@@ -145,12 +145,8 @@ pub struct MakerSwapData {
     pub maker_coin_swap_contract_address: Option<BytesJson>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub taker_coin_swap_contract_address: Option<BytesJson>,
-    /// Temporary privkey used in HTLC redeem script when applicable for maker coin
-    pub maker_coin_htlc_privkey: Option<SerializableSecp256k1Keypair>,
     /// Temporary pubkey used in HTLC redeem script when applicable for maker coin
     pub maker_coin_htlc_pubkey: Option<H264Json>,
-    /// Temporary privkey used in HTLC redeem script when applicable for taker coin
-    pub taker_coin_htlc_privkey: Option<SerializableSecp256k1Keypair>,
     /// Temporary pubkey used in HTLC redeem script when applicable for taker coin
     pub taker_coin_htlc_pubkey: Option<H264Json>,
     /// Temporary privkey used to sign P2P messages when applicable
@@ -168,8 +164,6 @@ pub struct MakerSwapMut {
     taker_payment_spend: Option<TransactionIdentifier>,
     taker_payment_spend_confirmed: bool,
     maker_payment_refund: Option<TransactionIdentifier>,
-    my_maker_coin_htlc_keypair: KeyPair,
-    my_taker_coin_htlc_keypair: KeyPair,
 }
 
 pub struct MakerSwap {
@@ -207,13 +201,6 @@ impl MakerSwap {
     fn apply_event(&self, event: MakerSwapEvent) {
         match event {
             MakerSwapEvent::Started(data) => {
-                if let Some(keypair) = data.maker_coin_htlc_privkey {
-                    self.w().my_maker_coin_htlc_keypair = keypair.into_inner();
-                }
-
-                if let Some(keypair) = data.taker_coin_htlc_privkey {
-                    self.w().my_taker_coin_htlc_keypair = keypair.into_inner();
-                }
                 self.w().data = data;
             },
             MakerSwapEvent::StartFailed(err) => self.errors.lock().push(err),
@@ -425,24 +412,16 @@ impl MakerSwap {
         let maker_coin_swap_contract_address = self.maker_coin.swap_contract_address();
         let taker_coin_swap_contract_address = self.taker_coin.swap_contract_address();
 
-        let maker_coin_htlc_key_pair = self.maker_coin.get_htlc_key_pair();
-        let taker_coin_htlc_key_pair = self.taker_coin.get_htlc_key_pair();
+        let secret_hash = dhash160(&secret);
 
-        let maker_coin_htlc_pubkey = match maker_coin_htlc_key_pair {
-            Some(k) => Some(k.public_slice().into()),
-            None => Some(self.ctx.secp256k1_key_pair().public_slice().into()),
-        };
-
-        let taker_coin_htlc_pubkey = match taker_coin_htlc_key_pair {
-            Some(k) => Some(k.public_slice().into()),
-            None => Some(self.ctx.secp256k1_key_pair().public_slice().into()),
-        };
+        let maker_coin_htlc_key_pair = self.maker_coin.derive_htlc_key_pair(secret_hash.as_slice());
+        let taker_coin_htlc_key_pair = self.taker_coin.derive_htlc_key_pair(secret_hash.as_slice());
 
         let data = MakerSwapData {
             taker_coin: self.taker_coin.ticker().to_owned(),
             maker_coin: self.maker_coin.ticker().to_owned(),
             taker: self.taker.bytes.into(),
-            secret_hash: Some(dhash160(&secret).into()),
+            secret_hash: Some(secret_hash.into()),
             secret: secret.into(),
             started_at,
             lock_duration: self.payment_locktime,
@@ -461,10 +440,8 @@ impl MakerSwap {
             taker_payment_spend_trade_fee: Some(SavedTradeFee::from(taker_payment_spend_trade_fee)),
             maker_coin_swap_contract_address,
             taker_coin_swap_contract_address,
-            maker_coin_htlc_privkey: maker_coin_htlc_key_pair.map(SerializableSecp256k1Keypair::from),
-            maker_coin_htlc_pubkey,
-            taker_coin_htlc_privkey: taker_coin_htlc_key_pair.map(SerializableSecp256k1Keypair::from),
-            taker_coin_htlc_pubkey,
+            maker_coin_htlc_pubkey: Some(maker_coin_htlc_key_pair.public_slice().into()),
+            taker_coin_htlc_pubkey: Some(taker_coin_htlc_key_pair.public_slice().into()),
             p2p_privkey: self.p2p_privkey.map(SerializableSecp256k1Keypair::from),
         };
 
@@ -648,29 +625,31 @@ impl MakerSwap {
             ]));
         }
 
+        let secret_hash = dhash160(&self.r().data.secret.0);
         let transaction_f = self
             .maker_coin
             .check_if_my_payment_sent(
                 self.r().data.maker_payment_lock as u32,
-                &**self.r().my_maker_coin_htlc_keypair.public(),
                 &*self.r().other_maker_coin_htlc_pub,
-                &*dhash160(&self.r().data.secret.0),
+                secret_hash.as_slice(),
                 self.r().data.maker_coin_start_block,
                 &self.r().data.maker_coin_swap_contract_address,
+                secret_hash.as_slice(),
             )
             .compat();
 
+        let secret_hash = dhash160(&self.r().data.secret.0);
         let transaction = match transaction_f.await {
             Ok(res) => match res {
                 Some(tx) => tx,
                 None => {
                     let payment_fut = self.maker_coin.send_maker_payment(
                         self.r().data.maker_payment_lock as u32,
-                        &**self.r().my_maker_coin_htlc_keypair.public(),
                         &*self.r().other_maker_coin_htlc_pub,
-                        &*dhash160(&self.r().data.secret.0),
+                        secret_hash.as_slice(),
                         self.maker_amount.clone(),
                         &self.r().data.maker_coin_swap_contract_address,
+                        secret_hash.as_slice(),
                     );
 
                     match payment_fut.compat().await {

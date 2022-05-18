@@ -95,9 +95,6 @@ use std::sync::atomic::{AtomicU64, Ordering};
 #[path = "lp_swap/swap_wasm_db.rs"]
 mod swap_wasm_db;
 
-use aes::cipher::generic_array::GenericArray;
-use aes::cipher::{BlockCipher, BlockDecrypt, BlockEncrypt, NewBlockCipher};
-use aes::{Aes256, Block};
 pub use check_balance::{check_other_coin_balance_for_swap, CheckBalanceError};
 use keys::KeyPair;
 use maker_swap::MakerSwapEvent;
@@ -115,17 +112,6 @@ pub use taker_swap::{calc_max_taker_vol, check_balance_for_taker_swap, max_taker
                      run_taker_swap, taker_swap_trade_preimage, RunTakerSwapInput, TakerSavedSwap, TakerSwap,
                      TakerSwapPreparedParams, TakerTradePreimage};
 pub use trade_preimage::trade_preimage_rpc;
-
-#[test]
-fn try_aes() {
-    let mut h256_json = H256Json::default();
-    let mut aes_block = Block::from_mut_slice(&mut h256_json.0[..16]);
-    let key = GenericArray::from_slice(&[0u8; 32]);
-    let aes = Aes256::new(key);
-    aes.encrypt_block(aes_block);
-    aes.decrypt_block(aes_block);
-    assert_eq!(aes_block, GenericArray::from_slice(&[0u8; 16]));
-}
 
 pub const SWAP_PREFIX: TopicPrefix = "swap";
 
@@ -818,12 +804,13 @@ impl<'a> From<&'a SavedSwap> for MySwapStatusResponse<'a> {
 /// Returns the status of swap performed on `my` node
 pub async fn my_swap_status(ctx: MmArc, req: Json) -> Result<Response<Vec<u8>>, String> {
     let uuid: Uuid = try_s!(json::from_value(req["params"]["uuid"].clone()));
-    let status = match SavedSwap::load_my_swap_from_db(&ctx, uuid).await {
+    let mut status = match SavedSwap::load_my_swap_from_db(&ctx, uuid).await {
         Ok(Some(status)) => status,
         Ok(None) => return Err("swap data is not found".to_owned()),
         Err(e) => return ERR!("{}", e),
     };
 
+    status.hide_secrets();
     let res_js = json!({ "result": MySwapStatusResponse::from(&status) });
     let res = try_s!(json::to_vec(&res_js));
     Ok(try_s!(Response::builder().body(res)))
@@ -1004,7 +991,10 @@ pub async fn my_recent_swaps_rpc(ctx: MmArc, req: Json) -> Result<Response<Vec<u
     let mut swaps = Vec::with_capacity(db_result.uuids.len());
     for uuid in db_result.uuids.iter() {
         let swap_json = match SavedSwap::load_my_swap_from_db(&ctx, *uuid).await {
-            Ok(Some(swap)) => json::to_value(MySwapStatusResponse::from(&swap)).unwrap(),
+            Ok(Some(mut swap)) => {
+                swap.hide_secrets();
+                json::to_value(MySwapStatusResponse::from(&swap)).unwrap()
+            },
             Ok(None) => {
                 error!("No such swap with the uuid '{}'", uuid);
                 Json::Null

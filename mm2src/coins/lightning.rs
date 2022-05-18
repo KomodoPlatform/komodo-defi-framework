@@ -242,11 +242,11 @@ impl SwapOps for LightningCoin {
     fn send_maker_payment(
         &self,
         _time_lock: u32,
-        _maker_pub: &[u8],
         _taker_pub: &[u8],
         _secret_hash: &[u8],
         _amount: BigDecimal,
         _swap_contract_address: &Option<BytesJson>,
+        _swap_unique_data: &[u8],
     ) -> TransactionFut {
         unimplemented!()
     }
@@ -254,11 +254,11 @@ impl SwapOps for LightningCoin {
     fn send_taker_payment(
         &self,
         _time_lock: u32,
-        _taker_pub: &[u8],
         _maker_pub: &[u8],
         _secret_hash: &[u8],
         _amount: BigDecimal,
         _swap_contract_address: &Option<BytesJson>,
+        _swap_unique_data: &[u8],
     ) -> TransactionFut {
         unimplemented!()
     }
@@ -269,8 +269,8 @@ impl SwapOps for LightningCoin {
         _time_lock: u32,
         _taker_pub: &[u8],
         _secret: &[u8],
-        _htlc_privkey: &[u8],
         _swap_contract_address: &Option<BytesJson>,
+        _swap_unique_data: &[u8],
     ) -> TransactionFut {
         unimplemented!()
     }
@@ -281,8 +281,8 @@ impl SwapOps for LightningCoin {
         _time_lock: u32,
         _maker_pub: &[u8],
         _secret: &[u8],
-        _htlc_privkey: &[u8],
         _swap_contract_address: &Option<BytesJson>,
+        _swap_unique_data: &[u8],
     ) -> TransactionFut {
         unimplemented!()
     }
@@ -293,8 +293,8 @@ impl SwapOps for LightningCoin {
         _time_lock: u32,
         _maker_pub: &[u8],
         _secret_hash: &[u8],
-        _htlc_privkey: &[u8],
         _swap_contract_address: &Option<BytesJson>,
+        _swap_unique_data: &[u8],
     ) -> TransactionFut {
         unimplemented!()
     }
@@ -305,8 +305,8 @@ impl SwapOps for LightningCoin {
         _time_lock: u32,
         _taker_pub: &[u8],
         _secret_hash: &[u8],
-        _htlc_privkey: &[u8],
         _swap_contract_address: &Option<BytesJson>,
+        _swap_unique_data: &[u8],
     ) -> TransactionFut {
         unimplemented!()
     }
@@ -340,11 +340,11 @@ impl SwapOps for LightningCoin {
     fn check_if_my_payment_sent(
         &self,
         _time_lock: u32,
-        _my_pub: &[u8],
         _other_pub: &[u8],
         _secret_hash: &[u8],
         _search_from_block: u64,
         _swap_contract_address: &Option<BytesJson>,
+        _swap_unique_data: &[u8],
     ) -> Box<dyn Future<Item = Option<TransactionEnum>, Error = String> + Send> {
         unimplemented!()
     }
@@ -382,7 +382,7 @@ impl SwapOps for LightningCoin {
         unimplemented!()
     }
 
-    fn get_htlc_key_pair(&self) -> Option<KeyPair> { unimplemented!() }
+    fn derive_htlc_key_pair(&self, _swap_unique_data: &[u8]) -> KeyPair { unimplemented!() }
 }
 
 impl MarketCoinOps for LightningCoin {

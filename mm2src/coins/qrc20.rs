@@ -739,11 +739,11 @@ impl SwapOps for Qrc20Coin {
     fn send_maker_payment(
         &self,
         time_lock: u32,
-        _maker_pub: &[u8],
         taker_pub: &[u8],
         secret_hash: &[u8],
         amount: BigDecimal,
         swap_contract_address: &Option<BytesJson>,
+        _swap_unique_data: &[u8],
     ) -> TransactionFut {
         let taker_addr = try_tx_fus!(self.contract_address_from_raw_pubkey(taker_pub));
         let id = qrc20_swap_id(time_lock, secret_hash);
@@ -763,11 +763,11 @@ impl SwapOps for Qrc20Coin {
     fn send_taker_payment(
         &self,
         time_lock: u32,
-        _taker_pub: &[u8],
         maker_pub: &[u8],
         secret_hash: &[u8],
         amount: BigDecimal,
         swap_contract_address: &Option<BytesJson>,
+        _swap_unique_data: &[u8],
     ) -> TransactionFut {
         let maker_addr = try_tx_fus!(self.contract_address_from_raw_pubkey(maker_pub));
         let id = qrc20_swap_id(time_lock, secret_hash);
@@ -790,8 +790,8 @@ impl SwapOps for Qrc20Coin {
         _time_lock: u32,
         _taker_pub: &[u8],
         secret: &[u8],
-        _htlc_privkey: &[u8],
         swap_contract_address: &Option<BytesJson>,
+        _swap_unique_data: &[u8],
     ) -> TransactionFut {
         let payment_tx: UtxoTx = try_tx_fus!(deserialize(taker_payment_tx).map_err(|e| ERRL!("{:?}", e)));
         let swap_contract_address = try_tx_fus!(swap_contract_address.try_to_address());
@@ -812,8 +812,8 @@ impl SwapOps for Qrc20Coin {
         _time_lock: u32,
         _maker_pub: &[u8],
         secret: &[u8],
-        _htlc_privkey: &[u8],
         swap_contract_address: &Option<BytesJson>,
+        _swap_unique_data: &[u8],
     ) -> TransactionFut {
         let payment_tx: UtxoTx = try_tx_fus!(deserialize(maker_payment_tx).map_err(|e| ERRL!("{:?}", e)));
         let secret = secret.to_vec();
@@ -834,8 +834,8 @@ impl SwapOps for Qrc20Coin {
         _time_lock: u32,
         _maker_pub: &[u8],
         _secret_hash: &[u8],
-        _htlc_privkey: &[u8],
         swap_contract_address: &Option<BytesJson>,
+        _swap_unique_data: &[u8],
     ) -> TransactionFut {
         let payment_tx: UtxoTx = try_tx_fus!(deserialize(taker_payment_tx).map_err(|e| ERRL!("{:?}", e)));
         let swap_contract_address = try_tx_fus!(swap_contract_address.try_to_address());
@@ -855,8 +855,8 @@ impl SwapOps for Qrc20Coin {
         _time_lock: u32,
         _taker_pub: &[u8],
         _secret_hash: &[u8],
-        _htlc_privkey: &[u8],
         swap_contract_address: &Option<BytesJson>,
+        _swap_unique_data: &[u8],
     ) -> TransactionFut {
         let payment_tx: UtxoTx = try_tx_fus!(deserialize(maker_payment_tx).map_err(|e| ERRL!("{:?}", e)));
         let swap_contract_address = try_tx_fus!(swap_contract_address.try_to_address());
@@ -901,7 +901,7 @@ impl SwapOps for Qrc20Coin {
 
     fn validate_maker_payment(&self, input: ValidatePaymentInput) -> Box<dyn Future<Item = (), Error = String> + Send> {
         let payment_tx: UtxoTx = try_fus!(deserialize(input.payment_tx.as_slice()).map_err(|e| ERRL!("{:?}", e)));
-        let sender = try_fus!(self.contract_address_from_raw_pubkey(&input.maker_pub));
+        let sender = try_fus!(self.contract_address_from_raw_pubkey(&input.other_pub));
         let swap_contract_address = try_fus!(input.swap_contract_address.try_to_address());
 
         let selfi = self.clone();
@@ -923,7 +923,7 @@ impl SwapOps for Qrc20Coin {
     fn validate_taker_payment(&self, input: ValidatePaymentInput) -> Box<dyn Future<Item = (), Error = String> + Send> {
         let swap_contract_address = try_fus!(input.swap_contract_address.try_to_address());
         let payment_tx: UtxoTx = try_fus!(deserialize(input.payment_tx.as_slice()).map_err(|e| ERRL!("{:?}", e)));
-        let sender = try_fus!(self.contract_address_from_raw_pubkey(&input.taker_pub));
+        let sender = try_fus!(self.contract_address_from_raw_pubkey(&input.other_pub));
 
         let selfi = self.clone();
         let fut = async move {
@@ -944,11 +944,11 @@ impl SwapOps for Qrc20Coin {
     fn check_if_my_payment_sent(
         &self,
         time_lock: u32,
-        _my_pub: &[u8],
         _other_pub: &[u8],
         secret_hash: &[u8],
         search_from_block: u64,
         swap_contract_address: &Option<BytesJson>,
+        _swap_unique_data: &[u8],
     ) -> Box<dyn Future<Item = Option<TransactionEnum>, Error = String> + Send> {
         let swap_id = qrc20_swap_id(time_lock, secret_hash);
         let swap_contract_address = try_fus!(swap_contract_address.try_to_address());
@@ -1022,7 +1022,9 @@ impl SwapOps for Qrc20Coin {
         }
     }
 
-    fn get_htlc_key_pair(&self) -> Option<KeyPair> { utxo_common::get_htlc_key_pair(self) }
+    fn derive_htlc_key_pair(&self, swap_unique_data: &[u8]) -> KeyPair {
+        utxo_common::derive_htlc_key_pair(self.as_ref(), swap_unique_data)
+    }
 }
 
 impl MarketCoinOps for Qrc20Coin {
