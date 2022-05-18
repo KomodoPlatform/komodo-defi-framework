@@ -8,7 +8,7 @@ use db_common::{sqlite::rusqlite::Error as SqlError,
                 sqlite::string_from_row,
                 sqlite::validate_table_name,
                 sqlite::CHECK_TABLE_EXISTS_SQL};
-use mm2_err_handle::mm_error::MmError;
+use mm2_err_handle::prelude::*;
 use serialization::deserialize;
 use std::collections::HashMap;
 use std::sync::{Arc, Mutex};

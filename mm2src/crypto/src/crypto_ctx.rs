@@ -6,7 +6,7 @@ use derive_more::Display;
 use hw_common::primitives::EcdsaCurve;
 use keys::Public as PublicKey;
 use mm2_core::mm_ctx::MmArc;
-use mm2_err_handle::{mm_error::NotEqual, prelude::*};
+use mm2_err_handle::prelude::*;
 use parking_lot::RwLock;
 use primitives::hash::H160;
 use std::ops::Deref;

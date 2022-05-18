@@ -19,7 +19,7 @@ use ethereum_types::H160;
 use futures::compat::Future01CompatExt;
 use futures::{FutureExt, TryFutureExt};
 use keys::{AddressHashEnum, Signature};
-use mm2_err_handle::prelude::{MapMmError, MapToMmResult, MmError};
+use mm2_err_handle::prelude::*;
 use rpc::v1::types::ToTxHash;
 use script::Builder as ScriptBuilder;
 use serialization::serialize;

@@ -10,7 +10,7 @@ use derive_more::Display;
 use futures::compat::Future01CompatExt;
 use keys::{Address, CashAddress};
 use mm2_core::mm_ctx::MmArc;
-use mm2_err_handle::{mm_error::NotEqual, prelude::*};
+use mm2_err_handle::prelude::*;
 use rpc::v1::types::{Bytes as BytesJson, ToTxHash};
 use std::collections::HashSet;
 

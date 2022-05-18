@@ -4,7 +4,7 @@ use async_trait::async_trait;
 use coins::solana::spl::{SplProtocolConf, SplTokenCreationError};
 use coins::{BalanceError, CoinBalance, CoinProtocol, MarketCoinOps, MmCoinEnum, SolanaCoin, SplToken};
 use common::Future01CompatExt;
-use mm2_err_handle::prelude::{MapToMmResult, MmError};
+use mm2_err_handle::prelude::*;
 use serde_derive::{Deserialize, Serialize};
 use std::collections::HashMap;
 

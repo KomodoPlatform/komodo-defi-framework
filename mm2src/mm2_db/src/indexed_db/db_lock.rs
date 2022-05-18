@@ -1,6 +1,6 @@
-use super::{DbIdentifier, DbInstance, DbNamespaceId, InitDbResult};
+use super::{DbIdentifier, DbInstance, InitDbResult};
 use futures::lock::{MappedMutexGuard as AsyncMappedMutexGuard, Mutex as AsyncMutex, MutexGuard as AsyncMutexGuard};
-use mm2_core::mm_ctx::MmArc;
+use mm2_core::{mm_ctx::MmArc, DbNamespaceId};
 use primitives::hash::H160;
 use std::sync::{Arc, Weak};
 

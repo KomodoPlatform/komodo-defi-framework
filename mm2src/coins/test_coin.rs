@@ -9,7 +9,7 @@ use common::mm_number::MmNumber;
 use futures01::Future;
 use keys::KeyPair;
 use mm2_core::mm_ctx::MmArc;
-use mm2_err_handle::mm_error::MmError;
+use mm2_err_handle::prelude::*;
 use mocktopus::macros::*;
 use rpc::v1::types::Bytes as BytesJson;
 use serde_json::Value as Json;

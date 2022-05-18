@@ -7,7 +7,7 @@ use coins::{lp_coinfind, lp_register_coin, MmCoinEnum, RegisterCoinError, Regist
 use common::{log, SuccessResponse};
 use crypto::trezor::trezor_rpc_task::RpcTaskHandle;
 use mm2_core::mm_ctx::MmArc;
-use mm2_err_handle::{mm_error::NotEqual, prelude::*};
+use mm2_err_handle::prelude::*;
 use rpc_task::rpc_common::{InitRpcTaskResponse, RpcTaskStatusRequest, RpcTaskUserActionRequest};
 use rpc_task::{RpcTask, RpcTaskManager, RpcTaskManagerShared, RpcTaskStatus, RpcTaskTypes};
 use serde_derive::Deserialize;

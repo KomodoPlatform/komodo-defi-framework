@@ -68,7 +68,7 @@ use derive_more::Display;
 use futures::future::{abortable, AbortHandle, TryFutureExt};
 use http::Response;
 use mm2_core::mm_ctx::{from_ctx, MmArc};
-use mm2_err_handle::mm_error::MmError;
+use mm2_err_handle::prelude::*;
 use mm2_libp2p::{decode_signed, encode_and_sign, pub_sub_topic, TopicPrefix};
 use primitives::hash::{H160, H264};
 use rpc::v1::types::{Bytes as BytesJson, H256 as H256Json};

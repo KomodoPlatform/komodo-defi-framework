@@ -25,7 +25,7 @@ use std::sync::{Arc, Mutex};
 
 cfg_wasm32! {
     use mm2_rpc::wasm_rpc::WasmRpcSender;
-    use common::DbNamespaceId;
+    use crate::DbNamespaceId;
 }
 
 cfg_native! {

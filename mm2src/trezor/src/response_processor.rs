@@ -1,7 +1,7 @@
 use crate::{TrezorError, TrezorPinMatrix3x3Response};
 use async_trait::async_trait;
 use derive_more::Display;
-use mm2_err_handle::{mm_error::NotEqual, prelude::*};
+use mm2_err_handle::prelude::*;
 
 #[derive(Display)]
 pub enum TrezorProcessingError<E> {

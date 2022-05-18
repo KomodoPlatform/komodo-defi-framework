@@ -307,8 +307,8 @@ mod wasm_impl {
 mod wasm_tests {
     use super::wasm_impl::*;
     use super::*;
+    use common::log::wasm_log::register_wasm_log;
     use common::new_uuid;
-    use common::register_wasm_log;
     use mm2_core::mm_ctx::MmCtxBuilder;
     use rand::seq::SliceRandom;
     use rand::Rng;

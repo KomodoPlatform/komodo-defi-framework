@@ -10,10 +10,10 @@
 use async_trait::async_trait;
 use common::executor::spawn_local;
 use common::log::debug;
-use common::DbNamespaceId;
 use derive_more::Display;
 use futures::channel::{mpsc, oneshot};
 use futures::StreamExt;
+use mm2_core::DbNamespaceId;
 use mm2_err_handle::prelude::*;
 use primitives::hash::H160;
 use serde::de::DeserializeOwned;
@@ -609,7 +609,7 @@ mod internal {
 
 mod tests {
     use super::*;
-    use common::register_wasm_log;
+    use common::log::wasm_log::register_wasm_log;
     use lazy_static::lazy_static;
     use serde::{Deserialize, Serialize};
     use wasm_bindgen_test::*;

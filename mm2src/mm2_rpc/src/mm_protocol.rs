@@ -1,6 +1,6 @@
 use common::{HttpStatusCode, SerializationError};
 use http::{Response, StatusCode};
-use mm2_err_handle::mm_error::{MmError, SerMmErrorType};
+use mm2_err_handle::prelude::*;
 use serde::{Deserialize, Serialize};
 use serde_json as json;
 use serde_json::Value as Json;
@@ -168,7 +168,7 @@ where
 #[cfg(test)]
 mod tests {
     use derive_more::Display;
-    use mm2_err_handle::mm_error::MmError;
+    use mm2_err_handle::prelude::*;
     use ser_error_derive::SerializeErrorType;
     use serde::{Serialize, Serializer};
     use serde_json as json;

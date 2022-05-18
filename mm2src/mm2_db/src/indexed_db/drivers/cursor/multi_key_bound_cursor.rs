@@ -217,7 +217,7 @@ impl CursorOps for IdbMultiKeyBoundCursor {
 
 mod tests {
     use super::*;
-    use common::register_wasm_log;
+    use common::log::wasm_log::register_wasm_log;
     use wasm_bindgen::JsCast;
     use wasm_bindgen_test::*;
 

@@ -121,7 +121,6 @@ pub mod executor;
 
 use backtrace::SymbolName;
 use bigdecimal::BigDecimal;
-use derive_more::Display;
 pub use futures::compat::Future01CompatExt;
 use futures::future::FutureExt;
 use futures::task::Waker;
@@ -132,7 +131,6 @@ use http::header::{HeaderValue, CONTENT_TYPE};
 use http::Response;
 use parking_lot::{Mutex as PaMutex, MutexGuard as PaMutexGuard};
 use rand::{rngs::SmallRng, SeedableRng};
-use rand::{thread_rng, Rng};
 use serde::{de, ser};
 use serde_bytes::ByteBuf;
 use serde_json::{self as json, Value as Json};
@@ -1693,48 +1691,4 @@ impl<Id> PagingOptionsEnum<Id> {
 
 impl<Id> Default for PagingOptionsEnum<Id> {
     fn default() -> Self { PagingOptionsEnum::PageNumber(NonZeroUsize::new(1).expect("1 > 0")) }
-}
-
-#[cfg(target_arch = "wasm32")]
-pub fn register_wasm_log() {
-    use crate::log::{register_callback, LogLevel, WasmCallback, WasmLoggerBuilder};
-    use std::str::FromStr;
-    use std::sync::atomic::AtomicBool;
-
-    static IS_INITIALIZED: AtomicBool = AtomicBool::new(false);
-
-    // Check if the logger is initialized already
-    if let Err(true) = IS_INITIALIZED.compare_exchange(false, true, Ordering::Relaxed, Ordering::Relaxed) {
-        return;
-    }
-
-    let log_level = match option_env!("RUST_WASM_TEST_LOG") {
-        Some(level_str) => LogLevel::from_str(level_str).unwrap_or(LogLevel::Info),
-        None => LogLevel::Info,
-    };
-
-    register_callback(WasmCallback::console_log());
-    WasmLoggerBuilder::default()
-        .level_filter(log_level)
-        .try_init()
-        .expect("Must be initialized only once");
-}
-
-#[derive(Clone, Copy, Display, PartialEq)]
-pub enum DbNamespaceId {
-    #[display(fmt = "MAIN")]
-    Main,
-    #[display(fmt = "TEST_{}", _0)]
-    Test(u64),
-}
-
-impl Default for DbNamespaceId {
-    fn default() -> Self { DbNamespaceId::Main }
-}
-
-impl DbNamespaceId {
-    pub fn for_test() -> DbNamespaceId {
-        let mut rng = thread_rng();
-        DbNamespaceId::Test(rng.gen())
-    }
 }

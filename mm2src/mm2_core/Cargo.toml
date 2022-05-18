@@ -8,6 +8,7 @@ edition = "2021"
 [dependencies]
 async-trait = "0.1"
 arrayref = "0.3"
+derive_more = "0.99"
 rand = { version = "0.7", features = ["std", "small_rng", "wasm-bindgen"] }
 uuid = { version = "0.7", features = ["serde", "v4"] }
 fomat-macros = "0.2"

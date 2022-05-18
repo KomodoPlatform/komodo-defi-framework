@@ -51,7 +51,7 @@ use std::str;
 #[path = "lp_native_dex.rs"] mod lp_native_dex;
 use self::lp_native_dex::lp_init;
 use coins::update_coins_config;
-use mm2_err_handle::mm_error::MmError;
+use mm2_err_handle::prelude::*;
 
 #[cfg(not(target_arch = "wasm32"))]
 #[path = "database.rs"]

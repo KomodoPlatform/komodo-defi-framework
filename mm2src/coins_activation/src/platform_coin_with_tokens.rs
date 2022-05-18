@@ -10,7 +10,7 @@ use common::{log, HttpStatusCode, StatusCode};
 use derive_more::Display;
 use futures::future::AbortHandle;
 use mm2_core::mm_ctx::MmArc;
-use mm2_err_handle::{mm_error::NotEqual, prelude::*};
+use mm2_err_handle::prelude::*;
 use ser_error_derive::SerializeErrorType;
 use serde_derive::{Deserialize, Serialize};
 use serde_json::Value as Json;

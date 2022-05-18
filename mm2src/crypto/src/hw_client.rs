@@ -3,7 +3,7 @@ use common::custom_futures::FutureTimerExt;
 use derive_more::Display;
 use futures::FutureExt;
 use hw_common::primitives::Bip32Error;
-use mm2_err_handle::{mm_error::NotEqual, prelude::*};
+use mm2_err_handle::prelude::*;
 use primitives::hash::H264;
 use std::time::Duration;
 use trezor::client::TrezorClient;

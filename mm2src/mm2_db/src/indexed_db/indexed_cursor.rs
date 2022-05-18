@@ -537,7 +537,7 @@ async fn send_event_recv_response<Event, Result>(
 mod tests {
     use super::*;
     use crate::indexed_db::{DbIdentifier, DbTable, DbUpgrader, IndexedDbBuilder, OnUpgradeResult};
-    use common::register_wasm_log;
+    use common::log::wasm_log::register_wasm_log;
     use serde::Deserialize;
     use wasm_bindgen_test::*;
 
