@@ -170,7 +170,6 @@ struct CallbackMsg {
     line: String,
 }
 
-#[cfg(target_arch = "wasm32")]
 pub fn register_wasm_log() {
     use crate::log::register_callback;
     use std::str::FromStr;

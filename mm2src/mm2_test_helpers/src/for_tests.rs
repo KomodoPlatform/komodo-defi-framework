@@ -5,7 +5,7 @@ use fomat_macros::wite;
 use gstuff::{try_s, ERR, ERRL};
 use http::{HeaderMap, StatusCode};
 use lazy_static::lazy_static;
-#[cfg(target_arch = "wasm32")] use rand::Rng;
+use rand::Rng;
 use serde::{Deserialize, Serialize};
 use serde_json::{self as json, json, Value as Json};
 use std::collections::HashMap;
@@ -588,7 +588,6 @@ impl MarketMakerIt {
 
         // Just use the IP given in the `conf`.
 
-        use rand::Rng;
         let ip: IpAddr = try_s!(try_s!(conf["myipaddr"].as_str().ok_or("myipaddr is not a string")).parse());
         let mut mm_ips = try_s!(MM_IPS.lock());
         if mm_ips.contains_key(&ip) {

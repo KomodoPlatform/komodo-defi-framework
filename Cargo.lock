@@ -2896,7 +2896,6 @@ dependencies = [
  "futures 0.3.15",
  "js-sys",
  "mm2_err_handle",
- "mm2_net",
  "rusb",
  "secp256k1",
  "serde",
