@@ -114,8 +114,8 @@ impl<E> SerMmErrorType for E where E: SerializeErrorType + fmt::Display + NotMmE
 #[derive(Clone, Debug, Display, Eq, PartialEq)]
 #[display(fmt = "{} {}", "trace.formatted()", etype)]
 pub struct MmError<E: NotMmError> {
-    pub etype: E,
-    pub trace: Vec<TraceLocation>,
+    pub(crate) etype: E,
+    pub(crate) trace: Vec<TraceLocation>,
 }
 
 pub auto trait NotEqual {}
