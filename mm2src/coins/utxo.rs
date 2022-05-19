@@ -1,13 +1,15 @@
 /******************************************************************************
- * Copyright © 2014-2019 The SuperNET Developers.                             *
+ * Copyright © 2022 Atomic Private Limited and its contributors               *
  *                                                                            *
- * See the AUTHORS, DEVELOPER-AGREEMENT and LICENSE files at                  *
+ * See the CONTRIBUTOR-LICENSE-AGREEMENT, COPYING, LICENSE-COPYRIGHT-NOTICE   *
+ * and DEVELOPER-CERTIFICATE-OF-ORIGIN files in the LEGAL directory in        *
  * the top-level directory of this distribution for the individual copyright  *
  * holder information and the developer policies on copyright and licensing.  *
  *                                                                            *
  * Unless otherwise agreed in a custom licensing agreement, no part of the    *
- * SuperNET software, including this file may be copied, modified, propagated *
- * or distributed except according to the terms contained in the LICENSE file *
+ * AtomicDEX software, including this file may be copied, modified, propagated*
+ * or distributed except according to the terms contained in the              *
+ * LICENSE-COPYRIGHT-NOTICE file.                                             *
  *                                                                            *
  * Removal or modification of this copyright notice is prohibited.            *
  *                                                                            *
@@ -16,7 +18,7 @@
 //  utxo.rs
 //  marketmaker
 //
-//  Copyright © 2017-2019 SuperNET. All rights reserved.
+//  Copyright © 2022 AtomicDEX. All rights reserved.
 //
 
 pub mod bch;
