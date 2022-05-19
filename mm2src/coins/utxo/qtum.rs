@@ -678,15 +678,17 @@ impl SwapOps for QtumCoin {
         tx: &[u8],
         search_from_block: u64,
         _swap_contract_address: &Option<BytesJson>,
+        swap_unique_data: &[u8],
     ) -> Result<Option<FoundSwapTxSpend>, String> {
         utxo_common::search_for_swap_tx_spend_my(
-            &self.utxo_arc,
+            self,
             time_lock,
             other_pub,
             secret_hash,
             tx,
             utxo_common::DEFAULT_SWAP_VOUT,
             search_from_block,
+            swap_unique_data,
         )
         .await
     }
@@ -699,15 +701,17 @@ impl SwapOps for QtumCoin {
         tx: &[u8],
         search_from_block: u64,
         _swap_contract_address: &Option<BytesJson>,
+        swap_unique_data: &[u8],
     ) -> Result<Option<FoundSwapTxSpend>, String> {
         utxo_common::search_for_swap_tx_spend_other(
-            &self.utxo_arc,
+            self,
             time_lock,
             other_pub,
             secret_hash,
             tx,
             utxo_common::DEFAULT_SWAP_VOUT,
             search_from_block,
+            swap_unique_data,
         )
         .await
     }

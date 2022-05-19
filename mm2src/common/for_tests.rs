@@ -601,11 +601,7 @@ impl MarketMakerIt {
 impl Drop for MarketMakerIt {
     fn drop(&mut self) {
         if let Ok(mut mm_ips) = MM_IPS.lock() {
-            // The IP addresses might still be used by the libtorrent even after a context is dropped,
-            // hence we're not trying to reuse them but rather just mark them as fried.
-            if let Some(active) = mm_ips.get_mut(&self.ip) {
-                *active = false
-            }
+            mm_ips.remove(&self.ip);
         } else {
             log!("MarketMakerIt] Can't lock MM_IPS.")
         }

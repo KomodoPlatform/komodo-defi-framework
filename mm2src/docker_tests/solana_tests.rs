@@ -1,7 +1,7 @@
 use crate::docker_tests::docker_tests_common::*;
 use common::for_tests::{enable_solana_with_tokens, enable_spl, sign_message, verify_message};
 use num_traits::Zero;
-use serde_json::{self as json, Value as Json};
+use serde_json::{self as json};
 
 #[test]
 fn test_solana_and_spl_balance_enable_spl_v2() {
@@ -62,10 +62,13 @@ fn test_sign_verify_message_solana() {
         response.signature,
         "3AoWCXHq3ACYHYEHUsCzPmRNiXn5c6kodXn9KDd1tz52e1da3dZKYXD5nrJW31XLtN6zzJiwHWtDta52w7Cd7qyE"
     );
-    
-    let response = block_on(verify_message(&mm, "SOL-DEVNET", 
-    "3AoWCXHq3ACYHYEHUsCzPmRNiXn5c6kodXn9KDd1tz52e1da3dZKYXD5nrJW31XLtN6zzJiwHWtDta52w7Cd7qyE",
-    "FJktmyjV9aBHEShT4hfnLpr9ELywdwVtEL1w1rSWgbVf"));
+
+    let response = block_on(verify_message(
+        &mm,
+        "SOL-DEVNET",
+        "3AoWCXHq3ACYHYEHUsCzPmRNiXn5c6kodXn9KDd1tz52e1da3dZKYXD5nrJW31XLtN6zzJiwHWtDta52w7Cd7qyE",
+        "FJktmyjV9aBHEShT4hfnLpr9ELywdwVtEL1w1rSWgbVf",
+    ));
     let response: RpcV2Response<VerificationResponse> = json::from_value(response).unwrap();
     let response = response.result;
 
@@ -85,7 +88,7 @@ fn test_sign_verify_message_spl() {
     ));
 
     block_on(enable_spl(&mm, "ADEX-SOL-DEVNET"));
-    
+
     let response = block_on(sign_message(&mm, "ADEX-SOL-DEVNET"));
     let response: RpcV2Response<SignatureResponse> = json::from_value(response).unwrap();
     let response = response.result;
@@ -94,13 +97,15 @@ fn test_sign_verify_message_spl() {
         response.signature,
         "3AoWCXHq3ACYHYEHUsCzPmRNiXn5c6kodXn9KDd1tz52e1da3dZKYXD5nrJW31XLtN6zzJiwHWtDta52w7Cd7qyE"
     );
-    
-    let response = block_on(verify_message(&mm, "ADEX-SOL-DEVNET", 
-    "3AoWCXHq3ACYHYEHUsCzPmRNiXn5c6kodXn9KDd1tz52e1da3dZKYXD5nrJW31XLtN6zzJiwHWtDta52w7Cd7qyE",
-    "FJktmyjV9aBHEShT4hfnLpr9ELywdwVtEL1w1rSWgbVf"));
+
+    let response = block_on(verify_message(
+        &mm,
+        "ADEX-SOL-DEVNET",
+        "3AoWCXHq3ACYHYEHUsCzPmRNiXn5c6kodXn9KDd1tz52e1da3dZKYXD5nrJW31XLtN6zzJiwHWtDta52w7Cd7qyE",
+        "FJktmyjV9aBHEShT4hfnLpr9ELywdwVtEL1w1rSWgbVf",
+    ));
     let response: RpcV2Response<VerificationResponse> = json::from_value(response).unwrap();
     let response = response.result;
 
     assert!(response.is_valid);
 }
-

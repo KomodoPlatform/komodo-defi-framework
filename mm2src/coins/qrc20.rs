@@ -970,6 +970,7 @@ impl SwapOps for Qrc20Coin {
         tx: &[u8],
         search_from_block: u64,
         _swap_contract_address: &Option<BytesJson>,
+        _swap_unique_data: &[u8],
     ) -> Result<Option<FoundSwapTxSpend>, String> {
         let tx: UtxoTx = try_s!(deserialize(tx).map_err(|e| ERRL!("{:?}", e)));
 
@@ -985,6 +986,7 @@ impl SwapOps for Qrc20Coin {
         tx: &[u8],
         search_from_block: u64,
         _swap_contract_address: &Option<BytesJson>,
+        _swap_unique_data: &[u8],
     ) -> Result<Option<FoundSwapTxSpend>, String> {
         let tx: UtxoTx = try_s!(deserialize(tx).map_err(|e| ERRL!("{:?}", e)));
 

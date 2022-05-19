@@ -543,6 +543,7 @@ pub trait SwapOps {
         swap_unique_data: &[u8],
     ) -> Box<dyn Future<Item = Option<TransactionEnum>, Error = String> + Send>;
 
+    #[allow(clippy::too_many_arguments)]
     async fn search_for_swap_tx_spend_my(
         &self,
         time_lock: u32,
@@ -551,8 +552,10 @@ pub trait SwapOps {
         tx: &[u8],
         search_from_block: u64,
         swap_contract_address: &Option<BytesJson>,
+        swap_unique_data: &[u8],
     ) -> Result<Option<FoundSwapTxSpend>, String>;
 
+    #[allow(clippy::too_many_arguments)]
     async fn search_for_swap_tx_spend_other(
         &self,
         time_lock: u32,
@@ -561,6 +564,7 @@ pub trait SwapOps {
         tx: &[u8],
         search_from_block: u64,
         swap_contract_address: &Option<BytesJson>,
+        swap_unique_data: &[u8],
     ) -> Result<Option<FoundSwapTxSpend>, String>;
 
     fn extract_secret(&self, secret_hash: &[u8], spend_tx: &[u8]) -> Result<Vec<u8>, String>;

@@ -213,6 +213,7 @@ impl SwapOps for TestCoin {
         tx: &[u8],
         search_from_block: u64,
         swap_contract_address: &Option<BytesJson>,
+        swap_unique_data: &[u8],
     ) -> Result<Option<FoundSwapTxSpend>, String> {
         unimplemented!()
     }
@@ -225,6 +226,7 @@ impl SwapOps for TestCoin {
         tx: &[u8],
         search_from_block: u64,
         swap_contract_address: &Option<BytesJson>,
+        swap_unique_data: &[u8],
     ) -> Result<Option<FoundSwapTxSpend>, String> {
         unimplemented!()
     }

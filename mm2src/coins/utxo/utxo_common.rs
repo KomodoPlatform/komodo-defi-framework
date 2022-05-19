@@ -1501,7 +1501,7 @@ pub fn validate_maker_payment<T: UtxoCommonOps + SwapOps>(
     let mut tx: UtxoTx = try_fus!(deserialize(input.payment_tx.as_slice()).map_err(|e| ERRL!("{:?}", e)));
     tx.tx_hash_algo = coin.as_ref().tx_hash_algo;
 
-    let htlc_keypair = coin.derive_htlc_key_pair(input.unique_swap_data);
+    let htlc_keypair = coin.derive_htlc_key_pair(&input.unique_swap_data);
     validate_payment(
         coin.clone(),
         tx,
@@ -1523,7 +1523,7 @@ pub fn validate_taker_payment<T: UtxoCommonOps + SwapOps>(
     let mut tx: UtxoTx = try_fus!(deserialize(input.payment_tx.as_slice()).map_err(|e| ERRL!("{:?}", e)));
     tx.tx_hash_algo = coin.as_ref().tx_hash_algo;
 
-    let htlc_keypair = coin.derive_htlc_key_pair(input.unique_swap_data);
+    let htlc_keypair = coin.derive_htlc_key_pair(&input.unique_swap_data);
     validate_payment(
         coin.clone(),
         tx,
@@ -1599,20 +1599,21 @@ pub fn check_if_my_payment_sent<T: UtxoCommonOps + SwapOps>(
     Box::new(fut.boxed().compat())
 }
 
-pub async fn search_for_swap_tx_spend_my(
-    coin: &UtxoCoinFields,
+#[allow(clippy::too_many_arguments)]
+pub async fn search_for_swap_tx_spend_my<T: AsRef<UtxoCoinFields> + SwapOps>(
+    coin: &T,
     time_lock: u32,
     other_pub: &[u8],
     secret_hash: &[u8],
     tx: &[u8],
     output_index: usize,
     search_from_block: u64,
+    swap_unique_data: &[u8],
 ) -> Result<Option<FoundSwapTxSpend>, String> {
-    let my_public = try_s!(coin.priv_key_policy.key_pair_or_err()).public();
     search_for_swap_output_spend(
-        coin,
+        coin.as_ref(),
         time_lock,
-        my_public,
+        coin.derive_htlc_key_pair(swap_unique_data).public(),
         &try_s!(Public::from_slice(other_pub)),
         secret_hash,
         tx,
@@ -1622,21 +1623,22 @@ pub async fn search_for_swap_tx_spend_my(
     .await
 }
 
-pub async fn search_for_swap_tx_spend_other(
-    coin: &UtxoCoinFields,
+#[allow(clippy::too_many_arguments)]
+pub async fn search_for_swap_tx_spend_other<T: AsRef<UtxoCoinFields> + SwapOps>(
+    coin: &T,
     time_lock: u32,
     other_pub: &[u8],
     secret_hash: &[u8],
     tx: &[u8],
     output_index: usize,
     search_from_block: u64,
+    swap_unique_data: &[u8],
 ) -> Result<Option<FoundSwapTxSpend>, String> {
-    let my_public = try_s!(coin.priv_key_policy.key_pair_or_err()).public();
     search_for_swap_output_spend(
-        coin,
+        coin.as_ref(),
         time_lock,
         &try_s!(Public::from_slice(other_pub)),
-        my_public,
+        coin.derive_htlc_key_pair(swap_unique_data).public(),
         secret_hash,
         tx,
         output_index,
@@ -3200,6 +3202,7 @@ pub async fn get_tx_height(tx: &UtxoTx, client: &ElectrumClient) -> Result<u64, 
 }
 
 #[allow(clippy::too_many_arguments)]
+#[cfg_attr(test, mockable)]
 pub fn validate_payment<T: UtxoCommonOps>(
     coin: T,
     tx: UtxoTx,

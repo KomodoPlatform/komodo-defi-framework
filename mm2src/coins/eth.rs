@@ -1030,6 +1030,7 @@ impl SwapOps for EthCoin {
         tx: &[u8],
         search_from_block: u64,
         swap_contract_address: &Option<BytesJson>,
+        _swap_unique_data: &[u8],
     ) -> Result<Option<FoundSwapTxSpend>, String> {
         let swap_contract_address = try_s!(swap_contract_address.try_to_address());
         self.search_for_swap_tx_spend(tx, swap_contract_address, search_from_block)
@@ -1043,6 +1044,7 @@ impl SwapOps for EthCoin {
         tx: &[u8],
         search_from_block: u64,
         swap_contract_address: &Option<BytesJson>,
+        _swap_unique_data: &[u8],
     ) -> Result<Option<FoundSwapTxSpend>, String> {
         let swap_contract_address = try_s!(swap_contract_address.try_to_address());
         self.search_for_swap_tx_spend(tx, swap_contract_address, search_from_block)

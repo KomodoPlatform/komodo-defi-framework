@@ -390,6 +390,7 @@ impl SwapOps for SplToken {
         _tx: &[u8],
         _search_from_block: u64,
         _swap_contract_address: &Option<BytesJson>,
+        _swap_unique_data: &[u8],
     ) -> Result<Option<FoundSwapTxSpend>, String> {
         unimplemented!()
     }
@@ -402,6 +403,7 @@ impl SwapOps for SplToken {
         _tx: &[u8],
         _search_from_block: u64,
         _swap_contract_address: &Option<BytesJson>,
+        _swap_unique_data: &[u8],
     ) -> Result<Option<FoundSwapTxSpend>, String> {
         unimplemented!()
     }
