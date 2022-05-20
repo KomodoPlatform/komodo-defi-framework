@@ -19,13 +19,12 @@ use async_trait::async_trait;
 use bitcrypto::{dhash160, dhash256};
 use chain::constants::SEQUENCE_FINAL;
 use chain::{Transaction as UtxoTx, TransactionOutput};
-use common::mm_ctx::MmArc;
-use common::mm_error::prelude::*;
+use common::executor::{spawn, Timer};
 use common::mm_number::{BigDecimal, MmNumber};
-use common::privkey::{key_pair_from_secret, secp_privkey_from_hash};
-use common::{log, AbortOnDropHandle};
-use futures::channel::mpsc::{channel, Receiver as AsyncReceiver, Sender as AsyncSender};
-use futures::channel::oneshot::{channel as oneshot_channel, Sender as OneshotSender};
+use common::{log, now_ms};
+use crypto::privkey::key_pair_from_secret;
+use db_common::sqlite::rusqlite::types::Type;
+use db_common::sqlite::rusqlite::{Connection, Error as SqliteError, Row, ToSql, NO_PARAMS};
 use futures::compat::Future01CompatExt;
 use futures::lock::{Mutex as AsyncMutex, MutexGuard as AsyncMutexGuard};
 use futures::{FutureExt, StreamExt, TryFutureExt};
@@ -33,6 +32,8 @@ use futures01::Future;
 use http::Uri;
 use keys::hash::H256;
 use keys::{KeyPair, Public};
+use mm2_core::mm_ctx::MmArc;
+use mm2_err_handle::prelude::*;
 #[cfg(test)] use mocktopus::macros::*;
 use parking_lot::Mutex;
 use primitives::bytes::Bytes;
@@ -1487,7 +1488,7 @@ impl InitWithdrawCoin for ZCoin {
 
 #[test]
 fn derive_z_key_from_mm_seed() {
-    use common::privkey::key_pair_from_seed;
+    use crypto::privkey::key_pair_from_seed;
     use zcash_client_backend::encoding::encode_extended_spending_key;
 
     let seed = "spice describe gravity federal blast come thank unfair canal monkey style afraid";

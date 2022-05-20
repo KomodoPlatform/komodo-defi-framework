@@ -1,7 +1,7 @@
 use super::*;
 use crate::lp_coininit;
-use common::mm_ctx::MmCtxBuilder;
 use crypto::CryptoCtx;
+use mm2_core::mm_ctx::MmCtxBuilder;
 use wasm_bindgen_test::*;
 use web_sys::console;
 

@@ -2,8 +2,8 @@ use coins::utxo::UtxoActivationParams;
 #[cfg(not(target_arch = "wasm32"))]
 use coins::z_coin::ZcoinActivationParams;
 use coins::{coin_conf, CoinBalance, CoinProtocol, MmCoinEnum};
-use common::mm_ctx::MmArc;
-use common::mm_error::prelude::*;
+use mm2_core::mm_ctx::MmArc;
+use mm2_err_handle::prelude::*;
 use serde_derive::Serialize;
 use serde_json::{self as json, Value as Json};
 use std::collections::HashMap;

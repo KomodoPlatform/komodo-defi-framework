@@ -5,10 +5,10 @@ use async_trait::async_trait;
 use coins::utxo::rpc_clients::UtxoRpcError;
 use coins::{lp_coinfind, lp_coinfind_or_err, BalanceError, CoinProtocol, CoinsContext, MmCoinEnum,
             UnexpectedDerivationMethod};
-use common::mm_ctx::MmArc;
-use common::mm_error::prelude::*;
-use common::{HttpStatusCode, NotSame, StatusCode};
+use common::{HttpStatusCode, StatusCode};
 use derive_more::Display;
+use mm2_core::mm_ctx::MmArc;
+use mm2_err_handle::prelude::*;
 use ser_error_derive::SerializeErrorType;
 use serde_derive::{Deserialize, Serialize};
 
@@ -102,7 +102,7 @@ pub async fn enable_token<Token>(
 where
     Token: TokenActivationOps,
     EnableTokenError: From<Token::ActivationError>,
-    (Token::ActivationError, EnableTokenError): NotSame,
+    (Token::ActivationError, EnableTokenError): NotEqual,
 {
     if let Ok(Some(_)) = lp_coinfind(&ctx, &req.ticker).await {
         return MmError::err(EnableTokenError::TokenIsAlreadyActivated(req.ticker));

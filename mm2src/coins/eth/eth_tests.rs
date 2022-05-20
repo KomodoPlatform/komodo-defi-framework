@@ -1,6 +1,6 @@
 use super::*;
 use common::block_on;
-use common::mm_ctx::{MmArc, MmCtxBuilder};
+use mm2_core::mm_ctx::{MmArc, MmCtxBuilder};
 use mocktopus::mocking::*;
 
 /// The gas price for the tests
@@ -718,8 +718,8 @@ fn test_withdraw_impl_fee_details() {
 #[test]
 #[cfg(not(target_arch = "wasm32"))]
 fn test_nonce_lock() {
-    use common::for_tests::wait_for_log;
     use futures::future::join_all;
+    use mm2_test_helpers::for_tests::wait_for_log;
 
     // send several transactions concurrently to check that they are not using same nonce
     // using real ETH dev node

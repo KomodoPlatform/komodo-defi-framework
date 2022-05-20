@@ -1,6 +1,6 @@
 use async_trait::async_trait;
-use common::mm_error::prelude::*;
 use derive_more::Display;
+use mm2_err_handle::prelude::*;
 use rpc::v1::types::{Transaction as RpcTransaction, H256 as H256Json};
 use std::collections::{HashMap, HashSet};
 use std::fmt;

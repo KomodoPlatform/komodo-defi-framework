@@ -21,12 +21,11 @@ use crate::{CoinBalance, PrivKeyBuildPolicy, StakingInfosDetails, SwapOps, Trade
 use bigdecimal::{BigDecimal, Signed};
 use chain::OutPoint;
 use common::executor::Timer;
-use common::mm_ctx::MmCtxBuilder;
-use common::privkey::key_pair_from_seed;
 use common::{block_on, now_ms, OrdRange, PagingOptionsEnum, DEX_FEE_ADDR_RAW_PUBKEY};
-use crypto::{Bip44Chain, RpcDerivationPath};
+use crypto::{privkey::key_pair_from_seed, Bip44Chain, RpcDerivationPath};
 use futures::future::join_all;
 use futures::TryFutureExt;
+use mm2_core::mm_ctx::MmCtxBuilder;
 use mocktopus::mocking::*;
 use rpc::v1::types::H256 as H256Json;
 use serialization::{deserialize, CoinVariant};

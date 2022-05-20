@@ -1,12 +1,11 @@
 use crate::transport::{send_event_recv_response, InternalError};
 use common::executor::spawn_local;
-use common::log::error;
-use common::mm_error::prelude::*;
-use common::stringify_js_error;
+use common::{log::error, stringify_js_error};
 use derive_more::Display;
 use futures::channel::{mpsc, oneshot};
 use futures::StreamExt;
 use js_sys::{Array, Uint8Array};
+use mm2_err_handle::prelude::*;
 use wasm_bindgen::prelude::*;
 use wasm_bindgen::JsCast;
 use wasm_bindgen_futures::JsFuture;

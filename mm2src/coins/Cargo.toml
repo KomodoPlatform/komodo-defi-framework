@@ -28,6 +28,12 @@ cfg-if = "1.0"
 chain = { path = "../mm2_bitcoin/chain" }
 common = { path = "../common" }
 crossbeam = "0.7"
+mm2_core = { path = "../mm2_core" }
+mm2_err_handle = { path = "../mm2_err_handle" }
+mm2_net = { path = "../mm2_net" }
+mm2_db = { path = "../mm2_db" }
+mm2_io = { path = "../mm2_io" }
+mm2_test_helpers = { path = "../mm2_test_helpers" }
 crypto = { path = "../crypto" }
 db_common = { path = "../db_common" }
 derive_more = "0.99"

@@ -1291,8 +1291,8 @@ impl MmCoin for BchCoin {
 #[cfg(test)]
 pub fn tbch_coin_for_test() -> BchCoin {
     use common::block_on;
-    use common::mm_ctx::MmCtxBuilder;
-    use common::privkey::key_pair_from_seed;
+    use crypto::privkey::key_pair_from_seed;
+    use mm2_core::mm_ctx::MmCtxBuilder;
 
     let ctx = MmCtxBuilder::default().into_mm_arc();
     let keypair = key_pair_from_seed("BCH SLP test").unwrap();
@@ -1323,8 +1323,8 @@ pub fn tbch_coin_for_test() -> BchCoin {
 #[cfg(test)]
 pub fn bch_coin_for_test() -> BchCoin {
     use common::block_on;
-    use common::mm_ctx::MmCtxBuilder;
-    use common::privkey::key_pair_from_seed;
+    use crypto::privkey::key_pair_from_seed;
+    use mm2_core::mm_ctx::MmCtxBuilder;
 
     let ctx = MmCtxBuilder::default().into_mm_arc();
     let keypair = key_pair_from_seed("BCH SLP test").unwrap();
