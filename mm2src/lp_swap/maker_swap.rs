@@ -1934,7 +1934,7 @@ pub async fn calc_max_maker_vol(
     let trade_fee = coin
         .get_sender_trade_fee(preimage_value, stage)
         .await
-        .mm_err(|e| CheckBalanceError::from_trade_preimage_error(e, coin))?;
+        .mm_err(|e| CheckBalanceError::from_trade_preimage_error(e, ticker))?;
 
     debug!("{} trade fee {}", trade_fee.coin, trade_fee.amount.to_decimal());
     let mut required_to_pay_fee = MmNumber::from(0);
