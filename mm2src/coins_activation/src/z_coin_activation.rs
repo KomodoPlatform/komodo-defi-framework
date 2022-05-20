@@ -5,11 +5,8 @@ use crate::standalone_coin::{InitStandaloneCoinActivationOps, InitStandaloneCoin
                              InitStandaloneCoinTaskManagerShared};
 use async_trait::async_trait;
 use coins::coin_balance::{EnableCoinBalance, IguanaWalletBalance};
-use coins::utxo::rpc_clients::ElectrumRpcRequest;
-use coins::utxo::{UtxoActivationParams, UtxoRpcMode};
-use coins::z_coin::{z_coin_from_conf_and_params, ZCoin, ZCoinBuildError};
-use coins::{BalanceError, CoinProtocol, MarketCoinOps, PrivKeyActivationPolicy, RegisterCoinError};
-use common::executor::Timer;
+use coins::z_coin::{z_coin_from_conf_and_params, ZCoin, ZCoinBuildError, ZcoinActivationParams, ZcoinConsensusParams};
+use coins::{BalanceError, CoinProtocol, MarketCoinOps, RegisterCoinError};
 use crypto::hw_rpc_task::{HwRpcTaskAwaitingStatus, HwRpcTaskUserAction};
 use crypto::CryptoInitError;
 use derive_more::Display;

@@ -68,7 +68,7 @@ pub use rlp;
 mod web3_transport;
 use crate::{TransactionErr, TransactionFut, ValidatePaymentInput};
 use common::mm_number::MmNumber;
-use common::privkey::key_pair_from_secret;
+use crypto::privkey::key_pair_from_secret;
 use ethkey::{sign, verify_address};
 use serialization::{CompactInteger, Serializable, Stream};
 use web3_transport::{EthFeeHistoryNamespace, Web3Transport};

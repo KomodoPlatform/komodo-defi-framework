@@ -1,6 +1,8 @@
 use super::*;
 use coins::z_coin::ZcoinConsensusParams;
-use common::for_tests::{init_withdraw, init_z_coin_light, send_raw_transaction, withdraw_status};
+use common::now_ms;
+use mm2_test_helpers::for_tests::{init_withdraw, init_z_coin_light, init_z_coin_status, send_raw_transaction,
+                                  withdraw_status};
 
 const RICK: &str = "RICK";
 const ZOMBIE_TEST_BALANCE_SEED: &str = "zombie test seed";
@@ -52,11 +54,11 @@ async fn enable_z_coin_light(
     lightwalletd_urls: &[&str],
     blocks_cache_path: &dyn AsRef<Path>,
 ) -> ZcoinActivationResult {
-    std::fs::copy("./mm2src/coins/test_cache_zombie.db", blocks_cache_path).unwrap();
+    std::fs::copy("../coins/test_cache_zombie.db", blocks_cache_path).unwrap();
 
     let init = init_z_coin_light(mm, coin, electrums, lightwalletd_urls).await;
     let init: RpcV2Response<InitTaskResult> = json::from_value(init).unwrap();
-    let timeout = now_ms() + 120000;
+    let timeout = now_ms() + 240000;
 
     loop {
         if now_ms() > timeout {
@@ -68,7 +70,10 @@ async fn enable_z_coin_light(
         let status: RpcV2Response<InitZcoinStatus> = json::from_value(status).unwrap();
         if let InitZcoinStatus::Ready(rpc_result) = status.result {
             match rpc_result {
-                MmRpcResult::Ok { result } => break result,
+                MmRpcResult::Ok { result } => {
+                    std::fs::copy(blocks_cache_path, "../coins/test_cache_zombie.db").unwrap();
+                    break result;
+                },
                 MmRpcResult::Err(e) => panic!("{} initialization error {:?}", coin, e),
             }
         }
