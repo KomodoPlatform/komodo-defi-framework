@@ -1865,7 +1865,7 @@ pub async fn maker_swap_trade_preimage(
     let base_coin_fee = base_coin
         .get_sender_trade_fee(preimage_value, FeeApproxStage::TradePreimage)
         .await
-        .mm_err(|e| TradePreimageRpcError::from_trade_preimage_error(e, base_coin_ticker))?;
+        .mm_err(|e| TradePreimageRpcError::from_trade_preimage_error(e, base_coin.platform_ticker()))?;
     let rel_coin_fee = rel_coin
         .get_receiver_trade_fee(FeeApproxStage::TradePreimage)
         .compat()
@@ -1934,7 +1934,7 @@ pub async fn calc_max_maker_vol(
     let trade_fee = coin
         .get_sender_trade_fee(preimage_value, stage)
         .await
-        .mm_err(|e| CheckBalanceError::from_trade_preimage_error(e, ticker))?;
+        .mm_err(|e| CheckBalanceError::from_trade_preimage_error(e, coin.platform_ticker()))?;
 
     debug!("{} trade fee {}", trade_fee.coin, trade_fee.amount.to_decimal());
     let mut required_to_pay_fee = MmNumber::from(0);
