@@ -255,7 +255,7 @@ impl CheckBalanceError {
                     }
                 } else {
                     CheckBalanceError::NotSufficientBaseCoinBalance {
-                        coin: ticker.to_string(),
+                        coin,
                         available,
                         locked_by_swaps: None,
                         required,

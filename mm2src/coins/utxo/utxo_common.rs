@@ -2635,7 +2635,7 @@ pub fn get_trade_fee<T: UtxoCommonOps>(coin: T) -> Box<dyn Future<Item = TradeFe
 ///
 /// To sum up, `get_sender_trade_fee(TradePreimageValue::Exact(9000)) > get_sender_trade_fee(TradePreimageValue::Exact(10000))`.
 /// So we should always return a fee as if a transaction includes the change output.
-pub async fn preimage_trade_fee_required_to_send_outputs<T>(
+pub async fn preimage_trade_fee_required_to_send_outputs<T: MarketCoinOps>(
     coin: &T,
     outputs: Vec<TransactionOutput>,
     fee_policy: FeePolicy,
@@ -2671,10 +2671,15 @@ where
             if let Some(gas) = gas_fee {
                 tx_builder = tx_builder.with_gas_fee(gas);
             }
-            let (tx, data) = tx_builder
-                .build()
-                .await
-                .mm_err(|e| TradePreimageError::from_generate_tx_error(e, ticker, decimals, is_amount_upper_bound))?;
+            let (tx, data) = tx_builder.build().await.mm_err(|e| {
+                TradePreimageError::from_generate_tx_error(
+                    e,
+                    ticker,
+                    coin.platform_ticker().to_string(),
+                    decimals,
+                    is_amount_upper_bound,
+                )
+            })?;
 
             let total_fee = if tx.outputs.len() == outputs_count {
                 // take into account the change output
@@ -2698,10 +2703,15 @@ where
             if let Some(gas) = gas_fee {
                 tx_builder = tx_builder.with_gas_fee(gas);
             }
-            let (tx, data) = tx_builder
-                .build()
-                .await
-                .mm_err(|e| TradePreimageError::from_generate_tx_error(e, ticker, decimals, is_amount_upper_bound))?;
+            let (tx, data) = tx_builder.build().await.mm_err(|e| {
+                TradePreimageError::from_generate_tx_error(
+                    e,
+                    ticker,
+                    coin.platform_ticker().to_string(),
+                    decimals,
+                    is_amount_upper_bound,
+                )
+            })?;
 
             let total_fee = if tx.outputs.len() == outputs_count {
                 // take into account the change output if tx_size_kb(tx with change) > tx_size_kb(tx without change)

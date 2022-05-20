@@ -1076,6 +1076,7 @@ impl TradePreimageError {
     pub fn from_generate_tx_error(
         gen_tx_err: GenerateTxError,
         coin: String,
+        platform_ticker: String,
         decimals: u8,
         is_upper_bound: bool,
     ) -> TradePreimageError {
@@ -1127,7 +1128,7 @@ impl TradePreimageError {
                 let available = big_decimal_from_sat_unsigned(sum_utxos, decimals);
                 let required = big_decimal_from_sat_unsigned(required, decimals);
                 TradePreimageError::NotSufficientBalance {
-                    coin,
+                    coin: platform_ticker,
                     available,
                     required,
                 }
