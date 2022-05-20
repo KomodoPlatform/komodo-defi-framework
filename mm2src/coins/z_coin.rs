@@ -68,7 +68,7 @@ use z_rpc::{ZcoinLightClient, ZcoinRpcClient};
 
 mod z_coin_errors;
 use crate::rpc_command::init_withdraw::{InitWithdrawCoin, WithdrawInProgressStatus, WithdrawTaskHandle};
-use crate::z_coin::z_rpc::{SaplingSyncRespawnGuard, SaplingSyncRespawnHandle};
+use crate::z_coin::z_rpc::{SaplingSyncLoopHandle, SaplingSyncRespawnGuard};
 pub use z_coin_errors::*;
 
 #[cfg(all(test, feature = "zhtlc-native-tests"))]
@@ -156,7 +156,7 @@ impl Parameters for ZcoinConsensusParams {
 }
 
 type SimpleSyncWatcher = AsyncReceiver<BlockHeight>;
-type NewTxNotifier = AsyncSender<OneshotSender<SaplingSyncRespawnHandle>>;
+type NewTxNotifier = AsyncSender<OneshotSender<SaplingSyncLoopHandle>>;
 
 pub struct SaplingSyncConnector {
     simple_sync_watcher: SimpleSyncWatcher,

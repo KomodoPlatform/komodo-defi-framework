@@ -26,6 +26,7 @@ pub type ZcoinUserAction = HwRpcTaskUserAction;
 
 #[derive(Clone, Serialize)]
 pub struct ZcoinActivationResult {
+    pub ticker: String,
     pub current_block: u64,
     pub wallet_balance: EnableCoinBalance,
 }
@@ -197,6 +198,7 @@ impl InitStandaloneCoinActivationOps for ZCoin {
 
         let balance = self.my_balance().compat().await?;
         Ok(ZcoinActivationResult {
+            ticker: self.ticker().into(),
             current_block,
             wallet_balance: EnableCoinBalance::Iguana(IguanaWalletBalance {
                 address: self.my_z_address_encoded(),

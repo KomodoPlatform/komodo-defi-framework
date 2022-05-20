@@ -617,6 +617,7 @@ pub enum EnableCoinBalance {
 #[derive(Debug, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct ZcoinActivationResult {
+    pub ticker: String,
     pub current_block: u64,
     pub wallet_balance: EnableCoinBalance,
 }

@@ -36,7 +36,7 @@ mod z_coin_grpc {
     tonic::include_proto!("cash.z.wallet.sdk.rpc");
 }
 use z_coin_grpc::compact_tx_streamer_client::CompactTxStreamerClient;
-use z_coin_grpc::{BlockId, BlockRange, ChainSpec};
+use z_coin_grpc::{BlockId, BlockRange, ChainSpec, TxFilter};
 
 const NO_TX_ERROR_CODE: &str = "-5";
 
@@ -252,7 +252,7 @@ impl ZcoinLightClient {
         let grpc_client = CompactTxStreamerClient::new(channel);
 
         let db = Arc::new(Mutex::new(ZcoinWalletDb { blocks_db, wallet_db }));
-        let sync_handle = SaplingSyncRespawnHandle {
+        let sync_handle = SaplingSyncLoopHandle {
             current_block: BlockHeight::from_u32(0),
             grpc_client,
             db: db.clone(),
@@ -336,10 +336,10 @@ fn is_tx_imported(conn: &Connection, tx_id: TxId) -> bool {
     }
 }
 
-type OnTxGenWatcher = AsyncReceiver<OneshotSender<SaplingSyncRespawnHandle>>;
+type OnTxGenWatcher = AsyncReceiver<OneshotSender<SaplingSyncLoopHandle>>;
 
 pub struct SaplingSyncRespawnGuard {
-    pub(super) sync_handle: Option<SaplingSyncRespawnHandle>,
+    pub(super) sync_handle: Option<SaplingSyncLoopHandle>,
     pub(super) abort_handle: Arc<Mutex<AbortOnDropHandle>>,
 }
 
@@ -362,7 +362,7 @@ impl SaplingSyncRespawnGuard {
     pub(super) fn current_block(&self) -> BlockHeight { self.sync_handle.as_ref().expect("always Some").current_block }
 }
 
-pub struct SaplingSyncRespawnHandle {
+pub struct SaplingSyncLoopHandle {
     pub(super) current_block: BlockHeight,
     grpc_client: CompactTxStreamerClient<Channel>,
     db: WalletDbShared,
@@ -375,7 +375,35 @@ pub struct SaplingSyncRespawnHandle {
     pub(super) watch_for_tx: Option<TxId>,
 }
 
-async fn light_wallet_db_sync_loop(mut sync_handle: SaplingSyncRespawnHandle) {
+async fn check_watch_for_tx_existence(handle: &mut SaplingSyncLoopHandle) {
+    if let Some(tx_id) = handle.watch_for_tx {
+        let mut attempts = 0;
+        loop {
+            let filter = TxFilter {
+                block: None,
+                index: 0,
+                hash: tx_id.0.into(),
+            };
+            let request = tonic::Request::new(filter);
+            match handle.grpc_client.get_transaction(request).await {
+                Ok(_) => break,
+                Err(e) => {
+                    error!("Error on getting tx {}", tx_id);
+                    if e.message().contains(NO_TX_ERROR_CODE) {
+                        if attempts >= 3 {
+                            handle.watch_for_tx = None;
+                            return;
+                        }
+                        attempts += 1;
+                    }
+                    Timer::sleep(30.).await;
+                },
+            }
+        }
+    }
+}
+
+async fn light_wallet_db_sync_loop(mut sync_handle: SaplingSyncLoopHandle) {
     loop {
         sync_handle.current_block = match update_blocks_cache(&mut sync_handle.grpc_client, &sync_handle.db).await {
             Ok(b) => b,
@@ -391,6 +419,8 @@ async fn light_wallet_db_sync_loop(mut sync_handle: SaplingSyncRespawnHandle) {
             Timer::sleep(10.).await;
             continue;
         }
+
+        check_watch_for_tx_existence(&mut sync_handle).await;
 
         if let Some(tx_id) = sync_handle.watch_for_tx {
             if !block_in_place(|| is_tx_imported(sync_handle.db.lock().wallet_db.sql_conn(), tx_id)) {
@@ -455,62 +485,4 @@ impl ZcoinRpcClient {
             },
         }
     }
-}
-
-#[test]
-fn check_non_existent_grpc_tx() {
-    use common::block_on;
-    use z_coin_grpc::TxFilter;
-
-    let mut config = ClientConfig::new();
-    config
-        .root_store
-        .add_server_trust_anchors(&webpki_roots::TLS_SERVER_ROOTS);
-    config.set_protocols(&["h2".to_string().into()]);
-    let tls = ClientTlsConfig::new().rustls_client_config(config);
-
-    let channel = block_on(
-        Channel::builder(Uri::from_static("http://mainnet.lightwalletd.com:9067"))
-            .tls_config(tls)
-            .unwrap()
-            .connect(),
-    )
-    .unwrap();
-    let mut grpc_client = CompactTxStreamerClient::new(channel);
-    let non_existent_hash = hex::decode("0ac245afcc3601d555c23c1e7fcd35fb64284d538acad88e4087181dd81f00bd").unwrap();
-
-    let filter = TxFilter {
-        block: None,
-        index: 0,
-        hash: non_existent_hash,
-    };
-    let request = tonic::Request::new(filter);
-    let err = block_on(grpc_client.get_transaction(request)).unwrap_err();
-    assert!(err.message().contains(NO_TX_ERROR_CODE));
-
-    let mut config = ClientConfig::new();
-    config
-        .root_store
-        .add_server_trust_anchors(&webpki_roots::TLS_SERVER_ROOTS);
-    config.set_protocols(&["h2".to_string().into()]);
-    let tls = ClientTlsConfig::new().rustls_client_config(config);
-
-    let channel = block_on(
-        Channel::builder(Uri::from_static("http://zombie.sirseven.me:443"))
-            .tls_config(tls)
-            .unwrap()
-            .connect(),
-    )
-    .unwrap();
-    let mut grpc_client = CompactTxStreamerClient::new(channel);
-    let non_existent_hash = hex::decode("0ac245afcc3601d555c23c1e7fcd35fb64284d538acad88e4087181dd81f00bd").unwrap();
-
-    let filter = TxFilter {
-        block: None,
-        index: 0,
-        hash: non_existent_hash,
-    };
-    let request = tonic::Request::new(filter);
-    let err = block_on(grpc_client.get_transaction(request)).unwrap_err();
-    assert!(err.message().contains(NO_TX_ERROR_CODE));
 }
