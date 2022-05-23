@@ -44,4 +44,3 @@ jobs:
       - bash: |
           cargo deny check advisories
         displayName: 'Check Cargo deny advisories'
-        enabled: false

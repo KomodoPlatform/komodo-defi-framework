@@ -37,7 +37,7 @@ crypto = { path = "../crypto" }
 db_common = { path = "../db_common" }
 derive_more = "0.99"
 ed25519-dalek = "1.0.1"
-ed25519-dalek-bip32 = "0.1.1"
+ed25519-dalek-bip32 = "0.2.0"
 ethabi = { git = "https://github.com/artemii235/ethabi" }
 ethcore-transaction = { git = "https://github.com/artemii235/parity-ethereum.git" }
 ethereum-types = { version = "0.4", default-features = false, features = ["std", "serialize"] }
@@ -76,7 +76,7 @@ ser_error = { path = "../derives/ser_error" }
 ser_error_derive = { path = "../derives/ser_error_derive" }
 serde = "1.0"
 serde_derive = "1.0"
-serde_json = { version = "1.0", features = ["preserve_order", "raw_value"] }
+serde_json = { version = "1.0", features = ["raw_value"] }
 serialization = { path = "../mm2_bitcoin/serialization" }
 serialization_derive = { path = "../mm2_bitcoin/serialization_derive" }
 spv_validation = { path = "../mm2_bitcoin/spv_validation" }

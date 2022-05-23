@@ -3865,7 +3865,7 @@ impl Hasher for Blake2Hasher64 {
     }
 }
 
-type Layout = sp_trie::Layout<Blake2Hasher64>;
+type Layout = dyn sp_trie::TrieLayout<Blake2Hasher64>;
 
 impl OrderbookItem {
     fn apply_updated(&mut self, msg: &new_protocol::MakerOrderUpdated) {

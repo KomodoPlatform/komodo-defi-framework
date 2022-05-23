@@ -53,7 +53,7 @@ rustc-hex = "2"
 serde = "1"
 serde_bytes = "0.11"
 serde_derive = "1"
-serde_json = { version = "1.0", features = ["raw_value", "preserve_order"] }
+serde_json = { version = "1.0", features = ["raw_value"] }
 serde_repr = "0.1.6"
 ser_error = { path = "../derives/ser_error" }
 ser_error_derive = { path = "../derives/ser_error_derive" }
@@ -64,9 +64,9 @@ winapi = "0.3"
 
 [target.'cfg(target_arch = "wasm32")'.dependencies]
 chrono = { version = "0.4", features = ["wasmbind"] }
-getrandom = { version = "0.2", features = ["js"] } # see https://docs.rs/getrandom/0.2.0/getrandom/#webassembly-support
+# getrandom = { version = "0.2", features = ["js"] } # see https://docs.rs/getrandom/0.2.0/getrandom/#webassembly-support
 gstuff = { version = "0.7", features = ["nightly"] }
-indexmap = "=1.6.0" # see https://github.com/KomodoPlatform/atomicDEX-API/issues/1042
+# indexmap = "=1.6.0" # see https://github.com/KomodoPlatform/atomicDEX-API/issues/1042
 js-sys = "0.3.27"
 serde_bencode = "0.2"
 wasm-bindgen = { version = "0.2.50", features = ["serde-serialize", "nightly"] }
