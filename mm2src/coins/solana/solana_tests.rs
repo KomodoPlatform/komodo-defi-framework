@@ -6,7 +6,6 @@ use crate::MarketCoinOps;
 use base58::ToBase58;
 use solana_client::rpc_request::TokenAccountsFilter;
 use solana_sdk::signature::Signer;
-use std::str;
 use std::str::FromStr;
 
 mod tests {
@@ -124,6 +123,33 @@ mod tests {
         // invalid len
         let res = sol_coin.validate_address("r8fraJXAe1cFU81mF7NhHTrUzXjZAJkQE1gUQ11riHn");
         assert_eq!(res.is_valid, false);
+    }
+
+    #[test]
+    #[cfg(not(target_arch = "wasm32"))]
+    fn test_sign_message() {
+        let passphrase = "spice describe gravity federal blast come thank unfair canal monkey style afraid".to_string();
+        let (_, sol_coin) = solana_coin_for_test(passphrase.clone(), SolanaNet::Testnet);
+        let signature = sol_coin.sign_message("test").unwrap();
+        assert_eq!(
+            signature,
+            "4dzKwEteN8nch76zPMEjPX19RsaQwGTxsbtfg2bwGTkGenLfrdm31zvn9GH5rvaJBwivp6ESXx1KYR672ngs3UfF"
+        );
+    }
+
+    #[test]
+    #[cfg(not(target_arch = "wasm32"))]
+    fn test_verify_message() {
+        let passphrase = "spice describe gravity federal blast come thank unfair canal monkey style afraid".to_string();
+        let (_, sol_coin) = solana_coin_for_test(passphrase.clone(), SolanaNet::Testnet);
+        let is_valid = sol_coin
+            .verify_message(
+                "4dzKwEteN8nch76zPMEjPX19RsaQwGTxsbtfg2bwGTkGenLfrdm31zvn9GH5rvaJBwivp6ESXx1KYR672ngs3UfF",
+                "test",
+                "8UF6jSVE1jW8mSiGqt8Hft1rLwPjdKLaTfhkNozFwoAG",
+            )
+            .unwrap();
+        assert!(is_valid);
     }
 
     #[tokio::test]
@@ -257,9 +283,17 @@ mod tests {
             .await
             .unwrap();
         println!("{:?}", valid_tx_details);
-        let tx_str = str::from_utf8(&*valid_tx_details.tx_hex.0).unwrap();
-        let res = sol_coin.send_raw_tx(tx_str).compat().await;
-        assert_eq!(res.is_err(), false);
+
+        let tx_str = hex::encode(&*valid_tx_details.tx_hex.0);
+        let res = sol_coin.send_raw_tx(&tx_str).compat().await.unwrap();
+
+        let res2 = sol_coin
+            .send_raw_tx_bytes(&*valid_tx_details.tx_hex.0)
+            .compat()
+            .await
+            .unwrap();
+        assert_eq!(res, res2);
+
         //println!("{:?}", res);
     }
 

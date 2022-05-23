@@ -10,14 +10,14 @@ use crate::utxo::rpc_clients::{UtxoRpcClientEnum, UtxoRpcError};
 use crate::utxo::utxo_common::payment_script;
 use crate::utxo::{sat_from_big_decimal, UtxoAddressFormat};
 use crate::z_coin::{ARRRConsensusParams, SendOutputsErr, ZOutput, DEX_FEE_OVK};
-use crate::{NumConversError, PrivKeyNotAllowed};
+use crate::{NumConversError, PrivKeyNotAllowed, TransactionEnum};
 use bigdecimal::BigDecimal;
 use bitcrypto::dhash160;
 use chain::Transaction as UtxoTx;
-use common::mm_error::prelude::*;
 use derive_more::Display;
 use futures::compat::Future01CompatExt;
 use keys::{Address, Public};
+use mm2_err_handle::prelude::*;
 use script::{Builder as ScriptBuilder, Opcode, Script};
 use secp256k1::SecretKey;
 use serialization::deserialize;
@@ -99,6 +99,8 @@ pub enum ZP2SHSpendError {
     ZTxBuilderError(ZTxBuilderError),
     PrivKeyNotAllowed(PrivKeyNotAllowed),
     Rpc(UtxoRpcError),
+    #[display(fmt = "{:?} {}", _0, _1)]
+    TxRecoverable(TransactionEnum, String),
 }
 
 impl From<ZTxBuilderError> for ZP2SHSpendError {
@@ -111,6 +113,16 @@ impl From<PrivKeyNotAllowed> for ZP2SHSpendError {
 
 impl From<UtxoRpcError> for ZP2SHSpendError {
     fn from(rpc: UtxoRpcError) -> ZP2SHSpendError { ZP2SHSpendError::Rpc(rpc) }
+}
+
+impl ZP2SHSpendError {
+    #[inline]
+    pub fn get_tx(&self) -> Option<TransactionEnum> {
+        match self {
+            ZP2SHSpendError::TxRecoverable(ref tx, _) => Some(tx.clone()),
+            _ => None,
+        }
+    }
 }
 
 /// Spends P2SH output 0 to the coin's my_z_addr
@@ -161,10 +173,10 @@ pub async fn z_p2sh_spend(
     zcash_tx.write(&mut tx_buffer).unwrap();
     let refund_tx: UtxoTx = deserialize(tx_buffer.as_slice()).expect("librustzcash should produce a valid tx");
 
-    coin.rpc_client()
-        .send_raw_transaction(tx_buffer.into())
-        .compat()
-        .await?;
+    match coin.rpc_client().send_raw_transaction(tx_buffer.into()).compat().await {
+        Ok(_) => (),
+        Err(e) => return Err(ZP2SHSpendError::TxRecoverable(refund_tx.into(), e.to_string()).into()),
+    };
 
     Ok(refund_tx)
 }

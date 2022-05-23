@@ -1,12 +1,14 @@
 use super::*;
+use crate::utxo::rpc_clients::UnspentInfo;
 use crate::TxFeeDetails;
 use bigdecimal::Zero;
 use chain::OutPoint;
-use common::mm_ctx::MmCtxBuilder;
 use common::{block_on, DEX_FEE_ADDR_RAW_PUBKEY};
 use itertools::Itertools;
+use mm2_core::mm_ctx::MmCtxBuilder;
 use mocktopus::mocking::{MockResult, Mockable};
 use rpc::v1::types::ToTxHash;
+use std::mem::discriminant;
 
 const EXPECTED_TX_FEE: i64 = 1000;
 const CONTRACT_CALL_GAS_FEE: i64 = (QRC20_GAS_LIMIT_DEFAULT * QRC20_GAS_PRICE_DEFAULT) as i64;
@@ -55,7 +57,7 @@ fn check_tx_fee(coin: &Qrc20Coin, expected_tx_fee: ActualTxFee) {
 
 #[test]
 fn test_withdraw_impl_fee_details() {
-    Qrc20Coin::list_mature_unspent_ordered.mock_safe(|coin, _| {
+    Qrc20Coin::get_unspent_ordered_list.mock_safe(|coin, _| {
         let cache = block_on(coin.as_ref().recently_spent_outpoints.lock());
         let unspents = vec![UnspentInfo {
             outpoint: OutPoint {
@@ -924,4 +926,36 @@ fn test_negotiate_swap_contract_addr_has_fallback() {
     let slice: &[u8] = fallback_addr.as_ref();
     let result = coin.negotiate_swap_contract_addr(Some(slice)).unwrap();
     assert_eq!(Some(fallback_addr.to_vec().into()), result);
+}
+
+#[test]
+fn test_send_contract_calls_recoverable_tx() {
+    let priv_key = [
+        3, 98, 177, 3, 108, 39, 234, 144, 131, 178, 103, 103, 127, 80, 230, 166, 53, 68, 147, 215, 42, 216, 144, 72,
+        172, 110, 180, 13, 123, 179, 10, 49,
+    ];
+    let (_ctx, coin) = qrc20_coin_for_test(&priv_key, None);
+
+    let tx = TransactionEnum::UtxoTx("010000000160fd74b5714172f285db2b36f0b391cd6883e7291441631c8b18f165b0a4635d020000006a47304402205d409e141111adbc4f185ae856997730de935ac30a0d2b1ccb5a6c4903db8171022024fc59bbcfdbba283556d7eeee4832167301dc8e8ad9739b7865f67b9676b226012103693bff1b39e8b5a306810023c29b95397eb395530b106b1820ea235fd81d9ce9ffffffff020000000000000000625403a08601012844a9059cbb000000000000000000000000ca1e04745e8ca0c60d8c5881531d51bec470743f00000000000000000000000000000000000000000000000000000000000f424014d362e096e873eb7907e205fadc6175c6fec7bc44c200ada205000000001976a9149e032d4b0090a11dc40fe6c47601499a35d55fbb88acfe967d5f".into());
+
+    let fee_addr = hex::decode("03bc2c7ba671bae4a6fc835244c9762b41647b9827d4780a89a949b984a8ddcc05").unwrap();
+    let to_address = coin.contract_address_from_raw_pubkey(&fee_addr).unwrap();
+    let amount = BigDecimal::from(0.2);
+    let amount = wei_from_big_decimal(&amount, coin.utxo.decimals).unwrap();
+    let mut transfer_output = coin
+        .transfer_output(to_address, amount, QRC20_GAS_LIMIT_DEFAULT, QRC20_GAS_PRICE_DEFAULT)
+        .unwrap();
+
+    // break the transfer output
+    transfer_output.value = 777;
+    transfer_output.gas_limit = 777;
+    transfer_output.gas_price = 777;
+
+    let tx_err = block_on(coin.send_contract_calls(vec![transfer_output])).unwrap_err();
+
+    // The error variant should equal to `TxRecoverable`
+    assert_eq!(
+        discriminant(&tx_err),
+        discriminant(&TransactionErr::TxRecoverable(TransactionEnum::from(tx), String::new()))
+    );
 }

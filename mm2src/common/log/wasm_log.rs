@@ -169,3 +169,27 @@ struct CallbackMsg {
     level: LogLevel,
     line: String,
 }
+
+pub fn register_wasm_log() {
+    use crate::log::register_callback;
+    use std::str::FromStr;
+    use std::sync::atomic::{AtomicBool, Ordering};
+
+    static IS_INITIALIZED: AtomicBool = AtomicBool::new(false);
+
+    // Check if the logger is initialized already
+    if let Err(true) = IS_INITIALIZED.compare_exchange(false, true, Ordering::Relaxed, Ordering::Relaxed) {
+        return;
+    }
+
+    let log_level = match option_env!("RUST_WASM_TEST_LOG") {
+        Some(level_str) => LogLevel::from_str(level_str).unwrap_or(LogLevel::Info),
+        None => LogLevel::Info,
+    };
+
+    register_callback(WasmCallback::console_log());
+    WasmLoggerBuilder::default()
+        .level_filter(log_level)
+        .try_init()
+        .expect("Must be initialized only once");
+}

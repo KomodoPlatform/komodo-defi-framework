@@ -78,6 +78,17 @@ macro_rules! cfg_native {
     };
 }
 
+/// Returns a JSON error HyRes on a failure.
+#[macro_export]
+macro_rules! try_h {
+    ($e: expr) => {
+        match $e {
+            Ok(ok) => ok,
+            Err(err) => return $crate::rpc_err_response(500, &ERRL!("{}", err)),
+        }
+    };
+}
+
 #[macro_use]
 pub mod jsonrpc_client;
 #[macro_use]
@@ -88,21 +99,13 @@ pub mod mm_metrics;
 pub mod big_int_str;
 pub mod crash_reports;
 pub mod custom_futures;
+pub mod custom_iter;
 pub mod duplex_mutex;
-pub mod event_dispatcher;
-pub mod for_tests;
-pub mod grpc_web;
 pub mod iguana_utils;
-#[cfg(not(target_arch = "wasm32"))] pub mod ip_addr;
-pub mod mm_ctx;
-#[path = "mm_error/mm_error.rs"] pub mod mm_error;
 pub mod mm_number;
-pub mod mm_rpc_protocol;
-pub mod privkey;
 pub mod seri;
 #[path = "patterns/state_machine.rs"] pub mod state_machine;
 pub mod time_cache;
-#[path = "transport/transport.rs"] pub mod transport;
 
 #[cfg(not(target_arch = "wasm32"))]
 #[path = "executor/native_executor.rs"]
@@ -115,12 +118,6 @@ pub mod wio;
 #[cfg(target_arch = "wasm32")]
 #[path = "executor/wasm_executor.rs"]
 pub mod executor;
-
-#[cfg(target_arch = "wasm32")]
-#[path = "indexed_db/indexed_db.rs"]
-pub mod indexed_db;
-
-#[cfg(target_arch = "wasm32")] pub mod wasm_rpc;
 
 use backtrace::SymbolName;
 use bigdecimal::BigDecimal;
@@ -159,10 +156,6 @@ pub use http::StatusCode;
 pub use serde;
 
 #[cfg(not(target_arch = "wasm32"))] pub mod for_c;
-
-#[cfg(not(target_arch = "wasm32"))]
-#[path = "fs/fs.rs"]
-pub mod fs;
 
 cfg_native! {
     pub use gstuff::{now_float, now_ms};
@@ -805,17 +798,6 @@ pub mod lazy {
             );
         assert_eq!(actual, Some("HELLO".into()));
     }
-}
-
-/// Returns a JSON error HyRes on a failure.
-#[macro_export]
-macro_rules! try_h {
-    ($e: expr) => {
-        match $e {
-            Ok(ok) => ok,
-            Err(err) => return $crate::rpc_err_response(500, &ERRL!("{}", err)),
-        }
-    };
 }
 
 /// Wraps a JSON string into the `HyRes` RPC response future.

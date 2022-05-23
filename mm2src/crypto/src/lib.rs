@@ -7,6 +7,7 @@ mod hw_client;
 mod hw_ctx;
 pub mod hw_rpc_task;
 mod key_pair_ctx;
+pub mod privkey;
 
 pub use bip32_child::{Bip32Child, Bip32DerPathError, Bip32DerPathOps, Bip44Tail};
 pub use bip44::{Bip44Chain, Bip44DerPathError, Bip44DerivationPath, Bip44PathToAccount, Bip44PathToCoin,

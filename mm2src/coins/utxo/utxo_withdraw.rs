@@ -1,20 +1,20 @@
-use crate::init_withdraw::{WithdrawAwaitingStatus, WithdrawInProgressStatus, WithdrawTaskHandle};
+use crate::rpc_command::init_withdraw::{WithdrawAwaitingStatus, WithdrawInProgressStatus, WithdrawTaskHandle};
 use crate::utxo::utxo_common::{big_decimal_from_sat, UtxoTxBuilder};
-use crate::utxo::{output_script, sat_from_big_decimal, ActualTxFee, Address, FeePolicy, PrivKeyPolicy,
+use crate::utxo::{output_script, sat_from_big_decimal, ActualTxFee, Address, FeePolicy, GetUtxoListOps, PrivKeyPolicy,
                   UtxoAddressFormat, UtxoCoinFields, UtxoCommonOps, UtxoFeeDetails, UtxoTx, UTXO_LOCK};
 use crate::{CoinWithDerivationMethod, GetWithdrawSenderAddress, MarketCoinOps, TransactionDetails, WithdrawError,
             WithdrawFee, WithdrawRequest, WithdrawResult};
 use async_trait::async_trait;
 use chain::TransactionOutput;
 use common::log::info;
-use common::mm_ctx::MmArc;
-use common::mm_error::prelude::*;
 use common::now_ms;
 use crypto::hw_rpc_task::{HwConnectStatuses, TrezorRpcTaskConnectProcessor};
 use crypto::trezor::client::TrezorClient;
 use crypto::trezor::{TrezorError, TrezorProcessingError};
 use crypto::{Bip32Error, CryptoCtx, CryptoInitError, DerivationPath, HwError, HwProcessingError};
 use keys::{Public as PublicKey, Type as ScriptType};
+use mm2_core::mm_ctx::MmArc;
+use mm2_err_handle::prelude::*;
 use rpc::v1::types::ToTxHash;
 use rpc_task::RpcTaskError;
 use script::{Builder, Script, SignatureVersion, TransactionInputSigner};
@@ -100,7 +100,7 @@ impl From<Bip32Error> for WithdrawError {
 pub trait UtxoWithdraw<Coin>
 where
     Self: Sized + Sync,
-    Coin: UtxoCommonOps,
+    Coin: UtxoCommonOps + GetUtxoListOps,
 {
     fn coin(&self) -> &Coin;
 
@@ -153,7 +153,7 @@ where
         let script_pubkey = output_script(&to, script_type).to_bytes();
 
         let _utxo_lock = UTXO_LOCK.lock().await;
-        let (unspents, _) = coin.list_unspent_ordered(&self.sender_address()).await?;
+        let (unspents, _) = coin.get_unspent_ordered_list(&self.sender_address()).await?;
         let (value, fee_policy) = if req.max {
             (
                 unspents.iter().fold(0, |sum, unspent| sum + unspent.value),
@@ -246,7 +246,7 @@ pub struct InitUtxoWithdraw<'a, Coin> {
 #[async_trait]
 impl<'a, Coin> UtxoWithdraw<Coin> for InitUtxoWithdraw<'a, Coin>
 where
-    Coin: UtxoCommonOps + UtxoSignerOps,
+    Coin: UtxoCommonOps + GetUtxoListOps + UtxoSignerOps,
 {
     fn coin(&self) -> &Coin { &self.coin }
 
@@ -404,7 +404,7 @@ pub struct StandardUtxoWithdraw<Coin> {
 #[async_trait]
 impl<Coin> UtxoWithdraw<Coin> for StandardUtxoWithdraw<Coin>
 where
-    Coin: UtxoCommonOps,
+    Coin: UtxoCommonOps + GetUtxoListOps,
 {
     fn coin(&self) -> &Coin { &self.coin }
 

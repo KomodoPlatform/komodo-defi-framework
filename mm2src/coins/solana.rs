@@ -1,21 +1,22 @@
-use super::{CoinBalance, HistorySyncState, MarketCoinOps, MmCoin, SwapOps, TradeFee, TransactionEnum, TransactionFut};
+use super::{CoinBalance, HistorySyncState, MarketCoinOps, MmCoin, SwapOps, TradeFee, TransactionEnum};
 use crate::solana::solana_common::{lamports_to_sol, PrepareTransferData, SufficientBalanceError};
 use crate::solana::spl::SplTokenInfo;
 use crate::{BalanceError, BalanceFut, FeeApproxStage, FoundSwapTxSpend, NegotiateSwapContractAddrErr,
-            RawTransactionFut, RawTransactionRequest, TradePreimageFut, TradePreimageResult, TradePreimageValue,
-            TransactionDetails, TransactionType, ValidateAddressResult, ValidatePaymentInput, WithdrawError,
-            WithdrawFut, WithdrawRequest, WithdrawResult};
+            RawTransactionFut, RawTransactionRequest, SignatureResult, TradePreimageFut, TradePreimageResult,
+            TradePreimageValue, TransactionDetails, TransactionFut, TransactionType, UnexpectedDerivationMethod,
+            ValidateAddressResult, ValidatePaymentInput, VerificationResult, WithdrawError, WithdrawFut,
+            WithdrawRequest, WithdrawResult};
 use async_trait::async_trait;
 use base58::ToBase58;
 use bigdecimal::BigDecimal;
 use bincode::{deserialize, serialize};
-use common::mm_error::prelude::MapToMmResult;
-use common::{mm_ctx::MmArc, mm_error::MmError, mm_number::MmNumber, now_ms};
+use common::{mm_number::MmNumber, now_ms};
 use derive_more::Display;
-use ed25519_dalek::SignatureError;
 use futures::{FutureExt, TryFutureExt};
 use futures01::Future;
 use keys::KeyPair;
+use mm2_core::mm_ctx::MmArc;
+use mm2_err_handle::prelude::*;
 use rpc::v1::types::Bytes as BytesJson;
 use serde_json::{self as json, Value as Json};
 use solana_client::rpc_request::TokenAccountsFilter;
@@ -148,7 +149,7 @@ pub enum KeyPairCreationError {
 }
 
 impl From<ed25519_dalek::SignatureError> for KeyPairCreationError {
-    fn from(e: SignatureError) -> Self { KeyPairCreationError::SignatureError(e) }
+    fn from(e: ed25519_dalek::SignatureError) -> Self { KeyPairCreationError::SignatureError(e) }
 }
 
 fn generate_keypair_from_slice(priv_key: &[u8]) -> Result<Keypair, MmError<KeyPairCreationError>> {
@@ -239,7 +240,6 @@ async fn withdraw_base_coin_impl(coin: SolanaCoin, req: WithdrawRequest) -> With
     let to = solana_sdk::pubkey::Pubkey::try_from(&*req.to)?;
     let tx = solana_sdk::system_transaction::transfer(&coin.key_pair, &to, res.lamports_to_send, hash);
     let serialized_tx = serialize(&tx).map_to_mm(|e| WithdrawError::InternalError(e.to_string()))?;
-    let encoded_tx = hex::encode(&serialized_tx);
     let total_amount = lamports_to_sol(res.lamports_to_send);
     let received_by_me = if req.to == coin.my_address {
         total_amount.clone()
@@ -248,7 +248,7 @@ async fn withdraw_base_coin_impl(coin: SolanaCoin, req: WithdrawRequest) -> With
     };
     let spent_by_me = &total_amount + &res.sol_required;
     Ok(TransactionDetails {
-        tx_hex: encoded_tx.as_bytes().into(),
+        tx_hex: serialized_tx.into(),
         tx_hash: tx.signatures[0].to_string(),
         from: vec![coin.my_address.clone()],
         to: vec![req.to],
@@ -339,6 +339,16 @@ impl MarketCoinOps for SolanaCoin {
 
     fn my_address(&self) -> Result<String, String> { Ok(self.my_address.clone()) }
 
+    fn get_public_key(&self) -> Result<String, MmError<UnexpectedDerivationMethod>> { unimplemented!() }
+
+    fn sign_message_hash(&self, _message: &str) -> Option<[u8; 32]> { unimplemented!() }
+
+    fn sign_message(&self, message: &str) -> SignatureResult<String> { solana_common::sign_message(self, message) }
+
+    fn verify_message(&self, signature: &str, message: &str, pubkey_bs58: &str) -> VerificationResult<bool> {
+        solana_common::verify_message(self, signature, message, pubkey_bs58)
+    }
+
     fn my_balance(&self) -> BalanceFut<CoinBalance> {
         let decimals = self.decimals as u64;
         let fut = self.my_balance_impl().and_then(move |result| {
@@ -368,6 +378,17 @@ impl MarketCoinOps for SolanaCoin {
             let tx: Transaction = deserialize(bytes.as_slice())
                 .map_to_mm(|e| e)
                 .map_err(|e| format!("{:?}", e))?;
+            let signature = coin.rpc().send_transaction(&tx).await.map_err(|e| format!("{:?}", e))?;
+            Ok(signature.to_string())
+        };
+        Box::new(fut.boxed().compat())
+    }
+
+    fn send_raw_tx_bytes(&self, tx: &[u8]) -> Box<dyn Future<Item = String, Error = String> + Send> {
+        let coin = self.clone();
+        let tx = tx.to_owned();
+        let fut = async move {
+            let tx = try_s!(deserialize(tx.as_slice()));
             let signature = coin.rpc().send_transaction(&tx).await.map_err(|e| format!("{:?}", e))?;
             Ok(signature.to_string())
         };
@@ -552,7 +573,7 @@ impl SwapOps for SolanaCoin {
         unimplemented!()
     }
 
-    fn get_htlc_key_pair(&self) -> KeyPair { todo!() }
+    fn get_htlc_key_pair(&self) -> Option<KeyPair> { todo!() }
 }
 
 #[allow(clippy::forget_ref, clippy::forget_copy, clippy::cast_ref_to_mut)]

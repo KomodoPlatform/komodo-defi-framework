@@ -116,15 +116,6 @@ dependencies = [
 
 [[package]]
 name = "ahash"
-version = "0.2.18"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "6f33b5018f120946c1dcf279194f238a9f146725593ead1c08fa47ff22b0b5d3"
-dependencies = [
- "const-random",
-]
-
-[[package]]
-name = "ahash"
 version = "0.3.8"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "e8fd72866655d1904d6b0997d0b07ba561047d070fbe29de039031c641b61217"
@@ -341,7 +332,6 @@ dependencies = [
  "libp2p-swarm",
  "libp2p-yamux",
  "log 0.4.14",
- "lru 0.4.3",
  "prost",
  "prost-build",
  "quickcheck",
@@ -546,6 +536,7 @@ dependencies = [
  "groestl",
  "primitives",
  "ripemd160 0.8.0",
+ "serialization",
  "sha-1 0.8.2",
  "sha2 0.8.2",
  "sha3 0.8.2",
@@ -795,12 +786,6 @@ checksum = "771fe0050b883fcc3ea2359b1a96bcfbc090b7116eae7c3c512c7a083fdf23d3"
 dependencies = [
  "sha2 0.9.5",
 ]
-
-[[package]]
-name = "build_const"
-version = "0.2.1"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "39092a32794787acd8525ee150305ff051b0aa6cc2abaf193924f5ab05425f39"
 
 [[package]]
 name = "bumpalo"
@@ -1096,7 +1081,7 @@ dependencies = [
  "gstuff",
  "hex 0.4.2",
  "http 0.2.1",
- "itertools 0.9.0",
+ "itertools",
  "js-sys",
  "jsonrpc-core 8.0.1",
  "keys",
@@ -1108,6 +1093,12 @@ dependencies = [
  "lightning-net-tokio",
  "lightning-persister",
  "metrics",
+ "mm2_core",
+ "mm2_db",
+ "mm2_err_handle",
+ "mm2_io",
+ "mm2_net",
+ "mm2_test_helpers",
  "mocktopus",
  "num-traits 0.2.12",
  "parking_lot 0.12.0",
@@ -1151,6 +1142,7 @@ dependencies = [
  "web3",
  "webpki-roots 0.19.0",
  "winapi 0.3.9",
+ "zbase32",
  "zcash_client_backend",
  "zcash_client_sqlite",
  "zcash_primitives",
@@ -1168,6 +1160,8 @@ dependencies = [
  "derive_more",
  "futures 0.3.15",
  "hex 0.4.2",
+ "mm2_core",
+ "mm2_err_handle",
  "rpc",
  "rpc_task",
  "ser_error",
@@ -1213,7 +1207,7 @@ dependencies = [
  "hyper",
  "hyper-rustls 0.22.1",
  "indexmap",
- "itertools 0.8.2",
+ "itertools",
  "js-sys",
  "keys",
  "lazy_static",
@@ -1300,26 +1294,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "const-random"
-version = "0.1.8"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "2f1af9ac737b2dd2d577701e59fd09ba34822f6f2ebdb30a7647405d9e55e16a"
-dependencies = [
- "const-random-macro",
- "proc-macro-hack",
-]
-
-[[package]]
-name = "const-random-macro"
-version = "0.1.8"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "25e4c606eb459dd29f7c57b2e0879f2b6f14ee130918c2b78ccb58a9624e6c7a"
-dependencies = [
- "getrandom 0.1.14",
- "proc-macro-hack",
-]
-
-[[package]]
 name = "const_fn"
 version = "0.4.7"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1347,15 +1321,6 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "95059428f66df56b63431fdb4e1947ed2190586af5c5a8a8b71122bdf5a7f469"
 dependencies = [
  "libc",
-]
-
-[[package]]
-name = "crc"
-version = "1.8.1"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "d663548de7f5cca343f1e0a48d14dcfb0e9eb4e079ec58883b7251539fa10aeb"
-dependencies = [
- "build_const",
 ]
 
 [[package]]
@@ -1535,10 +1500,13 @@ dependencies = [
  "http 0.2.1",
  "hw_common",
  "keys",
+ "mm2_core",
+ "mm2_err_handle",
  "num-traits 0.1.43",
  "parking_lot 0.12.0",
  "primitives",
  "rpc_task",
+ "rustc-hex 2.1.0",
  "secp256k1",
  "ser_error",
  "ser_error_derive",
@@ -2123,7 +2091,7 @@ dependencies = [
 [[package]]
 name = "ethcore-transaction"
 version = "0.1.0"
-source = "git+https://github.com/artemii235/parity-ethereum.git#d4b2179e76b447f7def274e68e60e4c0a52c4070"
+source = "git+https://github.com/artemii235/parity-ethereum.git#0a090f9b3efd7e24193265cf0e4109bf2369ad98"
 dependencies = [
  "ethereum-types 0.4.2",
  "ethkey",
@@ -2173,7 +2141,7 @@ dependencies = [
 [[package]]
 name = "ethkey"
 version = "0.3.0"
-source = "git+https://github.com/artemii235/parity-ethereum.git#d4b2179e76b447f7def274e68e60e4c0a52c4070"
+source = "git+https://github.com/artemii235/parity-ethereum.git#0a090f9b3efd7e24193265cf0e4109bf2369ad98"
 dependencies = [
  "byteorder 1.4.3",
  "edit-distance",
@@ -2676,16 +2644,6 @@ dependencies = [
 
 [[package]]
 name = "hashbrown"
-version = "0.6.3"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "8e6073d0ca812575946eb5f35ff68dbe519907b25c42530389ff946dc84c6ead"
-dependencies = [
- "ahash 0.2.18",
- "autocfg 0.1.7",
-]
-
-[[package]]
-name = "hashbrown"
 version = "0.8.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "e91b62f79061a0bc2e046024cb7ba44b08419ed238ecbd9adbd787434b9e8c25"
@@ -2771,12 +2729,6 @@ name = "hex"
 version = "0.4.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "644f9158b2f133fd50f5fb3242878846d9eb792e445c893805ff0e3824006e35"
-
-[[package]]
-name = "hex-literal"
-version = "0.3.1"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "5af1f635ef1bc545d78392b136bfe1c9809e029023c84a3638a864a10b8819c8"
 
 [[package]]
 name = "hkd32"
@@ -2943,6 +2895,7 @@ dependencies = [
  "derive_more",
  "futures 0.3.15",
  "js-sys",
+ "mm2_err_handle",
  "rusb",
  "secp256k1",
  "serde",
@@ -3198,24 +3151,6 @@ name = "ipnet"
 version = "2.3.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "47be2f14c678be2fdcab04ab1171db51b2762ce6f0a8ee87c8dd4a04ed216135"
-
-[[package]]
-name = "itertools"
-version = "0.8.2"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "f56a2d0bc861f9165be4eb3442afd3c236d8a98afd426f65d92324ae1091a484"
-dependencies = [
- "either",
-]
-
-[[package]]
-name = "itertools"
-version = "0.9.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "284f18f85651fe11e8a991b2adb42cb078325c996ed026d994719efcfca1d54b"
-dependencies = [
- "either",
-]
 
 [[package]]
 name = "itertools"
@@ -3809,6 +3744,7 @@ dependencies = [
  "hex 0.4.2",
  "libc",
  "lightning",
+ "mm2_io",
  "parking_lot 0.12.0",
  "rand 0.7.3",
  "secp256k1",
@@ -3906,15 +3842,6 @@ dependencies = [
 
 [[package]]
 name = "lru"
-version = "0.4.3"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "0609345ddee5badacf857d4f547e0e5a2e987db77085c24cd887f73573a04237"
-dependencies = [
- "hashbrown 0.6.3",
-]
-
-[[package]]
-name = "lru"
 version = "0.6.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "111b945ac72ec09eb7bc62a0fbdc3cc6e80555a7245f52a69d3921a75b53b153"
@@ -3961,7 +3888,7 @@ checksum = "60302e4db3a61da70c0cb7991976248362f30319e88850c487b9b95bbf059e00"
 [[package]]
 name = "mem"
 version = "0.1.0"
-source = "git+https://github.com/artemii235/parity-ethereum.git#d4b2179e76b447f7def274e68e60e4c0a52c4070"
+source = "git+https://github.com/artemii235/parity-ethereum.git#0a090f9b3efd7e24193265cf0e4109bf2369ad98"
 
 [[package]]
 name = "memchr"
@@ -4129,89 +4056,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "mm2"
-version = "0.1.0"
-dependencies = [
- "async-std",
- "async-trait",
- "bitcrypto",
- "blake2",
- "bytes 0.4.12",
- "cfg-if 1.0.0",
- "chain",
- "chrono",
- "coins",
- "coins_activation",
- "common",
- "crc",
- "crc32fast",
- "crossbeam",
- "crypto",
- "db_common",
- "derive_more",
- "dirs",
- "either",
- "enum-primitive-derive",
- "ethereum-types 0.4.2",
- "fomat-macros 0.2.1",
- "futures 0.1.29",
- "futures 0.3.15",
- "futures-cpupool",
- "futures-rustls",
- "gstuff",
- "hash-db",
- "hash256-std-hasher",
- "hex 0.4.2",
- "hex-literal",
- "http 0.2.1",
- "hw_common",
- "hyper",
- "instant",
- "itertools 0.9.0",
- "js-sys",
- "keys",
- "lazy_static",
- "libc",
- "metrics",
- "mm2-libp2p",
- "mocktopus",
- "num-traits 0.2.12",
- "parity-util-mem",
- "parking_lot 0.12.0",
- "primitives",
- "rand 0.6.5",
- "rand 0.7.3",
- "regex 1.5.4",
- "rmp-serde",
- "rpc",
- "rpc_task",
- "script",
- "secp256k1",
- "ser_error",
- "ser_error_derive",
- "serde",
- "serde_bencode",
- "serde_derive",
- "serde_json",
- "serialization",
- "serialization_derive",
- "sp-runtime-interface",
- "sp-trie",
- "spv_validation",
- "testcontainers",
- "tokio",
- "trie-db",
- "trie-root",
- "uuid",
- "wasm-bindgen",
- "wasm-bindgen-futures",
- "wasm-bindgen-test",
- "wasm-timer",
- "web-sys",
- "winapi 0.3.9",
-]
-
-[[package]]
 name = "mm2-libp2p"
 version = "0.1.0"
 dependencies = [
@@ -4242,6 +4086,242 @@ dependencies = [
  "void",
  "wasm-bindgen-futures",
  "wasm-timer",
+]
+
+[[package]]
+name = "mm2_core"
+version = "0.1.0"
+dependencies = [
+ "arrayref",
+ "async-trait",
+ "cfg-if 1.0.0",
+ "common",
+ "db_common",
+ "derive_more",
+ "fomat-macros 0.2.1",
+ "futures 0.3.15",
+ "gstuff",
+ "hex 0.3.2",
+ "keys",
+ "lazy_static",
+ "mm2_rpc",
+ "primitives",
+ "rand 0.7.3",
+ "serde",
+ "serde_bytes 0.11.5",
+ "serde_json",
+ "shared_ref_counter",
+ "uuid",
+]
+
+[[package]]
+name = "mm2_db"
+version = "0.1.0"
+dependencies = [
+ "async-trait",
+ "common",
+ "derive_more",
+ "futures 0.3.15",
+ "hex 0.3.2",
+ "js-sys",
+ "lazy_static",
+ "mm2_core",
+ "mm2_err_handle",
+ "primitives",
+ "rand 0.7.3",
+ "serde",
+ "serde_json",
+ "wasm-bindgen",
+ "wasm-bindgen-futures",
+ "wasm-bindgen-test",
+ "web-sys",
+]
+
+[[package]]
+name = "mm2_err_handle"
+version = "0.1.0"
+dependencies = [
+ "common",
+ "derive_more",
+ "futures 0.1.29",
+ "gstuff",
+ "http 0.2.1",
+ "itertools",
+ "ser_error",
+ "ser_error_derive",
+ "serde",
+ "serde_json",
+]
+
+[[package]]
+name = "mm2_io"
+version = "0.1.0"
+dependencies = [
+ "async-std",
+ "common",
+ "derive_more",
+ "futures 0.3.15",
+ "gstuff",
+ "mm2_err_handle",
+ "rand 0.7.3",
+ "serde",
+ "serde_json",
+]
+
+[[package]]
+name = "mm2_main"
+version = "0.1.0"
+dependencies = [
+ "async-std",
+ "async-trait",
+ "bitcrypto",
+ "blake2",
+ "bytes 0.4.12",
+ "cfg-if 1.0.0",
+ "chain",
+ "chrono",
+ "coins",
+ "coins_activation",
+ "common",
+ "crc32fast",
+ "crossbeam",
+ "crypto",
+ "db_common",
+ "derive_more",
+ "dirs",
+ "either",
+ "enum-primitive-derive",
+ "ethereum-types 0.4.2",
+ "fomat-macros 0.2.1",
+ "futures 0.1.29",
+ "futures 0.3.15",
+ "futures-cpupool",
+ "futures-rustls",
+ "gstuff",
+ "hash-db",
+ "hash256-std-hasher",
+ "hex 0.4.2",
+ "http 0.2.1",
+ "hw_common",
+ "hyper",
+ "instant",
+ "itertools",
+ "js-sys",
+ "keys",
+ "lazy_static",
+ "libc",
+ "metrics",
+ "mm2-libp2p",
+ "mm2_core",
+ "mm2_db",
+ "mm2_err_handle",
+ "mm2_io",
+ "mm2_net",
+ "mm2_rpc",
+ "mm2_test_helpers",
+ "mocktopus",
+ "num-traits 0.2.12",
+ "parity-util-mem",
+ "parking_lot 0.12.0",
+ "primitives",
+ "rand 0.6.5",
+ "rand 0.7.3",
+ "regex 1.5.4",
+ "rmp-serde",
+ "rpc",
+ "rpc_task",
+ "script",
+ "secp256k1",
+ "ser_error",
+ "ser_error_derive",
+ "serde",
+ "serde_derive",
+ "serde_json",
+ "serialization",
+ "serialization_derive",
+ "sp-runtime-interface",
+ "sp-trie",
+ "spv_validation",
+ "testcontainers",
+ "tokio",
+ "trie-db",
+ "trie-root",
+ "uuid",
+ "wasm-bindgen",
+ "wasm-bindgen-futures",
+ "wasm-bindgen-test",
+ "wasm-timer",
+ "web-sys",
+ "winapi 0.3.9",
+]
+
+[[package]]
+name = "mm2_net"
+version = "0.1.0"
+dependencies = [
+ "async-trait",
+ "bytes 1.1.0",
+ "cfg-if 1.0.0",
+ "common",
+ "derive_more",
+ "fomat-macros 0.2.1",
+ "futures 0.3.15",
+ "gstuff",
+ "http 0.2.1",
+ "hyper",
+ "js-sys",
+ "lazy_static",
+ "mm2_core",
+ "mm2_err_handle",
+ "prost",
+ "rand 0.7.3",
+ "serde",
+ "serde_json",
+ "wasm-bindgen",
+ "wasm-bindgen-futures",
+ "wasm-bindgen-test",
+ "web-sys",
+]
+
+[[package]]
+name = "mm2_rpc"
+version = "0.1.0"
+dependencies = [
+ "common",
+ "derive_more",
+ "futures 0.3.15",
+ "gstuff",
+ "http 0.2.1",
+ "mm2_err_handle",
+ "ser_error",
+ "ser_error_derive",
+ "serde",
+ "serde_json",
+]
+
+[[package]]
+name = "mm2_test_helpers"
+version = "0.1.0"
+dependencies = [
+ "bigdecimal",
+ "bytes 1.1.0",
+ "cfg-if 1.0.0",
+ "chrono",
+ "common",
+ "crossterm",
+ "fomat-macros 0.2.1",
+ "futures 0.3.15",
+ "gstuff",
+ "http 0.2.1",
+ "lazy_static",
+ "mm2_core",
+ "mm2_io",
+ "mm2_net",
+ "rand 0.7.3",
+ "regex 1.5.4",
+ "serde",
+ "serde_json",
+ "uuid",
 ]
 
 [[package]]
@@ -5075,7 +5155,7 @@ checksum = "355f634b43cdd80724ee7848f95770e7e70eefa6dcf14fea676216573b8fd603"
 dependencies = [
  "bytes 1.1.0",
  "heck",
- "itertools 0.10.3",
+ "itertools",
  "log 0.4.14",
  "multimap",
  "petgraph",
@@ -5092,7 +5172,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "600d2f334aa05acb02a755e217ef1ab6dea4d51b58b7846588b747edec04efba"
 dependencies = [
  "anyhow",
- "itertools 0.10.3",
+ "itertools",
  "proc-macro2 1.0.27",
  "quote 1.0.7",
  "syn 1.0.72",
@@ -5747,6 +5827,8 @@ dependencies = [
  "common",
  "derive_more",
  "futures 0.3.15",
+ "mm2_err_handle",
+ "mm2_rpc",
  "ser_error",
  "ser_error_derive",
  "serde",
@@ -6791,7 +6873,7 @@ dependencies = [
  "console_log",
  "curve25519-dalek",
  "getrandom 0.1.14",
- "itertools 0.10.3",
+ "itertools",
  "js-sys",
  "lazy_static",
  "libsecp256k1",
@@ -6823,7 +6905,7 @@ dependencies = [
  "base64 0.13.0",
  "bincode",
  "enum-iterator",
- "itertools 0.10.3",
+ "itertools",
  "libc",
  "libloading",
  "log 0.4.14",
@@ -6887,7 +6969,7 @@ dependencies = [
  "flate2",
  "fnv",
  "index_list",
- "itertools 0.10.3",
+ "itertools",
  "lazy_static",
  "log 0.4.14",
  "memmap2",
@@ -6945,7 +7027,7 @@ dependencies = [
  "ed25519-dalek-bip32 0.2.0",
  "generic-array 0.14.5",
  "hmac 0.12.1",
- "itertools 0.10.3",
+ "itertools",
  "js-sys",
  "lazy_static",
  "libsecp256k1",
@@ -8039,12 +8121,11 @@ dependencies = [
  "byteorder 1.4.3",
  "common",
  "derive_more",
- "env_logger 0.7.1",
  "futures 0.3.15",
  "hw_common",
  "js-sys",
+ "mm2_err_handle",
  "prost",
- "prost-build",
  "rand 0.7.3",
  "rpc_task",
  "serde",
@@ -8208,7 +8289,7 @@ dependencies = [
 [[package]]
 name = "unexpected"
 version = "0.1.0"
-source = "git+https://github.com/artemii235/parity-ethereum.git#d4b2179e76b447f7def274e68e60e4c0a52c4070"
+source = "git+https://github.com/artemii235/parity-ethereum.git#0a090f9b3efd7e24193265cf0e4109bf2369ad98"
 
 [[package]]
 name = "unicode-bidi"
@@ -8361,6 +8442,7 @@ dependencies = [
  "derive_more",
  "hex 0.4.2",
  "keys",
+ "mm2_err_handle",
  "primitives",
  "rpc",
  "script",
@@ -8814,6 +8896,12 @@ dependencies = [
  "rand 0.8.4",
  "static_assertions",
 ]
+
+[[package]]
+name = "zbase32"
+version = "0.1.2"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "0f9079049688da5871a7558ddacb7f04958862c703e68258594cb7a862b5e33f"
 
 [[package]]
 name = "zcash_client_backend"

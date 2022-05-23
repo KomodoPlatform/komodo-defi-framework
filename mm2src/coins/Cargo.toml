@@ -27,6 +27,12 @@ bytes = "0.4"
 cfg-if = "1.0"
 chain = { path = "../mm2_bitcoin/chain" }
 common = { path = "../common" }
+mm2_core = { path = "../mm2_core" }
+mm2_err_handle = { path = "../mm2_err_handle" }
+mm2_net = { path = "../mm2_net" }
+mm2_db = { path = "../mm2_db" }
+mm2_io = { path = "../mm2_io" }
+mm2_test_helpers = { path = "../mm2_test_helpers" }
 crypto = { path = "../crypto" }
 db_common = { path = "../db_common" }
 derive_more = "0.99"
@@ -45,7 +51,7 @@ futures = { version = "0.3", package = "futures", features = ["compat", "async-a
 gstuff = { version = "0.7", features = ["nightly"] }
 hex = "0.4.2"
 http = "0.2"
-itertools = "0.9"
+itertools = { version = "0.10", features = ["use_std"] }
 jsonrpc-core = "8.0.1"
 keys = { path = "../mm2_bitcoin/keys" }
 lazy_static = "1.4"
@@ -82,6 +88,7 @@ tiny-bip39 = "0.8.0"
 # We don't need the default web3 features at all since we added our own web3 transport using shared HYPER instance.
 web3 = { git = "https://github.com/artemii235/rust-web3", default-features = false }
 winapi = "0.3"
+zbase32 = "0.1.2"
 
 [target.'cfg(target_arch = "wasm32")'.dependencies]
 js-sys = { version = "0.3.27" }

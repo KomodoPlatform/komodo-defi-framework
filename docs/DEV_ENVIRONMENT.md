@@ -53,16 +53,16 @@
 6. Run WASM tests
    - for Linux users:
    ```
-   wasm-pack test --firefox --headless
+   wasm-pack test --firefox --headless mm2src/mm2_main
    ```
     - for OSX users (Intel):
    ```
-   CC=/usr/local/opt/llvm/bin/clang AR=/usr/local/opt/llvm/bin/llvm-ar wasm-pack test --firefox --headless
+   CC=/usr/local/opt/llvm/bin/clang AR=/usr/local/opt/llvm/bin/llvm-ar wasm-pack test --firefox --headless mm2src/mm2_main
    ```
     - for OSX users (M1):
    ```
-   CC=/opt/homebrew/opt/llvm/bin/clang AR=/opt/homebrew/opt/llvm/bin/llvm-ar wasm-pack test --firefox --headless
+   CC=/opt/homebrew/opt/llvm/bin/clang AR=/opt/homebrew/opt/llvm/bin/llvm-ar wasm-pack test --firefox --headless mm2src/mm2_main
    ```
-   Please note `CC` and `AR` must be specified in the same line as `wasm-pack test`.
+   Please note `CC` and `AR` must be specified in the same line as `wasm-pack test mm2src/mm2_main`.
 
 PS If you notice that this guide is outdated, please submit a PR.

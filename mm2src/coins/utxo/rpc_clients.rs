@@ -2,16 +2,17 @@
 #![cfg_attr(target_arch = "wasm32", allow(dead_code))]
 
 use crate::utxo::{output_script, sat_from_big_decimal};
-use crate::{NumConversError, RpcTransportEventHandler, RpcTransportEventHandlerShared};
+use crate::{big_decimal_from_sat_unsigned, NumConversError, RpcTransportEventHandler, RpcTransportEventHandlerShared};
 use async_trait::async_trait;
 use bigdecimal::BigDecimal;
 use chain::{BlockHeader, BlockHeaderBits, BlockHeaderNonce, OutPoint, Transaction as UtxoTx};
 use common::custom_futures::{select_ok_sequential, FutureTimerExt};
+use common::custom_iter::{CollectInto, TryIntoGroupMap};
 use common::executor::{spawn, Timer};
-use common::jsonrpc_client::{JsonRpcClient, JsonRpcError, JsonRpcErrorType, JsonRpcMultiClient, JsonRpcRemoteAddr,
-                             JsonRpcRequest, JsonRpcResponse, JsonRpcResponseFut, RpcRes};
+use common::jsonrpc_client::{JsonRpcBatchClient, JsonRpcBatchResponse, JsonRpcClient, JsonRpcError, JsonRpcErrorType,
+                             JsonRpcId, JsonRpcMultiClient, JsonRpcRemoteAddr, JsonRpcRequest, JsonRpcRequestEnum,
+                             JsonRpcResponse, JsonRpcResponseEnum, JsonRpcResponseFut, RpcRes};
 use common::log::{error, info, warn};
-use common::mm_error::prelude::*;
 use common::mm_number::{BigInt, MmNumber};
 use common::{median, now_float, now_ms, OrdRange};
 use derive_more::Display;
@@ -24,15 +25,18 @@ use futures01::future::select_ok;
 use futures01::sync::{mpsc, oneshot};
 use futures01::{Future, Sink, Stream};
 use http::Uri;
+use itertools::Itertools;
 use keys::hash::H256;
 use keys::{Address, Type as ScriptType};
+use mm2_err_handle::prelude::*;
 #[cfg(test)] use mocktopus::macros::*;
 use rpc::v1::types::{Bytes as BytesJson, Transaction as RpcTransaction, H256 as H256Json};
 use serde_json::{self as json, Value as Json};
 use serialization::{deserialize, serialize, serialize_with_flags, CoinVariant, CompactInteger, Reader,
                     SERIALIZE_TRANSACTION_WITNESS};
 use sha2::{Digest, Sha256};
-use std::collections::hash_map::{Entry, HashMap};
+use std::collections::hash_map::Entry;
+use std::collections::HashMap;
 use std::fmt;
 use std::io;
 use std::net::{SocketAddr, ToSocketAddrs};
@@ -57,6 +61,12 @@ cfg_native! {
 }
 
 pub type AddressesByLabelResult = HashMap<String, AddressPurpose>;
+pub type JsonRpcPendingRequestsShared = Arc<AsyncMutex<JsonRpcPendingRequests>>;
+pub type JsonRpcPendingRequests = HashMap<JsonRpcId, async_oneshot::Sender<JsonRpcResponseEnum>>;
+pub type UnspentMap = HashMap<Address, Vec<UnspentInfo>>;
+
+type ElectrumScriptHash = String;
+type ScriptHashUnspents = Vec<ElectrumUnspent>;
 
 #[derive(Debug, Deserialize)]
 #[allow(dead_code)]
@@ -178,6 +188,14 @@ impl UtxoRpcClientEnum {
         };
         Box::new(fut.boxed().compat())
     }
+
+    #[inline]
+    pub fn is_native(&self) -> bool {
+        match self {
+            UtxoRpcClientEnum::Native(_) => true,
+            UtxoRpcClientEnum::Electrum(_) => false,
+        }
+    }
 }
 
 /// Generic unspent info required to build transactions, we need this separate type because native
@@ -235,6 +253,7 @@ pub enum UtxoRpcError {
 impl From<JsonRpcError> for UtxoRpcError {
     fn from(e: JsonRpcError) -> Self {
         match e.error {
+            JsonRpcErrorType::InvalidRequest(_) => UtxoRpcError::Internal(e.to_string()),
             JsonRpcErrorType::Transport(_) => UtxoRpcError::Transport(e),
             JsonRpcErrorType::Parse(_, _) | JsonRpcErrorType::Response(_, _) => UtxoRpcError::ResponseParseError(e),
         }
@@ -252,21 +271,38 @@ impl From<NumConversError> for UtxoRpcError {
 /// Common operations that both types of UTXO clients have but implement them differently
 #[async_trait]
 pub trait UtxoRpcClientOps: fmt::Debug + Send + Sync + 'static {
+    /// Returns available unspents for the given `address`.
     fn list_unspent(&self, address: &Address, decimals: u8) -> UtxoRpcFut<Vec<UnspentInfo>>;
 
+    /// Returns available unspents for every given `addresses`.
+    fn list_unspent_group(&self, addresses: Vec<Address>, decimals: u8) -> UtxoRpcFut<UnspentMap>;
+
+    /// Submits the given `tx` transaction to blockchain network.
     fn send_transaction(&self, tx: &UtxoTx) -> UtxoRpcFut<H256Json>;
 
+    /// Submits the raw `tx` transaction (serialized, hex-encoded) to blockchain network.
     fn send_raw_transaction(&self, tx: BytesJson) -> UtxoRpcFut<H256Json>;
 
+    /// Returns raw transaction (serialized, hex-encoded) by the given `txid`.
     fn get_transaction_bytes(&self, txid: &H256Json) -> UtxoRpcFut<BytesJson>;
 
+    /// Returns verbose transaction by the given `txid`.
     fn get_verbose_transaction(&self, txid: &H256Json) -> UtxoRpcFut<RpcTransaction>;
 
+    /// Returns verbose transactions in the same order they were requested.
+    fn get_verbose_transactions(&self, tx_ids: &[H256Json]) -> UtxoRpcFut<Vec<RpcTransaction>>;
+
+    /// Returns the height of the most-work fully-validated chain.
     fn get_block_count(&self) -> UtxoRpcFut<u64>;
 
+    /// Requests balance of the given `address`.
     fn display_balance(&self, address: Address, decimals: u8) -> RpcRes<BigDecimal>;
 
-    /// returns fee estimation per KByte in satoshis
+    /// Requests balances of the given `addresses`.
+    /// The pairs `(Address, BigDecimal)` are guaranteed to be in the same order in which they were requested.
+    fn display_balances(&self, addresses: Vec<Address>, decimals: u8) -> UtxoRpcFut<Vec<(Address, BigDecimal)>>;
+
+    /// Returns fee estimation per KByte in satoshis.
     fn estimate_fee_sat(
         &self,
         decimals: u8,
@@ -275,8 +311,10 @@ pub trait UtxoRpcClientOps: fmt::Debug + Send + Sync + 'static {
         n_blocks: u32,
     ) -> UtxoRpcFut<u64>;
 
+    /// Returns the minimum fee a low-priority transaction must pay in order to be accepted to the daemon’s memory pool.
     fn get_relay_fee(&self) -> RpcRes<BigDecimal>;
 
+    /// Tries to find a transaction that spends the specified `vout` output of the `tx_hash` transaction.
     fn find_output_spend(
         &self,
         tx_hash: H256,
@@ -293,10 +331,12 @@ pub trait UtxoRpcClientOps: fmt::Debug + Send + Sync + 'static {
         coin_variant: CoinVariant,
     ) -> UtxoRpcFut<u32>;
 
+    /// Returns block time in seconds since epoch (Jan 1 1970 GMT).
     async fn get_block_timestamp(&self, height: u64) -> Result<u64, MmError<UtxoRpcError>>;
 }
 
 #[derive(Clone, Deserialize, Debug)]
+#[cfg_attr(test, derive(Default))]
 pub struct NativeUnspent {
     pub txid: H256Json,
     pub vout: u32,
@@ -557,15 +597,15 @@ impl JsonRpcClient for NativeClientImpl {
     fn client_info(&self) -> String { UtxoJsonRpcClientInfo::client_info(self) }
 
     #[cfg(target_arch = "wasm32")]
-    fn transport(&self, _request: JsonRpcRequest) -> JsonRpcResponseFut {
+    fn transport(&self, _request: JsonRpcRequestEnum) -> JsonRpcResponseFut {
         Box::new(futures01::future::err(ERRL!(
             "'NativeClientImpl' must be used in native mode only"
         )))
     }
 
     #[cfg(not(target_arch = "wasm32"))]
-    fn transport(&self, request: JsonRpcRequest) -> JsonRpcResponseFut {
-        use common::transport::slurp_req;
+    fn transport(&self, request: JsonRpcRequestEnum) -> JsonRpcResponseFut {
+        use mm2_net::transport::slurp_req;
 
         let request_body = try_fus!(json::to_string(&request));
         // measure now only body length, because the `hyper` crate doesn't allow to get total HTTP packet length
@@ -581,7 +621,7 @@ impl JsonRpcClient for NativeClientImpl {
 
         let event_handles = self.event_handlers.clone();
         Box::new(slurp_req(http_request).boxed().compat().then(
-            move |result| -> Result<(JsonRpcRemoteAddr, JsonRpcResponse), String> {
+            move |result| -> Result<(JsonRpcRemoteAddr, JsonRpcResponseEnum), String> {
                 let res = try_s!(result);
                 // measure now only body length, because the `hyper` crate doesn't allow to get total HTTP packet length
                 event_handles.on_incoming_response(&res.2);
@@ -603,6 +643,8 @@ impl JsonRpcClient for NativeClientImpl {
         ))
     }
 }
+
+impl JsonRpcBatchClient for NativeClientImpl {}
 
 // if mockable is placed before async_trait there is `munmap_chunk(): invalid pointer` error on async fn mocking attempt
 #[async_trait]
@@ -631,6 +673,45 @@ impl UtxoRpcClientOps for NativeClient {
         Box::new(fut)
     }
 
+    fn list_unspent_group(&self, addresses: Vec<Address>, decimals: u8) -> UtxoRpcFut<UnspentMap> {
+        let mut addresses_str = Vec::with_capacity(addresses.len());
+        let mut addresses_map = HashMap::with_capacity(addresses.len());
+        for addr in addresses {
+            let addr_str = addr.to_string();
+            addresses_str.push(addr_str.clone());
+            addresses_map.insert(addr_str, addr);
+        }
+
+        let fut = self
+            .list_unspent_impl(0, std::i32::MAX, addresses_str)
+            .map_to_mm_fut(UtxoRpcError::from)
+            .and_then(move |unspents| {
+                unspents
+                    .into_iter()
+                    // Convert `Vec<NativeUnspent>` into `UnspentMap`.
+                    .map(|unspent| {
+                        let orig_address = addresses_map
+                            .get(&unspent.address)
+                            .or_mm_err(|| {
+                                UtxoRpcError::InvalidResponse(format!("Unexpected address '{}'", unspent.address))
+                            })?
+                            .clone();
+                        let unspent_info = UnspentInfo {
+                            outpoint: OutPoint {
+                                hash: unspent.txid.reversed().into(),
+                                index: unspent.vout,
+                            },
+                            value: sat_from_big_decimal(&unspent.amount.to_decimal(), decimals)?,
+                            height: None,
+                        };
+                        Ok((orig_address, unspent_info))
+                    })
+                    // Collect `(Address, UnspentInfo)` items into `HashMap<Address, Vec<UnspentInfo>>` grouped by the addresses.
+                    .try_into_group_map()
+            });
+        Box::new(fut)
+    }
+
     fn send_transaction(&self, tx: &UtxoTx) -> UtxoRpcFut<H256Json> {
         let tx_bytes = if tx.has_witness() {
             BytesJson::from(serialize_with_flags(tx, SERIALIZE_TRANSACTION_WITNESS))
@@ -653,6 +734,13 @@ impl UtxoRpcClientOps for NativeClient {
         Box::new(self.get_raw_transaction_verbose(txid).map_to_mm_fut(UtxoRpcError::from))
     }
 
+    fn get_verbose_transactions(&self, tx_ids: &[H256Json]) -> UtxoRpcFut<Vec<RpcTransaction>> {
+        Box::new(
+            self.get_raw_transaction_verbose_batch(tx_ids)
+                .map_to_mm_fut(UtxoRpcError::from),
+        )
+    }
+
     fn get_block_count(&self) -> UtxoRpcFut<u64> {
         Box::new(self.0.get_block_count().map_to_mm_fut(UtxoRpcError::from))
     }
@@ -666,6 +754,22 @@ impl UtxoRpcClientOps for NativeClient {
                         .fold(BigDecimal::from(0), |sum, unspent| sum + unspent.amount.to_decimal())
                 }),
         )
+    }
+
+    fn display_balances(&self, addresses: Vec<Address>, decimals: u8) -> UtxoRpcFut<Vec<(Address, BigDecimal)>> {
+        let this = self.clone();
+        let fut = async move {
+            let unspent_map = this.list_unspent_group(addresses.clone(), decimals).compat().await?;
+            let balances = addresses
+                .into_iter()
+                .map(|address| {
+                    let balance = address_balance_from_unspent_map(&address, &unspent_map, decimals);
+                    (address, balance)
+                })
+                .collect();
+            Ok(balances)
+        };
+        Box::new(fut.boxed().compat())
     }
 
     fn estimate_fee_sat(
@@ -865,6 +969,16 @@ impl NativeClientImpl {
     fn get_raw_transaction_verbose(&self, txid: &H256Json) -> RpcRes<RpcTransaction> {
         let verbose = 1;
         rpc_func!(self, "getrawtransaction", txid, verbose)
+    }
+
+    /// https://developer.bitcoin.org/reference/rpc/getrawtransaction.html
+    /// Always returns verbose transactions in the same order they were requested.
+    fn get_raw_transaction_verbose_batch(&self, tx_ids: &[H256Json]) -> RpcRes<Vec<RpcTransaction>> {
+        let verbose = 1;
+        let requests = tx_ids
+            .iter()
+            .map(|txid| rpc_req!(self, "getrawtransaction", txid, verbose));
+        self.batch_rpc(requests)
     }
 
     /// https://developer.bitcoin.org/reference/rpc/getrawtransaction.html
@@ -1068,12 +1182,14 @@ impl ElectrumBlockHeaderV12 {
         }
     }
 
+    #[inline]
     pub fn as_hex(&self) -> String {
         let block_header = self.as_block_header();
         let serialized = serialize(&block_header);
         hex::encode(serialized)
     }
 
+    #[inline]
     pub fn hash(&self) -> H256Json {
         let block_header = self.as_block_header();
         BlockHeader::hash(&block_header).into()
@@ -1158,12 +1274,22 @@ pub struct ElectrumBalance {
     pub(crate) unconfirmed: i128,
 }
 
+impl ElectrumBalance {
+    #[inline]
+    pub fn to_big_decimal(&self, decimals: u8) -> BigDecimal {
+        let balance_sat = BigInt::from(self.confirmed) + BigInt::from(self.unconfirmed);
+        BigDecimal::from(balance_sat) / BigDecimal::from(10u64.pow(decimals as u32))
+    }
+}
+
+#[inline]
 fn sha_256(input: &[u8]) -> Vec<u8> {
     let mut sha = Sha256::new();
     sha.input(input);
     sha.result().to_vec()
 }
 
+#[inline]
 pub fn electrum_script_hash(script: &[u8]) -> Vec<u8> {
     let mut result = sha_256(script);
     result.reverse();
@@ -1318,7 +1444,7 @@ pub struct ElectrumConnection {
     /// The Sender used to shutdown the background connection loop when ElectrumConnection is dropped
     shutdown_tx: Option<oneshot::Sender<()>>,
     /// Responses are stored here
-    responses: Arc<AsyncMutex<HashMap<String, async_oneshot::Sender<JsonRpcResponse>>>>,
+    responses: JsonRpcPendingRequestsShared,
     /// Selected protocol version. The value is initialized after the server.version RPC call.
     protocol_version: AsyncMutex<Option<f32>>,
 }
@@ -1411,8 +1537,8 @@ pub struct ElectrumClientImpl {
 
 async fn electrum_request_multi(
     client: ElectrumClient,
-    request: JsonRpcRequest,
-) -> Result<(JsonRpcRemoteAddr, JsonRpcResponse), String> {
+    request: JsonRpcRequestEnum,
+) -> Result<(JsonRpcRemoteAddr, JsonRpcResponseEnum), String> {
     let mut futures = vec![];
     let connections = client.connections.lock().await;
     for (i, connection) in connections.iter().enumerate() {
@@ -1435,31 +1561,32 @@ async fn electrum_request_multi(
     if futures.is_empty() {
         return ERR!("All electrums are currently disconnected");
     }
-    if request.method != "server.ping" {
-        match select_ok_sequential(futures).compat().await {
-            Ok((res, no_of_failed_requests)) => {
-                client.clone().rotate_servers(no_of_failed_requests).await;
-                Ok(res)
-            },
-            Err(e) => return ERR!("{:?}", e),
-        }
-    } else {
-        // server.ping must be sent to all servers to keep all connections alive
-        Ok(try_s!(
-            select_ok(futures)
+
+    match request {
+        JsonRpcRequestEnum::Single(single) if single.method == "server.ping" => {
+            // server.ping must be sent to all servers to keep all connections alive
+            return select_ok(futures)
                 .map(|(result, _)| result)
                 .map_err(|e| ERRL!("{:?}", e))
                 .compat()
-                .await
-        ))
+                .await;
+        },
+        _ => (),
     }
+
+    let (res, no_of_failed_requests) = select_ok_sequential(futures)
+        .compat()
+        .await
+        .map_err(|e| ERRL!("{:?}", e))?;
+    client.rotate_servers(no_of_failed_requests).await;
+    Ok(res)
 }
 
 async fn electrum_request_to(
     client: ElectrumClient,
-    request: JsonRpcRequest,
+    request: JsonRpcRequestEnum,
     to_addr: String,
-) -> Result<(JsonRpcRemoteAddr, JsonRpcResponse), String> {
+) -> Result<(JsonRpcRemoteAddr, JsonRpcResponseEnum), String> {
     let (tx, responses) = {
         let connections = client.connections.lock().await;
         let connection = connections
@@ -1568,13 +1695,15 @@ impl JsonRpcClient for ElectrumClient {
 
     fn client_info(&self) -> String { UtxoJsonRpcClientInfo::client_info(self) }
 
-    fn transport(&self, request: JsonRpcRequest) -> JsonRpcResponseFut {
+    fn transport(&self, request: JsonRpcRequestEnum) -> JsonRpcResponseFut {
         Box::new(electrum_request_multi(self.clone(), request).boxed().compat())
     }
 }
 
+impl JsonRpcBatchClient for ElectrumClient {}
+
 impl JsonRpcMultiClient for ElectrumClient {
-    fn transport_exact(&self, to_addr: String, request: JsonRpcRequest) -> JsonRpcResponseFut {
+    fn transport_exact(&self, to_addr: String, request: JsonRpcRequestEnum) -> JsonRpcResponseFut {
         Box::new(electrum_request_to(self.clone(), request, to_addr).boxed().compat())
     }
 }
@@ -1620,6 +1749,27 @@ impl ElectrumClient {
         Box::new(fut.boxed().compat())
     }
 
+    /// https://electrumx.readthedocs.io/en/latest/protocol-methods.html#blockchain-scripthash-listunspent
+    /// It can return duplicates sometimes: https://github.com/artemii235/SuperNET/issues/269
+    /// We should remove them to build valid transactions.
+    /// Please note the function returns `ScriptHashUnspents` elements in the same order in which they were requested.
+    pub fn scripthash_list_unspent_batch(&self, hashes: Vec<ElectrumScriptHash>) -> RpcRes<Vec<ScriptHashUnspents>> {
+        let requests = hashes
+            .iter()
+            .map(|hash| rpc_req!(self, "blockchain.scripthash.listunspent", hash));
+        Box::new(self.batch_rpc(requests).map(move |unspents: Vec<ScriptHashUnspents>| {
+            unspents
+                .into_iter()
+                .map(|hash_unspents| {
+                    hash_unspents
+                        .into_iter()
+                        .unique_by(|unspent| (unspent.tx_hash, unspent.tx_pos))
+                        .collect::<Vec<_>>()
+                })
+                .collect()
+        }))
+    }
+
     /// https://electrumx.readthedocs.io/en/latest/protocol-methods.html#blockchain-scripthash-get-history
     pub fn scripthash_get_history(&self, hash: &str) -> RpcRes<Vec<ElectrumTxHistoryItem>> {
         rpc_func!(self, "blockchain.scripthash.get_history", hash)
@@ -1634,6 +1784,18 @@ impl ElectrumClient {
             arc.get_balance_concurrent_map.wrap_request(hash, request).await
         };
         Box::new(fut.boxed().compat())
+    }
+
+    /// https://electrumx.readthedocs.io/en/latest/protocol-methods.html#blockchain-scripthash-gethistory
+    /// Requests balances in a batch and returns them in the same order they were requested.
+    pub fn scripthash_get_balances<I>(&self, hashes: I) -> RpcRes<Vec<ElectrumBalance>>
+    where
+        I: IntoIterator<Item = String>,
+    {
+        let requests = hashes
+            .into_iter()
+            .map(|hash| rpc_req!(self, "blockchain.scripthash.get_balance", &hash));
+        self.batch_rpc(requests)
     }
 
     /// https://electrumx.readthedocs.io/en/latest/protocol-methods.html#blockchain-headers-subscribe
@@ -1744,6 +1906,33 @@ impl UtxoRpcClientOps for ElectrumClient {
         )
     }
 
+    fn list_unspent_group(&self, addresses: Vec<Address>, _decimals: u8) -> UtxoRpcFut<UnspentMap> {
+        let script_hashes = addresses
+            .iter()
+            .map(|addr| {
+                let script = output_script(addr, ScriptType::P2PKH);
+                let script_hash = electrum_script_hash(&script);
+                hex::encode(script_hash)
+            })
+            .collect();
+
+        let this = self.clone();
+        let fut = async move {
+            let unspents = this.scripthash_list_unspent_batch(script_hashes).compat().await?;
+
+            let unspent_map = addresses
+                .into_iter()
+                // `scripthash_list_unspent_batch` returns `ScriptHashUnspents` elements in the same order in which they were requested.
+                // So we can zip `addresses` and `unspents` into one iterator.
+                .zip(unspents)
+                // Map `(Address, Vec<ElectrumUnspent>)` pairs into `(Address, Vec<UnspentInfo>)`.
+                .map(|(address, electrum_unspents)| (address, electrum_unspents.collect_into()))
+                .collect();
+            Ok(unspent_map)
+        };
+        Box::new(fut.boxed().compat())
+    }
+
     fn send_transaction(&self, tx: &UtxoTx) -> UtxoRpcFut<H256Json> {
         let bytes = if tx.has_witness() {
             BytesJson::from(serialize_with_flags(tx, SERIALIZE_TRANSACTION_WITNESS))
@@ -1777,6 +1966,16 @@ impl UtxoRpcClientOps for ElectrumClient {
         Box::new(rpc_func!(self, "blockchain.transaction.get", txid, verbose).map_to_mm_fut(UtxoRpcError::from))
     }
 
+    /// https://electrumx.readthedocs.io/en/latest/protocol-methods.html#blockchain-transaction-get
+    /// Returns verbose transactions in a batch.
+    fn get_verbose_transactions(&self, tx_ids: &[H256Json]) -> UtxoRpcFut<Vec<RpcTransaction>> {
+        let verbose = true;
+        let requests = tx_ids
+            .iter()
+            .map(|txid| rpc_req!(self, "blockchain.transaction.get", txid, verbose));
+        Box::new(self.batch_rpc(requests).map_to_mm_fut(UtxoRpcError::from))
+    }
+
     fn get_block_count(&self) -> UtxoRpcFut<u64> {
         Box::new(
             self.blockchain_headers_subscribe()
@@ -1788,10 +1987,32 @@ impl UtxoRpcClientOps for ElectrumClient {
     fn display_balance(&self, address: Address, decimals: u8) -> RpcRes<BigDecimal> {
         let hash = electrum_script_hash(&output_script(&address, ScriptType::P2PKH));
         let hash_str = hex::encode(hash);
-        Box::new(self.scripthash_get_balance(&hash_str).map(move |result| {
-            let balance_sat = BigInt::from(result.confirmed) + BigInt::from(result.unconfirmed);
-            BigDecimal::from(balance_sat) / BigDecimal::from(10u64.pow(decimals as u32))
-        }))
+        Box::new(
+            self.scripthash_get_balance(&hash_str)
+                .map(move |electrum_balance| electrum_balance.to_big_decimal(decimals)),
+        )
+    }
+
+    fn display_balances(&self, addresses: Vec<Address>, decimals: u8) -> UtxoRpcFut<Vec<(Address, BigDecimal)>> {
+        let this = self.clone();
+        let fut = async move {
+            let hashes = addresses.iter().map(|address| {
+                let hash = electrum_script_hash(&output_script(address, ScriptType::P2PKH));
+                hex::encode(hash)
+            });
+
+            let electrum_balances = this.scripthash_get_balances(hashes).compat().await?;
+            let balances = electrum_balances
+                .into_iter()
+                // `scripthash_get_balances` returns `ElectrumBalance` elements in the same order in which they were requested.
+                // So we can zip `addresses` and the balances into one iterator.
+                .zip(addresses)
+                .map(|(electrum_balance, address)| (address, electrum_balance.to_big_decimal(decimals)))
+                .collect();
+            Ok(balances)
+        };
+
+        Box::new(fut.boxed().compat())
     }
 
     fn estimate_fee_sat(
@@ -1919,62 +2140,56 @@ fn rx_to_stream(rx: mpsc::Receiver<Vec<u8>>) -> impl Stream<Item = Vec<u8>, Erro
     rx.map_err(|_| panic!("errors not possible on rx"))
 }
 
-async fn electrum_process_json(
-    raw_json: Json,
-    arc: &Arc<AsyncMutex<HashMap<String, async_oneshot::Sender<JsonRpcResponse>>>>,
-) {
+async fn electrum_process_json(raw_json: Json, arc: &JsonRpcPendingRequestsShared) {
     // detect if we got standard JSONRPC response or subscription response as JSONRPC request
-    if raw_json["method"].is_null() && raw_json["params"].is_null() {
-        let response: JsonRpcResponse = match json::from_value(raw_json) {
-            Ok(res) => res,
-            Err(e) => {
-                error!("{}", e);
-                return;
-            },
-        };
-        let mut resp = arc.lock().await;
-        // the corresponding sender may not exist, receiver may be dropped
-        // these situations are not considered as errors so we just silently skip them
-        if let Some(tx) = resp.remove(&response.id.to_string()) {
-            tx.send(response).unwrap_or(())
-        }
-        drop(resp);
-    } else {
-        let request: JsonRpcRequest = match json::from_value(raw_json) {
-            Ok(res) => res,
-            Err(e) => {
-                error!("{}", e);
-                return;
-            },
-        };
-        let id = match request.method.as_ref() {
-            BLOCKCHAIN_HEADERS_SUB_ID => BLOCKCHAIN_HEADERS_SUB_ID,
-            _ => {
-                error!("Couldn't get id of request {:?}", request);
-                return;
-            },
-        };
+    #[derive(Deserialize)]
+    #[serde(untagged)]
+    enum ElectrumRpcResponseEnum {
+        /// The standard JSONRPC single response.
+        SingleResponse(JsonRpcResponse),
+        /// The batch of standard JSONRPC responses.
+        BatchResponses(JsonRpcBatchResponse),
+        /// The subscription response as JSONRPC request.
+        SubscriptionNotification(JsonRpcRequest),
+    }
 
-        let response = JsonRpcResponse {
-            id: id.into(),
-            jsonrpc: "2.0".into(),
-            result: request.params[0].clone(),
-            error: Json::Null,
-        };
-        let mut resp = arc.lock().await;
-        // the corresponding sender may not exist, receiver may be dropped
-        // these situations are not considered as errors so we just silently skip them
-        if let Some(tx) = resp.remove(&response.id.to_string()) {
-            tx.send(response).unwrap_or(())
-        }
-        drop(resp);
+    let response: ElectrumRpcResponseEnum = match json::from_value(raw_json) {
+        Ok(res) => res,
+        Err(e) => {
+            error!("{}", e);
+            return;
+        },
+    };
+
+    let response = match response {
+        ElectrumRpcResponseEnum::SingleResponse(single) => JsonRpcResponseEnum::Single(single),
+        ElectrumRpcResponseEnum::BatchResponses(batch) => JsonRpcResponseEnum::Batch(batch),
+        ElectrumRpcResponseEnum::SubscriptionNotification(req) => {
+            let id = match req.method.as_ref() {
+                BLOCKCHAIN_HEADERS_SUB_ID => BLOCKCHAIN_HEADERS_SUB_ID,
+                _ => {
+                    error!("Couldn't get id of request {:?}", req);
+                    return;
+                },
+            };
+            JsonRpcResponseEnum::Single(JsonRpcResponse {
+                id: id.into(),
+                jsonrpc: "2.0".into(),
+                result: req.params[0].clone(),
+                error: Json::Null,
+            })
+        },
+    };
+
+    // the corresponding sender may not exist, receiver may be dropped
+    // these situations are not considered as errors so we just silently skip them
+    let mut pending = arc.lock().await;
+    if let Some(tx) = pending.remove(&response.rpc_id()) {
+        tx.send(response).ok();
     }
 }
 
-async fn electrum_process_chunk(
-    chunk: &[u8],
-    arc: &Arc<AsyncMutex<HashMap<String, async_oneshot::Sender<JsonRpcResponse>>>>,
-) {
+async fn electrum_process_chunk(chunk: &[u8], arc: &JsonRpcPendingRequestsShared) {
     // we should split the received chunk because we can get several responses in 1 chunk.
     let split = chunk.split(|item| *item == b'\n');
     for chunk in split {
@@ -2083,7 +2298,7 @@ async fn electrum_last_chunk_loop(last_chunk: Arc<AtomicU64>) {
 async fn connect_loop(
     config: ElectrumConfig,
     addr: String,
-    responses: Arc<AsyncMutex<HashMap<String, async_oneshot::Sender<JsonRpcResponse>>>>,
+    responses: JsonRpcPendingRequestsShared,
     connection_tx: Arc<AsyncMutex<Option<mpsc::Sender<Vec<u8>>>>>,
     event_handlers: Vec<RpcTransportEventHandlerShared>,
 ) -> Result<(), ()> {
@@ -2204,7 +2419,7 @@ async fn connect_loop(
 async fn connect_loop(
     _config: ElectrumConfig,
     addr: String,
-    responses: Arc<AsyncMutex<HashMap<String, async_oneshot::Sender<JsonRpcResponse>>>>,
+    responses: JsonRpcPendingRequestsShared,
     connection_tx: Arc<AsyncMutex<Option<mpsc::Sender<Vec<u8>>>>>,
     event_handlers: Vec<RpcTransportEventHandlerShared>,
 ) -> Result<(), ()> {
@@ -2214,7 +2429,7 @@ async fn connect_loop(
         static ref CONN_IDX: Arc<AtomicUsize> = Arc::new(AtomicUsize::new(0));
     }
 
-    use common::transport::wasm_ws::ws_transport;
+    use mm2_net::wasm_ws::ws_transport;
 
     let delay = Arc::new(AtomicU64::new(0));
     loop {
@@ -2311,7 +2526,7 @@ fn electrum_connect(
     event_handlers: Vec<RpcTransportEventHandlerShared>,
 ) -> ElectrumConnection {
     let (shutdown_tx, shutdown_rx) = oneshot::channel::<()>();
-    let responses = Arc::new(AsyncMutex::new(HashMap::new()));
+    let responses = Arc::new(AsyncMutex::new(JsonRpcPendingRequests::default()));
     let tx = Arc::new(AsyncMutex::new(None));
 
     let connect_loop = connect_loop(
@@ -2335,11 +2550,11 @@ fn electrum_connect(
 }
 
 fn electrum_request(
-    request: JsonRpcRequest,
+    request: JsonRpcRequestEnum,
     tx: mpsc::Sender<Vec<u8>>,
-    responses: Arc<AsyncMutex<HashMap<String, async_oneshot::Sender<JsonRpcResponse>>>>,
+    responses: JsonRpcPendingRequestsShared,
     timeout: u64,
-) -> Box<dyn Future<Item = JsonRpcResponse, Error = String> + Send + 'static> {
+) -> Box<dyn Future<Item = JsonRpcResponseEnum, Error = String> + Send + 'static> {
     let send_fut = async move {
         let mut json = try_s!(json::to_string(&request));
         #[cfg(not(target_arch = "wasm"))]
@@ -2349,12 +2564,11 @@ fn electrum_request(
             json.push('\n');
         }
 
-        let request_id = request.get_id().to_string();
         let (req_tx, resp_rx) = async_oneshot::channel();
-        responses.lock().await.insert(request_id, req_tx);
+        responses.lock().await.insert(request.rpc_id(), req_tx);
         try_s!(tx.send(json.into_bytes()).compat().await);
-        let response = try_s!(resp_rx.await);
-        Ok(response)
+        let resps = try_s!(resp_rx.await);
+        Ok(resps)
     };
     let send_fut = send_fut
         .boxed()
@@ -2366,4 +2580,16 @@ fn electrum_request(
         })
         .map_err(|e| ERRL!("{}", e));
     Box::new(send_fut)
+}
+
+fn address_balance_from_unspent_map(address: &Address, unspent_map: &UnspentMap, decimals: u8) -> BigDecimal {
+    let unspents = match unspent_map.get(address) {
+        Some(unspents) => unspents,
+        // If `balances` doesn't contain `address`, there are no unspents related to the address.
+        // Consider the balance of that address equal to 0.
+        None => return BigDecimal::from(0),
+    };
+    unspents.iter().fold(BigDecimal::from(0), |sum, unspent| {
+        sum + big_decimal_from_sat_unsigned(unspent.value, decimals)
+    })
 }

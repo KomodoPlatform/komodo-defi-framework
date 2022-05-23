@@ -37,16 +37,16 @@ impl Qrc20Coin {
         secret_hash: Vec<u8>,
         receiver_addr: H160,
         swap_contract_address: H160,
-    ) -> Result<TransactionEnum, String> {
-        let balance = try_s!(self.my_spendable_balance().compat().await);
-        let balance = try_s!(wei_from_big_decimal(&balance, self.utxo.decimals));
+    ) -> Result<TransactionEnum, TransactionErr> {
+        let balance = try_tx_s!(self.my_spendable_balance().compat().await);
+        let balance = try_tx_s!(wei_from_big_decimal(&balance, self.utxo.decimals));
 
         // Check the balance to avoid unnecessary burning of gas
         if balance < value {
-            return ERR!("Balance {} is less than value {}", balance, value);
+            return TX_PLAIN_ERR!("Balance {} is less than value {}", balance, value);
         }
 
-        let outputs = try_s!(
+        let outputs = try_tx_s!(
             self.generate_swap_payment_outputs(
                 balance,
                 id,
@@ -67,17 +67,18 @@ impl Qrc20Coin {
         payment_tx: UtxoTx,
         swap_contract_address: H160,
         secret: Vec<u8>,
-    ) -> Result<TransactionEnum, String> {
+    ) -> Result<TransactionEnum, TransactionErr> {
         let Erc20PaymentDetails {
             swap_id, value, sender, ..
-        } = try_s!(self.erc20_payment_details_from_tx(&payment_tx).await);
+        } = try_tx_s!(self.erc20_payment_details_from_tx(&payment_tx).await);
 
-        let status = try_s!(self.payment_status(&swap_contract_address, swap_id.clone()).await);
+        let status = try_tx_s!(self.payment_status(&swap_contract_address, swap_id.clone()).await);
         if status != eth::PAYMENT_STATE_SENT.into() {
-            return ERR!("Payment state is not PAYMENT_STATE_SENT, got {}", status);
+            return TX_PLAIN_ERR!("Payment state is not PAYMENT_STATE_SENT, got {}", status);
         }
 
-        let spend_output = try_s!(self.receiver_spend_output(&swap_contract_address, swap_id, value, secret, sender));
+        let spend_output =
+            try_tx_s!(self.receiver_spend_output(&swap_contract_address, swap_id, value, secret, sender));
         self.send_contract_calls(vec![spend_output]).await
     }
 
@@ -85,22 +86,22 @@ impl Qrc20Coin {
         &self,
         swap_contract_address: H160,
         payment_tx: UtxoTx,
-    ) -> Result<TransactionEnum, String> {
+    ) -> Result<TransactionEnum, TransactionErr> {
         let Erc20PaymentDetails {
             swap_id,
             value,
             receiver,
             secret_hash,
             ..
-        } = try_s!(self.erc20_payment_details_from_tx(&payment_tx).await);
+        } = try_tx_s!(self.erc20_payment_details_from_tx(&payment_tx).await);
 
-        let status = try_s!(self.payment_status(&swap_contract_address, swap_id.clone()).await);
+        let status = try_tx_s!(self.payment_status(&swap_contract_address, swap_id.clone()).await);
         if status != eth::PAYMENT_STATE_SENT.into() {
-            return ERR!("Payment state is not PAYMENT_STATE_SENT, got {}", status);
+            return TX_PLAIN_ERR!("Payment state is not PAYMENT_STATE_SENT, got {}", status);
         }
 
         let refund_output =
-            try_s!(self.sender_refund_output(&swap_contract_address, swap_id, value, secret_hash, receiver));
+            try_tx_s!(self.sender_refund_output(&swap_contract_address, swap_id, value, secret_hash, receiver));
         self.send_contract_calls(vec![refund_output]).await
     }
 

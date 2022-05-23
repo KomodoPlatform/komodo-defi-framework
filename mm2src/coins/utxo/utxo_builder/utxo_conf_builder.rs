@@ -3,12 +3,12 @@ use crate::utxo::{parse_hex_encoded_u32, UtxoCoinConf, DEFAULT_DYNAMIC_FEE_VOLAT
                   MATURE_CONFIRMATIONS_DEFAULT};
 use crate::UtxoActivationParams;
 use bitcrypto::ChecksumType;
-use common::mm_error::prelude::*;
 use crypto::trezor::utxo::TrezorUtxoCoin;
 use crypto::{Bip32Error, ChildNumber};
 use derive_more::Display;
 pub use keys::{Address, AddressFormat as UtxoAddressFormat, AddressHashEnum, KeyPair, Private, Public, Secret,
                Type as ScriptType};
+use mm2_err_handle::prelude::*;
 use script::SignatureVersion;
 use serde_json::{self as json, Value as Json};
 use std::num::NonZeroU64;
@@ -65,6 +65,7 @@ impl<'a> UtxoConfBuilder<'a> {
         let p2sh_addr_prefix = self.p2sh_address_prefix();
         let pub_t_addr_prefix = self.pub_t_address_prefix();
         let p2sh_t_addr_prefix = self.p2sh_t_address_prefix();
+        let sign_message_prefix = self.sign_message_prefix();
 
         let wif_prefix = self.wif_prefix();
 
@@ -108,6 +109,7 @@ impl<'a> UtxoConfBuilder<'a> {
             p2sh_addr_prefix,
             pub_t_addr_prefix,
             p2sh_t_addr_prefix,
+            sign_message_prefix,
             bech32_hrp,
             segwit,
             wif_prefix,
@@ -156,6 +158,10 @@ impl<'a> UtxoConfBuilder<'a> {
     fn pub_t_address_prefix(&self) -> u8 { self.conf["taddr"].as_u64().unwrap_or(0) as u8 }
 
     fn p2sh_t_address_prefix(&self) -> u8 { self.conf["taddr"].as_u64().unwrap_or(0) as u8 }
+
+    fn sign_message_prefix(&self) -> Option<String> {
+        json::from_value(self.conf["sign_message_prefix"].clone()).unwrap_or(None)
+    }
 
     fn wif_prefix(&self) -> u8 {
         let wiftype = self.conf["wiftype"]

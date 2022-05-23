@@ -1,15 +1,15 @@
 use super::{CoinBalance, HistorySyncState, MarketCoinOps, MmCoin, RawTransactionFut, RawTransactionRequest, SwapOps,
             TradeFee, TransactionEnum, TransactionFut};
-use crate::{BalanceFut, FeeApproxStage, FoundSwapTxSpend, NegotiateSwapContractAddrErr, TradePreimageFut,
-            TradePreimageResult, TradePreimageValue, ValidateAddressResult, ValidatePaymentInput, WithdrawFut,
-            WithdrawRequest};
+use crate::{BalanceFut, FeeApproxStage, FoundSwapTxSpend, NegotiateSwapContractAddrErr, SignatureResult,
+            TradePreimageFut, TradePreimageResult, TradePreimageValue, UnexpectedDerivationMethod,
+            ValidateAddressResult, ValidatePaymentInput, VerificationResult, WithdrawFut, WithdrawRequest};
 use async_trait::async_trait;
 use bigdecimal::BigDecimal;
-use common::mm_ctx::MmArc;
-use common::mm_error::MmError;
 use common::mm_number::MmNumber;
 use futures01::Future;
 use keys::KeyPair;
+use mm2_core::mm_ctx::MmArc;
+use mm2_err_handle::prelude::*;
 use mocktopus::macros::*;
 use rpc::v1::types::Bytes as BytesJson;
 use serde_json::Value as Json;
@@ -36,6 +36,16 @@ impl MarketCoinOps for TestCoin {
 
     fn my_address(&self) -> Result<String, String> { unimplemented!() }
 
+    fn get_public_key(&self) -> Result<String, MmError<UnexpectedDerivationMethod>> { unimplemented!() }
+
+    fn sign_message_hash(&self, _message: &str) -> Option<[u8; 32]> { unimplemented!() }
+
+    fn sign_message(&self, _message: &str) -> SignatureResult<String> { unimplemented!() }
+
+    fn verify_message(&self, _signature: &str, _message: &str, _address: &str) -> VerificationResult<bool> {
+        unimplemented!()
+    }
+
     fn my_balance(&self) -> BalanceFut<CoinBalance> { unimplemented!() }
 
     fn base_coin_balance(&self) -> BalanceFut<BigDecimal> { unimplemented!() }
@@ -44,6 +54,8 @@ impl MarketCoinOps for TestCoin {
 
     /// Receives raw transaction bytes in hexadecimal format as input and returns tx hash in hexadecimal format
     fn send_raw_tx(&self, tx: &str) -> Box<dyn Future<Item = String, Error = String> + Send> { unimplemented!() }
+
+    fn send_raw_tx_bytes(&self, tx: &[u8]) -> Box<dyn Future<Item = String, Error = String> + Send> { unimplemented!() }
 
     fn wait_for_confirmations(
         &self,
@@ -226,7 +238,7 @@ impl SwapOps for TestCoin {
         unimplemented!()
     }
 
-    fn get_htlc_key_pair(&self) -> KeyPair { unimplemented!() }
+    fn get_htlc_key_pair(&self) -> Option<KeyPair> { unimplemented!() }
 }
 
 #[async_trait]

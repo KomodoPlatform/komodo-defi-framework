@@ -11,3 +11,4 @@ sha-1 = "0.8.1"
 sha2 = "0.8.0"
 sha3 = "0.8.1"
 siphasher = "0.1.1"
+serialization = { path = "../serialization" }
