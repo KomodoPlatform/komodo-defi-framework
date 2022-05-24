@@ -30,7 +30,7 @@ use futures::{FutureExt, StreamExt, TryFutureExt};
 use futures01::Future;
 use http::Uri;
 use keys::hash::H256;
-use keys::{KeyPair, Public};
+use keys::{KeyPair, Message, Public};
 use mm2_core::mm_ctx::MmArc;
 use mm2_err_handle::prelude::*;
 #[cfg(test)] use mocktopus::macros::*;
@@ -281,6 +281,14 @@ impl ZCoin {
             .await
             .wait_for_simple_blockchain_sync()
             .await
+    }
+
+    #[inline]
+    fn secp_keypair(&self) -> &KeyPair {
+        self.utxo_arc
+            .priv_key_policy
+            .key_pair()
+            .expect("Zcoin doesn't support HW wallets")
     }
 
     async fn wait_for_gen_tx_blockchain_sync(&self) -> Result<SaplingSyncGuard<'_>, MmError<BlockchainScanStopped>> {
@@ -1145,10 +1153,10 @@ impl SwapOps for ZCoin {
     }
 
     fn derive_htlc_key_pair(&self, swap_unique_data: &[u8]) -> KeyPair {
-        let mut hash_input = Vec::with_capacity(32 + swap_unique_data.len());
-        hash_input.extend_from_slice(self.utxo_arc.priv_key_policy.key_pair().unwrap().private_ref());
-        hash_input.extend_from_slice(swap_unique_data);
-        let key = secp_privkey_from_hash(dhash256(&hash_input));
+        let message = Message::from(dhash256(swap_unique_data).take());
+        let signature = self.secp_keypair().private().sign(&message).expect("valid privkey");
+
+        let key = secp_privkey_from_hash(dhash256(&signature));
         key_pair_from_secret(key.as_slice()).expect("valid privkey")
     }
 }
