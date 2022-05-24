@@ -4379,7 +4379,7 @@ dependencies = [
  "spv_validation",
  "testcontainers",
  "tokio",
- "trie-db 0.22.6",
+ "trie-db",
  "trie-root 0.16.0",
  "uuid",
  "wasm-bindgen",
@@ -7446,7 +7446,7 @@ dependencies = [
  "scale-info",
  "sp-core",
  "sp-std",
- "trie-db 0.23.1",
+ "trie-db",
  "trie-root 0.17.0",
 ]
 
@@ -8267,18 +8267,6 @@ dependencies = [
  "wasm-bindgen-futures",
  "wasm-bindgen-test",
  "web-sys",
-]
-
-[[package]]
-name = "trie-db"
-version = "0.22.6"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "9eac131e334e81b6b3be07399482042838adcd7957aa0010231d0813e39e02fa"
-dependencies = [
- "hash-db",
- "hashbrown 0.11.2",
- "log 0.4.14",
- "smallvec 1.6.1",
 ]
 
 [[package]]

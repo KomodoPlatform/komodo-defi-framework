@@ -111,7 +111,7 @@ spv_validation = { path = "../mm2_bitcoin/spv_validation" }
 sp-runtime-interface = { version = "6.0.0", default-features = false, features = ["disable_target_static_assertions"] }
 sp-trie = { version = "6.0", default-features = false }
 
-trie-db = { version = "0.22.6", default-features = false }
+trie-db = { version = "0.23.1", default-features = false }
 trie-root = "0.16.0"
 uuid = { version = "0.7", features = ["serde", "v4"] }
 wasm-timer = "0.2.4"
