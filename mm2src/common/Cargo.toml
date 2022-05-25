@@ -69,7 +69,7 @@ gstuff = { version = "0.7", features = ["nightly"] }
 # indexmap = "=1.6.0" # see https://github.com/KomodoPlatform/atomicDEX-API/issues/1042
 js-sys = "0.3.27"
 serde_bencode = "0.2"
-wasm-bindgen = { version = "0.2.50", features = ["serde-serialize", "nightly"] }
+wasm-bindgen = { version = "0.2.50", features = ["nightly"] }
 wasm-bindgen-futures = "0.4.21"
 wasm-bindgen-test = { version = "0.3.2" }
 web-sys = { version = "0.3.55", features = ["console", "CloseEvent", "DomException", "ErrorEvent", "IdbDatabase", "IdbCursor", "IdbCursorWithValue", "IdbFactory", "IdbIndex", "IdbIndexParameters", "IdbObjectStore", "IdbObjectStoreParameters", "IdbOpenDbRequest", "IdbKeyRange", "IdbTransaction", "IdbTransactionMode", "IdbVersionChangeEvent", "MessageEvent", "WebSocket"] }

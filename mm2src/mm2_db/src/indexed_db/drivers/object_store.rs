@@ -4,7 +4,9 @@ use common::stringify_js_error;
 use futures::channel::mpsc;
 use futures::StreamExt;
 use mm2_err_handle::prelude::*;
+use serde::Serialize;
 use serde_json::Value as Json;
+use serde_wasm_bindgen::Serializer;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
 use wasm_bindgen::prelude::*;
@@ -28,7 +30,8 @@ impl IdbObjectStoreImpl {
 
         // The [`InternalItem::item`] is a flatten field, so if we add the item without the [`InternalItem::_item_id`] id,
         // it will be calculated automatically.
-        let js_value = match JsValue::from_serde(item) {
+        let serializer = Serializer::json_compatible();
+        let js_value = match item.serialize(&serializer) {
             Ok(value) => value,
             Err(e) => return MmError::err(DbTransactionError::ErrorSerializingItem(e.to_string())),
         };
@@ -52,11 +55,14 @@ impl IdbObjectStoreImpl {
         }
 
         let index = index_str.to_owned();
+        let serializer = Serializer::json_compatible();
         let index_value_js =
-            JsValue::from_serde(&index_value).map_to_mm(|e| DbTransactionError::ErrorSerializingIndex {
-                index: index.clone(),
-                description: e.to_string(),
-            })?;
+            index_value
+                .serialize(&serializer)
+                .map_to_mm(|e| DbTransactionError::ErrorSerializingIndex {
+                    index: index.clone(),
+                    description: e.to_string(),
+                })?;
 
         let db_index = match self.object_store.index(index_str) {
             Ok(index) => index,

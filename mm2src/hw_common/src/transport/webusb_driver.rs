@@ -6,6 +6,8 @@ use futures::channel::{mpsc, oneshot};
 use futures::StreamExt;
 use js_sys::{Array, Uint8Array};
 use mm2_err_handle::prelude::*;
+use serde::Serialize;
+use serde_wasm_bindgen::Serializer;
 use wasm_bindgen::prelude::*;
 use wasm_bindgen::JsCast;
 use wasm_bindgen_futures::JsFuture;
@@ -154,7 +156,9 @@ impl WebUsbWrapper {
     }
 
     async fn on_request_device(usb: &Usb, filters: Vec<DeviceFilter>) -> WebUsbResult<()> {
-        let filters_js_value = JsValue::from_serde(&filters)
+        let serializer = Serializer::json_compatible();
+        let filters_js_value = filters
+            .serialize(&serializer)
             .map_to_mm(|e| WebUsbError::Internal(format!("DeviceFilter::serialize should never fail: {}", e)))?;
 
         let request_options = UsbDeviceRequestOptions::new(&filters_js_value);

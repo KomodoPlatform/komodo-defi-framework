@@ -3168,3 +3168,9 @@ fn check_sync_pubkey_state_p2p_res_serde() {
 
     let _v2_from_new: SyncPubkeyOrderbookStateResV2 = rmp_serde::from_read_ref(&new_serialized).unwrap();
 }
+
+#[test]
+fn check_order_serde() {
+    let order_json = r#"{"type":"Maker","order":{"base":"BASE","base_orderbook_ticker":null,"conf_settings":null,"created_at":1653473944616,"matches":{},"max_base_vol":[[1,[10]],[1,[1]]],"min_base_vol":[[0,[]],[1,[1]]],"p2p_privkey":null,"price":[[1,[1]],[1,[1]]],"rel":"REL","rel_orderbook_ticker":null,"save_in_history":true,"started_swaps":[],"updated_at":1653473944616,"uuid":"c6e34a89-a2a8-4fc3-9f16-eb2ecaded3c4"}}"#;
+    let _order: Order = json::from_str(order_json).unwrap();
+}

@@ -3,7 +3,9 @@ use async_trait::async_trait;
 use common::stringify_js_error;
 use js_sys::Array;
 use mm2_err_handle::prelude::*;
+use serde::Serialize;
 use serde_json::Value as Json;
+use serde_wasm_bindgen::Serializer;
 use wasm_bindgen::prelude::*;
 use web_sys::{IdbIndex, IdbKeyRange};
 
@@ -50,12 +52,16 @@ impl CursorOps for IdbMultiKeyCursor {
     fn key_range(&self) -> CursorResult<Option<IdbKeyRange>> {
         let only = Array::new();
 
+        let serializer = Serializer::json_compatible();
         for (field, value) in self.only_values.iter() {
-            let js_value = JsValue::from_serde(value).map_to_mm(|e| CursorError::ErrorSerializingIndexFieldValue {
-                field: field.to_owned(),
-                value: format!("{:?}", value),
-                description: e.to_string(),
-            })?;
+            let js_value =
+                value
+                    .serialize(&serializer)
+                    .map_to_mm(|e| CursorError::ErrorSerializingIndexFieldValue {
+                        field: field.to_owned(),
+                        value: format!("{:?}", value),
+                        description: e.to_string(),
+                    })?;
             only.push(&js_value);
         }
 

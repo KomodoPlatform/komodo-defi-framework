@@ -2,7 +2,9 @@ use super::{CollectCursorAction, CollectItemAction, CursorError, CursorOps, Curs
 use async_trait::async_trait;
 use common::{log::warn, stringify_js_error};
 use mm2_err_handle::prelude::*;
+use serde::Serialize;
 use serde_json::Value as Json;
+use serde_wasm_bindgen::Serializer;
 use wasm_bindgen::prelude::*;
 use web_sys::{IdbIndex, IdbKeyRange};
 
@@ -42,12 +44,15 @@ impl CursorOps for IdbSingleKeyCursor {
     fn db_index(&self) -> &IdbIndex { &self.db_index }
 
     fn key_range(&self) -> CursorResult<Option<IdbKeyRange>> {
+        let serializer = Serializer::json_compatible();
         let js_value =
-            JsValue::from_serde(&self.field_value).map_to_mm(|e| CursorError::ErrorSerializingIndexFieldValue {
-                field: self.field_name.clone(),
-                value: format!("{:?}", self.field_value),
-                description: e.to_string(),
-            })?;
+            self.field_value
+                .serialize(&serializer)
+                .map_to_mm(|e| CursorError::ErrorSerializingIndexFieldValue {
+                    field: self.field_name.clone(),
+                    value: format!("{:?}", self.field_value),
+                    description: e.to_string(),
+                })?;
 
         let key_range = IdbKeyRange::only(&js_value).map_to_mm(|e| CursorError::InvalidKeyRange {
             description: stringify_js_error(&e),
