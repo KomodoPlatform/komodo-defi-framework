@@ -18,7 +18,6 @@ use common::{executor::{spawn, Timer},
 use derive_more::Display;
 use mm2_core::mm_ctx::MmArc;
 use mm2_err_handle::prelude::*;
-use mm2_net::transport::{slurp_url, SlurpError};
 use serde_json::Value as Json;
 use std::{collections::{HashMap, HashSet},
           num::NonZeroUsize};
