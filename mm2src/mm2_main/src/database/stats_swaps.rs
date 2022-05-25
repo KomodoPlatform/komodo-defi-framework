@@ -1,5 +1,4 @@
-use crate::mm2::{lp_price::CEXRates,
-                 lp_swap::{MakerSavedSwap, SavedSwap, SavedSwapIo, TakerSavedSwap}};
+use crate::mm2::lp_swap::{MakerSavedSwap, SavedSwap, SavedSwapIo, TakerSavedSwap};
 use common::log::{debug, error};
 use db_common::{owned_named_params,
                 sqlite::{rusqlite::{types::Value, Connection, OptionalExtension},
@@ -111,10 +110,7 @@ fn split_coin(coin: &str) -> (String, String) {
     (ticker, platform)
 }
 
-fn insert_stats_maker_swap_sql(
-    swap: &MakerSavedSwap,
-    prices: Option<CEXRates>,
-) -> Option<(&'static str, OwnedSqlNamedParams)> {
+fn insert_stats_maker_swap_sql(swap: &MakerSavedSwap) -> Option<(&'static str, OwnedSqlNamedParams)> {
     let swap_data = match swap.swap_data() {
         Ok(d) => d,
         Err(e) => {
@@ -136,9 +132,9 @@ fn insert_stats_maker_swap_sql(
     let (maker_coin_ticker, maker_coin_platform) = split_coin(&swap_data.maker_coin);
     let (taker_coin_ticker, taker_coin_platform) = split_coin(&swap_data.taker_coin);
 
-    let (base_usd_price, rel_usd_price) = match prices {
-        None => (Value::Null, Value::Null),
-        Some(e) => (e.base.to_string().into(), e.base.to_string().into()),
+    let (maker_coin_usd_price, taker_coin_usd_price) = match (&swap.maker_coin_usd_price, &swap.taker_coin_usd_price) {
+        (Some(maker), Some(taker)) => (maker.to_string().into(), taker.to_string().into()),
+        _ => (Value::Null, Value::Null),
     };
 
     let params = owned_named_params! {
@@ -154,8 +150,8 @@ fn insert_stats_maker_swap_sql(
         ":maker_amount":swap_data.maker_amount.to_string(),
         ":taker_amount":swap_data.taker_amount.to_string(),
         ":is_success":(is_success as u32).to_string(),
-        ":maker_coin_usd_price":base_usd_price,
-        ":taker_coin_usd_price":rel_usd_price,
+        ":maker_coin_usd_price":maker_coin_usd_price,
+        ":taker_coin_usd_price":taker_coin_usd_price,
     };
     Some((INSERT_STATS_SWAP, params.as_slice().to_vec()))
 }
@@ -192,10 +188,7 @@ fn insert_stats_maker_swap_sql_init(swap: &MakerSavedSwap) -> Option<(&'static s
     Some((INSERT_STATS_SWAP_ON_INIT, params))
 }
 
-fn insert_stats_taker_swap_sql(
-    swap: &TakerSavedSwap,
-    prices: Option<CEXRates>,
-) -> Option<(&'static str, OwnedSqlNamedParams)> {
+fn insert_stats_taker_swap_sql(swap: &TakerSavedSwap) -> Option<(&'static str, OwnedSqlNamedParams)> {
     let swap_data = match swap.swap_data() {
         Ok(d) => d,
         Err(e) => {
@@ -217,10 +210,11 @@ fn insert_stats_taker_swap_sql(
     let (maker_coin_ticker, maker_coin_platform) = split_coin(&swap_data.maker_coin);
     let (taker_coin_ticker, taker_coin_platform) = split_coin(&swap_data.taker_coin);
 
-    let (base_usd_price, rel_usd_price) = match prices {
-        None => (Value::Null, Value::Null),
-        Some(e) => (e.base.to_string().into(), e.base.to_string().into()),
+    let (maker_coin_usd_price, taker_coin_usd_price) = match (&swap.maker_coin_usd_price, &swap.taker_coin_usd_price) {
+        (Some(maker), Some(taker)) => (maker.to_string().into(), taker.to_string().into()),
+        _ => (Value::Null, Value::Null),
     };
+
     let params = owned_named_params! {
     ":maker_coin": swap_data.maker_coin.clone(),
     ":maker_coin_ticker": maker_coin_ticker,
@@ -234,8 +228,8 @@ fn insert_stats_taker_swap_sql(
     ":maker_amount":swap_data.maker_amount.to_string(),
     ":taker_amount":swap_data.taker_amount.to_string(),
     ":is_success":(is_success as u32).to_string(),
-    ":maker_coin_usd_price":base_usd_price,
-    ":taker_coin_usd_price":rel_usd_price,
+    ":maker_coin_usd_price":maker_coin_usd_price,
+    ":taker_coin_usd_price":taker_coin_usd_price,
     };
     Some((INSERT_STATS_SWAP, params))
 }
@@ -272,7 +266,7 @@ fn insert_stats_taker_swap_sql_init(swap: &TakerSavedSwap) -> Option<(&'static s
     Some((INSERT_STATS_SWAP_ON_INIT, params))
 }
 
-pub fn add_swap_to_index(conn: &Connection, swap: &SavedSwap, prices: Option<CEXRates>) {
+pub fn add_swap_to_index(conn: &Connection, swap: &SavedSwap) {
     let params = vec![swap.uuid().to_string()];
     let query_row = conn.query_row(SELECT_ID_BY_UUID, &params, |row| row.get::<_, i64>(0));
     match query_row.optional() {
@@ -287,8 +281,8 @@ pub fn add_swap_to_index(conn: &Connection, swap: &SavedSwap, prices: Option<CEX
     };
 
     let sql_with_params = match swap {
-        SavedSwap::Maker(maker) => insert_stats_maker_swap_sql(maker, prices),
-        SavedSwap::Taker(taker) => insert_stats_taker_swap_sql(taker, prices),
+        SavedSwap::Maker(maker) => insert_stats_maker_swap_sql(maker),
+        SavedSwap::Taker(taker) => insert_stats_taker_swap_sql(taker),
     };
 
     let (sql, params) = match sql_with_params {

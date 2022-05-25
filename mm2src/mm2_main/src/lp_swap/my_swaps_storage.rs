@@ -1,6 +1,6 @@
 use super::{MyRecentSwapsUuids, MySwapsFilter};
 use async_trait::async_trait;
-use common::{PagingOptions, mm_number::BigDecimal};
+use common::PagingOptions;
 use derive_more::Display;
 use mm2_core::mm_ctx::MmArc;
 use mm2_err_handle::prelude::*;
@@ -34,13 +34,6 @@ pub enum MySwapsError {
 pub trait MySwapsOps {
     async fn save_new_swap(&self, my_coin: &str, other_coin: &str, uuid: Uuid, started_at: u64) -> MySwapsResult<()>;
 
-    async fn update_coins_price(
-        &self,
-        uuid: Uuid,
-        my_coin_usd_price: &BigDecimal,
-        other_coin_usd_price: &BigDecimal,
-    ) -> MySwapsResult<()>;
-
     async fn my_recent_swaps_with_filters(
         &self,
         filter: &MySwapsFilter,
@@ -59,9 +52,7 @@ impl MySwapsStorage {
 #[cfg(not(target_arch = "wasm32"))]
 mod native_impl {
     use super::*;
-    use crate::mm2::database::my_swaps::{insert_new_swap, select_uuids_by_my_swaps_filter, update_coins_price,
-                                         SelectRecentSwapsUuidsErr};
-    use common::mm_number::BigDecimal;
+    use crate::mm2::database::my_swaps::{insert_new_swap, select_uuids_by_my_swaps_filter, SelectRecentSwapsUuidsErr};
     use db_common::sqlite::rusqlite::Error as SqlError;
 
     impl From<SelectRecentSwapsUuidsErr> for MySwapsError {
@@ -92,20 +83,6 @@ mod native_impl {
                 other_coin,
                 &uuid.to_string(),
                 &started_at.to_string(),
-            )?)
-        }
-
-        async fn update_coins_price(
-            &self,
-            uuid: Uuid,
-            my_coin_usd_price: &BigDecimal,
-            other_coin_usd_price: &BigDecimal,
-        ) -> MySwapsResult<()> {
-            Ok(update_coins_price(
-                &self.ctx,
-                &uuid.to_string(),
-                my_coin_usd_price,
-                other_coin_usd_price,
             )?)
         }
 
@@ -201,15 +178,6 @@ mod wasm_impl {
                 started_at: started_at as u32,
             };
             my_swaps_table.add_item(&item).await?;
-            Ok(())
-        }
-
-        async fn update_coins_price(
-            &self,
-            _uuid: Uuid,
-            _my_coin_usd_price: &BigDecimal,
-            _other_coin_usd_price: &BigDecimal,
-        ) -> MySwapsResult<()> {
             Ok(())
         }
 

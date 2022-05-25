@@ -218,14 +218,16 @@ async fn try_price_fetcher_endpoint(
 }
 
 // Consume try_price_fetcher_endpoint result here using MY_PRICE_ENDPOINT1 and if it fails, we'll retry to fetch from MY_PRICE_ENDPOINT2.
-// Returning price data if successful or None if price fetching fails.
-pub async fn fetch_swap_coins_price(base: &str, rel: &str) -> Option<CEXRates> {
+// return price data if successful or None on failure.
+pub async fn fetch_swap_coins_price(base: Option<String>, rel: Option<String>) -> Option<CEXRates> {
     debug!("Trying to fetch coins latest price...");
-    for endpoint in [MY_PRICE_ENDPOINT1, MY_PRICE_ENDPOINT2] {
-        match try_price_fetcher_endpoint(endpoint, base, rel).await {
-            Ok(response) => return Some(response),
-            // Continue fetching endpoints.
-            Err(e) => error!("{:?}", e),
+    if let (Some(base), Some(rel)) = (base, rel) {
+        for endpoint in [MY_PRICE_ENDPOINT1, MY_PRICE_ENDPOINT2] {
+            match try_price_fetcher_endpoint(endpoint, &base, &rel).await {
+                Ok(response) => return Some(response),
+                // Continue fetching endpoints.
+                Err(err) => error!("{:?}", err),
+            }
         }
     }
     // Couldn't fetch prices.
@@ -248,9 +250,9 @@ mod tests {
         use common::block_on;
 
         use super::*;
-        let example_response = None;
-        let example_request = block_on(fetch_swap_coins_price("ETH", "JST"));
-        assert_eq!(example_response, example_request);
+        let expected = None;
+        let actual = block_on(fetch_swap_coins_price(Some("ETH".to_string()), Some("JST".to_string())));
+        assert_eq!(expected, actual);
     }
 
     #[test]

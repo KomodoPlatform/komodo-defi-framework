@@ -2,7 +2,6 @@
 use crate::mm2::lp_swap::{MyRecentSwapsUuids, MySwapsFilter, SavedSwap, SavedSwapIo};
 use common::log::debug;
 use common::PagingOptions;
-use common::mm_number::BigDecimal;
 use db_common::sqlite::offset_by_uuid;
 use db_common::sqlite::rusqlite::{Connection, Error as SqlError, Result as SqlResult, ToSql};
 use db_common::sqlite::sql_builder::SqlBuilder;
@@ -27,22 +26,10 @@ macro_rules! CREATE_MY_SWAPS_TABLE {
 }
 const INSERT_MY_SWAP: &str = "INSERT INTO my_swaps (my_coin, other_coin, uuid, started_at) VALUES (?1, ?2, ?3, ?4)";
 
-const UPDATE_MY_SWAP: &str = "UPDATE my_swaps SET my_coin_usd_price = ?2, other_coin_usd_price = ?3 WHERE uuid = ?1";
-
-const ADD_COINS_PRICE_INFOMATION: &[&str] = &[
-    "ALTER TABLE my_swaps ADD COLUMN my_coin_usd_price DECIMAL;",
-    "ALTER TABLE my_swaps ADD COLUMN other_coin_usd_price DECIMAL;",
-];
-
 /// Returns SQL statements to initially fill my_swaps table using existing DB with JSON files
 pub async fn fill_my_swaps_from_json_statements(ctx: &MmArc) -> Vec<(&'static str, Vec<String>)> {
     let swaps = SavedSwap::load_all_my_swaps_from_db(ctx).await.unwrap_or_default();
     swaps.into_iter().filter_map(insert_saved_swap_sql).collect()
-}
-
-//Add maker_coin_usd_price && taker_coin_usd_price columns to existing stats_swap table without the columns and default to NULL
-pub fn add_coins_price_information_to_my_swap_db() -> Vec<(&'static str, Vec<String>)> {
-    ADD_COINS_PRICE_INFOMATION.iter().map(|sql| (*sql, vec![])).collect()
 }
 
 pub fn insert_new_swap(ctx: &MmArc, my_coin: &str, other_coin: &str, uuid: &str, started_at: &str) -> SqlResult<()> {
@@ -50,22 +37,6 @@ pub fn insert_new_swap(ctx: &MmArc, my_coin: &str, other_coin: &str, uuid: &str,
     let conn = ctx.sqlite_connection();
     let params = [my_coin, other_coin, uuid, started_at];
     conn.execute(INSERT_MY_SWAP, &params).map(|_| ())
-}
-
-pub fn update_coins_price(
-    ctx: &MmArc,
-    uuid: &str,
-    my_coin_usd_price: &BigDecimal,
-    other_coin_usd_price: &BigDecimal,
-) -> SqlResult<()> {
-    debug!("Updating fiat price on moment of trade for {} in SQLite database", uuid);
-    let conn = ctx.sqlite_connection();
-    let params = vec![
-        uuid.to_string(),
-        my_coin_usd_price.to_string(),
-        other_coin_usd_price.to_string(),
-    ];
-    conn.execute(UPDATE_MY_SWAP, &params).map(|_| ())
 }
 
 fn insert_saved_swap_sql(swap: SavedSwap) -> Option<(&'static str, Vec<String>)> {
@@ -195,16 +166,13 @@ mod tests {
     use std::sync::Arc;
     use std::sync::Mutex;
 
-    const GET_SWAP: &str =
-        "SELECT uuid, my_coin, other_coin, started_at, my_coin_usd_price, other_coin_usd_price FROM my_swaps";
+    const GET_SWAP: &str = "SELECT uuid, my_coin, other_coin, started_at FROM my_swaps";
 
     #[derive(Debug, PartialEq)]
     struct MySwap {
         uuid: String,
         my_coin: String,
         other_coin: String,
-        my_coin_usd_price: Option<String>,
-        other_coin_usd_price: Option<String>,
         started_at: i32,
     }
 
@@ -223,8 +191,6 @@ mod tests {
                     my_coin: row.get(1)?,
                     other_coin: row.get(2)?,
                     started_at: row.get(3)?,
-                    my_coin_usd_price: row.get(4)?,
-                    other_coin_usd_price: row.get(5)?,
                 })
             })
         }
@@ -249,8 +215,6 @@ mod tests {
             my_coin: my_coin.to_string(),
             other_coin: other_coin.to_string(),
             started_at,
-            my_coin_usd_price: None,
-            other_coin_usd_price: None,
         };
 
         let my_swap_from_req = get_my_swap(&ctx).expect("MY SWAP DATA");

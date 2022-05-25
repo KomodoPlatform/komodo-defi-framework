@@ -11,6 +11,7 @@ use super::{broadcast_my_swap_status, broadcast_swap_message_every, check_other_
 use crate::mm2::lp_dispatcher::{DispatcherContext, LpEvents};
 use crate::mm2::lp_network::subscribe_to_topic;
 use crate::mm2::lp_ordermatch::{MakerOrderBuilder, OrderConfirmationsSettings};
+use crate::mm2::lp_price::fetch_swap_coins_price;
 use crate::mm2::lp_swap::{broadcast_p2p_tx_msg, tx_helper_topic};
 use crate::mm2::MM_VERSION;
 use bitcrypto::dhash160;
@@ -78,8 +79,10 @@ async fn save_my_maker_swap_event(ctx: &MmArc, swap: &MakerSwap, event: MakerSav
             my_order_uuid: swap.my_order_uuid,
             maker_amount: Some(swap.maker_amount.clone()),
             maker_coin: Some(swap.maker_coin.ticker().to_owned()),
+            maker_coin_usd_price: None,
             taker_amount: Some(swap.taker_amount.clone()),
             taker_coin: Some(swap.taker_coin.ticker().to_owned()),
+            taker_coin_usd_price: None,
             gui: ctx.gui().map(|g| g.to_owned()),
             mm_version: Some(MM_VERSION.to_owned()),
             events: vec![],
@@ -91,6 +94,14 @@ async fn save_my_maker_swap_event(ctx: &MmArc, swap: &MakerSwap, event: MakerSav
 
     if let SavedSwap::Maker(mut maker_swap) = swap {
         maker_swap.events.push(event);
+        if maker_swap.is_success().is_ok() {
+            if let Some(usd) =
+                fetch_swap_coins_price(maker_swap.maker_coin.clone(), maker_swap.taker_coin.clone()).await
+            {
+                maker_swap.maker_coin_usd_price = Some(usd.base);
+                maker_swap.taker_coin_usd_price = Some(usd.rel);
+            };
+        }
         let new_swap = SavedSwap::Maker(maker_swap);
         try_s!(new_swap.save_to_db(ctx).await);
         Ok(())
@@ -1468,8 +1479,10 @@ pub struct MakerSavedSwap {
     pub events: Vec<MakerSavedEvent>,
     pub maker_amount: Option<BigDecimal>,
     pub maker_coin: Option<String>,
+    pub maker_coin_usd_price: Option<BigDecimal>,
     pub taker_amount: Option<BigDecimal>,
     pub taker_coin: Option<String>,
+    pub taker_coin_usd_price: Option<BigDecimal>,
     pub gui: Option<String>,
     pub mm_version: Option<String>,
     pub success_events: Vec<String>,
@@ -1522,8 +1535,10 @@ impl MakerSavedSwap {
             events,
             maker_amount: Some(maker_amount.to_decimal()),
             maker_coin: None,
+            maker_coin_usd_price: None,
             taker_amount: Some(taker_amount.to_decimal()),
             taker_coin: None,
+            taker_coin_usd_price: None,
             gui: None,
             mm_version: None,
             success_events: vec![],
