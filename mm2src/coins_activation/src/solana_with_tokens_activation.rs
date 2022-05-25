@@ -10,13 +10,12 @@ use coins::my_tx_history_v2::TxHistoryStorage;
 use coins::solana::spl::{SplProtocolConf, SplTokenCreationError};
 use coins::{solana_coin_from_conf_and_params, BalanceError, CoinBalance, CoinProtocol, MarketCoinOps,
             SolanaActivationParams, SolanaCoin, SplToken};
-use common::mm_ctx::MmArc;
-use common::mm_error::prelude::MapToMmResult;
-use common::mm_error::MmError;
 use common::mm_metrics::MetricsArc;
 use common::mm_number::BigDecimal;
 use common::Future01CompatExt;
 use futures::future::AbortHandle;
+use mm2_core::mm_ctx::MmArc;
+use mm2_err_handle::prelude::*;
 use serde_derive::{Deserialize, Serialize};
 use serde_json::Value as Json;
 use std::collections::HashMap;

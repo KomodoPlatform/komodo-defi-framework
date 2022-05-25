@@ -13,7 +13,6 @@ use common::jsonrpc_client::{JsonRpcBatchClient, JsonRpcBatchResponse, JsonRpcCl
                              JsonRpcId, JsonRpcMultiClient, JsonRpcRemoteAddr, JsonRpcRequest, JsonRpcRequestEnum,
                              JsonRpcResponse, JsonRpcResponseEnum, JsonRpcResponseFut, RpcRes};
 use common::log::{error, info, warn};
-use common::mm_error::prelude::*;
 use common::mm_number::{BigInt, MmNumber};
 use common::{median, now_float, now_ms, OrdRange};
 use derive_more::Display;
@@ -29,6 +28,7 @@ use http::Uri;
 use itertools::Itertools;
 use keys::hash::H256;
 use keys::{Address, Type as ScriptType};
+use mm2_err_handle::prelude::*;
 #[cfg(test)] use mocktopus::macros::*;
 use rpc::v1::types::{Bytes as BytesJson, Transaction as RpcTransaction, H256 as H256Json};
 use serde_json::{self as json, Value as Json};
@@ -605,7 +605,7 @@ impl JsonRpcClient for NativeClientImpl {
 
     #[cfg(not(target_arch = "wasm32"))]
     fn transport(&self, request: JsonRpcRequestEnum) -> JsonRpcResponseFut {
-        use common::transport::slurp_req;
+        use mm2_net::transport::slurp_req;
 
         let request_body = try_fus!(json::to_string(&request));
         // measure now only body length, because the `hyper` crate doesn't allow to get total HTTP packet length
@@ -2429,7 +2429,7 @@ async fn connect_loop(
         static ref CONN_IDX: Arc<AtomicUsize> = Arc::new(AtomicUsize::new(0));
     }
 
-    use common::transport::wasm_ws::ws_transport;
+    use mm2_net::wasm_ws::ws_transport;
 
     let delay = Arc::new(AtomicU64::new(0));
     loop {

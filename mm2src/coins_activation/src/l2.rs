@@ -3,10 +3,10 @@
 use crate::prelude::*;
 use async_trait::async_trait;
 use coins::{lp_coinfind, lp_coinfind_or_err, CoinProtocol, CoinsContext, MmCoinEnum};
-use common::mm_ctx::MmArc;
-use common::mm_error::prelude::*;
-use common::{HttpStatusCode, NotSame, StatusCode};
+use common::{HttpStatusCode, StatusCode};
 use derive_more::Display;
+use mm2_core::mm_ctx::MmArc;
+use mm2_err_handle::prelude::*;
 use ser_error_derive::SerializeErrorType;
 use serde_derive::{Deserialize, Serialize};
 use serde_json::Value as Json;
@@ -102,7 +102,7 @@ pub async fn enable_l2<L2>(
 where
     L2: L2ActivationOps,
     EnableL2Error: From<L2::ActivationError>,
-    (L2::ActivationError, EnableL2Error): NotSame,
+    (L2::ActivationError, EnableL2Error): NotEqual,
 {
     if let Ok(Some(_)) = lp_coinfind(&ctx, &req.ticker).await {
         return MmError::err(EnableL2Error::L2IsAlreadyActivated(req.ticker));

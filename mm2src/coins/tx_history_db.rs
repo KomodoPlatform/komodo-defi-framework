@@ -1,6 +1,6 @@
 use crate::{TransactionDetails, TxHistoryError, TxHistoryResult};
 use async_trait::async_trait;
-use common::indexed_db::{DbIdentifier, DbInstance, DbTransactionError, DbUpgrader, IndexedDb, IndexedDbBuilder,
+use mm2_db::indexed_db::{DbIdentifier, DbInstance, DbTransactionError, DbUpgrader, IndexedDb, IndexedDbBuilder,
                          InitDbError, InitDbResult, OnUpgradeResult, TableSignature};
 
 const DB_NAME: &str = "tx_history";

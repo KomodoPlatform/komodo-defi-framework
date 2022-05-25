@@ -1,8 +1,8 @@
 use crate::utxo::rpc_clients::{NativeClient, UtxoRpcClientEnum, UtxoRpcError, UtxoRpcFut};
 use bigdecimal::BigDecimal;
 use common::jsonrpc_client::{JsonRpcClient, JsonRpcRequest};
-use common::mm_error::prelude::*;
 use common::mm_number::MmNumber;
+use mm2_err_handle::prelude::*;
 use rpc::v1::types::{Bytes as BytesJson, H256 as H256Json, H264 as H264Json};
 use serde_json::{self as json, Value as Json};
 
@@ -161,10 +161,10 @@ fn try_grpc() {
     use z_coin_grpc::{BlockId, BlockRange};
     use zcash_client_backend::data_api::{chain::{scan_cached_blocks, validate_chain},
                                          error::Error,
-                                         BlockSource, WalletRead, WalletWrite};
+                                         WalletRead, WalletWrite};
     use zcash_client_sqlite::{chain::init::init_cache_database, error::SqliteClientError,
-                              wallet::init::init_wallet_db, wallet::rewind_to_height, BlockDb, WalletDb};
-    use zcash_primitives::consensus::{BlockHeight, Network, Parameters};
+                              wallet::init::init_wallet_db, BlockDb, WalletDb};
+    use zcash_primitives::consensus::Network;
 
     fn insert_into_cache(db_cache: &Connection, height: u32, cb_bytes: Vec<u8>) {
         db_cache
@@ -238,7 +238,7 @@ fn try_grpc() {
                 let rewind_height = lower_bound - 10;
 
                 // b) Rewind scanned block information.
-                db_data.rewind_to_height(rewind_height);
+                db_data.rewind_to_height(rewind_height).unwrap();
                 // c) Delete cached blocks from rewind_height onwards.
                 //
                 // This does imply that assumed-valid blocks will be re-downloaded, but it
