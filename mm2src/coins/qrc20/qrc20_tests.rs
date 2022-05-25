@@ -666,11 +666,9 @@ fn test_sender_trade_preimage_with_allowance() {
     );
     let sender_refund_fee = big_decimal_from_sat(CONTRACT_CALL_GAS_FEE + EXPECTED_TX_FEE, coin.utxo.decimals);
 
-    let actual = block_on(coin.get_sender_trade_fee(
-        TradePreimageValue::Exact(2.5.into()),
-        FeeApproxStage::WithoutApprox,
-    ))
-    .expect("!get_sender_trade_fee");
+    let actual =
+        block_on(coin.get_sender_trade_fee(TradePreimageValue::Exact(2.5.into()), FeeApproxStage::WithoutApprox))
+            .expect("!get_sender_trade_fee");
     // the expected fee should not include any `approve` contract call
     let expected = TradeFee {
         coin: "QTUM".to_owned(),
