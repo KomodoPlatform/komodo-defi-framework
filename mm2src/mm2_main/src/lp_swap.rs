@@ -768,7 +768,7 @@ async fn process_coins_price_update(ctx: &MmArc, swap: &SavedSwap) {
 #[cfg(not(target_arch = "wasm32"))]
 fn add_swap_to_db_index(ctx: &MmArc, swap: &SavedSwap, prices: Option<crate::mm2::lp_price::CEXRates>) {
     let ctx = &ctx.sqlite_connection();
-    crate::mm2::database::stats_swaps::add_swap_to_index(ctx, swap, prices);
+    super::database::stats_swaps::add_swap_to_index(ctx, swap, prices);
 }
 
 #[cfg(not(target_arch = "wasm32"))]

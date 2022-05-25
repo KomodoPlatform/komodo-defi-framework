@@ -1,10 +1,10 @@
-use common::mm_error::prelude::OrMmError;
-use common::mm_error::MmError;
 use common::mm_number::MmNumber;
-use common::transport::{slurp_url, SlurpError};
 use common::StatusCode;
 use common::{log::{debug, error},
              mm_number::BigDecimal};
+use mm2_err_handle::prelude::{MmError, OrMmError};
+use mm2_net::native_http::slurp_url;
+use mm2_net::transport::SlurpError;
 use std::collections::HashMap;
 use std::str::Utf8Error;
 
