@@ -118,5 +118,5 @@ zcash_primitives = { features = ["transparent-inputs"], git = "https://github.co
 zcash_proofs = { git = "https://github.com/KomodoPlatform/librustzcash.git" }
 
 [build-dependencies]
-prost-build = "0.8"
+prost-build = { version = "0.10.3", default-features = false }
 tonic-build = { version = "0.5.2", features = ["prost", "compression"] }

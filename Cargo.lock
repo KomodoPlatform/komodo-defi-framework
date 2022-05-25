@@ -272,7 +272,7 @@ dependencies = [
  "futures-sink",
  "futures-util",
  "memchr 2.4.1",
- "pin-project-lite 0.2.6",
+ "pin-project-lite 0.2.9",
 ]
 
 [[package]]
@@ -303,7 +303,7 @@ dependencies = [
  "libp2p-yamux",
  "log 0.4.14",
  "prost 0.8.0",
- "prost-build 0.8.0",
+ "prost-build 0.10.3",
  "quickcheck",
  "rand 0.7.3",
  "sha2 0.8.2",
@@ -1070,7 +1070,7 @@ dependencies = [
  "futures 0.3.15",
  "gstuff",
  "hex 0.4.2",
- "http 0.2.1",
+ "http 0.2.7",
  "itertools",
  "js-sys",
  "jsonrpc-core 8.0.1",
@@ -1094,7 +1094,7 @@ dependencies = [
  "parking_lot 0.12.0",
  "primitives",
  "prost 0.8.0",
- "prost-build 0.8.0",
+ "prost-build 0.10.3",
  "rand 0.7.3",
  "rlp 0.3.0",
  "rmp-serde",
@@ -1191,7 +1191,7 @@ dependencies = [
  "gstuff",
  "hdrhistogram 7.1.0",
  "hex 0.3.2",
- "http 0.2.1",
+ "http 0.2.7",
  "http-body 0.1.0",
  "hyper",
  "hyper-rustls 0.22.1",
@@ -1500,7 +1500,7 @@ dependencies = [
  "enum-primitive-derive",
  "futures 0.3.15",
  "hex 0.4.2",
- "http 0.2.1",
+ "http 0.2.7",
  "hw_common",
  "keys",
  "mm2_core",
@@ -2550,7 +2550,7 @@ dependencies = [
  "futures-sink",
  "futures-task",
  "memchr 2.4.1",
- "pin-project-lite 0.2.6",
+ "pin-project-lite 0.2.9",
  "pin-utils",
  "slab 0.4.2",
 ]
@@ -2707,7 +2707,7 @@ dependencies = [
  "futures-core",
  "futures-sink",
  "futures-util",
- "http 0.2.1",
+ "http 0.2.7",
  "indexmap",
  "slab 0.4.2",
  "tokio",
@@ -2789,9 +2789,9 @@ dependencies = [
 
 [[package]]
 name = "heck"
-version = "0.3.1"
+version = "0.3.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "20564e78d53d2bb135c343b3f47714a56af2061f1c928fdb541dc7b9fdd94205"
+checksum = "6d621efb26863f0e9924c6ac577e8275e5e6b77455db64ffa6c65c904e9e132c"
 dependencies = [
  "unicode-segmentation",
 ]
@@ -2930,13 +2930,13 @@ dependencies = [
 
 [[package]]
 name = "http"
-version = "0.2.1"
+version = "0.2.7"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "28d569972648b2c512421b5f2a405ad6ac9666547189d0c5477a3f200f3e02f9"
+checksum = "ff8670570af52249509a86f5e3e18a08c60b177071826898fde8997cf5f6bfbb"
 dependencies = [
- "bytes 0.5.6",
+ "bytes 1.1.0",
  "fnv",
- "itoa 0.4.6",
+ "itoa 1.0.1",
 ]
 
 [[package]]
@@ -2958,8 +2958,8 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "1ff4f84919677303da5f147645dbea6b1881f368d03ac84e1dc09031ebd7b2c6"
 dependencies = [
  "bytes 1.1.0",
- "http 0.2.1",
- "pin-project-lite 0.2.6",
+ "http 0.2.7",
+ "pin-project-lite 0.2.9",
 ]
 
 [[package]]
@@ -3021,12 +3021,12 @@ dependencies = [
  "futures-core",
  "futures-util",
  "h2",
- "http 0.2.1",
+ "http 0.2.7",
  "http-body 0.4.4",
  "httparse",
  "httpdate",
  "itoa 1.0.1",
- "pin-project-lite 0.2.6",
+ "pin-project-lite 0.2.9",
  "socket2 0.4.4",
  "tokio",
  "tower-service",
@@ -3057,7 +3057,7 @@ version = "0.23.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "d87c48c02e0dc5e3b849a2041db3029fd066650f8f717c07bf8ed78ccb895cac"
 dependencies = [
- "http 0.2.1",
+ "http 0.2.7",
  "hyper",
  "rustls 0.20.4",
  "tokio",
@@ -3071,7 +3071,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "bbb958482e8c7be4bc3cf272a766a2b0bf1a6755e7a6ae777f017a31d11b13b1"
 dependencies = [
  "hyper",
- "pin-project-lite 0.2.6",
+ "pin-project-lite 0.2.9",
  "tokio",
  "tokio-io-timeout",
 ]
@@ -3491,7 +3491,7 @@ dependencies = [
  "libp2p-core",
  "libp2p-swarm",
  "prost 0.8.0",
- "prost-build 0.8.0",
+ "prost-build 0.10.3",
  "rand 0.7.3",
  "smallvec 1.6.1",
 ]
@@ -4280,7 +4280,7 @@ dependencies = [
  "derive_more",
  "futures 0.1.29",
  "gstuff",
- "http 0.2.1",
+ "http 0.2.7",
  "itertools",
  "ser_error",
  "ser_error_derive",
@@ -4336,7 +4336,7 @@ dependencies = [
  "hash-db",
  "hash256-std-hasher",
  "hex 0.4.2",
- "http 0.2.1",
+ "http 0.2.7",
  "hw_common",
  "hyper",
  "instant",
@@ -4402,7 +4402,7 @@ dependencies = [
  "fomat-macros 0.2.1",
  "futures 0.3.15",
  "gstuff",
- "http 0.2.1",
+ "http 0.2.7",
  "hyper",
  "js-sys",
  "lazy_static",
@@ -4426,7 +4426,7 @@ dependencies = [
  "derive_more",
  "futures 0.3.15",
  "gstuff",
- "http 0.2.1",
+ "http 0.2.7",
  "mm2_err_handle",
  "ser_error",
  "ser_error_derive",
@@ -4447,7 +4447,7 @@ dependencies = [
  "fomat-macros 0.2.1",
  "futures 0.3.15",
  "gstuff",
- "http 0.2.1",
+ "http 0.2.7",
  "lazy_static",
  "mm2_core",
  "mm2_io",
@@ -5096,9 +5096,9 @@ checksum = "257b64915a082f7811703966789728173279bdebb956b143dbcd23f6f970a777"
 
 [[package]]
 name = "pin-project-lite"
-version = "0.2.6"
+version = "0.2.9"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "dc0e1f259c92177c30a4c9d177246edd0a3568b25756a977d0632cf8fa37e905"
+checksum = "e0a7ae3ac2f1173085d398531c705756c94a4c56843785df85a60c1a0afac116"
 
 [[package]]
 name = "pin-utils"
@@ -5292,7 +5292,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "355f634b43cdd80724ee7848f95770e7e70eefa6dcf14fea676216573b8fd603"
 dependencies = [
  "bytes 1.1.0",
- "heck 0.3.1",
+ "heck 0.3.3",
  "itertools",
  "log 0.4.14",
  "multimap",
@@ -5862,7 +5862,7 @@ dependencies = [
  "futures-core",
  "futures-util",
  "h2",
- "http 0.2.1",
+ "http 0.2.7",
  "http-body 0.4.4",
  "hyper",
  "hyper-rustls 0.23.0",
@@ -5872,7 +5872,7 @@ dependencies = [
  "log 0.4.14",
  "mime",
  "percent-encoding 2.1.0",
- "pin-project-lite 0.2.6",
+ "pin-project-lite 0.2.9",
  "rustls 0.20.4",
  "rustls-pemfile",
  "serde",
@@ -8015,7 +8015,7 @@ dependencies = [
  "num_cpus",
  "once_cell",
  "parking_lot 0.12.0",
- "pin-project-lite 0.2.6",
+ "pin-project-lite 0.2.9",
  "signal-hook-registry",
  "socket2 0.4.4",
  "tokio-macros",
@@ -8038,7 +8038,7 @@ version = "1.2.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "30b74022ada614a1b4834de765f9bb43877f910cc8ce4be40e89042c9223a8bf"
 dependencies = [
- "pin-project-lite 0.2.6",
+ "pin-project-lite 0.2.9",
  "tokio",
 ]
 
@@ -8082,7 +8082,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "50145484efff8818b5ccd256697f36863f587da82cf8b409c53adf1e840798e3"
 dependencies = [
  "futures-core",
- "pin-project-lite 0.2.6",
+ "pin-project-lite 0.2.9",
  "tokio",
 ]
 
@@ -8106,7 +8106,7 @@ dependencies = [
  "futures-core",
  "futures-sink",
  "log 0.4.14",
- "pin-project-lite 0.2.6",
+ "pin-project-lite 0.2.9",
  "tokio",
 ]
 
@@ -8133,7 +8133,7 @@ dependencies = [
  "futures-core",
  "futures-util",
  "h2",
- "http 0.2.1",
+ "http 0.2.7",
  "http-body 0.4.4",
  "hyper",
  "hyper-timeout",
@@ -8166,14 +8166,15 @@ dependencies = [
 
 [[package]]
 name = "tower"
-version = "0.4.8"
+version = "0.4.11"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "f60422bc7fefa2f3ec70359b8ff1caff59d785877eb70595904605bcc412470f"
+checksum = "5651b5f6860a99bd1adb59dbfe1db8beb433e73709d9032b413a77e2fb7c066a"
 dependencies = [
  "futures-core",
  "futures-util",
  "indexmap",
  "pin-project 1.0.10",
+ "pin-project-lite 0.2.9",
  "rand 0.8.4",
  "slab 0.4.2",
  "tokio",
@@ -8204,7 +8205,7 @@ checksum = "5d0ecdcb44a79f0fe9844f0c4f33a342cbcbb5117de8001e6ba0dc2351327d09"
 dependencies = [
  "cfg-if 1.0.0",
  "log 0.4.14",
- "pin-project-lite 0.2.6",
+ "pin-project-lite 0.2.9",
  "tracing-attributes",
  "tracing-core",
 ]
@@ -8359,7 +8360,7 @@ dependencies = [
  "base64 0.13.0",
  "byteorder 1.4.3",
  "bytes 1.1.0",
- "http 0.2.1",
+ "http 0.2.7",
  "httparse",
  "log 0.4.14",
  "rand 0.8.4",
@@ -8453,9 +8454,9 @@ dependencies = [
 
 [[package]]
 name = "unicode-segmentation"
-version = "1.6.0"
+version = "1.9.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "e83e153d1053cbb5a118eeff7fd5be06ed99153f00dbcd8ae310c5fb2b22edc0"
+checksum = "7e8820f5d777f6224dc4be3632222971ac30164d4a258d595640799554ebfd99"
 
 [[package]]
 name = "unicode-width"
