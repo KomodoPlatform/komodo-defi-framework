@@ -1078,6 +1078,67 @@ fn test_trade_preimage_fee_includes_change_output_anyway() {
 
     test_get_max_taker_vol_and_trade_with_dynamic_trade_fee(coin, &priv_key);
 }
+#[test]
+fn test_trade_preimage_not_sufficient_base_coin_balance_for_ticker() {
+    wait_for_estimate_smart_fee(30).expect("!wait_for_estimate_smart_fee");
+    // generate QRC20 coin(QICK) fill the wallet with 10 QICK
+    // fill QTUM balance with 0.005 QTUM which is will be than expected transaction fee just to get our desired output for this test.
+    let qick_balance = MmNumber::from("10").to_decimal();
+    let qtum_balance = MmNumber::from("0.005").to_decimal();
+    let (_, _, priv_key) = generate_qrc20_coin_with_random_privkey("QICK", qtum_balance.clone(), qick_balance.clone());
+
+    let qick_contract_address = format!("{:#02x}", unsafe { QICK_TOKEN_ADDRESS.expect("!QICK_TOKEN_ADDRESS") });
+    let confpath = unsafe { QTUM_CONF_PATH.as_ref().expect("Qtum config is not set yet") };
+    let coins = json! ([
+        {"coin":"MYCOIN","asset":"MYCOIN","txversion":4,"overwintered":1,"txfee":1000,"protocol":{"type":"UTXO"}},
+        {"coin":"QICK","required_confirmations":1,"pubtype": 120,"p2shtype": 50,"wiftype": 128,"segwit": true,"mm2": 1,"mature_confirmations": 500,"confpath": confpath,"network":"regtest",
+         "protocol":{"type":"QRC20","protocol_data":{"platform":"QTUM","contract_address":qick_contract_address}}},
+    ]);
+    let mut mm = MarketMakerIt::start(
+        json! ({
+            "gui": "nogui",
+            "netid": 9000,
+            "dht": "on",  // Enable DHT without delay.
+            "passphrase": format!("0x{}", hex::encode(priv_key)),
+            "coins": coins,
+            "rpc_password": "pass",
+            "i_am_seed": true,
+        }),
+        "pass".to_string(),
+        None,
+    )
+    .unwrap();
+    let (_alice_dump_log, _alice_dump_dashboard) = mm_dump(&mm.log_path);
+    block_on(mm.wait_for_log(22., |log| log.contains(">>>>>>>>> DEX stats "))).unwrap();
+
+    log!([block_on(enable_native(&mm, "MYCOIN", &[]))]);
+    log!([block_on(enable_native(&mm, "QICK", &[]))]);
+
+    // txfee > 0, amount = 0.005 => required = txfee + amount > 0.005,
+    // but balance = 0.005
+    // This RPC call should fail because [`QtumCoin::get_sender_trade_fee`] will try to generate a dummy transaction due to the dynamic tx fee,
+    // and this operation must fail with the [`TradePreimageError::NotSufficientBaseCoinBalance`].
+    let rc = block_on(mm.rpc(&json!({
+        "userpass": mm.userpass,
+        "mmrpc": "2.0",
+        "method": "trade_preimage",
+        "params": {
+            "base": "QICK",
+            "rel": "MYCOIN",
+            "swap_method": "setprice",
+            "price": 10,
+            "volume": 1,
+        },
+    })))
+    .unwrap();
+    assert!(!rc.0.is_success(), "trade_preimage success, but should fail: {}", rc.1);
+    let actual: RpcErrorResponse<trade_preimage_error::NotSufficientBalance> = json::from_str(&rc.1).unwrap();
+    assert_eq!(actual.error_type, "NotSufficientBaseCoinBalance");
+    let data = actual.error_data.expect("Expected 'error_data'");
+    assert_eq!(data.coin, "QTUM");
+    assert_eq!(data.available, qtum_balance);
+    assert!(data.required > qtum_balance);
+}
 
 #[test]
 fn test_trade_preimage_dynamic_fee_not_sufficient_balance() {
