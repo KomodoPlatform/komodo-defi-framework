@@ -40,7 +40,7 @@ jobs:
             echo $VERSION > MM_VERSION
           fi
           cat MM_VERSION
-          CC=clang-8 wasm-pack build mm2src/mm2_main --release --target web --out-dir ./target/target-wasm-release
+          CC=clang-8 wasm-pack build mm2src/mm2_main --release --target web --out-dir ../../target/target-wasm-release
         displayName: 'Build MM2 WASM Release'
         condition: ne ( variables['Build.Reason'], 'PullRequest' )
         env:
