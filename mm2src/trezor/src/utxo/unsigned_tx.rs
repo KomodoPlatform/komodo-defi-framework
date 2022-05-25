@@ -2,8 +2,8 @@ use crate::proto::messages_bitcoin as proto_bitcoin;
 use crate::utxo::prev_tx::PrevTx;
 use crate::utxo::TrezorUtxoCoin;
 use crate::{serialize_derivation_path, TrezorError, TrezorResult};
-use common::mm_error::prelude::*;
 use hw_common::primitives::DerivationPath;
+use mm2_err_handle::prelude::*;
 
 /// https://github.com/trezor/trezor-common/blob/master/protob/messages-bitcoin.proto#L16
 #[derive(Clone, Copy)]

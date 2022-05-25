@@ -1,14 +1,11 @@
 use super::*;
 use crate::utxo::rpc_clients::UnspentInfo;
-use crate::utxo::utxo_common::preimage_trade_fee_required_to_send_outputs;
-use crate::TradePreimageError::NotSufficientBalance;
 use crate::TxFeeDetails;
 use bigdecimal::Zero;
 use chain::OutPoint;
-use common::for_tests::MarketMakerIt;
-use common::mm_ctx::MmCtxBuilder;
 use common::{block_on, DEX_FEE_ADDR_RAW_PUBKEY};
 use itertools::Itertools;
+use mm2_core::mm_ctx::MmCtxBuilder;
 use mocktopus::mocking::{MockResult, Mockable};
 use rpc::v1::types::ToTxHash;
 use std::mem::discriminant;
@@ -670,7 +667,7 @@ fn test_sender_trade_preimage_with_allowance() {
     let sender_refund_fee = big_decimal_from_sat(CONTRACT_CALL_GAS_FEE + EXPECTED_TX_FEE, coin.utxo.decimals);
 
     let actual = block_on(coin.get_sender_trade_fee(
-        TradePreimageValue::Exact(27777777777777777777.5.into()),
+        TradePreimageValue::Exact(2.5.into()),
         FeeApproxStage::WithoutApprox,
     ))
     .expect("!get_sender_trade_fee");

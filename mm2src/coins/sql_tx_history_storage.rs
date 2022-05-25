@@ -2,12 +2,12 @@ use crate::my_tx_history_v2::{GetHistoryResult, HistoryCoinType, RemoveTxResult,
                               TxHistoryStorageError};
 use crate::{TransactionDetails, TransactionType};
 use async_trait::async_trait;
-use common::mm_error::prelude::*;
 use common::{async_blocking, PagingOptionsEnum};
 use db_common::sqlite::rusqlite::types::Type;
 use db_common::sqlite::rusqlite::{Connection, Error as SqlError, Row, NO_PARAMS};
 use db_common::sqlite::sql_builder::SqlBuilder;
 use db_common::sqlite::{offset_by_id, query_single_row, string_from_row, validate_table_name, CHECK_TABLE_EXISTS_SQL};
+use mm2_err_handle::prelude::*;
 use rpc::v1::types::Bytes as BytesJson;
 use serde_json::{self as json};
 use std::convert::TryInto;

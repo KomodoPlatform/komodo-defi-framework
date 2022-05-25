@@ -1,13 +1,12 @@
 use crate::hw_client::{HwError, HwProcessingError, TrezorConnectProcessor};
 use crate::hw_ctx::{HardwareWalletArc, HardwareWalletCtx};
 use crate::key_pair_ctx::IguanaArc;
-use common::mm_ctx::MmArc;
-use common::mm_error::prelude::*;
-use common::privkey::{key_pair_from_seed, PrivKeyError};
-use common::NotSame;
+use crate::privkey::{key_pair_from_seed, PrivKeyError};
 use derive_more::Display;
 use hw_common::primitives::EcdsaCurve;
 use keys::Public as PublicKey;
+use mm2_core::mm_ctx::MmArc;
+use mm2_err_handle::prelude::*;
 use parking_lot::RwLock;
 use primitives::hash::H160;
 use std::ops::Deref;
@@ -58,7 +57,7 @@ impl<ProcessorError> From<HwProcessingError<ProcessorError>> for HwCtxInitError<
 }
 
 /// This is required for converting `MmError<HwProcessingError<E>>` into `MmError<InitHwCtxError<E>>`.
-impl<E> NotSame for HwCtxInitError<E> {}
+impl<E> NotEqual for HwCtxInitError<E> {}
 
 pub struct CryptoCtx {
     iguana_ctx: IguanaArc,

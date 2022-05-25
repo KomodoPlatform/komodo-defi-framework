@@ -1,9 +1,9 @@
 use crate::{UtxoSignTxError, UtxoSignTxResult};
 use chain::TransactionOutput;
-use common::mm_error::prelude::*;
 use crypto::trezor::utxo::TrezorOutputScriptType;
 use crypto::DerivationPath;
 use keys::Public as PublicKey;
+use mm2_err_handle::prelude::*;
 use script::{Script, SignatureVersion, TransactionInputSigner, UnsignedTransactionInput};
 
 impl UtxoSignTxError {

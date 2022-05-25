@@ -13,8 +13,6 @@ use crate::{BlockchainNetwork, CoinTransportMetrics, DerivationMethod, HistorySy
 use async_trait::async_trait;
 use chain::TxHashAlgo;
 use common::executor::{spawn, Timer};
-use common::mm_ctx::MmArc;
-use common::mm_error::prelude::*;
 use common::small_rng;
 use crypto::{Bip32DerPathError, Bip44DerPathError, Bip44PathToCoin, CryptoCtx, CryptoInitError, HwWalletType};
 use derive_more::Display;
@@ -25,6 +23,8 @@ use futures::StreamExt;
 use keys::bytes::Bytes;
 pub use keys::{Address, AddressFormat as UtxoAddressFormat, AddressHashEnum, KeyPair, Private, Public, Secret,
                Type as ScriptType};
+use mm2_core::mm_ctx::MmArc;
+use mm2_err_handle::prelude::*;
 use primitives::hash::H256;
 use rand::seq::SliceRandom;
 use serde_json::{self as json, Value as Json};

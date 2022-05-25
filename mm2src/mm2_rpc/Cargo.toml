@@ -1,0 +1,23 @@
+[package]
+name = "mm2_rpc"
+version = "0.1.0"
+edition = "2018"
+
+# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
+
+[dependencies]
+common = { path = "../common" }
+mm2_err_handle = { path = "../mm2_err_handle" }
+derive_more = "0.99"
+futures = { version = "0.3", package = "futures", features = ["compat", "async-await", "thread-pool"] }
+http = "0.2"
+serde = "1"
+serde_json = { version = "1.0", features = ["raw_value", "preserve_order"] }
+ser_error = { path = "../derives/ser_error" }
+ser_error_derive = { path = "../derives/ser_error_derive" }
+
+[target.'cfg(target_arch = "wasm32")'.dependencies]
+gstuff = { version = "0.7", features = ["nightly"] }
+
+[target.'cfg(not(target_arch = "wasm32"))'.dependencies]
+gstuff = { version = "0.7", features = ["crossterm", "nightly"] }
