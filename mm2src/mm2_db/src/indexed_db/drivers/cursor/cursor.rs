@@ -1,7 +1,7 @@
 use super::construct_event_closure;
 use crate::indexed_db::db_driver::{InternalItem, ItemId};
 use async_trait::async_trait;
-use common::stringify_js_error;
+use common::{deserialize_from_js, stringify_js_error};
 use derive_more::Display;
 use futures::channel::mpsc;
 use futures::StreamExt;
@@ -183,8 +183,8 @@ pub trait CursorOps: Sized {
                 _ => break,
             };
 
-            let item: InternalItem = serde_wasm_bindgen::from_value(js_value)
-                .map_to_mm(|e| CursorError::ErrorDeserializingItem(e.to_string()))?;
+            let item: InternalItem =
+                deserialize_from_js(js_value).map_to_mm(|e| CursorError::ErrorDeserializingItem(e.to_string()))?;
 
             let (item_action, cursor_action) = self.on_collect_iter(key, &item.item)?;
             match item_action {

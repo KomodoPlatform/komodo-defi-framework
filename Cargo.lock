@@ -1188,6 +1188,7 @@ dependencies = [
  "futures 0.1.29",
  "futures 0.3.15",
  "futures-cpupool",
+ "getrandom 0.2.6",
  "gstuff",
  "hdrhistogram 7.1.0",
  "hex 0.3.2",
@@ -1221,8 +1222,8 @@ dependencies = [
  "ser_error",
  "ser_error_derive",
  "serde",
- "serde_bencode",
- "serde_bytes 0.11.5",
+ "serde-wasm-bindgen",
+ "serde_bytes",
  "serde_derive",
  "serde_json",
  "serde_repr",
@@ -3003,7 +3004,6 @@ dependencies = [
  "rusb",
  "secp256k1",
  "serde",
- "serde-wasm-bindgen",
  "serde_derive",
  "wasm-bindgen",
  "wasm-bindgen-futures",
@@ -4215,7 +4215,7 @@ dependencies = [
  "rmp-serde",
  "secp256k1",
  "serde",
- "serde_bytes 0.11.5",
+ "serde_bytes",
  "serde_json",
  "sha2 0.9.9",
  "tokio",
@@ -4244,7 +4244,7 @@ dependencies = [
  "primitives",
  "rand 0.7.3",
  "serde",
- "serde_bytes 0.11.5",
+ "serde_bytes",
  "serde_json",
  "shared_ref_counter",
  "uuid",
@@ -4266,7 +4266,6 @@ dependencies = [
  "primitives",
  "rand 0.7.3",
  "serde",
- "serde-wasm-bindgen",
  "serde_json",
  "wasm-bindgen",
  "wasm-bindgen-futures",
@@ -4372,7 +4371,6 @@ dependencies = [
  "ser_error",
  "ser_error_derive",
  "serde",
- "serde-wasm-bindgen",
  "serde_derive",
  "serde_json",
  "serialization",
@@ -6380,25 +6378,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "serde_bencode"
-version = "0.2.1"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "315c49c11b6b10acc209df75b757ee70957b911ecd0e29bcbf2b735ebd580d45"
-dependencies = [
- "serde",
- "serde_bytes 0.10.5",
-]
-
-[[package]]
-name = "serde_bytes"
-version = "0.10.5"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "defbb8a83d7f34cc8380751eeb892b825944222888aff18996ea7901f24aec88"
-dependencies = [
- "serde",
-]
-
-[[package]]
 name = "serde_bytes"
 version = "0.11.5"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -7080,7 +7059,7 @@ dependencies = [
  "rustc_version 0.4.0",
  "rustversion",
  "serde",
- "serde_bytes 0.11.5",
+ "serde_bytes",
  "serde_derive",
  "sha2 0.9.9",
  "sha3 0.9.1",
@@ -7238,7 +7217,7 @@ dependencies = [
  "rustc_version 0.4.0",
  "rustversion",
  "serde",
- "serde_bytes 0.11.5",
+ "serde_bytes",
  "serde_derive",
  "serde_json",
  "sha2 0.9.9",
@@ -7954,9 +7933,9 @@ dependencies = [
 
 [[package]]
 name = "time-macros-impl"
-version = "0.1.1"
+version = "0.1.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "e5c3be1edfad6027c69f5491cf4cb310d1a71ecd6af742788c6ff8bced86b8fa"
+checksum = "fd3c141a1b43194f3f56a1411225df8646c55781d5f26db825b3d98507eb482f"
 dependencies = [
  "proc-macro-hack",
  "proc-macro2 1.0.39",

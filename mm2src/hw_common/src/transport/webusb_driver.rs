@@ -1,13 +1,12 @@
 use crate::transport::{send_event_recv_response, InternalError};
 use common::executor::spawn_local;
-use common::{log::error, stringify_js_error};
+use common::{deserialize_from_js, log::error, serialize_to_js, stringify_js_error};
 use derive_more::Display;
 use futures::channel::{mpsc, oneshot};
 use futures::StreamExt;
 use js_sys::{Array, Uint8Array};
 use mm2_err_handle::prelude::*;
 use serde::Serialize;
-use serde_wasm_bindgen::Serializer;
 use wasm_bindgen::prelude::*;
 use wasm_bindgen::JsCast;
 use wasm_bindgen_futures::JsFuture;
@@ -93,7 +92,7 @@ pub struct WebUsbDeviceInfo {
 impl WebUsbDeviceInfo {
     fn from_usb_device(usb_device: &UsbDevice) -> WebUsbDeviceInfo {
         let interface = match device_interface(usb_device) {
-            Ok(js_value) => serde_wasm_bindgen::from_value::<DeviceInterfaceInfo>(js_value).ok(),
+            Ok(js_value) => deserialize_from_js::<DeviceInterfaceInfo>(js_value).ok(),
             Err(e) => {
                 error!("Error getting device interface: {}", stringify_js_error(&e));
                 None
@@ -156,9 +155,7 @@ impl WebUsbWrapper {
     }
 
     async fn on_request_device(usb: &Usb, filters: Vec<DeviceFilter>) -> WebUsbResult<()> {
-        let serializer = Serializer::json_compatible();
-        let filters_js_value = filters
-            .serialize(&serializer)
+        let filters_js_value = serialize_to_js(&filters)
             .map_to_mm(|e| WebUsbError::Internal(format!("DeviceFilter::serialize should never fail: {}", e)))?;
 
         let request_options = UsbDeviceRequestOptions::new(&filters_js_value);

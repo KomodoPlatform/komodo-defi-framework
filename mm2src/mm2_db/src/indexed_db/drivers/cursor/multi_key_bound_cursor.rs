@@ -1,10 +1,9 @@
 use super::{index_key_as_array, CollectCursorAction, CollectItemAction, CursorBoundValue, CursorError, CursorOps,
             CursorResult, DbFilter};
 use async_trait::async_trait;
-use common::stringify_js_error;
+use common::{deserialize_from_js, serialize_to_js, stringify_js_error};
 use js_sys::Array;
 use mm2_err_handle::prelude::*;
-use serde::Serialize;
 use serde_json::{json, Value as Json};
 use wasm_bindgen::prelude::*;
 use web_sys::{IdbIndex, IdbKeyRange};
@@ -87,17 +86,13 @@ impl CursorOps for IdbMultiKeyBoundCursor {
         let lower = Array::new();
         let upper = Array::new();
 
-        let serializer = serde_wasm_bindgen::Serializer::json_compatible();
         // first, push the `only` values
         for (field, value) in self.only_values.iter() {
-            let js_value =
-                value
-                    .serialize(&serializer)
-                    .map_to_mm(|e| CursorError::ErrorSerializingIndexFieldValue {
-                        field: field.to_owned(),
-                        value: format!("{:?}", value),
-                        description: e.to_string(),
-                    })?;
+            let js_value = serialize_to_js(value).map_to_mm(|e| CursorError::ErrorSerializingIndexFieldValue {
+                field: field.to_owned(),
+                value: format!("{:?}", value),
+                description: e.to_string(),
+            })?;
             lower.push(&js_value);
             upper.push(&js_value);
         }
@@ -128,7 +123,7 @@ impl CursorOps for IdbMultiKeyBoundCursor {
         let index_keys: Vec<Json> = index_keys_js_array
             .iter()
             .map(|js_value| {
-                serde_wasm_bindgen::from_value(js_value).map_to_mm(|e| CursorError::ErrorDeserializingIndexValue {
+                deserialize_from_js(js_value).map_to_mm(|e| CursorError::ErrorDeserializingIndexValue {
                     description: e.to_string(),
                 })
             }) // Item = Result<Json, MmError<CursorError>>
@@ -228,9 +223,8 @@ mod tests {
 
     /// The given indexes are expected to be in the bound.
     fn test_in_bound_indexes(cursor: &mut IdbMultiKeyBoundCursor, input_indexes: Vec<Json>) {
-        let serializer = serde_wasm_bindgen::Serializer::json_compatible();
         for input_index in input_indexes {
-            let input_index_js_value = input_index.serialize(&serializer).unwrap();
+            let input_index_js_value = serialize_to_js(&input_index).unwrap();
             let result = cursor.on_collect_iter(input_index_js_value, &Json::Null);
             assert_eq!(
                 result,
@@ -245,16 +239,15 @@ mod tests {
     /// * Index that is out of bound;
     /// * Next index that is expected to be returned.
     fn test_out_of_bound_indexes_with_next(cursor: &mut IdbMultiKeyBoundCursor, input_indexes: Vec<(Json, Json)>) {
-        let serializer = serde_wasm_bindgen::Serializer::json_compatible();
         for (input_index, expected_next) in input_indexes {
-            let input_index_js_value = input_index.serialize(&serializer).unwrap();
+            let input_index_js_value = serialize_to_js(&input_index).unwrap();
             let (item_action, cursor_action) = cursor
                 .on_collect_iter(input_index_js_value, &Json::Null)
                 .expect(&format!("Error due to the index '{:?}'", input_index));
 
             let actual_next: Json = match cursor_action {
                 CollectCursorAction::ContinueWithValue(next_index_js_value) => {
-                    serde_wasm_bindgen::from_value(next_index_js_value).expect("Error deserializing next index}")
+                    deserialize_from_js(next_index_js_value).expect("Error deserializing next index}")
                 },
                 action => panic!(
                     "Expected 'CollectCursorAction::ContinueWithValue', found '{:?}'",
@@ -268,9 +261,8 @@ mod tests {
 
     // `input_indexes` are expected to be out of bound and can't be found next index to continue.
     fn test_out_of_bound_indexes(cursor: &mut IdbMultiKeyBoundCursor, input_indexes: Vec<Json>) {
-        let serializer = serde_wasm_bindgen::Serializer::json_compatible();
         for input_index in input_indexes {
-            let input_index_js_value = input_index.serialize(&serializer).unwrap();
+            let input_index_js_value = serialize_to_js(&input_index).unwrap();
             let result = cursor.on_collect_iter(input_index_js_value, &Json::Null);
             assert_eq!(
                 result,
@@ -522,8 +514,6 @@ mod tests {
 
         //////////////////
 
-        let serializer = serde_wasm_bindgen::Serializer::json_compatible();
-
         // The following indexes must lead to the `CursorError::TypeMismatch` error.
         let input_indexes: Vec<_> = vec![
             // the second field is expected to be `i32`, but it's `u32`
@@ -534,7 +524,7 @@ mod tests {
             (json!("Foo"), "js_sys::Array"),
         ];
         for (input_index, expected_type) in input_indexes {
-            let input_index_js_value = input_index.serialize(&serializer).unwrap();
+            let input_index_js_value = serialize_to_js(&input_index).unwrap();
             let error = cursor
                 .on_collect_iter(input_index_js_value, &Json::Null)
                 .expect_err(&format!("'{:?}' must lead to 'CursorError::TypeMismatch'", input_index));
@@ -552,7 +542,7 @@ mod tests {
             json!([2, 10, 1, 2]),
         ];
         for input_index in input_indexes {
-            let input_index_js_value = input_index.serialize(&serializer).unwrap();
+            let input_index_js_value = serialize_to_js(&input_index).unwrap();
             let error = cursor
                 .on_collect_iter(input_index_js_value, &Json::Null)
                 .expect_err(&format!("'{:?}' must lead to 'CursorError::TypeMismatch'", input_index));
