@@ -730,18 +730,13 @@ pub async fn insert_new_swap_to_db(
 
 #[cfg(not(target_arch = "wasm32"))]
 fn add_swap_to_db_index(ctx: &MmArc, swap: &SavedSwap) {
-    let ctx = &ctx.sqlite_connection();
-    super::database::stats_swaps::add_swap_to_index(ctx, swap);
+    let conn = &ctx.sqlite_connection();
+    super::database::stats_swaps::add_swap_to_index(conn, swap);
 }
 
 #[cfg(not(target_arch = "wasm32"))]
 async fn save_stats_swap(ctx: &MmArc, swap: &SavedSwap) -> Result<(), String> {
     try_s!(swap.save_to_stats_db(ctx).await);
-    // let prices = crate::mm2::lp_price::fetch_swap_coins_price(
-    //     swap.maker_coin_ticker().unwrap_or_else(|_| "".to_string()).as_str(),
-    //     swap.taker_coin_ticker().unwrap_or_else(|_| "".to_string()).as_str(),
-    // )
-    // .await;
     add_swap_to_db_index(ctx, swap);
     Ok(())
 }

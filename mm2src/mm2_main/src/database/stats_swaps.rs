@@ -134,7 +134,7 @@ fn insert_stats_maker_swap_sql(swap: &MakerSavedSwap) -> Option<(&'static str, O
 
     let (maker_coin_usd_price, taker_coin_usd_price) = match (&swap.maker_coin_usd_price, &swap.taker_coin_usd_price) {
         (Some(maker), Some(taker)) => (maker.to_string().into(), taker.to_string().into()),
-        _ => (Value::Null, Value::Null),
+        _ => (None, None),
     };
 
     let params = owned_named_params! {
@@ -212,7 +212,7 @@ fn insert_stats_taker_swap_sql(swap: &TakerSavedSwap) -> Option<(&'static str, O
 
     let (maker_coin_usd_price, taker_coin_usd_price) = match (&swap.maker_coin_usd_price, &swap.taker_coin_usd_price) {
         (Some(maker), Some(taker)) => (maker.to_string().into(), taker.to_string().into()),
-        _ => (Value::Null, Value::Null),
+        _ => (None, None),
     };
 
     let params = owned_named_params! {
@@ -290,13 +290,13 @@ pub fn add_swap_to_index(conn: &Connection, swap: &SavedSwap) {
         None => return,
     };
 
-    debug!("Executing query {} with params {:?}", sql, &params);
+    debug!("Executing query {} with params {:?}", sql, params);
     if let Err(e) = conn.execute_named(sql, &params.as_sql_named_params()) {
         error!("Error {} on query {} with params {:?}", e, sql, params);
     };
 }
 
-//Add maker_coin_usd_price && taker_coin_usd_price columns to existing stats_swap table default to NULL
+/// Add `maker_coin_usd_price` && `taker_coin_usd_price` columns to existing `stats_swap` table default to `NULL`
 pub fn add_coins_price_information_to_stats_swap_db() -> Vec<(&'static str, Vec<String>)> {
     ADD_COINS_PRICE_INFOMATION.iter().map(|sql| (*sql, vec![])).collect()
 }

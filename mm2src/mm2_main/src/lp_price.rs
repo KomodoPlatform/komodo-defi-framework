@@ -7,8 +7,10 @@ use mm2_net::transport::SlurpError;
 use std::collections::HashMap;
 use std::str::Utf8Error;
 
-const MY_PRICE_ENDPOINT1: &str = "https://prices.komodo.live:1313/api/v2/tickers";
-const MY_PRICE_ENDPOINT2: &str = "https://prices.cipig.net:1717/api/v2/tickers";
+const PRICE_ENDPOINTS: [&str; 2] = [
+    "https://prices.komodo.live:1313/api/v2/tickers",
+    "https://prices.cipig.net:1717/api/v2/tickers",
+];
 
 #[derive(Debug)]
 pub enum PriceServiceRequestError {
@@ -234,7 +236,7 @@ async fn try_price_fetcher_endpoint(
 pub async fn fetch_swap_coins_price(base: Option<String>, rel: Option<String>) -> Option<CEXRates> {
     debug!("Trying to fetch coins latest price...");
     if let (Some(base), Some(rel)) = (base, rel) {
-        for endpoint in [MY_PRICE_ENDPOINT1, MY_PRICE_ENDPOINT2] {
+        for endpoint in PRICE_ENDPOINTS {
             match try_price_fetcher_endpoint(endpoint, &base, &rel).await {
                 Ok(response) => return Some(response),
                 // Continue fetching endpoints.
@@ -254,7 +256,9 @@ mod tests {
         use common::block_on;
 
         use super::*;
-        let _resp = block_on(process_price_request(MY_PRICE_ENDPOINT1)).unwrap();
+        let _resp = for endpoint in PRICE_ENDPOINTS {
+            block_on(process_price_request(endpoint)).unwrap();
+        };
     }
 
     #[test]

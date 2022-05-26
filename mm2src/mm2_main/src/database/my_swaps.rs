@@ -26,17 +26,17 @@ macro_rules! CREATE_MY_SWAPS_TABLE {
 }
 const INSERT_MY_SWAP: &str = "INSERT INTO my_swaps (my_coin, other_coin, uuid, started_at) VALUES (?1, ?2, ?3, ?4)";
 
-/// Returns SQL statements to initially fill my_swaps table using existing DB with JSON files
-pub async fn fill_my_swaps_from_json_statements(ctx: &MmArc) -> Vec<(&'static str, Vec<String>)> {
-    let swaps = SavedSwap::load_all_my_swaps_from_db(ctx).await.unwrap_or_default();
-    swaps.into_iter().filter_map(insert_saved_swap_sql).collect()
-}
-
 pub fn insert_new_swap(ctx: &MmArc, my_coin: &str, other_coin: &str, uuid: &str, started_at: &str) -> SqlResult<()> {
     debug!("Inserting new swap {} to the SQLite database", uuid);
     let conn = ctx.sqlite_connection();
     let params = [my_coin, other_coin, uuid, started_at];
     conn.execute(INSERT_MY_SWAP, &params).map(|_| ())
+}
+
+/// Returns SQL statements to initially fill my_swaps table using existing DB with JSON files
+pub async fn fill_my_swaps_from_json_statements(ctx: &MmArc) -> Vec<(&'static str, Vec<String>)> {
+    let swaps = SavedSwap::load_all_my_swaps_from_db(ctx).await.unwrap_or_default();
+    swaps.into_iter().filter_map(insert_saved_swap_sql).collect()
 }
 
 fn insert_saved_swap_sql(swap: SavedSwap) -> Option<(&'static str, Vec<String>)> {
@@ -150,74 +150,4 @@ pub fn select_uuids_by_my_swaps_filter(
         total_count,
         skipped,
     })
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-    use crate::mm2::database::init_and_migrate_db;
-    use common::block_on;
-    use common::new_uuid;
-    use db_common::sqlite::rusqlite::Connection;
-    use db_common::sqlite::rusqlite::Error;
-    use db_common::sqlite::rusqlite::NO_PARAMS;
-    use mm2_core::mm_ctx::MmCtxBuilder;
-    use rand::Rng;
-    use std::sync::Arc;
-    use std::sync::Mutex;
-
-    const GET_SWAP: &str = "SELECT uuid, my_coin, other_coin, started_at FROM my_swaps";
-
-    #[derive(Debug, PartialEq)]
-    struct MySwap {
-        uuid: String,
-        my_coin: String,
-        other_coin: String,
-        started_at: i32,
-    }
-
-    #[test]
-    fn insert_new_swap_test() {
-        let ctx = MmCtxBuilder::default().into_mm_arc();
-        let connection = Connection::open_in_memory().unwrap();
-        ctx.sqlite_connection.pin(Arc::new(Mutex::new(connection))).unwrap();
-        block_on(init_and_migrate_db(&ctx)).unwrap();
-
-        fn get_my_swap(ctx: &MmArc) -> SqlResult<MySwap, Error> {
-            let conn = ctx.sqlite_connection();
-            conn.query_row(GET_SWAP, NO_PARAMS, |row| {
-                Ok(MySwap {
-                    uuid: row.get(0)?,
-                    my_coin: row.get(1)?,
-                    other_coin: row.get(2)?,
-                    started_at: row.get(3)?,
-                })
-            })
-        }
-
-        let mut rng = rand::thread_rng();
-
-        let uuid = new_uuid();
-        let my_coin = &"ETH";
-        let other_coin = &"JST";
-        let started_at = rng.gen_range(1000, 5000);
-        let result = insert_new_swap(
-            &ctx,
-            my_coin,
-            other_coin,
-            uuid.to_string().as_str(),
-            &started_at.to_string().as_str(),
-        );
-        assert_eq!((), result.unwrap());
-
-        let my_swap_example = MySwap {
-            uuid: uuid.to_string(),
-            my_coin: my_coin.to_string(),
-            other_coin: other_coin.to_string(),
-            started_at,
-        };
-
-        let my_swap_from_req = get_my_swap(&ctx).expect("MY SWAP DATA");
-        assert_eq!(my_swap_example, my_swap_from_req)
-    }
 }
