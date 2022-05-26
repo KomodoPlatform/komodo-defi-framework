@@ -20,6 +20,7 @@ use gstuff::any_to_str;
 use js_sys::Array;
 use mm2_rpc::wasm_rpc::WasmRpcResponse;
 use num_traits::FromPrimitive;
+use serde::Serialize;
 use serde_json::{self as json, Value as Json};
 use std::cell::RefCell;
 use std::sync::Mutex;
@@ -85,7 +86,7 @@ impl From<MainParams> for LpMainParams {
 /// ```
 #[wasm_bindgen]
 pub fn mm2_main(params: JsValue, log_cb: js_sys::Function) -> Result<(), JsValue> {
-    let params: MainParams = match params.into_serde() {
+    let params: MainParams = match serde_wasm_bindgen::from_value(params.clone()) {
         Ok(p) => p,
         Err(e) => {
             console_err!("Expected 'MainParams' as the first argument, found {:?}: {}", params, e);
@@ -197,7 +198,7 @@ impl From<Mm2RpcErr> for JsValue {
 /// ```
 #[wasm_bindgen]
 pub async fn mm2_rpc(payload: JsValue) -> Result<JsValue, JsValue> {
-    let request_json: Json = match payload.into_serde() {
+    let request_json: Json = match serde_wasm_bindgen::from_value(payload) {
         Ok(p) => p,
         Err(e) => {
             console_err!("Payload is not a valid JSON: {}", e);
@@ -222,7 +223,8 @@ pub async fn mm2_rpc(payload: JsValue) -> Result<JsValue, JsValue> {
     let wasm_rpc = ctx.wasm_rpc.ok_or(JsValue::from(Mm2RpcErr::NotRunning))?;
     let response: Mm2RpcResponse = wasm_rpc.request(request_json).await.into();
 
-    JsValue::from_serde(&response).map_err(|e| {
+    let serializer = serde_wasm_bindgen::Serializer::json_compatible();
+    response.serialize(&serializer).map_err(|e| {
         console_err!("Couldn't represent the response '{:?}' as a JsValue: {}", response, e);
         JsValue::from(Mm2RpcErr::InternalError)
     })
@@ -243,4 +245,9 @@ pub async fn mm2_rpc(payload: JsValue) -> Result<JsValue, JsValue> {
 /// }
 /// ```
 #[wasm_bindgen]
-pub fn mm2_version() -> JsValue { JsValue::from_serde(&MmVersionResult::new()).expect("expected valid JSON object") }
+pub fn mm2_version() -> JsValue {
+    let serializer = serde_wasm_bindgen::Serializer::json_compatible();
+    MmVersionResult::new()
+        .serialize(&serializer)
+        .expect("expected serialization to succeed")
+}
