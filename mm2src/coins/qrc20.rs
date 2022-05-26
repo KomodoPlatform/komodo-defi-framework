@@ -693,7 +693,7 @@ impl UtxoCommonOps for Qrc20Coin {
     ) -> TradePreimageResult<BigDecimal> {
         utxo_common::preimage_trade_fee_required_to_send_outputs(
             self,
-            &self.platform_ticker().to_string(),
+            self.platform_ticker(),
             outputs,
             fee_policy,
             gas_fee,

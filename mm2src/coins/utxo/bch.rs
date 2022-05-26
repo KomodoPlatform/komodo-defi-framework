@@ -826,7 +826,7 @@ impl UtxoCommonOps for BchCoin {
     ) -> TradePreimageResult<BigDecimal> {
         utxo_common::preimage_trade_fee_required_to_send_outputs(
             self,
-            &self.ticker().to_string(),
+            self.ticker(),
             outputs,
             fee_policy,
             gas_fee,

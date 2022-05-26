@@ -2637,7 +2637,7 @@ pub fn get_trade_fee<T: UtxoCommonOps>(coin: T) -> Box<dyn Future<Item = TradeFe
 /// So we should always return a fee as if a transaction includes the change output.
 pub async fn preimage_trade_fee_required_to_send_outputs<T>(
     coin: &T,
-    ticker: &String,
+    ticker: &str,
     outputs: Vec<TransactionOutput>,
     fee_policy: FeePolicy,
     gas_fee: Option<u64>,
@@ -2698,7 +2698,7 @@ where
                 tx_builder = tx_builder.with_gas_fee(gas);
             }
             let (tx, data) = tx_builder.build().await.mm_err(|e| {
-                TradePreimageError::from_generate_tx_error(e, ticker.to_owned(), decimals, is_amount_upper_bound)
+                TradePreimageError::from_generate_tx_error(e, ticker.to_string(), decimals, is_amount_upper_bound)
             })?;
 
             let total_fee = if tx.outputs.len() == outputs_count {
