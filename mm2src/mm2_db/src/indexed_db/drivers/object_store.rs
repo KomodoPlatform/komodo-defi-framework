@@ -93,12 +93,15 @@ impl IdbObjectStoreImpl {
             return MmError::err(DbTransactionError::TransactionAborted);
         }
 
+        let serializer = serde_wasm_bindgen::Serializer::json_compatible();
         let index = index_str.to_owned();
         let index_value_js =
-            JsValue::from_serde(&index_value).map_to_mm(|e| DbTransactionError::ErrorSerializingIndex {
-                index: index.clone(),
-                description: e.to_string(),
-            })?;
+            index_value
+                .serialize(&serializer)
+                .map_to_mm(|e| DbTransactionError::ErrorSerializingIndex {
+                    index: index.clone(),
+                    description: e.to_string(),
+                })?;
 
         let db_index = match self.object_store.index(index_str) {
             Ok(index) => index,
@@ -149,7 +152,8 @@ impl IdbObjectStoreImpl {
         }
 
         let item_with_key = InternalItem { _item_id, item };
-        let js_value = match JsValue::from_serde(&item_with_key) {
+        let serializer = serde_wasm_bindgen::Serializer::json_compatible();
+        let js_value = match item_with_key.serialize(&serializer) {
             Ok(value) => value,
             Err(e) => return MmError::err(DbTransactionError::ErrorSerializingItem(e.to_string())),
         };
@@ -237,8 +241,7 @@ impl IdbObjectStoreImpl {
             Err(e) => return MmError::err(DbTransactionError::UnexpectedState(stringify_js_error(&e))),
         };
 
-        result_js_value
-            .into_serde()
+        serde_wasm_bindgen::from_value(result_js_value)
             .map_to_mm(|e| DbTransactionError::ErrorDeserializingItem(e.to_string()))
     }
 
@@ -252,7 +255,7 @@ impl IdbObjectStoreImpl {
             return Ok(Vec::new());
         }
 
-        let items: Vec<InternalItem> = match result_js_value.into_serde() {
+        let items: Vec<InternalItem> = match serde_wasm_bindgen::from_value(result_js_value) {
             Ok(items) => items,
             Err(e) => return MmError::err(DbTransactionError::ErrorDeserializingItem(e.to_string())),
         };
@@ -270,8 +273,7 @@ impl IdbObjectStoreImpl {
             return Ok(Vec::new());
         }
 
-        result_js_value
-            .into_serde()
+        serde_wasm_bindgen::from_value(result_js_value)
             .map_to_mm(|e| DbTransactionError::ErrorDeserializingItem(e.to_string()))
     }
 

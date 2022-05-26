@@ -101,7 +101,7 @@ regex = "1"
 script = { path = "../mm2_bitcoin/script" }
 secp256k1 = { version = "0.20", features = ["rand"] }
 serde = "1.0"
-serde_json = { version = "1.0", features = ["raw_value"] }
+serde_json = { version = "1.0", features = ["preserve_order", "raw_value"] }
 serde_derive = "1.0"
 ser_error = { path = "../derives/ser_error" }
 ser_error_derive = { path = "../derives/ser_error_derive" }
@@ -118,7 +118,7 @@ wasm-timer = "0.2.4"
 
 [target.'cfg(target_arch = "wasm32")'.dependencies]
 js-sys = { version = "0.3.27" }
-wasm-bindgen = { version = "=0.2.78", features = ["serde-serialize", "nightly"] }
+wasm-bindgen = { version = "=0.2.78", features = ["nightly"] }
 wasm-bindgen-futures = { version = "0.4.1" }
 wasm-bindgen-test = { version = "0.3.1" }
 web-sys = { version = "0.3.55", features = ["console"] }

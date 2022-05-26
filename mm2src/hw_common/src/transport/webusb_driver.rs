@@ -93,7 +93,7 @@ pub struct WebUsbDeviceInfo {
 impl WebUsbDeviceInfo {
     fn from_usb_device(usb_device: &UsbDevice) -> WebUsbDeviceInfo {
         let interface = match device_interface(usb_device) {
-            Ok(js_value) => js_value.into_serde::<DeviceInterfaceInfo>().ok(),
+            Ok(js_value) => serde_wasm_bindgen::from_value::<DeviceInterfaceInfo>(js_value).ok(),
             Err(e) => {
                 error!("Error getting device interface: {}", stringify_js_error(&e));
                 None
