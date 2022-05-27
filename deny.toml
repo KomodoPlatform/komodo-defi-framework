@@ -47,10 +47,14 @@ yanked = "warn"
 notice = "warn"
 # A list of advisory IDs to ignore. Note that ignored advisories will still
 # output a note when they are encountered.
+
+# RUSTSEC-2021-0113 is related to metrics-util crate that is not actively used for now despite being still present in deps tree
+# RUSTSEC-2021-0113 and RUSTSEC-2022-0006 are reported only because lightning crate depends on old regex and thread-local deps,
+# these will be removed after rust-lightning update https://github.com/KomodoPlatform/atomicDEX-API/issues/1298
 ignore = [
     "RUSTSEC-2022-0013",
     "RUSTSEC-2021-0113",
-    "RUSTSEC-2022-0006",
+    "RUSTSEC-2022-0006"
     #"RUSTSEC-0000-0000",
 ]
 # Threshold for security vulnerabilities, any vulnerability with a CVSS score
