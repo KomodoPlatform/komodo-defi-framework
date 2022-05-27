@@ -1084,7 +1084,7 @@ dependencies = [
  "rpc",
  "rpc_task",
  "rust-ini",
- "rustls 0.19.1",
+ "rustls 0.20.4",
  "script",
  "secp256k1",
  "ser_error",
@@ -1104,7 +1104,7 @@ dependencies = [
  "spv_validation",
  "tiny-bip39",
  "tokio",
- "tokio-rustls 0.22.0",
+ "tokio-rustls 0.23.2",
  "tonic",
  "tonic-build",
  "utxo_signer",
@@ -1113,7 +1113,7 @@ dependencies = [
  "wasm-bindgen-test",
  "web-sys",
  "web3",
- "webpki-roots 0.21.1",
+ "webpki-roots",
  "winapi 0.3.9",
  "zbase32",
  "zcash_client_backend",
@@ -3020,7 +3020,7 @@ dependencies = [
  "rustls 0.20.4",
  "tokio",
  "tokio-rustls 0.23.2",
- "webpki-roots 0.22.3",
+ "webpki-roots",
 ]
 
 [[package]]
@@ -3641,7 +3641,7 @@ dependencies = [
  "rw-stream-sink",
  "soketto",
  "url 2.2.2",
- "webpki-roots 0.22.3",
+ "webpki-roots",
 ]
 
 [[package]]
@@ -5834,7 +5834,7 @@ dependencies = [
  "wasm-bindgen",
  "wasm-bindgen-futures",
  "web-sys",
- "webpki-roots 0.22.3",
+ "webpki-roots",
  "winreg",
 ]
 
@@ -8288,7 +8288,7 @@ dependencies = [
  "url 2.2.2",
  "utf-8",
  "webpki 0.22.0",
- "webpki-roots 0.22.3",
+ "webpki-roots",
 ]
 
 [[package]]
@@ -8755,15 +8755,6 @@ checksum = "f095d78192e208183081cc07bc5515ef55216397af48b873e5edcd72637fa1bd"
 dependencies = [
  "ring",
  "untrusted",
-]
-
-[[package]]
-name = "webpki-roots"
-version = "0.21.1"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "aabe153544e473b775453675851ecc86863d2a81d786d741f6b76778f2a48940"
-dependencies = [
- "webpki 0.21.3",
 ]
 
 [[package]]

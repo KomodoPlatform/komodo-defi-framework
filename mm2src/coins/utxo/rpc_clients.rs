@@ -51,12 +51,16 @@ cfg_native! {
     use futures::io::Error;
     use http::header::AUTHORIZATION;
     use http::{Request, StatusCode};
+    use rustls::client::ServerCertVerified;
+    use rustls::{Certificate, ClientConfig, ServerName, OwnedTrustAnchor, RootCertStore};
+    use std::convert::TryFrom;
     use std::pin::Pin;
     use std::task::{Context, Poll};
+    use std::time::SystemTime;
     use tokio::io::{AsyncBufReadExt, AsyncRead, AsyncWrite, AsyncWriteExt, BufReader, ReadBuf};
     use tokio::net::TcpStream;
     use tokio_rustls::{client::TlsStream, TlsConnector};
-    use tokio_rustls::webpki::DNSNameRef;
+    use tokio_rustls::webpki::DnsNameRef;
     use webpki_roots::TLS_SERVER_ROOTS;
 }
 
@@ -78,15 +82,17 @@ pub struct AddressPurpose {
 pub struct NoCertificateVerification {}
 
 #[cfg(not(target_arch = "wasm32"))]
-impl rustls::ServerCertVerifier for NoCertificateVerification {
+impl rustls::client::ServerCertVerifier for NoCertificateVerification {
     fn verify_server_cert(
         &self,
-        _roots: &rustls::RootCertStore,
-        _presented_certs: &[rustls::Certificate],
-        _dns_name: DNSNameRef<'_>,
-        _ocsp: &[u8],
-    ) -> Result<rustls::ServerCertVerified, rustls::TLSError> {
-        Ok(rustls::ServerCertVerified::assertion())
+        _: &Certificate,
+        _: &[Certificate],
+        _: &ServerName,
+        _: &mut dyn Iterator<Item = &[u8]>,
+        _: &[u8],
+        _: SystemTime,
+    ) -> Result<ServerCertVerified, rustls::Error> {
+        Ok(rustls::client::ServerCertVerified::assertion())
     }
 }
 
@@ -1381,7 +1387,7 @@ pub fn spawn_electrum(
                 .ok_or(ERRL!("Couldn't retrieve host from addr {}", req.url))?;
 
             // check the dns name
-            try_s!(DNSNameRef::try_from_ascii_str(host));
+            try_s!(DnsNameRef::try_from_ascii_str(host));
 
             ElectrumConfig::SSL {
                 dns_name: host.into(),
@@ -2295,6 +2301,43 @@ async fn electrum_last_chunk_loop(last_chunk: Arc<AtomicU64>) {
 }
 
 #[cfg(not(target_arch = "wasm32"))]
+lazy_static! {
+    static ref SAFE_TLS_CONFIG: Arc<ClientConfig> =
+        {
+            let mut cert_store = RootCertStore::empty();
+
+            cert_store.add_server_trust_anchors(TLS_SERVER_ROOTS.0.iter().map(|ta| {
+                OwnedTrustAnchor::from_subject_spki_name_constraints(ta.subject, ta.spki, ta.name_constraints)
+            }));
+
+            let tls_config = rustls::ClientConfig::builder()
+                .with_safe_defaults()
+                .with_root_certificates(cert_store)
+                .with_no_client_auth();
+
+            Arc::new(tls_config)
+        };
+    static ref UNSAFE_TLS_CONFIG: Arc<ClientConfig> =
+        {
+            let mut cert_store = RootCertStore::empty();
+
+            cert_store.add_server_trust_anchors(TLS_SERVER_ROOTS.0.iter().map(|ta| {
+                OwnedTrustAnchor::from_subject_spki_name_constraints(ta.subject, ta.spki, ta.name_constraints)
+            }));
+
+            let mut tls_config = rustls::ClientConfig::builder()
+                .with_safe_defaults()
+                .with_root_certificates(cert_store)
+                .with_no_client_auth();
+            tls_config
+                .dangerous()
+                .set_certificate_verifier(Arc::new(NoCertificateVerification {}));
+
+            Arc::new(tls_config)
+        };
+}
+
+#[cfg(not(target_arch = "wasm32"))]
 async fn connect_loop(
     config: ElectrumConfig,
     addr: String,
@@ -2318,18 +2361,15 @@ async fn connect_loop(
                 dns_name,
                 skip_validation,
             } => {
-                let mut ssl_config = rustls::ClientConfig::new();
-                ssl_config.root_store.add_server_trust_anchors(&TLS_SERVER_ROOTS);
-                if skip_validation {
-                    ssl_config
-                        .dangerous()
-                        .set_certificate_verifier(Arc::new(NoCertificateVerification {}));
-                }
-                let tls_connector = TlsConnector::from(Arc::new(ssl_config));
+                let tls_connector = if skip_validation {
+                    TlsConnector::from(UNSAFE_TLS_CONFIG.clone())
+                } else {
+                    TlsConnector::from(SAFE_TLS_CONFIG.clone())
+                };
 
                 Either::Right(TcpStream::connect(&socket_addr).and_then(move |stream| {
                     // Can use `unwrap` cause `dns_name` is pre-checked.
-                    let dns = DNSNameRef::try_from_ascii_str(&dns_name)
+                    let dns = ServerName::try_from(dns_name.as_str())
                         .map_err(|e| fomat!([e]))
                         .unwrap();
                     tls_connector.connect(dns, stream).map_ok(ElectrumStream::Tls)

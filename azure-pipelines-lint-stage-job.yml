@@ -44,4 +44,4 @@ jobs:
       - bash: |
           cargo deny check bans --hide-inclusion-graph
           cargo deny check advisories --hide-inclusion-graph
-        displayName: 'Check Cargo deny checks'
+        displayName: 'Cargo deny checks'
