@@ -88,9 +88,6 @@ rpc = { path = "../mm2_bitcoin/rpc" }
 rpc_task = { path = "../rpc_task" }
 parking_lot = { version = "0.12.0", features = ["nightly"] }
 parity-util-mem = "0.11"
-# AP: portfolio RPCs are not documented and not used as of now
-# so the crate is disabled to speed up the entire removal of C code
-# portfolio = { path = "../portfolio" }
 primitives = { path = "../mm2_bitcoin/primitives" }
 rand = { version = "0.7", features = ["std", "small_rng"] }
 rand6 = { version = "0.6", package = "rand" }
