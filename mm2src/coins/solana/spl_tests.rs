@@ -76,8 +76,8 @@ fn spl_my_balance() {
     );
 
     let res = block_on(sol_spl_usdc_coin.my_balance().compat()).unwrap();
-    assert_ne!(res.spendable, BigDecimal::from(0.0));
-    assert!(res.spendable < 10.0.into());
+    assert_ne!(res.spendable, BigDecimal::from(0));
+    assert!(res.spendable < BigDecimal::from(10));
 
     let sol_spl_wsol_coin = spl_coin_for_test(
         sol_coin.clone(),
@@ -86,7 +86,7 @@ fn spl_my_balance() {
         solana_sdk::pubkey::Pubkey::from_str("So11111111111111111111111111111111111111112").unwrap(),
     );
     let res = block_on(sol_spl_wsol_coin.my_balance().compat()).unwrap();
-    assert_eq!(res.spendable, BigDecimal::from(0.0));
+    assert_eq!(res.spendable, BigDecimal::from(0));
 }
 
 #[test]

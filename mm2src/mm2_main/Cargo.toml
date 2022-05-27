@@ -44,7 +44,7 @@ bench = false
 async-std = { version = "1.5", features = ["unstable"] }
 async-trait = "0.1"
 bitcrypto = { path = "../mm2_bitcoin/crypto" }
-blake2 = "0.9.1"
+blake2 = "0.10"
 bytes = "0.4"
 chain = { path = "../mm2_bitcoin/chain" }
 cfg-if = "1.0"
@@ -65,7 +65,7 @@ db_common = { path = "../db_common" }
 derive_more = "0.99"
 either = "1.6"
 ethereum-types = { version = "0.4", default-features = false, features = ["std", "serialize"] }
-enum-primitive-derive = "0.1"
+enum-primitive-derive = "0.2"
 fomat-macros = "0.2"
 futures01 = { version = "0.1", package = "futures" }
 futures-cpupool = "0.1"

@@ -16,7 +16,7 @@ async-std = { version = "1.5", features = ["unstable"] }
 async-trait = "0.1.52"
 base64 = "0.10.0"
 base58 = "0.2.0"
-bigdecimal = { version = "0.1.0", features = ["serde"] }
+bigdecimal = { version = "0.3", features = ["serde"] }
 bip32 = { version = "0.2.2", default-features = false, features = ["alloc", "secp256k1-ffi"] }
 bitcoin = "0.27.1"
 bitcoin_hashes = "0.10.0"
@@ -80,8 +80,8 @@ serde_json = { version = "1.0", features = ["preserve_order", "raw_value"] }
 serialization = { path = "../mm2_bitcoin/serialization" }
 serialization_derive = { path = "../mm2_bitcoin/serialization_derive" }
 spv_validation = { path = "../mm2_bitcoin/spv_validation" }
-sha2 = "0.8"
-sha3 = "0.8"
+sha2 = "0.9"
+sha3 = "0.9"
 utxo_signer = { path = "utxo_signer" }
 tiny-bip39 = "0.8.0"
 # One of web3 dependencies is the old `tokio-uds 0.1.7` which fails cross-compiling to ARM.
@@ -106,7 +106,7 @@ rustls = { version = "0.19", features = ["dangerous_configuration"] }
 tokio = { version = "1.7" }
 tokio-rustls = { version = "0.22.0" }
 tonic = { version = "0.5.2", features = ["tls", "compression"] }
-webpki-roots = { version = "0.19.0" }
+webpki-roots = { version = "0.21" }
 solana-client = { version = "1", default-features = false }
 solana-sdk = { version = "1", default-features = false }
 solana-transaction-status = "1"

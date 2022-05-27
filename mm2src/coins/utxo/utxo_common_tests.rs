@@ -1,6 +1,7 @@
 use super::*;
 use crate::utxo::rpc_clients::{ElectrumClient, UtxoRpcClientOps};
 use common::jsonrpc_client::JsonRpcErrorType;
+use std::convert::TryFrom;
 
 pub async fn test_electrum_display_balances(rpc_client: &ElectrumClient) {
     let addresses = vec![
@@ -12,10 +13,19 @@ pub async fn test_electrum_display_balances(rpc_client: &ElectrumClient) {
     let actual = rpc_client.display_balances(addresses, 8).compat().await.unwrap();
 
     let expected: Vec<(Address, BigDecimal)> = vec![
-        ("RG278CfeNPFtNztFZQir8cgdWexVhViYVy".into(), BigDecimal::from(5.77699)),
+        (
+            "RG278CfeNPFtNztFZQir8cgdWexVhViYVy".into(),
+            BigDecimal::try_from(5.77699).unwrap(),
+        ),
         ("RYPz6Lr4muj4gcFzpMdv3ks1NCGn3mkDPN".into(), BigDecimal::from(0)),
-        ("RJeDDtDRtKUoL8BCKdH7TNCHqUKr7kQRsi".into(), BigDecimal::from(0.77699)),
-        ("RQHn9VPHBqNjYwyKfJbZCiaxVrWPKGQjeF".into(), BigDecimal::from(16.55398)),
+        (
+            "RJeDDtDRtKUoL8BCKdH7TNCHqUKr7kQRsi".into(),
+            BigDecimal::try_from(0.77699).unwrap(),
+        ),
+        (
+            "RQHn9VPHBqNjYwyKfJbZCiaxVrWPKGQjeF".into(),
+            BigDecimal::try_from(16.55398).unwrap(),
+        ),
     ];
     assert_eq!(actual, expected);
 

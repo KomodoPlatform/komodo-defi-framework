@@ -13,7 +13,7 @@ use mm2_test_helpers::for_tests::{check_my_swap_status, check_recent_swaps, chec
                                   TAKER_ERROR_EVENTS, TAKER_SUCCESS_EVENTS};
 use serde_json::{self as json, Value as Json};
 use std::collections::HashMap;
-use std::convert::identity;
+use std::convert::{identity, TryFrom};
 use std::env::{self, var};
 use std::path::{Path, PathBuf};
 use std::str::FromStr;
@@ -1118,8 +1118,8 @@ async fn trade_base_rel_electrum(
             uuid,
             &TAKER_SUCCESS_EVENTS,
             &TAKER_ERROR_EVENTS,
-            volume.into(),
-            volume.into(),
+            BigDecimal::try_from(volume).unwrap(),
+            BigDecimal::try_from(volume).unwrap(),
         )
         .await;
 
@@ -1129,8 +1129,8 @@ async fn trade_base_rel_electrum(
             uuid,
             &MAKER_SUCCESS_EVENTS,
             &MAKER_ERROR_EVENTS,
-            volume.into(),
-            volume.into(),
+            BigDecimal::try_from(volume).unwrap(),
+            BigDecimal::try_from(volume).unwrap(),
         )
         .await;
     }

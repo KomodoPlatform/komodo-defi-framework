@@ -14,14 +14,14 @@ bitcrypto = { path = "../mm2_bitcoin/crypto" }
 common = { path = "../common" }
 mm2_core = { path = "../mm2_core" }
 derive_more = "0.99"
-enum-primitive-derive = "0.1"
+enum-primitive-derive = "0.2"
 futures = "0.3"
 hex = "0.4.2"
 http = "0.2"
 hw_common = { path = "../hw_common" }
 parking_lot = { version = "0.12.0", features = ["nightly"] }
 keys = { path = "../mm2_bitcoin/keys" }
-num-traits = "0.1"
+num-traits = "0.2"
 primitives = { path = "../mm2_bitcoin/primitives" }
 rpc_task = { path = "../rpc_task" }
 secp256k1 = "0.20"

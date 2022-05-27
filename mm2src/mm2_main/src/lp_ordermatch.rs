@@ -21,7 +21,7 @@
 use async_trait::async_trait;
 use best_orders::BestOrdersAction;
 use blake2::digest::{Update, VariableOutput};
-use blake2::VarBlake2b;
+use blake2::Blake2bVar;
 use coins::utxo::{compressed_pub_key_from_priv_raw, ChecksumType, UtxoAddressFormat};
 use coins::{coin_conf, find_pair, lp_coinfind, BalanceTradeFeeUpdatedHandler, CoinProtocol, FeeApproxStage, MmCoinEnum};
 use common::executor::{spawn, Timer};
@@ -3857,10 +3857,10 @@ impl Hasher for Blake2Hasher64 {
     const LENGTH: usize = 8;
 
     fn hash(x: &[u8]) -> Self::Out {
-        let mut hasher = VarBlake2b::new(8).expect("8 is valid VarBlake2b output_size");
+        let mut hasher = Blake2bVar::new(8).expect("8 is valid VarBlake2b output_size");
         hasher.update(x);
         let mut res: [u8; 8] = Default::default();
-        hasher.finalize_variable(|hash| res.copy_from_slice(hash));
+        hasher.finalize_variable(&mut res).expect("hashing to succeed");
         res
     }
 }

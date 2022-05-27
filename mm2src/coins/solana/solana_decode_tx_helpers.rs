@@ -1,8 +1,10 @@
 extern crate serde_derive;
 
-use crate::{SolanaCoin, SolanaFeeDetails, TransactionDetails, TransactionType};
+use crate::{NumConversError, NumConversResult, SolanaCoin, SolanaFeeDetails, TransactionDetails, TransactionType};
 use bigdecimal::BigDecimal;
+use mm2_err_handle::prelude::*;
 use solana_sdk::native_token::lamports_to_sol;
+use std::convert::TryFrom;
 
 #[derive(Debug, Serialize, Deserialize)]
 pub struct SolanaConfirmedTransaction {
@@ -27,13 +29,14 @@ impl SolanaConfirmedTransaction {
         idx
     }
 
-    pub fn extract_solana_transactions(&self, solana_coin: &SolanaCoin) -> Vec<TransactionDetails> {
+    pub fn extract_solana_transactions(&self, solana_coin: &SolanaCoin) -> NumConversResult<Vec<TransactionDetails>> {
         let mut transactions = Vec::new();
         let account_idx = self.extract_account_index(solana_coin.my_address.clone());
         for instruction in self.transaction.message.instructions.iter() {
             if instruction.is_solana_transfer() {
                 let lamports = instruction.parsed.info.lamports.unwrap_or_default();
-                let amount: BigDecimal = lamports_to_sol(lamports).into();
+                let amount =
+                    BigDecimal::try_from(lamports_to_sol(lamports)).map_to_mm(|e| NumConversError(e.to_string()))?;
                 let is_self_transfer = instruction.parsed.info.source == instruction.parsed.info.destination;
                 let am_i_sender = instruction.parsed.info.source == solana_coin.my_address;
                 let spent_by_me = if am_i_sender && !is_self_transfer {
@@ -43,15 +46,18 @@ impl SolanaConfirmedTransaction {
                 };
                 let received_by_me = if is_self_transfer { amount.clone() } else { 0.into() };
                 let my_balance_change = if am_i_sender {
-                    BigDecimal::from(lamports_to_sol(
+                    BigDecimal::try_from(lamports_to_sol(
                         self.meta.pre_balances[account_idx] - self.meta.post_balances[account_idx],
                     ))
+                    .map_to_mm(|e| NumConversError(e.to_string()))?
                 } else {
-                    BigDecimal::from(lamports_to_sol(
+                    BigDecimal::try_from(lamports_to_sol(
                         self.meta.post_balances[account_idx] - self.meta.pre_balances[account_idx],
                     ))
+                    .map_to_mm(|e| NumConversError(e.to_string()))?
                 };
-                let fee: BigDecimal = lamports_to_sol(self.meta.fee).into();
+                let fee = BigDecimal::try_from(lamports_to_sol(self.meta.fee))
+                    .map_to_mm(|e| NumConversError(e.to_string()))?;
                 let tx = TransactionDetails {
                     tx_hex: Default::default(),
                     tx_hash: self.transaction.signatures[0].to_string(),
@@ -72,7 +78,7 @@ impl SolanaConfirmedTransaction {
                 transactions.push(tx);
             }
         }
-        transactions
+        Ok(transactions)
     }
 }
 

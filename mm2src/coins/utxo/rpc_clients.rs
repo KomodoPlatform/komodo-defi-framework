@@ -1285,8 +1285,8 @@ impl ElectrumBalance {
 #[inline]
 fn sha_256(input: &[u8]) -> Vec<u8> {
     let mut sha = Sha256::new();
-    sha.input(input);
-    sha.result().to_vec()
+    sha.update(input);
+    sha.finalize().to_vec()
 }
 
 #[inline]

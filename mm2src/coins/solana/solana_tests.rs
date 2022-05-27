@@ -55,7 +55,7 @@ fn solana_prerequisites() {
         let balance = client
             .get_balance(&key_pair.pubkey())
             .expect("Expect to retrieve balance");
-        assert_eq!(lamports_to_sol(balance), 0.0.into());
+        assert_eq!(lamports_to_sol(balance), BigDecimal::from(0));
         assert_eq!(balance, 0);
 
         //  This will fetch all the balance from all tokens
@@ -86,7 +86,7 @@ fn solana_my_balance() {
     let passphrase = "federal stay trigger hour exist success game vapor become comfort action phone bright ill target wild nasty crumble dune close rare fabric hen iron".to_string();
     let (_, sol_coin) = solana_coin_for_test(passphrase.clone(), SolanaNet::Testnet);
     let res = block_on(sol_coin.my_balance().compat()).unwrap();
-    assert_ne!(res.spendable, BigDecimal::from(0.0));
+    assert_ne!(res.spendable, BigDecimal::from(0));
 }
 
 #[test]
@@ -153,7 +153,7 @@ fn test_verify_message() {
 fn solana_transaction_simulations() {
     let passphrase = "federal stay trigger hour exist success game vapor become comfort action phone bright ill target wild nasty crumble dune close rare fabric hen iron".to_string();
     let (_, sol_coin) = solana_coin_for_test(passphrase.clone(), SolanaNet::Devnet);
-    let request_amount: BigDecimal = 0.0001.into();
+    let request_amount = BigDecimal::try_from(0.0001).unwrap();
     let valid_tx_details = block_on(
         sol_coin
             .withdraw(WithdrawRequest {
@@ -276,7 +276,7 @@ fn solana_test_transactions() {
                 coin: "SOL".to_string(),
                 from: None,
                 to: sol_coin.my_address.clone(),
-                amount: BigDecimal::from(0.0001),
+                amount: BigDecimal::try_from(0.0001).unwrap(),
                 max: false,
                 fee: None,
             })
@@ -315,7 +315,7 @@ fn solana_test_tx_history() {
         println!("{}", serde_json::to_string(&res).unwrap());
         let parsed = serde_json::to_value(&res).unwrap();
         let tx_infos: SolanaConfirmedTransaction = serde_json::from_value(parsed).unwrap();
-        let mut txs = tx_infos.extract_solana_transactions(&sol_coin);
+        let mut txs = tx_infos.extract_solana_transactions(&sol_coin).unwrap();
         history.append(&mut txs);
     }
     println!("{}", serde_json::to_string(&history).unwrap());

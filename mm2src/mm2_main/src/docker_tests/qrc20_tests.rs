@@ -17,6 +17,7 @@ use http::StatusCode;
 use mm2_core::mm_ctx::{MmArc, MmCtxBuilder};
 use rand6::Rng;
 use serde_json::{self as json, Value as Json};
+use std::convert::TryFrom;
 use std::process::Command;
 use std::str::FromStr;
 use std::time::Duration;
@@ -139,7 +140,7 @@ fn withdraw_and_send(mm: &MarketMakerIt, coin: &str, to: &str, amount: f64) {
     log!("Balance Change: "[tx_details.my_balance_change]);
 
     assert_eq!(tx_details.to, vec![to.to_owned()]);
-    assert!(BigDecimal::from(amount) + tx_details.my_balance_change < 0.into());
+    assert!(BigDecimal::try_from(amount).unwrap() + tx_details.my_balance_change < 0.into());
 
     let send = block_on(mm.rpc(&json! ({
         "userpass": mm.userpass,
@@ -173,7 +174,7 @@ fn test_taker_spends_maker_payment() {
     let taker_pub = taker_coin.my_public_key().unwrap().to_vec();
     let secret = &[1; 32];
     let secret_hash = dhash160(secret).to_vec();
-    let amount = BigDecimal::from(0.2);
+    let amount = BigDecimal::try_from(0.2).unwrap();
 
     let payment = maker_coin
         .send_maker_payment(
@@ -265,7 +266,7 @@ fn test_maker_spends_taker_payment() {
     let taker_pub = taker_coin.my_public_key().unwrap().to_vec();
     let secret = &[1; 32];
     let secret_hash = dhash160(secret).to_vec();
-    let amount = BigDecimal::from(0.2);
+    let amount = BigDecimal::try_from(0.2).unwrap();
 
     let payment = taker_coin
         .send_taker_payment(
@@ -516,7 +517,7 @@ fn test_search_for_swap_tx_spend_taker_spent() {
     let taker_pub = taker_coin.my_public_key().unwrap();
     let secret = &[1; 32];
     let secret_hash = &*dhash160(secret);
-    let amount = BigDecimal::from(0.2);
+    let amount = BigDecimal::try_from(0.2).unwrap();
 
     let payment = maker_coin
         .send_maker_payment(
@@ -584,7 +585,7 @@ fn test_search_for_swap_tx_spend_maker_refunded() {
     let taker_pub = hex::decode("022b00078841f37b5d30a6a1defb82b3af4d4e2d24dd4204d41f0c9ce1e875de1a").unwrap();
     let secret = &[1; 32];
     let secret_hash = &*dhash160(secret);
-    let amount = BigDecimal::from(0.2);
+    let amount = BigDecimal::try_from(0.2).unwrap();
 
     let payment = maker_coin
         .send_maker_payment(
@@ -652,7 +653,7 @@ fn test_search_for_swap_tx_spend_not_spent() {
     let taker_pub = hex::decode("022b00078841f37b5d30a6a1defb82b3af4d4e2d24dd4204d41f0c9ce1e875de1a").unwrap();
     let secret = &[1; 32];
     let secret_hash = &*dhash160(secret);
-    let amount = BigDecimal::from(0.2);
+    let amount = BigDecimal::try_from(0.2).unwrap();
 
     let payment = maker_coin
         .send_maker_payment(
@@ -701,7 +702,7 @@ fn test_wait_for_tx_spend() {
     let taker_pub = taker_coin.my_public_key().unwrap();
     let secret = &[1; 32];
     let secret_hash = &*dhash160(secret);
-    let amount = BigDecimal::from(0.2);
+    let amount = BigDecimal::try_from(0.2).unwrap();
 
     let payment = maker_coin
         .send_maker_payment(
@@ -788,7 +789,7 @@ fn test_check_balance_on_order_post_base_coin_locked() {
     // fill the Bob address by 0.05 Qtum
     let (_ctx, coin) = qrc20_coin_from_privkey("QICK", bob_priv_key.as_ref());
     let my_address = coin.my_address().expect("!my_address");
-    fill_address(&coin, &my_address, 0.05.into(), timeout);
+    fill_address(&coin, &my_address, BigDecimal::try_from(0.05).unwrap(), timeout);
     // fill the Bob address by 10 MYCOIN
     let (_ctx, coin) = utxo_coin_from_privkey("MYCOIN", bob_priv_key.as_ref());
     let my_address = coin.my_address().expect("!my_address");
@@ -1204,7 +1205,8 @@ fn test_trade_preimage_deduct_fee_from_output_failed() {
 fn test_segwit_native_balance() {
     wait_for_estimate_smart_fee(30).expect("!wait_for_estimate_smart_fee");
     // generate QTUM coin with the dynamic fee and fill the wallet by 0.5 Qtums
-    let (_ctx, _coin, priv_key) = generate_segwit_qtum_coin_with_random_privkey("QTUM", 0.5.into(), Some(0));
+    let (_ctx, _coin, priv_key) =
+        generate_segwit_qtum_coin_with_random_privkey("QTUM", BigDecimal::try_from(0.5).unwrap(), Some(0));
 
     let confpath = unsafe { QTUM_CONF_PATH.as_ref().expect("Qtum config is not set yet") };
     let coins = json! ([
@@ -1249,7 +1251,8 @@ fn test_segwit_native_balance() {
 fn test_withdraw_and_send_from_segwit() {
     wait_for_estimate_smart_fee(30).expect("!wait_for_estimate_smart_fee");
     // generate QTUM coin with the dynamic fee and fill the wallet by 0.7 Qtums
-    let (_ctx, _coin, priv_key) = generate_segwit_qtum_coin_with_random_privkey("QTUM", 0.7.into(), Some(0));
+    let (_ctx, _coin, priv_key) =
+        generate_segwit_qtum_coin_with_random_privkey("QTUM", BigDecimal::try_from(0.7).unwrap(), Some(0));
 
     let confpath = unsafe { QTUM_CONF_PATH.as_ref().expect("Qtum config is not set yet") };
     let coins = json! ([
@@ -1296,7 +1299,8 @@ fn test_withdraw_and_send_from_segwit() {
 fn test_withdraw_and_send_legacy_to_segwit() {
     wait_for_estimate_smart_fee(30).expect("!wait_for_estimate_smart_fee");
     // generate QTUM coin with the dynamic fee and fill the wallet by 0.7 Qtums
-    let (_ctx, _coin, priv_key) = generate_qtum_coin_with_random_privkey("QTUM", 0.7.into(), Some(0));
+    let (_ctx, _coin, priv_key) =
+        generate_qtum_coin_with_random_privkey("QTUM", BigDecimal::try_from(0.7).unwrap(), Some(0));
 
     let confpath = unsafe { QTUM_CONF_PATH.as_ref().expect("Qtum config is not set yet") };
     let coins = json! ([
@@ -1436,7 +1440,8 @@ pub async fn enable_native_segwit(mm: &MarketMakerIt, coin: &str) -> Json {
 fn segwit_address_in_the_orderbook() {
     wait_for_estimate_smart_fee(30).expect("!wait_for_estimate_smart_fee");
     // generate QTUM coin with the dynamic fee and fill the wallet by 0.5 Qtums
-    let (_ctx, coin, priv_key) = generate_qtum_coin_with_random_privkey("QTUM", 0.5.into(), Some(0));
+    let (_ctx, coin, priv_key) =
+        generate_qtum_coin_with_random_privkey("QTUM", BigDecimal::try_from(0.5).unwrap(), Some(0));
 
     let confpath = unsafe { QTUM_CONF_PATH.as_ref().expect("Qtum config is not set yet") };
     let coins = json! ([

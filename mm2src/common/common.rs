@@ -108,7 +108,6 @@ pub mod executor;
 #[cfg(target_arch = "wasm32")] pub use wasm::*;
 
 use backtrace::SymbolName;
-use bigdecimal::BigDecimal;
 pub use futures::compat::Future01CompatExt;
 use futures::future::FutureExt;
 use futures::task::Waker;
@@ -1051,112 +1050,6 @@ impl<T: PartialOrd> OrdRange<T> {
 impl<T: Copy> OrdRange<T> {
     /// Flatten a start-end pair into the vector.
     pub fn flatten(&self) -> Vec<T> { vec![*self.start(), *self.end()] }
-}
-
-fn without_trailing_zeroes(decimal: &str, dot: usize) -> &str {
-    let mut pos = decimal.len() - 1;
-    loop {
-        let ch = decimal.as_bytes()[pos];
-        if ch != b'0' {
-            break &decimal[0..=pos];
-        }
-        if pos == dot {
-            break &decimal[0..pos];
-        }
-        pos -= 1
-    }
-}
-
-/// Round half away from zero (aka commercial rounding).
-pub fn round_to(bd: &BigDecimal, places: u8) -> String {
-    // Normally we'd do
-    //
-    //     let divisor = pow (10, places)
-    //     round (self * divisor) / divisor
-    //
-    // But we don't have a `round` function in `BigDecimal` at present, so we're on our own.
-
-    let bds = format!("{}", bd);
-    let bda = bds.as_bytes();
-    let dot = bda.iter().position(|&ch| ch == b'.');
-    let dot = match dot {
-        Some(dot) => dot,
-        None => return bds,
-    };
-
-    if bda.len() - dot <= places as usize {
-        return String::from(without_trailing_zeroes(&bds, dot));
-    }
-
-    let mut pos = bda.len() - 1;
-    let mut ch = bda[pos];
-    let mut prev_digit = 0;
-    loop {
-        let digit = ch - b'0';
-        let rounded = if prev_digit > 5 { digit + 1 } else { digit };
-        //println! ("{} at {}: prev_digit {}, digit {}, rounded {}", bds, pos, prev_digit, digit, rounded);
-
-        if pos < dot {
-            //println! ("{}, pos < dot, stopping at pos {}", bds, pos);
-            let mut integer: i64 = (bds[0..=pos]).parse().unwrap();
-            if prev_digit > 5 {
-                if bda[0] == b'-' {
-                    integer = integer.checked_sub(1).unwrap()
-                } else {
-                    integer = integer.checked_add(1).unwrap()
-                }
-            }
-            return format!("{}", integer);
-        }
-
-        if pos == dot + places as usize && rounded < 10 {
-            //println! ("{}, stopping at pos {}", bds, pos);
-            break format!("{}{}", &bds[0..pos], rounded);
-        }
-
-        pos -= 1;
-        if pos == dot {
-            pos -= 1
-        } // Skip over the dot.
-        ch = bda[pos];
-        prev_digit = rounded
-    }
-}
-
-#[test]
-fn test_round_to() {
-    assert_eq!(round_to(&BigDecimal::from(0.999), 2), "1");
-    assert_eq!(round_to(&BigDecimal::from(-0.999), 2), "-1");
-
-    assert_eq!(round_to(&BigDecimal::from(10.999), 2), "11");
-    assert_eq!(round_to(&BigDecimal::from(-10.999), 2), "-11");
-
-    assert_eq!(round_to(&BigDecimal::from(99.9), 1), "99.9");
-    assert_eq!(round_to(&BigDecimal::from(-99.9), 1), "-99.9");
-
-    assert_eq!(round_to(&BigDecimal::from(99.9), 0), "100");
-    assert_eq!(round_to(&BigDecimal::from(-99.9), 0), "-100");
-
-    let ouch = BigDecimal::from(1) / BigDecimal::from(7);
-    assert_eq!(round_to(&ouch, 3), "0.143");
-
-    let ouch = BigDecimal::from(1) / BigDecimal::from(3);
-    assert_eq!(round_to(&ouch, 0), "0");
-    assert_eq!(round_to(&ouch, 1), "0.3");
-    assert_eq!(round_to(&ouch, 2), "0.33");
-    assert_eq!(round_to(&ouch, 9), "0.333333333");
-
-    assert_eq!(round_to(&BigDecimal::from(0.123), 99), "0.123");
-    assert_eq!(round_to(&BigDecimal::from(-0.123), 99), "-0.123");
-
-    assert_eq!(round_to(&BigDecimal::from(0), 99), "0");
-    assert_eq!(round_to(&BigDecimal::from(-0), 99), "0");
-
-    assert_eq!(round_to(&BigDecimal::from(0.123), 0), "0");
-    assert_eq!(round_to(&BigDecimal::from(-0.123), 0), "0");
-
-    assert_eq!(round_to(&BigDecimal::from(0), 0), "0");
-    assert_eq!(round_to(&BigDecimal::from(-0), 0), "0");
 }
 
 pub const fn true_f() -> bool { true }
