@@ -2301,40 +2301,33 @@ async fn electrum_last_chunk_loop(last_chunk: Arc<AtomicU64>) {
 }
 
 #[cfg(not(target_arch = "wasm32"))]
+fn rustls_client_config(unsafe_conf: bool) -> Arc<ClientConfig> {
+    let mut cert_store = RootCertStore::empty();
+
+    cert_store.add_server_trust_anchors(
+        TLS_SERVER_ROOTS
+            .0
+            .iter()
+            .map(|ta| OwnedTrustAnchor::from_subject_spki_name_constraints(ta.subject, ta.spki, ta.name_constraints)),
+    );
+
+    let mut tls_config = rustls::ClientConfig::builder()
+        .with_safe_defaults()
+        .with_root_certificates(cert_store)
+        .with_no_client_auth();
+
+    if unsafe_conf {
+        tls_config
+            .dangerous()
+            .set_certificate_verifier(Arc::new(NoCertificateVerification {}));
+    }
+    Arc::new(tls_config)
+}
+
+#[cfg(not(target_arch = "wasm32"))]
 lazy_static! {
-    static ref SAFE_TLS_CONFIG: Arc<ClientConfig> =
-        {
-            let mut cert_store = RootCertStore::empty();
-
-            cert_store.add_server_trust_anchors(TLS_SERVER_ROOTS.0.iter().map(|ta| {
-                OwnedTrustAnchor::from_subject_spki_name_constraints(ta.subject, ta.spki, ta.name_constraints)
-            }));
-
-            let tls_config = rustls::ClientConfig::builder()
-                .with_safe_defaults()
-                .with_root_certificates(cert_store)
-                .with_no_client_auth();
-
-            Arc::new(tls_config)
-        };
-    static ref UNSAFE_TLS_CONFIG: Arc<ClientConfig> =
-        {
-            let mut cert_store = RootCertStore::empty();
-
-            cert_store.add_server_trust_anchors(TLS_SERVER_ROOTS.0.iter().map(|ta| {
-                OwnedTrustAnchor::from_subject_spki_name_constraints(ta.subject, ta.spki, ta.name_constraints)
-            }));
-
-            let mut tls_config = rustls::ClientConfig::builder()
-                .with_safe_defaults()
-                .with_root_certificates(cert_store)
-                .with_no_client_auth();
-            tls_config
-                .dangerous()
-                .set_certificate_verifier(Arc::new(NoCertificateVerification {}));
-
-            Arc::new(tls_config)
-        };
+    static ref SAFE_TLS_CONFIG: Arc<ClientConfig> = rustls_client_config(false);
+    static ref UNSAFE_TLS_CONFIG: Arc<ClientConfig> = rustls_client_config(true);
 }
 
 #[cfg(not(target_arch = "wasm32"))]

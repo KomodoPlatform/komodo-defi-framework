@@ -14,24 +14,19 @@ cargo test --all
 We also use [Clippy](https://github.com/rust-lang/rust-clippy) to avoid common mistakes
 and we use [rustfmt](https://github.com/rust-lang/rustfmt) to make our code clear to everyone.
 
-1. Install these tools (only once):
-    ```shell
-    rustup component add rustfmt
-    rustup component add clippy
-    ```
-2. Format the code using rustfmt:
+1. Format the code using rustfmt:
     ```shell
     cargo fmt
     ```
-3. Make sure there are no warnings and errors. Run the Clippy:
+2. Make sure there are no warnings and errors. Run the Clippy:
     ```shell
     cargo clippy -- -D warnings
     ```
-4. Make sure that no new dependencies duplicates appear. Run the following check
+3. Make sure that no new dependencies duplicates appear. Run the following check
    ```shell
    cargo deny check bans
    ```
-5. Make sure that dependencies do not have known vulnerabilities. If they do, update them.
+4. Make sure that dependencies do not have known vulnerabilities. If they do, update them.
    ```shell
    cargo deny check advisories
    ```

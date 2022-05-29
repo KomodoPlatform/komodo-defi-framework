@@ -463,7 +463,6 @@ impl<Table: TableSignature> DbTable<'_, Table> {
         items
             .into_iter()
             .map(|(item_id, item)| {
-                web_sys::console::log_1(&format!("Item {}", json::to_string(&item).unwrap()).into());
                 let item: Table =
                     json::from_value(item).map_to_mm(|e| DbTransactionError::ErrorDeserializingItem(e.to_string()))?;
                 Ok((item_id, item))

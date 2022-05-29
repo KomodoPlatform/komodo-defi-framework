@@ -9,7 +9,7 @@ use crate::{BalanceFut, FeeApproxStage, FoundSwapTxSpend, NegotiateSwapContractA
 use async_trait::async_trait;
 use bigdecimal::BigDecimal;
 use bincode::serialize;
-use common::{mm_number::MmNumber, now_ms};
+use common::{async_blocking, mm_number::MmNumber, now_ms};
 use futures::{FutureExt, TryFutureExt};
 use futures01::Future;
 use keys::KeyPair;
@@ -26,7 +26,6 @@ use std::{convert::TryFrom,
           fmt::{Debug, Formatter, Result as FmtResult},
           str::FromStr,
           sync::Arc};
-use tokio::task::block_in_place;
 
 #[derive(Debug)]
 pub enum SplTokenCreationError {
@@ -99,7 +98,11 @@ async fn withdraw_spl_token_impl(coin: SplToken, req: WithdrawRequest) -> Withdr
     let funding_address = coin.get_pubkey().await?;
     let dest_token_address = get_associated_token_address(&system_destination_pubkey, &contract_key);
     let mut instructions = Vec::with_capacity(1);
-    let account_info = block_in_place(|| coin.rpc().get_account(&dest_token_address));
+    let account_info = async_blocking({
+        let coin = coin.clone();
+        move || coin.rpc().get_account(&dest_token_address)
+    })
+    .await;
     if account_info.is_err() {
         let instruction_creation = create_associated_token_account(&auth_key, &dest_token_address, &contract_key);
         instructions.push(instruction_creation);
@@ -180,12 +183,13 @@ impl SplToken {
 
     async fn get_pubkey(&self) -> Result<Pubkey, MmError<AccountError>> {
         let coin = self.clone();
-        let token_accounts = block_in_place(|| {
+        let token_accounts = async_blocking(move || {
             coin.rpc().get_token_accounts_by_owner(
                 &coin.platform_coin.key_pair.pubkey(),
                 TokenAccountsFilter::Mint(coin.get_underlying_contract_pubkey()),
             )
-        })?;
+        })
+        .await?;
         if token_accounts.is_empty() {
             return MmError::err(AccountError::NotFundedError("account_not_funded".to_string()));
         }

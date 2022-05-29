@@ -31,11 +31,12 @@ use libp2p_swarm::{IntoConnectionHandler, NetworkBehaviour, NetworkBehaviourActi
 use log::{debug, error, info, trace, warn};
 use rand::seq::SliceRandom;
 use smallvec::SmallVec;
+use std::collections::hash_map::Entry;
+use std::collections::{HashMap, HashSet, VecDeque};
+use std::iter;
+use std::sync::Arc;
+use std::task::{Context, Poll};
 use std::time::Duration;
-use std::{collections::{HashMap, HashSet, VecDeque},
-          iter,
-          sync::Arc,
-          task::{Context, Poll}};
 use wasm_timer::{Instant, Interval};
 
 mod tests;
@@ -1316,14 +1317,12 @@ impl NetworkBehaviour for Gossipsub {
         _: <Self::ConnectionHandler as IntoConnectionHandler>::Handler,
         remaining_established: usize,
     ) {
-        let mut clean = false;
-
-        if let Some(connected_points) = self.peer_connections.get_mut(peer_id) {
+        if let Entry::Occupied(mut o) = self.peer_connections.entry(*peer_id) {
+            let connected_points = o.get_mut();
             connected_points.retain(|(conn_id, _point)| conn_id != disconnected_conn_id);
-            clean = connected_points.is_empty();
-        }
-        if clean {
-            self.peer_connections.remove(peer_id);
+            if connected_points.is_empty() {
+                o.remove_entry();
+            }
         }
 
         self.connected_addresses

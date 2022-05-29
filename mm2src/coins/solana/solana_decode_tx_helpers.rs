@@ -1,8 +1,7 @@
 extern crate serde_derive;
 
-use crate::{NumConversError, NumConversResult, SolanaCoin, SolanaFeeDetails, TransactionDetails, TransactionType};
+use crate::{NumConversResult, SolanaCoin, SolanaFeeDetails, TransactionDetails, TransactionType};
 use bigdecimal::BigDecimal;
-use mm2_err_handle::prelude::*;
 use solana_sdk::native_token::lamports_to_sol;
 use std::convert::TryFrom;
 
@@ -35,8 +34,7 @@ impl SolanaConfirmedTransaction {
         for instruction in self.transaction.message.instructions.iter() {
             if instruction.is_solana_transfer() {
                 let lamports = instruction.parsed.info.lamports.unwrap_or_default();
-                let amount =
-                    BigDecimal::try_from(lamports_to_sol(lamports)).map_to_mm(|e| NumConversError(e.to_string()))?;
+                let amount = BigDecimal::try_from(lamports_to_sol(lamports))?;
                 let is_self_transfer = instruction.parsed.info.source == instruction.parsed.info.destination;
                 let am_i_sender = instruction.parsed.info.source == solana_coin.my_address;
                 let spent_by_me = if am_i_sender && !is_self_transfer {
@@ -48,16 +46,13 @@ impl SolanaConfirmedTransaction {
                 let my_balance_change = if am_i_sender {
                     BigDecimal::try_from(lamports_to_sol(
                         self.meta.pre_balances[account_idx] - self.meta.post_balances[account_idx],
-                    ))
-                    .map_to_mm(|e| NumConversError(e.to_string()))?
+                    ))?
                 } else {
                     BigDecimal::try_from(lamports_to_sol(
                         self.meta.post_balances[account_idx] - self.meta.pre_balances[account_idx],
-                    ))
-                    .map_to_mm(|e| NumConversError(e.to_string()))?
+                    ))?
                 };
-                let fee = BigDecimal::try_from(lamports_to_sol(self.meta.fee))
-                    .map_to_mm(|e| NumConversError(e.to_string()))?;
+                let fee = BigDecimal::try_from(lamports_to_sol(self.meta.fee))?;
                 let tx = TransactionDetails {
                     tx_hex: Default::default(),
                     tx_hash: self.transaction.signatures[0].to_string(),
