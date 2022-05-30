@@ -2008,7 +2008,7 @@ mod maker_swap_tests {
             MockResult::Return(Box::new(futures01::future::ok(eth_tx_for_test().into())))
         });
         TestCoin::search_for_swap_tx_spend_my
-            .mock_safe(|_, _, _, _, _, _, _, _| MockResult::Return(Box::pin(futures::future::ready(Ok(None)))));
+            .mock_safe(|_, _| MockResult::Return(Box::pin(futures::future::ready(Ok(None)))));
         let maker_coin = MmCoinEnum::Test(TestCoin::default());
         let taker_coin = MmCoinEnum::Test(TestCoin::default());
         let (maker_swap, _) = MakerSwap::load_from_saved(ctx, maker_coin, taker_coin, maker_saved_swap).unwrap();
@@ -2043,7 +2043,7 @@ mod maker_swap_tests {
         });
 
         TestCoin::search_for_swap_tx_spend_my
-            .mock_safe(|_, _, _, _, _, _, _, _| MockResult::Return(Box::pin(futures::future::ready(Ok(None)))));
+            .mock_safe(|_, _| MockResult::Return(Box::pin(futures::future::ready(Ok(None)))));
         let maker_coin = MmCoinEnum::Test(TestCoin::default());
         let taker_coin = MmCoinEnum::Test(TestCoin::default());
         let (maker_swap, _) = MakerSwap::load_from_saved(ctx, maker_coin, taker_coin, maker_saved_swap).unwrap();
@@ -2070,7 +2070,7 @@ mod maker_swap_tests {
         TestCoin::ticker.mock_safe(|_| MockResult::Return("ticker"));
         TestCoin::swap_contract_address.mock_safe(|_| MockResult::Return(None));
 
-        TestCoin::search_for_swap_tx_spend_my.mock_safe(|_, _, _, _, _, _, _, _| {
+        TestCoin::search_for_swap_tx_spend_my.mock_safe(|_, _| {
             MockResult::Return(Box::pin(futures::future::ready(Ok(Some(FoundSwapTxSpend::Refunded(
                 eth_tx_for_test().into(),
             ))))))
@@ -2095,7 +2095,7 @@ mod maker_swap_tests {
         TestCoin::swap_contract_address.mock_safe(|_| MockResult::Return(None));
 
         static mut SEARCH_FOR_SWAP_TX_SPEND_MY_CALLED: bool = true;
-        TestCoin::search_for_swap_tx_spend_my.mock_safe(|_, _, _, _, _, _, _, _| {
+        TestCoin::search_for_swap_tx_spend_my.mock_safe(|_, _| {
             unsafe { SEARCH_FOR_SWAP_TX_SPEND_MY_CALLED = true }
             MockResult::Return(Box::pin(futures::future::ready(Ok(Some(FoundSwapTxSpend::Spent(
                 eth_tx_for_test().into(),
@@ -2103,7 +2103,7 @@ mod maker_swap_tests {
         });
 
         static mut SEARCH_FOR_SWAP_TX_SPEND_OTHER_CALLED: bool = true;
-        TestCoin::search_for_swap_tx_spend_other.mock_safe(|_, _, _, _, _, _, _, _| {
+        TestCoin::search_for_swap_tx_spend_other.mock_safe(|_, _| {
             unsafe { SEARCH_FOR_SWAP_TX_SPEND_OTHER_CALLED = true }
             MockResult::Return(Box::pin(futures::future::ready(Ok(Some(FoundSwapTxSpend::Refunded(
                 eth_tx_for_test().into(),
@@ -2139,7 +2139,7 @@ mod maker_swap_tests {
             MockResult::Return(Box::new(futures01::future::ok(Some(eth_tx_for_test().into()))))
         });
         TestCoin::search_for_swap_tx_spend_my
-            .mock_safe(|_, _, _, _, _, _, _, _| MockResult::Return(Box::pin(futures::future::ready(Ok(None)))));
+            .mock_safe(|_, _| MockResult::Return(Box::pin(futures::future::ready(Ok(None)))));
         let maker_coin = MmCoinEnum::Test(TestCoin::default());
         let taker_coin = MmCoinEnum::Test(TestCoin::default());
         let (maker_swap, _) = MakerSwap::load_from_saved(ctx, maker_coin, taker_coin, maker_saved_swap).unwrap();
@@ -2206,7 +2206,7 @@ mod maker_swap_tests {
         TestCoin::swap_contract_address.mock_safe(|_| MockResult::Return(None));
 
         static mut SEARCH_FOR_SWAP_TX_SPEND_MY_CALLED: bool = true;
-        TestCoin::search_for_swap_tx_spend_my.mock_safe(|_, _, _, _, _, _, _, _| {
+        TestCoin::search_for_swap_tx_spend_my.mock_safe(|_, _| {
             unsafe { SEARCH_FOR_SWAP_TX_SPEND_MY_CALLED = true }
             MockResult::Return(Box::pin(futures::future::ready(Ok(Some(FoundSwapTxSpend::Spent(
                 eth_tx_for_test().into(),
@@ -2214,7 +2214,7 @@ mod maker_swap_tests {
         });
 
         static mut SEARCH_FOR_SWAP_TX_SPEND_OTHER_CALLED: bool = true;
-        TestCoin::search_for_swap_tx_spend_other.mock_safe(|_, _, _, _, _, _, _, _| {
+        TestCoin::search_for_swap_tx_spend_other.mock_safe(|_, _| {
             unsafe { SEARCH_FOR_SWAP_TX_SPEND_OTHER_CALLED = true }
             MockResult::Return(Box::pin(futures::future::ready(Ok(Some(FoundSwapTxSpend::Spent(
                 eth_tx_for_test().into(),
@@ -2265,7 +2265,7 @@ mod maker_swap_tests {
         TestCoin::swap_contract_address.mock_safe(|_| MockResult::Return(None));
 
         static mut SEARCH_FOR_SWAP_TX_SPEND_MY_CALLED: bool = false;
-        TestCoin::search_for_swap_tx_spend_my.mock_safe(|_, _, _, _, _, _, _, _| {
+        TestCoin::search_for_swap_tx_spend_my.mock_safe(|_, _| {
             unsafe { SEARCH_FOR_SWAP_TX_SPEND_MY_CALLED = true }
             MockResult::Return(Box::pin(futures::future::ready(Ok(Some(FoundSwapTxSpend::Spent(
                 eth_tx_for_test().into(),
@@ -2273,7 +2273,7 @@ mod maker_swap_tests {
         });
 
         static mut SEARCH_FOR_SWAP_TX_SPEND_OTHER_CALLED: bool = false;
-        TestCoin::search_for_swap_tx_spend_other.mock_safe(|_, _, _, _, _, _, _, _| {
+        TestCoin::search_for_swap_tx_spend_other.mock_safe(|_, _| {
             unsafe { SEARCH_FOR_SWAP_TX_SPEND_OTHER_CALLED = true }
             MockResult::Return(Box::pin(futures::future::ready(Ok(None))))
         });
@@ -2311,7 +2311,7 @@ mod maker_swap_tests {
         TestCoin::swap_contract_address.mock_safe(|_| MockResult::Return(None));
 
         static mut SEARCH_FOR_SWAP_TX_SPEND_MY_CALLED: bool = false;
-        TestCoin::search_for_swap_tx_spend_my.mock_safe(|_, _, _, _, _, _, _, _| {
+        TestCoin::search_for_swap_tx_spend_my.mock_safe(|_, _| {
             unsafe { SEARCH_FOR_SWAP_TX_SPEND_MY_CALLED = true }
             MockResult::Return(Box::pin(futures::future::ready(Ok(Some(FoundSwapTxSpend::Spent(
                 eth_tx_for_test().into(),
@@ -2319,7 +2319,7 @@ mod maker_swap_tests {
         });
 
         static mut SEARCH_FOR_SWAP_TX_SPEND_OTHER_CALLED: bool = false;
-        TestCoin::search_for_swap_tx_spend_other.mock_safe(|_, _, _, _, _, _, _, _| {
+        TestCoin::search_for_swap_tx_spend_other.mock_safe(|_, _| {
             unsafe { SEARCH_FOR_SWAP_TX_SPEND_OTHER_CALLED = true }
             MockResult::Return(Box::pin(futures::future::ready(Ok(None))))
         });

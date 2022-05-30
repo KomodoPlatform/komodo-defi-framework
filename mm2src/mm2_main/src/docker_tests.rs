@@ -112,8 +112,8 @@ mod docker_tests {
     use coins::utxo::utxo_common::send_outputs_from_my_address;
     use coins::utxo::utxo_standard::{utxo_standard_coin_with_priv_key, UtxoStandardCoin};
     use coins::utxo::{dhash160, GetUtxoListOps, UtxoActivationParams, UtxoCommonOps};
-    use coins::{CoinProtocol, FoundSwapTxSpend, MarketCoinOps, MmCoin, SwapOps, Transaction, TransactionEnum,
-                WithdrawRequest};
+    use coins::{CoinProtocol, FoundSwapTxSpend, MarketCoinOps, MmCoin, SearchForSwapTxSpendInput, SwapOps,
+                Transaction, TransactionEnum, WithdrawRequest};
     use common::mm_number::{BigDecimal, MmNumber};
     use common::{block_on, now_ms};
     use crypto::privkey::{key_pair_from_secret, key_pair_from_seed};
@@ -430,17 +430,18 @@ mod docker_tests {
             .wait()
             .unwrap();
 
-        let found = block_on(coin.search_for_swap_tx_spend_my(
+        let search_input = SearchForSwapTxSpendInput {
             time_lock,
-            &*coin.my_public_key().unwrap(),
-            &[0; 20],
-            &tx.tx_hex(),
-            0,
-            &None,
-            &[],
-        ))
-        .unwrap()
-        .unwrap();
+            other_pub: &*coin.my_public_key().unwrap(),
+            secret_hash: &[0; 20],
+            tx: &tx.tx_hex(),
+            search_from_block: 0,
+            swap_contract_address: &None,
+            swap_unique_data: &[],
+        };
+        let found = block_on(coin.search_for_swap_tx_spend_my(search_input))
+            .unwrap()
+            .unwrap();
         assert_eq!(FoundSwapTxSpend::Refunded(refund_tx), found);
     }
 
@@ -469,17 +470,18 @@ mod docker_tests {
             .wait()
             .unwrap();
 
-        let found = block_on(coin.search_for_swap_tx_spend_my(
+        let search_input = SearchForSwapTxSpendInput {
             time_lock,
-            &*coin.my_public_key().unwrap(),
-            &[0; 20],
-            &tx.tx_hex(),
-            0,
-            &None,
-            &[],
-        ))
-        .unwrap()
-        .unwrap();
+            other_pub: &*coin.my_public_key().unwrap(),
+            secret_hash: &[0; 20],
+            tx: &tx.tx_hex(),
+            search_from_block: 0,
+            swap_contract_address: &None,
+            swap_unique_data: &[],
+        };
+        let found = block_on(coin.search_for_swap_tx_spend_my(search_input))
+            .unwrap()
+            .unwrap();
         assert_eq!(FoundSwapTxSpend::Refunded(refund_tx), found);
     }
 
@@ -509,17 +511,18 @@ mod docker_tests {
             .wait()
             .unwrap();
 
-        let found = block_on(coin.search_for_swap_tx_spend_my(
+        let search_input = SearchForSwapTxSpendInput {
             time_lock,
-            &*coin.my_public_key().unwrap(),
-            &*dhash160(&secret),
-            &tx.tx_hex(),
-            0,
-            &None,
-            &[],
-        ))
-        .unwrap()
-        .unwrap();
+            other_pub: &*coin.my_public_key().unwrap(),
+            secret_hash: &*dhash160(&secret),
+            tx: &tx.tx_hex(),
+            search_from_block: 0,
+            swap_contract_address: &None,
+            swap_unique_data: &[],
+        };
+        let found = block_on(coin.search_for_swap_tx_spend_my(search_input))
+            .unwrap()
+            .unwrap();
         assert_eq!(FoundSwapTxSpend::Spent(spend_tx), found);
     }
 
@@ -549,17 +552,18 @@ mod docker_tests {
             .wait()
             .unwrap();
 
-        let found = block_on(coin.search_for_swap_tx_spend_my(
+        let search_input = SearchForSwapTxSpendInput {
             time_lock,
-            &*coin.my_public_key().unwrap(),
-            &*dhash160(&secret),
-            &tx.tx_hex(),
-            0,
-            &None,
-            &[],
-        ))
-        .unwrap()
-        .unwrap();
+            other_pub: &*coin.my_public_key().unwrap(),
+            secret_hash: &*dhash160(&secret),
+            tx: &tx.tx_hex(),
+            search_from_block: 0,
+            swap_contract_address: &None,
+            swap_unique_data: &[],
+        };
+        let found = block_on(coin.search_for_swap_tx_spend_my(search_input))
+            .unwrap()
+            .unwrap();
         assert_eq!(FoundSwapTxSpend::Spent(spend_tx), found);
     }
 
