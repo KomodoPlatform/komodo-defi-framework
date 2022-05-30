@@ -2459,7 +2459,7 @@ pub async fn tx_details_by_hash<T: UtxoCommonOps>(
             };
             cur + fee
         });
-        (fee.into(), None)
+        (try_s!(fee.try_into()), None)
     } else {
         let fee = input_amount as i64 - output_amount as i64;
         (big_decimal_from_sat(fee, coin.as_ref().decimals), None)

@@ -22,8 +22,9 @@ use crate::protocol::{FloodsubMessage, FloodsubProtocol, FloodsubRpc, FloodsubSu
 use crate::topic::Topic;
 use crate::FloodsubConfig;
 use cuckoofilter::CuckooFilter;
-use libp2p_core::{connection::ConnectionId, Multiaddr, PeerId};
-use libp2p_swarm::{NetworkBehaviour, NetworkBehaviourAction, NotifyHandler, OneShotHandler, PollParameters};
+use libp2p_core::{connection::ConnectionId, ConnectedPoint, Multiaddr, PeerId};
+use libp2p_swarm::{IntoConnectionHandler, NetworkBehaviour, NetworkBehaviourAction, NotifyHandler, OneShotHandler,
+                   PollParameters};
 use smallvec::SmallVec;
 use std::collections::hash_map::{DefaultHasher, HashMap};
 use std::task::{Context, Poll};
@@ -201,14 +202,26 @@ impl Floodsub {
 }
 
 impl NetworkBehaviour for Floodsub {
-    type ProtocolsHandler = OneShotHandler<FloodsubProtocol, FloodsubRpc, InnerMessage>;
+    type ConnectionHandler = OneShotHandler<FloodsubProtocol, FloodsubRpc, InnerMessage>;
     type OutEvent = FloodsubEvent;
 
-    fn new_handler(&mut self) -> Self::ProtocolsHandler { Default::default() }
+    fn new_handler(&mut self) -> Self::ConnectionHandler { Default::default() }
 
     fn addresses_of_peer(&mut self, _: &PeerId) -> Vec<Multiaddr> { Vec::new() }
 
-    fn inject_connected(&mut self, id: &PeerId) {
+    fn inject_connection_established(
+        &mut self,
+        id: &PeerId,
+        _: &ConnectionId,
+        _: &ConnectedPoint,
+        _: Option<&Vec<Multiaddr>>,
+        other_established: usize,
+    ) {
+        if other_established > 0 {
+            // We only care about the first time a peer connects.
+            return;
+        }
+
         // We need to send our subscriptions to the newly-connected node.
         for topic in self.subscribed_topics.iter().cloned() {
             self.events.push_back(NetworkBehaviourAction::NotifyHandler {
@@ -227,7 +240,19 @@ impl NetworkBehaviour for Floodsub {
         self.connected_peers.insert(*id, SmallVec::new());
     }
 
-    fn inject_disconnected(&mut self, id: &PeerId) {
+    fn inject_connection_closed(
+        &mut self,
+        id: &PeerId,
+        _: &ConnectionId,
+        _: &ConnectedPoint,
+        _: <Self::ConnectionHandler as IntoConnectionHandler>::Handler,
+        remaining_established: usize,
+    ) {
+        if remaining_established > 0 {
+            // we only care about peer disconnections
+            return;
+        }
+
         let was_in = self.connected_peers.remove(id);
         debug_assert!(was_in.is_some());
     }
@@ -324,7 +349,7 @@ impl NetworkBehaviour for Floodsub {
         &mut self,
         _: &mut Context<'_>,
         _: &mut impl PollParameters,
-    ) -> Poll<NetworkBehaviourAction<Self::OutEvent, Self::ProtocolsHandler>> {
+    ) -> Poll<NetworkBehaviourAction<Self::OutEvent, Self::ConnectionHandler>> {
         if let Some(event) = self.events.pop_front() {
             return Poll::Ready(event);
         }

@@ -3505,8 +3505,8 @@ fn checksum_address(addr: &str) -> String {
     }
 
     let mut hasher = Keccak256::default();
-    hasher.input(&addr);
-    let hash = hasher.result();
+    hasher.update(&addr);
+    let hash = hasher.finalize();
     let mut result: String = "0x".into();
     for (i, c) in addr.chars().enumerate() {
         if c.is_digit(10) {

@@ -1,6 +1,6 @@
 use super::{construct_event_closure, DbTransactionError, DbTransactionResult, InternalItem, ItemId};
 use crate::indexed_db::db_driver::cursor::IdbCursorBuilder;
-use common::stringify_js_error;
+use common::{deserialize_from_js, serialize_to_js, stringify_js_error};
 use futures::channel::mpsc;
 use futures::StreamExt;
 use mm2_err_handle::prelude::*;
@@ -28,7 +28,7 @@ impl IdbObjectStoreImpl {
 
         // The [`InternalItem::item`] is a flatten field, so if we add the item without the [`InternalItem::_item_id`] id,
         // it will be calculated automatically.
-        let js_value = match JsValue::from_serde(item) {
+        let js_value = match serialize_to_js(item) {
             Ok(value) => value,
             Err(e) => return MmError::err(DbTransactionError::ErrorSerializingItem(e.to_string())),
         };
@@ -53,7 +53,7 @@ impl IdbObjectStoreImpl {
 
         let index = index_str.to_owned();
         let index_value_js =
-            JsValue::from_serde(&index_value).map_to_mm(|e| DbTransactionError::ErrorSerializingIndex {
+            serialize_to_js(&index_value).map_to_mm(|e| DbTransactionError::ErrorSerializingIndex {
                 index: index.clone(),
                 description: e.to_string(),
             })?;
@@ -89,7 +89,7 @@ impl IdbObjectStoreImpl {
 
         let index = index_str.to_owned();
         let index_value_js =
-            JsValue::from_serde(&index_value).map_to_mm(|e| DbTransactionError::ErrorSerializingIndex {
+            serialize_to_js(&index_value).map_to_mm(|e| DbTransactionError::ErrorSerializingIndex {
                 index: index.clone(),
                 description: e.to_string(),
             })?;
@@ -143,7 +143,7 @@ impl IdbObjectStoreImpl {
         }
 
         let item_with_key = InternalItem { _item_id, item };
-        let js_value = match JsValue::from_serde(&item_with_key) {
+        let js_value = match serialize_to_js(&item_with_key) {
             Ok(value) => value,
             Err(e) => return MmError::err(DbTransactionError::ErrorSerializingItem(e.to_string())),
         };
@@ -231,9 +231,7 @@ impl IdbObjectStoreImpl {
             Err(e) => return MmError::err(DbTransactionError::UnexpectedState(stringify_js_error(&e))),
         };
 
-        result_js_value
-            .into_serde()
-            .map_to_mm(|e| DbTransactionError::ErrorDeserializingItem(e.to_string()))
+        deserialize_from_js(result_js_value).map_to_mm(|e| DbTransactionError::ErrorDeserializingItem(e.to_string()))
     }
 
     fn items_from_completed_request(request: &IdbRequest) -> DbTransactionResult<Vec<(ItemId, Json)>> {
@@ -246,7 +244,7 @@ impl IdbObjectStoreImpl {
             return Ok(Vec::new());
         }
 
-        let items: Vec<InternalItem> = match result_js_value.into_serde() {
+        let items: Vec<InternalItem> = match deserialize_from_js(result_js_value) {
             Ok(items) => items,
             Err(e) => return MmError::err(DbTransactionError::ErrorDeserializingItem(e.to_string())),
         };
@@ -264,9 +262,7 @@ impl IdbObjectStoreImpl {
             return Ok(Vec::new());
         }
 
-        result_js_value
-            .into_serde()
-            .map_to_mm(|e| DbTransactionError::ErrorDeserializingItem(e.to_string()))
+        deserialize_from_js(result_js_value).map_to_mm(|e| DbTransactionError::ErrorDeserializingItem(e.to_string()))
     }
 
     fn error_from_failed_request(request: &IdbRequest) -> String {

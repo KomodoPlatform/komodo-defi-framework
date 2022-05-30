@@ -1,6 +1,6 @@
 use super::{CollectCursorAction, CollectItemAction, CursorError, CursorOps, CursorResult, DbFilter};
 use async_trait::async_trait;
-use common::{log::warn, stringify_js_error};
+use common::{log::warn, serialize_to_js, stringify_js_error};
 use mm2_err_handle::prelude::*;
 use serde_json::Value as Json;
 use wasm_bindgen::prelude::*;
@@ -43,7 +43,7 @@ impl CursorOps for IdbSingleKeyCursor {
 
     fn key_range(&self) -> CursorResult<Option<IdbKeyRange>> {
         let js_value =
-            JsValue::from_serde(&self.field_value).map_to_mm(|e| CursorError::ErrorSerializingIndexFieldValue {
+            serialize_to_js(&self.field_value).map_to_mm(|e| CursorError::ErrorSerializingIndexFieldValue {
                 field: self.field_name.clone(),
                 value: format!("{:?}", self.field_value),
                 description: e.to_string(),
