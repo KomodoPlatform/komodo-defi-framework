@@ -921,7 +921,11 @@ mod tests {
             Arc<test_utils::TestFeeEstimator>,
             Arc<test_utils::TestLogger>,
         >| node_0_persister.persist_manager(node);
-        let router = DefaultRouter::new(Arc::clone(&nodes[0].network_graph), Arc::clone(&nodes[0].logger), random_seed_bytes);
+        let router = DefaultRouter::new(
+            Arc::clone(&nodes[0].network_graph),
+            Arc::clone(&nodes[0].logger),
+            random_seed_bytes,
+        );
         let scorer = Arc::new(Mutex::new(test_utils::TestScorer::with_penalty(0)));
         let invoice_payer = Arc::new(InvoicePayer::new(
             Arc::clone(&nodes[0].node),
