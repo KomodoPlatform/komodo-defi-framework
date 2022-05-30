@@ -519,9 +519,11 @@ mod tests {
             for j in (i + 1)..num_nodes {
                 nodes[i].node.peer_connected(&nodes[j].node.get_our_node_id(), &Init {
                     features: InitFeatures::known(),
+                    remote_network_address: None,
                 });
                 nodes[j].node.peer_connected(&nodes[i].node.get_our_node_id(), &Init {
                     features: InitFeatures::known(),
+                    remote_network_address: None,
                 });
             }
         }
@@ -905,6 +907,8 @@ mod tests {
 
     #[test]
     fn test_invoice_payer() {
+        let keys_manager = test_utils::TestKeysInterface::new(&[0u8; 32], Network::Testnet);
+        let random_seed_bytes = keys_manager.get_secure_random_bytes();
         let nodes = create_nodes(2, "test_invoice_payer".to_string());
 
         // Initiate the background processors to watch each node.
@@ -917,7 +921,7 @@ mod tests {
             Arc<test_utils::TestFeeEstimator>,
             Arc<test_utils::TestLogger>,
         >| node_0_persister.persist_manager(node);
-        let router = DefaultRouter::new(Arc::clone(&nodes[0].network_graph), Arc::clone(&nodes[0].logger));
+        let router = DefaultRouter::new(Arc::clone(&nodes[0].network_graph), Arc::clone(&nodes[0].logger), random_seed_bytes);
         let scorer = Arc::new(Mutex::new(test_utils::TestScorer::with_penalty(0)));
         let invoice_payer = Arc::new(InvoicePayer::new(
             Arc::clone(&nodes[0].node),

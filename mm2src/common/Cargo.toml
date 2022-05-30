@@ -37,7 +37,7 @@ http-body = "0.1"
 itertools = "0.10"
 keys = { path = "../mm2_bitcoin/keys" }
 lazy_static = "1.4"
-lightning = "0.0.105"
+lightning = { git = "https://github.com/shamardy/rust-lightning", branch = "0.0.106" }
 log = "0.4.8"
 num-bigint = { version = "0.4", features = ["serde", "std"] }
 num-rational = { version = "0.4", features = ["serde"] }

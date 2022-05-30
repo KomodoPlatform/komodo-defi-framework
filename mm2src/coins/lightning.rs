@@ -685,7 +685,7 @@ pub async fn start_lightning(
     spawn(ln_utils::persist_scorer_loop(persister.clone(), scorer.clone()));
 
     // Create InvoicePayer
-    let router = DefaultRouter::new(network_graph, logger.clone());
+    let router = DefaultRouter::new(network_graph, logger.clone(), keys_manager.get_secure_random_bytes());
     let invoice_payer = Arc::new(InvoicePayer::new(
         channel_manager.clone(),
         router,
