@@ -23,6 +23,7 @@ use mm2_err_handle::prelude::*;
 use rpc::v1::types::ToTxHash;
 use script::Builder as ScriptBuilder;
 use serialization::serialize;
+use std::convert::TryInto;
 use std::str::FromStr;
 use utxo_signer::with_key_pair::sign_tx;
 
@@ -205,7 +206,9 @@ impl QtumCoin {
 
         let staker = self.am_i_currently_staking().await?;
         let (unspents, _) = self.get_unspent_ordered_list(my_address).await?;
-        let lower_bound = QTUM_LOWER_BOUND_DELEGATION_AMOUNT.into();
+        let lower_bound = QTUM_LOWER_BOUND_DELEGATION_AMOUNT
+            .try_into()
+            .expect("Conversion should succeed");
         let mut amount = BigDecimal::zero();
         if staker.is_some() {
             amount = unspents

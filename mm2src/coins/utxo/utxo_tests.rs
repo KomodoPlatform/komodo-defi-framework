@@ -29,6 +29,7 @@ use mm2_core::mm_ctx::MmCtxBuilder;
 use mocktopus::mocking::*;
 use rpc::v1::types::H256 as H256Json;
 use serialization::{deserialize, CoinVariant};
+use std::convert::TryFrom;
 use std::iter;
 use std::mem::discriminant;
 use std::num::NonZeroUsize;
@@ -3846,10 +3847,19 @@ fn test_native_display_balances() {
         .unwrap();
 
     let expected: Vec<(Address, BigDecimal)> = vec![
-        ("RG278CfeNPFtNztFZQir8cgdWexVhViYVy".into(), BigDecimal::from(5.77699)),
+        (
+            "RG278CfeNPFtNztFZQir8cgdWexVhViYVy".into(),
+            BigDecimal::try_from(5.77699).unwrap(),
+        ),
         ("RYPz6Lr4muj4gcFzpMdv3ks1NCGn3mkDPN".into(), BigDecimal::from(0)),
-        ("RJeDDtDRtKUoL8BCKdH7TNCHqUKr7kQRsi".into(), BigDecimal::from(0.77699)),
-        ("RQHn9VPHBqNjYwyKfJbZCiaxVrWPKGQjeF".into(), BigDecimal::from(0.99998)),
+        (
+            "RJeDDtDRtKUoL8BCKdH7TNCHqUKr7kQRsi".into(),
+            BigDecimal::try_from(0.77699).unwrap(),
+        ),
+        (
+            "RQHn9VPHBqNjYwyKfJbZCiaxVrWPKGQjeF".into(),
+            BigDecimal::try_from(0.99998).unwrap(),
+        ),
     ];
     assert_eq!(actual, expected);
 }

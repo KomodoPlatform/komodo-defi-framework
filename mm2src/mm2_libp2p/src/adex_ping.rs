@@ -18,7 +18,7 @@ use void::Void;
 pub struct AdexPing {
     ping: Ping,
     #[behaviour(ignore)]
-    events: VecDeque<NetworkBehaviourAction<Void, <Self as NetworkBehaviour>::ProtocolsHandler>>,
+    events: VecDeque<NetworkBehaviourAction<Void, <Self as NetworkBehaviour>::ConnectionHandler>>,
 }
 
 impl NetworkBehaviourEventProcess<PingEvent> for AdexPing {
@@ -46,7 +46,7 @@ impl AdexPing {
         &mut self,
         _cx: &mut Context,
         _params: &mut impl PollParameters,
-    ) -> Poll<NetworkBehaviourAction<Void, <Self as NetworkBehaviour>::ProtocolsHandler>> {
+    ) -> Poll<NetworkBehaviourAction<Void, <Self as NetworkBehaviour>::ConnectionHandler>> {
         if let Some(event) = self.events.pop_front() {
             return Poll::Ready(event);
         }
