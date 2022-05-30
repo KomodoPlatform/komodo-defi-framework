@@ -15,8 +15,8 @@ use crate::rpc_command::init_withdraw::{InitWithdrawCoin, WithdrawTaskHandle};
 use crate::utxo::utxo_builder::{MergeUtxoArcOps, UtxoCoinBuildError, UtxoCoinBuilder, UtxoCoinBuilderCommonOps,
                                 UtxoFieldsWithHardwareWalletBuilder, UtxoFieldsWithIguanaPrivKeyBuilder};
 use crate::{eth, CanRefundHtlc, CoinBalance, CoinWithDerivationMethod, DelegationError, DelegationFut,
-            GetWithdrawSenderAddress, NegotiateSwapContractAddrErr, PrivKeyBuildPolicy, SignatureResult,
-            StakingInfosFut, SwapOps, TradePreimageValue, TransactionFut, UnexpectedDerivationMethod,
+            GetWithdrawSenderAddress, NegotiateSwapContractAddrErr, PrivKeyBuildPolicy, SearchForSwapTxSpendInput,
+            SignatureResult, StakingInfosFut, SwapOps, TradePreimageValue, TransactionFut, UnexpectedDerivationMethod,
             ValidateAddressResult, ValidatePaymentInput, VerificationResult, WithdrawFut, WithdrawSenderAddress};
 use common::mm_metrics::MetricsArc;
 use common::mm_number::MmNumber;
@@ -413,28 +413,8 @@ impl UtxoCommonOps for QtumCoin {
         utxo_common::get_mut_verbose_transaction_from_map_or_rpc(self, tx_hash, utxo_tx_map).await
     }
 
-    #[allow(clippy::too_many_arguments)]
-    async fn p2sh_spending_tx(
-        &self,
-        prev_transaction: UtxoTx,
-        redeem_script: Bytes,
-        outputs: Vec<TransactionOutput>,
-        script_data: Script,
-        sequence: u32,
-        lock_time: u32,
-        keypair: &KeyPair,
-    ) -> Result<UtxoTx, String> {
-        utxo_common::p2sh_spending_tx(
-            self,
-            prev_transaction,
-            redeem_script,
-            outputs,
-            script_data,
-            sequence,
-            lock_time,
-            keypair,
-        )
-        .await
+    async fn p2sh_spending_tx(&self, input: utxo_common::P2SHSpendingTxInput<'_>) -> Result<UtxoTx, String> {
+        utxo_common::p2sh_spending_tx(self, input).await
     }
 
     fn get_verbose_transactions_from_cache_or_rpc(
@@ -672,48 +652,16 @@ impl SwapOps for QtumCoin {
 
     async fn search_for_swap_tx_spend_my(
         &self,
-        time_lock: u32,
-        other_pub: &[u8],
-        secret_hash: &[u8],
-        tx: &[u8],
-        search_from_block: u64,
-        _swap_contract_address: &Option<BytesJson>,
-        swap_unique_data: &[u8],
+        input: SearchForSwapTxSpendInput<'_>,
     ) -> Result<Option<FoundSwapTxSpend>, String> {
-        utxo_common::search_for_swap_tx_spend_my(
-            self,
-            time_lock,
-            other_pub,
-            secret_hash,
-            tx,
-            utxo_common::DEFAULT_SWAP_VOUT,
-            search_from_block,
-            swap_unique_data,
-        )
-        .await
+        utxo_common::search_for_swap_tx_spend_my(self, input, utxo_common::DEFAULT_SWAP_VOUT).await
     }
 
     async fn search_for_swap_tx_spend_other(
         &self,
-        time_lock: u32,
-        other_pub: &[u8],
-        secret_hash: &[u8],
-        tx: &[u8],
-        search_from_block: u64,
-        _swap_contract_address: &Option<BytesJson>,
-        swap_unique_data: &[u8],
+        input: SearchForSwapTxSpendInput<'_>,
     ) -> Result<Option<FoundSwapTxSpend>, String> {
-        utxo_common::search_for_swap_tx_spend_other(
-            self,
-            time_lock,
-            other_pub,
-            secret_hash,
-            tx,
-            utxo_common::DEFAULT_SWAP_VOUT,
-            search_from_block,
-            swap_unique_data,
-        )
-        .await
+        utxo_common::search_for_swap_tx_spend_other(self, input, utxo_common::DEFAULT_SWAP_VOUT).await
     }
 
     fn extract_secret(&self, secret_hash: &[u8], spend_tx: &[u8]) -> Result<Vec<u8>, String> {

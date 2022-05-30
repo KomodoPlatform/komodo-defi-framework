@@ -14,8 +14,8 @@ use crate::mm2::lp_ordermatch::{MakerOrderBuilder, OrderConfirmationsSettings};
 use crate::mm2::lp_swap::{broadcast_p2p_tx_msg, tx_helper_topic};
 use crate::mm2::MM_VERSION;
 use bitcrypto::dhash160;
-use coins::{CanRefundHtlc, FeeApproxStage, FoundSwapTxSpend, MmCoinEnum, TradeFee, TradePreimageValue,
-            TransactionEnum, ValidatePaymentInput};
+use coins::{CanRefundHtlc, FeeApproxStage, FoundSwapTxSpend, MmCoinEnum, SearchForSwapTxSpendInput, TradeFee,
+            TradePreimageValue, TransactionEnum, ValidatePaymentInput};
 use common::log::{debug, error, warn};
 use common::mm_number::{BigDecimal, MmNumber};
 use common::{bits256, executor::Timer, now_ms, DEX_FEE_ADDR_RAW_PUBKEY};
@@ -1092,20 +1092,17 @@ impl MakerSwap {
 
             let secret = selfi.r().data.secret.0;
 
+            let search_input = SearchForSwapTxSpendInput {
+                time_lock: timelock,
+                other_pub: other_taker_coin_htlc_pub.as_slice(),
+                secret_hash,
+                tx: taker_payment_hex,
+                search_from_block: taker_coin_start_block,
+                swap_contract_address: &taker_coin_swap_contract_address,
+                swap_unique_data: secret_hash,
+            };
             // check if the taker payment is not spent yet
-            match selfi
-                .taker_coin
-                .search_for_swap_tx_spend_other(
-                    timelock,
-                    other_taker_coin_htlc_pub.as_slice(),
-                    secret_hash,
-                    taker_payment_hex,
-                    taker_coin_start_block,
-                    &taker_coin_swap_contract_address,
-                    secret_hash,
-                )
-                .await
-            {
+            match selfi.taker_coin.search_for_swap_tx_spend_other(search_input).await {
                 Ok(Some(FoundSwapTxSpend::Spent(tx))) => {
                     return ERR!(
                         "Taker payment was already spent by {} tx {:02x}",
@@ -1151,11 +1148,7 @@ impl MakerSwap {
             return ERR!("Taker payment spend transaction has been sent and confirmed");
         }
 
-        let secret_hash = self
-            .r()
-            .data
-            .secret_hash
-            .unwrap_or_else(|| dhash160(&self.r().data.secret.0).into());
+        let secret_hash = self.secret_hash();
 
         // have to do this because std::sync::RwLockReadGuard returned by r() is not Send,
         // so it can't be used across await
@@ -1173,10 +1166,10 @@ impl MakerSwap {
                         .check_if_my_payment_sent(
                             maker_payment_lock,
                             other_maker_coin_htlc_pub.as_slice(),
-                            &secret_hash.0,
+                            secret_hash.as_slice(),
                             maker_coin_start_block,
                             &maker_coin_swap_contract_address,
-                            &secret_hash.0,
+                            secret_hash.as_slice(),
                         )
                         .compat()
                         .await
@@ -1187,23 +1180,21 @@ impl MakerSwap {
                 }
             },
         };
+
+        let search_input = SearchForSwapTxSpendInput {
+            time_lock: maker_payment_lock,
+            other_pub: other_maker_coin_htlc_pub.as_slice(),
+            secret_hash: secret_hash.as_slice(),
+            tx: &maker_payment,
+            search_from_block: maker_coin_start_block,
+            swap_contract_address: &maker_coin_swap_contract_address,
+            swap_unique_data: secret_hash.as_slice(),
+        };
         // validate that maker payment is not spent
-        match self
-            .maker_coin
-            .search_for_swap_tx_spend_my(
-                maker_payment_lock,
-                other_maker_coin_htlc_pub.as_slice(),
-                &secret_hash.0,
-                &maker_payment,
-                maker_coin_start_block,
-                &maker_coin_swap_contract_address,
-                self.secret_hash().as_slice(),
-            )
-            .await
-        {
+        match self.maker_coin.search_for_swap_tx_spend_my(search_input).await {
             Ok(Some(FoundSwapTxSpend::Spent(_))) => {
                 log!("Warning: MakerPayment spent, but TakerPayment is not yet. Trying to spend TakerPayment");
-                let transaction = try_s!(try_spend_taker_payment(self, &secret_hash.0).await);
+                let transaction = try_s!(try_spend_taker_payment(self, secret_hash.as_slice()).await);
 
                 Ok(RecoveredSwap {
                     action: RecoveredSwapAction::SpentOtherPayment,
@@ -1230,9 +1221,9 @@ impl MakerSwap {
                     &maker_payment,
                     maker_payment_lock,
                     other_maker_coin_htlc_pub.as_slice(),
-                    &secret_hash.0,
+                    secret_hash.as_slice(),
                     &maker_coin_swap_contract_address,
-                    &secret_hash.0,
+                    secret_hash.as_slice(),
                 );
 
                 let transaction = match fut.compat().await {

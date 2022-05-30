@@ -13,7 +13,7 @@ use mm2_err_handle::prelude::*;
 use parking_lot::Mutex;
 use prost::Message;
 use protobuf::Message as ProtobufMessage;
-use rustls::ClientConfig;
+use rustls19::ClientConfig;
 use std::path::Path;
 use std::sync::Arc;
 use tokio::task::block_in_place;
@@ -239,7 +239,7 @@ impl ZcoinLightClient {
         let mut config = ClientConfig::new();
         config
             .root_store
-            .add_server_trust_anchors(&webpki_roots::TLS_SERVER_ROOTS);
+            .add_server_trust_anchors(&webpki_roots21::TLS_SERVER_ROOTS);
         config.set_protocols(&["h2".to_string().into()]);
         let tls = ClientTlsConfig::new().rustls_client_config(config);
 

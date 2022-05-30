@@ -12,8 +12,8 @@ use crate::mm2::lp_network::subscribe_to_topic;
 use crate::mm2::lp_ordermatch::{MatchBy, OrderConfirmationsSettings, TakerAction, TakerOrderBuilder};
 use crate::mm2::lp_swap::{broadcast_p2p_tx_msg, tx_helper_topic};
 use crate::mm2::MM_VERSION;
-use coins::{lp_coinfind, CanRefundHtlc, FeeApproxStage, FoundSwapTxSpend, MmCoinEnum, TradeFee, TradePreimageValue,
-            ValidatePaymentInput};
+use coins::{lp_coinfind, CanRefundHtlc, FeeApproxStage, FoundSwapTxSpend, MmCoinEnum, SearchForSwapTxSpendInput,
+            TradeFee, TradePreimageValue, ValidatePaymentInput};
 use common::executor::Timer;
 use common::log::{debug, error, warn};
 use common::mm_number::{BigDecimal, MmNumber};
@@ -1487,19 +1487,17 @@ impl TakerSwap {
         macro_rules! check_maker_payment_is_not_spent {
             // validate that maker payment is not spent
             () => {
-                match self
-                    .maker_coin
-                    .search_for_swap_tx_spend_other(
-                        self.maker_payment_lock.load(Ordering::Relaxed) as u32,
-                        other_maker_coin_htlc_pub.as_slice(),
-                        &secret_hash,
-                        &maker_payment,
-                        maker_coin_start_block,
-                        &maker_coin_swap_contract_address,
-                        self.uuid.as_bytes(),
-                    )
-                    .await
-                {
+                let search_input = SearchForSwapTxSpendInput {
+                    time_lock: self.maker_payment_lock.load(Ordering::Relaxed) as u32,
+                    other_pub: other_maker_coin_htlc_pub.as_slice(),
+                    secret_hash: &secret_hash,
+                    tx: &maker_payment,
+                    search_from_block: maker_coin_start_block,
+                    swap_contract_address: &maker_coin_swap_contract_address,
+                    swap_unique_data: self.uuid.as_bytes(),
+                };
+
+                match self.maker_coin.search_for_swap_tx_spend_other(search_input).await {
                     Ok(Some(FoundSwapTxSpend::Spent(tx))) => {
                         return ERR!(
                             "Maker payment was already spent by {} tx {:02x}",
@@ -1584,19 +1582,16 @@ impl TakerSwap {
             });
         }
 
-        let taker_payment_spend = try_s!(
-            self.taker_coin
-                .search_for_swap_tx_spend_my(
-                    taker_payment_lock as u32,
-                    other_taker_coin_htlc_pub.as_slice(),
-                    &secret_hash,
-                    &taker_payment,
-                    taker_coin_start_block,
-                    &taker_coin_swap_contract_address,
-                    self.uuid.as_bytes(),
-                )
-                .await
-        );
+        let search_input = SearchForSwapTxSpendInput {
+            time_lock: taker_payment_lock as u32,
+            other_pub: other_taker_coin_htlc_pub.as_slice(),
+            secret_hash: &secret_hash,
+            tx: &taker_payment,
+            search_from_block: taker_coin_start_block,
+            swap_contract_address: &taker_coin_swap_contract_address,
+            swap_unique_data: self.uuid.as_bytes(),
+        };
+        let taker_payment_spend = try_s!(self.taker_coin.search_for_swap_tx_spend_my(search_input).await);
 
         match taker_payment_spend {
             Some(spend) => match spend {

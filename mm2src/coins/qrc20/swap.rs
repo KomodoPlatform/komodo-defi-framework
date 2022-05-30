@@ -221,7 +221,7 @@ impl Qrc20Coin {
     pub async fn search_for_swap_tx_spend(
         &self,
         time_lock: u32,
-        secret_hash: Vec<u8>,
+        secret_hash: &[u8],
         tx: UtxoTx,
         search_from_block: u64,
     ) -> Result<Option<FoundSwapTxSpend>, String> {
@@ -232,7 +232,7 @@ impl Qrc20Coin {
         }
 
         let Erc20PaymentDetails { swap_id, receiver, .. } = try_s!(self.erc20_payment_details_from_tx(&tx).await);
-        let expected_swap_id = qrc20_swap_id(time_lock, &secret_hash);
+        let expected_swap_id = qrc20_swap_id(time_lock, secret_hash);
         if expected_swap_id != swap_id {
             return ERR!("Unexpected swap_id {}", hex::encode(swap_id));
         }
@@ -241,7 +241,7 @@ impl Qrc20Coin {
         let spend_txs = try_s!(self.receiver_spend_transactions(receiver, search_from_block).await);
         let found = spend_txs
             .into_iter()
-            .find(|tx| find_receiver_spend_with_swap_id_and_secret_hash(tx, &expected_swap_id, &secret_hash).is_some());
+            .find(|tx| find_receiver_spend_with_swap_id_and_secret_hash(tx, &expected_swap_id, secret_hash).is_some());
         if let Some(spent_tx) = found {
             return Ok(Some(FoundSwapTxSpend::Spent(TransactionEnum::UtxoTx(spent_tx))));
         }

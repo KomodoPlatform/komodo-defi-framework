@@ -12,10 +12,11 @@ use crate::utxo::{generate_and_send_tx, sat_from_big_decimal, ActualTxFee, Addit
                   UtxoCommonOps, UtxoTx, UtxoTxBroadcastOps, UtxoTxGenerationOps};
 use crate::{BalanceFut, CoinBalance, FeeApproxStage, FoundSwapTxSpend, HistorySyncState, MarketCoinOps, MmCoin,
             NegotiateSwapContractAddrErr, NumConversError, PrivKeyNotAllowed, RawTransactionFut,
-            RawTransactionRequest, SignatureResult, SwapOps, TradeFee, TradePreimageError, TradePreimageFut,
-            TradePreimageResult, TradePreimageValue, TransactionDetails, TransactionEnum, TransactionErr,
-            TransactionFut, TxFeeDetails, UnexpectedDerivationMethod, ValidateAddressResult, ValidatePaymentInput,
-            VerificationError, VerificationResult, WithdrawError, WithdrawFee, WithdrawFut, WithdrawRequest};
+            RawTransactionRequest, SearchForSwapTxSpendInput, SignatureResult, SwapOps, TradeFee, TradePreimageError,
+            TradePreimageFut, TradePreimageResult, TradePreimageValue, TransactionDetails, TransactionEnum,
+            TransactionErr, TransactionFut, TxFeeDetails, UnexpectedDerivationMethod, ValidateAddressResult,
+            ValidatePaymentInput, VerificationError, VerificationResult, WithdrawError, WithdrawFee, WithdrawFut,
+            WithdrawRequest};
 use async_trait::async_trait;
 use bitcrypto::dhash160;
 use chain::constants::SEQUENCE_FINAL;
@@ -1402,48 +1403,16 @@ impl SwapOps for SlpToken {
 
     async fn search_for_swap_tx_spend_my(
         &self,
-        time_lock: u32,
-        other_pub: &[u8],
-        secret_hash: &[u8],
-        tx: &[u8],
-        search_from_block: u64,
-        _swap_contract_address: &Option<BytesJson>,
-        swap_unique_data: &[u8],
+        input: SearchForSwapTxSpendInput<'_>,
     ) -> Result<Option<FoundSwapTxSpend>, String> {
-        utxo_common::search_for_swap_tx_spend_my(
-            &self.platform_coin,
-            time_lock,
-            other_pub,
-            secret_hash,
-            tx,
-            SLP_SWAP_VOUT,
-            search_from_block,
-            swap_unique_data,
-        )
-        .await
+        utxo_common::search_for_swap_tx_spend_my(&self.platform_coin, input, SLP_SWAP_VOUT).await
     }
 
     async fn search_for_swap_tx_spend_other(
         &self,
-        time_lock: u32,
-        other_pub: &[u8],
-        secret_hash: &[u8],
-        tx: &[u8],
-        search_from_block: u64,
-        _swap_contract_address: &Option<BytesJson>,
-        swap_unique_data: &[u8],
+        input: SearchForSwapTxSpendInput<'_>,
     ) -> Result<Option<FoundSwapTxSpend>, String> {
-        utxo_common::search_for_swap_tx_spend_other(
-            &self.platform_coin,
-            time_lock,
-            other_pub,
-            secret_hash,
-            tx,
-            SLP_SWAP_VOUT,
-            search_from_block,
-            swap_unique_data,
-        )
-        .await
+        utxo_common::search_for_swap_tx_spend_other(&self.platform_coin, input, SLP_SWAP_VOUT).await
     }
 
     fn extract_secret(&self, secret_hash: &[u8], spend_tx: &[u8]) -> Result<Vec<u8>, String> {

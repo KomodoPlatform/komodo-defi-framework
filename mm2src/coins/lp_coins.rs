@@ -454,6 +454,16 @@ pub struct ValidatePaymentInput {
     pub unique_swap_data: Vec<u8>,
 }
 
+pub struct SearchForSwapTxSpendInput<'a> {
+    pub time_lock: u32,
+    pub other_pub: &'a [u8],
+    pub secret_hash: &'a [u8],
+    pub tx: &'a [u8],
+    pub search_from_block: u64,
+    pub swap_contract_address: &'a Option<BytesJson>,
+    pub swap_unique_data: &'a [u8],
+}
+
 /// Swap operations (mostly based on the Hash/Time locked transactions implemented by coin wallets).
 #[async_trait]
 pub trait SwapOps {
@@ -543,28 +553,14 @@ pub trait SwapOps {
         swap_unique_data: &[u8],
     ) -> Box<dyn Future<Item = Option<TransactionEnum>, Error = String> + Send>;
 
-    #[allow(clippy::too_many_arguments)]
     async fn search_for_swap_tx_spend_my(
         &self,
-        time_lock: u32,
-        other_pub: &[u8],
-        secret_hash: &[u8],
-        tx: &[u8],
-        search_from_block: u64,
-        swap_contract_address: &Option<BytesJson>,
-        swap_unique_data: &[u8],
+        input: SearchForSwapTxSpendInput<'_>,
     ) -> Result<Option<FoundSwapTxSpend>, String>;
 
-    #[allow(clippy::too_many_arguments)]
     async fn search_for_swap_tx_spend_other(
         &self,
-        time_lock: u32,
-        other_pub: &[u8],
-        secret_hash: &[u8],
-        tx: &[u8],
-        search_from_block: u64,
-        swap_contract_address: &Option<BytesJson>,
-        swap_unique_data: &[u8],
+        input: SearchForSwapTxSpendInput<'_>,
     ) -> Result<Option<FoundSwapTxSpend>, String>;
 
     fn extract_secret(&self, secret_hash: &[u8], spend_tx: &[u8]) -> Result<Vec<u8>, String>;

@@ -11,9 +11,10 @@ use crate::utxo::rpc_clients::{electrum_script_hash, BlockHashOrHeight, UnspentI
 use crate::utxo::tx_cache::TxCacheResult;
 use crate::utxo::utxo_withdraw::{InitUtxoWithdraw, StandardUtxoWithdraw, UtxoWithdraw};
 use crate::{CanRefundHtlc, CoinBalance, CoinWithDerivationMethod, GetWithdrawSenderAddress, HDAddressId,
-            RawTransactionError, RawTransactionRequest, RawTransactionRes, SignatureError, SignatureResult, SwapOps,
-            TradePreimageValue, TransactionFut, TxFeeDetails, ValidateAddressResult, ValidatePaymentInput,
-            VerificationError, VerificationResult, WithdrawFrom, WithdrawResult, WithdrawSenderAddress};
+            RawTransactionError, RawTransactionRequest, RawTransactionRes, SearchForSwapTxSpendInput, SignatureError,
+            SignatureResult, SwapOps, TradePreimageValue, TransactionFut, TxFeeDetails, ValidateAddressResult,
+            ValidatePaymentInput, VerificationError, VerificationResult, WithdrawFrom, WithdrawResult,
+            WithdrawSenderAddress};
 use bigdecimal::BigDecimal;
 use bitcrypto::dhash256;
 pub use bitcrypto::{dhash160, sha256, ChecksumType};
@@ -953,18 +954,18 @@ pub async fn calc_interest_if_required<T: UtxoCommonOps>(
     Ok((unsigned, data))
 }
 
-#[allow(clippy::too_many_arguments)]
-pub async fn p2sh_spending_tx<T: UtxoCommonOps>(
-    coin: &T,
+pub struct P2SHSpendingTxInput<'a> {
     prev_transaction: UtxoTx,
     redeem_script: Bytes,
     outputs: Vec<TransactionOutput>,
     script_data: Script,
     sequence: u32,
     lock_time: u32,
-    keypair: &KeyPair,
-) -> Result<UtxoTx, String> {
-    let lock_time = try_s!(coin.p2sh_tx_locktime(lock_time).await);
+    keypair: &'a KeyPair,
+}
+
+pub async fn p2sh_spending_tx<T: UtxoCommonOps>(coin: &T, input: P2SHSpendingTxInput<'_>) -> Result<UtxoTx, String> {
+    let lock_time = try_s!(coin.p2sh_tx_locktime(input.lock_time).await);
     let n_time = if coin.as_ref().conf.is_pos {
         Some((now_ms() / 1000) as u32)
     } else {
@@ -982,15 +983,15 @@ pub async fn p2sh_spending_tx<T: UtxoCommonOps>(
         n_time,
         overwintered: coin.as_ref().conf.overwintered,
         inputs: vec![UnsignedTransactionInput {
-            sequence,
+            sequence: input.sequence,
             previous_output: OutPoint {
-                hash: prev_transaction.hash(),
+                hash: input.prev_transaction.hash(),
                 index: DEFAULT_SWAP_VOUT as u32,
             },
-            amount: prev_transaction.outputs[0].value,
+            amount: input.prev_transaction.outputs[0].value,
             witness: Vec::new(),
         }],
-        outputs: outputs.clone(),
+        outputs: input.outputs,
         expiry_height: 0,
         join_splits: vec![],
         shielded_spends: vec![],
@@ -1005,9 +1006,9 @@ pub async fn p2sh_spending_tx<T: UtxoCommonOps>(
     let signed_input = try_s!(p2sh_spend(
         &unsigned,
         DEFAULT_SWAP_VOUT,
-        keypair,
-        script_data,
-        redeem_script.into(),
+        input.keypair,
+        input.script_data,
+        input.redeem_script.into(),
         coin.as_ref().conf.signature_version,
         coin.as_ref().conf.fork_id
     ));
@@ -1017,7 +1018,7 @@ pub async fn p2sh_spending_tx<T: UtxoCommonOps>(
         overwintered: unsigned.overwintered,
         lock_time: unsigned.lock_time,
         inputs: vec![signed_input],
-        outputs,
+        outputs: unsigned.outputs,
         expiry_height: unsigned.expiry_height,
         join_splits: vec![],
         shielded_spends: vec![],
@@ -1139,8 +1140,8 @@ pub fn send_maker_spends_taker_payment<T: UtxoCommonOps + SwapOps>(
     swap_unique_data: &[u8],
 ) -> TransactionFut {
     let my_address = try_tx_fus!(coin.as_ref().derivation_method.iguana_or_err()).clone();
-    let mut prev_tx: UtxoTx = try_tx_fus!(deserialize(taker_payment_tx).map_err(|e| ERRL!("{:?}", e)));
-    prev_tx.tx_hash_algo = coin.as_ref().tx_hash_algo;
+    let mut prev_transaction: UtxoTx = try_tx_fus!(deserialize(taker_payment_tx).map_err(|e| ERRL!("{:?}", e)));
+    prev_transaction.tx_hash_algo = coin.as_ref().tx_hash_algo;
 
     let key_pair = coin.derive_htlc_key_pair(swap_unique_data);
     let script_data = Builder::default()
@@ -1152,27 +1153,26 @@ pub fn send_maker_spends_taker_payment<T: UtxoCommonOps + SwapOps>(
         &*dhash160(secret),
         &try_tx_fus!(Public::from_slice(taker_pub)),
         key_pair.public(),
-    );
+    )
+    .into();
     let fut = async move {
         let fee = try_tx_s!(coin.get_htlc_spend_fee(DEFAULT_SWAP_TX_SPEND_SIZE).await);
         let script_pubkey = output_script(&my_address, ScriptType::P2PKH).to_bytes();
         let output = TransactionOutput {
-            value: prev_tx.outputs[0].value - fee,
+            value: prev_transaction.outputs[0].value - fee,
             script_pubkey,
         };
 
-        let transaction = try_tx_s!(
-            coin.p2sh_spending_tx(
-                prev_tx,
-                redeem_script.into(),
-                vec![output],
-                script_data,
-                SEQUENCE_FINAL,
-                time_lock,
-                &key_pair,
-            )
-            .await
-        );
+        let input = P2SHSpendingTxInput {
+            prev_transaction,
+            redeem_script,
+            outputs: vec![output],
+            script_data,
+            sequence: SEQUENCE_FINAL,
+            lock_time: time_lock,
+            keypair: &key_pair,
+        };
+        let transaction = try_tx_s!(coin.p2sh_spending_tx(input).await);
 
         let tx_fut = coin.as_ref().rpc_client.send_transaction(&transaction).compat();
         try_tx_s!(tx_fut.await, transaction);
@@ -1191,8 +1191,8 @@ pub fn send_taker_spends_maker_payment<T: UtxoCommonOps + SwapOps>(
     swap_unique_data: &[u8],
 ) -> TransactionFut {
     let my_address = try_tx_fus!(coin.as_ref().derivation_method.iguana_or_err()).clone();
-    let mut prev_tx: UtxoTx = try_tx_fus!(deserialize(maker_payment_tx).map_err(|e| ERRL!("{:?}", e)));
-    prev_tx.tx_hash_algo = coin.as_ref().tx_hash_algo;
+    let mut prev_transaction: UtxoTx = try_tx_fus!(deserialize(maker_payment_tx).map_err(|e| ERRL!("{:?}", e)));
+    prev_transaction.tx_hash_algo = coin.as_ref().tx_hash_algo;
 
     let key_pair = coin.derive_htlc_key_pair(swap_unique_data);
 
@@ -1205,27 +1205,26 @@ pub fn send_taker_spends_maker_payment<T: UtxoCommonOps + SwapOps>(
         &*dhash160(secret),
         &try_tx_fus!(Public::from_slice(maker_pub)),
         key_pair.public(),
-    );
+    )
+    .into();
     let fut = async move {
         let fee = try_tx_s!(coin.get_htlc_spend_fee(DEFAULT_SWAP_TX_SPEND_SIZE).await);
         let script_pubkey = output_script(&my_address, ScriptType::P2PKH).to_bytes();
         let output = TransactionOutput {
-            value: prev_tx.outputs[0].value - fee,
+            value: prev_transaction.outputs[0].value - fee,
             script_pubkey,
         };
 
-        let transaction = try_tx_s!(
-            coin.p2sh_spending_tx(
-                prev_tx,
-                redeem_script.into(),
-                vec![output],
-                script_data,
-                SEQUENCE_FINAL,
-                time_lock,
-                &key_pair,
-            )
-            .await
-        );
+        let input = P2SHSpendingTxInput {
+            prev_transaction,
+            redeem_script,
+            outputs: vec![output],
+            script_data,
+            sequence: SEQUENCE_FINAL,
+            lock_time: time_lock,
+            keypair: &key_pair,
+        };
+        let transaction = try_tx_s!(coin.p2sh_spending_tx(input).await);
 
         let tx_fut = coin.as_ref().rpc_client.send_transaction(&transaction).compat();
         try_tx_s!(tx_fut.await, transaction);
@@ -1244,9 +1243,9 @@ pub fn send_taker_refunds_payment<T: UtxoCommonOps + SwapOps>(
     swap_unique_data: &[u8],
 ) -> TransactionFut {
     let my_address = try_tx_fus!(coin.as_ref().derivation_method.iguana_or_err()).clone();
-    let mut prev_tx: UtxoTx =
+    let mut prev_transaction: UtxoTx =
         try_tx_fus!(deserialize(taker_payment_tx).map_err(|e| TransactionErr::Plain(format!("{:?}", e))));
-    prev_tx.tx_hash_algo = coin.as_ref().tx_hash_algo;
+    prev_transaction.tx_hash_algo = coin.as_ref().tx_hash_algo;
 
     let key_pair = coin.derive_htlc_key_pair(swap_unique_data);
     let script_data = Builder::default().push_opcode(Opcode::OP_1).into_script();
@@ -1255,27 +1254,26 @@ pub fn send_taker_refunds_payment<T: UtxoCommonOps + SwapOps>(
         secret_hash,
         key_pair.public(),
         &try_tx_fus!(Public::from_slice(maker_pub)),
-    );
+    )
+    .into();
     let fut = async move {
         let fee = try_tx_s!(coin.get_htlc_spend_fee(DEFAULT_SWAP_TX_SPEND_SIZE).await);
         let script_pubkey = output_script(&my_address, ScriptType::P2PKH).to_bytes();
         let output = TransactionOutput {
-            value: prev_tx.outputs[0].value - fee,
+            value: prev_transaction.outputs[0].value - fee,
             script_pubkey,
         };
 
-        let transaction = try_tx_s!(
-            coin.p2sh_spending_tx(
-                prev_tx,
-                redeem_script.into(),
-                vec![output],
-                script_data,
-                SEQUENCE_FINAL - 1,
-                time_lock,
-                &key_pair,
-            )
-            .await
-        );
+        let input = P2SHSpendingTxInput {
+            prev_transaction,
+            redeem_script,
+            outputs: vec![output],
+            script_data,
+            sequence: SEQUENCE_FINAL - 1,
+            lock_time: time_lock,
+            keypair: &key_pair,
+        };
+        let transaction = try_tx_s!(coin.p2sh_spending_tx(input).await);
 
         let tx_fut = coin.as_ref().rpc_client.send_transaction(&transaction).compat();
         try_tx_s!(tx_fut.await, transaction);
@@ -1294,8 +1292,8 @@ pub fn send_maker_refunds_payment<T: UtxoCommonOps + SwapOps>(
     swap_unique_data: &[u8],
 ) -> TransactionFut {
     let my_address = try_tx_fus!(coin.as_ref().derivation_method.iguana_or_err()).clone();
-    let mut prev_tx: UtxoTx = try_tx_fus!(deserialize(maker_payment_tx).map_err(|e| ERRL!("{:?}", e)));
-    prev_tx.tx_hash_algo = coin.as_ref().tx_hash_algo;
+    let mut prev_transaction: UtxoTx = try_tx_fus!(deserialize(maker_payment_tx).map_err(|e| ERRL!("{:?}", e)));
+    prev_transaction.tx_hash_algo = coin.as_ref().tx_hash_algo;
 
     let key_pair = coin.derive_htlc_key_pair(swap_unique_data);
     let script_data = Builder::default().push_opcode(Opcode::OP_1).into_script();
@@ -1304,27 +1302,26 @@ pub fn send_maker_refunds_payment<T: UtxoCommonOps + SwapOps>(
         secret_hash,
         key_pair.public(),
         &try_tx_fus!(Public::from_slice(taker_pub)),
-    );
+    )
+    .into();
     let fut = async move {
         let fee = try_tx_s!(coin.get_htlc_spend_fee(DEFAULT_SWAP_TX_SPEND_SIZE).await);
         let script_pubkey = output_script(&my_address, ScriptType::P2PKH).to_bytes();
         let output = TransactionOutput {
-            value: prev_tx.outputs[0].value - fee,
+            value: prev_transaction.outputs[0].value - fee,
             script_pubkey,
         };
 
-        let transaction = try_tx_s!(
-            coin.p2sh_spending_tx(
-                prev_tx,
-                redeem_script.into(),
-                vec![output],
-                script_data,
-                SEQUENCE_FINAL - 1,
-                time_lock,
-                &key_pair,
-            )
-            .await
-        );
+        let input = P2SHSpendingTxInput {
+            prev_transaction,
+            redeem_script,
+            outputs: vec![output],
+            script_data,
+            sequence: SEQUENCE_FINAL - 1,
+            lock_time: time_lock,
+            keypair: &key_pair,
+        };
+        let transaction = try_tx_s!(coin.p2sh_spending_tx(input).await);
 
         let tx_fut = coin.as_ref().rpc_client.send_transaction(&transaction).compat();
         try_tx_s!(tx_fut.await, transaction);
@@ -1599,50 +1596,38 @@ pub fn check_if_my_payment_sent<T: UtxoCommonOps + SwapOps>(
     Box::new(fut.boxed().compat())
 }
 
-#[allow(clippy::too_many_arguments)]
 pub async fn search_for_swap_tx_spend_my<T: AsRef<UtxoCoinFields> + SwapOps>(
     coin: &T,
-    time_lock: u32,
-    other_pub: &[u8],
-    secret_hash: &[u8],
-    tx: &[u8],
+    input: SearchForSwapTxSpendInput<'_>,
     output_index: usize,
-    search_from_block: u64,
-    swap_unique_data: &[u8],
 ) -> Result<Option<FoundSwapTxSpend>, String> {
     search_for_swap_output_spend(
         coin.as_ref(),
-        time_lock,
-        coin.derive_htlc_key_pair(swap_unique_data).public(),
-        &try_s!(Public::from_slice(other_pub)),
-        secret_hash,
-        tx,
+        input.time_lock,
+        coin.derive_htlc_key_pair(input.swap_unique_data).public(),
+        &try_s!(Public::from_slice(input.other_pub)),
+        input.secret_hash,
+        input.tx,
         output_index,
-        search_from_block,
+        input.search_from_block,
     )
     .await
 }
 
-#[allow(clippy::too_many_arguments)]
 pub async fn search_for_swap_tx_spend_other<T: AsRef<UtxoCoinFields> + SwapOps>(
     coin: &T,
-    time_lock: u32,
-    other_pub: &[u8],
-    secret_hash: &[u8],
-    tx: &[u8],
+    input: SearchForSwapTxSpendInput<'_>,
     output_index: usize,
-    search_from_block: u64,
-    swap_unique_data: &[u8],
 ) -> Result<Option<FoundSwapTxSpend>, String> {
     search_for_swap_output_spend(
         coin.as_ref(),
-        time_lock,
-        &try_s!(Public::from_slice(other_pub)),
-        coin.derive_htlc_key_pair(swap_unique_data).public(),
-        secret_hash,
-        tx,
+        input.time_lock,
+        &try_s!(Public::from_slice(input.other_pub)),
+        coin.derive_htlc_key_pair(input.swap_unique_data).public(),
+        input.secret_hash,
+        input.tx,
         output_index,
-        search_from_block,
+        input.search_from_block,
     )
     .await
 }
