@@ -456,7 +456,7 @@ dependencies = [
  "bs58",
  "hkd32",
  "hmac 0.11.0",
- "ripemd160 0.9.1",
+ "ripemd160",
  "secp256k1",
  "sha2 0.9.9",
  "subtle 2.4.0",
@@ -497,7 +497,7 @@ version = "0.1.0"
 dependencies = [
  "groestl",
  "primitives",
- "ripemd160 0.9.1",
+ "ripemd160",
  "serialization",
  "sha-1",
  "sha2 0.9.9",
@@ -5802,17 +5802,6 @@ dependencies = [
 
 [[package]]
 name = "ripemd160"
-version = "0.8.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "ad5112e0dbbb87577bfbc56c42450235e3012ce336e29c5befd7807bd626da4a"
-dependencies = [
- "block-buffer 0.7.3",
- "digest 0.8.1",
- "opaque-debug 0.2.3",
-]
-
-[[package]]
-name = "ripemd160"
 version = "0.9.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "2eca4ecc81b7f313189bf73ce724400a07da2a6dac19588b03c8bd76a2dcc251"
@@ -7351,12 +7340,12 @@ dependencies = [
  "chain",
  "hex 0.4.2",
  "primitives",
- "ripemd160 0.8.0",
+ "ripemd160",
  "rustc-hex 2.1.0",
  "serde",
  "serde_json",
  "serialization",
- "sha2 0.8.2",
+ "sha2 0.9.9",
 ]
 
 [[package]]
@@ -8947,7 +8936,7 @@ dependencies = [
  "log 0.4.14",
  "rand 0.7.3",
  "rand_core 0.5.1",
- "ripemd160 0.9.1",
+ "ripemd160",
  "secp256k1",
  "sha2 0.9.9",
  "subtle 2.4.0",

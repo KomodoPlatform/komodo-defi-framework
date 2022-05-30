@@ -268,7 +268,6 @@ skip = [
     { name = "redox_users", version = "*" },
     { name = "regex", version = "*" },
     { name = "regex-syntax", version = "*" },
-    { name = "ripemd160", version = "*" },
     { name = "rlp", version = "*" },
     { name = "rustc-hex", version = "*" },
     { name = "rustc_version", version = "*" },

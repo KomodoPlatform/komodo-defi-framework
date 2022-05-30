@@ -130,13 +130,13 @@ pub fn validate_vout(vout: &[u8]) -> bool {
 pub fn hash256(preimages: &[&[u8]]) -> Hash256Digest {
     let mut sha = Sha256::new();
     for preimage in preimages.iter() {
-        sha.input(preimage);
+        sha.update(preimage);
     }
-    let digest = sha.result();
+    let digest = sha.finalize();
 
     let mut second_sha = Sha256::new();
-    second_sha.input(digest);
-    let buf: [u8; 32] = second_sha.result().into();
+    second_sha.update(digest);
+    let buf: [u8; 32] = second_sha.finalize().into();
     buf.into()
 }
 
