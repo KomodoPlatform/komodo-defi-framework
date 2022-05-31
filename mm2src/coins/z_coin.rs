@@ -208,7 +208,6 @@ struct SaplingSyncGuard<'a> {
     respawn_guard: SaplingSyncRespawnGuard,
 }
 
-#[allow(dead_code)]
 pub struct ZCoinFields {
     dex_fee_addr: PaymentAddress,
     my_z_addr: PaymentAddress,
@@ -659,9 +658,12 @@ impl MarketCoinOps for ZCoin {
 
     fn my_address(&self) -> Result<String, String> { Ok(self.z_fields.my_z_addr_encoded.clone()) }
 
-    fn get_public_key(&self) -> Result<String, MmError<UnexpectedDerivationMethod>> { unimplemented!() }
+    fn get_public_key(&self) -> Result<String, MmError<UnexpectedDerivationMethod>> {
+        let pubkey = utxo_common::my_public_key(self.as_ref())?;
+        Ok(pubkey.to_string())
+    }
 
-    fn sign_message_hash(&self, _message: &str) -> Option<[u8; 32]> { unimplemented!() }
+    fn sign_message_hash(&self, _message: &str) -> Option<[u8; 32]> { None }
 
     fn sign_message(&self, _message: &str) -> SignatureResult<String> {
         MmError::err(SignatureError::InvalidRequest(

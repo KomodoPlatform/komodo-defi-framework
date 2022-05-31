@@ -219,22 +219,19 @@ impl ZcoinLightClient {
 
         let wallet_db = async_blocking({
             let consensus_params = consensus_params.clone();
-            move || {
-                WalletDb::for_path(wallet_db_path, consensus_params)
-                    .map_to_mm(ZcoinLightClientInitError::WalletDbInitFailure)
+            move || -> Result<_, MmError<ZcoinLightClientInitError>> {
+                let db = WalletDb::for_path(wallet_db_path, consensus_params)
+                    .map_to_mm(ZcoinLightClientInitError::WalletDbInitFailure)?;
+                run_optimization_pragmas(db.sql_conn()).map_to_mm(ZcoinLightClientInitError::WalletDbInitFailure)?;
+                init_wallet_db(&db).map_to_mm(ZcoinLightClientInitError::WalletDbInitFailure)?;
+                let existing_keys = db.get_extended_full_viewing_keys()?;
+                if existing_keys.is_empty() {
+                    init_accounts_table(&db, &[evk])?;
+                }
+                Ok(db)
             }
         })
         .await?;
-        block_in_place(|| {
-            run_optimization_pragmas(wallet_db.sql_conn()).map_to_mm(ZcoinLightClientInitError::WalletDbInitFailure)
-        })?;
-
-        block_in_place(|| init_wallet_db(&wallet_db).map_to_mm(ZcoinLightClientInitError::WalletDbInitFailure))?;
-
-        let existing_keys = block_in_place(|| wallet_db.get_extended_full_viewing_keys())?;
-        if existing_keys.is_empty() {
-            block_in_place(|| init_accounts_table(&wallet_db, &[evk]))?;
-        }
 
         let mut config = ClientConfig::new();
         config
@@ -404,6 +401,7 @@ async fn check_watch_for_tx_existence(handle: &mut SaplingSyncLoopHandle) {
 }
 
 async fn light_wallet_db_sync_loop(mut sync_handle: SaplingSyncLoopHandle) {
+    // this loop is spawned as standalone task so it's safe to use block_in_place here
     loop {
         sync_handle.current_block = match update_blocks_cache(&mut sync_handle.grpc_client, &sync_handle.db).await {
             Ok(b) => b,
