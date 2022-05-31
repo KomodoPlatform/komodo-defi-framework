@@ -46,7 +46,7 @@ parking_lot = { version = "0.12.0", features = ["nightly"] }
 parking_lot_core = { version = "0.6", features = ["nightly"] }
 paste = "1.0"
 primitives = { path = "../mm2_bitcoin/primitives" }
-prost = "0.8"
+prost = "0.10"
 rand = { version = "0.7", features = ["std", "small_rng", "wasm-bindgen"] }
 regex = "1"
 rustc-hex = "2"
