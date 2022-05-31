@@ -313,30 +313,6 @@ mod tests {
     }
 
     #[test]
-    fn it_extracts_legacy_le_sequence_info() {
-        test_utils::run_test(|fixtures| {
-            let test_cases = test_utils::get_test_cases("extractSequenceLELegacy", &fixtures);
-            for case in test_cases {
-                let input = force_deserialize_hex(case.input.as_str().unwrap());
-                let expected: &[u8] = &force_deserialize_hex(case.output.as_str().unwrap());
-                assert_eq!(&types::extract_sequence_le(&TxIn(&input)).unwrap(), expected);
-            }
-        })
-    }
-
-    #[test]
-    fn it_extracts_legacy_sequence_info() {
-        test_utils::run_test(|fixtures| {
-            let test_cases = test_utils::get_test_cases("extractSequenceLegacy", &fixtures);
-            for case in test_cases {
-                let input = force_deserialize_hex(case.input.as_str().unwrap());
-                let expected = case.output.as_u64().unwrap() as u32;
-                assert_eq!(types::extract_sequence(&TxIn(&input)).unwrap(), expected);
-            }
-        })
-    }
-
-    #[test]
     fn it_determines_input_length() {
         test_utils::run_test(|fixtures| {
             let test_cases = test_utils::get_test_cases("determineInputLength", &fixtures);
@@ -356,30 +332,6 @@ mod tests {
                 let input = force_deserialize_hex(case.input.as_str().unwrap());
                 let expected: &[u8] = &force_deserialize_hex(case.output.as_str().unwrap());
                 assert_eq!(types::extract_script_sig(&TxIn(&input)).unwrap(), expected);
-            }
-        })
-    }
-
-    #[test]
-    fn it_extracts_witness_le_sequence_numbers() {
-        test_utils::run_test(|fixtures| {
-            let test_cases = test_utils::get_test_cases("extractSequenceLEWitness", &fixtures);
-            for case in test_cases {
-                let input = force_deserialize_hex(case.input.as_str().unwrap());
-                let expected: &[u8] = &force_deserialize_hex(case.output.as_str().unwrap());
-                assert_eq!(types::extract_sequence_le(&TxIn(&input)).unwrap(), expected);
-            }
-        })
-    }
-
-    #[test]
-    fn it_extracts_witness_sequence_numbers() {
-        test_utils::run_test(|fixtures| {
-            let test_cases = test_utils::get_test_cases("extractSequenceWitness", &fixtures);
-            for case in test_cases {
-                let input = force_deserialize_hex(case.input.as_str().unwrap());
-                let expected = case.output.as_u64().unwrap() as u32;
-                assert_eq!(types::extract_sequence(&TxIn(&input)).unwrap(), expected);
             }
         })
     }

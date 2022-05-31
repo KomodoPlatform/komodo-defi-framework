@@ -41,18 +41,6 @@
       ]
     }
   ],
-  "extractSequenceLELegacy": [
-    {
-      "input": "0x1746bd867400f3494b8f44c24b83e1aa58c4f0ff25b4a61cffeffd4bc0f9ba3000000000203232323232323232323232323232323232323232323232323232323232323232ffffffff",
-      "output": "0xffffffff"
-    }
-  ],
-  "extractSequenceLegacy": [
-    {
-      "input": "0x1746bd867400f3494b8f44c24b83e1aa58c4f0ff25b4a61cffeffd4bc0f9ba3000000000203232323232323232323232323232323232323232323232323232323232323232ffffffff",
-      "output": 4294967295
-    }
-  ],
   "determineInputLength": [
     {
       "input": "0x7bb2b8f32b9ebf13af2b0a2f9dc03797c7b77ccddcac75d1216389abfa7ab3750000000000ffffffffaa15ec17524f1f7bd47ab7caa4c6652cb95eec4c58902984f9b4bcfee444567d0000000000ffffff",
@@ -79,18 +67,6 @@
     {
       "input": "0x1746bd867400f3494b8f44c24b83e1aa58c4f0ff25b4a61cffeffd4bc0f9ba300000000001eeffffffff",
       "output": "0x01ee"
-    }
-  ],
-  "extractSequenceLEWitness": [
-    {
-      "input": "0x1746bd867400f3494b8f44c24b83e1aa58c4f0ff25b4a61cffeffd4bc0f9ba300000000000ffffffff",
-      "output": "0xffffffff"
-    }
-  ],
-  "extractSequenceWitness": [
-    {
-      "input": "0x1746bd867400f3494b8f44c24b83e1aa58c4f0ff25b4a61cffeffd4bc0f9ba300000000000ffffffff",
-      "output": 4294967295
     }
   ],
   "determineOutputLength": [

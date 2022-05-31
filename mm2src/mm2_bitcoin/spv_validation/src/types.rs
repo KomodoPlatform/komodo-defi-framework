@@ -165,34 +165,6 @@ macro_rules! impl_view_type {
     }
 }
 
-/// Extracts the LE sequence bytes from an input.
-/// Sequence is used for relative time locks.
-///
-/// # Arguments
-///
-/// * `tx_in` - The LEGACY input
-pub fn extract_sequence_le(tx_in: &TxIn) -> Result<[u8; 4], SPVError> {
-    let script_sig_len = extract_script_sig_len(tx_in)?;
-    let offset: usize = 36 + script_sig_len.serialized_length() + script_sig_len.as_usize();
-
-    let mut sequence = [0u8; 4];
-    sequence.copy_from_slice(&tx_in[offset..offset + 4]);
-    Ok(sequence)
-}
-
-/// Extracts the sequence from the input.
-/// Sequence is a 4-byte little-endian number.
-///
-/// # Arguments
-///
-/// * `tx_in` - The LEGACY input
-pub fn extract_sequence(tx_in: &TxIn) -> Result<u32, SPVError> {
-    let mut arr: [u8; 4] = [0u8; 4];
-    let b = extract_sequence_le(tx_in)?;
-    arr.copy_from_slice(&b[..]);
-    Ok(u32::from_le_bytes(arr))
-}
-
 impl_view_type!(
     /// A ScriptSig
     ScriptSig
@@ -229,9 +201,6 @@ impl_view_type!(
 );
 
 impl TxIn<'_> {
-    /// Extract the sequence number from the TxIn
-    pub fn sequence(&self) -> u32 { extract_sequence(self).expect("Not malformed") }
-
     /// Extract the script sig from the TxIn
     pub fn script_sig(&self) -> ScriptSig { extract_script_sig(self).expect("Not malformed") }
 }
