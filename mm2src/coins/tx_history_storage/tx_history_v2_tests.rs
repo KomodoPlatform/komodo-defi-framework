@@ -1,8 +1,8 @@
 use crate::my_tx_history_v2::{GetHistoryResult, TxHistoryStorage};
 use crate::tx_history_storage::{GetTxHistoryFilters, TxHistoryStorageBuilder, WalletId};
 use crate::{BytesJson, TransactionDetails};
-use common::for_tests::mm_ctx_with_custom_db;
 use common::PagingOptionsEnum;
+use mm2_test_helpers::for_tests::mm_ctx_with_custom_db;
 use serde_json as json;
 use std::num::NonZeroUsize;
 
@@ -510,7 +510,7 @@ mod native_tests {
     use crate::my_tx_history_v2::TxHistoryStorage;
     use crate::tx_history_storage::sql_tx_history_storage_v2::SqliteTxHistoryStorage;
     use common::block_on;
-    use common::for_tests::mm_ctx_with_custom_db;
+    use mm2_test_helpers::for_tests::mm_ctx_with_custom_db;
 
     #[test]
     fn test_init_collection() {
@@ -576,7 +576,7 @@ mod wasm_tests {
     use super::wallet_id_for_test;
     use crate::my_tx_history_v2::TxHistoryStorage;
     use crate::tx_history_storage::wasm::tx_history_storage_v2::IndexedDbTxHistoryStorage;
-    use common::for_tests::mm_ctx_with_custom_db;
+    use mm2_test_helpers::for_tests::mm_ctx_with_custom_db;
     use wasm_bindgen_test::*;
 
     wasm_bindgen_test_configure!(run_in_browser);

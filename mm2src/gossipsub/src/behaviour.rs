@@ -27,15 +27,16 @@ use crate::topic::{Topic, TopicHash};
 use common::time_cache::{Entry as TimeCacheEntry, TimeCache};
 use futures::prelude::*;
 use libp2p_core::{connection::ConnectionId, ConnectedPoint, Multiaddr, PeerId};
-use libp2p_swarm::{IntoProtocolsHandler, NetworkBehaviour, NetworkBehaviourAction, NotifyHandler, PollParameters};
+use libp2p_swarm::{IntoConnectionHandler, NetworkBehaviour, NetworkBehaviourAction, NotifyHandler, PollParameters};
 use log::{debug, error, info, trace, warn};
 use rand::seq::SliceRandom;
 use smallvec::SmallVec;
+use std::collections::hash_map::Entry;
+use std::collections::{HashMap, HashSet, VecDeque};
+use std::iter;
+use std::sync::Arc;
+use std::task::{Context, Poll};
 use std::time::Duration;
-use std::{collections::{HashMap, HashSet, VecDeque},
-          iter,
-          sync::Arc,
-          task::{Context, Poll}};
 use wasm_timer::{Instant, Interval};
 
 mod tests;
@@ -1246,16 +1247,34 @@ impl Gossipsub {
 }
 
 impl NetworkBehaviour for Gossipsub {
-    type ProtocolsHandler = GossipsubHandler;
+    type ConnectionHandler = GossipsubHandler;
     type OutEvent = GossipsubEvent;
 
-    fn new_handler(&mut self) -> Self::ProtocolsHandler {
+    fn new_handler(&mut self) -> Self::ConnectionHandler {
         GossipsubHandler::new(self.config.protocol_id.clone(), self.config.max_transmit_size)
     }
 
     fn addresses_of_peer(&mut self, _: &PeerId) -> Vec<Multiaddr> { Vec::new() }
 
-    fn inject_connected(&mut self, id: &PeerId) {
+    fn inject_connection_established(
+        &mut self,
+        id: &PeerId,
+        conn_id: &ConnectionId,
+        point: &ConnectedPoint,
+        _: Option<&Vec<Multiaddr>>,
+        other_established: usize,
+    ) {
+        self.peer_connections
+            .entry(*id)
+            .or_insert_with(Default::default)
+            .push((*conn_id, point.clone()));
+        self.connected_addresses.push(point.get_remote_address().clone());
+
+        if other_established > 0 {
+            // For other actions, we only care about the first time a peer connects.
+            return;
+        }
+
         info!("New peer connected: {:?}", id);
         // We need to send our subscriptions to the newly-connected node if we are not relay.
         // Notify peer that we act as relay otherwise
@@ -1290,11 +1309,33 @@ impl NetworkBehaviour for Gossipsub {
         self.peer_topics.insert(*id, Vec::new());
     }
 
-    fn inject_disconnected(&mut self, id: &PeerId) {
+    fn inject_connection_closed(
+        &mut self,
+        peer_id: &PeerId,
+        disconnected_conn_id: &ConnectionId,
+        disconnected_point: &ConnectedPoint,
+        _: <Self::ConnectionHandler as IntoConnectionHandler>::Handler,
+        remaining_established: usize,
+    ) {
+        if let Entry::Occupied(mut o) = self.peer_connections.entry(*peer_id) {
+            let connected_points = o.get_mut();
+            connected_points.retain(|(conn_id, _point)| conn_id != disconnected_conn_id);
+            if connected_points.is_empty() {
+                o.remove_entry();
+            }
+        }
+
+        self.connected_addresses
+            .retain(|addr| addr != disconnected_point.get_remote_address());
+
+        if remaining_established > 0 {
+            return;
+        }
+
         // remove from mesh, topic_peers, peer_topic and fanout
-        debug!("Peer disconnected: {:?}", id);
+        debug!("Peer disconnected: {:?}", peer_id);
         {
-            let topics = match self.peer_topics.get(id) {
+            let topics = match self.peer_topics.get(peer_id) {
                 Some(topics) => (topics),
                 None => {
                     warn!("Disconnected node, not in connected nodes");
@@ -1307,70 +1348,41 @@ impl NetworkBehaviour for Gossipsub {
                 // check the mesh for the topic
                 if let Some(mesh_peers) = self.mesh.get_mut(topic) {
                     // check if the peer is in the mesh and remove it
-                    if let Some(pos) = mesh_peers.iter().position(|p| p == id) {
+                    if let Some(pos) = mesh_peers.iter().position(|p| p == peer_id) {
                         mesh_peers.remove(pos);
                     }
                 }
 
                 // remove from topic_peers
                 if let Some(peer_list) = self.topic_peers.get_mut(topic) {
-                    if let Some(pos) = peer_list.iter().position(|p| p == id) {
+                    if let Some(pos) = peer_list.iter().position(|p| p == peer_id) {
                         peer_list.remove(pos);
                     }
                     // debugging purposes
                     else {
-                        warn!("Disconnected node: {:?} not in topic_peers peer list", &id);
+                        warn!("Disconnected node: {:?} not in topic_peers peer list", peer_id);
                     }
                 } else {
                     warn!(
                         "Disconnected node: {:?} with topic: {:?} not in topic_peers",
-                        &id, &topic
+                        &peer_id, &topic
                     );
                 }
 
                 // remove from fanout
                 if let Some(peers) = self.fanout.get_mut(topic) {
-                    peers.retain(|p| p != id)
+                    peers.retain(|p| p != peer_id)
                 }
             }
         }
 
-        self.relays_mesh.remove(id);
-        self.connected_relays.remove(id);
-        self.included_to_relays_mesh.remove(id);
-        self.peer_connections.remove(id);
+        self.relays_mesh.remove(peer_id);
+        self.connected_relays.remove(peer_id);
+        self.included_to_relays_mesh.remove(peer_id);
+        self.peer_connections.remove(peer_id);
         // remove peer from peer_topics
-        let was_in = self.peer_topics.remove(id);
+        let was_in = self.peer_topics.remove(peer_id);
         debug_assert!(was_in.is_some());
-    }
-
-    fn inject_connection_established(&mut self, peer_id: &PeerId, conn_id: &ConnectionId, point: &ConnectedPoint) {
-        self.peer_connections
-            .entry(*peer_id)
-            .or_insert_with(Default::default)
-            .push((*conn_id, point.clone()));
-        self.connected_addresses.push(point.get_remote_address().clone());
-    }
-
-    fn inject_connection_closed(
-        &mut self,
-        peer_id: &PeerId,
-        disconnected_conn_id: &ConnectionId,
-        disconnected_point: &ConnectedPoint,
-        _: <Self::ProtocolsHandler as IntoProtocolsHandler>::Handler,
-    ) {
-        let mut clean = false;
-
-        if let Some(connected_points) = self.peer_connections.get_mut(peer_id) {
-            connected_points.retain(|(conn_id, _point)| conn_id != disconnected_conn_id);
-            clean = connected_points.is_empty();
-        }
-        if clean {
-            self.peer_connections.remove(peer_id);
-        }
-
-        self.connected_addresses
-            .retain(|addr| addr != disconnected_point.get_remote_address());
     }
 
     fn inject_event(&mut self, propagation_source: PeerId, _: ConnectionId, event: GossipsubRpc) {
@@ -1426,7 +1438,7 @@ impl NetworkBehaviour for Gossipsub {
         &mut self,
         cx: &mut Context,
         _: &mut impl PollParameters,
-    ) -> Poll<NetworkBehaviourAction<Self::OutEvent, Self::ProtocolsHandler>> {
+    ) -> Poll<NetworkBehaviourAction<Self::OutEvent, Self::ConnectionHandler>> {
         if let Some(event) = self.events.pop_front() {
             // clone send event reference if others references are present
             match event {
@@ -1453,19 +1465,8 @@ impl NetworkBehaviour for Gossipsub {
                 NetworkBehaviourAction::GenerateEvent(e) => {
                     return Poll::Ready(NetworkBehaviourAction::GenerateEvent(e));
                 },
-                NetworkBehaviourAction::DialAddress { address, handler } => {
-                    return Poll::Ready(NetworkBehaviourAction::DialAddress { address, handler });
-                },
-                NetworkBehaviourAction::DialPeer {
-                    peer_id,
-                    condition,
-                    handler,
-                } => {
-                    return Poll::Ready(NetworkBehaviourAction::DialPeer {
-                        peer_id,
-                        condition,
-                        handler,
-                    });
+                NetworkBehaviourAction::Dial { opts, handler } => {
+                    return Poll::Ready(NetworkBehaviourAction::Dial { opts, handler });
                 },
                 NetworkBehaviourAction::ReportObservedAddr { address, score } => {
                     return Poll::Ready(NetworkBehaviourAction::ReportObservedAddr { address, score });

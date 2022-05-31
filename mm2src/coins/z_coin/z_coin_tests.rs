@@ -1,8 +1,8 @@
 use super::*;
 use crate::z_coin::z_htlc::z_send_dex_fee;
 use common::block_on;
-use common::mm_ctx::MmCtxBuilder;
 use common::now_ms;
+use mm2_core::mm_ctx::MmCtxBuilder;
 use std::time::Duration;
 use zcash_client_backend::encoding::decode_extended_spending_key;
 

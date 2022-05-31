@@ -3,13 +3,13 @@ use async_trait::async_trait;
 use coins::my_tx_history_v2::TxHistoryStorage;
 use coins::tx_history_storage::{CreateTxHistoryStorageError, TxHistoryStorageBuilder};
 use coins::{lp_coinfind, CoinProtocol, CoinsContext, MmCoinEnum};
-use common::mm_ctx::MmArc;
-use common::mm_error::prelude::*;
 use common::mm_metrics::MetricsArc;
 use common::mm_number::BigDecimal;
-use common::{log, HttpStatusCode, NotSame, StatusCode};
+use common::{log, HttpStatusCode, StatusCode};
 use derive_more::Display;
 use futures::future::AbortHandle;
+use mm2_core::mm_ctx::MmArc;
+use mm2_err_handle::prelude::*;
 use ser_error_derive::SerializeErrorType;
 use serde_derive::{Deserialize, Serialize};
 use serde_json::Value as Json;
@@ -100,7 +100,7 @@ impl<T> TokenAsMmCoinInitializer for T
 where
     T: TokenInitializer + Send + Sync,
     InitTokensAsMmCoinsError: From<T::InitTokensError>,
-    (T::InitTokensError, InitTokensAsMmCoinsError): NotSame,
+    (T::InitTokensError, InitTokensAsMmCoinsError): NotEqual,
 {
     type PlatformCoin = <T::Token as TokenOf>::PlatformCoin;
     type ActivationRequest = <Self::PlatformCoin as PlatformWithTokensActivationOps>::ActivationRequest;
@@ -284,7 +284,7 @@ pub async fn enable_platform_coin_with_tokens<Platform>(
 where
     Platform: PlatformWithTokensActivationOps,
     EnablePlatformCoinWithTokensError: From<Platform::ActivationError>,
-    (Platform::ActivationError, EnablePlatformCoinWithTokensError): NotSame,
+    (Platform::ActivationError, EnablePlatformCoinWithTokensError): NotEqual,
 {
     if let Ok(Some(_)) = lp_coinfind(&ctx, &req.ticker).await {
         return MmError::err(EnablePlatformCoinWithTokensError::PlatformIsAlreadyActivated(

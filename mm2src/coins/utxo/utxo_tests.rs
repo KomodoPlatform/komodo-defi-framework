@@ -21,15 +21,15 @@ use crate::{CoinBalance, PrivKeyBuildPolicy, StakingInfosDetails, SwapOps, Trade
 use bigdecimal::{BigDecimal, Signed};
 use chain::OutPoint;
 use common::executor::Timer;
-use common::mm_ctx::MmCtxBuilder;
-use common::privkey::key_pair_from_seed;
 use common::{block_on, now_ms, OrdRange, PagingOptionsEnum, DEX_FEE_ADDR_RAW_PUBKEY};
-use crypto::{Bip44Chain, RpcDerivationPath};
+use crypto::{privkey::key_pair_from_seed, Bip44Chain, RpcDerivationPath};
 use futures::future::join_all;
 use futures::TryFutureExt;
+use mm2_core::mm_ctx::MmCtxBuilder;
 use mocktopus::mocking::*;
 use rpc::v1::types::H256 as H256Json;
 use serialization::{deserialize, CoinVariant};
+use std::convert::TryFrom;
 use std::iter;
 use std::mem::discriminant;
 use std::num::NonZeroUsize;
@@ -3847,10 +3847,19 @@ fn test_native_display_balances() {
         .unwrap();
 
     let expected: Vec<(Address, BigDecimal)> = vec![
-        ("RG278CfeNPFtNztFZQir8cgdWexVhViYVy".into(), BigDecimal::from(5.77699)),
+        (
+            "RG278CfeNPFtNztFZQir8cgdWexVhViYVy".into(),
+            BigDecimal::try_from(5.77699).unwrap(),
+        ),
         ("RYPz6Lr4muj4gcFzpMdv3ks1NCGn3mkDPN".into(), BigDecimal::from(0)),
-        ("RJeDDtDRtKUoL8BCKdH7TNCHqUKr7kQRsi".into(), BigDecimal::from(0.77699)),
-        ("RQHn9VPHBqNjYwyKfJbZCiaxVrWPKGQjeF".into(), BigDecimal::from(0.99998)),
+        (
+            "RJeDDtDRtKUoL8BCKdH7TNCHqUKr7kQRsi".into(),
+            BigDecimal::try_from(0.77699).unwrap(),
+        ),
+        (
+            "RQHn9VPHBqNjYwyKfJbZCiaxVrWPKGQjeF".into(),
+            BigDecimal::try_from(0.99998).unwrap(),
+        ),
     ];
     assert_eq!(actual, expected);
 }

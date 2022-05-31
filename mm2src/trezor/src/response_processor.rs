@@ -1,8 +1,7 @@
 use crate::{TrezorError, TrezorPinMatrix3x3Response};
 use async_trait::async_trait;
-use common::mm_error::prelude::*;
-use common::NotSame;
 use derive_more::Display;
+use mm2_err_handle::prelude::*;
 
 #[derive(Display)]
 pub enum TrezorProcessingError<E> {
@@ -15,7 +14,7 @@ impl<E> From<TrezorError> for TrezorProcessingError<E> {
 }
 
 /// This is required for implementing `MmError<TrezorProcessingError<E>>: From<MmError<TrezorError>>`.
-impl<E> NotSame for TrezorProcessingError<E> {}
+impl<E> NotEqual for TrezorProcessingError<E> {}
 
 #[async_trait]
 pub trait TrezorRequestProcessor {

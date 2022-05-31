@@ -1,7 +1,7 @@
 use crate::tx_history_storage::wasm::tx_history_db::TxHistoryDb;
 use crate::tx_history_storage::wasm::WasmTxHistoryResult;
 use crate::TransactionDetails;
-use common::indexed_db::{DbIdentifier, DbInstance, DbUpgrader, OnUpgradeResult, TableSignature};
+use mm2_db::indexed_db::{DbIdentifier, DbInstance, DbUpgrader, OnUpgradeResult, TableSignature};
 
 pub async fn load_tx_history(
     db: &TxHistoryDb,

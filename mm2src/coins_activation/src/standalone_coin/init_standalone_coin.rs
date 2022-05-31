@@ -4,10 +4,10 @@ use crate::standalone_coin::init_standalone_coin_error::{InitStandaloneCoinError
                                                          InitStandaloneCoinUserActionError};
 use async_trait::async_trait;
 use coins::{lp_coinfind, lp_register_coin, MmCoinEnum, RegisterCoinError, RegisterCoinParams};
-use common::mm_ctx::MmArc;
-use common::mm_error::prelude::*;
-use common::{log, NotSame, SuccessResponse};
+use common::{log, SuccessResponse};
 use crypto::trezor::trezor_rpc_task::RpcTaskHandle;
+use mm2_core::mm_ctx::MmArc;
+use mm2_err_handle::prelude::*;
 use rpc_task::rpc_common::{InitRpcTaskResponse, RpcTaskStatusRequest, RpcTaskUserActionRequest};
 use rpc_task::{RpcTask, RpcTaskManager, RpcTaskManagerShared, RpcTaskStatus, RpcTaskTypes};
 use serde_derive::Deserialize;
@@ -34,7 +34,7 @@ pub trait InitStandaloneCoinActivationOps: Into<MmCoinEnum> + Send + Sync + 'sta
     type ActivationError: From<RegisterCoinError>
         + Into<InitStandaloneCoinError>
         + SerMmErrorType
-        + NotSame
+        + NotEqual
         + Clone
         + Send
         + Sync
@@ -71,7 +71,7 @@ where
     Standalone: InitStandaloneCoinActivationOps + Send + Sync + 'static,
     Standalone::InProgressStatus: InitStandaloneCoinInitialStatus,
     InitStandaloneCoinError: From<Standalone::ActivationError>,
-    (Standalone::ActivationError, InitStandaloneCoinError): NotSame,
+    (Standalone::ActivationError, InitStandaloneCoinError): NotEqual,
 {
     if let Ok(Some(_)) = lp_coinfind(&ctx, &request.ticker).await {
         return MmError::err(InitStandaloneCoinError::CoinIsAlreadyActivated { ticker: request.ticker });

@@ -109,7 +109,8 @@ impl RequestResponseBehaviour {
         &mut self,
         cx: &mut Context,
         _params: &mut impl PollParameters,
-    ) -> Poll<NetworkBehaviourAction<RequestResponseBehaviourEvent, <Self as NetworkBehaviour>::ProtocolsHandler>> {
+    ) -> Poll<NetworkBehaviourAction<RequestResponseBehaviourEvent, <Self as NetworkBehaviour>::ConnectionHandler>>
+    {
         // poll the `rx`
         match self.rx.poll_next_unpin(cx) {
             // received a request, forward it through the network and put to the `pending_requests`

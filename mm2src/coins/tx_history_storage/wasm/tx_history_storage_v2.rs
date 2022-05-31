@@ -5,11 +5,11 @@ use crate::tx_history_storage::{token_id_from_tx_type, ConfirmationStatus, Creat
                                 FilteringAddresses, GetTxHistoryFilters, WalletId};
 use crate::{CoinsContext, TransactionDetails};
 use async_trait::async_trait;
-use common::indexed_db::{BeBigUint, DbUpgrader, MultiIndex, OnUpgradeResult, SharedDb, TableSignature};
-use common::mm_ctx::MmArc;
-use common::mm_error::prelude::*;
 use common::PagingOptionsEnum;
 use itertools::Itertools;
+use mm2_core::mm_ctx::MmArc;
+use mm2_db::indexed_db::{BeBigUint, DbUpgrader, MultiIndex, OnUpgradeResult, SharedDb, TableSignature};
+use mm2_err_handle::prelude::*;
 use rpc::v1::types::Bytes as BytesJson;
 use serde_json::{self as json, Value as Json};
 

@@ -318,7 +318,7 @@ impl AtomicDexBehaviour {
                         let connected_points = connected_points
                             .into_iter()
                             .map(|(_conn_id, point)| match point {
-                                ConnectedPoint::Dialer { address } => address.to_string(),
+                                ConnectedPoint::Dialer { address, .. } => address.to_string(),
                                 ConnectedPoint::Listener { send_back_addr, .. } => send_back_addr.to_string(),
                             })
                             .collect();
@@ -492,7 +492,7 @@ fn maintain_connection_to_relays(swarm: &mut AtomicDexSwarm, bootstrap_addresses
                 .collect::<Vec<_>>()
                 .choose_multiple(&mut rng, connect_bootstrap_num)
             {
-                if let Err(e) = libp2p::Swarm::dial_addr(swarm, (*addr).clone()) {
+                if let Err(e) = libp2p::Swarm::dial(swarm, (*addr).clone()) {
                     error!("Bootstrap addr {} dial error {}", addr, e);
                 }
             }
@@ -502,7 +502,7 @@ fn maintain_connection_to_relays(swarm: &mut AtomicDexSwarm, bootstrap_addresses
                 if swarm.behaviour().gossipsub.is_connected_to_addr(&addr) {
                     continue;
                 }
-                if let Err(e) = libp2p::Swarm::dial_addr(swarm, addr.clone()) {
+                if let Err(e) = libp2p::Swarm::dial(swarm, addr.clone()) {
                     error!("Peer {} address {} dial error {}", peer, addr, e);
                 }
             }
@@ -755,7 +755,7 @@ fn start_gossipsub(
     }
 
     for relay in bootstrap.choose_multiple(&mut rng, mesh_n) {
-        match libp2p::Swarm::dial_addr(&mut swarm, relay.clone()) {
+        match libp2p::Swarm::dial(&mut swarm, relay.clone()) {
             Ok(_) => info!("Dialed {}", relay),
             Err(e) => error!("Dial {:?} failed: {:?}", relay, e),
         }
@@ -859,7 +859,7 @@ fn upgrade_transport<T>(
     noise_keys: libp2p::noise::AuthenticKeypair<libp2p::noise::X25519Spec>,
 ) -> BoxedTransport<(PeerId, libp2p::core::muxing::StreamMuxerBox)>
 where
-    T: Transport + Clone + Send + Sync + 'static,
+    T: Transport + Send + Sync + 'static,
     T::Output: futures::AsyncRead + futures::AsyncWrite + Unpin + Send + 'static,
     T::ListenerUpgrade: Send,
     T::Listener: Send,

@@ -8,7 +8,7 @@ use futures_cpupool::CpuPool;
 use gstuff::{duration_to_float, now_float};
 use hyper::client::HttpConnector;
 use hyper::Client;
-use hyper_rustls::HttpsConnector;
+use hyper_rustls::{HttpsConnector, HttpsConnectorBuilder};
 use std::fmt;
 use std::sync::Mutex;
 use std::thread::JoinHandle;
@@ -169,7 +169,7 @@ lazy_static! {
     /// NB: With a shared client there is a possibility that keep-alive connections will be reused.
     pub static ref HYPER: Client<HttpsConnector<HttpConnector>> = {
         // Please note there was a problem on iOS if [`HttpsConnector::with_native_roots`] is used instead.
-        let https = HttpsConnector::with_webpki_roots();
+        let https = HttpsConnectorBuilder::new().with_webpki_roots().https_or_http().enable_http1().enable_http2().build();
         Client::builder()
             .executor(&*CORE)
             // Hyper had a lot of Keep-Alive bugs over the years and I suspect

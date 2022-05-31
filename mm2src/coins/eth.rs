@@ -24,9 +24,6 @@ use bitcrypto::{keccak256, sha256};
 use common::custom_futures::TimedAsyncMutex;
 use common::executor::Timer;
 use common::log::error;
-use common::mm_ctx::{MmArc, MmWeak};
-use common::mm_error::prelude::*;
-use common::transport::{slurp_url, SlurpError};
 use common::{now_ms, small_rng, DEX_FEE_ADDR_RAW_PUBKEY};
 use derive_more::Display;
 use ethabi::{Contract, Token};
@@ -37,6 +34,9 @@ use futures::compat::Future01CompatExt;
 use futures::future::{join_all, select, Either, FutureExt, TryFutureExt};
 use futures01::Future;
 use http::StatusCode;
+use mm2_core::mm_ctx::{MmArc, MmWeak};
+use mm2_err_handle::prelude::*;
+use mm2_net::transport::{slurp_url, SlurpError};
 #[cfg(test)] use mocktopus::macros::*;
 use rand::seq::SliceRandom;
 use rpc::v1::types::Bytes as BytesJson;
@@ -3500,8 +3500,8 @@ fn checksum_address(addr: &str) -> String {
     }
 
     let mut hasher = Keccak256::default();
-    hasher.input(&addr);
-    let hash = hasher.result();
+    hasher.update(&addr);
+    let hash = hasher.finalize();
     let mut result: String = "0x".into();
     for (i, c) in addr.chars().enumerate() {
         if c.is_digit(10) {

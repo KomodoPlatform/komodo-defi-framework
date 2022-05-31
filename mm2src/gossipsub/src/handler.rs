@@ -23,8 +23,8 @@ use crate::protocol::{GossipsubCodec, ProtocolConfig};
 use futures::prelude::*;
 use futures_codec::Framed;
 use libp2p_core::upgrade::{InboundUpgrade, OutboundUpgrade};
-use libp2p_swarm::protocols_handler::{KeepAlive, ProtocolsHandler, ProtocolsHandlerEvent, ProtocolsHandlerUpgrErr,
-                                      SubstreamProtocol};
+use libp2p_swarm::handler::{ConnectionHandler, ConnectionHandlerEvent, ConnectionHandlerUpgrErr, KeepAlive,
+                            SubstreamProtocol};
 use libp2p_swarm::NegotiatedSubstream;
 use log::{debug, error, trace, warn};
 use smallvec::SmallVec;
@@ -108,7 +108,7 @@ impl Default for GossipsubHandler {
     }
 }
 
-impl ProtocolsHandler for GossipsubHandler {
+impl ConnectionHandler for GossipsubHandler {
     type InEvent = GossipsubRpc;
     type OutEvent = GossipsubRpc;
     type Error = io::Error;
@@ -153,7 +153,7 @@ impl ProtocolsHandler for GossipsubHandler {
     fn inject_dial_upgrade_error(
         &mut self,
         _: Self::OutboundOpenInfo,
-        _: ProtocolsHandlerUpgrErr<<Self::OutboundProtocol as OutboundUpgrade<NegotiatedSubstream>>::Error>,
+        _: ConnectionHandlerUpgrErr<<Self::OutboundProtocol as OutboundUpgrade<NegotiatedSubstream>>::Error>,
     ) {
         self.outbound_substream_establishing = false;
         // Ignore upgrade errors for now.
@@ -167,13 +167,13 @@ impl ProtocolsHandler for GossipsubHandler {
     fn poll(
         &mut self,
         cx: &mut Context,
-    ) -> Poll<ProtocolsHandlerEvent<Self::OutboundProtocol, Self::OutboundOpenInfo, Self::OutEvent, Self::Error>> {
+    ) -> Poll<ConnectionHandlerEvent<Self::OutboundProtocol, Self::OutboundOpenInfo, Self::OutEvent, Self::Error>> {
         // determine if we need to create the stream
         if !self.send_queue.is_empty() && self.outbound_substream.is_none() && !self.outbound_substream_establishing {
             let message = self.send_queue.remove(0);
             self.send_queue.shrink_to_fit();
             self.outbound_substream_establishing = true;
-            return Poll::Ready(ProtocolsHandlerEvent::OutboundSubstreamRequest {
+            return Poll::Ready(ConnectionHandlerEvent::OutboundSubstreamRequest {
                 protocol: self.listen_protocol.clone().map_info(|()| message),
             });
         }
@@ -185,7 +185,7 @@ impl ProtocolsHandler for GossipsubHandler {
                     match substream.poll_next_unpin(cx) {
                         Poll::Ready(Some(Ok(message))) => {
                             self.inbound_substream = Some(InboundSubstreamState::WaitingInput(substream));
-                            return Poll::Ready(ProtocolsHandlerEvent::Custom(message));
+                            return Poll::Ready(ConnectionHandlerEvent::Custom(message));
                         },
                         Poll::Ready(Some(Err(e))) => {
                             debug!("Inbound substream error while awaiting input: {:?}", e);
@@ -253,13 +253,13 @@ impl ProtocolsHandler for GossipsubHandler {
                                     error!("Message over the maximum transmission limit was not sent.");
                                     self.outbound_substream = Some(OutboundSubstreamState::WaitingOutput(substream));
                                 } else {
-                                    return Poll::Ready(ProtocolsHandlerEvent::Close(e));
+                                    return Poll::Ready(ConnectionHandlerEvent::Close(e));
                                 }
                             },
                         },
                         Poll::Ready(Err(e)) => {
                             debug!("Outbound substream error while sending output: {:?}", e);
-                            return Poll::Ready(ProtocolsHandlerEvent::Close(e));
+                            return Poll::Ready(ConnectionHandlerEvent::Close(e));
                         },
                         Poll::Pending => {
                             self.outbound_substream = Some(OutboundSubstreamState::PendingSend(substream, message));
@@ -272,7 +272,7 @@ impl ProtocolsHandler for GossipsubHandler {
                         Poll::Ready(Ok(())) => {
                             self.outbound_substream = Some(OutboundSubstreamState::WaitingOutput(substream))
                         },
-                        Poll::Ready(Err(e)) => return Poll::Ready(ProtocolsHandlerEvent::Close(e)),
+                        Poll::Ready(Err(e)) => return Poll::Ready(ConnectionHandlerEvent::Close(e)),
                         Poll::Pending => {
                             self.outbound_substream = Some(OutboundSubstreamState::PendingFlush(substream));
                             break;
@@ -291,7 +291,7 @@ impl ProtocolsHandler for GossipsubHandler {
                         },
                         Poll::Ready(Err(e)) => {
                             debug!("Outbound substream error while closing: {:?}", e);
-                            return Poll::Ready(ProtocolsHandlerEvent::Close(io::Error::new(
+                            return Poll::Ready(ConnectionHandlerEvent::Close(io::Error::new(
                                 io::ErrorKind::BrokenPipe,
                                 "Failed to close outbound substream",
                             )));

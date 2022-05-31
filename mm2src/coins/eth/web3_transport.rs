@@ -151,10 +151,10 @@ async fn send_request(
 ) -> Result<Json, Error> {
     use common::executor::Timer;
     use common::log::warn;
-    use common::transport::slurp_req;
     use futures::future::{select, Either};
     use gstuff::binprint;
     use http::header::HeaderValue;
+    use mm2_net::transport::slurp_req;
 
     const REQUEST_TIMEOUT_S: f64 = 60.;
 
@@ -242,7 +242,7 @@ async fn send_request_once(
     uri: &http::Uri,
     event_handlers: &Vec<RpcTransportEventHandlerShared>,
 ) -> Result<Json, Error> {
-    use common::transport::wasm_http::FetchRequest;
+    use mm2_net::wasm_http::FetchRequest;
 
     macro_rules! try_or {
         ($exp:expr, $errkind:ident) => {

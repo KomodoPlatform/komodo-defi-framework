@@ -2,10 +2,10 @@ use crate::sign_common::{complete_tx, p2pk_spend_with_signature, p2pkh_spend_wit
                          p2sh_spend_with_signature, p2wpkh_spend_with_signature};
 use crate::Signature;
 use chain::{Transaction as UtxoTx, TransactionInput};
-use common::mm_error::prelude::*;
 use derive_more::Display;
 use keys::bytes::Bytes;
 use keys::KeyPair;
+use mm2_err_handle::prelude::*;
 use primitives::hash::H256;
 use script::{Builder, Script, SignatureVersion, TransactionInputSigner, UnsignedTransactionInput};
 

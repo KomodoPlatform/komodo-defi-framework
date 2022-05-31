@@ -1264,8 +1264,8 @@ impl CoinWithTxHistoryV2 for BchCoin {
 #[cfg(test)]
 pub fn tbch_coin_for_test() -> BchCoin {
     use common::block_on;
-    use common::mm_ctx::MmCtxBuilder;
-    use common::privkey::key_pair_from_seed;
+    use crypto::privkey::key_pair_from_seed;
+    use mm2_core::mm_ctx::MmCtxBuilder;
 
     let ctx = MmCtxBuilder::default().into_mm_arc();
     let keypair = key_pair_from_seed("BCH SLP test").unwrap();
@@ -1296,8 +1296,8 @@ pub fn tbch_coin_for_test() -> BchCoin {
 #[cfg(test)]
 pub fn bch_coin_for_test() -> BchCoin {
     use common::block_on;
-    use common::mm_ctx::MmCtxBuilder;
-    use common::privkey::key_pair_from_seed;
+    use crypto::privkey::key_pair_from_seed;
+    use mm2_core::mm_ctx::MmCtxBuilder;
 
     let ctx = MmCtxBuilder::default().into_mm_arc();
     let keypair = key_pair_from_seed("BCH SLP test").unwrap();
@@ -1330,7 +1330,7 @@ mod bch_tests {
     use crate::tx_history_storage::TxHistoryStorageBuilder;
     use crate::{TransactionType, TxFeeDetails};
     use common::block_on;
-    use common::for_tests::mm_ctx_with_custom_db;
+    use mm2_test_helpers::for_tests::mm_ctx_with_custom_db;
 
     fn init_storage_for<Coin: CoinWithTxHistoryV2>(coin: &Coin) -> (MmArc, impl TxHistoryStorage) {
         let ctx = mm_ctx_with_custom_db();
