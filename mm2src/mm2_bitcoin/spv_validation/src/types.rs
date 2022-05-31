@@ -1,4 +1,5 @@
 use chain::RawHeaderError;
+use primitives::hash::H256;
 
 #[derive(Debug, PartialEq, Eq, Clone)]
 pub enum SPVError {
@@ -71,27 +72,7 @@ impl From<RawHeaderError> for SPVError {
     }
 }
 
-/// A bitoin double-sha256 digest
-#[derive(Copy, Clone, PartialEq, Eq, Default, Hash)]
-pub struct Hash256Digest([u8; 32]);
-
-impl core::fmt::Debug for Hash256Digest {
-    fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result { write!(f, "Hash256Digest: {:x?}", self.0) }
-}
-
-impl From<[u8; 32]> for Hash256Digest {
-    fn from(buf: [u8; 32]) -> Self { Self(buf) }
-}
-
-impl AsRef<[u8; 32]> for Hash256Digest {
-    fn as_ref(&self) -> &[u8; 32] { &self.0 }
-}
-
-impl AsMut<[u8; 32]> for Hash256Digest {
-    fn as_mut(&mut self) -> &mut [u8; 32] { &mut self.0 }
-}
-
-/// A slice of `Hash256Digest`s for use in a merkle array
+/// A slice of `H256`s for use in a merkle array
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct MerkleArray<'a>(&'a [u8]);
 
@@ -114,8 +95,8 @@ impl MerkleArray<'_> {
     pub fn is_empty(&self) -> bool { self.0.is_empty() }
 
     /// Index into the merkle array
-    pub fn index(&self, index: usize) -> Hash256Digest {
-        let mut digest = Hash256Digest::default();
+    pub fn index(&self, index: usize) -> H256 {
+        let mut digest = H256::default();
         digest.as_mut().copy_from_slice(&self.0[index * 32..(index + 1) * 32]);
         digest
     }
@@ -279,8 +260,8 @@ macro_rules! impl_view_type {
 /// # Arguments
 ///
 /// * `outpoint` - The outpoint extracted from the input
-pub fn extract_input_tx_id_le(outpoint: &Outpoint) -> Hash256Digest {
-    let mut txid = Hash256Digest::default();
+pub fn extract_input_tx_id_le(outpoint: &Outpoint) -> H256 {
+    let mut txid = H256::default();
     txid.as_mut().copy_from_slice(&outpoint[0..32]);
     txid
 }
@@ -317,7 +298,7 @@ impl_view_type!(
 
 impl Outpoint<'_> {
     /// Extract the LE txid from the outpoint
-    pub fn txid_le(&self) -> Hash256Digest { extract_input_tx_id_le(self) }
+    pub fn txid_le(&self) -> H256 { extract_input_tx_id_le(self) }
 
     /// Extract the outpoint's index in the prevout tx's vout
     pub fn vout_index(&self) -> u32 { extract_tx_index(self) }

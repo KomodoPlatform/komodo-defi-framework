@@ -3,7 +3,7 @@ use primitives::hash::H256;
 use primitives::U256;
 use ripemd160::Digest;
 use sha2::Sha256;
-use types::{parse_compact_int, CompactInt, Hash256Digest, MerkleArray, SPVError, TxIn};
+use types::{parse_compact_int, CompactInt, MerkleArray, SPVError, TxIn};
 
 /// Determines the length of a scriptSig in an input.
 /// Will return 0 if passed a witness input.
@@ -127,7 +127,7 @@ pub fn validate_vout(vout: &[u8]) -> bool {
 /// # Arguments
 ///
 /// * `preimage` - The pre-image
-pub fn hash256(preimages: &[&[u8]]) -> Hash256Digest {
+pub fn hash256(preimages: &[&[u8]]) -> H256 {
     let mut sha = Sha256::new();
     for preimage in preimages.iter() {
         sha.update(preimage);
@@ -146,7 +146,7 @@ pub fn hash256(preimages: &[&[u8]]) -> Hash256Digest {
 ///
 /// * `a` - The first hash
 /// * `b` - The second hash
-pub fn hash256_merkle_step(a: &[u8], b: &[u8]) -> Hash256Digest { hash256(&[a, b]) }
+pub fn hash256_merkle_step(a: &[u8], b: &[u8]) -> H256 { hash256(&[a, b]) }
 
 /// Verifies a Bitcoin-style merkle tree.
 /// Leaves are 0-indexed.
@@ -156,12 +156,7 @@ pub fn hash256_merkle_step(a: &[u8], b: &[u8]) -> Hash256Digest { hash256(&[a, b
 ///
 /// * `proof` - The proof. Tightly packed LE sha256 hashes.  The last hash is the root
 /// * `index` - The index of the leaf
-pub fn verify_hash256_merkle(
-    txid: Hash256Digest,
-    merkle_root: Hash256Digest,
-    intermediate_nodes: &MerkleArray,
-    index: u64,
-) -> bool {
+pub fn verify_hash256_merkle(txid: H256, merkle_root: H256, intermediate_nodes: &MerkleArray, index: u64) -> bool {
     let mut idx = index;
     let proof_len = intermediate_nodes.len();
 
@@ -177,9 +172,9 @@ pub fn verify_hash256_merkle(
         let next = intermediate_nodes.index(i);
 
         if idx % 2 == 1 {
-            current = hash256_merkle_step(next.as_ref(), current.as_ref());
+            current = hash256_merkle_step(next.as_slice(), current.as_slice());
         } else {
-            current = hash256_merkle_step(current.as_ref(), next.as_ref());
+            current = hash256_merkle_step(current.as_slice(), next.as_slice());
         }
         idx >>= 1;
     }
@@ -329,7 +324,7 @@ mod tests {
             let test_cases = test_utils::get_test_cases("hash256", &fixtures);
             for case in test_cases {
                 let input = force_deserialize_hex(case.input.as_str().unwrap());
-                let mut expected = Hash256Digest::default();
+                let mut expected = H256::default();
                 let output = force_deserialize_hex(case.output.as_str().unwrap());
                 expected.as_mut().copy_from_slice(&output);
                 assert_eq!(hash256(&[&input]), expected);
@@ -345,7 +340,7 @@ mod tests {
                 let inputs = case.input.as_array().unwrap();
                 let a = force_deserialize_hex(inputs[0].as_str().unwrap());
                 let b = force_deserialize_hex(inputs[1].as_str().unwrap());
-                let mut expected = Hash256Digest::default();
+                let mut expected = H256::default();
                 let output = force_deserialize_hex(case.output.as_str().unwrap());
                 expected.as_mut().copy_from_slice(&output);
                 assert_eq!(hash256_merkle_step(&a, &b), expected);
@@ -460,7 +455,7 @@ mod tests {
                 let input = force_deserialize_hex(case.input.as_str().unwrap());
                 let expected: &[u8] = &force_deserialize_hex(case.output.as_str().unwrap());
                 assert_eq!(
-                    types::extract_input_tx_id_le(&types::extract_outpoint(&TxIn(&input))).as_ref(),
+                    types::extract_input_tx_id_le(&types::extract_outpoint(&TxIn(&input))).as_slice(),
                     expected
                 );
             }
@@ -549,8 +544,8 @@ mod tests {
                 let expected = case.output.as_bool().unwrap();
 
                 // extract root and txid
-                let mut root = Hash256Digest::default();
-                let mut txid = Hash256Digest::default();
+                let mut root = H256::default();
+                let mut txid = H256::default();
                 println!("{:?}", extended_proof);
                 root.as_mut().copy_from_slice(&extended_proof[proof_len - 32..]);
                 txid.as_mut().copy_from_slice(&extended_proof[..32]);
