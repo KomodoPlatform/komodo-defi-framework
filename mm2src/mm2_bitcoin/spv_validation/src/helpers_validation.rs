@@ -4,7 +4,7 @@ use primitives::U256;
 use ripemd160::Digest;
 use serialization::parse_compact_int;
 use sha2::Sha256;
-use types::{extract_script_sig_len, MerkleArray, SPVError, TxIn};
+use types::{MerkleArray, SPVError};
 
 /// Determines the length of an input from its scriptsig:
 /// 36 for outpoint, 1 for scriptsig length, 4 for sequence.
@@ -13,7 +13,10 @@ use types::{extract_script_sig_len, MerkleArray, SPVError, TxIn};
 ///
 /// * `tx_in` - The input as a u8 array
 pub fn determine_input_length(tx_in: &[u8]) -> Result<usize, SPVError> {
-    let script_sig_len = extract_script_sig_len(&TxIn(tx_in))?;
+    if tx_in.len() < 37 {
+        return Err(SPVError::ReadOverrun);
+    }
+    let script_sig_len = parse_compact_int(&tx_in[36..]).map_err(|_| SPVError::BadCompactInt)?;
     // 40 = 36 (outpoint) + 4 (sequence)
     Ok(40 + script_sig_len.serialized_length() + script_sig_len.as_usize())
 }
@@ -265,7 +268,6 @@ mod tests {
     use test_helpers::for_tests::force_deserialize_hex;
 
     use crate::test_utils::{self};
-    use crate::types::{self};
 
     #[test]
     fn it_does_bitcoin_hash256() {
@@ -298,21 +300,6 @@ mod tests {
     }
 
     #[test]
-    fn it_extracts_script_sig_length_info() {
-        test_utils::run_test(|fixtures| {
-            let test_cases = test_utils::get_test_cases("extractScriptSigLen", &fixtures);
-            for case in test_cases {
-                let input = force_deserialize_hex(case.input.as_str().unwrap());
-
-                let outputs = case.output.as_array().unwrap();
-                let expected_num = outputs[1].as_u64().unwrap() as usize;
-
-                assert_eq!(extract_script_sig_len(&TxIn(&input)).unwrap().as_usize(), expected_num);
-            }
-        })
-    }
-
-    #[test]
     fn it_determines_input_length() {
         test_utils::run_test(|fixtures| {
             let test_cases = test_utils::get_test_cases("determineInputLength", &fixtures);
@@ -320,18 +307,6 @@ mod tests {
                 let input = force_deserialize_hex(case.input.as_str().unwrap());
                 let expected = case.output.as_u64().unwrap() as usize;
                 assert_eq!(determine_input_length(&input).unwrap(), expected);
-            }
-        })
-    }
-
-    #[test]
-    fn it_extracts_scipt_sigs() {
-        test_utils::run_test(|fixtures| {
-            let test_cases = test_utils::get_test_cases("extractScriptSig", &fixtures);
-            for case in test_cases {
-                let input = force_deserialize_hex(case.input.as_str().unwrap());
-                let expected: &[u8] = &force_deserialize_hex(case.output.as_str().unwrap());
-                assert_eq!(types::extract_script_sig(&TxIn(&input)).unwrap(), expected);
             }
         })
     }
