@@ -1,26 +1,31 @@
-use crate::my_tx_history_v2::{GetHistoryResult, HistoryCoinType, RemoveTxResult, TxHistoryStorage,
-                              TxHistoryStorageError};
-use crate::tx_history_storage::{token_id_from_tx_type, CoinTokenId, ConfirmationStatus, CreateTxHistoryStorageError};
+use crate::my_tx_history_v2::{GetHistoryResult, RemoveTxResult, TxHistoryStorage, TxHistoryStorageError};
+use crate::tx_history_storage::{token_id_from_tx_type, ConfirmationStatus, CreateTxHistoryStorageError,
+                                FilteringAddresses, GetTxHistoryFilters, WalletId};
 use crate::TransactionDetails;
 use async_trait::async_trait;
 use common::mm_ctx::MmArc;
 use common::mm_error::prelude::*;
 use common::{async_blocking, PagingOptionsEnum};
+use db_common::sql_query::SqlQuery;
 use db_common::sqlite::rusqlite::types::Type;
 use db_common::sqlite::rusqlite::{Connection, Error as SqlError, Row, NO_PARAMS};
-use db_common::sqlite::sql_builder::SqlBuilder;
-use db_common::sqlite::{offset_by_id, query_single_row, string_from_row, validate_table_name, CHECK_TABLE_EXISTS_SQL};
+use db_common::sqlite::{query_single_row, string_from_row, validate_table_name, CHECK_TABLE_EXISTS_SQL};
 use rpc::v1::types::Bytes as BytesJson;
 use serde_json::{self as json};
 use std::convert::TryInto;
 use std::sync::{Arc, Mutex};
 
-fn tx_history_table(ticker: &str) -> String { ticker.to_owned() + "_tx_history" }
+fn tx_history_table(wallet_id: &WalletId) -> String { wallet_id.to_sql_table_name() + "_tx_history" }
 
-fn tx_cache_table(ticker: &str) -> String { ticker.to_owned() + "_tx_cache" }
+fn tx_from_address_table(wallet_id: &WalletId) -> String { wallet_id.to_sql_table_name() + "_tx_from_address" }
 
-fn create_tx_history_table_sql(for_coin: &str) -> Result<String, MmError<SqlError>> {
-    let table_name = tx_history_table(for_coin);
+fn tx_to_address_table(wallet_id: &WalletId) -> String { wallet_id.to_sql_table_name() + "_tx_to_address" }
+
+/// Please note TX cache table name doesn't depend on [`WalletId::hd_wallet_rmd160`].
+fn tx_cache_table(wallet_id: &WalletId) -> String { format!("{}_tx_cache", wallet_id.ticker) }
+
+fn create_tx_history_table_sql(wallet_id: &WalletId) -> Result<String, MmError<SqlError>> {
+    let table_name = tx_history_table(wallet_id);
     validate_table_name(&table_name)?;
 
     let sql = format!(
@@ -39,8 +44,41 @@ fn create_tx_history_table_sql(for_coin: &str) -> Result<String, MmError<SqlErro
     Ok(sql)
 }
 
-fn create_tx_cache_table_sql(for_coin: &str) -> Result<String, MmError<SqlError>> {
-    let table_name = tx_cache_table(for_coin);
+fn create_tx_from_address_table_sql(wallet_id: &WalletId) -> Result<String, MmError<SqlError>> {
+    let tx_from_address_table = tx_from_address_table(wallet_id);
+    validate_table_name(&tx_from_address_table)?;
+
+    let sql = format!(
+        "CREATE TABLE IF NOT EXISTS {} (
+            id INTEGER NOT NULL PRIMARY KEY,
+            internal_id VARCHAR(255) NOT NULL,
+            from_address TEXT NOT NULL
+        );",
+        tx_from_address_table
+    );
+
+    Ok(sql)
+}
+
+fn create_tx_to_address_table_sql(wallet_id: &WalletId) -> Result<String, MmError<SqlError>> {
+    let tx_to_address_table = tx_to_address_table(wallet_id);
+
+    validate_table_name(&tx_to_address_table)?;
+
+    let sql = format!(
+        "CREATE TABLE IF NOT EXISTS {} (
+            id INTEGER NOT NULL PRIMARY KEY,
+            internal_id VARCHAR(255) NOT NULL,
+            to_address TEXT NOT NULL
+        );",
+        tx_to_address_table
+    );
+
+    Ok(sql)
+}
+
+fn create_tx_cache_table_sql(wallet_id: &WalletId) -> Result<String, MmError<SqlError>> {
+    let table_name = tx_cache_table(wallet_id);
     validate_table_name(&table_name)?;
 
     let sql = format!(
@@ -54,8 +92,22 @@ fn create_tx_cache_table_sql(for_coin: &str) -> Result<String, MmError<SqlError>
     Ok(sql)
 }
 
-fn insert_tx_in_history_sql(for_coin: &str) -> Result<String, MmError<SqlError>> {
-    let table_name = tx_history_table(for_coin);
+fn create_internal_id_index_sql<F>(wallet_id: &WalletId, table_name_creator: F) -> Result<String, MmError<SqlError>>
+where
+    F: FnOnce(&WalletId) -> String,
+{
+    let table_name = table_name_creator(wallet_id);
+    validate_table_name(&table_name)?;
+
+    let sql = format!(
+        "CREATE INDEX IF NOT EXISTS internal_id_idx ON {} (internal_id);",
+        table_name
+    );
+    Ok(sql)
+}
+
+fn insert_tx_in_history_sql(wallet_id: &WalletId) -> Result<String, MmError<SqlError>> {
+    let table_name = tx_history_table(wallet_id);
     validate_table_name(&table_name)?;
 
     let sql = format!(
@@ -75,8 +127,38 @@ fn insert_tx_in_history_sql(for_coin: &str) -> Result<String, MmError<SqlError>>
     Ok(sql)
 }
 
-fn insert_tx_in_cache_sql(for_coin: &str) -> Result<String, MmError<SqlError>> {
-    let table_name = tx_cache_table(for_coin);
+fn insert_tx_from_address_sql(wallet_id: &WalletId) -> Result<String, MmError<SqlError>> {
+    let table_name = tx_from_address_table(wallet_id);
+    validate_table_name(&table_name)?;
+
+    let sql = format!(
+        "INSERT INTO {} (
+            internal_id,
+            from_address
+        ) VALUES (?1, ?2);",
+        table_name
+    );
+
+    Ok(sql)
+}
+
+fn insert_tx_to_address_sql(wallet_id: &WalletId) -> Result<String, MmError<SqlError>> {
+    let table_name = tx_to_address_table(wallet_id);
+    validate_table_name(&table_name)?;
+
+    let sql = format!(
+        "INSERT INTO {} (
+            internal_id,
+            to_address
+        ) VALUES (?1, ?2);",
+        table_name
+    );
+
+    Ok(sql)
+}
+
+fn insert_tx_in_cache_sql(wallet_id: &WalletId) -> Result<String, MmError<SqlError>> {
+    let table_name = tx_cache_table(wallet_id);
     validate_table_name(&table_name)?;
 
     // We can simply ignore the repetitive attempt to insert the same tx_hash
@@ -88,17 +170,18 @@ fn insert_tx_in_cache_sql(for_coin: &str) -> Result<String, MmError<SqlError>> {
     Ok(sql)
 }
 
-fn remove_tx_by_internal_id_sql(for_coin: &str) -> Result<String, MmError<SqlError>> {
-    let table_name = tx_history_table(for_coin);
+fn remove_tx_by_internal_id_sql<F>(wallet_id: &WalletId, table_name_creator: F) -> Result<String, MmError<SqlError>>
+where
+    F: FnOnce(&WalletId) -> String,
+{
+    let table_name = table_name_creator(wallet_id);
     validate_table_name(&table_name)?;
-
     let sql = format!("DELETE FROM {} WHERE internal_id=?1;", table_name);
-
     Ok(sql)
 }
 
-fn select_tx_by_internal_id_sql(for_coin: &str) -> Result<String, MmError<SqlError>> {
-    let table_name = tx_history_table(for_coin);
+fn select_tx_by_internal_id_sql(wallet_id: &WalletId) -> Result<String, MmError<SqlError>> {
+    let table_name = tx_history_table(wallet_id);
     validate_table_name(&table_name)?;
 
     let sql = format!("SELECT details_json FROM {} WHERE internal_id=?1;", table_name);
@@ -106,8 +189,8 @@ fn select_tx_by_internal_id_sql(for_coin: &str) -> Result<String, MmError<SqlErr
     Ok(sql)
 }
 
-fn update_tx_in_table_by_internal_id_sql(for_coin: &str) -> Result<String, MmError<SqlError>> {
-    let table_name = tx_history_table(for_coin);
+fn update_tx_in_table_by_internal_id_sql(wallet_id: &WalletId) -> Result<String, MmError<SqlError>> {
+    let table_name = tx_history_table(wallet_id);
     validate_table_name(&table_name)?;
 
     let sql = format!(
@@ -123,8 +206,8 @@ fn update_tx_in_table_by_internal_id_sql(for_coin: &str) -> Result<String, MmErr
     Ok(sql)
 }
 
-fn contains_unconfirmed_transactions_sql(for_coin: &str) -> Result<String, MmError<SqlError>> {
-    let table_name = tx_history_table(for_coin);
+fn contains_unconfirmed_transactions_sql(wallet_id: &WalletId) -> Result<String, MmError<SqlError>> {
+    let table_name = tx_history_table(wallet_id);
     validate_table_name(&table_name)?;
 
     let sql = format!(
@@ -136,8 +219,8 @@ fn contains_unconfirmed_transactions_sql(for_coin: &str) -> Result<String, MmErr
     Ok(sql)
 }
 
-fn get_unconfirmed_transactions_sql(for_coin: &str) -> Result<String, MmError<SqlError>> {
-    let table_name = tx_history_table(for_coin);
+fn get_unconfirmed_transactions_sql(wallet_id: &WalletId) -> Result<String, MmError<SqlError>> {
+    let table_name = tx_history_table(wallet_id);
     validate_table_name(&table_name)?;
 
     let sql = format!(
@@ -149,8 +232,8 @@ fn get_unconfirmed_transactions_sql(for_coin: &str) -> Result<String, MmError<Sq
     Ok(sql)
 }
 
-fn has_transactions_with_hash_sql(for_coin: &str) -> Result<String, MmError<SqlError>> {
-    let table_name = tx_history_table(for_coin);
+fn has_transactions_with_hash_sql(wallet_id: &WalletId) -> Result<String, MmError<SqlError>> {
+    let table_name = tx_history_table(wallet_id);
     validate_table_name(&table_name)?;
 
     let sql = format!("SELECT COUNT(id) FROM {} WHERE tx_hash = ?1;", table_name);
@@ -158,8 +241,8 @@ fn has_transactions_with_hash_sql(for_coin: &str) -> Result<String, MmError<SqlE
     Ok(sql)
 }
 
-fn unique_tx_hashes_num_sql(for_coin: &str) -> Result<String, MmError<SqlError>> {
-    let table_name = tx_history_table(for_coin);
+fn unique_tx_hashes_num_sql(wallet_id: &WalletId) -> Result<String, MmError<SqlError>> {
+    let table_name = tx_history_table(wallet_id);
     validate_table_name(&table_name)?;
 
     let sql = format!("SELECT COUNT(DISTINCT tx_hash) FROM {};", table_name);
@@ -167,8 +250,8 @@ fn unique_tx_hashes_num_sql(for_coin: &str) -> Result<String, MmError<SqlError>>
     Ok(sql)
 }
 
-fn get_tx_hex_from_cache_sql(for_coin: &str) -> Result<String, MmError<SqlError>> {
-    let table_name = tx_cache_table(for_coin);
+fn get_tx_hex_from_cache_sql(wallet_id: &WalletId) -> Result<String, MmError<SqlError>> {
+    let table_name = tx_cache_table(wallet_id);
     validate_table_name(&table_name)?;
 
     let sql = format!("SELECT tx_hex FROM {} WHERE tx_hash = ?1 LIMIT 1;", table_name);
@@ -176,22 +259,68 @@ fn get_tx_hex_from_cache_sql(for_coin: &str) -> Result<String, MmError<SqlError>
     Ok(sql)
 }
 
-fn get_history_builder_preimage(for_coin: &str) -> Result<SqlBuilder, MmError<SqlError>> {
-    let table_name = tx_history_table(for_coin);
-    validate_table_name(&table_name)?;
+/// Creates an `SqlQuery` instance with the required `WHERE`, `ORDER`, `GROUP_BY` constraints.
+/// Please note you can refer to the [`tx_history_table(wallet_id)`] table by the `tx_history` alias.
+fn get_history_builder_preimage<'a>(
+    connection: &'a Connection,
+    wallet_id: &WalletId,
+    token_id: String,
+    for_addresses: Option<FilteringAddresses>,
+) -> Result<SqlQuery<'a>, MmError<SqlError>> {
+    let tx_history_table_name = tx_history_table(wallet_id);
+    validate_table_name(&tx_history_table_name)?;
 
-    let mut sql_builder = SqlBuilder::select_from(table_name);
-    sql_builder.and_where("token_id = ?1");
+    let mut sql_builder = SqlQuery::select_from_alias(connection, &tx_history_table_name, "tx_history")?;
+
+    // Check if we need to join [`tx_from_address_table(wallet_id)`] and [`tx_to_address_table(wallet_id)`] tables
+    // to query transactions that were sent from/to `for_addresses` addresses.
+    if let Some(for_addresses) = for_addresses {
+        let tx_from_address_table_name = tx_from_address_table(wallet_id);
+        validate_table_name(&tx_from_address_table_name)?;
+
+        let tx_to_address_table_name = tx_to_address_table(wallet_id);
+        validate_table_name(&tx_to_address_table_name)?;
+
+        sql_builder
+            .join_alias(&tx_from_address_table_name, "tx_from")?
+            .on_eq("tx_history.internal_id", "tx_from.internal_id");
+        sql_builder
+            .join_alias(&tx_to_address_table_name, "tx_to")?
+            .on_eq("tx_history.internal_id", "tx_to.internal_id");
+
+        sql_builder
+            .and_where_in_params("tx_from.from_address", for_addresses.clone())
+            .or_where_in_params("tx_to.to_address", for_addresses)
+            .group_by("tx_history.internal_id");
+    }
+
+    sql_builder
+        .and_where_eq_param("token_id", token_id)
+        .order_asc("tx_history.confirmation_status")
+        .order_desc("tx_history.block_height")
+        .order_asc("tx_history.id");
     Ok(sql_builder)
 }
 
-fn finalize_get_history_sql_builder(sql_builder: &mut SqlBuilder, offset: usize, limit: usize) {
-    sql_builder.field("details_json");
-    sql_builder.offset(offset);
-    sql_builder.limit(limit);
-    sql_builder.order_asc("confirmation_status");
-    sql_builder.order_desc("block_height");
-    sql_builder.order_asc("id");
+fn finalize_get_total_count_sql_builder(mut subquery: SqlQuery<'_>) -> Result<SqlQuery<'_>, MmError<SqlError>> {
+    /// The alias is needed so that the external query can access the results of the subquery.
+    /// Example:
+    ///   SUBQUERY: `SELECT h.internal_id AS __INTERNAL_ID_ALIAS FROM tx_history h JOIN tx_address a ON h.internal_id = a.internal_id WHERE a.address IN ('address_2', 'address_4') GROUP BY h.internal_id`
+    ///   EXTERNAL_QUERY: `SELECT COUNT(__INTERNAL_ID_ALIAS) FROM (<SUBQUERY>);`
+    /// Here we can't use `h.internal_id` in the external query because it doesn't know about the `tx_history h` table.
+    /// So we need to give the `h.internal_id` an alias like `__INTERNAL_ID_ALIAS`.
+    const INTERNAL_ID_ALIAS: &str = "__INTERNAL_ID_ALIAS";
+
+    // Query `id_field` and give it the `__ID_FIELD` alias.
+    subquery.field(format!("tx_history.internal_id as {}", INTERNAL_ID_ALIAS));
+
+    let mut external_query = SqlQuery::select_from_subquery(subquery.subquery())?;
+    external_query.count(INTERNAL_ID_ALIAS);
+    Ok(external_query)
+}
+
+fn finalize_get_history_sql_builder(sql_builder: &mut SqlQuery, offset: usize, limit: usize) {
+    sql_builder.field("tx_history.details_json").offset(offset).limit(limit);
 }
 
 fn tx_details_from_row(row: &Row<'_>) -> Result<TransactionDetails, SqlError> {
@@ -200,6 +329,19 @@ fn tx_details_from_row(row: &Row<'_>) -> Result<TransactionDetails, SqlError> {
 }
 
 impl TxHistoryStorageError for SqlError {}
+
+impl ConfirmationStatus {
+    fn to_sql_param(self) -> String { (self as u8).to_string() }
+}
+
+impl WalletId {
+    fn to_sql_table_name(&self) -> String {
+        match self.hd_wallet_rmd160 {
+            Some(hd_wallet_rmd160) => format!("{}_{}", self.ticker, hd_wallet_rmd160),
+            None => self.ticker.clone(),
+        }
+    }
+}
 
 #[derive(Clone)]
 pub struct SqliteTxHistoryStorage(Arc<Mutex<Connection>>);
@@ -219,24 +361,39 @@ impl SqliteTxHistoryStorage {
 impl TxHistoryStorage for SqliteTxHistoryStorage {
     type Error = SqlError;
 
-    async fn init(&self, for_coin: &str) -> Result<(), MmError<Self::Error>> {
+    async fn init(&self, wallet_id: &WalletId) -> Result<(), MmError<Self::Error>> {
         let selfi = self.clone();
-        let sql_history = create_tx_history_table_sql(for_coin)?;
-        let sql_cache = create_tx_cache_table_sql(for_coin)?;
+
+        let sql_history = create_tx_history_table_sql(wallet_id)?;
+        let sql_cache = create_tx_cache_table_sql(wallet_id)?;
+        let sql_from_addr = create_tx_from_address_table_sql(wallet_id)?;
+        let sql_to_addr = create_tx_to_address_table_sql(wallet_id)?;
+
+        let sql_history_index = create_internal_id_index_sql(wallet_id, tx_history_table)?;
+        let sql_from_addr_index = create_internal_id_index_sql(wallet_id, tx_from_address_table)?;
+        let sql_to_addr_index = create_internal_id_index_sql(wallet_id, tx_to_address_table)?;
+
         async_blocking(move || {
             let conn = selfi.0.lock().unwrap();
+
             conn.execute(&sql_history, NO_PARAMS).map(|_| ())?;
+            conn.execute(&sql_from_addr, NO_PARAMS).map(|_| ())?;
+            conn.execute(&sql_to_addr, NO_PARAMS).map(|_| ())?;
             conn.execute(&sql_cache, NO_PARAMS).map(|_| ())?;
+
+            conn.execute(&sql_history_index, NO_PARAMS).map(|_| ())?;
+            conn.execute(&sql_from_addr_index, NO_PARAMS).map(|_| ())?;
+            conn.execute(&sql_to_addr_index, NO_PARAMS).map(|_| ())?;
             Ok(())
         })
         .await
     }
 
-    async fn is_initialized_for(&self, for_coin: &str) -> Result<bool, MmError<Self::Error>> {
-        let tx_history_table = tx_history_table(for_coin);
+    async fn is_initialized_for(&self, wallet_id: &WalletId) -> Result<bool, MmError<Self::Error>> {
+        let tx_history_table = tx_history_table(wallet_id);
         validate_table_name(&tx_history_table)?;
 
-        let tx_cache_table = tx_cache_table(for_coin);
+        let tx_cache_table = tx_cache_table(wallet_id);
         validate_table_name(&tx_cache_table)?;
 
         let selfi = self.clone();
@@ -250,14 +407,17 @@ impl TxHistoryStorage for SqliteTxHistoryStorage {
         .await
     }
 
-    async fn add_transactions_to_history<I>(&self, for_coin: &str, transactions: I) -> Result<(), MmError<Self::Error>>
+    async fn add_transactions_to_history<I>(
+        &self,
+        wallet_id: &WalletId,
+        transactions: I,
+    ) -> Result<(), MmError<Self::Error>>
     where
         I: IntoIterator<Item = TransactionDetails> + Send + 'static,
         I::IntoIter: Send,
     {
-        let for_coin = for_coin.to_owned();
         let selfi = self.clone();
-
+        let wallet_id = wallet_id.clone();
         async_blocking(move || {
             let mut conn = selfi.0.lock().unwrap();
             let sql_transaction = conn.transaction()?;
@@ -272,18 +432,29 @@ impl TxHistoryStorage for SqliteTxHistoryStorage {
                 let tx_hex = format!("{:02x}", tx.tx_hex);
                 let tx_cache_params = [&tx_hash, &tx_hex];
 
-                sql_transaction.execute(&insert_tx_in_cache_sql(&for_coin)?, tx_cache_params)?;
+                sql_transaction.execute(&insert_tx_in_cache_sql(&wallet_id)?, tx_cache_params)?;
 
                 let params = [
                     tx_hash,
-                    internal_id,
+                    internal_id.clone(),
                     tx.block_height.to_string(),
                     confirmation_status.to_sql_param(),
                     token_id,
                     tx_json,
                 ];
+                sql_transaction.execute(&insert_tx_in_history_sql(&wallet_id)?, &params)?;
 
-                sql_transaction.execute(&insert_tx_in_history_sql(&for_coin)?, &params)?;
+                let from_addresses: FilteringAddresses = tx.from.into_iter().collect();
+                for from_address in from_addresses {
+                    let params = [internal_id.clone(), from_address];
+                    sql_transaction.execute(&insert_tx_from_address_sql(&wallet_id)?, &params)?;
+                }
+
+                let to_addresses: FilteringAddresses = tx.to.into_iter().collect();
+                for to_address in to_addresses {
+                    let params = [internal_id.clone(), to_address];
+                    sql_transaction.execute(&insert_tx_to_address_sql(&wallet_id)?, &params)?;
+                }
             }
             sql_transaction.commit()?;
             Ok(())
@@ -293,35 +464,43 @@ impl TxHistoryStorage for SqliteTxHistoryStorage {
 
     async fn remove_tx_from_history(
         &self,
-        for_coin: &str,
+        wallet_id: &WalletId,
         internal_id: &BytesJson,
     ) -> Result<RemoveTxResult, MmError<Self::Error>> {
-        let sql = remove_tx_by_internal_id_sql(for_coin)?;
+        let remove_tx_history_sql = remove_tx_by_internal_id_sql(wallet_id, tx_history_table)?;
+        let remove_tx_from_addr_sql = remove_tx_by_internal_id_sql(wallet_id, tx_from_address_table)?;
+        let remove_tx_to_addr_sql = remove_tx_by_internal_id_sql(wallet_id, tx_to_address_table)?;
+
         let params = [format!("{:02x}", internal_id)];
         let selfi = self.clone();
 
         async_blocking(move || {
-            let conn = selfi.0.lock().unwrap();
-            conn.execute(&sql, &params)
-                .map(|rows_num| {
-                    if rows_num > 0 {
-                        RemoveTxResult::TxRemoved
-                    } else {
-                        RemoveTxResult::TxDidNotExist
-                    }
-                })
-                .map_err(MmError::new)
+            let mut conn = selfi.0.lock().unwrap();
+            let sql_transaction = conn.transaction()?;
+
+            sql_transaction.execute(&remove_tx_from_addr_sql, &params)?;
+            sql_transaction.execute(&remove_tx_to_addr_sql, &params)?;
+
+            let rows_num = sql_transaction.execute(&remove_tx_history_sql, &params)?;
+            let remove_tx_result = if rows_num > 0 {
+                RemoveTxResult::TxRemoved
+            } else {
+                RemoveTxResult::TxDidNotExist
+            };
+
+            sql_transaction.commit()?;
+            Ok(remove_tx_result)
         })
         .await
     }
 
     async fn get_tx_from_history(
         &self,
-        for_coin: &str,
+        wallet_id: &WalletId,
         internal_id: &BytesJson,
     ) -> Result<Option<TransactionDetails>, MmError<Self::Error>> {
         let params = [format!("{:02x}", internal_id)];
-        let sql = select_tx_by_internal_id_sql(for_coin)?;
+        let sql = select_tx_by_internal_id_sql(wallet_id)?;
         let selfi = self.clone();
 
         async_blocking(move || {
@@ -331,8 +510,8 @@ impl TxHistoryStorage for SqliteTxHistoryStorage {
         .await
     }
 
-    async fn history_contains_unconfirmed_txes(&self, for_coin: &str) -> Result<bool, MmError<Self::Error>> {
-        let sql = contains_unconfirmed_transactions_sql(for_coin)?;
+    async fn history_contains_unconfirmed_txes(&self, wallet_id: &WalletId) -> Result<bool, MmError<Self::Error>> {
+        let sql = contains_unconfirmed_transactions_sql(wallet_id)?;
         let selfi = self.clone();
 
         async_blocking(move || {
@@ -345,9 +524,9 @@ impl TxHistoryStorage for SqliteTxHistoryStorage {
 
     async fn get_unconfirmed_txes_from_history(
         &self,
-        for_coin: &str,
+        wallet_id: &WalletId,
     ) -> Result<Vec<TransactionDetails>, MmError<Self::Error>> {
-        let sql = get_unconfirmed_transactions_sql(for_coin)?;
+        let sql = get_unconfirmed_transactions_sql(wallet_id)?;
         let selfi = self.clone();
 
         async_blocking(move || {
@@ -360,8 +539,12 @@ impl TxHistoryStorage for SqliteTxHistoryStorage {
         .await
     }
 
-    async fn update_tx_in_history(&self, for_coin: &str, tx: &TransactionDetails) -> Result<(), MmError<Self::Error>> {
-        let sql = update_tx_in_table_by_internal_id_sql(for_coin)?;
+    async fn update_tx_in_history(
+        &self,
+        wallet_id: &WalletId,
+        tx: &TransactionDetails,
+    ) -> Result<(), MmError<Self::Error>> {
+        let sql = update_tx_in_table_by_internal_id_sql(wallet_id)?;
 
         let block_height = tx.block_height.to_string();
         let confirmation_status = ConfirmationStatus::from_block_height(tx.block_height);
@@ -383,8 +566,8 @@ impl TxHistoryStorage for SqliteTxHistoryStorage {
         .await
     }
 
-    async fn history_has_tx_hash(&self, for_coin: &str, tx_hash: &str) -> Result<bool, MmError<Self::Error>> {
-        let sql = has_transactions_with_hash_sql(for_coin)?;
+    async fn history_has_tx_hash(&self, wallet_id: &WalletId, tx_hash: &str) -> Result<bool, MmError<Self::Error>> {
+        let sql = has_transactions_with_hash_sql(wallet_id)?;
         let params = [tx_hash.to_owned()];
 
         let selfi = self.clone();
@@ -396,8 +579,8 @@ impl TxHistoryStorage for SqliteTxHistoryStorage {
         .await
     }
 
-    async fn unique_tx_hashes_num_in_history(&self, for_coin: &str) -> Result<usize, MmError<Self::Error>> {
-        let sql = unique_tx_hashes_num_sql(for_coin)?;
+    async fn unique_tx_hashes_num_in_history(&self, wallet_id: &WalletId) -> Result<usize, MmError<Self::Error>> {
+        let sql = unique_tx_hashes_num_sql(wallet_id)?;
         let selfi = self.clone();
         async_blocking(move || {
             let conn = selfi.0.lock().unwrap();
@@ -409,11 +592,11 @@ impl TxHistoryStorage for SqliteTxHistoryStorage {
 
     async fn add_tx_to_cache(
         &self,
-        for_coin: &str,
+        wallet_id: &WalletId,
         tx_hash: &str,
         tx_hex: &BytesJson,
     ) -> Result<(), MmError<Self::Error>> {
-        let sql = insert_tx_in_cache_sql(for_coin)?;
+        let sql = insert_tx_in_cache_sql(wallet_id)?;
         let params = [tx_hash.to_owned(), format!("{:02x}", tx_hex)];
         let selfi = self.clone();
         async_blocking(move || {
@@ -426,10 +609,10 @@ impl TxHistoryStorage for SqliteTxHistoryStorage {
 
     async fn tx_bytes_from_cache(
         &self,
-        for_coin: &str,
+        wallet_id: &WalletId,
         tx_hash: &str,
     ) -> Result<Option<BytesJson>, MmError<Self::Error>> {
-        let sql = get_tx_hex_from_cache_sql(for_coin)?;
+        let sql = get_tx_hex_from_cache_sql(wallet_id)?;
         let params = [tx_hash.to_owned()];
         let selfi = self.clone();
         async_blocking(move || {
@@ -448,56 +631,58 @@ impl TxHistoryStorage for SqliteTxHistoryStorage {
 
     async fn get_history(
         &self,
-        coin_type: HistoryCoinType,
+        wallet_id: &WalletId,
+        filters: GetTxHistoryFilters,
         paging: PagingOptionsEnum<BytesJson>,
         limit: usize,
     ) -> Result<GetHistoryResult, MmError<Self::Error>> {
+        // Check if [`GetTxHistoryFilters::for_addresses`] is specified and empty.
+        // If it is, it's much more efficient to return an empty result before we do any query.
+        if matches!(filters.for_addresses, Some(ref for_addresses) if for_addresses.is_empty()) {
+            return Ok(GetHistoryResult {
+                transactions: Vec::new(),
+                skipped: 0,
+                total: 0,
+            });
+        }
+
+        let wallet_id = wallet_id.clone();
         let selfi = self.clone();
 
         async_blocking(move || {
             let conn = selfi.0.lock().unwrap();
-            let CoinTokenId { coin, token_id } = CoinTokenId::from_history_coin_type(coin_type);
-            let mut sql_builder = get_history_builder_preimage(&coin)?;
+            let token_id = filters.token_id_or_exclude();
+            let mut sql_builder = get_history_builder_preimage(&conn, &wallet_id, token_id, filters.for_addresses)?;
 
-            let mut total_builder = sql_builder.clone();
-            total_builder.count("id");
-            let total_sql = total_builder.sql().expect("valid sql");
-            let total: isize = conn.query_row(&total_sql, [&token_id], |row| row.get(0))?;
+            let total_count_builder = finalize_get_total_count_sql_builder(sql_builder.clone())?;
+            let total: isize = total_count_builder
+                .query_single_row(|row| row.get(0))?
+                .or_mm_err(|| SqlError::QueryReturnedNoRows)?;
             let total = total.try_into().expect("count should be always above zero");
 
             let offset = match paging {
                 PagingOptionsEnum::PageNumber(page) => (page.get() - 1) * limit,
-                PagingOptionsEnum::FromId(id) => {
-                    let id_str = format!("{:02x}", id);
-                    let params = [&token_id, &id_str];
-                    let maybe_offset = offset_by_id(
-                        &conn,
-                        &sql_builder,
-                        params,
-                        "internal_id",
-                        "confirmation_status ASC, block_height DESC, id ASC",
-                        "internal_id = ?2",
-                    )?;
+                PagingOptionsEnum::FromId(from_internal_id) => {
+                    let maybe_offset = sql_builder
+                        .clone()
+                        .query_offset_by_id("tx_history.internal_id", format!("{:02x}", from_internal_id))?;
                     match maybe_offset {
                         Some(offset) => offset,
                         None => {
+                            // TODO do we need to return `SqlError::QueryReturnedNoRows` error instead?
                             return Ok(GetHistoryResult {
                                 transactions: vec![],
                                 skipped: 0,
                                 total,
-                            })
+                            });
                         },
                     }
                 },
             };
 
             finalize_get_history_sql_builder(&mut sql_builder, offset, limit);
-            let params = [token_id];
+            let transactions = sql_builder.query(tx_details_from_row)?;
 
-            let sql = sql_builder.sql().expect("valid sql");
-            let mut stmt = conn.prepare(&sql)?;
-            let rows = stmt.query(params)?;
-            let transactions = rows.mapped(tx_details_from_row).collect::<Result<_, _>>()?;
             let result = GetHistoryResult {
                 transactions,
                 skipped: offset,

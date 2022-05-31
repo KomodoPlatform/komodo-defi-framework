@@ -863,10 +863,6 @@ mod tests {
 
     wasm_bindgen_test_configure!(run_in_browser);
 
-    lazy_static! {
-        static ref DEFAULT_RMD_160: H160 = H160::default();
-    }
-
     #[derive(Clone, Debug, Deserialize, PartialEq, Serialize)]
     #[serde(deny_unknown_fields)]
     struct TxTable {

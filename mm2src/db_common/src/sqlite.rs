@@ -2,7 +2,7 @@ pub use rusqlite;
 pub use sql_builder;
 
 use log::debug;
-use rusqlite::types::{FromSql, Type as SqlType};
+use rusqlite::types::{FromSql, Type as SqlType, Value};
 use rusqlite::{Connection, Error as SqlError, Result as SqlResult, Row, ToSql};
 use sql_builder::SqlBuilder;
 use std::sync::{Arc, Mutex, Weak};
@@ -10,6 +10,11 @@ use uuid::Uuid;
 
 pub type SqliteConnShared = Arc<Mutex<Connection>>;
 pub type SqliteConnWeak = Weak<Mutex<Connection>>;
+
+pub type OwnedSqlParam = Value;
+pub type OwnedSqlParams = Vec<Value>;
+
+pub(crate) type ParamId = String;
 
 pub const CHECK_TABLE_EXISTS_SQL: &str = "SELECT name FROM sqlite_master WHERE type='table' AND name=?1;";
 
@@ -156,4 +161,34 @@ where
         None => None,
     };
     Ok(res)
+}
+
+/// This structure manages the SQL parameters.
+#[derive(Clone, Default)]
+pub(crate) struct SqlParamsBuilder {
+    next_param_id: usize,
+    params: OwnedSqlParams,
+}
+
+impl SqlParamsBuilder {
+    /// Pushes the given `param` and returns its `:<IDX>` identifier.
+    pub(crate) fn push_param<P>(&mut self, param: P) -> ParamId
+    where
+        OwnedSqlParam: From<P>,
+    {
+        self.params.push(OwnedSqlParam::from(param));
+        self.next_param_id += 1;
+        format!(":{}", self.next_param_id)
+    }
+
+    /// Pushes the given `params` and returns their `:<IDX>` identifiers.
+    pub(crate) fn push_params<I, P>(&mut self, params: I) -> Vec<ParamId>
+    where
+        I: IntoIterator<Item = P>,
+        OwnedSqlParam: From<P>,
+    {
+        params.into_iter().map(|param| self.push_param(param)).collect()
+    }
+
+    pub(crate) fn params(&self) -> &OwnedSqlParams { &self.params }
 }

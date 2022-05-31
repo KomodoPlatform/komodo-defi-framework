@@ -161,10 +161,10 @@ fn try_grpc() {
     use z_coin_grpc::{BlockId, BlockRange};
     use zcash_client_backend::data_api::{chain::{scan_cached_blocks, validate_chain},
                                          error::Error,
-                                         BlockSource, WalletRead, WalletWrite};
+                                         WalletRead, WalletWrite};
     use zcash_client_sqlite::{chain::init::init_cache_database, error::SqliteClientError,
-                              wallet::init::init_wallet_db, wallet::rewind_to_height, BlockDb, WalletDb};
-    use zcash_primitives::consensus::{BlockHeight, Network, Parameters};
+                              wallet::init::init_wallet_db, BlockDb, WalletDb};
+    use zcash_primitives::consensus::Network;
 
     fn insert_into_cache(db_cache: &Connection, height: u32, cb_bytes: Vec<u8>) {
         db_cache

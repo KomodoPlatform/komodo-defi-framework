@@ -1,5 +1,6 @@
 use super::*;
-use crate::my_tx_history_v2::{TxDetailsBuilder, TxHistoryStorage, TxHistoryStorageError};
+use crate::my_tx_history_v2::{CoinWithTxHistoryV2, TxDetailsBuilder, TxHistoryStorage, TxHistoryStorageError};
+use crate::tx_history_storage::{GetTxHistoryFilters, WalletId};
 use crate::utxo::rpc_clients::UtxoRpcFut;
 use crate::utxo::slp::{parse_slp_script, ParseSlpScriptError, SlpGenesisParams, SlpTokenInfo, SlpTransaction,
                        SlpUnspent};
@@ -383,11 +384,12 @@ impl BchCoin {
         storage: &T,
     ) -> Result<UtxoTx, MmError<GetTxDetailsError<T::Error>>> {
         let tx_hash_str = format!("{:02x}", tx_hash);
-        let tx_bytes = match storage.tx_bytes_from_cache(self.ticker(), &tx_hash_str).await? {
+        let wallet_id = self.history_wallet_id();
+        let tx_bytes = match storage.tx_bytes_from_cache(&wallet_id, &tx_hash_str).await? {
             Some(tx_bytes) => tx_bytes,
             None => {
                 let tx_bytes = self.as_ref().rpc_client.get_transaction_bytes(tx_hash).compat().await?;
-                storage.add_tx_to_cache(self.ticker(), &tx_hash_str, &tx_bytes).await?;
+                storage.add_tx_to_cache(&wallet_id, &tx_hash_str, &tx_bytes).await?;
                 tx_bytes
             },
         };
@@ -1251,6 +1253,13 @@ impl MmCoin for BchCoin {
     }
 }
 
+impl CoinWithTxHistoryV2 for BchCoin {
+    fn history_wallet_id(&self) -> WalletId { WalletId::new(self.ticker().to_owned()) }
+
+    /// There are not specific filters for `BchCoin`.
+    fn get_tx_history_filters(&self) -> GetTxHistoryFilters { GetTxHistoryFilters::new() }
+}
+
 // testnet
 #[cfg(test)]
 pub fn tbch_coin_for_test() -> BchCoin {
@@ -1323,10 +1332,10 @@ mod bch_tests {
     use common::block_on;
     use common::for_tests::mm_ctx_with_custom_db;
 
-    fn init_storage_for(ticker: &str) -> (MmArc, impl TxHistoryStorage) {
+    fn init_storage_for<Coin: CoinWithTxHistoryV2>(coin: &Coin) -> (MmArc, impl TxHistoryStorage) {
         let ctx = mm_ctx_with_custom_db();
         let storage = TxHistoryStorageBuilder::new(&ctx).build().unwrap();
-        block_on(storage.init(ticker)).unwrap();
+        block_on(storage.init(&coin.history_wallet_id())).unwrap();
         (ctx, storage)
     }
 
@@ -1334,7 +1343,7 @@ mod bch_tests {
     fn test_get_slp_genesis_params() {
         let coin = tbch_coin_for_test();
         let token_id = "bb309e48930671582bea508f9a1d9b491e49b69be3d6f372dc08da2ac6e90eb7".into();
-        let (_ctx, storage) = init_storage_for(coin.ticker());
+        let (_ctx, storage) = init_storage_for(&coin);
 
         let slp_params = block_on(coin.get_slp_genesis_params(token_id, &storage)).unwrap();
         assert_eq!("USDF", slp_params.token_ticker);
@@ -1344,7 +1353,7 @@ mod bch_tests {
     #[test]
     fn test_plain_bch_tx_details() {
         let coin = tbch_coin_for_test();
-        let (_ctx, storage) = init_storage_for(coin.ticker());
+        let (_ctx, storage) = init_storage_for(&coin);
 
         let hash = "a8dcc3c6776e93e7bd21fb81551e853447c55e2d8ac141b418583bc8095ce390".into();
         let tx = block_on(coin.tx_from_storage_or_rpc(&hash, &storage)).unwrap();
@@ -1386,7 +1395,7 @@ mod bch_tests {
     #[test]
     fn test_slp_tx_details() {
         let coin = tbch_coin_for_test();
-        let (_ctx, storage) = init_storage_for(coin.ticker());
+        let (_ctx, storage) = init_storage_for(&coin);
 
         let hash = "a8dcc3c6776e93e7bd21fb81551e853447c55e2d8ac141b418583bc8095ce390".into();
         let tx = block_on(coin.tx_from_storage_or_rpc(&hash, &storage)).unwrap();

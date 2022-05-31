@@ -1,7 +1,7 @@
 /// This module is named bch_and_slp_tx_history temporary. We will most likely use the same approach for every
 /// supported UTXO coin.
 use super::RequestTxHistoryResult;
-use crate::my_tx_history_v2::TxHistoryStorage;
+use crate::my_tx_history_v2::{CoinWithTxHistoryV2, TxHistoryStorage};
 use crate::utxo::bch::BchCoin;
 use crate::utxo::utxo_common;
 use crate::utxo::UtxoStandardOps;
@@ -45,7 +45,7 @@ impl<T: TxHistoryStorage> State for Init<T> {
     async fn on_changed(self: Box<Self>, ctx: &mut BchAndSlpHistoryCtx<T>) -> StateResult<BchAndSlpHistoryCtx<T>, ()> {
         *ctx.coin.as_ref().history_sync_state.lock().unwrap() = HistorySyncState::NotStarted;
 
-        if let Err(e) = ctx.storage.init(ctx.coin.ticker()).await {
+        if let Err(e) = ctx.storage.init(&ctx.coin.history_wallet_id()).await {
             return Self::change_state(Stopped::storage_error(e));
         }
 
@@ -76,14 +76,15 @@ impl<T: TxHistoryStorage> State for FetchingTxHashes<T> {
     type Result = ();
 
     async fn on_changed(self: Box<Self>, ctx: &mut BchAndSlpHistoryCtx<T>) -> StateResult<BchAndSlpHistoryCtx<T>, ()> {
-        if let Err(e) = ctx.storage.init(ctx.coin.ticker()).await {
+        let wallet_id = ctx.coin.history_wallet_id();
+        if let Err(e) = ctx.storage.init(&wallet_id).await {
             return Self::change_state(Stopped::storage_error(e));
         }
 
         let maybe_tx_ids = ctx.coin.request_tx_history(ctx.metrics.clone()).await;
         match maybe_tx_ids {
             RequestTxHistoryResult::Ok(all_tx_ids_with_height) => {
-                let in_storage = match ctx.storage.unique_tx_hashes_num_in_history(ctx.coin.ticker()).await {
+                let in_storage = match ctx.storage.unique_tx_hashes_num_in_history(&wallet_id).await {
                     Ok(num) => num,
                     Err(e) => return Self::change_state(Stopped::storage_error(e)),
                 };
@@ -161,9 +162,10 @@ impl<T: TxHistoryStorage> State for WaitForHistoryUpdateTrigger<T> {
     type Result = ();
 
     async fn on_changed(self: Box<Self>, ctx: &mut BchAndSlpHistoryCtx<T>) -> StateResult<Self::Ctx, Self::Result> {
+        let wallet_id = ctx.coin.history_wallet_id();
         loop {
             Timer::sleep(30.).await;
-            match ctx.storage.history_contains_unconfirmed_txes(ctx.coin.ticker()).await {
+            match ctx.storage.history_contains_unconfirmed_txes(&wallet_id).await {
                 Ok(contains) => {
                     if contains {
                         return Self::change_state(FetchingTxHashes::new());
@@ -211,7 +213,8 @@ impl<T: TxHistoryStorage> State for UpdatingUnconfirmedTxes<T> {
     type Result = ();
 
     async fn on_changed(self: Box<Self>, ctx: &mut BchAndSlpHistoryCtx<T>) -> StateResult<BchAndSlpHistoryCtx<T>, ()> {
-        match ctx.storage.get_unconfirmed_txes_from_history(ctx.coin.ticker()).await {
+        let wallet_id = ctx.coin.history_wallet_id();
+        match ctx.storage.get_unconfirmed_txes_from_history(&wallet_id).await {
             Ok(unconfirmed) => {
                 for mut tx in unconfirmed {
                     let found = self
@@ -226,7 +229,7 @@ impl<T: TxHistoryStorage> State for UpdatingUnconfirmedTxes<T> {
                                     Err(_) => return Self::change_state(OnIoErrorCooldown::new()),
                                 };
                                 tx.block_height = *height;
-                                if let Err(e) = ctx.storage.update_tx_in_history(ctx.coin.ticker(), &tx).await {
+                                if let Err(e) = ctx.storage.update_tx_in_history(&wallet_id, &tx).await {
                                     return Self::change_state(Stopped::storage_error(e));
                                 }
                             }
@@ -234,11 +237,7 @@ impl<T: TxHistoryStorage> State for UpdatingUnconfirmedTxes<T> {
                         None => {
                             // This can potentially happen when unconfirmed tx is removed from mempool for some reason.
                             // We should remove it from storage too.
-                            if let Err(e) = ctx
-                                .storage
-                                .remove_tx_from_history(ctx.coin.ticker(), &tx.internal_id)
-                                .await
-                            {
+                            if let Err(e) = ctx.storage.remove_tx_from_history(&wallet_id, &tx.internal_id).await {
                                 return Self::change_state(Stopped::storage_error(e));
                             }
                         },
@@ -274,13 +273,10 @@ impl<T: TxHistoryStorage> State for FetchingTransactionsData<T> {
     type Result = ();
 
     async fn on_changed(self: Box<Self>, ctx: &mut BchAndSlpHistoryCtx<T>) -> StateResult<BchAndSlpHistoryCtx<T>, ()> {
+        let wallet_id = ctx.coin.history_wallet_id();
         for (tx_hash, height) in self.all_tx_ids_with_height {
             let tx_hash_string = format!("{:02x}", tx_hash);
-            match ctx
-                .storage
-                .history_has_tx_hash(ctx.coin.ticker(), &tx_hash_string)
-                .await
-            {
+            match ctx.storage.history_has_tx_hash(&wallet_id, &tx_hash_string).await {
                 Ok(true) => continue,
                 Ok(false) => (),
                 Err(e) => return Self::change_state(Stopped::storage_error(e)),
@@ -312,11 +308,7 @@ impl<T: TxHistoryStorage> State for FetchingTransactionsData<T> {
                 },
             };
 
-            if let Err(e) = ctx
-                .storage
-                .add_transactions_to_history(ctx.coin.ticker(), tx_details)
-                .await
-            {
+            if let Err(e) = ctx.storage.add_transactions_to_history(&wallet_id, tx_details).await {
                 return Self::change_state(Stopped::storage_error(e));
             }
 
