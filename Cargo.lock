@@ -6265,6 +6265,7 @@ dependencies = [
  "byteorder 1.4.3",
  "derive_more",
  "primitives",
+ "test_helpers",
 ]
 
 [[package]]
@@ -7288,7 +7289,6 @@ name = "spv_validation"
 version = "0.1.0"
 dependencies = [
  "chain",
- "hex 0.4.2",
  "primitives",
  "ripemd160",
  "rustc-hex 2.1.0",
@@ -7296,6 +7296,7 @@ dependencies = [
  "serde_json",
  "serialization",
  "sha2 0.9.9",
+ "test_helpers",
 ]
 
 [[package]]
@@ -7611,6 +7612,13 @@ checksum = "633c1a546cee861a1a6d0dc69ebeca693bf4296661ba7852b9d21d159e0506df"
 dependencies = [
  "libc",
  "winapi",
+]
+
+[[package]]
+name = "test_helpers"
+version = "0.1.0"
+dependencies = [
+ "hex 0.4.2",
 ]
 
 [[package]]

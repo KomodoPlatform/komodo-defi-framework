@@ -2,21 +2,9 @@ use chain::{BlockHeader, RawBlockHeader};
 use primitives::hash::H256;
 use primitives::U256;
 use ripemd160::Digest;
+use serialization::parse_compact_int;
 use sha2::Sha256;
-use types::{parse_compact_int, CompactInt, MerkleArray, SPVError, TxIn};
-
-/// Determines the length of a scriptSig in an input.
-/// Will return 0 if passed a witness input.
-///
-/// # Arguments
-///
-/// * `tx_in` - The LEGACY input
-pub fn extract_script_sig_len(tx_in: &TxIn) -> Result<CompactInt, SPVError> {
-    if tx_in.len() < 37 {
-        return Err(SPVError::ReadOverrun);
-    }
-    parse_compact_int(&tx_in[36..])
-}
+use types::{extract_script_sig_len, MerkleArray, SPVError, TxIn};
 
 /// Determines the length of an input from its scriptsig:
 /// 36 for outpoint, 1 for scriptsig length, 4 for sequence.
@@ -48,7 +36,7 @@ pub fn determine_output_length(tx_out: &[u8]) -> Result<usize, SPVError> {
     if tx_out.len() < 9 {
         return Err(SPVError::MalformattedOutput);
     }
-    let script_pubkey_len = parse_compact_int(&tx_out[8..])?;
+    let script_pubkey_len = parse_compact_int(&tx_out[8..]).map_err(|_| SPVError::BadCompactInt)?;
 
     Ok(8 + script_pubkey_len.serialized_length() + script_pubkey_len.as_usize())
 }
@@ -72,7 +60,7 @@ pub fn validate_vin(vin: &[u8]) -> bool {
     let vin_length = vin.len();
 
     let mut offset = n_ins.serialized_length();
-    if n_ins == 0usize {
+    if n_ins.as_usize() == 0usize {
         return false;
     }
 
@@ -104,7 +92,7 @@ pub fn validate_vout(vout: &[u8]) -> bool {
     let vout_length = vout.len();
 
     let mut offset = n_outs.serialized_length();
-    if n_outs == 0usize {
+    if n_outs.as_usize() == 0usize {
         return false;
     }
 
@@ -271,52 +259,13 @@ pub fn validate_headers(
 #[cfg(test)]
 mod tests {
     use super::*;
-    extern crate hex;
     extern crate std;
 
     use std::{println, vec};
+    use test_helpers::for_tests::force_deserialize_hex;
 
-    use crate::test_utils::{self, force_deserialize_hex};
+    use crate::test_utils::{self};
     use crate::types::{self};
-
-    #[test]
-    fn it_determines_compact_int_data_length() {
-        test_utils::run_test(|fixtures| {
-            let test_cases = test_utils::get_test_cases("determineVarIntDataLength", &fixtures);
-            for case in test_cases {
-                let input = case.input.as_u64().unwrap() as u8;
-                let expected = case.output.as_u64().unwrap() as u8;
-                assert_eq!(CompactInt::data_length(input), expected);
-            }
-        })
-    }
-
-    #[test]
-    fn it_parses_compact_ints() {
-        test_utils::run_test(|fixtures| {
-            let test_cases = test_utils::get_test_cases("parseVarInt", &fixtures);
-            for case in test_cases {
-                let input = force_deserialize_hex(case.input.as_str().unwrap());
-                let expected = case.output.as_array().unwrap();
-                let expected_num = expected[1].as_u64().unwrap() as usize;
-                assert_eq!(parse_compact_int(&input).unwrap(), expected_num);
-            }
-        })
-    }
-
-    #[test]
-    fn it_parses_compact_int_errors() {
-        test_utils::run_test(|fixtures| {
-            let test_cases = test_utils::get_test_cases("parseVarIntError", &fixtures);
-            for case in test_cases {
-                let input = force_deserialize_hex(case.input.as_str().unwrap());
-                match parse_compact_int(&input) {
-                    Ok(_) => assert!(false, "expected an error"),
-                    Err(e) => assert_eq!(e, SPVError::BadCompactInt),
-                }
-            }
-        })
-    }
 
     #[test]
     fn it_does_bitcoin_hash256() {
@@ -358,7 +307,7 @@ mod tests {
                 let outputs = case.output.as_array().unwrap();
                 let expected_num = outputs[1].as_u64().unwrap() as usize;
 
-                assert_eq!(extract_script_sig_len(&TxIn(&input)).unwrap(), expected_num);
+                assert_eq!(extract_script_sig_len(&TxIn(&input)).unwrap().as_usize(), expected_num);
             }
         })
     }

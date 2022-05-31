@@ -1,5 +1,6 @@
 use chain::RawHeaderError;
 use primitives::hash::H256;
+use serialization::{parse_compact_int, CompactInteger};
 
 #[derive(Debug, PartialEq, Eq, Clone)]
 pub enum SPVError {
@@ -100,96 +101,6 @@ impl MerkleArray<'_> {
         digest.as_mut().copy_from_slice(&self.0[index * 32..(index + 1) * 32]);
         digest
     }
-}
-
-macro_rules! compact_int_conv {
-    ($target:ty) => {
-        impl From<$target> for CompactInt {
-            fn from(number: $target) -> CompactInt { Self(number as u64) }
-        }
-
-        impl PartialEq<$target> for CompactInt {
-            fn eq(&self, other: &$target) -> bool { self.0 == *other as u64 }
-        }
-    };
-}
-
-/// A Bitcoin-formatted `CompactInt`
-#[derive(Copy, Clone, Debug, Eq, PartialEq, Hash, Ord, PartialOrd)]
-pub struct CompactInt(u64);
-
-compact_int_conv!(u8);
-compact_int_conv!(u16);
-compact_int_conv!(u32);
-compact_int_conv!(u64);
-compact_int_conv!(usize);
-
-impl AsRef<u64> for CompactInt {
-    fn as_ref(&self) -> &u64 { &self.0 }
-}
-
-impl CompactInt {
-    /// Parse a compact int from a byte slice
-    pub fn parse<T: AsRef<[u8]> + ?Sized>(t: &T) -> Result<CompactInt, SPVError> { parse_compact_int(t) }
-
-    /// Return the underlying u64
-    pub fn number(&self) -> u64 { self.0 }
-
-    /// The underlying number as a usize
-    pub fn as_usize(&self) -> usize { self.0 as usize }
-
-    /// Determine the length of the compact int when serialized
-    pub fn serialized_length(&self) -> usize {
-        match self.0 {
-            0..=0xfc => 1,
-            0xfd..=0xffff => 3,
-            0x10000..=0xffff_ffff => 5,
-            _ => 9,
-        }
-    }
-
-    /// Determines the length of a CompactInt in bytes.
-    /// A CompactInt of > 1 byte is prefixed with a flag indicating its length.
-    ///
-    /// # Arguments
-    ///
-    /// * `flag` - The first byte of a compact_int
-    pub fn data_length(flag: u8) -> u8 {
-        let length: u8 = match flag {
-            0xfd => 2,
-            0xfe => 4,
-            0xff => 8,
-            _ => 0,
-        };
-        length
-    }
-}
-
-/// Parse a CompactInt into its data length and the number it represents
-/// Useful for Parsing Vins and Vouts. Returns `BadCompactInt` if insufficient bytes.
-///
-/// # Arguments
-///
-/// * `buf` - A byte-string starting with a CompactInt
-///
-/// # Returns
-///
-/// * (length, number) - the length of the data in bytes, and the number it represents
-pub fn parse_compact_int<T: AsRef<[u8]> + ?Sized>(buf: &T) -> Result<CompactInt, SPVError> {
-    let buf = buf.as_ref();
-    let length = CompactInt::data_length(buf[0]) as usize;
-
-    if length == 0 {
-        return Ok(buf[0].into());
-    }
-    if buf.len() < 1 + length {
-        return Err(SPVError::BadCompactInt);
-    }
-
-    let mut num_bytes = [0u8; 8];
-    num_bytes[..length].copy_from_slice(&buf[1..=length]);
-
-    Ok(u64::from_le_bytes(num_bytes).into())
 }
 
 macro_rules! impl_view_type {
@@ -351,11 +262,11 @@ impl_view_type!(
 /// # Arguments
 ///
 /// * `tx_in` - The LEGACY input
-fn extract_script_sig_len(tx_in: &TxIn) -> Result<CompactInt, SPVError> {
+pub fn extract_script_sig_len(tx_in: &TxIn) -> Result<CompactInteger, SPVError> {
     if tx_in.len() < 37 {
         return Err(SPVError::ReadOverrun);
     }
-    parse_compact_int(&tx_in[36..])
+    parse_compact_int(&tx_in[36..]).map_err(|_| SPVError::BadCompactInt)
 }
 
 /// Extracts the CompactInt-prepended scriptSig from the input in a tx.

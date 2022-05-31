@@ -4,6 +4,7 @@ extern crate ripemd160;
 extern crate rustc_hex as hex;
 extern crate serialization;
 extern crate sha2;
+extern crate test_helpers;
 
 /// `types` exposes simple types for on-chain evaluation of SPV proofs
 pub mod types;
@@ -16,45 +17,12 @@ pub mod spv_proof;
 
 #[cfg(test)]
 pub mod test_utils {
-    extern crate hex;
     extern crate serde;
     extern crate std;
 
     use self::serde::Deserialize;
 
     use std::{fs::File, io::Read, panic, string::String, vec, vec::Vec};
-
-    /// Strips the '0x' prefix off of hex string so it can be deserialized.
-    ///
-    /// # Arguments
-    ///
-    /// * `s` - The hex str
-    pub fn strip_0x_prefix(s: &str) -> &str {
-        if &s[..2] == "0x" {
-            &s[2..]
-        } else {
-            s
-        }
-    }
-
-    /// Deserializes a hex string into a u8 array.
-    ///
-    /// # Arguments
-    ///
-    /// * `s` - The hex string
-    pub fn deserialize_hex(s: &str) -> Result<Vec<u8>, hex::FromHexError> { hex::decode(&strip_0x_prefix(s)) }
-
-    /// Deserialize a hex string into bytes.
-    /// Panics if the string is malformatted.
-    ///
-    /// # Arguments
-    ///
-    /// * `s` - The hex string
-    ///
-    /// # Panics
-    ///
-    /// When the string is not validly formatted hex.
-    pub fn force_deserialize_hex(s: &str) -> Vec<u8> { deserialize_hex(s).unwrap() }
 
     #[derive(Deserialize, Debug)]
     pub struct TestCase {
@@ -111,20 +79,5 @@ pub mod test_utils {
         let result = panic::catch_unwind(|| test(&fixtures));
 
         assert!(result.is_ok())
-    }
-
-    #[test]
-    fn it_strips_0x_prefixes() {
-        let cases = [
-            ("00", "00"),
-            ("0x00", "00"),
-            ("aa", "aa"),
-            ("0xaa", "aa"),
-            ("Quotidian", "Quotidian"),
-            ("0xQuotidian", "Quotidian"),
-        ];
-        for case in cases.iter() {
-            assert_eq!(strip_0x_prefix(case.0), case.1);
-        }
     }
 }
