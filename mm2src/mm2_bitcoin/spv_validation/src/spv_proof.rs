@@ -1,8 +1,7 @@
 use chain::BlockHeader;
 use chain::RawBlockHeader;
-use helpers_validation::{merkle_prove, validate_vin, validate_vout};
+use helpers_validation::{merkle_prove, validate_vin, validate_vout, SPVError};
 use primitives::hash::H256;
-use types::SPVError;
 
 pub const TRY_SPV_PROOF_INTERVAL: u64 = 10;
 
