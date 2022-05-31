@@ -385,63 +385,6 @@ mod tests {
     }
 
     #[test]
-    fn it_extracts_outpoints() {
-        test_utils::run_test(|fixtures| {
-            let test_cases = test_utils::get_test_cases("extractOutpoint", &fixtures);
-            for case in test_cases {
-                let input = force_deserialize_hex(case.input.as_str().unwrap());
-                let expected: &[u8] = &force_deserialize_hex(case.output.as_str().unwrap());
-                assert_eq!(types::extract_outpoint(&TxIn(&input)), &expected[..]);
-            }
-        })
-    }
-
-    #[test]
-    fn it_extracts_outpoint_txids() {
-        test_utils::run_test(|fixtures| {
-            let test_cases = test_utils::get_test_cases("extractInputTxIdLE", &fixtures);
-            for case in test_cases {
-                let input = force_deserialize_hex(case.input.as_str().unwrap());
-                let expected: &[u8] = &force_deserialize_hex(case.output.as_str().unwrap());
-                assert_eq!(
-                    types::extract_input_tx_id_le(&types::extract_outpoint(&TxIn(&input))).as_slice(),
-                    expected
-                );
-            }
-        })
-    }
-
-    #[test]
-    fn it_extracts_outpoint_indices_le() {
-        test_utils::run_test(|fixtures| {
-            let test_cases = test_utils::get_test_cases("extractTxIndexLE", &fixtures);
-            for case in test_cases {
-                let input = force_deserialize_hex(case.input.as_str().unwrap());
-                let expected: &[u8] = &force_deserialize_hex(case.output.as_str().unwrap());
-                assert_eq!(
-                    types::extract_tx_index_le(&types::extract_outpoint(&TxIn(&input))),
-                    expected
-                );
-            }
-        })
-    }
-
-    #[test]
-    fn it_extracts_outpoint_indices() {
-        test_utils::run_test(|fixtures| {
-            let test_cases = test_utils::get_test_cases("extractTxIndex", &fixtures);
-            for case in test_cases {
-                let input = force_deserialize_hex(case.input.as_str().unwrap());
-                let expected = case.output.as_u64().unwrap() as u32;
-                assert_eq!(
-                    types::extract_tx_index(&types::extract_outpoint(&TxIn(&input))),
-                    expected
-                );
-            }
-        })
-    }
-
-    #[test]
     fn it_determines_output_length() {
         test_utils::run_test(|fixtures| {
             let test_cases = test_utils::get_test_cases("determineOutputLength", &fixtures);

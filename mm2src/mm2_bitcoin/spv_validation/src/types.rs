@@ -165,64 +165,6 @@ macro_rules! impl_view_type {
     }
 }
 
-/// Extracts the outpoint tx id from an input,
-/// 32 byte tx id.
-///
-/// # Arguments
-///
-/// * `outpoint` - The outpoint extracted from the input
-pub fn extract_input_tx_id_le(outpoint: &Outpoint) -> H256 {
-    let mut txid = H256::default();
-    txid.as_mut().copy_from_slice(&outpoint[0..32]);
-    txid
-}
-
-/// Extracts the LE tx input index from the input in a tx,
-/// 4 byte tx index.
-///
-/// # Arguments
-///
-/// * `outpoint` - The outpoint extracted from the input
-pub fn extract_tx_index_le(outpoint: &Outpoint) -> [u8; 4] {
-    let mut idx = [0u8; 4];
-    idx.copy_from_slice(&outpoint[32..36]);
-    idx
-}
-
-/// Extracts the LE tx input index from the input in a tx,
-/// 4 byte tx index.
-///
-/// # Arguments
-///
-/// * `outpoint` - The outpoint extracted from the input
-pub fn extract_tx_index(outpoint: &Outpoint) -> u32 {
-    let mut arr: [u8; 4] = [0u8; 4];
-    let b = extract_tx_index_le(outpoint);
-    arr.copy_from_slice(&b[..]);
-    u32::from_le_bytes(arr)
-}
-
-impl_view_type!(
-    /// A Outpoint
-    Outpoint
-);
-
-impl Outpoint<'_> {
-    /// Extract the LE txid from the outpoint
-    pub fn txid_le(&self) -> H256 { extract_input_tx_id_le(self) }
-
-    /// Extract the outpoint's index in the prevout tx's vout
-    pub fn vout_index(&self) -> u32 { extract_tx_index(self) }
-}
-
-/// Extracts the outpoint from the input in a tx,
-/// 32 byte tx id with 4 byte index.
-///
-/// # Arguments
-///
-/// * `tx_in` - The input
-pub fn extract_outpoint<'a>(tx_in: &'a TxIn<'a>) -> Outpoint<'a> { Outpoint(&tx_in[0..36]) }
-
 /// Extracts the LE sequence bytes from an input.
 /// Sequence is used for relative time locks.
 ///
@@ -287,9 +229,6 @@ impl_view_type!(
 );
 
 impl TxIn<'_> {
-    /// Extract the outpoint from the TxIn
-    pub fn outpoint(&self) -> Outpoint { extract_outpoint(self) }
-
     /// Extract the sequence number from the TxIn
     pub fn sequence(&self) -> u32 { extract_sequence(self).expect("Not malformed") }
 
