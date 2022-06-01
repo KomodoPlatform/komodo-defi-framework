@@ -13,7 +13,7 @@ pub mod helpers_validation;
 pub mod spv_proof;
 
 #[cfg(test)]
-pub mod test_utils {
+pub(crate) mod test_utils {
     extern crate serde;
     extern crate std;
 
@@ -21,14 +21,13 @@ pub mod test_utils {
 
     use std::{fs::File, io::Read, panic, string::String, vec, vec::Vec};
 
-    #[derive(Deserialize, Debug)]
-    pub struct TestCase {
+    #[derive(Deserialize)]
+    pub(crate) struct TestCase {
         pub input: serde_json::Value,
         pub output: serde_json::Value,
-        pub error_message: serde_json::Value,
     }
 
-    pub fn setup() -> serde_json::Value {
+    fn setup() -> serde_json::Value {
         let mut file = File::open("./src/for_tests/spvTestVectors.json").unwrap();
         let mut data = String::new();
         file.read_to_string(&mut data).unwrap();
@@ -36,7 +35,7 @@ pub mod test_utils {
         serde_json::from_str(&data).unwrap()
     }
 
-    pub fn to_test_case(val: &serde_json::Value) -> TestCase {
+    fn to_test_case(val: &serde_json::Value) -> TestCase {
         let o = val.get("output");
         let output: &serde_json::Value;
         output = match o {
@@ -44,21 +43,13 @@ pub mod test_utils {
             None => &serde_json::Value::Null,
         };
 
-        let e = val.get("rustError");
-        let error_message: &serde_json::Value;
-        error_message = match e {
-            Some(v) => v,
-            None => &serde_json::Value::Null,
-        };
-
         TestCase {
             input: val.get("input").unwrap().clone(),
             output: output.clone(),
-            error_message: error_message.clone(),
         }
     }
 
-    pub fn get_test_cases(name: &str, fixtures: &serde_json::Value) -> Vec<TestCase> {
+    pub(crate) fn get_test_cases(name: &str, fixtures: &serde_json::Value) -> Vec<TestCase> {
         let vals: &Vec<serde_json::Value> = fixtures.get(name).unwrap().as_array().unwrap();
         let mut cases = vec![];
         for i in vals {
@@ -67,7 +58,7 @@ pub mod test_utils {
         cases
     }
 
-    pub fn run_test<T>(test: T)
+    pub(crate) fn run_test<T>(test: T)
     where
         T: FnOnce(&serde_json::Value) -> () + panic::UnwindSafe,
     {

@@ -204,11 +204,11 @@ impl MmCtx {
     }
 
     pub fn netid(&self) -> u16 {
-        let big = self.conf["netid"].as_u64().unwrap_or(0);
-        if big > u16::MAX.into() {
-            panic!("netid {} is too big", big)
+        let netid = self.conf["netid"].as_u64().unwrap_or(0);
+        if netid > u16::MAX.into() {
+            panic!("netid {} is too big", netid)
         }
-        big as u16
+        netid as u16
     }
 
     pub fn p2p_in_memory(&self) -> bool { self.conf["p2p_in_memory"].as_bool().unwrap_or(false) }

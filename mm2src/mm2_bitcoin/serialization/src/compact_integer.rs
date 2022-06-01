@@ -13,7 +13,7 @@ pub enum CompactIntegerError {
 pub struct CompactInteger(u64);
 
 /// Parse a CompactInteger into its data length and the number it represents
-/// Useful for Parsing Vins and Vouts. Returns `BadCompactInteger` if insufficient bytes.
+/// Useful for Parsing Vins and Vouts. Returns `ParseError` if insufficient bytes.
 ///
 /// # Arguments
 ///
@@ -24,13 +24,16 @@ pub struct CompactInteger(u64);
 /// * (length, number) - the length of the data in bytes, and the number it represents
 pub fn parse_compact_int<T: AsRef<[u8]> + ?Sized>(buf: &T) -> Result<CompactInteger, CompactIntegerError> {
     let buf = buf.as_ref();
+    if buf.is_empty() {
+        return Err(CompactIntegerError::ParseError("Empty buffer!".into()));
+    }
     let length = CompactInteger::data_length(buf[0]) as usize;
 
     if length == 0 {
         return Ok(buf[0].into());
     }
     if buf.len() < 1 + length {
-        return Err(CompactIntegerError::ParseError("Insufficient bytes".into()));
+        return Err(CompactIntegerError::ParseError("Insufficient bytes!".into()));
     }
 
     let mut num_bytes = [0u8; 8];
@@ -40,12 +43,6 @@ pub fn parse_compact_int<T: AsRef<[u8]> + ?Sized>(buf: &T) -> Result<CompactInte
 }
 
 impl CompactInteger {
-    /// Parse a compact integer from a byte slice
-    pub fn parse<T: AsRef<[u8]> + ?Sized>(t: &T) -> Result<CompactInteger, CompactIntegerError> { parse_compact_int(t) }
-
-    /// Return the underlying u64
-    pub fn number(&self) -> u64 { self.0 }
-
     /// The underlying number as a usize
     pub fn as_usize(&self) -> usize { self.0 as usize }
 
@@ -158,11 +155,9 @@ impl Deserializable for CompactInteger {
 
 #[cfg(test)]
 mod tests {
-
     use super::{parse_compact_int, CompactInteger, CompactIntegerError};
+    use test_helpers::hex::force_deserialize_hex;
     use {Error as ReaderError, Reader, Stream};
-
-    use test_helpers::for_tests::force_deserialize_hex;
 
     #[test]
     fn test_compact_integer_data_length() {
@@ -205,22 +200,20 @@ mod tests {
     #[test]
     fn test_parse_compact_integer_errors() {
         let input = force_deserialize_hex("0xfd01");
-        match parse_compact_int(&input) {
-            Ok(_) => assert!(false, "expected an error"),
-            Err(e) => assert_eq!(e, CompactIntegerError::ParseError("Insufficient bytes".into())),
-        }
+        let error = parse_compact_int(&input).unwrap_err();
+        assert_eq!(error, CompactIntegerError::ParseError("Insufficient bytes!".into()));
 
         let input = force_deserialize_hex("0xfe010000");
-        match parse_compact_int(&input) {
-            Ok(_) => assert!(false, "expected an error"),
-            Err(e) => assert_eq!(e, CompactIntegerError::ParseError("Insufficient bytes".into())),
-        }
+        let error = parse_compact_int(&input).unwrap_err();
+        assert_eq!(error, CompactIntegerError::ParseError("Insufficient bytes!".into()));
 
         let input = force_deserialize_hex("0xff01000000000000");
-        match parse_compact_int(&input) {
-            Ok(_) => assert!(false, "expected an error"),
-            Err(e) => assert_eq!(e, CompactIntegerError::ParseError("Insufficient bytes".into())),
-        }
+        let error = parse_compact_int(&input).unwrap_err();
+        assert_eq!(error, CompactIntegerError::ParseError("Insufficient bytes!".into()));
+
+        let input = force_deserialize_hex("0x");
+        let error = parse_compact_int(&input).unwrap_err();
+        assert_eq!(error, CompactIntegerError::ParseError("Empty buffer!".into()));
     }
 
     #[test]

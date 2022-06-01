@@ -58,7 +58,7 @@ impl From<RawHeaderError> for SPVError {
 
 /// A slice of `H256`s for use in a merkle array
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub struct MerkleArray<'a>(&'a [u8]);
+struct MerkleArray<'a>(&'a [u8]);
 
 impl<'a> MerkleArray<'a> {
     /// Return a new merkle array from a slice
@@ -73,16 +73,17 @@ impl<'a> MerkleArray<'a> {
 
 impl MerkleArray<'_> {
     /// The length of the underlying slice
-    pub fn len(&self) -> usize { self.0.len() / 32 }
-
-    /// Whether the underlying slice is empty
-    pub fn is_empty(&self) -> bool { self.0.is_empty() }
+    fn len(&self) -> usize { self.0.len() / 32 }
 
     /// Index into the merkle array
-    pub fn index(&self, index: usize) -> H256 {
+    fn index(&self, index: usize) -> Result<H256, SPVError> {
+        let to_index = (index + 1) * 32;
+        if self.0.len() < to_index {
+            return Err(SPVError::BadMerkleProof);
+        }
         let mut digest = H256::default();
-        digest.as_mut().copy_from_slice(&self.0[index * 32..(index + 1) * 32]);
-        digest
+        digest.as_mut().copy_from_slice(&self.0[index * 32..to_index]);
+        Ok(digest)
     }
 }
 
@@ -92,7 +93,7 @@ impl MerkleArray<'_> {
 /// # Arguments
 ///
 /// * `tx_in` - The input as a u8 array
-pub fn determine_input_length(tx_in: &[u8]) -> Result<usize, SPVError> {
+fn determine_input_length(tx_in: &[u8]) -> Result<usize, SPVError> {
     if tx_in.len() < 37 {
         return Err(SPVError::ReadOverrun);
     }
@@ -115,7 +116,7 @@ pub fn determine_input_length(tx_in: &[u8]) -> Result<usize, SPVError> {
 /// # Errors
 ///
 /// * Errors if CompactInt represents a number larger than 253; large CompactInts are not supported.
-pub fn determine_output_length(tx_out: &[u8]) -> Result<usize, SPVError> {
+fn determine_output_length(tx_out: &[u8]) -> Result<usize, SPVError> {
     if tx_out.len() < 9 {
         return Err(SPVError::MalformattedOutput);
     }
@@ -134,7 +135,7 @@ pub fn determine_output_length(tx_out: &[u8]) -> Result<usize, SPVError> {
 /// # Arguments
 ///
 /// * `vin` - Raw bytes length-prefixed input vector
-pub fn validate_vin(vin: &[u8]) -> bool {
+pub(crate) fn validate_vin(vin: &[u8]) -> bool {
     let n_ins = match parse_compact_int(vin) {
         Ok(v) => v,
         Err(_) => return false,
@@ -166,7 +167,7 @@ pub fn validate_vin(vin: &[u8]) -> bool {
 /// # Arguments
 ///
 /// * `vout` - Raw bytes length-prefixed output vector
-pub fn validate_vout(vout: &[u8]) -> bool {
+pub(crate) fn validate_vout(vout: &[u8]) -> bool {
     let n_outs = match parse_compact_int(vout) {
         Ok(v) => v,
         Err(_) => return false,
@@ -198,7 +199,7 @@ pub fn validate_vout(vout: &[u8]) -> bool {
 /// # Arguments
 ///
 /// * `preimage` - The pre-image
-pub fn hash256(preimages: &[&[u8]]) -> H256 {
+fn hash256(preimages: &[&[u8]]) -> H256 {
     let mut sha = Sha256::new();
     for preimage in preimages.iter() {
         sha.update(preimage);
@@ -217,7 +218,7 @@ pub fn hash256(preimages: &[&[u8]]) -> H256 {
 ///
 /// * `a` - The first hash
 /// * `b` - The second hash
-pub fn hash256_merkle_step(a: &[u8], b: &[u8]) -> H256 { hash256(&[a, b]) }
+fn hash256_merkle_step(a: &[u8], b: &[u8]) -> H256 { hash256(&[a, b]) }
 
 /// Verifies a Bitcoin-style merkle tree.
 /// Leaves are 0-indexed.
@@ -227,20 +228,23 @@ pub fn hash256_merkle_step(a: &[u8], b: &[u8]) -> H256 { hash256(&[a, b]) }
 ///
 /// * `proof` - The proof. Tightly packed LE sha256 hashes.  The last hash is the root
 /// * `index` - The index of the leaf
-pub fn verify_hash256_merkle(txid: H256, merkle_root: H256, intermediate_nodes: &MerkleArray, index: u64) -> bool {
+fn verify_hash256_merkle(
+    txid: H256,
+    merkle_root: H256,
+    intermediate_nodes: &MerkleArray,
+    index: u64,
+) -> Result<(), SPVError> {
     let mut idx = index;
     let proof_len = intermediate_nodes.len();
 
-    match proof_len {
-        0 => return txid == merkle_root,
-        1 => return true,
-        _ => {},
+    if (proof_len == 0 && txid == merkle_root) || proof_len == 1 {
+        return Ok(());
     }
 
     let mut current = txid;
 
     for i in 0..proof_len {
-        let next = intermediate_nodes.index(i);
+        let next = intermediate_nodes.index(i)?;
 
         if idx % 2 == 1 {
             current = hash256_merkle_step(next.as_slice(), current.as_slice());
@@ -250,7 +254,11 @@ pub fn verify_hash256_merkle(txid: H256, merkle_root: H256, intermediate_nodes: 
         idx >>= 1;
     }
 
-    current == merkle_root
+    if current != merkle_root {
+        return Err(SPVError::BadMerkleProof);
+    }
+
+    Ok(())
 }
 
 /// Evaluates a Bitcoin merkle inclusion proof.
@@ -265,21 +273,23 @@ pub fn verify_hash256_merkle(txid: H256, merkle_root: H256, intermediate_nodes: 
 ///
 /// # Notes
 /// Wrapper around `bitcoin_spv::validatespv::prove`
-pub fn merkle_prove(txid: H256, merkle_root: H256, intermediate_nodes: Vec<H256>, index: u64) -> Result<(), SPVError> {
+pub(crate) fn merkle_prove(
+    txid: H256,
+    merkle_root: H256,
+    intermediate_nodes: Vec<H256>,
+    index: u64,
+) -> Result<(), SPVError> {
     if txid == merkle_root && index == 0 && intermediate_nodes.is_empty() {
         return Ok(());
     }
     let vec: Vec<u8> = intermediate_nodes.into_iter().flat_map(|node| node.take()).collect();
     let nodes = MerkleArray::new(vec.as_slice())?;
-    if !verify_hash256_merkle(txid.take().into(), merkle_root.take().into(), &nodes, index) {
-        return Err(SPVError::BadMerkleProof);
-    }
-    Ok(())
+    verify_hash256_merkle(txid.take().into(), merkle_root.take().into(), &nodes, index)
 }
 
 fn validate_header_prev_hash(actual: &H256, to_compare_with: &H256) -> bool { actual == to_compare_with }
 
-pub fn validate_header_work(digest: H256, target: &U256) -> bool {
+fn validate_header_work(digest: H256, target: &U256) -> bool {
     let empty = H256::default();
 
     if digest == empty {
@@ -341,13 +351,12 @@ pub fn validate_headers(
 
 #[cfg(test)]
 mod tests {
-    use super::*;
     extern crate std;
 
-    use std::{println, vec};
-    use test_helpers::for_tests::force_deserialize_hex;
-
+    use super::*;
     use crate::test_utils::{self};
+    use std::{println, vec};
+    use test_helpers::hex::force_deserialize_hex;
 
     #[test]
     fn it_does_bitcoin_hash256() {
@@ -440,7 +449,12 @@ mod tests {
                 }
 
                 let index = inputs.get("index").unwrap().as_u64().unwrap() as u64;
-                let expected = case.output.as_bool().unwrap();
+                let expected = case
+                    .output
+                    .as_bool()
+                    .unwrap()
+                    .then(|| ())
+                    .ok_or(SPVError::BadMerkleProof);
 
                 // extract root and txid
                 let mut root = H256::default();

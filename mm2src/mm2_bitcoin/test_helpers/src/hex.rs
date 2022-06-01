@@ -3,7 +3,7 @@
 /// # Arguments
 ///
 /// * `s` - The hex str
-pub fn strip_0x_prefix(s: &str) -> &str {
+fn strip_0x_prefix(s: &str) -> &str {
     if &s[..2] == "0x" {
         &s[2..]
     } else {
@@ -16,7 +16,7 @@ pub fn strip_0x_prefix(s: &str) -> &str {
 /// # Arguments
 ///
 /// * `s` - The hex string
-pub fn deserialize_hex(s: &str) -> Result<Vec<u8>, hex::FromHexError> { hex::decode(&strip_0x_prefix(s)) }
+fn deserialize_hex(s: &str) -> Result<Vec<u8>, hex::FromHexError> { hex::decode(&strip_0x_prefix(s)) }
 
 /// Deserialize a hex string into bytes.
 /// Panics if the string is malformatted.
@@ -28,4 +28,5 @@ pub fn deserialize_hex(s: &str) -> Result<Vec<u8>, hex::FromHexError> { hex::dec
 /// # Panics
 ///
 /// When the string is not validly formatted hex.
+#[inline]
 pub fn force_deserialize_hex(s: &str) -> Vec<u8> { deserialize_hex(s).unwrap() }
