@@ -207,32 +207,25 @@ pub struct CEXRates {
     pub rel: BigDecimal,
 }
 
-// Fetcher funtion to test fetching latest prices from a endoint.
+/// fetcher funtion to try fetch latest price from single endoint.
 async fn try_price_fetcher_endpoint(
     endpoint: &str,
     base: &str,
     rel: &str,
 ) -> Result<CEXRates, MmError<PriceServiceRequestError>> {
-    match process_price_request(endpoint).await {
-        Ok(response) => match response.get_cex_rates(base.to_string(), rel.to_string()) {
-            Some(fiat_price) => {
-                let (base_usd_price, rel_usd_price) = fiat_price.get_rate_price();
-                Ok(CEXRates {
-                    base: base_usd_price,
-                    rel: rel_usd_price,
-                })
-            },
-            None => {
-                let cex: Option<CEXRates> = None;
-                cex.or_mm_err(|| PriceServiceRequestError::Internal("Couldn't fetch price".to_string()))
-            },
-        },
-        Err(e) => MmError::err(e.into_inner()),
-    }
+    let response = process_price_request(endpoint).await?;
+    let fiat_price = response
+        .get_cex_rates(base.to_string(), rel.to_string())
+        .or_mm_err(|| PriceServiceRequestError::Internal("Couldn't fetch price".to_string()))?;
+    let (base_usd_price, rel_usd_price) = fiat_price.get_rate_price();
+    Ok(CEXRates {
+        base: base_usd_price,
+        rel: rel_usd_price,
+    })
 }
 
-// Consume try_price_fetcher_endpoint result here using MY_PRICE_ENDPOINT1 and if it fails, we'll retry to fetch from MY_PRICE_ENDPOINT2.
-// return price data if successful or None on failure.
+/// consume try_price_fetcher_endpoint result here using different endpoints.
+/// return price data on Success or None on failure.
 pub async fn fetch_swap_coins_price(base: Option<String>, rel: Option<String>) -> Option<CEXRates> {
     debug!("Trying to fetch coins latest price...");
     if let (Some(base), Some(rel)) = (base, rel) {
