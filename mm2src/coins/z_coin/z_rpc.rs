@@ -208,7 +208,7 @@ impl ZcoinLightClient {
         wallet_db_path: impl AsRef<Path> + Send + 'static,
         consensus_params: ZcoinConsensusParams,
         evk: ExtendedFullViewingKey,
-        simple_sync_notifier: AsyncSender<BlockHeight>,
+        sync_status_notifier: AsyncSender<SyncStatus>,
         on_tx_generation_watcher: OnTxGenWatcher,
     ) -> Result<(Self, AbortOnDropHandle), MmError<ZcoinLightClientInitError>> {
         let blocks_db = async_blocking(|| {
@@ -246,7 +246,7 @@ impl ZcoinLightClient {
             grpc_client,
             db: db.clone(),
             consensus_params,
-            simple_sync_notifier,
+            sync_status_notifier,
             on_tx_gen_watcher: on_tx_generation_watcher,
             watch_for_tx: None,
         };
@@ -254,43 +254,6 @@ impl ZcoinLightClient {
 
         Ok((ZcoinLightClient { db }, db_sync_abort_handler))
     }
-}
-
-pub async fn update_blocks_cache(
-    grpc_client: &mut CompactTxStreamerClient<Channel>,
-    db: &WalletDbShared,
-) -> Result<BlockHeight, MmError<UpdateBlocksCacheErr>> {
-    let request = tonic::Request::new(ChainSpec {});
-    let current_blockchain_block = grpc_client.get_latest_block(request).await?;
-    let current_block_in_db = db.lock().blocks_db.get_latest_block()?;
-
-    let from_block = current_block_in_db as u64 + 1;
-    let current_block: u64 = current_blockchain_block.into_inner().height;
-
-    if current_block >= from_block {
-        let request = tonic::Request::new(BlockRange {
-            start: Some(BlockId {
-                height: from_block,
-                hash: Vec::new(),
-            }),
-            end: Some(BlockId {
-                height: current_block,
-                hash: Vec::new(),
-            }),
-        });
-
-        let mut response = grpc_client.get_block_range(request).await?;
-
-        while let Ok(Some(block)) = response.get_mut().message().await {
-            debug!("Got block {:?}", block);
-            block_in_place(|| {
-                db.lock()
-                    .blocks_db
-                    .insert_block(block.height as u32, block.encode_to_vec())
-            })?;
-        }
-    }
-    Ok(BlockHeight::from_u32(current_block as u32))
 }
 
 /// Scans cached blocks, validates the chain and updates WalletDb.
@@ -351,42 +314,128 @@ impl SaplingSyncRespawnGuard {
     pub(super) fn current_block(&self) -> BlockHeight { self.sync_handle.as_ref().expect("always Some").current_block }
 }
 
+pub enum SyncStatus {
+    UpdatingBlocksCache {
+        current_scanned_block: u64,
+        latest_block: u64,
+    },
+    BuildingWalletDb,
+    Finished {
+        block_number: u64,
+    },
+}
+
 pub struct SaplingSyncLoopHandle {
     pub(super) current_block: BlockHeight,
     grpc_client: CompactTxStreamerClient<Channel>,
     db: WalletDbShared,
     consensus_params: ZcoinConsensusParams,
-    /// Notifies that sync is done without stopping the loop, e.g. on coin activation
-    simple_sync_notifier: AsyncSender<BlockHeight>,
+    /// Notifies about sync status without stopping the loop, e.g. on coin activation
+    sync_status_notifier: AsyncSender<SyncStatus>,
     /// If new tx is required to be generated, we stop the sync and respawn it after tx is sent
     /// This watcher waits for such notification
     on_tx_gen_watcher: AsyncReceiver<OneshotSender<Self>>,
     pub(super) watch_for_tx: Option<TxId>,
 }
 
-async fn check_watch_for_tx_existence(handle: &mut SaplingSyncLoopHandle) {
-    if let Some(tx_id) = handle.watch_for_tx {
-        let mut attempts = 0;
-        loop {
-            let filter = TxFilter {
-                block: None,
-                index: 0,
-                hash: tx_id.0.into(),
-            };
-            let request = tonic::Request::new(filter);
-            match handle.grpc_client.get_transaction(request).await {
-                Ok(_) => break,
-                Err(e) => {
-                    error!("Error on getting tx {}", tx_id);
-                    if e.message().contains(NO_TX_ERROR_CODE) {
-                        if attempts >= 3 {
-                            handle.watch_for_tx = None;
-                            return;
+impl SaplingSyncLoopHandle {
+    fn notify_blocks_cache_status(&mut self, current_scanned_block: u64, latest_block: u64) {
+        if self
+            .sync_status_notifier
+            .try_send(SyncStatus::UpdatingBlocksCache {
+                current_scanned_block,
+                latest_block,
+            })
+            .is_err()
+        {
+            debug!("No one seems interested in SyncStatus");
+        }
+    }
+
+    fn notify_building_wallet_db(&mut self) {
+        if self
+            .sync_status_notifier
+            .try_send(SyncStatus::BuildingWalletDb)
+            .is_err()
+        {
+            debug!("No one seems interested in SyncStatus");
+        }
+    }
+
+    fn notify_sync_finished(&mut self) {
+        if self
+            .sync_status_notifier
+            .try_send(SyncStatus::Finished {
+                block_number: self.current_block.into(),
+            })
+            .is_err()
+        {
+            debug!("No one seems interested in SyncStatus");
+        }
+    }
+
+    async fn update_blocks_cache(&mut self) -> Result<(), MmError<UpdateBlocksCacheErr>> {
+        let request = tonic::Request::new(ChainSpec {});
+        let current_blockchain_block = self.grpc_client.get_latest_block(request).await?;
+        let current_block_in_db = block_in_place(|| self.db.lock().blocks_db.get_latest_block())?;
+
+        let from_block = current_block_in_db as u64 + 1;
+        let current_block: u64 = current_blockchain_block.into_inner().height;
+
+        if current_block >= from_block {
+            let request = tonic::Request::new(BlockRange {
+                start: Some(BlockId {
+                    height: from_block,
+                    hash: Vec::new(),
+                }),
+                end: Some(BlockId {
+                    height: current_block,
+                    hash: Vec::new(),
+                }),
+            });
+
+            let mut response = self.grpc_client.get_block_range(request).await?;
+
+            while let Some(block) = response.get_mut().message().await? {
+                debug!("Got block {:?}", block);
+                block_in_place(|| {
+                    self.db
+                        .lock()
+                        .blocks_db
+                        .insert_block(block.height as u32, block.encode_to_vec())
+                })?;
+                self.notify_blocks_cache_status(block.height, current_block);
+            }
+        }
+
+        self.current_block = BlockHeight::from_u32(current_block as u32);
+        Ok(())
+    }
+
+    async fn check_watch_for_tx_existence(&mut self) {
+        if let Some(tx_id) = self.watch_for_tx {
+            let mut attempts = 0;
+            loop {
+                let filter = TxFilter {
+                    block: None,
+                    index: 0,
+                    hash: tx_id.0.into(),
+                };
+                let request = tonic::Request::new(filter);
+                match self.grpc_client.get_transaction(request).await {
+                    Ok(_) => break,
+                    Err(e) => {
+                        error!("Error on getting tx {}", tx_id);
+                        if e.message().contains(NO_TX_ERROR_CODE) {
+                            if attempts >= 3 {
+                                self.watch_for_tx = None;
+                                return;
+                            }
+                            attempts += 1;
                         }
-                        attempts += 1;
-                    }
-                    Timer::sleep(30.).await;
-                },
+                        Timer::sleep(30.).await;
+                    },
+                }
             }
         }
     }
@@ -395,14 +444,13 @@ async fn check_watch_for_tx_existence(handle: &mut SaplingSyncLoopHandle) {
 async fn light_wallet_db_sync_loop(mut sync_handle: SaplingSyncLoopHandle) {
     // this loop is spawned as standalone task so it's safe to use block_in_place here
     loop {
-        sync_handle.current_block = match update_blocks_cache(&mut sync_handle.grpc_client, &sync_handle.db).await {
-            Ok(b) => b,
-            Err(e) => {
-                error!("Error {} on blocks cache update", e);
-                Timer::sleep(10.).await;
-                continue;
-            },
-        };
+        if let Err(e) = sync_handle.update_blocks_cache().await {
+            error!("Error {} on blocks cache update", e);
+            Timer::sleep(10.).await;
+            continue;
+        }
+
+        sync_handle.notify_building_wallet_db();
 
         if let Err(e) = block_in_place(|| scan_blocks(&sync_handle.db, &sync_handle.consensus_params)) {
             error!("Error {} on scan_blocks", e);
@@ -410,7 +458,9 @@ async fn light_wallet_db_sync_loop(mut sync_handle: SaplingSyncLoopHandle) {
             continue;
         }
 
-        check_watch_for_tx_existence(&mut sync_handle).await;
+        sync_handle.notify_sync_finished();
+
+        sync_handle.check_watch_for_tx_existence().await;
 
         if let Some(tx_id) = sync_handle.watch_for_tx {
             if !block_in_place(|| is_tx_imported(sync_handle.db.lock().wallet_db.sql_conn(), tx_id)) {
@@ -420,14 +470,6 @@ async fn light_wallet_db_sync_loop(mut sync_handle: SaplingSyncLoopHandle) {
             } else {
                 sync_handle.watch_for_tx = None;
             }
-        }
-
-        if sync_handle
-            .simple_sync_notifier
-            .try_send(sync_handle.current_block)
-            .is_err()
-        {
-            debug!("No one seems to be interested about sync state");
         }
 
         if let Ok(Some(sender)) = sync_handle.on_tx_gen_watcher.try_next() {

@@ -115,17 +115,19 @@ pub fn zombie_conf() -> Json {
         "protocol":{
             "type":"ZHTLC",
             "protocol_data": {
-                "overwinter_activation_height": 0,
-                "sapling_activation_height": 1,
-                "blossom_activation_height": null,
-                "heartwood_activation_height": null,
-                "canopy_activation_height": null,
-                "coin_type": 133,
-                "hrp_sapling_extended_spending_key": "secret-extended-key-main",
-                "hrp_sapling_extended_full_viewing_key": "zxviews",
-                "hrp_sapling_payment_address": "zs",
-                "b58_pubkey_address_prefix": [ 28, 184 ],
-                "b58_script_address_prefix": [ 28, 189 ]
+                "consensus_params": {
+                    "overwinter_activation_height": 0,
+                    "sapling_activation_height": 1,
+                    "blossom_activation_height": null,
+                    "heartwood_activation_height": null,
+                    "canopy_activation_height": null,
+                    "coin_type": 133,
+                    "hrp_sapling_extended_spending_key": "secret-extended-key-main",
+                    "hrp_sapling_extended_full_viewing_key": "zxviews",
+                    "hrp_sapling_payment_address": "zs",
+                    "b58_pubkey_address_prefix": [ 28, 184 ],
+                    "b58_script_address_prefix": [ 28, 189 ]
+                }
             }
         },
         "required_confirmations":0

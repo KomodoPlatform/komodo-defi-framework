@@ -1,3 +1,4 @@
+use crate::rpc_command::init_withdraw::{InitWithdrawCoin, WithdrawInProgressStatus, WithdrawTaskHandle};
 use crate::utxo::rpc_clients::{ElectrumRpcRequest, UnspentInfo, UtxoRpcClientEnum, UtxoRpcError, UtxoRpcFut,
                                UtxoRpcResult};
 use crate::utxo::utxo_builder::{UtxoCoinBuilderCommonOps, UtxoCoinWithIguanaPrivKeyBuilder,
@@ -63,11 +64,10 @@ mod z_htlc;
 use z_htlc::{z_p2sh_spend, z_send_dex_fee, z_send_htlc};
 
 mod z_rpc;
-use z_rpc::{ZcoinLightClient, ZcoinRpcClient};
+pub use z_rpc::SyncStatus;
+use z_rpc::{SaplingSyncLoopHandle, SaplingSyncRespawnGuard, ZcoinLightClient, ZcoinRpcClient};
 
 mod z_coin_errors;
-use crate::rpc_command::init_withdraw::{InitWithdrawCoin, WithdrawInProgressStatus, WithdrawTaskHandle};
-use crate::z_coin::z_rpc::{SaplingSyncLoopHandle, SaplingSyncRespawnGuard};
 pub use z_coin_errors::*;
 
 #[cfg(all(test, feature = "zhtlc-native-tests"))]
@@ -136,11 +136,11 @@ impl Parameters for ZcoinConsensusParams {
     fn b58_script_address_prefix(&self) -> [u8; 2] { self.b58_script_address_prefix }
 }
 
-type SimpleSyncWatcher = AsyncReceiver<BlockHeight>;
+type SyncWatcher = AsyncReceiver<SyncStatus>;
 type NewTxNotifier = AsyncSender<OneshotSender<SaplingSyncLoopHandle>>;
 
 pub struct SaplingSyncConnector {
-    simple_sync_watcher: SimpleSyncWatcher,
+    sync_watcher: SyncWatcher,
     on_tx_gen_notifier: NewTxNotifier,
     abort_handle: Arc<Mutex<AbortOnDropHandle>>,
 }
@@ -148,22 +148,20 @@ pub struct SaplingSyncConnector {
 impl SaplingSyncConnector {
     #[inline]
     fn new_mutex_wrapped(
-        simple_sync_watcher: SimpleSyncWatcher,
+        simple_sync_watcher: SyncWatcher,
         on_tx_gen_notifier: NewTxNotifier,
         abort_handle: AbortOnDropHandle,
     ) -> AsyncMutex<Self> {
         AsyncMutex::new(SaplingSyncConnector {
-            simple_sync_watcher,
+            sync_watcher: simple_sync_watcher,
             on_tx_gen_notifier,
             abort_handle: Arc::new(Mutex::new(abort_handle)),
         })
     }
 
-    async fn wait_for_simple_blockchain_sync(&mut self) -> Result<BlockHeight, MmError<BlockchainScanStopped>> {
-        self.simple_sync_watcher
-            .next()
-            .await
-            .or_mm_err(|| BlockchainScanStopped {})
+    #[inline]
+    pub async fn current_sync_status(&mut self) -> Result<SyncStatus, MmError<BlockchainScanStopped>> {
+        self.sync_watcher.next().await.or_mm_err(|| BlockchainScanStopped {})
     }
 
     async fn wait_for_gen_tx_blockchain_sync(
@@ -254,12 +252,12 @@ impl ZCoin {
     pub fn consensus_params_ref(&self) -> &ZcoinConsensusParams { &self.z_fields.consensus_params }
 
     #[inline]
-    pub async fn wait_for_blockchain_sync(&self) -> Result<BlockHeight, MmError<BlockchainScanStopped>> {
+    pub async fn sync_status(&self) -> Result<SyncStatus, MmError<BlockchainScanStopped>> {
         self.z_fields
             .sync_state_connector
             .lock()
             .await
-            .wait_for_simple_blockchain_sync()
+            .current_sync_status()
             .await
     }
 
@@ -526,7 +524,7 @@ impl<'a> UtxoCoinWithIguanaPrivKeyBuilder for ZCoinBuilder<'a> {
                         .or_mm_err(|| ZCoinBuildError::EmptyLightwalletdUris)?,
                 )?;
 
-                let (simple_sync_notifier, simple_sync_watcher) = channel(1);
+                let (sync_notifier, sync_watcher) = channel(1);
                 let (on_tx_gen_notifier, on_tx_gen_watcher) = channel(1);
 
                 let (client, abort_handle) = ZcoinLightClient::init(
@@ -535,13 +533,13 @@ impl<'a> UtxoCoinWithIguanaPrivKeyBuilder for ZCoinBuilder<'a> {
                     wallet_db_path,
                     self.consensus_params.clone(),
                     evk,
-                    simple_sync_notifier,
+                    sync_notifier,
                     on_tx_gen_watcher,
                 )
                 .await?;
                 (
                     client.into(),
-                    SaplingSyncConnector::new_mutex_wrapped(simple_sync_watcher, on_tx_gen_notifier, abort_handle),
+                    SaplingSyncConnector::new_mutex_wrapped(sync_watcher, on_tx_gen_notifier, abort_handle),
                 )
             },
         };

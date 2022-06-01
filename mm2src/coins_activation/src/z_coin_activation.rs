@@ -5,7 +5,8 @@ use crate::standalone_coin::{InitStandaloneCoinActivationOps, InitStandaloneCoin
                              InitStandaloneCoinTaskManagerShared};
 use async_trait::async_trait;
 use coins::coin_balance::{EnableCoinBalance, IguanaWalletBalance};
-use coins::z_coin::{z_coin_from_conf_and_params, ZCoin, ZCoinBuildError, ZcoinActivationParams, ZcoinConsensusParams};
+use coins::z_coin::{z_coin_from_conf_and_params, BlockchainScanStopped, SyncStatus, ZCoin, ZCoinBuildError,
+                    ZcoinActivationParams, ZcoinConsensusParams};
 use coins::{BalanceError, CoinProtocol, MarketCoinOps, RegisterCoinError};
 use crypto::hw_rpc_task::{HwRpcTaskAwaitingStatus, HwRpcTaskUserAction};
 use crypto::CryptoInitError;
@@ -39,7 +40,11 @@ impl CurrentBlock for ZcoinActivationResult {
 #[non_exhaustive]
 pub enum ZcoinInProgressStatus {
     ActivatingCoin,
-    Scanning,
+    UpdatingBlocksCache {
+        current_scanned_block: u64,
+        latest_block: u64,
+    },
+    BuildingWalletDb,
     RequestingWalletBalance,
     Finishing,
     /// This status doesn't require the user to send `UserAction`,
@@ -111,6 +116,10 @@ impl From<CryptoInitError> for ZcoinInitError {
     fn from(err: CryptoInitError) -> Self { ZcoinInitError::Internal(err.to_string()) }
 }
 
+impl From<BlockchainScanStopped> for ZcoinInitError {
+    fn from(_: BlockchainScanStopped) -> Self { ZcoinInitError::Internal("Blockchain scan process stopped".into()) }
+}
+
 impl From<ZcoinInitError> for InitStandaloneCoinError {
     fn from(err: ZcoinInitError) -> Self {
         match err {
@@ -178,8 +187,21 @@ impl InitStandaloneCoinActivationOps for ZCoin {
         .await
         .mm_err(|e| ZcoinInitError::from_build_err(e, ticker))?;
 
-        task_handle.update_in_progress_status(ZcoinInProgressStatus::Scanning)?;
-        coin.wait_for_blockchain_sync().await.unwrap();
+        loop {
+            let in_progress_status = match coin.sync_status().await? {
+                SyncStatus::UpdatingBlocksCache {
+                    current_scanned_block,
+                    latest_block,
+                } => ZcoinInProgressStatus::UpdatingBlocksCache {
+                    current_scanned_block,
+                    latest_block,
+                },
+                SyncStatus::BuildingWalletDb => ZcoinInProgressStatus::BuildingWalletDb,
+                SyncStatus::Finished { .. } => break,
+            };
+            task_handle.update_in_progress_status(in_progress_status)?;
+        }
+
         Ok(coin)
     }
 
