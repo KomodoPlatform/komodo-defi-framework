@@ -4,13 +4,14 @@ use common::executor::Timer;
 use common::log::LogLevel;
 use common::mm_metrics::{MetricType, MetricsJson};
 use common::mm_number::{BigDecimal, BigRational, Fraction, MmNumber};
+use common::now_ms;
 use crypto::privkey::key_pair_from_seed;
 use http::{HeaderMap, StatusCode};
 use mm2_test_helpers::for_tests::{check_my_swap_status, check_recent_swaps, check_stats_swap_status,
                                   enable_native as enable_native_impl, enable_qrc20, find_metrics_in_json,
-                                  from_env_file, mm_spat, sign_message, verify_message, wait_till_history_has_records,
-                                  LocalStart, MarketMakerIt, RaiiDump, MAKER_ERROR_EVENTS, MAKER_SUCCESS_EVENTS,
-                                  TAKER_ERROR_EVENTS, TAKER_SUCCESS_EVENTS};
+                                  from_env_file, init_z_coin_light, init_z_coin_status, mm_spat, sign_message,
+                                  verify_message, wait_till_history_has_records, LocalStart, MarketMakerIt, RaiiDump,
+                                  MAKER_ERROR_EVENTS, MAKER_SUCCESS_EVENTS, TAKER_ERROR_EVENTS, TAKER_SUCCESS_EVENTS};
 use serde_json::{self as json, Value as Json};
 use std::collections::HashMap;
 use std::convert::{identity, TryFrom};
@@ -22,7 +23,7 @@ use std::time::Duration;
 use uuid::Uuid;
 
 #[cfg(all(feature = "zhtlc-native-tests", not(target_arch = "wasm32")))]
-use mm2_test_helpers::for_tests::{init_z_coin, init_z_coin_status};
+use mm2_test_helpers::for_tests::init_z_coin_native;
 
 #[cfg(all(feature = "zhtlc-native-tests", not(target_arch = "wasm32")))]
 async fn enable_z_coin(mm: &MarketMakerIt, coin: &str) -> ZcoinActivationResult {
@@ -166,6 +167,46 @@ fn addr_from_enable<'a>(enable_response: &'a HashMap<&str, EnableElectrumRespons
 
 fn rmd160_from_passphrase(passphrase: &str) -> [u8; 20] {
     key_pair_from_seed(passphrase).unwrap().public().address_hash().take()
+}
+
+fn blocks_cache_path(mm: &MarketMakerIt, seed: &str, coin: &str) -> PathBuf {
+    let rmd = rmd160_from_passphrase(seed);
+    let db_name = format!("{}_light_cache.db", coin);
+    mm.folder.join("DB").join(hex::encode(rmd)).join(db_name)
+}
+
+async fn enable_z_coin_light(
+    mm: &MarketMakerIt,
+    coin: &str,
+    electrums: &[&str],
+    lightwalletd_urls: &[&str],
+    blocks_cache_path: &dyn AsRef<Path>,
+) -> ZcoinActivationResult {
+    std::fs::copy("../coins/test_cache_zombie.db", blocks_cache_path).unwrap();
+
+    let init = init_z_coin_light(mm, coin, electrums, lightwalletd_urls).await;
+    let init: RpcV2Response<InitTaskResult> = json::from_value(init).unwrap();
+    let timeout = now_ms() + 600000;
+
+    loop {
+        if now_ms() > timeout {
+            panic!("{} initialization timed out", coin);
+        }
+
+        let status = init_z_coin_status(mm, init.result.task_id).await;
+        println!("Status {}", json::to_string(&status).unwrap());
+        let status: RpcV2Response<InitZcoinStatus> = json::from_value(status).unwrap();
+        if let InitZcoinStatus::Ready(rpc_result) = status.result {
+            match rpc_result {
+                MmRpcResult::Ok { result } => {
+                    std::fs::copy(blocks_cache_path, "../coins/test_cache_zombie.db").unwrap();
+                    break result;
+                },
+                MmRpcResult::Err(e) => panic!("{} initialization error {:?}", coin, e),
+            }
+        }
+        Timer::sleep(1.).await;
+    }
 }
 
 /// Integration test for RPC server.

@@ -1,4 +1,7 @@
 use super::*;
+use mm2_test_helpers::for_tests::{orderbook_v2, rick_conf, zombie_conf, RICK, ZOMBIE_ELECTRUMS,
+                                  ZOMBIE_LIGHTWALLETD_URLS, ZOMBIE_TICKER};
+use mm2_test_helpers::get_passphrase;
 
 /// https://github.com/artemii235/SuperNET/issues/241
 #[test]
@@ -1310,4 +1313,220 @@ fn setprice_min_volume_should_be_displayed_in_orderbook() {
 
     let min_volume = asks[0]["min_volume"].as_str().unwrap();
     assert_eq!(min_volume, "1", "Alice ETH/JST ask must display correct min_volume");
+}
+
+// ignored because it requires a long-running ZOMBIE initialization process
+#[test]
+#[ignore]
+fn zhtlc_orders_sync_alice_connected_before_creation() {
+    let bob_passphrase = get_passphrase!(".env.seed", "BOB_PASSPHRASE").unwrap();
+    let alice_passphrase = get_passphrase!(".env.client", "ALICE_PASSPHRASE").unwrap();
+
+    let coins = json!([rick_conf(), zombie_conf()]);
+
+    let mm_bob = MarketMakerIt::start(
+        json!({
+            "gui": "nogui",
+            "netid": 9998,
+            "myipaddr": env::var ("BOB_TRADE_IP") .ok(),
+            "rpcip": env::var ("BOB_TRADE_IP") .ok(),
+            "canbind": env::var ("BOB_TRADE_PORT") .ok().map (|s| s.parse::<i64>().unwrap()),
+            "passphrase": bob_passphrase,
+            "coins": coins,
+            "rpc_password": "pass",
+            "i_am_seed": true,
+        }),
+        "pass".into(),
+        match var("LOCAL_THREAD_MM") {
+            Ok(ref e) if e == "bob" => Some(local_start()),
+            _ => None,
+        },
+    )
+    .unwrap();
+
+    let (_dump_log, _dump_dashboard) = mm_bob.mm_dump();
+    log!({"Bob log path: {}", mm_bob.log_path.display()});
+
+    let mm_alice = MarketMakerIt::start(
+        json!({
+            "gui": "nogui",
+            "netid": 9998,
+            "dht": "on",  // Enable DHT without delay.
+            "myipaddr": env::var ("ALICE_TRADE_IP") .ok(),
+            "rpcip": env::var ("ALICE_TRADE_IP") .ok(),
+            "passphrase": alice_passphrase,
+            "coins": coins,
+            "seednodes": [fomat!((mm_bob.ip))],
+            "rpc_password": "pass",
+        }),
+        "pass".into(),
+        match var("LOCAL_THREAD_MM") {
+            Ok(ref e) if e == "alice" => Some(local_start()),
+            _ => None,
+        },
+    )
+    .unwrap();
+
+    let (_alice_dump_log, _alice_dump_dashboard) = mm_alice.mm_dump();
+    log!({"Alice log path: {}", mm_alice.log_path.display()});
+
+    block_on(enable_electrum_json(&mm_bob, RICK, false, rick_electrums()));
+    block_on(enable_z_coin_light(
+        &mm_bob,
+        ZOMBIE_TICKER,
+        ZOMBIE_ELECTRUMS,
+        ZOMBIE_LIGHTWALLETD_URLS,
+        &blocks_cache_path(&mm_bob, &bob_passphrase, ZOMBIE_TICKER),
+    ));
+
+    let set_price_json = json!({
+        "userpass": mm_bob.userpass,
+        "method": "setprice",
+        "base": ZOMBIE_TICKER,
+        "rel": RICK,
+        "price": 1,
+        "volume": "1",
+    });
+    log!("Issue sell request on Bob side by setting base/rel price…");
+    let rc = block_on(mm_bob.rpc(&set_price_json)).unwrap();
+    assert!(rc.0.is_success(), "!setprice: {}", rc.1);
+
+    let set_price_res: SetPriceResponse = json::from_str(&rc.1).unwrap();
+
+    let orderbook = block_on(orderbook_v2(&mm_alice, ZOMBIE_TICKER, RICK));
+    let orderbook: RpcV2Response<OrderbookV2Response> = json::from_value(orderbook).unwrap();
+    let orderbook = orderbook.result;
+
+    assert_eq!(1, orderbook.asks.len());
+    orderbook
+        .asks
+        .iter()
+        .find(|ask| ask.entry.uuid == set_price_res.result.uuid)
+        .unwrap();
+
+    thread::sleep(Duration::from_secs(MIN_ORDER_KEEP_ALIVE_INTERVAL * 3));
+
+    let orderbook = block_on(orderbook_v2(&mm_alice, ZOMBIE_TICKER, RICK));
+    let orderbook: RpcV2Response<OrderbookV2Response> = json::from_value(orderbook).unwrap();
+    let orderbook = orderbook.result;
+
+    assert_eq!(1, orderbook.asks.len());
+    orderbook
+        .asks
+        .iter()
+        .find(|ask| ask.entry.uuid == set_price_res.result.uuid)
+        .unwrap();
+}
+
+// ignored because it requires a long-running ZOMBIE initialization process
+#[test]
+#[ignore]
+fn zhtlc_orders_sync_alice_connected_after_creation() {
+    let bob_passphrase = get_passphrase!(".env.seed", "BOB_PASSPHRASE").unwrap();
+    let alice_passphrase = get_passphrase!(".env.client", "ALICE_PASSPHRASE").unwrap();
+
+    let coins = json!([rick_conf(), zombie_conf()]);
+
+    let mm_bob = MarketMakerIt::start(
+        json!({
+            "gui": "nogui",
+            "netid": 9998,
+            "myipaddr": env::var ("BOB_TRADE_IP") .ok(),
+            "rpcip": env::var ("BOB_TRADE_IP") .ok(),
+            "canbind": env::var ("BOB_TRADE_PORT") .ok().map (|s| s.parse::<i64>().unwrap()),
+            "passphrase": bob_passphrase,
+            "coins": coins,
+            "rpc_password": "pass",
+            "i_am_seed": true,
+        }),
+        "pass".into(),
+        match var("LOCAL_THREAD_MM") {
+            Ok(ref e) if e == "bob" => Some(local_start()),
+            _ => None,
+        },
+    )
+    .unwrap();
+
+    let (_dump_log, _dump_dashboard) = mm_bob.mm_dump();
+    log!({"Bob log path: {}", mm_bob.log_path.display()});
+
+    block_on(enable_electrum_json(&mm_bob, "RICK", false, rick_electrums()));
+    block_on(enable_z_coin_light(
+        &mm_bob,
+        ZOMBIE_TICKER,
+        ZOMBIE_ELECTRUMS,
+        ZOMBIE_LIGHTWALLETD_URLS,
+        &blocks_cache_path(&mm_bob, &bob_passphrase, ZOMBIE_TICKER),
+    ));
+
+    let set_price_json = json!({
+        "userpass": mm_bob.userpass,
+        "method": "setprice",
+        "base": "ZOMBIE",
+        "rel": "RICK",
+        "price": 1,
+        "volume": "1",
+    });
+    log!("Issue sell request on Bob side by setting base/rel price…");
+    let rc = block_on(mm_bob.rpc(&set_price_json)).unwrap();
+    assert!(rc.0.is_success(), "!setprice: {}", rc.1);
+
+    let bob_set_price_res: SetPriceResponse = json::from_str(&rc.1).unwrap();
+
+    let mm_alice = MarketMakerIt::start(
+        json!({
+            "gui": "nogui",
+            "netid": 9998,
+            "dht": "on",  // Enable DHT without delay.
+            "myipaddr": env::var ("ALICE_TRADE_IP") .ok(),
+            "rpcip": env::var ("ALICE_TRADE_IP") .ok(),
+            "passphrase": alice_passphrase,
+            "coins": coins,
+            "seednodes": [fomat!((mm_bob.ip))],
+            "rpc_password": "pass",
+        }),
+        "pass".into(),
+        match var("LOCAL_THREAD_MM") {
+            Ok(ref e) if e == "alice" => Some(local_start()),
+            _ => None,
+        },
+    )
+    .unwrap();
+
+    let (_alice_dump_log, _alice_dump_dashboard) = mm_alice.mm_dump();
+    log!({"Alice log path: {}", mm_alice.log_path.display()});
+
+    block_on(enable_electrum_json(&mm_alice, RICK, false, rick_electrums()));
+    block_on(enable_z_coin_light(
+        &mm_alice,
+        ZOMBIE_TICKER,
+        ZOMBIE_ELECTRUMS,
+        ZOMBIE_LIGHTWALLETD_URLS,
+        &blocks_cache_path(&mm_alice, &alice_passphrase, ZOMBIE_TICKER),
+    ));
+
+    let set_price_json = json!({
+        "userpass": mm_alice.userpass,
+        "method": "setprice",
+        "base": "RICK",
+        "rel": "ZOMBIE",
+        "price": 1,
+        "volume": "1",
+    });
+    log!("Issue sell request on Alice side to trigger subscription on orderbook topic");
+    let rc = block_on(mm_alice.rpc(&set_price_json)).unwrap();
+    assert!(rc.0.is_success(), "!setprice: {}", rc.1);
+
+    thread::sleep(Duration::from_secs(MIN_ORDER_KEEP_ALIVE_INTERVAL));
+
+    let orderbook = block_on(orderbook_v2(&mm_alice, ZOMBIE_TICKER, RICK));
+    let orderbook: RpcV2Response<OrderbookV2Response> = json::from_value(orderbook).unwrap();
+    let orderbook = orderbook.result;
+
+    assert_eq!(1, orderbook.asks.len());
+    orderbook
+        .asks
+        .iter()
+        .find(|ask| ask.entry.uuid == bob_set_price_res.result.uuid)
+        .unwrap();
 }

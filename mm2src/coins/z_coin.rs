@@ -49,7 +49,6 @@ use zcash_client_backend::encoding::{decode_payment_address, encode_extended_spe
 use zcash_client_backend::wallet::SpendableNote;
 use zcash_client_sqlite::error::SqliteClientError;
 use zcash_primitives::consensus::{BlockHeight, NetworkUpgrade, Parameters, H0};
-use zcash_primitives::constants::mainnet;
 use zcash_primitives::memo::MemoBytes;
 use zcash_primitives::sapling::keys::OutgoingViewingKey;
 use zcash_primitives::sapling::note_encryption::try_sapling_output_recovery;
@@ -111,24 +110,6 @@ pub struct ZcoinConsensusParams {
     hrp_sapling_payment_address: String,
     b58_pubkey_address_prefix: [u8; 2],
     b58_script_address_prefix: [u8; 2],
-}
-
-impl ZcoinConsensusParams {
-    pub fn for_zombie() -> Self {
-        ZcoinConsensusParams {
-            overwinter_activation_height: 0,
-            sapling_activation_height: 1,
-            blossom_activation_height: None,
-            heartwood_activation_height: None,
-            canopy_activation_height: None,
-            coin_type: mainnet::COIN_TYPE,
-            hrp_sapling_extended_spending_key: mainnet::HRP_SAPLING_EXTENDED_SPENDING_KEY.into(),
-            hrp_sapling_extended_full_viewing_key: mainnet::HRP_SAPLING_EXTENDED_FULL_VIEWING_KEY.into(),
-            hrp_sapling_payment_address: mainnet::HRP_SAPLING_PAYMENT_ADDRESS.into(),
-            b58_pubkey_address_prefix: mainnet::B58_PUBKEY_ADDRESS_PREFIX,
-            b58_script_address_prefix: mainnet::B58_SCRIPT_ADDRESS_PREFIX,
-        }
-    }
 }
 
 impl Parameters for ZcoinConsensusParams {
