@@ -169,7 +169,7 @@ fn rmd160_from_passphrase(passphrase: &str) -> [u8; 20] {
     key_pair_from_seed(passphrase).unwrap().public().address_hash().take()
 }
 
-#[cfg(not((target_arch = "wasm32")))]
+#[cfg(not(target_arch = "wasm32"))]
 fn blocks_cache_path(mm: &MarketMakerIt, seed: &str, coin: &str) -> PathBuf {
     let rmd = rmd160_from_passphrase(seed);
     let db_name = format!("{}_light_cache.db", coin);
