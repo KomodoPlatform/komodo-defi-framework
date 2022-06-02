@@ -812,7 +812,7 @@ impl SwapOps for ZCoin {
                 SEQUENCE_FINAL,
                 redeem_script,
                 script_data,
-                key_pair.private().secret.as_slice(),
+                &key_pair,
             );
             let tx = try_ztx_s!(tx_fut.await);
             Ok(tx.into())
@@ -850,7 +850,7 @@ impl SwapOps for ZCoin {
                 SEQUENCE_FINAL,
                 redeem_script,
                 script_data,
-                key_pair.private().secret.as_slice(),
+                &key_pair,
             );
             let tx = try_ztx_s!(tx_fut.await);
             Ok(tx.into())
@@ -885,7 +885,7 @@ impl SwapOps for ZCoin {
                 SEQUENCE_FINAL - 1,
                 redeem_script,
                 script_data,
-                key_pair.private().secret.as_slice(),
+                &key_pair,
             );
             let tx = try_ztx_s!(tx_fut.await);
             Ok(tx.into())
@@ -920,7 +920,7 @@ impl SwapOps for ZCoin {
                 SEQUENCE_FINAL - 1,
                 redeem_script,
                 script_data,
-                key_pair.private().secret.as_slice(),
+                &key_pair,
             );
             let tx = try_ztx_s!(tx_fut.await);
             Ok(tx.into())
