@@ -736,15 +736,15 @@ fn test_get_sender_trade_fee_preimage_for_correct_ticker() {
 
     let actual = block_on(coin.get_sender_trade_fee(TradePreimageValue::Exact(0.into()), FeeApproxStage::OrderIssue))
         .err()
-        .unwrap();
-    let actual = &*actual.get_inner();
+        .unwrap()
+        .into_inner();
     // expecting TradePreimageError::NotSufficientBalance
     let expected = TradePreimageError::NotSufficientBalance {
         coin: "tQTUM".to_string(),
         available: BigDecimal::from_str("0").unwrap(),
         required: BigDecimal::from_str("0.08").unwrap(),
     };
-    assert_eq!(expected, *actual);
+    assert_eq!(expected, actual);
 }
 
 /// `receiverSpend` should be included in the estimated trade fee.
