@@ -1,6 +1,5 @@
 use crate::utxo::rpc_clients::UtxoRpcError;
 use crate::utxo::utxo_builder::UtxoCoinBuildError;
-use crate::z_coin::z_rpc::ZcoinLightClientInitError;
 use crate::WithdrawError;
 use crate::{NumConversError, PrivKeyNotAllowed};
 use bigdecimal::BigDecimal;
@@ -9,7 +8,37 @@ use derive_more::Display;
 use http::uri::InvalidUri;
 use rpc::v1::types::Bytes as BytesJson;
 use zcash_client_sqlite::error::SqliteClientError;
+use zcash_client_sqlite::error::SqliteClientError as ZcashClientError;
 use zcash_primitives::transaction::builder::Error as ZTxBuilderError;
+
+#[derive(Debug, Display)]
+#[non_exhaustive]
+pub enum UpdateBlocksCacheErr {
+    GrpcError(tonic::Status),
+    DbError(SqliteError),
+}
+
+impl From<tonic::Status> for UpdateBlocksCacheErr {
+    fn from(err: tonic::Status) -> Self { UpdateBlocksCacheErr::GrpcError(err) }
+}
+
+impl From<SqliteError> for UpdateBlocksCacheErr {
+    fn from(err: SqliteError) -> Self { UpdateBlocksCacheErr::DbError(err) }
+}
+
+#[derive(Debug, Display)]
+#[non_exhaustive]
+pub enum ZcoinLightClientInitError {
+    TlsConfigFailure(tonic::transport::Error),
+    ConnectionFailure(tonic::transport::Error),
+    BlocksDbInitFailure(SqliteError),
+    WalletDbInitFailure(SqliteError),
+    ZcashSqliteError(ZcashClientError),
+}
+
+impl From<ZcashClientError> for ZcoinLightClientInitError {
+    fn from(err: ZcashClientError) -> Self { ZcoinLightClientInitError::ZcashSqliteError(err) }
+}
 
 #[derive(Debug, Display)]
 pub struct BlockchainScanStopped {}

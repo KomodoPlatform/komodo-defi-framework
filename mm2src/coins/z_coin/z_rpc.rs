@@ -1,13 +1,13 @@
-use super::ZcoinConsensusParams;
-use crate::utxo::rpc_clients::NativeClient;
+use super::{z_coin_errors::*, ZcoinConsensusParams};
 use common::executor::Timer;
 use common::log::{debug, error, info};
 use common::{async_blocking, spawn_abortable, AbortOnDropHandle};
 use db_common::sqlite::rusqlite::{params, Connection, Error as SqliteError, NO_PARAMS};
 use db_common::sqlite::{query_single_row, run_optimization_pragmas};
-use derive_more::Display;
-use futures::channel::mpsc::{Receiver as AsyncReceiver, Sender as AsyncSender};
-use futures::channel::oneshot::Sender as OneshotSender;
+use futures::channel::mpsc::{channel, Receiver as AsyncReceiver, Sender as AsyncSender};
+use futures::channel::oneshot::{channel as oneshot_channel, Sender as OneshotSender};
+use futures::lock::{Mutex as AsyncMutex, MutexGuard as AsyncMutexGuard};
+use futures::StreamExt;
 use http::Uri;
 use mm2_err_handle::prelude::*;
 use parking_lot::Mutex;
@@ -21,11 +21,8 @@ use zcash_client_backend::data_api::chain::{scan_cached_blocks, validate_chain};
 use zcash_client_backend::data_api::error::Error as ChainError;
 use zcash_client_backend::data_api::{BlockSource, WalletRead, WalletWrite};
 use zcash_client_backend::proto::compact_formats::CompactBlock;
-use zcash_client_backend::wallet::{AccountId, SpendableNote};
 use zcash_client_sqlite::error::SqliteClientError as ZcashClientError;
-use zcash_client_sqlite::wallet::get_balance;
 use zcash_client_sqlite::wallet::init::{init_accounts_table, init_wallet_db};
-use zcash_client_sqlite::wallet::transact::get_spendable_notes;
 use zcash_client_sqlite::WalletDb;
 use zcash_primitives::consensus::BlockHeight;
 use zcash_primitives::transaction::TxId;
@@ -39,27 +36,11 @@ use z_coin_grpc::{BlockId, BlockRange, ChainSpec, TxFilter};
 
 const NO_TX_ERROR_CODE: &str = "-5";
 
-#[allow(dead_code)]
-pub struct ZcoinNativeClient {
-    pub(super) client: NativeClient,
-    /// SQLite connection that is used to cache Sapling data for shielded transactions creation
-    pub(super) sqlite: Mutex<Connection>,
-}
-
-pub enum ZcoinRpcClient {
-    Native(ZcoinNativeClient),
-    Light(ZcoinLightClient),
-}
-
-impl From<ZcoinLightClient> for ZcoinRpcClient {
-    fn from(client: ZcoinLightClient) -> Self { ZcoinRpcClient::Light(client) }
-}
-
 pub type WalletDbShared = Arc<Mutex<ZcoinWalletDb>>;
 
 pub struct ZcoinWalletDb {
-    blocks_db: BlockDb,
-    wallet_db: WalletDb<ZcoinConsensusParams>,
+    pub(super) blocks_db: BlockDb,
+    pub(super) wallet_db: WalletDb<ZcoinConsensusParams>,
 }
 
 struct CompactBlockRow {
@@ -169,91 +150,60 @@ impl BlockSource for BlockDb {
     }
 }
 
-pub struct ZcoinLightClient {
-    db: WalletDbShared,
-}
+pub(super) async fn init_light_client(
+    lightwalletd_url: Uri,
+    cache_db_path: impl AsRef<Path> + Send + 'static,
+    wallet_db_path: impl AsRef<Path> + Send + 'static,
+    consensus_params: ZcoinConsensusParams,
+    evk: ExtendedFullViewingKey,
+) -> Result<(AsyncMutex<SaplingSyncConnector>, WalletDbShared), MmError<ZcoinLightClientInitError>> {
+    let blocks_db =
+        async_blocking(|| BlockDb::for_path(cache_db_path).map_to_mm(ZcoinLightClientInitError::BlocksDbInitFailure))
+            .await?;
 
-#[derive(Debug, Display)]
-#[non_exhaustive]
-pub enum ZcoinLightClientInitError {
-    TlsConfigFailure(tonic::transport::Error),
-    ConnectionFailure(tonic::transport::Error),
-    BlocksDbInitFailure(SqliteError),
-    WalletDbInitFailure(SqliteError),
-    ZcashSqliteError(ZcashClientError),
-}
-
-impl From<ZcashClientError> for ZcoinLightClientInitError {
-    fn from(err: ZcashClientError) -> Self { ZcoinLightClientInitError::ZcashSqliteError(err) }
-}
-#[derive(Debug, Display)]
-#[non_exhaustive]
-pub enum UpdateBlocksCacheErr {
-    GrpcError(tonic::Status),
-    DbError(SqliteError),
-}
-
-impl From<tonic::Status> for UpdateBlocksCacheErr {
-    fn from(err: tonic::Status) -> Self { UpdateBlocksCacheErr::GrpcError(err) }
-}
-
-impl From<SqliteError> for UpdateBlocksCacheErr {
-    fn from(err: SqliteError) -> Self { UpdateBlocksCacheErr::DbError(err) }
-}
-
-impl ZcoinLightClient {
-    pub async fn init(
-        lightwalletd_url: Uri,
-        cache_db_path: impl AsRef<Path> + Send + 'static,
-        wallet_db_path: impl AsRef<Path> + Send + 'static,
-        consensus_params: ZcoinConsensusParams,
-        evk: ExtendedFullViewingKey,
-        sync_status_notifier: AsyncSender<SyncStatus>,
-        on_tx_generation_watcher: OnTxGenWatcher,
-    ) -> Result<(Self, AbortOnDropHandle), MmError<ZcoinLightClientInitError>> {
-        let blocks_db = async_blocking(|| {
-            BlockDb::for_path(cache_db_path).map_to_mm(ZcoinLightClientInitError::BlocksDbInitFailure)
-        })
-        .await?;
-
-        let wallet_db = async_blocking({
-            let consensus_params = consensus_params.clone();
-            move || -> Result<_, MmError<ZcoinLightClientInitError>> {
-                let db = WalletDb::for_path(wallet_db_path, consensus_params)
-                    .map_to_mm(ZcoinLightClientInitError::WalletDbInitFailure)?;
-                run_optimization_pragmas(db.sql_conn()).map_to_mm(ZcoinLightClientInitError::WalletDbInitFailure)?;
-                init_wallet_db(&db).map_to_mm(ZcoinLightClientInitError::WalletDbInitFailure)?;
-                let existing_keys = db.get_extended_full_viewing_keys()?;
-                if existing_keys.is_empty() {
-                    init_accounts_table(&db, &[evk])?;
-                }
-                Ok(db)
+    let wallet_db = async_blocking({
+        let consensus_params = consensus_params.clone();
+        move || -> Result<_, MmError<ZcoinLightClientInitError>> {
+            let db = WalletDb::for_path(wallet_db_path, consensus_params)
+                .map_to_mm(ZcoinLightClientInitError::WalletDbInitFailure)?;
+            run_optimization_pragmas(db.sql_conn()).map_to_mm(ZcoinLightClientInitError::WalletDbInitFailure)?;
+            init_wallet_db(&db).map_to_mm(ZcoinLightClientInitError::WalletDbInitFailure)?;
+            let existing_keys = db.get_extended_full_viewing_keys()?;
+            if existing_keys.is_empty() {
+                init_accounts_table(&db, &[evk])?;
             }
-        })
-        .await?;
+            Ok(db)
+        }
+    })
+    .await?;
 
-        let channel = Channel::builder(lightwalletd_url)
-            .tls_config(ClientTlsConfig::new())
-            .map_to_mm(ZcoinLightClientInitError::TlsConfigFailure)?
-            .connect()
-            .await
-            .map_to_mm(ZcoinLightClientInitError::ConnectionFailure)?;
-        let grpc_client = CompactTxStreamerClient::new(channel);
+    let tonic_channel = Channel::builder(lightwalletd_url)
+        .tls_config(ClientTlsConfig::new())
+        .map_to_mm(ZcoinLightClientInitError::TlsConfigFailure)?
+        .connect()
+        .await
+        .map_to_mm(ZcoinLightClientInitError::ConnectionFailure)?;
+    let grpc_client = CompactTxStreamerClient::new(tonic_channel);
 
-        let db = Arc::new(Mutex::new(ZcoinWalletDb { blocks_db, wallet_db }));
-        let sync_handle = SaplingSyncLoopHandle {
-            current_block: BlockHeight::from_u32(0),
-            grpc_client,
-            db: db.clone(),
-            consensus_params,
-            sync_status_notifier,
-            on_tx_gen_watcher: on_tx_generation_watcher,
-            watch_for_tx: None,
-        };
-        let db_sync_abort_handler = spawn_abortable(light_wallet_db_sync_loop(sync_handle));
+    let (sync_status_notifier, sync_watcher) = channel(1);
+    let (on_tx_gen_notifier, on_tx_gen_watcher) = channel(1);
+    let db = Arc::new(Mutex::new(ZcoinWalletDb { blocks_db, wallet_db }));
 
-        Ok((ZcoinLightClient { db }, db_sync_abort_handler))
-    }
+    let sync_handle = SaplingSyncLoopHandle {
+        current_block: BlockHeight::from_u32(0),
+        grpc_client,
+        db: db.clone(),
+        consensus_params,
+        sync_status_notifier,
+        on_tx_gen_watcher,
+        watch_for_tx: None,
+    };
+    let abort_handle = spawn_abortable(light_wallet_db_sync_loop(sync_handle));
+
+    Ok((
+        SaplingSyncConnector::new_mutex_wrapped(sync_watcher, on_tx_gen_notifier, abort_handle),
+        db,
+    ))
 }
 
 /// Scans cached blocks, validates the chain and updates WalletDb.
@@ -287,8 +237,6 @@ fn is_tx_imported(conn: &Connection, tx_id: TxId) -> bool {
         Ok(None) | Err(_) => false,
     }
 }
-
-type OnTxGenWatcher = AsyncReceiver<OneshotSender<SaplingSyncLoopHandle>>;
 
 pub struct SaplingSyncRespawnGuard {
     pub(super) sync_handle: Option<SaplingSyncLoopHandle>,
@@ -485,36 +433,53 @@ async fn light_wallet_db_sync_loop(mut sync_handle: SaplingSyncLoopHandle) {
     }
 }
 
-impl ZcoinRpcClient {
-    pub async fn my_balance_sat(&self) -> Result<u64, MmError<ZcashClientError>> {
-        match self {
-            ZcoinRpcClient::Native(_) => unimplemented!(),
-            ZcoinRpcClient::Light(light) => {
-                let db = light.db.clone();
-                async_blocking(move || {
-                    let balance = get_balance(&db.lock().wallet_db, AccountId::default())?.into();
-                    Ok(balance)
-                })
-                .await
-            },
-        }
+type SyncWatcher = AsyncReceiver<SyncStatus>;
+type NewTxNotifier = AsyncSender<OneshotSender<SaplingSyncLoopHandle>>;
+
+pub(super) struct SaplingSyncConnector {
+    sync_watcher: SyncWatcher,
+    on_tx_gen_notifier: NewTxNotifier,
+    abort_handle: Arc<Mutex<AbortOnDropHandle>>,
+}
+
+impl SaplingSyncConnector {
+    #[inline]
+    pub(super) fn new_mutex_wrapped(
+        simple_sync_watcher: SyncWatcher,
+        on_tx_gen_notifier: NewTxNotifier,
+        abort_handle: AbortOnDropHandle,
+    ) -> AsyncMutex<Self> {
+        AsyncMutex::new(SaplingSyncConnector {
+            sync_watcher: simple_sync_watcher,
+            on_tx_gen_notifier,
+            abort_handle: Arc::new(Mutex::new(abort_handle)),
+        })
     }
 
-    pub async fn get_spendable_notes(&self) -> Result<Vec<SpendableNote>, MmError<ZcashClientError>> {
-        match self {
-            ZcoinRpcClient::Native(_) => unimplemented!(),
-            ZcoinRpcClient::Light(light) => {
-                let db = light.db.clone();
-                async_blocking(move || {
-                    let guard = db.lock();
-                    let latest_db_block = match guard.wallet_db.block_height_extrema()? {
-                        Some((_, latest)) => latest,
-                        None => return Ok(Vec::new()),
-                    };
-                    get_spendable_notes(&guard.wallet_db, AccountId::default(), latest_db_block).map_err(MmError::new)
-                })
-                .await
-            },
-        }
+    #[inline]
+    pub(super) async fn current_sync_status(&mut self) -> Result<SyncStatus, MmError<BlockchainScanStopped>> {
+        self.sync_watcher.next().await.or_mm_err(|| BlockchainScanStopped {})
     }
+
+    pub(super) async fn wait_for_gen_tx_blockchain_sync(
+        &mut self,
+    ) -> Result<SaplingSyncRespawnGuard, MmError<BlockchainScanStopped>> {
+        let (sender, receiver) = oneshot_channel();
+        self.on_tx_gen_notifier
+            .try_send(sender)
+            .map_to_mm(|_| BlockchainScanStopped {})?;
+        receiver
+            .await
+            .map(|handle| SaplingSyncRespawnGuard {
+                sync_handle: Some(handle),
+                abort_handle: self.abort_handle.clone(),
+            })
+            .map_to_mm(|_| BlockchainScanStopped {})
+    }
+}
+
+pub(super) struct SaplingSyncGuard<'a> {
+    #[allow(dead_code)]
+    pub(super) connector_guard: AsyncMutexGuard<'a, SaplingSyncConnector>,
+    pub(super) respawn_guard: SaplingSyncRespawnGuard,
 }

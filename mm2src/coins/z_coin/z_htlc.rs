@@ -14,6 +14,7 @@ use crate::{NumConversError, PrivKeyNotAllowed, TransactionEnum};
 use bigdecimal::BigDecimal;
 use bitcrypto::dhash160;
 use chain::Transaction as UtxoTx;
+use common::async_blocking;
 use derive_more::Display;
 use futures::compat::Future01CompatExt;
 use keys::{Address, Public};
@@ -159,15 +160,17 @@ pub async fn z_p2sh_spend(
         .add_sapling_output(
             None,
             coin.z_fields.my_z_addr.clone(),
-            // TODO use fee from coin here
+            // TODO use fee from coin here. Will do on next iteration, 1000 is default value that works fine
             p2sh_tx.vout[0].value - Amount::from_i64(1000).expect("1000 will always succeed"),
             None,
         )
         .map_to_mm(ZP2SHSpendError::from)?;
 
-    let (zcash_tx, _) = tx_builder
-        .build(consensus::BranchId::Sapling, &coin.z_fields.z_tx_prover)
-        .map_to_mm(ZP2SHSpendError::from)?;
+    let (zcash_tx, _) = async_blocking({
+        let prover = coin.z_fields.z_tx_prover.clone();
+        move || tx_builder.build(consensus::BranchId::Sapling, prover.as_ref())
+    })
+    .await?;
 
     let mut tx_buffer = Vec::with_capacity(1024);
     zcash_tx.write(&mut tx_buffer).unwrap();

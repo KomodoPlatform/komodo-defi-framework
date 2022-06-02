@@ -21,13 +21,11 @@ use bitcrypto::{dhash160, dhash256};
 use chain::constants::SEQUENCE_FINAL;
 use chain::{Transaction as UtxoTx, TransactionOutput};
 use common::mm_number::{BigDecimal, MmNumber};
-use common::{log, AbortOnDropHandle};
+use common::{async_blocking, log};
 use crypto::privkey::{key_pair_from_secret, secp_privkey_from_hash};
-use futures::channel::mpsc::{channel, Receiver as AsyncReceiver, Sender as AsyncSender};
-use futures::channel::oneshot::{channel as oneshot_channel, Sender as OneshotSender};
 use futures::compat::Future01CompatExt;
-use futures::lock::{Mutex as AsyncMutex, MutexGuard as AsyncMutexGuard};
-use futures::{FutureExt, StreamExt, TryFutureExt};
+use futures::lock::Mutex as AsyncMutex;
+use futures::{FutureExt, TryFutureExt};
 use futures01::Future;
 use http::Uri;
 use keys::hash::H256;
@@ -35,7 +33,6 @@ use keys::{KeyPair, Message, Public};
 use mm2_core::mm_ctx::MmArc;
 use mm2_err_handle::prelude::*;
 #[cfg(test)] use mocktopus::macros::*;
-use parking_lot::Mutex;
 use primitives::bytes::Bytes;
 use rpc::v1::types::{Bytes as BytesJson, Transaction as RpcTransaction, H256 as H256Json};
 use script::{Builder as ScriptBuilder, Opcode, Script, TransactionInputSigner};
@@ -45,10 +42,13 @@ use std::collections::{HashMap, HashSet};
 use std::path::PathBuf;
 use std::str::FromStr;
 use std::sync::Arc;
-use tokio::task::block_in_place;
+use zcash_client_backend::data_api::WalletRead;
 use zcash_client_backend::encoding::{decode_payment_address, encode_extended_spending_key, encode_payment_address};
-use zcash_client_backend::wallet::SpendableNote;
+use zcash_client_backend::wallet::{AccountId, SpendableNote};
+use zcash_client_sqlite::error::SqliteClientError as ZcashClientError;
 use zcash_client_sqlite::error::SqliteClientError;
+use zcash_client_sqlite::wallet::get_balance;
+use zcash_client_sqlite::wallet::transact::get_spendable_notes;
 use zcash_primitives::consensus::{BlockHeight, NetworkUpgrade, Parameters, H0};
 use zcash_primitives::memo::MemoBytes;
 use zcash_primitives::sapling::keys::OutgoingViewingKey;
@@ -65,7 +65,7 @@ use z_htlc::{z_p2sh_spend, z_send_dex_fee, z_send_htlc};
 
 mod z_rpc;
 pub use z_rpc::SyncStatus;
-use z_rpc::{SaplingSyncLoopHandle, SaplingSyncRespawnGuard, ZcoinLightClient, ZcoinRpcClient};
+use z_rpc::{init_light_client, SaplingSyncConnector, SaplingSyncGuard, WalletDbShared};
 
 mod z_coin_errors;
 pub use z_coin_errors::*;
@@ -136,64 +136,13 @@ impl Parameters for ZcoinConsensusParams {
     fn b58_script_address_prefix(&self) -> [u8; 2] { self.b58_script_address_prefix }
 }
 
-type SyncWatcher = AsyncReceiver<SyncStatus>;
-type NewTxNotifier = AsyncSender<OneshotSender<SaplingSyncLoopHandle>>;
-
-pub struct SaplingSyncConnector {
-    sync_watcher: SyncWatcher,
-    on_tx_gen_notifier: NewTxNotifier,
-    abort_handle: Arc<Mutex<AbortOnDropHandle>>,
-}
-
-impl SaplingSyncConnector {
-    #[inline]
-    fn new_mutex_wrapped(
-        simple_sync_watcher: SyncWatcher,
-        on_tx_gen_notifier: NewTxNotifier,
-        abort_handle: AbortOnDropHandle,
-    ) -> AsyncMutex<Self> {
-        AsyncMutex::new(SaplingSyncConnector {
-            sync_watcher: simple_sync_watcher,
-            on_tx_gen_notifier,
-            abort_handle: Arc::new(Mutex::new(abort_handle)),
-        })
-    }
-
-    #[inline]
-    pub async fn current_sync_status(&mut self) -> Result<SyncStatus, MmError<BlockchainScanStopped>> {
-        self.sync_watcher.next().await.or_mm_err(|| BlockchainScanStopped {})
-    }
-
-    async fn wait_for_gen_tx_blockchain_sync(
-        &mut self,
-    ) -> Result<SaplingSyncRespawnGuard, MmError<BlockchainScanStopped>> {
-        let (sender, receiver) = oneshot_channel();
-        self.on_tx_gen_notifier
-            .try_send(sender)
-            .map_to_mm(|_| BlockchainScanStopped {})?;
-        receiver
-            .await
-            .map(|handle| SaplingSyncRespawnGuard {
-                sync_handle: Some(handle),
-                abort_handle: self.abort_handle.clone(),
-            })
-            .map_to_mm(|_| BlockchainScanStopped {})
-    }
-}
-
-struct SaplingSyncGuard<'a> {
-    #[allow(dead_code)]
-    connector_guard: AsyncMutexGuard<'a, SaplingSyncConnector>,
-    respawn_guard: SaplingSyncRespawnGuard,
-}
-
 pub struct ZCoinFields {
     dex_fee_addr: PaymentAddress,
     my_z_addr: PaymentAddress,
     my_z_addr_encoded: String,
     z_spending_key: ExtendedSpendingKey,
-    z_tx_prover: LocalTxProver,
-    z_rpc: ZcoinRpcClient,
+    z_tx_prover: Arc<LocalTxProver>,
+    light_wallet_db: WalletDbShared,
     consensus_params: ZcoinConsensusParams,
     sync_state_connector: AsyncMutex<SaplingSyncConnector>,
 }
@@ -237,9 +186,6 @@ pub struct ZOutput {
 
 impl ZCoin {
     #[inline]
-    pub fn z_rpc(&self) -> &ZcoinRpcClient { &self.z_fields.z_rpc }
-
-    #[inline]
     pub fn utxo_rpc_client(&self) -> &UtxoRpcClientEnum { &self.utxo_arc.rpc_client }
 
     #[inline]
@@ -278,9 +224,31 @@ impl ZCoin {
         })
     }
 
+    async fn my_balance_sat(&self) -> Result<u64, MmError<ZcashClientError>> {
+        let db = self.z_fields.light_wallet_db.clone();
+        async_blocking(move || {
+            let balance = get_balance(&db.lock().wallet_db, AccountId::default())?.into();
+            Ok(balance)
+        })
+        .await
+    }
+
+    async fn get_spendable_notes(&self) -> Result<Vec<SpendableNote>, MmError<ZcashClientError>> {
+        let db = self.z_fields.light_wallet_db.clone();
+        async_blocking(move || {
+            let guard = db.lock();
+            let latest_db_block = match guard.wallet_db.block_height_extrema()? {
+                Some((_, latest)) => latest,
+                None => return Ok(Vec::new()),
+            };
+            get_spendable_notes(&guard.wallet_db, AccountId::default(), latest_db_block).map_err(MmError::new)
+        })
+        .await
+    }
+
     /// Returns spendable notes
     async fn spendable_notes_ordered(&self) -> Result<Vec<SpendableNote>, MmError<SqliteClientError>> {
-        let mut unspents = self.z_rpc().get_spendable_notes().await?;
+        let mut unspents = self.get_spendable_notes().await?;
 
         unspents.sort_unstable_by(|a, b| a.note_value.cmp(&b.note_value));
         Ok(unspents)
@@ -383,7 +351,11 @@ impl ZCoin {
             tx_builder.add_tx_out(output);
         }
 
-        let (tx, _) = block_in_place(|| tx_builder.build(consensus::BranchId::Sapling, &self.z_fields.z_tx_prover))?;
+        let (tx, _) = async_blocking({
+            let prover = self.z_fields.z_tx_prover.clone();
+            move || tx_builder.build(consensus::BranchId::Sapling, prover.as_ref())
+        })
+        .await?;
 
         let additional_data = AdditionalTxData {
             received_by_me,
@@ -503,13 +475,14 @@ impl<'a> UtxoCoinWithIguanaPrivKeyBuilder for ZCoinBuilder<'a> {
             .expect("DEX_FEE_Z_ADDR is a valid z-address")
             .expect("DEX_FEE_Z_ADDR is a valid z-address");
 
-        let z_tx_prover =
-            block_in_place(LocalTxProver::with_default_location).or_mm_err(|| ZCoinBuildError::ZCashParamsNotFound)?;
+        let z_tx_prover = async_blocking(LocalTxProver::with_default_location)
+            .await
+            .or_mm_err(|| ZCoinBuildError::ZCashParamsNotFound)?;
 
         let my_z_addr_encoded = encode_payment_address(self.consensus_params.hrp_sapling_payment_address(), &my_z_addr);
 
         let evk = ExtendedFullViewingKey::from(&self.z_spending_key);
-        let (z_rpc, sync_state_connector) = match &self.z_coin_params.mode {
+        let (sync_state_connector, light_wallet_db) = match &self.z_coin_params.mode {
             ZcoinRpcMode::Native => {
                 return MmError::err(ZCoinBuildError::NativeModeIsNotSupportedYet);
             },
@@ -518,29 +491,14 @@ impl<'a> UtxoCoinWithIguanaPrivKeyBuilder for ZCoinBuilder<'a> {
             } => {
                 let cache_db_path = self.db_dir_path.join(format!("{}_light_cache.db", self.ticker));
                 let wallet_db_path = self.db_dir_path.join(format!("{}_light_wallet.db", self.ticker));
+                // TODO multi lightwalletd servers support will be added on the next iteration
                 let uri = Uri::from_str(
                     light_wallet_d_servers
                         .first()
                         .or_mm_err(|| ZCoinBuildError::EmptyLightwalletdUris)?,
                 )?;
 
-                let (sync_notifier, sync_watcher) = channel(1);
-                let (on_tx_gen_notifier, on_tx_gen_watcher) = channel(1);
-
-                let (client, abort_handle) = ZcoinLightClient::init(
-                    uri,
-                    cache_db_path,
-                    wallet_db_path,
-                    self.consensus_params.clone(),
-                    evk,
-                    sync_notifier,
-                    on_tx_gen_watcher,
-                )
-                .await?;
-                (
-                    client.into(),
-                    SaplingSyncConnector::new_mutex_wrapped(sync_watcher, on_tx_gen_notifier, abort_handle),
-                )
+                init_light_client(uri, cache_db_path, wallet_db_path, self.consensus_params.clone(), evk).await?
             },
         };
 
@@ -549,8 +507,8 @@ impl<'a> UtxoCoinWithIguanaPrivKeyBuilder for ZCoinBuilder<'a> {
             my_z_addr,
             my_z_addr_encoded,
             z_spending_key: self.z_spending_key,
-            z_tx_prover,
-            z_rpc,
+            z_tx_prover: Arc::new(z_tx_prover),
+            light_wallet_db,
             consensus_params: self.consensus_params,
             sync_state_connector,
         };
@@ -660,7 +618,6 @@ impl MarketCoinOps for ZCoin {
         let coin = self.clone();
         let fut = async move {
             let sat = coin
-                .z_rpc()
                 .my_balance_sat()
                 .await
                 .mm_err(|e| BalanceError::WalletStorageError(e.to_string()))?;
