@@ -389,6 +389,27 @@ impl SaplingSyncLoopHandle {
     }
 }
 
+/// For more info on shielded light client protocol, please check the https://zips.z.cash/zip-0307
+///
+/// It's important to note that unlike standard UTXOs, shielded outputs are not spendable until the transaction is confirmed.
+///
+/// For AtomicDEX, we have additional requirements for the sync process:
+/// 1. Coin should not be usable until initial sync is finished.
+/// 2. During concurrent transaction generation (several simultaneous swaps using the same coin), we should prevent the same input usage.
+/// 3. Once the transaction is sent, we have to wait until it's confirmed for the change to become spendable.
+///
+/// So the following was implemented:
+/// 1. On the coin initialization, `init_light_client` creates `SaplingSyncLoopHandle`, spawns sync loop
+///     and returns mutex-wrapped `SaplingSyncConnector` to interact with it.
+/// 2. During sync process, the `SaplingSyncLoopHandle` notifies external code about status using `sync_status_notifier`.
+/// 3. Once the sync completes, the coin becomes usable.
+/// 4. When transaction is about to be generated, the external code locks the `SaplingSyncConnector` mutex,
+///     and calls `SaplingSyncConnector::wait_for_gen_tx_blockchain_sync`.
+///     This actually stops the loop and returns `SaplingSyncGuard`, which contains MutexGuard<SaplingSyncConnector> and `SaplingSyncRespawnGuard`.
+/// 5. `SaplingSyncRespawnGuard` in its turn contains `SaplingSyncLoopHandle` that is used to respawn the sync when the guard is dropped.
+/// 6. Once the transaction is generated and sent, `SaplingSyncRespawnGuard::watch_for_tx` is called to update `SaplingSyncLoopHandle` state.
+/// 7. Once the loop is respawned, it will check that broadcast tx is imported (or not available anymore) before stopping in favor of
+///     next wait_for_gen_tx_blockchain_sync call.
 async fn light_wallet_db_sync_loop(mut sync_handle: SaplingSyncLoopHandle) {
     // this loop is spawned as standalone task so it's safe to use block_in_place here
     loop {
@@ -479,7 +500,6 @@ impl SaplingSyncConnector {
 }
 
 pub(super) struct SaplingSyncGuard<'a> {
-    #[allow(dead_code)]
-    pub(super) connector_guard: AsyncMutexGuard<'a, SaplingSyncConnector>,
+    pub(super) _connector_guard: AsyncMutexGuard<'a, SaplingSyncConnector>,
     pub(super) respawn_guard: SaplingSyncRespawnGuard,
 }

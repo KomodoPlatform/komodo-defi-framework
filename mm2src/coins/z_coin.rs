@@ -219,7 +219,7 @@ impl ZCoin {
         let mut connector_guard = self.z_fields.sync_state_connector.lock().await;
         let sync_respawn_guard = connector_guard.wait_for_gen_tx_blockchain_sync().await?;
         Ok(SaplingSyncGuard {
-            connector_guard,
+            _connector_guard: connector_guard,
             respawn_guard: sync_respawn_guard,
         })
     }
