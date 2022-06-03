@@ -46,7 +46,7 @@ jobs:
           then
             cargo udeps
           else
-            export OPENSSL_INCLUDE_DIR=/usr/local/opt/openssl/include
+            export OPENSSL_DIR=/usr/local/opt/openssl/include
             cargo install cargo-udeps --locked
             cargo udeps
           fi
