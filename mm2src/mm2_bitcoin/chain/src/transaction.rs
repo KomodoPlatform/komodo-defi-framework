@@ -31,11 +31,11 @@ impl OutPoint {
     pub fn null() -> Self {
         OutPoint {
             hash: H256::default(),
-            index: u32::max_value(),
+            index: u32::MAX,
         }
     }
 
-    pub fn is_null(&self) -> bool { self.hash.is_zero() && self.index == u32::max_value() }
+    pub fn is_null(&self) -> bool { self.hash.is_zero() && self.index == u32::MAX }
 }
 
 #[derive(Debug, PartialEq, Default, Clone)]
@@ -276,8 +276,8 @@ impl Transaction {
     pub fn total_spends(&self) -> u64 {
         let mut result = 0u64;
         for output in self.outputs.iter() {
-            if u64::max_value() - result < output.value {
-                return u64::max_value();
+            if u64::MAX - result < output.value {
+                return u64::MAX;
             }
             result += output.value;
         }

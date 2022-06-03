@@ -1225,7 +1225,7 @@ impl MmCoin for Qrc20Coin {
             let sender_addr = H160::default();
             // get the max available value that we can pass into the contract call params
             // see `generate_contract_call_script_pubkey`
-            let value = u64::max_value().into();
+            let value = u64::MAX.into();
             let output =
                 selfi.receiver_spend_output(&selfi.swap_contract_address, swap_id, value, secret, sender_addr)?;
 
