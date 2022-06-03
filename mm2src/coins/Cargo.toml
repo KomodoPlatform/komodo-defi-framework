@@ -114,6 +114,9 @@ zcash_client_backend = { git = "https://github.com/KomodoPlatform/librustzcash.g
 zcash_primitives = { features = ["transparent-inputs"], git = "https://github.com/KomodoPlatform/librustzcash.git" }
 zcash_proofs = { git = "https://github.com/KomodoPlatform/librustzcash.git" }
 
+[target.'cfg(windows)'.dependencies]
+winapi = "0.3"
+
 [dev-dependencies]
 mm2_test_helpers = { path = "../mm2_test_helpers" }
 

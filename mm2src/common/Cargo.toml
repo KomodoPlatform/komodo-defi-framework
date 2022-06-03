@@ -81,6 +81,9 @@ metrics-core = { version = "0.5" }
 metrics-util = { version = "0.3" }
 tokio = { version = "1.7", features = ["io-util", "rt-multi-thread", "net"] }
 
+[target.'cfg(windows)'.dependencies]
+winapi = "0.3"
+
 [build-dependencies]
 cc = "1.0"
 fomat-macros = "0.3"

@@ -126,6 +126,9 @@ futures-rustls = { version = "0.21.1" }
 hyper = { version = "0.14.11", features = ["client", "http2", "server", "tcp"] }
 tokio = { version = "1.7", features = ["io-util", "rt-multi-thread", "net"] }
 
+[target.'cfg(windows)'.dependencies]
+winapi = "0.3"
+
 [dev-dependencies]
 mm2_test_helpers = { path = "../mm2_test_helpers" }
 mocktopus = "0.7.0"
