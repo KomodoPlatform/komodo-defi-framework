@@ -137,10 +137,10 @@ impl TickerInfosRegistry {
         self.get_infos(base).zip(self.get_infos(rel))
     }
 
-    pub fn get_cex_rates(&self, base: String, rel: String) -> Option<RateInfos> {
-        match self.get_infos_pair(&base, &rel) {
+    pub fn get_cex_rates(&self, base: &str, rel: &str) -> Option<RateInfos> {
+        match self.get_infos_pair(base, rel) {
             Some((base_price_infos, rel_price_infos)) => {
-                let mut rate_infos = RateInfos::new(base, rel);
+                let mut rate_infos = RateInfos::new(base.to_string(), rel.to_string());
                 if base_price_infos.price_provider == Provider::Unknown
                     || rel_price_infos.price_provider == Provider::Unknown
                     || base_price_infos.last_updated_timestamp == 0
@@ -207,7 +207,7 @@ pub struct CEXRates {
     pub rel: BigDecimal,
 }
 
-/// fetcher funtion to try fetch latest price from single endoint.
+/// fetcher function to fetch latest price from a single endpoint.
 async fn try_price_fetcher_endpoint(
     endpoint: &str,
     base: &str,
@@ -215,8 +215,8 @@ async fn try_price_fetcher_endpoint(
 ) -> Result<CEXRates, MmError<PriceServiceRequestError>> {
     let response = process_price_request(endpoint).await?;
     let fiat_price = response
-        .get_cex_rates(base.to_string(), rel.to_string())
-        .or_mm_err(|| PriceServiceRequestError::Internal("Couldn't fetch price".to_string()))?;
+        .get_cex_rates(base, rel)
+        .or_mm_err(|| PriceServiceRequestError::Internal("couldn't fetch price".to_string()))?;
     let (base_usd_price, rel_usd_price) = fiat_price.get_rate_price();
     Ok(CEXRates {
         base: base_usd_price,
@@ -232,12 +232,11 @@ pub async fn fetch_swap_coins_price(base: Option<String>, rel: Option<String>) -
         for endpoint in PRICE_ENDPOINTS {
             match try_price_fetcher_endpoint(endpoint, &base, &rel).await {
                 Ok(response) => return Some(response),
-                // Continue fetching endpoints.
                 Err(err) => error!("{:?}", err),
             }
         }
     }
-    // Couldn't fetch prices.
+    // couldn't fetch prices.
     None
 }
 
@@ -272,9 +271,7 @@ mod tests {
         use crate::mm2::lp_price::{Provider, TickerInfos, TickerInfosRegistry};
 
         let mut registry = TickerInfosRegistry::default();
-        let rates = registry
-            .get_cex_rates("KMD".to_string(), "LTC".to_string())
-            .unwrap_or_default();
+        let rates = registry.get_cex_rates("KMD", "LTC").unwrap_or_default();
         assert_eq!(rates.base_provider, Provider::Unknown);
         assert_eq!(rates.rel_provider, Provider::Unknown);
 
@@ -329,9 +326,7 @@ mod tests {
             change_24_h_provider: Default::default(),
         });
 
-        let rates = registry
-            .get_cex_rates("KMD".to_string(), "LTC".to_string())
-            .unwrap_or_default();
+        let rates = registry.get_cex_rates("KMD", "LTC").unwrap_or_default();
         assert_eq!(rates.base_provider, Provider::Binance);
         assert_eq!(rates.rel_provider, Provider::Coingecko);
         assert_eq!(rates.price, MmNumber::from("0.02"));

@@ -665,7 +665,7 @@ async fn process_bot_logic(ctx: &MmArc) {
                 let cloned_infos = (
                     ctx.clone(),
                     rates_registry
-                        .get_cex_rates(coin_cfg.base.clone(), coin_cfg.rel.clone())
+                        .get_cex_rates(&coin_cfg.base, &coin_cfg.rel)
                         .unwrap_or_default(),
                     key_trade_pair.clone(),
                     coin_cfg.clone(),
@@ -690,7 +690,7 @@ async fn process_bot_logic(ctx: &MmArc) {
                     continue;
                 }
                 let rates_infos = rates_registry
-                    .get_cex_rates(cur_cfg.base.clone(), cur_cfg.rel.clone())
+                    .get_cex_rates(&cur_cfg.base, &cur_cfg.rel)
                     .unwrap_or_default();
                 futures_order_creation.push(execute_create_single_order(
                     rates_infos,

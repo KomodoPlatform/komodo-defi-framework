@@ -1,4 +1,5 @@
-use crate::mm2::lp_swap::{MakerSavedSwap, SavedSwap, SavedSwapIo, TakerSavedSwap};
+use crate::mm2::{lp_price::CEXRates,
+                 lp_swap::{MakerSavedSwap, SavedSwap, SavedSwapIo, TakerSavedSwap}};
 use common::log::{debug, error};
 use db_common::{owned_named_params,
                 sqlite::{rusqlite::{types::Value, Connection, OptionalExtension},
@@ -46,12 +47,12 @@ const INSERT_STATS_SWAP: &str = "INSERT INTO stats_swaps (
     taker_coin_usd_price
 ) VALUES (:maker_coin, :maker_coin_ticker, :maker_coin_platform, :taker_coin, :taker_coin_ticker, :taker_coin_platform, :uuid, :started_at, :finished_at, :maker_amount, :taker_amount, :is_success, :maker_coin_usd_price, :taker_coin_usd_price)";
 
-const ADD_COINS_PRICE_INFOMATION: &[&str] = &[
+pub const ADD_COINS_PRICE_INFOMATION: &[&str] = &[
     "ALTER TABLE stats_swaps ADD COLUMN maker_coin_usd_price DECIMAL;",
     "ALTER TABLE stats_swaps ADD COLUMN taker_coin_usd_price DECIMAL;",
 ];
 
-const ADD_SPLIT_TICKERS: &[&str] = &[
+pub const ADD_SPLIT_TICKERS: &[&str] = &[
     "ALTER TABLE stats_swaps ADD COLUMN maker_coin_ticker VARCHAR(255) NOT NULL DEFAULT '';",
     "ALTER TABLE stats_swaps ADD COLUMN maker_coin_platform VARCHAR(255) NOT NULL DEFAULT '';",
     "ALTER TABLE stats_swaps ADD COLUMN taker_coin_ticker VARCHAR(255) NOT NULL DEFAULT '';",
@@ -76,7 +77,7 @@ const ADD_SPLIT_TICKERS: &[&str] = &[
 
 pub const ADD_STARTED_AT_INDEX: &str = "CREATE INDEX timestamp_index ON stats_swaps (started_at);";
 
-const SELECT_ID_BY_UUID: &str = "SELECT id FROM stats_swaps WHERE uuid = ?1";
+pub const SELECT_ID_BY_UUID: &str = "SELECT id FROM stats_swaps WHERE uuid = ?1";
 
 /// Returns SQL statements to initially fill stats_swaps table using existing DB with JSON files
 pub async fn create_and_fill_stats_swaps_from_json_statements(ctx: &MmArc) -> Vec<(&'static str, Vec<String>)> {
@@ -110,7 +111,10 @@ fn split_coin(coin: &str) -> (String, String) {
     (ticker, platform)
 }
 
-fn insert_stats_maker_swap_sql(swap: &MakerSavedSwap) -> Option<(&'static str, OwnedSqlNamedParams)> {
+fn insert_stats_maker_swap_sql(
+    swap: &MakerSavedSwap,
+    coins_price: Option<CEXRates>,
+) -> Option<(&'static str, OwnedSqlNamedParams)> {
     let swap_data = match swap.swap_data() {
         Ok(d) => d,
         Err(e) => {
@@ -132,9 +136,13 @@ fn insert_stats_maker_swap_sql(swap: &MakerSavedSwap) -> Option<(&'static str, O
     let (maker_coin_ticker, maker_coin_platform) = split_coin(&swap_data.maker_coin);
     let (taker_coin_ticker, taker_coin_platform) = split_coin(&swap_data.taker_coin);
 
-    let (maker_coin_usd_price, taker_coin_usd_price) = match (&swap.maker_coin_usd_price, &swap.taker_coin_usd_price) {
-        (Some(maker), Some(taker)) => (Some(maker.to_string()), Some(taker.to_string())),
-        _ => (None, None),
+    let (maker_coin_usd_price, taker_coin_usd_price) = if let Some(rates) = coins_price {
+        (Some(rates.base.to_string()), Some(rates.rel.to_string()))
+    } else {
+        match (&swap.maker_coin_usd_price, &swap.taker_coin_usd_price) {
+            (Some(maker), Some(taker)) => (Some(maker.to_string()), Some(taker.to_string())),
+            _ => (None, None),
+        }
     };
 
     let params = owned_named_params! {
@@ -188,7 +196,10 @@ fn insert_stats_maker_swap_sql_init(swap: &MakerSavedSwap) -> Option<(&'static s
     Some((INSERT_STATS_SWAP_ON_INIT, params))
 }
 
-fn insert_stats_taker_swap_sql(swap: &TakerSavedSwap) -> Option<(&'static str, OwnedSqlNamedParams)> {
+fn insert_stats_taker_swap_sql(
+    swap: &TakerSavedSwap,
+    coins_price: Option<CEXRates>,
+) -> Option<(&'static str, OwnedSqlNamedParams)> {
     let swap_data = match swap.swap_data() {
         Ok(d) => d,
         Err(e) => {
@@ -210,9 +221,13 @@ fn insert_stats_taker_swap_sql(swap: &TakerSavedSwap) -> Option<(&'static str, O
     let (maker_coin_ticker, maker_coin_platform) = split_coin(&swap_data.maker_coin);
     let (taker_coin_ticker, taker_coin_platform) = split_coin(&swap_data.taker_coin);
 
-    let (maker_coin_usd_price, taker_coin_usd_price) = match (&swap.maker_coin_usd_price, &swap.taker_coin_usd_price) {
-        (Some(maker), Some(taker)) => (Some(maker.to_string()), Some(taker.to_string())),
-        _ => (None, None),
+    let (maker_coin_usd_price, taker_coin_usd_price) = if let Some(rates) = coins_price {
+        (Some(rates.base.to_string()), Some(rates.rel.to_string()))
+    } else {
+        match (&swap.maker_coin_usd_price, &swap.taker_coin_usd_price) {
+            (Some(maker), Some(taker)) => (Some(maker.to_string()), Some(taker.to_string())),
+            _ => (None, None),
+        }
     };
 
     let params = owned_named_params! {
@@ -266,12 +281,15 @@ fn insert_stats_taker_swap_sql_init(swap: &TakerSavedSwap) -> Option<(&'static s
     Some((INSERT_STATS_SWAP_ON_INIT, params))
 }
 
-pub fn add_swap_to_index(conn: &Connection, swap: &SavedSwap) {
+pub fn add_swap_to_index(conn: &Connection, swap: &SavedSwap, coins_price: Option<CEXRates>) {
     let params = vec![swap.uuid().to_string()];
+    let mut coins_price_mut = None;
     let query_row = conn.query_row(SELECT_ID_BY_UUID, &params, |row| row.get::<_, i64>(0));
     match query_row.optional() {
         // swap is not indexed yet, go ahead
-        Ok(None) => (),
+        Ok(None) => {
+            coins_price_mut = coins_price;
+        },
         // swap is already indexed
         Ok(Some(_)) => return,
         Err(e) => {
@@ -281,8 +299,8 @@ pub fn add_swap_to_index(conn: &Connection, swap: &SavedSwap) {
     };
 
     let sql_with_params = match swap {
-        SavedSwap::Maker(maker) => insert_stats_maker_swap_sql(maker),
-        SavedSwap::Taker(taker) => insert_stats_taker_swap_sql(taker),
+        SavedSwap::Maker(maker) => insert_stats_maker_swap_sql(maker, coins_price_mut),
+        SavedSwap::Taker(taker) => insert_stats_taker_swap_sql(taker, coins_price_mut),
     };
 
     let (sql, params) = match sql_with_params {
@@ -296,13 +314,8 @@ pub fn add_swap_to_index(conn: &Connection, swap: &SavedSwap) {
     };
 }
 
-/// Add `maker_coin_usd_price` && `taker_coin_usd_price` columns to existing `stats_swap` table default to `NULL`
-pub fn add_coins_price_information_to_stats_swap_db() -> Vec<(&'static str, Vec<String>)> {
-    ADD_COINS_PRICE_INFOMATION.iter().map(|sql| (*sql, vec![])).collect()
-}
-
-pub fn add_and_split_tickers() -> Vec<(&'static str, Vec<String>)> {
-    ADD_SPLIT_TICKERS.iter().map(|sql| (*sql, vec![])).collect()
+pub fn do_action_on_stats_db(statement: &'static [&str]) -> Vec<(&'static str, Vec<String>)> {
+    statement.iter().map(|sql| (*sql, vec![])).collect()
 }
 
 #[test]

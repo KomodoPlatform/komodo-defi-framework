@@ -78,7 +78,9 @@ async fn migration_2(ctx: &MmArc) -> Vec<(&'static str, Vec<String>)> {
 
 fn migration_3() -> Vec<(&'static str, Vec<String>)> { vec![(stats_swaps::ADD_STARTED_AT_INDEX, vec![])] }
 
-fn migration_4() -> Vec<(&'static str, Vec<String>)> { stats_swaps::add_and_split_tickers() }
+fn migration_4() -> Vec<(&'static str, Vec<String>)> {
+    stats_swaps::do_action_on_stats_db(stats_swaps::ADD_SPLIT_TICKERS)
+}
 
 fn migration_5() -> Vec<(&'static str, Vec<String>)> { vec![(my_orders::CREATE_MY_ORDERS_TABLE, vec![])] }
 
@@ -89,7 +91,9 @@ fn migration_6() -> Vec<(&'static str, Vec<String>)> {
     ]
 }
 
-fn migration_7() -> Vec<(&'static str, Vec<String>)> { stats_swaps::add_coins_price_information_to_stats_swap_db() }
+fn migration_7() -> Vec<(&'static str, Vec<String>)> {
+    stats_swaps::do_action_on_stats_db(stats_swaps::ADD_COINS_PRICE_INFOMATION)
+}
 
 async fn statements_for_migration(ctx: &MmArc, current_migration: i64) -> Option<Vec<(&'static str, Vec<String>)>> {
     match current_migration {
