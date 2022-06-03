@@ -342,7 +342,7 @@ dependencies = [
  "hyper",
  "itoa 1.0.1",
  "matchit",
- "memchr 2.4.1",
+ "memchr",
  "mime",
  "percent-encoding 2.1.0",
  "pin-project-lite 0.2.9",
