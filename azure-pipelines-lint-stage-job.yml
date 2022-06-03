@@ -45,10 +45,6 @@ jobs:
           if [ $AGENT_OS = "Linux" ] || [ $AGENT_OS = "Windows_NT" ]
           then
             cargo udeps
-          else
-            export OPENSSL_DIR=/usr/local/opt/openssl
-            cargo install cargo-udeps --locked
-            cargo udeps
           fi
         displayName: 'Check unused dependencies'
       - bash: |
