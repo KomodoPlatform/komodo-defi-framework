@@ -41,9 +41,9 @@ jobs:
         displayName: 'Check Tests'
         env:
           MANUAL_MM_VERSION: true
-      - uses: aig787/cargo-udeps-action@v1
-        with:
-          version: 'latest'
+      - bash: |
+          cargo install cargo-udeps --locked
+          cargo udeps
         displayName: 'Cargo unused dependencies check'
       - bash: |
           cargo deny check bans --hide-inclusion-graph
