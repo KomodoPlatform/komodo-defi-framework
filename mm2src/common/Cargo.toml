@@ -21,7 +21,6 @@ bigdecimal = { version = "0.3", features = ["serde"] }
 bytes = "1.1"
 cfg-if = "1.0"
 crossbeam = "0.7"
-findshlibs = "0.5"
 fnv = "1.0.6"
 fomat-macros = "0.2"
 futures01 = { version = "0.1", package = "futures" }
@@ -83,6 +82,9 @@ tokio = { version = "1.7", features = ["io-util", "rt-multi-thread", "net"] }
 
 [target.'cfg(windows)'.dependencies]
 winapi = "0.3"
+
+[target.'cfg(not(windows))'.dependencies]
+findshlibs = "0.5"
 
 [build-dependencies]
 cc = "1.0"
