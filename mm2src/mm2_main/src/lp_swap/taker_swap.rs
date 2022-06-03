@@ -93,12 +93,7 @@ async fn save_my_taker_swap_event(ctx: &MmArc, swap: &TakerSwap, event: TakerSav
     if let SavedSwap::Taker(mut taker_swap) = swap {
         taker_swap.events.push(event);
         if taker_swap.is_success().is_ok() {
-            if let Some(usd) =
-                fetch_swap_coins_price(taker_swap.maker_coin.clone(), taker_swap.taker_coin.clone()).await
-            {
-                taker_swap.maker_coin_usd_price = Some(usd.base);
-                taker_swap.taker_coin_usd_price = Some(usd.rel);
-            };
+            taker_swap.fetch_and_set_usd_prices().await;
         }
         let new_swap = SavedSwap::Taker(taker_swap);
         try_s!(new_swap.save_to_db(ctx).await);
@@ -259,6 +254,13 @@ impl TakerSavedSwap {
         }
 
         Ok(true)
+    }
+
+    pub async fn fetch_and_set_usd_prices(&mut self) {
+        if let Some(rates) = fetch_swap_coins_price(self.maker_coin.clone(), self.taker_coin.clone()).await {
+            self.maker_coin_usd_price = Some(rates.base);
+            self.taker_coin_usd_price = Some(rates.rel);
+        }
     }
 }
 

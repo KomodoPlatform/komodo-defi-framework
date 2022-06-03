@@ -183,3 +183,7 @@ where
     };
     Ok(res)
 }
+
+pub fn execute_batch(statement: &'static [&str]) -> Vec<(&'static str, Vec<String>)> {
+    statement.iter().map(|sql| (*sql, vec![])).collect()
+}

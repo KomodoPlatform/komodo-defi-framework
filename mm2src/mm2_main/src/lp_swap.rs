@@ -56,7 +56,6 @@
 //
 
 use crate::mm2::lp_network::{broadcast_p2p_msg, Libp2pPeerId};
-use crate::mm2::lp_price::fetch_swap_coins_price;
 use async_std::sync as async_std_sync;
 use coins::{lp_coinfind, MmCoinEnum, TradeFee, TransactionEnum};
 use common::log::{debug, warn};
@@ -214,13 +213,9 @@ pub async fn process_msg(ctx: MmArc, topic: &str, msg: &[u8]) {
         Err(swap_msg_err) => {
             #[cfg(not(target_arch = "wasm32"))]
             match json::from_slice::<SwapStatus>(msg) {
-                Ok(status) => {
-                    let cex_rates = fetch_swap_coins_price(
-                        Some(status.data.maker_coin_ticker().unwrap_or_else(|_| "".to_string())),
-                        Some(status.data.taker_coin_ticker().unwrap_or_else(|_| "".to_string())),
-                    )
-                    .await;
-                    if let Err(e) = save_stats_swap(&ctx, &status.data, cex_rates).await {
+                Ok(mut status) => {
+                    status.data.fetch_and_set_usd_prices().await;
+                    if let Err(e) = save_stats_swap(&ctx, &status.data).await {
                         error!("Error saving the swap {} status: {}", status.data.uuid(), e);
                     };
                 },
@@ -735,18 +730,14 @@ pub async fn insert_new_swap_to_db(
 }
 
 #[cfg(not(target_arch = "wasm32"))]
-fn add_swap_to_db_index(ctx: &MmArc, swap: &SavedSwap, coins_price: Option<crate::mm2::lp_price::CEXRates>) {
-    crate::mm2::database::stats_swaps::add_swap_to_index(&ctx.sqlite_connection(), swap, coins_price);
+fn add_swap_to_db_index(ctx: &MmArc, swap: &SavedSwap) {
+    crate::mm2::database::stats_swaps::add_swap_to_index(&ctx.sqlite_connection(), swap);
 }
 
 #[cfg(not(target_arch = "wasm32"))]
-async fn save_stats_swap(
-    ctx: &MmArc,
-    swap: &SavedSwap,
-    coins_price: Option<crate::mm2::lp_price::CEXRates>,
-) -> Result<(), String> {
+async fn save_stats_swap(ctx: &MmArc, swap: &SavedSwap) -> Result<(), String> {
     try_s!(swap.save_to_stats_db(ctx).await);
-    add_swap_to_db_index(ctx, swap, coins_price);
+    add_swap_to_db_index(ctx, swap);
     Ok(())
 }
 
@@ -876,14 +867,8 @@ async fn broadcast_my_swap_status(ctx: &MmArc, uuid: Uuid) -> Result<(), String>
     };
     status.hide_secrets();
 
-    let cex_rates = fetch_swap_coins_price(
-        Some(status.maker_coin_ticker().unwrap_or_else(|_| "".to_string())),
-        Some(status.taker_coin_ticker().unwrap_or_else(|_| "".to_string())),
-    )
-    .await;
-
     #[cfg(not(target_arch = "wasm32"))]
-    try_s!(save_stats_swap(ctx, &status, cex_rates).await);
+    try_s!(save_stats_swap(ctx, &status).await);
 
     let status = SwapStatus {
         method: "swapstatus".into(),
