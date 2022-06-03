@@ -65,7 +65,7 @@ pub enum CursorError {
 }
 
 impl CursorError {
-    pub fn type_mismatch(expected: &str, found: &Json) -> CursorError {
+    fn type_mismatch(expected: &str, found: &Json) -> CursorError {
         CursorError::TypeMismatch {
             expected: expected.to_owned(),
             found: format!("{:?}", found),
@@ -129,9 +129,9 @@ impl CursorBoundValue {
         // (CursorBoundValue::Uint(_), CursorBoundValue::Uint(_))
         // ^ no rules expected this token in macro call
         match (self, other) {
-            (CursorBoundValue::Int(_), CursorBoundValue::Int(_)) => true,
-            (CursorBoundValue::Uint(_), CursorBoundValue::Uint(_)) => true,
-            (CursorBoundValue::BigUint(_), CursorBoundValue::BigUint(_)) => true,
+            (CursorBoundValue::Int(_), CursorBoundValue::Int(_))
+            | (CursorBoundValue::Uint(_), CursorBoundValue::Uint(_))
+            | (CursorBoundValue::BigUint(_), CursorBoundValue::BigUint(_)) => true,
             _ => false,
         }
     }

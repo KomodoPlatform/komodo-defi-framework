@@ -23,6 +23,20 @@ use std::collections::HashMap;
 use std::marker::PhantomData;
 use std::sync::Mutex;
 
+macro_rules! try_serialize_index_value {
+    ($exp:expr, $index:expr) => {{
+        match $exp {
+            Ok(res) => res,
+            Err(ser_err) => {
+                return MmError::err(DbTransactionError::ErrorSerializingIndex {
+                    index: $index.to_owned(),
+                    description: ser_err.to_string(),
+                })
+            },
+        }
+    }};
+}
+
 mod be_big_uint;
 mod db_driver;
 mod db_lock;
@@ -346,10 +360,7 @@ impl<Table: TableSignature> DbTable<'_, Table> {
         Value: Serialize,
     {
         let (result_tx, result_rx) = oneshot::channel();
-        let index_value = json::to_value(index_value).map_to_mm(|e| DbTransactionError::ErrorSerializingIndex {
-            index: index.to_owned(),
-            description: e.to_string(),
-        })?;
+        let index_value = try_serialize_index_value!(json::to_value(index_value), index);
         let event = internal::DbTableEvent::GetItems {
             index: index.to_owned(),
             index_value,
@@ -415,10 +426,7 @@ impl<Table: TableSignature> DbTable<'_, Table> {
         Value: Serialize,
     {
         let (result_tx, result_rx) = oneshot::channel();
-        let index_value = json::to_value(index_value).map_to_mm(|e| DbTransactionError::ErrorSerializingIndex {
-            index: index.to_owned(),
-            description: e.to_string(),
-        })?;
+        let index_value = try_serialize_index_value!(json::to_value(index_value), index);
         let event = internal::DbTableEvent::GetItemIds {
             index: index.to_owned(),
             index_value,
@@ -453,10 +461,7 @@ impl<Table: TableSignature> DbTable<'_, Table> {
     /// * `index_value` - the value of the `index`, therefore the value of a corresponding `Table`'s field.
     pub async fn count<Value: Serialize>(&self, index: &str, index_value: Value) -> DbTransactionResult<usize> {
         let (result_tx, result_rx) = oneshot::channel();
-        let index_value = json::to_value(index_value).map_to_mm(|e| DbTransactionError::ErrorSerializingIndex {
-            index: index.to_owned(),
-            description: e.to_string(),
-        })?;
+        let index_value = try_serialize_index_value!(json::to_value(index_value), index);
         let event = internal::DbTableEvent::Count {
             index: index.to_owned(),
             index_value,
@@ -734,10 +739,7 @@ impl MultiIndex {
     }
 
     pub fn push<Value: Serialize>(&mut self, value: Value) -> DbTransactionResult<&mut Self> {
-        let index_value = serde_json::to_value(value).map_to_mm(|e| DbTransactionError::ErrorSerializingIndex {
-            index: self.index.clone(),
-            description: e.to_string(),
-        })?;
+        let index_value = try_serialize_index_value!(json::to_value(value), self.index);
         self.values.push(index_value);
         Ok(self)
     }

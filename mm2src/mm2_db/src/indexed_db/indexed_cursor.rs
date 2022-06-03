@@ -219,7 +219,7 @@ impl<Table: TableSignature, T: CollectCursorImpl<Table> + Send> CollectCursor<Ta
 }
 
 #[async_trait]
-pub trait CollectCursorImpl<Table: TableSignature>: Sized {
+pub(crate) trait CollectCursorImpl<Table: TableSignature>: Sized {
     fn into_collect_options(self) -> CursorCollectOptions;
 
     fn event_tx(&self) -> DbCursorEventTx;

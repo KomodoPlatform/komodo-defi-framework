@@ -60,9 +60,9 @@ pub struct IdbTransactionImpl {
 impl !Send for IdbTransactionImpl {}
 
 impl IdbTransactionImpl {
-    pub fn aborted(&self) -> bool { self.aborted.load(Ordering::Relaxed) }
+    pub(crate) fn aborted(&self) -> bool { self.aborted.load(Ordering::Relaxed) }
 
-    pub fn open_table(&self, table_name: &str) -> DbTransactionResult<IdbObjectStoreImpl> {
+    pub(crate) fn open_table(&self, table_name: &str) -> DbTransactionResult<IdbObjectStoreImpl> {
         if self.aborted.load(Ordering::Relaxed) {
             return MmError::err(DbTransactionError::TransactionAborted);
         }
@@ -84,7 +84,7 @@ impl IdbTransactionImpl {
         }
     }
 
-    pub fn init(transaction: IdbTransaction, tables: HashSet<String>) -> IdbTransactionImpl {
+    pub(crate) fn init(transaction: IdbTransaction, tables: HashSet<String>) -> IdbTransactionImpl {
         let (event_tx, mut event_rx) = mpsc::channel(2);
         let onabort_closure = construct_event_closure(PASS_THROUGH, event_tx);
 

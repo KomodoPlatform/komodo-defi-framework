@@ -304,6 +304,8 @@ pub trait CoinWithTxHistoryV2 {
     fn get_tx_history_filters(&self) -> GetTxHistoryFilters;
 }
 
+/// According to the [comment](https://github.com/KomodoPlatform/atomicDEX-API/pull/1285#discussion_r888410390),
+/// it's worth to add [`MmCoin::my_tx_history_v2`] when most coins support transaction history V2.
 pub async fn my_tx_history_v2_rpc(
     ctx: MmArc,
     request: MyTxHistoryRequestV2,
@@ -316,7 +318,7 @@ pub async fn my_tx_history_v2_rpc(
     }
 }
 
-async fn my_tx_history_v2_impl<Coin>(
+pub(crate) async fn my_tx_history_v2_impl<Coin>(
     ctx: MmArc,
     coin: &Coin,
     request: MyTxHistoryRequestV2,

@@ -11,8 +11,8 @@ use uuid::Uuid;
 pub type SqliteConnShared = Arc<Mutex<Connection>>;
 pub type SqliteConnWeak = Weak<Mutex<Connection>>;
 
-pub type OwnedSqlParam = Value;
-pub type OwnedSqlParams = Vec<Value>;
+pub(crate) type OwnedSqlParam = Value;
+pub(crate) type OwnedSqlParams = Vec<Value>;
 
 pub(crate) type ParamId = String;
 
