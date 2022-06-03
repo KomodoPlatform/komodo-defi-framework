@@ -8,8 +8,8 @@ use crate::utxo::bchd_grpc::{check_slp_transaction, validate_slp_utxos, Validate
 use crate::utxo::rpc_clients::{UnspentInfo, UtxoRpcClientEnum, UtxoRpcError, UtxoRpcResult};
 use crate::utxo::utxo_common::{self, big_decimal_from_sat_unsigned, payment_script, UtxoTxBuilder};
 use crate::utxo::{generate_and_send_tx, sat_from_big_decimal, ActualTxFee, AdditionalTxData, BroadcastTxErr,
-                  FeePolicy, GenerateTxError, RecentlySpentOutPoints, UtxoCoinConf, UtxoCoinFields, UtxoCommonOps,
-                  UtxoTx, UtxoTxBroadcastOps, UtxoTxGenerationOps};
+                  FeePolicy, GenerateTxError, RecentlySpentOutPointsGuard, UtxoCoinConf, UtxoCoinFields,
+                  UtxoCommonOps, UtxoTx, UtxoTxBroadcastOps, UtxoTxGenerationOps};
 use crate::{BalanceFut, CoinBalance, FeeApproxStage, FoundSwapTxSpend, HistorySyncState, MarketCoinOps, MmCoin,
             NegotiateSwapContractAddrErr, NumConversError, PrivKeyNotAllowed, RawTransactionFut,
             RawTransactionRequest, SignatureResult, SwapOps, TradeFee, TradePreimageError, TradePreimageFut,
@@ -21,20 +21,19 @@ use bitcrypto::dhash160;
 use chain::constants::SEQUENCE_FINAL;
 use chain::{OutPoint, TransactionOutput};
 use common::log::warn;
-use common::mm_ctx::MmArc;
-use common::mm_error::prelude::*;
 use common::mm_number::{BigDecimal, MmNumber};
 use common::now_ms;
-use common::privkey::key_pair_from_secret;
+use crypto::privkey::key_pair_from_secret;
 use derive_more::Display;
 use futures::compat::Future01CompatExt;
-use futures::lock::MutexGuard as AsyncMutexGuard;
 use futures::{FutureExt, TryFutureExt};
 use futures01::Future;
 use hex::FromHexError;
 use keys::hash::H160;
 use keys::{AddressHashEnum, CashAddrType, CashAddress, CompactSignature, KeyPair, NetworkPrefix as CashAddrPrefix,
            Public};
+use mm2_core::mm_ctx::MmArc;
+use mm2_err_handle::prelude::*;
 use primitives::hash::H256;
 use rpc::v1::types::{Bytes as BytesJson, ToTxHash, H256 as H256Json};
 use script::bytes::Bytes;
@@ -332,11 +331,7 @@ impl SlpToken {
     /// Returns unspents of the SLP token plus plain BCH UTXOs plus RecentlySpentOutPoints mutex guard
     async fn slp_unspents_for_spend(
         &self,
-    ) -> UtxoRpcResult<(
-        Vec<SlpUnspent>,
-        Vec<UnspentInfo>,
-        AsyncMutexGuard<'_, RecentlySpentOutPoints>,
-    )> {
+    ) -> UtxoRpcResult<(Vec<SlpUnspent>, Vec<UnspentInfo>, RecentlySpentOutPointsGuard<'_>)> {
         self.platform_coin.get_token_utxos_for_spend(&self.conf.token_id).await
     }
 
@@ -350,7 +345,7 @@ impl SlpToken {
     async fn generate_slp_tx_preimage(
         &self,
         slp_outputs: Vec<SlpOutput>,
-    ) -> Result<(SlpTxPreimage, AsyncMutexGuard<'_, RecentlySpentOutPoints>), MmError<GenSlpSpendErr>> {
+    ) -> Result<(SlpTxPreimage, RecentlySpentOutPointsGuard<'_>), MmError<GenSlpSpendErr>> {
         // the limit is 19, but we may require the change to be added
         if slp_outputs.len() > 18 {
             return MmError::err(GenSlpSpendErr::TooManyOutputs);
@@ -1821,6 +1816,7 @@ pub fn slp_addr_from_pubkey_str(pubkey: &str, prefix: &str) -> Result<String, Mm
 #[cfg(test)]
 mod slp_tests {
     use super::*;
+    use crate::utxo::GetUtxoListOps;
     use crate::{utxo::bch::tbch_coin_for_test, TransactionErr};
     use common::block_on;
     use std::mem::discriminant;
@@ -2022,7 +2018,7 @@ mod slp_tests {
         let fusd = SlpToken::new(4, "FUSD".into(), token_id, bch.clone(), 0);
 
         let bch_address = bch.as_ref().derivation_method.unwrap_iguana();
-        let (unspents, recently_spent) = block_on(bch.list_unspent_ordered(bch_address)).unwrap();
+        let (unspents, recently_spent) = block_on(bch.get_unspent_ordered_list(bch_address)).unwrap();
 
         let secret_hash = hex::decode("5d9e149ad9ccb20e9f931a69b605df2ffde60242").unwrap();
         let other_pub = hex::decode("036879df230663db4cd083c8eeb0f293f46abc460ad3c299b0089b72e6d472202c").unwrap();

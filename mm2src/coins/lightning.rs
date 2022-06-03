@@ -9,7 +9,7 @@ mod ln_utils;
 use super::{lp_coinfind_or_err, DerivationMethod, MmCoinEnum};
 use crate::utxo::rpc_clients::UtxoRpcClientEnum;
 use crate::utxo::utxo_common::{big_decimal_from_sat_unsigned, UtxoTxBuilder};
-use crate::utxo::{sat_from_big_decimal, BlockchainNetwork, FeePolicy, UtxoCommonOps, UtxoTxGenerationOps};
+use crate::utxo::{sat_from_big_decimal, BlockchainNetwork, FeePolicy, GetUtxoListOps, UtxoTxGenerationOps};
 use crate::{BalanceFut, CoinBalance, FeeApproxStage, FoundSwapTxSpend, HistorySyncState, MarketCoinOps, MmCoin,
             NegotiateSwapContractAddrErr, RawTransactionFut, RawTransactionRequest, SignatureError, SignatureResult,
             SwapOps, TradeFee, TradePreimageFut, TradePreimageResult, TradePreimageValue, TransactionEnum,
@@ -23,10 +23,7 @@ use bitcrypto::dhash256;
 use bitcrypto::ChecksumType;
 use chain::TransactionOutput;
 use common::executor::spawn;
-use common::ip_addr::myipaddr;
 use common::log::{LogOnError, LogState};
-use common::mm_ctx::MmArc;
-use common::mm_error::prelude::*;
 use common::mm_number::MmNumber;
 use common::{async_blocking, calc_total_pages, log, now_ms, ten, PagingOptionsEnum};
 use futures::{FutureExt, TryFutureExt};
@@ -59,6 +56,9 @@ use ln_p2p::{connect_to_node, ConnectToNodeRes, PeerManager};
 use ln_platform::{h256_json_from_txid, Platform};
 use ln_serialization::{InvoiceForRPC, NodeAddress, PublicKeyForRPC};
 use ln_utils::{ChainMonitor, ChannelManager};
+use mm2_core::mm_ctx::MmArc;
+use mm2_err_handle::prelude::*;
+use mm2_net::ip_addr::myipaddr;
 use parking_lot::Mutex as PaMutex;
 use rpc::v1::types::{Bytes as BytesJson, H256 as H256Json};
 use script::{Builder, TransactionInputSigner};
@@ -685,7 +685,7 @@ pub async fn start_lightning(
     spawn(ln_utils::persist_scorer_loop(persister.clone(), scorer.clone()));
 
     // Create InvoicePayer
-    let router = DefaultRouter::new(network_graph, logger.clone());
+    let router = DefaultRouter::new(network_graph, logger.clone(), keys_manager.get_secure_random_bytes());
     let invoice_payer = Arc::new(InvoicePayer::new(
         channel_manager.clone(),
         router,
@@ -822,7 +822,7 @@ pub async fn open_channel(ctx: MmArc, req: OpenChannelRequest) -> OpenChannelRes
     let platform_coin = ln_coin.platform_coin().clone();
     let decimals = platform_coin.as_ref().decimals;
     let my_address = platform_coin.as_ref().derivation_method.iguana_or_err()?;
-    let (unspents, _) = platform_coin.list_unspent_ordered(my_address).await?;
+    let (unspents, _) = platform_coin.get_unspent_ordered_list(my_address).await?;
     let (value, fee_policy) = match req.amount.clone() {
         ChannelOpenAmount::Max => (
             unspents.iter().fold(0, |sum, unspent| sum + unspent.value),

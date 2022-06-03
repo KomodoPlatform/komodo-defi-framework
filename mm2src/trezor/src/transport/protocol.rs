@@ -5,7 +5,7 @@ use crate::proto::ProtoMessage;
 use crate::{TrezorError, TrezorResult};
 use async_trait::async_trait;
 use byteorder::{BigEndian, ByteOrder};
-use common::mm_error::prelude::*;
+use mm2_err_handle::prelude::*;
 
 const CHUNK_LEN: u32 = 64;
 const CHUNK_HEADER_LEN: usize = 9;

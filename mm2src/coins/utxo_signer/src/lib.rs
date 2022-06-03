@@ -1,12 +1,12 @@
 use async_trait::async_trait;
 use chain::Transaction as UtxoTx;
-use common::mm_error::prelude::*;
 use crypto::trezor::client::TrezorClient;
 use crypto::trezor::utxo::TrezorUtxoCoin;
 use crypto::trezor::TrezorError;
 use derive_more::Display;
 use keys::bytes::Bytes;
 use keys::KeyPair;
+use mm2_err_handle::prelude::*;
 use rpc::v1::types::{Transaction as RpcTransaction, H256 as H256Json};
 use script::Script;
 

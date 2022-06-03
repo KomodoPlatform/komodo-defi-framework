@@ -46,8 +46,6 @@ use chain::{OutPoint, TransactionOutput, TxHashAlgo};
 #[cfg(not(target_arch = "wasm32"))]
 use common::first_char_to_upper;
 use common::jsonrpc_client::JsonRpcError;
-use common::mm_ctx::MmArc;
-use common::mm_error::prelude::*;
 use common::mm_metrics::MetricsArc;
 use common::now_ms;
 use crypto::trezor::utxo::TrezorUtxoCoin;
@@ -63,6 +61,8 @@ use keys::bytes::Bytes;
 pub use keys::{Address, AddressFormat as UtxoAddressFormat, AddressHashEnum, KeyPair, Private, Public, Secret,
                Type as ScriptType};
 use lightning_invoice::Currency as LightningCurrency;
+use mm2_core::mm_ctx::MmArc;
+use mm2_err_handle::prelude::*;
 #[cfg(test)] use mocktopus::macros::*;
 use num_traits::ToPrimitive;
 use primitives::hash::{H256, H264};
@@ -70,15 +70,15 @@ use rpc::v1::types::{Bytes as BytesJson, Transaction as RpcTransaction, H256 as 
 use script::{Builder, Script, SignatureVersion, TransactionInputSigner};
 use serde_json::{self as json, Value as Json};
 use serialization::{serialize, serialize_with_flags, SERIALIZE_TRANSACTION_WITNESS};
-use spv_validation::types::SPVError;
+use spv_validation::helpers_validation::SPVError;
 use std::array::TryFromSliceError;
 use std::collections::{HashMap, HashSet};
 use std::convert::TryInto;
 use std::hash::Hash;
 use std::num::NonZeroU64;
 use std::ops::Deref;
-#[cfg(not(target_arch = "wasm32"))] use std::path::Path;
-use std::path::PathBuf;
+#[cfg(not(target_arch = "wasm32"))]
+use std::path::{Path, PathBuf};
 use std::str::FromStr;
 use std::sync::atomic::{AtomicBool, AtomicU64};
 use std::sync::{Arc, Mutex, Weak};
@@ -88,25 +88,31 @@ use utxo_signer::with_key_pair::sign_tx;
 use utxo_signer::{TxProvider, TxProviderError, UtxoSignTxError, UtxoSignTxResult};
 
 use self::rpc_clients::{electrum_script_hash, ElectrumClient, ElectrumRpcRequest, EstimateFeeMethod, EstimateFeeMode,
-                        NativeClient, UnspentInfo, UtxoRpcClientEnum, UtxoRpcError, UtxoRpcFut, UtxoRpcResult};
-use super::{BalanceError, BalanceFut, BalanceResult, CoinsContext, DerivationMethod, FeeApproxStage, FoundSwapTxSpend,
-            HistorySyncState, KmdRewardsDetails, MarketCoinOps, MmCoin, NumConversError, NumConversResult,
-            PrivKeyActivationPolicy, PrivKeyNotAllowed, PrivKeyPolicy, RawTransactionFut, RawTransactionRequest,
-            RawTransactionResult, RpcTransportEventHandler, RpcTransportEventHandlerShared, TradeFee,
-            TradePreimageError, TradePreimageFut, TradePreimageResult, Transaction, TransactionDetails,
-            TransactionEnum, UnexpectedDerivationMethod, WithdrawError, WithdrawRequest};
+                        NativeClient, UnspentInfo, UnspentMap, UtxoRpcClientEnum, UtxoRpcError, UtxoRpcFut,
+                        UtxoRpcResult};
+use super::{big_decimal_from_sat_unsigned, BalanceError, BalanceFut, BalanceResult, CoinBalance, CoinsContext,
+            DerivationMethod, FeeApproxStage, FoundSwapTxSpend, HistorySyncState, KmdRewardsDetails, MarketCoinOps,
+            MmCoin, NumConversError, NumConversResult, PrivKeyActivationPolicy, PrivKeyNotAllowed, PrivKeyPolicy,
+            RawTransactionFut, RawTransactionRequest, RawTransactionResult, RpcTransportEventHandler,
+            RpcTransportEventHandlerShared, TradeFee, TradePreimageError, TradePreimageFut, TradePreimageResult,
+            Transaction, TransactionDetails, TransactionEnum, UnexpectedDerivationMethod, WithdrawError,
+            WithdrawRequest};
 use crate::coin_balance::{EnableCoinScanPolicy, HDAddressBalanceScanner};
 use crate::hd_wallet::{HDAccountOps, HDAccountsMutex, HDAddress, HDWalletCoinOps, HDWalletOps, InvalidBip44ChainError};
 use crate::hd_wallet_storage::{HDAccountStorageItem, HDWalletCoinStorage, HDWalletStorageError, HDWalletStorageResult};
+use crate::utxo::tx_cache::UtxoVerboseCacheShared;
 use crate::utxo::utxo_block_header_storage::BlockHeaderStorageError;
 use crate::TransactionErr;
 use utxo_block_header_storage::BlockHeaderStorage;
-#[cfg(not(target_arch = "wasm32"))] pub mod tx_cache;
+
+pub mod tx_cache;
 #[cfg(target_arch = "wasm32")]
 pub mod utxo_indexedb_block_header_storage;
 #[cfg(not(target_arch = "wasm32"))]
 pub mod utxo_sql_block_header_storage;
 
+#[cfg(any(test, target_arch = "wasm32"))]
+pub mod utxo_common_tests;
 #[cfg(test)] pub mod utxo_tests;
 #[cfg(target_arch = "wasm32")] pub mod utxo_wasm_tests;
 
@@ -127,6 +133,8 @@ const DEFAULT_GAP_LIMIT: u32 = 20;
 
 pub type GenerateTxResult = Result<(TransactionInputSigner, AdditionalTxData), MmError<GenerateTxError>>;
 pub type HistoryUtxoTxMap = HashMap<H256Json, HistoryUtxoTx>;
+pub type MatureUnspentMap = HashMap<Address, MatureUnspentList>;
+pub type RecentlySpentOutPointsGuard<'a> = AsyncMutexGuard<'a, RecentlySpentOutPoints>;
 
 #[cfg(windows)]
 #[cfg(not(target_arch = "wasm32"))]
@@ -522,8 +530,8 @@ pub struct UtxoCoinFields {
     /// Either an Iguana address or an info about last derived account/address.
     pub derivation_method: DerivationMethod<Address, UtxoHDWallet>,
     pub history_sync_state: Mutex<HistorySyncState>,
-    /// Path to the TX cache directory
-    pub tx_cache_directory: Option<PathBuf>,
+    /// The cache of verbose transactions.
+    pub tx_cache: UtxoVerboseCacheShared,
     pub block_headers_storage: Option<BlockHeaderStorage>,
     /// The cache of recently send transactions used to track the spent UTXOs and replace them with new outputs
     /// The daemon needs some time to update the listunspent list for address which makes it return already spent UTXOs
@@ -740,6 +748,43 @@ impl UtxoAddressScanner {
     }
 }
 
+/// Contains lists of mature and immature UTXOs.
+#[derive(Debug, Default)]
+pub struct MatureUnspentList {
+    mature: Vec<UnspentInfo>,
+    immature: Vec<UnspentInfo>,
+}
+
+impl MatureUnspentList {
+    #[inline]
+    pub fn with_capacity(capacity: usize) -> MatureUnspentList {
+        MatureUnspentList {
+            mature: Vec::with_capacity(capacity),
+            immature: Vec::with_capacity(capacity),
+        }
+    }
+
+    #[inline]
+    pub fn new_mature(mature: Vec<UnspentInfo>) -> MatureUnspentList {
+        MatureUnspentList {
+            mature,
+            immature: Vec::new(),
+        }
+    }
+
+    #[inline]
+    pub fn only_mature(self) -> Vec<UnspentInfo> { self.mature }
+
+    #[inline]
+    pub fn to_coin_balance(&self, decimals: u8) -> CoinBalance {
+        let fold = |acc: BigDecimal, x: &UnspentInfo| acc + big_decimal_from_sat_unsigned(x.value, decimals);
+        CoinBalance {
+            spendable: self.mature.iter().fold(BigDecimal::default(), fold),
+            unspendable: self.immature.iter().fold(BigDecimal::default(), fold),
+        }
+    }
+}
+
 #[async_trait]
 #[cfg_attr(test, mockable)]
 pub trait UtxoCommonOps:
@@ -792,34 +837,11 @@ pub trait UtxoCommonOps:
         keypair: &KeyPair,
     ) -> Result<UtxoTx, String>;
 
-    /// Returns available unspents in ascending order + RecentlySpentOutPoints MutexGuard for further interaction
-    /// (e.g. to add new transaction to it).
-    /// Please consider using [`UtxoCommonOps::list_unspent_ordered`] instead.
-    async fn list_all_unspent_ordered<'a>(
-        &'a self,
-        address: &Address,
-    ) -> UtxoRpcResult<(Vec<UnspentInfo>, AsyncMutexGuard<'a, RecentlySpentOutPoints>)>;
-
-    /// Returns available mature unspents ascending order + RecentlySpentOutPoints MutexGuard for further interaction
-    /// (e.g. to add new transaction to it).
-    /// Please consider using [`UtxoCommonOps::list_unspent_ordered`] instead.
-    async fn list_mature_unspent_ordered<'a>(
-        &'a self,
-        address: &Address,
-    ) -> UtxoRpcResult<(Vec<UnspentInfo>, AsyncMutexGuard<'a, RecentlySpentOutPoints>)>;
-
-    /// Try to load verbose transaction from cache or try to request it from Rpc client.
-    fn get_verbose_transaction_from_cache_or_rpc(&self, txid: H256Json) -> UtxoRpcFut<VerboseTransactionFrom>;
-
-    /// Cache transaction if the coin supports `TX_CACHE` and tx height is set and not zero.
-    async fn cache_transaction_if_possible(&self, tx: &RpcTransaction) -> Result<(), String>;
-
-    /// Returns available unspents in ascending order + RecentlySpentOutPoints MutexGuard for further interaction
-    /// (e.g. to add new transaction to it).
-    async fn list_unspent_ordered(
+    /// Loads verbose transactions from cache or requests it using RPC client.
+    fn get_verbose_transactions_from_cache_or_rpc(
         &self,
-        address: &Address,
-    ) -> UtxoRpcResult<(Vec<UnspentInfo>, AsyncMutexGuard<'_, RecentlySpentOutPoints>)>;
+        tx_ids: HashSet<H256Json>,
+    ) -> UtxoRpcFut<HashMap<H256Json, VerboseTransactionFrom>>;
 
     async fn preimage_trade_fee_required_to_send_outputs(
         &self,
@@ -845,6 +867,80 @@ pub trait UtxoCommonOps:
         let pubkey = Public::Compressed(H264::from(extended_pubkey.public_key().serialize()));
         self.address_from_pubkey(&pubkey)
     }
+}
+
+#[async_trait]
+#[cfg_attr(test, mockable)]
+pub trait GetUtxoListOps {
+    /// Returns available unspents in ascending order
+    /// + `RecentlySpentOutPoints` MutexGuard for further interaction (e.g. to add new transaction to it).
+    /// The function uses either [`GetUtxoListOps::get_all_unspent_ordered_list`] or [`GetUtxoListOps::get_mature_unspent_ordered_list`]
+    /// depending on the coin configuration.
+    async fn get_unspent_ordered_list(
+        &self,
+        address: &Address,
+    ) -> UtxoRpcResult<(Vec<UnspentInfo>, RecentlySpentOutPointsGuard<'_>)>;
+
+    /// Returns available unspents in ascending order
+    /// + `RecentlySpentOutPoints` MutexGuard for further interaction (e.g. to add new transaction to it).
+    ///
+    /// # Important
+    ///
+    /// The function doesn't check if the unspents are mature or immature.
+    /// Consider using [`GetUtxoListOps::get_unspent_ordered_list`] instead.
+    async fn get_all_unspent_ordered_list(
+        &self,
+        address: &Address,
+    ) -> UtxoRpcResult<(Vec<UnspentInfo>, RecentlySpentOutPointsGuard<'_>)>;
+
+    /// Returns available mature and immature unspents in ascending order
+    /// + `RecentlySpentOutPoints` MutexGuard for further interaction (e.g. to add new transaction to it).
+    ///
+    /// # Important
+    ///
+    /// The function may request extra data using RPC to check each unspent output whether it's mature or not.
+    /// It may be overhead in some cases, so consider using [`GetUtxoListOps::get_unspent_ordered_list`] instead.
+    async fn get_mature_unspent_ordered_list(
+        &self,
+        address: &Address,
+    ) -> UtxoRpcResult<(MatureUnspentList, RecentlySpentOutPointsGuard<'_>)>;
+}
+
+#[async_trait]
+#[cfg_attr(test, mockable)]
+pub trait GetUtxoMapOps {
+    /// Returns available unspents in ascending order for every given `addresses`
+    /// + `RecentlySpentOutPoints` MutexGuard for further interaction (e.g. to add new transaction to it).
+    /// The function uses either [`GetUtxoMapOps::get_all_unspent_ordered_map`] or [`GetUtxoMapOps::get_mature_unspent_ordered_map`]
+    /// depending on the coin configuration.
+    async fn get_unspent_ordered_map(
+        &self,
+        addresses: Vec<Address>,
+    ) -> UtxoRpcResult<(UnspentMap, RecentlySpentOutPointsGuard<'_>)>;
+
+    /// Returns available unspents in ascending order for every given `addresses`
+    /// + `RecentlySpentOutPoints` MutexGuard for further interaction (e.g. to add new transaction to it).
+    ///
+    /// # Important
+    ///
+    /// The function doesn't check if the unspents are mature or immature.
+    /// Consider using [`GetUtxoMapOps::get_unspent_ordered_map`] instead.
+    async fn get_all_unspent_ordered_map(
+        &self,
+        addresses: Vec<Address>,
+    ) -> UtxoRpcResult<(UnspentMap, RecentlySpentOutPointsGuard<'_>)>;
+
+    /// Returns available mature and immature unspents in ascending order for every given `addresses`
+    /// + `RecentlySpentOutPoints` MutexGuard for further interaction (e.g. to add new transaction to it).
+    ///
+    /// # Important
+    ///
+    /// The function may request extra data using RPC to check each unspent output whether it's mature or not.
+    /// It may be overhead in some cases, so consider using [`GetUtxoMapOps::get_unspent_ordered_map`] instead.
+    async fn get_mature_unspent_ordered_map(
+        &self,
+        addresses: Vec<Address>,
+    ) -> UtxoRpcResult<(MatureUnspentMap, RecentlySpentOutPointsGuard<'_>)>;
 }
 
 #[async_trait]
@@ -974,13 +1070,15 @@ pub enum RequestTxHistoryResult {
     CriticalError(String),
 }
 
+#[derive(Clone)]
 pub enum VerboseTransactionFrom {
     Cache(RpcTransaction),
     Rpc(RpcTransaction),
 }
 
 impl VerboseTransactionFrom {
-    fn into_inner(self) -> RpcTransaction {
+    #[inline]
+    fn to_inner(&self) -> &RpcTransaction {
         match self {
             VerboseTransactionFrom::Rpc(tx) | VerboseTransactionFrom::Cache(tx) => tx,
         }
@@ -1092,9 +1190,9 @@ impl RpcTransportEventHandler for ElectrumProtoVerifier {
 #[derive(Clone, Debug, Deserialize, Serialize)]
 pub struct UtxoMergeParams {
     pub merge_at: usize,
-    #[serde(default = "ten_f64")]
+    #[serde(default = "common::ten_f64")]
     pub check_every: f64,
-    #[serde(default = "one_hundred")]
+    #[serde(default = "common::one_hundred")]
     pub max_merge_at_once: usize,
 }
 
@@ -1415,9 +1513,8 @@ pub async fn kmd_rewards_info<T: UtxoCommonOps>(coin: &T) -> Result<Vec<KmdRewar
     let my_address = try_s!(utxo.derivation_method.iguana_or_err());
     let rpc_client = &utxo.rpc_client;
     let mut unspents = try_s!(rpc_client.list_unspent(my_address, utxo.decimals).compat().await);
-    // list_unspent_ordered() returns ordered from lowest to highest by value unspent outputs.
-    // reverse it to reorder from highest to lowest outputs.
-    unspents.reverse();
+    // Reorder from highest to lowest unspent outputs.
+    unspents.sort_unstable_by(|x, y| y.value.cmp(&x.value));
 
     let mut result = Vec::with_capacity(unspents.len());
     for unspent in unspents {
@@ -1478,10 +1575,10 @@ async fn send_outputs_from_my_address_impl<T>(
     outputs: Vec<TransactionOutput>,
 ) -> Result<UtxoTx, TransactionErr>
 where
-    T: UtxoCommonOps,
+    T: UtxoCommonOps + GetUtxoListOps,
 {
     let my_address = try_tx_s!(coin.as_ref().derivation_method.iguana_or_err());
-    let (unspents, recently_sent_txs) = try_tx_s!(coin.list_unspent_ordered(my_address).await);
+    let (unspents, recently_sent_txs) = try_tx_s!(coin.get_unspent_ordered_list(my_address).await);
     generate_and_send_tx(&coin, unspents, None, FeePolicy::SendExact, recently_sent_txs, outputs).await
 }
 
@@ -1491,7 +1588,7 @@ async fn generate_and_send_tx<T>(
     unspents: Vec<UnspentInfo>,
     required_inputs: Option<Vec<UnspentInfo>>,
     fee_policy: FeePolicy,
-    mut recently_spent: AsyncMutexGuard<'_, RecentlySpentOutPoints>,
+    mut recently_spent: RecentlySpentOutPointsGuard<'_>,
     outputs: Vec<TransactionOutput>,
 ) -> Result<UtxoTx, TransactionErr>
 where
@@ -1513,7 +1610,7 @@ where
         .inputs
         .iter()
         .map(|input| UnspentInfo {
-            outpoint: input.previous_output.clone(),
+            outpoint: input.previous_output,
             value: input.amount,
             height: None,
         })
@@ -1596,10 +1693,6 @@ fn parse_hex_encoded_u32(hex_encoded: &str) -> Result<u32, MmError<String>> {
         .map_to_mm(|e: TryFromSliceError| e.to_string())?;
     Ok(u32::from_be_bytes(be_bytes))
 }
-
-fn ten_f64() -> f64 { 10. }
-
-fn one_hundred() -> usize { 100 }
 
 #[test]
 fn test_parse_hex_encoded_u32() {

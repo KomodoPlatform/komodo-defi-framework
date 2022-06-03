@@ -2,14 +2,14 @@ use crate::utxo::utxo_block_header_storage::BlockHeaderStorage;
 use crate::utxo::utxo_builder::{UtxoCoinBuildError, UtxoCoinBuilder, UtxoCoinBuilderCommonOps,
                                 UtxoFieldsWithHardwareWalletBuilder, UtxoFieldsWithIguanaPrivKeyBuilder};
 use crate::utxo::utxo_common::{block_header_utxo_loop, merge_utxo_loop};
-use crate::utxo::{UtxoArc, UtxoCommonOps, UtxoWeak};
+use crate::utxo::{GetUtxoListOps, UtxoArc, UtxoCommonOps, UtxoWeak};
 use crate::{PrivKeyBuildPolicy, UtxoActivationParams};
 use async_trait::async_trait;
 use common::executor::spawn;
 use common::log::info;
-use common::mm_ctx::MmArc;
-use common::mm_error::prelude::*;
 use futures::future::{abortable, AbortHandle};
+use mm2_core::mm_ctx::MmArc;
+use mm2_err_handle::prelude::*;
 use serde_json::Value as Json;
 
 pub struct UtxoArcBuilder<'a, F, T>
@@ -75,7 +75,7 @@ impl<'a, F, T> UtxoFieldsWithHardwareWalletBuilder for UtxoArcBuilder<'a, F, T> 
 impl<'a, F, T> UtxoCoinBuilder for UtxoArcBuilder<'a, F, T>
 where
     F: Fn(UtxoArc) -> T + Clone + Send + Sync + 'static,
-    T: UtxoCommonOps,
+    T: UtxoCommonOps + GetUtxoListOps,
 {
     type ResultCoin = T;
     type Error = UtxoCoinBuildError;
@@ -103,7 +103,7 @@ where
 impl<'a, F, T> MergeUtxoArcOps<T> for UtxoArcBuilder<'a, F, T>
 where
     F: Fn(UtxoArc) -> T + Send + Sync + 'static,
-    T: UtxoCommonOps,
+    T: UtxoCommonOps + GetUtxoListOps,
 {
 }
 
@@ -114,7 +114,7 @@ where
 {
 }
 
-pub trait MergeUtxoArcOps<T: UtxoCommonOps>: UtxoCoinBuilderCommonOps {
+pub trait MergeUtxoArcOps<T: UtxoCommonOps + GetUtxoListOps>: UtxoCoinBuilderCommonOps {
     fn spawn_merge_utxo_loop_if_required<F>(&self, weak: UtxoWeak, constructor: F)
     where
         F: Fn(UtxoArc) -> T + Send + Sync + 'static,

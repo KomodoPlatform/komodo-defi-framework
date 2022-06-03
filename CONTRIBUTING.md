@@ -1,4 +1,4 @@
-# Contributing to AtomicDEX Marketmaker
+# Contributing to AtomicDEX-API
 
 We welcome contribution from everyone in the form of suggestions, bug reports, pull requests, and feedback.
 Please note we have a code of conduct, please follow it in all your interactions with the project.
@@ -14,19 +14,22 @@ cargo test --all
 We also use [Clippy](https://github.com/rust-lang/rust-clippy) to avoid common mistakes
 and we use [rustfmt](https://github.com/rust-lang/rustfmt) to make our code clear to everyone.
 
-1. Install these tools (only once):
-    ```
-    rustup component add rustfmt
-    rustup component add clippy
-    ```
 1. Format the code using rustfmt:
-    ```
+    ```shell
     cargo fmt
     ```
-1. Make sure there are no warnings and errors. Run the Clippy:
-    ```
+2. Make sure there are no warnings and errors. Run the Clippy:
+    ```shell
     cargo clippy -- -D warnings
     ```
+3. Make sure that no new dependencies duplicates appear. Run the following check
+   ```shell
+   cargo deny check bans
+   ```
+4. Make sure that dependencies do not have known vulnerabilities. If they do, update them.
+   ```shell
+   cargo deny check advisories
+   ```
 
 ### Run WASM tests
 
@@ -34,5 +37,5 @@ and we use [rustfmt](https://github.com/rust-lang/rustfmt) to make our code clea
 1. Download Gecko driver for your OS: https://github.com/mozilla/geckodriver/releases
 1. Run the tests
     ```
-    WASM_BINDGEN_TEST_TIMEOUT=120 GECKODRIVER=PATH_TO_GECKO_DRIVER_BIN wasm-pack test --firefox --headless
+    WASM_BINDGEN_TEST_TIMEOUT=120 GECKODRIVER=PATH_TO_GECKO_DRIVER_BIN wasm-pack test --firefox --headless mm2src/mm2_main
     ```

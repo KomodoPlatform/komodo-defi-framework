@@ -3,12 +3,12 @@ use crate::utxo::GenerateTxError;
 use crate::{BalanceError, CoinFindError, NumConversError, PrivKeyNotAllowed, UnexpectedDerivationMethod};
 use bitcoin::consensus::encode;
 use common::jsonrpc_client::JsonRpcError;
-use common::mm_error::prelude::*;
 use common::HttpStatusCode;
 use db_common::sqlite::rusqlite::Error as SqlError;
 use derive_more::Display;
 use http::StatusCode;
 use lightning_invoice::SignOrCreationError;
+use mm2_err_handle::prelude::*;
 use rpc::v1::types::H256 as H256Json;
 use utxo_signer::with_key_pair::UtxoSignWithKeyPairError;
 

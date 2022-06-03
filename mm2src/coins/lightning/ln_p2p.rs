@@ -1,6 +1,5 @@
 use super::*;
 use common::executor::{spawn, Timer};
-use common::ip_addr::fetch_external_ip;
 use common::log::LogState;
 use derive_more::Display;
 use lightning::chain::Access;
@@ -9,6 +8,7 @@ use lightning::ln::peer_handler::{IgnoringMessageHandler, MessageHandler, Simple
 use lightning::routing::network_graph::{NetGraphMsgHandler, NetworkGraph};
 use lightning_net_tokio::SocketDescriptor;
 use lightning_persister::storage::NodesAddressesMapShared;
+use mm2_net::ip_addr::fetch_external_ip;
 use rand::RngCore;
 use secp256k1::SecretKey;
 use std::net::{IpAddr, Ipv4Addr};

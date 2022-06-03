@@ -5,14 +5,12 @@ use crate::qrc20::{contract_addr_into_rpc_format, ContractCallOutput, GenerateQr
 use crate::utxo::qtum::{QtumBasedCoin, QtumCoin, QtumDelegationOps, QtumDelegationRequest, QtumStakingInfosDetails};
 use crate::utxo::rpc_clients::UtxoRpcClientEnum;
 use crate::utxo::utxo_common::{big_decimal_from_sat_unsigned, UtxoTxBuilder};
-use crate::utxo::{qtum, utxo_common, Address, UtxoCommonOps};
+use crate::utxo::{qtum, utxo_common, Address, GetUtxoListOps, UtxoCommonOps};
 use crate::utxo::{PrivKeyNotAllowed, UTXO_LOCK};
 use crate::{DelegationError, DelegationFut, DelegationResult, MarketCoinOps, StakingInfos, StakingInfosError,
             StakingInfosFut, StakingInfosResult, TransactionDetails, TransactionType};
 use bigdecimal::Zero;
 use bitcrypto::dhash256;
-use common::mm_error::prelude::{MapMmError, MapToMmResult};
-use common::mm_error::MmError;
 use common::mm_number::BigDecimal;
 use common::now_ms;
 use derive_more::Display;
@@ -21,9 +19,11 @@ use ethereum_types::H160;
 use futures::compat::Future01CompatExt;
 use futures::{FutureExt, TryFutureExt};
 use keys::{AddressHashEnum, Signature};
+use mm2_err_handle::prelude::*;
 use rpc::v1::types::ToTxHash;
 use script::Builder as ScriptBuilder;
 use serialization::serialize;
+use std::convert::TryInto;
 use std::str::FromStr;
 use utxo_signer::with_key_pair::sign_tx;
 
@@ -205,8 +205,10 @@ impl QtumCoin {
         let my_address = coin.derivation_method.iguana_or_err()?;
 
         let staker = self.am_i_currently_staking().await?;
-        let (unspents, _) = self.list_unspent_ordered(my_address).await?;
-        let lower_bound = QTUM_LOWER_BOUND_DELEGATION_AMOUNT.into();
+        let (unspents, _) = self.get_unspent_ordered_list(my_address).await?;
+        let lower_bound = QTUM_LOWER_BOUND_DELEGATION_AMOUNT
+            .try_into()
+            .expect("Conversion should succeed");
         let mut amount = BigDecimal::zero();
         if staker.is_some() {
             amount = unspents
@@ -273,7 +275,7 @@ impl QtumCoin {
         let key_pair = utxo.priv_key_policy.key_pair_or_err()?;
         let my_address = utxo.derivation_method.iguana_or_err()?;
 
-        let (unspents, _) = self.list_unspent_ordered(my_address).await?;
+        let (unspents, _) = self.get_unspent_ordered_list(my_address).await?;
         let mut gas_fee = 0;
         let mut outputs = Vec::with_capacity(contract_outputs.len());
         for output in contract_outputs {
