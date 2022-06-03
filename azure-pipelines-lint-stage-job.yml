@@ -42,8 +42,10 @@ jobs:
         env:
           MANUAL_MM_VERSION: true
       - bash: |
-          cargo install cargo-udeps --locked
-          cargo udeps
+          if [ $AGENT_OS = "Linux" ] || [ $AGENT_OS = "Windows_NT" ]
+          then
+            cargo udeps
+          fi
         displayName: 'Cargo unused dependencies check'
       - bash: |
           cargo deny check bans --hide-inclusion-graph
