@@ -51,13 +51,6 @@ cfg-if = "1.0"
 coins = { path = "../coins" }
 coins_activation = { path = "../coins_activation" }
 common = { path = "../common" }
-mm2_test_helpers = { path = "../mm2_test_helpers" }
-mm2_err_handle = { path = "../mm2_err_handle" }
-mm2_io = { path = "../mm2_io" }
-mm2_rpc = { path = "../mm2_rpc" }
-mm2_net = { path = "../mm2_net" }
-mm2_core = { path = "../mm2_core" }
-mm2_db = { path = "../mm2_db" }
 crc32fast = { version = "1.3.2", features = ["std", "nightly"] }
 crossbeam = "0.7"
 crypto = { path = "../crypto" }
@@ -82,19 +75,24 @@ lazy_static = "1.4"
 # ledger = { path = "../ledger" }
 libc = "0.2"
 metrics = "0.12"
+mm2_core = { path = "../mm2_core" }
+mm2_err_handle = { path = "../mm2_err_handle" }
+mm2_io = { path = "../mm2_io" }
 mm2-libp2p = { path = "../mm2_libp2p" }
+mm2_net = { path = "../mm2_net" }
+mm2_rpc = { path = "../mm2_rpc" }
 num-traits = "0.2"
-rpc = { path = "../mm2_bitcoin/rpc" }
-rpc_task = { path = "../rpc_task" }
-parking_lot = { version = "0.12.0", features = ["nightly"] }
 parity-util-mem = "0.11"
+parking_lot = { version = "0.12.0", features = ["nightly"] }
 primitives = { path = "../mm2_bitcoin/primitives" }
 rand = { version = "0.7", features = ["std", "small_rng"] }
 rand6 = { version = "0.6", package = "rand" }
-rmp-serde = "0.14.3"
 # TODO: Reduce the size of regex by disabling the features we don't use.
 # cf. https://github.com/rust-lang/regex/issues/583
 regex = "1"
+rmp-serde = "0.14.3"
+rpc = { path = "../mm2_bitcoin/rpc" }
+rpc_task = { path = "../rpc_task" }
 script = { path = "../mm2_bitcoin/script" }
 secp256k1 = { version = "0.20", features = ["rand"] }
 serde = "1.0"
@@ -107,30 +105,31 @@ serialization_derive = { path = "../mm2_bitcoin/serialization_derive" }
 spv_validation = { path = "../mm2_bitcoin/spv_validation" }
 sp-runtime-interface = { version = "6.0.0", default-features = false, features = ["disable_target_static_assertions"] }
 sp-trie = { version = "6.0", default-features = false }
-
 trie-db = { version = "0.23.1", default-features = false }
 trie-root = "0.16.0"
 uuid = { version = "0.7", features = ["serde", "v4"] }
 wasm-timer = "0.2.4"
 
 [target.'cfg(target_arch = "wasm32")'.dependencies]
+instant = {version = "0.1.12", features = ["wasm-bindgen"]}
 js-sys = { version = "0.3.27" }
+mm2_db = { path = "../mm2_db" }
+mm2_test_helpers = { path = "../mm2_test_helpers" }
 wasm-bindgen = { version = "=0.2.78", features = ["nightly"] }
 wasm-bindgen-futures = { version = "0.4.1" }
 wasm-bindgen-test = { version = "0.3.1" }
 web-sys = { version = "0.3.55", features = ["console"] }
-instant = {version = "0.1.12", features = ["wasm-bindgen"]}
 
 [target.'cfg(not(target_arch = "wasm32"))'.dependencies]
 dirs = { version = "1" }
+futures-rustls = { version = "0.21.1" }
 hyper = { version = "0.14.11", features = ["client", "http2", "server", "tcp"] }
 tokio = { version = "1.7", features = ["io-util", "rt-multi-thread", "net"] }
-futures-rustls = { version = "0.21.1" }
 
 [dev-dependencies]
+mm2_test_helpers = { path = "../mm2_test_helpers" }
 mocktopus = "0.7.0"
 testcontainers = { git = "https://github.com/artemii235/testcontainers-rs.git" }
-winapi = "0.3"
 
 [build-dependencies]
 chrono = "0.4"

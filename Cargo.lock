@@ -1075,10 +1075,8 @@ dependencies = [
  "web-sys",
  "web3",
  "webpki-roots",
- "winapi",
  "zbase32",
  "zcash_client_backend",
- "zcash_client_sqlite",
  "zcash_primitives",
  "zcash_proofs",
 ]
@@ -1111,20 +1109,16 @@ version = "0.1.0"
 dependencies = [
  "anyhow",
  "arrayref",
- "async-std",
  "async-trait",
  "backtrace",
  "base64 0.10.1",
  "bigdecimal",
- "bitcrypto",
  "bytes 1.1.0",
  "cc",
  "cfg-if 1.0.0",
  "chrono",
  "crossbeam",
  "crossterm",
- "db_common",
- "derive_more",
  "findshlibs",
  "fnv",
  "fomat-macros 0.2.1",
@@ -1142,7 +1136,6 @@ dependencies = [
  "hyper-rustls",
  "itertools",
  "js-sys",
- "keys",
  "lazy_static",
  "libc",
  "lightning",
@@ -1158,11 +1151,7 @@ dependencies = [
  "parking_lot 0.12.0",
  "parking_lot_core 0.6.2",
  "paste",
- "primitives",
- "prost 0.8.0",
  "rand 0.7.3",
- "regex",
- "rustc-hex 2.1.0",
  "ser_error",
  "ser_error_derive",
  "serde",
@@ -1179,7 +1168,6 @@ dependencies = [
  "wasm-bindgen-test",
  "wasm-timer",
  "web-sys",
- "winapi",
 ]
 
 [[package]]
@@ -4255,7 +4243,6 @@ dependencies = [
  "wasm-bindgen-test",
  "wasm-timer",
  "web-sys",
- "winapi",
 ]
 
 [[package]]
@@ -5849,7 +5836,6 @@ dependencies = [
  "libsqlite3-sys",
  "memchr",
  "smallvec 1.6.1",
- "time 0.2.27",
 ]
 
 [[package]]
@@ -8747,24 +8733,6 @@ dependencies = [
  "subtle 2.4.0",
  "time 0.2.27",
  "zcash_note_encryption",
- "zcash_primitives",
-]
-
-[[package]]
-name = "zcash_client_sqlite"
-version = "0.3.0"
-source = "git+https://github.com/KomodoPlatform/librustzcash.git#4ffb4433942ed90c2b6035425c1c97d3e181609f"
-dependencies = [
- "bech32",
- "bs58",
- "ff 0.8.0",
- "group 0.8.0",
- "jubjub",
- "protobuf",
- "rand_core 0.5.1",
- "rusqlite",
- "time 0.2.27",
- "zcash_client_backend",
  "zcash_primitives",
 ]
 

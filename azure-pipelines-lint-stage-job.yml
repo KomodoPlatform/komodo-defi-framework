@@ -46,7 +46,7 @@ jobs:
           then
             cargo udeps
           fi
-        displayName: 'Cargo unused dependencies check'
+        displayName: 'Check unused dependencies'
       - bash: |
           cargo deny check bans --hide-inclusion-graph
           cargo deny check advisories --hide-inclusion-graph

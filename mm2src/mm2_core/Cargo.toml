@@ -9,26 +9,26 @@ doctest = false
 [dependencies]
 async-trait = "0.1"
 arrayref = "0.3"
-derive_more = "0.99"
-rand = { version = "0.7", features = ["std", "small_rng", "wasm-bindgen"] }
-uuid = { version = "0.7", features = ["serde", "v4"] }
-fomat-macros = "0.2"
-serde = "1"
-serde_bytes = "0.11"
-hex = "0.4.2"
-serde_json = { version = "1.0", features = ["preserve_order", "raw_value"] }
-shared_ref_counter = { path = "../common/shared_ref_counter" }
 cfg-if = "1.0"
-primitives = { path = "../mm2_bitcoin/primitives" }
-keys = { path = "../mm2_bitcoin/keys" }
 common = { path = "../common" }
 db_common = { path = "../db_common" }
-mm2_rpc = { path = "../mm2_rpc" }
-lazy_static = "1.4"
+derive_more = "0.99"
+fomat-macros = "0.2"
 futures = { version = "0.3", package = "futures", features = ["compat", "async-await", "thread-pool"] }
+hex = "0.4.2"
+keys = { path = "../mm2_bitcoin/keys" }
+lazy_static = "1.4"
+primitives = { path = "../mm2_bitcoin/primitives" }
+rand = { version = "0.7", features = ["std", "small_rng", "wasm-bindgen"] }
+serde = "1"
+serde_bytes = "0.11"
+serde_json = { version = "1.0", features = ["preserve_order", "raw_value"] }
+shared_ref_counter = { path = "../common/shared_ref_counter" }
+uuid = { version = "0.7", features = ["serde", "v4"] }
 
 [target.'cfg(target_arch = "wasm32")'.dependencies]
 gstuff = { version = "0.7", features = ["nightly"] }
+mm2_rpc = { path = "../mm2_rpc" }
 
 [target.'cfg(not(target_arch = "wasm32"))'.dependencies]
 gstuff = { version = "0.7", features = ["crossterm", "nightly"] }
