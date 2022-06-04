@@ -3168,3 +3168,9 @@ fn check_sync_pubkey_state_p2p_res_serde() {
 
     let _v2_from_new: SyncPubkeyOrderbookStateResV2 = rmp_serde::from_read_ref(&new_serialized).unwrap();
 }
+
+#[test]
+fn check_order_serde() {
+    let order_json = include_str!("for_tests/check_order_serde_payload.json");
+    let _order: Order = json::from_str(order_json).unwrap();
+}

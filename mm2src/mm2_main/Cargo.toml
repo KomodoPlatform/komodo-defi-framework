@@ -44,7 +44,7 @@ bench = false
 async-std = { version = "1.5", features = ["unstable"] }
 async-trait = "0.1"
 bitcrypto = { path = "../mm2_bitcoin/crypto" }
-blake2 = "0.9.1"
+blake2 = "0.10"
 bytes = "0.4"
 chain = { path = "../mm2_bitcoin/chain" }
 cfg-if = "1.0"
@@ -65,7 +65,7 @@ db_common = { path = "../db_common" }
 derive_more = "0.99"
 either = "1.6"
 ethereum-types = { version = "0.4", default-features = false, features = ["std", "serialize"] }
-enum-primitive-derive = "0.1"
+enum-primitive-derive = "0.2"
 fomat-macros = "0.2"
 futures01 = { version = "0.1", package = "futures" }
 futures-cpupool = "0.1"
@@ -87,10 +87,7 @@ num-traits = "0.2"
 rpc = { path = "../mm2_bitcoin/rpc" }
 rpc_task = { path = "../rpc_task" }
 parking_lot = { version = "0.12.0", features = ["nightly"] }
-parity-util-mem = "0.9"
-# AP: portfolio RPCs are not documented and not used as of now
-# so the crate is disabled to speed up the entire removal of C code
-# portfolio = { path = "../portfolio" }
+parity-util-mem = "0.11"
 primitives = { path = "../mm2_bitcoin/primitives" }
 rand = { version = "0.7", features = ["std", "small_rng"] }
 rand6 = { version = "0.6", package = "rand" }
@@ -101,24 +98,24 @@ regex = "1"
 script = { path = "../mm2_bitcoin/script" }
 secp256k1 = { version = "0.20", features = ["rand"] }
 serde = "1.0"
-serde_json = { version = "1.0", features = ["preserve_order"] }
+serde_json = { version = "1.0", features = ["preserve_order", "raw_value"] }
 serde_derive = "1.0"
 ser_error = { path = "../derives/ser_error" }
 ser_error_derive = { path = "../derives/ser_error_derive" }
 serialization = { path = "../mm2_bitcoin/serialization" }
 serialization_derive = { path = "../mm2_bitcoin/serialization_derive" }
 spv_validation = { path = "../mm2_bitcoin/spv_validation" }
-sp-runtime-interface = { version = "3.0.0", default-features = false, features = ["disable_target_static_assertions"] }
-sp-trie = { version = "3.0", default-features = false }
+sp-runtime-interface = { version = "6.0.0", default-features = false, features = ["disable_target_static_assertions"] }
+sp-trie = { version = "6.0", default-features = false }
 
-trie-db = { version = "0.22.6", default-features = false }
+trie-db = { version = "0.23.1", default-features = false }
 trie-root = "0.16.0"
 uuid = { version = "0.7", features = ["serde", "v4"] }
 wasm-timer = "0.2.4"
 
 [target.'cfg(target_arch = "wasm32")'.dependencies]
 js-sys = { version = "0.3.27" }
-wasm-bindgen = { version = "=0.2.78", features = ["serde-serialize", "nightly"] }
+wasm-bindgen = { version = "=0.2.78", features = ["nightly"] }
 wasm-bindgen-futures = { version = "0.4.1" }
 wasm-bindgen-test = { version = "0.3.1" }
 web-sys = { version = "0.3.55", features = ["console"] }

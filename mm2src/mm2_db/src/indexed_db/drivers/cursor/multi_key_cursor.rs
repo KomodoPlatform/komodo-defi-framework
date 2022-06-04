@@ -1,6 +1,6 @@
 use super::{CollectCursorAction, CollectItemAction, CursorError, CursorOps, CursorResult, DbFilter};
 use async_trait::async_trait;
-use common::stringify_js_error;
+use common::{serialize_to_js, stringify_js_error};
 use js_sys::Array;
 use mm2_err_handle::prelude::*;
 use serde_json::Value as Json;
@@ -51,7 +51,7 @@ impl CursorOps for IdbMultiKeyCursor {
         let only = Array::new();
 
         for (field, value) in self.only_values.iter() {
-            let js_value = JsValue::from_serde(value).map_to_mm(|e| CursorError::ErrorSerializingIndexFieldValue {
+            let js_value = serialize_to_js(value).map_to_mm(|e| CursorError::ErrorSerializingIndexFieldValue {
                 field: field.to_owned(),
                 value: format!("{:?}", value),
                 description: e.to_string(),

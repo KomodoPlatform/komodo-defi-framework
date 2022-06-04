@@ -10,7 +10,7 @@ use async_trait::async_trait;
 use base58::ToBase58;
 use bigdecimal::BigDecimal;
 use bincode::{deserialize, serialize};
-use common::{mm_number::MmNumber, now_ms};
+use common::{async_blocking, mm_number::MmNumber, now_ms};
 use derive_more::Display;
 use futures::{FutureExt, TryFutureExt};
 use futures01::Future;
@@ -21,7 +21,7 @@ use rpc::v1::types::Bytes as BytesJson;
 use serde_json::{self as json, Value as Json};
 use solana_client::rpc_request::TokenAccountsFilter;
 use solana_client::{client_error::{ClientError, ClientErrorKind},
-                    nonblocking::rpc_client::RpcClient};
+                    rpc_client::RpcClient};
 use solana_sdk::commitment_config::{CommitmentConfig, CommitmentLevel};
 use solana_sdk::program_error::ProgramError;
 use solana_sdk::pubkey::ParsePubkeyError;
@@ -169,12 +169,9 @@ pub async fn solana_coin_from_conf_and_params(
     params: SolanaActivationParams,
     priv_key: &[u8],
 ) -> Result<SolanaCoin, String> {
-    let client = solana_client::nonblocking::rpc_client::RpcClient::new_with_commitment(
-        params.client_url.clone(),
-        CommitmentConfig {
-            commitment: params.confirmation_commitment,
-        },
-    );
+    let client = RpcClient::new_with_commitment(params.client_url.clone(), CommitmentConfig {
+        commitment: params.confirmation_commitment,
+    });
     let decimals = conf["decimals"].as_u64().unwrap_or(SOLANA_DEFAULT_DECIMALS) as u8;
     let key_pair = try_s!(generate_keypair_from_slice(priv_key));
     let my_address = key_pair.pubkey().to_string();
@@ -283,21 +280,34 @@ async fn withdraw_impl(coin: SolanaCoin, req: WithdrawRequest) -> WithdrawResult
 
 impl SolanaCoin {
     pub async fn estimate_withdraw_fees(&self) -> Result<(solana_sdk::hash::Hash, u64), MmError<ClientError>> {
-        let hash = self.rpc().get_latest_blockhash().await?;
+        let hash = async_blocking({
+            let coin = self.clone();
+            move || coin.rpc().get_latest_blockhash()
+        })
+        .await?;
         let to = self.key_pair.pubkey();
 
         let tx = solana_sdk::system_transaction::transfer(&self.key_pair, &to, LAMPORTS_DUMMY_AMOUNT, hash);
-        let fees = self.rpc().get_fee_for_message(tx.message()).await?;
+        let fees = async_blocking({
+            let coin = self.clone();
+            move || coin.rpc().get_fee_for_message(tx.message())
+        })
+        .await?;
         Ok((hash, fees))
     }
+
     pub async fn my_balance_spl(&self, infos: &SplTokenInfo) -> Result<CoinBalance, MmError<BalanceError>> {
-        let token_accounts = self
-            .rpc()
-            .get_token_accounts_by_owner(
-                &self.key_pair.pubkey(),
-                TokenAccountsFilter::Mint(infos.token_contract_address),
-            )
-            .await?;
+        let token_accounts = async_blocking({
+            let coin = self.clone();
+            let infos = infos.clone();
+            move || {
+                coin.rpc().get_token_accounts_by_owner(
+                    &coin.key_pair.pubkey(),
+                    TokenAccountsFilter::Mint(infos.token_contract_address),
+                )
+            }
+        })
+        .await?;
         if token_accounts.is_empty() {
             return Ok(CoinBalance {
                 spendable: Default::default(),
@@ -306,7 +316,11 @@ impl SolanaCoin {
         }
         let actual_token_pubkey =
             Pubkey::from_str(&*token_accounts[0].pubkey).map_err(|e| BalanceError::Internal(format!("{:?}", e)))?;
-        let amount = self.rpc().get_token_account_balance(&actual_token_pubkey).await?;
+        let amount = async_blocking({
+            let coin = self.clone();
+            move || coin.rpc().get_token_account_balance(&actual_token_pubkey)
+        })
+        .await?;
         let balance =
             BigDecimal::from_str(&*amount.ui_amount_string).map_to_mm(|e| BalanceError::Internal(e.to_string()))?;
         Ok(CoinBalance {
@@ -317,10 +331,11 @@ impl SolanaCoin {
 
     fn my_balance_impl(&self) -> BalanceFut<BigDecimal> {
         let coin = self.clone();
-        let fut = async move {
-            let res = coin.rpc().get_balance(&coin.key_pair.pubkey()).await?;
+        let fut = async_blocking(move || {
+            // this is blocking IO
+            let res = coin.rpc().get_balance(&coin.key_pair.pubkey())?;
             Ok(lamports_to_sol(res))
-        };
+        });
         Box::new(fut.boxed().compat())
     }
 
@@ -373,25 +388,27 @@ impl MarketCoinOps for SolanaCoin {
     fn send_raw_tx(&self, tx: &str) -> Box<dyn Future<Item = String, Error = String> + Send> {
         let coin = self.clone();
         let tx = tx.to_owned();
-        let fut = async move {
+        let fut = async_blocking(move || {
             let bytes = hex::decode(tx).map_to_mm(|e| e).map_err(|e| format!("{:?}", e))?;
             let tx: Transaction = deserialize(bytes.as_slice())
                 .map_to_mm(|e| e)
                 .map_err(|e| format!("{:?}", e))?;
-            let signature = coin.rpc().send_transaction(&tx).await.map_err(|e| format!("{:?}", e))?;
+            // this is blocking IO
+            let signature = coin.rpc().send_transaction(&tx).map_err(|e| format!("{:?}", e))?;
             Ok(signature.to_string())
-        };
+        });
         Box::new(fut.boxed().compat())
     }
 
     fn send_raw_tx_bytes(&self, tx: &[u8]) -> Box<dyn Future<Item = String, Error = String> + Send> {
         let coin = self.clone();
         let tx = tx.to_owned();
-        let fut = async move {
+        let fut = async_blocking(move || {
             let tx = try_s!(deserialize(tx.as_slice()));
-            let signature = coin.rpc().send_transaction(&tx).await.map_err(|e| format!("{:?}", e))?;
+            // this is blocking IO
+            let signature = coin.rpc().send_transaction(&tx).map_err(|e| format!("{:?}", e))?;
             Ok(signature.to_string())
-        };
+        });
         Box::new(fut.boxed().compat())
     }
 
@@ -420,7 +437,7 @@ impl MarketCoinOps for SolanaCoin {
 
     fn current_block(&self) -> Box<dyn Future<Item = u64, Error = String> + Send> {
         let coin = self.clone();
-        let fut = async move { coin.rpc().get_block_height().await.map_err(|e| format!("{:?}", e)) };
+        let fut = async_blocking(move || coin.rpc().get_block_height().map_err(|e| format!("{:?}", e)));
         Box::new(fut.boxed().compat())
     }
 

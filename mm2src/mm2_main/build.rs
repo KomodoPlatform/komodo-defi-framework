@@ -63,7 +63,7 @@ fn mm_version() -> String {
         }
     }
 
-    let mm_version_p = root().join("MM_VERSION");
+    let mm_version_p = root().join("../../MM_VERSION");
     let v_file = String::from_utf8(slurp(&mm_version_p)).unwrap();
     let v_file = v_file.trim().to_string();
     // if there is no MM_VERSION file there is no need to create it

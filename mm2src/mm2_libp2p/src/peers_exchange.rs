@@ -80,7 +80,7 @@ pub struct PeersExchange {
     #[behaviour(ignore)]
     reserved_peers: Vec<PeerId>,
     #[behaviour(ignore)]
-    events: VecDeque<NetworkBehaviourAction<(), <Self as NetworkBehaviour>::ProtocolsHandler>>,
+    events: VecDeque<NetworkBehaviourAction<(), <Self as NetworkBehaviour>::ConnectionHandler>>,
     #[behaviour(ignore)]
     maintain_peers_interval: Interval,
     #[behaviour(ignore)]
@@ -279,7 +279,7 @@ impl PeersExchange {
         &mut self,
         cx: &mut Context,
         _params: &mut impl PollParameters,
-    ) -> Poll<NetworkBehaviourAction<(), <Self as NetworkBehaviour>::ProtocolsHandler>> {
+    ) -> Poll<NetworkBehaviourAction<(), <Self as NetworkBehaviour>::ConnectionHandler>> {
         while let Poll::Ready(Some(())) = self.maintain_peers_interval.poll_next_unpin(cx) {
             self.maintain_known_peers();
         }

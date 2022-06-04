@@ -21,6 +21,7 @@ members = [
     "mm2src/mm2_bitcoin/script",
     "mm2src/mm2_bitcoin/serialization",
     "mm2src/mm2_bitcoin/serialization_derive",
+    "mm2src/mm2_bitcoin/test_helpers",
     "mm2src/mm2_core",
     "mm2src/mm2_db",
     "mm2src/mm2_err_handle",
@@ -56,4 +57,3 @@ debug = false
 [patch.crates-io]
 backtrace = { git = "https://github.com/artemii235/backtrace-rs.git" }
 backtrace-sys = { git = "https://github.com/artemii235/backtrace-rs.git" }
-num-rational = { git = "https://github.com/artemii235/num-rational.git" }

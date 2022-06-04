@@ -44,8 +44,8 @@ use serde_json::{self as json};
 use serialization::{deserialize, serialize, serialize_list, serialize_with_flags, CoinVariant, CompactInteger,
                     Serializable, Stream, SERIALIZE_TRANSACTION_WITNESS};
 use spv_validation::helpers_validation::validate_headers;
+use spv_validation::helpers_validation::SPVError;
 use spv_validation::spv_proof::{SPVProof, TRY_SPV_PROOF_INTERVAL};
-use spv_validation::types::SPVError;
 use std::cmp::Ordering;
 use std::collections::hash_map::{Entry, HashMap};
 use std::str::FromStr;
@@ -2455,7 +2455,7 @@ pub async fn tx_details_by_hash<T: UtxoCommonOps>(
             };
             cur + fee
         });
-        (fee.into(), None)
+        (try_s!(fee.try_into()), None)
     } else {
         let fee = input_amount as i64 - output_amount as i64;
         (big_decimal_from_sat(fee, coin.as_ref().decimals), None)

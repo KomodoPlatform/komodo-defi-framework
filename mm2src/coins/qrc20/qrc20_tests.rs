@@ -8,6 +8,7 @@ use itertools::Itertools;
 use mm2_core::mm_ctx::MmCtxBuilder;
 use mocktopus::mocking::{MockResult, Mockable};
 use rpc::v1::types::ToTxHash;
+use std::convert::TryFrom;
 use std::mem::discriminant;
 
 const EXPECTED_TX_FEE: i64 = 1000;
@@ -666,9 +667,11 @@ fn test_sender_trade_preimage_with_allowance() {
     );
     let sender_refund_fee = big_decimal_from_sat(CONTRACT_CALL_GAS_FEE + EXPECTED_TX_FEE, coin.utxo.decimals);
 
-    let actual =
-        block_on(coin.get_sender_trade_fee(TradePreimageValue::Exact(2.5.into()), FeeApproxStage::WithoutApprox))
-            .expect("!get_sender_trade_fee");
+    let actual = block_on(coin.get_sender_trade_fee(
+        TradePreimageValue::Exact(BigDecimal::try_from(2.5).unwrap()),
+        FeeApproxStage::WithoutApprox,
+    ))
+    .expect("!get_sender_trade_fee");
     // the expected fee should not include any `approve` contract call
     let expected = TradeFee {
         coin: "QTUM".to_owned(),
@@ -677,9 +680,11 @@ fn test_sender_trade_preimage_with_allowance() {
     };
     assert_eq!(actual, expected);
 
-    let actual =
-        block_on(coin.get_sender_trade_fee(TradePreimageValue::Exact(3.5.into()), FeeApproxStage::WithoutApprox))
-            .expect("!get_sender_trade_fee");
+    let actual = block_on(coin.get_sender_trade_fee(
+        TradePreimageValue::Exact(BigDecimal::try_from(3.5).unwrap()),
+        FeeApproxStage::WithoutApprox,
+    ))
+    .expect("!get_sender_trade_fee");
     // two `approve` contract calls should be included into the expected trade fee
     let expected = TradeFee {
         coin: "QTUM".to_owned(),
@@ -940,7 +945,7 @@ fn test_send_contract_calls_recoverable_tx() {
 
     let fee_addr = hex::decode("03bc2c7ba671bae4a6fc835244c9762b41647b9827d4780a89a949b984a8ddcc05").unwrap();
     let to_address = coin.contract_address_from_raw_pubkey(&fee_addr).unwrap();
-    let amount = BigDecimal::from(0.2);
+    let amount = BigDecimal::try_from(0.2).unwrap();
     let amount = wei_from_big_decimal(&amount, coin.utxo.decimals).unwrap();
     let mut transfer_output = coin
         .transfer_output(to_address, amount, QRC20_GAS_LIMIT_DEFAULT, QRC20_GAS_PRICE_DEFAULT)
