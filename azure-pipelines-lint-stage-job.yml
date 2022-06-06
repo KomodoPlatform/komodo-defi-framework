@@ -42,10 +42,7 @@ jobs:
         env:
           MANUAL_MM_VERSION: true
       - bash: |
-          if [ $AGENT_OS = "Linux" ] || [ $AGENT_OS = "Windows_NT" ]
-          then
-            cargo udeps
-          fi
+          cargo udeps
         displayName: 'Check unused dependencies'
       - bash: |
           cargo deny check bans --hide-inclusion-graph
