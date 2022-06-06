@@ -89,6 +89,10 @@ where
     fn write_to_file(&self, writer: &mut fs::File) -> Result<(), std::io::Error> { self.write(writer) }
 }
 
+impl DiskWriteable for NetworkGraph {
+    fn write_to_file(&self, writer: &mut fs::File) -> Result<(), std::io::Error> { self.write(writer) }
+}
+
 fn channels_history_table(ticker: &str) -> String { ticker.to_owned() + "_channels_history" }
 
 fn payments_history_table(ticker: &str) -> String { ticker.to_owned() + "_payments_history" }
@@ -650,6 +654,13 @@ impl LightningPersister {
         Ok(())
     }
 
+    /// Write the provided `NetworkGraph` to the path provided at `FilesystemPersister`
+    /// initialization, within a file called "network_graph"
+    pub fn persist_network_graph(&self, network_graph: &NetworkGraph) -> Result<(), std::io::Error> {
+        let path = self.main_path();
+        util::write_to_file(path, "network_graph".to_string(), network_graph)
+    }
+
     /// Read `ChannelMonitor`s from disk.
     pub fn read_channelmonitors<Signer: Sign, K: Deref>(
         &self,
@@ -873,19 +884,6 @@ impl FileSystemStorage for LightningPersister {
             common::log::info!("Reading the saved lightning network graph from file, this can take some time!");
             NetworkGraph::read(&mut BufReader::new(file))
                 .map_err(|e| std::io::Error::new(std::io::ErrorKind::InvalidData, e.to_string()))
-        })
-        .await
-    }
-
-    async fn save_network_graph(&self, network_graph: Arc<NetworkGraph>) -> Result<(), Self::Error> {
-        let path = self.network_graph_path();
-        async_blocking(move || {
-            let file = fs::OpenOptions::new()
-                .create(true)
-                .write(true)
-                .truncate(true)
-                .open(path)?;
-            network_graph.write(&mut BufWriter::new(file))
         })
         .await
     }

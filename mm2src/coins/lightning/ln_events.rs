@@ -113,6 +113,7 @@ impl EventHandler for LightningEventHandler {
                 counterparty_node_id,
                 funding_satoshis,
                 push_msat,
+                // Todo: Look for ways to use channel_type
                 channel_type: _,
             } => {
                 info!(

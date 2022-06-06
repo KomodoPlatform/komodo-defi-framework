@@ -638,10 +638,7 @@ pub async fn start_lightning(
 
     // Initialize the NetGraphMsgHandler. This is used for providing routes to send payments over
     let network_graph = Arc::new(persister.get_network_graph(protocol_conf.network.into()).await?);
-    spawn(ln_utils::persist_network_graph_loop(
-        persister.clone(),
-        network_graph.clone(),
-    ));
+
     let network_gossip = Arc::new(NetGraphMsgHandler::new(
         network_graph.clone(),
         None::<Arc<dyn Access + Send + Sync>>,
@@ -685,6 +682,9 @@ pub async fn start_lightning(
     spawn(ln_utils::persist_scorer_loop(persister.clone(), scorer.clone()));
 
     // Create InvoicePayer
+    // random_seed_bytes are additional random seed to improve privacy by adding a random CLTV expiry offset to each path's final hop.
+    // This helps obscure the intended recipient from adversarial intermediate hops. The seed is also used to randomize candidate paths during route selection.
+    // todo: random_seed_bytes should be taken in consideration when implementing swaps because they change the payment lock-time.
     let router = DefaultRouter::new(network_graph, logger.clone(), keys_manager.get_secure_random_bytes());
     let invoice_payer = Arc::new(InvoicePayer::new(
         channel_manager.clone(),
@@ -695,17 +695,11 @@ pub async fn start_lightning(
         payment::RetryAttempts(params.payment_retries.unwrap_or(5)),
     ));
 
-    // Persist ChannelManager
-    // Note: if the ChannelManager is not persisted properly to disk, there is risk of channels force closing the next time LN starts up
-    let channel_manager_persister = persister.clone();
-    let persist_channel_manager_callback =
-        move |node: &ChannelManager| channel_manager_persister.persist_manager(&*node);
-
     // Start Background Processing. Runs tasks periodically in the background to keep LN node operational.
     // InvoicePayer will act as our event handler as it handles some of the payments related events before
     // delegating it to LightningEventHandler.
     let background_processor = Arc::new(BackgroundProcessor::start(
-        persist_channel_manager_callback,
+        persister.clone(),
         invoice_payer.clone(),
         chain_monitor.clone(),
         channel_manager.clone(),

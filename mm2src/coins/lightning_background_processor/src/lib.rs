@@ -14,6 +14,7 @@ use lightning::ln::peer_handler::{CustomMessageHandler, PeerManager, SocketDescr
 use lightning::routing::network_graph::{NetGraphMsgHandler, NetworkGraph};
 use lightning::util::events::{Event, EventHandler, EventsProvider};
 use lightning::util::logger::Logger;
+use lightning_persister::LightningPersister;
 use std::ops::Deref;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
@@ -69,38 +70,10 @@ const PING_TIMER: u64 = 1;
 /// Prune the network graph of stale entries hourly.
 const NETWORK_PRUNE_TIMER: u64 = 60 * 60;
 
-/// Trait which handles persisting a [`ChannelManager`] to disk.
-///
-/// [`ChannelManager`]: lightning::ln::channelmanager::ChannelManager
-pub trait ChannelManagerPersister<Signer: Sign, M: Deref, T: Deref, K: Deref, F: Deref, L: Deref>
-where
-    M::Target: 'static + chain::Watch<Signer>,
-    T::Target: 'static + BroadcasterInterface,
-    K::Target: 'static + KeysInterface<Signer = Signer>,
-    F::Target: 'static + FeeEstimator,
-    L::Target: 'static + Logger,
-{
-    /// Persist the given [`ChannelManager`] to disk, returning an error if persistence failed
-    /// (which will cause the [`BackgroundProcessor`] which called this method to exit.
-    ///
-    /// [`ChannelManager`]: lightning::ln::channelmanager::ChannelManager
-    fn persist_manager(&self, channel_manager: &ChannelManager<Signer, M, T, K, F, L>) -> Result<(), std::io::Error>;
-}
-
-impl<Fun, Signer: Sign, M: Deref, T: Deref, K: Deref, F: Deref, L: Deref> ChannelManagerPersister<Signer, M, T, K, F, L>
-    for Fun
-where
-    M::Target: 'static + chain::Watch<Signer>,
-    T::Target: 'static + BroadcasterInterface,
-    K::Target: 'static + KeysInterface<Signer = Signer>,
-    F::Target: 'static + FeeEstimator,
-    L::Target: 'static + Logger,
-    Fun: Fn(&ChannelManager<Signer, M, T, K, F, L>) -> Result<(), std::io::Error>,
-{
-    fn persist_manager(&self, channel_manager: &ChannelManager<Signer, M, T, K, F, L>) -> Result<(), std::io::Error> {
-        self(channel_manager)
-    }
-}
+#[cfg(not(test))]
+const FIRST_NETWORK_PRUNE_TIMER: u64 = 60;
+#[cfg(test)]
+const FIRST_NETWORK_PRUNE_TIMER: u64 = 1;
 
 /// Decorates an [`EventHandler`] with common functionality provided by standard [`EventHandler`]s.
 struct DecoratingEventHandler<
@@ -141,17 +114,21 @@ impl BackgroundProcessor {
     /// documentation].
     ///
     /// The thread runs indefinitely unless the object is dropped, [`stop`] is called, or
-    /// `persist_manager` returns an error. In case of an error, the error is retrieved by calling
+    /// [`Persister::persist_manager`] returns an error. In case of an error, the error is retrieved by calling
     /// either [`join`] or [`stop`].
     ///
     /// # Data Persistence
     ///
-    /// `persist_manager` is responsible for writing out the [`ChannelManager`] to disk, and/or
+    /// [`Persister::persist_manager`] is responsible for writing out the [`ChannelManager`] to disk, and/or
     /// uploading to one or more backup services. See [`ChannelManager::write`] for writing out a
     /// [`ChannelManager`]. See [`LightningPersister::persist_manager`] for Rust-Lightning's
     /// provided implementation.
     ///
-    /// Typically, users should either implement [`ChannelManagerPersister`] to never return an
+    /// [`Persister::persist_graph`] is responsible for writing out the [`NetworkGraph`] to disk. See
+    /// [`NetworkGraph::write`] for writing out a [`NetworkGraph`]. See [`FilesystemPersister::persist_network_graph`]
+    /// for Rust-Lightning's provided implementation.
+    ///
+    /// Typically, users should either implement [`Persister::persist_manager`] to never return an
     /// error or call [`join`] and handle any error that may arise. For the latter case,
     /// `BackgroundProcessor` must be restarted by calling `start` again after handling the error.
     ///
@@ -168,7 +145,9 @@ impl BackgroundProcessor {
     /// [`ChannelManager`]: lightning::ln::channelmanager::ChannelManager
     /// [`ChannelManager::write`]: lightning::ln::channelmanager::ChannelManager#impl-Writeable
     /// [`LightningPersister::persist_manager`]: lightning_persister::LightningPersister::persist_manager
+    /// [`FilesystemPersister::persist_network_graph`]: lightning_persister::FilesystemPersister::persist_network_graph
     /// [`NetworkGraph`]: lightning::routing::network_graph::NetworkGraph
+    /// [`NetworkGraph::write`]: lightning::routing::network_graph::NetworkGraph#impl-Writeable
     pub fn start<
         Signer: 'static + Sign,
         CA: 'static + Deref + Send + Sync,
@@ -184,14 +163,14 @@ impl BackgroundProcessor {
         CMH: 'static + Deref + Send + Sync,
         RMH: 'static + Deref + Send + Sync,
         EH: 'static + EventHandler + Send,
-        CMP: 'static + Send + ChannelManagerPersister<Signer, CW, T, K, F, L>,
+        PS: 'static + Deref<Target = LightningPersister> + Send + Sync,
         M: 'static + Deref<Target = ChainMonitor<Signer, CF, T, F, L, P>> + Send + Sync,
         CM: 'static + Deref<Target = ChannelManager<Signer, CW, T, K, F, L>> + Send + Sync,
         NG: 'static + Deref<Target = NetGraphMsgHandler<G, CA, L>> + Send + Sync,
         UMH: 'static + Deref + Send + Sync,
         PM: 'static + Deref<Target = PeerManager<Descriptor, CMH, RMH, L, UMH>> + Send + Sync,
     >(
-        persister: CMP,
+        persister: PS,
         event_handler: EH,
         chain_monitor: M,
         channel_manager: CM,
@@ -280,10 +259,23 @@ impl BackgroundProcessor {
                 // falling back to our usual hourly prunes. This avoids short-lived clients never
                 // pruning their network graph. We run once 60 seconds after startup before
                 // continuing our normal cadence.
-                if last_prune_call.elapsed().as_secs() > if have_pruned { NETWORK_PRUNE_TIMER } else { 60 } {
+                if last_prune_call.elapsed().as_secs()
+                    > if have_pruned {
+                        NETWORK_PRUNE_TIMER
+                    } else {
+                        FIRST_NETWORK_PRUNE_TIMER
+                    }
+                {
                     if let Some(ref handler) = net_graph_msg_handler {
                         log_trace!(logger, "Pruning network graph of stale entries");
                         handler.network_graph().remove_stale_channels();
+                        if let Err(e) = persister.persist_network_graph(handler.network_graph()) {
+                            log_error!(
+                                logger,
+                                "Error: Failed to persist network graph, check your disk and permissions {}",
+                                e
+                            )
+                        }
                         last_prune_call = Instant::now();
                         have_pruned = true;
                     }
@@ -292,7 +284,13 @@ impl BackgroundProcessor {
             // After we exit, ensure we persist the ChannelManager one final time - this avoids
             // some races where users quit while channel updates were in-flight, with
             // ChannelMonitor update(s) persisted without a corresponding ChannelManager update.
-            persister.persist_manager(&*channel_manager)
+            persister.persist_manager(&*channel_manager)?;
+
+            // Persist NetworkGraph on exit
+            if let Some(ref handler) = net_graph_msg_handler {
+                persister.persist_network_graph(handler.network_graph())?;
+            }
+            Ok(())
         });
         Self {
             stop_thread: stop_thread_clone,
@@ -664,15 +662,7 @@ mod tests {
         let tx = open_channel!(nodes[0], nodes[1], 100000);
 
         // Initiate the background processors to watch each node.
-        let node_0_persister = nodes[0].persister.clone();
-        let persister = move |node: &ChannelManager<
-            InMemorySigner,
-            Arc<ChainMonitor>,
-            Arc<test_utils::TestBroadcaster>,
-            Arc<KeysManager>,
-            Arc<test_utils::TestFeeEstimator>,
-            Arc<test_utils::TestLogger>,
-        >| node_0_persister.persist_manager(node);
+        let persister = nodes[0].persister.clone();
         let event_handler = |_: &_| {};
         let bg_processor = BackgroundProcessor::start(
             persister,
@@ -685,13 +675,14 @@ mod tests {
         );
 
         macro_rules! check_persisted_data {
-            ($node: expr, $filepath: expr, $expected_bytes: expr) => {
+            ($node: expr, $filepath: expr) => {
+                let mut expected_bytes = Vec::new();
                 loop {
-                    $expected_bytes.clear();
-                    match $node.write(&mut $expected_bytes) {
+                    expected_bytes.clear();
+                    match $node.write(&mut expected_bytes) {
                         Ok(()) => match std::fs::read($filepath) {
                             Ok(bytes) => {
-                                if bytes == $expected_bytes {
+                                if bytes == expected_bytes {
                                     break;
                                 } else {
                                     continue;
@@ -710,8 +701,7 @@ mod tests {
             "test_background_processor_persister_0".to_string(),
             "manager".to_string(),
         );
-        let mut expected_bytes = Vec::new();
-        check_persisted_data!(nodes[0].node, filepath.clone(), expected_bytes);
+        check_persisted_data!(nodes[0].node, filepath.clone());
         loop {
             if !nodes[0].node.get_persistence_condvar_value() {
                 break;
@@ -731,12 +721,21 @@ mod tests {
             .unwrap();
 
         // Check that the force-close updates are persisted.
-        let mut expected_bytes = Vec::new();
-        check_persisted_data!(nodes[0].node, filepath.clone(), expected_bytes);
+        check_persisted_data!(nodes[0].node, filepath.clone());
         loop {
             if !nodes[0].node.get_persistence_condvar_value() {
                 break;
             }
+        }
+
+        // Check network graph is persisted
+        let filepath = get_full_filepath(
+            "test_background_processor_persister_0".to_string(),
+            "network_graph".to_string(),
+        );
+        if let Some(ref handler) = nodes[0].net_graph_msg_handler {
+            let network_graph = handler.network_graph();
+            check_persisted_data!(network_graph, filepath.clone());
         }
 
         assert!(bg_processor.stop().is_ok());
@@ -747,15 +746,7 @@ mod tests {
         // Test that ChannelManager's and PeerManager's `timer_tick_occurred` is called every
         // `FRESHNESS_TIMER`.
         let nodes = create_nodes(1, "test_timer_tick_called".to_string());
-        let node_0_persister = nodes[0].persister.clone();
-        let persister = move |node: &ChannelManager<
-            InMemorySigner,
-            Arc<ChainMonitor>,
-            Arc<test_utils::TestBroadcaster>,
-            Arc<KeysManager>,
-            Arc<test_utils::TestFeeEstimator>,
-            Arc<test_utils::TestLogger>,
-        >| node_0_persister.persist_manager(node);
+        let persister = nodes[0].persister.clone();
         let event_handler = |_: &_| {};
         let bg_processor = BackgroundProcessor::start(
             persister,
@@ -785,37 +776,10 @@ mod tests {
     }
 
     #[test]
-    fn test_persist_error() {
-        // Test that if we encounter an error during manager persistence, the thread panics.
-        let nodes = create_nodes(2, "test_persist_error".to_string());
-        open_channel!(nodes[0], nodes[1], 100000);
-
-        let persister = |_: &_| Err(std::io::Error::new(std::io::ErrorKind::Other, "test"));
-        let event_handler = |_: &_| {};
-        let bg_processor = BackgroundProcessor::start(
-            persister,
-            event_handler,
-            nodes[0].chain_monitor.clone(),
-            nodes[0].node.clone(),
-            nodes[0].net_graph_msg_handler.clone(),
-            nodes[0].peer_manager.clone(),
-            nodes[0].logger.clone(),
-        );
-        match bg_processor.join() {
-            Ok(_) => panic!("Expected error persisting manager"),
-            Err(e) => {
-                assert_eq!(e.kind(), std::io::ErrorKind::Other);
-                assert_eq!(e.get_ref().unwrap().to_string(), "test");
-            },
-        }
-    }
-
-    #[test]
     fn test_background_event_handling() {
         let mut nodes = create_nodes(2, "test_background_event_handling".to_string());
         let channel_value = 100000;
-        let node_0_persister = nodes[0].persister.clone();
-        let persister = move |node: &_| node_0_persister.persist_manager(node);
+        let persister = nodes[0].persister.clone();
 
         // Set up a background event handler for FundingGenerationReady events.
         let (sender, receiver) = std::sync::mpsc::sync_channel(1);
@@ -912,15 +876,7 @@ mod tests {
         let nodes = create_nodes(2, "test_invoice_payer".to_string());
 
         // Initiate the background processors to watch each node.
-        let node_0_persister = nodes[0].persister.clone();
-        let persister = move |node: &ChannelManager<
-            InMemorySigner,
-            Arc<ChainMonitor>,
-            Arc<test_utils::TestBroadcaster>,
-            Arc<KeysManager>,
-            Arc<test_utils::TestFeeEstimator>,
-            Arc<test_utils::TestLogger>,
-        >| node_0_persister.persist_manager(node);
+        let persister = nodes[0].persister.clone();
         let router = DefaultRouter::new(
             Arc::clone(&nodes[0].network_graph),
             Arc::clone(&nodes[0].logger),

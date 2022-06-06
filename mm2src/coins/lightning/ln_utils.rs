@@ -10,7 +10,6 @@ use lightning::chain::keysinterface::{InMemorySigner, KeysManager};
 use lightning::chain::{chainmonitor, BestBlock, Watch};
 use lightning::ln::channelmanager;
 use lightning::ln::channelmanager::{ChainParameters, ChannelManagerReadArgs, SimpleArcChannelManager};
-use lightning::routing::network_graph::NetworkGraph;
 use lightning::util::config::UserConfig;
 use lightning::util::ser::ReadableArgs;
 use lightning_persister::storage::{DbStorage, FileSystemStorage, NodesAddressesMap, Scorer};
@@ -21,7 +20,6 @@ use std::path::PathBuf;
 use std::sync::{Arc, Mutex};
 use std::time::SystemTime;
 
-const NETWORK_GRAPH_PERSIST_INTERVAL: u64 = 600;
 const SCORER_PERSIST_INTERVAL: u64 = 600;
 
 pub type ChainMonitor = chainmonitor::ChainMonitor<
@@ -228,18 +226,6 @@ pub async fn init_channel_manager(
     ));
 
     Ok((chain_monitor, channel_manager))
-}
-
-pub async fn persist_network_graph_loop(persister: Arc<LightningPersister>, network_graph: Arc<NetworkGraph>) {
-    loop {
-        if let Err(e) = persister.save_network_graph(network_graph.clone()).await {
-            log::warn!(
-                "Failed to persist network graph error: {}, please check disk space and permissions",
-                e
-            );
-        }
-        Timer::sleep(NETWORK_GRAPH_PERSIST_INTERVAL as f64).await;
-    }
 }
 
 pub async fn persist_scorer_loop(persister: Arc<LightningPersister>, scorer: Arc<Mutex<Scorer>>) {

@@ -32,8 +32,6 @@ pub trait FileSystemStorage {
 
     async fn get_network_graph(&self, network: Network) -> Result<NetworkGraph, Self::Error>;
 
-    async fn save_network_graph(&self, network_graph: Arc<NetworkGraph>) -> Result<(), Self::Error>;
-
     async fn get_scorer(&self, network_graph: Arc<NetworkGraph>) -> Result<Scorer, Self::Error>;
 
     async fn save_scorer(&self, scorer: Arc<Mutex<Scorer>>) -> Result<(), Self::Error>;
