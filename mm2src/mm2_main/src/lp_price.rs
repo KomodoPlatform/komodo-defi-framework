@@ -201,13 +201,14 @@ pub async fn fetch_price_tickers(price_url: &str) -> Result<TickerInfosRegistry,
     Ok(model)
 }
 
+/// CEXRates, structure for storing `base coin` and `rel coin `usd_price`
 #[derive(Default, Clone, Debug, PartialEq)]
 pub struct CEXRates {
     pub base: BigDecimal,
     pub rel: BigDecimal,
 }
 
-/// fetcher function to fetch latest price from a single endpoint.
+/// Fetcher function to fetch latest price from a single endpoint.
 async fn try_price_fetcher_endpoint(
     endpoint: &str,
     base: &str,
@@ -224,8 +225,8 @@ async fn try_price_fetcher_endpoint(
     })
 }
 
-/// consume try_price_fetcher_endpoint result here using different endpoints.
-/// return price data on Success or None on failure.
+/// Consume `try_price_fetcher_endpoint` result here using different endpoints.
+/// Return price data on `success` or None on `failure`.
 pub async fn fetch_swap_coins_price(base: Option<String>, rel: Option<String>) -> Option<CEXRates> {
     debug!("Trying to fetch coins latest price...");
     if let (Some(base), Some(rel)) = (base, rel) {
@@ -248,9 +249,9 @@ mod tests {
         use common::block_on;
 
         use super::*;
-        let _resp = for endpoint in PRICE_ENDPOINTS {
+        for endpoint in PRICE_ENDPOINTS {
             block_on(process_price_request(endpoint)).unwrap();
-        };
+        }
     }
 
     #[test]
@@ -258,9 +259,8 @@ mod tests {
         use common::block_on;
 
         use super::*;
-        let expected = None;
         let actual = block_on(fetch_swap_coins_price(Some("ETH".to_string()), Some("JST".to_string())));
-        assert_eq!(expected, actual);
+        assert_eq!(actual, None);
     }
 
     #[test]

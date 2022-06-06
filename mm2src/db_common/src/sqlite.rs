@@ -24,8 +24,8 @@ macro_rules! owned_named_params {
     };
 }
 
-pub type SqlNamedParam<'a> = (&'a str, &'a dyn ToSql);
-pub type SqlNamedParams<'a> = Vec<SqlNamedParam<'a>>;
+type SqlNamedParam<'a> = (&'a str, &'a dyn ToSql);
+type SqlNamedParams<'a> = Vec<SqlNamedParam<'a>>;
 pub type OwnedSqlNamedParam = (&'static str, Value);
 pub type OwnedSqlNamedParams = Vec<OwnedSqlNamedParam>;
 

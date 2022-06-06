@@ -217,7 +217,7 @@ pub async fn process_msg(ctx: MmArc, topic: &str, msg: &[u8]) {
                     status.data.fetch_and_set_usd_prices().await;
                     if let Err(e) = save_stats_swap(&ctx, &status.data).await {
                         error!("Error saving the swap {} status: {}", status.data.uuid(), e);
-                    };
+                    }
                 },
                 Err(swap_status_err) => {
                     error!("Couldn't deserialize 'SwapMsg': {:?}", swap_msg_err);
@@ -731,7 +731,7 @@ pub async fn insert_new_swap_to_db(
 
 #[cfg(not(target_arch = "wasm32"))]
 fn add_swap_to_db_index(ctx: &MmArc, swap: &SavedSwap) {
-    crate::mm2::database::stats_swaps::add_swap_to_index(&ctx.sqlite_connection(), swap);
+    crate::mm2::database::stats_swaps::add_swap_to_index(&ctx.sqlite_connection(), swap)
 }
 
 #[cfg(not(target_arch = "wasm32"))]

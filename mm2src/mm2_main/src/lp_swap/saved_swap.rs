@@ -1,4 +1,3 @@
-use crate::mm2::lp_price::fetch_swap_coins_price;
 use crate::mm2::lp_swap::maker_swap::{MakerSavedSwap, MakerSwap, MakerSwapEvent};
 use crate::mm2::lp_swap::taker_swap::{TakerSavedSwap, TakerSwap, TakerSwapEvent};
 use crate::mm2::lp_swap::{MySwapInfo, RecoveredSwap};
@@ -143,22 +142,9 @@ impl SavedSwap {
     }
 
     pub async fn fetch_and_set_usd_prices(&mut self) {
-        if let Some(rates) = fetch_swap_coins_price(
-            Some(self.maker_coin_ticker().unwrap_or_else(|_| "".to_string())).clone(),
-            Some(self.taker_coin_ticker().unwrap_or_else(|_| "".to_string())).clone(),
-        )
-        .await
-        {
-            match self {
-                SavedSwap::Maker(maker) => {
-                    maker.maker_coin_usd_price = Some(rates.base);
-                    maker.taker_coin_usd_price = Some(rates.rel);
-                },
-                SavedSwap::Taker(taker) => {
-                    taker.maker_coin_usd_price = Some(rates.base);
-                    taker.taker_coin_usd_price = Some(rates.rel);
-                },
-            }
+        match self {
+            SavedSwap::Maker(maker) => maker.fetch_and_set_usd_prices().await,
+            SavedSwap::Taker(taker) => taker.fetch_and_set_usd_prices().await,
         }
     }
 }

@@ -92,7 +92,7 @@ async fn save_my_taker_swap_event(ctx: &MmArc, swap: &TakerSwap, event: TakerSav
 
     if let SavedSwap::Taker(mut taker_swap) = swap {
         taker_swap.events.push(event);
-        if taker_swap.is_success().is_ok() {
+        if let Ok(true) = taker_swap.is_success() {
             taker_swap.fetch_and_set_usd_prices().await;
         }
         let new_swap = SavedSwap::Taker(taker_swap);

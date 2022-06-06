@@ -94,7 +94,7 @@ async fn save_my_maker_swap_event(ctx: &MmArc, swap: &MakerSwap, event: MakerSav
 
     if let SavedSwap::Maker(mut maker_swap) = swap {
         maker_swap.events.push(event);
-        if maker_swap.is_success().is_ok() {
+        if let Ok(true) = maker_swap.is_success() {
             maker_swap.fetch_and_set_usd_prices().await;
         }
         let new_swap = SavedSwap::Maker(maker_swap);
