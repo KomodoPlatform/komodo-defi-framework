@@ -19,44 +19,6 @@ pub enum PriceServiceRequestError {
     Internal(String),
 }
 
-#[derive(Default)]
-pub struct TickerInfosRegistry(HashMap<String, TickerInfos>);
-
-#[derive(Debug, Serialize, Deserialize)]
-pub struct TickerInfos {
-    pub ticker: String,
-    pub last_price: MmNumber,
-    pub last_updated: String,
-    pub last_updated_timestamp: u64,
-    #[serde(rename = "volume24h")]
-    pub volume24_h: MmNumber,
-    pub price_provider: Provider,
-    pub volume_provider: Provider,
-    #[serde(rename = "sparkline_7d")]
-    pub sparkline_7_d: Option<Vec<f64>>,
-    pub sparkline_provider: Provider,
-    #[serde(rename = "change_24h")]
-    pub change_24_h: MmNumber,
-    #[serde(rename = "change_24h_provider")]
-    pub change_24_h_provider: Provider,
-}
-
-#[derive(Debug, Serialize, Deserialize, Clone, PartialEq)]
-pub enum Provider {
-    #[serde(rename = "binance")]
-    Binance,
-    #[serde(rename = "coingecko")]
-    Coingecko,
-    #[serde(rename = "coinpaprika")]
-    Coinpaprika,
-    #[serde(rename = "forex")]
-    Forex,
-    #[serde(rename = "nomics")]
-    Nomics,
-    #[serde(rename = "unknown", other)]
-    Unknown,
-}
-
 impl Default for Provider {
     fn default() -> Self { Provider::Unknown }
 }
@@ -86,6 +48,44 @@ impl From<SlurpError> for PriceServiceRequestError {
     }
 }
 
+#[derive(Default)]
+pub struct TickerInfosRegistry(HashMap<String, TickerInfos>);
+
+#[derive(Debug, Serialize, Deserialize)]
+struct TickerInfos {
+    ticker: String,
+    last_price: MmNumber,
+    last_updated: String,
+    last_updated_timestamp: u64,
+    #[serde(rename = "volume24h")]
+    volume24_h: MmNumber,
+    price_provider: Provider,
+    volume_provider: Provider,
+    #[serde(rename = "sparkline_7d")]
+    sparkline_7_d: Option<Vec<f64>>,
+    sparkline_provider: Provider,
+    #[serde(rename = "change_24h")]
+    change_24_h: MmNumber,
+    #[serde(rename = "change_24h_provider")]
+    change_24_h_provider: Provider,
+}
+
+#[derive(Debug, Serialize, Deserialize, Clone, PartialEq)]
+pub enum Provider {
+    #[serde(rename = "binance")]
+    Binance,
+    #[serde(rename = "coingecko")]
+    Coingecko,
+    #[serde(rename = "coinpaprika")]
+    Coinpaprika,
+    #[serde(rename = "forex")]
+    Forex,
+    #[serde(rename = "nomics")]
+    Nomics,
+    #[serde(rename = "unknown", other)]
+    Unknown,
+}
+
 #[derive(Default, Clone, Debug)]
 pub struct RateInfos {
     #[allow(dead_code)]
@@ -101,6 +101,7 @@ pub struct RateInfos {
 }
 
 impl RateInfos {
+    #[inline]
     pub fn retrieve_elapsed_times(&self) -> f64 {
         let time_diff: f64 = common::now_float() - self.last_updated_timestamp.unwrap_or_default() as f64;
         time_diff
@@ -172,7 +173,7 @@ impl TickerInfosRegistry {
 }
 
 #[cfg(not(target_arch = "wasm32"))]
-pub async fn process_price_request(price_url: &str) -> Result<TickerInfosRegistry, MmError<PriceServiceRequestError>> {
+async fn process_price_request(price_url: &str) -> Result<TickerInfosRegistry, MmError<PriceServiceRequestError>> {
     debug!("Fetching price from: {}", price_url);
     let (status, headers, body) = mm2_net::native_http::slurp_url(price_url).await?;
     let (status_code, body, _) = (status, std::str::from_utf8(&body)?.trim().into(), headers);
@@ -184,7 +185,7 @@ pub async fn process_price_request(price_url: &str) -> Result<TickerInfosRegistr
 }
 
 #[cfg(target_arch = "wasm32")]
-pub async fn process_price_request(price_url: &str) -> Result<TickerInfosRegistry, MmError<PriceServiceRequestError>> {
+async fn process_price_request(price_url: &str) -> Result<TickerInfosRegistry, MmError<PriceServiceRequestError>> {
     debug!("Fetching price from: {}", price_url);
     let (status, headers, body) = mm2_net::wasm_http::slurp_url(price_url).await?;
     let (status_code, body, _) = (status, std::str::from_utf8(&body)?.trim().into(), headers);
@@ -259,8 +260,8 @@ mod tests {
         use common::block_on;
 
         use super::*;
-        let actual = block_on(fetch_swap_coins_price(Some("ETH".to_string()), Some("JST".to_string())));
-        assert_eq!(actual, None);
+        let actual = block_on(fetch_swap_coins_price(Some("ETH".to_string()), Some("BTC".to_string())));
+        assert!(actual.is_some());
     }
 
     #[test]

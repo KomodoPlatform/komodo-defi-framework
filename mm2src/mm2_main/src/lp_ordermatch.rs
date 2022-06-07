@@ -1308,6 +1308,7 @@ impl<'a> TakerOrderBuilder<'a> {
         self.save_in_history = save_in_history;
         self
     }
+
     pub fn with_base_orderbook_ticker(mut self, ticker: Option<String>) -> Self {
         self.base_orderbook_ticker = ticker;
         self

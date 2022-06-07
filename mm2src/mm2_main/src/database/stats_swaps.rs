@@ -132,11 +132,6 @@ fn insert_stats_maker_swap_sql(swap: &MakerSavedSwap) -> Option<(&'static str, O
     let (maker_coin_ticker, maker_coin_platform) = split_coin(&swap_data.maker_coin);
     let (taker_coin_ticker, taker_coin_platform) = split_coin(&swap_data.taker_coin);
 
-    let (maker_coin_usd_price, taker_coin_usd_price) = match (&swap.maker_coin_usd_price, &swap.taker_coin_usd_price) {
-        (Some(maker), Some(taker)) => (Some(maker.to_string()), Some(taker.to_string())),
-        _ => (None, None),
-    };
-
     let params = owned_named_params! {
         ":maker_coin": swap_data.maker_coin.clone(),
         ":maker_coin_ticker": maker_coin_ticker,
@@ -150,8 +145,8 @@ fn insert_stats_maker_swap_sql(swap: &MakerSavedSwap) -> Option<(&'static str, O
         ":maker_amount": swap_data.maker_amount.to_string(),
         ":taker_amount": swap_data.taker_amount.to_string(),
         ":is_success": (is_success as u32).to_string(),
-        ":maker_coin_usd_price": maker_coin_usd_price,
-        ":taker_coin_usd_price": taker_coin_usd_price,
+        ":maker_coin_usd_price": swap.maker_coin_usd_price.as_ref().map(|p| p.to_string()),
+        ":taker_coin_usd_price": swap.taker_coin_usd_price.as_ref().map(|p| p.to_string()),
     };
     Some((INSERT_STATS_SWAP, params))
 }
@@ -210,11 +205,6 @@ fn insert_stats_taker_swap_sql(swap: &TakerSavedSwap) -> Option<(&'static str, O
     let (maker_coin_ticker, maker_coin_platform) = split_coin(&swap_data.maker_coin);
     let (taker_coin_ticker, taker_coin_platform) = split_coin(&swap_data.taker_coin);
 
-    let (maker_coin_usd_price, taker_coin_usd_price) = match (&swap.maker_coin_usd_price, &swap.taker_coin_usd_price) {
-        (Some(maker), Some(taker)) => (Some(maker.to_string()), Some(taker.to_string())),
-        _ => (None, None),
-    };
-
     let params = owned_named_params! {
         ":maker_coin": swap_data.maker_coin.clone(),
         ":maker_coin_ticker": maker_coin_ticker,
@@ -228,8 +218,8 @@ fn insert_stats_taker_swap_sql(swap: &TakerSavedSwap) -> Option<(&'static str, O
         ":maker_amount": swap_data.maker_amount.to_string(),
         ":taker_amount": swap_data.taker_amount.to_string(),
         ":is_success": (is_success as u32).to_string(),
-        ":maker_coin_usd_price": maker_coin_usd_price,
-        ":taker_coin_usd_price": taker_coin_usd_price,
+        ":maker_coin_usd_price": swap.maker_coin_usd_price.as_ref().map(|p| p.to_string()),
+        ":taker_coin_usd_price": swap.taker_coin_usd_price.as_ref().map(|p| p.to_string()),
     };
     Some((INSERT_STATS_SWAP, params))
 }
