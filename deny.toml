@@ -49,12 +49,10 @@ notice = "warn"
 # output a note when they are encountered.
 
 # RUSTSEC-2021-0113 is related to metrics-util crate that is not actively used for now despite being still present in deps tree
-# RUSTSEC-2021-0113 and RUSTSEC-2022-0006 are reported only because lightning crate depends on old regex and thread-local deps,
-# these will be removed after rust-lightning update https://github.com/KomodoPlatform/atomicDEX-API/issues/1298
+# RUSTSEC-2020-0071 is related to time crate, which is used only by chrono in our deps tree, remove when https://github.com/chronotope/chrono/issues/700 is resolved
 ignore = [
-    "RUSTSEC-2022-0013",
     "RUSTSEC-2021-0113",
-    "RUSTSEC-2022-0006"
+    "RUSTSEC-2020-0071",
     #"RUSTSEC-0000-0000",
 ]
 # Threshold for security vulnerabilities, any vulnerability with a CVSS score
@@ -178,14 +176,12 @@ deny = [
 skip = [
     { name = "aes", version = "*" },
     { name = "ahash", version = "*" },
-    { name = "aho-corasick", version = "*" },
     { name = "arrayvec", version = "*" },
     { name = "autocfg", version = "*" },
     { name = "base64", version = "*" },
     { name = "bitvec", version = "*" },
     { name = "block-buffer", version = "*" },
     { name = "block-padding", version = "*" },
-    { name = "byte-slice-cast", version = "*" },
     { name = "byteorder", version = "*" },
     { name = "bytes", version = "*" },
     { name = "cfg-if", version = "*" },
@@ -235,13 +231,11 @@ skip = [
     { name = "libsecp256k1-gen-genmult", version = "*" },
     { name = "lock_api", version = "*" },
     { name = "log", version = "*" },
-    { name = "memchr", version = "*" },
     { name = "memoffset", version = "*" },
     { name = "miniz_oxide", version = "*" },
     { name = "mio", version = "*" },
     { name = "num-bigint", version = "*" },
     { name = "opaque-debug", version = "*" },
-    { name = "parity-scale-codec", version = "*" },
     { name = "parking_lot", version = "*" },
     { name = "parking_lot_core", version = "*" },
     { name = "pbkdf2", version = "*" },
@@ -250,7 +244,6 @@ skip = [
     { name = "pin-project", version = "*" },
     { name = "pin-project-internal", version = "*" },
     { name = "pin-project-lite", version = "*" },
-    { name = "primitive-types", version = "*" },
     { name = "proc-macro-crate", version = "*" },
     { name = "proc-macro2", version = "*" },
     { name = "prost", version = "*" },
@@ -266,9 +259,6 @@ skip = [
     { name = "rand_pcg", version = "*" },
     { name = "redox_syscall", version = "*" },
     { name = "redox_users", version = "*" },
-    { name = "regex", version = "*" },
-    { name = "regex-syntax", version = "*" },
-    { name = "ripemd160", version = "*" },
     { name = "rlp", version = "*" },
     { name = "rustc-hex", version = "*" },
     { name = "rustc_version", version = "*" },
@@ -283,7 +273,6 @@ skip = [
     { name = "socket2", version = "*" },
     { name = "subtle", version = "*" },
     { name = "syn", version = "*" },
-    { name = "thread-id", version = "*" },
     { name = "time", version = "*" },
     { name = "tiny-keccak", version = "*" },
     { name = "tokio-rustls", version = "*" },
@@ -296,7 +285,6 @@ skip = [
     { name = "wasi", version = "*" },
     { name = "webpki", version = "*" },
     { name = "webpki-roots", version = "*" },
-    { name = "winapi", version = "*" },
     { name = "wyz", version = "*" },
 ]
 # Similarly to `skip` allows you to skip certain crates during duplicate 

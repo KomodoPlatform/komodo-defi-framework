@@ -691,7 +691,15 @@ impl UtxoCommonOps for Qrc20Coin {
         gas_fee: Option<u64>,
         stage: &FeeApproxStage,
     ) -> TradePreimageResult<BigDecimal> {
-        utxo_common::preimage_trade_fee_required_to_send_outputs(self, outputs, fee_policy, gas_fee, stage).await
+        utxo_common::preimage_trade_fee_required_to_send_outputs(
+            self,
+            self.platform_ticker(),
+            outputs,
+            fee_policy,
+            gas_fee,
+            stage,
+        )
+        .await
     }
 
     fn increase_dynamic_fee_by_stage(&self, dynamic_fee: u64, stage: &FeeApproxStage) -> u64 {
@@ -1250,7 +1258,7 @@ impl MmCoin for Qrc20Coin {
             let sender_addr = H160::default();
             // get the max available value that we can pass into the contract call params
             // see `generate_contract_call_script_pubkey`
-            let value = u64::max_value().into();
+            let value = u64::MAX.into();
             let output =
                 selfi.receiver_spend_output(&selfi.swap_contract_address, swap_id, value, secret, sender_addr)?;
 

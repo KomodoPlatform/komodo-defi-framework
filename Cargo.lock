@@ -9,7 +9,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "fe438c63458706e03479442743baae6c88256498e6431708f6dfc520a26515d3"
 dependencies = [
  "lazy_static",
- "regex 1.5.6",
+ "regex",
 ]
 
 [[package]]
@@ -118,20 +118,11 @@ dependencies = [
 
 [[package]]
 name = "aho-corasick"
-version = "0.5.3"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "ca972c2ea5f742bfce5687b9aef75506a764f61d37f8f649047846a9686ddb66"
-dependencies = [
- "memchr 0.1.11",
-]
-
-[[package]]
-name = "aho-corasick"
 version = "0.7.18"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "1e37cfd5e7657ada45f742d6e99ca5788580b5c529dc78faf11ece6dc702656f"
 dependencies = [
- "memchr 2.4.1",
+ "memchr",
 ]
 
 [[package]]
@@ -146,7 +137,7 @@ version = "0.11.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "ee49baf6cb617b853aa8d93bf420db2383fab46d314482ca2803b40d5fde979b"
 dependencies = [
- "winapi 0.3.9",
+ "winapi",
 ]
 
 [[package]]
@@ -214,7 +205,7 @@ dependencies = [
  "futures-timer",
  "kv-log-macro",
  "log 0.4.14",
- "memchr 2.4.1",
+ "memchr",
  "num_cpus",
  "once_cell",
  "pin-project-lite 0.1.12",
@@ -271,7 +262,7 @@ dependencies = [
  "bytes 1.1.0",
  "futures-sink",
  "futures-util",
- "memchr 2.4.1",
+ "memchr",
  "pin-project-lite 0.2.9",
 ]
 
@@ -320,7 +311,7 @@ checksum = "d9b39be18770d11421cdb1b9947a45dd3f37e93092cbf377614828a319d5fee8"
 dependencies = [
  "hermit-abi",
  "libc",
- "winapi 0.3.9",
+ "winapi",
 ]
 
 [[package]]
@@ -456,7 +447,7 @@ dependencies = [
  "bs58",
  "hkd32",
  "hmac 0.11.0",
- "ripemd160 0.9.1",
+ "ripemd160",
  "secp256k1",
  "sha2 0.9.9",
  "subtle 2.4.0",
@@ -473,20 +464,6 @@ dependencies = [
  "bitcoin_hashes",
  "bitcoinconsensus",
  "secp256k1",
-]
-
-[[package]]
-name = "bitcoin-spv"
-version = "5.0.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "aefc3d887fcbb15bd92c1490308bf62df200ff338a9b67e4863dc7012c052cce"
-dependencies = [
- "hex 0.4.2",
- "primitive-types 0.7.3",
- "ripemd160 0.8.0",
- "serde",
- "serde_json",
- "sha2 0.8.2",
 ]
 
 [[package]]
@@ -511,7 +488,7 @@ version = "0.1.0"
 dependencies = [
  "groestl",
  "primitives",
- "ripemd160 0.9.1",
+ "ripemd160",
  "serialization",
  "sha-1",
  "sha2 0.9.9",
@@ -532,16 +509,6 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "031043d04099746d8db04daf1fa424b2bc8bd69d92b25962dcde24da39ab64a2"
 dependencies = [
  "typenum",
-]
-
-[[package]]
-name = "bitvec"
-version = "0.17.4"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "41262f11d771fd4a61aa3ce019fca363b4b6c282fca9da2a31186d3965a47a5c"
-dependencies = [
- "either",
- "radium 0.3.0",
 ]
 
 [[package]]
@@ -776,12 +743,6 @@ dependencies = [
  "feature-probe",
  "serde",
 ]
-
-[[package]]
-name = "byte-slice-cast"
-version = "0.3.5"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "b0a5e3906bcbf133e33c1d4d95afc664ad37fbdb9f6568d8043e7ea8c27d93d3"
 
 [[package]]
 name = "byte-slice-cast"
@@ -1114,10 +1075,9 @@ dependencies = [
  "web-sys",
  "web3",
  "webpki-roots",
- "winapi 0.3.9",
+ "winapi",
  "zbase32",
  "zcash_client_backend",
- "zcash_client_sqlite",
  "zcash_primitives",
  "zcash_proofs",
 ]
@@ -1150,20 +1110,16 @@ version = "0.1.0"
 dependencies = [
  "anyhow",
  "arrayref",
- "async-std",
  "async-trait",
  "backtrace",
  "base64 0.10.1",
  "bigdecimal",
- "bitcrypto",
  "bytes 1.1.0",
  "cc",
  "cfg-if 1.0.0",
  "chrono",
  "crossbeam",
  "crossterm",
- "db_common",
- "derive_more",
  "findshlibs",
  "fnv",
  "fomat-macros 0.2.1",
@@ -1181,7 +1137,6 @@ dependencies = [
  "hyper-rustls",
  "itertools",
  "js-sys",
- "keys",
  "lazy_static",
  "libc",
  "lightning",
@@ -1197,11 +1152,7 @@ dependencies = [
  "parking_lot 0.12.0",
  "parking_lot_core 0.6.2",
  "paste",
- "primitives",
- "prost 0.8.0",
  "rand 0.7.3",
- "regex 1.5.6",
- "rustc-hex 2.1.0",
  "ser_error",
  "ser_error_derive",
  "serde",
@@ -1218,7 +1169,7 @@ dependencies = [
  "wasm-bindgen-test",
  "wasm-timer",
  "web-sys",
- "winapi 0.3.9",
+ "winapi",
 ]
 
 [[package]]
@@ -1239,10 +1190,10 @@ dependencies = [
  "encode_unicode",
  "libc",
  "once_cell",
- "regex 1.5.6",
+ "regex",
  "terminal_size",
  "unicode-width",
- "winapi 0.3.9",
+ "winapi",
 ]
 
 [[package]]
@@ -1289,7 +1240,7 @@ version = "0.4.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "b49ba7ef1ad6107f8824dbe97de947cbaac53c44e7f9756a1fba0d37c1eec505"
 dependencies = [
- "memchr 2.4.1",
+ "memchr",
 ]
 
 [[package]]
@@ -1448,7 +1399,7 @@ dependencies = [
  "parking_lot 0.11.1",
  "signal-hook",
  "signal-hook-mio",
- "winapi 0.3.9",
+ "winapi",
 ]
 
 [[package]]
@@ -1457,7 +1408,7 @@ version = "0.8.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "3a6966607622438301997d3dac0d2f6e9a90c68bb6bc1785ea98456ab93c0507"
 dependencies = [
- "winapi 0.3.9",
+ "winapi",
 ]
 
 [[package]]
@@ -1797,7 +1748,7 @@ checksum = "3fd78930633bd1c6e35c4b42b1df7b0cbc6bc191146e512bb3bedf243fcc3901"
 dependencies = [
  "libc",
  "redox_users 0.3.4",
- "winapi 0.3.9",
+ "winapi",
 ]
 
 [[package]]
@@ -1818,7 +1769,7 @@ checksum = "03d86534ed367a67548dc68113a0f5db55432fdfbb6e6f9d77704397d95d5780"
 dependencies = [
  "libc",
  "redox_users 0.4.0",
- "winapi 0.3.9",
+ "winapi",
 ]
 
 [[package]]
@@ -1829,7 +1780,7 @@ checksum = "4ebda144c4fe02d1f7ea1a7d9641b6fc6b580adcfa024ae48797ecdeb6825b4d"
 dependencies = [
  "libc",
  "redox_users 0.4.0",
- "winapi 0.3.9",
+ "winapi",
 ]
 
 [[package]]
@@ -1847,7 +1798,7 @@ dependencies = [
  "dlopen_derive",
  "lazy_static",
  "libc",
- "winapi 0.3.9",
+ "winapi",
 ]
 
 [[package]]
@@ -2004,7 +1955,7 @@ dependencies = [
  "atty",
  "humantime 1.3.0",
  "log 0.4.14",
- "regex 1.5.6",
+ "regex",
  "termcolor",
 ]
 
@@ -2017,7 +1968,7 @@ dependencies = [
  "atty",
  "humantime 2.1.0",
  "log 0.4.14",
- "regex 1.5.6",
+ "regex",
  "termcolor",
 ]
 
@@ -2038,7 +1989,7 @@ checksum = "f639046355ee4f37944e44f60642c6f3a7efa3cf6b78c78a0d989a8ce6c396a1"
 dependencies = [
  "errno-dragonfly",
  "libc",
- "winapi 0.3.9",
+ "winapi",
 ]
 
 [[package]]
@@ -2138,7 +2089,7 @@ dependencies = [
  "fixed-hash 0.7.0",
  "impl-rlp",
  "impl-serde",
- "primitive-types 0.11.1",
+ "primitive-types",
  "uint 0.9.1",
 ]
 
@@ -2254,7 +2205,7 @@ dependencies = [
  "cfg-if 1.0.0",
  "libc",
  "redox_syscall 0.2.10",
- "winapi 0.3.9",
+ "winapi",
 ]
 
 [[package]]
@@ -2275,18 +2226,6 @@ checksum = "7afe6ce860afb14422711595a7b26ada9ed7de2f43c0b2ab79d09ee196287273"
 dependencies = [
  "rand 0.4.6",
  "rustc-hex 2.1.0",
-]
-
-[[package]]
-name = "fixed-hash"
-version = "0.6.1"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "11498d382790b7a8f2fd211780bec78619bba81cdad3a283997c0c41f836759c"
-dependencies = [
- "byteorder 1.4.3",
- "rand 0.7.3",
- "rustc-hex 2.1.0",
- "static_assertions",
 ]
 
 [[package]]
@@ -2524,7 +2463,7 @@ dependencies = [
  "futures-macro",
  "futures-sink",
  "futures-task",
- "memchr 2.4.1",
+ "memchr",
  "pin-project-lite 0.2.9",
  "pin-utils",
  "slab 0.4.2",
@@ -2538,7 +2477,7 @@ checksum = "ce54d63f8b0c75023ed920d46fd71d0cbbb830b0ee012726b5b4f506fb6dea5b"
 dependencies = [
  "bytes 0.5.6",
  "futures 0.3.15",
- "memchr 2.4.1",
+ "memchr",
  "pin-project 0.4.29",
 ]
 
@@ -2569,7 +2508,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "e692e296bfac1d2533ef168d0b60ff5897b8b70a4009276834014dd8924cc028"
 dependencies = [
  "libc",
- "winapi 0.3.9",
+ "winapi",
 ]
 
 [[package]]
@@ -2889,7 +2828,7 @@ checksum = "3c731c3e10504cc8ed35cfe2f1db4c9274c3d35fa486e3b31df46f068ef3e867"
 dependencies = [
  "libc",
  "match_cfg",
- "winapi 0.3.9",
+ "winapi",
 ]
 
 [[package]]
@@ -3064,7 +3003,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "cbc0fa01ffc752e9dbc72818cdb072cd028b86be5e09dd04c5a643704fe101a9"
 dependencies = [
  "libc",
- "winapi 0.3.9",
+ "winapi",
 ]
 
 [[package]]
@@ -3083,20 +3022,11 @@ dependencies = [
 
 [[package]]
 name = "impl-codec"
-version = "0.4.2"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "1be51a921b067b0eaca2fad532d9400041561aa922221cc65f95a85641c6bf53"
-dependencies = [
- "parity-scale-codec 1.3.7",
-]
-
-[[package]]
-name = "impl-codec"
 version = "0.6.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "ba6a270039626615617f3f36d15fc827041df3b78c439da2cadfa47455a77f2f"
 dependencies = [
- "parity-scale-codec 3.1.2",
+ "parity-scale-codec",
 ]
 
 [[package]]
@@ -3153,7 +3083,7 @@ dependencies = [
  "console",
  "lazy_static",
  "number_prefix",
- "regex 1.5.6",
+ "regex",
 ]
 
 [[package]]
@@ -3185,7 +3115,7 @@ checksum = "723519edce41262b05d4143ceb95050e4c614f483e78e9fd9e39a8275a84ad98"
 dependencies = [
  "socket2 0.4.4",
  "widestring",
- "winapi 0.3.9",
+ "winapi",
  "winreg",
 ]
 
@@ -3292,16 +3222,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "kernel32-sys"
-version = "0.2.2"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "7507624b29483431c0ba2d82aece8ca6cdba9382bff4ddd0f7490560c056098d"
-dependencies = [
- "winapi 0.2.8",
- "winapi-build",
-]
-
-[[package]]
 name = "keys"
 version = "0.1.0"
 dependencies = [
@@ -3359,7 +3279,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "efbc0f03f9a775e9f6aed295c6a1ba2253c5757a9e03d55c6caa46a681abcddd"
 dependencies = [
  "cfg-if 1.0.0",
- "winapi 0.3.9",
+ "winapi",
 ]
 
 [[package]]
@@ -3788,19 +3708,18 @@ dependencies = [
 
 [[package]]
 name = "lightning"
-version = "0.0.105"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "a10e7439623b293d000fc875627704210d8d0ff5b7badbb689f2a3d51afc618f"
+version = "0.0.106"
+source = "git+https://github.com/shamardy/rust-lightning?branch=0.0.106#af4a89c08c22d0110d386df0e288b2f825aaebbc"
 dependencies = [
  "bitcoin",
  "hex 0.4.2",
- "regex 0.1.80",
+ "regex",
  "secp256k1",
 ]
 
 [[package]]
 name = "lightning-background-processor"
-version = "0.0.105"
+version = "0.0.106"
 dependencies = [
  "bitcoin",
  "db_common",
@@ -3811,9 +3730,8 @@ dependencies = [
 
 [[package]]
 name = "lightning-invoice"
-version = "0.13.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "ce661ad7182c2b258d1506e264095d2b4c71436a91b72834d7fb87b7e92e06c0"
+version = "0.14.0"
+source = "git+https://github.com/shamardy/rust-lightning?branch=0.0.106#af4a89c08c22d0110d386df0e288b2f825aaebbc"
 dependencies = [
  "bech32",
  "bitcoin_hashes",
@@ -3824,9 +3742,8 @@ dependencies = [
 
 [[package]]
 name = "lightning-net-tokio"
-version = "0.0.105"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "e6eb1bcdf0a29baccb13d514e4a8761c9d8038ffd107f27e45182f0177f5e007"
+version = "0.0.106"
+source = "git+https://github.com/shamardy/rust-lightning?branch=0.0.106#af4a89c08c22d0110d386df0e288b2f825aaebbc"
 dependencies = [
  "bitcoin",
  "lightning",
@@ -3835,7 +3752,7 @@ dependencies = [
 
 [[package]]
 name = "lightning-persister"
-version = "0.0.105"
+version = "0.0.106"
 dependencies = [
  "async-trait",
  "bitcoin",
@@ -3851,7 +3768,7 @@ dependencies = [
  "secp256k1",
  "serde",
  "serde_json",
- "winapi 0.3.9",
+ "winapi",
 ]
 
 [[package]]
@@ -3904,7 +3821,6 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "51b9bbe6c47d51fc3e1a9b945965946b4c44142ab8792c50835a980d362c2710"
 dependencies = [
  "cfg-if 1.0.0",
- "serde",
  "value-bag",
 ]
 
@@ -3925,20 +3841,12 @@ dependencies = [
  "chrono",
  "derivative",
  "fnv",
- "humantime 2.1.0",
  "libc",
  "log 0.4.14",
  "log-mdc",
- "parking_lot 0.11.1",
- "regex 1.5.6",
- "serde",
- "serde-value",
- "serde_json",
- "serde_yaml",
  "thiserror",
- "thread-id 3.3.0",
- "typemap",
- "winapi 0.3.9",
+ "thread-id",
+ "winapi",
 ]
 
 [[package]]
@@ -3981,15 +3889,6 @@ checksum = "60302e4db3a61da70c0cb7991976248362f30319e88850c487b9b95bbf059e00"
 name = "mem"
 version = "0.1.0"
 source = "git+https://github.com/artemii235/parity-ethereum.git#0a090f9b3efd7e24193265cf0e4109bf2369ad98"
-
-[[package]]
-name = "memchr"
-version = "0.1.11"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "d8b629fb514376c675b98c1421e80b151d3817ac42d7c667717d282761418d20"
-dependencies = [
- "libc",
-]
 
 [[package]]
 name = "memchr"
@@ -4123,7 +4022,7 @@ dependencies = [
  "log 0.4.14",
  "miow",
  "ntapi",
- "winapi 0.3.9",
+ "winapi",
 ]
 
 [[package]]
@@ -4137,7 +4036,7 @@ dependencies = [
  "miow",
  "ntapi",
  "wasi 0.11.0+wasi-snapshot-preview1",
- "winapi 0.3.9",
+ "winapi",
 ]
 
 [[package]]
@@ -4146,7 +4045,7 @@ version = "0.3.7"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "b9f1c5b025cda876f66ef43a113f91ebc9f4ccef34843000e0adf6ebbab84e21"
 dependencies = [
- "winapi 0.3.9",
+ "winapi",
 ]
 
 [[package]]
@@ -4169,7 +4068,7 @@ dependencies = [
  "num-bigint 0.4.3",
  "num-rational",
  "rand 0.7.3",
- "regex 1.5.6",
+ "regex",
  "rmp-serde",
  "secp256k1",
  "serde",
@@ -4323,7 +4222,7 @@ dependencies = [
  "primitives",
  "rand 0.6.5",
  "rand 0.7.3",
- "regex 1.5.6",
+ "regex",
  "rmp-serde",
  "rpc",
  "rpc_task",
@@ -4349,7 +4248,7 @@ dependencies = [
  "wasm-bindgen-test",
  "wasm-timer",
  "web-sys",
- "winapi 0.3.9",
+ "winapi",
 ]
 
 [[package]]
@@ -4416,7 +4315,7 @@ dependencies = [
  "mm2_io",
  "mm2_net",
  "rand 0.7.3",
- "regex 1.5.6",
+ "regex",
  "serde",
  "serde_json",
  "uuid",
@@ -4540,7 +4439,7 @@ dependencies = [
  "bitvec 0.19.5",
  "funty 1.1.0",
  "lexical-core",
- "memchr 2.4.1",
+ "memchr",
  "version_check",
 ]
 
@@ -4550,7 +4449,7 @@ version = "0.3.6"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "3f6bb902e437b6d86e03cce10a7e2af662292c5dfef23b65899ea3ac9354ad44"
 dependencies = [
- "winapi 0.3.9",
+ "winapi",
 ]
 
 [[package]]
@@ -4682,15 +4581,6 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "624a8340c38c1b80fd549087862da4ba43e08858af025b236e509b6649fc13d5"
 
 [[package]]
-name = "ordered-float"
-version = "2.7.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "039f02eb0f69271f26abe3202189275d7aa2258b903cb0281b5de710a2570ff3"
-dependencies = [
- "num-traits",
-]
-
-[[package]]
 name = "ouroboros"
 version = "0.13.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -4747,25 +4637,13 @@ dependencies = [
 
 [[package]]
 name = "parity-scale-codec"
-version = "1.3.7"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "a4b26b16c7687c3075982af47719e481815df30bc544f7a6690763a25ca16e9d"
-dependencies = [
- "arrayvec 0.5.1",
- "bitvec 0.17.4",
- "byte-slice-cast 0.3.5",
- "serde",
-]
-
-[[package]]
-name = "parity-scale-codec"
 version = "3.1.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "e8b44461635bbb1a0300f100a841e571e7d919c81c73075ef5d152ffdb521066"
 dependencies = [
  "arrayvec 0.7.1",
  "bitvec 1.0.0",
- "byte-slice-cast 1.0.0",
+ "byte-slice-cast",
  "impl-trait-for-tuples",
  "parity-scale-codec-derive",
  "serde",
@@ -4802,9 +4680,9 @@ dependencies = [
  "lru",
  "parity-util-mem-derive",
  "parking_lot 0.12.0",
- "primitive-types 0.11.1",
+ "primitive-types",
  "smallvec 1.6.1",
- "winapi 0.3.9",
+ "winapi",
 ]
 
 [[package]]
@@ -4886,7 +4764,7 @@ dependencies = [
  "rand 0.6.5",
  "rustc_version 0.2.3",
  "smallvec 0.6.14",
- "winapi 0.3.9",
+ "winapi",
 ]
 
 [[package]]
@@ -4901,7 +4779,7 @@ dependencies = [
  "redox_syscall 0.1.56",
  "rustc_version 0.2.3",
  "smallvec 0.6.14",
- "winapi 0.3.9",
+ "winapi",
 ]
 
 [[package]]
@@ -4915,7 +4793,7 @@ dependencies = [
  "libc",
  "redox_syscall 0.1.56",
  "smallvec 1.6.1",
- "winapi 0.3.9",
+ "winapi",
 ]
 
 [[package]]
@@ -4930,7 +4808,7 @@ dependencies = [
  "libc",
  "redox_syscall 0.1.56",
  "smallvec 1.6.1",
- "winapi 0.3.9",
+ "winapi",
 ]
 
 [[package]]
@@ -5097,23 +4975,12 @@ checksum = "237a5ed80e274dbc66f86bd59c1e25edc039660be53194b5fe0a482e0f2612ea"
 
 [[package]]
 name = "primitive-types"
-version = "0.7.3"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "7dd39dcacf71411ba488570da7bbc89b717225e46478b30ba99b92db6b149809"
-dependencies = [
- "fixed-hash 0.6.1",
- "impl-codec 0.4.2",
- "uint 0.8.5",
-]
-
-[[package]]
-name = "primitive-types"
 version = "0.11.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "e28720988bff275df1f51b171e1b2a18c30d194c4d2b61defdacecd625a5d94a"
 dependencies = [
  "fixed-hash 0.7.0",
- "impl-codec 0.6.0",
+ "impl-codec",
  "impl-rlp",
  "impl-serde",
  "scale-info",
@@ -5274,7 +5141,7 @@ dependencies = [
  "petgraph 0.6.1",
  "prost 0.10.3",
  "prost-types 0.10.1",
- "regex 1.5.6",
+ "regex",
  "tempfile",
  "which",
 ]
@@ -5366,7 +5233,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "f4f7a1905379198075914bc93d32a5465c40474f90a078bb13439cb00c547bcc"
 dependencies = [
  "libc",
- "winapi 0.3.9",
+ "winapi",
 ]
 
 [[package]]
@@ -5460,7 +5327,7 @@ dependencies = [
  "libc",
  "rand_core 0.3.1",
  "rdrand",
- "winapi 0.3.9",
+ "winapi",
 ]
 
 [[package]]
@@ -5479,7 +5346,7 @@ dependencies = [
  "rand_os",
  "rand_pcg 0.1.2",
  "rand_xorshift",
- "winapi 0.3.9",
+ "winapi",
 ]
 
 [[package]]
@@ -5615,7 +5482,7 @@ checksum = "1166d5c91dc97b88d1decc3285bb0a99ed84b05cfd0bc2341bdf2d43fc41e39b"
 dependencies = [
  "libc",
  "rand_core 0.4.2",
- "winapi 0.3.9",
+ "winapi",
 ]
 
 [[package]]
@@ -5629,7 +5496,7 @@ dependencies = [
  "libc",
  "rand_core 0.4.2",
  "rdrand",
- "winapi 0.3.9",
+ "winapi",
 ]
 
 [[package]]
@@ -5761,33 +5628,14 @@ dependencies = [
 
 [[package]]
 name = "regex"
-version = "0.1.80"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "4fd4ace6a8cf7860714a2c2280d6c1f7e6a413486c13298bbc86fd3da019402f"
-dependencies = [
- "aho-corasick 0.5.3",
- "memchr 0.1.11",
- "regex-syntax 0.3.9",
- "thread_local",
- "utf8-ranges",
-]
-
-[[package]]
-name = "regex"
 version = "1.5.6"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "d83f127d94bdbcda4c8cc2e50f6f84f4b611f69c902699ca385a39c3a75f9ff1"
 dependencies = [
- "aho-corasick 0.7.18",
- "memchr 2.4.1",
- "regex-syntax 0.6.26",
+ "aho-corasick",
+ "memchr",
+ "regex-syntax",
 ]
-
-[[package]]
-name = "regex-syntax"
-version = "0.3.9"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "f9ec002c35e86791825ed294b50008eea9ddfc8def4420124fbc6b08db834957"
 
 [[package]]
 name = "regex-syntax"
@@ -5801,7 +5649,7 @@ version = "0.5.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "3acd125665422973a33ac9d3dd2df85edad0f4ae9b00dafb1a05e43a9f5ef8e7"
 dependencies = [
- "winapi 0.3.9",
+ "winapi",
 ]
 
 [[package]]
@@ -5875,18 +5723,7 @@ dependencies = [
  "spin",
  "untrusted",
  "web-sys",
- "winapi 0.3.9",
-]
-
-[[package]]
-name = "ripemd160"
-version = "0.8.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "ad5112e0dbbb87577bfbc56c42450235e3012ce336e29c5befd7807bd626da4a"
-dependencies = [
- "block-buffer 0.7.3",
- "digest 0.8.1",
- "opaque-debug 0.2.3",
+ "winapi",
 ]
 
 [[package]]
@@ -5948,7 +5785,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "ffc936cf8a7ea60c58f030fd36a612a48f440610214dc54bc36431f9ea0c3efb"
 dependencies = [
  "libc",
- "winapi 0.3.9",
+ "winapi",
 ]
 
 [[package]]
@@ -6004,9 +5841,8 @@ dependencies = [
  "fallible-streaming-iterator",
  "hashlink",
  "libsqlite3-sys",
- "memchr 2.4.1",
+ "memchr",
  "smallvec 1.6.1",
- "time 0.2.27",
 ]
 
 [[package]]
@@ -6142,7 +5978,7 @@ checksum = "c46be926081c9f4dd5dd9b6f1d3e3229f2360bc6502dd8836f84a93b7c75e99a"
 dependencies = [
  "cfg-if 1.0.0",
  "derive_more",
- "parity-scale-codec 3.1.2",
+ "parity-scale-codec",
  "scale-info-derive",
 ]
 
@@ -6310,16 +6146,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "serde-value"
-version = "0.7.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "f3a1a3341211875ef120e117ea7fd5228530ae7e7036a779fdc9117be6b3282c"
-dependencies = [
- "ordered-float",
- "serde",
-]
-
-[[package]]
 name = "serde-wasm-bindgen"
 version = "0.4.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -6404,6 +6230,7 @@ dependencies = [
  "byteorder 1.4.3",
  "derive_more",
  "primitives",
+ "test_helpers",
 ]
 
 [[package]]
@@ -6590,7 +6417,7 @@ dependencies = [
  "slab 0.4.2",
  "socket2 0.3.19",
  "wepoll-sys-stjepang",
- "winapi 0.3.9",
+ "winapi",
 ]
 
 [[package]]
@@ -6618,7 +6445,7 @@ checksum = "122e570113d28d773067fab24266b66753f6ea915758651696b6e35e49f88d6e"
 dependencies = [
  "cfg-if 1.0.0",
  "libc",
- "winapi 0.3.9",
+ "winapi",
 ]
 
 [[package]]
@@ -6628,7 +6455,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "66d72b759436ae32898a2af0a14218dbf55efde3feeb170eb623637db85ee1e0"
 dependencies = [
  "libc",
- "winapi 0.3.9",
+ "winapi",
 ]
 
 [[package]]
@@ -7083,7 +6910,7 @@ dependencies = [
  "ouroboros",
  "rand 0.7.3",
  "rayon",
- "regex 1.5.6",
+ "regex",
  "rustc_version 0.4.0",
  "serde",
  "serde_derive",
@@ -7272,9 +7099,9 @@ dependencies = [
  "hash256-std-hasher",
  "log 0.4.14",
  "num-traits",
- "parity-scale-codec 3.1.2",
+ "parity-scale-codec",
  "parity-util-mem",
- "primitive-types 0.11.1",
+ "primitive-types",
  "scale-info",
  "secrecy",
  "sp-debug-derive",
@@ -7303,8 +7130,8 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "158bf0305c75a50fc0e334b889568f519a126e32b87900c3f4251202dece7b4b"
 dependencies = [
  "impl-trait-for-tuples",
- "parity-scale-codec 3.1.2",
- "primitive-types 0.11.1",
+ "parity-scale-codec",
+ "primitive-types",
  "sp-runtime-interface-proc-macro",
  "sp-std",
  "sp-storage",
@@ -7338,7 +7165,7 @@ version = "6.0.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "5dab53af846068e3e0716d3ccc70ea0db44035c79b2ed5821aaa6635039efa37"
 dependencies = [
- "parity-scale-codec 3.1.2",
+ "parity-scale-codec",
  "ref-cast",
  "sp-debug-derive",
  "sp-std",
@@ -7350,7 +7177,7 @@ version = "5.0.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "69a67e555d171c4238bd223393cda747dd20ec7d4f5fe5c042c056cb7fde9eda"
 dependencies = [
- "parity-scale-codec 3.1.2",
+ "parity-scale-codec",
  "sp-std",
  "tracing",
  "tracing-core",
@@ -7364,7 +7191,7 @@ checksum = "d6fc34f4f291886914733e083b62708d829f3e6b8d7a7ca7fa8a55a3d7640b0b"
 dependencies = [
  "hash-db",
  "memory-db",
- "parity-scale-codec 3.1.2",
+ "parity-scale-codec",
  "scale-info",
  "sp-core",
  "sp-std",
@@ -7379,7 +7206,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "10d88debe690c2b24eaa9536a150334fcef2ae184c21a0e5b3e80135407a7d52"
 dependencies = [
  "impl-trait-for-tuples",
- "parity-scale-codec 3.1.2",
+ "parity-scale-codec",
  "sp-std",
 ]
 
@@ -7426,11 +7253,15 @@ dependencies = [
 name = "spv_validation"
 version = "0.1.0"
 dependencies = [
- "bitcoin-spv",
  "chain",
  "primitives",
+ "ripemd160",
  "rustc-hex 2.1.0",
+ "serde",
+ "serde_json",
  "serialization",
+ "sha2 0.9.9",
+ "test_helpers",
 ]
 
 [[package]]
@@ -7726,7 +7557,7 @@ dependencies = [
  "libc",
  "redox_syscall 0.2.10",
  "remove_dir_all",
- "winapi 0.3.9",
+ "winapi",
 ]
 
 [[package]]
@@ -7745,7 +7576,14 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "633c1a546cee861a1a6d0dc69ebeca693bf4296661ba7852b9d21d159e0506df"
 dependencies = [
  "libc",
- "winapi 0.3.9",
+ "winapi",
+]
+
+[[package]]
+name = "test_helpers"
+version = "0.1.0"
+dependencies = [
+ "hex 0.4.2",
 ]
 
 [[package]]
@@ -7796,32 +7634,13 @@ dependencies = [
 
 [[package]]
 name = "thread-id"
-version = "2.0.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "a9539db560102d1cef46b8b78ce737ff0bb64e7e18d35b2a5688f7d097d0ff03"
-dependencies = [
- "kernel32-sys",
- "libc",
-]
-
-[[package]]
-name = "thread-id"
 version = "3.3.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "c7fbf4c9d56b320106cd64fd024dadfa0be7cb4706725fc44a7d7ce952d820c1"
 dependencies = [
  "libc",
  "redox_syscall 0.1.56",
- "winapi 0.3.9",
-]
-
-[[package]]
-name = "thread_local"
-version = "0.2.7"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "8576dbbfcaef9641452d5cf0df9b0e7eeab7694956dd33bb61515fb8f18cfdd5"
-dependencies = [
- "thread-id 2.0.0",
+ "winapi",
 ]
 
 [[package]]
@@ -7831,7 +7650,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "ca8a50ef2360fbd1eeb0ecd46795a87a19024eb4b53c5dc916ca1fd95fe62438"
 dependencies = [
  "libc",
- "winapi 0.3.9",
+ "winapi",
 ]
 
 [[package]]
@@ -7846,7 +7665,7 @@ dependencies = [
  "stdweb",
  "time-macros",
  "version_check",
- "winapi 0.3.9",
+ "winapi",
 ]
 
 [[package]]
@@ -7932,7 +7751,7 @@ checksum = "4903bf0427cf68dddd5aa6a93220756f8be0c34fcfa9f5e6191e103e15a31395"
 dependencies = [
  "bytes 1.1.0",
  "libc",
- "memchr 2.4.1",
+ "memchr",
  "mio 0.8.2",
  "num_cpus",
  "once_cell",
@@ -7941,7 +7760,7 @@ dependencies = [
  "signal-hook-registry",
  "socket2 0.4.4",
  "tokio-macros",
- "winapi 0.3.9",
+ "winapi",
 ]
 
 [[package]]
@@ -8163,12 +7982,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "traitobject"
-version = "0.1.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "efd1f82c56340fdf16f2a953d7bda4f8fdffba13d93b00844c25572110b26079"
-
-[[package]]
 name = "trezor"
 version = "0.1.1"
 dependencies = [
@@ -8296,15 +8109,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "typemap"
-version = "0.3.3"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "653be63c80a3296da5551e1bfd2cca35227e13cdd08c6668903ae2f4f77aa1f6"
-dependencies = [
- "unsafe-any",
-]
-
-[[package]]
 name = "typenum"
 version = "1.15.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -8319,18 +8123,6 @@ dependencies = [
  "byteorder 1.4.3",
  "crunchy 0.1.6",
  "rustc-hex 2.1.0",
-]
-
-[[package]]
-name = "uint"
-version = "0.8.5"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "9db035e67dfaf7edd9aebfe8676afcd63eed53c8a4044fed514c8cccf1835177"
-dependencies = [
- "byteorder 1.4.3",
- "crunchy 0.2.2",
- "rustc-hex 2.1.0",
- "static_assertions",
 ]
 
 [[package]]
@@ -8415,15 +8207,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "unsafe-any"
-version = "0.4.2"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "f30360d7979f5e9c6e6cea48af192ea8fab4afb3cf72597154b8f08935bc9c7f"
-dependencies = [
- "traitobject",
-]
-
-[[package]]
 name = "unsigned-varint"
 version = "0.4.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -8489,12 +8272,6 @@ name = "utf-8"
 version = "0.7.6"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "09cc8ee72d2a9becf2f2febe0205bbed8fc6615b7cb429ad062dc7b7ddd036a9"
-
-[[package]]
-name = "utf8-ranges"
-version = "0.1.3"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "a1ca13c08c41c9c3e04224ed9ff80461d97e121589ff27c753a16cb10830ae0f"
 
 [[package]]
 name = "utxo_signer"
@@ -8571,7 +8348,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "808cf2735cd4b6866113f648b791c6adc5714537bc222d9347bb203386ffda56"
 dependencies = [
  "same-file",
- "winapi 0.3.9",
+ "winapi",
  "winapi-util",
 ]
 
@@ -8797,12 +8574,6 @@ checksum = "17882f045410753661207383517a6f62ec3dbeb6a4ed2acce01f0728238d1983"
 
 [[package]]
 name = "winapi"
-version = "0.2.8"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "167dc9d6949a9b857f3451275e911c3f44255842c1f7a76f33c55103a909087a"
-
-[[package]]
-name = "winapi"
 version = "0.3.9"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "5c839a674fcd7a98952e593242ea400abe93992746761e38641405d28b00f419"
@@ -8810,12 +8581,6 @@ dependencies = [
  "winapi-i686-pc-windows-gnu",
  "winapi-x86_64-pc-windows-gnu",
 ]
-
-[[package]]
-name = "winapi-build"
-version = "0.1.1"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "2d315eee3b34aca4797b2da6b13ed88266e6d612562a0c46390af8299fc699bc"
 
 [[package]]
 name = "winapi-i686-pc-windows-gnu"
@@ -8829,7 +8594,7 @@ version = "0.1.5"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "70ec6ce85bb158151cae5e5c87f95a8e97d2c0c4b001223f33a334e3ce5de178"
 dependencies = [
- "winapi 0.3.9",
+ "winapi",
 ]
 
 [[package]]
@@ -8887,7 +8652,7 @@ version = "0.7.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "0120db82e8a1e0b9fb3345a539c478767c0048d842860994d96113d5b667bd69"
 dependencies = [
- "winapi 0.3.9",
+ "winapi",
 ]
 
 [[package]]
@@ -8979,24 +8744,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "zcash_client_sqlite"
-version = "0.3.0"
-source = "git+https://github.com/KomodoPlatform/librustzcash.git#4ffb4433942ed90c2b6035425c1c97d3e181609f"
-dependencies = [
- "bech32",
- "bs58",
- "ff 0.8.0",
- "group 0.8.0",
- "jubjub",
- "protobuf",
- "rand_core 0.5.1",
- "rusqlite",
- "time 0.2.27",
- "zcash_client_backend",
- "zcash_primitives",
-]
-
-[[package]]
 name = "zcash_note_encryption"
 version = "0.0.0"
 source = "git+https://github.com/KomodoPlatform/librustzcash.git#4ffb4433942ed90c2b6035425c1c97d3e181609f"
@@ -9033,7 +8780,7 @@ dependencies = [
  "log 0.4.14",
  "rand 0.7.3",
  "rand_core 0.5.1",
- "ripemd160 0.9.1",
+ "ripemd160",
  "secp256k1",
  "sha2 0.9.9",
  "subtle 2.4.0",

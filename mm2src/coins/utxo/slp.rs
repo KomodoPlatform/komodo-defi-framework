@@ -1715,6 +1715,7 @@ impl MmCoin for SlpToken {
         let (preimage, _) = self.generate_slp_tx_preimage(vec![slp_out]).await?;
         let fee = utxo_common::preimage_trade_fee_required_to_send_outputs(
             &self.platform_coin,
+            self.platform_ticker(),
             preimage.outputs,
             FeePolicy::SendExact,
             None,
@@ -1760,6 +1761,7 @@ impl MmCoin for SlpToken {
         let (preimage, _) = self.generate_slp_tx_preimage(vec![slp_out]).await?;
         let fee = utxo_common::preimage_trade_fee_required_to_send_outputs(
             &self.platform_coin,
+            self.platform_ticker(),
             preimage.outputs,
             FeePolicy::SendExact,
             None,

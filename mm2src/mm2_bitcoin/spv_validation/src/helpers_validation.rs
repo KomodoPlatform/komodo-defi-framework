@@ -1,8 +1,265 @@
-use bitcoin_spv::btcspv::verify_hash256_merkle;
-use chain::{BlockHeader, RawBlockHeader};
+use chain::{BlockHeader, RawBlockHeader, RawHeaderError};
 use primitives::hash::H256;
 use primitives::U256;
-use types::SPVError;
+use ripemd160::Digest;
+use serialization::parse_compact_int;
+use sha2::Sha256;
+
+#[derive(Debug, PartialEq, Eq, Clone)]
+pub enum SPVError {
+    /// Overran a checked read on a slice
+    ReadOverrun,
+    /// Attempted to parse a CompactInt without enough bytes
+    BadCompactInt,
+    /// `extract_hash` could not identify the output type.
+    MalformattedOutput,
+    /// Unable to get target from block header
+    UnableToGetTarget,
+    /// Unable to get block header from network or storage
+    UnableToGetHeader,
+    /// Header not exactly 80 bytes.
+    WrongLengthHeader,
+    /// Header chain changed difficulties unexpectedly
+    UnexpectedDifficultyChange,
+    /// Header does not meet its own difficulty target.
+    InsufficientWork,
+    /// Header in chain does not correctly reference parent header.
+    InvalidChain,
+    /// When validating a `BitcoinHeader`, the `hash` field is not the digest
+    /// of the raw header.
+    WrongDigest,
+    /// When validating a `BitcoinHeader`, the `merkle_root` field does not
+    /// match the root found in the raw header.
+    WrongMerkleRoot,
+    /// When validating a `BitcoinHeader`, the `prevhash` field does not
+    /// match the parent hash found in the raw header.
+    WrongPrevHash,
+    /// A `vin` (transaction input vector) is malformatted.
+    InvalidVin,
+    /// A `vout` (transaction output vector) is malformatted or empty.
+    InvalidVout,
+    /// merkle proof connecting the `tx_id_le` to the `confirming_header`.
+    BadMerkleProof,
+    /// Unable to get merkle tree from network or storage
+    UnableToGetMerkle,
+    /// Unable to retrieve block height / block height is zero.
+    InvalidHeight,
+    /// Raises during validation loop
+    Timeout,
+}
+
+impl From<RawHeaderError> for SPVError {
+    fn from(e: RawHeaderError) -> Self {
+        match e {
+            RawHeaderError::WrongLengthHeader { .. } => SPVError::WrongLengthHeader,
+        }
+    }
+}
+
+/// A slice of `H256`s for use in a merkle array
+#[derive(Debug, Clone, PartialEq, Eq)]
+struct MerkleArray<'a>(&'a [u8]);
+
+impl<'a> MerkleArray<'a> {
+    /// Return a new merkle array from a slice
+    pub fn new(slice: &'a [u8]) -> Result<MerkleArray<'a>, SPVError> {
+        if slice.len() % 32 == 0 {
+            Ok(Self(slice))
+        } else {
+            Err(SPVError::BadMerkleProof)
+        }
+    }
+}
+
+impl MerkleArray<'_> {
+    /// The length of the underlying slice
+    fn len(&self) -> usize { self.0.len() / 32 }
+
+    /// Index into the merkle array
+    fn index(&self, index: usize) -> Result<H256, SPVError> {
+        let to_index = (index + 1) * 32;
+        if self.0.len() < to_index {
+            return Err(SPVError::BadMerkleProof);
+        }
+        let mut digest = H256::default();
+        digest.as_mut().copy_from_slice(&self.0[index * 32..to_index]);
+        Ok(digest)
+    }
+}
+
+/// Determines the length of an input from its scriptsig:
+/// 36 for outpoint, 1 for scriptsig length, 4 for sequence.
+///
+/// # Arguments
+///
+/// * `tx_in` - The input as a u8 array
+fn determine_input_length(tx_in: &[u8]) -> Result<usize, SPVError> {
+    if tx_in.len() < 37 {
+        return Err(SPVError::ReadOverrun);
+    }
+    let script_sig_len = parse_compact_int(&tx_in[36..]).map_err(|_| SPVError::BadCompactInt)?;
+    // 40 = 36 (outpoint) + 4 (sequence)
+    Ok(40 + script_sig_len.serialized_length() + script_sig_len.as_usize())
+}
+
+//
+// Outputs
+//
+
+/// Determines the length of an output.
+/// 5 types: WPKH, WSH, PKH, SH, and OP_RETURN.
+///
+/// # Arguments
+///
+/// * `tx_out` - The output
+///
+/// # Errors
+///
+/// * Errors if CompactInt represents a number larger than 253; large CompactInts are not supported.
+fn determine_output_length(tx_out: &[u8]) -> Result<usize, SPVError> {
+    if tx_out.len() < 9 {
+        return Err(SPVError::MalformattedOutput);
+    }
+    let script_pubkey_len = parse_compact_int(&tx_out[8..]).map_err(|_| SPVError::BadCompactInt)?;
+
+    Ok(8 + script_pubkey_len.serialized_length() + script_pubkey_len.as_usize())
+}
+
+//
+// Transaction
+//
+
+/// Checks that the vin passed up is properly formatted;
+/// Consider a vin with a valid vout in its scriptsig.
+///
+/// # Arguments
+///
+/// * `vin` - Raw bytes length-prefixed input vector
+pub(crate) fn validate_vin(vin: &[u8]) -> bool {
+    let n_ins = match parse_compact_int(vin) {
+        Ok(v) => v,
+        Err(_) => return false,
+    };
+
+    let vin_length = vin.len();
+
+    let mut offset = n_ins.serialized_length();
+    if n_ins.as_usize() == 0usize {
+        return false;
+    }
+
+    for _ in 0..n_ins.as_usize() {
+        if offset >= vin_length {
+            return false;
+        }
+        match determine_input_length(&vin[offset as usize..]) {
+            Ok(v) => offset += v as usize,
+            Err(_) => return false,
+        };
+    }
+
+    offset == vin_length
+}
+
+/// Checks that the vout passed up is properly formatted;
+/// Consider a vin with a valid vout in its scriptsig.
+///
+/// # Arguments
+///
+/// * `vout` - Raw bytes length-prefixed output vector
+pub(crate) fn validate_vout(vout: &[u8]) -> bool {
+    let n_outs = match parse_compact_int(vout) {
+        Ok(v) => v,
+        Err(_) => return false,
+    };
+
+    let vout_length = vout.len();
+
+    let mut offset = n_outs.serialized_length();
+    if n_outs.as_usize() == 0usize {
+        return false;
+    }
+
+    for _ in 0..n_outs.as_usize() {
+        if offset >= vout_length {
+            return false;
+        }
+        match determine_output_length(&vout[offset as usize..]) {
+            Ok(v) => offset += v as usize,
+            Err(_) => return false,
+        };
+    }
+
+    offset == vout_length
+}
+
+/// Implements bitcoin's hash256 (double sha2).
+/// Returns the digest.
+///
+/// # Arguments
+///
+/// * `preimage` - The pre-image
+fn hash256(preimages: &[&[u8]]) -> H256 {
+    let mut sha = Sha256::new();
+    for preimage in preimages.iter() {
+        sha.update(preimage);
+    }
+    let digest = sha.finalize();
+
+    let mut second_sha = Sha256::new();
+    second_sha.update(digest);
+    let buf: [u8; 32] = second_sha.finalize().into();
+    buf.into()
+}
+
+/// Concatenates and hashes two inputs for merkle proving.
+///
+/// # Arguments
+///
+/// * `a` - The first hash
+/// * `b` - The second hash
+fn hash256_merkle_step(a: &[u8], b: &[u8]) -> H256 { hash256(&[a, b]) }
+
+/// Verifies a Bitcoin-style merkle tree.
+/// Leaves are 0-indexed.
+/// Note that `index` is not a reliable indicator of location within a block.
+///
+/// # Arguments
+///
+/// * `proof` - The proof. Tightly packed LE sha256 hashes.  The last hash is the root
+/// * `index` - The index of the leaf
+fn verify_hash256_merkle(
+    txid: H256,
+    merkle_root: H256,
+    intermediate_nodes: &MerkleArray,
+    index: u64,
+) -> Result<(), SPVError> {
+    let mut idx = index;
+    let proof_len = intermediate_nodes.len();
+
+    if (proof_len == 0 && txid == merkle_root) || proof_len == 1 {
+        return Ok(());
+    }
+
+    let mut current = txid;
+
+    for i in 0..proof_len {
+        let next = intermediate_nodes.index(i)?;
+
+        if idx % 2 == 1 {
+            current = hash256_merkle_step(next.as_slice(), current.as_slice());
+        } else {
+            current = hash256_merkle_step(current.as_slice(), next.as_slice());
+        }
+        idx >>= 1;
+    }
+
+    if current != merkle_root {
+        return Err(SPVError::BadMerkleProof);
+    }
+
+    Ok(())
+}
 
 /// Evaluates a Bitcoin merkle inclusion proof.
 /// Note that `index` is not a reliable indicator of location within a block.
@@ -16,21 +273,23 @@ use types::SPVError;
 ///
 /// # Notes
 /// Wrapper around `bitcoin_spv::validatespv::prove`
-pub fn merkle_prove(txid: H256, merkle_root: H256, intermediate_nodes: Vec<H256>, index: u64) -> Result<(), SPVError> {
+pub(crate) fn merkle_prove(
+    txid: H256,
+    merkle_root: H256,
+    intermediate_nodes: Vec<H256>,
+    index: u64,
+) -> Result<(), SPVError> {
     if txid == merkle_root && index == 0 && intermediate_nodes.is_empty() {
         return Ok(());
     }
     let vec: Vec<u8> = intermediate_nodes.into_iter().flat_map(|node| node.take()).collect();
-    let nodes = bitcoin_spv::types::MerkleArray::new(vec.as_slice())?;
-    if !verify_hash256_merkle(txid.take().into(), merkle_root.take().into(), &nodes, index) {
-        return Err(SPVError::BadMerkleProof);
-    }
-    Ok(())
+    let nodes = MerkleArray::new(vec.as_slice())?;
+    verify_hash256_merkle(txid.take().into(), merkle_root.take().into(), &nodes, index)
 }
 
 fn validate_header_prev_hash(actual: &H256, to_compare_with: &H256) -> bool { actual == to_compare_with }
 
-pub fn validate_header_work(digest: H256, target: &U256) -> bool {
+fn validate_header_work(digest: H256, target: &U256) -> bool {
     let empty = H256::default();
 
     if digest == empty {
@@ -92,7 +351,133 @@ pub fn validate_headers(
 
 #[cfg(test)]
 mod tests {
+    extern crate std;
+
     use super::*;
+    use crate::test_utils::{self};
+    use std::{println, vec};
+    use test_helpers::hex::force_deserialize_hex;
+
+    #[test]
+    fn it_does_bitcoin_hash256() {
+        test_utils::run_test(|fixtures| {
+            let test_cases = test_utils::get_test_cases("hash256", &fixtures);
+            for case in test_cases {
+                let input = force_deserialize_hex(case.input.as_str().unwrap());
+                let mut expected = H256::default();
+                let output = force_deserialize_hex(case.output.as_str().unwrap());
+                expected.as_mut().copy_from_slice(&output);
+                assert_eq!(hash256(&[&input]), expected);
+            }
+        })
+    }
+
+    #[test]
+    fn it_computes_hash256_merkle_steps() {
+        test_utils::run_test(|fixtures| {
+            let test_cases = test_utils::get_test_cases("hash256MerkleStep", &fixtures);
+            for case in test_cases {
+                let inputs = case.input.as_array().unwrap();
+                let a = force_deserialize_hex(inputs[0].as_str().unwrap());
+                let b = force_deserialize_hex(inputs[1].as_str().unwrap());
+                let mut expected = H256::default();
+                let output = force_deserialize_hex(case.output.as_str().unwrap());
+                expected.as_mut().copy_from_slice(&output);
+                assert_eq!(hash256_merkle_step(&a, &b), expected);
+            }
+        })
+    }
+
+    #[test]
+    fn it_determines_input_length() {
+        test_utils::run_test(|fixtures| {
+            let test_cases = test_utils::get_test_cases("determineInputLength", &fixtures);
+            for case in test_cases {
+                let input = force_deserialize_hex(case.input.as_str().unwrap());
+                let expected = case.output.as_u64().unwrap() as usize;
+                assert_eq!(determine_input_length(&input).unwrap(), expected);
+            }
+        })
+    }
+
+    #[test]
+    fn it_determines_output_length() {
+        test_utils::run_test(|fixtures| {
+            let test_cases = test_utils::get_test_cases("determineOutputLength", &fixtures);
+            for case in test_cases {
+                let input = force_deserialize_hex(case.input.as_str().unwrap());
+                let expected = case.output.as_u64().unwrap() as usize;
+                assert_eq!(determine_output_length(&input).unwrap(), expected);
+            }
+        })
+    }
+
+    #[test]
+    fn it_validates_vin_syntax() {
+        test_utils::run_test(|fixtures| {
+            let test_cases = test_utils::get_test_cases("validateVin", &fixtures);
+            for case in test_cases {
+                let input = force_deserialize_hex(case.input.as_str().unwrap());
+                let expected = case.output.as_bool().unwrap();
+                assert_eq!(validate_vin(&input), expected);
+            }
+        })
+    }
+
+    #[test]
+    fn it_validates_vout_syntax() {
+        test_utils::run_test(|fixtures| {
+            let test_cases = test_utils::get_test_cases("validateVout", &fixtures);
+            for case in test_cases {
+                let input = force_deserialize_hex(case.input.as_str().unwrap());
+                let expected = case.output.as_bool().unwrap();
+                assert_eq!(validate_vout(&input), expected);
+            }
+        })
+    }
+
+    #[test]
+    fn it_verifies_hash256_merkles() {
+        test_utils::run_test(|fixtures| {
+            let test_cases = test_utils::get_test_cases("verifyHash256Merkle", &fixtures);
+            for case in test_cases {
+                let inputs = case.input.as_object().unwrap();
+                let extended_proof = force_deserialize_hex(inputs.get("proof").unwrap().as_str().unwrap());
+                let proof_len = extended_proof.len();
+                if proof_len < 32 {
+                    continue;
+                }
+
+                let index = inputs.get("index").unwrap().as_u64().unwrap() as u64;
+                let expected = case
+                    .output
+                    .as_bool()
+                    .unwrap()
+                    .then(|| ())
+                    .ok_or(SPVError::BadMerkleProof);
+
+                // extract root and txid
+                let mut root = H256::default();
+                let mut txid = H256::default();
+                println!("{:?}", extended_proof);
+                root.as_mut().copy_from_slice(&extended_proof[proof_len - 32..]);
+                txid.as_mut().copy_from_slice(&extended_proof[..32]);
+
+                let proof = if proof_len > 64 {
+                    extended_proof[32..proof_len - 32].to_vec()
+                } else {
+                    vec![]
+                };
+
+                println!("{:?} {:?} {:?} {:?}", root, txid, proof, proof.len());
+
+                assert_eq!(
+                    verify_hash256_merkle(txid, root, &MerkleArray::new(&proof).unwrap(), index),
+                    expected
+                );
+            }
+        })
+    }
 
     #[test]
     fn test_merkle_prove_inclusion() {
