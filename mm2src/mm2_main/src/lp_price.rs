@@ -19,10 +19,6 @@ pub enum PriceServiceRequestError {
     Internal(String),
 }
 
-impl Default for Provider {
-    fn default() -> Self { Provider::Unknown }
-}
-
 impl From<serde_json::Error> for PriceServiceRequestError {
     fn from(error: serde_json::Error) -> Self { PriceServiceRequestError::ParsingAnswerError(error.to_string()) }
 }
@@ -84,6 +80,10 @@ pub enum Provider {
     Nomics,
     #[serde(rename = "unknown", other)]
     Unknown,
+}
+
+impl Default for Provider {
+    fn default() -> Self { Provider::Unknown }
 }
 
 #[derive(Default, Clone, Debug)]
