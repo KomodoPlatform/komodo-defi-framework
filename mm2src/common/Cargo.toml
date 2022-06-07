@@ -14,18 +14,13 @@ track-ctx-pointer = ["shared_ref_counter/enable", "shared_ref_counter/log"]
 
 [dependencies]
 arrayref = "0.3"
-async-std = { version = "1.5", features = ["unstable"] }
 async-trait = "0.1"
 backtrace = "0.3"
 base64 = "0.10.0"
 bigdecimal = { version = "0.3", features = ["serde"] }
-bitcrypto = { path = "../mm2_bitcoin/crypto" }
 bytes = "1.1"
 cfg-if = "1.0"
 crossbeam = "0.7"
-db_common = { path = "../db_common" }
-derive_more = "0.99"
-findshlibs = "0.5"
 fnv = "1.0.6"
 fomat-macros = "0.2"
 futures01 = { version = "0.1", package = "futures" }
@@ -35,7 +30,6 @@ hex = "0.4.2"
 http = "0.2"
 http-body = "0.1"
 itertools = "0.10"
-keys = { path = "../mm2_bitcoin/keys" }
 lazy_static = "1.4"
 lightning = { git = "https://github.com/shamardy/rust-lightning", branch = "0.0.106" }
 log = "0.4.8"
@@ -48,25 +42,22 @@ paste = "1.0"
 primitives = { path = "../mm2_bitcoin/primitives" }
 prost = "0.10"
 rand = { version = "0.7", features = ["std", "small_rng", "wasm-bindgen"] }
-regex = "1"
-rustc-hex = "2"
 serde = "1"
 serde_bytes = "0.11"
 serde_derive = "1"
 serde_json = { version = "1.0", features = ["preserve_order", "raw_value"] }
-serde_repr = "0.1.6"
 ser_error = { path = "../derives/ser_error" }
 ser_error_derive = { path = "../derives/ser_error_derive" }
-shared_ref_counter = { path = "shared_ref_counter" }
+shared_ref_counter = { path = "shared_ref_counter", optional = true }
 uuid = { version = "0.7", features = ["serde", "v4"] }
 wasm-timer = "0.2.4"
-winapi = "0.3"
 
 [target.'cfg(target_arch = "wasm32")'.dependencies]
 chrono = { version = "0.4", features = ["wasmbind"] }
 getrandom = { version = "0.2", features = ["js"] } # see https://docs.rs/getrandom/0.2.0/getrandom/#webassembly-support
 gstuff = { version = "0.7", features = ["nightly"] }
 js-sys = "0.3.27"
+serde_repr = "0.1.6"
 serde-wasm-bindgen = "0.4.3"
 wasm-bindgen = { version = "0.2.50", features = ["nightly"] }
 wasm-bindgen-futures = "0.4.21"
@@ -90,6 +81,12 @@ metrics-runtime = { version = "0.13", default-features = false, features = ["met
 metrics-core = { version = "0.5" }
 metrics-util = { version = "0.3" }
 tokio = { version = "1.7", features = ["io-util", "rt-multi-thread", "net"] }
+
+[target.'cfg(windows)'.dependencies]
+winapi = "0.3"
+
+[target.'cfg(not(windows))'.dependencies]
+findshlibs = "0.5"
 
 [build-dependencies]
 cc = "1.0"

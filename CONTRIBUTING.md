@@ -22,11 +22,15 @@ and we use [rustfmt](https://github.com/rust-lang/rustfmt) to make our code clea
     ```shell
     cargo clippy -- -D warnings
     ```
-3. Make sure that no new dependencies duplicates appear. Run the following check
+3. Make sure there are no unused dependencies. Run the following check
+   ```shell
+   cargo udeps
+   ```
+4. Make sure that no new dependencies duplicates appear. Run the following check
    ```shell
    cargo deny check bans
    ```
-4. Make sure that dependencies do not have known vulnerabilities. If they do, update them.
+5. Make sure that dependencies do not have known vulnerabilities. If they do, update them.
    ```shell
    cargo deny check advisories
    ```

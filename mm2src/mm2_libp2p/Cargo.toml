@@ -8,11 +8,9 @@ edition = "2018"
 
 [dependencies]
 async-trait = "0.1"
-async-std = { version = "1.6.2", features = ["unstable"] }
 atomicdex-gossipsub = { path = "../gossipsub" }
 derive_more = "0.99"
 libp2p-floodsub = { path = "../floodsub" }
-env_logger = "0.7.1"
 futures = { version = "0.3.1", package = "futures", features = ["compat", "async-await"] }
 futures-rustls = { version = "0.21.1" }
 hex = "0.4.2"
@@ -40,4 +38,6 @@ libp2p = { git = "https://github.com/libp2p/rust-libp2p.git", default-features =
 wasm-bindgen-futures = "0.4.21"
 
 [dev-dependencies]
+async-std = { version = "1.6.2", features = ["unstable"] }
+env_logger = "0.7.1"
 serde_json = "1.0"
