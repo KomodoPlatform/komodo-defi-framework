@@ -13,7 +13,7 @@ fn path2s(path: PathBuf) -> String {
         .into()
 }
 
-/// SuperNET's root.
+/// AtomicDEX's root.
 fn root() -> PathBuf {
     let super_net = Path::new(env!("CARGO_MANIFEST_DIR"));
     let super_net = match super_net.canonicalize() {

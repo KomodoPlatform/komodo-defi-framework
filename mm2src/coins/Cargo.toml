@@ -27,12 +27,6 @@ bytes = "0.4"
 cfg-if = "1.0"
 chain = { path = "../mm2_bitcoin/chain" }
 common = { path = "../common" }
-mm2_core = { path = "../mm2_core" }
-mm2_err_handle = { path = "../mm2_err_handle" }
-mm2_net = { path = "../mm2_net" }
-mm2_db = { path = "../mm2_db" }
-mm2_io = { path = "../mm2_io" }
-mm2_test_helpers = { path = "../mm2_test_helpers" }
 crypto = { path = "../crypto" }
 db_common = { path = "../db_common" }
 derive_more = "0.99"
@@ -59,6 +53,10 @@ libc = "0.2"
 lightning = { git = "https://github.com/shamardy/rust-lightning", branch = "0.0.106" }
 lightning-invoice = { git = "https://github.com/shamardy/rust-lightning", branch = "0.0.106" }
 metrics = "0.12"
+mm2_core = { path = "../mm2_core" }
+mm2_err_handle = { path = "../mm2_err_handle" }
+mm2_io = { path = "../mm2_io" }
+mm2_net = { path = "../mm2_net" }
 mocktopus = "0.7.0"
 num-traits = "0.2"
 parking_lot = { version = "0.12.0", features = ["nightly"] }
@@ -86,11 +84,11 @@ tiny-bip39 = "0.8.0"
 # One of web3 dependencies is the old `tokio-uds 0.1.7` which fails cross-compiling to ARM.
 # We don't need the default web3 features at all since we added our own web3 transport using shared HYPER instance.
 web3 = { git = "https://github.com/artemii235/rust-web3", default-features = false }
-winapi = "0.3"
 zbase32 = "0.1.2"
 
 [target.'cfg(target_arch = "wasm32")'.dependencies]
 js-sys = { version = "0.3.27" }
+mm2_db = { path = "../mm2_db" }
 wasm-bindgen = { version = "0.2.50", features = ["nightly"] }
 wasm-bindgen-futures = { version = "0.4.1" }
 wasm-bindgen-test = { version = "0.3.2" }
@@ -113,9 +111,14 @@ solana-transaction-status = "1"
 spl-token = { version = "3" }
 spl-associated-token-account = "1"
 zcash_client_backend = { git = "https://github.com/KomodoPlatform/librustzcash.git" }
-zcash_client_sqlite = { git = "https://github.com/KomodoPlatform/librustzcash.git" }
 zcash_primitives = { features = ["transparent-inputs"], git = "https://github.com/KomodoPlatform/librustzcash.git" }
 zcash_proofs = { git = "https://github.com/KomodoPlatform/librustzcash.git" }
+
+[target.'cfg(windows)'.dependencies]
+winapi = "0.3"
+
+[dev-dependencies]
+mm2_test_helpers = { path = "../mm2_test_helpers" }
 
 [build-dependencies]
 prost-build = { version = "0.10.3", default-features = false }
