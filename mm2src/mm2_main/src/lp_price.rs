@@ -201,7 +201,7 @@ pub async fn fetch_price_tickers(price_url: &str) -> Result<TickerInfosRegistry,
     Ok(model)
 }
 
-/// CEXRates, structure for storing `base coin` and `rel coin `usd_price`
+/// CEXRates, structure for storing `base` coin and `rel` coin USD price
 #[derive(Default, Clone, Debug, PartialEq)]
 pub struct CEXRates {
     pub base: BigDecimal,
@@ -226,7 +226,7 @@ async fn try_price_fetcher_endpoint(
 }
 
 /// Consume `try_price_fetcher_endpoint` result here using different endpoints.
-/// Return price data on `success` or None on `failure`.
+/// Return price data on success or None on failure.
 pub async fn fetch_swap_coins_price(base: Option<String>, rel: Option<String>) -> Option<CEXRates> {
     debug!("Trying to fetch coins latest price...");
     if let (Some(base), Some(rel)) = (base, rel) {
