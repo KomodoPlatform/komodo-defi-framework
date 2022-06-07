@@ -60,6 +60,7 @@ pub const DEFAULT_FEE_VOUT: usize = 0;
 pub const DEFAULT_SWAP_TX_SPEND_SIZE: u64 = 305;
 pub const DEFAULT_SWAP_VOUT: usize = 0;
 const MIN_BTC_TRADING_VOL: &str = "0.00777";
+pub const NO_TX_ERROR_CODE: &str = "'code': -5";
 
 macro_rules! true_or {
     ($cond: expr, $etype: expr) => {

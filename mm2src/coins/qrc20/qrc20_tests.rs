@@ -860,7 +860,7 @@ fn test_validate_maker_payment_malicious() {
         try_spv_proof_until: now_ms() / 1000 + 30,
         confirmations: 1,
         other_pub: maker_pub,
-        unique_swap_data: vec![],
+        unique_swap_data: Vec::new(),
     };
     let error = coin
         .validate_maker_payment(input)

@@ -227,7 +227,7 @@ impl ZCoin {
     async fn my_balance_sat(&self) -> Result<u64, MmError<ZcashClientError>> {
         let db = self.z_fields.light_wallet_db.clone();
         async_blocking(move || {
-            let balance = get_balance(&db.lock().wallet_db, AccountId::default())?.into();
+            let balance = get_balance(&db.lock(), AccountId::default())?.into();
             Ok(balance)
         })
         .await
@@ -237,11 +237,11 @@ impl ZCoin {
         let db = self.z_fields.light_wallet_db.clone();
         async_blocking(move || {
             let guard = db.lock();
-            let latest_db_block = match guard.wallet_db.block_height_extrema()? {
+            let latest_db_block = match guard.block_height_extrema()? {
                 Some((_, latest)) => latest,
                 None => return Ok(Vec::new()),
             };
-            get_spendable_notes(&guard.wallet_db, AccountId::default(), latest_db_block).map_err(MmError::new)
+            get_spendable_notes(&guard, AccountId::default(), latest_db_block).map_err(MmError::new)
         })
         .await
     }
@@ -279,33 +279,16 @@ impl ZCoin {
         let total_required = &total_output + &tx_fee;
 
         let spendable_notes = self.spendable_notes_ordered().await?;
-        let mut selected_notes = Vec::new();
         let mut total_input_amount = BigDecimal::from(0);
         let mut change = BigDecimal::from(0);
 
         let mut received_by_me = 0u64;
 
-        for note in spendable_notes {
-            total_input_amount += big_decimal_from_sat_unsigned(note.note_value.into(), self.decimals());
-            selected_notes.push(note);
-
-            if total_input_amount >= total_required {
-                change = &total_input_amount - &total_required;
-                break;
-            }
-        }
-
-        if total_input_amount < total_required {
-            return MmError::err(GenTxError::InsufficientBalance {
-                coin: self.ticker().into(),
-                available: total_input_amount,
-                required: total_required,
-            });
-        }
-
         let mut tx_builder = ZTxBuilder::new(self.consensus_params(), sync_guard.respawn_guard.current_block());
 
-        for spendable_note in selected_notes {
+        for spendable_note in spendable_notes {
+            total_input_amount += big_decimal_from_sat_unsigned(spendable_note.note_value.into(), self.decimals());
+
             let note = self
                 .z_fields
                 .my_z_addr
@@ -320,6 +303,19 @@ impl ZCoin {
                     .path()
                     .or_mm_err(|| GenTxError::FailedToGetMerklePath)?,
             )?;
+
+            if total_input_amount >= total_required {
+                change = &total_input_amount - &total_required;
+                break;
+            }
+        }
+
+        if total_input_amount < total_required {
+            return MmError::err(GenTxError::InsufficientBalance {
+                coin: self.ticker().into(),
+                available: total_input_amount,
+                required: total_required,
+            });
         }
 
         for z_out in z_outputs {
@@ -1354,17 +1350,18 @@ impl InitWithdrawCoin for ZCoin {
         let mut tx_hash = tx.txid().0.to_vec();
         tx_hash.reverse();
 
-        let my_balance_change = data.spent_by_me - data.received_by_me;
+        let received_by_me = big_decimal_from_sat_unsigned(data.received_by_me, self.decimals());
+        let spent_by_me = big_decimal_from_sat_unsigned(data.spent_by_me, self.decimals());
 
         Ok(TransactionDetails {
             tx_hex: tx_bytes.into(),
             tx_hash: hex::encode(&tx_hash),
             from: vec![self.z_fields.my_z_addr_encoded.clone()],
             to: vec![req.to],
-            total_amount: big_decimal_from_sat_unsigned(data.spent_by_me, self.decimals()),
-            spent_by_me: big_decimal_from_sat_unsigned(data.spent_by_me, self.decimals()),
-            received_by_me: big_decimal_from_sat_unsigned(data.received_by_me, self.decimals()),
-            my_balance_change: big_decimal_from_sat_unsigned(my_balance_change, self.decimals()),
+            my_balance_change: &received_by_me - &spent_by_me,
+            total_amount: spent_by_me.clone(),
+            spent_by_me,
+            received_by_me,
             block_height: 0,
             timestamp: 0,
             fee_details: Some(TxFeeDetails::Utxo(UtxoFeeDetails {

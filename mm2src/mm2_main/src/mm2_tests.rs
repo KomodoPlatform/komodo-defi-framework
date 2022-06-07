@@ -183,7 +183,8 @@ async fn enable_z_coin_light(
     lightwalletd_urls: &[&str],
     blocks_cache_path: &dyn AsRef<Path>,
 ) -> ZcoinActivationResult {
-    std::fs::copy("../coins/test_cache_zombie.db", blocks_cache_path).unwrap();
+    const TEST_CACHE_ZOMBIE: &str = "../coins/test_cache_zombie.db";
+    std::fs::copy(TEST_CACHE_ZOMBIE, blocks_cache_path).unwrap();
 
     let init = init_z_coin_light(mm, coin, electrums, lightwalletd_urls).await;
     let init: RpcV2Response<InitTaskResult> = json::from_value(init).unwrap();
@@ -200,7 +201,7 @@ async fn enable_z_coin_light(
         if let InitZcoinStatus::Ready(rpc_result) = status.result {
             match rpc_result {
                 MmRpcResult::Ok { result } => {
-                    std::fs::copy(blocks_cache_path, "../coins/test_cache_zombie.db").unwrap();
+                    std::fs::copy(blocks_cache_path, TEST_CACHE_ZOMBIE).unwrap();
                     break result;
                 },
                 MmRpcResult::Err(e) => panic!("{} initialization error {:?}", coin, e),

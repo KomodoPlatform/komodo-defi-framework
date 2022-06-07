@@ -17,6 +17,7 @@ async fn withdraw(mm: &MarketMakerIt, coin: &str, to: &str, amount: &str) -> Tra
         }
 
         let status = withdraw_status(mm, init.result.task_id).await;
+        println!("Withdraw status {}", json::to_string(&status).unwrap());
         let status: RpcV2Response<WithdrawStatus> = json::from_value(status).unwrap();
         if let WithdrawStatus::Ready(rpc_result) = status.result {
             match rpc_result {
@@ -112,6 +113,12 @@ fn withdraw_z_coin_light() {
         "0.1",
     ));
     println!("{:?}", withdraw_res);
+
+    // withdrawing to myself, balance change is the fee
+    assert_eq!(
+        withdraw_res.my_balance_change,
+        BigDecimal::from_str("-0.00001").unwrap()
+    );
 
     let send_raw_tx = block_on(send_raw_transaction(&mm, ZOMBIE_TICKER, &withdraw_res.tx_hex));
     println!("{:?}", send_raw_tx);

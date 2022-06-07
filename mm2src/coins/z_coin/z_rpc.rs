@@ -1,4 +1,5 @@
 use super::{z_coin_errors::*, ZcoinConsensusParams};
+use crate::utxo::utxo_common;
 use common::executor::Timer;
 use common::log::{debug, error, info};
 use common::{async_blocking, spawn_abortable, AbortOnDropHandle};
@@ -13,7 +14,7 @@ use mm2_err_handle::prelude::*;
 use parking_lot::Mutex;
 use prost::Message;
 use protobuf::Message as ProtobufMessage;
-use std::path::Path;
+use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use tokio::task::block_in_place;
 use tonic::transport::{Channel, ClientTlsConfig};
@@ -34,14 +35,7 @@ mod z_coin_grpc {
 use z_coin_grpc::compact_tx_streamer_client::CompactTxStreamerClient;
 use z_coin_grpc::{BlockId, BlockRange, ChainSpec, TxFilter};
 
-const NO_TX_ERROR_CODE: &str = "-5";
-
-pub type WalletDbShared = Arc<Mutex<ZcoinWalletDb>>;
-
-pub struct ZcoinWalletDb {
-    pub(super) blocks_db: BlockDb,
-    pub(super) wallet_db: WalletDb<ZcoinConsensusParams>,
-}
+pub type WalletDbShared = Arc<Mutex<WalletDb<ZcoinConsensusParams>>>;
 
 struct CompactBlockRow {
     height: BlockHeight,
@@ -115,8 +109,7 @@ impl BlockDb {
             "SELECT height FROM compactblocks ORDER BY height DESC LIMIT 1",
             db_common::sqlite::rusqlite::NO_PARAMS,
             |row| row.get(0),
-        )
-        .map_err(MmError::new)?
+        )?
         .unwrap_or(0))
     }
 
@@ -126,8 +119,7 @@ impl BlockDb {
         cb_bytes: Vec<u8>,
     ) -> Result<usize, MmError<db_common::sqlite::rusqlite::Error>> {
         self.0
-            .prepare("INSERT INTO compactblocks (height, data) VALUES (?, ?)")
-            .map_err(MmError::new)?
+            .prepare("INSERT INTO compactblocks (height, data) VALUES (?, ?)")?
             .execute(params![height, cb_bytes])
             .map_err(MmError::new)
     }
@@ -152,8 +144,8 @@ impl BlockSource for BlockDb {
 
 pub(super) async fn init_light_client(
     lightwalletd_url: Uri,
-    cache_db_path: impl AsRef<Path> + Send + 'static,
-    wallet_db_path: impl AsRef<Path> + Send + 'static,
+    cache_db_path: PathBuf,
+    wallet_db_path: PathBuf,
     consensus_params: ZcoinConsensusParams,
     evk: ExtendedFullViewingKey,
 ) -> Result<(AsyncMutex<SaplingSyncConnector>, WalletDbShared), MmError<ZcoinLightClientInitError>> {
@@ -187,12 +179,13 @@ pub(super) async fn init_light_client(
 
     let (sync_status_notifier, sync_watcher) = channel(1);
     let (on_tx_gen_notifier, on_tx_gen_watcher) = channel(1);
-    let db = Arc::new(Mutex::new(ZcoinWalletDb { blocks_db, wallet_db }));
 
+    let wallet_db = Arc::new(Mutex::new(wallet_db));
     let sync_handle = SaplingSyncLoopHandle {
         current_block: BlockHeight::from_u32(0),
         grpc_client,
-        db: db.clone(),
+        blocks_db,
+        wallet_db: wallet_db.clone(),
         consensus_params,
         sync_status_notifier,
         on_tx_gen_watcher,
@@ -202,32 +195,8 @@ pub(super) async fn init_light_client(
 
     Ok((
         SaplingSyncConnector::new_mutex_wrapped(sync_watcher, on_tx_gen_notifier, abort_handle),
-        db,
+        wallet_db,
     ))
-}
-
-/// Scans cached blocks, validates the chain and updates WalletDb.
-/// For more notes on the process, check https://github.com/zcash/librustzcash/blob/master/zcash_client_backend/src/data_api/chain.rs#L2
-fn scan_blocks(db: &WalletDbShared, consensus_params: &ZcoinConsensusParams) -> Result<(), MmError<ZcashClientError>> {
-    let db_guard = db.lock();
-    let mut db_data = db_guard
-        .wallet_db
-        .get_update_ops()
-        .expect("get_update_ops always returns Ok");
-
-    if let Err(e) = validate_chain(consensus_params, &db_guard.blocks_db, db_data.get_max_height_hash()?) {
-        match e {
-            ZcashClientError::BackendError(ChainError::InvalidChain(lower_bound, _)) => {
-                let rewind_height = lower_bound - 10;
-                db_data.rewind_to_height(rewind_height)?;
-                db_guard.blocks_db.rewind_to_height(rewind_height.into())?;
-            },
-            e => return MmError::err(e),
-        }
-    }
-
-    scan_cached_blocks(consensus_params, &db_guard.blocks_db, &mut db_data, None)?;
-    Ok(())
 }
 
 fn is_tx_imported(conn: &Connection, tx_id: TxId) -> bool {
@@ -274,16 +243,17 @@ pub enum SyncStatus {
 }
 
 pub struct SaplingSyncLoopHandle {
-    pub(super) current_block: BlockHeight,
+    current_block: BlockHeight,
     grpc_client: CompactTxStreamerClient<Channel>,
-    db: WalletDbShared,
+    blocks_db: BlockDb,
+    wallet_db: WalletDbShared,
     consensus_params: ZcoinConsensusParams,
     /// Notifies about sync status without stopping the loop, e.g. on coin activation
     sync_status_notifier: AsyncSender<SyncStatus>,
     /// If new tx is required to be generated, we stop the sync and respawn it after tx is sent
     /// This watcher waits for such notification
     on_tx_gen_watcher: AsyncReceiver<OneshotSender<Self>>,
-    pub(super) watch_for_tx: Option<TxId>,
+    watch_for_tx: Option<TxId>,
 }
 
 impl SaplingSyncLoopHandle {
@@ -325,7 +295,7 @@ impl SaplingSyncLoopHandle {
     async fn update_blocks_cache(&mut self) -> Result<(), MmError<UpdateBlocksCacheErr>> {
         let request = tonic::Request::new(ChainSpec {});
         let current_blockchain_block = self.grpc_client.get_latest_block(request).await?;
-        let current_block_in_db = block_in_place(|| self.db.lock().blocks_db.get_latest_block())?;
+        let current_block_in_db = block_in_place(|| self.blocks_db.get_latest_block())?;
 
         let from_block = current_block_in_db as u64 + 1;
         let current_block: u64 = current_blockchain_block.into_inner().height;
@@ -346,17 +316,41 @@ impl SaplingSyncLoopHandle {
 
             while let Some(block) = response.get_mut().message().await? {
                 debug!("Got block {:?}", block);
-                block_in_place(|| {
-                    self.db
-                        .lock()
-                        .blocks_db
-                        .insert_block(block.height as u32, block.encode_to_vec())
-                })?;
+                block_in_place(|| self.blocks_db.insert_block(block.height as u32, block.encode_to_vec()))?;
                 self.notify_blocks_cache_status(block.height, current_block);
             }
         }
 
         self.current_block = BlockHeight::from_u32(current_block as u32);
+        Ok(())
+    }
+
+    /// Scans cached blocks, validates the chain and updates WalletDb.
+    /// For more notes on the process, check https://github.com/zcash/librustzcash/blob/master/zcash_client_backend/src/data_api/chain.rs#L2
+    fn scan_blocks(&mut self) -> Result<(), MmError<ZcashClientError>> {
+        let wallet_guard = self.wallet_db.lock();
+        let mut wallet_ops = wallet_guard.get_update_ops().expect("get_update_ops always returns Ok");
+
+        if let Err(e) = validate_chain(
+            &self.consensus_params,
+            &self.blocks_db,
+            wallet_ops.get_max_height_hash()?,
+        ) {
+            match e {
+                ZcashClientError::BackendError(ChainError::InvalidChain(lower_bound, _)) => {
+                    let rewind_height = if lower_bound > BlockHeight::from_u32(10) {
+                        lower_bound - 10
+                    } else {
+                        BlockHeight::from_u32(0)
+                    };
+                    wallet_ops.rewind_to_height(rewind_height)?;
+                    self.blocks_db.rewind_to_height(rewind_height.into())?;
+                },
+                e => return MmError::err(e),
+            }
+        }
+
+        scan_cached_blocks(&self.consensus_params, &self.blocks_db, &mut wallet_ops, None)?;
         Ok(())
     }
 
@@ -374,7 +368,7 @@ impl SaplingSyncLoopHandle {
                     Ok(_) => break,
                     Err(e) => {
                         error!("Error on getting tx {}", tx_id);
-                        if e.message().contains(NO_TX_ERROR_CODE) {
+                        if e.message().contains(utxo_common::NO_TX_ERROR_CODE) {
                             if attempts >= 3 {
                                 self.watch_for_tx = None;
                                 return;
@@ -421,7 +415,7 @@ async fn light_wallet_db_sync_loop(mut sync_handle: SaplingSyncLoopHandle) {
 
         sync_handle.notify_building_wallet_db();
 
-        if let Err(e) = block_in_place(|| scan_blocks(&sync_handle.db, &sync_handle.consensus_params)) {
+        if let Err(e) = block_in_place(|| sync_handle.scan_blocks()) {
             error!("Error {} on scan_blocks", e);
             Timer::sleep(10.).await;
             continue;
@@ -432,13 +426,12 @@ async fn light_wallet_db_sync_loop(mut sync_handle: SaplingSyncLoopHandle) {
         sync_handle.check_watch_for_tx_existence().await;
 
         if let Some(tx_id) = sync_handle.watch_for_tx {
-            if !block_in_place(|| is_tx_imported(sync_handle.db.lock().wallet_db.sql_conn(), tx_id)) {
+            if !block_in_place(|| is_tx_imported(sync_handle.wallet_db.lock().sql_conn(), tx_id)) {
                 info!("Tx {} is not imported yet", tx_id);
                 Timer::sleep(10.).await;
                 continue;
-            } else {
-                sync_handle.watch_for_tx = None;
             }
+            sync_handle.watch_for_tx = None;
         }
 
         if let Ok(Some(sender)) = sync_handle.on_tx_gen_watcher.try_next() {
