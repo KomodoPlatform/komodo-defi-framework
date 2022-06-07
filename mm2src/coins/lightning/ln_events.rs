@@ -115,18 +115,7 @@ impl EventHandler for LightningEventHandler {
                 push_msat,
                 // Todo: Look for ways to use channel_type
                 channel_type: _,
-            } => {
-                info!(
-                    "Handling OpenChannelRequest from node: {} with funding value: {} and starting balance: {}",
-                    counterparty_node_id,
-                    funding_satoshis,
-                    push_msat,
-                );
-                if self.channel_manager.accept_inbound_channel(temporary_channel_id, 0).is_ok() {
-                    // Todo: once the rust-lightning PR for user_channel_id in accept_inbound_channel is released
-                    // use user_channel_id to get the funding tx here once the funding tx is available.
-                }
-            },
+            } => self.handle_open_channel_request(*temporary_channel_id, *counterparty_node_id, *funding_satoshis, *push_msat),
         }
     }
 }
@@ -356,19 +345,15 @@ impl LightningEventHandler {
         );
         let persister = self.persister.clone();
         let platform = self.platform.clone();
-        // Todo: Handle inbound channels closure case after updating to latest version of rust-lightning
-        // as it has a new OpenChannelRequest event where we can give an inbound channel a user_channel_id
-        // other than 0 in sql
-        if user_channel_id != 0 {
-            spawn(async move {
-                if let Err(e) = save_channel_closing_details(persister, platform, user_channel_id, reason).await {
-                    error!(
-                        "Unable to update channel {} closing details in DB: {}",
-                        user_channel_id, e
-                    );
-                }
-            });
-        }
+        spawn(async move {
+            // todo: handle the case when the channel is closed before funding is broadcasted. Will probably need a mutex.
+            if let Err(e) = save_channel_closing_details(persister, platform, user_channel_id, reason).await {
+                error!(
+                    "Unable to update channel {} closing details in DB: {}",
+                    user_channel_id, e
+                );
+            }
+        });
     }
 
     fn handle_payment_failed(&self, payment_hash: PaymentHash) {
@@ -476,5 +461,81 @@ impl LightningEventHandler {
 
             self.platform.broadcast_transaction(&spending_tx);
         }
+    }
+
+    fn handle_open_channel_request(
+        &self,
+        temporary_channel_id: [u8; 32],
+        counterparty_node_id: PublicKey,
+        funding_satoshis: u64,
+        push_msat: u64,
+    ) {
+        info!(
+            "Handling OpenChannelRequest from node: {} with funding value: {} and starting balance: {}",
+            counterparty_node_id, funding_satoshis, push_msat,
+        );
+
+        let persister = self.persister.clone();
+        let channel_manager = self.channel_manager.clone();
+        let platform = self.platform.clone();
+        spawn(async move {
+            // can we get the same last_channel_rpc_id if opening an outbound channel while handling this?
+            if let Ok(last_channel_rpc_id) = persister.get_last_channel_rpc_id().await.error_log_passthrough() {
+                let user_channel_id = last_channel_rpc_id as u64 + 1;
+                if channel_manager
+                    .accept_inbound_channel(&temporary_channel_id, user_channel_id)
+                    .is_ok()
+                {
+                    // todo: look for ways to reconcile this with similar code in lightning.rs
+                    let is_public = match channel_manager
+                        .list_channels()
+                        .into_iter()
+                        .find(|chan| chan.user_channel_id == user_channel_id)
+                    {
+                        Some(details) => details.is_public,
+                        None => {
+                            error!(
+                                "Inbound channel {} details should be found by list_channels!",
+                                user_channel_id
+                            );
+                            return;
+                        },
+                    };
+
+                    let pending_channel_details = SqlChannelDetails::new(
+                        user_channel_id,
+                        temporary_channel_id,
+                        counterparty_node_id,
+                        false,
+                        is_public,
+                    );
+                    if let Err(e) = persister.add_channel_to_db(pending_channel_details).await {
+                        error!("Unable to add new inbound channel {} to db: {}", user_channel_id, e);
+                    }
+
+                    while let Some(details) = channel_manager
+                        .list_channels()
+                        .into_iter()
+                        .find(|chan| chan.user_channel_id == user_channel_id)
+                    {
+                        if let Some(funding_tx) = details.funding_txo {
+                            let best_block_height = platform.best_block_height();
+                            persister
+                                .add_funding_tx_to_db(
+                                    user_channel_id,
+                                    funding_tx.txid.to_string(),
+                                    funding_satoshis,
+                                    best_block_height,
+                                )
+                                .await
+                                .error_log();
+                            break;
+                        }
+
+                        Timer::sleep(TRY_LOOP_INTERVAL).await;
+                    }
+                }
+            }
+        });
     }
 }
