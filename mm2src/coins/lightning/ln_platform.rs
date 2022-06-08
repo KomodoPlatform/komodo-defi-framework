@@ -98,7 +98,7 @@ pub async fn update_best_block(
 
 pub async fn ln_best_block_update_loop(
     platform: Arc<Platform>,
-    persister: Arc<LightningPersister>,
+    persister: LightningPersisterShared,
     chain_monitor: Arc<ChainMonitor>,
     channel_manager: Arc<ChannelManager>,
     best_header_listener: ElectrumClient,

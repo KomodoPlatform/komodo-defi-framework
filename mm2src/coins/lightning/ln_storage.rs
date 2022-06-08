@@ -1,96 +1,292 @@
-//! Utilities that handle persisting Rust-Lightning data to disk via standard filesystem APIs.
-
-#![feature(io_error_more)]
-
-pub mod storage;
-mod util;
-
-extern crate async_trait;
-extern crate bitcoin;
-extern crate common;
-extern crate libc;
-extern crate lightning;
-extern crate secp256k1;
-extern crate serde_json;
-
-use crate::storage::{ChannelType, ChannelVisibility, ClosedChannelsFilter, DbStorage, FileSystemStorage,
-                     GetClosedChannelsResult, GetPaymentsResult, HTLCStatus, NodesAddressesMap,
-                     NodesAddressesMapShared, PaymentInfo, PaymentType, PaymentsFilter, Scorer, SqlChannelDetails};
-use crate::util::DiskWriteable;
+// todo: break up this file to smaller files
+use crate::lightning::ln_platform::Platform;
+use crate::lightning::ln_utils::{ChainMonitor, ChannelManager};
 use async_trait::async_trait;
 use bitcoin::blockdata::constants::genesis_block;
-use bitcoin::hash_types::{BlockHash, Txid};
-use bitcoin::hashes::hex::{FromHex, ToHex};
 use bitcoin::Network;
+use common::log::LogState;
 use common::{async_blocking, now_ms, PagingOptionsEnum};
+use db_common::sqlite::rusqlite::types::FromSqlError;
 use db_common::sqlite::rusqlite::{Error as SqlError, Row, ToSql, NO_PARAMS};
 use db_common::sqlite::sql_builder::SqlBuilder;
 use db_common::sqlite::{h256_option_slice_from_row, h256_slice_from_row, offset_by_id, query_single_row,
                         sql_text_conversion_err, string_from_row, validate_table_name, SqliteConnShared,
                         CHECK_TABLE_EXISTS_SQL};
-use lightning::chain;
-use lightning::chain::chaininterface::{BroadcasterInterface, FeeEstimator};
-use lightning::chain::chainmonitor;
+use derive_more::Display;
 use lightning::chain::channelmonitor::{ChannelMonitor, ChannelMonitorUpdate};
-use lightning::chain::keysinterface::{KeysInterface, Sign};
+use lightning::chain::keysinterface::{InMemorySigner, KeysManager, Sign};
 use lightning::chain::transaction::OutPoint;
-use lightning::ln::channelmanager::ChannelManager;
+use lightning::chain::{chainmonitor, ChannelMonitorUpdateErr};
 use lightning::ln::{PaymentHash, PaymentPreimage, PaymentSecret};
 use lightning::routing::network_graph::NetworkGraph;
-use lightning::routing::scoring::ProbabilisticScoringParameters;
-use lightning::util::logger::Logger;
+use lightning::routing::scoring::{ProbabilisticScorer, ProbabilisticScoringParameters};
 use lightning::util::ser::{Readable, ReadableArgs, Writeable};
+use lightning_background_processor::Persister;
+use lightning_persister::FilesystemPersister;
 use mm2_io::fs::check_dir_operations;
+use parking_lot::Mutex as PaMutex;
 use secp256k1::PublicKey;
+use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::convert::TryInto;
 use std::fs;
-use std::io::{BufReader, BufWriter, Cursor, Error};
+use std::io::{BufReader, BufWriter};
 use std::net::SocketAddr;
 use std::ops::Deref;
-use std::path::{Path, PathBuf};
+use std::path::PathBuf;
 use std::str::FromStr;
 use std::sync::{Arc, Mutex};
 
-/// LightningPersister persists channel data on disk, where each channel's
-/// data is stored in a file named after its funding outpoint.
-/// It is also used to persist payments and channels history to sqlite database.
-///
-/// Warning: this module does the best it can with calls to persist data, but it
-/// can only guarantee that the data is passed to the drive. It is up to the
-/// drive manufacturers to do the actual persistence properly, which they often
-/// don't (especially on consumer-grade hardware). Therefore, it is up to the
-/// user to validate their entire storage stack, to ensure the writes are
-/// persistent.
-/// Corollary: especially when dealing with larger amounts of money, it is best
-/// practice to have multiple channel data backups and not rely only on one
-/// LightningPersister.
+pub type NodesAddressesMap = HashMap<PublicKey, SocketAddr>;
+pub type NodesAddressesMapShared = Arc<PaMutex<NodesAddressesMap>>;
+pub type Scorer = ProbabilisticScorer<Arc<NetworkGraph>>;
 
-pub struct LightningPersister {
-    storage_ticker: String,
-    main_path: PathBuf,
-    backup_path: Option<PathBuf>,
-    sqlite_connection: SqliteConnShared,
+#[async_trait]
+pub trait FileSystemStorage {
+    type Error;
+
+    /// Initializes dirs/collection/tables in storage for a specified coin
+    async fn init_fs(&self) -> Result<(), Self::Error>;
+
+    async fn is_fs_initialized(&self) -> Result<bool, Self::Error>;
+
+    async fn get_nodes_addresses(&self) -> Result<HashMap<PublicKey, SocketAddr>, Self::Error>;
+
+    async fn save_nodes_addresses(&self, nodes_addresses: NodesAddressesMapShared) -> Result<(), Self::Error>;
+
+    async fn get_network_graph(&self, network: Network) -> Result<NetworkGraph, Self::Error>;
+
+    async fn get_scorer(&self, network_graph: Arc<NetworkGraph>) -> Result<Scorer, Self::Error>;
+
+    async fn save_scorer(&self, scorer: Arc<Mutex<Scorer>>) -> Result<(), Self::Error>;
 }
 
-impl<Signer: Sign> DiskWriteable for ChannelMonitor<Signer> {
-    fn write_to_file(&self, writer: &mut fs::File) -> Result<(), Error> { self.write(writer) }
+#[derive(Clone, Debug, PartialEq, Serialize)]
+pub struct SqlChannelDetails {
+    pub rpc_id: u64,
+    pub channel_id: String,
+    pub counterparty_node_id: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub funding_tx: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub funding_value: Option<u64>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub closing_tx: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub closure_reason: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub claiming_tx: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub claimed_balance: Option<f64>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub funding_generated_in_block: Option<u64>,
+    pub is_outbound: bool,
+    pub is_public: bool,
+    pub is_closed: bool,
+    pub created_at: u64,
+    pub last_updated: u64,
 }
 
-impl<Signer: Sign, M: Deref, T: Deref, K: Deref, F: Deref, L: Deref> DiskWriteable
-    for ChannelManager<Signer, M, T, K, F, L>
-where
-    M::Target: chain::Watch<Signer>,
-    T::Target: BroadcasterInterface,
-    K::Target: KeysInterface<Signer = Signer>,
-    F::Target: FeeEstimator,
-    L::Target: Logger,
-{
-    fn write_to_file(&self, writer: &mut fs::File) -> Result<(), std::io::Error> { self.write(writer) }
+impl SqlChannelDetails {
+    #[inline]
+    pub fn new(
+        rpc_id: u64,
+        channel_id: [u8; 32],
+        counterparty_node_id: PublicKey,
+        is_outbound: bool,
+        is_public: bool,
+    ) -> Self {
+        SqlChannelDetails {
+            rpc_id,
+            channel_id: hex::encode(channel_id),
+            counterparty_node_id: counterparty_node_id.to_string(),
+            funding_tx: None,
+            funding_value: None,
+            funding_generated_in_block: None,
+            closing_tx: None,
+            closure_reason: None,
+            claiming_tx: None,
+            claimed_balance: None,
+            is_outbound,
+            is_public,
+            is_closed: false,
+            created_at: now_ms() / 1000,
+            last_updated: now_ms() / 1000,
+        }
+    }
 }
 
-impl DiskWriteable for NetworkGraph {
-    fn write_to_file(&self, writer: &mut fs::File) -> Result<(), std::io::Error> { self.write(writer) }
+#[derive(Clone, Deserialize)]
+pub enum ChannelType {
+    Outbound,
+    Inbound,
+}
+
+#[derive(Clone, Deserialize)]
+pub enum ChannelVisibility {
+    Public,
+    Private,
+}
+
+#[derive(Clone, Deserialize)]
+pub struct ClosedChannelsFilter {
+    pub channel_id: Option<String>,
+    pub counterparty_node_id: Option<String>,
+    pub funding_tx: Option<String>,
+    pub from_funding_value: Option<u64>,
+    pub to_funding_value: Option<u64>,
+    pub closing_tx: Option<String>,
+    pub closure_reason: Option<String>,
+    pub claiming_tx: Option<String>,
+    pub from_claimed_balance: Option<f64>,
+    pub to_claimed_balance: Option<f64>,
+    pub channel_type: Option<ChannelType>,
+    pub channel_visibility: Option<ChannelVisibility>,
+}
+
+pub struct GetClosedChannelsResult {
+    pub channels: Vec<SqlChannelDetails>,
+    pub skipped: usize,
+    pub total: usize,
+}
+
+#[derive(Clone, Debug, Deserialize, Display, PartialEq, Serialize)]
+#[serde(rename_all = "lowercase")]
+pub enum HTLCStatus {
+    Pending,
+    Succeeded,
+    Failed,
+}
+
+impl FromStr for HTLCStatus {
+    type Err = FromSqlError;
+
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        match s {
+            "Pending" => Ok(HTLCStatus::Pending),
+            "Succeeded" => Ok(HTLCStatus::Succeeded),
+            "Failed" => Ok(HTLCStatus::Failed),
+            _ => Err(FromSqlError::InvalidType),
+        }
+    }
+}
+
+#[derive(Clone, Debug, PartialEq)]
+pub enum PaymentType {
+    OutboundPayment { destination: PublicKey },
+    InboundPayment,
+}
+
+#[derive(Clone, Debug, PartialEq)]
+pub struct PaymentInfo {
+    pub payment_hash: PaymentHash,
+    pub payment_type: PaymentType,
+    pub description: String,
+    pub preimage: Option<PaymentPreimage>,
+    pub secret: Option<PaymentSecret>,
+    pub amt_msat: Option<u64>,
+    pub fee_paid_msat: Option<u64>,
+    pub status: HTLCStatus,
+    pub created_at: u64,
+    pub last_updated: u64,
+}
+
+#[derive(Clone)]
+pub struct PaymentsFilter {
+    pub payment_type: Option<PaymentType>,
+    pub description: Option<String>,
+    pub status: Option<HTLCStatus>,
+    pub from_amount_msat: Option<u64>,
+    pub to_amount_msat: Option<u64>,
+    pub from_fee_paid_msat: Option<u64>,
+    pub to_fee_paid_msat: Option<u64>,
+    pub from_timestamp: Option<u64>,
+    pub to_timestamp: Option<u64>,
+}
+
+pub struct GetPaymentsResult {
+    pub payments: Vec<PaymentInfo>,
+    pub skipped: usize,
+    pub total: usize,
+}
+
+#[async_trait]
+pub trait DbStorage {
+    type Error;
+
+    /// Initializes tables in DB.
+    async fn init_db(&self) -> Result<(), Self::Error>;
+
+    /// Checks if tables have been initialized or not in DB.
+    async fn is_db_initialized(&self) -> Result<bool, Self::Error>;
+
+    /// Gets the last added channel rpc_id. Can be used to deduce the rpc_id for a new channel to be added to DB.
+    async fn get_last_channel_rpc_id(&self) -> Result<u32, Self::Error>;
+
+    /// Inserts a new channel record in the DB. The record's data is completed using add_funding_tx_to_db,
+    /// add_closing_tx_to_db, add_claiming_tx_to_db when this information is available.
+    async fn add_channel_to_db(&self, details: SqlChannelDetails) -> Result<(), Self::Error>;
+
+    /// Updates a channel's DB record with the channel's funding transaction information.
+    async fn add_funding_tx_to_db(
+        &self,
+        rpc_id: u64,
+        funding_tx: String,
+        funding_value: u64,
+        funding_generated_in_block: u64,
+    ) -> Result<(), Self::Error>;
+
+    /// Updates funding_tx_block_height value for a channel in the DB. Should be used to update the block height of
+    /// the funding tx when the transaction is confirmed on-chain.
+    async fn update_funding_tx_block_height(&self, funding_tx: String, block_height: u64) -> Result<(), Self::Error>;
+
+    /// Updates the is_closed value for a channel in the DB to 1.
+    async fn update_channel_to_closed(&self, rpc_id: u64, closure_reason: String) -> Result<(), Self::Error>;
+
+    /// Gets the list of closed channels records in the DB with no closing tx hashs saved yet. Can be used to check if
+    /// the closing tx hash needs to be fetched from the chain and saved to DB when initializing the persister.
+    async fn get_closed_channels_with_no_closing_tx(&self) -> Result<Vec<SqlChannelDetails>, Self::Error>;
+
+    /// Updates a channel's DB record with the channel's closing transaction hash.
+    async fn add_closing_tx_to_db(&self, rpc_id: u64, closing_tx: String) -> Result<(), Self::Error>;
+
+    /// Updates a channel's DB record with information about the transaction responsible for claiming the channel's
+    /// closing balance back to the user's address.
+    async fn add_claiming_tx_to_db(
+        &self,
+        closing_tx: String,
+        claiming_tx: String,
+        claimed_balance: f64,
+    ) -> Result<(), Self::Error>;
+
+    /// Gets a channel record from DB by the channel's rpc_id.
+    async fn get_channel_from_db(&self, rpc_id: u64) -> Result<Option<SqlChannelDetails>, Self::Error>;
+
+    /// Gets the list of closed channels that match the provided filter criteria. The number of requested records is
+    /// specified by the limit parameter, the starting record to list from is specified by the paging parameter. The
+    /// total number of matched records along with the number of skipped records are also returned in the result.
+    async fn get_closed_channels_by_filter(
+        &self,
+        filter: Option<ClosedChannelsFilter>,
+        paging: PagingOptionsEnum<u64>,
+        limit: usize,
+    ) -> Result<GetClosedChannelsResult, Self::Error>;
+
+    /// Inserts or updates a new payment record in the DB.
+    async fn add_or_update_payment_in_db(&self, info: PaymentInfo) -> Result<(), Self::Error>;
+
+    /// Gets a payment's record from DB by the payment's hash.
+    async fn get_payment_from_db(&self, hash: PaymentHash) -> Result<Option<PaymentInfo>, Self::Error>;
+
+    /// Gets the list of payments that match the provided filter criteria. The number of requested records is specified
+    /// by the limit parameter, the starting record to list from is specified by the paging parameter. The total number
+    /// of matched records along with the number of skipped records are also returned in the result.
+    async fn get_payments_by_filter(
+        &self,
+        filter: Option<PaymentsFilter>,
+        paging: PagingOptionsEnum<PaymentHash>,
+        limit: usize,
+    ) -> Result<GetPaymentsResult, Self::Error>;
 }
 
 fn channels_history_table(ticker: &str) -> String { ticker.to_owned() + "_channels_history" }
@@ -205,7 +401,7 @@ fn select_channel_by_rpc_id_sql(for_coin: &str) -> Result<String, SqlError> {
     validate_table_name(&table_name)?;
 
     let sql = format!(
-        "SELECT 
+        "SELECT
             rpc_id,
             channel_id,
             counterparty_node_id,
@@ -564,6 +760,15 @@ fn update_claiming_tx_sql(for_coin: &str) -> Result<String, SqlError> {
     Ok(sql)
 }
 
+pub struct LightningPersister {
+    // todo: check again if the available trait can be used for storage_ticker
+    storage_ticker: String,
+    main_path: PathBuf,
+    backup_path: Option<PathBuf>,
+    channels_persister: FilesystemPersister,
+    sqlite_connection: SqliteConnShared,
+}
+
 impl LightningPersister {
     /// Initialize a new LightningPersister and set the path to the individual channels'
     /// files.
@@ -575,8 +780,9 @@ impl LightningPersister {
     ) -> Self {
         Self {
             storage_ticker,
-            main_path,
+            main_path: main_path.clone(),
             backup_path,
+            channels_persister: FilesystemPersister::new(main_path.display().to_string()),
             sqlite_connection,
         }
     }
@@ -587,13 +793,10 @@ impl LightningPersister {
     /// Get the backup directory which was provided when this persister was initialized.
     pub fn backup_path(&self) -> Option<PathBuf> { self.backup_path.clone() }
 
-    pub(crate) fn monitor_path(&self) -> PathBuf {
-        let mut path = self.main_path();
-        path.push("monitors");
-        path
-    }
+    /// Get the channels_persister which was initialized when this persister was initialized.
+    pub fn channels_persister(&self) -> &FilesystemPersister { &self.channels_persister }
 
-    pub(crate) fn monitor_backup_path(&self) -> Option<PathBuf> {
+    pub fn monitor_backup_path(&self) -> Option<PathBuf> {
         if let Some(mut backup_path) = self.backup_path() {
             backup_path.push("monitors");
             return Some(backup_path);
@@ -601,13 +804,13 @@ impl LightningPersister {
         None
     }
 
-    pub(crate) fn nodes_addresses_path(&self) -> PathBuf {
+    pub fn nodes_addresses_path(&self) -> PathBuf {
         let mut path = self.main_path();
         path.push("channel_nodes_data");
         path
     }
 
-    pub(crate) fn nodes_addresses_backup_path(&self) -> Option<PathBuf> {
+    pub fn nodes_addresses_backup_path(&self) -> Option<PathBuf> {
         if let Some(mut backup_path) = self.backup_path() {
             backup_path.push("channel_nodes_data");
             return Some(backup_path);
@@ -615,13 +818,13 @@ impl LightningPersister {
         None
     }
 
-    pub(crate) fn network_graph_path(&self) -> PathBuf {
+    pub fn network_graph_path(&self) -> PathBuf {
         let mut path = self.main_path();
         path.push("network_graph");
         path
     }
 
-    pub(crate) fn scorer_path(&self) -> PathBuf {
+    pub fn scorer_path(&self) -> PathBuf {
         let mut path = self.main_path();
         path.push("scorer");
         path
@@ -632,125 +835,75 @@ impl LightningPersister {
         path.push("manager");
         path
     }
+}
 
-    /// Writes the provided `ChannelManager` to the path provided at `LightningPersister`
-    /// initialization, within a file called "manager".
-    pub fn persist_manager<Signer: Sign, M: Deref, T: Deref, K: Deref, F: Deref, L: Deref>(
-        &self,
-        manager: &ChannelManager<Signer, M, T, K, F, L>,
-    ) -> Result<(), std::io::Error>
-    where
-        M::Target: chain::Watch<Signer>,
-        T::Target: BroadcasterInterface,
-        K::Target: KeysInterface<Signer = Signer>,
-        F::Target: FeeEstimator,
-        L::Target: Logger,
-    {
-        let path = self.main_path();
-        util::write_to_file(path, "manager".to_string(), manager)?;
-        if let Some(backup_path) = self.backup_path() {
-            util::write_to_file(backup_path, "manager".to_string(), manager)?;
+// todo: try to find a better way, probably breaking up LightningPersister struct to smaller structs can be a solution
+pub struct LightningPersisterShared(pub Arc<LightningPersister>);
+
+impl Clone for LightningPersisterShared {
+    fn clone(&self) -> Self { LightningPersisterShared(self.0.clone()) }
+}
+
+impl Deref for LightningPersisterShared {
+    type Target = LightningPersister;
+    fn deref(&self) -> &LightningPersister { self.0.deref() }
+}
+
+// todo: revise this, and try to make LightningPersisterShared -> LightningPersister
+impl Persister<InMemorySigner, Arc<ChainMonitor>, Arc<Platform>, Arc<KeysManager>, Arc<Platform>, Arc<LogState>>
+    for LightningPersisterShared
+{
+    fn persist_manager(&self, channel_manager: &ChannelManager) -> Result<(), std::io::Error> {
+        FilesystemPersister::persist_manager(
+            // todo: revise this (might be better to make main_path a String)
+            self.0.main_path().display().to_string(),
+            channel_manager,
+        )?;
+        if let Some(backup_path) = self.0.backup_path() {
+            // todo: test all backups
+            let file = fs::OpenOptions::new()
+                .create(true)
+                .write(true)
+                .truncate(true)
+                .open(backup_path)?;
+            channel_manager.write(&mut BufWriter::new(file))?;
         }
         Ok(())
     }
 
-    /// Write the provided `NetworkGraph` to the path provided at `FilesystemPersister`
-    /// initialization, within a file called "network_graph"
-    pub fn persist_network_graph(&self, network_graph: &NetworkGraph) -> Result<(), std::io::Error> {
-        let path = self.main_path();
-        util::write_to_file(path, "network_graph".to_string(), network_graph)
-    }
-
-    /// Read `ChannelMonitor`s from disk.
-    pub fn read_channelmonitors<Signer: Sign, K: Deref>(
-        &self,
-        keys_manager: K,
-    ) -> Result<Vec<(BlockHash, ChannelMonitor<Signer>)>, std::io::Error>
-    where
-        K::Target: KeysInterface<Signer = Signer> + Sized,
-    {
-        let path = self.monitor_path();
-        if !Path::new(&path).exists() {
-            return Ok(Vec::new());
+    fn persist_graph(&self, network_graph: &NetworkGraph) -> Result<(), std::io::Error> {
+        if FilesystemPersister::persist_network_graph(self.0.main_path().display().to_string(), network_graph).is_err()
+        {
+            // Persistence errors here are non-fatal as we can just fetch the routing graph
+            // again later, but they may indicate a disk error which could be fatal elsewhere.
+            eprintln!("Warning: Failed to persist network graph, check your disk and permissions");
         }
-        let mut res = Vec::new();
-        for file_option in fs::read_dir(path).unwrap() {
-            let file = file_option.unwrap();
-            let owned_file_name = file.file_name();
-            let filename = owned_file_name.to_str();
-            if filename.is_none() || !filename.unwrap().is_ascii() || filename.unwrap().len() < 65 {
-                return Err(std::io::Error::new(
-                    std::io::ErrorKind::InvalidData,
-                    "Invalid ChannelMonitor file name",
-                ));
-            }
-            if filename.unwrap().ends_with(".tmp") {
-                // If we were in the middle of committing an new update and crashed, it should be
-                // safe to ignore the update - we should never have returned to the caller and
-                // irrevocably committed to the new state in any way.
-                continue;
-            }
 
-            let txid = Txid::from_hex(filename.unwrap().split_at(64).0);
-            if txid.is_err() {
-                return Err(std::io::Error::new(
-                    std::io::ErrorKind::InvalidData,
-                    "Invalid tx ID in filename",
-                ));
-            }
-
-            let index = filename.unwrap().split_at(65).1.parse::<u16>();
-            if index.is_err() {
-                return Err(std::io::Error::new(
-                    std::io::ErrorKind::InvalidData,
-                    "Invalid tx index in filename",
-                ));
-            }
-
-            let contents = fs::read(&file.path())?;
-            let mut buffer = Cursor::new(&contents);
-            match <(BlockHash, ChannelMonitor<Signer>)>::read(&mut buffer, &*keys_manager) {
-                Ok((blockhash, channel_monitor)) => {
-                    if channel_monitor.get_funding_txo().0.txid != txid.unwrap()
-                        || channel_monitor.get_funding_txo().0.index != index.unwrap()
-                    {
-                        return Err(std::io::Error::new(
-                            std::io::ErrorKind::InvalidData,
-                            "ChannelMonitor was stored in the wrong file",
-                        ));
-                    }
-                    res.push((blockhash, channel_monitor));
-                },
-                Err(e) => {
-                    return Err(std::io::Error::new(
-                        std::io::ErrorKind::InvalidData,
-                        format!("Failed to deserialize ChannelMonitor: {}", e),
-                    ))
-                },
-            }
-        }
-        Ok(res)
+        Ok(())
     }
 }
 
+//todo: revise this
 impl<ChannelSigner: Sign> chainmonitor::Persist<ChannelSigner> for LightningPersister {
-    // TODO: We really need a way for the persister to inform the user that its time to crash/shut
-    // down once these start returning failure.
-    // A PermanentFailure implies we need to shut down since we're force-closing channels without
-    // even broadcasting!
-
     fn persist_new_channel(
         &self,
         funding_txo: OutPoint,
         monitor: &ChannelMonitor<ChannelSigner>,
-        _update_id: chainmonitor::MonitorUpdateId,
-    ) -> Result<(), chain::ChannelMonitorUpdateErr> {
-        let filename = format!("{}_{}", funding_txo.txid.to_hex(), funding_txo.index);
-        util::write_to_file(self.monitor_path(), filename.clone(), monitor)
-            .map_err(|_| chain::ChannelMonitorUpdateErr::PermanentFailure)?;
+        update_id: chainmonitor::MonitorUpdateId,
+    ) -> Result<(), ChannelMonitorUpdateErr> {
+        self.channels_persister
+            .persist_new_channel(funding_txo, monitor, update_id)?;
         if let Some(backup_path) = self.monitor_backup_path() {
-            util::write_to_file(backup_path, filename, monitor)
-                .map_err(|_| chain::ChannelMonitorUpdateErr::PermanentFailure)?;
+            let file = fs::OpenOptions::new()
+                .create(true)
+                .write(true)
+                .truncate(true)
+                .open(backup_path)
+                .map_err(|_| ChannelMonitorUpdateErr::TemporaryFailure)?;
+            // todo: implement from for ChannelMonitorUpdateErr
+            monitor
+                .write(&mut BufWriter::new(file))
+                .map_err(|_| ChannelMonitorUpdateErr::TemporaryFailure)?;
         }
         Ok(())
     }
@@ -758,16 +911,22 @@ impl<ChannelSigner: Sign> chainmonitor::Persist<ChannelSigner> for LightningPers
     fn update_persisted_channel(
         &self,
         funding_txo: OutPoint,
-        _update: &Option<ChannelMonitorUpdate>,
+        update: &Option<ChannelMonitorUpdate>,
         monitor: &ChannelMonitor<ChannelSigner>,
-        _update_id: chainmonitor::MonitorUpdateId,
-    ) -> Result<(), chain::ChannelMonitorUpdateErr> {
-        let filename = format!("{}_{}", funding_txo.txid.to_hex(), funding_txo.index);
-        util::write_to_file(self.monitor_path(), filename.clone(), monitor)
-            .map_err(|_| chain::ChannelMonitorUpdateErr::PermanentFailure)?;
+        update_id: chainmonitor::MonitorUpdateId,
+    ) -> Result<(), ChannelMonitorUpdateErr> {
+        self.channels_persister
+            .update_persisted_channel(funding_txo, update, monitor, update_id)?;
         if let Some(backup_path) = self.monitor_backup_path() {
-            util::write_to_file(backup_path, filename, monitor)
-                .map_err(|_| chain::ChannelMonitorUpdateErr::PermanentFailure)?;
+            let file = fs::OpenOptions::new()
+                .create(true)
+                .write(true)
+                .truncate(true)
+                .open(backup_path)
+                .map_err(|_| ChannelMonitorUpdateErr::TemporaryFailure)?;
+            monitor
+                .write(&mut BufWriter::new(file))
+                .map_err(|_| ChannelMonitorUpdateErr::TemporaryFailure)?;
         }
         Ok(())
     }
@@ -775,6 +934,7 @@ impl<ChannelSigner: Sign> chainmonitor::Persist<ChannelSigner> for LightningPers
 
 #[async_trait]
 impl FileSystemStorage for LightningPersister {
+    // todo: maybe change this to MmError
     type Error = std::io::Error;
 
     async fn init_fs(&self) -> Result<(), Self::Error> {
@@ -799,12 +959,12 @@ impl FileSystemStorage for LightningPersister {
                 Ok(false)
             } else if !dir_path.is_dir() {
                 Err(std::io::Error::new(
-                    std::io::ErrorKind::NotADirectory,
+                    std::io::ErrorKind::Other,
                     format!("{} is not a directory", dir_path.display()),
                 ))
             } else if backup_dir_path.as_ref().map(|path| !path.is_dir()).unwrap_or(false) {
                 Err(std::io::Error::new(
-                    std::io::ErrorKind::NotADirectory,
+                    std::io::ErrorKind::Other,
                     "Backup path is not a directory",
                 ))
             } else {
@@ -1326,21 +1486,8 @@ impl DbStorage for LightningPersister {
 #[cfg(test)]
 mod tests {
     use super::*;
-    extern crate bitcoin;
-    extern crate lightning;
-    use bitcoin::blockdata::block::{Block, BlockHeader};
-    use bitcoin::hashes::hex::FromHex;
-    use bitcoin::Txid;
     use common::{block_on, now_ms};
     use db_common::sqlite::rusqlite::Connection;
-    use lightning::chain::chainmonitor::Persist;
-    use lightning::chain::transaction::OutPoint;
-    use lightning::chain::ChannelMonitorUpdateErr;
-    use lightning::ln::features::InitFeatures;
-    use lightning::ln::functional_test_utils::*;
-    use lightning::util::events::{ClosureReason, MessageSendEventsProvider};
-    use lightning::util::test_utils;
-    use lightning::{check_added_monitors, check_closed_broadcast, check_closed_event};
     use rand::distributions::Alphanumeric;
     use rand::{Rng, RngCore};
     use secp256k1::{Secp256k1, SecretKey};
@@ -1460,203 +1607,6 @@ mod tests {
             payments.push(info);
         }
         payments
-    }
-
-    // Integration-test the LightningPersister. Test relaying a few payments
-    // and check that the persisted data is updated the appropriate number of
-    // times.
-    #[test]
-    fn test_filesystem_persister() {
-        // Create the nodes, giving them LightningPersisters for data persisters.
-        let persister_0 = LightningPersister::new(
-            "test_filesystem_persister_0".into(),
-            PathBuf::from("test_filesystem_persister_0"),
-            None,
-            Arc::new(Mutex::new(Connection::open_in_memory().unwrap())),
-        );
-        let persister_1 = LightningPersister::new(
-            "test_filesystem_persister_1".into(),
-            PathBuf::from("test_filesystem_persister_1"),
-            None,
-            Arc::new(Mutex::new(Connection::open_in_memory().unwrap())),
-        );
-        let chanmon_cfgs = create_chanmon_cfgs(2);
-        let mut node_cfgs = create_node_cfgs(2, &chanmon_cfgs);
-        let chain_mon_0 = test_utils::TestChainMonitor::new(
-            Some(&chanmon_cfgs[0].chain_source),
-            &chanmon_cfgs[0].tx_broadcaster,
-            &chanmon_cfgs[0].logger,
-            &chanmon_cfgs[0].fee_estimator,
-            &persister_0,
-            &node_cfgs[0].keys_manager,
-        );
-        let chain_mon_1 = test_utils::TestChainMonitor::new(
-            Some(&chanmon_cfgs[1].chain_source),
-            &chanmon_cfgs[1].tx_broadcaster,
-            &chanmon_cfgs[1].logger,
-            &chanmon_cfgs[1].fee_estimator,
-            &persister_1,
-            &node_cfgs[1].keys_manager,
-        );
-        node_cfgs[0].chain_monitor = chain_mon_0;
-        node_cfgs[1].chain_monitor = chain_mon_1;
-        let node_chanmgrs = create_node_chanmgrs(2, &node_cfgs, &[None, None]);
-        let nodes = create_network(2, &node_cfgs, &node_chanmgrs);
-
-        // Check that the persisted channel data is empty before any channels are
-        // open.
-        let mut persisted_chan_data_0 = persister_0.read_channelmonitors(nodes[0].keys_manager).unwrap();
-        assert_eq!(persisted_chan_data_0.len(), 0);
-        let mut persisted_chan_data_1 = persister_1.read_channelmonitors(nodes[1].keys_manager).unwrap();
-        assert_eq!(persisted_chan_data_1.len(), 0);
-
-        // Helper to make sure the channel is on the expected update ID.
-        macro_rules! check_persisted_data {
-            ($expected_update_id: expr) => {
-                persisted_chan_data_0 = persister_0.read_channelmonitors(nodes[0].keys_manager).unwrap();
-                assert_eq!(persisted_chan_data_0.len(), 1);
-                for (_, mon) in persisted_chan_data_0.iter() {
-                    assert_eq!(mon.get_latest_update_id(), $expected_update_id);
-                }
-                persisted_chan_data_1 = persister_1.read_channelmonitors(nodes[1].keys_manager).unwrap();
-                assert_eq!(persisted_chan_data_1.len(), 1);
-                for (_, mon) in persisted_chan_data_1.iter() {
-                    assert_eq!(mon.get_latest_update_id(), $expected_update_id);
-                }
-            };
-        }
-
-        // Create some initial channel and check that a channel was persisted.
-        let _ = create_announced_chan_between_nodes(&nodes, 0, 1, InitFeatures::known(), InitFeatures::known());
-        check_persisted_data!(0);
-
-        // Send a few payments and make sure the monitors are updated to the latest.
-        send_payment(&nodes[0], &vec![&nodes[1]][..], 8000000);
-        check_persisted_data!(5);
-        send_payment(&nodes[1], &vec![&nodes[0]][..], 4000000);
-        check_persisted_data!(10);
-
-        // Force close because cooperative close doesn't result in any persisted
-        // updates.
-        nodes[0]
-            .node
-            .force_close_channel(&nodes[0].node.list_channels()[0].channel_id)
-            .unwrap();
-        check_closed_event!(nodes[0], 1, ClosureReason::HolderForceClosed);
-        check_closed_broadcast!(nodes[0], true);
-        check_added_monitors!(nodes[0], 1);
-
-        let node_txn = nodes[0].tx_broadcaster.txn_broadcasted.lock().unwrap();
-        assert_eq!(node_txn.len(), 1);
-
-        let header = BlockHeader {
-            version: 0x20000000,
-            prev_blockhash: nodes[0].best_block_hash(),
-            merkle_root: Default::default(),
-            time: 42,
-            bits: 42,
-            nonce: 42,
-        };
-        connect_block(&nodes[1], &Block {
-            header,
-            txdata: vec![node_txn[0].clone(), node_txn[0].clone()],
-        });
-        check_closed_broadcast!(nodes[1], true);
-        check_closed_event!(nodes[1], 1, ClosureReason::CommitmentTxConfirmed);
-        check_added_monitors!(nodes[1], 1);
-
-        // Make sure everything is persisted as expected after close.
-        check_persisted_data!(11);
-    }
-
-    // Test that if the persister's path to channel data is read-only, writing a
-    // monitor to it results in the persister returning a PermanentFailure.
-    // Windows ignores the read-only flag for folders, so this test is Unix-only.
-    #[cfg(not(target_os = "windows"))]
-    #[test]
-    fn test_readonly_dir_perm_failure() {
-        let persister = LightningPersister::new(
-            "test_readonly_dir_perm_failure".into(),
-            PathBuf::from("test_readonly_dir_perm_failure"),
-            None,
-            Arc::new(Mutex::new(Connection::open_in_memory().unwrap())),
-        );
-        fs::create_dir_all(&persister.main_path).unwrap();
-
-        // Set up a dummy channel and force close. This will produce a monitor
-        // that we can then use to test persistence.
-        let chanmon_cfgs = create_chanmon_cfgs(2);
-        let node_cfgs = create_node_cfgs(2, &chanmon_cfgs);
-        let node_chanmgrs = create_node_chanmgrs(2, &node_cfgs, &[None, None]);
-        let nodes = create_network(2, &node_cfgs, &node_chanmgrs);
-        let chan = create_announced_chan_between_nodes(&nodes, 0, 1, InitFeatures::known(), InitFeatures::known());
-        nodes[1].node.force_close_channel(&chan.2).unwrap();
-        check_closed_event!(nodes[1], 1, ClosureReason::HolderForceClosed);
-        let mut added_monitors = nodes[1].chain_monitor.added_monitors.lock().unwrap();
-        let update_map = nodes[1].chain_monitor.latest_monitor_update_id.lock().unwrap();
-        let update_id = update_map.get(&added_monitors[0].0.to_channel_id()).unwrap();
-
-        // Set the persister's directory to read-only, which should result in
-        // returning a permanent failure when we then attempt to persist a
-        // channel update.
-        let path = &persister.main_path;
-        let mut perms = fs::metadata(path).unwrap().permissions();
-        perms.set_readonly(true);
-        fs::set_permissions(path, perms).unwrap();
-
-        let test_txo = OutPoint {
-            txid: Txid::from_hex("8984484a580b825b9972d7adb15050b3ab624ccd731946b3eeddb92f4e7ef6be").unwrap(),
-            index: 0,
-        };
-        match persister.persist_new_channel(test_txo, &added_monitors[0].1, update_id.2) {
-            Err(ChannelMonitorUpdateErr::PermanentFailure) => {},
-            _ => panic!("unexpected result from persisting new channel"),
-        }
-
-        nodes[1].node.get_and_clear_pending_msg_events();
-        added_monitors.clear();
-    }
-
-    // Test that if a persister's directory name is invalid, monitor persistence
-    // will fail.
-    #[cfg(target_os = "windows")]
-    #[test]
-    fn test_fail_on_open() {
-        // Set up a dummy channel and force close. This will produce a monitor
-        // that we can then use to test persistence.
-        let chanmon_cfgs = create_chanmon_cfgs(2);
-        let node_cfgs = create_node_cfgs(2, &chanmon_cfgs);
-        let node_chanmgrs = create_node_chanmgrs(2, &node_cfgs, &[None, None]);
-        let nodes = create_network(2, &node_cfgs, &node_chanmgrs);
-        let chan = create_announced_chan_between_nodes(&nodes, 0, 1, InitFeatures::known(), InitFeatures::known());
-        nodes[1].node.force_close_channel(&chan.2).unwrap();
-        check_closed_event!(nodes[1], 1, ClosureReason::HolderForceClosed);
-        let mut added_monitors = nodes[1].chain_monitor.added_monitors.lock().unwrap();
-        let update_map = nodes[1].chain_monitor.latest_monitor_update_id.lock().unwrap();
-        let update_id = update_map.get(&added_monitors[0].0.to_channel_id()).unwrap();
-
-        // Create the persister with an invalid directory name and test that the
-        // channel fails to open because the directories fail to be created. There
-        // don't seem to be invalid filename characters on Unix that Rust doesn't
-        // handle, hence why the test is Windows-only.
-        let persister = LightningPersister::new(
-            "test_fail_on_open".into(),
-            PathBuf::from(":<>/"),
-            None,
-            Arc::new(Mutex::new(Connection::open_in_memory().unwrap())),
-        );
-
-        let test_txo = OutPoint {
-            txid: Txid::from_hex("8984484a580b825b9972d7adb15050b3ab624ccd731946b3eeddb92f4e7ef6be").unwrap(),
-            index: 0,
-        };
-        match persister.persist_new_channel(test_txo, &added_monitors[0].1, update_id.2) {
-            Err(ChannelMonitorUpdateErr::PermanentFailure) => {},
-            _ => panic!("unexpected result from persisting new channel"),
-        }
-
-        nodes[1].node.get_and_clear_pending_msg_events();
-        added_monitors.clear();
     }
 
     #[test]

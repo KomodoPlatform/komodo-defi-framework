@@ -1,5 +1,6 @@
 use super::*;
 use crate::lightning::ln_errors::{SaveChannelClosingError, SaveChannelClosingResult};
+use crate::lightning::ln_storage::{HTLCStatus, LightningPersisterShared, PaymentType, SqlChannelDetails};
 use bitcoin::blockdata::script::Script;
 use bitcoin::blockdata::transaction::Transaction;
 use common::executor::{spawn, Timer};
@@ -22,7 +23,7 @@ pub struct LightningEventHandler {
     platform: Arc<Platform>,
     channel_manager: Arc<ChannelManager>,
     keys_manager: Arc<KeysManager>,
-    persister: Arc<LightningPersister>,
+    persister: LightningPersisterShared,
 }
 
 impl EventHandler for LightningEventHandler {
@@ -157,7 +158,7 @@ fn sign_funding_transaction(
 }
 
 async fn save_channel_closing_details(
-    persister: Arc<LightningPersister>,
+    persister: LightningPersisterShared,
     platform: Arc<Platform>,
     user_channel_id: u64,
     reason: String,
@@ -181,7 +182,7 @@ impl LightningEventHandler {
         platform: Arc<Platform>,
         channel_manager: Arc<ChannelManager>,
         keys_manager: Arc<KeysManager>,
-        persister: Arc<LightningPersister>,
+        persister: LightningPersisterShared,
     ) -> Self {
         LightningEventHandler {
             platform,
@@ -479,7 +480,7 @@ impl LightningEventHandler {
         let channel_manager = self.channel_manager.clone();
         let platform = self.platform.clone();
         spawn(async move {
-            // can we get the same last_channel_rpc_id if opening an outbound channel while handling this?
+            // todo: check if we can we get the same last_channel_rpc_id if opening an outbound channel while handling this
             if let Ok(last_channel_rpc_id) = persister.get_last_channel_rpc_id().await.error_log_passthrough() {
                 let user_channel_id = last_channel_rpc_id as u64 + 1;
                 if channel_manager

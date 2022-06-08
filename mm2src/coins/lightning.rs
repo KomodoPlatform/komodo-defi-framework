@@ -4,6 +4,7 @@ mod ln_events;
 mod ln_p2p;
 mod ln_platform;
 mod ln_serialization;
+mod ln_storage;
 mod ln_utils;
 
 use super::{lp_coinfind_or_err, DerivationMethod, MmCoinEnum};
@@ -40,10 +41,6 @@ use lightning_background_processor::BackgroundProcessor;
 use lightning_invoice::payment;
 use lightning_invoice::utils::{create_invoice_from_channelmanager, DefaultRouter};
 use lightning_invoice::{Invoice, InvoiceDescription};
-use lightning_persister::storage::{ClosedChannelsFilter, DbStorage, FileSystemStorage, HTLCStatus,
-                                   NodesAddressesMapShared, PaymentInfo, PaymentType, PaymentsFilter, Scorer,
-                                   SqlChannelDetails};
-use lightning_persister::LightningPersister;
 use ln_conf::{ChannelOptions, LightningCoinConf, LightningProtocolConf, PlatformCoinConfirmations};
 use ln_errors::{ClaimableBalancesError, ClaimableBalancesResult, CloseChannelError, CloseChannelResult,
                 ConnectToNodeError, ConnectToNodeResult, EnableLightningError, EnableLightningResult,
@@ -55,6 +52,9 @@ use ln_events::LightningEventHandler;
 use ln_p2p::{connect_to_node, ConnectToNodeRes, PeerManager};
 use ln_platform::{h256_json_from_txid, Platform};
 use ln_serialization::{InvoiceForRPC, NodeAddress, PublicKeyForRPC};
+use ln_storage::{ClosedChannelsFilter, DbStorage, FileSystemStorage, HTLCStatus, LightningPersister,
+                 LightningPersisterShared, NodesAddressesMapShared, PaymentInfo, PaymentType, PaymentsFilter, Scorer,
+                 SqlChannelDetails};
 use ln_utils::{ChainMonitor, ChannelManager};
 use mm2_core::mm_ctx::MmArc;
 use mm2_err_handle::prelude::*;
@@ -93,7 +93,7 @@ pub struct LightningCoin {
     /// The lightning node invoice payer.
     pub invoice_payer: Arc<InvoicePayer<Arc<LightningEventHandler>>>,
     /// The lightning node persister that takes care of writing/reading data from storage.
-    pub persister: Arc<LightningPersister>,
+    pub persister: LightningPersisterShared,
     /// The mutex storing the addresses of the nodes that the lightning node has open channels with,
     /// these addresses are used for reconnecting.
     pub open_channels_nodes: NodesAddressesMapShared,

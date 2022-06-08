@@ -1,5 +1,6 @@
 use super::*;
 use crate::lightning::ln_platform::{get_best_header, ln_best_block_update_loop, update_best_block};
+use crate::lightning::ln_storage::{DbStorage, FileSystemStorage, NodesAddressesMap, Scorer};
 use crate::utxo::rpc_clients::BestBlock as RpcBestBlock;
 use bitcoin::hash_types::BlockHash;
 use bitcoin_hashes::{sha256d, Hash};
@@ -12,8 +13,6 @@ use lightning::ln::channelmanager;
 use lightning::ln::channelmanager::{ChainParameters, ChannelManagerReadArgs, SimpleArcChannelManager};
 use lightning::util::config::UserConfig;
 use lightning::util::ser::ReadableArgs;
-use lightning_persister::storage::{DbStorage, FileSystemStorage, NodesAddressesMap, Scorer};
-use lightning_persister::LightningPersister;
 use mm2_core::mm_ctx::MmArc;
 use std::fs::File;
 use std::path::PathBuf;
@@ -28,7 +27,7 @@ pub type ChainMonitor = chainmonitor::ChainMonitor<
     Arc<Platform>,
     Arc<Platform>,
     Arc<LogState>,
-    Arc<LightningPersister>,
+    LightningPersisterShared,
 >;
 
 pub type ChannelManager = SimpleArcChannelManager<ChainMonitor, Platform, Platform, LogState>;
@@ -51,10 +50,10 @@ pub async fn init_persister(
     platform: Arc<Platform>,
     ticker: String,
     backup_path: Option<String>,
-) -> EnableLightningResult<Arc<LightningPersister>> {
+) -> EnableLightningResult<LightningPersisterShared> {
     let ln_data_dir = ln_data_dir(ctx, &ticker);
     let ln_data_backup_dir = ln_data_backup_dir(ctx, backup_path, &ticker);
-    let persister = Arc::new(LightningPersister::new(
+    let persister = LightningPersisterShared(Arc::new(LightningPersister::new(
         ticker.replace('-', "_"),
         ln_data_dir,
         ln_data_backup_dir,
@@ -63,7 +62,7 @@ pub async fn init_persister(
                 "sqlite_connection is not initialized".into(),
             )))?
             .clone(),
-    ));
+    )));
     let is_initialized = persister.is_fs_initialized().await?;
     if !is_initialized {
         persister.init_fs().await?;
@@ -111,7 +110,7 @@ pub fn init_keys_manager(ctx: &MmArc) -> EnableLightningResult<Arc<KeysManager>>
 pub async fn init_channel_manager(
     platform: Arc<Platform>,
     logger: Arc<LogState>,
-    persister: Arc<LightningPersister>,
+    persister: LightningPersisterShared,
     keys_manager: Arc<KeysManager>,
     user_config: UserConfig,
 ) -> EnableLightningResult<(Arc<ChainMonitor>, Arc<ChannelManager>)> {
@@ -132,7 +131,9 @@ pub async fn init_channel_manager(
     ));
 
     // Read ChannelMonitor state from disk, important for lightning node is restarting and has at least 1 channel
+    // todo: should open a PR in rust-lightning to move read_channelmonitors to the persister trait to avoid using FileSystemPersister
     let mut channelmonitors = persister
+        .channels_persister()
         .read_channelmonitors(keys_manager.clone())
         .map_to_mm(|e| EnableLightningError::IOError(e.to_string()))?;
 
@@ -228,7 +229,7 @@ pub async fn init_channel_manager(
     Ok((chain_monitor, channel_manager))
 }
 
-pub async fn persist_scorer_loop(persister: Arc<LightningPersister>, scorer: Arc<Mutex<Scorer>>) {
+pub async fn persist_scorer_loop(persister: LightningPersisterShared, scorer: Arc<Mutex<Scorer>>) {
     loop {
         if let Err(e) = persister.save_scorer(scorer.clone()).await {
             log::warn!(
@@ -241,7 +242,7 @@ pub async fn persist_scorer_loop(persister: Arc<LightningPersister>, scorer: Arc
 }
 
 pub async fn get_open_channels_nodes_addresses(
-    persister: Arc<LightningPersister>,
+    persister: LightningPersisterShared,
     channel_manager: Arc<ChannelManager>,
 ) -> EnableLightningResult<NodesAddressesMap> {
     let channels = channel_manager.list_channels();
