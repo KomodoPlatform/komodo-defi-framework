@@ -24,7 +24,7 @@ and we use [rustfmt](https://github.com/rust-lang/rustfmt) to make our code clea
     ```
    Install cargo udeps
    ```shell
-    cargo install cargo-udeps --locked
+    cargo install cargo-udeps
     ```
 3. Make sure there are no unused dependencies. Run the following check
    ```shell
@@ -32,7 +32,7 @@ and we use [rustfmt](https://github.com/rust-lang/rustfmt) to make our code clea
    ```
    Install cargo deny
    ```shell
-   cargo install --locked cargo-deny
+   cargo install cargo-deny
    ```
 4. Make sure that no new dependencies duplicates appear. Run the following check
    ```shell
