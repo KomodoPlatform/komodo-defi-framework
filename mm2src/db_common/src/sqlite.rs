@@ -1,5 +1,6 @@
 pub use rusqlite;
 pub use sql_builder;
+use std::fmt;
 
 use log::debug;
 use rusqlite::types::{FromSql, Type as SqlType, Value};
@@ -35,14 +36,14 @@ where
     Ok(Some(result))
 }
 
+pub fn validate_ident(ident: &str) -> SqlResult<()> {
+    validate_ident_impl(ident, |c| c.is_alphanumeric() || c == '_' || c == '.')
+}
+
 pub fn validate_table_name(table_name: &str) -> SqlResult<()> {
     // As per https://stackoverflow.com/a/3247553, tables can't be the target of parameter substitution.
     // So we have to use a plain concatenation disallowing any characters in the table name that may lead to SQL injection.
-    if table_name.chars().all(|c| c.is_alphanumeric() || c == '_') {
-        Ok(())
-    } else {
-        Err(SqlError::InvalidParameterName(table_name.to_string()))
-    }
+    validate_ident_impl(table_name, |c| c.is_alphanumeric() || c == '_')
 }
 
 /// Calculates the offset to skip records by uuid.
@@ -163,6 +164,76 @@ where
     Ok(res)
 }
 
+pub trait ToValidSqlTable {
+    /// Converts `self` to a valid SQL table name or returns an error.
+    fn to_valid_sql_table(&self) -> SqlResult<String>;
+}
+
+impl<S: ToString> ToValidSqlTable for S {
+    fn to_valid_sql_table(&self) -> SqlResult<String> {
+        let table = self.to_string();
+        validate_table_name(&table)?;
+        Ok(table)
+    }
+}
+
+pub trait ToValidSqlIdent {
+    /// Converts `self` to a valid SQL value or returns an error.
+    fn to_valid_sql_ident(&self) -> SqlResult<String>;
+}
+
+impl<S: ToString> ToValidSqlIdent for S {
+    fn to_valid_sql_ident(&self) -> SqlResult<String> {
+        let ident = self.to_string();
+        validate_ident(&ident)?;
+        Ok(ident)
+    }
+}
+
+/// A valid SQL value that can be passed as an argument to the `SqlBuilder` or `SqlQuery` safely.
+pub enum SqlValue {
+    String(&'static str),
+    Decimal(i64),
+}
+
+impl SqlValue {
+    /// Converts the given `value` to string if it implements `Into<SqlValue>`.
+    /// The resulting string is considered a safe SQL value.
+    pub(crate) fn value_to_string<S>(value: S) -> String
+    where
+        SqlValue: From<S>,
+    {
+        SqlValue::from(value).to_string()
+    }
+
+    /// Converts the given `values` to `Vec<String>` if they implement `Into<SqlValue>`.
+    /// /// The resulting strings are considered safe SQL values.
+    pub(crate) fn values_to_strings<I, S>(values: I) -> Vec<String>
+    where
+        I: IntoIterator<Item = S>,
+        SqlValue: From<S>,
+    {
+        values.into_iter().map(SqlValue::value_to_string).collect()
+    }
+}
+
+impl fmt::Display for SqlValue {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            SqlValue::String(string) => write!(f, "{}", string),
+            SqlValue::Decimal(decimal) => write!(f, "{}", decimal),
+        }
+    }
+}
+
+impl From<&'static str> for SqlValue {
+    fn from(string: &'static str) -> Self { SqlValue::String(string) }
+}
+
+impl From<i64> for SqlValue {
+    fn from(decimal: i64) -> Self { SqlValue::Decimal(decimal) }
+}
+
 /// This structure manages the SQL parameters.
 #[derive(Clone, Default)]
 pub(crate) struct SqlParamsBuilder {
@@ -191,4 +262,15 @@ impl SqlParamsBuilder {
     }
 
     pub(crate) fn params(&self) -> &OwnedSqlParams { &self.params }
+}
+
+fn validate_ident_impl<F>(ident: &str, is_valid: F) -> SqlResult<()>
+where
+    F: Fn(char) -> bool,
+{
+    if ident.chars().all(is_valid) {
+        Ok(())
+    } else {
+        Err(SqlError::InvalidParameterName(ident.to_string()))
+    }
 }

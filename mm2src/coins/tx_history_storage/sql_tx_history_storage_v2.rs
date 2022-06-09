@@ -267,38 +267,32 @@ fn get_history_builder_preimage<'a>(
     token_id: String,
     for_addresses: Option<FilteringAddresses>,
 ) -> Result<SqlQuery<'a>, MmError<SqlError>> {
-    let tx_history_table_name = tx_history_table(wallet_id);
-    validate_table_name(&tx_history_table_name)?;
-
-    let mut sql_builder = SqlQuery::select_from_alias(connection, &tx_history_table_name, "tx_history")?;
+    let mut sql_builder = SqlQuery::select_from_alias(connection, &tx_history_table(wallet_id), "tx_history")?;
 
     // Check if we need to join [`tx_from_address_table(wallet_id)`] and [`tx_to_address_table(wallet_id)`] tables
     // to query transactions that were sent from/to `for_addresses` addresses.
     if let Some(for_addresses) = for_addresses {
         let tx_from_address_table_name = tx_from_address_table(wallet_id);
-        validate_table_name(&tx_from_address_table_name)?;
-
         let tx_to_address_table_name = tx_to_address_table(wallet_id);
-        validate_table_name(&tx_to_address_table_name)?;
 
         sql_builder
             .join_alias(&tx_from_address_table_name, "tx_from")?
-            .on_eq("tx_history.internal_id", "tx_from.internal_id");
+            .on_join_eq("tx_history.internal_id", "tx_from.internal_id")?;
         sql_builder
             .join_alias(&tx_to_address_table_name, "tx_to")?
-            .on_eq("tx_history.internal_id", "tx_to.internal_id");
+            .on_join_eq("tx_history.internal_id", "tx_to.internal_id")?;
 
         sql_builder
-            .and_where_in_params("tx_from.from_address", for_addresses.clone())
-            .or_where_in_params("tx_to.to_address", for_addresses)
-            .group_by("tx_history.internal_id");
+            .and_where_in_params("tx_from.from_address", for_addresses.clone())?
+            .or_where_in_params("tx_to.to_address", for_addresses)?
+            .group_by("tx_history.internal_id")?;
     }
 
     sql_builder
-        .and_where_eq_param("token_id", token_id)
-        .order_asc("tx_history.confirmation_status")
-        .order_desc("tx_history.block_height")
-        .order_asc("tx_history.id");
+        .and_where_eq_param("tx_history.token_id", token_id)?
+        .order_asc("tx_history.confirmation_status")?
+        .order_desc("tx_history.block_height")?
+        .order_asc("tx_history.id")?;
     Ok(sql_builder)
 }
 
@@ -312,15 +306,19 @@ fn finalize_get_total_count_sql_builder(mut subquery: SqlQuery<'_>) -> Result<Sq
     const INTERNAL_ID_ALIAS: &str = "__INTERNAL_ID_ALIAS";
 
     // Query `id_field` and give it the `__ID_FIELD` alias.
-    subquery.field(format!("tx_history.internal_id as {}", INTERNAL_ID_ALIAS));
+    subquery.field_alias("tx_history.internal_id", INTERNAL_ID_ALIAS)?;
 
     let mut external_query = SqlQuery::select_from_subquery(subquery.subquery())?;
-    external_query.count(INTERNAL_ID_ALIAS);
+    external_query.count(INTERNAL_ID_ALIAS)?;
     Ok(external_query)
 }
 
-fn finalize_get_history_sql_builder(sql_builder: &mut SqlQuery, offset: usize, limit: usize) {
-    sql_builder.field("tx_history.details_json").offset(offset).limit(limit);
+fn finalize_get_history_sql_builder(sql_builder: &mut SqlQuery, offset: usize, limit: usize) -> Result<(), SqlError> {
+    sql_builder
+        .field("tx_history.details_json")?
+        .offset(offset)
+        .limit(limit);
+    Ok(())
 }
 
 fn tx_details_from_row(row: &Row<'_>) -> Result<TransactionDetails, SqlError> {
@@ -680,7 +678,7 @@ impl TxHistoryStorage for SqliteTxHistoryStorage {
                 },
             };
 
-            finalize_get_history_sql_builder(&mut sql_builder, offset, limit);
+            finalize_get_history_sql_builder(&mut sql_builder, offset, limit)?;
             let transactions = sql_builder.query(tx_details_from_row)?;
 
             let result = GetHistoryResult {

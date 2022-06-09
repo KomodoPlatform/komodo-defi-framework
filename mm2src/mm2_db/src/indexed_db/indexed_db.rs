@@ -1411,4 +1411,67 @@ mod tests {
         let actual = table.get_items("started_at", 123).await.expect("Couldn't get items");
         assert_eq!(actual, vec![(swap_1_id, swap_1)]);
     }
+
+    #[wasm_bindgen_test]
+    async fn test_transaction_abort_on_error() {
+        const DB_NAME: &str = "TEST_TRANSACTION_ABORT_ON_ERROR";
+        const DB_VERSION: u32 = 1;
+
+        let tx_1 = TxTable {
+            ticker: "RICK".to_owned(),
+            tx_hash: "0a0fda88364b960000f445351fe7678317a1e0c80584de0413377ede00ba696f".to_owned(),
+            block_height: 10000,
+        };
+        let tx_2 = TxTable {
+            ticker: "RICK".to_owned(),
+            tx_hash: "ba881ecca15b5d4593f14f25debbcdfe25f101fd2e9cf8d0b5d92d19813d4424".to_owned(),
+            block_height: 10000,
+        };
+        // The transaction has the same `tx_hash` as `tx_1`.
+        let invalid_tx = TxTable {
+            ticker: "RICK".to_owned(),
+            tx_hash: "0a0fda88364b960000f445351fe7678317a1e0c80584de0413377ede00ba696f".to_owned(),
+            block_height: 20000,
+        };
+
+        register_wasm_log();
+
+        let db = IndexedDbBuilder::new(DbIdentifier::for_test(DB_NAME))
+            .with_version(DB_VERSION)
+            .with_table::<TxTable>()
+            .build()
+            .await
+            .expect("!IndexedDb::init");
+        let transaction = db.transaction().await.expect("!IndexedDb::transaction()");
+        let table = transaction
+            .table::<TxTable>()
+            .await
+            .expect("!DbTransaction::open_table");
+
+        let _tx_1_id = table.add_item(&tx_1).await.expect("Couldn't add an item");
+        let _tx_2_id = table.add_item(&tx_2).await.expect("Couldn't add an item");
+
+        // Try to add the updated RICK tx item with the same [`TxTable::tx_hash`].
+        // [`TxTable::tx_hash`] is a unique index, so this operation must fail.
+        let _err = table
+            .add_item(&invalid_tx)
+            .await
+            .expect_err("'DbTable::add_item' should have failed");
+        assert_eq!(table.aborted().await, Ok(true));
+        assert_eq!(transaction.aborted().await, Ok(true));
+
+        // Check if `tx_1` and `tx_2` hasn't been uploaded.
+        // Since the last operation failed, we have to reopen the transaction.
+        let transaction = db.transaction().await.expect("!IndexedDb::transaction()");
+        let table = transaction
+            .table::<TxTable>()
+            .await
+            .expect("!DbTransaction::open_table");
+
+        let actual_txs = table
+            .get_items("ticker", "RICK")
+            .await
+            .expect("Couldn't get items by the index 'ticker=RICK'");
+        assert!(actual_txs.is_empty());
+    }
 }

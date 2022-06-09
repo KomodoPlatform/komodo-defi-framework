@@ -1,4 +1,5 @@
-use crate::sqlite::{query_single_row, validate_table_name, OwnedSqlParam, OwnedSqlParams, SqlParamsBuilder};
+use crate::sqlite::{query_single_row, validate_ident, validate_table_name, OwnedSqlParam, OwnedSqlParams,
+                    SqlParamsBuilder, SqlValue, ToValidSqlIdent, ToValidSqlTable};
 use log::debug;
 use rusqlite::{Connection, Error as SqlError, Result as SqlResult, Row};
 use sql_builder::SqlBuilder;
@@ -35,7 +36,7 @@ impl<'a> SqlQuery<'a> {
         validate_table_name(alias)?;
         Ok(SqlQuery {
             conn,
-            sql_builder: SqlBuilder::select_from(format!("{} {}", table, alias)),
+            sql_builder: SqlBuilder::select_from(format!("{} AS {}", table, alias)),
             params: SqlParamsBuilder::default(),
             ordering: Vec::default(),
         })
@@ -59,24 +60,40 @@ impl<'a> SqlQuery<'a> {
 
     /// Add COUNT(field).
     /// For more details see [`SqlBuilder::count`].
+    ///
+    /// Please note the function validates the given `field`.
     #[inline]
-    pub fn count<S: ToString>(&mut self, field: S) -> &mut Self {
-        self.sql_builder.count(field);
-        self
+    pub fn count<S: ToValidSqlIdent>(&mut self, field: S) -> SqlResult<&mut Self> {
+        self.sql_builder.count(field.to_valid_sql_ident()?);
+        Ok(self)
     }
 
     /// Add field.
     /// For more details see [`SqlBuilder::field`].
+    ///
+    /// Please note the function validates the given `field`.
     #[inline]
-    pub fn field<S: ToString>(&mut self, field: S) -> &mut Self {
-        self.sql_builder.field(field);
-        self
+    pub fn field<S: ToValidSqlIdent>(&mut self, field: S) -> SqlResult<&mut Self> {
+        self.sql_builder.field(field.to_valid_sql_ident()?);
+        Ok(self)
+    }
+
+    /// Add field and gives it an alias.
+    /// For more details see [`SqlBuilder::field`].
+    ///
+    /// Please note the function validates the given `field` and `alias` names.
+    #[inline]
+    pub fn field_alias<S: ToValidSqlIdent>(&mut self, field: S, alias: &'static str) -> SqlResult<&mut Self> {
+        validate_ident(alias)?;
+        self.sql_builder
+            .field(format!("{} AS {}", field.to_valid_sql_ident()?, alias));
+        Ok(self)
     }
 
     /// Set OFFSET.
     /// For more details see [`SqlBuilder::offset`].
     #[inline]
-    pub fn offset<S: ToString>(&mut self, offset: S) -> &mut Self {
+    pub fn offset(&mut self, offset: usize) -> &mut Self {
         self.sql_builder.offset(offset);
         self
     }
@@ -84,190 +101,240 @@ impl<'a> SqlQuery<'a> {
     /// Set LIMIT.
     /// For more details see [`SqlBuilder::limit`].
     #[inline]
-    pub fn limit<S: ToString>(&mut self, limit: S) -> &mut Self {
+    pub fn limit(&mut self, limit: usize) -> &mut Self {
         self.sql_builder.limit(limit);
         self
     }
 
     /// Add GROUP BY part.
     /// For more details see [`SqlBuilder::group_by`].
+    ///
+    /// Please note the function validates the given `field`.
     #[inline]
-    pub fn group_by<S: ToString>(&mut self, field: S) -> &mut Self {
-        self.sql_builder.group_by(field);
-        self
+    pub fn group_by<S: ToValidSqlIdent>(&mut self, field: S) -> SqlResult<&mut Self> {
+        self.sql_builder.group_by(field.to_valid_sql_ident()?);
+        Ok(self)
     }
 
     /// Add ORDER BY ASC.
     /// For more details see [`SqlBuilder::order_asc`].
+    ///
+    /// Please note the function validates the given `field` name.
     #[inline]
-    pub fn order_asc<S: ToString>(&mut self, field: S) -> &mut Self {
-        self.ordering.push(SqlOrdering::Asc(field.to_string()));
-        self
+    pub fn order_asc<S: ToValidSqlIdent>(&mut self, field: S) -> SqlResult<&mut Self> {
+        self.ordering.push(SqlOrdering::Asc(field.to_valid_sql_ident()?));
+        Ok(self)
     }
 
     /// Add ORDER BY DESC.
     /// For more details see [`SqlBuilder::order_desc`].
-    #[inline]
-    pub fn order_desc<S: ToString>(&mut self, field: S) -> &mut Self {
-        self.ordering.push(SqlOrdering::Desc(field.to_string()));
-        self
-    }
-
-    /// Join the given `table` and gives it the `alias`.
     ///
-    /// Please note the function validates the given `table` name.
-    /// For more details see [`SqlBuilder::join`].
+    /// Please note the function validates the given `field` name.
     #[inline]
-    pub fn join_alias(&mut self, table: &str, alias: &'static str) -> SqlResult<&mut Self> {
-        validate_table_name(table)?;
-        validate_table_name(alias)?;
-        self.sql_builder.join(format!("{} {}", table, alias));
+    pub fn order_desc<S: ToValidSqlIdent>(&mut self, field: S) -> SqlResult<&mut Self> {
+        self.ordering.push(SqlOrdering::Desc(field.to_valid_sql_ident()?));
         Ok(self)
     }
 
-    /// Join constraint to the last JOIN part.
+    /// Join the given `table` and gives it the `alias`.
+    /// For more details see [`SqlBuilder::join`].
+    ///
+    /// Please note the function validates the given `table` and `alias` names.
+    #[inline]
+    pub fn join_alias<S: ToValidSqlTable>(&mut self, table: S, alias: &'static str) -> SqlResult<&mut Self> {
+        validate_table_name(alias)?;
+        self.sql_builder
+            .join(format!("{} AS {}", table.to_valid_sql_table()?, alias));
+        Ok(self)
+    }
+
+    /// Join the given `table`.
+    /// For more details see [`SqlBuilder::join`].
     ///
     /// Please note the function validates the given `table` name.
-    /// For more details see [`SqlBuilder::join`].
     #[inline]
-    pub fn join(&mut self, table: &str) -> SqlResult<&mut Self> {
-        validate_table_name(table)?;
-        self.sql_builder.join(table);
+    pub fn join<S: ToValidSqlTable>(&mut self, table: S) -> SqlResult<&mut Self> {
+        self.sql_builder.join(table.to_valid_sql_table()?);
         Ok(self)
     }
 
     /// Join constraint to the last JOIN part [`SqlQuery::join`].
     /// For more details see [`SqlBuilder::on_eq`].
+    ///
+    /// Please note the function validates the given `c1` name,
+    /// and `c2` is considered a valid value as it's able to be converted into `SqlValue`.
     #[inline]
-    pub fn on_eq<C1, C2>(&mut self, c1: C1, c2: C2) -> &mut Self
+    pub fn on_join_eq<C1, C2>(&mut self, c1: C1, c2: C2) -> SqlResult<&mut Self>
     where
-        C1: ToString,
-        C2: ToString,
+        C1: ToValidSqlIdent,
+        SqlValue: From<C2>,
     {
-        self.sql_builder.on_eq(c1, c2);
-        self
+        self.sql_builder
+            .on_eq(c1.to_valid_sql_ident()?, SqlValue::value_to_string(c2));
+        Ok(self)
     }
 
     /// Add WHERE condition for equal parts.
     /// For more details see [`SqlBuilder::and_where_eq`].
+    ///
+    /// Please note the function validates the given `field` name,
+    /// and `value` is considered a valid as it's able to be converted into `SqlValue`.
     #[inline]
-    pub fn and_where_eq<S, T>(&mut self, field: S, value: T) -> &mut Self
+    pub fn and_where_eq<S, T>(&mut self, field: S, value: T) -> SqlResult<&mut Self>
     where
-        S: ToString,
-        T: ToString,
+        S: ToValidSqlIdent,
+        SqlValue: From<T>,
     {
-        self.sql_builder.and_where_eq(field, value);
-        self
+        self.sql_builder
+            .and_where_eq(field.to_valid_sql_ident()?, SqlValue::value_to_string(value));
+        Ok(self)
     }
 
     /// Add WHERE condition for equal parts.
     /// For more details see [`SqlBuilder::and_where_eq`].
+    ///
+    /// Please note the function validates the given `field`.
     #[inline]
-    pub fn and_where_eq_param<S, T>(&mut self, field: S, param: T) -> &mut Self
+    pub fn and_where_eq_param<S, T>(&mut self, field: S, param: T) -> SqlResult<&mut Self>
     where
-        S: ToString,
+        S: ToValidSqlIdent,
         OwnedSqlParam: From<T>,
     {
-        self.sql_builder.and_where_eq(field, self.params.push_param(param));
-        self
+        self.sql_builder
+            .and_where_eq(field.to_valid_sql_ident()?, self.params.push_param(param));
+        Ok(self)
     }
 
     /// Add WHERE field IN (list).
     /// For more details see [`SqlBuilder::and_where_in`].
+    ///
+    /// Please note the function validates the given `field`,
+    /// and `values` are considered valid as they're able to be converted into `SqlValue`.
     #[inline]
-    pub fn and_where_in<S, T>(&mut self, field: S, list: &[T]) -> &mut Self
+    pub fn and_where_in<S, I, T>(&mut self, field: S, values: I) -> SqlResult<&mut Self>
     where
-        S: ToString,
-        T: ToString,
+        S: ToValidSqlIdent,
+        I: IntoIterator<Item = T>,
+        SqlValue: From<T>,
     {
-        self.sql_builder.and_where_in(field, list);
-        self
+        self.sql_builder
+            .and_where_in(field.to_valid_sql_ident()?, &SqlValue::values_to_strings(values));
+        Ok(self)
     }
 
     /// Add WHERE field IN (string list).
     /// For more details see [`SqlBuilder::and_where_in_quoted`].
+    ///
+    /// Please note the function validates the given `field`,
+    /// and `values` are considered valid as they're able to be converted into `SqlValue`.
     #[inline]
-    pub fn and_where_in_quoted<S, T>(&mut self, field: S, list: &[T]) -> &mut Self
+    pub fn and_where_in_quoted<S, I, T>(&mut self, field: S, values: I) -> SqlResult<&mut Self>
     where
-        S: ToString,
-        T: ToString,
+        S: ToValidSqlIdent,
+        I: IntoIterator<Item = T>,
+        SqlValue: From<T>,
     {
-        self.sql_builder.and_where_in_quoted(field, list);
-        self
+        let values: Vec<_> = values.into_iter().map(SqlValue::value_to_string).collect();
+        self.sql_builder
+            .and_where_in_quoted(field.to_valid_sql_ident()?, &values);
+        Ok(self)
     }
 
     /// Add WHERE field IN (string list) with the specified `params`.
     /// For more details see [`SqlBuilder::and_where_in_quoted`].
+    ///
+    /// Please note the function validates the given `field`.
     #[inline]
-    pub fn and_where_in_params<S, I, P>(&mut self, field: S, params: I) -> &mut Self
+    pub fn and_where_in_params<S, I, P>(&mut self, field: S, params: I) -> SqlResult<&mut Self>
     where
-        S: ToString,
+        S: ToValidSqlIdent,
         I: IntoIterator<Item = P>,
         OwnedSqlParam: From<P>,
     {
-        self.sql_builder.and_where_in(field, &self.params.push_params(params));
-        self
+        self.sql_builder
+            .and_where_in(field.to_valid_sql_ident()?, &self.params.push_params(params));
+        Ok(self)
     }
 
     /// Add OR condition of equal parts to the last WHERE condition.
     /// For more details see [`SqlBuilder::or_where_eq`].
+    ///
+    /// Please note the function validates the given `field`,
+    /// and `value` is considered a valid as it's able to be converted into `SqlValue`.
     #[inline]
-    pub fn or_where_eq<S, T>(&mut self, field: S, value: T) -> &mut Self
+    pub fn or_where_eq<S, T>(&mut self, field: S, value: T) -> SqlResult<&mut Self>
     where
-        S: ToString,
-        T: ToString,
+        S: ToValidSqlIdent,
+        SqlValue: From<T>,
     {
-        self.sql_builder.or_where_eq(field, value);
-        self
+        self.sql_builder
+            .or_where_eq(field.to_valid_sql_ident()?, SqlValue::value_to_string(value));
+        Ok(self)
     }
 
     /// Add OR condition of equal parts to the last WHERE condition.
     /// For more details see [`SqlBuilder::or_where_eq`].
+    ///
+    /// Please note the function validates the given `field`.
     #[inline]
-    pub fn or_where_eq_param<S, T>(&mut self, field: S, param: T) -> &mut Self
+    pub fn or_where_eq_param<S, T>(&mut self, field: S, param: T) -> SqlResult<&mut Self>
     where
-        S: ToString,
+        S: ToValidSqlIdent,
         OwnedSqlParam: From<T>,
     {
-        self.sql_builder.or_where_eq(field, self.params.push_param(param));
-        self
+        self.sql_builder
+            .or_where_eq(field.to_valid_sql_ident()?, self.params.push_param(param));
+        Ok(self)
     }
 
     /// Add OR field IN (list) to the last WHERE condition.
     /// For more details see [`SqlBuilder::or_where_in`].
+    ///
+    /// Please note the function validates the given `field`,
+    /// and `values` are considered valid as they're able to be converted into `SqlValue`.
     #[inline]
-    pub fn or_where_in<S, T>(&mut self, field: S, list: &[T]) -> &mut Self
+    pub fn or_where_in<S, I, T>(&mut self, field: S, values: I) -> SqlResult<&mut Self>
     where
-        S: ToString,
-        T: ToString,
+        S: ToValidSqlIdent,
+        I: IntoIterator<Item = T>,
+        SqlValue: From<T>,
     {
-        self.sql_builder.or_where_in(field, list);
-        self
+        self.sql_builder
+            .or_where_in(field.to_valid_sql_ident()?, &SqlValue::values_to_strings(values));
+        Ok(self)
     }
 
     /// Add OR field IN (string list) to the last WHERE condition.
     /// For more details see [`SqlBuilder::and_where_in_quoted`].
+    ///
+    /// Please note the function validates the given `field`,
+    /// and `values` are considered valid as they're able to be converted into `SqlValue`.
     #[inline]
-    pub fn or_where_in_quoted<S, T>(&mut self, field: S, list: &[T]) -> &mut Self
+    pub fn or_where_in_quoted<S, I, T>(&mut self, field: S, values: I) -> SqlResult<&mut Self>
     where
-        S: ToString,
-        T: ToString,
+        S: ToValidSqlIdent,
+        I: IntoIterator<Item = T>,
+        SqlValue: From<T>,
     {
-        self.sql_builder.or_where_in_quoted(field, list);
-        self
+        self.sql_builder
+            .or_where_in_quoted(field.to_valid_sql_ident()?, &SqlValue::values_to_strings(values));
+        Ok(self)
     }
 
     /// Add OR field IN (list) to the last WHERE condition.
     /// For more details see [`SqlBuilder::or_where_in_quoted`].
+    ///
+    /// Please note the function validates the given `field`.
     #[inline]
-    pub fn or_where_in_params<S, I, P>(&mut self, field: S, params: I) -> &mut Self
+    pub fn or_where_in_params<S, I, P>(&mut self, field: S, params: I) -> SqlResult<&mut Self>
     where
-        S: ToString,
+        S: ToValidSqlIdent,
         I: IntoIterator<Item = P>,
         OwnedSqlParam: From<P>,
     {
-        self.sql_builder.or_where_in(field, &self.params.push_params(params));
-        self
+        self.sql_builder
+            .or_where_in(field.to_valid_sql_ident()?, &self.params.push_params(params));
+        Ok(self)
     }
 
     #[inline]
@@ -302,39 +369,35 @@ impl<'a> SqlQuery<'a> {
     /// 2) Don't specify any `WHERE` constraint, ordering on the original `SqlQuery` instance
     ///    after [`SqlQuery::offset_by_id`] is called.
     #[inline]
-    pub fn query_offset_by_id<T>(mut self, id_field: &str, where_id_eq_param: T) -> SqlResult<Option<usize>>
+    pub fn query_offset_by_id<S, T>(mut self, id_field: S, where_id_eq_param: T) -> SqlResult<Option<usize>>
     where
+        S: ToValidSqlIdent,
         OwnedSqlParam: From<T>,
     {
         /// The alias is needed so that the external query can access the results of the subquery.
         /// Example:
-        ///   SUBQUERY: `SELECT ROW_NUMBER() OVER (ORDER BY h.height ASC, h.total_amount DESC) AS row, h.tx_hash as __ID_FIELD FROM tx_history h JOIN tx_address a ON h.tx_hash = a.tx_hash WHERE a.address IN ('address_2', 'address_4') GROUP BY h.tx_hash`
-        ///   EXTERNAL_QUERY: `SELECT row FROM (<SUBQUERY>) WHERE __ID_FIELD = :1;`
-        /// Here we can't use `id_field = "h.tx_hash"` in the external query because it doesn't know about the `tx_history h` table.
+        ///   SUBQUERY: `SELECT ROW_NUMBER() OVER (ORDER BY h.height ASC, h.total_amount DESC) AS __ROW, h.tx_hash as __ID_FIELD FROM tx_history h JOIN tx_address a ON h.tx_hash = a.tx_hash WHERE a.address IN ('address_2', 'address_4') GROUP BY h.tx_hash`
+        ///   EXTERNAL_QUERY: `SELECT __ROW FROM (<SUBQUERY>) WHERE __ID_FIELD = :1;`
+        /// Here we can't use `id_field = "h.tx_hash"` in the external query because it doesn't know about the `tx_history AS h` table.
         /// So we need to give the `id_field` an alias like `__ID_FIELD`.
         const ID_FIELD_ALIAS: &str = "__ID_FIELD";
+        const ROW_NUMBER_ALIAS: &str = "__ROW";
 
         if self.ordering.is_empty() {
             let error = "SQL ORDERs must be specified before `SqlQuery::query_offset_by_id` is called";
             return Err(SqlError::ToSqlConversionFailure(StringError::from(error).into_boxed()));
         }
 
-        let order_by = self
-            .ordering
-            .iter()
-            .map(SqlOrdering::to_sql)
-            .collect::<Vec<_>>()
-            .join(", ");
         self
             // Query the number of the row with the specified `order_by` ordering.
-            .field(format!("ROW_NUMBER() OVER (ORDER BY {}) AS row", order_by))
+            .row_number_alias(ROW_NUMBER_ALIAS)?
             // Query `id_field` and give it the `__ID_FIELD` alias.
-            .field(format!("{} as {}", id_field, ID_FIELD_ALIAS));
+            .field_alias(id_field.to_valid_sql_ident()?, ID_FIELD_ALIAS)?;
 
         let mut external_query = SqlQuery::select_from_subquery(self.subquery())?;
         external_query
-            .field("row")
-            .and_where_eq_param(ID_FIELD_ALIAS, where_id_eq_param);
+            .field(ROW_NUMBER_ALIAS)?
+            .and_where_eq_param(ID_FIELD_ALIAS, where_id_eq_param)?;
         Ok(external_query
             .query_single_row(|row| row.get::<_, isize>(0))?
             .map(|offset| offset.try_into().expect("row index should be always above zero")))
@@ -384,6 +447,25 @@ impl<'a> SqlQuery<'a> {
                 SqlOrdering::Desc(column) => self.sql_builder.order_desc(column),
             };
         }
+    }
+
+    /// Add `ROW_NUMBER()` field with the specified `order_by` ordering,
+    /// and give it the specified `alias`.
+    /// For more details see [`SqlBuilder::field`].
+    ///
+    /// Please note the functions clears [`SqlQuery::ordering`].
+    fn row_number_alias(&mut self, alias: &'static str) -> SqlResult<&mut Self> {
+        validate_ident(alias)?;
+        let order_by = self
+            .ordering
+            .drain(..)
+            .map(|ordering| SqlOrdering::to_sql(&ordering))
+            .collect::<Vec<_>>()
+            .join(", ");
+        // Query the number of the row with the specified `order_by` ordering.
+        self.sql_builder
+            .field(format!("ROW_NUMBER() OVER (ORDER BY {}) AS {}", order_by, alias));
+        Ok(self)
     }
 }
 
@@ -487,11 +569,15 @@ mod tests {
         let mut query = SqlQuery::select_from(&conn, "tx_history").unwrap();
         query
             .field("tx_history.tx_hash")
+            .unwrap()
             .join("tx_address")
             .unwrap()
-            .on_eq("tx_history.tx_hash", "tx_address.tx_hash")
-            .and_where_in_quoted("tx_address.address", &SEARCHING_ADDRESSES)
-            .group_by("tx_history.tx_hash");
+            .on_join_eq("tx_history.tx_hash", "tx_address.tx_hash")
+            .unwrap()
+            .and_where_in_quoted("tx_address.address", SEARCHING_ADDRESSES.to_owned())
+            .unwrap()
+            .group_by("tx_history.tx_hash")
+            .unwrap();
         assert_eq!(
             query.clone().sql().unwrap(),
             "SELECT tx_history.tx_hash FROM tx_history JOIN tx_address ON tx_history.tx_hash = tx_address.tx_hash WHERE tx_address.address IN ('address_2', 'address_4') GROUP BY tx_history.tx_hash;"
@@ -511,7 +597,9 @@ mod tests {
         let mut query = SqlQuery::select_from(&conn, "tx_history").unwrap();
         query
             .field("tx_hash")
-            .and_where_in_params("height", SEARCHING_HEIGHTS.clone());
+            .unwrap()
+            .and_where_in_params("height", SEARCHING_HEIGHTS.clone())
+            .unwrap();
         assert_eq!(
             query.clone().sql().unwrap(),
             "SELECT tx_hash FROM tx_history WHERE height IN (:1, :2, :3);"
@@ -529,8 +617,7 @@ mod tests {
         init_table_for_test(&conn);
 
         let mut query = SqlQuery::select_from(&conn, "tx_history").unwrap();
-        query.order_asc("height");
-        query.order_desc("total_amount");
+        query.order_asc("height").unwrap().order_desc("total_amount").unwrap();
 
         // Resulting rows:
         // 1) tx_hash="tx_hash_4", height=699530, total_amount=100
@@ -571,12 +658,17 @@ mod tests {
         let mut query = SqlQuery::select_from_alias(&conn, "tx_history", "h").unwrap();
         query
             .order_asc("h.height")
+            .unwrap()
             .order_desc("h.total_amount")
+            .unwrap()
             .join_alias("tx_address", "a")
             .unwrap()
-            .on_eq("h.tx_hash", "a.tx_hash")
-            .and_where_in_quoted("a.address", &SEARCHING_ADDRESSES)
-            .group_by("h.tx_hash");
+            .on_join_eq("h.tx_hash", "a.tx_hash")
+            .unwrap()
+            .and_where_in_quoted("a.address", SEARCHING_ADDRESSES.to_owned())
+            .unwrap()
+            .group_by("h.tx_hash")
+            .unwrap();
 
         // Resulting rows:
         // 1) tx_hash="tx_hash_4", height=699530, total_amount=100
