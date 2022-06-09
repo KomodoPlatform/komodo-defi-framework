@@ -9,15 +9,41 @@ use sql_builder::SqlBuilder;
 use std::sync::{Arc, Mutex, Weak};
 use uuid::Uuid;
 
+pub const CHECK_TABLE_EXISTS_SQL: &str = "SELECT name FROM sqlite_master WHERE type='table' AND name=?1;";
+
+/// The macro returns `OwnedSqlNamedParams`.
+#[macro_export]
+macro_rules! owned_named_params {
+    () => {
+        Vec::new()
+    };
+    ($($param_name:literal: $param_val:expr),+ $(,)?) => {
+        vec![$(($param_name, Value::from($param_val))),+]
+    };
+}
+
 pub type SqliteConnShared = Arc<Mutex<Connection>>;
 pub type SqliteConnWeak = Weak<Mutex<Connection>>;
+
+pub(crate) type ParamId = String;
 
 pub(crate) type OwnedSqlParam = Value;
 pub(crate) type OwnedSqlParams = Vec<Value>;
 
-pub(crate) type ParamId = String;
+type SqlNamedParam<'a> = (&'a str, &'a dyn ToSql);
+type SqlNamedParams<'a> = Vec<SqlNamedParam<'a>>;
+type OwnedSqlNamedParam = (&'static str, Value);
+pub type OwnedSqlNamedParams = Vec<OwnedSqlNamedParam>;
 
-pub const CHECK_TABLE_EXISTS_SQL: &str = "SELECT name FROM sqlite_master WHERE type='table' AND name=?1;";
+pub trait AsSqlNamedParams {
+    fn as_sql_named_params(&self) -> SqlNamedParams<'_>;
+}
+
+impl AsSqlNamedParams for OwnedSqlNamedParams {
+    fn as_sql_named_params(&self) -> SqlNamedParams<'_> {
+        self.iter().map(|(name, param)| (*name, param as &dyn ToSql)).collect()
+    }
+}
 
 pub fn string_from_row(row: &Row<'_>) -> Result<String, SqlError> { row.get(0) }
 
@@ -162,6 +188,10 @@ where
         None => None,
     };
     Ok(res)
+}
+
+pub fn execute_batch(statement: &'static [&str]) -> Vec<(&'static str, Vec<String>)> {
+    statement.iter().map(|sql| (*sql, vec![])).collect()
 }
 
 pub trait ToValidSqlTable {

@@ -140,6 +140,13 @@ impl SavedSwap {
             },
         };
     }
+
+    pub async fn fetch_and_set_usd_prices(&mut self) {
+        match self {
+            SavedSwap::Maker(maker) => maker.fetch_and_set_usd_prices().await,
+            SavedSwap::Taker(taker) => taker.fetch_and_set_usd_prices().await,
+        }
+    }
 }
 
 #[async_trait]
