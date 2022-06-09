@@ -3,7 +3,7 @@ pub use sql_builder;
 
 use log::debug;
 use rusqlite::types::{FromSql, Type as SqlType, Value};
-use rusqlite::{Connection, Error as SqlError, Result as SqlResult, Row, ToSql};
+use rusqlite::{Connection, Error as SqlError, Result as SqlResult, Row, ToSql, NO_PARAMS};
 use sql_builder::SqlBuilder;
 use std::sync::{Arc, Mutex, Weak};
 use uuid::Uuid;
