@@ -17,9 +17,7 @@ use std::sync::{Arc, Mutex};
 
 fn tx_history_table(wallet_id: &WalletId) -> String { wallet_id.to_sql_table_name() + "_tx_history" }
 
-fn tx_from_address_table(wallet_id: &WalletId) -> String { wallet_id.to_sql_table_name() + "_tx_from_address" }
-
-fn tx_to_address_table(wallet_id: &WalletId) -> String { wallet_id.to_sql_table_name() + "_tx_to_address" }
+fn tx_address_table(wallet_id: &WalletId) -> String { wallet_id.to_sql_table_name() + "_tx_address" }
 
 /// Please note TX cache table name doesn't depend on [`WalletId::hd_wallet_rmd160`].
 fn tx_cache_table(wallet_id: &WalletId) -> String { format!("{}_tx_cache", wallet_id.ticker) }
@@ -44,34 +42,17 @@ fn create_tx_history_table_sql(wallet_id: &WalletId) -> Result<String, MmError<S
     Ok(sql)
 }
 
-fn create_tx_from_address_table_sql(wallet_id: &WalletId) -> Result<String, MmError<SqlError>> {
-    let tx_from_address_table = tx_from_address_table(wallet_id);
-    validate_table_name(&tx_from_address_table)?;
+fn create_tx_address_table_sql(wallet_id: &WalletId) -> Result<String, MmError<SqlError>> {
+    let tx_address_table = tx_address_table(wallet_id);
+    validate_table_name(&tx_address_table)?;
 
     let sql = format!(
         "CREATE TABLE IF NOT EXISTS {} (
             id INTEGER NOT NULL PRIMARY KEY,
             internal_id VARCHAR(255) NOT NULL,
-            from_address TEXT NOT NULL
+            address TEXT NOT NULL
         );",
-        tx_from_address_table
-    );
-
-    Ok(sql)
-}
-
-fn create_tx_to_address_table_sql(wallet_id: &WalletId) -> Result<String, MmError<SqlError>> {
-    let tx_to_address_table = tx_to_address_table(wallet_id);
-
-    validate_table_name(&tx_to_address_table)?;
-
-    let sql = format!(
-        "CREATE TABLE IF NOT EXISTS {} (
-            id INTEGER NOT NULL PRIMARY KEY,
-            internal_id VARCHAR(255) NOT NULL,
-            to_address TEXT NOT NULL
-        );",
-        tx_to_address_table
+        tx_address_table
     );
 
     Ok(sql)
@@ -127,29 +108,14 @@ fn insert_tx_in_history_sql(wallet_id: &WalletId) -> Result<String, MmError<SqlE
     Ok(sql)
 }
 
-fn insert_tx_from_address_sql(wallet_id: &WalletId) -> Result<String, MmError<SqlError>> {
-    let table_name = tx_from_address_table(wallet_id);
+fn insert_tx_address_sql(wallet_id: &WalletId) -> Result<String, MmError<SqlError>> {
+    let table_name = tx_address_table(wallet_id);
     validate_table_name(&table_name)?;
 
     let sql = format!(
         "INSERT INTO {} (
             internal_id,
-            from_address
-        ) VALUES (?1, ?2);",
-        table_name
-    );
-
-    Ok(sql)
-}
-
-fn insert_tx_to_address_sql(wallet_id: &WalletId) -> Result<String, MmError<SqlError>> {
-    let table_name = tx_to_address_table(wallet_id);
-    validate_table_name(&table_name)?;
-
-    let sql = format!(
-        "INSERT INTO {} (
-            internal_id,
-            to_address
+            address
         ) VALUES (?1, ?2);",
         table_name
     );
@@ -269,22 +235,17 @@ fn get_history_builder_preimage<'a>(
 ) -> Result<SqlQuery<'a>, MmError<SqlError>> {
     let mut sql_builder = SqlQuery::select_from_alias(connection, &tx_history_table(wallet_id), "tx_history")?;
 
-    // Check if we need to join [`tx_from_address_table(wallet_id)`] and [`tx_to_address_table(wallet_id)`] tables
+    // Check if we need to join the [`tx_address_table(wallet_id)`] table
     // to query transactions that were sent from/to `for_addresses` addresses.
     if let Some(for_addresses) = for_addresses {
-        let tx_from_address_table_name = tx_from_address_table(wallet_id);
-        let tx_to_address_table_name = tx_to_address_table(wallet_id);
+        let tx_address_table_name = tx_address_table(wallet_id);
 
         sql_builder
-            .join_alias(&tx_from_address_table_name, "tx_from")?
-            .on_join_eq("tx_history.internal_id", "tx_from.internal_id")?;
-        sql_builder
-            .join_alias(&tx_to_address_table_name, "tx_to")?
-            .on_join_eq("tx_history.internal_id", "tx_to.internal_id")?;
+            .join_alias(&tx_address_table_name, "tx_address")?
+            .on_join_eq("tx_history.internal_id", "tx_address.internal_id")?;
 
         sql_builder
-            .and_where_in_params("tx_from.from_address", for_addresses.clone())?
-            .or_where_in_params("tx_to.to_address", for_addresses)?
+            .and_where_in_params("tx_address.address", for_addresses.clone())?
             .group_by("tx_history.internal_id")?;
     }
 
@@ -364,24 +325,20 @@ impl TxHistoryStorage for SqliteTxHistoryStorage {
 
         let sql_history = create_tx_history_table_sql(wallet_id)?;
         let sql_cache = create_tx_cache_table_sql(wallet_id)?;
-        let sql_from_addr = create_tx_from_address_table_sql(wallet_id)?;
-        let sql_to_addr = create_tx_to_address_table_sql(wallet_id)?;
+        let sql_addr = create_tx_address_table_sql(wallet_id)?;
 
         let sql_history_index = create_internal_id_index_sql(wallet_id, tx_history_table)?;
-        let sql_from_addr_index = create_internal_id_index_sql(wallet_id, tx_from_address_table)?;
-        let sql_to_addr_index = create_internal_id_index_sql(wallet_id, tx_to_address_table)?;
+        let sql_addr_index = create_internal_id_index_sql(wallet_id, tx_address_table)?;
 
         async_blocking(move || {
             let conn = selfi.0.lock().unwrap();
 
             conn.execute(&sql_history, NO_PARAMS).map(|_| ())?;
-            conn.execute(&sql_from_addr, NO_PARAMS).map(|_| ())?;
-            conn.execute(&sql_to_addr, NO_PARAMS).map(|_| ())?;
+            conn.execute(&sql_addr, NO_PARAMS).map(|_| ())?;
             conn.execute(&sql_cache, NO_PARAMS).map(|_| ())?;
 
             conn.execute(&sql_history_index, NO_PARAMS).map(|_| ())?;
-            conn.execute(&sql_from_addr_index, NO_PARAMS).map(|_| ())?;
-            conn.execute(&sql_to_addr_index, NO_PARAMS).map(|_| ())?;
+            conn.execute(&sql_addr_index, NO_PARAMS).map(|_| ())?;
             Ok(())
         })
         .await
@@ -442,16 +399,10 @@ impl TxHistoryStorage for SqliteTxHistoryStorage {
                 ];
                 sql_transaction.execute(&insert_tx_in_history_sql(&wallet_id)?, &params)?;
 
-                let from_addresses: FilteringAddresses = tx.from.into_iter().collect();
-                for from_address in from_addresses {
-                    let params = [internal_id.clone(), from_address];
-                    sql_transaction.execute(&insert_tx_from_address_sql(&wallet_id)?, &params)?;
-                }
-
-                let to_addresses: FilteringAddresses = tx.to.into_iter().collect();
-                for to_address in to_addresses {
-                    let params = [internal_id.clone(), to_address];
-                    sql_transaction.execute(&insert_tx_to_address_sql(&wallet_id)?, &params)?;
+                let addresses: FilteringAddresses = tx.from.into_iter().chain(tx.to.into_iter()).collect();
+                for address in addresses {
+                    let params = [internal_id.clone(), address];
+                    sql_transaction.execute(&insert_tx_address_sql(&wallet_id)?, &params)?;
                 }
             }
             sql_transaction.commit()?;
@@ -466,8 +417,7 @@ impl TxHistoryStorage for SqliteTxHistoryStorage {
         internal_id: &BytesJson,
     ) -> Result<RemoveTxResult, MmError<Self::Error>> {
         let remove_tx_history_sql = remove_tx_by_internal_id_sql(wallet_id, tx_history_table)?;
-        let remove_tx_from_addr_sql = remove_tx_by_internal_id_sql(wallet_id, tx_from_address_table)?;
-        let remove_tx_to_addr_sql = remove_tx_by_internal_id_sql(wallet_id, tx_to_address_table)?;
+        let remove_tx_addr_sql = remove_tx_by_internal_id_sql(wallet_id, tx_address_table)?;
 
         let params = [format!("{:02x}", internal_id)];
         let selfi = self.clone();
@@ -476,8 +426,7 @@ impl TxHistoryStorage for SqliteTxHistoryStorage {
             let mut conn = selfi.0.lock().unwrap();
             let sql_transaction = conn.transaction()?;
 
-            sql_transaction.execute(&remove_tx_from_addr_sql, &params)?;
-            sql_transaction.execute(&remove_tx_to_addr_sql, &params)?;
+            sql_transaction.execute(&remove_tx_addr_sql, &params)?;
 
             let rows_num = sql_transaction.execute(&remove_tx_history_sql, &params)?;
             let remove_tx_result = if rows_num > 0 {
