@@ -245,7 +245,7 @@ fn get_history_builder_preimage<'a>(
             .on_join_eq("tx_history.internal_id", "tx_address.internal_id")?;
 
         sql_builder
-            .and_where_in_params("tx_address.address", for_addresses.clone())?
+            .and_where_in_params("tx_address.address", for_addresses)?
             .group_by("tx_history.internal_id")?;
     }
 
