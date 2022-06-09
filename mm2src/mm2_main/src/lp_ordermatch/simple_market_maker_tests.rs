@@ -1,8 +1,5 @@
 use crate::mm2::{lp_ordermatch::lp_bot::simple_market_maker_bot::vwap,
-                 lp_ordermatch::lp_bot::Provider,
                  lp_ordermatch::lp_bot::SimpleCoinMarketMakerCfg,
-                 lp_ordermatch::lp_bot::TickerInfos,
-                 lp_ordermatch::lp_bot::TickerInfosRegistry,
                  lp_swap::{MakerSavedSwap, MyRecentSwapsResponse, SavedSwap}};
 use common::{block_on, log::UnifiedLoggerBuilder, mm_number::MmNumber};
 
@@ -48,7 +45,6 @@ fn generate_cfg_from_params(base: String, rel: String, spread: MmNumber) -> Simp
 
 mod tests {
     use super::*;
-    use std::time::SystemTime;
 
     #[test]
     #[cfg(not(target_arch = "wasm32"))]
@@ -206,82 +202,5 @@ mod tests {
             "181.8799512443925929123148242562683065552235106947031231789891984094078454989954152150057794418761367",
         );
         assert_eq!(calculated_price.to_decimal(), expected_price.to_decimal());
-    }
-
-    #[test]
-    #[cfg(not(target_arch = "wasm32"))]
-    fn test_get_cex_rates() {
-        let mut registry = TickerInfosRegistry::default();
-        let rates = registry
-            .get_cex_rates("KMD".to_string(), "LTC".to_string())
-            .unwrap_or_default();
-        assert_eq!(rates.base_provider, Provider::Unknown);
-        assert_eq!(rates.rel_provider, Provider::Unknown);
-
-        registry.0.insert("KMD".to_string(), TickerInfos {
-            ticker: "KMD".to_string(),
-            last_price: MmNumber::from("10"),
-            last_updated: "".to_string(),
-            last_updated_timestamp: SystemTime::now()
-                .duration_since(SystemTime::UNIX_EPOCH)
-                .unwrap()
-                .as_secs(),
-            volume24_h: MmNumber::from("25000"),
-            price_provider: Provider::Binance,
-            volume_provider: Provider::Coinpaprika,
-            sparkline_7_d: None,
-            sparkline_provider: Default::default(),
-            change_24_h: MmNumber::default(),
-            change_24_h_provider: Default::default(),
-        });
-
-        registry.0.insert("LTC".to_string(), TickerInfos {
-            ticker: "LTC".to_string(),
-            last_price: MmNumber::from("500.0"),
-            last_updated: "".to_string(),
-            last_updated_timestamp: SystemTime::now()
-                .duration_since(SystemTime::UNIX_EPOCH)
-                .unwrap()
-                .as_secs(),
-            volume24_h: MmNumber::from("25000"),
-            price_provider: Provider::Coingecko,
-            volume_provider: Provider::Binance,
-            sparkline_7_d: None,
-            sparkline_provider: Default::default(),
-            change_24_h: MmNumber::default(),
-            change_24_h_provider: Default::default(),
-        });
-
-        registry.0.insert("USDT".to_string(), TickerInfos {
-            ticker: "USDT".to_string(),
-            last_price: MmNumber::from("1"),
-            last_updated: "".to_string(),
-            last_updated_timestamp: SystemTime::now()
-                .duration_since(SystemTime::UNIX_EPOCH)
-                .unwrap()
-                .as_secs(),
-            volume24_h: MmNumber::from("25000"),
-            price_provider: Provider::Coingecko,
-            volume_provider: Provider::Binance,
-            sparkline_7_d: None,
-            sparkline_provider: Default::default(),
-            change_24_h: MmNumber::default(),
-            change_24_h_provider: Default::default(),
-        });
-
-        let rates = registry
-            .get_cex_rates("KMD".to_string(), "LTC".to_string())
-            .unwrap_or_default();
-        assert_eq!(rates.base_provider, Provider::Binance);
-        assert_eq!(rates.rel_provider, Provider::Coingecko);
-        assert_eq!(rates.price, MmNumber::from("0.02"));
-
-        let usdt_infos = registry.get_infos("USDT-PLG20");
-        assert_eq!(usdt_infos.is_some(), true);
-        assert_eq!(usdt_infos.unwrap().last_price, MmNumber::from(1));
-
-        let usdt_infos = registry.get_infos("USDT");
-        assert_eq!(usdt_infos.is_some(), true);
-        assert_eq!(usdt_infos.unwrap().last_price, MmNumber::from(1));
     }
 }

@@ -62,6 +62,7 @@ fn eth_coin_for_test(
         required_confirmations: 1.into(),
         chain_id: None,
         logs_block_range: DEFAULT_LOGS_BLOCK_RANGE,
+        nonce_lock: new_nonce_lock(),
     }));
     (ctx, eth_coin)
 }
@@ -229,6 +230,7 @@ fn send_and_refund_erc20_payment() {
         required_confirmations: 1.into(),
         chain_id: None,
         logs_block_range: DEFAULT_LOGS_BLOCK_RANGE,
+        nonce_lock: new_nonce_lock(),
     }));
 
     let payment = coin
@@ -295,6 +297,7 @@ fn send_and_refund_eth_payment() {
         required_confirmations: 1.into(),
         chain_id: None,
         logs_block_range: DEFAULT_LOGS_BLOCK_RANGE,
+        nonce_lock: new_nonce_lock(),
     }));
 
     let payment = coin
@@ -380,6 +383,7 @@ fn test_nonce_several_urls() {
         required_confirmations: 1.into(),
         chain_id: None,
         logs_block_range: DEFAULT_LOGS_BLOCK_RANGE,
+        nonce_lock: new_nonce_lock(),
     }));
 
     log!("My address "[coin.my_address]);
@@ -428,6 +432,7 @@ fn test_wait_for_payment_spend_timeout() {
         required_confirmations: 1.into(),
         chain_id: None,
         logs_block_range: DEFAULT_LOGS_BLOCK_RANGE,
+        nonce_lock: new_nonce_lock(),
     };
 
     let coin = EthCoin(Arc::new(coin));
@@ -489,6 +494,7 @@ fn test_search_for_swap_tx_spend_was_spent() {
         required_confirmations: 1.into(),
         chain_id: None,
         logs_block_range: DEFAULT_LOGS_BLOCK_RANGE,
+        nonce_lock: new_nonce_lock(),
     }));
 
     // raw transaction bytes of https://ropsten.etherscan.io/tx/0xb1c987e2ac79581bb8718267b5cb49a18274890494299239d1d0dfdb58d6d76a
@@ -597,6 +603,7 @@ fn test_search_for_swap_tx_spend_was_refunded() {
         required_confirmations: 1.into(),
         chain_id: None,
         logs_block_range: DEFAULT_LOGS_BLOCK_RANGE,
+        nonce_lock: new_nonce_lock(),
     }));
 
     // raw transaction bytes of https://ropsten.etherscan.io/tx/0xe18bbca69dea9a4624e1f5b0b2021d5fe4c8daa03f36084a8ba011b08e5cd938
@@ -636,7 +643,7 @@ fn test_search_for_swap_tx_spend_was_refunded() {
 
 #[test]
 fn test_withdraw_impl_manual_fee() {
-    let (ctx, coin) = eth_coin_for_test(EthCoinType::Eth, vec!["http://dummy.dummy".into()], None);
+    let (_ctx, coin) = eth_coin_for_test(EthCoinType::Eth, vec!["http://dummy.dummy".into()], None);
 
     EthCoin::my_balance.mock_safe(|_| {
         let balance = wei_from_big_decimal(&1000000000.into(), 18).unwrap();
@@ -657,7 +664,7 @@ fn test_withdraw_impl_manual_fee() {
     };
     coin.my_balance().wait().unwrap();
 
-    let tx_details = block_on(withdraw_impl(ctx, coin.clone(), withdraw_req)).unwrap();
+    let tx_details = block_on(withdraw_impl(coin.clone(), withdraw_req)).unwrap();
     let expected = Some(
         EthTxFeeDetails {
             coin: "ETH".into(),
@@ -672,7 +679,7 @@ fn test_withdraw_impl_manual_fee() {
 
 #[test]
 fn test_withdraw_impl_fee_details() {
-    let (ctx, coin) = eth_coin_for_test(
+    let (_ctx, coin) = eth_coin_for_test(
         EthCoinType::Erc20 {
             platform: "ETH".to_string(),
             token_addr: Address::from("0x2b294F029Fde858b2c62184e8390591755521d8E"),
@@ -700,7 +707,7 @@ fn test_withdraw_impl_fee_details() {
     };
     coin.my_balance().wait().unwrap();
 
-    let tx_details = block_on(withdraw_impl(ctx, coin.clone(), withdraw_req)).unwrap();
+    let tx_details = block_on(withdraw_impl(coin.clone(), withdraw_req)).unwrap();
     let expected = Some(
         EthTxFeeDetails {
             coin: "ETH".into(),
@@ -1281,6 +1288,7 @@ fn test_message_hash() {
         required_confirmations: 1.into(),
         chain_id: None,
         logs_block_range: DEFAULT_LOGS_BLOCK_RANGE,
+        nonce_lock: new_nonce_lock(),
     }));
 
     let message_hash = coin.sign_message_hash("test").unwrap();
@@ -1321,6 +1329,7 @@ fn test_sign_verify_message() {
         required_confirmations: 1.into(),
         chain_id: None,
         logs_block_range: DEFAULT_LOGS_BLOCK_RANGE,
+        nonce_lock: new_nonce_lock(),
     }));
 
     let message = "test";

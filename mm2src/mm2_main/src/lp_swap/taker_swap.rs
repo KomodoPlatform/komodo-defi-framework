@@ -10,6 +10,7 @@ use super::{broadcast_my_swap_status, broadcast_swap_message_every, check_other_
             SwapConfirmationsSettings, SwapError, SwapMsg, SwapsContext, TransactionIdentifier, WAIT_CONFIRM_INTERVAL};
 use crate::mm2::lp_network::subscribe_to_topic;
 use crate::mm2::lp_ordermatch::{MatchBy, OrderConfirmationsSettings, TakerAction, TakerOrderBuilder};
+use crate::mm2::lp_price::fetch_swap_coins_price;
 use crate::mm2::lp_swap::{broadcast_p2p_tx_msg, tx_helper_topic};
 use crate::mm2::MM_VERSION;
 use coins::{lp_coinfind, CanRefundHtlc, FeeApproxStage, FoundSwapTxSpend, MmCoinEnum, SearchForSwapTxSpendInput,
@@ -76,8 +77,10 @@ async fn save_my_taker_swap_event(ctx: &MmArc, swap: &TakerSwap, event: TakerSav
             my_order_uuid: swap.my_order_uuid,
             maker_amount: Some(swap.maker_amount.to_decimal()),
             maker_coin: Some(swap.maker_coin.ticker().to_owned()),
+            maker_coin_usd_price: None,
             taker_amount: Some(swap.taker_amount.to_decimal()),
             taker_coin: Some(swap.taker_coin.ticker().to_owned()),
+            taker_coin_usd_price: None,
             gui: ctx.gui().map(|g| g.to_owned()),
             mm_version: Some(MM_VERSION.to_owned()),
             events: vec![],
@@ -89,6 +92,9 @@ async fn save_my_taker_swap_event(ctx: &MmArc, swap: &TakerSwap, event: TakerSav
 
     if let SavedSwap::Taker(mut taker_swap) = swap {
         taker_swap.events.push(event);
+        if taker_swap.is_success().unwrap_or(false) {
+            taker_swap.fetch_and_set_usd_prices().await;
+        }
         let new_swap = SavedSwap::Taker(taker_swap);
         try_s!(new_swap.save_to_db(ctx).await);
         Ok(())
@@ -141,8 +147,10 @@ pub struct TakerSavedSwap {
     pub events: Vec<TakerSavedEvent>,
     pub maker_amount: Option<BigDecimal>,
     pub maker_coin: Option<String>,
+    pub maker_coin_usd_price: Option<BigDecimal>,
     pub taker_amount: Option<BigDecimal>,
     pub taker_coin: Option<String>,
+    pub taker_coin_usd_price: Option<BigDecimal>,
     pub gui: Option<String>,
     pub mm_version: Option<String>,
     pub success_events: Vec<String>,
@@ -246,6 +254,13 @@ impl TakerSavedSwap {
         }
 
         Ok(true)
+    }
+
+    pub async fn fetch_and_set_usd_prices(&mut self) {
+        if let Some(rates) = fetch_swap_coins_price(self.maker_coin.clone(), self.taker_coin.clone()).await {
+            self.maker_coin_usd_price = Some(rates.base);
+            self.taker_coin_usd_price = Some(rates.rel);
+        }
     }
 }
 

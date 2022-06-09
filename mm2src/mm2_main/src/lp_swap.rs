@@ -205,7 +205,8 @@ pub async fn process_msg(ctx: MmArc, topic: &str, msg: &[u8]) {
         Err(swap_msg_err) => {
             #[cfg(not(target_arch = "wasm32"))]
             match json::from_slice::<SwapStatus>(msg) {
-                Ok(status) => {
+                Ok(mut status) => {
+                    status.data.fetch_and_set_usd_prices().await;
                     if let Err(e) = save_stats_swap(&ctx, &status.data).await {
                         error!("Error saving the swap {} status: {}", status.data.uuid(), e);
                     }

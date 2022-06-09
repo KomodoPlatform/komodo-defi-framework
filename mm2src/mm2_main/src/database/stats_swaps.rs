@@ -1,6 +1,8 @@
 use crate::mm2::lp_swap::{MakerSavedSwap, SavedSwap, SavedSwapIo, TakerSavedSwap};
 use common::log::{debug, error};
-use db_common::sqlite::rusqlite::{Connection, OptionalExtension};
+use db_common::{owned_named_params,
+                sqlite::{rusqlite::{types::Value, Connection, OptionalExtension},
+                         AsSqlNamedParams, OwnedSqlNamedParams}};
 use mm2_core::mm_ctx::MmArc;
 use std::collections::HashSet;
 
@@ -39,10 +41,17 @@ const INSERT_STATS_SWAP: &str = "INSERT INTO stats_swaps (
     finished_at,
     maker_amount,
     taker_amount,
-    is_success
-) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12)";
+    is_success,
+    maker_coin_usd_price,
+    taker_coin_usd_price
+) VALUES (:maker_coin, :maker_coin_ticker, :maker_coin_platform, :taker_coin, :taker_coin_ticker, :taker_coin_platform, :uuid, :started_at, :finished_at, :maker_amount, :taker_amount, :is_success, :maker_coin_usd_price, :taker_coin_usd_price)";
 
-const ADD_SPLIT_TICKERS: &[&str] = &[
+pub const ADD_COINS_PRICE_INFOMATION: &[&str] = &[
+    "ALTER TABLE stats_swaps ADD COLUMN maker_coin_usd_price DECIMAL;",
+    "ALTER TABLE stats_swaps ADD COLUMN taker_coin_usd_price DECIMAL;",
+];
+
+pub const ADD_SPLIT_TICKERS: &[&str] = &[
     "ALTER TABLE stats_swaps ADD COLUMN maker_coin_ticker VARCHAR(255) NOT NULL DEFAULT '';",
     "ALTER TABLE stats_swaps ADD COLUMN maker_coin_platform VARCHAR(255) NOT NULL DEFAULT '';",
     "ALTER TABLE stats_swaps ADD COLUMN taker_coin_ticker VARCHAR(255) NOT NULL DEFAULT '';",
@@ -67,7 +76,7 @@ const ADD_SPLIT_TICKERS: &[&str] = &[
 
 pub const ADD_STARTED_AT_INDEX: &str = "CREATE INDEX timestamp_index ON stats_swaps (started_at);";
 
-const SELECT_ID_BY_UUID: &str = "SELECT id FROM stats_swaps WHERE uuid = ?1";
+pub const SELECT_ID_BY_UUID: &str = "SELECT id FROM stats_swaps WHERE uuid = ?1";
 
 /// Returns SQL statements to initially fill stats_swaps table using existing DB with JSON files
 pub async fn create_and_fill_stats_swaps_from_json_statements(ctx: &MmArc) -> Vec<(&'static str, Vec<String>)> {
@@ -101,7 +110,7 @@ fn split_coin(coin: &str) -> (String, String) {
     (ticker, platform)
 }
 
-fn insert_stats_maker_swap_sql(swap: &MakerSavedSwap) -> Option<(&'static str, Vec<String>)> {
+fn insert_stats_maker_swap_sql(swap: &MakerSavedSwap) -> Option<(&'static str, OwnedSqlNamedParams)> {
     let swap_data = match swap.swap_data() {
         Ok(d) => d,
         Err(e) => {
@@ -123,20 +132,22 @@ fn insert_stats_maker_swap_sql(swap: &MakerSavedSwap) -> Option<(&'static str, V
     let (maker_coin_ticker, maker_coin_platform) = split_coin(&swap_data.maker_coin);
     let (taker_coin_ticker, taker_coin_platform) = split_coin(&swap_data.taker_coin);
 
-    let params = vec![
-        swap_data.maker_coin.clone(),
-        maker_coin_ticker,
-        maker_coin_platform,
-        swap_data.taker_coin.clone(),
-        taker_coin_ticker,
-        taker_coin_platform,
-        swap.uuid.to_string(),
-        swap_data.started_at.to_string(),
-        finished_at,
-        swap_data.maker_amount.to_string(),
-        swap_data.taker_amount.to_string(),
-        (is_success as u32).to_string(),
-    ];
+    let params = owned_named_params! {
+        ":maker_coin": swap_data.maker_coin.clone(),
+        ":maker_coin_ticker": maker_coin_ticker,
+        ":maker_coin_platform": maker_coin_platform,
+        ":taker_coin": swap_data.taker_coin.clone(),
+        ":taker_coin_ticker": taker_coin_ticker,
+        ":taker_coin_platform": taker_coin_platform,
+        ":uuid": swap.uuid.to_string(),
+        ":started_at": swap_data.started_at.to_string(),
+        ":finished_at": finished_at,
+        ":maker_amount": swap_data.maker_amount.to_string(),
+        ":taker_amount": swap_data.taker_amount.to_string(),
+        ":is_success": (is_success as u32).to_string(),
+        ":maker_coin_usd_price": swap.maker_coin_usd_price.as_ref().map(|p| p.to_string()),
+        ":taker_coin_usd_price": swap.taker_coin_usd_price.as_ref().map(|p| p.to_string()),
+    };
     Some((INSERT_STATS_SWAP, params))
 }
 
@@ -172,7 +183,7 @@ fn insert_stats_maker_swap_sql_init(swap: &MakerSavedSwap) -> Option<(&'static s
     Some((INSERT_STATS_SWAP_ON_INIT, params))
 }
 
-fn insert_stats_taker_swap_sql(swap: &TakerSavedSwap) -> Option<(&'static str, Vec<String>)> {
+fn insert_stats_taker_swap_sql(swap: &TakerSavedSwap) -> Option<(&'static str, OwnedSqlNamedParams)> {
     let swap_data = match swap.swap_data() {
         Ok(d) => d,
         Err(e) => {
@@ -194,20 +205,22 @@ fn insert_stats_taker_swap_sql(swap: &TakerSavedSwap) -> Option<(&'static str, V
     let (maker_coin_ticker, maker_coin_platform) = split_coin(&swap_data.maker_coin);
     let (taker_coin_ticker, taker_coin_platform) = split_coin(&swap_data.taker_coin);
 
-    let params = vec![
-        swap_data.maker_coin.clone(),
-        maker_coin_ticker,
-        maker_coin_platform,
-        swap_data.taker_coin.clone(),
-        taker_coin_ticker,
-        taker_coin_platform,
-        swap.uuid.to_string(),
-        swap_data.started_at.to_string(),
-        finished_at,
-        swap_data.maker_amount.to_string(),
-        swap_data.taker_amount.to_string(),
-        (is_success as u32).to_string(),
-    ];
+    let params = owned_named_params! {
+        ":maker_coin": swap_data.maker_coin.clone(),
+        ":maker_coin_ticker": maker_coin_ticker,
+        ":maker_coin_platform": maker_coin_platform,
+        ":taker_coin": swap_data.taker_coin.clone(),
+        ":taker_coin_ticker": taker_coin_ticker,
+        ":taker_coin_platform": taker_coin_platform,
+        ":uuid": swap.uuid.to_string(),
+        ":started_at": swap_data.started_at.to_string(),
+        ":finished_at": finished_at,
+        ":maker_amount": swap_data.maker_amount.to_string(),
+        ":taker_amount": swap_data.taker_amount.to_string(),
+        ":is_success": (is_success as u32).to_string(),
+        ":maker_coin_usd_price": swap.maker_coin_usd_price.as_ref().map(|p| p.to_string()),
+        ":taker_coin_usd_price": swap.taker_coin_usd_price.as_ref().map(|p| p.to_string()),
+    };
     Some((INSERT_STATS_SWAP, params))
 }
 
@@ -268,13 +281,9 @@ pub fn add_swap_to_index(conn: &Connection, swap: &SavedSwap) {
     };
 
     debug!("Executing query {} with params {:?}", sql, params);
-    if let Err(e) = conn.execute(sql, &params) {
+    if let Err(e) = conn.execute_named(sql, &params.as_sql_named_params()) {
         error!("Error {} on query {} with params {:?}", e, sql, params);
     };
-}
-
-pub fn add_and_split_tickers() -> Vec<(&'static str, Vec<String>)> {
-    ADD_SPLIT_TICKERS.iter().map(|sql| (*sql, vec![])).collect()
 }
 
 #[test]
