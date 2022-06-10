@@ -28,7 +28,7 @@ pub type SqliteConnWeak = Weak<Mutex<Connection>>;
 pub(crate) type ParamId = String;
 
 pub(crate) type OwnedSqlParam = Value;
-pub(crate) type OwnedSqlParams = Vec<Value>;
+pub(crate) type OwnedSqlParams = Vec<OwnedSqlParam>;
 
 type SqlNamedParam<'a> = (&'a str, &'a dyn ToSql);
 type SqlNamedParams<'a> = Vec<SqlNamedParam<'a>>;

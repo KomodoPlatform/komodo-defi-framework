@@ -326,9 +326,9 @@ pub(crate) async fn my_tx_history_v2_impl<Coin>(
 where
     Coin: CoinWithTxHistoryV2 + MmCoin,
 {
-    let wallet_id = coin.history_wallet_id();
     let tx_history_storage = TxHistoryStorageBuilder::new(&ctx).build()?;
 
+    let wallet_id = coin.history_wallet_id();
     let is_storage_init = tx_history_storage.is_initialized_for(&wallet_id).await?;
     if !is_storage_init {
         let msg = format!("Storage is not initialized for {:?}", wallet_id);
