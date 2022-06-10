@@ -658,7 +658,8 @@ impl MakerSwap {
             ]));
         }
 
-        let secret_hash = dhash160(&self.r().data.secret.0);
+        let secret_hash = self.secret_hash();
+        let unique_data = self.unique_swap_data();
         let transaction_f = self
             .maker_coin
             .check_if_my_payment_sent(
@@ -667,11 +668,10 @@ impl MakerSwap {
                 secret_hash.as_slice(),
                 self.r().data.maker_coin_start_block,
                 &self.r().data.maker_coin_swap_contract_address,
-                secret_hash.as_slice(),
+                &unique_data,
             )
             .compat();
 
-        let secret_hash = dhash160(&self.r().data.secret.0);
         let transaction = match transaction_f.await {
             Ok(res) => match res {
                 Some(tx) => tx,
@@ -682,7 +682,7 @@ impl MakerSwap {
                         secret_hash.as_slice(),
                         self.maker_amount.clone(),
                         &self.r().data.maker_coin_swap_contract_address,
-                        secret_hash.as_slice(),
+                        &unique_data,
                     );
 
                     match payment_fut.compat().await {
@@ -814,13 +814,12 @@ impl MakerSwap {
             ]));
         }
 
-        let secret_hash = dhash160(&self.r().data.secret.0).to_vec();
         let validate_input = ValidatePaymentInput {
             payment_tx: self.r().taker_payment.clone().unwrap().tx_hex.0,
             time_lock: self.taker_payment_lock.load(Ordering::Relaxed) as u32,
             other_pub: self.r().other_taker_coin_htlc_pub.to_vec(),
-            unique_swap_data: secret_hash.clone(),
-            secret_hash,
+            unique_swap_data: self.unique_swap_data(),
+            secret_hash: self.secret_hash().to_vec(),
             amount: self.taker_amount.clone(),
             swap_contract_address: self.r().data.taker_coin_swap_contract_address.clone(),
             try_spv_proof_until: wait_taker_payment,
@@ -862,7 +861,7 @@ impl MakerSwap {
             &*self.r().other_taker_coin_htlc_pub,
             &self.r().data.secret.0,
             &self.r().data.taker_coin_swap_contract_address,
-            self.secret_hash().as_slice(),
+            &self.unique_swap_data(),
         );
 
         let transaction = match spend_fut.compat().await {
@@ -958,7 +957,7 @@ impl MakerSwap {
             &*self.r().other_maker_coin_htlc_pub,
             self.secret_hash().as_slice(),
             &self.r().data.maker_coin_swap_contract_address,
-            self.secret_hash().as_slice(),
+            &self.unique_swap_data(),
         );
 
         let transaction = match spend_fut.compat().await {
@@ -1135,7 +1134,7 @@ impl MakerSwap {
                     other_taker_coin_htlc_pub.as_slice(),
                     &secret,
                     &taker_coin_swap_contract_address,
-                    selfi.secret_hash().as_slice(),
+                    &selfi.unique_swap_data(),
                 )
                 .compat()
                 .await
@@ -1155,6 +1154,7 @@ impl MakerSwap {
         }
 
         let secret_hash = self.secret_hash();
+        let unique_data = self.unique_swap_data();
 
         // have to do this because std::sync::RwLockReadGuard returned by r() is not Send,
         // so it can't be used across await
@@ -1175,7 +1175,7 @@ impl MakerSwap {
                             secret_hash.as_slice(),
                             maker_coin_start_block,
                             &maker_coin_swap_contract_address,
-                            secret_hash.as_slice(),
+                            &unique_data,
                         )
                         .compat()
                         .await
@@ -1194,7 +1194,7 @@ impl MakerSwap {
             tx: &maker_payment,
             search_from_block: maker_coin_start_block,
             swap_contract_address: &maker_coin_swap_contract_address,
-            swap_unique_data: secret_hash.as_slice(),
+            swap_unique_data: &unique_data,
         };
         // validate that maker payment is not spent
         match self.maker_coin.search_for_swap_tx_spend_my(search_input).await {
@@ -1229,7 +1229,7 @@ impl MakerSwap {
                     other_maker_coin_htlc_pub.as_slice(),
                     secret_hash.as_slice(),
                     &maker_coin_swap_contract_address,
-                    secret_hash.as_slice(),
+                    &unique_data,
                 );
 
                 let transaction = match fut.compat().await {
@@ -1285,11 +1285,17 @@ impl AtomicSwap for MakerSwap {
         result
     }
 
+    #[inline]
     fn uuid(&self) -> &Uuid { &self.uuid }
 
+    #[inline]
     fn maker_coin(&self) -> &str { self.maker_coin.ticker() }
 
+    #[inline]
     fn taker_coin(&self) -> &str { self.taker_coin.ticker() }
+
+    #[inline]
+    fn unique_swap_data(&self) -> Vec<u8> { self.secret_hash().to_vec() }
 }
 
 #[derive(Debug)]

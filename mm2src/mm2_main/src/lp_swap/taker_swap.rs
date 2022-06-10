@@ -1139,7 +1139,7 @@ impl TakerSwap {
             swap_contract_address: self.r().data.maker_coin_swap_contract_address.clone(),
             try_spv_proof_until: self.r().data.maker_payment_wait,
             confirmations,
-            unique_swap_data: self.uuid.as_bytes().to_vec(),
+            unique_swap_data: self.unique_swap_data(),
         };
         let validated = self.maker_coin.validate_maker_payment(validate_input).compat().await;
 
@@ -1163,13 +1163,14 @@ impl TakerSwap {
             ]));
         }
 
+        let unique_data = self.unique_swap_data();
         let f = self.taker_coin.check_if_my_payment_sent(
             self.r().data.taker_payment_lock as u32,
             self.r().other_taker_coin_htlc_pub.as_slice(),
             &self.r().secret_hash.0,
             self.r().data.taker_coin_start_block,
             &self.r().data.taker_coin_swap_contract_address,
-            self.uuid.as_bytes(),
+            &unique_data,
         );
         let transaction = match f.compat().await {
             Ok(res) => match res {
@@ -1181,7 +1182,7 @@ impl TakerSwap {
                         &self.r().secret_hash.0,
                         self.taker_amount.to_decimal(),
                         &self.r().data.taker_coin_swap_contract_address,
-                        self.uuid.as_bytes(),
+                        &unique_data,
                     );
 
                     match payment_fut.compat().await {
@@ -1295,7 +1296,7 @@ impl TakerSwap {
             &*self.r().other_maker_coin_htlc_pub,
             &self.r().secret.0,
             &self.r().data.maker_coin_swap_contract_address,
-            self.uuid.as_bytes(),
+            &self.unique_swap_data(),
         );
         let transaction = match spend_fut.compat().await {
             Ok(t) => t,
@@ -1353,7 +1354,7 @@ impl TakerSwap {
             &*self.r().other_taker_coin_htlc_pub,
             &self.r().secret_hash.0,
             &self.r().data.taker_coin_swap_contract_address,
-            self.uuid.as_bytes(),
+            &self.unique_swap_data(),
         );
 
         let transaction = match refund_fut.compat().await {
@@ -1499,6 +1500,7 @@ impl TakerSwap {
         let taker_coin_start_block = self.r().data.taker_coin_start_block;
         let taker_coin_swap_contract_address = self.r().data.taker_coin_swap_contract_address.clone();
 
+        let unique_data = self.unique_swap_data();
         macro_rules! check_maker_payment_is_not_spent {
             // validate that maker payment is not spent
             () => {
@@ -1509,7 +1511,7 @@ impl TakerSwap {
                     tx: &maker_payment,
                     search_from_block: maker_coin_start_block,
                     swap_contract_address: &maker_coin_swap_contract_address,
-                    swap_unique_data: self.uuid.as_bytes(),
+                    swap_unique_data: &unique_data,
                 };
 
                 match self.maker_coin.search_for_swap_tx_spend_other(search_input).await {
@@ -1545,7 +1547,7 @@ impl TakerSwap {
                             &secret_hash,
                             taker_coin_start_block,
                             &taker_coin_swap_contract_address,
-                            self.uuid.as_bytes(),
+                            &unique_data,
                         )
                         .compat()
                         .await
@@ -1571,7 +1573,7 @@ impl TakerSwap {
                 other_maker_coin_htlc_pub.as_slice(),
                 &secret,
                 &maker_coin_swap_contract_address,
-                self.uuid.as_bytes(),
+                &unique_data,
             );
 
             let transaction = match fut.compat().await {
@@ -1604,7 +1606,7 @@ impl TakerSwap {
             tx: &taker_payment,
             search_from_block: taker_coin_start_block,
             swap_contract_address: &taker_coin_swap_contract_address,
-            swap_unique_data: self.uuid.as_bytes(),
+            swap_unique_data: &unique_data,
         };
         let taker_payment_spend = try_s!(self.taker_coin.search_for_swap_tx_spend_my(search_input).await);
 
@@ -1620,7 +1622,7 @@ impl TakerSwap {
                         other_maker_coin_htlc_pub.as_slice(),
                         &secret,
                         &maker_coin_swap_contract_address,
-                        self.uuid.as_bytes(),
+                        &unique_data,
                     );
 
                     let transaction = match fut.compat().await {
@@ -1664,7 +1666,7 @@ impl TakerSwap {
                     other_taker_coin_htlc_pub.as_slice(),
                     &secret_hash,
                     &taker_coin_swap_contract_address,
-                    self.uuid.as_bytes(),
+                    &unique_data,
                 );
 
                 let transaction = match fut.compat().await {
@@ -1732,11 +1734,17 @@ impl AtomicSwap for TakerSwap {
         result
     }
 
+    #[inline]
     fn uuid(&self) -> &Uuid { &self.uuid }
 
+    #[inline]
     fn maker_coin(&self) -> &str { self.maker_coin.ticker() }
 
+    #[inline]
     fn taker_coin(&self) -> &str { self.taker_coin.ticker() }
+
+    #[inline]
+    fn unique_swap_data(&self) -> Vec<u8> { self.uuid.as_bytes().to_vec() }
 }
 
 pub struct TakerSwapPreparedParams {

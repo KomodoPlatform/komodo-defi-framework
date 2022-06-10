@@ -41,6 +41,7 @@ impl From<ZcashClientError> for ZcoinLightClientInitError {
 }
 
 #[derive(Debug, Display)]
+#[display(fmt = "Blockchain scan process stopped")]
 pub struct BlockchainScanStopped {}
 
 #[derive(Debug, Display)]

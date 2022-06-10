@@ -104,6 +104,46 @@ pub const RICK: &str = "RICK";
 pub const ZOMBIE_TICKER: &str = "ZOMBIE";
 pub const ZOMBIE_ELECTRUMS: &[&str] = &["zombie.sirseven.me:10033"];
 pub const ZOMBIE_LIGHTWALLETD_URLS: &[&str] = &["http://zombie.sirseven.me:443"];
+const DEFAULT_RPC_PASSWORD: &str = "pass";
+
+pub struct Mm2TestConf {
+    pub conf: Json,
+    pub rpc_password: String,
+    /// This doesn't seem to be really used, so we will possibly remove it soon
+    pub local: Option<LocalStart>,
+}
+
+impl Mm2TestConf {
+    pub fn seednode(passphrase: &str, coins: &Json) -> Self {
+        Mm2TestConf {
+            conf: json!({
+                "gui": "nogui",
+                "netid": 9998,
+                "passphrase": passphrase,
+                "coins": coins,
+                "rpc_password": DEFAULT_RPC_PASSWORD,
+                "i_am_seed": true,
+            }),
+            rpc_password: DEFAULT_RPC_PASSWORD.into(),
+            local: None,
+        }
+    }
+
+    pub fn light_node(passphrase: &str, coins: &Json, seednodes: &[&str]) -> Self {
+        Mm2TestConf {
+            conf: json!({
+                "gui": "nogui",
+                "netid": 9998,
+                "passphrase": passphrase,
+                "coins": coins,
+                "rpc_password": DEFAULT_RPC_PASSWORD,
+                "seednodes": seednodes,
+            }),
+            rpc_password: DEFAULT_RPC_PASSWORD.into(),
+            local: None,
+        }
+    }
+}
 
 pub fn zombie_conf() -> Json {
     json!({

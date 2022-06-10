@@ -117,7 +117,7 @@ impl From<CryptoInitError> for ZcoinInitError {
 }
 
 impl From<BlockchainScanStopped> for ZcoinInitError {
-    fn from(_: BlockchainScanStopped) -> Self { ZcoinInitError::Internal("Blockchain scan process stopped".into()) }
+    fn from(e: BlockchainScanStopped) -> Self { ZcoinInitError::Internal(e.to_string()) }
 }
 
 impl From<ZcoinInitError> for InitStandaloneCoinError {

@@ -160,8 +160,7 @@ pub(super) async fn init_light_client(
                 .map_to_mm(ZcoinLightClientInitError::WalletDbInitFailure)?;
             run_optimization_pragmas(db.sql_conn()).map_to_mm(ZcoinLightClientInitError::WalletDbInitFailure)?;
             init_wallet_db(&db).map_to_mm(ZcoinLightClientInitError::WalletDbInitFailure)?;
-            let existing_keys = db.get_extended_full_viewing_keys()?;
-            if existing_keys.is_empty() {
+            if db.get_extended_full_viewing_keys()?.is_empty() {
                 init_accounts_table(&db, &[evk])?;
             }
             Ok(db)

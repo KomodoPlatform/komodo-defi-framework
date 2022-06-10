@@ -1,5 +1,5 @@
 use super::*;
-use mm2_test_helpers::for_tests::{orderbook_v2, rick_conf, zombie_conf, RICK, ZOMBIE_ELECTRUMS,
+use mm2_test_helpers::for_tests::{orderbook_v2, rick_conf, zombie_conf, Mm2TestConf, RICK, ZOMBIE_ELECTRUMS,
                                   ZOMBIE_LIGHTWALLETD_URLS, ZOMBIE_TICKER};
 use mm2_test_helpers::get_passphrase;
 
@@ -1324,48 +1324,14 @@ fn zhtlc_orders_sync_alice_connected_before_creation() {
 
     let coins = json!([rick_conf(), zombie_conf()]);
 
-    let mm_bob = MarketMakerIt::start(
-        json!({
-            "gui": "nogui",
-            "netid": 9998,
-            "myipaddr": env::var ("BOB_TRADE_IP") .ok(),
-            "rpcip": env::var ("BOB_TRADE_IP") .ok(),
-            "canbind": env::var ("BOB_TRADE_PORT") .ok().map (|s| s.parse::<i64>().unwrap()),
-            "passphrase": bob_passphrase,
-            "coins": coins,
-            "rpc_password": "pass",
-            "i_am_seed": true,
-        }),
-        "pass".into(),
-        match var("LOCAL_THREAD_MM") {
-            Ok(ref e) if e == "bob" => Some(local_start()),
-            _ => None,
-        },
-    )
-    .unwrap();
+    let bob_conf = Mm2TestConf::seednode(&bob_passphrase, &coins);
+    let mm_bob = MarketMakerIt::start(bob_conf.conf, bob_conf.rpc_password, bob_conf.local).unwrap();
 
     let (_dump_log, _dump_dashboard) = mm_bob.mm_dump();
     log!({"Bob log path: {}", mm_bob.log_path.display()});
 
-    let mm_alice = MarketMakerIt::start(
-        json!({
-            "gui": "nogui",
-            "netid": 9998,
-            "dht": "on",  // Enable DHT without delay.
-            "myipaddr": env::var ("ALICE_TRADE_IP") .ok(),
-            "rpcip": env::var ("ALICE_TRADE_IP") .ok(),
-            "passphrase": alice_passphrase,
-            "coins": coins,
-            "seednodes": [fomat!((mm_bob.ip))],
-            "rpc_password": "pass",
-        }),
-        "pass".into(),
-        match var("LOCAL_THREAD_MM") {
-            Ok(ref e) if e == "alice" => Some(local_start()),
-            _ => None,
-        },
-    )
-    .unwrap();
+    let alice_conf = Mm2TestConf::light_node(&alice_passphrase, &coins, &[&mm_bob.ip.to_string()]);
+    let mm_alice = MarketMakerIt::start(alice_conf.conf, alice_conf.rpc_password, alice_conf.local).unwrap();
 
     let (_alice_dump_log, _alice_dump_dashboard) = mm_alice.mm_dump();
     log!({"Alice log path: {}", mm_alice.log_path.display()});
@@ -1427,25 +1393,8 @@ fn zhtlc_orders_sync_alice_connected_after_creation() {
 
     let coins = json!([rick_conf(), zombie_conf()]);
 
-    let mm_bob = MarketMakerIt::start(
-        json!({
-            "gui": "nogui",
-            "netid": 9998,
-            "myipaddr": env::var ("BOB_TRADE_IP") .ok(),
-            "rpcip": env::var ("BOB_TRADE_IP") .ok(),
-            "canbind": env::var ("BOB_TRADE_PORT") .ok().map (|s| s.parse::<i64>().unwrap()),
-            "passphrase": bob_passphrase,
-            "coins": coins,
-            "rpc_password": "pass",
-            "i_am_seed": true,
-        }),
-        "pass".into(),
-        match var("LOCAL_THREAD_MM") {
-            Ok(ref e) if e == "bob" => Some(local_start()),
-            _ => None,
-        },
-    )
-    .unwrap();
+    let bob_conf = Mm2TestConf::seednode(&bob_passphrase, &coins);
+    let mm_bob = MarketMakerIt::start(bob_conf.conf, bob_conf.rpc_password, bob_conf.local).unwrap();
 
     let (_dump_log, _dump_dashboard) = mm_bob.mm_dump();
     log!({"Bob log path: {}", mm_bob.log_path.display()});
@@ -1473,25 +1422,8 @@ fn zhtlc_orders_sync_alice_connected_after_creation() {
 
     let bob_set_price_res: SetPriceResponse = json::from_str(&rc.1).unwrap();
 
-    let mm_alice = MarketMakerIt::start(
-        json!({
-            "gui": "nogui",
-            "netid": 9998,
-            "dht": "on",  // Enable DHT without delay.
-            "myipaddr": env::var ("ALICE_TRADE_IP") .ok(),
-            "rpcip": env::var ("ALICE_TRADE_IP") .ok(),
-            "passphrase": alice_passphrase,
-            "coins": coins,
-            "seednodes": [fomat!((mm_bob.ip))],
-            "rpc_password": "pass",
-        }),
-        "pass".into(),
-        match var("LOCAL_THREAD_MM") {
-            Ok(ref e) if e == "alice" => Some(local_start()),
-            _ => None,
-        },
-    )
-    .unwrap();
+    let alice_conf = Mm2TestConf::light_node(&alice_passphrase, &coins, &[&mm_bob.ip.to_string()]);
+    let mm_alice = MarketMakerIt::start(alice_conf.conf, alice_conf.rpc_password, alice_conf.local).unwrap();
 
     let (_alice_dump_log, _alice_dump_dashboard) = mm_alice.mm_dump();
     log!({"Alice log path: {}", mm_alice.log_path.display()});
