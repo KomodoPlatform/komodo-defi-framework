@@ -4,7 +4,26 @@ use crate::{BytesJson, TransactionDetails};
 use common::PagingOptionsEnum;
 use mm2_test_helpers::for_tests::mm_ctx_with_custom_db;
 use serde_json as json;
+use std::collections::HashMap;
 use std::num::NonZeroUsize;
+
+const BCH_TX_HISTORY_STR: &str = include_str!("../for_tests/tBCH_tx_history_fixtures.json");
+
+lazy_static! {
+    static ref BCH_TX_HISTORY: Vec<TransactionDetails> = parse_tx_history();
+    static ref BCH_TX_HISTORY_MAP: HashMap<String, TransactionDetails> = parse_tx_history_map();
+}
+
+fn parse_tx_history() -> Vec<TransactionDetails> { json::from_str(BCH_TX_HISTORY_STR).unwrap() }
+
+fn parse_tx_history_map() -> HashMap<String, TransactionDetails> {
+    parse_tx_history()
+        .into_iter()
+        .map(|tx| (format!("{:02x}", tx.internal_id), tx))
+        .collect()
+}
+
+fn get_bch_tx_details(internal_id: &str) -> TransactionDetails { BCH_TX_HISTORY_MAP.get(internal_id).unwrap().clone() }
 
 fn wallet_id_for_test(test_name: &str) -> WalletId { WalletId::new(test_name.to_owned()) }
 
@@ -37,9 +56,8 @@ async fn test_add_transactions_impl() {
     let storage = TxHistoryStorageBuilder::new(&ctx).build().unwrap();
 
     storage.init(&wallet_id).await.unwrap();
-    let tx1_json =
-        include_str!("../for_tests/RICK_2c33baf0c40eebcb70fc22eab0158e315e2176e4a3f20acddcd849186fca492c.json");
-    let tx1: TransactionDetails = json::from_str(&tx1_json).unwrap();
+
+    let tx1 = get_bch_tx_details("6686ee013620d31ba645b27d581fed85437ce00f46b595a576718afac4dd5b69");
     let transactions = [tx1.clone(), tx1.clone()];
 
     // must fail because we are adding transactions with the same internal_id
@@ -50,9 +68,7 @@ async fn test_add_transactions_impl() {
     let actual_txs = get_coin_history(&storage, &wallet_id).await;
     assert!(actual_txs.is_empty());
 
-    let tx2_json =
-        include_str!("../for_tests/RICK_8d61223938c56ca97e9a0e1a295734c5f7b9dba8e4e0c1c638125190e7e796fa.json");
-    let tx2 = json::from_str(tx2_json).unwrap();
+    let tx2 = get_bch_tx_details("c07836722bbdfa2404d8fe0ea56700d02e2012cb9dc100ccaf1138f334a759ce");
     let transactions = vec![tx1, tx2];
     storage
         .add_transactions_to_history(&wallet_id, transactions.clone())
@@ -69,17 +85,16 @@ async fn test_remove_transaction_impl() {
     let storage = TxHistoryStorageBuilder::new(&ctx).build().unwrap();
 
     storage.init(&wallet_id).await.unwrap();
-    let tx_json =
-        include_str!("../for_tests/RICK_2c33baf0c40eebcb70fc22eab0158e315e2176e4a3f20acddcd849186fca492c.json");
+    let tx_details = get_bch_tx_details("6686ee013620d31ba645b27d581fed85437ce00f46b595a576718afac4dd5b69");
     storage
-        .add_transactions_to_history(&wallet_id, [json::from_str(tx_json).unwrap()])
+        .add_transactions_to_history(&wallet_id, [tx_details])
         .await
         .unwrap();
 
     let remove_res = storage
         .remove_tx_from_history(
             &wallet_id,
-            &"2c33baf0c40eebcb70fc22eab0158e315e2176e4a3f20acddcd849186fca492c".into(),
+            &"6686ee013620d31ba645b27d581fed85437ce00f46b595a576718afac4dd5b69".into(),
         )
         .await
         .unwrap();
@@ -88,7 +103,7 @@ async fn test_remove_transaction_impl() {
     let remove_res = storage
         .remove_tx_from_history(
             &wallet_id,
-            &"2c33baf0c40eebcb70fc22eab0158e315e2176e4a3f20acddcd849186fca492c".into(),
+            &"6686ee013620d31ba645b27d581fed85437ce00f46b595a576718afac4dd5b69".into(),
         )
         .await
         .unwrap();
@@ -103,17 +118,16 @@ async fn test_get_transaction_impl() {
 
     storage.init(&wallet_id).await.unwrap();
 
-    let tx_json =
-        include_str!("../for_tests/RICK_2c33baf0c40eebcb70fc22eab0158e315e2176e4a3f20acddcd849186fca492c.json");
+    let tx_details = get_bch_tx_details("6686ee013620d31ba645b27d581fed85437ce00f46b595a576718afac4dd5b69");
     storage
-        .add_transactions_to_history(&wallet_id, [json::from_str(tx_json).unwrap()])
+        .add_transactions_to_history(&wallet_id, [tx_details])
         .await
         .unwrap();
 
     let tx = storage
         .get_tx_from_history(
             &wallet_id,
-            &"2c33baf0c40eebcb70fc22eab0158e315e2176e4a3f20acddcd849186fca492c".into(),
+            &"6686ee013620d31ba645b27d581fed85437ce00f46b595a576718afac4dd5b69".into(),
         )
         .await
         .unwrap()
@@ -123,7 +137,7 @@ async fn test_get_transaction_impl() {
     storage
         .remove_tx_from_history(
             &wallet_id,
-            &"2c33baf0c40eebcb70fc22eab0158e315e2176e4a3f20acddcd849186fca492c".into(),
+            &"6686ee013620d31ba645b27d581fed85437ce00f46b595a576718afac4dd5b69".into(),
         )
         .await
         .unwrap();
@@ -131,7 +145,7 @@ async fn test_get_transaction_impl() {
     let tx = storage
         .get_tx_from_history(
             &wallet_id,
-            &"2c33baf0c40eebcb70fc22eab0158e315e2176e4a3f20acddcd849186fca492c".into(),
+            &"6686ee013620d31ba645b27d581fed85437ce00f46b595a576718afac4dd5b69".into(),
         )
         .await
         .unwrap();
@@ -146,9 +160,7 @@ async fn test_update_transaction_impl() {
 
     storage.init(&wallet_id).await.unwrap();
 
-    let tx_json =
-        include_str!("../for_tests/RICK_2c33baf0c40eebcb70fc22eab0158e315e2176e4a3f20acddcd849186fca492c.json");
-    let mut tx_details: TransactionDetails = json::from_str(tx_json).unwrap();
+    let mut tx_details = get_bch_tx_details("6686ee013620d31ba645b27d581fed85437ce00f46b595a576718afac4dd5b69");
     storage
         .add_transactions_to_history(&wallet_id, [tx_details.clone()])
         .await
@@ -175,9 +187,7 @@ async fn test_contains_and_get_unconfirmed_transaction_impl() {
 
     storage.init(&wallet_id).await.unwrap();
 
-    let tx_json =
-        include_str!("../for_tests/RICK_2c33baf0c40eebcb70fc22eab0158e315e2176e4a3f20acddcd849186fca492c.json");
-    let mut tx_details: TransactionDetails = json::from_str(tx_json).unwrap();
+    let mut tx_details = get_bch_tx_details("6686ee013620d31ba645b27d581fed85437ce00f46b595a576718afac4dd5b69");
     tx_details.block_height = 0;
     storage
         .add_transactions_to_history(&wallet_id, [tx_details.clone()])
@@ -211,16 +221,13 @@ async fn test_has_transactions_with_hash_impl() {
     let has_tx_hash = storage
         .history_has_tx_hash(
             &wallet_id,
-            "2c33baf0c40eebcb70fc22eab0158e315e2176e4a3f20acddcd849186fca492c",
+            "6686ee013620d31ba645b27d581fed85437ce00f46b595a576718afac4dd5b69",
         )
         .await
         .unwrap();
     assert!(!has_tx_hash);
 
-    let tx_json =
-        include_str!("../for_tests/RICK_2c33baf0c40eebcb70fc22eab0158e315e2176e4a3f20acddcd849186fca492c.json");
-    let tx_details: TransactionDetails = json::from_str(tx_json).unwrap();
-
+    let tx_details = get_bch_tx_details("6686ee013620d31ba645b27d581fed85437ce00f46b595a576718afac4dd5b69");
     storage
         .add_transactions_to_history(&wallet_id, [tx_details])
         .await
@@ -229,7 +236,7 @@ async fn test_has_transactions_with_hash_impl() {
     let has_tx_hash = storage
         .history_has_tx_hash(
             &wallet_id,
-            "2c33baf0c40eebcb70fc22eab0158e315e2176e4a3f20acddcd849186fca492c",
+            "6686ee013620d31ba645b27d581fed85437ce00f46b595a576718afac4dd5b69",
         )
         .await
         .unwrap();
@@ -244,16 +251,12 @@ async fn test_unique_tx_hashes_num_impl() {
 
     storage.init(&wallet_id).await.unwrap();
 
-    let tx1_json =
-        include_str!("../for_tests/RICK_2c33baf0c40eebcb70fc22eab0158e315e2176e4a3f20acddcd849186fca492c.json");
-    let tx1: TransactionDetails = json::from_str(&tx1_json).unwrap();
+    let tx1 = get_bch_tx_details("6686ee013620d31ba645b27d581fed85437ce00f46b595a576718afac4dd5b69");
 
     let mut tx2 = tx1.clone();
     tx2.internal_id = BytesJson(vec![1; 32]);
 
-    let tx3_json =
-        include_str!("../for_tests/RICK_8d61223938c56ca97e9a0e1a295734c5f7b9dba8e4e0c1c638125190e7e796fa.json");
-    let tx3 = json::from_str(tx3_json).unwrap();
+    let tx3 = get_bch_tx_details("c07836722bbdfa2404d8fe0ea56700d02e2012cb9dc100ccaf1138f334a759ce");
 
     let transactions = [tx1, tx2, tx3];
     storage
@@ -277,8 +280,7 @@ async fn test_add_and_get_tx_from_cache_impl() {
     storage.init(&wallet_id_1).await.unwrap();
     storage.init(&wallet_id_2).await.unwrap();
 
-    let tx = include_str!("../for_tests/RICK_2c33baf0c40eebcb70fc22eab0158e315e2176e4a3f20acddcd849186fca492c.json");
-    let tx: TransactionDetails = json::from_str(tx).unwrap();
+    let tx = get_bch_tx_details("6686ee013620d31ba645b27d581fed85437ce00f46b595a576718afac4dd5b69");
 
     storage
         .add_tx_to_cache(&wallet_id_1, &tx.tx_hash, &tx.tx_hex)
@@ -309,14 +311,12 @@ async fn test_get_raw_tx_bytes_on_add_transactions_impl() {
 
     storage.init(&wallet_id).await.unwrap();
 
-    let tx_hash = "2c33baf0c40eebcb70fc22eab0158e315e2176e4a3f20acddcd849186fca492c";
+    let tx_hash = "6686ee013620d31ba645b27d581fed85437ce00f46b595a576718afac4dd5b69";
 
     let maybe_tx_hex = storage.tx_bytes_from_cache(&wallet_id, &tx_hash).await.unwrap();
     assert!(maybe_tx_hex.is_none());
 
-    let tx1_json =
-        include_str!("../for_tests/RICK_2c33baf0c40eebcb70fc22eab0158e315e2176e4a3f20acddcd849186fca492c.json");
-    let tx1: TransactionDetails = json::from_str(tx1_json).unwrap();
+    let tx1 = get_bch_tx_details("6686ee013620d31ba645b27d581fed85437ce00f46b595a576718afac4dd5b69");
 
     let mut tx2 = tx1.clone();
     tx2.internal_id = BytesJson(vec![1; 32]);
@@ -345,11 +345,9 @@ async fn test_get_history_page_number_impl() {
     let storage = TxHistoryStorageBuilder::new(&ctx).build().unwrap();
 
     storage.init(&wallet_id).await.unwrap();
-    let tx_details = include_str!("../for_tests/tBCH_tx_history_fixtures.json");
-    let transactions: Vec<TransactionDetails> = json::from_str(tx_details).unwrap();
 
     storage
-        .add_transactions_to_history(&wallet_id, transactions)
+        .add_transactions_to_history(&wallet_id, BCH_TX_HISTORY.clone())
         .await
         .unwrap();
 
@@ -391,11 +389,9 @@ async fn test_get_history_from_id_impl() {
     let storage = TxHistoryStorageBuilder::new(&ctx).build().unwrap();
 
     storage.init(&wallet_id).await.unwrap();
-    let tx_details = include_str!("../for_tests/tBCH_tx_history_fixtures.json");
-    let transactions: Vec<TransactionDetails> = json::from_str(tx_details).unwrap();
 
     storage
-        .add_transactions_to_history(&wallet_id, transactions)
+        .add_transactions_to_history(&wallet_id, BCH_TX_HISTORY.clone())
         .await
         .unwrap();
 
@@ -435,11 +431,9 @@ async fn test_get_history_for_addresses_impl() {
     let storage = TxHistoryStorageBuilder::new(&ctx).build().unwrap();
 
     storage.init(&wallet_id).await.unwrap();
-    let tx_details = include_str!("../for_tests/tBCH_tx_history_fixtures.json");
-    let transactions: Vec<TransactionDetails> = json::from_str(tx_details).unwrap();
 
     storage
-        .add_transactions_to_history(&wallet_id, transactions)
+        .add_transactions_to_history(&wallet_id, BCH_TX_HISTORY.clone())
         .await
         .unwrap();
 
