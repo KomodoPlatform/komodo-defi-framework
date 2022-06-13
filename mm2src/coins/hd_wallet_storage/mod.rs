@@ -304,7 +304,7 @@ fn display_rmd160(rmd160: &H160) -> String { hex::encode(rmd160.deref()) }
 mod tests {
     use super::*;
     use itertools::Itertools;
-    use mm2_core::mm_ctx::MmCtxBuilder;
+    use mm2_test_helpers::for_tests::mm_ctx_with_custom_db;
     use primitives::hash::H160;
 
     cfg_wasm32! {
@@ -317,19 +317,6 @@ mod tests {
     cfg_native! {
         use crate::hd_wallet_storage::sqlite_storage::get_all_storage_items;
         use common::block_on;
-        use db_common::sqlite::rusqlite::Connection;
-        use std::sync::{Arc, Mutex};
-    }
-
-    #[cfg(target_arch = "wasm32")]
-    fn mm_ctx_with_custom_db() -> MmArc { MmCtxBuilder::new().with_test_db_namespace().into_mm_arc() }
-
-    #[cfg(not(target_arch = "wasm32"))]
-    fn mm_ctx_with_custom_db() -> MmArc {
-        let ctx = MmCtxBuilder::new().into_mm_arc();
-        let connection = Connection::open_in_memory().unwrap();
-        let _ = ctx.sqlite_connection.pin(Arc::new(Mutex::new(connection)));
-        ctx
     }
 
     async fn test_unique_wallets_impl() {

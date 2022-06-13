@@ -3,6 +3,8 @@
 //! Tracking issue: https://github.com/KomodoPlatform/atomicDEX-API/issues/701
 //! More info about the protocol and implementation guides can be found at https://slp.dev/
 
+use crate::my_tx_history_v2::CoinWithTxHistoryV2;
+use crate::tx_history_storage::{GetTxHistoryFilters, WalletId};
 use crate::utxo::bch::BchCoin;
 use crate::utxo::bchd_grpc::{check_slp_transaction, validate_slp_utxos, ValidateSlpUtxosErr};
 use crate::utxo::rpc_clients::{UnspentInfo, UtxoRpcClientEnum, UtxoRpcError, UtxoRpcResult};
@@ -1739,6 +1741,14 @@ impl MmCoin for SlpToken {
     fn coin_protocol_info(&self) -> Vec<u8> { Vec::new() }
 
     fn is_coin_protocol_supported(&self, _info: &Option<Vec<u8>>) -> bool { true }
+}
+
+impl CoinWithTxHistoryV2 for SlpToken {
+    fn history_wallet_id(&self) -> WalletId { WalletId::new(self.platform_ticker().to_owned()) }
+
+    fn get_tx_history_filters(&self) -> GetTxHistoryFilters {
+        GetTxHistoryFilters::new().with_token_id(self.token_id().to_string())
+    }
 }
 
 #[derive(Debug, Display)]

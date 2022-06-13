@@ -90,9 +90,9 @@ mod wasm_lock {
                 | e @ DbTransactionError::InvalidIndex { .. }
                 | e @ DbTransactionError::UnexpectedState(_)
                 | e @ DbTransactionError::TransactionAborted => SwapLockError::InternalError(e.to_string()),
-                e @ DbTransactionError::ErrorDeserializingItem(_) | e @ DbTransactionError::ErrorGettingItems(_) => {
-                    SwapLockError::ErrorReadingTimestamp(e.to_string())
-                },
+                e @ DbTransactionError::ErrorDeserializingItem(_)
+                | e @ DbTransactionError::ErrorGettingItems(_)
+                | e @ DbTransactionError::ErrorCountingItems(_) => SwapLockError::ErrorReadingTimestamp(e.to_string()),
                 e @ DbTransactionError::ErrorDeletingItems(_) | e @ DbTransactionError::ErrorUploadingItem(_) => {
                     SwapLockError::ErrorWritingTimestamp(e.to_string())
                 },
@@ -149,7 +149,6 @@ mod wasm_lock {
                 timestamp: now_ms() / 1000,
             };
             let record_id = table.add_item(&item).await?;
-            transaction.wait_for_complete().await?;
 
             Ok(Some(SwapLock {
                 ctx: ctx.clone(),
@@ -171,7 +170,6 @@ mod wasm_lock {
             let table = transaction.table::<SwapLockTable>().await?;
 
             let replaced_record_id = table.replace_item(self.record_id, &item).await?;
-            transaction.wait_for_complete().await?;
 
             if self.record_id != replaced_record_id {
                 let error = format!("Expected {} record id, found {}", self.record_id, replaced_record_id);
@@ -188,7 +186,6 @@ mod wasm_lock {
             let transaction = db.transaction().await?;
             let table = transaction.table::<SwapLockTable>().await?;
             table.delete_item(record_id).await?;
-            transaction.wait_for_complete().await?;
             Ok(())
         }
     }

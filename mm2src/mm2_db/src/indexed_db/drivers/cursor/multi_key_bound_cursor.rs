@@ -68,13 +68,18 @@ impl IdbMultiKeyBoundCursor {
 
     /// Fill the given `array` with the lower values of the corresponding key bounds
     /// starting from the `starting_from_idx` index of [`IdbMultiKeyBoundCursor::bound_values`].
-    fn fill_array_with_lower_values_starting_from_idx(&self, array: &Array, starting_from_bound: usize) {
+    fn fill_array_with_lower_values_starting_from_idx(
+        &self,
+        array: &Array,
+        starting_from_bound: usize,
+    ) -> CursorResult<()> {
         let mut idx = starting_from_bound;
         while idx < self.bound_values.len() {
             let (_index, lower_value, _upper_value) = &self.bound_values[idx];
-            array.push(&lower_value.to_js_value());
+            array.push(&lower_value.to_js_value()?);
             idx += 1;
         }
+        Ok(())
     }
 }
 
@@ -98,8 +103,8 @@ impl CursorOps for IdbMultiKeyBoundCursor {
         }
 
         for (_index, lower_value, upper_value) in self.bound_values.iter() {
-            let lower_js_value = lower_value.to_js_value();
-            let upper_js_value = upper_value.to_js_value();
+            let lower_js_value = lower_value.to_js_value()?;
+            let upper_js_value = upper_value.to_js_value()?;
 
             lower.push(&lower_js_value);
             upper.push(&upper_js_value);
@@ -163,7 +168,7 @@ impl CursorOps for IdbMultiKeyBoundCursor {
                 // It means, we have to continue iterating with a DB index, whose `[0, idx_in_index)` keys are the same as in `index_keys`,
                 // but with the lowest keys starting from `idx_in_index`.
                 let new_index = index_keys_js_array.slice(0, idx_in_index as u32);
-                self.fill_array_with_lower_values_starting_from_idx(&new_index, idx_in_bounds);
+                self.fill_array_with_lower_values_starting_from_idx(&new_index, idx_in_bounds)?;
 
                 return Ok((
                     // the `actual_index_value` is not in our expected bounds
@@ -182,8 +187,8 @@ impl CursorOps for IdbMultiKeyBoundCursor {
                     last_increased_index_key
                 {
                     let new_index = index_keys_js_array.slice(0, last_increased_idx_in_index as u32);
-                    new_index.push(&last_increased_value.to_js_value());
-                    self.fill_array_with_lower_values_starting_from_idx(&new_index, last_increased_idx_in_bounds + 1);
+                    new_index.push(&last_increased_value.to_js_value()?);
+                    self.fill_array_with_lower_values_starting_from_idx(&new_index, last_increased_idx_in_bounds + 1)?;
 
                     return Ok((
                         // the `actual_index_value` is not in our expected bounds

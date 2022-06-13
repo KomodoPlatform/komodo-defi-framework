@@ -1,8 +1,7 @@
 use crate::prelude::*;
 use async_trait::async_trait;
 use coins::my_tx_history_v2::TxHistoryStorage;
-#[cfg(not(target_arch = "wasm32"))]
-use coins::sql_tx_history_storage::SqliteTxHistoryStorage;
+use coins::tx_history_storage::{CreateTxHistoryStorageError, TxHistoryStorageBuilder};
 use coins::{lp_coinfind, CoinProtocol, CoinsContext, MmCoinEnum};
 use common::mm_metrics::MetricsArc;
 use common::mm_number::BigDecimal;
@@ -162,7 +161,7 @@ pub trait PlatformWithTokensActivationOps: Into<MmCoinEnum> {
     fn start_history_background_fetching(
         &self,
         metrics: MetricsArc,
-        storage: impl TxHistoryStorage + Send + 'static,
+        storage: impl TxHistoryStorage,
         initial_balance: BigDecimal,
     ) -> AbortHandle;
 }
@@ -251,6 +250,14 @@ impl From<InitTokensAsMmCoinsError> for EnablePlatformCoinWithTokensError {
     }
 }
 
+impl From<CreateTxHistoryStorageError> for EnablePlatformCoinWithTokensError {
+    fn from(e: CreateTxHistoryStorageError) -> Self {
+        match e {
+            CreateTxHistoryStorageError::Internal(internal) => EnablePlatformCoinWithTokensError::Internal(internal),
+        }
+    }
+}
+
 impl HttpStatusCode for EnablePlatformCoinWithTokensError {
     fn status_code(&self) -> StatusCode {
         match self {
@@ -307,11 +314,10 @@ where
     let activation_result = platform_coin.get_activation_result().await?;
     log::info!("{} current block {}", req.ticker, activation_result.current_block());
 
-    #[cfg(not(target_arch = "wasm32"))]
     if req.request.tx_history() {
         let abort_handler = platform_coin.start_history_background_fetching(
             ctx.metrics.clone(),
-            SqliteTxHistoryStorage(ctx.sqlite_connection.as_option().unwrap().clone()),
+            TxHistoryStorageBuilder::new(&ctx).build()?,
             activation_result.get_platform_balance(),
         );
         ctx.abort_handlers.lock().unwrap().push(abort_handler);
