@@ -3,11 +3,12 @@ use crate::utxo::rpc_clients::UnspentInfo;
 use crate::TxFeeDetails;
 use bigdecimal::Zero;
 use chain::OutPoint;
-use common::mm_ctx::MmCtxBuilder;
 use common::{block_on, DEX_FEE_ADDR_RAW_PUBKEY};
 use itertools::Itertools;
+use mm2_core::mm_ctx::MmCtxBuilder;
 use mocktopus::mocking::{MockResult, Mockable};
 use rpc::v1::types::ToTxHash;
+use std::convert::TryFrom;
 use std::mem::discriminant;
 
 const EXPECTED_TX_FEE: i64 = 1000;
@@ -666,9 +667,11 @@ fn test_sender_trade_preimage_with_allowance() {
     );
     let sender_refund_fee = big_decimal_from_sat(CONTRACT_CALL_GAS_FEE + EXPECTED_TX_FEE, coin.utxo.decimals);
 
-    let actual =
-        block_on(coin.get_sender_trade_fee(TradePreimageValue::Exact(2.5.into()), FeeApproxStage::WithoutApprox))
-            .expect("!get_sender_trade_fee");
+    let actual = block_on(coin.get_sender_trade_fee(
+        TradePreimageValue::Exact(BigDecimal::try_from(2.5).unwrap()),
+        FeeApproxStage::WithoutApprox,
+    ))
+    .expect("!get_sender_trade_fee");
     // the expected fee should not include any `approve` contract call
     let expected = TradeFee {
         coin: "QTUM".to_owned(),
@@ -677,9 +680,11 @@ fn test_sender_trade_preimage_with_allowance() {
     };
     assert_eq!(actual, expected);
 
-    let actual =
-        block_on(coin.get_sender_trade_fee(TradePreimageValue::Exact(3.5.into()), FeeApproxStage::WithoutApprox))
-            .expect("!get_sender_trade_fee");
+    let actual = block_on(coin.get_sender_trade_fee(
+        TradePreimageValue::Exact(BigDecimal::try_from(3.5).unwrap()),
+        FeeApproxStage::WithoutApprox,
+    ))
+    .expect("!get_sender_trade_fee");
     // two `approve` contract calls should be included into the expected trade fee
     let expected = TradeFee {
         coin: "QTUM".to_owned(),
@@ -687,6 +692,64 @@ fn test_sender_trade_preimage_with_allowance() {
         paid_from_trading_vol: false,
     };
     assert_eq!(actual, expected);
+}
+
+#[test]
+fn test_get_sender_trade_fee_preimage_for_correct_ticker() {
+    // where balance for tQTUM is at 0 for the priv_key below (using 0 bal just to make sure we get required(TradePreimageError::NotSufficientBalance) result for get_sender_trade_fee)
+    let priv_key = [
+        48, 88, 65, 23, 20, 154, 63, 74, 243, 8, 108, 134, 154, 199, 60, 197, 51, 238, 7, 68, 199, 14, 127, 221, 89,
+        80, 37, 174, 221, 178, 233, 65,
+    ];
+    let conf = json!({
+        "coin":"QRC20",
+        "required_confirmations":0,
+        "pubtype":120,
+        "p2shtype":110,
+        "wiftype":128,
+        "segwit":true,
+        "mm2":1,
+        "mature_confirmations":2000,
+        "protocol": {
+        "type": "QRC20",
+        "protocol_data": {
+        "platform": "tQTUM",
+        "contract_address": "0xd362e096e873eb7907e205fadc6175c6fec7bc44"
+      }
+    }
+    });
+    let req = json!({
+        "method": "electrum",
+        "servers": [{"url":"electrum1.cipig.net:10071"}, {"url":"electrum2.cipig.net:10071"}, {"url":"electrum3.cipig.net:10071"}],
+        "swap_contract_address": "0xba8b71f3544b93e2f681f996da519a98ace0107a",
+    });
+
+    let contract_address = "0xd362e096e873eb7907e205fadc6175c6fec7bc44".into();
+    let ctx = MmCtxBuilder::new().into_mm_arc();
+    let params = Qrc20ActivationParams::from_legacy_req(&req).unwrap();
+
+    let coin = block_on(qrc20_coin_from_conf_and_params(
+        &ctx,
+        "QRC20",
+        "tQTUM",
+        &conf,
+        &params,
+        &priv_key,
+        contract_address,
+    ))
+    .unwrap();
+
+    let actual = block_on(coin.get_sender_trade_fee(TradePreimageValue::Exact(0.into()), FeeApproxStage::OrderIssue))
+        .err()
+        .unwrap()
+        .into_inner();
+    // expecting TradePreimageError::NotSufficientBalance
+    let expected = TradePreimageError::NotSufficientBalance {
+        coin: "tQTUM".to_string(),
+        available: BigDecimal::from_str("0").unwrap(),
+        required: BigDecimal::from_str("0.08").unwrap(),
+    };
+    assert_eq!(expected, actual);
 }
 
 /// `receiverSpend` should be included in the estimated trade fee.
@@ -940,7 +1003,7 @@ fn test_send_contract_calls_recoverable_tx() {
 
     let fee_addr = hex::decode("03bc2c7ba671bae4a6fc835244c9762b41647b9827d4780a89a949b984a8ddcc05").unwrap();
     let to_address = coin.contract_address_from_raw_pubkey(&fee_addr).unwrap();
-    let amount = BigDecimal::from(0.2);
+    let amount = BigDecimal::try_from(0.2).unwrap();
     let amount = wei_from_big_decimal(&amount, coin.utxo.decimals).unwrap();
     let mut transfer_output = coin
         .transfer_output(to_address, amount, QRC20_GAS_LIMIT_DEFAULT, QRC20_GAS_PRICE_DEFAULT)

@@ -4,11 +4,11 @@ version = "0.1.0"
 authors = ["debris <marek.kotewicz@gmail.com>"]
 
 [dependencies]
-groestl = "0.8.0"
+groestl = "0.9"
 primitives = { path = "../primitives" }
-ripemd160 = "0.8.0"
-sha-1 = "0.8.1"
-sha2 = "0.8.0"
-sha3 = "0.8.1"
+ripemd160 = "0.9.0"
+sha-1 = "0.9"
+sha2 = "0.9"
+sha3 = "0.9"
 siphasher = "0.1.1"
 serialization = { path = "../serialization" }

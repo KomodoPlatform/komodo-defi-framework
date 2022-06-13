@@ -1,7 +1,7 @@
 use super::*;
 use crate::lp_coininit;
-use common::mm_ctx::MmCtxBuilder;
 use crypto::CryptoCtx;
+use mm2_core::mm_ctx::MmCtxBuilder;
 use wasm_bindgen_test::*;
 use web_sys::console;
 
@@ -45,6 +45,7 @@ async fn test_send() {
         required_confirmations: 1.into(),
         chain_id: None,
         logs_block_range: DEFAULT_LOGS_BLOCK_RANGE,
+        nonce_lock: new_nonce_lock(),
     }));
     let tx = coin
         .send_maker_payment(

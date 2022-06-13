@@ -26,20 +26,6 @@
 #[macro_use] pub extern crate serde_json;
 #[macro_use] extern crate ser_error_derive;
 
-/// Fills a C character array with a zero-terminated C string,
-/// returning an error if the string is too large.
-#[macro_export]
-#[allow(unused_unsafe)]
-macro_rules! safecopy {
-    ($to: expr, $format: expr, $($args: tt)+) => {{
-        use ::std::io::Write;
-        let to: &mut [i8] = &mut $to[..];  // Check the type.
-        let to: &mut [u8] = unsafe {::std::mem::transmute (to)};  // c_char to Rust.
-        let mut wr = ::std::io::Cursor::new (to);
-        write! (&mut wr, concat! ($format, "\0"), $($args)+)
-    }}
-}
-
 /// Implements a `From` for `enum` with a variant name matching the name of the type stored.
 ///
 /// This is helpful as a workaround for the lack of datasort refinements.  
@@ -101,20 +87,10 @@ pub mod crash_reports;
 pub mod custom_futures;
 pub mod custom_iter;
 pub mod duplex_mutex;
-pub mod event_dispatcher;
-pub mod for_tests;
-pub mod grpc_web;
-pub mod iguana_utils;
-#[cfg(not(target_arch = "wasm32"))] pub mod ip_addr;
-pub mod mm_ctx;
-#[path = "mm_error/mm_error.rs"] pub mod mm_error;
 pub mod mm_number;
-pub mod mm_rpc_protocol;
-pub mod privkey;
 pub mod seri;
 #[path = "patterns/state_machine.rs"] pub mod state_machine;
 pub mod time_cache;
-#[path = "transport/transport.rs"] pub mod transport;
 
 #[cfg(not(target_arch = "wasm32"))]
 #[path = "executor/native_executor.rs"]
@@ -128,20 +104,15 @@ pub mod wio;
 #[path = "executor/wasm_executor.rs"]
 pub mod executor;
 
-#[cfg(target_arch = "wasm32")]
-#[path = "indexed_db/indexed_db.rs"]
-pub mod indexed_db;
-
-#[cfg(target_arch = "wasm32")] pub mod wasm_rpc;
+#[cfg(target_arch = "wasm32")] pub mod wasm;
+#[cfg(target_arch = "wasm32")] pub use wasm::*;
 
 use backtrace::SymbolName;
-use bigdecimal::BigDecimal;
 pub use futures::compat::Future01CompatExt;
 use futures::future::FutureExt;
 use futures::task::Waker;
 use futures01::{future, task::Task, Future};
 use gstuff::binprint;
-use hex::FromHex;
 use http::header::{HeaderValue, CONTENT_TYPE};
 use http::Response;
 use parking_lot::{Mutex as PaMutex, MutexGuard as PaMutexGuard};
@@ -172,10 +143,6 @@ pub use serde;
 
 #[cfg(not(target_arch = "wasm32"))] pub mod for_c;
 
-#[cfg(not(target_arch = "wasm32"))]
-#[path = "fs/fs.rs"]
-pub mod fs;
-
 cfg_native! {
     pub use gstuff::{now_float, now_ms};
     #[cfg(not(windows))]
@@ -183,10 +150,6 @@ cfg_native! {
     use libc::{free, malloc};
     use std::env;
     use std::path::PathBuf;
-}
-
-cfg_wasm32! {
-    use wasm_bindgen::prelude::*;
 }
 
 pub const SATOSHIS: u64 = 100_000_000;
@@ -301,21 +264,6 @@ impl bits256 {
 }
 
 pub fn nonz(k: [u8; 32]) -> bool { k.iter().any(|ch| *ch != 0) }
-
-/// Decodes a HEX string into a 32-bytes array.  
-/// But only if the HEX string is 64 characters long, returning a zeroed array otherwise.  
-/// (Use `fn nonz` to check if the array is zeroed).  
-/// A port of cJSON.c/jbits256.
-pub fn jbits256(json: &Json) -> Result<bits256, String> {
-    if let Some(hex) = json.as_str() {
-        if hex.len() == 64 {
-            //try_s! (::common::iguana_utils::decode_hex (unsafe {&mut hash.bytes[..]}, hex.as_bytes()));
-            let bytes: [u8; 32] = try_s!(FromHex::from_hex(hex));
-            return Ok(bits256::from(bytes));
-        }
-    }
-    Ok(unsafe { zeroed() })
-}
 
 pub const SATOSHIDEN: i64 = 100_000_000;
 pub fn dstr(x: i64, decimals: u8) -> f64 { x as f64 / 10.0_f64.powf(decimals as f64) }
@@ -644,179 +592,6 @@ struct HostedHttpResponse {
     status: u16,
     headers: HashMap<String, String>,
     body: Vec<u8>,
-}
-
-// To improve git history and ease of exploratory refactoring
-// we're splitting the code in place with conditional compilation.
-// wio stands for "web I/O" or "wasm I/O",
-// it contains the parts which aren't directly available with WASM.
-
-pub mod lazy {
-    #[cfg(test)] use super::block_on;
-    use async_trait::async_trait;
-    use std::future::Future;
-
-    /// Wrapper of lazily evaluated variables.
-    /// A `LazyLocal` object initializes the [`LazyLocal::inner`] value once
-    /// on [`LazyLocal::get()`] or [`LazyLocal::get_mut()`] calls using [`LazyLocal::constructor`] callback.
-    pub struct LazyLocal<'a, T> {
-        inner: Option<T>,
-        constructor: Option<Box<dyn FnOnce() -> T + 'a>>,
-    }
-
-    impl<'a, T> LazyLocal<'a, T> {
-        pub fn with_constructor(constructor: impl FnOnce() -> T + 'a) -> Self {
-            Self {
-                inner: None,
-                constructor: Some(Box::new(constructor)),
-            }
-        }
-
-        pub fn is_initialized(&self) -> bool { self.inner.is_some() }
-
-        /// Initialize the [`LazyLocal::inner`] value if it is not yet and get the immutable reference on it.
-        pub fn get(&mut self) -> &T { self.get_mut() }
-
-        /// Initialize the [`LazyLocal::inner`] value if it is not yet and get the mutable reference on it.
-        pub fn get_mut(&mut self) -> &mut T {
-            match self.inner {
-                Some(ref mut inner) => inner,
-                None => {
-                    let mut constructor = None;
-                    std::mem::swap(&mut self.constructor, &mut constructor);
-                    let constructor = constructor.expect("constructor is used already");
-                    self.inner = Some(constructor());
-                    self.inner.as_mut().unwrap()
-                },
-            }
-        }
-    }
-
-    /// Searches for an element of an iterator that satisfies a predicate function.
-    /// `find_lazy()` takes a closure that returns `true` or `false`.
-    /// It applies this closure to each execution result of the futures stored within iterator, and if any of them return
-    /// `true`, then `find_lazy()` returns [`Some(element)`]. If they all return
-    /// `false`, it returns [`None`].
-    #[async_trait]
-    pub trait FindLazy: Iterator {
-        type FutureOutput;
-
-        async fn find_lazy<F>(self, f: F) -> Option<Self::FutureOutput>
-        where
-            F: FnMut(&Self::FutureOutput) -> bool + Send;
-    }
-
-    /// Is equivalent to `FindLazy` except a predicate function can modify a return element.
-    #[async_trait]
-    pub trait FindMapLazy: Iterator {
-        type FutureOutput;
-
-        async fn find_map_lazy<M, F>(self, f: F) -> Option<M>
-        where
-            F: FnMut(Self::FutureOutput) -> Option<M> + Send;
-    }
-
-    /// Implement the `FindLazy` for iterator of futures.
-    #[async_trait]
-    impl<T, I> FindLazy for I
-    where
-        T: Future + Send + 'static,
-        I: Iterator<Item = T> + Send,
-    {
-        type FutureOutput = T::Output;
-
-        async fn find_lazy<F>(mut self, mut f: F) -> Option<Self::FutureOutput>
-        where
-            F: FnMut(&Self::FutureOutput) -> bool + Send,
-        {
-            for item in self {
-                let result = item.await;
-                if f(&result) {
-                    return Some(result);
-                }
-            }
-            None
-        }
-    }
-
-    /// Implement the `FindMapLazy` for iterators of futures.
-    #[async_trait]
-    impl<T, I> FindMapLazy for I
-    where
-        T: Future + Send + 'static,
-        I: Iterator<Item = T> + Send,
-    {
-        type FutureOutput = T::Output;
-
-        async fn find_map_lazy<M, F>(mut self, mut f: F) -> Option<M>
-        where
-            F: FnMut(Self::FutureOutput) -> Option<M> + Send,
-        {
-            for item in self {
-                let mres = f(item.await);
-                if mres.is_some() {
-                    return mres;
-                }
-            }
-            None
-        }
-    }
-
-    #[cfg(test)]
-    async fn future_helper(msg: &str, panic: bool) -> String {
-        if panic {
-            panic!("This future must not be executed");
-        }
-
-        msg.into()
-    }
-
-    #[test]
-    fn test_lazy_local() {
-        let template = "Default".to_string();
-        let mut local = LazyLocal::with_constructor(|| template.clone());
-
-        assert!(!local.is_initialized());
-        assert!(local.constructor.is_some());
-        assert_eq!(local.inner, None);
-
-        assert_eq!(local.get(), &template);
-        assert!(local.is_initialized());
-        assert!(local.constructor.is_none());
-        assert_eq!(local.get_mut(), &template);
-
-        *local.get_mut() = "Another string".into();
-        assert_eq!(local.get(), "Another string");
-    }
-
-    #[test]
-    fn test_find_lazy() {
-        let futures = vec![
-            future_helper("say", false),
-            future_helper("hello", false),
-            future_helper("world", true), // this future must not be executed
-        ];
-
-        let actual = block_on(futures.into_iter().find_lazy(|x| x == "hello"));
-        assert_eq!(actual, Some("hello".into()));
-    }
-
-    #[test]
-    fn test_find_map_lazy() {
-        let futures = vec![
-            future_helper("say", false),
-            future_helper("hello", false),
-            future_helper("world", true), // this future must not be executed
-        ];
-
-        let actual =
-            block_on(
-                futures
-                    .into_iter()
-                    .find_map_lazy(|x| if x == "hello" { Some(x.to_uppercase()) } else { None }),
-            );
-        assert_eq!(actual, Some("HELLO".into()));
-    }
 }
 
 /// Wraps a JSON string into the `HyRes` RPC response future.
@@ -1277,112 +1052,6 @@ impl<T: Copy> OrdRange<T> {
     pub fn flatten(&self) -> Vec<T> { vec![*self.start(), *self.end()] }
 }
 
-fn without_trailing_zeroes(decimal: &str, dot: usize) -> &str {
-    let mut pos = decimal.len() - 1;
-    loop {
-        let ch = decimal.as_bytes()[pos];
-        if ch != b'0' {
-            break &decimal[0..=pos];
-        }
-        if pos == dot {
-            break &decimal[0..pos];
-        }
-        pos -= 1
-    }
-}
-
-/// Round half away from zero (aka commercial rounding).
-pub fn round_to(bd: &BigDecimal, places: u8) -> String {
-    // Normally we'd do
-    //
-    //     let divisor = pow (10, places)
-    //     round (self * divisor) / divisor
-    //
-    // But we don't have a `round` function in `BigDecimal` at present, so we're on our own.
-
-    let bds = format!("{}", bd);
-    let bda = bds.as_bytes();
-    let dot = bda.iter().position(|&ch| ch == b'.');
-    let dot = match dot {
-        Some(dot) => dot,
-        None => return bds,
-    };
-
-    if bda.len() - dot <= places as usize {
-        return String::from(without_trailing_zeroes(&bds, dot));
-    }
-
-    let mut pos = bda.len() - 1;
-    let mut ch = bda[pos];
-    let mut prev_digit = 0;
-    loop {
-        let digit = ch - b'0';
-        let rounded = if prev_digit > 5 { digit + 1 } else { digit };
-        //println! ("{} at {}: prev_digit {}, digit {}, rounded {}", bds, pos, prev_digit, digit, rounded);
-
-        if pos < dot {
-            //println! ("{}, pos < dot, stopping at pos {}", bds, pos);
-            let mut integer: i64 = (bds[0..=pos]).parse().unwrap();
-            if prev_digit > 5 {
-                if bda[0] == b'-' {
-                    integer = integer.checked_sub(1).unwrap()
-                } else {
-                    integer = integer.checked_add(1).unwrap()
-                }
-            }
-            return format!("{}", integer);
-        }
-
-        if pos == dot + places as usize && rounded < 10 {
-            //println! ("{}, stopping at pos {}", bds, pos);
-            break format!("{}{}", &bds[0..pos], rounded);
-        }
-
-        pos -= 1;
-        if pos == dot {
-            pos -= 1
-        } // Skip over the dot.
-        ch = bda[pos];
-        prev_digit = rounded
-    }
-}
-
-#[test]
-fn test_round_to() {
-    assert_eq!(round_to(&BigDecimal::from(0.999), 2), "1");
-    assert_eq!(round_to(&BigDecimal::from(-0.999), 2), "-1");
-
-    assert_eq!(round_to(&BigDecimal::from(10.999), 2), "11");
-    assert_eq!(round_to(&BigDecimal::from(-10.999), 2), "-11");
-
-    assert_eq!(round_to(&BigDecimal::from(99.9), 1), "99.9");
-    assert_eq!(round_to(&BigDecimal::from(-99.9), 1), "-99.9");
-
-    assert_eq!(round_to(&BigDecimal::from(99.9), 0), "100");
-    assert_eq!(round_to(&BigDecimal::from(-99.9), 0), "-100");
-
-    let ouch = BigDecimal::from(1) / BigDecimal::from(7);
-    assert_eq!(round_to(&ouch, 3), "0.143");
-
-    let ouch = BigDecimal::from(1) / BigDecimal::from(3);
-    assert_eq!(round_to(&ouch, 0), "0");
-    assert_eq!(round_to(&ouch, 1), "0.3");
-    assert_eq!(round_to(&ouch, 2), "0.33");
-    assert_eq!(round_to(&ouch, 9), "0.333333333");
-
-    assert_eq!(round_to(&BigDecimal::from(0.123), 99), "0.123");
-    assert_eq!(round_to(&BigDecimal::from(-0.123), 99), "-0.123");
-
-    assert_eq!(round_to(&BigDecimal::from(0), 99), "0");
-    assert_eq!(round_to(&BigDecimal::from(-0), 99), "0");
-
-    assert_eq!(round_to(&BigDecimal::from(0.123), 0), "0");
-    assert_eq!(round_to(&BigDecimal::from(-0.123), 0), "0");
-
-    assert_eq!(round_to(&BigDecimal::from(0), 0), "0");
-    assert_eq!(round_to(&BigDecimal::from(-0), 0), "0");
-}
-
 pub const fn true_f() -> bool { true }
 
 pub const fn ten() -> usize { 10 }
@@ -1404,151 +1073,6 @@ pub struct PagingOptions {
 
 #[cfg(not(target_arch = "wasm32"))]
 pub fn new_uuid() -> Uuid { Uuid::new_v4() }
-
-#[cfg(target_arch = "wasm32")]
-pub fn new_uuid() -> Uuid {
-    use rand::RngCore;
-    use uuid::{Builder, Variant, Version};
-
-    let mut rng = rand::thread_rng();
-    let mut bytes = [0; 16];
-
-    rng.fill_bytes(&mut bytes);
-
-    Builder::from_bytes(bytes)
-        .set_variant(Variant::RFC4122)
-        .set_version(Version::Random)
-        .build()
-}
-
-/// Get only the first line of the error.
-/// Generally, the `JsValue` error contains the stack trace of an error.
-/// This function cuts off the stack trace.
-#[cfg(target_arch = "wasm32")]
-pub fn stringify_js_error(error: &JsValue) -> String {
-    format!("{:?}", error)
-        .lines()
-        .next()
-        .map(|e| e.to_owned())
-        .unwrap_or_default()
-}
-
-/// The function helper for the `WasmUnwrapExt`, `WasmUnwrapErrExt` traits.
-#[cfg(target_arch = "wasm32")]
-#[track_caller]
-fn caller_file_line() -> (&'static str, u32) {
-    let location = std::panic::Location::caller();
-    let file = gstuff::filename(location.file());
-    let line = location.line();
-    (file, line)
-}
-
-#[cfg(target_arch = "wasm32")]
-pub trait WasmUnwrapExt<T> {
-    fn unwrap_w(self) -> T;
-    fn expect_w(self, description: &str) -> T;
-}
-
-#[cfg(target_arch = "wasm32")]
-pub trait WasmUnwrapErrExt<E> {
-    fn unwrap_err_w(self) -> E;
-    fn expect_err_w(self, description: &str) -> E;
-}
-
-#[cfg(target_arch = "wasm32")]
-impl<T, E: fmt::Debug> WasmUnwrapExt<T> for Result<T, E> {
-    #[track_caller]
-    fn unwrap_w(self) -> T {
-        match self {
-            Ok(t) => t,
-            Err(e) => {
-                let (file, line) = caller_file_line();
-                let error = format!(
-                    "{}:{}] 'Result::unwrap_w' called on an 'Err' value: {:?}",
-                    file, line, e
-                );
-                wasm_bindgen::throw_str(&error)
-            },
-        }
-    }
-
-    #[track_caller]
-    fn expect_w(self, description: &str) -> T {
-        match self {
-            Ok(t) => t,
-            Err(e) => {
-                let (file, line) = caller_file_line();
-                let error = format!("{}:{}] {}: {:?}", file, line, description, e);
-                wasm_bindgen::throw_str(&error)
-            },
-        }
-    }
-}
-
-#[cfg(target_arch = "wasm32")]
-impl<T> WasmUnwrapExt<T> for Option<T> {
-    #[track_caller]
-    fn unwrap_w(self) -> T {
-        match self {
-            Some(t) => t,
-            None => {
-                let (file, line) = caller_file_line();
-                let error = format!("{}:{}] 'Option::unwrap_w' called on a 'None' value", file, line);
-                wasm_bindgen::throw_str(&error)
-            },
-        }
-    }
-
-    #[track_caller]
-    fn expect_w(self, description: &str) -> T {
-        match self {
-            Some(t) => t,
-            None => {
-                let (file, line) = caller_file_line();
-                let error = format!("{}:{}] {}", file, line, description);
-                wasm_bindgen::throw_str(&error)
-            },
-        }
-    }
-}
-
-#[cfg(target_arch = "wasm32")]
-impl<T: fmt::Debug, E> WasmUnwrapErrExt<E> for Result<T, E> {
-    #[track_caller]
-    fn unwrap_err_w(self) -> E {
-        match self {
-            Ok(t) => {
-                let (file, line) = caller_file_line();
-                let error = format!(
-                    "{}:{}] 'Result::unwrap_err_w' called on an 'Ok' value: {:?}",
-                    file, line, t
-                );
-                wasm_bindgen::throw_str(&error)
-            },
-            Err(e) => e,
-        }
-    }
-
-    #[track_caller]
-    fn expect_err_w(self, description: &str) -> E {
-        match self {
-            Ok(t) => {
-                let (file, line) = caller_file_line();
-                let error = format!("{}:{}] {}: {:?}", file, line, description, t);
-                wasm_bindgen::throw_str(&error)
-            },
-            Err(e) => e,
-        }
-    }
-}
-
-#[cfg(target_arch = "wasm32")]
-#[track_caller]
-pub fn panic_w(description: &str) {
-    let (file, line) = caller_file_line();
-    let error = format!("{}:{}] 'panic_w' called: {:?}", file, line, description);
-    wasm_bindgen::throw_str(&error)
-}
 
 pub fn first_char_to_upper(input: &str) -> String {
     let mut v: Vec<char> = input.chars().collect();

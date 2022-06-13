@@ -26,8 +26,6 @@ use chain::TransactionOutput;
 use common::executor::Timer;
 use common::jsonrpc_client::{JsonRpcClient, JsonRpcRequest, RpcRes};
 use common::log::{error, warn};
-use common::mm_ctx::MmArc;
-use common::mm_error::prelude::*;
 use common::mm_number::MmNumber;
 use common::now_ms;
 use derive_more::Display;
@@ -38,6 +36,8 @@ use futures::{FutureExt, TryFutureExt};
 use futures01::Future;
 use keys::bytes::Bytes as ScriptBytes;
 use keys::{Address as UtxoAddress, Address, KeyPair, Public};
+use mm2_core::mm_ctx::MmArc;
+use mm2_err_handle::prelude::*;
 #[cfg(test)] use mocktopus::macros::*;
 use rpc::v1::types::{Bytes as BytesJson, ToTxHash, Transaction as RpcTransaction, H160 as H160Json, H256 as H256Json};
 use script::{Builder as ScriptBuilder, Opcode, Script, TransactionInputSigner};
@@ -691,7 +691,15 @@ impl UtxoCommonOps for Qrc20Coin {
         gas_fee: Option<u64>,
         stage: &FeeApproxStage,
     ) -> TradePreimageResult<BigDecimal> {
-        utxo_common::preimage_trade_fee_required_to_send_outputs(self, outputs, fee_policy, gas_fee, stage).await
+        utxo_common::preimage_trade_fee_required_to_send_outputs(
+            self,
+            self.platform_ticker(),
+            outputs,
+            fee_policy,
+            gas_fee,
+            stage,
+        )
+        .await
     }
 
     fn increase_dynamic_fee_by_stage(&self, dynamic_fee: u64, stage: &FeeApproxStage) -> u64 {
@@ -1250,7 +1258,7 @@ impl MmCoin for Qrc20Coin {
             let sender_addr = H160::default();
             // get the max available value that we can pass into the contract call params
             // see `generate_contract_call_script_pubkey`
-            let value = u64::max_value().into();
+            let value = u64::MAX.into();
             let output =
                 selfi.receiver_spend_output(&selfi.swap_contract_address, swap_id, value, secret, sender_addr)?;
 

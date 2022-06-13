@@ -1,13 +1,15 @@
 /******************************************************************************
- * Copyright © 2014-2019 The SuperNET Developers.                             *
+ * Copyright © 2022 Atomic Private Limited and its contributors               *
  *                                                                            *
- * See the AUTHORS, DEVELOPER-AGREEMENT and LICENSE files at                  *
+ * See the CONTRIBUTOR-LICENSE-AGREEMENT, COPYING, LICENSE-COPYRIGHT-NOTICE   *
+ * and DEVELOPER-CERTIFICATE-OF-ORIGIN files in the LEGAL directory in        *
  * the top-level directory of this distribution for the individual copyright  *
  * holder information and the developer policies on copyright and licensing.  *
  *                                                                            *
  * Unless otherwise agreed in a custom licensing agreement, no part of the    *
- * SuperNET software, including this file may be copied, modified, propagated *
- * or distributed except according to the terms contained in the LICENSE file *
+ * AtomicDEX software, including this file may be copied, modified, propagated*
+ * or distributed except according to the terms contained in the              *
+ * LICENSE-COPYRIGHT-NOTICE file.                                             *
  *                                                                            *
  * Removal or modification of this copyright notice is prohibited.            *
  *                                                                            *
@@ -16,7 +18,7 @@
 //  utxo.rs
 //  marketmaker
 //
-//  Copyright © 2017-2019 SuperNET. All rights reserved.
+//  Copyright © 2022 AtomicDEX. All rights reserved.
 //
 
 pub mod bch;
@@ -44,8 +46,6 @@ use chain::{OutPoint, TransactionOutput, TxHashAlgo};
 #[cfg(not(target_arch = "wasm32"))]
 use common::first_char_to_upper;
 use common::jsonrpc_client::JsonRpcError;
-use common::mm_ctx::MmArc;
-use common::mm_error::prelude::*;
 use common::mm_metrics::MetricsArc;
 use common::now_ms;
 use crypto::trezor::utxo::TrezorUtxoCoin;
@@ -61,6 +61,8 @@ use keys::bytes::Bytes;
 pub use keys::{Address, AddressFormat as UtxoAddressFormat, AddressHashEnum, KeyPair, Private, Public, Secret,
                Type as ScriptType};
 use lightning_invoice::Currency as LightningCurrency;
+use mm2_core::mm_ctx::MmArc;
+use mm2_err_handle::prelude::*;
 #[cfg(test)] use mocktopus::macros::*;
 use num_traits::ToPrimitive;
 use primitives::hash::{H256, H264};
@@ -68,7 +70,7 @@ use rpc::v1::types::{Bytes as BytesJson, Transaction as RpcTransaction, H256 as 
 use script::{Builder, Script, SignatureVersion, TransactionInputSigner};
 use serde_json::{self as json, Value as Json};
 use serialization::{serialize, serialize_with_flags, SERIALIZE_TRANSACTION_WITNESS};
-use spv_validation::types::SPVError;
+use spv_validation::helpers_validation::SPVError;
 use std::array::TryFromSliceError;
 use std::collections::{HashMap, HashSet};
 use std::convert::TryInto;

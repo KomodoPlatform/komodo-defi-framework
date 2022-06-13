@@ -1,0 +1,140 @@
+# Support for split-debuginfo [should eventually](https://github.com/rust-lang/rust/issues/34651) land,
+# hopefully giving us an out-of-the-box way to separate the code from the debugging information.
+# We should use the "objcopy --only-keep-debug" and "add-symbol-file" meanwhile
+# and separating stack tracing into raw trace and symbolication parts.
+
+[package]
+name = "mm2_main"
+version = "0.1.0"
+edition = "2018"
+default-run = "mm2"
+
+# wasm-opt reduces the size from 17 Mb to 14. But it runs for few minutes, which is not good for CI.
+# For production builds, it's recommended to run wasm-opt separately.
+[package.metadata.wasm-pack.profile.release]
+wasm-opt = false
+
+[features]
+# Deprecated
+native = []
+track-ctx-pointer = ["common/track-ctx-pointer"]
+custom-swap-locktime = [] # only for testing purposes, should never be activated on release builds.
+zhtlc-native-tests = ["coins/zhtlc-native-tests"]
+
+[[bin]]
+name = "mm2"
+path = "src/mm2_bin.rs"
+test = false
+doctest = false
+bench = false
+
+[[bin]]
+name = "docker_tests"
+path = "src/docker_tests.rs"
+
+[lib]
+name = "mm2"
+path = "src/mm2_lib.rs"
+crate-type = ["cdylib", "staticlib"]
+test = false
+doctest = false
+bench = false
+
+[dependencies]
+async-std = { version = "1.5", features = ["unstable"] }
+async-trait = "0.1"
+bitcrypto = { path = "../mm2_bitcoin/crypto" }
+blake2 = "0.10"
+bytes = "0.4"
+chain = { path = "../mm2_bitcoin/chain" }
+cfg-if = "1.0"
+coins = { path = "../coins" }
+coins_activation = { path = "../coins_activation" }
+common = { path = "../common" }
+crc32fast = { version = "1.3.2", features = ["std", "nightly"] }
+crossbeam = "0.7"
+crypto = { path = "../crypto" }
+db_common = { path = "../db_common" }
+derive_more = "0.99"
+either = "1.6"
+ethereum-types = { version = "0.4", default-features = false, features = ["std", "serialize"] }
+enum-primitive-derive = "0.2"
+fomat-macros = "0.2"
+futures01 = { version = "0.1", package = "futures" }
+futures-cpupool = "0.1"
+futures = { version = "0.3.1", package = "futures", features = ["compat", "async-await"] }
+gstuff = { version = "0.7", features = ["nightly"] }
+hash256-std-hasher = "0.15.2"
+hash-db = "0.15.2"
+hex = "0.4.2"
+http = "0.2"
+hw_common = { path = "../hw_common" }
+itertools = "0.10"
+keys = { path = "../mm2_bitcoin/keys" }
+lazy_static = "1.4"
+# ledger = { path = "../ledger" }
+libc = "0.2"
+metrics = "0.12"
+mm2_core = { path = "../mm2_core" }
+mm2_err_handle = { path = "../mm2_err_handle" }
+mm2_io = { path = "../mm2_io" }
+mm2-libp2p = { path = "../mm2_libp2p" }
+mm2_net = { path = "../mm2_net" }
+mm2_rpc = { path = "../mm2_rpc" }
+num-traits = "0.2"
+parity-util-mem = "0.11"
+parking_lot = { version = "0.12.0", features = ["nightly"] }
+primitives = { path = "../mm2_bitcoin/primitives" }
+rand = { version = "0.7", features = ["std", "small_rng"] }
+rand6 = { version = "0.6", package = "rand" }
+# TODO: Reduce the size of regex by disabling the features we don't use.
+# cf. https://github.com/rust-lang/regex/issues/583
+regex = "1"
+rmp-serde = "0.14.3"
+rpc = { path = "../mm2_bitcoin/rpc" }
+rpc_task = { path = "../rpc_task" }
+script = { path = "../mm2_bitcoin/script" }
+secp256k1 = { version = "0.20", features = ["rand"] }
+serde = "1.0"
+serde_json = { version = "1.0", features = ["preserve_order", "raw_value"] }
+serde_derive = "1.0"
+ser_error = { path = "../derives/ser_error" }
+ser_error_derive = { path = "../derives/ser_error_derive" }
+serialization = { path = "../mm2_bitcoin/serialization" }
+serialization_derive = { path = "../mm2_bitcoin/serialization_derive" }
+spv_validation = { path = "../mm2_bitcoin/spv_validation" }
+sp-runtime-interface = { version = "6.0.0", default-features = false, features = ["disable_target_static_assertions"] }
+sp-trie = { version = "6.0", default-features = false }
+trie-db = { version = "0.23.1", default-features = false }
+trie-root = "0.16.0"
+uuid = { version = "0.7", features = ["serde", "v4"] }
+wasm-timer = "0.2.4"
+
+[target.'cfg(target_arch = "wasm32")'.dependencies]
+instant = {version = "0.1.12", features = ["wasm-bindgen"]}
+js-sys = { version = "0.3.27" }
+mm2_db = { path = "../mm2_db" }
+mm2_test_helpers = { path = "../mm2_test_helpers" }
+wasm-bindgen = { version = "=0.2.78", features = ["nightly"] }
+wasm-bindgen-futures = { version = "0.4.1" }
+wasm-bindgen-test = { version = "0.3.1" }
+web-sys = { version = "0.3.55", features = ["console"] }
+
+[target.'cfg(not(target_arch = "wasm32"))'.dependencies]
+dirs = { version = "1" }
+futures-rustls = { version = "0.21.1" }
+hyper = { version = "0.14.11", features = ["client", "http2", "server", "tcp"] }
+tokio = { version = "1.7", features = ["io-util", "rt-multi-thread", "net"] }
+
+[target.'cfg(windows)'.dependencies]
+winapi = "0.3"
+
+[dev-dependencies]
+mm2_test_helpers = { path = "../mm2_test_helpers" }
+mocktopus = "0.7.0"
+testcontainers = { git = "https://github.com/artemii235/testcontainers-rs.git" }
+
+[build-dependencies]
+chrono = "0.4"
+gstuff = { version = "0.7", features = ["nightly"] }
+regex = "1"

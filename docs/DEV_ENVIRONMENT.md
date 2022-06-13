@@ -3,17 +3,19 @@
 ## Running native tests
 
 1. Install Docker or Podman.
-2. Download ZCash params files: [Windows](https://github.com/KomodoPlatform/komodo/blob/master/zcutil/fetch-params.bat),
+2. Install `libudev-dev` (dpkg) or `libudev-devel` (rpm) package.
+3. Install protobuf compiler, so `protoc` is available in your PATH.
+4. Download ZCash params files: [Windows](https://github.com/KomodoPlatform/komodo/blob/master/zcutil/fetch-params.bat),
    [Unix/Linux](https://github.com/KomodoPlatform/komodo/blob/master/zcutil/fetch-params.sh)
-3. Create `.env.client` file with the following content
+5. Create `.env.client` file with the following content
    ```
    PASSPHRASE=spice describe gravity federal blast come thank unfair canal monkey style afraid
    ```
-4. Create `.env.seed` file with the following content
+6. Create `.env.seed` file with the following content
    ```
    PASSPHRASE=also shoot benefit prefer juice shell elder veteran woman mimic image kidney
    ```
-5. MacOS specific: run script (required after each reboot)
+7. MacOS specific: run script (required after each reboot)
    ```shell
    #!/bin/bash
    for ((i=2;i<256;i++))
@@ -24,7 +26,7 @@
    sudo ifconfig lo0 inet6 -alias fe80::1%lo0
    ```
    Please note that you have to run it again after each reboot
-6. Linux specific:
+8. Linux specific:
     - for Docker users:
        ```
        sudo groupadd docker
@@ -34,7 +36,7 @@
        ```
        sudo ln -s $(which podman) /usr/bin/docker
        ```
-7. Try `cargo test --features native --all -- --test-threads=16`.
+9. Try `cargo test --features native --all -- --test-threads=16`.
 
 ## Running WASM tests
 
@@ -53,16 +55,16 @@
 6. Run WASM tests
    - for Linux users:
    ```
-   wasm-pack test --firefox --headless
+   wasm-pack test --firefox --headless mm2src/mm2_main
    ```
     - for OSX users (Intel):
    ```
-   CC=/usr/local/opt/llvm/bin/clang AR=/usr/local/opt/llvm/bin/llvm-ar wasm-pack test --firefox --headless
+   CC=/usr/local/opt/llvm/bin/clang AR=/usr/local/opt/llvm/bin/llvm-ar wasm-pack test --firefox --headless mm2src/mm2_main
    ```
     - for OSX users (M1):
    ```
-   CC=/opt/homebrew/opt/llvm/bin/clang AR=/opt/homebrew/opt/llvm/bin/llvm-ar wasm-pack test --firefox --headless
+   CC=/opt/homebrew/opt/llvm/bin/clang AR=/opt/homebrew/opt/llvm/bin/llvm-ar wasm-pack test --firefox --headless mm2src/mm2_main
    ```
-   Please note `CC` and `AR` must be specified in the same line as `wasm-pack test`.
+   Please note `CC` and `AR` must be specified in the same line as `wasm-pack test mm2src/mm2_main`.
 
 PS If you notice that this guide is outdated, please submit a PR.

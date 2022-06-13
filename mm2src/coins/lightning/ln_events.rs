@@ -113,6 +113,7 @@ impl EventHandler for LightningEventHandler {
                 counterparty_node_id,
                 funding_satoshis,
                 push_msat,
+                channel_type: _,
             } => {
                 info!(
                     "Handling OpenChannelRequest from node: {} with funding value: {} and starting balance: {}",
@@ -120,7 +121,7 @@ impl EventHandler for LightningEventHandler {
                     funding_satoshis,
                     push_msat,
                 );
-                if self.channel_manager.accept_inbound_channel(temporary_channel_id).is_ok() {
+                if self.channel_manager.accept_inbound_channel(temporary_channel_id, 0).is_ok() {
                     // Todo: once the rust-lightning PR for user_channel_id in accept_inbound_channel is released
                     // use user_channel_id to get the funding tx here once the funding tx is available.
                 }

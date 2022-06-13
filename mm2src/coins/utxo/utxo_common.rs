@@ -22,12 +22,10 @@ use chain::{BlockHeader, OutPoint, RawBlockHeader, TransactionOutput};
 use common::executor::Timer;
 use common::jsonrpc_client::JsonRpcErrorType;
 use common::log::{debug, error, info, warn};
-use common::mm_ctx::MmArc;
-use common::mm_error::prelude::*;
 use common::mm_metrics::MetricsArc;
 use common::mm_number::MmNumber;
-use common::privkey::key_pair_from_secret;
 use common::{now_ms, one_hundred, ten_f64};
+use crypto::privkey::key_pair_from_secret;
 use crypto::{Bip32DerPathOps, Bip44Chain, Bip44DerPathError, Bip44DerivationPath, RpcDerivationPath};
 use futures::compat::Future01CompatExt;
 use futures::future::{FutureExt, TryFutureExt};
@@ -36,6 +34,8 @@ use itertools::Itertools;
 use keys::bytes::Bytes;
 use keys::{Address, AddressFormat as UtxoAddressFormat, AddressHashEnum, CompactSignature, Public, SegwitAddress,
            Type as ScriptType};
+use mm2_core::mm_ctx::MmArc;
+use mm2_err_handle::prelude::*;
 use primitives::hash::H512;
 use rpc::v1::types::{Bytes as BytesJson, ToTxHash, TransactionInputEnum, H256 as H256Json};
 use script::{Builder, Opcode, Script, ScriptAddress, TransactionInputSigner, UnsignedTransactionInput};
@@ -44,8 +44,8 @@ use serde_json::{self as json};
 use serialization::{deserialize, serialize, serialize_list, serialize_with_flags, CoinVariant, CompactInteger,
                     Serializable, Stream, SERIALIZE_TRANSACTION_WITNESS};
 use spv_validation::helpers_validation::validate_headers;
+use spv_validation::helpers_validation::SPVError;
 use spv_validation::spv_proof::{SPVProof, TRY_SPV_PROOF_INTERVAL};
-use spv_validation::types::SPVError;
 use std::cmp::Ordering;
 use std::collections::hash_map::{Entry, HashMap};
 use std::str::FromStr;
@@ -2455,7 +2455,7 @@ pub async fn tx_details_by_hash<T: UtxoCommonOps>(
             };
             cur + fee
         });
-        (fee.into(), None)
+        (try_s!(fee.try_into()), None)
     } else {
         let fee = input_amount as i64 - output_amount as i64;
         (big_decimal_from_sat(fee, coin.as_ref().decimals), None)
@@ -2637,6 +2637,7 @@ pub fn get_trade_fee<T: UtxoCommonOps>(coin: T) -> Box<dyn Future<Item = TradeFe
 /// So we should always return a fee as if a transaction includes the change output.
 pub async fn preimage_trade_fee_required_to_send_outputs<T>(
     coin: &T,
+    ticker: &str,
     outputs: Vec<TransactionOutput>,
     fee_policy: FeePolicy,
     gas_fee: Option<u64>,
@@ -2645,7 +2646,6 @@ pub async fn preimage_trade_fee_required_to_send_outputs<T>(
 where
     T: UtxoCommonOps + GetUtxoListOps,
 {
-    let ticker = coin.as_ref().conf.ticker.clone();
     let decimals = coin.as_ref().decimals;
     let tx_fee = coin.get_tx_fee().await?;
     // [`FeePolicy::DeductFromOutput`] is used if the value is [`TradePreimageValue::UpperBound`] only
@@ -2671,10 +2671,9 @@ where
             if let Some(gas) = gas_fee {
                 tx_builder = tx_builder.with_gas_fee(gas);
             }
-            let (tx, data) = tx_builder
-                .build()
-                .await
-                .mm_err(|e| TradePreimageError::from_generate_tx_error(e, ticker, decimals, is_amount_upper_bound))?;
+            let (tx, data) = tx_builder.build().await.mm_err(|e| {
+                TradePreimageError::from_generate_tx_error(e, ticker.to_owned(), decimals, is_amount_upper_bound)
+            })?;
 
             let total_fee = if tx.outputs.len() == outputs_count {
                 // take into account the change output
@@ -2698,10 +2697,9 @@ where
             if let Some(gas) = gas_fee {
                 tx_builder = tx_builder.with_gas_fee(gas);
             }
-            let (tx, data) = tx_builder
-                .build()
-                .await
-                .mm_err(|e| TradePreimageError::from_generate_tx_error(e, ticker, decimals, is_amount_upper_bound))?;
+            let (tx, data) = tx_builder.build().await.mm_err(|e| {
+                TradePreimageError::from_generate_tx_error(e, ticker.to_string(), decimals, is_amount_upper_bound)
+            })?;
 
             let total_fee = if tx.outputs.len() == outputs_count {
                 // take into account the change output if tx_size_kb(tx with change) > tx_size_kb(tx without change)

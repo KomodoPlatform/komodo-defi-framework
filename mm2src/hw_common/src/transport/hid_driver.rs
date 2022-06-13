@@ -7,7 +7,7 @@
 //! https://github.com/libusb/hidapi/issues/103#issuecomment-537336680
 
 use common::log::warn;
-use common::mm_error::prelude::*;
+use mm2_err_handle::prelude::*;
 use derive_more::Display;
 use futures::lock::Mutex as AsyncMutex;
 use hidapi::HidApi;

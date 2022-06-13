@@ -7,9 +7,9 @@ use crate::{PrivKeyBuildPolicy, UtxoActivationParams};
 use async_trait::async_trait;
 use common::executor::spawn;
 use common::log::info;
-use common::mm_ctx::MmArc;
-use common::mm_error::prelude::*;
 use futures::future::{abortable, AbortHandle};
+use mm2_core::mm_ctx::MmArc;
+use mm2_err_handle::prelude::*;
 use serde_json::Value as Json;
 
 pub struct UtxoArcBuilder<'a, F, T>

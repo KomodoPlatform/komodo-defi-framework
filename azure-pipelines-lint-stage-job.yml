@@ -42,6 +42,9 @@ jobs:
         env:
           MANUAL_MM_VERSION: true
       - bash: |
-          cargo deny check advisories
-        displayName: 'Check Cargo deny advisories'
-        enabled: false
+          cargo udeps
+        displayName: 'Check unused dependencies'
+      - bash: |
+          cargo deny check bans --hide-inclusion-graph
+          cargo deny check advisories --hide-inclusion-graph
+        displayName: 'Cargo deny checks'

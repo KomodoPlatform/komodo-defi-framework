@@ -1,13 +1,15 @@
 /******************************************************************************
- * Copyright © 2014-2018 The SuperNET Developers.                             *
+ * Copyright © 2022 Atomic Private Limited and its contributors               *
  *                                                                            *
- * See the AUTHORS, DEVELOPER-AGREEMENT and LICENSE files at                  *
+ * See the CONTRIBUTOR-LICENSE-AGREEMENT, COPYING, LICENSE-COPYRIGHT-NOTICE   *
+ * and DEVELOPER-CERTIFICATE-OF-ORIGIN files in the LEGAL directory in        *
  * the top-level directory of this distribution for the individual copyright  *
  * holder information and the developer policies on copyright and licensing.  *
  *                                                                            *
  * Unless otherwise agreed in a custom licensing agreement, no part of the    *
- * SuperNET software, including this file may be copied, modified, propagated *
- * or distributed except according to the terms contained in the LICENSE file *
+ * AtomicDEX software, including this file may be copied, modified, propagated*
+ * or distributed except according to the terms contained in the              *
+ * LICENSE-COPYRIGHT-NOTICE file.                                             *
  *                                                                            *
  * Removal or modification of this copyright notice is prohibited.            *
  *                                                                            *
@@ -34,8 +36,7 @@
 use async_trait::async_trait;
 use base58::FromBase58Error;
 use bigdecimal::{BigDecimal, ParseBigDecimalError, Zero};
-use common::mm_ctx::{from_ctx, MmArc};
-use common::mm_error::prelude::*;
+use common::executor::{spawn, Timer};
 use common::mm_metrics::MetricsWeak;
 use common::mm_number::MmNumber;
 use common::{calc_total_pages, now_ms, ten, HttpStatusCode};
@@ -47,6 +48,8 @@ use futures::{FutureExt, TryFutureExt};
 use futures01::Future;
 use http::{Response, StatusCode};
 use keys::{AddressFormat as UtxoAddressFormat, KeyPair, NetworkPrefix as CashAddrPrefix};
+use mm2_core::mm_ctx::{from_ctx, MmArc};
+use mm2_err_handle::prelude::*;
 use rpc::v1::types::{Bytes as BytesJson, H256 as H256Json};
 use serde::{Deserialize, Deserializer, Serialize};
 use serde_json::{self as json, Value as Json};
@@ -70,7 +73,7 @@ cfg_native! {
 }
 
 cfg_wasm32! {
-    use common::indexed_db::{ConstructibleDb, DbLocked, SharedDb};
+    use mm2_db::indexed_db::{ConstructibleDb, DbLocked, SharedDb};
     use hd_wallet_storage::HDWalletDb;
     use tx_history_db::TxHistoryDb;
 
@@ -1041,7 +1044,7 @@ pub enum TradePreimageValue {
     UpperBound(BigDecimal),
 }
 
-#[derive(Debug, Display)]
+#[derive(Debug, Display, PartialEq)]
 pub enum TradePreimageError {
     #[display(
         fmt = "Not enough {} to preimage the trade: available {}, required at least {}",

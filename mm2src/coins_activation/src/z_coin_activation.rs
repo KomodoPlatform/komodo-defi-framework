@@ -10,12 +10,12 @@ use coins::utxo::{UtxoActivationParams, UtxoRpcMode};
 use coins::z_coin::{z_coin_from_conf_and_params, ZCoin, ZCoinBuildError};
 use coins::{BalanceError, CoinProtocol, MarketCoinOps, PrivKeyActivationPolicy, RegisterCoinError};
 use common::executor::Timer;
-use common::mm_ctx::MmArc;
-use common::mm_error::prelude::*;
 use crypto::hw_rpc_task::{HwRpcTaskAwaitingStatus, HwRpcTaskUserAction};
 use crypto::{CryptoCtx, CryptoInitError};
 use derive_more::Display;
 use futures::compat::Future01CompatExt;
+use mm2_core::mm_ctx::MmArc;
+use mm2_err_handle::prelude::*;
 use rpc_task::RpcTaskError;
 use ser_error_derive::SerializeErrorType;
 use serde_derive::{Deserialize, Serialize};
@@ -134,7 +134,7 @@ impl From<CryptoInitError> for ZcoinInitError {
 }
 
 impl From<ZcoinInitError> for InitStandaloneCoinError {
-    fn from(_: ZcoinInitError) -> Self { todo!() }
+    fn from(err: ZcoinInitError) -> Self { InitStandaloneCoinError::Internal(err.to_string()) }
 }
 
 pub struct ZcoinProtocolInfo;

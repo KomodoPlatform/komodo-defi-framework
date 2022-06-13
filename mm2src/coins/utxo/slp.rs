@@ -21,11 +21,9 @@ use bitcrypto::dhash160;
 use chain::constants::SEQUENCE_FINAL;
 use chain::{OutPoint, TransactionOutput};
 use common::log::warn;
-use common::mm_ctx::MmArc;
-use common::mm_error::prelude::*;
 use common::mm_number::{BigDecimal, MmNumber};
 use common::now_ms;
-use common::privkey::key_pair_from_secret;
+use crypto::privkey::key_pair_from_secret;
 use derive_more::Display;
 use futures::compat::Future01CompatExt;
 use futures::{FutureExt, TryFutureExt};
@@ -34,6 +32,8 @@ use hex::FromHexError;
 use keys::hash::H160;
 use keys::{AddressHashEnum, CashAddrType, CashAddress, CompactSignature, KeyPair, NetworkPrefix as CashAddrPrefix,
            Public};
+use mm2_core::mm_ctx::MmArc;
+use mm2_err_handle::prelude::*;
 use primitives::hash::H256;
 use rpc::v1::types::{Bytes as BytesJson, ToTxHash, H256 as H256Json};
 use script::bytes::Bytes;
@@ -1713,6 +1713,7 @@ impl MmCoin for SlpToken {
         let (preimage, _) = self.generate_slp_tx_preimage(vec![slp_out]).await?;
         let fee = utxo_common::preimage_trade_fee_required_to_send_outputs(
             &self.platform_coin,
+            self.platform_ticker(),
             preimage.outputs,
             FeePolicy::SendExact,
             None,
@@ -1758,6 +1759,7 @@ impl MmCoin for SlpToken {
         let (preimage, _) = self.generate_slp_tx_preimage(vec![slp_out]).await?;
         let fee = utxo_common::preimage_trade_fee_required_to_send_outputs(
             &self.platform_coin,
+            self.platform_ticker(),
             preimage.outputs,
             FeePolicy::SendExact,
             None,

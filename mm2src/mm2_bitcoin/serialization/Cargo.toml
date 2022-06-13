@@ -7,3 +7,4 @@ authors = ["debris <marek.kotewicz@gmail.com>"]
 byteorder = "1.0"
 primitives = { path = "../primitives" }
 derive_more = "0.99"
+test_helpers = { path = "../test_helpers" }

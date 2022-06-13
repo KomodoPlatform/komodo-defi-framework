@@ -12,9 +12,9 @@ use coins::utxo::qtum::{QtumCoin, QtumCoinBuilder};
 use coins::utxo::utxo_builder::UtxoCoinBuilder;
 use coins::utxo::UtxoActivationParams;
 use coins::CoinProtocol;
-use common::mm_ctx::MmArc;
-use common::mm_error::prelude::*;
 use crypto::CryptoCtx;
+use mm2_core::mm_ctx::MmArc;
+use mm2_err_handle::prelude::*;
 use serde_json::Value as Json;
 
 pub type QtumTaskManagerShared = InitStandaloneCoinTaskManagerShared<QtumCoin>;
