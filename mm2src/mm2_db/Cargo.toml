@@ -10,11 +10,14 @@ async-trait = "0.1"
 common = { path = "../common" }
 derive_more = "0.99"
 futures = { version = "0.3", package = "futures", features = ["compat", "async-await", "thread-pool"] }
+itertools = "0.10"
 hex = "0.4.2"
 js-sys = "0.3.27"
 lazy_static = "1.4"
 mm2_core = { path = "../mm2_core" }
 mm2_err_handle = { path = "../mm2_err_handle" }
+num-bigint = { version = "0.4", features = ["serde", "std"] }
+num-traits = "0.2"
 primitives = { path = "../mm2_bitcoin/primitives" }
 rand = { version = "0.7", features = ["std", "small_rng", "wasm-bindgen"] }
 serde = "1"

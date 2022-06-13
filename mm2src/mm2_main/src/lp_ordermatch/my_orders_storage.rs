@@ -380,7 +380,8 @@ mod wasm_impl {
                 DbTransactionError::ErrorDeserializingItem(_) => MyOrdersError::ErrorDeserializing(stringified_error),
                 DbTransactionError::ErrorUploadingItem(_)
                 | DbTransactionError::ErrorDeletingItems(_) => MyOrdersError::ErrorSaving(stringified_error),
-                DbTransactionError::ErrorGettingItems(_) => MyOrdersError::ErrorLoading(stringified_error),
+                DbTransactionError::ErrorGettingItems(_)
+                | DbTransactionError::ErrorCountingItems(_) => MyOrdersError::ErrorLoading(stringified_error),
             }
         }
     }
@@ -464,14 +465,16 @@ mod wasm_impl {
             let db = self.ctx.ordermatch_db().await?;
             let transaction = db.transaction().await?;
             let table = transaction.table::<MyActiveMakerOrdersTable>().await?;
-            Ok(table.delete_item_by_unique_index("uuid", uuid).await?)
+            table.delete_item_by_unique_index("uuid", uuid).await?;
+            Ok(())
         }
 
         async fn delete_active_taker_order(&self, uuid: Uuid) -> MyOrdersResult<()> {
             let db = self.ctx.ordermatch_db().await?;
             let transaction = db.transaction().await?;
             let table = transaction.table::<MyActiveTakerOrdersTable>().await?;
-            Ok(table.delete_item_by_unique_index("uuid", uuid).await?)
+            table.delete_item_by_unique_index("uuid", uuid).await?;
+            Ok(())
         }
 
         async fn update_active_maker_order(&self, order: &MakerOrder) -> MyOrdersResult<()> {

@@ -42,6 +42,16 @@ macro_rules! ifrom {
     };
 }
 
+/// This macro is used to implement `From<$t>` for `$name`, where `$name($inner)`.
+#[macro_export]
+macro_rules! ifrom_inner {
+    ($name:ident, $inner:ident, $($t:ty)*) => ($(
+        impl From<$t> for $name {
+            fn from(num: $t) -> $name { $name($inner::from(num)) }
+        }
+    )*);
+}
+
 #[macro_export]
 macro_rules! cfg_wasm32 {
     ($($tokens:tt)*) => {

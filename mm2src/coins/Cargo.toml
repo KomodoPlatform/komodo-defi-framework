@@ -89,6 +89,7 @@ zbase32 = "0.1.2"
 [target.'cfg(target_arch = "wasm32")'.dependencies]
 js-sys = { version = "0.3.27" }
 mm2_db = { path = "../mm2_db" }
+mm2_test_helpers = { path = "../mm2_test_helpers" }
 wasm-bindgen = { version = "0.2.50", features = ["nightly"] }
 wasm-bindgen-futures = { version = "0.4.1" }
 wasm-bindgen-test = { version = "0.3.2" }

@@ -6,12 +6,23 @@ use crypto::XPub;
 use mm2_core::mm_ctx::MmArc;
 use mm2_db::indexed_db::cursor_prelude::*;
 use mm2_db::indexed_db::{DbIdentifier, DbInstance, DbLocked, DbTable, DbTransactionError, DbUpgrader, IndexedDb,
-                         IndexedDbBuilder, InitDbError, InitDbResult, ItemId, OnUpgradeResult, SharedDb,
+                         IndexedDbBuilder, InitDbError, InitDbResult, ItemId, MultiIndex, OnUpgradeResult, SharedDb,
                          TableSignature, WeakDb};
 use mm2_err_handle::prelude::*;
 
 const DB_NAME: &str = "hd_wallet";
 const DB_VERSION: u32 = 1;
+/// An index of the `HDAccountTable` table that consists of the following properties:
+/// * coin - coin ticker
+/// * mm2_rmd160 - RIPEMD160(SHA256(x)) where x is a pubkey with which mm2 is launched
+/// * hd_wallet_rmd160 - RIPEMD160(SHA256(x)) where x is a pubkey extracted from a Hardware Wallet device or passphrase.
+const WALLET_ID_INDEX: &str = "wallet_id";
+/// A **unique** index of the `HDAccountTable` table that consists of the following properties:
+/// * coin - coin ticker
+/// * mm2_rmd160 - RIPEMD160(SHA256(x)) where x is a pubkey with which mm2 is launched
+/// * hd_wallet_rmd160 - RIPEMD160(SHA256(x)) where x is a pubkey extracted from a Hardware Wallet device or passphrase.
+/// * account_id - HD account id
+const WALLET_ACCOUNT_ID_INDEX: &str = "wallet_account_id";
 
 pub type HDWalletDbLocked<'a> = DbLocked<'a, HDWalletDb>;
 
@@ -30,7 +41,9 @@ impl From<DbTransactionError> for HDWalletStorageError {
             | DbTransactionError::TransactionAborted => HDWalletStorageError::Internal(desc),
             DbTransactionError::ErrorDeserializingItem(_) => HDWalletStorageError::ErrorDeserializing(desc),
             DbTransactionError::ErrorSerializingItem(_) => HDWalletStorageError::ErrorSerializing(desc),
-            DbTransactionError::ErrorGettingItems(_) => HDWalletStorageError::ErrorLoading(desc),
+            DbTransactionError::ErrorGettingItems(_) | DbTransactionError::ErrorCountingItems(_) => {
+                HDWalletStorageError::ErrorLoading(desc)
+            },
             DbTransactionError::ErrorUploadingItem(_) | DbTransactionError::ErrorDeletingItems(_) => {
                 HDWalletStorageError::ErrorSaving(desc)
             },
@@ -45,15 +58,15 @@ impl From<CursorError> for HDWalletStorageError {
             // We don't expect that the `String` and `u32` types serialization to fail.
             CursorError::ErrorSerializingIndexFieldValue {..}
             // We don't expect that the `String` and `u32` types deserialization to fail.
-            | CursorError::ErrorDeserializingIndexValue{..}
+            | CursorError::ErrorDeserializingIndexValue {..}
             | CursorError::ErrorOpeningCursor {..}
             | CursorError::AdvanceError {..}
             | CursorError::InvalidKeyRange {..}
-            | CursorError::TypeMismatch{..}
+            | CursorError::TypeMismatch {..}
             | CursorError::IncorrectNumberOfKeysPerIndex {..}
             | CursorError::UnexpectedState(..)
-            | CursorError::IncorrectUsage{..} => HDWalletStorageError::Internal(stringified_error),
-            CursorError::ErrorDeserializingItem{..} => HDWalletStorageError::ErrorDeserializing(stringified_error),
+            | CursorError::IncorrectUsage {..} => HDWalletStorageError::Internal(stringified_error),
+            CursorError::ErrorDeserializingItem {..} => HDWalletStorageError::ErrorDeserializing(stringified_error),
         }
     }
 }
@@ -93,13 +106,9 @@ impl TableSignature for HDAccountTable {
         match (old_version, new_version) {
             (0, 1) => {
                 let table = upgrader.create_table(Self::table_name())?;
-                table.create_index("coin", false)?;
-                table.create_index("mm2_rmd160", false)?;
-                table.create_index("hd_wallet_rmd160", false)?;
-                table.create_index("account_id", false)?;
-                table.create_multi_index("wallet_id", &["coin", "mm2_rmd160", "hd_wallet_rmd160"], false)?;
+                table.create_multi_index(WALLET_ID_INDEX, &["coin", "mm2_rmd160", "hd_wallet_rmd160"], false)?;
                 table.create_multi_index(
-                    "wallet_account_id",
+                    WALLET_ACCOUNT_ID_INDEX,
                     &["coin", "mm2_rmd160", "hd_wallet_rmd160", "account_id"],
                     true,
                 )?;
@@ -176,19 +185,16 @@ impl HDWalletStorageInternalOps for HDWalletIndexedDbStorage {
         let transaction = locked_db.inner.transaction().await?;
         let table = transaction.table::<HDAccountTable>().await?;
 
-        // Use the cursor to find items with by the specified `wallet_id`.
-        let accounts = table
-            .open_cursor("wallet_id")
-            .await?
-            .only("coin", wallet_id.coin)?
-            .only("mm2_rmd160", wallet_id.mm2_rmd160)?
-            .only("hd_wallet_rmd160", wallet_id.hd_wallet_rmd160)?
-            .collect()
+        let index_keys = MultiIndex::new(WALLET_ID_INDEX)
+            .with_value(wallet_id.coin)?
+            .with_value(wallet_id.mm2_rmd160)?
+            .with_value(wallet_id.hd_wallet_rmd160)?;
+        Ok(table
+            .get_items_by_multi_index(index_keys)
             .await?
             .into_iter()
             .map(|(_item_id, item)| HDAccountStorageItem::from(item))
-            .collect();
-        Ok(accounts)
+            .collect())
     }
 
     async fn load_account(
@@ -259,23 +265,11 @@ impl HDWalletStorageInternalOps for HDWalletIndexedDbStorage {
         let transaction = locked_db.inner.transaction().await?;
         let table = transaction.table::<HDAccountTable>().await?;
 
-        // Use the cursor to find item ids with by the specified `wallet_id`.
-        let item_ids = table
-            .open_cursor("wallet_id")
-            .await?
-            .only("coin", wallet_id.coin)?
-            .only("mm2_rmd160", wallet_id.mm2_rmd160)?
-            .only("hd_wallet_rmd160", wallet_id.hd_wallet_rmd160)?
-            .collect()
-            .await?
-            .into_iter()
-            .map(|(item_id, _item)| item_id);
-
-        // Delete accounts by `item_ids`.
-        for account_item_id in item_ids {
-            table.delete_item(account_item_id).await?;
-        }
-
+        let index_keys = MultiIndex::new(WALLET_ID_INDEX)
+            .with_value(wallet_id.coin)?
+            .with_value(wallet_id.mm2_rmd160)?
+            .with_value(wallet_id.hd_wallet_rmd160)?;
+        table.delete_items_by_multi_index(index_keys).await?;
         Ok(())
     }
 }
@@ -291,30 +285,20 @@ impl HDWalletIndexedDbStorage {
         db.get_or_initialize().await.mm_err(HDWalletStorageError::from)
     }
 
-    async fn find_account<'a>(
-        table: &DbTable<'a, HDAccountTable>,
+    async fn find_account(
+        table: &DbTable<'_, HDAccountTable>,
         wallet_id: HDWalletId,
         account_id: u32,
     ) -> HDWalletStorageResult<Option<(ItemId, HDAccountTable)>> {
-        // Use the cursor to find an item with the specified `wallet_id` and `account_id`.
-        let accounts = table
-            .open_cursor("wallet_account_id")
-            .await?
-            .only("coin", wallet_id.coin)?
-            .only("mm2_rmd160", wallet_id.mm2_rmd160)?
-            .only("hd_wallet_rmd160", wallet_id.hd_wallet_rmd160)?
-            .only("account_id", account_id)?
-            .collect()
-            .await?;
-
-        if accounts.len() > 1 {
-            let error = DbTransactionError::MultipleItemsByUniqueIndex {
-                index: "wallet_account_id".to_owned(),
-                got_items: accounts.len(),
-            };
-            return MmError::err(HDWalletStorageError::ErrorLoading(error.to_string()));
-        }
-        Ok(accounts.into_iter().next())
+        let index_keys = MultiIndex::new(WALLET_ACCOUNT_ID_INDEX)
+            .with_value(wallet_id.coin)?
+            .with_value(wallet_id.mm2_rmd160)?
+            .with_value(wallet_id.hd_wallet_rmd160)?
+            .with_value(account_id)?;
+        table
+            .get_item_by_unique_multi_index(index_keys)
+            .await
+            .mm_err(HDWalletStorageError::from)
     }
 
     async fn update_account<F>(&self, wallet_id: HDWalletId, account_id: u32, f: F) -> HDWalletStorageResult<()>

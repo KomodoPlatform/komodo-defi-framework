@@ -23,10 +23,26 @@ use std::collections::HashMap;
 use std::marker::PhantomData;
 use std::sync::Mutex;
 
+macro_rules! try_serialize_index_value {
+    ($exp:expr, $index:expr) => {{
+        match $exp {
+            Ok(res) => res,
+            Err(ser_err) => {
+                return MmError::err(DbTransactionError::ErrorSerializingIndex {
+                    index: $index.to_owned(),
+                    description: ser_err.to_string(),
+                })
+            },
+        }
+    }};
+}
+
+mod be_big_uint;
 mod db_driver;
 mod db_lock;
 mod indexed_cursor;
 
+pub use be_big_uint::BeBigUint;
 pub use db_driver::{DbTransactionError, DbTransactionResult, DbUpgrader, InitDbError, InitDbResult, ItemId,
                     OnUpgradeError, OnUpgradeResult};
 pub use db_lock::{ConstructibleDb, DbLocked, SharedDb, WeakDb};
@@ -236,12 +252,6 @@ impl DbTransaction<'_> {
         send_event_recv_response(&self.event_tx, event, result_rx).await
     }
 
-    pub async fn wait_for_complete(self) -> DbTransactionResult<()> {
-        let (result_tx, result_rx) = oneshot::channel();
-        let event = internal::DbTransactionEvent::WaitForComplete { result_tx };
-        send_event_recv_response(&self.event_tx, event, result_rx).await
-    }
-
     async fn event_loop(
         mut rx: mpsc::UnboundedReceiver<internal::DbTransactionEvent>,
         transaction: IdbTransactionImpl,
@@ -253,11 +263,6 @@ impl DbTransaction<'_> {
                 },
                 internal::DbTransactionEvent::IsAborted { result_tx } => {
                     result_tx.send(Ok(transaction.aborted())).ok();
-                },
-                internal::DbTransactionEvent::WaitForComplete { result_tx } => {
-                    let res = transaction.wait_for_complete().await;
-                    result_tx.send(res).ok();
-                    return;
                 },
             }
         }
@@ -289,7 +294,14 @@ pub struct DbTable<'a, Table: TableSignature> {
     phantom: PhantomData<&'a Table>,
 }
 
+pub enum AddOrIgnoreResult {
+    Added(ItemId),
+    ExistAlready(ItemId),
+}
+
 impl<Table: TableSignature> DbTable<'_, Table> {
+    /// Adds the given item to the table.
+    /// https://developer.mozilla.org/en-US/docs/Web/API/IDBObjectStore/add
     pub async fn add_item(&self, item: &Table) -> DbTransactionResult<ItemId> {
         let item = json::to_value(&item).map_to_mm(|e| DbTransactionError::ErrorSerializingItem(e.to_string()))?;
 
@@ -298,15 +310,57 @@ impl<Table: TableSignature> DbTable<'_, Table> {
         send_event_recv_response(&self.event_tx, event, result_rx).await
     }
 
+    /// Adds the given `item` if there are no items with the same `index`.
+    /// https://developer.mozilla.org/en-US/docs/Web/API/IDBObjectStore/add
+    ///
+    /// * `index` - the name of a corresponding `Table`'s field by which records will be searched.
+    /// * `index_value` - the value of the `index`, therefore the value of a corresponding `Table`'s field.
+    pub async fn add_item_or_ignore_by_unique_index<Value>(
+        &self,
+        index: &str,
+        index_value: Value,
+        item: &Table,
+    ) -> DbTransactionResult<AddOrIgnoreResult>
+    where
+        Value: Serialize,
+    {
+        let ids = self.get_item_ids(index, index_value).await?;
+        match ids.len() {
+            0 => self.add_item(item).await.map(AddOrIgnoreResult::Added),
+            1 => Ok(AddOrIgnoreResult::ExistAlready(ids[0])),
+            got_items => {
+                return MmError::err(DbTransactionError::MultipleItemsByUniqueIndex {
+                    index: index.to_owned(),
+                    got_items,
+                });
+            },
+        }
+    }
+
+    /// Adds the given `item` if there are no items with the same multiple indexes.
+    /// https://developer.mozilla.org/en-US/docs/Web/API/IDBObjectStore/add
+    ///
+    /// For more details on multiple indexes see [`TableUpgrader::create_multi_index`].
+    pub async fn add_item_or_ignore_by_unique_multi_index(
+        &self,
+        multi_index: MultiIndex,
+        item: &Table,
+    ) -> DbTransactionResult<AddOrIgnoreResult> {
+        self.add_item_or_ignore_by_unique_index(&multi_index.index, multi_index.values, item)
+            .await
+    }
+
+    /// Queries items from the store matching the specified `index`.
+    /// https://developer.mozilla.org/en-US/docs/Web/API/IDBObjectStore/getAllKeys
+    ///
+    /// * `index` - the name of a corresponding `Table`'s field by which records will be searched.
+    /// * `index_value` - the value of the `index`, therefore the value of a corresponding `Table`'s field.
     pub async fn get_items<Value>(&self, index: &str, index_value: Value) -> DbTransactionResult<Vec<(ItemId, Table)>>
     where
         Value: Serialize,
     {
         let (result_tx, result_rx) = oneshot::channel();
-        let index_value = json::to_value(index_value).map_to_mm(|e| DbTransactionError::ErrorSerializingIndex {
-            index: index.to_owned(),
-            description: e.to_string(),
-        })?;
+        let index_value = try_serialize_index_value!(json::to_value(index_value), index);
         let event = internal::DbTableEvent::GetItems {
             index: index.to_owned(),
             index_value,
@@ -317,6 +371,20 @@ impl<Table: TableSignature> DbTable<'_, Table> {
             .and_then(|items| Self::deserialize_items(items))
     }
 
+    /// Queries items from the store matching the specified multiple indexes.
+    /// https://developer.mozilla.org/en-US/docs/Web/API/IDBObjectStore/getAllKeys
+    ///
+    /// For more details on multiple indexes see [`TableUpgrader::create_multi_index`].
+    pub async fn get_items_by_multi_index(&self, multi_index: MultiIndex) -> DbTransactionResult<Vec<(ItemId, Table)>> {
+        self.get_items(&multi_index.index, multi_index.values).await
+    }
+
+    /// Queries an item from the store matching the specified **unique** `index`.
+    /// https://developer.mozilla.org/en-US/docs/Web/API/IDBObjectStore/getAllKeys
+    ///
+    /// * `index` - the name of a corresponding `Table`'s field by which records will be searched.
+    /// * `index_value` - the value of the `index`, therefore the value of a corresponding `Table`'s field.
+    ///
     pub async fn get_item_by_unique_index<Value>(
         &self,
         index: &str,
@@ -335,15 +403,30 @@ impl<Table: TableSignature> DbTable<'_, Table> {
         Ok(items.into_iter().next())
     }
 
+    /// Queries an item from the store matching the specified **unique** multiple indexes.
+    /// https://developer.mozilla.org/en-US/docs/Web/API/IDBObjectStore/getAllKeys
+    ///
+    /// For more details on multiple indexes see [`TableUpgrader::create_multi_index`].
+    pub async fn get_item_by_unique_multi_index(
+        &self,
+        multi_index: MultiIndex,
+    ) -> DbTransactionResult<Option<(ItemId, Table)>> {
+        self.get_item_by_unique_index(&multi_index.index, multi_index.values)
+            .await
+    }
+
+    /// Queries IDs of items from the store matching the specified `index`.
+    /// Such IDs can be used to delete, replace items.
+    /// https://developer.mozilla.org/en-US/docs/Web/API/IDBObjectStore/getAllKeys
+    ///
+    /// * `index` - the name of a corresponding `Table`'s field by which records will be searched.
+    /// * `index_value` - the value of the `index`, therefore the value of a corresponding `Table`'s field.
     pub async fn get_item_ids<Value>(&self, index: &str, index_value: Value) -> DbTransactionResult<Vec<ItemId>>
     where
         Value: Serialize,
     {
         let (result_tx, result_rx) = oneshot::channel();
-        let index_value = json::to_value(index_value).map_to_mm(|e| DbTransactionError::ErrorSerializingIndex {
-            index: index.to_owned(),
-            description: e.to_string(),
-        })?;
+        let index_value = try_serialize_index_value!(json::to_value(index_value), index);
         let event = internal::DbTableEvent::GetItemIds {
             index: index.to_owned(),
             index_value,
@@ -352,6 +435,17 @@ impl<Table: TableSignature> DbTable<'_, Table> {
         send_event_recv_response(&self.event_tx, event, result_rx).await
     }
 
+    /// Queries IDs of items from the store matching the specified multiple indexes.
+    /// Such IDs can be used to delete, replace items.
+    /// https://developer.mozilla.org/en-US/docs/Web/API/IDBObjectStore/getAllKeys
+    ///
+    /// For more details on multiple indexes see [`TableUpgrader::create_multi_index`].
+    pub async fn get_item_ids_by_multi_index(&self, multi_index: MultiIndex) -> DbTransactionResult<Vec<ItemId>> {
+        self.get_item_ids(&multi_index.index, multi_index.values).await
+    }
+
+    /// Queries all items from the store.
+    /// https://developer.mozilla.org/en-US/docs/Web/API/IDBObjectStore/getAll
     pub async fn get_all_items(&self) -> DbTransactionResult<Vec<(ItemId, Table)>> {
         let (result_tx, result_rx) = oneshot::channel();
         let event = internal::DbTableEvent::GetAllItems { result_tx };
@@ -360,6 +454,40 @@ impl<Table: TableSignature> DbTable<'_, Table> {
             .and_then(|items| Self::deserialize_items(items))
     }
 
+    /// Returns the number of items matching the specified `index`.
+    /// https://developer.mozilla.org/en-US/docs/Web/API/IDBObjectStore/count
+    ///
+    /// * `index` - the name of a corresponding `Table`'s field by which records will be searched.
+    /// * `index_value` - the value of the `index`, therefore the value of a corresponding `Table`'s field.
+    pub async fn count<Value: Serialize>(&self, index: &str, index_value: Value) -> DbTransactionResult<usize> {
+        let (result_tx, result_rx) = oneshot::channel();
+        let index_value = try_serialize_index_value!(json::to_value(index_value), index);
+        let event = internal::DbTableEvent::Count {
+            index: index.to_owned(),
+            index_value,
+            result_tx,
+        };
+        send_event_recv_response(&self.event_tx, event, result_rx).await
+    }
+
+    /// Returns the number of items matching the specified multiple indexes.
+    /// https://developer.mozilla.org/en-US/docs/Web/API/IDBObjectStore/count
+    ///
+    /// For more details on multiple indexes see [`TableUpgrader::create_multi_index`].
+    pub async fn count_by_multi_index(&self, multi_index: MultiIndex) -> DbTransactionResult<usize> {
+        self.count(&multi_index.index, multi_index.values).await
+    }
+
+    /// Returns the number of items in the store.
+    /// https://developer.mozilla.org/en-US/docs/Web/API/IDBObjectStore/count
+    pub async fn count_all(&self) -> DbTransactionResult<usize> {
+        let (result_tx, result_rx) = oneshot::channel();
+        let event = internal::DbTableEvent::CountAll { result_tx };
+        send_event_recv_response(&self.event_tx, event, result_rx).await
+    }
+
+    /// Adds the given `item` of replace the previous one.
+    /// https://developer.mozilla.org/en-US/docs/Web/API/IDBObjectStore/put
     pub async fn replace_item(&self, item_id: ItemId, item: &Table) -> DbTransactionResult<ItemId> {
         let item = json::to_value(item).map_to_mm(|e| DbTransactionError::ErrorSerializingItem(e.to_string()))?;
 
@@ -372,15 +500,19 @@ impl<Table: TableSignature> DbTable<'_, Table> {
         send_event_recv_response(&self.event_tx, event, result_rx).await
     }
 
-    /// Add the given `item` or replace the previous one if such item with the specified index exists already.
-    pub async fn replace_item_by_unique_index<IndexV>(
+    /// Adds the given `item` or replace the previous one if such item with the specified `index` exists already.
+    /// https://developer.mozilla.org/en-US/docs/Web/API/IDBObjectStore/put
+    ///
+    /// * `index` - the name of a corresponding `Table`'s field by which records will be searched.
+    /// * `index_value` - the value of the `index`, therefore the value of a corresponding `Table`'s field.
+    pub async fn replace_item_by_unique_index<Value>(
         &self,
         index: &str,
-        index_value: IndexV,
+        index_value: Value,
         item: &Table,
     ) -> DbTransactionResult<ItemId>
     where
-        IndexV: Serialize,
+        Value: Serialize,
     {
         let ids = self.get_item_ids(index, index_value).await?;
         match ids.len() {
@@ -398,22 +530,48 @@ impl<Table: TableSignature> DbTable<'_, Table> {
         }
     }
 
+    /// Adds the given `item` or replace the previous one if such item with the specified multiple indexes exists already.
+    /// https://developer.mozilla.org/en-US/docs/Web/API/IDBObjectStore/put
+    ///
+    /// For more details on multiple indexes see [`TableUpgrader::create_multi_index`].
+    pub async fn replace_item_by_unique_multi_index(
+        &self,
+        multi_index: MultiIndex,
+        item: &Table,
+    ) -> DbTransactionResult<ItemId> {
+        self.replace_item_by_unique_index(&multi_index.index, multi_index.values, item)
+            .await
+    }
+
+    /// Deletes an item from the store by the specified `item_id`.
+    /// https://developer.mozilla.org/en-US/docs/Web/API/IDBObjectStore/delete
     pub async fn delete_item(&self, item_id: ItemId) -> DbTransactionResult<()> {
         let (result_tx, result_rx) = oneshot::channel();
         let event = internal::DbTableEvent::DeleteItem { item_id, result_tx };
         send_event_recv_response(&self.event_tx, event, result_rx).await
     }
 
-    pub async fn delete_item_by_unique_index<IndexV>(&self, index: &str, index_value: IndexV) -> DbTransactionResult<()>
+    /// Tries to find an item by the **unique** `index` and removes it if it exists.
+    /// Returns `Ok(None)` if there is no an item with the given `index`.
+    /// https://developer.mozilla.org/en-US/docs/Web/API/IDBObjectStore/delete
+    ///
+    /// * `index` - the name of a corresponding `Table`'s field by which records will be searched.
+    /// * `index_value` - the value of the `index`, therefore the value of a corresponding `Table`'s field.
+    pub async fn delete_item_by_unique_index<Value>(
+        &self,
+        index: &str,
+        index_value: Value,
+    ) -> DbTransactionResult<Option<ItemId>>
     where
-        IndexV: Serialize,
+        Value: Serialize,
     {
         let ids = self.get_item_ids(index, index_value).await?;
         match ids.len() {
-            0 => Ok(()),
+            0 => Ok(None),
             1 => {
                 let item_id = ids[0];
-                self.delete_item(item_id).await
+                self.delete_item(item_id).await?;
+                Ok(Some(item_id))
             },
             got_items => MmError::err(DbTransactionError::MultipleItemsByUniqueIndex {
                 index: index.to_owned(),
@@ -422,6 +580,22 @@ impl<Table: TableSignature> DbTable<'_, Table> {
         }
     }
 
+    /// Tries to find an item matching the specified **unique** multiple indexes and removes the item if it exists.
+    /// Returns `Ok(None)` if there is no an item with the given keys.
+    /// https://developer.mozilla.org/en-US/docs/Web/API/IDBObjectStore/delete
+    ///
+    /// For more details on multiple indexes see [`TableUpgrader::create_multi_index`].
+    pub async fn delete_item_by_unique_multi_index(
+        &self,
+        multi_index: MultiIndex,
+    ) -> DbTransactionResult<Option<ItemId>> {
+        self.delete_item_by_unique_index(&multi_index.index, multi_index.values)
+            .await
+    }
+
+    /// Tries to find items matching the given `index` and removes them from the store.
+    /// Returns IDs of removed items.
+    /// https://developer.mozilla.org/en-US/docs/Web/API/IDBObjectStore/delete
     pub async fn delete_items_by_index<Value>(
         &self,
         index: &str,
@@ -437,12 +611,25 @@ impl<Table: TableSignature> DbTable<'_, Table> {
         Ok(ids)
     }
 
+    /// Tries to find items matching the given multiple indexes and removes them from the store.
+    /// Returns IDs of removed items.
+    /// https://developer.mozilla.org/en-US/docs/Web/API/IDBObjectStore/delete
+    ///
+    /// For more details on multiple indexes see [`TableUpgrader::create_multi_index`].
+    pub async fn delete_items_by_multi_index(&self, multi_index: MultiIndex) -> DbTransactionResult<Vec<ItemId>> {
+        self.delete_items_by_index(&multi_index.index, multi_index.values).await
+    }
+
+    /// Deletes all items from the store.
+    /// https://developer.mozilla.org/en-US/docs/Web/API/IDBObjectStore/clear
     pub async fn clear(&self) -> DbTransactionResult<()> {
         let (result_tx, result_rx) = oneshot::channel();
         let event = internal::DbTableEvent::Clear { result_tx };
         send_event_recv_response(&self.event_tx, event, result_rx).await
     }
 
+    /// Opens a cursor by the specified `index`.
+    /// https://developer.mozilla.org/en-US/docs/Web/API/IDBObjectStore/openCursor
     pub async fn open_cursor(&self, index: &str) -> DbTransactionResult<DbEmptyCursor<'_, Table>> {
         let (result_tx, result_rx) = oneshot::channel();
         let event = internal::DbTableEvent::OpenCursor {
@@ -453,6 +640,7 @@ impl<Table: TableSignature> DbTable<'_, Table> {
         Ok(DbEmptyCursor::new(cursor_event_tx))
     }
 
+    /// Whether the transaction is aborted.
     pub async fn aborted(&self) -> DbTransactionResult<bool> {
         let (result_tx, result_rx) = oneshot::channel();
         let event = internal::DbTableEvent::IsAborted { result_tx };
@@ -499,6 +687,18 @@ async fn table_event_loop(mut rx: mpsc::UnboundedReceiver<internal::DbTableEvent
                 let res = table.get_all_items().await;
                 result_tx.send(res).ok();
             },
+            internal::DbTableEvent::Count {
+                index,
+                index_value,
+                result_tx,
+            } => {
+                let res = table.count(&index, index_value).await;
+                result_tx.send(res).ok();
+            },
+            internal::DbTableEvent::CountAll { result_tx } => {
+                let res = table.count_all().await;
+                result_tx.send(res).ok();
+            },
             internal::DbTableEvent::ReplaceItem {
                 item_id,
                 item,
@@ -522,6 +722,31 @@ async fn table_event_loop(mut rx: mpsc::UnboundedReceiver<internal::DbTableEvent
                 open_cursor(&table, index, result_tx);
             },
         }
+    }
+}
+
+pub struct MultiIndex {
+    index: String,
+    values: Vec<Json>,
+}
+
+impl MultiIndex {
+    pub fn new(index: &str) -> MultiIndex {
+        MultiIndex {
+            index: index.to_owned(),
+            values: Vec::new(),
+        }
+    }
+
+    pub fn push<Value: Serialize>(&mut self, value: Value) -> DbTransactionResult<&mut Self> {
+        let index_value = try_serialize_index_value!(json::to_value(value), self.index);
+        self.values.push(index_value);
+        Ok(self)
+    }
+
+    pub fn with_value<Value: Serialize>(mut self, value: Value) -> DbTransactionResult<Self> {
+        self.push(value)?;
+        Ok(self)
     }
 }
 
@@ -562,9 +787,6 @@ mod internal {
         IsAborted {
             result_tx: oneshot::Sender<DbTransactionResult<bool>>,
         },
-        WaitForComplete {
-            result_tx: oneshot::Sender<DbTransactionResult<()>>,
-        },
     }
 
     pub(super) enum DbTableEvent {
@@ -584,6 +806,14 @@ mod internal {
         },
         GetAllItems {
             result_tx: oneshot::Sender<DbTransactionResult<Vec<(ItemId, Json)>>>,
+        },
+        Count {
+            index: String,
+            index_value: Json,
+            result_tx: oneshot::Sender<DbTransactionResult<usize>>,
+        },
+        CountAll {
+            result_tx: oneshot::Sender<DbTransactionResult<usize>>,
         },
         ReplaceItem {
             item_id: ItemId,
@@ -615,10 +845,6 @@ mod tests {
     use wasm_bindgen_test::*;
 
     wasm_bindgen_test_configure!(run_in_browser);
-
-    lazy_static! {
-        static ref DEFAULT_RMD_160: H160 = H160::default();
-    }
 
     #[derive(Clone, Debug, Deserialize, PartialEq, Serialize)]
     #[serde(deny_unknown_fields)]
@@ -717,6 +943,115 @@ mod tests {
     }
 
     #[wasm_bindgen_test]
+    async fn test_add_item_or_ignore() {
+        const DB_NAME: &str = "TEST_ADD_ITEM_OR_IGNORE";
+        const DB_VERSION: u32 = 1;
+        const TX_HASH: &str = "0a0fda88364b960000f445351fe7678317a1e0c80584de0413377ede00ba696f";
+
+        let tx_1 = TxTable {
+            ticker: "RICK".to_owned(),
+            tx_hash: TX_HASH.to_owned(),
+            block_height: 10000,
+        };
+        let tx_2 = TxTable {
+            ticker: "RICK".to_owned(),
+            tx_hash: TX_HASH.to_owned(),
+            block_height: 20000,
+        };
+
+        register_wasm_log();
+
+        let db = IndexedDbBuilder::new(DbIdentifier::for_test(DB_NAME))
+            .with_version(DB_VERSION)
+            .with_table::<TxTable>()
+            .build()
+            .await
+            .expect("!IndexedDb::init");
+        let transaction = db.transaction().await.expect("!IndexedDb::transaction()");
+        let table = transaction
+            .table::<TxTable>()
+            .await
+            .expect("!DbTransaction::open_table");
+
+        let tx_1_id = match table
+            .add_item_or_ignore_by_unique_index("tx_hash", TX_HASH, &tx_1)
+            .await
+            .expect("!Couldn't add a 'RICK' transaction")
+        {
+            AddOrIgnoreResult::Added(item_id) => item_id,
+            AddOrIgnoreResult::ExistAlready(unknown_tx_id) => {
+                panic!("Transaction should be added: found '{}'", unknown_tx_id)
+            },
+        };
+        let found_tx_id = match table
+            .add_item_or_ignore_by_unique_index("tx_hash", TX_HASH, &tx_2)
+            .await
+            .expect("'add_item_or_ignore_by_unique_index' failed, but should just ignore the transaction")
+        {
+            // Transaction shouldn't be added since we added `tx_1` with the same `tx_hash` already.
+            AddOrIgnoreResult::Added(_) => panic!("'add_item_or_ignore_by_unique_index' shouldn't have added 'tx_2'"),
+            AddOrIgnoreResult::ExistAlready(exist_tx_id) => exist_tx_id,
+        };
+        assert_eq!(tx_1_id, found_tx_id);
+
+        let actual_txs = table.get_all_items().await.expect("Couldn't get items");
+        assert_eq!(actual_txs, vec![(tx_1_id, tx_1)]);
+    }
+
+    #[wasm_bindgen_test]
+    async fn test_count() {
+        const DB_NAME: &str = "TEST_COUNT";
+        const DB_VERSION: u32 = 1;
+
+        let rick_tx_1 = TxTable {
+            ticker: "RICK".to_owned(),
+            tx_hash: "0a0fda88364b960000f445351fe7678317a1e0c80584de0413377ede00ba696f".to_owned(),
+            block_height: 10000,
+        };
+        let rick_tx_2 = TxTable {
+            ticker: "RICK".to_owned(),
+            tx_hash: "ba881ecca15b5d4593f14f25debbcdfe25f101fd2e9cf8d0b5d92d19813d4424".to_owned(),
+            block_height: 10000,
+        };
+        let morty_tx_1 = TxTable {
+            ticker: "MORTY".to_owned(),
+            tx_hash: "1fc789133239260ed16361190a026a88cab2243935f02f1ccd794f1d06a22246".to_owned(),
+            block_height: 20000,
+        };
+
+        register_wasm_log();
+
+        let db = IndexedDbBuilder::new(DbIdentifier::for_test(DB_NAME))
+            .with_version(DB_VERSION)
+            .with_table::<TxTable>()
+            .build()
+            .await
+            .expect("!IndexedDb::init");
+        let transaction = db.transaction().await.expect("!IndexedDb::transaction()");
+        let table = transaction
+            .table::<TxTable>()
+            .await
+            .expect("!DbTransaction::open_table");
+
+        table
+            .add_item(&rick_tx_1)
+            .await
+            .expect("!Couldn't add a 'RICK' transaction");
+        table
+            .add_item(&rick_tx_2)
+            .await
+            .expect("!Couldn't add a 'RICK' transaction with the different 'tx_hash'");
+        table
+            .add_item(&morty_tx_1)
+            .await
+            .expect("!Couldn't add a 'MORTY' transaction");
+
+        assert_eq!(3, table.count_all().await.expect("!IndexedDb::count_all()"));
+        assert_eq!(2, table.count("ticker", "RICK").await.expect("!IndexedDb::count()"));
+        assert_eq!(1, table.count("ticker", "MORTY").await.expect("!IndexedDb::count()"));
+    }
+
+    #[wasm_bindgen_test]
     async fn test_replace_item() {
         const DB_NAME: &str = "TEST_REPLACE_ITEM";
         const DB_VERSION: u32 = 1;
@@ -753,12 +1088,6 @@ mod tests {
 
         let rick_tx_1_id = table.add_item(&rick_tx_1).await.expect("Couldn't add an item");
         let rick_tx_2_id = table.add_item(&rick_tx_2).await.expect("Couldn't add an item");
-
-        // Wait for the transaction to complete to save the changes to the database.
-        transaction
-            .wait_for_complete()
-            .await
-            .expect("Error waiting for the transaction to complete");
 
         // Open new transaction.
         let transaction = db.transaction().await.expect("!IndexedDb::transaction()");
@@ -1081,5 +1410,68 @@ mod tests {
 
         let actual = table.get_items("started_at", 123).await.expect("Couldn't get items");
         assert_eq!(actual, vec![(swap_1_id, swap_1)]);
+    }
+
+    #[wasm_bindgen_test]
+    async fn test_transaction_abort_on_error() {
+        const DB_NAME: &str = "TEST_TRANSACTION_ABORT_ON_ERROR";
+        const DB_VERSION: u32 = 1;
+
+        let tx_1 = TxTable {
+            ticker: "RICK".to_owned(),
+            tx_hash: "0a0fda88364b960000f445351fe7678317a1e0c80584de0413377ede00ba696f".to_owned(),
+            block_height: 10000,
+        };
+        let tx_2 = TxTable {
+            ticker: "RICK".to_owned(),
+            tx_hash: "ba881ecca15b5d4593f14f25debbcdfe25f101fd2e9cf8d0b5d92d19813d4424".to_owned(),
+            block_height: 10000,
+        };
+        // The transaction has the same `tx_hash` as `tx_1`.
+        let invalid_tx = TxTable {
+            ticker: "RICK".to_owned(),
+            tx_hash: "0a0fda88364b960000f445351fe7678317a1e0c80584de0413377ede00ba696f".to_owned(),
+            block_height: 20000,
+        };
+
+        register_wasm_log();
+
+        let db = IndexedDbBuilder::new(DbIdentifier::for_test(DB_NAME))
+            .with_version(DB_VERSION)
+            .with_table::<TxTable>()
+            .build()
+            .await
+            .expect("!IndexedDb::init");
+        let transaction = db.transaction().await.expect("!IndexedDb::transaction()");
+        let table = transaction
+            .table::<TxTable>()
+            .await
+            .expect("!DbTransaction::open_table");
+
+        let _tx_1_id = table.add_item(&tx_1).await.expect("Couldn't add an item");
+        let _tx_2_id = table.add_item(&tx_2).await.expect("Couldn't add an item");
+
+        // Try to add the updated RICK tx item with the same [`TxTable::tx_hash`].
+        // [`TxTable::tx_hash`] is a unique index, so this operation must fail.
+        let _err = table
+            .add_item(&invalid_tx)
+            .await
+            .expect_err("'DbTable::add_item' should have failed");
+        assert_eq!(table.aborted().await, Ok(true));
+        assert_eq!(transaction.aborted().await, Ok(true));
+
+        // Check if `tx_1` and `tx_2` hasn't been uploaded.
+        // Since the last operation failed, we have to reopen the transaction.
+        let transaction = db.transaction().await.expect("!IndexedDb::transaction()");
+        let table = transaction
+            .table::<TxTable>()
+            .await
+            .expect("!DbTransaction::open_table");
+
+        let actual_txs = table
+            .get_items("ticker", "RICK")
+            .await
+            .expect("Couldn't get items by the index 'ticker=RICK'");
+        assert!(actual_txs.is_empty());
     }
 }

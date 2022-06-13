@@ -134,7 +134,7 @@ impl From<CryptoInitError> for ZcoinInitError {
 }
 
 impl From<ZcoinInitError> for InitStandaloneCoinError {
-    fn from(_: ZcoinInitError) -> Self { todo!() }
+    fn from(err: ZcoinInitError) -> Self { InitStandaloneCoinError::Internal(err.to_string()) }
 }
 
 pub struct ZcoinProtocolInfo;

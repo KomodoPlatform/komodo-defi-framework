@@ -9,6 +9,7 @@ edition = "2018"
 serde = "1"
 serde_json = { version = "1.0", features = ["preserve_order", "raw_value"] }
 bigdecimal = { version = "0.3", features = ["serde"] }
+db_common = { path = "../db_common" }
 http = "0.2"
 uuid = { version = "0.7", features = ["serde", "v4"] }
 lazy_static = "1.4"

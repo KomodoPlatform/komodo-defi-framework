@@ -1,17 +1,49 @@
 pub use rusqlite;
 pub use sql_builder;
+use std::fmt;
 
 use log::debug;
-use rusqlite::types::{FromSql, Type as SqlType};
+use rusqlite::types::{FromSql, Type as SqlType, Value};
 use rusqlite::{Connection, Error as SqlError, Result as SqlResult, Row, ToSql};
 use sql_builder::SqlBuilder;
 use std::sync::{Arc, Mutex, Weak};
 use uuid::Uuid;
 
+pub const CHECK_TABLE_EXISTS_SQL: &str = "SELECT name FROM sqlite_master WHERE type='table' AND name=?1;";
+
+/// The macro returns `OwnedSqlNamedParams`.
+#[macro_export]
+macro_rules! owned_named_params {
+    () => {
+        Vec::new()
+    };
+    ($($param_name:literal: $param_val:expr),+ $(,)?) => {
+        vec![$(($param_name, Value::from($param_val))),+]
+    };
+}
+
 pub type SqliteConnShared = Arc<Mutex<Connection>>;
 pub type SqliteConnWeak = Weak<Mutex<Connection>>;
 
-pub const CHECK_TABLE_EXISTS_SQL: &str = "SELECT name FROM sqlite_master WHERE type='table' AND name=?1;";
+pub(crate) type ParamId = String;
+
+pub(crate) type OwnedSqlParam = Value;
+pub(crate) type OwnedSqlParams = Vec<OwnedSqlParam>;
+
+type SqlNamedParam<'a> = (&'a str, &'a dyn ToSql);
+type SqlNamedParams<'a> = Vec<SqlNamedParam<'a>>;
+type OwnedSqlNamedParam = (&'static str, Value);
+pub type OwnedSqlNamedParams = Vec<OwnedSqlNamedParam>;
+
+pub trait AsSqlNamedParams {
+    fn as_sql_named_params(&self) -> SqlNamedParams<'_>;
+}
+
+impl AsSqlNamedParams for OwnedSqlNamedParams {
+    fn as_sql_named_params(&self) -> SqlNamedParams<'_> {
+        self.iter().map(|(name, param)| (*name, param as &dyn ToSql)).collect()
+    }
+}
 
 pub fn string_from_row(row: &Row<'_>) -> Result<String, SqlError> { row.get(0) }
 
@@ -30,14 +62,14 @@ where
     Ok(Some(result))
 }
 
+pub fn validate_ident(ident: &str) -> SqlResult<()> {
+    validate_ident_impl(ident, |c| c.is_alphanumeric() || c == '_' || c == '.')
+}
+
 pub fn validate_table_name(table_name: &str) -> SqlResult<()> {
     // As per https://stackoverflow.com/a/3247553, tables can't be the target of parameter substitution.
     // So we have to use a plain concatenation disallowing any characters in the table name that may lead to SQL injection.
-    if table_name.chars().all(|c| c.is_alphanumeric() || c == '_') {
-        Ok(())
-    } else {
-        Err(SqlError::InvalidParameterName(table_name.to_string()))
-    }
+    validate_ident_impl(table_name, |c| c.is_alphanumeric() || c == '_')
 }
 
 /// Calculates the offset to skip records by uuid.
@@ -156,4 +188,119 @@ where
         None => None,
     };
     Ok(res)
+}
+
+pub fn execute_batch(statement: &'static [&str]) -> Vec<(&'static str, Vec<String>)> {
+    statement.iter().map(|sql| (*sql, vec![])).collect()
+}
+
+pub trait ToValidSqlTable {
+    /// Converts `self` to a valid SQL table name or returns an error.
+    fn to_valid_sql_table(&self) -> SqlResult<String>;
+}
+
+impl<S: ToString> ToValidSqlTable for S {
+    fn to_valid_sql_table(&self) -> SqlResult<String> {
+        let table = self.to_string();
+        validate_table_name(&table)?;
+        Ok(table)
+    }
+}
+
+pub trait ToValidSqlIdent {
+    /// Converts `self` to a valid SQL value or returns an error.
+    fn to_valid_sql_ident(&self) -> SqlResult<String>;
+}
+
+impl<S: ToString> ToValidSqlIdent for S {
+    fn to_valid_sql_ident(&self) -> SqlResult<String> {
+        let ident = self.to_string();
+        validate_ident(&ident)?;
+        Ok(ident)
+    }
+}
+
+/// A valid SQL value that can be passed as an argument to the `SqlBuilder` or `SqlQuery` safely.
+pub enum SqlValue {
+    String(&'static str),
+    Decimal(i64),
+}
+
+impl SqlValue {
+    /// Converts the given `value` to string if it implements `Into<SqlValue>`.
+    /// The resulting string is considered a safe SQL value.
+    pub(crate) fn value_to_string<S>(value: S) -> String
+    where
+        SqlValue: From<S>,
+    {
+        SqlValue::from(value).to_string()
+    }
+
+    /// Converts the given `values` to `Vec<String>` if they implement `Into<SqlValue>`.
+    /// /// The resulting strings are considered safe SQL values.
+    pub(crate) fn values_to_strings<I, S>(values: I) -> Vec<String>
+    where
+        I: IntoIterator<Item = S>,
+        SqlValue: From<S>,
+    {
+        values.into_iter().map(SqlValue::value_to_string).collect()
+    }
+}
+
+impl fmt::Display for SqlValue {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            SqlValue::String(string) => write!(f, "{}", string),
+            SqlValue::Decimal(decimal) => write!(f, "{}", decimal),
+        }
+    }
+}
+
+impl From<&'static str> for SqlValue {
+    fn from(string: &'static str) -> Self { SqlValue::String(string) }
+}
+
+impl From<i64> for SqlValue {
+    fn from(decimal: i64) -> Self { SqlValue::Decimal(decimal) }
+}
+
+/// This structure manages the SQL parameters.
+#[derive(Clone, Default)]
+pub(crate) struct SqlParamsBuilder {
+    next_param_id: usize,
+    params: OwnedSqlParams,
+}
+
+impl SqlParamsBuilder {
+    /// Pushes the given `param` and returns its `:<IDX>` identifier.
+    pub(crate) fn push_param<P>(&mut self, param: P) -> ParamId
+    where
+        OwnedSqlParam: From<P>,
+    {
+        self.params.push(OwnedSqlParam::from(param));
+        self.next_param_id += 1;
+        format!(":{}", self.next_param_id)
+    }
+
+    /// Pushes the given `params` and returns their `:<IDX>` identifiers.
+    pub(crate) fn push_params<I, P>(&mut self, params: I) -> Vec<ParamId>
+    where
+        I: IntoIterator<Item = P>,
+        OwnedSqlParam: From<P>,
+    {
+        params.into_iter().map(|param| self.push_param(param)).collect()
+    }
+
+    pub(crate) fn params(&self) -> &OwnedSqlParams { &self.params }
+}
+
+fn validate_ident_impl<F>(ident: &str, is_valid: F) -> SqlResult<()>
+where
+    F: Fn(char) -> bool,
+{
+    if ident.chars().all(is_valid) {
+        Ok(())
+    } else {
+        Err(SqlError::InvalidParameterName(ident.to_string()))
+    }
 }

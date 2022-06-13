@@ -140,6 +140,13 @@ impl SavedSwap {
             },
         };
     }
+
+    pub async fn fetch_and_set_usd_prices(&mut self) {
+        match self {
+            SavedSwap::Maker(maker) => maker.fetch_and_set_usd_prices().await,
+            SavedSwap::Taker(taker) => taker.fetch_and_set_usd_prices().await,
+        }
+    }
 }
 
 #[async_trait]
@@ -268,7 +275,9 @@ mod wasm_impl {
                 | DbTransactionError::TransactionAborted => SavedSwapError::InternalError(desc),
                 DbTransactionError::ErrorDeserializingItem(_) => SavedSwapError::ErrorDeserializing(desc),
                 DbTransactionError::ErrorSerializingItem(_) => SavedSwapError::ErrorSerializing(desc),
-                DbTransactionError::ErrorGettingItems(_) => SavedSwapError::ErrorLoading(desc),
+                DbTransactionError::ErrorGettingItems(_) | DbTransactionError::ErrorCountingItems(_) => {
+                    SavedSwapError::ErrorLoading(desc)
+                },
                 DbTransactionError::ErrorUploadingItem(_) | DbTransactionError::ErrorDeletingItems(_) => {
                     SavedSwapError::ErrorSaving(desc)
                 },
@@ -326,7 +335,6 @@ mod wasm_impl {
             table
                 .replace_item_by_unique_index("uuid", *self.uuid(), &saved_swap_item)
                 .await?;
-            transaction.wait_for_complete().await?;
             Ok(())
         }
     }

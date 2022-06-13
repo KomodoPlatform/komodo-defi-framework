@@ -1,13 +1,15 @@
 use super::construct_event_closure;
 use crate::indexed_db::db_driver::{InternalItem, ItemId};
+use crate::indexed_db::BeBigUint;
 use async_trait::async_trait;
-use common::{deserialize_from_js, stringify_js_error};
+use common::wasm::{deserialize_from_js, serialize_to_js, stringify_js_error};
 use derive_more::Display;
 use futures::channel::mpsc;
 use futures::StreamExt;
 use js_sys::Array;
 use mm2_err_handle::prelude::*;
-use serde_json::Value as Json;
+use serde_json::{self as json, Value as Json};
+use std::convert::TryInto;
 use wasm_bindgen::prelude::*;
 use wasm_bindgen::JsCast;
 use web_sys::{IdbCursorWithValue, IdbIndex, IdbKeyRange, IdbRequest};
@@ -62,11 +64,21 @@ pub enum CursorError {
     IncorrectUsage { description: String },
 }
 
+impl CursorError {
+    fn type_mismatch(expected: &str, found: &Json) -> CursorError {
+        CursorError::TypeMismatch {
+            expected: expected.to_owned(),
+            found: format!("{:?}", found),
+        }
+    }
+}
+
 /// The value types that are guaranteed ordered as we expect.
-#[derive(Clone, Debug, Eq, Ord, PartialOrd, PartialEq)]
+#[derive(Clone, Debug, Eq, Ord, PartialEq, PartialOrd)]
 pub enum CursorBoundValue {
     Uint(u32),
     Int(i32),
+    BigUint(BeBigUint),
 }
 
 impl From<u32> for CursorBoundValue {
@@ -77,18 +89,38 @@ impl From<i32> for CursorBoundValue {
     fn from(int: i32) -> Self { CursorBoundValue::Int(int) }
 }
 
+impl From<u64> for CursorBoundValue {
+    fn from(uint: u64) -> Self { CursorBoundValue::BigUint(BeBigUint::from(uint)) }
+}
+
+impl From<usize> for CursorBoundValue {
+    fn from(uint: usize) -> Self { CursorBoundValue::BigUint(BeBigUint::from(uint)) }
+}
+
+impl From<u128> for CursorBoundValue {
+    fn from(uint: u128) -> Self { CursorBoundValue::BigUint(BeBigUint::from(uint)) }
+}
+
+impl From<BeBigUint> for CursorBoundValue {
+    fn from(uint: BeBigUint) -> Self { CursorBoundValue::BigUint(uint) }
+}
+
 impl CursorBoundValue {
     fn next(&self) -> CursorBoundValue {
         match self {
             CursorBoundValue::Uint(uint) => CursorBoundValue::Uint(*uint + 1),
             CursorBoundValue::Int(int) => CursorBoundValue::Int(*int + 1),
+            CursorBoundValue::BigUint(int) => CursorBoundValue::BigUint(int.clone() + 1u64),
         }
     }
 
-    fn to_js_value(&self) -> JsValue {
+    pub fn to_js_value(&self) -> CursorResult<JsValue> {
         match self {
-            CursorBoundValue::Uint(uint) => JsValue::from(*uint as u32),
-            CursorBoundValue::Int(int) => JsValue::from(*int as i32),
+            CursorBoundValue::Uint(uint) => Ok(JsValue::from(*uint as u32)),
+            CursorBoundValue::Int(int) => Ok(JsValue::from(*int as i32)),
+            CursorBoundValue::BigUint(int) => serialize_to_js(int).map_to_mm(|e| CursorError::InvalidKeyRange {
+                description: e.to_string(),
+            }),
         }
     }
 
@@ -97,28 +129,32 @@ impl CursorBoundValue {
         // (CursorBoundValue::Uint(_), CursorBoundValue::Uint(_))
         // ^ no rules expected this token in macro call
         match (self, other) {
-            (CursorBoundValue::Int(_), CursorBoundValue::Int(_)) => true,
-            (CursorBoundValue::Uint(_), CursorBoundValue::Uint(_)) => true,
+            (CursorBoundValue::Int(_), CursorBoundValue::Int(_))
+            | (CursorBoundValue::Uint(_), CursorBoundValue::Uint(_))
+            | (CursorBoundValue::BigUint(_), CursorBoundValue::BigUint(_)) => true,
             _ => false,
         }
     }
 
     fn deserialize_with_expected_type(value: &Json, expected: &Self) -> CursorResult<CursorBoundValue> {
         match expected {
-            CursorBoundValue::Uint(_) => value
-                .as_u64()
-                .map(|uint| CursorBoundValue::Uint(uint as u32))
-                .or_mm_err(|| CursorError::TypeMismatch {
-                    expected: "u32".to_owned(),
-                    found: format!("{:?}", value),
-                }),
-            CursorBoundValue::Int(_) => value
-                .as_i64()
-                .map(|int| CursorBoundValue::Int(int as i32))
-                .or_mm_err(|| CursorError::TypeMismatch {
-                    expected: "i32".to_owned(),
-                    found: format!("{:?}", value),
-                }),
+            CursorBoundValue::Uint(_) => {
+                let uint64 = value.as_u64().or_mm_err(|| CursorError::type_mismatch("u32", value))?;
+                let uint = uint64
+                    .try_into()
+                    .map_to_mm(|_| CursorError::type_mismatch("u32", value))?;
+                Ok(CursorBoundValue::Uint(uint))
+            },
+            CursorBoundValue::Int(_) => {
+                let int64 = value.as_i64().or_mm_err(|| CursorError::type_mismatch("i32", value))?;
+                let int = int64
+                    .try_into()
+                    .map_to_mm(|_| CursorError::type_mismatch("i32", value))?;
+                Ok(CursorBoundValue::Int(int))
+            },
+            CursorBoundValue::BigUint(_) => json::from_value::<BeBigUint>(value.clone())
+                .map(CursorBoundValue::BigUint)
+                .map_to_mm(|_| CursorError::type_mismatch("BeBigUint", value)),
         }
     }
 }

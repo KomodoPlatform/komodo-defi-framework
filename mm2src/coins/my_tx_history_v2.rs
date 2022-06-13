@@ -1,7 +1,6 @@
-#[cfg(not(target_arch = "wasm32"))]
-use crate::sql_tx_history_storage::SqliteTxHistoryStorage;
-use crate::{lp_coinfind_or_err, BlockHeightAndTime, CoinFindError, HistorySyncState, MarketCoinOps, MmCoinEnum,
-            Transaction, TransactionDetails, TransactionType, TxFeeDetails};
+use crate::tx_history_storage::{CreateTxHistoryStorageError, GetTxHistoryFilters, TxHistoryStorageBuilder, WalletId};
+use crate::{lp_coinfind_or_err, BlockHeightAndTime, CoinFindError, HistorySyncState, MmCoin, MmCoinEnum, Transaction,
+            TransactionDetails, TransactionType, TxFeeDetails};
 use async_trait::async_trait;
 use bitcrypto::sha256;
 use common::mm_number::BigDecimal;
@@ -36,65 +35,79 @@ pub trait TxHistoryStorageError: std::fmt::Debug + NotMmError + NotEqual + Send 
 pub trait TxHistoryStorage: Send + Sync + 'static {
     type Error: TxHistoryStorageError;
 
-    /// Initializes collection/tables in storage for a specified coin
-    async fn init(&self, for_coin: &str) -> Result<(), MmError<Self::Error>>;
+    /// Initializes collection/tables in storage for the specified wallet.
+    async fn init(&self, wallet_id: &WalletId) -> Result<(), MmError<Self::Error>>;
 
-    async fn is_initialized_for(&self, for_coin: &str) -> Result<bool, MmError<Self::Error>>;
+    /// Whether collections/tables are initialized for the specified wallet.
+    async fn is_initialized_for(&self, wallet_id: &WalletId) -> Result<bool, MmError<Self::Error>>;
 
-    /// Adds multiple transactions to the selected coin's history
-    /// Also consider adding tx_hex to the cache during this operation
-    async fn add_transactions_to_history(
+    /// Adds multiple transactions to the selected wallet's history.
+    /// Also consider adding tx_hex to the cache during this operation.
+    async fn add_transactions_to_history<I>(
         &self,
-        for_coin: &str,
-        transactions: impl IntoIterator<Item = TransactionDetails> + Send + 'static,
-    ) -> Result<(), MmError<Self::Error>>;
+        wallet_id: &WalletId,
+        transactions: I,
+    ) -> Result<(), MmError<Self::Error>>
+    where
+        I: IntoIterator<Item = TransactionDetails> + Send + 'static,
+        I::IntoIter: Send;
 
-    /// Removes the transaction by internal_id from the selected coin's history
+    /// Removes the transaction by internal_id from the selected wallet's history.
     async fn remove_tx_from_history(
         &self,
-        for_coin: &str,
+        wallet_id: &WalletId,
         internal_id: &BytesJson,
     ) -> Result<RemoveTxResult, MmError<Self::Error>>;
 
-    /// Gets the transaction by internal_id from the selected coin's history
+    /// Gets the transaction by internal_id from the selected wallet's history
     async fn get_tx_from_history(
         &self,
-        for_coin: &str,
+        wallet_id: &WalletId,
         internal_id: &BytesJson,
     ) -> Result<Option<TransactionDetails>, MmError<Self::Error>>;
 
-    /// Returns whether the history contains unconfirmed transactions
-    async fn history_contains_unconfirmed_txes(&self, for_coin: &str) -> Result<bool, MmError<Self::Error>>;
+    /// Returns whether the history contains unconfirmed transactions.
+    async fn history_contains_unconfirmed_txes(&self, wallet_id: &WalletId) -> Result<bool, MmError<Self::Error>>;
 
-    /// Gets the unconfirmed transactions from the history
+    /// Gets the unconfirmed transactions from the wallet's history.
     async fn get_unconfirmed_txes_from_history(
         &self,
-        for_coin: &str,
+        wallet_id: &WalletId,
     ) -> Result<Vec<TransactionDetails>, MmError<Self::Error>>;
 
-    /// Updates transaction in the selected coin's history
-    async fn update_tx_in_history(&self, for_coin: &str, tx: &TransactionDetails) -> Result<(), MmError<Self::Error>>;
+    /// Updates transaction in the selected wallet's history
+    async fn update_tx_in_history(
+        &self,
+        wallet_id: &WalletId,
+        tx: &TransactionDetails,
+    ) -> Result<(), MmError<Self::Error>>;
 
-    async fn history_has_tx_hash(&self, for_coin: &str, tx_hash: &str) -> Result<bool, MmError<Self::Error>>;
+    /// Whether the selected wallet's history contains a transaction with the given `tx_hash`.
+    async fn history_has_tx_hash(&self, wallet_id: &WalletId, tx_hash: &str) -> Result<bool, MmError<Self::Error>>;
 
-    async fn unique_tx_hashes_num_in_history(&self, for_coin: &str) -> Result<usize, MmError<Self::Error>>;
+    /// Returns the number of unique transaction hashes.
+    async fn unique_tx_hashes_num_in_history(&self, wallet_id: &WalletId) -> Result<usize, MmError<Self::Error>>;
 
+    /// Adds the given `tx_hex` transaction to the selected wallet's cache.
     async fn add_tx_to_cache(
         &self,
-        for_coin: &str,
-        tx_hash: &BytesJson,
+        wallet_id: &WalletId,
+        tx_hash: &str,
         tx_hex: &BytesJson,
     ) -> Result<(), MmError<Self::Error>>;
 
+    /// Gets transaction hexes from the wallet's cache.
     async fn tx_bytes_from_cache(
         &self,
-        for_coin: &str,
-        tx_hash: &BytesJson,
+        wallet_id: &WalletId,
+        tx_hash: &str,
     ) -> Result<Option<BytesJson>, MmError<Self::Error>>;
 
+    /// Gets transaction history for the selected wallet according to the specified `filters`.
     async fn get_history(
         &self,
-        coin_type: HistoryCoinType,
+        wallet_id: &WalletId,
+        filters: GetTxHistoryFilters,
         paging: PagingOptionsEnum<BytesJson>,
         limit: usize,
     ) -> Result<GetHistoryResult, MmError<Self::Error>>;
@@ -252,8 +265,6 @@ pub enum MyTxHistoryErrorV2 {
     StorageError(String),
     RpcError(String),
     NotSupportedFor(String),
-    #[cfg(target_arch = "wasm32")]
-    NotSupportedInWasm,
 }
 
 impl HttpStatusCode for MyTxHistoryErrorV2 {
@@ -264,8 +275,6 @@ impl HttpStatusCode for MyTxHistoryErrorV2 {
             | MyTxHistoryErrorV2::StorageError(_)
             | MyTxHistoryErrorV2::RpcError(_)
             | MyTxHistoryErrorV2::NotSupportedFor(_) => StatusCode::INTERNAL_SERVER_ERROR,
-            #[cfg(target_arch = "wasm32")]
-            MyTxHistoryErrorV2::NotSupportedInWasm => StatusCode::BAD_REQUEST,
         }
     }
 }
@@ -285,61 +294,44 @@ impl<T: TxHistoryStorageError> From<T> for MyTxHistoryErrorV2 {
     }
 }
 
-pub enum HistoryCoinType {
-    Coin(String),
-    Token { platform: String, token_id: BytesJson },
-    // TODO extend with the L2 required info
-    L2 { platform: String },
+impl From<CreateTxHistoryStorageError> for MyTxHistoryErrorV2 {
+    fn from(e: CreateTxHistoryStorageError) -> Self { MyTxHistoryErrorV2::StorageError(e.to_string()) }
 }
 
-impl HistoryCoinType {
-    fn storage_ticker(&self) -> &str {
-        match self {
-            HistoryCoinType::Coin(ticker) => ticker,
-            HistoryCoinType::Token { platform, .. } | HistoryCoinType::L2 { platform } => platform,
-        }
-    }
+pub trait CoinWithTxHistoryV2 {
+    fn history_wallet_id(&self) -> WalletId;
+
+    fn get_tx_history_filters(&self) -> GetTxHistoryFilters;
 }
 
-trait GetHistoryCoinType {
-    fn get_history_coin_type(&self) -> Option<HistoryCoinType>;
-}
-
-impl GetHistoryCoinType for MmCoinEnum {
-    fn get_history_coin_type(&self) -> Option<HistoryCoinType> {
-        match self {
-            MmCoinEnum::Bch(bch) => Some(HistoryCoinType::Coin(bch.ticker().to_owned())),
-            MmCoinEnum::SlpToken(token) => Some(HistoryCoinType::Token {
-                platform: token.platform_ticker().to_owned(),
-                token_id: token.token_id().take().to_vec().into(),
-            }),
-            _ => None,
-        }
-    }
-}
-
-#[cfg(not(target_arch = "wasm32"))]
+/// According to the [comment](https://github.com/KomodoPlatform/atomicDEX-API/pull/1285#discussion_r888410390),
+/// it's worth to add [`MmCoin::my_tx_history_v2`] when most coins support transaction history V2.
 pub async fn my_tx_history_v2_rpc(
     ctx: MmArc,
     request: MyTxHistoryRequestV2,
 ) -> Result<MyTxHistoryResponseV2, MmError<MyTxHistoryErrorV2>> {
     let coin = lp_coinfind_or_err(&ctx, &request.coin).await?;
-    let tx_history_storage = SqliteTxHistoryStorage(
-        ctx.sqlite_connection
-            .ok_or(MmError::new(MyTxHistoryErrorV2::StorageIsNotInitialized(
-                "sqlite_connection is not initialized".into(),
-            )))?
-            .clone(),
-    );
-    let history_coin_type = match coin.get_history_coin_type() {
-        Some(t) => t,
-        None => return MmError::err(MyTxHistoryErrorV2::NotSupportedFor(coin.ticker().to_owned())),
-    };
-    let is_storage_init = tx_history_storage
-        .is_initialized_for(history_coin_type.storage_ticker())
-        .await?;
+    match coin {
+        MmCoinEnum::Bch(bch) => my_tx_history_v2_impl(ctx, &bch, request).await,
+        MmCoinEnum::SlpToken(slp_token) => my_tx_history_v2_impl(ctx, &slp_token, request).await,
+        other => MmError::err(MyTxHistoryErrorV2::NotSupportedFor(other.ticker().to_owned())),
+    }
+}
+
+pub(crate) async fn my_tx_history_v2_impl<Coin>(
+    ctx: MmArc,
+    coin: &Coin,
+    request: MyTxHistoryRequestV2,
+) -> Result<MyTxHistoryResponseV2, MmError<MyTxHistoryErrorV2>>
+where
+    Coin: CoinWithTxHistoryV2 + MmCoin,
+{
+    let tx_history_storage = TxHistoryStorageBuilder::new(&ctx).build()?;
+
+    let wallet_id = coin.history_wallet_id();
+    let is_storage_init = tx_history_storage.is_initialized_for(&wallet_id).await?;
     if !is_storage_init {
-        let msg = format!("Storage is not initialized for {}", history_coin_type.storage_ticker());
+        let msg = format!("Storage is not initialized for {:?}", wallet_id);
         return MmError::err(MyTxHistoryErrorV2::StorageIsNotInitialized(msg));
     }
     let current_block = coin
@@ -348,8 +340,9 @@ pub async fn my_tx_history_v2_rpc(
         .await
         .map_to_mm(MyTxHistoryErrorV2::RpcError)?;
 
+    let filters = coin.get_tx_history_filters();
     let history = tx_history_storage
-        .get_history(history_coin_type, request.paging_options.clone(), request.limit)
+        .get_history(&wallet_id, filters, request.paging_options.clone(), request.limit)
         .await?;
 
     let transactions = history
@@ -380,12 +373,4 @@ pub async fn my_tx_history_v2_rpc(
         total_pages: calc_total_pages(history.total, request.limit),
         paging_options: request.paging_options,
     })
-}
-
-#[cfg(target_arch = "wasm32")]
-pub async fn my_tx_history_v2_rpc(
-    _ctx: MmArc,
-    _request: MyTxHistoryRequestV2,
-) -> Result<MyTxHistoryResponseV2, MmError<MyTxHistoryErrorV2>> {
-    MmError::err(MyTxHistoryErrorV2::NotSupportedInWasm)
 }

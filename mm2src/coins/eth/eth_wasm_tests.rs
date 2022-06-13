@@ -45,6 +45,7 @@ async fn test_send() {
         required_confirmations: 1.into(),
         chain_id: None,
         logs_block_range: DEFAULT_LOGS_BLOCK_RANGE,
+        nonce_lock: new_nonce_lock(),
     }));
     let tx = coin
         .send_maker_payment(

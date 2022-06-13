@@ -21,7 +21,7 @@ use crate::mm2::lp_message_service::{MessageServiceContext, MAKER_BOT_ROOM_ID};
 use crate::mm2::lp_ordermatch::lp_bot::simple_market_maker_bot::{tear_down_bot, BOT_DEFAULT_REFRESH_RATE,
                                                                  PRECISION_FOR_NOTIFICATION};
 use crate::mm2::lp_swap::MakerSwapStatusChanged;
-pub use simple_market_maker_bot::{process_price_request, start_simple_market_maker_bot, stop_simple_market_maker_bot,
+pub use simple_market_maker_bot::{start_simple_market_maker_bot, stop_simple_market_maker_bot,
                                   StartSimpleMakerBotRequest, KMD_PRICE_ENDPOINT};
 
 #[cfg(all(test, not(target_arch = "wasm32")))]
@@ -158,48 +158,6 @@ pub struct SimpleCoinMarketMakerCfg {
 }
 
 #[derive(Default)]
-pub struct TickerInfosRegistry(HashMap<String, TickerInfos>);
-
-#[derive(Debug, Serialize, Deserialize)]
-pub struct TickerInfos {
-    ticker: String,
-    last_price: MmNumber,
-    last_updated: String,
-    last_updated_timestamp: u64,
-    #[serde(rename = "volume24h")]
-    volume24_h: MmNumber,
-    price_provider: Provider,
-    volume_provider: Provider,
-    #[serde(rename = "sparkline_7d")]
-    sparkline_7_d: Option<Vec<f64>>,
-    sparkline_provider: Provider,
-    #[serde(rename = "change_24h")]
-    change_24_h: MmNumber,
-    #[serde(rename = "change_24h_provider")]
-    change_24_h_provider: Provider,
-}
-
-#[derive(Debug, Serialize, Deserialize, Clone, PartialEq)]
-pub enum Provider {
-    #[serde(rename = "binance")]
-    Binance,
-    #[serde(rename = "coingecko")]
-    Coingecko,
-    #[serde(rename = "coinpaprika")]
-    Coinpaprika,
-    #[serde(rename = "forex")]
-    Forex,
-    #[serde(rename = "nomics")]
-    Nomics,
-    #[serde(rename = "unknown", other)]
-    Unknown,
-}
-
-impl Default for Provider {
-    fn default() -> Self { Provider::Unknown }
-}
-
-#[derive(Default)]
 pub struct TradingBotContext {
     trading_bot_states: AsyncMutex<TradingBotState>,
 }
@@ -297,83 +255,6 @@ impl EventListener for ArcTradingBotContext {
     }
 
     fn listener_id(&self) -> &'static str { "lp_bot_listener" }
-}
-
-#[derive(Default, Clone, Debug)]
-pub struct RateInfos {
-    #[allow(dead_code)]
-    base: String,
-    #[allow(dead_code)]
-    rel: String,
-    base_price: MmNumber,
-    rel_price: MmNumber,
-    price: MmNumber,
-    last_updated_timestamp: Option<u64>,
-    base_provider: Provider,
-    rel_provider: Provider,
-}
-
-impl RateInfos {
-    pub fn retrieve_elapsed_times(&self) -> f64 {
-        let time_diff: f64 = common::now_float() - self.last_updated_timestamp.unwrap_or_default() as f64;
-        time_diff
-    }
-
-    pub fn new(base: String, rel: String) -> RateInfos {
-        RateInfos {
-            base,
-            rel,
-            base_provider: Provider::Unknown,
-            rel_provider: Provider::Unknown,
-            last_updated_timestamp: None,
-            ..Default::default()
-        }
-    }
-}
-
-impl TickerInfosRegistry {
-    fn get_infos(&self, ticker: &str) -> Option<&TickerInfos> {
-        let mut ticker_infos = self.0.get(ticker);
-        let limit = ticker.len() - 1;
-        let pos = ticker.find('-').unwrap_or(limit);
-        if ticker_infos.is_none() && pos < limit {
-            ticker_infos = self.0.get(&ticker[0..pos])
-        }
-        ticker_infos
-    }
-
-    fn get_infos_pair(&self, base: &str, rel: &str) -> Option<(&TickerInfos, &TickerInfos)> {
-        self.get_infos(base).zip(self.get_infos(rel))
-    }
-
-    pub fn get_cex_rates(&self, base: String, rel: String) -> Option<RateInfos> {
-        match self.get_infos_pair(&base, &rel) {
-            Some((base_price_infos, rel_price_infos)) => {
-                let mut rate_infos = RateInfos::new(base, rel);
-                if base_price_infos.price_provider == Provider::Unknown
-                    || rel_price_infos.price_provider == Provider::Unknown
-                    || base_price_infos.last_updated_timestamp == 0
-                    || rel_price_infos.last_updated_timestamp == 0
-                {
-                    return None;
-                }
-
-                rate_infos.base_provider = base_price_infos.price_provider.clone();
-                rate_infos.rel_provider = rel_price_infos.price_provider.clone();
-                rate_infos.last_updated_timestamp =
-                    if base_price_infos.last_updated_timestamp <= rel_price_infos.last_updated_timestamp {
-                        Some(base_price_infos.last_updated_timestamp)
-                    } else {
-                        Some(rel_price_infos.last_updated_timestamp)
-                    };
-                rate_infos.base_price = base_price_infos.last_price.clone();
-                rate_infos.rel_price = rel_price_infos.last_price.clone();
-                rate_infos.price = &base_price_infos.last_price / &rel_price_infos.last_price;
-                Some(rate_infos)
-            },
-            None => None,
-        }
-    }
 }
 
 #[cfg_attr(test, mockable)]
