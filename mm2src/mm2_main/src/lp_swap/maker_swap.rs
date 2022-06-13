@@ -1096,6 +1096,7 @@ impl MakerSwap {
             let taker_coin_swap_contract_address = selfi.r().data.taker_coin_swap_contract_address.clone();
 
             let secret = selfi.r().data.secret.0;
+            let unique_data = selfi.unique_swap_data();
 
             let search_input = SearchForSwapTxSpendInput {
                 time_lock: timelock,
@@ -1104,7 +1105,7 @@ impl MakerSwap {
                 tx: taker_payment_hex,
                 search_from_block: taker_coin_start_block,
                 swap_contract_address: &taker_coin_swap_contract_address,
-                swap_unique_data: secret_hash,
+                swap_unique_data: &unique_data,
             };
             // check if the taker payment is not spent yet
             match selfi.taker_coin.search_for_swap_tx_spend_other(search_input).await {
