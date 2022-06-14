@@ -4388,7 +4388,7 @@ dependencies = [
  "keys",
  "lazy_static",
  "libc",
- "metrics 0.12.1",
+ "metrics 0.19.0",
  "mm2-libp2p",
  "mm2_core",
  "mm2_db",

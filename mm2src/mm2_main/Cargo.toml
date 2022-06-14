@@ -75,7 +75,7 @@ keys = { path = "../mm2_bitcoin/keys" }
 lazy_static = "1.4"
 # ledger = { path = "../ledger" }
 libc = "0.2"
-metrics = "0.12"
+metrics = "0.19"
 mm2_core = { path = "../mm2_core" }
 mm2_err_handle = { path = "../mm2_err_handle" }
 mm2_io = { path = "../mm2_io" }
