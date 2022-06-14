@@ -236,11 +236,11 @@ fn send_and_refund_erc20_payment() {
     let payment = coin
         .send_maker_payment(
             (now_ms() / 1000) as u32 - 200,
-            &[],
             &DEX_FEE_ADDR_RAW_PUBKEY,
             &[1; 20],
             "0.001".parse().unwrap(),
             &coin.swap_contract_address(),
+            &[],
         )
         .wait()
         .unwrap();
@@ -255,8 +255,8 @@ fn send_and_refund_erc20_payment() {
             (now_ms() / 1000) as u32 - 200,
             &DEX_FEE_ADDR_RAW_PUBKEY,
             &[1; 20],
-            &[],
             &coin.swap_contract_address(),
+            &[],
         )
         .wait()
         .unwrap();
@@ -303,11 +303,11 @@ fn send_and_refund_eth_payment() {
     let payment = coin
         .send_maker_payment(
             (now_ms() / 1000) as u32 - 200,
-            &[],
             &DEX_FEE_ADDR_RAW_PUBKEY,
             &[1; 20],
             "0.001".parse().unwrap(),
             &coin.swap_contract_address(),
+            &[],
         )
         .wait()
         .unwrap();
@@ -322,8 +322,8 @@ fn send_and_refund_eth_payment() {
             (now_ms() / 1000) as u32 - 200,
             &DEX_FEE_ADDR_RAW_PUBKEY,
             &[1; 20],
-            &[],
             &coin.swap_contract_address(),
+            &[],
         )
         .wait()
         .unwrap();
@@ -525,8 +525,7 @@ fn test_search_for_swap_tx_spend_was_spent() {
     ];
     let spend_tx = FoundSwapTxSpend::Spent(signed_eth_tx_from_bytes(&spend_tx).unwrap().into());
 
-    let found_tx = coin
-        .search_for_swap_tx_spend(&payment_tx, swap_contract_address, 6051857)
+    let found_tx = block_on(coin.search_for_swap_tx_spend(&payment_tx, swap_contract_address, 6051857))
         .unwrap()
         .unwrap();
     assert_eq!(spend_tx, found_tx);
@@ -636,8 +635,7 @@ fn test_search_for_swap_tx_spend_was_refunded() {
     ];
     let refund_tx = FoundSwapTxSpend::Refunded(signed_eth_tx_from_bytes(&refund_tx).unwrap().into());
 
-    let found_tx = coin
-        .search_for_swap_tx_spend(&payment_tx, swap_contract_address, 5886908)
+    let found_tx = block_on(coin.search_for_swap_tx_spend(&payment_tx, swap_contract_address, 5886908))
         .unwrap()
         .unwrap();
     assert_eq!(refund_tx, found_tx);
@@ -1247,10 +1245,10 @@ fn polygon_check_if_my_payment_sent() {
         .check_if_my_payment_sent(
             1638764369,
             &[],
-            &[],
             &secret_hash,
             22185109,
             &Some(swap_contract_address),
+            &[],
         )
         .wait()
         .unwrap()

@@ -45,6 +45,10 @@ debug-assertions = false
 # For better or worse, might affect the stack traces in our portion of the code.
 #opt-level = 1
 
+[profile.test]
+# required to avoid a long running process of librustcash additional chain validation that is enabled with debug assertions
+debug-assertions = false
+
 [profile.release.overrides."*"]
 # Turns debugging symbols off for the out-of-workspace dependencies.
 debug = false

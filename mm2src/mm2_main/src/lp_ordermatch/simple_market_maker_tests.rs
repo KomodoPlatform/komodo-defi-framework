@@ -1,25 +1,13 @@
 use crate::mm2::{lp_ordermatch::lp_bot::simple_market_maker_bot::vwap,
                  lp_ordermatch::lp_bot::SimpleCoinMarketMakerCfg,
-                 lp_swap::{MakerSavedSwap, MyRecentSwapsResponse, SavedSwap}};
+                 lp_swap::{MakerSavedSwap, SavedSwap}};
 use common::{block_on, log::UnifiedLoggerBuilder, mm_number::MmNumber};
 
-use std::num::NonZeroUsize;
-
-fn generate_swaps_from_values(swaps_value: Vec<(MmNumber, MmNumber)>) -> MyRecentSwapsResponse {
-    let mut swaps: Vec<SavedSwap> = Vec::with_capacity(swaps_value.len());
-    for (base_amount, other_amount) in swaps_value.iter() {
-        swaps.push(SavedSwap::Maker(MakerSavedSwap::new(base_amount, other_amount)));
-    }
-    MyRecentSwapsResponse {
-        from_uuid: None,
-        limit: 0,
-        skipped: 0,
-        total: 0,
-        found_records: 0,
-        page_number: NonZeroUsize::new(1).unwrap(),
-        total_pages: 0,
-        swaps,
-    }
+fn generate_swaps_from_values(swaps_value: Vec<(MmNumber, MmNumber)>) -> Vec<SavedSwap> {
+    swaps_value
+        .iter()
+        .map(|(base_amount, other_amount)| SavedSwap::Maker(MakerSavedSwap::new(base_amount, other_amount)))
+        .collect()
 }
 
 fn generate_cfg_from_params(base: String, rel: String, spread: MmNumber) -> SimpleCoinMarketMakerCfg {

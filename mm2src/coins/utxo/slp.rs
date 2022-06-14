@@ -14,10 +14,11 @@ use crate::utxo::{generate_and_send_tx, sat_from_big_decimal, ActualTxFee, Addit
                   UtxoCommonOps, UtxoTx, UtxoTxBroadcastOps, UtxoTxGenerationOps};
 use crate::{BalanceFut, CoinBalance, FeeApproxStage, FoundSwapTxSpend, HistorySyncState, MarketCoinOps, MmCoin,
             NegotiateSwapContractAddrErr, NumConversError, PrivKeyNotAllowed, RawTransactionFut,
-            RawTransactionRequest, SignatureResult, SwapOps, TradeFee, TradePreimageError, TradePreimageFut,
-            TradePreimageResult, TradePreimageValue, TransactionDetails, TransactionEnum, TransactionErr,
-            TransactionFut, TxFeeDetails, UnexpectedDerivationMethod, ValidateAddressResult, ValidatePaymentInput,
-            VerificationError, VerificationResult, WithdrawError, WithdrawFee, WithdrawFut, WithdrawRequest};
+            RawTransactionRequest, SearchForSwapTxSpendInput, SignatureResult, SwapOps, TradeFee, TradePreimageError,
+            TradePreimageFut, TradePreimageResult, TradePreimageValue, TransactionDetails, TransactionEnum,
+            TransactionErr, TransactionFut, TxFeeDetails, UnexpectedDerivationMethod, ValidateAddressResult,
+            ValidatePaymentInput, VerificationError, VerificationResult, WithdrawError, WithdrawFee, WithdrawFut,
+            WithdrawRequest};
 use async_trait::async_trait;
 use bitcrypto::dhash160;
 use chain::constants::SEQUENCE_FINAL;
@@ -25,7 +26,6 @@ use chain::{OutPoint, TransactionOutput};
 use common::log::warn;
 use common::mm_number::{BigDecimal, MmNumber};
 use common::now_ms;
-use crypto::privkey::key_pair_from_secret;
 use derive_more::Display;
 use futures::compat::Future01CompatExt;
 use futures::{FutureExt, TryFutureExt};
@@ -110,6 +110,7 @@ enum ValidateHtlcError {
     NumConversionErr(NumConversError),
     ValidatePaymentError(String),
     UnexpectedDerivationMethod(UnexpectedDerivationMethod),
+    OtherPubInvalid(keys::Error),
 }
 
 impl From<NumConversError> for ValidateHtlcError {
@@ -295,17 +296,6 @@ pub struct SlpProtocolConf {
     pub required_confirmations: Option<u64>,
 }
 
-#[derive(Debug)]
-pub struct ValidateHtlcInput {
-    tx: Vec<u8>,
-    other_pub: Public,
-    my_pub: Public,
-    time_lock: u32,
-    secret_hash: Vec<u8>,
-    amount: BigDecimal,
-    confirmations: u64,
-}
-
 impl SlpToken {
     pub fn new(
         decimals: u8,
@@ -442,8 +432,8 @@ impl SlpToken {
         .await
     }
 
-    async fn validate_htlc(&self, input: ValidateHtlcInput) -> Result<(), MmError<ValidateHtlcError>> {
-        let mut tx: UtxoTx = deserialize(input.tx.as_slice()).map_to_mm(ValidateHtlcError::TxParseError)?;
+    async fn validate_htlc(&self, input: ValidatePaymentInput) -> Result<(), MmError<ValidateHtlcError>> {
+        let mut tx: UtxoTx = deserialize(input.payment_tx.as_slice()).map_to_mm(ValidateHtlcError::TxParseError)?;
         tx.tx_hash_algo = self.platform_coin.as_ref().tx_hash_algo;
         if tx.outputs.len() < 2 {
             return MmError::err(ValidateHtlcError::TxLackOfOutputs);
@@ -483,12 +473,13 @@ impl SlpToken {
             _ => return MmError::err(ValidateHtlcError::InvalidSlpDetails),
         }
 
+        let htlc_keypair = self.derive_htlc_key_pair(&input.unique_swap_data);
         let validate_fut = utxo_common::validate_payment(
             self.platform_coin.clone(),
             tx,
             SLP_SWAP_VOUT,
-            &input.other_pub,
-            &input.my_pub,
+            &Public::from_slice(&input.other_pub).map_to_mm(ValidateHtlcError::OtherPubInvalid)?,
+            htlc_keypair.public(),
             &input.secret_hash,
             self.platform_dust_dec(),
             input.time_lock,
@@ -1068,7 +1059,10 @@ impl MarketCoinOps for SlpToken {
         slp_address.encode()
     }
 
-    fn get_public_key(&self) -> Result<String, MmError<UnexpectedDerivationMethod>> { unimplemented!() }
+    fn get_public_key(&self) -> Result<String, MmError<UnexpectedDerivationMethod>> {
+        let pubkey = utxo_common::my_public_key(self.platform_coin.as_ref())?;
+        Ok(pubkey.to_string())
+    }
 
     fn sign_message_hash(&self, message: &str) -> Option<[u8; 32]> {
         utxo_common::sign_message_hash(self.as_ref(), message)
@@ -1200,21 +1194,21 @@ impl SwapOps for SlpToken {
     fn send_maker_payment(
         &self,
         time_lock: u32,
-        maker_pub: &[u8],
         taker_pub: &[u8],
         secret_hash: &[u8],
         amount: BigDecimal,
         _swap_contract_address: &Option<BytesJson>,
+        swap_unique_data: &[u8],
     ) -> TransactionFut {
-        let maker_pub = try_tx_fus!(Public::from_slice(maker_pub));
         let taker_pub = try_tx_fus!(Public::from_slice(taker_pub));
         let amount = try_tx_fus!(sat_from_big_decimal(&amount, self.decimals()));
         let secret_hash = secret_hash.to_owned();
+        let maker_htlc_keypair = self.derive_htlc_key_pair(swap_unique_data);
 
         let coin = self.clone();
         let fut = async move {
             let tx = try_tx_s!(
-                coin.send_htlc(&maker_pub, &taker_pub, time_lock, &secret_hash, amount)
+                coin.send_htlc(maker_htlc_keypair.public(), &taker_pub, time_lock, &secret_hash, amount)
                     .await
             );
             Ok(tx.into())
@@ -1225,21 +1219,22 @@ impl SwapOps for SlpToken {
     fn send_taker_payment(
         &self,
         time_lock: u32,
-        taker_pub: &[u8],
         maker_pub: &[u8],
         secret_hash: &[u8],
         amount: BigDecimal,
         _swap_contract_address: &Option<BytesJson>,
+        swap_unique_data: &[u8],
     ) -> TransactionFut {
-        let taker_pub = try_tx_fus!(Public::from_slice(taker_pub));
         let maker_pub = try_tx_fus!(Public::from_slice(maker_pub));
         let amount = try_tx_fus!(sat_from_big_decimal(&amount, self.decimals()));
         let secret_hash = secret_hash.to_owned();
 
+        let taker_htlc_keypair = self.derive_htlc_key_pair(swap_unique_data);
+
         let coin = self.clone();
         let fut = async move {
             let tx = try_tx_s!(
-                coin.send_htlc(&taker_pub, &maker_pub, time_lock, &secret_hash, amount)
+                coin.send_htlc(taker_htlc_keypair.public(), &maker_pub, time_lock, &secret_hash, amount)
                     .await
             );
             Ok(tx.into())
@@ -1253,13 +1248,13 @@ impl SwapOps for SlpToken {
         time_lock: u32,
         taker_pub: &[u8],
         secret: &[u8],
-        htlc_privkey: &[u8],
         _swap_contract_address: &Option<BytesJson>,
+        swap_unique_data: &[u8],
     ) -> TransactionFut {
         let tx = taker_payment_tx.to_owned();
         let taker_pub = try_tx_fus!(Public::from_slice(taker_pub));
         let secret = secret.to_owned();
-        let htlc_keypair = try_tx_fus!(key_pair_from_secret(htlc_privkey));
+        let htlc_keypair = self.derive_htlc_key_pair(swap_unique_data);
         let coin = self.clone();
 
         let fut = async move {
@@ -1278,13 +1273,13 @@ impl SwapOps for SlpToken {
         time_lock: u32,
         maker_pub: &[u8],
         secret: &[u8],
-        htlc_privkey: &[u8],
         _swap_contract_address: &Option<BytesJson>,
+        swap_unique_data: &[u8],
     ) -> TransactionFut {
         let tx = maker_payment_tx.to_owned();
         let maker_pub = try_tx_fus!(Public::from_slice(maker_pub));
         let secret = secret.to_owned();
-        let htlc_keypair = try_tx_fus!(key_pair_from_secret(htlc_privkey));
+        let htlc_keypair = self.derive_htlc_key_pair(swap_unique_data);
         let coin = self.clone();
 
         let fut = async move {
@@ -1303,18 +1298,18 @@ impl SwapOps for SlpToken {
         time_lock: u32,
         maker_pub: &[u8],
         secret_hash: &[u8],
-        htlc_privkey: &[u8],
         _swap_contract_address: &Option<BytesJson>,
+        swap_unique_data: &[u8],
     ) -> TransactionFut {
         let tx = taker_payment_tx.to_owned();
         let maker_pub = try_tx_fus!(Public::from_slice(maker_pub));
         let secret_hash = secret_hash.to_owned();
-        let keypair = try_tx_fus!(key_pair_from_secret(htlc_privkey));
+        let htlc_keypair = self.derive_htlc_key_pair(swap_unique_data);
         let coin = self.clone();
 
         let fut = async move {
             let tx = try_s!(
-                coin.refund_htlc(&tx, &maker_pub, time_lock, &secret_hash, &keypair)
+                coin.refund_htlc(&tx, &maker_pub, time_lock, &secret_hash, &htlc_keypair)
                     .await
             );
             Ok(tx.into())
@@ -1328,18 +1323,18 @@ impl SwapOps for SlpToken {
         time_lock: u32,
         taker_pub: &[u8],
         secret_hash: &[u8],
-        htlc_privkey: &[u8],
         _swap_contract_address: &Option<BytesJson>,
+        swap_unique_data: &[u8],
     ) -> TransactionFut {
         let tx = maker_payment_tx.to_owned();
         let taker_pub = try_tx_fus!(Public::from_slice(taker_pub));
         let secret_hash = secret_hash.to_owned();
-        let keypair = try_tx_fus!(key_pair_from_secret(htlc_privkey));
+        let htlc_keypair = self.derive_htlc_key_pair(swap_unique_data);
         let coin = self.clone();
 
         let fut = async move {
             let tx = try_tx_s!(
-                coin.refund_htlc(&tx, &taker_pub, time_lock, &secret_hash, &keypair)
+                coin.refund_htlc(&tx, &taker_pub, time_lock, &secret_hash, &htlc_keypair)
                     .await
             );
             Ok(tx.into())
@@ -1376,24 +1371,7 @@ impl SwapOps for SlpToken {
     }
 
     fn validate_maker_payment(&self, input: ValidatePaymentInput) -> Box<dyn Future<Item = (), Error = String> + Send> {
-        let maker_pub = try_fus!(Public::from_slice(&input.maker_pub));
-        let taker_pub = try_fus!(Public::from_slice(&input.taker_pub));
-        let tx = input.payment_tx.to_owned();
-        let secret_hash = input.secret_hash.to_owned();
-        let time_lock = input.time_lock;
-        let amount = input.amount;
-        let confirmations = input.confirmations;
-
         let coin = self.clone();
-        let input = ValidateHtlcInput {
-            tx,
-            other_pub: maker_pub,
-            my_pub: taker_pub,
-            time_lock,
-            secret_hash,
-            amount,
-            confirmations,
-        };
         let fut = async move {
             try_s!(coin.validate_htlc(input).await);
             Ok(())
@@ -1402,20 +1380,7 @@ impl SwapOps for SlpToken {
     }
 
     fn validate_taker_payment(&self, input: ValidatePaymentInput) -> Box<dyn Future<Item = (), Error = String> + Send> {
-        let taker_pub = try_fus!(Public::from_slice(&input.taker_pub));
-        let maker_pub = try_fus!(Public::from_slice(&input.maker_pub));
-        let confirmations = input.confirmations;
-
         let coin = self.clone();
-        let input = ValidateHtlcInput {
-            tx: input.payment_tx,
-            other_pub: taker_pub,
-            my_pub: maker_pub,
-            time_lock: input.time_lock,
-            secret_hash: input.secret_hash,
-            amount: input.amount,
-            confirmations,
-        };
         let fut = async move {
             try_s!(coin.validate_htlc(input).await);
             Ok(())
@@ -1426,55 +1391,33 @@ impl SwapOps for SlpToken {
     fn check_if_my_payment_sent(
         &self,
         time_lock: u32,
-        my_pub: &[u8],
         other_pub: &[u8],
         secret_hash: &[u8],
         _search_from_block: u64,
         _swap_contract_address: &Option<BytesJson>,
+        swap_unique_data: &[u8],
     ) -> Box<dyn Future<Item = Option<TransactionEnum>, Error = String> + Send> {
-        utxo_common::check_if_my_payment_sent(self.platform_coin.clone(), time_lock, my_pub, other_pub, secret_hash)
+        utxo_common::check_if_my_payment_sent(
+            self.platform_coin.clone(),
+            time_lock,
+            other_pub,
+            secret_hash,
+            swap_unique_data,
+        )
     }
 
     async fn search_for_swap_tx_spend_my(
         &self,
-        time_lock: u32,
-        other_pub: &[u8],
-        secret_hash: &[u8],
-        tx: &[u8],
-        search_from_block: u64,
-        _swap_contract_address: &Option<BytesJson>,
+        input: SearchForSwapTxSpendInput<'_>,
     ) -> Result<Option<FoundSwapTxSpend>, String> {
-        utxo_common::search_for_swap_tx_spend_my(
-            self.platform_coin.as_ref(),
-            time_lock,
-            other_pub,
-            secret_hash,
-            tx,
-            SLP_SWAP_VOUT,
-            search_from_block,
-        )
-        .await
+        utxo_common::search_for_swap_tx_spend_my(&self.platform_coin, input, SLP_SWAP_VOUT).await
     }
 
     async fn search_for_swap_tx_spend_other(
         &self,
-        time_lock: u32,
-        other_pub: &[u8],
-        secret_hash: &[u8],
-        tx: &[u8],
-        search_from_block: u64,
-        _swap_contract_address: &Option<BytesJson>,
+        input: SearchForSwapTxSpendInput<'_>,
     ) -> Result<Option<FoundSwapTxSpend>, String> {
-        utxo_common::search_for_swap_tx_spend_other(
-            self.platform_coin.as_ref(),
-            time_lock,
-            other_pub,
-            secret_hash,
-            tx,
-            SLP_SWAP_VOUT,
-            search_from_block,
-        )
-        .await
+        utxo_common::search_for_swap_tx_spend_other(&self.platform_coin, input, SLP_SWAP_VOUT).await
     }
 
     fn extract_secret(&self, secret_hash: &[u8], spend_tx: &[u8]) -> Result<Vec<u8>, String> {
@@ -1488,7 +1431,9 @@ impl SwapOps for SlpToken {
         Ok(None)
     }
 
-    fn get_htlc_key_pair(&self) -> Option<KeyPair> { utxo_common::get_htlc_key_pair(&self.platform_coin) }
+    fn derive_htlc_key_pair(&self, swap_unique_data: &[u8]) -> KeyPair {
+        utxo_common::derive_htlc_key_pair(self.platform_coin.as_ref(), swap_unique_data)
+    }
 }
 
 impl From<GenSlpSpendErr> for TradePreimageError {
@@ -1831,6 +1776,7 @@ mod slp_tests {
     use crate::utxo::GetUtxoListOps;
     use crate::{utxo::bch::tbch_coin_for_test, TransactionErr};
     use common::block_on;
+    use mocktopus::mocking::{MockResult, Mockable};
     use std::mem::discriminant;
 
     // https://slp.dev/specs/slp-token-type-1/#examples
@@ -2000,25 +1946,30 @@ mod slp_tests {
         let fusd = SlpToken::new(4, "FUSD".into(), token_id, bch, 0);
 
         // https://testnet.simpleledger.info/tx/e935160bfb5b45007a0fc6f8fbe8da618f28df6573731f1ffb54d9560abb49b2
-        let tx = hex::decode("0100000002736cf584f877ec7b6b95974bc461a9cfb9f126655b5d335471683154cc6cf4c5020000006a47304402206be99fe56a98e7a8c2ffe6f2d05c5c1f46a6577064b84d27d45fe0e959f6e77402201c512629313b48cd4df873222aa49046ae9a3a6e34e359d10d4308cb40438fba4121036879df230663db4cd083c8eeb0f293f46abc460ad3c299b0089b72e6d472202cffffffff736cf584f877ec7b6b95974bc461a9cfb9f126655b5d335471683154cc6cf4c5030000006a473044022020d774d045bbe3dce5b04af836f6a5629c6c4ce75b0b5ba8a1da0ae9a4ecc0530220522f86d20c9e4142e40f9a9c8d25db16fde91d4a0ad6f6ff2107e201386131b64121036879df230663db4cd083c8eeb0f293f46abc460ad3c299b0089b72e6d472202cffffffff040000000000000000406a04534c500001010453454e4420bb309e48930671582bea508f9a1d9b491e49b69be3d6f372dc08da2ac6e90eb70800000000000003e8080000000000001f3ee80300000000000017a914b0ca1fea17cf522c7e858416093fc6d95e55824087e8030000000000001976a9148cfffc2409d063437d6aa8b75a009b9ba51b71fc88accf614801000000001976a9148cfffc2409d063437d6aa8b75a009b9ba51b71fc88ac8c83d460").unwrap();
+        let payment_tx = hex::decode("0100000002736cf584f877ec7b6b95974bc461a9cfb9f126655b5d335471683154cc6cf4c5020000006a47304402206be99fe56a98e7a8c2ffe6f2d05c5c1f46a6577064b84d27d45fe0e959f6e77402201c512629313b48cd4df873222aa49046ae9a3a6e34e359d10d4308cb40438fba4121036879df230663db4cd083c8eeb0f293f46abc460ad3c299b0089b72e6d472202cffffffff736cf584f877ec7b6b95974bc461a9cfb9f126655b5d335471683154cc6cf4c5030000006a473044022020d774d045bbe3dce5b04af836f6a5629c6c4ce75b0b5ba8a1da0ae9a4ecc0530220522f86d20c9e4142e40f9a9c8d25db16fde91d4a0ad6f6ff2107e201386131b64121036879df230663db4cd083c8eeb0f293f46abc460ad3c299b0089b72e6d472202cffffffff040000000000000000406a04534c500001010453454e4420bb309e48930671582bea508f9a1d9b491e49b69be3d6f372dc08da2ac6e90eb70800000000000003e8080000000000001f3ee80300000000000017a914b0ca1fea17cf522c7e858416093fc6d95e55824087e8030000000000001976a9148cfffc2409d063437d6aa8b75a009b9ba51b71fc88accf614801000000001976a9148cfffc2409d063437d6aa8b75a009b9ba51b71fc88ac8c83d460").unwrap();
 
         let other_pub = hex::decode("036879df230663db4cd083c8eeb0f293f46abc460ad3c299b0089b72e6d472202c").unwrap();
-        let other_pub = Public::from_slice(&other_pub).unwrap();
 
-        let my_pub = hex::decode("03c6a78589e18b482aea046975e6d0acbdea7bf7dbf04d9d5bd67fda917815e3ed").unwrap();
-        let my_pub = Public::from_slice(&my_pub).unwrap();
+        utxo_common::validate_payment::<BchCoin>.mock_safe(|coin, tx, out_i, pub0, _, h, a, lock, spv, conf| {
+            // replace the second public because payment was sent with privkey that is currently unknown
+            let my_pub = hex::decode("03c6a78589e18b482aea046975e6d0acbdea7bf7dbf04d9d5bd67fda917815e3ed").unwrap();
+            let my_pub = Box::leak(Box::new(Public::from_slice(&my_pub).unwrap()));
+            MockResult::Continue((coin, tx, out_i, pub0, my_pub, h, a, lock, spv, conf))
+        });
 
         let lock_time = 1624547837;
         let secret_hash = hex::decode("5d9e149ad9ccb20e9f931a69b605df2ffde60242").unwrap();
         let amount: BigDecimal = "0.1".parse().unwrap();
-        let input = ValidateHtlcInput {
-            tx,
+        let input = ValidatePaymentInput {
+            payment_tx,
             other_pub,
-            my_pub,
             time_lock: lock_time,
             secret_hash,
             amount,
             confirmations: 1,
+            try_spv_proof_until: now_ms() / 1000 + 60,
+            unique_swap_data: Vec::new(),
+            swap_contract_address: None,
         };
         block_on(fusd.validate_htlc(input)).unwrap();
     }
@@ -2115,10 +2066,11 @@ mod slp_tests {
         let fusd = SlpToken::new(4, "FUSD".into(), token_id, bch.clone(), 0);
 
         // https://www.blockchain.com/ru/bch-testnet/tx/6686ee013620d31ba645b27d581fed85437ce00f46b595a576718afac4dd5b69
-        let tx = hex::decode("0100000001ce59a734f33811afcc00c19dcb12202ed00067a50efed80424fabd2b723678c0020000006b483045022100ec1fecff9c60fb7e821b9a412bd8c4ce4a757c68287f9cf9e0f461165492d6530220222f020dd05d65ba35cddd0116c99255612ec90d63019bb1cea45e2cf09a62a94121036879df230663db4cd083c8eeb0f293f46abc460ad3c299b0089b72e6d472202cffffffff030000000000000000376a04534c500001010453454e4420bb309e48930671582bea508f9a1d9b491e49b69be3d6f372dc08da2ac6e90eb70800000000000003e8e80300000000000017a914953b3909ff6aa269f85da34c132a92424440e18e879decad00000000001976a9148cfffc2409d063437d6aa8b75a009b9ba51b71fc88acd1215c61").unwrap();
+        let payment_tx = hex::decode("0100000001ce59a734f33811afcc00c19dcb12202ed00067a50efed80424fabd2b723678c0020000006b483045022100ec1fecff9c60fb7e821b9a412bd8c4ce4a757c68287f9cf9e0f461165492d6530220222f020dd05d65ba35cddd0116c99255612ec90d63019bb1cea45e2cf09a62a94121036879df230663db4cd083c8eeb0f293f46abc460ad3c299b0089b72e6d472202cffffffff030000000000000000376a04534c500001010453454e4420bb309e48930671582bea508f9a1d9b491e49b69be3d6f372dc08da2ac6e90eb70800000000000003e8e80300000000000017a914953b3909ff6aa269f85da34c132a92424440e18e879decad00000000001976a9148cfffc2409d063437d6aa8b75a009b9ba51b71fc88acd1215c61").unwrap();
 
-        let other_pub = hex::decode("036879df230663db4cd083c8eeb0f293f46abc460ad3c299b0089b72e6d472202c").unwrap();
-        let other_pub = Public::from_slice(&other_pub).unwrap();
+        let other_pub_bytes =
+            hex::decode("036879df230663db4cd083c8eeb0f293f46abc460ad3c299b0089b72e6d472202c").unwrap();
+        let other_pub = Public::from_slice(&other_pub_bytes).unwrap();
 
         let lock_time = 1624547837;
         let secret_hash = hex::decode("5d9e149ad9ccb20e9f931a69b605df2ffde60242").unwrap();
@@ -2128,7 +2080,7 @@ mod slp_tests {
         // standard BCH validation should pass as the output itself is correct
         utxo_common::validate_payment(
             bch.clone(),
-            deserialize(tx.as_slice()).unwrap(),
+            deserialize(payment_tx.as_slice()).unwrap(),
             SLP_SWAP_VOUT,
             my_pub,
             &other_pub,
@@ -2141,14 +2093,16 @@ mod slp_tests {
         .wait()
         .unwrap();
 
-        let input = ValidateHtlcInput {
-            tx,
-            other_pub,
-            my_pub: my_pub.clone(),
+        let input = ValidatePaymentInput {
+            payment_tx,
+            other_pub: other_pub_bytes,
             time_lock: lock_time,
             secret_hash,
             amount,
+            swap_contract_address: None,
+            try_spv_proof_until: now_ms() / 1000 + 60,
             confirmations: 1,
+            unique_swap_data: Vec::new(),
         };
         let validity_err = block_on(fusd.validate_htlc(input)).unwrap_err();
         match validity_err.into_inner() {

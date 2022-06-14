@@ -70,6 +70,7 @@ cfg_native! {
     use futures::AsyncWriteExt;
     use std::io;
     use zcash_primitives::transaction::Transaction as ZTransaction;
+    use z_coin::ZcoinConsensusParams;
 }
 
 cfg_wasm32! {
@@ -448,13 +449,23 @@ pub enum NegotiateSwapContractAddrErr {
 pub struct ValidatePaymentInput {
     pub payment_tx: Vec<u8>,
     pub time_lock: u32,
-    pub taker_pub: Vec<u8>,
-    pub maker_pub: Vec<u8>,
+    pub other_pub: Vec<u8>,
     pub secret_hash: Vec<u8>,
     pub amount: BigDecimal,
     pub swap_contract_address: Option<BytesJson>,
     pub try_spv_proof_until: u64,
     pub confirmations: u64,
+    pub unique_swap_data: Vec<u8>,
+}
+
+pub struct SearchForSwapTxSpendInput<'a> {
+    pub time_lock: u32,
+    pub other_pub: &'a [u8],
+    pub secret_hash: &'a [u8],
+    pub tx: &'a [u8],
+    pub search_from_block: u64,
+    pub swap_contract_address: &'a Option<BytesJson>,
+    pub swap_unique_data: &'a [u8],
 }
 
 /// Swap operations (mostly based on the Hash/Time locked transactions implemented by coin wallets).
@@ -465,21 +476,21 @@ pub trait SwapOps {
     fn send_maker_payment(
         &self,
         time_lock: u32,
-        maker_pub: &[u8],
         taker_pub: &[u8],
         secret_hash: &[u8],
         amount: BigDecimal,
         swap_contract_address: &Option<BytesJson>,
+        swap_unique_data: &[u8],
     ) -> TransactionFut;
 
     fn send_taker_payment(
         &self,
         time_lock: u32,
-        taker_pub: &[u8],
         maker_pub: &[u8],
         secret_hash: &[u8],
         amount: BigDecimal,
         swap_contract_address: &Option<BytesJson>,
+        swap_unique_data: &[u8],
     ) -> TransactionFut;
 
     fn send_maker_spends_taker_payment(
@@ -488,8 +499,8 @@ pub trait SwapOps {
         time_lock: u32,
         taker_pub: &[u8],
         secret: &[u8],
-        htlc_privkey: &[u8],
         swap_contract_address: &Option<BytesJson>,
+        swap_unique_data: &[u8],
     ) -> TransactionFut;
 
     fn send_taker_spends_maker_payment(
@@ -498,8 +509,8 @@ pub trait SwapOps {
         time_lock: u32,
         maker_pub: &[u8],
         secret: &[u8],
-        htlc_privkey: &[u8],
         swap_contract_address: &Option<BytesJson>,
+        swap_unique_data: &[u8],
     ) -> TransactionFut;
 
     fn send_taker_refunds_payment(
@@ -508,8 +519,8 @@ pub trait SwapOps {
         time_lock: u32,
         maker_pub: &[u8],
         secret_hash: &[u8],
-        htlc_privkey: &[u8],
         swap_contract_address: &Option<BytesJson>,
+        swap_unique_data: &[u8],
     ) -> TransactionFut;
 
     fn send_maker_refunds_payment(
@@ -518,8 +529,8 @@ pub trait SwapOps {
         time_lock: u32,
         taker_pub: &[u8],
         secret_hash: &[u8],
-        htlc_privkey: &[u8],
         swap_contract_address: &Option<BytesJson>,
+        swap_unique_data: &[u8],
     ) -> TransactionFut;
 
     fn validate_fee(
@@ -539,31 +550,21 @@ pub trait SwapOps {
     fn check_if_my_payment_sent(
         &self,
         time_lock: u32,
-        my_pub: &[u8],
         other_pub: &[u8],
         secret_hash: &[u8],
         search_from_block: u64,
         swap_contract_address: &Option<BytesJson>,
+        swap_unique_data: &[u8],
     ) -> Box<dyn Future<Item = Option<TransactionEnum>, Error = String> + Send>;
 
     async fn search_for_swap_tx_spend_my(
         &self,
-        time_lock: u32,
-        other_pub: &[u8],
-        secret_hash: &[u8],
-        tx: &[u8],
-        search_from_block: u64,
-        swap_contract_address: &Option<BytesJson>,
+        input: SearchForSwapTxSpendInput<'_>,
     ) -> Result<Option<FoundSwapTxSpend>, String>;
 
     async fn search_for_swap_tx_spend_other(
         &self,
-        time_lock: u32,
-        other_pub: &[u8],
-        secret_hash: &[u8],
-        tx: &[u8],
-        search_from_block: u64,
-        swap_contract_address: &Option<BytesJson>,
+        input: SearchForSwapTxSpendInput<'_>,
     ) -> Result<Option<FoundSwapTxSpend>, String>;
 
     fn extract_secret(&self, secret_hash: &[u8], spend_tx: &[u8]) -> Result<Vec<u8>, String>;
@@ -586,7 +587,7 @@ pub trait SwapOps {
         other_side_address: Option<&[u8]>,
     ) -> Result<Option<BytesJson>, MmError<NegotiateSwapContractAddrErr>>;
 
-    fn get_htlc_key_pair(&self) -> Option<KeyPair>;
+    fn derive_htlc_key_pair(&self, swap_unique_data: &[u8]) -> KeyPair;
 }
 
 /// Operations that coins have independently from the MarketMaker.
@@ -2110,7 +2111,9 @@ pub enum CoinProtocol {
         decimals: u8,
     },
     #[cfg(not(target_arch = "wasm32"))]
-    ZHTLC,
+    ZHTLC {
+        consensus_params: ZcoinConsensusParams,
+    },
 }
 
 pub type RpcTransportEventHandlerShared = Arc<dyn RpcTransportEventHandler + Send + Sync + 'static>;
@@ -2350,7 +2353,7 @@ pub async fn lp_coininit(ctx: &MmArc, ticker: &str, req: &Json) -> Result<MmCoin
             token.into()
         },
         #[cfg(not(target_arch = "wasm32"))]
-        CoinProtocol::ZHTLC => return ERR!("ZHTLC protocol is not supported by lp_coininit"),
+        CoinProtocol::ZHTLC { .. } => return ERR!("ZHTLC protocol is not supported by lp_coininit"),
         #[cfg(not(target_arch = "wasm32"))]
         CoinProtocol::LIGHTNING { .. } => return ERR!("Lightning protocol is not supported by lp_coininit"),
         #[cfg(not(target_arch = "wasm32"))]
@@ -2949,7 +2952,7 @@ pub fn address_by_coin_conf_and_pubkey_str(
             ERR!("Solana pubkey is the public address - you do not need to use this rpc call.")
         },
         #[cfg(not(target_arch = "wasm32"))]
-        CoinProtocol::ZHTLC => ERR!("address_by_coin_conf_and_pubkey_str is not supported for ZHTLC protocol!"),
+        CoinProtocol::ZHTLC { .. } => ERR!("address_by_coin_conf_and_pubkey_str is not supported for ZHTLC protocol!"),
     }
 }
 

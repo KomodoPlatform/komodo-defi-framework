@@ -5,8 +5,44 @@ use crate::{NumConversError, PrivKeyNotAllowed};
 use bigdecimal::BigDecimal;
 use db_common::sqlite::rusqlite::Error as SqliteError;
 use derive_more::Display;
+use http::uri::InvalidUri;
 use rpc::v1::types::Bytes as BytesJson;
+use zcash_client_sqlite::error::SqliteClientError;
+use zcash_client_sqlite::error::SqliteClientError as ZcashClientError;
 use zcash_primitives::transaction::builder::Error as ZTxBuilderError;
+
+#[derive(Debug, Display)]
+#[non_exhaustive]
+pub enum UpdateBlocksCacheErr {
+    GrpcError(tonic::Status),
+    DbError(SqliteError),
+}
+
+impl From<tonic::Status> for UpdateBlocksCacheErr {
+    fn from(err: tonic::Status) -> Self { UpdateBlocksCacheErr::GrpcError(err) }
+}
+
+impl From<SqliteError> for UpdateBlocksCacheErr {
+    fn from(err: SqliteError) -> Self { UpdateBlocksCacheErr::DbError(err) }
+}
+
+#[derive(Debug, Display)]
+#[non_exhaustive]
+pub enum ZcoinLightClientInitError {
+    TlsConfigFailure(tonic::transport::Error),
+    ConnectionFailure(tonic::transport::Error),
+    BlocksDbInitFailure(SqliteError),
+    WalletDbInitFailure(SqliteError),
+    ZcashSqliteError(ZcashClientError),
+}
+
+impl From<ZcashClientError> for ZcoinLightClientInitError {
+    fn from(err: ZcashClientError) -> Self { ZcoinLightClientInitError::ZcashSqliteError(err) }
+}
+
+#[derive(Debug, Display)]
+#[display(fmt = "Blockchain scan process stopped")]
+pub struct BlockchainScanStopped {}
 
 #[derive(Debug, Display)]
 pub enum GenTxError {
@@ -33,6 +69,9 @@ pub enum GenTxError {
         hex: BytesJson,
         err: std::io::Error,
     },
+    BlockchainScanStopped,
+    LightClientErr(SqliteClientError),
+    FailedToCreateNote,
 }
 
 impl From<GetUnspentWitnessErr> for GenTxError {
@@ -49,6 +88,10 @@ impl From<UtxoRpcError> for GenTxError {
 
 impl From<ZTxBuilderError> for GenTxError {
     fn from(err: ZTxBuilderError) -> GenTxError { GenTxError::TxBuilderError(err) }
+}
+
+impl From<SqliteClientError> for GenTxError {
+    fn from(err: SqliteClientError) -> Self { GenTxError::LightClientErr(err) }
 }
 
 impl From<GenTxError> for WithdrawError {
@@ -70,9 +113,17 @@ impl From<GenTxError> for WithdrawError {
             | GenTxError::GetWitnessErr(_)
             | GenTxError::NumConversion(_)
             | GenTxError::TxBuilderError(_)
-            | GenTxError::TxReadError { .. } => WithdrawError::InternalError(gen_tx.to_string()),
+            | GenTxError::TxReadError { .. }
+            | GenTxError::BlockchainScanStopped
+            | GenTxError::LightClientErr(_)
+            | GenTxError::FailedToCreateNote => WithdrawError::InternalError(gen_tx.to_string()),
         }
     }
+}
+
+impl From<BlockchainScanStopped> for GenTxError {
+    #[inline]
+    fn from(_: BlockchainScanStopped) -> Self { GenTxError::BlockchainScanStopped }
 }
 
 #[derive(Debug, Display)]
@@ -124,6 +175,10 @@ pub enum ZCoinBuildError {
         path: String,
     },
     Io(std::io::Error),
+    EmptyLightwalletdUris,
+    NativeModeIsNotSupportedYet,
+    InvalidLightwalletdUri(InvalidUri),
+    LightClientInitErr(ZcoinLightClientInitError),
     ZCashParamsNotFound,
 }
 
@@ -141,4 +196,12 @@ impl From<UtxoCoinBuildError> for ZCoinBuildError {
 
 impl From<std::io::Error> for ZCoinBuildError {
     fn from(err: std::io::Error) -> ZCoinBuildError { ZCoinBuildError::Io(err) }
+}
+
+impl From<InvalidUri> for ZCoinBuildError {
+    fn from(err: InvalidUri) -> Self { ZCoinBuildError::InvalidLightwalletdUri(err) }
+}
+
+impl From<ZcoinLightClientInitError> for ZCoinBuildError {
+    fn from(err: ZcoinLightClientInitError) -> Self { ZCoinBuildError::LightClientInitErr(err) }
 }

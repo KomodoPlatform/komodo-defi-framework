@@ -100,6 +100,93 @@ pub const TAKER_ERROR_EVENTS: [&str; 13] = [
     "TakerPaymentRefundFailed",
 ];
 
+pub const RICK: &str = "RICK";
+pub const ZOMBIE_TICKER: &str = "ZOMBIE";
+pub const ZOMBIE_ELECTRUMS: &[&str] = &["zombie.sirseven.me:10033"];
+pub const ZOMBIE_LIGHTWALLETD_URLS: &[&str] = &["http://zombie.sirseven.me:443"];
+const DEFAULT_RPC_PASSWORD: &str = "pass";
+
+pub struct Mm2TestConf {
+    pub conf: Json,
+    pub rpc_password: String,
+    /// This doesn't seem to be really used, so we will possibly remove it soon
+    pub local: Option<LocalStart>,
+}
+
+impl Mm2TestConf {
+    pub fn seednode(passphrase: &str, coins: &Json) -> Self {
+        Mm2TestConf {
+            conf: json!({
+                "gui": "nogui",
+                "netid": 9998,
+                "passphrase": passphrase,
+                "coins": coins,
+                "rpc_password": DEFAULT_RPC_PASSWORD,
+                "i_am_seed": true,
+            }),
+            rpc_password: DEFAULT_RPC_PASSWORD.into(),
+            local: None,
+        }
+    }
+
+    pub fn light_node(passphrase: &str, coins: &Json, seednodes: &[&str]) -> Self {
+        Mm2TestConf {
+            conf: json!({
+                "gui": "nogui",
+                "netid": 9998,
+                "passphrase": passphrase,
+                "coins": coins,
+                "rpc_password": DEFAULT_RPC_PASSWORD,
+                "seednodes": seednodes,
+            }),
+            rpc_password: DEFAULT_RPC_PASSWORD.into(),
+            local: None,
+        }
+    }
+}
+
+pub fn zombie_conf() -> Json {
+    json!({
+        "coin":"ZOMBIE",
+        "asset":"ZOMBIE",
+        "txversion":4,
+        "overwintered":1,
+        "mm2":1,
+        "protocol":{
+            "type":"ZHTLC",
+            "protocol_data": {
+                "consensus_params": {
+                    "overwinter_activation_height": 0,
+                    "sapling_activation_height": 1,
+                    "blossom_activation_height": null,
+                    "heartwood_activation_height": null,
+                    "canopy_activation_height": null,
+                    "coin_type": 133,
+                    "hrp_sapling_extended_spending_key": "secret-extended-key-main",
+                    "hrp_sapling_extended_full_viewing_key": "zxviews",
+                    "hrp_sapling_payment_address": "zs",
+                    "b58_pubkey_address_prefix": [ 28, 184 ],
+                    "b58_script_address_prefix": [ 28, 189 ]
+                }
+            }
+        },
+        "required_confirmations":0
+    })
+}
+
+pub fn rick_conf() -> Json {
+    json!({
+        "coin":"RICK",
+        "asset":"RICK",
+        "required_confirmations":0,
+        "txversion":4,
+        "overwintered":1,
+        "protocol":{
+            "type":"UTXO"
+        }
+    })
+}
+
 #[cfg(target_arch = "wasm32")]
 pub fn mm_ctx_with_custom_db() -> MmArc { MmCtxBuilder::new().with_test_db_namespace().into_mm_arc() }
 
@@ -616,11 +703,7 @@ impl MarketMakerIt {
 impl Drop for MarketMakerIt {
     fn drop(&mut self) {
         if let Ok(mut mm_ips) = MM_IPS.lock() {
-            // The IP addresses might still be used by the libtorrent even after a context is dropped,
-            // hence we're not trying to reuse them but rather just mark them as fried.
-            if let Some(active) = mm_ips.get_mut(&self.ip) {
-                *active = false
-            }
+            mm_ips.remove(&self.ip);
         } else {
             log!("MarketMakerIt] Can't lock MM_IPS.")
         }
@@ -927,13 +1010,17 @@ pub enum UtxoRpcMode {
     Electrum { servers: Vec<ElectrumRpcRequest> },
 }
 
+fn electrum_servers_rpc(servers: &[&str]) -> Vec<ElectrumRpcRequest> {
+    servers
+        .iter()
+        .map(|url| ElectrumRpcRequest { url: url.to_string() })
+        .collect()
+}
+
 impl UtxoRpcMode {
     pub fn electrum(servers: &[&str]) -> Self {
         UtxoRpcMode::Electrum {
-            servers: servers
-                .iter()
-                .map(|url| ElectrumRpcRequest { url: url.to_string() })
-                .collect(),
+            servers: electrum_servers_rpc(servers),
         }
     }
 }
@@ -1282,7 +1369,41 @@ pub async fn best_orders_v2(mm: &MarketMakerIt, coin: &str, action: &str, volume
     json::from_str(&request.1).unwrap()
 }
 
-pub async fn init_z_coin(mm: &MarketMakerIt, coin: &str) -> Json {
+pub async fn init_withdraw(mm: &MarketMakerIt, coin: &str, to: &str, amount: &str) -> Json {
+    let request = mm
+        .rpc(&json! ({
+            "userpass": mm.userpass,
+            "method": "init_withdraw",
+            "mmrpc": "2.0",
+            "params": {
+                "coin": coin,
+                "to": to,
+                "amount": amount,
+            }
+        }))
+        .await
+        .unwrap();
+    assert_eq!(request.0, StatusCode::OK, "'init_withdraw' failed: {}", request.1);
+    json::from_str(&request.1).unwrap()
+}
+
+pub async fn withdraw_status(mm: &MarketMakerIt, task_id: u64) -> Json {
+    let request = mm
+        .rpc(&json! ({
+            "userpass": mm.userpass,
+            "method": "withdraw_status",
+            "mmrpc": "2.0",
+            "params": {
+                "task_id": task_id,
+            }
+        }))
+        .await
+        .unwrap();
+    assert_eq!(request.0, StatusCode::OK, "'withdraw_status' failed: {}", request.1);
+    json::from_str(&request.1).unwrap()
+}
+
+pub async fn init_z_coin_native(mm: &MarketMakerIt, coin: &str) -> Json {
     let request = mm
         .rpc(&json! ({
             "userpass": mm.userpass,
@@ -1293,6 +1414,31 @@ pub async fn init_z_coin(mm: &MarketMakerIt, coin: &str) -> Json {
                 "activation_params": {
                     "mode": {
                         "rpc": "Native",
+                    }
+                },
+            }
+        }))
+        .await
+        .unwrap();
+    assert_eq!(request.0, StatusCode::OK, "'init_z_coin' failed: {}", request.1);
+    json::from_str(&request.1).unwrap()
+}
+
+pub async fn init_z_coin_light(mm: &MarketMakerIt, coin: &str, electrums: &[&str], lightwalletd_urls: &[&str]) -> Json {
+    let request = mm
+        .rpc(&json! ({
+            "userpass": mm.userpass,
+            "method": "init_z_coin",
+            "mmrpc": "2.0",
+            "params": {
+                "ticker": coin,
+                "activation_params": {
+                    "mode": {
+                        "rpc": "Light",
+                        "rpc_data": {
+                            "electrum_servers": electrum_servers_rpc(electrums),
+                            "light_wallet_d_servers": lightwalletd_urls,
+                        },
                     }
                 },
             }
@@ -1355,5 +1501,24 @@ pub async fn verify_message(mm: &MarketMakerIt, coin: &str, signature: &str, add
         .await
         .unwrap();
     assert_eq!(request.0, StatusCode::OK, "'verify_message' failed: {}", request.1);
+    json::from_str(&request.1).unwrap()
+}
+
+pub async fn send_raw_transaction(mm: &MarketMakerIt, coin: &str, tx: &str) -> Json {
+    let request = mm
+        .rpc(&json! ({
+            "userpass": mm.userpass,
+            "method": "send_raw_transaction",
+            "coin": coin,
+            "tx_hex": tx,
+        }))
+        .await
+        .unwrap();
+    assert_eq!(
+        request.0,
+        StatusCode::OK,
+        "'send_raw_transaction' failed: {}",
+        request.1
+    );
     json::from_str(&request.1).unwrap()
 }
