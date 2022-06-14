@@ -866,9 +866,9 @@ impl TakerSwap {
         let maker_coin_swap_contract_address = self.maker_coin.swap_contract_address();
         let taker_coin_swap_contract_address = self.taker_coin.swap_contract_address();
 
-        // Taker generates swap UUID so it's safe for him to use it for privkey derivation
-        let maker_coin_htlc_key_pair = self.maker_coin.derive_htlc_key_pair(self.uuid.as_bytes());
-        let taker_coin_htlc_key_pair = self.taker_coin.derive_htlc_key_pair(self.uuid.as_bytes());
+        let unique_data = self.unique_swap_data();
+        let maker_coin_htlc_key_pair = self.maker_coin.derive_htlc_key_pair(&unique_data);
+        let taker_coin_htlc_key_pair = self.taker_coin.derive_htlc_key_pair(&unique_data);
 
         let data = TakerSwapData {
             taker_coin: self.taker_coin.ticker().to_owned(),
@@ -1744,7 +1744,10 @@ impl AtomicSwap for TakerSwap {
     fn taker_coin(&self) -> &str { self.taker_coin.ticker() }
 
     #[inline]
-    fn unique_swap_data(&self) -> Vec<u8> { self.uuid.as_bytes().to_vec() }
+    fn unique_swap_data(&self) -> Vec<u8> {
+        // Taker generates swap UUID so it's safe for him to use it for privkey derivation
+        self.uuid.as_bytes().to_vec()
+    }
 }
 
 pub struct TakerSwapPreparedParams {

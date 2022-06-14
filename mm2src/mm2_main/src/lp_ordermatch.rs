@@ -2794,6 +2794,7 @@ fn lp_connect_start_bob(ctx: MmArc, maker_match: MakerMatch, maker_order: MakerO
             taker_coin,
             lock_time,
             maker_order.p2p_privkey.map(SerializableSecp256k1Keypair::into_inner),
+            MakerSwap::generate_secret().into(),
         );
         run_maker_swap(RunMakerSwapInput::StartNew(maker_swap), ctx).await;
     });

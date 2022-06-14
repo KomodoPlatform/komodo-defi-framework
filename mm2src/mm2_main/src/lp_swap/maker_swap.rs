@@ -26,7 +26,7 @@ use keys::KeyPair;
 use mm2_core::mm_ctx::MmArc;
 use mm2_err_handle::prelude::*;
 use parking_lot::Mutex as PaMutex;
-use primitives::hash::{H160, H264};
+use primitives::hash::{H160, H256, H264};
 use rand::Rng;
 use rpc::v1::types::{Bytes as BytesJson, H160 as H160Json, H256 as H256Json, H264 as H264Json};
 use std::any::TypeId;
@@ -194,6 +194,7 @@ pub struct MakerSwap {
     payment_locktime: u64,
     /// Temporary privkey used to sign P2P messages when applicable
     p2p_privkey: Option<KeyPair>,
+    secret: H256,
 }
 
 impl MakerSwap {
@@ -204,7 +205,7 @@ impl MakerSwap {
     fn r(&self) -> RwLockReadGuard<MakerSwapMut> { self.mutable.read().unwrap() }
 
     #[inline]
-    fn generate_secret(&self) -> [u8; 32] { rand::thread_rng().gen() }
+    pub fn generate_secret() -> [u8; 32] { rand::thread_rng().gen() }
 
     #[inline]
     fn secret_hash(&self) -> H160 {
@@ -212,7 +213,7 @@ impl MakerSwap {
             .data
             .secret_hash
             .map(H160Json::into)
-            .unwrap_or_else(|| dhash160(&self.r().data.secret.0))
+            .unwrap_or_else(|| dhash160(self.secret.as_slice()))
     }
 
     #[inline]
@@ -310,6 +311,7 @@ impl MakerSwap {
         taker_coin: MmCoinEnum,
         payment_locktime: u64,
         p2p_privkey: Option<KeyPair>,
+        secret: H256,
     ) -> Self {
         MakerSwap {
             maker_coin,
@@ -339,6 +341,7 @@ impl MakerSwap {
                 taker_payment_spend_confirmed: false,
             }),
             ctx,
+            secret,
         }
     }
 
@@ -422,7 +425,6 @@ impl MakerSwap {
             },
         };
 
-        let secret = self.generate_secret();
         let started_at = now_ms() / 1000;
         let maker_coin_start_block = match self.maker_coin.current_block().compat().await {
             Ok(b) => b,
@@ -445,17 +447,16 @@ impl MakerSwap {
         let maker_coin_swap_contract_address = self.maker_coin.swap_contract_address();
         let taker_coin_swap_contract_address = self.taker_coin.swap_contract_address();
 
-        let secret_hash = dhash160(&secret);
-
-        let maker_coin_htlc_key_pair = self.maker_coin.derive_htlc_key_pair(secret_hash.as_slice());
-        let taker_coin_htlc_key_pair = self.taker_coin.derive_htlc_key_pair(secret_hash.as_slice());
+        let unique_data = self.unique_swap_data();
+        let maker_coin_htlc_key_pair = self.maker_coin.derive_htlc_key_pair(&unique_data);
+        let taker_coin_htlc_key_pair = self.taker_coin.derive_htlc_key_pair(&unique_data);
 
         let data = MakerSwapData {
             taker_coin: self.taker_coin.ticker().to_owned(),
             maker_coin: self.maker_coin.ticker().to_owned(),
             taker: self.taker.bytes.into(),
-            secret_hash: Some(secret_hash.into()),
-            secret: secret.into(),
+            secret: self.secret.into(),
+            secret_hash: Some(self.secret_hash().into()),
             started_at,
             lock_duration: self.payment_locktime,
             maker_amount: self.maker_amount.clone(),
@@ -1070,6 +1071,7 @@ impl MakerSwap {
             taker_coin,
             data.lock_duration,
             data.p2p_privkey.map(SerializableSecp256k1Keypair::into_inner),
+            data.secret.into(),
         );
         let command = saved.events.last().unwrap().get_command();
         for saved_event in saved.events {
