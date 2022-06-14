@@ -1,4 +1,5 @@
 use crate::log::LogWeak;
+pub use metrics_core::labels;
 use serde_json::{Value as Json, Value};
 use std::collections::HashMap;
 use std::sync::{Arc, Weak};

@@ -827,10 +827,18 @@ fn build_dns_ws_transport(
 ) -> BoxedTransport<(PeerId, libp2p::core::muxing::StreamMuxerBox)> {
     use libp2p::websocket::tls as libp2p_tls;
 
-    let tcp = libp2p::tcp::TokioTcpConfig::new().nodelay(true);
-    let dns_tcp =
-        libp2p::dns::TokioDnsConfig::custom(tcp, libp2p::dns::ResolverConfig::google(), Default::default()).unwrap();
-    let mut ws_dns_tcp = libp2p::websocket::WsConfig::new(dns_tcp.clone());
+    // let dns_tcp = dns::DnsConfig::system(tcp::TcpConfig::new().nodelay(true).port_reuse(true)).await?;
+    // let ws_dns_tcp = websocket::WsConfig::new(
+    //     dns::DnsConfig::system(tcp::TcpConfig::new().nodelay(true).port_reuse(true)).await?,
+    // );
+
+    let dns_tcp = libp2p::dns::TokioDnsConfig::custom(
+        libp2p::tcp::TokioTcpConfig::new().nodelay(true),
+        libp2p::dns::ResolverConfig::google(),
+        Default::default(),
+    )
+    .unwrap();
+    let mut ws_dns_tcp = libp2p::websocket::WsConfig::new(libp2p::tcp::TokioTcpConfig::new().nodelay(true));
 
     if let Some(certs) = wss_certs {
         let server_priv_key = libp2p_tls::PrivateKey::new(certs.server_priv_key.0.clone());

@@ -36,6 +36,7 @@ log = "0.4.8"
 num-bigint = { version = "0.4", features = ["serde", "std"] }
 num-rational = { version = "0.4", features = ["serde"] }
 num-traits = "0.2"
+once_cell = "1.12.0" # to be used in replacement of gstuff::Constructible
 parking_lot = { version = "0.12.0", features = ["nightly"] }
 parking_lot_core = { version = "0.6", features = ["nightly"] }
 paste = "1.0"
@@ -74,10 +75,10 @@ hyper = { version = "0.14.11", features = ["client", "http2", "server", "tcp"] }
 hyper-rustls = { version = "0.23", default-features = false, features = ["http1", "http2", "webpki-tokio"] }
 libc = { version = "0.2" }
 log4rs = { version = "1.0", default-features = false, features = ["console_appender", "pattern_encoder"] }
-metrics = { version = "0.12" }
+metrics = { version = "0.19" }
 metrics-runtime = { version = "0.13", default-features = false, features = ["metrics-observer-prometheus"] }
 metrics-core = { version = "0.5" }
-metrics-util = { version = "0.3" }
+metrics-util = { version = "0.13" }
 tokio = { version = "1.7", features = ["io-util", "rt-multi-thread", "net"] }
 
 [target.'cfg(windows)'.dependencies]

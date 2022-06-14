@@ -351,12 +351,12 @@ impl<'a> Drop for RaiiRm<'a> {
 
 /// Using a static buffer in order to minimize the chance of heap and stack allocations in the signal handler.
 fn trace_buf() -> PaMutexGuard<'static, [u8; 256]> {
-    static TRACE_BUF: PaMutex<[u8; 256]> = PaMutex::new([0; 256]);
+    static TRACE_BUF: PaMutex<[u8; 256]> = parking_lot::const_mutex([0; 256]);
     TRACE_BUF.lock()
 }
 
 fn trace_name_buf() -> PaMutexGuard<'static, [u8; 128]> {
-    static TRACE_NAME_BUF: PaMutex<[u8; 128]> = PaMutex::new([0; 128]);
+    static TRACE_NAME_BUF: PaMutex<[u8; 128]> = parking_lot::const_mutex([0; 128]);
     TRACE_NAME_BUF.lock()
 }
 

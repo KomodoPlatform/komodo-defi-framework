@@ -41,6 +41,7 @@ doctest = false
 bench = false
 
 [dependencies]
+async-channel = "1.6"
 async-std = { version = "1.5", features = ["unstable"] }
 async-trait = "0.1"
 bitcrypto = { path = "../mm2_bitcoin/crypto" }

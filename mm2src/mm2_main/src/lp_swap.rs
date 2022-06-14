@@ -58,7 +58,7 @@
 //
 
 use crate::mm2::lp_network::{broadcast_p2p_msg, Libp2pPeerId};
-use async_std::sync as async_std_sync;
+// use async_std::sync as async_std_sync;
 use coins::{lp_coinfind, MmCoinEnum, TradeFee, TransactionEnum};
 use common::log::{debug, warn};
 use common::{bits256, calc_total_pages,
@@ -372,7 +372,7 @@ struct SwapsContext {
     /// MM2 is used as static lib on some platforms e.g. iOS so it doesn't run as separate process.
     /// So when stop was invoked the swaps could stay running on shared executors causing
     /// Very unpleasant consequences
-    shutdown_rx: async_std_sync::Receiver<()>,
+    shutdown_rx: async_channel::Receiver<()>,
     swap_msgs: Mutex<HashMap<Uuid, SwapMsgStore>>,
     #[cfg(target_arch = "wasm32")]
     swap_db: ConstructibleDb<SwapDb>,
@@ -382,13 +382,13 @@ impl SwapsContext {
     /// Obtains a reference to this crate context, creating it if necessary.
     fn from_ctx(ctx: &MmArc) -> Result<Arc<SwapsContext>, String> {
         Ok(try_s!(from_ctx(&ctx.swaps_ctx, move || {
-            let (shutdown_tx, shutdown_rx) = async_std_sync::channel(1);
+            let (shutdown_tx, shutdown_rx) = async_channel::bounded(1);
             let mut shutdown_tx = Some(shutdown_tx);
             ctx.on_stop(Box::new(move || {
                 if let Some(shutdown_tx) = shutdown_tx.take() {
                     info!("on_stop] firing shutdown_tx!");
                     spawn(async move {
-                        shutdown_tx.send(()).await;
+                        let _ = shutdown_tx.send(()).await;
                     });
                     Ok(())
                 } else {

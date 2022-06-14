@@ -23,9 +23,8 @@ macro_rules! mm_counter {
         }
     }};
     ($metrics:expr, $name:expr, $value:expr, $($label_key:expr => $label_val:expr),+) => {{
-        use metrics::labels;
         if let Some(mut sink) = $crate::mm_metrics::TrySink::try_sink(&$metrics) {
-            let labels = labels!( $($label_key => $label_val),+ );
+            let labels = $crate::mm_metrics::labels!( $($label_key => $label_val),+ );
             sink.increment_counter_with_labels($name, $value, labels);
         }
     }};
@@ -41,9 +40,8 @@ macro_rules! mm_gauge {
     }};
 
     ($metrics:expr, $name:expr, $value:expr, $($label_key:expr => $label_val:expr),+) => {{
-        use metrics::labels;
-        if let Some(mut sink) = $crate::mm_metrics::TrySink::try_sink(&$metrics) {
-            let labels = labels!( $($label_key => $label_val),+ );
+         if let Some(mut sink) = $crate::mm_metrics::TrySink::try_sink(&$metrics) {
+            let labels = $crate::mm_metrics::labels!( $($label_key => $label_val),+ );
             sink.update_gauge_with_labels($name, $value, labels);
         }
     }};
@@ -59,9 +57,8 @@ macro_rules! mm_timing {
     }};
 
     ($metrics:expr, $name:expr, $start:expr, $end:expr, $($label_key:expr => $label_val:expr),+) => {{
-        use metrics::labels;
-        if let Some(mut sink) = $crate::mm_metrics::TrySink::try_sink(&$metrics) {
-            let labels = labels!( $($label_key => $label_val),+ );
+         if let Some(mut sink) = $crate::mm_metrics::TrySink::try_sink(&$metrics) {
+            let labels = $crate::mm_metrics::labels!( $($label_key => $label_val),+ );
             sink.record_timing_with_labels($name, $start, $end, labels);
         }
     }};

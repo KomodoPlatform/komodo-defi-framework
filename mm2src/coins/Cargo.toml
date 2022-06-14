@@ -45,6 +45,7 @@ futures = { version = "0.3", package = "futures", features = ["compat", "async-a
 gstuff = { version = "0.7", features = ["nightly"] }
 hex = "0.4.2"
 http = "0.2"
+indexmap = "=1.6.2"
 itertools = { version = "0.10", features = ["use_std"] }
 jsonrpc-core = "8.0.1"
 keys = { path = "../mm2_bitcoin/keys" }
@@ -53,7 +54,7 @@ libc = "0.2"
 lightning = { git = "https://github.com/shamardy/rust-lightning", branch = "0.0.106" }
 lightning-background-processor = { path = "lightning_background_processor" }
 lightning-invoice = { git = "https://github.com/shamardy/rust-lightning", branch = "0.0.106" }
-metrics = "0.12"
+metrics = "0.19"
 mm2_core = { path = "../mm2_core" }
 mm2_err_handle = { path = "../mm2_err_handle" }
 mm2_io = { path = "../mm2_io" }
@@ -106,7 +107,7 @@ tokio = { version = "1.7" }
 tokio-rustls = { version = "0.23" }
 tonic = { version = "0.5.2", features = ["tls", "compression"] }
 webpki-roots = { version = "0.22" }
-solana-client = { version = "1", default-features = false }
+solana-client = { version = "1.9", default-features = false }
 solana-sdk = { version = "1", default-features = false }
 solana-transaction-status = "1"
 spl-token = { version = "3" }
