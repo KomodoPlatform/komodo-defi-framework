@@ -7230,6 +7230,7 @@ name = "spv_validation"
 version = "0.1.0"
 dependencies = [
  "chain",
+ "derive_more",
  "primitives",
  "ripemd160",
  "rustc-hex 2.1.0",

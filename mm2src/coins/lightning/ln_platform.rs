@@ -14,6 +14,7 @@ use bitcoin_hashes::{sha256d, Hash};
 use common::executor::{spawn, Timer};
 use common::log::{debug, error, info};
 use futures::compat::Future01CompatExt;
+use futures::future::join_all;
 use keys::hash::H256;
 use lightning::chain::{chaininterface::{BroadcasterInterface, ConfirmationTarget, FeeEstimator},
                        Confirm, Filter, WatchedOutput};
@@ -244,27 +245,78 @@ impl Platform {
         let ticker = self.coin.ticker();
         let block_headers_storage = &self.coin.as_ref().block_headers_storage;
         let registered_txs = self.registered_txs.lock().clone();
-        let mut confirmed_registered_txs = Vec::new();
-        // Todo: Use utxo rpc batch requests when this PR https://github.com/KomodoPlatform/atomicDEX-API/pull/1255 is merged.
-        // This will reduce the time needed for checking for confirmed transactions.
-        for txid in registered_txs {
-            let rpc_txid = h256_json_from_txid(txid);
-            if let Some(transaction) = ok_or_continue!(get_tx_if_onchain(self.rpc_client(), rpc_txid).await) {
-                let (proof, height) =
-                    ok_or_continue!(validate_spv_proof(ticker, block_headers_storage, client, &transaction, 5).await);
-                let header: BlockHeader = ok_or_continue!(deserialize(&proof.raw_header.0));
-                let confirmed_transaction_info = ConfirmedTransactionInfo::new(
+
+        let on_chain_txs_futs = registered_txs
+            .into_iter()
+            .map(|txid| async move {
+                let rpc_txid = h256_json_from_txid(txid);
+                get_tx_if_onchain(self.rpc_client(), rpc_txid).await
+            })
+            .collect::<Vec<_>>();
+        let on_chain_txs = join_all(on_chain_txs_futs)
+            .await
+            .into_iter()
+            .filter_map(|maybe_tx| match maybe_tx {
+                Ok(maybe_tx) => maybe_tx,
+                Err(e) => {
+                    error!(
+                        "Error while trying to figure if transaction is on-chain or not: {:?}",
+                        e
+                    );
+                    None
+                },
+            });
+
+        let txs_with_proof_futs = on_chain_txs
+            .map(|transaction| async move {
+                (
+                    transaction.clone(),
+                    validate_spv_proof(ticker, block_headers_storage, client, &transaction, 5).await,
+                )
+            })
+            .collect::<Vec<_>>();
+        let txs_with_proof = join_all(txs_with_proof_futs)
+            .await
+            .into_iter()
+            .filter_map(|(transaction, spv_proof)| match spv_proof {
+                Ok(proof) => Some((transaction, proof)),
+                Err(e) => {
+                    error!("Error verifying transaction: {:?}", e);
+                    None
+                },
+            });
+
+        txs_with_proof
+            .filter_map(|(transaction, (proof, height))| {
+                let transaction: Transaction = match transaction.try_into() {
+                    Ok(tx) => tx,
+                    Err(e) => {
+                        error!("Error deserializing transaction: {}", e);
+                        return None;
+                    },
+                };
+                let header = match deserialize::<BlockHeader>(&proof.raw_header.0) {
+                    Ok(h) => h,
+                    Err(e) => {
+                        error!(
+                            "Error deserializing blockheader for transaction {}: {}",
+                            transaction.txid(),
+                            e
+                        );
+                        return None;
+                    },
+                };
+                let txid = transaction.txid();
+                self.registered_txs.lock().remove(&txid);
+                Some(ConfirmedTransactionInfo::new(
                     txid,
                     header,
                     proof.index as usize,
-                    ok_or_continue!(transaction.try_into()),
+                    transaction,
                     height as u32,
-                );
-                confirmed_registered_txs.push(confirmed_transaction_info);
-                self.registered_txs.lock().remove(&txid);
-            }
-        }
-        confirmed_registered_txs
+                ))
+            })
+            .collect()
     }
 
     async fn append_spent_registered_output_txs(
@@ -274,10 +326,11 @@ impl Platform {
     ) {
         let ticker = self.coin.ticker();
         let block_headers_storage = &self.coin.as_ref().block_headers_storage;
-        let mut outputs_to_remove = Vec::new();
         let registered_outputs = self.registered_outputs.lock().clone();
-        for output in registered_outputs {
-            if let Some(tx_info) = ok_or_continue!(
+
+        let spent_outputs_info_fut = registered_outputs
+            .into_iter()
+            .map(|output| async move {
                 self.rpc_client()
                     .find_output_spend(
                         h256_from_txid(output.outpoint.txid),
@@ -287,31 +340,84 @@ impl Platform {
                     )
                     .compat()
                     .await
-            ) {
-                if !transactions_to_confirm
-                    .iter()
-                    .any(|info| h256_json_from_txid(info.txid) == tx_info.spending_tx.hash().into())
-                {
-                    let (proof, height) = ok_or_continue!(
-                        validate_spv_proof(ticker, block_headers_storage, client, &tx_info.spending_tx, 5).await
-                    );
-                    let transaction: Transaction = ok_or_continue!(tx_info.spending_tx.try_into());
-                    let header: BlockHeader = ok_or_continue!(deserialize(&proof.raw_header.0));
-                    let confirmed_transaction_info = ConfirmedTransactionInfo::new(
-                        transaction.txid(),
-                        header,
-                        proof.index as usize,
-                        transaction,
-                        height as u32,
-                    );
-                    transactions_to_confirm.push(confirmed_transaction_info);
-                }
-                outputs_to_remove.push(output);
-            }
-        }
-        self.registered_outputs
-            .lock()
-            .retain(|output| !outputs_to_remove.contains(output));
+            })
+            .collect::<Vec<_>>();
+        let mut spent_outputs_info = join_all(spent_outputs_info_fut)
+            .await
+            .into_iter()
+            .filter_map(|maybe_spent| match maybe_spent {
+                Ok(maybe_spent) => maybe_spent,
+                Err(e) => {
+                    error!("Error while trying to figure if output is spent or not: {:?}", e);
+                    None
+                },
+            })
+            .collect::<Vec<_>>();
+        spent_outputs_info.retain(|output| {
+            !transactions_to_confirm
+                .iter()
+                .any(|info| h256_json_from_txid(info.txid) == output.spending_tx.hash().into())
+        });
+
+        let txs_with_proof_futs = spent_outputs_info
+            .into_iter()
+            .map(|output| async move {
+                (
+                    output.spending_tx.clone(),
+                    validate_spv_proof(ticker, block_headers_storage, client, &output.spending_tx, 5).await,
+                )
+            })
+            .collect::<Vec<_>>();
+        // Todo: reconcile duplicate code
+        let txs_with_proof = join_all(txs_with_proof_futs)
+            .await
+            .into_iter()
+            .filter_map(|(transaction, spv_proof)| match spv_proof {
+                Ok(proof) => Some((transaction, proof)),
+                Err(e) => {
+                    error!("Error verifying transaction: {:?}", e);
+                    None
+                },
+            });
+
+        let mut confirmed_transaction_info = txs_with_proof
+            .filter_map(|(transaction, (proof, height))| {
+                let transaction: Transaction = match transaction.try_into() {
+                    Ok(tx) => tx,
+                    Err(e) => {
+                        error!("Error deserializing transaction: {}", e);
+                        return None;
+                    },
+                };
+                let header = match deserialize::<BlockHeader>(&proof.raw_header.0) {
+                    Ok(h) => h,
+                    Err(e) => {
+                        error!(
+                            "Error deserializing blockheader for transaction {}: {}",
+                            transaction.txid(),
+                            e
+                        );
+                        return None;
+                    },
+                };
+                self.registered_outputs.lock().retain(|output| {
+                    !transaction
+                        .clone()
+                        .input
+                        .into_iter()
+                        .any(|txin| txin.previous_output.txid == output.outpoint.txid)
+                });
+                Some(ConfirmedTransactionInfo::new(
+                    transaction.txid(),
+                    header,
+                    proof.index as usize,
+                    transaction,
+                    height as u32,
+                ))
+            })
+            .collect();
+
+        transactions_to_confirm.append(&mut confirmed_transaction_info);
     }
 
     pub async fn process_txs_confirmations(

@@ -5,6 +5,7 @@ authors = ["Roman Sztergbaum <rmscastle@gmail.com>"]
 
 [dependencies]
 chain = {path = "../chain"}
+derive_more = "0.99"
 primitives = { path = "../primitives" }
 ripemd160 = "0.9.0"
 rustc-hex = "2"

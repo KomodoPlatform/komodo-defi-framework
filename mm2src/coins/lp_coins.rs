@@ -179,19 +179,6 @@ macro_rules! ok_or_continue_after_sleep {
 }
 
 #[cfg(not(target_arch = "wasm32"))]
-macro_rules! ok_or_continue {
-    ($e:expr) => {
-        match $e {
-            Ok(res) => res,
-            Err(e) => {
-                error!("error {:?}", e);
-                continue;
-            },
-        }
-    };
-}
-
-#[cfg(not(target_arch = "wasm32"))]
 macro_rules! ok_or_retry_after_sleep {
     ($e:expr, $delay: ident) => {
         loop {

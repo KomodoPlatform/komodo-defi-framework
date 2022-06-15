@@ -1,4 +1,5 @@
 extern crate chain;
+extern crate derive_more;
 extern crate primitives;
 extern crate ripemd160;
 extern crate rustc_hex as hex;
