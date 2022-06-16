@@ -571,7 +571,13 @@ pub trait UtxoCoinBuilderCommonOps {
     }
 
     #[inline]
-    fn check_utxo_maturity(&self) -> bool { self.activation_params().check_utxo_maturity.unwrap_or_default() }
+    fn check_utxo_maturity(&self) -> bool {
+        // First, check if the flag is set in the activation params.
+        if let Some(check_utxo_maturity) = self.activation_params().check_utxo_maturity {
+            return check_utxo_maturity;
+        }
+        self.conf()["check_utxo_maturity"].as_bool().unwrap_or_default()
+    }
 
     #[inline]
     fn is_hw_coin(&self, conf: &UtxoCoinConf) -> bool { conf.trezor_coin.is_some() }
