@@ -1,7 +1,7 @@
 use super::{CoinBalance, HistorySyncState, MarketCoinOps, MmCoin, RawTransactionFut, RawTransactionRequest, SwapOps,
             TradeFee, TransactionEnum, TransactionFut};
-use crate::{BalanceFut, FeeApproxStage, FoundSwapTxSpend, NegotiateSwapContractAddrErr, SignatureResult,
-            TradePreimageFut, TradePreimageResult, TradePreimageValue, UnexpectedDerivationMethod,
+use crate::{BalanceFut, FeeApproxStage, FoundSwapTxSpend, NegotiateSwapContractAddrErr, SearchForSwapTxSpendInput,
+            SignatureResult, TradePreimageFut, TradePreimageResult, TradePreimageValue, UnexpectedDerivationMethod,
             ValidateAddressResult, ValidatePaymentInput, VerificationResult, WithdrawFut, WithdrawRequest};
 use async_trait::async_trait;
 use bigdecimal::BigDecimal;
@@ -98,11 +98,11 @@ impl SwapOps for TestCoin {
     fn send_maker_payment(
         &self,
         time_lock: u32,
-        maker_pub: &[u8],
         taker_pub: &[u8],
         secret_hash: &[u8],
         amount: BigDecimal,
         swap_contract_address: &Option<BytesJson>,
+        _swap_unique_data: &[u8],
     ) -> TransactionFut {
         unimplemented!()
     }
@@ -110,11 +110,11 @@ impl SwapOps for TestCoin {
     fn send_taker_payment(
         &self,
         time_lock: u32,
-        taker_pub: &[u8],
         maker_pub: &[u8],
         secret_hash: &[u8],
         amount: BigDecimal,
         swap_contract_address: &Option<BytesJson>,
+        _swap_unique_data: &[u8],
     ) -> TransactionFut {
         unimplemented!()
     }
@@ -125,8 +125,8 @@ impl SwapOps for TestCoin {
         time_lock: u32,
         taker_pub: &[u8],
         secret: &[u8],
-        htlc_privkey: &[u8],
         swap_contract_address: &Option<BytesJson>,
+        _swap_unique_data: &[u8],
     ) -> TransactionFut {
         unimplemented!()
     }
@@ -137,8 +137,8 @@ impl SwapOps for TestCoin {
         time_lock: u32,
         maker_pub: &[u8],
         secret: &[u8],
-        htlc_privkey: &[u8],
         swap_contract_address: &Option<BytesJson>,
+        _swap_unique_data: &[u8],
     ) -> TransactionFut {
         unimplemented!()
     }
@@ -149,8 +149,8 @@ impl SwapOps for TestCoin {
         time_lock: u32,
         maker_pub: &[u8],
         secret_hash: &[u8],
-        htlc_privkey: &[u8],
         swap_contract_address: &Option<BytesJson>,
+        _swap_unique_data: &[u8],
     ) -> TransactionFut {
         unimplemented!()
     }
@@ -161,8 +161,8 @@ impl SwapOps for TestCoin {
         time_lock: u32,
         taker_pub: &[u8],
         secret_hash: &[u8],
-        htlc_privkey: &[u8],
         swap_contract_address: &Option<BytesJson>,
+        _swap_unique_data: &[u8],
     ) -> TransactionFut {
         unimplemented!()
     }
@@ -196,35 +196,25 @@ impl SwapOps for TestCoin {
     fn check_if_my_payment_sent(
         &self,
         time_lock: u32,
-        my_pub: &[u8],
         other_pub: &[u8],
         secret_hash: &[u8],
         search_from_block: u64,
         swap_contract_address: &Option<BytesJson>,
+        swap_unique_data: &[u8],
     ) -> Box<dyn Future<Item = Option<TransactionEnum>, Error = String> + Send> {
         unimplemented!()
     }
 
     async fn search_for_swap_tx_spend_my(
         &self,
-        time_lock: u32,
-        other_pub: &[u8],
-        secret_hash: &[u8],
-        tx: &[u8],
-        search_from_block: u64,
-        swap_contract_address: &Option<BytesJson>,
+        _: SearchForSwapTxSpendInput<'_>,
     ) -> Result<Option<FoundSwapTxSpend>, String> {
         unimplemented!()
     }
 
     async fn search_for_swap_tx_spend_other(
         &self,
-        time_lock: u32,
-        other_pub: &[u8],
-        secret_hash: &[u8],
-        tx: &[u8],
-        search_from_block: u64,
-        swap_contract_address: &Option<BytesJson>,
+        _: SearchForSwapTxSpendInput<'_>,
     ) -> Result<Option<FoundSwapTxSpend>, String> {
         unimplemented!()
     }
@@ -238,7 +228,7 @@ impl SwapOps for TestCoin {
         unimplemented!()
     }
 
-    fn get_htlc_key_pair(&self) -> Option<KeyPair> { unimplemented!() }
+    fn derive_htlc_key_pair(&self, _swap_unique_data: &[u8]) -> KeyPair { unimplemented!() }
 }
 
 #[async_trait]

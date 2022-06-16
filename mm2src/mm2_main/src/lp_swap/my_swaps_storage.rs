@@ -119,6 +119,7 @@ mod wasm_impl {
                 // We don't expect that the `String` and `u32` types serialization to fail.
                 | DbTransactionError::ErrorSerializingIndex { .. }
                 | DbTransactionError::ErrorGettingItems(_)
+                | DbTransactionError::ErrorCountingItems(_)
                 // We don't delete items from the `my_swaps` table
                 | DbTransactionError::ErrorDeletingItems(_)
                 | DbTransactionError::MultipleItemsByUniqueIndex { .. }
@@ -140,15 +141,15 @@ mod wasm_impl {
                 // We don't expect that the `String` and `u32` types serialization to fail.
                 CursorError::ErrorSerializingIndexFieldValue {..}
                 // We don't expect that the `String` and `u32` types deserialization to fail.
-                | CursorError::ErrorDeserializingIndexValue{..}
+                | CursorError::ErrorDeserializingIndexValue {..}
                 | CursorError::ErrorOpeningCursor {..}
                 | CursorError::AdvanceError {..}
                 | CursorError::InvalidKeyRange {..}
-                | CursorError::TypeMismatch{..}
+                | CursorError::TypeMismatch {..}
                 | CursorError::IncorrectNumberOfKeysPerIndex {..}
                 | CursorError::UnexpectedState(..)
-                | CursorError::IncorrectUsage{..} => MySwapsError::InternalError(stringified_error),
-                CursorError::ErrorDeserializingItem{..} => MySwapsError::ErrorDeserializingItem(stringified_error),
+                | CursorError::IncorrectUsage {..} => MySwapsError::InternalError(stringified_error),
+                CursorError::ErrorDeserializingItem {..} => MySwapsError::ErrorDeserializingItem(stringified_error),
             }
         }
     }

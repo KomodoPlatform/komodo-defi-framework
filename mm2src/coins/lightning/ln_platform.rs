@@ -4,6 +4,7 @@ use crate::lightning::ln_errors::{FindWatchedOutputSpendError, GetHeaderError, G
 use crate::utxo::rpc_clients::{electrum_script_hash, BestBlock as RpcBestBlock, BlockHashOrHeight,
                                ElectrumBlockHeader, ElectrumClient, ElectrumNonce, EstimateFeeMethod,
                                UtxoRpcClientEnum, UtxoRpcError};
+use crate::utxo::utxo_common;
 use crate::utxo::utxo_standard::UtxoStandardCoin;
 use crate::{MarketCoinOps, MmCoin};
 use bitcoin::blockdata::block::BlockHeader;
@@ -264,7 +265,7 @@ impl Platform {
                 if let UtxoRpcError::ResponseParseError(ref json_err) = err {
                     if let JsonRpcErrorType::Response(_, json) = &json_err.error {
                         if let Some(message) = json["message"].as_str() {
-                            if message.contains("'code': -5") {
+                            if message.contains(utxo_common::NO_TX_ERROR_CODE) {
                                 return Ok(None);
                             }
                         }

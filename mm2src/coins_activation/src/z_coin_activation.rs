@@ -5,20 +5,18 @@ use crate::standalone_coin::{InitStandaloneCoinActivationOps, InitStandaloneCoin
                              InitStandaloneCoinTaskManagerShared};
 use async_trait::async_trait;
 use coins::coin_balance::{EnableCoinBalance, IguanaWalletBalance};
-use coins::utxo::rpc_clients::ElectrumRpcRequest;
-use coins::utxo::{UtxoActivationParams, UtxoRpcMode};
-use coins::z_coin::{z_coin_from_conf_and_params, ZCoin, ZCoinBuildError};
-use coins::{BalanceError, CoinProtocol, MarketCoinOps, PrivKeyActivationPolicy, RegisterCoinError};
-use common::executor::Timer;
+use coins::z_coin::{z_coin_from_conf_and_params, BlockchainScanStopped, SyncStatus, ZCoin, ZCoinBuildError,
+                    ZcoinActivationParams, ZcoinConsensusParams};
+use coins::{BalanceError, CoinProtocol, MarketCoinOps, RegisterCoinError};
 use crypto::hw_rpc_task::{HwRpcTaskAwaitingStatus, HwRpcTaskUserAction};
-use crypto::{CryptoCtx, CryptoInitError};
+use crypto::CryptoInitError;
 use derive_more::Display;
 use futures::compat::Future01CompatExt;
 use mm2_core::mm_ctx::MmArc;
 use mm2_err_handle::prelude::*;
 use rpc_task::RpcTaskError;
 use ser_error_derive::SerializeErrorType;
-use serde_derive::{Deserialize, Serialize};
+use serde_derive::Serialize;
 use serde_json::Value as Json;
 use std::time::Duration;
 
@@ -29,6 +27,7 @@ pub type ZcoinUserAction = HwRpcTaskUserAction;
 
 #[derive(Clone, Serialize)]
 pub struct ZcoinActivationResult {
+    pub ticker: String,
     pub current_block: u64,
     pub wallet_balance: EnableCoinBalance,
 }
@@ -41,7 +40,11 @@ impl CurrentBlock for ZcoinActivationResult {
 #[non_exhaustive]
 pub enum ZcoinInProgressStatus {
     ActivatingCoin,
-    Scanning,
+    UpdatingBlocksCache {
+        current_scanned_block: u64,
+        latest_block: u64,
+    },
+    BuildingWalletDb,
     RequestingWalletBalance,
     Finishing,
     /// This status doesn't require the user to send `UserAction`,
@@ -54,29 +57,9 @@ impl InitStandaloneCoinInitialStatus for ZcoinInProgressStatus {
     fn initial_status() -> Self { ZcoinInProgressStatus::ActivatingCoin }
 }
 
-#[derive(Clone, Debug, Deserialize, Serialize)]
-#[serde(tag = "rpc", content = "rpc_data")]
-pub enum ZcoinRpcMode {
-    Native,
-    Light {
-        electrum_servers: Vec<ElectrumRpcRequest>,
-        light_wallet_d_servers: Vec<String>,
-    },
-}
-
-#[derive(Deserialize)]
-pub struct ZcoinActivationParams {
-    pub mode: ZcoinRpcMode,
-    pub required_confirmations: Option<u64>,
-    pub requires_notarization: Option<bool>,
-}
-
-impl TxHistory for ZcoinActivationParams {
-    fn tx_history(&self) -> bool { false }
-}
-
 #[derive(Clone, Display, Serialize, SerializeErrorType)]
 #[serde(tag = "error_type", content = "error_data")]
+#[non_exhaustive]
 pub enum ZcoinInitError {
     #[display(fmt = "Error on coin {} creation: {}", ticker, error)]
     CoinCreationError {
@@ -133,19 +116,38 @@ impl From<CryptoInitError> for ZcoinInitError {
     fn from(err: CryptoInitError) -> Self { ZcoinInitError::Internal(err.to_string()) }
 }
 
-impl From<ZcoinInitError> for InitStandaloneCoinError {
-    fn from(err: ZcoinInitError) -> Self { InitStandaloneCoinError::Internal(err.to_string()) }
+impl From<BlockchainScanStopped> for ZcoinInitError {
+    fn from(e: BlockchainScanStopped) -> Self { ZcoinInitError::Internal(e.to_string()) }
 }
 
-pub struct ZcoinProtocolInfo;
+impl From<ZcoinInitError> for InitStandaloneCoinError {
+    fn from(err: ZcoinInitError) -> Self {
+        match err {
+            ZcoinInitError::CoinCreationError { ticker, error } => {
+                InitStandaloneCoinError::CoinCreationError { ticker, error }
+            },
+            ZcoinInitError::CoinIsAlreadyActivated { ticker } => {
+                InitStandaloneCoinError::CoinIsAlreadyActivated { ticker }
+            },
+            ZcoinInitError::HardwareWalletsAreNotSupportedYet => {
+                InitStandaloneCoinError::Internal("Hardware wallets are not supported yet".into())
+            },
+            ZcoinInitError::TaskTimedOut { duration } => InitStandaloneCoinError::TaskTimedOut { duration },
+            ZcoinInitError::CouldNotGetBalance(e) | ZcoinInitError::CouldNotGetBlockCount(e) => {
+                InitStandaloneCoinError::Transport(e)
+            },
+            ZcoinInitError::Internal(e) => InitStandaloneCoinError::Internal(e),
+        }
+    }
+}
 
-impl TryFromCoinProtocol for ZcoinProtocolInfo {
+impl TryFromCoinProtocol for ZcoinConsensusParams {
     fn try_from_coin_protocol(proto: CoinProtocol) -> Result<Self, MmError<CoinProtocol>>
     where
         Self: Sized,
     {
         match proto {
-            CoinProtocol::ZHTLC => Ok(ZcoinProtocolInfo),
+            CoinProtocol::ZHTLC { consensus_params } => Ok(consensus_params),
             protocol => MmError::err(protocol),
         }
     }
@@ -154,7 +156,7 @@ impl TryFromCoinProtocol for ZcoinProtocolInfo {
 #[async_trait]
 impl InitStandaloneCoinActivationOps for ZCoin {
     type ActivationRequest = ZcoinActivationParams;
-    type StandaloneProtocol = ZcoinProtocolInfo;
+    type StandaloneProtocol = ZcoinConsensusParams;
     type ActivationResult = ZcoinActivationResult;
     type ActivationError = ZcoinInitError;
     type InProgressStatus = ZcoinInProgressStatus;
@@ -170,37 +172,36 @@ impl InitStandaloneCoinActivationOps for ZCoin {
         ticker: String,
         coin_conf: Json,
         activation_request: &ZcoinActivationParams,
-        _protocol_info: ZcoinProtocolInfo,
+        protocol_info: ZcoinConsensusParams,
         task_handle: &ZcoinRpcTaskHandle,
     ) -> MmResult<Self, ZcoinInitError> {
-        let utxo_mode = match &activation_request.mode {
-            ZcoinRpcMode::Native => UtxoRpcMode::Native,
-            ZcoinRpcMode::Light { electrum_servers, .. } => UtxoRpcMode::Electrum {
-                servers: electrum_servers.clone(),
-            },
-        };
-        let utxo_params = UtxoActivationParams {
-            mode: utxo_mode,
-            utxo_merge_params: None,
-            tx_history: false,
-            required_confirmations: activation_request.required_confirmations,
-            requires_notarization: activation_request.requires_notarization,
-            address_format: None,
-            gap_limit: None,
-            scan_policy: Default::default(),
-            priv_key_policy: PrivKeyActivationPolicy::IguanaPrivKey,
-            check_utxo_maturity: None,
-        };
-        let crypto_ctx = CryptoCtx::from_ctx(&ctx)?;
-        let priv_key = crypto_ctx.iguana_ctx().secp256k1_privkey().secret;
-        let coin = z_coin_from_conf_and_params(&ctx, &ticker, &coin_conf, &utxo_params, priv_key.as_slice())
-            .await
-            .mm_err(|e| ZcoinInitError::from_build_err(e, ticker))?;
+        let secp_privkey = ctx.secp256k1_key_pair().private().secret;
+        let coin = z_coin_from_conf_and_params(
+            &ctx,
+            &ticker,
+            &coin_conf,
+            activation_request,
+            protocol_info,
+            secp_privkey.as_slice(),
+        )
+        .await
+        .mm_err(|e| ZcoinInitError::from_build_err(e, ticker))?;
 
-        task_handle.update_in_progress_status(ZcoinInProgressStatus::Scanning)?;
-        while !coin.is_sapling_state_synced() {
-            Timer::sleep(1.).await;
+        loop {
+            let in_progress_status = match coin.sync_status().await? {
+                SyncStatus::UpdatingBlocksCache {
+                    current_scanned_block,
+                    latest_block,
+                } => ZcoinInProgressStatus::UpdatingBlocksCache {
+                    current_scanned_block,
+                    latest_block,
+                },
+                SyncStatus::BuildingWalletDb => ZcoinInProgressStatus::BuildingWalletDb,
+                SyncStatus::Finished { .. } => break,
+            };
+            task_handle.update_in_progress_status(in_progress_status)?;
         }
+
         Ok(coin)
     }
 
@@ -219,6 +220,7 @@ impl InitStandaloneCoinActivationOps for ZCoin {
 
         let balance = self.my_balance().compat().await?;
         Ok(ZcoinActivationResult {
+            ticker: self.ticker().into(),
             current_block,
             wallet_balance: EnableCoinBalance::Iguana(IguanaWalletBalance {
                 address: self.my_z_address_encoded(),

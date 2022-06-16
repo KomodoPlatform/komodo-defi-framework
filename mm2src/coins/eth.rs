@@ -67,8 +67,9 @@ pub use ethcore_transaction::SignedTransaction as SignedEthTx;
 pub use rlp;
 
 mod web3_transport;
-use crate::{AsyncMutex, TransactionErr, TransactionFut, ValidatePaymentInput};
+use crate::{AsyncMutex, SearchForSwapTxSpendInput, TransactionErr, TransactionFut, ValidatePaymentInput};
 use common::mm_number::MmNumber;
+use crypto::privkey::key_pair_from_secret;
 use ethkey::{sign, verify_address};
 use serialization::{CompactInteger, Serializable, Stream};
 use web3_transport::{EthFeeHistoryNamespace, Web3Transport};
@@ -515,7 +516,7 @@ impl EthCoinImpl {
         swap_contract_address: Address,
         from_block: u64,
         to_block: u64,
-    ) -> Box<dyn Future<Item = Vec<Log>, Error = String>> {
+    ) -> Box<dyn Future<Item = Vec<Log>, Error = String> + Send> {
         let contract_event = try_fus!(SWAP_CONTRACT.event("SenderRefunded"));
         let filter = FilterBuilder::default()
             .topics(Some(vec![contract_event.signature()]), None, None, None)
@@ -692,11 +693,11 @@ impl SwapOps for EthCoin {
     fn send_maker_payment(
         &self,
         time_lock: u32,
-        _maker_pub: &[u8],
         taker_pub: &[u8],
         secret_hash: &[u8],
         amount: BigDecimal,
         swap_contract_address: &Option<BytesJson>,
+        _swap_unique_data: &[u8],
     ) -> TransactionFut {
         let taker_addr = try_tx_fus!(addr_from_raw_pubkey(taker_pub));
         let swap_contract_address = try_tx_fus!(swap_contract_address.try_to_address());
@@ -717,11 +718,11 @@ impl SwapOps for EthCoin {
     fn send_taker_payment(
         &self,
         time_lock: u32,
-        _taker_pub: &[u8],
         maker_pub: &[u8],
         secret_hash: &[u8],
         amount: BigDecimal,
         swap_contract_address: &Option<BytesJson>,
+        _swap_unique_data: &[u8],
     ) -> TransactionFut {
         let maker_addr = try_tx_fus!(addr_from_raw_pubkey(maker_pub));
         let swap_contract_address = try_tx_fus!(swap_contract_address.try_to_address());
@@ -745,8 +746,8 @@ impl SwapOps for EthCoin {
         _time_lock: u32,
         _taker_pub: &[u8],
         secret: &[u8],
-        _htlc_privkey: &[u8],
         swap_contract_address: &Option<BytesJson>,
+        _swap_unique_data: &[u8],
     ) -> TransactionFut {
         let tx: UnverifiedTransaction = try_tx_fus!(rlp::decode(taker_payment_tx));
         let signed = try_tx_fus!(SignedEthTx::new(tx));
@@ -764,8 +765,8 @@ impl SwapOps for EthCoin {
         _time_lock: u32,
         _maker_pub: &[u8],
         secret: &[u8],
-        _htlc_privkey: &[u8],
         swap_contract_address: &Option<BytesJson>,
+        _swap_unique_data: &[u8],
     ) -> TransactionFut {
         let tx: UnverifiedTransaction = try_tx_fus!(rlp::decode(maker_payment_tx));
         let signed = try_tx_fus!(SignedEthTx::new(tx));
@@ -782,8 +783,8 @@ impl SwapOps for EthCoin {
         _time_lock: u32,
         _maker_pub: &[u8],
         _secret_hash: &[u8],
-        _htlc_privkey: &[u8],
         swap_contract_address: &Option<BytesJson>,
+        _swap_unique_data: &[u8],
     ) -> TransactionFut {
         let tx: UnverifiedTransaction = try_tx_fus!(rlp::decode(taker_payment_tx));
         let signed = try_tx_fus!(SignedEthTx::new(tx));
@@ -801,8 +802,8 @@ impl SwapOps for EthCoin {
         _time_lock: u32,
         _taker_pub: &[u8],
         _secret_hash: &[u8],
-        _htlc_privkey: &[u8],
         swap_contract_address: &Option<BytesJson>,
+        _swap_unique_data: &[u8],
     ) -> TransactionFut {
         let tx: UnverifiedTransaction = try_tx_fus!(rlp::decode(maker_payment_tx));
         let signed = try_tx_fus!(SignedEthTx::new(tx));
@@ -926,7 +927,7 @@ impl SwapOps for EthCoin {
         self.validate_payment(
             &input.payment_tx,
             input.time_lock,
-            &input.maker_pub,
+            &input.other_pub,
             &input.secret_hash,
             input.amount,
             swap_contract_address,
@@ -938,7 +939,7 @@ impl SwapOps for EthCoin {
         self.validate_payment(
             &input.payment_tx,
             input.time_lock,
-            &input.taker_pub,
+            &input.other_pub,
             &input.secret_hash,
             input.amount,
             swap_contract_address,
@@ -948,11 +949,11 @@ impl SwapOps for EthCoin {
     fn check_if_my_payment_sent(
         &self,
         time_lock: u32,
-        _my_pub: &[u8],
         _other_pub: &[u8],
         secret_hash: &[u8],
         from_block: u64,
         swap_contract_address: &Option<BytesJson>,
+        _swap_unique_data: &[u8],
     ) -> Box<dyn Future<Item = Option<TransactionEnum>, Error = String> + Send> {
         let id = self.etomic_swap_id(time_lock, secret_hash);
         let swap_contract_address = try_fus!(swap_contract_address.try_to_address());
@@ -1017,28 +1018,20 @@ impl SwapOps for EthCoin {
 
     async fn search_for_swap_tx_spend_my(
         &self,
-        _time_lock: u32,
-        _other_pub: &[u8],
-        _secret_hash: &[u8],
-        tx: &[u8],
-        search_from_block: u64,
-        swap_contract_address: &Option<BytesJson>,
+        input: SearchForSwapTxSpendInput<'_>,
     ) -> Result<Option<FoundSwapTxSpend>, String> {
-        let swap_contract_address = try_s!(swap_contract_address.try_to_address());
-        self.search_for_swap_tx_spend(tx, swap_contract_address, search_from_block)
+        let swap_contract_address = try_s!(input.swap_contract_address.try_to_address());
+        self.search_for_swap_tx_spend(input.tx, swap_contract_address, input.search_from_block)
+            .await
     }
 
     async fn search_for_swap_tx_spend_other(
         &self,
-        _time_lock: u32,
-        _other_pub: &[u8],
-        _secret_hash: &[u8],
-        tx: &[u8],
-        search_from_block: u64,
-        swap_contract_address: &Option<BytesJson>,
+        input: SearchForSwapTxSpendInput<'_>,
     ) -> Result<Option<FoundSwapTxSpend>, String> {
-        let swap_contract_address = try_s!(swap_contract_address.try_to_address());
-        self.search_for_swap_tx_spend(tx, swap_contract_address, search_from_block)
+        let swap_contract_address = try_s!(input.swap_contract_address.try_to_address());
+        self.search_for_swap_tx_spend(input.tx, swap_contract_address, input.search_from_block)
+            .await
     }
 
     fn extract_secret(&self, _secret_hash: &[u8], spend_tx: &[u8]) -> Result<Vec<u8>, String> {
@@ -1083,7 +1076,9 @@ impl SwapOps for EthCoin {
         }
     }
 
-    fn get_htlc_key_pair(&self) -> Option<keys::KeyPair> { None }
+    fn derive_htlc_key_pair(&self, _swap_unique_data: &[u8]) -> keys::KeyPair {
+        key_pair_from_secret(self.key_pair.secret()).expect("valid key")
+    }
 }
 
 #[cfg_attr(test, mockable)]
@@ -2785,7 +2780,7 @@ impl EthCoin {
         )
     }
 
-    fn search_for_swap_tx_spend(
+    async fn search_for_swap_tx_spend(
         &self,
         tx: &[u8],
         swap_contract_address: Address,
@@ -2806,7 +2801,7 @@ impl EthCoin {
             _ => panic!(),
         };
 
-        let mut current_block = try_s!(self.current_block().wait());
+        let mut current_block = try_s!(self.current_block().compat().await);
         if current_block < search_from_block {
             current_block = search_from_block;
         }
@@ -2816,19 +2811,26 @@ impl EthCoin {
         loop {
             let to_block = current_block.min(from_block + self.logs_block_range);
 
-            let spend_events = try_s!(self.spend_events(swap_contract_address, from_block, to_block).wait());
+            let spend_events = try_s!(
+                self.spend_events(swap_contract_address, from_block, to_block)
+                    .compat()
+                    .await
+            );
             let found = spend_events.iter().find(|event| &event.data.0[..32] == id.as_slice());
 
             if let Some(event) = found {
                 match event.transaction_hash {
                     Some(tx_hash) => {
-                        let transaction = match try_s!(self.web3.eth().transaction(TransactionId::Hash(tx_hash)).wait())
-                        {
-                            Some(t) => t,
-                            None => {
-                                return ERR!("Found ReceiverSpent event, but transaction {:02x} is missing", tx_hash)
-                            },
-                        };
+                        let transaction =
+                            match try_s!(self.web3.eth().transaction(TransactionId::Hash(tx_hash)).compat().await) {
+                                Some(t) => t,
+                                None => {
+                                    return ERR!(
+                                        "Found ReceiverSpent event, but transaction {:02x} is missing",
+                                        tx_hash
+                                    )
+                                },
+                            };
 
                         return Ok(Some(FoundSwapTxSpend::Spent(TransactionEnum::from(try_s!(
                             signed_tx_from_web3_tx(transaction)
@@ -2838,19 +2840,26 @@ impl EthCoin {
                 }
             }
 
-            let refund_events = try_s!(self.refund_events(swap_contract_address, from_block, to_block).wait());
+            let refund_events = try_s!(
+                self.refund_events(swap_contract_address, from_block, to_block)
+                    .compat()
+                    .await
+            );
             let found = refund_events.iter().find(|event| &event.data.0[..32] == id.as_slice());
 
             if let Some(event) = found {
                 match event.transaction_hash {
                     Some(tx_hash) => {
-                        let transaction = match try_s!(self.web3.eth().transaction(TransactionId::Hash(tx_hash)).wait())
-                        {
-                            Some(t) => t,
-                            None => {
-                                return ERR!("Found SenderRefunded event, but transaction {:02x} is missing", tx_hash)
-                            },
-                        };
+                        let transaction =
+                            match try_s!(self.web3.eth().transaction(TransactionId::Hash(tx_hash)).compat().await) {
+                                Some(t) => t,
+                                None => {
+                                    return ERR!(
+                                        "Found SenderRefunded event, but transaction {:02x} is missing",
+                                        tx_hash
+                                    )
+                                },
+                            };
 
                         return Ok(Some(FoundSwapTxSpend::Refunded(TransactionEnum::from(try_s!(
                             signed_tx_from_web3_tx(transaction)

@@ -42,6 +42,16 @@ macro_rules! ifrom {
     };
 }
 
+/// This macro is used to implement `From<$t>` for `$name`, where `$name($inner)`.
+#[macro_export]
+macro_rules! ifrom_inner {
+    ($name:ident, $inner:ident, $($t:ty)*) => ($(
+        impl From<$t> for $name {
+            fn from(num: $t) -> $name { $name($inner::from(num)) }
+        }
+    )*);
+}
+
 #[macro_export]
 macro_rules! cfg_wasm32 {
     ($($tokens:tt)*) => {
@@ -109,7 +119,7 @@ pub mod executor;
 
 use backtrace::SymbolName;
 pub use futures::compat::Future01CompatExt;
-use futures::future::FutureExt;
+use futures::future::{abortable, AbortHandle, FutureExt};
 use futures::task::Waker;
 use futures01::{future, task::Task, Future};
 use gstuff::binprint;
@@ -138,6 +148,7 @@ use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::{Arc, Mutex};
 use uuid::Uuid;
 
+use crate::executor::spawn;
 pub use http::StatusCode;
 pub use serde;
 
@@ -1234,4 +1245,18 @@ impl<Id> PagingOptionsEnum<Id> {
 
 impl<Id> Default for PagingOptionsEnum<Id> {
     fn default() -> Self { PagingOptionsEnum::PageNumber(NonZeroUsize::new(1).expect("1 > 0")) }
+}
+
+/// The AbortHandle that aborts on drop
+pub struct AbortOnDropHandle(AbortHandle);
+
+impl Drop for AbortOnDropHandle {
+    #[inline(always)]
+    fn drop(&mut self) { self.0.abort(); }
+}
+
+pub fn spawn_abortable(fut: impl Future03<Output = ()> + Send + 'static) -> AbortOnDropHandle {
+    let (abortable, handle) = abortable(fut);
+    spawn(abortable.then(|_| async {}));
+    AbortOnDropHandle(handle)
 }

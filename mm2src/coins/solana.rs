@@ -2,10 +2,10 @@ use super::{CoinBalance, HistorySyncState, MarketCoinOps, MmCoin, SwapOps, Trade
 use crate::solana::solana_common::{lamports_to_sol, PrepareTransferData, SufficientBalanceError};
 use crate::solana::spl::SplTokenInfo;
 use crate::{BalanceError, BalanceFut, FeeApproxStage, FoundSwapTxSpend, NegotiateSwapContractAddrErr,
-            RawTransactionFut, RawTransactionRequest, SignatureResult, TradePreimageFut, TradePreimageResult,
-            TradePreimageValue, TransactionDetails, TransactionFut, TransactionType, UnexpectedDerivationMethod,
-            ValidateAddressResult, ValidatePaymentInput, VerificationResult, WithdrawError, WithdrawFut,
-            WithdrawRequest, WithdrawResult};
+            RawTransactionFut, RawTransactionRequest, SearchForSwapTxSpendInput, SignatureResult, TradePreimageFut,
+            TradePreimageResult, TradePreimageValue, TransactionDetails, TransactionFut, TransactionType,
+            UnexpectedDerivationMethod, ValidateAddressResult, ValidatePaymentInput, VerificationResult,
+            WithdrawError, WithdrawFut, WithdrawRequest, WithdrawResult};
 use async_trait::async_trait;
 use base58::ToBase58;
 use bigdecimal::BigDecimal;
@@ -456,11 +456,11 @@ impl SwapOps for SolanaCoin {
     fn send_maker_payment(
         &self,
         time_lock: u32,
-        maker_pub: &[u8],
         taker_pub: &[u8],
         secret_hash: &[u8],
         amount: BigDecimal,
         swap_contract_address: &Option<BytesJson>,
+        _swap_unique_data: &[u8],
     ) -> TransactionFut {
         unimplemented!()
     }
@@ -469,10 +469,10 @@ impl SwapOps for SolanaCoin {
         &self,
         time_lock: u32,
         taker_pub: &[u8],
-        maker_pub: &[u8],
         secret_hash: &[u8],
         amount: BigDecimal,
         swap_contract_address: &Option<BytesJson>,
+        _swap_unique_data: &[u8],
     ) -> TransactionFut {
         unimplemented!()
     }
@@ -483,8 +483,8 @@ impl SwapOps for SolanaCoin {
         time_lock: u32,
         taker_pub: &[u8],
         secret: &[u8],
-        htlc_privkey: &[u8],
         swap_contract_address: &Option<BytesJson>,
+        _swap_unique_data: &[u8],
     ) -> TransactionFut {
         unimplemented!()
     }
@@ -495,8 +495,8 @@ impl SwapOps for SolanaCoin {
         time_lock: u32,
         maker_pub: &[u8],
         secret: &[u8],
-        htlc_privkey: &[u8],
         swap_contract_address: &Option<BytesJson>,
+        _swap_unique_data: &[u8],
     ) -> TransactionFut {
         unimplemented!()
     }
@@ -507,8 +507,8 @@ impl SwapOps for SolanaCoin {
         time_lock: u32,
         maker_pub: &[u8],
         secret_hash: &[u8],
-        htlc_privkey: &[u8],
         swap_contract_address: &Option<BytesJson>,
+        _swap_unique_data: &[u8],
     ) -> TransactionFut {
         unimplemented!()
     }
@@ -519,8 +519,8 @@ impl SwapOps for SolanaCoin {
         time_lock: u32,
         taker_pub: &[u8],
         secret_hash: &[u8],
-        htlc_privkey: &[u8],
         swap_contract_address: &Option<BytesJson>,
+        _swap_unique_data: &[u8],
     ) -> TransactionFut {
         unimplemented!()
     }
@@ -550,33 +550,23 @@ impl SwapOps for SolanaCoin {
         time_lock: u32,
         my_pub: &[u8],
         other_pub: &[u8],
-        secret_hash: &[u8],
         search_from_block: u64,
         swap_contract_address: &Option<BytesJson>,
+        swap_unique_data: &[u8],
     ) -> Box<dyn Future<Item = Option<TransactionEnum>, Error = String> + Send> {
         unimplemented!()
     }
 
     async fn search_for_swap_tx_spend_my(
         &self,
-        _time_lock: u32,
-        _other_pub: &[u8],
-        _secret_hash: &[u8],
-        _tx: &[u8],
-        _search_from_block: u64,
-        _swap_contract_address: &Option<BytesJson>,
+        _: SearchForSwapTxSpendInput<'_>,
     ) -> Result<Option<FoundSwapTxSpend>, String> {
         unimplemented!()
     }
 
     async fn search_for_swap_tx_spend_other(
         &self,
-        _time_lock: u32,
-        _other_pub: &[u8],
-        _secret_hash: &[u8],
-        _tx: &[u8],
-        _search_from_block: u64,
-        _swap_contract_address: &Option<BytesJson>,
+        _: SearchForSwapTxSpendInput<'_>,
     ) -> Result<Option<FoundSwapTxSpend>, String> {
         unimplemented!()
     }
@@ -590,7 +580,7 @@ impl SwapOps for SolanaCoin {
         unimplemented!()
     }
 
-    fn get_htlc_key_pair(&self) -> Option<KeyPair> { todo!() }
+    fn derive_htlc_key_pair(&self, _swap_unique_data: &[u8]) -> KeyPair { todo!() }
 }
 
 #[allow(clippy::forget_ref, clippy::forget_copy, clippy::cast_ref_to_mut)]

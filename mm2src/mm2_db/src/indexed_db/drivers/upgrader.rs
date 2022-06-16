@@ -62,6 +62,8 @@ pub struct TableUpgrader {
 }
 
 impl TableUpgrader {
+    /// Creates an index.
+    /// https://developer.mozilla.org/en-US/docs/Web/API/IDBObjectStore/createIndex
     pub fn create_index(&self, index: &str, unique: bool) -> OnUpgradeResult<()> {
         let mut params = IdbIndexParameters::new();
         params.unique(unique);
@@ -75,8 +77,9 @@ impl TableUpgrader {
     }
 
     /// Creates an index with the multiple keys.
-    /// The key has to be a field of the table.
+    /// Each key of the index has to be a field of the table.
     /// Such indexes are used to find records that satisfy constraints imposed on multiple fields.
+    /// https://developer.mozilla.org/en-US/docs/Web/API/IDBObjectStore/createIndex
     pub fn create_multi_index(&self, index: &str, fields: &[&str], unique: bool) -> OnUpgradeResult<()> {
         let mut params = IdbIndexParameters::new();
         params.unique(unique);

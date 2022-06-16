@@ -1,12 +1,12 @@
 //! # Usage
 //!
 //! As an example, the following table will be used:
-//! ```
+//!
 //! | uuid                                   | base_coin | rel_coin | base_coin_value | started_at |
 //! | "c52659d7-4e13-41f5-9c1a-30cc2f646033" | "RICK"    | "MORTY"  | 10              | 1000000029 |
 //! | "5acb0e63-8b26-469e-81df-7dd9e4a9ad15" | "RICK"    | "MORTY"  | 13              | 1000000030 |
 //! | "9db641f5-4300-4527-9fa6-f1c391d42c35" | "RICK"    | "MORTY"  | 1.2             | 1000000031 |
-//! ```
+//!
 //! with the `search_index` index created by:
 //! ```rust
 //! TableUpgrader::create_multi_index(self, "search_index", &["base_coin", "rel_coin", "started_at"]).unwrap();
@@ -54,7 +54,6 @@ use crate::indexed_db::db_driver::cursor::{CollectCursorAction, CollectItemActio
 pub use crate::indexed_db::db_driver::cursor::{CursorError, CursorResult};
 use crate::indexed_db::{ItemId, TableSignature};
 use async_trait::async_trait;
-use common::serde::de::DeserializeOwned;
 use futures::channel::{mpsc, oneshot};
 use futures::StreamExt;
 use mm2_err_handle::prelude::*;
@@ -210,17 +209,17 @@ pub trait WithFilter: Sized {
 }
 
 #[async_trait]
-pub trait CollectCursor<Table: DeserializeOwned> {
+pub trait CollectCursor<Table: TableSignature> {
     async fn collect(self) -> CursorResult<Vec<(ItemId, Table)>>;
 }
 
 #[async_trait]
-impl<Table: DeserializeOwned + 'static, T: CollectCursorImpl<Table> + Send> CollectCursor<Table> for T {
+impl<Table: TableSignature, T: CollectCursorImpl<Table> + Send> CollectCursor<Table> for T {
     async fn collect(self) -> CursorResult<Vec<(ItemId, Table)>> { self.collect_impl().await }
 }
 
 #[async_trait]
-pub trait CollectCursorImpl<Table: DeserializeOwned + 'static>: Sized {
+pub(crate) trait CollectCursorImpl<Table: TableSignature>: Sized {
     fn into_collect_options(self) -> CursorCollectOptions;
 
     fn event_tx(&self) -> DbCursorEventTx;
@@ -536,9 +535,10 @@ async fn send_event_recv_response<Event, Result>(
 
 mod tests {
     use super::*;
-    use crate::indexed_db::{DbIdentifier, DbTable, DbUpgrader, IndexedDbBuilder, OnUpgradeResult};
+    use crate::indexed_db::{BeBigUint, DbIdentifier, DbTable, DbUpgrader, IndexedDbBuilder, OnUpgradeResult};
     use common::log::wasm_log::register_wasm_log;
-    use serde::Deserialize;
+    use itertools::Itertools;
+    use serde::{Deserialize, Serialize};
     use wasm_bindgen_test::*;
 
     wasm_bindgen_test_configure!(run_in_browser);
@@ -597,12 +597,135 @@ mod tests {
         }
     }
 
-    async fn fill_table(table: &DbTable<'_, SwapTable>, items: Vec<SwapTable>) {
+    async fn fill_table<Table>(table: &DbTable<'_, Table>, items: Vec<Table>)
+    where
+        Table: TableSignature + std::fmt::Debug,
+    {
         for item in items {
             table
                 .add_item(&item)
                 .await
                 .expect(&format!("Error adding {:?} item", item));
+        }
+    }
+
+    /// The table with `BeBigUint` parameters.
+    #[derive(Clone, Debug, Default, Deserialize, Eq, Ord, PartialEq, PartialOrd, Serialize)]
+    #[serde(deny_unknown_fields)]
+    struct TimestampTable {
+        timestamp_x: BeBigUint,
+        timestamp_y: u32,
+        timestamp_z: BeBigUint,
+    }
+
+    impl TimestampTable {
+        fn new<X, Z>(timestamp_x: X, timestamp_y: u32, timestamp_z: Z) -> TimestampTable
+        where
+            BeBigUint: From<X>,
+            BeBigUint: From<Z>,
+        {
+            TimestampTable {
+                timestamp_x: BeBigUint::from(timestamp_x),
+                timestamp_y,
+                timestamp_z: BeBigUint::from(timestamp_z),
+            }
+        }
+    }
+
+    impl TableSignature for TimestampTable {
+        fn table_name() -> &'static str { "timestamp_table" }
+
+        fn on_upgrade_needed(upgrader: &DbUpgrader, old_version: u32, _new_version: u32) -> OnUpgradeResult<()> {
+            if old_version > 0 {
+                // the table is initialized already
+                return Ok(());
+            }
+            let table_upgrader = upgrader.create_table("timestamp_table")?;
+            table_upgrader.create_index("timestamp_x", false)?;
+            table_upgrader.create_multi_index("timestamp_xyz", &["timestamp_x", "timestamp_y", "timestamp_z"], false)
+        }
+    }
+
+    /// Test if `BeBigUint` works properly as an `IndexedDb` index.
+    #[wasm_bindgen_test]
+    async fn test_be_big_uint_index() {
+        const DB_NAME: &str = "TEST_BE_BIG_UINT_INDEX";
+        const DB_VERSION: u32 = 1;
+
+        let numbers: Vec<BeBigUint> = vec![
+            0u32.into(),
+            1u32.into(),
+            2u32.into(),
+            BeBigUint::from(u8::MAX - 1),
+            BeBigUint::from(u8::MAX),
+            BeBigUint::from(u8::MAX) + 1u64,
+            BeBigUint::from(u16::MAX - 1),
+            BeBigUint::from(u16::MAX),
+            BeBigUint::from(u16::MAX) + 1u64,
+            BeBigUint::from(u32::MAX - 1),
+            BeBigUint::from(u32::MAX),
+            BeBigUint::from(u32::MAX) + 1u64,
+            BeBigUint::from(u64::MAX - 1),
+            BeBigUint::from(u64::MAX),
+            BeBigUint::from(u64::MAX) + 1u64,
+            BeBigUint::from(u128::MAX - 1),
+            BeBigUint::from(u128::MAX),
+            BeBigUint::from(u128::MAX) + 1u64,
+        ];
+
+        // Convert `numbers` into `Vec<TimeStampTable>`.
+        let items = numbers
+            .iter()
+            .cloned()
+            .map(|timestamp_x| TimestampTable {
+                timestamp_x,
+                ..TimestampTable::default()
+            })
+            .collect();
+
+        let db = IndexedDbBuilder::new(DbIdentifier::for_test(DB_NAME))
+            .with_version(DB_VERSION)
+            .with_table::<TimestampTable>()
+            .build()
+            .await
+            .expect("!IndexedDb::init");
+        let transaction = db.transaction().await.expect("!IndexedDb::transaction");
+        let table = transaction
+            .table::<TimestampTable>()
+            .await
+            .expect("!DbTransaction::open_table");
+        fill_table(&table, items).await;
+
+        // Test the cursor index for each combination of numbers (lower, upper).
+        for num_x in numbers.iter() {
+            for num_y in numbers.iter() {
+                if num_x > num_y {
+                    continue;
+                }
+
+                // Get every item that satisfies the following [num_x, num_y] bound.
+                let actual_items = table
+                    .open_cursor("timestamp_x")
+                    .await
+                    .expect("!DbTable::open_cursor")
+                    .bound("timestamp_x", num_x.clone(), num_y.clone())
+                    .collect()
+                    .await
+                    .expect("!DbSingleKeyBoundCursor::collect")
+                    .into_iter()
+                    // Map `(ItemId, TimestampTable)` into `BeBigUint`.
+                    .map(|(_item_id, item)| item.timestamp_x)
+                    .sorted()
+                    .collect::<Vec<_>>();
+                // Get `BeBigUint` numbers that should have been returned by the cursor above.
+                let expected = numbers
+                    .iter()
+                    .cloned()
+                    .filter(|num| num_x <= num && num <= num_y)
+                    .sorted()
+                    .collect::<Vec<_>>();
+                assert_eq!(actual_items, expected);
+            }
         }
     }
 
@@ -846,6 +969,62 @@ mod tests {
             swap_item!("uuid20", "RICK", "QRC20", 5, 11, 785),
             swap_item!("uuid9", "RICK", "QRC20", 7, 10, 743),
             swap_item!("uuid3", "RICK", "QRC20", 8, 11, 795),
+        ];
+
+        assert_eq!(actual_items, expected_items);
+    }
+
+    #[wasm_bindgen_test]
+    async fn test_collect_multi_key_bound_cursor_big_int() {
+        const DB_NAME: &str = "TEST_COLLECT_MULTI_KEY_BOUND_CURSOR_BIG_INT";
+        const DB_VERSION: u32 = 1;
+
+        register_wasm_log();
+
+        let items = vec![
+            TimestampTable::new(u64::MAX, 6, u128::MAX - 3),
+            TimestampTable::new(u64::MAX - 1, 0, u128::MAX - 2), // +
+            TimestampTable::new(u64::MAX - 2, 1, u128::MAX / 2),
+            TimestampTable::new(u128::MAX / 2, 3, 4u64),
+            TimestampTable::new(u64::MAX - 1, 1, u128::MAX / 2), // +
+            TimestampTable::new(u128::MAX, 5, u64::MAX),         // +
+            TimestampTable::new(u64::MAX - 1, 0, u64::MAX - 1),
+            TimestampTable::new(u128::MAX, 2, u64::MAX as u128 + 1), // +
+        ];
+
+        let db = IndexedDbBuilder::new(DbIdentifier::for_test(DB_NAME))
+            .with_version(DB_VERSION)
+            .with_table::<TimestampTable>()
+            .build()
+            .await
+            .expect("!IndexedDb::init");
+        let transaction = db.transaction().await.expect("!IndexedDb::transaction");
+        let table = transaction
+            .table::<TimestampTable>()
+            .await
+            .expect("!DbTransaction::open_table");
+        fill_table(&table, items).await;
+
+        let actual_items = table
+            .open_cursor("timestamp_xyz")
+            .await
+            .expect("!DbTable::open_cursor")
+            .bound("timestamp_x", BeBigUint::from(u64::MAX - 1), BeBigUint::from(u128::MAX))
+            .bound("timestamp_y", 0u32, 5u32)
+            .bound("timestamp_z", BeBigUint::from(u64::MAX), BeBigUint::from(u128::MAX - 2))
+            .collect()
+            .await
+            .expect("!DbMultiKeyCursor::collect")
+            .into_iter()
+            .map(|(_item_id, item)| item)
+            .collect::<Vec<_>>();
+
+        // Items are expected to be sorted in the following order.
+        let expected_items = vec![
+            TimestampTable::new(u64::MAX - 1, 0, u128::MAX - 2),
+            TimestampTable::new(u64::MAX - 1, 1, u128::MAX / 2),
+            TimestampTable::new(u128::MAX, 2, u64::MAX as u128 + 1),
+            TimestampTable::new(u128::MAX, 5, u64::MAX),
         ];
 
         assert_eq!(actual_items, expected_items);

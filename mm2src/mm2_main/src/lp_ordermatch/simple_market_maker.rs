@@ -3,30 +3,31 @@ use crate::mm2::lp_ordermatch::lp_bot::{RunningState, StoppedState, StoppingStat
                                         TradingBotStopped, TradingBotStopping, VolumeSettings};
 use crate::mm2::lp_ordermatch::{cancel_all_orders, CancelBy, TradingBotEvent};
 use crate::mm2::lp_price::{fetch_price_tickers, Provider, RateInfos};
+use crate::mm2::lp_swap::SavedSwap;
 use crate::mm2::{lp_ordermatch::{cancel_order, create_maker_order,
                                  lp_bot::{SimpleCoinMarketMakerCfg, SimpleMakerBotRegistry, TradingBotContext,
                                           TradingBotState},
                                  update_maker_order, CancelOrderReq, MakerOrder, MakerOrderUpdateReq,
                                  OrdermatchContext, SetPriceReq},
-                 lp_swap::{my_recent_swaps, MyRecentSwapsErr, MyRecentSwapsReq, MyRecentSwapsResponse, MySwapsFilter}};
+                 lp_swap::{latest_swaps_for_pair, LatestSwapsErr}};
 use coins::{lp_coinfind, GetNonZeroBalance};
 use common::Future01CompatExt;
 use common::{executor::{spawn, Timer},
              log::{debug, error, info, warn},
              mm_number::MmNumber,
-             HttpStatusCode, PagingOptions, StatusCode};
+             HttpStatusCode, StatusCode};
 use derive_more::Display;
 use mm2_core::mm_ctx::MmArc;
 use mm2_err_handle::prelude::*;
 use serde_json::Value as Json;
-use std::{collections::{HashMap, HashSet},
-          num::NonZeroUsize};
+use std::collections::{HashMap, HashSet};
 use uuid::Uuid;
 
 // !< constants
 pub const KMD_PRICE_ENDPOINT: &str = "https://prices.komodo.live:1313/api/v2/tickers";
 pub const BOT_DEFAULT_REFRESH_RATE: f64 = 30.0;
 pub const PRECISION_FOR_NOTIFICATION: u64 = 8;
+const LATEST_SWAPS_LIMIT: usize = 1000;
 
 // !< Type definitions
 pub type StartSimpleMakerBotResult = Result<StartSimpleMakerBotRes, MmError<StartSimpleMakerBotError>>;
@@ -93,8 +94,8 @@ pub enum OrderProcessingError {
     LegacyError(String),
 }
 
-impl From<MyRecentSwapsErr> for OrderProcessingError {
-    fn from(e: MyRecentSwapsErr) -> Self { OrderProcessingError::MyRecentSwapsError(format!("{}", e)) }
+impl From<LatestSwapsErr> for OrderProcessingError {
+    fn from(e: LatestSwapsErr) -> Self { OrderProcessingError::MyRecentSwapsError(format!("{}", e)) }
 }
 
 impl From<GetNonZeroBalance> for OrderProcessingError {
@@ -186,13 +187,13 @@ pub enum StartSimpleMakerBotError {
 #[serde(tag = "error_type", content = "error_data")]
 pub enum SwapUpdateNotificationError {
     #[display(fmt = "{}", _0)]
-    MyRecentSwapsError(MyRecentSwapsErr),
+    MyRecentSwapsError(LatestSwapsErr),
     #[display(fmt = "Swap info not available")]
     SwapInfoNotAvailable,
 }
 
-impl From<MyRecentSwapsErr> for SwapUpdateNotificationError {
-    fn from(e: MyRecentSwapsErr) -> Self { SwapUpdateNotificationError::MyRecentSwapsError(e) }
+impl From<LatestSwapsErr> for SwapUpdateNotificationError {
+    fn from(e: LatestSwapsErr) -> Self { SwapUpdateNotificationError::MyRecentSwapsError(e) }
 }
 
 impl HttpStatusCode for StartSimpleMakerBotError {
@@ -252,15 +253,11 @@ fn sum_vwap(base_amount: &MmNumber, rel_amount: &MmNumber, total_volume: &mut Mm
     cur_sum_price_volume
 }
 
-fn vwap_calculation(
-    kind: VwapSide,
-    swaps_answer: MyRecentSwapsResponse,
-    calculated_price: MmNumber,
-) -> (MmNumber, i32) {
+fn vwap_calculation(kind: VwapSide, swaps: Vec<SavedSwap>, calculated_price: MmNumber) -> (MmNumber, i32) {
     let mut nb_trades_treated = 0;
     let mut total_sum_price_volume = MmNumber::default();
     let mut total_vol = MmNumber::default();
-    for swap in swaps_answer.swaps.iter() {
+    for swap in swaps.iter() {
         if !swap.is_finished_and_success() {
             continue;
         }
@@ -285,13 +282,13 @@ fn vwap_calculation(
 }
 
 async fn vwap_logic(
-    base_swaps: MyRecentSwapsResponse,
-    rel_swaps: MyRecentSwapsResponse,
+    base_swaps: Vec<SavedSwap>,
+    rel_swaps: Vec<SavedSwap>,
     calculated_price: MmNumber,
     cfg: &SimpleCoinMarketMakerCfg,
 ) -> MmNumber {
-    let base_swaps_empty = base_swaps.swaps.is_empty();
-    let rel_swaps_empty = rel_swaps.swaps.is_empty();
+    let base_swaps_empty = base_swaps.is_empty();
+    let rel_swaps_empty = rel_swaps.is_empty();
     let (base_vwap, nb_base_trades) = vwap_calculation(VwapSide::Rel, base_swaps, calculated_price.clone());
     let (rel_vwap, nb_rel_trades) = vwap_calculation(VwapSide::Base, rel_swaps, calculated_price.clone());
     let total_trades_treated = nb_base_trades + nb_rel_trades;
@@ -323,14 +320,13 @@ async fn vwap_logic(
 }
 
 pub async fn vwap(
-    base_swaps: MyRecentSwapsResponse,
-    rel_swaps: MyRecentSwapsResponse,
+    base_swaps: Vec<SavedSwap>,
+    rel_swaps: Vec<SavedSwap>,
     calculated_price: MmNumber,
     cfg: &SimpleCoinMarketMakerCfg,
 ) -> MmNumber {
-    // since the limit is `1000` unwrap is fine here.
-    let is_equal_history_len = rel_swaps.swaps.len() == base_swaps.swaps.len();
-    let have_precedent_swaps = !rel_swaps.swaps.is_empty() && !base_swaps.swaps.is_empty();
+    let is_equal_history_len = rel_swaps.len() == base_swaps.len();
+    let have_precedent_swaps = !rel_swaps.is_empty() && !base_swaps.is_empty();
     if is_equal_history_len && !have_precedent_swaps {
         debug!(
             "No last trade for trading pair: [{}/{}] - keeping calculated price: {}",
@@ -346,29 +342,8 @@ async fn vwap_calculator(
     ctx: &MmArc,
     cfg: &SimpleCoinMarketMakerCfg,
 ) -> VwapProcessingResult {
-    let my_recent_swaps_req = async move |base: String, rel: String| MyRecentSwapsReq {
-        paging_options: PagingOptions {
-            limit: 1000,
-            page_number: NonZeroUsize::new(1).unwrap(),
-            from_uuid: None,
-        },
-        filter: MySwapsFilter {
-            my_coin: Some(base),
-            other_coin: Some(rel),
-            from_timestamp: None,
-            to_timestamp: None,
-        },
-    };
-    let base_swaps = my_recent_swaps(
-        ctx.clone(),
-        my_recent_swaps_req(cfg.base.clone(), cfg.rel.clone()).await,
-    )
-    .await?;
-    let rel_swaps = my_recent_swaps(
-        ctx.clone(),
-        my_recent_swaps_req(cfg.rel.clone(), cfg.base.clone()).await,
-    )
-    .await?;
+    let base_swaps = latest_swaps_for_pair(ctx.clone(), cfg.base.clone(), cfg.rel.clone(), LATEST_SWAPS_LIMIT).await?;
+    let rel_swaps = latest_swaps_for_pair(ctx.clone(), cfg.rel.clone(), cfg.base.clone(), LATEST_SWAPS_LIMIT).await?;
     Ok(vwap(base_swaps, rel_swaps, calculated_price, cfg).await)
 }
 

@@ -123,8 +123,6 @@ impl SavedSwap {
                 if let Some(ref mut event) = swap.events.first_mut() {
                     if let MakerSwapEvent::Started(ref mut data) = event.event {
                         data.secret = H256Json::default();
-                        data.maker_coin_htlc_privkey = None;
-                        data.taker_coin_htlc_privkey = None;
                         data.p2p_privkey = None;
                     }
                 }
@@ -132,8 +130,6 @@ impl SavedSwap {
             SavedSwap::Taker(swap) => {
                 if let Some(ref mut event) = swap.events.first_mut() {
                     if let TakerSwapEvent::Started(ref mut data) = event.event {
-                        data.maker_coin_htlc_privkey = None;
-                        data.taker_coin_htlc_privkey = None;
                         data.p2p_privkey = None;
                     }
                 }
@@ -275,7 +271,9 @@ mod wasm_impl {
                 | DbTransactionError::TransactionAborted => SavedSwapError::InternalError(desc),
                 DbTransactionError::ErrorDeserializingItem(_) => SavedSwapError::ErrorDeserializing(desc),
                 DbTransactionError::ErrorSerializingItem(_) => SavedSwapError::ErrorSerializing(desc),
-                DbTransactionError::ErrorGettingItems(_) => SavedSwapError::ErrorLoading(desc),
+                DbTransactionError::ErrorGettingItems(_) | DbTransactionError::ErrorCountingItems(_) => {
+                    SavedSwapError::ErrorLoading(desc)
+                },
                 DbTransactionError::ErrorUploadingItem(_) | DbTransactionError::ErrorDeletingItems(_) => {
                     SavedSwapError::ErrorSaving(desc)
                 },
@@ -333,7 +331,6 @@ mod wasm_impl {
             table
                 .replace_item_by_unique_index("uuid", *self.uuid(), &saved_swap_item)
                 .await?;
-            transaction.wait_for_complete().await?;
             Ok(())
         }
     }

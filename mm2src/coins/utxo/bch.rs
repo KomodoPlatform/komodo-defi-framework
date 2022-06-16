@@ -1,13 +1,14 @@
 use super::*;
-use crate::my_tx_history_v2::{TxDetailsBuilder, TxHistoryStorage, TxHistoryStorageError};
+use crate::my_tx_history_v2::{CoinWithTxHistoryV2, TxDetailsBuilder, TxHistoryStorage, TxHistoryStorageError};
+use crate::tx_history_storage::{GetTxHistoryFilters, WalletId};
 use crate::utxo::rpc_clients::UtxoRpcFut;
 use crate::utxo::slp::{parse_slp_script, ParseSlpScriptError, SlpGenesisParams, SlpTokenInfo, SlpTransaction,
                        SlpUnspent};
 use crate::utxo::utxo_builder::{UtxoArcBuilder, UtxoCoinBuilder};
 use crate::utxo::utxo_common::big_decimal_from_sat_unsigned;
 use crate::{BlockHeightAndTime, CanRefundHtlc, CoinBalance, CoinProtocol, NegotiateSwapContractAddrErr,
-            PrivKeyBuildPolicy, RawTransactionFut, RawTransactionRequest, SignatureResult, SwapOps,
-            TradePreimageValue, TransactionFut, TransactionType, TxFeeDetails, UnexpectedDerivationMethod,
+            PrivKeyBuildPolicy, RawTransactionFut, RawTransactionRequest, SearchForSwapTxSpendInput, SignatureResult,
+            SwapOps, TradePreimageValue, TransactionFut, TransactionType, TxFeeDetails, UnexpectedDerivationMethod,
             ValidateAddressResult, ValidatePaymentInput, VerificationResult, WithdrawFut};
 use common::log::warn;
 use common::mm_metrics::MetricsArc;
@@ -382,14 +383,13 @@ impl BchCoin {
         tx_hash: &H256Json,
         storage: &T,
     ) -> Result<UtxoTx, MmError<GetTxDetailsError<T::Error>>> {
-        let tx_hash_as_bytes = BytesJson::new(tx_hash.0.to_vec());
-        let tx_bytes = match storage.tx_bytes_from_cache(self.ticker(), &tx_hash_as_bytes).await? {
+        let tx_hash_str = format!("{:02x}", tx_hash);
+        let wallet_id = self.history_wallet_id();
+        let tx_bytes = match storage.tx_bytes_from_cache(&wallet_id, &tx_hash_str).await? {
             Some(tx_bytes) => tx_bytes,
             None => {
                 let tx_bytes = self.as_ref().rpc_client.get_transaction_bytes(tx_hash).compat().await?;
-                storage
-                    .add_tx_to_cache(self.ticker(), &tx_hash_as_bytes, &tx_bytes)
-                    .await?;
+                storage.add_tx_to_cache(&wallet_id, &tx_hash_str, &tx_bytes).await?;
                 tx_bytes
             },
         };
@@ -784,28 +784,8 @@ impl UtxoCommonOps for BchCoin {
         utxo_common::get_mut_verbose_transaction_from_map_or_rpc(self, tx_hash, utxo_tx_map).await
     }
 
-    #[allow(clippy::too_many_arguments)]
-    async fn p2sh_spending_tx(
-        &self,
-        prev_transaction: UtxoTx,
-        redeem_script: Bytes,
-        outputs: Vec<TransactionOutput>,
-        script_data: Script,
-        sequence: u32,
-        lock_time: u32,
-        keypair: &KeyPair,
-    ) -> Result<UtxoTx, String> {
-        utxo_common::p2sh_spending_tx(
-            self,
-            prev_transaction,
-            redeem_script,
-            outputs,
-            script_data,
-            sequence,
-            lock_time,
-            keypair,
-        )
-        .await
+    async fn p2sh_spending_tx(&self, input: utxo_common::P2SHSpendingTxInput<'_>) -> Result<UtxoTx, String> {
+        utxo_common::p2sh_spending_tx(self, input).await
     }
 
     fn get_verbose_transactions_from_cache_or_rpc(
@@ -872,25 +852,39 @@ impl SwapOps for BchCoin {
     fn send_maker_payment(
         &self,
         time_lock: u32,
-        maker_pub: &[u8],
         taker_pub: &[u8],
         secret_hash: &[u8],
         amount: BigDecimal,
         _swap_contract_address: &Option<BytesJson>,
+        swap_unique_data: &[u8],
     ) -> TransactionFut {
-        utxo_common::send_maker_payment(self.clone(), time_lock, maker_pub, taker_pub, secret_hash, amount)
+        utxo_common::send_maker_payment(
+            self.clone(),
+            time_lock,
+            taker_pub,
+            secret_hash,
+            amount,
+            swap_unique_data,
+        )
     }
 
     fn send_taker_payment(
         &self,
         time_lock: u32,
-        taker_pub: &[u8],
         maker_pub: &[u8],
         secret_hash: &[u8],
         amount: BigDecimal,
         _swap_contract_address: &Option<BytesJson>,
+        swap_unique_data: &[u8],
     ) -> TransactionFut {
-        utxo_common::send_taker_payment(self.clone(), time_lock, taker_pub, maker_pub, secret_hash, amount)
+        utxo_common::send_taker_payment(
+            self.clone(),
+            time_lock,
+            maker_pub,
+            secret_hash,
+            amount,
+            swap_unique_data,
+        )
     }
 
     fn send_maker_spends_taker_payment(
@@ -899,8 +893,8 @@ impl SwapOps for BchCoin {
         time_lock: u32,
         taker_pub: &[u8],
         secret: &[u8],
-        htlc_privkey: &[u8],
         _swap_contract_address: &Option<BytesJson>,
+        swap_unique_data: &[u8],
     ) -> TransactionFut {
         utxo_common::send_maker_spends_taker_payment(
             self.clone(),
@@ -908,7 +902,7 @@ impl SwapOps for BchCoin {
             time_lock,
             taker_pub,
             secret,
-            htlc_privkey,
+            swap_unique_data,
         )
     }
 
@@ -918,8 +912,8 @@ impl SwapOps for BchCoin {
         time_lock: u32,
         maker_pub: &[u8],
         secret: &[u8],
-        htlc_privkey: &[u8],
         _swap_contract_address: &Option<BytesJson>,
+        swap_unique_data: &[u8],
     ) -> TransactionFut {
         utxo_common::send_taker_spends_maker_payment(
             self.clone(),
@@ -927,7 +921,7 @@ impl SwapOps for BchCoin {
             time_lock,
             maker_pub,
             secret,
-            htlc_privkey,
+            swap_unique_data,
         )
     }
 
@@ -937,10 +931,17 @@ impl SwapOps for BchCoin {
         time_lock: u32,
         maker_pub: &[u8],
         secret_hash: &[u8],
-        htlc_privkey: &[u8],
         _swap_contract_address: &Option<BytesJson>,
+        swap_unique_data: &[u8],
     ) -> TransactionFut {
-        utxo_common::send_taker_refunds_payment(self.clone(), taker_tx, time_lock, maker_pub, secret_hash, htlc_privkey)
+        utxo_common::send_taker_refunds_payment(
+            self.clone(),
+            taker_tx,
+            time_lock,
+            maker_pub,
+            secret_hash,
+            swap_unique_data,
+        )
     }
 
     fn send_maker_refunds_payment(
@@ -949,10 +950,17 @@ impl SwapOps for BchCoin {
         time_lock: u32,
         taker_pub: &[u8],
         secret_hash: &[u8],
-        htlc_privkey: &[u8],
         _swap_contract_address: &Option<BytesJson>,
+        swap_unique_data: &[u8],
     ) -> TransactionFut {
-        utxo_common::send_maker_refunds_payment(self.clone(), maker_tx, time_lock, taker_pub, secret_hash, htlc_privkey)
+        utxo_common::send_maker_refunds_payment(
+            self.clone(),
+            maker_tx,
+            time_lock,
+            taker_pub,
+            secret_hash,
+            swap_unique_data,
+        )
     }
 
     fn validate_fee(
@@ -990,55 +998,27 @@ impl SwapOps for BchCoin {
     fn check_if_my_payment_sent(
         &self,
         time_lock: u32,
-        my_pub: &[u8],
         other_pub: &[u8],
         secret_hash: &[u8],
         _search_from_block: u64,
         _swap_contract_address: &Option<BytesJson>,
+        swap_unique_data: &[u8],
     ) -> Box<dyn Future<Item = Option<TransactionEnum>, Error = String> + Send> {
-        utxo_common::check_if_my_payment_sent(self.clone(), time_lock, my_pub, other_pub, secret_hash)
+        utxo_common::check_if_my_payment_sent(self.clone(), time_lock, other_pub, secret_hash, swap_unique_data)
     }
 
     async fn search_for_swap_tx_spend_my(
         &self,
-        time_lock: u32,
-        other_pub: &[u8],
-        secret_hash: &[u8],
-        tx: &[u8],
-        search_from_block: u64,
-        _swap_contract_address: &Option<BytesJson>,
+        input: SearchForSwapTxSpendInput<'_>,
     ) -> Result<Option<FoundSwapTxSpend>, String> {
-        utxo_common::search_for_swap_tx_spend_my(
-            &self.utxo_arc,
-            time_lock,
-            other_pub,
-            secret_hash,
-            tx,
-            utxo_common::DEFAULT_SWAP_VOUT,
-            search_from_block,
-        )
-        .await
+        utxo_common::search_for_swap_tx_spend_my(self, input, utxo_common::DEFAULT_SWAP_VOUT).await
     }
 
     async fn search_for_swap_tx_spend_other(
         &self,
-        time_lock: u32,
-        other_pub: &[u8],
-        secret_hash: &[u8],
-        tx: &[u8],
-        search_from_block: u64,
-        _swap_contract_address: &Option<BytesJson>,
+        input: SearchForSwapTxSpendInput<'_>,
     ) -> Result<Option<FoundSwapTxSpend>, String> {
-        utxo_common::search_for_swap_tx_spend_other(
-            &self.utxo_arc,
-            time_lock,
-            other_pub,
-            secret_hash,
-            tx,
-            utxo_common::DEFAULT_SWAP_VOUT,
-            search_from_block,
-        )
-        .await
+        utxo_common::search_for_swap_tx_spend_other(self, input, utxo_common::DEFAULT_SWAP_VOUT).await
     }
 
     fn extract_secret(&self, secret_hash: &[u8], spend_tx: &[u8]) -> Result<Vec<u8>, String> {
@@ -1061,7 +1041,9 @@ impl SwapOps for BchCoin {
         Ok(None)
     }
 
-    fn get_htlc_key_pair(&self) -> Option<KeyPair> { utxo_common::get_htlc_key_pair(self) }
+    fn derive_htlc_key_pair(&self, swap_unique_data: &[u8]) -> KeyPair {
+        utxo_common::derive_htlc_key_pair(self.as_ref(), swap_unique_data)
+    }
 }
 
 fn total_unspent_value<'a>(unspents: impl IntoIterator<Item = &'a UnspentInfo>) -> u64 {
@@ -1073,7 +1055,10 @@ impl MarketCoinOps for BchCoin {
 
     fn my_address(&self) -> Result<String, String> { utxo_common::my_address(self) }
 
-    fn get_public_key(&self) -> Result<String, MmError<UnexpectedDerivationMethod>> { unimplemented!() }
+    fn get_public_key(&self) -> Result<String, MmError<UnexpectedDerivationMethod>> {
+        let pubkey = utxo_common::my_public_key(&self.utxo_arc)?;
+        Ok(pubkey.to_string())
+    }
 
     fn sign_message_hash(&self, message: &str) -> Option<[u8; 32]> {
         utxo_common::sign_message_hash(self.as_ref(), message)
@@ -1261,6 +1246,13 @@ impl MmCoin for BchCoin {
     }
 }
 
+impl CoinWithTxHistoryV2 for BchCoin {
+    fn history_wallet_id(&self) -> WalletId { WalletId::new(self.ticker().to_owned()) }
+
+    /// There are not specific filters for `BchCoin`.
+    fn get_tx_history_filters(&self) -> GetTxHistoryFilters { GetTxHistoryFilters::new() }
+}
+
 // testnet
 #[cfg(test)]
 pub fn tbch_coin_for_test() -> BchCoin {
@@ -1328,21 +1320,23 @@ pub fn bch_coin_for_test() -> BchCoin {
 #[cfg(test)]
 mod bch_tests {
     use super::*;
-    use crate::sql_tx_history_storage::SqliteTxHistoryStorage;
+    use crate::tx_history_storage::TxHistoryStorageBuilder;
     use crate::{TransactionType, TxFeeDetails};
     use common::block_on;
+    use mm2_test_helpers::for_tests::mm_ctx_with_custom_db;
 
-    fn init_storage_for(ticker: &str) -> impl TxHistoryStorage {
-        let storage = SqliteTxHistoryStorage::in_memory();
-        block_on(storage.init(ticker)).unwrap();
-        storage
+    fn init_storage_for<Coin: CoinWithTxHistoryV2>(coin: &Coin) -> (MmArc, impl TxHistoryStorage) {
+        let ctx = mm_ctx_with_custom_db();
+        let storage = TxHistoryStorageBuilder::new(&ctx).build().unwrap();
+        block_on(storage.init(&coin.history_wallet_id())).unwrap();
+        (ctx, storage)
     }
 
     #[test]
     fn test_get_slp_genesis_params() {
         let coin = tbch_coin_for_test();
         let token_id = "bb309e48930671582bea508f9a1d9b491e49b69be3d6f372dc08da2ac6e90eb7".into();
-        let storage = init_storage_for(coin.ticker());
+        let (_ctx, storage) = init_storage_for(&coin);
 
         let slp_params = block_on(coin.get_slp_genesis_params(token_id, &storage)).unwrap();
         assert_eq!("USDF", slp_params.token_ticker);
@@ -1352,7 +1346,7 @@ mod bch_tests {
     #[test]
     fn test_plain_bch_tx_details() {
         let coin = tbch_coin_for_test();
-        let storage = init_storage_for(coin.ticker());
+        let (_ctx, storage) = init_storage_for(&coin);
 
         let hash = "a8dcc3c6776e93e7bd21fb81551e853447c55e2d8ac141b418583bc8095ce390".into();
         let tx = block_on(coin.tx_from_storage_or_rpc(&hash, &storage)).unwrap();
@@ -1394,7 +1388,7 @@ mod bch_tests {
     #[test]
     fn test_slp_tx_details() {
         let coin = tbch_coin_for_test();
-        let storage = init_storage_for(coin.ticker());
+        let (_ctx, storage) = init_storage_for(&coin);
 
         let hash = "a8dcc3c6776e93e7bd21fb81551e853447c55e2d8ac141b418583bc8095ce390".into();
         let tx = block_on(coin.tx_from_storage_or_rpc(&hash, &storage)).unwrap();

@@ -19,9 +19,9 @@ pub struct IdbObjectStoreImpl {
 impl !Send for IdbObjectStoreImpl {}
 
 impl IdbObjectStoreImpl {
-    pub fn aborted(&self) -> bool { self.aborted.load(Ordering::Relaxed) }
+    pub(crate) fn aborted(&self) -> bool { self.aborted.load(Ordering::Relaxed) }
 
-    pub async fn add_item(&self, item: &Json) -> DbTransactionResult<ItemId> {
+    pub(crate) async fn add_item(&self, item: &Json) -> DbTransactionResult<ItemId> {
         if self.aborted.load(Ordering::Relaxed) {
             return MmError::err(DbTransactionError::TransactionAborted);
         }
@@ -46,17 +46,17 @@ impl IdbObjectStoreImpl {
         Self::item_id_from_completed_request(&add_request)
     }
 
-    pub async fn get_items(&self, index_str: &str, index_value: Json) -> DbTransactionResult<Vec<(ItemId, Json)>> {
+    pub(crate) async fn get_items(
+        &self,
+        index_str: &str,
+        index_value: Json,
+    ) -> DbTransactionResult<Vec<(ItemId, Json)>> {
         if self.aborted.load(Ordering::Relaxed) {
             return MmError::err(DbTransactionError::TransactionAborted);
         }
 
         let index = index_str.to_owned();
-        let index_value_js =
-            serialize_to_js(&index_value).map_to_mm(|e| DbTransactionError::ErrorSerializingIndex {
-                index: index.clone(),
-                description: e.to_string(),
-            })?;
+        let index_value_js = try_serialize_index_value!(serialize_to_js(&index_value), index_str);
 
         let db_index = match self.object_store.index(index_str) {
             Ok(index) => index,
@@ -82,17 +82,13 @@ impl IdbObjectStoreImpl {
         Self::items_from_completed_request(&get_request)
     }
 
-    pub async fn get_item_ids(&self, index_str: &str, index_value: Json) -> DbTransactionResult<Vec<ItemId>> {
+    pub(crate) async fn get_item_ids(&self, index_str: &str, index_value: Json) -> DbTransactionResult<Vec<ItemId>> {
         if self.aborted.load(Ordering::Relaxed) {
             return MmError::err(DbTransactionError::TransactionAborted);
         }
 
         let index = index_str.to_owned();
-        let index_value_js =
-            serialize_to_js(&index_value).map_to_mm(|e| DbTransactionError::ErrorSerializingIndex {
-                index: index.clone(),
-                description: e.to_string(),
-            })?;
+        let index_value_js = try_serialize_index_value!(serialize_to_js(&index_value), index);
 
         let db_index = match self.object_store.index(index_str) {
             Ok(index) => index,
@@ -118,7 +114,7 @@ impl IdbObjectStoreImpl {
         Self::item_ids_from_completed_request(&get_request)
     }
 
-    pub async fn get_all_items(&self) -> DbTransactionResult<Vec<(ItemId, Json)>> {
+    pub(crate) async fn get_all_items(&self) -> DbTransactionResult<Vec<(ItemId, Json)>> {
         if self.aborted.load(Ordering::Relaxed) {
             return MmError::err(DbTransactionError::TransactionAborted);
         }
@@ -137,7 +133,58 @@ impl IdbObjectStoreImpl {
         Self::items_from_completed_request(&get_request)
     }
 
-    pub async fn replace_item(&self, _item_id: ItemId, item: Json) -> DbTransactionResult<ItemId> {
+    pub(crate) async fn count(&self, index_str: &str, index_value: Json) -> DbTransactionResult<usize> {
+        if self.aborted.load(Ordering::Relaxed) {
+            return MmError::err(DbTransactionError::TransactionAborted);
+        }
+
+        let index = index_str.to_owned();
+        let index_value_js = try_serialize_index_value!(serialize_to_js(&index_value), index);
+
+        let db_index = match self.object_store.index(index_str) {
+            Ok(index) => index,
+            Err(_) => return MmError::err(DbTransactionError::NoSuchIndex { index }),
+        };
+        let count_request = match db_index.count_with_key(&index_value_js) {
+            Ok(request) => request,
+            Err(e) => {
+                return MmError::err(DbTransactionError::InvalidIndex {
+                    index,
+                    index_value,
+                    description: stringify_js_error(&e),
+                })
+            },
+        };
+
+        if let Err(_error_event) = Self::wait_for_request_complete(&count_request).await {
+            self.aborted.store(true, Ordering::Relaxed);
+            let error = Self::error_from_failed_request(&count_request);
+            return MmError::err(DbTransactionError::ErrorCountingItems(error));
+        }
+
+        Self::count_from_completed_request(&count_request)
+    }
+
+    pub(crate) async fn count_all(&self) -> DbTransactionResult<usize> {
+        if self.aborted.load(Ordering::Relaxed) {
+            return MmError::err(DbTransactionError::TransactionAborted);
+        }
+
+        let count_request = match self.object_store.count() {
+            Ok(request) => request,
+            Err(e) => return MmError::err(DbTransactionError::ErrorCountingItems(stringify_js_error(&e))),
+        };
+
+        if let Err(_error_event) = Self::wait_for_request_complete(&count_request).await {
+            self.aborted.store(true, Ordering::Relaxed);
+            let error = Self::error_from_failed_request(&count_request);
+            return MmError::err(DbTransactionError::ErrorCountingItems(error));
+        }
+
+        Self::count_from_completed_request(&count_request)
+    }
+
+    pub(crate) async fn replace_item(&self, _item_id: ItemId, item: Json) -> DbTransactionResult<ItemId> {
         if self.aborted.load(Ordering::Relaxed) {
             return MmError::err(DbTransactionError::TransactionAborted);
         }
@@ -161,7 +208,7 @@ impl IdbObjectStoreImpl {
         Self::item_id_from_completed_request(&replace_request)
     }
 
-    pub async fn delete_item(&self, item_id: ItemId) -> DbTransactionResult<()> {
+    pub(crate) async fn delete_item(&self, item_id: ItemId) -> DbTransactionResult<()> {
         if self.aborted.load(Ordering::Relaxed) {
             return MmError::err(DbTransactionError::TransactionAborted);
         }
@@ -182,7 +229,7 @@ impl IdbObjectStoreImpl {
         Ok(())
     }
 
-    pub async fn clear(&self) -> DbTransactionResult<()> {
+    pub(crate) async fn clear(&self) -> DbTransactionResult<()> {
         if self.aborted.load(Ordering::Relaxed) {
             return MmError::err(DbTransactionError::TransactionAborted);
         }
@@ -201,7 +248,7 @@ impl IdbObjectStoreImpl {
         Ok(())
     }
 
-    pub fn cursor_builder(&self, index_str: &str) -> DbTransactionResult<IdbCursorBuilder> {
+    pub(crate) fn cursor_builder(&self, index_str: &str) -> DbTransactionResult<IdbCursorBuilder> {
         let db_index = match self.object_store.index(index_str) {
             Ok(index) => index,
             Err(_) => {
@@ -260,6 +307,19 @@ impl IdbObjectStoreImpl {
 
         if result_js_value.is_null() || result_js_value.is_undefined() {
             return Ok(Vec::new());
+        }
+
+        deserialize_from_js(result_js_value).map_to_mm(|e| DbTransactionError::ErrorDeserializingItem(e.to_string()))
+    }
+
+    fn count_from_completed_request(request: &IdbRequest) -> DbTransactionResult<usize> {
+        let result_js_value = match request.result() {
+            Ok(res) => res,
+            Err(e) => return MmError::err(DbTransactionError::UnexpectedState(stringify_js_error(&e))),
+        };
+
+        if result_js_value.is_null() || result_js_value.is_undefined() {
+            return Ok(0);
         }
 
         deserialize_from_js(result_js_value).map_to_mm(|e| DbTransactionError::ErrorDeserializingItem(e.to_string()))
