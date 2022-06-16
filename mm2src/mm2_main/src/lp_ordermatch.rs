@@ -2682,14 +2682,13 @@ impl OrdermatchContext {
     fn from_ctx(ctx: &MmArc) -> Result<Arc<OrdermatchContext>, String> {
         Ok(try_s!(from_ctx(&ctx.ordermatch_ctx, move || {
             Ok(OrdermatchContext {
-                my_maker_orders: Default::default(),
+                makerorders_ctx: Default::default(),
                 my_taker_orders: Default::default(),
                 orderbook: Default::default(),
                 pending_maker_reserved: Default::default(),
                 orderbook_tickers: Default::default(),
                 original_tickers: Default::default(),
                 ordermatch_db: ConstructibleDb::new(ctx),
-                balance_loops: Default::default(),
             })
         })))
     }
