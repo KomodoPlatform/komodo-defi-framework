@@ -3290,6 +3290,7 @@ fn test_qtum_without_check_utxo_maturity() {
     assert!(unsafe { GET_MATURE_UNSPENT_ORDERED_LIST_CALLED });
 }
 
+/// The test is for splitting some mature unspent `QTUM` out points into 40 outputs with amount `1 QTUM` in each
 #[test]
 #[ignore]
 fn test_split_qtum() {
