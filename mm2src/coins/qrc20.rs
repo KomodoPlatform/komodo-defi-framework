@@ -15,10 +15,10 @@ use crate::utxo::{qtum, ActualTxFee, AdditionalTxData, BroadcastTxErr, FeePolicy
                   UtxoTx, UtxoTxBroadcastOps, UtxoTxGenerationOps, VerboseTransactionFrom, UTXO_LOCK};
 use crate::{BalanceError, BalanceFut, CoinBalance, FeeApproxStage, FoundSwapTxSpend, HistorySyncState, MarketCoinOps,
             MmCoin, NegotiateSwapContractAddrErr, PrivKeyNotAllowed, RawTransactionFut, RawTransactionRequest,
-            SignatureResult, SwapOps, TradeFee, TradePreimageError, TradePreimageFut, TradePreimageResult,
-            TradePreimageValue, TransactionDetails, TransactionEnum, TransactionErr, TransactionFut, TransactionType,
-            UnexpectedDerivationMethod, ValidateAddressResult, ValidatePaymentInput, VerificationResult,
-            WithdrawError, WithdrawFee, WithdrawFut, WithdrawRequest, WithdrawResult};
+            SearchForSwapTxSpendInput, SignatureResult, SwapOps, TradeFee, TradePreimageError, TradePreimageFut,
+            TradePreimageResult, TradePreimageValue, TransactionDetails, TransactionEnum, TransactionErr,
+            TransactionFut, TransactionType, UnexpectedDerivationMethod, ValidateAddressResult, ValidatePaymentInput,
+            VerificationResult, WithdrawError, WithdrawFee, WithdrawFut, WithdrawRequest, WithdrawResult};
 use async_trait::async_trait;
 use bigdecimal::BigDecimal;
 use bitcrypto::{dhash160, sha256};
@@ -651,28 +651,8 @@ impl UtxoCommonOps for Qrc20Coin {
         utxo_common::get_mut_verbose_transaction_from_map_or_rpc(self, tx_hash, utxo_tx_map).await
     }
 
-    #[allow(clippy::too_many_arguments)]
-    async fn p2sh_spending_tx(
-        &self,
-        prev_transaction: UtxoTx,
-        redeem_script: ScriptBytes,
-        outputs: Vec<TransactionOutput>,
-        script_data: Script,
-        sequence: u32,
-        lock_time: u32,
-        keypair: &KeyPair,
-    ) -> Result<UtxoTx, String> {
-        utxo_common::p2sh_spending_tx(
-            self,
-            prev_transaction,
-            redeem_script,
-            outputs,
-            script_data,
-            sequence,
-            lock_time,
-            keypair,
-        )
-        .await
+    async fn p2sh_spending_tx(&self, input: utxo_common::P2SHSpendingTxInput<'_>) -> Result<UtxoTx, String> {
+        utxo_common::p2sh_spending_tx(self, input).await
     }
 
     fn get_verbose_transactions_from_cache_or_rpc(
@@ -747,11 +727,11 @@ impl SwapOps for Qrc20Coin {
     fn send_maker_payment(
         &self,
         time_lock: u32,
-        _maker_pub: &[u8],
         taker_pub: &[u8],
         secret_hash: &[u8],
         amount: BigDecimal,
         swap_contract_address: &Option<BytesJson>,
+        _swap_unique_data: &[u8],
     ) -> TransactionFut {
         let taker_addr = try_tx_fus!(self.contract_address_from_raw_pubkey(taker_pub));
         let id = qrc20_swap_id(time_lock, secret_hash);
@@ -771,11 +751,11 @@ impl SwapOps for Qrc20Coin {
     fn send_taker_payment(
         &self,
         time_lock: u32,
-        _taker_pub: &[u8],
         maker_pub: &[u8],
         secret_hash: &[u8],
         amount: BigDecimal,
         swap_contract_address: &Option<BytesJson>,
+        _swap_unique_data: &[u8],
     ) -> TransactionFut {
         let maker_addr = try_tx_fus!(self.contract_address_from_raw_pubkey(maker_pub));
         let id = qrc20_swap_id(time_lock, secret_hash);
@@ -798,8 +778,8 @@ impl SwapOps for Qrc20Coin {
         _time_lock: u32,
         _taker_pub: &[u8],
         secret: &[u8],
-        _htlc_privkey: &[u8],
         swap_contract_address: &Option<BytesJson>,
+        _swap_unique_data: &[u8],
     ) -> TransactionFut {
         let payment_tx: UtxoTx = try_tx_fus!(deserialize(taker_payment_tx).map_err(|e| ERRL!("{:?}", e)));
         let swap_contract_address = try_tx_fus!(swap_contract_address.try_to_address());
@@ -820,8 +800,8 @@ impl SwapOps for Qrc20Coin {
         _time_lock: u32,
         _maker_pub: &[u8],
         secret: &[u8],
-        _htlc_privkey: &[u8],
         swap_contract_address: &Option<BytesJson>,
+        _swap_unique_data: &[u8],
     ) -> TransactionFut {
         let payment_tx: UtxoTx = try_tx_fus!(deserialize(maker_payment_tx).map_err(|e| ERRL!("{:?}", e)));
         let secret = secret.to_vec();
@@ -842,8 +822,8 @@ impl SwapOps for Qrc20Coin {
         _time_lock: u32,
         _maker_pub: &[u8],
         _secret_hash: &[u8],
-        _htlc_privkey: &[u8],
         swap_contract_address: &Option<BytesJson>,
+        _swap_unique_data: &[u8],
     ) -> TransactionFut {
         let payment_tx: UtxoTx = try_tx_fus!(deserialize(taker_payment_tx).map_err(|e| ERRL!("{:?}", e)));
         let swap_contract_address = try_tx_fus!(swap_contract_address.try_to_address());
@@ -863,8 +843,8 @@ impl SwapOps for Qrc20Coin {
         _time_lock: u32,
         _taker_pub: &[u8],
         _secret_hash: &[u8],
-        _htlc_privkey: &[u8],
         swap_contract_address: &Option<BytesJson>,
+        _swap_unique_data: &[u8],
     ) -> TransactionFut {
         let payment_tx: UtxoTx = try_tx_fus!(deserialize(maker_payment_tx).map_err(|e| ERRL!("{:?}", e)));
         let swap_contract_address = try_tx_fus!(swap_contract_address.try_to_address());
@@ -909,7 +889,7 @@ impl SwapOps for Qrc20Coin {
 
     fn validate_maker_payment(&self, input: ValidatePaymentInput) -> Box<dyn Future<Item = (), Error = String> + Send> {
         let payment_tx: UtxoTx = try_fus!(deserialize(input.payment_tx.as_slice()).map_err(|e| ERRL!("{:?}", e)));
-        let sender = try_fus!(self.contract_address_from_raw_pubkey(&input.maker_pub));
+        let sender = try_fus!(self.contract_address_from_raw_pubkey(&input.other_pub));
         let swap_contract_address = try_fus!(input.swap_contract_address.try_to_address());
 
         let selfi = self.clone();
@@ -931,7 +911,7 @@ impl SwapOps for Qrc20Coin {
     fn validate_taker_payment(&self, input: ValidatePaymentInput) -> Box<dyn Future<Item = (), Error = String> + Send> {
         let swap_contract_address = try_fus!(input.swap_contract_address.try_to_address());
         let payment_tx: UtxoTx = try_fus!(deserialize(input.payment_tx.as_slice()).map_err(|e| ERRL!("{:?}", e)));
-        let sender = try_fus!(self.contract_address_from_raw_pubkey(&input.taker_pub));
+        let sender = try_fus!(self.contract_address_from_raw_pubkey(&input.other_pub));
 
         let selfi = self.clone();
         let fut = async move {
@@ -952,11 +932,11 @@ impl SwapOps for Qrc20Coin {
     fn check_if_my_payment_sent(
         &self,
         time_lock: u32,
-        _my_pub: &[u8],
         _other_pub: &[u8],
         secret_hash: &[u8],
         search_from_block: u64,
         swap_contract_address: &Option<BytesJson>,
+        _swap_unique_data: &[u8],
     ) -> Box<dyn Future<Item = Option<TransactionEnum>, Error = String> + Send> {
         let swap_id = qrc20_swap_id(time_lock, secret_hash);
         let swap_contract_address = try_fus!(swap_contract_address.try_to_address());
@@ -972,31 +952,21 @@ impl SwapOps for Qrc20Coin {
 
     async fn search_for_swap_tx_spend_my(
         &self,
-        time_lock: u32,
-        _other_pub: &[u8],
-        secret_hash: &[u8],
-        tx: &[u8],
-        search_from_block: u64,
-        _swap_contract_address: &Option<BytesJson>,
+        input: SearchForSwapTxSpendInput<'_>,
     ) -> Result<Option<FoundSwapTxSpend>, String> {
-        let tx: UtxoTx = try_s!(deserialize(tx).map_err(|e| ERRL!("{:?}", e)));
+        let tx: UtxoTx = try_s!(deserialize(input.tx).map_err(|e| ERRL!("{:?}", e)));
 
-        self.search_for_swap_tx_spend(time_lock, secret_hash.to_vec(), tx, search_from_block)
+        self.search_for_swap_tx_spend(input.time_lock, input.secret_hash, tx, input.search_from_block)
             .await
     }
 
     async fn search_for_swap_tx_spend_other(
         &self,
-        time_lock: u32,
-        _other_pub: &[u8],
-        secret_hash: &[u8],
-        tx: &[u8],
-        search_from_block: u64,
-        _swap_contract_address: &Option<BytesJson>,
+        input: SearchForSwapTxSpendInput<'_>,
     ) -> Result<Option<FoundSwapTxSpend>, String> {
-        let tx: UtxoTx = try_s!(deserialize(tx).map_err(|e| ERRL!("{:?}", e)));
+        let tx: UtxoTx = try_s!(deserialize(input.tx).map_err(|e| ERRL!("{:?}", e)));
 
-        self.search_for_swap_tx_spend(time_lock, secret_hash.to_vec(), tx, search_from_block)
+        self.search_for_swap_tx_spend(input.time_lock, input.secret_hash, tx, input.search_from_block)
             .await
     }
 
@@ -1030,7 +1000,9 @@ impl SwapOps for Qrc20Coin {
         }
     }
 
-    fn get_htlc_key_pair(&self) -> Option<KeyPair> { utxo_common::get_htlc_key_pair(self) }
+    fn derive_htlc_key_pair(&self, swap_unique_data: &[u8]) -> KeyPair {
+        utxo_common::derive_htlc_key_pair(self.as_ref(), swap_unique_data)
+    }
 }
 
 impl MarketCoinOps for Qrc20Coin {
@@ -1038,7 +1010,10 @@ impl MarketCoinOps for Qrc20Coin {
 
     fn my_address(&self) -> Result<String, String> { utxo_common::my_address(self) }
 
-    fn get_public_key(&self) -> Result<String, MmError<UnexpectedDerivationMethod>> { unimplemented!() }
+    fn get_public_key(&self) -> Result<String, MmError<UnexpectedDerivationMethod>> {
+        let pubkey = utxo_common::my_public_key(self.as_ref())?;
+        Ok(pubkey.to_string())
+    }
 
     fn sign_message_hash(&self, message: &str) -> Option<[u8; 32]> {
         utxo_common::sign_message_hash(self.as_ref(), message)

@@ -1,7 +1,7 @@
 use super::*;
-
-#[cfg(feature = "zhtlc-native-tests")]
-use mm2_test_helpers::for_tests::orderbook_v2;
+use mm2_test_helpers::for_tests::{orderbook_v2, rick_conf, zombie_conf, Mm2TestConf, RICK, ZOMBIE_ELECTRUMS,
+                                  ZOMBIE_LIGHTWALLETD_URLS, ZOMBIE_TICKER};
+use mm2_test_helpers::get_passphrase;
 
 /// https://github.com/artemii235/SuperNET/issues/241
 #[test]
@@ -1315,76 +1315,41 @@ fn setprice_min_volume_should_be_displayed_in_orderbook() {
     assert_eq!(min_volume, "1", "Alice ETH/JST ask must display correct min_volume");
 }
 
-#[cfg(feature = "zhtlc-native-tests")]
+// ignored because it requires a long-running ZOMBIE initialization process
 #[test]
+#[ignore]
 fn zhtlc_orders_sync_alice_connected_before_creation() {
     let bob_passphrase = get_passphrase!(".env.seed", "BOB_PASSPHRASE").unwrap();
     let alice_passphrase = get_passphrase!(".env.client", "ALICE_PASSPHRASE").unwrap();
 
-    let coins = json!([
-        {"coin":"RICK","asset":"RICK","required_confirmations":0,"txversion":4,"overwintered":1,"protocol":{"type":"UTXO"}},
-        {"coin":"ZOMBIE","asset":"ZOMBIE","fname":"ZOMBIE (TESTCOIN)","txversion":4,"overwintered":1,"mm2":1,"protocol":{"type":"ZHTLC"},"required_confirmations":0}
-    ]);
+    let coins = json!([rick_conf(), zombie_conf()]);
 
-    let mm_bob = MarketMakerIt::start(
-        json!({
-            "gui": "nogui",
-            "netid": 9998,
-            "myipaddr": env::var ("BOB_TRADE_IP") .ok(),
-            "rpcip": env::var ("BOB_TRADE_IP") .ok(),
-            "canbind": env::var ("BOB_TRADE_PORT") .ok().map (|s| s.parse::<i64>().unwrap()),
-            "passphrase": bob_passphrase,
-            "coins": coins,
-            "rpc_password": "pass",
-            "i_am_seed": true,
-        }),
-        "pass".into(),
-        match var("LOCAL_THREAD_MM") {
-            Ok(ref e) if e == "bob" => Some(local_start()),
-            _ => None,
-        },
-    )
-    .unwrap();
+    let bob_conf = Mm2TestConf::seednode(&bob_passphrase, &coins);
+    let mm_bob = MarketMakerIt::start(bob_conf.conf, bob_conf.rpc_password, bob_conf.local).unwrap();
 
     let (_dump_log, _dump_dashboard) = mm_bob.mm_dump();
     log!({"Bob log path: {}", mm_bob.log_path.display()});
 
-    let mm_alice = MarketMakerIt::start(
-        json!({
-            "gui": "nogui",
-            "netid": 9998,
-            "dht": "on",  // Enable DHT without delay.
-            "myipaddr": env::var ("ALICE_TRADE_IP") .ok(),
-            "rpcip": env::var ("ALICE_TRADE_IP") .ok(),
-            "passphrase": alice_passphrase,
-            "coins": coins,
-            "seednodes": [fomat!((mm_bob.ip))],
-            "rpc_password": "pass",
-        }),
-        "pass".into(),
-        match var("LOCAL_THREAD_MM") {
-            Ok(ref e) if e == "alice" => Some(local_start()),
-            _ => None,
-        },
-    )
-    .unwrap();
+    let alice_conf = Mm2TestConf::light_node(&alice_passphrase, &coins, &[&mm_bob.ip.to_string()]);
+    let mm_alice = MarketMakerIt::start(alice_conf.conf, alice_conf.rpc_password, alice_conf.local).unwrap();
 
     let (_alice_dump_log, _alice_dump_dashboard) = mm_alice.mm_dump();
     log!({"Alice log path: {}", mm_alice.log_path.display()});
 
-    let rmd = rmd160_from_passphrase(&bob_passphrase);
-    let bob_zombie_cache_path = mm_bob.folder.join("DB").join(hex::encode(rmd)).join("ZOMBIE_CACHE.db");
-    log!("bob_zombie_cache_path "(bob_zombie_cache_path.display()));
-    std::fs::copy("./mm2src/coins/for_tests/ZOMBIE_CACHE.db", bob_zombie_cache_path).unwrap();
-
-    block_on(enable_electrum_json(&mm_bob, "RICK", false, rick_electrums()));
-    block_on(enable_z_coin(&mm_bob, "ZOMBIE"));
+    block_on(enable_electrum_json(&mm_bob, RICK, false, rick_electrums()));
+    block_on(enable_z_coin_light(
+        &mm_bob,
+        ZOMBIE_TICKER,
+        ZOMBIE_ELECTRUMS,
+        ZOMBIE_LIGHTWALLETD_URLS,
+        &blocks_cache_path(&mm_bob, &bob_passphrase, ZOMBIE_TICKER),
+    ));
 
     let set_price_json = json!({
         "userpass": mm_bob.userpass,
         "method": "setprice",
-        "base": "ZOMBIE",
-        "rel": "RICK",
+        "base": ZOMBIE_TICKER,
+        "rel": RICK,
         "price": 1,
         "volume": "1",
     });
@@ -1394,7 +1359,7 @@ fn zhtlc_orders_sync_alice_connected_before_creation() {
 
     let set_price_res: SetPriceResponse = json::from_str(&rc.1).unwrap();
 
-    let orderbook = block_on(orderbook_v2(&mm_alice, "ZOMBIE", "RICK"));
+    let orderbook = block_on(orderbook_v2(&mm_alice, ZOMBIE_TICKER, RICK));
     let orderbook: RpcV2Response<OrderbookV2Response> = json::from_value(orderbook).unwrap();
     let orderbook = orderbook.result;
 
@@ -1407,7 +1372,7 @@ fn zhtlc_orders_sync_alice_connected_before_creation() {
 
     thread::sleep(Duration::from_secs(MIN_ORDER_KEEP_ALIVE_INTERVAL * 3));
 
-    let orderbook = block_on(orderbook_v2(&mm_alice, "ZOMBIE", "RICK"));
+    let orderbook = block_on(orderbook_v2(&mm_alice, ZOMBIE_TICKER, RICK));
     let orderbook: RpcV2Response<OrderbookV2Response> = json::from_value(orderbook).unwrap();
     let orderbook = orderbook.result;
 
@@ -1419,47 +1384,29 @@ fn zhtlc_orders_sync_alice_connected_before_creation() {
         .unwrap();
 }
 
-#[cfg(feature = "zhtlc-native-tests")]
+// ignored because it requires a long-running ZOMBIE initialization process
 #[test]
+#[ignore]
 fn zhtlc_orders_sync_alice_connected_after_creation() {
     let bob_passphrase = get_passphrase!(".env.seed", "BOB_PASSPHRASE").unwrap();
     let alice_passphrase = get_passphrase!(".env.client", "ALICE_PASSPHRASE").unwrap();
 
-    let coins = json!([
-        {"coin":"RICK","asset":"RICK","required_confirmations":0,"txversion":4,"overwintered":1,"protocol":{"type":"UTXO"}},
-        {"coin":"ZOMBIE","asset":"ZOMBIE","fname":"ZOMBIE (TESTCOIN)","txversion":4,"overwintered":1,"mm2":1,"protocol":{"type":"ZHTLC"},"required_confirmations":0}
-    ]);
+    let coins = json!([rick_conf(), zombie_conf()]);
 
-    let mm_bob = MarketMakerIt::start(
-        json!({
-            "gui": "nogui",
-            "netid": 9998,
-            "myipaddr": env::var ("BOB_TRADE_IP") .ok(),
-            "rpcip": env::var ("BOB_TRADE_IP") .ok(),
-            "canbind": env::var ("BOB_TRADE_PORT") .ok().map (|s| s.parse::<i64>().unwrap()),
-            "passphrase": bob_passphrase,
-            "coins": coins,
-            "rpc_password": "pass",
-            "i_am_seed": true,
-        }),
-        "pass".into(),
-        match var("LOCAL_THREAD_MM") {
-            Ok(ref e) if e == "bob" => Some(local_start()),
-            _ => None,
-        },
-    )
-    .unwrap();
+    let bob_conf = Mm2TestConf::seednode(&bob_passphrase, &coins);
+    let mm_bob = MarketMakerIt::start(bob_conf.conf, bob_conf.rpc_password, bob_conf.local).unwrap();
 
     let (_dump_log, _dump_dashboard) = mm_bob.mm_dump();
     log!({"Bob log path: {}", mm_bob.log_path.display()});
 
-    let rmd = rmd160_from_passphrase(&bob_passphrase);
-    let bob_zombie_cache_path = mm_bob.folder.join("DB").join(hex::encode(rmd)).join("ZOMBIE_CACHE.db");
-    log!("bob_zombie_cache_path "(bob_zombie_cache_path.display()));
-    std::fs::copy("./mm2src/coins/for_tests/ZOMBIE_CACHE.db", bob_zombie_cache_path).unwrap();
-
     block_on(enable_electrum_json(&mm_bob, "RICK", false, rick_electrums()));
-    block_on(enable_z_coin(&mm_bob, "ZOMBIE"));
+    block_on(enable_z_coin_light(
+        &mm_bob,
+        ZOMBIE_TICKER,
+        ZOMBIE_ELECTRUMS,
+        ZOMBIE_LIGHTWALLETD_URLS,
+        &blocks_cache_path(&mm_bob, &bob_passphrase, ZOMBIE_TICKER),
+    ));
 
     let set_price_json = json!({
         "userpass": mm_bob.userpass,
@@ -1475,40 +1422,20 @@ fn zhtlc_orders_sync_alice_connected_after_creation() {
 
     let bob_set_price_res: SetPriceResponse = json::from_str(&rc.1).unwrap();
 
-    let mm_alice = MarketMakerIt::start(
-        json!({
-            "gui": "nogui",
-            "netid": 9998,
-            "dht": "on",  // Enable DHT without delay.
-            "myipaddr": env::var ("ALICE_TRADE_IP") .ok(),
-            "rpcip": env::var ("ALICE_TRADE_IP") .ok(),
-            "passphrase": alice_passphrase,
-            "coins": coins,
-            "seednodes": [fomat!((mm_bob.ip))],
-            "rpc_password": "pass",
-        }),
-        "pass".into(),
-        match var("LOCAL_THREAD_MM") {
-            Ok(ref e) if e == "alice" => Some(local_start()),
-            _ => None,
-        },
-    )
-    .unwrap();
+    let alice_conf = Mm2TestConf::light_node(&alice_passphrase, &coins, &[&mm_bob.ip.to_string()]);
+    let mm_alice = MarketMakerIt::start(alice_conf.conf, alice_conf.rpc_password, alice_conf.local).unwrap();
 
     let (_alice_dump_log, _alice_dump_dashboard) = mm_alice.mm_dump();
     log!({"Alice log path: {}", mm_alice.log_path.display()});
 
-    let rmd = rmd160_from_passphrase(&alice_passphrase);
-    let alice_cache_path = mm_alice
-        .folder
-        .join("DB")
-        .join(hex::encode(rmd))
-        .join("ZOMBIE_CACHE.db");
-    log!("alice_cache_path "(alice_cache_path.display()));
-    std::fs::copy("./mm2src/coins/for_tests/ZOMBIE_CACHE.db", alice_cache_path).unwrap();
-
-    block_on(enable_electrum_json(&mm_alice, "RICK", false, rick_electrums()));
-    block_on(enable_z_coin(&mm_alice, "ZOMBIE"));
+    block_on(enable_electrum_json(&mm_alice, RICK, false, rick_electrums()));
+    block_on(enable_z_coin_light(
+        &mm_alice,
+        ZOMBIE_TICKER,
+        ZOMBIE_ELECTRUMS,
+        ZOMBIE_LIGHTWALLETD_URLS,
+        &blocks_cache_path(&mm_alice, &alice_passphrase, ZOMBIE_TICKER),
+    ));
 
     let set_price_json = json!({
         "userpass": mm_alice.userpass,
@@ -1524,7 +1451,7 @@ fn zhtlc_orders_sync_alice_connected_after_creation() {
 
     thread::sleep(Duration::from_secs(MIN_ORDER_KEEP_ALIVE_INTERVAL));
 
-    let orderbook = block_on(orderbook_v2(&mm_alice, "ZOMBIE", "RICK"));
+    let orderbook = block_on(orderbook_v2(&mm_alice, ZOMBIE_TICKER, RICK));
     let orderbook: RpcV2Response<OrderbookV2Response> = json::from_value(orderbook).unwrap();
     let orderbook = orderbook.result;
 

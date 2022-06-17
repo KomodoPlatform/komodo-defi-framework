@@ -27,6 +27,7 @@ bytes = "0.4"
 cfg-if = "1.0"
 chain = { path = "../mm2_bitcoin/chain" }
 common = { path = "../common" }
+crossbeam = "0.7"
 crypto = { path = "../crypto" }
 db_common = { path = "../db_common" }
 derive_more = "0.99"
@@ -61,7 +62,8 @@ mocktopus = "0.7.0"
 num-traits = "0.2"
 parking_lot = { version = "0.12.0", features = ["nightly"] }
 primitives = { path = "../mm2_bitcoin/primitives" }
-prost = "0.8"
+prost = "0.10"
+protobuf = "2.20"
 rand = { version = "0.7", features = ["std", "small_rng"] }
 rlp = { git = "https://github.com/artemii235/parity-common" }
 rmp-serde = "0.14.3"
@@ -104,7 +106,7 @@ rust-ini = { version = "0.13" }
 rustls = { version = "0.20", features = ["dangerous_configuration"] }
 tokio = { version = "1.7" }
 tokio-rustls = { version = "0.23" }
-tonic = { version = "0.5.2", features = ["tls", "compression"] }
+tonic = { version = "0.7", features = ["tls", "tls-webpki-roots", "compression"] }
 webpki-roots = { version = "0.22" }
 solana-client = { version = "1", default-features = false }
 solana-sdk = { version = "1", default-features = false }
@@ -112,6 +114,7 @@ solana-transaction-status = "1"
 spl-token = { version = "3" }
 spl-associated-token-account = "1"
 zcash_client_backend = { git = "https://github.com/KomodoPlatform/librustzcash.git" }
+zcash_client_sqlite = { git = "https://github.com/KomodoPlatform/librustzcash.git" }
 zcash_primitives = { features = ["transparent-inputs"], git = "https://github.com/KomodoPlatform/librustzcash.git" }
 zcash_proofs = { git = "https://github.com/KomodoPlatform/librustzcash.git" }
 
@@ -123,4 +126,4 @@ mm2_test_helpers = { path = "../mm2_test_helpers" }
 
 [build-dependencies]
 prost-build = { version = "0.10.3", default-features = false }
-tonic-build = { version = "0.5.2", features = ["prost", "compression"] }
+tonic-build = { version = "0.7", features = ["prost", "compression"] }

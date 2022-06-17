@@ -65,9 +65,8 @@ use common::{bits256, calc_total_pages,
              executor::{spawn, Timer},
              log::{error, info},
              mm_number::{BigDecimal, BigRational, MmNumber},
-             now_ms, var, PagingOptions};
+             now_ms, spawn_abortable, var, AbortOnDropHandle, PagingOptions};
 use derive_more::Display;
-use futures::future::{abortable, AbortHandle, TryFutureExt};
 use http::Response;
 use mm2_core::mm_ctx::{from_ctx, MmArc};
 use mm2_err_handle::prelude::*;
@@ -76,6 +75,7 @@ use primitives::hash::{H160, H264};
 use rpc::v1::types::{Bytes as BytesJson, H256 as H256Json};
 use serde_json::{self as json, Value as Json};
 use std::collections::{HashMap, HashSet};
+use std::num::NonZeroUsize;
 use std::path::PathBuf;
 use std::str::FromStr;
 use std::sync::{Arc, Mutex, Weak};
@@ -109,7 +109,6 @@ use pubkey_banning::BanReason;
 pub use pubkey_banning::{ban_pubkey_rpc, is_pubkey_banned, list_banned_pubkeys_rpc, unban_pubkeys_rpc};
 pub use recreate_swap_data::recreate_swap_data;
 pub use saved_swap::{SavedSwap, SavedSwapError, SavedSwapIo, SavedSwapResult};
-use std::num::NonZeroUsize;
 use taker_swap::TakerSwapEvent;
 pub use taker_swap::{calc_max_taker_vol, check_balance_for_taker_swap, max_taker_vol, max_taker_vol_from_available,
                      run_taker_swap, taker_swap_trade_preimage, RunTakerSwapInput, TakerSavedSwap, TakerSwap,
@@ -157,13 +156,6 @@ impl SwapMsgStore {
     }
 }
 
-/// The AbortHandle that aborts on drop
-pub struct AbortOnDropHandle(AbortHandle);
-
-impl Drop for AbortOnDropHandle {
-    fn drop(&mut self) { self.0.abort(); }
-}
-
 /// Spawns the loop that broadcasts message every `interval` seconds returning the AbortOnDropHandle
 /// to stop it
 pub fn broadcast_swap_message_every(
@@ -179,9 +171,7 @@ pub fn broadcast_swap_message_every(
             Timer::sleep(interval).await;
         }
     };
-    let (abortable, abort_handle) = abortable(fut);
-    spawn(abortable.unwrap_or_else(|_| ()));
-    AbortOnDropHandle(abort_handle)
+    spawn_abortable(fut)
 }
 
 /// Broadcast the swap message once
@@ -347,6 +337,8 @@ pub trait AtomicSwap: Send + Sync {
     fn maker_coin(&self) -> &str;
 
     fn taker_coin(&self) -> &str;
+
+    fn unique_swap_data(&self) -> Vec<u8>;
 }
 
 #[derive(Serialize)]
@@ -797,19 +789,20 @@ impl From<&str> for SwapError {
 }
 
 #[derive(Serialize)]
-struct MySwapStatusResponse<'a> {
+struct MySwapStatusResponse {
     #[serde(flatten)]
-    swap: &'a SavedSwap,
+    swap: SavedSwap,
     my_info: Option<MySwapInfo>,
     recoverable: bool,
 }
 
-impl<'a> From<&'a SavedSwap> for MySwapStatusResponse<'a> {
-    fn from(swap: &'a SavedSwap) -> MySwapStatusResponse {
+impl From<SavedSwap> for MySwapStatusResponse {
+    fn from(mut swap: SavedSwap) -> MySwapStatusResponse {
+        swap.hide_secrets();
         MySwapStatusResponse {
-            swap,
             my_info: swap.get_my_info(),
             recoverable: swap.is_recoverable(),
+            swap,
         }
     }
 }
@@ -823,7 +816,7 @@ pub async fn my_swap_status(ctx: MmArc, req: Json) -> Result<Response<Vec<u8>>, 
         Err(e) => return ERR!("{}", e),
     };
 
-    let res_js = json!({ "result": MySwapStatusResponse::from(&status) });
+    let res_js = json!({ "result": MySwapStatusResponse::from(status) });
     let res = try_s!(json::to_vec(&res_js));
     Ok(try_s!(Response::builder().body(res)))
 }
@@ -932,21 +925,9 @@ pub struct MyRecentSwapsUuids {
     pub skipped: usize,
 }
 
-#[derive(Debug)]
-pub struct MyRecentSwapsResponse {
-    pub from_uuid: Option<Uuid>,
-    pub limit: usize,
-    pub skipped: usize,
-    pub total: usize,
-    pub found_records: usize,
-    pub page_number: NonZeroUsize,
-    pub total_pages: usize,
-    pub swaps: Vec<SavedSwap>,
-}
-
 #[derive(Debug, Display, Deserialize, Serialize, SerializeErrorType)]
 #[serde(tag = "error_type", content = "error_data")]
-pub enum MyRecentSwapsErr {
+pub enum LatestSwapsErr {
     #[display(fmt = "No such swap with the uuid '{}'", _0)]
     UUIDNotPresentInDb(Uuid),
     UnableToLoadSavedSwaps(SavedSwapError),
@@ -954,15 +935,31 @@ pub enum MyRecentSwapsErr {
     UnableToQuerySwapStorage,
 }
 
-pub type MyRecentSwapsResult = Result<MyRecentSwapsResponse, MmError<MyRecentSwapsErr>>;
+pub async fn latest_swaps_for_pair(
+    ctx: MmArc,
+    my_coin: String,
+    other_coin: String,
+    limit: usize,
+) -> Result<Vec<SavedSwap>, MmError<LatestSwapsErr>> {
+    let filter = MySwapsFilter {
+        my_coin: Some(my_coin),
+        other_coin: Some(other_coin),
+        from_timestamp: None,
+        to_timestamp: None,
+    };
 
-pub async fn my_recent_swaps(ctx: MmArc, req: MyRecentSwapsReq) -> MyRecentSwapsResult {
+    let paging_options = PagingOptions {
+        limit,
+        page_number: NonZeroUsize::new(1).expect("1 > 0"),
+        from_uuid: None,
+    };
+
     let db_result = match MySwapsStorage::new(ctx.clone())
-        .my_recent_swaps_with_filters(&req.filter, Some(&req.paging_options))
+        .my_recent_swaps_with_filters(&filter, Some(&paging_options))
         .await
     {
         Ok(x) => x,
-        Err(_) => return Err(MmError::new(MyRecentSwapsErr::UnableToQuerySwapStorage)),
+        Err(_) => return Err(MmError::new(LatestSwapsErr::UnableToQuerySwapStorage)),
     };
 
     let mut swaps = Vec::with_capacity(db_result.uuids.len());
@@ -973,21 +970,12 @@ pub async fn my_recent_swaps(ctx: MmArc, req: MyRecentSwapsReq) -> MyRecentSwaps
                 error!("No such swap with the uuid '{}'", uuid);
                 continue;
             },
-            Err(e) => return Err(MmError::new(MyRecentSwapsErr::UnableToLoadSavedSwaps(e.into_inner()))),
+            Err(e) => return Err(MmError::new(LatestSwapsErr::UnableToLoadSavedSwaps(e.into_inner()))),
         };
         swaps.push(swap);
     }
 
-    Ok(MyRecentSwapsResponse {
-        from_uuid: req.paging_options.from_uuid,
-        limit: req.paging_options.limit,
-        skipped: db_result.skipped,
-        total: db_result.total_count,
-        found_records: db_result.uuids.len(),
-        page_number: req.paging_options.page_number,
-        total_pages: calc_total_pages(db_result.total_count, req.paging_options.limit),
-        swaps,
-    })
+    Ok(swaps)
 }
 
 /// Returns the data of recent swaps of `my` node.
@@ -1003,7 +991,7 @@ pub async fn my_recent_swaps_rpc(ctx: MmArc, req: Json) -> Result<Response<Vec<u
     let mut swaps = Vec::with_capacity(db_result.uuids.len());
     for uuid in db_result.uuids.iter() {
         let swap_json = match SavedSwap::load_my_swap_from_db(&ctx, *uuid).await {
-            Ok(Some(swap)) => json::to_value(MySwapStatusResponse::from(&swap)).unwrap(),
+            Ok(Some(swap)) => json::to_value(MySwapStatusResponse::from(swap)).unwrap(),
             Ok(None) => {
                 error!("No such swap with the uuid '{}'", uuid);
                 Json::Null

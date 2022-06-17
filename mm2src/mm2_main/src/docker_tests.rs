@@ -112,8 +112,8 @@ mod docker_tests {
     use coins::utxo::utxo_common::send_outputs_from_my_address;
     use coins::utxo::utxo_standard::{utxo_standard_coin_with_priv_key, UtxoStandardCoin};
     use coins::utxo::{dhash160, GetUtxoListOps, UtxoActivationParams, UtxoCommonOps};
-    use coins::{CoinProtocol, FoundSwapTxSpend, MarketCoinOps, MmCoin, SwapOps, Transaction, TransactionEnum,
-                WithdrawRequest};
+    use coins::{CoinProtocol, FoundSwapTxSpend, MarketCoinOps, MmCoin, SearchForSwapTxSpendInput, SwapOps,
+                Transaction, TransactionEnum, WithdrawRequest};
     use common::mm_number::{BigDecimal, MmNumber};
     use common::{block_on, now_ms};
     use crypto::privkey::{key_pair_from_secret, key_pair_from_seed};
@@ -408,12 +408,12 @@ mod docker_tests {
     #[test]
     fn test_search_for_swap_tx_spend_native_was_refunded_taker() {
         let timeout = (now_ms() / 1000) + 120; // timeout if test takes more than 120 seconds to run
-        let (_ctx, coin, privkey) = generate_utxo_coin_with_random_privkey("MYCOIN", 1000u64.into());
+        let (_ctx, coin, _) = generate_utxo_coin_with_random_privkey("MYCOIN", 1000u64.into());
         let my_public_key = coin.my_public_key().unwrap();
 
         let time_lock = (now_ms() / 1000) as u32 - 3600;
         let tx = coin
-            .send_taker_payment(time_lock, my_public_key, my_public_key, &[0; 20], 1u64.into(), &None)
+            .send_taker_payment(time_lock, my_public_key, &[0; 20], 1u64.into(), &None, &[])
             .wait()
             .unwrap();
 
@@ -422,7 +422,7 @@ mod docker_tests {
             .unwrap();
 
         let refund_tx = coin
-            .send_taker_refunds_payment(&tx.tx_hex(), time_lock, my_public_key, &[0; 20], &privkey, &None)
+            .send_taker_refunds_payment(&tx.tx_hex(), time_lock, my_public_key, &[0; 20], &None, &[])
             .wait()
             .unwrap();
 
@@ -430,28 +430,30 @@ mod docker_tests {
             .wait()
             .unwrap();
 
-        let found = block_on(coin.search_for_swap_tx_spend_my(
+        let search_input = SearchForSwapTxSpendInput {
             time_lock,
-            &*coin.my_public_key().unwrap(),
-            &[0; 20],
-            &tx.tx_hex(),
-            0,
-            &None,
-        ))
-        .unwrap()
-        .unwrap();
+            other_pub: &*coin.my_public_key().unwrap(),
+            secret_hash: &[0; 20],
+            tx: &tx.tx_hex(),
+            search_from_block: 0,
+            swap_contract_address: &None,
+            swap_unique_data: &[],
+        };
+        let found = block_on(coin.search_for_swap_tx_spend_my(search_input))
+            .unwrap()
+            .unwrap();
         assert_eq!(FoundSwapTxSpend::Refunded(refund_tx), found);
     }
 
     #[test]
     fn test_search_for_swap_tx_spend_native_was_refunded_maker() {
         let timeout = (now_ms() / 1000) + 120; // timeout if test takes more than 120 seconds to run
-        let (_ctx, coin, privkey) = generate_utxo_coin_with_random_privkey("MYCOIN", 1000u64.into());
+        let (_ctx, coin, _) = generate_utxo_coin_with_random_privkey("MYCOIN", 1000u64.into());
         let my_public_key = coin.my_public_key().unwrap();
 
         let time_lock = (now_ms() / 1000) as u32 - 3600;
         let tx = coin
-            .send_maker_payment(time_lock, my_public_key, my_public_key, &[0; 20], 1u64.into(), &None)
+            .send_maker_payment(time_lock, my_public_key, &[0; 20], 1u64.into(), &None, &[])
             .wait()
             .unwrap();
 
@@ -460,7 +462,7 @@ mod docker_tests {
             .unwrap();
 
         let refund_tx = coin
-            .send_maker_refunds_payment(&tx.tx_hex(), time_lock, my_public_key, &[0; 20], &privkey, &None)
+            .send_maker_refunds_payment(&tx.tx_hex(), time_lock, my_public_key, &[0; 20], &None, &[])
             .wait()
             .unwrap();
 
@@ -468,29 +470,31 @@ mod docker_tests {
             .wait()
             .unwrap();
 
-        let found = block_on(coin.search_for_swap_tx_spend_my(
+        let search_input = SearchForSwapTxSpendInput {
             time_lock,
-            &*coin.my_public_key().unwrap(),
-            &[0; 20],
-            &tx.tx_hex(),
-            0,
-            &None,
-        ))
-        .unwrap()
-        .unwrap();
+            other_pub: &*coin.my_public_key().unwrap(),
+            secret_hash: &[0; 20],
+            tx: &tx.tx_hex(),
+            search_from_block: 0,
+            swap_contract_address: &None,
+            swap_unique_data: &[],
+        };
+        let found = block_on(coin.search_for_swap_tx_spend_my(search_input))
+            .unwrap()
+            .unwrap();
         assert_eq!(FoundSwapTxSpend::Refunded(refund_tx), found);
     }
 
     #[test]
     fn test_search_for_taker_swap_tx_spend_native_was_spent_by_maker() {
         let timeout = (now_ms() / 1000) + 120; // timeout if test takes more than 120 seconds to run
-        let (_ctx, coin, privkey) = generate_utxo_coin_with_random_privkey("MYCOIN", 1000u64.into());
+        let (_ctx, coin, _) = generate_utxo_coin_with_random_privkey("MYCOIN", 1000u64.into());
         let secret = [0; 32];
         let my_pubkey = coin.my_public_key().unwrap();
 
         let time_lock = (now_ms() / 1000) as u32 - 3600;
         let tx = coin
-            .send_taker_payment(time_lock, my_pubkey, my_pubkey, &*dhash160(&secret), 1u64.into(), &None)
+            .send_taker_payment(time_lock, my_pubkey, &*dhash160(&secret), 1u64.into(), &None, &[])
             .wait()
             .unwrap();
 
@@ -499,7 +503,7 @@ mod docker_tests {
             .unwrap();
 
         let spend_tx = coin
-            .send_maker_spends_taker_payment(&tx.tx_hex(), time_lock, my_pubkey, &secret, &privkey, &None)
+            .send_maker_spends_taker_payment(&tx.tx_hex(), time_lock, my_pubkey, &secret, &None, &[])
             .wait()
             .unwrap();
 
@@ -507,29 +511,31 @@ mod docker_tests {
             .wait()
             .unwrap();
 
-        let found = block_on(coin.search_for_swap_tx_spend_my(
+        let search_input = SearchForSwapTxSpendInput {
             time_lock,
-            &*coin.my_public_key().unwrap(),
-            &*dhash160(&secret),
-            &tx.tx_hex(),
-            0,
-            &None,
-        ))
-        .unwrap()
-        .unwrap();
+            other_pub: &*coin.my_public_key().unwrap(),
+            secret_hash: &*dhash160(&secret),
+            tx: &tx.tx_hex(),
+            search_from_block: 0,
+            swap_contract_address: &None,
+            swap_unique_data: &[],
+        };
+        let found = block_on(coin.search_for_swap_tx_spend_my(search_input))
+            .unwrap()
+            .unwrap();
         assert_eq!(FoundSwapTxSpend::Spent(spend_tx), found);
     }
 
     #[test]
     fn test_search_for_maker_swap_tx_spend_native_was_spent_by_taker() {
         let timeout = (now_ms() / 1000) + 120; // timeout if test takes more than 120 seconds to run
-        let (_ctx, coin, privkey) = generate_utxo_coin_with_random_privkey("MYCOIN", 1000u64.into());
+        let (_ctx, coin, _) = generate_utxo_coin_with_random_privkey("MYCOIN", 1000u64.into());
         let secret = [0; 32];
         let my_pubkey = coin.my_public_key().unwrap();
 
         let time_lock = (now_ms() / 1000) as u32 - 3600;
         let tx = coin
-            .send_maker_payment(time_lock, my_pubkey, my_pubkey, &*dhash160(&secret), 1u64.into(), &None)
+            .send_maker_payment(time_lock, my_pubkey, &*dhash160(&secret), 1u64.into(), &None, &[])
             .wait()
             .unwrap();
 
@@ -538,7 +544,7 @@ mod docker_tests {
             .unwrap();
 
         let spend_tx = coin
-            .send_taker_spends_maker_payment(&tx.tx_hex(), time_lock, my_pubkey, &secret, &privkey, &None)
+            .send_taker_spends_maker_payment(&tx.tx_hex(), time_lock, my_pubkey, &secret, &None, &[])
             .wait()
             .unwrap();
 
@@ -546,16 +552,18 @@ mod docker_tests {
             .wait()
             .unwrap();
 
-        let found = block_on(coin.search_for_swap_tx_spend_my(
+        let search_input = SearchForSwapTxSpendInput {
             time_lock,
-            &*coin.my_public_key().unwrap(),
-            &*dhash160(&secret),
-            &tx.tx_hex(),
-            0,
-            &None,
-        ))
-        .unwrap()
-        .unwrap();
+            other_pub: &*coin.my_public_key().unwrap(),
+            secret_hash: &*dhash160(&secret),
+            tx: &tx.tx_hex(),
+            search_from_block: 0,
+            swap_contract_address: &None,
+            swap_unique_data: &[],
+        };
+        let found = block_on(coin.search_for_swap_tx_spend_my(search_input))
+            .unwrap()
+            .unwrap();
         assert_eq!(FoundSwapTxSpend::Spent(spend_tx), found);
     }
 
@@ -575,10 +583,10 @@ mod docker_tests {
                 .send_maker_payment(
                     time_lock + i,
                     my_pubkey,
-                    my_pubkey,
                     &*dhash160(&secret),
                     1.into(),
                     &coin.swap_contract_address(),
+                    &[],
                 )
                 .wait()
                 .unwrap();

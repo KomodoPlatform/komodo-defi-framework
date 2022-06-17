@@ -9,18 +9,17 @@ use super::ZCoin;
 use crate::utxo::rpc_clients::{UtxoRpcClientEnum, UtxoRpcError};
 use crate::utxo::utxo_common::payment_script;
 use crate::utxo::{sat_from_big_decimal, UtxoAddressFormat};
-use crate::z_coin::{ARRRConsensusParams, SendOutputsErr, ZOutput, DEX_FEE_OVK};
+use crate::z_coin::{SendOutputsErr, ZOutput, DEX_FEE_OVK};
 use crate::{NumConversError, PrivKeyNotAllowed, TransactionEnum};
 use bigdecimal::BigDecimal;
 use bitcrypto::dhash160;
-use chain::Transaction as UtxoTx;
+use common::async_blocking;
 use derive_more::Display;
 use futures::compat::Future01CompatExt;
-use keys::{Address, Public};
+use keys::{Address, KeyPair, Public};
 use mm2_err_handle::prelude::*;
 use script::{Builder as ScriptBuilder, Opcode, Script};
 use secp256k1::SecretKey;
-use serialization::deserialize;
 use zcash_primitives::consensus;
 use zcash_primitives::legacy::Script as ZCashScript;
 use zcash_primitives::memo::MemoBytes;
@@ -50,7 +49,7 @@ pub async fn z_send_htlc(
 
     let amount_sat = sat_from_big_decimal(&amount, coin.utxo_arc.decimals)?;
     let address = htlc_address.to_string();
-    if let UtxoRpcClientEnum::Native(native) = coin.rpc_client() {
+    if let UtxoRpcClientEnum::Native(native) = coin.utxo_rpc_client() {
         native.import_address(&address, &address, false).compat().await.unwrap();
     }
 
@@ -101,6 +100,7 @@ pub enum ZP2SHSpendError {
     Rpc(UtxoRpcError),
     #[display(fmt = "{:?} {}", _0, _1)]
     TxRecoverable(TransactionEnum, String),
+    Io(std::io::Error),
 }
 
 impl From<ZTxBuilderError> for ZP2SHSpendError {
@@ -113,6 +113,10 @@ impl From<PrivKeyNotAllowed> for ZP2SHSpendError {
 
 impl From<UtxoRpcError> for ZP2SHSpendError {
     fn from(rpc: UtxoRpcError) -> ZP2SHSpendError { ZP2SHSpendError::Rpc(rpc) }
+}
+
+impl From<std::io::Error> for ZP2SHSpendError {
+    fn from(e: std::io::Error) -> Self { ZP2SHSpendError::Io(e) }
 }
 
 impl ZP2SHSpendError {
@@ -133,50 +137,47 @@ pub async fn z_p2sh_spend(
     input_sequence: u32,
     redeem_script: Script,
     script_data: Script,
-    htlc_privkey: &[u8],
-) -> Result<UtxoTx, MmError<ZP2SHSpendError>> {
+    htlc_keypair: &KeyPair,
+) -> Result<ZTransaction, MmError<ZP2SHSpendError>> {
     let current_block = coin.utxo_arc.rpc_client.get_block_count().compat().await? as u32;
-    let mut tx_builder = ZTxBuilder::new(ARRRConsensusParams {}, current_block.into());
+    let mut tx_builder = ZTxBuilder::new(coin.consensus_params(), current_block.into());
     tx_builder.set_lock_time(tx_locktime);
 
-    let secp_secret = SecretKey::from_slice(htlc_privkey).expect("Keypair contains a valid secret key");
+    let secp_secret = SecretKey::from_slice(htlc_keypair.private_ref()).expect("Keypair contains a valid secret key");
 
     let outpoint = ZCashOutpoint::new(p2sh_tx.txid().0, 0);
     let tx_out = TxOut {
         value: p2sh_tx.vout[0].value,
         script_pubkey: ZCashScript(redeem_script.to_vec()),
     };
-    tx_builder
-        .add_transparent_input(
-            secp_secret,
-            outpoint,
-            input_sequence,
-            ZCashScript(script_data.to_vec()),
-            tx_out,
-        )
-        .map_to_mm(ZP2SHSpendError::from)?;
-    tx_builder
-        .add_sapling_output(
-            None,
-            coin.z_fields.my_z_addr.clone(),
-            // TODO use fee from coin here
-            p2sh_tx.vout[0].value - Amount::from_i64(1000).expect("1000 will always succeed"),
-            None,
-        )
-        .map_to_mm(ZP2SHSpendError::from)?;
+    tx_builder.add_transparent_input(
+        secp_secret,
+        outpoint,
+        input_sequence,
+        ZCashScript(script_data.to_vec()),
+        tx_out,
+    )?;
+    tx_builder.add_sapling_output(
+        None,
+        coin.z_fields.my_z_addr.clone(),
+        // TODO use fee from coin here. Will do on next iteration, 1000 is default value that works fine
+        p2sh_tx.vout[0].value - Amount::from_i64(1000).expect("1000 will always succeed"),
+        None,
+    )?;
 
-    let (zcash_tx, _) = tx_builder
-        .build(consensus::BranchId::Sapling, &coin.z_fields.z_tx_prover)
-        .map_to_mm(ZP2SHSpendError::from)?;
+    let (zcash_tx, _) = async_blocking({
+        let prover = coin.z_fields.z_tx_prover.clone();
+        move || tx_builder.build(consensus::BranchId::Sapling, prover.as_ref())
+    })
+    .await?;
 
     let mut tx_buffer = Vec::with_capacity(1024);
-    zcash_tx.write(&mut tx_buffer).unwrap();
-    let refund_tx: UtxoTx = deserialize(tx_buffer.as_slice()).expect("librustzcash should produce a valid tx");
+    zcash_tx.write(&mut tx_buffer)?;
 
-    match coin.rpc_client().send_raw_transaction(tx_buffer.into()).compat().await {
-        Ok(_) => (),
-        Err(e) => return Err(ZP2SHSpendError::TxRecoverable(refund_tx.into(), e.to_string()).into()),
-    };
-
-    Ok(refund_tx)
+    coin.utxo_rpc_client()
+        .send_raw_transaction(tx_buffer.into())
+        .compat()
+        .await
+        .map(|_| zcash_tx.clone())
+        .mm_err(|e| ZP2SHSpendError::TxRecoverable(zcash_tx.into(), e.to_string()))
 }

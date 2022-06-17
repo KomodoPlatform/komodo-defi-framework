@@ -617,6 +617,7 @@ pub enum EnableCoinBalance {
 #[derive(Debug, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct ZcoinActivationResult {
+    pub ticker: String,
     pub current_block: u64,
     pub wallet_balance: EnableCoinBalance,
 }
@@ -638,6 +639,14 @@ pub enum MmRpcResult<T> {
 #[serde(deny_unknown_fields, tag = "status", content = "details")]
 pub enum InitZcoinStatus {
     Ready(MmRpcResult<ZcoinActivationResult>),
+    InProgress(Json),
+    UserActionRequired(Json),
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(deny_unknown_fields, tag = "status", content = "details")]
+pub enum WithdrawStatus {
+    Ready(MmRpcResult<TransactionDetails>),
     InProgress(Json),
     UserActionRequired(Json),
 }
@@ -898,3 +907,7 @@ pub struct SignatureResponse {
 pub struct VerificationResponse {
     pub is_valid: bool,
 }
+
+#[derive(Debug, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct WithdrawResult {}

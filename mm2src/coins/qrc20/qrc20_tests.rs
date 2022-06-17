@@ -122,7 +122,6 @@ fn test_validate_maker_payment() {
 
     // tx_hash: 016a59dd2b181b3906b0f0333d5c7561dacb332dc99ac39679a591e523f2c49a
     let payment_tx = hex::decode("010000000194448324c14fc6b78c7a52c59debe3240fc392019dbd6f1457422e3308ce1e75010000006b483045022100800a4956a30a36708536d98e8ea55a3d0983b963af6c924f60241616e2ff056d0220239e622f8ec8f1a0f5ef0fc93ff094a8e6b5aab964a62bed680b17bf6a848aac012103693bff1b39e8b5a306810023c29b95397eb395530b106b1820ea235fd81d9ce9ffffffff020000000000000000e35403a0860101284cc49b415b2a0c692f2ec8ebab181a79e31b7baab30fef0902e57f901c47a342643eeafa6b510000000000000000000000000000000000000000000000000000000001312d00000000000000000000000000d362e096e873eb7907e205fadc6175c6fec7bc44000000000000000000000000783cf0be521101942da509846ea476e683aad8320101010101010101010101010101010101010101000000000000000000000000000000000000000000000000000000000000000000000000000000005f72ec7514ba8b71f3544b93e2f681f996da519a98ace0107ac201319302000000001976a9149e032d4b0090a11dc40fe6c47601499a35d55fbb88ac40ed725f").unwrap();
-    let taker_pub = coin.my_public_key().unwrap().to_vec();
     // pubkey of "cMhHM3PMpMrChygR4bLF7QsTdenhWpFrrmf2UezBG3eeFsz41rtL" passphrase
     let correct_maker_pub = hex::decode("03693bff1b39e8b5a306810023c29b95397eb395530b106b1820ea235fd81d9ce9").unwrap();
     let correct_amount = BigDecimal::from_str("0.2").unwrap();
@@ -130,24 +129,24 @@ fn test_validate_maker_payment() {
     let mut input = ValidatePaymentInput {
         payment_tx,
         time_lock: 1601367157,
-        taker_pub,
-        maker_pub: correct_maker_pub.clone(),
+        other_pub: correct_maker_pub.clone(),
         secret_hash: vec![1; 20],
         amount: correct_amount.clone(),
         swap_contract_address: coin.swap_contract_address(),
         try_spv_proof_until: now_ms() / 1000 + 30,
         confirmations: 1,
+        unique_swap_data: Vec::new(),
     };
 
     coin.validate_maker_payment(input.clone()).wait().unwrap();
 
-    input.maker_pub = hex::decode("022b00078841f37b5d30a6a1defb82b3af4d4e2d24dd4204d41f0c9ce1e875de1a").unwrap();
+    input.other_pub = hex::decode("022b00078841f37b5d30a6a1defb82b3af4d4e2d24dd4204d41f0c9ce1e875de1a").unwrap();
     let error = coin.validate_maker_payment(input.clone()).wait().unwrap_err();
     log!("error: "[error]);
     assert!(
         error.contains("Payment tx was sent from wrong address, expected 0x783cf0be521101942da509846ea476e683aad832")
     );
-    input.maker_pub = correct_maker_pub;
+    input.other_pub = correct_maker_pub;
 
     input.amount = BigDecimal::from_str("0.3").unwrap();
     let error = coin.validate_maker_payment(input.clone()).wait().unwrap_err();
@@ -913,13 +912,13 @@ fn test_validate_maker_payment_malicious() {
     let input = ValidatePaymentInput {
         payment_tx,
         time_lock: 1604386811,
-        taker_pub: vec![],
-        maker_pub,
         secret_hash,
         amount,
         swap_contract_address: coin.swap_contract_address(),
         try_spv_proof_until: now_ms() / 1000 + 30,
         confirmations: 1,
+        other_pub: maker_pub,
+        unique_swap_data: Vec::new(),
     };
     let error = coin
         .validate_maker_payment(input)

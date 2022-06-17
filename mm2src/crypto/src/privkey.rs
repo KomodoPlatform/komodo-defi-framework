@@ -70,19 +70,24 @@ fn private_from_seed(seed: &str) -> PrivKeyResult<Private> {
             })
         },
         None => {
-            let mut hash = sha256(seed.as_bytes());
-            hash[0] &= 248;
-            hash[31] &= 127;
-            hash[31] |= 64;
+            let hash = sha256(seed.as_bytes());
 
             Ok(Private {
                 prefix: 0,
-                secret: hash,
+                secret: secp_privkey_from_hash(hash),
                 compressed: true,
                 checksum_type: ChecksumType::DSHA256,
             })
         },
     }
+}
+
+/// Mutates the arbitrary hash to become a valid secp256k1 private key
+pub fn secp_privkey_from_hash(mut hash: H256) -> H256 {
+    hash[0] &= 248;
+    hash[31] &= 127;
+    hash[31] |= 64;
+    hash
 }
 
 pub fn key_pair_from_seed(seed: &str) -> PrivKeyResult<KeyPair> {

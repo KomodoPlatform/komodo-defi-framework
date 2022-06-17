@@ -17,7 +17,8 @@ use crate::utxo::utxo_common::UtxoTxBuilder;
 use crate::utxo::utxo_common_tests;
 use crate::utxo::utxo_standard::{utxo_standard_coin_with_priv_key, UtxoStandardCoin};
 #[cfg(not(target_arch = "wasm32"))] use crate::WithdrawFee;
-use crate::{CoinBalance, PrivKeyBuildPolicy, StakingInfosDetails, SwapOps, TradePreimageValue, TxFeeDetails};
+use crate::{CoinBalance, PrivKeyBuildPolicy, SearchForSwapTxSpendInput, StakingInfosDetails, SwapOps,
+            TradePreimageValue, TxFeeDetails};
 use bigdecimal::{BigDecimal, Signed};
 use chain::OutPoint;
 use common::executor::Timer;
@@ -202,7 +203,6 @@ fn test_send_maker_spends_taker_payment_recoverable_tx() {
     let coin = utxo_coin_for_test(client.into(), None, false);
     let tx_hex = hex::decode("0100000001de7aa8d29524906b2b54ee2e0281f3607f75662cbc9080df81d1047b78e21dbc00000000d7473044022079b6c50820040b1fbbe9251ced32ab334d33830f6f8d0bf0a40c7f1336b67d5b0220142ccf723ddabb34e542ed65c395abc1fbf5b6c3e730396f15d25c49b668a1a401209da937e5609680cb30bff4a7661364ca1d1851c2506fa80c443f00a3d3bf7365004c6b6304f62b0e5cb175210270e75970bb20029b3879ec76c4acd320a8d0589e003636264d01a7d566504bfbac6782012088a9142fb610d856c19fd57f2d0cffe8dff689074b3d8a882103f368228456c940ac113e53dad5c104cf209f2f102a409207269383b6ab9b03deac68ffffffff01d0dc9800000000001976a9146d9d2b554d768232320587df75c4338ecc8bf37d88ac40280e5c").unwrap();
     let secret = hex::decode("9da937e5609680cb30bff4a7661364ca1d1851c2506fa80c443f00a3d3bf7365").unwrap();
-    let keypair = key_pair_from_seed("").unwrap();
 
     let tx_err = coin
         .send_maker_spends_taker_payment(
@@ -210,8 +210,8 @@ fn test_send_maker_spends_taker_payment_recoverable_tx() {
             777,
             &coin.my_public_key().unwrap().to_vec(),
             &secret,
-            &*keypair.private().secret,
             &coin.swap_contract_address(),
+            &[],
         )
         .wait()
         .unwrap_err();
@@ -503,22 +503,24 @@ fn test_search_for_swap_tx_spend_electrum_was_spent() {
         .unwrap();
     let spend_tx = TransactionEnum::UtxoTx(deserialize(spend_tx_bytes.as_slice()).unwrap());
 
-    let found = block_on(coin.search_for_swap_tx_spend_my(
-        1591928233,
-        &*coin.my_public_key().unwrap(),
-        &*dhash160(&secret),
-        &payment_tx_bytes,
-        0,
-        &None,
-    ))
-    .unwrap()
-    .unwrap();
+    let search_input = SearchForSwapTxSpendInput {
+        time_lock: 1591928233,
+        other_pub: &*coin.my_public_key().unwrap(),
+        secret_hash: &*dhash160(&secret),
+        tx: &payment_tx_bytes,
+        search_from_block: 0,
+        swap_contract_address: &None,
+        swap_unique_data: &[],
+    };
+    let found = block_on(coin.search_for_swap_tx_spend_my(search_input))
+        .unwrap()
+        .unwrap();
     assert_eq!(FoundSwapTxSpend::Spent(spend_tx), found);
 }
 
 #[test]
 fn test_search_for_swap_tx_spend_electrum_was_refunded() {
-    let secret = [0; 20];
+    let secret_hash = [0; 20];
     let client = electrum_client_for_test(RICK_ELECTRUM_ADDRS);
     let coin = utxo_coin_for_test(
         client.into(),
@@ -535,16 +537,18 @@ fn test_search_for_swap_tx_spend_electrum_was_refunded() {
         .unwrap();
     let refund_tx = TransactionEnum::UtxoTx(deserialize(refund_tx_bytes.as_slice()).unwrap());
 
-    let found = block_on(coin.search_for_swap_tx_spend_my(
-        1591933469,
-        coin.as_ref().priv_key_policy.key_pair_or_err().unwrap().public(),
-        &secret,
-        &payment_tx_bytes,
-        0,
-        &None,
-    ))
-    .unwrap()
-    .unwrap();
+    let search_input = SearchForSwapTxSpendInput {
+        time_lock: 1591933469,
+        other_pub: &coin.as_ref().priv_key_policy.key_pair_or_err().unwrap().public(),
+        secret_hash: &secret_hash,
+        tx: &payment_tx_bytes,
+        search_from_block: 0,
+        swap_contract_address: &None,
+        swap_unique_data: &[],
+    };
+    let found = block_on(coin.search_for_swap_tx_spend_my(search_input))
+        .unwrap()
+        .unwrap();
     assert_eq!(FoundSwapTxSpend::Refunded(refund_tx), found);
 }
 
