@@ -3327,12 +3327,10 @@ fn test_split_qtum() {
     let ctx = MmCtxBuilder::new().into_mm_arc();
     let params = UtxoActivationParams::from_legacy_req(&req).unwrap();
     let coin = block_on(qtum_coin_with_priv_key(&ctx, "QTUM", &conf, &params, &priv_key)).unwrap();
-    let address_out = Address::from("qXxsj5RtciAby9T7m98AgAATL4zTi4UwDG");
-    let script: Script = output_script(&address_out, ScriptType::P2PKH);
     let p2pkh_address = coin.as_ref().derivation_method.unwrap_iguana();
+    let script: Script = output_script(p2pkh_address, ScriptType::P2PKH);
     let key_pair = coin.as_ref().priv_key_policy.key_pair_or_err().unwrap();
-    let (unspents, _) =
-        block_on(coin.get_mature_unspent_ordered_list(&address_out)).expect("Expected an empty unspent list");
+    let (unspents, _) = block_on(coin.get_mature_unspent_ordered_list(p2pkh_address)).expect("Unspent list is empty");
     let unspents_mature = unspents.mature;
     println!("unspents_mature vec = {:?}", unspents_mature);
     let outputs = vec![
@@ -3347,9 +3345,9 @@ fn test_split_qtum() {
         .add_outputs(outputs);
     let (unsigned, data) = block_on(builder.build()).unwrap();
     let min_fee = 400000;
-    assert_eq!(data.fee_amount > min_fee, true);
+    assert!(data.fee_amount > min_fee);
     println!("unsigned tx = {:?}", unsigned);
-    let signature_version = match &p2pkh_address.addr_format {
+    let signature_version = match p2pkh_address.addr_format {
         UtxoAddressFormat::Segwit => SignatureVersion::WitnessV0,
         _ => coin.as_ref().conf.signature_version,
     };
