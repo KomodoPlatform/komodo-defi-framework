@@ -3111,7 +3111,7 @@ async fn get_merkle_and_header_retry_loop(
             error!(
                 "Waited too long until {} for transaction {:?} to validate spv proof",
                 try_spv_proof_until,
-                tx.hash(),
+                tx.hash().reversed(),
             );
             return Err(SPVError::Timeout.into());
         }

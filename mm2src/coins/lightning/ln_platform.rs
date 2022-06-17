@@ -271,7 +271,8 @@ impl Platform {
             .map(|transaction| async move {
                 (
                     transaction.clone(),
-                    validate_spv_proof(ticker, block_headers_storage, client, &transaction, 5).await,
+                    // Todo: make it number of retries maybe??
+                    validate_spv_proof(ticker, block_headers_storage, client, &transaction, (now_ms() / 1000) + 5).await,
                 )
             })
             .collect::<Vec<_>>();
@@ -364,7 +365,7 @@ impl Platform {
             .map(|output| async move {
                 (
                     output.spending_tx.clone(),
-                    validate_spv_proof(ticker, block_headers_storage, client, &output.spending_tx, 5).await,
+                    validate_spv_proof(ticker, block_headers_storage, client, &output.spending_tx, (now_ms() / 1000) + 5).await,
                 )
             })
             .collect::<Vec<_>>();
