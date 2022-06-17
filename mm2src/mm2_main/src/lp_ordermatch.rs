@@ -2731,6 +2731,7 @@ impl MakerOrdersContext {
         *self.count_by_tickers.entry(order.base.clone()).or_insert(0) += 1;
         self.orders.insert(order.uuid, Arc::new(AsyncMutex::new(order)));
     }
+
     fn remove_order(&mut self, uuid: &Uuid, ticker: &str) -> Option<Arc<AsyncMutex<MakerOrder>>> {
         if let Some(count) = self.count_by_tickers.get_mut(ticker) {
             if *count > 0 {
@@ -2739,14 +2740,18 @@ impl MakerOrdersContext {
         }
         self.orders.remove(uuid)
     }
+
     fn coin_has_active_maker_orders(&self, ticker: &str) -> bool {
         match self.count_by_tickers.get(ticker) {
             Some(count) => *count > 0,
             None => false,
         }
     }
+
     fn add_balance_loop(&mut self, ticker: &str) { self.balance_loops.insert(ticker.to_string()); }
+
     fn remove_balance_loop(&mut self, ticker: &str) { self.balance_loops.remove(ticker); }
+
     fn balance_loop_exists(&mut self, ticker: &str) -> bool { self.balance_loops.contains(ticker) }
 }
 
@@ -4320,14 +4325,14 @@ pub async fn check_balance_update_loop(ctx: MmWeak, ticker: String, balance: Opt
             None => return,
         };
 
-        let ordermatch_ctx = OrdermatchContext::from_ctx(&ctx).unwrap();
-        if !ordermatch_ctx
-            .makerorders_ctx
-            .lock()
-            .coin_has_active_maker_orders(&ticker)
         {
-            ordermatch_ctx.makerorders_ctx.lock().remove_balance_loop(&ticker);
-            break;
+            let ordermatch_ctx = OrdermatchContext::from_ctx(&ctx).unwrap();
+            let mut makerorders_ctx = ordermatch_ctx.makerorders_ctx.lock();
+
+            if !makerorders_ctx.coin_has_active_maker_orders(&ticker) {
+                makerorders_ctx.remove_balance_loop(&ticker);
+                break;
+            }
         }
 
         if let Ok(Some(coin)) = lp_coinfind(&ctx, &ticker).await {
@@ -4430,21 +4435,14 @@ pub async fn create_maker_order(ctx: &MmArc, req: SetPriceReq) -> Result<MakerOr
         rel_coin.coin_protocol_info(),
     );
 
-    let balance_loop_exists = ordermatch_ctx
-        .makerorders_ctx
-        .lock()
-        .balance_loop_exists(base_coin.ticker());
-    if !balance_loop_exists {
+    let mut makerorders_ctx = ordermatch_ctx.makerorders_ctx.lock();
+    if !makerorders_ctx.balance_loop_exists(base_coin.ticker()) {
         let ctx_weak = ctx.weak();
         let ticker = base_coin.ticker().to_string();
         spawn(async move { check_balance_update_loop(ctx_weak, ticker, Some(balance)).await });
-        ordermatch_ctx
-            .makerorders_ctx
-            .lock()
-            .add_balance_loop(base_coin.ticker());
+        makerorders_ctx.add_balance_loop(base_coin.ticker());
     }
-
-    ordermatch_ctx.makerorders_ctx.lock().add_order(new_order.clone());
+    makerorders_ctx.add_order(new_order.clone());
 
     Ok(new_order)
 }
@@ -5120,18 +5118,17 @@ pub async fn orders_kick_start(ctx: &MmArc) -> Result<HashSet<String>, String> {
     let saved_maker_orders = try_s!(storage.load_active_maker_orders().await);
     let saved_taker_orders = try_s!(storage.load_active_taker_orders().await);
 
+    let mut makerorders_ctx = ordermatch_ctx.makerorders_ctx.lock();
     for order in saved_maker_orders {
-        let balance_loop_exists = ordermatch_ctx.makerorders_ctx.lock().balance_loop_exists(&order.base);
-        if !balance_loop_exists {
+        if !makerorders_ctx.balance_loop_exists(&order.base) {
             let ctx_weak = ctx.weak();
             let ticker = order.base.clone();
             spawn(async move { check_balance_update_loop(ctx_weak, ticker, None).await });
-            ordermatch_ctx.makerorders_ctx.lock().add_balance_loop(&order.base);
+            makerorders_ctx.add_balance_loop(&order.base);
         }
-
         coins.insert(order.base.clone());
         coins.insert(order.rel.clone());
-        ordermatch_ctx.makerorders_ctx.lock().add_order(order);
+        makerorders_ctx.add_order(order);
     }
 
     let mut taker_orders = ordermatch_ctx.my_taker_orders.lock().await;
