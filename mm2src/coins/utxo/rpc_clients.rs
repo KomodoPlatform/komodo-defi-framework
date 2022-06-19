@@ -2363,7 +2363,7 @@ async fn connect_loop(
                 Either::Right(TcpStream::connect(&socket_addr).and_then(move |stream| {
                     // Can use `unwrap` cause `dns_name` is pre-checked.
                     let dns = ServerName::try_from(dns_name.as_str())
-                        .map_err(|e| fomat!([e]))
+                        .map_err(|e| format!("{:?}", e))
                         .unwrap();
                     tls_connector.connect(dns, stream).map_ok(ElectrumStream::Tls)
                 }))

@@ -29,9 +29,12 @@ fn alice_can_see_the_active_order_after_connection() {
     )
     .unwrap();
     let (_bob_dump_log, _bob_dump_dashboard) = mm_bob.mm_dump();
-    log!({"Bob log path: {}", mm_bob.log_path.display()});
+    log!("Bob log path: {}", mm_bob.log_path.display());
     // Enable coins on Bob side. Print the replies in case we need the "address".
-    log!({ "enable_coins (bob): {:?}", block_on(enable_coins_rick_morty_electrum(&mm_bob)) });
+    log!(
+        "enable_coins (bob): {:?}",
+        block_on(enable_coins_rick_morty_electrum(&mm_bob))
+    );
     // issue sell request on Bob side by setting base/rel price
     log!("Issue bob sell request");
     let rc = block_on(mm_bob.rpc(&json! ({
@@ -56,7 +59,7 @@ fn alice_can_see_the_active_order_after_connection() {
     assert!(rc.0.is_success(), "!orderbook: {}", rc.1);
 
     let bob_orderbook: OrderbookResponse = json::from_str(&rc.1).unwrap();
-    log!("Bob orderbook "[bob_orderbook]);
+    log!("Bob orderbook {:?}", bob_orderbook);
     assert!(!bob_orderbook.asks.is_empty(), "Bob RICK/MORTY asks are empty");
     assert_eq!(BigDecimal::from_str("0.9").unwrap(), bob_orderbook.asks[0].max_volume);
 
@@ -71,16 +74,19 @@ fn alice_can_see_the_active_order_after_connection() {
             "passphrase": "eve passphrase",
             "coins": coins,
             "rpc_password": "pass",
-            "seednodes": [fomat!((mm_bob.ip))],
+            "seednodes": [mm_bob.ip.to_string()],
         }),
         "pass".into(),
         local_start!("bob"),
     )
     .unwrap();
     let (_eve_dump_log, _eve_dump_dashboard) = mm_eve.mm_dump();
-    log!({ "Eve log path: {}", mm_eve.log_path.display() });
+    log!("Eve log path: {}", mm_eve.log_path.display());
     // Enable coins on Eve side. Print the replies in case we need the "address".
-    log!({ "enable_coins (eve): {:?}", block_on(enable_coins_rick_morty_electrum(&mm_eve)) });
+    log!(
+        "enable_coins (eve): {:?}",
+        block_on(enable_coins_rick_morty_electrum(&mm_eve))
+    );
     // issue sell request on Eve side by setting base/rel price
     log!("Issue eve sell request");
     let rc = block_on(mm_eve.rpc(&json! ({
@@ -117,7 +123,7 @@ fn alice_can_see_the_active_order_after_connection() {
     assert!(rc.0.is_success(), "!orderbook: {}", rc.1);
 
     let eve_orderbook: OrderbookResponse = json::from_str(&rc.1).unwrap();
-    log!("Eve orderbook "[eve_orderbook]);
+    log!("Eve orderbook {:?}", eve_orderbook);
     assert_eq!(
         eve_orderbook.asks.len(),
         2,
@@ -142,7 +148,7 @@ fn alice_can_see_the_active_order_after_connection() {
     assert!(rc.0.is_success(), "!orderbook: {}", rc.1);
 
     let bob_orderbook: OrderbookResponse = json::from_str(&rc.1).unwrap();
-    log!("Bob orderbook "[bob_orderbook]);
+    log!("Bob orderbook {:?}", bob_orderbook);
     assert_eq!(
         bob_orderbook.asks.len(),
         2,
@@ -162,7 +168,7 @@ fn alice_can_see_the_active_order_after_connection() {
             "rpcip": env::var ("ALICE_TRADE_IP") .ok(),
             "passphrase": "alice passphrase",
             "coins": coins,
-            "seednodes": [fomat!((mm_bob.ip))],
+            "seednodes": [mm_bob.ip.to_string()],
             "rpc_password": "pass",
         }),
         "pass".into(),
@@ -171,10 +177,13 @@ fn alice_can_see_the_active_order_after_connection() {
     .unwrap();
 
     let (_alice_dump_log, _alice_dump_dashboard) = mm_alice.mm_dump();
-    log!({ "Alice log path: {}", mm_alice.log_path.display() });
+    log!("Alice log path: {}", mm_alice.log_path.display());
 
     // Enable coins on Alice side. Print the replies in case we need the "address".
-    log!({ "enable_coins (alice): {:?}", block_on(enable_coins_rick_morty_electrum(&mm_alice)) });
+    log!(
+        "enable_coins (alice): {:?}",
+        block_on(enable_coins_rick_morty_electrum(&mm_alice))
+    );
 
     log!("Get RICK/MORTY orderbook on Alice side");
     let rc = block_on(mm_alice.rpc(&json! ({
@@ -187,7 +196,7 @@ fn alice_can_see_the_active_order_after_connection() {
     assert!(rc.0.is_success(), "!orderbook: {}", rc.1);
 
     let alice_orderbook: OrderbookResponse = json::from_str(&rc.1).unwrap();
-    log!("Alice orderbook "[alice_orderbook]);
+    log!("Alice orderbook {:?}", alice_orderbook);
     assert_eq!(
         alice_orderbook.asks.len(),
         2,
@@ -235,7 +244,7 @@ fn alice_can_see_the_active_order_after_orderbook_sync_segwit() {
     )
     .unwrap();
     let (_bob_dump_log, _bob_dump_dashboard) = mm_bob.mm_dump();
-    log!({"Bob log path: {}", mm_bob.log_path.display()});
+    log!("Bob log path: {}", mm_bob.log_path.display());
 
     // Enable coins on Bob side. Print the replies in case we need the "address".
     let electrum = block_on(mm_bob.rpc(&json!({
@@ -253,7 +262,7 @@ fn alice_can_see_the_active_order_after_orderbook_sync_segwit() {
         electrum.0,
         electrum.1
     );
-    log!({ "enable tBTC: {:?}", electrum });
+    log!("enable tBTC: {:?}", electrum);
     let enable_tbtc_res: EnableElectrumResponse = json::from_str(&electrum.1).unwrap();
     let tbtc_segwit_address = enable_tbtc_res.address;
 
@@ -271,7 +280,7 @@ fn alice_can_see_the_active_order_after_orderbook_sync_segwit() {
         electrum.0,
         electrum.1
     );
-    log!({ "enable RICK: {:?}", electrum });
+    log!("enable RICK: {:?}", electrum);
     let enable_rick_res: Json = json::from_str(&electrum.1).unwrap();
     let rick_address = enable_rick_res["address"].as_str().unwrap();
 
@@ -317,7 +326,7 @@ fn alice_can_see_the_active_order_after_orderbook_sync_segwit() {
             "rpcip": env::var ("ALICE_TRADE_IP") .ok(),
             "passphrase": "alice passphrase",
             "coins": alice_coins_config,
-            "seednodes": [fomat!((mm_bob.ip))],
+            "seednodes": [mm_bob.ip.to_string()],
             "rpc_password": "pass",
         }),
         "pass".into(),
@@ -326,7 +335,7 @@ fn alice_can_see_the_active_order_after_orderbook_sync_segwit() {
     .unwrap();
 
     let (_alice_dump_log, _alice_dump_dashboard) = mm_alice.mm_dump();
-    log!({ "Alice log path: {}", mm_alice.log_path.display() });
+    log!("Alice log path: {}", mm_alice.log_path.display());
 
     block_on(mm_bob.wait_for_log(22., |log| {
         log.contains("DEBUG Handling IncludedTorelaysMesh message for peer")
@@ -348,7 +357,7 @@ fn alice_can_see_the_active_order_after_orderbook_sync_segwit() {
         electrum.0,
         electrum.1
     );
-    log!({ "enable Alice tBTC: {:?}", electrum });
+    log!("enable Alice tBTC: {:?}", electrum);
 
     let electrum = block_on(mm_alice.rpc(&json!({
         "userpass": "pass",
@@ -364,7 +373,7 @@ fn alice_can_see_the_active_order_after_orderbook_sync_segwit() {
         electrum.0,
         electrum.1
     );
-    log!({ "enable Alice RICK: {:?}", electrum });
+    log!("enable Alice RICK: {:?}", electrum);
 
     // setting the price will trigger Alice's subscription to the orderbook topic
     // but won't request the actual orderbook
@@ -435,7 +444,7 @@ fn test_orderbook_segwit() {
     )
     .unwrap();
     let (_bob_dump_log, _bob_dump_dashboard) = mm_bob.mm_dump();
-    log!({"Bob log path: {}", mm_bob.log_path.display()});
+    log!("Bob log path: {}", mm_bob.log_path.display());
 
     // Enable coins on Bob side. Print the replies in case we need the "address".
     let electrum = block_on(mm_bob.rpc(&json!({
@@ -453,7 +462,7 @@ fn test_orderbook_segwit() {
         electrum.0,
         electrum.1
     );
-    log!({ "enable tBTC: {:?}", electrum });
+    log!("enable tBTC: {:?}", electrum);
     let enable_tbtc_res: EnableElectrumResponse = json::from_str(&electrum.1).unwrap();
     let tbtc_segwit_address = enable_tbtc_res.address;
 
@@ -471,7 +480,7 @@ fn test_orderbook_segwit() {
         electrum.0,
         electrum.1
     );
-    log!({ "enable RICK: {:?}", electrum });
+    log!("enable RICK: {:?}", electrum);
     let enable_rick_res: Json = json::from_str(&electrum.1).unwrap();
     let rick_address = enable_rick_res["address"].as_str().unwrap();
 
@@ -506,7 +515,7 @@ fn test_orderbook_segwit() {
             "rpcip": env::var ("ALICE_TRADE_IP") .ok(),
             "passphrase": "alice passphrase",
             "coins": alice_coins_config,
-            "seednodes": [fomat!((mm_bob.ip))],
+            "seednodes": [mm_bob.ip.to_string()],
             "rpc_password": "pass",
         }),
         "pass".into(),
@@ -515,7 +524,7 @@ fn test_orderbook_segwit() {
     .unwrap();
 
     let (_alice_dump_log, _alice_dump_dashboard) = mm_alice.mm_dump();
-    log!({ "Alice log path: {}", mm_alice.log_path.display() });
+    log!("Alice log path: {}", mm_alice.log_path.display());
 
     block_on(mm_bob.wait_for_log(22., |log| {
         log.contains("DEBUG Handling IncludedTorelaysMesh message for peer")
@@ -562,7 +571,7 @@ fn test_get_orderbook_with_same_orderbook_ticker() {
     )
     .unwrap();
     let (_dump_log, _dump_dashboard) = mm.mm_dump();
-    log!({"Log path: {}", mm.log_path.display()});
+    log!("Log path: {}", mm.log_path.display());
 
     let rc = block_on(mm.rpc(&json! ({
         "userpass": mm.userpass,
@@ -608,9 +617,12 @@ fn test_conf_settings_in_orderbook() {
     )
     .unwrap();
     let (_dump_log, _dump_dashboard) = mm_bob.mm_dump();
-    log!({"Log path: {}", mm_bob.log_path.display()});
+    log!("Log path: {}", mm_bob.log_path.display());
 
-    log! ({"enable_coins (bob): {:?}", block_on (enable_coins_rick_morty_electrum(&mm_bob))});
+    log!(
+        "enable_coins (bob): {:?}",
+        block_on(enable_coins_rick_morty_electrum(&mm_bob))
+    );
 
     log!("Issue set_price request for RICK/MORTY on Bob side");
     let rc = block_on(mm_bob.rpc(&json! ({
@@ -643,16 +655,19 @@ fn test_conf_settings_in_orderbook() {
             "passphrase": "alice passphrase",
             "rpc_password": "password",
             "coins": coins,
-            "seednodes": [fomat!((mm_bob.ip))],
+            "seednodes": [mm_bob.ip.to_string()],
         }),
         "password".into(),
         None,
     )
     .unwrap();
     let (_dump_log, _dump_dashboard) = mm_alice.mm_dump();
-    log!({"Log path: {}", mm_alice.log_path.display()});
+    log!("Log path: {}", mm_alice.log_path.display());
 
-    log! ({"enable_coins (alice): {:?}", block_on (enable_coins_rick_morty_electrum(&mm_alice))});
+    log!(
+        "enable_coins (alice): {:?}",
+        block_on(enable_coins_rick_morty_electrum(&mm_alice))
+    );
 
     log!("Get RICK/MORTY orderbook on Alice side");
     let rc = block_on(mm_alice.rpc(&json! ({
@@ -665,7 +680,7 @@ fn test_conf_settings_in_orderbook() {
     assert!(rc.0.is_success(), "!orderbook: {}", rc.1);
 
     let alice_orderbook: OrderbookResponse = json::from_str(&rc.1).unwrap();
-    log!("Alice orderbook "[alice_orderbook]);
+    log!("Alice orderbook {:?}", alice_orderbook);
 
     assert_eq!(
         alice_orderbook.asks.len(),
@@ -712,9 +727,12 @@ fn alice_can_see_confs_in_orderbook_after_sync() {
     )
     .unwrap();
     // let (_dump_log, _dump_dashboard) = mm_bob.mm_dump();
-    log!({"Bob log path: {}", mm_bob.log_path.display()});
+    log!("Bob log path: {}", mm_bob.log_path.display());
 
-    log! ({"enable_coins (bob): {:?}", block_on (enable_coins_rick_morty_electrum(&mm_bob))});
+    log!(
+        "enable_coins (bob): {:?}",
+        block_on(enable_coins_rick_morty_electrum(&mm_bob))
+    );
 
     log!("Issue sell request on Bob side");
     let rc = block_on(mm_bob.rpc(&json! ({
@@ -752,16 +770,19 @@ fn alice_can_see_confs_in_orderbook_after_sync() {
             "passphrase": "alice passphrase",
             "rpc_password": "password",
             "coins": alice_coins,
-            "seednodes": [fomat!((mm_bob.ip))],
+            "seednodes": [mm_bob.ip.to_string()],
         }),
         "password".into(),
         None,
     )
     .unwrap();
     let (_dump_log, _dump_dashboard) = mm_alice.mm_dump();
-    log!({"Alice log path: {}", mm_alice.log_path.display()});
+    log!("Alice log path: {}", mm_alice.log_path.display());
 
-    log! ({"enable_coins (alice): {:?}", block_on (enable_coins_rick_morty_electrum(&mm_alice))});
+    log!(
+        "enable_coins (alice): {:?}",
+        block_on(enable_coins_rick_morty_electrum(&mm_alice))
+    );
 
     // setting the price will trigger Alice's subscription to the orderbook topic
     // but won't request the actual orderbook
@@ -795,7 +816,7 @@ fn alice_can_see_confs_in_orderbook_after_sync() {
     assert!(rc.0.is_success(), "!orderbook: {}", rc.1);
 
     let alice_orderbook: OrderbookResponse = json::from_str(&rc.1).unwrap();
-    log!("Alice orderbook "[alice_orderbook]);
+    log!("Alice orderbook {:?}", alice_orderbook);
     assert_eq!(
         alice_orderbook.asks.len(),
         2,
@@ -843,7 +864,7 @@ fn orderbook_extended_data() {
     )
     .unwrap();
     let (_dump_log, _dump_dashboard) = &mm.mm_dump();
-    log!({"Log path: {}", mm.log_path.display()});
+    log!("Log path: {}", mm.log_path.display());
     block_on(enable_electrum(&mm, "RICK", false, &[
         "electrum3.cipig.net:10017",
         "electrum2.cipig.net:10017",
@@ -890,7 +911,7 @@ fn orderbook_extended_data() {
     assert!(rc.0.is_success(), "!orderbook: {}", rc.1);
 
     let orderbook: OrderbookResponse = json::from_str(&rc.1).unwrap();
-    log!("orderbook "[rc.1]);
+    log!("orderbook {:?}", rc.1);
     let expected_total_asks_base_vol = MmNumber::from("2.7");
     assert_eq!(expected_total_asks_base_vol.to_decimal(), orderbook.total_asks_base_vol);
 
@@ -954,7 +975,7 @@ fn orderbook_should_display_base_rel_volumes() {
     )
     .unwrap();
     let (_dump_log, _dump_dashboard) = &mm.mm_dump();
-    log!({"Log path: {}", mm.log_path.display()});
+    log!("Log path: {}", mm.log_path.display());
     block_on(enable_electrum(&mm, "RICK", false, &[
         "electrum3.cipig.net:10017",
         "electrum2.cipig.net:10017",
@@ -994,7 +1015,7 @@ fn orderbook_should_display_base_rel_volumes() {
     assert!(rc.0.is_success(), "!orderbook: {}", rc.1);
 
     let orderbook: OrderbookResponse = json::from_str(&rc.1).unwrap();
-    log!("orderbook "[orderbook]);
+    log!("orderbook {:?}", orderbook);
     assert_eq!(orderbook.asks.len(), 1, "RICK/MORTY orderbook must have exactly 1 ask");
     let min_volume = BigRational::new(1.into(), 10000.into());
     assert_eq!(volume, orderbook.asks[0].base_max_volume_rat);
@@ -1014,7 +1035,7 @@ fn orderbook_should_display_base_rel_volumes() {
     assert!(rc.0.is_success(), "!orderbook: {}", rc.1);
 
     let orderbook: OrderbookResponse = json::from_str(&rc.1).unwrap();
-    log!("orderbook "[orderbook]);
+    log!("orderbook {:?}", orderbook);
     assert_eq!(orderbook.bids.len(), 1, "MORTY/RICK orderbook must have exactly 1 bid");
     let min_volume = BigRational::new(1.into(), 10000.into());
     assert_eq!(volume, orderbook.bids[0].rel_max_volume_rat);
@@ -1057,7 +1078,7 @@ fn orderbook_should_work_without_coins_activation() {
     .unwrap();
 
     let (_dump_log, _dump_dashboard) = mm_bob.mm_dump();
-    log!({"Bob log path: {}", mm_bob.log_path.display()});
+    log!("Bob log path: {}", mm_bob.log_path.display());
 
     let mm_alice = MarketMakerIt::start(
         json! ({
@@ -1068,7 +1089,7 @@ fn orderbook_should_work_without_coins_activation() {
             "rpcip": env::var ("ALICE_TRADE_IP") .ok(),
             "passphrase": "alice passphrase",
             "coins": coins,
-            "seednodes": [fomat!((mm_bob.ip))],
+            "seednodes": [mm_bob.ip.to_string()],
             "rpc_password": "pass",
         }),
         "pass".into(),
@@ -1080,9 +1101,12 @@ fn orderbook_should_work_without_coins_activation() {
     .unwrap();
 
     let (_alice_dump_log, _alice_dump_dashboard) = mm_alice.mm_dump();
-    log!({"Alice log path: {}", mm_alice.log_path.display()});
+    log!("Alice log path: {}", mm_alice.log_path.display());
 
-    log! ({"enable_coins (bob): {:?}", block_on (enable_coins_eth_electrum (&mm_bob, &["http://195.201.0.6:8565"]))});
+    log!(
+        "enable_coins (bob): {:?}",
+        block_on(enable_coins_eth_electrum(&mm_bob, &["http://195.201.0.6:8565"]))
+    );
 
     let rc = block_on(mm_bob.rpc(&json! ({
         "userpass": mm_bob.userpass,
@@ -1107,7 +1131,7 @@ fn orderbook_should_work_without_coins_activation() {
     assert!(rc.0.is_success(), "!orderbook: {}", rc.1);
 
     let orderbook: Json = json::from_str(&rc.1).unwrap();
-    log!("orderbook "[orderbook]);
+    log!("orderbook {:?}", orderbook);
     let asks = orderbook["asks"].as_array().unwrap();
     assert_eq!(asks.len(), 1, "Alice ETH/JST orderbook must have exactly 1 ask");
 }
@@ -1140,7 +1164,7 @@ fn test_all_orders_per_pair_per_node_must_be_displayed_in_orderbook() {
     )
     .unwrap();
     let (_dump_log, _dump_dashboard) = mm.mm_dump();
-    log!({"Log path: {}", mm.log_path.display()});
+    log!("Log path: {}", mm.log_path.display());
     block_on(enable_electrum(&mm, "RICK", false, &[
         "electrum3.cipig.net:10017",
         "electrum2.cipig.net:10017",
@@ -1190,7 +1214,7 @@ fn test_all_orders_per_pair_per_node_must_be_displayed_in_orderbook() {
     assert!(rc.0.is_success(), "!orderbook: {}", rc.1);
 
     let orderbook: Json = json::from_str(&rc.1).unwrap();
-    log!("orderbook "[orderbook]);
+    log!("orderbook {:?}", orderbook);
     let asks = orderbook["asks"].as_array().unwrap();
     assert_eq!(asks.len(), 2, "RICK/MORTY orderbook must have exactly 2 asks");
 }
@@ -1228,7 +1252,7 @@ fn setprice_min_volume_should_be_displayed_in_orderbook() {
     .unwrap();
 
     let (_dump_log, _dump_dashboard) = mm_bob.mm_dump();
-    log!({"Bob log path: {}", mm_bob.log_path.display()});
+    log!("Bob log path: {}", mm_bob.log_path.display());
 
     let mm_alice = MarketMakerIt::start(
         json! ({
@@ -1239,7 +1263,7 @@ fn setprice_min_volume_should_be_displayed_in_orderbook() {
             "rpcip": env::var ("ALICE_TRADE_IP") .ok(),
             "passphrase": "alice passphrase",
             "coins": coins,
-            "seednodes": [fomat!((mm_bob.ip))],
+            "seednodes": [mm_bob.ip.to_string()],
             "rpc_password": "pass",
         }),
         "pass".into(),
@@ -1251,10 +1275,16 @@ fn setprice_min_volume_should_be_displayed_in_orderbook() {
     .unwrap();
 
     let (_alice_dump_log, _alice_dump_dashboard) = mm_alice.mm_dump();
-    log!({"Alice log path: {}", mm_alice.log_path.display()});
+    log!("Alice log path: {}", mm_alice.log_path.display());
 
-    log! ({"enable_coins (bob): {:?}", block_on (enable_coins_eth_electrum (&mm_bob, &["http://195.201.0.6:8565"]))});
-    log! ({"enable_coins (alice): {:?}", block_on (enable_coins_eth_electrum (&mm_alice, &["http://195.201.0.6:8565"]))});
+    log!(
+        "enable_coins (bob): {:?}",
+        block_on(enable_coins_eth_electrum(&mm_bob, &["http://195.201.0.6:8565"]))
+    );
+    log!(
+        "enable_coins (alice): {:?}",
+        block_on(enable_coins_eth_electrum(&mm_alice, &["http://195.201.0.6:8565"]))
+    );
 
     // issue orderbook call on Alice side to trigger subscription to a topic
     block_on(mm_alice.rpc(&json! ({
@@ -1289,7 +1319,7 @@ fn setprice_min_volume_should_be_displayed_in_orderbook() {
     assert!(rc.0.is_success(), "!orderbook: {}", rc.1);
 
     let orderbook: Json = json::from_str(&rc.1).unwrap();
-    log!("orderbook "[orderbook]);
+    log!("orderbook {:?}", orderbook);
     let asks = orderbook["asks"].as_array().unwrap();
     assert_eq!(asks.len(), 1, "Bob ETH/JST orderbook must have exactly 1 ask");
 
@@ -1307,7 +1337,7 @@ fn setprice_min_volume_should_be_displayed_in_orderbook() {
     assert!(rc.0.is_success(), "!orderbook: {}", rc.1);
 
     let orderbook: Json = json::from_str(&rc.1).unwrap();
-    log!("orderbook "[orderbook]);
+    log!("orderbook {:?}", orderbook);
     let asks = orderbook["asks"].as_array().unwrap();
     assert_eq!(asks.len(), 1, "Alice ETH/JST orderbook must have exactly 1 ask");
 
@@ -1328,13 +1358,13 @@ fn zhtlc_orders_sync_alice_connected_before_creation() {
     let mm_bob = MarketMakerIt::start(bob_conf.conf, bob_conf.rpc_password, bob_conf.local).unwrap();
 
     let (_dump_log, _dump_dashboard) = mm_bob.mm_dump();
-    log!({"Bob log path: {}", mm_bob.log_path.display()});
+    log!("Bob log path: {}", mm_bob.log_path.display());
 
     let alice_conf = Mm2TestConf::light_node(&alice_passphrase, &coins, &[&mm_bob.ip.to_string()]);
     let mm_alice = MarketMakerIt::start(alice_conf.conf, alice_conf.rpc_password, alice_conf.local).unwrap();
 
     let (_alice_dump_log, _alice_dump_dashboard) = mm_alice.mm_dump();
-    log!({"Alice log path: {}", mm_alice.log_path.display()});
+    log!("Alice log path: {}", mm_alice.log_path.display());
 
     block_on(enable_electrum_json(&mm_bob, RICK, false, rick_electrums()));
     block_on(enable_z_coin_light(
@@ -1397,7 +1427,7 @@ fn zhtlc_orders_sync_alice_connected_after_creation() {
     let mm_bob = MarketMakerIt::start(bob_conf.conf, bob_conf.rpc_password, bob_conf.local).unwrap();
 
     let (_dump_log, _dump_dashboard) = mm_bob.mm_dump();
-    log!({"Bob log path: {}", mm_bob.log_path.display()});
+    log!("Bob log path: {}", mm_bob.log_path.display());
 
     block_on(enable_electrum_json(&mm_bob, "RICK", false, rick_electrums()));
     block_on(enable_z_coin_light(
@@ -1426,7 +1456,7 @@ fn zhtlc_orders_sync_alice_connected_after_creation() {
     let mm_alice = MarketMakerIt::start(alice_conf.conf, alice_conf.rpc_password, alice_conf.local).unwrap();
 
     let (_alice_dump_log, _alice_dump_dashboard) = mm_alice.mm_dump();
-    log!({"Alice log path: {}", mm_alice.log_path.display()});
+    log!("Alice log path: {}", mm_alice.log_path.display());
 
     block_on(enable_electrum_json(&mm_alice, RICK, false, rick_electrums()));
     block_on(enable_z_coin_light(

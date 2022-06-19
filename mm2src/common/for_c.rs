@@ -14,14 +14,14 @@ pub unsafe extern "C" fn log_stacktrace(desc: *const c_char) {
         match CStr::from_ptr(desc).to_str() {
             Ok(s) => s,
             Err(err) => {
-                log! ({"log_stacktrace] Bad trace description: {}", err});
+                log!("log_stacktrace] Bad trace description: {}", err);
                 ""
             },
         }
     };
     let mut trace = String::with_capacity(4096);
     super::stack_trace(&mut super::stack_trace_frame, &mut |l| trace.push_str(l));
-    log! ({"Stacktrace. {}\n{}", desc, trace});
+    log!("Stacktrace. {}\n{}", desc, trace);
 }
 
 #[no_mangle]
@@ -35,7 +35,7 @@ pub unsafe extern "C" fn is_loopback_ip(ip: *mut c_char) -> u8 {
     let ip_str = match CStr::from_ptr(ip).to_str() {
         Ok(s) => s,
         Err(e) => {
-            log!("Error creating CStr "[e]);
+            log!("Error creating CStr {:?}", e);
             return 0;
         },
     };
@@ -43,7 +43,7 @@ pub unsafe extern "C" fn is_loopback_ip(ip: *mut c_char) -> u8 {
     let ip: IpAddr = match ip_str.parse() {
         Ok(ip) => ip,
         Err(e) => {
-            log!("Error " [e] " parsing ip from str " (ip_str));
+            log!("Error {:?} parsing ip from str {}", e, ip_str);
             return 0;
         },
     };

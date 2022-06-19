@@ -26,7 +26,6 @@
 #![feature(stmt_expr_attributes)]
 
 #[macro_use] extern crate common;
-#[macro_use] extern crate fomat_macros;
 #[macro_use] extern crate gstuff;
 #[macro_use] extern crate lazy_static;
 #[macro_use] extern crate serde_derive;
@@ -2277,11 +2276,15 @@ pub async fn lp_coininit(ctx: &MmArc, ticker: &str, req: &Json) -> Result<MmCoin
     let coins_en = coin_conf(ctx, ticker);
 
     if coins_en.is_null() {
+        let warning = format!(
+            "Warning, coin {} is used without a corresponding configuration.",
+            ticker
+        );
         ctx.log.log(
             "😅",
             #[allow(clippy::unnecessary_cast)]
             &[&("coin" as &str), &ticker, &("no-conf" as &str)],
-            &fomat! ("Warning, coin " (ticker) " is used without a corresponding configuration."),
+            &warning,
         );
     }
 

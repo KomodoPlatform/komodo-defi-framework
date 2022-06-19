@@ -14,9 +14,6 @@
 extern crate common;
 #[cfg(test)]
 #[macro_use]
-extern crate fomat_macros;
-#[cfg(test)]
-#[macro_use]
 extern crate gstuff;
 #[cfg(all(test, not(target_arch = "wasm32")))]
 #[macro_use]
@@ -612,7 +609,7 @@ mod docker_tests {
             .collect();
 
         let after = now_ms();
-        log!("Took "(after - before));
+        log!("Took {}", after - before);
 
         let last_tx = sent_tx.last().unwrap();
         let expected_unspent = UnspentInfo {
@@ -652,8 +649,8 @@ mod docker_tests {
         )
         .unwrap();
         let (_bob_dump_log, _bob_dump_dashboard) = mm_dump(&mm_bob.log_path);
-        log!([block_on(enable_native(&mm_bob, "MYCOIN", &[]))]);
-        log!([block_on(enable_native(&mm_bob, "MYCOIN1", &[]))]);
+        log!("{:?}", block_on(enable_native(&mm_bob, "MYCOIN", &[])));
+        log!("{:?}", block_on(enable_native(&mm_bob, "MYCOIN1", &[])));
         let rc = block_on(mm_bob.rpc(&json! ({
             "userpass": mm_bob.userpass,
             "method": "setprice",
@@ -678,7 +675,7 @@ mod docker_tests {
         assert!(rc.0.is_success(), "!orderbook: {}", rc.1);
 
         let bob_orderbook: Json = json::from_str(&rc.1).unwrap();
-        log!("orderbook "[bob_orderbook]);
+        log!("orderbook {:?}", bob_orderbook);
         let asks = bob_orderbook["asks"].as_array().unwrap();
         assert_eq!(asks.len(), 1, "MYCOIN/MYCOIN1 orderbook must have exactly 1 ask");
 
@@ -716,7 +713,7 @@ mod docker_tests {
         assert!(rc.0.is_success(), "!orderbook: {}", rc.1);
 
         let bob_orderbook: Json = json::from_str(&rc.1).unwrap();
-        log!("orderbook "(json::to_string(&bob_orderbook).unwrap()));
+        log!("orderbook {}", json::to_string(&bob_orderbook).unwrap());
         let asks = bob_orderbook["asks"].as_array().unwrap();
         assert_eq!(asks.len(), 0, "MYCOIN/MYCOIN1 orderbook must have exactly 0 asks");
 
@@ -728,7 +725,7 @@ mod docker_tests {
         .unwrap();
         assert!(rc.0.is_success(), "!my_orders: {}", rc.1);
         let orders: Json = json::from_str(&rc.1).unwrap();
-        log!("my_orders "(json::to_string(&orders).unwrap()));
+        log!("my_orders {}", json::to_string(&orders).unwrap());
         assert!(
             orders["result"]["maker_orders"].as_object().unwrap().is_empty(),
             "maker_orders must be empty"
@@ -740,7 +737,7 @@ mod docker_tests {
             hex::encode(rmd160.take()),
             bob_uuid,
         ));
-        log!("Order path "(order_path.display()));
+        log!("Order path {}", order_path.display());
         assert!(!order_path.exists());
         block_on(mm_bob.stop()).unwrap();
     }
@@ -787,10 +784,10 @@ mod docker_tests {
         .unwrap();
         let (_alice_dump_log, _alice_dump_dashboard) = mm_dump(&mm_alice.log_path);
 
-        log!([block_on(enable_native(&mm_bob, "MYCOIN", &[]))]);
-        log!([block_on(enable_native(&mm_bob, "MYCOIN1", &[]))]);
-        log!([block_on(enable_native(&mm_alice, "MYCOIN", &[]))]);
-        log!([block_on(enable_native(&mm_alice, "MYCOIN1", &[]))]);
+        log!("{:?}", block_on(enable_native(&mm_bob, "MYCOIN", &[])));
+        log!("{:?}", block_on(enable_native(&mm_bob, "MYCOIN1", &[])));
+        log!("{:?}", block_on(enable_native(&mm_alice, "MYCOIN", &[])));
+        log!("{:?}", block_on(enable_native(&mm_alice, "MYCOIN1", &[])));
 
         let rc = block_on(mm_bob.rpc(&json! ({
             "userpass": mm_bob.userpass,
@@ -814,7 +811,7 @@ mod docker_tests {
         assert!(rc.0.is_success(), "!orderbook: {}", rc.1);
 
         let bob_orderbook: Json = json::from_str(&rc.1).unwrap();
-        log!("orderbook "[bob_orderbook]);
+        log!("orderbook {:?}", bob_orderbook);
         let asks = bob_orderbook["asks"].as_array().unwrap();
         assert_eq!(asks.len(), 1, "MYCOIN/MYCOIN1 orderbook must have exactly 1 ask");
 
@@ -852,7 +849,7 @@ mod docker_tests {
         assert!(rc.0.is_success(), "!orderbook: {}", rc.1);
 
         let bob_orderbook: Json = json::from_str(&rc.1).unwrap();
-        log!("orderbook "(json::to_string(&bob_orderbook).unwrap()));
+        log!("orderbook {}", json::to_string(&bob_orderbook).unwrap());
         let asks = bob_orderbook["asks"].as_array().unwrap();
         assert_eq!(asks.len(), 1, "Bob MYCOIN/MYCOIN1 orderbook must have exactly 1 ask");
 
@@ -870,7 +867,7 @@ mod docker_tests {
         assert!(rc.0.is_success(), "!orderbook: {}", rc.1);
 
         let alice_orderbook: Json = json::from_str(&rc.1).unwrap();
-        log!("orderbook "(json::to_string(&alice_orderbook).unwrap()));
+        log!("orderbook {}", json::to_string(&alice_orderbook).unwrap());
         let asks = alice_orderbook["asks"].as_array().unwrap();
         assert_eq!(asks.len(), 1, "Alice MYCOIN/MYCOIN1 orderbook must have exactly 1 ask");
 
@@ -923,10 +920,10 @@ mod docker_tests {
         .unwrap();
         let (_alice_dump_log, _alice_dump_dashboard) = mm_dump(&mm_alice.log_path);
 
-        log!([block_on(enable_native(&mm_bob, "MYCOIN", &[]))]);
-        log!([block_on(enable_native(&mm_bob, "MYCOIN1", &[]))]);
-        log!([block_on(enable_native(&mm_alice, "MYCOIN", &[]))]);
-        log!([block_on(enable_native(&mm_alice, "MYCOIN1", &[]))]);
+        log!("{:?}", block_on(enable_native(&mm_bob, "MYCOIN", &[])));
+        log!("{:?}", block_on(enable_native(&mm_bob, "MYCOIN1", &[])));
+        log!("{:?}", block_on(enable_native(&mm_alice, "MYCOIN", &[])));
+        log!("{:?}", block_on(enable_native(&mm_alice, "MYCOIN1", &[])));
 
         let rc = block_on(mm_bob.rpc(&json! ({
             "userpass": mm_bob.userpass,
@@ -950,7 +947,7 @@ mod docker_tests {
         assert!(rc.0.is_success(), "!orderbook: {}", rc.1);
 
         let bob_orderbook: Json = json::from_str(&rc.1).unwrap();
-        log!("orderbook "[bob_orderbook]);
+        log!("orderbook {:?}", bob_orderbook);
         let asks = bob_orderbook["asks"].as_array().unwrap();
         assert_eq!(asks.len(), 1, "Bob MYCOIN/MYCOIN1 orderbook must have exactly 1 ask");
 
@@ -966,7 +963,7 @@ mod docker_tests {
         assert!(rc.0.is_success(), "!orderbook: {}", rc.1);
 
         let alice_orderbook: Json = json::from_str(&rc.1).unwrap();
-        log!("orderbook "(json::to_string(&alice_orderbook).unwrap()));
+        log!("orderbook {}", json::to_string(&alice_orderbook).unwrap());
         let asks = alice_orderbook["asks"].as_array().unwrap();
         assert_eq!(asks.len(), 1, "Alice MYCOIN/MYCOIN1 orderbook must have exactly 1 ask");
 
@@ -1004,7 +1001,7 @@ mod docker_tests {
         assert!(rc.0.is_success(), "!orderbook: {}", rc.1);
 
         let bob_orderbook: Json = json::from_str(&rc.1).unwrap();
-        log!("orderbook "(json::to_string(&bob_orderbook).unwrap()));
+        log!("orderbook {}", json::to_string(&bob_orderbook).unwrap());
         let asks = bob_orderbook["asks"].as_array().unwrap();
         assert_eq!(asks.len(), 1, "Bob MYCOIN/MYCOIN1 orderbook must have exactly 1 ask");
 
@@ -1022,7 +1019,7 @@ mod docker_tests {
         assert!(rc.0.is_success(), "!orderbook: {}", rc.1);
 
         let alice_orderbook: Json = json::from_str(&rc.1).unwrap();
-        log!("orderbook "(json::to_string(&alice_orderbook).unwrap()));
+        log!("orderbook {}", json::to_string(&alice_orderbook).unwrap());
         let asks = alice_orderbook["asks"].as_array().unwrap();
         assert_eq!(asks.len(), 1, "Alice MYCOIN/MYCOIN1 orderbook must have exactly 1 ask");
 
@@ -1073,10 +1070,10 @@ mod docker_tests {
         .unwrap();
         let (_alice_dump_log, _alice_dump_dashboard) = mm_dump(&mm_alice.log_path);
 
-        log!([block_on(enable_native(&mm_bob, "MYCOIN", &[]))]);
-        log!([block_on(enable_native(&mm_bob, "MYCOIN1", &[]))]);
-        log!([block_on(enable_native(&mm_alice, "MYCOIN", &[]))]);
-        log!([block_on(enable_native(&mm_alice, "MYCOIN1", &[]))]);
+        log!("{:?}", block_on(enable_native(&mm_bob, "MYCOIN", &[])));
+        log!("{:?}", block_on(enable_native(&mm_bob, "MYCOIN1", &[])));
+        log!("{:?}", block_on(enable_native(&mm_alice, "MYCOIN", &[])));
+        log!("{:?}", block_on(enable_native(&mm_alice, "MYCOIN1", &[])));
 
         let rc = block_on(mm_bob.rpc(&json! ({
             "userpass": mm_bob.userpass,
@@ -1115,7 +1112,7 @@ mod docker_tests {
         assert!(rc.0.is_success(), "!orderbook: {}", rc.1);
 
         let bob_orderbook: Json = json::from_str(&rc.1).unwrap();
-        log!("orderbook "(json::to_string(&bob_orderbook).unwrap()));
+        log!("orderbook {}", json::to_string(&bob_orderbook).unwrap());
         let asks = bob_orderbook["asks"].as_array().unwrap();
         assert_eq!(asks.len(), 1, "Bob MYCOIN/MYCOIN1 orderbook must have exactly 1 ask");
 
@@ -1133,7 +1130,7 @@ mod docker_tests {
         assert!(rc.0.is_success(), "!orderbook: {}", rc.1);
 
         let alice_orderbook: Json = json::from_str(&rc.1).unwrap();
-        log!("orderbook "(json::to_string(&alice_orderbook).unwrap()));
+        log!("orderbook {}", json::to_string(&alice_orderbook).unwrap());
         let asks = alice_orderbook["asks"].as_array().unwrap();
         assert_eq!(asks.len(), 1, "Alice MYCOIN/MYCOIN1 orderbook must have exactly 1 ask");
 
@@ -1182,10 +1179,10 @@ mod docker_tests {
         .unwrap();
         let (_alice_dump_log, _alice_dump_dashboard) = mm_dump(&mm_alice.log_path);
 
-        log!([block_on(enable_native(&mm_bob, "MYCOIN", &[]))]);
-        log!([block_on(enable_native(&mm_bob, "MYCOIN1", &[]))]);
-        log!([block_on(enable_native(&mm_alice, "MYCOIN", &[]))]);
-        log!([block_on(enable_native(&mm_alice, "MYCOIN1", &[]))]);
+        log!("{:?}", block_on(enable_native(&mm_bob, "MYCOIN", &[])));
+        log!("{:?}", block_on(enable_native(&mm_bob, "MYCOIN1", &[])));
+        log!("{:?}", block_on(enable_native(&mm_alice, "MYCOIN", &[])));
+        log!("{:?}", block_on(enable_native(&mm_alice, "MYCOIN1", &[])));
         let rc = block_on(mm_bob.rpc(&json! ({
             "userpass": mm_bob.userpass,
             "method": "setprice",
@@ -1210,7 +1207,7 @@ mod docker_tests {
         assert!(rc.0.is_success(), "!orderbook: {}", rc.1);
 
         let bob_orderbook: Json = json::from_str(&rc.1).unwrap();
-        log!("orderbook "[bob_orderbook]);
+        log!("orderbook {:?}", bob_orderbook);
         let asks = bob_orderbook["asks"].as_array().unwrap();
         assert_eq!(asks.len(), 1, "MYCOIN/MYCOIN1 orderbook must have exactly 1 ask");
         assert_eq!(asks[0]["maxvolume"], Json::from("999.99999"));
@@ -1238,7 +1235,7 @@ mod docker_tests {
             hex::encode(rmd160.take()),
             bob_uuid,
         ));
-        log!("Order path "(order_path.display()));
+        log!("Order path {}", order_path.display());
         assert!(!order_path.exists());
         block_on(mm_bob.stop()).unwrap();
         block_on(mm_alice.stop()).unwrap();
@@ -1289,10 +1286,10 @@ mod docker_tests {
         let (_alice_dump_log, _alice_dump_dashboard) = mm_dump(&mm_alice.log_path);
         block_on(mm_alice.wait_for_log(22., |log| log.contains(">>>>>>>>> DEX stats "))).unwrap();
 
-        log!([block_on(enable_native(&mm_bob, "MYCOIN", &[]))]);
-        log!([block_on(enable_native(&mm_bob, "MYCOIN1", &[]))]);
-        log!([block_on(enable_native(&mm_alice, "MYCOIN", &[]))]);
-        log!([block_on(enable_native(&mm_alice, "MYCOIN1", &[]))]);
+        log!("{:?}", block_on(enable_native(&mm_bob, "MYCOIN", &[])));
+        log!("{:?}", block_on(enable_native(&mm_bob, "MYCOIN1", &[])));
+        log!("{:?}", block_on(enable_native(&mm_alice, "MYCOIN", &[])));
+        log!("{:?}", block_on(enable_native(&mm_alice, "MYCOIN1", &[])));
         let price = MmNumber::from((100, 1620));
         let rc = block_on(mm_bob.rpc(&json! ({
             "userpass": mm_bob.userpass,
@@ -1313,7 +1310,7 @@ mod docker_tests {
         })))
         .unwrap();
         assert!(rc.0.is_success(), "!orderbook: {}", rc.1);
-        log!((rc.1));
+        log!("{}", rc.1);
         thread::sleep(Duration::from_secs(3));
 
         let rc = block_on(mm_alice.rpc(&json! ({
@@ -1406,10 +1403,10 @@ mod docker_tests {
         .unwrap();
         let (_alice_dump_log, _alice_dump_dashboard) = mm_dump(&mm_alice.log_path);
 
-        log!([block_on(enable_native(&mm_bob, "MYCOIN", &[]))]);
-        log!([block_on(enable_native(&mm_bob, "MYCOIN1", &[]))]);
-        log!([block_on(enable_native(&mm_alice, "MYCOIN", &[]))]);
-        log!([block_on(enable_native(&mm_alice, "MYCOIN1", &[]))]);
+        log!("{:?}", block_on(enable_native(&mm_bob, "MYCOIN", &[])));
+        log!("{:?}", block_on(enable_native(&mm_bob, "MYCOIN1", &[])));
+        log!("{:?}", block_on(enable_native(&mm_alice, "MYCOIN", &[])));
+        log!("{:?}", block_on(enable_native(&mm_alice, "MYCOIN1", &[])));
         let rc = block_on(mm_bob.rpc(&json! ({
             "userpass": mm_bob.userpass,
             "method": "setprice",
@@ -1503,10 +1500,10 @@ mod docker_tests {
         .unwrap();
         let (_alice_dump_log, _alice_dump_dashboard) = mm_dump(&mm_alice.log_path);
 
-        log!([block_on(enable_native(&mm_bob, "MYCOIN", &[]))]);
-        log!([block_on(enable_native(&mm_bob, "MYCOIN1", &[]))]);
-        log!([block_on(enable_native(&mm_alice, "MYCOIN", &[]))]);
-        log!([block_on(enable_native(&mm_alice, "MYCOIN1", &[]))]);
+        log!("{:?}", block_on(enable_native(&mm_bob, "MYCOIN", &[])));
+        log!("{:?}", block_on(enable_native(&mm_bob, "MYCOIN1", &[])));
+        log!("{:?}", block_on(enable_native(&mm_alice, "MYCOIN", &[])));
+        log!("{:?}", block_on(enable_native(&mm_alice, "MYCOIN1", &[])));
         let rc = block_on(mm_bob.rpc(&json! ({
             "userpass": mm_bob.userpass,
             "method": "setprice",
@@ -1583,8 +1580,8 @@ mod docker_tests {
         .unwrap();
         let (_alice_dump_log, _alice_dump_dashboard) = mm_dump(&mm_alice.log_path);
 
-        log!([block_on(enable_native(&mm_alice, "MYCOIN", &[]))]);
-        log!([block_on(enable_native(&mm_alice, "MYCOIN1", &[]))]);
+        log!("{:?}", block_on(enable_native(&mm_alice, "MYCOIN", &[])));
+        log!("{:?}", block_on(enable_native(&mm_alice, "MYCOIN1", &[])));
         let rc = block_on(mm_alice.rpc(&json! ({
             "userpass": mm_alice.userpass,
             "method": "buy",
@@ -1650,8 +1647,8 @@ mod docker_tests {
         .unwrap();
         let (_dump_log, _dump_dashboard) = mm_dump(&mm.log_path);
 
-        log!([block_on(enable_native(&mm, "MYCOIN1", &[]))]);
-        log!([block_on(enable_native(&mm, "MYCOIN", &[]))]);
+        log!("{:?}", block_on(enable_native(&mm, "MYCOIN1", &[])));
+        log!("{:?}", block_on(enable_native(&mm, "MYCOIN", &[])));
 
         let rc = block_on(mm.rpc(&json!({
             "userpass": mm.userpass,
@@ -1790,8 +1787,8 @@ mod docker_tests {
         .unwrap();
         let (_dump_log, _dump_dashboard) = mm_dump(&mm.log_path);
 
-        log!([block_on(enable_native(&mm, "MYCOIN1", &[]))]);
-        log!([block_on(enable_native(&mm, "MYCOIN", &[]))]);
+        log!("{:?}", block_on(enable_native(&mm, "MYCOIN1", &[])));
+        log!("{:?}", block_on(enable_native(&mm, "MYCOIN", &[])));
 
         // `max` field is not supported for `buy/sell` swap methods
         let rc = block_on(mm.rpc(&json!({
@@ -1934,8 +1931,8 @@ mod docker_tests {
         .unwrap();
         let (_dump_log, _dump_dashboard) = mm_dump(&mm.log_path);
 
-        log!([block_on(enable_native(&mm, "MYCOIN1", &[]))]);
-        log!([block_on(enable_native(&mm, "MYCOIN", &[]))]);
+        log!("{:?}", block_on(enable_native(&mm, "MYCOIN1", &[])));
+        log!("{:?}", block_on(enable_native(&mm, "MYCOIN", &[])));
 
         fill_balance_functor(MmNumber::from("0.000015").to_decimal());
         // Try sell the max amount with the zero balance.
@@ -2055,8 +2052,8 @@ mod docker_tests {
         .unwrap();
         let (_dump_log, _dump_dashboard) = mm_dump(&mm.log_path);
 
-        log!([block_on(enable_native(&mm, "MYCOIN1", &[]))]);
-        log!([block_on(enable_native(&mm, "MYCOIN", &[]))]);
+        log!("{:?}", block_on(enable_native(&mm, "MYCOIN1", &[])));
+        log!("{:?}", block_on(enable_native(&mm, "MYCOIN", &[])));
 
         // Price is too low
         let rc = block_on(mm.rpc(&json!({
@@ -2198,8 +2195,8 @@ mod docker_tests {
         .unwrap();
         let (_dump_log, _dump_dashboard) = mm_dump(&mm.log_path);
 
-        log!([block_on(enable_native(&mm, "MYCOIN1", &[]))]);
-        log!([block_on(enable_native(&mm, "MYCOIN", &[]))]);
+        log!("{:?}", block_on(enable_native(&mm, "MYCOIN1", &[])));
+        log!("{:?}", block_on(enable_native(&mm, "MYCOIN", &[])));
 
         let rc = block_on(mm.rpc(&json!({
             "userpass": mm.userpass,
@@ -2271,8 +2268,8 @@ mod docker_tests {
         .unwrap();
         let (_alice_dump_log, _alice_dump_dashboard) = mm_dump(&mm_alice.log_path);
 
-        log!([block_on(enable_native(&mm_alice, "MYCOIN1", &[]))]);
-        log!([block_on(enable_native(&mm_alice, "MYCOIN", &[]))]);
+        log!("{:?}", block_on(enable_native(&mm_alice, "MYCOIN1", &[])));
+        log!("{:?}", block_on(enable_native(&mm_alice, "MYCOIN", &[])));
         let rc = block_on(mm_alice.rpc(&json! ({
             "userpass": mm_alice.userpass,
             "method": "max_taker_vol",
@@ -2327,8 +2324,8 @@ mod docker_tests {
         .unwrap();
         let (_alice_dump_log, _alice_dump_dashboard) = mm_dump(&mm_alice.log_path);
 
-        log!([block_on(enable_native(&mm_alice, "MYCOIN1", &[]))]);
-        log!([block_on(enable_native(&mm_alice, "MYCOIN", &[]))]);
+        log!("{:?}", block_on(enable_native(&mm_alice, "MYCOIN1", &[])));
+        log!("{:?}", block_on(enable_native(&mm_alice, "MYCOIN", &[])));
         let rc = block_on(mm_alice.rpc(&json! ({
             "userpass": mm_alice.userpass,
             "method": "max_taker_vol",
@@ -2388,8 +2385,8 @@ mod docker_tests {
         .unwrap();
         let (_alice_dump_log, _alice_dump_dashboard) = mm_dump(&mm.log_path);
 
-        log!([block_on(enable_native(&mm, "MYCOIN1", &[]))]);
-        log!([block_on(enable_native(&mm, "MYCOIN", &[]))]);
+        log!("{:?}", block_on(enable_native(&mm, "MYCOIN1", &[])));
+        log!("{:?}", block_on(enable_native(&mm, "MYCOIN", &[])));
 
         let rc = block_on(mm.rpc(&json!({
             "userpass": mm.userpass,
@@ -2443,13 +2440,14 @@ mod docker_tests {
         .unwrap();
         let (_alice_dump_log, _alice_dump_dashboard) = mm_dump(&mm_alice.log_path);
 
-        log!([block_on(enable_native(&mm_alice, "MYCOIN1", &[]))]);
-        log!([block_on(enable_native(&mm_alice, "MYCOIN", &[]))]);
-        log!([block_on(enable_electrum(&mm_alice, "KMD", false, &[
+        log!("{:?}", block_on(enable_native(&mm_alice, "MYCOIN1", &[])));
+        log!("{:?}", block_on(enable_native(&mm_alice, "MYCOIN", &[])));
+        let electrum = block_on(enable_electrum(&mm_alice, "KMD", false, &[
             "electrum1.cipig.net:10001",
             "electrum2.cipig.net:10001",
-            "electrum3.cipig.net:10001"
-        ]))]);
+            "electrum3.cipig.net:10001",
+        ]));
+        log!("{:?}", electrum);
         let rc = block_on(mm_alice.rpc(&json! ({
             "userpass": mm_alice.userpass,
             "method": "max_taker_vol",
@@ -2503,8 +2501,8 @@ mod docker_tests {
         .unwrap();
         let (_alice_dump_log, _alice_dump_dashboard) = mm_dump(&mm_alice.log_path);
 
-        log!([block_on(enable_native(&mm_alice, "MYCOIN", &[]))]);
-        log!([block_on(enable_native(&mm_alice, "MYCOIN1", &[]))]);
+        log!("{:?}", block_on(enable_native(&mm_alice, "MYCOIN", &[])));
+        log!("{:?}", block_on(enable_native(&mm_alice, "MYCOIN1", &[])));
         let rc = block_on(mm_alice.rpc(&json! ({
             "userpass": mm_alice.userpass,
             "method": "setprice",
@@ -2577,10 +2575,10 @@ mod docker_tests {
         .unwrap();
         let (_alice_dump_log, _alice_dump_dashboard) = mm_dump(&mm_alice.log_path);
 
-        log!([block_on(enable_native(&mm_bob, "MYCOIN", &[]))]);
-        log!([block_on(enable_native(&mm_bob, "MYCOIN1", &[]))]);
-        log!([block_on(enable_native(&mm_alice, "MYCOIN", &[]))]);
-        log!([block_on(enable_native(&mm_alice, "MYCOIN1", &[]))]);
+        log!("{:?}", block_on(enable_native(&mm_bob, "MYCOIN", &[])));
+        log!("{:?}", block_on(enable_native(&mm_bob, "MYCOIN1", &[])));
+        log!("{:?}", block_on(enable_native(&mm_alice, "MYCOIN", &[])));
+        log!("{:?}", block_on(enable_native(&mm_alice, "MYCOIN1", &[])));
         let rc = block_on(mm_bob.rpc(&json! ({
             "userpass": mm_bob.userpass,
             "method": "setprice",
@@ -2653,8 +2651,8 @@ mod docker_tests {
         let mm_bob = MarketMakerIt::start(bob_conf.clone(), "pass".to_string(), None).unwrap();
         let (_bob_dump_log, _bob_dump_dashboard) = mm_dump(&mm_bob.log_path);
 
-        log!([block_on(enable_native(&mm_bob, "MYCOIN", &[]))]);
-        log!([block_on(enable_native(&mm_bob, "MYCOIN1", &[]))]);
+        log!("{:?}", block_on(enable_native(&mm_bob, "MYCOIN", &[])));
+        log!("{:?}", block_on(enable_native(&mm_bob, "MYCOIN1", &[])));
         let rc = block_on(mm_bob.rpc(&json! ({
             "userpass": mm_bob.userpass,
             "method": "setprice",
@@ -2673,8 +2671,8 @@ mod docker_tests {
 
         let mm_bob_dup = MarketMakerIt::start(bob_conf, "pass".to_string(), None).unwrap();
         let (_bob_dup_dump_log, _bob_dup_dump_dashboard) = mm_dump(&mm_bob_dup.log_path);
-        log!([block_on(enable_native(&mm_bob_dup, "MYCOIN", &[]))]);
-        log!([block_on(enable_native(&mm_bob_dup, "MYCOIN1", &[]))]);
+        log!("{:?}", block_on(enable_native(&mm_bob_dup, "MYCOIN", &[])));
+        log!("{:?}", block_on(enable_native(&mm_bob_dup, "MYCOIN1", &[])));
 
         thread::sleep(Duration::from_secs(2));
 
@@ -2689,7 +2687,7 @@ mod docker_tests {
         assert!(rc.0.is_success(), "!orderbook: {}", rc.1);
 
         let bob_orderbook: Json = json::from_str(&rc.1).unwrap();
-        log!("Bob orderbook "[bob_orderbook]);
+        log!("Bob orderbook {:?}", bob_orderbook);
         let asks = bob_orderbook["asks"].as_array().unwrap();
         assert_eq!(asks.len(), 1, "Bob MYCOIN/MYCOIN1 orderbook must have exactly 1 asks");
     }
@@ -2713,8 +2711,8 @@ mod docker_tests {
         let mm_bob = MarketMakerIt::start(bob_conf.clone(), "pass".to_string(), None).unwrap();
         let (_bob_dump_log, _bob_dump_dashboard) = mm_dump(&mm_bob.log_path);
 
-        log!([block_on(enable_native(&mm_bob, "MYCOIN", &[]))]);
-        log!([block_on(enable_native(&mm_bob, "MYCOIN1", &[]))]);
+        log!("{:?}", block_on(enable_native(&mm_bob, "MYCOIN", &[])));
+        log!("{:?}", block_on(enable_native(&mm_bob, "MYCOIN1", &[])));
         let rc = block_on(mm_bob.rpc(&json! ({
             "userpass": mm_bob.userpass,
             "method": "setprice",
@@ -2747,8 +2745,8 @@ mod docker_tests {
 
         let mm_bob_dup = MarketMakerIt::start(bob_conf, "pass".to_string(), None).unwrap();
         let (_bob_dup_dump_log, _bob_dup_dump_dashboard) = mm_dump(&mm_bob_dup.log_path);
-        log!([block_on(enable_native(&mm_bob_dup, "MYCOIN", &[]))]);
-        log!([block_on(enable_native(&mm_bob_dup, "MYCOIN1", &[]))]);
+        log!("{:?}", block_on(enable_native(&mm_bob_dup, "MYCOIN", &[])));
+        log!("{:?}", block_on(enable_native(&mm_bob_dup, "MYCOIN1", &[])));
 
         thread::sleep(Duration::from_secs(2));
 
@@ -2763,7 +2761,7 @@ mod docker_tests {
         assert!(rc.0.is_success(), "!orderbook: {}", rc.1);
 
         let bob_orderbook: Json = json::from_str(&rc.1).unwrap();
-        log!("Bob orderbook "[bob_orderbook]);
+        log!("Bob orderbook {:?}", bob_orderbook);
         let asks = bob_orderbook["asks"].as_array().unwrap();
         assert!(asks.is_empty(), "Bob MYCOIN/MYCOIN1 orderbook must not have asks");
 
@@ -2837,10 +2835,10 @@ mod docker_tests {
         .unwrap();
         let (_alice_dump_log, _alice_dump_dashboard) = mm_dump(&mm_alice.log_path);
 
-        log!([block_on(enable_native(&mm_bob, "MYCOIN", &[]))]);
-        log!([block_on(enable_native(&mm_bob, "MYCOIN1", &[]))]);
-        log!([block_on(enable_native(&mm_alice, "MYCOIN", &[]))]);
-        log!([block_on(enable_native(&mm_alice, "MYCOIN1", &[]))]);
+        log!("{:?}", block_on(enable_native(&mm_bob, "MYCOIN", &[])));
+        log!("{:?}", block_on(enable_native(&mm_bob, "MYCOIN1", &[])));
+        log!("{:?}", block_on(enable_native(&mm_alice, "MYCOIN", &[])));
+        log!("{:?}", block_on(enable_native(&mm_alice, "MYCOIN1", &[])));
 
         let rc = block_on(mm_bob.rpc(&json! ({
             "userpass": mm_bob.userpass,
@@ -2860,8 +2858,8 @@ mod docker_tests {
 
         let mut mm_bob_dup = MarketMakerIt::start(bob_conf, "pass".to_string(), None).unwrap();
         let (_bob_dup_dump_log, _bob_dup_dump_dashboard) = mm_dump(&mm_bob_dup.log_path);
-        log!([block_on(enable_native(&mm_bob_dup, "MYCOIN", &[]))]);
-        log!([block_on(enable_native(&mm_bob_dup, "MYCOIN1", &[]))]);
+        log!("{:?}", block_on(enable_native(&mm_bob_dup, "MYCOIN", &[])));
+        log!("{:?}", block_on(enable_native(&mm_bob_dup, "MYCOIN1", &[])));
 
         log!("Give restarted Bob 2 seconds to kickstart the order");
         thread::sleep(Duration::from_secs(2));
@@ -2939,12 +2937,12 @@ mod docker_tests {
         .unwrap();
         let (_alice_2_dump_log, _alice_2_dump_dashboard) = mm_dump(&mm_alice_2.log_path);
 
-        log!([block_on(enable_native(&mm_bob, "MYCOIN", &[]))]);
-        log!([block_on(enable_native(&mm_bob, "MYCOIN1", &[]))]);
-        log!([block_on(enable_native(&mm_alice_1, "MYCOIN", &[]))]);
-        log!([block_on(enable_native(&mm_alice_1, "MYCOIN1", &[]))]);
-        log!([block_on(enable_native(&mm_alice_2, "MYCOIN", &[]))]);
-        log!([block_on(enable_native(&mm_alice_2, "MYCOIN1", &[]))]);
+        log!("{:?}", block_on(enable_native(&mm_bob, "MYCOIN", &[])));
+        log!("{:?}", block_on(enable_native(&mm_bob, "MYCOIN1", &[])));
+        log!("{:?}", block_on(enable_native(&mm_alice_1, "MYCOIN", &[])));
+        log!("{:?}", block_on(enable_native(&mm_alice_1, "MYCOIN1", &[])));
+        log!("{:?}", block_on(enable_native(&mm_alice_2, "MYCOIN", &[])));
+        log!("{:?}", block_on(enable_native(&mm_alice_2, "MYCOIN1", &[])));
 
         let rc = block_on(mm_bob.rpc(&json! ({
             "userpass": mm_bob.userpass,
@@ -3031,10 +3029,10 @@ mod docker_tests {
         .unwrap();
         let (_alice_1_dump_log, _alice_1_dump_dashboard) = mm_dump(&mm_alice.log_path);
 
-        log!([block_on(enable_native(&mm_bob, "MYCOIN", &[]))]);
-        log!([block_on(enable_native(&mm_bob, "MYCOIN1", &[]))]);
-        log!([block_on(enable_native(&mm_alice, "MYCOIN", &[]))]);
-        log!([block_on(enable_native(&mm_alice, "MYCOIN1", &[]))]);
+        log!("{:?}", block_on(enable_native(&mm_bob, "MYCOIN", &[])));
+        log!("{:?}", block_on(enable_native(&mm_bob, "MYCOIN1", &[])));
+        log!("{:?}", block_on(enable_native(&mm_alice, "MYCOIN", &[])));
+        log!("{:?}", block_on(enable_native(&mm_alice, "MYCOIN1", &[])));
 
         let rc = block_on(mm_bob.rpc(&json! ({
             "userpass": mm_bob.userpass,
@@ -3107,10 +3105,10 @@ mod docker_tests {
         .unwrap();
         let (_alice_dump_log, _alice_dump_dashboard) = mm_dump(&mm_alice.log_path);
 
-        log!([block_on(enable_native(&mm_bob, "MYCOIN", &[]))]);
-        log!([block_on(enable_native(&mm_bob, "MYCOIN1", &[]))]);
-        log!([block_on(enable_native(&mm_alice, "MYCOIN", &[]))]);
-        log!([block_on(enable_native(&mm_alice, "MYCOIN1", &[]))]);
+        log!("{:?}", block_on(enable_native(&mm_bob, "MYCOIN", &[])));
+        log!("{:?}", block_on(enable_native(&mm_bob, "MYCOIN1", &[])));
+        log!("{:?}", block_on(enable_native(&mm_alice, "MYCOIN", &[])));
+        log!("{:?}", block_on(enable_native(&mm_alice, "MYCOIN1", &[])));
         let rc = block_on(mm_bob.rpc(&json! ({
             "userpass": mm_bob.userpass,
             "method": "sell",
@@ -3165,7 +3163,7 @@ mod docker_tests {
         assert!(rc.0.is_success(), "!orderbook: {}", rc.1);
 
         let bob_orderbook: Json = json::from_str(&rc.1).unwrap();
-        log!("Bob orderbook "[bob_orderbook]);
+        log!("Bob orderbook {:?}", bob_orderbook);
         let asks = bob_orderbook["asks"].as_array().unwrap();
         assert_eq!(asks.len(), 0, "Bob MYCOIN/MYCOIN1 orderbook must be empty");
 
@@ -3180,7 +3178,7 @@ mod docker_tests {
         assert!(rc.0.is_success(), "!orderbook: {}", rc.1);
 
         let alice_orderbook: Json = json::from_str(&rc.1).unwrap();
-        log!("Alice orderbook "[alice_orderbook]);
+        log!("Alice orderbook {:?}", alice_orderbook);
         let asks = alice_orderbook["asks"].as_array().unwrap();
         assert_eq!(asks.len(), 0, "Alice MYCOIN/MYCOIN1 orderbook must be empty");
 
@@ -3230,7 +3228,7 @@ mod docker_tests {
         })))
         .unwrap();
         assert!(native.0.is_success(), "'enable' failed: {}", native.1);
-        log!("Enable result "(native.1));
+        log!("Enable result {}", native.1);
 
         block_on(mm_bob.wait_for_log(4., |log| log.contains("Starting UTXO merge loop for coin MYCOIN"))).unwrap();
 
@@ -3288,7 +3286,7 @@ mod docker_tests {
         })))
         .unwrap();
         assert!(native.0.is_success(), "'enable' failed: {}", native.1);
-        log!("Enable result "(native.1));
+        log!("Enable result {}", native.1);
 
         block_on(mm_bob.wait_for_log(4., |log| log.contains("Starting UTXO merge loop for coin MYCOIN"))).unwrap();
 
@@ -3326,7 +3324,7 @@ mod docker_tests {
         )
         .unwrap();
         let (_bob_dump_log, _bob_dump_dashboard) = mm_dump(&mm.log_path);
-        log!([block_on(enable_native(&mm, "MYCOIN", &[]))]);
+        log!("{:?}", block_on(enable_native(&mm, "MYCOIN", &[])));
 
         // balance = 0, but amount = 1
         let amount = BigDecimal::from(1);
@@ -3344,7 +3342,7 @@ mod docker_tests {
         .unwrap();
 
         assert!(withdraw.0.is_client_error(), "RICK withdraw: {}", withdraw.1);
-        log!("error: "[withdraw.1]);
+        log!("error: {:?}", withdraw.1);
         let error: RpcErrorResponse<withdraw_error::NotSufficientBalance> =
             json::from_str(&withdraw.1).expect("Expected 'RpcErrorResponse<NotSufficientBalance>'");
         let expected_error = withdraw_error::NotSufficientBalance {
@@ -3377,7 +3375,7 @@ mod docker_tests {
         .unwrap();
 
         assert!(withdraw.0.is_client_error(), "RICK withdraw: {}", withdraw.1);
-        log!("error: "[withdraw.1]);
+        log!("error: {:?}", withdraw.1);
         let error: RpcErrorResponse<withdraw_error::NotSufficientBalance> =
             json::from_str(&withdraw.1).expect("Expected 'RpcErrorResponse<NotSufficientBalance>'");
         let expected_error = withdraw_error::NotSufficientBalance {
@@ -3448,12 +3446,12 @@ mod docker_tests {
         .unwrap();
         let (_eve_dump_log, _eve_dump_dashboard) = mm_dump(&mm_alice.log_path);
 
-        log!([block_on(enable_native(&mm_bob, "MYCOIN", &[]))]);
-        log!([block_on(enable_native(&mm_bob, "MYCOIN1", &[]))]);
-        log!([block_on(enable_native(&mm_alice, "MYCOIN", &[]))]);
-        log!([block_on(enable_native(&mm_alice, "MYCOIN1", &[]))]);
-        log!([block_on(enable_native(&mm_eve, "MYCOIN", &[]))]);
-        log!([block_on(enable_native(&mm_eve, "MYCOIN1", &[]))]);
+        log!("{:?}", block_on(enable_native(&mm_bob, "MYCOIN", &[])));
+        log!("{:?}", block_on(enable_native(&mm_bob, "MYCOIN1", &[])));
+        log!("{:?}", block_on(enable_native(&mm_alice, "MYCOIN", &[])));
+        log!("{:?}", block_on(enable_native(&mm_alice, "MYCOIN1", &[])));
+        log!("{:?}", block_on(enable_native(&mm_eve, "MYCOIN", &[])));
+        log!("{:?}", block_on(enable_native(&mm_eve, "MYCOIN1", &[])));
 
         let rc = block_on(mm_bob.rpc(&json! ({
             "userpass": mm_bob.userpass,
@@ -3486,7 +3484,7 @@ mod docker_tests {
         })))
         .unwrap();
         assert!(rc.0.is_success(), "!alice orderbook: {}", rc.1);
-        log!("alice orderbook "(rc.1));
+        log!("alice orderbook {}", rc.1);
 
         thread::sleep(Duration::from_secs(1));
 
@@ -3585,12 +3583,12 @@ mod docker_tests {
         .unwrap();
         let (_eve_dump_log, _eve_dump_dashboard) = mm_dump(&mm_alice.log_path);
 
-        log!([block_on(enable_native(&mm_bob, "MYCOIN", &[]))]);
-        log!([block_on(enable_native(&mm_bob, "MYCOIN1", &[]))]);
-        log!([block_on(enable_native(&mm_alice, "MYCOIN", &[]))]);
-        log!([block_on(enable_native(&mm_alice, "MYCOIN1", &[]))]);
-        log!([block_on(enable_native(&mm_eve, "MYCOIN", &[]))]);
-        log!([block_on(enable_native(&mm_eve, "MYCOIN1", &[]))]);
+        log!("{:?}", block_on(enable_native(&mm_bob, "MYCOIN", &[])));
+        log!("{:?}", block_on(enable_native(&mm_bob, "MYCOIN1", &[])));
+        log!("{:?}", block_on(enable_native(&mm_alice, "MYCOIN", &[])));
+        log!("{:?}", block_on(enable_native(&mm_alice, "MYCOIN1", &[])));
+        log!("{:?}", block_on(enable_native(&mm_eve, "MYCOIN", &[])));
+        log!("{:?}", block_on(enable_native(&mm_eve, "MYCOIN1", &[])));
 
         let rc = block_on(mm_bob.rpc(&json! ({
             "userpass": mm_bob.userpass,
@@ -3623,7 +3621,7 @@ mod docker_tests {
         })))
         .unwrap();
         assert!(rc.0.is_success(), "!alice orderbook: {}", rc.1);
-        log!("alice orderbook "(rc.1));
+        log!("alice orderbook {}", rc.1);
 
         thread::sleep(Duration::from_secs(1));
 
@@ -3704,8 +3702,8 @@ mod docker_tests {
         .unwrap();
         let (_alice_dump_log, _alice_dump_dashboard) = mm_dump(&mm_alice.log_path);
 
-        log!([block_on(enable_native(&mm_bob, "MYCOIN", &[]))]);
-        log!([block_on(enable_native(&mm_alice, "MYCOIN", &[]))]);
+        log!("{:?}", block_on(enable_native(&mm_bob, "MYCOIN", &[])));
+        log!("{:?}", block_on(enable_native(&mm_alice, "MYCOIN", &[])));
         let eth_bob = block_on(enable_native(&mm_bob, "ETH", &["http://195.201.0.6:8565"]));
         let eth_bob: EnableElectrumResponse = json::from_value(eth_bob).unwrap();
         // pass without 0x
@@ -3785,8 +3783,8 @@ mod docker_tests {
         .unwrap();
         let (_alice_dump_log, _alice_dump_dashboard) = mm_dump(&mm_alice.log_path);
 
-        log!([block_on(enable_native(&mm_bob, "MYCOIN", &[]))]);
-        log!([block_on(enable_native(&mm_alice, "MYCOIN", &[]))]);
+        log!("{:?}", block_on(enable_native(&mm_bob, "MYCOIN", &[])));
+        log!("{:?}", block_on(enable_native(&mm_alice, "MYCOIN", &[])));
         let eth_bob = block_on(enable_native(&mm_bob, "ETH", &["http://195.201.0.6:8565"]));
         let eth_bob: EnableElectrumResponse = json::from_value(eth_bob).unwrap();
         // pass without 0x

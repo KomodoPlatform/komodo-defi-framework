@@ -107,8 +107,6 @@ pub async fn fetch_external_ip() -> Result<IpAddr, String> {
 /// Which might be a good thing, allowing us to detect the likehoodness of NAT early.
 #[cfg(not(target_arch = "wasm32"))]
 async fn detect_myipaddr(ctx: MmArc) -> Result<IpAddr, String> {
-    use fomat_macros::{fomat, wite};
-
     let ip = try_s!(fetch_external_ip().await);
 
     // Try to bind on this IP.
@@ -116,41 +114,38 @@ async fn detect_myipaddr(ctx: MmArc) -> Result<IpAddr, String> {
     // If the bind fails then emit a user-visible warning and fall back to 0.0.0.0.
     match test_ip(&ctx, ip) {
         Ok(_) => {
-            ctx.log.log(
-                "🙂",
-                &[&"myipaddr"],
-                &fomat! (
-                        "We've detected an external IP " (ip) " and we can bind on it"
-                        ", so probably a dedicated IP."),
+            let msg = format!(
+                "We've detected an external IP {} and we can bind on it, so probably a dedicated IP.",
+                ip
             );
+            ctx.log.log("🙂", &[&"myipaddr"], &msg);
             return Ok(ip);
         },
         Err(err) => log::error!("IP {} not available: {}", ip, err),
     }
     let all_interfaces = Ipv4Addr::new(0, 0, 0, 0).into();
     if test_ip(&ctx, all_interfaces).is_ok() {
-        ctx.log.log ("😅", &[&"myipaddr"], &fomat! (
-                    "We couldn't bind on the external IP " (ip) ", so NAT is likely to be present. We'll be okay though."));
+        let error = format!(
+            "We couldn't bind on the external IP {}, so NAT is likely to be present. We'll be okay though.",
+            ip
+        );
+        ctx.log.log("😅", &[&"myipaddr"], &error);
         return Ok(all_interfaces);
     }
     let localhost = Ipv4Addr::new(127, 0, 0, 1).into();
     if test_ip(&ctx, localhost).is_ok() {
-        ctx.log.log(
-            "🤫",
-            &[&"myipaddr"],
-            &fomat! (
-                    "We couldn't bind on " (ip) " or 0.0.0.0!"
-                    " Looks like we can bind on 127.0.0.1 as a workaround, but that's not how we're supposed to work."),
+        let error = format!(
+            "We couldn't bind on {} or 0.0.0.0! Looks like we can bind on 127.0.0.1 as a workaround, but that's not how we're supposed to work.",
+            ip
         );
+        ctx.log.log("🤫", &[&"myipaddr"], &error);
         return Ok(localhost);
     }
-    ctx.log.log(
-        "🤒",
-        &[&"myipaddr"],
-        &fomat! (
-                "Couldn't bind on " (ip) ", 0.0.0.0 or 127.0.0.1."),
-    );
-    Ok(all_interfaces) // Seems like a better default than 127.0.0.1, might still work for other ports.
+
+    let error = format!("Couldn't bind on {}, 0.0.0.0 or 127.0.0.1.", ip);
+    ctx.log.log("🤒", &[&"myipaddr"], &error);
+    // Seems like a better default than 127.0.0.1, might still work for other ports.
+    Ok(all_interfaces)
 }
 
 #[cfg(not(target_arch = "wasm32"))]

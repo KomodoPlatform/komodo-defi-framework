@@ -4,7 +4,6 @@ use common::executor::Timer;
 use common::log::{self, LogLevel, LogState};
 use common::mm_metrics::{MetricsArc, MetricsOps};
 use common::{bits256, cfg_native, cfg_wasm32, small_rng};
-use fomat_macros::wite;
 use futures::future::AbortHandle;
 use gstuff::{try_s, Constructible, ERR, ERRL};
 use keys::KeyPair;
@@ -224,7 +223,7 @@ impl MmCtx {
         let mut stop_listeners = self.stop_listeners.lock().expect("Can't lock stop_listeners");
         if self.stop.copy_or(false) {
             if let Err(err) = cb() {
-                common::log! ({"MmCtx::on_stop] Listener error: {}", err})
+                common::log!("MmCtx::on_stop] Listener error: {}", err)
             }
         } else {
             stop_listeners.push(cb)
@@ -287,7 +286,7 @@ impl Drop for MmCtx {
             .as_option()
             .map(|handle| handle.to_string())
             .unwrap_or_else(|| "UNKNOWN".to_owned());
-        common::log!("MmCtx ("(ffi_handle)") has been dropped")
+        common::log!("MmCtx ({}) has been dropped", ffi_handle)
     }
 }
 
@@ -333,15 +332,13 @@ impl MmWeak {
 
 impl fmt::Debug for MmWeak {
     fn fmt(&self, ft: &mut fmt::Formatter) -> Result<(), fmt::Error> {
-        let ctx = MmArc::from_weak(self);
-        wite! (ft, "MmWeak("
-            if let Some (ctx) = ctx {
-                match ctx.ffi_handle() {
-                    Ok (k) => {(k)}
-                    Err (err) => {"err " (err)}
-                }
-            } else {'-'}
-        ')')
+        match MmArc::from_weak(self) {
+            Some(ctx) => match ctx.ffi_handle() {
+                Ok(ffi_handle) => write!(ft, "MmWeak({})", ffi_handle),
+                Err(err) => write!(ft, "MmWeak(ERROR({}))", err),
+            },
+            None => write!(ft, "MmWeak(-)"),
+        }
     }
 }
 
@@ -381,7 +378,7 @@ impl MmArc {
         // that would prevent the contexts from properly `Drop`ping.
         for mut listener in stop_listeners.drain(..) {
             if let Err(err) = listener() {
-                common::log! ({"MmCtx::stop] Listener error: {}", err})
+                common::log!("MmCtx::stop] Listener error: {}", err)
             }
         }
 

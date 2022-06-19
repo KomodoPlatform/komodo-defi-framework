@@ -22,7 +22,6 @@ bytes = "1.1"
 cfg-if = "1.0"
 crossbeam = "0.7"
 fnv = "1.0.6"
-fomat-macros = "0.2"
 futures01 = { version = "0.1", package = "futures" }
 futures = { version = "0.3", package = "futures", features = ["compat", "async-await", "thread-pool"] }
 futures-cpupool = "0.1"
@@ -88,5 +87,4 @@ findshlibs = "0.5"
 
 [build-dependencies]
 cc = "1.0"
-fomat-macros = "0.3"
 gstuff = { version = "0.7", features = ["nightly"] }

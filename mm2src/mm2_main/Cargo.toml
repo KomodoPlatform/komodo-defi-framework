@@ -59,7 +59,6 @@ derive_more = "0.99"
 either = "1.6"
 ethereum-types = { version = "0.4", default-features = false, features = ["std", "serialize"] }
 enum-primitive-derive = "0.2"
-fomat-macros = "0.2"
 futures01 = { version = "0.1", package = "futures" }
 futures-cpupool = "0.1"
 futures = { version = "0.3.1", package = "futures", features = ["compat", "async-await"] }

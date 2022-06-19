@@ -33,11 +33,11 @@ fn test_best_orders() {
     )
     .unwrap();
     let (_bob_dump_log, _bob_dump_dashboard) = mm_bob.mm_dump();
-    log!({"Bob log path: {}", mm_bob.log_path.display()});
+    log!("Bob log path: {}", mm_bob.log_path.display());
 
     // Enable coins on Bob side. Print the replies in case we need the "address".
     let bob_coins = block_on(enable_coins_eth_electrum(&mm_bob, &["http://195.201.0.6:8565"]));
-    log!({ "enable_coins (bob): {:?}", bob_coins });
+    log!("enable_coins (bob): {:?}", bob_coins);
     // issue sell request on Bob side by setting base/rel price
     log!("Issue bob sell requests");
 
@@ -76,7 +76,7 @@ fn test_best_orders() {
             "rpcip": env::var ("ALICE_TRADE_IP") .ok(),
             "passphrase": "alice passphrase",
             "coins": coins,
-            "seednodes": [fomat!((mm_bob.ip))],
+            "seednodes": [mm_bob.ip.to_string()],
             "rpc_password": "pass",
         }),
         "pass".into(),
@@ -85,7 +85,7 @@ fn test_best_orders() {
     .unwrap();
 
     let (_alice_dump_log, _alice_dump_dashboard) = mm_alice.mm_dump();
-    log!({ "Alice log path: {}", mm_alice.log_path.display() });
+    log!("Alice log path: {}", mm_alice.log_path.display());
 
     block_on(mm_bob.wait_for_log(22., |log| {
         log.contains("DEBUG Handling IncludedTorelaysMesh message for peer")
@@ -212,18 +212,18 @@ fn test_best_orders_duplicates_after_update() {
             "passphrase": eve_passphrase,
             "coins": coins,
             "rpc_password": "pass",
-            "seednodes": [fomat!((mm_bob.ip))],
+            "seednodes": [mm_bob.ip.to_string()],
         }),
         "pass".into(),
         local_start!("bob"),
     )
     .unwrap();
     let (_bob_dump_log, _bob_dump_dashboard) = mm_bob.mm_dump();
-    log!({"Bob log path: {}", mm_bob.log_path.display()});
+    log!("Bob log path: {}", mm_bob.log_path.display());
 
     // Enable coins on Eve side. Print the replies in case we need the "address".
     let eve_coins = block_on(enable_coins_rick_morty_electrum(&mm_eve));
-    log!({ "enable_coins (eve): {:?}", eve_coins });
+    log!("enable_coins (eve): {:?}", eve_coins);
     // issue sell request on Eve side by setting base/rel price
     log!("Issue eve sell request");
 
@@ -247,7 +247,7 @@ fn test_best_orders_duplicates_after_update() {
             "rpcip": env::var ("ALICE_TRADE_IP") .ok(),
             "passphrase": "alice passphrase",
             "coins": coins,
-            "seednodes": [fomat!((mm_bob.ip))],
+            "seednodes": [mm_bob.ip.to_string()],
             "rpc_password": "pass",
         }),
         "pass".into(),
@@ -256,7 +256,7 @@ fn test_best_orders_duplicates_after_update() {
     .unwrap();
 
     let (_alice_dump_log, _alice_dump_dashboard) = mm_alice.mm_dump();
-    log!({ "Alice log path: {}", mm_alice.log_path.display() });
+    log!("Alice log path: {}", mm_alice.log_path.display());
 
     block_on(mm_bob.wait_for_log(22., |log| {
         log.contains("DEBUG Handling IncludedTorelaysMesh message for peer")
@@ -361,11 +361,11 @@ fn test_best_orders_filter_response() {
     )
     .unwrap();
     let (_bob_dump_log, _bob_dump_dashboard) = mm_bob.mm_dump();
-    log!({"Bob log path: {}", mm_bob.log_path.display()});
+    log!("Bob log path: {}", mm_bob.log_path.display());
 
     // Enable coins on Bob side. Print the replies in case we need the "address".
     let bob_coins = block_on(enable_coins_eth_electrum(&mm_bob, &["http://195.201.0.6:8565"]));
-    log!({ "enable_coins (bob): {:?}", bob_coins });
+    log!("enable_coins (bob): {:?}", bob_coins);
     // issue sell request on Bob side by setting base/rel price
     log!("Issue bob sell requests");
 
@@ -404,7 +404,7 @@ fn test_best_orders_filter_response() {
             "rpcip": env::var ("ALICE_TRADE_IP") .ok(),
             "passphrase": "alice passphrase",
             "coins": alice_coins_config,
-            "seednodes": [fomat!((mm_bob.ip))],
+            "seednodes": [mm_bob.ip.to_string()],
             "rpc_password": "pass",
         }),
         "pass".into(),
@@ -413,7 +413,7 @@ fn test_best_orders_filter_response() {
     .unwrap();
 
     let (_alice_dump_log, _alice_dump_dashboard) = mm_alice.mm_dump();
-    log!({ "Alice log path: {}", mm_alice.log_path.display() });
+    log!("Alice log path: {}", mm_alice.log_path.display());
 
     block_on(mm_bob.wait_for_log(22., |log| {
         log.contains("DEBUG Handling IncludedTorelaysMesh message for peer")
@@ -472,7 +472,7 @@ fn test_best_orders_address_and_confirmations() {
     )
     .unwrap();
     let (_bob_dump_log, _bob_dump_dashboard) = mm_bob.mm_dump();
-    log!({"Bob log path: {}", mm_bob.log_path.display()});
+    log!("Bob log path: {}", mm_bob.log_path.display());
 
     // Enable coins on Bob side. Print the replies in case we need the "address".
     let electrum = block_on(mm_bob.rpc(&json!({
@@ -490,7 +490,7 @@ fn test_best_orders_address_and_confirmations() {
         electrum.0,
         electrum.1
     );
-    log!({ "enable tBTC: {:?}", electrum });
+    log!("enable tBTC: {:?}", electrum);
     let enable_tbtc_res: EnableElectrumResponse = json::from_str(&electrum.1).unwrap();
     let tbtc_segwit_address = enable_tbtc_res.address;
 
@@ -508,7 +508,7 @@ fn test_best_orders_address_and_confirmations() {
         electrum.0,
         electrum.1
     );
-    log!({ "enable RICK: {:?}", electrum });
+    log!("enable RICK: {:?}", electrum);
     let enable_rick_res: EnableElectrumResponse = json::from_str(&electrum.1).unwrap();
     let rick_address = enable_rick_res.address;
 
@@ -543,7 +543,7 @@ fn test_best_orders_address_and_confirmations() {
             "rpcip": env::var ("ALICE_TRADE_IP") .ok(),
             "passphrase": "alice passphrase",
             "coins": alice_coins_config,
-            "seednodes": [fomat!((mm_bob.ip))],
+            "seednodes": [mm_bob.ip.to_string()],
             "rpc_password": "pass",
         }),
         "pass".into(),
@@ -552,7 +552,7 @@ fn test_best_orders_address_and_confirmations() {
     .unwrap();
 
     let (_alice_dump_log, _alice_dump_dashboard) = mm_alice.mm_dump();
-    log!({ "Alice log path: {}", mm_alice.log_path.display() });
+    log!("Alice log path: {}", mm_alice.log_path.display());
 
     block_on(mm_bob.wait_for_log(22., |log| {
         log.contains("DEBUG Handling IncludedTorelaysMesh message for peer")
@@ -673,11 +673,11 @@ fn zhtlc_best_orders() {
     .unwrap();
 
     let (_dump_log, _dump_dashboard) = mm_bob.mm_dump();
-    log!({"Bob log path: {}", mm_bob.log_path.display()});
+    log!("Bob log path: {}", mm_bob.log_path.display());
 
     let rmd = rmd160_from_passphrase(&bob_passphrase);
     let bob_zombie_cache_path = mm_bob.folder.join("DB").join(hex::encode(rmd)).join("ZOMBIE_CACHE.db");
-    log!("bob_zombie_cache_path "(bob_zombie_cache_path.display()));
+    log!("bob_zombie_cache_path {}", bob_zombie_cache_path.display());
     std::fs::copy("./mm2src/coins/for_tests/ZOMBIE_CACHE.db", bob_zombie_cache_path).unwrap();
 
     block_on(enable_electrum_json(&mm_bob, "RICK", false, rick_electrums()));
@@ -706,7 +706,7 @@ fn zhtlc_best_orders() {
             "rpcip": env::var ("ALICE_TRADE_IP") .ok(),
             "passphrase": alice_passphrase,
             "coins": coins,
-            "seednodes": [fomat!((mm_bob.ip))],
+            "seednodes": [mm_bob.ip.to_string()],
             "rpc_password": "pass",
         }),
         "pass".into(),
@@ -718,7 +718,7 @@ fn zhtlc_best_orders() {
     .unwrap();
 
     let (_alice_dump_log, _alice_dump_dashboard) = mm_alice.mm_dump();
-    log!({"Alice log path: {}", mm_alice.log_path.display()});
+    log!("Alice log path: {}", mm_alice.log_path.display());
 
     let best_orders = block_on(best_orders_v2(&mm_alice, "RICK", "sell", "1"));
     let best_orders: RpcV2Response<BestOrdersV2Response> = json::from_value(best_orders).unwrap();

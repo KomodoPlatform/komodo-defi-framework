@@ -245,7 +245,7 @@ fn send_and_refund_erc20_payment() {
         .wait()
         .unwrap();
 
-    log!([payment]);
+    log!("{:?}", payment);
 
     block_on(Timer::sleep(60.));
 
@@ -261,7 +261,7 @@ fn send_and_refund_erc20_payment() {
         .wait()
         .unwrap();
 
-    log!([refund]);
+    log!("{:?}", refund);
 }
 
 #[test]
@@ -312,7 +312,7 @@ fn send_and_refund_eth_payment() {
         .wait()
         .unwrap();
 
-    log!([payment]);
+    log!("{:?}", payment);
 
     block_on(Timer::sleep(60.));
 
@@ -328,7 +328,7 @@ fn send_and_refund_eth_payment() {
         .wait()
         .unwrap();
 
-    log!([refund]);
+    log!("{:?}", refund);
 }
 
 #[test]
@@ -386,15 +386,15 @@ fn test_nonce_several_urls() {
         nonce_lock: new_nonce_lock(),
     }));
 
-    log!("My address "[coin.my_address]);
+    log!("My address {:?}", coin.my_address);
     log!("before payment");
     let payment = coin.send_to_address(coin.my_address, 200000000.into()).wait().unwrap();
 
-    log!([payment]);
+    log!("{:?}", payment);
     let new_nonce = get_addr_nonce(coin.my_address, coin.web3_instances.clone())
         .wait()
         .unwrap();
-    log!([new_nonce]);
+    log!("{:?}", new_nonce);
 }
 
 #[test]
@@ -850,7 +850,7 @@ fn get_erc20_sender_trade_preimage() {
     let actual =
         block_on(coin.get_sender_trade_fee(TradePreimageValue::UpperBound(value), FeeApproxStage::WithoutApprox))
             .expect("!get_sender_trade_fee");
-    log!([actual.amount.to_decimal()]);
+    log!("{:?}", actual.amount.to_decimal());
     unsafe { assert!(!ESTIMATE_GAS_CALLED) }
     assert_eq!(actual, expected_trade_fee(300_000, GAS_PRICE));
 
@@ -974,7 +974,7 @@ fn test_get_fee_to_send_taker_fee_insufficient_balance() {
 
     let error =
         block_on(coin.get_fee_to_send_taker_fee(dex_fee_amount.clone(), FeeApproxStage::WithoutApprox)).unwrap_err();
-    log!((error));
+    log!("{}", error);
     assert!(
         matches!(error.get_inner(), TradePreimageError::NotSufficientBalance { .. }),
         "Expected TradePreimageError::NotSufficientBalance"

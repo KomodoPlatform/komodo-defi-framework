@@ -236,7 +236,7 @@ fn initialize_payment_locktime(conf: &Json) {
 pub async fn lp_main(params: LpMainParams, ctx_cb: &dyn Fn(u32)) -> Result<(), String> {
     let log_filter = params.filter.unwrap_or_default();
     if let Err(e) = init_logger(log_filter) {
-        log!("Logger initialization failed: "(e))
+        log!("Logger initialization failed: {}", e);
     }
 
     let conf = params.conf;
@@ -274,80 +274,64 @@ pub async fn lp_main(params: LpMainParams, ctx_cb: &dyn Fn(u32)) -> Result<(), S
 
 #[allow(dead_code)]
 fn help() {
-    // Removed options:
-    // "client" - In MM2 anyone can be a Maker, the "client" option is no longer applicable.
+    const HELP_MSG: &str = r#"Command-line options.
+The first command-line argument is special and designates the mode.
 
-    pintln! (
-            "Command-line options.\n"
-            "The first command-line argument is special and designates the mode.\n"
-            "\n"
-            "  help                       ..  Display this message.\n"
-            "  btc2kmd {WIF or BTC}       ..  Convert a BTC WIF into a KMD WIF.\n"
-            "  events                     ..  Listen to a feed coming from a separate MM daemon and print it to stdout.\n"
-            "  vanity {substring}         ..  Tries to find an address with the given substring.\n"
-            "  update_config {SRC} {DST}  ..  Update the configuration of coins from the SRC config and save it to DST file.\n"
-            "  {JSON configuration}       ..  Run the MarketMaker daemon.\n"
-            "\n"
-            "Some (but not all) of the JSON configuration parameters (* - required):\n"
-            "\n"
-            // We don't want to break the existing RPC API,
-            // so the "refrel=coinmarketcap" designator will act as autoselect,
-            // using the CoinGecko behind the scenes unless the "cmc_key" is given.
-            // In the future, when MM2 is more widely used and thus we're working more tighly with the GUIs (BarterDEX, HyperDEX, dICO),
-            // we might add the "refrel=cmc" and "refrel=coingecko" RPC options.
-    /* we're not using the `portfolio` crate at present
-            "  cmc_key        ..  CoinMarketCap Professional API Key. Switches from CoinGecko to CoinMarketCap.\n"
-            "                     The Key can be obtained from 'https://pro.coinmarketcap.com/account'.\n"
-    */
-            "                     NB: The 'coins' command-line configuration must have the lowercased coin names in the 'name' field,\n"
-          r#"                     {"coins": [{"name": "dash", "coin": "DASH", ...}, ...], ...}."# "\n"
-            // cf. https://github.com/atomiclabs/hyperdex/blob/1d4ed3234b482e769124725c7e979eef5cd72d24/app/marketmaker/supported-currencies.js#L12
-            "  coins          ..  Information about the currencies: their ticker symbols, names, ports, addresses, etc.\n"
-            "                     If the field isn't present on the command line then we try loading it from the 'coins' file.\n"
-            "  crash          ..  Simulate a crash to check how the crash handling works.\n"
-            "  dbdir          ..  MM database path. 'DB' by default.\n"
-            "  gui            ..  The information about GUI app using MM2 instance. Included in swap statuses shared with network.\n"
-            "                 ..  It's recommended to put essential info to this field (application name, OS, version, etc).\n"
-            "                 ..  e.g. AtomicDEX iOS 1.0.1000.\n"
-            "  myipaddr       ..  IP address to bind to for P2P networking.\n"
-            "  netid          ..  Subnetwork. Affects ports and keys.\n"
-            "  passphrase *   ..  Wallet seed.\n"
-            "                     Compressed WIFs and hexadecimal ECDSA keys (prefixed with 0x) are also accepted.\n"
-            "  panic          ..  Simulate a panic to see if backtrace works.\n"
-            // cf. https://github.com/atomiclabs/hyperdex/pull/563/commits/6d17c0c994693b768e30130855c679a7849a2b27
-            "  rpccors        ..  Access-Control-Allow-Origin header value to be used in all the RPC responses.\n"
-            "                     Default is currently 'http://localhost:3000'\n"
-            "  rpcip          ..  IP address to bind to for RPC server. Overrides the 127.0.0.1 default\n"
-            "  rpc_password   ..  RPC password used to authorize non-public RPC calls\n"
-            "                     MM generates password from passphrase if this field is not set\n"
-            "  rpc_local_only ..  MM forbids some RPC requests from not loopback (localhost) IPs as additional security measure.\n"
-            "                     Defaults to `true`, set `false` to disable. `Use with caution`.\n"
-            "  rpcport        ..  If > 1000 overrides the 7783 default.\n"
-            "  i_am_seed      ..  Activate the seed node mode (acting as a relay for mm2 clients).\n"
-            "                     Defaults to `false`.\n"
-            "  seednodes      ..  Seednode IPs that node will use.\n"
-            "                     At least one seed IP must be present if the node is not a seed itself.\n"
-            "  stderr         ..  Print a message to stderr and exit.\n"
-            "  userhome       ..  System home directory of a user ('/root' by default).\n"
-            "  wif            ..  `1` to add WIFs to the information we provide about a coin.\n"
-            "\n"
-            "Environment variables:\n"
-            "\n"
-            // Per-process (we might have several MM instances running but they will share the same log).
-            "  MM_CONF_PATH   ..  File path. MM2 will try to load the JSON configuration from this file.\n"
-            "                     File must contain valid json with structure mentioned above.\n"
-            "                     Defaults to `MM2.json`\n"
-            "  MM_COINS_PATH  ..  File path. MM2 will try to load coins data from this file.\n"
-            "                     File must contain valid json.\n"
-            "                     Recommended: https://github.com/jl777/coins/blob/master/coins.\n"
-            "                     Defaults to `coins`.\n"
-            "  MM_LOG         ..  File path. Must end with '.log'. MM will log to this file.\n"
-            "\n"
-            // Generated from https://github.com/KomodoPlatform/developer-docs/tree/sidd.
-            // (SHossain, siddhartha-crypto).
-            "See also the online documentation at\n"
-            "https://developers.atomicdex.io\n"
-        )
+  help                       ..  Display this message.
+  btc2kmd {WIF or BTC}       ..  Convert a BTC WIF into a KMD WIF.
+  events                     ..  Listen to a feed coming from a separate MM daemon and print it to stdout.
+  vanity {substring}         ..  Tries to find an address with the given substring.
+  update_config {SRC} {DST}  ..  Update the configuration of coins from the SRC config and save it to DST file.
+  {JSON configuration}       ..  Run the MarketMaker daemon.
+
+Some (but not all) of the JSON configuration parameters (* - required):
+
+                     NB: The 'coins' command-line configuration must have the lowercased coin names in the 'name' field,
+                     {"coins": [{"name": "dash", "coin": "DASH", ...}, ...], ...}.
+  coins          ..  Information about the currencies: their ticker symbols, names, ports, addresses, etc.
+                     If the field isn't present on the command line then we try loading it from the 'coins' file.
+  crash          ..  Simulate a crash to check how the crash handling works.
+  dbdir          ..  MM database path. 'DB' by default.
+  gui            ..  The information about GUI app using MM2 instance. Included in swap statuses shared with network.
+                 ..  It's recommended to put essential info to this field (application name, OS, version, etc).
+                 ..  e.g. AtomicDEX iOS 1.0.1000.
+  myipaddr       ..  IP address to bind to for P2P networking.
+  netid          ..  Subnetwork. Affects ports and keys.
+  passphrase *   ..  Wallet seed.
+                     Compressed WIFs and hexadecimal ECDSA keys (prefixed with 0x) are also accepted.
+  panic          ..  Simulate a panic to see if backtrace works.
+  rpccors        ..  Access-Control-Allow-Origin header value to be used in all the RPC responses.
+                     Default is currently 'http://localhost:3000'
+  rpcip          ..  IP address to bind to for RPC server. Overrides the 127.0.0.1 default
+  rpc_password   ..  RPC password used to authorize non-public RPC calls
+                     MM generates password from passphrase if this field is not set
+  rpc_local_only ..  MM forbids some RPC requests from not loopback (localhost) IPs as additional security measure.
+                     Defaults to `true`, set `false` to disable. `Use with caution`.
+  rpcport        ..  If > 1000 overrides the 7783 default.
+  i_am_seed      ..  Activate the seed node mode (acting as a relay for mm2 clients).
+                     Defaults to `false`.
+  seednodes      ..  Seednode IPs that node will use.
+                     At least one seed IP must be present if the node is not a seed itself.
+  stderr         ..  Print a message to stderr and exit.
+  userhome       ..  System home directory of a user ('/root' by default).
+  wif            ..  `1` to add WIFs to the information we provide about a coin.
+
+Environment variables:
+
+  MM_CONF_PATH   ..  File path. MM2 will try to load the JSON configuration from this file.
+                     File must contain valid json with structure mentioned above.
+                     Defaults to `MM2.json`
+  MM_COINS_PATH  ..  File path. MM2 will try to load coins data from this file.
+                     File must contain valid json.
+                     Recommended: https://github.com/jl777/coins/blob/master/coins.
+                     Defaults to `coins`.
+  MM_LOG         ..  File path. Must end with '.log'. MM will log to this file.
+
+See also the online documentation at
+https://developers.atomicdex.io
+"#;
+
+    println!("{}", HELP_MSG);
 }
 
 #[cfg(not(target_arch = "wasm32"))]
@@ -356,7 +340,7 @@ pub fn mm2_main() {
     use libc::c_char;
 
     init_crash_reports();
-    log!({"AtomicDEX MarketMaker {} DT {}", MM_VERSION, MM_DATETIME});
+    log!("AtomicDEX MarketMaker {} DT {}", MM_VERSION, MM_DATETIME);
 
     // Temporarily simulate `argv[]` for the C version of the main method.
     let args: Vec<String> = env::args()
@@ -403,7 +387,7 @@ pub fn mm2_main() {
     }
 
     if let Err(err) = run_lp_main(first_arg, &|_| ()) {
-        log!((err));
+        log!("{}", err);
         exit(1);
     }
 }

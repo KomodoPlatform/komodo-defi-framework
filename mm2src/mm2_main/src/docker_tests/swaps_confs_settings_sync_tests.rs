@@ -54,10 +54,10 @@ fn test_confirmation_settings_sync_correctly_on_buy(
     .unwrap();
     let (_alice_dump_log, _alice_dump_dashboard) = mm_dump(&mm_alice.log_path);
 
-    log!([block_on(enable_native(&mm_bob, "MYCOIN", &[]))]);
-    log!([block_on(enable_native(&mm_bob, "MYCOIN1", &[]))]);
-    log!([block_on(enable_native(&mm_alice, "MYCOIN", &[]))]);
-    log!([block_on(enable_native(&mm_alice, "MYCOIN1", &[]))]);
+    log!("{:?}", block_on(enable_native(&mm_bob, "MYCOIN", &[])));
+    log!("{:?}", block_on(enable_native(&mm_bob, "MYCOIN1", &[])));
+    log!("{:?}", block_on(enable_native(&mm_alice, "MYCOIN", &[])));
+    log!("{:?}", block_on(enable_native(&mm_alice, "MYCOIN1", &[])));
     let rc = block_on(mm_bob.rpc(&json! ({
         "userpass": mm_bob.userpass,
         "method": "setprice",
@@ -72,7 +72,7 @@ fn test_confirmation_settings_sync_correctly_on_buy(
     })))
     .unwrap();
     assert!(rc.0.is_success(), "!setprice: {}", rc.1);
-    log!("Maker order "(rc.1));
+    log!("Maker order {}", rc.1);
 
     let rc = block_on(mm_alice.rpc(&json! ({
         "userpass": mm_alice.userpass,
@@ -219,10 +219,10 @@ fn test_confirmation_settings_sync_correctly_on_sell(
     .unwrap();
     let (_alice_dump_log, _alice_dump_dashboard) = mm_dump(&mm_alice.log_path);
 
-    log!([block_on(enable_native(&mm_bob, "MYCOIN", &[]))]);
-    log!([block_on(enable_native(&mm_bob, "MYCOIN1", &[]))]);
-    log!([block_on(enable_native(&mm_alice, "MYCOIN", &[]))]);
-    log!([block_on(enable_native(&mm_alice, "MYCOIN1", &[]))]);
+    log!("{:?}", block_on(enable_native(&mm_bob, "MYCOIN", &[])));
+    log!("{:?}", block_on(enable_native(&mm_bob, "MYCOIN1", &[])));
+    log!("{:?}", block_on(enable_native(&mm_alice, "MYCOIN", &[])));
+    log!("{:?}", block_on(enable_native(&mm_alice, "MYCOIN1", &[])));
     let rc = block_on(mm_bob.rpc(&json! ({
         "userpass": mm_bob.userpass,
         "method": "setprice",
@@ -237,7 +237,7 @@ fn test_confirmation_settings_sync_correctly_on_sell(
     })))
     .unwrap();
     assert!(rc.0.is_success(), "!setprice: {}", rc.1);
-    log!("Maker order "(rc.1));
+    log!("Maker order {}", rc.1);
 
     let rc = block_on(mm_alice.rpc(&json! ({
         "userpass": mm_alice.userpass,

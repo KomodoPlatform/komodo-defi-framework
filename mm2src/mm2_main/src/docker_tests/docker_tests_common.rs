@@ -2,9 +2,9 @@
 pub use crate::mm2::mm2_tests::structs::*;
 pub use common::mm_number::MmNumber;
 pub use common::{block_on, now_ms};
-pub use mm2_test_helpers::for_tests::{check_my_swap_status, check_recent_swaps, check_stats_swap_status, enable_native,
-                                     enable_native_bch, mm_dump, MarketMakerIt, MAKER_ERROR_EVENTS,
-                                     MAKER_SUCCESS_EVENTS, TAKER_ERROR_EVENTS, TAKER_SUCCESS_EVENTS};
+pub use mm2_test_helpers::for_tests::{check_my_swap_status, check_recent_swaps, check_stats_swap_status,
+                                      enable_native, enable_native_bch, mm_dump, MarketMakerIt, MAKER_ERROR_EVENTS,
+                                      MAKER_SUCCESS_EVENTS, TAKER_ERROR_EVENTS, TAKER_SUCCESS_EVENTS};
 pub use secp256k1::{PublicKey, SecretKey};
 pub use std::env;
 pub use std::thread;
@@ -18,12 +18,12 @@ use coins::utxo::utxo_standard::{utxo_standard_coin_with_priv_key, UtxoStandardC
 use coins::utxo::{coin_daemon_data_dir, sat_from_big_decimal, zcash_params_path, UtxoActivationParams,
                   UtxoAddressFormat, UtxoCoinFields};
 use coins::MarketCoinOps;
-use mm2_core::mm_ctx::{MmArc, MmCtxBuilder};
 use common::mm_number::BigDecimal;
 use ethereum_types::H160 as H160Eth;
 use futures01::Future;
 use http::StatusCode;
 use keys::{Address, AddressHashEnum};
+use mm2_core::mm_ctx::{MmArc, MmCtxBuilder};
 use primitives::hash::{H160, H256};
 use secp256k1::Secp256k1;
 use serde_json::{self as json, Value as Json};
@@ -80,7 +80,7 @@ pub trait CoinDockerOps {
                         }
                     }
                 },
-                Err(e) => log!([e]),
+                Err(e) => log!("{:?}", e),
             }
             assert!(now_ms() < timeout, "Test timed out");
             thread::sleep(Duration::from_secs(1));
@@ -310,7 +310,7 @@ pub fn fill_qrc20_address(coin: &Qrc20Coin, amount: BigDecimal, timeout: u64) {
         .txid;
 
     let tx_bytes = client.get_transaction_bytes(&hash).wait().unwrap();
-    log!({ "{:02x}", tx_bytes });
+    log!("{:02x}", tx_bytes);
     coin.wait_for_confirmations(&tx_bytes, 1, false, timeout, 1)
         .wait()
         .unwrap();
@@ -421,7 +421,7 @@ where
         coin.wait_for_confirmations(&tx_bytes, 1, false, timeout, 1)
             .wait()
             .unwrap();
-        log!({ "{:02x}", tx_bytes });
+        log!("{:02x}", tx_bytes);
         loop {
             let unspents = client
                 .list_unspent_impl(0, std::i32::MAX, vec![address.to_string()])
@@ -584,21 +584,21 @@ pub fn trade_base_rel((base, rel): (&str, &str)) {
     let (_alice_dump_log, _alice_dump_dashboard) = mm_dump(&mm_alice.log_path);
     block_on(mm_alice.wait_for_log(22., |log| log.contains(">>>>>>>>> DEX stats "))).unwrap();
 
-    log!([block_on(enable_qrc20_native(&mm_bob, "QICK"))]);
-    log!([block_on(enable_qrc20_native(&mm_bob, "QORTY"))]);
-    log!([block_on(enable_native(&mm_bob, "MYCOIN", &[]))]);
-    log!([block_on(enable_native(&mm_bob, "MYCOIN1", &[]))]);
-    log!([block_on(enable_native(&mm_bob, "QTUM", &[]))]);
-    log!([block_on(enable_native_bch(&mm_bob, "FORSLP", &[]))]);
-    log!([block_on(enable_native(&mm_bob, "ADEXSLP", &[]))]);
+    log!("{:?}", block_on(enable_qrc20_native(&mm_bob, "QICK")));
+    log!("{:?}", block_on(enable_qrc20_native(&mm_bob, "QORTY")));
+    log!("{:?}", block_on(enable_native(&mm_bob, "MYCOIN", &[])));
+    log!("{:?}", block_on(enable_native(&mm_bob, "MYCOIN1", &[])));
+    log!("{:?}", block_on(enable_native(&mm_bob, "QTUM", &[])));
+    log!("{:?}", block_on(enable_native_bch(&mm_bob, "FORSLP", &[])));
+    log!("{:?}", block_on(enable_native(&mm_bob, "ADEXSLP", &[])));
 
-    log!([block_on(enable_qrc20_native(&mm_alice, "QICK"))]);
-    log!([block_on(enable_qrc20_native(&mm_alice, "QORTY"))]);
-    log!([block_on(enable_native(&mm_alice, "MYCOIN", &[]))]);
-    log!([block_on(enable_native(&mm_alice, "MYCOIN1", &[]))]);
-    log!([block_on(enable_native(&mm_alice, "QTUM", &[]))]);
-    log!([block_on(enable_native_bch(&mm_alice, "FORSLP", &[]))]);
-    log!([block_on(enable_native(&mm_alice, "ADEXSLP", &[]))]);
+    log!("{:?}", block_on(enable_qrc20_native(&mm_alice, "QICK")));
+    log!("{:?}", block_on(enable_qrc20_native(&mm_alice, "QORTY")));
+    log!("{:?}", block_on(enable_native(&mm_alice, "MYCOIN", &[])));
+    log!("{:?}", block_on(enable_native(&mm_alice, "MYCOIN1", &[])));
+    log!("{:?}", block_on(enable_native(&mm_alice, "QTUM", &[])));
+    log!("{:?}", block_on(enable_native_bch(&mm_alice, "FORSLP", &[])));
+    log!("{:?}", block_on(enable_native(&mm_alice, "ADEXSLP", &[])));
     let rc = block_on(mm_bob.rpc(&json! ({
         "userpass": mm_bob.userpass,
         "method": "setprice",
@@ -612,7 +612,7 @@ pub fn trade_base_rel((base, rel): (&str, &str)) {
 
     thread::sleep(Duration::from_secs(1));
 
-    log!("Issue alice " (base) "/" (rel) " buy request");
+    log!("Issue alice {}/{} buy request", base, rel);
     let rc = block_on(mm_alice.rpc(&json! ({
         "userpass": mm_alice.userpass,
         "method": "buy",

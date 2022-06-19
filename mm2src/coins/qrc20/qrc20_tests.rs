@@ -142,7 +142,7 @@ fn test_validate_maker_payment() {
 
     input.other_pub = hex::decode("022b00078841f37b5d30a6a1defb82b3af4d4e2d24dd4204d41f0c9ce1e875de1a").unwrap();
     let error = coin.validate_maker_payment(input.clone()).wait().unwrap_err();
-    log!("error: "[error]);
+    log!("error: {:?}", error);
     assert!(
         error.contains("Payment tx was sent from wrong address, expected 0x783cf0be521101942da509846ea476e683aad832")
     );
@@ -150,19 +150,19 @@ fn test_validate_maker_payment() {
 
     input.amount = BigDecimal::from_str("0.3").unwrap();
     let error = coin.validate_maker_payment(input.clone()).wait().unwrap_err();
-    log!("error: "[error]);
+    log!("error: {:?}", error);
     assert!(error.contains("Unexpected 'erc20Payment' contract call bytes"));
     input.amount = correct_amount;
 
     input.secret_hash = vec![2; 20];
     let error = coin.validate_maker_payment(input.clone()).wait().unwrap_err();
-    log!("error: "[error]);
+    log!("error: {:?}", error);
     assert!(error.contains("Payment state is not PAYMENT_STATE_SENT, got 0"));
     input.secret_hash = vec![1; 20];
 
     input.time_lock = 123;
     let error = coin.validate_maker_payment(input).wait().unwrap_err();
-    log!("error: "[error]);
+    log!("error: {:?}", error);
     assert!(error.contains("Payment state is not PAYMENT_STATE_SENT, got 0"));
 }
 
@@ -199,7 +199,7 @@ fn test_wait_for_confirmations_excepted() {
         .wait_for_confirmations(&payment_tx, confirmations, requires_nota, wait_until, check_every)
         .wait()
         .unwrap_err();
-    log!("error: "[error]);
+    log!("error: {:?}", error);
     assert!(error.contains("Contract call failed with an error: Revert"));
 
     // tx_hash: aa992c028c07e239dbd2ff32bf67251f026929c644b4d02a469e351cb44abab7
@@ -209,7 +209,7 @@ fn test_wait_for_confirmations_excepted() {
         .wait_for_confirmations(&payment_tx, confirmations, requires_nota, wait_until, check_every)
         .wait()
         .unwrap_err();
-    log!("error: "[error]);
+    log!("error: {:?}", error);
     assert!(error.contains("Contract call failed with an error: Revert"));
 }
 
@@ -231,7 +231,7 @@ fn test_send_taker_fee() {
         TransactionEnum::UtxoTx(ref tx) => tx.hash().reversed().into(),
         _ => panic!("Expected UtxoTx"),
     };
-    log!("Fee tx "[tx_hash]);
+    log!("Fee tx {:?}", tx_hash);
 
     let result = coin
         .validate_fee(
@@ -272,7 +272,7 @@ fn test_validate_fee() {
         .wait()
         .err()
         .expect("Expected an error");
-    log!("error: "[err]);
+    log!("error: {:?}", err);
     assert!(err.contains("QRC20 Fee tx was sent to wrong address"));
 
     let err = coin
@@ -280,7 +280,7 @@ fn test_validate_fee() {
         .wait()
         .err()
         .expect("Expected an error");
-    log!("error: "[err]);
+    log!("error: {:?}", err);
     assert!(err.contains("was sent from wrong address"));
 
     let err = coin
@@ -288,7 +288,7 @@ fn test_validate_fee() {
         .wait()
         .err()
         .expect("Expected an error");
-    log!("error: "[err]);
+    log!("error: {:?}", err);
     assert!(err.contains("confirmed before min_block"));
 
     let amount_dif = BigDecimal::from_str("0.02").unwrap();
@@ -297,7 +297,7 @@ fn test_validate_fee() {
         .wait()
         .err()
         .expect("Expected an error");
-    log!("error: "[err]);
+    log!("error: {:?}", err);
     assert!(err.contains("QRC20 Fee tx value 1000000 is less than expected 2000000"));
 
     // QTUM tx "8a51f0ffd45f34974de50f07c5bf2f0949da4e88433f8f75191953a442cf9310"
@@ -308,7 +308,7 @@ fn test_validate_fee() {
         .wait()
         .err()
         .expect("Expected an error");
-    log!("error: "[err]);
+    log!("error: {:?}", err);
     assert!(err.contains("Expected 'transfer' contract call"));
 }
 
@@ -925,7 +925,7 @@ fn test_validate_maker_payment_malicious() {
         .wait()
         .err()
         .expect("'erc20Payment' was called from another swap contract, expected an error");
-    log!("error: "(error));
+    log!("error: {}", error);
     assert!(error.contains("Unexpected amount 1000 in 'Transfer' event, expected 100000000"));
 }
 

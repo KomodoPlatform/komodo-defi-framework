@@ -63,7 +63,7 @@ extern "C" fn signal_handler(sig: c_int) {
         libc::SIGBUS => "SIGBUS",
         libc::SIGSYS => "SIGSYS",
         sig => {
-            sigˢ = fomat!((sig));
+            sigˢ = sig.to_string();
             &sigˢ[..]
         },
     };
@@ -87,7 +87,7 @@ fn init_signal_handling() {
         let mut prev = MaybeUninit::<libc::sigaction>::uninit();
         let rc = unsafe { libc::sigaction(signal, &sa, prev.as_mut_ptr()) };
         if rc != 0 {
-            log!("Error " (rc) " invoking sigaction on " (signal))
+            log::error!("Error {} invoking sigaction on {}", rc, signal)
         }
     }
 }

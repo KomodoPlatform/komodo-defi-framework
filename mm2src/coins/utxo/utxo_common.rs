@@ -1642,31 +1642,39 @@ pub fn extract_secret(secret_hash: &[u8], spend_tx: &[u8]) -> Result<Vec<u8>, St
         let instruction = match script.get_instruction(1) {
             Some(Ok(instr)) => instr,
             Some(Err(e)) => {
-                log!("Warning: "[e]);
+                warn!("{:?}", e);
                 continue;
             },
             None => {
-                log!("Warning: couldn't find secret in "[input_idx]" input");
+                warn!("Couldn't find secret in {:?} input", input_idx);
                 continue;
             },
         };
 
         if instruction.opcode != Opcode::OP_PUSHBYTES_32 {
-            log!("Warning: expected "[Opcode::OP_PUSHBYTES_32]" opcode, found "[instruction.opcode] " in "[input_idx]" input");
+            warn!(
+                "Expected {:?} opcode, found {:?} in {:?} input",
+                Opcode::OP_PUSHBYTES_32,
+                instruction.opcode,
+                input_idx
+            );
             continue;
         }
 
         let secret = match instruction.data {
             Some(data) => data.to_vec(),
             None => {
-                log!("Warning: secret is empty in "[input_idx] " input");
+                warn!("Secret is empty in {:?} input", input_idx);
                 continue;
             },
         };
 
         let actual_secret_hash = &*dhash160(&secret);
         if actual_secret_hash != secret_hash {
-            log!("Warning: invalid 'dhash160(secret)' "[actual_secret_hash]", expected "[secret_hash]);
+            warn!(
+                "Invalid 'dhash160(secret)' {:?}, expected {:?}",
+                actual_secret_hash, secret_hash
+            );
             continue;
         }
         return Ok(secret);
@@ -1802,9 +1810,7 @@ pub fn wait_for_output_spend(
                     return Ok(tx.into());
                 },
                 Ok(None) => (),
-                Err(e) => {
-                    log!("Error " (e) " on find_output_spend of tx " [e]);
-                },
+                Err(e) => error!("Error on find_output_spend_of_tx: {}", e),
             };
 
             if now_ms() / 1000 > wait_until {
@@ -3222,7 +3228,7 @@ pub fn validate_payment<T: UtxoCommonOps>(
                         );
                     };
                     attempts += 1;
-                    log!("Error " [e] " getting the tx " [tx.tx_hash()] " from rpc");
+                    error!("Error getting tx {:?} from rpc: {:?}", tx.tx_hash(), e);
                     Timer::sleep(10.).await;
                     continue;
                 },

@@ -20,7 +20,6 @@ mm2_core = { path = "../mm2_core" }
 cfg-if = "1.0"
 rand = { version = "0.7", features = ["std", "small_rng", "wasm-bindgen"] }
 regex = "1"
-fomat-macros = "0.2"
 futures = { version = "0.3", package = "futures", features = ["compat", "async-await", "thread-pool"] }
 bytes = "1.1"
 

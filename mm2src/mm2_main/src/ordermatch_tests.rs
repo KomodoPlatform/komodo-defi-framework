@@ -1742,7 +1742,7 @@ fn test_process_get_orderbook_request() {
             })
             .collect();
         actual.sort_unstable_by(|x, y| x.uuid.cmp(&y.uuid));
-        log!([pubkey]"-"[actual.len()]);
+        log!("{:?}-{:?}", pubkey, actual.len());
         assert_eq!(actual, *expected);
     }
 }
@@ -1776,7 +1776,7 @@ fn test_process_get_orderbook_request_limit() {
         .err()
         .expect("Expected an error");
 
-    log!("error: "(err));
+    log!("error: {}", err);
     assert!(err.contains("Orderbook too large"));
 }
 
@@ -2541,7 +2541,7 @@ fn test_process_sync_pubkey_orderbook_state_points_to_not_uptodate_trie_root() {
         let ordermatch_ctx = OrdermatchContext::from_ctx(&ctx).unwrap();
         let mut orderbook = ordermatch_ctx.orderbook.lock();
 
-        log!([pubkey]", found "[orderbook.pubkeys_state.keys()]);
+        log!("{:?}, found {:?}", pubkey, orderbook.pubkeys_state.keys());
         let old_root = *orderbook
             .pubkeys_state
             .get_mut(&pubkey)

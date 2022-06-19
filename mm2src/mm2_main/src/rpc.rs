@@ -240,7 +240,7 @@ async fn rpc_service(req: Request<Body>, ctx_h: u32, client: SocketAddr) -> Resp
                 Ok(ok) => ok,
                 Err(err) => {
                     error!("RPC error response: {}", err);
-                    let ebody = err_to_rpc_json_string(&fomat!((err)));
+                    let ebody = err_to_rpc_json_string(&err.to_string());
                     // generate a `Response` with the headers specified in `$header_key` and `$header_val`
                     let response = Response::builder().status(500) $(.header($header_key, $header_val))* .body(Body::from(ebody)).unwrap();
                     return response;

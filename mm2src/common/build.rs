@@ -9,8 +9,6 @@
 
 #![allow(uncommon_codepoints)]
 
-#[macro_use] extern crate fomat_macros;
-
 use gstuff::{last_modified_sec, slurp};
 use std::env::{self};
 use std::fs;
@@ -34,7 +32,7 @@ fn _in_place(path: &dyn AsRef<Path>, update: &mut dyn FnMut(Vec<u8>) -> Vec<u8>)
     }
     let updated = update(bulk.clone());
     if bulk != updated {
-        let tmp = dir.join(fomat! ((name) ".tmp"));
+        let tmp = dir.join(format!("{}.tmp", name));
         {
             let mut file = fs::File::create(&tmp).unwrap();
             file.write_all(&updated).unwrap();
