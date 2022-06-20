@@ -3331,8 +3331,7 @@ fn test_split_qtum() {
     let script: Script = output_script(p2pkh_address, ScriptType::P2PKH);
     let key_pair = coin.as_ref().priv_key_policy.key_pair_or_err().unwrap();
     let (unspents, _) = block_on(coin.get_mature_unspent_ordered_list(p2pkh_address)).expect("Unspent list is empty");
-    let unspents_mature = unspents.mature;
-    println!("unspents_mature vec = {:?}", unspents_mature);
+    log!("Mature unspents vec = "[unspents.mature]);
     let outputs = vec![
         TransactionOutput {
             value: 100_000_000,
@@ -3341,12 +3340,12 @@ fn test_split_qtum() {
         40
     ];
     let builder = UtxoTxBuilder::new(&coin)
-        .add_available_inputs(unspents_mature)
+        .add_available_inputs(unspents.mature)
         .add_outputs(outputs);
     let (unsigned, data) = block_on(builder.build()).unwrap();
-    let min_fee = 400000;
-    assert!(data.fee_amount > min_fee);
-    println!("unsigned tx = {:?}", unsigned);
+    // fee_amount must be higher than the minimum fee
+    assert!(data.fee_amount > 400_000);
+    log!("Unsigned tx = "[unsigned]);
     let signature_version = match p2pkh_address.addr_format {
         UtxoAddressFormat::Segwit => SignatureVersion::WitnessV0,
         _ => coin.as_ref().conf.signature_version,
@@ -3360,9 +3359,9 @@ fn test_split_qtum() {
         coin.as_ref().conf.fork_id,
     )
     .unwrap();
-    println!("signed tx = {:?}", signed);
+    log!("Signed tx = "[signed]);
     let res = block_on(coin.broadcast_tx(&signed)).unwrap();
-    println!("res = {:?}", res);
+    log!("Res = "[res]);
 }
 
 /// `QtumCoin` hasn't to check UTXO maturity if `check_utxo_maturity` is `false`.
