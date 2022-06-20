@@ -3331,7 +3331,7 @@ fn test_split_qtum() {
     let script: Script = output_script(p2pkh_address, ScriptType::P2PKH);
     let key_pair = coin.as_ref().priv_key_policy.key_pair_or_err().unwrap();
     let (unspents, _) = block_on(coin.get_mature_unspent_ordered_list(p2pkh_address)).expect("Unspent list is empty");
-    log!("Mature unspents vec = "[unspents.mature]);
+    log!("Mature unspents vec = {:?}", unspents.mature);
     let outputs = vec![
         TransactionOutput {
             value: 100_000_000,
@@ -3345,7 +3345,7 @@ fn test_split_qtum() {
     let (unsigned, data) = block_on(builder.build()).unwrap();
     // fee_amount must be higher than the minimum fee
     assert!(data.fee_amount > 400_000);
-    log!("Unsigned tx = "[unsigned]);
+    log!("Unsigned tx = {:?}", unsigned);
     let signature_version = match p2pkh_address.addr_format {
         UtxoAddressFormat::Segwit => SignatureVersion::WitnessV0,
         _ => coin.as_ref().conf.signature_version,
@@ -3359,9 +3359,9 @@ fn test_split_qtum() {
         coin.as_ref().conf.fork_id,
     )
     .unwrap();
-    log!("Signed tx = "[signed]);
+    log!("Signed tx = {:?}", signed);
     let res = block_on(coin.broadcast_tx(&signed)).unwrap();
-    log!("Res = "[res]);
+    log!("Res = {:?}", res);
 }
 
 /// `QtumCoin` hasn't to check UTXO maturity if `check_utxo_maturity` is `false`.
