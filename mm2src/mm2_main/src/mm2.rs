@@ -235,9 +235,9 @@ fn initialize_payment_locktime(conf: &Json) {
 /// * `ctx_cb` - callback used to share the `MmCtx` ID with the call site.
 pub async fn lp_main(params: LpMainParams, ctx_cb: &dyn Fn(u32)) -> Result<(), String> {
     let log_filter = params.filter.unwrap_or_default();
-    if let Err(e) = init_logger(log_filter) {
-        log!("Logger initialization failed: {}", e);
-    }
+    // Logger can be initialized once.
+    // If `mm2` is linked as a library, and `mm2` is restarted, `init_logger` returns an error.
+    init_logger(log_filter).ok();
 
     let conf = params.conf;
     if !conf["rpc_password"].is_null() {
@@ -340,7 +340,7 @@ pub fn mm2_main() {
     use libc::c_char;
 
     init_crash_reports();
-    log!("AtomicDEX MarketMaker {} DT {}", MM_VERSION, MM_DATETIME);
+    println!("AtomicDEX MarketMaker {} DT {}", MM_VERSION, MM_DATETIME);
 
     // Temporarily simulate `argv[]` for the C version of the main method.
     let args: Vec<String> = env::args()
@@ -387,7 +387,7 @@ pub fn mm2_main() {
     }
 
     if let Err(err) = run_lp_main(first_arg, &|_| ()) {
-        log!("{}", err);
+        eprintln!("{}", err);
         exit(1);
     }
 }

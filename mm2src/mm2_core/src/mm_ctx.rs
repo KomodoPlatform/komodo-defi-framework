@@ -223,7 +223,7 @@ impl MmCtx {
         let mut stop_listeners = self.stop_listeners.lock().expect("Can't lock stop_listeners");
         if self.stop.copy_or(false) {
             if let Err(err) = cb() {
-                common::log!("MmCtx::on_stop] Listener error: {}", err)
+                log::error!("MmCtx::on_stop] Listener error: {}", err)
             }
         } else {
             stop_listeners.push(cb)
@@ -286,7 +286,7 @@ impl Drop for MmCtx {
             .as_option()
             .map(|handle| handle.to_string())
             .unwrap_or_else(|| "UNKNOWN".to_owned());
-        common::log!("MmCtx ({}) has been dropped", ffi_handle)
+        log::info!("MmCtx ({}) has been dropped", ffi_handle)
     }
 }
 
@@ -378,7 +378,7 @@ impl MmArc {
         // that would prevent the contexts from properly `Drop`ping.
         for mut listener in stop_listeners.drain(..) {
             if let Err(err) = listener() {
-                common::log!("MmCtx::stop] Listener error: {}", err)
+                log::error!("MmCtx::stop] Listener error: {}", err)
             }
         }
 

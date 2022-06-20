@@ -709,16 +709,6 @@ impl Drop for MarketMakerIt {
     }
 }
 
-#[macro_export]
-macro_rules! wait_log_re {
-    ($mm_it: expr, $timeout_sec: expr, $re_pred: expr) => {{
-        log! ("Waiting for “" ($re_pred) "”…");
-        let re = regex::Regex::new($re_pred).unwrap();
-        let rc = $mm_it.wait_for_log ($timeout_sec, |line| re.is_match (line)) .await;
-        if let Err (err) = rc {panic! ("{}: {}", $re_pred, err)}
-    }};
-}
-
 /// Busy-wait on the log until the `pred` returns `true` or `timeout_sec` expires.
 pub async fn wait_for_log<F>(ctx: &MmArc, timeout_sec: f64, pred: F) -> Result<(), String>
 where

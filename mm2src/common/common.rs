@@ -143,8 +143,6 @@ use crate::executor::spawn;
 pub use http::StatusCode;
 pub use serde;
 
-#[cfg(not(target_arch = "wasm32"))] pub mod for_c;
-
 cfg_native! {
     pub use gstuff::{now_float, now_ms};
     #[cfg(not(windows))]
@@ -442,8 +440,8 @@ pub fn set_panic_hook() {
 
         let mut trace = String::new();
         stack_trace(&mut stack_trace_frame, &mut |l| trace.push_str(l));
-        log!("{}", info);
-        log!("backtrace\n{}", trace);
+        log::info!("{}", info);
+        log::info!("backtrace\n{}", trace);
 
         let _ = ENTERED.try_with(|e| e.compare_exchange(true, false, Ordering::Relaxed, Ordering::Relaxed));
     }))
@@ -570,7 +568,7 @@ where
     if var("TRACE_BLOCK_ON").map(|v| v == "true") == Ok(true) {
         let mut trace = String::with_capacity(4096);
         stack_trace(&mut stack_trace_frame, &mut |l| trace.push_str(l));
-        log!("block_on at\n{}", trace);
+        log::info!("block_on at\n{}", trace);
     }
 
     wio::CORE.0.block_on(f)

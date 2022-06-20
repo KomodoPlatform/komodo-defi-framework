@@ -35,7 +35,7 @@ pub unsafe extern "C" fn mm2_main(conf: *const c_char, log_cb: extern "C" fn(lin
             let mut msg = format!("mm2_lib:{}] ", line!());
             let args = format!($($args)*);
             msg.push_str(&args);
-            log_cb (msg.as_ptr() as *const c_char);
+            log_cb(msg.as_ptr() as *const c_char);
         }}
     }
     macro_rules! eret {

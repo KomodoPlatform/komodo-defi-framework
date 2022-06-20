@@ -96,38 +96,6 @@ fn init_signal_handling() {
 #[cfg(not(unix))]
 fn init_signal_handling() {}
 
-/// Check that access violation stack traces are being reported to stderr under macOS and Linux.
-#[test]
-fn test_crash_handling() {
-    /* TODO: Implement without `cmd!` (without `duct`).
-        let executable = env::args().next());
-        let executable = Path::new (&executable) .canonicalize());
-
-        if env::var ("_MM2_TEST_CRASH_HANDLING_IS_CHILD") != Ok ("1".into()) {
-            log!("test_crash_handling] Spawning a child...");
-            let output = cmd!(&executable, "test_crash_handling", "--nocapture")
-                .env ("_MM2_TEST_CRASH_HANDLING_IS_CHILD", "1")
-                .dir (executable.parent()))  // Might help finding libcurl.dll and pthreadVC2.dll.
-                .stdout_capture().stderr_capture().unchecked().run());
-            let stderr = String::from_utf8_lossy (&output.stderr);
-            log!({"Obtained stderr is: ---\n{}", stderr});
-
-            if cfg!(windows) {
-              assert!(stderr.contains ("SEH caught!"));
-            } else {
-              assert!(stderr.contains ("Signal caught!"));
-            }
-
-            assert!(stderr.contains ("] mm2::mm2::crash_reports::access_violation"));
-            assert!(stderr.contains ("] mm2::mm2::crash_reports::call_access_violation"));
-        } else {
-            log!("test_crash_handling] Hi from the child.");
-            init_crash_reports();
-            call_access_violation();
-        }
-    */
-}
-
 /// Setup the crash handlers.
 #[allow(dead_code)]
 #[cfg(not(target_arch = "wasm32"))]

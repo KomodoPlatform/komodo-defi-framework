@@ -1,5 +1,6 @@
 use super::*;
 use crate::executor::{spawn, Timer};
+use crate::log::error;
 use gstuff::Constructible;
 use hdrhistogram::Histogram;
 use itertools::Itertools;
@@ -272,7 +273,7 @@ impl Observer for TagObserver {
             match Histogram::new(sigfig) {
                 Ok(x) => x,
                 Err(err) => {
-                    log!("failed to create histogram: {}", err);
+                    error!("failed to create histogram: {}", err);
                     // do nothing on error
                     return;
                 },
@@ -281,7 +282,7 @@ impl Observer for TagObserver {
 
         for value in values {
             if let Err(err) = entry.record(*value) {
-                log!("failed to observe histogram value: {}", err);
+                error!("failed to observe histogram value: {}", err);
             }
         }
     }
@@ -329,7 +330,7 @@ impl Observer for JsonObserver {
         let mut histogram = match Histogram::new(sigfig) {
             Ok(x) => x,
             Err(err) => {
-                log!("failed to create histogram: {}", err);
+                error!("failed to create histogram: {}", err);
                 // do nothing on error
                 return;
             },
@@ -337,7 +338,7 @@ impl Observer for JsonObserver {
 
         for value in values {
             if let Err(err) = histogram.record(*value) {
-                log!("failed to observe histogram value: {}", err);
+                error!("failed to observe histogram value: {}", err);
             }
         }
 
@@ -499,7 +500,7 @@ pub mod prometheus {
 
         let server = server.then(|r| {
             if let Err(err) = r {
-                log!("{}", err);
+                error!("{}", err);
             };
             futures::future::ready(())
         });
@@ -514,9 +515,9 @@ pub mod prometheus {
         credentials: Option<PrometheusCredentials>,
     ) -> Result<Response<Body>, http::Error> {
         fn on_error(status: StatusCode, error: String) -> Result<Response<Body>, http::Error> {
-            log!("{}", error);
+            error!("{}", error);
             Response::builder().status(status).body(Body::empty()).map_err(|err| {
-                log!("{}", err);
+                error!("{}", err);
                 err
             })
         }
@@ -559,7 +560,7 @@ pub mod prometheus {
             .header(header::CONTENT_TYPE, "text/plain")
             .body(body)
             .map_err(|err| {
-                log!("{}", err);
+                error!("{}", err);
                 err
             })
     }
