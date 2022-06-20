@@ -3290,6 +3290,80 @@ fn test_qtum_without_check_utxo_maturity() {
     assert!(unsafe { GET_MATURE_UNSPENT_ORDERED_LIST_CALLED });
 }
 
+/// The test is for splitting some mature unspent `QTUM` out points into 40 outputs with amount `1 QTUM` in each
+#[test]
+#[ignore]
+fn test_split_qtum() {
+    let priv_key = [
+        3, 98, 177, 3, 108, 39, 234, 144, 131, 178, 103, 103, 127, 80, 230, 166, 53, 68, 147, 215, 42, 216, 144, 72,
+        172, 110, 180, 13, 123, 179, 10, 49,
+    ];
+    let conf = json!({
+      "coin": "tQTUM",
+      "name": "qtumtest",
+      "fname": "Qtum test",
+      "rpcport": 13889,
+      "pubtype": 120,
+      "p2shtype": 110,
+      "wiftype": 239,
+      "segwit": true,
+      "txfee": 400000,
+      "mm2": 1,
+      "required_confirmations": 1,
+      "mature_confirmations": 2000,
+      "avg_blocktime": 0.53,
+      "protocol": {
+        "type": "QTUM"
+      }
+    });
+    let req = json!({
+        "method": "electrum",
+        "servers": [
+            {"url":"electrum1.cipig.net:10071"},
+            {"url":"electrum2.cipig.net:10071"},
+            {"url":"electrum3.cipig.net:10071"},
+        ],
+    });
+    let ctx = MmCtxBuilder::new().into_mm_arc();
+    let params = UtxoActivationParams::from_legacy_req(&req).unwrap();
+    let coin = block_on(qtum_coin_with_priv_key(&ctx, "QTUM", &conf, &params, &priv_key)).unwrap();
+    let p2pkh_address = coin.as_ref().derivation_method.unwrap_iguana();
+    let script: Script = output_script(p2pkh_address, ScriptType::P2PKH);
+    let key_pair = coin.as_ref().priv_key_policy.key_pair_or_err().unwrap();
+    let (unspents, _) = block_on(coin.get_mature_unspent_ordered_list(p2pkh_address)).expect("Unspent list is empty");
+    log!("Mature unspents vec = "[unspents.mature]);
+    let outputs = vec![
+        TransactionOutput {
+            value: 100_000_000,
+            script_pubkey: script.to_bytes(),
+        };
+        40
+    ];
+    let builder = UtxoTxBuilder::new(&coin)
+        .add_available_inputs(unspents.mature)
+        .add_outputs(outputs);
+    let (unsigned, data) = block_on(builder.build()).unwrap();
+    // fee_amount must be higher than the minimum fee
+    assert!(data.fee_amount > 400_000);
+    log!("Unsigned tx = "[unsigned]);
+    let signature_version = match p2pkh_address.addr_format {
+        UtxoAddressFormat::Segwit => SignatureVersion::WitnessV0,
+        _ => coin.as_ref().conf.signature_version,
+    };
+    let prev_script = Builder::build_p2pkh(&p2pkh_address.hash);
+    let signed = sign_tx(
+        unsigned,
+        key_pair,
+        prev_script,
+        signature_version,
+        coin.as_ref().conf.fork_id,
+    )
+    .unwrap();
+    log!("Signed tx = "[signed]);
+    let res = block_on(coin.broadcast_tx(&signed)).unwrap();
+    log!("Res = "[res]);
+}
+
 /// `QtumCoin` hasn't to check UTXO maturity if `check_utxo_maturity` is `false`.
 /// https://github.com/KomodoPlatform/atomicDEX-API/issues/1181
 #[test]

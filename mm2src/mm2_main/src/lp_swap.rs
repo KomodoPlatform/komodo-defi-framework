@@ -990,18 +990,14 @@ pub async fn my_recent_swaps_rpc(ctx: MmArc, req: Json) -> Result<Response<Vec<u
     // iterate over uuids trying to parse the corresponding files content and add to result vector
     let mut swaps = Vec::with_capacity(db_result.uuids.len());
     for uuid in db_result.uuids.iter() {
-        let swap_json = match SavedSwap::load_my_swap_from_db(&ctx, *uuid).await {
-            Ok(Some(swap)) => json::to_value(MySwapStatusResponse::from(swap)).unwrap(),
-            Ok(None) => {
-                error!("No such swap with the uuid '{}'", uuid);
-                Json::Null
+        match SavedSwap::load_my_swap_from_db(&ctx, *uuid).await {
+            Ok(Some(swap)) => {
+                let swap_json = json::to_value(MySwapStatusResponse::from(swap)).unwrap();
+                swaps.push(swap_json)
             },
-            Err(e) => {
-                error!("Error loading a swap with the uuid '{}': {}", uuid, e);
-                Json::Null
-            },
-        };
-        swaps.push(swap_json);
+            Ok(None) => error!("No such swap with the uuid '{}'", uuid),
+            Err(e) => error!("Error loading a swap with the uuid '{}': {}", uuid, e),
+        }
     }
 
     let res_js = json!({
