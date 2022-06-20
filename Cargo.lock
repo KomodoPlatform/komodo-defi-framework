@@ -1200,7 +1200,6 @@ dependencies = [
  "ser_error_derive",
  "serde",
  "serde-wasm-bindgen",
- "serde_bytes",
  "serde_derive",
  "serde_json",
  "serde_repr",
