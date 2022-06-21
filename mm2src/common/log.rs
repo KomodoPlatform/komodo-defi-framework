@@ -175,7 +175,7 @@ pub fn short_log_time(ms: u64) -> DelayedFormat<StrftimeItems<'static>> {
 macro_rules! log {
     ($($args: tt)+) => {{
         let time = $crate::log::short_log_time($crate::now_ms());
-        let file = ::gstuff::filename (file!());
+        let file = ::gstuff::filename(file!());
         let msg = format!($($args)+);
         let chunk = format!("{}, {}:{}] {}", time, file, line!(), msg);
         $crate::log::chunk2log(chunk, $crate::log::LogLevel::Info)

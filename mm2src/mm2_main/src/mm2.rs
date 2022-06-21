@@ -272,7 +272,6 @@ pub async fn lp_main(params: LpMainParams, ctx_cb: &dyn Fn(u32)) -> Result<(), S
     Ok(())
 }
 
-#[allow(dead_code)]
 fn help() {
     const HELP_MSG: &str = r#"Command-line options.
 The first command-line argument is special and designates the mode.
@@ -340,7 +339,7 @@ pub fn mm2_main() {
     use libc::c_char;
 
     init_crash_reports();
-    println!("AtomicDEX MarketMaker {} DT {}", MM_VERSION, MM_DATETIME);
+    log!("AtomicDEX MarketMaker {} DT {}", MM_VERSION, MM_DATETIME);
 
     // Temporarily simulate `argv[]` for the C version of the main method.
     let args: Vec<String> = env::args()
@@ -387,7 +386,7 @@ pub fn mm2_main() {
     }
 
     if let Err(err) = run_lp_main(first_arg, &|_| ()) {
-        eprintln!("{}", err);
+        log!("{}", err);
         exit(1);
     }
 }

@@ -602,14 +602,10 @@ mod docker_tests {
 
         let recently_sent = block_on(coin.as_ref().recently_spent_outpoints.lock());
 
-        let before = now_ms();
         unspents = recently_sent
             .replace_spent_outputs_with_cache(unspents.into_iter().collect())
             .into_iter()
             .collect();
-
-        let after = now_ms();
-        log!("Took {}", after - before);
 
         let last_tx = sent_tx.last().unwrap();
         let expected_unspent = UnspentInfo {
