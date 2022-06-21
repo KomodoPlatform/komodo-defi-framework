@@ -5118,17 +5118,19 @@ pub async fn orders_kick_start(ctx: &MmArc) -> Result<HashSet<String>, String> {
     let saved_maker_orders = try_s!(storage.load_active_maker_orders().await);
     let saved_taker_orders = try_s!(storage.load_active_taker_orders().await);
 
-    let mut makerorders_ctx = ordermatch_ctx.makerorders_ctx.lock();
-    for order in saved_maker_orders {
-        if !makerorders_ctx.balance_loop_exists(&order.base) {
-            let ctx_weak = ctx.weak();
-            let ticker = order.base.clone();
-            spawn(async move { check_balance_update_loop(ctx_weak, ticker, None).await });
-            makerorders_ctx.add_balance_loop(&order.base);
+    {
+        let mut makerorders_ctx = ordermatch_ctx.makerorders_ctx.lock();
+        for order in saved_maker_orders {
+            if !makerorders_ctx.balance_loop_exists(&order.base) {
+                let ctx_weak = ctx.weak();
+                let ticker = order.base.clone();
+                spawn(async move { check_balance_update_loop(ctx_weak, ticker, None).await });
+                makerorders_ctx.add_balance_loop(&order.base);
+            }
+            coins.insert(order.base.clone());
+            coins.insert(order.rel.clone());
+            makerorders_ctx.add_order(order.clone());
         }
-        coins.insert(order.base.clone());
-        coins.insert(order.rel.clone());
-        makerorders_ctx.add_order(order);
     }
 
     let mut taker_orders = ordermatch_ctx.my_taker_orders.lock().await;
