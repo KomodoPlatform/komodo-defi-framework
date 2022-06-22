@@ -62,7 +62,8 @@ pub struct SqlChannelDetails {
     pub is_public: bool,
     pub is_closed: bool,
     pub created_at: u64,
-    pub last_updated: u64,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub closed_at: Option<u64>,
 }
 
 impl SqlChannelDetails {
@@ -89,7 +90,7 @@ impl SqlChannelDetails {
             is_public,
             is_closed: false,
             created_at: now_ms() / 1000,
-            last_updated: now_ms() / 1000,
+            closed_at: None,
         }
     }
 }
@@ -219,7 +220,12 @@ pub trait DbStorage {
     async fn update_funding_tx_block_height(&self, funding_tx: String, block_height: u64) -> Result<(), Self::Error>;
 
     /// Updates the is_closed value for a channel in the DB to 1.
-    async fn update_channel_to_closed(&self, rpc_id: u64, closure_reason: String) -> Result<(), Self::Error>;
+    async fn update_channel_to_closed(
+        &self,
+        rpc_id: u64,
+        closure_reason: String,
+        close_at: u64,
+    ) -> Result<(), Self::Error>;
 
     /// Gets the list of closed channels records in the DB with no closing tx hashs saved yet. Can be used to check if
     /// the closing tx hash needs to be fetched from the chain and saved to DB when initializing the persister.

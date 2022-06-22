@@ -172,7 +172,9 @@ async fn save_channel_closing_details(
     user_channel_id: u64,
     reason: String,
 ) -> SaveChannelClosingResult<()> {
-    persister.update_channel_to_closed(user_channel_id, reason).await?;
+    persister
+        .update_channel_to_closed(user_channel_id, reason, now_ms() / 1000)
+        .await?;
 
     let channel_details = persister
         .get_channel_from_db(user_channel_id)
