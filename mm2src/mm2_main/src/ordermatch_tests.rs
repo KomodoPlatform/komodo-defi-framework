@@ -943,60 +943,72 @@ fn prepare_for_cancel_by(ctx: &MmArc) -> mpsc::Receiver<AdexBehaviourCmd> {
     let mut makerorders_ctx = ordermatch_ctx.makerorders_ctx.lock();
     let mut taker_orders = block_on(ordermatch_ctx.my_taker_orders.lock());
 
-    makerorders_ctx.add_order(MakerOrder {
-        uuid: Uuid::from_bytes([0; 16]),
-        base: "RICK".into(),
-        rel: "MORTY".into(),
-        created_at: now_ms(),
-        updated_at: Some(now_ms()),
-        matches: HashMap::new(),
-        max_base_vol: 0.into(),
-        min_base_vol: 0.into(),
-        price: 0.into(),
-        started_swaps: vec![],
-        conf_settings: None,
-        changes_history: None,
-        save_in_history: false,
-        base_orderbook_ticker: None,
-        rel_orderbook_ticker: None,
-        p2p_privkey: None,
-    });
-    makerorders_ctx.add_order(MakerOrder {
-        uuid: Uuid::from_bytes([1; 16]),
-        base: "MORTY".into(),
-        rel: "RICK".into(),
-        created_at: now_ms(),
-        updated_at: Some(now_ms()),
-        matches: HashMap::new(),
-        max_base_vol: 0.into(),
-        min_base_vol: 0.into(),
-        price: 0.into(),
-        started_swaps: vec![],
-        conf_settings: None,
-        changes_history: None,
-        save_in_history: false,
-        base_orderbook_ticker: None,
-        rel_orderbook_ticker: None,
-        p2p_privkey: None,
-    });
-    makerorders_ctx.add_order(MakerOrder {
-        uuid: Uuid::from_bytes([2; 16]),
-        base: "MORTY".into(),
-        rel: "ETH".into(),
-        created_at: now_ms(),
-        updated_at: Some(now_ms()),
-        matches: HashMap::new(),
-        max_base_vol: 0.into(),
-        min_base_vol: 0.into(),
-        price: 0.into(),
-        started_swaps: vec![],
-        conf_settings: None,
-        changes_history: None,
-        save_in_history: false,
-        base_orderbook_ticker: None,
-        rel_orderbook_ticker: None,
-        p2p_privkey: None,
-    });
+    makerorders_ctx.add_order(
+        ctx.weak(),
+        MakerOrder {
+            uuid: Uuid::from_bytes([0; 16]),
+            base: "RICK".into(),
+            rel: "MORTY".into(),
+            created_at: now_ms(),
+            updated_at: Some(now_ms()),
+            matches: HashMap::new(),
+            max_base_vol: 0.into(),
+            min_base_vol: 0.into(),
+            price: 0.into(),
+            started_swaps: vec![],
+            conf_settings: None,
+            changes_history: None,
+            save_in_history: false,
+            base_orderbook_ticker: None,
+            rel_orderbook_ticker: None,
+            p2p_privkey: None,
+        },
+        None,
+    );
+    makerorders_ctx.add_order(
+        ctx.weak(),
+        MakerOrder {
+            uuid: Uuid::from_bytes([1; 16]),
+            base: "MORTY".into(),
+            rel: "RICK".into(),
+            created_at: now_ms(),
+            updated_at: Some(now_ms()),
+            matches: HashMap::new(),
+            max_base_vol: 0.into(),
+            min_base_vol: 0.into(),
+            price: 0.into(),
+            started_swaps: vec![],
+            conf_settings: None,
+            changes_history: None,
+            save_in_history: false,
+            base_orderbook_ticker: None,
+            rel_orderbook_ticker: None,
+            p2p_privkey: None,
+        },
+        None,
+    );
+    makerorders_ctx.add_order(
+        ctx.weak(),
+        MakerOrder {
+            uuid: Uuid::from_bytes([2; 16]),
+            base: "MORTY".into(),
+            rel: "ETH".into(),
+            created_at: now_ms(),
+            updated_at: Some(now_ms()),
+            matches: HashMap::new(),
+            max_base_vol: 0.into(),
+            min_base_vol: 0.into(),
+            price: 0.into(),
+            started_swaps: vec![],
+            conf_settings: None,
+            changes_history: None,
+            save_in_history: false,
+            base_orderbook_ticker: None,
+            rel_orderbook_ticker: None,
+            p2p_privkey: None,
+        },
+        None,
+    );
     taker_orders.insert(Uuid::from_bytes([3; 16]), TakerOrder {
         matches: HashMap::new(),
         created_at: now_ms(),
@@ -1199,7 +1211,10 @@ fn lp_connect_start_bob_should_not_be_invoked_if_order_match_already_connected()
         )
         .into_mm_arc();
     let ordermatch_ctx = OrdermatchContext::from_ctx(&ctx).unwrap();
-    ordermatch_ctx.makerorders_ctx.lock().add_order(maker_order);
+    ordermatch_ctx
+        .makerorders_ctx
+        .lock()
+        .add_order(ctx.weak(), maker_order, None);
 
     static mut CONNECT_START_CALLED: bool = false;
     lp_connect_start_bob.mock_safe(|_, _, _| {
@@ -1224,7 +1239,10 @@ fn should_process_request_only_once() {
         )
         .into_mm_arc();
     let ordermatch_ctx = OrdermatchContext::from_ctx(&ctx).unwrap();
-    ordermatch_ctx.makerorders_ctx.lock().add_order(maker_order);
+    ordermatch_ctx
+        .makerorders_ctx
+        .lock()
+        .add_order(ctx.weak(), maker_order, None);
     let request: TakerRequest = json::from_str(
         r#"{"base":"ETH","rel":"JST","base_amount":"0.1","base_amount_rat":[[1,[1]],[1,[10]]],"rel_amount":"0.2","rel_amount_rat":[[1,[1]],[1,[5]]],"action":"Buy","uuid":"2f9afe84-7a89-4194-8947-45fba563118f","method":"request","sender_pubkey":"031d4256c4bc9f99ac88bf3dba21773132281f65f9bf23a59928bce08961e2f3","dest_pub_key":"0000000000000000000000000000000000000000000000000000000000000000","match_by":{"type":"Any"}}"#,
     ).unwrap();
@@ -3158,4 +3176,102 @@ fn check_sync_pubkey_state_p2p_res_serde() {
 fn check_order_serde() {
     let order_json = include_str!("for_tests/check_order_serde_payload.json");
     let _order: Order = json::from_str(order_json).unwrap();
+}
+
+#[test]
+fn test_maker_order_balance_loops() {
+    let ctx = MmCtxBuilder::default()
+        .with_secp256k1_key_pair(key_pair_from_seed("123").unwrap())
+        .into_mm_arc();
+
+    let ordermatch_ctx = OrdermatchContext::from_ctx(&ctx).unwrap();
+    let mut makerorders_ctx = ordermatch_ctx.makerorders_ctx.lock();
+
+    let rick_ticker = "RICK";
+    let morty_ticker = "MORTY";
+
+    let rick_order = MakerOrder {
+        uuid: Uuid::from_bytes([0; 16]),
+        base: rick_ticker.into(),
+        rel: morty_ticker.into(),
+        created_at: now_ms(),
+        updated_at: Some(now_ms()),
+        matches: HashMap::new(),
+        max_base_vol: 0.into(),
+        min_base_vol: 0.into(),
+        price: 0.into(),
+        started_swaps: vec![],
+        conf_settings: None,
+        changes_history: None,
+        save_in_history: false,
+        base_orderbook_ticker: None,
+        rel_orderbook_ticker: None,
+        p2p_privkey: None,
+    };
+
+    let morty_order = MakerOrder {
+        uuid: Uuid::from_bytes([0; 16]),
+        base: morty_ticker.into(),
+        rel: rick_ticker.into(),
+        created_at: now_ms(),
+        updated_at: Some(now_ms()),
+        matches: HashMap::new(),
+        max_base_vol: 0.into(),
+        min_base_vol: 0.into(),
+        price: 0.into(),
+        started_swaps: vec![],
+        conf_settings: None,
+        changes_history: None,
+        save_in_history: false,
+        base_orderbook_ticker: None,
+        rel_orderbook_ticker: None,
+        p2p_privkey: None,
+    };
+
+    assert!(!makerorders_ctx.balance_loop_exists(rick_ticker));
+    assert!(!makerorders_ctx.balance_loop_exists(morty_ticker));
+    assert_eq!(makerorders_ctx.count_by_tickers.get(rick_ticker), None);
+    assert_eq!(makerorders_ctx.count_by_tickers.get(morty_ticker), None);
+
+    makerorders_ctx.add_order(ctx.weak(), rick_order.clone(), None);
+    assert!(makerorders_ctx.balance_loop_exists(rick_ticker));
+    assert_eq!(*makerorders_ctx.count_by_tickers.get(rick_ticker).unwrap(), 1);
+
+    makerorders_ctx.add_order(ctx.weak(), morty_order.clone(), None);
+    assert!(makerorders_ctx.balance_loop_exists(morty_ticker));
+    assert_eq!(*makerorders_ctx.count_by_tickers.get(morty_ticker).unwrap(), 1);
+
+    let rick_order_2 = MakerOrder {
+        uuid: Uuid::from_bytes([0; 16]),
+        base: rick_ticker.into(),
+        rel: "MORTY2".into(),
+        created_at: now_ms(),
+        updated_at: Some(now_ms()),
+        matches: HashMap::new(),
+        max_base_vol: 0.into(),
+        min_base_vol: 0.into(),
+        price: 0.into(),
+        started_swaps: vec![],
+        conf_settings: None,
+        changes_history: None,
+        save_in_history: false,
+        base_orderbook_ticker: None,
+        rel_orderbook_ticker: None,
+        p2p_privkey: None,
+    };
+
+    makerorders_ctx.add_order(ctx.weak(), rick_order_2.clone(), None);
+    assert_eq!(*makerorders_ctx.count_by_tickers.get(rick_ticker).unwrap(), 2);
+
+    makerorders_ctx.remove_order(&rick_order_2.uuid, &rick_order_2.base);
+    assert!(makerorders_ctx.balance_loop_exists(rick_ticker));
+    assert_eq!(*makerorders_ctx.count_by_tickers.get(rick_ticker).unwrap(), 1);
+
+    makerorders_ctx.remove_order(&rick_order.uuid, &rick_order.base);
+    assert!(!makerorders_ctx.balance_loop_exists(rick_ticker));
+    assert_eq!(*makerorders_ctx.count_by_tickers.get(rick_ticker).unwrap(), 0);
+
+    makerorders_ctx.remove_order(&morty_order.uuid, &morty_order.base);
+    assert!(!makerorders_ctx.balance_loop_exists(morty_ticker));
+    assert_eq!(*makerorders_ctx.count_by_tickers.get(morty_ticker).unwrap(), 0);
 }
