@@ -40,8 +40,6 @@ pub enum EnableLightningError {
     InvalidPath(String),
     #[display(fmt = "System time error {}", _0)]
     SystemTimeError(String),
-    #[display(fmt = "Hash error {}", _0)]
-    HashError(String),
     #[display(fmt = "RPC error {}", _0)]
     RpcError(String),
     #[display(fmt = "DB error {}", _0)]
@@ -58,7 +56,6 @@ impl HttpStatusCode for EnableLightningError {
             | EnableLightningError::InvalidPath(_)
             | EnableLightningError::SystemTimeError(_)
             | EnableLightningError::IOError(_)
-            | EnableLightningError::HashError(_)
             | EnableLightningError::ConnectToNodeError(_)
             | EnableLightningError::InvalidConfiguration(_)
             | EnableLightningError::DbError(_) => StatusCode::INTERNAL_SERVER_ERROR,

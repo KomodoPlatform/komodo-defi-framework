@@ -154,9 +154,7 @@ pub async fn init_channel_manager(
     let best_header = get_best_header(&rpc_client).await?;
     platform.update_best_block_height(best_header.block_height());
     let best_block = RpcBestBlock::from(best_header.clone());
-    let best_block_hash = BlockHash::from_hash(
-        sha256d::Hash::from_slice(&best_block.hash.0).map_to_mm(|e| EnableLightningError::HashError(e.to_string()))?,
-    );
+    let best_block_hash = BlockHash::from_hash(sha256d::Hash::from_inner(best_block.hash.0));
     let (channel_manager_blockhash, channel_manager) = {
         if let Ok(mut f) = File::open(persister.manager_path()) {
             let mut channel_monitor_mut_references = Vec::new();

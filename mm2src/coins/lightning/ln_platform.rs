@@ -2,7 +2,7 @@ use super::*;
 use crate::lightning::ln_errors::{SaveChannelClosingError, SaveChannelClosingResult};
 use crate::utxo::rpc_clients::{BestBlock as RpcBestBlock, BlockHashOrHeight, ElectrumBlockHeader, ElectrumClient,
                                ElectrumNonce, EstimateFeeMethod, UtxoRpcClientEnum};
-use crate::utxo::utxo_common::{get_tx_if_onchain, validate_spv_proof};
+use crate::utxo::utxo_common::{get_tx_if_onchain, validate_spv_proof, ConfirmedTransactionInfo};
 use crate::utxo::utxo_standard::UtxoStandardCoin;
 use crate::{MarketCoinOps, MmCoin};
 use bitcoin::blockdata::block::BlockHeader;
@@ -20,12 +20,13 @@ use lightning::chain::{chaininterface::{BroadcasterInterface, ConfirmationTarget
                        Confirm, Filter, WatchedOutput};
 use rpc::v1::types::H256 as H256Json;
 use std::cmp;
-use std::convert::{TryFrom, TryInto};
+use std::convert::TryFrom;
 use std::sync::atomic::{AtomicU64, Ordering as AtomicOrdering};
 
 const CHECK_FOR_NEW_BEST_BLOCK_INTERVAL: f64 = 60.;
 const MIN_ALLOWED_FEE_PER_1000_WEIGHT: u32 = 253;
 const TRY_LOOP_INTERVAL: f64 = 60.;
+const SPV_PROOF_TRY_UNTIL_INTERVAL: u64 = 5;
 
 #[inline]
 pub fn h256_json_from_txid(txid: Txid) -> H256Json { H256Json::from(txid.as_hash().into_inner()).reversed() }
@@ -55,20 +56,8 @@ pub async fn update_best_block(
                         return;
                     },
                 };
-                let prev_blockhash = match sha256d::Hash::from_slice(&h.prev_block_hash.0) {
-                    Ok(h) => h,
-                    Err(e) => {
-                        error!("Error while parsing previous block hash for lightning node: {}", e);
-                        return;
-                    },
-                };
-                let merkle_root = match sha256d::Hash::from_slice(&h.merkle_root.0) {
-                    Ok(h) => h,
-                    Err(e) => {
-                        error!("Error while parsing merkle root for lightning node: {}", e);
-                        return;
-                    },
-                };
+                let prev_blockhash = sha256d::Hash::from_inner(h.prev_block_hash.0);
+                let merkle_root = sha256d::Hash::from_inner(h.merkle_root.0);
                 (
                     BlockHeader {
                         version: h.version as i32,
@@ -123,26 +112,6 @@ pub async fn ln_best_block_update_loop(
             update_best_block(&chain_monitor, &channel_manager, best_header).await;
         }
         Timer::sleep(CHECK_FOR_NEW_BEST_BLOCK_INTERVAL).await;
-    }
-}
-
-struct ConfirmedTransactionInfo {
-    txid: Txid,
-    header: BlockHeader,
-    index: usize,
-    transaction: Transaction,
-    height: u32,
-}
-
-impl ConfirmedTransactionInfo {
-    fn new(txid: Txid, header: BlockHeader, index: usize, transaction: Transaction, height: u32) -> Self {
-        ConfirmedTransactionInfo {
-            txid,
-            header,
-            index,
-            transaction,
-            height,
-        }
     }
 }
 
@@ -267,62 +236,31 @@ impl Platform {
                 },
             });
 
-        let txs_with_proof_futs = on_chain_txs
+        let confirmed_transactions_futs = on_chain_txs
             .map(|transaction| async move {
-                (
-                    transaction.clone(),
-                    // Todo: make it number of retries maybe??
-                    validate_spv_proof(
-                        ticker,
-                        block_headers_storage,
-                        client,
-                        &transaction,
-                        (now_ms() / 1000) + 5,
-                    )
-                    .await,
+                validate_spv_proof(
+                    ticker,
+                    block_headers_storage,
+                    client,
+                    &transaction,
+                    (now_ms() / 1000) + SPV_PROOF_TRY_UNTIL_INTERVAL,
                 )
+                .await
             })
             .collect::<Vec<_>>();
-        let txs_with_proof = join_all(txs_with_proof_futs)
+        join_all(confirmed_transactions_futs)
             .await
             .into_iter()
-            .filter_map(|(transaction, spv_proof)| match spv_proof {
-                Ok(proof) => Some((transaction, proof)),
+            .filter_map(|confirmed_transaction| match confirmed_transaction {
+                Ok(confirmed_tx) => {
+                    let txid = Txid::from_hash(confirmed_tx.tx.hash().reversed().to_sha256d());
+                    self.registered_txs.lock().remove(&txid);
+                    Some(confirmed_tx)
+                },
                 Err(e) => {
                     error!("Error verifying transaction: {:?}", e);
                     None
                 },
-            });
-
-        txs_with_proof
-            .filter_map(|(transaction, (proof, height))| {
-                let transaction: Transaction = match transaction.try_into() {
-                    Ok(tx) => tx,
-                    Err(e) => {
-                        error!("Error deserializing transaction: {}", e);
-                        return None;
-                    },
-                };
-                let header = match deserialize::<BlockHeader>(&proof.raw_header.0) {
-                    Ok(h) => h,
-                    Err(e) => {
-                        error!(
-                            "Error deserializing blockheader for transaction {}: {}",
-                            transaction.txid(),
-                            e
-                        );
-                        return None;
-                    },
-                };
-                let txid = transaction.txid();
-                self.registered_txs.lock().remove(&txid);
-                Some(ConfirmedTransactionInfo::new(
-                    txid,
-                    header,
-                    proof.index as usize,
-                    transaction,
-                    height as u32,
-                ))
             })
             .collect()
     }
@@ -364,71 +302,40 @@ impl Platform {
         spent_outputs_info.retain(|output| {
             !transactions_to_confirm
                 .iter()
-                .any(|info| h256_json_from_txid(info.txid) == output.spending_tx.hash().into())
+                .any(|info| info.tx.hash() == output.spending_tx.hash())
         });
 
-        let txs_with_proof_futs = spent_outputs_info
+        let confirmed_transactions_futs = spent_outputs_info
             .into_iter()
             .map(|output| async move {
-                (
-                    output.spending_tx.clone(),
-                    validate_spv_proof(
-                        ticker,
-                        block_headers_storage,
-                        client,
-                        &output.spending_tx,
-                        (now_ms() / 1000) + 5,
-                    )
-                    .await,
+                validate_spv_proof(
+                    ticker,
+                    block_headers_storage,
+                    client,
+                    &output.spending_tx,
+                    (now_ms() / 1000) + SPV_PROOF_TRY_UNTIL_INTERVAL,
                 )
+                .await
             })
             .collect::<Vec<_>>();
-        // Todo: reconcile duplicate code
-        let txs_with_proof = join_all(txs_with_proof_futs)
+        let mut confirmed_transaction_info = join_all(confirmed_transactions_futs)
             .await
             .into_iter()
-            .filter_map(|(transaction, spv_proof)| match spv_proof {
-                Ok(proof) => Some((transaction, proof)),
+            .filter_map(|confirmed_transaction| match confirmed_transaction {
+                Ok(tx) => {
+                    self.registered_outputs.lock().retain(|output| {
+                        !tx.tx
+                            .clone()
+                            .inputs
+                            .into_iter()
+                            .any(|txin| txin.previous_output.hash == h256_from_txid(output.outpoint.txid))
+                    });
+                    Some(tx)
+                },
                 Err(e) => {
                     error!("Error verifying transaction: {:?}", e);
                     None
                 },
-            });
-
-        let mut confirmed_transaction_info = txs_with_proof
-            .filter_map(|(transaction, (proof, height))| {
-                let transaction: Transaction = match transaction.try_into() {
-                    Ok(tx) => tx,
-                    Err(e) => {
-                        error!("Error deserializing transaction: {}", e);
-                        return None;
-                    },
-                };
-                let header = match deserialize::<BlockHeader>(&proof.raw_header.0) {
-                    Ok(h) => h,
-                    Err(e) => {
-                        error!(
-                            "Error deserializing blockheader for transaction {}: {}",
-                            transaction.txid(),
-                            e
-                        );
-                        return None;
-                    },
-                };
-                self.registered_outputs.lock().retain(|output| {
-                    !transaction
-                        .clone()
-                        .input
-                        .into_iter()
-                        .any(|txin| txin.previous_output.txid == output.outpoint.txid)
-                });
-                Some(ConfirmedTransactionInfo::new(
-                    transaction.txid(),
-                    header,
-                    proof.index as usize,
-                    transaction,
-                    height as u32,
-                ))
             })
             .collect();
 
@@ -452,7 +359,7 @@ impl Platform {
             let best_block_height = self.best_block_height();
             if let Err(e) = persister
                 .update_funding_tx_block_height(
-                    confirmed_transaction_info.transaction.txid().to_string(),
+                    confirmed_transaction_info.tx.hash().reversed().to_string(),
                     best_block_height,
                 )
                 .await
@@ -460,20 +367,20 @@ impl Platform {
                 error!("Unable to update the funding tx block height in DB: {}", e);
             }
             channel_manager.transactions_confirmed(
-                &confirmed_transaction_info.header,
+                &confirmed_transaction_info.header.clone().into(),
                 &[(
-                    confirmed_transaction_info.index,
-                    &confirmed_transaction_info.transaction,
+                    confirmed_transaction_info.index as usize,
+                    &confirmed_transaction_info.tx.clone().into(),
                 )],
-                confirmed_transaction_info.height,
+                confirmed_transaction_info.height as u32,
             );
             chain_monitor.transactions_confirmed(
-                &confirmed_transaction_info.header,
+                &confirmed_transaction_info.header.into(),
                 &[(
-                    confirmed_transaction_info.index,
-                    &confirmed_transaction_info.transaction,
+                    confirmed_transaction_info.index as usize,
+                    &confirmed_transaction_info.tx.into(),
                 )],
-                confirmed_transaction_info.height,
+                confirmed_transaction_info.height as u32,
             );
         }
     }

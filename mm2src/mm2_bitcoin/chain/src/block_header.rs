@@ -1,5 +1,7 @@
 use compact::Compact;
 use crypto::dhash256;
+use ext_bitcoin::blockdata::block::BlockHeader as ExtBlockHeader;
+use ext_bitcoin::hash_types::{BlockHash as ExtBlockHash, TxMerkleNode as ExtTxMerkleNode};
 use hash::H256;
 use hex::FromHex;
 use primitives::bytes::Bytes;
@@ -36,6 +38,15 @@ impl Serializable for BlockHeaderBits {
             BlockHeaderBits::Compact(c) => s.append(c),
             BlockHeaderBits::U32(n) => s.append(n),
         };
+    }
+}
+
+impl From<BlockHeaderBits> for u32 {
+    fn from(bits: BlockHeaderBits) -> Self {
+        match bits {
+            BlockHeaderBits::Compact(c) => c.into(),
+            BlockHeaderBits::U32(n) => n,
+        }
     }
 }
 
@@ -303,8 +314,29 @@ impl From<&'static str> for BlockHeader {
     fn from(s: &'static str) -> Self { deserialize(&s.from_hex::<Vec<u8>>().unwrap() as &[u8]).unwrap() }
 }
 
+impl From<BlockHeader> for ExtBlockHeader {
+    fn from(header: BlockHeader) -> Self {
+        let prev_blockhash = ExtBlockHash::from_hash(header.previous_header_hash.to_sha256d());
+        let merkle_root = ExtTxMerkleNode::from_hash(header.merkle_root_hash.to_sha256d());
+        // note: H256 nonce is not supported for bitcoin, we will just set nonce to 0 in this case since this will never happen
+        let nonce = match header.nonce {
+            BlockHeaderNonce::U32(n) => n,
+            _ => 0,
+        };
+        ExtBlockHeader {
+            version: header.version as i32,
+            prev_blockhash,
+            merkle_root,
+            time: header.time,
+            bits: header.bits.into(),
+            nonce,
+        }
+    }
+}
+
 #[cfg(test)]
 mod tests {
+    use super::ExtBlockHeader;
     use block_header::{BlockHeader, BlockHeaderBits, BlockHeaderNonce, AUX_POW_VERSION_DOGE, AUX_POW_VERSION_SYS,
                        KAWPOW_VERSION, MTP_POW_VERSION, PROG_POW_SWITCH_TIME, QTUM_BLOCK_HEADER_VERSION};
     use hex::FromHex;
@@ -2304,5 +2336,16 @@ mod tests {
         }
         let serialized = serialize_list(&headers);
         assert_eq!(serialized.take(), headers_bytes);
+    }
+
+    #[test]
+    fn test_from_blockheader_to_ext_blockheader() {
+        // https://live.blockcypher.com/btc/block/00000000000000000020cf2bdc6563fb25c424af588d5fb7223461e72715e4a9/
+        let header: BlockHeader = "0200000066720b99e07d284bd4fe67ff8c49a5db1dd8514fcdab610000000000000000007829844f4c3a41a537b3131ca992643eaa9d093b2383e4cdc060ad7dc548118751eb505ac1910018de19b302".into();
+        let ext_header = ExtBlockHeader::from(header.clone());
+        assert_eq!(
+            header.hash().reversed().to_string(),
+            ext_header.block_hash().to_string()
+        );
     }
 }

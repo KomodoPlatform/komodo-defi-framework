@@ -4,13 +4,12 @@
 use bytes::Bytes;
 use constants::{LOCKTIME_THRESHOLD, SEQUENCE_FINAL};
 use crypto::{dhash256, sha256};
-use ext_bitcoin::blockdata::transaction::Transaction as ExtTransaction;
-use ext_bitcoin::consensus::encode::{deserialize as deserialize_ext, Error as EncodeError};
+use ext_bitcoin::blockdata::transaction::{OutPoint as ExtOutpoint, Transaction as ExtTransaction, TxIn, TxOut};
+use ext_bitcoin::hash_types::Txid;
 use hash::{CipherText, EncCipherText, OutCipherText, ZkProof, ZkProofSapling, H256, H512, H64};
 use hex::FromHex;
 use ser::{deserialize, serialize, serialize_with_flags, SERIALIZE_TRANSACTION_WITNESS};
 use ser::{CompactInteger, Deserializable, Error, Reader, Serializable, Stream};
-use std::convert::TryFrom;
 use std::io;
 use std::io::Read;
 
@@ -38,6 +37,15 @@ impl OutPoint {
     pub fn is_null(&self) -> bool { self.hash.is_zero() && self.index == u32::MAX }
 }
 
+impl From<OutPoint> for ExtOutpoint {
+    fn from(outpoint: OutPoint) -> Self {
+        ExtOutpoint {
+            txid: Txid::from_hash(outpoint.hash.to_sha256d()),
+            vout: outpoint.index,
+        }
+    }
+}
+
 #[derive(Debug, PartialEq, Default, Clone)]
 pub struct TransactionInput {
     pub previous_output: OutPoint,
@@ -61,6 +69,17 @@ impl TransactionInput {
     pub fn has_witness(&self) -> bool { !self.script_witness.is_empty() }
 }
 
+impl From<TransactionInput> for TxIn {
+    fn from(txin: TransactionInput) -> Self {
+        TxIn {
+            previous_output: txin.previous_output.into(),
+            script_sig: txin.script_sig.take().into(),
+            sequence: txin.sequence,
+            witness: txin.script_witness.into_iter().map(|s| s.take()).collect(),
+        }
+    }
+}
+
 #[derive(Debug, PartialEq, Clone, Serializable, Deserializable)]
 pub struct TransactionOutput {
     pub value: u64,
@@ -72,6 +91,15 @@ impl Default for TransactionOutput {
         TransactionOutput {
             value: 0xffffffffffffffffu64,
             script_pubkey: Bytes::default(),
+        }
+    }
+}
+
+impl From<TransactionOutput> for TxOut {
+    fn from(txout: TransactionOutput) -> Self {
+        TxOut {
+            value: txout.value,
+            script_pubkey: txout.script_pubkey.take().into(),
         }
     }
 }
@@ -198,16 +226,14 @@ impl From<&'static str> for Transaction {
     fn from(s: &'static str) -> Self { deserialize(&s.from_hex::<Vec<u8>>().unwrap() as &[u8]).unwrap() }
 }
 
-impl TryFrom<Transaction> for ExtTransaction {
-    type Error = EncodeError;
-
-    fn try_from(tx: Transaction) -> Result<ExtTransaction, EncodeError> {
-        let tx_hex = if tx.has_witness() {
-            serialize_with_flags(&tx, SERIALIZE_TRANSACTION_WITNESS)
-        } else {
-            serialize(&tx)
-        };
-        deserialize_ext(&tx_hex.take())
+impl From<Transaction> for ExtTransaction {
+    fn from(tx: Transaction) -> Self {
+        ExtTransaction {
+            version: tx.version,
+            lock_time: tx.lock_time,
+            input: tx.inputs.into_iter().map(|i| i.into()).collect(),
+            output: tx.outputs.into_iter().map(|o| o.into()).collect(),
+        }
     }
 }
 
@@ -527,7 +553,6 @@ mod tests {
     use hash::{H256, H512};
     use hex::ToHex;
     use ser::{deserialize, serialize, serialize_with_flags, Serializable, SERIALIZE_TRANSACTION_WITNESS};
-    use std::convert::TryFrom;
     use TxHashAlgo;
 
     // real transaction from block 80000
@@ -995,10 +1020,10 @@ mod tests {
     }
 
     #[test]
-    fn test_try_from_tx_to_ext_tx() {
+    fn test_from_tx_to_ext_tx() {
         // https://live.blockcypher.com/btc-testnet/tx/2be90e03abb4d5328bf7e9467ca9c571aef575837b55f1253119b87e85ccb94f/
         let tx: Transaction = "010000000001016546e6d844ad0142c8049a839e8deae16c17f0a6587e36e75ff2181ed7020a800100000000ffffffff0247070800000000002200200bbfbd271853ec0a775e5455d4bb19d32818e9b5bda50655ac183fb15c9aa01625910300000000001600149a85cc05e9a722575feb770a217c73fd6145cf0102473044022002eac5d11f3800131985c14a3d1bc03dfe5e694f5731bde39b0d2b183eb7d3d702201d62e7ff2dd433260bf7a8223db400d539a2c4eccd27a5aa24d83f5ad9e9e1750121031ac6d25833a5961e2a8822b2e8b0ac1fd55d90cbbbb18a780552cbd66fc02bb35c099c61".into();
-        let ext_tx = ExtTransaction::try_from(tx.clone()).unwrap();
+        let ext_tx = ExtTransaction::from(tx.clone());
         assert_eq!(tx.hash().reversed().to_string(), ext_tx.txid().to_string());
     }
 }

@@ -3061,20 +3061,27 @@ pub fn address_from_pubkey(
     }
 }
 
+pub struct ConfirmedTransactionInfo {
+    pub tx: UtxoTx,
+    pub header: BlockHeader,
+    pub index: u64,
+    pub height: u64,
+}
+
 pub async fn validate_spv_proof(
     ticker: &str,
     block_headers_storage: &Option<BlockHeaderStorage>,
     client: &ElectrumClient,
     tx: &UtxoTx,
     try_spv_proof_until: u64,
-) -> Result<(SPVProof, u64), MmError<SPVError>> {
+) -> Result<ConfirmedTransactionInfo, MmError<SPVError>> {
     if tx.outputs.is_empty() {
         return MmError::err(SPVError::InvalidVout);
     }
 
-    let (merkle_branch, block_header, height) =
+    let (merkle_branch, header, height) =
         get_merkle_and_header_retry_loop(ticker, block_headers_storage, client, tx, try_spv_proof_until).await?;
-    let raw_header = RawBlockHeader::new(block_header.raw().take())?;
+    let raw_header = RawBlockHeader::new(header.raw().take())?;
     let intermediate_nodes: Vec<H256> = merkle_branch
         .merkle
         .into_iter()
@@ -3086,14 +3093,19 @@ pub async fn validate_spv_proof(
         vin: serialize_list(&tx.inputs).take(),
         vout: serialize_list(&tx.outputs).take(),
         index: merkle_branch.pos as u64,
-        confirming_header: block_header,
+        confirming_header: header.clone(),
         raw_header,
         intermediate_nodes,
     };
 
     proof.validate().map_err(MmError::new)?;
 
-    Ok((proof, height))
+    Ok(ConfirmedTransactionInfo {
+        tx: tx.clone(),
+        header,
+        index: proof.index,
+        height,
+    })
 }
 
 async fn get_merkle_and_header_retry_loop(

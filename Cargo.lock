@@ -5010,6 +5010,7 @@ dependencies = [
 name = "primitives"
 version = "0.1.0"
 dependencies = [
+ "bitcoin_hashes",
  "byteorder 1.4.3",
  "rustc-hex 2.1.0",
  "uint 0.9.1",
