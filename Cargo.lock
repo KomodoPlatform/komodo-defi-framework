@@ -4166,7 +4166,6 @@ dependencies = [
  "common",
  "derive_more",
  "futures 0.1.29",
- "gstuff",
  "http 0.2.7",
  "itertools",
  "ser_error",

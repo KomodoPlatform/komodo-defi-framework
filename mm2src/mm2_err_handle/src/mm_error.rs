@@ -84,7 +84,7 @@
 //!  }
 //! ```
 
-use common::HttpStatusCode;
+use common::{filename, HttpStatusCode};
 use derive_more::Display;
 use http::StatusCode;
 use itertools::Itertools;
@@ -274,7 +274,7 @@ pub struct TraceLocation {
 impl From<&'static Location<'static>> for TraceLocation {
     fn from(location: &'static Location<'static>) -> Self {
         TraceLocation {
-            file: gstuff::filename(location.file()),
+            file: filename(location.file()),
             line: location.line(),
         }
     }

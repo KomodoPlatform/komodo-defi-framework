@@ -282,6 +282,31 @@ fn trace_name_buf() -> PaMutexGuard<'static, [u8; 128]> {
     TRACE_NAME_BUF.lock()
 }
 
+/// Shortcut to path->filename conversion.
+///
+/// # Notes
+///
+/// Returns the file name without extension if only the file name ends on `.rs`.
+/// Returns the unchanged `path` if there is a character encoding error or something.
+///
+/// Inspired by https://docs.rs/gstuff/latest/gstuff/fn.filename.html
+pub fn filename(path: &str) -> &str {
+    // NB: `Path::new (path) .file_name()` only works for file separators of the current operating system,
+    // whereas the error trace might be coming from another operating system.
+    // In particular, I see `file_name` failing with WASM.
+
+    let name = match path.rfind(|ch| ch == '/' || ch == '\\') {
+        Some(ofs) => &path[ofs + 1..],
+        None => path,
+    };
+
+    if name.ends_with(".rs") {
+        &name[0..name.len() - 3]
+    } else {
+        name
+    }
+}
+
 /// Formats a stack frame.
 /// Some common and less than useful frames are skipped.
 pub fn stack_trace_frame(instr_ptr: *mut c_void, buf: &mut dyn Write, symbol: &backtrace::Symbol) {

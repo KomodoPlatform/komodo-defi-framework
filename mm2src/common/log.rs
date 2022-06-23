@@ -3,6 +3,7 @@
 use super::duplex_mutex::DuplexMutex;
 use super::executor::{spawn, Timer};
 use super::{now_ms, writeln};
+use crate::filename;
 use chrono::format::strftime::StrftimeItems;
 use chrono::format::DelayedFormat;
 use chrono::{Local, TimeZone, Utc};
@@ -175,7 +176,7 @@ pub fn short_log_time(ms: u64) -> DelayedFormat<StrftimeItems<'static>> {
 macro_rules! log {
     ($($args: tt)+) => {{
         let time = $crate::log::short_log_time($crate::now_ms());
-        let file = ::gstuff::filename(file!());
+        let file = $crate::filename(file!());
         let msg = format!($($args)+);
         let chunk = format!("{}, {}:{}] {}", time, file, line!(), msg);
         $crate::log::chunk2log(chunk, $crate::log::LogLevel::Info)
@@ -245,7 +246,7 @@ impl<T, E: fmt::Display> LogOnError for Result<T, E> {
     fn warn_log(self) {
         if let Err(e) = self {
             let location = std::panic::Location::caller();
-            let file = gstuff::filename(location.file());
+            let file = filename(location.file());
             let line = location.line();
             warn!("{}:{}] {}", file, line, e);
         }
@@ -255,7 +256,7 @@ impl<T, E: fmt::Display> LogOnError for Result<T, E> {
     fn warn_log_with_msg(self, msg: &str) {
         if let Err(e) = self {
             let location = std::panic::Location::caller();
-            let file = gstuff::filename(location.file());
+            let file = filename(location.file());
             let line = location.line();
             warn!("{}:{}] {}: {}", file, line, msg, e);
         }
@@ -265,7 +266,7 @@ impl<T, E: fmt::Display> LogOnError for Result<T, E> {
     fn error_log(self) {
         if let Err(e) = self {
             let location = std::panic::Location::caller();
-            let file = gstuff::filename(location.file());
+            let file = filename(location.file());
             let line = location.line();
             error!("{}:{}] {}", file, line, e);
         }
@@ -275,7 +276,7 @@ impl<T, E: fmt::Display> LogOnError for Result<T, E> {
     fn error_log_with_msg(self, msg: &str) {
         if let Err(e) = self {
             let location = std::panic::Location::caller();
-            let file = gstuff::filename(location.file());
+            let file = filename(location.file());
             let line = location.line();
             error!("{}:{}] {}: {}", file, line, msg, e);
         }
@@ -285,7 +286,7 @@ impl<T, E: fmt::Display> LogOnError for Result<T, E> {
     fn error_log_passthrough(self) -> Self {
         if let Err(e) = &self {
             let location = std::panic::Location::caller();
-            let file = gstuff::filename(location.file());
+            let file = filename(location.file());
             let line = location.line();
             error!("{}:{}] {}", file, line, e);
         }
@@ -1101,7 +1102,7 @@ pub fn format_record(record: &Record) -> String {
     let level = metadata.level();
     let date = Utc::now().format(DATE_FORMAT);
     let line = record.line().unwrap_or(0);
-    let file = record.file().map(gstuff::filename).unwrap_or("???");
+    let file = record.file().map(filename).unwrap_or("???");
     let module = record.module_path().unwrap_or("");
     let message = record.args();
 
