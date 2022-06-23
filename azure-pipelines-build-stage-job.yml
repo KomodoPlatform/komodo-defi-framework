@@ -64,10 +64,10 @@ jobs:
       - bash: |
           rm -rf atomicdex-deployments
           git clone git@github.com:KomodoPlatform/atomicdex-deployments.git
-          if [ -d "atomicdex-deployments" ]; then
-            cd atomicdex-deployments
-            sed -i "1s/^.*$/$(COMMIT_HASH)/" atomicDEX-API/.commit
-            git add atomicDEX-API/.commit
+          if [ -d "atomicdex-deployments/atomicDEX-API" ]; then
+            cd atomicdex-deployments/atomicDEX-API
+            sed -i "1s/^.*$/$(COMMIT_HASH)/" .commit
+            git add .commit
             git commit -m "$(COMMIT_HASH) is committed for git & container registry"
             git push
           fi
