@@ -1010,7 +1010,7 @@ impl BalanceTradeFeeUpdatedHandler for BalanceUpdateOrdermatchHandler {
         };
 
         let ordermatch_ctx = OrdermatchContext::from_ctx(&ctx).unwrap();
-        let my_maker_orders = ordermatch_ctx.makerorders_ctx.lock().orders.clone();
+        let my_maker_orders = ordermatch_ctx.maker_orders_ctx.lock().orders.clone();
 
         for (uuid, order_mutex) in my_maker_orders {
             let mut order = order_mutex.lock().await;
@@ -1019,7 +1019,7 @@ impl BalanceTradeFeeUpdatedHandler for BalanceUpdateOrdermatchHandler {
             }
 
             if new_volume < order.min_base_vol {
-                let removed_order_mutex = ordermatch_ctx.makerorders_ctx.lock().remove_order(&uuid, &order.base);
+                let removed_order_mutex = ordermatch_ctx.maker_orders_ctx.lock().remove_order(&uuid);
                 // This checks that the order hasn't been removed by another process
                 if removed_order_mutex.is_some() {
                     // cancel the order
@@ -2185,7 +2185,7 @@ pub async fn broadcast_maker_orders_keep_alive_loop(ctx: MmArc) {
     while !ctx.is_stopping() {
         Timer::sleep(MIN_ORDER_KEEP_ALIVE_INTERVAL as f64).await;
         let ordermatch_ctx = OrdermatchContext::from_ctx(&ctx).expect("from_ctx failed");
-        let my_orders = ordermatch_ctx.makerorders_ctx.lock().orders.clone();
+        let my_orders = ordermatch_ctx.maker_orders_ctx.lock().orders.clone();
 
         for (_, order_mutex) in my_orders {
             let order = order_mutex.lock().await;
@@ -2610,7 +2610,7 @@ impl Orderbook {
 
 #[cfg_attr(not(target_arch = "wasm32"), derive(Default))]
 struct OrdermatchContext {
-    pub makerorders_ctx: PaMutex<MakerOrdersContext>,
+    pub maker_orders_ctx: PaMutex<MakerOrdersContext>,
     pub my_taker_orders: AsyncMutex<HashMap<Uuid, TakerOrder>>,
     pub orderbook: PaMutex<Orderbook>,
     /// The map from coin original ticker to the orderbook ticker
@@ -2652,7 +2652,7 @@ pub fn init_ordermatch_context(ctx: &MmArc) -> OrdermatchInitResult<()> {
     }
 
     let ordermatch_context = OrdermatchContext {
-        makerorders_ctx: Default::default(),
+        maker_orders_ctx: Default::default(),
         my_taker_orders: Default::default(),
         orderbook: Default::default(),
         pending_maker_reserved: Default::default(),
@@ -2682,7 +2682,7 @@ impl OrdermatchContext {
     fn from_ctx(ctx: &MmArc) -> Result<Arc<OrdermatchContext>, String> {
         Ok(try_s!(from_ctx(&ctx.ordermatch_ctx, move || {
             Ok(OrdermatchContext {
-                makerorders_ctx: Default::default(),
+                maker_orders_ctx: Default::default(),
                 my_taker_orders: Default::default(),
                 orderbook: Default::default(),
                 pending_maker_reserved: Default::default(),
@@ -2722,6 +2722,7 @@ impl OrdermatchContext {
 #[derive(Default)]
 struct MakerOrdersContext {
     orders: HashMap<Uuid, Arc<AsyncMutex<MakerOrder>>>,
+    order_tickers: HashMap<Uuid, String>,
     count_by_tickers: HashMap<String, usize>,
     balance_loops: HashMap<String, AbortOnDropHandle>,
 }
@@ -2729,41 +2730,47 @@ struct MakerOrdersContext {
 impl MakerOrdersContext {
     fn add_order(&mut self, ctx: MmWeak, order: MakerOrder, balance: Option<BigDecimal>) {
         if !self.balance_loop_exists(&order.base) {
-            let ticker = order.base.to_string();
-            let handle = spawn_abortable(async move { check_balance_update_loop(ctx, ticker, balance).await });
-            self.add_balance_loop(&order.base, handle);
+            self.spawn_balance_loop(ctx, &order.base, balance);
         }
 
+        self.order_tickers.insert(order.uuid, order.base.clone());
         *self.count_by_tickers.entry(order.base.clone()).or_insert(0) += 1;
         self.orders.insert(order.uuid, Arc::new(AsyncMutex::new(order)));
     }
 
-    fn remove_order(&mut self, uuid: &Uuid, ticker: &str) -> Option<Arc<AsyncMutex<MakerOrder>>> {
-        if let Some(count) = self.count_by_tickers.get_mut(ticker) {
+    fn get_order(&self, uuid: &Uuid) -> Option<&Arc<AsyncMutex<MakerOrder>>> { self.orders.get(uuid) }
+
+    fn remove_order(&mut self, uuid: &Uuid) -> Option<Arc<AsyncMutex<MakerOrder>>> {
+        let order = self.orders.remove(uuid)?;
+        let ticker = self.order_tickers.remove(uuid)?;
+        if let Some(count) = self.count_by_tickers.get_mut(&ticker) {
             if *count > 0 {
                 *count -= 1;
             }
         }
 
-        if !self.coin_has_active_maker_orders(ticker) {
-            self.remove_balance_loop(ticker);
+        if !self.coin_has_active_maker_orders(&ticker) {
+            self.stop_balance_loop(&ticker);
         }
 
-        self.orders.remove(uuid)
+        Some(order)
     }
 
     fn coin_has_active_maker_orders(&self, ticker: &str) -> bool {
-        match self.count_by_tickers.get(ticker) {
-            Some(count) => *count > 0,
-            None => false,
-        }
+        self.count_by_tickers.get(ticker).copied() > Some(0)
     }
 
     fn add_balance_loop(&mut self, ticker: &str, handle: AbortOnDropHandle) {
         self.balance_loops.insert(ticker.to_string(), handle);
     }
 
-    fn remove_balance_loop(&mut self, ticker: &str) { self.balance_loops.remove(ticker); }
+    fn spawn_balance_loop(&mut self, ctx: MmWeak, order_base: &str, balance: Option<BigDecimal>) {
+        let ticker = order_base.to_string();
+        let handle = spawn_abortable(async move { check_balance_update_loop(ctx, ticker, balance).await });
+        self.add_balance_loop(order_base, handle);
+    }
+
+    fn stop_balance_loop(&mut self, ticker: &str) { self.balance_loops.remove(ticker); }
 
     fn balance_loop_exists(&mut self, ticker: &str) -> bool { self.balance_loops.contains_key(ticker) }
 }
@@ -2984,7 +2991,7 @@ pub async fn lp_ordermatch_loop(ctx: MmArc) {
             let mut to_cancel = Vec::new();
             {
                 let orderbook = ordermatch_ctx.orderbook.lock();
-                for (uuid, _) in ordermatch_ctx.makerorders_ctx.lock().orders.iter() {
+                for (uuid, _) in ordermatch_ctx.maker_orders_ctx.lock().orders.iter() {
                     if !orderbook.order_set.contains_key(uuid) {
                         missing_uuids.push(*uuid);
                     }
@@ -2992,7 +2999,7 @@ pub async fn lp_ordermatch_loop(ctx: MmArc) {
             }
 
             for uuid in missing_uuids {
-                let order_mutex = match ordermatch_ctx.makerorders_ctx.lock().orders.get(&uuid) {
+                let order_mutex = match ordermatch_ctx.maker_orders_ctx.lock().get_order(&uuid) {
                     Some(o) => o.clone(),
                     None => continue,
                 };
@@ -3006,7 +3013,7 @@ pub async fn lp_ordermatch_loop(ctx: MmArc) {
                     Ok(b) => b,
                     Err(e) => {
                         log::info!("Error {} on balance check to kickstart order {}, cancelling", e, uuid);
-                        to_cancel.push((uuid, order.base.clone()));
+                        to_cancel.push(uuid);
                         continue;
                     },
                 };
@@ -3015,7 +3022,7 @@ pub async fn lp_ordermatch_loop(ctx: MmArc) {
                     Ok(max) => max,
                     Err(e) => {
                         log::info!("Error {} on balance check to kickstart order {}, cancelling", e, uuid);
-                        to_cancel.push((uuid, order.base.clone()));
+                        to_cancel.push(uuid);
                         continue;
                     },
                 };
@@ -3024,11 +3031,11 @@ pub async fn lp_ordermatch_loop(ctx: MmArc) {
                 }
                 if order.available_amount() < order.min_base_vol {
                     log::info!("Insufficient volume available for order {}, cancelling", uuid);
-                    to_cancel.push((uuid, order.base.clone()));
+                    to_cancel.push(uuid);
                     continue;
                 }
 
-                let maker_orders = ordermatch_ctx.makerorders_ctx.lock().orders.clone();
+                let maker_orders = ordermatch_ctx.maker_orders_ctx.lock().orders.clone();
 
                 // notify other nodes only if maker order is still there keeping maker_orders locked during the operation
                 if maker_orders.contains_key(&uuid) {
@@ -3043,8 +3050,8 @@ pub async fn lp_ordermatch_loop(ctx: MmArc) {
                 }
             }
 
-            for (uuid, ticker) in to_cancel {
-                let removed_order_mutex = ordermatch_ctx.makerorders_ctx.lock().remove_order(&uuid, &ticker);
+            for uuid in to_cancel {
+                let removed_order_mutex = ordermatch_ctx.maker_orders_ctx.lock().remove_order(&uuid);
                 // This checks that the order hasn't been removed by another process
                 if let Some(order_mutex) = removed_order_mutex {
                     let order = order_mutex.lock().await;
@@ -3115,7 +3122,7 @@ async fn handle_timed_out_taker_orders(ctx: MmArc, ordermatch_ctx: &OrdermatchCo
             .ok();
         let maker_order: MakerOrder = order.into();
         ordermatch_ctx
-            .makerorders_ctx
+            .maker_orders_ctx
             .lock()
             .add_order(ctx.weak(), maker_order.clone(), None);
 
@@ -3148,7 +3155,7 @@ async fn handle_timed_out_taker_orders(ctx: MmArc, ordermatch_ctx: &OrdermatchCo
 ///
 /// The function locks the [`OrdermatchContext::my_maker_orders`] mutex.
 async fn check_balance_for_maker_orders(ctx: MmArc, ordermatch_ctx: &OrdermatchContext) {
-    let my_maker_orders = ordermatch_ctx.makerorders_ctx.lock().orders.clone();
+    let my_maker_orders = ordermatch_ctx.maker_orders_ctx.lock().orders.clone();
 
     for (uuid, order) in my_maker_orders {
         let order = order.lock().await;
@@ -3161,10 +3168,7 @@ async fn check_balance_for_maker_orders(ctx: MmArc, ordermatch_ctx: &OrdermatchC
         } else {
             MakerOrderCancellationReason::Fulfilled
         };
-        let removed_order_mutex = ordermatch_ctx
-            .makerorders_ctx
-            .lock()
-            .remove_order(&uuid, &order.base.clone());
+        let removed_order_mutex = ordermatch_ctx.maker_orders_ctx.lock().remove_order(&uuid);
         // This checks that the order hasn't been removed by another process
         if removed_order_mutex.is_some() {
             maker_order_cancelled_p2p_notify(ctx.clone(), &order);
@@ -3184,7 +3188,7 @@ async fn check_balance_for_maker_orders(ctx: MmArc, ordermatch_ctx: &OrdermatchC
 async fn handle_timed_out_maker_matches(ctx: MmArc, ordermatch_ctx: &OrdermatchContext) {
     let now = now_ms();
     let storage = MyOrdersStorage::new(ctx.clone());
-    let my_maker_orders = ordermatch_ctx.makerorders_ctx.lock().orders.clone();
+    let my_maker_orders = ordermatch_ctx.maker_orders_ctx.lock().orders.clone();
 
     for (_, order) in my_maker_orders.iter() {
         let mut order = order.lock().await;
@@ -3335,7 +3339,7 @@ async fn process_taker_request(ctx: MmArc, from_pubkey: H256Json, taker_request:
 
     let ordermatch_ctx = OrdermatchContext::from_ctx(&ctx).unwrap();
     let storage = MyOrdersStorage::new(ctx.clone());
-    let mut my_orders = ordermatch_ctx.makerorders_ctx.lock().orders.clone();
+    let mut my_orders = ordermatch_ctx.maker_orders_ctx.lock().orders.clone();
     let filtered = my_orders
         .iter_mut()
         .filter(|(uuid, _)| taker_request.can_match_with_uuid(uuid));
@@ -3404,7 +3408,7 @@ async fn process_taker_connect(ctx: MmArc, sender_pubkey: H256Json, connect_msg:
 
     let order_mutex = {
         match ordermatch_ctx
-            .makerorders_ctx
+            .maker_orders_ctx
             .lock()
             .orders
             .get(&connect_msg.maker_order_uuid)
@@ -4441,7 +4445,7 @@ pub async fn create_maker_order(ctx: &MmArc, req: SetPriceReq) -> Result<MakerOr
     );
 
     ordermatch_ctx
-        .makerorders_ctx
+        .maker_orders_ctx
         .lock()
         .add_order(ctx.weak(), new_order.clone(), Some(balance));
     Ok(new_order)
@@ -4469,13 +4473,13 @@ async fn cancel_previous_maker_orders(
     base_to_delete: &str,
     rel_to_delete: &str,
 ) {
-    let my_maker_orders = ordermatch_ctx.makerorders_ctx.lock().orders.clone();
+    let my_maker_orders = ordermatch_ctx.maker_orders_ctx.lock().orders.clone();
 
     for (uuid, order) in my_maker_orders {
         let order = order.lock().await;
         let to_delete = order.base == base_to_delete && order.rel == rel_to_delete;
         if to_delete {
-            let removed_order_mutex = ordermatch_ctx.makerorders_ctx.lock().remove_order(&uuid, &order.base);
+            let removed_order_mutex = ordermatch_ctx.maker_orders_ctx.lock().remove_order(&uuid);
             // This checks that the uuid, &order.base hasn't been removed by another process
             if removed_order_mutex.is_some() {
                 maker_order_cancelled_p2p_notify(ctx.clone(), &order);
@@ -4491,8 +4495,8 @@ async fn cancel_previous_maker_orders(
 pub async fn update_maker_order(ctx: &MmArc, req: MakerOrderUpdateReq) -> Result<MakerOrder, String> {
     let ordermatch_ctx = try_s!(OrdermatchContext::from_ctx(ctx));
     let order_mutex = {
-        let my_maker_orders = ordermatch_ctx.makerorders_ctx.lock().orders.clone();
-        match my_maker_orders.get(&req.uuid) {
+        let maker_orders_ctx = ordermatch_ctx.maker_orders_ctx.lock();
+        match maker_orders_ctx.get_order(&req.uuid) {
             Some(order) => order.clone(),
             None => return ERR!("There is no order with UUID {}", req.uuid),
         }
@@ -4595,8 +4599,8 @@ pub async fn update_maker_order(ctx: &MmArc, req: MakerOrderUpdateReq) -> Result
     ));
 
     let order_mutex = {
-        let my_maker_orders = ordermatch_ctx.makerorders_ctx.lock().orders.clone();
-        match my_maker_orders.get(&req.uuid) {
+        let maker_orders_ctx = ordermatch_ctx.maker_orders_ctx.lock();
+        match maker_orders_ctx.get_order(&req.uuid) {
             Some(order) => order.clone(),
             None => return ERR!("Order with UUID: {} has been deleted", req.uuid),
         }
@@ -4652,7 +4656,7 @@ pub async fn order_status(ctx: MmArc, req: Json) -> Result<Response<Vec<u8>>, St
     let ordermatch_ctx = try_s!(OrdermatchContext::from_ctx(&ctx));
     let storage = MyOrdersStorage::new(ctx.clone());
 
-    let maybe_order_mutex = ordermatch_ctx.makerorders_ctx.lock().orders.get(&req.uuid).cloned();
+    let maybe_order_mutex = ordermatch_ctx.maker_orders_ctx.lock().get_order(&req.uuid).cloned();
     if let Some(order_mutex) = maybe_order_mutex {
         let order = order_mutex.lock().await.clone();
         let res = json!({
@@ -4810,7 +4814,7 @@ pub async fn orders_history_by_filter(ctx: MmArc, req: Json) -> Result<Response<
 
             let ordermatch_ctx = try_s!(OrdermatchContext::from_ctx(&ctx));
             if order.order_type == "Maker" {
-                let maybe_order_mutex = ordermatch_ctx.makerorders_ctx.lock().orders.get(&uuid).cloned();
+                let maybe_order_mutex = ordermatch_ctx.maker_orders_ctx.lock().get_order(&uuid).cloned();
                 if let Some(maker_order_mutex) = maybe_order_mutex {
                     let maker_order = maker_order_mutex.lock().await.clone();
                     vec.push(Order::Maker(maker_order));
@@ -4869,16 +4873,13 @@ pub async fn cancel_order(ctx: MmArc, req: CancelOrderReq) -> Result<CancelOrder
         Ok(x) => x,
         Err(_) => return MmError::err(CancelOrderError::CannotRetrieveOrderMatchContext),
     };
-    let maybe_order_mutex = ordermatch_ctx.makerorders_ctx.lock().orders.get(&req.uuid).cloned();
+    let maybe_order_mutex = ordermatch_ctx.maker_orders_ctx.lock().get_order(&req.uuid).cloned();
     if let Some(order_mutex) = maybe_order_mutex {
         let order = order_mutex.lock().await;
         if !order.is_cancellable() {
             return MmError::err(CancelOrderError::OrderBeingMatched { uuid: req.uuid });
         }
-        let removed_order_mutex = ordermatch_ctx
-            .makerorders_ctx
-            .lock()
-            .remove_order(&order.uuid, &order.base);
+        let removed_order_mutex = ordermatch_ctx.maker_orders_ctx.lock().remove_order(&order.uuid);
         // This checks that the order hasn't been removed by another process
         if removed_order_mutex.is_some() {
             maker_order_cancelled_p2p_notify(ctx.clone(), &order);
@@ -4917,16 +4918,13 @@ pub async fn cancel_order_rpc(ctx: MmArc, req: Json) -> Result<Response<Vec<u8>>
     let req: CancelOrderReq = try_s!(json::from_value(req));
 
     let ordermatch_ctx = try_s!(OrdermatchContext::from_ctx(&ctx));
-    let maybe_order_mutex = ordermatch_ctx.makerorders_ctx.lock().orders.get(&req.uuid).cloned();
+    let maybe_order_mutex = ordermatch_ctx.maker_orders_ctx.lock().get_order(&req.uuid).cloned();
     if let Some(order_mutex) = maybe_order_mutex {
         let order = order_mutex.lock().await;
         if !order.is_cancellable() {
             return ERR!("Order {} is being matched now, can't cancel", req.uuid);
         }
-        let removed_order_mutex = ordermatch_ctx
-            .makerorders_ctx
-            .lock()
-            .remove_order(&order.uuid, &order.base);
+        let removed_order_mutex = ordermatch_ctx.maker_orders_ctx.lock().remove_order(&order.uuid);
         // This checks that the order hasn't been removed by another process
         if removed_order_mutex.is_some() {
             maker_order_cancelled_p2p_notify(ctx.clone(), &order);
@@ -5051,7 +5049,7 @@ enum OrderForRpc<'a> {
 
 pub async fn my_orders(ctx: MmArc) -> Result<Response<Vec<u8>>, String> {
     let ordermatch_ctx = try_s!(OrdermatchContext::from_ctx(&ctx));
-    let my_maker_orders = ordermatch_ctx.makerorders_ctx.lock().orders.clone();
+    let my_maker_orders = ordermatch_ctx.maker_orders_ctx.lock().orders.clone();
     let mut maker_orders_map = HashMap::with_capacity(my_maker_orders.len());
     for (uuid, order_mutex) in my_maker_orders.iter() {
         let order = order_mutex.lock().await.clone();
@@ -5119,11 +5117,11 @@ pub async fn orders_kick_start(ctx: &MmArc) -> Result<HashSet<String>, String> {
     let saved_taker_orders = try_s!(storage.load_active_taker_orders().await);
 
     {
-        let mut makerorders_ctx = ordermatch_ctx.makerorders_ctx.lock();
+        let mut maker_orders_ctx = ordermatch_ctx.maker_orders_ctx.lock();
         for order in saved_maker_orders {
             coins.insert(order.base.clone());
             coins.insert(order.rel.clone());
-            makerorders_ctx.add_order(ctx.weak(), order.clone(), None);
+            maker_orders_ctx.add_order(ctx.weak(), order.clone(), None);
         }
     }
 
@@ -5154,7 +5152,7 @@ pub async fn cancel_orders_by(ctx: &MmArc, cancel_by: CancelBy) -> Result<(Vec<U
     let mut currently_matching = vec![];
 
     let ordermatch_ctx = try_s!(OrdermatchContext::from_ctx(ctx));
-    let maker_orders = ordermatch_ctx.makerorders_ctx.lock().orders.clone();
+    let maker_orders = ordermatch_ctx.maker_orders_ctx.lock().orders.clone();
     let mut taker_orders = ordermatch_ctx.my_taker_orders.lock().await;
 
     macro_rules! cancel_maker_if_true {
@@ -5197,13 +5195,13 @@ pub async fn cancel_orders_by(ctx: &MmArc, cancel_by: CancelBy) -> Result<(Vec<U
             for (uuid, order) in maker_orders.iter() {
                 let uuid = *uuid;
                 let order = order.lock().await.clone();
-                let base = order.base.clone();
                 if cancel_maker_if_true!(true, uuid, order) {
-                    to_remove.push((uuid, base));
+                    to_remove.push(uuid);
                 }
             }
-            for (uuid, ticker) in to_remove.iter() {
-                ordermatch_ctx.makerorders_ctx.lock().remove_order(uuid, ticker);
+            let mut maker_order_ctx = ordermatch_ctx.maker_orders_ctx.lock();
+            for uuid in to_remove.iter() {
+                maker_order_ctx.remove_order(uuid);
             }
             *taker_orders = taker_orders
                 .drain()
@@ -5215,13 +5213,13 @@ pub async fn cancel_orders_by(ctx: &MmArc, cancel_by: CancelBy) -> Result<(Vec<U
             for (uuid, order) in maker_orders.iter() {
                 let uuid = *uuid;
                 let order = order.lock().await.clone();
-                let base = order.base.clone();
                 if cancel_maker_if_true!(order.base == base && order.rel == rel, uuid, order) {
-                    to_remove.push((uuid, base));
+                    to_remove.push(uuid);
                 }
             }
-            for (uuid, ticker) in to_remove.iter() {
-                ordermatch_ctx.makerorders_ctx.lock().remove_order(uuid, ticker);
+            let mut maker_orders_ctx = ordermatch_ctx.maker_orders_ctx.lock();
+            for uuid in to_remove.iter() {
+                maker_orders_ctx.remove_order(uuid);
             }
             *taker_orders = taker_orders
                 .drain()
@@ -5235,13 +5233,13 @@ pub async fn cancel_orders_by(ctx: &MmArc, cancel_by: CancelBy) -> Result<(Vec<U
             for (uuid, order) in maker_orders.iter() {
                 let uuid = *uuid;
                 let order = order.lock().await.clone();
-                let base = order.base.clone();
                 if cancel_maker_if_true!(order.base == ticker || order.rel == ticker, uuid, order) {
-                    to_remove.push((uuid, base));
+                    to_remove.push(uuid);
                 }
             }
-            for (uuid, ticker) in to_remove.iter() {
-                ordermatch_ctx.makerorders_ctx.lock().remove_order(uuid, ticker);
+            let mut maker_orders_ctx = ordermatch_ctx.maker_orders_ctx.lock();
+            for uuid in to_remove.iter() {
+                maker_orders_ctx.remove_order(uuid);
             }
             *taker_orders = taker_orders
                 .drain()
