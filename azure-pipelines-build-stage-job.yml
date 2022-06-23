@@ -68,7 +68,7 @@ jobs:
             cd atomicdex-deployments/atomicDEX-API
             sed -i "1s/^.*$/$(COMMIT_HASH)/" .commit
             git add .commit
-            git commit -m "$(COMMIT_HASH) is committed for git & container registry"
+            git commit -m "[atomicDEX-API] $(COMMIT_HASH) is committed for git & container registry"
             git push
           fi
         condition: and( eq( variables['Agent.OS'], 'Linux' ), eq( variables['Build.SourceBranchName'], 'dev' ) )
