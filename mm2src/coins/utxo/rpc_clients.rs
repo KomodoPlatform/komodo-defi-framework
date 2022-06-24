@@ -1,7 +1,7 @@
 #![cfg_attr(target_arch = "wasm32", allow(unused_macros))]
 #![cfg_attr(target_arch = "wasm32", allow(dead_code))]
 
-use crate::utxo::{output_script, sat_from_big_decimal};
+use crate::utxo::{output_script, sat_from_big_decimal, GetTxError, GetTxHeightError};
 use crate::{big_decimal_from_sat_unsigned, NumConversError, RpcTransportEventHandler, RpcTransportEventHandlerShared};
 use async_trait::async_trait;
 use bigdecimal::BigDecimal;
@@ -63,6 +63,8 @@ cfg_native! {
     use tokio_rustls::webpki::DnsNameRef;
     use webpki_roots::TLS_SERVER_ROOTS;
 }
+
+pub const NO_TX_ERROR_CODE: &str = "'code': -5";
 
 pub type AddressesByLabelResult = HashMap<String, AddressPurpose>;
 pub type JsonRpcPendingRequestsShared = Arc<AsyncMutex<JsonRpcPendingRequests>>;
@@ -339,6 +341,30 @@ pub trait UtxoRpcClientOps: fmt::Debug + Send + Sync + 'static {
 
     /// Returns block time in seconds since epoch (Jan 1 1970 GMT).
     async fn get_block_timestamp(&self, height: u64) -> Result<u64, MmError<UtxoRpcError>>;
+
+    /// Returns verbose transaction by the given `txid` if it's on-chain or None if it's not.
+    async fn get_tx_if_onchain(&self, tx_hash: &H256Json) -> Result<Option<UtxoTx>, MmError<GetTxError>> {
+        match self
+            .get_transaction_bytes(tx_hash)
+            .compat()
+            .await
+            .map_err(|e| e.into_inner())
+        {
+            Ok(bytes) => Ok(Some(deserialize(bytes.as_slice())?)),
+            Err(err) => {
+                if let UtxoRpcError::ResponseParseError(ref json_err) = err {
+                    if let JsonRpcErrorType::Response(_, json) = &json_err.error {
+                        if let Some(message) = json["message"].as_str() {
+                            if message.contains(NO_TX_ERROR_CODE) {
+                                return Ok(None);
+                            }
+                        }
+                    }
+                }
+                Err(err.into())
+            },
+        }
+    }
 }
 
 #[derive(Clone, Deserialize, Debug)]
@@ -1883,6 +1909,21 @@ impl ElectrumClient {
     /// https://electrumx.readthedocs.io/en/latest/protocol-methods.html#blockchain-transaction-get-merkle
     pub fn blockchain_transaction_get_merkle(&self, txid: H256Json, height: u64) -> RpcRes<TxMerkleBranch> {
         rpc_func!(self, "blockchain.transaction.get_merkle", txid, height)
+    }
+
+    pub async fn get_tx_height(&self, tx: &UtxoTx) -> Result<u64, MmError<GetTxHeightError>> {
+        for output in tx.outputs.clone() {
+            let script_pubkey_str = hex::encode(electrum_script_hash(&output.script_pubkey));
+            if let Ok(history) = self.scripthash_get_history(script_pubkey_str.as_str()).compat().await {
+                if let Some(item) = history
+                    .into_iter()
+                    .find(|item| item.tx_hash.reversed() == H256Json(*tx.hash()) && item.height > 0)
+                {
+                    return Ok(item.height as u64);
+                }
+            }
+        }
+        MmError::err(GetTxHeightError::HeightNotFound)
     }
 }
 

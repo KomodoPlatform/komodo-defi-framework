@@ -2,7 +2,7 @@ use super::*;
 use crate::lightning::ln_errors::{SaveChannelClosingError, SaveChannelClosingResult};
 use crate::utxo::rpc_clients::{BestBlock as RpcBestBlock, BlockHashOrHeight, ElectrumBlockHeader, ElectrumClient,
                                ElectrumNonce, EstimateFeeMethod, UtxoRpcClientEnum};
-use crate::utxo::utxo_common::{get_tx_if_onchain, validate_spv_proof, ConfirmedTransactionInfo};
+use crate::utxo::utxo_common::{validate_spv_proof, ConfirmedTransactionInfo};
 use crate::utxo::utxo_standard::UtxoStandardCoin;
 use crate::{MarketCoinOps, MmCoin};
 use bitcoin::blockdata::block::BlockHeader;
@@ -19,6 +19,7 @@ use keys::hash::H256;
 use lightning::chain::{chaininterface::{BroadcasterInterface, ConfirmationTarget, FeeEstimator},
                        Confirm, Filter, WatchedOutput};
 use rpc::v1::types::H256 as H256Json;
+use spv_validation::spv_proof::TRY_SPV_PROOF_INTERVAL;
 use std::cmp;
 use std::convert::TryFrom;
 use std::sync::atomic::{AtomicU64, Ordering as AtomicOrdering};
@@ -26,7 +27,6 @@ use std::sync::atomic::{AtomicU64, Ordering as AtomicOrdering};
 const CHECK_FOR_NEW_BEST_BLOCK_INTERVAL: f64 = 60.;
 const MIN_ALLOWED_FEE_PER_1000_WEIGHT: u32 = 253;
 const TRY_LOOP_INTERVAL: f64 = 60.;
-const SPV_PROOF_TRY_UNTIL_INTERVAL: u64 = 5;
 
 #[inline]
 pub fn h256_json_from_txid(txid: Txid) -> H256Json { H256Json::from(txid.as_hash().into_inner()).reversed() }
@@ -176,7 +176,7 @@ impl Platform {
         T: Confirm,
     {
         let rpc_txid = h256_json_from_txid(txid);
-        match get_tx_if_onchain(self.rpc_client(), rpc_txid).await {
+        match self.rpc_client().get_tx_if_onchain(&rpc_txid).await {
             Ok(Some(_)) => {},
             Ok(None) => {
                 info!(
@@ -219,7 +219,7 @@ impl Platform {
             .into_iter()
             .map(|txid| async move {
                 let rpc_txid = h256_json_from_txid(txid);
-                get_tx_if_onchain(self.rpc_client(), rpc_txid).await
+                self.rpc_client().get_tx_if_onchain(&rpc_txid).await
             })
             .collect::<Vec<_>>();
         let on_chain_txs = join_all(on_chain_txs_futs)
@@ -243,7 +243,7 @@ impl Platform {
                     block_headers_storage,
                     client,
                     &transaction,
-                    (now_ms() / 1000) + SPV_PROOF_TRY_UNTIL_INTERVAL,
+                    (now_ms() / 1000) + TRY_SPV_PROOF_INTERVAL,
                 )
                 .await
             })
@@ -313,7 +313,7 @@ impl Platform {
                     block_headers_storage,
                     client,
                     &output.spending_tx,
-                    (now_ms() / 1000) + SPV_PROOF_TRY_UNTIL_INTERVAL,
+                    (now_ms() / 1000) + TRY_SPV_PROOF_INTERVAL,
                 )
                 .await
             })

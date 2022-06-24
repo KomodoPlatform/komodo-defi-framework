@@ -60,7 +60,6 @@ pub const DEFAULT_FEE_VOUT: usize = 0;
 pub const DEFAULT_SWAP_TX_SPEND_SIZE: u64 = 305;
 pub const DEFAULT_SWAP_VOUT: usize = 0;
 const MIN_BTC_TRADING_VOL: &str = "0.00777";
-pub const NO_TX_ERROR_CODE: &str = "'code': -5";
 
 macro_rules! true_or {
     ($cond: expr, $etype: expr) => {
@@ -3129,7 +3128,7 @@ async fn get_merkle_and_header_retry_loop(
         }
 
         if height.is_none() {
-            match get_tx_height(client, tx).await {
+            match client.get_tx_height(tx).await {
                 Ok(h) => height = Some(h),
                 Err(e) => {
                     debug!("`get_tx_height` returned an error {:?}", e);
@@ -3180,47 +3179,6 @@ async fn get_merkle_and_header_retry_loop(
 
         Timer::sleep(TRY_SPV_PROOF_INTERVAL as f64).await;
     }
-}
-
-pub async fn get_tx_if_onchain(
-    client: &UtxoRpcClientEnum,
-    tx_hash: H256Json,
-) -> Result<Option<UtxoTx>, MmError<GetTxError>> {
-    match client
-        .get_transaction_bytes(&tx_hash)
-        .compat()
-        .await
-        .map_err(|e| e.into_inner())
-    {
-        Ok(bytes) => Ok(Some(deserialize(bytes.as_slice())?)),
-        Err(err) => {
-            if let UtxoRpcError::ResponseParseError(ref json_err) = err {
-                if let JsonRpcErrorType::Response(_, json) = &json_err.error {
-                    if let Some(message) = json["message"].as_str() {
-                        if message.contains(NO_TX_ERROR_CODE) {
-                            return Ok(None);
-                        }
-                    }
-                }
-            }
-            Err(err.into())
-        },
-    }
-}
-
-pub async fn get_tx_height(client: &ElectrumClient, tx: &UtxoTx) -> Result<u64, MmError<GetTxHeightError>> {
-    for output in tx.outputs.clone() {
-        let script_pubkey_str = hex::encode(electrum_script_hash(&output.script_pubkey));
-        if let Ok(history) = client.scripthash_get_history(script_pubkey_str.as_str()).compat().await {
-            if let Some(item) = history
-                .into_iter()
-                .find(|item| item.tx_hash.reversed() == H256Json(*tx.hash()) && item.height > 0)
-            {
-                return Ok(item.height as u64);
-            }
-        }
-    }
-    MmError::err(GetTxHeightError::HeightNotFound)
 }
 
 #[allow(clippy::too_many_arguments)]
