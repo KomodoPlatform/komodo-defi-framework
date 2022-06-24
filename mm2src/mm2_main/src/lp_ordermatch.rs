@@ -2730,7 +2730,7 @@ struct MakerOrdersContext {
 impl MakerOrdersContext {
     fn add_order(&mut self, ctx: MmWeak, order: MakerOrder, balance: Option<BigDecimal>) {
         if !self.balance_loop_exists(&order.base) {
-            self.spawn_balance_loop(ctx, &order.base, balance);
+            self.spawn_balance_loop(ctx, order.base.clone(), balance);
         }
 
         self.order_tickers.insert(order.uuid, order.base.clone());
@@ -2764,10 +2764,10 @@ impl MakerOrdersContext {
         self.balance_loops.insert(ticker.to_string(), handle);
     }
 
-    fn spawn_balance_loop(&mut self, ctx: MmWeak, order_base: &str, balance: Option<BigDecimal>) {
-        let ticker = order_base.to_string();
+    fn spawn_balance_loop(&mut self, ctx: MmWeak, order_base: String, balance: Option<BigDecimal>) {
+        let ticker = order_base.clone();
         let handle = spawn_abortable(async move { check_balance_update_loop(ctx, ticker, balance).await });
-        self.add_balance_loop(order_base, handle);
+        self.add_balance_loop(&order_base, handle);
     }
 
     fn stop_balance_loop(&mut self, ticker: &str) { self.balance_loops.remove(ticker); }
