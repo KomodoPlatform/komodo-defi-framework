@@ -1,5 +1,5 @@
-use trie_db::Value;
 use super::*;
+use trie_db::Value;
 
 #[cfg(feature = "zhtlc-native-tests")]
 use mm2_test_helpers::for_tests::best_orders_v2;
@@ -495,7 +495,7 @@ fn test_best_orders_v2_by_volume() {
     let response: RpcV2Response<BestOrdersV2Response> = json::from_str(&rc.1).unwrap();
     let expected_price: BigDecimal = "1.25".parse().unwrap();
     let best_morty_orders = response.result.orders.get("MORTY").unwrap();
-    log!("Best MORTY orders when sell RICK {:?}",[best_morty_orders]);
+    log!("Best MORTY orders when sell RICK {:?}", [best_morty_orders]);
     assert_eq!(expected_price, best_morty_orders[0].price.decimal);
     assert_eq!(1, best_morty_orders.len());
     let best_eth_orders = response.result.orders.get("ETH").unwrap();
