@@ -3455,8 +3455,8 @@ pub async fn block_header_utxo_loop<T: UtxoCommonOps>(weak: UtxoWeak, constructo
         };
         // todo: add a function to rpc_client then maybe to the coin even to use straight away
         let storage = match client.block_headers_storage() {
-                None => return,
-                Some(storage) => storage,
+            None => return,
+            Some(storage) => storage,
         };
         let params = storage.params.clone();
         let (check_every, blocks_limit_to_check, difficulty_check, constant_difficulty) = (

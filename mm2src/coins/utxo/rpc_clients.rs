@@ -1720,9 +1720,7 @@ impl ElectrumClientImpl {
     pub fn protocol_version(&self) -> &OrdRange<f32> { &self.protocol_version }
 
     /// Get block headers storage.
-    pub fn block_headers_storage(&self) -> &Option<BlockHeaderStorage> {
-        &self.block_headers_storage
-    }
+    pub fn block_headers_storage(&self) -> &Option<BlockHeaderStorage> { &self.block_headers_storage }
 }
 
 #[derive(Clone, Debug)]

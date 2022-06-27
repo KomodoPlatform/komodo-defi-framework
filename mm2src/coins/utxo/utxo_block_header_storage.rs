@@ -124,7 +124,10 @@ impl InitBlockHeaderStorageOps for BlockHeaderStorage {
     }
 
     #[cfg(target_arch = "wasm32")]
-    fn new_from_ctx(_ctx: MmArc, params: ElectrumBlockHeaderVerificationParams) -> Result<Self, BlockHeaderStorageError> {
+    fn new_from_ctx(
+        _ctx: MmArc,
+        params: ElectrumBlockHeaderVerificationParams,
+    ) -> Result<Self, BlockHeaderStorageError> {
         Ok(BlockHeaderStorage {
             inner: Box::new(IndexedDBBlockHeadersStorage {}),
             params,
