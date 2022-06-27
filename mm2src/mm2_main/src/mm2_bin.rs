@@ -7,7 +7,6 @@
 #![feature(map_first_last)]
 
 #[macro_use] extern crate common;
-#[macro_use] extern crate fomat_macros;
 #[macro_use] extern crate gstuff;
 #[macro_use] extern crate serde_json;
 #[macro_use] extern crate serde_derive;

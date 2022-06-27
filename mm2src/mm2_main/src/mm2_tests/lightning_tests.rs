@@ -81,7 +81,7 @@ fn start_lightning_nodes() -> (MarketMakerIt, MarketMakerIt, String, String) {
     )
     .unwrap();
     let (_dump_log, _dump_dashboard) = mm_node_1.mm_dump();
-    log!({ "bob log path: {}", mm_node_1.log_path.display() });
+    log!("bob log path: {}", mm_node_1.log_path.display());
 
     let _electrum = block_on(enable_electrum(&mm_node_1, "tBTC-TEST-segwit", false, T_BTC_ELECTRUMS));
 
@@ -103,7 +103,7 @@ fn start_lightning_nodes() -> (MarketMakerIt, MarketMakerIt, String, String) {
     )
     .unwrap();
     let (_dump_log, _dump_dashboard) = mm_node_2.mm_dump();
-    log!({ "alice log path: {}", mm_node_2.log_path.display() });
+    log!("alice log path: {}", mm_node_2.log_path.display());
 
     let _electrum = block_on(enable_electrum(&mm_node_2, "tBTC-TEST-segwit", false, T_BTC_ELECTRUMS));
 
@@ -183,7 +183,7 @@ fn test_enable_lightning() {
     )
     .unwrap();
     let (_dump_log, _dump_dashboard) = mm.mm_dump();
-    log!({ "log path: {}", mm.log_path.display() });
+    log!("log path: {}", mm.log_path.display());
 
     let _electrum = block_on(enable_electrum(&mm, "tBTC-TEST-segwit", false, T_BTC_ELECTRUMS));
 
@@ -264,7 +264,7 @@ fn test_open_channel() {
         list_channels_node_1.1
     );
     let list_channels_node_1_res: Json = json::from_str(&list_channels_node_1.1).unwrap();
-    log!("list_channels_node_1_res "[list_channels_node_1_res]);
+    log!("list_channels_node_1_res {:?}", list_channels_node_1_res);
     assert_eq!(
         list_channels_node_1_res["result"]["open_channels"][0]["counterparty_node_id"],
         node_2_id
@@ -381,7 +381,7 @@ fn test_sign_verify_message_lightning() {
     )
     .unwrap();
     let (_dump_log, _dump_dashboard) = mm.mm_dump();
-    log!({ "log path: {}", mm.log_path.display() });
+    log!("log path: {}", mm.log_path.display());
 
     block_on(enable_electrum(&mm, "tBTC-TEST-segwit", false, T_BTC_ELECTRUMS));
     block_on(enable_lightning(&mm, "tBTC-TEST-lightning"));

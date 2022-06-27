@@ -20,7 +20,6 @@ rand = { version = "0.7", features = ["std", "small_rng", "wasm-bindgen"] }
 futures = { version = "0.3", package = "futures", features = ["compat", "async-await", "thread-pool"] }
 lazy_static = "1.4"
 prost = "0.10"
-fomat-macros = "0.2"
 
 [target.'cfg(target_arch = "wasm32")'.dependencies]
 gstuff = { version = "0.7", features = ["nightly"] }

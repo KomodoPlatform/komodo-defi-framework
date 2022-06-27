@@ -24,7 +24,7 @@ use async_trait::async_trait;
 use bigdecimal::BigDecimal;
 use bitcrypto::{keccak256, sha256};
 use common::executor::Timer;
-use common::log::error;
+use common::log::{error, info, warn};
 use common::{now_ms, small_rng, DEX_FEE_ADDR_RAW_PUBKEY};
 use derive_more::Display;
 use ethabi::{Contract, Token};
@@ -1203,7 +1203,12 @@ impl MarketCoinOps for EthCoin {
                 let web3_receipt = match selfi.web3.eth().transaction_receipt(tx.hash()).compat().await {
                     Ok(r) => r,
                     Err(e) => {
-                        log!("Error " [e] " getting the " (selfi.ticker()) " transaction " [tx.tx_hash()] ", retrying in 15 seconds");
+                        error!(
+                            "Error {:?} getting the {} transaction {:?}, retrying in 15 seconds",
+                            e,
+                            selfi.ticker(),
+                            tx.tx_hash()
+                        );
                         Timer::sleep(check_every as f64).await;
                         continue;
                     },
@@ -1223,7 +1228,11 @@ impl MarketCoinOps for EthCoin {
                         let current_block = match selfi.web3.eth().block_number().compat().await {
                             Ok(b) => b,
                             Err(e) => {
-                                log!("Error " [e] " getting the " (selfi.ticker()) " block number retrying in 15 seconds");
+                                error!(
+                                    "Error {:?} getting the {} block number retrying in 15 seconds",
+                                    e,
+                                    selfi.ticker()
+                                );
                                 Timer::sleep(check_every as f64).await;
                                 continue;
                             },
@@ -1270,7 +1279,7 @@ impl MarketCoinOps for EthCoin {
                 let current_block = match selfi.current_block().compat().await {
                     Ok(b) => b,
                     Err(e) => {
-                        log!("Error " (e) " getting block number");
+                        error!("Error getting block number: {}", e);
                         Timer::sleep(5.).await;
                         continue;
                     },
@@ -1283,7 +1292,7 @@ impl MarketCoinOps for EthCoin {
                 {
                     Ok(ev) => ev,
                     Err(e) => {
-                        log!("Error " (e) " getting spend events");
+                        error!("Error getting spend events: {}", e);
                         Timer::sleep(5.).await;
                         continue;
                     },
@@ -1302,12 +1311,12 @@ impl MarketCoinOps for EthCoin {
                         {
                             Ok(Some(t)) => t,
                             Ok(None) => {
-                                log!("Tx " (tx_hash) " not found yet");
+                                info!("Tx {} not found yet", tx_hash);
                                 Timer::sleep(5.).await;
                                 continue;
                             },
                             Err(e) => {
-                                log!("Get tx " (tx_hash) " error " (e));
+                                error!("Get tx {} error: {}", tx_hash, e);
                                 Timer::sleep(5.).await;
                                 continue;
                             },
@@ -1426,7 +1435,7 @@ async fn sign_and_send_transaction_impl(
         {
             Ok(n) => n,
             Err(e) => {
-                log!("Error " [e] " getting " [coin.ticker()] " " [coin.my_address] " nonce");
+                error!("Error getting {} {} nonce: {}", coin.ticker(), coin.my_address, e);
                 // we can just keep looping in case of error hoping it will go away
                 continue;
             },
@@ -3164,7 +3173,7 @@ impl MmCoin for EthCoin {
     }
 
     fn set_requires_notarization(&self, _requires_nota: bool) {
-        log!("Warning: set_requires_notarization doesn't take any effect on ETH/ERC20 coins");
+        warn!("set_requires_notarization doesn't take any effect on ETH/ERC20 coins");
     }
 
     fn swap_contract_address(&self) -> Option<BytesJson> {
@@ -3406,7 +3415,7 @@ pub async fn eth_coin_from_conf_and_request(
         let version = match web3.web3().client_version().compat().await {
             Ok(v) => v,
             Err(e) => {
-                log!("Couldn't get client version for url " (url) ", " (e));
+                error!("Couldn't get client version for url {}: {}", url, e);
                 continue;
             },
         };
@@ -3446,7 +3455,7 @@ pub async fn eth_coin_from_conf_and_request(
         .into();
 
     if req["requires_notarization"].as_bool().is_some() {
-        log!("Warning: requires_notarization doesn't take any effect on ETH/ERC20 coins");
+        warn!("requires_notarization doesn't take any effect on ETH/ERC20 coins");
     }
 
     let sign_message_prefix: Option<String> = json::from_value(conf["sign_message_prefix"].clone()).unwrap_or(None);
@@ -3557,7 +3566,7 @@ fn get_addr_nonce(addr: Address, web3s: Vec<Web3Instance>) -> Box<dyn Future<Ite
                 .filter_map(|nonce_res| match nonce_res {
                     Ok(n) => Some(n),
                     Err(e) => {
-                        log!("Error " (e) " when getting nonce for addr " [addr]);
+                        error!("Error getting nonce for addr {:?}: {}", addr, e);
                         None
                     },
                 })
@@ -3574,7 +3583,7 @@ fn get_addr_nonce(addr: Address, web3s: Vec<Web3Instance>) -> Box<dyn Future<Ite
                 if max == min {
                     return Ok(*max);
                 } else {
-                    log!("Max nonce " (max) " != " (min) " min nonce");
+                    warn!("Max nonce {} != {} min nonce", max, min);
                 }
             }
             Timer::sleep(1.).await

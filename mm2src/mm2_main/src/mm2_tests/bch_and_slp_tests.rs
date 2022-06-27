@@ -36,7 +36,7 @@ fn test_withdraw_cashaddresses() {
     )
     .unwrap();
     let (_dump_log, _dump_dashboard) = mm.mm_dump();
-    log!({ "log path: {}", mm.log_path.display() });
+    log!("log path: {}", mm.log_path.display());
 
     let electrum = block_on(mm.rpc(&json! ({
         "userpass": mm.userpass,
@@ -55,7 +55,7 @@ fn test_withdraw_cashaddresses() {
         electrum.1
     );
     let electrum: Json = json::from_str(&electrum.1).unwrap();
-    log!([electrum]);
+    log!("{:?}", electrum);
 
     // make withdraw from cashaddress to cashaddress
     let withdraw = block_on(mm.rpc(&json! ({
@@ -69,7 +69,7 @@ fn test_withdraw_cashaddresses() {
 
     assert!(withdraw.0.is_success(), "BCH withdraw: {}", withdraw.1);
     let withdraw_json: Json = json::from_str(&withdraw.1).unwrap();
-    log!((withdraw_json));
+    log!("{}", withdraw_json);
 
     // check "from" addresses
     let from: Vec<&str> = withdraw_json["from"]
@@ -98,7 +98,7 @@ fn test_withdraw_cashaddresses() {
     })))
     .unwrap();
     assert!(send_tx.0.is_success(), "BCH send_raw_transaction: {}", send_tx.1);
-    log!((send_tx.1));
+    log!("{}", send_tx.1);
 
     // Wait 5 seconds to avoid double spending
     thread::sleep(Duration::from_secs(5));
@@ -115,7 +115,7 @@ fn test_withdraw_cashaddresses() {
 
     assert!(withdraw.0.is_success(), "BCH withdraw: {}", withdraw.1);
     let withdraw_json: Json = json::from_str(&withdraw.1).unwrap();
-    log!((withdraw_json));
+    log!("{}", withdraw_json);
 
     // check "from" addresses
     let from: Vec<&str> = withdraw_json["from"]
@@ -144,7 +144,7 @@ fn test_withdraw_cashaddresses() {
     })))
     .unwrap();
     assert!(send_tx.0.is_success(), "BCH send_raw_transaction: {}", send_tx.1);
-    log!((send_tx.1));
+    log!("{}", send_tx.1);
 
     // Wait 5 seconds to avoid double spending
     thread::sleep(Duration::from_secs(5));
@@ -176,7 +176,7 @@ fn test_withdraw_cashaddresses() {
         electrum.1
     );
     let electrum: Json = json::from_str(&electrum.1).unwrap();
-    log!([electrum]);
+    log!("{:?}", electrum);
 
     // make withdraw from Legacy to Cashaddress
     let withdraw = block_on(mm.rpc(&json! ({
@@ -190,7 +190,7 @@ fn test_withdraw_cashaddresses() {
 
     assert!(withdraw.0.is_success(), "BCH withdraw: {}", withdraw.1);
     let withdraw_json: Json = json::from_str(&withdraw.1).unwrap();
-    log!((withdraw_json));
+    log!("{}", withdraw_json);
 
     // check "from" addresses
     let from: Vec<&str> = withdraw_json["from"]
@@ -219,7 +219,7 @@ fn test_withdraw_cashaddresses() {
     })))
     .unwrap();
     assert!(send_tx.0.is_success(), "BCH send_raw_transaction: {}", send_tx.1);
-    log!((send_tx.1));
+    log!("{}", send_tx.1);
 }
 
 #[test]
@@ -246,7 +246,7 @@ fn test_withdraw_to_different_cashaddress_network_should_fail() {
     )
     .unwrap();
     let (_dump_log, _dump_dashboard) = mm.mm_dump();
-    log!({ "log path: {}", mm.log_path.display() });
+    log!("log path: {}", mm.log_path.display());
 
     let electrum = block_on(mm.rpc(&json! ({
         "userpass": mm.userpass,
@@ -265,7 +265,7 @@ fn test_withdraw_to_different_cashaddress_network_should_fail() {
         electrum.1
     );
     let electrum: Json = json::from_str(&electrum.1).unwrap();
-    log!([electrum]);
+    log!("{:?}", electrum);
 
     // make withdraw to from bchtest to bitcoincash should fail
     let withdraw = block_on(mm.rpc(&json! ({
@@ -278,7 +278,7 @@ fn test_withdraw_to_different_cashaddress_network_should_fail() {
     .unwrap();
 
     assert!(withdraw.0.is_server_error(), "BCH withdraw: {}", withdraw.1);
-    log!([withdraw.1]);
+    log!("{:?}", withdraw.1);
 
     block_on(mm.stop()).unwrap();
 }
@@ -307,7 +307,7 @@ fn test_common_cashaddresses() {
     )
     .unwrap();
     let (_dump_log, _dump_dashboard) = mm.mm_dump();
-    log!({ "log path: {}", mm.log_path.display() });
+    log!("log path: {}", mm.log_path.display());
 
     // Enable BCH electrum client with tx_history loop.
     // Enable RICK electrum client with tx_history loop.
@@ -328,7 +328,7 @@ fn test_common_cashaddresses() {
         electrum.1
     );
     let electrum: Json = json::from_str(&electrum.1).unwrap();
-    log!([electrum]);
+    log!("{:?}", electrum);
 
     assert_eq!(
         electrum["address"].as_str().unwrap(),
@@ -410,14 +410,14 @@ fn test_bch_and_slp_testnet_history() {
     )
     .unwrap();
     let (_dump_log, _dump_dashboard) = mm.mm_dump();
-    log!({ "log path: {}", mm.log_path.display() });
+    log!("log path: {}", mm.log_path.display());
 
     let rpc_mode = UtxoRpcMode::electrum(T_BCH_ELECTRUMS);
     let tx_history = true;
     let enable_bch = block_on(enable_bch_with_tokens(&mm, "tBCH", &[], rpc_mode, tx_history));
-    log!({ "enable_bch: {:?}", enable_bch });
+    log!("enable_bch: {:?}", enable_bch);
     let history = block_on(wait_till_history_has_records(&mm, 4, "tBCH", None));
-    log!({ "bch history: {:?}", history });
+    log!("bch history: {:?}", history);
 
     let expected_internal_ids = vec![
         "eefb21290909cb7f2864ef066836bd98f8963731576f65a8c0ff590c3e91d439",
@@ -435,13 +435,13 @@ fn test_bch_and_slp_testnet_history() {
     assert_eq!(expected_internal_ids, actual_ids);
 
     let enable_usdf = block_on(enable_slp(&mm, "USDF"));
-    log!({ "enable_usdf: {:?}", enable_usdf });
+    log!("enable_usdf: {:?}", enable_usdf);
 
     let paging =
         common::PagingOptionsEnum::FromId("433b641bc89e1b59c22717918583c60ec98421805c8e85b064691705d9aeb970".into());
     let slp_history = block_on(wait_till_history_has_records(&mm, 4, "USDF", Some(paging)));
 
-    log!({ "slp history: {:?}", slp_history });
+    log!("slp history: {:?}", slp_history);
 
     let expected_slp_ids = vec![
         "cd6ec10b0cd9747ddc66ac5c97c2d7b493e8cea191bc2d847b3498719d4bd989",
@@ -492,7 +492,7 @@ fn test_sign_verify_message_bch() {
     )
     .unwrap();
     let (_dump_log, _dump_dashboard) = mm.mm_dump();
-    log!({ "log path: {}", mm.log_path.display() });
+    log!("log path: {}", mm.log_path.display());
 
     let electrum = block_on(mm.rpc(&json! ({
         "userpass": mm.userpass,
@@ -511,7 +511,7 @@ fn test_sign_verify_message_bch() {
         electrum.1
     );
     let electrum: Json = json::from_str(&electrum.1).unwrap();
-    log!([electrum]);
+    log!("{:?}", electrum);
 
     let response = block_on(sign_message(&mm, "BCH"));
     let response: RpcV2Response<SignatureResponse> = json::from_value(response).unwrap();
@@ -561,14 +561,14 @@ fn test_sign_verify_message_slp() {
     )
     .unwrap();
     let (_dump_log, _dump_dashboard) = mm.mm_dump();
-    log!({ "log path: {}", mm.log_path.display() });
+    log!("log path: {}", mm.log_path.display());
 
     let rpc_mode = UtxoRpcMode::electrum(T_BCH_ELECTRUMS);
     let enable_bch = block_on(enable_bch_with_tokens(&mm, "tBCH", &[], rpc_mode, false));
-    log!({ "enable_bch: {:?}", enable_bch });
+    log!("enable_bch: {:?}", enable_bch);
 
     let enable_usdf = block_on(enable_slp(&mm, "USDF"));
-    log!({ "enable_usdf: {:?}", enable_usdf });
+    log!("enable_usdf: {:?}", enable_usdf);
 
     let response = block_on(sign_message(&mm, "USDF"));
     let response: RpcV2Response<SignatureResponse> = json::from_value(response).unwrap();

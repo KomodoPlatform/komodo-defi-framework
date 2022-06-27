@@ -54,7 +54,7 @@ mod tests {
         )
         .unwrap();
         let (_dump_log, _dump_dashboard) = mm.mm_dump();
-        log!({"Log path: {}", mm.log_path.display()});
+        log!("Log path: {}", mm.log_path.display());
         fn start_simple_market_maker_bot_rpc(mm: &MarketMakerIt) -> (StatusCode, String, HeaderMap) {
             block_on(mm.rpc(&json!({
                  "userpass": "password",

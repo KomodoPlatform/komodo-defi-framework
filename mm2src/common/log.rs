@@ -3,10 +3,12 @@
 use super::duplex_mutex::DuplexMutex;
 use super::executor::{spawn, Timer};
 use super::{now_ms, writeln};
+use crate::filename;
 use chrono::format::strftime::StrftimeItems;
 use chrono::format::DelayedFormat;
 use chrono::{Local, TimeZone, Utc};
 use crossbeam::queue::SegQueue;
+use itertools::Itertools;
 #[cfg(not(target_arch = "wasm32"))]
 use lightning::util::logger::{Level as LightningLevel, Logger as LightningLogger, Record as LightningRecord};
 use log::{Level, Record};
@@ -22,6 +24,7 @@ use std::hash::{Hash, Hasher};
 use std::mem::swap;
 use std::ops::Deref;
 use std::path::{Path, PathBuf};
+use std::str::FromStr;
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::{Arc, Weak};
 use std::thread;
@@ -31,15 +34,16 @@ pub use log::{self as log_crate, debug, error, info, trace, warn, LevelFilter};
 #[cfg(target_arch = "wasm32")]
 #[path = "log/wasm_log.rs"]
 pub mod wasm_log;
+
 #[cfg(target_arch = "wasm32")]
 pub use wasm_log::{LogLevel, WasmCallback, WasmLoggerBuilder};
 
 #[cfg(not(target_arch = "wasm32"))]
 #[path = "log/native_log.rs"]
 mod native_log;
+
 #[cfg(not(target_arch = "wasm32"))]
 pub use native_log::{FfiCallback, LogLevel, UnifiedLoggerBuilder};
-use std::str::FromStr;
 
 lazy_static! {
     /// If this C callback is present then all the logging output should happen through it
@@ -171,18 +175,11 @@ pub fn short_log_time(ms: u64) -> DelayedFormat<StrftimeItems<'static>> {
 #[macro_export]
 macro_rules! log {
     ($($args: tt)+) => {{
-        use std::fmt::Write;
-
-        // We can optimize this with a stack-allocated SmallVec from https://github.com/arcnmx/stack-rs,
-        // though it doesn't worth the trouble at the moment.
-        let mut buf = String::new();
-        wite! (&mut buf,
-            ($crate::log::short_log_time ($crate::now_ms()))
-            if cfg! (target_arch = "wasm32") {"ʷ "} else {", "}
-            (::gstuff::filename (file!())) ':' (line!()) "] "
-            $($args)+)
-        .unwrap();
-        $crate::log::chunk2log(buf, $crate::log::LogLevel::Info)
+        let time = $crate::log::short_log_time($crate::now_ms());
+        let file = $crate::filename(file!());
+        let msg = format!($($args)+);
+        let chunk = format!("{}, {}:{}] {}", time, file, line!(), msg);
+        $crate::log::chunk2log(chunk, $crate::log::LogLevel::Info)
     }}
 }
 
@@ -249,7 +246,7 @@ impl<T, E: fmt::Display> LogOnError for Result<T, E> {
     fn warn_log(self) {
         if let Err(e) = self {
             let location = std::panic::Location::caller();
-            let file = gstuff::filename(location.file());
+            let file = filename(location.file());
             let line = location.line();
             warn!("{}:{}] {}", file, line, e);
         }
@@ -259,7 +256,7 @@ impl<T, E: fmt::Display> LogOnError for Result<T, E> {
     fn warn_log_with_msg(self, msg: &str) {
         if let Err(e) = self {
             let location = std::panic::Location::caller();
-            let file = gstuff::filename(location.file());
+            let file = filename(location.file());
             let line = location.line();
             warn!("{}:{}] {}: {}", file, line, msg, e);
         }
@@ -269,7 +266,7 @@ impl<T, E: fmt::Display> LogOnError for Result<T, E> {
     fn error_log(self) {
         if let Err(e) = self {
             let location = std::panic::Location::caller();
-            let file = gstuff::filename(location.file());
+            let file = filename(location.file());
             let line = location.line();
             error!("{}:{}] {}", file, line, e);
         }
@@ -279,7 +276,7 @@ impl<T, E: fmt::Display> LogOnError for Result<T, E> {
     fn error_log_with_msg(self, msg: &str) {
         if let Err(e) = self {
             let location = std::panic::Location::caller();
-            let file = gstuff::filename(location.file());
+            let file = filename(location.file());
             let line = location.line();
             error!("{}:{}] {}: {}", file, line, msg, e);
         }
@@ -289,7 +286,7 @@ impl<T, E: fmt::Display> LogOnError for Result<T, E> {
     fn error_log_passthrough(self) -> Self {
         if let Err(e) = &self {
             let location = std::panic::Location::caller();
-            let file = gstuff::filename(location.file());
+            let file = filename(location.file());
             let line = location.line();
             error!("{}:{}] {}", file, line, e);
         }
@@ -324,7 +321,7 @@ impl<'a> TagParam<'a> for (String, &'a str) {
 
 impl<'a> TagParam<'a> for (&'a str, i32) {
     fn key(&self) -> String { String::from(self.0) }
-    fn val(&self) -> Option<String> { Some(fomat!((self.1))) }
+    fn val(&self) -> Option<String> { Some(self.1.to_string()) }
 }
 
 impl<'a> TagParam<'a> for (String, String) {
@@ -422,7 +419,7 @@ impl Status {
         swap(&mut log.line, &mut *status.line.spinlock(77).unwrap());
         let mut chunk = String::with_capacity(256);
         if let Err(err) = log.format(&mut chunk) {
-            log! ({"log] Error formatting log entry: {}", err});
+            log!("log] Error formatting log entry: {}", err);
         }
         tail.push_back(log);
         drop(tail);
@@ -453,16 +450,10 @@ impl Default for LogEntry {
 impl LogEntry {
     pub fn format(&self, buf: &mut String) -> Result<(), fmt::Error> {
         let time = Local.timestamp_millis(self.time as i64);
-
-        wite! (buf,
-            if self.emotion.is_empty() {'·'} else {(self.emotion)}
-            ' '
-            (time.format ("%Y-%m-%d %H:%M:%S %z"))
-            ' '
-            // TODO: JSON-escape the keys and values when necessary.
-            '[' for t in &self.tags {(t.key) if let Some (ref v) = t.val {'=' (v)}} separated {' '} "] "
-            (self.line)
-        )
+        let time_formatted = time.format("%Y-%m-%d %H:%M:%S %z");
+        let emotion = if self.emotion.is_empty() { "·" } else { &self.emotion };
+        let tags = format_tags(&self.tags);
+        write!(buf, "{} {} [{}] {}", emotion, time_formatted, tags, self.line)
     }
 }
 
@@ -669,27 +660,38 @@ fn log_dashboard_sometimesʹ(dashboard: &[Arc<Status>], dl: &mut DashboardLoggin
 
     dl.last_hash.store(hash, Ordering::Relaxed);
     dl.last_log_ms.store(now, Ordering::Relaxed);
-    let mut buf = String::with_capacity(7777);
-    wite! (buf, "+--- " (short_log_time (now)) " -------").unwrap();
+    let mut buf = format!("+--- {} -------", short_log_time(now));
     for status in dashboard.iter() {
         let start = status.start.load(Ordering::Relaxed);
-        let deadline = status.deadline.load(Ordering::Relaxed);
-        let passed = (now as i64 - start as i64) / 1000;
-        let timeframe = (deadline as i64 - start as i64) / 1000;
-        let tags = match status.tags.spinlock(77) {
-            Ok(t) => t.clone(),
-            Err(_) => Vec::new(),
+
+        let tags_str = match status.tags.spinlock(77) {
+            Ok(t) => format_tags(&t),
+            Err(_) => String::new(),
         };
+
+        let passed = (now as i64 - start as i64) / 1000;
+        let passed_str = if passed >= 0 {
+            format!("{}:{:0>2}", passed / 60, passed % 60)
+        } else {
+            "-".to_owned()
+        };
+
+        let deadline = status.deadline.load(Ordering::Relaxed);
+        let timeframe = (deadline as i64 - start as i64) / 1000;
+        let timeframe_str = if deadline > 0 {
+            format!("/{}:{:0>2}", timeframe / 60, timeframe % 60)
+        } else {
+            String::new()
+        };
+
         let line = match status.line.spinlock(77) {
             Ok(l) => l.clone(),
             Err(_) => "-locked-".into(),
         };
-        wite! (buf,
-          "\n| (" if passed >= 0 {(passed / 60) ':' {"{:0>2}", passed % 60}} else {'-'}
-          if deadline > 0 {'/' (timeframe / 60) ':' {"{:0>2}", timeframe % 60}} ") "
-          '[' for t in tags {(t.key) if let Some (ref v) = t.val {'=' (v)}} separated {' '} "] "
-          (line))
-        .unwrap();
+        buf.push_str(&format!(
+            "\n| ({}{}) [{}] {}",
+            passed_str, timeframe_str, tags_str, line
+        ));
     }
     chunk2log(buf, LogLevel::Info)
 }
@@ -884,7 +886,7 @@ impl LogState {
     fn log_entry(&self, entry: LogEntry) {
         let mut chunk = String::with_capacity(256);
         if let Err(err) = entry.format(&mut chunk) {
-            log!({ "log] Error formatting log entry: {}", err });
+            log!("log] Error formatting log entry: {}", err);
             return;
         }
 
@@ -1100,7 +1102,7 @@ pub fn format_record(record: &Record) -> String {
     let level = metadata.level();
     let date = Utc::now().format(DATE_FORMAT);
     let line = record.line().unwrap_or(0);
-    let file = record.file().map(gstuff::filename).unwrap_or("???");
+    let file = record.file().map(filename).unwrap_or("???");
     let module = record.module_path().unwrap_or("");
     let message = record.args();
 
@@ -1117,6 +1119,18 @@ pub fn format_record(record: &Record) -> String {
         l = level,
         m = message
     )
+}
+
+fn format_tags(tags: &[Tag]) -> String {
+    tags.iter()
+        .map(|tag| {
+            if let Some(ref val) = tag.val {
+                format!("{}={}", tag.key, val)
+            } else {
+                tag.key.clone()
+            }
+        })
+        .join(" ")
 }
 
 #[doc(hidden)]

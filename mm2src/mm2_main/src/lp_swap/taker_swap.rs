@@ -16,7 +16,7 @@ use crate::mm2::MM_VERSION;
 use coins::{lp_coinfind, CanRefundHtlc, FeeApproxStage, FoundSwapTxSpend, MmCoinEnum, SearchForSwapTxSpendInput,
             TradeFee, TradePreimageValue, ValidatePaymentInput};
 use common::executor::Timer;
-use common::log::{debug, error, warn};
+use common::log::{debug, error, info, warn};
 use common::mm_number::{BigDecimal, MmNumber};
 use common::{bits256, now_ms, DEX_FEE_ADDR_RAW_PUBKEY};
 use crypto::privkey::SerializableSecp256k1Keypair;
@@ -321,16 +321,16 @@ pub async fn run_taker_swap(swap: RunTakerSwapInput, ctx: MmArc) {
         } => match TakerSwap::load_from_db_by_uuid(ctx, maker_coin, taker_coin, &swap_uuid).await {
             Ok((swap, command)) => match command {
                 Some(c) => {
-                    log!("Swap " (uuid) " kick started.");
+                    info!("Swap {} kick started.", uuid);
                     (swap, c)
                 },
                 None => {
-                    log!("Swap " (uuid) " has been finished already, aborting.");
+                    warn!("Swap {} has been finished already, aborting.", uuid);
                     return;
                 },
             },
             Err(e) => {
-                log!("Error " (e) " loading swap " (uuid));
+                error!("Error loading swap {}: {}", uuid, e);
                 return;
             },
         },
@@ -395,7 +395,7 @@ pub async fn run_taker_swap(swap: RunTakerSwapInput, ctx: MmArc) {
                     None => {
                         if to_broadcast {
                             if let Err(e) = broadcast_my_swap_status(&ctx, running_swap.uuid).await {
-                                log!("!broadcast_my_swap_status(" (uuid) "): " (e));
+                                error!("!broadcast_my_swap_status({}): {}", uuid, e);
                             }
                         }
                         break;
@@ -409,7 +409,7 @@ pub async fn run_taker_swap(swap: RunTakerSwapInput, ctx: MmArc) {
     let do_nothing = (); // to fix https://rust-lang.github.io/rust-clippy/master/index.html#unused_unit
     select! {
         _swap = swap_fut => do_nothing, // swap finished normally
-        _shutdown = shutdown_fut => log!("on_stop] swap " (swap_for_log.uuid) " stopped!"),
+        _shutdown = shutdown_fut => info!("swap {} stopped!", swap_for_log.uuid),
         _touch = touch_loop => unreachable!("Touch loop can not stop!"),
     };
 }
@@ -1047,7 +1047,7 @@ impl TakerSwap {
         };
 
         let tx_hash = transaction.tx_hash();
-        log!({"Taker fee tx hash {:02x}", tx_hash});
+        info!("Taker fee tx hash {:02x}", tx_hash);
         let tx_ident = TransactionIdentifier {
             tx_hex: transaction.tx_hex().into(),
             tx_hash,
@@ -1099,7 +1099,7 @@ impl TakerSwap {
         };
 
         let tx_hash = maker_payment.tx_hash();
-        log!({"Got maker payment {:02x}", tx_hash});
+        info!("Got maker payment {:02x}", tx_hash);
         let tx_ident = TransactionIdentifier {
             tx_hex: maker_payment.tx_hex().into(),
             tx_hash,
@@ -1112,7 +1112,7 @@ impl TakerSwap {
     }
 
     async fn validate_maker_payment(&self) -> Result<(Option<TakerSwapCommand>, Vec<TakerSwapEvent>), String> {
-        log!({ "Before wait confirm" });
+        info!("Before wait confirm");
         let confirmations = self.r().data.maker_payment_confirmations;
         let f = self.maker_coin.wait_for_confirmations(
             &self.r().maker_payment.clone().unwrap().tx_hex,
@@ -1128,7 +1128,7 @@ impl TakerSwap {
                 ),
             ]));
         }
-        log!({ "After wait confirm" });
+        info!("After wait confirm");
 
         let validate_input = ValidatePaymentInput {
             payment_tx: self.r().maker_payment.clone().unwrap().tx_hex.0,
@@ -1205,7 +1205,7 @@ impl TakerSwap {
         };
 
         let tx_hash = transaction.tx_hash();
-        log!({"Taker payment tx hash {:02x}", tx_hash });
+        info!("Taker payment tx hash {:02x}", tx_hash);
         let tx_ident = TransactionIdentifier {
             tx_hex: transaction.tx_hex().into(),
             tx_hash,
@@ -1264,7 +1264,7 @@ impl TakerSwap {
         };
         drop(send_abort_handle);
         let tx_hash = tx.tx_hash();
-        log!({"Taker payment spend tx {:02x}", tx_hash });
+        info!("Taker payment spend tx {:02x}", tx_hash);
         let tx_ident = TransactionIdentifier {
             tx_hex: tx.tx_hex().into(),
             tx_hash,
@@ -1324,7 +1324,7 @@ impl TakerSwap {
         );
 
         let tx_hash = transaction.tx_hash();
-        log!({"Maker payment spend tx {:02x}", tx_hash });
+        info!("Maker payment spend tx {:02x}", tx_hash);
         let tx_ident = TransactionIdentifier {
             tx_hex: transaction.tx_hex().into(),
             tx_hash,
@@ -1383,7 +1383,7 @@ impl TakerSwap {
         );
 
         let tx_hash = transaction.tx_hash();
-        log!({"Taker refund tx hash {:02x}", tx_hash });
+        info!("Taker refund tx hash {:02x}", tx_hash);
         let tx_ident = TransactionIdentifier {
             tx_hex: transaction.tx_hex().into(),
             tx_hash,
@@ -2476,7 +2476,12 @@ mod taker_swap_tests {
             let max_taker_vol = max_taker_vol_from_available(available.clone(), base, "MORTY", &min_tx_amount)
                 .expect("!max_taker_vol_from_available");
             let dex_fee = dex_fee_amount(base, "MORTY", &max_taker_vol, &dex_fee_threshold);
-            log!("available "[available.to_decimal()]" max_taker_vol "[max_taker_vol.to_decimal()]", dex_fee "[dex_fee.to_decimal()]);
+            println!(
+                "available={:?} max_taker_vol={:?} dex_fee={:?}",
+                available.to_decimal(),
+                max_taker_vol.to_decimal(),
+                dex_fee.to_decimal()
+            );
             assert_eq!(dex_fee_threshold, dex_fee);
             assert!(min_tx_amount <= max_taker_vol);
             assert_eq!(max_taker_vol + dex_fee, available);

@@ -17,7 +17,7 @@ use crate::mm2::MM_VERSION;
 use bitcrypto::dhash160;
 use coins::{CanRefundHtlc, FeeApproxStage, FoundSwapTxSpend, MmCoinEnum, SearchForSwapTxSpendInput, TradeFee,
             TradePreimageValue, TransactionEnum, ValidatePaymentInput};
-use common::log::{debug, error, warn};
+use common::log::{debug, error, info, warn};
 use common::mm_number::{BigDecimal, MmNumber};
 use common::{bits256, executor::Timer, now_ms, DEX_FEE_ADDR_RAW_PUBKEY};
 use crypto::privkey::SerializableSecp256k1Keypair;
@@ -604,7 +604,7 @@ impl MakerSwap {
         };
 
         let hash = taker_fee.tx_hash();
-        log!({ "Taker fee tx {:02x}", hash });
+        info!("Taker fee tx {:02x}", hash);
 
         let taker_amount = MmNumber::from(self.taker_amount.clone());
         let fee_amount = dex_fee_amount_from_taker_coin(&self.taker_coin, &self.r().data.maker_coin, &taker_amount);
@@ -706,7 +706,7 @@ impl MakerSwap {
         };
 
         let tx_hash = transaction.tx_hash();
-        log!({ "Maker payment tx {:02x}", tx_hash });
+        info!("Maker payment tx {:02x}", tx_hash);
 
         let tx_ident = TransactionIdentifier {
             tx_hex: transaction.tx_hex().into(),
@@ -777,7 +777,7 @@ impl MakerSwap {
         };
 
         let tx_hash = taker_payment.tx_hash();
-        log!({ "Taker payment tx {:02x}", tx_hash });
+        info!("Taker payment tx {:02x}", tx_hash);
         let tx_ident = TransactionIdentifier {
             tx_hex: taker_payment.tx_hex().into(),
             tx_hash,
@@ -900,7 +900,7 @@ impl MakerSwap {
         );
 
         let tx_hash = transaction.tx_hash();
-        log!({ "Taker payment spend tx {:02x}", tx_hash });
+        info!("Taker payment spend tx {:02x}", tx_hash);
         let tx_ident = TransactionIdentifier {
             tx_hex: transaction.tx_hex().into(),
             tx_hash,
@@ -993,7 +993,7 @@ impl MakerSwap {
         );
 
         let tx_hash = transaction.tx_hash();
-        log!({ "Maker payment refund tx {:02x}", tx_hash });
+        info!("Maker payment refund tx {:02x}", tx_hash);
         let tx_ident = TransactionIdentifier {
             tx_hex: transaction.tx_hex().into(),
             tx_hash,
@@ -1202,7 +1202,7 @@ impl MakerSwap {
         // validate that maker payment is not spent
         match self.maker_coin.search_for_swap_tx_spend_my(search_input).await {
             Ok(Some(FoundSwapTxSpend::Spent(_))) => {
-                log!("Warning: MakerPayment spent, but TakerPayment is not yet. Trying to spend TakerPayment");
+                warn!("MakerPayment spent, but TakerPayment is not yet. Trying to spend TakerPayment");
                 let transaction = try_s!(try_spend_taker_payment(self, secret_hash.as_slice()).await);
 
                 Ok(RecoveredSwap {
@@ -1219,7 +1219,7 @@ impl MakerSwap {
             Err(e) => ERR!("Error {} when trying to find maker payment spend", e),
             Ok(None) => {
                 // our payment is not spent, try to refund
-                log!("Trying to refund MakerPayment");
+                info!("Trying to refund MakerPayment");
                 if now_ms() / 1000 < self.r().data.maker_payment_lock + 3700 {
                     return ERR!(
                         "Too early to refund, wait until {}",
@@ -1708,16 +1708,16 @@ pub async fn run_maker_swap(swap: RunMakerSwapInput, ctx: MmArc) {
         } => match MakerSwap::load_from_db_by_uuid(ctx, maker_coin, taker_coin, &swap_uuid).await {
             Ok((swap, command)) => match command {
                 Some(c) => {
-                    log!("Swap " (uuid) " kick started.");
+                    info!("Swap {} kick started.", uuid);
                     (swap, c)
                 },
                 None => {
-                    log!("Swap " (uuid) " has been finished already, aborting.");
+                    warn!("Swap {} has been finished already, aborting.", uuid);
                     return;
                 },
             },
             Err(e) => {
-                log!("Error " (e) " loading swap " (uuid));
+                error!("Error loading swap {}: {}", uuid, e);
                 return;
             },
         },
@@ -1793,7 +1793,7 @@ pub async fn run_maker_swap(swap: RunMakerSwapInput, ctx: MmArc) {
                     None => {
                         if to_broadcast {
                             if let Err(e) = broadcast_my_swap_status(&ctx, uuid).await {
-                                log!("!broadcast_my_swap_status(" (uuid) "): " (e));
+                                error!("!broadcast_my_swap_status({}): {}", uuid, e);
                             }
                         }
                         break;
@@ -1807,7 +1807,7 @@ pub async fn run_maker_swap(swap: RunMakerSwapInput, ctx: MmArc) {
     let do_nothing = (); // to fix https://rust-lang.github.io/rust-clippy/master/index.html#unused_unit
     select! {
         _swap = swap_fut => do_nothing, // swap finished normally
-        _shutdown = shutdown_fut => log!("on_stop] swap " (swap_for_log.uuid) " stopped!"),
+        _shutdown = shutdown_fut => info!("swap {} stopped!", swap_for_log.uuid),
         _touch = touch_loop => unreachable!("Touch loop can not stop!"),
     };
 }
@@ -1825,7 +1825,7 @@ pub async fn check_balance_for_maker_swap(
     swap_uuid: Option<&Uuid>,
     prepared_params: Option<MakerSwapPreparedParams>,
     stage: FeeApproxStage,
-) -> CheckBalanceResult<()> {
+) -> CheckBalanceResult<BigDecimal> {
     let (maker_payment_trade_fee, taker_payment_spend_trade_fee) = match prepared_params {
         Some(MakerSwapPreparedParams {
             maker_payment_trade_fee,
@@ -1846,9 +1846,10 @@ pub async fn check_balance_for_maker_swap(
         },
     };
 
-    check_my_coin_balance_for_swap(ctx, my_coin, swap_uuid, volume, maker_payment_trade_fee, None).await?;
+    let balance =
+        check_my_coin_balance_for_swap(ctx, my_coin, swap_uuid, volume, maker_payment_trade_fee, None).await?;
     check_other_coin_balance_for_swap(ctx, other_coin, swap_uuid, taker_payment_spend_trade_fee).await?;
-    Ok(())
+    Ok(balance)
 }
 
 pub struct MakerTradePreimage {
@@ -1912,7 +1913,7 @@ pub async fn maker_swap_trade_preimage(
             Some(prepared_params),
             FeeApproxStage::TradePreimage,
         )
-        .await?
+        .await?;
     }
 
     let conf_settings = OrderConfirmationsSettings {
@@ -2139,7 +2140,7 @@ mod maker_swap_tests {
         let taker_coin = MmCoinEnum::Test(TestCoin::default());
         let (maker_swap, _) = MakerSwap::load_from_saved(ctx, maker_coin, taker_coin, maker_saved_swap).unwrap();
         let err = block_on(maker_swap.recover_funds()).expect_err("Expected an error");
-        log!("Error: "(err));
+        println!("{}", err);
         assert!(err.contains("Taker payment was already refunded"));
         assert!(unsafe { SEARCH_FOR_SWAP_TX_SPEND_MY_CALLED });
         assert!(unsafe { SEARCH_FOR_SWAP_TX_SPEND_OTHER_CALLED });
@@ -2251,7 +2252,7 @@ mod maker_swap_tests {
         let taker_coin = MmCoinEnum::Test(TestCoin::default());
         let (maker_swap, _) = MakerSwap::load_from_saved(ctx, maker_coin, taker_coin, maker_saved_swap).unwrap();
         let err = block_on(maker_swap.recover_funds()).expect_err("Expected an error");
-        log!("Error: "(err));
+        println!("{}", err);
         assert!(err.contains("Taker payment was already spent"));
         assert!(unsafe { SEARCH_FOR_SWAP_TX_SPEND_MY_CALLED });
         assert!(unsafe { SEARCH_FOR_SWAP_TX_SPEND_OTHER_CALLED });

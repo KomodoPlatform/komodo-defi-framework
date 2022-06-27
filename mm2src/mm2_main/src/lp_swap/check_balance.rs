@@ -21,7 +21,7 @@ pub async fn check_my_coin_balance_for_swap(
     volume: MmNumber,
     mut trade_fee: TradeFee,
     taker_fee: Option<TakerFeeAdditionalInfo>,
-) -> CheckBalanceResult<()> {
+) -> CheckBalanceResult<BigDecimal> {
     let ticker = coin.ticker();
     debug!("Check my_coin '{}' balance for swap", ticker);
     let balance: MmNumber = coin.my_spendable_balance().compat().await?.into();
@@ -80,7 +80,7 @@ pub async fn check_my_coin_balance_for_swap(
         });
     }
 
-    Ok(())
+    Ok(balance.into())
 }
 
 pub async fn check_other_coin_balance_for_swap(

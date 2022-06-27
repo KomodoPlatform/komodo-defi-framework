@@ -16,7 +16,7 @@ const DEFAULT_LEVEL_FILTER: LogLevel = LogLevel::Info;
 #[macro_export]
 macro_rules! console_err {
     ($($args: tt)+) => {{
-        let here = format!("{}:{}]", ::gstuff::filename(file!()), line!());
+        let here = format!("{}:{}]", $crate::filename(file!()), line!());
         let msg = format!($($args)+);
         let msg_formatted = format!("{} {}", here, msg);
         let msg_js = $crate::log::wasm_log::JsValue::from(msg_formatted);
@@ -27,7 +27,7 @@ macro_rules! console_err {
 #[macro_export]
 macro_rules! console_info {
     ($($args: tt)+) => {{
-        let here = format!("{}:{}]", ::gstuff::filename(file!()), line!());
+        let here = format!("{}:{}]", $crate::filename(file!()), line!());
         let msg = format!($($args)+);
         let msg_formatted = format!("{} {}", here, msg);
         let msg_js = $crate::log::wasm_log::JsValue::from(msg_formatted);
@@ -38,7 +38,7 @@ macro_rules! console_info {
 #[macro_export]
 macro_rules! console_log {
     ($($args: tt)+) => {{
-        let here = format!("{}:{}]", ::gstuff::filename(file!()), line!());
+        let here = format!("{}:{}]", $crate::filename(file!()), line!());
         let msg = format!($($args)+);
         let msg_formatted = format!("{} {}", here, msg);
         let msg_js = $crate::log::wasm_log::JsValue::from(msg_formatted);

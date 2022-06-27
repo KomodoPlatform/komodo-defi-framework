@@ -39,7 +39,6 @@ ethereum-types = { version = "0.4", default-features = false, features = ["std",
 ethkey = { git = "https://github.com/artemii235/parity-ethereum.git" }
 # Waiting for https://github.com/rust-lang/rust/issues/54725 to use on Stable.
 #enum_dispatch = "0.1"
-fomat-macros = "0.2"
 futures01 = { version = "0.1", package = "futures" }
 # using select macro requires the crate to be named futures, compilation failed with futures03 name
 futures = { version = "0.3", package = "futures", features = ["compat", "async-await"] }

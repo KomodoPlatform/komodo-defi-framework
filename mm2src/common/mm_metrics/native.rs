@@ -1,5 +1,6 @@
 use super::*;
 use crate::executor::{spawn, Timer};
+use crate::log::error;
 use gstuff::Constructible;
 use hdrhistogram::Histogram;
 use itertools::Itertools;
@@ -8,7 +9,7 @@ use metrics_runtime::{observers::PrometheusBuilder, Receiver};
 use metrics_util::{parse_quantiles, Quantile};
 use serde_json as json;
 use std::collections::HashMap;
-use std::fmt::Write as WriteFmt;
+use std::fmt;
 use std::slice::Iter;
 
 use crate::log::{LogArc, Tag};
@@ -179,11 +180,11 @@ enum Integer {
     Unsigned(u64),
 }
 
-impl ToString for Integer {
-    fn to_string(&self) -> String {
+impl fmt::Display for Integer {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
-            Integer::Signed(x) => format!("{}", x),
-            Integer::Unsigned(x) => format!("{}", x),
+            Integer::Signed(x) => write!(f, "{}", x),
+            Integer::Unsigned(x) => write!(f, "{}", x),
         }
     }
 }
@@ -272,7 +273,7 @@ impl Observer for TagObserver {
             match Histogram::new(sigfig) {
                 Ok(x) => x,
                 Err(err) => {
-                    log!("failed to create histogram: "(err));
+                    error!("failed to create histogram: {}", err);
                     // do nothing on error
                     return;
                 },
@@ -281,7 +282,7 @@ impl Observer for TagObserver {
 
         for value in values {
             if let Err(err) = entry.record(*value) {
-                log!("failed to observe histogram value: "(err));
+                error!("failed to observe histogram value: {}", err);
             }
         }
     }
@@ -329,7 +330,7 @@ impl Observer for JsonObserver {
         let mut histogram = match Histogram::new(sigfig) {
             Ok(x) => x,
             Err(err) => {
-                log!("failed to create histogram: "(err));
+                error!("failed to create histogram: {}", err);
                 // do nothing on error
                 return;
             },
@@ -337,7 +338,7 @@ impl Observer for JsonObserver {
 
         for value in values {
             if let Err(err) = histogram.record(*value) {
-                log!("failed to observe histogram value: "(err));
+                error!("failed to observe histogram value: {}", err);
             }
         }
 
@@ -430,15 +431,11 @@ fn labels_into_parts(labels: Iter<Label>) -> HashMap<String, String> {
 }
 
 fn name_value_map_to_message(name_value_map: &MetricNameValueMap) -> String {
-    let mut message = String::with_capacity(256);
-    match wite!(message, for (key, value) in name_value_map.iter().sorted() { (key) "=" (value.to_string()) } separated {' '})
-    {
-        Ok(_) => message,
-        Err(err) => {
-            log!("Error " (err) " on format hist to message");
-            String::new()
-        },
-    }
+    name_value_map
+        .iter()
+        .sorted()
+        .map(|(key, value)| format!("{}={}", key, value))
+        .join(" ")
 }
 
 fn hist_at_quantiles(hist: Histogram<u64>, quantiles: &[Quantile]) -> HashMap<String, u64> {
@@ -453,24 +450,19 @@ fn hist_at_quantiles(hist: Histogram<u64>, quantiles: &[Quantile]) -> HashMap<St
 }
 
 fn hist_to_message(hist: &Histogram<u64>, quantiles: &[Quantile]) -> String {
-    let mut message = String::with_capacity(256);
-    let fmt_quantiles = quantiles.iter().map(|quantile| {
-        let key = quantile.label().to_string();
-        let val = hist.value_at_quantile(quantile.value());
-        format!("{}={}", key, val)
-    });
-
-    match wite!(message,
-                "count=" (hist.len())
-                if quantiles.is_empty() { "" } else { " " }
-                for q in fmt_quantiles { (q) } separated {' '}
-    ) {
-        Ok(_) => message,
-        Err(err) => {
-            log!("Error " (err) " on format hist to message");
-            String::new()
-        },
+    if quantiles.is_empty() {
+        return format!("count={}", hist.len());
     }
+
+    let fmt_quantiles = quantiles
+        .iter()
+        .map(|quantile| {
+            let key = quantile.label().to_string();
+            let val = hist.value_at_quantile(quantile.value());
+            format!("{}={}", key, val)
+        })
+        .join(" ");
+    format!("count={} {}", hist.len(), fmt_quantiles)
 }
 
 pub mod prometheus {
@@ -508,7 +500,7 @@ pub mod prometheus {
 
         let server = server.then(|r| {
             if let Err(err) = r {
-                log!((err));
+                error!("{}", err);
             };
             futures::future::ready(())
         });
@@ -523,9 +515,9 @@ pub mod prometheus {
         credentials: Option<PrometheusCredentials>,
     ) -> Result<Response<Body>, http::Error> {
         fn on_error(status: StatusCode, error: String) -> Result<Response<Body>, http::Error> {
-            log!((error));
+            error!("{}", error);
             Response::builder().status(status).body(Body::empty()).map_err(|err| {
-                log!((err));
+                error!("{}", err);
                 err
             })
         }
@@ -568,7 +560,7 @@ pub mod prometheus {
             .header(header::CONTENT_TYPE, "text/plain")
             .body(body)
             .map_err(|err| {
-                log!((err));
+                error!("{}", err);
                 err
             })
     }

@@ -3,7 +3,7 @@ use common::block_on;
 use mm2_test_helpers::for_tests::{mm_dump, MarketMakerIt};
 
 fn check_asks_num(mm: &MarketMakerIt, base: &str, rel: &str, expected: usize) {
-    log!({"Get {}/{} orderbook", base, rel});
+    log!("Get {}/{} orderbook", base, rel);
     let rc = block_on(mm.rpc(&json! ({
         "userpass": mm.userpass,
         "method": "orderbook",
@@ -13,7 +13,7 @@ fn check_asks_num(mm: &MarketMakerIt, base: &str, rel: &str, expected: usize) {
     .unwrap();
     assert!(rc.0.is_success(), "!orderbook: {}", rc.1);
     let orderbook: OrderbookResponse = json::from_str(&rc.1).unwrap();
-    log!("orderbook "[orderbook]);
+    log!("orderbook {:?}", orderbook);
     assert_eq!(
         orderbook.asks.len(),
         expected,
@@ -25,7 +25,7 @@ fn check_asks_num(mm: &MarketMakerIt, base: &str, rel: &str, expected: usize) {
 }
 
 fn check_bids_num(mm: &MarketMakerIt, base: &str, rel: &str, expected: usize) {
-    log!({"Get {}/{} orderbook", base, rel});
+    log!("Get {}/{} orderbook", base, rel);
     let rc = block_on(mm.rpc(&json! ({
         "userpass": mm.userpass,
         "method": "orderbook",
@@ -35,7 +35,7 @@ fn check_bids_num(mm: &MarketMakerIt, base: &str, rel: &str, expected: usize) {
     .unwrap();
     assert!(rc.0.is_success(), "!orderbook: {}", rc.1);
     let orderbook: OrderbookResponse = json::from_str(&rc.1).unwrap();
-    log!("orderbook "[orderbook]);
+    log!("orderbook {:?}", orderbook);
     assert_eq!(
         orderbook.bids.len(),
         expected,
@@ -47,7 +47,7 @@ fn check_bids_num(mm: &MarketMakerIt, base: &str, rel: &str, expected: usize) {
 }
 
 fn check_orderbook_depth(mm: &MarketMakerIt, pairs: &[(&str, &str)], expected: &[(usize, usize)]) {
-    log!({"Get {:?} orderbook depth", pairs});
+    log!("Get {:?} orderbook depth", pairs);
     let rc = block_on(mm.rpc(&json! ({
         "userpass": mm.userpass,
         "method": "orderbook_depth",
@@ -56,7 +56,7 @@ fn check_orderbook_depth(mm: &MarketMakerIt, pairs: &[(&str, &str)], expected: &
     .unwrap();
     assert!(rc.0.is_success(), "!orderbook_depth: {}", rc.1);
     let orderbook_depth: OrderbookDepthResponse = json::from_str(&rc.1).unwrap();
-    log!("orderbook depth "[orderbook_depth]);
+    log!("orderbook depth {:?}", orderbook_depth);
     for (pair, expected_depth) in pairs.iter().zip(expected) {
         let actual_depth = orderbook_depth
             .result
@@ -84,7 +84,7 @@ fn check_best_orders(
     ticker_in_response: &str,
     expected_num_orders: usize,
 ) {
-    log!({"Get best orders for {}", for_coin});
+    log!("Get best orders for {}", for_coin);
     let rc = block_on(mm.rpc(&json! ({
         "userpass": mm.userpass,
         "method": "best_orders",
@@ -145,10 +145,10 @@ fn test_ordermatch_custom_orderbook_ticker_both_on_maker() {
     .unwrap();
     let (_alice_dump_log, _alice_dump_dashboard) = mm_dump(&mm_alice.log_path);
 
-    log!([block_on(enable_native(&mm_bob, "MYCOIN-Custom", &[]))]);
-    log!([block_on(enable_native(&mm_bob, "MYCOIN1-Custom", &[]))]);
-    log!([block_on(enable_native(&mm_alice, "MYCOIN", &[]))]);
-    log!([block_on(enable_native(&mm_alice, "MYCOIN1", &[]))]);
+    log!("{:?}", block_on(enable_native(&mm_bob, "MYCOIN-Custom", &[])));
+    log!("{:?}", block_on(enable_native(&mm_bob, "MYCOIN1-Custom", &[])));
+    log!("{:?}", block_on(enable_native(&mm_alice, "MYCOIN", &[])));
+    log!("{:?}", block_on(enable_native(&mm_alice, "MYCOIN1", &[])));
     let rc = block_on(mm_bob.rpc(&json! ({
         "userpass": mm_bob.userpass,
         "method": "setprice",
@@ -270,10 +270,10 @@ fn test_ordermatch_custom_orderbook_ticker_both_on_taker() {
     .unwrap();
     let (_alice_dump_log, _alice_dump_dashboard) = mm_dump(&mm_alice.log_path);
 
-    log!([block_on(enable_native(&mm_bob, "MYCOIN", &[]))]);
-    log!([block_on(enable_native(&mm_bob, "MYCOIN1", &[]))]);
-    log!([block_on(enable_native(&mm_alice, "MYCOIN-Custom", &[]))]);
-    log!([block_on(enable_native(&mm_alice, "MYCOIN1-Custom", &[]))]);
+    log!("{:?}", block_on(enable_native(&mm_bob, "MYCOIN", &[])));
+    log!("{:?}", block_on(enable_native(&mm_bob, "MYCOIN1", &[])));
+    log!("{:?}", block_on(enable_native(&mm_alice, "MYCOIN-Custom", &[])));
+    log!("{:?}", block_on(enable_native(&mm_alice, "MYCOIN1-Custom", &[])));
     let rc = block_on(mm_bob.rpc(&json! ({
         "userpass": mm_bob.userpass,
         "method": "setprice",
@@ -393,10 +393,10 @@ fn test_ordermatch_custom_orderbook_ticker_mixed_case_one() {
     .unwrap();
     let (_alice_dump_log, _alice_dump_dashboard) = mm_dump(&mm_alice.log_path);
 
-    log!([block_on(enable_native(&mm_bob, "MYCOIN-Custom", &[]))]);
-    log!([block_on(enable_native(&mm_bob, "MYCOIN1", &[]))]);
-    log!([block_on(enable_native(&mm_alice, "MYCOIN", &[]))]);
-    log!([block_on(enable_native(&mm_alice, "MYCOIN1-Custom", &[]))]);
+    log!("{:?}", block_on(enable_native(&mm_bob, "MYCOIN-Custom", &[])));
+    log!("{:?}", block_on(enable_native(&mm_bob, "MYCOIN1", &[])));
+    log!("{:?}", block_on(enable_native(&mm_alice, "MYCOIN", &[])));
+    log!("{:?}", block_on(enable_native(&mm_alice, "MYCOIN1-Custom", &[])));
     let rc = block_on(mm_bob.rpc(&json! ({
         "userpass": mm_bob.userpass,
         "method": "setprice",
@@ -524,10 +524,10 @@ fn test_ordermatch_custom_orderbook_ticker_mixed_case_two() {
     .unwrap();
     let (_alice_dump_log, _alice_dump_dashboard) = mm_dump(&mm_alice.log_path);
 
-    log!([block_on(enable_native(&mm_bob, "MYCOIN", &[]))]);
-    log!([block_on(enable_native(&mm_bob, "MYCOIN1-Custom", &[]))]);
-    log!([block_on(enable_native(&mm_alice, "MYCOIN-Custom", &[]))]);
-    log!([block_on(enable_native(&mm_alice, "MYCOIN1", &[]))]);
+    log!("{:?}", block_on(enable_native(&mm_bob, "MYCOIN", &[])));
+    log!("{:?}", block_on(enable_native(&mm_bob, "MYCOIN1-Custom", &[])));
+    log!("{:?}", block_on(enable_native(&mm_alice, "MYCOIN-Custom", &[])));
+    log!("{:?}", block_on(enable_native(&mm_alice, "MYCOIN1", &[])));
     let rc = block_on(mm_bob.rpc(&json! ({
         "userpass": mm_bob.userpass,
         "method": "setprice",
@@ -646,8 +646,8 @@ fn test_zombie_order_after_balance_reduce_and_mm_restart() {
     let mm_maker = MarketMakerIt::start(conf.clone(), "pass".to_string(), None).unwrap();
     let (_dump_log, _dump_dashboard) = mm_dump(&mm_maker.log_path);
 
-    log!([block_on(enable_native(&mm_maker, "MYCOIN", &[]))]);
-    log!([block_on(enable_native(&mm_maker, "MYCOIN1", &[]))]);
+    log!("{:?}", block_on(enable_native(&mm_maker, "MYCOIN", &[])));
+    log!("{:?}", block_on(enable_native(&mm_maker, "MYCOIN1", &[])));
 
     let rc = block_on(mm_maker.rpc(&json! ({
         "userpass": mm_maker.userpass,
@@ -686,7 +686,7 @@ fn test_zombie_order_after_balance_reduce_and_mm_restart() {
 
     let new_expected_vol: BigDecimal = "499.99998".parse().unwrap();
 
-    thread::sleep(Duration::from_secs(12));
+    thread::sleep(Duration::from_secs(32));
 
     log!("Get MYCOIN/MYCOIN1 orderbook");
     let rc = block_on(mm_maker.rpc(&json! ({
@@ -699,7 +699,7 @@ fn test_zombie_order_after_balance_reduce_and_mm_restart() {
     assert!(rc.0.is_success(), "!orderbook: {}", rc.1);
 
     let orderbook: OrderbookResponse = json::from_str(&rc.1).unwrap();
-    log!("orderbook "[orderbook]);
+    log!("orderbook {:?}", orderbook);
     assert_eq!(
         orderbook.asks.len(),
         1,
@@ -739,15 +739,15 @@ fn test_zombie_order_after_balance_reduce_and_mm_restart() {
     assert!(rc.0.is_success(), "!orderbook: {}", rc.1);
 
     let orderbook: OrderbookResponse = json::from_str(&rc.1).unwrap();
-    log!("orderbook "[orderbook]);
+    log!("orderbook {:?}", orderbook);
     assert!(
         orderbook.asks.is_empty(),
         "MYCOIN/MYCOIN1 orderbook must have empty asks"
     );
 
     // activate coins to kickstart our order
-    log!([block_on(enable_native(&mm_maker_dup, "MYCOIN", &[]))]);
-    log!([block_on(enable_native(&mm_maker_dup, "MYCOIN1", &[]))]);
+    log!("{:?}", block_on(enable_native(&mm_maker_dup, "MYCOIN", &[])));
+    log!("{:?}", block_on(enable_native(&mm_maker_dup, "MYCOIN1", &[])));
 
     thread::sleep(Duration::from_secs(5));
 
@@ -762,7 +762,7 @@ fn test_zombie_order_after_balance_reduce_and_mm_restart() {
     assert!(rc.0.is_success(), "!orderbook: {}", rc.1);
 
     let orderbook: OrderbookResponse = json::from_str(&rc.1).unwrap();
-    log!("orderbook "[orderbook]);
+    log!("orderbook {:?}", orderbook);
     assert_eq!(
         orderbook.asks.len(),
         1,

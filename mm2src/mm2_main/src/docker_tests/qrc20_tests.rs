@@ -137,7 +137,7 @@ fn withdraw_and_send(mm: &MarketMakerIt, coin: &str, to: &str, amount: f64) {
         json::from_str(&withdraw.1).expect("Expected 'RpcSuccessResponse<TransactionDetails>'");
     let tx_details = res.result;
 
-    log!("Balance Change: "[tx_details.my_balance_change]);
+    log!("Balance Change: {:?}", tx_details.my_balance_change);
 
     assert_eq!(tx_details.to, vec![to.to_owned()]);
     assert!(BigDecimal::try_from(amount).unwrap() + tx_details.my_balance_change < 0.into());
@@ -189,7 +189,7 @@ fn test_taker_spends_maker_payment() {
         .unwrap();
     let payment_tx_hash = payment.tx_hash();
     let payment_tx_hex = payment.tx_hex();
-    log!("Maker payment: "[payment_tx_hash]);
+    log!("Maker payment: {:?}", payment_tx_hash);
 
     let confirmations = 1;
     let requires_nota = false;
@@ -226,7 +226,7 @@ fn test_taker_spends_maker_payment() {
         .unwrap();
     let spend_tx_hash = spend.tx_hash();
     let spend_tx_hex = spend.tx_hex();
-    log!("Taker spends tx: "[spend_tx_hash]);
+    log!("Taker spends tx: {:?}", spend_tx_hash);
 
     let wait_until = (now_ms() / 1000) + 40; // timeout if test takes more than 40 seconds to run
     taker_coin
@@ -281,7 +281,7 @@ fn test_maker_spends_taker_payment() {
         .unwrap();
     let payment_tx_hash = payment.tx_hash();
     let payment_tx_hex = payment.tx_hex();
-    log!("Taker payment: "[payment_tx_hash]);
+    log!("Taker payment: {:?}", payment_tx_hash);
 
     let confirmations = 1;
     let requires_nota = false;
@@ -318,7 +318,7 @@ fn test_maker_spends_taker_payment() {
         .unwrap();
     let spend_tx_hash = spend.tx_hash();
     let spend_tx_hex = spend.tx_hex();
-    log!("Maker spends tx: "[spend_tx_hash]);
+    log!("Maker spends tx: {:?}", spend_tx_hash);
 
     let wait_until = (now_ms() / 1000) + 40; // timeout if test takes more than 40 seconds to run
     maker_coin
@@ -362,7 +362,7 @@ fn test_maker_refunds_payment() {
         .unwrap();
     let payment_tx_hash = payment.tx_hash();
     let payment_tx_hex = payment.tx_hex();
-    log!("Maker payment: "[payment_tx_hash]);
+    log!("Maker payment: {:?}", payment_tx_hash);
 
     let confirmations = 1;
     let requires_nota = false;
@@ -388,7 +388,7 @@ fn test_maker_refunds_payment() {
         .unwrap();
     let refund_tx_hash = refund.tx_hash();
     let refund_tx_hex = refund.tx_hex();
-    log!("Maker refunds payment: "[refund_tx_hash]);
+    log!("Maker refunds payment: {:?}", refund_tx_hash);
 
     let wait_until = (now_ms() / 1000) + 40; // timeout if test takes more than 40 seconds to run
     coin.wait_for_confirmations(&refund_tx_hex, confirmations, requires_nota, wait_until, check_every)
@@ -423,7 +423,7 @@ fn test_taker_refunds_payment() {
         .unwrap();
     let payment_tx_hash = payment.tx_hash();
     let payment_tx_hex = payment.tx_hex();
-    log!("Taker payment: "[payment_tx_hash]);
+    log!("Taker payment: {:?}", payment_tx_hash);
 
     let confirmations = 1;
     let requires_nota = false;
@@ -449,7 +449,7 @@ fn test_taker_refunds_payment() {
         .unwrap();
     let refund_tx_hash = refund.tx_hash();
     let refund_tx_hex = refund.tx_hex();
-    log!("Taker refunds payment: "[refund_tx_hash]);
+    log!("Taker refunds payment: {:?}", refund_tx_hash);
 
     let wait_until = (now_ms() / 1000) + 40; // timeout if test takes more than 40 seconds to run
     coin.wait_for_confirmations(&refund_tx_hex, confirmations, requires_nota, wait_until, check_every)
@@ -481,7 +481,7 @@ fn test_check_if_my_payment_sent() {
         .unwrap();
     let payment_tx_hash = payment.tx_hash();
     let payment_tx_hex = payment.tx_hex();
-    log!("Maker payment: "[payment_tx_hash]);
+    log!("Maker payment: {:?}", payment_tx_hash);
 
     let confirmations = 2;
     let requires_nota = false;
@@ -532,7 +532,7 @@ fn test_search_for_swap_tx_spend_taker_spent() {
         .unwrap();
     let payment_tx_hash = payment.tx_hash();
     let payment_tx_hex = payment.tx_hex();
-    log!("Maker payment: "[payment_tx_hash]);
+    log!("Maker payment: {:?}", payment_tx_hash);
 
     let confirmations = 1;
     let requires_nota = false;
@@ -556,7 +556,7 @@ fn test_search_for_swap_tx_spend_taker_spent() {
         .unwrap();
     let spend_tx_hash = spend.tx_hash();
     let spend_tx_hex = spend.tx_hex();
-    log!("Taker spends tx: "[spend_tx_hash]);
+    log!("Taker spends tx: {:?}", spend_tx_hash);
 
     let wait_until = (now_ms() / 1000) + 40; // timeout if test takes more than 40 seconds to run
     taker_coin
@@ -602,7 +602,7 @@ fn test_search_for_swap_tx_spend_maker_refunded() {
         .unwrap();
     let payment_tx_hash = payment.tx_hash();
     let payment_tx_hex = payment.tx_hex();
-    log!("Maker payment: "[payment_tx_hash]);
+    log!("Maker payment: {:?}", payment_tx_hash);
 
     let confirmations = 1;
     let requires_nota = false;
@@ -626,7 +626,7 @@ fn test_search_for_swap_tx_spend_maker_refunded() {
         .unwrap();
     let refund_tx_hash = refund.tx_hash();
     let refund_tx_hex = refund.tx_hex();
-    log!("Maker refunds tx: "[refund_tx_hash]);
+    log!("Maker refunds tx: {:?}", refund_tx_hash);
 
     let wait_until = (now_ms() / 1000) + 40; // timeout if test takes more than 40 seconds to run
     maker_coin
@@ -672,7 +672,7 @@ fn test_search_for_swap_tx_spend_not_spent() {
         .unwrap();
     let payment_tx_hash = payment.tx_hash();
     let payment_tx_hex = payment.tx_hex();
-    log!("Maker payment: "[payment_tx_hash]);
+    log!("Maker payment: {:?}", payment_tx_hash);
 
     let confirmations = 1;
     let requires_nota = false;
@@ -723,7 +723,7 @@ fn test_wait_for_tx_spend() {
         .unwrap();
     let payment_tx_hash = payment.tx_hash();
     let payment_tx_hex = payment.tx_hex();
-    log!("Maker payment: "[payment_tx_hash]);
+    log!("Maker payment: {:?}", payment_tx_hash);
 
     let confirmations = 1;
     let requires_nota = false;
@@ -747,7 +747,7 @@ fn test_wait_for_tx_spend() {
         .expect_err("Expected 'Waited too long' error");
 
     let err = tx_err.get_plain_text_format();
-    log!("error: "[err]);
+    log!("error: {:?}", err);
     assert!(err.contains("Waited too long"));
 
     // also spends the maker payment and try to check if the wait_for_tx_spend() returns the correct tx
@@ -836,7 +836,7 @@ fn test_check_balance_on_order_post_base_coin_locked() {
     )
     .unwrap();
     let (_dump_log, _dump_dashboard) = mm_dump(&mm_bob.log_path);
-    log!({"Log path: {}", mm_bob.log_path.display()});
+    log!("Log path: {}", mm_bob.log_path.display());
     block_on(mm_bob.wait_for_log(22., |log| log.contains(">>>>>>>>> DEX stats "))).unwrap();
     block_on(enable_native(&mm_bob, "MYCOIN", &[]));
     block_on(enable_qrc20_native(&mm_bob, "QICK"));
@@ -851,7 +851,7 @@ fn test_check_balance_on_order_post_base_coin_locked() {
             "canbind": env::var ("BOB_TRADE_PORT") .ok().map(|s| s.parse::<i64>().unwrap()),
             "passphrase": format!("0x{}", hex::encode(alice_priv_key.as_ref())),
             "coins": coins,
-            "seednodes": [fomat!((mm_bob.ip))],
+            "seednodes": [mm_bob.ip.to_string()],
             "rpc_password": "pass",
         }),
         "pass".into(),
@@ -859,7 +859,7 @@ fn test_check_balance_on_order_post_base_coin_locked() {
     )
     .unwrap();
     let (_dump_log, _dump_dashboard) = mm_dump(&mm_alice.log_path);
-    log!({"Log path: {}", mm_alice.log_path.display()});
+    log!("Log path: {}", mm_alice.log_path.display());
     block_on(mm_alice.wait_for_log(22., |log| log.contains(">>>>>>>>> DEX stats "))).unwrap();
     block_on(enable_native(&mm_alice, "MYCOIN", &[]));
     block_on(enable_qrc20_native(&mm_alice, "QICK"));
@@ -937,8 +937,8 @@ fn test_get_max_taker_vol_and_trade_with_dynamic_trade_fee(coin: QtumCoin, priv_
     let (_alice_dump_log, _alice_dump_dashboard) = mm_dump(&mm.log_path);
     block_on(mm.wait_for_log(22., |log| log.contains(">>>>>>>>> DEX stats "))).unwrap();
 
-    log!([block_on(enable_native(&mm, "MYCOIN", &[]))]);
-    log!([block_on(enable_native(&mm, "QTUM", &[]))]);
+    log!("{:?}", block_on(enable_native(&mm, "MYCOIN", &[])));
+    log!("{:?}", block_on(enable_native(&mm, "QTUM", &[])));
 
     let qtum_balance = coin.my_spendable_balance().wait().expect("!my_balance");
     let qtum_dex_fee_threshold = MmNumber::from("0.000728");
@@ -1058,7 +1058,7 @@ fn test_max_taker_vol_dynamic_trade_fee() {
         qtum_balance = &qtum_balance + &amount;
         fill_address(&coin, &my_address, amount, 30);
     }
-    log!("QTUM balance "(qtum_balance)" = "(qtum_balance_steps));
+    log!("QTUM balance {} = {}", qtum_balance, qtum_balance_steps);
 
     test_get_max_taker_vol_and_trade_with_dynamic_trade_fee(coin, &priv_key);
 }
@@ -1118,8 +1118,8 @@ fn test_trade_preimage_not_sufficient_base_coin_balance_for_ticker() {
     let (_alice_dump_log, _alice_dump_dashboard) = mm_dump(&mm.log_path);
     block_on(mm.wait_for_log(22., |log| log.contains(">>>>>>>>> DEX stats "))).unwrap();
 
-    log!([block_on(enable_native(&mm, "MYCOIN", &[]))]);
-    log!([block_on(enable_native(&mm, "QICK", &[]))]);
+    log!("{:?}", block_on(enable_native(&mm, "MYCOIN", &[])));
+    log!("{:?}", block_on(enable_native(&mm, "QICK", &[])));
 
     // txfee > 0, amount = 0.005 => required = txfee + amount > 0.005,
     // but balance = 0.005
@@ -1177,8 +1177,8 @@ fn test_trade_preimage_dynamic_fee_not_sufficient_balance() {
     let (_alice_dump_log, _alice_dump_dashboard) = mm_dump(&mm.log_path);
     block_on(mm.wait_for_log(22., |log| log.contains(">>>>>>>>> DEX stats "))).unwrap();
 
-    log!([block_on(enable_native(&mm, "MYCOIN", &[]))]);
-    log!([block_on(enable_native(&mm, "QTUM", &[]))]);
+    log!("{:?}", block_on(enable_native(&mm, "MYCOIN", &[])));
+    log!("{:?}", block_on(enable_native(&mm, "QTUM", &[])));
 
     // txfee > 0, amount = 0.5 => required = txfee + amount > 0.5,
     // but balance = 0.5
@@ -1238,8 +1238,8 @@ fn test_trade_preimage_deduct_fee_from_output_failed() {
     let (_alice_dump_log, _alice_dump_dashboard) = mm_dump(&mm.log_path);
     block_on(mm.wait_for_log(22., |log| log.contains(">>>>>>>>> DEX stats "))).unwrap();
 
-    log!([block_on(enable_native(&mm, "MYCOIN", &[]))]);
-    log!([block_on(enable_native(&mm, "QTUM", &[]))]);
+    log!("{:?}", block_on(enable_native(&mm, "MYCOIN", &[])));
+    log!("{:?}", block_on(enable_native(&mm, "QTUM", &[])));
 
     let rc = block_on(mm.rpc(&json!({
         "userpass": mm.userpass,
@@ -1343,7 +1343,7 @@ fn test_withdraw_and_send_from_segwit() {
     let (_alice_dump_log, _alice_dump_dashboard) = mm_dump(&mm.log_path);
     block_on(mm.wait_for_log(22., |log| log.contains(">>>>>>>>> DEX stats "))).unwrap();
 
-    log!([block_on(enable_native(&mm, "QTUM", &[]))]);
+    log!("{:?}", block_on(enable_native(&mm, "QTUM", &[])));
 
     // Send from Segwit Address to Segwit Address
     withdraw_and_send(&mm, "QTUM", "qcrt1q6pwxl4na4a363mgmrw8tjyppdcwuyfmat836dd", 0.2);
@@ -1391,7 +1391,7 @@ fn test_withdraw_and_send_legacy_to_segwit() {
     let (_alice_dump_log, _alice_dump_dashboard) = mm_dump(&mm.log_path);
     block_on(mm.wait_for_log(22., |log| log.contains(">>>>>>>>> DEX stats "))).unwrap();
 
-    log!([block_on(enable_native(&mm, "QTUM", &[]))]);
+    log!("{:?}", block_on(enable_native(&mm, "QTUM", &[])));
 
     // Send from Legacy Address to Segwit Address
     withdraw_and_send(&mm, "QTUM", "qcrt1q6pwxl4na4a363mgmrw8tjyppdcwuyfmat836dd", 0.2);
@@ -1543,7 +1543,7 @@ fn segwit_address_in_the_orderbook() {
 
     fill_address(&coin, &segwit_addr, 1000.into(), 30);
 
-    log!([block_on(enable_native(&mm, "MYCOIN", &[]))]);
+    log!("{:?}", block_on(enable_native(&mm, "MYCOIN", &[])));
 
     let rc = block_on(mm.rpc(&json! ({
         "userpass": mm.userpass,

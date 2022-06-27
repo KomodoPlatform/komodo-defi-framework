@@ -69,7 +69,7 @@ where
     CORE.0.spawn(async move {
         let res = f.await;
         if sx.send(res).is_err() {
-            log!("drive03 receiver is dropped");
+            crate::log::debug!("drive03 receiver is dropped");
         };
     });
     rx

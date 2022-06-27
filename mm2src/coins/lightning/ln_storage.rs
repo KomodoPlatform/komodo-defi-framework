@@ -84,7 +84,8 @@ pub struct SqlChannelDetails {
     pub is_public: bool,
     pub is_closed: bool,
     pub created_at: u64,
-    pub last_updated: u64,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub closed_at: Option<u64>,
 }
 
 impl SqlChannelDetails {
@@ -111,7 +112,7 @@ impl SqlChannelDetails {
             is_public,
             is_closed: false,
             created_at: now_ms() / 1000,
-            last_updated: now_ms() / 1000,
+            closed_at: None,
         }
     }
 }
@@ -241,7 +242,12 @@ pub trait DbStorage {
     async fn update_funding_tx_block_height(&self, funding_tx: String, block_height: u64) -> Result<(), Self::Error>;
 
     /// Updates the is_closed value for a channel in the DB to 1.
-    async fn update_channel_to_closed(&self, rpc_id: u64, closure_reason: String) -> Result<(), Self::Error>;
+    async fn update_channel_to_closed(
+        &self,
+        rpc_id: u64,
+        closure_reason: String,
+        close_at: u64,
+    ) -> Result<(), Self::Error>;
 
     /// Gets the list of closed channels records in the DB with no closing tx hashs saved yet. Can be used to check if
     /// the closing tx hash needs to be fetched from the chain and saved to DB when initializing the persister.
@@ -314,7 +320,7 @@ fn create_channels_history_table_sql(for_coin: &str) -> Result<String, SqlError>
             is_public INTEGER NOT NULL,
             is_closed INTEGER NOT NULL,
             created_at INTEGER NOT NULL,
-            last_updated INTEGER NOT NULL
+            closed_at INTEGER
         );",
         table_name
     );
@@ -359,10 +365,9 @@ fn insert_channel_sql(for_coin: &str) -> Result<String, SqlError> {
             is_outbound,
             is_public,
             is_closed,
-            created_at,
-            last_updated
+            created_at
         ) VALUES (
-            ?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8
+            ?1, ?2, ?3, ?4, ?5, ?6, ?7
         );",
         table_name
     );
@@ -416,7 +421,7 @@ fn select_channel_by_rpc_id_sql(for_coin: &str) -> Result<String, SqlError> {
             is_public,
             is_closed,
             created_at,
-            last_updated
+            closed_at
         FROM
             {}
         WHERE
@@ -470,7 +475,7 @@ fn channel_details_from_row(row: &Row<'_>) -> Result<SqlChannelDetails, SqlError
         is_public: row.get(11)?,
         is_closed: row.get(12)?,
         created_at: row.get::<_, u32>(13)? as u64,
-        last_updated: row.get::<_, u32>(14)? as u64,
+        closed_at: row.get::<_, Option<u32>>(14)?.map(|t| t as u64),
     };
     Ok(channel_details)
 }
@@ -517,10 +522,9 @@ fn update_funding_tx_sql(for_coin: &str) -> Result<String, SqlError> {
         "UPDATE {} SET
             funding_tx = ?1,
             funding_value = ?2,
-            funding_generated_in_block = ?3,
-            last_updated = ?4
+            funding_generated_in_block = ?3
         WHERE
-            rpc_id = ?5;",
+            rpc_id = ?4;",
         table_name
     );
 
@@ -544,7 +548,7 @@ fn update_channel_to_closed_sql(for_coin: &str) -> Result<String, SqlError> {
     validate_table_name(&table_name)?;
 
     let sql = format!(
-        "UPDATE {} SET closure_reason = ?1, is_closed = ?2, last_updated = ?3 WHERE rpc_id = ?4;",
+        "UPDATE {} SET closure_reason = ?1, is_closed = ?2, closed_at = ?3 WHERE rpc_id = ?4;",
         table_name
     );
 
@@ -555,10 +559,7 @@ fn update_closing_tx_sql(for_coin: &str) -> Result<String, SqlError> {
     let table_name = channels_history_table(for_coin);
     validate_table_name(&table_name)?;
 
-    let sql = format!(
-        "UPDATE {} SET closing_tx = ?1, last_updated = ?2 WHERE rpc_id = ?3;",
-        table_name
-    );
+    let sql = format!("UPDATE {} SET closing_tx = ?1 WHERE rpc_id = ?2;", table_name);
 
     Ok(sql)
 }
@@ -588,13 +589,13 @@ fn add_fields_to_get_channels_sql_builder(sql_builder: &mut SqlBuilder) {
         .field("is_public")
         .field("is_closed")
         .field("created_at")
-        .field("last_updated");
+        .field("closed_at");
 }
 
 fn finalize_get_channels_sql_builder(sql_builder: &mut SqlBuilder, offset: usize, limit: usize) {
     sql_builder.offset(offset);
     sql_builder.limit(limit);
-    sql_builder.order_desc("last_updated");
+    sql_builder.order_desc("closed_at");
 }
 
 fn apply_get_channels_filter(builder: &mut SqlBuilder, params: &mut Vec<(&str, String)>, filter: ClosedChannelsFilter) {
@@ -753,7 +754,7 @@ fn update_claiming_tx_sql(for_coin: &str) -> Result<String, SqlError> {
     validate_table_name(&table_name)?;
 
     let sql = format!(
-        "UPDATE {} SET claiming_tx = ?1, claimed_balance = ?2, last_updated = ?3 WHERE closing_tx = ?4;",
+        "UPDATE {} SET claiming_tx = ?1, claimed_balance = ?2 WHERE closing_tx = ?3;",
         table_name
     );
 
@@ -1135,7 +1136,6 @@ impl DbStorage for LightningPersister {
         let is_public = (details.is_public as i32).to_string();
         let is_closed = (details.is_closed as i32).to_string();
         let created_at = (details.created_at as u32).to_string();
-        let last_updated = (details.last_updated as u32).to_string();
 
         let params = [
             rpc_id,
@@ -1145,7 +1145,6 @@ impl DbStorage for LightningPersister {
             is_public,
             is_closed,
             created_at,
-            last_updated,
         ];
 
         let sqlite_connection = self.sqlite_connection.clone();
@@ -1169,16 +1168,9 @@ impl DbStorage for LightningPersister {
         let for_coin = self.storage_ticker.clone();
         let funding_value = funding_value.to_string();
         let funding_generated_in_block = funding_generated_in_block.to_string();
-        let last_updated = (now_ms() / 1000).to_string();
         let rpc_id = rpc_id.to_string();
 
-        let params = [
-            funding_tx,
-            funding_value,
-            funding_generated_in_block,
-            last_updated,
-            rpc_id,
-        ];
+        let params = [funding_tx, funding_value, funding_generated_in_block, rpc_id];
 
         let sqlite_connection = self.sqlite_connection.clone();
         async_blocking(move || {
@@ -1207,13 +1199,17 @@ impl DbStorage for LightningPersister {
         .await
     }
 
-    async fn update_channel_to_closed(&self, rpc_id: u64, closure_reason: String) -> Result<(), Self::Error> {
+    async fn update_channel_to_closed(
+        &self,
+        rpc_id: u64,
+        closure_reason: String,
+        closed_at: u64,
+    ) -> Result<(), Self::Error> {
         let for_coin = self.storage_ticker.clone();
         let is_closed = "1".to_string();
-        let last_updated = (now_ms() / 1000).to_string();
         let rpc_id = rpc_id.to_string();
 
-        let params = [closure_reason, is_closed, last_updated, rpc_id];
+        let params = [closure_reason, is_closed, closed_at.to_string(), rpc_id];
 
         let sqlite_connection = self.sqlite_connection.clone();
         async_blocking(move || {
@@ -1247,10 +1243,9 @@ impl DbStorage for LightningPersister {
 
     async fn add_closing_tx_to_db(&self, rpc_id: u64, closing_tx: String) -> Result<(), Self::Error> {
         let for_coin = self.storage_ticker.clone();
-        let last_updated = (now_ms() / 1000).to_string();
         let rpc_id = rpc_id.to_string();
 
-        let params = [closing_tx, last_updated, rpc_id];
+        let params = [closing_tx, rpc_id];
 
         let sqlite_connection = self.sqlite_connection.clone();
         async_blocking(move || {
@@ -1271,9 +1266,8 @@ impl DbStorage for LightningPersister {
     ) -> Result<(), Self::Error> {
         let for_coin = self.storage_ticker.clone();
         let claimed_balance = claimed_balance.to_string();
-        let last_updated = (now_ms() / 1000).to_string();
 
-        let params = [claiming_tx, claimed_balance, last_updated, closing_tx];
+        let params = [claiming_tx, claimed_balance, closing_tx];
 
         let sqlite_connection = self.sqlite_connection.clone();
         async_blocking(move || {
@@ -1320,14 +1314,8 @@ impl DbStorage for LightningPersister {
                 PagingOptionsEnum::PageNumber(page) => (page.get() - 1) * limit,
                 PagingOptionsEnum::FromId(rpc_id) => {
                     let params = [rpc_id as u32];
-                    let maybe_offset = offset_by_id(
-                        &conn,
-                        &sql_builder,
-                        params,
-                        "rpc_id",
-                        "last_updated DESC",
-                        "rpc_id = ?1",
-                    )?;
+                    let maybe_offset =
+                        offset_by_id(&conn, &sql_builder, params, "rpc_id", "closed_at DESC", "rpc_id = ?1")?;
                     match maybe_offset {
                         Some(offset) => offset,
                         None => {
@@ -1491,21 +1479,9 @@ mod tests {
     use rand::distributions::Alphanumeric;
     use rand::{Rng, RngCore};
     use secp256k1::{Secp256k1, SecretKey};
-    use std::fs;
     use std::num::NonZeroUsize;
     use std::path::PathBuf;
     use std::sync::{Arc, Mutex};
-
-    impl Drop for LightningPersister {
-        fn drop(&mut self) {
-            // We test for invalid directory names, so it's OK if directory removal
-            // fails.
-            match fs::remove_dir_all(&self.main_path) {
-                Err(e) => println!("Failed to remove test persister directory: {}", e),
-                _ => {},
-            }
-        }
-    }
 
     fn generate_random_channels(num: u64) -> Vec<SqlChannelDetails> {
         let mut rng = rand::thread_rng();
@@ -1552,7 +1528,7 @@ mod tests {
                 is_public: rand::random(),
                 is_closed: rand::random(),
                 created_at: rng.gen::<u32>() as u64,
-                last_updated: rng.gen::<u32>() as u64,
+                closed_at: Some(rng.gen::<u32>() as u64),
             };
             channels.push(details);
         }
@@ -1693,9 +1669,12 @@ mod tests {
         let actual_channel_details = block_on(persister.get_channel_from_db(2)).unwrap().unwrap();
         assert_eq!(expected_channel_details, actual_channel_details);
 
-        block_on(persister.update_channel_to_closed(2, "the channel was cooperatively closed".into())).unwrap();
+        let current_time = now_ms() / 1000;
+        block_on(persister.update_channel_to_closed(2, "the channel was cooperatively closed".into(), current_time))
+            .unwrap();
         expected_channel_details.closure_reason = Some("the channel was cooperatively closed".into());
         expected_channel_details.is_closed = true;
+        expected_channel_details.closed_at = Some(current_time);
 
         let actual_channel_details = block_on(persister.get_channel_from_db(2)).unwrap().unwrap();
         assert_eq!(expected_channel_details, actual_channel_details);
@@ -1708,7 +1687,8 @@ mod tests {
         assert_eq!(closed_channels.channels.len(), 1);
         assert_eq!(expected_channel_details, closed_channels.channels[0]);
 
-        block_on(persister.update_channel_to_closed(1, "the channel was cooperatively closed".into())).unwrap();
+        block_on(persister.update_channel_to_closed(1, "the channel was cooperatively closed".into(), now_ms() / 1000))
+            .unwrap();
         let closed_channels =
             block_on(persister.get_closed_channels_by_filter(None, PagingOptionsEnum::default(), 10)).unwrap();
         assert_eq!(closed_channels.channels.len(), 2);
@@ -1924,9 +1904,9 @@ mod tests {
 
         block_on(persister.init_db()).unwrap();
 
-        let mut channels = generate_random_channels(100);
+        let channels = generate_random_channels(100);
 
-        for channel in channels.clone() {
+        for channel in channels {
             block_on(persister.add_channel_to_db(channel.clone())).unwrap();
             block_on(persister.add_funding_tx_to_db(
                 channel.rpc_id,
@@ -1935,7 +1915,8 @@ mod tests {
                 channel.funding_generated_in_block.unwrap(),
             ))
             .unwrap();
-            block_on(persister.update_channel_to_closed(channel.rpc_id, channel.closure_reason.unwrap())).unwrap();
+            block_on(persister.update_channel_to_closed(channel.rpc_id, channel.closure_reason.unwrap(), 1655806080))
+                .unwrap();
             block_on(persister.add_closing_tx_to_db(channel.rpc_id, channel.closing_tx.clone().unwrap())).unwrap();
             block_on(persister.add_claiming_tx_to_db(
                 channel.closing_tx.unwrap(),
@@ -1946,7 +1927,7 @@ mod tests {
         }
 
         // get all channels from SQL since updated_at changed from channels generated by generate_random_channels
-        channels = block_on(persister.get_closed_channels_by_filter(None, PagingOptionsEnum::default(), 100))
+        let channels = block_on(persister.get_closed_channels_by_filter(None, PagingOptionsEnum::default(), 100))
             .unwrap()
             .channels;
         assert_eq!(100, channels.len());
@@ -1981,14 +1962,11 @@ mod tests {
 
         let result = block_on(persister.get_closed_channels_by_filter(None, paging, limit)).unwrap();
 
-        channels.sort_by(|a, b| a.rpc_id.cmp(&b.rpc_id));
-
-        let expected_channels = &channels[20..23].to_vec();
-        let actual_channels = &result.channels;
+        let expected_channels = channels[20..23].to_vec();
+        let actual_channels = result.channels;
 
         assert_eq!(expected_channels, actual_channels);
 
-        channels.sort_by(|a, b| b.last_updated.cmp(&a.last_updated));
         let mut filter = ClosedChannelsFilter {
             channel_id: None,
             counterparty_node_id: None,

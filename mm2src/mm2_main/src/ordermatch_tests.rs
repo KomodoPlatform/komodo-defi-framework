@@ -5,7 +5,7 @@ use coins::{MmCoin, TestCoin};
 use common::{block_on, executor::spawn};
 use crypto::privkey::key_pair_from_seed;
 use db_common::sqlite::rusqlite::Connection;
-use futures::{channel::mpsc, lock::Mutex as AsyncMutex, StreamExt};
+use futures::{channel::mpsc, StreamExt};
 use mm2_core::mm_ctx::{MmArc, MmCtx, MmCtxBuilder};
 use mm2_libp2p::atomicdex_behaviour::AdexBehaviourCmd;
 use mm2_libp2p::{decode_message, PeerId};
@@ -940,12 +940,12 @@ fn prepare_for_cancel_by(ctx: &MmArc) -> mpsc::Receiver<AdexBehaviourCmd> {
     p2p_ctx.store_to_mm_arc(ctx);
 
     let ordermatch_ctx = OrdermatchContext::from_ctx(ctx).unwrap();
-    let mut maker_orders = ordermatch_ctx.my_maker_orders.lock();
+    let mut maker_orders_ctx = ordermatch_ctx.maker_orders_ctx.lock();
     let mut taker_orders = block_on(ordermatch_ctx.my_taker_orders.lock());
 
-    maker_orders.insert(
-        Uuid::from_bytes([0; 16]),
-        Arc::new(AsyncMutex::new(MakerOrder {
+    maker_orders_ctx.add_order(
+        ctx.weak(),
+        MakerOrder {
             uuid: Uuid::from_bytes([0; 16]),
             base: "RICK".into(),
             rel: "MORTY".into(),
@@ -962,11 +962,12 @@ fn prepare_for_cancel_by(ctx: &MmArc) -> mpsc::Receiver<AdexBehaviourCmd> {
             base_orderbook_ticker: None,
             rel_orderbook_ticker: None,
             p2p_privkey: None,
-        })),
+        },
+        None,
     );
-    maker_orders.insert(
-        Uuid::from_bytes([1; 16]),
-        Arc::new(AsyncMutex::new(MakerOrder {
+    maker_orders_ctx.add_order(
+        ctx.weak(),
+        MakerOrder {
             uuid: Uuid::from_bytes([1; 16]),
             base: "MORTY".into(),
             rel: "RICK".into(),
@@ -983,11 +984,12 @@ fn prepare_for_cancel_by(ctx: &MmArc) -> mpsc::Receiver<AdexBehaviourCmd> {
             base_orderbook_ticker: None,
             rel_orderbook_ticker: None,
             p2p_privkey: None,
-        })),
+        },
+        None,
     );
-    maker_orders.insert(
-        Uuid::from_bytes([2; 16]),
-        Arc::new(AsyncMutex::new(MakerOrder {
+    maker_orders_ctx.add_order(
+        ctx.weak(),
+        MakerOrder {
             uuid: Uuid::from_bytes([2; 16]),
             base: "MORTY".into(),
             rel: "ETH".into(),
@@ -1004,7 +1006,8 @@ fn prepare_for_cancel_by(ctx: &MmArc) -> mpsc::Receiver<AdexBehaviourCmd> {
             base_orderbook_ticker: None,
             rel_orderbook_ticker: None,
             p2p_privkey: None,
-        })),
+        },
+        None,
     );
     taker_orders.insert(Uuid::from_bytes([3; 16]), TakerOrder {
         matches: HashMap::new(),
@@ -1209,9 +1212,9 @@ fn lp_connect_start_bob_should_not_be_invoked_if_order_match_already_connected()
         .into_mm_arc();
     let ordermatch_ctx = OrdermatchContext::from_ctx(&ctx).unwrap();
     ordermatch_ctx
-        .my_maker_orders
+        .maker_orders_ctx
         .lock()
-        .insert(maker_order.uuid, Arc::new(AsyncMutex::new(maker_order)));
+        .add_order(ctx.weak(), maker_order, None);
 
     static mut CONNECT_START_CALLED: bool = false;
     lp_connect_start_bob.mock_safe(|_, _, _| {
@@ -1237,14 +1240,14 @@ fn should_process_request_only_once() {
         .into_mm_arc();
     let ordermatch_ctx = OrdermatchContext::from_ctx(&ctx).unwrap();
     ordermatch_ctx
-        .my_maker_orders
+        .maker_orders_ctx
         .lock()
-        .insert(maker_order.uuid, Arc::new(AsyncMutex::new(maker_order)));
+        .add_order(ctx.weak(), maker_order, None);
     let request: TakerRequest = json::from_str(
         r#"{"base":"ETH","rel":"JST","base_amount":"0.1","base_amount_rat":[[1,[1]],[1,[10]]],"rel_amount":"0.2","rel_amount_rat":[[1,[1]],[1,[5]]],"action":"Buy","uuid":"2f9afe84-7a89-4194-8947-45fba563118f","method":"request","sender_pubkey":"031d4256c4bc9f99ac88bf3dba21773132281f65f9bf23a59928bce08961e2f3","dest_pub_key":"0000000000000000000000000000000000000000000000000000000000000000","match_by":{"type":"Any"}}"#,
     ).unwrap();
     block_on(process_taker_request(ctx, Default::default(), request));
-    let maker_orders = ordermatch_ctx.my_maker_orders.lock();
+    let maker_orders = &ordermatch_ctx.maker_orders_ctx.lock().orders;
     let order = block_on(maker_orders.get(&uuid).unwrap().lock());
     // when new request is processed match is replaced with new instance resetting
     // connect and connected to None so by checking is_some we check that request message is ignored
@@ -1742,7 +1745,7 @@ fn test_process_get_orderbook_request() {
             })
             .collect();
         actual.sort_unstable_by(|x, y| x.uuid.cmp(&y.uuid));
-        log!([pubkey]"-"[actual.len()]);
+        log!("{:?}-{:?}", pubkey, actual.len());
         assert_eq!(actual, *expected);
     }
 }
@@ -1776,7 +1779,7 @@ fn test_process_get_orderbook_request_limit() {
         .err()
         .expect("Expected an error");
 
-    log!("error: "(err));
+    log!("error: {}", err);
     assert!(err.contains("Orderbook too large"));
 }
 
@@ -2541,7 +2544,7 @@ fn test_process_sync_pubkey_orderbook_state_points_to_not_uptodate_trie_root() {
         let ordermatch_ctx = OrdermatchContext::from_ctx(&ctx).unwrap();
         let mut orderbook = ordermatch_ctx.orderbook.lock();
 
-        log!([pubkey]", found "[orderbook.pubkeys_state.keys()]);
+        log!("{:?}, found {:?}", pubkey, orderbook.pubkeys_state.keys());
         let old_root = *orderbook
             .pubkeys_state
             .get_mut(&pubkey)
@@ -3173,4 +3176,102 @@ fn check_sync_pubkey_state_p2p_res_serde() {
 fn check_order_serde() {
     let order_json = include_str!("for_tests/check_order_serde_payload.json");
     let _order: Order = json::from_str(order_json).unwrap();
+}
+
+#[test]
+fn test_maker_order_balance_loops() {
+    let ctx = MmCtxBuilder::default()
+        .with_secp256k1_key_pair(key_pair_from_seed("123").unwrap())
+        .into_mm_arc();
+
+    let ordermatch_ctx = OrdermatchContext::from_ctx(&ctx).unwrap();
+    let mut maker_orders_ctx = ordermatch_ctx.maker_orders_ctx.lock();
+
+    let rick_ticker = "RICK";
+    let morty_ticker = "MORTY";
+
+    let rick_order = MakerOrder {
+        uuid: Uuid::from_bytes([0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0]),
+        base: rick_ticker.into(),
+        rel: morty_ticker.into(),
+        created_at: now_ms(),
+        updated_at: Some(now_ms()),
+        matches: HashMap::new(),
+        max_base_vol: 0.into(),
+        min_base_vol: 0.into(),
+        price: 0.into(),
+        started_swaps: vec![],
+        conf_settings: None,
+        changes_history: None,
+        save_in_history: false,
+        base_orderbook_ticker: None,
+        rel_orderbook_ticker: None,
+        p2p_privkey: None,
+    };
+
+    let morty_order = MakerOrder {
+        uuid: Uuid::from_bytes([0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1]),
+        base: morty_ticker.into(),
+        rel: rick_ticker.into(),
+        created_at: now_ms(),
+        updated_at: Some(now_ms()),
+        matches: HashMap::new(),
+        max_base_vol: 0.into(),
+        min_base_vol: 0.into(),
+        price: 0.into(),
+        started_swaps: vec![],
+        conf_settings: None,
+        changes_history: None,
+        save_in_history: false,
+        base_orderbook_ticker: None,
+        rel_orderbook_ticker: None,
+        p2p_privkey: None,
+    };
+
+    assert!(!maker_orders_ctx.balance_loop_exists(rick_ticker));
+    assert!(!maker_orders_ctx.balance_loop_exists(morty_ticker));
+    assert_eq!(maker_orders_ctx.count_by_tickers.get(rick_ticker), None);
+    assert_eq!(maker_orders_ctx.count_by_tickers.get(morty_ticker), None);
+
+    maker_orders_ctx.add_order(ctx.weak(), rick_order.clone(), None);
+    assert!(maker_orders_ctx.balance_loop_exists(rick_ticker));
+    assert_eq!(*maker_orders_ctx.count_by_tickers.get(rick_ticker).unwrap(), 1);
+
+    maker_orders_ctx.add_order(ctx.weak(), morty_order.clone(), None);
+    assert!(maker_orders_ctx.balance_loop_exists(morty_ticker));
+    assert_eq!(*maker_orders_ctx.count_by_tickers.get(morty_ticker).unwrap(), 1);
+
+    let rick_order_2 = MakerOrder {
+        uuid: Uuid::from_bytes([0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 2]),
+        base: rick_ticker.into(),
+        rel: "MORTY2".into(),
+        created_at: now_ms(),
+        updated_at: Some(now_ms()),
+        matches: HashMap::new(),
+        max_base_vol: 0.into(),
+        min_base_vol: 0.into(),
+        price: 0.into(),
+        started_swaps: vec![],
+        conf_settings: None,
+        changes_history: None,
+        save_in_history: false,
+        base_orderbook_ticker: None,
+        rel_orderbook_ticker: None,
+        p2p_privkey: None,
+    };
+
+    maker_orders_ctx.add_order(ctx.weak(), rick_order_2.clone(), None);
+    assert_eq!(*maker_orders_ctx.count_by_tickers.get(rick_ticker).unwrap(), 2);
+
+    maker_orders_ctx.remove_order(&rick_order_2.uuid);
+    assert!(maker_orders_ctx.balance_loop_exists(rick_ticker));
+    assert_eq!(*maker_orders_ctx.count_by_tickers.get(rick_ticker).unwrap(), 1);
+
+    maker_orders_ctx.remove_order(&rick_order.uuid);
+    assert!(!maker_orders_ctx.balance_loop_exists(rick_ticker));
+    assert_eq!(*maker_orders_ctx.count_by_tickers.get(rick_ticker).unwrap(), 0);
+
+    maker_orders_ctx.remove_order(&morty_order.uuid);
+    assert!(!maker_orders_ctx.balance_loop_exists(morty_ticker));
+    assert_eq!(*maker_orders_ctx.count_by_tickers.get(morty_ticker).unwrap(), 0);
 }

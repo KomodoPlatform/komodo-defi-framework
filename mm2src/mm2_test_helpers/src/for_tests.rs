@@ -1,7 +1,6 @@
 //! Helpers used in the unit and integration tests.
 
 use bigdecimal::BigDecimal;
-use fomat_macros::wite;
 use gstuff::{try_s, ERR, ERRL};
 use http::{HeaderMap, StatusCode};
 use lazy_static::lazy_static;
@@ -267,7 +266,7 @@ impl Drop for RaiiDump {
             )
             .expect("Printing to stdout failed");
         } else {
-            log! ({"vvv {:?} vvv\n{}", self.log_path, log});
+            log!("vvv {:?} vvv\n{}", self.log_path, log);
         }
     }
 }
@@ -439,7 +438,7 @@ impl MarketMakerIt {
             let mut rng = common::small_rng();
             let new_p2p_port: u64 = rng.gen();
 
-            log!("Set 'p2p_in_memory_port' to "[new_p2p_port]);
+            log!("Set 'p2p_in_memory_port' to {:?}", new_p2p_port);
             conf["p2p_in_memory_port"] = Json::Number(new_p2p_port.into());
         }
 
@@ -545,7 +544,7 @@ impl MarketMakerIt {
     #[cfg(not(target_arch = "wasm32"))]
     pub async fn rpc(&self, payload: &Json) -> Result<(StatusCode, String, HeaderMap), String> {
         let uri = format!("http://{}:7783", self.ip);
-        log!("sending rpc request " (json::to_string(payload).unwrap()) " to " (uri));
+        log!("sending rpc request {} to {}", json::to_string(payload).unwrap(), uri);
 
         let payload = try_s!(json::to_vec(payload));
         let request = try_s!(Request::builder().method("POST").uri(uri).body(payload));
@@ -597,7 +596,7 @@ impl MarketMakerIt {
                 // Downgrade the known errors into log warnings,
                 // in order not to spam the unit test logs with confusing panics, obscuring the real issue.
                 if err.contains("An existing connection was forcibly closed by the remote host") {
-                    log!("stop] MM already down? "(err));
+                    log!("stop] MM already down? {}", err);
                     return Ok(());
                 } else {
                     return ERR!("{}", err);
@@ -692,7 +691,7 @@ impl MarketMakerIt {
         let ip: IpAddr = try_s!(try_s!(conf["myipaddr"].as_str().ok_or("myipaddr is not a string")).parse());
         let mut mm_ips = try_s!(MM_IPS.lock());
         if mm_ips.contains_key(&ip) {
-            log! ({"MarketMakerIt] Warning, IP {} was already used.", ip})
+            log!("MarketMakerIt] Warning, IP {} was already used.", ip)
         }
         mm_ips.insert(ip, true);
         Ok(ip)
@@ -708,16 +707,6 @@ impl Drop for MarketMakerIt {
             log!("MarketMakerIt] Can't lock MM_IPS.")
         }
     }
-}
-
-#[macro_export]
-macro_rules! wait_log_re {
-    ($mm_it: expr, $timeout_sec: expr, $re_pred: expr) => {{
-        log! ("Waiting for “" ($re_pred) "”…");
-        let re = regex::Regex::new($re_pred).unwrap();
-        let rc = $mm_it.wait_for_log ($timeout_sec, |line| re.is_match (line)) .await;
-        if let Err (err) = rc {panic! ("{}: {}", $re_pred, err)}
-    }};
 }
 
 /// Busy-wait on the log until the `pred` returns `true` or `timeout_sec` expires.
@@ -1323,7 +1312,7 @@ pub async fn wait_till_history_has_records(mm: &MarketMakerIt, coin: &str, expec
             tx_history.0,
             tx_history.1
         );
-        log!([tx_history.1]);
+        log!("{:?}", tx_history.1);
         let tx_history_json: Json = json::from_str(&tx_history.1).unwrap();
         if tx_history_json["result"]["transactions"].as_array().unwrap().len() >= expected_len {
             break;

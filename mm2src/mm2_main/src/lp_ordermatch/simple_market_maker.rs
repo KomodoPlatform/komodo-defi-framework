@@ -626,7 +626,7 @@ async fn process_bot_logic(ctx: &MmArc) {
 
     let mut memoization_pair_registry: HashSet<String> = HashSet::new();
     let ordermatch_ctx = OrdermatchContext::from_ctx(ctx).unwrap();
-    let maker_orders = ordermatch_ctx.my_maker_orders.lock().clone();
+    let maker_orders = ordermatch_ctx.maker_orders_ctx.lock().orders.clone();
     let mut futures_order_update = Vec::with_capacity(0);
     // Iterating over maker orders and update order that are present in cfg as the key_trade_pair e.g KMD/LTC
     for (uuid, order_mutex) in maker_orders.into_iter() {

@@ -102,7 +102,7 @@ fn trade_rick_zombie_light() {
     let mut mm_bob = MarketMakerIt::start(bob_conf.conf, bob_conf.rpc_password, bob_conf.local).unwrap();
 
     let (_bob_dump_log, _bob_dump_dashboard) = mm_bob.mm_dump();
-    log!({"Bob log path: {}", mm_bob.log_path.display()});
+    log!("Bob log path: {}", mm_bob.log_path.display());
 
     let zombie_activation = block_on(enable_z_coin_light(
         &mm_bob,
@@ -135,7 +135,7 @@ fn trade_rick_zombie_light() {
     thread::sleep(Duration::from_secs(1));
 
     let (_alice_dump_log, _alice_dump_dashboard) = mm_alice.mm_dump();
-    log!({"Alice log path: {}", mm_alice.log_path.display()});
+    log!("Alice log path: {}", mm_alice.log_path.display());
 
     let zombie_activation = block_on(enable_z_coin_light(
         &mm_alice,

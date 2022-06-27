@@ -203,11 +203,7 @@ async fn send_request(
 
         return single_response(body, &uri.to_string());
     }
-    Err(ErrorKind::Transport(fomat!(
-        "request " [request] " failed: "
-        for err in errors {(err)} sep {"; "}
-    ))
-    .into())
+    Err(request_failed_error(&request, &errors))
 }
 
 #[cfg(target_arch = "wasm32")]
@@ -229,11 +225,7 @@ async fn send_request(
         }
     }
 
-    Err(ErrorKind::Transport(fomat!(
-        "request " [request] " failed: "
-        for err in transport_errors {(err)} sep {"; "}
-    ))
-    .into())
+    Err(request_failed_error(&request, &transport_errors))
 }
 
 #[cfg(target_arch = "wasm32")]
@@ -282,4 +274,10 @@ async fn send_request_once(
             "Expected single, got batch.".to_owned(),
         ))),
     }
+}
+
+fn request_failed_error(request: &Call, errors: &[String]) -> Error {
+    let errors = errors.join("; ");
+    let error = format!("request {:?} failed: {}", request, errors);
+    Error::from(ErrorKind::Transport(error))
 }

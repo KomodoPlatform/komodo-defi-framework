@@ -31,14 +31,22 @@ enum MainErr {
 pub unsafe extern "C" fn mm2_main(conf: *const c_char, log_cb: extern "C" fn(line: *const c_char)) -> i8 {
     init_crash_reports();
     macro_rules! log {
-        ($($args: tt)+) => {{
-            let msg = fomat! ("mm2_lib:" ((line!())) "] " $($args)+ '\0');
-            log_cb (msg.as_ptr() as *const c_char);
+        ($($args: tt)*) => {{
+            let mut msg = format!("mm2_lib:{}] ", line!());
+            let args = format!($($args)*);
+            msg.push_str(&args);
+            log_cb(msg.as_ptr() as *const c_char);
         }}
     }
     macro_rules! eret {
-        ($rc: expr, $($args: tt)+) => {{log! ("error " ($rc as i8) ", " [$rc] ": " $($args)+); return $rc as i8}};
-        ($rc: expr) => {{log! ("error " ($rc as i8) ", " [$rc]); return $rc as i8}};
+        ($rc: expr, $desc:expr) => {{
+            log!("error {}, {:?}: {}", $rc as i8, $rc, $desc);
+            return $rc as i8;
+        }};
+        ($rc: expr) => {{
+            log!("error {}, {:?}", $rc as i8, $rc);
+            return $rc as i8;
+        }};
     }
 
     if LP_MAIN_RUNNING.load(Ordering::Relaxed) {
@@ -52,7 +60,7 @@ pub unsafe extern "C" fn mm2_main(conf: *const c_char, log_cb: extern "C" fn(lin
     let conf = CStr::from_ptr(conf);
     let conf = match conf.to_str() {
         Ok(s) => s,
-        Err(e) => eret!(MainErr::ConfNotUtf8, (e)),
+        Err(e) => eret!(MainErr::ConfNotUtf8, e),
     };
     let conf = conf.to_owned();
 
@@ -65,13 +73,13 @@ pub unsafe extern "C" fn mm2_main(conf: *const c_char, log_cb: extern "C" fn(lin
         let ctx_cb = &|ctx| CTX.store(ctx, Ordering::Relaxed);
         match catch_unwind(move || mm2::run_lp_main(Some(&conf), ctx_cb)) {
             Ok(Ok(_)) => log!("run_lp_main finished"),
-            Ok(Err(err)) => log!("run_lp_main error: "(err)),
-            Err(err) => log!("run_lp_main panic: "[any_to_str(&*err)]),
+            Ok(Err(err)) => log!("run_lp_main error: {}", err),
+            Err(err) => log!("run_lp_main panic: {:?}", any_to_str(&*err)),
         };
         LP_MAIN_RUNNING.store(false, Ordering::Relaxed)
     });
     if let Err(e) = rc {
-        eret!(MainErr::CantThread, (e))
+        eret!(MainErr::CantThread, e)
     }
     MainErr::Ok as i8
 }
@@ -107,11 +115,11 @@ pub extern "C" fn mm2_test(torch: i32, log_cb: extern "C" fn(line: *const c_char
     // #402: Stop the MM in order to test the library restart.
     let prev = if LP_MAIN_RUNNING.load(Ordering::Relaxed) {
         let ctx_id = CTX.load(Ordering::Relaxed);
-        log! ("mm2_test] Stopping MM instance " (ctx_id) "…");
+        log!("mm2_test] Stopping MM instance {}…", ctx_id);
         let ctx = match MmArc::from_ffi_handle(ctx_id) {
             Ok(ctx) => ctx,
             Err(err) => {
-                log!("mm2_test] Invalid CTX? !from_ffi_handle: "(err));
+                log!("mm2_test] Invalid CTX? !from_ffi_handle: {}", err);
                 return -1;
             },
         };
@@ -120,12 +128,12 @@ pub extern "C" fn mm2_test(torch: i32, log_cb: extern "C" fn(line: *const c_char
         let r = match block_on(hy_res) {
             Ok(r) => r,
             Err(err) => {
-                log!("mm2_test] !stop: "(err));
+                log!("mm2_test] !stop: {}", err);
                 return -1;
             },
         };
         if !r.status().is_success() {
-            log!("mm2_test] stop status "(r.status()));
+            log!("mm2_test] stop status {}", r.status());
             return -1;
         }
 
@@ -160,7 +168,7 @@ pub extern "C" fn mm2_test(torch: i32, log_cb: extern "C" fn(line: *const c_char
     });
 
     if let Err(err) = rc {
-        log!("mm2_test] There was an error: "(any_to_str(&*err).unwrap_or("-")));
+        log!("mm2_test] There was an error: {}", any_to_str(&*err).unwrap_or("-"));
         return -1;
     }
 
@@ -171,7 +179,7 @@ pub extern "C" fn mm2_test(torch: i32, log_cb: extern "C" fn(line: *const c_char
         let rc = unsafe { mm2_main(conf.as_ptr(), log_cb) };
         let rc = MainErr::from_i8(rc).unwrap();
         if rc != MainErr::Ok {
-            log!("!mm2_main: "[rc]);
+            log!("!mm2_main: {:?}", rc);
             return -1;
         }
 
@@ -193,7 +201,7 @@ pub extern "C" fn mm2_test(torch: i32, log_cb: extern "C" fn(line: *const c_char
             log!("mm2_test] Context ID is the same");
             return -1;
         }
-        log! ("mm2_test] New MM instance " (ctx_id) " started");
+        log!("mm2_test] New MM instance {} started", ctx_id);
     }
 
     RUNNING.store(false, Ordering::Relaxed);

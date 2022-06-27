@@ -1,3 +1,4 @@
+use crate::filename;
 use rand::RngCore;
 use serde::de::DeserializeOwned;
 use serde::Serialize;
@@ -33,7 +34,7 @@ pub fn stringify_js_error(error: &JsValue) -> String {
 #[track_caller]
 fn caller_file_line() -> (&'static str, u32) {
     let location = std::panic::Location::caller();
-    let file = gstuff::filename(location.file());
+    let file = filename(location.file());
     let line = location.line();
     (file, line)
 }

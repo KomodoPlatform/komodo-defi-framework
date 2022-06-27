@@ -1042,7 +1042,6 @@ dependencies = [
  "ethcore-transaction",
  "ethereum-types 0.4.2",
  "ethkey",
- "fomat-macros 0.2.1",
  "futures 0.1.29",
  "futures 0.3.15",
  "gstuff",
@@ -1157,8 +1156,6 @@ dependencies = [
  "crossterm",
  "findshlibs",
  "fnv",
- "fomat-macros 0.2.1",
- "fomat-macros 0.3.1",
  "futures 0.1.29",
  "futures 0.3.15",
  "futures-cpupool",
@@ -1192,7 +1189,6 @@ dependencies = [
  "ser_error_derive",
  "serde",
  "serde-wasm-bindgen",
- "serde_bytes",
  "serde_derive",
  "serde_json",
  "serde_repr",
@@ -2299,18 +2295,6 @@ name = "fnv"
 version = "1.0.7"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "3f9eec918d3f24069decb9af1554cad7c880e2da24a9afd88aca000531ab82c1"
-
-[[package]]
-name = "fomat-macros"
-version = "0.2.1"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "b541b35d643a4dfbba66fc2a4d401314d6eb16e36155c92b439baeb232c5d0c7"
-
-[[package]]
-name = "fomat-macros"
-version = "0.3.1"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "fe56556a8c9f9f556150eb6b390bc1a8b3715fd2ddbb4585f36b6a5672c6a833"
 
 [[package]]
 name = "form_urlencoded"
@@ -4110,7 +4094,6 @@ dependencies = [
  "common",
  "db_common",
  "derive_more",
- "fomat-macros 0.2.1",
  "futures 0.3.15",
  "gstuff",
  "hex 0.4.2",
@@ -4159,7 +4142,6 @@ dependencies = [
  "common",
  "derive_more",
  "futures 0.1.29",
- "gstuff",
  "http 0.2.7",
  "itertools",
  "ser_error",
@@ -4207,7 +4189,6 @@ dependencies = [
  "either",
  "enum-primitive-derive",
  "ethereum-types 0.4.2",
- "fomat-macros 0.2.1",
  "futures 0.1.29",
  "futures 0.3.15",
  "futures-cpupool",
@@ -4279,7 +4260,6 @@ dependencies = [
  "cfg-if 1.0.0",
  "common",
  "derive_more",
- "fomat-macros 0.2.1",
  "futures 0.3.15",
  "gstuff",
  "http 0.2.7",
@@ -4325,7 +4305,6 @@ dependencies = [
  "common",
  "crossterm",
  "db_common",
- "fomat-macros 0.2.1",
  "futures 0.3.15",
  "gstuff",
  "http 0.2.7",

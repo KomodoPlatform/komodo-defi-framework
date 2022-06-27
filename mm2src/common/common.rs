@@ -19,7 +19,6 @@
 #![feature(drain_filter)]
 
 #[macro_use] extern crate arrayref;
-#[macro_use] extern crate fomat_macros;
 #[macro_use] extern crate gstuff;
 #[macro_use] extern crate lazy_static;
 #[macro_use] pub extern crate serde_derive;
@@ -120,47 +119,41 @@ pub mod executor;
 use backtrace::SymbolName;
 pub use futures::compat::Future01CompatExt;
 use futures::future::{abortable, AbortHandle, FutureExt};
-use futures::task::Waker;
-use futures01::{future, task::Task, Future};
-use gstuff::binprint;
+use futures01::{future, Future};
 use http::header::{HeaderValue, CONTENT_TYPE};
 use http::Response;
 use parking_lot::{Mutex as PaMutex, MutexGuard as PaMutexGuard};
 use rand::{rngs::SmallRng, SeedableRng};
 use serde::{de, ser};
-use serde_bytes::ByteBuf;
 use serde_json::{self as json, Value as Json};
-use std::collections::HashMap;
-use std::ffi::CStr;
 use std::fmt::{self, Write as FmtWrite};
 use std::future::Future as Future03;
 use std::io::Write;
 use std::iter::Peekable;
-use std::mem::{forget, size_of, zeroed};
-use std::net::SocketAddr;
+use std::mem::{forget, zeroed};
 use std::num::NonZeroUsize;
 use std::ops::{Add, Deref, Div, RangeInclusive};
-use std::os::raw::{c_char, c_void};
+use std::os::raw::c_void;
 use std::panic::{set_hook, PanicInfo};
-use std::path::Path;
 use std::ptr::read_volatile;
-use std::sync::atomic::{AtomicUsize, Ordering};
-use std::sync::{Arc, Mutex};
+use std::sync::atomic::Ordering;
 use uuid::Uuid;
 
 use crate::executor::spawn;
 pub use http::StatusCode;
 pub use serde;
 
-#[cfg(not(target_arch = "wasm32"))] pub mod for_c;
-
 cfg_native! {
     pub use gstuff::{now_float, now_ms};
     #[cfg(not(windows))]
     use findshlibs::{IterationControl, Segment, SharedLibrary, TargetSharedLibrary};
-    use libc::{free, malloc};
     use std::env;
     use std::path::PathBuf;
+    use std::sync::Mutex;
+}
+
+cfg_wasm32! {
+    use std::sync::atomic::AtomicUsize;
 }
 
 pub const SATOSHIS: u64 = 100_000_000;
@@ -268,68 +261,6 @@ impl From<[u8; 32]> for bits256 {
     fn from(bytes: [u8; 32]) -> Self { bits256 { bytes } }
 }
 
-impl bits256 {
-    /// Returns true if the hash is not zero.  
-    /// Port of `#define bits256_nonz`.
-    pub fn nonz(&self) -> bool { self.bytes.iter().any(|ch| *ch != 0) }
-}
-
-pub fn nonz(k: [u8; 32]) -> bool { k.iter().any(|ch| *ch != 0) }
-
-pub const SATOSHIDEN: i64 = 100_000_000;
-pub fn dstr(x: i64, decimals: u8) -> f64 { x as f64 / 10.0_f64.powf(decimals as f64) }
-
-/// Apparently helps to workaround `double` fluctuations occuring on *certain* systems.
-/// cf. https://stackoverflow.com/questions/19804472/double-randomly-adds-0-000000000000001.
-/// Not sure it's needed in Rust, the floating point operations should be determenistic here,
-/// but better safe than sorry.
-pub const SMALLVAL: f64 = 0.000_000_000_000_001; // 1e-15f64
-
-/// Helps sharing a string slice with C code by allocating a zero-terminated string with the C standard library allocator.
-///
-/// The difference from `CString` is that the memory is then *owned* by the C code instead of being temporarily borrowed,
-/// that is it doesn't need to be recycled in Rust.
-/// Plus we don't check the slice for zeroes, most of our code doesn't need that extra check.
-#[cfg(not(target_arch = "wasm32"))]
-pub fn str_to_malloc(s: &str) -> *mut c_char { slice_to_malloc(s.as_bytes()) as *mut c_char }
-
-/// Helps sharing a byte slice with C code by allocating a zero-terminated string with the C standard library allocator.
-#[cfg(not(target_arch = "wasm32"))]
-pub fn slice_to_malloc(bytes: &[u8]) -> *mut u8 {
-    unsafe {
-        let buf = malloc(bytes.len() + 1) as *mut u8;
-        std::intrinsics::copy(bytes.as_ptr(), buf, bytes.len());
-        *buf.add(bytes.len()) = 0;
-        buf
-    }
-}
-
-/// Converts *mut c_char to Rust String
-/// Doesn't free the allocated memory
-/// It's responsibility of the caller to free the memory when required
-/// Returns error in case of null pointer input
-#[allow(clippy::missing_safety_doc)]
-pub unsafe fn c_char_to_string(ptr: *mut c_char) -> Result<String, String> {
-    if !ptr.is_null() {
-        let res_str = try_s!(CStr::from_ptr(ptr).to_str());
-        let res_str = String::from(res_str);
-        Ok(res_str)
-    } else {
-        ERR!("Tried to convert null pointer to Rust String!")
-    }
-}
-
-/// Frees C raw pointer
-/// Does nothing in case of null pointer input
-#[cfg(not(target_arch = "wasm32"))]
-pub fn free_c_ptr(ptr: *mut c_void) {
-    unsafe {
-        if !ptr.is_null() {
-            free(ptr as *mut libc::c_void);
-        }
-    }
-}
-
 /// Use the value, preventing the compiler and linker from optimizing it away.
 pub fn black_box<T>(v: T) -> T {
     // https://github.com/rust-lang/rfcs/issues/1484#issuecomment-240853111
@@ -338,16 +269,6 @@ pub fn black_box<T>(v: T) -> T {
     let ret = unsafe { read_volatile(&v) };
     forget(v);
     ret
-}
-
-/// Attempts to remove the `Path` on `drop`.
-#[derive(Debug)]
-pub struct RaiiRm<'a>(pub &'a Path);
-impl<'a> AsRef<Path> for RaiiRm<'a> {
-    fn as_ref(&self) -> &Path { self.0 }
-}
-impl<'a> Drop for RaiiRm<'a> {
-    fn drop(&mut self) { let _ = std::fs::remove_file(self); }
 }
 
 /// Using a static buffer in order to minimize the chance of heap and stack allocations in the signal handler.
@@ -359,6 +280,31 @@ fn trace_buf() -> PaMutexGuard<'static, [u8; 256]> {
 fn trace_name_buf() -> PaMutexGuard<'static, [u8; 128]> {
     static TRACE_NAME_BUF: PaMutex<[u8; 128]> = PaMutex::new([0; 128]);
     TRACE_NAME_BUF.lock()
+}
+
+/// Shortcut to path->filename conversion.
+///
+/// # Notes
+///
+/// Returns the file name without extension if only the file name ends on `.rs`.
+/// Returns the unchanged `path` if there is a character encoding error or something.
+///
+/// Inspired by https://docs.rs/gstuff/latest/gstuff/fn.filename.html
+pub fn filename(path: &str) -> &str {
+    // NB: `Path::new (path) .file_name()` only works for file separators of the current operating system,
+    // whereas the error trace might be coming from another operating system.
+    // In particular, I see `file_name` failing with WASM.
+
+    let name = match path.rfind(|ch| ch == '/' || ch == '\\') {
+        Some(ofs) => &path[ofs + 1..],
+        None => path,
+    };
+
+    if name.ends_with(".rs") {
+        &name[0..name.len() - 3]
+    } else {
+        name
+    }
 }
 
 /// Formats a stack frame.
@@ -519,8 +465,8 @@ pub fn set_panic_hook() {
 
         let mut trace = String::new();
         stack_trace(&mut stack_trace_frame, &mut |l| trace.push_str(l));
-        log!((info));
-        log!("backtrace\n"(trace));
+        log::info!("{}", info);
+        log::info!("backtrace\n{}", trace);
 
         let _ = ENTERED.try_with(|e| e.compare_exchange(true, false, Ordering::Relaxed, Ordering::Relaxed));
     }))
@@ -539,46 +485,6 @@ pub fn double_panic_crash() {
     drop(panicker) // Delays the drop.
 }
 
-/// Tries to detect if we're running under a test, allowing us to be lazy and *delay* some costly operations.
-///
-/// Note that the code SHOULD behave uniformely regardless of where it's invoked from
-/// (nondeterminism breaks POLA and we don't know how the code will be used in the future)
-/// but in certain cases we have a leeway of adjusting to being run from a test
-/// without breaking any invariants or expectations.
-/// For instance, DHT might take unknown time to initialize, and by delaying this initialization in the tests
-/// we can avoid the unnecessary overhead of DHT initializaion and destruction while maintaining the contract.
-pub fn is_a_test_drill() -> bool {
-    // Stack tracing would sometimes crash on Windows, doesn't worth the risk here.
-    if cfg!(windows) {
-        return false;
-    }
-
-    let mut trace = String::with_capacity(1024);
-    stack_trace(
-        &mut |_ptr, mut fwr, sym| {
-            if let Some(name) = sym.name() {
-                let _ = witeln!(fwr, (name));
-            }
-        },
-        &mut |tr| trace.push_str(tr),
-    );
-
-    if trace.contains("\nmm2::main\n") || trace.contains("\nmm2::run_lp_main\n") {
-        return false;
-    }
-
-    if let Some(executable) = std::env::args().next() {
-        if executable.ends_with(r"\mm2.exe") {
-            return false;
-        }
-        if executable.ends_with("/mm2") {
-            return false;
-        }
-    }
-
-    true
-}
-
 /// RPC response, returned by the RPC handlers.  
 /// NB: By default the future is executed on the shared asynchronous reactor (`CORE`),
 /// the handler is responsible for spawning the future on another reactor if it doesn't fit the `CORE` well.
@@ -588,21 +494,6 @@ pub type BoxFut<T, E> = Box<dyn Future<Item = T, Error = E> + Send>;
 
 pub trait HttpStatusCode {
     fn status_code(&self) -> StatusCode;
-}
-
-#[derive(Debug, Deserialize, Serialize)]
-struct HostedHttpRequest {
-    method: String,
-    uri: String,
-    headers: HashMap<String, String>,
-    body: Vec<u8>,
-}
-
-#[derive(Debug, Deserialize, Serialize)]
-struct HostedHttpResponse {
-    status: u16,
-    headers: HashMap<String, String>,
-    body: Vec<u8>,
 }
 
 /// Wraps a JSON string into the `HyRes` RPC response future.
@@ -677,180 +568,9 @@ pub fn rpc_err_response(status: u16, msg: &str) -> HyRes {
     // TODO: Like in most other places, we should check for a thread-local access to the proper log here.
     // Might be a good idea to use emoji too, like "🤒" or "🤐" or "😕".
     // TODO: Consider turning this into a macros or merging with `try_h` in order to retain the `line!`.
-    log! ({"RPC error response: {}", msg});
+    log::error!("RPC error response: {}", msg);
 
     rpc_response(status, err_to_rpc_json_string(msg))
-}
-
-/// A closure that would (re)start a `Future` to synchronize with an external resource in `RefreshedExternalResource`.
-type ExternalResourceSync<R> =
-    Box<dyn Fn() -> Box<dyn Future<Item = R, Error = String> + Send + 'static> + Send + 'static>;
-
-/// Memory space accessible to the `Future` tail spawned by the `RefreshedExternalResource`.
-struct RerShelf<R: Send + 'static> {
-    /// The time when the `Future` generated by `sync` has filled this shell.
-    time: f64,
-    /// Results of the `sync`-generated `Future`.
-    result: Result<R, String>,
-}
-
-/// Often we have an external resource that we need a fresh copy of.
-/// (Or the other way around, when there is an external resource that we need to periodically update or synchronize with).
-/// Particular property of such resources is that they might be unavailable,
-/// might be slow due to resource overload or network congestion,
-/// need to be resynchronized periodically
-/// while being nice to the resource by maintaining rate limits.
-///
-/// Some of these resources are naturally singleton.
-/// For exampe, we have only one "bittrex.com" and we need not multiple copies of its market data withing the process.
-///
-/// This helper here will organize the handling of such synchronization, periodically starting the synchronization `Future`,
-/// restarting it on timeout, maintaining rate limits.
-pub struct RefreshedExternalResource<R: Send + 'static> {
-    sync: Mutex<ExternalResourceSync<R>>,
-    /// Rate limit in the form of the desired number of seconds between the syncs.
-    every_n_sec: f64,
-    /// Start a new `Future` and drop the old one if it fails to finish after this number of seconds.
-    timeout_sec: f64,
-    /// The time (in f64 seconds) when we last (re)started the `sync`.
-    /// We want `AtomicU64` but it isn't yet stable.
-    last_start: AtomicUsize,
-    shelf: Arc<Mutex<Option<RerShelf<R>>>>,
-    /// The `Future`s interested in the next update.  
-    /// When there is an updated the `Task::notify` gets invoked once and then the `Task` is removed from the `listeners` list.
-    listeners: Arc<Mutex<Vec<Task>>>,
-}
-impl<R: Send + 'static> RefreshedExternalResource<R> {
-    /// New instance of the external resource tracker.
-    ///
-    /// * `every_n_sec` - Desired number of seconds between the syncs.
-    /// * `timeout_sec` - Start a new `sync` and drop the old `Future` if it fails to finish after this number of seconds.
-    ///                   Automatically bumped to be at least `every_n_sec` large.
-    /// * `sync` - Generates the `Future` that should synchronize with the external resource in background.
-    ///            Note that we'll tail the `Future`, polling the tail from the shared asynchronous reactor;
-    ///            *spawn* the `Future` onto a different reactor if the shared asynchronous reactor is not the best option.
-    pub fn new(every_n_sec: f64, timeout_sec: f64, sync: ExternalResourceSync<R>) -> RefreshedExternalResource<R> {
-        assert_eq!(size_of::<usize>(), 8);
-        RefreshedExternalResource {
-            sync: Mutex::new(sync),
-            every_n_sec,
-            timeout_sec: timeout_sec.max(every_n_sec),
-            last_start: AtomicUsize::new(0f64.to_bits() as usize),
-            shelf: Arc::new(Mutex::new(None)),
-            listeners: Arc::new(Mutex::new(Vec::new())),
-        }
-    }
-
-    pub fn add_listeners(&self, mut tasks: Vec<Task>) -> Result<(), String> {
-        let mut listeners = try_s!(self.listeners.lock());
-        listeners.append(&mut tasks);
-        Ok(())
-    }
-
-    /// Performs the maintenance operations necessary to periodically refresh the resource.
-    pub fn tick(&self) -> Result<(), String> {
-        let now = now_float();
-        let last_finish = match *try_s!(self.shelf.lock()) {
-            Some(ref rer_shelf) => rer_shelf.time,
-            None => 0.,
-        };
-        let last_start = f64::from_bits(self.last_start.load(Ordering::Relaxed) as u64);
-
-        if now - last_start > self.timeout_sec || (last_finish > last_start && now - last_start > self.every_n_sec) {
-            self.last_start.store(now.to_bits() as usize, Ordering::Relaxed);
-            let sync = try_s!(self.sync.lock());
-            let f = (*sync)();
-            let shelf_tx = self.shelf.clone();
-            let listeners = self.listeners.clone();
-            let f = f.then(move |result| -> Result<(), ()> {
-                let mut shelf = match shelf_tx.lock() {
-                    Ok(l) => l,
-                    Err(err) => {
-                        log! ({"RefreshedExternalResource::tick] Can't lock the shelf: {}", err});
-                        return Err(());
-                    },
-                };
-                let shelf_time = match *shelf {
-                    Some(ref r) => r.time,
-                    None => 0.,
-                };
-                if now > shelf_time {
-                    // This check prevents out-of-order shelf updates.
-                    *shelf = Some(RerShelf {
-                        time: now_float(),
-                        result,
-                    });
-                    drop(shelf); // Don't hold the lock unnecessarily.
-                    {
-                        let mut listeners = match listeners.lock() {
-                            Ok(l) => l,
-                            Err(err) => {
-                                log! ({"RefreshedExternalResource::tick] Can't lock the listeners: {}", err});
-                                return Err(());
-                            },
-                        };
-                        for task in listeners.drain(..) {
-                            task.notify()
-                        }
-                    }
-                }
-                Ok(())
-            });
-            executor::spawn(f.compat().map(|_| ())); // Polls `f` in background.
-        }
-
-        Ok(())
-    }
-
-    /// The time, in seconds since UNIX epoch, when the refresh `Future` resolved.
-    pub fn last_finish(&self) -> Result<f64, String> {
-        Ok(match *try_s!(self.shelf.lock()) {
-            Some(ref rer_shelf) => rer_shelf.time,
-            None => 0.,
-        })
-    }
-
-    pub fn with_result<V, F: FnMut(Option<&Result<R, String>>) -> Result<V, String>>(
-        &self,
-        mut cb: F,
-    ) -> Result<V, String> {
-        let shelf = try_s!(self.shelf.lock());
-        match *shelf {
-            Some(ref rer_shelf) => cb(Some(&rer_shelf.result)),
-            None => cb(None),
-        }
-    }
-}
-
-#[derive(Clone, Debug)]
-pub struct P2PMessage {
-    pub from: SocketAddr,
-    pub content: String,
-}
-
-impl P2PMessage {
-    pub fn from_string_with_default_addr(content: String) -> P2PMessage {
-        P2PMessage {
-            from: SocketAddr::new([0; 4].into(), 0),
-            content,
-        }
-    }
-
-    pub fn from_serialize_with_default_addr<T: serde::Serialize>(msg: &T) -> P2PMessage {
-        P2PMessage {
-            from: SocketAddr::new([0; 4].into(), 0),
-            content: serde_json::to_string(msg).unwrap(),
-        }
-    }
-}
-
-#[derive(Debug)]
-pub struct QueuedCommand {
-    pub response_sock: i32,
-    pub stats_json_only: i32,
-    pub queue_id: u32,
-    pub msg: P2PMessage,
-    // retstrp: *mut *mut c_char,
 }
 
 #[cfg(not(target_arch = "wasm32"))]
@@ -873,7 +593,7 @@ where
     if var("TRACE_BLOCK_ON").map(|v| v == "true") == Ok(true) {
         let mut trace = String::with_capacity(4096);
         stack_trace(&mut stack_trace_frame, &mut |l| trace.push_str(l));
-        log!("block_on at\n"(trace));
+        log::info!("block_on at\n{}", trace);
     }
 
     wio::CORE.0.block_on(f)
@@ -952,7 +672,7 @@ pub fn writeln(line: &str) {
     let _ = catch_unwind(|| {
         if let Ok(mut log_file) = LOG_FILE.lock() {
             if let Some(ref mut log_file) = *log_file {
-                let _ = witeln!(log_file, (line));
+                writeln!(log_file, "{}", line).ok();
                 return;
             }
         }
@@ -998,44 +718,6 @@ pub fn writeln(line: &str) {
 }
 
 pub fn small_rng() -> SmallRng { SmallRng::seed_from_u64(now_ms()) }
-
-lazy_static! {
-    /// Maps helper request ID to the corresponding Waker,
-    /// allowing WASM host to wake the `HelperReply`.
-    static ref HELPER_REQUESTS: Mutex<HashMap<i32, Waker>> = Mutex::new (HashMap::new());
-}
-
-/// WASM host invokes this method to signal the readiness of the HTTP request.
-#[no_mangle]
-#[cfg(target_arch = "wasm32")]
-pub extern "C" fn http_ready(helper_request_id: i32) {
-    let mut helper_requests = HELPER_REQUESTS.lock().unwrap();
-    if let Some(waker) = helper_requests.remove(&helper_request_id) {
-        waker.wake()
-    }
-}
-
-#[derive(Deserialize, Debug)]
-pub struct HelperResponse {
-    pub status: u32,
-    #[serde(rename = "ct")]
-    pub content_type: Option<ByteBuf>,
-    #[serde(rename = "cs")]
-    pub checksum: Option<ByteBuf>,
-    pub body: ByteBuf,
-}
-/// Mostly used to log the errors coming from the other side.
-impl fmt::Display for HelperResponse {
-    fn fmt(&self, ft: &mut fmt::Formatter) -> fmt::Result {
-        wite! (ft, (self.status) ", " (binprint (&self.body, b'.')))
-    }
-}
-
-#[derive(Serialize, Deserialize)]
-pub struct BroadcastP2pMessageArgs {
-    pub ctx: u32,
-    pub msg: String,
-}
 
 #[derive(Debug, Clone)]
 /// Ordered from low to height inclusive range.

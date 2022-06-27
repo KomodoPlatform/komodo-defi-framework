@@ -48,7 +48,7 @@ pub async fn disable_coin(ctx: MmArc, req: Json) -> Result<Response<Vec<u8>>, St
     let swaps = try_s!(active_swaps_using_coin(&ctx, &ticker));
     if !swaps.is_empty() {
         let err = json!({
-            "error": fomat! ("There're active swaps using " (ticker)),
+            "error": format!("There're active swaps using {}", ticker),
             "swaps": swaps,
         });
         return Response::builder()
@@ -59,7 +59,7 @@ pub async fn disable_coin(ctx: MmArc, req: Json) -> Result<Response<Vec<u8>>, St
     let (cancelled, still_matching) = try_s!(cancel_orders_by(&ctx, CancelBy::Coin { ticker: ticker.clone() }).await);
     if !still_matching.is_empty() {
         let err = json!({
-            "error": fomat! ("There're currently matching orders using " (ticker)),
+            "error": format!("There're currently matching orders using {}", ticker),
             "orders": {
                 "matching": still_matching,
                 "cancelled": cancelled,
@@ -351,32 +351,3 @@ pub async fn min_trading_vol(ctx: MmArc, req: Json) -> Result<Response<Vec<u8>>,
     let res = try_s!(json::to_vec(&res));
     Ok(try_s!(Response::builder().body(res)))
 }
-
-// AP: Inventory is not documented and not used as of now, commented out
-/*
-pub fn inventory (ctx: MmArc, req: Json) -> HyRes {
-    let ticker = match req["coin"].as_str() {Some (s) => s, None => return rpc_err_response (500, "No 'coin' argument in request")};
-    let coin = match lp_coinfind (&ctx, ticker) {
-        Ok (Some (t)) => t,
-        Ok (None) => return rpc_err_response (500, &fomat! ("No such coin: " (ticker))),
-        Err (err) => return rpc_err_response (500, &fomat! ("!lp_coinfind(" (ticker) "): " (err)))
-    };
-    let ii = coin.iguana_info();
-
-    unsafe {lp::LP_address (ii, (*ii).smartaddr.as_mut_ptr())};
-    if unsafe {nonz (lp::G.LP_privkey.bytes)} {
-        unsafe {lp::LP_privkey_init (-1, ii, lp::G.LP_privkey, lp::G.LP_mypub25519)};
-    } else {
-        log! ("inventory] no LP_privkey");
-    }
-    let retjson = json! ({
-        "result": "success",
-        "coin": ticker,
-        "timestamp": now_ms() / 1000,
-        "alice": []  // LP_inventory(coin)
-        // "bob": LP_inventory(coin,1)
-    });
-    //LP_smartutxos_push(ptr);
-    rpc_response (200, try_h! (json::to_string (&retjson)))
-}
-*/

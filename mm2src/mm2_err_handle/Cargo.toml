@@ -11,14 +11,8 @@ futures01 = { version = "0.1", package = "futures" }
 serde_json = { version = "1.0", features = ["preserve_order", "raw_value"] }
 derive_more = "0.99"
 itertools = "0.10"
-serde = "1"
+serde = { version = "1.0", features = ["derive"] }
 ser_error = { path = "../derives/ser_error" }
 ser_error_derive = { path = "../derives/ser_error_derive" }
 common = { path = "../common" }
 http = "0.2"
-
-[target.'cfg(target_arch = "wasm32")'.dependencies]
-gstuff = { version = "0.7", features = ["nightly"] }
-
-[target.'cfg(not(target_arch = "wasm32"))'.dependencies]
-gstuff = { version = "0.7", features = ["crossterm", "nightly"] }
