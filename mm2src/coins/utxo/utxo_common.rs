@@ -2148,6 +2148,20 @@ where
             0
         };
 
+        // Remove transactions in the history_map that are not in the requested transaction list anymore
+        let requested_ids: HashSet<H256Json> = tx_ids.iter().map(|x| x.0).collect();
+        let mut txs_to_remove: HashSet<H256Json> = HashSet::new();
+        for (id, tx_details) in history_map.iter() {
+            if let Ok(tx_hash) = H256Json::from_str(&tx_details.tx_hash) {
+                if !requested_ids.contains(&tx_hash) {
+                    txs_to_remove.insert(*id);
+                }
+            }
+        }
+        for id in txs_to_remove.iter() {
+            history_map.remove(id);
+        }
+
         // This is the cache of the already requested transactions.
         let mut input_transactions = HistoryUtxoTxMap::default();
         for (txid, height) in tx_ids {
