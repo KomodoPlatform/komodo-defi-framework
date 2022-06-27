@@ -1,4 +1,4 @@
-use crate::utxo::utxo_block_header_storage::BlockHeaderStorage;
+use crate::utxo::rpc_clients::UtxoRpcClientEnum;
 use crate::utxo::utxo_builder::{UtxoCoinBuildError, UtxoCoinBuilder, UtxoCoinBuilderCommonOps,
                                 UtxoFieldsWithHardwareWalletBuilder, UtxoFieldsWithIguanaPrivKeyBuilder};
 use crate::utxo::utxo_common::{block_header_utxo_loop, merge_utxo_loop};
@@ -84,16 +84,16 @@ where
 
     async fn build(self) -> MmResult<Self::ResultCoin, Self::Error> {
         let utxo = self.build_utxo_fields().await?;
+        let rpc_client = utxo.rpc_client.clone();
         let utxo_arc = UtxoArc::new(utxo);
         let utxo_weak = utxo_arc.downgrade();
         let result_coin = (self.constructor)(utxo_arc);
 
         self.spawn_merge_utxo_loop_if_required(utxo_weak.clone(), self.constructor.clone());
-        if let Some(abort_handler) = self.spawn_block_header_utxo_loop_if_required(
-            utxo_weak,
-            &result_coin.as_ref().block_headers_storage,
-            self.constructor.clone(),
-        ) {
+        // todo: check if this can be moved to a better place
+        if let Some(abort_handler) =
+            self.spawn_block_header_utxo_loop_if_required(utxo_weak, &rpc_client, self.constructor.clone())
+        {
             self.ctx.abort_handlers.lock().unwrap().push(abort_handler);
         }
         Ok(result_coin)
@@ -137,26 +137,28 @@ pub trait BlockHeaderUtxoArcOps<T>: UtxoCoinBuilderCommonOps {
     fn spawn_block_header_utxo_loop_if_required<F>(
         &self,
         weak: UtxoWeak,
-        maybe_storage: &Option<BlockHeaderStorage>,
+        rpc_client: &UtxoRpcClientEnum,
         constructor: F,
     ) -> Option<AbortHandle>
     where
         F: Fn(UtxoArc) -> T + Send + Sync + 'static,
         T: UtxoCommonOps,
     {
-        if maybe_storage.is_some() {
-            let ticker = self.ticker().to_owned();
-            let (fut, abort_handle) = abortable(block_header_utxo_loop(weak, constructor));
-            info!("Starting UTXO block header loop for coin {}", ticker);
-            spawn(async move {
-                if let Err(e) = fut.await {
-                    info!(
-                        "spawn_block_header_utxo_loop_if_required stopped for {}, reason {}",
-                        ticker, e
-                    );
-                }
-            });
-            return Some(abort_handle);
+        if let UtxoRpcClientEnum::Electrum(electrum) = rpc_client {
+            if electrum.block_headers_storage().is_some() {
+                let ticker = self.ticker().to_owned();
+                let (fut, abort_handle) = abortable(block_header_utxo_loop(weak, constructor));
+                info!("Starting UTXO block header loop for coin {}", ticker);
+                spawn(async move {
+                    if let Err(e) = fut.await {
+                        info!(
+                            "spawn_block_header_utxo_loop_if_required stopped for {}, reason {}",
+                            ticker, e
+                        );
+                    }
+                });
+                return Some(abort_handle);
+            }
         }
         None
     }

@@ -87,9 +87,9 @@ use utxo_common::{big_decimal_from_sat, UtxoTxBuilder};
 use utxo_signer::with_key_pair::sign_tx;
 use utxo_signer::{TxProvider, TxProviderError, UtxoSignTxError, UtxoSignTxResult};
 
-use self::rpc_clients::{electrum_script_hash, ElectrumClient, ElectrumRpcRequest, EstimateFeeMethod, EstimateFeeMode,
-                        NativeClient, UnspentInfo, UnspentMap, UtxoRpcClientEnum, UtxoRpcError, UtxoRpcFut,
-                        UtxoRpcResult};
+use self::rpc_clients::{electrum_script_hash, ElectrumBlockHeaderVerificationParams, ElectrumClient,
+                        ElectrumRpcRequest, EstimateFeeMethod, EstimateFeeMode, NativeClient, UnspentInfo, UnspentMap,
+                        UtxoRpcClientEnum, UtxoRpcError, UtxoRpcFut, UtxoRpcResult};
 use super::{big_decimal_from_sat_unsigned, BalanceError, BalanceFut, BalanceResult, CoinBalance, CoinsContext,
             DerivationMethod, FeeApproxStage, FoundSwapTxSpend, HistorySyncState, KmdRewardsDetails, MarketCoinOps,
             MmCoin, NumConversError, NumConversResult, PrivKeyActivationPolicy, PrivKeyNotAllowed, PrivKeyPolicy,
@@ -103,7 +103,6 @@ use crate::hd_wallet_storage::{HDAccountStorageItem, HDWalletCoinStorage, HDWall
 use crate::utxo::tx_cache::UtxoVerboseCacheShared;
 use crate::utxo::utxo_block_header_storage::BlockHeaderStorageError;
 use crate::TransactionErr;
-use utxo_block_header_storage::BlockHeaderStorage;
 
 pub mod tx_cache;
 #[cfg(target_arch = "wasm32")]
@@ -532,7 +531,6 @@ pub struct UtxoCoinFields {
     pub history_sync_state: Mutex<HistorySyncState>,
     /// The cache of verbose transactions.
     pub tx_cache: UtxoVerboseCacheShared,
-    pub block_headers_storage: Option<BlockHeaderStorage>,
     /// The cache of recently send transactions used to track the spent UTXOs and replace them with new outputs
     /// The daemon needs some time to update the listunspent list for address which makes it return already spent UTXOs
     /// This cache helps to prevent UTXO reuse in such cases
@@ -1202,14 +1200,6 @@ pub struct UtxoMergeParams {
 }
 
 #[derive(Clone, Debug, Deserialize, Serialize)]
-pub struct UtxoBlockHeaderVerificationParams {
-    pub difficulty_check: bool,
-    pub constant_difficulty: bool,
-    pub blocks_limit_to_check: NonZeroU64,
-    pub check_every: f64,
-}
-
-#[derive(Clone, Debug, Deserialize, Serialize)]
 pub struct UtxoActivationParams {
     pub mode: UtxoRpcMode,
     pub utxo_merge_params: Option<UtxoMergeParams>,
@@ -1249,7 +1239,12 @@ impl UtxoActivationParams {
             Some("electrum") => {
                 let servers =
                     json::from_value(req["servers"].clone()).map_to_mm(UtxoFromLegacyReqErr::InvalidElectrumServers)?;
-                UtxoRpcMode::Electrum { servers }
+                let block_header_params = json::from_value(req["block_header_params"].clone())
+                    .map_to_mm(UtxoFromLegacyReqErr::InvalidBlockHeaderVerificationParams)?;
+                UtxoRpcMode::Electrum {
+                    servers,
+                    block_header_params,
+                }
             },
             _ => return MmError::err(UtxoFromLegacyReqErr::UnexpectedMethod),
         };
@@ -1291,7 +1286,10 @@ impl UtxoActivationParams {
 #[serde(tag = "rpc", content = "rpc_data")]
 pub enum UtxoRpcMode {
     Native,
-    Electrum { servers: Vec<ElectrumRpcRequest> },
+    Electrum {
+        servers: Vec<ElectrumRpcRequest>,
+        block_header_params: Option<ElectrumBlockHeaderVerificationParams>,
+    },
 }
 
 #[derive(Debug)]

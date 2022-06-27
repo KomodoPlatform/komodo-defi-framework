@@ -1,18 +1,19 @@
 #![cfg_attr(target_arch = "wasm32", allow(unused_macros))]
 #![cfg_attr(target_arch = "wasm32", allow(dead_code))]
 
-use crate::utxo::{output_script, sat_from_big_decimal, GetTxError, GetTxHeightError};
+use crate::utxo::utxo_block_header_storage::{BlockHeaderStorage, BlockHeaderStorageError, BlockHeaderStorageOps};
+use crate::utxo::{output_script, sat_from_big_decimal, GetBlockHeaderError, GetTxError, GetTxHeightError};
 use crate::{big_decimal_from_sat_unsigned, NumConversError, RpcTransportEventHandler, RpcTransportEventHandlerShared};
 use async_trait::async_trait;
 use bigdecimal::BigDecimal;
-use chain::{BlockHeader, BlockHeaderBits, BlockHeaderNonce, OutPoint, Transaction as UtxoTx};
+use chain::{BlockHeader, BlockHeaderBits, BlockHeaderNonce, OutPoint, RawBlockHeader, Transaction as UtxoTx};
 use common::custom_futures::{select_ok_sequential, FutureTimerExt};
 use common::custom_iter::{CollectInto, TryIntoGroupMap};
 use common::executor::{spawn, Timer};
 use common::jsonrpc_client::{JsonRpcBatchClient, JsonRpcBatchResponse, JsonRpcClient, JsonRpcError, JsonRpcErrorType,
                              JsonRpcId, JsonRpcMultiClient, JsonRpcRemoteAddr, JsonRpcRequest, JsonRpcRequestEnum,
                              JsonRpcResponse, JsonRpcResponseEnum, JsonRpcResponseFut, RpcRes};
-use common::log::{error, info, warn};
+use common::log::{debug, error, info, warn};
 use common::mm_number::{BigInt, MmNumber};
 use common::{median, now_float, now_ms, OrdRange};
 use derive_more::Display;
@@ -32,9 +33,11 @@ use mm2_err_handle::prelude::*;
 #[cfg(test)] use mocktopus::macros::*;
 use rpc::v1::types::{Bytes as BytesJson, Transaction as RpcTransaction, H256 as H256Json};
 use serde_json::{self as json, Value as Json};
-use serialization::{deserialize, serialize, serialize_with_flags, CoinVariant, CompactInteger, Reader,
+use serialization::{deserialize, serialize, serialize_list, serialize_with_flags, CoinVariant, CompactInteger, Reader,
                     SERIALIZE_TRANSACTION_WITNESS};
 use sha2::{Digest, Sha256};
+use spv_validation::helpers_validation::SPVError;
+use spv_validation::spv_proof::{SPVProof, TRY_SPV_PROOF_INTERVAL};
 use std::collections::hash_map::Entry;
 use std::collections::HashMap;
 use std::fmt;
@@ -1379,6 +1382,15 @@ enum ElectrumConfig {
     SSL { dns_name: String, skip_validation: bool },
 }
 
+/// Electrum SPV configuration
+#[derive(Clone, Debug, Deserialize, Serialize)]
+pub struct ElectrumBlockHeaderVerificationParams {
+    pub difficulty_check: bool,
+    pub constant_difficulty: bool,
+    pub blocks_limit_to_check: NonZeroU64,
+    pub check_every: f64,
+}
+
 /// Electrum client configuration
 #[cfg(target_arch = "wasm32")]
 #[derive(Clone, Debug, Serialize)]
@@ -1565,6 +1577,7 @@ pub struct ElectrumClientImpl {
     protocol_version: OrdRange<f32>,
     get_balance_concurrent_map: ConcurrentRequestMap<String, ElectrumBalance>,
     list_unspent_concurrent_map: ConcurrentRequestMap<String, Vec<ElectrumUnspent>>,
+    block_headers_storage: Option<BlockHeaderStorage>,
 }
 
 async fn electrum_request_multi(
@@ -1705,6 +1718,11 @@ impl ElectrumClientImpl {
 
     /// Get available protocol versions.
     pub fn protocol_version(&self) -> &OrdRange<f32> { &self.protocol_version }
+
+    /// Get block headers storage.
+    pub fn block_headers_storage(&self) -> &Option<BlockHeaderStorage> {
+        &self.block_headers_storage
+    }
 }
 
 #[derive(Clone, Debug)]
@@ -1738,6 +1756,13 @@ impl JsonRpcMultiClient for ElectrumClient {
     fn transport_exact(&self, to_addr: String, request: JsonRpcRequestEnum) -> JsonRpcResponseFut {
         Box::new(electrum_request_to(self.clone(), request, to_addr).boxed().compat())
     }
+}
+
+pub struct ConfirmedTransactionInfo {
+    pub tx: UtxoTx,
+    pub header: BlockHeader,
+    pub index: u64,
+    pub height: u64,
 }
 
 impl ElectrumClient {
@@ -1911,7 +1936,8 @@ impl ElectrumClient {
         rpc_func!(self, "blockchain.transaction.get_merkle", txid, height)
     }
 
-    pub async fn get_tx_height(&self, tx: &UtxoTx) -> Result<u64, MmError<GetTxHeightError>> {
+    // todo: check if to use a different error or result like the rest of electrum functions (same for similar functions)
+    async fn get_tx_height(&self, tx: &UtxoTx) -> Result<u64, MmError<GetTxHeightError>> {
         for output in tx.outputs.clone() {
             let script_pubkey_str = hex::encode(electrum_script_hash(&output.script_pubkey));
             if let Ok(history) = self.scripthash_get_history(script_pubkey_str.as_str()).compat().await {
@@ -1924,6 +1950,171 @@ impl ElectrumClient {
             }
         }
         MmError::err(GetTxHeightError::HeightNotFound)
+    }
+
+    // todo: maybe make a trait and implement for electrum??? (same for similar functions)
+    async fn valid_block_header_from_storage(
+        &self,
+        ticker: &str,
+        height: u64,
+    ) -> Result<BlockHeader, MmError<GetBlockHeaderError>> {
+        let storage = match &self.block_headers_storage {
+            Some(storage) => storage,
+            None => {
+                return MmError::err(GetBlockHeaderError::StorageError(BlockHeaderStorageError::Internal(
+                    "block_headers_storage is not initialized".to_owned(),
+                )))
+            },
+        };
+        match storage.get_block_header(ticker, height).await? {
+            None => {
+                let bytes = self.blockchain_block_header(height).compat().await?;
+                let header: BlockHeader = deserialize(bytes.0.as_slice())?;
+                let params = &storage.params;
+                let blocks_limit = params.blocks_limit_to_check;
+                let (headers_registry, headers) = self.retrieve_last_headers(blocks_limit, height).compat().await?;
+                match spv_validation::helpers_validation::validate_headers(
+                    headers,
+                    params.difficulty_check,
+                    params.constant_difficulty,
+                ) {
+                    Ok(_) => {
+                        storage.add_block_headers_to_storage(ticker, headers_registry).await?;
+                        Ok(header)
+                    },
+                    Err(err) => MmError::err(GetBlockHeaderError::SPVError(err)),
+                }
+            },
+            Some(header) => Ok(header),
+        }
+    }
+
+    #[inline]
+    async fn block_header_from_storage_or_rpc(
+        &self,
+        ticker: &str,
+        height: u64,
+    ) -> Result<BlockHeader, MmError<GetBlockHeaderError>> {
+        match &self.block_headers_storage {
+            Some(_) => self.valid_block_header_from_storage(ticker, height).await,
+            None => Ok(deserialize(
+                self.blockchain_block_header(height).compat().await?.as_slice(),
+            )?),
+        }
+    }
+
+    // todo: maybe make loop outside of this function (in the validation function) see how a trait should be first
+    async fn get_merkle_and_header_retry_loop(
+        &self,
+        ticker: &str,
+        tx: &UtxoTx,
+        try_spv_proof_until: u64,
+    ) -> Result<(TxMerkleBranch, BlockHeader, u64), MmError<SPVError>> {
+        let mut height: Option<u64> = None;
+        let mut merkle_branch: Option<TxMerkleBranch> = None;
+
+        loop {
+            if now_ms() / 1000 > try_spv_proof_until {
+                error!(
+                    "Waited too long until {} for transaction {:?} to validate spv proof",
+                    try_spv_proof_until,
+                    tx.hash().reversed(),
+                );
+                return Err(SPVError::Timeout.into());
+            }
+
+            if height.is_none() {
+                match self.get_tx_height(tx).await {
+                    Ok(h) => height = Some(h),
+                    Err(e) => {
+                        debug!("`get_tx_height` returned an error {:?}", e);
+                        error!("{:?} for tx {:?}", SPVError::InvalidHeight, tx);
+                    },
+                }
+            }
+
+            if height.is_some() && merkle_branch.is_none() {
+                match self
+                    .blockchain_transaction_get_merkle(tx.hash().reversed().into(), height.unwrap())
+                    .compat()
+                    .await
+                {
+                    Ok(m) => merkle_branch = Some(m),
+                    Err(e) => {
+                        debug!("`blockchain_transaction_get_merkle` returned an error {:?}", e);
+                        error!(
+                            "{:?} by tx: {:?}, height: {}",
+                            SPVError::UnableToGetMerkle,
+                            H256Json::from(tx.hash().reversed()),
+                            height.unwrap()
+                        );
+                    },
+                }
+            }
+
+            if height.is_some() && merkle_branch.is_some() {
+                match self.block_header_from_storage_or_rpc(ticker, height.unwrap()).await {
+                    Ok(block_header) => {
+                        return Ok((merkle_branch.unwrap(), block_header, height.unwrap()));
+                    },
+                    Err(e) => {
+                        debug!("`block_header_from_storage_or_rpc` returned an error {:?}", e);
+                        error!(
+                            "{:?}, Received header likely not compatible with header format in mm2",
+                            SPVError::UnableToGetHeader
+                        );
+                    },
+                }
+            }
+
+            error!(
+                "Failed spv proof validation for transaction {:?}, retrying in {} seconds.",
+                tx.hash(),
+                TRY_SPV_PROOF_INTERVAL,
+            );
+
+            Timer::sleep(TRY_SPV_PROOF_INTERVAL as f64).await;
+        }
+    }
+
+    pub async fn validate_spv_proof(
+        &self,
+        ticker: &str,
+        tx: &UtxoTx,
+        try_spv_proof_until: u64,
+    ) -> Result<ConfirmedTransactionInfo, MmError<SPVError>> {
+        if tx.outputs.is_empty() {
+            return MmError::err(SPVError::InvalidVout);
+        }
+
+        let (merkle_branch, header, height) = self
+            .get_merkle_and_header_retry_loop(ticker, tx, try_spv_proof_until)
+            .await?;
+        let raw_header = RawBlockHeader::new(header.raw().take())?;
+        let intermediate_nodes: Vec<H256> = merkle_branch
+            .merkle
+            .into_iter()
+            .map(|hash| hash.reversed().into())
+            .collect();
+
+        let proof = SPVProof {
+            tx_id: tx.hash(),
+            vin: serialize_list(&tx.inputs).take(),
+            vout: serialize_list(&tx.outputs).take(),
+            index: merkle_branch.pos as u64,
+            confirming_header: header.clone(),
+            raw_header,
+            intermediate_nodes,
+        };
+
+        proof.validate().map_err(MmError::new)?;
+
+        Ok(ConfirmedTransactionInfo {
+            tx: tx.clone(),
+            header,
+            index: proof.index,
+            height,
+        })
     }
 }
 
@@ -2156,7 +2347,11 @@ impl UtxoRpcClientOps for ElectrumClient {
 
 #[cfg_attr(test, mockable)]
 impl ElectrumClientImpl {
-    pub fn new(coin_ticker: String, event_handlers: Vec<RpcTransportEventHandlerShared>) -> ElectrumClientImpl {
+    pub fn new(
+        coin_ticker: String,
+        event_handlers: Vec<RpcTransportEventHandlerShared>,
+        block_headers_storage: Option<BlockHeaderStorage>,
+    ) -> ElectrumClientImpl {
         let protocol_version = OrdRange::new(1.2, 1.4).unwrap();
         ElectrumClientImpl {
             coin_ticker,
@@ -2166,6 +2361,7 @@ impl ElectrumClientImpl {
             protocol_version,
             get_balance_concurrent_map: ConcurrentRequestMap::new(),
             list_unspent_concurrent_map: ConcurrentRequestMap::new(),
+            block_headers_storage,
         }
     }
 
@@ -2174,10 +2370,11 @@ impl ElectrumClientImpl {
         coin_ticker: String,
         event_handlers: Vec<RpcTransportEventHandlerShared>,
         protocol_version: OrdRange<f32>,
+        block_headers_storage: Option<BlockHeaderStorage>,
     ) -> ElectrumClientImpl {
         ElectrumClientImpl {
             protocol_version,
-            ..ElectrumClientImpl::new(coin_ticker, event_handlers)
+            ..ElectrumClientImpl::new(coin_ticker, event_handlers, block_headers_storage)
         }
     }
 }

@@ -1,9 +1,8 @@
-use crate::utxo::rpc_clients::ElectrumBlockHeader;
+use crate::utxo::rpc_clients::{ElectrumBlockHeader, ElectrumBlockHeaderVerificationParams};
 #[cfg(target_arch = "wasm32")]
 use crate::utxo::utxo_indexedb_block_header_storage::IndexedDBBlockHeadersStorage;
 #[cfg(not(target_arch = "wasm32"))]
 use crate::utxo::utxo_sql_block_header_storage::SqliteBlockHeadersStorage;
-use crate::utxo::UtxoBlockHeaderVerificationParams;
 use async_trait::async_trait;
 use chain::BlockHeader;
 use derive_more::Display;
@@ -15,26 +14,45 @@ use std::fmt::{Debug, Formatter};
 #[derive(Debug, Display)]
 pub enum BlockHeaderStorageError {
     #[display(fmt = "Can't add to the storage for {} - reason: {}", ticker, reason)]
-    AddToStorageError { ticker: String, reason: String },
+    AddToStorageError {
+        ticker: String,
+        reason: String,
+    },
     #[display(fmt = "Can't get from the storage for {} - reason: {}", ticker, reason)]
-    GetFromStorageError { ticker: String, reason: String },
+    GetFromStorageError {
+        ticker: String,
+        reason: String,
+    },
     #[display(
         fmt = "Can't retrieve the table from the storage for {} - reason: {}",
         ticker,
         reason
     )]
-    CantRetrieveTableError { ticker: String, reason: String },
+    CantRetrieveTableError {
+        ticker: String,
+        reason: String,
+    },
     #[display(fmt = "Can't query from the storage - query: {} - reason: {}", query, reason)]
-    QueryError { query: String, reason: String },
+    QueryError {
+        query: String,
+        reason: String,
+    },
     #[display(fmt = "Can't init from the storage - ticker: {} - reason: {}", ticker, reason)]
-    InitializationError { ticker: String, reason: String },
+    InitializationError {
+        ticker: String,
+        reason: String,
+    },
     #[display(fmt = "Can't decode/deserialize from storage for {} - reason: {}", ticker, reason)]
-    DecodeError { ticker: String, reason: String },
+    DecodeError {
+        ticker: String,
+        reason: String,
+    },
+    Internal(String),
 }
 
 pub struct BlockHeaderStorage {
     pub inner: Box<dyn BlockHeaderStorageOps>,
-    pub params: UtxoBlockHeaderVerificationParams,
+    pub params: ElectrumBlockHeaderVerificationParams,
 }
 
 impl Debug for BlockHeaderStorage {
@@ -42,7 +60,10 @@ impl Debug for BlockHeaderStorage {
 }
 
 pub trait InitBlockHeaderStorageOps: Send + Sync + 'static {
-    fn new_from_ctx(ctx: MmArc, params: UtxoBlockHeaderVerificationParams) -> Option<BlockHeaderStorage>
+    fn new_from_ctx(
+        ctx: MmArc,
+        params: ElectrumBlockHeaderVerificationParams,
+    ) -> Result<BlockHeaderStorage, BlockHeaderStorageError>
     where
         Self: Sized;
 }
@@ -89,16 +110,22 @@ pub trait BlockHeaderStorageOps: Send + Sync + 'static {
 
 impl InitBlockHeaderStorageOps for BlockHeaderStorage {
     #[cfg(not(target_arch = "wasm32"))]
-    fn new_from_ctx(ctx: MmArc, params: UtxoBlockHeaderVerificationParams) -> Option<BlockHeaderStorage> {
-        ctx.sqlite_connection.as_option().map(|connection| BlockHeaderStorage {
-            inner: Box::new(SqliteBlockHeadersStorage(connection.clone())),
+    fn new_from_ctx(
+        ctx: MmArc,
+        params: ElectrumBlockHeaderVerificationParams,
+    ) -> Result<Self, BlockHeaderStorageError> {
+        let sqlite_connection = ctx.sqlite_connection.ok_or(BlockHeaderStorageError::Internal(
+            "sqlite_connection is not initialized".to_owned(),
+        ))?;
+        Ok(BlockHeaderStorage {
+            inner: Box::new(SqliteBlockHeadersStorage(sqlite_connection.clone())),
             params,
         })
     }
 
     #[cfg(target_arch = "wasm32")]
-    fn new_from_ctx(_ctx: MmArc, params: UtxoBlockHeaderVerificationParams) -> Option<BlockHeaderStorage> {
-        Some(BlockHeaderStorage {
+    fn new_from_ctx(_ctx: MmArc, params: ElectrumBlockHeaderVerificationParams) -> Result<Self, BlockHeaderStorageError> {
+        Ok(BlockHeaderStorage {
             inner: Box::new(IndexedDBBlockHeadersStorage {}),
             params,
         })

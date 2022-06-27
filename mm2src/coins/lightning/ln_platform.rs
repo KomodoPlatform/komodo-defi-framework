@@ -1,8 +1,8 @@
 use super::*;
 use crate::lightning::ln_errors::{SaveChannelClosingError, SaveChannelClosingResult};
-use crate::utxo::rpc_clients::{BestBlock as RpcBestBlock, BlockHashOrHeight, ElectrumBlockHeader, ElectrumClient,
-                               ElectrumNonce, EstimateFeeMethod, UtxoRpcClientEnum};
-use crate::utxo::utxo_common::{validate_spv_proof, ConfirmedTransactionInfo};
+use crate::utxo::rpc_clients::{BestBlock as RpcBestBlock, BlockHashOrHeight, ConfirmedTransactionInfo,
+                               ElectrumBlockHeader, ElectrumClient, ElectrumNonce, EstimateFeeMethod,
+                               UtxoRpcClientEnum};
 use crate::utxo::utxo_standard::UtxoStandardCoin;
 use crate::{MarketCoinOps, MmCoin};
 use bitcoin::blockdata::block::BlockHeader;
@@ -212,7 +212,6 @@ impl Platform {
 
     async fn get_confirmed_registered_txs(&self, client: &ElectrumClient) -> Vec<ConfirmedTransactionInfo> {
         let ticker = self.coin.ticker();
-        let block_headers_storage = &self.coin.as_ref().block_headers_storage;
         let registered_txs = self.registered_txs.lock().clone();
 
         let on_chain_txs_futs = registered_txs
@@ -238,14 +237,9 @@ impl Platform {
 
         let confirmed_transactions_futs = on_chain_txs
             .map(|transaction| async move {
-                validate_spv_proof(
-                    ticker,
-                    block_headers_storage,
-                    client,
-                    &transaction,
-                    (now_ms() / 1000) + TRY_SPV_PROOF_INTERVAL,
-                )
-                .await
+                client
+                    .validate_spv_proof(ticker, &transaction, (now_ms() / 1000) + TRY_SPV_PROOF_INTERVAL)
+                    .await
             })
             .collect::<Vec<_>>();
         join_all(confirmed_transactions_futs)
@@ -271,7 +265,6 @@ impl Platform {
         client: &ElectrumClient,
     ) {
         let ticker = self.coin.ticker();
-        let block_headers_storage = &self.coin.as_ref().block_headers_storage;
         let registered_outputs = self.registered_outputs.lock().clone();
 
         let spent_outputs_info_fut = registered_outputs
@@ -308,14 +301,9 @@ impl Platform {
         let confirmed_transactions_futs = spent_outputs_info
             .into_iter()
             .map(|output| async move {
-                validate_spv_proof(
-                    ticker,
-                    block_headers_storage,
-                    client,
-                    &output.spending_tx,
-                    (now_ms() / 1000) + TRY_SPV_PROOF_INTERVAL,
-                )
-                .await
+                client
+                    .validate_spv_proof(ticker, &output.spending_tx, (now_ms() / 1000) + TRY_SPV_PROOF_INTERVAL)
+                    .await
             })
             .collect::<Vec<_>>();
         let mut confirmed_transaction_info = join_all(confirmed_transactions_futs)

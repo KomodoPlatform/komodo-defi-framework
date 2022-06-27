@@ -1,7 +1,7 @@
 use crate::hd_wallet::{HDAccountsMap, HDAccountsMutex};
 use crate::hd_wallet_storage::{HDWalletCoinStorage, HDWalletStorageError};
-use crate::utxo::rpc_clients::{ElectrumClient, ElectrumClientImpl, ElectrumRpcRequest, EstimateFeeMethod,
-                               UtxoRpcClientEnum};
+use crate::utxo::rpc_clients::{ElectrumBlockHeaderVerificationParams, ElectrumClient, ElectrumClientImpl,
+                               ElectrumRpcRequest, EstimateFeeMethod, UtxoRpcClientEnum};
 use crate::utxo::tx_cache::{UtxoVerboseCacheOps, UtxoVerboseCacheShared};
 use crate::utxo::utxo_block_header_storage::{BlockHeaderStorage, InitBlockHeaderStorageOps};
 use crate::utxo::utxo_builder::utxo_conf_builder::{UtxoConfBuilder, UtxoConfError, UtxoConfResult};
@@ -162,7 +162,6 @@ pub trait UtxoFieldsWithIguanaPrivKeyBuilder: UtxoCoinBuilderCommonOps {
         let tx_hash_algo = self.tx_hash_algo();
         let check_utxo_maturity = self.check_utxo_maturity();
         let tx_cache = self.tx_cache();
-        let block_headers_storage = self.block_headers_storage()?;
 
         let coin = UtxoCoinFields {
             conf,
@@ -173,7 +172,6 @@ pub trait UtxoFieldsWithIguanaPrivKeyBuilder: UtxoCoinBuilderCommonOps {
             derivation_method,
             history_sync_state: Mutex::new(initial_history_state),
             tx_cache,
-            block_headers_storage,
             recently_spent_outpoints: AsyncMutex::new(RecentlySpentOutPoints::new(my_script_pubkey)),
             tx_fee,
             tx_hash_algo,
@@ -225,7 +223,6 @@ pub trait UtxoFieldsWithHardwareWalletBuilder: UtxoCoinBuilderCommonOps {
         let tx_hash_algo = self.tx_hash_algo();
         let check_utxo_maturity = self.check_utxo_maturity();
         let tx_cache = self.tx_cache();
-        let block_headers_storage = self.block_headers_storage()?;
 
         let coin = UtxoCoinFields {
             conf,
@@ -235,7 +232,6 @@ pub trait UtxoFieldsWithHardwareWalletBuilder: UtxoCoinBuilderCommonOps {
             priv_key_policy: PrivKeyPolicy::Trezor,
             derivation_method: DerivationMethod::HDWallet(hd_wallet),
             history_sync_state: Mutex::new(initial_history_state),
-            block_headers_storage,
             tx_cache,
             recently_spent_outpoints,
             tx_fee,
@@ -291,16 +287,6 @@ pub trait UtxoCoinBuilderCommonOps {
     fn activation_params(&self) -> &UtxoActivationParams;
 
     fn ticker(&self) -> &str;
-
-    #[inline]
-    fn block_headers_storage(&self) -> UtxoCoinBuildResult<Option<BlockHeaderStorage>> {
-        let params: Option<_> = json::from_value(self.conf()["block_header_params"].clone())
-            .map_to_mm(|e| UtxoConfError::InvalidBlockHeaderParams(e.to_string()))?;
-        match params {
-            None => Ok(None),
-            Some(params) => Ok(BlockHeaderStorage::new_from_ctx(self.ctx().clone(), params)),
-        }
-    }
 
     fn address_format(&self) -> UtxoCoinBuildResult<UtxoAddressFormat> {
         let format_from_req = self.activation_params().address_format.clone();
@@ -416,8 +402,13 @@ pub trait UtxoCoinBuilderCommonOps {
                     Ok(UtxoRpcClientEnum::Native(native))
                 }
             },
-            UtxoRpcMode::Electrum { servers } => {
-                let electrum = self.electrum_client(ElectrumBuilderArgs::default(), servers).await?;
+            UtxoRpcMode::Electrum {
+                servers,
+                block_header_params,
+            } => {
+                let electrum = self
+                    .electrum_client(ElectrumBuilderArgs::default(), servers, block_header_params)
+                    .await?;
                 Ok(UtxoRpcClientEnum::Electrum(electrum))
             },
         }
@@ -427,6 +418,7 @@ pub trait UtxoCoinBuilderCommonOps {
         &self,
         args: ElectrumBuilderArgs,
         mut servers: Vec<ElectrumRpcRequest>,
+        block_header_params: Option<ElectrumBlockHeaderVerificationParams>,
     ) -> UtxoCoinBuildResult<ElectrumClient> {
         let (on_connect_tx, on_connect_rx) = mpsc::unbounded();
         let ticker = self.ticker().to_owned();
@@ -442,9 +434,17 @@ pub trait UtxoCoinBuilderCommonOps {
             event_handlers.push(ElectrumProtoVerifier { on_connect_tx }.into_shared());
         }
 
+        let block_headers_storage = match block_header_params {
+            Some(params) => Some(
+                BlockHeaderStorage::new_from_ctx(self.ctx().clone(), params)
+                    .map_to_mm(|e| UtxoCoinBuildError::Internal(e.to_string()))?,
+            ),
+            None => None,
+        };
+
         let mut rng = small_rng();
         servers.as_mut_slice().shuffle(&mut rng);
-        let client = ElectrumClientImpl::new(ticker, event_handlers);
+        let client = ElectrumClientImpl::new(ticker, event_handlers, block_headers_storage);
         for server in servers.iter() {
             match client.add_server(server).await {
                 Ok(_) => (),
