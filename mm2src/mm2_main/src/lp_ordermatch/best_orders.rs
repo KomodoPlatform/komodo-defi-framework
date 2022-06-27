@@ -38,6 +38,7 @@ struct BestOrdersP2PRes {
 }
 
 #[derive(Debug, Deserialize)]
+#[serde(rename_all = "lowercase")]
 pub enum RequestBestOrdersBy {
     Volume(MmNumber),
     Number(usize),
