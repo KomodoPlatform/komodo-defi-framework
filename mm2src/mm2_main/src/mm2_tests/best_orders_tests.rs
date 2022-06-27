@@ -1,5 +1,4 @@
 use super::*;
-use trie_db::Value;
 
 #[cfg(feature = "zhtlc-native-tests")]
 use mm2_test_helpers::for_tests::best_orders_v2;
@@ -276,7 +275,7 @@ fn test_best_orders_v2_by_number() {
     })))
     .unwrap();
     assert!(rc.0.is_success(), "!best_orders: {}", rc.1);
-    log!("rc {:?}", [rc]);
+    log!("rc {:?}", [&rc]);
     let response: RpcV2Response<BestOrdersV2Response> = json::from_str(&rc.1).unwrap();
     let best_morty_orders = response.result.orders.get("MORTY").unwrap();
     log!("Best MORTY orders when buy RICK {:?}", [best_morty_orders]);
@@ -298,7 +297,7 @@ fn test_best_orders_v2_by_number() {
     })))
     .unwrap();
     assert!(rc.0.is_success(), "!best_orders: {}", rc.1);
-    log!("rc {:?}", [rc]);
+    log!("rc {:?}", [&rc]);
     let response: RpcV2Response<BestOrdersV2Response> = json::from_str(&rc.1).unwrap();
     let best_morty_orders = response.result.orders.get("MORTY").unwrap();
     log!("Best MORTY orders when buy RICK {:?}", [best_morty_orders]);
@@ -322,7 +321,7 @@ fn test_best_orders_v2_by_number() {
     })))
     .unwrap();
     assert!(rc.0.is_success(), "!best_orders: {}", rc.1);
-    log!("rc {:?}", [rc]);
+    log!("rc {:?}", [&rc]);
     let response: RpcV2Response<BestOrdersV2Response> = json::from_str(&rc.1).unwrap();
     let expected_price: BigDecimal = "1.25".parse().unwrap();
     let best_morty_orders = response.result.orders.get("MORTY").unwrap();
@@ -348,7 +347,7 @@ fn test_best_orders_v2_by_number() {
     })))
     .unwrap();
     assert!(rc.0.is_success(), "!best_orders: {}", rc.1);
-    log!("rc {:?}", [rc]);
+    log!("rc {:?}", [&rc]);
     let response: RpcV2Response<BestOrdersV2Response> = json::from_str(&rc.1).unwrap();
     let best_rick_orders = response.result.orders.get("RICK").unwrap();
     log!("Best RICK orders when sell ETH {:?}", [best_rick_orders]);
@@ -462,7 +461,7 @@ fn test_best_orders_v2_by_volume() {
     })))
     .unwrap();
     assert!(rc.0.is_success(), "!best_orders: {}", rc.1);
-    log!("rc {:?}", [rc]);
+    log!("rc {:?}", [&rc]);
     let response: RpcV2Response<BestOrdersV2Response> = json::from_str(&rc.1).unwrap();
     // MORTY
     let best_morty_orders = response.result.orders.get("MORTY").unwrap();
@@ -491,7 +490,7 @@ fn test_best_orders_v2_by_volume() {
     })))
     .unwrap();
     assert!(rc.0.is_success(), "!best_orders: {}", rc.1);
-    log!("rc {:?}", [rc]);
+    log!("rc {:?}", [&rc]);
     let response: RpcV2Response<BestOrdersV2Response> = json::from_str(&rc.1).unwrap();
     let expected_price: BigDecimal = "1.25".parse().unwrap();
     let best_morty_orders = response.result.orders.get("MORTY").unwrap();
@@ -516,7 +515,7 @@ fn test_best_orders_v2_by_volume() {
     })))
     .unwrap();
     assert!(rc.0.is_success(), "!best_orders: {}", rc.1);
-    log!("rc {:?}", [rc]);
+    log!("rc {:?}", [&rc]);
     let response: RpcV2Response<BestOrdersV2Response> = json::from_str(&rc.1).unwrap();
     let expected_price: BigDecimal = "1.25".parse().unwrap();
     let best_morty_orders = response.result.orders.get("MORTY").unwrap();
