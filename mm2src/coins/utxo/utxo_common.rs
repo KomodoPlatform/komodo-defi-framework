@@ -2056,8 +2056,10 @@ where
     };
     let mut history_map: HashMap<H256Json, TransactionDetails> = history
         .into_iter()
-        .filter(|tx| H256Json::from_str(&tx.tx_hash).is_ok())
-        .map(|tx| (H256Json::from_str(&tx.tx_hash).unwrap(), tx))
+        .filter_map(|tx| {
+            let tx_hash = H256Json::from_str(&tx.tx_hash).ok()?;
+            Some((tx_hash, tx))
+        })
         .collect();
 
     let mut success_iteration = 0i32;
