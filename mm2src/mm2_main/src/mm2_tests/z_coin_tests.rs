@@ -1,7 +1,8 @@
 use super::*;
 use common::now_ms;
-use mm2_test_helpers::for_tests::{init_withdraw, rick_conf, send_raw_transaction, withdraw_status, zombie_conf,
-                                  Mm2TestConf, RICK, ZOMBIE_ELECTRUMS, ZOMBIE_LIGHTWALLETD_URLS, ZOMBIE_TICKER};
+use mm2_test_helpers::for_tests::{init_withdraw, my_tx_history_v2, rick_conf, send_raw_transaction, withdraw_status,
+                                  zombie_conf, Mm2TestConf, RICK, ZOMBIE_ELECTRUMS, ZOMBIE_LIGHTWALLETD_URLS,
+                                  ZOMBIE_TICKER};
 
 const ZOMBIE_TEST_BALANCE_SEED: &str = "zombie test seed";
 const ZOMBIE_TEST_WITHDRAW_SEED: &str = "zombie withdraw test seed";
@@ -51,6 +52,28 @@ fn activate_z_coin_light() {
         _ => panic!("Expected EnableCoinBalance::Iguana"),
     };
     assert_eq!(balance.balance.spendable, BigDecimal::from(1));
+}
+
+// ignored because it requires a long-running Zcoin initialization process
+#[test]
+#[ignore]
+fn z_coin_tx_history() {
+    let coins = json!([zombie_conf()]);
+
+    let conf = Mm2TestConf::seednode(ZOMBIE_TEST_BALANCE_SEED, &coins);
+    let mm = MarketMakerIt::start(conf.conf, conf.rpc_password, conf.local).unwrap();
+
+    block_on(enable_z_coin_light(
+        &mm,
+        ZOMBIE_TICKER,
+        ZOMBIE_ELECTRUMS,
+        ZOMBIE_LIGHTWALLETD_URLS,
+        &blocks_cache_path(&mm, ZOMBIE_TEST_BALANCE_SEED, ZOMBIE_TICKER),
+    ));
+
+    let tx_history = block_on(my_tx_history_v2(&mm, ZOMBIE_TICKER, 1, None));
+
+    println!("{}", json::to_string(&tx_history).unwrap());
 }
 
 // ignored because it requires a long-running Zcoin initialization process

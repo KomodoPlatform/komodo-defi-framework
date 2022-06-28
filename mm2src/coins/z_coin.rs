@@ -1,3 +1,4 @@
+use crate::my_tx_history_v2::{MyTxHistoryErrorV2, MyTxHistoryRequestV2, MyTxHistoryResponseV2};
 use crate::rpc_command::init_withdraw::{InitWithdrawCoin, WithdrawInProgressStatus, WithdrawTaskHandle};
 use crate::utxo::rpc_clients::{ElectrumRpcRequest, UnspentInfo, UtxoRpcClientEnum, UtxoRpcError, UtxoRpcFut,
                                UtxoRpcResult};
@@ -20,9 +21,11 @@ use async_trait::async_trait;
 use bitcrypto::{dhash160, dhash256};
 use chain::constants::SEQUENCE_FINAL;
 use chain::{Transaction as UtxoTx, TransactionOutput};
+use common::log::debug;
 use common::mm_number::{BigDecimal, MmNumber};
 use common::{async_blocking, log};
 use crypto::privkey::{key_pair_from_secret, secp_privkey_from_hash};
+use db_common::sqlite::sql_builder::{name, SqlBuilder, SqlName};
 use futures::compat::Future01CompatExt;
 use futures::lock::Mutex as AsyncMutex;
 use futures::{FutureExt, TryFutureExt};
@@ -94,6 +97,9 @@ macro_rules! try_ztx_s {
 
 const DEX_FEE_OVK: OutgoingViewingKey = OutgoingViewingKey([7; 32]);
 const DEX_FEE_Z_ADDR: &str = "zs1rp6426e9r6jkq2nsanl66tkd34enewrmr0uvj0zelhkcwmsy0uvxz2fhm9eu9rl3ukxvgzy2v9f";
+const TRANSACTIONS_TABLE: &str = "transactions";
+const RECEIVED_NOTES_TABLE: &str = "received_notes";
+const SENT_NOTES_TABLE: &str = "sent_notes";
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct ZcoinConsensusParams {
@@ -379,6 +385,31 @@ impl ZCoin {
 
         sync_guard.respawn_guard.watch_for_tx(tx.txid());
         Ok(tx)
+    }
+
+    pub async fn tx_history(
+        &self,
+        request: MyTxHistoryRequestV2,
+    ) -> Result<MyTxHistoryResponseV2, MmError<MyTxHistoryErrorV2>> {
+        let wallet_db = self.z_fields.light_wallet_db.clone();
+        async_blocking(move || {
+            let db_guard = wallet_db.lock();
+            let conn = db_guard.sql_conn();
+            let sql = SqlBuilder::select_from(name!(TRANSACTIONS_TABLE; "txes"))
+                .field("txes.txid")
+                .field("SUM(rn.value) as input_amount")
+                .field("SUM(sn.value) as output_amount")
+                .left()
+                .join(name!(RECEIVED_NOTES_TABLE; "rn"))
+                .on("txes.id_tx = rn.tx")
+                .join(name!(SENT_NOTES_TABLE; "sn"))
+                .on("txes.id_tx = sn.tx")
+                .sql()
+                .expect("valid query");
+            debug!("query {}", sql);
+            unimplemented!()
+        })
+        .await
     }
 }
 

@@ -101,7 +101,7 @@ pub const TAKER_ERROR_EVENTS: [&str; 13] = [
 
 pub const RICK: &str = "RICK";
 pub const ZOMBIE_TICKER: &str = "ZOMBIE";
-pub const ZOMBIE_ELECTRUMS: &[&str] = &["zombie.sirseven.me:10033"];
+pub const ZOMBIE_ELECTRUMS: &[&str] = &["electrum1.cipig.net:10001"];
 pub const ZOMBIE_LIGHTWALLETD_URLS: &[&str] = &["http://zombie.sirseven.me:443"];
 const DEFAULT_RPC_PASSWORD: &str = "pass";
 
