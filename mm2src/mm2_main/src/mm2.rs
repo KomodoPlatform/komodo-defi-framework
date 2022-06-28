@@ -192,7 +192,7 @@ fn check_password_policy() {
         PasswordPolicyError::PasswordMissUppercase
     );
 
-    // Miss uppercase
+    // Contains the same character 3 times in a row
     assert_eq!(
         password_policy("SecretPassSoStrong123*aaa").unwrap_err().into_inner(),
         PasswordPolicyError::PasswordConsecutiveCharactersExceeded
@@ -209,6 +209,11 @@ fn check_password_policy() {
         password_policy("Foopassword123*$").unwrap_err().into_inner(),
         PasswordPolicyError::ContainsTheWordPassword
     );
+
+    // Check valid long password
+    let long_pass = "SecretPassSoStrong*!1234567891012";
+    assert!(long_pass.len() > 32);
+    assert!(password_policy(long_pass).is_ok());
 
     // Valid passwords
     password_policy("StrongPass123*").unwrap();
