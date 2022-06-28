@@ -7,6 +7,7 @@ use crate::hd_wallet_storage::{HDWalletCoinWithStorageOps, HDWalletStorageResult
 use crate::rpc_command::init_withdraw::WithdrawTaskHandle;
 use crate::utxo::rpc_clients::{electrum_script_hash, BlockHashOrHeight, UnspentInfo, UnspentMap, UtxoRpcClientEnum,
                                UtxoRpcClientOps, UtxoRpcResult};
+use crate::utxo::spv::SimplePaymentVerification;
 use crate::utxo::tx_cache::TxCacheResult;
 use crate::utxo::utxo_withdraw::{InitUtxoWithdraw, StandardUtxoWithdraw, UtxoWithdraw};
 use crate::{CanRefundHtlc, CoinBalance, CoinWithDerivationMethod, GetWithdrawSenderAddress, HDAddressId,
@@ -3429,7 +3430,6 @@ pub async fn block_header_utxo_loop<T: UtxoCommonOps>(weak: UtxoWeak, constructo
             None => return,
         };
         let ticker = coin.as_ref().conf.ticker.as_str();
-        // todo: add a function to rpc_client then maybe to the coin even to use straight away
         let storage = match &coin.as_ref().rpc_client {
             UtxoRpcClientEnum::Native(_) => return,
             UtxoRpcClientEnum::Electrum(e) => match e.block_headers_storage() {
@@ -3454,12 +3454,10 @@ pub async fn block_header_utxo_loop<T: UtxoCommonOps>(weak: UtxoWeak, constructo
     }
     while let Some(arc) = weak.upgrade() {
         let coin = constructor(arc);
-        // todo: check above code for similar functionality (remove this also)
         let client = match &coin.as_ref().rpc_client {
             UtxoRpcClientEnum::Native(_) => break,
             UtxoRpcClientEnum::Electrum(client) => client,
         };
-        // todo: add a function to rpc_client then maybe to the coin even to use straight away
         let storage = match client.block_headers_storage() {
             None => return,
             Some(storage) => storage,

@@ -10,6 +10,7 @@ use crate::utxo::rpc_clients::{BlockHashOrHeight, ElectrumBalance, ElectrumClien
                                GetAddressInfoRes, ListSinceBlockRes, ListTransactionsItem, NativeClient,
                                NativeClientImpl, NativeUnspent, NetworkInfo, UtxoRpcClientOps, ValidateAddressRes,
                                VerboseBlock};
+use crate::utxo::spv::SimplePaymentVerification;
 use crate::utxo::tx_cache::dummy_tx_cache::DummyVerboseCache;
 use crate::utxo::tx_cache::UtxoVerboseCacheOps;
 use crate::utxo::utxo_builder::{UtxoArcBuilder, UtxoCoinBuilderCommonOps};

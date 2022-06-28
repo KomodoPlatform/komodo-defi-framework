@@ -1,8 +1,8 @@
 use super::*;
 use crate::lightning::ln_errors::{SaveChannelClosingError, SaveChannelClosingResult};
-use crate::utxo::rpc_clients::{BestBlock as RpcBestBlock, BlockHashOrHeight, ConfirmedTransactionInfo,
-                               ElectrumBlockHeader, ElectrumClient, ElectrumNonce, EstimateFeeMethod,
-                               UtxoRpcClientEnum};
+use crate::utxo::rpc_clients::{BestBlock as RpcBestBlock, BlockHashOrHeight, ElectrumBlockHeader, ElectrumClient,
+                               ElectrumNonce, EstimateFeeMethod, UtxoRpcClientEnum};
+use crate::utxo::spv::{ConfirmedTransactionInfo, SimplePaymentVerification};
 use crate::utxo::utxo_standard::UtxoStandardCoin;
 use crate::{MarketCoinOps, MmCoin};
 use bitcoin::blockdata::block::BlockHeader;
@@ -310,15 +310,16 @@ impl Platform {
             .await
             .into_iter()
             .filter_map(|confirmed_transaction| match confirmed_transaction {
-                Ok(tx) => {
+                Ok(confirmed_tx) => {
                     self.registered_outputs.lock().retain(|output| {
-                        !tx.tx
+                        !confirmed_tx
+                            .tx
                             .clone()
                             .inputs
                             .into_iter()
                             .any(|txin| txin.previous_output.hash == h256_from_txid(output.outpoint.txid))
                     });
-                    Some(tx)
+                    Some(confirmed_tx)
                 },
                 Err(e) => {
                     error!("Error verifying transaction: {:?}", e);

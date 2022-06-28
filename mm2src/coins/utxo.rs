@@ -31,6 +31,7 @@ mod bchd_pb;
 pub mod qtum;
 pub mod rpc_clients;
 pub mod slp;
+pub mod spv;
 pub mod utxo_block_header_storage;
 pub mod utxo_builder;
 pub mod utxo_common;
@@ -87,9 +88,9 @@ use utxo_common::{big_decimal_from_sat, UtxoTxBuilder};
 use utxo_signer::with_key_pair::sign_tx;
 use utxo_signer::{TxProvider, TxProviderError, UtxoSignTxError, UtxoSignTxResult};
 
-use self::rpc_clients::{electrum_script_hash, ElectrumBlockHeaderVerificationParams, ElectrumClient,
-                        ElectrumRpcRequest, EstimateFeeMethod, EstimateFeeMode, NativeClient, UnspentInfo, UnspentMap,
-                        UtxoRpcClientEnum, UtxoRpcError, UtxoRpcFut, UtxoRpcResult};
+use self::rpc_clients::{electrum_script_hash, BlockHeaderVerificationParams, ElectrumClient, ElectrumRpcRequest,
+                        EstimateFeeMethod, EstimateFeeMode, NativeClient, UnspentInfo, UnspentMap, UtxoRpcClientEnum,
+                        UtxoRpcError, UtxoRpcFut, UtxoRpcResult};
 use super::{big_decimal_from_sat_unsigned, BalanceError, BalanceFut, BalanceResult, CoinBalance, CoinsContext,
             DerivationMethod, FeeApproxStage, FoundSwapTxSpend, HistorySyncState, KmdRewardsDetails, MarketCoinOps,
             MmCoin, NumConversError, NumConversResult, PrivKeyActivationPolicy, PrivKeyNotAllowed, PrivKeyPolicy,
@@ -594,14 +595,19 @@ impl From<GetTxHeightError> for SPVError {
     }
 }
 
-#[derive(Debug)]
+#[derive(Debug, Display)]
 pub enum GetBlockHeaderError {
+    #[display(fmt = "Block header storage error: {}", _0)]
     StorageError(BlockHeaderStorageError),
+    #[display(fmt = "RPC error: {}", _0)]
     RpcError(JsonRpcError),
+    #[display(fmt = "Serialization error: {}", _0)]
     SerializationError(serialization::Error),
+    #[display(fmt = "Invalid response: {}", _0)]
     InvalidResponse(String),
+    #[display(fmt = "Error validating headers: {}", _0)]
     SPVError(SPVError),
-    NativeNotSupported(String),
+    #[display(fmt = "Internal error: {}", _0)]
     Internal(String),
 }
 
@@ -619,16 +625,16 @@ impl From<UtxoRpcError> for GetBlockHeaderError {
     }
 }
 
-impl From<SPVError> for GetBlockHeaderError {
-    fn from(e: SPVError) -> Self { GetBlockHeaderError::SPVError(e) }
-}
-
 impl From<serialization::Error> for GetBlockHeaderError {
     fn from(err: serialization::Error) -> Self { GetBlockHeaderError::SerializationError(err) }
 }
 
 impl From<BlockHeaderStorageError> for GetBlockHeaderError {
     fn from(err: BlockHeaderStorageError) -> Self { GetBlockHeaderError::StorageError(err) }
+}
+
+impl From<GetBlockHeaderError> for SPVError {
+    fn from(e: GetBlockHeaderError) -> Self { SPVError::UnableToGetHeader(e.to_string()) }
 }
 
 impl UtxoCoinFields {
@@ -1288,7 +1294,7 @@ pub enum UtxoRpcMode {
     Native,
     Electrum {
         servers: Vec<ElectrumRpcRequest>,
-        block_header_params: Option<ElectrumBlockHeaderVerificationParams>,
+        block_header_params: Option<BlockHeaderVerificationParams>,
     },
 }
 

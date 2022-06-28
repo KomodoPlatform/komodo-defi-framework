@@ -1,7 +1,7 @@
 use crate::hd_wallet::{HDAccountsMap, HDAccountsMutex};
 use crate::hd_wallet_storage::{HDWalletCoinStorage, HDWalletStorageError};
-use crate::utxo::rpc_clients::{ElectrumBlockHeaderVerificationParams, ElectrumClient, ElectrumClientImpl,
-                               ElectrumRpcRequest, EstimateFeeMethod, UtxoRpcClientEnum};
+use crate::utxo::rpc_clients::{BlockHeaderVerificationParams, ElectrumClient, ElectrumClientImpl, ElectrumRpcRequest,
+                               EstimateFeeMethod, UtxoRpcClientEnum};
 use crate::utxo::tx_cache::{UtxoVerboseCacheOps, UtxoVerboseCacheShared};
 use crate::utxo::utxo_block_header_storage::{BlockHeaderStorage, InitBlockHeaderStorageOps};
 use crate::utxo::utxo_builder::utxo_conf_builder::{UtxoConfBuilder, UtxoConfError, UtxoConfResult};
@@ -409,7 +409,7 @@ pub trait UtxoCoinBuilderCommonOps {
         &self,
         args: ElectrumBuilderArgs,
         mut servers: Vec<ElectrumRpcRequest>,
-        block_header_params: Option<ElectrumBlockHeaderVerificationParams>,
+        block_header_params: Option<BlockHeaderVerificationParams>,
     ) -> UtxoCoinBuildResult<ElectrumClient> {
         let (on_connect_tx, on_connect_rx) = mpsc::unbounded();
         let ticker = self.ticker().to_owned();

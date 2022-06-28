@@ -6,14 +6,14 @@ use crate::utxo::{output_script, sat_from_big_decimal, GetBlockHeaderError, GetT
 use crate::{big_decimal_from_sat_unsigned, NumConversError, RpcTransportEventHandler, RpcTransportEventHandlerShared};
 use async_trait::async_trait;
 use bigdecimal::BigDecimal;
-use chain::{BlockHeader, BlockHeaderBits, BlockHeaderNonce, OutPoint, RawBlockHeader, Transaction as UtxoTx};
+use chain::{BlockHeader, BlockHeaderBits, BlockHeaderNonce, OutPoint, Transaction as UtxoTx};
 use common::custom_futures::{select_ok_sequential, FutureTimerExt};
 use common::custom_iter::{CollectInto, TryIntoGroupMap};
 use common::executor::{spawn, Timer};
 use common::jsonrpc_client::{JsonRpcBatchClient, JsonRpcBatchResponse, JsonRpcClient, JsonRpcError, JsonRpcErrorType,
                              JsonRpcId, JsonRpcMultiClient, JsonRpcRemoteAddr, JsonRpcRequest, JsonRpcRequestEnum,
                              JsonRpcResponse, JsonRpcResponseEnum, JsonRpcResponseFut, RpcRes};
-use common::log::{debug, error, info, warn};
+use common::log::{error, info, warn};
 use common::mm_number::{BigInt, MmNumber};
 use common::{median, now_float, now_ms, OrdRange};
 use derive_more::Display;
@@ -33,11 +33,10 @@ use mm2_err_handle::prelude::*;
 #[cfg(test)] use mocktopus::macros::*;
 use rpc::v1::types::{Bytes as BytesJson, Transaction as RpcTransaction, H256 as H256Json};
 use serde_json::{self as json, Value as Json};
-use serialization::{deserialize, serialize, serialize_list, serialize_with_flags, CoinVariant, CompactInteger, Reader,
+use serialization::{deserialize, serialize, serialize_with_flags, CoinVariant, CompactInteger, Reader,
                     SERIALIZE_TRANSACTION_WITNESS};
 use sha2::{Digest, Sha256};
 use spv_validation::helpers_validation::SPVError;
-use spv_validation::spv_proof::{SPVProof, TRY_SPV_PROOF_INTERVAL};
 use std::collections::hash_map::Entry;
 use std::collections::HashMap;
 use std::fmt;
@@ -1382,11 +1381,12 @@ enum ElectrumConfig {
     SSL { dns_name: String, skip_validation: bool },
 }
 
-/// Electrum SPV configuration
+/// SPV headers verification parameters
 #[derive(Clone, Debug, Deserialize, Serialize)]
-pub struct ElectrumBlockHeaderVerificationParams {
+pub struct BlockHeaderVerificationParams {
     pub difficulty_check: bool,
     pub constant_difficulty: bool,
+    // This should to be equal to or greater than the number of blocks needed before the chain is safe from reorganization (e.g. 6 blocks for BTC)
     pub blocks_limit_to_check: NonZeroU64,
     pub check_every: f64,
 }
@@ -1756,13 +1756,6 @@ impl JsonRpcMultiClient for ElectrumClient {
     }
 }
 
-pub struct ConfirmedTransactionInfo {
-    pub tx: UtxoTx,
-    pub header: BlockHeader,
-    pub index: u64,
-    pub height: u64,
-}
-
 impl ElectrumClient {
     /// https://electrumx.readthedocs.io/en/latest/protocol-methods.html#server-ping
     pub fn server_ping(&self) -> RpcRes<()> { rpc_func!(self, "server.ping") }
@@ -1934,7 +1927,6 @@ impl ElectrumClient {
         rpc_func!(self, "blockchain.transaction.get_merkle", txid, height)
     }
 
-    // todo: check if to use a different error or result like the rest of electrum functions (same for similar functions)
     async fn get_tx_height(&self, tx: &UtxoTx) -> Result<u64, MmError<GetTxHeightError>> {
         for output in tx.outputs.clone() {
             let script_pubkey_str = hex::encode(electrum_script_hash(&output.script_pubkey));
@@ -1950,7 +1942,6 @@ impl ElectrumClient {
         MmError::err(GetTxHeightError::HeightNotFound)
     }
 
-    // todo: maybe make a trait and implement for electrum??? (same for similar functions)
     async fn valid_block_header_from_storage(
         &self,
         ticker: &str,
@@ -1987,7 +1978,6 @@ impl ElectrumClient {
         }
     }
 
-    #[inline]
     async fn block_header_from_storage_or_rpc(
         &self,
         ticker: &str,
@@ -2001,118 +1991,22 @@ impl ElectrumClient {
         }
     }
 
-    // todo: maybe make loop outside of this function (in the validation function) see how a trait should be first
-    async fn get_merkle_and_header_retry_loop(
+    pub async fn get_merkle_and_header(
         &self,
         ticker: &str,
         tx: &UtxoTx,
-        try_spv_proof_until: u64,
     ) -> Result<(TxMerkleBranch, BlockHeader, u64), MmError<SPVError>> {
-        let mut height: Option<u64> = None;
-        let mut merkle_branch: Option<TxMerkleBranch> = None;
+        let height = self.get_tx_height(tx).await?;
 
-        loop {
-            if now_ms() / 1000 > try_spv_proof_until {
-                error!(
-                    "Waited too long until {} for transaction {:?} to validate spv proof",
-                    try_spv_proof_until,
-                    tx.hash().reversed(),
-                );
-                return Err(SPVError::Timeout.into());
-            }
+        let merkle_branch = self
+            .blockchain_transaction_get_merkle(tx.hash().reversed().into(), height)
+            .compat()
+            .await
+            .map_to_mm(|e| SPVError::UnableToGetMerkle(e.to_string()))?;
 
-            if height.is_none() {
-                match self.get_tx_height(tx).await {
-                    Ok(h) => height = Some(h),
-                    Err(e) => {
-                        debug!("`get_tx_height` returned an error {:?}", e);
-                        error!("{:?} for tx {:?}", SPVError::InvalidHeight, tx);
-                    },
-                }
-            }
+        let header = self.block_header_from_storage_or_rpc(ticker, height).await?;
 
-            if height.is_some() && merkle_branch.is_none() {
-                match self
-                    .blockchain_transaction_get_merkle(tx.hash().reversed().into(), height.unwrap())
-                    .compat()
-                    .await
-                {
-                    Ok(m) => merkle_branch = Some(m),
-                    Err(e) => {
-                        debug!("`blockchain_transaction_get_merkle` returned an error {:?}", e);
-                        error!(
-                            "{:?} by tx: {:?}, height: {}",
-                            SPVError::UnableToGetMerkle,
-                            H256Json::from(tx.hash().reversed()),
-                            height.unwrap()
-                        );
-                    },
-                }
-            }
-
-            if height.is_some() && merkle_branch.is_some() {
-                match self.block_header_from_storage_or_rpc(ticker, height.unwrap()).await {
-                    Ok(block_header) => {
-                        return Ok((merkle_branch.unwrap(), block_header, height.unwrap()));
-                    },
-                    Err(e) => {
-                        debug!("`block_header_from_storage_or_rpc` returned an error {:?}", e);
-                        error!(
-                            "{:?}, Received header likely not compatible with header format in mm2",
-                            SPVError::UnableToGetHeader
-                        );
-                    },
-                }
-            }
-
-            error!(
-                "Failed spv proof validation for transaction {:?}, retrying in {} seconds.",
-                tx.hash(),
-                TRY_SPV_PROOF_INTERVAL,
-            );
-
-            Timer::sleep(TRY_SPV_PROOF_INTERVAL as f64).await;
-        }
-    }
-
-    pub async fn validate_spv_proof(
-        &self,
-        ticker: &str,
-        tx: &UtxoTx,
-        try_spv_proof_until: u64,
-    ) -> Result<ConfirmedTransactionInfo, MmError<SPVError>> {
-        if tx.outputs.is_empty() {
-            return MmError::err(SPVError::InvalidVout);
-        }
-
-        let (merkle_branch, header, height) = self
-            .get_merkle_and_header_retry_loop(ticker, tx, try_spv_proof_until)
-            .await?;
-        let raw_header = RawBlockHeader::new(header.raw().take())?;
-        let intermediate_nodes: Vec<H256> = merkle_branch
-            .merkle
-            .into_iter()
-            .map(|hash| hash.reversed().into())
-            .collect();
-
-        let proof = SPVProof {
-            tx_id: tx.hash(),
-            vin: serialize_list(&tx.inputs).take(),
-            vout: serialize_list(&tx.outputs).take(),
-            index: merkle_branch.pos as u64,
-            confirming_header: header.clone(),
-            raw_header,
-            intermediate_nodes,
-        };
-
-        proof.validate().map_err(MmError::new)?;
-
-        Ok(ConfirmedTransactionInfo {
-            tx: tx.clone(),
-            header,
-            index: proof.index,
-            height,
-        })
+        Ok((merkle_branch, header, height))
     }
 }
 

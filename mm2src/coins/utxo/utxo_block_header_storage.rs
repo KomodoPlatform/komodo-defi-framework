@@ -1,4 +1,4 @@
-use crate::utxo::rpc_clients::{ElectrumBlockHeader, ElectrumBlockHeaderVerificationParams};
+use crate::utxo::rpc_clients::{BlockHeaderVerificationParams, ElectrumBlockHeader};
 #[cfg(target_arch = "wasm32")]
 use crate::utxo::utxo_indexedb_block_header_storage::IndexedDBBlockHeadersStorage;
 #[cfg(not(target_arch = "wasm32"))]
@@ -52,7 +52,7 @@ pub enum BlockHeaderStorageError {
 
 pub struct BlockHeaderStorage {
     pub inner: Box<dyn BlockHeaderStorageOps>,
-    pub params: ElectrumBlockHeaderVerificationParams,
+    pub params: BlockHeaderVerificationParams,
 }
 
 impl Debug for BlockHeaderStorage {
@@ -62,7 +62,7 @@ impl Debug for BlockHeaderStorage {
 pub trait InitBlockHeaderStorageOps: Send + Sync + 'static {
     fn new_from_ctx(
         ctx: MmArc,
-        params: ElectrumBlockHeaderVerificationParams,
+        params: BlockHeaderVerificationParams,
     ) -> Result<BlockHeaderStorage, BlockHeaderStorageError>
     where
         Self: Sized;
@@ -110,10 +110,7 @@ pub trait BlockHeaderStorageOps: Send + Sync + 'static {
 
 impl InitBlockHeaderStorageOps for BlockHeaderStorage {
     #[cfg(not(target_arch = "wasm32"))]
-    fn new_from_ctx(
-        ctx: MmArc,
-        params: ElectrumBlockHeaderVerificationParams,
-    ) -> Result<Self, BlockHeaderStorageError> {
+    fn new_from_ctx(ctx: MmArc, params: BlockHeaderVerificationParams) -> Result<Self, BlockHeaderStorageError> {
         let sqlite_connection = ctx.sqlite_connection.ok_or(BlockHeaderStorageError::Internal(
             "sqlite_connection is not initialized".to_owned(),
         ))?;
@@ -124,10 +121,7 @@ impl InitBlockHeaderStorageOps for BlockHeaderStorage {
     }
 
     #[cfg(target_arch = "wasm32")]
-    fn new_from_ctx(
-        _ctx: MmArc,
-        params: ElectrumBlockHeaderVerificationParams,
-    ) -> Result<Self, BlockHeaderStorageError> {
+    fn new_from_ctx(_ctx: MmArc, params: BlockHeaderVerificationParams) -> Result<Self, BlockHeaderStorageError> {
         Ok(BlockHeaderStorage {
             inner: Box::new(IndexedDBBlockHeadersStorage {}),
             params,

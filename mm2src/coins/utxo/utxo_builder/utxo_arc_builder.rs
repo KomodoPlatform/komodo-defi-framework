@@ -89,8 +89,11 @@ where
         let utxo_weak = utxo_arc.downgrade();
         let result_coin = (self.constructor)(utxo_arc);
 
-        self.spawn_merge_utxo_loop_if_required(utxo_weak.clone(), self.constructor.clone());
-        // todo: check if this can be moved to a better place
+        if let Some(abort_handler) = self.spawn_merge_utxo_loop_if_required(utxo_weak.clone(), self.constructor.clone())
+        {
+            self.ctx.abort_handlers.lock().unwrap().push(abort_handler);
+        }
+
         if let Some(abort_handler) =
             self.spawn_block_header_utxo_loop_if_required(utxo_weak, &rpc_client, self.constructor.clone())
         {
@@ -115,21 +118,28 @@ where
 }
 
 pub trait MergeUtxoArcOps<T: UtxoCommonOps + GetUtxoListOps>: UtxoCoinBuilderCommonOps {
-    fn spawn_merge_utxo_loop_if_required<F>(&self, weak: UtxoWeak, constructor: F)
+    fn spawn_merge_utxo_loop_if_required<F>(&self, weak: UtxoWeak, constructor: F) -> Option<AbortHandle>
     where
         F: Fn(UtxoArc) -> T + Send + Sync + 'static,
     {
         if let Some(ref merge_params) = self.activation_params().utxo_merge_params {
-            let fut = merge_utxo_loop(
+            let (fut, abort_handle) = abortable(merge_utxo_loop(
                 weak,
                 merge_params.merge_at,
                 merge_params.check_every,
                 merge_params.max_merge_at_once,
                 constructor,
-            );
-            info!("Starting UTXO merge loop for coin {}", self.ticker());
-            spawn(fut);
+            ));
+            let ticker = self.ticker().to_owned();
+            info!("Starting UTXO merge loop for coin {}", ticker);
+            spawn(async move {
+                if let Err(e) = fut.await {
+                    info!("spawn_merge_utxo_loop_if_required stopped for {}, reason {}", ticker, e);
+                }
+            });
+            return Some(abort_handle);
         }
+        None
     }
 }
 

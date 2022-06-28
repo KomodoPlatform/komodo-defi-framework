@@ -16,8 +16,8 @@ pub enum SPVError {
     MalformattedOutput,
     #[display(fmt = "Unable to get target from block header")]
     UnableToGetTarget,
-    #[display(fmt = "Unable to get block header from network or storage")]
-    UnableToGetHeader,
+    #[display(fmt = "Unable to get block header from network or storage: {}", _0)]
+    UnableToGetHeader(String),
     #[display(fmt = "Header not exactly 80 bytes")]
     WrongLengthHeader,
     #[display(fmt = "Header chain changed difficulties unexpectedly")]
@@ -42,8 +42,8 @@ pub enum SPVError {
     InvalidVout,
     #[display(fmt = "merkle proof connecting the `tx_id_le` to the `confirming_header`")]
     BadMerkleProof,
-    #[display(fmt = "Unable to get merkle tree from network or storage")]
-    UnableToGetMerkle,
+    #[display(fmt = "Unable to get merkle tree from network or storage: {}", _0)]
+    UnableToGetMerkle(String),
     #[display(fmt = "Unable to retrieve block height / block height is zero")]
     InvalidHeight,
     #[display(fmt = "Raises during validation loop")]
