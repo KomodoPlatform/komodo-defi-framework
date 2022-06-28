@@ -38,9 +38,11 @@ struct BestOrdersP2PRes {
 }
 
 #[derive(Debug, Deserialize)]
-#[serde(rename_all = "lowercase")]
+#[serde(tag = "type", content = "value")]
 pub enum RequestBestOrdersBy {
+    #[serde(rename = "volume")]
     Volume(MmNumber),
+    #[serde(rename = "number")]
     Number(usize),
 }
 
@@ -168,8 +170,7 @@ pub fn process_best_orders_p2p_request_by_number(
             },
         };
         let mut best_orders = vec![];
-        let orders = orders.iter().take(number);
-        for ordered in orders {
+        for ordered in orders.iter().take(number) {
             match orderbook.order_set.get(&ordered.uuid) {
                 Some(o) => {
                     let order_w_proof = orderbook.orderbook_item_with_proof(o.clone());

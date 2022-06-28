@@ -269,7 +269,8 @@ fn test_best_orders_v2_by_number() {
             "coin": "RICK",
             "action": "buy",
             "request_by": {
-                "number": 1
+                "type": "number",
+                "value": 1
             }
         }
     })))
@@ -291,7 +292,8 @@ fn test_best_orders_v2_by_number() {
             "coin": "RICK",
             "action": "buy",
             "request_by": {
-                "number": 2
+                "type": "number",
+                "value": 2
             }
         }
     })))
@@ -315,7 +317,8 @@ fn test_best_orders_v2_by_number() {
             "coin": "RICK",
             "action": "sell",
             "request_by": {
-                "number": 1
+                "type": "number",
+                "value": 1
             }
         }
     })))
@@ -341,7 +344,8 @@ fn test_best_orders_v2_by_number() {
             "coin": "ETH",
             "action": "sell",
             "request_by": {
-                "number": 1
+                "type": "number",
+                "value": 1
             }
         }
     })))
@@ -455,7 +459,8 @@ fn test_best_orders_v2_by_volume() {
             "coin": "RICK",
             "action": "buy",
             "request_by": {
-                "volume": 1.7
+                "type": "volume",
+                "value": 1.7
             }
         }
     })))
@@ -484,7 +489,8 @@ fn test_best_orders_v2_by_volume() {
             "coin": "RICK",
             "action": "sell",
             "request_by": {
-                "volume": 0.1
+                "type": "volume",
+                "value": 0.1
             }
         }
     })))
@@ -509,7 +515,8 @@ fn test_best_orders_v2_by_volume() {
             "coin": "ETH",
             "action": "sell",
             "request_by": {
-                "volume": 0.1
+                "type": "volume",
+                "value": 0.1
             }
         }
     })))

@@ -119,7 +119,8 @@ fn check_best_orders_v2_by_number(
             "coin": for_coin,
             "action": action,
             "request_by": {
-                "number": 1
+                "type": "number",
+                "value": 1
             }
         }
     })))
@@ -150,7 +151,8 @@ fn check_best_orders_v2_by_volume(
             "coin": for_coin,
             "action": action,
             "request_by": {
-                "volume": 1
+                "type": "volume",
+                "value": 1
             }
         }
     })))
