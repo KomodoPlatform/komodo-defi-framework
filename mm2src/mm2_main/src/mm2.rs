@@ -114,7 +114,7 @@ impl LpMainParams {
 pub enum PasswordPolicyError {
     #[display(fmt = "Password can't contain the word password")]
     ContainsTheWordPassword,
-    #[display(fmt = "Password length should be between 8 and 32")]
+    #[display(fmt = "Password length should be at least 8 characters long")]
     PasswordLength,
     #[display(fmt = "Password should contain at least 1 digit")]
     PasswordMissDigit,
@@ -139,7 +139,7 @@ pub fn password_policy(password: &str) -> Result<(), MmError<PasswordPolicyError
         return MmError::err(PasswordPolicyError::ContainsTheWordPassword);
     }
     let password_len = password.chars().count();
-    if !(8..=32).contains(&password_len) {
+    if (0..8).contains(&password_len) {
         return MmError::err(PasswordPolicyError::PasswordLength);
     }
     if !REGEX_NUMBER.is_match(password) {
@@ -164,7 +164,7 @@ pub fn password_policy(password: &str) -> Result<(), MmError<PasswordPolicyError
 fn check_password_policy() {
     // Length
     assert_eq!(
-        password_policy("123").unwrap_err().into_inner(),
+        password_policy("1234567").unwrap_err().into_inner(),
         PasswordPolicyError::PasswordLength
     );
 
@@ -192,7 +192,7 @@ fn check_password_policy() {
         PasswordPolicyError::PasswordMissUppercase
     );
 
-    // Miss uppercase
+    // Contains the same character 3 times in a row
     assert_eq!(
         password_policy("SecretPassSoStrong123*aaa").unwrap_err().into_inner(),
         PasswordPolicyError::PasswordConsecutiveCharactersExceeded
@@ -209,6 +209,11 @@ fn check_password_policy() {
         password_policy("Foopassword123*$").unwrap_err().into_inner(),
         PasswordPolicyError::ContainsTheWordPassword
     );
+
+    // Check valid long password
+    let long_pass = "SecretPassSoStrong*!1234567891012";
+    assert!(long_pass.len() > 32);
+    assert!(password_policy(long_pass).is_ok());
 
     // Valid passwords
     password_policy("StrongPass123*").unwrap();
