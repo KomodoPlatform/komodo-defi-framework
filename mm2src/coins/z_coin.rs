@@ -1,10 +1,10 @@
-use crate::my_tx_history_v2::{MyTxHistoryErrorV2, MyTxHistoryRequestV2, MyTxHistoryResponseV2};
+use crate::my_tx_history_v2::{MyTxHistoryDetails, MyTxHistoryErrorV2, MyTxHistoryRequestV2, MyTxHistoryResponseV2};
 use crate::rpc_command::init_withdraw::{InitWithdrawCoin, WithdrawInProgressStatus, WithdrawTaskHandle};
 use crate::utxo::rpc_clients::{ElectrumRpcRequest, UnspentInfo, UtxoRpcClientEnum, UtxoRpcError, UtxoRpcFut,
                                UtxoRpcResult};
 use crate::utxo::utxo_builder::{UtxoCoinBuilderCommonOps, UtxoCoinWithIguanaPrivKeyBuilder,
                                 UtxoFieldsWithIguanaPrivKeyBuilder};
-use crate::utxo::utxo_common::{big_decimal_from_sat_unsigned, payment_script};
+use crate::utxo::utxo_common::{big_decimal_from_sat, big_decimal_from_sat_unsigned, payment_script};
 use crate::utxo::{sat_from_big_decimal, utxo_common, ActualTxFee, AdditionalTxData, Address, BroadcastTxErr,
                   FeePolicy, GetUtxoListOps, HistoryUtxoTx, HistoryUtxoTxMap, MatureUnspentList,
                   RecentlySpentOutPointsGuard, UtxoActivationParams, UtxoAddressFormat, UtxoArc, UtxoCoinFields,
@@ -21,10 +21,10 @@ use async_trait::async_trait;
 use bitcrypto::{dhash160, dhash256};
 use chain::constants::SEQUENCE_FINAL;
 use chain::{Transaction as UtxoTx, TransactionOutput};
-use common::log::debug;
 use common::mm_number::{BigDecimal, MmNumber};
 use common::{async_blocking, log};
 use crypto::privkey::{key_pair_from_secret, secp_privkey_from_hash};
+use db_common::sqlite::rusqlite::NO_PARAMS;
 use db_common::sqlite::sql_builder::{name, SqlBuilder, SqlName};
 use futures::compat::Future01CompatExt;
 use futures::lock::Mutex as AsyncMutex;
@@ -99,7 +99,7 @@ const DEX_FEE_OVK: OutgoingViewingKey = OutgoingViewingKey([7; 32]);
 const DEX_FEE_Z_ADDR: &str = "zs1rp6426e9r6jkq2nsanl66tkd34enewrmr0uvj0zelhkcwmsy0uvxz2fhm9eu9rl3ukxvgzy2v9f";
 const TRANSACTIONS_TABLE: &str = "transactions";
 const RECEIVED_NOTES_TABLE: &str = "received_notes";
-const SENT_NOTES_TABLE: &str = "sent_notes";
+const BLOCKS_TABLE: &str = "blocks";
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct ZcoinConsensusParams {
@@ -147,6 +147,7 @@ pub struct ZCoinFields {
     my_z_addr: PaymentAddress,
     my_z_addr_encoded: String,
     z_spending_key: ExtendedSpendingKey,
+    evk: ExtendedFullViewingKey,
     z_tx_prover: Arc<LocalTxProver>,
     light_wallet_db: WalletDbShared,
     consensus_params: ZcoinConsensusParams,
@@ -188,6 +189,15 @@ pub struct ZOutput {
     pub amount: Amount,
     pub viewing_key: Option<OutgoingViewingKey>,
     pub memo: Option<MemoBytes>,
+}
+
+struct ZCoinSqlTxHistoryItem {
+    tx_hash: Vec<u8>,
+    internal_id: i64,
+    height: u32,
+    timestamp: u32,
+    received_amount: i64,
+    spent_amount: i64,
 }
 
 impl ZCoin {
@@ -337,7 +347,7 @@ impl ZCoin {
             received_by_me += change_sat;
 
             tx_builder.add_sapling_output(
-                None,
+                Some(self.z_fields.evk.fvk.ovk),
                 self.z_fields.my_z_addr.clone(),
                 Amount::from_u64(change_sat).map_to_mm(|_| {
                     GenTxError::NumConversion(NumConversError(format!(
@@ -391,23 +401,86 @@ impl ZCoin {
         &self,
         request: MyTxHistoryRequestV2,
     ) -> Result<MyTxHistoryResponseV2, MmError<MyTxHistoryErrorV2>> {
+        let coin = self.clone();
         let wallet_db = self.z_fields.light_wallet_db.clone();
         async_blocking(move || {
             let db_guard = wallet_db.lock();
             let conn = db_guard.sql_conn();
             let sql = SqlBuilder::select_from(name!(TRANSACTIONS_TABLE; "txes"))
                 .field("txes.txid")
-                .field("SUM(rn.value) as input_amount")
-                .field("SUM(sn.value) as output_amount")
+                .field("txes.id_tx as internal_id")
+                .field("txes.block")
+                .field("blocks.time")
+                .field("COALESCE(SUM(rn.value), 0) as received_amount")
+                .field("COALESCE(SUM(sn.value), 0) as spent_amount")
                 .left()
                 .join(name!(RECEIVED_NOTES_TABLE; "rn"))
                 .on("txes.id_tx = rn.tx")
-                .join(name!(SENT_NOTES_TABLE; "sn"))
-                .on("txes.id_tx = sn.tx")
+                // detecting spent_amount by "spent" field in received_notes table
+                .join(name!(RECEIVED_NOTES_TABLE; "sn"))
+                .on("txes.id_tx = sn.spent")
+                .join(BLOCKS_TABLE)
+                .on("txes.block = blocks.height")
+                .group_by("txes.id_tx")
+                .order_by("block", true)
+                .order_by("txes.id_tx", false)
+                .limit(request.limit)
                 .sql()
                 .expect("valid query");
-            debug!("query {}", sql);
-            unimplemented!()
+
+            let mut stmt = conn.prepare(&sql)?;
+            let sql_items = stmt
+                .query_map(NO_PARAMS, |row| {
+                    Ok(ZCoinSqlTxHistoryItem {
+                        tx_hash: row.get(0)?,
+                        internal_id: row.get(1)?,
+                        height: row.get(2)?,
+                        timestamp: row.get(3)?,
+                        received_amount: row.get(4)?,
+                        spent_amount: row.get(5)?,
+                    })
+                })?
+                .collect::<Result<Vec<_>, _>>()?;
+
+            let transactions = sql_items
+                .into_iter()
+                .map(|sql_item| {
+                    let spent_by_me = big_decimal_from_sat(sql_item.spent_amount, coin.decimals());
+                    let received_by_me = big_decimal_from_sat(sql_item.received_amount, coin.decimals());
+                    MyTxHistoryDetails {
+                        details: TransactionDetails {
+                            tx_hex: Default::default(),
+                            tx_hash: hex::encode(sql_item.tx_hash),
+                            from: Vec::new(),
+                            to: Vec::new(),
+                            // it's not really possible to know the total amount for shielded transactions
+                            total_amount: BigDecimal::from(0),
+                            my_balance_change: &received_by_me - &spent_by_me,
+                            spent_by_me,
+                            received_by_me,
+                            block_height: sql_item.height as u64,
+                            timestamp: sql_item.timestamp as u64,
+                            fee_details: None,
+                            coin: coin.ticker().into(),
+                            internal_id: Default::default(),
+                            kmd_rewards: None,
+                            transaction_type: Default::default(),
+                        },
+                        confirmations: 0,
+                    }
+                })
+                .collect();
+            Ok(MyTxHistoryResponseV2 {
+                coin: coin.ticker().into(),
+                current_block: 0,
+                transactions,
+                sync_status: HistorySyncState::NotEnabled,
+                limit: request.limit,
+                skipped: 0,
+                total: 0,
+                total_pages: 0,
+                paging_options: request.paging_options,
+            })
         })
         .await
     }
@@ -533,6 +606,7 @@ impl<'a> UtxoCoinWithIguanaPrivKeyBuilder for ZCoinBuilder<'a> {
             dex_fee_addr,
             my_z_addr,
             my_z_addr_encoded,
+            evk: ExtendedFullViewingKey::from(&self.z_spending_key),
             z_spending_key: self.z_spending_key,
             z_tx_prover: Arc::new(z_tx_prover),
             light_wallet_db,
@@ -1378,7 +1452,7 @@ impl InitWithdrawCoin for ZCoin {
             amount: Amount::from_u64(satoshi)
                 .map_to_mm(|_| NumConversError(format!("Failed to get ZCash amount from {}", amount)))?,
             // TODO add optional viewing_key and memo fields to the WithdrawRequest
-            viewing_key: None,
+            viewing_key: Some(self.z_fields.evk.fvk.ovk),
             memo: None,
         };
 

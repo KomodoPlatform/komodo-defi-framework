@@ -51,7 +51,7 @@ fn activate_z_coin_light() {
         EnableCoinBalance::Iguana(iguana) => iguana,
         _ => panic!("Expected EnableCoinBalance::Iguana"),
     };
-    assert_eq!(balance.balance.spendable, BigDecimal::from(1));
+    assert_eq!(balance.balance.spendable, BigDecimal::from(3));
 }
 
 // ignored because it requires a long-running Zcoin initialization process
@@ -71,9 +71,9 @@ fn z_coin_tx_history() {
         &blocks_cache_path(&mm, ZOMBIE_TEST_BALANCE_SEED, ZOMBIE_TICKER),
     ));
 
-    let tx_history = block_on(my_tx_history_v2(&mm, ZOMBIE_TICKER, 1, None));
-
-    println!("{}", json::to_string(&tx_history).unwrap());
+    let tx_history = block_on(my_tx_history_v2(&mm, ZOMBIE_TICKER, 2, None));
+    let response: RpcV2Response<MyTxHistoryV2Response> = json::from_value(tx_history).unwrap();
+    println!("{:?}", response);
 }
 
 // ignored because it requires a long-running Zcoin initialization process

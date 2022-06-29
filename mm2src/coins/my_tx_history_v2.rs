@@ -232,29 +232,29 @@ impl<'a, Addr: Clone + DisplayAddress + Eq + std::hash::Hash, Tx: Transaction> T
 pub struct MyTxHistoryRequestV2 {
     coin: String,
     #[serde(default = "ten")]
-    limit: usize,
+    pub(crate) limit: usize,
     #[serde(default)]
-    paging_options: PagingOptionsEnum<BytesJson>,
+    pub(crate) paging_options: PagingOptionsEnum<BytesJson>,
 }
 
 #[derive(Serialize)]
 pub struct MyTxHistoryDetails {
     #[serde(flatten)]
-    details: TransactionDetails,
-    confirmations: u64,
+    pub(crate) details: TransactionDetails,
+    pub(crate) confirmations: u64,
 }
 
 #[derive(Serialize)]
 pub struct MyTxHistoryResponseV2 {
-    coin: String,
-    current_block: u64,
-    transactions: Vec<MyTxHistoryDetails>,
-    sync_status: HistorySyncState,
-    limit: usize,
-    skipped: usize,
-    total: usize,
-    total_pages: usize,
-    paging_options: PagingOptionsEnum<BytesJson>,
+    pub(crate) coin: String,
+    pub(crate) current_block: u64,
+    pub(crate) transactions: Vec<MyTxHistoryDetails>,
+    pub(crate) sync_status: HistorySyncState,
+    pub(crate) limit: usize,
+    pub(crate) skipped: usize,
+    pub(crate) total: usize,
+    pub(crate) total_pages: usize,
+    pub(crate) paging_options: PagingOptionsEnum<BytesJson>,
 }
 
 #[derive(Debug, Display, Serialize, SerializeErrorType)]
