@@ -1368,7 +1368,7 @@ fn test_withdraw_and_send() {
         0.001,
     );
 
-    // allow to withdraw to P2SH addresses for non-Segwit coins
+    // allow to withdraw non-Segwit coin to P2SH addresses
     let withdraw = block_on(mm_alice.rpc(&json! ({
         "userpass": mm_alice.userpass,
         "mmrpc": "2.0",
@@ -1597,7 +1597,7 @@ fn test_withdraw_legacy() {
     assert!(withdraw.0.is_success(), "MORTY withdraw: {}", withdraw.1);
     let _: TransactionDetails = json::from_str(&withdraw.1).expect("Expected 'TransactionDetails'");
 
-    // allow to withdraw to P2SH addresses
+    // allow to withdraw non-Segwit coin to P2SH addresses
     let withdraw = block_on(mm_alice.rpc(&json!({
         "userpass": mm_alice.userpass,
         "method": "withdraw",
