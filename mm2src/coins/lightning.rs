@@ -1,13 +1,17 @@
 pub mod ln_conf;
+mod ln_db;
 pub mod ln_errors;
 mod ln_events;
+mod ln_filesystem_persister;
 mod ln_p2p;
 mod ln_platform;
 mod ln_serialization;
+mod ln_sql;
 mod ln_storage;
 mod ln_utils;
 
 use super::{lp_coinfind_or_err, DerivationMethod, MmCoinEnum};
+use crate::lightning::ln_sql::SqliteLightningDB;
 use crate::utxo::rpc_clients::UtxoRpcClientEnum;
 use crate::utxo::utxo_common::{big_decimal_from_sat_unsigned, UtxoTxBuilder};
 use crate::utxo::{sat_from_big_decimal, BlockchainNetwork, FeePolicy, GetUtxoListOps, UtxoTxGenerationOps};
@@ -43,6 +47,7 @@ use lightning_invoice::payment;
 use lightning_invoice::utils::{create_invoice_from_channelmanager, DefaultRouter};
 use lightning_invoice::{Invoice, InvoiceDescription};
 use ln_conf::{ChannelOptions, LightningCoinConf, LightningProtocolConf, PlatformCoinConfirmations};
+use ln_db::{ClosedChannelsFilter, DBChannelDetails, HTLCStatus, LightningDB, PaymentInfo, PaymentType, PaymentsFilter};
 use ln_errors::{ClaimableBalancesError, ClaimableBalancesResult, CloseChannelError, CloseChannelResult,
                 ConnectToNodeError, ConnectToNodeResult, EnableLightningError, EnableLightningResult,
                 GenerateInvoiceError, GenerateInvoiceResult, GetChannelDetailsError, GetChannelDetailsResult,
@@ -50,12 +55,11 @@ use ln_errors::{ClaimableBalancesError, ClaimableBalancesResult, CloseChannelErr
                 ListPaymentsError, ListPaymentsResult, OpenChannelError, OpenChannelResult, SendPaymentError,
                 SendPaymentResult};
 use ln_events::LightningEventHandler;
+use ln_filesystem_persister::{LightningFilesystemPersister, LightningPersisterShared};
 use ln_p2p::{connect_to_node, ConnectToNodeRes, PeerManager};
 use ln_platform::{h256_json_from_txid, Platform};
 use ln_serialization::{InvoiceForRPC, NodeAddress, PublicKeyForRPC};
-use ln_storage::{ClosedChannelsFilter, DbStorage, FileSystemStorage, HTLCStatus, LightningPersister,
-                 LightningPersisterShared, NodesAddressesMapShared, PaymentInfo, PaymentType, PaymentsFilter, Scorer,
-                 SqlChannelDetails};
+use ln_storage::{LightningStorage, NodesAddressesMapShared, Scorer};
 use ln_utils::{ChainMonitor, ChannelManager};
 use mm2_core::mm_ctx::MmArc;
 use mm2_err_handle::prelude::*;
@@ -95,6 +99,8 @@ pub struct LightningCoin {
     pub invoice_payer: Arc<InvoicePayer<Arc<LightningEventHandler>>>,
     /// The lightning node persister that takes care of writing/reading data from storage.
     pub persister: LightningPersisterShared,
+    /// The lightning node db struct that takes care of reading/writing data from/to db.
+    pub db: SqliteLightningDB,
     /// The mutex storing the addresses of the nodes that the lightning node has open channels with,
     /// these addresses are used for reconnecting.
     pub open_channels_nodes: NodesAddressesMapShared,
@@ -622,7 +628,7 @@ pub async fn start_lightning(
     let logger = ctx.log.0.clone();
 
     // Initialize Persister
-    let persister = ln_utils::init_persister(ctx, platform.clone(), conf.ticker.clone(), params.backup_path).await?;
+    let persister = ln_utils::init_persister(ctx, conf.ticker.clone(), params.backup_path).await?;
 
     // Initialize the KeysManager
     let keys_manager = ln_utils::init_keys_manager(ctx)?;
@@ -636,11 +642,15 @@ pub async fn start_lightning(
         logger.clone(),
     ));
 
+    // Initialize DB
+    let db = ln_utils::init_db(ctx, platform.clone(), conf.ticker.clone()).await?;
+
     // Initialize the ChannelManager
     let (chain_monitor, channel_manager) = ln_utils::init_channel_manager(
         platform.clone(),
         logger.clone(),
         persister.clone(),
+        db.clone(),
         keys_manager.clone(),
         conf.clone().into(),
     )
@@ -665,7 +675,7 @@ pub async fn start_lightning(
         platform.clone(),
         channel_manager.clone(),
         keys_manager.clone(),
-        persister.clone(),
+        db.clone(),
     ));
 
     // Initialize routing Scorer
@@ -726,6 +736,7 @@ pub async fn start_lightning(
         keys_manager,
         invoice_payer,
         persister,
+        db,
         open_channels_nodes,
     })
 }
@@ -858,7 +869,7 @@ pub async fn open_channel(ctx: MmArc, req: OpenChannelRequest) -> OpenChannelRes
         user_config.own_channel_config.our_htlc_minimum_msat = min;
     }
 
-    let rpc_channel_id = ln_coin.persister.get_last_channel_rpc_id().await? as u64 + 1;
+    let rpc_channel_id = ln_coin.db.get_last_channel_rpc_id().await? as u64 + 1;
 
     let temp_channel_id = async_blocking(move || {
         channel_manager
@@ -872,7 +883,7 @@ pub async fn open_channel(ctx: MmArc, req: OpenChannelRequest) -> OpenChannelRes
         unsigned_funding_txs.insert(rpc_channel_id, unsigned);
     }
 
-    let pending_channel_details = SqlChannelDetails::new(
+    let pending_channel_details = DBChannelDetails::new(
         rpc_channel_id,
         temp_channel_id,
         node_pubkey,
@@ -887,7 +898,7 @@ pub async fn open_channel(ctx: MmArc, req: OpenChannelRequest) -> OpenChannelRes
         .save_nodes_addresses(ln_coin.open_channels_nodes)
         .await?;
 
-    ln_coin.persister.add_channel_to_db(pending_channel_details).await?;
+    ln_coin.db.add_channel_to_db(pending_channel_details).await?;
 
     Ok(OpenChannelResponse {
         rpc_channel_id,
@@ -1075,7 +1086,7 @@ pub struct ListClosedChannelsRequest {
 
 #[derive(Serialize)]
 pub struct ListClosedChannelsResponse {
-    closed_channels: Vec<SqlChannelDetails>,
+    closed_channels: Vec<DBChannelDetails>,
     limit: usize,
     skipped: usize,
     total: usize,
@@ -1093,7 +1104,7 @@ pub async fn list_closed_channels_by_filter(
         _ => return MmError::err(ListChannelsError::UnsupportedCoin(coin.ticker().to_string())),
     };
     let closed_channels_res = ln_coin
-        .persister
+        .db
         .get_closed_channels_by_filter(req.filter, req.paging_options.clone(), req.limit)
         .await?;
 
@@ -1117,7 +1128,7 @@ pub struct GetChannelDetailsRequest {
 #[serde(tag = "status", content = "details")]
 pub enum GetChannelDetailsResponse {
     Open(ChannelDetailsForRPC),
-    Closed(SqlChannelDetails),
+    Closed(DBChannelDetails),
 }
 
 pub async fn get_channel_details(
@@ -1138,7 +1149,7 @@ pub async fn get_channel_details(
         Some(details) => GetChannelDetailsResponse::Open(details.into()),
         None => GetChannelDetailsResponse::Closed(
             ln_coin
-                .persister
+                .db
                 .get_channel_from_db(req.rpc_channel_id)
                 .await?
                 .ok_or(GetChannelDetailsError::NoSuchChannel(req.rpc_channel_id))?,
@@ -1201,7 +1212,7 @@ pub async fn generate_invoice(
         created_at: now_ms() / 1000,
         last_updated: now_ms() / 1000,
     };
-    ln_coin.persister.add_or_update_payment_in_db(payment_info).await?;
+    ln_coin.db.add_or_update_payment_in_db(payment_info).await?;
     Ok(GenerateInvoiceResponse {
         payment_hash: payment_hash.into(),
         invoice: invoice.into(),
@@ -1260,10 +1271,7 @@ pub async fn send_payment(ctx: MmArc, req: SendPaymentReq) -> SendPaymentResult<
             expiry,
         } => ln_coin.keysend(destination.into(), amount_in_msat, expiry)?,
     };
-    ln_coin
-        .persister
-        .add_or_update_payment_in_db(payment_info.clone())
-        .await?;
+    ln_coin.db.add_or_update_payment_in_db(payment_info.clone()).await?;
     Ok(SendPaymentResponse {
         payment_hash: payment_info.payment_hash.0.into(),
     })
@@ -1385,7 +1393,7 @@ pub async fn list_payments_by_filter(ctx: MmArc, req: ListPaymentsReq) -> ListPa
         _ => return MmError::err(ListPaymentsError::UnsupportedCoin(coin.ticker().to_string())),
     };
     let get_payments_res = ln_coin
-        .persister
+        .db
         .get_payments_by_filter(
             req.filter.map(From::from),
             req.paging_options.clone().map(|h| PaymentHash(h.0)),
@@ -1424,11 +1432,7 @@ pub async fn get_payment_details(
         _ => return MmError::err(GetPaymentDetailsError::UnsupportedCoin(coin.ticker().to_string())),
     };
 
-    if let Some(payment_info) = ln_coin
-        .persister
-        .get_payment_from_db(PaymentHash(req.payment_hash.0))
-        .await?
-    {
+    if let Some(payment_info) = ln_coin.db.get_payment_from_db(PaymentHash(req.payment_hash.0)).await? {
         return Ok(GetPaymentDetailsResponse {
             payment_details: payment_info.into(),
         });

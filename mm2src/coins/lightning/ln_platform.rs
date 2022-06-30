@@ -88,7 +88,7 @@ pub async fn update_best_block(
 
 pub async fn ln_best_block_update_loop(
     platform: Arc<Platform>,
-    persister: LightningPersisterShared,
+    db: SqliteLightningDB,
     chain_monitor: Arc<ChainMonitor>,
     channel_manager: Arc<ChannelManager>,
     best_header_listener: ElectrumClient,
@@ -100,7 +100,7 @@ pub async fn ln_best_block_update_loop(
         // in case a transaction confirmation fails due to electrums being down. This way there will be no need to wait for a new
         // block to confirm such transaction and causing delays.
         platform
-            .process_txs_confirmations(&best_header_listener, &persister, &chain_monitor, &channel_manager)
+            .process_txs_confirmations(&best_header_listener, &db, &chain_monitor, &channel_manager)
             .await;
         let best_header = ok_or_continue_after_sleep!(get_best_header(&best_header_listener).await, TRY_LOOP_INTERVAL);
         if current_best_block != best_header.clone().into() {
@@ -334,7 +334,7 @@ impl Platform {
     pub async fn process_txs_confirmations(
         &self,
         client: &ElectrumClient,
-        persister: &LightningPersister,
+        db: &SqliteLightningDB,
         chain_monitor: &ChainMonitor,
         channel_manager: &ChannelManager,
     ) {
@@ -346,7 +346,7 @@ impl Platform {
 
         for confirmed_transaction_info in transactions_to_confirm {
             let best_block_height = self.best_block_height();
-            if let Err(e) = persister
+            if let Err(e) = db
                 .update_funding_tx_block_height(
                     confirmed_transaction_info.tx.hash().reversed().to_string(),
                     best_block_height,
@@ -374,7 +374,7 @@ impl Platform {
         }
     }
 
-    pub async fn get_channel_closing_tx(&self, channel_details: SqlChannelDetails) -> SaveChannelClosingResult<String> {
+    pub async fn get_channel_closing_tx(&self, channel_details: DBChannelDetails) -> SaveChannelClosingResult<String> {
         let from_block = channel_details
             .funding_generated_in_block
             .ok_or_else(|| MmError::new(SaveChannelClosingError::BlockHeightNull))?;

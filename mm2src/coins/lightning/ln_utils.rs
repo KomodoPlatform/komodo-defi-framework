@@ -1,6 +1,9 @@
 use super::*;
+use crate::lightning::ln_db::LightningDB;
+use crate::lightning::ln_filesystem_persister::LightningPersisterShared;
 use crate::lightning::ln_platform::{get_best_header, ln_best_block_update_loop, update_best_block};
-use crate::lightning::ln_storage::{DbStorage, FileSystemStorage, NodesAddressesMap, Scorer};
+use crate::lightning::ln_sql::SqliteLightningDB;
+use crate::lightning::ln_storage::{LightningStorage, NodesAddressesMap, Scorer};
 use crate::utxo::rpc_clients::BestBlock as RpcBestBlock;
 use bitcoin::hash_types::BlockHash;
 use bitcoin_hashes::{sha256d, Hash};
@@ -47,35 +50,43 @@ fn ln_data_backup_dir(ctx: &MmArc, path: Option<String>, ticker: &str) -> Option
 
 pub async fn init_persister(
     ctx: &MmArc,
-    platform: Arc<Platform>,
     ticker: String,
     backup_path: Option<String>,
 ) -> EnableLightningResult<LightningPersisterShared> {
     let ln_data_dir = ln_data_dir(ctx, &ticker);
     let ln_data_backup_dir = ln_data_backup_dir(ctx, backup_path, &ticker);
-    let persister = LightningPersisterShared(Arc::new(LightningPersister::new(
-        ticker.replace('-', "_"),
+    let persister = LightningPersisterShared(Arc::new(LightningFilesystemPersister::new(
         ln_data_dir,
         ln_data_backup_dir,
+    )));
+
+    let is_initialized = persister.is_fs_initialized().await?;
+    if !is_initialized {
+        persister.init_fs().await?;
+    }
+
+    Ok(persister)
+}
+
+pub async fn init_db(ctx: &MmArc, platform: Arc<Platform>, ticker: String) -> EnableLightningResult<SqliteLightningDB> {
+    let db = SqliteLightningDB::new(
+        ticker,
         ctx.sqlite_connection
             .ok_or(MmError::new(EnableLightningError::DbError(
                 "sqlite_connection is not initialized".into(),
             )))?
             .clone(),
-    )));
-    let is_initialized = persister.is_fs_initialized().await?;
-    if !is_initialized {
-        persister.init_fs().await?;
-    }
-    let is_db_initialized = persister.is_db_initialized().await?;
+    );
+
+    let is_db_initialized = db.is_db_initialized().await?;
     if !is_db_initialized {
-        persister.init_db().await?;
+        db.init_db().await?;
     }
 
-    let closed_channels_without_closing_tx = persister.get_closed_channels_with_no_closing_tx().await?;
+    let closed_channels_without_closing_tx = db.get_closed_channels_with_no_closing_tx().await?;
     for channel_details in closed_channels_without_closing_tx {
         let platform = platform.clone();
-        let persister = persister.clone();
+        let db = db.clone();
         let user_channel_id = channel_details.rpc_id;
         spawn(async move {
             if let Ok(closing_tx_hash) = platform
@@ -83,7 +94,7 @@ pub async fn init_persister(
                 .await
                 .error_log_passthrough()
             {
-                if let Err(e) = persister.add_closing_tx_to_db(user_channel_id, closing_tx_hash).await {
+                if let Err(e) = db.add_closing_tx_to_db(user_channel_id, closing_tx_hash).await {
                     log::error!(
                         "Unable to update channel {} closing details in DB: {}",
                         user_channel_id,
@@ -94,7 +105,7 @@ pub async fn init_persister(
         });
     }
 
-    Ok(persister)
+    Ok(db)
 }
 
 pub fn init_keys_manager(ctx: &MmArc) -> EnableLightningResult<Arc<KeysManager>> {
@@ -111,6 +122,7 @@ pub async fn init_channel_manager(
     platform: Arc<Platform>,
     logger: Arc<LogState>,
     persister: LightningPersisterShared,
+    db: SqliteLightningDB,
     keys_manager: Arc<KeysManager>,
     user_config: UserConfig,
 ) -> EnableLightningResult<(Arc<ChainMonitor>, Arc<ChannelManager>)> {
@@ -196,7 +208,7 @@ pub async fn init_channel_manager(
 
     // Sync ChannelMonitors and ChannelManager to chain tip if the node is restarting and has open channels
     platform
-        .process_txs_confirmations(&rpc_client, &persister, &chain_monitor, &channel_manager)
+        .process_txs_confirmations(&rpc_client, &db, &chain_monitor, &channel_manager)
         .await;
     if channel_manager_blockhash != best_block_hash {
         platform
@@ -217,7 +229,7 @@ pub async fn init_channel_manager(
     spawn(ln_best_block_update_loop(
         // It's safe to use unwrap here for now until implementing Native Client for Lightning
         platform,
-        persister.clone(),
+        db,
         chain_monitor.clone(),
         channel_manager.clone(),
         rpc_client.clone(),
