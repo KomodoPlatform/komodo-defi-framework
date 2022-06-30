@@ -14,6 +14,8 @@ use common::mm_number::BigDecimal;
 use common::state_machine::prelude::*;
 use futures::compat::Future01CompatExt;
 use rpc::v1::types::H256 as H256Json;
+use std::collections::HashMap;
+use std::str::FromStr;
 
 struct BchAndSlpHistoryCtx<Storage: TxHistoryStorage> {
     coin: BchCoin,
@@ -216,13 +218,16 @@ impl<T: TxHistoryStorage> State for UpdatingUnconfirmedTxes<T> {
         let wallet_id = ctx.coin.history_wallet_id();
         match ctx.storage.get_unconfirmed_txes_from_history(&wallet_id).await {
             Ok(unconfirmed) => {
+                let txs_with_height: HashMap<H256Json, u64> = self.all_tx_ids_with_height.clone().into_iter().collect();
                 for mut tx in unconfirmed {
-                    let found = self
-                        .all_tx_ids_with_height
-                        .iter()
-                        .find(|(hash, _)| hash.0.as_ref() == tx.tx_hash.as_bytes());
+                    let found = if let Ok(unconfirmed_tx_hash) = H256Json::from_str(&tx.tx_hash) {
+                        txs_with_height.get(&unconfirmed_tx_hash)
+                    } else {
+                        None
+                    };
+
                     match found {
-                        Some((_, height)) => {
+                        Some(height) => {
                             if *height > 0 {
                                 match ctx.coin.get_block_timestamp(*height).await {
                                     Ok(time) => tx.timestamp = time,
@@ -236,7 +241,7 @@ impl<T: TxHistoryStorage> State for UpdatingUnconfirmedTxes<T> {
                         },
                         None => {
                             // This can potentially happen when unconfirmed tx is removed from mempool for some reason.
-                            // We should remove it from storage too.
+                            // Or if the hash is undecodable. We should remove it from storage too.
                             if let Err(e) = ctx.storage.remove_tx_from_history(&wallet_id, &tx.internal_id).await {
                                 return Self::change_state(Stopped::storage_error(e));
                             }
