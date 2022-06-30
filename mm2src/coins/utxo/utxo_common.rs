@@ -3788,8 +3788,7 @@ where
         // This can be changed depending on the coins implementation
         UtxoAddressFormat::Standard => {
             let is_p2pkh = addr.prefix == conf.pub_addr_prefix && addr.t_addr_prefix == conf.pub_t_addr_prefix;
-            let is_p2sh =
-                addr.prefix == conf.p2sh_addr_prefix && addr.t_addr_prefix == conf.p2sh_t_addr_prefix;
+            let is_p2sh = addr.prefix == conf.p2sh_addr_prefix && addr.t_addr_prefix == conf.p2sh_t_addr_prefix;
             if !is_p2pkh && !is_p2sh {
                 MmError::err(UnsupportedAddr::PrefixError(conf.ticker.clone()))
             } else {
