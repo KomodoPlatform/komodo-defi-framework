@@ -1326,7 +1326,8 @@ async fn qrc20_withdraw(coin: Qrc20Coin, req: WithdrawRequest) -> WithdrawResult
         .map_to_mm(WithdrawError::InvalidAddress)?;
     let conf = &coin.utxo.conf;
     let is_p2pkh = to_addr.prefix == conf.pub_addr_prefix && to_addr.t_addr_prefix == conf.pub_t_addr_prefix;
-    let is_p2sh = to_addr.prefix == conf.p2sh_addr_prefix && to_addr.t_addr_prefix == conf.p2sh_t_addr_prefix;
+    let is_p2sh =
+        to_addr.prefix == conf.p2sh_addr_prefix && to_addr.t_addr_prefix == conf.p2sh_t_addr_prefix && conf.segwit;
     if !is_p2pkh && !is_p2sh {
         let error = "Expected either P2PKH or P2SH".to_owned();
         return MmError::err(WithdrawError::InvalidAddress(error));
