@@ -2018,8 +2018,7 @@ pub fn validate_address<T: UtxoCommonOps>(coin: &T, address: &str) -> ValidateAd
     let is_p2pkh = address.prefix == coin.as_ref().conf.pub_addr_prefix
         && address.t_addr_prefix == coin.as_ref().conf.pub_t_addr_prefix;
     let is_p2sh = address.prefix == coin.as_ref().conf.p2sh_addr_prefix
-        && address.t_addr_prefix == coin.as_ref().conf.p2sh_t_addr_prefix
-        && coin.as_ref().conf.segwit;
+        && address.t_addr_prefix == coin.as_ref().conf.p2sh_t_addr_prefix;
     let is_segwit = address.hrp.is_some() && address.hrp == coin.as_ref().conf.bech32_hrp && coin.as_ref().conf.segwit;
 
     if is_p2pkh || is_p2sh || is_segwit {
@@ -3790,7 +3789,7 @@ where
         UtxoAddressFormat::Standard => {
             let is_p2pkh = addr.prefix == conf.pub_addr_prefix && addr.t_addr_prefix == conf.pub_t_addr_prefix;
             let is_p2sh =
-                addr.prefix == conf.p2sh_addr_prefix && addr.t_addr_prefix == conf.p2sh_t_addr_prefix && conf.segwit;
+                addr.prefix == conf.p2sh_addr_prefix && addr.t_addr_prefix == conf.p2sh_t_addr_prefix;
             if !is_p2pkh && !is_p2sh {
                 MmError::err(UnsupportedAddr::PrefixError(conf.ticker.clone()))
             } else {

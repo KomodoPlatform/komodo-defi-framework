@@ -1368,7 +1368,7 @@ fn test_withdraw_and_send() {
         0.001,
     );
 
-    // must not allow to withdraw to non-P2PKH addresses
+    // allow to withdraw to P2SH addresses for non-Segwit coins
     let withdraw = block_on(mm_alice.rpc(&json! ({
         "userpass": mm_alice.userpass,
         "mmrpc": "2.0",
@@ -1381,16 +1381,9 @@ fn test_withdraw_and_send() {
         "id": 0,
     })))
     .unwrap();
+    assert!(withdraw.0.is_success(), "MORTY withdraw: {}", withdraw.1);
 
-    assert!(withdraw.0.is_client_error(), "MORTY withdraw: {}", withdraw.1);
-    let res: RpcErrorResponse<String> = json::from_str(&withdraw.1).unwrap();
-    assert_eq!(res.error_type, "InvalidAddress");
-    assert!(res
-        .error_data
-        .unwrap()
-        .contains("Expected a valid P2PKH or P2SH prefix for MORTY"));
-
-    // but must allow to withdraw to P2SH addresses if Segwit flag is true
+    // allow to withdraw to P2SH addresses if Segwit flag is true
     let withdraw = block_on(mm_alice.rpc(&json! ({
         "userpass": mm_alice.userpass,
         "mmrpc": "2.0",
@@ -1604,7 +1597,7 @@ fn test_withdraw_legacy() {
     assert!(withdraw.0.is_success(), "MORTY withdraw: {}", withdraw.1);
     let _: TransactionDetails = json::from_str(&withdraw.1).expect("Expected 'TransactionDetails'");
 
-    // must not allow to withdraw to non-P2PKH addresses
+    // allow to withdraw to P2SH addresses
     let withdraw = block_on(mm_alice.rpc(&json!({
         "userpass": mm_alice.userpass,
         "method": "withdraw",
@@ -1613,18 +1606,7 @@ fn test_withdraw_legacy() {
         "amount": "0.001",
     })))
     .unwrap();
-
-    assert!(withdraw.0.is_server_error(), "MORTY withdraw: {}", withdraw.1);
-    log!("{:?}", withdraw.1);
-    let withdraw_error: Json = json::from_str(&withdraw.1).unwrap();
-    withdraw_error["error"]
-        .as_str()
-        .expect("Expected 'error' field")
-        .contains("Expected either P2PKH or P2SH");
-    assert!(withdraw_error.get("error_path").is_none());
-    assert!(withdraw_error.get("error_trace").is_none());
-    assert!(withdraw_error.get("error_type").is_none());
-    assert!(withdraw_error.get("error_data").is_none());
+    assert!(withdraw.0.is_success(), "MORTY withdraw: {}", withdraw.1);
 
     block_on(mm_alice.stop()).unwrap();
 }
