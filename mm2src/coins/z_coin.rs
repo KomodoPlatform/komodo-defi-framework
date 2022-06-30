@@ -24,7 +24,7 @@ use chain::{Transaction as UtxoTx, TransactionOutput};
 use common::mm_number::{BigDecimal, MmNumber};
 use common::{async_blocking, log};
 use crypto::privkey::{key_pair_from_secret, secp_privkey_from_hash};
-use db_common::sqlite::rusqlite::NO_PARAMS;
+use db_common::sqlite::rusqlite::{Error as SqlError, NO_PARAMS};
 use db_common::sqlite::sql_builder::{name, SqlBuilder, SqlName};
 use futures::compat::Future01CompatExt;
 use futures::lock::Mutex as AsyncMutex;
@@ -193,7 +193,7 @@ pub struct ZOutput {
 
 struct ZCoinSqlTxHistoryItem {
     tx_hash: Vec<u8>,
-    internal_id: i64,
+    internal_id: u32,
     height: u32,
     timestamp: u32,
     received_amount: i64,
@@ -401,9 +401,9 @@ impl ZCoin {
         &self,
         request: MyTxHistoryRequestV2,
     ) -> Result<MyTxHistoryResponseV2, MmError<MyTxHistoryErrorV2>> {
-        let coin = self.clone();
         let wallet_db = self.z_fields.light_wallet_db.clone();
-        async_blocking(move || {
+        let limit = request.limit;
+        let sql_items = async_blocking(move || -> Result<_, SqlError> {
             let db_guard = wallet_db.lock();
             let conn = db_guard.sql_conn();
             let sql = SqlBuilder::select_from(name!(TRANSACTIONS_TABLE; "txes"))
@@ -424,15 +424,17 @@ impl ZCoin {
                 .group_by("txes.id_tx")
                 .order_by("block", true)
                 .order_by("txes.id_tx", false)
-                .limit(request.limit)
+                .limit(limit)
                 .sql()
                 .expect("valid query");
 
-            let mut stmt = conn.prepare(&sql)?;
-            let sql_items = stmt
+            let sql_items = conn
+                .prepare(&sql)?
                 .query_map(NO_PARAMS, |row| {
+                    let mut tx_hash: Vec<u8> = row.get(0)?;
+                    tx_hash.reverse();
                     Ok(ZCoinSqlTxHistoryItem {
-                        tx_hash: row.get(0)?,
+                        tx_hash,
                         internal_id: row.get(1)?,
                         height: row.get(2)?,
                         timestamp: row.get(3)?,
@@ -441,48 +443,61 @@ impl ZCoin {
                     })
                 })?
                 .collect::<Result<Vec<_>, _>>()?;
-
-            let transactions = sql_items
-                .into_iter()
-                .map(|sql_item| {
-                    let spent_by_me = big_decimal_from_sat(sql_item.spent_amount, coin.decimals());
-                    let received_by_me = big_decimal_from_sat(sql_item.received_amount, coin.decimals());
-                    MyTxHistoryDetails {
-                        details: TransactionDetails {
-                            tx_hex: Default::default(),
-                            tx_hash: hex::encode(sql_item.tx_hash),
-                            from: Vec::new(),
-                            to: Vec::new(),
-                            // it's not really possible to know the total amount for shielded transactions
-                            total_amount: BigDecimal::from(0),
-                            my_balance_change: &received_by_me - &spent_by_me,
-                            spent_by_me,
-                            received_by_me,
-                            block_height: sql_item.height as u64,
-                            timestamp: sql_item.timestamp as u64,
-                            fee_details: None,
-                            coin: coin.ticker().into(),
-                            internal_id: Default::default(),
-                            kmd_rewards: None,
-                            transaction_type: Default::default(),
-                        },
-                        confirmations: 0,
-                    }
-                })
-                .collect();
-            Ok(MyTxHistoryResponseV2 {
-                coin: coin.ticker().into(),
-                current_block: 0,
-                transactions,
-                sync_status: HistorySyncState::NotEnabled,
-                limit: request.limit,
-                skipped: 0,
-                total: 0,
-                total_pages: 0,
-                paging_options: request.paging_options,
-            })
+            Ok(sql_items)
         })
-        .await
+        .await?;
+
+        let hashes_for_verbose = sql_items
+            .iter()
+            .map(|item| H256Json::from(item.tx_hash.as_slice()))
+            .collect();
+        let mut verbose_transactions = self
+            .get_verbose_transactions_from_cache_or_rpc(hashes_for_verbose)
+            .compat()
+            .await?;
+
+        let transactions = sql_items
+            .into_iter()
+            .map(|sql_item| {
+                let hash = H256Json::from(sql_item.tx_hash.as_slice());
+                let verbose = verbose_transactions.remove(&hash).unwrap();
+
+                let spent_by_me = big_decimal_from_sat(sql_item.spent_amount, self.decimals());
+                let received_by_me = big_decimal_from_sat(sql_item.received_amount, self.decimals());
+                MyTxHistoryDetails {
+                    details: TransactionDetails {
+                        tx_hex: verbose.into_inner().hex,
+                        tx_hash: hex::encode(sql_item.tx_hash),
+                        from: Vec::new(),
+                        to: Vec::new(),
+                        // it's not possible to always know the total amount for shielded transactions
+                        total_amount: BigDecimal::from(0),
+                        my_balance_change: &received_by_me - &spent_by_me,
+                        spent_by_me,
+                        received_by_me,
+                        block_height: sql_item.height as u64,
+                        timestamp: sql_item.timestamp as u64,
+                        fee_details: None,
+                        coin: self.ticker().into(),
+                        internal_id: BytesJson::default(),
+                        kmd_rewards: None,
+                        transaction_type: Default::default(),
+                    },
+                    confirmations: 0,
+                }
+            })
+            .collect();
+        Ok(MyTxHistoryResponseV2 {
+            coin: self.ticker().into(),
+            current_block: 0,
+            transactions,
+            sync_status: HistorySyncState::NotEnabled,
+            limit: request.limit,
+            skipped: 0,
+            total: 0,
+            total_pages: 0,
+            paging_options: request.paging_options,
+        })
     }
 }
 

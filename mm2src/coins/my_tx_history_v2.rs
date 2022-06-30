@@ -1,6 +1,6 @@
 use crate::tx_history_storage::{CreateTxHistoryStorageError, GetTxHistoryFilters, TxHistoryStorageBuilder, WalletId};
 use crate::{lp_coinfind_or_err, BlockHeightAndTime, CoinFindError, HistorySyncState, MmCoin, MmCoinEnum, Transaction,
-            TransactionDetails, TransactionType, TxFeeDetails};
+            TransactionDetails, TransactionType, TxFeeDetails, UtxoRpcError};
 use async_trait::async_trait;
 use bitcrypto::sha256;
 use common::mm_number::BigDecimal;
@@ -296,6 +296,10 @@ impl<T: TxHistoryStorageError> From<T> for MyTxHistoryErrorV2 {
 
 impl From<CreateTxHistoryStorageError> for MyTxHistoryErrorV2 {
     fn from(e: CreateTxHistoryStorageError) -> Self { MyTxHistoryErrorV2::StorageError(e.to_string()) }
+}
+
+impl From<UtxoRpcError> for MyTxHistoryErrorV2 {
+    fn from(err: UtxoRpcError) -> Self { MyTxHistoryErrorV2::RpcError(err.to_string()) }
 }
 
 pub trait CoinWithTxHistoryV2 {
