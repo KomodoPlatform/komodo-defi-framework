@@ -252,10 +252,8 @@ fn test_best_orders_v2_by_number() {
         local_start!("alice"),
     )
     .unwrap();
-
     let (_alice_dump_log, _alice_dump_dashboard) = mm_alice.mm_dump();
     log!("Alice log path: {:?}", [mm_alice.log_path.display()]);
-
     block_on(mm_bob.wait_for_log(22., |log| {
         log.contains("DEBUG Handling IncludedTorelaysMesh message for peer")
     }))
@@ -442,10 +440,8 @@ fn test_best_orders_v2_by_volume() {
         local_start!("alice"),
     )
     .unwrap();
-
     let (_alice_dump_log, _alice_dump_dashboard) = mm_alice.mm_dump();
     log!("Alice log path: {:?}", [mm_alice.log_path.display()]);
-
     block_on(mm_bob.wait_for_log(22., |log| {
         log.contains("DEBUG Handling IncludedTorelaysMesh message for peer")
     }))
