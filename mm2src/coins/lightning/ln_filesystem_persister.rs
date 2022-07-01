@@ -23,7 +23,7 @@ use std::fs;
 use std::io::{BufReader, BufWriter};
 use std::net::SocketAddr;
 use std::ops::Deref;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::str::FromStr;
 use std::sync::{Arc, Mutex};
 
@@ -31,7 +31,7 @@ use std::sync::{Arc, Mutex};
 use std::os::unix::io::AsRawFd;
 
 #[cfg(target_os = "windows")]
-use {std::ffi::OsStr, std::os::windows::ffi::OsStrExt, std::path::Path};
+use {std::ffi::OsStr, std::os::windows::ffi::OsStrExt};
 
 pub struct LightningFilesystemPersister {
     main_path: PathBuf,
@@ -153,7 +153,7 @@ fn path_to_windows_str<T: AsRef<OsStr>>(path: T) -> Vec<winapi::shared::ntdef::W
 }
 
 fn write_monitor_to_file<ChannelSigner: Sign>(
-    path: PathBuf,
+    mut path: PathBuf,
     filename: String,
     monitor: &ChannelMonitor<ChannelSigner>,
 ) -> std::io::Result<()> {
@@ -162,9 +162,8 @@ fn write_monitor_to_file<ChannelSigner: Sign>(
     // old data on power loss after we've returned.
     // The way to atomically write a file on Unix platforms is:
     // open(tmpname), write(tmpfile), fsync(tmpfile), close(tmpfile), rename(), fsync(dir)
-    let mut filepath = path.clone();
-    filepath.push(filename);
-    let filename_with_path = filepath.display().to_string();
+    path.push(filename);
+    let filename_with_path = path.display().to_string();
     let tmp_filename = format!("{}.tmp", filename_with_path);
 
     {
@@ -176,6 +175,12 @@ fn write_monitor_to_file<ChannelSigner: Sign>(
     #[cfg(not(target_os = "windows"))]
     {
         fs::rename(&tmp_filename, &filename_with_path)?;
+        let path = Path::new(&filename_with_path).parent().ok_or_else(|| {
+            std::io::Error::new(
+                std::io::ErrorKind::NotFound,
+                format!("can't find parent dir for {}", filename_with_path),
+            )
+        })?;
         let dir_file = fs::OpenOptions::new().read(true).open(path)?;
         unsafe {
             libc::fsync(dir_file.as_raw_fd());
@@ -183,11 +188,12 @@ fn write_monitor_to_file<ChannelSigner: Sign>(
     }
     #[cfg(target_os = "windows")]
     {
-        let src = PathBuf::from(tmp_filename.clone());
-        if filepath.exists() {
+        let src = PathBuf::from(tmp_filename);
+        let dst = PathBuf::from(filename_with_path.clone());
+        if Path::new(&filename_with_path).exists() {
             unsafe {
                 winapi::um::winbase::ReplaceFileW(
-                    path_to_windows_str(filepath).as_ptr(),
+                    path_to_windows_str(dst).as_ptr(),
                     path_to_windows_str(src).as_ptr(),
                     std::ptr::null(),
                     winapi::um::winbase::REPLACEFILE_IGNORE_MERGE_ERRORS,
@@ -199,7 +205,7 @@ fn write_monitor_to_file<ChannelSigner: Sign>(
             call!(unsafe {
                 winapi::um::winbase::MoveFileExW(
                     path_to_windows_str(src).as_ptr(),
-                    path_to_windows_str(filepath).as_ptr(),
+                    path_to_windows_str(dst).as_ptr(),
                     winapi::um::winbase::MOVEFILE_WRITE_THROUGH | winapi::um::winbase::MOVEFILE_REPLACE_EXISTING,
                 )
             });
