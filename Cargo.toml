@@ -34,6 +34,9 @@ members = [
     "mm2src/rpc_task",
     "mm2src/trezor",
 ]
+# Exclude `mm2src/gui_storage` dependency from the workspace not to compile it
+# if the `gui-storage` feature is not enabled.
+exclude = ["mm2src/gui_storage"]
 
 # https://doc.rust-lang.org/beta/cargo/reference/features.html#feature-resolver-version-2
 resolver = "2"

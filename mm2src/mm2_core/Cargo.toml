@@ -3,6 +3,9 @@ name = "mm2_core"
 version = "0.1.0"
 edition = "2021"
 
+[features]
+gui-storage = []
+
 [lib]
 doctest = false
 

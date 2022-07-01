@@ -2635,6 +2635,24 @@ dependencies = [
 ]
 
 [[package]]
+name = "gui_storage"
+version = "0.1.0"
+dependencies = [
+ "async-trait",
+ "common",
+ "crypto",
+ "db_common",
+ "derive_more",
+ "mm2_core",
+ "mm2_db",
+ "mm2_err_handle",
+ "ser_error",
+ "ser_error_derive",
+ "serde",
+ "serde_json",
+]
+
+[[package]]
 name = "h2"
 version = "0.3.13"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -4218,6 +4236,7 @@ dependencies = [
  "futures-cpupool",
  "futures-rustls 0.21.1",
  "gstuff",
+ "gui_storage",
  "hash-db",
  "hash256-std-hasher",
  "hex 0.4.2",
