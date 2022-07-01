@@ -127,6 +127,12 @@ pub fn process_best_orders_p2p_request(
             BestOrdersAction::Sell => result.insert(pair.0, best_orders),
         };
     }
+
+    // Drop mutability of result, protocol_infos and conf_infos
+    let result = result;
+    let protocol_infos = protocol_infos;
+    let conf_infos = conf_infos;
+
     let response = BestOrdersP2PRes {
         orders: result,
         protocol_infos,
@@ -191,6 +197,12 @@ pub fn process_best_orders_p2p_request_by_number(
             BestOrdersAction::Sell => result.insert(pair.0, best_orders),
         };
     }
+
+    // Drop mutability of result, protocol_infos and conf_infos
+    let result = result;
+    let protocol_infos = protocol_infos;
+    let conf_infos = conf_infos;
+
     let response = BestOrdersP2PRes {
         orders: result,
         protocol_infos,
