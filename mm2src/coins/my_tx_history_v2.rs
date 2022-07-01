@@ -265,6 +265,7 @@ pub enum MyTxHistoryErrorV2 {
     StorageError(String),
     RpcError(String),
     NotSupportedFor(String),
+    Internal(String),
 }
 
 impl HttpStatusCode for MyTxHistoryErrorV2 {
@@ -274,7 +275,8 @@ impl HttpStatusCode for MyTxHistoryErrorV2 {
             MyTxHistoryErrorV2::StorageIsNotInitialized(_)
             | MyTxHistoryErrorV2::StorageError(_)
             | MyTxHistoryErrorV2::RpcError(_)
-            | MyTxHistoryErrorV2::NotSupportedFor(_) => StatusCode::INTERNAL_SERVER_ERROR,
+            | MyTxHistoryErrorV2::NotSupportedFor(_)
+            | MyTxHistoryErrorV2::Internal(_) => StatusCode::INTERNAL_SERVER_ERROR,
         }
     }
 }

@@ -427,6 +427,7 @@ impl ZCoin {
         &self,
         request: MyTxHistoryRequestV2<i64>,
     ) -> Result<MyTxHistoryResponseV2<ZcoinTxDetails, i64>, MmError<MyTxHistoryErrorV2>> {
+        let current_block = self.utxo_rpc_client().get_block_count().compat().await?;
         let wallet_db = self.z_fields.light_wallet_db.clone();
         let limit = request.limit;
         let sql_items = async_blocking(move || -> Result<_, SqlError> {
@@ -473,9 +474,64 @@ impl ZCoin {
         })
         .await?;
 
+        let hashes_for_verbose = sql_items
+            .iter()
+            .map(|item| H256Json::from(item.tx_hash.as_slice()))
+            .collect();
+        let mut transactions: HashMap<_, _> = self
+            .get_verbose_transactions_from_cache_or_rpc(hashes_for_verbose)
+            .compat()
+            .await?
+            .into_iter()
+            .map(|(hash, tx)| -> Result<_, std::io::Error> {
+                Ok((hash, ZTransaction::read(tx.into_inner().hex.as_slice())?))
+            })
+            .collect::<Result<_, _>>()
+            .map_to_mm(|e| MyTxHistoryErrorV2::Internal(e.to_string()))?;
+        let prev_tx_hashes: HashSet<_> = transactions
+            .iter()
+            .flat_map(|(_, tx)| {
+                tx.vin.iter().map(|vin| {
+                    let mut hash = *vin.prevout.hash();
+                    hash.reverse();
+                    H256Json::from(hash)
+                })
+            })
+            .collect();
+        let prev_transactions: HashMap<_, _> = self
+            .get_verbose_transactions_from_cache_or_rpc(prev_tx_hashes)
+            .compat()
+            .await?
+            .into_iter()
+            .map(|(hash, tx)| Ok((hash, ZTransaction::read(tx.into_inner().hex.as_slice())?)))
+            .collect::<Result<_, std::io::Error>>()
+            .map_to_mm(|e| MyTxHistoryErrorV2::Internal(e.to_string()))?;
+
         let transactions = sql_items
             .into_iter()
             .map(|sql_item| {
+                let mut confirmations = current_block as i64 - sql_item.height + 1;
+                if confirmations < 0 {
+                    confirmations = 0;
+                }
+
+                let mut transparent_input_amount = Amount::zero();
+                let z_tx = transactions
+                    .remove(&H256Json::from(sql_item.tx_hash.as_slice()))
+                    .unwrap();
+                for input in z_tx.vin.iter() {
+                    let mut hash = *input.prevout.hash();
+                    hash.reverse();
+                    let prev_tx = prev_transactions.get(&H256Json::from(hash)).unwrap();
+                    transparent_input_amount += prev_tx.vout[input.prevout.n() as usize].value;
+                }
+
+                let transparent_output_amount = z_tx
+                    .vout
+                    .iter()
+                    .fold(Amount::zero(), |current, out| current + out.value);
+
+                let fee_amount = z_tx.value_balance + transparent_output_amount - transparent_input_amount;
                 let spent_by_me = big_decimal_from_sat(sql_item.spent_amount, self.decimals());
                 let received_by_me = big_decimal_from_sat(sql_item.received_amount, self.decimals());
                 ZcoinTxDetails {
@@ -486,9 +542,9 @@ impl ZCoin {
                     spent_by_me,
                     received_by_me,
                     block_height: sql_item.height,
-                    confirmations: 0,
+                    confirmations,
                     timestamp: sql_item.timestamp,
-                    transaction_fee: Default::default(),
+                    transaction_fee: big_decimal_from_sat(fee_amount.into(), self.decimals()),
                     coin: self.ticker().into(),
                     internal_id: sql_item.internal_id,
                 }
@@ -496,9 +552,10 @@ impl ZCoin {
             .collect();
         Ok(MyTxHistoryResponseV2 {
             coin: self.ticker().into(),
-            current_block: 0,
+            current_block,
             transactions,
-            sync_status: HistorySyncState::NotEnabled,
+            // Zcoin is activated only after the state is synced
+            sync_status: HistorySyncState::Finished,
             limit: request.limit,
             skipped: 0,
             total: 0,
