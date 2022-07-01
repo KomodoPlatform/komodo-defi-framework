@@ -115,7 +115,6 @@ impl EventHandler for LightningEventHandler {
                 counterparty_node_id,
                 funding_satoshis,
                 push_msat,
-                // Todo: Look for ways to use channel_type
                 channel_type: _,
             } => self.handle_open_channel_request(*temporary_channel_id, *counterparty_node_id, *funding_satoshis, *push_msat),
         }

@@ -4,6 +4,7 @@ use crate::lightning::ln_utils::{ChainMonitor, ChannelManager};
 use async_trait::async_trait;
 use bitcoin::blockdata::constants::genesis_block;
 use bitcoin::Network;
+use bitcoin_hashes::hex::ToHex;
 use common::async_blocking;
 use common::log::LogState;
 use lightning::chain::channelmonitor::{ChannelMonitor, ChannelMonitorUpdate};
@@ -25,6 +26,12 @@ use std::ops::Deref;
 use std::path::PathBuf;
 use std::str::FromStr;
 use std::sync::{Arc, Mutex};
+
+#[cfg(not(target_os = "windows"))]
+use std::os::unix::io::AsRawFd;
+
+#[cfg(target_os = "windows")]
+use {std::ffi::OsStr, std::os::windows::ffi::OsStrExt, std::path::Path};
 
 pub struct LightningFilesystemPersister {
     main_path: PathBuf,
@@ -129,7 +136,78 @@ impl Persister<InMemorySigner, Arc<ChainMonitor>, Arc<Platform>, Arc<KeysManager
     }
 }
 
-//todo: revise this
+#[cfg(target_os = "windows")]
+macro_rules! call {
+    ($e: expr) => {
+        if $e != 0 {
+            return Ok(());
+        } else {
+            return Err(std::io::Error::last_os_error());
+        }
+    };
+}
+
+#[cfg(target_os = "windows")]
+fn path_to_windows_str<T: AsRef<OsStr>>(path: T) -> Vec<winapi::shared::ntdef::WCHAR> {
+    path.as_ref().encode_wide().chain(Some(0)).collect()
+}
+
+fn write_monitor_to_file<ChannelSigner: Sign>(
+    path: PathBuf,
+    filename: String,
+    monitor: &ChannelMonitor<ChannelSigner>,
+) -> std::io::Result<()> {
+    // Do a crazy dance with lots of fsync()s to be overly cautious here...
+    // We never want to end up in a state where we've lost the old data, or end up using the
+    // old data on power loss after we've returned.
+    // The way to atomically write a file on Unix platforms is:
+    // open(tmpname), write(tmpfile), fsync(tmpfile), close(tmpfile), rename(), fsync(dir)
+    let mut filepath = path.clone();
+    filepath.push(filename);
+    let filename_with_path = filepath.display().to_string();
+    let tmp_filename = format!("{}.tmp", filename_with_path);
+
+    {
+        let mut f = fs::File::create(&tmp_filename)?;
+        monitor.write(&mut f)?;
+        f.sync_all()?;
+    }
+    // Fsync the parent directory on Unix.
+    #[cfg(not(target_os = "windows"))]
+    {
+        fs::rename(&tmp_filename, &filename_with_path)?;
+        let dir_file = fs::OpenOptions::new().read(true).open(path)?;
+        unsafe {
+            libc::fsync(dir_file.as_raw_fd());
+        }
+    }
+    #[cfg(target_os = "windows")]
+    {
+        let src = PathBuf::from(tmp_filename.clone());
+        if filepath.exists() {
+            unsafe {
+                winapi::um::winbase::ReplaceFileW(
+                    path_to_windows_str(filepath).as_ptr(),
+                    path_to_windows_str(src).as_ptr(),
+                    std::ptr::null(),
+                    winapi::um::winbase::REPLACEFILE_IGNORE_MERGE_ERRORS,
+                    std::ptr::null_mut() as *mut winapi::ctypes::c_void,
+                    std::ptr::null_mut() as *mut winapi::ctypes::c_void,
+                )
+            };
+        } else {
+            call!(unsafe {
+                winapi::um::winbase::MoveFileExW(
+                    path_to_windows_str(src).as_ptr(),
+                    path_to_windows_str(filepath).as_ptr(),
+                    winapi::um::winbase::MOVEFILE_WRITE_THROUGH | winapi::um::winbase::MOVEFILE_REPLACE_EXISTING,
+                )
+            });
+        }
+    }
+    Ok(())
+}
+
 impl<ChannelSigner: Sign> chainmonitor::Persist<ChannelSigner> for LightningFilesystemPersister {
     fn persist_new_channel(
         &self,
@@ -140,16 +218,9 @@ impl<ChannelSigner: Sign> chainmonitor::Persist<ChannelSigner> for LightningFile
         self.channels_persister
             .persist_new_channel(funding_txo, monitor, update_id)?;
         if let Some(backup_path) = self.monitor_backup_path() {
-            let file = fs::OpenOptions::new()
-                .create(true)
-                .write(true)
-                .truncate(true)
-                .open(backup_path)
-                .map_err(|_| ChannelMonitorUpdateErr::TemporaryFailure)?;
-            // todo: implement from for ChannelMonitorUpdateErr
-            monitor
-                .write(&mut BufWriter::new(file))
-                .map_err(|_| ChannelMonitorUpdateErr::TemporaryFailure)?;
+            let filename = format!("{}_{}", funding_txo.txid.to_hex(), funding_txo.index);
+            write_monitor_to_file(backup_path, filename, monitor)
+                .map_err(|_| ChannelMonitorUpdateErr::PermanentFailure)?;
         }
         Ok(())
     }
@@ -164,15 +235,9 @@ impl<ChannelSigner: Sign> chainmonitor::Persist<ChannelSigner> for LightningFile
         self.channels_persister
             .update_persisted_channel(funding_txo, update, monitor, update_id)?;
         if let Some(backup_path) = self.monitor_backup_path() {
-            let file = fs::OpenOptions::new()
-                .create(true)
-                .write(true)
-                .truncate(true)
-                .open(backup_path)
-                .map_err(|_| ChannelMonitorUpdateErr::TemporaryFailure)?;
-            monitor
-                .write(&mut BufWriter::new(file))
-                .map_err(|_| ChannelMonitorUpdateErr::TemporaryFailure)?;
+            let filename = format!("{}_{}", funding_txo.txid.to_hex(), funding_txo.index);
+            write_monitor_to_file(backup_path, filename, monitor)
+                .map_err(|_| ChannelMonitorUpdateErr::PermanentFailure)?;
         }
         Ok(())
     }
@@ -180,7 +245,6 @@ impl<ChannelSigner: Sign> chainmonitor::Persist<ChannelSigner> for LightningFile
 
 #[async_trait]
 impl LightningStorage for LightningFilesystemPersister {
-    // todo: maybe change this to MmError
     type Error = std::io::Error;
 
     async fn init_fs(&self) -> Result<(), Self::Error> {

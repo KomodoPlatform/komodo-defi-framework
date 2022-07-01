@@ -143,7 +143,6 @@ pub async fn init_channel_manager(
     ));
 
     // Read ChannelMonitor state from disk, important for lightning node is restarting and has at least 1 channel
-    // todo: should open a PR in rust-lightning to move read_channelmonitors to the persister trait to avoid using FileSystemPersister
     let mut channelmonitors = persister
         .channels_persister()
         .read_channelmonitors(keys_manager.clone())
