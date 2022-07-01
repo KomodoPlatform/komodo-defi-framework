@@ -1104,6 +1104,30 @@ pub async fn my_tx_history_v2(
     json::from_str(&request.1).unwrap()
 }
 
+pub async fn z_coin_tx_history(
+    mm: &MarketMakerIt,
+    coin: &str,
+    limit: usize,
+    paging: Option<PagingOptionsEnum<i64>>,
+) -> Json {
+    let paging = paging.unwrap_or(PagingOptionsEnum::PageNumber(NonZeroUsize::new(1).unwrap()));
+    let request = mm
+        .rpc(&json! ({
+            "userpass": mm.userpass,
+            "method": "z_coin_tx_history",
+            "mmrpc": "2.0",
+            "params": {
+                "coin": coin,
+                "limit": limit,
+                "paging_options": paging,
+            }
+        }))
+        .await
+        .unwrap();
+    assert_eq!(request.0, StatusCode::OK, "'z_coin_tx_history' failed: {}", request.1);
+    json::from_str(&request.1).unwrap()
+}
+
 pub async fn enable_native_bch(mm: &MarketMakerIt, coin: &str, bchd_urls: &[&str]) -> Json {
     let native = mm
         .rpc(&json! ({

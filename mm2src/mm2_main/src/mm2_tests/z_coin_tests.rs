@@ -1,6 +1,6 @@
 use super::*;
 use common::now_ms;
-use mm2_test_helpers::for_tests::{init_withdraw, my_tx_history_v2, rick_conf, send_raw_transaction, withdraw_status,
+use mm2_test_helpers::for_tests::{init_withdraw, rick_conf, send_raw_transaction, withdraw_status, z_coin_tx_history,
                                   zombie_conf, Mm2TestConf, RICK, ZOMBIE_ELECTRUMS, ZOMBIE_LIGHTWALLETD_URLS,
                                   ZOMBIE_TICKER};
 
@@ -57,7 +57,7 @@ fn activate_z_coin_light() {
 // ignored because it requires a long-running Zcoin initialization process
 #[test]
 #[ignore]
-fn z_coin_tx_history() {
+fn test_z_coin_tx_history() {
     let coins = json!([zombie_conf()]);
 
     let conf = Mm2TestConf::seednode(ZOMBIE_TEST_BALANCE_SEED, &coins);
@@ -71,8 +71,8 @@ fn z_coin_tx_history() {
         &blocks_cache_path(&mm, ZOMBIE_TEST_BALANCE_SEED, ZOMBIE_TICKER),
     ));
 
-    let tx_history = block_on(my_tx_history_v2(&mm, ZOMBIE_TICKER, 2, None));
-    let response: RpcV2Response<MyTxHistoryV2Response> = json::from_value(tx_history).unwrap();
+    let tx_history = block_on(z_coin_tx_history(&mm, ZOMBIE_TICKER, 2, None));
+    let response: RpcV2Response<ZcoinHistoryRes> = json::from_value(tx_history).unwrap();
     println!("{:?}", response);
 }
 

@@ -1,4 +1,4 @@
-use crate::my_tx_history_v2::{MyTxHistoryDetails, MyTxHistoryErrorV2, MyTxHistoryRequestV2, MyTxHistoryResponseV2};
+use crate::my_tx_history_v2::{MyTxHistoryErrorV2, MyTxHistoryRequestV2, MyTxHistoryResponseV2};
 use crate::rpc_command::init_withdraw::{InitWithdrawCoin, WithdrawInProgressStatus, WithdrawTaskHandle};
 use crate::utxo::rpc_clients::{ElectrumRpcRequest, UnspentInfo, UtxoRpcClientEnum, UtxoRpcError, UtxoRpcFut,
                                UtxoRpcResult};
@@ -193,11 +193,37 @@ pub struct ZOutput {
 
 struct ZCoinSqlTxHistoryItem {
     tx_hash: Vec<u8>,
-    internal_id: u32,
-    height: u32,
-    timestamp: u32,
+    internal_id: i64,
+    height: i64,
+    timestamp: i64,
     received_amount: i64,
     spent_amount: i64,
+}
+
+#[derive(Serialize)]
+pub struct ZcoinTxDetails {
+    /// Transaction hash in hexadecimal format
+    tx_hash: String,
+    /// Coins are sent from these addresses
+    from: Vec<String>,
+    /// Coins are sent to these addresses
+    to: Vec<String>,
+    /// The amount spent from "my" address
+    spent_by_me: BigDecimal,
+    /// The amount received by "my" address
+    received_by_me: BigDecimal,
+    /// Resulting "my" balance change
+    my_balance_change: BigDecimal,
+    /// Block height
+    block_height: i64,
+    confirmations: i64,
+    /// Transaction timestamp
+    timestamp: i64,
+    transaction_fee: BigDecimal,
+    /// The coin transaction belongs to
+    coin: String,
+    /// Internal MM2 id used for internal transaction identification, for some coins it might be equal to transaction hash
+    internal_id: i64,
 }
 
 impl ZCoin {
@@ -399,8 +425,8 @@ impl ZCoin {
 
     pub async fn tx_history(
         &self,
-        request: MyTxHistoryRequestV2,
-    ) -> Result<MyTxHistoryResponseV2, MmError<MyTxHistoryErrorV2>> {
+        request: MyTxHistoryRequestV2<i64>,
+    ) -> Result<MyTxHistoryResponseV2<ZcoinTxDetails, i64>, MmError<MyTxHistoryErrorV2>> {
         let wallet_db = self.z_fields.light_wallet_db.clone();
         let limit = request.limit;
         let sql_items = async_blocking(move || -> Result<_, SqlError> {
@@ -447,43 +473,24 @@ impl ZCoin {
         })
         .await?;
 
-        let hashes_for_verbose = sql_items
-            .iter()
-            .map(|item| H256Json::from(item.tx_hash.as_slice()))
-            .collect();
-        let mut verbose_transactions = self
-            .get_verbose_transactions_from_cache_or_rpc(hashes_for_verbose)
-            .compat()
-            .await?;
-
         let transactions = sql_items
             .into_iter()
             .map(|sql_item| {
-                let hash = H256Json::from(sql_item.tx_hash.as_slice());
-                let verbose = verbose_transactions.remove(&hash).unwrap();
-
                 let spent_by_me = big_decimal_from_sat(sql_item.spent_amount, self.decimals());
                 let received_by_me = big_decimal_from_sat(sql_item.received_amount, self.decimals());
-                MyTxHistoryDetails {
-                    details: TransactionDetails {
-                        tx_hex: verbose.into_inner().hex,
-                        tx_hash: hex::encode(sql_item.tx_hash),
-                        from: Vec::new(),
-                        to: Vec::new(),
-                        // it's not possible to always know the total amount for shielded transactions
-                        total_amount: BigDecimal::from(0),
-                        my_balance_change: &received_by_me - &spent_by_me,
-                        spent_by_me,
-                        received_by_me,
-                        block_height: sql_item.height as u64,
-                        timestamp: sql_item.timestamp as u64,
-                        fee_details: None,
-                        coin: self.ticker().into(),
-                        internal_id: BytesJson::default(),
-                        kmd_rewards: None,
-                        transaction_type: Default::default(),
-                    },
+                ZcoinTxDetails {
+                    tx_hash: hex::encode(sql_item.tx_hash),
+                    from: vec![],
+                    to: vec![],
+                    my_balance_change: &received_by_me - &spent_by_me,
+                    spent_by_me,
+                    received_by_me,
+                    block_height: sql_item.height,
                     confirmations: 0,
+                    timestamp: sql_item.timestamp,
+                    transaction_fee: Default::default(),
+                    coin: self.ticker().into(),
+                    internal_id: sql_item.internal_id,
                 }
             })
             .collect();
