@@ -195,8 +195,10 @@ pub trait LightningDB {
         close_at: u64,
     ) -> Result<(), Self::Error>;
 
-    /// Gets the list of closed channels records in the DB with no closing tx hashs saved yet. Can be used to check if
-    /// the closing tx hash needs to be fetched from the chain and saved to DB when initializing the persister.
+    /// Gets the list of closed channels records in the DB that have funding tx hashes saved with no closing
+    /// tx hashes saved yet.
+    /// Can be used to check if the closing tx hash needs to be fetched from the chain and saved to DB
+    /// when initializing the persister.
     async fn get_closed_channels_with_no_closing_tx(&self) -> Result<Vec<DBChannelDetails>, Self::Error>;
 
     /// Updates a channel's DB record with the channel's closing transaction hash.

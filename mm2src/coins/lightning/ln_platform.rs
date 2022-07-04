@@ -23,6 +23,7 @@ use spv_validation::spv_proof::TRY_SPV_PROOF_INTERVAL;
 use std::cmp;
 use std::convert::TryFrom;
 use std::sync::atomic::{AtomicU64, Ordering as AtomicOrdering};
+// use common::AbortOnDropHandle;
 
 const CHECK_FOR_NEW_BEST_BLOCK_INTERVAL: f64 = 60.;
 const MIN_ALLOWED_FEE_PER_1000_WEIGHT: u32 = 253;
@@ -454,6 +455,7 @@ impl BroadcasterInterface for Platform {
         spawn(async move {
             match fut.compat().await {
                 Ok(id) => info!("Transaction broadcasted successfully: {:?} ", id),
+                // todo: broadcast transaction through p2p network in case of error
                 Err(e) => error!("Broadcast transaction {} failed: {}", txid, e),
             }
         });

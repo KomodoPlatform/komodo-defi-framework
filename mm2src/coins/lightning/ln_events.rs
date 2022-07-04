@@ -339,12 +339,14 @@ impl LightningEventHandler {
         let db = self.db.clone();
         let platform = self.platform.clone();
         spawn(async move {
-            // todo: handle the case when the channel is closed before funding is broadcasted. Will probably need a mutex.
             if let Err(e) = save_channel_closing_details(db, platform, user_channel_id, reason).await {
-                error!(
-                    "Unable to update channel {} closing details in DB: {}",
-                    user_channel_id, e
-                );
+                // This is the case when a channel is closed before funding is broadcasted due to the counterparty disconnecting or other incompatibility issue.
+                if e != SaveChannelClosingError::FundingTxNull.into() {
+                    error!(
+                        "Unable to update channel {} closing details in DB: {}",
+                        user_channel_id, e
+                    );
+                }
             }
         });
     }
@@ -435,6 +437,8 @@ impl LightningEventHandler {
             };
             let claiming_txid = spending_tx.txid().to_string();
             let db = self.db.clone();
+            // This doesn't need to be respawned on restart unlike add_closing_tx_to_db since Event::SpendableOutputs will be re-fired on restart
+            // if the spending_tx is not broadcasted.
             spawn(async move {
                 ok_or_retry_after_sleep!(
                     db.add_claiming_tx_to_db(
@@ -467,7 +471,6 @@ impl LightningEventHandler {
         let channel_manager = self.channel_manager.clone();
         let platform = self.platform.clone();
         spawn(async move {
-            // todo: check if we can we get the same last_channel_rpc_id if opening an outbound channel while handling this
             if let Ok(last_channel_rpc_id) = db.get_last_channel_rpc_id().await.error_log_passthrough() {
                 let user_channel_id = last_channel_rpc_id as u64 + 1;
                 if channel_manager

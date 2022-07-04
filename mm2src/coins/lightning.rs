@@ -86,7 +86,7 @@ pub struct LightningCoin {
     pub conf: LightningCoinConf,
     /// The lightning node peer manager that takes care of connecting to peers, etc..
     pub peer_manager: Arc<PeerManager>,
-    /// The lightning node background processor that takes care of tasks that need to happen periodically
+    /// The lightning node background processor that takes care of tasks that need to happen periodically.
     pub background_processor: Arc<BackgroundProcessor>,
     /// The lightning node channel manager which keeps track of the number of open channels and sends messages to the appropriate
     /// channel, also tracks HTLC preimages and forwards onion packets appropriately.
@@ -699,6 +699,7 @@ pub async fn start_lightning(
     // Start Background Processing. Runs tasks periodically in the background to keep LN node operational.
     // InvoicePayer will act as our event handler as it handles some of the payments related events before
     // delegating it to LightningEventHandler.
+    // note: background_processor stops automatically when dropped since BackgroundProcessor implements the Drop trait.
     let background_processor = Arc::new(BackgroundProcessor::start(
         persister.clone(),
         invoice_payer.clone(),

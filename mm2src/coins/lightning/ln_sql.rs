@@ -639,6 +639,7 @@ impl LightningDB for SqliteLightningDB {
 
     async fn get_closed_channels_with_no_closing_tx(&self) -> Result<Vec<DBChannelDetails>, Self::Error> {
         let mut builder = get_channels_builder_preimage(self.db_ticker.as_str())?;
+        builder.and_where("funding_tx IS NOT NULL");
         builder.and_where("closing_tx IS NULL");
         add_fields_to_get_channels_sql_builder(&mut builder);
         let sql = builder.sql().expect("valid sql");
@@ -1089,9 +1090,6 @@ mod tests {
         let actual_channel_details = block_on(db.get_channel_from_db(2)).unwrap().unwrap();
         assert_eq!(expected_channel_details, actual_channel_details);
 
-        let actual_channels = block_on(db.get_closed_channels_with_no_closing_tx()).unwrap();
-        assert_eq!(actual_channels.len(), 1);
-
         let closed_channels =
             block_on(db.get_closed_channels_by_filter(None, PagingOptionsEnum::default(), 10)).unwrap();
         assert_eq!(closed_channels.channels.len(), 1);
@@ -1104,7 +1102,7 @@ mod tests {
         assert_eq!(closed_channels.channels.len(), 2);
 
         let actual_channels = block_on(db.get_closed_channels_with_no_closing_tx()).unwrap();
-        assert_eq!(actual_channels.len(), 2);
+        assert_eq!(actual_channels.len(), 1);
 
         block_on(db.add_closing_tx_to_db(
             2,
@@ -1115,7 +1113,7 @@ mod tests {
             Some("5557df9ad2c9b3c57a4df8b4a7da0b7a6f4e923b4a01daa98bf9e5a3b33e9c8f".into());
 
         let actual_channels = block_on(db.get_closed_channels_with_no_closing_tx()).unwrap();
-        assert_eq!(actual_channels.len(), 1);
+        assert!(actual_channels.is_empty());
 
         let actual_channel_details = block_on(db.get_channel_from_db(2)).unwrap().unwrap();
         assert_eq!(expected_channel_details, actual_channel_details);

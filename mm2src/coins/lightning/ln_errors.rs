@@ -488,7 +488,7 @@ impl From<CoinFindError> for ClaimableBalancesError {
     }
 }
 
-#[derive(Display)]
+#[derive(Display, PartialEq)]
 pub enum SaveChannelClosingError {
     #[display(fmt = "DB error: {}", _0)]
     DbError(String),
