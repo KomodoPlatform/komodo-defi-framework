@@ -5,7 +5,10 @@ use mm2_test_helpers::for_tests::{init_withdraw, rick_conf, send_raw_transaction
                                   ZOMBIE_TICKER};
 
 const ZOMBIE_TEST_BALANCE_SEED: &str = "zombie test seed";
+const ZOMBIE_TEST_HISTORY_SEED: &str = "zombie test history seed";
 const ZOMBIE_TEST_WITHDRAW_SEED: &str = "zombie withdraw test seed";
+const ZOMBIE_TRADE_BOB_SEED: &str = "RICK ZOMBIE BOB";
+const ZOMBIE_TRADE_ALICE_SEED: &str = "RICK ZOMBIE ALICE";
 
 async fn withdraw(mm: &MarketMakerIt, coin: &str, to: &str, amount: &str) -> TransactionDetails {
     let init = init_withdraw(mm, coin, to, amount).await;
@@ -51,7 +54,7 @@ fn activate_z_coin_light() {
         EnableCoinBalance::Iguana(iguana) => iguana,
         _ => panic!("Expected EnableCoinBalance::Iguana"),
     };
-    assert_eq!(balance.balance.spendable, BigDecimal::from(3));
+    assert_eq!(balance.balance.spendable, BigDecimal::from_str("3.1").unwrap());
 }
 
 // ignored because it requires a long-running Zcoin initialization process
@@ -60,7 +63,7 @@ fn activate_z_coin_light() {
 fn test_z_coin_tx_history() {
     let coins = json!([zombie_conf()]);
 
-    let conf = Mm2TestConf::seednode(ZOMBIE_TEST_BALANCE_SEED, &coins);
+    let conf = Mm2TestConf::seednode(ZOMBIE_TEST_HISTORY_SEED, &coins);
     let mm = MarketMakerIt::start(conf.conf, conf.rpc_password, conf.local).unwrap();
 
     block_on(enable_z_coin_light(
@@ -68,12 +71,13 @@ fn test_z_coin_tx_history() {
         ZOMBIE_TICKER,
         ZOMBIE_ELECTRUMS,
         ZOMBIE_LIGHTWALLETD_URLS,
-        &blocks_cache_path(&mm, ZOMBIE_TEST_BALANCE_SEED, ZOMBIE_TICKER),
+        &blocks_cache_path(&mm, ZOMBIE_TEST_HISTORY_SEED, ZOMBIE_TICKER),
     ));
 
-    let tx_history = block_on(z_coin_tx_history(&mm, ZOMBIE_TICKER, 2, None));
-    let response: RpcV2Response<ZcoinHistoryRes> = json::from_value(tx_history).unwrap();
-    println!("{:?}", response);
+    let tx_history = block_on(z_coin_tx_history(&mm, ZOMBIE_TICKER, 5, None));
+    println!("History {}", json::to_string(&tx_history).unwrap());
+
+    let _response: RpcV2Response<ZcoinHistoryRes> = json::from_value(tx_history).unwrap();
 }
 
 // ignored because it requires a long-running Zcoin initialization process
@@ -118,8 +122,8 @@ fn withdraw_z_coin_light() {
 #[ignore]
 fn trade_rick_zombie_light() {
     let coins = json!([zombie_conf(), rick_conf()]);
-    let bob_passphrase = "RICK ZOMBIE BOB";
-    let alice_passphrase = "RICK ZOMBIE ALICE";
+    let bob_passphrase = ZOMBIE_TRADE_BOB_SEED;
+    let alice_passphrase = ZOMBIE_TRADE_ALICE_SEED;
 
     let bob_conf = Mm2TestConf::seednode(bob_passphrase, &coins);
     let mut mm_bob = MarketMakerIt::start(bob_conf.conf, bob_conf.rpc_password, bob_conf.local).unwrap();

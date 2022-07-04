@@ -455,6 +455,7 @@ impl ZCoin {
                 .sql()
                 .expect("valid query");
 
+            common::log::debug!("Query: {}", sql);
             let sql_items = conn
                 .prepare(&sql)?
                 .query_map(NO_PARAMS, |row| {
