@@ -37,6 +37,22 @@ struct BestOrdersP2PRes {
     conf_infos: HashMap<Uuid, OrderConfirmationsSettings>,
 }
 
+#[derive(Debug, Deserialize)]
+#[serde(tag = "type", content = "value")]
+pub enum RequestBestOrdersBy {
+    #[serde(rename = "volume")]
+    Volume(MmNumber),
+    #[serde(rename = "number")]
+    Number(usize),
+}
+
+#[derive(Debug, Deserialize)]
+pub struct BestOrdersRequestV2 {
+    coin: String,
+    action: BestOrdersAction,
+    request_by: RequestBestOrdersBy,
+}
+
 pub fn process_best_orders_p2p_request(
     ctx: MmArc,
     coin: String,
@@ -111,6 +127,82 @@ pub fn process_best_orders_p2p_request(
             BestOrdersAction::Sell => result.insert(pair.0, best_orders),
         };
     }
+
+    // Drop mutability of result, protocol_infos and conf_infos
+    let result = result;
+    let protocol_infos = protocol_infos;
+    let conf_infos = conf_infos;
+
+    let response = BestOrdersP2PRes {
+        orders: result,
+        protocol_infos,
+        conf_infos,
+    };
+    let encoded = rmp_serde::to_vec(&response).expect("rmp_serde::to_vec should not fail here");
+    Ok(Some(encoded))
+}
+
+pub fn process_best_orders_p2p_request_by_number(
+    ctx: MmArc,
+    coin: String,
+    action: BestOrdersAction,
+    number: usize,
+) -> Result<Option<Vec<u8>>, String> {
+    let ordermatch_ctx = OrdermatchContext::from_ctx(&ctx).expect("ordermatch_ctx must exist at this point");
+    let orderbook = ordermatch_ctx.orderbook.lock();
+    let search_pairs_in = match action {
+        BestOrdersAction::Buy => &orderbook.pairs_existing_for_base,
+        BestOrdersAction::Sell => &orderbook.pairs_existing_for_rel,
+    };
+    let tickers = match search_pairs_in.get(&coin) {
+        Some(tickers) => tickers,
+        None => return Ok(None),
+    };
+    let mut result = HashMap::new();
+    let pairs = tickers.iter().map(|ticker| match action {
+        BestOrdersAction::Buy => (coin.clone(), ticker.clone()),
+        BestOrdersAction::Sell => (ticker.clone(), coin.clone()),
+    });
+
+    let mut protocol_infos = HashMap::new();
+    let mut conf_infos = HashMap::new();
+
+    for pair in pairs {
+        let orders = match orderbook.ordered.get(&pair) {
+            Some(orders) => orders.clone(),
+            None => {
+                log::debug!("No orders for pair {:?}", pair);
+                continue;
+            },
+        };
+        let mut best_orders = vec![];
+        for ordered in orders.iter().take(number) {
+            match orderbook.order_set.get(&ordered.uuid) {
+                Some(o) => {
+                    let order_w_proof = orderbook.orderbook_item_with_proof(o.clone());
+                    protocol_infos.insert(order_w_proof.order.uuid, order_w_proof.order.base_rel_proto_info());
+                    if let Some(info) = order_w_proof.order.conf_settings {
+                        conf_infos.insert(order_w_proof.order.uuid, info);
+                    }
+                    best_orders.push(order_w_proof.into());
+                },
+                None => {
+                    log::debug!("No order with uuid {:?}", ordered.uuid);
+                    continue;
+                },
+            };
+        }
+        match action {
+            BestOrdersAction::Buy => result.insert(pair.1, best_orders),
+            BestOrdersAction::Sell => result.insert(pair.0, best_orders),
+        };
+    }
+
+    // Drop mutability of result, protocol_infos and conf_infos
+    let result = result;
+    let protocol_infos = protocol_infos;
+    let conf_infos = conf_infos;
+
     let response = BestOrdersP2PRes {
         orders: result,
         protocol_infos,
@@ -209,16 +301,23 @@ pub struct BestOrdersV2Response {
 
 pub async fn best_orders_rpc_v2(
     ctx: MmArc,
-    req: BestOrdersRequest,
+    req: BestOrdersRequestV2,
 ) -> Result<BestOrdersV2Response, MmError<BestOrdersRpcError>> {
     if is_wallet_only_ticker(&ctx, &req.coin) {
         return MmError::err(BestOrdersRpcError::CoinIsWalletOnly(req.coin));
     }
     let ordermatch_ctx = OrdermatchContext::from_ctx(&ctx).unwrap();
-    let p2p_request = OrdermatchRequest::BestOrders {
-        coin: ordermatch_ctx.orderbook_ticker_bypass(&req.coin),
-        action: req.action,
-        volume: req.volume.into(),
+    let p2p_request = match req.request_by {
+        RequestBestOrdersBy::Volume(mm_number) => OrdermatchRequest::BestOrders {
+            coin: ordermatch_ctx.orderbook_ticker_bypass(&req.coin),
+            action: req.action,
+            volume: mm_number.into(),
+        },
+        RequestBestOrdersBy::Number(size) => OrdermatchRequest::BestOrdersByNumber {
+            coin: ordermatch_ctx.orderbook_ticker_bypass(&req.coin),
+            action: req.action,
+            number: size,
+        },
     };
 
     let best_orders_res = request_any_relay::<BestOrdersP2PRes>(ctx.clone(), P2PRequest::Ordermatch(p2p_request))
