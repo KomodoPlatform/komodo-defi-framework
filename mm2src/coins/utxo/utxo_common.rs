@@ -12,9 +12,9 @@ use crate::utxo::tx_cache::TxCacheResult;
 use crate::utxo::utxo_withdraw::{InitUtxoWithdraw, StandardUtxoWithdraw, UtxoWithdraw};
 use crate::{CanRefundHtlc, CoinBalance, CoinWithDerivationMethod, GetWithdrawSenderAddress, HDAddressId,
             RawTransactionError, RawTransactionRequest, RawTransactionRes, SearchForSwapTxSpendInput, SignatureError,
-            SignatureResult, SwapOps, TradePreimageValue, TransactionFut, TxFeeDetails, ValidateAddressResult,
-            ValidatePaymentInput, VerificationError, VerificationResult, WithdrawFrom, WithdrawResult,
-            WithdrawSenderAddress};
+            SignatureResult, SwapOps, TradePreimageValue, TransactionFut, TxFeeDetails, TxHistoryFut,
+            ValidateAddressResult, ValidatePaymentInput, VerificationError, VerificationResult, WithdrawFrom,
+            WithdrawResult, WithdrawSenderAddress};
 use bigdecimal::BigDecimal;
 use bitcrypto::dhash256;
 pub use bitcrypto::{dhash160, sha256, ChecksumType};
@@ -2141,8 +2141,22 @@ where
         };
 
         // Remove transactions in the history_map that are not in the requested transaction list anymore
+        let history_length = history_map.len();
         let requested_ids: HashSet<H256Json> = tx_ids.iter().map(|x| x.0).collect();
         history_map.retain(|hash, _| requested_ids.contains(hash));
+
+        if history_map.len() < history_length {
+            if let Err(e) = save_transaction_history(&ctx, &coin, &history_map).compat().await {
+                log_tag!(
+                    ctx,
+                    "",
+                    "tx_history",
+                    "coin" => coin.as_ref().conf.ticker;
+                    fmt = "Error {} on 'save_history_to_file', stop the history loop", e
+                );
+                return;
+            };
+        }
 
         let mut transactions_left = if tx_ids.len() > history_map.len() {
             *coin.as_ref().history_sync_state.lock().unwrap() = HistorySyncState::InProgress(json!({
@@ -2208,19 +2222,7 @@ where
                 },
             }
             if updated {
-                let mut to_write: Vec<TransactionDetails> =
-                    history_map.iter().map(|(_, value)| value.clone()).collect();
-                // the transactions with block_height == 0 are the most recent so we need to separately handle them while sorting
-                to_write.sort_unstable_by(|a, b| {
-                    if a.block_height == 0 {
-                        Ordering::Less
-                    } else if b.block_height == 0 {
-                        Ordering::Greater
-                    } else {
-                        b.block_height.cmp(&a.block_height)
-                    }
-                });
-                if let Err(e) = coin.save_history_to_file(&ctx, to_write).compat().await {
+                if let Err(e) = save_transaction_history(&ctx, &coin, &history_map).compat().await {
                     log_tag!(
                         ctx,
                         "",
@@ -2248,6 +2250,31 @@ where
         success_iteration += 1;
         Timer::sleep(30.).await;
     }
+}
+
+pub fn save_transaction_history<T>(
+    ctx: &MmArc,
+    coin: &T,
+    history_map: &HashMap<H256Json, TransactionDetails>,
+) -> TxHistoryFut<()>
+where
+    T: UtxoStandardOps + UtxoCommonOps + MmCoin + MarketCoinOps,
+{
+    //let empty_map :HashMap<H256, TransactionDetails> = HashMap::new();
+
+    let mut to_write: Vec<TransactionDetails> = history_map.iter().map(|(_, value)| value.clone()).collect();
+    // the transactions with block_height == 0 are the most recent so we need to separately handle them while sorting
+    to_write.sort_unstable_by(|a, b| {
+        if a.block_height == 0 {
+            Ordering::Less
+        } else if b.block_height == 0 {
+            Ordering::Greater
+        } else {
+            b.block_height.cmp(&a.block_height)
+        }
+    });
+
+    coin.save_history_to_file(ctx, to_write)
 }
 
 pub async fn request_tx_history<T>(coin: &T, metrics: MetricsArc) -> RequestTxHistoryResult
