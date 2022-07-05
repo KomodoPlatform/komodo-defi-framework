@@ -4,7 +4,8 @@ use crate::utxo::rpc_clients::{ElectrumRpcRequest, UnspentInfo, UtxoRpcClientEnu
                                UtxoRpcResult};
 use crate::utxo::utxo_builder::{UtxoCoinBuilderCommonOps, UtxoCoinWithIguanaPrivKeyBuilder,
                                 UtxoFieldsWithIguanaPrivKeyBuilder};
-use crate::utxo::utxo_common::{big_decimal_from_sat, big_decimal_from_sat_unsigned, payment_script};
+use crate::utxo::utxo_common::{addresses_from_script, big_decimal_from_sat, big_decimal_from_sat_unsigned,
+                               payment_script};
 use crate::utxo::{sat_from_big_decimal, utxo_common, ActualTxFee, AdditionalTxData, Address, BroadcastTxErr,
                   FeePolicy, GetUtxoListOps, HistoryUtxoTx, HistoryUtxoTxMap, MatureUnspentList,
                   RecentlySpentOutPointsGuard, UtxoActivationParams, UtxoAddressFormat, UtxoArc, UtxoCoinFields,
@@ -98,7 +99,6 @@ macro_rules! try_ztx_s {
 const DEX_FEE_OVK: OutgoingViewingKey = OutgoingViewingKey([7; 32]);
 const DEX_FEE_Z_ADDR: &str = "zs1rp6426e9r6jkq2nsanl66tkd34enewrmr0uvj0zelhkcwmsy0uvxz2fhm9eu9rl3ukxvgzy2v9f";
 const TRANSACTIONS_TABLE: &str = "transactions";
-const RECEIVED_NOTES_TABLE: &str = "received_notes";
 const BLOCKS_TABLE: &str = "blocks";
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
@@ -205,9 +205,9 @@ pub struct ZcoinTxDetails {
     /// Transaction hash in hexadecimal format
     tx_hash: String,
     /// Coins are sent from these addresses
-    from: Vec<String>,
+    from: HashSet<String>,
     /// Coins are sent to these addresses
-    to: Vec<String>,
+    to: HashSet<String>,
     /// The amount spent from "my" address
     spent_by_me: BigDecimal,
     /// The amount received by "my" address
@@ -423,28 +423,24 @@ impl ZCoin {
         Ok(tx)
     }
 
-    pub async fn tx_history(
-        &self,
-        request: MyTxHistoryRequestV2<i64>,
-    ) -> Result<MyTxHistoryResponseV2<ZcoinTxDetails, i64>, MmError<MyTxHistoryErrorV2>> {
-        let current_block = self.utxo_rpc_client().get_block_count().compat().await?;
+    async fn tx_history_sql_items(&self, limit: usize) -> Result<Vec<ZCoinSqlTxHistoryItem>, MmError<SqlError>> {
         let wallet_db = self.z_fields.light_wallet_db.clone();
-        let limit = request.limit;
-        let sql_items = async_blocking(move || -> Result<_, SqlError> {
+        async_blocking(move || {
             let db_guard = wallet_db.lock();
             let conn = db_guard.sql_conn();
+
             let sql = SqlBuilder::select_from(name!(TRANSACTIONS_TABLE; "txes"))
                 .field("txes.txid")
                 .field("txes.id_tx as internal_id")
                 .field("txes.block")
                 .field("blocks.time")
-                .field("COALESCE(SUM(rn.value), 0) as received_amount")
-                .field("COALESCE(SUM(sn.value), 0) as spent_amount")
+                .field("COALESCE(rn.received_amount, 0)")
+                .field("COALESCE(sn.sent_amount, 0)")
                 .left()
-                .join(name!(RECEIVED_NOTES_TABLE; "rn"))
+                .join("(SELECT tx, SUM(value) as received_amount FROM received_notes GROUP BY tx) as rn")
                 .on("txes.id_tx = rn.tx")
-                // detecting spent_amount by "spent" field in received_notes table
-                .join(name!(RECEIVED_NOTES_TABLE; "sn"))
+                // detecting spent amount by "spent" field in received_notes table
+                .join("(SELECT spent, SUM(value) as sent_amount FROM received_notes GROUP BY spent) as sn")
                 .on("txes.id_tx = sn.spent")
                 .join(BLOCKS_TABLE)
                 .on("txes.block = blocks.height")
@@ -455,7 +451,6 @@ impl ZCoin {
                 .sql()
                 .expect("valid query");
 
-            common::log::debug!("Query: {}", sql);
             let sql_items = conn
                 .prepare(&sql)?
                 .query_map(NO_PARAMS, |row| {
@@ -473,14 +468,14 @@ impl ZCoin {
                 .collect::<Result<Vec<_>, _>>()?;
             Ok(sql_items)
         })
-        .await?;
+        .await
+    }
 
-        let hashes_for_verbose = sql_items
-            .iter()
-            .map(|item| H256Json::from(item.tx_hash.as_slice()))
-            .collect();
-        let mut transactions: HashMap<_, _> = self
-            .get_verbose_transactions_from_cache_or_rpc(hashes_for_verbose)
+    async fn z_transactions_from_cache_or_rpc(
+        &self,
+        hashes: HashSet<H256Json>,
+    ) -> UtxoRpcResult<HashMap<H256Json, ZTransaction>> {
+        self.get_verbose_transactions_from_cache_or_rpc(hashes)
             .compat()
             .await?
             .into_iter()
@@ -488,7 +483,118 @@ impl ZCoin {
                 Ok((hash, ZTransaction::read(tx.into_inner().hex.as_slice())?))
             })
             .collect::<Result<_, _>>()
-            .map_to_mm(|e| MyTxHistoryErrorV2::Internal(e.to_string()))?;
+            .map_to_mm(|e| UtxoRpcError::InvalidResponse(e.to_string()))
+    }
+
+    fn tx_details_from_sql_item(
+        &self,
+        sql_item: ZCoinSqlTxHistoryItem,
+        transactions: &mut HashMap<H256Json, ZTransaction>,
+        prev_transactions: &HashMap<H256Json, ZTransaction>,
+        current_block: u64,
+    ) -> ZcoinTxDetails {
+        let mut from = HashSet::new();
+
+        let mut confirmations = current_block as i64 - sql_item.height + 1;
+        if confirmations < 0 {
+            confirmations = 0;
+        }
+
+        let mut transparent_input_amount = Amount::zero();
+        let z_tx = transactions
+            .remove(&H256Json::from(sql_item.tx_hash.as_slice()))
+            .unwrap();
+        for input in z_tx.vin.iter() {
+            let mut hash = *input.prevout.hash();
+            hash.reverse();
+            let prev_tx = prev_transactions.get(&H256Json::from(hash)).unwrap();
+
+            if let Some(spent_output) = prev_tx.vout.get(input.prevout.n() as usize) {
+                transparent_input_amount += spent_output.value;
+                if let Ok(addresses) = addresses_from_script(self, &spent_output.script_pubkey.0.clone().into()) {
+                    from.extend(addresses.into_iter().map(|a| a.to_string()));
+                }
+            }
+        }
+
+        let transparent_output_amount = z_tx
+            .vout
+            .iter()
+            .fold(Amount::zero(), |current, out| current + out.value);
+
+        let mut to = HashSet::new();
+        for out in z_tx.vout.iter() {
+            if let Ok(addresses) = addresses_from_script(self, &out.script_pubkey.0.clone().into()) {
+                to.extend(addresses.into_iter().map(|a| a.to_string()));
+            }
+        }
+
+        let fee_amount = z_tx.value_balance + transparent_input_amount - transparent_output_amount;
+        if sql_item.spent_amount > 0 {
+            from.insert(self.my_z_address_encoded());
+        }
+
+        if sql_item.received_amount > 0 {
+            to.insert(self.my_z_address_encoded());
+        }
+
+        for z_out in z_tx.shielded_outputs.iter() {
+            if let Some((_, address, _)) = try_sapling_output_recovery(
+                self.consensus_params_ref(),
+                BlockHeight::from_u32(current_block as u32),
+                &self.z_fields.evk.fvk.ovk,
+                z_out,
+            ) {
+                to.insert(encode_payment_address(
+                    self.consensus_params_ref().hrp_sapling_payment_address(),
+                    &address,
+                ));
+            }
+
+            if let Some((_, address, _)) = try_sapling_output_recovery(
+                self.consensus_params_ref(),
+                BlockHeight::from_u32(current_block as u32),
+                &DEX_FEE_OVK,
+                z_out,
+            ) {
+                to.insert(encode_payment_address(
+                    self.consensus_params_ref().hrp_sapling_payment_address(),
+                    &address,
+                ));
+            }
+        }
+
+        let spent_by_me = big_decimal_from_sat(sql_item.spent_amount, self.decimals());
+        let received_by_me = big_decimal_from_sat(sql_item.received_amount, self.decimals());
+        ZcoinTxDetails {
+            tx_hash: hex::encode(sql_item.tx_hash),
+            from,
+            to,
+            my_balance_change: &received_by_me - &spent_by_me,
+            spent_by_me,
+            received_by_me,
+            block_height: sql_item.height,
+            confirmations,
+            timestamp: sql_item.timestamp,
+            transaction_fee: big_decimal_from_sat(fee_amount.into(), self.decimals()),
+            coin: self.ticker().into(),
+            internal_id: sql_item.internal_id,
+        }
+    }
+
+    pub async fn tx_history(
+        &self,
+        request: MyTxHistoryRequestV2<i64>,
+    ) -> Result<MyTxHistoryResponseV2<ZcoinTxDetails, i64>, MmError<MyTxHistoryErrorV2>> {
+        let current_block = self.utxo_rpc_client().get_block_count().compat().await?;
+        let sql_items = self.tx_history_sql_items(request.limit).await?;
+
+        let hashes_for_verbose = sql_items
+            .iter()
+            .map(|item| H256Json::from(item.tx_hash.as_slice()))
+            .collect();
+        let mut transactions = self.z_transactions_from_cache_or_rpc(hashes_for_verbose).await?;
+
         let prev_tx_hashes: HashSet<_> = transactions
             .iter()
             .flat_map(|(_, tx)| {
@@ -499,58 +605,15 @@ impl ZCoin {
                 })
             })
             .collect();
-        let prev_transactions: HashMap<_, _> = self
-            .get_verbose_transactions_from_cache_or_rpc(prev_tx_hashes)
-            .compat()
-            .await?
-            .into_iter()
-            .map(|(hash, tx)| Ok((hash, ZTransaction::read(tx.into_inner().hex.as_slice())?)))
-            .collect::<Result<_, std::io::Error>>()
-            .map_to_mm(|e| MyTxHistoryErrorV2::Internal(e.to_string()))?;
+        let prev_transactions = self.z_transactions_from_cache_or_rpc(prev_tx_hashes).await?;
 
         let transactions = sql_items
             .into_iter()
             .map(|sql_item| {
-                let mut confirmations = current_block as i64 - sql_item.height + 1;
-                if confirmations < 0 {
-                    confirmations = 0;
-                }
-
-                let mut transparent_input_amount = Amount::zero();
-                let z_tx = transactions
-                    .remove(&H256Json::from(sql_item.tx_hash.as_slice()))
-                    .unwrap();
-                for input in z_tx.vin.iter() {
-                    let mut hash = *input.prevout.hash();
-                    hash.reverse();
-                    let prev_tx = prev_transactions.get(&H256Json::from(hash)).unwrap();
-                    transparent_input_amount += prev_tx.vout[input.prevout.n() as usize].value;
-                }
-
-                let transparent_output_amount = z_tx
-                    .vout
-                    .iter()
-                    .fold(Amount::zero(), |current, out| current + out.value);
-
-                let fee_amount = z_tx.value_balance + transparent_output_amount - transparent_input_amount;
-                let spent_by_me = big_decimal_from_sat(sql_item.spent_amount, self.decimals());
-                let received_by_me = big_decimal_from_sat(sql_item.received_amount, self.decimals());
-                ZcoinTxDetails {
-                    tx_hash: hex::encode(sql_item.tx_hash),
-                    from: vec![],
-                    to: vec![],
-                    my_balance_change: &received_by_me - &spent_by_me,
-                    spent_by_me,
-                    received_by_me,
-                    block_height: sql_item.height,
-                    confirmations,
-                    timestamp: sql_item.timestamp,
-                    transaction_fee: big_decimal_from_sat(fee_amount.into(), self.decimals()),
-                    coin: self.ticker().into(),
-                    internal_id: sql_item.internal_id,
-                }
+                self.tx_details_from_sql_item(sql_item, &mut transactions, &prev_transactions, current_block)
             })
             .collect();
+
         Ok(MyTxHistoryResponseV2 {
             coin: self.ticker().into(),
             current_block,

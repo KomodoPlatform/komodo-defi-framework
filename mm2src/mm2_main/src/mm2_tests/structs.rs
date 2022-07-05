@@ -801,8 +801,8 @@ pub struct HistoryTransactionDetails {
 #[serde(deny_unknown_fields)]
 pub struct ZcoinTransactionDetails {
     pub tx_hash: String,
-    pub from: Vec<String>,
-    pub to: Vec<String>,
+    pub from: HashSet<String>,
+    pub to: HashSet<String>,
     pub spent_by_me: BigDecimal,
     pub received_by_me: BigDecimal,
     pub my_balance_change: BigDecimal,
