@@ -3,6 +3,7 @@ use super::{RpcTransportEventHandler, RpcTransportEventHandlerShared};
 use futures::TryFutureExt;
 use futures01::{Future, Poll};
 use jsonrpc_core::{Call, Response};
+use mm2_net::transport::GuiAuthValidation;
 use serde_json::Value as Json;
 #[cfg(not(target_arch = "wasm32"))] use std::ops::Deref;
 use std::sync::atomic::{AtomicUsize, Ordering};
@@ -72,11 +73,12 @@ pub struct Web3Transport {
     id: Arc<AtomicUsize>,
     uris: Vec<http::Uri>,
     event_handlers: Vec<RpcTransportEventHandlerShared>,
+    gui_auth_validation: Option<GuiAuthValidation>,
 }
 
 impl Web3Transport {
     #[allow(dead_code)]
-    pub fn new(urls: Vec<String>) -> Result<Self, String> {
+    pub fn new(urls: Vec<String>, gui_auth_validation: Option<GuiAuthValidation>) -> Result<Self, String> {
         let mut uris = vec![];
         for url in urls.iter() {
             uris.push(try_s!(url.parse()));
@@ -85,12 +87,14 @@ impl Web3Transport {
             id: Arc::new(AtomicUsize::new(0)),
             uris,
             event_handlers: Default::default(),
+            gui_auth_validation,
         })
     }
 
     pub fn with_event_handlers(
         urls: Vec<String>,
         event_handlers: Vec<RpcTransportEventHandlerShared>,
+        gui_auth_validation: Option<GuiAuthValidation>,
     ) -> Result<Self, String> {
         let mut uris = vec![];
         for url in urls.iter() {
@@ -100,6 +104,7 @@ impl Web3Transport {
             id: Arc::new(AtomicUsize::new(0)),
             uris,
             event_handlers,
+            gui_auth_validation,
         })
     }
 }

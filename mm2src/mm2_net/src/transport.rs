@@ -48,3 +48,12 @@ where
         error: e.to_string(),
     })
 }
+
+/// gui-auth specific data-type that needed in order to perform gui-auth calls
+#[derive(Clone, Debug, Serialize, Deserialize, PartialEq)]
+pub struct GuiAuthValidation {
+    pub(crate) coin_ticker: String,
+    pub(crate) address: String,
+    pub(crate) timestamp_message: u64,
+    pub(crate) signature: String,
+}

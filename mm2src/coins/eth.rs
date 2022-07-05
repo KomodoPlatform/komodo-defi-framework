@@ -3409,7 +3409,8 @@ pub async fn eth_coin_from_conf_and_request(
     for url in urls.iter() {
         let transport = try_s!(Web3Transport::with_event_handlers(
             vec![url.clone()],
-            event_handlers.clone()
+            event_handlers.clone(),
+            None
         ));
         let web3 = Web3::new(transport);
         let version = match web3.web3().client_version().compat().await {
@@ -3429,7 +3430,7 @@ pub async fn eth_coin_from_conf_and_request(
         return ERR!("Failed to get client version for all urls");
     }
 
-    let transport = try_s!(Web3Transport::with_event_handlers(urls, event_handlers));
+    let transport = try_s!(Web3Transport::with_event_handlers(urls, event_handlers, None));
     let web3 = Web3::new(transport);
 
     let (coin_type, decimals) = match protocol {
