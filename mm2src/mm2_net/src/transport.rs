@@ -52,8 +52,8 @@ where
 /// gui-auth specific data-type that needed in order to perform gui-auth calls
 #[derive(Clone, Debug, Serialize, Deserialize, PartialEq)]
 pub struct GuiAuthValidation {
-    pub(crate) coin_ticker: String,
-    pub(crate) address: String,
+    pub coin_ticker: String,
+    pub address: String,
     pub timestamp_message: u64,
-    pub(crate) signature: String,
+    pub signature: String,
 }

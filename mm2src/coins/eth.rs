@@ -37,7 +37,7 @@ use futures01::Future;
 use http::StatusCode;
 use mm2_core::mm_ctx::{MmArc, MmWeak};
 use mm2_err_handle::prelude::*;
-use mm2_net::transport::{slurp_url, SlurpError};
+use mm2_net::transport::{slurp_url, GuiAuthValidation, SlurpError};
 #[cfg(test)] use mocktopus::macros::*;
 use rand::seq::SliceRandom;
 use rpc::v1::types::Bytes as BytesJson;
@@ -51,6 +51,7 @@ use std::path::PathBuf;
 use std::str::FromStr;
 use std::sync::atomic::{AtomicU64, Ordering as AtomicOrdering};
 use std::sync::{Arc, Mutex};
+use std::time::{SystemTime, UNIX_EPOCH};
 use web3::types::{Action as TraceAction, BlockId, BlockNumber, Bytes, CallRequest, FilterBuilder, Log, Trace,
                   TraceFilterBuilder, Transaction as Web3Transaction, TransactionId};
 use web3::{self, Web3};
@@ -1093,19 +1094,7 @@ impl MarketCoinOps for EthCoin {
     /// Hash message for signature using Ethereum's message signing format.
     /// keccak256(PREFIX_LENGTH + PREFIX + MESSAGE_LENGTH + MESSAGE)
     fn sign_message_hash(&self, message: &str) -> Option<[u8; 32]> {
-        let (message, message_prefix) = match self.gui_auth_message_prefix.as_ref() {
-            Some(prefix) => {
-                let message = self
-                    .web3
-                    .transport()
-                    .gui_auth_validation
-                    .as_ref()?
-                    .timestamp_message
-                    .to_string();
-                (message, prefix)
-            },
-            None => (String::from(message), self.sign_message_prefix.as_ref()?),
-        };
+        let message_prefix = self.sign_message_prefix.as_ref()?;
 
         let mut stream = Stream::new();
         let prefix_len = CompactInteger::from(message_prefix.len());
@@ -3215,6 +3204,46 @@ impl<T: TryToAddress> TryToAddress for Option<T> {
             Some(ref inner) => inner.try_to_address(),
             None => ERR!("Cannot convert None to address"),
         }
+    }
+}
+
+pub trait GuiAuthMessages {
+    fn gui_auth_sign_message_hash(&self, message: String) -> Option<[u8; 32]>;
+    fn generate_gui_auth_signed_validation(&self) -> SignatureResult<GuiAuthValidation>;
+}
+
+impl GuiAuthMessages for EthCoin {
+    fn gui_auth_sign_message_hash(&self, message: String) -> Option<[u8; 32]> {
+        let message_prefix = self.gui_auth_message_prefix.as_ref()?;
+        let prefix_len = CompactInteger::from(message_prefix.len());
+
+        let mut stream = Stream::new();
+        prefix_len.serialize(&mut stream);
+        stream.append_slice(message_prefix.as_bytes());
+        stream.append_slice(message.len().to_string().as_bytes());
+        stream.append_slice(message.as_bytes());
+
+        Some(keccak256(&stream.out()).take())
+    }
+
+    fn generate_gui_auth_signed_validation(&self) -> SignatureResult<GuiAuthValidation> {
+        let timestamp_message = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .map_err(|e| SignatureError::InternalError(e.to_string()))?
+            .as_secs();
+
+        let message_hash = self
+            .gui_auth_sign_message_hash(timestamp_message.to_string())
+            .ok_or(SignatureError::PrefixNotFound)?;
+        let privkey = &self.key_pair.secret();
+        let signature = sign(privkey, &H256::from(message_hash))?;
+
+        Ok(GuiAuthValidation {
+            coin_ticker: self.ticker.clone(),
+            address: self.my_address.to_string(),
+            timestamp_message: timestamp_message + 5 * 60,
+            signature: format!("0x{}", signature),
+        })
     }
 }
 
