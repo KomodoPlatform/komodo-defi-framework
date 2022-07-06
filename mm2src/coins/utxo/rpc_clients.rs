@@ -2,7 +2,8 @@
 #![cfg_attr(target_arch = "wasm32", allow(dead_code))]
 
 use crate::utxo::utxo_block_header_storage::{BlockHeaderStorage, BlockHeaderStorageError, BlockHeaderStorageOps};
-use crate::utxo::{output_script, sat_from_big_decimal, GetBlockHeaderError, GetTxError, GetTxHeightError};
+use crate::utxo::{output_script, sat_from_big_decimal, BlockchainNetwork, GetBlockHeaderError, GetTxError,
+                  GetTxHeightError};
 use crate::{big_decimal_from_sat_unsigned, NumConversError, RpcTransportEventHandler, RpcTransportEventHandlerShared};
 use async_trait::async_trait;
 use bigdecimal::BigDecimal;
@@ -31,12 +32,15 @@ use keys::hash::H256;
 use keys::{Address, Type as ScriptType};
 use mm2_err_handle::prelude::*;
 #[cfg(test)] use mocktopus::macros::*;
+use primitives::compact::Compact;
+use primitives::U256;
 use rpc::v1::types::{Bytes as BytesJson, Transaction as RpcTransaction, H256 as H256Json};
 use serde_json::{self as json, Value as Json};
 use serialization::{deserialize, serialize, serialize_with_flags, CoinVariant, CompactInteger, Reader,
                     SERIALIZE_TRANSACTION_WITNESS};
 use sha2::{Digest, Sha256};
 use spv_validation::helpers_validation::SPVError;
+use std::cmp;
 use std::collections::hash_map::Entry;
 use std::collections::HashMap;
 use std::fmt;
@@ -2755,4 +2759,122 @@ fn address_balance_from_unspent_map(address: &Address, unspent_map: &UnspentMap,
     unspents.iter().fold(BigDecimal::from(0), |sum, unspent| {
         sum + big_decimal_from_sat_unsigned(unspent.value, decimals)
     })
+}
+
+pub const RETARGETING_FACTOR: u32 = 4;
+pub const TARGET_SPACING_SECONDS: u32 = 10 * 60;
+pub const TARGET_TIMESPAN_SECONDS: u32 = 2 * 7 * 24 * 60 * 60;
+
+/// The Target number of blocks equals to 2 weeks or 2016 blocks
+pub const RETARGETING_INTERVAL: u32 = TARGET_TIMESPAN_SECONDS / TARGET_SPACING_SECONDS;
+
+// The upper and lower bounds for retargeting timespan
+pub const MIN_TIMESPAN: u32 = TARGET_TIMESPAN_SECONDS / RETARGETING_FACTOR;
+pub const MAX_TIMESPAN: u32 = TARGET_TIMESPAN_SECONDS * RETARGETING_FACTOR;
+
+pub fn is_retarget_height(height: u32) -> bool { height % RETARGETING_INTERVAL == 0 }
+
+#[derive(Debug, Display)]
+pub enum NextBlockBitsError {
+    #[display(fmt = "Can't calculate next block bits for Network {:?}", _0)]
+    UnsupportedNetwork(BlockchainNetwork),
+    Internal(String),
+}
+
+pub fn next_block_bits(network: BlockchainNetwork) -> Result<BlockHeaderBits, NextBlockBitsError> {
+    match network {
+        BlockchainNetwork::Mainnet => unimplemented!(),
+        BlockchainNetwork::Testnet => unimplemented!(),
+        network => Err(NextBlockBitsError::UnsupportedNetwork(network)),
+    }
+}
+
+fn range_constrain(value: i64, min: i64, max: i64) -> i64 { cmp::min(cmp::max(value, min), max) }
+
+/// Returns constrained number of seconds since last retarget
+pub fn retarget_timespan(retarget_timestamp: u32, last_timestamp: u32) -> u32 {
+    // subtract unsigned 32 bit numbers in signed 64 bit space in
+    // order to prevent underflow before applying the range constraint.
+    let timespan = last_timestamp as i64 - retarget_timestamp as i64;
+    range_constrain(timespan, MIN_TIMESPAN as i64, MAX_TIMESPAN as i64) as u32
+}
+
+// height can be replaced with last_header.height + 1
+pub async fn btc_mainnet_next_block_bits(
+    last_header: BlockHeader,
+    height: u32,
+    store: BlockHeaderStorage,
+) -> Result<BlockHeaderBits, NextBlockBitsError> {
+    if height == 0 {
+        return Err(NextBlockBitsError::Internal("Next block height can't be zero".into()));
+    }
+
+    if height % RETARGETING_INTERVAL == 0 {
+        let retarget_ref = (height - RETARGETING_INTERVAL).into();
+        let retarget_header = store.get_block_header("BTC", retarget_ref).await.unwrap().unwrap();
+        // timestamp of block(height - RETARGETING_INTERVAL)
+        let retarget_timestamp = retarget_header.time;
+        // timestamp of current block
+        let last_timestamp = last_header.time;
+
+        let retarget: Compact = last_header.bits.into();
+        let retarget: U256 = retarget.into();
+        let retarget_timespan: U256 = retarget_timespan(retarget_timestamp, last_timestamp).into();
+        let retarget: U256 = retarget * retarget_timespan;
+        let target_timespan_seconds: U256 = TARGET_TIMESPAN_SECONDS.into();
+        let retarget = retarget / target_timespan_seconds;
+
+        let maximum: U256 = "00000000ffffffffffffffffffffffffffffffffffffffffffffffffffffffff"
+            .parse()
+            .expect("hardcoded value should parse without errors");
+
+        if retarget > maximum {
+            Ok(BlockHeaderBits::Compact(maximum.into()))
+        } else {
+            Ok(BlockHeaderBits::Compact(retarget.into()))
+        }
+    } else {
+        Ok(last_header.bits)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::utxo::utxo_sql_block_header_storage::SqliteBlockHeadersStorage;
+    use common::block_on;
+
+    #[test]
+    fn test_btc_mainnet_next_block_bits() {
+        let for_coin = "BTC";
+        let storage = SqliteBlockHeadersStorage::in_memory();
+        block_on(storage.init(for_coin)).unwrap();
+
+        let initialized = block_on(storage.is_initialized_for(for_coin)).unwrap();
+        assert!(initialized);
+
+        // https://live.blockcypher.com/btc/block/00000000000000000012145f8ffa7218d2d04ca66b61835a2a5eaec33dffc098/
+        let block_header = ElectrumBlockHeaderV14 {
+            height: 604800,
+            hex: "000000208e244d2c55bc403caa5d6eaf0f922170e413eb1e02fb02000000000000000000e03b4d9df72d8db232a20bb2ff35c433a99f1467f391f75b5f62180d96f06d6aa4c4d65d3eb215179ef91633".into(),
+        }.into();
+        let headers = vec![ElectrumBlockHeader::V14(block_header)];
+        block_on(storage.add_electrum_block_headers_to_storage(for_coin, headers)).unwrap();
+
+        let storage = BlockHeaderStorage {
+            inner: Box::new(storage),
+            params: BlockHeaderVerificationParams {
+                difficulty_check: false,
+                constant_difficulty: false,
+                blocks_limit_to_check: NonZeroU64::new(1).unwrap(),
+                check_every: 0.0,
+            },
+        };
+
+        let last_header: BlockHeader = "000000201d758432ecd495a2177b44d3fe6c22af183461a0b9ea0d0000000000000000008283a1dfa795d9b68bd8c18601e443368265072cbf8c76bfe58de46edd303798035de95d3eb2151756fdb0e8".into();
+
+        let btc_mainnet_next_block_bits = block_on(btc_mainnet_next_block_bits(last_header, 606816, storage)).unwrap();
+
+        assert_eq!(btc_mainnet_next_block_bits, BlockHeaderBits::Compact(387308498.into()))
+    }
 }

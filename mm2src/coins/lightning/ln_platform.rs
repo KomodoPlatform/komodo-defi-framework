@@ -23,7 +23,6 @@ use spv_validation::spv_proof::TRY_SPV_PROOF_INTERVAL;
 use std::cmp;
 use std::convert::TryFrom;
 use std::sync::atomic::{AtomicU64, Ordering as AtomicOrdering};
-// use common::AbortOnDropHandle;
 
 const CHECK_FOR_NEW_BEST_BLOCK_INTERVAL: f64 = 60.;
 const MIN_ALLOWED_FEE_PER_1000_WEIGHT: u32 = 253;

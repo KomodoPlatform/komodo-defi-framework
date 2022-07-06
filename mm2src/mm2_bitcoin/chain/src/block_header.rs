@@ -50,6 +50,15 @@ impl From<BlockHeaderBits> for u32 {
     }
 }
 
+impl From<BlockHeaderBits> for Compact {
+    fn from(bits: BlockHeaderBits) -> Self {
+        match bits {
+            BlockHeaderBits::Compact(c) => c,
+            BlockHeaderBits::U32(n) => Compact::new(n),
+        }
+    }
+}
+
 const AUX_POW_VERSION_DOGE: u32 = 6422788;
 const AUX_POW_VERSION_SYS: u32 = 537919744;
 const MTP_POW_VERSION: u32 = 0x20001000u32;

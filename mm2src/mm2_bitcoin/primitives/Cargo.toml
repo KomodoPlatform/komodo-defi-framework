@@ -7,4 +7,4 @@ authors = ["debris <marek.kotewicz@gmail.com>"]
 rustc-hex = "2"
 bitcoin_hashes = "0.10.0"
 byteorder = "1.0"
-uint = "0.9.1"
+uint = "0.9.3"
