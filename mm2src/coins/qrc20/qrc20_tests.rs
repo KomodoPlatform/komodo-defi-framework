@@ -82,7 +82,7 @@ fn test_withdraw_to_p2sh_address_should_fail() {
         fee: None,
     };
     let err = coin.withdraw(req).wait().unwrap_err().into_inner();
-    let expect = WithdrawError::InvalidAddress("Expected P2PKH and not P2SH".to_owned());
+    let expect = WithdrawError::InvalidAddress("QRC20 can be sent to P2PKH addresses only".to_owned());
     assert_eq!(err, expect);
 }
 
