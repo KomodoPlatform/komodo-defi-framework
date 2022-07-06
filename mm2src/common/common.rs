@@ -84,7 +84,7 @@ macro_rules! try_h {
     };
 }
 
-/// Returns a JSON error HyRes on a failure.
+/// Drops mutability of given variable
 #[macro_export]
 macro_rules! drop_mutability {
     ($t: ident) => {
