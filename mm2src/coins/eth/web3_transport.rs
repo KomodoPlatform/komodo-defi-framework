@@ -152,7 +152,7 @@ impl Transport for Web3Transport {
             request,
             self.uris.clone(),
             self.event_handlers.clone(),
-            self.gui_auth_validation,
+            self.gui_auth_validation.clone(),
         );
         Box::new(SendFuture(Box::pin(fut).compat()))
     }
@@ -237,12 +237,21 @@ async fn send_request(
     request: Call,
     uris: Vec<http::Uri>,
     event_handlers: Vec<RpcTransportEventHandlerShared>,
+    gui_auth_validation: Option<GuiAuthValidation>,
 ) -> Result<Json, Error> {
-    let request_payload = to_string(&request);
+    let mut serialized_request = to_string(&request);
+
+    if let Some(gui_auth_validation) = gui_auth_validation {
+        let mut json_payload = serde_json::to_value(&serialized_request)?;
+        json_payload["signed_message"] = json!(gui_auth_validation);
+        drop_mutability!(json_payload);
+        serialized_request = json_payload.to_string();
+    }
+    drop_mutability!(serialized_request);
 
     let mut transport_errors = Vec::new();
     for uri in uris {
-        match send_request_once(request_payload.clone(), &uri, &event_handlers).await {
+        match send_request_once(serialized_request.clone(), &uri, &event_handlers).await {
             Ok(response_json) => return Ok(response_json),
             Err(Error(ErrorKind::Transport(e), _)) => {
                 transport_errors.push(e.to_string());
