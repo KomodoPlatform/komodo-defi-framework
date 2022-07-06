@@ -1409,7 +1409,7 @@ impl DelegationError {
     }
 }
 
-#[derive(Clone, Debug, Deserialize, Display, Serialize, SerializeErrorType)]
+#[derive(Clone, Debug, Deserialize, Display, Serialize, SerializeErrorType, PartialEq)]
 #[serde(tag = "error_type", content = "error_data")]
 pub enum WithdrawError {
     /*                                              */
