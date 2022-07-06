@@ -73,12 +73,17 @@ pub struct Web3Transport {
     id: Arc<AtomicUsize>,
     uris: Vec<http::Uri>,
     event_handlers: Vec<RpcTransportEventHandlerShared>,
+    pub(crate) gui_auth: bool,
     pub(crate) gui_auth_validation: Option<GuiAuthValidation>,
 }
 
 impl Web3Transport {
     #[allow(dead_code)]
-    pub fn new(urls: Vec<String>, gui_auth_validation: Option<GuiAuthValidation>) -> Result<Self, String> {
+    pub fn new(
+        urls: Vec<String>,
+        gui_auth: bool,
+        gui_auth_validation: Option<GuiAuthValidation>,
+    ) -> Result<Self, String> {
         let mut uris = vec![];
         for url in urls.iter() {
             uris.push(try_s!(url.parse()));
@@ -87,6 +92,7 @@ impl Web3Transport {
             id: Arc::new(AtomicUsize::new(0)),
             uris,
             event_handlers: Default::default(),
+            gui_auth,
             gui_auth_validation,
         })
     }
@@ -94,6 +100,7 @@ impl Web3Transport {
     pub fn with_event_handlers(
         urls: Vec<String>,
         event_handlers: Vec<RpcTransportEventHandlerShared>,
+        gui_auth: bool,
         gui_auth_validation: Option<GuiAuthValidation>,
     ) -> Result<Self, String> {
         let mut uris = vec![];
@@ -104,6 +111,7 @@ impl Web3Transport {
             id: Arc::new(AtomicUsize::new(0)),
             uris,
             event_handlers,
+            gui_auth,
             gui_auth_validation,
         })
     }
@@ -163,6 +171,7 @@ async fn send_request(
     request: Call,
     uris: Vec<http::Uri>,
     event_handlers: Vec<RpcTransportEventHandlerShared>,
+    gui_auth: bool,
     gui_auth_validation: Option<GuiAuthValidation>,
 ) -> Result<Json, Error> {
     use common::executor::Timer;
@@ -178,12 +187,15 @@ async fn send_request(
 
     let mut serialized_request = to_string(&request);
 
-    if let Some(gui_auth_validation) = gui_auth_validation {
-        let mut json_payload = serde_json::to_value(&serialized_request)?;
-        json_payload["signed_message"] = json!(gui_auth_validation);
-        drop_mutability!(json_payload);
-        serialized_request = json_payload.to_string();
-    }
+    match gui_auth_validation {
+        Some(gui_auth_validation) if gui_auth => {
+            let mut json_payload = serde_json::to_value(&serialized_request)?;
+            json_payload["signed_message"] = json!(gui_auth_validation);
+            common::drop_mutability!(json_payload);
+            serialized_request = json_payload.to_string();
+        },
+        _ => {},
+    };
     drop_mutability!(serialized_request);
 
     event_handlers.on_outgoing_request(serialized_request.as_bytes());
@@ -237,16 +249,20 @@ async fn send_request(
     request: Call,
     uris: Vec<http::Uri>,
     event_handlers: Vec<RpcTransportEventHandlerShared>,
+    gui_auth: bool,
     gui_auth_validation: Option<GuiAuthValidation>,
 ) -> Result<Json, Error> {
     let mut serialized_request = to_string(&request);
 
-    if let Some(gui_auth_validation) = gui_auth_validation {
-        let mut json_payload = serde_json::to_value(&serialized_request)?;
-        json_payload["signed_message"] = json!(gui_auth_validation);
-        drop_mutability!(json_payload);
-        serialized_request = json_payload.to_string();
-    }
+    match gui_auth_validation {
+        Some(gui_auth_validation) if gui_auth => {
+            let mut json_payload = serde_json::to_value(&serialized_request)?;
+            json_payload["signed_message"] = json!(gui_auth_validation);
+            drop_mutability!(json_payload);
+            serialized_request = json_payload.to_string();
+        },
+        _ => {},
+    };
     drop_mutability!(serialized_request);
 
     let mut transport_errors = Vec::new();

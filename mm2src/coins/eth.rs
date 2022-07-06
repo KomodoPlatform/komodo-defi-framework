@@ -289,7 +289,7 @@ pub struct EthCoinImpl {
     key_pair: KeyPair,
     my_address: Address,
     sign_message_prefix: Option<String>,
-    gui_auth_message_prefix: Option<String>,
+    gui_auth: bool,
     swap_contract_address: Address,
     fallback_swap_contract: Option<Address>,
     web3: Web3<Web3Transport>,
@@ -3214,7 +3214,7 @@ pub trait GuiAuthMessages {
 
 impl GuiAuthMessages for EthCoin {
     fn gui_auth_sign_message_hash(&self, message: String) -> Option<[u8; 32]> {
-        let message_prefix = self.gui_auth_message_prefix.as_ref()?;
+        let message_prefix = "atomicDEX Auth Ethereum Signed Message:\n";
         let prefix_len = CompactInteger::from(message_prefix.len());
 
         let mut stream = Stream::new();
@@ -3503,8 +3503,7 @@ pub async fn eth_coin_from_conf_and_request(
     }
 
     let sign_message_prefix: Option<String> = json::from_value(conf["sign_message_prefix"].clone()).unwrap_or(None);
-    let gui_auth_message_prefix: Option<String> =
-        json::from_value(conf["gui_auth_message_prefix"].clone()).unwrap_or(None);
+    let gui_auth: bool = json::from_value(conf["gui_auth"].clone()).unwrap_or(false);
 
     let initial_history_state = if req["tx_history"].as_bool().unwrap_or(false) {
         HistorySyncState::NotStarted
@@ -3530,7 +3529,7 @@ pub async fn eth_coin_from_conf_and_request(
         my_address,
         coin_type,
         sign_message_prefix,
-        gui_auth_message_prefix,
+        gui_auth,
         swap_contract_address,
         fallback_swap_contract,
         decimals,
