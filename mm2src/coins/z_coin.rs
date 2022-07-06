@@ -23,8 +23,9 @@ use bitcrypto::{dhash160, dhash256};
 use chain::constants::SEQUENCE_FINAL;
 use chain::{Transaction as UtxoTx, TransactionOutput};
 use common::mm_number::{BigDecimal, MmNumber};
-use common::{async_blocking, log};
+use common::{async_blocking, calc_total_pages, log, PagingOptionsEnum};
 use crypto::privkey::{key_pair_from_secret, secp_privkey_from_hash};
+use db_common::sqlite::offset_by_id;
 use db_common::sqlite::rusqlite::{Error as SqlError, NO_PARAMS};
 use db_common::sqlite::sql_builder::{name, SqlBuilder, SqlName};
 use futures::compat::Future01CompatExt;
@@ -198,6 +199,32 @@ struct ZCoinSqlTxHistoryItem {
     timestamp: i64,
     received_amount: i64,
     spent_amount: i64,
+}
+
+struct SqlTxHistoryRes {
+    transactions: Vec<ZCoinSqlTxHistoryItem>,
+    total_tx_count: u32,
+    skipped: usize,
+}
+
+enum SqlTxHistoryError {
+    Sql(SqlError),
+    FromIdDoesNotExist(i64),
+}
+
+impl From<SqlError> for SqlTxHistoryError {
+    fn from(err: SqlError) -> Self { SqlTxHistoryError::Sql(err) }
+}
+
+impl From<SqlTxHistoryError> for MyTxHistoryErrorV2 {
+    fn from(err: SqlTxHistoryError) -> Self {
+        match err {
+            SqlTxHistoryError::Sql(sql) => MyTxHistoryErrorV2::StorageError(sql.to_string()),
+            SqlTxHistoryError::FromIdDoesNotExist(id) => {
+                MyTxHistoryErrorV2::StorageError(format!("from_id {} does not exist", id))
+            },
+        }
+    }
 }
 
 #[derive(Serialize)]
@@ -423,16 +450,37 @@ impl ZCoin {
         Ok(tx)
     }
 
-    async fn tx_history_sql_items(&self, limit: usize) -> Result<Vec<ZCoinSqlTxHistoryItem>, MmError<SqlError>> {
+    async fn tx_history_from_sql(
+        &self,
+        limit: usize,
+        paging_options: PagingOptionsEnum<i64>,
+    ) -> Result<SqlTxHistoryRes, MmError<SqlTxHistoryError>> {
         let wallet_db = self.z_fields.light_wallet_db.clone();
         async_blocking(move || {
             let db_guard = wallet_db.lock();
             let conn = db_guard.sql_conn();
 
-            let sql = SqlBuilder::select_from(name!(TRANSACTIONS_TABLE; "txes"))
+            let total_sql = SqlBuilder::select_from(TRANSACTIONS_TABLE)
+                .field("COUNT(id_tx)")
+                .sql()
+                .expect("valid SQL");
+            let total_tx_count = conn.query_row(&total_sql, NO_PARAMS, |row| row.get(0))?;
+
+            let mut sql_builder = SqlBuilder::select_from(name!(TRANSACTIONS_TABLE; "txes"));
+            sql_builder
                 .field("txes.txid")
                 .field("txes.id_tx as internal_id")
-                .field("txes.block")
+                .field("txes.block as block");
+
+            let offset = match paging_options {
+                PagingOptionsEnum::PageNumber(page) => (page.get() - 1) * limit,
+                PagingOptionsEnum::FromId(id) => {
+                    offset_by_id(conn, &sql_builder, [id], "id_tx", "block DESC, id_tx ASC", "id_tx = ?1")?
+                        .ok_or(SqlTxHistoryError::FromIdDoesNotExist(id))?
+                },
+            };
+
+            let sql = sql_builder
                 .field("blocks.time")
                 .field("COALESCE(rn.received_amount, 0)")
                 .field("COALESCE(sn.sent_amount, 0)")
@@ -444,9 +492,10 @@ impl ZCoin {
                 .on("txes.id_tx = sn.spent")
                 .join(BLOCKS_TABLE)
                 .on("txes.block = blocks.height")
-                .group_by("txes.id_tx")
+                .group_by("internal_id")
                 .order_by("block", true)
-                .order_by("txes.id_tx", false)
+                .order_by("internal_id", false)
+                .offset(offset)
                 .limit(limit)
                 .sql()
                 .expect("valid query");
@@ -466,7 +515,11 @@ impl ZCoin {
                     })
                 })?
                 .collect::<Result<Vec<_>, _>>()?;
-            Ok(sql_items)
+            Ok(SqlTxHistoryRes {
+                transactions: sql_items,
+                total_tx_count,
+                skipped: offset,
+            })
         })
         .await
     }
@@ -587,9 +640,12 @@ impl ZCoin {
         request: MyTxHistoryRequestV2<i64>,
     ) -> Result<MyTxHistoryResponseV2<ZcoinTxDetails, i64>, MmError<MyTxHistoryErrorV2>> {
         let current_block = self.utxo_rpc_client().get_block_count().compat().await?;
-        let sql_items = self.tx_history_sql_items(request.limit).await?;
+        let sql_result = self
+            .tx_history_from_sql(request.limit, request.paging_options.clone())
+            .await?;
 
-        let hashes_for_verbose = sql_items
+        let hashes_for_verbose = sql_result
+            .transactions
             .iter()
             .map(|item| H256Json::from(item.tx_hash.as_slice()))
             .collect();
@@ -607,7 +663,8 @@ impl ZCoin {
             .collect();
         let prev_transactions = self.z_transactions_from_cache_or_rpc(prev_tx_hashes).await?;
 
-        let transactions = sql_items
+        let transactions = sql_result
+            .transactions
             .into_iter()
             .map(|sql_item| {
                 self.tx_details_from_sql_item(sql_item, &mut transactions, &prev_transactions, current_block)
@@ -621,9 +678,9 @@ impl ZCoin {
             // Zcoin is activated only after the state is synced
             sync_status: HistorySyncState::Finished,
             limit: request.limit,
-            skipped: 0,
-            total: 0,
-            total_pages: 0,
+            skipped: sql_result.skipped,
+            total: sql_result.total_tx_count as usize,
+            total_pages: calc_total_pages(sql_result.total_tx_count as usize, request.limit),
             paging_options: request.paging_options,
         })
     }

@@ -5,6 +5,7 @@ use mm2_test_helpers::for_tests::{init_withdraw, rick_conf, send_raw_transaction
                                   ZOMBIE_TICKER};
 use std::collections::HashSet;
 use std::iter::FromIterator;
+use std::num::NonZeroUsize;
 
 const ZOMBIE_TEST_BALANCE_SEED: &str = "zombie test seed";
 const ZOMBIE_TEST_HISTORY_SEED: &str = "zombie test history seed";
@@ -234,6 +235,73 @@ fn test_z_coin_tx_history() {
 
     let my_balance_change = BigDecimal::from(2);
     assert_eq!(incoming_tx.my_balance_change, my_balance_change);
+
+    // check paging by page number
+    let page = Some(common::PagingOptionsEnum::PageNumber(NonZeroUsize::new(2).unwrap()));
+    let tx_history = block_on(z_coin_tx_history(&mm, ZOMBIE_TICKER, 2, page));
+    println!("History {}", json::to_string(&tx_history).unwrap());
+
+    let response: RpcV2Response<ZcoinHistoryRes> = json::from_value(tx_history).unwrap();
+    assert_eq!(response.result.transactions.len(), 2);
+
+    assert_eq!(
+        response.result.transactions[0].tx_hash,
+        "9e7146c77419f8db6975180328cf85c1eac6b18e4e4190293e4c7104c837477d"
+    );
+    assert_eq!(
+        response.result.transactions[1].tx_hash,
+        "7d45e5941e8701a030b0c1c0786995e0f638ce9b82cd71cb614a4a1957f1a3ab"
+    );
+    assert_eq!(response.result.skipped, 2);
+    assert_eq!(response.result.total, 5);
+    assert_eq!(response.result.limit, 2);
+    assert_eq!(response.result.total_pages, 3);
+
+    // check paging by from_id 3
+    let page = Some(common::PagingOptionsEnum::FromId(3));
+    let tx_history = block_on(z_coin_tx_history(&mm, ZOMBIE_TICKER, 3, page));
+    println!("History {}", json::to_string(&tx_history).unwrap());
+
+    let response: RpcV2Response<ZcoinHistoryRes> = json::from_value(tx_history).unwrap();
+    assert_eq!(response.result.transactions.len(), 2);
+
+    assert_eq!(
+        response.result.transactions[0].tx_hash,
+        "7d45e5941e8701a030b0c1c0786995e0f638ce9b82cd71cb614a4a1957f1a3ab"
+    );
+    assert_eq!(
+        response.result.transactions[1].tx_hash,
+        "a18a991738fe8568feb7578201250daee7abb9567c247e2241b62149674238c2"
+    );
+    assert_eq!(response.result.skipped, 3);
+    assert_eq!(response.result.total, 5);
+    assert_eq!(response.result.limit, 3);
+    assert_eq!(response.result.total_pages, 2);
+
+    // check paging by from_id 5
+    let page = Some(common::PagingOptionsEnum::FromId(5));
+    let tx_history = block_on(z_coin_tx_history(&mm, ZOMBIE_TICKER, 3, page));
+    println!("History {}", json::to_string(&tx_history).unwrap());
+
+    let response: RpcV2Response<ZcoinHistoryRes> = json::from_value(tx_history).unwrap();
+    assert_eq!(response.result.transactions.len(), 3);
+
+    assert_eq!(
+        response.result.transactions[0].tx_hash,
+        "9fb1a1690ddcc37b67d61af509343b0b7d147fc59fe58f4e7f7ca68f0d12f6a2"
+    );
+    assert_eq!(
+        response.result.transactions[1].tx_hash,
+        "9e7146c77419f8db6975180328cf85c1eac6b18e4e4190293e4c7104c837477d"
+    );
+    assert_eq!(
+        response.result.transactions[2].tx_hash,
+        "7d45e5941e8701a030b0c1c0786995e0f638ce9b82cd71cb614a4a1957f1a3ab"
+    );
+    assert_eq!(response.result.skipped, 1);
+    assert_eq!(response.result.total, 5);
+    assert_eq!(response.result.limit, 3);
+    assert_eq!(response.result.total_pages, 2);
 }
 
 // ignored because it requires a long-running Zcoin initialization process
