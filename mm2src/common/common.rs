@@ -84,6 +84,14 @@ macro_rules! try_h {
     };
 }
 
+/// Returns a JSON error HyRes on a failure.
+#[macro_export]
+macro_rules! drop_mutability {
+    ($t: ident) => {
+        let $t = $t;
+    };
+}
+
 #[macro_use]
 pub mod jsonrpc_client;
 #[macro_use]

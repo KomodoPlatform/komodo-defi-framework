@@ -135,15 +135,25 @@ impl Transport for Web3Transport {
     #[cfg(not(target_arch = "wasm32"))]
     fn send(&self, _id: RequestId, request: Call) -> Self::Out {
         Box::new(
-            send_request(request, self.uris.clone(), self.event_handlers.clone())
-                .boxed()
-                .compat(),
+            send_request(
+                request,
+                self.uris.clone(),
+                self.event_handlers.clone(),
+                self.gui_auth_validation.clone(),
+            )
+            .boxed()
+            .compat(),
         )
     }
 
     #[cfg(target_arch = "wasm32")]
     fn send(&self, _id: RequestId, request: Call) -> Self::Out {
-        let fut = send_request(request, self.uris.clone(), self.event_handlers.clone());
+        let fut = send_request(
+            request,
+            self.uris.clone(),
+            self.event_handlers.clone(),
+            self.gui_auth_validation,
+        );
         Box::new(SendFuture(Box::pin(fut).compat()))
     }
 }
@@ -153,6 +163,7 @@ async fn send_request(
     request: Call,
     uris: Vec<http::Uri>,
     event_handlers: Vec<RpcTransportEventHandlerShared>,
+    gui_auth_validation: Option<GuiAuthValidation>,
 ) -> Result<Json, Error> {
     use common::executor::Timer;
     use common::log::warn;
@@ -164,11 +175,21 @@ async fn send_request(
     const REQUEST_TIMEOUT_S: f64 = 60.;
 
     let mut errors = Vec::new();
-    for uri in uris.iter() {
-        let request = to_string(&request);
-        event_handlers.on_outgoing_request(request.as_bytes());
 
-        let mut req = http::Request::new(request.clone().into_bytes());
+    let mut serialized_request = to_string(&request);
+
+    if let Some(gui_auth_validation) = gui_auth_validation {
+        let mut json_payload = serde_json::to_value(&serialized_request)?;
+        json_payload["signed_message"] = json!(gui_auth_validation);
+        drop_mutability!(json_payload);
+        serialized_request = json_payload.to_string();
+    }
+    drop_mutability!(serialized_request);
+
+    event_handlers.on_outgoing_request(serialized_request.as_bytes());
+
+    for uri in uris.iter() {
+        let mut req = http::Request::new(serialized_request.clone().into_bytes());
         *req.method_mut() = http::Method::POST;
         *req.uri_mut() = uri.clone();
         req.headers_mut()
