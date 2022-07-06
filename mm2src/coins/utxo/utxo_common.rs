@@ -2260,8 +2260,6 @@ pub fn save_transaction_history<T>(
 where
     T: UtxoStandardOps + UtxoCommonOps + MmCoin + MarketCoinOps,
 {
-    //let empty_map :HashMap<H256, TransactionDetails> = HashMap::new();
-
     let mut to_write: Vec<TransactionDetails> = history_map.iter().map(|(_, value)| value.clone()).collect();
     // the transactions with block_height == 0 are the most recent so we need to separately handle them while sorting
     to_write.sort_unstable_by(|a, b| {
