@@ -147,6 +147,7 @@ impl Transport for Web3Transport {
                 request,
                 self.uris.clone(),
                 self.event_handlers.clone(),
+                self.gui_auth,
                 self.gui_auth_validation.clone(),
             )
             .boxed()
@@ -160,6 +161,7 @@ impl Transport for Web3Transport {
             request,
             self.uris.clone(),
             self.event_handlers.clone(),
+            self.gui_auth,
             self.gui_auth_validation.clone(),
         );
         Box::new(SendFuture(Box::pin(fut).compat()))

@@ -3444,6 +3444,7 @@ pub async fn eth_coin_from_conf_and_request(
         }
     }
 
+    let gui_auth: bool = json::from_value(conf["gui_auth"].clone()).unwrap_or(false);
     let key_pair: KeyPair = try_s!(KeyPair::from_secret_slice(priv_key));
     let my_address = key_pair.address();
 
@@ -3453,6 +3454,7 @@ pub async fn eth_coin_from_conf_and_request(
         let transport = try_s!(Web3Transport::with_event_handlers(
             vec![url.clone()],
             event_handlers.clone(),
+            gui_auth,
             None
         ));
         let web3 = Web3::new(transport);
@@ -3473,7 +3475,7 @@ pub async fn eth_coin_from_conf_and_request(
         return ERR!("Failed to get client version for all urls");
     }
 
-    let transport = try_s!(Web3Transport::with_event_handlers(urls, event_handlers, None));
+    let transport = try_s!(Web3Transport::with_event_handlers(urls, event_handlers, gui_auth, None));
     let web3 = Web3::new(transport);
 
     let (coin_type, decimals) = match protocol {
@@ -3503,7 +3505,6 @@ pub async fn eth_coin_from_conf_and_request(
     }
 
     let sign_message_prefix: Option<String> = json::from_value(conf["sign_message_prefix"].clone()).unwrap_or(None);
-    let gui_auth: bool = json::from_value(conf["gui_auth"].clone()).unwrap_or(false);
 
     let initial_history_state = if req["tx_history"].as_bool().unwrap_or(false) {
         HistorySyncState::NotStarted
