@@ -288,6 +288,7 @@ pub struct EthCoinImpl {
     key_pair: KeyPair,
     my_address: Address,
     sign_message_prefix: Option<String>,
+    gui_auth_message_prefix: Option<String>,
     swap_contract_address: Address,
     fallback_swap_contract: Option<Address>,
     web3: Web3<Web3Transport>,
@@ -1092,7 +1093,20 @@ impl MarketCoinOps for EthCoin {
     /// Hash message for signature using Ethereum's message signing format.
     /// keccak256(PREFIX_LENGTH + PREFIX + MESSAGE_LENGTH + MESSAGE)
     fn sign_message_hash(&self, message: &str) -> Option<[u8; 32]> {
-        let message_prefix = self.sign_message_prefix.as_ref()?;
+        let (message, message_prefix) = match self.gui_auth_message_prefix.as_ref() {
+            Some(prefix) => {
+                let message = self
+                    .web3
+                    .transport()
+                    .gui_auth_validation
+                    .as_ref()?
+                    .timestamp_message
+                    .to_string();
+                (message, prefix)
+            },
+            None => (String::from(message), self.sign_message_prefix.as_ref()?),
+        };
+
         let mut stream = Stream::new();
         let prefix_len = CompactInteger::from(message_prefix.len());
         prefix_len.serialize(&mut stream);
@@ -3460,6 +3474,8 @@ pub async fn eth_coin_from_conf_and_request(
     }
 
     let sign_message_prefix: Option<String> = json::from_value(conf["sign_message_prefix"].clone()).unwrap_or(None);
+    let gui_auth_message_prefix: Option<String> =
+        json::from_value(conf["gui_auth_message_prefix"].clone()).unwrap_or(None);
 
     let initial_history_state = if req["tx_history"].as_bool().unwrap_or(false) {
         HistorySyncState::NotStarted
@@ -3485,6 +3501,7 @@ pub async fn eth_coin_from_conf_and_request(
         my_address,
         coin_type,
         sign_message_prefix,
+        gui_auth_message_prefix,
         swap_contract_address,
         fallback_swap_contract,
         decimals,

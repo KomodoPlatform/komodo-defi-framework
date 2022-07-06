@@ -54,6 +54,6 @@ where
 pub struct GuiAuthValidation {
     pub(crate) coin_ticker: String,
     pub(crate) address: String,
-    pub(crate) timestamp_message: u64,
+    pub timestamp_message: u64,
     pub(crate) signature: String,
 }

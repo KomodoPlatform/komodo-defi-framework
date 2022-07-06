@@ -73,7 +73,7 @@ pub struct Web3Transport {
     id: Arc<AtomicUsize>,
     uris: Vec<http::Uri>,
     event_handlers: Vec<RpcTransportEventHandlerShared>,
-    gui_auth_validation: Option<GuiAuthValidation>,
+    pub(crate) gui_auth_validation: Option<GuiAuthValidation>,
 }
 
 impl Web3Transport {
