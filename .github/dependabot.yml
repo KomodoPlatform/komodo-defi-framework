@@ -9,166 +9,132 @@ updates:
     schedule:
       # By default, Dependabot checks for new versions on Monday at a random set time for the repository
       interval: weekly
-    # Disable rebasing for pull requests
-    rebase-strategy: "disabled"
   - package-ecosystem: cargo
     directory: "/mm2src/common/shared_ref_counter/"
     schedule:
       interval: weekly
-      rebase-strategy: "disabled"
   - package-ecosystem: cargo
     directory: "/mm2src/coins/lightning_persister/"
     schedule:
       interval: weekly
-      rebase-strategy: "disabled"
   - package-ecosystem: cargo
     directory: "/mm2src/coins/lightning_background_processor/"
     schedule:
       interval: weekly
-      rebase-strategy: "disabled"
   - package-ecosystem: cargo
     directory: "/mm2src/coins/utxo_signer/"
     schedule:
       interval: weekly
-      rebase-strategy: "disabled"
   - package-ecosystem: cargo
     directory: "/mm2src/coins_activation/"
     schedule:
       interval: weekly
-      rebase-strategy: "disabled"
   - package-ecosystem: cargo
     directory: "/mm2src/crypto/"
     schedule:
       interval: weekly
-      rebase-strategy: "disabled"
   - package-ecosystem: cargo
     directory: "/mm2src/db_common/"
     schedule:
       interval: weekly
-      rebase-strategy: "disabled"
   - package-ecosystem: cargo
     directory: "/mm2src/derives/ser_error/"
     schedule:
       interval: weekly
-      rebase-strategy: "disabled"
   - package-ecosystem: cargo
     directory: "/mm2src/derives/ser_error_derive/"
     schedule:
       interval: weekly
-      rebase-strategy: "disabled"
   - package-ecosystem: cargo
     directory: "/mm2src/floodsub/"
     schedule:
       interval: weekly
-      rebase-strategy: "disabled"
   - package-ecosystem: cargo
     directory: "/mm2src/gossipsub/"
     schedule:
       interval: weekly
-      rebase-strategy: "disabled"
     open-pull-requests-limit: 10
   - package-ecosystem: cargo
     directory: "/mm2src/hw_common/"
     schedule:
       interval: weekly
-      rebase-strategy: "disabled"
   - package-ecosystem: cargo
     directory: "/mm2src/mm2_bitcoin/crypto/"
     schedule:
       interval: weekly
-      rebase-strategy: "disabled"
   - package-ecosystem: cargo
     directory: "/mm2src/mm2_bitcoin/chain/"
     schedule:
       interval: weekly
-      rebase-strategy: "disabled"
   - package-ecosystem: cargo
     directory: "/mm2src/mm2_bitcoin/keys/"
     schedule:
       interval: weekly
-      rebase-strategy: "disabled"
   - package-ecosystem: cargo
     directory: "/mm2src/mm2_bitcoin/rpc/"
     schedule:
       interval: weekly
-      rebase-strategy: "disabled"
   - package-ecosystem: cargo
     directory: "/mm2src/mm2_bitcoin/primitives/"
     schedule:
       interval: weekly
-      rebase-strategy: "disabled"
   - package-ecosystem: cargo
     directory: "/mm2src/mm2_bitcoin/script/"
     schedule:
       interval: weekly
-      rebase-strategy: "disabled"
   - package-ecosystem: cargo
     directory: "/mm2src/mm2_bitcoin/serialization/"
     schedule:
       interval: weekly
-      rebase-strategy: "disabled"
   - package-ecosystem: cargo
     directory: "/mm2src/mm2_bitcoin/serialization_derive/"
     schedule:
       interval: weekly
-      rebase-strategy: "disabled"
   - package-ecosystem: cargo
     directory: "/mm2src/mm2_bitcoin/test_helpers/"
     schedule:
       interval: weekly
-      rebase-strategy: "disabled"
   - package-ecosystem: cargo
     directory: "/mm2src/mm2_core/"
     schedule:
       interval: weekly
-      rebase-strategy: "disabled"
   - package-ecosystem: cargo
     directory: "/mm2src/mm2_db/"
     schedule:
       interval: weekly
-      rebase-strategy: "disabled"
   - package-ecosystem: cargo
     directory: "/mm2src/mm2_err_handle/"
     schedule:
       interval: weekly
-      rebase-strategy: "disabled"
   - package-ecosystem: cargo
     directory: "/mm2src/mm2_test_helpers/"
     schedule:
       interval: weekly
-      rebase-strategy: "disabled"
   - package-ecosystem: cargo
     directory: "/mm2src/mm2_libp2p/"
     schedule:
       interval: weekly
-      rebase-strategy: "disabled"
   - package-ecosystem: cargo
     directory: "/mm2src/mm2_main/"
     schedule:
       interval: weekly
-      rebase-strategy: "disabled"
   - package-ecosystem: cargo
     directory: "/mm2src/mm2_net/"
     schedule:
       interval: weekly
-      rebase-strategy: "disabled"
   - package-ecosystem: cargo
     directory: "/mm2src/mm2_io/"
     schedule:
       interval: weekly
-      rebase-strategy: "disabled"
   - package-ecosystem: cargo
     directory: "/mm2src/mm2_rpc/"
     schedule:
       interval: weekly
-      rebase-strategy: "disabled"
   - package-ecosystem: cargo
     directory: "/mm2src/rpc_task/"
     schedule:
       interval: weekly
-      rebase-strategy: "disabled"
   - package-ecosystem: cargo
     directory: "/mm2src/trezor/"
     schedule:
       interval: weekly
-      rebase-strategy: "disabled"
