@@ -26,7 +26,7 @@ use common::mm_number::{BigDecimal, MmNumber};
 use common::{async_blocking, calc_total_pages, log, PagingOptionsEnum};
 use crypto::privkey::{key_pair_from_secret, secp_privkey_from_hash};
 use db_common::sqlite::offset_by_id;
-use db_common::sqlite::rusqlite::{Error as SqlError, NO_PARAMS};
+use db_common::sqlite::rusqlite::NO_PARAMS;
 use db_common::sqlite::sql_builder::{name, SqlBuilder, SqlName};
 use futures::compat::Future01CompatExt;
 use futures::lock::Mutex as AsyncMutex;
@@ -205,26 +205,6 @@ struct SqlTxHistoryRes {
     transactions: Vec<ZCoinSqlTxHistoryItem>,
     total_tx_count: u32,
     skipped: usize,
-}
-
-enum SqlTxHistoryError {
-    Sql(SqlError),
-    FromIdDoesNotExist(i64),
-}
-
-impl From<SqlError> for SqlTxHistoryError {
-    fn from(err: SqlError) -> Self { SqlTxHistoryError::Sql(err) }
-}
-
-impl From<SqlTxHistoryError> for MyTxHistoryErrorV2 {
-    fn from(err: SqlTxHistoryError) -> Self {
-        match err {
-            SqlTxHistoryError::Sql(sql) => MyTxHistoryErrorV2::StorageError(sql.to_string()),
-            SqlTxHistoryError::FromIdDoesNotExist(id) => {
-                MyTxHistoryErrorV2::StorageError(format!("from_id {} does not exist", id))
-            },
-        }
-    }
 }
 
 #[derive(Serialize)]
@@ -545,7 +525,7 @@ impl ZCoin {
         transactions: &mut HashMap<H256Json, ZTransaction>,
         prev_transactions: &HashMap<H256Json, ZTransaction>,
         current_block: u64,
-    ) -> ZcoinTxDetails {
+    ) -> Result<ZcoinTxDetails, MmError<NoInfoAboutTx>> {
         let mut from = HashSet::new();
 
         let mut confirmations = current_block as i64 - sql_item.height + 1;
@@ -554,13 +534,12 @@ impl ZCoin {
         }
 
         let mut transparent_input_amount = Amount::zero();
-        let z_tx = transactions
-            .remove(&H256Json::from(sql_item.tx_hash.as_slice()))
-            .unwrap();
+        let hash = H256Json::from(sql_item.tx_hash.as_slice());
+        let z_tx = transactions.remove(&hash).or_mm_err(|| NoInfoAboutTx(hash))?;
         for input in z_tx.vin.iter() {
-            let mut hash = *input.prevout.hash();
-            hash.reverse();
-            let prev_tx = prev_transactions.get(&H256Json::from(hash)).unwrap();
+            let mut hash = H256Json::from(*input.prevout.hash());
+            hash.0.reverse();
+            let prev_tx = prev_transactions.get(&hash).or_mm_err(|| NoInfoAboutTx(hash))?;
 
             if let Some(spent_output) = prev_tx.vout.get(input.prevout.n() as usize) {
                 transparent_input_amount += spent_output.value;
@@ -619,7 +598,7 @@ impl ZCoin {
 
         let spent_by_me = big_decimal_from_sat(sql_item.spent_amount, self.decimals());
         let received_by_me = big_decimal_from_sat(sql_item.received_amount, self.decimals());
-        ZcoinTxDetails {
+        Ok(ZcoinTxDetails {
             tx_hash: hex::encode(sql_item.tx_hash),
             from,
             to,
@@ -632,7 +611,7 @@ impl ZCoin {
             transaction_fee: big_decimal_from_sat(fee_amount.into(), self.decimals()),
             coin: self.ticker().into(),
             internal_id: sql_item.internal_id,
-        }
+        })
     }
 
     pub async fn tx_history(
@@ -669,7 +648,7 @@ impl ZCoin {
             .map(|sql_item| {
                 self.tx_details_from_sql_item(sql_item, &mut transactions, &prev_transactions, current_block)
             })
-            .collect();
+            .collect::<Result<_, _>>()?;
 
         Ok(MyTxHistoryResponseV2 {
             coin: self.ticker().into(),
