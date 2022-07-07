@@ -289,7 +289,6 @@ pub struct EthCoinImpl {
     key_pair: KeyPair,
     my_address: Address,
     sign_message_prefix: Option<String>,
-    gui_auth: bool,
     swap_contract_address: Address,
     fallback_swap_contract: Option<Address>,
     web3: Web3<Web3Transport>,
@@ -3444,7 +3443,6 @@ pub async fn eth_coin_from_conf_and_request(
         }
     }
 
-    let gui_auth: bool = json::from_value(conf["gui_auth"].clone()).unwrap_or(false);
     let key_pair: KeyPair = try_s!(KeyPair::from_secret_slice(priv_key));
     let my_address = key_pair.address();
 
@@ -3454,7 +3452,6 @@ pub async fn eth_coin_from_conf_and_request(
         let transport = try_s!(Web3Transport::with_event_handlers(
             vec![url.clone()],
             event_handlers.clone(),
-            gui_auth,
             None
         ));
         let web3 = Web3::new(transport);
@@ -3475,7 +3472,7 @@ pub async fn eth_coin_from_conf_and_request(
         return ERR!("Failed to get client version for all urls");
     }
 
-    let transport = try_s!(Web3Transport::with_event_handlers(urls, event_handlers, gui_auth, None));
+    let transport = try_s!(Web3Transport::with_event_handlers(urls, event_handlers, None));
     let web3 = Web3::new(transport);
 
     let (coin_type, decimals) = match protocol {
@@ -3530,7 +3527,6 @@ pub async fn eth_coin_from_conf_and_request(
         my_address,
         coin_type,
         sign_message_prefix,
-        gui_auth,
         swap_contract_address,
         fallback_swap_contract,
         decimals,
