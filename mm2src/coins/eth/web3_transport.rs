@@ -184,19 +184,25 @@ async fn send_request(
 
     let mut errors = Vec::new();
 
-    let mut serialized_request = to_string(&request);
-
-    if let Some(gui_auth_validation) = gui_auth_validation {
-        let mut json_payload = serde_json::to_value(&serialized_request)?;
-        json_payload["signed_message"] = json!(gui_auth_validation);
-        common::drop_mutability!(json_payload);
-        serialized_request = json_payload.to_string();
-    };
-    drop_mutability!(serialized_request);
-
-    event_handlers.on_outgoing_request(serialized_request.as_bytes());
+    let serialized_request = to_string(&request);
 
     for node in nodes.iter() {
+        let mut serialized_request = serialized_request.clone();
+        if node.gui_auth {
+            if let Some(gui_auth_validation) = gui_auth_validation.clone() {
+                let mut json_payload = serde_json::to_value(&serialized_request)?;
+                json_payload["signed_message"] = json!(gui_auth_validation);
+                common::drop_mutability!(json_payload);
+                serialized_request = json_payload.to_string();
+            } else {
+                errors.push(ERRL!("GuiAuthValidation is not provided for {:?} node", node,));
+                continue;
+            }
+        }
+        common::drop_mutability!(serialized_request);
+
+        event_handlers.on_outgoing_request(serialized_request.as_bytes());
+
         let mut req = http::Request::new(serialized_request.clone().into_bytes());
         *req.method_mut() = http::Method::POST;
         *req.uri_mut() = node.uri.clone();
@@ -241,6 +247,7 @@ async fn send_request(
 
         return single_response(body, &node.uri.to_string());
     }
+
     Err(request_failed_error(&request, &errors))
 }
 
@@ -251,18 +258,24 @@ async fn send_request(
     event_handlers: Vec<RpcTransportEventHandlerShared>,
     gui_auth_validation: Option<GuiAuthValidation>,
 ) -> Result<Json, Error> {
-    let mut serialized_request = to_string(&request);
-
-    if let Some(gui_auth_validation) = gui_auth_validation {
-        let mut json_payload = serde_json::to_value(&serialized_request)?;
-        json_payload["signed_message"] = json!(gui_auth_validation);
-        common::drop_mutability!(json_payload);
-        serialized_request = json_payload.to_string();
-    };
-    drop_mutability!(serialized_request);
+    let serialized_request = to_string(&request);
 
     let mut transport_errors = Vec::new();
     for node in nodes {
+        let mut serialized_request = serialized_request.clone();
+        if node.gui_auth {
+            if let Some(gui_auth_validation) = gui_auth_validation.clone() {
+                let mut json_payload = serde_json::to_value(&serialized_request)?;
+                json_payload["signed_message"] = json!(gui_auth_validation);
+                common::drop_mutability!(json_payload);
+                serialized_request = json_payload.to_string();
+            } else {
+                transport_errors.push(ERRL!("GuiAuthValidation is not provided for {:?} node", node,));
+                continue;
+            }
+        }
+        common::drop_mutability!(serialized_request);
+
         match send_request_once(serialized_request.clone(), &node.uri, &event_handlers).await {
             Ok(response_json) => return Ok(response_json),
             Err(Error(ErrorKind::Transport(e), _)) => {
