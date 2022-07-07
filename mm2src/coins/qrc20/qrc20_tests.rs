@@ -23,7 +23,6 @@ pub fn qrc20_coin_for_test(priv_key: &[u8], fallback_swap: Option<&str>) -> (MmA
         "pubtype":120,
         "p2shtype":110,
         "wiftype":128,
-        "segwit":true,
         "mm2":1,
         "mature_confirmations":2000,
         "dust":72800,
@@ -736,7 +735,6 @@ fn test_get_sender_trade_fee_preimage_for_correct_ticker() {
         "pubtype":120,
         "p2shtype":110,
         "wiftype":128,
-        "segwit":true,
         "mm2":1,
         "mature_confirmations":2000,
         "protocol": {
@@ -852,7 +850,6 @@ fn test_coin_from_conf_without_decimals() {
         "pubtype":120,
         "p2shtype":110,
         "wiftype":128,
-        "segwit":true,
         "mm2":1,
         "mature_confirmations":2000,
     });

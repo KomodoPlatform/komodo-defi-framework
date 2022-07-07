@@ -464,7 +464,8 @@ pub struct UtxoCoinConf {
     /// Overwinter and then Sapling upgrades
     /// https://github.com/zcash/zips/blob/master/zip-0243.rst
     pub tx_version: i32,
-    /// If true - allow coins withdraw to P2SH addresses (Segwit).
+    /// If true - allow coins withdraw to P2SH addresses (Segwit), except QRC20.
+    /// We must not allow the user to send QRC20 tokens to a P2SH address.
     /// the flag will also affect the address that MM2 generates by default in the future
     /// will be the Segwit (starting from 3 for BTC case) instead of legacy
     /// https://en.bitcoin.it/wiki/Segregated_Witness

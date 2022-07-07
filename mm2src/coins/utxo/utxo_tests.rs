@@ -3306,7 +3306,6 @@ fn test_split_qtum() {
       "pubtype": 120,
       "p2shtype": 110,
       "wiftype": 239,
-      "segwit": true,
       "txfee": 400000,
       "mm2": 1,
       "required_confirmations": 1,
