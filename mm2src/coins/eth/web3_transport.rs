@@ -71,40 +71,48 @@ fn single_response<T: Deref<Target = [u8]>>(response: T, rpc_url: &str) -> Resul
 #[derive(Clone, Debug)]
 pub struct Web3Transport {
     id: Arc<AtomicUsize>,
-    uris: Vec<http::Uri>,
+    nodes: Vec<Web3TransportNode>,
     event_handlers: Vec<RpcTransportEventHandlerShared>,
     pub(crate) gui_auth_validation: Option<GuiAuthValidation>,
 }
 
+#[derive(Clone, Debug)]
+pub struct Web3TransportNode {
+    uri: http::Uri,
+    gui_auth: bool,
+}
+
 impl Web3Transport {
     #[allow(dead_code)]
-    pub fn new(urls: Vec<String>, gui_auth_validation: Option<GuiAuthValidation>) -> Result<Self, String> {
-        let mut uris = vec![];
+    pub fn new(urls: Vec<String>, gui_auth: bool) -> Result<Self, String> {
+        let mut nodes = vec![];
         for url in urls.iter() {
-            uris.push(try_s!(url.parse()));
+            let uri = try_s!(url.parse());
+            nodes.push(Web3TransportNode { uri, gui_auth });
         }
         Ok(Web3Transport {
             id: Arc::new(AtomicUsize::new(0)),
-            uris,
+            nodes,
             event_handlers: Default::default(),
-            gui_auth_validation,
+            gui_auth_validation: None,
         })
     }
 
     pub fn with_event_handlers(
         urls: Vec<String>,
         event_handlers: Vec<RpcTransportEventHandlerShared>,
-        gui_auth_validation: Option<GuiAuthValidation>,
+        gui_auth: bool,
     ) -> Result<Self, String> {
-        let mut uris = vec![];
+        let mut nodes = vec![];
         for url in urls.iter() {
-            uris.push(try_s!(url.parse()));
+            let uri = try_s!(url.parse());
+            nodes.push(Web3TransportNode { uri, gui_auth });
         }
         Ok(Web3Transport {
             id: Arc::new(AtomicUsize::new(0)),
-            uris,
+            nodes,
             event_handlers,
-            gui_auth_validation,
+            gui_auth_validation: None,
         })
     }
 }
@@ -137,7 +145,7 @@ impl Transport for Web3Transport {
         Box::new(
             send_request(
                 request,
-                self.uris.clone(),
+                self.nodes.clone(),
                 self.event_handlers.clone(),
                 self.gui_auth_validation.clone(),
             )
@@ -150,7 +158,7 @@ impl Transport for Web3Transport {
     fn send(&self, _id: RequestId, request: Call) -> Self::Out {
         let fut = send_request(
             request,
-            self.uris.clone(),
+            self.nodes.clone(),
             self.event_handlers.clone(),
             self.gui_auth_validation.clone(),
         );
@@ -161,7 +169,7 @@ impl Transport for Web3Transport {
 #[cfg(not(target_arch = "wasm32"))]
 async fn send_request(
     request: Call,
-    uris: Vec<http::Uri>,
+    nodes: Vec<Web3TransportNode>,
     event_handlers: Vec<RpcTransportEventHandlerShared>,
     gui_auth_validation: Option<GuiAuthValidation>,
 ) -> Result<Json, Error> {
@@ -188,10 +196,10 @@ async fn send_request(
 
     event_handlers.on_outgoing_request(serialized_request.as_bytes());
 
-    for uri in uris.iter() {
+    for node in nodes.iter() {
         let mut req = http::Request::new(serialized_request.clone().into_bytes());
         *req.method_mut() = http::Method::POST;
-        *req.uri_mut() = uri.clone();
+        *req.uri_mut() = node.uri.clone();
         req.headers_mut()
             .insert(http::header::CONTENT_TYPE, HeaderValue::from_static("application/json"));
         let timeout = Timer::sleep(REQUEST_TIMEOUT_S);
@@ -200,7 +208,11 @@ async fn send_request(
         let res = match rc {
             Either::Left((r, _t)) => r,
             Either::Right((_t, _r)) => {
-                let error = ERRL!("Error requesting '{}': {}s timeout expired", uri, REQUEST_TIMEOUT_S);
+                let error = ERRL!(
+                    "Error requesting '{}': {}s timeout expired",
+                    node.uri,
+                    REQUEST_TIMEOUT_S
+                );
                 warn!("{}", error);
                 errors.push(error);
                 continue;
@@ -219,15 +231,15 @@ async fn send_request(
 
         if !status.is_success() {
             errors.push(ERRL!(
-                "Server '{}' response !200: {}, {}",
-                uri,
+                "Server '{:?}' response !200: {}, {}",
+                node,
                 status,
                 binprint(&body, b'.')
             ));
             continue;
         }
 
-        return single_response(body, &uri.to_string());
+        return single_response(body, &node.uri.to_string());
     }
     Err(request_failed_error(&request, &errors))
 }
@@ -235,7 +247,7 @@ async fn send_request(
 #[cfg(target_arch = "wasm32")]
 async fn send_request(
     request: Call,
-    uris: Vec<http::Uri>,
+    nodes: Vec<Web3TransportNode>,
     event_handlers: Vec<RpcTransportEventHandlerShared>,
     gui_auth_validation: Option<GuiAuthValidation>,
 ) -> Result<Json, Error> {
@@ -250,8 +262,8 @@ async fn send_request(
     drop_mutability!(serialized_request);
 
     let mut transport_errors = Vec::new();
-    for uri in uris {
-        match send_request_once(serialized_request.clone(), &uri, &event_handlers).await {
+    for node in nodes {
+        match send_request_once(serialized_request.clone(), &node.uri, &event_handlers).await {
             Ok(response_json) => return Ok(response_json),
             Err(Error(ErrorKind::Transport(e), _)) => {
                 transport_errors.push(e.to_string());
