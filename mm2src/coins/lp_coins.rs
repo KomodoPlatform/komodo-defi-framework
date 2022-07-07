@@ -51,6 +51,7 @@ use mm2_err_handle::prelude::*;
 use rpc::v1::types::{Bytes as BytesJson, H256 as H256Json};
 use serde::{Deserialize, Deserializer, Serialize};
 use serde_json::{self as json, Value as Json};
+use std::cmp::Ordering;
 use std::collections::hash_map::{HashMap, RawEntryMut};
 use std::fmt;
 use std::num::NonZeroUsize;
@@ -3003,13 +3004,26 @@ where
 }
 
 #[cfg(target_arch = "wasm32")]
-fn save_history_to_file_impl<T>(coin: &T, ctx: &MmArc, history: Vec<TransactionDetails>) -> TxHistoryFut<()>
+fn save_history_to_file_impl<T>(coin: &T, ctx: &MmArc, mut history: Vec<TransactionDetails>) -> TxHistoryFut<()>
 where
     T: MmCoin + MarketCoinOps + ?Sized,
 {
     let ctx = ctx.clone();
     let ticker = coin.ticker().to_owned();
     let my_address = try_f!(coin.my_address().map_to_mm(TxHistoryError::InternalError));
+
+    // the transactions with block_height == 0 are the most recent so we need to separately handle them while sorting
+    history.sort_unstable_by(|a, b| {
+        if a.block_height == 0 {
+            Ordering::Less
+        } else if b.block_height == 0 {
+            Ordering::Greater
+        } else if a.block_height == b.block_height {
+            a.internal_id.cmp(&b.internal_id)
+        } else {
+            b.block_height.cmp(&a.block_height)
+        }
+    });
 
     let fut = async move {
         let coins_ctx = CoinsContext::from_ctx(&ctx).unwrap();
@@ -3021,12 +3035,25 @@ where
 }
 
 #[cfg(not(target_arch = "wasm32"))]
-fn save_history_to_file_impl<T>(coin: &T, ctx: &MmArc, history: Vec<TransactionDetails>) -> TxHistoryFut<()>
+fn save_history_to_file_impl<T>(coin: &T, ctx: &MmArc, mut history: Vec<TransactionDetails>) -> TxHistoryFut<()>
 where
     T: MmCoin + MarketCoinOps + ?Sized,
 {
     let history_path = coin.tx_history_path(ctx);
     let tmp_file = format!("{}.tmp", history_path.display());
+
+    // the transactions with block_height == 0 are the most recent so we need to separately handle them while sorting
+    history.sort_unstable_by(|a, b| {
+        if a.block_height == 0 {
+            Ordering::Less
+        } else if b.block_height == 0 {
+            Ordering::Greater
+        } else if a.block_height == b.block_height {
+            a.internal_id.cmp(&b.internal_id)
+        } else {
+            b.block_height.cmp(&a.block_height)
+        }
+    });
 
     let fut = async move {
         let content = json::to_vec(&history).map_to_mm(|e| TxHistoryError::ErrorSerializing(e.to_string()))?;
