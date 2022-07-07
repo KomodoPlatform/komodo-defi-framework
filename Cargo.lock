@@ -1031,7 +1031,6 @@ dependencies = [
  "async-trait",
  "base58",
  "base64 0.10.1",
- "bigdecimal",
  "bincode",
  "bip32",
  "bitcoin",
@@ -1075,6 +1074,7 @@ dependencies = [
  "mm2_err_handle",
  "mm2_io",
  "mm2_net",
+ "mm2_number",
  "mm2_test_helpers",
  "mocktopus",
  "num-traits",
@@ -1140,6 +1140,7 @@ dependencies = [
  "hex 0.4.2",
  "mm2_core",
  "mm2_err_handle",
+ "mm2_number",
  "rpc",
  "rpc_task",
  "ser_error",
@@ -1158,7 +1159,6 @@ dependencies = [
  "async-trait",
  "backtrace",
  "base64 0.10.1",
- "bigdecimal",
  "bytes 1.1.0",
  "cc",
  "cfg-if 1.0.0",
@@ -1189,12 +1189,8 @@ dependencies = [
  "metrics-core",
  "metrics-runtime",
  "metrics-util",
- "num-bigint 0.4.3",
- "num-rational",
- "num-traits",
  "parking_lot 0.12.0",
  "parking_lot_core 0.6.2",
- "paste",
  "rand 0.7.3",
  "ser_error",
  "ser_error_derive",
@@ -4092,8 +4088,6 @@ dependencies = [
  "libp2p",
  "libp2p-floodsub 0.22.0",
  "log 0.4.14",
- "num-bigint 0.4.3",
- "num-rational",
  "rand 0.7.3",
  "regex",
  "rmp-serde",
@@ -4147,7 +4141,7 @@ dependencies = [
  "lazy_static",
  "mm2_core",
  "mm2_err_handle",
- "num-bigint 0.4.3",
+ "mm2_number",
  "num-traits",
  "primitives",
  "rand 0.7.3",
@@ -4237,6 +4231,7 @@ dependencies = [
  "mm2_err_handle",
  "mm2_io",
  "mm2_net",
+ "mm2_number",
  "mm2_rpc",
  "mm2_test_helpers",
  "mocktopus",
@@ -4303,6 +4298,19 @@ dependencies = [
 ]
 
 [[package]]
+name = "mm2_number"
+version = "0.1.0"
+dependencies = [
+ "bigdecimal",
+ "num-bigint 0.4.3",
+ "num-rational",
+ "num-traits",
+ "paste",
+ "serde",
+ "serde_json",
+]
+
+[[package]]
 name = "mm2_rpc"
 version = "0.1.0"
 dependencies = [
@@ -4322,7 +4330,6 @@ dependencies = [
 name = "mm2_test_helpers"
 version = "0.1.0"
 dependencies = [
- "bigdecimal",
  "bytes 1.1.0",
  "cfg-if 1.0.0",
  "chrono",
@@ -4336,6 +4343,7 @@ dependencies = [
  "mm2_core",
  "mm2_io",
  "mm2_net",
+ "mm2_number",
  "rand 0.7.3",
  "regex",
  "serde",

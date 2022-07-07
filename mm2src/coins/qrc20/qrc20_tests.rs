@@ -1,11 +1,11 @@
 use super::*;
 use crate::utxo::rpc_clients::UnspentInfo;
 use crate::TxFeeDetails;
-use bigdecimal::Zero;
 use chain::OutPoint;
 use common::{block_on, DEX_FEE_ADDR_RAW_PUBKEY};
 use itertools::Itertools;
 use mm2_core::mm_ctx::MmCtxBuilder;
+use mm2_number::bigdecimal::Zero;
 use mocktopus::mocking::{MockResult, Mockable};
 use rpc::v1::types::ToTxHash;
 use std::convert::TryFrom;

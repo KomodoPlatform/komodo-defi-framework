@@ -1,9 +1,9 @@
 //! Helpers used in the unit and integration tests.
 
-use bigdecimal::BigDecimal;
 use gstuff::{try_s, ERR, ERRL};
 use http::{HeaderMap, StatusCode};
 use lazy_static::lazy_static;
+use mm2_number::BigDecimal;
 use rand::Rng;
 use serde::{Deserialize, Serialize};
 use serde_json::{self as json, json, Value as Json};

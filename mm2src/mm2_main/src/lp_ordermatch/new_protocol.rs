@@ -1,8 +1,8 @@
 use super::{MatchBy as SuperMatchBy, TakerAction};
 use crate::mm2::lp_ordermatch::{AlbOrderedOrderbookPair, OrderConfirmationsSettings, H64};
-use common::mm_number::{BigRational, MmNumber};
 use common::now_ms;
 use compact_uuid::CompactUuid;
+use mm2_number::{BigRational, MmNumber};
 use std::collections::{HashMap, HashSet};
 use uuid::Uuid;
 

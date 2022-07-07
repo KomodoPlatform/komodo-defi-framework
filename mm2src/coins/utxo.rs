@@ -38,7 +38,6 @@ pub mod utxo_standard;
 pub mod utxo_withdraw;
 
 use async_trait::async_trait;
-use bigdecimal::BigDecimal;
 use bitcoin::network::constants::Network as BitcoinNetwork;
 pub use bitcrypto::{dhash160, sha256, ChecksumType};
 pub use chain::Transaction as UtxoTx;
@@ -63,6 +62,7 @@ pub use keys::{Address, AddressFormat as UtxoAddressFormat, AddressHashEnum, Key
 use lightning_invoice::Currency as LightningCurrency;
 use mm2_core::mm_ctx::MmArc;
 use mm2_err_handle::prelude::*;
+use mm2_number::BigDecimal;
 #[cfg(test)] use mocktopus::macros::*;
 use num_traits::ToPrimitive;
 use primitives::hash::{H256, H264};
