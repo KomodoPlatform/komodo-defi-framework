@@ -2055,7 +2055,10 @@ where
     };
     let mut history_map: HashMap<H256Json, TransactionDetails> = history
         .into_iter()
-        .map(|tx| (H256Json::from(tx.tx_hash.as_bytes()), tx))
+        .filter_map(|tx| {
+            let tx_hash = H256Json::from_str(&tx.tx_hash).ok()?;
+            Some((tx_hash, tx))
+        })
         .collect();
 
     let mut success_iteration = 0i32;
@@ -2135,6 +2138,11 @@ where
                 break;
             },
         };
+
+        // Remove transactions in the history_map that are not in the requested transaction list anymore
+        let requested_ids: HashSet<H256Json> = tx_ids.iter().map(|x| x.0).collect();
+        history_map.retain(|hash, _| requested_ids.contains(hash));
+
         let mut transactions_left = if tx_ids.len() > history_map.len() {
             *coin.as_ref().history_sync_state.lock().unwrap() = HistorySyncState::InProgress(json!({
                 "transactions_left": tx_ids.len() - history_map.len()

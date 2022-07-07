@@ -471,6 +471,10 @@ impl Qrc20Coin {
 
     /// Returns true if the `history_map` has been updated.
     async fn process_tx_ids(&self, ctx: &MmArc, history_map: &mut HistoryMapByHash, tx_ids: TxIds) -> bool {
+        // Remove transactions in the history_map that are not in the requested transaction list anymore
+        let requested_ids: HashSet<H256Json> = tx_ids.iter().map(|x| x.0).collect();
+        history_map.retain(|hash, _| requested_ids.contains(hash));
+
         let mut transactions_left = if history_map.len() < tx_ids.len() {
             tx_ids.len() - history_map.len()
         } else {

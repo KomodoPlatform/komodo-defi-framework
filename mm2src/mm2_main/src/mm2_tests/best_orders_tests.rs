@@ -175,6 +175,364 @@ fn test_best_orders() {
 
 #[test]
 #[cfg(not(target_arch = "wasm32"))]
+fn test_best_orders_v2_by_number() {
+    let bob_passphrase = get_passphrase(&".env.seed", "BOB_PASSPHRASE").unwrap();
+
+    let coins = json!([
+        {"coin":"RICK","asset":"RICK","rpcport":8923,"txversion":4,"overwintered":1,"protocol":{"type":"UTXO"}},
+        {"coin":"MORTY","asset":"MORTY","rpcport":11608,"txversion":4,"overwintered":1,"protocol":{"type":"UTXO"}},
+        {"coin":"ETH","name":"ethereum","protocol":{"type":"ETH"},"rpcport":80},
+        {"coin":"JST","name":"jst","protocol":{"type":"ERC20", "protocol_data":{"platform":"ETH","contract_address":"0x2b294F029Fde858b2c62184e8390591755521d8E"}}}
+    ]);
+
+    // start bob and immediately place the orders
+    let mut mm_bob = MarketMakerIt::start(
+        json! ({
+            "gui": "nogui",
+            "netid": 9998,
+            "myipaddr": env::var ("BOB_TRADE_IP") .ok(),
+            "rpcip": env::var ("BOB_TRADE_IP") .ok(),
+            "canbind": env::var ("BOB_TRADE_PORT") .ok().map (|s| s.parse::<i64>().unwrap()),
+            "passphrase": bob_passphrase,
+            "coins": coins,
+            "rpc_password": "pass",
+            "i_am_seed": true,
+        }),
+        "pass".into(),
+        local_start!("bob"),
+    )
+    .unwrap();
+    let (_bob_dump_log, _bob_dump_dashboard) = mm_bob.mm_dump();
+    log!("Bob log path: {:?}", [mm_bob.log_path.display()]);
+
+    // Enable coins on Bob side. Print the replies in case we need the "address".
+    let bob_coins = block_on(enable_coins_eth_electrum(&mm_bob, &["http://195.201.0.6:8565"]));
+    log!("enable_coins (bob) {:?}", [bob_coins]);
+    // issue sell request on Bob side by setting base/rel price
+    log!("Issue bob sell requests");
+
+    let bob_orders = [
+        // (base, rel, price, volume, min_volume)
+        ("RICK", "MORTY", "0.9", "0.9", None),
+        ("RICK", "MORTY", "0.8", "0.9", None),
+        ("RICK", "MORTY", "0.7", "0.9", Some("0.9")),
+        ("RICK", "ETH", "0.8", "0.9", None),
+        ("MORTY", "RICK", "0.8", "0.9", None),
+        ("MORTY", "RICK", "0.9", "0.9", None),
+        ("ETH", "RICK", "0.8", "0.9", None),
+        ("MORTY", "ETH", "0.8", "0.8", None),
+        ("MORTY", "ETH", "0.7", "0.8", Some("0.8")),
+    ];
+    for (base, rel, price, volume, min_volume) in bob_orders.iter() {
+        let rc = block_on(mm_bob.rpc(&json! ({
+            "userpass": mm_bob.userpass,
+            "method": "setprice",
+            "base": base,
+            "rel": rel,
+            "price": price,
+            "volume": volume,
+            "min_volume": min_volume.unwrap_or("0.00777"),
+            "cancel_previous": false,
+        })))
+        .unwrap();
+        assert!(rc.0.is_success(), "!setprice: {}", rc.1);
+    }
+    let mm_alice = MarketMakerIt::start(
+        json! ({
+            "gui": "nogui",
+            "netid": 9998,
+            "myipaddr": env::var ("ALICE_TRADE_IP") .ok(),
+            "rpcip": env::var ("ALICE_TRADE_IP") .ok(),
+            "passphrase": "alice passphrase",
+            "coins": coins,
+            "seednodes": [mm_bob.ip.to_string()],
+            "rpc_password": "pass",
+        }),
+        "pass".into(),
+        local_start!("alice"),
+    )
+    .unwrap();
+    let (_alice_dump_log, _alice_dump_dashboard) = mm_alice.mm_dump();
+    log!("Alice log path: {:?}", [mm_alice.log_path.display()]);
+    block_on(mm_bob.wait_for_log(22., |log| {
+        log.contains("DEBUG Handling IncludedTorelaysMesh message for peer")
+    }))
+    .unwrap();
+
+    let rc = block_on(mm_alice.rpc(&json! ({
+        "userpass": mm_alice.userpass,
+        "method": "best_orders",
+        "mmrpc": "2.0",
+        "params": {
+            "coin": "RICK",
+            "action": "buy",
+            "request_by": {
+                "type": "number",
+                "value": 1
+            }
+        }
+    })))
+    .unwrap();
+    assert!(rc.0.is_success(), "!best_orders: {}", rc.1);
+    log!("rc {:?}", [&rc]);
+    let response: RpcV2Response<BestOrdersV2Response> = json::from_str(&rc.1).unwrap();
+    let best_morty_orders = response.result.orders.get("MORTY").unwrap();
+    log!("Best MORTY orders when buy RICK {:?}", [best_morty_orders]);
+    assert_eq!(1, best_morty_orders.len());
+    let expected_price: BigDecimal = "0.7".parse().unwrap();
+    assert_eq!(expected_price, best_morty_orders[0].price.decimal);
+
+    let rc = block_on(mm_alice.rpc(&json! ({
+        "userpass": mm_alice.userpass,
+        "method": "best_orders",
+        "mmrpc": "2.0",
+        "params": {
+            "coin": "RICK",
+            "action": "buy",
+            "request_by": {
+                "type": "number",
+                "value": 2
+            }
+        }
+    })))
+    .unwrap();
+    assert!(rc.0.is_success(), "!best_orders: {}", rc.1);
+    log!("rc {:?}", [&rc]);
+    let response: RpcV2Response<BestOrdersV2Response> = json::from_str(&rc.1).unwrap();
+    let best_morty_orders = response.result.orders.get("MORTY").unwrap();
+    log!("Best MORTY orders when buy RICK {:?}", [best_morty_orders]);
+    assert_eq!(2, best_morty_orders.len());
+    let expected_price: BigDecimal = "0.7".parse().unwrap();
+    assert_eq!(expected_price, best_morty_orders[0].price.decimal);
+    let expected_price: BigDecimal = "0.8".parse().unwrap();
+    assert_eq!(expected_price, best_morty_orders[1].price.decimal);
+
+    let rc = block_on(mm_alice.rpc(&json! ({
+        "userpass": mm_alice.userpass,
+        "method": "best_orders",
+        "mmrpc": "2.0",
+        "params": {
+            "coin": "RICK",
+            "action": "sell",
+            "request_by": {
+                "type": "number",
+                "value": 1
+            }
+        }
+    })))
+    .unwrap();
+    assert!(rc.0.is_success(), "!best_orders: {}", rc.1);
+    log!("rc {:?}", [&rc]);
+    let response: RpcV2Response<BestOrdersV2Response> = json::from_str(&rc.1).unwrap();
+    let expected_price: BigDecimal = "1.25".parse().unwrap();
+    let best_morty_orders = response.result.orders.get("MORTY").unwrap();
+    log!("Best MORTY orders when sell RICK {:?}", [best_morty_orders]);
+    assert_eq!(1, best_morty_orders.len());
+    assert_eq!(expected_price, best_morty_orders[0].price.decimal);
+    let best_eth_orders = response.result.orders.get("ETH").unwrap();
+    log!("Best ETH orders when sell RICK {:?}", [best_eth_orders]);
+    assert_eq!(1, best_eth_orders.len());
+    assert_eq!(expected_price, best_eth_orders[0].price.decimal);
+
+    let rc = block_on(mm_alice.rpc(&json! ({
+        "userpass": mm_alice.userpass,
+        "method": "best_orders",
+        "mmrpc": "2.0",
+        "params": {
+            "coin": "ETH",
+            "action": "sell",
+            "request_by": {
+                "type": "number",
+                "value": 1
+            }
+        }
+    })))
+    .unwrap();
+    assert!(rc.0.is_success(), "!best_orders: {}", rc.1);
+    log!("rc {:?}", [&rc]);
+    let response: RpcV2Response<BestOrdersV2Response> = json::from_str(&rc.1).unwrap();
+    let best_rick_orders = response.result.orders.get("RICK").unwrap();
+    log!("Best RICK orders when sell ETH {:?}", [best_rick_orders]);
+    assert_eq!(1, best_rick_orders.len());
+    let expected_price: BigDecimal = "1.25".parse().unwrap();
+    assert_eq!(expected_price, best_rick_orders[0].price.decimal);
+
+    block_on(mm_bob.stop()).unwrap();
+    block_on(mm_alice.stop()).unwrap();
+}
+
+#[test]
+#[cfg(not(target_arch = "wasm32"))]
+fn test_best_orders_v2_by_volume() {
+    let bob_passphrase = get_passphrase(&".env.seed", "BOB_PASSPHRASE").unwrap();
+
+    let coins = json!([
+        {"coin":"RICK","asset":"RICK","rpcport":8923,"txversion":4,"overwintered":1,"protocol":{"type":"UTXO"}},
+        {"coin":"MORTY","asset":"MORTY","rpcport":11608,"txversion":4,"overwintered":1,"protocol":{"type":"UTXO"}},
+        {"coin":"ETH","name":"ethereum","protocol":{"type":"ETH"},"rpcport":80},
+        {"coin":"JST","name":"jst","protocol":{"type":"ERC20", "protocol_data":{"platform":"ETH","contract_address":"0x2b294F029Fde858b2c62184e8390591755521d8E"}}}
+    ]);
+
+    // start bob and immediately place the orders
+    let mut mm_bob = MarketMakerIt::start(
+        json! ({
+            "gui": "nogui",
+            "netid": 9998,
+            "myipaddr": env::var ("BOB_TRADE_IP") .ok(),
+            "rpcip": env::var ("BOB_TRADE_IP") .ok(),
+            "canbind": env::var ("BOB_TRADE_PORT") .ok().map (|s| s.parse::<i64>().unwrap()),
+            "passphrase": bob_passphrase,
+            "coins": coins,
+            "rpc_password": "pass",
+            "i_am_seed": true,
+        }),
+        "pass".into(),
+        local_start!("bob"),
+    )
+    .unwrap();
+    let (_bob_dump_log, _bob_dump_dashboard) = mm_bob.mm_dump();
+    log!("Bob log path: {:?}", [mm_bob.log_path.display()]);
+
+    // Enable coins on Bob side. Print the replies in case we need the "address".
+    let bob_coins = block_on(enable_coins_eth_electrum(&mm_bob, &["http://195.201.0.6:8565"]));
+    log!("enable_coins (bob): {:?}", [bob_coins]);
+    // issue sell request on Bob side by setting base/rel price
+    log!("Issue bob sell requests");
+
+    let bob_orders = [
+        // (base, rel, price, volume, min_volume)
+        ("RICK", "MORTY", "0.9", "0.9", None),
+        ("RICK", "MORTY", "0.8", "0.9", None),
+        ("RICK", "MORTY", "0.7", "0.9", Some("0.9")),
+        ("RICK", "ETH", "0.8", "0.9", None),
+        ("MORTY", "RICK", "0.8", "0.9", None),
+        ("MORTY", "RICK", "0.9", "0.9", None),
+        ("ETH", "RICK", "0.8", "0.9", None),
+        ("MORTY", "ETH", "0.8", "0.8", None),
+        ("MORTY", "ETH", "0.7", "0.8", Some("0.8")),
+    ];
+    for (base, rel, price, volume, min_volume) in bob_orders.iter() {
+        let rc = block_on(mm_bob.rpc(&json! ({
+            "userpass": mm_bob.userpass,
+            "method": "setprice",
+            "base": base,
+            "rel": rel,
+            "price": price,
+            "volume": volume,
+            "min_volume": min_volume.unwrap_or("0.00777"),
+            "cancel_previous": false,
+        })))
+        .unwrap();
+        assert!(rc.0.is_success(), "!setprice: {}", rc.1);
+    }
+    let mm_alice = MarketMakerIt::start(
+        json! ({
+            "gui": "nogui",
+            "netid": 9998,
+            "myipaddr": env::var ("ALICE_TRADE_IP") .ok(),
+            "rpcip": env::var ("ALICE_TRADE_IP") .ok(),
+            "passphrase": "alice passphrase",
+            "coins": coins,
+            "seednodes": [mm_bob.ip.to_string()],
+            "rpc_password": "pass",
+        }),
+        "pass".into(),
+        local_start!("alice"),
+    )
+    .unwrap();
+    let (_alice_dump_log, _alice_dump_dashboard) = mm_alice.mm_dump();
+    log!("Alice log path: {:?}", [mm_alice.log_path.display()]);
+    block_on(mm_bob.wait_for_log(22., |log| {
+        log.contains("DEBUG Handling IncludedTorelaysMesh message for peer")
+    }))
+    .unwrap();
+
+    let rc = block_on(mm_alice.rpc(&json! ({
+        "userpass": mm_alice.userpass,
+        "method": "best_orders",
+        "mmrpc": "2.0",
+        "params": {
+            "coin": "RICK",
+            "action": "buy",
+            "request_by": {
+                "type": "volume",
+                "value": 1.7
+            }
+        }
+    })))
+    .unwrap();
+    assert!(rc.0.is_success(), "!best_orders: {}", rc.1);
+    log!("rc {:?}", [&rc]);
+    let response: RpcV2Response<BestOrdersV2Response> = json::from_str(&rc.1).unwrap();
+    // MORTY
+    let best_morty_orders = response.result.orders.get("MORTY").unwrap();
+    log!("Best MORTY orders when buy RICK {:?}", [best_morty_orders]);
+    let expected_price: BigDecimal = "0.7".parse().unwrap();
+    assert_eq!(expected_price, best_morty_orders[0].price.decimal);
+    let expected_price: BigDecimal = "0.8".parse().unwrap();
+    assert_eq!(expected_price, best_morty_orders[1].price.decimal);
+    // ETH
+    let expected_price: BigDecimal = "0.8".parse().unwrap();
+    let best_eth_orders = response.result.orders.get("ETH").unwrap();
+    log!("Best ETH orders when buy RICK {:?}", [best_eth_orders]);
+    assert_eq!(expected_price, best_eth_orders[0].price.decimal);
+
+    let rc = block_on(mm_alice.rpc(&json! ({
+        "userpass": mm_alice.userpass,
+        "method": "best_orders",
+        "mmrpc": "2.0",
+        "params": {
+            "coin": "RICK",
+            "action": "sell",
+            "request_by": {
+                "type": "volume",
+                "value": 0.1
+            }
+        }
+    })))
+    .unwrap();
+    assert!(rc.0.is_success(), "!best_orders: {}", rc.1);
+    log!("rc {:?}", [&rc]);
+    let response: RpcV2Response<BestOrdersV2Response> = json::from_str(&rc.1).unwrap();
+    let expected_price: BigDecimal = "1.25".parse().unwrap();
+    let best_morty_orders = response.result.orders.get("MORTY").unwrap();
+    log!("Best MORTY orders when sell RICK {:?}", [best_morty_orders]);
+    assert_eq!(expected_price, best_morty_orders[0].price.decimal);
+    assert_eq!(1, best_morty_orders.len());
+    let best_eth_orders = response.result.orders.get("ETH").unwrap();
+    log!("Best ETH orders when sell RICK {:?}", [best_morty_orders]);
+    assert_eq!(expected_price, best_eth_orders[0].price.decimal);
+
+    let rc = block_on(mm_alice.rpc(&json! ({
+        "userpass": mm_alice.userpass,
+        "method": "best_orders",
+        "mmrpc": "2.0",
+        "params": {
+            "coin": "ETH",
+            "action": "sell",
+            "request_by": {
+                "type": "volume",
+                "value": 0.1
+            }
+        }
+    })))
+    .unwrap();
+    assert!(rc.0.is_success(), "!best_orders: {}", rc.1);
+    log!("rc {:?}", [&rc]);
+    let response: RpcV2Response<BestOrdersV2Response> = json::from_str(&rc.1).unwrap();
+    let expected_price: BigDecimal = "1.25".parse().unwrap();
+    let best_morty_orders = response.result.orders.get("MORTY").unwrap();
+    log!("Best MORTY orders when sell ETH {:?}", [best_morty_orders]);
+    assert_eq!(expected_price, best_morty_orders[0].price.decimal);
+    assert_eq!("MORTY", best_morty_orders[0].coin);
+    assert_eq!(1, best_morty_orders.len());
+
+    block_on(mm_bob.stop()).unwrap();
+    block_on(mm_alice.stop()).unwrap();
+}
+
+#[test]
+#[cfg(not(target_arch = "wasm32"))]
 fn test_best_orders_duplicates_after_update() {
     let eve_passphrase = get_passphrase(&".env.seed", "BOB_PASSPHRASE").unwrap();
 
