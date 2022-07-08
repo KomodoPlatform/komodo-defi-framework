@@ -1,7 +1,6 @@
-use crate::utxo::rpc_clients::ElectrumBlockHeader;
 use async_trait::async_trait;
 use chain::BlockHeader;
-use mm2_err_handle::prelude::*;
+use spv_validation::storage::{BlockHeaderStorageError, BlockHeaderStorageOps};
 use std::collections::HashMap;
 
 #[derive(Debug)]
