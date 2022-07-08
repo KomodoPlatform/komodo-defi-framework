@@ -44,11 +44,11 @@ use serde_json::{self as json};
 use serialization::{deserialize, serialize, serialize_with_flags, CoinVariant, CompactInteger, Serializable, Stream,
                     SERIALIZE_TRANSACTION_WITNESS};
 use spv_validation::helpers_validation::validate_headers;
+use spv_validation::storage::BlockHeaderStorageOps;
 use std::cmp::Ordering;
 use std::collections::hash_map::{Entry, HashMap};
 use std::str::FromStr;
 use std::sync::atomic::Ordering as AtomicOrdering;
-use utxo_block_header_storage::BlockHeaderStorageOps;
 use utxo_signer::with_key_pair::p2sh_spend;
 use utxo_signer::UtxoSignerOps;
 

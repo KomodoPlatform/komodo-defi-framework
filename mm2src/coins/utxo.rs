@@ -72,6 +72,7 @@ use script::{Builder, Script, SignatureVersion, TransactionInputSigner};
 use serde_json::{self as json, Value as Json};
 use serialization::{serialize, serialize_with_flags, Error as SerError, SERIALIZE_TRANSACTION_WITNESS};
 use spv_validation::helpers_validation::SPVError;
+use spv_validation::storage::BlockHeaderStorageError;
 use std::array::TryFromSliceError;
 use std::collections::{HashMap, HashSet};
 use std::convert::TryInto;
@@ -102,7 +103,6 @@ use crate::coin_balance::{EnableCoinScanPolicy, HDAddressBalanceScanner};
 use crate::hd_wallet::{HDAccountOps, HDAccountsMutex, HDAddress, HDWalletCoinOps, HDWalletOps, InvalidBip44ChainError};
 use crate::hd_wallet_storage::{HDAccountStorageItem, HDWalletCoinStorage, HDWalletStorageError, HDWalletStorageResult};
 use crate::utxo::tx_cache::UtxoVerboseCacheShared;
-use crate::utxo::utxo_block_header_storage::BlockHeaderStorageError;
 use crate::TransactionErr;
 
 pub mod tx_cache;

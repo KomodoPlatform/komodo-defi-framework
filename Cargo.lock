@@ -7211,8 +7211,12 @@ dependencies = [
 name = "spv_validation"
 version = "0.1.0"
 dependencies = [
+ "async-trait",
  "chain",
+ "common",
  "derive_more",
+ "keys",
+ "lazy_static",
  "primitives",
  "ripemd160",
  "rustc-hex 2.1.0",
