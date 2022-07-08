@@ -85,11 +85,11 @@ pub struct Web3TransportNode {
 
 impl Web3Transport {
     #[allow(dead_code)]
-    pub fn new(urls: Vec<String>, gui_auth: bool) -> Result<Self, String> {
+    pub fn new(urls: Vec<String>) -> Result<Self, String> {
         let mut nodes = vec![];
         for url in urls.iter() {
             let uri = try_s!(url.parse());
-            nodes.push(Web3TransportNode { uri, gui_auth });
+            nodes.push(Web3TransportNode { uri, gui_auth: false });
         }
         Ok(Web3Transport {
             id: Arc::new(AtomicUsize::new(0)),
@@ -102,12 +102,11 @@ impl Web3Transport {
     pub fn with_event_handlers(
         urls: Vec<String>,
         event_handlers: Vec<RpcTransportEventHandlerShared>,
-        gui_auth: bool,
     ) -> Result<Self, String> {
         let mut nodes = vec![];
         for url in urls.iter() {
             let uri = try_s!(url.parse());
-            nodes.push(Web3TransportNode { uri, gui_auth });
+            nodes.push(Web3TransportNode { uri, gui_auth: false });
         }
         Ok(Web3Transport {
             id: Arc::new(AtomicUsize::new(0)),
@@ -291,7 +290,7 @@ async fn send_request(
                 common::drop_mutability!(json_payload);
                 serialized_request = json_payload.to_string();
             } else {
-                transport_errors.push(ERRL!("GuiAuthValidationGenerator is not provided for {:?} node", node,));
+                transport_errors.push(ERRL!("GuiAuthValidationGenerator is not provided for {:?} node", node));
                 continue;
             }
         }
