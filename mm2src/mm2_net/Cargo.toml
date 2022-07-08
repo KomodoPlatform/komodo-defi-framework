@@ -12,6 +12,7 @@ serde_json = { version = "1.0", features = ["preserve_order", "raw_value"] }
 bytes = "1.1"
 cfg-if = "1.0"
 common = { path = "../common" }
+ethkey = { git = "https://github.com/artemii235/parity-ethereum.git" }
 mm2_err_handle = { path = "../mm2_err_handle" }
 mm2_core = { path = "../mm2_core" }
 derive_more = "0.99"

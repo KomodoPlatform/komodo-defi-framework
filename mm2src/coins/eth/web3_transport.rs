@@ -1,9 +1,10 @@
 use super::{RpcTransportEventHandler, RpcTransportEventHandlerShared};
+use crate::eth::{EthCoin, GuiAuthMessages};
 #[cfg(not(target_arch = "wasm32"))] use futures::FutureExt;
 use futures::TryFutureExt;
 use futures01::{Future, Poll};
 use jsonrpc_core::{Call, Response};
-use mm2_net::transport::GuiAuthValidation;
+use mm2_net::transport::GuiAuthValidationGenerator;
 use serde_json::Value as Json;
 #[cfg(not(target_arch = "wasm32"))] use std::ops::Deref;
 use std::sync::atomic::{AtomicUsize, Ordering};
@@ -73,7 +74,7 @@ pub struct Web3Transport {
     id: Arc<AtomicUsize>,
     nodes: Vec<Web3TransportNode>,
     event_handlers: Vec<RpcTransportEventHandlerShared>,
-    pub(crate) gui_auth_validation: Option<GuiAuthValidation>,
+    pub(crate) gui_auth_validation_generator: Option<GuiAuthValidationGenerator>,
 }
 
 #[derive(Clone, Debug)]
@@ -94,7 +95,7 @@ impl Web3Transport {
             id: Arc::new(AtomicUsize::new(0)),
             nodes,
             event_handlers: Default::default(),
-            gui_auth_validation: None,
+            gui_auth_validation_generator: None,
         })
     }
 
@@ -112,7 +113,7 @@ impl Web3Transport {
             id: Arc::new(AtomicUsize::new(0)),
             nodes,
             event_handlers,
-            gui_auth_validation: None,
+            gui_auth_validation_generator: None,
         })
     }
 }
@@ -147,7 +148,7 @@ impl Transport for Web3Transport {
                 request,
                 self.nodes.clone(),
                 self.event_handlers.clone(),
-                self.gui_auth_validation.clone(),
+                self.gui_auth_validation_generator.clone(),
             )
             .boxed()
             .compat(),
@@ -160,7 +161,7 @@ impl Transport for Web3Transport {
             request,
             self.nodes.clone(),
             self.event_handlers.clone(),
-            self.gui_auth_validation.clone(),
+            self.gui_auth_validation_generator.clone(),
         );
         Box::new(SendFuture(Box::pin(fut).compat()))
     }
@@ -171,7 +172,7 @@ async fn send_request(
     request: Call,
     nodes: Vec<Web3TransportNode>,
     event_handlers: Vec<RpcTransportEventHandlerShared>,
-    gui_auth_validation: Option<GuiAuthValidation>,
+    gui_auth_validation_generator: Option<GuiAuthValidationGenerator>,
 ) -> Result<Json, Error> {
     use common::executor::Timer;
     use common::log::warn;
@@ -189,13 +190,23 @@ async fn send_request(
     for node in nodes.iter() {
         let mut serialized_request = serialized_request.clone();
         if node.gui_auth {
-            if let Some(gui_auth_validation) = gui_auth_validation.clone() {
+            if let Some(generator) = gui_auth_validation_generator.clone() {
                 let mut json_payload = serde_json::to_value(&serialized_request)?;
-                json_payload["signed_message"] = json!(gui_auth_validation);
+                json_payload["signed_message"] = match EthCoin::generate_gui_auth_signed_validation(generator) {
+                    Ok(t) => t,
+                    Err(e) => {
+                        errors.push(ERRL!(
+                            "GuiAuth signed message generation failed for {:?} node, error: {:?}",
+                            node,
+                            e
+                        ));
+                        continue;
+                    },
+                };
                 common::drop_mutability!(json_payload);
                 serialized_request = json_payload.to_string();
             } else {
-                errors.push(ERRL!("GuiAuthValidation is not provided for {:?} node", node,));
+                errors.push(ERRL!("GuiAuthValidationGenerator is not provided for {:?} node", node));
                 continue;
             }
         }
@@ -256,7 +267,7 @@ async fn send_request(
     request: Call,
     nodes: Vec<Web3TransportNode>,
     event_handlers: Vec<RpcTransportEventHandlerShared>,
-    gui_auth_validation: Option<GuiAuthValidation>,
+    gui_auth_validation_generator: Option<GuiAuthValidationGenerator>,
 ) -> Result<Json, Error> {
     let serialized_request = to_string(&request);
 
@@ -264,13 +275,23 @@ async fn send_request(
     for node in nodes {
         let mut serialized_request = serialized_request.clone();
         if node.gui_auth {
-            if let Some(gui_auth_validation) = gui_auth_validation.clone() {
+            if let Some(generator) = gui_auth_validation_generator.clone() {
                 let mut json_payload = serde_json::to_value(&serialized_request)?;
-                json_payload["signed_message"] = json!(gui_auth_validation);
+                json_payload["signed_message"] = match EthCoin::generate_gui_auth_signed_validation(generator) {
+                    Ok(t) => t,
+                    Err(e) => {
+                        transport_errors.push(ERRL!(
+                            "GuiAuth signed message generation failed for {:?} node, error: {:?}",
+                            node,
+                            e
+                        ));
+                        continue;
+                    },
+                };
                 common::drop_mutability!(json_payload);
                 serialized_request = json_payload.to_string();
             } else {
-                transport_errors.push(ERRL!("GuiAuthValidation is not provided for {:?} node", node,));
+                transport_errors.push(ERRL!("GuiAuthValidationGenerator is not provided for {:?} node", node,));
                 continue;
             }
         }

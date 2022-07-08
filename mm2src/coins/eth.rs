@@ -37,7 +37,7 @@ use futures01::Future;
 use http::StatusCode;
 use mm2_core::mm_ctx::{MmArc, MmWeak};
 use mm2_err_handle::prelude::*;
-use mm2_net::transport::{slurp_url, GuiAuthValidation, SlurpError};
+use mm2_net::transport::{slurp_url, GuiAuthValidationGenerator, SlurpError};
 #[cfg(test)] use mocktopus::macros::*;
 use rand::seq::SliceRandom;
 use rpc::v1::types::Bytes as BytesJson;
@@ -3207,12 +3207,13 @@ impl<T: TryToAddress> TryToAddress for Option<T> {
 }
 
 pub trait GuiAuthMessages {
-    fn gui_auth_sign_message_hash(&self, message: String) -> Option<[u8; 32]>;
-    fn generate_gui_auth_signed_validation(&self) -> SignatureResult<GuiAuthValidation>;
+    fn gui_auth_sign_message_hash(message: String) -> Option<[u8; 32]>;
+    fn generate_gui_auth_signed_validation(generator: GuiAuthValidationGenerator)
+        -> SignatureResult<serde_json::Value>;
 }
 
 impl GuiAuthMessages for EthCoin {
-    fn gui_auth_sign_message_hash(&self, message: String) -> Option<[u8; 32]> {
+    fn gui_auth_sign_message_hash(message: String) -> Option<[u8; 32]> {
         let message_prefix = "atomicDEX Auth Ethereum Signed Message:\n";
         let prefix_len = CompactInteger::from(message_prefix.len());
 
@@ -3225,24 +3226,24 @@ impl GuiAuthMessages for EthCoin {
         Some(keccak256(&stream.out()).take())
     }
 
-    fn generate_gui_auth_signed_validation(&self) -> SignatureResult<GuiAuthValidation> {
+    fn generate_gui_auth_signed_validation(
+        generator: GuiAuthValidationGenerator,
+    ) -> SignatureResult<serde_json::Value> {
         let timestamp_message = SystemTime::now()
             .duration_since(UNIX_EPOCH)
             .map_err(|e| SignatureError::InternalError(e.to_string()))?
             .as_secs();
 
-        let message_hash = self
-            .gui_auth_sign_message_hash(timestamp_message.to_string())
-            .ok_or(SignatureError::PrefixNotFound)?;
-        let privkey = &self.key_pair.secret();
-        let signature = sign(privkey, &H256::from(message_hash))?;
+        let message_hash =
+            EthCoin::gui_auth_sign_message_hash(timestamp_message.to_string()).ok_or(SignatureError::PrefixNotFound)?;
+        let signature = sign(&generator.secret, &H256::from(message_hash))?;
 
-        Ok(GuiAuthValidation {
-            coin_ticker: self.ticker.clone(),
-            address: self.my_address.to_string(),
-            timestamp_message: timestamp_message + 5 * 60,
-            signature: format!("0x{}", signature),
-        })
+        Ok(json!({
+            "coin_ticker": "ETH",
+            "address": generator.address,
+            "timestamp_message": timestamp_message + 90, // 90 seconds to expire
+            "signature": format!("0x{}", signature),
+        }))
     }
 }
 

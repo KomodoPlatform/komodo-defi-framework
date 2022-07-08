@@ -1,4 +1,5 @@
 use derive_more::Display;
+use ethkey::Secret;
 use http::{HeaderMap, StatusCode};
 use mm2_err_handle::prelude::*;
 use serde::{Deserialize, Serialize};
@@ -50,10 +51,8 @@ where
 }
 
 /// gui-auth specific data-type that needed in order to perform gui-auth calls
-#[derive(Clone, Debug, Serialize, Deserialize, PartialEq)]
-pub struct GuiAuthValidation {
-    pub coin_ticker: String,
+#[derive(Clone, Debug)]
+pub struct GuiAuthValidationGenerator {
+    pub secret: Secret,
     pub address: String,
-    pub timestamp_message: u64,
-    pub signature: String,
 }
