@@ -6,6 +6,7 @@ use mm2_core::mm_ctx::MmArc;
 use mm2_err_handle::prelude::*;
 use std::collections::BTreeMap;
 
+#[cfg(not(target_arch = "wasm32"))] mod sqlite_storage;
 #[cfg(target_arch = "wasm32")] mod wasm_storage;
 
 pub(crate) type AccountStorageBoxed = Box<dyn AccountStorage + Send + Sync>;

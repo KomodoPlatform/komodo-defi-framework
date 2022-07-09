@@ -1,11 +1,12 @@
 pub use rusqlite;
 pub use sql_builder;
-use std::fmt;
 
 use log::debug;
 use rusqlite::types::{FromSql, Type as SqlType, Value};
 use rusqlite::{Connection, Error as SqlError, Result as SqlResult, Row, ToSql, NO_PARAMS};
 use sql_builder::SqlBuilder;
+use std::error::Error as StdError;
+use std::fmt;
 use std::sync::{Arc, Mutex, Weak};
 use uuid::Uuid;
 
@@ -126,7 +127,7 @@ pub fn offset_by_id<P>(
     where_id: &str,
 ) -> SqlResult<Option<usize>>
 where
-    P: IntoIterator + std::fmt::Debug,
+    P: IntoIterator + fmt::Debug,
     P::Item: ToSql,
 {
     let row_number = format!("ROW_NUMBER() OVER (ORDER BY {}) AS row", order_by);
@@ -235,6 +236,7 @@ impl<S: ToString> ToValidSqlIdent for S {
 /// A valid SQL value that can be passed as an argument to the `SqlBuilder` or `SqlQuery` safely.
 pub enum SqlValue {
     String(&'static str),
+    StringQuoted(&'static str),
     Decimal(i64),
 }
 
@@ -263,6 +265,7 @@ impl fmt::Display for SqlValue {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
             SqlValue::String(string) => write!(f, "{}", string),
+            SqlValue::StringQuoted(string) => write!(f, "'{}'", string),
             SqlValue::Decimal(decimal) => write!(f, "{}", decimal),
         }
     }
@@ -304,6 +307,23 @@ impl SqlParamsBuilder {
     }
 
     pub(crate) fn params(&self) -> &OwnedSqlParams { &self.params }
+}
+
+#[derive(Debug)]
+pub(crate) struct StringError(String);
+
+impl fmt::Display for StringError {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result { write!(f, "{}", self.0) }
+}
+
+impl StdError for StringError {}
+
+impl From<&'static str> for StringError {
+    fn from(s: &str) -> Self { StringError(s.to_owned()) }
+}
+
+impl StringError {
+    pub fn into_boxed(self) -> Box<StringError> { Box::new(self) }
 }
 
 fn validate_ident_impl<F>(ident: &str, is_valid: F) -> SqlResult<()>

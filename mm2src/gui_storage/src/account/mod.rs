@@ -4,6 +4,10 @@ use std::collections::HashSet;
 
 pub(crate) mod storage;
 
+pub const MAX_ACCOUNT_NAME_LENGTH: usize = 255;
+pub const MAX_ACCOUNT_DESCRIPTION_LENGTH: usize = 600;
+pub const MAX_COIN_LENGTH: usize = 255;
+
 #[derive(Clone, Copy, Debug, Deserialize, Serialize)]
 pub(crate) enum AccountType {
     Iguana,

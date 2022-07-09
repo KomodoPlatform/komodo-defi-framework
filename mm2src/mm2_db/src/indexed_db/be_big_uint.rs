@@ -52,7 +52,6 @@ use serde::de::Error as DeError;
 use serde::ser::Error as SerError;
 use serde::{Deserialize, Deserializer, Serialize, Serializer};
 use std::fmt;
-use std::fmt::Formatter;
 use std::ops::Add;
 
 #[derive(Debug, Display)]
@@ -117,7 +116,7 @@ impl BeBigUint {
 }
 
 impl fmt::Debug for BeBigUint {
-    fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result { write!(f, "{}", self.0) }
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result { write!(f, "{}", self.0) }
 }
 
 impl fmt::Display for BeBigUint {

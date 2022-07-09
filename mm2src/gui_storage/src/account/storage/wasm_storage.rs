@@ -308,7 +308,7 @@ impl AccountTable {
 }
 
 impl TableSignature for AccountTable {
-    fn table_name() -> &'static str { "account_table" }
+    fn table_name() -> &'static str { "gui_account" }
 
     fn on_upgrade_needed(upgrader: &DbUpgrader, old_version: u32, new_version: u32) -> OnUpgradeResult<()> {
         match (old_version, new_version) {
@@ -389,7 +389,7 @@ impl TryFrom<EnabledAccountTable> for AccountId {
 }
 
 impl TableSignature for EnabledAccountTable {
-    fn table_name() -> &'static str { "enabled_account_table" }
+    fn table_name() -> &'static str { "gui_enabled_account" }
 
     fn on_upgrade_needed(upgrader: &DbUpgrader, old_version: u32, new_version: u32) -> OnUpgradeResult<()> {
         match (old_version, new_version) {

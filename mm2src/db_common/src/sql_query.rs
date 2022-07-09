@@ -1,10 +1,8 @@
 use crate::sqlite::{query_single_row, validate_ident, validate_table_name, OwnedSqlParam, OwnedSqlParams,
-                    SqlParamsBuilder, SqlValue, ToValidSqlIdent, ToValidSqlTable};
+                    SqlParamsBuilder, SqlValue, StringError, ToValidSqlIdent, ToValidSqlTable};
 use log::debug;
 use rusqlite::{Connection, Error as SqlError, Result as SqlResult, Row};
 use sql_builder::SqlBuilder;
-use std::error::Error as StdError;
-use std::fmt;
 
 #[derive(Clone)]
 pub struct SqlQuery<'a> {
@@ -228,13 +226,12 @@ impl<'a> SqlQuery<'a> {
     /// Please note the function validates the given `field`,
     /// and `values` are considered valid as they're able to be converted into `SqlValue`.
     #[inline]
-    pub fn and_where_in_quoted<S, I, T>(&mut self, field: S, values: I) -> SqlResult<&mut Self>
+    pub fn and_where_in_quoted<S, I>(&mut self, field: S, values: I) -> SqlResult<&mut Self>
     where
         S: ToValidSqlIdent,
-        I: IntoIterator<Item = T>,
-        SqlValue: From<T>,
+        I: IntoIterator<Item = &'static str>,
     {
-        let values: Vec<_> = values.into_iter().map(SqlValue::value_to_string).collect();
+        let values: Vec<_> = values.into_iter().collect();
         self.sql_builder
             .and_where_in_quoted(field.to_valid_sql_ident()?, &values);
         Ok(self)
@@ -313,16 +310,16 @@ impl<'a> SqlQuery<'a> {
     pub fn or_where_in_quoted<S, I, T>(&mut self, field: S, values: I) -> SqlResult<&mut Self>
     where
         S: ToValidSqlIdent,
-        I: IntoIterator<Item = T>,
-        SqlValue: From<T>,
+        I: IntoIterator<Item = &'static str>,
     {
+        let values: Vec<_> = values.into_iter().collect();
         self.sql_builder
-            .or_where_in_quoted(field.to_valid_sql_ident()?, &SqlValue::values_to_strings(values));
+            .or_where_in_quoted(field.to_valid_sql_ident()?, &values);
         Ok(self)
     }
 
     /// Add OR field IN (list) to the last WHERE condition.
-    /// For more details see [`SqlBuilder::or_where_in_quoted`].
+    /// For more details see [`SqlBuilder::or_where_in`].
     ///
     /// Please note the function validates the given `field`.
     #[inline]
@@ -485,23 +482,6 @@ impl SqlOrdering {
             SqlOrdering::Desc(column) => format!("{} DESC", column),
         }
     }
-}
-
-#[derive(Debug)]
-struct StringError(String);
-
-impl fmt::Display for StringError {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result { write!(f, "{}", self.0) }
-}
-
-impl StdError for StringError {}
-
-impl From<&'static str> for StringError {
-    fn from(s: &str) -> Self { StringError(s.to_owned()) }
-}
-
-impl StringError {
-    fn into_boxed(self) -> Box<StringError> { Box::new(self) }
 }
 
 #[cfg(test)]
