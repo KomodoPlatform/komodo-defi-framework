@@ -3012,18 +3012,7 @@ where
     let ticker = coin.ticker().to_owned();
     let my_address = try_f!(coin.my_address().map_to_mm(TxHistoryError::InternalError));
 
-    // the transactions with block_height == 0 are the most recent so we need to separately handle them while sorting
-    history.sort_unstable_by(|a, b| {
-        if a.block_height == 0 {
-            Ordering::Less
-        } else if b.block_height == 0 {
-            Ordering::Greater
-        } else if a.block_height == b.block_height {
-            a.internal_id.cmp(&b.internal_id)
-        } else {
-            b.block_height.cmp(&a.block_height)
-        }
-    });
+    history.sort_unstable_by(compare_transactions);
 
     let fut = async move {
         let coins_ctx = CoinsContext::from_ctx(&ctx).unwrap();
@@ -3042,18 +3031,7 @@ where
     let history_path = coin.tx_history_path(ctx);
     let tmp_file = format!("{}.tmp", history_path.display());
 
-    // the transactions with block_height == 0 are the most recent so we need to separately handle them while sorting
-    history.sort_unstable_by(|a, b| {
-        if a.block_height == 0 {
-            Ordering::Less
-        } else if b.block_height == 0 {
-            Ordering::Greater
-        } else if a.block_height == b.block_height {
-            a.internal_id.cmp(&b.internal_id)
-        } else {
-            b.block_height.cmp(&a.block_height)
-        }
-    });
+    history.sort_unstable_by(compare_transactions);
 
     let fut = async move {
         let content = json::to_vec(&history).map_to_mm(|e| TxHistoryError::ErrorSerializing(e.to_string()))?;
@@ -3074,4 +3052,12 @@ where
         Ok(())
     };
     Box::new(fut.boxed().compat())
+}
+
+fn compare_transactions(a: &TransactionDetails, b: &TransactionDetails) -> Ordering {
+    if a.block_height == b.block_height {
+        a.internal_id.cmp(&b.internal_id)
+    } else {
+        b.block_height.cmp(&a.block_height)
+    }
 }
