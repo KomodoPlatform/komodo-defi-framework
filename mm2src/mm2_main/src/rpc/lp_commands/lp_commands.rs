@@ -1,6 +1,7 @@
 use common::HttpStatusCode;
 use crypto::{CryptoCtx, CryptoInitError};
 use derive_more::Display;
+use ethereum_types::Address;
 use http::StatusCode;
 use mm2_core::mm_ctx::MmArc;
 use mm2_err_handle::prelude::*;
@@ -63,25 +64,57 @@ impl HttpStatusCode for EnableV2RpcError {
     }
 }
 
+#[derive(Clone, Copy, Debug, Serialize, Deserialize)]
+pub enum GasStationPricePolicyV2 {
+    /// Use mean between average and fast values, default and recommended to use on ETH mainnet due to
+    /// gas price big spikes.
+    MeanAverageFast,
+    /// Use average value only. Useful for non-heavily congested networks (Matic, etc.)
+    Average,
+}
+
+impl Default for GasStationPricePolicyV2 {
+    fn default() -> Self { GasStationPricePolicyV2::MeanAverageFast }
+}
+
+#[derive(Clone, Debug, Serialize, Deserialize)]
+pub struct EnableV2RpcRequest {
+    pub coin: String,
+    pub nodes: Vec<EnableV2NodesRpc>,
+    pub swap_contract_address: Option<u8>,
+    pub fallback_swap_contract: Option<Address>,
+    pub gas_station_url: Option<String>,
+    pub gas_station_decimals: Option<u8>,
+    pub gas_station_policy: GasStationPricePolicyV2,
+    pub mm2: Option<u8>,
+    pub tx_history: bool,
+    pub required_confirmations: u64,
+}
+
+#[derive(Clone, Debug, Serialize, Deserialize)]
+pub struct EnableV2NodesRpc {
+    pub url: String,
+    pub gui_auth: bool,
+}
+
 #[derive(Serialize)]
 pub struct EnableV2RpcResponse {
-    pub test: bool
-    // result: &'a str,
-    // address: String,
-    // balance: BigDecimal,
-    // unspendable_balance: BigDecimal,
-    // coin: &'a str,
-    // required_confirmations: u64,
-    // requires_notarization: bool,
-    // #[serde(skip_serializing_if = "Option::is_none")]
-    // mature_confirmations: Option<u32>,
+    pub test: bool, // result: &'a str,
+                    // address: String,
+                    // balance: BigDecimal,
+                    // unspendable_balance: BigDecimal,
+                    // coin: &'a str,
+                    // required_confirmations: u64,
+                    // requires_notarization: bool,
+                    // #[serde(skip_serializing_if = "Option::is_none")]
+                    // mature_confirmations: Option<u32>
 }
 
 /// v2 of `fn enable(ctx: MmArc, req: Json)`.
-pub async fn enable_v2(ctx: MmArc, req: Json) -> MmResult<EnableV2RpcResponse, EnableV2RpcError> {
+pub async fn enable_v2(ctx: MmArc, req: EnableV2RpcRequest) -> MmResult<EnableV2RpcResponse, EnableV2RpcError> {
     println!("request {:?}", req);
-    let ticker = req["coin"].as_str().ok_or("No 'coin' field").map_err(|e| EnableV2RpcError::CoinIsNotSupported(e.to_string()))?.to_owned();
-    println!("ticker {}", ticker);
+    // let coin: MmCoinEnum = lp_coininit(&ctx, &ticker, &req).await.unwrap();
+    // println!("coin {:?}", coin);
 
     Ok(EnableV2RpcResponse { test: true })
 }

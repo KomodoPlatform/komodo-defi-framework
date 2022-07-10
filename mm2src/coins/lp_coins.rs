@@ -2315,6 +2315,8 @@ pub async fn lp_coininit(ctx: &MmArc, ticker: &str, req: &Json) -> Result<MmCoin
             try_s!(qtum_coin_with_priv_key(ctx, ticker, &coins_en, &params, &secret).await).into()
         },
         CoinProtocol::ETH | CoinProtocol::ERC20 { .. } => {
+            // TODO
+            // Check if it's v2, if so call v2, continue as usual otherwise.
             try_s!(eth_coin_from_conf_and_request(ctx, ticker, &coins_en, req, &secret, protocol).await).into()
         },
         CoinProtocol::QRC20 {

@@ -3417,6 +3417,135 @@ fn rpc_event_handlers_for_eth_transport(ctx: &MmArc, ticker: String) -> Vec<RpcT
 #[inline]
 fn new_nonce_lock() -> Arc<AsyncMutex<()>> { Arc::new(AsyncMutex::new(())) }
 
+pub async fn eth_coin_from_conf_and_request_v2(
+    ctx: &MmArc,
+    ticker: &str,
+    conf: &Json,
+    req: &Json,
+    priv_key: &[u8],
+    protocol: CoinProtocol,
+) -> Result<EthCoin, String> {
+    let mut urls: Vec<String> = try_s!(json::from_value(req["params"]["nodes"].clone()));
+    if urls.is_empty() {
+        return ERR!("Enable request for ETH coin must have at least 1 node URL");
+    }
+    let mut rng = small_rng();
+    urls.as_mut_slice().shuffle(&mut rng);
+
+    let swap_contract_address: Address = try_s!(json::from_value(req["swap_contract_address"].clone()));
+    if swap_contract_address == Address::default() {
+        return ERR!("swap_contract_address can't be zero address");
+    }
+
+    let fallback_swap_contract: Option<Address> = try_s!(json::from_value(req["fallback_swap_contract"].clone()));
+    if let Some(fallback) = fallback_swap_contract {
+        if fallback == Address::default() {
+            return ERR!("fallback_swap_contract can't be zero address");
+        }
+    }
+
+    let key_pair: KeyPair = try_s!(KeyPair::from_secret_slice(priv_key));
+    let my_address = key_pair.address();
+
+    let mut web3_instances = vec![];
+    let event_handlers = rpc_event_handlers_for_eth_transport(ctx, ticker.to_string());
+    for url in urls.iter() {
+        let transport = try_s!(Web3Transport::with_event_handlers(
+            vec![url.clone()],
+            event_handlers.clone()
+        ));
+        let web3 = Web3::new(transport);
+        let version = match web3.web3().client_version().compat().await {
+            Ok(v) => v,
+            Err(e) => {
+                error!("Couldn't get client version for url {}: {}", url, e);
+                continue;
+            },
+        };
+        web3_instances.push(Web3Instance {
+            web3,
+            is_parity: version.contains("Parity") || version.contains("parity"),
+        })
+    }
+
+    if web3_instances.is_empty() {
+        return ERR!("Failed to get client version for all urls");
+    }
+
+    let transport = try_s!(Web3Transport::with_event_handlers(urls, event_handlers));
+    let web3 = Web3::new(transport);
+
+    let (coin_type, decimals) = match protocol {
+        CoinProtocol::ETH => (EthCoinType::Eth, 18),
+        CoinProtocol::ERC20 {
+            platform,
+            contract_address,
+        } => {
+            let token_addr = try_s!(valid_addr_from_str(&contract_address));
+            let decimals = match conf["decimals"].as_u64() {
+                None | Some(0) => try_s!(get_token_decimals(&web3, token_addr).await),
+                Some(d) => d as u8,
+            };
+            (EthCoinType::Erc20 { platform, token_addr }, decimals)
+        },
+        _ => return ERR!("Expect ETH or ERC20 protocol"),
+    };
+
+    // param from request should override the config
+    let required_confirmations = req["required_confirmations"]
+        .as_u64()
+        .unwrap_or_else(|| conf["required_confirmations"].as_u64().unwrap_or(1))
+        .into();
+
+    if req["requires_notarization"].as_bool().is_some() {
+        warn!("requires_notarization doesn't take any effect on ETH/ERC20 coins");
+    }
+
+    let sign_message_prefix: Option<String> = json::from_value(conf["sign_message_prefix"].clone()).unwrap_or(None);
+
+    let initial_history_state = if req["tx_history"].as_bool().unwrap_or(false) {
+        HistorySyncState::NotStarted
+    } else {
+        HistorySyncState::NotEnabled
+    };
+
+    let gas_station_decimals: Option<u8> = try_s!(json::from_value(req["gas_station_decimals"].clone()));
+    let gas_station_policy: GasStationPricePolicy =
+        json::from_value(req["gas_station_policy"].clone()).unwrap_or_default();
+
+    let key_lock = match &coin_type {
+        EthCoinType::Eth => String::from(ticker),
+        EthCoinType::Erc20 { ref platform, .. } => String::from(platform),
+    };
+
+    let mut map = NONCE_LOCK.lock().unwrap();
+
+    let nonce_lock = map.entry(key_lock).or_insert_with(new_nonce_lock).clone();
+
+    let coin = EthCoinImpl {
+        key_pair,
+        my_address,
+        coin_type,
+        sign_message_prefix,
+        swap_contract_address,
+        fallback_swap_contract,
+        decimals,
+        ticker: ticker.into(),
+        gas_station_url: try_s!(json::from_value(req["gas_station_url"].clone())),
+        gas_station_decimals: gas_station_decimals.unwrap_or(ETH_GAS_STATION_DECIMALS),
+        gas_station_policy,
+        web3,
+        web3_instances,
+        history_sync_state: Mutex::new(initial_history_state),
+        ctx: ctx.weak(),
+        required_confirmations,
+        chain_id: conf["chain_id"].as_u64(),
+        logs_block_range: conf["logs_block_range"].as_u64().unwrap_or(DEFAULT_LOGS_BLOCK_RANGE),
+        nonce_lock,
+    };
+    Ok(EthCoin(Arc::new(coin)))
+}
+
 pub async fn eth_coin_from_conf_and_request(
     ctx: &MmArc,
     ticker: &str,
