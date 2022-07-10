@@ -3055,8 +3055,13 @@ where
 }
 
 fn compare_transactions(a: &TransactionDetails, b: &TransactionDetails) -> Ordering {
+    // the transactions with block_height == 0 are the most recent so we need to separately handle them while sorting
     if a.block_height == b.block_height {
         a.internal_id.cmp(&b.internal_id)
+    } else if a.block_height == 0 {
+        Ordering::Less
+    } else if b.block_height == 0 {
+        Ordering::Greater
     } else {
         b.block_height.cmp(&a.block_height)
     }
