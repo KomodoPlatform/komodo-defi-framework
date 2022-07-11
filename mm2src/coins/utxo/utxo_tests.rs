@@ -19,7 +19,6 @@ use crate::utxo::utxo_standard::{utxo_standard_coin_with_priv_key, UtxoStandardC
 #[cfg(not(target_arch = "wasm32"))] use crate::WithdrawFee;
 use crate::{CoinBalance, PrivKeyBuildPolicy, SearchForSwapTxSpendInput, StakingInfosDetails, SwapOps,
             TradePreimageValue, TxFeeDetails};
-use bigdecimal::{BigDecimal, Signed};
 use chain::OutPoint;
 use common::executor::Timer;
 use common::{block_on, now_ms, OrdRange, PagingOptionsEnum, DEX_FEE_ADDR_RAW_PUBKEY};
@@ -27,6 +26,7 @@ use crypto::{privkey::key_pair_from_seed, Bip44Chain, RpcDerivationPath};
 use futures::future::join_all;
 use futures::TryFutureExt;
 use mm2_core::mm_ctx::MmCtxBuilder;
+use mm2_number::bigdecimal::{BigDecimal, Signed};
 use mocktopus::mocking::*;
 use rpc::v1::types::H256 as H256Json;
 use serialization::{deserialize, CoinVariant};
@@ -3306,7 +3306,6 @@ fn test_split_qtum() {
       "pubtype": 120,
       "p2shtype": 110,
       "wiftype": 239,
-      "segwit": true,
       "txfee": 400000,
       "mm2": 1,
       "required_confirmations": 1,

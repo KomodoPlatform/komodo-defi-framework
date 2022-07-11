@@ -6,7 +6,6 @@ use common::jsonrpc_client::JsonRpcErrorType;
 use common::mm_metrics::MetricsArc;
 use itertools::Itertools;
 use script_pubkey::{extract_contract_call_from_script, extract_gas_from_script, ExtractGasEnum};
-use std::cmp::Ordering;
 use std::collections::HashMap;
 use std::io::Cursor;
 use utxo_common::{HISTORY_TOO_LARGE_ERROR, HISTORY_TOO_LARGE_ERR_CODE};
@@ -173,18 +172,11 @@ impl Qrc20Coin {
             }
 
             // `history_map` has been updated.
-            let mut to_write: Vec<TransactionDetails> = history_map
+            let to_write: Vec<TransactionDetails> = history_map
                 .iter()
                 .flat_map(|(_, value)| value)
                 .map(|(_tx_id, tx)| tx.clone())
                 .collect();
-            to_write.sort_unstable_by(|a, b| {
-                match sort_newest_to_oldest(a.block_height, b.block_height) {
-                    // do not reverse `transfer` events in one transaction
-                    Ordering::Equal => a.internal_id.cmp(&b.internal_id),
-                    ord => ord,
-                }
-            });
             if let Err(e) = self.save_history_to_file(&ctx, to_write).compat().await {
                 ctx.log.log(
                     "",
@@ -471,6 +463,10 @@ impl Qrc20Coin {
 
     /// Returns true if the `history_map` has been updated.
     async fn process_tx_ids(&self, ctx: &MmArc, history_map: &mut HistoryMapByHash, tx_ids: TxIds) -> bool {
+        // Remove transactions in the history_map that are not in the requested transaction list anymore
+        let requested_ids: HashSet<H256Json> = tx_ids.iter().map(|x| x.0).collect();
+        history_map.retain(|hash, _| requested_ids.contains(hash));
+
         let mut transactions_left = if history_map.len() < tx_ids.len() {
             tx_ids.len() - history_map.len()
         } else {
@@ -803,17 +799,6 @@ fn is_transferred_to_contract(script_pubkey: &Script) -> bool {
         MutContractCallType::Erc20Payment => true,
         MutContractCallType::ReceiverSpend => false,
         MutContractCallType::SenderRefund => false,
-    }
-}
-
-fn sort_newest_to_oldest(x_height: u64, y_height: u64) -> Ordering {
-    // the transactions with block_height == 0 are the most recent
-    if x_height == 0 {
-        Ordering::Less
-    } else if y_height == 0 {
-        Ordering::Greater
-    } else {
-        y_height.cmp(&x_height)
     }
 }
 

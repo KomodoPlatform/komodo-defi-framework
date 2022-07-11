@@ -17,8 +17,6 @@ hex = "0.4.2"
 lazy_static = "1.4"
 secp256k1 = { version = "0.20", features = ["rand"] }
 log = "0.4.8"
-num-bigint = { version = "0.4", features = ["serde", "std"] }
-num-rational = { version = "0.4", features = ["serde"] }
 rand = { package = "rand", version = "0.7", features = ["std", "wasm-bindgen"] }
 regex = "1"
 rmp-serde = "0.14.3"

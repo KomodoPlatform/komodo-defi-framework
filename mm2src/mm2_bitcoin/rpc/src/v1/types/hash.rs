@@ -19,10 +19,12 @@ macro_rules! impl_hash {
             fn default() -> Self { $name([0; $size]) }
         }
 
+        impl fmt::Display for $name {
+            fn fmt(&self, f: &mut fmt::Formatter) -> Result<(), fmt::Error> { write!(f, "{:02x}", self) }
+        }
+
         impl fmt::Debug for $name {
-            fn fmt(&self, f: &mut fmt::Formatter) -> Result<(), fmt::Error> {
-                write!(f, "{}", $other::from(self.0.clone()).to_hex::<String>())
-            }
+            fn fmt(&self, f: &mut fmt::Formatter) -> Result<(), fmt::Error> { write!(f, "{:02x}", self) }
         }
 
         impl<T> From<T> for $name

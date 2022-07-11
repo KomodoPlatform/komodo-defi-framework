@@ -1,11 +1,11 @@
 use super::*;
 use crate::utxo::rpc_clients::UnspentInfo;
 use crate::TxFeeDetails;
-use bigdecimal::Zero;
 use chain::OutPoint;
 use common::{block_on, DEX_FEE_ADDR_RAW_PUBKEY};
 use itertools::Itertools;
 use mm2_core::mm_ctx::MmCtxBuilder;
+use mm2_number::bigdecimal::Zero;
 use mocktopus::mocking::{MockResult, Mockable};
 use rpc::v1::types::ToTxHash;
 use std::convert::TryFrom;
@@ -23,7 +23,6 @@ pub fn qrc20_coin_for_test(priv_key: &[u8], fallback_swap: Option<&str>) -> (MmA
         "pubtype":120,
         "p2shtype":110,
         "wiftype":128,
-        "segwit":true,
         "mm2":1,
         "mature_confirmations":2000,
         "dust":72800,
@@ -54,6 +53,36 @@ pub fn qrc20_coin_for_test(priv_key: &[u8], fallback_swap: Option<&str>) -> (MmA
 fn check_tx_fee(coin: &Qrc20Coin, expected_tx_fee: ActualTxFee) {
     let actual_tx_fee = block_on(coin.get_tx_fee()).unwrap();
     assert_eq!(actual_tx_fee, expected_tx_fee);
+}
+
+#[test]
+fn test_withdraw_to_p2sh_address_should_fail() {
+    let priv_key = [
+        3, 98, 177, 3, 108, 39, 234, 144, 131, 178, 103, 103, 127, 80, 230, 166, 53, 68, 147, 215, 42, 216, 144, 72,
+        172, 110, 180, 13, 123, 179, 10, 49,
+    ];
+    let (_, coin) = qrc20_coin_for_test(&priv_key, None);
+
+    let p2sh_address = Address {
+        prefix: coin.as_ref().conf.p2sh_addr_prefix,
+        hash: coin.as_ref().derivation_method.unwrap_iguana().hash.clone(),
+        t_addr_prefix: coin.as_ref().conf.p2sh_t_addr_prefix,
+        checksum_type: coin.as_ref().derivation_method.unwrap_iguana().checksum_type,
+        hrp: coin.as_ref().conf.bech32_hrp.clone(),
+        addr_format: UtxoAddressFormat::Standard,
+    };
+
+    let req = WithdrawRequest {
+        amount: 10.into(),
+        from: None,
+        to: p2sh_address.to_string(),
+        coin: "QRC20".into(),
+        max: false,
+        fee: None,
+    };
+    let err = coin.withdraw(req).wait().unwrap_err().into_inner();
+    let expect = WithdrawError::InvalidAddress("QRC20 can be sent to P2PKH addresses only".to_owned());
+    assert_eq!(err, expect);
 }
 
 #[test]
@@ -706,7 +735,6 @@ fn test_get_sender_trade_fee_preimage_for_correct_ticker() {
         "pubtype":120,
         "p2shtype":110,
         "wiftype":128,
-        "segwit":true,
         "mm2":1,
         "mature_confirmations":2000,
         "protocol": {
@@ -822,7 +850,6 @@ fn test_coin_from_conf_without_decimals() {
         "pubtype":120,
         "p2shtype":110,
         "wiftype":128,
-        "segwit":true,
         "mm2":1,
         "mature_confirmations":2000,
     });

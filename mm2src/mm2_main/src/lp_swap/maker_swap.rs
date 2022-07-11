@@ -18,13 +18,13 @@ use bitcrypto::dhash160;
 use coins::{CanRefundHtlc, FeeApproxStage, FoundSwapTxSpend, MmCoinEnum, SearchForSwapTxSpendInput, TradeFee,
             TradePreimageValue, TransactionEnum, ValidatePaymentInput};
 use common::log::{debug, error, info, warn};
-use common::mm_number::{BigDecimal, MmNumber};
 use common::{bits256, executor::Timer, now_ms, DEX_FEE_ADDR_RAW_PUBKEY};
 use crypto::privkey::SerializableSecp256k1Keypair;
 use futures::{compat::Future01CompatExt, select, FutureExt};
 use keys::KeyPair;
 use mm2_core::mm_ctx::MmArc;
 use mm2_err_handle::prelude::*;
+use mm2_number::{BigDecimal, MmNumber};
 use parking_lot::Mutex as PaMutex;
 use primitives::hash::{H160, H256, H264};
 use rand::Rng;

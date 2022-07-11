@@ -3,7 +3,7 @@
 /// The helper structs used in testing of RPC responses, these should be separated from actual MM2 code to ensure
 /// backwards compatibility
 /// Use `#[serde(deny_unknown_fields)]` for all structs for tests to fail in case of adding new fields to the response
-use common::mm_number::{BigDecimal, BigRational, Fraction, MmNumber};
+use mm2_number::{BigDecimal, BigRational, Fraction, MmNumber};
 use rpc::v1::types::H256 as H256Json;
 use serde_json::Value as Json;
 use std::collections::{HashMap, HashSet};
@@ -652,7 +652,7 @@ pub enum WithdrawStatus {
 }
 
 pub mod withdraw_error {
-    use common::mm_number::BigDecimal;
+    use mm2_number::BigDecimal;
 
     #[derive(Debug, Deserialize, PartialEq)]
     #[serde(deny_unknown_fields)]
@@ -671,7 +671,7 @@ pub mod withdraw_error {
 }
 
 pub mod trade_preimage_error {
-    use common::mm_number::BigDecimal;
+    use mm2_number::BigDecimal;
 
     #[derive(Debug, Deserialize, PartialEq)]
     #[serde(deny_unknown_fields)]

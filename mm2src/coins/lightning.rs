@@ -17,7 +17,6 @@ use crate::{BalanceFut, CoinBalance, FeeApproxStage, FoundSwapTxSpend, HistorySy
             ValidateAddressResult, ValidatePaymentInput, VerificationError, VerificationResult, WithdrawError,
             WithdrawFut, WithdrawRequest};
 use async_trait::async_trait;
-use bigdecimal::BigDecimal;
 use bitcoin::hashes::Hash;
 use bitcoin_hashes::sha256::Hash as Sha256;
 use bitcrypto::dhash256;
@@ -25,7 +24,6 @@ use bitcrypto::ChecksumType;
 use chain::TransactionOutput;
 use common::executor::spawn;
 use common::log::{LogOnError, LogState};
-use common::mm_number::MmNumber;
 use common::{async_blocking, calc_total_pages, log, now_ms, ten, PagingOptionsEnum};
 use futures::{FutureExt, TryFutureExt};
 use futures01::Future;
@@ -60,6 +58,7 @@ use ln_utils::{ChainMonitor, ChannelManager};
 use mm2_core::mm_ctx::MmArc;
 use mm2_err_handle::prelude::*;
 use mm2_net::ip_addr::myipaddr;
+use mm2_number::{BigDecimal, MmNumber};
 use parking_lot::Mutex as PaMutex;
 use rpc::v1::types::{Bytes as BytesJson, H256 as H256Json};
 use script::{Builder, TransactionInputSigner};
