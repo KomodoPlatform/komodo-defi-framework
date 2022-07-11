@@ -103,6 +103,70 @@ fn check_best_orders(
     assert_eq!(orders.len(), expected_num_orders);
 }
 
+fn check_best_orders_v2_by_number(
+    mm: &MarketMakerIt,
+    action: &str,
+    for_coin: &str,
+    ticker_in_response: &str,
+    expected_num_orders: usize,
+) {
+    log!("Get best orders for {}", for_coin);
+    let rc = block_on(mm.rpc(&json! ({
+        "userpass": mm.userpass,
+        "method": "best_orders",
+        "mmrpc": "2.0",
+        "params": {
+            "coin": for_coin,
+            "action": action,
+            "request_by": {
+                "type": "number",
+                "value": 1
+            }
+        }
+    })))
+    .unwrap();
+    assert!(rc.0.is_success(), "!best_orders: {}", rc.1);
+    let best_orders: RpcV2Response<BestOrdersV2Response> = json::from_str(&rc.1).unwrap();
+    let orders = best_orders
+        .result
+        .orders
+        .get(ticker_in_response)
+        .unwrap_or_else(|| panic!("No orders for ticker {}", ticker_in_response));
+    assert_eq!(orders.len(), expected_num_orders);
+}
+
+fn check_best_orders_v2_by_volume(
+    mm: &MarketMakerIt,
+    action: &str,
+    for_coin: &str,
+    ticker_in_response: &str,
+    expected_num_orders: usize,
+) {
+    log!("Get best orders for {}", for_coin);
+    let rc = block_on(mm.rpc(&json! ({
+        "userpass": mm.userpass,
+        "method": "best_orders",
+        "mmrpc": "2.0",
+        "params": {
+            "coin": for_coin,
+            "action": action,
+            "request_by": {
+                "type": "volume",
+                "value": 1
+            }
+        }
+    })))
+    .unwrap();
+    assert!(rc.0.is_success(), "!best_orders: {}", rc.1);
+    let best_orders: RpcV2Response<BestOrdersV2Response> = json::from_str(&rc.1).unwrap();
+    let orders = best_orders
+        .result
+        .orders
+        .get(ticker_in_response)
+        .unwrap_or_else(|| panic!("No orders for ticker {}", ticker_in_response));
+    assert_eq!(orders.len(), expected_num_orders);
+}
+
 #[test]
 fn test_ordermatch_custom_orderbook_ticker_both_on_maker() {
     let (_ctx, _, bob_priv_key) = generate_utxo_coin_with_random_privkey("MYCOIN", 1000.into());
@@ -177,6 +241,16 @@ fn test_ordermatch_custom_orderbook_ticker_both_on_maker() {
     check_best_orders(&mm_alice, "sell", "MYCOIN1-Custom", "MYCOIN", 1);
     check_best_orders(&mm_alice, "buy", "MYCOIN", "MYCOIN1", 1);
     check_best_orders(&mm_alice, "buy", "MYCOIN-Custom", "MYCOIN1", 1);
+
+    check_best_orders_v2_by_volume(&mm_alice, "sell", "MYCOIN1", "MYCOIN", 1);
+    check_best_orders_v2_by_volume(&mm_alice, "sell", "MYCOIN1-Custom", "MYCOIN", 1);
+    check_best_orders_v2_by_volume(&mm_alice, "buy", "MYCOIN", "MYCOIN1", 1);
+    check_best_orders_v2_by_volume(&mm_alice, "buy", "MYCOIN-Custom", "MYCOIN1", 1);
+
+    check_best_orders_v2_by_number(&mm_alice, "sell", "MYCOIN1", "MYCOIN", 1);
+    check_best_orders_v2_by_number(&mm_alice, "sell", "MYCOIN1-Custom", "MYCOIN", 1);
+    check_best_orders_v2_by_number(&mm_alice, "buy", "MYCOIN", "MYCOIN1", 1);
+    check_best_orders_v2_by_number(&mm_alice, "buy", "MYCOIN-Custom", "MYCOIN1", 1);
 
     check_orderbook_depth(
         &mm_alice,
@@ -296,6 +370,16 @@ fn test_ordermatch_custom_orderbook_ticker_both_on_taker() {
     check_best_orders(&mm_alice, "sell", "MYCOIN1-Custom", "MYCOIN", 1);
     check_best_orders(&mm_alice, "buy", "MYCOIN", "MYCOIN1", 1);
     check_best_orders(&mm_alice, "buy", "MYCOIN-Custom", "MYCOIN1", 1);
+
+    check_best_orders_v2_by_volume(&mm_alice, "sell", "MYCOIN1", "MYCOIN", 1);
+    check_best_orders_v2_by_volume(&mm_alice, "sell", "MYCOIN1-Custom", "MYCOIN", 1);
+    check_best_orders_v2_by_volume(&mm_alice, "buy", "MYCOIN", "MYCOIN1", 1);
+    check_best_orders_v2_by_volume(&mm_alice, "buy", "MYCOIN-Custom", "MYCOIN1", 1);
+
+    check_best_orders_v2_by_number(&mm_alice, "sell", "MYCOIN1", "MYCOIN", 1);
+    check_best_orders_v2_by_number(&mm_alice, "sell", "MYCOIN1-Custom", "MYCOIN", 1);
+    check_best_orders_v2_by_number(&mm_alice, "buy", "MYCOIN", "MYCOIN1", 1);
+    check_best_orders_v2_by_number(&mm_alice, "buy", "MYCOIN-Custom", "MYCOIN1", 1);
 
     check_orderbook_depth(
         &mm_alice,
@@ -424,6 +508,16 @@ fn test_ordermatch_custom_orderbook_ticker_mixed_case_one() {
     check_best_orders(&mm_alice, "sell", "MYCOIN1-Custom", "MYCOIN", 1);
     check_best_orders(&mm_alice, "buy", "MYCOIN", "MYCOIN1", 1);
     check_best_orders(&mm_alice, "buy", "MYCOIN-Custom", "MYCOIN1", 1);
+
+    check_best_orders_v2_by_volume(&mm_alice, "sell", "MYCOIN1", "MYCOIN", 1);
+    check_best_orders_v2_by_volume(&mm_alice, "sell", "MYCOIN1-Custom", "MYCOIN", 1);
+    check_best_orders_v2_by_volume(&mm_alice, "buy", "MYCOIN", "MYCOIN1", 1);
+    check_best_orders_v2_by_volume(&mm_alice, "buy", "MYCOIN-Custom", "MYCOIN1", 1);
+
+    check_best_orders_v2_by_number(&mm_alice, "sell", "MYCOIN1", "MYCOIN", 1);
+    check_best_orders_v2_by_number(&mm_alice, "sell", "MYCOIN1-Custom", "MYCOIN", 1);
+    check_best_orders_v2_by_number(&mm_alice, "buy", "MYCOIN", "MYCOIN1", 1);
+    check_best_orders_v2_by_number(&mm_alice, "buy", "MYCOIN-Custom", "MYCOIN1", 1);
 
     check_orderbook_depth(
         &mm_alice,
@@ -555,6 +649,16 @@ fn test_ordermatch_custom_orderbook_ticker_mixed_case_two() {
     check_best_orders(&mm_alice, "sell", "MYCOIN1-Custom", "MYCOIN", 1);
     check_best_orders(&mm_alice, "buy", "MYCOIN", "MYCOIN1", 1);
     check_best_orders(&mm_alice, "buy", "MYCOIN-Custom", "MYCOIN1", 1);
+
+    check_best_orders_v2_by_volume(&mm_alice, "sell", "MYCOIN1", "MYCOIN", 1);
+    check_best_orders_v2_by_volume(&mm_alice, "sell", "MYCOIN1-Custom", "MYCOIN", 1);
+    check_best_orders_v2_by_volume(&mm_alice, "buy", "MYCOIN", "MYCOIN1", 1);
+    check_best_orders_v2_by_volume(&mm_alice, "buy", "MYCOIN-Custom", "MYCOIN1", 1);
+
+    check_best_orders_v2_by_number(&mm_alice, "sell", "MYCOIN1", "MYCOIN", 1);
+    check_best_orders_v2_by_number(&mm_alice, "sell", "MYCOIN1-Custom", "MYCOIN", 1);
+    check_best_orders_v2_by_number(&mm_alice, "buy", "MYCOIN", "MYCOIN1", 1);
+    check_best_orders_v2_by_number(&mm_alice, "buy", "MYCOIN-Custom", "MYCOIN1", 1);
 
     check_orderbook_depth(
         &mm_alice,

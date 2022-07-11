@@ -6,22 +6,22 @@ edition = "2018"
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [dependencies]
-serde = "1"
-serde_json = { version = "1.0", features = ["preserve_order", "raw_value"] }
-bigdecimal = { version = "0.3", features = ["serde"] }
-db_common = { path = "../db_common" }
-http = "0.2"
-uuid = { version = "0.7", features = ["serde", "v4"] }
-lazy_static = "1.4"
+bytes = "1.1"
+cfg-if = "1.0"
 common = { path = "../common" }
+db_common = { path = "../db_common" }
+futures = { version = "0.3", package = "futures", features = ["compat", "async-await", "thread-pool"] }
+http = "0.2"
+lazy_static = "1.4"
+mm2_core = { path = "../mm2_core" }
 mm2_io = { path = "../mm2_io" }
 mm2_net = { path = "../mm2_net" }
-mm2_core = { path = "../mm2_core" }
-cfg-if = "1.0"
+mm2_number = { path = "../mm2_number" }
 rand = { version = "0.7", features = ["std", "small_rng", "wasm-bindgen"] }
 regex = "1"
-futures = { version = "0.3", package = "futures", features = ["compat", "async-await", "thread-pool"] }
-bytes = "1.1"
+serde = "1"
+serde_json = { version = "1.0", features = ["preserve_order", "raw_value"] }
+uuid = { version = "0.7", features = ["serde", "v4"] }
 
 [target.'cfg(target_arch = "wasm32")'.dependencies]
 chrono = { version = "0.4", features = ["wasmbind"] }

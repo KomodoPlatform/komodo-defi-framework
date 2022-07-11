@@ -12,11 +12,11 @@ use coins::{CoinBalance, CoinProtocol, MarketCoinOps, MmCoin, PrivKeyNotAllowed,
 use common::executor::spawn;
 use common::log::info;
 use common::mm_metrics::MetricsArc;
-use common::mm_number::BigDecimal;
 use common::Future01CompatExt;
 use futures::future::{abortable, AbortHandle};
 use mm2_core::mm_ctx::MmArc;
 use mm2_err_handle::prelude::*;
+use mm2_number::BigDecimal;
 use serde_derive::{Deserialize, Serialize};
 use serde_json::Value as Json;
 use std::collections::HashMap;

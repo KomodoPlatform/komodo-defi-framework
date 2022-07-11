@@ -24,7 +24,6 @@ use bitcrypto::dhash160;
 use chain::constants::SEQUENCE_FINAL;
 use chain::{OutPoint, TransactionOutput};
 use common::log::warn;
-use common::mm_number::{BigDecimal, MmNumber};
 use common::now_ms;
 use derive_more::Display;
 use futures::compat::Future01CompatExt;
@@ -36,6 +35,7 @@ use keys::{AddressHashEnum, CashAddrType, CashAddress, CompactSignature, KeyPair
            Public};
 use mm2_core::mm_ctx::MmArc;
 use mm2_err_handle::prelude::*;
+use mm2_number::{BigDecimal, MmNumber};
 use primitives::hash::H256;
 use rpc::v1::types::{Bytes as BytesJson, ToTxHash, H256 as H256Json};
 use script::bytes::Bytes;
