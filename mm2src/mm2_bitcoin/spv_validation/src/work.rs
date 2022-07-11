@@ -1,8 +1,6 @@
-use crate::storage::BlockHeaderStorageOps;
+use crate::storage::{BlockHeaderStorageError, BlockHeaderStorageOps};
 use chain::{BlockHeader, BlockHeaderBits};
 use derive_more::Display;
-use keys::Network;
-use lazy_static::lazy_static;
 use primitives::compact::Compact;
 use primitives::U256;
 use std::cmp;
@@ -18,28 +16,54 @@ const RETARGETING_INTERVAL: u32 = TARGET_TIMESPAN_SECONDS / TARGET_SPACING_SECON
 const MIN_TIMESPAN: u32 = TARGET_TIMESPAN_SECONDS / RETARGETING_FACTOR;
 const MAX_TIMESPAN: u32 = TARGET_TIMESPAN_SECONDS * RETARGETING_FACTOR;
 
-lazy_static! {
-    static ref MAX_BITS_MAINNET: U256 = "00000000ffffffffffffffffffffffffffffffffffffffffffffffffffffffff"
-        .parse()
-        .expect("hardcoded value should parse without errors");
-}
+/// The maximum value for bits corresponding to lowest difficulty of 1
+pub const MAX_BITS_BTC: u32 = 486604799;
 
 fn is_retarget_height(height: u32) -> bool { height % RETARGETING_INTERVAL == 0 }
 
 #[derive(Debug, Display)]
 pub enum NextBlockBitsError {
-    #[display(fmt = "Can't calculate next block bits for Network {:?}", _0)]
-    UnsupportedNetwork(Network),
+    #[display(fmt = "Block headers storage error: {}", _0)]
+    StorageError(BlockHeaderStorageError),
+    #[display(fmt = "Can't find Block header for {} with height {}", height, coin)]
+    NoSuchBlockHeader {
+        coin: String,
+        height: u32,
+    },
     Internal(String),
 }
 
-// todo: complete this code
-fn next_block_bits(network: Network) -> Result<BlockHeaderBits, NextBlockBitsError> {
-    match network {
-        Network::Mainnet => unimplemented!(),
-        Network::Testnet => unimplemented!(),
-        // todo: add extensive???
-        network => Err(NextBlockBitsError::UnsupportedNetwork(network)),
+impl From<BlockHeaderStorageError> for NextBlockBitsError {
+    fn from(e: BlockHeaderStorageError) -> Self { NextBlockBitsError::StorageError(e) }
+}
+
+pub enum DifficultyAlgorithm {
+    BitcoinMainnet,
+    BitcoinTestnet,
+}
+
+pub async fn next_block_bits(
+    coin: &str,
+    current_block_timestamp: u32,
+    last_block_header: BlockHeader,
+    last_block_height: u32,
+    storage: &dyn BlockHeaderStorageOps,
+    algorithm: DifficultyAlgorithm,
+) -> Result<BlockHeaderBits, NextBlockBitsError> {
+    match algorithm {
+        DifficultyAlgorithm::BitcoinMainnet => {
+            btc_mainnet_next_block_bits(coin, last_block_header, last_block_height, storage).await
+        },
+        DifficultyAlgorithm::BitcoinTestnet => {
+            btc_testnet_next_block_bits(
+                coin,
+                current_block_timestamp,
+                last_block_header,
+                last_block_height,
+                storage,
+            )
+            .await
+        },
     }
 }
 
@@ -53,53 +77,103 @@ fn retarget_timespan(retarget_timestamp: u32, last_timestamp: u32) -> u32 {
     range_constrain(timespan, MIN_TIMESPAN as i64, MAX_TIMESPAN as i64) as u32
 }
 
-pub async fn btc_mainnet_next_block_bits(
+async fn btc_retarget_bits(
+    coin: &str,
+    height: u32,
+    last_block_header: BlockHeader,
+    storage: &dyn BlockHeaderStorageOps,
+) -> Result<BlockHeaderBits, NextBlockBitsError> {
+    let retarget_ref = (height - RETARGETING_INTERVAL).into();
+    let retarget_header =
+        storage
+            .get_block_header(coin, retarget_ref)
+            .await?
+            .ok_or(NextBlockBitsError::NoSuchBlockHeader {
+                coin: coin.into(),
+                height,
+            })?;
+    // timestamp of block(height - RETARGETING_INTERVAL)
+    let retarget_timestamp = retarget_header.time;
+    // timestamp of last block
+    let last_timestamp = last_block_header.time;
+
+    let retarget: Compact = last_block_header.bits.into();
+    let retarget: U256 = retarget.into();
+    let retarget_timespan: U256 = retarget_timespan(retarget_timestamp, last_timestamp).into();
+    let retarget: U256 = retarget * retarget_timespan;
+    let target_timespan_seconds: U256 = TARGET_TIMESPAN_SECONDS.into();
+    let retarget = retarget / target_timespan_seconds;
+
+    let max_bits_compact: Compact = MAX_BITS_BTC.into();
+    let max_bits: U256 = max_bits_compact.into();
+
+    if retarget > max_bits {
+        Ok(BlockHeaderBits::Compact(max_bits_compact))
+    } else {
+        Ok(BlockHeaderBits::Compact(retarget.into()))
+    }
+}
+
+async fn btc_mainnet_next_block_bits(
+    coin: &str,
     last_block_header: BlockHeader,
     last_block_height: u32,
-    store: &dyn BlockHeaderStorageOps,
+    storage: &dyn BlockHeaderStorageOps,
 ) -> Result<BlockHeaderBits, NextBlockBitsError> {
     if last_block_height == 0 {
         return Err(NextBlockBitsError::Internal("Last block height can't be zero".into()));
     }
 
     let height = last_block_height + 1;
+    let last_block_bits = last_block_header.bits.clone();
 
-    if height % RETARGETING_INTERVAL == 0 {
-        let retarget_ref = (height - RETARGETING_INTERVAL).into();
-        // todo: remove hardcoded "BTC"
-        let retarget_header = store.get_block_header("BTC", retarget_ref).await.unwrap().unwrap();
-        // timestamp of block(height - RETARGETING_INTERVAL)
-        let retarget_timestamp = retarget_header.time;
-        // timestamp of current block
-        let last_timestamp = last_block_header.time;
-
-        let retarget: Compact = last_block_header.bits.into();
-        let retarget: U256 = retarget.into();
-        let retarget_timespan: U256 = retarget_timespan(retarget_timestamp, last_timestamp).into();
-        let retarget: U256 = retarget * retarget_timespan;
-        let target_timespan_seconds: U256 = TARGET_TIMESPAN_SECONDS.into();
-        let retarget = retarget / target_timespan_seconds;
-
-        let maximum = *MAX_BITS_MAINNET;
-
-        if retarget > maximum {
-            Ok(BlockHeaderBits::Compact(maximum.into()))
-        } else {
-            Ok(BlockHeaderBits::Compact(retarget.into()))
-        }
+    if is_retarget_height(height) {
+        btc_retarget_bits(coin, height, last_block_header, storage).await
     } else {
-        Ok(last_block_header.bits)
+        Ok(last_block_bits)
+    }
+}
+
+async fn btc_testnet_next_block_bits(
+    coin: &str,
+    current_block_timestamp: u32,
+    last_block_header: BlockHeader,
+    last_block_height: u32,
+    storage: &dyn BlockHeaderStorageOps,
+) -> Result<BlockHeaderBits, NextBlockBitsError> {
+    if last_block_height == 0 {
+        return Err(NextBlockBitsError::Internal("Last block height can't be zero".into()));
+    }
+
+    let height = last_block_height + 1;
+    let last_block_bits = last_block_header.bits.clone();
+    let max_time_gap = last_block_header.time + 2 * TARGET_SPACING_SECONDS;
+    let max_bits = BlockHeaderBits::Compact(MAX_BITS_BTC.into());
+
+    if is_retarget_height(height) {
+        btc_retarget_bits(coin, height, last_block_header, storage).await
+    } else if current_block_timestamp > max_time_gap {
+        Ok(max_bits)
+    } else if last_block_bits != max_bits {
+        Ok(last_block_bits.clone())
+    } else {
+        let last_block_header_with_non_max_bits = storage.get_last_block_header_with_non_max_bits(coin).await?.ok_or(
+            NextBlockBitsError::NoSuchBlockHeader {
+                coin: coin.into(),
+                height,
+            },
+        )?;
+        Ok(last_block_header_with_non_max_bits.bits)
     }
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
-    use async_trait::async_trait;
-    use std::collections::HashMap;
-    // todo: remove common from cargo.toml
     use crate::storage::{BlockHeaderStorageError, BlockHeaderStorageOps};
+    use async_trait::async_trait;
     use common::block_on;
+    use std::collections::HashMap;
 
     struct TestBlockHeadersStorage {}
 
@@ -119,17 +193,22 @@ mod tests {
 
         async fn get_block_header(
             &self,
-            _for_coin: &str,
+            for_coin: &str,
             height: u64,
         ) -> Result<Option<BlockHeader>, BlockHeaderStorageError> {
             // https://live.blockcypher.com/btc/block/00000000a141216a896c54f211301c436e557a8d55900637bbdce14c6c7bddef/
-            if height == 2016 {
+            if for_coin == "BTC" && height == 2016 {
                 return Ok(Some("010000006397bb6abd4fc521c0d3f6071b5650389f0b4551bc40b4e6b067306900000000ace470aecda9c8818c8fe57688cd2a772b5a57954a00df0420a7dd546b6d2c576b0e7f49ffff001d33f0192f".into()));
             }
 
             // https://live.blockcypher.com/btc/block/00000000000000000012145f8ffa7218d2d04ca66b61835a2a5eaec33dffc098/
-            if height == 604800 {
+            if for_coin == "BTC" && height == 604800 {
                 return Ok(Some("000000208e244d2c55bc403caa5d6eaf0f922170e413eb1e02fb02000000000000000000e03b4d9df72d8db232a20bb2ff35c433a99f1467f391f75b5f62180d96f06d6aa4c4d65d3eb215179ef91633".into()));
+            }
+
+            // https://live.blockcypher.com/btc-testnet/block/000000000000bbde3a83bd29bc5cacd73f039f345318e7a4088914342c9d259a/
+            if for_coin == "tBTC" && height == 199584 {
+                return Ok(Some("0200000097f2b61897ba2bed756cca30058bcc1c2dfbb4ed0e962f47f749dc03000000006b80079a1eda8071424e294fa56849370e331c8ff7e95034576c9789c8db0fa6da551153ab80011c9bdaca25".into()));
             }
 
             Ok(None)
@@ -142,6 +221,18 @@ mod tests {
         ) -> Result<Option<String>, BlockHeaderStorageError> {
             Ok(None)
         }
+
+        async fn get_last_block_header_with_non_max_bits(
+            &self,
+            for_coin: &str,
+        ) -> Result<Option<BlockHeader>, BlockHeaderStorageError> {
+            // https://live.blockcypher.com/btc-testnet/block/0000000000ad144538e6c80289378ba14cebb50ee47538b2a120742d1aa601ea/
+            if for_coin == "tBTC_last_block_header_with_non_max_bits" {
+                return Ok(Some("02000000cbed7fd98f1f06e85c47e13ff956533642056be45e7e6b532d4d768f00000000f2680982f333fcc9afa7f9a5e2a84dc54b7fe10605cd187362980b3aa882e9683be21353ab80011c813e1fc0".into()));
+            }
+
+            Ok(None)
+        }
     }
 
     #[test]
@@ -150,14 +241,14 @@ mod tests {
 
         let last_header: BlockHeader = "000000201d758432ecd495a2177b44d3fe6c22af183461a0b9ea0d0000000000000000008283a1dfa795d9b68bd8c18601e443368265072cbf8c76bfe58de46edd303798035de95d3eb2151756fdb0e8".into();
 
-        let next_block_bits = block_on(btc_mainnet_next_block_bits(last_header, 606815, &storage)).unwrap();
+        let next_block_bits = block_on(btc_mainnet_next_block_bits("BTC", last_header, 606815, &storage)).unwrap();
 
         assert_eq!(next_block_bits, BlockHeaderBits::Compact(387308498.into()));
 
         // check that bits for very early blocks that didn't change difficulty because of low hashrate is calculated correctly.
         let last_header: BlockHeader = "010000000d9c8c96715756b619116cc2160937fb26c655a2f8e28e3a0aff59c0000000007676252e8434de408ea31920d986aba297bd6f7c6f20756be08748713f7c135962719449ffff001df8c1cb01".into();
 
-        let next_block_bits = block_on(btc_mainnet_next_block_bits(last_header, 4031, &storage)).unwrap();
+        let next_block_bits = block_on(btc_mainnet_next_block_bits("BTC", last_header, 4031, &storage)).unwrap();
 
         assert_eq!(next_block_bits, BlockHeaderBits::Compact(486604799.into()));
 
@@ -165,8 +256,63 @@ mod tests {
         // https://live.blockcypher.com/btc/block/00000000000000000002622f52b6afe70a5bb139c788e67f221ffc67a762a1e0/
         let last_header: BlockHeader = "00e0ff2f44d953fe12a047129bbc7164668c6d96f3e7a553528b02000000000000000000d0b950384cd23ab0854d1c8f23fa7a97411a6ffd92347c0a3aea4466621e4093ec09c762afa7091705dad220".into();
 
-        let next_block_bits = block_on(btc_mainnet_next_block_bits(last_header, 744014, &storage)).unwrap();
+        let next_block_bits = block_on(btc_mainnet_next_block_bits("BTC", last_header, 744014, &storage)).unwrap();
 
         assert_eq!(next_block_bits, BlockHeaderBits::Compact(386508719.into()));
+    }
+
+    #[test]
+    fn test_btc_testnet_next_block_bits() {
+        let storage = TestBlockHeadersStorage {};
+
+        // https://live.blockcypher.com/btc-testnet/block/000000000057db3806384e2ec1b02b2c86bd928206ff8dff98f54d616b7fa5f2/
+        let current_header: BlockHeader = "02000000303505969a1df329e5fccdf69b847a201772e116e557eb7f119d1a9600000000469267f52f43b8799e72f0726ba2e56432059a8ad02b84d4fff84b9476e95f7716e41353ab80011c168cb471".into();
+        // https://live.blockcypher.com/btc-testnet/block/00000000961a9d117feb57e516e17217207a849bf6cdfce529f31d9a96053530/
+        let last_header: BlockHeader = "02000000ea01a61a2d7420a1b23875e40eb5eb4ca18b378902c8e6384514ad0000000000c0c5a1ae80582b3fe319d8543307fa67befc2a734b8eddb84b1780dfdf11fa2b20e71353ffff001d00805fe0".into();
+
+        let next_block_bits = block_on(btc_testnet_next_block_bits(
+            "tBTC_last_block_header_with_non_max_bits",
+            current_header.time,
+            last_header,
+            201595,
+            &storage,
+        ))
+        .unwrap();
+
+        assert_eq!(next_block_bits, BlockHeaderBits::Compact(469860523.into()));
+
+        // https://live.blockcypher.com/btc-testnet/block/00000000961a9d117feb57e516e17217207a849bf6cdfce529f31d9a96053530/
+        let current_header: BlockHeader = "02000000ea01a61a2d7420a1b23875e40eb5eb4ca18b378902c8e6384514ad0000000000c0c5a1ae80582b3fe319d8543307fa67befc2a734b8eddb84b1780dfdf11fa2b20e71353ffff001d00805fe0".into();
+        // https://live.blockcypher.com/btc-testnet/block/0000000000ad144538e6c80289378ba14cebb50ee47538b2a120742d1aa601ea/
+        let last_header: BlockHeader = "02000000cbed7fd98f1f06e85c47e13ff956533642056be45e7e6b532d4d768f00000000f2680982f333fcc9afa7f9a5e2a84dc54b7fe10605cd187362980b3aa882e9683be21353ab80011c813e1fc0".into();
+
+        let next_block_bits = block_on(btc_testnet_next_block_bits(
+            "tBTC_max_time_gap",
+            current_header.time,
+            last_header,
+            201594,
+            &storage,
+        ))
+        .unwrap();
+
+        assert_eq!(next_block_bits, BlockHeaderBits::Compact(486604799.into()));
+
+        // test testnet retarget bits
+
+        // https://live.blockcypher.com/btc-testnet/block/0000000000376bb71314321c45de3015fe958543afcbada242a3b1b072498e38/
+        let current_header: BlockHeader = "02000000ee689e4dcdc3c7dac591b98e1e4dc83aae03ff9fb9d469d704a64c0100000000bfffaded2a67821eb5729b362d613747e898d08d6c83b5704646c26c13146f4c6de91353c02a601b3a817f87".into();
+        // https://live.blockcypher.com/btc-testnet/block/00000000014ca604d769d4b99fff03ae3ac84d1e8eb991c5dac7c3cd4d9e68ee/
+        let last_header: BlockHeader = "02000000a9dccfcf372d6ce6ae784786ea94d20ce174e093520d779348e5a9000000000077c037863a0134ac05a8c19d258d6c03c225043a08687c90813e8352a144d68035e81353ab80011ca71f3849".into();
+
+        let next_block_bits = block_on(btc_testnet_next_block_bits(
+            "tBTC",
+            current_header.time,
+            last_header,
+            201599,
+            &storage,
+        ))
+        .unwrap();
+
+        assert_eq!(next_block_bits, BlockHeaderBits::Compact(459287232.into()));
     }
 }

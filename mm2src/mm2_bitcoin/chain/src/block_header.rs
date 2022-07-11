@@ -7,6 +7,7 @@ use hex::FromHex;
 use primitives::bytes::Bytes;
 use primitives::U256;
 use ser::{deserialize, serialize, Deserializable, Reader, Serializable, Stream};
+use std::convert::TryFrom;
 use std::io;
 use transaction::{deserialize_tx, TxType};
 use {OutPoint, Transaction};
@@ -321,6 +322,16 @@ impl BlockHeader {
 
 impl From<&'static str> for BlockHeader {
     fn from(s: &'static str) -> Self { deserialize(&s.from_hex::<Vec<u8>>().unwrap() as &[u8]).unwrap() }
+}
+
+impl TryFrom<String> for BlockHeader {
+    type Error = ser::Error;
+    fn try_from(s: String) -> Result<Self, Self::Error> {
+        deserialize(
+            &s.from_hex::<Vec<u8>>()
+                .map_err(|e| Self::Error::Custom(e.to_string()))? as &[u8],
+        )
+    }
 }
 
 impl From<BlockHeader> for ExtBlockHeader {

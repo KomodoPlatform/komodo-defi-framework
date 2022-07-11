@@ -80,4 +80,11 @@ impl BlockHeaderStorageOps for BlockHeaderStorage {
     ) -> Result<Option<String>, BlockHeaderStorageError> {
         self.inner.get_block_header_raw(for_coin, height).await
     }
+
+    async fn get_last_block_header_with_non_max_bits(
+        &self,
+        for_coin: &str,
+    ) -> Result<Option<BlockHeader>, BlockHeaderStorageError> {
+        self.inner.get_last_block_header_with_non_max_bits(for_coin).await
+    }
 }

@@ -67,4 +67,9 @@ pub trait BlockHeaderStorageOps: Send + Sync + 'static {
         for_coin: &str,
         height: u64,
     ) -> Result<Option<String>, BlockHeaderStorageError>;
+
+    async fn get_last_block_header_with_non_max_bits(
+        &self,
+        for_coin: &str,
+    ) -> Result<Option<BlockHeader>, BlockHeaderStorageError>;
 }

@@ -9,7 +9,6 @@ async-trait = "0.1"
 chain = {path = "../chain"}
 derive_more = "0.99"
 keys = {path = "../keys"}
-lazy_static = "1.4"
 primitives = { path = "../primitives" }
 ripemd160 = "0.9.0"
 rustc-hex = "2"

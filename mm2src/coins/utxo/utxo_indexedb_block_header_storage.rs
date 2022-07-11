@@ -35,4 +35,11 @@ impl BlockHeaderStorageOps for IndexedDBBlockHeadersStorage {
     ) -> Result<Option<String>, BlockHeaderStorageError> {
         Ok(None)
     }
+
+    async fn get_last_block_header_with_non_max_bits(
+        &self,
+        _for_coin: &str,
+    ) -> Result<Option<BlockHeader>, BlockHeaderStorageError> {
+        Ok(None)
+    }
 }

@@ -1,7 +1,6 @@
 extern crate chain;
 extern crate derive_more;
 extern crate keys;
-extern crate lazy_static;
 extern crate primitives;
 extern crate ripemd160;
 extern crate rustc_hex as hex;
@@ -19,9 +18,7 @@ pub mod spv_proof;
 pub mod storage;
 
 /// `work` Contains functions that can be used to calculate proof of work difficulty, target, bits, etc...
-// todo: remove #[allow(dead_code)] when work is used
-#[allow(dead_code)]
-mod work;
+pub mod work;
 
 #[cfg(test)]
 pub(crate) mod test_utils {

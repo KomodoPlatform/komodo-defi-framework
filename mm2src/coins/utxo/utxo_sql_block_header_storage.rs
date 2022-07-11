@@ -1,4 +1,3 @@
-use crate::utxo::rpc_clients::ElectrumBlockHeader;
 use async_trait::async_trait;
 use chain::BlockHeader;
 use common::async_blocking;
@@ -7,9 +6,10 @@ use db_common::{sqlite::rusqlite::Error as SqlError,
                 sqlite::string_from_row,
                 sqlite::validate_table_name,
                 sqlite::CHECK_TABLE_EXISTS_SQL};
-use serialization::deserialize;
 use spv_validation::storage::{BlockHeaderStorageError, BlockHeaderStorageOps};
+use spv_validation::work::MAX_BITS_BTC;
 use std::collections::HashMap;
+use std::convert::TryInto;
 use std::sync::{Arc, Mutex};
 
 fn block_headers_cache_table(ticker: &str) -> String { ticker.to_owned() + "_block_headers_cache" }
@@ -28,7 +28,8 @@ fn create_block_header_cache_table_sql(for_coin: &str) -> Result<String, BlockHe
     let sql = format!(
         "CREATE TABLE IF NOT EXISTS {} (
             block_height INTEGER NOT NULL UNIQUE,
-            hex TEXT NOT NULL
+            hex TEXT NOT NULL,
+            block_bits INTEGER NOT NULL
         );",
         table_name
     );
@@ -40,7 +41,7 @@ fn insert_block_header_in_cache_sql(for_coin: &str) -> Result<String, BlockHeade
     let table_name = get_table_name_and_validate(for_coin)?;
     // Always update the block headers with new values just in case a chain reorganization occurs.
     let sql = format!(
-        "INSERT OR REPLACE INTO {} (block_height, hex) VALUES (?1, ?2);",
+        "INSERT OR REPLACE INTO {} (block_height, hex, block_bits) VALUES (?1, ?2, ?3);",
         table_name
     );
     Ok(sql)
@@ -49,6 +50,16 @@ fn insert_block_header_in_cache_sql(for_coin: &str) -> Result<String, BlockHeade
 fn get_block_header_by_height(for_coin: &str) -> Result<String, BlockHeaderStorageError> {
     let table_name = get_table_name_and_validate(for_coin)?;
     let sql = format!("SELECT hex FROM {} WHERE block_height=?1;", table_name);
+
+    Ok(sql)
+}
+
+fn get_last_block_header_with_non_max_bits_sql(for_coin: &str) -> Result<String, BlockHeaderStorageError> {
+    let table_name = get_table_name_and_validate(for_coin)?;
+    let sql = format!(
+        "SELECT hex FROM {} WHERE block_bits<>{} ORDER BY block_height DESC LIMIT 1;",
+        table_name, MAX_BITS_BTC
+    );
 
     Ok(sql)
 }
@@ -71,64 +82,6 @@ where
         query: query.to_string(),
         reason: e.to_string(),
     })
-}
-
-struct SqlBlockHeader {
-    block_height: String,
-    block_hex: String,
-}
-
-impl From<ElectrumBlockHeader> for SqlBlockHeader {
-    fn from(header: ElectrumBlockHeader) -> Self {
-        match header {
-            ElectrumBlockHeader::V12(h) => {
-                let block_hex = h.as_hex();
-                let block_height = h.block_height.to_string();
-                SqlBlockHeader {
-                    block_height,
-                    block_hex,
-                }
-            },
-            ElectrumBlockHeader::V14(h) => {
-                let block_hex = format!("{:02x}", h.hex);
-                let block_height = h.height.to_string();
-                SqlBlockHeader {
-                    block_height,
-                    block_hex,
-                }
-            },
-        }
-    }
-}
-async fn common_headers_insert(
-    for_coin: &str,
-    storage: SqliteBlockHeadersStorage,
-    headers: Vec<SqlBlockHeader>,
-) -> Result<(), BlockHeaderStorageError> {
-    let for_coin = for_coin.to_owned();
-    let mut conn = storage.0.lock().unwrap();
-    let sql_transaction = conn
-        .transaction()
-        .map_err(|e| BlockHeaderStorageError::AddToStorageError {
-            coin: for_coin.to_string(),
-            reason: e.to_string(),
-        })?;
-    for header in headers {
-        let block_cache_params = [&header.block_height, &header.block_hex];
-        sql_transaction
-            .execute(&insert_block_header_in_cache_sql(&for_coin)?, block_cache_params)
-            .map_err(|e| BlockHeaderStorageError::AddToStorageError {
-                coin: for_coin.to_string(),
-                reason: e.to_string(),
-            })?;
-    }
-    sql_transaction
-        .commit()
-        .map_err(|e| BlockHeaderStorageError::AddToStorageError {
-            coin: for_coin.to_string(),
-            reason: e.to_string(),
-        })?;
-    Ok(())
 }
 
 #[async_trait]
@@ -171,14 +124,39 @@ impl BlockHeaderStorageOps for SqliteBlockHeadersStorage {
         for_coin: &str,
         headers: HashMap<u64, BlockHeader>,
     ) -> Result<(), BlockHeaderStorageError> {
-        let headers_for_sql = headers
-            .into_iter()
-            .map(|(height, header)| SqlBlockHeader {
-                block_height: height.to_string(),
-                block_hex: hex::encode(header.raw()),
-            })
-            .collect();
-        common_headers_insert(for_coin, self.clone(), headers_for_sql).await
+        let for_coin = for_coin.to_owned();
+        let selfi = self.clone();
+        async_blocking(move || {
+            let mut conn = selfi.0.lock().unwrap();
+            let sql_transaction = conn
+                .transaction()
+                .map_err(|e| BlockHeaderStorageError::AddToStorageError {
+                    coin: for_coin.to_string(),
+                    reason: e.to_string(),
+                })?;
+
+            for (height, header) in headers {
+                // todo: use u64 straight away after updating rusqlite
+                let height = height as u32;
+                let raw_header = hex::encode(header.raw());
+                let bits: u32 = header.bits.into();
+                let block_cache_params = [&height as &dyn ToSql, &raw_header as &dyn ToSql, &bits as &dyn ToSql];
+                sql_transaction
+                    .execute(&insert_block_header_in_cache_sql(&for_coin)?, block_cache_params)
+                    .map_err(|e| BlockHeaderStorageError::AddToStorageError {
+                        coin: for_coin.to_string(),
+                        reason: e.to_string(),
+                    })?;
+            }
+            sql_transaction
+                .commit()
+                .map_err(|e| BlockHeaderStorageError::AddToStorageError {
+                    coin: for_coin.to_string(),
+                    reason: e.to_string(),
+                })?;
+            Ok(())
+        })
+        .await
     }
 
     async fn get_block_header(
@@ -187,15 +165,13 @@ impl BlockHeaderStorageOps for SqliteBlockHeadersStorage {
         height: u64,
     ) -> Result<Option<BlockHeader>, BlockHeaderStorageError> {
         if let Some(header_raw) = self.get_block_header_raw(for_coin, height).await? {
-            let header_bytes = hex::decode(header_raw).map_err(|e| BlockHeaderStorageError::DecodeError {
-                coin: for_coin.to_string(),
-                reason: e.to_string(),
-            })?;
             let header: BlockHeader =
-                deserialize(header_bytes.as_slice()).map_err(|e| BlockHeaderStorageError::DecodeError {
-                    coin: for_coin.to_string(),
-                    reason: e.to_string(),
-                })?;
+                header_raw
+                    .try_into()
+                    .map_err(|e: serialization::Error| BlockHeaderStorageError::DecodeError {
+                        coin: for_coin.to_string(),
+                        reason: e.to_string(),
+                    })?;
             return Ok(Some(header));
         }
         Ok(None)
@@ -220,6 +196,36 @@ impl BlockHeaderStorageOps for SqliteBlockHeadersStorage {
             reason: e.to_string(),
         })
     }
+
+    async fn get_last_block_header_with_non_max_bits(
+        &self,
+        for_coin: &str,
+    ) -> Result<Option<BlockHeader>, BlockHeaderStorageError> {
+        let sql = get_last_block_header_with_non_max_bits_sql(for_coin)?;
+        let selfi = self.clone();
+
+        let maybe_header_raw = async_blocking(move || {
+            let conn = selfi.0.lock().unwrap();
+            query_single_row(&conn, &sql, NO_PARAMS, string_from_row)
+        })
+        .await
+        .map_err(|e| BlockHeaderStorageError::GetFromStorageError {
+            coin: for_coin.to_string(),
+            reason: e.to_string(),
+        })?;
+
+        if let Some(header_raw) = maybe_header_raw {
+            let header: BlockHeader =
+                header_raw
+                    .try_into()
+                    .map_err(|e: serialization::Error| BlockHeaderStorageError::DecodeError {
+                        coin: for_coin.to_string(),
+                        reason: e.to_string(),
+                    })?;
+            return Ok(Some(header));
+        }
+        Ok(None)
+    }
 }
 
 #[cfg(test)]
@@ -240,6 +246,7 @@ impl SqliteBlockHeadersStorage {
 #[cfg(test)]
 mod sql_block_headers_storage_tests {
     use super::*;
+    use chain::BlockHeaderBits;
     use common::block_on;
     use primitives::hash::H256;
 
@@ -302,5 +309,41 @@ mod sql_block_headers_storage_tests {
             block_header.hash(),
             H256::from_reversed_str("0000000000000000002e31d0714a5ab23100945ff87ba2d856cd566a3c9344ec")
         )
+    }
+
+    #[test]
+    fn test_get_last_block_header_with_non_max_bits() {
+        let for_coin = "get";
+        let storage = SqliteBlockHeadersStorage::in_memory();
+        let table = block_headers_cache_table(for_coin);
+        block_on(storage.init(for_coin)).unwrap();
+
+        let initialized = block_on(storage.is_initialized_for(for_coin)).unwrap();
+        assert!(initialized);
+
+        let mut headers = HashMap::with_capacity(2);
+
+        // This block has max difficulty
+        // https://live.blockcypher.com/btc-testnet/block/00000000961a9d117feb57e516e17217207a849bf6cdfce529f31d9a96053530/
+        let block_header: BlockHeader = "02000000ea01a61a2d7420a1b23875e40eb5eb4ca18b378902c8e6384514ad0000000000c0c5a1ae80582b3fe319d8543307fa67befc2a734b8eddb84b1780dfdf11fa2b20e71353ffff001d00805fe0".into();
+        headers.insert(201595, block_header);
+
+        // https://live.blockcypher.com/btc-testnet/block/0000000000ad144538e6c80289378ba14cebb50ee47538b2a120742d1aa601ea/
+        let expected_block_header: BlockHeader = "02000000cbed7fd98f1f06e85c47e13ff956533642056be45e7e6b532d4d768f00000000f2680982f333fcc9afa7f9a5e2a84dc54b7fe10605cd187362980b3aa882e9683be21353ab80011c813e1fc0".into();
+        headers.insert(201594, expected_block_header.clone());
+
+        // This block has max difficulty
+        // https://live.blockcypher.com/btc-testnet/block/0000000000ad144538e6c80289378ba14cebb50ee47538b2a120742d1aa601ea/
+        let block_header: BlockHeader = "020000001f38c8e30b30af912fbd4c3e781506713cfb43e73dff6250348e060000000000afa8f3eede276ccb4c4ee649ad9823fc181632f262848ca330733e7e7e541beb9be51353ffff001d00a63037".into();
+        headers.insert(201593, block_header);
+
+        block_on(storage.add_block_headers_to_storage(for_coin, headers)).unwrap();
+        assert!(!storage.is_table_empty(&table));
+
+        let actual_block_header = block_on(storage.get_last_block_header_with_non_max_bits(for_coin))
+            .unwrap()
+            .unwrap();
+        assert_ne!(actual_block_header.bits, BlockHeaderBits::Compact(MAX_BITS_BTC.into()));
+        assert_eq!(actual_block_header, expected_block_header);
     }
 }
