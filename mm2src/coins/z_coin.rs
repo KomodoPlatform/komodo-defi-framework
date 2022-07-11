@@ -22,7 +22,7 @@ use async_trait::async_trait;
 use bitcrypto::{dhash160, dhash256};
 use chain::constants::SEQUENCE_FINAL;
 use chain::{Transaction as UtxoTx, TransactionOutput};
-use common::{async_blocking, log};
+use common::{async_blocking, calc_total_pages, log, PagingOptionsEnum};
 use crypto::privkey::{key_pair_from_secret, secp_privkey_from_hash};
 use db_common::sqlite::offset_by_id;
 use db_common::sqlite::rusqlite::NO_PARAMS;
