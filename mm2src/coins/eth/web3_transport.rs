@@ -79,8 +79,8 @@ pub struct Web3Transport {
 
 #[derive(Clone, Debug)]
 pub struct Web3TransportNode {
-    uri: http::Uri,
-    gui_auth: bool,
+    pub(crate) uri: http::Uri,
+    pub(crate) gui_auth: bool,
 }
 
 impl Web3Transport {
@@ -108,6 +108,28 @@ impl Web3Transport {
             let uri = try_s!(url.parse());
             nodes.push(Web3TransportNode { uri, gui_auth: false });
         }
+        Ok(Web3Transport {
+            id: Arc::new(AtomicUsize::new(0)),
+            nodes,
+            event_handlers,
+            gui_auth_validation_generator: None,
+        })
+    }
+
+    #[allow(dead_code)]
+    pub fn new_with_gui_auth(nodes: Vec<Web3TransportNode>) -> Result<Self, String> {
+        Ok(Web3Transport {
+            id: Arc::new(AtomicUsize::new(0)),
+            nodes,
+            event_handlers: Default::default(),
+            gui_auth_validation_generator: None,
+        })
+    }
+
+    pub fn with_event_handlers_and_gui_auth(
+        nodes: Vec<Web3TransportNode>,
+        event_handlers: Vec<RpcTransportEventHandlerShared>,
+    ) -> Result<Self, String> {
         Ok(Web3Transport {
             id: Arc::new(AtomicUsize::new(0)),
             nodes,
@@ -190,7 +212,7 @@ async fn send_request(
         let mut serialized_request = serialized_request.clone();
         if node.gui_auth {
             if let Some(generator) = gui_auth_validation_generator.clone() {
-                let mut json_payload = serde_json::to_value(&serialized_request)?;
+                let mut json_payload: Json = serde_json::from_str(&serialized_request)?;
                 json_payload["signed_message"] = match EthCoin::generate_gui_auth_signed_validation(generator) {
                     Ok(t) => t,
                     Err(e) => {
@@ -275,7 +297,7 @@ async fn send_request(
         let mut serialized_request = serialized_request.clone();
         if node.gui_auth {
             if let Some(generator) = gui_auth_validation_generator.clone() {
-                let mut json_payload = serde_json::to_value(&serialized_request)?;
+                let mut json_payload: Json = serde_json::from_str(&serialized_request)?;
                 json_payload["signed_message"] = match EthCoin::generate_gui_auth_signed_validation(generator) {
                     Ok(t) => t,
                     Err(e) => {

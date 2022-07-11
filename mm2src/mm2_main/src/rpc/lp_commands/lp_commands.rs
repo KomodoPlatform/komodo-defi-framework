@@ -1,12 +1,14 @@
-use common::HttpStatusCode;
+use coins::lp_coininit;
+use common::{mm_number::BigDecimal, Future01CompatExt, HttpStatusCode};
 use crypto::{CryptoCtx, CryptoInitError};
 use derive_more::Display;
-use ethereum_types::Address;
 use http::StatusCode;
 use mm2_core::mm_ctx::MmArc;
 use mm2_err_handle::prelude::*;
 use rpc::v1::types::H160 as H160Json;
 use serde_json::Value as Json;
+
+use crate::mm2::{lp_network::subscribe_to_topic, lp_swap::tx_helper_topic};
 
 pub type GetPublicKeyRpcResult<T> = Result<T, MmError<GetPublicKeyError>>;
 
@@ -50,71 +52,67 @@ pub async fn get_public_key_hash(ctx: MmArc, _req: Json) -> GetPublicKeyRpcResul
 
 #[derive(Debug, Display, Serialize, SerializeErrorType)]
 #[serde(tag = "error_type", content = "error_data")]
+#[allow(dead_code)]
 pub enum EnableV2RpcError {
-    CoinIsNotSupported(String),
+    InvalidPayload(String),
+    CoinCouldNotInitialized(String),
     InternalError(String),
 }
 
 impl HttpStatusCode for EnableV2RpcError {
     fn status_code(&self) -> StatusCode {
         match self {
-            EnableV2RpcError::CoinIsNotSupported(_) => StatusCode::NOT_FOUND,
-            EnableV2RpcError::InternalError(_) => StatusCode::INTERNAL_SERVER_ERROR,
+            EnableV2RpcError::InvalidPayload(_) => StatusCode::BAD_REQUEST,
+            _ => StatusCode::INTERNAL_SERVER_ERROR,
         }
     }
 }
 
-#[derive(Clone, Copy, Debug, Serialize, Deserialize)]
-pub enum GasStationPricePolicyV2 {
-    /// Use mean between average and fast values, default and recommended to use on ETH mainnet due to
-    /// gas price big spikes.
-    MeanAverageFast,
-    /// Use average value only. Useful for non-heavily congested networks (Matic, etc.)
-    Average,
-}
-
-impl Default for GasStationPricePolicyV2 {
-    fn default() -> Self { GasStationPricePolicyV2::MeanAverageFast }
-}
-
-#[derive(Clone, Debug, Serialize, Deserialize)]
-pub struct EnableV2RpcRequest {
-    pub coin: String,
-    pub nodes: Vec<EnableV2NodesRpc>,
-    pub swap_contract_address: Option<u8>,
-    pub fallback_swap_contract: Option<Address>,
-    pub gas_station_url: Option<String>,
-    pub gas_station_decimals: Option<u8>,
-    pub gas_station_policy: GasStationPricePolicyV2,
-    pub mm2: Option<u8>,
-    pub tx_history: bool,
-    pub required_confirmations: u64,
-}
-
-#[derive(Clone, Debug, Serialize, Deserialize)]
-pub struct EnableV2NodesRpc {
-    pub url: String,
-    pub gui_auth: bool,
-}
-
-#[derive(Serialize)]
+#[derive(Serialize, Clone)]
 pub struct EnableV2RpcResponse {
-    pub test: bool, // result: &'a str,
-                    // address: String,
-                    // balance: BigDecimal,
-                    // unspendable_balance: BigDecimal,
-                    // coin: &'a str,
-                    // required_confirmations: u64,
-                    // requires_notarization: bool,
-                    // #[serde(skip_serializing_if = "Option::is_none")]
-                    // mature_confirmations: Option<u32>
+    result: String,
+    address: String,
+    balance: BigDecimal,
+    unspendable_balance: BigDecimal,
+    coin: String,
+    required_confirmations: u64,
+    requires_notarization: bool,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    mature_confirmations: Option<u32>,
 }
 
-/// v2 of `fn enable(ctx: MmArc, req: Json)`.
-pub async fn enable_v2(ctx: MmArc, req: EnableV2RpcRequest) -> MmResult<EnableV2RpcResponse, EnableV2RpcError> {
-    println!("request {:?}", req);
-    // let coin: MmCoinEnum = lp_coininit(&ctx, &ticker, &req).await.unwrap();
-    // println!("coin {:?}", coin);
+pub async fn enable_v2(ctx: MmArc, req: Json) -> MmResult<EnableV2RpcResponse, EnableV2RpcError> {
+    let mut req = req;
+    req["_v"] = json!(2_u64);
+    drop_mutability!(req);
 
-    Ok(EnableV2RpcResponse { test: true })
+    let ticker = req["coin"]
+        .as_str()
+        .ok_or_else(|| EnableV2RpcError::InvalidPayload(String::from("No 'coin' field")))?
+        .to_owned();
+
+    let coin = lp_coininit(&ctx, &ticker, &req)
+        .await
+        .map_err(EnableV2RpcError::CoinCouldNotInitialized)?;
+
+    let balance = coin
+        .my_balance()
+        .compat()
+        .await
+        .map_err(|e| EnableV2RpcError::CoinCouldNotInitialized(e.to_string()))?;
+
+    if coin.is_utxo_in_native_mode() {
+        subscribe_to_topic(&ctx, tx_helper_topic(coin.ticker()));
+    }
+
+    Ok(EnableV2RpcResponse {
+        result: String::from("success"),
+        address: coin.my_address().map_err(EnableV2RpcError::InternalError)?,
+        balance: balance.spendable,
+        unspendable_balance: balance.unspendable,
+        coin: coin.ticker().to_string(),
+        required_confirmations: coin.required_confirmations(),
+        requires_notarization: coin.requires_notarization(),
+        mature_confirmations: coin.mature_confirmations(),
+    })
 }

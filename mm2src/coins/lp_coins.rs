@@ -240,7 +240,8 @@ pub use solana::{solana_coin_from_conf_and_params, SolanaActivationParams, Solan
 pub mod utxo;
 #[cfg(not(target_arch = "wasm32"))] pub mod z_coin;
 
-use eth::{eth_coin_from_conf_and_request, EthCoin, EthTxFeeDetails, SignedEthTx};
+use eth::{eth_coin_from_conf_and_request, eth_coin_from_conf_and_request_v2, EnableV2RpcRequest, EthCoin,
+          EthTxFeeDetails, SignedEthTx};
 use hd_wallet::{HDAddress, HDAddressId};
 use qrc20::Qrc20ActivationParams;
 use qrc20::{qrc20_coin_from_conf_and_params, Qrc20Coin, Qrc20FeeDetails};
@@ -2315,9 +2316,17 @@ pub async fn lp_coininit(ctx: &MmArc, ticker: &str, req: &Json) -> Result<MmCoin
             try_s!(qtum_coin_with_priv_key(ctx, ticker, &coins_en, &params, &secret).await).into()
         },
         CoinProtocol::ETH | CoinProtocol::ERC20 { .. } => {
-            // TODO
-            // Check if it's v2, if so call v2, continue as usual otherwise.
-            try_s!(eth_coin_from_conf_and_request(ctx, ticker, &coins_en, req, &secret, protocol).await).into()
+            let call_version = req["_v"].as_u64().unwrap_or(1);
+
+            if call_version == 1 {
+                return Ok(try_s!(
+                    eth_coin_from_conf_and_request(ctx, ticker, &coins_en, req, &secret, protocol).await
+                )
+                .into());
+            }
+
+            let req = EnableV2RpcRequest::from_json_payload(req.clone());
+            try_s!(eth_coin_from_conf_and_request_v2(ctx, ticker, &coins_en, req, &secret, protocol).await).into()
         },
         CoinProtocol::QRC20 {
             platform,

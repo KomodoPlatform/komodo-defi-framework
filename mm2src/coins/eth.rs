@@ -73,7 +73,7 @@ use common::mm_number::MmNumber;
 use crypto::privkey::key_pair_from_secret;
 use ethkey::{sign, verify_address};
 use serialization::{CompactInteger, Serializable, Stream};
-use web3_transport::{EthFeeHistoryNamespace, Web3Transport};
+use web3_transport::{EthFeeHistoryNamespace, Web3Transport, Web3TransportNode};
 
 #[cfg(test)] mod eth_tests;
 #[cfg(target_arch = "wasm32")] mod eth_wasm_tests;
@@ -325,6 +325,32 @@ pub enum EthAddressFormat {
     /// https://eips.ethereum.org/EIPS/eip-55
     #[serde(rename = "mixedcase")]
     MixedCase,
+}
+
+#[derive(Clone, Debug, Deserialize)]
+pub struct EnableV2RpcRequest {
+    pub coin: String,
+    pub nodes: Vec<EnableV2NodesRpc>,
+    pub swap_contract_address: Address,
+    pub fallback_swap_contract: Option<Address>,
+    pub gas_station_url: Option<String>,
+    pub gas_station_decimals: Option<u8>,
+    #[serde(default)]
+    pub gas_station_policy: GasStationPricePolicy,
+    pub mm2: Option<u8>,
+    pub tx_history: Option<bool>,
+    pub required_confirmations: Option<u64>,
+}
+
+#[derive(Clone, Debug, Deserialize)]
+pub struct EnableV2NodesRpc {
+    pub url: String,
+    pub gui_auth: bool,
+}
+
+impl EnableV2RpcRequest {
+    #[inline(always)]
+    pub fn from_json_payload(payload: Json) -> Self { serde_json::from_value(payload).unwrap() }
 }
 
 #[cfg_attr(test, mockable)]
@@ -3234,6 +3260,7 @@ impl GuiAuthMessages for EthCoin {
             .map_err(|e| SignatureError::InternalError(e.to_string()))?
             .as_secs();
 
+        let timestamp_message = timestamp_message + 90; // 90 seconds to expire
         let message_hash =
             EthCoin::gui_auth_sign_message_hash(timestamp_message.to_string()).ok_or(SignatureError::PrefixNotFound)?;
         let signature = sign(&generator.secret, &H256::from(message_hash))?;
@@ -3241,7 +3268,7 @@ impl GuiAuthMessages for EthCoin {
         Ok(json!({
             "coin_ticker": "ETH",
             "address": generator.address,
-            "timestamp_message": timestamp_message + 90, // 90 seconds to expire
+            "timestamp_message": timestamp_message,
             "signature": format!("0x{}", signature),
         }))
     }
@@ -3335,7 +3362,7 @@ pub struct GasStationData {
 /// Using tagged representation to allow adding variants with coefficients, percentage, etc in the future.
 #[derive(Clone, Copy, Debug, Deserialize)]
 #[serde(tag = "policy", content = "additional_data")]
-enum GasStationPricePolicy {
+pub enum GasStationPricePolicy {
     /// Use mean between average and fast values, default and recommended to use on ETH mainnet due to
     /// gas price big spikes.
     MeanAverageFast,
@@ -3421,44 +3448,60 @@ pub async fn eth_coin_from_conf_and_request_v2(
     ctx: &MmArc,
     ticker: &str,
     conf: &Json,
-    req: &Json,
+    req: EnableV2RpcRequest,
     priv_key: &[u8],
     protocol: CoinProtocol,
 ) -> Result<EthCoin, String> {
-    let mut urls: Vec<String> = try_s!(json::from_value(req["params"]["nodes"].clone()));
-    if urls.is_empty() {
-        return ERR!("Enable request for ETH coin must have at least 1 node URL");
+    if req.nodes.is_empty() {
+        return ERR!("Enable request for ETH coin must have at least 1 node");
     }
-    let mut rng = small_rng();
-    urls.as_mut_slice().shuffle(&mut rng);
 
-    let swap_contract_address: Address = try_s!(json::from_value(req["swap_contract_address"].clone()));
-    if swap_contract_address == Address::default() {
+    let mut rng = small_rng();
+    let mut req = req;
+    req.nodes.as_mut_slice().shuffle(&mut rng);
+    drop_mutability!(req);
+
+    let mut nodes = vec![];
+    for node in req.nodes.iter() {
+        let uri: http::Uri = try_s!(node.url.parse());
+        nodes.push(Web3TransportNode {
+            uri,
+            gui_auth: node.gui_auth,
+        });
+    }
+    drop_mutability!(nodes);
+
+    if req.swap_contract_address == Address::default() {
         return ERR!("swap_contract_address can't be zero address");
     }
 
-    let fallback_swap_contract: Option<Address> = try_s!(json::from_value(req["fallback_swap_contract"].clone()));
-    if let Some(fallback) = fallback_swap_contract {
+    if let Some(fallback) = req.fallback_swap_contract {
         if fallback == Address::default() {
             return ERR!("fallback_swap_contract can't be zero address");
         }
     }
 
     let key_pair: KeyPair = try_s!(KeyPair::from_secret_slice(priv_key));
-    let my_address = key_pair.address();
+    let my_address = checksum_address(&format!("{:02x}", key_pair.address()));
 
     let mut web3_instances = vec![];
     let event_handlers = rpc_event_handlers_for_eth_transport(ctx, ticker.to_string());
-    for url in urls.iter() {
-        let transport = try_s!(Web3Transport::with_event_handlers(
-            vec![url.clone()],
+    for node in &nodes {
+        let mut transport = try_s!(Web3Transport::with_event_handlers_and_gui_auth(
+            vec![node.clone()],
             event_handlers.clone()
         ));
+        transport.gui_auth_validation_generator = Some(GuiAuthValidationGenerator {
+            secret: key_pair.secret().clone(),
+            address: my_address.clone(),
+        });
+        drop_mutability!(transport);
+
         let web3 = Web3::new(transport);
         let version = match web3.web3().client_version().compat().await {
             Ok(v) => v,
             Err(e) => {
-                error!("Couldn't get client version for url {}: {}", url, e);
+                error!("Couldn't get client version for url {}: {}", node.uri, e);
                 continue;
             },
         };
@@ -3472,7 +3515,14 @@ pub async fn eth_coin_from_conf_and_request_v2(
         return ERR!("Failed to get client version for all urls");
     }
 
-    let transport = try_s!(Web3Transport::with_event_handlers(urls, event_handlers));
+    let mut transport = try_s!(Web3Transport::with_event_handlers_and_gui_auth(nodes, event_handlers));
+    transport.gui_auth_validation_generator = Some(GuiAuthValidationGenerator {
+        secret: key_pair.secret().clone(),
+        address: my_address,
+    });
+
+    drop_mutability!(transport);
+
     let web3 = Web3::new(transport);
 
     let (coin_type, decimals) = match protocol {
@@ -3492,26 +3542,18 @@ pub async fn eth_coin_from_conf_and_request_v2(
     };
 
     // param from request should override the config
-    let required_confirmations = req["required_confirmations"]
-        .as_u64()
+    let required_confirmations = req
+        .required_confirmations
         .unwrap_or_else(|| conf["required_confirmations"].as_u64().unwrap_or(1))
         .into();
 
-    if req["requires_notarization"].as_bool().is_some() {
-        warn!("requires_notarization doesn't take any effect on ETH/ERC20 coins");
-    }
-
     let sign_message_prefix: Option<String> = json::from_value(conf["sign_message_prefix"].clone()).unwrap_or(None);
 
-    let initial_history_state = if req["tx_history"].as_bool().unwrap_or(false) {
+    let initial_history_state = if req.tx_history.unwrap_or(false) {
         HistorySyncState::NotStarted
     } else {
         HistorySyncState::NotEnabled
     };
-
-    let gas_station_decimals: Option<u8> = try_s!(json::from_value(req["gas_station_decimals"].clone()));
-    let gas_station_policy: GasStationPricePolicy =
-        json::from_value(req["gas_station_policy"].clone()).unwrap_or_default();
 
     let key_lock = match &coin_type {
         EthCoinType::Eth => String::from(ticker),
@@ -3523,17 +3565,17 @@ pub async fn eth_coin_from_conf_and_request_v2(
     let nonce_lock = map.entry(key_lock).or_insert_with(new_nonce_lock).clone();
 
     let coin = EthCoinImpl {
-        key_pair,
-        my_address,
+        key_pair: key_pair.clone(),
+        my_address: key_pair.address(),
         coin_type,
         sign_message_prefix,
-        swap_contract_address,
-        fallback_swap_contract,
+        swap_contract_address: req.swap_contract_address,
+        fallback_swap_contract: req.fallback_swap_contract,
         decimals,
         ticker: ticker.into(),
-        gas_station_url: try_s!(json::from_value(req["gas_station_url"].clone())),
-        gas_station_decimals: gas_station_decimals.unwrap_or(ETH_GAS_STATION_DECIMALS),
-        gas_station_policy,
+        gas_station_url: req.gas_station_url,
+        gas_station_decimals: req.gas_station_decimals.unwrap_or(ETH_GAS_STATION_DECIMALS),
+        gas_station_policy: req.gas_station_policy,
         web3,
         web3_instances,
         history_sync_state: Mutex::new(initial_history_state),
