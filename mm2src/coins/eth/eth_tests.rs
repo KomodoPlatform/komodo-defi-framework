@@ -436,7 +436,7 @@ fn test_wait_for_payment_spend_timeout() {
     )
     .unwrap();
     let transport = Web3Transport::new(vec![Web3TransportNode {
-        uri: "http://194.201.0.6:8555".parse().unwrap(),
+        uri: "http://195.201.0.6:8555".parse().unwrap(),
         gui_auth: false,
     }])
     .unwrap();

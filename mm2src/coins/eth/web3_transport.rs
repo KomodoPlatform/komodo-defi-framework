@@ -84,6 +84,7 @@ pub struct Web3TransportNode {
 
 impl Web3Transport {
     #[allow(dead_code)]
+    #[inline]
     pub fn new(nodes: Vec<Web3TransportNode>) -> Result<Self, String> {
         Ok(Web3Transport {
             id: Arc::new(AtomicUsize::new(0)),
@@ -93,6 +94,7 @@ impl Web3Transport {
         })
     }
 
+    #[inline]
     pub fn with_event_handlers(
         nodes: Vec<Web3TransportNode>,
         event_handlers: Vec<RpcTransportEventHandlerShared>,
