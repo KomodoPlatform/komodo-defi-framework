@@ -1,5 +1,4 @@
-use super::lp_commands::enable_v2;
-use super::{DispatcherError, DispatcherResult, PUBLIC_METHODS};
+use super::{lp_commands::enable_v2, DispatcherError, DispatcherResult, PUBLIC_METHODS};
 use crate::mm2::lp_native_dex::init_hw::{init_trezor, init_trezor_status, init_trezor_user_action};
 use crate::mm2::lp_ordermatch::{best_orders_rpc_v2, orderbook_rpc_v2, start_simple_market_maker_bot,
                                 stop_simple_market_maker_bot};

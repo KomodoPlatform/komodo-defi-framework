@@ -1,3 +1,4 @@
+use crate::mm2::{lp_network::subscribe_to_topic, lp_swap::tx_helper_topic};
 use coins::lp_coininit;
 use common::{Future01CompatExt, HttpStatusCode};
 use crypto::{CryptoCtx, CryptoInitError};
@@ -8,8 +9,6 @@ use mm2_err_handle::prelude::*;
 use mm2_number::BigDecimal;
 use rpc::v1::types::H160 as H160Json;
 use serde_json::Value as Json;
-
-use crate::mm2::{lp_network::subscribe_to_topic, lp_swap::tx_helper_topic};
 
 pub type GetPublicKeyRpcResult<T> = Result<T, MmError<GetPublicKeyError>>;
 

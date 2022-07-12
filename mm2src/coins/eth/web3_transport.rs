@@ -1,5 +1,4 @@
-use super::{RpcTransportEventHandler, RpcTransportEventHandlerShared};
-use crate::eth::{EthCoin, GuiAuthMessages};
+use super::{EthCoin, GuiAuthMessages, RpcTransportEventHandler, RpcTransportEventHandlerShared};
 #[cfg(not(target_arch = "wasm32"))] use futures::FutureExt;
 use futures::TryFutureExt;
 use futures01::{Future, Poll};
