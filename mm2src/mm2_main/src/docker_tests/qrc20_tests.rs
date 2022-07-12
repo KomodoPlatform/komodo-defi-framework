@@ -9,12 +9,12 @@ use coins::utxo::{UtxoActivationParams, UtxoCommonOps};
 use coins::{FeeApproxStage, FoundSwapTxSpend, MarketCoinOps, MmCoin, SearchForSwapTxSpendInput, SwapOps,
             TradePreimageValue, TransactionEnum, ValidatePaymentInput};
 use common::log::debug;
-use common::mm_number::BigDecimal;
 use common::{temp_dir, DEX_FEE_ADDR_RAW_PUBKEY};
 use ethereum_types::H160;
 use futures01::Future;
 use http::StatusCode;
 use mm2_core::mm_ctx::{MmArc, MmCtxBuilder};
+use mm2_number::BigDecimal;
 use rand6::Rng;
 use serde_json::{self as json, Value as Json};
 use std::convert::TryFrom;
@@ -815,7 +815,7 @@ fn test_check_balance_on_order_post_base_coin_locked() {
     let qick_contract_address = format!("{:#02x}", unsafe { QICK_TOKEN_ADDRESS.expect("!QICK_TOKEN_ADDRESS") });
     let coins = json!([
         {"coin":"MYCOIN","asset":"MYCOIN","required_confirmations":0,"txversion":4,"overwintered":1,"txfee":1000,"protocol":{"type":"UTXO"}},
-        {"coin":"QICK","required_confirmations":1,"pubtype": 120,"p2shtype": 50,"wiftype": 128,"segwit": true,"mm2": 1,"mature_confirmations": 500,"confpath": confpath,"network":"regtest",
+        {"coin":"QICK","required_confirmations":1,"pubtype": 120,"p2shtype": 50,"wiftype": 128,"mm2": 1,"mature_confirmations": 500,"confpath": confpath,"network":"regtest",
          "protocol":{"type":"QRC20","protocol_data":{"platform":"QTUM","contract_address":qick_contract_address}}},
     ]);
 
@@ -917,7 +917,7 @@ fn test_get_max_taker_vol_and_trade_with_dynamic_trade_fee(coin: QtumCoin, priv_
     let confpath = unsafe { QTUM_CONF_PATH.as_ref().expect("Qtum config is not set yet") };
     let coins = json! ([
         {"coin":"MYCOIN","asset":"MYCOIN","txversion":4,"overwintered":1,"txfee":1000,"protocol":{"type":"UTXO"}},
-        {"coin":"QTUM","decimals":8,"pubtype":120,"p2shtype":110,"wiftype":128,"segwit":true,"txfee":0,"txfee_volatility_percent":0.1,
+        {"coin":"QTUM","decimals":8,"pubtype":120,"p2shtype":110,"wiftype":128,"txfee":0,"txfee_volatility_percent":0.1,
         "mm2":1,"mature_confirmations":500,"network":"regtest","confpath":confpath,"protocol":{"type":"UTXO"}},
     ]);
     let mut mm = MarketMakerIt::start(
@@ -1098,7 +1098,7 @@ fn test_trade_preimage_not_sufficient_base_coin_balance_for_ticker() {
     let confpath = unsafe { QTUM_CONF_PATH.as_ref().expect("Qtum config is not set yet") };
     let coins = json! ([
         {"coin":"MYCOIN","asset":"MYCOIN","txversion":4,"overwintered":1,"txfee":1000,"protocol":{"type":"UTXO"}},
-        {"coin":"QICK","required_confirmations":1,"pubtype": 120,"p2shtype": 50,"wiftype": 128,"segwit": true,"mm2": 1,"mature_confirmations": 500,"confpath": confpath,"network":"regtest",
+        {"coin":"QICK","required_confirmations":1,"pubtype": 120,"p2shtype": 50,"wiftype": 128,"mm2": 1,"mature_confirmations": 500,"confpath": confpath,"network":"regtest",
          "protocol":{"type":"QRC20","protocol_data":{"platform":"QTUM","contract_address":qick_contract_address}}},
     ]);
     let mut mm = MarketMakerIt::start(
@@ -1157,7 +1157,7 @@ fn test_trade_preimage_dynamic_fee_not_sufficient_balance() {
     let confpath = unsafe { QTUM_CONF_PATH.as_ref().expect("Qtum config is not set yet") };
     let coins = json! ([
         {"coin":"MYCOIN","asset":"MYCOIN","txversion":4,"overwintered":1,"txfee":1000,"protocol":{"type":"UTXO"}},
-        {"coin":"QTUM","decimals":8,"pubtype":120,"p2shtype":110,"wiftype":128,"segwit":true,"txfee":0,"txfee_volatility_percent":0.1,
+        {"coin":"QTUM","decimals":8,"pubtype":120,"p2shtype":110,"wiftype":128,"txfee":0,"txfee_volatility_percent":0.1,
         "mm2":1,"mature_confirmations":500,"network":"regtest","confpath":confpath,"protocol":{"type":"UTXO"}},
     ]);
     let mut mm = MarketMakerIt::start(
@@ -1218,7 +1218,7 @@ fn test_trade_preimage_deduct_fee_from_output_failed() {
     let confpath = unsafe { QTUM_CONF_PATH.as_ref().expect("Qtum config is not set yet") };
     let coins = json! ([
         {"coin":"MYCOIN","asset":"MYCOIN","txversion":4,"overwintered":1,"txfee":1000,"protocol":{"type":"UTXO"}},
-        {"coin":"QTUM","decimals":8,"pubtype":120,"p2shtype":110,"wiftype":128,"segwit":true,"txfee":0,"txfee_volatility_percent":0.1,
+        {"coin":"QTUM","decimals":8,"pubtype":120,"p2shtype":110,"wiftype":128,"txfee":0,"txfee_volatility_percent":0.1,
         "mm2":1,"mature_confirmations":500,"network":"regtest","confpath":confpath,"protocol":{"type":"UTXO"}},
     ]);
     let mut mm = MarketMakerIt::start(

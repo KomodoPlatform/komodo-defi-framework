@@ -2,12 +2,12 @@ use super::check_balance::CheckBalanceError;
 use super::{maker_swap_trade_preimage, taker_swap_trade_preimage, MakerTradePreimage, TakerTradePreimage};
 use crate::mm2::lp_ordermatch::{MakerOrderBuildError, TakerAction, TakerOrderBuildError};
 use coins::{is_wallet_only_ticker, lp_coinfind_or_err, BalanceError, CoinFindError, TradeFee, TradePreimageError};
-use common::mm_number::{BigDecimal, MmNumber};
 use common::HttpStatusCode;
 use derive_more::Display;
 use http::StatusCode;
 use mm2_core::mm_ctx::MmArc;
 use mm2_err_handle::prelude::*;
+use mm2_number::{construct_detailed, BigDecimal, MmNumber};
 use std::collections::HashMap;
 
 construct_detailed!(DetailedAmount, amount);

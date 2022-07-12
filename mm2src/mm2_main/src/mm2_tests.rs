@@ -3,10 +3,10 @@ use crate::mm2::lp_ordermatch::MIN_ORDER_KEEP_ALIVE_INTERVAL;
 use common::executor::Timer;
 use common::log::LogLevel;
 use common::mm_metrics::{MetricType, MetricsJson};
-use common::mm_number::{BigDecimal, BigRational, Fraction, MmNumber};
 use common::now_ms;
 use crypto::privkey::key_pair_from_seed;
 use http::{HeaderMap, StatusCode};
+use mm2_number::{BigDecimal, BigRational, Fraction, MmNumber};
 use mm2_test_helpers::for_tests::{check_my_swap_status, check_recent_swaps, check_stats_swap_status,
                                   enable_native as enable_native_impl, enable_qrc20, find_metrics_in_json,
                                   from_env_file, init_z_coin_light, init_z_coin_status, mm_spat, sign_message,
@@ -1368,7 +1368,7 @@ fn test_withdraw_and_send() {
         0.001,
     );
 
-    // must not allow to withdraw to non-P2PKH addresses
+    // allow to withdraw non-Segwit coin to P2SH addresses
     let withdraw = block_on(mm_alice.rpc(&json! ({
         "userpass": mm_alice.userpass,
         "mmrpc": "2.0",
@@ -1381,16 +1381,9 @@ fn test_withdraw_and_send() {
         "id": 0,
     })))
     .unwrap();
+    assert!(withdraw.0.is_success(), "MORTY withdraw: {}", withdraw.1);
 
-    assert!(withdraw.0.is_client_error(), "MORTY withdraw: {}", withdraw.1);
-    let res: RpcErrorResponse<String> = json::from_str(&withdraw.1).unwrap();
-    assert_eq!(res.error_type, "InvalidAddress");
-    assert!(res
-        .error_data
-        .unwrap()
-        .contains("Expected a valid P2PKH or P2SH prefix for MORTY"));
-
-    // but must allow to withdraw to P2SH addresses if Segwit flag is true
+    // allow to withdraw to P2SH addresses if Segwit flag is true
     let withdraw = block_on(mm_alice.rpc(&json! ({
         "userpass": mm_alice.userpass,
         "mmrpc": "2.0",
@@ -1604,7 +1597,7 @@ fn test_withdraw_legacy() {
     assert!(withdraw.0.is_success(), "MORTY withdraw: {}", withdraw.1);
     let _: TransactionDetails = json::from_str(&withdraw.1).expect("Expected 'TransactionDetails'");
 
-    // must not allow to withdraw to non-P2PKH addresses
+    // allow to withdraw non-Segwit coin to P2SH addresses
     let withdraw = block_on(mm_alice.rpc(&json!({
         "userpass": mm_alice.userpass,
         "method": "withdraw",
@@ -1613,18 +1606,7 @@ fn test_withdraw_legacy() {
         "amount": "0.001",
     })))
     .unwrap();
-
-    assert!(withdraw.0.is_server_error(), "MORTY withdraw: {}", withdraw.1);
-    log!("{:?}", withdraw.1);
-    let withdraw_error: Json = json::from_str(&withdraw.1).unwrap();
-    withdraw_error["error"]
-        .as_str()
-        .expect("Expected 'error' field")
-        .contains("Expected either P2PKH or P2SH");
-    assert!(withdraw_error.get("error_path").is_none());
-    assert!(withdraw_error.get("error_trace").is_none());
-    assert!(withdraw_error.get("error_type").is_none());
-    assert!(withdraw_error.get("error_data").is_none());
+    assert!(withdraw.0.is_success(), "MORTY withdraw: {}", withdraw.1);
 
     block_on(mm_alice.stop()).unwrap();
 }
@@ -3740,7 +3722,6 @@ fn test_add_delegation_qtum() {
       "pubtype": 120,
       "p2shtype": 110,
       "wiftype": 239,
-      "segwit": true,
       "txfee": 400000,
       "mm2": 1,
       "required_confirmations": 1,
@@ -3829,7 +3810,6 @@ fn test_remove_delegation_qtum() {
       "pubtype": 120,
       "p2shtype": 110,
       "wiftype": 239,
-      "segwit": true,
       "txfee": 400000,
       "mm2": 1,
       "required_confirmations": 1,
@@ -3893,7 +3873,6 @@ fn test_get_staking_infos_qtum() {
       "pubtype": 120,
       "p2shtype": 110,
       "wiftype": 239,
-      "segwit": true,
       "txfee": 400000,
       "mm2": 1,
       "required_confirmations": 1,
@@ -3951,7 +3930,7 @@ fn test_get_staking_infos_qtum() {
 fn test_convert_qrc20_address() {
     let passphrase = "cV463HpebE2djP9ugJry5wZ9st5cc6AbkHXGryZVPXMH1XJK8cVU";
     let coins = json! ([
-        {"coin":"QRC20","required_confirmations":0,"pubtype": 120,"p2shtype": 50,"wiftype": 128,"segwit": true,"txfee": 0,"mm2": 1,"mature_confirmations":2000,
+        {"coin":"QRC20","required_confirmations":0,"pubtype": 120,"p2shtype": 50,"wiftype": 128,"txfee": 0,"mm2": 1,"mature_confirmations":2000,
          "protocol":{"type":"QRC20","protocol_data":{"platform":"QTUM","contract_address":"0xd362e096e873eb7907e205fadc6175c6fec7bc44"}}},
     ]);
 
@@ -4383,7 +4362,7 @@ fn test_validateaddress_segwit() {
 fn qrc20_activate_electrum() {
     let passphrase = "cV463HpebE2djP9ugJry5wZ9st5cc6AbkHXGryZVPXMH1XJK8cVU";
     let coins = json! ([
-        {"coin":"QRC20","required_confirmations":0,"pubtype": 120,"p2shtype": 50,"wiftype": 128,"segwit": true,"txfee": 0,"mm2": 1,"mature_confirmations":2000,
+        {"coin":"QRC20","required_confirmations":0,"pubtype": 120,"p2shtype": 50,"wiftype": 128,"txfee": 0,"mm2": 1,"mature_confirmations":2000,
          "protocol":{"type":"QRC20","protocol_data":{"platform":"QTUM","contract_address":"0xd362e096e873eb7907e205fadc6175c6fec7bc44"}}},
     ]);
 
@@ -4430,7 +4409,7 @@ fn test_qrc20_withdraw() {
     // corresponding private key: [3, 98, 177, 3, 108, 39, 234, 144, 131, 178, 103, 103, 127, 80, 230, 166, 53, 68, 147, 215, 42, 216, 144, 72, 172, 110, 180, 13, 123, 179, 10, 49]
     let passphrase = "cMhHM3PMpMrChygR4bLF7QsTdenhWpFrrmf2UezBG3eeFsz41rtL";
     let coins = json!([
-        {"coin":"QRC20","required_confirmations":0,"pubtype": 120,"p2shtype": 50,"wiftype": 128,"segwit": true,"txfee": 0,"mm2": 1,"mature_confirmations":2000,
+        {"coin":"QRC20","required_confirmations":0,"pubtype": 120,"p2shtype": 50,"wiftype": 128,"txfee": 0,"mm2": 1,"mature_confirmations":2000,
          "protocol":{"type":"QRC20","protocol_data":{"platform":"QTUM","contract_address":"0xd362e096e873eb7907e205fadc6175c6fec7bc44"}}},
     ]);
 
@@ -4511,7 +4490,7 @@ fn test_qrc20_withdraw() {
 fn test_qrc20_withdraw_error() {
     let passphrase = "album hollow help heart use bird response large lounge fat elbow coral";
     let coins = json!([
-        {"coin":"QRC20","required_confirmations":0,"pubtype": 120,"p2shtype": 50,"wiftype": 128,"segwit": true,"txfee": 0,"mm2": 1,"mature_confirmations":2000,
+        {"coin":"QRC20","required_confirmations":0,"pubtype": 120,"p2shtype": 50,"wiftype": 128,"txfee": 0,"mm2": 1,"mature_confirmations":2000,
          "protocol":{"type":"QRC20","protocol_data":{"platform":"QTUM","contract_address":"0xd362e096e873eb7907e205fadc6175c6fec7bc44"}}},
     ]);
 
@@ -4596,7 +4575,7 @@ fn test_qrc20_withdraw_error() {
 async fn test_qrc20_history_impl() {
     let passphrase = "daring blind measure rebuild grab boost fix favorite nurse stereo april rookie";
     let coins = json!([
-        {"coin":"QRC20","required_confirmations":0,"pubtype": 120,"p2shtype": 50,"wiftype": 128,"segwit": true,"txfee": 0,"mm2": 1,"mature_confirmations":2000,
+        {"coin":"QRC20","required_confirmations":0,"pubtype": 120,"p2shtype": 50,"wiftype": 128,"txfee": 0,"mm2": 1,"mature_confirmations":2000,
          "protocol":{"type":"QRC20","protocol_data":{"platform":"QTUM","contract_address":"0xd362e096e873eb7907e205fadc6175c6fec7bc44"}}},
     ]);
 

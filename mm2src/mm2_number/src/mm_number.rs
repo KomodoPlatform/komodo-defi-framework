@@ -1,14 +1,14 @@
-use crate::big_int_str::BigIntStr;
+use crate::fraction::Fraction;
+use crate::{from_dec_to_ratio, from_ratio_to_dec};
+use bigdecimal::BigDecimal;
 use core::ops::{Add, AddAssign, Div, Mul, Sub};
-use num_traits::{Pow, Zero};
+use num_bigint::BigInt;
+use num_rational::BigRational;
+use num_traits::Zero;
+use serde::Serialize;
 use serde::{de, Deserialize, Deserializer};
 use serde_json::value::RawValue;
 use std::str::FromStr;
-
-pub use bigdecimal::BigDecimal;
-pub use num_bigint::{BigInt, Sign};
-pub use num_rational::BigRational;
-pub use paste::paste;
 
 /// Construct a `$name` detailed number that have decimal, fraction and rational representations.
 /// The macro takes the `$name` name of the structure and the `$base_name` that is used to generate three different fields:
@@ -20,6 +20,8 @@ pub use paste::paste;
 ///
 /// Example: `construct_detailed(MyVolume, volume)` will construct something like that:
 /// ```
+/// use mm2_number::{BigDecimal, BigRational, Fraction};
+///
 /// struct MyVolume {
 ///     volume: BigDecimal,
 ///     volume_fraction: Fraction,
@@ -29,16 +31,16 @@ pub use paste::paste;
 #[macro_export]
 macro_rules! construct_detailed {
     ($name: ident, $base_field: ident) => {
-        $crate::mm_number::paste! {
+        $crate::paste! {
             #[derive(Clone, Debug, Serialize)]
             pub struct $name {
-                $base_field: $crate::mm_number::BigDecimal,
-                [<$base_field _fraction>]: $crate::mm_number::Fraction,
-                [<$base_field _rat>]: $crate::mm_number::BigRational,
+                $base_field: $crate::BigDecimal,
+                [<$base_field _fraction>]: $crate::Fraction,
+                [<$base_field _rat>]: $crate::BigRational,
             }
 
-            impl From<$crate::mm_number::MmNumber> for $name {
-                fn from(mm_num: $crate::mm_number::MmNumber) -> Self {
+            impl From<$crate::MmNumber> for $name {
+                fn from(mm_num: $crate::MmNumber) -> Self {
                     Self {
                         $base_field: mm_num.to_decimal(),
                         [<$base_field _fraction>]: mm_num.to_fraction(),
@@ -49,7 +51,7 @@ macro_rules! construct_detailed {
 
             #[allow(dead_code)]
             impl $name {
-                pub fn as_ratio(&self) -> &$crate::mm_number::BigRational {
+                pub fn as_ratio(&self) -> &$crate::BigRational {
                     &self.[<$base_field _rat>]
                 }
             }
@@ -58,80 +60,7 @@ macro_rules! construct_detailed {
 }
 
 #[derive(Clone, Debug, Eq, PartialEq, PartialOrd, Ord, Serialize)]
-pub struct MmNumber(BigRational);
-
-/// Rational number representation de/serializable in human readable form
-/// Should simplify the visual perception and parsing in code
-#[derive(Clone, Debug, Eq, PartialEq, Serialize)]
-pub struct Fraction {
-    /// Numerator
-    numer: BigIntStr,
-    /// Denominator
-    denom: BigIntStr,
-}
-
-impl Fraction {
-    /// Numerator
-    pub fn numer(&self) -> &BigInt { self.numer.inner() }
-
-    /// Denominator
-    pub fn denom(&self) -> &BigInt { self.denom.inner() }
-}
-
-impl From<BigRational> for Fraction {
-    fn from(ratio: BigRational) -> Fraction {
-        let (numer, denom) = ratio.into();
-        Fraction {
-            numer: numer.into(),
-            denom: denom.into(),
-        }
-    }
-}
-
-impl From<Fraction> for BigRational {
-    fn from(fraction: Fraction) -> Self { BigRational::new(fraction.numer.into(), fraction.denom.into()) }
-}
-
-impl From<BigDecimal> for Fraction {
-    fn from(dec: BigDecimal) -> Fraction { from_dec_to_ratio(&dec).into() }
-}
-
-impl<'de> Deserialize<'de> for Fraction {
-    fn deserialize<D>(deserializer: D) -> Result<Self, <D as Deserializer<'de>>::Error>
-    where
-        D: Deserializer<'de>,
-    {
-        #[derive(Deserialize)]
-        struct FractionHelper {
-            numer: BigIntStr,
-            denom: BigIntStr,
-        }
-
-        let maybe_fraction: FractionHelper = Deserialize::deserialize(deserializer)?;
-        if maybe_fraction.denom.inner() == &0.into() {
-            return Err(de::Error::custom("denom can not be 0"));
-        }
-
-        Ok(Fraction {
-            numer: maybe_fraction.numer,
-            denom: maybe_fraction.denom,
-        })
-    }
-}
-
-pub fn from_ratio_to_dec(r: &BigRational) -> BigDecimal {
-    BigDecimal::from(r.numer().clone()) / BigDecimal::from(r.denom().clone())
-}
-
-pub fn from_dec_to_ratio(d: &BigDecimal) -> BigRational {
-    let (num, scale) = d.as_bigint_and_exponent();
-    let ten = BigInt::from(10);
-    if scale >= 0 {
-        BigRational::new(num, ten.pow(scale as u64))
-    } else {
-        BigRational::new(num * ten.pow((-scale) as u64), 1.into())
-    }
-}
+pub struct MmNumber(pub(crate) BigRational);
 
 /// Handwritten deserialization method allows the MmNumber to be deserialized from:
 /// 1. big rational representation,
@@ -313,38 +242,10 @@ impl From<&'static str> for MmNumber {
     }
 }
 
-/// MmNumber representation in all available forms
-#[derive(Debug, Serialize)]
-pub struct MmNumberMultiRepr {
-    pub decimal: BigDecimal,
-    pub rational: BigRational,
-    pub fraction: Fraction,
-}
-
-impl From<MmNumber> for MmNumberMultiRepr {
-    fn from(num: MmNumber) -> Self {
-        MmNumberMultiRepr {
-            decimal: num.to_decimal(),
-            fraction: num.to_fraction(),
-            rational: num.0,
-        }
-    }
-}
-
-impl From<BigRational> for MmNumberMultiRepr {
-    fn from(rational: BigRational) -> Self {
-        MmNumberMultiRepr {
-            decimal: from_ratio_to_dec(&rational),
-            fraction: rational.clone().into(),
-            rational,
-        }
-    }
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
-    use serde_json as json;
+    use serde_json::{self as json, json};
     use std::str::FromStr;
 
     #[test]

@@ -1,10 +1,11 @@
 use coins::lp_coininit;
-use common::{mm_number::BigDecimal, Future01CompatExt, HttpStatusCode};
+use common::{Future01CompatExt, HttpStatusCode};
 use crypto::{CryptoCtx, CryptoInitError};
 use derive_more::Display;
 use http::StatusCode;
 use mm2_core::mm_ctx::MmArc;
 use mm2_err_handle::prelude::*;
+use mm2_number::BigDecimal;
 use rpc::v1::types::H160 as H160Json;
 use serde_json::Value as Json;
 
