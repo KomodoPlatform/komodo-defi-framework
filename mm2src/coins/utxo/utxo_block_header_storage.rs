@@ -1,4 +1,3 @@
-use crate::utxo::rpc_clients::BlockHeaderVerificationParams;
 #[cfg(target_arch = "wasm32")]
 use crate::utxo::utxo_indexedb_block_header_storage::IndexedDBBlockHeadersStorage;
 #[cfg(not(target_arch = "wasm32"))]
@@ -9,6 +8,17 @@ use mm2_core::mm_ctx::MmArc;
 use spv_validation::storage::{BlockHeaderStorageError, BlockHeaderStorageOps};
 use std::collections::HashMap;
 use std::fmt::{Debug, Formatter};
+use std::num::NonZeroU64;
+
+/// SPV headers verification parameters
+#[derive(Clone, Debug, Deserialize, Serialize)]
+pub struct BlockHeaderVerificationParams {
+    pub difficulty_check: bool,
+    pub constant_difficulty: bool,
+    // This should to be equal to or greater than the number of blocks needed before the chain is safe from reorganization (e.g. 6 blocks for BTC)
+    pub blocks_limit_to_check: NonZeroU64,
+    pub check_every: f64,
+}
 
 pub struct BlockHeaderStorage {
     pub inner: Box<dyn BlockHeaderStorageOps>,

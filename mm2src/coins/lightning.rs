@@ -685,6 +685,9 @@ pub async fn start_lightning(
     // random_seed_bytes are additional random seed to improve privacy by adding a random CLTV expiry offset to each path's final hop.
     // This helps obscure the intended recipient from adversarial intermediate hops. The seed is also used to randomize candidate paths during route selection.
     // todo: random_seed_bytes should be taken in consideration when implementing swaps because they change the payment lock-time.
+    // https://github.com/lightningdevkit/rust-lightning/issues/158
+    // https://github.com/lightningdevkit/rust-lightning/pull/1286
+    // https://github.com/lightningdevkit/rust-lightning/pull/1359
     let router = DefaultRouter::new(network_graph, logger.clone(), keys_manager.get_secure_random_bytes());
     let invoice_payer = Arc::new(InvoicePayer::new(
         channel_manager.clone(),

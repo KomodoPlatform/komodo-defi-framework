@@ -1381,17 +1381,6 @@ enum ElectrumConfig {
     SSL { dns_name: String, skip_validation: bool },
 }
 
-// todo: maybe move this to spv_validation crate??
-/// SPV headers verification parameters
-#[derive(Clone, Debug, Deserialize, Serialize)]
-pub struct BlockHeaderVerificationParams {
-    pub difficulty_check: bool,
-    pub constant_difficulty: bool,
-    // This should to be equal to or greater than the number of blocks needed before the chain is safe from reorganization (e.g. 6 blocks for BTC)
-    pub blocks_limit_to_check: NonZeroU64,
-    pub check_every: f64,
-}
-
 /// Electrum client configuration
 #[cfg(target_arch = "wasm32")]
 #[derive(Clone, Debug, Serialize)]

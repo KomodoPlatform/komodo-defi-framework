@@ -89,9 +89,10 @@ use utxo_common::{big_decimal_from_sat, UtxoTxBuilder};
 use utxo_signer::with_key_pair::sign_tx;
 use utxo_signer::{TxProvider, TxProviderError, UtxoSignTxError, UtxoSignTxResult};
 
-use self::rpc_clients::{electrum_script_hash, BlockHeaderVerificationParams, ElectrumClient, ElectrumRpcRequest,
-                        EstimateFeeMethod, EstimateFeeMode, NativeClient, UnspentInfo, UnspentMap, UtxoRpcClientEnum,
-                        UtxoRpcError, UtxoRpcFut, UtxoRpcResult};
+use self::rpc_clients::{electrum_script_hash, ElectrumClient, ElectrumRpcRequest, EstimateFeeMethod, EstimateFeeMode,
+                        NativeClient, UnspentInfo, UnspentMap, UtxoRpcClientEnum, UtxoRpcError, UtxoRpcFut,
+                        UtxoRpcResult};
+use self::utxo_block_header_storage::BlockHeaderVerificationParams;
 use super::{big_decimal_from_sat_unsigned, BalanceError, BalanceFut, BalanceResult, CoinBalance, CoinsContext,
             DerivationMethod, FeeApproxStage, FoundSwapTxSpend, HistorySyncState, KmdRewardsDetails, MarketCoinOps,
             MmCoin, NumConversError, NumConversResult, PrivKeyActivationPolicy, PrivKeyNotAllowed, PrivKeyPolicy,
