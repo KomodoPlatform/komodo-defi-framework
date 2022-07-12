@@ -11,7 +11,6 @@ mm2_err_handle = { path = "../mm2_err_handle" }
 derive_more = "0.99"
 futures = { version = "0.3", package = "futures", features = ["compat", "async-await", "thread-pool"] }
 http = "0.2"
-mm2_number = { path = "../mm2_number" }
 serde = "1"
 serde_json = { version = "1.0", features = ["preserve_order", "raw_value"] }
 ser_error = { path = "../derives/ser_error" }
