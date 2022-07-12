@@ -1,9 +1,9 @@
 [workspace]
 members = [
     "mm2src/coins",
-    "mm2src/common/shared_ref_counter",
     "mm2src/coins/utxo_signer",
     "mm2src/coins_activation",
+    "mm2src/common/shared_ref_counter",
     "mm2src/crypto",
     "mm2src/db_common",
     "mm2src/derives/ser_error",
@@ -27,6 +27,7 @@ members = [
     "mm2src/mm2_libp2p",
     "mm2src/mm2_main",
     "mm2src/mm2_net",
+    "mm2src/mm2_number",
     "mm2src/mm2_io",
     "mm2src/mm2_rpc",
     "mm2src/rpc_task",
