@@ -85,12 +85,7 @@ pub struct Web3TransportNode {
 
 impl Web3Transport {
     #[allow(dead_code)]
-    pub fn new(urls: Vec<String>) -> Result<Self, String> {
-        let mut nodes = vec![];
-        for url in urls.iter() {
-            let uri = try_s!(url.parse());
-            nodes.push(Web3TransportNode { uri, gui_auth: false });
-        }
+    pub fn new(nodes: Vec<Web3TransportNode>) -> Result<Self, String> {
         Ok(Web3Transport {
             id: Arc::new(AtomicUsize::new(0)),
             nodes,
@@ -100,33 +95,6 @@ impl Web3Transport {
     }
 
     pub fn with_event_handlers(
-        urls: Vec<String>,
-        event_handlers: Vec<RpcTransportEventHandlerShared>,
-    ) -> Result<Self, String> {
-        let mut nodes = vec![];
-        for url in urls.iter() {
-            let uri = try_s!(url.parse());
-            nodes.push(Web3TransportNode { uri, gui_auth: false });
-        }
-        Ok(Web3Transport {
-            id: Arc::new(AtomicUsize::new(0)),
-            nodes,
-            event_handlers,
-            gui_auth_validation_generator: None,
-        })
-    }
-
-    #[allow(dead_code)]
-    pub fn new_with_gui_auth(nodes: Vec<Web3TransportNode>) -> Result<Self, String> {
-        Ok(Web3Transport {
-            id: Arc::new(AtomicUsize::new(0)),
-            nodes,
-            event_handlers: Default::default(),
-            gui_auth_validation_generator: None,
-        })
-    }
-
-    pub fn with_event_handlers_and_gui_auth(
         nodes: Vec<Web3TransportNode>,
         event_handlers: Vec<RpcTransportEventHandlerShared>,
     ) -> Result<Self, String> {

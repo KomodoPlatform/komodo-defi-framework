@@ -3459,9 +3459,8 @@ pub async fn eth_coin_from_conf_and_request_v2(
 
     let mut nodes = vec![];
     for node in req.nodes.iter() {
-        let uri: http::Uri = try_s!(node.url.parse());
         nodes.push(Web3TransportNode {
-            uri,
+            uri: try_s!(node.url.parse()),
             gui_auth: node.gui_auth,
         });
     }
@@ -3483,7 +3482,7 @@ pub async fn eth_coin_from_conf_and_request_v2(
     let mut web3_instances = vec![];
     let event_handlers = rpc_event_handlers_for_eth_transport(ctx, ticker.to_string());
     for node in &nodes {
-        let mut transport = try_s!(Web3Transport::with_event_handlers_and_gui_auth(
+        let mut transport = try_s!(Web3Transport::with_event_handlers(
             vec![node.clone()],
             event_handlers.clone()
         ));
@@ -3508,15 +3507,14 @@ pub async fn eth_coin_from_conf_and_request_v2(
     }
 
     if web3_instances.is_empty() {
-        return ERR!("Failed to get client version for all urls");
+        return ERR!("Failed to get client version for all nodes");
     }
 
-    let mut transport = try_s!(Web3Transport::with_event_handlers_and_gui_auth(nodes, event_handlers));
+    let mut transport = try_s!(Web3Transport::with_event_handlers(nodes, event_handlers));
     transport.gui_auth_validation_generator = Some(GuiAuthValidationGenerator {
         secret: key_pair.secret().clone(),
         address: my_address,
     });
-
     drop_mutability!(transport);
 
     let web3 = Web3::new(transport);
@@ -3557,7 +3555,6 @@ pub async fn eth_coin_from_conf_and_request_v2(
     };
 
     let mut map = NONCE_LOCK.lock().unwrap();
-
     let nonce_lock = map.entry(key_lock).or_insert_with(new_nonce_lock).clone();
 
     let coin = EthCoinImpl {
@@ -3581,6 +3578,7 @@ pub async fn eth_coin_from_conf_and_request_v2(
         logs_block_range: conf["logs_block_range"].as_u64().unwrap_or(DEFAULT_LOGS_BLOCK_RANGE),
         nonce_lock,
     };
+
     Ok(EthCoin(Arc::new(coin)))
 }
 
@@ -3599,6 +3597,15 @@ pub async fn eth_coin_from_conf_and_request(
     let mut rng = small_rng();
     urls.as_mut_slice().shuffle(&mut rng);
 
+    let mut nodes = vec![];
+    for url in urls.iter() {
+        nodes.push(Web3TransportNode {
+            uri: try_s!(url.parse()),
+            gui_auth: false,
+        });
+    }
+    drop_mutability!(nodes);
+
     let swap_contract_address: Address = try_s!(json::from_value(req["swap_contract_address"].clone()));
     if swap_contract_address == Address::default() {
         return ERR!("swap_contract_address can't be zero address");
@@ -3616,16 +3623,16 @@ pub async fn eth_coin_from_conf_and_request(
 
     let mut web3_instances = vec![];
     let event_handlers = rpc_event_handlers_for_eth_transport(ctx, ticker.to_string());
-    for url in urls.iter() {
+    for node in nodes.iter() {
         let transport = try_s!(Web3Transport::with_event_handlers(
-            vec![url.clone()],
+            vec![node.clone()],
             event_handlers.clone()
         ));
         let web3 = Web3::new(transport);
         let version = match web3.web3().client_version().compat().await {
             Ok(v) => v,
             Err(e) => {
-                error!("Couldn't get client version for url {}: {}", url, e);
+                error!("Couldn't get client version for url {}: {}", node.uri, e);
                 continue;
             },
         };
@@ -3639,7 +3646,7 @@ pub async fn eth_coin_from_conf_and_request(
         return ERR!("Failed to get client version for all urls");
     }
 
-    let transport = try_s!(Web3Transport::with_event_handlers(urls, event_handlers));
+    let transport = try_s!(Web3Transport::with_event_handlers(nodes, event_handlers));
     let web3 = Web3::new(transport);
 
     let (coin_type, decimals) = match protocol {
