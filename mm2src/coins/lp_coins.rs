@@ -2316,18 +2316,12 @@ pub async fn lp_coininit(ctx: &MmArc, ticker: &str, req: &Json) -> Result<MmCoin
             let params = try_s!(UtxoActivationParams::from_legacy_req(req));
             try_s!(qtum_coin_with_priv_key(ctx, ticker, &coins_en, &params, &secret).await).into()
         },
-        CoinProtocol::ETH | CoinProtocol::ERC20 { .. } => {
-            let call_version = req["_v"].as_u64().unwrap_or(1);
-
-            if call_version == 1 {
-                return Ok(try_s!(
-                    eth_coin_from_conf_and_request(ctx, ticker, &coins_en, req, &secret, protocol).await
-                )
-                .into());
-            }
-
-            let req = EnableV2RpcRequest::from_json_payload(req.clone());
-            try_s!(eth_coin_from_conf_and_request_v2(ctx, ticker, &coins_en, req, &secret, protocol).await).into()
+        CoinProtocol::ETH | CoinProtocol::ERC20 { .. } => match req["_v"].as_u64() {
+            Some(2) => {
+                let req = EnableV2RpcRequest::from_json_payload(req.clone());
+                try_s!(eth_coin_from_conf_and_request_v2(ctx, ticker, &coins_en, req, &secret, protocol).await).into()
+            },
+            _ => try_s!(eth_coin_from_conf_and_request(ctx, ticker, &coins_en, req, &secret, protocol).await).into(),
         },
         CoinProtocol::QRC20 {
             platform,
