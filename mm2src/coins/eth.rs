@@ -25,7 +25,7 @@ use bigdecimal::BigDecimal;
 use bitcrypto::{keccak256, sha256};
 use common::executor::Timer;
 use common::log::{error, info, warn};
-use common::{now_ms, small_rng, DEX_FEE_ADDR_RAW_PUBKEY};
+use common::{get_utc_timestamp, now_ms, small_rng, DEX_FEE_ADDR_RAW_PUBKEY};
 use derive_more::Display;
 use ethabi::{Contract, Token};
 use ethcore_transaction::{Action, Transaction as UnSignedEthTx, UnverifiedTransaction};
@@ -51,7 +51,6 @@ use std::path::PathBuf;
 use std::str::FromStr;
 use std::sync::atomic::{AtomicU64, Ordering as AtomicOrdering};
 use std::sync::{Arc, Mutex};
-use std::time::{SystemTime, UNIX_EPOCH};
 use web3::types::{Action as TraceAction, BlockId, BlockNumber, Bytes, CallRequest, FilterBuilder, Log, Trace,
                   TraceFilterBuilder, Transaction as Web3Transaction, TransactionId};
 use web3::{self, Web3};
@@ -3255,10 +3254,7 @@ impl GuiAuthMessages for EthCoin {
     fn generate_gui_auth_signed_validation(
         generator: GuiAuthValidationGenerator,
     ) -> SignatureResult<serde_json::Value> {
-        let timestamp_message = SystemTime::now()
-            .duration_since(UNIX_EPOCH)
-            .map_err(|e| SignatureError::InternalError(e.to_string()))?
-            .as_secs();
+        let timestamp_message = get_utc_timestamp();
 
         let timestamp_message = timestamp_message + 90; // 90 seconds to expire
         let message_hash =
