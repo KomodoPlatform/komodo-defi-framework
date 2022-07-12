@@ -11,6 +11,7 @@ mod ln_storage;
 mod ln_utils;
 
 use super::{lp_coinfind_or_err, DerivationMethod, MmCoinEnum};
+use crate::lightning::ln_events::init_events_abort_handlers;
 use crate::lightning::ln_sql::SqliteLightningDB;
 use crate::utxo::rpc_clients::UtxoRpcClientEnum;
 use crate::utxo::utxo_common::{big_decimal_from_sat_unsigned, UtxoTxBuilder};
@@ -642,7 +643,7 @@ pub async fn start_lightning(
     ));
 
     // Initialize DB
-    let db = ln_utils::init_db(ctx, platform.clone(), conf.ticker.clone()).await?;
+    let db = ln_utils::init_db(ctx, conf.ticker.clone()).await?;
 
     // Initialize the ChannelManager
     let (chain_monitor, channel_manager) = ln_utils::init_channel_manager(
@@ -668,6 +669,8 @@ pub async fn start_lightning(
     )
     .await?;
 
+    let events_abort_handlers = init_events_abort_handlers(platform.clone(), db.clone()).await?;
+
     // Initialize the event handler
     let event_handler = Arc::new(ln_events::LightningEventHandler::new(
         // It's safe to use unwrap here for now until implementing Native Client for Lightning
@@ -675,6 +678,7 @@ pub async fn start_lightning(
         channel_manager.clone(),
         keys_manager.clone(),
         db.clone(),
+        events_abort_handlers,
     ));
 
     // Initialize routing Scorer

@@ -6,11 +6,12 @@ use bitcoin::blockdata::script::Script;
 use bitcoin::blockdata::transaction::Transaction;
 use common::executor::{spawn, Timer};
 use common::log::{error, info};
-use common::now_ms;
+use common::{now_ms, spawn_abortable, AbortOnDropHandle};
 use core::time::Duration;
 use lightning::chain::chaininterface::{BroadcasterInterface, ConfirmationTarget, FeeEstimator};
 use lightning::chain::keysinterface::SpendableOutputDescriptor;
 use lightning::util::events::{Event, EventHandler, PaymentPurpose};
+use parking_lot::Mutex as PaMutex;
 use rand::Rng;
 use script::{Builder, SignatureVersion};
 use secp256k1::Secp256k1;
@@ -25,6 +26,7 @@ pub struct LightningEventHandler {
     channel_manager: Arc<ChannelManager>,
     keys_manager: Arc<KeysManager>,
     db: SqliteLightningDB,
+    abort_handlers: Arc<PaMutex<Vec<AbortOnDropHandle>>>,
 }
 
 impl EventHandler for LightningEventHandler {
@@ -121,6 +123,36 @@ impl EventHandler for LightningEventHandler {
     }
 }
 
+pub async fn init_events_abort_handlers(
+    platform: Arc<Platform>,
+    db: SqliteLightningDB,
+) -> EnableLightningResult<Arc<PaMutex<Vec<AbortOnDropHandle>>>> {
+    let abort_handlers = Arc::new(PaMutex::new(Vec::new()));
+    let closed_channels_without_closing_tx = db.get_closed_channels_with_no_closing_tx().await?;
+    for channel_details in closed_channels_without_closing_tx {
+        let platform = platform.clone();
+        let db = db.clone();
+        let user_channel_id = channel_details.rpc_id;
+        let abort_handler = spawn_abortable(async move {
+            if let Ok(closing_tx_hash) = platform
+                .get_channel_closing_tx(channel_details)
+                .await
+                .error_log_passthrough()
+            {
+                if let Err(e) = db.add_closing_tx_to_db(user_channel_id, closing_tx_hash).await {
+                    log::error!(
+                        "Unable to update channel {} closing details in DB: {}",
+                        user_channel_id,
+                        e
+                    );
+                }
+            }
+        });
+        abort_handlers.lock().push(abort_handler);
+    }
+    Ok(abort_handlers)
+}
+
 // Generates the raw funding transaction with one output equal to the channel value.
 fn sign_funding_transaction(
     user_channel_id: u64,
@@ -178,18 +210,41 @@ async fn save_channel_closing_details(
     Ok(())
 }
 
+async fn add_claiming_tx_to_db_loop(
+    db: SqliteLightningDB,
+    closing_txid: String,
+    claiming_txid: String,
+    claimed_balance: f64,
+) {
+    loop {
+        match db
+            .add_claiming_tx_to_db(closing_txid.clone(), claiming_txid.clone(), claimed_balance)
+            .await
+        {
+            Ok(res) => break res,
+            Err(e) => {
+                error!("error {}", e);
+                Timer::sleep(TRY_LOOP_INTERVAL).await;
+                continue;
+            },
+        }
+    }
+}
+
 impl LightningEventHandler {
     pub fn new(
         platform: Arc<Platform>,
         channel_manager: Arc<ChannelManager>,
         keys_manager: Arc<KeysManager>,
         db: SqliteLightningDB,
+        abort_handlers: Arc<PaMutex<Vec<AbortOnDropHandle>>>,
     ) -> Self {
         LightningEventHandler {
             platform,
             channel_manager,
             keys_manager,
             db,
+            abort_handlers,
         }
     }
 
@@ -338,7 +393,7 @@ impl LightningEventHandler {
         );
         let db = self.db.clone();
         let platform = self.platform.clone();
-        spawn(async move {
+        let abort_handler = spawn_abortable(async move {
             if let Err(e) = save_channel_closing_details(db, platform, user_channel_id, reason).await {
                 // This is the case when a channel is closed before funding is broadcasted due to the counterparty disconnecting or other incompatibility issue.
                 if e != SaveChannelClosingError::FundingTxNull.into() {
@@ -349,6 +404,7 @@ impl LightningEventHandler {
                 }
             }
         });
+        self.abort_handlers.lock().push(abort_handler);
     }
 
     fn handle_payment_failed(&self, payment_hash: PaymentHash) {
@@ -439,17 +495,13 @@ impl LightningEventHandler {
             let db = self.db.clone();
             // This doesn't need to be respawned on restart unlike add_closing_tx_to_db since Event::SpendableOutputs will be re-fired on restart
             // if the spending_tx is not broadcasted.
-            spawn(async move {
-                ok_or_retry_after_sleep!(
-                    db.add_claiming_tx_to_db(
-                        closing_txid.clone(),
-                        claiming_txid.clone(),
-                        (claimed_balance as f64) - claiming_tx_fee_per_channel,
-                    )
-                    .await,
-                    TRY_LOOP_INTERVAL
-                );
-            });
+            let abort_handler = spawn_abortable(add_claiming_tx_to_db_loop(
+                db,
+                closing_txid,
+                claiming_txid,
+                (claimed_balance as f64) - claiming_tx_fee_per_channel,
+            ));
+            self.abort_handlers.lock().push(abort_handler);
 
             self.platform.broadcast_transaction(&spending_tx);
         }

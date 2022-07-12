@@ -68,7 +68,7 @@ pub async fn init_persister(
     Ok(persister)
 }
 
-pub async fn init_db(ctx: &MmArc, platform: Arc<Platform>, ticker: String) -> EnableLightningResult<SqliteLightningDB> {
+pub async fn init_db(ctx: &MmArc, ticker: String) -> EnableLightningResult<SqliteLightningDB> {
     let db = SqliteLightningDB::new(
         ticker,
         ctx.sqlite_connection
@@ -81,28 +81,6 @@ pub async fn init_db(ctx: &MmArc, platform: Arc<Platform>, ticker: String) -> En
     let is_db_initialized = db.is_db_initialized().await?;
     if !is_db_initialized {
         db.init_db().await?;
-    }
-
-    let closed_channels_without_closing_tx = db.get_closed_channels_with_no_closing_tx().await?;
-    for channel_details in closed_channels_without_closing_tx {
-        let platform = platform.clone();
-        let db = db.clone();
-        let user_channel_id = channel_details.rpc_id;
-        spawn(async move {
-            if let Ok(closing_tx_hash) = platform
-                .get_channel_closing_tx(channel_details)
-                .await
-                .error_log_passthrough()
-            {
-                if let Err(e) = db.add_closing_tx_to_db(user_channel_id, closing_tx_hash).await {
-                    log::error!(
-                        "Unable to update channel {} closing details in DB: {}",
-                        user_channel_id,
-                        e
-                    );
-                }
-            }
-        });
     }
 
     Ok(db)

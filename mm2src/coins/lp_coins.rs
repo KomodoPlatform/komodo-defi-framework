@@ -178,22 +178,6 @@ macro_rules! ok_or_continue_after_sleep {
     };
 }
 
-#[cfg(not(target_arch = "wasm32"))]
-macro_rules! ok_or_retry_after_sleep {
-    ($e:expr, $delay: ident) => {
-        loop {
-            match $e {
-                Ok(res) => break res,
-                Err(e) => {
-                    error!("error {:?}", e);
-                    Timer::sleep($delay).await;
-                    continue;
-                },
-            }
-        }
-    };
-}
-
 pub mod coin_balance;
 #[doc(hidden)]
 #[cfg(test)]

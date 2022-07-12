@@ -18,7 +18,7 @@ use futures::future::join_all;
 use keys::hash::H256;
 use lightning::chain::{chaininterface::{BroadcasterInterface, ConfirmationTarget, FeeEstimator},
                        Confirm, Filter, WatchedOutput};
-use rpc::v1::types::H256 as H256Json;
+use rpc::v1::types::{Bytes as BytesJson, H256 as H256Json};
 use spv_validation::spv_proof::TRY_SPV_PROOF_INTERVAL;
 use std::cmp;
 use std::convert::TryFrom;
@@ -112,6 +112,19 @@ pub async fn ln_best_block_update_loop(
             update_best_block(&chain_monitor, &channel_manager, best_header).await;
         }
         Timer::sleep(CHECK_FOR_NEW_BEST_BLOCK_INTERVAL).await;
+    }
+}
+
+async fn get_funding_tx_bytes_loop(rpc_client: &UtxoRpcClientEnum, tx_hash: H256Json) -> BytesJson {
+    loop {
+        match rpc_client.get_transaction_bytes(&tx_hash).compat().await {
+            Ok(res) => break res,
+            Err(e) => {
+                error!("error {}", e);
+                Timer::sleep(TRY_LOOP_INTERVAL).await;
+                continue;
+            },
+        }
     }
 }
 
@@ -386,10 +399,7 @@ impl Platform {
         let tx_hash =
             H256Json::from_str(&tx_id).map_to_mm(|e| SaveChannelClosingError::FundingTxParseError(e.to_string()))?;
 
-        let funding_tx_bytes = ok_or_retry_after_sleep!(
-            self.rpc_client().get_transaction_bytes(&tx_hash).compat().await,
-            TRY_LOOP_INTERVAL
-        );
+        let funding_tx_bytes = get_funding_tx_bytes_loop(self.rpc_client(), tx_hash).await;
 
         let closing_tx = self
             .coin
