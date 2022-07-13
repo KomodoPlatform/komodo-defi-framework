@@ -3210,9 +3210,8 @@ impl GuiAuthMessages for EthCoin {
     fn generate_gui_auth_signed_validation(
         generator: GuiAuthValidationGenerator,
     ) -> SignatureResult<serde_json::Value> {
-        let timestamp_message = get_utc_timestamp();
+        let timestamp_message = get_utc_timestamp() + 90; // 90 seconds to expire
 
-        let timestamp_message = timestamp_message + 90; // 90 seconds to expire
         let message_hash =
             EthCoin::gui_auth_sign_message_hash(timestamp_message.to_string()).ok_or(SignatureError::PrefixNotFound)?;
         let signature = sign(&generator.secret, &H256::from(message_hash))?;
