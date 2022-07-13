@@ -4321,7 +4321,6 @@ dependencies = [
  "gstuff",
  "http 0.2.7",
  "mm2_err_handle",
- "mm2_number",
  "ser_error",
  "ser_error_derive",
  "serde",

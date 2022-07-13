@@ -1,12 +1,11 @@
 use crate::mm2::{lp_network::subscribe_to_topic, lp_swap::tx_helper_topic};
-use coins::lp_coininit;
+use coins::rpc_command::enable_v2::{enable_v2, EnableV2RpcError, EnableV2RpcResponse};
 use common::{Future01CompatExt, HttpStatusCode};
 use crypto::{CryptoCtx, CryptoInitError};
 use derive_more::Display;
 use http::StatusCode;
 use mm2_core::mm_ctx::MmArc;
 use mm2_err_handle::prelude::*;
-use mm2_number::BigDecimal;
 use rpc::v1::types::H160 as H160Json;
 use serde_json::Value as Json;
 
@@ -50,50 +49,8 @@ pub async fn get_public_key_hash(ctx: MmArc, _req: Json) -> GetPublicKeyRpcResul
     Ok(GetPublicKeyHashResponse { public_key_hash })
 }
 
-#[derive(Debug, Display, Serialize, SerializeErrorType)]
-#[serde(tag = "error_type", content = "error_data")]
-#[allow(dead_code)]
-pub enum EnableV2RpcError {
-    InvalidPayload(String),
-    CoinCouldNotInitialized(String),
-    InternalError(String),
-}
-
-impl HttpStatusCode for EnableV2RpcError {
-    fn status_code(&self) -> StatusCode {
-        match self {
-            EnableV2RpcError::InvalidPayload(_) => StatusCode::BAD_REQUEST,
-            _ => StatusCode::INTERNAL_SERVER_ERROR,
-        }
-    }
-}
-
-#[derive(Serialize, Clone)]
-pub struct EnableV2RpcResponse {
-    result: String,
-    address: String,
-    balance: BigDecimal,
-    unspendable_balance: BigDecimal,
-    coin: String,
-    required_confirmations: u64,
-    requires_notarization: bool,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    mature_confirmations: Option<u32>,
-}
-
-pub async fn enable_v2(ctx: MmArc, req: Json) -> MmResult<EnableV2RpcResponse, EnableV2RpcError> {
-    let mut req = req;
-    req["_v"] = json!(2_u64);
-    drop_mutability!(req);
-
-    let ticker = req["coin"]
-        .as_str()
-        .ok_or_else(|| EnableV2RpcError::InvalidPayload(String::from("No 'coin' field")))?
-        .to_owned();
-
-    let coin = lp_coininit(&ctx, &ticker, &req)
-        .await
-        .map_err(EnableV2RpcError::CoinCouldNotInitialized)?;
+pub async fn enable_v2_wrapper(ctx: MmArc, req: Json) -> MmResult<EnableV2RpcResponse, EnableV2RpcError> {
+    let coin = enable_v2(&ctx, req).await?;
 
     let balance = coin
         .my_balance()

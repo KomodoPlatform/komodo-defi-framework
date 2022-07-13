@@ -59,15 +59,16 @@ use web3::types::{Action as TraceAction, BlockId, BlockNumber, Bytes, CallReques
 use web3::{self, Web3};
 use web3_transport::{EthFeeHistoryNamespace, Web3Transport, Web3TransportNode};
 
-use super::{AsyncMutex, BalanceError, BalanceFut, CoinBalance, CoinProtocol, CoinTransportMetrics, CoinsContext,
-            FeeApproxStage, FoundSwapTxSpend, HistorySyncState, MarketCoinOps, MmCoin, NegotiateSwapContractAddrErr,
-            NumConversError, NumConversResult, RawTransactionError, RawTransactionFut, RawTransactionRequest,
-            RawTransactionRes, RawTransactionResult, RpcClientType, RpcTransportEventHandler,
-            RpcTransportEventHandlerShared, SearchForSwapTxSpendInput, SignatureError, SignatureResult, SwapOps,
-            TradeFee, TradePreimageError, TradePreimageFut, TradePreimageResult, TradePreimageValue, Transaction,
-            TransactionDetails, TransactionEnum, TransactionErr, TransactionFut, UnexpectedDerivationMethod,
-            ValidateAddressResult, ValidatePaymentInput, VerificationError, VerificationResult, WithdrawError,
-            WithdrawFee, WithdrawFut, WithdrawRequest, WithdrawResult};
+use super::{rpc_command::enable_v2::EnableV2RpcRequest, AsyncMutex, BalanceError, BalanceFut, CoinBalance,
+            CoinProtocol, CoinTransportMetrics, CoinsContext, FeeApproxStage, FoundSwapTxSpend, HistorySyncState,
+            MarketCoinOps, MmCoin, NegotiateSwapContractAddrErr, NumConversError, NumConversResult,
+            RawTransactionError, RawTransactionFut, RawTransactionRequest, RawTransactionRes, RawTransactionResult,
+            RpcClientType, RpcTransportEventHandler, RpcTransportEventHandlerShared, SearchForSwapTxSpendInput,
+            SignatureError, SignatureResult, SwapOps, TradeFee, TradePreimageError, TradePreimageFut,
+            TradePreimageResult, TradePreimageValue, Transaction, TransactionDetails, TransactionEnum, TransactionErr,
+            TransactionFut, UnexpectedDerivationMethod, ValidateAddressResult, ValidatePaymentInput,
+            VerificationError, VerificationResult, WithdrawError, WithdrawFee, WithdrawFut, WithdrawRequest,
+            WithdrawResult};
 
 pub use rlp;
 
@@ -322,32 +323,6 @@ pub enum EthAddressFormat {
     /// https://eips.ethereum.org/EIPS/eip-55
     #[serde(rename = "mixedcase")]
     MixedCase,
-}
-
-#[derive(Clone, Debug, Deserialize)]
-pub struct EnableV2RpcRequest {
-    pub coin: String,
-    pub nodes: Vec<EnableV2NodesRpc>,
-    pub swap_contract_address: Address,
-    pub fallback_swap_contract: Option<Address>,
-    pub gas_station_url: Option<String>,
-    pub gas_station_decimals: Option<u8>,
-    #[serde(default)]
-    pub gas_station_policy: GasStationPricePolicy,
-    pub mm2: Option<u8>,
-    pub tx_history: Option<bool>,
-    pub required_confirmations: Option<u64>,
-}
-
-#[derive(Clone, Debug, Deserialize)]
-pub struct EnableV2NodesRpc {
-    pub url: String,
-    pub gui_auth: bool,
-}
-
-impl EnableV2RpcRequest {
-    #[inline(always)]
-    pub fn from_json_payload(payload: Json) -> Self { serde_json::from_value(payload).unwrap() }
 }
 
 #[cfg_attr(test, mockable)]
