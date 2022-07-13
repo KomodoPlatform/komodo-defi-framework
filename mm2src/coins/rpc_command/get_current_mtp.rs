@@ -59,6 +59,7 @@ pub async fn get_current_mtp_rpc(
         MmCoinEnum::Qrc20Coin(qrc) => Ok(GetCurrentMtpResponse {
             mtp: qrc.get_current_mtp().await?,
         }),
+        #[cfg(not(target_arch = "wasm32"))]
         MmCoinEnum::ZCoin(zcoin) => Ok(GetCurrentMtpResponse {
             mtp: zcoin.get_current_mtp().await?,
         }),
