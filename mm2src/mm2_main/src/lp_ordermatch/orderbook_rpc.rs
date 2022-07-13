@@ -136,7 +136,11 @@ pub async fn orderbook_rpc(ctx: MmArc, req: Json) -> Result<Response<Vec<u8>>, S
 
     try_s!(subscribe_to_orderbook_topic(&ctx, &base_ticker, &rel_ticker, request_orderbook).await);
     let orderbook = ordermatch_ctx.orderbook.lock();
-    let my_pubsecp = try_s!(CryptoCtx::from_ctx(&ctx)).secp256k1_pubkey_hex();
+    let my_pubsecp = ctx.secp256k1_key_pair_as_option().map(|_| {
+        CryptoCtx::from_ctx(&ctx)
+            .expect("ctx is available")
+            .secp256k1_pubkey_hex()
+    });
 
     let mut asks = match orderbook.unordered.get(&(base_ticker.clone(), rel_ticker.clone())) {
         Some(uuids) => {
@@ -154,7 +158,10 @@ pub async fn orderbook_rpc(ctx: MmArc, req: Json) -> Result<Response<Vec<u8>>, S
                     &ask.pubkey,
                     address_format,
                 ));
-                let is_mine = my_pubsecp == ask.pubkey;
+                let is_mine = match &my_pubsecp {
+                    Some(my_pubsecp) => my_pubsecp == &ask.pubkey,
+                    None => false,
+                };
                 orderbook_entries.push(ask.as_rpc_entry_ask(address, is_mine));
             }
             orderbook_entries
@@ -181,7 +188,10 @@ pub async fn orderbook_rpc(ctx: MmArc, req: Json) -> Result<Response<Vec<u8>>, S
                     &bid.pubkey,
                     address_format,
                 ));
-                let is_mine = my_pubsecp == bid.pubkey;
+                let is_mine = match &my_pubsecp {
+                    Some(my_pubsecp) => my_pubsecp == &bid.pubkey,
+                    None => false,
+                };
                 orderbook_entries.push(bid.as_rpc_entry_bid(address, is_mine));
             }
             orderbook_entries
@@ -298,9 +308,11 @@ pub async fn orderbook_rpc_v2(
         .map_to_mm(OrderbookRpcError::P2PSubscribeError)?;
 
     let orderbook = ordermatch_ctx.orderbook.lock();
-    let my_pubsecp = CryptoCtx::from_ctx(&ctx)
-        .expect("ctx is available")
-        .secp256k1_pubkey_hex();
+    let my_pubsecp = ctx.secp256k1_key_pair_as_option().map(|_| {
+        CryptoCtx::from_ctx(&ctx)
+            .expect("ctx is available")
+            .secp256k1_pubkey_hex()
+    });
 
     let mut asks = match orderbook.unordered.get(&(base_ticker.clone(), rel_ticker.clone())) {
         Some(uuids) => {
@@ -321,7 +333,10 @@ pub async fn orderbook_rpc_v2(
                         continue;
                     },
                 };
-                let is_mine = my_pubsecp == ask.pubkey;
+                let is_mine = match &my_pubsecp {
+                    Some(my_pubsecp) => my_pubsecp == &ask.pubkey,
+                    None => false,
+                };
                 orderbook_entries.push(ask.as_rpc_v2_entry_ask(address, is_mine));
             }
             orderbook_entries
@@ -351,7 +366,10 @@ pub async fn orderbook_rpc_v2(
                         continue;
                     },
                 };
-                let is_mine = my_pubsecp == bid.pubkey;
+                let is_mine = match &my_pubsecp {
+                    Some(my_pubsecp) => my_pubsecp == &bid.pubkey,
+                    None => false,
+                };
                 orderbook_entries.push(bid.as_rpc_v2_entry_bid(address, is_mine));
             }
             orderbook_entries

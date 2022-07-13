@@ -7385,3 +7385,92 @@ fn test_sign_verify_message_eth() {
 
     assert!(response.is_valid);
 }
+
+#[test]
+#[cfg(not(target_arch = "wasm32"))]
+fn test_no_login() {
+    let coins = json!([
+        {"coin":"RICK","asset":"RICK","rpcport":8923,"txversion":4,"overwintered":1,"protocol":{"type":"UTXO"}},
+        {"coin":"MORTY","asset":"MORTY","rpcport":11608,"txversion":4,"overwintered":1,"protocol":{"type":"UTXO"}}
+    ]);
+
+    let mm = MarketMakerIt::start(
+        json! ({
+            "gui": "core_readme",
+            "netid": 9998,
+            "coins": coins,
+            "rpc_password": "pass",
+        }),
+        "pass".into(),
+        local_start!("bob"),
+    )
+    .unwrap();
+    let (_dump_log, _dump_dashboard) = mm.mm_dump();
+    log!("log path: {}", mm.log_path.display());
+
+    let orderbook = block_on(mm.rpc(&json! ({
+        "userpass": mm.userpass,
+        "method": "orderbook",
+        "base": "RICK",
+        "rel": "MORTY",
+    })))
+    .unwrap();
+    assert!(orderbook.0.is_success(), "!orderbook: {}", orderbook.1);
+
+    let orderbook_v2 = block_on(mm.rpc(&json! ({
+        "userpass": mm.userpass,
+        "mmrpc": "2.0",
+        "method": "orderbook",
+        "params": {
+            "base": "RICK",
+            "rel": "MORTY",
+        },
+    })))
+    .unwrap();
+    assert!(orderbook_v2.0.is_success(), "!orderbook: {}", orderbook_v2.1);
+
+    let best_orders = block_on(mm.rpc(&json! ({
+        "userpass": mm.userpass,
+        "method": "best_orders",
+        "coin": "RICK",
+        "action": "buy",
+        "volume": "1",
+    })))
+    .unwrap();
+    assert!(best_orders.0.is_success(), "!best_orders: {}", best_orders.1);
+
+    let best_orders_v2 = block_on(mm.rpc(&json! ({
+        "userpass": mm.userpass,
+        "mmrpc": "2.0",
+        "method": "best_orders",
+        "params": {
+            "coin": "RICK",
+            "action": "buy",
+            "request_by": {
+                "type": "number",
+                "value": 1
+            }
+        },
+    })))
+    .unwrap();
+    assert!(best_orders_v2.0.is_success(), "!best_orders: {}", best_orders_v2.1);
+
+    let orderbook_depth = block_on(mm.rpc(&json! ({
+        "userpass": mm.userpass,
+        "method": "orderbook_depth",
+        "pairs":[["ETH","KMD"],["BTC","KMD"],["DOGE","KMD"]]
+    })))
+    .unwrap();
+    assert!(
+        orderbook_depth.0.is_success(),
+        "!orderbook_depth: {}",
+        orderbook_depth.1
+    );
+
+    let version = block_on(mm.rpc(&json! ({
+        "userpass": mm.userpass,
+        "method": "version",
+    })))
+    .unwrap();
+    assert!(version.0.is_success(), "!version: {}", version.1);
+}

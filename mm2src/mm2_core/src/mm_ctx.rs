@@ -239,6 +239,10 @@ impl MmCtx {
         }
     }
 
+    /// Get a reference to the secp256k1 key pair as option.
+    /// Can be used in no-login functions to check if the passphrase is set
+    pub fn secp256k1_key_pair_as_option(&self) -> Option<&KeyPair> { self.secp256k1_key_pair.as_option() }
+
     /// This is our public ID, allowing us to be different from other peers.
     /// This should also be our public key which we'd use for message verification.
     pub fn public_id(&self) -> Result<bits256, String> {
