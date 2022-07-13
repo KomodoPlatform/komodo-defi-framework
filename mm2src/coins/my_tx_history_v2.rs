@@ -275,8 +275,8 @@ impl HttpStatusCode for MyTxHistoryErrorV2 {
             MyTxHistoryErrorV2::StorageIsNotInitialized(_)
             | MyTxHistoryErrorV2::StorageError(_)
             | MyTxHistoryErrorV2::RpcError(_)
-            | MyTxHistoryErrorV2::NotSupportedFor(_)
             | MyTxHistoryErrorV2::Internal(_) => StatusCode::INTERNAL_SERVER_ERROR,
+            MyTxHistoryErrorV2::NotSupportedFor(_) => StatusCode::BAD_REQUEST,
         }
     }
 }
@@ -316,8 +316,7 @@ pub async fn my_tx_history_v2_rpc(
     ctx: MmArc,
     request: MyTxHistoryRequestV2<BytesJson>,
 ) -> Result<MyTxHistoryResponseV2<MyTxHistoryDetails, BytesJson>, MmError<MyTxHistoryErrorV2>> {
-    let coin = lp_coinfind_or_err(&ctx, &request.coin).await?;
-    match coin {
+    match lp_coinfind_or_err(&ctx, &request.coin).await? {
         MmCoinEnum::Bch(bch) => my_tx_history_v2_impl(ctx, &bch, request).await,
         MmCoinEnum::SlpToken(slp_token) => my_tx_history_v2_impl(ctx, &slp_token, request).await,
         other => MmError::err(MyTxHistoryErrorV2::NotSupportedFor(other.ticker().to_owned())),
@@ -386,8 +385,7 @@ pub async fn z_coin_tx_history_rpc(
     ctx: MmArc,
     request: MyTxHistoryRequestV2<i64>,
 ) -> Result<MyTxHistoryResponseV2<crate::z_coin::ZcoinTxDetails, i64>, MmError<MyTxHistoryErrorV2>> {
-    let coin = lp_coinfind_or_err(&ctx, &request.coin).await?;
-    match coin {
+    match lp_coinfind_or_err(&ctx, &request.coin).await? {
         MmCoinEnum::ZCoin(z_coin) => z_coin.tx_history(request).await,
         other => MmError::err(MyTxHistoryErrorV2::NotSupportedFor(other.ticker().to_owned())),
     }
