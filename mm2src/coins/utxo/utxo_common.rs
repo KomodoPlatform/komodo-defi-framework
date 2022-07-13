@@ -15,7 +15,6 @@ use crate::{CanRefundHtlc, CoinBalance, CoinWithDerivationMethod, GetWithdrawSen
             SignatureResult, SwapOps, TradePreimageValue, TransactionFut, TxFeeDetails, ValidateAddressResult,
             ValidatePaymentInput, VerificationError, VerificationResult, WithdrawFrom, WithdrawResult,
             WithdrawSenderAddress};
-use bigdecimal::BigDecimal;
 use bitcrypto::dhash256;
 pub use bitcrypto::{dhash160, sha256, ChecksumType};
 use chain::constants::SEQUENCE_FINAL;
@@ -24,7 +23,6 @@ use common::executor::Timer;
 use common::jsonrpc_client::JsonRpcErrorType;
 use common::log::{debug, error, info, warn};
 use common::mm_metrics::MetricsArc;
-use common::mm_number::MmNumber;
 use common::{now_ms, one_hundred, ten_f64};
 use crypto::{Bip32DerPathOps, Bip44Chain, Bip44DerPathError, Bip44DerivationPath, RpcDerivationPath};
 use futures::compat::Future01CompatExt;
@@ -36,6 +34,7 @@ use keys::{Address, AddressFormat as UtxoAddressFormat, AddressHashEnum, Compact
            Type as ScriptType};
 use mm2_core::mm_ctx::MmArc;
 use mm2_err_handle::prelude::*;
+use mm2_number::{BigDecimal, MmNumber};
 use primitives::hash::H512;
 use rpc::v1::types::{Bytes as BytesJson, ToTxHash, TransactionInputEnum, H256 as H256Json};
 use script::{Builder, Opcode, Script, ScriptAddress, TransactionInputSigner, UnsignedTransactionInput};
@@ -2018,8 +2017,7 @@ pub fn validate_address<T: UtxoCommonOps>(coin: &T, address: &str) -> ValidateAd
     let is_p2pkh = address.prefix == coin.as_ref().conf.pub_addr_prefix
         && address.t_addr_prefix == coin.as_ref().conf.pub_t_addr_prefix;
     let is_p2sh = address.prefix == coin.as_ref().conf.p2sh_addr_prefix
-        && address.t_addr_prefix == coin.as_ref().conf.p2sh_t_addr_prefix
-        && coin.as_ref().conf.segwit;
+        && address.t_addr_prefix == coin.as_ref().conf.p2sh_t_addr_prefix;
     let is_segwit = address.hrp.is_some() && address.hrp == coin.as_ref().conf.bech32_hrp && coin.as_ref().conf.segwit;
 
     if is_p2pkh || is_p2sh || is_segwit {
@@ -2054,6 +2052,7 @@ where
             return;
         },
     };
+
     let mut history_map: HashMap<H256Json, TransactionDetails> = history
         .into_iter()
         .filter_map(|tx| {
@@ -2141,8 +2140,23 @@ where
         };
 
         // Remove transactions in the history_map that are not in the requested transaction list anymore
+        let history_length = history_map.len();
         let requested_ids: HashSet<H256Json> = tx_ids.iter().map(|x| x.0).collect();
         history_map.retain(|hash, _| requested_ids.contains(hash));
+
+        if history_map.len() < history_length {
+            let to_write: Vec<TransactionDetails> = history_map.iter().map(|(_, value)| value.clone()).collect();
+            if let Err(e) = coin.save_history_to_file(&ctx, to_write).compat().await {
+                log_tag!(
+                    ctx,
+                    "",
+                    "tx_history",
+                    "coin" => coin.as_ref().conf.ticker;
+                    fmt = "Error {} on 'save_history_to_file', stop the history loop", e
+                );
+                return;
+            };
+        }
 
         let mut transactions_left = if tx_ids.len() > history_map.len() {
             *coin.as_ref().history_sync_state.lock().unwrap() = HistorySyncState::InProgress(json!({
@@ -2208,18 +2222,7 @@ where
                 },
             }
             if updated {
-                let mut to_write: Vec<TransactionDetails> =
-                    history_map.iter().map(|(_, value)| value.clone()).collect();
-                // the transactions with block_height == 0 are the most recent so we need to separately handle them while sorting
-                to_write.sort_unstable_by(|a, b| {
-                    if a.block_height == 0 {
-                        Ordering::Less
-                    } else if b.block_height == 0 {
-                        Ordering::Greater
-                    } else {
-                        b.block_height.cmp(&a.block_height)
-                    }
-                });
+                let to_write: Vec<TransactionDetails> = history_map.iter().map(|(_, value)| value.clone()).collect();
                 if let Err(e) = coin.save_history_to_file(&ctx, to_write).compat().await {
                     log_tag!(
                         ctx,
@@ -3797,8 +3800,7 @@ where
         // This can be changed depending on the coins implementation
         UtxoAddressFormat::Standard => {
             let is_p2pkh = addr.prefix == conf.pub_addr_prefix && addr.t_addr_prefix == conf.pub_t_addr_prefix;
-            let is_p2sh =
-                addr.prefix == conf.p2sh_addr_prefix && addr.t_addr_prefix == conf.p2sh_t_addr_prefix && conf.segwit;
+            let is_p2sh = addr.prefix == conf.p2sh_addr_prefix && addr.t_addr_prefix == conf.p2sh_t_addr_prefix;
             if !is_p2pkh && !is_p2sh {
                 MmError::err(UnsupportedAddr::PrefixError(conf.ticker.clone()))
             } else {

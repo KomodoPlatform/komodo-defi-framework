@@ -17,7 +17,6 @@ arrayref = "0.3"
 async-trait = "0.1"
 backtrace = "0.3"
 base64 = "0.10.0"
-bigdecimal = { version = "0.3", features = ["serde"] }
 bytes = "1.1"
 cfg-if = "1.0"
 crossbeam = "0.7"
@@ -32,12 +31,8 @@ itertools = "0.10"
 lazy_static = "1.4"
 lightning = { git = "https://github.com/shamardy/rust-lightning", branch = "0.0.106" }
 log = "0.4.8"
-num-bigint = { version = "0.4", features = ["serde", "std"] }
-num-rational = { version = "0.4", features = ["serde"] }
-num-traits = "0.2"
 parking_lot = { version = "0.12.0", features = ["nightly"] }
 parking_lot_core = { version = "0.6", features = ["nightly"] }
-paste = "1.0"
 rand = { version = "0.7", features = ["std", "small_rng", "wasm-bindgen"] }
 serde = "1"
 serde_derive = "1"

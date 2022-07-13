@@ -9,9 +9,7 @@ use crate::utxo::{qtum, utxo_common, Address, GetUtxoListOps, UtxoCommonOps};
 use crate::utxo::{PrivKeyNotAllowed, UTXO_LOCK};
 use crate::{DelegationError, DelegationFut, DelegationResult, MarketCoinOps, StakingInfos, StakingInfosError,
             StakingInfosFut, StakingInfosResult, TransactionDetails, TransactionType};
-use bigdecimal::Zero;
 use bitcrypto::dhash256;
-use common::mm_number::BigDecimal;
 use common::now_ms;
 use derive_more::Display;
 use ethabi::{Contract, Token};
@@ -20,6 +18,7 @@ use futures::compat::Future01CompatExt;
 use futures::{FutureExt, TryFutureExt};
 use keys::{AddressHashEnum, Signature};
 use mm2_err_handle::prelude::*;
+use mm2_number::bigdecimal::{BigDecimal, Zero};
 use rpc::v1::types::ToTxHash;
 use script::Builder as ScriptBuilder;
 use serialization::serialize;

@@ -16,7 +16,7 @@ js-sys = "0.3.27"
 lazy_static = "1.4"
 mm2_core = { path = "../mm2_core" }
 mm2_err_handle = { path = "../mm2_err_handle" }
-num-bigint = { version = "0.4", features = ["serde", "std"] }
+mm2_number = { path = "../mm2_number" }
 num-traits = "0.2"
 primitives = { path = "../mm2_bitcoin/primitives" }
 rand = { version = "0.7", features = ["std", "small_rng", "wasm-bindgen"] }

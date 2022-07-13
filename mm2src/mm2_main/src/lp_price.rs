@@ -1,9 +1,8 @@
-use common::mm_number::MmNumber;
+use common::log::{debug, error};
 use common::StatusCode;
-use common::{log::{debug, error},
-             mm_number::BigDecimal};
 use mm2_err_handle::prelude::{MmError, OrMmError};
 use mm2_net::transport::SlurpError;
+use mm2_number::{BigDecimal, MmNumber};
 use std::collections::HashMap;
 use std::str::Utf8Error;
 
@@ -266,7 +265,7 @@ mod tests {
 
     #[test]
     fn test_get_cex_rates() {
-        use common::mm_number::MmNumber;
+        use mm2_number::MmNumber;
         use wasm_timer::SystemTime;
 
         use crate::mm2::lp_price::{Provider, TickerInfos, TickerInfosRegistry};
