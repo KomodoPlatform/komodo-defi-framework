@@ -25,7 +25,7 @@ use chain::{Transaction as UtxoTx, TransactionOutput};
 use common::{async_blocking, calc_total_pages, log, PagingOptionsEnum};
 use crypto::privkey::{key_pair_from_secret, secp_privkey_from_hash};
 use db_common::sqlite::offset_by_id;
-use db_common::sqlite::rusqlite::NO_PARAMS;
+use db_common::sqlite::rusqlite::{Error as SqlError, Row, NO_PARAMS};
 use db_common::sqlite::sql_builder::{name, SqlBuilder, SqlName};
 use futures::compat::Future01CompatExt;
 use futures::lock::Mutex as AsyncMutex;
@@ -199,6 +199,21 @@ struct ZCoinSqlTxHistoryItem {
     timestamp: i64,
     received_amount: i64,
     spent_amount: i64,
+}
+
+impl ZCoinSqlTxHistoryItem {
+    fn try_from_sql_row(row: &Row<'_>) -> Result<Self, SqlError> {
+        let mut tx_hash: Vec<u8> = row.get(0)?;
+        tx_hash.reverse();
+        Ok(ZCoinSqlTxHistoryItem {
+            tx_hash,
+            internal_id: row.get(1)?,
+            height: row.get(2)?,
+            timestamp: row.get(3)?,
+            received_amount: row.get(4)?,
+            spent_amount: row.get(5)?,
+        })
+    }
 }
 
 struct SqlTxHistoryRes {
@@ -482,19 +497,9 @@ impl ZCoin {
 
             let sql_items = conn
                 .prepare(&sql)?
-                .query_map(NO_PARAMS, |row| {
-                    let mut tx_hash: Vec<u8> = row.get(0)?;
-                    tx_hash.reverse();
-                    Ok(ZCoinSqlTxHistoryItem {
-                        tx_hash,
-                        internal_id: row.get(1)?,
-                        height: row.get(2)?,
-                        timestamp: row.get(3)?,
-                        received_amount: row.get(4)?,
-                        spent_amount: row.get(5)?,
-                    })
-                })?
+                .query_map(NO_PARAMS, ZCoinSqlTxHistoryItem::try_from_sql_row)?
                 .collect::<Result<Vec<_>, _>>()?;
+
             Ok(SqlTxHistoryRes {
                 transactions: sql_items,
                 total_tx_count,

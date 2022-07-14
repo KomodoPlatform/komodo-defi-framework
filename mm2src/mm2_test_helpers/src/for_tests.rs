@@ -1110,7 +1110,7 @@ pub async fn z_coin_tx_history(
     limit: usize,
     paging: Option<PagingOptionsEnum<i64>>,
 ) -> Json {
-    let paging = paging.unwrap_or(PagingOptionsEnum::PageNumber(NonZeroUsize::new(1).unwrap()));
+    let paging = paging.unwrap_or_default();
     let request = mm
         .rpc(&json! ({
             "userpass": mm.userpass,
