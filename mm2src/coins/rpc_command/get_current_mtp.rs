@@ -23,30 +23,26 @@ pub struct GetCurrentMtpResponse {
 #[serde(tag = "error_type", content = "error_data")]
 pub enum GetCurrentMtpError {
     NoSuchCoin(String),
+    #[display(fmt = "Requested coin: {}; is not supported for this action.", _0)]
     NotSupportedCoin(String),
-    UtxoRpcError(String),
+    RpcError(String),
 }
 
 impl HttpStatusCode for GetCurrentMtpError {
     fn status_code(&self) -> StatusCode {
         match self {
-            GetCurrentMtpError::NoSuchCoin(_)
-            | GetCurrentMtpError::UtxoRpcError(_)
-            | GetCurrentMtpError::NotSupportedCoin(_) => StatusCode::BAD_REQUEST,
+            GetCurrentMtpError::NoSuchCoin(_) => StatusCode::NOT_FOUND,
+            GetCurrentMtpError::RpcError(_) | GetCurrentMtpError::NotSupportedCoin(_) => StatusCode::BAD_REQUEST,
         }
     }
 }
 
 impl From<UtxoRpcError> for GetCurrentMtpError {
-    fn from(err: UtxoRpcError) -> Self { Self::UtxoRpcError(err.to_string()) }
+    fn from(err: UtxoRpcError) -> Self { Self::RpcError(err.to_string()) }
 }
 
 impl From<CoinFindError> for GetCurrentMtpError {
-    fn from(err: CoinFindError) -> Self {
-        match err {
-            CoinFindError::NoSuchCoin { coin } => Self::NoSuchCoin(format!("No such coin: {}", coin)),
-        }
-    }
+    fn from(err: CoinFindError) -> Self { Self::NoSuchCoin(err.to_string()) }
 }
 
 pub async fn get_current_mtp_rpc(
@@ -70,9 +66,6 @@ pub async fn get_current_mtp_rpc(
         MmCoinEnum::Bch(bch) => Ok(GetCurrentMtpResponse {
             mtp: bch.get_current_mtp().await?,
         }),
-        _ => Err(MmError::new(GetCurrentMtpError::NotSupportedCoin(format!(
-            "Requested coin: {}; is not supported for this action.",
-            &req.coin
-        )))),
+        _ => Err(MmError::new(GetCurrentMtpError::NotSupportedCoin(req.coin))),
     }
 }
