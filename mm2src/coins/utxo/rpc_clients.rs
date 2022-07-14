@@ -35,7 +35,7 @@ use serde_json::{self as json, Value as Json};
 use serialization::{deserialize, serialize, serialize_with_flags, CoinVariant, CompactInteger, Reader,
                     SERIALIZE_TRANSACTION_WITNESS};
 use sha2::{Digest, Sha256};
-use spv_validation::helpers_validation::SPVError;
+use spv_validation::helpers_validation::{validate_headers, SPVError};
 use spv_validation::storage::{BlockHeaderStorageError, BlockHeaderStorageOps};
 use std::collections::hash_map::Entry;
 use std::collections::HashMap;
@@ -1952,11 +1952,7 @@ impl ElectrumClient {
                 let params = &storage.params;
                 let blocks_limit = params.blocks_limit_to_check;
                 let (headers_registry, headers) = self.retrieve_last_headers(blocks_limit, height).compat().await?;
-                match spv_validation::helpers_validation::validate_headers(
-                    headers,
-                    params.difficulty_check,
-                    params.constant_difficulty,
-                ) {
+                match validate_headers(headers, params.difficulty_check, params.constant_difficulty) {
                     Ok(_) => {
                         storage.add_block_headers_to_storage(ticker, headers_registry).await?;
                         Ok(header)

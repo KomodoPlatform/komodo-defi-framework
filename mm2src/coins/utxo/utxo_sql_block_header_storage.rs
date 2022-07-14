@@ -136,7 +136,7 @@ impl BlockHeaderStorageOps for SqliteBlockHeadersStorage {
                 })?;
 
             for (height, header) in headers {
-                // todo: use u64 straight away after updating rusqlite
+                // TODO: use u64 straight away after updating rusqlite
                 let height = height as u32;
                 let raw_header = hex::encode(header.raw());
                 let bits: u32 = header.bits.into();

@@ -464,7 +464,7 @@ impl BroadcasterInterface for Platform {
         spawn(async move {
             match fut.compat().await {
                 Ok(id) => info!("Transaction broadcasted successfully: {:?} ", id),
-                // todo: broadcast transaction through p2p network in case of error
+                // TODO: broadcast transaction through p2p network in case of error
                 Err(e) => error!("Broadcast transaction {} failed: {}", txid, e),
             }
         });

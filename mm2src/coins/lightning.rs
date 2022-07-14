@@ -673,7 +673,6 @@ pub async fn start_lightning(
 
     // Initialize the event handler
     let event_handler = Arc::new(ln_events::LightningEventHandler::new(
-        // It's safe to use unwrap here for now until implementing Native Client for Lightning
         platform.clone(),
         channel_manager.clone(),
         keys_manager.clone(),
@@ -688,7 +687,7 @@ pub async fn start_lightning(
     // Create InvoicePayer
     // random_seed_bytes are additional random seed to improve privacy by adding a random CLTV expiry offset to each path's final hop.
     // This helps obscure the intended recipient from adversarial intermediate hops. The seed is also used to randomize candidate paths during route selection.
-    // todo: random_seed_bytes should be taken in consideration when implementing swaps because they change the payment lock-time.
+    // TODO: random_seed_bytes should be taken in consideration when implementing swaps because they change the payment lock-time.
     // https://github.com/lightningdevkit/rust-lightning/issues/158
     // https://github.com/lightningdevkit/rust-lightning/pull/1286
     // https://github.com/lightningdevkit/rust-lightning/pull/1359

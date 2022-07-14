@@ -204,7 +204,6 @@ pub async fn init_channel_manager(
 
     // Update best block whenever there's a new chain tip or a block has been newly disconnected
     spawn(ln_best_block_update_loop(
-        // It's safe to use unwrap here for now until implementing Native Client for Lightning
         platform,
         db,
         chain_monitor.clone(),

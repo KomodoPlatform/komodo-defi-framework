@@ -216,18 +216,12 @@ async fn add_claiming_tx_to_db_loop(
     claiming_txid: String,
     claimed_balance: f64,
 ) {
-    loop {
-        match db
-            .add_claiming_tx_to_db(closing_txid.clone(), claiming_txid.clone(), claimed_balance)
-            .await
-        {
-            Ok(res) => break res,
-            Err(e) => {
-                error!("error {}", e);
-                Timer::sleep(TRY_LOOP_INTERVAL).await;
-                continue;
-            },
-        }
+    while let Err(e) = db
+        .add_claiming_tx_to_db(closing_txid.clone(), claiming_txid.clone(), claimed_balance)
+        .await
+    {
+        error!("error {}", e);
+        Timer::sleep(TRY_LOOP_INTERVAL).await;
     }
 }
 

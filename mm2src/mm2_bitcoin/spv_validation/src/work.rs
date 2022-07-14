@@ -28,7 +28,11 @@ pub enum NextBlockBitsError {
     #[display(fmt = "Can't find Block header for {} with height {}", height, coin)]
     NoSuchBlockHeader {
         coin: String,
-        height: u32,
+        height: u64,
+    },
+    #[display(fmt = "Can't find a Block header for {} with no max bits", coin)]
+    NoBlockHeaderWithNoMaxBits {
+        coin: String,
     },
     Internal(String),
 }
@@ -90,7 +94,7 @@ async fn btc_retarget_bits(
             .await?
             .ok_or(NextBlockBitsError::NoSuchBlockHeader {
                 coin: coin.into(),
-                height,
+                height: retarget_ref,
             })?;
     // timestamp of block(height - RETARGETING_INTERVAL)
     let retarget_timestamp = retarget_header.time;
@@ -157,12 +161,10 @@ async fn btc_testnet_next_block_bits(
     } else if last_block_bits != max_bits {
         Ok(last_block_bits.clone())
     } else {
-        let last_block_header_with_non_max_bits = storage.get_last_block_header_with_non_max_bits(coin).await?.ok_or(
-            NextBlockBitsError::NoSuchBlockHeader {
-                coin: coin.into(),
-                height,
-            },
-        )?;
+        let last_block_header_with_non_max_bits = storage
+            .get_last_block_header_with_non_max_bits(coin)
+            .await?
+            .ok_or(NextBlockBitsError::NoBlockHeaderWithNoMaxBits { coin: coin.into() })?;
         Ok(last_block_header_with_non_max_bits.bits)
     }
 }

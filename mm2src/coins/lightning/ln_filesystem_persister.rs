@@ -27,8 +27,7 @@ use std::path::{Path, PathBuf};
 use std::str::FromStr;
 use std::sync::{Arc, Mutex};
 
-#[cfg(not(target_os = "windows"))]
-use std::os::unix::io::AsRawFd;
+#[cfg(target_family = "unix")] use std::os::unix::io::AsRawFd;
 
 #[cfg(target_os = "windows")]
 use {std::ffi::OsStr, std::os::windows::ffi::OsStrExt};
@@ -42,6 +41,7 @@ pub struct LightningFilesystemPersister {
 impl LightningFilesystemPersister {
     /// Initialize a new LightningPersister and set the path to the individual channels'
     /// files.
+    #[inline]
     pub fn new(main_path: PathBuf, backup_path: Option<PathBuf>) -> Self {
         Self {
             main_path: main_path.clone(),
@@ -51,12 +51,15 @@ impl LightningFilesystemPersister {
     }
 
     /// Get the directory which was provided when this persister was initialized.
+    #[inline]
     pub fn main_path(&self) -> PathBuf { self.main_path.clone() }
 
     /// Get the backup directory which was provided when this persister was initialized.
+    #[inline]
     pub fn backup_path(&self) -> Option<PathBuf> { self.backup_path.clone() }
 
     /// Get the channels_persister which was initialized when this persister was initialized.
+    #[inline]
     pub fn channels_persister(&self) -> &FilesystemPersister { &self.channels_persister }
 
     pub fn monitor_backup_path(&self) -> Option<PathBuf> {
@@ -172,7 +175,7 @@ fn write_monitor_to_file<ChannelSigner: Sign>(
         f.sync_all()?;
     }
     // Fsync the parent directory on Unix.
-    #[cfg(not(target_os = "windows"))]
+    #[cfg(target_family = "unix")]
     {
         fs::rename(&tmp_filename, &filename_with_path)?;
         let path = Path::new(&filename_with_path).parent().ok_or_else(|| {
