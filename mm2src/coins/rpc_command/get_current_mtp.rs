@@ -22,34 +22,38 @@ pub struct GetCurrentMtpResponse {
 #[derive(Serialize, Display, SerializeErrorType)]
 #[serde(tag = "error_type", content = "error_data")]
 pub enum GetCurrentMtpError {
-    NotSupported(String),
-    Internal(String),
+    NoSuchCoin(String),
+    NotSupportedCoin(String),
+    UtxoRpcError(String),
 }
 
 impl HttpStatusCode for GetCurrentMtpError {
     fn status_code(&self) -> StatusCode {
         match self {
-            GetCurrentMtpError::Internal(_) => StatusCode::INTERNAL_SERVER_ERROR,
-            GetCurrentMtpError::NotSupported(_) => StatusCode::INTERNAL_SERVER_ERROR,
+            GetCurrentMtpError::NoSuchCoin(_)
+            | GetCurrentMtpError::UtxoRpcError(_)
+            | GetCurrentMtpError::NotSupportedCoin(_) => StatusCode::BAD_REQUEST,
         }
     }
 }
 
 impl From<UtxoRpcError> for GetCurrentMtpError {
-    fn from(_: UtxoRpcError) -> Self { GetCurrentMtpError::Internal("Unable to get current mtp".to_string()) }
+    fn from(err: UtxoRpcError) -> Self { Self::UtxoRpcError(err.to_string()) }
 }
 
 impl From<CoinFindError> for GetCurrentMtpError {
-    fn from(_: CoinFindError) -> Self { GetCurrentMtpError::Internal("Coin not founded or not activated".to_string()) }
+    fn from(err: CoinFindError) -> Self {
+        match err {
+            CoinFindError::NoSuchCoin { coin } => Self::NoSuchCoin(format!("No such coin: {}", coin)),
+        }
+    }
 }
 
 pub async fn get_current_mtp_rpc(
     ctx: MmArc,
     req: GetCurrentMtpRequest,
 ) -> GetCurrentMtpRpcResult<GetCurrentMtpResponse> {
-    let coin = lp_coinfind_or_err(&ctx, &req.coin).await?;
-
-    match coin {
+    match lp_coinfind_or_err(&ctx, &req.coin).await? {
         MmCoinEnum::UtxoCoin(utxo) => Ok(GetCurrentMtpResponse {
             mtp: utxo.get_current_mtp().await?,
         }),
@@ -66,6 +70,9 @@ pub async fn get_current_mtp_rpc(
         MmCoinEnum::Bch(bch) => Ok(GetCurrentMtpResponse {
             mtp: bch.get_current_mtp().await?,
         }),
-        _ => Err(MmError::new(GetCurrentMtpError::NotSupported("Internal".to_string()))),
+        _ => Err(MmError::new(GetCurrentMtpError::NotSupportedCoin(format!(
+            "Requested coin: {}; is not supported for this action.",
+            &req.coin
+        )))),
     }
 }

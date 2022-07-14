@@ -6790,6 +6790,53 @@ fn test_mm2_db_migration() {
 }
 
 #[test]
+fn test_get_current_mtp() {
+    let passphrase = "cMhHM3PMpMrChygR4bLF7QsTdenhWpFrrmf2UezBG3eeFsz41rtL";
+    // KMD coin config used for this test
+    let coins = json!([
+        {"coin":"KMD","txversion":4,"overwintered":1,"txfee":10000,"protocol":{"type":"UTXO"}},
+    ]);
+    let mm = MarketMakerIt::start(
+        json! ({
+            "gui": "nogui",
+            "netid": 9000,
+            "dht": "on",  // Enable DHT without delay.
+            "passphrase": passphrase,
+            "coins": coins,
+            "rpc_password": "password",
+            "i_am_seed": true,
+        }),
+        "password".to_string(),
+        None,
+    )
+    .unwrap();
+    let (_dump_log, _dump_dashboard) = mm2_test_helpers::for_tests::mm_dump(&mm.log_path);
+
+    let electrum = block_on(enable_electrum(&mm, "KMD", false, &[
+        "electrum1.cipig.net:10001",
+        "electrum2.cipig.net:10001",
+        "electrum3.cipig.net:10001",
+    ]));
+    log!("{:?}", electrum);
+
+    let rc = block_on(mm.rpc(&json!({
+        "userpass": mm.userpass,
+        "mmrpc": "2.0",
+        "method": "get_current_mtp",
+        "params": {
+            "coin": "KMD",
+        },
+    })))
+    .unwrap();
+
+    // Test if request is successful before proceeding.
+    assert_eq!(true, rc.0.is_success());
+    let mtp_result = <Json as std::str::FromStr>::from_str(&rc.1).unwrap();
+    // Test if mtp returns a u32 Number.
+    assert_eq!(true, mtp_result["result"]["mtp"].is_number());
+}
+
+#[test]
 #[cfg(not(target_arch = "wasm32"))]
 fn test_get_public_key() {
     let coins = json!([

@@ -2242,54 +2242,6 @@ mod docker_tests {
     }
 
     #[test]
-    fn test_get_current_mtp() {
-        let (_ctx, _, alice_priv_key) = generate_utxo_coin_with_random_privkey("MYCOIN1", 1.into());
-
-        // KMD coin config used for this test
-        let coins = json!([
-            {"coin":"KMD","txversion":4,"overwintered":1,"txfee":10000,"protocol":{"type":"UTXO"}},
-        ]);
-        let mm = MarketMakerIt::start(
-            json! ({
-                "gui": "nogui",
-                "netid": 9000,
-                "dht": "on",  // Enable DHT without delay.
-                "passphrase": format!("0x{}", hex::encode(alice_priv_key)),
-                "coins": coins,
-                "rpc_password": "pass",
-                "i_am_seed": true,
-            }),
-            "pass".to_string(),
-            None,
-        )
-        .unwrap();
-        let (_dump_log, _dump_dashboard) = mm_dump(&mm.log_path);
-
-        let electrum = block_on(enable_electrum(&mm, "KMD", false, &[
-            "electrum1.cipig.net:10001",
-            "electrum2.cipig.net:10001",
-            "electrum3.cipig.net:10001",
-        ]));
-        log!("{:?}", electrum);
-
-        let rc = block_on(mm.rpc(&json!({
-            "userpass": mm.userpass,
-            "mmrpc": "2.0",
-            "method": "get_current_mtp",
-            "params": {
-                "coin": "KMD",
-            },
-        })))
-        .unwrap();
-
-        // Test if request is successful before proceeding.
-        assert_eq!(true, rc.0.is_success());
-        let mtp_result = <Json as std::str::FromStr>::from_str(&rc.1).unwrap();
-        // Test if mtp returns a u32 Number.
-        assert_eq!(true, mtp_result["result"]["mtp"].is_number());
-    }
-
-    #[test]
     fn test_get_max_taker_vol() {
         let (_ctx, _, alice_priv_key) = generate_utxo_coin_with_random_privkey("MYCOIN1", 1.into());
         let coins = json! ([
