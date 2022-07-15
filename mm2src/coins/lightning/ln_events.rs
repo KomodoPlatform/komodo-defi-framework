@@ -4,11 +4,12 @@ use crate::lightning::ln_errors::{SaveChannelClosingError, SaveChannelClosingRes
 use crate::lightning::ln_sql::SqliteLightningDB;
 use bitcoin::blockdata::script::Script;
 use bitcoin::blockdata::transaction::Transaction;
+use bitcoin::consensus::encode::serialize_hex;
 use common::executor::{spawn, Timer};
 use common::log::{error, info};
 use common::{now_ms, spawn_abortable, AbortOnDropHandle};
 use core::time::Duration;
-use lightning::chain::chaininterface::{BroadcasterInterface, ConfirmationTarget, FeeEstimator};
+use lightning::chain::chaininterface::{ConfirmationTarget, FeeEstimator};
 use lightning::chain::keysinterface::SpendableOutputDescriptor;
 use lightning::util::events::{Event, EventHandler, PaymentPurpose};
 use parking_lot::Mutex as PaMutex;
@@ -443,7 +444,7 @@ impl LightningEventHandler {
         let change_destination_script = Builder::build_witness_script(&my_address.hash).to_bytes().take().into();
         let feerate_sat_per_1000_weight = self.platform.get_est_sat_per_1000_weight(ConfirmationTarget::Normal);
         let output_descriptors = &outputs.iter().collect::<Vec<_>>();
-        let spending_tx = match self.keys_manager.spend_spendable_outputs(
+        let claiming_tx = match self.keys_manager.spend_spendable_outputs(
             output_descriptors,
             Vec::new(),
             change_destination_script,
@@ -457,12 +458,23 @@ impl LightningEventHandler {
             },
         };
 
+        let claiming_txid = claiming_tx.txid();
+        let tx_hex = serialize_hex(&claiming_tx);
+        if let Err(e) = tokio::task::block_in_place(move || self.platform.coin.send_raw_tx(&tx_hex).wait()) {
+            // TODO: broadcast transaction through p2p network in this case
+            error!(
+                "Broadcasting of the claiming transaction {} failed: {}",
+                claiming_txid, e
+            );
+            return;
+        }
+
         let claiming_tx_inputs_value = outputs.iter().fold(0, |sum, output| match output {
             SpendableOutputDescriptor::StaticOutput { output, .. } => sum + output.value,
             SpendableOutputDescriptor::DelayedPaymentOutput(descriptor) => sum + descriptor.output.value,
             SpendableOutputDescriptor::StaticPaymentOutput(descriptor) => sum + descriptor.output.value,
         });
-        let claiming_tx_outputs_value = spending_tx.output.iter().fold(0, |sum, txout| sum + txout.value);
+        let claiming_tx_outputs_value = claiming_tx.output.iter().fold(0, |sum, txout| sum + txout.value);
         if claiming_tx_inputs_value < claiming_tx_outputs_value {
             error!(
                 "Claiming transaction input value {} can't be less than outputs value {}!",
@@ -485,19 +497,17 @@ impl LightningEventHandler {
                     (descriptor.outpoint.txid.to_string(), descriptor.output.value)
                 },
             };
-            let claiming_txid = spending_tx.txid().to_string();
             let db = self.db.clone();
+
             // This doesn't need to be respawned on restart unlike add_closing_tx_to_db since Event::SpendableOutputs will be re-fired on restart
             // if the spending_tx is not broadcasted.
             let abort_handler = spawn_abortable(add_claiming_tx_to_db_loop(
                 db,
                 closing_txid,
-                claiming_txid,
+                claiming_txid.to_string(),
                 (claimed_balance as f64) - claiming_tx_fee_per_channel,
             ));
             self.abort_handlers.lock().push(abort_handler);
-
-            self.platform.broadcast_transaction(&spending_tx);
         }
     }
 
