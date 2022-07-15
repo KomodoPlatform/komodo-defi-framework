@@ -29,7 +29,7 @@ use bitcrypto::dhash256;
 use bitcrypto::ChecksumType;
 use chain::TransactionOutput;
 use common::executor::spawn;
-use common::log::{LogOnError, LogState};
+use common::log::{error, LogOnError, LogState};
 use common::{async_blocking, calc_total_pages, log, now_ms, ten, PagingOptionsEnum};
 use futures::{FutureExt, TryFutureExt};
 use futures01::Future;
@@ -904,7 +904,9 @@ pub async fn open_channel(ctx: MmArc, req: OpenChannelRequest) -> OpenChannelRes
         .save_nodes_addresses(ln_coin.open_channels_nodes)
         .await?;
 
-    ln_coin.db.add_channel_to_db(pending_channel_details).await?;
+    if let Err(e) = ln_coin.db.add_channel_to_db(pending_channel_details).await {
+        error!("Unable to add new outbound channel {} to db: {}", rpc_channel_id, e);
+    }
 
     Ok(OpenChannelResponse {
         rpc_channel_id,

@@ -7224,6 +7224,7 @@ dependencies = [
  "common",
  "derive_more",
  "keys",
+ "lazy_static",
  "primitives",
  "ripemd160",
  "rustc-hex 2.1.0",

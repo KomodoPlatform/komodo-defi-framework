@@ -175,7 +175,32 @@ mod tests {
     use crate::storage::{BlockHeaderStorageError, BlockHeaderStorageOps};
     use async_trait::async_trait;
     use common::block_on;
+    use lazy_static::lazy_static;
+    use serde::Deserialize;
     use std::collections::HashMap;
+
+    const BLOCK_HEADERS_STR: &str = include_str!("./for_tests/workTestVectors.json");
+
+    #[derive(Deserialize)]
+    struct TestRawHeader {
+        height: u64,
+        hex: String,
+    }
+
+    lazy_static! {
+        static ref BLOCK_HEADERS_MAP: HashMap<String, Vec<TestRawHeader>> = parse_block_headers();
+    }
+
+    fn parse_block_headers() -> HashMap<String, Vec<TestRawHeader>> { serde_json::from_str(BLOCK_HEADERS_STR).unwrap() }
+
+    fn get_block_headers_for_coin(coin: &str) -> HashMap<u64, BlockHeader> {
+        BLOCK_HEADERS_MAP
+            .get(coin)
+            .unwrap()
+            .into_iter()
+            .map(|h| (h.height, h.hex.as_str().into()))
+            .collect()
+    }
 
     struct TestBlockHeadersStorage {}
 
@@ -198,22 +223,7 @@ mod tests {
             for_coin: &str,
             height: u64,
         ) -> Result<Option<BlockHeader>, BlockHeaderStorageError> {
-            // https://live.blockcypher.com/btc/block/00000000a141216a896c54f211301c436e557a8d55900637bbdce14c6c7bddef/
-            if for_coin == "BTC" && height == 2016 {
-                return Ok(Some("010000006397bb6abd4fc521c0d3f6071b5650389f0b4551bc40b4e6b067306900000000ace470aecda9c8818c8fe57688cd2a772b5a57954a00df0420a7dd546b6d2c576b0e7f49ffff001d33f0192f".into()));
-            }
-
-            // https://live.blockcypher.com/btc/block/00000000000000000012145f8ffa7218d2d04ca66b61835a2a5eaec33dffc098/
-            if for_coin == "BTC" && height == 604800 {
-                return Ok(Some("000000208e244d2c55bc403caa5d6eaf0f922170e413eb1e02fb02000000000000000000e03b4d9df72d8db232a20bb2ff35c433a99f1467f391f75b5f62180d96f06d6aa4c4d65d3eb215179ef91633".into()));
-            }
-
-            // https://live.blockcypher.com/btc-testnet/block/000000000000bbde3a83bd29bc5cacd73f039f345318e7a4088914342c9d259a/
-            if for_coin == "tBTC" && height == 199584 {
-                return Ok(Some("0200000097f2b61897ba2bed756cca30058bcc1c2dfbb4ed0e962f47f749dc03000000006b80079a1eda8071424e294fa56849370e331c8ff7e95034576c9789c8db0fa6da551153ab80011c9bdaca25".into()));
-            }
-
-            Ok(None)
+            Ok(get_block_headers_for_coin(for_coin).get(&height).cloned())
         }
 
         async fn get_block_header_raw(
@@ -228,12 +238,10 @@ mod tests {
             &self,
             for_coin: &str,
         ) -> Result<Option<BlockHeader>, BlockHeaderStorageError> {
-            // https://live.blockcypher.com/btc-testnet/block/0000000000ad144538e6c80289378ba14cebb50ee47538b2a120742d1aa601ea/
-            if for_coin == "tBTC_last_block_header_with_non_max_bits" {
-                return Ok(Some("02000000cbed7fd98f1f06e85c47e13ff956533642056be45e7e6b532d4d768f00000000f2680982f333fcc9afa7f9a5e2a84dc54b7fe10605cd187362980b3aa882e9683be21353ab80011c813e1fc0".into()));
-            }
-
-            Ok(None)
+            let mut headers = get_block_headers_for_coin(for_coin);
+            headers.retain(|_, h| h.bits != BlockHeaderBits::Compact(MAX_BITS_BTC.into()));
+            let header = headers.into_iter().max_by(|a, b| a.0.cmp(&b.0));
+            Ok(header.map(|(_, h)| h))
         }
     }
 
@@ -273,7 +281,7 @@ mod tests {
         let last_header: BlockHeader = "02000000ea01a61a2d7420a1b23875e40eb5eb4ca18b378902c8e6384514ad0000000000c0c5a1ae80582b3fe319d8543307fa67befc2a734b8eddb84b1780dfdf11fa2b20e71353ffff001d00805fe0".into();
 
         let next_block_bits = block_on(btc_testnet_next_block_bits(
-            "tBTC_last_block_header_with_non_max_bits",
+            "tBTC",
             current_header.time,
             last_header,
             201595,
@@ -289,7 +297,7 @@ mod tests {
         let last_header: BlockHeader = "02000000cbed7fd98f1f06e85c47e13ff956533642056be45e7e6b532d4d768f00000000f2680982f333fcc9afa7f9a5e2a84dc54b7fe10605cd187362980b3aa882e9683be21353ab80011c813e1fc0".into();
 
         let next_block_bits = block_on(btc_testnet_next_block_bits(
-            "tBTC_max_time_gap",
+            "tBTC",
             current_header.time,
             last_header,
             201594,
