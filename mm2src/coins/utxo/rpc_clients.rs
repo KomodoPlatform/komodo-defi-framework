@@ -1168,6 +1168,7 @@ impl ElectrumBlockHeaderV12 {
             version: self.version as u32,
             previous_header_hash: self.prev_block_hash.into(),
             merkle_root_hash: self.merkle_root.into(),
+            claim_trie_root: None,
             hash_final_sapling_root: None,
             time: self.timestamp as u32,
             bits: BlockHeaderBits::U32(self.bits as u32),

@@ -43,6 +43,7 @@ const AUX_POW_VERSION_DOGE: u32 = 6422788;
 const AUX_POW_VERSION_SYS: u32 = 537919744;
 const MTP_POW_VERSION: u32 = 0x20001000u32;
 const PROG_POW_SWITCH_TIME: u32 = 1635228000;
+// This header version is also uses for coins like LBC
 const QTUM_BLOCK_HEADER_VERSION: u32 = 536870912;
 // RVN
 const KAWPOW_VERSION: u32 = 805306368;
@@ -92,6 +93,7 @@ pub struct BlockHeader {
     pub version: u32,
     pub previous_header_hash: H256,
     pub merkle_root_hash: H256,
+    pub claim_trie_root: Option<H256>,
     pub hash_final_sapling_root: Option<H256>,
     pub time: u32,
     pub bits: BlockHeaderBits,
@@ -129,6 +131,9 @@ impl Serializable for BlockHeader {
         }
         s.append(&self.previous_header_hash);
         s.append(&self.merkle_root_hash);
+        if let Some(claim) = &self.claim_trie_root {
+            s.append(claim);
+        }
         match &self.hash_final_sapling_root {
             Some(h) => {
                 s.append(h);
@@ -197,6 +202,11 @@ impl Deserializable for BlockHeader {
         }
         let previous_header_hash = reader.read()?;
         let merkle_root_hash = reader.read()?;
+        let claim_trie_root = if version == QTUM_BLOCK_HEADER_VERSION {
+            Some(reader.read()?)
+        } else {
+            None
+        };
         let hash_final_sapling_root = if version == 4 { Some(reader.read()?) } else { None };
         let time = reader.read()?;
         let bits = if version == 4 {
@@ -266,6 +276,7 @@ impl Deserializable for BlockHeader {
             version,
             previous_header_hash,
             merkle_root_hash,
+            claim_trie_root,
             hash_final_sapling_root,
             time,
             bits,
@@ -316,6 +327,7 @@ mod tests {
             version: 1,
             previous_header_hash: [2; 32].into(),
             merkle_root_hash: [3; 32].into(),
+            claim_trie_root: None,
             hash_final_sapling_root: None,
             time: 4,
             bits: BlockHeaderBits::Compact(5.into()),
@@ -361,6 +373,7 @@ mod tests {
             version: 1,
             previous_header_hash: [2; 32].into(),
             merkle_root_hash: [3; 32].into(),
+            claim_trie_root: None,
             hash_final_sapling_root: Default::default(),
             time: 4,
             bits: BlockHeaderBits::Compact(5.into()),
@@ -393,6 +406,7 @@ mod tests {
             version: 4,
             previous_header_hash: "8e4e7283b71dd1572d220935db0a1654d1042e92378579f8abab67b143f93a02".into(),
             merkle_root_hash: "fa026610d2634b72ff729b9ea7850c0d2c25eeaf7a82878ca42a8e9912028863".into(),
+            claim_trie_root: None,
             hash_final_sapling_root: Some("a2d8a734eb73a4dc734072dbfd12406f1e7121bfe0e3d6c10922495c44e5cc1c".into()),
             time: 1583159441,
             bits: BlockHeaderBits::U32(486611429),
