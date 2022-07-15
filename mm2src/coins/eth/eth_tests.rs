@@ -36,7 +36,7 @@ fn eth_coin_for_test(
     }
     drop_mutability!(nodes);
 
-    let transport = Web3Transport::new(nodes).unwrap();
+    let transport = Web3Transport::new(nodes);
     let web3 = Web3::new(transport);
     let conf = json!({
         "coins":[
@@ -215,8 +215,7 @@ fn send_and_refund_erc20_payment() {
     let transport = Web3Transport::new(vec![Web3TransportNode {
         uri: "http://195.201.0.6:8545".parse().unwrap(),
         gui_auth: false,
-    }])
-    .unwrap();
+    }]);
     let web3 = Web3::new(transport);
     let ctx = MmCtxBuilder::new().into_mm_arc();
     let coin = EthCoin(Arc::new(EthCoinImpl {
@@ -289,8 +288,7 @@ fn send_and_refund_eth_payment() {
     let transport = Web3Transport::new(vec![Web3TransportNode {
         uri: "http://195.201.0.6:8545".parse().unwrap(),
         gui_auth: false,
-    }])
-    .unwrap();
+    }]);
     let web3 = Web3::new(transport);
     let ctx = MmCtxBuilder::new().into_mm_arc();
     let coin = EthCoin(Arc::new(EthCoinImpl {
@@ -361,19 +359,16 @@ fn test_nonce_several_urls() {
             .parse()
             .unwrap(),
         gui_auth: false,
-    }])
-    .unwrap();
+    }]);
     let linkpool_transport = Web3Transport::new(vec![Web3TransportNode {
         uri: "https://ropsten-rpc.linkpool.io".parse().unwrap(),
         gui_auth: false,
-    }])
-    .unwrap();
+    }]);
     // get nonce must succeed if some nodes are down at the moment for some reason
     let failing_transport = Web3Transport::new(vec![Web3TransportNode {
         uri: "http://195.201.0.6:8989".parse().unwrap(),
         gui_auth: false,
-    }])
-    .unwrap();
+    }]);
 
     let web3_infura = Web3::new(infura_transport);
     let web3_linkpool = Web3::new(linkpool_transport);
@@ -438,8 +433,7 @@ fn test_wait_for_payment_spend_timeout() {
     let transport = Web3Transport::new(vec![Web3TransportNode {
         uri: "http://195.201.0.6:8555".parse().unwrap(),
         gui_auth: false,
-    }])
-    .unwrap();
+    }]);
     let web3 = Web3::new(transport);
     let ctx = MmCtxBuilder::new().into_mm_arc();
 
@@ -502,8 +496,7 @@ fn test_search_for_swap_tx_spend_was_spent() {
             .parse()
             .unwrap(),
         gui_auth: false,
-    }])
-    .unwrap();
+    }]);
     let web3 = Web3::new(transport);
     let ctx = MmCtxBuilder::new().into_mm_arc();
 
@@ -611,8 +604,7 @@ fn test_search_for_swap_tx_spend_was_refunded() {
             .parse()
             .unwrap(),
         gui_auth: false,
-    }])
-    .unwrap();
+    }]);
     let web3 = Web3::new(transport);
     let ctx = MmCtxBuilder::new().into_mm_arc();
 
@@ -1305,8 +1297,7 @@ fn test_message_hash() {
     let transport = Web3Transport::new(vec![Web3TransportNode {
         uri: "http://195.201.0.6:8545".parse().unwrap(),
         gui_auth: false,
-    }])
-    .unwrap();
+    }]);
     let web3 = Web3::new(transport);
     let ctx = MmCtxBuilder::new().into_mm_arc();
     let coin = EthCoin(Arc::new(EthCoinImpl {
@@ -1350,8 +1341,7 @@ fn test_sign_verify_message() {
     let transport = Web3Transport::new(vec![Web3TransportNode {
         uri: "http://195.201.0.6:8545".parse().unwrap(),
         gui_auth: false,
-    }])
-    .unwrap();
+    }]);
 
     let web3 = Web3::new(transport);
     let ctx = MmCtxBuilder::new().into_mm_arc();

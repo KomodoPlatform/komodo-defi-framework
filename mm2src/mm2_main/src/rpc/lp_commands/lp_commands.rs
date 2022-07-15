@@ -1,5 +1,6 @@
 use crate::mm2::{lp_network::subscribe_to_topic, lp_swap::tx_helper_topic};
-use coins::rpc_command::enable_v2::{enable_v2, EnableV2RpcError, EnableV2RpcResponse};
+use coins::rpc_command::activate_eth_coin::{activate_eth_coin, EnableV2RpcError, EnableV2RpcRequest,
+                                            EnableV2RpcResponse};
 use common::{Future01CompatExt, HttpStatusCode};
 use crypto::{CryptoCtx, CryptoInitError};
 use derive_more::Display;
@@ -49,14 +50,17 @@ pub async fn get_public_key_hash(ctx: MmArc, _req: Json) -> GetPublicKeyRpcResul
     Ok(GetPublicKeyHashResponse { public_key_hash })
 }
 
-pub async fn enable_v2_wrapper(ctx: MmArc, req: Json) -> MmResult<EnableV2RpcResponse, EnableV2RpcError> {
-    let coin = enable_v2(&ctx, req).await?;
+pub async fn activate_eth_coin_wrapper(
+    ctx: MmArc,
+    req: EnableV2RpcRequest,
+) -> MmResult<EnableV2RpcResponse, EnableV2RpcError> {
+    let coin = activate_eth_coin(&ctx, req).await?;
 
     let balance = coin
         .my_balance()
         .compat()
         .await
-        .map_err(|e| EnableV2RpcError::CoinCouldNotInitialized(e.to_string()))?;
+        .map_err(|e| EnableV2RpcError::CouldNotFetchBalance(e.to_string()))?;
 
     if coin.is_utxo_in_native_mode() {
         subscribe_to_topic(&ctx, tx_helper_topic(coin.ticker()));

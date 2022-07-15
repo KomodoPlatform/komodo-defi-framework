@@ -241,13 +241,12 @@ pub use solana::{solana_coin_from_conf_and_params, SolanaActivationParams, Solan
 pub mod utxo;
 #[cfg(not(target_arch = "wasm32"))] pub mod z_coin;
 
-use eth::{eth_coin_from_conf_and_request, eth_coin_from_conf_and_request_v2, EthCoin, EthTxFeeDetails, SignedEthTx};
+use eth::{eth_coin_from_conf_and_request, EthCoin, EthTxFeeDetails, SignedEthTx};
 use hd_wallet::{HDAddress, HDAddressId};
 use qrc20::Qrc20ActivationParams;
 use qrc20::{qrc20_coin_from_conf_and_params, Qrc20Coin, Qrc20FeeDetails};
 use qtum::{Qrc20AddressError, ScriptHashTypeNotSupported};
-use rpc_command::{enable_v2::EnableV2RpcRequest,
-                  init_create_account::{CreateAccountTaskManager, CreateAccountTaskManagerShared},
+use rpc_command::{init_create_account::{CreateAccountTaskManager, CreateAccountTaskManagerShared},
                   init_scan_for_new_addresses::{ScanAddressesTaskManager, ScanAddressesTaskManagerShared},
                   init_withdraw::{WithdrawTaskManager, WithdrawTaskManagerShared}};
 use utxo::bch::{bch_coin_from_conf_and_params, BchActivationRequest, BchCoin};
@@ -2316,12 +2315,8 @@ pub async fn lp_coininit(ctx: &MmArc, ticker: &str, req: &Json) -> Result<MmCoin
             let params = try_s!(UtxoActivationParams::from_legacy_req(req));
             try_s!(qtum_coin_with_priv_key(ctx, ticker, &coins_en, &params, &secret).await).into()
         },
-        CoinProtocol::ETH | CoinProtocol::ERC20 { .. } => match req["_v"].as_u64() {
-            Some(2) => {
-                let req = EnableV2RpcRequest::from_json_payload(req.clone());
-                try_s!(eth_coin_from_conf_and_request_v2(ctx, ticker, &coins_en, req, &secret, protocol).await).into()
-            },
-            _ => try_s!(eth_coin_from_conf_and_request(ctx, ticker, &coins_en, req, &secret, protocol).await).into(),
+        CoinProtocol::ETH | CoinProtocol::ERC20 { .. } => {
+            try_s!(eth_coin_from_conf_and_request(ctx, ticker, &coins_en, req, &secret, protocol).await).into()
         },
         CoinProtocol::QRC20 {
             platform,

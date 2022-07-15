@@ -39,7 +39,7 @@ use futures01::Future;
 use http::StatusCode;
 use mm2_core::mm_ctx::{MmArc, MmWeak};
 use mm2_err_handle::prelude::*;
-use mm2_net::transport::{slurp_url, GuiAuthValidationGenerator, SlurpError};
+use mm2_net::transport::{slurp_url, GuiAuthValidation, GuiAuthValidationGenerator, SlurpError};
 use mm2_number::{BigDecimal, MmNumber};
 #[cfg(test)] use mocktopus::macros::*;
 use rand::seq::SliceRandom;
@@ -59,16 +59,16 @@ use web3::types::{Action as TraceAction, BlockId, BlockNumber, Bytes, CallReques
 use web3::{self, Web3};
 use web3_transport::{EthFeeHistoryNamespace, Web3Transport, Web3TransportNode};
 
-use super::{rpc_command::enable_v2::EnableV2RpcRequest, AsyncMutex, BalanceError, BalanceFut, CoinBalance,
-            CoinProtocol, CoinTransportMetrics, CoinsContext, FeeApproxStage, FoundSwapTxSpend, HistorySyncState,
-            MarketCoinOps, MmCoin, NegotiateSwapContractAddrErr, NumConversError, NumConversResult,
-            RawTransactionError, RawTransactionFut, RawTransactionRequest, RawTransactionRes, RawTransactionResult,
-            RpcClientType, RpcTransportEventHandler, RpcTransportEventHandlerShared, SearchForSwapTxSpendInput,
-            SignatureError, SignatureResult, SwapOps, TradeFee, TradePreimageError, TradePreimageFut,
-            TradePreimageResult, TradePreimageValue, Transaction, TransactionDetails, TransactionEnum, TransactionErr,
-            TransactionFut, UnexpectedDerivationMethod, ValidateAddressResult, ValidatePaymentInput,
-            VerificationError, VerificationResult, WithdrawError, WithdrawFee, WithdrawFut, WithdrawRequest,
-            WithdrawResult};
+use super::{rpc_command::activate_eth_coin::{EnableV2RpcError, EnableV2RpcRequest},
+            AsyncMutex, BalanceError, BalanceFut, CoinBalance, CoinProtocol, CoinTransportMetrics, CoinsContext,
+            FeeApproxStage, FoundSwapTxSpend, HistorySyncState, MarketCoinOps, MmCoin, NegotiateSwapContractAddrErr,
+            NumConversError, NumConversResult, RawTransactionError, RawTransactionFut, RawTransactionRequest,
+            RawTransactionRes, RawTransactionResult, RpcClientType, RpcTransportEventHandler,
+            RpcTransportEventHandlerShared, SearchForSwapTxSpendInput, SignatureError, SignatureResult, SwapOps,
+            TradeFee, TradePreimageError, TradePreimageFut, TradePreimageResult, TradePreimageValue, Transaction,
+            TransactionDetails, TransactionEnum, TransactionErr, TransactionFut, UnexpectedDerivationMethod,
+            ValidateAddressResult, ValidatePaymentInput, VerificationError, VerificationResult, WithdrawError,
+            WithdrawFee, WithdrawFut, WithdrawRequest, WithdrawResult};
 
 pub use rlp;
 
@@ -3190,7 +3190,7 @@ impl<T: TryToAddress> TryToAddress for Option<T> {
 pub trait GuiAuthMessages {
     fn gui_auth_sign_message_hash(message: String) -> Option<[u8; 32]>;
     fn generate_gui_auth_signed_validation(generator: GuiAuthValidationGenerator)
-        -> SignatureResult<serde_json::Value>;
+        -> SignatureResult<GuiAuthValidation>;
 }
 
 impl GuiAuthMessages for EthCoin {
@@ -3209,19 +3209,19 @@ impl GuiAuthMessages for EthCoin {
 
     fn generate_gui_auth_signed_validation(
         generator: GuiAuthValidationGenerator,
-    ) -> SignatureResult<serde_json::Value> {
+    ) -> SignatureResult<GuiAuthValidation> {
         let timestamp_message = get_utc_timestamp() + 90; // 90 seconds to expire
 
         let message_hash =
             EthCoin::gui_auth_sign_message_hash(timestamp_message.to_string()).ok_or(SignatureError::PrefixNotFound)?;
         let signature = sign(&generator.secret, &H256::from(message_hash))?;
 
-        Ok(json!({
-            "coin_ticker": "ETH",
-            "address": generator.address,
-            "timestamp_message": timestamp_message,
-            "signature": format!("0x{}", signature),
-        }))
+        Ok(GuiAuthValidation {
+            coin_ticker: String::from("ETH"),
+            address: generator.address,
+            timestamp_message,
+            signature: format!("0x{}", signature),
+        })
     }
 }
 
@@ -3402,9 +3402,12 @@ pub async fn eth_coin_from_conf_and_request_v2(
     req: EnableV2RpcRequest,
     priv_key: &[u8],
     protocol: CoinProtocol,
-) -> Result<EthCoin, String> {
+) -> Result<EthCoin, MmError<EnableV2RpcError>> {
     if req.nodes.is_empty() {
-        return ERR!("Enable request for ETH coin must have at least 1 node");
+        return Err(EnableV2RpcError::AtLeastOneNodeRequired(
+            "Enable request for ETH coin must have at least 1 node".to_string(),
+        )
+        .into());
     }
 
     let mut rng = small_rng();
@@ -3414,33 +3417,38 @@ pub async fn eth_coin_from_conf_and_request_v2(
 
     let mut nodes = vec![];
     for node in req.nodes.iter() {
+        let uri = node
+            .url
+            .parse()
+            .map_err(|_| EnableV2RpcError::InvalidPayload(format!("{} could not be parsed.", node.url)))?;
+
         nodes.push(Web3TransportNode {
-            uri: try_s!(node.url.parse()),
+            uri,
             gui_auth: node.gui_auth,
         });
     }
     drop_mutability!(nodes);
 
     if req.swap_contract_address == Address::default() {
-        return ERR!("swap_contract_address can't be zero address");
+        return Err(EnableV2RpcError::InvalidPayload("swap_contract_address can't be zero address".to_string()).into());
     }
 
     if let Some(fallback) = req.fallback_swap_contract {
         if fallback == Address::default() {
-            return ERR!("fallback_swap_contract can't be zero address");
+            return Err(
+                EnableV2RpcError::InvalidPayload("fallback_swap_contract can't be zero address".to_string()).into(),
+            );
         }
     }
 
-    let key_pair: KeyPair = try_s!(KeyPair::from_secret_slice(priv_key));
+    let key_pair: KeyPair =
+        KeyPair::from_secret_slice(priv_key).map_err(|e| EnableV2RpcError::InternalError(e.to_string()))?;
     let my_address = checksum_address(&format!("{:02x}", key_pair.address()));
 
     let mut web3_instances = vec![];
     let event_handlers = rpc_event_handlers_for_eth_transport(ctx, ticker.to_string());
     for node in &nodes {
-        let mut transport = try_s!(Web3Transport::with_event_handlers(
-            vec![node.clone()],
-            event_handlers.clone()
-        ));
+        let mut transport = Web3Transport::with_event_handlers(vec![node.clone()], event_handlers.clone());
         transport.gui_auth_validation_generator = Some(GuiAuthValidationGenerator {
             secret: key_pair.secret().clone(),
             address: my_address.clone(),
@@ -3462,10 +3470,12 @@ pub async fn eth_coin_from_conf_and_request_v2(
     }
 
     if web3_instances.is_empty() {
-        return ERR!("Failed to get client version for all nodes");
+        return Err(
+            EnableV2RpcError::UnreachableNodes("Failed to get client version for all nodes".to_string()).into(),
+        );
     }
 
-    let mut transport = try_s!(Web3Transport::with_event_handlers(nodes, event_handlers));
+    let mut transport = Web3Transport::with_event_handlers(nodes, event_handlers);
     transport.gui_auth_validation_generator = Some(GuiAuthValidationGenerator {
         secret: key_pair.secret().clone(),
         address: my_address,
@@ -3480,14 +3490,18 @@ pub async fn eth_coin_from_conf_and_request_v2(
             platform,
             contract_address,
         } => {
-            let token_addr = try_s!(valid_addr_from_str(&contract_address));
+            let token_addr = valid_addr_from_str(&contract_address).map_err(EnableV2RpcError::InternalError)?;
             let decimals = match conf["decimals"].as_u64() {
-                None | Some(0) => try_s!(get_token_decimals(&web3, token_addr).await),
+                None | Some(0) => get_token_decimals(&web3, token_addr)
+                    .await
+                    .map_err(EnableV2RpcError::InternalError)?,
                 Some(d) => d as u8,
             };
             (EthCoinType::Erc20 { platform, token_addr }, decimals)
         },
-        _ => return ERR!("Expect ETH or ERC20 protocol"),
+        _ => {
+            return Err(EnableV2RpcError::InvalidPayload("Expect ETH or ERC20 protocol".to_string()).into());
+        },
     };
 
     // param from request should override the config
@@ -3579,10 +3593,7 @@ pub async fn eth_coin_from_conf_and_request(
     let mut web3_instances = vec![];
     let event_handlers = rpc_event_handlers_for_eth_transport(ctx, ticker.to_string());
     for node in nodes.iter() {
-        let transport = try_s!(Web3Transport::with_event_handlers(
-            vec![node.clone()],
-            event_handlers.clone()
-        ));
+        let transport = Web3Transport::with_event_handlers(vec![node.clone()], event_handlers.clone());
         let web3 = Web3::new(transport);
         let version = match web3.web3().client_version().compat().await {
             Ok(v) => v,
@@ -3601,7 +3612,7 @@ pub async fn eth_coin_from_conf_and_request(
         return ERR!("Failed to get client version for all urls");
     }
 
-    let transport = try_s!(Web3Transport::with_event_handlers(nodes, event_handlers));
+    let transport = Web3Transport::with_event_handlers(nodes, event_handlers);
     let web3 = Web3::new(transport);
 
     let (coin_type, decimals) = match protocol {

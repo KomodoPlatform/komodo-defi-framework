@@ -85,26 +85,26 @@ pub struct Web3TransportNode {
 impl Web3Transport {
     #[allow(dead_code)]
     #[inline]
-    pub fn new(nodes: Vec<Web3TransportNode>) -> Result<Self, String> {
-        Ok(Web3Transport {
+    pub fn new(nodes: Vec<Web3TransportNode>) -> Self {
+        Web3Transport {
             id: Arc::new(AtomicUsize::new(0)),
             nodes,
             event_handlers: Default::default(),
             gui_auth_validation_generator: None,
-        })
+        }
     }
 
     #[inline]
     pub fn with_event_handlers(
         nodes: Vec<Web3TransportNode>,
         event_handlers: Vec<RpcTransportEventHandlerShared>,
-    ) -> Result<Self, String> {
-        Ok(Web3Transport {
+    ) -> Self {
+        Web3Transport {
             id: Arc::new(AtomicUsize::new(0)),
             nodes,
             event_handlers,
             gui_auth_validation_generator: None,
-        })
+        }
     }
 }
 
@@ -183,7 +183,7 @@ async fn send_request(
             if let Some(generator) = gui_auth_validation_generator.clone() {
                 let mut json_payload: Json = serde_json::from_str(&serialized_request)?;
                 json_payload["signed_message"] = match EthCoin::generate_gui_auth_signed_validation(generator) {
-                    Ok(t) => t,
+                    Ok(t) => serde_json::to_value(t)?,
                     Err(e) => {
                         errors.push(ERRL!(
                             "GuiAuth signed message generation failed for {:?} node, error: {:?}",
@@ -268,7 +268,7 @@ async fn send_request(
             if let Some(generator) = gui_auth_validation_generator.clone() {
                 let mut json_payload: Json = serde_json::from_str(&serialized_request)?;
                 json_payload["signed_message"] = match EthCoin::generate_gui_auth_signed_validation(generator) {
-                    Ok(t) => t,
+                    Ok(t) => serde_json::to_value(t)?,
                     Err(e) => {
                         transport_errors.push(ERRL!(
                             "GuiAuth signed message generation failed for {:?} node, error: {:?}",

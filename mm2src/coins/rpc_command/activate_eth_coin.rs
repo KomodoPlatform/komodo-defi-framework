@@ -1,11 +1,13 @@
-use crate::{eth::GasStationPricePolicy, lp_coininit, MmCoinEnum};
+use crate::{coin_conf,
+            eth::{eth_coin_from_conf_and_request_v2, GasStationPricePolicy},
+            lp_register_coin, CoinProtocol, MmCoinEnum, RegisterCoinParams};
 use common::{HttpStatusCode, StatusCode};
+use crypto::CryptoCtx;
 use derive_more::Display;
 use ethereum_types::Address;
 use mm2_core::mm_ctx::MmArc;
 use mm2_err_handle::prelude::MmResult;
 use mm2_number::BigDecimal;
-use serde_json::Value as Json;
 
 #[derive(Debug, Display, Serialize, SerializeErrorType)]
 #[serde(tag = "error_type", content = "error_data")]
@@ -14,14 +16,18 @@ pub enum EnableV2RpcError {
     InvalidPayload(String),
     CoinCouldNotInitialized(String),
     CouldNotFetchBalance(String),
+    UnreachableNodes(String),
+    AtLeastOneNodeRequired(String),
     InternalError(String),
 }
 
 impl HttpStatusCode for EnableV2RpcError {
     fn status_code(&self) -> StatusCode {
         match self {
-            EnableV2RpcError::InvalidPayload(_) => StatusCode::BAD_REQUEST,
-            EnableV2RpcError::CoinCouldNotInitialized(_) => StatusCode::BAD_REQUEST,
+            EnableV2RpcError::InvalidPayload(_)
+            | EnableV2RpcError::CoinCouldNotInitialized(_)
+            | EnableV2RpcError::UnreachableNodes(_)
+            | EnableV2RpcError::AtLeastOneNodeRequired(_) => StatusCode::BAD_REQUEST,
             EnableV2RpcError::CouldNotFetchBalance(_) => StatusCode::SERVICE_UNAVAILABLE,
             _ => StatusCode::INTERNAL_SERVER_ERROR,
         }
@@ -49,15 +55,6 @@ pub struct EnableV2NodesRpc {
     pub gui_auth: bool,
 }
 
-impl EnableV2RpcRequest {
-    #[inline(always)]
-    pub fn from_json_payload(payload: Json) -> Self {
-        serde_json::from_value(payload)
-            .map_err(|e| EnableV2RpcError::InvalidPayload(e.to_string()))
-            .unwrap()
-    }
-}
-
 #[derive(Serialize, Clone)]
 pub struct EnableV2RpcResponse {
     pub result: String,
@@ -71,17 +68,30 @@ pub struct EnableV2RpcResponse {
     pub mature_confirmations: Option<u32>,
 }
 
-pub async fn enable_v2(ctx: &MmArc, req: Json) -> MmResult<MmCoinEnum, EnableV2RpcError> {
-    let mut req = req;
-    req["_v"] = json!(2_u64);
-    drop_mutability!(req);
+pub async fn activate_eth_coin(ctx: &MmArc, req: EnableV2RpcRequest) -> MmResult<MmCoinEnum, EnableV2RpcError> {
+    let secret = CryptoCtx::from_ctx(ctx)
+        .map_err(|e| EnableV2RpcError::InternalError(e.to_string()))?
+        .iguana_ctx()
+        .secp256k1_privkey_bytes()
+        .to_vec();
 
-    let ticker = req["coin"]
-        .as_str()
-        .ok_or_else(|| EnableV2RpcError::InvalidPayload(String::from("No 'coin' field")))?
-        .to_owned();
+    let coins_en = coin_conf(ctx, &req.coin);
 
-    Ok(lp_coininit(ctx, &ticker, &req)
+    let protocol: CoinProtocol = serde_json::from_value(coins_en["protocol"].clone())
+        .map_err(|e| EnableV2RpcError::CoinCouldNotInitialized(e.to_string()))?;
+
+    let coin: MmCoinEnum = eth_coin_from_conf_and_request_v2(ctx, &req.coin, &coins_en, req.clone(), &secret, protocol)
+        .await?
+        .into();
+
+    let register_params = RegisterCoinParams {
+        ticker: req.coin,
+        tx_history: req.tx_history.unwrap_or(false),
+    };
+
+    lp_register_coin(ctx, coin.clone(), register_params)
         .await
-        .map_err(EnableV2RpcError::CoinCouldNotInitialized)?)
+        .map_err(|e| EnableV2RpcError::CoinCouldNotInitialized(e.to_string()))?;
+
+    Ok(coin)
 }

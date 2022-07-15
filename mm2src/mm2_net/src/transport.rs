@@ -50,9 +50,17 @@ where
     })
 }
 
-/// gui-auth specific data-type that needed in order to perform gui-auth calls
 #[derive(Clone, Debug)]
 pub struct GuiAuthValidationGenerator {
     pub secret: Secret,
     pub address: String,
+}
+
+/// gui-auth specific data-type that needed in order to perform gui-auth calls
+#[derive(Serialize)]
+pub struct GuiAuthValidation {
+    pub coin_ticker: String,
+    pub address: String,
+    pub timestamp_message: i64,
+    pub signature: String,
 }
