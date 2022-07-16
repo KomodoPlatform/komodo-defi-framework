@@ -31,8 +31,9 @@ pub enum GetCurrentMtpError {
 impl HttpStatusCode for GetCurrentMtpError {
     fn status_code(&self) -> StatusCode {
         match self {
-            GetCurrentMtpError::NoSuchCoin(_) => StatusCode::NOT_FOUND,
-            GetCurrentMtpError::RpcError(_) | GetCurrentMtpError::NotSupportedCoin(_) => StatusCode::BAD_REQUEST,
+            GetCurrentMtpError::NoSuchCoin(_) => StatusCode::PRECONDITION_REQUIRED,
+            GetCurrentMtpError::NotSupportedCoin(_) => StatusCode::BAD_REQUEST,
+            GetCurrentMtpError::RpcError(_) => StatusCode::INTERNAL_SERVER_ERROR,
         }
     }
 }
