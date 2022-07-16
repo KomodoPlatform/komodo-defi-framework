@@ -6810,7 +6810,7 @@ fn test_get_current_mtp() {
         None,
     )
     .unwrap();
-    let (_dump_log, _dump_dashboard) = mm2_test_helpers::for_tests::mm_dump(&mm.log_path);
+    let (_dump_log, _dump_dashboard) = mm.mm_dump();
 
     let electrum = block_on(enable_electrum(&mm, "KMD", false, &[
         "electrum1.cipig.net:10001",
