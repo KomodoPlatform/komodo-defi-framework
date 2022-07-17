@@ -43,7 +43,7 @@ const AUX_POW_VERSION_DOGE: u32 = 6422788;
 const AUX_POW_VERSION_SYS: u32 = 537919744;
 const MTP_POW_VERSION: u32 = 0x20001000u32;
 const PROG_POW_SWITCH_TIME: u32 = 1635228000;
-// This header version is also uses for coins like LBC
+// This header version is also used for LBC coin.
 const QTUM_BLOCK_HEADER_VERSION: u32 = 536870912;
 // RVN
 const KAWPOW_VERSION: u32 = 805306368;
@@ -93,6 +93,7 @@ pub struct BlockHeader {
     pub version: u32,
     pub previous_header_hash: H256,
     pub merkle_root_hash: H256,
+    /// https://github.com/lbryio/lbrycrd/blob/71fc94b1dea1c7818f84a09832ec3db736481e0f/src/primitives/block.h#L40
     pub claim_trie_root: Option<H256>,
     pub hash_final_sapling_root: Option<H256>,
     pub time: u32,
@@ -202,11 +203,15 @@ impl Deserializable for BlockHeader {
         }
         let previous_header_hash = reader.read()?;
         let merkle_root_hash = reader.read()?;
-        let claim_trie_root = if version == QTUM_BLOCK_HEADER_VERSION {
+
+        // This is needed to deserialize coin like LBC correctly.
+        let claim_trie_root = if version == QTUM_BLOCK_HEADER_VERSION && *reader.coin_name() == Some("LBC".to_string())
+        {
             Some(reader.read()?)
         } else {
             None
         };
+
         let hash_final_sapling_root = if version == 4 { Some(reader.read()?) } else { None };
         let time = reader.read()?;
         let bits = if version == 4 {
@@ -1976,7 +1981,7 @@ mod tests {
             226, 1, 77, 51, 114, 115, 8, 152, 211, 49, 161, 62, 190, 80, 119, 154, 30, 193, 226, 46, 248, 169, 69, 226,
             86, 134, 101, 238, 115, 14, 63, 174, 123, 30, 7, 123, 174, 60, 13, 100, 49, 23, 123,
         ];
-        let mut reader = Reader::new_with_coin_variant(headers_bytes, CoinVariant::Qtum);
+        let mut reader = Reader::new_with_coin_params(headers_bytes, CoinVariant::Qtum, Some("QTUM".to_string()));
         let headers = reader.read_list::<BlockHeader>().unwrap();
         for header in headers.iter() {
             assert_eq!(header.version, QTUM_BLOCK_HEADER_VERSION);

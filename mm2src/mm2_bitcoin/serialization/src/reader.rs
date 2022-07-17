@@ -65,6 +65,8 @@ pub struct Reader<T> {
     buffer: T,
     peeked: Option<u8>,
     coin_variant: CoinVariant,
+    /// This field will be very important to deserializing specific coins correctly e.g `LBC`
+    coin_name: Option<String>,
 }
 
 impl<'a> Reader<&'a [u8]> {
@@ -74,15 +76,17 @@ impl<'a> Reader<&'a [u8]> {
             buffer,
             peeked: None,
             coin_variant: CoinVariant::Standard,
+            coin_name: None,
         }
     }
 
     /// Convenient way of creating for slice of bytes
-    pub fn new_with_coin_variant(buffer: &'a [u8], coin_variant: CoinVariant) -> Self {
+    pub fn new_with_coin_params(buffer: &'a [u8], coin_variant: CoinVariant, coin_name: Option<String>) -> Self {
         Reader {
             buffer,
             peeked: None,
             coin_variant,
+            coin_name,
         }
     }
 }
@@ -118,6 +122,7 @@ where
             buffer: read,
             peeked: None,
             coin_variant: CoinVariant::Standard,
+            coin_name: None,
         }
     }
 
@@ -190,6 +195,8 @@ where
     }
 
     pub fn coin_variant(&self) -> &CoinVariant { &self.coin_variant }
+
+    pub fn coin_name(&self) -> &Option<String> { &self.coin_name }
 }
 
 /// Should be used to iterate over structures of the same type
