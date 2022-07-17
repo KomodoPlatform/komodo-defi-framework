@@ -6790,6 +6790,7 @@ fn test_mm2_db_migration() {
 }
 
 #[test]
+#[cfg(not(target_arch = "wasm32"))]
 fn test_get_current_mtp() {
     let passphrase = "cMhHM3PMpMrChygR4bLF7QsTdenhWpFrrmf2UezBG3eeFsz41rtL";
     // KMD coin config used for this test
