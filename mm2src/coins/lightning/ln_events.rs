@@ -196,7 +196,7 @@ async fn save_channel_closing_details(
     user_channel_id: u64,
     reason: String,
 ) -> SaveChannelClosingResult<()> {
-    db.update_channel_to_closed(user_channel_id, reason, now_ms() / 1000)
+    db.update_channel_to_closed(user_channel_id as i64, reason, (now_ms() / 1000) as i64)
         .await?;
 
     let channel_details = db
@@ -206,7 +206,7 @@ async fn save_channel_closing_details(
 
     let closing_tx_hash = platform.get_channel_closing_tx(channel_details).await?;
 
-    db.add_closing_tx_to_db(user_channel_id, closing_tx_hash).await?;
+    db.add_closing_tx_to_db(user_channel_id as i64, closing_tx_hash).await?;
 
     Ok(())
 }
@@ -279,10 +279,10 @@ impl LightningEventHandler {
         spawn(async move {
             let best_block_height = platform.best_block_height();
             db.add_funding_tx_to_db(
-                user_channel_id,
+                user_channel_id as i64,
                 funding_txid.to_string(),
-                channel_value_satoshis,
-                best_block_height,
+                channel_value_satoshis as i64,
+                best_block_height as i64,
             )
             .await
             .error_log();
@@ -321,25 +321,25 @@ impl LightningEventHandler {
                 if let Ok(Some(mut payment_info)) = db.get_payment_from_db(payment_hash).await.error_log_passthrough() {
                     payment_info.preimage = Some(payment_preimage);
                     payment_info.status = HTLCStatus::Succeeded;
-                    payment_info.amt_msat = Some(amt);
-                    payment_info.last_updated = now_ms() / 1000;
+                    payment_info.amt_msat = Some(amt as i64);
+                    payment_info.last_updated = (now_ms() / 1000) as i64;
                     if let Err(e) = db.add_or_update_payment_in_db(payment_info).await {
                         error!("Unable to update payment information in DB: {}", e);
                     }
                 }
             }),
             PaymentPurpose::SpontaneousPayment(_) => {
-                let payment_info = PaymentInfo {
+                let payment_info = DBPaymentInfo {
                     payment_hash,
                     payment_type: PaymentType::InboundPayment,
                     description: "".into(),
                     preimage: Some(payment_preimage),
                     secret: payment_secret,
-                    amt_msat: Some(amt),
+                    amt_msat: Some(amt as i64),
                     fee_paid_msat: None,
                     status,
-                    created_at: now_ms() / 1000,
-                    last_updated: now_ms() / 1000,
+                    created_at: (now_ms() / 1000) as i64,
+                    last_updated: (now_ms() / 1000) as i64,
                 };
                 spawn(async move {
                     if let Err(e) = db.add_or_update_payment_in_db(payment_info).await {
@@ -365,8 +365,8 @@ impl LightningEventHandler {
             if let Ok(Some(mut payment_info)) = db.get_payment_from_db(payment_hash).await.error_log_passthrough() {
                 payment_info.preimage = Some(payment_preimage);
                 payment_info.status = HTLCStatus::Succeeded;
-                payment_info.fee_paid_msat = fee_paid_msat;
-                payment_info.last_updated = now_ms() / 1000;
+                payment_info.fee_paid_msat = fee_paid_msat.map(|f| f as i64);
+                payment_info.last_updated = (now_ms() / 1000) as i64;
                 let amt_msat = payment_info.amt_msat;
                 if let Err(e) = db.add_or_update_payment_in_db(payment_info).await {
                     error!("Unable to update payment information in DB: {}", e);
@@ -411,7 +411,7 @@ impl LightningEventHandler {
         spawn(async move {
             if let Ok(Some(mut payment_info)) = db.get_payment_from_db(payment_hash).await.error_log_passthrough() {
                 payment_info.status = HTLCStatus::Failed;
-                payment_info.last_updated = now_ms() / 1000;
+                payment_info.last_updated = (now_ms() / 1000) as i64;
                 if let Err(e) = db.add_or_update_payment_in_db(payment_info).await {
                     error!("Unable to update payment information in DB: {}", e);
                 }
@@ -567,10 +567,10 @@ impl LightningEventHandler {
                         if let Some(funding_tx) = details.funding_txo {
                             let best_block_height = platform.best_block_height();
                             db.add_funding_tx_to_db(
-                                user_channel_id,
+                                user_channel_id as i64,
                                 funding_tx.txid.to_string(),
-                                funding_satoshis,
-                                best_block_height,
+                                funding_satoshis as i64,
+                                best_block_height as i64,
                             )
                             .await
                             .error_log();

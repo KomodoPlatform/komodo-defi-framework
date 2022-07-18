@@ -46,7 +46,8 @@ use lightning_invoice::payment;
 use lightning_invoice::utils::{create_invoice_from_channelmanager, DefaultRouter};
 use lightning_invoice::{Invoice, InvoiceDescription};
 use ln_conf::{ChannelOptions, LightningCoinConf, LightningProtocolConf, PlatformCoinConfirmations};
-use ln_db::{ClosedChannelsFilter, DBChannelDetails, HTLCStatus, LightningDB, PaymentInfo, PaymentType, PaymentsFilter};
+use ln_db::{ClosedChannelsFilter, DBChannelDetails, DBPaymentInfo, DBPaymentsFilter, HTLCStatus, LightningDB,
+            PaymentType};
 use ln_errors::{ClaimableBalancesError, ClaimableBalancesResult, CloseChannelError, CloseChannelResult,
                 ConnectToNodeError, ConnectToNodeResult, EnableLightningError, EnableLightningResult,
                 GenerateInvoiceError, GenerateInvoiceResult, GetChannelDetailsError, GetChannelDetailsResult,
@@ -132,7 +133,7 @@ impl LightningCoin {
             })
     }
 
-    fn pay_invoice(&self, invoice: Invoice) -> SendPaymentResult<PaymentInfo> {
+    fn pay_invoice(&self, invoice: Invoice) -> SendPaymentResult<DBPaymentInfo> {
         self.invoice_payer
             .pay_invoice(&invoice)
             .map_to_mm(|e| SendPaymentError::PaymentError(format!("{:?}", e)))?;
@@ -145,17 +146,17 @@ impl LightningCoin {
             InvoiceDescription::Hash(h) => hex::encode(h.0.into_inner()),
         };
         let payment_secret = Some(*invoice.payment_secret());
-        Ok(PaymentInfo {
+        Ok(DBPaymentInfo {
             payment_hash,
             payment_type,
             description,
             preimage: None,
             secret: payment_secret,
-            amt_msat: invoice.amount_milli_satoshis(),
+            amt_msat: invoice.amount_milli_satoshis().map(|a| a as i64),
             fee_paid_msat: None,
             status: HTLCStatus::Pending,
-            created_at: now_ms() / 1000,
-            last_updated: now_ms() / 1000,
+            created_at: (now_ms() / 1000) as i64,
+            last_updated: (now_ms() / 1000) as i64,
         })
     }
 
@@ -164,7 +165,7 @@ impl LightningCoin {
         destination: PublicKey,
         amount_msat: u64,
         final_cltv_expiry_delta: u32,
-    ) -> SendPaymentResult<PaymentInfo> {
+    ) -> SendPaymentResult<DBPaymentInfo> {
         if final_cltv_expiry_delta < MIN_FINAL_CLTV_EXPIRY {
             return MmError::err(SendPaymentError::CLTVExpiryError(
                 final_cltv_expiry_delta,
@@ -178,17 +179,17 @@ impl LightningCoin {
         let payment_hash = PaymentHash(Sha256::hash(&payment_preimage.0).into_inner());
         let payment_type = PaymentType::OutboundPayment { destination };
 
-        Ok(PaymentInfo {
+        Ok(DBPaymentInfo {
             payment_hash,
             payment_type,
             description: "".into(),
             preimage: Some(payment_preimage),
             secret: None,
-            amt_msat: Some(amount_msat),
+            amt_msat: Some(amount_msat as i64),
             fee_paid_msat: None,
             status: HTLCStatus::Pending,
-            created_at: now_ms() / 1000,
-            last_updated: now_ms() / 1000,
+            created_at: (now_ms() / 1000) as i64,
+            last_updated: (now_ms() / 1000) as i64,
         })
     }
 
@@ -1208,17 +1209,17 @@ pub async fn generate_invoice(
         req.description.clone(),
     )?;
     let payment_hash = invoice.payment_hash().into_inner();
-    let payment_info = PaymentInfo {
+    let payment_info = DBPaymentInfo {
         payment_hash: PaymentHash(payment_hash),
         payment_type: PaymentType::InboundPayment,
         description: req.description,
         preimage: None,
         secret: Some(*invoice.payment_secret()),
-        amt_msat: req.amount_in_msat,
+        amt_msat: req.amount_in_msat.map(|a| a as i64),
         fee_paid_msat: None,
         status: HTLCStatus::Pending,
-        created_at: now_ms() / 1000,
-        last_updated: now_ms() / 1000,
+        created_at: (now_ms() / 1000) as i64,
+        last_updated: (now_ms() / 1000) as i64,
     };
     ln_coin.db.add_or_update_payment_in_db(payment_info).await?;
     Ok(GenerateInvoiceResponse {
@@ -1298,18 +1299,27 @@ pub struct PaymentsFilterForRPC {
     pub to_timestamp: Option<u64>,
 }
 
-impl From<PaymentsFilterForRPC> for PaymentsFilter {
+impl From<PaymentsFilterForRPC> for DBPaymentsFilter {
     fn from(filter: PaymentsFilterForRPC) -> Self {
-        PaymentsFilter {
-            payment_type: filter.payment_type.map(From::from),
+        let (is_outbound, destination) = if let Some(payment_type) = filter.payment_type {
+            match payment_type {
+                PaymentTypeForRPC::OutboundPayment { destination } => (Some(true), Some(destination.0.to_string())),
+                PaymentTypeForRPC::InboundPayment => (Some(false), None),
+            }
+        } else {
+            (None, None)
+        };
+        DBPaymentsFilter {
+            is_outbound,
+            destination,
             description: filter.description,
-            status: filter.status,
-            from_amount_msat: filter.from_amount_msat,
-            to_amount_msat: filter.to_amount_msat,
-            from_fee_paid_msat: filter.from_fee_paid_msat,
-            to_fee_paid_msat: filter.to_fee_paid_msat,
-            from_timestamp: filter.from_timestamp,
-            to_timestamp: filter.to_timestamp,
+            status: filter.status.map(|s| s.to_string()),
+            from_amount_msat: filter.from_amount_msat.map(|a| a as i64),
+            to_amount_msat: filter.to_amount_msat.map(|a| a as i64),
+            from_fee_paid_msat: filter.from_fee_paid_msat.map(|f| f as i64),
+            to_fee_paid_msat: filter.to_fee_paid_msat.map(|f| f as i64),
+            from_timestamp: filter.from_timestamp.map(|f| f as i64),
+            to_timestamp: filter.to_timestamp.map(|f| f as i64),
         }
     }
 }
@@ -1361,16 +1371,16 @@ pub struct PaymentInfoForRPC {
     payment_type: PaymentTypeForRPC,
     description: String,
     #[serde(skip_serializing_if = "Option::is_none")]
-    amount_in_msat: Option<u64>,
+    amount_in_msat: Option<i64>,
     #[serde(skip_serializing_if = "Option::is_none")]
-    fee_paid_msat: Option<u64>,
+    fee_paid_msat: Option<i64>,
     status: HTLCStatus,
-    created_at: u64,
-    last_updated: u64,
+    created_at: i64,
+    last_updated: i64,
 }
 
-impl From<PaymentInfo> for PaymentInfoForRPC {
-    fn from(info: PaymentInfo) -> Self {
+impl From<DBPaymentInfo> for PaymentInfoForRPC {
+    fn from(info: DBPaymentInfo) -> Self {
         PaymentInfoForRPC {
             payment_hash: info.payment_hash.0.into(),
             payment_type: info.payment_type.into(),

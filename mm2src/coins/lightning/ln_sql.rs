@@ -1,13 +1,13 @@
-use crate::lightning::ln_db::{ChannelType, ChannelVisibility, ClosedChannelsFilter, DBChannelDetails,
-                              GetClosedChannelsResult, GetPaymentsResult, HTLCStatus, LightningDB, PaymentInfo,
-                              PaymentType, PaymentsFilter};
+use crate::lightning::ln_db::{ChannelType, ChannelVisibility, ClosedChannelsFilter, DBChannelDetails, DBPaymentInfo,
+                              DBPaymentsFilter, GetClosedChannelsResult, GetPaymentsResult, HTLCStatus, LightningDB,
+                              PaymentType};
 use async_trait::async_trait;
 use common::{async_blocking, PagingOptionsEnum};
 use db_common::sqlite::rusqlite::{Error as SqlError, Row, ToSql, NO_PARAMS};
 use db_common::sqlite::sql_builder::SqlBuilder;
 use db_common::sqlite::{h256_option_slice_from_row, h256_slice_from_row, offset_by_id, query_single_row,
-                        sql_text_conversion_err, string_from_row, validate_table_name, SqliteConnShared,
-                        CHECK_TABLE_EXISTS_SQL};
+                        sql_text_conversion_err, string_from_row, validate_table_name, SqlNamedParams,
+                        SqliteConnShared, CHECK_TABLE_EXISTS_SQL};
 use lightning::ln::{PaymentHash, PaymentPreimage, PaymentSecret};
 use secp256k1::PublicKey;
 use std::convert::TryInto;
@@ -179,26 +179,26 @@ fn select_payment_by_hash_sql(for_coin: &str) -> Result<String, SqlError> {
 
 fn channel_details_from_row(row: &Row<'_>) -> Result<DBChannelDetails, SqlError> {
     let channel_details = DBChannelDetails {
-        rpc_id: row.get::<_, u32>(0)? as u64,
+        rpc_id: row.get(0)?,
         channel_id: row.get(1)?,
         counterparty_node_id: row.get(2)?,
         funding_tx: row.get(3)?,
-        funding_value: row.get::<_, Option<u32>>(4)?.map(|v| v as u64),
-        funding_generated_in_block: row.get::<_, Option<u32>>(5)?.map(|v| v as u64),
+        funding_value: row.get(4)?,
+        funding_generated_in_block: row.get(5)?,
         closing_tx: row.get(6)?,
         closure_reason: row.get(7)?,
         claiming_tx: row.get(8)?,
-        claimed_balance: row.get::<_, Option<f64>>(9)?,
+        claimed_balance: row.get(9)?,
         is_outbound: row.get(10)?,
         is_public: row.get(11)?,
         is_closed: row.get(12)?,
-        created_at: row.get::<_, u32>(13)? as u64,
-        closed_at: row.get::<_, Option<u32>>(14)?.map(|t| t as u64),
+        created_at: row.get(13)?,
+        closed_at: row.get(14)?,
     };
     Ok(channel_details)
 }
 
-fn payment_info_from_row(row: &Row<'_>) -> Result<PaymentInfo, SqlError> {
+fn payment_info_from_row(row: &Row<'_>) -> Result<DBPaymentInfo, SqlError> {
     let is_outbound = row.get::<_, bool>(8)?;
     let payment_type = if is_outbound {
         PaymentType::OutboundPayment {
@@ -208,17 +208,17 @@ fn payment_info_from_row(row: &Row<'_>) -> Result<PaymentInfo, SqlError> {
         PaymentType::InboundPayment
     };
 
-    let payment_info = PaymentInfo {
+    let payment_info = DBPaymentInfo {
         payment_hash: PaymentHash(h256_slice_from_row::<String>(row, 0)?),
         payment_type,
         description: row.get(2)?,
         preimage: h256_option_slice_from_row::<String>(row, 3)?.map(PaymentPreimage),
         secret: h256_option_slice_from_row::<String>(row, 4)?.map(PaymentSecret),
-        amt_msat: row.get::<_, Option<u32>>(5)?.map(|v| v as u64),
-        fee_paid_msat: row.get::<_, Option<u32>>(6)?.map(|v| v as u64),
+        amt_msat: row.get(5)?,
+        fee_paid_msat: row.get(6)?,
         status: HTLCStatus::from_str(&row.get::<_, String>(7)?)?,
-        created_at: row.get::<_, u32>(9)? as u64,
-        last_updated: row.get::<_, u32>(10)? as u64,
+        created_at: row.get(9)?,
+        last_updated: row.get(10)?,
     };
     Ok(payment_info)
 }
@@ -316,74 +316,78 @@ fn finalize_get_channels_sql_builder(sql_builder: &mut SqlBuilder, offset: usize
     sql_builder.order_desc("closed_at");
 }
 
-fn apply_get_channels_filter(builder: &mut SqlBuilder, params: &mut Vec<(&str, String)>, filter: ClosedChannelsFilter) {
-    if let Some(channel_id) = filter.channel_id {
+fn apply_get_channels_filter<'a>(
+    builder: &mut SqlBuilder,
+    params: &mut SqlNamedParams<'a>,
+    filter: &'a ClosedChannelsFilter,
+) {
+    if let Some(channel_id) = &filter.channel_id {
         builder.and_where("channel_id = :channel_id");
         params.push((":channel_id", channel_id));
     }
 
-    if let Some(counterparty_node_id) = filter.counterparty_node_id {
+    if let Some(counterparty_node_id) = &filter.counterparty_node_id {
         builder.and_where("counterparty_node_id = :counterparty_node_id");
         params.push((":counterparty_node_id", counterparty_node_id));
     }
 
-    if let Some(funding_tx) = filter.funding_tx {
+    if let Some(funding_tx) = &filter.funding_tx {
         builder.and_where("funding_tx = :funding_tx");
         params.push((":funding_tx", funding_tx));
     }
 
-    if let Some(from_funding_value) = filter.from_funding_value {
+    if let Some(from_funding_value) = &filter.from_funding_value {
         builder.and_where("funding_value >= :from_funding_value");
-        params.push((":from_funding_value", from_funding_value.to_string()));
+        params.push((":from_funding_value", from_funding_value));
     }
 
-    if let Some(to_funding_value) = filter.to_funding_value {
+    if let Some(to_funding_value) = &filter.to_funding_value {
         builder.and_where("funding_value <= :to_funding_value");
-        params.push((":to_funding_value", to_funding_value.to_string()));
+        params.push((":to_funding_value", to_funding_value));
     }
 
-    if let Some(closing_tx) = filter.closing_tx {
+    if let Some(closing_tx) = &filter.closing_tx {
         builder.and_where("closing_tx = :closing_tx");
         params.push((":closing_tx", closing_tx));
     }
 
-    if let Some(closure_reason) = filter.closure_reason {
+    if let Some(closure_reason) = &filter.closure_reason {
         builder.and_where(format!("closure_reason LIKE '%{}%'", closure_reason));
     }
 
-    if let Some(claiming_tx) = filter.claiming_tx {
+    if let Some(claiming_tx) = &filter.claiming_tx {
         builder.and_where("claiming_tx = :claiming_tx");
         params.push((":claiming_tx", claiming_tx));
     }
 
-    if let Some(from_claimed_balance) = filter.from_claimed_balance {
+    if let Some(from_claimed_balance) = &filter.from_claimed_balance {
         builder.and_where("claimed_balance >= :from_claimed_balance");
-        params.push((":from_claimed_balance", from_claimed_balance.to_string()));
+        params.push((":from_claimed_balance", from_claimed_balance));
     }
 
-    if let Some(to_claimed_balance) = filter.to_claimed_balance {
+    if let Some(to_claimed_balance) = &filter.to_claimed_balance {
         builder.and_where("claimed_balance <= :to_claimed_balance");
-        params.push((":to_claimed_balance", to_claimed_balance.to_string()));
+        params.push((":to_claimed_balance", to_claimed_balance));
     }
 
-    if let Some(channel_type) = filter.channel_type {
+    if let Some(channel_type) = &filter.channel_type {
         let is_outbound = match channel_type {
-            ChannelType::Outbound => true as i32,
-            ChannelType::Inbound => false as i32,
+            ChannelType::Outbound => &true,
+            ChannelType::Inbound => &false,
         };
 
         builder.and_where("is_outbound = :is_outbound");
-        params.push((":is_outbound", is_outbound.to_string()));
+        params.push((":is_outbound", is_outbound));
     }
 
-    if let Some(channel_visibility) = filter.channel_visibility {
+    if let Some(channel_visibility) = &filter.channel_visibility {
         let is_public = match channel_visibility {
-            ChannelVisibility::Public => true as i32,
-            ChannelVisibility::Private => false as i32,
+            ChannelVisibility::Public => &true,
+            ChannelVisibility::Private => &false,
         };
 
         builder.and_where("is_public = :is_public");
-        params.push((":is_public", is_public.to_string()));
+        params.push((":is_public", is_public));
     }
 }
 
@@ -412,58 +416,58 @@ fn finalize_get_payments_sql_builder(sql_builder: &mut SqlBuilder, offset: usize
     sql_builder.order_desc("last_updated");
 }
 
-fn apply_get_payments_filter(builder: &mut SqlBuilder, params: &mut Vec<(&str, String)>, filter: PaymentsFilter) {
-    if let Some(payment_type) = filter.payment_type {
-        let (is_outbound, destination) = match payment_type {
-            PaymentType::OutboundPayment { destination } => (true as i32, Some(destination.to_string())),
-            PaymentType::InboundPayment => (false as i32, None),
-        };
-        if let Some(dest) = destination {
-            builder.and_where("destination = :dest");
-            params.push((":dest", dest));
-        }
-
-        builder.and_where("is_outbound = :is_outbound");
-        params.push((":is_outbound", is_outbound.to_string()));
+fn apply_get_payments_filter<'a>(
+    builder: &mut SqlBuilder,
+    params: &mut SqlNamedParams<'a>,
+    filter: &'a DBPaymentsFilter,
+) {
+    if let Some(dest) = &filter.destination {
+        builder.and_where("destination = :dest");
+        params.push((":dest", dest));
     }
 
-    if let Some(description) = filter.description {
+    if let Some(outbound) = &filter.is_outbound {
+        builder.and_where("is_outbound = :is_outbound");
+        params.push((":is_outbound", outbound));
+    }
+
+    if let Some(description) = &filter.description {
         builder.and_where(format!("description LIKE '%{}%'", description));
     }
 
-    if let Some(status) = filter.status {
+    if let Some(status) = &filter.status {
         builder.and_where("status = :status");
-        params.push((":status", status.to_string()));
+        params.push((":status", status));
     }
 
-    if let Some(from_amount) = filter.from_amount_msat {
+    if let Some(from_amount) = &filter.from_amount_msat {
         builder.and_where("amount_msat >= :from_amount");
-        params.push((":from_amount", from_amount.to_string()));
+        params.push((":from_amount", from_amount));
     }
 
-    if let Some(to_amount) = filter.to_amount_msat {
+    if let Some(to_amount) = &filter.to_amount_msat {
         builder.and_where("amount_msat <= :to_amount");
-        params.push((":to_amount", to_amount.to_string()));
+        params.push((":to_amount", to_amount));
     }
 
-    if let Some(from_fee) = filter.from_fee_paid_msat {
+    if let Some(from_fee) = &filter.from_fee_paid_msat {
         builder.and_where("fee_paid_msat >= :from_fee");
-        params.push((":from_fee", from_fee.to_string()));
+        params.push((":from_fee", from_fee));
     }
 
-    if let Some(to_fee) = filter.to_fee_paid_msat {
+    if let Some(to_fee) = &filter.to_fee_paid_msat {
         builder.and_where("fee_paid_msat <= :to_fee");
-        params.push((":to_fee", to_fee.to_string()));
+        params.push((":to_fee", to_fee));
     }
 
-    if let Some(from_time) = filter.from_timestamp {
+    if let Some(from_time) = &filter.from_timestamp {
         builder.and_where("created_at >= :from_time");
-        params.push((":from_time", from_time.to_string()));
+        params.push((":from_time", from_time));
     }
 
-    if let Some(to_time) = filter.to_timestamp {
+    if let Some(to_time) = &filter.to_timestamp {
         builder.and_where("created_at <= :to_time");
-        params.push((":to_time", to_time.to_string()));
+        params.push((":to_time", to_time));
     }
 }
 
@@ -544,28 +548,22 @@ impl LightningDB for SqliteLightningDB {
 
     async fn add_channel_to_db(&self, details: DBChannelDetails) -> Result<(), Self::Error> {
         let for_coin = self.db_ticker.clone();
-        let rpc_id = details.rpc_id.to_string();
-        let channel_id = details.channel_id;
-        let counterparty_node_id = details.counterparty_node_id;
-        let is_outbound = (details.is_outbound as i32).to_string();
-        let is_public = (details.is_public as i32).to_string();
-        let is_closed = (details.is_closed as i32).to_string();
-        let created_at = (details.created_at as u32).to_string();
-
-        let params = [
-            rpc_id,
-            channel_id,
-            counterparty_node_id,
-            is_outbound,
-            is_public,
-            is_closed,
-            created_at,
-        ];
+        let rpc_id = details.rpc_id as i64;
+        let created_at = details.created_at as i64;
 
         let sqlite_connection = self.sqlite_connection.clone();
         async_blocking(move || {
             let mut conn = sqlite_connection.lock().unwrap();
             let sql_transaction = conn.transaction()?;
+            let params = [
+                &rpc_id as &dyn ToSql,
+                &details.channel_id as &dyn ToSql,
+                &details.counterparty_node_id as &dyn ToSql,
+                &details.is_outbound as &dyn ToSql,
+                &details.is_public as &dyn ToSql,
+                &details.is_closed as &dyn ToSql,
+                &created_at as &dyn ToSql,
+            ];
             sql_transaction.execute(&insert_channel_sql(&for_coin)?, &params)?;
             sql_transaction.commit()?;
             Ok(())
@@ -575,22 +573,23 @@ impl LightningDB for SqliteLightningDB {
 
     async fn add_funding_tx_to_db(
         &self,
-        rpc_id: u64,
+        rpc_id: i64,
         funding_tx: String,
-        funding_value: u64,
-        funding_generated_in_block: u64,
+        funding_value: i64,
+        funding_generated_in_block: i64,
     ) -> Result<(), Self::Error> {
         let for_coin = self.db_ticker.clone();
-        let funding_value = funding_value.to_string();
-        let funding_generated_in_block = funding_generated_in_block.to_string();
-        let rpc_id = rpc_id.to_string();
-
-        let params = [funding_tx, funding_value, funding_generated_in_block, rpc_id];
 
         let sqlite_connection = self.sqlite_connection.clone();
         async_blocking(move || {
             let mut conn = sqlite_connection.lock().unwrap();
             let sql_transaction = conn.transaction()?;
+            let params = [
+                &funding_tx as &dyn ToSql,
+                &funding_value as &dyn ToSql,
+                &funding_generated_in_block as &dyn ToSql,
+                &rpc_id as &dyn ToSql,
+            ];
             sql_transaction.execute(&update_funding_tx_sql(&for_coin)?, &params)?;
             sql_transaction.commit()?;
             Ok(())
@@ -598,15 +597,14 @@ impl LightningDB for SqliteLightningDB {
         .await
     }
 
-    async fn update_funding_tx_block_height(&self, funding_tx: String, block_height: u64) -> Result<(), Self::Error> {
+    async fn update_funding_tx_block_height(&self, funding_tx: String, block_height: i64) -> Result<(), Self::Error> {
         let for_coin = self.db_ticker.clone();
-        let generated_in_block = block_height as u32;
 
         let sqlite_connection = self.sqlite_connection.clone();
         async_blocking(move || {
             let mut conn = sqlite_connection.lock().unwrap();
             let sql_transaction = conn.transaction()?;
-            let params = [&generated_in_block as &dyn ToSql, &funding_tx as &dyn ToSql];
+            let params = [&block_height as &dyn ToSql, &funding_tx as &dyn ToSql];
             sql_transaction.execute(&update_funding_tx_block_height_sql(&for_coin)?, &params)?;
             sql_transaction.commit()?;
             Ok(())
@@ -616,20 +614,23 @@ impl LightningDB for SqliteLightningDB {
 
     async fn update_channel_to_closed(
         &self,
-        rpc_id: u64,
+        rpc_id: i64,
         closure_reason: String,
-        closed_at: u64,
+        closed_at: i64,
     ) -> Result<(), Self::Error> {
         let for_coin = self.db_ticker.clone();
-        let is_closed = "1".to_string();
-        let rpc_id = rpc_id.to_string();
-
-        let params = [closure_reason, is_closed, closed_at.to_string(), rpc_id];
+        let is_closed = true;
 
         let sqlite_connection = self.sqlite_connection.clone();
         async_blocking(move || {
             let mut conn = sqlite_connection.lock().unwrap();
             let sql_transaction = conn.transaction()?;
+            let params = [
+                &closure_reason as &dyn ToSql,
+                &is_closed as &dyn ToSql,
+                &closed_at as &dyn ToSql,
+                &rpc_id as &dyn ToSql,
+            ];
             sql_transaction.execute(&update_channel_to_closed_sql(&for_coin)?, &params)?;
             sql_transaction.commit()?;
             Ok(())
@@ -657,16 +658,14 @@ impl LightningDB for SqliteLightningDB {
         .await
     }
 
-    async fn add_closing_tx_to_db(&self, rpc_id: u64, closing_tx: String) -> Result<(), Self::Error> {
+    async fn add_closing_tx_to_db(&self, rpc_id: i64, closing_tx: String) -> Result<(), Self::Error> {
         let for_coin = self.db_ticker.clone();
-        let rpc_id = rpc_id.to_string();
-
-        let params = [closing_tx, rpc_id];
 
         let sqlite_connection = self.sqlite_connection.clone();
         async_blocking(move || {
             let mut conn = sqlite_connection.lock().unwrap();
             let sql_transaction = conn.transaction()?;
+            let params = [&closing_tx as &dyn ToSql, &rpc_id as &dyn ToSql];
             sql_transaction.execute(&update_closing_tx_sql(&for_coin)?, &params)?;
             sql_transaction.commit()?;
             Ok(())
@@ -681,14 +680,16 @@ impl LightningDB for SqliteLightningDB {
         claimed_balance: f64,
     ) -> Result<(), Self::Error> {
         let for_coin = self.db_ticker.clone();
-        let claimed_balance = claimed_balance.to_string();
-
-        let params = [claiming_tx, claimed_balance, closing_tx];
 
         let sqlite_connection = self.sqlite_connection.clone();
         async_blocking(move || {
             let mut conn = sqlite_connection.lock().unwrap();
             let sql_transaction = conn.transaction()?;
+            let params = [
+                &claiming_tx as &dyn ToSql,
+                &claimed_balance as &dyn ToSql,
+                &closing_tx as &dyn ToSql,
+            ];
             sql_transaction.execute(&update_claiming_tx_sql(&for_coin)?, &params)?;
             sql_transaction.commit()?;
             Ok(())
@@ -746,17 +747,16 @@ impl LightningDB for SqliteLightningDB {
             };
 
             let mut params = vec![];
-            if let Some(f) = filter {
+            if let Some(f) = &filter {
                 apply_get_channels_filter(&mut sql_builder, &mut params, f);
             }
-            let params_as_trait: Vec<_> = params.iter().map(|(key, value)| (*key, value as &dyn ToSql)).collect();
             add_fields_to_get_channels_sql_builder(&mut sql_builder);
             finalize_get_channels_sql_builder(&mut sql_builder, offset, limit);
 
             let sql = sql_builder.sql().expect("valid sql");
             let mut stmt = conn.prepare(&sql)?;
             let channels = stmt
-                .query_map_named(params_as_trait.as_slice(), channel_details_from_row)?
+                .query_map_named(params.as_slice(), channel_details_from_row)?
                 .collect::<Result<_, _>>()?;
             let result = GetClosedChannelsResult {
                 channels,
@@ -768,36 +768,31 @@ impl LightningDB for SqliteLightningDB {
         .await
     }
 
-    async fn add_or_update_payment_in_db(&self, info: PaymentInfo) -> Result<(), Self::Error> {
+    async fn add_or_update_payment_in_db(&self, info: DBPaymentInfo) -> Result<(), Self::Error> {
         let for_coin = self.db_ticker.clone();
         let payment_hash = hex::encode(info.payment_hash.0);
         let (is_outbound, destination) = match info.payment_type {
-            PaymentType::OutboundPayment { destination } => (true as i32, Some(destination.to_string())),
-            PaymentType::InboundPayment => (false as i32, None),
+            PaymentType::OutboundPayment { destination } => (true, Some(destination.to_string())),
+            PaymentType::InboundPayment => (false, None),
         };
-        let description = info.description;
         let preimage = info.preimage.map(|p| hex::encode(p.0));
         let secret = info.secret.map(|s| hex::encode(s.0));
-        let amount_msat = info.amt_msat.map(|a| a as u32);
-        let fee_paid_msat = info.fee_paid_msat.map(|f| f as u32);
         let status = info.status.to_string();
-        let created_at = info.created_at as u32;
-        let last_updated = info.last_updated as u32;
 
         let sqlite_connection = self.sqlite_connection.clone();
         async_blocking(move || {
             let params = [
                 &payment_hash as &dyn ToSql,
                 &destination as &dyn ToSql,
-                &description as &dyn ToSql,
+                &info.description as &dyn ToSql,
                 &preimage as &dyn ToSql,
                 &secret as &dyn ToSql,
-                &amount_msat as &dyn ToSql,
-                &fee_paid_msat as &dyn ToSql,
+                &info.amt_msat as &dyn ToSql,
+                &info.fee_paid_msat as &dyn ToSql,
                 &is_outbound as &dyn ToSql,
                 &status as &dyn ToSql,
-                &created_at as &dyn ToSql,
-                &last_updated as &dyn ToSql,
+                &info.created_at as &dyn ToSql,
+                &info.last_updated as &dyn ToSql,
             ];
             let mut conn = sqlite_connection.lock().unwrap();
             let sql_transaction = conn.transaction()?;
@@ -808,7 +803,7 @@ impl LightningDB for SqliteLightningDB {
         .await
     }
 
-    async fn get_payment_from_db(&self, hash: PaymentHash) -> Result<Option<PaymentInfo>, Self::Error> {
+    async fn get_payment_from_db(&self, hash: PaymentHash) -> Result<Option<DBPaymentInfo>, Self::Error> {
         let params = [hex::encode(hash.0)];
         let sql = select_payment_by_hash_sql(self.db_ticker.as_str())?;
 
@@ -822,7 +817,7 @@ impl LightningDB for SqliteLightningDB {
 
     async fn get_payments_by_filter(
         &self,
-        filter: Option<PaymentsFilter>,
+        filter: Option<DBPaymentsFilter>,
         paging: PagingOptionsEnum<PaymentHash>,
         limit: usize,
     ) -> Result<GetPaymentsResult, Self::Error> {
@@ -865,7 +860,7 @@ impl LightningDB for SqliteLightningDB {
             };
 
             let mut params = vec![];
-            if let Some(f) = filter {
+            if let Some(f) = &filter {
                 apply_get_payments_filter(&mut sql_builder, &mut params, f);
             }
             let params_as_trait: Vec<_> = params.iter().map(|(key, value)| (*key, value as &dyn ToSql)).collect();
@@ -906,7 +901,7 @@ mod tests {
         let mut bytes = [0; 32];
         for i in 0..num {
             let details = DBChannelDetails {
-                rpc_id: i + 1,
+                rpc_id: (i + 1) as i64,
                 channel_id: {
                     rng.fill_bytes(&mut bytes);
                     hex::encode(bytes)
@@ -921,7 +916,7 @@ mod tests {
                     rng.fill_bytes(&mut bytes);
                     Some(hex::encode(bytes))
                 },
-                funding_value: Some(rng.gen::<u32>() as u64),
+                funding_value: Some(rng.gen::<i64>()),
                 closing_tx: {
                     rng.fill_bytes(&mut bytes);
                     Some(hex::encode(bytes))
@@ -939,32 +934,32 @@ mod tests {
                     Some(hex::encode(bytes))
                 },
                 claimed_balance: Some(rng.gen::<f64>()),
-                funding_generated_in_block: Some(rng.gen::<u32>() as u64),
-                is_outbound: rand::random(),
-                is_public: rand::random(),
+                funding_generated_in_block: Some(rng.gen::<i64>()),
+                is_outbound: rng.gen::<bool>(),
+                is_public: rng.gen::<bool>(),
                 is_closed: rand::random(),
-                created_at: rng.gen::<u32>() as u64,
-                closed_at: Some(rng.gen::<u32>() as u64),
+                created_at: rng.gen::<i64>(),
+                closed_at: Some(rng.gen::<i64>()),
             };
             channels.push(details);
         }
         channels
     }
 
-    fn generate_random_payments(num: u64) -> Vec<PaymentInfo> {
+    fn generate_random_payments(num: u64) -> Vec<DBPaymentInfo> {
         let mut rng = rand::thread_rng();
         let mut payments = vec![];
         let s = Secp256k1::new();
         let mut bytes = [0; 32];
         for _ in 0..num {
-            let payment_type = if let 0 = rng.gen::<u8>() % 2 {
-                PaymentType::InboundPayment
-            } else {
+            let payment_type = if rng.gen::<bool>() {
                 rng.fill_bytes(&mut bytes);
                 let secret = SecretKey::from_slice(&bytes).unwrap();
                 PaymentType::OutboundPayment {
                     destination: PublicKey::from_secret_key(&s, &secret),
                 }
+            } else {
+                PaymentType::InboundPayment
             };
             let status_rng: u8 = rng.gen();
             let status = if status_rng % 3 == 0 {
@@ -975,7 +970,7 @@ mod tests {
                 HTLCStatus::Failed
             };
             let description: String = rng.sample_iter(&Alphanumeric).take(30).map(char::from).collect();
-            let info = PaymentInfo {
+            let info = DBPaymentInfo {
                 payment_hash: {
                     rng.fill_bytes(&mut bytes);
                     PaymentHash(bytes)
@@ -990,11 +985,11 @@ mod tests {
                     rng.fill_bytes(&mut bytes);
                     Some(PaymentSecret(bytes))
                 },
-                amt_msat: Some(rng.gen::<u32>() as u64),
-                fee_paid_msat: Some(rng.gen::<u32>() as u64),
+                amt_msat: Some(rng.gen::<i64>()),
+                fee_paid_msat: Some(rng.gen::<i64>()),
                 status,
-                created_at: rng.gen::<u32>() as u64,
-                last_updated: rng.gen::<u32>() as u64,
+                created_at: rng.gen::<i64>(),
+                last_updated: rng.gen::<i64>(),
             };
             payments.push(info);
         }
@@ -1081,7 +1076,7 @@ mod tests {
         let actual_channel_details = block_on(db.get_channel_from_db(2)).unwrap().unwrap();
         assert_eq!(expected_channel_details, actual_channel_details);
 
-        let current_time = now_ms() / 1000;
+        let current_time = (now_ms() / 1000) as i64;
         block_on(db.update_channel_to_closed(2, "the channel was cooperatively closed".into(), current_time)).unwrap();
         expected_channel_details.closure_reason = Some("the channel was cooperatively closed".into());
         expected_channel_details.is_closed = true;
@@ -1095,8 +1090,12 @@ mod tests {
         assert_eq!(closed_channels.channels.len(), 1);
         assert_eq!(expected_channel_details, closed_channels.channels[0]);
 
-        block_on(db.update_channel_to_closed(1, "the channel was cooperatively closed".into(), now_ms() / 1000))
-            .unwrap();
+        block_on(db.update_channel_to_closed(
+            1,
+            "the channel was cooperatively closed".into(),
+            (now_ms() / 1000) as i64,
+        ))
+        .unwrap();
         let closed_channels =
             block_on(db.get_closed_channels_by_filter(None, PagingOptionsEnum::default(), 10)).unwrap();
         assert_eq!(closed_channels.channels.len(), 2);
@@ -1144,7 +1143,7 @@ mod tests {
         let payment = block_on(db.get_payment_from_db(PaymentHash([0; 32]))).unwrap();
         assert!(payment.is_none());
 
-        let mut expected_payment_info = PaymentInfo {
+        let mut expected_payment_info = DBPaymentInfo {
             payment_hash: PaymentHash([0; 32]),
             payment_type: PaymentType::InboundPayment,
             description: "test payment".into(),
@@ -1153,8 +1152,8 @@ mod tests {
             amt_msat: Some(2000),
             fee_paid_msat: Some(100),
             status: HTLCStatus::Failed,
-            created_at: now_ms() / 1000,
-            last_updated: now_ms() / 1000,
+            created_at: (now_ms() / 1000) as i64,
+            last_updated: (now_ms() / 1000) as i64,
         };
         block_on(db.add_or_update_payment_in_db(expected_payment_info.clone())).unwrap();
 
@@ -1169,7 +1168,7 @@ mod tests {
         expected_payment_info.secret = None;
         expected_payment_info.amt_msat = None;
         expected_payment_info.status = HTLCStatus::Succeeded;
-        expected_payment_info.last_updated = now_ms() / 1000;
+        expected_payment_info.last_updated = (now_ms() / 1000) as i64;
         block_on(db.add_or_update_payment_in_db(expected_payment_info.clone())).unwrap();
 
         let actual_payment_info = block_on(db.get_payment_from_db(PaymentHash([1; 32]))).unwrap().unwrap();
@@ -1227,8 +1226,9 @@ mod tests {
 
         assert_eq!(expected_payments, actual_payments);
 
-        let mut filter = PaymentsFilter {
-            payment_type: Some(PaymentType::InboundPayment),
+        let mut filter = DBPaymentsFilter {
+            is_outbound: Some(false),
+            destination: None,
             description: None,
             status: None,
             from_amount_msat: None,
@@ -1242,7 +1242,7 @@ mod tests {
         let limit = 10;
 
         let result = block_on(db.get_payments_by_filter(Some(filter.clone()), paging.clone(), limit)).unwrap();
-        let expected_payments_vec: Vec<PaymentInfo> = payments
+        let expected_payments_vec: Vec<DBPaymentInfo> = payments
             .iter()
             .map(|p| p.clone())
             .filter(|p| p.payment_type == PaymentType::InboundPayment)
@@ -1256,9 +1256,9 @@ mod tests {
 
         assert_eq!(expected_payments, actual_payments);
 
-        filter.status = Some(HTLCStatus::Succeeded);
+        filter.status = Some(HTLCStatus::Succeeded.to_string());
         let result = block_on(db.get_payments_by_filter(Some(filter.clone()), paging.clone(), limit)).unwrap();
-        let expected_payments_vec: Vec<PaymentInfo> = expected_payments_vec
+        let expected_payments_vec: Vec<DBPaymentInfo> = expected_payments_vec
             .iter()
             .map(|p| p.clone())
             .filter(|p| p.status == HTLCStatus::Succeeded)
@@ -1274,11 +1274,12 @@ mod tests {
 
         let description = &payments[42].description;
         let substr = &description[5..10];
-        filter.payment_type = None;
+        filter.is_outbound = None;
+        filter.destination = None;
         filter.status = None;
         filter.description = Some(substr.to_string());
         let result = block_on(db.get_payments_by_filter(Some(filter), paging, limit)).unwrap();
-        let expected_payments_vec: Vec<PaymentInfo> = payments
+        let expected_payments_vec: Vec<DBPaymentInfo> = payments
             .iter()
             .map(|p| p.clone())
             .filter(|p| p.description.contains(&substr))

@@ -8,6 +8,7 @@ use http::StatusCode;
 use lightning_invoice::SignOrCreationError;
 use mm2_err_handle::prelude::*;
 use rpc::v1::types::H256 as H256Json;
+use std::num::TryFromIntError;
 use utxo_signer::with_key_pair::UtxoSignWithKeyPairError;
 
 pub type EnableLightningResult<T> = Result<T, MmError<EnableLightningError>>;
@@ -502,8 +503,14 @@ pub enum SaveChannelClosingError {
     FundingTxParseError(String),
     #[display(fmt = "Error while waiting for the funding transaction to be spent: {}", _0)]
     WaitForFundingTxSpendError(String),
+    #[display(fmt = "Error while converting types: {}", _0)]
+    ConversionError(TryFromIntError),
 }
 
 impl From<SqlError> for SaveChannelClosingError {
     fn from(err: SqlError) -> SaveChannelClosingError { SaveChannelClosingError::DbError(err.to_string()) }
+}
+
+impl From<TryFromIntError> for SaveChannelClosingError {
+    fn from(err: TryFromIntError) -> SaveChannelClosingError { SaveChannelClosingError::ConversionError(err) }
 }

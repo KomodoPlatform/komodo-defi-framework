@@ -136,8 +136,7 @@ impl BlockHeaderStorageOps for SqliteBlockHeadersStorage {
                 })?;
 
             for (height, header) in headers {
-                // TODO: use u64 straight away after updating rusqlite
-                let height = height as u32;
+                let height = height as i64;
                 let raw_header = hex::encode(header.raw());
                 let bits: u32 = header.bits.into();
                 let block_cache_params = [&height as &dyn ToSql, &raw_header as &dyn ToSql, &bits as &dyn ToSql];
@@ -182,7 +181,7 @@ impl BlockHeaderStorageOps for SqliteBlockHeadersStorage {
         for_coin: &str,
         height: u64,
     ) -> Result<Option<String>, BlockHeaderStorageError> {
-        let params = [height.to_string()];
+        let params = [height as i64];
         let sql = get_block_header_by_height(for_coin)?;
         let selfi = self.clone();
 

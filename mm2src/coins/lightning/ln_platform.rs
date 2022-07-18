@@ -21,7 +21,7 @@ use lightning::chain::{chaininterface::{BroadcasterInterface, ConfirmationTarget
 use rpc::v1::types::{Bytes as BytesJson, H256 as H256Json};
 use spv_validation::spv_proof::TRY_SPV_PROOF_INTERVAL;
 use std::cmp;
-use std::convert::TryFrom;
+use std::convert::{TryFrom, TryInto};
 use std::sync::atomic::{AtomicU64, Ordering as AtomicOrdering};
 
 const CHECK_FOR_NEW_BEST_BLOCK_INTERVAL: f64 = 60.;
@@ -358,7 +358,7 @@ impl Platform {
         transactions_to_confirm.sort_by(|a, b| (a.height, a.index).cmp(&(b.height, b.index)));
 
         for confirmed_transaction_info in transactions_to_confirm {
-            let best_block_height = self.best_block_height();
+            let best_block_height = self.best_block_height() as i64;
             if let Err(e) = db
                 .update_funding_tx_block_height(
                     confirmed_transaction_info.tx.hash().reversed().to_string(),
@@ -406,7 +406,7 @@ impl Platform {
             .wait_for_tx_spend(
                 &funding_tx_bytes.into_vec(),
                 (now_ms() / 1000) + 3600,
-                from_block,
+                from_block.try_into()?,
                 &None,
             )
             .compat()
