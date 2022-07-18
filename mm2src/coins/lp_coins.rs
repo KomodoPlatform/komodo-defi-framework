@@ -35,7 +35,9 @@
 use async_trait::async_trait;
 use base58::FromBase58Error;
 use common::mm_metrics::MetricsWeak;
-use common::{calc_total_pages, now_ms, ten, HttpStatusCode};
+use common::{block_on, calc_total_pages, now_ms, ten, HttpStatusCode};
+use cosmrs::rpc::Client;
+use cosmrs::AccountId;
 use crypto::{Bip32Error, CryptoCtx, DerivationPath};
 use derive_more::Display;
 use futures::compat::Future01CompatExt;
@@ -3065,4 +3067,33 @@ fn compare_transactions(a: &TransactionDetails, b: &TransactionDetails) -> Order
     } else {
         b.block_height.cmp(&a.block_height)
     }
+}
+
+#[test]
+fn try_cosmos() {
+    use cosmrs::proto::cosmos::bank::v1beta1::{QueryAllBalancesRequest, QueryAllBalancesResponse};
+    use cosmrs::rpc::endpoint::abci_query::Request as AbciRequest;
+    use cosmrs::rpc::HttpClient;
+    use cosmrs::tendermint::abci::Path as AbciPath;
+    let cosmos_url = "https://rpc.cosmos.network";
+    let client = HttpClient::new(cosmos_url).unwrap();
+    use prost::Message;
+    println!("{:?}", client);
+
+    let request = cosmrs::rpc::endpoint::abci_info::Request {};
+    let response = block_on(client.perform(request));
+    println!("{:?}", response);
+
+    let path = AbciPath::from_str("/cosmos.bank.v1beta1.Query/AllBalances").unwrap();
+    let request = QueryAllBalancesRequest {
+        address: "cosmos1tu9vpnwmwxlthz0n6uwuwn8l3jfu9zty8zzftw".to_string(),
+        pagination: None,
+    };
+    let account_id = AccountId::from_str("cosmos1tu9vpnwmwxlthz0n6uwuwn8l3jfu9zty8zzftw").unwrap();
+    let request = AbciRequest::new(Some(path), request.encode_to_vec(), None, false);
+
+    let response = block_on(client.perform(request)).unwrap();
+    println!("{:?}", response);
+    let response = QueryAllBalancesResponse::decode(response.response.value.as_slice()).unwrap();
+    println!("{:?}", response);
 }
