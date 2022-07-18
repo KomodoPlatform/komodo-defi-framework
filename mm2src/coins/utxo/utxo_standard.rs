@@ -163,7 +163,12 @@ impl UtxoCommonOps for UtxoStandardCoin {
     }
 
     async fn get_current_mtp(&self) -> UtxoRpcResult<u32> {
-        utxo_common::get_current_mtp(&self.utxo_arc, CoinVariant::Standard).await
+        let coin_variant = if self.ticker() == "LBC" {
+            CoinVariant::LBC
+        } else {
+            CoinVariant::Standard
+        };
+        utxo_common::get_current_mtp(&self.utxo_arc, coin_variant).await
     }
 
     fn is_unspent_mature(&self, output: &RpcTransaction) -> bool {

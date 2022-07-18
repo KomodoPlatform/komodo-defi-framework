@@ -1862,8 +1862,12 @@ impl ElectrumClient {
                         let len = CompactInteger::from(headers.count);
                         let mut serialized = serialize(&len).take();
                         serialized.extend(headers.hex.0.into_iter());
-                        let mut reader =
-                            Reader::new_with_coin_params(serialized.as_slice(), CoinVariant::Standard, Some(coin_name));
+                        let coin_variant = if coin_name == "LBC" {
+                            CoinVariant::LBC
+                        } else {
+                            CoinVariant::Standard
+                        };
+                        let mut reader = Reader::new_with_coin_variant(serialized.as_slice(), coin_variant);
                         let maybe_block_headers = reader.read_list::<BlockHeader>();
                         let block_headers = match maybe_block_headers {
                             Ok(headers) => headers,
@@ -2083,7 +2087,6 @@ impl UtxoRpcClientOps for ElectrumClient {
         count: NonZeroU64,
         coin_variant: CoinVariant,
     ) -> UtxoRpcFut<u32> {
-        let coin_name = self.coin_name().to_string();
         let from = if starting_block <= count.get() {
             0
         } else {
@@ -2099,7 +2102,7 @@ impl UtxoRpcClientOps for ElectrumClient {
                     let len = CompactInteger::from(res.count);
                     let mut serialized = serialize(&len).take();
                     serialized.extend(res.hex.0.into_iter());
-                    let mut reader = Reader::new_with_coin_params(serialized.as_slice(), coin_variant, Some(coin_name));
+                    let mut reader = Reader::new_with_coin_variant(serialized.as_slice(), coin_variant);
                     let headers = reader.read_list::<BlockHeader>()?;
                     let mut timestamps: Vec<_> = headers.into_iter().map(|block| block.time).collect();
                     // can unwrap because count is non zero

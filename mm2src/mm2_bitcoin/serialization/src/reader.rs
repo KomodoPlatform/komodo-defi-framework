@@ -51,12 +51,14 @@ pub trait Deserializable {
 
 #[derive(Debug)]
 pub enum CoinVariant {
+    LBC,
     Standard,
     Qtum,
 }
 
 impl CoinVariant {
     pub fn is_qtum(&self) -> bool { matches!(self, CoinVariant::Qtum) }
+    pub fn is_lbc(&self) -> bool { matches!(self, CoinVariant::LBC) }
 }
 
 /// Bitcoin structures reader.
@@ -65,8 +67,6 @@ pub struct Reader<T> {
     buffer: T,
     peeked: Option<u8>,
     coin_variant: CoinVariant,
-    /// This field will be very important to deserializing specific coins correctly e.g `LBC`
-    coin_name: Option<String>,
 }
 
 impl<'a> Reader<&'a [u8]> {
@@ -76,17 +76,15 @@ impl<'a> Reader<&'a [u8]> {
             buffer,
             peeked: None,
             coin_variant: CoinVariant::Standard,
-            coin_name: None,
         }
     }
 
     /// Convenient way of creating for slice of bytes
-    pub fn new_with_coin_params(buffer: &'a [u8], coin_variant: CoinVariant, coin_name: Option<String>) -> Self {
+    pub fn new_with_coin_variant(buffer: &'a [u8], coin_variant: CoinVariant) -> Self {
         Reader {
             buffer,
             peeked: None,
             coin_variant,
-            coin_name,
         }
     }
 }
@@ -122,7 +120,6 @@ where
             buffer: read,
             peeked: None,
             coin_variant: CoinVariant::Standard,
-            coin_name: None,
         }
     }
 
@@ -195,8 +192,6 @@ where
     }
 
     pub fn coin_variant(&self) -> &CoinVariant { &self.coin_variant }
-
-    pub fn coin_name(&self) -> &Option<String> { &self.coin_name }
 }
 
 /// Should be used to iterate over structures of the same type
