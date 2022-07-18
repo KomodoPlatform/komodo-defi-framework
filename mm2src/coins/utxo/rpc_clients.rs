@@ -356,10 +356,8 @@ pub trait UtxoRpcClientOps: fmt::Debug + Send + Sync + 'static {
             Err(err) => {
                 if let UtxoRpcError::ResponseParseError(ref json_err) = err {
                     if let JsonRpcErrorType::Response(_, json) = &json_err.error {
-                        if let Some(message) = json["message"].as_str() {
-                            if message.contains(NO_TX_ERROR_CODE) {
-                                return Ok(None);
-                            }
+                        if json["message"].as_str().unwrap_or_default().contains(NO_TX_ERROR_CODE) {
+                            return Ok(None);
                         }
                     }
                 }

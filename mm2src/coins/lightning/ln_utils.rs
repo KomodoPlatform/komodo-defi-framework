@@ -78,8 +78,7 @@ pub async fn init_db(ctx: &MmArc, ticker: String) -> EnableLightningResult<Sqlit
             .clone(),
     );
 
-    let is_db_initialized = db.is_db_initialized().await?;
-    if !is_db_initialized {
+    if !db.is_db_initialized().await? {
         db.init_db().await?;
     }
 

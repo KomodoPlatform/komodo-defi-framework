@@ -29,7 +29,7 @@ use std::sync::{Arc, Mutex};
 
 #[cfg(target_family = "unix")] use std::os::unix::io::AsRawFd;
 
-#[cfg(target_os = "windows")]
+#[cfg(target_family = "windows")]
 use {std::ffi::OsStr, std::os::windows::ffi::OsStrExt};
 
 pub struct LightningFilesystemPersister {
@@ -139,7 +139,7 @@ impl Persister<InMemorySigner, Arc<ChainMonitor>, Arc<Platform>, Arc<KeysManager
     }
 }
 
-#[cfg(target_os = "windows")]
+#[cfg(target_family = "windows")]
 macro_rules! call {
     ($e: expr) => {
         if $e != 0 {
@@ -150,7 +150,7 @@ macro_rules! call {
     };
 }
 
-#[cfg(target_os = "windows")]
+#[cfg(target_family = "windows")]
 fn path_to_windows_str<T: AsRef<OsStr>>(path: T) -> Vec<winapi::shared::ntdef::WCHAR> {
     path.as_ref().encode_wide().chain(Some(0)).collect()
 }
@@ -189,7 +189,7 @@ fn write_monitor_to_file<ChannelSigner: Sign>(
             libc::fsync(dir_file.as_raw_fd());
         }
     }
-    #[cfg(target_os = "windows")]
+    #[cfg(target_family = "windows")]
     {
         let src = PathBuf::from(tmp_filename);
         let dst = PathBuf::from(filename_with_path.clone());
