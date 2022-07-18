@@ -224,7 +224,6 @@ impl Platform {
     }
 
     async fn get_confirmed_registered_txs(&self, client: &ElectrumClient) -> Vec<ConfirmedTransactionInfo> {
-        let ticker = self.coin.ticker();
         let registered_txs = self.registered_txs.lock().clone();
 
         let on_chain_txs_futs = registered_txs
@@ -251,7 +250,7 @@ impl Platform {
         let confirmed_transactions_futs = on_chain_txs
             .map(|transaction| async move {
                 client
-                    .validate_spv_proof(ticker, &transaction, (now_ms() / 1000) + TRY_SPV_PROOF_INTERVAL)
+                    .validate_spv_proof(&transaction, (now_ms() / 1000) + TRY_SPV_PROOF_INTERVAL)
                     .await
             })
             .collect::<Vec<_>>();
@@ -277,7 +276,6 @@ impl Platform {
         transactions_to_confirm: &mut Vec<ConfirmedTransactionInfo>,
         client: &ElectrumClient,
     ) {
-        let ticker = self.coin.ticker();
         let registered_outputs = self.registered_outputs.lock().clone();
 
         let spent_outputs_info_fut = registered_outputs
@@ -315,7 +313,7 @@ impl Platform {
             .into_iter()
             .map(|output| async move {
                 client
-                    .validate_spv_proof(ticker, &output.spending_tx, (now_ms() / 1000) + TRY_SPV_PROOF_INTERVAL)
+                    .validate_spv_proof(&output.spending_tx, (now_ms() / 1000) + TRY_SPV_PROOF_INTERVAL)
                     .await
             })
             .collect::<Vec<_>>();

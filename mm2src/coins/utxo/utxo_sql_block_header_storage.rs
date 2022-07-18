@@ -6,6 +6,7 @@ use db_common::{sqlite::rusqlite::Error as SqlError,
                 sqlite::string_from_row,
                 sqlite::validate_table_name,
                 sqlite::CHECK_TABLE_EXISTS_SQL};
+use primitives::hash::H256;
 use spv_validation::storage::{BlockHeaderStorageError, BlockHeaderStorageOps};
 use spv_validation::work::MAX_BITS_BTC;
 use std::collections::HashMap;
@@ -29,7 +30,8 @@ fn create_block_header_cache_table_sql(for_coin: &str) -> Result<String, BlockHe
         "CREATE TABLE IF NOT EXISTS {} (
             block_height INTEGER NOT NULL UNIQUE,
             hex TEXT NOT NULL,
-            block_bits INTEGER NOT NULL
+            block_bits INTEGER NOT NULL,
+            block_hash VARCHAR(255) NOT NULL UNIQUE
         );",
         table_name
     );
@@ -41,7 +43,7 @@ fn insert_block_header_in_cache_sql(for_coin: &str) -> Result<String, BlockHeade
     let table_name = get_table_name_and_validate(for_coin)?;
     // Always update the block headers with new values just in case a chain reorganization occurs.
     let sql = format!(
-        "INSERT OR REPLACE INTO {} (block_height, hex, block_bits) VALUES (?1, ?2, ?3);",
+        "INSERT OR REPLACE INTO {} (block_height, hex, block_bits, block_hash) VALUES (?1, ?2, ?3, ?4);",
         table_name
     );
     Ok(sql)
@@ -60,6 +62,13 @@ fn get_last_block_header_with_non_max_bits_sql(for_coin: &str) -> Result<String,
         "SELECT hex FROM {} WHERE block_bits<>{} ORDER BY block_height DESC LIMIT 1;",
         table_name, MAX_BITS_BTC
     );
+
+    Ok(sql)
+}
+
+fn get_block_height_by_hash(for_coin: &str) -> Result<String, BlockHeaderStorageError> {
+    let table_name = get_table_name_and_validate(for_coin)?;
+    let sql = format!("SELECT block_height FROM {} WHERE block_hash=?1;", table_name);
 
     Ok(sql)
 }
@@ -137,9 +146,15 @@ impl BlockHeaderStorageOps for SqliteBlockHeadersStorage {
 
             for (height, header) in headers {
                 let height = height as i64;
+                let hash = header.hash().reversed().to_string();
                 let raw_header = hex::encode(header.raw());
                 let bits: u32 = header.bits.into();
-                let block_cache_params = [&height as &dyn ToSql, &raw_header as &dyn ToSql, &bits as &dyn ToSql];
+                let block_cache_params = [
+                    &height as &dyn ToSql,
+                    &raw_header as &dyn ToSql,
+                    &bits as &dyn ToSql,
+                    &hash as &dyn ToSql,
+                ];
                 sql_transaction
                     .execute(&insert_block_header_in_cache_sql(&for_coin)?, block_cache_params)
                     .map_err(|e| BlockHeaderStorageError::AddToStorageError {
@@ -225,6 +240,26 @@ impl BlockHeaderStorageOps for SqliteBlockHeadersStorage {
         }
         Ok(None)
     }
+
+    async fn get_block_height_by_hash(
+        &self,
+        for_coin: &str,
+        hash: H256,
+    ) -> Result<Option<i64>, BlockHeaderStorageError> {
+        let params = [hash.to_string()];
+        let sql = get_block_height_by_hash(for_coin)?;
+        let selfi = self.clone();
+
+        async_blocking(move || {
+            let conn = selfi.0.lock().unwrap();
+            query_single_row(&conn, &sql, params, |row| row.get(0))
+        })
+        .await
+        .map_err(|e| BlockHeaderStorageError::GetFromStorageError {
+            coin: for_coin.to_string(),
+            reason: e.to_string(),
+        })
+    }
 }
 
 #[cfg(test)]
@@ -304,10 +339,13 @@ mod sql_block_headers_storage_tests {
         assert_eq!(hex, "0000002076d41d3e4b0bfd4c0d3b30aa69fdff3ed35d85829efd04000000000000000000b386498b583390959d9bac72346986e3015e83ac0b54bc7747a11a494ac35c94bb3ce65a53fb45177f7e311c".to_string());
 
         let block_header = block_on(storage.get_block_header(for_coin, 520481)).unwrap().unwrap();
-        assert_eq!(
-            block_header.hash(),
-            H256::from_reversed_str("0000000000000000002e31d0714a5ab23100945ff87ba2d856cd566a3c9344ec")
-        )
+        let block_hash: H256 = "0000000000000000002e31d0714a5ab23100945ff87ba2d856cd566a3c9344ec".into();
+        assert_eq!(block_header.hash(), block_hash.reversed());
+
+        let height = block_on(storage.get_block_height_by_hash(for_coin, block_hash))
+            .unwrap()
+            .unwrap();
+        assert_eq!(height, 520481);
     }
 
     #[test]

@@ -39,6 +39,7 @@ use spv_validation::helpers_validation::{validate_headers, SPVError};
 use spv_validation::storage::{BlockHeaderStorageError, BlockHeaderStorageOps};
 use std::collections::hash_map::Entry;
 use std::collections::HashMap;
+use std::convert::TryInto;
 use std::fmt;
 use std::io;
 use std::net::{SocketAddr, ToSocketAddrs};
@@ -1927,14 +1928,27 @@ impl ElectrumClient {
                 }
             }
         }
-        MmError::err(GetTxHeightError::HeightNotFound)
+        MmError::err(GetTxHeightError::HeightNotFound(
+            "Couldn't find height through electrum!".into(),
+        ))
     }
 
-    async fn valid_block_header_from_storage(
-        &self,
-        ticker: &str,
-        height: u64,
-    ) -> Result<BlockHeader, MmError<GetBlockHeaderError>> {
+    async fn tx_height_from_storage_or_rpc(&self, tx: &UtxoTx) -> Result<u64, MmError<GetTxHeightError>> {
+        if let Some(storage) = &self.block_headers_storage {
+            let ticker = self.coin_name();
+            let tx_hash = tx.hash().reversed();
+            let blockhash = self.get_verbose_transaction(&tx_hash.into()).compat().await?.blockhash;
+            if let Ok(Some(height)) = storage.get_block_height_by_hash(ticker, blockhash.into()).await {
+                if let Ok(height) = height.try_into() {
+                    return Ok(height);
+                }
+            }
+        }
+
+        self.get_tx_height(tx).await
+    }
+
+    async fn valid_block_header_from_storage(&self, height: u64) -> Result<BlockHeader, MmError<GetBlockHeaderError>> {
         let storage = match &self.block_headers_storage {
             Some(storage) => storage,
             None => {
@@ -1943,6 +1957,7 @@ impl ElectrumClient {
                 )))
             },
         };
+        let ticker = self.coin_name();
         match storage.get_block_header(ticker, height).await? {
             None => {
                 let bytes = self.blockchain_block_header(height).compat().await?;
@@ -1962,13 +1977,9 @@ impl ElectrumClient {
         }
     }
 
-    async fn block_header_from_storage_or_rpc(
-        &self,
-        ticker: &str,
-        height: u64,
-    ) -> Result<BlockHeader, MmError<GetBlockHeaderError>> {
+    async fn block_header_from_storage_or_rpc(&self, height: u64) -> Result<BlockHeader, MmError<GetBlockHeaderError>> {
         match &self.block_headers_storage {
-            Some(_) => self.valid_block_header_from_storage(ticker, height).await,
+            Some(_) => self.valid_block_header_from_storage(height).await,
             None => Ok(deserialize(
                 self.blockchain_block_header(height).compat().await?.as_slice(),
             )?),
@@ -1977,10 +1988,9 @@ impl ElectrumClient {
 
     pub async fn get_merkle_and_header(
         &self,
-        ticker: &str,
         tx: &UtxoTx,
     ) -> Result<(TxMerkleBranch, BlockHeader, u64), MmError<SPVError>> {
-        let height = self.get_tx_height(tx).await?;
+        let height = self.tx_height_from_storage_or_rpc(tx).await?;
 
         let merkle_branch = self
             .blockchain_transaction_get_merkle(tx.hash().reversed().into(), height)
@@ -1988,7 +1998,7 @@ impl ElectrumClient {
             .await
             .map_to_mm(|e| SPVError::UnableToGetMerkle(e.to_string()))?;
 
-        let header = self.block_header_from_storage_or_rpc(ticker, height).await?;
+        let header = self.block_header_from_storage_or_rpc(height).await?;
 
         Ok((merkle_branch, header, height))
     }

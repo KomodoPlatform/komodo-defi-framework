@@ -5,6 +5,7 @@ use crate::utxo::utxo_sql_block_header_storage::SqliteBlockHeadersStorage;
 use async_trait::async_trait;
 use chain::BlockHeader;
 use mm2_core::mm_ctx::MmArc;
+use primitives::hash::H256;
 use spv_validation::storage::{BlockHeaderStorageError, BlockHeaderStorageOps};
 use std::collections::HashMap;
 use std::fmt::{Debug, Formatter};
@@ -96,5 +97,13 @@ impl BlockHeaderStorageOps for BlockHeaderStorage {
         for_coin: &str,
     ) -> Result<Option<BlockHeader>, BlockHeaderStorageError> {
         self.inner.get_last_block_header_with_non_max_bits(for_coin).await
+    }
+
+    async fn get_block_height_by_hash(
+        &self,
+        for_coin: &str,
+        hash: H256,
+    ) -> Result<Option<i64>, BlockHeaderStorageError> {
+        self.inner.get_block_height_by_hash(for_coin, hash).await
     }
 }

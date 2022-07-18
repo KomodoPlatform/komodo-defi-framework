@@ -21,7 +21,6 @@ pub struct ConfirmedTransactionInfo {
 pub trait SimplePaymentVerification {
     async fn validate_spv_proof(
         &self,
-        ticker: &str,
         tx: &UtxoTx,
         try_spv_proof_until: u64,
     ) -> Result<ConfirmedTransactionInfo, MmError<SPVError>>;
@@ -31,7 +30,6 @@ pub trait SimplePaymentVerification {
 impl SimplePaymentVerification for ElectrumClient {
     async fn validate_spv_proof(
         &self,
-        ticker: &str,
         tx: &UtxoTx,
         try_spv_proof_until: u64,
     ) -> Result<ConfirmedTransactionInfo, MmError<SPVError>> {
@@ -49,7 +47,7 @@ impl SimplePaymentVerification for ElectrumClient {
                 return MmError::err(SPVError::Timeout);
             }
 
-            match self.get_merkle_and_header(ticker, tx).await {
+            match self.get_merkle_and_header(tx).await {
                 Ok(res) => break res,
                 Err(e) => {
                     error!(

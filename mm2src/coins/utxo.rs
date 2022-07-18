@@ -583,15 +583,19 @@ impl From<SerError> for GetTxError {
 
 #[derive(Debug)]
 pub enum GetTxHeightError {
-    HeightNotFound,
+    HeightNotFound(String),
 }
 
 impl From<GetTxHeightError> for SPVError {
     fn from(e: GetTxHeightError) -> Self {
         match e {
-            GetTxHeightError::HeightNotFound => SPVError::InvalidHeight,
+            GetTxHeightError::HeightNotFound(e) => SPVError::InvalidHeight(e),
         }
     }
+}
+
+impl From<UtxoRpcError> for GetTxHeightError {
+    fn from(e: UtxoRpcError) -> Self { GetTxHeightError::HeightNotFound(e.to_string()) }
 }
 
 #[derive(Debug, Display)]

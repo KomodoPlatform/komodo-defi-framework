@@ -176,6 +176,7 @@ mod tests {
     use async_trait::async_trait;
     use common::block_on;
     use lazy_static::lazy_static;
+    use primitives::hash::H256;
     use serde::Deserialize;
     use std::collections::HashMap;
 
@@ -242,6 +243,14 @@ mod tests {
             headers.retain(|_, h| h.bits != BlockHeaderBits::Compact(MAX_BITS_BTC.into()));
             let header = headers.into_iter().max_by(|a, b| a.0.cmp(&b.0));
             Ok(header.map(|(_, h)| h))
+        }
+
+        async fn get_block_height_by_hash(
+            &self,
+            _for_coin: &str,
+            _hash: H256,
+        ) -> Result<Option<i64>, BlockHeaderStorageError> {
+            Ok(None)
         }
     }
 

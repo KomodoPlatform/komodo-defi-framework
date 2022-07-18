@@ -44,8 +44,8 @@ pub enum SPVError {
     BadMerkleProof,
     #[display(fmt = "Unable to get merkle tree from network or storage: {}", _0)]
     UnableToGetMerkle(String),
-    #[display(fmt = "Unable to retrieve block height / block height is zero")]
-    InvalidHeight,
+    #[display(fmt = "Unable to retrieve block height / block height is zero: {}", _0)]
+    InvalidHeight(String),
     #[display(fmt = "Raises during validation loop")]
     Timeout,
 }

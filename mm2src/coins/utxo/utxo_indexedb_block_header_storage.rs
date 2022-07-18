@@ -1,5 +1,6 @@
 use async_trait::async_trait;
 use chain::BlockHeader;
+use primitives::hash::H256;
 use spv_validation::storage::{BlockHeaderStorageError, BlockHeaderStorageOps};
 use std::collections::HashMap;
 
@@ -40,6 +41,14 @@ impl BlockHeaderStorageOps for IndexedDBBlockHeadersStorage {
         &self,
         _for_coin: &str,
     ) -> Result<Option<BlockHeader>, BlockHeaderStorageError> {
+        Ok(None)
+    }
+
+    async fn get_block_height_by_hash(
+        &self,
+        for_coin: &str,
+        hash: H256,
+    ) -> Result<Option<i64>, BlockHeaderStorageError> {
         Ok(None)
     }
 }

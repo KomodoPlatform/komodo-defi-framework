@@ -1,6 +1,7 @@
 use async_trait::async_trait;
 use chain::BlockHeader;
 use derive_more::Display;
+use primitives::hash::H256;
 use std::collections::HashMap;
 
 #[derive(Debug, Display)]
@@ -72,4 +73,10 @@ pub trait BlockHeaderStorageOps: Send + Sync + 'static {
         &self,
         for_coin: &str,
     ) -> Result<Option<BlockHeader>, BlockHeaderStorageError>;
+
+    async fn get_block_height_by_hash(
+        &self,
+        for_coin: &str,
+        hash: H256,
+    ) -> Result<Option<i64>, BlockHeaderStorageError>;
 }

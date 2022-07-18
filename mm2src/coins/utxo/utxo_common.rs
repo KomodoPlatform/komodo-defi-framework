@@ -3144,7 +3144,7 @@ pub fn validate_payment<T: UtxoCommonOps>(
             if let UtxoRpcClientEnum::Electrum(client) = &coin.as_ref().rpc_client {
                 if coin.as_ref().conf.enable_spv_proof && confirmations != 0 {
                     client
-                        .validate_spv_proof(&coin.as_ref().conf.ticker, &tx, try_spv_proof_until)
+                        .validate_spv_proof(&tx, try_spv_proof_until)
                         .await
                         .map_err(|e| format!("{:?}", e))?;
                 }
