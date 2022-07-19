@@ -1,6 +1,7 @@
 use crate::mm2::{lp_network::subscribe_to_topic, lp_swap::tx_helper_topic};
-use coins::{rpc_command::activate_eth_coin::{activate_eth_coin, EnableV2RpcError, EnableV2RpcRequest,
-                                            EnableV2RpcResponse}, eth::EthActivationRequest};
+use coins::{eth::EthActivationRequest,
+            rpc_command::activate_eth_coin::{activate_eth_coin, EnableV2RpcError, EnableV2RpcRequest,
+                                             EnableV2RpcResponse}};
 use common::{Future01CompatExt, HttpStatusCode};
 use crypto::{CryptoCtx, CryptoInitError};
 use derive_more::Display;

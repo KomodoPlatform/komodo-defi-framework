@@ -1,5 +1,5 @@
 use crate::{coin_conf,
-            eth::{eth_coin_from_conf_and_request_v2, GasStationPricePolicy, EthActivationRequest},
+            eth::{eth_coin_from_conf_and_request_v2, EthActivationRequest, GasStationPricePolicy},
             lp_register_coin, CoinProtocol, MmCoinEnum, RegisterCoinParams};
 use common::{HttpStatusCode, StatusCode};
 use crypto::CryptoCtx;
@@ -81,7 +81,8 @@ pub async fn activate_eth_coin(ctx: &MmArc, req: EthActivationRequest) -> MmResu
         .map_err(|e| EnableV2RpcError::CoinCouldNotInitialized(e.to_string()))?;
 
     let coin: MmCoinEnum = eth_coin_from_conf_and_request_v2(ctx, &req.coin, &coins_en, req.clone(), &secret, protocol)
-        .await.unwrap()
+        .await
+        .unwrap()
         .into();
 
     let register_params = RegisterCoinParams {

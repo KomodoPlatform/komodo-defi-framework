@@ -257,7 +257,10 @@ impl From<web3::Error> for BalanceError {
 pub enum EthActivationV2Error {
     InvalidPayload(String),
     #[display(fmt = "Platform coin {} activation failed. {}", ticker, error)]
-    ActivationFailed { ticker: String, error: String },
+    ActivationFailed {
+        ticker: String,
+        error: String,
+    },
     CouldNotFetchBalance(String),
     UnreachableNodes(String),
     AtLeastOneNodeRequired(String),
