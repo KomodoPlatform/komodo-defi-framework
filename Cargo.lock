@@ -1136,6 +1136,7 @@ dependencies = [
  "common",
  "crypto",
  "derive_more",
+ "ethereum-types 0.4.2",
  "futures 0.3.15",
  "hex 0.4.2",
  "mm2_core",

@@ -1,5 +1,5 @@
 use crate::{coin_conf,
-            eth::{eth_coin_from_conf_and_request_v2, GasStationPricePolicy},
+            eth::{eth_coin_from_conf_and_request_v2, GasStationPricePolicy, EthActivationRequest},
             lp_register_coin, CoinProtocol, MmCoinEnum, RegisterCoinParams};
 use common::{HttpStatusCode, StatusCode};
 use crypto::CryptoCtx;
@@ -68,7 +68,7 @@ pub struct EnableV2RpcResponse {
     pub mature_confirmations: Option<u32>,
 }
 
-pub async fn activate_eth_coin(ctx: &MmArc, req: EnableV2RpcRequest) -> MmResult<MmCoinEnum, EnableV2RpcError> {
+pub async fn activate_eth_coin(ctx: &MmArc, req: EthActivationRequest) -> MmResult<MmCoinEnum, EnableV2RpcError> {
     let secret = CryptoCtx::from_ctx(ctx)
         .map_err(|e| EnableV2RpcError::InternalError(e.to_string()))?
         .iguana_ctx()
@@ -81,7 +81,7 @@ pub async fn activate_eth_coin(ctx: &MmArc, req: EnableV2RpcRequest) -> MmResult
         .map_err(|e| EnableV2RpcError::CoinCouldNotInitialized(e.to_string()))?;
 
     let coin: MmCoinEnum = eth_coin_from_conf_and_request_v2(ctx, &req.coin, &coins_en, req.clone(), &secret, protocol)
-        .await?
+        .await.unwrap()
         .into();
 
     let register_params = RegisterCoinParams {

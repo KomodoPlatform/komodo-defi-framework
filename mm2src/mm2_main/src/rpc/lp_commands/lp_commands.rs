@@ -1,6 +1,6 @@
 use crate::mm2::{lp_network::subscribe_to_topic, lp_swap::tx_helper_topic};
-use coins::rpc_command::activate_eth_coin::{activate_eth_coin, EnableV2RpcError, EnableV2RpcRequest,
-                                            EnableV2RpcResponse};
+use coins::{rpc_command::activate_eth_coin::{activate_eth_coin, EnableV2RpcError, EnableV2RpcRequest,
+                                            EnableV2RpcResponse}, eth::EthActivationRequest};
 use common::{Future01CompatExt, HttpStatusCode};
 use crypto::{CryptoCtx, CryptoInitError};
 use derive_more::Display;
@@ -52,9 +52,9 @@ pub async fn get_public_key_hash(ctx: MmArc, _req: Json) -> GetPublicKeyRpcResul
 
 pub async fn activate_eth_coin_wrapper(
     ctx: MmArc,
-    req: EnableV2RpcRequest,
+    req: EthActivationRequest,
 ) -> MmResult<EnableV2RpcResponse, EnableV2RpcError> {
-    let coin = activate_eth_coin(&ctx, req).await?;
+    let coin = activate_eth_coin(&ctx, req).await.unwrap();
 
     let balance = coin
         .my_balance()

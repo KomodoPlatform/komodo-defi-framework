@@ -24,7 +24,7 @@ use async_trait::async_trait;
 use bitcrypto::{keccak256, sha256};
 use common::executor::Timer;
 use common::log::{error, info, warn};
-use common::{get_utc_timestamp, now_ms, small_rng, DEX_FEE_ADDR_RAW_PUBKEY};
+use common::{get_utc_timestamp, now_ms, small_rng, HttpStatusCode, DEX_FEE_ADDR_RAW_PUBKEY};
 use crypto::privkey::key_pair_from_secret;
 use derive_more::Display;
 use ethabi::{Contract, Token};
@@ -72,6 +72,7 @@ use super::{rpc_command::activate_eth_coin::{EnableV2RpcError, EnableV2RpcReques
 
 pub use rlp;
 
+pub mod erc20;
 #[cfg(test)] mod eth_tests;
 #[cfg(target_arch = "wasm32")] mod eth_wasm_tests;
 mod web3_transport;
@@ -250,6 +251,53 @@ impl From<web3::Error> for BalanceError {
     fn from(e: web3::Error) -> Self { BalanceError::Transport(e.to_string()) }
 }
 
+#[derive(Debug, Display, Serialize, SerializeErrorType)]
+#[serde(tag = "error_type", content = "error_data")]
+#[allow(dead_code)]
+pub enum EthActivationV2Error {
+    InvalidPayload(String),
+    #[display(fmt = "Platform coin {} activation failed. {}", ticker, error)]
+    ActivationFailed { ticker: String, error: String },
+    CouldNotFetchBalance(String),
+    UnreachableNodes(String),
+    AtLeastOneNodeRequired(String),
+    InternalError(String),
+}
+
+impl HttpStatusCode for EthActivationV2Error {
+    fn status_code(&self) -> StatusCode {
+        match self {
+            EthActivationV2Error::InvalidPayload(_)
+            | EthActivationV2Error::ActivationFailed { .. }
+            | EthActivationV2Error::UnreachableNodes(_)
+            | EthActivationV2Error::AtLeastOneNodeRequired(_) => StatusCode::BAD_REQUEST,
+            EthActivationV2Error::CouldNotFetchBalance(_) => StatusCode::SERVICE_UNAVAILABLE,
+            _ => StatusCode::INTERNAL_SERVER_ERROR,
+        }
+    }
+}
+
+#[derive(Clone, Debug, Deserialize)]
+pub struct EthActivationRequest {
+    pub coin: String,
+    pub nodes: Vec<EthNode>,
+    pub swap_contract_address: Address,
+    pub fallback_swap_contract: Option<Address>,
+    pub gas_station_url: Option<String>,
+    pub gas_station_decimals: Option<u8>,
+    #[serde(default)]
+    pub gas_station_policy: GasStationPricePolicy,
+    pub mm2: Option<u8>,
+    pub tx_history: Option<bool>,
+    pub required_confirmations: Option<u64>,
+}
+
+#[derive(Clone, Debug, Deserialize)]
+pub struct EthNode {
+    pub url: String,
+    pub gui_auth: bool,
+}
+
 #[derive(Debug, Deserialize, Serialize)]
 struct SavedTraces {
     /// ETH traces for my_address
@@ -271,7 +319,7 @@ struct SavedErc20Events {
 }
 
 #[derive(Debug, PartialEq, Eq)]
-enum EthCoinType {
+pub enum EthCoinType {
     /// Ethereum itself or it's forks: ETC/others
     Eth,
     /// ERC20 token with smart contract address
@@ -3371,7 +3419,7 @@ async fn get_token_decimals(web3: &Web3<Web3Transport>, token_addr: Address) -> 
     Ok(decimals as u8)
 }
 
-fn valid_addr_from_str(addr_str: &str) -> Result<Address, String> {
+pub fn valid_addr_from_str(addr_str: &str) -> Result<Address, String> {
     let addr = try_s!(addr_from_str(addr_str));
     if !is_valid_checksum_addr(addr_str) {
         return ERR!("Invalid address checksum");
@@ -3399,12 +3447,12 @@ pub async fn eth_coin_from_conf_and_request_v2(
     ctx: &MmArc,
     ticker: &str,
     conf: &Json,
-    req: EnableV2RpcRequest,
+    req: EthActivationRequest,
     priv_key: &[u8],
     protocol: CoinProtocol,
-) -> Result<EthCoin, MmError<EnableV2RpcError>> {
+) -> Result<EthCoin, MmError<EthActivationV2Error>> {
     if req.nodes.is_empty() {
-        return Err(EnableV2RpcError::AtLeastOneNodeRequired(
+        return Err(EthActivationV2Error::AtLeastOneNodeRequired(
             "Enable request for ETH coin must have at least 1 node".to_string(),
         )
         .into());
@@ -3420,7 +3468,7 @@ pub async fn eth_coin_from_conf_and_request_v2(
         let uri = node
             .url
             .parse()
-            .map_err(|_| EnableV2RpcError::InvalidPayload(format!("{} could not be parsed.", node.url)))?;
+            .map_err(|_| EthActivationV2Error::InvalidPayload(format!("{} could not be parsed.", node.url)))?;
 
         nodes.push(Web3TransportNode {
             uri,
@@ -3430,19 +3478,22 @@ pub async fn eth_coin_from_conf_and_request_v2(
     drop_mutability!(nodes);
 
     if req.swap_contract_address == Address::default() {
-        return Err(EnableV2RpcError::InvalidPayload("swap_contract_address can't be zero address".to_string()).into());
+        return Err(
+            EthActivationV2Error::InvalidPayload("swap_contract_address can't be zero address".to_string()).into(),
+        );
     }
 
     if let Some(fallback) = req.fallback_swap_contract {
         if fallback == Address::default() {
-            return Err(
-                EnableV2RpcError::InvalidPayload("fallback_swap_contract can't be zero address".to_string()).into(),
-            );
+            return Err(EthActivationV2Error::InvalidPayload(
+                "fallback_swap_contract can't be zero address".to_string(),
+            )
+            .into());
         }
     }
 
     let key_pair: KeyPair =
-        KeyPair::from_secret_slice(priv_key).map_err(|e| EnableV2RpcError::InternalError(e.to_string()))?;
+        KeyPair::from_secret_slice(priv_key).map_err(|e| EthActivationV2Error::InternalError(e.to_string()))?;
     let my_address = checksum_address(&format!("{:02x}", key_pair.address()));
 
     let mut web3_instances = vec![];
@@ -3471,7 +3522,7 @@ pub async fn eth_coin_from_conf_and_request_v2(
 
     if web3_instances.is_empty() {
         return Err(
-            EnableV2RpcError::UnreachableNodes("Failed to get client version for all nodes".to_string()).into(),
+            EthActivationV2Error::UnreachableNodes("Failed to get client version for all nodes".to_string()).into(),
         );
     }
 
@@ -3490,17 +3541,17 @@ pub async fn eth_coin_from_conf_and_request_v2(
             platform,
             contract_address,
         } => {
-            let token_addr = valid_addr_from_str(&contract_address).map_err(EnableV2RpcError::InternalError)?;
+            let token_addr = valid_addr_from_str(&contract_address).map_err(EthActivationV2Error::InternalError)?;
             let decimals = match conf["decimals"].as_u64() {
                 None | Some(0) => get_token_decimals(&web3, token_addr)
                     .await
-                    .map_err(EnableV2RpcError::InternalError)?,
+                    .map_err(EthActivationV2Error::InternalError)?,
                 Some(d) => d as u8,
             };
             (EthCoinType::Erc20 { platform, token_addr }, decimals)
         },
         _ => {
-            return Err(EnableV2RpcError::InvalidPayload("Expect ETH or ERC20 protocol".to_string()).into());
+            return Err(EthActivationV2Error::InvalidPayload("Expect ETH or ERC20 protocol".to_string()).into());
         },
     };
 
