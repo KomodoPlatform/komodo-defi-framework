@@ -1,22 +1,25 @@
 use std::collections::HashMap;
 
+use crate::{erc20_token_activation::Erc20ActivationRequest,
+            platform_coin_with_tokens::{EnablePlatformCoinWithTokensError, GetPlatformBalance,
+                                        PlatformWithTokensActivationOps, RegisterTokenInfo, TokenActivationParams,
+                                        TokenActivationRequest, TokenAsMmCoinInitializer, TokenInitializer, TokenOf},
+            prelude::*};
 use async_trait::async_trait;
 use coins::{coin_conf,
             eth::{eth_coin_from_conf_and_request_v2, valid_addr_from_str, EthActivationRequest, EthActivationV2Error,
                   EthCoin, EthCoinType},
+            lp_register_coin,
             my_tx_history_v2::TxHistoryStorage,
-            CoinBalance, CoinProtocol, MarketCoinOps};
+            CoinBalance, CoinProtocol, MarketCoinOps, MmCoin, MmCoinEnum, RegisterCoinParams};
 use common::{log::info, mm_metrics::MetricsArc, Future01CompatExt};
+use crypto::CryptoCtx;
 use futures::future::AbortHandle;
-use mm2_core::mm_ctx::MmArc;
+use mm2_core::mm_ctx::{MmArc, MmCtxBuilder};
 use mm2_err_handle::prelude::*;
 use mm2_number::BigDecimal;
 use serde::{Deserialize, Serialize};
 use serde_json::Value as Json;
-
-use crate::{platform_coin_with_tokens::{EnablePlatformCoinWithTokensError, GetPlatformBalance,
-                                        PlatformWithTokensActivationOps, TokenAsMmCoinInitializer},
-            prelude::*};
 
 pub struct Erc20Initializer {
     platform_coin: EthCoin,
@@ -25,6 +28,73 @@ pub struct Erc20Initializer {
 pub struct EthProtocolInfo {
     coin_type: EthCoinType,
     decimals: u8,
+}
+impl TokenOf for EthCoin {
+    type PlatformCoin = EthCoin;
+}
+
+impl RegisterTokenInfo<EthCoin> for EthCoin {
+    fn register_token_info(&self, token: &EthCoin) {
+        // self.add_slp_token_info(token.ticker().into(), token.get_info())
+    }
+}
+
+#[async_trait]
+impl TokenInitializer for Erc20Initializer {
+    type Token = EthCoin;
+    type TokenActivationRequest = EthActivationRequest;
+    type TokenProtocol = EthProtocolInfo;
+    type InitTokensError = std::convert::Infallible;
+
+    fn tokens_requests_from_platform_request(
+        platform_params: &EthWithTokensActivationRequest,
+    ) -> Vec<TokenActivationRequest<Self::TokenActivationRequest>> {
+        platform_params.erc20_tokens_requests.clone()
+    }
+
+    async fn enable_tokens(
+        &self,
+        activation_params: Vec<TokenActivationParams<EthActivationRequest, EthProtocolInfo>>,
+    ) -> Result<Vec<EthCoin>, MmError<std::convert::Infallible>> {
+        let ctx = MmArc::from_weak(&self.platform_coin.ctx).clone().unwrap();
+        let secret = CryptoCtx::from_ctx(&ctx)
+            .unwrap()
+            .iguana_ctx()
+            .secp256k1_privkey_bytes()
+            .to_vec();
+
+        let mut tokens = vec![];
+        for param in activation_params {
+            let coins_en = coin_conf(&ctx, &param.activation_request.coin);
+            let protocol: CoinProtocol = serde_json::from_value(coins_en["protocol"].clone()).unwrap();
+            let coin: EthCoin = eth_coin_from_conf_and_request_v2(
+                &ctx,
+                &param.activation_request.coin,
+                &coins_en,
+                param.activation_request.clone(),
+                &secret,
+                protocol,
+            )
+            .await
+            .unwrap()
+            .into();
+
+            let register_params = RegisterCoinParams {
+                ticker: param.activation_request.coin,
+                tx_history: param.activation_request.tx_history.unwrap_or(false),
+            };
+
+            lp_register_coin(&ctx, MmCoinEnum::EthCoin(coin.clone()), register_params)
+                .await
+                .unwrap();
+
+            tokens.push(coin);
+        }
+
+        Ok(tokens)
+    }
+
+    fn platform_coin(&self) -> &EthCoin { &self.platform_coin }
 }
 
 impl TryFromCoinProtocol for EthProtocolInfo {
@@ -37,6 +107,16 @@ impl TryFromCoinProtocol for EthProtocolInfo {
                 coin_type: EthCoinType::Eth,
                 decimals: 18,
             }),
+            CoinProtocol::ERC20 {
+                platform,
+                contract_address,
+            } => {
+                let token_addr = valid_addr_from_str(&contract_address).unwrap();
+                Ok(EthProtocolInfo {
+                    coin_type: EthCoinType::Erc20 { platform, token_addr },
+                    decimals: 18,
+                })
+            },
             protocol => MmError::err(protocol),
         }
     }
@@ -80,9 +160,7 @@ impl From<EthActivationV2Error> for EnablePlatformCoinWithTokensError {
 pub struct EthWithTokensActivationRequest {
     #[serde(flatten)]
     platform_request: EthActivationRequest,
-    erc20_tokens_requests: Vec<
-        crate::platform_coin_with_tokens::TokenActivationRequest<crate::slp_token_activation::SlpActivationRequest>,
-    >,
+    erc20_tokens_requests: Vec<TokenActivationRequest<EthActivationRequest>>,
 }
 
 impl TxHistory for EthWithTokensActivationRequest {
@@ -150,11 +228,9 @@ impl PlatformWithTokensActivationOps for EthCoin {
     fn token_initializers(
         &self,
     ) -> Vec<Box<dyn TokenAsMmCoinInitializer<PlatformCoin = Self, ActivationRequest = Self::ActivationRequest>>> {
-        vec![]
-
-        // vec![Box::new(Erc20Initializer {
-        //     platform_coin: self.clone(),
-        // })]
+        vec![Box::new(Erc20Initializer {
+            platform_coin: self.clone(),
+        })]
     }
 
     async fn get_activation_result(&self) -> Result<EthWithTokensActivationResult, MmError<EthActivationV2Error>> {

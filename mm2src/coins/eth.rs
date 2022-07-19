@@ -351,7 +351,7 @@ pub struct EthCoinImpl {
     required_confirmations: AtomicU64,
     /// Coin needs access to the context in order to reuse the logging and shutdown facilities.
     /// Using a weak reference by default in order to avoid circular references and leaks.
-    ctx: MmWeak,
+    pub ctx: MmWeak,
     chain_id: Option<u64>,
     /// the block range used for eth_getLogs
     logs_block_range: u64,
