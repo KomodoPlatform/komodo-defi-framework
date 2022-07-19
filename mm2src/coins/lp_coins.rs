@@ -36,6 +36,7 @@ use async_trait::async_trait;
 use base58::FromBase58Error;
 use common::mm_metrics::MetricsWeak;
 use common::{block_on, calc_total_pages, now_ms, ten, HttpStatusCode};
+use cosmrs::proto::cosmos::bank::v1beta1::{QueryBalanceRequest, QueryBalanceResponse};
 use cosmrs::rpc::Client;
 use cosmrs::AccountId;
 use crypto::{Bip32Error, CryptoCtx, DerivationPath};
@@ -3086,14 +3087,28 @@ fn try_cosmos() {
 
     let path = AbciPath::from_str("/cosmos.bank.v1beta1.Query/AllBalances").unwrap();
     let request = QueryAllBalancesRequest {
-        address: "cosmos1tu9vpnwmwxlthz0n6uwuwn8l3jfu9zty8zzftw".to_string(),
+        address: "cosmos1m7uyxn26sz6w4755k6rch4dc2fj6cmzajkszvn".to_string(),
         pagination: None,
     };
-    let account_id = AccountId::from_str("cosmos1tu9vpnwmwxlthz0n6uwuwn8l3jfu9zty8zzftw").unwrap();
     let request = AbciRequest::new(Some(path), request.encode_to_vec(), None, false);
 
     let response = block_on(client.perform(request)).unwrap();
     println!("{:?}", response);
     let response = QueryAllBalancesResponse::decode(response.response.value.as_slice()).unwrap();
     println!("{:?}", response);
+
+    /*
+    let path = AbciPath::from_str("/cosmos.bank.v1beta1.Query/Balance").unwrap();
+    let request = QueryBalanceRequest {
+        address: "cosmos1m7uyxn26sz6w4755k6rch4dc2fj6cmzajkszvn".to_string(),
+        denom: "uosmo".into(),
+    };
+    let request = AbciRequest::new(Some(path), request.encode_to_vec(), None, false);
+
+    let response = block_on(client.perform(request)).unwrap();
+    println!("{:?}", response);
+    let response = QueryBalanceResponse::decode(response.response.value.as_slice()).unwrap();
+    println!("{:?}", response);
+
+     */
 }
