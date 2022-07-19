@@ -43,8 +43,7 @@ const AUX_POW_VERSION_DOGE: u32 = 6422788;
 const AUX_POW_VERSION_SYS: u32 = 537919744;
 const MTP_POW_VERSION: u32 = 0x20001000u32;
 const PROG_POW_SWITCH_TIME: u32 = 1635228000;
-const LBC_BLOCK_HEADER_VERSION: u32 = 536870912;
-const QTUM_BLOCK_HEADER_VERSION: u32 = 536870912;
+const BIP9_NO_SOFT_FORK_BLOCK_HEADER_VERSION: u32 = 536870912;
 // RVN
 const KAWPOW_VERSION: u32 = 805306368;
 
@@ -205,7 +204,7 @@ impl Deserializable for BlockHeader {
         let merkle_root_hash = reader.read()?;
 
         // This is needed to deserialize coin like LBC correctly.
-        let claim_trie_root = if version == LBC_BLOCK_HEADER_VERSION && reader.coin_variant().is_lbc() {
+        let claim_trie_root = if version == BIP9_NO_SOFT_FORK_BLOCK_HEADER_VERSION && reader.coin_variant().is_lbc() {
             Some(reader.read()?)
         } else {
             None
@@ -258,7 +257,7 @@ impl Deserializable for BlockHeader {
         };
 
         let (hash_state_root, hash_utxo_root, prevout_stake, vch_block_sig_dlgt) =
-            if version == QTUM_BLOCK_HEADER_VERSION && reader.coin_variant().is_qtum() {
+            if version == BIP9_NO_SOFT_FORK_BLOCK_HEADER_VERSION && reader.coin_variant().is_qtum() {
                 (
                     Some(reader.read()?),
                     Some(reader.read()?),
@@ -321,11 +320,9 @@ impl From<&'static str> for BlockHeader {
 #[cfg(test)]
 mod tests {
     use block_header::{BlockHeader, BlockHeaderBits, BlockHeaderNonce, AUX_POW_VERSION_DOGE, AUX_POW_VERSION_SYS,
-                       KAWPOW_VERSION, MTP_POW_VERSION, PROG_POW_SWITCH_TIME, QTUM_BLOCK_HEADER_VERSION};
+                       BIP9_NO_SOFT_FORK_BLOCK_HEADER_VERSION, KAWPOW_VERSION, MTP_POW_VERSION, PROG_POW_SWITCH_TIME};
     use hex::FromHex;
     use ser::{deserialize, serialize, serialize_list, CoinVariant, Error as ReaderError, Reader, Stream};
-
-    use crate::block_header::LBC_BLOCK_HEADER_VERSION;
 
     #[test]
     fn test_block_header_stream() {
@@ -979,7 +976,7 @@ mod tests {
         let mut reader = Reader::new_with_coin_variant(headers_bytes, CoinVariant::LBC);
         let headers = reader.read_list::<BlockHeader>().unwrap();
         for header in headers.iter() {
-            assert_eq!(header.version, LBC_BLOCK_HEADER_VERSION);
+            assert_eq!(header.version, BIP9_NO_SOFT_FORK_BLOCK_HEADER_VERSION);
         }
         let serialized = serialize_list(&headers);
         assert_eq!(serialized.take(), headers_bytes);
@@ -2050,7 +2047,7 @@ mod tests {
         let mut reader = Reader::new_with_coin_variant(headers_bytes, CoinVariant::Qtum);
         let headers = reader.read_list::<BlockHeader>().unwrap();
         for header in headers.iter() {
-            assert_eq!(header.version, QTUM_BLOCK_HEADER_VERSION);
+            assert_eq!(header.version, BIP9_NO_SOFT_FORK_BLOCK_HEADER_VERSION);
         }
         let serialized = serialize_list(&headers);
         assert_eq!(serialized.take(), headers_bytes);

@@ -31,8 +31,8 @@ use mm2_number::{BigDecimal, BigInt, MmNumber};
 #[cfg(test)] use mocktopus::macros::*;
 use rpc::v1::types::{Bytes as BytesJson, Transaction as RpcTransaction, H256 as H256Json};
 use serde_json::{self as json, Value as Json};
-use serialization::{deserialize, serialize, serialize_with_flags, CoinVariant, CompactInteger, Reader,
-                    SERIALIZE_TRANSACTION_WITNESS};
+use serialization::{coin_variant_by_ticker, deserialize, serialize, serialize_with_flags, CoinVariant, CompactInteger,
+                    Reader, SERIALIZE_TRANSACTION_WITNESS};
 use sha2::{Digest, Sha256};
 use std::collections::hash_map::Entry;
 use std::collections::HashMap;
@@ -1842,7 +1842,7 @@ impl ElectrumClient {
         blocks_limit_to_check: NonZeroU64,
         block_height: u64,
     ) -> UtxoRpcFut<(HashMap<u64, BlockHeader>, Vec<BlockHeader>)> {
-        let coin_name = self.coin_name().to_string();
+        let coin_name = self.coin_ticker.clone();
         let (from, count) = {
             let from = if block_height < blocks_limit_to_check.get() {
                 0
@@ -1862,11 +1862,7 @@ impl ElectrumClient {
                         let len = CompactInteger::from(headers.count);
                         let mut serialized = serialize(&len).take();
                         serialized.extend(headers.hex.0.into_iter());
-                        let coin_variant = if coin_name == "LBC" {
-                            CoinVariant::LBC
-                        } else {
-                            CoinVariant::Standard
-                        };
+                        let coin_variant = coin_variant_by_ticker(&coin_name);
                         let mut reader = Reader::new_with_coin_variant(serialized.as_slice(), coin_variant);
                         let maybe_block_headers = reader.read_list::<BlockHeader>();
                         let block_headers = match maybe_block_headers {

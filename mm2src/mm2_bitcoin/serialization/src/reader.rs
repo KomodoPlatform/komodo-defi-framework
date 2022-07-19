@@ -58,7 +58,15 @@ pub enum CoinVariant {
 
 impl CoinVariant {
     pub fn is_qtum(&self) -> bool { matches!(self, CoinVariant::Qtum) }
+
     pub fn is_lbc(&self) -> bool { matches!(self, CoinVariant::LBC) }
+}
+
+pub fn coin_variant_by_ticker(ticker: &str) -> CoinVariant {
+    match ticker {
+        "LBC" => CoinVariant::LBC,
+        _ => CoinVariant::Standard,
+    }
 }
 
 /// Bitcoin structures reader.
