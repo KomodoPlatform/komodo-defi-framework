@@ -53,7 +53,7 @@ use std::ops::Deref;
 use std::path::PathBuf;
 use std::str::FromStr;
 use std::sync::atomic::{AtomicU64, Ordering as AtomicOrdering};
-use std::sync::{Arc, Mutex, MutexGuard};
+use std::sync::{Arc, Mutex};
 use web3::types::{Action as TraceAction, BlockId, BlockNumber, Bytes, CallRequest, FilterBuilder, Log, Trace,
                   TraceFilterBuilder, Transaction as Web3Transaction, TransactionId};
 use web3::{self, Web3};
@@ -71,7 +71,6 @@ use super::{AsyncMutex, BalanceError, BalanceFut, CoinBalance, CoinProtocol, Coi
 
 pub use rlp;
 
-pub mod erc20;
 #[cfg(test)] mod eth_tests;
 #[cfg(target_arch = "wasm32")] mod eth_wasm_tests;
 mod web3_transport;
@@ -281,7 +280,6 @@ impl HttpStatusCode for EthActivationV2Error {
 
 #[derive(Clone, Debug, Deserialize)]
 pub struct EthActivationRequest {
-    pub coin: String,
     pub nodes: Vec<EthNode>,
     pub swap_contract_address: Address,
     pub fallback_swap_contract: Option<Address>,

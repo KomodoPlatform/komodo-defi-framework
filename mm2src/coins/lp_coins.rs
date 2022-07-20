@@ -38,7 +38,6 @@ use common::mm_metrics::MetricsWeak;
 use common::{calc_total_pages, now_ms, ten, HttpStatusCode};
 use crypto::{Bip32Error, CryptoCtx, DerivationPath};
 use derive_more::Display;
-use eth::erc20::Erc20Token;
 use futures::compat::Future01CompatExt;
 use futures::lock::Mutex as AsyncMutex;
 use futures::{FutureExt, TryFutureExt};
@@ -1788,7 +1787,6 @@ pub enum MmCoinEnum {
     QtumCoin(QtumCoin),
     Qrc20Coin(Qrc20Coin),
     EthCoin(EthCoin),
-    Erc20Token(Erc20Token),
     #[cfg(not(target_arch = "wasm32"))]
     ZCoin(ZCoin),
     Bch(BchCoin),
@@ -1808,10 +1806,6 @@ impl From<UtxoStandardCoin> for MmCoinEnum {
 
 impl From<EthCoin> for MmCoinEnum {
     fn from(c: EthCoin) -> MmCoinEnum { MmCoinEnum::EthCoin(c) }
-}
-
-impl From<Erc20Token> for MmCoinEnum {
-    fn from(c: Erc20Token) -> MmCoinEnum { MmCoinEnum::Erc20Token(c) }
 }
 
 impl From<TestCoin> for MmCoinEnum {
@@ -1874,7 +1868,6 @@ impl Deref for MmCoinEnum {
             MmCoinEnum::SolanaCoin(ref c) => c,
             #[cfg(not(target_arch = "wasm32"))]
             MmCoinEnum::SplToken(ref c) => c,
-            MmCoinEnum::Erc20Token(ref c) => c,
         }
     }
 }
