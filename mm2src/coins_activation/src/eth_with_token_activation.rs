@@ -9,7 +9,7 @@ use coins::{coin_conf,
             lp_register_coin,
             my_tx_history_v2::TxHistoryStorage,
             CoinBalance, CoinProtocol, MarketCoinOps, MmCoin, MmCoinEnum, RegisterCoinParams};
-use common::{mm_metrics::MetricsArc, Future01CompatExt};
+use common::{block_on, mm_metrics::MetricsArc, Future01CompatExt};
 use crypto::CryptoCtx;
 use futures::future::AbortHandle;
 use mm2_core::mm_ctx::MmArc;
@@ -18,6 +18,7 @@ use mm2_number::BigDecimal;
 use serde::{Deserialize, Serialize};
 use serde_json::Value as Json;
 use std::collections::HashMap;
+use tokio::task::block_in_place;
 
 impl From<EthActivationV2Error> for EnablePlatformCoinWithTokensError {
     fn from(err: EthActivationV2Error) -> Self {
@@ -86,13 +87,6 @@ impl TokenInitializer for Erc20Initializer {
             .await
             .unwrap();
 
-            self.platform_coin()
-                .add_erc_token_info(coin.ticker().to_string(), Erc20TokenInfo {
-                    token_address: coin.swap_contract_address,
-                    decimals: coin.decimals(),
-                })
-                .await;
-
             let register_params = RegisterCoinParams {
                 ticker: param.ticker,
                 tx_history: param.activation_request.tx_history.unwrap_or(false),
@@ -127,8 +121,14 @@ impl TokenOf for EthCoin {
 }
 
 impl RegisterTokenInfo<EthCoin> for EthCoin {
-    fn register_token_info(&self, _token: &EthCoin) {
-        // handled in enable_tokens for now because of concurrent thread safety reasons
+    fn register_token_info(&self, token: &EthCoin) {
+        block_in_place(|| {
+            let fut = self.add_erc_token_info(token.ticker().to_string(), Erc20TokenInfo {
+                token_address: token.swap_contract_address,
+                decimals: token.decimals(),
+            });
+            block_on(fut);
+        });
     }
 }
 
@@ -198,8 +198,15 @@ impl PlatformWithTokensActivationOps for EthCoin {
             .await
             .map_err(EthActivationV2Error::InternalError)?;
 
-        let eth_balance = self.my_balance().compat().await.unwrap();
-        let token_balances = self.get_tokens_balance_list().await.unwrap();
+        let eth_balance = self
+            .my_balance()
+            .compat()
+            .await
+            .map_err(|e| EthActivationV2Error::CouldNotFetchBalance(e.to_string()))?;
+        let token_balances = self
+            .get_tokens_balance_list()
+            .await
+            .map_err(|e| EthActivationV2Error::CouldNotFetchBalance(e.to_string()))?;
 
         let mut result = EthWithTokensActivationResult {
             current_block,
