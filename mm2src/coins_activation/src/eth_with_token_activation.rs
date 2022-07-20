@@ -4,8 +4,8 @@ use crate::{platform_coin_with_tokens::{EnablePlatformCoinWithTokensError, GetPl
             prelude::*};
 use async_trait::async_trait;
 use coins::{coin_conf,
-            eth::{eth_coin_from_conf_and_request_v2, valid_addr_from_str, Erc20TokenInfo, EthActivationRequest,
-                  EthActivationV2Error, EthCoin, EthCoinType},
+            eth::{eth_coin_from_conf_and_request_v2, Erc20TokenInfo, EthActivationRequest, EthActivationV2Error,
+                  EthCoin},
             lp_register_coin,
             my_tx_history_v2::TxHistoryStorage,
             CoinBalance, CoinProtocol, MarketCoinOps, MmCoin, MmCoinEnum, RegisterCoinParams};
@@ -34,33 +34,12 @@ impl From<EthActivationV2Error> for EnablePlatformCoinWithTokensError {
     }
 }
 
-pub struct EthProtocolInfo {
-    coin_type: EthCoinType,
-    decimals: u8,
-}
-
-impl TryFromCoinProtocol for EthProtocolInfo {
+impl TryFromCoinProtocol for CoinProtocol {
     fn try_from_coin_protocol(proto: CoinProtocol) -> Result<Self, MmError<CoinProtocol>>
     where
         Self: Sized,
     {
-        match proto {
-            CoinProtocol::ETH => Ok(EthProtocolInfo {
-                coin_type: EthCoinType::Eth,
-                decimals: 18,
-            }),
-            CoinProtocol::ERC20 {
-                platform,
-                contract_address,
-            } => {
-                let token_addr = valid_addr_from_str(&contract_address).unwrap();
-                Ok(EthProtocolInfo {
-                    coin_type: EthCoinType::Erc20 { platform, token_addr },
-                    decimals: 6,
-                })
-            },
-            protocol => MmError::err(protocol),
-        }
+        Ok(proto)
     }
 }
 
@@ -72,7 +51,7 @@ pub struct Erc20Initializer {
 impl TokenInitializer for Erc20Initializer {
     type Token = EthCoin;
     type TokenActivationRequest = EthActivationRequest;
-    type TokenProtocol = EthProtocolInfo;
+    type TokenProtocol = CoinProtocol;
     type InitTokensError = std::convert::Infallible;
 
     fn tokens_requests_from_platform_request(
@@ -83,7 +62,7 @@ impl TokenInitializer for Erc20Initializer {
 
     async fn enable_tokens(
         &self,
-        activation_params: Vec<TokenActivationParams<EthActivationRequest, EthProtocolInfo>>,
+        activation_params: Vec<TokenActivationParams<EthActivationRequest, CoinProtocol>>,
     ) -> Result<Vec<EthCoin>, MmError<std::convert::Infallible>> {
         let ctx = MmArc::from_weak(&self.platform_coin.ctx).ok_or("No context").unwrap();
 
@@ -96,14 +75,13 @@ impl TokenInitializer for Erc20Initializer {
         let mut tokens = vec![];
         for param in activation_params {
             let coins_en = coin_conf(&ctx, &param.ticker);
-            let protocol: CoinProtocol = serde_json::from_value(coins_en["protocol"].clone()).unwrap();
             let coin: EthCoin = eth_coin_from_conf_and_request_v2(
                 &ctx,
                 &param.ticker,
                 &coins_en,
                 param.activation_request.clone(),
                 &secret,
-                protocol,
+                param.protocol,
             )
             .await
             .unwrap();
@@ -178,7 +156,7 @@ impl CurrentBlock for EthWithTokensActivationResult {
 #[async_trait]
 impl PlatformWithTokensActivationOps for EthCoin {
     type ActivationRequest = EthWithTokensActivationRequest;
-    type PlatformProtocolInfo = EthProtocolInfo;
+    type PlatformProtocolInfo = CoinProtocol;
     type ActivationResult = EthWithTokensActivationResult;
     type ActivationError = EthActivationV2Error;
 
@@ -187,18 +165,9 @@ impl PlatformWithTokensActivationOps for EthCoin {
         ticker: String,
         platform_conf: Json,
         activation_request: Self::ActivationRequest,
-        _protocol_conf: Self::PlatformProtocolInfo,
+        protocol: Self::PlatformProtocolInfo,
         priv_key: &[u8],
     ) -> Result<Self, MmError<Self::ActivationError>> {
-        let coins_en = coin_conf(&ctx, &ticker);
-
-        let protocol: CoinProtocol = serde_json::from_value(coins_en["protocol"].clone()).map_err(|e| {
-            Self::ActivationError::ActivationFailed {
-                ticker: ticker.clone(),
-                error: e.to_string(),
-            }
-        })?;
-
         let platform_coin = eth_coin_from_conf_and_request_v2(
             &ctx,
             &ticker,
@@ -230,8 +199,7 @@ impl PlatformWithTokensActivationOps for EthCoin {
             .map_err(EthActivationV2Error::InternalError)?;
 
         let eth_balance = self.my_balance().compat().await.unwrap();
-
-        let token_balances = self.get_tokens_balance_list().await;
+        let token_balances = self.get_tokens_balance_list().await.unwrap();
 
         let mut result = EthWithTokensActivationResult {
             current_block,

@@ -2529,7 +2529,7 @@ impl EthCoin {
         Box::new(fut.boxed().compat())
     }
 
-    pub async fn get_tokens_balance_list(&self) -> HashMap<String, CoinBalance> {
+    pub async fn get_tokens_balance_list(&self) -> Result<HashMap<String, CoinBalance>, MmError<BalanceError>> {
         let coin = self.clone();
         let mut token_balances = HashMap::new();
         for (token_ticker, info) in self.get_erc_tokens_infos().await.iter() {
@@ -2541,12 +2541,11 @@ impl EthCoin {
                     unspendable: BigDecimal::from(0),
                 })
                 .compat()
-                .await
-                .unwrap();
+                .await?;
             token_balances.insert(token_ticker.clone(), balance);
         }
 
-        token_balances
+        Ok(token_balances)
     }
 
     pub fn get_token_balance_by_address(&self, token: Erc20TokenInfo) -> BalanceFut<U256> {

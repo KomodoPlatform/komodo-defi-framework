@@ -1,6 +1,4 @@
-use crate::mm2::{lp_network::subscribe_to_topic, lp_swap::tx_helper_topic};
-use coins::eth::EthActivationRequest;
-use common::{Future01CompatExt, HttpStatusCode};
+use common::HttpStatusCode;
 use crypto::{CryptoCtx, CryptoInitError};
 use derive_more::Display;
 use http::StatusCode;
