@@ -7,10 +7,11 @@ use crate::{erc20_token_activation::Erc20ActivationRequest,
             prelude::*};
 use async_trait::async_trait;
 use coins::{coin_conf,
-            eth::{eth_coin_from_conf_and_request_v2, valid_addr_from_str, EthActivationRequest, EthActivationV2Error,
-                  EthCoin, EthCoinType},
+            eth::{eth_coin_from_conf_and_request_v2, valid_addr_from_str, Erc20TokenInfo, EthActivationRequest,
+                  EthActivationV2Error, EthCoin, EthCoinType},
             lp_register_coin,
             my_tx_history_v2::TxHistoryStorage,
+            rpc_command::activate_eth_coin::activate_eth_coin,
             CoinBalance, CoinProtocol, MarketCoinOps, MmCoin, MmCoinEnum, RegisterCoinParams};
 use common::{log::info, mm_metrics::MetricsArc, Future01CompatExt};
 use crypto::CryptoCtx;
@@ -35,7 +36,11 @@ impl TokenOf for EthCoin {
 
 impl RegisterTokenInfo<EthCoin> for EthCoin {
     fn register_token_info(&self, token: &EthCoin) {
-        // self.add_slp_token_info(token.ticker().into(), token.get_info())
+        // self.add_erc_token_info(Erc20TokenInfo {
+        //     token_address: token.my_address,
+        //     decimals: token.decimals(),
+        // })
+        // .await;
     }
 }
 
@@ -56,7 +61,11 @@ impl TokenInitializer for Erc20Initializer {
         &self,
         activation_params: Vec<TokenActivationParams<EthActivationRequest, EthProtocolInfo>>,
     ) -> Result<Vec<EthCoin>, MmError<std::convert::Infallible>> {
-        let ctx = MmArc::from_weak(&self.platform_coin.ctx).clone().unwrap();
+        let ctx = MmArc::from_weak(&self.platform_coin.ctx)
+            .clone()
+            .ok_or("No context")
+            .unwrap();
+
         let secret = CryptoCtx::from_ctx(&ctx)
             .unwrap()
             .iguana_ctx()
@@ -79,14 +88,21 @@ impl TokenInitializer for Erc20Initializer {
             .unwrap()
             .into();
 
-            let register_params = RegisterCoinParams {
-                ticker: param.activation_request.coin,
-                tx_history: param.activation_request.tx_history.unwrap_or(false),
-            };
+            self.platform_coin()
+                .add_erc_token_info(coin.ticker().to_string(), Erc20TokenInfo {
+                    token_address: coin.swap_contract_address,
+                    decimals: coin.decimals(),
+                })
+                .await;
 
-            lp_register_coin(&ctx, MmCoinEnum::EthCoin(coin.clone()), register_params)
-                .await
-                .unwrap();
+            //            let register_params = RegisterCoinParams {
+            //                ticker: param.activation_request.coin,
+            //                tx_history: param.activation_request.tx_history.unwrap_or(false),
+            //            };
+            //
+            //            lp_register_coin(&ctx, MmCoinEnum::EthCoin(coin.clone()), register_params)
+            //                .await
+            //                .unwrap();
 
             tokens.push(coin);
         }
@@ -114,7 +130,7 @@ impl TryFromCoinProtocol for EthProtocolInfo {
                 let token_addr = valid_addr_from_str(&contract_address).unwrap();
                 Ok(EthProtocolInfo {
                     coin_type: EthCoinType::Erc20 { platform, token_addr },
-                    decimals: 18,
+                    decimals: 6,
                 })
             },
             protocol => MmError::err(protocol),
@@ -124,25 +140,6 @@ impl TryFromCoinProtocol for EthProtocolInfo {
 
 impl From<EthActivationV2Error> for EnablePlatformCoinWithTokensError {
     fn from(err: EthActivationV2Error) -> Self {
-        // match err {
-        //     BchWithTokensActivationError::PlatformCoinCreationError { ticker, error } => {
-        //         EnablePlatformCoinWithTokensError::PlatformCoinCreationError { ticker, error }
-        //     },
-        //     BchWithTokensActivationError::InvalidSlpPrefix { ticker, prefix, error } => {
-        //         EnablePlatformCoinWithTokensError::Internal(format!(
-        //             "Invalid slp prefix {} configured for {}. Error: {}",
-        //             prefix, ticker, error
-        //         ))
-        //     },
-        //     BchWithTokensActivationError::PrivKeyNotAllowed(e) => {
-        //         EnablePlatformCoinWithTokensError::PrivKeyNotAllowed(e)
-        //     },
-        //     BchWithTokensActivationError::UnexpectedDerivationMethod(e) => {
-        //         EnablePlatformCoinWithTokensError::UnexpectedDerivationMethod(e)
-        //     },
-        //     BchWithTokensActivationError::Transport(e) => EnablePlatformCoinWithTokensError::Transport(e),
-        //     BchWithTokensActivationError::Internal(e) => EnablePlatformCoinWithTokensError::Internal(e),
-        // }
         match err {
             EthActivationV2Error::InvalidPayload(e) => EnablePlatformCoinWithTokensError::InvalidPayload(e),
             EthActivationV2Error::ActivationFailed { ticker, error } => {
@@ -245,11 +242,9 @@ impl PlatformWithTokensActivationOps for EthCoin {
         // let bch_unspents = self.bch_unspents_for_display(my_address).await?;
         // let bch_balance = bch_unspents.platform_balance(self.decimals());
 
-        // let mut token_balances = HashMap::new();
-        // for (token_ticker, info) in self.get_slp_tokens_infos().iter() {
-        //     let token_balance = bch_unspents.slp_token_balance(&info.token_id, info.decimals);
-        //     token_balances.insert(token_ticker.clone(), token_balance);
-        // }
+        //let balance = self.my_balance().compat().await.unwrap();
+
+        let token_balances = self.get_tokens_balance_list().await;
 
         let mut result = EthWithTokensActivationResult {
             current_block,
@@ -257,13 +252,13 @@ impl PlatformWithTokensActivationOps for EthCoin {
             erc20_addresses_infos: HashMap::new(),
         };
 
-        // result
-        //     .bch_addresses_infos
-        //     .insert(my_address.to_string(), CoinAddressInfo {
-        //         derivation_method: DerivationMethod::Iguana,
-        //         pubkey: self.my_public_key()?.to_string(),
-        //         balances: bch_balance,
-        //     });
+        result
+            .erc20_addresses_infos
+            .insert(my_address.to_string(), CoinAddressInfo {
+                derivation_method: DerivationMethod::Iguana,
+                pubkey: my_address,
+                balances: token_balances,
+            });
 
         // result.slp_addresses_infos.insert(my_slp_address, CoinAddressInfo {
         //     derivation_method: DerivationMethod::Iguana,

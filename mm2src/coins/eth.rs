@@ -53,7 +53,7 @@ use std::ops::Deref;
 use std::path::PathBuf;
 use std::str::FromStr;
 use std::sync::atomic::{AtomicU64, Ordering as AtomicOrdering};
-use std::sync::{Arc, Mutex};
+use std::sync::{Arc, Mutex, MutexGuard};
 use web3::types::{Action as TraceAction, BlockId, BlockNumber, Bytes, CallRequest, FilterBuilder, Log, Trace,
                   TraceFilterBuilder, Transaction as Web3Transaction, TransactionId};
 use web3::{self, Web3};
@@ -336,9 +336,9 @@ pub struct EthCoinImpl {
     ticker: String,
     coin_type: EthCoinType,
     key_pair: KeyPair,
-    my_address: Address,
+    pub my_address: Address,
     sign_message_prefix: Option<String>,
-    swap_contract_address: Address,
+    pub swap_contract_address: Address,
     fallback_swap_contract: Option<Address>,
     web3: Web3<Web3Transport>,
     /// The separate web3 instances kept to get nonce, will replace the web3 completely soon
@@ -356,12 +356,19 @@ pub struct EthCoinImpl {
     /// the block range used for eth_getLogs
     logs_block_range: u64,
     nonce_lock: Arc<AsyncMutex<()>>,
+    erc20_tokens_infos: Arc<tokio::sync::Mutex<HashMap<String, Erc20TokenInfo>>>,
 }
 
 #[derive(Clone, Debug)]
 pub struct Web3Instance {
     web3: Web3<Web3Transport>,
     is_parity: bool,
+}
+
+#[derive(Clone, Debug)]
+pub struct Erc20TokenInfo {
+    pub token_address: Address,
+    pub decimals: u8,
 }
 
 #[derive(Deserialize, Serialize)]
@@ -581,6 +588,14 @@ impl EthCoinImpl {
     /// Try to parse address from string.
     pub fn address_from_str(&self, address: &str) -> Result<Address, String> {
         Ok(try_s!(valid_addr_from_str(address)))
+    }
+
+    pub async fn add_erc_token_info(&self, ticker: String, info: Erc20TokenInfo) {
+        self.erc20_tokens_infos.lock().await.insert(ticker, info);
+    }
+
+    pub async fn get_erc_tokens_infos(&self) -> tokio::sync::MutexGuard<'_, HashMap<String, Erc20TokenInfo>> {
+        self.erc20_tokens_infos.lock().await
     }
 }
 
@@ -2517,6 +2532,48 @@ impl EthCoin {
         Box::new(fut.boxed().compat())
     }
 
+    pub async fn get_tokens_balance_list(&self) -> HashMap<String, CoinBalance> {
+        let coin = self.clone();
+        let mut token_balances = HashMap::new();
+        for (token_ticker, info) in self.get_erc_tokens_infos().await.iter() {
+            let balance: CoinBalance = coin
+                .get_token_balance_by_address(info.clone())
+                .and_then(move |result| Ok(u256_to_big_decimal(result, info.decimals)?))
+                .map(|spendable| CoinBalance {
+                    spendable,
+                    unspendable: BigDecimal::from(0),
+                })
+                .compat()
+                .await
+                .unwrap();
+            token_balances.insert(token_ticker.clone(), balance);
+        }
+
+        token_balances
+    }
+
+    pub fn get_token_balance_by_address(&self, token: Erc20TokenInfo) -> BalanceFut<U256> {
+        let coin = self.clone();
+        let fut = async move {
+            let function = ERC20_CONTRACT.function("balanceOf")?;
+            let data = function.encode_input(&[Token::Address(coin.my_address)])?;
+            let res = coin
+                .call_request(token.token_address, None, Some(data.into()))
+                .compat()
+                .await?;
+            let decoded = function.decode_output(&res.0)?;
+            match decoded[0] {
+                Token::Uint(number) => Ok(number),
+                _ => {
+                    let error = format!("Expected U256 as balanceOf result but got {:?}", decoded);
+                    MmError::err(BalanceError::InvalidResponse(error))
+                },
+            }
+        };
+
+        Box::new(fut.boxed().compat())
+    }
+
     /// Estimates how much gas is necessary to allow the contract call to complete.
     /// `contract_addr` can be a ERC20 token address or any other contract address.
     ///
@@ -3600,6 +3657,7 @@ pub async fn eth_coin_from_conf_and_request_v2(
         chain_id: conf["chain_id"].as_u64(),
         logs_block_range: conf["logs_block_range"].as_u64().unwrap_or(DEFAULT_LOGS_BLOCK_RANGE),
         nonce_lock,
+        erc20_tokens_infos: Default::default(),
     };
 
     Ok(EthCoin(Arc::new(coin)))
@@ -3736,6 +3794,7 @@ pub async fn eth_coin_from_conf_and_request(
         chain_id: conf["chain_id"].as_u64(),
         logs_block_range: conf["logs_block_range"].as_u64().unwrap_or(DEFAULT_LOGS_BLOCK_RANGE),
         nonce_lock,
+        erc20_tokens_infos: Default::default(),
     };
     Ok(EthCoin(Arc::new(coin)))
 }
