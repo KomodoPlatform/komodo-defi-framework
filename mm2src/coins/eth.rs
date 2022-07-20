@@ -59,8 +59,7 @@ use web3::types::{Action as TraceAction, BlockId, BlockNumber, Bytes, CallReques
 use web3::{self, Web3};
 use web3_transport::{EthFeeHistoryNamespace, Web3Transport, Web3TransportNode};
 
-use super::{rpc_command::activate_eth_coin::{EnableV2RpcError, EnableV2RpcRequest},
-            AsyncMutex, BalanceError, BalanceFut, CoinBalance, CoinProtocol, CoinTransportMetrics, CoinsContext,
+use super::{AsyncMutex, BalanceError, BalanceFut, CoinBalance, CoinProtocol, CoinTransportMetrics, CoinsContext,
             FeeApproxStage, FoundSwapTxSpend, HistorySyncState, MarketCoinOps, MmCoin, NegotiateSwapContractAddrErr,
             NumConversError, NumConversResult, RawTransactionError, RawTransactionFut, RawTransactionRequest,
             RawTransactionRes, RawTransactionResult, RpcClientType, RpcTransportEventHandler,

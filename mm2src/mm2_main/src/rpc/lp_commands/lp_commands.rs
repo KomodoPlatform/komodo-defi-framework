@@ -1,7 +1,5 @@
 use crate::mm2::{lp_network::subscribe_to_topic, lp_swap::tx_helper_topic};
-use coins::{eth::EthActivationRequest,
-            rpc_command::activate_eth_coin::{activate_eth_coin, EnableV2RpcError, EnableV2RpcRequest,
-                                             EnableV2RpcResponse}};
+use coins::eth::EthActivationRequest;
 use common::{Future01CompatExt, HttpStatusCode};
 use crypto::{CryptoCtx, CryptoInitError};
 use derive_more::Display;
@@ -49,32 +47,4 @@ pub struct GetPublicKeyHashResponse {
 pub async fn get_public_key_hash(ctx: MmArc, _req: Json) -> GetPublicKeyRpcResult<GetPublicKeyHashResponse> {
     let public_key_hash = ctx.rmd160().to_owned().into();
     Ok(GetPublicKeyHashResponse { public_key_hash })
-}
-
-pub async fn activate_eth_coin_wrapper(
-    ctx: MmArc,
-    req: EthActivationRequest,
-) -> MmResult<EnableV2RpcResponse, EnableV2RpcError> {
-    let coin = activate_eth_coin(&ctx, req).await.unwrap();
-
-    let balance = coin
-        .my_balance()
-        .compat()
-        .await
-        .map_err(|e| EnableV2RpcError::CouldNotFetchBalance(e.to_string()))?;
-
-    if coin.is_utxo_in_native_mode() {
-        subscribe_to_topic(&ctx, tx_helper_topic(coin.ticker()));
-    }
-
-    Ok(EnableV2RpcResponse {
-        result: String::from("success"),
-        address: coin.my_address().map_err(EnableV2RpcError::InternalError)?,
-        balance: balance.spendable,
-        unspendable_balance: balance.unspendable,
-        coin: coin.ticker().to_string(),
-        required_confirmations: coin.required_confirmations(),
-        requires_notarization: coin.requires_notarization(),
-        mature_confirmations: coin.mature_confirmations(),
-    })
 }

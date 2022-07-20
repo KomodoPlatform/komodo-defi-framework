@@ -11,7 +11,6 @@ use coins::{coin_conf,
                   EthActivationV2Error, EthCoin, EthCoinType},
             lp_register_coin,
             my_tx_history_v2::TxHistoryStorage,
-            rpc_command::activate_eth_coin::activate_eth_coin,
             CoinBalance, CoinProtocol, MarketCoinOps, MmCoin, MmCoinEnum, RegisterCoinParams};
 use common::{log::info, mm_metrics::MetricsArc, Future01CompatExt};
 use crypto::CryptoCtx;
