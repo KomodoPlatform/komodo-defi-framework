@@ -35,10 +35,7 @@
 use async_trait::async_trait;
 use base58::FromBase58Error;
 use common::mm_metrics::MetricsWeak;
-use common::{block_on, calc_total_pages, now_ms, ten, HttpStatusCode};
-use cosmrs::proto::cosmos::bank::v1beta1::{QueryBalanceRequest, QueryBalanceResponse};
-use cosmrs::rpc::Client;
-use cosmrs::AccountId;
+use common::{calc_total_pages, now_ms, ten, HttpStatusCode};
 use crypto::{Bip32Error, CryptoCtx, DerivationPath};
 use derive_more::Display;
 use futures::compat::Future01CompatExt;
@@ -226,6 +223,7 @@ pub mod hd_wallet_storage;
 pub mod my_tx_history_v2;
 pub mod qrc20;
 pub mod rpc_command;
+pub mod tendermint;
 #[doc(hidden)]
 #[allow(unused_variables)]
 pub mod test_coin;
@@ -244,6 +242,7 @@ pub use solana::{solana_coin_from_conf_and_params, SolanaActivationParams, Solan
 pub mod utxo;
 #[cfg(not(target_arch = "wasm32"))] pub mod z_coin;
 
+use crate::tendermint::{TendermintCoin, TendermintProtocolInfo};
 use eth::{eth_coin_from_conf_and_request, EthCoin, EthTxFeeDetails, SignedEthTx};
 use hd_wallet::{HDAddress, HDAddressId};
 use qrc20::Qrc20ActivationParams;
@@ -1794,6 +1793,7 @@ pub enum MmCoinEnum {
     ZCoin(ZCoin),
     Bch(BchCoin),
     SlpToken(SlpToken),
+    Tendermint(TendermintCoin),
     #[cfg(not(target_arch = "wasm32"))]
     SolanaCoin(SolanaCoin),
     #[cfg(not(target_arch = "wasm32"))]
@@ -1841,6 +1841,10 @@ impl From<SlpToken> for MmCoinEnum {
     fn from(c: SlpToken) -> MmCoinEnum { MmCoinEnum::SlpToken(c) }
 }
 
+impl From<TendermintCoin> for MmCoinEnum {
+    fn from(c: TendermintCoin) -> Self { MmCoinEnum::Tendermint(c) }
+}
+
 #[cfg(not(target_arch = "wasm32"))]
 impl From<LightningCoin> for MmCoinEnum {
     fn from(c: LightningCoin) -> MmCoinEnum { MmCoinEnum::LightningCoin(c) }
@@ -1862,6 +1866,7 @@ impl Deref for MmCoinEnum {
             MmCoinEnum::EthCoin(ref c) => c,
             MmCoinEnum::Bch(ref c) => c,
             MmCoinEnum::SlpToken(ref c) => c,
+            MmCoinEnum::Tendermint(ref c) => c,
             #[cfg(not(target_arch = "wasm32"))]
             MmCoinEnum::LightningCoin(ref c) => c,
             #[cfg(not(target_arch = "wasm32"))]
@@ -2098,6 +2103,7 @@ pub enum CoinProtocol {
     BCH {
         slp_prefix: String,
     },
+    TENDERMINT(TendermintProtocolInfo),
     #[cfg(not(target_arch = "wasm32"))]
     LIGHTNING {
         platform: String,
@@ -2358,6 +2364,7 @@ pub async fn lp_coininit(ctx: &MmArc, ticker: &str, req: &Json) -> Result<MmCoin
             let token = SlpToken::new(*decimals, ticker.into(), (*token_id).into(), platform_coin, confs);
             token.into()
         },
+        CoinProtocol::TENDERMINT { .. } => return ERR!("TENDERMINT protocol is not supported by lp_coininit"),
         #[cfg(not(target_arch = "wasm32"))]
         CoinProtocol::ZHTLC { .. } => return ERR!("ZHTLC protocol is not supported by lp_coininit"),
         #[cfg(not(target_arch = "wasm32"))]
@@ -2919,6 +2926,9 @@ pub fn address_by_coin_conf_and_pubkey_str(
                 _ => ERR!("Platform protocol {:?} is not BCH", platform_protocol),
             }
         },
+        CoinProtocol::TENDERMINT { .. } => {
+            ERR!("address_by_coin_conf_and_pubkey_str is not implemented for TENDERMINT protocol yet!")
+        },
         #[cfg(not(target_arch = "wasm32"))]
         CoinProtocol::LIGHTNING { .. } => {
             ERR!("address_by_coin_conf_and_pubkey_str is not implemented for lightning protocol yet!")
@@ -3068,47 +3078,4 @@ fn compare_transactions(a: &TransactionDetails, b: &TransactionDetails) -> Order
     } else {
         b.block_height.cmp(&a.block_height)
     }
-}
-
-#[test]
-fn try_cosmos() {
-    use cosmrs::proto::cosmos::bank::v1beta1::{QueryAllBalancesRequest, QueryAllBalancesResponse};
-    use cosmrs::rpc::endpoint::abci_query::Request as AbciRequest;
-    use cosmrs::rpc::HttpClient;
-    use cosmrs::tendermint::abci::Path as AbciPath;
-    let cosmos_url = "https://rpc.cosmos.network";
-    let client = HttpClient::new(cosmos_url).unwrap();
-    use prost::Message;
-    println!("{:?}", client);
-
-    let request = cosmrs::rpc::endpoint::abci_info::Request {};
-    let response = block_on(client.perform(request));
-    println!("{:?}", response);
-
-    let path = AbciPath::from_str("/cosmos.bank.v1beta1.Query/AllBalances").unwrap();
-    let request = QueryAllBalancesRequest {
-        address: "cosmos1m7uyxn26sz6w4755k6rch4dc2fj6cmzajkszvn".to_string(),
-        pagination: None,
-    };
-    let request = AbciRequest::new(Some(path), request.encode_to_vec(), None, false);
-
-    let response = block_on(client.perform(request)).unwrap();
-    println!("{:?}", response);
-    let response = QueryAllBalancesResponse::decode(response.response.value.as_slice()).unwrap();
-    println!("{:?}", response);
-
-    /*
-    let path = AbciPath::from_str("/cosmos.bank.v1beta1.Query/Balance").unwrap();
-    let request = QueryBalanceRequest {
-        address: "cosmos1m7uyxn26sz6w4755k6rch4dc2fj6cmzajkszvn".to_string(),
-        denom: "uosmo".into(),
-    };
-    let request = AbciRequest::new(Some(path), request.encode_to_vec(), None, false);
-
-    let response = block_on(client.perform(request)).unwrap();
-    println!("{:?}", response);
-    let response = QueryBalanceResponse::decode(response.response.value.as_slice()).unwrap();
-    println!("{:?}", response);
-
-     */
 }

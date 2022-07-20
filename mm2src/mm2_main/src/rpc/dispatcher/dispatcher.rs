@@ -14,6 +14,7 @@ use coins::rpc_command::init_create_account::{init_create_new_account, init_crea
                                               init_create_new_account_user_action};
 use coins::rpc_command::init_scan_for_new_addresses::{init_scan_for_new_addresses, init_scan_for_new_addresses_status};
 use coins::rpc_command::init_withdraw::{init_withdraw, withdraw_status, withdraw_user_action};
+use coins::tendermint::TendermintCoin;
 use coins::utxo::bch::BchCoin;
 use coins::utxo::qtum::QtumCoin;
 use coins::utxo::slp::SlpToken;
@@ -125,6 +126,9 @@ async fn dispatcher_v2(request: MmRpcRequest, ctx: MmArc) -> DispatcherResult<Re
         "best_orders" => handle_mmrpc(ctx, request, best_orders_rpc_v2).await,
         "enable_bch_with_tokens" => handle_mmrpc(ctx, request, enable_platform_coin_with_tokens::<BchCoin>).await,
         "enable_slp" => handle_mmrpc(ctx, request, enable_token::<SlpToken>).await,
+        "enable_tendermint_with_assets" => {
+            handle_mmrpc(ctx, request, enable_platform_coin_with_tokens::<TendermintCoin>).await
+        },
         "get_new_address" => handle_mmrpc(ctx, request, get_new_address).await,
         "get_public_key" => handle_mmrpc(ctx, request, get_public_key).await,
         "get_public_key_hash" => handle_mmrpc(ctx, request, get_public_key_hash).await,

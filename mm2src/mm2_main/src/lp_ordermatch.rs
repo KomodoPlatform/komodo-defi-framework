@@ -5566,11 +5566,11 @@ fn orderbook_address(
                 _ => MmError::err(OrderbookAddrErr::InvalidPlatformCoinProtocol(platform)),
             }
         },
+        CoinProtocol::TENDERMINT(_) => MmError::err(OrderbookAddrErr::CoinIsNotSupported(coin.to_owned())),
         #[cfg(not(target_arch = "wasm32"))]
-        // TODO ask Slyris
-        CoinProtocol::SOLANA | CoinProtocol::SPLTOKEN { .. } => unimplemented!(),
-        #[cfg(not(target_arch = "wasm32"))]
-        CoinProtocol::LIGHTNING { .. } => MmError::err(OrderbookAddrErr::CoinIsNotSupported(coin.to_owned())),
+        CoinProtocol::LIGHTNING { .. } | CoinProtocol::SOLANA | CoinProtocol::SPLTOKEN { .. } => {
+            MmError::err(OrderbookAddrErr::CoinIsNotSupported(coin.to_owned()))
+        },
         #[cfg(not(target_arch = "wasm32"))]
         CoinProtocol::ZHTLC { .. } => Ok(OrderbookAddress::Shielded),
     }

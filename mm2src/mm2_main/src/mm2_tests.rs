@@ -101,6 +101,10 @@ mod lp_bot_tests;
 mod orderbook_sync_tests;
 
 #[cfg(all(test, not(target_arch = "wasm32")))]
+#[path = "mm2_tests/tendermint_tests.rs"]
+mod tendermint_tests;
+
+#[cfg(all(test, not(target_arch = "wasm32")))]
 #[path = "mm2_tests/z_coin_tests.rs"]
 mod z_coin_tests;
 
