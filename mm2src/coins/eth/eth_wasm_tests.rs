@@ -49,6 +49,7 @@ async fn test_send() {
         chain_id: None,
         logs_block_range: DEFAULT_LOGS_BLOCK_RANGE,
         nonce_lock: new_nonce_lock(),
+        erc20_tokens_infos: Default::default(),
     }));
     let tx = coin
         .send_maker_payment(
