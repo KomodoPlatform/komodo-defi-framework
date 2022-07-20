@@ -1,7 +1,4 @@
-use std::collections::HashMap;
-
-use crate::{erc20_token_activation::Erc20ActivationRequest,
-            platform_coin_with_tokens::{EnablePlatformCoinWithTokensError, GetPlatformBalance,
+use crate::{platform_coin_with_tokens::{EnablePlatformCoinWithTokensError, GetPlatformBalance,
                                         PlatformWithTokensActivationOps, RegisterTokenInfo, TokenActivationParams,
                                         TokenActivationRequest, TokenAsMmCoinInitializer, TokenInitializer, TokenOf},
             prelude::*};
@@ -12,14 +9,15 @@ use coins::{coin_conf,
             lp_register_coin,
             my_tx_history_v2::TxHistoryStorage,
             CoinBalance, CoinProtocol, MarketCoinOps, MmCoin, MmCoinEnum, RegisterCoinParams};
-use common::{log::info, mm_metrics::MetricsArc, Future01CompatExt};
+use common::{mm_metrics::MetricsArc, Future01CompatExt};
 use crypto::CryptoCtx;
 use futures::future::AbortHandle;
-use mm2_core::mm_ctx::{MmArc, MmCtxBuilder};
+use mm2_core::mm_ctx::MmArc;
 use mm2_err_handle::prelude::*;
 use mm2_number::BigDecimal;
 use serde::{Deserialize, Serialize};
 use serde_json::Value as Json;
+use std::collections::HashMap;
 
 pub struct Erc20Initializer {
     platform_coin: EthCoin,
@@ -34,7 +32,7 @@ impl TokenOf for EthCoin {
 }
 
 impl RegisterTokenInfo<EthCoin> for EthCoin {
-    fn register_token_info(&self, token: &EthCoin) {
+    fn register_token_info(&self, _token: &EthCoin) {
         // self.add_erc_token_info(Erc20TokenInfo {
         //     token_address: token.my_address,
         //     decimals: token.decimals(),
@@ -94,14 +92,14 @@ impl TokenInitializer for Erc20Initializer {
                 })
                 .await;
 
-            //            let register_params = RegisterCoinParams {
-            //                ticker: param.activation_request.coin,
-            //                tx_history: param.activation_request.tx_history.unwrap_or(false),
-            //            };
-            //
-            //            lp_register_coin(&ctx, MmCoinEnum::EthCoin(coin.clone()), register_params)
-            //                .await
-            //                .unwrap();
+            let register_params = RegisterCoinParams {
+                ticker: param.activation_request.coin,
+                tx_history: param.activation_request.tx_history.unwrap_or(false),
+            };
+
+            lp_register_coin(&ctx, MmCoinEnum::EthCoin(coin.clone()), register_params)
+                .await
+                .unwrap();
 
             tokens.push(coin);
         }
@@ -241,7 +239,7 @@ impl PlatformWithTokensActivationOps for EthCoin {
         // let bch_unspents = self.bch_unspents_for_display(my_address).await?;
         // let bch_balance = bch_unspents.platform_balance(self.decimals());
 
-        //let balance = self.my_balance().compat().await.unwrap();
+        let eth_balance = self.my_balance().compat().await.unwrap();
 
         let token_balances = self.get_tokens_balance_list().await;
 
@@ -252,6 +250,14 @@ impl PlatformWithTokensActivationOps for EthCoin {
         };
 
         result
+            .eth_addresses_infos
+            .insert(my_address.to_string(), CoinAddressInfo {
+                derivation_method: DerivationMethod::Iguana,
+                pubkey: my_address.clone(),
+                balances: eth_balance,
+            });
+
+        result
             .erc20_addresses_infos
             .insert(my_address.to_string(), CoinAddressInfo {
                 derivation_method: DerivationMethod::Iguana,
@@ -259,11 +265,6 @@ impl PlatformWithTokensActivationOps for EthCoin {
                 balances: token_balances,
             });
 
-        // result.slp_addresses_infos.insert(my_slp_address, CoinAddressInfo {
-        //     derivation_method: DerivationMethod::Iguana,
-        //     pubkey: self.my_public_key()?.to_string(),
-        //     balances: token_balances,
-        // });
         Ok(result)
     }
 
