@@ -223,6 +223,7 @@ pub fn atom_testnet_conf() -> Json {
                 "decimals": 6,
                 "denom": "uatom",
                 "account_prefix": "cosmos",
+                "chain_id": "theta-testnet-001",
             },
         }
     })

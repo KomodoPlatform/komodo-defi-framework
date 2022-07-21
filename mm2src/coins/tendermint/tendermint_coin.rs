@@ -2,8 +2,8 @@ use crate::{big_decimal_from_sat_unsigned, BalanceError, BalanceFut, BigDecimal,
             FoundSwapTxSpend, HistorySyncState, MarketCoinOps, MmCoin, NegotiateSwapContractAddrErr,
             RawTransactionFut, RawTransactionRequest, SearchForSwapTxSpendInput, SignatureResult, SwapOps, TradeFee,
             TradePreimageFut, TradePreimageResult, TradePreimageValue, TransactionEnum, TransactionFut,
-            UnexpectedDerivationMethod, ValidateAddressResult, ValidatePaymentInput, VerificationResult, WithdrawFut,
-            WithdrawRequest};
+            UnexpectedDerivationMethod, ValidateAddressResult, ValidatePaymentInput, VerificationResult,
+            WithdrawError, WithdrawFut, WithdrawRequest};
 use async_trait::async_trait;
 use cosmrs::crypto::secp256k1::SigningKey;
 use cosmrs::proto::cosmos::bank::v1beta1::{QueryBalanceRequest, QueryBalanceResponse};
@@ -11,6 +11,7 @@ use cosmrs::rpc::endpoint::abci_query::Request as AbciRequest;
 use cosmrs::rpc::Client;
 use cosmrs::rpc::HttpClient;
 use cosmrs::tendermint::abci::Path as AbciPath;
+use cosmrs::tendermint::chain::Id as ChainId;
 use cosmrs::AccountId;
 use derive_more::Display;
 use futures::{FutureExt, TryFutureExt};
@@ -31,6 +32,7 @@ pub struct TendermintProtocolInfo {
     decimals: u8,
     denom: String,
     account_prefix: String,
+    chain_id: String,
 }
 
 #[derive(Clone, Deserialize)]
@@ -49,6 +51,7 @@ pub struct TendermintCoinImpl {
     priv_key: Vec<u8>,
     decimals: u8,
     denom: String,
+    chain_id: ChainId,
 }
 
 #[derive(Clone, Debug)]
@@ -70,6 +73,7 @@ pub enum TendermintInitErrorKind {
     InvalidPrivKey(String),
     CouldNotGenerateAccountId(String),
     RpcClientInitError(String),
+    InvalidChainId(String),
     RpcError(String),
 }
 
@@ -99,6 +103,11 @@ impl TendermintCoin {
                 kind: TendermintInitErrorKind::RpcClientInitError(e.to_string()),
             })?;
 
+        let chain_id = ChainId::from_str(&protocol_info.chain_id).map_to_mm(|e| TendermintInitError {
+            ticker: ticker.clone(),
+            kind: TendermintInitErrorKind::InvalidChainId(e.to_string()),
+        })?;
+
         Ok(TendermintCoin(Arc::new(TendermintCoinImpl {
             ticker,
             rpc_client,
@@ -107,6 +116,7 @@ impl TendermintCoin {
             priv_key: priv_key.to_vec(),
             decimals: protocol_info.decimals,
             denom: protocol_info.denom,
+            chain_id,
         })))
     }
 }
@@ -116,7 +126,22 @@ impl TendermintCoin {
 impl MmCoin for TendermintCoin {
     fn is_asset_chain(&self) -> bool { false }
 
-    fn withdraw(&self, req: WithdrawRequest) -> WithdrawFut { todo!() }
+    fn withdraw(&self, req: WithdrawRequest) -> WithdrawFut {
+        let coin = self.clone();
+        let fut = async move {
+            let recipient_account =
+                AccountId::from_str(&req.to).map_to_mm(|e| WithdrawError::InvalidAddress(e.to_string()))?;
+            if recipient_account.prefix() != coin.account_prefix {
+                return MmError::err(WithdrawError::InvalidAddress(format!(
+                    "expected {} address prefix",
+                    coin.account_prefix
+                )));
+            }
+
+            unimplemented!()
+        };
+        Box::new(fut.boxed().compat())
+    }
 
     fn get_raw_transaction(&self, req: RawTransactionRequest) -> RawTransactionFut { todo!() }
 
