@@ -10,7 +10,7 @@ use coins::{coin_conf,
             lp_register_coin,
             my_tx_history_v2::TxHistoryStorage,
             CoinBalance, CoinProtocol, MarketCoinOps, MmCoin, MmCoinEnum, RegisterCoinParams};
-use common::{mm_metrics::MetricsArc, Future01CompatExt};
+use common::{drop_mutability, mm_metrics::MetricsArc, Future01CompatExt};
 use crypto::CryptoCtx;
 use futures::future::AbortHandle;
 use mm2_core::mm_ctx::MmArc;
@@ -117,6 +117,7 @@ impl TokenInitializer for Erc20Initializer {
 
             tokens.push(coin);
         }
+        drop_mutability!(tokens);
 
         Ok(tokens)
     }
@@ -246,6 +247,7 @@ impl PlatformWithTokensActivationOps for EthCoin {
                 pubkey: my_address,
                 balances: token_balances,
             });
+        drop_mutability!(result);
 
         Ok(result)
     }

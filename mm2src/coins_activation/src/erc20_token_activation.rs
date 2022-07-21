@@ -97,8 +97,7 @@ impl TokenActivationOps for EthCoin {
             .await
             .map_err(|e| EthActivationV2Error::CouldNotFetchBalance(e.to_string()))?;
 
-        let mut balances = HashMap::new();
-        balances.insert(my_address.clone(), balance);
+        let balances = HashMap::from([(my_address.clone(), balance)]);
 
         let init_result = Erc20InitResult {
             balances,
