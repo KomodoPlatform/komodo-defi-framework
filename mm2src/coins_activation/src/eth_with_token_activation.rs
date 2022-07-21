@@ -27,9 +27,12 @@ impl From<EthActivationV2Error> for EnablePlatformCoinWithTokensError {
             EthActivationV2Error::ActivationFailed { ticker, error } => {
                 EnablePlatformCoinWithTokensError::PlatformCoinCreationError { ticker, error }
             },
-            EthActivationV2Error::CouldNotFetchBalance(e)
-            | EthActivationV2Error::UnreachableNodes(e)
-            | EthActivationV2Error::AtLeastOneNodeRequired(e) => EnablePlatformCoinWithTokensError::Transport(e),
+            EthActivationV2Error::AtLeastOneNodeRequired => EnablePlatformCoinWithTokensError::Transport(
+                "Enable request for ETH coin must have at least 1 node".to_string(),
+            ),
+            EthActivationV2Error::CouldNotFetchBalance(e) | EthActivationV2Error::UnreachableNodes(e) => {
+                EnablePlatformCoinWithTokensError::Transport(e)
+            },
             EthActivationV2Error::InternalError(e) => EnablePlatformCoinWithTokensError::Internal(e),
         }
     }
@@ -57,8 +60,8 @@ impl From<EthActivationV2Error> for InitTokensAsMmCoinsError {
             },
             EthActivationV2Error::CouldNotFetchBalance(e)
             | EthActivationV2Error::UnreachableNodes(e)
-            | EthActivationV2Error::AtLeastOneNodeRequired(e)
             | EthActivationV2Error::InternalError(e) => InitTokensAsMmCoinsError::Internal(e),
+            e => InitTokensAsMmCoinsError::Internal(e.to_string()),
         }
     }
 }
@@ -105,7 +108,7 @@ impl TokenInitializer for Erc20Initializer {
 
             let register_params = RegisterCoinParams {
                 ticker: param.ticker.clone(),
-                tx_history: param.activation_request.tx_history.unwrap_or(false),
+                tx_history: param.activation_request.tx_history,
             };
 
             lp_register_coin(&ctx, MmCoinEnum::EthCoin(coin.clone()), register_params)
@@ -133,7 +136,7 @@ pub struct EthWithTokensActivationRequest {
 }
 
 impl TxHistory for EthWithTokensActivationRequest {
-    fn tx_history(&self) -> bool { self.platform_request.tx_history.unwrap_or(false) }
+    fn tx_history(&self) -> bool { self.platform_request.tx_history }
 }
 
 impl TokenOf for EthCoin {

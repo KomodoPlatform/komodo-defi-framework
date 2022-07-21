@@ -261,7 +261,8 @@ pub enum EthActivationV2Error {
     },
     CouldNotFetchBalance(String),
     UnreachableNodes(String),
-    AtLeastOneNodeRequired(String),
+    #[display(fmt = "Enable request for ETH coin must have at least 1 node")]
+    AtLeastOneNodeRequired,
     InternalError(String),
 }
 
@@ -275,7 +276,8 @@ pub struct EthActivationV2Request {
     #[serde(default)]
     pub gas_station_policy: GasStationPricePolicy,
     pub mm2: Option<u8>,
-    pub tx_history: Option<bool>,
+    #[serde(default)]
+    pub tx_history: bool,
     pub required_confirmations: Option<u64>,
 }
 
@@ -3499,10 +3501,7 @@ pub async fn eth_coin_from_conf_and_request_v2(
     protocol: CoinProtocol,
 ) -> Result<EthCoin, MmError<EthActivationV2Error>> {
     if req.nodes.is_empty() {
-        return Err(EthActivationV2Error::AtLeastOneNodeRequired(
-            "Enable request for ETH coin must have at least 1 node".to_string(),
-        )
-        .into());
+        return Err(EthActivationV2Error::AtLeastOneNodeRequired.into());
     }
 
     let mut rng = small_rng();
@@ -3610,7 +3609,7 @@ pub async fn eth_coin_from_conf_and_request_v2(
 
     let sign_message_prefix: Option<String> = json::from_value(conf["sign_message_prefix"].clone()).unwrap_or(None);
 
-    let initial_history_state = if req.tx_history.unwrap_or(false) {
+    let initial_history_state = if req.tx_history {
         HistorySyncState::NotStarted
     } else {
         HistorySyncState::NotEnabled

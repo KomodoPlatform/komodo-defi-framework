@@ -46,9 +46,12 @@ impl From<EthActivationV2Error> for EnableTokenError {
             EthActivationV2Error::ActivationFailed { ticker, error } => {
                 EnableTokenError::Internal(format!("{} activation is failed. {}", ticker, error))
             },
-            EthActivationV2Error::AtLeastOneNodeRequired(e)
-            | EthActivationV2Error::UnreachableNodes(e)
-            | EthActivationV2Error::CouldNotFetchBalance(e) => EnableTokenError::Transport(e),
+            EthActivationV2Error::AtLeastOneNodeRequired => {
+                EnableTokenError::Transport("Enable request for ETH coin must have at least 1 node".to_string())
+            },
+            EthActivationV2Error::UnreachableNodes(e) | EthActivationV2Error::CouldNotFetchBalance(e) => {
+                EnableTokenError::Transport(e)
+            },
             EthActivationV2Error::InternalError(e) => EnableTokenError::Internal(e),
         }
     }
