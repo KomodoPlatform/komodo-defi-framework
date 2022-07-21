@@ -24,7 +24,7 @@ use async_trait::async_trait;
 use bitcrypto::{keccak256, sha256};
 use common::executor::Timer;
 use common::log::{error, info, warn};
-use common::{get_utc_timestamp, now_ms, small_rng, HttpStatusCode, DEX_FEE_ADDR_RAW_PUBKEY};
+use common::{get_utc_timestamp, now_ms, small_rng, DEX_FEE_ADDR_RAW_PUBKEY};
 use crypto::privkey::key_pair_from_secret;
 use derive_more::Display;
 use ethabi::{Contract, Token};
@@ -265,19 +265,6 @@ pub enum EthActivationV2Error {
     InternalError(String),
 }
 
-impl HttpStatusCode for EthActivationV2Error {
-    fn status_code(&self) -> StatusCode {
-        match self {
-            EthActivationV2Error::InvalidPayload(_)
-            | EthActivationV2Error::ActivationFailed { .. }
-            | EthActivationV2Error::UnreachableNodes(_)
-            | EthActivationV2Error::AtLeastOneNodeRequired(_) => StatusCode::BAD_REQUEST,
-            EthActivationV2Error::CouldNotFetchBalance(_) => StatusCode::SERVICE_UNAVAILABLE,
-            _ => StatusCode::INTERNAL_SERVER_ERROR,
-        }
-    }
-}
-
 #[derive(Clone, Debug, Deserialize)]
 pub struct EthActivationV2Request {
     pub nodes: Vec<EthNode>,
@@ -333,9 +320,9 @@ pub struct EthCoinImpl {
     ticker: String,
     coin_type: EthCoinType,
     key_pair: KeyPair,
-    pub my_address: Address,
+    my_address: Address,
     sign_message_prefix: Option<String>,
-    pub swap_contract_address: Address,
+    swap_contract_address: Address,
     fallback_swap_contract: Option<Address>,
     web3: Web3<Web3Transport>,
     /// The separate web3 instances kept to get nonce, will replace the web3 completely soon
@@ -348,7 +335,7 @@ pub struct EthCoinImpl {
     required_confirmations: AtomicU64,
     /// Coin needs access to the context in order to reuse the logging and shutdown facilities.
     /// Using a weak reference by default in order to avoid circular references and leaks.
-    pub ctx: MmWeak,
+    ctx: MmWeak,
     chain_id: Option<u64>,
     /// the block range used for eth_getLogs
     logs_block_range: u64,
@@ -586,6 +573,10 @@ impl EthCoinImpl {
     pub fn address_from_str(&self, address: &str) -> Result<Address, String> {
         Ok(try_s!(valid_addr_from_str(address)))
     }
+
+    pub fn swap_contract_address_as_h160(&self) -> Address { self.swap_contract_address }
+
+    pub fn ctx(&self) -> MmWeak { self.ctx.clone() }
 
     pub async fn add_erc_token_info(&self, ticker: String, info: Erc20TokenInfo) {
         self.erc20_tokens_infos.lock().await.insert(ticker, info);

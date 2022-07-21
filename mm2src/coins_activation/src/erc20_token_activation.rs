@@ -68,7 +68,7 @@ impl TokenActivationOps for EthCoin {
         activation_params: Self::ActivationParams,
         protocol_conf: Self::ProtocolInfo,
     ) -> Result<(Self, Self::ActivationResult), MmError<Self::ActivationError>> {
-        let ctx = MmArc::from_weak(&platform_coin.ctx)
+        let ctx = MmArc::from_weak(&platform_coin.ctx())
             .ok_or("No context")
             .map_err(|e| EthActivationV2Error::InternalError(e.to_string()))?;
 

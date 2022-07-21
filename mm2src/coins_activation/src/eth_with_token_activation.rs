@@ -80,7 +80,7 @@ impl TokenInitializer for Erc20Initializer {
         &self,
         activation_params: Vec<TokenActivationParams<EthActivationV2Request, CoinProtocol>>,
     ) -> Result<Vec<EthCoin>, MmError<EthActivationV2Error>> {
-        let ctx = MmArc::from_weak(&self.platform_coin.ctx)
+        let ctx = MmArc::from_weak(&self.platform_coin.ctx())
             .ok_or("No context")
             .map_err(|e| EthActivationV2Error::InternalError(e.to_string()))?;
 
@@ -142,7 +142,7 @@ impl TokenOf for EthCoin {
 impl RegisterTokenInfo<EthCoin> for EthCoin {
     fn register_token_info(&self, token: &EthCoin) {
         let fut = self.add_erc_token_info(token.ticker().to_string(), Erc20TokenInfo {
-            token_address: token.swap_contract_address,
+            token_address: token.swap_contract_address_as_h160(),
             decimals: token.decimals(),
         });
         futures::executor::block_on(fut);
