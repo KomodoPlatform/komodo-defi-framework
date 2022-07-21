@@ -279,7 +279,7 @@ impl HttpStatusCode for EthActivationV2Error {
 }
 
 #[derive(Clone, Debug, Deserialize)]
-pub struct EthActivationRequest {
+pub struct EthActivationV2Request {
     pub nodes: Vec<EthNode>,
     pub swap_contract_address: Address,
     pub fallback_swap_contract: Option<Address>,
@@ -3503,7 +3503,7 @@ pub async fn eth_coin_from_conf_and_request_v2(
     ctx: &MmArc,
     ticker: &str,
     conf: &Json,
-    req: EthActivationRequest,
+    req: EthActivationV2Request,
     priv_key: &[u8],
     protocol: CoinProtocol,
 ) -> Result<EthCoin, MmError<EthActivationV2Error>> {

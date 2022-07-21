@@ -2,7 +2,7 @@ use crate::{prelude::TryPlatformCoinFromMmCoinEnum,
             token::{EnableTokenError, TokenActivationOps, TokenProtocolParams}};
 use async_trait::async_trait;
 use coins::{coin_conf,
-            eth::{eth_coin_from_conf_and_request_v2, EthActivationRequest, EthActivationV2Error, EthCoin},
+            eth::{eth_coin_from_conf_and_request_v2, EthActivationV2Error, EthActivationV2Request, EthCoin},
             CoinBalance, CoinProtocol, MarketCoinOps, MmCoinEnum};
 use common::Future01CompatExt;
 use crypto::CryptoCtx;
@@ -57,7 +57,7 @@ impl From<EthActivationV2Error> for EnableTokenError {
 #[async_trait]
 impl TokenActivationOps for EthCoin {
     type PlatformCoin = EthCoin;
-    type ActivationParams = EthActivationRequest;
+    type ActivationParams = EthActivationV2Request;
     type ProtocolInfo = CoinProtocol;
     type ActivationResult = Erc20InitResult;
     type ActivationError = EthActivationV2Error;
