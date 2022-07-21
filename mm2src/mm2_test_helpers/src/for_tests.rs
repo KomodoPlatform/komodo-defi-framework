@@ -1443,6 +1443,21 @@ pub async fn init_withdraw(mm: &MarketMakerIt, coin: &str, to: &str, amount: &st
     json::from_str(&request.1).unwrap()
 }
 
+pub async fn withdraw_v1(mm: &MarketMakerIt, coin: &str, to: &str, amount: &str) -> Json {
+    let request = mm
+        .rpc(&json! ({
+            "userpass": mm.userpass,
+            "method": "withdraw",
+            "coin": coin,
+            "to": to,
+            "amount": amount,
+        }))
+        .await
+        .unwrap();
+    assert_eq!(request.0, StatusCode::OK, "'withdraw' failed: {}", request.1);
+    json::from_str(&request.1).unwrap()
+}
+
 pub async fn withdraw_status(mm: &MarketMakerIt, task_id: u64) -> Json {
     let request = mm
         .rpc(&json! ({

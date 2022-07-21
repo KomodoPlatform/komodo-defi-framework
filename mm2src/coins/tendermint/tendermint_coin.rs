@@ -1,18 +1,23 @@
+use crate::utxo::sat_from_big_decimal;
 use crate::{big_decimal_from_sat_unsigned, BalanceError, BalanceFut, BigDecimal, CoinBalance, FeeApproxStage,
             FoundSwapTxSpend, HistorySyncState, MarketCoinOps, MmCoin, NegotiateSwapContractAddrErr,
             RawTransactionFut, RawTransactionRequest, SearchForSwapTxSpendInput, SignatureResult, SwapOps, TradeFee,
-            TradePreimageFut, TradePreimageResult, TradePreimageValue, TransactionEnum, TransactionFut,
-            UnexpectedDerivationMethod, ValidateAddressResult, ValidatePaymentInput, VerificationResult,
-            WithdrawError, WithdrawFut, WithdrawRequest};
+            TradePreimageFut, TradePreimageResult, TradePreimageValue, TransactionDetails, TransactionEnum,
+            TransactionFut, TransactionType, UnexpectedDerivationMethod, ValidateAddressResult, ValidatePaymentInput,
+            VerificationResult, WithdrawError, WithdrawFut, WithdrawRequest};
 use async_trait::async_trait;
+use common::Future01CompatExt;
+use cosmrs::bank::MsgSend;
 use cosmrs::crypto::secp256k1::SigningKey;
+use cosmrs::proto::cosmos::auth::v1beta1::{BaseAccount, QueryAccountRequest, QueryAccountResponse};
 use cosmrs::proto::cosmos::bank::v1beta1::{QueryBalanceRequest, QueryBalanceResponse};
 use cosmrs::rpc::endpoint::abci_query::Request as AbciRequest;
 use cosmrs::rpc::Client;
 use cosmrs::rpc::HttpClient;
 use cosmrs::tendermint::abci::Path as AbciPath;
 use cosmrs::tendermint::chain::Id as ChainId;
-use cosmrs::AccountId;
+use cosmrs::tx::{self, Fee, Msg, Raw, SignDoc, SignerInfo};
+use cosmrs::{AccountId, Coin, Denom};
 use derive_more::Display;
 use futures::{FutureExt, TryFutureExt};
 use futures01::Future;
@@ -50,7 +55,7 @@ pub struct TendermintCoinImpl {
     account_prefix: String,
     priv_key: Vec<u8>,
     decimals: u8,
-    denom: String,
+    denom: Denom,
     chain_id: ChainId,
 }
 
@@ -74,6 +79,7 @@ pub enum TendermintInitErrorKind {
     CouldNotGenerateAccountId(String),
     RpcClientInitError(String),
     InvalidChainId(String),
+    InvalidDenom(String),
     RpcError(String),
 }
 
@@ -108,6 +114,11 @@ impl TendermintCoin {
             kind: TendermintInitErrorKind::InvalidChainId(e.to_string()),
         })?;
 
+        let denom = Denom::from_str(&protocol_info.denom).map_to_mm(|e| TendermintInitError {
+            ticker: ticker.clone(),
+            kind: TendermintInitErrorKind::InvalidDenom(e.to_string()),
+        })?;
+
         Ok(TendermintCoin(Arc::new(TendermintCoinImpl {
             ticker,
             rpc_client,
@@ -115,7 +126,7 @@ impl TendermintCoin {
             account_prefix: protocol_info.account_prefix,
             priv_key: priv_key.to_vec(),
             decimals: protocol_info.decimals,
-            denom: protocol_info.denom,
+            denom,
             chain_id,
         })))
     }
@@ -129,16 +140,80 @@ impl MmCoin for TendermintCoin {
     fn withdraw(&self, req: WithdrawRequest) -> WithdrawFut {
         let coin = self.clone();
         let fut = async move {
-            let recipient_account =
+            let path = AbciPath::from_str("/cosmos.auth.v1beta1.Query/Account").expect("valid path");
+            let request = QueryAccountRequest {
+                address: coin.account_id.to_string(),
+            };
+            let request = AbciRequest::new(Some(path), request.encode_to_vec(), None, false);
+
+            let response = coin
+                .rpc_client
+                .perform(request)
+                .await
+                .map_to_mm(|e| WithdrawError::Transport(e.to_string()))?;
+            // let any = Any::decode(response.response.value.as_slice())
+            // .map_to_mm(|e| WithdrawError::Transport(e.to_string()))?;
+            common::log::info!("Abci Response {:?}", response);
+            let account_response = QueryAccountResponse::decode(response.response.value.as_slice())
+                .map_to_mm(|e| WithdrawError::Transport(e.to_string()))?;
+            let account_info = BaseAccount::decode(account_response.account.unwrap().value.as_slice())
+                .map_to_mm(|e| WithdrawError::Transport(e.to_string()))?;
+
+            let current_block = coin
+                .current_block()
+                .compat()
+                .await
+                .map_to_mm(|e| WithdrawError::Transport(e))?;
+            let to_address =
                 AccountId::from_str(&req.to).map_to_mm(|e| WithdrawError::InvalidAddress(e.to_string()))?;
-            if recipient_account.prefix() != coin.account_prefix {
+            if to_address.prefix() != coin.account_prefix {
                 return MmError::err(WithdrawError::InvalidAddress(format!(
                     "expected {} address prefix",
                     coin.account_prefix
                 )));
             }
 
-            unimplemented!()
+            let amount = sat_from_big_decimal(&req.amount, coin.decimals)?;
+            let amount = Coin {
+                denom: coin.denom.clone(),
+                amount: amount.into(),
+            };
+            let msg_send = MsgSend {
+                from_address: coin.account_id.clone(),
+                to_address,
+                amount: vec![amount.clone()],
+            }
+            .to_any()
+            .unwrap();
+
+            let sequence_number = 0;
+            let gas = 100_000;
+            let fee = Fee::from_amount_and_gas(amount, gas);
+            let timeout_height = current_block + 100;
+
+            let privkey = SigningKey::from_bytes(&coin.priv_key).unwrap();
+
+            let tx_body = tx::Body::new(vec![msg_send], "", timeout_height as u32);
+            let auth_info = SignerInfo::single_direct(Some(privkey.public_key()), sequence_number).auth_info(fee);
+            let sign_doc = SignDoc::new(&tx_body, &auth_info, &coin.chain_id, account_info.account_number).unwrap();
+            let tx_raw = sign_doc.sign(&privkey).unwrap();
+            Ok(TransactionDetails {
+                tx_hex: tx_raw.to_bytes().unwrap().into(),
+                tx_hash: "".to_string(),
+                from: vec![],
+                to: vec![],
+                total_amount: Default::default(),
+                spent_by_me: Default::default(),
+                received_by_me: Default::default(),
+                my_balance_change: Default::default(),
+                block_height: 0,
+                timestamp: 0,
+                fee_details: None,
+                coin: coin.ticker.to_string(),
+                internal_id: Default::default(),
+                kmd_rewards: None,
+                transaction_type: TransactionType::default(),
+            })
         };
         Box::new(fut.boxed().compat())
     }
@@ -212,7 +287,7 @@ impl MarketCoinOps for TendermintCoin {
             let path = AbciPath::from_str("/cosmos.bank.v1beta1.Query/Balance").expect("valid path");
             let request = QueryBalanceRequest {
                 address: coin.account_id.to_string(),
-                denom: coin.denom.clone(),
+                denom: coin.denom.to_string(),
             };
             let request = AbciRequest::new(Some(path), request.encode_to_vec(), None, false);
 
@@ -241,7 +316,23 @@ impl MarketCoinOps for TendermintCoin {
 
     fn platform_ticker(&self) -> &str { todo!() }
 
-    fn send_raw_tx(&self, tx: &str) -> Box<dyn Future<Item = String, Error = String> + Send> { todo!() }
+    fn send_raw_tx(&self, tx: &str) -> Box<dyn Future<Item = String, Error = String> + Send> {
+        let tx_bytes = try_fus!(hex::decode(tx));
+        let tx = try_fus!(Raw::from_bytes(&tx_bytes));
+        let coin = self.clone();
+        let fut = async move {
+            let broadcast_res = try_s!(tx.broadcast_commit(&coin.rpc_client).await);
+            if !broadcast_res.check_tx.code.is_ok() {
+                return ERR!("Tx check failed {:?}", broadcast_res.check_tx);
+            }
+
+            if !broadcast_res.deliver_tx.code.is_ok() {
+                return ERR!("Tx deliver failed {:?}", broadcast_res.deliver_tx);
+            }
+            Ok(broadcast_res.hash.to_string())
+        };
+        Box::new(fut.boxed().compat())
+    }
 
     fn send_raw_tx_bytes(&self, tx: &[u8]) -> Box<dyn Future<Item = String, Error = String> + Send> { todo!() }
 
