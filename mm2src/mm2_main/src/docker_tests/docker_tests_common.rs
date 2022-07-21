@@ -1,7 +1,7 @@
 // re-export the most common imports
 pub use crate::mm2::mm2_tests::structs::*;
-pub use common::mm_number::MmNumber;
 pub use common::{block_on, now_ms};
+pub use mm2_number::MmNumber;
 pub use mm2_test_helpers::for_tests::{check_my_swap_status, check_recent_swaps, check_stats_swap_status,
                                       enable_native, enable_native_bch, mm_dump, MarketMakerIt, MAKER_ERROR_EVENTS,
                                       MAKER_SUCCESS_EVENTS, TAKER_ERROR_EVENTS, TAKER_SUCCESS_EVENTS};
@@ -18,12 +18,12 @@ use coins::utxo::utxo_standard::{utxo_standard_coin_with_priv_key, UtxoStandardC
 use coins::utxo::{coin_daemon_data_dir, sat_from_big_decimal, zcash_params_path, UtxoActivationParams,
                   UtxoAddressFormat, UtxoCoinFields};
 use coins::MarketCoinOps;
-use common::mm_number::BigDecimal;
 use ethereum_types::H160 as H160Eth;
 use futures01::Future;
 use http::StatusCode;
 use keys::{Address, AddressHashEnum};
 use mm2_core::mm_ctx::{MmArc, MmCtxBuilder};
+use mm2_number::BigDecimal;
 use primitives::hash::{H160, H256};
 use secp256k1::Secp256k1;
 use serde_json::{self as json, Value as Json};
@@ -194,7 +194,6 @@ pub fn qrc20_coin_from_privkey(ticker: &str, priv_key: &[u8]) -> (MmArc, Qrc20Co
         "pubtype":120,
         "p2shtype":110,
         "wiftype":128,
-        "segwit":true,
         "mm2":1,
         "mature_confirmations":500,
         "network":"regtest",
@@ -243,7 +242,6 @@ fn qrc20_coin_conf_item(ticker: &str) -> Json {
         "pubtype":120,
         "p2shtype":110,
         "wiftype":128,
-        "segwit":true,
         "mature_confirmations":500,
         "confpath":confpath,
         "network":"regtest",
@@ -345,7 +343,6 @@ pub fn generate_qtum_coin_with_random_privkey(
         "pubtype":120,
         "p2shtype": 110,
         "wiftype":128,
-        "segwit":true,
         "txfee": txfee,
         "txfee_volatility_percent":0.1,
         "mm2":1,

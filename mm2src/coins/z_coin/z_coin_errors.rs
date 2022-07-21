@@ -1,12 +1,14 @@
+use crate::my_tx_history_v2::MyTxHistoryErrorV2;
 use crate::utxo::rpc_clients::UtxoRpcError;
 use crate::utxo::utxo_builder::UtxoCoinBuildError;
 use crate::WithdrawError;
 use crate::{NumConversError, PrivKeyNotAllowed};
-use bigdecimal::BigDecimal;
 use db_common::sqlite::rusqlite::Error as SqliteError;
+use db_common::sqlite::rusqlite::Error as SqlError;
 use derive_more::Display;
 use http::uri::InvalidUri;
-use rpc::v1::types::Bytes as BytesJson;
+use mm2_number::BigDecimal;
+use rpc::v1::types::{Bytes as BytesJson, H256 as H256Json};
 use zcash_client_sqlite::error::SqliteClientError;
 use zcash_client_sqlite::error::SqliteClientError as ZcashClientError;
 use zcash_primitives::transaction::builder::Error as ZTxBuilderError;
@@ -204,4 +206,32 @@ impl From<InvalidUri> for ZCoinBuildError {
 
 impl From<ZcoinLightClientInitError> for ZCoinBuildError {
     fn from(err: ZcoinLightClientInitError) -> Self { ZCoinBuildError::LightClientInitErr(err) }
+}
+
+pub(super) enum SqlTxHistoryError {
+    Sql(SqlError),
+    FromIdDoesNotExist(i64),
+}
+
+impl From<SqlError> for SqlTxHistoryError {
+    fn from(err: SqlError) -> Self { SqlTxHistoryError::Sql(err) }
+}
+
+impl From<SqlTxHistoryError> for MyTxHistoryErrorV2 {
+    fn from(err: SqlTxHistoryError) -> Self {
+        match err {
+            SqlTxHistoryError::Sql(sql) => MyTxHistoryErrorV2::StorageError(sql.to_string()),
+            SqlTxHistoryError::FromIdDoesNotExist(id) => {
+                MyTxHistoryErrorV2::StorageError(format!("from_id {} does not exist", id))
+            },
+        }
+    }
+}
+
+pub(super) struct NoInfoAboutTx(pub(super) H256Json);
+
+impl From<NoInfoAboutTx> for MyTxHistoryErrorV2 {
+    fn from(err: NoInfoAboutTx) -> Self {
+        MyTxHistoryErrorV2::RpcError(format!("No info about transaction {:02x}", err.0))
+    }
 }

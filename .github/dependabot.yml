@@ -1,0 +1,140 @@
+# Please see the documentation for all configuration options:
+# https://help.github.com/github/administering-a-repository/configuration-options-for-dependency-updates
+
+version: 2
+updates:
+  - package-ecosystem: cargo
+    # Define the location of the package manifests
+    directory: "/mm2src/coins/"
+    schedule:
+      # By default, Dependabot checks for new versions on Monday at a random set time for the repository
+      interval: weekly
+  - package-ecosystem: cargo
+    directory: "/mm2src/common/shared_ref_counter/"
+    schedule:
+      interval: weekly
+  - package-ecosystem: cargo
+    directory: "/mm2src/coins/lightning_persister/"
+    schedule:
+      interval: weekly
+  - package-ecosystem: cargo
+    directory: "/mm2src/coins/lightning_background_processor/"
+    schedule:
+      interval: weekly
+  - package-ecosystem: cargo
+    directory: "/mm2src/coins/utxo_signer/"
+    schedule:
+      interval: weekly
+  - package-ecosystem: cargo
+    directory: "/mm2src/coins_activation/"
+    schedule:
+      interval: weekly
+  - package-ecosystem: cargo
+    directory: "/mm2src/crypto/"
+    schedule:
+      interval: weekly
+  - package-ecosystem: cargo
+    directory: "/mm2src/db_common/"
+    schedule:
+      interval: weekly
+  - package-ecosystem: cargo
+    directory: "/mm2src/derives/ser_error/"
+    schedule:
+      interval: weekly
+  - package-ecosystem: cargo
+    directory: "/mm2src/derives/ser_error_derive/"
+    schedule:
+      interval: weekly
+  - package-ecosystem: cargo
+    directory: "/mm2src/floodsub/"
+    schedule:
+      interval: weekly
+  - package-ecosystem: cargo
+    directory: "/mm2src/gossipsub/"
+    schedule:
+      interval: weekly
+    open-pull-requests-limit: 10
+  - package-ecosystem: cargo
+    directory: "/mm2src/hw_common/"
+    schedule:
+      interval: weekly
+  - package-ecosystem: cargo
+    directory: "/mm2src/mm2_bitcoin/crypto/"
+    schedule:
+      interval: weekly
+  - package-ecosystem: cargo
+    directory: "/mm2src/mm2_bitcoin/chain/"
+    schedule:
+      interval: weekly
+  - package-ecosystem: cargo
+    directory: "/mm2src/mm2_bitcoin/keys/"
+    schedule:
+      interval: weekly
+  - package-ecosystem: cargo
+    directory: "/mm2src/mm2_bitcoin/rpc/"
+    schedule:
+      interval: weekly
+  - package-ecosystem: cargo
+    directory: "/mm2src/mm2_bitcoin/primitives/"
+    schedule:
+      interval: weekly
+  - package-ecosystem: cargo
+    directory: "/mm2src/mm2_bitcoin/script/"
+    schedule:
+      interval: weekly
+  - package-ecosystem: cargo
+    directory: "/mm2src/mm2_bitcoin/serialization/"
+    schedule:
+      interval: weekly
+  - package-ecosystem: cargo
+    directory: "/mm2src/mm2_bitcoin/serialization_derive/"
+    schedule:
+      interval: weekly
+  - package-ecosystem: cargo
+    directory: "/mm2src/mm2_bitcoin/test_helpers/"
+    schedule:
+      interval: weekly
+  - package-ecosystem: cargo
+    directory: "/mm2src/mm2_core/"
+    schedule:
+      interval: weekly
+  - package-ecosystem: cargo
+    directory: "/mm2src/mm2_db/"
+    schedule:
+      interval: weekly
+  - package-ecosystem: cargo
+    directory: "/mm2src/mm2_err_handle/"
+    schedule:
+      interval: weekly
+  - package-ecosystem: cargo
+    directory: "/mm2src/mm2_test_helpers/"
+    schedule:
+      interval: weekly
+  - package-ecosystem: cargo
+    directory: "/mm2src/mm2_libp2p/"
+    schedule:
+      interval: weekly
+  - package-ecosystem: cargo
+    directory: "/mm2src/mm2_main/"
+    schedule:
+      interval: weekly
+  - package-ecosystem: cargo
+    directory: "/mm2src/mm2_net/"
+    schedule:
+      interval: weekly
+  - package-ecosystem: cargo
+    directory: "/mm2src/mm2_io/"
+    schedule:
+      interval: weekly
+  - package-ecosystem: cargo
+    directory: "/mm2src/mm2_rpc/"
+    schedule:
+      interval: weekly
+  - package-ecosystem: cargo
+    directory: "/mm2src/rpc_task/"
+    schedule:
+      interval: weekly
+  - package-ecosystem: cargo
+    directory: "/mm2src/trezor/"
+    schedule:
+      interval: weekly

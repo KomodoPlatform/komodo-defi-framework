@@ -29,7 +29,6 @@ use coins::{coin_conf, find_pair, lp_coinfind, BalanceTradeFeeUpdatedHandler, Co
             FeeApproxStage, MmCoinEnum};
 use common::executor::{spawn, Timer};
 use common::log::{error, LogOnError};
-use common::mm_number::{BigDecimal, BigRational, Fraction, MmNumber, MmNumberMultiRepr};
 use common::time_cache::TimeCache;
 use common::{bits256, log, new_uuid, now_ms, spawn_abortable, AbortOnDropHandle};
 use crypto::privkey::SerializableSecp256k1Keypair;
@@ -43,6 +42,7 @@ use keys::{AddressFormat, KeyPair};
 use mm2_core::mm_ctx::{from_ctx, MmArc, MmWeak};
 use mm2_err_handle::prelude::*;
 use mm2_libp2p::{decode_signed, encode_and_sign, encode_message, pub_sub_topic, TopicPrefix, TOPIC_SEPARATOR};
+use mm2_number::{construct_detailed, BigDecimal, BigRational, Fraction, MmNumber, MmNumberMultiRepr};
 #[cfg(test)] use mocktopus::macros::*;
 use num_traits::identities::Zero;
 use parking_lot::Mutex as PaMutex;
@@ -341,7 +341,7 @@ async fn request_and_fill_orderbook(ctx: &MmArc, base: &str, rel: &str) -> Resul
     let ordermatch_ctx = OrdermatchContext::from_ctx(ctx).unwrap();
     let mut orderbook = ordermatch_ctx.orderbook.lock();
 
-    let my_pubkey = ctx.secp256k1_key_pair().public();
+    let keypair = ctx.secp256k1_key_pair_as_option();
     let alb_pair = alb_ordered_pair(base, rel);
     for (pubkey, GetOrderbookPubkeyItem { orders, .. }) in pubkey_orders {
         let pubkey_bytes = match hex::decode(&pubkey) {
@@ -351,8 +351,10 @@ async fn request_and_fill_orderbook(ctx: &MmArc, base: &str, rel: &str) -> Resul
                 continue;
             },
         };
-        if pubkey_bytes.as_slice() == my_pubkey.as_ref() {
-            continue;
+        if let Some(keypair) = keypair {
+            if pubkey_bytes.as_slice() == keypair.public().as_ref() {
+                continue;
+            }
         }
 
         if is_pubkey_banned(ctx, &pubkey_bytes[1..].into()) {
@@ -505,6 +507,11 @@ pub enum OrdermatchRequest {
         action: BestOrdersAction,
         volume: BigRational,
     },
+    BestOrdersByNumber {
+        coin: String,
+        action: BestOrdersAction,
+        number: usize,
+    },
     OrderbookDepth {
         pairs: Vec<(String, String)>,
     },
@@ -557,6 +564,9 @@ pub fn process_peer_request(ctx: MmArc, request: OrdermatchRequest) -> Result<Op
         },
         OrdermatchRequest::BestOrders { coin, action, volume } => {
             best_orders::process_best_orders_p2p_request(ctx, coin, action, volume)
+        },
+        OrdermatchRequest::BestOrdersByNumber { coin, action, number } => {
+            best_orders::process_best_orders_p2p_request_by_number(ctx, coin, action, number)
         },
         OrdermatchRequest::OrderbookDepth { pairs } => orderbook_depth::process_orderbook_depth_p2p_request(ctx, pairs),
     }

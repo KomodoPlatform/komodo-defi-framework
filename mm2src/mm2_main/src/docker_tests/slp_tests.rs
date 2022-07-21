@@ -1,5 +1,5 @@
 use crate::docker_tests::docker_tests_common::*;
-use common::mm_number::BigDecimal;
+use mm2_number::BigDecimal;
 use mm2_test_helpers::for_tests::{enable_bch_with_tokens, enable_slp, UtxoRpcMode};
 use serde_json::{self as json};
 use std::time::Duration;

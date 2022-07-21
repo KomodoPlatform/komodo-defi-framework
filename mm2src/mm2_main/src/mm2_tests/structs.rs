@@ -3,7 +3,7 @@
 /// The helper structs used in testing of RPC responses, these should be separated from actual MM2 code to ensure
 /// backwards compatibility
 /// Use `#[serde(deny_unknown_fields)]` for all structs for tests to fail in case of adding new fields to the response
-use common::mm_number::{BigDecimal, BigRational, Fraction, MmNumber};
+use mm2_number::{BigDecimal, BigRational, Fraction, MmNumber};
 use rpc::v1::types::H256 as H256Json;
 use serde_json::Value as Json;
 use std::collections::{HashMap, HashSet};
@@ -652,7 +652,7 @@ pub enum WithdrawStatus {
 }
 
 pub mod withdraw_error {
-    use common::mm_number::BigDecimal;
+    use mm2_number::BigDecimal;
 
     #[derive(Debug, Deserialize, PartialEq)]
     #[serde(deny_unknown_fields)]
@@ -671,7 +671,7 @@ pub mod withdraw_error {
 }
 
 pub mod trade_preimage_error {
-    use common::mm_number::BigDecimal;
+    use mm2_number::BigDecimal;
 
     #[derive(Debug, Deserialize, PartialEq)]
     #[serde(deny_unknown_fields)]
@@ -797,24 +797,44 @@ pub struct HistoryTransactionDetails {
     pub confirmations: u64,
 }
 
+#[derive(Debug, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct ZcoinTransactionDetails {
+    pub tx_hash: String,
+    pub from: HashSet<String>,
+    pub to: HashSet<String>,
+    pub spent_by_me: BigDecimal,
+    pub received_by_me: BigDecimal,
+    pub my_balance_change: BigDecimal,
+    pub block_height: u64,
+    pub timestamp: u64,
+    pub transaction_fee: BigDecimal,
+    pub coin: String,
+    pub internal_id: i64,
+    pub confirmations: u64,
+}
+
 #[derive(Clone, Debug, Deserialize)]
-pub enum PagingOptionsEnum {
-    FromId(String),
+pub enum PagingOptionsEnum<T> {
+    FromId(T),
     PageNumber(NonZeroUsize),
 }
 
+pub type StandardHistoryV2Res = MyTxHistoryV2Response<HistoryTransactionDetails, String>;
+pub type ZcoinHistoryRes = MyTxHistoryV2Response<ZcoinTransactionDetails, i64>;
+
 #[derive(Debug, Deserialize)]
 #[serde(deny_unknown_fields)]
-pub struct MyTxHistoryV2Response {
+pub struct MyTxHistoryV2Response<Tx, Id> {
     pub coin: String,
     pub current_block: u64,
-    pub transactions: Vec<HistoryTransactionDetails>,
+    pub transactions: Vec<Tx>,
     pub sync_status: Json,
     pub limit: usize,
     pub skipped: usize,
     pub total: usize,
     pub total_pages: usize,
-    pub paging_options: PagingOptionsEnum,
+    pub paging_options: PagingOptionsEnum<Id>,
 }
 
 #[derive(Debug, Deserialize)]

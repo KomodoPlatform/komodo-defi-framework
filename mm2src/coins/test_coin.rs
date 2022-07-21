@@ -4,12 +4,11 @@ use crate::{BalanceFut, FeeApproxStage, FoundSwapTxSpend, NegotiateSwapContractA
             SignatureResult, TradePreimageFut, TradePreimageResult, TradePreimageValue, UnexpectedDerivationMethod,
             ValidateAddressResult, ValidatePaymentInput, VerificationResult, WithdrawFut, WithdrawRequest};
 use async_trait::async_trait;
-use bigdecimal::BigDecimal;
-use common::mm_number::MmNumber;
 use futures01::Future;
 use keys::KeyPair;
 use mm2_core::mm_ctx::MmArc;
 use mm2_err_handle::prelude::*;
+use mm2_number::{BigDecimal, MmNumber};
 use mocktopus::macros::*;
 use rpc::v1::types::Bytes as BytesJson;
 use serde_json::Value as Json;

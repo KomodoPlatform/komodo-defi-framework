@@ -46,7 +46,7 @@
 
 use common::ifrom_inner;
 use derive_more::Display;
-use num_bigint::BigUint;
+use mm2_number::BigUint;
 use num_traits::ToPrimitive;
 use serde::de::Error as DeError;
 use serde::ser::Error as SerError;

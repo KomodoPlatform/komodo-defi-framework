@@ -351,6 +351,13 @@ fn migrate_db(ctx: &MmArc) -> MmInitResult<()> {
 fn migration_1(_ctx: &MmArc) {}
 
 pub async fn lp_init_continue(ctx: MmArc) -> MmInitResult<()> {
+    init_ordermatch_context(&ctx)?;
+    init_p2p(ctx.clone()).await?;
+
+    if ctx.secp256k1_key_pair_as_option().is_none() {
+        return Ok(());
+    }
+
     #[cfg(not(target_arch = "wasm32"))]
     {
         fix_directories(&ctx)?;
@@ -360,9 +367,7 @@ pub async fn lp_init_continue(ctx: MmArc) -> MmInitResult<()> {
         migrate_db(&ctx)?;
     }
 
-    init_ordermatch_context(&ctx)?;
     init_message_service(&ctx).await?;
-    init_p2p(ctx.clone()).await?;
 
     let balance_update_ordermatch_handler = BalanceUpdateOrdermatchHandler::new(ctx.clone());
     register_balance_update_handler(ctx.clone(), Box::new(balance_update_ordermatch_handler)).await;
@@ -386,18 +391,15 @@ pub async fn lp_init_continue(ctx: MmArc) -> MmInitResult<()> {
 pub async fn lp_init(ctx: MmArc) -> MmInitResult<()> {
     info!("Version: {} DT {}", MM_VERSION, MM_DATETIME);
 
-    if ctx.conf["passphrase"].is_null() && ctx.conf["hw_wallet"].is_null() {
-        return MmError::err(MmInitError::FieldNotFoundInConfig {
-            field: "passphrase".to_owned(),
-        });
+    if !ctx.conf["passphrase"].is_null() {
+        let passphrase: String =
+            json::from_value(ctx.conf["passphrase"].clone()).map_to_mm(|e| MmInitError::ErrorDeserializingConfig {
+                field: "passphrase".to_owned(),
+                error: e.to_string(),
+            })?;
+        CryptoCtx::init_with_iguana_passphrase(ctx.clone(), &passphrase)?;
     }
 
-    let passphrase: String =
-        json::from_value(ctx.conf["passphrase"].clone()).map_to_mm(|e| MmInitError::ErrorDeserializingConfig {
-            field: "passphrase".to_owned(),
-            error: e.to_string(),
-        })?;
-    CryptoCtx::init_with_iguana_passphrase(ctx.clone(), &passphrase)?;
     lp_init_continue(ctx.clone()).await?;
 
     let ctx_id = ctx.ffi_handle().map_to_mm(MmInitError::Internal)?;

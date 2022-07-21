@@ -137,7 +137,7 @@ where
             .map_to_mm(WithdrawError::InvalidAddress)?;
 
         let is_p2pkh = to.prefix == conf.pub_addr_prefix && to.t_addr_prefix == conf.pub_t_addr_prefix;
-        let is_p2sh = to.prefix == conf.p2sh_addr_prefix && to.t_addr_prefix == conf.p2sh_t_addr_prefix && conf.segwit;
+        let is_p2sh = to.prefix == conf.p2sh_addr_prefix && to.t_addr_prefix == conf.p2sh_t_addr_prefix;
 
         let script_type = if is_p2pkh {
             ScriptType::P2PKH

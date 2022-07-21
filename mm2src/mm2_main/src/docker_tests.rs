@@ -111,12 +111,12 @@ mod docker_tests {
     use coins::utxo::{dhash160, GetUtxoListOps, UtxoActivationParams, UtxoCommonOps};
     use coins::{CoinProtocol, FoundSwapTxSpend, MarketCoinOps, MmCoin, SearchForSwapTxSpendInput, SwapOps,
                 Transaction, TransactionEnum, WithdrawRequest};
-    use common::mm_number::{BigDecimal, MmNumber};
     use common::{block_on, now_ms};
     use crypto::privkey::{key_pair_from_secret, key_pair_from_seed};
     use futures01::Future;
     use keys::{Address, KeyPair, NetworkPrefix as CashAddrPrefix, Private};
     use mm2_core::mm_ctx::{MmArc, MmCtxBuilder};
+    use mm2_number::{BigDecimal, MmNumber};
     use mm2_test_helpers::for_tests::{check_my_swap_status_amounts, enable_electrum};
     use qrc20_tests::{qtum_docker_node, QtumDockerOps, QTUM_REGTEST_DOCKER_IMAGE};
     use script::Builder;
