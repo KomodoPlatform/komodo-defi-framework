@@ -66,6 +66,9 @@ pub trait TokenAsMmCoinInitializer: Send + Sync {
 pub enum InitTokensAsMmCoinsError {
     TokenConfigIsNotFound(String),
     InvalidPubkey(String),
+    InvalidPayload(String),
+    Internal(String),
+    InitializationFailed { ticker: String, error: String },
     TokenProtocolParseError { ticker: String, error: String },
     UnexpectedTokenProtocol { ticker: String, protocol: CoinProtocol },
 }
@@ -206,6 +209,11 @@ pub enum EnablePlatformCoinWithTokensError {
         ticker: String,
         error: String,
     },
+    #[display(fmt = "Error on {} token initialization: {}", ticker, error)]
+    TokenCreationError {
+        ticker: String,
+        error: String,
+    },
     #[display(fmt = "Private key is not allowed: {}", _0)]
     PrivKeyNotAllowed(String),
     #[display(fmt = "Unexpected derivation method: {}", _0)]
@@ -246,7 +254,13 @@ impl From<InitTokensAsMmCoinsError> for EnablePlatformCoinWithTokensError {
             InitTokensAsMmCoinsError::UnexpectedTokenProtocol { ticker, protocol } => {
                 EnablePlatformCoinWithTokensError::UnexpectedTokenProtocol { ticker, protocol }
             },
-            InitTokensAsMmCoinsError::InvalidPubkey(e) => EnablePlatformCoinWithTokensError::Internal(e),
+            InitTokensAsMmCoinsError::InvalidPayload(e) => EnablePlatformCoinWithTokensError::InvalidPayload(e),
+            InitTokensAsMmCoinsError::InvalidPubkey(e) | InitTokensAsMmCoinsError::Internal(e) => {
+                EnablePlatformCoinWithTokensError::Internal(e)
+            },
+            InitTokensAsMmCoinsError::InitializationFailed { ticker, error } => {
+                EnablePlatformCoinWithTokensError::TokenCreationError { ticker, error }
+            },
         }
     }
 }
@@ -265,6 +279,7 @@ impl HttpStatusCode for EnablePlatformCoinWithTokensError {
             EnablePlatformCoinWithTokensError::CoinProtocolParseError { .. }
             | EnablePlatformCoinWithTokensError::TokenProtocolParseError { .. }
             | EnablePlatformCoinWithTokensError::PlatformCoinCreationError { .. }
+            | EnablePlatformCoinWithTokensError::TokenCreationError { .. }
             | EnablePlatformCoinWithTokensError::PrivKeyNotAllowed(_)
             | EnablePlatformCoinWithTokensError::UnexpectedDerivationMethod(_)
             | EnablePlatformCoinWithTokensError::Transport(_)

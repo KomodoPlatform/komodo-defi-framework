@@ -1,6 +1,7 @@
 use crate::{platform_coin_with_tokens::{EnablePlatformCoinWithTokensError, GetPlatformBalance,
-                                        PlatformWithTokensActivationOps, RegisterTokenInfo, TokenActivationParams,
-                                        TokenActivationRequest, TokenAsMmCoinInitializer, TokenInitializer, TokenOf},
+                                        InitTokensAsMmCoinsError, PlatformWithTokensActivationOps, RegisterTokenInfo,
+                                        TokenActivationParams, TokenActivationRequest, TokenAsMmCoinInitializer,
+                                        TokenInitializer, TokenOf},
             prelude::*};
 use async_trait::async_trait;
 use coins::{coin_conf,
@@ -48,12 +49,27 @@ pub struct Erc20Initializer {
     platform_coin: EthCoin,
 }
 
+impl From<EthActivationV2Error> for InitTokensAsMmCoinsError {
+    fn from(error: EthActivationV2Error) -> Self {
+        match error {
+            EthActivationV2Error::InvalidPayload(e) => InitTokensAsMmCoinsError::InvalidPayload(e),
+            EthActivationV2Error::ActivationFailed { ticker, error } => {
+                InitTokensAsMmCoinsError::InitializationFailed { ticker, error }
+            },
+            EthActivationV2Error::CouldNotFetchBalance(e)
+            | EthActivationV2Error::UnreachableNodes(e)
+            | EthActivationV2Error::AtLeastOneNodeRequired(e)
+            | EthActivationV2Error::InternalError(e) => InitTokensAsMmCoinsError::Internal(e),
+        }
+    }
+}
+
 #[async_trait]
 impl TokenInitializer for Erc20Initializer {
     type Token = EthCoin;
     type TokenActivationRequest = EthActivationRequest;
     type TokenProtocol = CoinProtocol;
-    type InitTokensError = std::convert::Infallible;
+    type InitTokensError = EthActivationV2Error;
 
     fn tokens_requests_from_platform_request(
         platform_params: &EthWithTokensActivationRequest,
@@ -64,11 +80,13 @@ impl TokenInitializer for Erc20Initializer {
     async fn enable_tokens(
         &self,
         activation_params: Vec<TokenActivationParams<EthActivationRequest, CoinProtocol>>,
-    ) -> Result<Vec<EthCoin>, MmError<std::convert::Infallible>> {
-        let ctx = MmArc::from_weak(&self.platform_coin.ctx).ok_or("No context").unwrap();
+    ) -> Result<Vec<EthCoin>, MmError<EthActivationV2Error>> {
+        let ctx = MmArc::from_weak(&self.platform_coin.ctx)
+            .ok_or("No context")
+            .map_err(|e| EthActivationV2Error::InternalError(e.to_string()))?;
 
         let secret = CryptoCtx::from_ctx(&ctx)
-            .unwrap()
+            .map_err(|e| EthActivationV2Error::InternalError(e.to_string()))?
             .iguana_ctx()
             .secp256k1_privkey_bytes()
             .to_vec();
@@ -82,19 +100,21 @@ impl TokenInitializer for Erc20Initializer {
                 &coins_en,
                 param.activation_request.clone(),
                 &secret,
-                param.protocol,
+                param.protocol.clone(),
             )
-            .await
-            .unwrap();
+            .await?;
 
             let register_params = RegisterCoinParams {
-                ticker: param.ticker,
+                ticker: param.ticker.clone(),
                 tx_history: param.activation_request.tx_history.unwrap_or(false),
             };
 
             lp_register_coin(&ctx, MmCoinEnum::EthCoin(coin.clone()), register_params)
                 .await
-                .unwrap();
+                .map_err(|e| EthActivationV2Error::ActivationFailed {
+                    ticker: param.ticker,
+                    error: e.to_string(),
+                })?;
 
             tokens.push(coin);
         }
