@@ -6792,25 +6792,16 @@ fn test_mm2_db_migration() {
 #[test]
 #[cfg(not(target_arch = "wasm32"))]
 fn test_get_current_mtp() {
-    let passphrase = "cMhHM3PMpMrChygR4bLF7QsTdenhWpFrrmf2UezBG3eeFsz41rtL";
+    use mm2_test_helpers::for_tests::Mm2TestConf;
+
     // KMD coin config used for this test
     let coins = json!([
         {"coin":"KMD","txversion":4,"overwintered":1,"txfee":10000,"protocol":{"type":"UTXO"}},
     ]);
-    let mm = MarketMakerIt::start(
-        json! ({
-            "gui": "nogui",
-            "netid": 9000,
-            "dht": "on",  // Enable DHT without delay.
-            "passphrase": passphrase,
-            "coins": coins,
-            "rpc_password": "password",
-            "i_am_seed": true,
-        }),
-        "password".to_string(),
-        None,
-    )
-    .unwrap();
+    let passphrase = "cMhHM3PMpMrChygR4bLF7QsTdenhWpFrrmf2UezBG3eeFsz41rtL";
+
+    let conf = Mm2TestConf::seednode(&passphrase, &coins);
+    let mm = MarketMakerIt::start(conf.conf, conf.rpc_password, conf.local).unwrap();
     let (_dump_log, _dump_dashboard) = mm.mm_dump();
 
     let electrum = block_on(enable_electrum(&mm, "KMD", false, &[
@@ -6832,7 +6823,7 @@ fn test_get_current_mtp() {
 
     // Test if request is successful before proceeding.
     assert_eq!(true, rc.0.is_success());
-    let mtp_result = <Json as std::str::FromStr>::from_str(&rc.1).unwrap();
+    let mtp_result: Json = json::from_str(&rc.1).unwrap();
     // Test if mtp returns a u32 Number.
     assert_eq!(true, mtp_result["result"]["mtp"].is_number());
 }
