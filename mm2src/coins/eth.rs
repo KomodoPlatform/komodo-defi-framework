@@ -353,7 +353,7 @@ pub struct EthCoinImpl {
     /// the block range used for eth_getLogs
     logs_block_range: u64,
     nonce_lock: Arc<AsyncMutex<()>>,
-    erc20_tokens_infos: Arc<tokio::sync::Mutex<HashMap<String, Erc20TokenInfo>>>,
+    erc20_tokens_infos: Arc<AsyncMutex<HashMap<String, Erc20TokenInfo>>>,
 }
 
 #[derive(Clone, Debug)]
@@ -591,7 +591,7 @@ impl EthCoinImpl {
         self.erc20_tokens_infos.lock().await.insert(ticker, info);
     }
 
-    pub async fn get_erc_tokens_infos(&self) -> tokio::sync::MutexGuard<'_, HashMap<String, Erc20TokenInfo>> {
+    pub async fn get_erc_tokens_infos(&self) -> futures::lock::MutexGuard< '_,HashMap<String,Erc20TokenInfo> > {
         self.erc20_tokens_infos.lock().await
     }
 }

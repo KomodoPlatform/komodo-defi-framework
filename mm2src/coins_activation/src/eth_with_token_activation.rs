@@ -5,12 +5,11 @@ use crate::{platform_coin_with_tokens::{EnablePlatformCoinWithTokensError, GetPl
             prelude::*};
 use async_trait::async_trait;
 use coins::{coin_conf,
-            eth::{eth_coin_from_conf_and_request_v2, Erc20TokenInfo, EthActivationRequest, EthActivationV2Error,
-                  EthCoin},
+            eth::{eth_coin_from_conf_and_request_v2, EthActivationRequest, EthActivationV2Error, EthCoin},
             lp_register_coin,
             my_tx_history_v2::TxHistoryStorage,
-            CoinBalance, CoinProtocol, MarketCoinOps, MmCoin, MmCoinEnum, RegisterCoinParams};
-use common::{block_on, mm_metrics::MetricsArc, Future01CompatExt};
+            CoinBalance, CoinProtocol, MarketCoinOps, MmCoinEnum, RegisterCoinParams};
+use common::{mm_metrics::MetricsArc, Future01CompatExt};
 use crypto::CryptoCtx;
 use futures::future::AbortHandle;
 use mm2_core::mm_ctx::MmArc;
@@ -19,6 +18,12 @@ use mm2_number::BigDecimal;
 use serde::{Deserialize, Serialize};
 use serde_json::Value as Json;
 use std::collections::HashMap;
+
+#[cfg(not(target_arch = "wasm32"))]
+use coins::eth::Erc20TokenInfo;
+#[cfg(not(target_arch = "wasm32"))] use coins::MmCoin;
+#[cfg(not(target_arch = "wasm32"))] use common::block_on;
+#[cfg(not(target_arch = "wasm32"))]
 use tokio::task::block_in_place;
 
 impl From<EthActivationV2Error> for EnablePlatformCoinWithTokensError {
@@ -141,14 +146,22 @@ impl TokenOf for EthCoin {
 }
 
 impl RegisterTokenInfo<EthCoin> for EthCoin {
+    #[cfg(not(target_arch = "wasm32"))]
     fn register_token_info(&self, token: &EthCoin) {
-        block_in_place(|| {
+        block_in_place(move || {
             let fut = self.add_erc_token_info(token.ticker().to_string(), Erc20TokenInfo {
                 token_address: token.swap_contract_address,
                 decimals: token.decimals(),
             });
             block_on(fut);
         });
+    }
+
+    #[cfg(target_arch = "wasm32")]
+    fn register_token_info(&self, _token: &EthCoin) {
+        // TODO
+        common::panic_w("'register_token_info' is not implemented in WASM yet.");
+        unimplemented!()
     }
 }
 
