@@ -591,7 +591,7 @@ impl EthCoinImpl {
         self.erc20_tokens_infos.lock().await.insert(ticker, info);
     }
 
-    pub async fn get_erc_tokens_infos(&self) -> futures::lock::MutexGuard< '_,HashMap<String,Erc20TokenInfo> > {
+    pub async fn get_erc_tokens_infos(&self) -> futures::lock::MutexGuard<'_, HashMap<String, Erc20TokenInfo>> {
         self.erc20_tokens_infos.lock().await
     }
 }
