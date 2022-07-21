@@ -1,4 +1,4 @@
-use common::mm_number::BigDecimal;
+use mm2_number::BigDecimal;
 use serde::{Deserialize, Serialize};
 use std::collections::HashSet;
 

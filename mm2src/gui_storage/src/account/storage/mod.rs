@@ -1,9 +1,9 @@
 use crate::account::{AccountId, AccountInfo, AccountType, AccountWithCoins, AccountWithEnabledFlag};
 use async_trait::async_trait;
-use common::mm_number::BigDecimal;
 use derive_more::Display;
 use mm2_core::mm_ctx::MmArc;
 use mm2_err_handle::prelude::*;
+use mm2_number::BigDecimal;
 use std::collections::BTreeMap;
 
 #[cfg(not(target_arch = "wasm32"))] mod sqlite_storage;

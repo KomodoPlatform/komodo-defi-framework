@@ -2,7 +2,7 @@ use crate::account::storage::{AccountStorage, AccountStorageError, AccountStorag
 use crate::account::{AccountId, AccountInfo, AccountType, AccountWithCoins, AccountWithEnabledFlag,
                      MAX_ACCOUNT_DESCRIPTION_LENGTH, MAX_ACCOUNT_NAME_LENGTH, MAX_COIN_LENGTH};
 use async_trait::async_trait;
-use common::mm_number::BigDecimal;
+use mm2_number::BigDecimal;
 use db_common::sql_constraint::UniqueConstraint;
 use db_common::sql_create::{SqlColumn, SqlCreateTable, SqlType};
 use db_common::sqlite::rusqlite::{Connection, Error as SqlError, Row, ToSql, NO_PARAMS};
