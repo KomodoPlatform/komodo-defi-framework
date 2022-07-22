@@ -59,6 +59,8 @@ use web3::types::{Action as TraceAction, BlockId, BlockNumber, Bytes, CallReques
 use web3::{self, Web3};
 use web3_transport::{EthFeeHistoryNamespace, Web3Transport, Web3TransportNode};
 
+use crate::coin_conf;
+
 use super::{AsyncMutex, BalanceError, BalanceFut, CoinBalance, CoinProtocol, CoinTransportMetrics, CoinsContext,
             FeeApproxStage, FoundSwapTxSpend, HistorySyncState, MarketCoinOps, MmCoin, NegotiateSwapContractAddrErr,
             NumConversError, NumConversResult, RawTransactionError, RawTransactionFut, RawTransactionRequest,
@@ -282,9 +284,19 @@ pub struct EthActivationV2Request {
 }
 
 #[derive(Clone, Debug, Deserialize)]
+pub struct Erc20TokenRequest {
+    pub required_confirmations: Option<u64>,
+}
+
+#[derive(Clone, Debug, Deserialize)]
 pub struct EthNode {
     pub url: String,
     pub gui_auth: bool,
+}
+
+pub struct Erc20Protocol {
+    pub platform: String,
+    pub token_addr: Address,
 }
 
 #[derive(Debug, Deserialize, Serialize)]
@@ -307,7 +319,7 @@ struct SavedErc20Events {
     latest_block: U256,
 }
 
-#[derive(Debug, PartialEq, Eq)]
+#[derive(Clone, Debug, PartialEq, Eq)]
 pub enum EthCoinType {
     /// Ethereum itself or it's forks: ETC/others
     Eth,
@@ -319,12 +331,12 @@ pub enum EthCoinType {
 /// pImpl idiom.
 #[derive(Debug)]
 pub struct EthCoinImpl {
-    ticker: String,
+    pub ticker: String,
     coin_type: EthCoinType,
     key_pair: KeyPair,
     my_address: Address,
     sign_message_prefix: Option<String>,
-    swap_contract_address: Address,
+    pub swap_contract_address: Address,
     fallback_swap_contract: Option<Address>,
     web3: Web3<Web3Transport>,
     /// The separate web3 instances kept to get nonce, will replace the web3 completely soon
@@ -728,7 +740,7 @@ async fn withdraw_impl(coin: EthCoin, req: WithdrawRequest) -> WithdrawResult {
 }
 
 #[derive(Clone, Debug)]
-pub struct EthCoin(Arc<EthCoinImpl>);
+pub struct EthCoin(pub Arc<EthCoinImpl>);
 impl Deref for EthCoin {
     type Target = EthCoinImpl;
     fn deref(&self) -> &EthCoinImpl { &*self.0 }
@@ -2561,6 +2573,59 @@ impl EthCoin {
         };
 
         Box::new(fut.boxed().compat())
+    }
+
+    pub async fn initialize_erc20_token(
+        &self,
+        activation_params: Erc20TokenRequest,
+        protocol: Erc20Protocol,
+        ticker: String,
+    ) -> Result<EthCoin, MmError<EthActivationV2Error>> {
+        let ctx = MmArc::from_weak(&self.ctx)
+            .ok_or_else(|| String::from("No context"))
+            .map_err(EthActivationV2Error::InternalError)?;
+
+        let conf = coin_conf(&ctx, &ticker);
+
+        let decimals = match conf["decimals"].as_u64() {
+            None | Some(0) => get_token_decimals(&self.web3, protocol.token_addr)
+                .await
+                .map_err(EthActivationV2Error::InternalError)?,
+            Some(d) => d as u8,
+        };
+
+        let required_confirmations = activation_params
+            .required_confirmations
+            .unwrap_or_else(|| conf["required_confirmations"].as_u64().unwrap_or(1))
+            .into();
+
+        let token = EthCoinImpl {
+            key_pair: self.key_pair.clone(),
+            my_address: self.my_address,
+            coin_type: EthCoinType::Erc20 {
+                platform: protocol.platform,
+                token_addr: protocol.token_addr,
+            },
+            sign_message_prefix: self.sign_message_prefix.clone(),
+            swap_contract_address: self.swap_contract_address,
+            fallback_swap_contract: self.fallback_swap_contract,
+            decimals,
+            ticker,
+            gas_station_url: self.gas_station_url.clone(),
+            gas_station_decimals: self.gas_station_decimals,
+            gas_station_policy: self.gas_station_policy,
+            web3: self.web3.clone(),
+            web3_instances: self.web3_instances.clone(),
+            history_sync_state: Mutex::new(self.history_sync_state.lock().unwrap().clone()),
+            ctx: self.ctx.clone(),
+            required_confirmations,
+            chain_id: self.chain_id,
+            logs_block_range: self.logs_block_range,
+            nonce_lock: self.nonce_lock.clone(),
+            erc20_tokens_infos: Default::default(),
+        };
+
+        Ok(EthCoin(Arc::new(token)))
     }
 
     /// Estimates how much gas is necessary to allow the contract call to complete.

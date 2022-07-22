@@ -1,12 +1,9 @@
-use crate::{prelude::TryPlatformCoinFromMmCoinEnum,
+use crate::{prelude::{TryFromCoinProtocol, TryPlatformCoinFromMmCoinEnum},
             token::{EnableTokenError, TokenActivationOps, TokenProtocolParams}};
 use async_trait::async_trait;
-use coins::{coin_conf,
-            eth::{eth_coin_from_conf_and_request_v2, EthActivationV2Error, EthActivationV2Request, EthCoin},
+use coins::{eth::{valid_addr_from_str, Erc20Protocol, Erc20TokenRequest, EthActivationV2Error, EthCoin},
             CoinBalance, CoinProtocol, MarketCoinOps, MmCoinEnum};
 use common::Future01CompatExt;
-use crypto::CryptoCtx;
-use mm2_core::mm_ctx::MmArc;
 use mm2_err_handle::prelude::MmError;
 use serde::Serialize;
 use std::collections::HashMap;
@@ -16,27 +13,6 @@ pub struct Erc20InitResult {
     balances: HashMap<String, CoinBalance>,
     pubkey: String,
     platform_coin: String,
-}
-
-impl TokenProtocolParams for CoinProtocol {
-    fn platform_coin_ticker(&self) -> &str {
-        match self {
-            CoinProtocol::ERC20 { platform, .. } => platform,
-            _ => "ETH",
-        }
-    }
-}
-
-impl TryPlatformCoinFromMmCoinEnum for EthCoin {
-    fn try_from_mm_coin(coin: MmCoinEnum) -> Option<Self>
-    where
-        Self: Sized,
-    {
-        match coin {
-            MmCoinEnum::EthCoin(coin) => Some(coin),
-            _ => None,
-        }
-    }
 }
 
 impl From<EthActivationV2Error> for EnableTokenError {
@@ -57,11 +33,49 @@ impl From<EthActivationV2Error> for EnableTokenError {
     }
 }
 
+impl TryPlatformCoinFromMmCoinEnum for EthCoin {
+    fn try_from_mm_coin(coin: MmCoinEnum) -> Option<Self>
+    where
+        Self: Sized,
+    {
+        match coin {
+            MmCoinEnum::EthCoin(coin) => Some(coin),
+            _ => None,
+        }
+    }
+}
+
+impl TryFromCoinProtocol for Erc20Protocol {
+    fn try_from_coin_protocol(proto: CoinProtocol) -> Result<Self, MmError<CoinProtocol>>
+    where
+        Self: Sized,
+    {
+        match proto {
+            CoinProtocol::ERC20 {
+                platform,
+                contract_address,
+            } => {
+                let token_addr = valid_addr_from_str(&contract_address).map_err(|_| CoinProtocol::ERC20 {
+                    platform: platform.clone(),
+                    contract_address,
+                })?;
+
+                Ok(Erc20Protocol { platform, token_addr })
+            },
+            proto => MmError::err(proto),
+        }
+    }
+}
+
+impl TokenProtocolParams for Erc20Protocol {
+    fn platform_coin_ticker(&self) -> &str { &self.platform }
+}
+
 #[async_trait]
 impl TokenActivationOps for EthCoin {
     type PlatformCoin = EthCoin;
-    type ActivationParams = EthActivationV2Request;
-    type ProtocolInfo = CoinProtocol;
+    type ActivationParams = Erc20TokenRequest;
+    type ProtocolInfo = Erc20Protocol;
     type ActivationResult = Erc20InitResult;
     type ActivationError = EthActivationV2Error;
 
@@ -71,26 +85,9 @@ impl TokenActivationOps for EthCoin {
         activation_params: Self::ActivationParams,
         protocol_conf: Self::ProtocolInfo,
     ) -> Result<(Self, Self::ActivationResult), MmError<Self::ActivationError>> {
-        let ctx = MmArc::from_weak(&platform_coin.ctx())
-            .ok_or("No context")
-            .map_err(|e| EthActivationV2Error::InternalError(e.to_string()))?;
-
-        let secret = CryptoCtx::from_ctx(&ctx)
-            .map_err(|e| EthActivationV2Error::InternalError(e.to_string()))?
-            .iguana_ctx()
-            .secp256k1_privkey_bytes()
-            .to_vec();
-
-        let coins_en = coin_conf(&ctx, &ticker);
-        let token: EthCoin = eth_coin_from_conf_and_request_v2(
-            &ctx,
-            &ticker,
-            &coins_en,
-            activation_params.clone(),
-            &secret,
-            protocol_conf,
-        )
-        .await?;
+        let token = platform_coin
+            .initialize_erc20_token(activation_params, protocol_conf, ticker)
+            .await?;
 
         let my_address = token.my_address().map_err(EthActivationV2Error::InternalError)?;
 
