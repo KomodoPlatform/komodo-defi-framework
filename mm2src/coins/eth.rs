@@ -603,8 +603,6 @@ impl EthCoinImpl {
         }
     }
 
-    pub fn ctx(&self) -> MmWeak { self.ctx.clone() }
-
     pub async fn add_erc_token_info(&self, ticker: String, info: Erc20TokenInfo) {
         self.erc20_tokens_infos.lock().await.insert(ticker, info);
     }
@@ -753,7 +751,7 @@ async fn withdraw_impl(coin: EthCoin, req: WithdrawRequest) -> WithdrawResult {
 }
 
 #[derive(Clone, Debug)]
-pub struct EthCoin(pub Arc<EthCoinImpl>);
+pub struct EthCoin(Arc<EthCoinImpl>);
 impl Deref for EthCoin {
     type Target = EthCoinImpl;
     fn deref(&self) -> &EthCoinImpl { &*self.0 }
@@ -2551,41 +2549,35 @@ impl EthCoin {
         let coin = self.clone();
         let mut token_balances = HashMap::new();
         for (token_ticker, info) in self.get_erc_tokens_infos().await.iter() {
-            let balance: CoinBalance = coin
-                .get_token_balance_by_address(info.clone())
-                .and_then(move |result| Ok(u256_to_big_decimal(result, info.decimals)?))
-                .map(|spendable| CoinBalance {
-                    spendable,
-                    unspendable: BigDecimal::from(0),
-                })
-                .compat()
-                .await?;
+            let balance_as_u256 = coin.get_token_balance_by_address(info.clone()).await?;
+            let balance_as_big_decimal = u256_to_big_decimal(balance_as_u256, info.decimals)?;
+            let balance = CoinBalance {
+                spendable: balance_as_big_decimal,
+                unspendable: BigDecimal::from(0),
+            };
             token_balances.insert(token_ticker.clone(), balance);
         }
 
         Ok(token_balances)
     }
 
-    fn get_token_balance_by_address(&self, token: Erc20TokenInfo) -> BalanceFut<U256> {
+    async fn get_token_balance_by_address(&self, token: Erc20TokenInfo) -> Result<U256, MmError<BalanceError>> {
         let coin = self.clone();
-        let fut = async move {
-            let function = ERC20_CONTRACT.function("balanceOf")?;
-            let data = function.encode_input(&[Token::Address(coin.my_address)])?;
-            let res = coin
-                .call_request(token.token_address, None, Some(data.into()))
-                .compat()
-                .await?;
-            let decoded = function.decode_output(&res.0)?;
-            match decoded[0] {
-                Token::Uint(number) => Ok(number),
-                _ => {
-                    let error = format!("Expected U256 as balanceOf result but got {:?}", decoded);
-                    MmError::err(BalanceError::InvalidResponse(error))
-                },
-            }
-        };
+        let function = ERC20_CONTRACT.function("balanceOf")?;
+        let data = function.encode_input(&[Token::Address(coin.my_address)])?;
+        let res = coin
+            .call_request(token.token_address, None, Some(data.into()))
+            .compat()
+            .await?;
+        let decoded = function.decode_output(&res.0)?;
 
-        Box::new(fut.boxed().compat())
+        match decoded[0] {
+            Token::Uint(number) => Ok(number),
+            _ => {
+                let error = format!("Expected U256 as balanceOf result but got {:?}", decoded);
+                MmError::err(BalanceError::InvalidResponse(error))
+            },
+        }
     }
 
     pub async fn initialize_erc20_token(
