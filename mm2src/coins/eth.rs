@@ -588,7 +588,12 @@ impl EthCoinImpl {
         Ok(try_s!(valid_addr_from_str(address)))
     }
 
-    pub fn swap_contract_address_as_h160(&self) -> Address { self.swap_contract_address }
+    pub fn erc20_token_address(&self) -> Option<Address> {
+        match self.coin_type {
+            EthCoinType::Erc20 { token_addr, .. } => Some(token_addr),
+            EthCoinType::Eth => None,
+        }
+    }
 
     pub fn ctx(&self) -> MmWeak { self.ctx.clone() }
 

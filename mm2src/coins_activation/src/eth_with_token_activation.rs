@@ -4,14 +4,11 @@ use crate::{platform_coin_with_tokens::{EnablePlatformCoinWithTokensError, GetPl
                                         TokenInitializer, TokenOf},
             prelude::*};
 use async_trait::async_trait;
-use coins::{coin_conf,
-            eth::{eth_coin_from_conf_and_request_v2, Erc20TokenInfo, EthActivationV2Error, EthActivationV2Request,
-                  EthCoin},
-            lp_register_coin,
+use coins::{eth::{eth_coin_from_conf_and_request_v2, Erc20Protocol, Erc20TokenInfo, Erc20TokenRequest,
+                  EthActivationV2Error, EthActivationV2Request, EthCoin},
             my_tx_history_v2::TxHistoryStorage,
-            CoinBalance, CoinProtocol, MarketCoinOps, MmCoin, MmCoinEnum, RegisterCoinParams};
+            CoinBalance, CoinProtocol, MarketCoinOps, MmCoin};
 use common::{drop_mutability, mm_metrics::MetricsArc, Future01CompatExt};
-use crypto::CryptoCtx;
 use futures::future::AbortHandle;
 use mm2_core::mm_ctx::MmArc;
 use mm2_err_handle::prelude::*;
@@ -69,8 +66,8 @@ impl From<EthActivationV2Error> for InitTokensAsMmCoinsError {
 #[async_trait]
 impl TokenInitializer for Erc20Initializer {
     type Token = EthCoin;
-    type TokenActivationRequest = EthActivationV2Request;
-    type TokenProtocol = CoinProtocol;
+    type TokenActivationRequest = Erc20TokenRequest;
+    type TokenProtocol = Erc20Protocol;
     type InitTokensError = EthActivationV2Error;
 
     fn tokens_requests_from_platform_request(
@@ -81,44 +78,15 @@ impl TokenInitializer for Erc20Initializer {
 
     async fn enable_tokens(
         &self,
-        activation_params: Vec<TokenActivationParams<EthActivationV2Request, CoinProtocol>>,
+        activation_params: Vec<TokenActivationParams<Erc20TokenRequest, Erc20Protocol>>,
     ) -> Result<Vec<EthCoin>, MmError<EthActivationV2Error>> {
-        let ctx = MmArc::from_weak(&self.platform_coin.ctx())
-            .ok_or("No context")
-            .map_err(|e| EthActivationV2Error::InternalError(e.to_string()))?;
-
-        let secret = CryptoCtx::from_ctx(&ctx)
-            .map_err(|e| EthActivationV2Error::InternalError(e.to_string()))?
-            .iguana_ctx()
-            .secp256k1_privkey_bytes()
-            .to_vec();
-
         let mut tokens = vec![];
         for param in activation_params {
-            let coins_en = coin_conf(&ctx, &param.ticker);
-            let coin: EthCoin = eth_coin_from_conf_and_request_v2(
-                &ctx,
-                &param.ticker,
-                &coins_en,
-                param.activation_request.clone(),
-                &secret,
-                param.protocol.clone(),
-            )
-            .await?;
-
-            let register_params = RegisterCoinParams {
-                ticker: param.ticker.clone(),
-                tx_history: param.activation_request.tx_history,
-            };
-
-            lp_register_coin(&ctx, MmCoinEnum::EthCoin(coin.clone()), register_params)
-                .await
-                .map_err(|e| EthActivationV2Error::ActivationFailed {
-                    ticker: param.ticker,
-                    error: e.to_string(),
-                })?;
-
-            tokens.push(coin);
+            let token: EthCoin = self
+                .platform_coin
+                .initialize_erc20_token(param.activation_request.clone(), param.protocol, param.ticker)
+                .await?;
+            tokens.push(token);
         }
         drop_mutability!(tokens);
 
@@ -132,7 +100,7 @@ impl TokenInitializer for Erc20Initializer {
 pub struct EthWithTokensActivationRequest {
     #[serde(flatten)]
     platform_request: EthActivationV2Request,
-    erc20_tokens_requests: Vec<TokenActivationRequest<EthActivationV2Request>>,
+    erc20_tokens_requests: Vec<TokenActivationRequest<Erc20TokenRequest>>,
 }
 
 impl TxHistory for EthWithTokensActivationRequest {
@@ -146,7 +114,7 @@ impl TokenOf for EthCoin {
 impl RegisterTokenInfo<EthCoin> for EthCoin {
     fn register_token_info(&self, token: &EthCoin) {
         let fut = self.add_erc_token_info(token.ticker().to_string(), Erc20TokenInfo {
-            token_address: token.swap_contract_address_as_h160(),
+            token_address: token.erc20_token_address().unwrap(),
             decimals: token.decimals(),
         });
         futures::executor::block_on(fut);
