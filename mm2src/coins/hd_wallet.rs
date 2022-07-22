@@ -6,7 +6,7 @@ use crate::{lp_coinfind_or_err, BalanceError, CoinFindError, CoinWithDerivationM
 use async_trait::async_trait;
 use common::HttpStatusCode;
 use crypto::{Bip32DerPathError, Bip32Error, Bip44Chain, Bip44DerPathError, Bip44DerivationPath, ChildNumber,
-             DerivationPath, HwError};
+             DerivationPath, HwError, HwPubkey};
 use derive_more::Display;
 use http::StatusCode;
 use mm2_core::mm_ctx::MmArc;
@@ -184,8 +184,15 @@ pub enum HDWalletRpcError {
     HardwareWalletInternal(String),
     #[display(fmt = "No Trezor device available")]
     NoTrezorDeviceAvailable,
-    #[display(fmt = "Unexpected Hardware Wallet device: {}", _0)]
-    FoundUnexpectedDevice(String),
+    #[display(
+        fmt = "Expected a Hardware Wallet device with '{}' pubkey, found '{}'",
+        expected_pubkey,
+        actual_pubkey
+    )]
+    FoundUnexpectedDevice {
+        actual_pubkey: HwPubkey,
+        expected_pubkey: HwPubkey,
+    },
     #[display(
         fmt = "Coin doesn't support Trezor hardware wallet. Please consider adding the 'trezor_coin' field to the coins config"
     )]
@@ -292,11 +299,16 @@ impl From<RpcTaskError> for HDWalletRpcError {
 
 impl From<HwError> for HDWalletRpcError {
     fn from(e: HwError) -> Self {
-        let error = e.to_string();
         match e {
             HwError::NoTrezorDeviceAvailable => HDWalletRpcError::NoTrezorDeviceAvailable,
-            HwError::FoundUnexpectedDevice { .. } => HDWalletRpcError::FoundUnexpectedDevice(error),
-            _ => HDWalletRpcError::HardwareWalletInternal(error),
+            HwError::FoundUnexpectedDevice {
+                actual_pubkey,
+                expected_pubkey,
+            } => HDWalletRpcError::FoundUnexpectedDevice {
+                actual_pubkey,
+                expected_pubkey,
+            },
+            e => HDWalletRpcError::HardwareWalletInternal(e.to_string()),
         }
     }
 }
@@ -316,7 +328,7 @@ impl HttpStatusCode for HDWalletRpcError {
             HDWalletRpcError::TrezorDisconnected
             | HDWalletRpcError::HardwareWalletInternal(_)
             | HDWalletRpcError::NoTrezorDeviceAvailable
-            | HDWalletRpcError::FoundUnexpectedDevice(_)
+            | HDWalletRpcError::FoundUnexpectedDevice { .. }
             | HDWalletRpcError::Timeout(_)
             | HDWalletRpcError::Transport(_)
             | HDWalletRpcError::RpcInvalidResponse(_)

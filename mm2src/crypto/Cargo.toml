@@ -23,6 +23,7 @@ parking_lot = { version = "0.12.0", features = ["nightly"] }
 keys = { path = "../mm2_bitcoin/keys" }
 num-traits = "0.2"
 primitives = { path = "../mm2_bitcoin/primitives" }
+rpc = { path = "../mm2_bitcoin/rpc" }
 rpc_task = { path = "../rpc_task" }
 secp256k1 = "0.20"
 ser_error = { path = "../derives/ser_error" }

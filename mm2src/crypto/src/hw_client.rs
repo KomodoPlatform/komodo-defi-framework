@@ -4,12 +4,13 @@ use derive_more::Display;
 use futures::FutureExt;
 use hw_common::primitives::Bip32Error;
 use mm2_err_handle::prelude::*;
-use primitives::hash::H264;
+use rpc::v1::types::H160 as H160Json;
 use std::time::Duration;
 use trezor::client::TrezorClient;
 use trezor::{TrezorError, TrezorProcessingError, TrezorRequestProcessor, TrezorUserInteraction};
 
 pub type HwResult<T> = Result<T, MmError<HwError>>;
+pub type HwPubkey = H160Json;
 
 #[derive(Clone, Debug, Display)]
 pub enum HwError {
@@ -28,8 +29,8 @@ pub enum HwError {
         actual_pubkey
     )]
     FoundUnexpectedDevice {
-        actual_pubkey: H264,
-        expected_pubkey: H264,
+        actual_pubkey: HwPubkey,
+        expected_pubkey: HwPubkey,
     },
     DeviceDisconnected,
     #[display(fmt = "'{}' transport not supported", transport)]

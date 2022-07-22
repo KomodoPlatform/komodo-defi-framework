@@ -1481,6 +1481,7 @@ dependencies = [
  "num-traits",
  "parking_lot 0.12.0",
  "primitives",
+ "rpc",
  "rpc_task",
  "rustc-hex 2.1.0",
  "secp256k1",

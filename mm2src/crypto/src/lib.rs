@@ -14,7 +14,7 @@ pub use bip44::{Bip44Chain, Bip44DerPathError, Bip44DerivationPath, Bip44PathToA
                 UnkownBip44ChainError, BIP44_PURPOSE};
 pub use crypto_ctx::{CryptoCtx, CryptoInitError, CryptoInitResult, HwCtxInitError};
 pub use hw_client::TrezorConnectProcessor;
-pub use hw_client::{HwClient, HwError, HwProcessingError, HwResult, HwWalletType};
+pub use hw_client::{HwClient, HwError, HwProcessingError, HwPubkey, HwResult, HwWalletType};
 pub use hw_common::primitives::{Bip32Error, ChildNumber, DerivationPath, EcdsaCurve, ExtendedPublicKey,
                                 Secp256k1ExtendedPublicKey, XPub};
 pub use hw_ctx::{HardwareWalletArc, HardwareWalletCtx};

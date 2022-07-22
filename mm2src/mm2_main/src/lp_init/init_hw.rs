@@ -3,7 +3,7 @@ use async_trait::async_trait;
 use common::{HttpStatusCode, SuccessResponse};
 use crypto::hw_rpc_task::{HwConnectStatuses, HwRpcTaskAwaitingStatus, HwRpcTaskUserAction, HwRpcTaskUserActionRequest,
                           TrezorRpcTaskConnectProcessor};
-use crypto::{CryptoCtx, CryptoInitError, HwCtxInitError, HwError, HwWalletType};
+use crypto::{CryptoCtx, CryptoInitError, HwCtxInitError, HwError, HwPubkey, HwWalletType};
 use derive_more::Display;
 use http::StatusCode;
 use mm2_core::mm_ctx::MmArc;
@@ -19,7 +19,7 @@ pub type InitHwAwaitingStatus = HwRpcTaskAwaitingStatus;
 pub type InitHwUserAction = HwRpcTaskUserAction;
 
 pub type InitHwTaskManagerShared = RpcTaskManagerShared<InitHwTask>;
-pub type InitHwStatus = RpcTaskStatus<SuccessResponse, InitHwError, InitHwInProgressStatus, InitHwAwaitingStatus>;
+pub type InitHwStatus = RpcTaskStatus<InitHwResponse, InitHwError, InitHwInProgressStatus, InitHwAwaitingStatus>;
 type InitHwTaskHandle = RpcTaskHandle<InitHwTask>;
 
 #[derive(Clone, Display, Serialize, SerializeErrorType)]
@@ -33,8 +33,15 @@ pub enum InitHwError {
     /* ---------------- RPC error ----------------- */
     #[display(fmt = "Hardware Wallet context is initializing already")]
     HwContextInitializingAlready,
-    #[display(fmt = "Hardware Wallet context is initialized already")]
-    HwContextInitializedAlready,
+    #[display(
+        fmt = "Expected a Hardware Wallet device with '{}' pubkey, found '{}'",
+        expected_pubkey,
+        actual_pubkey
+    )]
+    FoundUnexpectedDevice {
+        actual_pubkey: HwPubkey,
+        expected_pubkey: HwPubkey,
+    },
     #[display(fmt = "RPC timed out {:?}", _0)]
     Timeout(Duration),
     #[display(fmt = "Internal: {}", _0)]
@@ -49,7 +56,13 @@ impl From<HwCtxInitError<RpcTaskError>> for InitHwError {
     fn from(e: HwCtxInitError<RpcTaskError>) -> Self {
         match e {
             HwCtxInitError::InitializingAlready => InitHwError::HwContextInitializingAlready,
-            HwCtxInitError::InitializedAlready => InitHwError::HwContextInitializedAlready,
+            HwCtxInitError::UnexpectedPubkey {
+                actual_pubkey,
+                expected_pubkey,
+            } => InitHwError::FoundUnexpectedDevice {
+                actual_pubkey,
+                expected_pubkey,
+            },
             HwCtxInitError::HwError(hw_error) => InitHwError::from(hw_error),
             HwCtxInitError::ProcessorError(rpc) => InitHwError::from(rpc),
         }
@@ -80,7 +93,7 @@ impl From<RpcTaskError> for InitHwError {
 impl HttpStatusCode for InitHwError {
     fn status_code(&self) -> StatusCode {
         match self {
-            InitHwError::HwContextInitializingAlready | InitHwError::HwContextInitializedAlready => {
+            InitHwError::HwContextInitializingAlready | InitHwError::FoundUnexpectedDevice { .. } => {
                 StatusCode::BAD_REQUEST
             },
             InitHwError::Timeout(_) => StatusCode::REQUEST_TIMEOUT,
@@ -98,13 +111,24 @@ pub enum InitHwInProgressStatus {
     ReadPublicKeyFromTrezor,
 }
 
+#[derive(Deserialize)]
+pub struct InitHwRequest {
+    device_pubkey: Option<HwPubkey>,
+}
+
+#[derive(Clone, Serialize)]
+pub struct InitHwResponse {
+    device_pubkey: HwPubkey,
+}
+
 pub struct InitHwTask {
     ctx: MmArc,
     hw_wallet_type: HwWalletType,
+    req: InitHwRequest,
 }
 
 impl RpcTaskTypes for InitHwTask {
-    type Item = SuccessResponse;
+    type Item = InitHwResponse;
     type Error = InitHwError;
     type InProgressStatus = InitHwInProgressStatus;
     type AwaitingStatus = InitHwAwaitingStatus;
@@ -118,7 +142,7 @@ impl RpcTask for InitHwTask {
     async fn run(self, task_handle: &InitHwTaskHandle) -> Result<Self::Item, MmError<Self::Error>> {
         let crypto_ctx = CryptoCtx::from_ctx(&self.ctx)?;
 
-        match self.hw_wallet_type {
+        let device_pubkey = match self.hw_wallet_type {
             HwWalletType::Trezor => {
                 let trezor_connect_processor = TrezorRpcTaskConnectProcessor::new(task_handle, HwConnectStatuses {
                     on_connect: InitHwInProgressStatus::WaitingForTrezorToConnect,
@@ -131,21 +155,22 @@ impl RpcTask for InitHwTask {
                 .with_connect_timeout(TREZOR_CONNECT_TIMEOUT)
                 .with_pin_timeout(TREZOR_PIN_TIMEOUT);
 
-                crypto_ctx.init_hw_ctx_with_trezor(&trezor_connect_processor).await?;
+                let hw_ctx = crypto_ctx
+                    .init_hw_ctx_with_trezor(&trezor_connect_processor, self.req.device_pubkey)
+                    .await?;
+                hw_ctx.hw_pubkey()
             },
-        }
-        Ok(SuccessResponse::new())
+        };
+        Ok(InitHwResponse { device_pubkey })
     }
 }
 
-#[derive(Deserialize)]
-pub struct InitTrezorRequest;
-
-pub async fn init_trezor(ctx: MmArc, _req: InitTrezorRequest) -> MmResult<InitRpcTaskResponse, InitHwError> {
+pub async fn init_trezor(ctx: MmArc, req: InitHwRequest) -> MmResult<InitRpcTaskResponse, InitHwError> {
     let init_ctx = MmInitContext::from_ctx(&ctx).map_to_mm(InitHwError::Internal)?;
     let task = InitHwTask {
         ctx,
         hw_wallet_type: HwWalletType::Trezor,
+        req,
     };
     let task_id = RpcTaskManager::spawn_rpc_task(&init_ctx.init_hw_task_manager, task)?;
     Ok(InitRpcTaskResponse { task_id })
