@@ -66,7 +66,10 @@ pub trait TokenAsMmCoinInitializer: Send + Sync {
 pub enum InitTokensAsMmCoinsError {
     TokenConfigIsNotFound(String),
     InvalidPubkey(String),
+    InvalidSwapContractAddr(String),
+    InvalidFallbackSwapContract(String),
     InvalidPayload(String),
+    CouldNotFetchBalance(String),
     Internal(String),
     InitializationFailed { ticker: String, error: String },
     TokenProtocolParseError { ticker: String, error: String },
@@ -219,7 +222,10 @@ pub enum EnablePlatformCoinWithTokensError {
     #[display(fmt = "Unexpected derivation method: {}", _0)]
     UnexpectedDerivationMethod(String),
     Transport(String),
+    AtLeastOneNodeRequired(String),
     InvalidPayload(String),
+    InvalidSwapContractAddr(String),
+    InvalidFallbackSwapContract(String),
     Internal(String),
 }
 
@@ -261,6 +267,13 @@ impl From<InitTokensAsMmCoinsError> for EnablePlatformCoinWithTokensError {
             InitTokensAsMmCoinsError::InitializationFailed { ticker, error } => {
                 EnablePlatformCoinWithTokensError::TokenCreationError { ticker, error }
             },
+            InitTokensAsMmCoinsError::InvalidSwapContractAddr(e) => {
+                EnablePlatformCoinWithTokensError::InvalidSwapContractAddr(e)
+            },
+            InitTokensAsMmCoinsError::InvalidFallbackSwapContract(e) => {
+                EnablePlatformCoinWithTokensError::InvalidFallbackSwapContract(e)
+            },
+            InitTokensAsMmCoinsError::CouldNotFetchBalance(e) => EnablePlatformCoinWithTokensError::Transport(e),
         }
     }
 }
@@ -289,6 +302,9 @@ impl HttpStatusCode for EnablePlatformCoinWithTokensError {
             | EnablePlatformCoinWithTokensError::TokenConfigIsNotFound(_)
             | EnablePlatformCoinWithTokensError::UnexpectedPlatformProtocol { .. }
             | EnablePlatformCoinWithTokensError::InvalidPayload { .. }
+            | EnablePlatformCoinWithTokensError::InvalidSwapContractAddr(_)
+            | EnablePlatformCoinWithTokensError::InvalidFallbackSwapContract(_)
+            | EnablePlatformCoinWithTokensError::AtLeastOneNodeRequired(_)
             | EnablePlatformCoinWithTokensError::UnexpectedTokenProtocol { .. } => StatusCode::BAD_REQUEST,
         }
     }

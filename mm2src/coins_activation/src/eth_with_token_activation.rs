@@ -4,8 +4,8 @@ use crate::{platform_coin_with_tokens::{EnablePlatformCoinWithTokensError, GetPl
                                         TokenInitializer, TokenOf},
             prelude::*};
 use async_trait::async_trait;
-use coins::{eth::{eth_coin_from_conf_and_request_v2, Erc20Protocol, Erc20TokenInfo, Erc20TokenRequest,
-                  EthActivationV2Error, EthActivationV2Request, EthCoin},
+use coins::{eth::{eth_coin_from_conf_and_request_v2, Erc20Protocol, Erc20TokenActivationError,
+                  Erc20TokenActivationRequest, Erc20TokenInfo, EthActivationV2Error, EthActivationV2Request, EthCoin},
             my_tx_history_v2::TxHistoryStorage,
             CoinBalance, CoinProtocol, MarketCoinOps, MmCoin};
 use common::{drop_mutability, mm_metrics::MetricsArc, Future01CompatExt};
@@ -24,13 +24,19 @@ impl From<EthActivationV2Error> for EnablePlatformCoinWithTokensError {
             EthActivationV2Error::ActivationFailed { ticker, error } => {
                 EnablePlatformCoinWithTokensError::PlatformCoinCreationError { ticker, error }
             },
-            EthActivationV2Error::AtLeastOneNodeRequired => EnablePlatformCoinWithTokensError::Transport(
+            EthActivationV2Error::AtLeastOneNodeRequired => EnablePlatformCoinWithTokensError::AtLeastOneNodeRequired(
                 "Enable request for ETH coin must have at least 1 node".to_string(),
             ),
             EthActivationV2Error::CouldNotFetchBalance(e) | EthActivationV2Error::UnreachableNodes(e) => {
                 EnablePlatformCoinWithTokensError::Transport(e)
             },
             EthActivationV2Error::InternalError(e) => EnablePlatformCoinWithTokensError::Internal(e),
+            EthActivationV2Error::InvalidSwapContractAddr(e) => {
+                EnablePlatformCoinWithTokensError::InvalidSwapContractAddr(e)
+            },
+            EthActivationV2Error::InvalidFallbackSwapContract(e) => {
+                EnablePlatformCoinWithTokensError::InvalidFallbackSwapContract(e)
+            },
         }
     }
 }
@@ -48,17 +54,11 @@ pub struct Erc20Initializer {
     platform_coin: EthCoin,
 }
 
-impl From<EthActivationV2Error> for InitTokensAsMmCoinsError {
-    fn from(error: EthActivationV2Error) -> Self {
+impl From<Erc20TokenActivationError> for InitTokensAsMmCoinsError {
+    fn from(error: Erc20TokenActivationError) -> Self {
         match error {
-            EthActivationV2Error::InvalidPayload(e) => InitTokensAsMmCoinsError::InvalidPayload(e),
-            EthActivationV2Error::ActivationFailed { ticker, error } => {
-                InitTokensAsMmCoinsError::InitializationFailed { ticker, error }
-            },
-            EthActivationV2Error::CouldNotFetchBalance(e)
-            | EthActivationV2Error::UnreachableNodes(e)
-            | EthActivationV2Error::InternalError(e) => InitTokensAsMmCoinsError::Internal(e),
-            e => InitTokensAsMmCoinsError::Internal(e.to_string()),
+            Erc20TokenActivationError::InternalError(e) => InitTokensAsMmCoinsError::Internal(e),
+            Erc20TokenActivationError::CouldNotFetchBalance(e) => InitTokensAsMmCoinsError::CouldNotFetchBalance(e),
         }
     }
 }
@@ -66,9 +66,9 @@ impl From<EthActivationV2Error> for InitTokensAsMmCoinsError {
 #[async_trait]
 impl TokenInitializer for Erc20Initializer {
     type Token = EthCoin;
-    type TokenActivationRequest = Erc20TokenRequest;
+    type TokenActivationRequest = Erc20TokenActivationRequest;
     type TokenProtocol = Erc20Protocol;
-    type InitTokensError = EthActivationV2Error;
+    type InitTokensError = Erc20TokenActivationError;
 
     fn tokens_requests_from_platform_request(
         platform_params: &EthWithTokensActivationRequest,
@@ -78,13 +78,13 @@ impl TokenInitializer for Erc20Initializer {
 
     async fn enable_tokens(
         &self,
-        activation_params: Vec<TokenActivationParams<Erc20TokenRequest, Erc20Protocol>>,
-    ) -> Result<Vec<EthCoin>, MmError<EthActivationV2Error>> {
+        activation_params: Vec<TokenActivationParams<Erc20TokenActivationRequest, Erc20Protocol>>,
+    ) -> Result<Vec<EthCoin>, MmError<Erc20TokenActivationError>> {
         let mut tokens = vec![];
         for param in activation_params {
             let token: EthCoin = self
                 .platform_coin
-                .initialize_erc20_token(param.activation_request.clone(), param.protocol, param.ticker)
+                .initialize_erc20_token(param.activation_request, param.protocol, param.ticker)
                 .await?;
             tokens.push(token);
         }
@@ -96,11 +96,11 @@ impl TokenInitializer for Erc20Initializer {
     fn platform_coin(&self) -> &EthCoin { &self.platform_coin }
 }
 
-#[derive(Clone, Debug, Deserialize)]
+#[derive(Clone, Deserialize)]
 pub struct EthWithTokensActivationRequest {
     #[serde(flatten)]
     platform_request: EthActivationV2Request,
-    erc20_tokens_requests: Vec<TokenActivationRequest<Erc20TokenRequest>>,
+    erc20_tokens_requests: Vec<TokenActivationRequest<Erc20TokenActivationRequest>>,
 }
 
 impl TxHistory for EthWithTokensActivationRequest {
@@ -121,7 +121,7 @@ impl RegisterTokenInfo<EthCoin> for EthCoin {
     }
 }
 
-#[derive(Debug, Serialize)]
+#[derive(Serialize)]
 pub struct EthWithTokensActivationResult {
     current_block: u64,
     eth_addresses_infos: HashMap<String, CoinAddressInfo<CoinBalance>>,

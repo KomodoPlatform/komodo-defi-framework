@@ -59,7 +59,6 @@ pub enum EnableTokenError {
     #[display(fmt = "{}", _0)]
     UnexpectedDerivationMethod(UnexpectedDerivationMethod),
     #[display(fmt = "{} is not valid payload.", _0)]
-    InvalidPayload(String),
     Transport(String),
     Internal(String),
 }
@@ -153,7 +152,6 @@ impl HttpStatusCode for EnableTokenError {
             EnableTokenError::TokenIsAlreadyActivated(_)
             | EnableTokenError::PlatformCoinIsNotActivated(_)
             | EnableTokenError::TokenConfigIsNotFound { .. }
-            | EnableTokenError::InvalidPayload { .. }
             | EnableTokenError::UnexpectedTokenProtocol { .. } => StatusCode::BAD_REQUEST,
             EnableTokenError::TokenProtocolParseError { .. }
             | EnableTokenError::UnsupportedPlatformCoin { .. }

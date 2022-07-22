@@ -251,11 +251,13 @@ impl From<web3::Error> for BalanceError {
     fn from(e: web3::Error) -> Self { BalanceError::Transport(e.to_string()) }
 }
 
-#[derive(Debug, Display, Serialize, SerializeErrorType)]
+#[derive(Display, Serialize, SerializeErrorType)]
 #[serde(tag = "error_type", content = "error_data")]
 #[allow(dead_code)]
 pub enum EthActivationV2Error {
     InvalidPayload(String),
+    InvalidSwapContractAddr(String),
+    InvalidFallbackSwapContract(String),
     #[display(fmt = "Platform coin {} activation failed. {}", ticker, error)]
     ActivationFailed {
         ticker: String,
@@ -268,7 +270,7 @@ pub enum EthActivationV2Error {
     InternalError(String),
 }
 
-#[derive(Clone, Debug, Deserialize)]
+#[derive(Clone, Deserialize)]
 pub struct EthActivationV2Request {
     pub nodes: Vec<EthNode>,
     pub swap_contract_address: Address,
@@ -283,15 +285,23 @@ pub struct EthActivationV2Request {
     pub required_confirmations: Option<u64>,
 }
 
-#[derive(Clone, Debug, Deserialize)]
-pub struct Erc20TokenRequest {
-    pub required_confirmations: Option<u64>,
-}
-
-#[derive(Clone, Debug, Deserialize)]
+#[derive(Clone, Deserialize)]
 pub struct EthNode {
     pub url: String,
     pub gui_auth: bool,
+}
+
+#[derive(Serialize, SerializeErrorType)]
+#[serde(tag = "error_type", content = "error_data")]
+#[allow(dead_code)]
+pub enum Erc20TokenActivationError {
+    InternalError(String),
+    CouldNotFetchBalance(String),
+}
+
+#[derive(Clone, Deserialize)]
+pub struct Erc20TokenActivationRequest {
+    pub required_confirmations: Option<u64>,
 }
 
 pub struct Erc20Protocol {
@@ -2582,20 +2592,20 @@ impl EthCoin {
 
     pub async fn initialize_erc20_token(
         &self,
-        activation_params: Erc20TokenRequest,
+        activation_params: Erc20TokenActivationRequest,
         protocol: Erc20Protocol,
         ticker: String,
-    ) -> Result<EthCoin, MmError<EthActivationV2Error>> {
+    ) -> Result<EthCoin, MmError<Erc20TokenActivationError>> {
         let ctx = MmArc::from_weak(&self.ctx)
             .ok_or_else(|| String::from("No context"))
-            .map_err(EthActivationV2Error::InternalError)?;
+            .map_err(Erc20TokenActivationError::InternalError)?;
 
         let conf = coin_conf(&ctx, &ticker);
 
         let decimals = match conf["decimals"].as_u64() {
             None | Some(0) => get_token_decimals(&self.web3, protocol.token_addr)
                 .await
-                .map_err(EthActivationV2Error::InternalError)?,
+                .map_err(Erc20TokenActivationError::InternalError)?,
             Some(d) => d as u8,
         };
 
@@ -3594,14 +3604,15 @@ pub async fn eth_coin_from_conf_and_request_v2(
     drop_mutability!(nodes);
 
     if req.swap_contract_address == Address::default() {
-        return Err(
-            EthActivationV2Error::InvalidPayload("swap_contract_address can't be zero address".to_string()).into(),
-        );
+        return Err(EthActivationV2Error::InvalidSwapContractAddr(
+            "swap_contract_address can't be zero address".to_string(),
+        )
+        .into());
     }
 
     if let Some(fallback) = req.fallback_swap_contract {
         if fallback == Address::default() {
-            return Err(EthActivationV2Error::InvalidPayload(
+            return Err(EthActivationV2Error::InvalidFallbackSwapContract(
                 "fallback_swap_contract can't be zero address".to_string(),
             )
             .into());
