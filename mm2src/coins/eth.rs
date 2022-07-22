@@ -59,12 +59,10 @@ use web3::types::{Action as TraceAction, BlockId, BlockNumber, Bytes, CallReques
 use web3::{self, Web3};
 use web3_transport::{EthFeeHistoryNamespace, Web3Transport, Web3TransportNode};
 
-use crate::coin_conf;
-
-use super::{AsyncMutex, BalanceError, BalanceFut, CoinBalance, CoinProtocol, CoinTransportMetrics, CoinsContext,
-            FeeApproxStage, FoundSwapTxSpend, HistorySyncState, MarketCoinOps, MmCoin, NegotiateSwapContractAddrErr,
-            NumConversError, NumConversResult, RawTransactionError, RawTransactionFut, RawTransactionRequest,
-            RawTransactionRes, RawTransactionResult, RpcClientType, RpcTransportEventHandler,
+use super::{coin_conf, AsyncMutex, BalanceError, BalanceFut, CoinBalance, CoinProtocol, CoinTransportMetrics,
+            CoinsContext, FeeApproxStage, FoundSwapTxSpend, HistorySyncState, MarketCoinOps, MmCoin,
+            NegotiateSwapContractAddrErr, NumConversError, NumConversResult, RawTransactionError, RawTransactionFut,
+            RawTransactionRequest, RawTransactionRes, RawTransactionResult, RpcClientType, RpcTransportEventHandler,
             RpcTransportEventHandlerShared, SearchForSwapTxSpendInput, SignatureError, SignatureResult, SwapOps,
             TradeFee, TradePreimageError, TradePreimageFut, TradePreimageResult, TradePreimageValue, Transaction,
             TransactionDetails, TransactionEnum, TransactionErr, TransactionFut, UnexpectedDerivationMethod,
@@ -329,8 +327,8 @@ struct SavedErc20Events {
     latest_block: U256,
 }
 
-#[derive(Clone, Debug, PartialEq, Eq)]
-pub enum EthCoinType {
+#[derive(Debug, PartialEq, Eq)]
+enum EthCoinType {
     /// Ethereum itself or it's forks: ETC/others
     Eth,
     /// ERC20 token with smart contract address
@@ -341,12 +339,12 @@ pub enum EthCoinType {
 /// pImpl idiom.
 #[derive(Debug)]
 pub struct EthCoinImpl {
-    pub ticker: String,
+    ticker: String,
     coin_type: EthCoinType,
     key_pair: KeyPair,
     my_address: Address,
     sign_message_prefix: Option<String>,
-    pub swap_contract_address: Address,
+    swap_contract_address: Address,
     fallback_swap_contract: Option<Address>,
     web3: Web3<Web3Transport>,
     /// The separate web3 instances kept to get nonce, will replace the web3 completely soon
@@ -373,7 +371,7 @@ pub struct Web3Instance {
     is_parity: bool,
 }
 
-#[derive(Clone, Debug)]
+#[derive(Clone)]
 pub struct Erc20TokenInfo {
     pub token_address: Address,
     pub decimals: u8,
@@ -2568,7 +2566,7 @@ impl EthCoin {
         Ok(token_balances)
     }
 
-    pub fn get_token_balance_by_address(&self, token: Erc20TokenInfo) -> BalanceFut<U256> {
+    fn get_token_balance_by_address(&self, token: Erc20TokenInfo) -> BalanceFut<U256> {
         let coin = self.clone();
         let fut = async move {
             let function = ERC20_CONTRACT.function("balanceOf")?;
