@@ -28,12 +28,13 @@ where
         > + EnableCoinBalanceOps
         + MarketCoinOps,
 {
+    let ticker = coin.ticker().to_owned();
     let current_block =
         coin.current_block()
             .compat()
             .await
             .map_to_mm(|error| InitUtxoStandardError::CoinCreationError {
-                ticker: coin.ticker().to_owned(),
+                ticker: ticker.clone(),
                 error,
             })?;
 
@@ -46,12 +47,13 @@ where
         .enable_coin_balance(&xpub_extractor, activation_params.scan_policy)
         .await
         .mm_err(|error| InitUtxoStandardError::CoinCreationError {
-            ticker: coin.ticker().to_owned(),
+            ticker: ticker.clone(),
             error: error.to_string(),
         })?;
     task_handle.update_in_progress_status(UtxoStandardInProgressStatus::ActivatingCoin)?;
 
     let result = UtxoStandardActivationResult {
+        ticker,
         current_block,
         wallet_balance,
     };
@@ -64,7 +66,7 @@ pub fn xpub_extractor_rpc_statuses() -> HwConnectStatuses<UtxoStandardInProgress
         on_connected: UtxoStandardInProgressStatus::ActivatingCoin,
         on_connection_failed: UtxoStandardInProgressStatus::Finishing,
         on_button_request: UtxoStandardInProgressStatus::WaitingForUserToConfirmPubkey,
-        on_pin_request: UtxoStandardAwaitingStatus::WaitForTrezorPin,
+        on_pin_request: UtxoStandardAwaitingStatus::EnterTrezorPin,
         on_ready: UtxoStandardInProgressStatus::ActivatingCoin,
     }
 }

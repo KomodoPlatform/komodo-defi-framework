@@ -11,6 +11,8 @@ use mm2_err_handle::prelude::*;
 use rpc_task::{RpcTask, RpcTaskError, RpcTaskHandle};
 use std::convert::TryInto;
 
+const SHOW_PUBKEY_ON_DISPLAY: bool = false;
+
 #[derive(Clone)]
 pub enum HDExtractPubkeyError {
     HwContextNotInitialized,
@@ -176,7 +178,12 @@ where
 
         let pubkey_processor = TrezorRpcTaskProcessor::new(task_handle, statuses.to_trezor_request_statuses());
         trezor_session
-            .get_public_key(derivation_path, trezor_coin, EcdsaCurve::Secp256k1)
+            .get_public_key(
+                derivation_path,
+                trezor_coin,
+                EcdsaCurve::Secp256k1,
+                SHOW_PUBKEY_ON_DISPLAY,
+            )
             .await?
             .process(&pubkey_processor)
             .await

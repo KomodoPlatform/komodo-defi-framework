@@ -25,6 +25,7 @@ use trezor::{ProcessTrezorResponse, TrezorRequestProcessor};
 const MM2_INTERNAL_DERIVATION_PATH: &str = "m/44'/141'/2147483647/0/0";
 const MM2_INTERNAL_ECDSA_CURVE: EcdsaCurve = EcdsaCurve::Secp256k1;
 const MM2_TREZOR_INTERNAL_COIN: TrezorUtxoCoin = TrezorUtxoCoin::Komodo;
+const SHOW_PUBKEY_ON_DISPLAY: bool = false;
 
 #[derive(Clone)]
 pub struct HardwareWalletArc(Arc<HardwareWalletCtx>);
@@ -118,7 +119,12 @@ impl HardwareWalletCtx {
         let path = DerivationPath::from_str(MM2_INTERNAL_DERIVATION_PATH)
             .expect("'MM2_INTERNAL_DERIVATION_PATH' is expected to be valid derivation path");
         let mm2_internal_xpub = trezor
-            .get_public_key(path, MM2_TREZOR_INTERNAL_COIN, MM2_INTERNAL_ECDSA_CURVE)
+            .get_public_key(
+                path,
+                MM2_TREZOR_INTERNAL_COIN,
+                MM2_INTERNAL_ECDSA_CURVE,
+                SHOW_PUBKEY_ON_DISPLAY,
+            )
             .await?
             .process(processor)
             .await?;

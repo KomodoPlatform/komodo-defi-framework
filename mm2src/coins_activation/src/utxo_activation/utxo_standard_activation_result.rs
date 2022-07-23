@@ -4,6 +4,7 @@ use serde_derive::Serialize;
 
 #[derive(Clone, Serialize)]
 pub struct UtxoStandardActivationResult {
+    pub ticker: String,
     pub current_block: u64,
     pub wallet_balance: EnableCoinBalance,
 }

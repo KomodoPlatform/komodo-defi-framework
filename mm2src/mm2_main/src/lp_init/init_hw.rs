@@ -108,7 +108,7 @@ impl HttpStatusCode for InitHwError {
 pub enum InitHwInProgressStatus {
     Initializing,
     WaitingForTrezorToConnect,
-    ReadPublicKeyFromTrezor,
+    WaitingForUserToConfirmPubkey,
 }
 
 #[derive(Deserialize)]
@@ -148,8 +148,8 @@ impl RpcTask for InitHwTask {
                     on_connect: InitHwInProgressStatus::WaitingForTrezorToConnect,
                     on_connected: InitHwInProgressStatus::Initializing,
                     on_connection_failed: InitHwInProgressStatus::Initializing,
-                    on_button_request: InitHwInProgressStatus::ReadPublicKeyFromTrezor,
-                    on_pin_request: InitHwAwaitingStatus::WaitForTrezorPin,
+                    on_button_request: InitHwInProgressStatus::WaitingForUserToConfirmPubkey,
+                    on_pin_request: InitHwAwaitingStatus::EnterTrezorPin,
                     on_ready: InitHwInProgressStatus::Initializing,
                 })
                 .with_connect_timeout(TREZOR_CONNECT_TIMEOUT)

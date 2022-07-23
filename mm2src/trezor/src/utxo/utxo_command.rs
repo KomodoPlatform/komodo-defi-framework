@@ -30,11 +30,12 @@ impl<'a> TrezorSession<'a> {
         path: DerivationPath,
         coin: TrezorUtxoCoin,
         ecdsa_curve: EcdsaCurve,
+        show_display: bool,
     ) -> TrezorResult<TrezorResponse<'a, 'b, XPub>> {
         let req = proto_bitcoin::GetPublicKey {
             address_n: serialize_derivation_path(&path),
             ecdsa_curve_name: Some(ecdsa_curve_to_string(ecdsa_curve)),
-            show_display: None,
+            show_display: Some(show_display),
             coin_name: Some(coin.to_string()),
             script_type: None,
             ignore_xpub_magic: None,
