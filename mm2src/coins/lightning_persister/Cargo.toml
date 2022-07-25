@@ -29,4 +29,4 @@ winapi = { version = "0.3", features = ["winbase"] }
 
 [dev-dependencies]
 lightning = { git = "https://github.com/shamardy/rust-lightning", branch = "0.0.106", features = ["_test_utils"] }
-rand = { version = "0.7", features = ["std", "small_rng"] }
+rand = { version = "0.8", features = ["std", "small_rng"] }
