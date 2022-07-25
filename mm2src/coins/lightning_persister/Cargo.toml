@@ -20,7 +20,7 @@ hex = "0.4.2"
 lightning = { git = "https://github.com/shamardy/rust-lightning", branch = "0.0.106" }
 libc = "0.2"
 parking_lot = { version = "0.12.0", features = ["nightly"] }
-secp256k1 = { version = "0.20" }
+secp256k1 = { version = "0.24" }
 serde = "1.0"
 serde_json = "1.0"
 
