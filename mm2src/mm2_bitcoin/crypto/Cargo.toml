@@ -4,7 +4,7 @@ version = "0.1.0"
 authors = ["debris <marek.kotewicz@gmail.com>"]
 
 [dependencies]
-groestl = "0.9"
+groestl = "0.10"
 primitives = { path = "../primitives" }
 ripemd160 = "0.9.0"
 sha-1 = "0.9"
