@@ -11,4 +11,4 @@ primitives = { path = "../primitives" }
 serde = "1.0"
 serialization = { path = "../serialization" }
 log = "0.4"
-blake2b_simd = "0.5"
+blake2b_simd = "1.0"
