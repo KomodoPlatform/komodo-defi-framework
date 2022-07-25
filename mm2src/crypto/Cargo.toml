@@ -24,7 +24,7 @@ keys = { path = "../mm2_bitcoin/keys" }
 num-traits = "0.2"
 primitives = { path = "../mm2_bitcoin/primitives" }
 rpc_task = { path = "../rpc_task" }
-secp256k1 = "0.20"
+secp256k1 = "0.24"
 ser_error = { path = "../derives/ser_error" }
 ser_error_derive = { path = "../derives/ser_error_derive" }
 serde = "1.0"
