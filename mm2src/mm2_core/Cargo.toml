@@ -26,7 +26,7 @@ shared_ref_counter = { path = "../common/shared_ref_counter" }
 uuid = { version = "0.7", features = ["serde", "v4"] }
 
 [target.'cfg(target_arch = "wasm32")'.dependencies]
-gstuff = { version = "0.7", features = ["nightly"] }
+gstuff = { version = "0.8", features = ["nightly"] }
 mm2_rpc = { path = "../mm2_rpc" }
 
 [target.'cfg(not(target_arch = "wasm32"))'.dependencies]
