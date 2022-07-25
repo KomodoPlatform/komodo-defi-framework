@@ -22,7 +22,7 @@ lazy_static = "1.4"
 prost = "0.10"
 
 [target.'cfg(target_arch = "wasm32")'.dependencies]
-gstuff = { version = "0.7", features = ["nightly"] }
+gstuff = { version = "0.8", features = ["nightly"] }
 wasm-bindgen = { version = "0.2.50", features = ["nightly"] }
 wasm-bindgen-test = { version = "0.3.2" }
 wasm-bindgen-futures = "0.4.21"
