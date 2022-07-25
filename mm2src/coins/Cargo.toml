@@ -66,7 +66,7 @@ prost = "0.10"
 protobuf = "2.20"
 rand = { version = "0.7", features = ["std", "small_rng"] }
 rlp = { git = "https://github.com/artemii235/parity-common" }
-rmp-serde = "0.14.3"
+rmp-serde = "1.1.0"
 rpc = { path = "../mm2_bitcoin/rpc" }
 rpc_task = { path = "../rpc_task" }
 script = { path = "../mm2_bitcoin/script" }
