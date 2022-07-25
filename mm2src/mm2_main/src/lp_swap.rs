@@ -59,15 +59,15 @@
 
 use crate::mm2::lp_network::{broadcast_p2p_msg, Libp2pPeerId};
 use async_std::sync as async_std_sync;
-use coins::{lp_coinfind, MmCoinEnum, TradeFee, TransactionEnum};
+use coins::{lp_coinfind, MarketCoinOps, MmCoinEnum, PrivKeyActivationPolicy, TradeFee, TransactionEnum};
 use common::log::{debug, warn};
-use common::{bits256, calc_total_pages,
+use common::{bits256, block_on, calc_total_pages,
              executor::{spawn, Timer},
              log::{error, info},
              now_ms, spawn_abortable, var, AbortOnDropHandle, PagingOptions};
 use derive_more::Display;
 use http::Response;
-use mm2_core::mm_ctx::{from_ctx, MmArc};
+use mm2_core::mm_ctx::{from_ctx, MmArc, MmCtxBuilder};
 use mm2_err_handle::prelude::*;
 use mm2_libp2p::{decode_signed, encode_and_sign, pub_sub_topic, TopicPrefix};
 use mm2_number::{BigDecimal, BigRational, MmNumber};
@@ -98,12 +98,18 @@ use std::sync::atomic::{AtomicU64, Ordering};
 #[path = "lp_swap/swap_wasm_db.rs"]
 mod swap_wasm_db;
 
+use crate::mm2::lp_native_dex::{fix_directories, init_p2p};
 pub use check_balance::{check_other_coin_balance_for_swap, CheckBalanceError};
+use coins::utxo::rpc_clients::ElectrumRpcRequest;
+use coins::utxo::utxo_standard::utxo_standard_coin_with_priv_key;
+use coins::utxo::{UtxoActivationParams, UtxoRpcMode};
+use crypto::privkey::key_pair_from_seed;
 use keys::KeyPair;
 use maker_swap::MakerSwapEvent;
 pub use maker_swap::{calc_max_maker_vol, check_balance_for_maker_swap, maker_swap_trade_preimage, run_maker_swap,
                      MakerSavedEvent, MakerSavedSwap, MakerSwap, MakerSwapStatusChanged, MakerTradePreimage,
                      RunMakerSwapInput};
+use mm2_test_helpers::for_tests::{morty_conf, rick_conf};
 use my_swaps_storage::{MySwapsOps, MySwapsStorage};
 use pubkey_banning::BanReason;
 pub use pubkey_banning::{ban_pubkey_rpc, is_pubkey_banned, list_banned_pubkeys_rpc, unban_pubkeys_rpc};
@@ -725,7 +731,9 @@ pub async fn insert_new_swap_to_db(
 
 #[cfg(not(target_arch = "wasm32"))]
 fn add_swap_to_db_index(ctx: &MmArc, swap: &SavedSwap) {
-    crate::mm2::database::stats_swaps::add_swap_to_index(&ctx.sqlite_connection(), swap)
+    if ctx.sqlite_initialized() {
+        crate::mm2::database::stats_swaps::add_swap_to_index(&ctx.sqlite_connection(), swap)
+    }
 }
 
 #[cfg(not(target_arch = "wasm32"))]
@@ -1523,4 +1531,196 @@ mod lp_swap_tests {
 
         assert_eq!(deserialized, v3);
     }
+}
+
+#[test]
+#[ignore]
+fn gen_recoverable_swap() {
+    env_logger::init();
+
+    const RICK_ELECTRUM_ADDRS: &[&str] = &[
+        "electrum1.cipig.net:10017",
+        "electrum2.cipig.net:10017",
+        "electrum3.cipig.net:10017",
+    ];
+
+    const MORTY_ELECTRUM_ADDRS: &[&str] = &[
+        "electrum1.cipig.net:10018",
+        "electrum2.cipig.net:10018",
+        "electrum3.cipig.net:10018",
+    ];
+
+    let maker_ctx_conf = json!({
+        "netid": 1234,
+        "p2p_in_memory": true,
+        "p2p_in_memory_port": 777,
+        "i_am_seed": true,
+    });
+
+    let maker_passphrase = std::env::var("BOB_PASSPHRASE").unwrap();
+    let maker_key_pair = key_pair_from_seed(&maker_passphrase).unwrap();
+    let maker_ctx = MmCtxBuilder::default()
+        .with_secp256k1_key_pair(maker_key_pair.clone())
+        .with_conf(maker_ctx_conf)
+        .into_mm_arc();
+    fix_directories(&maker_ctx).unwrap();
+    block_on(init_p2p(maker_ctx.clone())).unwrap();
+
+    let rick_activation_params = UtxoActivationParams {
+        mode: UtxoRpcMode::Electrum {
+            servers: RICK_ELECTRUM_ADDRS
+                .into_iter()
+                .map(|url| ElectrumRpcRequest {
+                    url: url.to_string(),
+                    protocol: Default::default(),
+                    disable_cert_verification: false,
+                })
+                .collect(),
+        },
+        utxo_merge_params: None,
+        tx_history: false,
+        required_confirmations: Some(0),
+        requires_notarization: None,
+        address_format: None,
+        gap_limit: None,
+        scan_policy: Default::default(),
+        priv_key_policy: PrivKeyActivationPolicy::IguanaPrivKey,
+        check_utxo_maturity: None,
+    };
+
+    let morty_activation_params = UtxoActivationParams {
+        mode: UtxoRpcMode::Electrum {
+            servers: MORTY_ELECTRUM_ADDRS
+                .into_iter()
+                .map(|url| ElectrumRpcRequest {
+                    url: url.to_string(),
+                    protocol: Default::default(),
+                    disable_cert_verification: false,
+                })
+                .collect(),
+        },
+        utxo_merge_params: None,
+        tx_history: false,
+        required_confirmations: Some(0),
+        requires_notarization: None,
+        address_format: None,
+        gap_limit: None,
+        scan_policy: Default::default(),
+        priv_key_policy: PrivKeyActivationPolicy::IguanaPrivKey,
+        check_utxo_maturity: None,
+    };
+    let rick_maker = block_on(utxo_standard_coin_with_priv_key(
+        &maker_ctx,
+        "RICK",
+        &rick_conf(),
+        &rick_activation_params,
+        maker_key_pair.private_ref(),
+    ))
+    .unwrap();
+
+    println!("Maker address {}", rick_maker.my_address().unwrap());
+
+    let morty_maker = block_on(utxo_standard_coin_with_priv_key(
+        &maker_ctx,
+        "MORTY",
+        &morty_conf(),
+        &morty_activation_params,
+        maker_key_pair.private_ref(),
+    ))
+    .unwrap();
+
+    let taker_passphrase = std::env::var("ALICE_PASSPHRASE").unwrap();
+    let taker_key_pair = key_pair_from_seed(&taker_passphrase).unwrap();
+
+    let taker_ctx_conf = json!({
+        "netid": 1234,
+        "p2p_in_memory": true,
+        "seednodes": vec!["/memory/777"]
+    });
+    let taker_ctx = MmCtxBuilder::default()
+        .with_secp256k1_key_pair(taker_key_pair.clone())
+        .with_conf(taker_ctx_conf)
+        .into_mm_arc();
+    fix_directories(&taker_ctx).unwrap();
+    block_on(init_p2p(taker_ctx.clone())).unwrap();
+
+    let rick_taker = block_on(utxo_standard_coin_with_priv_key(
+        &taker_ctx,
+        "RICK",
+        &rick_conf(),
+        &rick_activation_params,
+        taker_key_pair.private_ref(),
+    ))
+    .unwrap();
+
+    let morty_taker = block_on(utxo_standard_coin_with_priv_key(
+        &taker_ctx,
+        "MORTY",
+        &morty_conf(),
+        &morty_activation_params,
+        taker_key_pair.private_ref(),
+    ))
+    .unwrap();
+
+    println!("Taker address {}", rick_taker.my_address().unwrap());
+
+    let uuid = Uuid::new_v4();
+    let maker_swap = MakerSwap::new(
+        maker_ctx.clone(),
+        taker_key_pair.public().unprefixed().into(),
+        BigDecimal::from_str("0.1").unwrap(),
+        BigDecimal::from_str("0.1").unwrap(),
+        maker_key_pair.public_slice().into(),
+        uuid.clone(),
+        None,
+        SwapConfirmationsSettings {
+            maker_coin_confs: 0,
+            maker_coin_nota: false,
+            taker_coin_confs: 0,
+            taker_coin_nota: false,
+        },
+        rick_maker.clone().into(),
+        morty_maker.clone().into(),
+        60,
+        None,
+        Default::default(),
+    );
+
+    let taker_swap = TakerSwap::new(
+        taker_ctx.clone(),
+        maker_key_pair.public().unprefixed().into(),
+        BigDecimal::from_str("0.1").unwrap().into(),
+        BigDecimal::from_str("0.1").unwrap().into(),
+        taker_key_pair.public_slice().into(),
+        uuid.clone(),
+        None,
+        SwapConfirmationsSettings {
+            maker_coin_confs: 0,
+            maker_coin_nota: false,
+            taker_coin_confs: 0,
+            taker_coin_nota: false,
+        },
+        rick_taker.clone().into(),
+        morty_taker.clone().into(),
+        60,
+        None,
+    );
+
+    block_on(futures::future::join(
+        run_maker_swap(RunMakerSwapInput::StartNew(maker_swap), maker_ctx.clone()),
+        run_taker_swap(RunTakerSwapInput::StartNew(taker_swap), taker_ctx.clone()),
+    ));
+
+    println!(
+        "Maker swap path {}",
+        std::fs::canonicalize(my_swap_file_path(&maker_ctx, &uuid))
+            .unwrap()
+            .display()
+    );
+    println!(
+        "Taker swap path {}",
+        std::fs::canonicalize(my_swap_file_path(&taker_ctx, &uuid))
+            .unwrap()
+            .display()
+    );
 }

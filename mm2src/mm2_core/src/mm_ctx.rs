@@ -271,6 +271,9 @@ impl MmCtx {
     }
 
     #[cfg(not(target_arch = "wasm32"))]
+    pub fn sqlite_initialized(&self) -> bool { self.sqlite_connection.is_some() }
+
+    #[cfg(not(target_arch = "wasm32"))]
     pub fn sqlite_connection(&self) -> MutexGuard<Connection> {
         self.sqlite_connection
             .or(&|| panic!("sqlite_connection is not initialized"))
