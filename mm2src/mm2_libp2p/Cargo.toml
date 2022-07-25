@@ -15,7 +15,7 @@ futures = { version = "0.3.1", package = "futures", features = ["compat", "async
 futures-rustls = { version = "0.21.1" }
 hex = "0.4.2"
 lazy_static = "1.4"
-secp256k1 = { version = "0.20", features = ["rand"] }
+secp256k1 = { version = "0.24", features = ["rand"] }
 log = "0.4.8"
 rand = { package = "rand", version = "0.7", features = ["std", "wasm-bindgen"] }
 regex = "1"
