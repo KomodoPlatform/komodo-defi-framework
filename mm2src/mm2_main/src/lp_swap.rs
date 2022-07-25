@@ -99,6 +99,7 @@ use std::sync::atomic::{AtomicU64, Ordering};
 mod swap_wasm_db;
 
 use crate::mm2::lp_native_dex::{fix_directories, init_p2p};
+use crate::mm2::lp_swap::taker_swap::FailAt;
 pub use check_balance::{check_other_coin_balance_for_swap, CheckBalanceError};
 use coins::utxo::rpc_clients::ElectrumRpcRequest;
 use coins::utxo::utxo_standard::utxo_standard_coin_with_priv_key;
@@ -1686,7 +1687,7 @@ fn gen_recoverable_swap() {
         Default::default(),
     );
 
-    let taker_swap = TakerSwap::new(
+    let mut taker_swap = TakerSwap::new(
         taker_ctx.clone(),
         maker_key_pair.public().unprefixed().into(),
         BigDecimal::from_str("0.1").unwrap().into(),
@@ -1705,6 +1706,8 @@ fn gen_recoverable_swap() {
         60,
         None,
     );
+
+    taker_swap.fail_at = Some(FailAt::TakerPayment);
 
     block_on(futures::future::join(
         run_maker_swap(RunMakerSwapInput::StartNew(maker_swap), maker_ctx.clone()),

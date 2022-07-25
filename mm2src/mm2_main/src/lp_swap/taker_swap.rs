@@ -469,6 +469,12 @@ pub struct TakerSwapMut {
     secret: H256Json,
 }
 
+#[cfg(test)]
+#[derive(Eq, PartialEq)]
+pub(super) enum FailAt {
+    TakerPayment,
+}
+
 pub struct TakerSwap {
     ctx: MmArc,
     maker_coin: MmCoinEnum,
@@ -487,6 +493,8 @@ pub struct TakerSwap {
     conf_settings: SwapConfirmationsSettings,
     payment_locktime: u64,
     p2p_privkey: Option<KeyPair>,
+    #[cfg(test)]
+    pub(super) fail_at: Option<FailAt>,
 }
 
 #[derive(Clone, Debug, Deserialize, PartialEq, Serialize)]
@@ -754,6 +762,8 @@ impl TakerSwap {
                 secret: H256Json::default(),
             }),
             ctx,
+            #[cfg(test)]
+            fail_at: None,
         }
     }
 
@@ -1155,6 +1165,13 @@ impl TakerSwap {
     }
 
     async fn send_taker_payment(&self) -> Result<(Option<TakerSwapCommand>, Vec<TakerSwapEvent>), String> {
+        #[cfg(test)]
+        if self.fail_at == Some(FailAt::TakerPayment) {
+            return Ok((Some(TakerSwapCommand::Finish), vec![
+                TakerSwapEvent::TakerPaymentTransactionFailed("Explicit test failure".into()),
+            ]));
+        }
+
         let timeout = self.r().data.started_at + self.r().data.lock_duration / 3;
         let now = now_ms() / 1000;
         if now > timeout {
