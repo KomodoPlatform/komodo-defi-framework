@@ -3384,7 +3384,7 @@ impl GuiAuthMessages for EthCoin {
         let signature = sign(&generator.secret, &H256::from(message_hash))?;
 
         Ok(GuiAuthValidation {
-            coin_ticker: String::from("ETH"),
+            coin_ticker: generator.coin_ticker,
             address: generator.address,
             timestamp_message,
             signature: format!("0x{}", signature),
@@ -3618,6 +3618,7 @@ pub async fn eth_coin_from_conf_and_request_v2(
     for node in &nodes {
         let mut transport = Web3Transport::with_event_handlers(vec![node.clone()], event_handlers.clone());
         transport.gui_auth_validation_generator = Some(GuiAuthValidationGenerator {
+            coin_ticker: ticker.to_string(),
             secret: key_pair.secret().clone(),
             address: my_address.clone(),
         });
@@ -3645,6 +3646,7 @@ pub async fn eth_coin_from_conf_and_request_v2(
 
     let mut transport = Web3Transport::with_event_handlers(nodes, event_handlers);
     transport.gui_auth_validation_generator = Some(GuiAuthValidationGenerator {
+        coin_ticker: ticker.to_string(),
         secret: key_pair.secret().clone(),
         address: my_address,
     });

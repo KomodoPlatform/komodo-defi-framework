@@ -8,7 +8,7 @@ use coins::{eth::{eth_coin_from_conf_and_request_v2, Erc20Protocol, Erc20TokenAc
                   Erc20TokenActivationRequest, Erc20TokenInfo, EthActivationV2Error, EthActivationV2Request, EthCoin},
             my_tx_history_v2::TxHistoryStorage,
             CoinBalance, CoinProtocol, MarketCoinOps, MmCoin};
-use common::{drop_mutability, mm_metrics::MetricsArc, Future01CompatExt};
+use common::{mm_metrics::MetricsArc, Future01CompatExt};
 use futures::future::AbortHandle;
 use mm2_core::mm_ctx::MmArc;
 use mm2_err_handle::prelude::*;
@@ -88,7 +88,6 @@ impl TokenInitializer for Erc20Initializer {
                 .await?;
             tokens.push(token);
         }
-        drop_mutability!(tokens);
 
         Ok(tokens)
     }
@@ -218,7 +217,6 @@ impl PlatformWithTokensActivationOps for EthCoin {
                 pubkey: my_address,
                 balances: token_balances,
             });
-        drop_mutability!(result);
 
         Ok(result)
     }

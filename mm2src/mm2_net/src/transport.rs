@@ -52,6 +52,7 @@ where
 
 #[derive(Clone, Debug)]
 pub struct GuiAuthValidationGenerator {
+    pub coin_ticker: String,
     pub secret: Secret,
     pub address: String,
 }
