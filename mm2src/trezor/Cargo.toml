@@ -20,7 +20,7 @@ serde = "1.0"
 serde_derive = "1.0"
 
 [target.'cfg(not(target_arch = "wasm32"))'.dependencies]
-bip32 = { version = "0.2.2", default-features = false, features = ["alloc", "secp256k1-ffi"] }
+bip32 = { version = "0.4.0", default-features = false, features = ["alloc", "secp256k1-ffi"] }
 
 [target.'cfg(target_arch = "wasm32")'.dependencies]
 js-sys = { version = "0.3.27" }
