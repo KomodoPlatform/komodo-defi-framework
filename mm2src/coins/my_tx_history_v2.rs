@@ -1,6 +1,6 @@
 use crate::tx_history_storage::{CreateTxHistoryStorageError, GetTxHistoryFilters, TxHistoryStorageBuilder, WalletId};
 use crate::{lp_coinfind_or_err, BlockHeightAndTime, CoinFindError, HistorySyncState, MmCoin, MmCoinEnum, Transaction,
-            TransactionDetails, TransactionType, TxFeeDetails};
+            TransactionDetails, TransactionType, TxFeeDetails, UtxoRpcError};
 use async_trait::async_trait;
 use bitcrypto::sha256;
 use common::{calc_total_pages, ten, HttpStatusCode, PagingOptionsEnum, StatusCode};
@@ -229,32 +229,32 @@ impl<'a, Addr: Clone + DisplayAddress + Eq + std::hash::Hash, Tx: Transaction> T
 }
 
 #[derive(Deserialize)]
-pub struct MyTxHistoryRequestV2 {
+pub struct MyTxHistoryRequestV2<T> {
     coin: String,
     #[serde(default = "ten")]
-    limit: usize,
+    pub(crate) limit: usize,
     #[serde(default)]
-    paging_options: PagingOptionsEnum<BytesJson>,
+    pub(crate) paging_options: PagingOptionsEnum<T>,
 }
 
 #[derive(Serialize)]
 pub struct MyTxHistoryDetails {
     #[serde(flatten)]
-    details: TransactionDetails,
-    confirmations: u64,
+    pub(crate) details: TransactionDetails,
+    pub(crate) confirmations: u64,
 }
 
 #[derive(Serialize)]
-pub struct MyTxHistoryResponseV2 {
-    coin: String,
-    current_block: u64,
-    transactions: Vec<MyTxHistoryDetails>,
-    sync_status: HistorySyncState,
-    limit: usize,
-    skipped: usize,
-    total: usize,
-    total_pages: usize,
-    paging_options: PagingOptionsEnum<BytesJson>,
+pub struct MyTxHistoryResponseV2<Tx, Id> {
+    pub(crate) coin: String,
+    pub(crate) current_block: u64,
+    pub(crate) transactions: Vec<Tx>,
+    pub(crate) sync_status: HistorySyncState,
+    pub(crate) limit: usize,
+    pub(crate) skipped: usize,
+    pub(crate) total: usize,
+    pub(crate) total_pages: usize,
+    pub(crate) paging_options: PagingOptionsEnum<Id>,
 }
 
 #[derive(Debug, Display, Serialize, SerializeErrorType)]
@@ -265,6 +265,7 @@ pub enum MyTxHistoryErrorV2 {
     StorageError(String),
     RpcError(String),
     NotSupportedFor(String),
+    Internal(String),
 }
 
 impl HttpStatusCode for MyTxHistoryErrorV2 {
@@ -274,7 +275,8 @@ impl HttpStatusCode for MyTxHistoryErrorV2 {
             MyTxHistoryErrorV2::StorageIsNotInitialized(_)
             | MyTxHistoryErrorV2::StorageError(_)
             | MyTxHistoryErrorV2::RpcError(_)
-            | MyTxHistoryErrorV2::NotSupportedFor(_) => StatusCode::INTERNAL_SERVER_ERROR,
+            | MyTxHistoryErrorV2::Internal(_) => StatusCode::INTERNAL_SERVER_ERROR,
+            MyTxHistoryErrorV2::NotSupportedFor(_) => StatusCode::BAD_REQUEST,
         }
     }
 }
@@ -298,6 +300,10 @@ impl From<CreateTxHistoryStorageError> for MyTxHistoryErrorV2 {
     fn from(e: CreateTxHistoryStorageError) -> Self { MyTxHistoryErrorV2::StorageError(e.to_string()) }
 }
 
+impl From<UtxoRpcError> for MyTxHistoryErrorV2 {
+    fn from(err: UtxoRpcError) -> Self { MyTxHistoryErrorV2::RpcError(err.to_string()) }
+}
+
 pub trait CoinWithTxHistoryV2 {
     fn history_wallet_id(&self) -> WalletId;
 
@@ -308,10 +314,9 @@ pub trait CoinWithTxHistoryV2 {
 /// it's worth to add [`MmCoin::my_tx_history_v2`] when most coins support transaction history V2.
 pub async fn my_tx_history_v2_rpc(
     ctx: MmArc,
-    request: MyTxHistoryRequestV2,
-) -> Result<MyTxHistoryResponseV2, MmError<MyTxHistoryErrorV2>> {
-    let coin = lp_coinfind_or_err(&ctx, &request.coin).await?;
-    match coin {
+    request: MyTxHistoryRequestV2<BytesJson>,
+) -> Result<MyTxHistoryResponseV2<MyTxHistoryDetails, BytesJson>, MmError<MyTxHistoryErrorV2>> {
+    match lp_coinfind_or_err(&ctx, &request.coin).await? {
         MmCoinEnum::Bch(bch) => my_tx_history_v2_impl(ctx, &bch, request).await,
         MmCoinEnum::SlpToken(slp_token) => my_tx_history_v2_impl(ctx, &slp_token, request).await,
         other => MmError::err(MyTxHistoryErrorV2::NotSupportedFor(other.ticker().to_owned())),
@@ -321,8 +326,8 @@ pub async fn my_tx_history_v2_rpc(
 pub(crate) async fn my_tx_history_v2_impl<Coin>(
     ctx: MmArc,
     coin: &Coin,
-    request: MyTxHistoryRequestV2,
-) -> Result<MyTxHistoryResponseV2, MmError<MyTxHistoryErrorV2>>
+    request: MyTxHistoryRequestV2<BytesJson>,
+) -> Result<MyTxHistoryResponseV2<MyTxHistoryDetails, BytesJson>, MmError<MyTxHistoryErrorV2>>
 where
     Coin: CoinWithTxHistoryV2 + MmCoin,
 {
@@ -373,4 +378,15 @@ where
         total_pages: calc_total_pages(history.total, request.limit),
         paging_options: request.paging_options,
     })
+}
+
+#[cfg(not(target_arch = "wasm32"))]
+pub async fn z_coin_tx_history_rpc(
+    ctx: MmArc,
+    request: MyTxHistoryRequestV2<i64>,
+) -> Result<MyTxHistoryResponseV2<crate::z_coin::ZcoinTxDetails, i64>, MmError<MyTxHistoryErrorV2>> {
+    match lp_coinfind_or_err(&ctx, &request.coin).await? {
+        MmCoinEnum::ZCoin(z_coin) => z_coin.tx_history(request).await,
+        other => MmError::err(MyTxHistoryErrorV2::NotSupportedFor(other.ticker().to_owned())),
+    }
 }

@@ -100,6 +100,7 @@ pub const TAKER_ERROR_EVENTS: [&str; 13] = [
 ];
 
 pub const RICK: &str = "RICK";
+pub const MORTY: &str = "MORTY";
 pub const ZOMBIE_TICKER: &str = "ZOMBIE";
 pub const ZOMBIE_ELECTRUMS: &[&str] = &["zombie.sirseven.me:10033"];
 pub const ZOMBIE_LIGHTWALLETD_URLS: &[&str] = &["http://zombie.sirseven.me:443"];
@@ -134,6 +135,20 @@ impl Mm2TestConf {
                 "gui": "nogui",
                 "netid": 9998,
                 "passphrase": passphrase,
+                "coins": coins,
+                "rpc_password": DEFAULT_RPC_PASSWORD,
+                "seednodes": seednodes,
+            }),
+            rpc_password: DEFAULT_RPC_PASSWORD.into(),
+            local: None,
+        }
+    }
+
+    pub fn no_login_node(coins: &Json, seednodes: &[&str]) -> Self {
+        Mm2TestConf {
+            conf: json!({
+                "gui": "nogui",
+                "netid": 9998,
                 "coins": coins,
                 "rpc_password": DEFAULT_RPC_PASSWORD,
                 "seednodes": seednodes,
@@ -177,6 +192,19 @@ pub fn rick_conf() -> Json {
     json!({
         "coin":"RICK",
         "asset":"RICK",
+        "required_confirmations":0,
+        "txversion":4,
+        "overwintered":1,
+        "protocol":{
+            "type":"UTXO"
+        }
+    })
+}
+
+pub fn morty_conf() -> Json {
+    json!({
+        "coin":"MORTY",
+        "asset":"MORTY",
         "required_confirmations":0,
         "txversion":4,
         "overwintered":1,
@@ -1101,6 +1129,30 @@ pub async fn my_tx_history_v2(
         .await
         .unwrap();
     assert_eq!(request.0, StatusCode::OK, "'my_tx_history' failed: {}", request.1);
+    json::from_str(&request.1).unwrap()
+}
+
+pub async fn z_coin_tx_history(
+    mm: &MarketMakerIt,
+    coin: &str,
+    limit: usize,
+    paging: Option<PagingOptionsEnum<i64>>,
+) -> Json {
+    let paging = paging.unwrap_or_default();
+    let request = mm
+        .rpc(&json! ({
+            "userpass": mm.userpass,
+            "method": "z_coin_tx_history",
+            "mmrpc": "2.0",
+            "params": {
+                "coin": coin,
+                "limit": limit,
+                "paging_options": paging,
+            }
+        }))
+        .await
+        .unwrap();
+    assert_eq!(request.0, StatusCode::OK, "'z_coin_tx_history' failed: {}", request.1);
     json::from_str(&request.1).unwrap()
 }
 

@@ -43,7 +43,7 @@ const AUX_POW_VERSION_DOGE: u32 = 6422788;
 const AUX_POW_VERSION_SYS: u32 = 537919744;
 const MTP_POW_VERSION: u32 = 0x20001000u32;
 const PROG_POW_SWITCH_TIME: u32 = 1635228000;
-const QTUM_BLOCK_HEADER_VERSION: u32 = 536870912;
+const BIP9_NO_SOFT_FORK_BLOCK_HEADER_VERSION: u32 = 536870912;
 // RVN
 const KAWPOW_VERSION: u32 = 805306368;
 
@@ -92,6 +92,8 @@ pub struct BlockHeader {
     pub version: u32,
     pub previous_header_hash: H256,
     pub merkle_root_hash: H256,
+    /// https://github.com/lbryio/lbrycrd/blob/71fc94b1dea1c7818f84a09832ec3db736481e0f/src/primitives/block.h#L40
+    pub claim_trie_root: Option<H256>,
     pub hash_final_sapling_root: Option<H256>,
     pub time: u32,
     pub bits: BlockHeaderBits,
@@ -129,6 +131,9 @@ impl Serializable for BlockHeader {
         }
         s.append(&self.previous_header_hash);
         s.append(&self.merkle_root_hash);
+        if let Some(claim) = &self.claim_trie_root {
+            s.append(claim);
+        }
         match &self.hash_final_sapling_root {
             Some(h) => {
                 s.append(h);
@@ -197,6 +202,14 @@ impl Deserializable for BlockHeader {
         }
         let previous_header_hash = reader.read()?;
         let merkle_root_hash = reader.read()?;
+
+        // This is needed to deserialize coin like LBC correctly.
+        let claim_trie_root = if version == BIP9_NO_SOFT_FORK_BLOCK_HEADER_VERSION && reader.coin_variant().is_lbc() {
+            Some(reader.read()?)
+        } else {
+            None
+        };
+
         let hash_final_sapling_root = if version == 4 { Some(reader.read()?) } else { None };
         let time = reader.read()?;
         let bits = if version == 4 {
@@ -244,7 +257,7 @@ impl Deserializable for BlockHeader {
         };
 
         let (hash_state_root, hash_utxo_root, prevout_stake, vch_block_sig_dlgt) =
-            if version == QTUM_BLOCK_HEADER_VERSION && reader.coin_variant().is_qtum() {
+            if version == BIP9_NO_SOFT_FORK_BLOCK_HEADER_VERSION && reader.coin_variant().is_qtum() {
                 (
                     Some(reader.read()?),
                     Some(reader.read()?),
@@ -266,6 +279,7 @@ impl Deserializable for BlockHeader {
             version,
             previous_header_hash,
             merkle_root_hash,
+            claim_trie_root,
             hash_final_sapling_root,
             time,
             bits,
@@ -306,7 +320,7 @@ impl From<&'static str> for BlockHeader {
 #[cfg(test)]
 mod tests {
     use block_header::{BlockHeader, BlockHeaderBits, BlockHeaderNonce, AUX_POW_VERSION_DOGE, AUX_POW_VERSION_SYS,
-                       KAWPOW_VERSION, MTP_POW_VERSION, PROG_POW_SWITCH_TIME, QTUM_BLOCK_HEADER_VERSION};
+                       BIP9_NO_SOFT_FORK_BLOCK_HEADER_VERSION, KAWPOW_VERSION, MTP_POW_VERSION, PROG_POW_SWITCH_TIME};
     use hex::FromHex;
     use ser::{deserialize, serialize, serialize_list, CoinVariant, Error as ReaderError, Reader, Stream};
 
@@ -316,6 +330,7 @@ mod tests {
             version: 1,
             previous_header_hash: [2; 32].into(),
             merkle_root_hash: [3; 32].into(),
+            claim_trie_root: None,
             hash_final_sapling_root: None,
             time: 4,
             bits: BlockHeaderBits::Compact(5.into()),
@@ -361,6 +376,7 @@ mod tests {
             version: 1,
             previous_header_hash: [2; 32].into(),
             merkle_root_hash: [3; 32].into(),
+            claim_trie_root: None,
             hash_final_sapling_root: Default::default(),
             time: 4,
             bits: BlockHeaderBits::Compact(5.into()),
@@ -393,6 +409,7 @@ mod tests {
             version: 4,
             previous_header_hash: "8e4e7283b71dd1572d220935db0a1654d1042e92378579f8abab67b143f93a02".into(),
             merkle_root_hash: "fa026610d2634b72ff729b9ea7850c0d2c25eeaf7a82878ca42a8e9912028863".into(),
+            claim_trie_root: None,
             hash_final_sapling_root: Some("a2d8a734eb73a4dc734072dbfd12406f1e7121bfe0e3d6c10922495c44e5cc1c".into()),
             time: 1583159441,
             bits: BlockHeaderBits::U32(486611429),
@@ -895,6 +912,71 @@ mod tests {
         let headers = reader.read_list::<BlockHeader>().unwrap();
         for header in headers.iter() {
             assert_eq!(header.version, MTP_POW_VERSION);
+        }
+        let serialized = serialize_list(&headers);
+        assert_eq!(serialized.take(), headers_bytes);
+    }
+
+    #[test]
+    fn test_lbc_block_herders_serde_11() {
+        let headers_bytes: &[u8] = &[
+            11, 0, 0, 0, 32, 4, 226, 205, 70, 162, 151, 56, 130, 229, 25, 56, 118, 91, 160, 178, 217, 85, 27, 1, 56,
+            140, 20, 226, 40, 81, 171, 69, 77, 146, 40, 3, 245, 151, 115, 182, 25, 85, 159, 63, 6, 216, 43, 43, 130,
+            111, 1, 126, 229, 53, 112, 195, 185, 7, 49, 80, 227, 104, 71, 129, 155, 14, 80, 229, 38, 102, 215, 134, 81,
+            191, 250, 187, 217, 169, 93, 203, 220, 82, 217, 39, 221, 45, 2, 138, 18, 143, 248, 133, 15, 59, 140, 214,
+            169, 65, 98, 208, 61, 46, 30, 213, 98, 213, 174, 0, 26, 75, 221, 59, 116, 0, 0, 0, 32, 196, 109, 14, 170,
+            9, 36, 64, 47, 8, 64, 125, 180, 223, 157, 207, 10, 17, 147, 142, 204, 121, 184, 222, 20, 96, 107, 117, 222,
+            175, 16, 105, 186, 108, 207, 33, 68, 226, 33, 122, 81, 173, 178, 158, 158, 8, 214, 102, 132, 57, 8, 233,
+            138, 194, 133, 26, 124, 84, 0, 79, 31, 203, 142, 45, 232, 94, 218, 52, 2, 164, 160, 62, 236, 233, 187, 156,
+            61, 122, 43, 214, 177, 87, 143, 144, 214, 64, 70, 168, 150, 210, 240, 78, 38, 204, 182, 2, 226, 137, 30,
+            213, 98, 207, 195, 0, 26, 26, 210, 86, 33, 0, 0, 0, 32, 248, 242, 27, 4, 83, 243, 188, 89, 225, 120, 109,
+            155, 92, 211, 112, 226, 110, 106, 117, 155, 244, 215, 210, 185, 63, 178, 180, 223, 137, 162, 58, 251, 107,
+            190, 58, 159, 209, 134, 141, 129, 158, 66, 135, 230, 248, 146, 217, 232, 6, 92, 244, 181, 139, 203, 184,
+            35, 35, 209, 240, 53, 56, 222, 63, 95, 180, 75, 178, 246, 193, 163, 175, 209, 16, 201, 188, 164, 245, 0,
+            44, 216, 64, 8, 22, 170, 213, 238, 21, 240, 118, 16, 197, 201, 177, 29, 109, 91, 217, 30, 213, 98, 171,
+            186, 0, 26, 3, 57, 180, 217, 0, 0, 0, 32, 107, 241, 118, 66, 209, 221, 160, 24, 69, 212, 76, 221, 81, 47,
+            150, 6, 196, 22, 254, 107, 67, 96, 165, 129, 93, 87, 86, 253, 174, 166, 240, 6, 87, 49, 250, 185, 201, 18,
+            49, 115, 222, 30, 154, 134, 214, 114, 183, 95, 87, 218, 116, 4, 176, 126, 196, 187, 210, 197, 142, 91, 129,
+            175, 158, 88, 141, 159, 87, 247, 179, 75, 237, 84, 58, 216, 37, 210, 72, 167, 226, 154, 15, 69, 10, 254,
+            149, 135, 74, 149, 110, 178, 91, 9, 134, 36, 137, 183, 57, 32, 213, 98, 182, 176, 0, 26, 184, 35, 19, 17,
+            0, 0, 0, 32, 54, 175, 218, 241, 215, 229, 54, 226, 65, 178, 208, 185, 207, 176, 61, 171, 1, 203, 94, 53,
+            30, 40, 188, 54, 70, 35, 33, 68, 234, 37, 203, 110, 248, 170, 156, 152, 52, 72, 42, 28, 248, 97, 9, 159,
+            106, 83, 6, 68, 106, 134, 222, 38, 97, 227, 211, 181, 75, 36, 154, 182, 130, 133, 161, 8, 94, 210, 79, 13,
+            155, 245, 191, 77, 157, 95, 40, 208, 220, 69, 190, 192, 248, 200, 39, 148, 177, 163, 88, 210, 23, 209, 106,
+            200, 239, 23, 147, 3, 87, 32, 213, 98, 41, 206, 0, 26, 36, 6, 216, 89, 0, 0, 0, 32, 191, 206, 127, 113,
+            217, 20, 89, 51, 103, 46, 155, 38, 64, 52, 51, 218, 35, 153, 161, 11, 24, 225, 116, 139, 117, 96, 245, 112,
+            218, 168, 88, 99, 13, 117, 103, 10, 163, 133, 114, 186, 178, 138, 120, 22, 245, 23, 32, 108, 186, 238, 18,
+            250, 254, 20, 236, 152, 247, 1, 229, 145, 249, 121, 29, 19, 64, 176, 250, 1, 212, 155, 54, 168, 176, 22,
+            10, 174, 183, 38, 88, 77, 17, 174, 221, 73, 84, 133, 174, 149, 222, 93, 168, 85, 47, 122, 254, 142, 191,
+            32, 213, 98, 139, 185, 0, 26, 11, 156, 81, 208, 0, 0, 0, 32, 185, 10, 134, 138, 197, 14, 90, 184, 108, 77,
+            52, 169, 245, 158, 113, 196, 92, 63, 10, 42, 93, 138, 96, 146, 248, 103, 105, 107, 110, 92, 153, 32, 46,
+            134, 91, 9, 151, 59, 17, 87, 145, 104, 83, 124, 153, 71, 154, 44, 254, 1, 16, 179, 214, 82, 219, 179, 57,
+            94, 110, 85, 137, 231, 104, 113, 216, 65, 67, 201, 131, 14, 28, 55, 72, 31, 197, 88, 146, 130, 243, 56,
+            173, 30, 153, 236, 36, 53, 220, 45, 18, 114, 217, 223, 59, 74, 60, 143, 214, 35, 213, 98, 91, 179, 0, 26,
+            184, 79, 48, 125, 0, 0, 0, 32, 207, 9, 44, 157, 84, 2, 136, 174, 93, 198, 173, 105, 35, 141, 243, 6, 21,
+            214, 24, 80, 113, 166, 149, 36, 207, 78, 157, 77, 195, 76, 118, 75, 93, 168, 103, 196, 147, 125, 5, 145,
+            183, 30, 98, 150, 37, 135, 29, 3, 184, 160, 62, 61, 205, 109, 89, 124, 161, 161, 99, 166, 76, 198, 57, 104,
+            21, 200, 173, 105, 181, 83, 152, 148, 115, 92, 215, 131, 108, 16, 121, 168, 25, 212, 150, 158, 205, 1, 128,
+            106, 232, 31, 177, 216, 61, 70, 106, 149, 19, 36, 213, 98, 8, 13, 1, 26, 66, 126, 250, 117, 0, 0, 0, 32,
+            14, 226, 195, 145, 216, 149, 97, 248, 36, 168, 95, 51, 163, 63, 36, 79, 144, 213, 195, 185, 88, 79, 179,
+            68, 6, 166, 42, 176, 56, 129, 130, 158, 157, 158, 185, 82, 70, 100, 135, 53, 130, 252, 84, 56, 153, 183, 4,
+            64, 167, 75, 237, 171, 159, 117, 76, 115, 169, 115, 131, 251, 119, 23, 3, 24, 159, 110, 115, 78, 6, 134,
+            71, 167, 91, 187, 203, 252, 77, 121, 169, 201, 152, 67, 155, 21, 5, 19, 61, 136, 215, 31, 55, 173, 225,
+            126, 138, 230, 51, 36, 213, 98, 77, 249, 0, 26, 153, 65, 133, 15, 0, 0, 0, 32, 98, 23, 129, 255, 228, 196,
+            211, 128, 56, 58, 241, 153, 48, 139, 73, 26, 39, 169, 57, 4, 91, 179, 149, 36, 158, 254, 190, 185, 52, 110,
+            160, 218, 227, 60, 248, 234, 204, 240, 216, 126, 70, 68, 180, 22, 122, 203, 103, 19, 177, 126, 226, 83, 44,
+            83, 2, 36, 157, 164, 127, 241, 219, 47, 100, 53, 86, 216, 76, 242, 161, 117, 71, 214, 50, 154, 144, 42,
+            180, 57, 145, 57, 95, 10, 18, 217, 161, 66, 70, 4, 116, 79, 24, 64, 71, 88, 47, 160, 77, 38, 213, 98, 8,
+            226, 0, 26, 6, 75, 190, 72, 0, 0, 0, 32, 92, 201, 103, 9, 253, 13, 166, 231, 44, 6, 225, 162, 236, 10, 255,
+            4, 42, 43, 196, 53, 83, 118, 220, 157, 231, 6, 104, 2, 111, 141, 219, 28, 162, 101, 33, 136, 243, 11, 130,
+            200, 145, 88, 52, 186, 115, 44, 146, 231, 80, 158, 155, 182, 134, 156, 229, 247, 68, 55, 145, 249, 71, 225,
+            115, 127, 165, 240, 245, 7, 151, 6, 193, 202, 139, 227, 48, 79, 12, 178, 233, 104, 176, 129, 136, 171, 201,
+            184, 15, 6, 37, 118, 246, 130, 5, 177, 140, 190, 58, 38, 213, 98, 92, 42, 1, 26, 63, 91, 195, 195,
+        ];
+        let mut reader = Reader::new_with_coin_variant(headers_bytes, CoinVariant::LBC);
+        let headers = reader.read_list::<BlockHeader>().unwrap();
+        for header in headers.iter() {
+            assert_eq!(header.version, BIP9_NO_SOFT_FORK_BLOCK_HEADER_VERSION);
         }
         let serialized = serialize_list(&headers);
         assert_eq!(serialized.take(), headers_bytes);
@@ -1965,7 +2047,7 @@ mod tests {
         let mut reader = Reader::new_with_coin_variant(headers_bytes, CoinVariant::Qtum);
         let headers = reader.read_list::<BlockHeader>().unwrap();
         for header in headers.iter() {
-            assert_eq!(header.version, QTUM_BLOCK_HEADER_VERSION);
+            assert_eq!(header.version, BIP9_NO_SOFT_FORK_BLOCK_HEADER_VERSION);
         }
         let serialized = serialize_list(&headers);
         assert_eq!(serialized.take(), headers_bytes);
