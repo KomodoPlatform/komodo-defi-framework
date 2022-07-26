@@ -277,8 +277,7 @@ async fn send_request(
         let mut serialized_request = serialized_request.clone();
         if node.gui_auth {
             if let Some(generator) = gui_auth_validation_generator.clone() {
-                let mut json_payload: Json = serde_json::from_str(&serialized_request)?;
-                json_payload["signed_message"] = match EthCoin::generate_gui_auth_signed_validation(generator) {
+                let signed_message = match EthCoin::generate_gui_auth_signed_validation(generator) {
                     Ok(t) => serde_json::to_value(t)?,
                     Err(e) => {
                         transport_errors.push(ERRL!(
@@ -289,8 +288,13 @@ async fn send_request(
                         continue;
                     },
                 };
-                common::drop_mutability!(json_payload);
-                serialized_request = json_payload.to_string();
+
+                let auth_request = AuthPayload {
+                    request: &request,
+                    signed_message,
+                };
+
+                serialized_request = to_string(&auth_request);
             } else {
                 transport_errors.push(ERRL!("GuiAuthValidationGenerator is not provided for {:?} node", node));
                 continue;
