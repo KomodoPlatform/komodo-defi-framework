@@ -99,7 +99,6 @@ use std::sync::atomic::{AtomicU64, Ordering};
 mod swap_wasm_db;
 
 use crate::mm2::lp_native_dex::{fix_directories, init_p2p};
-use crate::mm2::lp_swap::taker_swap::FailAt;
 pub use check_balance::{check_other_coin_balance_for_swap, CheckBalanceError};
 use coins::utxo::rpc_clients::ElectrumRpcRequest;
 use coins::utxo::utxo_standard::utxo_standard_coin_with_priv_key;
@@ -1537,7 +1536,14 @@ mod lp_swap_tests {
 #[test]
 #[ignore]
 fn gen_recoverable_swap() {
-    env_logger::init();
+    let maker_passphrase = std::env::var("BOB_PASSPHRASE").expect("BOB_PASSPHRASE env must be set");
+    let maker_fail_at = std::env::var("MAKER_FAIL_AT").map(maker_swap::FailAt::from).ok();
+    let taker_passphrase = std::env::var("ALICE_PASSPHRASE").expect("ALICE_PASSPHRASE env must be set");
+    let taker_fail_at = std::env::var("TAKER_FAIL_AT").map(taker_swap::FailAt::from).ok();
+
+    if maker_fail_at.is_none() && taker_fail_at.is_none() {
+        panic!("At least one of MAKER_FAIL_AT/TAKER_FAIL_AT must be provided");
+    }
 
     const RICK_ELECTRUM_ADDRS: &[&str] = &[
         "electrum1.cipig.net:10017",
@@ -1558,7 +1564,6 @@ fn gen_recoverable_swap() {
         "i_am_seed": true,
     });
 
-    let maker_passphrase = std::env::var("BOB_PASSPHRASE").unwrap();
     let maker_key_pair = key_pair_from_seed(&maker_passphrase).unwrap();
     let maker_ctx = MmCtxBuilder::default()
         .with_secp256k1_key_pair(maker_key_pair.clone())
@@ -1630,7 +1635,6 @@ fn gen_recoverable_swap() {
     ))
     .unwrap();
 
-    let taker_passphrase = std::env::var("ALICE_PASSPHRASE").unwrap();
     let taker_key_pair = key_pair_from_seed(&taker_passphrase).unwrap();
 
     let taker_ctx_conf = json!({
@@ -1666,13 +1670,13 @@ fn gen_recoverable_swap() {
     println!("Taker address {}", rick_taker.my_address().unwrap());
 
     let uuid = Uuid::new_v4();
-    let maker_swap = MakerSwap::new(
+    let mut maker_swap = MakerSwap::new(
         maker_ctx.clone(),
         taker_key_pair.public().unprefixed().into(),
         BigDecimal::from_str("0.1").unwrap(),
         BigDecimal::from_str("0.1").unwrap(),
         maker_key_pair.public_slice().into(),
-        uuid.clone(),
+        uuid,
         None,
         SwapConfirmationsSettings {
             maker_coin_confs: 0,
@@ -1687,13 +1691,15 @@ fn gen_recoverable_swap() {
         Default::default(),
     );
 
+    maker_swap.fail_at = maker_fail_at;
+
     let mut taker_swap = TakerSwap::new(
         taker_ctx.clone(),
         maker_key_pair.public().unprefixed().into(),
         BigDecimal::from_str("0.1").unwrap().into(),
         BigDecimal::from_str("0.1").unwrap().into(),
         taker_key_pair.public_slice().into(),
-        uuid.clone(),
+        uuid,
         None,
         SwapConfirmationsSettings {
             maker_coin_confs: 0,
@@ -1707,7 +1713,7 @@ fn gen_recoverable_swap() {
         None,
     );
 
-    taker_swap.fail_at = Some(FailAt::TakerPayment);
+    taker_swap.fail_at = taker_fail_at;
 
     block_on(futures::future::join(
         run_maker_swap(RunMakerSwapInput::StartNew(maker_swap), maker_ctx.clone()),

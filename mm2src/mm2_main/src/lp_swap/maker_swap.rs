@@ -175,6 +175,24 @@ pub struct MakerSwapMut {
     maker_payment_refund: Option<TransactionIdentifier>,
 }
 
+#[cfg(test)]
+#[derive(Eq, PartialEq)]
+pub(super) enum FailAt {
+    TakerPaymentSpend,
+    MakerPaymentRefund,
+}
+
+#[cfg(test)]
+impl From<String> for FailAt {
+    fn from(str: String) -> Self {
+        match str.as_str() {
+            "taker_payment_spend" => FailAt::TakerPaymentSpend,
+            "maker_payment_refund" => FailAt::MakerPaymentRefund,
+            _ => panic!("Invalid MAKER_FAIL_AT value"),
+        }
+    }
+}
+
 pub struct MakerSwap {
     ctx: MmArc,
     maker_coin: MmCoinEnum,
@@ -195,6 +213,8 @@ pub struct MakerSwap {
     /// Temporary privkey used to sign P2P messages when applicable
     p2p_privkey: Option<KeyPair>,
     secret: H256,
+    #[cfg(test)]
+    pub(super) fail_at: Option<FailAt>,
 }
 
 impl MakerSwap {
@@ -342,6 +362,8 @@ impl MakerSwap {
             }),
             ctx,
             secret,
+            #[cfg(test)]
+            fail_at: None,
         }
     }
 
@@ -843,6 +865,13 @@ impl MakerSwap {
     }
 
     async fn spend_taker_payment(&self) -> Result<(Option<MakerSwapCommand>, Vec<MakerSwapEvent>), String> {
+        #[cfg(test)]
+        if self.fail_at == Some(FailAt::TakerPaymentSpend) {
+            return Ok((Some(MakerSwapCommand::Finish), vec![
+                MakerSwapEvent::TakerPaymentSpendFailed("explicit failure".into()),
+            ]));
+        }
+
         let duration = (self.r().data.lock_duration * 4) / 5;
         let timeout = self.r().data.started_at + duration;
 
@@ -940,6 +969,13 @@ impl MakerSwap {
     }
 
     async fn refund_maker_payment(&self) -> Result<(Option<MakerSwapCommand>, Vec<MakerSwapEvent>), String> {
+        #[cfg(test)]
+        if self.fail_at == Some(FailAt::MakerPaymentRefund) {
+            return Ok((Some(MakerSwapCommand::Finish), vec![
+                MakerSwapEvent::MakerPaymentRefundFailed("explicit failure".into()),
+            ]));
+        }
+
         let locktime = self.r().data.maker_payment_lock;
         loop {
             match self.maker_coin.can_refund_htlc(locktime).compat().await {

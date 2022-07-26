@@ -473,6 +473,20 @@ pub struct TakerSwapMut {
 #[derive(Eq, PartialEq)]
 pub(super) enum FailAt {
     TakerPayment,
+    MakerPaymentSpend,
+    TakerPaymentRefund,
+}
+
+#[cfg(test)]
+impl From<String> for FailAt {
+    fn from(str: String) -> Self {
+        match str.as_str() {
+            "taker_payment" => FailAt::TakerPayment,
+            "maker_payment_spend" => FailAt::MakerPaymentSpend,
+            "taker_payment_refund" => FailAt::TakerPaymentRefund,
+            _ => panic!("Invalid TAKER_FAIL_AT value"),
+        }
+    }
 }
 
 pub struct TakerSwap {
@@ -1307,6 +1321,12 @@ impl TakerSwap {
     }
 
     async fn spend_maker_payment(&self) -> Result<(Option<TakerSwapCommand>, Vec<TakerSwapEvent>), String> {
+        #[cfg(test)]
+        if self.fail_at == Some(FailAt::MakerPaymentSpend) {
+            return Ok((Some(TakerSwapCommand::Finish), vec![
+                TakerSwapEvent::MakerPaymentSpendFailed("Explicit test failure".into()),
+            ]));
+        }
         let spend_fut = self.maker_coin.send_taker_spends_maker_payment(
             &self.r().maker_payment.clone().unwrap().tx_hex,
             self.maker_payment_lock.load(Ordering::Relaxed) as u32,
@@ -1353,6 +1373,13 @@ impl TakerSwap {
     }
 
     async fn refund_taker_payment(&self) -> Result<(Option<TakerSwapCommand>, Vec<TakerSwapEvent>), String> {
+        #[cfg(test)]
+        if self.fail_at == Some(FailAt::TakerPaymentRefund) {
+            return Ok((Some(TakerSwapCommand::Finish), vec![
+                TakerSwapEvent::TakerPaymentRefundFailed("Explicit test failure".into()),
+            ]));
+        }
+
         let locktime = self.r().data.taker_payment_lock;
         loop {
             match self.taker_coin.can_refund_htlc(locktime).compat().await {
