@@ -12,8 +12,8 @@ categories = ["network-programming", "asynchronous"]
 [dependencies]
 cuckoofilter = "0.3.2"
 futures = "0.3.1"
-libp2p-core = { git = "https://github.com/libp2p/rust-libp2p.git" }
-libp2p-swarm = { git = "https://github.com/libp2p/rust-libp2p.git" }
+libp2p-core = { git = "https://github.com/libp2p/rust-libp2p.git", rev = "ef2afcd41eac1459c0408a7a6eb599bfc2035938" }
+libp2p-swarm = { git = "https://github.com/libp2p/rust-libp2p.git", rev = "ef2afcd41eac1459c0408a7a6eb599bfc2035938" }
 prost = "0.10"
 rand = "0.7"
 smallvec = "1.0"

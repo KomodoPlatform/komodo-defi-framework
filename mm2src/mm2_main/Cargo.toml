@@ -132,7 +132,7 @@ winapi = "0.3"
 [dev-dependencies]
 mm2_test_helpers = { path = "../mm2_test_helpers" }
 mocktopus = "0.7.0"
-testcontainers = { git = "https://github.com/artemii235/testcontainers-rs.git" }
+testcontainers = { git = "https://github.com/artemii235/testcontainers-rs.git", rev = "65e738093488f1b37185af0f1d3cf0ffd23e840d" }
 
 [build-dependencies]
 chrono = "0.4"

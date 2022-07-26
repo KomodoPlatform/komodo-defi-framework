@@ -32,10 +32,10 @@ db_common = { path = "../db_common" }
 derive_more = "0.99"
 ed25519-dalek = "1.0.1"
 ed25519-dalek-bip32 = "0.2.0"
-ethabi = { git = "https://github.com/artemii235/ethabi" }
-ethcore-transaction = { git = "https://github.com/artemii235/parity-ethereum.git" }
+ethabi = { git = "https://github.com/artemii235/ethabi", rev = "d70bfd94e05c49d9b28a5edb4def2ebfaa5e1053" }
+ethcore-transaction = { git = "https://github.com/artemii235/parity-ethereum.git", rev = "0a090f9b3efd7e24193265cf0e4109bf2369ad98" }
 ethereum-types = { version = "0.4", default-features = false, features = ["std", "serialize"] }
-ethkey = { git = "https://github.com/artemii235/parity-ethereum.git" }
+ethkey = { git = "https://github.com/artemii235/parity-ethereum.git", rev = "0a090f9b3efd7e24193265cf0e4109bf2369ad98" }
 # Waiting for https://github.com/rust-lang/rust/issues/54725 to use on Stable.
 #enum_dispatch = "0.1"
 futures01 = { version = "0.1", package = "futures" }
@@ -49,9 +49,9 @@ jsonrpc-core = "8.0.1"
 keys = { path = "../mm2_bitcoin/keys" }
 lazy_static = "1.4"
 libc = "0.2"
-lightning = { git = "https://github.com/shamardy/rust-lightning", branch = "0.0.106" }
+lightning = { git = "https://github.com/shamardy/rust-lightning", rev = "af4a89c08c22d0110d386df0e288b2f825aaebbc" }
 lightning-background-processor = { path = "lightning_background_processor" }
-lightning-invoice = { git = "https://github.com/shamardy/rust-lightning", branch = "0.0.106" }
+lightning-invoice = { git = "https://github.com/shamardy/rust-lightning", rev = "af4a89c08c22d0110d386df0e288b2f825aaebbc" }
 metrics = "0.12"
 mm2_core = { path = "../mm2_core" }
 mm2_err_handle = { path = "../mm2_err_handle" }
@@ -85,7 +85,7 @@ utxo_signer = { path = "utxo_signer" }
 tiny-bip39 = "0.8.0"
 # One of web3 dependencies is the old `tokio-uds 0.1.7` which fails cross-compiling to ARM.
 # We don't need the default web3 features at all since we added our own web3 transport using shared HYPER instance.
-web3 = { git = "https://github.com/artemii235/rust-web3", default-features = false }
+web3 = { git = "https://github.com/artemii235/rust-web3", default-features = false, rev = "9357249d31c258c5a7d47dfc51e9bb7d980056f1" }
 zbase32 = "0.1.2"
 
 [target.'cfg(target_arch = "wasm32")'.dependencies]
@@ -100,7 +100,7 @@ web-sys = { version = "0.3.55", features = ["console", "Headers", "Request", "Re
 [target.'cfg(not(target_arch = "wasm32"))'.dependencies]
 dirs = { version = "1" }
 lightning-persister = { path = "lightning_persister" }
-lightning-net-tokio = { git = "https://github.com/shamardy/rust-lightning", branch = "0.0.106" }
+lightning-net-tokio = { git = "https://github.com/shamardy/rust-lightning", rev = "af4a89c08c22d0110d386df0e288b2f825aaebbc" }
 rust-ini = { version = "0.13" }
 rustls = { version = "0.20", features = ["dangerous_configuration"] }
 tokio = { version = "1.7" }
@@ -112,10 +112,10 @@ solana-sdk = { version = "1", default-features = false }
 solana-transaction-status = "1"
 spl-token = { version = "3" }
 spl-associated-token-account = "1"
-zcash_client_backend = { git = "https://github.com/KomodoPlatform/librustzcash.git" }
-zcash_client_sqlite = { git = "https://github.com/KomodoPlatform/librustzcash.git" }
-zcash_primitives = { features = ["transparent-inputs"], git = "https://github.com/KomodoPlatform/librustzcash.git" }
-zcash_proofs = { git = "https://github.com/KomodoPlatform/librustzcash.git" }
+zcash_client_backend = { git = "https://github.com/KomodoPlatform/librustzcash.git", rev = "95fa5110b4b3ec105ae5fed1aba3847f656ec9b7" }
+zcash_client_sqlite = { git = "https://github.com/KomodoPlatform/librustzcash.git", rev = "95fa5110b4b3ec105ae5fed1aba3847f656ec9b7" }
+zcash_primitives = { features = ["transparent-inputs"], git = "https://github.com/KomodoPlatform/librustzcash.git", rev = "95fa5110b4b3ec105ae5fed1aba3847f656ec9b7" }
+zcash_proofs = { git = "https://github.com/KomodoPlatform/librustzcash.git", rev = "95fa5110b4b3ec105ae5fed1aba3847f656ec9b7" }
 
 [target.'cfg(windows)'.dependencies]
 winapi = "0.3"

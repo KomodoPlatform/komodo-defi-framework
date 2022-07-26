@@ -28,11 +28,11 @@ wasm-timer = "0.2.4"
 
 [target.'cfg(not(target_arch = "wasm32"))'.dependencies]
 tokio = { version = "1.7", features = ["rt-multi-thread", "macros"] }
-libp2p = { git = "https://github.com/libp2p/rust-libp2p.git", default-features = false, features = ["dns-tokio", "floodsub", "mplex", "noise", "ping", "request-response", "secp256k1", "tcp-tokio", "websocket"] }
+libp2p = { git = "https://github.com/libp2p/rust-libp2p.git", rev = "ef2afcd41eac1459c0408a7a6eb599bfc2035938", default-features = false, features = ["dns-tokio", "floodsub", "mplex", "noise", "ping", "request-response", "secp256k1", "tcp-tokio", "websocket"] }
 
 [target.'cfg(target_arch = "wasm32")'.dependencies]
 getrandom = { version = "0.2", features = ["js"] } # see https://docs.rs/getrandom/0.2.0/getrandom/#webassembly-support
-libp2p = { git = "https://github.com/libp2p/rust-libp2p.git", default-features = false, features = ["floodsub", "mplex", "noise", "ping", "request-response", "secp256k1", "wasm-ext", "wasm-ext-websocket"] }
+libp2p = { git = "https://github.com/libp2p/rust-libp2p.git", rev = "ef2afcd41eac1459c0408a7a6eb599bfc2035938", default-features = false, features = ["floodsub", "mplex", "noise", "ping", "request-response", "secp256k1", "wasm-ext", "wasm-ext-websocket"] }
 wasm-bindgen-futures = "0.4.21"
 
 [dev-dependencies]

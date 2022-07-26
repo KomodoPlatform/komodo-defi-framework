@@ -11,10 +11,10 @@ edition = "2018"
 
 [dependencies]
 bitcoin = "0.27.1"
-lightning = { git = "https://github.com/shamardy/rust-lightning", branch = "0.0.106", features = ["std"] }
+lightning = { git = "https://github.com/shamardy/rust-lightning", rev = "af4a89c08c22d0110d386df0e288b2f825aaebbc", features = ["std"] }
 
 [dev-dependencies]
 db_common = { path = "../../db_common" }
-lightning = { git = "https://github.com/shamardy/rust-lightning", branch = "0.0.106", features = ["_test_utils"] }
-lightning-invoice = { git = "https://github.com/shamardy/rust-lightning", branch = "0.0.106" }
+lightning = { git = "https://github.com/shamardy/rust-lightning", rev = "af4a89c08c22d0110d386df0e288b2f825aaebbc", features = ["_test_utils"] }
+lightning-invoice = { git = "https://github.com/shamardy/rust-lightning", rev = "af4a89c08c22d0110d386df0e288b2f825aaebbc" }
 lightning-persister = { version = "0.0.106", path = "../lightning_persister" }
