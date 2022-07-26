@@ -3,7 +3,7 @@ use super::{EthCoin, GuiAuthMessages, RpcTransportEventHandler, RpcTransportEven
 use futures::TryFutureExt;
 use futures01::{Future, Poll};
 use jsonrpc_core::{Call, Response};
-use mm2_net::transport::GuiAuthValidationGenerator;
+use mm2_net::transport::{GuiAuthValidation, GuiAuthValidationGenerator};
 use serde_json::Value as Json;
 #[cfg(not(target_arch = "wasm32"))] use std::ops::Deref;
 use std::sync::atomic::{AtomicUsize, Ordering};
@@ -19,6 +19,13 @@ use web3::{RequestId, Transport};
 #[derive(Debug, Clone)]
 pub struct EthFeeHistoryNamespace<T> {
     transport: T,
+}
+
+#[derive(Serialize, Clone)]
+pub struct AuthPayload<'a> {
+    #[serde(flatten)]
+    pub request: &'a Call,
+    pub signed_message: GuiAuthValidation,
 }
 
 impl<T: Transport> Namespace<T> for EthFeeHistoryNamespace<T> {
@@ -181,9 +188,8 @@ async fn send_request(
         let mut serialized_request = serialized_request.clone();
         if node.gui_auth {
             if let Some(generator) = gui_auth_validation_generator.clone() {
-                let mut json_payload: Json = serde_json::from_str(&serialized_request)?;
-                json_payload["signed_message"] = match EthCoin::generate_gui_auth_signed_validation(generator) {
-                    Ok(t) => serde_json::to_value(t)?,
+                let signed_message = match EthCoin::generate_gui_auth_signed_validation(generator) {
+                    Ok(t) => t,
                     Err(e) => {
                         errors.push(ERRL!(
                             "GuiAuth signed message generation failed for {:?} node, error: {:?}",
@@ -193,8 +199,13 @@ async fn send_request(
                         continue;
                     },
                 };
-                common::drop_mutability!(json_payload);
-                serialized_request = json_payload.to_string();
+
+                let auth_request = AuthPayload {
+                    request: &request,
+                    signed_message,
+                };
+
+                serialized_request = to_string(&auth_request);
             } else {
                 errors.push(ERRL!("GuiAuthValidationGenerator is not provided for {:?} node", node));
                 continue;
