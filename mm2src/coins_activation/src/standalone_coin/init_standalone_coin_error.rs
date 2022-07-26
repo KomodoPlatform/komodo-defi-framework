@@ -74,9 +74,10 @@ impl HttpStatusCode for InitStandaloneCoinError {
             | InitStandaloneCoinError::UnexpectedCoinProtocol { .. }
             | InitStandaloneCoinError::CoinCreationError { .. } => StatusCode::BAD_REQUEST,
             InitStandaloneCoinError::TaskTimedOut { .. } => StatusCode::REQUEST_TIMEOUT,
-            InitStandaloneCoinError::HwError(_)
-            | InitStandaloneCoinError::Transport(_)
-            | InitStandaloneCoinError::Internal(_) => StatusCode::INTERNAL_SERVER_ERROR,
+            InitStandaloneCoinError::HwError(_) => StatusCode::GONE,
+            InitStandaloneCoinError::Transport(_) | InitStandaloneCoinError::Internal(_) => {
+                StatusCode::INTERNAL_SERVER_ERROR
+            },
         }
     }
 }

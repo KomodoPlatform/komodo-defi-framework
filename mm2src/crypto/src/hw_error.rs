@@ -68,8 +68,8 @@ impl From<Bip32Error> for HwError {
 /// This enum consists of error types that cli/GUI must handle correctly,
 /// so please extend it if it's required **only**.
 ///
-/// Please also note that this enum is a fieldless.
-#[derive(Clone, Debug, Display, Serialize)]
+/// Please also note that this enum is fieldless.
+#[derive(Clone, Debug, Display, Serialize, PartialEq)]
 pub enum HwRpcError {
     #[display(fmt = "No Trezor device available")]
     NoTrezorDeviceAvailable = 0,

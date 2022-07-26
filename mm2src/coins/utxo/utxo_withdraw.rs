@@ -11,7 +11,7 @@ use common::now_ms;
 use crypto::hw_rpc_task::{HwConnectStatuses, TrezorRpcTaskConnectProcessor};
 use crypto::trezor::client::TrezorClient;
 use crypto::trezor::{TrezorError, TrezorProcessingError};
-use crypto::{Bip32Error, CryptoCtx, CryptoInitError, DerivationPath, HwError, HwProcessingError};
+use crypto::{CryptoCtx, CryptoInitError, DerivationPath, HwError, HwProcessingError, HwRpcError};
 use keys::{Public as PublicKey, Type as ScriptType};
 use mm2_core::mm_ctx::MmArc;
 use mm2_err_handle::prelude::*;
@@ -59,17 +59,25 @@ impl From<TrezorProcessingError<RpcTaskError>> for WithdrawError {
 
 impl From<HwError> for WithdrawError {
     fn from(e: HwError) -> Self {
-        let error = e.to_string();
         match e {
-            HwError::NoTrezorDeviceAvailable => WithdrawError::NoTrezorDeviceAvailable,
-            HwError::FoundUnexpectedDevice { .. } => WithdrawError::FoundUnexpectedDevice(error),
-            _ => WithdrawError::HardwareWalletInternal(error),
+            HwError::NoTrezorDeviceAvailable | HwError::DeviceDisconnected => {
+                WithdrawError::HwError(HwRpcError::NoTrezorDeviceAvailable)
+            },
+            HwError::CannotChooseDevice { .. } => WithdrawError::HwError(HwRpcError::FoundMultipleDevices),
+            HwError::ConnectionTimedOut { timeout } => WithdrawError::Timeout(timeout),
+            HwError::FoundUnexpectedDevice { .. } => WithdrawError::HwError(HwRpcError::FoundUnexpectedDevice),
+            other => WithdrawError::InternalError(other.to_string()),
         }
     }
 }
 
 impl From<TrezorError> for WithdrawError {
-    fn from(e: TrezorError) -> Self { WithdrawError::HardwareWalletInternal(e.to_string()) }
+    fn from(e: TrezorError) -> Self {
+        match e {
+            TrezorError::DeviceDisconnected => WithdrawError::HwError(HwRpcError::NoTrezorDeviceAvailable),
+            other => WithdrawError::InternalError(other.to_string()),
+        }
+    }
 }
 
 impl From<CryptoInitError> for WithdrawError {
@@ -87,12 +95,6 @@ impl From<RpcTaskError> for WithdrawError {
             },
             RpcTaskError::Internal(internal) => WithdrawError::InternalError(internal),
         }
-    }
-}
-
-impl From<Bip32Error> for WithdrawError {
-    fn from(e: Bip32Error) -> Self {
-        WithdrawError::HardwareWalletInternal(format!("Error parsing pubkey received from Hardware Wallet: {}", e))
     }
 }
 
@@ -374,7 +376,7 @@ impl<'a, Coin> InitUtxoWithdraw<'a, Coin> {
         let crypto_ctx = CryptoCtx::from_ctx(&self.ctx)?;
         let hw_ctx = crypto_ctx
             .hw_ctx()
-            .or_mm_err(|| WithdrawError::NoTrezorDeviceAvailable)?;
+            .or_mm_err(|| WithdrawError::HwError(HwRpcError::NoTrezorDeviceAvailable))?;
 
         let trezor_connect_processor = TrezorRpcTaskConnectProcessor::new(self.task_handle, HwConnectStatuses {
             on_connect: WithdrawInProgressStatus::WaitingForTrezorToConnect,

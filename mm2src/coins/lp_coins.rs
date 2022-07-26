@@ -36,7 +36,7 @@ use async_trait::async_trait;
 use base58::FromBase58Error;
 use common::mm_metrics::MetricsWeak;
 use common::{calc_total_pages, now_ms, ten, HttpStatusCode};
-use crypto::{Bip32Error, CryptoCtx, DerivationPath};
+use crypto::{Bip32Error, CryptoCtx, DerivationPath, HwRpcError};
 use derive_more::Display;
 use futures::compat::Future01CompatExt;
 use futures::lock::Mutex as AsyncMutex;
@@ -1411,21 +1411,9 @@ impl DelegationError {
     }
 }
 
-#[derive(Clone, Debug, Deserialize, Display, Serialize, SerializeErrorType, PartialEq)]
+#[derive(Clone, Debug, Display, Serialize, SerializeErrorType, PartialEq)]
 #[serde(tag = "error_type", content = "error_data")]
 pub enum WithdrawError {
-    /*                                              */
-    /*------------ Trezor device errors ------------*/
-    /*                                             */
-    #[display(fmt = "Trezor internal error: {}", _0)]
-    HardwareWalletInternal(String),
-    #[display(fmt = "No Trezor device available")]
-    NoTrezorDeviceAvailable,
-    #[display(fmt = "Unexpected Hardware Wallet device: {}", _0)]
-    FoundUnexpectedDevice(String),
-    /*                                         */
-    /*------------- WithdrawError -------------*/
-    /*                                         */
     #[display(
         fmt = "'{}' coin doesn't support 'init_withdraw' yet. Consider using 'withdraw' request instead",
         coin
@@ -1460,6 +1448,8 @@ pub enum WithdrawError {
     UnexpectedFromAddress(String),
     #[display(fmt = "Unknown '{}' account", account_id)]
     UnknownAccount { account_id: u32 },
+    #[display(fmt = "{}", _0)]
+    HwError(HwRpcError),
     #[display(fmt = "Transport error: {}", _0)]
     Transport(String),
     #[display(fmt = "Internal error: {}", _0)]
@@ -1480,10 +1470,8 @@ impl HttpStatusCode for WithdrawError {
             | WithdrawError::FromAddressNotFound
             | WithdrawError::UnexpectedFromAddress(_)
             | WithdrawError::UnknownAccount { .. } => StatusCode::BAD_REQUEST,
-            WithdrawError::NoTrezorDeviceAvailable | WithdrawError::FoundUnexpectedDevice(_) => StatusCode::GONE,
-            WithdrawError::HardwareWalletInternal(_)
-            | WithdrawError::Transport(_)
-            | WithdrawError::InternalError(_) => StatusCode::INTERNAL_SERVER_ERROR,
+            WithdrawError::HwError(_) => StatusCode::GONE,
+            WithdrawError::Transport(_) | WithdrawError::InternalError(_) => StatusCode::INTERNAL_SERVER_ERROR,
         }
     }
 }
