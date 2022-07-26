@@ -1,9 +1,10 @@
 use crate::request_response::Codec;
+use crate::NetworkInfo;
 use futures::StreamExt;
 use libp2p::swarm::NetworkBehaviour;
 use libp2p::{multiaddr::{Multiaddr, Protocol},
-             request_response::{handler::RequestProtocol, ProtocolName, ProtocolSupport, RequestResponse,
-                                RequestResponseConfig, RequestResponseEvent, RequestResponseMessage},
+             request_response::{ProtocolName, ProtocolSupport, RequestResponse, RequestResponseConfig,
+                                RequestResponseEvent, RequestResponseMessage},
              swarm::{NetworkBehaviourAction, NetworkBehaviourEventProcess, PollParameters},
              NetworkBehaviour, PeerId};
 use log::{error, info, warn};
@@ -71,7 +72,7 @@ pub enum PeersExchangeResponse {
 
 /// Behaviour that requests known peers list from other peers at random
 #[derive(NetworkBehaviour)]
-#[behaviour(poll_method = "poll")]
+#[behaviour(poll_method = "poll", event_process = true)]
 pub struct PeersExchange {
     request_response: RequestResponse<PeersExchangeCodec>,
     #[behaviour(ignore)]
@@ -79,16 +80,16 @@ pub struct PeersExchange {
     #[behaviour(ignore)]
     reserved_peers: Vec<PeerId>,
     #[behaviour(ignore)]
-    events: VecDeque<NetworkBehaviourAction<RequestProtocol<PeersExchangeCodec>, ()>>,
+    events: VecDeque<NetworkBehaviourAction<(), <Self as NetworkBehaviour>::ConnectionHandler>>,
     #[behaviour(ignore)]
     maintain_peers_interval: Interval,
     #[behaviour(ignore)]
-    netid_port: u16,
+    network_info: NetworkInfo,
 }
 
 #[allow(clippy::new_without_default)]
 impl PeersExchange {
-    pub fn new(netid_port: u16) -> Self {
+    pub fn new(network_info: NetworkInfo) -> Self {
         let codec = Codec::default();
         let protocol = iter::once((PeersExchangeProtocol::Version1, ProtocolSupport::Full));
         let config = RequestResponseConfig::default();
@@ -102,7 +103,7 @@ impl PeersExchange {
                 Instant::now() + Duration::from_secs(REQUEST_PEERS_INITIAL_DELAY),
                 Duration::from_secs(REQUEST_PEERS_INTERVAL),
             ),
-            netid_port,
+            network_info,
         }
     }
 
@@ -131,7 +132,7 @@ impl PeersExchange {
 
     fn forget_peer_addresses(&mut self, peer: &PeerId) {
         for address in self.request_response.addresses_of_peer(peer) {
-            if !self.is_reserved_peer(&peer) {
+            if !self.is_reserved_peer(peer) {
                 self.request_response.remove_address(peer, &address);
             }
         }
@@ -140,6 +141,7 @@ impl PeersExchange {
     pub fn add_peer_addresses_to_known_peers(&mut self, peer: &PeerId, addresses: PeerAddresses) {
         for address in addresses.iter() {
             if !self.validate_global_multiaddr(address) {
+                warn!("Attempt adding a not valid address of the peer '{}': {}", peer, address);
                 return;
             }
         }
@@ -161,14 +163,14 @@ impl PeersExchange {
             }
         }
 
-        if !self.reserved_peers.contains(&peer) && !addresses.is_empty() {
+        if !self.reserved_peers.contains(peer) && !addresses.is_empty() {
             self.reserved_peers.push(*peer);
         }
 
         let already_reserved = self.request_response.addresses_of_peer(peer);
         for address in addresses {
             if !already_reserved.contains(&address) {
-                self.request_response.add_address(&peer, address);
+                self.request_response.add_address(peer, address);
             }
         }
     }
@@ -221,6 +223,11 @@ impl PeersExchange {
     }
 
     fn validate_global_multiaddr(&self, address: &Multiaddr) -> bool {
+        let network_ports = match self.network_info {
+            NetworkInfo::Distributed { network_ports } => network_ports,
+            NetworkInfo::InMemory => panic!("PeersExchange must not be used with in-memory network"),
+        };
+
         let mut components = address.iter();
         match components.next() {
             Some(Protocol::Ip4(addr)) => {
@@ -233,7 +240,8 @@ impl PeersExchange {
 
         match components.next() {
             Some(Protocol::Tcp(port)) => {
-                if port != self.netid_port {
+                // currently, `NetworkPorts::ws` is not supported by `PeersExchange`
+                if port != network_ports.tcp {
                     return false;
                 }
             },
@@ -259,6 +267,7 @@ impl PeersExchange {
 
             for address in addresses {
                 if !self.validate_global_multiaddr(address) {
+                    warn!("Received a not valid address: {}", address);
                     return false;
                 }
             }
@@ -270,7 +279,7 @@ impl PeersExchange {
         &mut self,
         cx: &mut Context,
         _params: &mut impl PollParameters,
-    ) -> Poll<NetworkBehaviourAction<RequestProtocol<PeersExchangeCodec>, ()>> {
+    ) -> Poll<NetworkBehaviourAction<(), <Self as NetworkBehaviour>::ConnectionHandler>> {
         while let Poll::Ready(Some(())) = self.maintain_peers_interval.poll_next_unpin(cx) {
             self.maintain_known_peers();
         }
@@ -339,8 +348,8 @@ impl NetworkBehaviourEventProcess<RequestResponseEvent<PeersExchangeRequest, Pee
 
 #[cfg(test)]
 mod tests {
-    use crate::peers_exchange::{PeerIdSerde, PeersExchange};
-    use crate::PeerId;
+    use super::{NetworkInfo, PeerIdSerde, PeersExchange};
+    use crate::{NetworkPorts, PeerId};
     use libp2p::core::Multiaddr;
     use std::collections::{HashMap, HashSet};
     use std::iter::FromIterator;
@@ -355,7 +364,10 @@ mod tests {
 
     #[test]
     fn test_validate_get_known_peers_response() {
-        let behaviour = PeersExchange::new(3000);
+        let network_info = NetworkInfo::Distributed {
+            network_ports: NetworkPorts { tcp: 3000, wss: 3010 },
+        };
+        let behaviour = PeersExchange::new(network_info);
         let response = HashMap::default();
         assert!(!behaviour.validate_get_known_peers_response(&response));
 
@@ -400,7 +412,7 @@ mod tests {
 
     #[test]
     fn test_get_random_known_peers() {
-        let mut behaviour = PeersExchange::new(3000);
+        let mut behaviour = PeersExchange::new(NetworkInfo::InMemory);
         let peer_id = PeerId::random();
         behaviour.add_known_peer(peer_id);
 

@@ -36,13 +36,13 @@ impl<T: fmt::Display> fmt::Display for DuplexMutexGuard<'_, T> {
     fn fmt(&self, ft: &mut fmt::Formatter<'_>) -> fmt::Result { (**self).fmt(ft) }
 }
 
-struct Impl<T> {
+pub struct Impl<T> {
     locked: AtomicUsize,
     data: UnsafeCell<T>,
 }
 
 // We're only using `Impl::data` behind an `Arc` and a lock.
-unsafe impl<T> Send for Impl<T> {}
+unsafe impl<T> Send for Impl<T> where T: Send {}
 unsafe impl<T> Sync for Impl<T> {}
 
 impl<T> Impl<T> {
@@ -130,7 +130,7 @@ pub struct DuplexMutex<T> {
     pimpl: Arc<Impl<T>>,
 }
 
-unsafe impl<T> Send for DuplexMutex<T> {}
+unsafe impl<T> Send for DuplexMutex<T> where Arc<Impl<T>>: Send {}
 
 impl<T> Clone for DuplexMutex<T> {
     fn clone(&self) -> DuplexMutex<T> {

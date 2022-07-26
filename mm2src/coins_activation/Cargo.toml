@@ -1,0 +1,25 @@
+[package]
+name = "coins_activation"
+version = "0.1.0"
+edition = "2018"
+
+# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
+
+[dependencies]
+async-trait = "0.1"
+coins = { path = "../coins" }
+common = { path = "../common" }
+mm2_core = { path = "../mm2_core" }
+mm2_err_handle = { path = "../mm2_err_handle" }
+mm2_number = { path = "../mm2_number" }
+crypto = { path = "../crypto" }
+derive_more = "0.99"
+futures = { version = "0.3", package = "futures", features = ["compat", "async-await"] }
+hex = "0.4.2"
+rpc = { path = "../mm2_bitcoin/rpc" }
+rpc_task = { path = "../rpc_task" }
+ser_error = { path = "../derives/ser_error" }
+ser_error_derive = { path = "../derives/ser_error_derive" }
+serde = "1.0"
+serde_derive = "1.0"
+serde_json = { version = "1.0", features = ["preserve_order", "raw_value"] }

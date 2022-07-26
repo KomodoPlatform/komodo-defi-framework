@@ -7,6 +7,7 @@ parameters:
   bob_userpass: ''
   alice_passphrase: ''
   alice_userpass: ''
+  telegram_api_key: ''
 
 jobs:
   - job: ${{ parameters.name }}
@@ -30,25 +31,58 @@ jobs:
           export TAG="$(git rev-parse --short=9 HEAD)"
           echo "##vso[task.setvariable variable=COMMIT_HASH]${TAG}"
         displayName: Setup ENV
+      # On MacOS, cross-compile for x86_64-apple-darwin
       - bash: |
           rm -rf upload
           mkdir upload
-          echo 2.1.$(Build.BuildId)_$(Build.SourceBranchName)_$(COMMIT_HASH)_$(Agent.OS)_Release > MM_VERSION
+          VERSION=2.1.$(Build.BuildId)_$(Build.SourceBranchName)_$(COMMIT_HASH)_$(Agent.OS)_Release
+          if ! grep -q $VERSION MM_VERSION; then
+            echo $VERSION > MM_VERSION
+          fi
           cat MM_VERSION
-          cargo build --release --bin mm2
+          if [ $AGENT_OS = "Darwin" ]
+          then
+            cargo build --bin mm2 --release --target x86_64-apple-darwin
+          else
+            cargo build --bin mm2 --release
+          fi
         displayName: 'Build MM2 Release'
-      - bash: |
-          cargo test --target wasm32-unknown-unknown --release --bin mm2
-        displayName: 'Test MM2 WASM'
-        condition: eq( variables['Agent.OS'], 'Linux' )
+        condition: ne ( variables['Build.Reason'], 'PullRequest' )
         env:
-          WASM_BINDGEN_TEST_TIMEOUT: 120
-          GECKODRIVER: '/home/azureagent/wasm/geckodriver'
+          MANUAL_MM_VERSION: true
+      - task: Docker@2
+        displayName: Build & Push container of dev branch
+        condition: and( eq( variables['Agent.OS'], 'Linux' ), eq( variables['Build.SourceBranchName'], 'dev' ) )
+        inputs:
+          containerRegistry: dockerhub
+          repository: komodoofficial/atomicdexapi
+          command: buildAndPush
+          tags: |
+            dev-$(COMMIT_HASH)
+            dev-latest
+          Dockerfile: Dockerfile.dev-release
+      - bash: |
+          rm -rf atomicdex-deployments
+          git clone git@github.com:KomodoPlatform/atomicdex-deployments.git
+          if [ -d "atomicdex-deployments/atomicDEX-API" ]; then
+            cd atomicdex-deployments/atomicDEX-API
+            sed -i "1s/^.*$/$(COMMIT_HASH)/" .commit
+            git add .commit
+            git commit -m "[atomicDEX-API] $(COMMIT_HASH) is committed for git & container registry"
+            git push
+          fi
+        condition: and( eq( variables['Agent.OS'], 'Linux' ), eq( variables['Build.SourceBranchName'], 'dev' ) )
+        displayName: 'Update playground deployment'
       # Explicit --test-threads=16 makes testing process slightly faster on agents that have <16 CPU cores.
       # Always run tests on mm2.1 branch and PRs
+      # On MacOS, run for x86_64-apple-darwin
       - bash: |
-          cargo clean -p mm2-libp2p -p mm2
-          cargo test --all -- --test-threads=16
+          if [ $AGENT_OS = "Darwin" ]
+          then
+            cargo test --all --target x86_64-apple-darwin -- --test-threads=16
+          else
+            cargo test --all -- --test-threads=32
+          fi
         displayName: 'Test MM2'
         timeoutInMinutes: 22
         env:
@@ -56,34 +90,32 @@ jobs:
           BOB_USERPASS: $(${{ parameters.bob_userpass }})
           ALICE_PASSPHRASE: $(${{ parameters.alice_passphrase }})
           ALICE_USERPASS: $(${{ parameters.alice_userpass }})
+          TELEGRAM_API_KEY: $(${{ parameters.telegram_api_key }})
           RUST_LOG: debug
+          MANUAL_MM_VERSION: true
         condition: or( eq( variables['Build.Reason'], 'PullRequest' ), eq( variables['Build.SourceBranchName'], 'mm2.1' ), eq( variables['Build.SourceBranchName'], 'dev' ) )
       - bash: |
-          cargo clippy -- -D warnings
-        displayName: 'Check Clippy warnings'
-        condition: eq( variables['Agent.OS'], 'Linux' )
-      - bash: |
-          cargo deny check advisories
-        displayName: 'Check Cargo deny advisories'
-        condition: eq( variables['Agent.OS'], 'Linux' )
-        enabled: false
-      - bash: |
-          cargo fmt -- --check
-        displayName: 'Check rustfmt warnings'
-        condition: eq( variables['Agent.OS'], 'Linux' )
+          containers=$(docker ps -q | wc -l)
+          echo $containers
+          if [ $containers -gt 0 ]; then
+            docker rm -f $(docker ps -q)
+          fi
+        displayName: 'Clean up Docker containers'
+        # Run unconditionally even if previous steps failed
+        condition: true
       - bash: |
           zip upload/mm2-$(COMMIT_HASH)-$(Agent.OS)-Release target/release/mm2 -j
         displayName: 'Prepare release build upload Linux'
-        condition: eq( variables['Agent.OS'], 'Linux' )
+        condition: and ( eq( variables['Agent.OS'], 'Linux' ), ne ( variables['Build.Reason'], 'PullRequest' ) )
       - bash: |
-          cd target/release
-          zip ../../upload/mm2-$(COMMIT_HASH)-$(Agent.OS)-Release mm2.dSYM mm2 -r
+          cd target/x86_64-apple-darwin/release
+          zip ../../../upload/mm2-$(COMMIT_HASH)-$(Agent.OS)-Release mm2.dSYM mm2 -r
         displayName: 'Prepare release build upload MacOS'
-        condition: eq( variables['Agent.OS'], 'Darwin' )
+        condition: and ( eq( variables['Agent.OS'], 'Darwin' ), ne ( variables['Build.Reason'], 'PullRequest' ) )
       - powershell: |
           7z a .\upload\mm2-$(COMMIT_HASH)-$(Agent.OS)-Release.zip .\target\release\mm2.exe .\target\release\*.dll "$Env:windir\system32\msvcr100.dll" "$Env:windir\system32\msvcp140.dll" "$Env:windir\system32\vcruntime140.dll"
         displayName: 'Prepare release build upload Windows'
-        condition: eq( variables['Agent.OS'], 'Windows_NT' )
+        condition: and ( eq( variables['Agent.OS'], 'Windows_NT' ), ne ( variables['Build.Reason'], 'PullRequest' ) )
       # https://docs.microsoft.com/en-us/azure/devops/pipelines/tasks/deploy/copy-files-over-ssh?view=vsts
       - task: CopyFilesOverSSH@0
         inputs:
@@ -93,4 +125,4 @@ jobs:
           targetFolder: "uploads/$(Build.SourceBranchName)" # Optional
           overwrite: true
         displayName: 'Upload nightly'
-        condition: ne(variables['build.sourceBranch'], 'refs/heads/mm2')
+        condition: ne ( variables['Build.Reason'], 'PullRequest' )

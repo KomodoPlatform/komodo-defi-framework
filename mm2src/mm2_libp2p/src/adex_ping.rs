@@ -1,3 +1,4 @@
+use libp2p::swarm::NetworkBehaviour;
 use libp2p::{ping::{Ping, PingConfig, PingEvent},
              swarm::{CloseConnection, NetworkBehaviourAction, NetworkBehaviourEventProcess, PollParameters},
              NetworkBehaviour};
@@ -12,12 +13,12 @@ use void::Void;
 /// Libp2p has unclear ConnectionHandlers keep alive logic so in some cases even if Ping handler emits Close event the
 /// connection is kept active which is undesirable.
 #[derive(NetworkBehaviour)]
-#[behaviour(out_event = "Void")]
+#[behaviour(out_event = "Void", event_process = true)]
 #[behaviour(poll_method = "poll_event")]
 pub struct AdexPing {
     ping: Ping,
     #[behaviour(ignore)]
-    events: VecDeque<NetworkBehaviourAction<Void, Void>>,
+    events: VecDeque<NetworkBehaviourAction<Void, <Self as NetworkBehaviour>::ConnectionHandler>>,
 }
 
 impl NetworkBehaviourEventProcess<PingEvent> for AdexPing {
@@ -45,7 +46,7 @@ impl AdexPing {
         &mut self,
         _cx: &mut Context,
         _params: &mut impl PollParameters,
-    ) -> Poll<NetworkBehaviourAction<Void, Void>> {
+    ) -> Poll<NetworkBehaviourAction<Void, <Self as NetworkBehaviour>::ConnectionHandler>> {
         if let Some(event) = self.events.pop_front() {
             return Poll::Ready(event);
         }

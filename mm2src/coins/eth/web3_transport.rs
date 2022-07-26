@@ -57,9 +57,9 @@ impl<T: Transport> EthFeeHistoryNamespace<T> {
 /// Parse bytes RPC response into `Result`.
 /// Implementation copied from Web3 HTTP transport
 #[cfg(not(target_arch = "wasm32"))]
-fn single_response<T: Deref<Target = [u8]>>(response: T) -> Result<Json, Error> {
-    let response =
-        serde_json::from_slice(&*response).map_err(|e| Error::from(ErrorKind::InvalidResponse(format!("{}", e))))?;
+fn single_response<T: Deref<Target = [u8]>>(response: T, rpc_url: &str) -> Result<Json, Error> {
+    let response = serde_json::from_slice(&*response)
+        .map_err(|e| Error::from(ErrorKind::InvalidResponse(format!("{}: {}", rpc_url, e))))?;
 
     match response {
         Response::Single(output) => to_result_from_output(output),
@@ -114,7 +114,7 @@ impl<T: Future> Future for SendFuture<T> {
     fn poll(&mut self) -> Poll<Self::Item, Self::Error> { self.0.poll() }
 }
 
-unsafe impl<T> Send for SendFuture<T> {}
+unsafe impl<T> Send for SendFuture<T> where T: Send {}
 unsafe impl<T> Sync for SendFuture<T> {}
 
 impl Transport for Web3Transport {
@@ -150,10 +150,13 @@ async fn send_request(
     event_handlers: Vec<RpcTransportEventHandlerShared>,
 ) -> Result<Json, Error> {
     use common::executor::Timer;
-    use common::wio::slurp_reqʹ;
+    use common::log::warn;
     use futures::future::{select, Either};
     use gstuff::binprint;
     use http::header::HeaderValue;
+    use mm2_net::transport::slurp_req;
+
+    const REQUEST_TIMEOUT_S: f64 = 60.;
 
     let mut errors = Vec::new();
     for uri in uris.iter() {
@@ -165,13 +168,15 @@ async fn send_request(
         *req.uri_mut() = uri.clone();
         req.headers_mut()
             .insert(http::header::CONTENT_TYPE, HeaderValue::from_static("application/json"));
-        let timeout = Timer::sleep(60.);
-        let req = Box::pin(slurp_reqʹ(req));
+        let timeout = Timer::sleep(REQUEST_TIMEOUT_S);
+        let req = Box::pin(slurp_req(req));
         let rc = select(req, timeout).await;
         let res = match rc {
             Either::Left((r, _t)) => r,
             Either::Right((_t, _r)) => {
-                errors.push(ERRL!("timeout"));
+                let error = ERRL!("Error requesting '{}': {}s timeout expired", uri, REQUEST_TIMEOUT_S);
+                warn!("{}", error);
+                errors.push(error);
                 continue;
             },
         };
@@ -179,7 +184,7 @@ async fn send_request(
         let (status, _headers, body) = match res {
             Ok(r) => r,
             Err(err) => {
-                errors.push(err);
+                errors.push(err.to_string());
                 continue;
             },
         };
@@ -187,17 +192,18 @@ async fn send_request(
         event_handlers.on_incoming_response(&body);
 
         if !status.is_success() {
-            errors.push(ERRL!("!200: {}, {}", status, binprint(&body, b'.')));
+            errors.push(ERRL!(
+                "Server '{}' response !200: {}, {}",
+                uri,
+                status,
+                binprint(&body, b'.')
+            ));
             continue;
         }
 
-        return single_response(body);
+        return single_response(body, &uri.to_string());
     }
-    Err(ErrorKind::Transport(fomat!(
-        "request " [request] " failed: "
-        for err in errors {(err)} sep {"; "}
-    ))
-    .into())
+    Err(request_failed_error(&request, &errors))
 }
 
 #[cfg(target_arch = "wasm32")]
@@ -210,7 +216,7 @@ async fn send_request(
 
     let mut transport_errors = Vec::new();
     for uri in uris {
-        match send_request_once(&request_payload, &uri, &event_handlers).await {
+        match send_request_once(request_payload.clone(), &uri, &event_handlers).await {
             Ok(response_json) => return Ok(response_json),
             Err(Error(ErrorKind::Transport(e), _)) => {
                 transport_errors.push(e.to_string());
@@ -219,23 +225,16 @@ async fn send_request(
         }
     }
 
-    Err(ErrorKind::Transport(fomat!(
-        "request " [request] " failed: "
-        for err in transport_errors {(err)} sep {"; "}
-    ))
-    .into())
+    Err(request_failed_error(&request, &transport_errors))
 }
 
 #[cfg(target_arch = "wasm32")]
 async fn send_request_once(
-    request_payload: &String,
+    request_payload: String,
     uri: &http::Uri,
     event_handlers: &Vec<RpcTransportEventHandlerShared>,
 ) -> Result<Json, Error> {
-    use wasm_bindgen::prelude::*;
-    use wasm_bindgen::JsCast;
-    use wasm_bindgen_futures::JsFuture;
-    use web_sys::{Request, RequestInit, RequestMode, Response as JsResponse};
+    use mm2_net::wasm_http::FetchRequest;
 
     macro_rules! try_or {
         ($exp:expr, $errkind:ident) => {
@@ -246,43 +245,39 @@ async fn send_request_once(
         };
     }
 
-    let window = web_sys::window().expect("!window");
-
     // account for outgoing traffic
     event_handlers.on_outgoing_request(request_payload.as_bytes());
 
-    let mut opts = RequestInit::new();
-    opts.method("POST");
-    opts.mode(RequestMode::Cors);
-    opts.body(Some(&JsValue::from_str(&request_payload)));
+    let result = FetchRequest::post(&uri.to_string())
+        .cors()
+        .body_utf8(request_payload)
+        .header("Accept", "application/json")
+        .header("Content-Type", "application/json")
+        .request_str()
+        .await;
+    let (status_code, response_str) = try_or!(result, Transport);
+    if !status_code.is_success() {
+        return Err(Error::from(ErrorKind::Transport(ERRL!(
+            "!200: {}, {}",
+            status_code,
+            response_str
+        ))));
+    }
 
-    let request = try_or!(Request::new_with_str_and_init(&uri.to_string(), &opts), Transport);
+    // account for incoming traffic
+    event_handlers.on_incoming_response(response_str.as_bytes());
 
-    request.headers().set("Accept", "application/json").unwrap();
-    request.headers().set("Content-Type", "application/json").unwrap();
-
-    let request_promise = window.fetch_with_request(&request);
-
-    let future = JsFuture::from(request_promise);
-    let resp_value = try_or!(future.await, Transport);
-    let js_response: JsResponse = try_or!(resp_value.dyn_into(), Transport);
-
-    let resp_txt_fut = try_or!(js_response.text(), Transport);
-    let resp_txt = try_or!(JsFuture::from(resp_txt_fut).await, Transport);
-
-    let resp_str = resp_txt.as_string().ok_or_else(|| {
-        Error::from(ErrorKind::Transport(ERRL!(
-            "Expected a UTF-8 string JSON, found {:?}",
-            resp_txt
-        )))
-    })?;
-    event_handlers.on_incoming_response(resp_str.as_bytes());
-
-    let response: Response = try_or!(serde_json::from_str(&resp_str), InvalidResponse);
+    let response: Response = try_or!(serde_json::from_str(&response_str), InvalidResponse);
     match response {
         Response::Single(output) => to_result_from_output(output),
         Response::Batch(_) => Err(Error::from(ErrorKind::InvalidResponse(
             "Expected single, got batch.".to_owned(),
         ))),
     }
+}
+
+fn request_failed_error(request: &Call, errors: &[String]) -> Error {
+    let errors = errors.join("; ");
+    let error = format!("request {:?} failed: {}", request, errors);
+    Error::from(ErrorKind::Transport(error))
 }

@@ -214,8 +214,8 @@ mod tests {
             (-256, vec![0, 129]),
             (2500000, vec![160, 37, 38]),
             (-2500000, vec![160, 37, 166]),
-            (i64::max_value(), vec![255, 255, 255, 255, 255, 255, 255, 127]),
-            (i64::min_value(), vec![0, 0, 0, 0, 0, 0, 0, 128, 128]),
+            (i64::MAX, vec![255, 255, 255, 255, 255, 255, 255, 127]),
+            (i64::MIN, vec![0, 0, 0, 0, 0, 0, 0, 128, 128]),
             (Opcode::OP_4 as i64, vec![84]),
             (Opcode::OP_CALL as i64, vec![194, 0]),
         ];
@@ -247,7 +247,7 @@ mod tests {
         let script: Script = "5403a02526012844a9059cbb0000000000000000000000000240b898276ad2cc0d2fe6f527e8e31104e7fde3000000000000000000000000000000000000000000000000000000003b9aca0014d362e096e873eb7907e205fadc6175c6fec7bc44c2".into();
 
         let to_addr: UtxoAddress = "qHmJ3KA6ZAjR9wGjpFASn4gtUSeFAqdZgs".into();
-        let to_addr = qtum::contract_addr_from_utxo_addr(to_addr);
+        let to_addr = qtum::contract_addr_from_utxo_addr(to_addr).unwrap();
         let amount: U256 = 1000000000.into();
         let function = eth::ERC20_CONTRACT.function("transfer").unwrap();
         let expected = function

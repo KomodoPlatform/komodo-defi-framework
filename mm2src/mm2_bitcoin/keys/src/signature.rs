@@ -90,3 +90,7 @@ impl From<&'static str> for CompactSignature {
 impl From<H520> for CompactSignature {
     fn from(h: H520) -> Self { CompactSignature(h) }
 }
+
+impl From<Vec<u8>> for CompactSignature {
+    fn from(v: Vec<u8>) -> Self { CompactSignature(H520::from(&v[..])) }
+}

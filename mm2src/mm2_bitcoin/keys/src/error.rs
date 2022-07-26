@@ -1,7 +1,7 @@
 use secp256k1::Error as SecpError;
 use std::fmt;
 
-#[derive(Debug, PartialEq)]
+#[derive(Debug, PartialEq, Serialize)]
 pub enum Error {
     InvalidPublic,
     InvalidSecret,

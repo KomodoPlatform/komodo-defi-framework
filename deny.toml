@@ -47,7 +47,12 @@ yanked = "warn"
 notice = "warn"
 # A list of advisory IDs to ignore. Note that ignored advisories will still
 # output a note when they are encountered.
+
+# RUSTSEC-2021-0113 is related to metrics-util crate that is not actively used for now despite being still present in deps tree
+# RUSTSEC-2020-0071 is related to time crate, which is used only by chrono in our deps tree, remove when https://github.com/chronotope/chrono/issues/700 is resolved
 ignore = [
+    "RUSTSEC-2021-0113",
+    "RUSTSEC-2020-0071",
     #"RUSTSEC-0000-0000",
 ]
 # Threshold for security vulnerabilities, any vulnerability with a CVSS score
@@ -143,7 +148,7 @@ registries = [
 # https://embarkstudios.github.io/cargo-deny/checks/bans/cfg.html
 [bans]
 # Lint level for when multiple versions of the same crate are detected
-multiple-versions = "warn"
+multiple-versions = "deny"
 # Lint level for when a crate version requirement is `*`
 wildcards = "allow"
 # The graph highlighting used when creating dotgraphs for crates
@@ -167,8 +172,112 @@ deny = [
     #{ name = "ansi_term", version = "=0.11.0", wrappers = [] },
 ]
 # Certain crates/versions that will be skipped when doing duplicate detection.
+# The goal is to reduce this list as much as possible
 skip = [
-    #{ name = "ansi_term", version = "=0.11.0" },
+    { name = "aes", version = "*" },
+    { name = "ahash", version = "*" },
+    { name = "arrayvec", version = "*" },
+    { name = "autocfg", version = "*" },
+    { name = "base64", version = "*" },
+    { name = "bitvec", version = "*" },
+    { name = "block-buffer", version = "*" },
+    { name = "block-padding", version = "*" },
+    { name = "byteorder", version = "*" },
+    { name = "bytes", version = "*" },
+    { name = "cfg-if", version = "*" },
+    { name = "cipher", version = "*" },
+    { name = "cloudabi", version = "*" },
+    { name = "cpufeatures", version = "*" },
+    { name = "crossbeam-channel", version = "*" },
+    { name = "crossbeam-deque", version = "*" },
+    { name = "crossbeam-epoch", version = "*" },
+    { name = "crossbeam-utils", version = "*" },
+    { name = "crunchy", version = "*" },
+    { name = "crypto-mac", version = "*" },
+    { name = "cuckoofilter", version = "*" },
+    { name = "curve25519-dalek", version = "*" },
+    { name = "derivation-path", version = "*" },
+    { name = "digest", version = "*" },
+    { name = "ed25519-dalek-bip32", version = "*" },
+    { name = "env_logger", version = "*" },
+    { name = "ethbloom", version = "*" },
+    { name = "ethereum-types", version = "*" },
+    { name = "ff", version = "*" },
+    { name = "fixed-hash", version = "*" },
+    { name = "funty", version = "*" },
+    { name = "futures", version = "*" },
+    { name = "futures-rustls", version = "*" },
+    { name = "generic-array", version = "*" },
+    { name = "getrandom", version = "*" },
+    { name = "group", version = "*" },
+    { name = "hashbrown", version = "*" },
+    { name = "hdrhistogram", version = "*" },
+    { name = "hex", version = "*" },
+    { name = "hmac", version = "*" },
+    { name = "http", version = "*" },
+    { name = "http-body", version = "*" },
+    { name = "humantime", version = "*" },
+    { name = "idna", version = "*" },
+    { name = "impl-codec", version = "*" },
+    { name = "itoa", version = "*" },
+    { name = "jsonrpc-core", version = "*" },
+    { name = "libp2p-floodsub", version = "*" },
+    { name = "libsecp256k1", version = "*" },
+    { name = "libsecp256k1-core", version = "*" },
+    { name = "libsecp256k1-gen-ecmult", version = "*" },
+    { name = "libsecp256k1-gen-genmult", version = "*" },
+    { name = "lock_api", version = "*" },
+    { name = "log", version = "*" },
+    { name = "memoffset", version = "*" },
+    { name = "miniz_oxide", version = "*" },
+    { name = "mio", version = "*" },
+    { name = "num-bigint", version = "*" },
+    { name = "opaque-debug", version = "*" },
+    { name = "parking_lot", version = "*" },
+    { name = "parking_lot_core", version = "*" },
+    { name = "pbkdf2", version = "*" },
+    { name = "percent-encoding", version = "*" },
+    { name = "petgraph", version = "*" },
+    { name = "pin-project", version = "*" },
+    { name = "pin-project-internal", version = "*" },
+    { name = "pin-project-lite", version = "*" },
+    { name = "proc-macro-crate", version = "*" },
+    { name = "proc-macro2", version = "*" },
+    { name = "quote", version = "*" },
+    { name = "radium", version = "*" },
+    { name = "rand", version = "*" },
+    { name = "rand_chacha", version = "*" },
+    { name = "rand_core", version = "*" },
+    { name = "rand_hc", version = "*" },
+    { name = "rand_pcg", version = "*" },
+    { name = "redox_syscall", version = "*" },
+    { name = "redox_users", version = "*" },
+    { name = "rlp", version = "*" },
+    { name = "rustc-hex", version = "*" },
+    { name = "rustc_version", version = "*" },
+    { name = "rustls", version = "*" },
+    { name = "rustls-pemfile", version = "*" },
+    { name = "scopeguard", version = "*" },
+    { name = "sct", version = "*" },
+    { name = "semver", version = "*" },
+    { name = "send_wrapper", version = "*" },
+    { name = "sha2", version = "*" },
+    { name = "slab", version = "*" },
+    { name = "smallvec", version = "*" },
+    { name = "socket2", version = "*" },
+    { name = "subtle", version = "*" },
+    { name = "syn", version = "*" },
+    { name = "time", version = "*" },
+    { name = "tiny-keccak", version = "*" },
+    { name = "tokio-util", version = "*" },
+    { name = "trie-root", version = "*" },
+    { name = "uint", version = "*" },
+    { name = "unicode-xid", version = "*" },
+    { name = "unsigned-varint", version = "*" },
+    { name = "url", version = "*" },
+    { name = "wasi", version = "*" },
+    { name = "webpki", version = "*" },
+    { name = "wyz", version = "*" },
 ]
 # Similarly to `skip` allows you to skip certain crates during duplicate 
 # detection. Unlike skip, it also includes the entire tree of transitive 

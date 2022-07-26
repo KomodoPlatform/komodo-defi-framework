@@ -1,6 +1,7 @@
 use super::*;
 use crate::lp_coininit;
-use common::mm_ctx::MmCtxBuilder;
+use crypto::CryptoCtx;
+use mm2_core::mm_ctx::MmCtxBuilder;
 use wasm_bindgen_test::*;
 use web_sys::console;
 
@@ -26,6 +27,7 @@ async fn test_send() {
         ticker: "ETH".into(),
         coin_type: EthCoinType::Eth,
         my_address: key_pair.address(),
+        sign_message_prefix: Some(String::from("Ethereum Signed Message:\n")),
         key_pair,
         swap_contract_address: Address::from("0x7Bc1bBDD6A0a722fC9bffC49c921B685ECB84b94"),
         fallback_swap_contract: None,
@@ -43,6 +45,7 @@ async fn test_send() {
         required_confirmations: 1.into(),
         chain_id: None,
         logs_block_range: DEFAULT_LOGS_BLOCK_RANGE,
+        nonce_lock: new_nonce_lock(),
     }));
     let tx = coin
         .send_maker_payment(
@@ -51,6 +54,7 @@ async fn test_send() {
             &[1; 20],
             "0.001".parse().unwrap(),
             &None,
+            &[],
         )
         .compat()
         .await;
@@ -62,10 +66,6 @@ async fn test_send() {
 
 #[wasm_bindgen_test]
 async fn test_init_eth_coin() {
-    use common::privkey::key_pair_from_seed;
-
-    let key_pair =
-        key_pair_from_seed("spice describe gravity federal blast come thank unfair canal monkey style afraid").unwrap();
     let conf = json!({
         "coins": [{
             "coin": "ETH",
@@ -78,10 +78,13 @@ async fn test_init_eth_coin() {
             "mm2": 1
         }]
     });
-    let ctx = MmCtxBuilder::new()
-        .with_conf(conf)
-        .with_secp256k1_key_pair(key_pair)
-        .into_mm_arc();
+
+    let ctx = MmCtxBuilder::new().with_conf(conf).into_mm_arc();
+    CryptoCtx::init_with_iguana_passphrase(
+        ctx.clone(),
+        "spice describe gravity federal blast come thank unfair canal monkey style afraid",
+    )
+    .unwrap();
 
     let req = json!({
         "urls":["http://195.201.0.6:8565"],

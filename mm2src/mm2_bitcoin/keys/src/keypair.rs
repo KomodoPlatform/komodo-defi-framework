@@ -7,7 +7,7 @@ use secp256k1::{PublicKey, SecretKey};
 use std::fmt;
 use {Error, Private, Public, Secret};
 
-#[derive(Default, PartialEq)]
+#[derive(Clone, Copy, Default, PartialEq)]
 pub struct KeyPair {
     private: Private,
     public: Public,
@@ -30,7 +30,13 @@ impl fmt::Display for KeyPair {
 impl KeyPair {
     pub fn private(&self) -> &Private { &self.private }
 
+    pub fn private_bytes(&self) -> [u8; 32] { self.private.secret.take() }
+
+    pub fn private_ref(&self) -> &[u8; 32] { &self.private.secret }
+
     pub fn public(&self) -> &Public { &self.public }
+
+    pub fn public_slice(&self) -> &[u8] { &self.public }
 
     pub fn from_private(private: Private) -> Result<KeyPair, Error> {
         let s: SecretKey = SecretKey::from_slice(&*private.secret)?;
@@ -68,6 +74,21 @@ impl KeyPair {
                 checksum_type: ChecksumType::DSHA256,
             },
             public: Public::Normal(public),
+        }
+    }
+
+    pub fn random_compressed() -> Self {
+        let secp_secret = SecretKey::new(&mut rand::thread_rng());
+        let pub_key = PublicKey::from_secret_key(&SECP_SIGN, &secp_secret);
+
+        KeyPair {
+            private: Private {
+                prefix: 0,
+                secret: (*secp_secret.as_ref()).into(),
+                compressed: true,
+                checksum_type: Default::default(),
+            },
+            public: Public::Compressed(pub_key.serialize().into()),
         }
     }
 }

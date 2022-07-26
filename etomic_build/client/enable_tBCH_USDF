@@ -1,0 +1,54 @@
+#!/bin/bash
+source userpass
+curl --url "http://127.0.0.1:7783" --data '{
+  "userpass":"'$userpass'",
+  "method":"enable_bch_with_tokens",
+  "mmrpc":"2.0",
+  "params":{
+    "ticker":"tBCH",
+    "allow_slp_unsafe_conf":false,
+    "bchd_urls":[
+      "https://bchd-testnet.electroncash.de:18335"
+    ],
+    "mode":{
+      "rpc":"Electrum",
+      "rpc_data":{
+        "servers":[
+          {
+            "url":"electroncash.de:50003"
+          },
+          {
+            "url":"tbch.loping.net:60001"
+          },
+          {
+            "url":"blackie.c3-soft.com:60001"
+          },
+          {
+            "url":"bch0.kister.net:51001"
+          },
+          {
+            "url":"testnet.imaginary.cash:50001"
+          }
+        ]
+      }
+    },
+    "tx_history":true,
+    "slp_tokens_requests":[
+      {
+        "ticker":"USDF",
+        "required_confirmations": 1
+      }
+    ],
+    "required_confirmations": 1,
+    "requires_notarization":false,
+    "address_format":{
+      "format":"cashaddress",
+      "network":"bchtest"
+    },
+    "utxo_merge_params":{
+      "merge_at":50,
+      "check_every":10,
+      "max_merge_at_once":25
+    }
+  }
+}'

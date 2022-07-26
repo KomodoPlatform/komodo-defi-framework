@@ -6,7 +6,7 @@ curl --url "http://127.0.0.1:7783" --data '
   "method":"buy",
   "base":"'$1'",
   "rel":"'$2'",
-  "volume":"0.1",
-  "price":"2"
+  "volume":"0.777",
+  "price":"1"
 }
 '

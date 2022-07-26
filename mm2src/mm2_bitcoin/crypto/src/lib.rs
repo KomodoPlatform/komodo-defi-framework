@@ -1,6 +1,7 @@
 extern crate groestl;
 extern crate primitives;
 extern crate ripemd160;
+extern crate serialization;
 extern crate sha1;
 extern crate sha2;
 extern crate sha3;
@@ -8,9 +9,9 @@ extern crate siphasher;
 
 use groestl::Groestl512;
 use primitives::hash::{H160, H256, H32, H512};
-use ripemd160::Ripemd160;
+use ripemd160::{Digest, Ripemd160};
 use sha1::Sha1;
-use sha2::{Digest, Sha256};
+use sha2::Sha256;
 use sha3::Keccak256;
 use siphasher::sip::SipHasher24;
 use std::hash::Hasher;
@@ -20,7 +21,7 @@ use std::hash::Hasher;
 /// GRS uses double groestl512
 /// SMART uses keccak
 #[allow(clippy::upper_case_acronyms)]
-#[derive(Copy, Clone, Debug, PartialEq, Eq)]
+#[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
 pub enum ChecksumType {
     DSHA256,
     DGROESTL512,
@@ -35,40 +36,40 @@ impl Default for ChecksumType {
 #[inline]
 pub fn ripemd160(input: &[u8]) -> H160 {
     let mut hasher = Ripemd160::new();
-    hasher.input(input);
-    (*hasher.result()).into()
+    hasher.update(input);
+    (*hasher.finalize()).into()
 }
 
 /// SHA-1
 #[inline]
 pub fn sha1(input: &[u8]) -> H160 {
     let mut hasher = Sha1::default();
-    hasher.input(input);
-    (*hasher.result()).into()
+    hasher.update(input);
+    (*hasher.finalize()).into()
 }
 
 /// SHA-256
 #[inline]
 pub fn sha256(input: &[u8]) -> H256 {
     let mut hasher = Sha256::new();
-    hasher.input(input);
-    (*hasher.result()).into()
+    hasher.update(input);
+    (*hasher.finalize()).into()
 }
 
 /// Groestl-512
 #[inline]
 pub fn groestl512(input: &[u8]) -> H512 {
     let mut hasher = Groestl512::new();
-    hasher.input(input);
-    (*hasher.result()).into()
+    hasher.update(input);
+    (*hasher.finalize()).into()
 }
 
 /// Keccak-256
 #[inline]
 pub fn keccak256(input: &[u8]) -> H256 {
     let mut hasher = Keccak256::new();
-    hasher.input(input);
-    (*hasher.result()).into()
+    hasher.update(input);
+    (*hasher.finalize()).into()
 }
 
 /// Double Keccak-256

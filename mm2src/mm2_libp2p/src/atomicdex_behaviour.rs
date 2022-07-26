@@ -1,21 +1,25 @@
 use crate::{adex_ping::AdexPing,
+            network::{get_all_network_seednodes, NETID_7777},
             peers_exchange::{PeerAddresses, PeersExchange},
             request_response::{build_request_response_behaviour, PeerRequest, PeerResponse, RequestResponseBehaviour,
                                RequestResponseBehaviourEvent, RequestResponseSender},
-            runtime::{SwarmRuntimeOps, SWARM_RUNTIME}};
+            runtime::{SwarmRuntimeOps, SWARM_RUNTIME},
+            NetworkInfo, NetworkPorts, RelayAddress, RelayAddressError};
 use atomicdex_gossipsub::{Gossipsub, GossipsubConfigBuilder, GossipsubEvent, GossipsubMessage, MessageId, Topic,
                           TopicHash};
+use derive_more::Display;
 use futures::{channel::{mpsc::{channel, Receiver, Sender},
                         oneshot},
               future::{abortable, join_all, poll_fn, AbortHandle},
               Future, SinkExt, StreamExt};
-use libp2p::swarm::{IntoProtocolsHandler, NetworkBehaviour, ProtocolsHandler};
+use futures_rustls::rustls;
+use libp2p::core::transport::Boxed as BoxedTransport;
 use libp2p::{core::{ConnectedPoint, Multiaddr, Transport},
              identity,
              multiaddr::Protocol,
              noise,
              request_response::ResponseChannel,
-             swarm::{ExpandedSwarm, NetworkBehaviourEventProcess, Swarm},
+             swarm::{NetworkBehaviourEventProcess, Swarm},
              NetworkBehaviour, PeerId};
 use libp2p_floodsub::{Floodsub, FloodsubEvent, Topic as FloodsubTopic};
 use log::{debug, error, info};
@@ -25,7 +29,6 @@ use std::{collections::hash_map::{DefaultHasher, HashMap},
           hash::{Hash, Hasher},
           iter,
           net::IpAddr,
-          str::FromStr,
           task::{Context, Poll},
           time::Duration};
 use void::Void;
@@ -41,7 +44,6 @@ const CONNECTED_RELAYS_CHECK_INTERVAL: Duration = Duration::from_secs(30);
 const ANNOUNCE_INTERVAL: Duration = Duration::from_secs(600);
 const ANNOUNCE_INITIAL_DELAY: Duration = Duration::from_secs(60);
 const CHANNEL_BUF_SIZE: usize = 1024 * 8;
-const NETID_7777: u16 = 7777;
 
 /// Returns info about connected peers
 pub async fn get_peers_info(mut cmd_tx: AdexCmdTx) -> HashMap<String, Vec<String>> {
@@ -100,6 +102,11 @@ pub enum AdexBehaviourCmd {
     PublishMsg {
         topics: Vec<String>,
         msg: Vec<u8>,
+    },
+    PublishMsgFrom {
+        topics: Vec<String>,
+        msg: Vec<u8>,
+        from: PeerId,
     },
     /// Request relays sequential until a response is received.
     RequestAnyRelay {
@@ -227,7 +234,9 @@ impl From<GossipsubEvent> for AdexBehaviourEvent {
 
 /// AtomicDEX libp2p Network behaviour implementation
 #[derive(NetworkBehaviour)]
+#[behaviour(event_process = true)]
 pub struct AtomicDexBehaviour {
+    floodsub: Floodsub,
     #[behaviour(ignore)]
     event_tx: Sender<AdexBehaviourEvent>,
     #[behaviour(ignore)]
@@ -236,7 +245,6 @@ pub struct AtomicDexBehaviour {
     cmd_rx: Receiver<AdexBehaviourCmd>,
     #[behaviour(ignore)]
     netid: u16,
-    floodsub: Floodsub,
     gossipsub: Gossipsub,
     request_response: RequestResponseBehaviour,
     peers_exchange: PeersExchange,
@@ -260,6 +268,10 @@ impl AtomicDexBehaviour {
             },
             AdexBehaviourCmd::PublishMsg { topics, msg } => {
                 self.gossipsub.publish_many(topics.into_iter().map(Topic::new), msg);
+            },
+            AdexBehaviourCmd::PublishMsgFrom { topics, msg, from } => {
+                self.gossipsub
+                    .publish_many_from(topics.into_iter().map(Topic::new), msg, from);
             },
             AdexBehaviourCmd::RequestAnyRelay { req, response_tx } => {
                 let relays = self.gossipsub.get_relay_mesh();
@@ -306,7 +318,7 @@ impl AtomicDexBehaviour {
                         let connected_points = connected_points
                             .into_iter()
                             .map(|(_conn_id, point)| match point {
-                                ConnectedPoint::Dialer { address } => address.to_string(),
+                                ConnectedPoint::Dialer { address, .. } => address.to_string(),
                                 ConnectedPoint::Listener { send_back_addr, .. } => send_back_addr.to_string(),
                             })
                             .collect();
@@ -453,13 +465,7 @@ impl NetworkBehaviourEventProcess<RequestResponseBehaviourEvent> for AtomicDexBe
 }
 
 /// Custom types mapping the complex associated types of AtomicDexBehaviour to the ExpandedSwarm
-type AdexSwarmHandler = <<AtomicDexBehaviour as NetworkBehaviour>::ProtocolsHandler as IntoProtocolsHandler>::Handler;
-type AtomicDexSwarm = ExpandedSwarm<
-    AtomicDexBehaviour,
-    <AdexSwarmHandler as ProtocolsHandler>::InEvent,
-    <AdexSwarmHandler as ProtocolsHandler>::OutEvent,
-    <AtomicDexBehaviour as NetworkBehaviour>::ProtocolsHandler,
->;
+type AtomicDexSwarm = Swarm<AtomicDexBehaviour>;
 
 fn maintain_connection_to_relays(swarm: &mut AtomicDexSwarm, bootstrap_addresses: &[Multiaddr]) {
     let behaviour = swarm.behaviour();
@@ -486,7 +492,7 @@ fn maintain_connection_to_relays(swarm: &mut AtomicDexSwarm, bootstrap_addresses
                 .collect::<Vec<_>>()
                 .choose_multiple(&mut rng, connect_bootstrap_num)
             {
-                if let Err(e) = libp2p::Swarm::dial_addr(swarm, (*addr).clone()) {
+                if let Err(e) = libp2p::Swarm::dial(swarm, (*addr).clone()) {
                     error!("Bootstrap addr {} dial error {}", addr, e);
                 }
             }
@@ -496,7 +502,7 @@ fn maintain_connection_to_relays(swarm: &mut AtomicDexSwarm, bootstrap_addresses
                 if swarm.behaviour().gossipsub.is_connected_to_addr(&addr) {
                     continue;
                 }
-                if let Err(e) = libp2p::Swarm::dial_addr(swarm, addr.clone()) {
+                if let Err(e) = libp2p::Swarm::dial(swarm, addr.clone()) {
                     error!("Peer {} address {} dial error {}", peer, addr, e);
                 }
             }
@@ -545,68 +551,52 @@ fn announce_my_addresses(swarm: &mut AtomicDexSwarm) {
     }
 }
 
-const ALL_NETID_7777_SEEDNODES: &[(&str, &str)] = &[
-    (
-        "12D3KooWEsuiKcQaBaKEzuMtT6uFjs89P1E8MK3wGRZbeuCbCw6P",
-        "168.119.236.241",
-    ),
-    (
-        "12D3KooWKxavLCJVrQ5Gk1kd9m6cohctGQBmiKPS9XQFoXEoyGmS",
-        "168.119.236.249",
-    ),
-    (
-        "12D3KooWAToxtunEBWCoAHjefSv74Nsmxranw8juy3eKEdrQyGRF",
-        "168.119.236.240",
-    ),
-    (
-        "12D3KooWSmEi8ypaVzFA1AGde2RjxNW5Pvxw3qa2fVe48PjNs63R",
-        "168.119.236.239",
-    ),
-    (
-        "12D3KooWHKkHiNhZtKceQehHhPqwU5W1jXpoVBgS1qst899GjvTm",
-        "168.119.236.251",
-    ),
-    ("12D3KooWMrjLmrv8hNgAoVf1RfumfjyPStzd4nv5XL47zN4ZKisb", "168.119.237.8"),
-    (
-        "12D3KooWL6yrrNACb7t7RPyTEPxKmq8jtrcbkcNd6H5G2hK7bXaL",
-        "168.119.236.233",
-    ),
-    (
-        "12D3KooWHBeCnJdzNk51G4mLnao9cDsjuqiMTEo5wMFXrd25bd1F",
-        "168.119.236.243",
-    ),
-    (
-        "12D3KooW9soGyPfX6kcyh3uVXNHq1y2dPmQNt2veKgdLXkBiCVKq",
-        "168.119.236.246",
-    ),
-    ("12D3KooWPR2RoPi19vQtLugjCdvVmCcGLP2iXAzbDfP3tp81ZL4d", "168.119.237.13"),
-    ("12D3KooWKu8pMTgteWacwFjN7zRWWHb3bctyTvHU3xx5x4x6qDYY", "195.201.91.96"),
-    ("12D3KooWJWBnkVsVNjiqUEPjLyHpiSmQVAJ5t6qt1Txv5ctJi9Xd", "195.201.91.53"),
-    (
-        "12D3KooWGrUpCAbkxhPRioNs64sbUmPmpEcou6hYfrqQvxfWDEuf",
-        "168.119.174.126",
-    ),
-    ("12D3KooWEaZpH61H4yuQkaNG5AsyGdpBhKRppaLdAY52a774ab5u", "46.4.78.11"),
-    ("12D3KooWAd5gPXwX7eDvKWwkr2FZGfoJceKDCA53SHmTFFVkrN7Q", "46.4.87.18"),
-];
+#[derive(Debug, Display)]
+pub enum AdexBehaviourError {
+    #[display(fmt = "{}", _0)]
+    ParsingRelayAddress(RelayAddressError),
+}
+
+impl From<RelayAddressError> for AdexBehaviourError {
+    fn from(e: RelayAddressError) -> Self { AdexBehaviourError::ParsingRelayAddress(e) }
+}
+
+pub struct WssCerts {
+    pub server_priv_key: rustls::PrivateKey,
+    pub certs: Vec<rustls::Certificate>,
+}
 
 pub enum NodeType {
     Light {
-        network_port: u16,
+        network_ports: NetworkPorts,
     },
+    LightInMemory,
     Relay {
         ip: IpAddr,
-        network_port: u16,
-        network_ws_port: u16,
+        network_ports: NetworkPorts,
+        wss_certs: Option<WssCerts>,
+    },
+    RelayInMemory {
+        port: u64,
     },
 }
 
 impl NodeType {
-    pub fn is_relay(&self) -> bool { matches!(self, NodeType::Relay { .. }) }
-
-    pub fn network_port(&self) -> u16 {
+    pub fn to_network_info(&self) -> NetworkInfo {
         match self {
-            NodeType::Light { network_port } | NodeType::Relay { network_port, .. } => *network_port,
+            NodeType::Light { network_ports } | NodeType::Relay { network_ports, .. } => NetworkInfo::Distributed {
+                network_ports: *network_ports,
+            },
+            NodeType::LightInMemory | NodeType::RelayInMemory { .. } => NetworkInfo::InMemory,
+        }
+    }
+
+    pub fn is_relay(&self) -> bool { matches!(self, NodeType::Relay { .. } | NodeType::RelayInMemory { .. }) }
+
+    pub fn wss_certs(&self) -> Option<&WssCerts> {
+        match self {
+            NodeType::Relay { wss_certs, .. } => wss_certs.as_ref(),
+            _ => None,
         }
     }
 }
@@ -620,15 +610,14 @@ pub async fn spawn_gossipsub(
     netid: u16,
     force_key: Option<[u8; 32]>,
     spawn_fn: fn(Box<dyn Future<Output = ()> + Send + Unpin + 'static>) -> (),
-    to_dial: Vec<String>,
+    to_dial: Vec<RelayAddress>,
     node_type: NodeType,
     on_poll: impl Fn(&AtomicDexSwarm) + Send + 'static,
-) -> (Sender<AdexBehaviourCmd>, AdexEventRx, PeerId, AbortHandle) {
+) -> Result<(Sender<AdexBehaviourCmd>, AdexEventRx, PeerId, AbortHandle), AdexBehaviourError> {
     let (result_tx, result_rx) = futures::channel::oneshot::channel();
     let fut = async move {
-        let (cmd_tx, event_rx, peer_id, p2p_abort) =
-            start_gossipsub(netid, force_key, spawn_fn, to_dial, node_type, on_poll);
-        result_tx.send((cmd_tx, event_rx, peer_id, p2p_abort)).unwrap();
+        let result = start_gossipsub(netid, force_key, spawn_fn, to_dial, node_type, on_poll);
+        result_tx.send(result).unwrap();
     };
 
     // `Libp2p` must be spawned on the tokio runtime
@@ -650,53 +639,33 @@ fn start_gossipsub(
     netid: u16,
     force_key: Option<[u8; 32]>,
     spawn_fn: fn(Box<dyn Future<Output = ()> + Send + Unpin + 'static>) -> (),
-    to_dial: Vec<String>,
+    to_dial: Vec<RelayAddress>,
     node_type: NodeType,
     on_poll: impl Fn(&AtomicDexSwarm) + Send + 'static,
-) -> (Sender<AdexBehaviourCmd>, AdexEventRx, PeerId, AbortHandle) {
+) -> Result<(Sender<AdexBehaviourCmd>, AdexEventRx, PeerId, AbortHandle), AdexBehaviourError> {
     let i_am_relay = node_type.is_relay();
     let mut rng = rand::thread_rng();
     let local_key = generate_ed25519_keypair(&mut rng, force_key);
     let local_peer_id = PeerId::from(local_key.public());
     info!("Local peer id: {:?}", local_peer_id);
-    let network_port = node_type.network_port();
-
-    #[cfg(target_arch = "wasm32")]
-    let transport = {
-        let websocket = libp2p::wasm_ext::ffi::websocket_transport();
-        libp2p::wasm_ext::ExtTransport::new(websocket)
-    };
-
-    #[cfg(not(target_arch = "wasm32"))]
-    let transport = {
-        let tcp = libp2p::tcp::TokioTcpConfig::new().nodelay(true);
-        let dns_tcp =
-            libp2p::dns::TokioDnsConfig::custom(tcp, libp2p::dns::ResolverConfig::google(), Default::default())
-                .unwrap();
-        let ws_dns_tcp = libp2p::websocket::WsConfig::new(dns_tcp.clone());
-        dns_tcp.or_transport(ws_dns_tcp)
-    };
 
     let noise_keys = noise::Keypair::<noise::X25519Spec>::new()
         .into_authentic(&local_key)
         .expect("Signing libp2p-noise static DH keypair failed.");
 
-    // Set up an encrypted Transport over the Mplex protocol
-    let transport = transport
-        .upgrade(libp2p::core::upgrade::Version::V1)
-        .authenticate(noise::NoiseConfig::xx(noise_keys).into_authenticated())
-        .multiplex(libp2p::mplex::MplexConfig::default())
-        .timeout(std::time::Duration::from_secs(20))
-        .map(|(peer, muxer), _| (peer, libp2p::core::muxing::StreamMuxerBox::new(muxer)))
-        .boxed();
+    let network_info = node_type.to_network_info();
+    let transport = match network_info {
+        NetworkInfo::InMemory => build_memory_transport(noise_keys),
+        NetworkInfo::Distributed { .. } => build_dns_ws_transport(noise_keys, node_type.wss_certs()),
+    };
 
     let (cmd_tx, cmd_rx) = channel(CHANNEL_BUF_SIZE);
     let (event_tx, event_rx) = channel(CHANNEL_BUF_SIZE);
 
-    let bootstrap: Vec<Multiaddr> = to_dial
+    let bootstrap = to_dial
         .into_iter()
-        .map(|addr| parse_relay_address(addr, network_port))
-        .collect();
+        .map(|addr| addr.try_to_multiaddr(network_info))
+        .collect::<Result<Vec<Multiaddr>, _>>()?;
 
     let (mesh_n_low, mesh_n, mesh_n_high) = if i_am_relay { (4, 6, 12) } else { (2, 3, 4) };
 
@@ -728,11 +697,12 @@ fn start_gossipsub(
 
         let floodsub = Floodsub::new(local_peer_id, netid != NETID_7777);
 
-        let mut peers_exchange = PeersExchange::new(network_port);
-        if netid == NETID_7777 {
-            for (peer_id, address) in ALL_NETID_7777_SEEDNODES {
-                let peer_id = PeerId::from_str(peer_id).expect("valid peer id");
-                let multiaddr = parse_relay_address((*address).to_owned(), network_port);
+        let mut peers_exchange = PeersExchange::new(network_info);
+        if !network_info.in_memory() {
+            // Please note WASM nodes don't support `PeersExchange` currently,
+            // so `get_all_network_seednodes` returns an empty list.
+            for (peer_id, addr) in get_all_network_seednodes(netid) {
+                let multiaddr = addr.try_to_multiaddr(network_info)?;
                 peers_exchange.add_peer_addresses_to_known_peers(&peer_id, iter::once(multiaddr).collect());
                 gossipsub.add_explicit_relay(peer_id);
             }
@@ -745,11 +715,11 @@ fn start_gossipsub(
         let ping = AdexPing::new();
 
         let adex_behavior = AtomicDexBehaviour {
+            floodsub,
             event_tx,
             spawn_fn,
             cmd_rx,
             netid,
-            floodsub,
             gossipsub,
             request_response,
             peers_exchange,
@@ -764,20 +734,28 @@ fn start_gossipsub(
         .floodsub
         .subscribe(FloodsubTopic::new(PEERS_TOPIC.to_owned()));
 
-    if let NodeType::Relay {
-        ip,
-        network_port,
-        network_ws_port,
-    } = node_type
-    {
-        let dns_addr: Multiaddr = format!("/ip4/{}/tcp/{}", ip, network_port).parse().unwrap();
-        let ws_addr: Multiaddr = format!("/ip4/{}/tcp/{}/ws", ip, network_ws_port).parse().unwrap();
-        libp2p::Swarm::listen_on(&mut swarm, dns_addr).unwrap();
-        libp2p::Swarm::listen_on(&mut swarm, ws_addr).unwrap();
+    match node_type {
+        NodeType::Relay {
+            ip,
+            network_ports,
+            wss_certs,
+        } => {
+            let dns_addr: Multiaddr = format!("/ip4/{}/tcp/{}", ip, network_ports.tcp).parse().unwrap();
+            libp2p::Swarm::listen_on(&mut swarm, dns_addr).unwrap();
+            if wss_certs.is_some() {
+                let wss_addr: Multiaddr = format!("/ip4/{}/tcp/{}/wss", ip, network_ports.wss).parse().unwrap();
+                libp2p::Swarm::listen_on(&mut swarm, wss_addr).unwrap();
+            }
+        },
+        NodeType::RelayInMemory { port } => {
+            let memory_addr: Multiaddr = format!("/memory/{}", port).parse().unwrap();
+            libp2p::Swarm::listen_on(&mut swarm, memory_addr).unwrap();
+        },
+        _ => (),
     }
 
     for relay in bootstrap.choose_multiple(&mut rng, mesh_n) {
-        match libp2p::Swarm::dial_addr(&mut swarm, relay.clone()) {
+        match libp2p::Swarm::dial(&mut swarm, relay.clone()) {
             Ok(_) => info!("Dialed {}", relay),
             Err(e) => error!("Dial {:?} failed: {:?}", relay, e),
         }
@@ -829,7 +807,72 @@ fn start_gossipsub(
     let (polling_fut, abort_handle) = abortable(polling_fut);
     SWARM_RUNTIME.spawn(polling_fut);
 
-    (cmd_tx, event_rx, local_peer_id, abort_handle)
+    Ok((cmd_tx, event_rx, local_peer_id, abort_handle))
+}
+
+#[cfg(target_arch = "wasm32")]
+fn build_dns_ws_transport(
+    noise_keys: libp2p::noise::AuthenticKeypair<libp2p::noise::X25519Spec>,
+    _wss_certs: Option<&WssCerts>,
+) -> BoxedTransport<(PeerId, libp2p::core::muxing::StreamMuxerBox)> {
+    let websocket = libp2p::wasm_ext::ffi::websocket_transport();
+    let transport = libp2p::wasm_ext::ExtTransport::new(websocket);
+    upgrade_transport(transport, noise_keys)
+}
+
+#[cfg(not(target_arch = "wasm32"))]
+fn build_dns_ws_transport(
+    noise_keys: libp2p::noise::AuthenticKeypair<libp2p::noise::X25519Spec>,
+    wss_certs: Option<&WssCerts>,
+) -> BoxedTransport<(PeerId, libp2p::core::muxing::StreamMuxerBox)> {
+    use libp2p::websocket::tls as libp2p_tls;
+
+    let tcp = libp2p::tcp::TokioTcpConfig::new().nodelay(true);
+    let dns_tcp =
+        libp2p::dns::TokioDnsConfig::custom(tcp, libp2p::dns::ResolverConfig::google(), Default::default()).unwrap();
+    let mut ws_dns_tcp = libp2p::websocket::WsConfig::new(dns_tcp.clone());
+
+    if let Some(certs) = wss_certs {
+        let server_priv_key = libp2p_tls::PrivateKey::new(certs.server_priv_key.0.clone());
+        let certs = certs
+            .certs
+            .iter()
+            .map(|cert| libp2p_tls::Certificate::new(cert.0.clone()));
+        let wss_config = libp2p_tls::Config::new(server_priv_key, certs).unwrap();
+        ws_dns_tcp.set_tls_config(wss_config);
+    }
+
+    let transport = dns_tcp.or_transport(ws_dns_tcp);
+    upgrade_transport(transport, noise_keys)
+}
+
+fn build_memory_transport(
+    noise_keys: libp2p::noise::AuthenticKeypair<libp2p::noise::X25519Spec>,
+) -> BoxedTransport<(PeerId, libp2p::core::muxing::StreamMuxerBox)> {
+    let transport = libp2p::core::transport::MemoryTransport::default();
+    upgrade_transport(transport, noise_keys)
+}
+
+/// Set up an encrypted Transport over the Mplex protocol.
+fn upgrade_transport<T>(
+    transport: T,
+    noise_keys: libp2p::noise::AuthenticKeypair<libp2p::noise::X25519Spec>,
+) -> BoxedTransport<(PeerId, libp2p::core::muxing::StreamMuxerBox)>
+where
+    T: Transport + Send + Sync + 'static,
+    T::Output: futures::AsyncRead + futures::AsyncWrite + Unpin + Send + 'static,
+    T::ListenerUpgrade: Send,
+    T::Listener: Send,
+    T::Dial: Send,
+    T::Error: Send + Sync + 'static,
+{
+    transport
+        .upgrade(libp2p::core::upgrade::Version::V1)
+        .authenticate(noise::NoiseConfig::xx(noise_keys).into_authenticated())
+        .multiplex(libp2p::mplex::MplexConfig::default())
+        .timeout(std::time::Duration::from_secs(20))
+        .map(|(peer, muxer), _| (peer, libp2p::core::muxing::StreamMuxerBox::new(muxer)))
+        .boxed()
 }
 
 fn generate_ed25519_keypair<R: Rng>(rng: &mut R, force_key: Option<[u8; 32]>) -> identity::Keypair {
@@ -844,36 +887,6 @@ fn generate_ed25519_keypair<R: Rng>(rng: &mut R, force_key: Option<[u8; 32]>) ->
     let secret = identity::ed25519::SecretKey::from_bytes(&mut raw_key).expect("Secret length is 32 bytes");
     let keypair = identity::ed25519::Keypair::from(secret);
     identity::Keypair::Ed25519(keypair)
-}
-
-/// `addr` is expected to be either `/dns/<DOMAIN>/tcp/<PORT>` or `/ipv4/<IP_ADDR>/tcp/<PORT>` or an IPv4 address.
-#[cfg(target_arch = "wasm32")]
-pub fn parse_relay_address(addr: String, port: u16) -> Multiaddr {
-    let dns = addr.starts_with("/dns") && addr.contains("/tcp/") && addr.ends_with("/ws");
-    let ip4 = addr.starts_with("/ip4/") && addr.contains("/tcp/") && addr.ends_with("/ws");
-    if dns || ip4 {
-        return Multiaddr::from_str(&addr).unwrap();
-    }
-    // check if the address is IPv4
-    std::net::Ipv4Addr::from_str(&addr).unwrap();
-    Multiaddr::from_str(&format!("/ip4/{}/tcp/{}/ws", addr, port)).unwrap()
-}
-
-/// If the `addr` is in the "/ip4/{addr}/tcp/{port}" format then parse the `addr` immediately to the `Multiaddr`,
-/// else construct the "/ip4/{addr}/tcp/{port}" from the `addr` and `port` values.
-#[cfg(all(test, not(target_arch = "wasm32")))]
-pub fn parse_relay_address(addr: String, port: u16) -> Multiaddr {
-    if addr.starts_with("/ip4/") && addr.contains("/tcp/") {
-        return addr.parse().unwrap();
-    }
-
-    format!("/ip4/{}/tcp/{}", addr, port).parse().unwrap()
-}
-
-/// The `addr` is expected to be an IP of the relay.
-#[cfg(all(not(test), not(target_arch = "wasm32")))]
-pub fn parse_relay_address(ipv4_addr: String, port: u16) -> Multiaddr {
-    format!("/ip4/{}/tcp/{}", ipv4_addr, port).parse().unwrap()
 }
 
 /// Request the peers sequential until a `PeerResponse::Ok()` will not be received.

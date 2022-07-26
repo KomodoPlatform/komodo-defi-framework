@@ -6,10 +6,9 @@ use futures::io::{AsyncRead, AsyncWrite};
 use futures::task::{Context, Poll};
 use futures::StreamExt;
 use libp2p::core::upgrade::{read_length_prefixed, write_length_prefixed};
-use libp2p::request_response::handler::RequestProtocol;
 use libp2p::request_response::{ProtocolName, ProtocolSupport, RequestId, RequestResponse, RequestResponseCodec,
                                RequestResponseConfig, RequestResponseEvent, RequestResponseMessage, ResponseChannel};
-use libp2p::swarm::{NetworkBehaviourAction, NetworkBehaviourEventProcess, PollParameters};
+use libp2p::swarm::{NetworkBehaviour, NetworkBehaviourAction, NetworkBehaviourEventProcess, PollParameters};
 use libp2p::NetworkBehaviour;
 use libp2p::PeerId;
 use log::{debug, error, warn};
@@ -24,7 +23,6 @@ const MAX_BUFFER_SIZE: usize = 1024 * 1024 - 100;
 
 pub type RequestResponseReceiver = mpsc::UnboundedReceiver<(PeerId, PeerRequest, oneshot::Sender<PeerResponse>)>;
 pub type RequestResponseSender = mpsc::UnboundedSender<(PeerId, PeerRequest, oneshot::Sender<PeerResponse>)>;
-type ReqResCodec = Codec<Protocol, PeerRequest, PeerResponse>;
 
 /// Build a request-response network behaviour.
 pub fn build_request_response_behaviour() -> RequestResponseBehaviour {
@@ -39,13 +37,13 @@ pub fn build_request_response_behaviour() -> RequestResponseBehaviour {
     let timeout_interval = Interval::new(Duration::from_secs(1));
 
     RequestResponseBehaviour {
+        inner,
         rx,
         tx,
         pending_requests,
         events,
         timeout,
         timeout_interval,
-        inner,
     }
 }
 
@@ -63,9 +61,11 @@ struct PendingRequest {
 }
 
 #[derive(NetworkBehaviour)]
-#[behaviour(out_event = "RequestResponseBehaviourEvent")]
+#[behaviour(out_event = "RequestResponseBehaviourEvent", event_process = true)]
 #[behaviour(poll_method = "poll_event")]
 pub struct RequestResponseBehaviour {
+    /// The inner RequestResponse network behaviour.
+    inner: RequestResponse<Codec<Protocol, PeerRequest, PeerResponse>>,
     #[behaviour(ignore)]
     rx: RequestResponseReceiver,
     #[behaviour(ignore)]
@@ -81,8 +81,6 @@ pub struct RequestResponseBehaviour {
     /// Interval for request timeout check
     #[behaviour(ignore)]
     timeout_interval: Interval,
-    /// The inner RequestResponse network behaviour.
-    inner: RequestResponse<Codec<Protocol, PeerRequest, PeerResponse>>,
 }
 
 impl RequestResponseBehaviour {
@@ -111,7 +109,8 @@ impl RequestResponseBehaviour {
         &mut self,
         cx: &mut Context,
         _params: &mut impl PollParameters,
-    ) -> Poll<NetworkBehaviourAction<RequestProtocol<ReqResCodec>, RequestResponseBehaviourEvent>> {
+    ) -> Poll<NetworkBehaviourAction<RequestResponseBehaviourEvent, <Self as NetworkBehaviour>::ConnectionHandler>>
+    {
         // poll the `rx`
         match self.rx.poll_next_unpin(cx) {
             // received a request, forward it through the network and put to the `pending_requests`

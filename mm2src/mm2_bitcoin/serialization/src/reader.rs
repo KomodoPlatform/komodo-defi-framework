@@ -1,4 +1,5 @@
 use compact_integer::CompactInteger;
+use derive_more::Display;
 use std::{io, marker};
 
 pub fn deserialize<R, T>(buffer: R) -> Result<T, Error>
@@ -27,13 +28,15 @@ where
     }
 }
 
-#[derive(Debug, PartialEq)]
+#[derive(Debug, Display, PartialEq)]
 pub enum Error {
     MalformedData,
     UnexpectedEnd,
     UnreadData,
     Custom(String),
 }
+
+impl std::error::Error for Error {}
 
 impl From<io::Error> for Error {
     fn from(_: io::Error) -> Self { Error::UnexpectedEnd }
@@ -48,12 +51,22 @@ pub trait Deserializable {
 
 #[derive(Debug)]
 pub enum CoinVariant {
+    LBC,
     Standard,
     Qtum,
 }
 
 impl CoinVariant {
     pub fn is_qtum(&self) -> bool { matches!(self, CoinVariant::Qtum) }
+
+    pub fn is_lbc(&self) -> bool { matches!(self, CoinVariant::LBC) }
+}
+
+pub fn coin_variant_by_ticker(ticker: &str) -> CoinVariant {
+    match ticker {
+        "LBC" => CoinVariant::LBC,
+        _ => CoinVariant::Standard,
+    }
 }
 
 /// Bitcoin structures reader.

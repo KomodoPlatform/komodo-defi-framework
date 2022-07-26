@@ -1,144 +1,18 @@
-# Support for split-debuginfo [should eventually](https://github.com/rust-lang/rust/issues/34651) land,
-# hopefully giving us an out-of-the-box way to separate the code from the debugging information.
-# We should use the "objcopy --only-keep-debug" and "add-symbol-file" meanwhile
-# and separating stack tracing into raw trace and symbolication parts.
-
-[package]
-name = "mm2"
-version = "0.1.0"
-edition = "2018"
-default-run = "mm2"
-
-[features]
-# Deprecated
-native = []
-wallet-only = []
-zhtlc = ["coins/zhtlc"]
-
-[[bin]]
-name = "mm2"
-path = "mm2src/mm2_bin.rs"
-test = false
-doctest = false
-bench = false
-
-[[bin]]
-name = "docker_tests"
-path = "mm2src/docker_tests.rs"
-
-[lib]
-name = "mm2"
-path = "mm2src/mm2_lib.rs"
-crate-type = ["cdylib", "staticlib"]
-test = false
-doctest = false
-bench = false
-
-[profile.release]
-# Due to the "overrides" only affects our workspace crates, as intended.
-debug = true
-debug-assertions = false
-# For better or worse, might affect the stack traces in our portion of the code.
-#opt-level = 1
-
-[profile.release.package."*"]
-# Turns debugging symbols off for the out-of-workspace dependencies.
-debug = false
-
-[dependencies]
-async-std = { version = "1.5", features = ["unstable"] }
-async-trait = "0.1"
-bigdecimal = { version = "0.1", features = ["serde"] }
-bitcrypto = { path = "mm2src/mm2_bitcoin/crypto" }
-blake2 = "0.9.1"
-bytes = "0.4"
-chain = { path = "mm2src/mm2_bitcoin/chain" }
-coins = { path = "mm2src/coins" }
-common = { path = "mm2src/common" }
-crc = "1.8"
-crc32fast = { version = "1.2", features = ["std", "nightly"] }
-crossbeam = "0.7"
-derive_more = "0.99"
-either = "1.6"
-ethereum-types = { version = "0.4", default-features = false, features = ["std", "serialize"] }
-enum-primitive-derive = "0.1"
-fomat-macros = "0.2"
-futures01 = { version = "0.1", package = "futures" }
-futures-cpupool = "0.1"
-futures = { version = "0.3.1", package = "futures", features = ["compat", "async-await"] }
-gstuff = { version = "0.7", features = ["nightly"] }
-hash256-std-hasher = "0.15.2"
-hash-db = "0.15.2"
-hex = "0.3.2"
-hex-literal = "0.3.1"
-http = "0.2"
-itertools = "0.9"
-keys = { path = "mm2src/mm2_bitcoin/keys" }
-lazy_static = "1.4"
-libc = "0.2"
-metrics = "0.12"
-mm2-libp2p = { path = "mm2src/mm2_libp2p" }
-num-rational = { version = "0.2", features = ["serde", "bigint", "bigint-std"] }
-num-traits = "0.2"
-rpc = { path = "mm2src/mm2_bitcoin/rpc" }
-parking_lot = { version = "0.11", features = ["nightly"] }
-parity-util-mem = "0.9"
-# AP: portfolio RPCs are not documented and not used as of now
-# so the crate is disabled to speed up the entire removal of C code
-# portfolio = { path = "mm2src/portfolio" }
-primitives = { path = "mm2src/mm2_bitcoin/primitives" }
-rand = { version = "0.7", features = ["std", "small_rng"] }
-rmp-serde = "0.14.3"
-# TODO: Reduce the size of regex by disabling the features we don't use.
-# cf. https://github.com/rust-lang/regex/issues/583
-regex = "1"
-script = { path = "mm2src/mm2_bitcoin/script" }
-serde = "1.0"
-serde_bencode = "0.2"
-serde_json = { version = "1.0", features = ["preserve_order"] }
-serde_derive = "1.0"
-ser_error = { path = "mm2src/derives/ser_error" }
-ser_error_derive = { path = "mm2src/derives/ser_error_derive" }
-serialization = { path = "mm2src/mm2_bitcoin/serialization" }
-serialization_derive = { path = "mm2src/mm2_bitcoin/serialization_derive" }
-sp-runtime-interface = { version = "3.0.0", default-features = false, features = ["disable_target_static_assertions"] }
-sp-trie = { version = "3.0", default-features = false }
-sql-builder = "3.1.1"
-
-trie-db = { version = "0.22.6", default-features = false }
-trie-root = "0.16.0"
-uuid = { version = "0.7", features = ["serde", "v4"] }
-wasm-timer = "0.2.4"
-
-[target.'cfg(target_arch = "wasm32")'.dependencies]
-js-sys = { version = "0.3.27" }
-wasm-bindgen = { version = "0.2.50", features = ["serde-serialize", "nightly"] }
-wasm-bindgen-futures = { version = "0.4.1" }
-wasm-bindgen-test = { version = "0.3.1" }
-web-sys = { version = "0.3.4", features = ["console"] }
-
-[target.'cfg(not(target_arch = "wasm32"))'.dependencies]
-dirs = { version = "1" }
-hyper = { version = "0.14.11", features = ["client", "http2", "server", "tcp"] }
-tokio = { version = "1.7", features = ["io-util", "rt-multi-thread", "net"] }
-
-[dev-dependencies]
-bitcoin-cash-slp = "0.3.1"
-mocktopus = "0.7.0"
-rand6 = { version = "0.6", package = "rand" }
-secp256k1 = { version = "0.20", features = ["rand"] }
-testcontainers = { git = "https://github.com/artemii235/testcontainers-rs.git" }
-winapi = "0.3"
-
-[build-dependencies]
-chrono = "0.4"
-gstuff = { version = "0.7", features = ["nightly"] }
-regex = "1"
-
 [workspace]
 members = [
     "mm2src/coins",
+    "mm2src/coins/lightning_persister",
+    "mm2src/coins/lightning_background_processor",
+    "mm2src/coins/utxo_signer",
+    "mm2src/coins_activation",
+    "mm2src/common/shared_ref_counter",
+    "mm2src/crypto",
+    "mm2src/db_common",
+    "mm2src/derives/ser_error",
+    "mm2src/derives/ser_error_derive",
     "mm2src/floodsub",
+    "mm2src/gossipsub",
+    "mm2src/hw_common",
     "mm2src/mm2_bitcoin/crypto",
     "mm2src/mm2_bitcoin/chain",
     "mm2src/mm2_bitcoin/keys",
@@ -147,13 +21,38 @@ members = [
     "mm2src/mm2_bitcoin/script",
     "mm2src/mm2_bitcoin/serialization",
     "mm2src/mm2_bitcoin/serialization_derive",
+    "mm2src/mm2_bitcoin/test_helpers",
+    "mm2src/mm2_core",
+    "mm2src/mm2_db",
+    "mm2src/mm2_err_handle",
+    "mm2src/mm2_test_helpers",
     "mm2src/mm2_libp2p",
-    "mm2src/gossipsub",
-    "mm2src/derives/ser_error",
-    "mm2src/derives/ser_error_derive",
+    "mm2src/mm2_main",
+    "mm2src/mm2_net",
+    "mm2src/mm2_number",
+    "mm2src/mm2_io",
+    "mm2src/mm2_rpc",
+    "mm2src/rpc_task",
+    "mm2src/trezor",
 ]
+
 # https://doc.rust-lang.org/beta/cargo/reference/features.html#feature-resolver-version-2
 resolver = "2"
+
+[profile.release]
+# Due to the "overrides" only affects our workspace crates, as intended.
+debug = true
+debug-assertions = false
+# For better or worse, might affect the stack traces in our portion of the code.
+#opt-level = 1
+
+[profile.test]
+# required to avoid a long running process of librustcash additional chain validation that is enabled with debug assertions
+debug-assertions = false
+
+[profile.release.overrides."*"]
+# Turns debugging symbols off for the out-of-workspace dependencies.
+debug = false
 
 # The backtrace disables build.define("HAVE_DL_ITERATE_PHDR", "1"); for android which results in "unknown" function
 # names being printed, but dl_iterate_phdr is present since API version 21 https://github.com/rust-lang/rust/issues/17520#issuecomment-344885468
@@ -163,5 +62,3 @@ resolver = "2"
 [patch.crates-io]
 backtrace = { git = "https://github.com/artemii235/backtrace-rs.git" }
 backtrace-sys = { git = "https://github.com/artemii235/backtrace-rs.git" }
-num-rational = { git = "https://github.com/artemii235/num-rational.git" }
-parity-util-mem = { git = "https://github.com/KomodoPlatform/parity-common.git" }

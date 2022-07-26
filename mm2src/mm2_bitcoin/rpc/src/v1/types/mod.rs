@@ -23,3 +23,15 @@ pub use self::transaction::{GetRawTransactionResponse, RawTransaction, SignedTra
                             TransactionInputScript, TransactionOutput, TransactionOutputScript,
                             TransactionOutputWithAddress, TransactionOutputWithScriptData, TransactionOutputs};
 pub use self::uint::U256;
+
+pub trait ToTxHash {
+    fn to_tx_hash(&self) -> String;
+}
+
+impl ToTxHash for Bytes {
+    fn to_tx_hash(&self) -> String { format!("{:02x}", self) }
+}
+
+impl ToTxHash for Vec<u8> {
+    fn to_tx_hash(&self) -> String { Bytes::new(self.clone()).to_tx_hash() }
+}

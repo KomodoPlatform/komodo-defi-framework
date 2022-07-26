@@ -1,0 +1,27 @@
+[package]
+name = "hw_common"
+version = "0.1.0"
+edition = "2018"
+
+# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
+
+[dependencies]
+async-trait = "0.1"
+bip32 = { version = "0.2.2", default-features = false, features = ["alloc", "secp256k1-ffi"] }
+common = { path = "../common" }
+mm2_err_handle = { path = "../mm2_err_handle" }
+derive_more = "0.99"
+futures = { version = "0.3", package = "futures", features = ["compat", "async-await"] }
+secp256k1 = { version = "0.20", features = ["rand"] }
+serde = "1.0"
+serde_derive = "1.0"
+
+[target.'cfg(not(target_arch = "wasm32"))'.dependencies]
+rusb = { version = "0.7.0" }
+
+[target.'cfg(target_arch = "wasm32")'.dependencies]
+js-sys = { version = "0.3.27" }
+wasm-bindgen = { version = "0.2.50", features = ["nightly"] }
+wasm-bindgen-futures = { version = "0.4.1" }
+wasm-bindgen-test = { version = "0.3.1" }
+web-sys = { version = "0.3.55", features = ["console", "Navigator", "Usb", "UsbDevice", "UsbDeviceRequestOptions", "UsbInTransferResult"] }

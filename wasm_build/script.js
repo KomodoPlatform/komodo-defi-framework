@@ -2,10 +2,19 @@
 // that we have compiled.
 //
 // Note that the `default` import is an initialization function which
-// will "boot" the module and make it ready to use. Currently browsers
-// don't support natively imported WebAssembly as an ES module, but
+// will "boot" the module and make it ready to use.
+// Currently, browsers don't support natively imported WebAssembly as an ES module, but
 // eventually the manual initialization won't be required!
-import init, {mm2_main, mm2_main_status, mm2_rpc, LogLevel, Mm2MainErr, MainStatus, Mm2RpcErr} from "./deps/pkg/mm2.js";
+import init, {
+    mm2_main,
+    mm2_main_status,
+    mm2_rpc,
+    mm2_version,
+    LogLevel,
+    Mm2MainErr,
+    MainStatus,
+    Mm2RpcErr
+} from "./deps/pkg/mm2.js";
 
 const LOG_LEVEL = LogLevel.Debug;
 
@@ -24,6 +33,9 @@ async function init_wasm() {
 async function run_mm2(params) {
     // run an MM2 instance
     try {
+        const version = mm2_version();
+        console.info(`run_mm2() version=${version.result} datetime=${version.datetime}`);
+
         mm2_main(params, handle_log);
     } catch (e) {
         switch (e) {

@@ -1,0 +1,34 @@
+[package]
+name = "mm2_net"
+version = "0.1.0"
+edition = "2018"
+
+# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
+
+[dependencies]
+async-trait = "0.1"
+serde = "1"
+serde_json = { version = "1.0", features = ["preserve_order", "raw_value"] }
+bytes = "1.1"
+cfg-if = "1.0"
+common = { path = "../common" }
+mm2_err_handle = { path = "../mm2_err_handle" }
+mm2_core = { path = "../mm2_core" }
+derive_more = "0.99"
+http = "0.2"
+rand = { version = "0.7", features = ["std", "small_rng", "wasm-bindgen"] }
+futures = { version = "0.3", package = "futures", features = ["compat", "async-await", "thread-pool"] }
+lazy_static = "1.4"
+prost = "0.10"
+
+[target.'cfg(target_arch = "wasm32")'.dependencies]
+gstuff = { version = "0.7", features = ["nightly"] }
+wasm-bindgen = { version = "0.2.50", features = ["nightly"] }
+wasm-bindgen-test = { version = "0.3.2" }
+wasm-bindgen-futures = "0.4.21"
+web-sys = { version = "0.3.55", features = ["console", "CloseEvent", "DomException", "ErrorEvent", "IdbDatabase", "IdbCursor", "IdbCursorWithValue", "IdbFactory", "IdbIndex", "IdbIndexParameters", "IdbObjectStore", "IdbObjectStoreParameters", "IdbOpenDbRequest", "IdbKeyRange", "IdbTransaction", "IdbTransactionMode", "IdbVersionChangeEvent", "MessageEvent", "WebSocket"] }
+js-sys = "0.3.27"
+
+[target.'cfg(not(target_arch = "wasm32"))'.dependencies]
+hyper = { version = "0.14.11", features = ["client", "http2", "server", "tcp"] }
+gstuff = { version = "0.7", features = ["crossterm", "nightly"] }

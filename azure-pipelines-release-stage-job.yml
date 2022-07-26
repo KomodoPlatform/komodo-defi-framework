@@ -41,7 +41,10 @@ jobs:
           mkdir upload
         displayName: 'Recreate upload dir'
       - bash: |
-          echo 2.1.$(Build.BuildId)_$(Build.SourceBranchName)_$(COMMIT_HASH)_$(Agent.OS)_Debug > MM_VERSION
+          VERSION=2.1.$(Build.BuildId)_$(Build.SourceBranchName)_$(COMMIT_HASH)_$(Agent.OS)_Debug
+          if ! grep -q $VERSION MM_VERSION; then
+            echo $VERSION > MM_VERSION
+          fi
           cat MM_VERSION
           if [ $AGENT_OS = "Linux" ]
           then
@@ -62,6 +65,8 @@ jobs:
           fi
         displayName: 'Build MM2 Debug'
         condition: eq( variables['DEBUG_UPLOADED'], '' )
+        env:
+          MANUAL_MM_VERSION: true
       - bash: |
           zip upload/mm2-$(COMMIT_HASH)-$(Agent.OS)-Debug target-xenial/debug/mm2 target-xenial/debug/libmm2.a -j
         displayName: 'Prepare debug build upload Linux'
@@ -77,7 +82,10 @@ jobs:
         condition: and( eq( variables['Agent.OS'], 'Windows_NT' ), eq( variables['DEBUG_UPLOADED'], '' ) )
       - bash: |
           rm -f MM_VERSION
-          echo 2.1.$(Build.BuildId)_$(Build.SourceBranchName)_$(COMMIT_HASH)_$(Agent.OS)_Release > MM_VERSION
+          VERSION=2.1.$(Build.BuildId)_$(Build.SourceBranchName)_$(COMMIT_HASH)_$(Agent.OS)_Release
+          if ! grep -q $VERSION MM_VERSION; then
+            echo $VERSION > MM_VERSION
+          fi
           cat MM_VERSION
           touch mm2src/common/build.rs
           if [ $AGENT_OS = "Linux" ]
@@ -99,6 +107,8 @@ jobs:
           fi
         displayName: 'Build MM2 Release'
         condition: eq( variables['RELEASE_UPLOADED'], '' )
+        env:
+          MANUAL_MM_VERSION: true
       - bash: |
           objcopy --only-keep-debug target-xenial/release/mm2 target-xenial/release/mm2.debug
           objcopy --only-keep-debug target-xenial/release/libmm2.a target-xenial/release/libmm2.debug.a

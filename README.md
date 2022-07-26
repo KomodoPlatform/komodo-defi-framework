@@ -79,12 +79,12 @@ If you want to build from source, the following prerequisites are required:
 - [Rustup](https://rustup.rs/)
 - [Cmake](https://cmake.org/download/) version 3.12 or higher
 - OS specific build tools (e.g. [build-essential](https://linuxhint.com/install-build-essential-ubuntu/) on Linux, [XCode](https://apps.apple.com/us/app/xcode/id497799835?mt=12) on OSX or [MSVC](https://docs.microsoft.com/en-us/cpp/build/vscpp-step-0-installation?view=vs-2017) on Win)
-- (Optional) OSX: install [openssl](https://www.openssl.org/), e.g. `brew install openssl`.  
+- (Optional) OSX: install [openssl](https://www.openssl.org/), e.g. `brew install openssl`.
 - (Optional) OSX: run `LIBRARY_PATH=/usr/local/opt/openssl/lib`
 - Additional Rust Components
     ```
-    rustup install nightly-2021-05-17
-    rustup default nightly-2021-05-17
+    rustup install nightly-2022-02-01
+    rustup default nightly-2022-02-01
     rustup component add rustfmt-preview
     ```
         
@@ -92,6 +92,9 @@ To build, run `cargo build` (or `cargo build -vv` to get verbose build output).
 
 For more detailed instructions, please refer to the [Installation Guide](https://developers.komodoplatform.com/basic-docs/atomicdex/atomicdex-setup/get-started-atomicdex.html). 
 
+## Building WASM binary
+
+Please refer to the [WASM Build Guide](./docs/WASM_BUILD.md).
 
 ## Configuration
 
@@ -165,9 +168,9 @@ Refer to the [Komodo Developer Docs](https://developers.komodoplatform.com/basic
 
 ## Additional docs for developers
 
-- [Contribution guide](./CONTRIBUTING.md)  
-- [Setting up the environment to run the full tests suite](./docs/DEV_ENVIRONMENT.md)  
-- [Git flow and general workflow](./docs/GIT_FLOW_AND_WORKING_PROCESS.md)  
+- [Contribution guide](./CONTRIBUTING.md)
+- [Setting up the environment to run the full tests suite](./docs/DEV_ENVIRONMENT.md)
+- [Git flow and general workflow](./docs/GIT_FLOW_AND_WORKING_PROCESS.md)
 - [Komodo Developer Docs](https://developers.komodoplatform.com/basic-docs/atomicdex/introduction-to-atomicdex.html)
 
 

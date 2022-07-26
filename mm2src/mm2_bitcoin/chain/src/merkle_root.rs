@@ -19,7 +19,7 @@ where
     T: AsRef<H256>,
 {
     if hashes.len() == 1 {
-        return hashes[0].as_ref().clone();
+        return *hashes[0].as_ref();
     }
 
     let mut row = Vec::with_capacity(hashes.len() / 2);

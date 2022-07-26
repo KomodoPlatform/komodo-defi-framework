@@ -24,6 +24,9 @@
 mod tests {
     use super::super::*;
     use crate::GossipsubConfigBuilder;
+    use libp2p_core::Endpoint;
+    use std::net::IpAddr;
+    use std::str::FromStr;
 
     // helper functions for testing
 
@@ -50,10 +53,20 @@ mod tests {
         // build and connect peer_no random peers
         let mut peers = vec![];
 
-        for _ in 0..peer_no {
+        for i in 0..peer_no {
             let peer = PeerId::random();
             peers.push(peer.clone());
-            <Gossipsub as NetworkBehaviour>::inject_connected(&mut gs, &peer);
+            <Gossipsub as NetworkBehaviour>::inject_connection_established(
+                &mut gs,
+                &peer,
+                &ConnectionId::new(i),
+                &ConnectedPoint::Dialer {
+                    address: Multiaddr::from(IpAddr::from_str("127.0.0.1").unwrap()),
+                    role_override: Endpoint::Dialer,
+                },
+                None,
+                0,
+            );
             if to_subscribe {
                 gs.handle_received_subscriptions(
                     &topic_hashes
@@ -399,7 +412,7 @@ mod tests {
 
         // check that our subscriptions are sent to each of the peers
         // collect all the SendEvents
-        let send_events: Vec<&NetworkBehaviourAction<Arc<GossipsubRpc>, GossipsubEvent>> = gs
+        let send_events: Vec<&NetworkBehaviourAction<GossipsubEvent, GossipsubHandler, Arc<GossipsubRpc>>> = gs
             .events
             .iter()
             .filter(|e| match e {
