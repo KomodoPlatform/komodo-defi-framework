@@ -9,9 +9,10 @@ use http::{HeaderMap, StatusCode};
 use mm2_number::{BigDecimal, BigRational, Fraction, MmNumber};
 use mm2_test_helpers::for_tests::{check_my_swap_status, check_recent_swaps, check_stats_swap_status,
                                   enable_native as enable_native_impl, enable_qrc20, find_metrics_in_json,
-                                  from_env_file, init_z_coin_light, init_z_coin_status, mm_spat, sign_message,
-                                  verify_message, wait_till_history_has_records, LocalStart, MarketMakerIt, RaiiDump,
-                                  MAKER_ERROR_EVENTS, MAKER_SUCCESS_EVENTS, TAKER_ERROR_EVENTS, TAKER_SUCCESS_EVENTS};
+                                  from_env_file, init_z_coin_light, init_z_coin_status, mm_spat, morty_conf,
+                                  rick_conf, sign_message, verify_message, wait_till_history_has_records, LocalStart,
+                                  MarketMakerIt, Mm2TestConf, RaiiDump, MAKER_ERROR_EVENTS, MAKER_SUCCESS_EVENTS,
+                                  MORTY, RICK, TAKER_ERROR_EVENTS, TAKER_SUCCESS_EVENTS};
 use serde_json::{self as json, Value as Json};
 use std::collections::HashMap;
 use std::convert::{identity, TryFrom};
@@ -7363,4 +7364,135 @@ fn test_sign_verify_message_eth() {
     let response = response.result;
 
     assert!(response.is_valid);
+}
+
+#[test]
+#[cfg(not(target_arch = "wasm32"))]
+fn test_no_login() {
+    let coins = json!([rick_conf(), morty_conf()]);
+    let seednode_passphrase = get_passphrase(&".env.seed", "BOB_PASSPHRASE").unwrap();
+    let seednode_conf = Mm2TestConf::seednode(&seednode_passphrase, &coins);
+    let seednode = MarketMakerIt::start(seednode_conf.conf, seednode_conf.rpc_password, seednode_conf.local).unwrap();
+    let (_dump_log, _dump_dashboard) = seednode.mm_dump();
+    log!("log path: {}", seednode.log_path.display());
+
+    let no_login_conf = Mm2TestConf::no_login_node(&coins, &[&seednode.ip.to_string()]);
+    let no_login_node =
+        MarketMakerIt::start(no_login_conf.conf, no_login_conf.rpc_password, no_login_conf.local).unwrap();
+    let (_dump_log, _dump_dashboard) = no_login_node.mm_dump();
+    log!("log path: {}", no_login_node.log_path.display());
+
+    block_on(enable_electrum_json(&seednode, RICK, false, rick_electrums()));
+    block_on(enable_electrum_json(&seednode, MORTY, false, morty_electrums()));
+
+    let orders = [
+        // (base, rel, price, volume, min_volume)
+        ("RICK", "MORTY", "0.9", "0.9", None),
+        ("RICK", "MORTY", "0.8", "0.9", None),
+        ("RICK", "MORTY", "0.7", "0.9", Some("0.9")),
+        ("MORTY", "RICK", "0.8", "0.9", None),
+        ("MORTY", "RICK", "0.9", "0.9", None),
+    ];
+
+    for (base, rel, price, volume, min_volume) in orders.iter() {
+        let rc = block_on(seednode.rpc(&json! ({
+            "userpass": seednode.userpass,
+            "method": "setprice",
+            "base": base,
+            "rel": rel,
+            "price": price,
+            "volume": volume,
+            "min_volume": min_volume.unwrap_or("0.00777"),
+            "cancel_previous": false,
+        })))
+        .unwrap();
+        assert!(rc.0.is_success(), "!setprice: {}", rc.1);
+    }
+
+    let orderbook = block_on(no_login_node.rpc(&json! ({
+        "userpass": no_login_node.userpass,
+        "method": "orderbook",
+        "base": "RICK",
+        "rel": "MORTY",
+    })))
+    .unwrap();
+    assert!(orderbook.0.is_success(), "!orderbook: {}", orderbook.1);
+    let orderbook: OrderbookResponse = json::from_str(&orderbook.1).unwrap();
+    assert_eq!(orderbook.asks.len(), 3);
+    assert_eq!(orderbook.bids.len(), 2);
+
+    let orderbook_v2 = block_on(no_login_node.rpc(&json! ({
+        "userpass": no_login_node.userpass,
+        "mmrpc": "2.0",
+        "method": "orderbook",
+        "params": {
+            "base": "RICK",
+            "rel": "MORTY",
+        },
+    })))
+    .unwrap();
+    assert!(orderbook_v2.0.is_success(), "!orderbook: {}", orderbook_v2.1);
+    let orderbook_v2: RpcV2Response<OrderbookV2Response> = json::from_str(&orderbook_v2.1).unwrap();
+    let orderbook_v2 = orderbook_v2.result;
+    assert_eq!(orderbook_v2.asks.len(), 3);
+    assert_eq!(orderbook_v2.bids.len(), 2);
+
+    let best_orders = block_on(no_login_node.rpc(&json! ({
+        "userpass": no_login_node.userpass,
+        "method": "best_orders",
+        "coin": "RICK",
+        "action": "buy",
+        "volume": "0.1",
+    })))
+    .unwrap();
+    assert!(best_orders.0.is_success(), "!best_orders: {}", best_orders.1);
+    let best_orders: BestOrdersResponse = json::from_str(&best_orders.1).unwrap();
+    let best_morty_orders = best_orders.result.get("MORTY").unwrap();
+    assert_eq!(1, best_morty_orders.len());
+    let expected_price: BigDecimal = "0.8".parse().unwrap();
+    assert_eq!(expected_price, best_morty_orders[0].price);
+
+    let best_orders_v2 = block_on(no_login_node.rpc(&json! ({
+        "userpass": no_login_node.userpass,
+        "mmrpc": "2.0",
+        "method": "best_orders",
+        "params": {
+            "coin": "RICK",
+            "action": "buy",
+            "request_by": {
+                "type": "number",
+                "value": 1
+            }
+        },
+    })))
+    .unwrap();
+    assert!(best_orders_v2.0.is_success(), "!best_orders: {}", best_orders_v2.1);
+    let best_orders_v2: RpcV2Response<BestOrdersV2Response> = json::from_str(&best_orders_v2.1).unwrap();
+    let best_morty_orders = best_orders_v2.result.orders.get(MORTY).unwrap();
+    assert_eq!(1, best_morty_orders.len());
+    let expected_price: BigDecimal = "0.7".parse().unwrap();
+    assert_eq!(expected_price, best_morty_orders[0].price.decimal);
+
+    let orderbook_depth = block_on(no_login_node.rpc(&json! ({
+        "userpass": no_login_node.userpass,
+        "method": "orderbook_depth",
+        "pairs":[["RICK","MORTY"]]
+    })))
+    .unwrap();
+    assert!(
+        orderbook_depth.0.is_success(),
+        "!orderbook_depth: {}",
+        orderbook_depth.1
+    );
+    let orderbook_depth: OrderbookDepthResponse = json::from_str(&orderbook_depth.1).unwrap();
+    let orderbook_depth = orderbook_depth.result;
+    assert_eq!(orderbook_depth[0].depth.asks, 3);
+    assert_eq!(orderbook_depth[0].depth.bids, 2);
+
+    let version = block_on(no_login_node.rpc(&json! ({
+        "userpass": no_login_node.userpass,
+        "method": "version",
+    })))
+    .unwrap();
+    assert!(version.0.is_success(), "!version: {}", version.1);
 }

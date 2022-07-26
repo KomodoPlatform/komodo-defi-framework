@@ -1071,6 +1071,13 @@ impl VerboseTransactionFrom {
             VerboseTransactionFrom::Rpc(tx) | VerboseTransactionFrom::Cache(tx) => tx,
         }
     }
+
+    #[inline]
+    pub fn into_inner(self) -> RpcTransaction {
+        match self {
+            VerboseTransactionFrom::Rpc(tx) | VerboseTransactionFrom::Cache(tx) => tx,
+        }
+    }
 }
 
 pub fn compressed_key_pair_from_bytes(raw: &[u8], prefix: u8, checksum_type: ChecksumType) -> Result<KeyPair, String> {

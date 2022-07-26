@@ -341,7 +341,7 @@ async fn request_and_fill_orderbook(ctx: &MmArc, base: &str, rel: &str) -> Resul
     let ordermatch_ctx = OrdermatchContext::from_ctx(ctx).unwrap();
     let mut orderbook = ordermatch_ctx.orderbook.lock();
 
-    let my_pubkey = ctx.secp256k1_key_pair().public();
+    let keypair = ctx.secp256k1_key_pair_as_option();
     let alb_pair = alb_ordered_pair(base, rel);
     for (pubkey, GetOrderbookPubkeyItem { orders, .. }) in pubkey_orders {
         let pubkey_bytes = match hex::decode(&pubkey) {
@@ -351,8 +351,10 @@ async fn request_and_fill_orderbook(ctx: &MmArc, base: &str, rel: &str) -> Resul
                 continue;
             },
         };
-        if pubkey_bytes.as_slice() == my_pubkey.as_ref() {
-            continue;
+        if let Some(keypair) = keypair {
+            if pubkey_bytes.as_slice() == keypair.public().as_ref() {
+                continue;
+            }
         }
 
         if is_pubkey_banned(ctx, &pubkey_bytes[1..].into()) {

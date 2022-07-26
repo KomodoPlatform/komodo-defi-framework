@@ -797,24 +797,44 @@ pub struct HistoryTransactionDetails {
     pub confirmations: u64,
 }
 
+#[derive(Debug, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct ZcoinTransactionDetails {
+    pub tx_hash: String,
+    pub from: HashSet<String>,
+    pub to: HashSet<String>,
+    pub spent_by_me: BigDecimal,
+    pub received_by_me: BigDecimal,
+    pub my_balance_change: BigDecimal,
+    pub block_height: u64,
+    pub timestamp: u64,
+    pub transaction_fee: BigDecimal,
+    pub coin: String,
+    pub internal_id: i64,
+    pub confirmations: u64,
+}
+
 #[derive(Clone, Debug, Deserialize)]
-pub enum PagingOptionsEnum {
-    FromId(String),
+pub enum PagingOptionsEnum<T> {
+    FromId(T),
     PageNumber(NonZeroUsize),
 }
 
+pub type StandardHistoryV2Res = MyTxHistoryV2Response<HistoryTransactionDetails, String>;
+pub type ZcoinHistoryRes = MyTxHistoryV2Response<ZcoinTransactionDetails, i64>;
+
 #[derive(Debug, Deserialize)]
 #[serde(deny_unknown_fields)]
-pub struct MyTxHistoryV2Response {
+pub struct MyTxHistoryV2Response<Tx, Id> {
     pub coin: String,
     pub current_block: u64,
-    pub transactions: Vec<HistoryTransactionDetails>,
+    pub transactions: Vec<Tx>,
     pub sync_status: Json,
     pub limit: usize,
     pub skipped: usize,
     pub total: usize,
     pub total_pages: usize,
-    pub paging_options: PagingOptionsEnum,
+    pub paging_options: PagingOptionsEnum<Id>,
 }
 
 #[derive(Debug, Deserialize)]
