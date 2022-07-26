@@ -179,6 +179,9 @@ impl PlatformWithTokensActivationOps for EthCoin {
 
     async fn get_activation_result(&self) -> Result<EthWithTokensActivationResult, MmError<EthActivationV2Error>> {
         let my_address = self.my_address().map_err(EthActivationV2Error::InternalError)?;
+        let pubkey = self
+            .get_public_key()
+            .map_err(|e| EthActivationV2Error::InternalError(e.to_string()))?;
 
         let current_block = self
             .current_block()
@@ -206,7 +209,7 @@ impl PlatformWithTokensActivationOps for EthCoin {
             .eth_addresses_infos
             .insert(my_address.to_string(), CoinAddressInfo {
                 derivation_method: DerivationMethod::Iguana,
-                pubkey: my_address.clone(),
+                pubkey: pubkey.clone(),
                 balances: eth_balance,
             });
 
@@ -214,7 +217,7 @@ impl PlatformWithTokensActivationOps for EthCoin {
             .erc20_addresses_infos
             .insert(my_address.to_string(), CoinAddressInfo {
                 derivation_method: DerivationMethod::Iguana,
-                pubkey: my_address,
+                pubkey,
                 balances: token_balances,
             });
 

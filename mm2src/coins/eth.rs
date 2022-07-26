@@ -1165,7 +1165,13 @@ impl MarketCoinOps for EthCoin {
 
     fn my_address(&self) -> Result<String, String> { Ok(checksum_address(&format!("{:#02x}", self.my_address))) }
 
-    fn get_public_key(&self) -> Result<String, MmError<UnexpectedDerivationMethod>> { unimplemented!() }
+    fn get_public_key(&self) -> Result<String, MmError<UnexpectedDerivationMethod>> {
+        let mut raw_pubkey = [0; 65];
+        raw_pubkey[0] = 0x04;
+        raw_pubkey[1..].copy_from_slice(self.key_pair.public());
+        let secp_public = PublicKey::from_slice(&raw_pubkey).unwrap();
+        Ok(secp_public.to_string())
+    }
 
     /// Hash message for signature using Ethereum's message signing format.
     /// keccak256(PREFIX_LENGTH + PREFIX + MESSAGE_LENGTH + MESSAGE)

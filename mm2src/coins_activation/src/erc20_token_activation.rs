@@ -2,7 +2,7 @@ use crate::{prelude::{TryFromCoinProtocol, TryPlatformCoinFromMmCoinEnum},
             token::{EnableTokenError, TokenActivationOps, TokenProtocolParams}};
 use async_trait::async_trait;
 use coins::{eth::{valid_addr_from_str, Erc20Protocol, Erc20TokenActivationError, Erc20TokenActivationRequest, EthCoin},
-            CoinBalance, CoinProtocol, MarketCoinOps, MmCoinEnum};
+            CoinBalance, CoinProtocol, MarketCoinOps, MmCoin, MmCoinEnum};
 use common::Future01CompatExt;
 use mm2_err_handle::prelude::MmError;
 use serde::Serialize;
@@ -11,8 +11,9 @@ use std::collections::HashMap;
 #[derive(Debug, Serialize)]
 pub struct Erc20InitResult {
     balances: HashMap<String, CoinBalance>,
-    pubkey: String,
     platform_coin: String,
+    token_contract_address: String,
+    required_confirmations: u64,
 }
 
 impl From<Erc20TokenActivationError> for EnableTokenError {
@@ -80,7 +81,10 @@ impl TokenActivationOps for EthCoin {
             .initialize_erc20_token(activation_params, protocol_conf, ticker)
             .await?;
 
-        let my_address = token.my_address().map_err(Erc20TokenActivationError::InternalError)?;
+        let address = token.my_address().map_err(Erc20TokenActivationError::InternalError)?;
+        let token_contract_address = token
+            .erc20_token_address()
+            .ok_or_else(|| Erc20TokenActivationError::InternalError("Token contract address is missing".to_string()))?;
 
         let balance = token
             .my_balance()
@@ -88,12 +92,13 @@ impl TokenActivationOps for EthCoin {
             .await
             .map_err(|e| Erc20TokenActivationError::CouldNotFetchBalance(e.to_string()))?;
 
-        let balances = HashMap::from([(my_address.clone(), balance)]);
+        let balances = HashMap::from([(address, balance)]);
 
         let init_result = Erc20InitResult {
             balances,
-            pubkey: my_address,
             platform_coin: token.platform_ticker().to_owned(),
+            required_confirmations: token.required_confirmations(),
+            token_contract_address: format!("{:#02x}", token_contract_address),
         };
 
         Ok((token, init_result))
