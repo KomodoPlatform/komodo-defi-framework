@@ -3749,7 +3749,7 @@ where
     let now = now_ms() / 1000;
     if now < locktime {
         let to_wait = locktime - now + 1;
-        return Ok(CanRefundHtlc::HaveToWait(to_wait.max(3600)));
+        return Ok(CanRefundHtlc::HaveToWait(to_wait.min(3600)));
     }
 
     let mtp = coin.get_current_mtp().await?;
@@ -3759,7 +3759,7 @@ where
         Ok(CanRefundHtlc::CanRefundNow)
     } else {
         let to_wait = (locktime - mtp + 1) as u64;
-        Ok(CanRefundHtlc::HaveToWait(to_wait.max(3600)))
+        Ok(CanRefundHtlc::HaveToWait(to_wait.min(3600)))
     }
 }
 
