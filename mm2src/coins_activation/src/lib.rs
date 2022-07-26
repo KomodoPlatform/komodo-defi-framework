@@ -5,9 +5,10 @@ mod l2;
 mod platform_coin_with_tokens;
 mod prelude;
 mod slp_token_activation;
-#[cfg(not(target_arch = "wasm32"))]
+#[cfg(all(not(target_os = "ios"), not(target_arch = "wasm32")))]
 mod solana_with_tokens_activation;
-#[cfg(not(target_arch = "wasm32"))] mod spl_token_activation;
+#[cfg(all(not(target_os = "ios"), not(target_arch = "wasm32")))]
+mod spl_token_activation;
 mod standalone_coin;
 mod token;
 mod utxo_activation;

@@ -104,7 +104,7 @@ macos-build:
   script:
 #    - cargo lipo --features native --targets x86_64-apple-ios,aarch64-apple-ios --release
 # TMP disable universal builds until x86_64 build is fixed on server
-    - cargo build --target aarch64-apple-ios --release --features native
+    - IPHONEOS_DEPLOYMENT_TARGET=9.0 cargo build --target aarch64-apple-ios --release --lib
     - cp target/aarch64-apple-ios/release/libmm2.a /Users/hetzner/GitLab/archive/aarch64/libmm2.a
 #    - cp target/universal/release/libmm2.a /Users/hetzner/GitLab/archive/universal/libmm2.a
 #    - cp target/x86_64-apple-ios/release/libmm2.a /Users/hetzner/GitLab/archive/x86_64/libmm2.a

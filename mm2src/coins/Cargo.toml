@@ -88,6 +88,13 @@ tiny-bip39 = "0.8.0"
 web3 = { git = "https://github.com/artemii235/rust-web3", default-features = false }
 zbase32 = "0.1.2"
 
+[target.'cfg(all(not(target_os = "ios"), not(target_arch = "wasm32")))'.dependencies]
+solana-client = { version = "1", default-features = false }
+solana-sdk = { version = "1", default-features = false }
+solana-transaction-status = "1"
+spl-token = { version = "3" }
+spl-associated-token-account = "1"
+
 [target.'cfg(target_arch = "wasm32")'.dependencies]
 js-sys = { version = "0.3.27" }
 mm2_db = { path = "../mm2_db" }
@@ -107,11 +114,6 @@ tokio = { version = "1.7" }
 tokio-rustls = { version = "0.23" }
 tonic = { version = "0.7", features = ["tls", "tls-webpki-roots", "compression"] }
 webpki-roots = { version = "0.22" }
-solana-client = { version = "1", default-features = false }
-solana-sdk = { version = "1", default-features = false }
-solana-transaction-status = "1"
-spl-token = { version = "3" }
-spl-associated-token-account = "1"
 zcash_client_backend = { git = "https://github.com/KomodoPlatform/librustzcash.git" }
 zcash_client_sqlite = { git = "https://github.com/KomodoPlatform/librustzcash.git" }
 zcash_primitives = { features = ["transparent-inputs"], git = "https://github.com/KomodoPlatform/librustzcash.git" }
