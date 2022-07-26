@@ -1,4 +1,5 @@
-use crate::hw_client::{HwClient, HwError, HwProcessingError, HwPubkey, TrezorConnectProcessor};
+use crate::hw_client::{HwClient, HwProcessingError, HwPubkey, TrezorConnectProcessor};
+use crate::hw_error::HwError;
 use crate::trezor::TrezorSession;
 use crate::HwWalletType;
 use bitcrypto::dhash160;

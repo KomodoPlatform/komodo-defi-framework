@@ -178,8 +178,6 @@ impl From<AccountUpdatingError> for BalanceError {
 #[serde(tag = "error_type", content = "error_data")]
 pub enum HDWalletRpcError {
     /* ----------- Trezor device errors ----------- */
-    #[display(fmt = "Trezor device disconnected")]
-    TrezorDisconnected,
     #[display(fmt = "Trezor internal error: {}", _0)]
     HardwareWalletInternal(String),
     #[display(fmt = "No Trezor device available")]
@@ -325,7 +323,6 @@ impl HttpStatusCode for HDWalletRpcError {
             | HDWalletRpcError::ErrorDerivingAddress(_)
             | HDWalletRpcError::AddressLimitReached { .. }
             | HDWalletRpcError::AccountLimitReached { .. } => StatusCode::BAD_REQUEST,
-            HDWalletRpcError::TrezorDisconnected
             | HDWalletRpcError::HardwareWalletInternal(_)
             | HDWalletRpcError::NoTrezorDeviceAvailable
             | HDWalletRpcError::FoundUnexpectedDevice { .. }

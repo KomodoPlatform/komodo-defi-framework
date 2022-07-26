@@ -622,6 +622,7 @@ pub trait MarketCoinOps {
 
     /// Base coin balance for tokens, e.g. ETH balance in ERC20 case
     fn base_coin_balance(&self) -> BalanceFut<BigDecimal>;
+
     fn platform_ticker(&self) -> &str;
 
     /// Receives raw transaction bytes in hexadecimal format as input and returns tx hash in hexadecimal format
@@ -1416,8 +1417,6 @@ pub enum WithdrawError {
     /*                                              */
     /*------------ Trezor device errors ------------*/
     /*                                             */
-    #[display(fmt = "Trezor device disconnected")]
-    TrezorDisconnected,
     #[display(fmt = "Trezor internal error: {}", _0)]
     HardwareWalletInternal(String),
     #[display(fmt = "No Trezor device available")]
@@ -1455,8 +1454,6 @@ pub enum WithdrawError {
     NoSuchCoin { coin: String },
     #[display(fmt = "Withdraw timed out {:?}", _0)]
     Timeout(Duration),
-    #[display(fmt = "Unexpected user action. Expected '{}'", expected)]
-    UnexpectedUserAction { expected: String },
     #[display(fmt = "Request should contain a 'from' address/account")]
     FromAddressNotFound,
     #[display(fmt = "Unexpected 'from' address: {}", _0)]
@@ -1475,7 +1472,6 @@ impl HttpStatusCode for WithdrawError {
             WithdrawError::NoSuchCoin { .. } => StatusCode::NOT_FOUND,
             WithdrawError::Timeout(_) => StatusCode::REQUEST_TIMEOUT,
             WithdrawError::CoinDoesntSupportInitWithdraw { .. }
-            | WithdrawError::UnexpectedUserAction { .. }
             | WithdrawError::NotSufficientBalance { .. }
             | WithdrawError::ZeroBalanceToWithdrawMax
             | WithdrawError::AmountTooLow { .. }
@@ -1484,9 +1480,7 @@ impl HttpStatusCode for WithdrawError {
             | WithdrawError::FromAddressNotFound
             | WithdrawError::UnexpectedFromAddress(_)
             | WithdrawError::UnknownAccount { .. } => StatusCode::BAD_REQUEST,
-            WithdrawError::NoTrezorDeviceAvailable
-            | WithdrawError::TrezorDisconnected
-            | WithdrawError::FoundUnexpectedDevice(_) => StatusCode::GONE,
+            WithdrawError::NoTrezorDeviceAvailable | WithdrawError::FoundUnexpectedDevice(_) => StatusCode::GONE,
             WithdrawError::HardwareWalletInternal(_)
             | WithdrawError::Transport(_)
             | WithdrawError::InternalError(_) => StatusCode::INTERNAL_SERVER_ERROR,

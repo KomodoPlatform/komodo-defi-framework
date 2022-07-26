@@ -1,6 +1,7 @@
 use crate::prelude::CoinConfWithProtocolError;
 use coins::CoinProtocol;
 use common::{HttpStatusCode, StatusCode};
+use crypto::HwRpcError;
 use derive_more::Display;
 use rpc_task::rpc_common::{RpcTaskStatusError, RpcTaskUserActionError};
 use rpc_task::{RpcTaskError, TaskId};
@@ -14,36 +15,25 @@ pub type InitStandaloneCoinUserActionError = RpcTaskUserActionError;
 #[derive(Clone, Debug, Display, Serialize, SerializeErrorType)]
 #[serde(tag = "error_type", content = "error_data")]
 pub enum InitStandaloneCoinError {
+    #[display(fmt = "No such task '{}'", _0)]
     NoSuchTask(TaskId),
     #[display(fmt = "Initialization task has timed out {:?}", duration)]
-    TaskTimedOut {
-        duration: Duration,
-    },
-    CoinIsAlreadyActivated {
-        ticker: String,
-    },
+    TaskTimedOut { duration: Duration },
+    #[display(fmt = "Coin {} is activated already", ticker)]
+    CoinIsAlreadyActivated { ticker: String },
     #[display(fmt = "Coin {} config is not found", _0)]
     CoinConfigIsNotFound(String),
     #[display(fmt = "Coin {} protocol parsing failed: {}", ticker, error)]
-    CoinProtocolParseError {
-        ticker: String,
-        error: String,
-    },
+    CoinProtocolParseError { ticker: String, error: String },
     #[display(fmt = "Unexpected platform protocol {:?} for {}", protocol, ticker)]
-    UnexpectedCoinProtocol {
-        ticker: String,
-        protocol: CoinProtocol,
-    },
+    UnexpectedCoinProtocol { ticker: String, protocol: CoinProtocol },
     #[display(fmt = "Error on platform coin {} creation: {}", ticker, error)]
-    CoinCreationError {
-        ticker: String,
-        error: String,
-    },
-    #[display(fmt = "Private key is not allowed: {}", _0)]
-    PrivKeyNotAllowed(String),
-    #[display(fmt = "Unexpected derivation method: {}", _0)]
-    UnexpectedDerivationMethod(String),
+    CoinCreationError { ticker: String, error: String },
+    #[display(fmt = "{}", _0)]
+    HwError(HwRpcError),
+    #[display(fmt = "Transport error: {}", _0)]
     Transport(String),
+    #[display(fmt = "Internal error: {}", _0)]
     Internal(String),
 }
 
@@ -82,13 +72,11 @@ impl HttpStatusCode for InitStandaloneCoinError {
             | InitStandaloneCoinError::CoinConfigIsNotFound { .. }
             | InitStandaloneCoinError::CoinProtocolParseError { .. }
             | InitStandaloneCoinError::UnexpectedCoinProtocol { .. }
-            | InitStandaloneCoinError::CoinCreationError { .. }
-            | InitStandaloneCoinError::PrivKeyNotAllowed(_)
-            | InitStandaloneCoinError::UnexpectedDerivationMethod(_) => StatusCode::BAD_REQUEST,
+            | InitStandaloneCoinError::CoinCreationError { .. } => StatusCode::BAD_REQUEST,
             InitStandaloneCoinError::TaskTimedOut { .. } => StatusCode::REQUEST_TIMEOUT,
-            InitStandaloneCoinError::Transport(_) | InitStandaloneCoinError::Internal(_) => {
-                StatusCode::INTERNAL_SERVER_ERROR
-            },
+            InitStandaloneCoinError::HwError(_)
+            | InitStandaloneCoinError::Transport(_)
+            | InitStandaloneCoinError::Internal(_) => StatusCode::INTERNAL_SERVER_ERROR,
         }
     }
 }

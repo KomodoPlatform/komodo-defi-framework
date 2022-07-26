@@ -29,14 +29,11 @@ where
         + MarketCoinOps,
 {
     let ticker = coin.ticker().to_owned();
-    let current_block =
-        coin.current_block()
-            .compat()
-            .await
-            .map_to_mm(|error| InitUtxoStandardError::CoinCreationError {
-                ticker: ticker.clone(),
-                error,
-            })?;
+    let current_block = coin
+        .current_block()
+        .compat()
+        .await
+        .map_to_mm(InitUtxoStandardError::Transport)?;
 
     // Construct an Xpub extractor without checking if the MarketMaker supports HD wallet ops.
     // [`EnableCoinBalanceOps::enable_coin_balance`] won't just use `xpub_extractor`
@@ -46,10 +43,7 @@ where
     let wallet_balance = coin
         .enable_coin_balance(&xpub_extractor, activation_params.scan_policy)
         .await
-        .mm_err(|error| InitUtxoStandardError::CoinCreationError {
-            ticker: ticker.clone(),
-            error: error.to_string(),
-        })?;
+        .mm_err(|enable_err| InitUtxoStandardError::from_enable_coin_balance_err(enable_err, ticker.clone()))?;
     task_handle.update_in_progress_status(UtxoStandardInProgressStatus::ActivatingCoin)?;
 
     let result = UtxoStandardActivationResult {

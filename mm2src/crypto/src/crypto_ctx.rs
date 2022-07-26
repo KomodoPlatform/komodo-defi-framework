@@ -1,5 +1,6 @@
-use crate::hw_client::{HwError, HwProcessingError, HwPubkey, TrezorConnectProcessor};
+use crate::hw_client::{HwProcessingError, HwPubkey, TrezorConnectProcessor};
 use crate::hw_ctx::{HardwareWalletArc, HardwareWalletCtx};
+use crate::hw_error::HwError;
 use crate::key_pair_ctx::IguanaArc;
 use crate::privkey::{key_pair_from_seed, PrivKeyError};
 use derive_more::Display;
