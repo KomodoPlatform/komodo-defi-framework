@@ -535,37 +535,4 @@ mod test {
 
         block_on(async { Timer::sleep(6.).await });
     }
-
-    #[test]
-    fn test_prometheus_format() {
-        let mm_metrics = MetricsArc::new();
-
-        mm_metrics.init();
-
-        mm_counter!(mm_metrics, "rpc.traffic.tx", 54, "coin" => "KMD");
-        mm_counter!(mm_metrics, "rpc.traffic.rx", 158, "coin" => "KMD");
-
-        mm_gauge!(mm_metrics, "rpc.connection.count", 3.0, "coin" => "KMD");
-        mm_gauge!(mm_metrics, "rpc.connection.count", 5.0, "coin" => "KMD");
-
-        mm_timing!(mm_metrics,
-                    "rpc.query.spent_time",
-                    4.5,
-                    "coin"=> "KMD",
-                    "method"=>"blockchain.transaction.get");
-
-        let expected = concat!(
-            "# TYPE rpc_traffic_tx counter\n",
-            "rpc_traffic_tx{coin=\"KMD\"} 54\n\n",
-            "# TYPE rpc_traffic_rx counter\n",
-            "rpc_traffic_rx{coin=\"KMD\"} 158\n\n",
-            "# TYPE rpc_connection_count gauge\n",
-            "rpc_connection_count{coin=\"KMD\"} 5\n\n",
-            "# TYPE rpc_query_spent_time histogram\n",
-            "rpc_query_spent_time_sum 4.5\n",
-            "rpc_query_spent_time_count 1\n\n",
-        );
-        let actual = mm_metrics.0.collect_prometheus_format();
-        assert_eq!(actual, expected);
-    }
 }
