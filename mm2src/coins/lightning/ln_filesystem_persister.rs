@@ -35,7 +35,7 @@ use {std::ffi::OsStr, std::os::windows::ffi::OsStrExt};
 pub struct LightningFilesystemPersister {
     main_path: PathBuf,
     backup_path: Option<PathBuf>,
-    channels_persister: FilesystemPersister,
+    channels_persister: Arc<FilesystemPersister>,
 }
 
 impl LightningFilesystemPersister {
@@ -46,7 +46,7 @@ impl LightningFilesystemPersister {
         Self {
             main_path: main_path.clone(),
             backup_path,
-            channels_persister: FilesystemPersister::new(main_path.display().to_string()),
+            channels_persister: Arc::new(FilesystemPersister::new(main_path.display().to_string())),
         }
     }
 
@@ -60,7 +60,7 @@ impl LightningFilesystemPersister {
 
     /// Get the channels_persister which was initialized when this persister was initialized.
     #[inline]
-    pub fn channels_persister(&self) -> &FilesystemPersister { &self.channels_persister }
+    pub fn channels_persister(&self) -> Arc<FilesystemPersister> { self.channels_persister.clone() }
 
     pub fn monitor_backup_path(&self) -> Option<PathBuf> {
         if let Some(mut backup_path) = self.backup_path() {

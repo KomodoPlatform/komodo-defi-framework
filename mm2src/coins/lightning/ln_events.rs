@@ -9,6 +9,7 @@ use common::executor::{spawn, Timer};
 use common::log::{error, info};
 use common::{now_ms, spawn_abortable, AbortOnDropHandle};
 use core::time::Duration;
+use futures::compat::Future01CompatExt;
 use lightning::chain::chaininterface::{ConfirmationTarget, FeeEstimator};
 use lightning::chain::keysinterface::SpendableOutputDescriptor;
 use lightning::util::events::{Event, EventHandler, PaymentPurpose};
@@ -62,7 +63,7 @@ impl EventHandler for LightningEventHandler {
 
             Event::PendingHTLCsForwardable { time_forwardable } => self.handle_pending_htlcs_forwards(*time_forwardable),
 
-            Event::SpendableOutputs { outputs } => self.handle_spendable_outputs(outputs),
+            Event::SpendableOutputs { outputs } => self.handle_spendable_outputs(outputs.clone()),
 
             // Todo: an RPC for total amount earned
             Event::PaymentForwarded { fee_earned_msat, claim_from_onchain_tx } => info!(
@@ -430,85 +431,92 @@ impl LightningEventHandler {
         });
     }
 
-    fn handle_spendable_outputs(&self, outputs: &[SpendableOutputDescriptor]) {
+    fn handle_spendable_outputs(&self, outputs: Vec<SpendableOutputDescriptor>) {
         info!("Handling SpendableOutputs event!");
-        let platform_coin = &self.platform.coin;
         // Todo: add support for Hardware wallets for funding transactions and spending spendable outputs (channel closing transactions)
-        let my_address = match platform_coin.as_ref().derivation_method.iguana_or_err() {
-            Ok(addr) => addr,
+        let my_address = match self.platform.coin.as_ref().derivation_method.iguana_or_err() {
+            Ok(addr) => addr.clone(),
             Err(e) => {
                 error!("{}", e);
                 return;
             },
         };
-        let change_destination_script = Builder::build_witness_script(&my_address.hash).to_bytes().take().into();
-        let feerate_sat_per_1000_weight = self.platform.get_est_sat_per_1000_weight(ConfirmationTarget::Normal);
-        let output_descriptors = &outputs.iter().collect::<Vec<_>>();
-        let claiming_tx = match self.keys_manager.spend_spendable_outputs(
-            output_descriptors,
-            Vec::new(),
-            change_destination_script,
-            feerate_sat_per_1000_weight,
-            &Secp256k1::new(),
-        ) {
-            Ok(tx) => tx,
-            Err(_) => {
-                error!("Error spending spendable outputs");
-                return;
-            },
-        };
 
-        let claiming_txid = claiming_tx.txid();
-        let tx_hex = serialize_hex(&claiming_tx);
-        if let Err(e) = tokio::task::block_in_place(move || self.platform.coin.send_raw_tx(&tx_hex).wait()) {
-            // TODO: broadcast transaction through p2p network in this case
-            error!(
-                "Broadcasting of the claiming transaction {} failed: {}",
-                claiming_txid, e
-            );
-            return;
-        }
+        let platform = self.platform.clone();
+        let db = self.db.clone();
+        let keys_manager = self.keys_manager.clone();
 
-        let claiming_tx_inputs_value = outputs.iter().fold(0, |sum, output| match output {
-            SpendableOutputDescriptor::StaticOutput { output, .. } => sum + output.value,
-            SpendableOutputDescriptor::DelayedPaymentOutput(descriptor) => sum + descriptor.output.value,
-            SpendableOutputDescriptor::StaticPaymentOutput(descriptor) => sum + descriptor.output.value,
-        });
-        let claiming_tx_outputs_value = claiming_tx.output.iter().fold(0, |sum, txout| sum + txout.value);
-        if claiming_tx_inputs_value < claiming_tx_outputs_value {
-            error!(
-                "Claiming transaction input value {} can't be less than outputs value {}!",
-                claiming_tx_inputs_value, claiming_tx_outputs_value
-            );
-            return;
-        }
-        let claiming_tx_fee = claiming_tx_inputs_value - claiming_tx_outputs_value;
-        let claiming_tx_fee_per_channel = (claiming_tx_fee as f64) / (outputs.len() as f64);
-
-        for output in outputs {
-            let (closing_txid, claimed_balance) = match output {
-                SpendableOutputDescriptor::StaticOutput { outpoint, output } => {
-                    (outpoint.txid.to_string(), output.value)
-                },
-                SpendableOutputDescriptor::DelayedPaymentOutput(descriptor) => {
-                    (descriptor.outpoint.txid.to_string(), descriptor.output.value)
-                },
-                SpendableOutputDescriptor::StaticPaymentOutput(descriptor) => {
-                    (descriptor.outpoint.txid.to_string(), descriptor.output.value)
+        let abort_handler = spawn_abortable(async move {
+            let change_destination_script = Builder::build_witness_script(&my_address.hash).to_bytes().take().into();
+            let feerate_sat_per_1000_weight = platform.get_est_sat_per_1000_weight(ConfirmationTarget::Normal);
+            let output_descriptors = outputs.iter().collect::<Vec<_>>();
+            let claiming_tx = match keys_manager.spend_spendable_outputs(
+                &output_descriptors,
+                Vec::new(),
+                change_destination_script,
+                feerate_sat_per_1000_weight,
+                &Secp256k1::new(),
+            ) {
+                Ok(tx) => tx,
+                Err(_) => {
+                    error!("Error spending spendable outputs");
+                    return;
                 },
             };
-            let db = self.db.clone();
 
-            // This doesn't need to be respawned on restart unlike add_closing_tx_to_db since Event::SpendableOutputs will be re-fired on restart
-            // if the spending_tx is not broadcasted.
-            let abort_handler = spawn_abortable(add_claiming_tx_to_db_loop(
-                db,
-                closing_txid,
-                claiming_txid.to_string(),
-                (claimed_balance as f64) - claiming_tx_fee_per_channel,
-            ));
-            self.abort_handlers.lock().push(abort_handler);
-        }
+            let claiming_txid = claiming_tx.txid();
+            let tx_hex = serialize_hex(&claiming_tx);
+
+            if let Err(e) = platform.coin.send_raw_tx(&tx_hex).compat().await {
+                // TODO: broadcast transaction through p2p network in this case, we have to check that the transactions is confirmed on-chain after this.
+                error!(
+                    "Broadcasting of the claiming transaction {} failed: {}",
+                    claiming_txid, e
+                );
+                return;
+            }
+
+            let claiming_tx_inputs_value = outputs.iter().fold(0, |sum, output| match output {
+                SpendableOutputDescriptor::StaticOutput { output, .. } => sum + output.value,
+                SpendableOutputDescriptor::DelayedPaymentOutput(descriptor) => sum + descriptor.output.value,
+                SpendableOutputDescriptor::StaticPaymentOutput(descriptor) => sum + descriptor.output.value,
+            });
+            let claiming_tx_outputs_value = claiming_tx.output.iter().fold(0, |sum, txout| sum + txout.value);
+            if claiming_tx_inputs_value < claiming_tx_outputs_value {
+                error!(
+                    "Claiming transaction input value {} can't be less than outputs value {}!",
+                    claiming_tx_inputs_value, claiming_tx_outputs_value
+                );
+                return;
+            }
+            let claiming_tx_fee = claiming_tx_inputs_value - claiming_tx_outputs_value;
+            let claiming_tx_fee_per_channel = (claiming_tx_fee as f64) / (outputs.len() as f64);
+
+            for output in outputs {
+                let (closing_txid, claimed_balance) = match output {
+                    SpendableOutputDescriptor::StaticOutput { outpoint, output } => {
+                        (outpoint.txid.to_string(), output.value)
+                    },
+                    SpendableOutputDescriptor::DelayedPaymentOutput(descriptor) => {
+                        (descriptor.outpoint.txid.to_string(), descriptor.output.value)
+                    },
+                    SpendableOutputDescriptor::StaticPaymentOutput(descriptor) => {
+                        (descriptor.outpoint.txid.to_string(), descriptor.output.value)
+                    },
+                };
+
+                // This doesn't need to be respawned on restart unlike add_closing_tx_to_db since Event::SpendableOutputs will be re-fired on restart
+                // if the spending_tx is not broadcasted.
+                add_claiming_tx_to_db_loop(
+                    db.clone(),
+                    closing_txid,
+                    claiming_txid.to_string(),
+                    (claimed_balance as f64) - claiming_tx_fee_per_channel,
+                )
+                .await;
+            }
+        });
+        self.abort_handlers.lock().push(abort_handler);
     }
 
     fn handle_open_channel_request(

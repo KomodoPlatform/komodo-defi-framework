@@ -117,9 +117,14 @@ impl LightningCoin {
     #[inline]
     fn my_node_id(&self) -> String { self.channel_manager.get_our_node_id().to_string() }
 
-    fn get_balance_msat(&self) -> (u64, u64) {
-        self.channel_manager
-            .list_channels()
+    async fn list_channels(&self) -> Vec<ChannelDetails> {
+        let selfi = self.clone();
+        async_blocking(move || selfi.channel_manager.list_channels()).await
+    }
+
+    async fn get_balance_msat(&self) -> (u64, u64) {
+        self.list_channels()
+            .await
             .iter()
             .fold((0, 0), |(spendable, unspendable), chan| {
                 if chan.is_usable {
@@ -133,11 +138,8 @@ impl LightningCoin {
             })
     }
 
-    fn pay_invoice(&self, invoice: Invoice) -> SendPaymentResult<DBPaymentInfo> {
-        self.invoice_payer
-            .pay_invoice(&invoice)
-            .map_to_mm(|e| SendPaymentError::PaymentError(format!("{:?}", e)))?;
-        let payment_hash = PaymentHash((*invoice.payment_hash()).into_inner());
+    async fn pay_invoice(&self, invoice: Invoice) -> SendPaymentResult<DBPaymentInfo> {
+        let payment_hash = PaymentHash((invoice.payment_hash()).into_inner());
         let payment_type = PaymentType::OutboundPayment {
             destination: *invoice.payee_pub_key().unwrap_or(&invoice.recover_payee_pub_key()),
         };
@@ -146,13 +148,24 @@ impl LightningCoin {
             InvoiceDescription::Hash(h) => hex::encode(h.0.into_inner()),
         };
         let payment_secret = Some(*invoice.payment_secret());
+        let amt_msat = invoice.amount_milli_satoshis().map(|a| a as i64);
+
+        let selfi = self.clone();
+        async_blocking(move || {
+            selfi
+                .invoice_payer
+                .pay_invoice(&invoice)
+                .map_to_mm(|e| SendPaymentError::PaymentError(format!("{:?}", e)))
+        })
+        .await?;
+
         Ok(DBPaymentInfo {
             payment_hash,
             payment_type,
             description,
             preimage: None,
             secret: payment_secret,
-            amt_msat: invoice.amount_milli_satoshis().map(|a| a as i64),
+            amt_msat,
             fee_paid_msat: None,
             status: HTLCStatus::Pending,
             created_at: (now_ms() / 1000) as i64,
@@ -160,7 +173,7 @@ impl LightningCoin {
         })
     }
 
-    fn keysend(
+    async fn keysend(
         &self,
         destination: PublicKey,
         amount_msat: u64,
@@ -173,9 +186,16 @@ impl LightningCoin {
             ));
         }
         let payment_preimage = PaymentPreimage(self.keys_manager.get_secure_random_bytes());
-        self.invoice_payer
-            .pay_pubkey(destination, payment_preimage, amount_msat, final_cltv_expiry_delta)
-            .map_to_mm(|e| SendPaymentError::PaymentError(format!("{:?}", e)))?;
+
+        let selfi = self.clone();
+        async_blocking(move || {
+            selfi
+                .invoice_payer
+                .pay_pubkey(destination, payment_preimage, amount_msat, final_cltv_expiry_delta)
+                .map_to_mm(|e| SendPaymentError::PaymentError(format!("{:?}", e)))
+        })
+        .await?;
+
         let payment_hash = PaymentHash(Sha256::hash(&payment_preimage.0).into_inner());
         let payment_type = PaymentType::OutboundPayment { destination };
 
@@ -199,12 +219,8 @@ impl LightningCoin {
         paging: PagingOptionsEnum<u64>,
         limit: usize,
     ) -> ListChannelsResult<GetOpenChannelsResult> {
-        let mut total_open_channels: Vec<ChannelDetailsForRPC> = self
-            .channel_manager
-            .list_channels()
-            .into_iter()
-            .map(From::from)
-            .collect();
+        let mut total_open_channels: Vec<ChannelDetailsForRPC> =
+            self.list_channels().await.into_iter().map(From::from).collect();
 
         total_open_channels.sort_by(|a, b| a.rpc_channel_id.cmp(&b.rpc_channel_id));
 
@@ -425,13 +441,16 @@ impl MarketCoinOps for LightningCoin {
     }
 
     fn my_balance(&self) -> BalanceFut<CoinBalance> {
+        let coin = self.clone();
         let decimals = self.decimals();
-        let (spendable_msat, unspendable_msat) = self.get_balance_msat();
-        let my_balance = CoinBalance {
-            spendable: big_decimal_from_sat_unsigned(spendable_msat, decimals),
-            unspendable: big_decimal_from_sat_unsigned(unspendable_msat, decimals),
+        let fut = async move {
+            let (spendable_msat, unspendable_msat) = coin.get_balance_msat().await;
+            Ok(CoinBalance {
+                spendable: big_decimal_from_sat_unsigned(spendable_msat, decimals),
+                unspendable: big_decimal_from_sat_unsigned(unspendable_msat, decimals),
+            })
         };
-        Box::new(futures01::future::ok(my_balance))
+        Box::new(fut.boxed().compat())
     }
 
     fn base_coin_balance(&self) -> BalanceFut<BigDecimal> {
@@ -1273,12 +1292,12 @@ pub async fn send_payment(ctx: MmArc, req: SendPaymentReq) -> SendPaymentResult<
             ));
     }
     let payment_info = match req.payment {
-        Payment::Invoice { invoice } => ln_coin.pay_invoice(invoice.into())?,
+        Payment::Invoice { invoice } => ln_coin.pay_invoice(invoice.into()).await?,
         Payment::Keysend {
             destination,
             amount_in_msat,
             expiry,
-        } => ln_coin.keysend(destination.into(), amount_in_msat, expiry)?,
+        } => ln_coin.keysend(destination.into(), amount_in_msat, expiry).await?,
     };
     ln_coin.db.add_or_update_payment_in_db(payment_info.clone()).await?;
     Ok(SendPaymentResponse {
@@ -1473,16 +1492,23 @@ pub async fn close_channel(ctx: MmArc, req: CloseChannelReq) -> CloseChannelResu
         MmCoinEnum::LightningCoin(c) => c,
         _ => return MmError::err(CloseChannelError::UnsupportedCoin(coin.ticker().to_string())),
     };
+    let channel_id = req.channel_id.0;
     if req.force_close {
-        ln_coin
-            .channel_manager
-            .force_close_channel(&req.channel_id.0)
-            .map_to_mm(|e| CloseChannelError::CloseChannelError(format!("{:?}", e)))?;
+        async_blocking(move || {
+            ln_coin
+                .channel_manager
+                .force_close_channel(&channel_id)
+                .map_to_mm(|e| CloseChannelError::CloseChannelError(format!("{:?}", e)))
+        })
+        .await?;
     } else {
-        ln_coin
-            .channel_manager
-            .close_channel(&req.channel_id.0)
-            .map_to_mm(|e| CloseChannelError::CloseChannelError(format!("{:?}", e)))?;
+        async_blocking(move || {
+            ln_coin
+                .channel_manager
+                .close_channel(&channel_id)
+                .map_to_mm(|e| CloseChannelError::CloseChannelError(format!("{:?}", e)))
+        })
+        .await?;
     }
 
     Ok(format!("Initiated closing of channel: {:?}", req.channel_id))
