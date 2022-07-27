@@ -16,7 +16,7 @@ secp256k1 = { version = "0.20", features = ["rand"] }
 serde = "1.0"
 serde_derive = "1.0"
 
-[target.'cfg(not(target_arch = "wasm32"))'.dependencies]
+[target.'cfg(all(not(target_arch = "wasm32"), not(target_os = "ios")))'.dependencies]
 rusb = { version = "0.7.0" }
 
 [target.'cfg(target_arch = "wasm32")'.dependencies]

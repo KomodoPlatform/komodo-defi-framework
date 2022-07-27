@@ -7,7 +7,7 @@ use prost::{DecodeError, EncodeError};
 
 pub type TrezorResult<T> = Result<T, MmError<TrezorError>>;
 
-#[cfg(not(target_arch = "wasm32"))]
+#[cfg(all(not(target_arch = "wasm32"), not(target_os = "ios")))]
 use hw_common::transport::UsbError;
 #[cfg(target_arch = "wasm32")]
 use hw_common::transport::WebUsbError;
@@ -79,7 +79,7 @@ impl From<WebUsbError> for TrezorError {
     }
 }
 
-#[cfg(not(target_arch = "wasm32"))]
+#[cfg(all(not(target_arch = "wasm32"), not(target_os = "ios")))]
 impl From<UsbError> for TrezorError {
     fn from(e: UsbError) -> Self {
         match e {
