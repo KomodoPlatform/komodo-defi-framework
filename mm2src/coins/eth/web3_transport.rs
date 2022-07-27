@@ -278,7 +278,7 @@ async fn send_request(
         if node.gui_auth {
             if let Some(generator) = gui_auth_validation_generator.clone() {
                 let signed_message = match EthCoin::generate_gui_auth_signed_validation(generator) {
-                    Ok(t) => serde_json::to_value(t)?,
+                    Ok(t) => t,
                     Err(e) => {
                         transport_errors.push(ERRL!(
                             "GuiAuth signed message generation failed for {:?} node, error: {:?}",
