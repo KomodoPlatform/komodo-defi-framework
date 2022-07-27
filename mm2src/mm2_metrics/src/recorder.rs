@@ -4,9 +4,8 @@ use metrics::{Counter, Gauge, Histogram, Key, KeyName, Label, Recorder, Unit};
 #[cfg(not(target_arch = "wasm32"))]
 use metrics_exporter_prometheus::formatting::{key_to_parts, write_metric_line, write_type_line};
 use metrics_util::registry::{GenerationalAtomicStorage, GenerationalStorage, Registry};
-use std::{collections::HashMap,
-          slice::Iter,
-          sync::{atomic::Ordering, Arc}};
+use std::sync::{atomic::Ordering, Arc};
+use std::{collections::HashMap, slice::Iter};
 
 pub struct Snapshot {
     pub counters: HashMap<String, HashMap<Vec<String>, u64>>,
@@ -60,7 +59,7 @@ impl MmRecorder {
     }
 
     #[cfg(not(target_arch = "wasm32"))]
-    pub fn render(&self) -> String {
+    pub fn render_prometheus(&self) -> String {
         let Snapshot {
             mut counters,
             mut histograms,

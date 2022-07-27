@@ -1,13 +1,12 @@
+use common::executor::{spawn, Timer};
 #[cfg(not(target_arch = "wasm32"))] use common::log::error;
-use common::{executor::{spawn, Timer},
-             log::{LogArc, LogWeak}};
+use common::log::{LogArc, LogWeak};
 use itertools::Itertools;
 use metrics::{Key, Label};
-use mm2_err_handle::prelude::MmError;
+use mm2_err_handle::prelude::*;
 use serde_json::Value;
-use std::{collections::HashMap,
-          slice::Iter,
-          sync::{atomic::Ordering, Arc}};
+use std::sync::{atomic::Ordering, Arc};
+use std::{collections::HashMap, slice::Iter};
 
 use crate::MmMetricsError;
 use crate::{common::log::Tag, MetricsOps, MmMetricsResult, MmRecorder};
@@ -96,13 +95,13 @@ macro_rules! mm_timing {
 /// Market Maker Metrics, used as inner to get metrics data and exporting.
 #[derive(Default, Clone)]
 pub struct Metrics {
-    pub recorder: Arc<MmRecorder>,
+    pub(crate) recorder: Arc<MmRecorder>,
 }
 
 impl Metrics {
     /// Collect the metrics in Prometheus format.
     #[cfg(not(target_arch = "wasm32"))]
-    pub fn collect_prometheus_format(&self) -> String { self.recorder.render() }
+    pub fn collect_prometheus_format(&self) -> String { self.recorder.render_prometheus() }
 }
 
 impl MetricsOps for Metrics {
@@ -117,10 +116,7 @@ impl MetricsOps for Metrics {
 
     /// Collect prepared metrics json from the recorder.
     fn collect_json(&self) -> MmMetricsResult<Value> {
-        match serde_json::to_value(self.recorder.prepare_json()) {
-            Ok(res) => Ok(res),
-            Err(err) => Err(MmError::new(MmMetricsError::Internal(err.to_string()))),
-        }
+        serde_json::to_value(self.recorder.prepare_json()).map_to_mm(|err| MmMetricsError::Internal(err.to_string()))
     }
 }
 
@@ -149,9 +145,7 @@ impl TagObserver {
             Timer::sleep(interval).await;
             let log_state = match LogArc::from_weak(&log_state) {
                 Some(log_arc) => log_arc,
-                _ => {
-                    return;
-                },
+                _ => return,
             };
 
             log!(">>>>>>>>>> DEX metrics <<<<<<<<<");
@@ -205,7 +199,7 @@ fn map_metrics_to_prepare_tag_metric_output(
 pub(crate) fn labels_to_tags(labels: Iter<Label>) -> Vec<Tag> {
     labels
         .map(|label| Tag {
-            key: label.clone().into_parts().0.to_string(),
+            key: label.key().to_string(),
             val: Some(label.value().to_string()),
         })
         .collect()
@@ -215,7 +209,7 @@ pub(crate) fn labels_to_tags(labels: Iter<Label>) -> Vec<Tag> {
 pub(crate) fn name_value_map_to_message(name_value_map: &MetricNameValueMap) -> String {
     name_value_map
         .iter()
-        .sorted_by(|x, y| x.partial_cmp(y).expect("sorting faulted"))
+        .sorted_by(|x, y| x.partial_cmp(y).unwrap_or(std::cmp::Ordering::Less))
         .map(|(key, value)| match value {
             crate::mm_metrics::PreparedMetric::Unsigned(v) => format!("{}={:?}", key, v),
             crate::mm_metrics::PreparedMetric::Float(v) => format!("{}={:?}", key, v),
@@ -236,16 +230,12 @@ impl MmHistogram {
     ///
     /// Return None if data.len() <= 0.
     pub(crate) fn new(data: &[f64]) -> Option<MmHistogram> {
-        let count: usize = data.len();
-        if count > 0 {
-            let minmax = data.iter().minmax().into_option();
-            return minmax.map(|(min, max)| MmHistogram {
-                count,
-                min: *min,
-                max: *max,
-            });
-        }
-        None
+        let (min, max) = data.iter().minmax().into_option()?;
+        Some(MmHistogram {
+            count: data.len(),
+            min: *min,
+            max: *max,
+        })
     }
 
     /// Create new MmHistogram from `&[f64]`.
@@ -294,7 +284,8 @@ pub mod prometheus {
             })))
         });
 
-        let server = try_s!(Server::try_bind(&address))
+        let server = Server::try_bind(&address)
+            .map_err(|e| e.to_string())?
             .http1_half_close(false) // https://github.com/hyperium/hyper/issues/1764
             .serve(make_svc)
             .with_graceful_shutdown(shutdown_detector);
@@ -316,7 +307,7 @@ pub mod prometheus {
         credentials: Option<PrometheusCredentials>,
     ) -> Result<Response<Body>, http::Error> {
         fn on_error(status: StatusCode, error: MmError<MmMetricsError>) -> Result<Response<Body>, http::Error> {
-            error!("{}", error.get_inner().to_string());
+            error!("{}", error.to_string());
             Response::builder().status(status).body(Body::empty()).map_err(|err| {
                 error!("{}", err);
                 err
@@ -419,21 +410,21 @@ mod test {
         mm_gauge!(metrics, "rpc.connection.count", 3.0, "coin" => "KMD");
         mm_gauge!(metrics, "rpc.connection.count", 5.0, "coin" => "KMD");
 
-        // mm_timing!(metrics,
-        //            "rpc.query.spent_time",
-        //            // ~ 1 second
-        //            34381019796149, // start
-        //            34382022725155, // end
-        //            "coin" => "KMD",
-        //            "method" => "blockchain.transaction.get");
-        //
-        // mm_timing!(metrics,
-        //            "rpc.query.spent_time",
-        //            // ~ 2 second
-        //            34382022774105, // start
-        //            34384023173373, // end
-        //            "coin" => "KMD",
-        //            "method" => "blockchain.transaction.get");
+        let delta = 34382022725155.0 - 34381019796149.0;
+        mm_timing!(metrics,
+                   "rpc.query.spent_time",
+                   // ~ 1 second
+                   delta, // delta
+                   "coin" => "KMD",
+                   "method" => "blockchain.transaction.get");
+
+        let delta = 34384023173373.0 - 34382022774105.0;
+        mm_timing!(metrics,
+                   "rpc.query.spent_time",
+                   // ~ 2 second
+                    delta, // delta
+                   "coin" => "KMD",
+                   "method" => "blockchain.transaction.get");
 
         let expected = serde_json::json!({
             "metrics": [
@@ -461,14 +452,14 @@ mod test {
                     "type": "counter",
                     "value": 158
                 },
-                // {
-                //     "count": 2,
-                //     "key": "rpc.query.spent_time",
-                //     "labels": { "coin": "KMD", "method": "blockchain.transaction.get" },
-                //     "max": 2000683007,
-                //     "min": 1002438656,
-                //     "type": "histogram"
-                // },
+                {
+                    "count": 2.0,
+                    "key": "rpc.query.spent_time",
+                    "labels": { "coin": "KMD", "method": "blockchain.transaction.get" },
+                    "max": 2000399268.0,
+                    "min": 1002929006.0,
+                    "type": "histogram"
+                },
                 {
                     "key": "rpc.connection.count",
                     "labels": { "coin": "KMD" },
@@ -502,7 +493,7 @@ mod test {
 
         mm_metrics.init_with_dashboard(log_state.weak(), 6.).unwrap();
 
-        let mut clock = Clock::new();
+        let clock = Clock::new();
         let last: quanta::Instant = clock.now();
 
         mm_counter!(mm_metrics, "rpc.traffic.tx", 62, "coin" => "BTC");
@@ -551,12 +542,6 @@ mod test {
 
         mm_metrics.init();
 
-        mm_counter!(mm_metrics, "rpc.traffic.tx", 62, "coin" => "BTC");
-        mm_counter!(mm_metrics, "rpc.traffic.rx", 105, "coin" => "BTC");
-
-        mm_counter!(mm_metrics, "rpc.traffic.tx", 30, "coin" => "BTC");
-        mm_counter!(mm_metrics, "rpc.traffic.rx", 44, "coin" => "BTC");
-
         mm_counter!(mm_metrics, "rpc.traffic.tx", 54, "coin" => "KMD");
         mm_counter!(mm_metrics, "rpc.traffic.rx", 158, "coin" => "KMD");
 
@@ -569,7 +554,18 @@ mod test {
                     "coin"=> "KMD",
                     "method"=>"blockchain.transaction.get");
 
-        // println!("{}", mm_metrics.0.collect_prometheus_format());
-        // TODO
+        let expected = concat!(
+            "# TYPE rpc_traffic_tx counter\n",
+            "rpc_traffic_tx{coin=\"KMD\"} 54\n\n",
+            "# TYPE rpc_traffic_rx counter\n",
+            "rpc_traffic_rx{coin=\"KMD\"} 158\n\n",
+            "# TYPE rpc_connection_count gauge\n",
+            "rpc_connection_count{coin=\"KMD\"} 5\n\n",
+            "# TYPE rpc_query_spent_time histogram\n",
+            "rpc_query_spent_time_sum 4.5\n",
+            "rpc_query_spent_time_count 1\n\n",
+        );
+        let actual = mm_metrics.0.collect_prometheus_format();
+        assert_eq!(actual, expected);
     }
 }

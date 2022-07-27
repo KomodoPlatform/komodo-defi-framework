@@ -4252,11 +4252,9 @@ dependencies = [
  "common",
  "derive_more",
  "futures 0.3.15",
- "gstuff",
  "hyper",
  "hyper-rustls",
  "itertools",
- "js-sys",
  "metrics",
  "metrics-exporter-prometheus",
  "metrics-util",
@@ -4265,10 +4263,6 @@ dependencies = [
  "serde",
  "serde_derive",
  "serde_json",
- "wasm-bindgen",
- "wasm-bindgen-futures",
- "wasm-bindgen-test",
- "web-sys",
 ]
 
 [[package]]
