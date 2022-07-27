@@ -1,7 +1,5 @@
 #[macro_use] extern crate common;
-#[cfg(not(target_arch = "wasm32"))]
-#[macro_use]
-extern crate serde_derive;
+#[macro_use] extern crate serde_derive;
 
 #[macro_use]
 pub mod mm_metrics;
