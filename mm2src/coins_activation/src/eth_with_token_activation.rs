@@ -32,10 +32,10 @@ impl From<EthActivationV2Error> for EnablePlatformCoinWithTokensError {
             },
             EthActivationV2Error::InternalError(e) => EnablePlatformCoinWithTokensError::Internal(e),
             EthActivationV2Error::InvalidSwapContractAddr(e) => {
-                EnablePlatformCoinWithTokensError::InvalidSwapContractAddr(e)
+                EnablePlatformCoinWithTokensError::Internal(e)
             },
             EthActivationV2Error::InvalidFallbackSwapContract(e) => {
-                EnablePlatformCoinWithTokensError::InvalidFallbackSwapContract(e)
+                EnablePlatformCoinWithTokensError::Internal(e)
             },
         }
     }

@@ -251,7 +251,6 @@ impl From<web3::Error> for BalanceError {
 
 #[derive(Display, Serialize, SerializeErrorType)]
 #[serde(tag = "error_type", content = "error_data")]
-#[allow(dead_code)]
 pub enum EthActivationV2Error {
     InvalidPayload(String),
     InvalidSwapContractAddr(String),
@@ -291,7 +290,6 @@ pub struct EthNode {
 
 #[derive(Serialize, SerializeErrorType)]
 #[serde(tag = "error_type", content = "error_data")]
-#[allow(dead_code)]
 pub enum Erc20TokenActivationError {
     InternalError(String),
     CouldNotFetchBalance(String),
@@ -2592,6 +2590,9 @@ impl EthCoin {
         protocol: Erc20Protocol,
         ticker: String,
     ) -> Result<EthCoin, MmError<Erc20TokenActivationError>> {
+        // TODO
+        // Check if ctx is required.
+        // Remove it to avoid circular references if possible
         let ctx = MmArc::from_weak(&self.ctx)
             .ok_or_else(|| String::from("No context"))
             .map_err(Erc20TokenActivationError::InternalError)?;

@@ -66,8 +66,6 @@ pub trait TokenAsMmCoinInitializer: Send + Sync {
 pub enum InitTokensAsMmCoinsError {
     TokenConfigIsNotFound(String),
     InvalidPubkey(String),
-    InvalidSwapContractAddr(String),
-    InvalidFallbackSwapContract(String),
     CouldNotFetchBalance(String),
     Internal(String),
     TokenProtocolParseError { ticker: String, error: String },
@@ -217,8 +215,6 @@ pub enum EnablePlatformCoinWithTokensError {
     Transport(String),
     AtLeastOneNodeRequired(String),
     InvalidPayload(String),
-    InvalidSwapContractAddr(String),
-    InvalidFallbackSwapContract(String),
     Internal(String),
 }
 
@@ -256,12 +252,6 @@ impl From<InitTokensAsMmCoinsError> for EnablePlatformCoinWithTokensError {
             InitTokensAsMmCoinsError::InvalidPubkey(e) | InitTokensAsMmCoinsError::Internal(e) => {
                 EnablePlatformCoinWithTokensError::Internal(e)
             },
-            InitTokensAsMmCoinsError::InvalidSwapContractAddr(e) => {
-                EnablePlatformCoinWithTokensError::InvalidSwapContractAddr(e)
-            },
-            InitTokensAsMmCoinsError::InvalidFallbackSwapContract(e) => {
-                EnablePlatformCoinWithTokensError::InvalidFallbackSwapContract(e)
-            },
             InitTokensAsMmCoinsError::CouldNotFetchBalance(e) => EnablePlatformCoinWithTokensError::Transport(e),
         }
     }
@@ -290,8 +280,6 @@ impl HttpStatusCode for EnablePlatformCoinWithTokensError {
             | EnablePlatformCoinWithTokensError::TokenConfigIsNotFound(_)
             | EnablePlatformCoinWithTokensError::UnexpectedPlatformProtocol { .. }
             | EnablePlatformCoinWithTokensError::InvalidPayload { .. }
-            | EnablePlatformCoinWithTokensError::InvalidSwapContractAddr(_)
-            | EnablePlatformCoinWithTokensError::InvalidFallbackSwapContract(_)
             | EnablePlatformCoinWithTokensError::AtLeastOneNodeRequired(_)
             | EnablePlatformCoinWithTokensError::UnexpectedTokenProtocol { .. } => StatusCode::BAD_REQUEST,
         }
