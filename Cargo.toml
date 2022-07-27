@@ -8,6 +8,7 @@ members = [
     "mm2src/common/shared_ref_counter",
     "mm2src/crypto",
     "mm2src/db_common",
+    "mm2src/derives/enum_from",
     "mm2src/derives/ser_error",
     "mm2src/derives/ser_error_derive",
     "mm2src/floodsub",

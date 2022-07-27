@@ -18,7 +18,7 @@ pub use hw_client::{HwClient, HwProcessingError, HwPubkey, HwWalletType, TrezorC
 pub use hw_common::primitives::{Bip32Error, ChildNumber, DerivationPath, EcdsaCurve, ExtendedPublicKey,
                                 Secp256k1ExtendedPublicKey, XPub};
 pub use hw_ctx::{HardwareWalletArc, HardwareWalletCtx};
-pub use hw_error::{HwError, HwResult, HwRpcError};
+pub use hw_error::{from_hw_error, HwError, HwResult, HwRpcError, WithHwRpcError};
 pub use key_pair_ctx::{IguanaArc, IguanaCtx};
 pub use trezor;
 

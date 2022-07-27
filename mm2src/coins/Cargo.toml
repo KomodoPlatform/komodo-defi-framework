@@ -32,6 +32,7 @@ db_common = { path = "../db_common" }
 derive_more = "0.99"
 ed25519-dalek = "1.0.1"
 ed25519-dalek-bip32 = "0.2.0"
+enum_from = { path = "../derives/enum_from" }
 ethabi = { git = "https://github.com/artemii235/ethabi" }
 ethcore-transaction = { git = "https://github.com/artemii235/parity-ethereum.git" }
 ethereum-types = { version = "0.4", default-features = false, features = ["std", "serialize"] }

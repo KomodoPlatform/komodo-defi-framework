@@ -78,3 +78,25 @@ pub enum HwRpcError {
     #[display(fmt = "Found unexpected device. Please re-initialize Hardware wallet")]
     FoundUnexpectedDevice,
 }
+
+pub trait WithHwRpcError {
+    fn hw_rpc_error(hw_rpc_error: HwRpcError) -> Self;
+}
+
+/// Unfortunately, it's not possible to implementing `From<HwError>` for every type
+/// that implements `WithHwRpcError`, `WithTimeout` and `WithInternal`.
+/// So this function should be called from the `From<HwError>` implementation.
+pub fn from_hw_error<T>(hw_error: HwError) -> T
+where
+    T: WithHwRpcError + WithTimeout + WithInternal,
+{
+    match hw_error {
+        HwError::NoTrezorDeviceAvailable | HwError::DeviceDisconnected => {
+            T::hw_rpc_error(HwRpcError::NoTrezorDeviceAvailable)
+        },
+        HwError::CannotChooseDevice { .. } => T::hw_rpc_error(HwRpcError::FoundMultipleDevices),
+        HwError::ConnectionTimedOut { timeout } => T::timeout(timeout),
+        HwError::FoundUnexpectedDevice { .. } => T::hw_rpc_error(HwRpcError::FoundUnexpectedDevice),
+        other => T::internal(other.to_string()),
+    }
+}

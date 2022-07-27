@@ -1048,6 +1048,7 @@ dependencies = [
  "dirs",
  "ed25519-dalek",
  "ed25519-dalek-bip32 0.2.0",
+ "enum_from",
  "ethabi",
  "ethcore-transaction",
  "ethereum-types 0.4.2",
@@ -1981,6 +1982,16 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "c375b9c5eadb68d0a6efee2999fef292f45854c3444c86f09d8ab086ba942b0e"
 dependencies = [
  "num-traits",
+ "quote 1.0.18",
+ "syn 1.0.95",
+]
+
+[[package]]
+name = "enum_from"
+version = "0.1.0"
+dependencies = [
+ "itertools",
+ "proc-macro2 1.0.39",
  "quote 1.0.18",
  "syn 1.0.95",
 ]
@@ -4207,6 +4218,7 @@ dependencies = [
  "dirs",
  "either",
  "enum-primitive-derive",
+ "enum_from",
  "ethereum-types 0.4.2",
  "futures 0.1.29",
  "futures 0.3.15",

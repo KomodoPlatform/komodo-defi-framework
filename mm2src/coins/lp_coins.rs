@@ -36,8 +36,9 @@ use async_trait::async_trait;
 use base58::FromBase58Error;
 use common::mm_metrics::MetricsWeak;
 use common::{calc_total_pages, now_ms, ten, HttpStatusCode};
-use crypto::{Bip32Error, CryptoCtx, DerivationPath, HwRpcError};
+use crypto::{Bip32Error, CryptoCtx, DerivationPath, HwRpcError, WithHwRpcError};
 use derive_more::Display;
+use enum_from::EnumFromTrait;
 use futures::compat::Future01CompatExt;
 use futures::lock::Mutex as AsyncMutex;
 use futures::{FutureExt, TryFutureExt};
@@ -1411,7 +1412,7 @@ impl DelegationError {
     }
 }
 
-#[derive(Clone, Debug, Display, Serialize, SerializeErrorType, PartialEq)]
+#[derive(Clone, Debug, Display, EnumFromTrait, Serialize, SerializeErrorType, PartialEq)]
 #[serde(tag = "error_type", content = "error_data")]
 pub enum WithdrawError {
     #[display(
@@ -1440,6 +1441,7 @@ pub enum WithdrawError {
     InvalidFeePolicy(String),
     #[display(fmt = "No such coin {}", coin)]
     NoSuchCoin { coin: String },
+    #[from_trait(WithTimeout::timeout)]
     #[display(fmt = "Withdraw timed out {:?}", _0)]
     Timeout(Duration),
     #[display(fmt = "Request should contain a 'from' address/account")]
@@ -1448,10 +1450,12 @@ pub enum WithdrawError {
     UnexpectedFromAddress(String),
     #[display(fmt = "Unknown '{}' account", account_id)]
     UnknownAccount { account_id: u32 },
+    #[from_trait(WithHwRpcError::hw_rpc_error)]
     #[display(fmt = "{}", _0)]
     HwError(HwRpcError),
     #[display(fmt = "Transport error: {}", _0)]
     Transport(String),
+    #[from_trait(WithInternal::internal)]
     #[display(fmt = "Internal error: {}", _0)]
     InternalError(String),
 }

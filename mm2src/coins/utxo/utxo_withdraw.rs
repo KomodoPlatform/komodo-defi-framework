@@ -11,7 +11,7 @@ use common::now_ms;
 use crypto::hw_rpc_task::{HwConnectStatuses, TrezorRpcTaskConnectProcessor};
 use crypto::trezor::client::TrezorClient;
 use crypto::trezor::{TrezorError, TrezorProcessingError};
-use crypto::{CryptoCtx, CryptoInitError, DerivationPath, HwError, HwProcessingError, HwRpcError};
+use crypto::{from_hw_error, CryptoCtx, CryptoInitError, DerivationPath, HwError, HwProcessingError, HwRpcError};
 use keys::{Public as PublicKey, Type as ScriptType};
 use mm2_core::mm_ctx::MmArc;
 use mm2_err_handle::prelude::*;
@@ -58,17 +58,7 @@ impl From<TrezorProcessingError<RpcTaskError>> for WithdrawError {
 }
 
 impl From<HwError> for WithdrawError {
-    fn from(e: HwError) -> Self {
-        match e {
-            HwError::NoTrezorDeviceAvailable | HwError::DeviceDisconnected => {
-                WithdrawError::HwError(HwRpcError::NoTrezorDeviceAvailable)
-            },
-            HwError::CannotChooseDevice { .. } => WithdrawError::HwError(HwRpcError::FoundMultipleDevices),
-            HwError::ConnectionTimedOut { timeout } => WithdrawError::Timeout(timeout),
-            HwError::FoundUnexpectedDevice { .. } => WithdrawError::HwError(HwRpcError::FoundUnexpectedDevice),
-            other => WithdrawError::InternalError(other.to_string()),
-        }
-    }
+    fn from(e: HwError) -> Self { from_hw_error(e) }
 }
 
 impl From<TrezorError> for WithdrawError {

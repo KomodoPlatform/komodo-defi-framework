@@ -5,9 +5,10 @@ use crate::{lp_coinfind_or_err, BalanceError, CoinFindError, CoinWithDerivationM
             UnexpectedDerivationMethod, WithdrawError};
 use async_trait::async_trait;
 use common::HttpStatusCode;
-use crypto::{Bip32DerPathError, Bip32Error, Bip44Chain, Bip44DerPathError, Bip44DerivationPath, ChildNumber,
-             DerivationPath, HwError, HwPubkey};
+use crypto::{from_hw_error, Bip32DerPathError, Bip32Error, Bip44Chain, Bip44DerPathError, Bip44DerivationPath,
+             ChildNumber, DerivationPath, HwError, HwRpcError, WithHwRpcError};
 use derive_more::Display;
+use enum_from::EnumFromTrait;
 use http::StatusCode;
 use mm2_core::mm_ctx::MmArc;
 use mm2_err_handle::prelude::*;
@@ -174,32 +175,18 @@ impl From<AccountUpdatingError> for BalanceError {
     }
 }
 
-#[derive(Clone, Debug, Deserialize, Display, Serialize, SerializeErrorType)]
+#[derive(Clone, Debug, Display, EnumFromTrait, Serialize, SerializeErrorType)]
 #[serde(tag = "error_type", content = "error_data")]
 pub enum HDWalletRpcError {
-    /* ----------- Trezor device errors ----------- */
-    #[display(fmt = "Trezor internal error: {}", _0)]
-    HardwareWalletInternal(String),
-    #[display(fmt = "No Trezor device available")]
-    NoTrezorDeviceAvailable,
-    #[display(
-        fmt = "Expected a Hardware Wallet device with '{}' pubkey, found '{}'",
-        expected_pubkey,
-        actual_pubkey
-    )]
-    FoundUnexpectedDevice {
-        actual_pubkey: HwPubkey,
-        expected_pubkey: HwPubkey,
-    },
     #[display(
         fmt = "Coin doesn't support Trezor hardware wallet. Please consider adding the 'trezor_coin' field to the coins config"
     )]
     CoinDoesntSupportTrezor,
-    /* ----------- HD Wallet RPC error ------------ */
     #[display(fmt = "Hardware Wallet context is not initialized")]
     HwContextNotInitialized,
     #[display(fmt = "No such coin {}", coin)]
     NoSuchCoin { coin: String },
+    #[from_trait(WithTimeout::timeout)]
     #[display(fmt = "RPC timed out {:?}", _0)]
     Timeout(Duration),
     #[display(fmt = "Coin is expected to be activated with the HD wallet derivation method")]
@@ -218,8 +205,12 @@ pub enum HDWalletRpcError {
     RpcInvalidResponse(String),
     #[display(fmt = "HD wallet storage error: {}", _0)]
     WalletStorageError(String),
+    #[from_trait(WithHwRpcError::hw_rpc_error)]
+    #[display(fmt = "{}", _0)]
+    HwError(HwRpcError),
     #[display(fmt = "Transport: {}", _0)]
     Transport(String),
+    #[from_trait(WithInternal::internal)]
     #[display(fmt = "Internal: {}", _0)]
     Internal(String),
 }
@@ -296,19 +287,7 @@ impl From<RpcTaskError> for HDWalletRpcError {
 }
 
 impl From<HwError> for HDWalletRpcError {
-    fn from(e: HwError) -> Self {
-        match e {
-            HwError::NoTrezorDeviceAvailable => HDWalletRpcError::NoTrezorDeviceAvailable,
-            HwError::FoundUnexpectedDevice {
-                actual_pubkey,
-                expected_pubkey,
-            } => HDWalletRpcError::FoundUnexpectedDevice {
-                actual_pubkey,
-                expected_pubkey,
-            },
-            e => HDWalletRpcError::HardwareWalletInternal(e.to_string()),
-        }
-    }
+    fn from(e: HwError) -> Self { from_hw_error(e) }
 }
 
 impl HttpStatusCode for HDWalletRpcError {
@@ -323,11 +302,9 @@ impl HttpStatusCode for HDWalletRpcError {
             | HDWalletRpcError::ErrorDerivingAddress(_)
             | HDWalletRpcError::AddressLimitReached { .. }
             | HDWalletRpcError::AccountLimitReached { .. } => StatusCode::BAD_REQUEST,
-            | HDWalletRpcError::HardwareWalletInternal(_)
-            | HDWalletRpcError::NoTrezorDeviceAvailable
-            | HDWalletRpcError::FoundUnexpectedDevice { .. }
-            | HDWalletRpcError::Timeout(_)
-            | HDWalletRpcError::Transport(_)
+            HDWalletRpcError::HwError(_) => StatusCode::GONE,
+            HDWalletRpcError::Timeout(_) => StatusCode::REQUEST_TIMEOUT,
+            HDWalletRpcError::Transport(_)
             | HDWalletRpcError::RpcInvalidResponse(_)
             | HDWalletRpcError::WalletStorageError(_)
             | HDWalletRpcError::Internal(_) => StatusCode::INTERNAL_SERVER_ERROR,

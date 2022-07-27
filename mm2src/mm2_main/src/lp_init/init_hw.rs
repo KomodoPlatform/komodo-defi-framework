@@ -3,8 +3,10 @@ use async_trait::async_trait;
 use common::{HttpStatusCode, SuccessResponse};
 use crypto::hw_rpc_task::{HwConnectStatuses, HwRpcTaskAwaitingStatus, HwRpcTaskUserAction, HwRpcTaskUserActionRequest,
                           TrezorRpcTaskConnectProcessor};
-use crypto::{CryptoCtx, CryptoInitError, HwCtxInitError, HwError, HwPubkey, HwWalletType};
+use crypto::{from_hw_error, CryptoCtx, CryptoInitError, HwCtxInitError, HwError, HwPubkey, HwRpcError, HwWalletType,
+             WithHwRpcError};
 use derive_more::Display;
+use enum_from::EnumFromTrait;
 use http::StatusCode;
 use mm2_core::mm_ctx::MmArc;
 use mm2_err_handle::prelude::*;
@@ -22,30 +24,24 @@ pub type InitHwTaskManagerShared = RpcTaskManagerShared<InitHwTask>;
 pub type InitHwStatus = RpcTaskStatus<InitHwResponse, InitHwError, InitHwInProgressStatus, InitHwAwaitingStatus>;
 type InitHwTaskHandle = RpcTaskHandle<InitHwTask>;
 
-#[derive(Clone, Display, Serialize, SerializeErrorType)]
+#[derive(Clone, Display, EnumFromTrait, Serialize, SerializeErrorType)]
 #[serde(tag = "error_type", content = "error_data")]
 pub enum InitHwError {
-    /* ----------- Trezor device errors ----------- */
-    #[display(fmt = "Trezor internal error: {}", _0)]
-    TrezorInternal(String),
-    #[display(fmt = "No Trezor device available")]
-    NoTrezorDeviceAvailable,
-    /* ---------------- RPC error ----------------- */
     #[display(fmt = "Hardware Wallet context is initializing already")]
     HwContextInitializingAlready,
-    #[display(
-        fmt = "Expected a Hardware Wallet device with '{}' pubkey, found '{}'",
-        expected_pubkey,
-        actual_pubkey
-    )]
-    FoundUnexpectedDevice {
-        actual_pubkey: HwPubkey,
-        expected_pubkey: HwPubkey,
-    },
+    #[from_trait(WithHwRpcError::hw_rpc_error)]
+    #[display(fmt = "{}", _0)]
+    HwError(HwRpcError),
+    #[from_trait(WithTimeout::timeout)]
     #[display(fmt = "RPC timed out {:?}", _0)]
     Timeout(Duration),
+    #[from_trait(WithInternal::internal)]
     #[display(fmt = "Internal: {}", _0)]
     Internal(String),
+}
+
+impl From<HwError> for InitHwError {
+    fn from(hw_error: HwError) -> Self { from_hw_error(hw_error) }
 }
 
 impl From<CryptoInitError> for InitHwError {
@@ -56,24 +52,9 @@ impl From<HwCtxInitError<RpcTaskError>> for InitHwError {
     fn from(e: HwCtxInitError<RpcTaskError>) -> Self {
         match e {
             HwCtxInitError::InitializingAlready => InitHwError::HwContextInitializingAlready,
-            HwCtxInitError::UnexpectedPubkey {
-                actual_pubkey,
-                expected_pubkey,
-            } => InitHwError::FoundUnexpectedDevice {
-                actual_pubkey,
-                expected_pubkey,
-            },
+            HwCtxInitError::UnexpectedPubkey { .. } => InitHwError::HwError(HwRpcError::FoundUnexpectedDevice),
             HwCtxInitError::HwError(hw_error) => InitHwError::from(hw_error),
             HwCtxInitError::ProcessorError(rpc) => InitHwError::from(rpc),
-        }
-    }
-}
-
-impl From<HwError> for InitHwError {
-    fn from(e: HwError) -> Self {
-        match e {
-            HwError::NoTrezorDeviceAvailable => InitHwError::NoTrezorDeviceAvailable,
-            trezor => InitHwError::TrezorInternal(trezor.to_string()),
         }
     }
 }
@@ -93,13 +74,10 @@ impl From<RpcTaskError> for InitHwError {
 impl HttpStatusCode for InitHwError {
     fn status_code(&self) -> StatusCode {
         match self {
-            InitHwError::HwContextInitializingAlready | InitHwError::FoundUnexpectedDevice { .. } => {
-                StatusCode::BAD_REQUEST
-            },
+            InitHwError::HwContextInitializingAlready => StatusCode::BAD_REQUEST,
+            InitHwError::HwError(_) => StatusCode::GONE,
             InitHwError::Timeout(_) => StatusCode::REQUEST_TIMEOUT,
-            InitHwError::TrezorInternal(_) | InitHwError::NoTrezorDeviceAvailable | InitHwError::Internal(_) => {
-                StatusCode::INTERNAL_SERVER_ERROR
-            },
+            InitHwError::Internal(_) => StatusCode::INTERNAL_SERVER_ERROR,
         }
     }
 }

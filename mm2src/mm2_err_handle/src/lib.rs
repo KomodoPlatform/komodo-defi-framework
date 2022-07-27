@@ -1,6 +1,7 @@
 #![feature(negative_impls)]
 #![feature(auto_traits)]
 
+pub mod common_errors;
 pub mod map_mm_error;
 pub mod map_to_mm;
 pub mod map_to_mm_fut;
@@ -9,6 +10,7 @@ pub mod mm_json_error;
 pub mod or_mm_error;
 
 pub mod prelude {
+    pub use crate::common_errors::{WithInternal, WithTimeout};
     pub use crate::map_mm_error::MapMmError;
     pub use crate::map_to_mm::MapToMmResult;
     pub use crate::map_to_mm_fut::MapToMmFutureExt;
