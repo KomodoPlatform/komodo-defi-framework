@@ -11,6 +11,7 @@ use coins::eth::EthCoin;
 use coins::hd_wallet::get_new_address;
 use coins::my_tx_history_v2::my_tx_history_v2_rpc;
 use coins::rpc_command::account_balance::account_balance;
+use coins::rpc_command::get_current_mtp::get_current_mtp_rpc;
 use coins::rpc_command::init_create_account::{init_create_new_account, init_create_new_account_status,
                                               init_create_new_account_user_action};
 use coins::rpc_command::init_scan_for_new_addresses::{init_scan_for_new_addresses, init_scan_for_new_addresses_status};
@@ -128,6 +129,7 @@ async fn dispatcher_v2(request: MmRpcRequest, ctx: MmArc) -> DispatcherResult<Re
         "enable_slp" => handle_mmrpc(ctx, request, enable_token::<SlpToken>).await,
         "enable_eth_with_tokens" => handle_mmrpc(ctx, request, enable_platform_coin_with_tokens::<EthCoin>).await,
         "enable_erc20" => handle_mmrpc(ctx, request, enable_token::<EthCoin>).await,
+        "get_current_mtp" => handle_mmrpc(ctx, request, get_current_mtp_rpc).await,
         "get_new_address" => handle_mmrpc(ctx, request, get_new_address).await,
         "get_public_key" => handle_mmrpc(ctx, request, get_public_key).await,
         "get_public_key_hash" => handle_mmrpc(ctx, request, get_public_key_hash).await,
@@ -187,6 +189,7 @@ async fn dispatcher_v2(request: MmRpcRequest, ctx: MmArc) -> DispatcherResult<Re
                 handle_mmrpc(ctx, request, enable_platform_coin_with_tokens::<SolanaCoin>).await
             },
             "enable_spl" => handle_mmrpc(ctx, request, enable_token::<SplToken>).await,
+            "z_coin_tx_history" => handle_mmrpc(ctx, request, coins::my_tx_history_v2::z_coin_tx_history_rpc).await,
             _ => MmError::err(DispatcherError::NoSuchMethod),
         },
         #[cfg(target_arch = "wasm32")]

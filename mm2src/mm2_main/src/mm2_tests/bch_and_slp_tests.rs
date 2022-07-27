@@ -374,12 +374,12 @@ async fn wait_till_history_has_records(
     expected_len: usize,
     for_coin: &str,
     paging: Option<common::PagingOptionsEnum<String>>,
-) -> MyTxHistoryV2Response {
+) -> StandardHistoryV2Res {
     loop {
         let history_json = my_tx_history_v2(mm, for_coin, expected_len, paging.clone()).await;
-        let history: MyTxHistoryV2Response = json::from_value(history_json["result"].clone()).unwrap();
-        if history.transactions.len() >= expected_len {
-            break history;
+        let history: RpcV2Response<StandardHistoryV2Res> = json::from_value(history_json).unwrap();
+        if history.result.transactions.len() >= expected_len {
+            break history.result;
         }
         Timer::sleep(1.).await;
     }
