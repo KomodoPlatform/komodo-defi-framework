@@ -2550,7 +2550,7 @@ impl EthCoin {
         let coin = self.clone();
         let mut token_balances = HashMap::new();
         for (token_ticker, info) in self.get_erc_tokens_infos().await.iter() {
-            let balance_as_u256 = coin.get_token_balance_by_address(info.clone()).await?;
+            let balance_as_u256 = coin.get_token_balance_by_address(info.token_address).await?;
             let balance_as_big_decimal = u256_to_big_decimal(balance_as_u256, info.decimals)?;
             let balance = CoinBalance {
                 spendable: balance_as_big_decimal,
@@ -2562,12 +2562,12 @@ impl EthCoin {
         Ok(token_balances)
     }
 
-    async fn get_token_balance_by_address(&self, token: Erc20TokenInfo) -> Result<U256, MmError<BalanceError>> {
+    async fn get_token_balance_by_address(&self, token_address: Address) -> Result<U256, MmError<BalanceError>> {
         let coin = self.clone();
         let function = ERC20_CONTRACT.function("balanceOf")?;
         let data = function.encode_input(&[Token::Address(coin.my_address)])?;
         let res = coin
-            .call_request(token.token_address, None, Some(data.into()))
+            .call_request(token_address, None, Some(data.into()))
             .compat()
             .await?;
         let decoded = function.decode_output(&res.0)?;
