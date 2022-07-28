@@ -353,7 +353,6 @@ impl TryFrom<String> for BlockHeader {
 impl From<BlockHeader> for ExtBlockHeader {
     fn from(header: BlockHeader) -> Self {
         let prev_blockhash = ExtBlockHash::from_hash(header.previous_header_hash.to_sha256d());
-        println!("{:?}", header.previous_header_hash);
         let merkle_root = ExtTxMerkleNode::from_hash(header.merkle_root_hash.to_sha256d());
         // note: H256 nonce is not supported for bitcoin, we will just set nonce to 0 in this case since this will never happen
         let nonce = match header.nonce {
