@@ -20,7 +20,11 @@ use std::collections::HashMap;
 impl From<EthActivationV2Error> for EnablePlatformCoinWithTokensError {
     fn from(err: EthActivationV2Error) -> Self {
         match err {
-            EthActivationV2Error::InvalidPayload(e) => EnablePlatformCoinWithTokensError::InvalidPayload(e),
+            EthActivationV2Error::InvalidPayload(e)
+            | EthActivationV2Error::InvalidSwapContractAddr(e)
+            | EthActivationV2Error::InvalidFallbackSwapContract(e) => {
+                EnablePlatformCoinWithTokensError::InvalidPayload(e)
+            },
             EthActivationV2Error::ActivationFailed { ticker, error } => {
                 EnablePlatformCoinWithTokensError::PlatformCoinCreationError { ticker, error }
             },
@@ -31,8 +35,6 @@ impl From<EthActivationV2Error> for EnablePlatformCoinWithTokensError {
                 EnablePlatformCoinWithTokensError::Transport(e)
             },
             EthActivationV2Error::InternalError(e) => EnablePlatformCoinWithTokensError::Internal(e),
-            EthActivationV2Error::InvalidSwapContractAddr(e) => EnablePlatformCoinWithTokensError::Internal(e),
-            EthActivationV2Error::InvalidFallbackSwapContract(e) => EnablePlatformCoinWithTokensError::Internal(e),
         }
     }
 }
