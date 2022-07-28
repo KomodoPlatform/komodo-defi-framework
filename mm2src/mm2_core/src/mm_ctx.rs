@@ -7,7 +7,7 @@ use futures::future::AbortHandle;
 use gstuff::{try_s, Constructible, ERR, ERRL};
 use keys::KeyPair;
 use lazy_static::lazy_static;
-use mm2_metrics::{MetricsArc, MetricsOps};
+use mm2_metrics::{MetricsArc, MetricsOps, MmMetricsError};
 use primitives::hash::H160;
 use rand::Rng;
 use serde::{Deserialize, Serialize};
@@ -18,6 +18,7 @@ use std::any::Any;
 use std::collections::hash_map::{Entry, HashMap};
 use std::collections::HashSet;
 use std::fmt;
+use std::net::AddrParseError;
 use std::ops::Deref;
 use std::path::{Path, PathBuf};
 use std::sync::{Arc, Mutex};
@@ -482,13 +483,15 @@ impl MmArc {
     }
 
     #[cfg(not(target_arch = "wasm32"))]
-    fn spawn_prometheus_exporter(&self) -> Result<(), String> {
+    fn spawn_prometheus_exporter(&self) -> Result<(), MmMetricsError> {
         let prometheusport = match self.conf["prometheusport"].as_u64() {
             Some(port) => port,
             _ => return Ok(()),
         };
 
-        let address: SocketAddr = try_s!(format!("127.0.0.1:{}", prometheusport).parse());
+        let address: SocketAddr = format!("127.0.0.1:{}", prometheusport)
+            .parse()
+            .map_err(|e: AddrParseError| MmMetricsError::Internal(e.to_string()))?;
 
         let credentials =
             self.conf["prometheus_credentials"]

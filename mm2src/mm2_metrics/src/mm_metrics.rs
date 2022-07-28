@@ -207,15 +207,16 @@ pub(crate) fn labels_to_tags(labels: Iter<Label>) -> Vec<Tag> {
 
 /// Used for parsing `MetricNameValueMap` into Message(loggable string).
 pub(crate) fn name_value_map_to_message(name_value_map: &MetricNameValueMap) -> String {
-    name_value_map
+    let sort = name_value_map
         .iter()
-        .sorted_by(|x, y| x.partial_cmp(y).unwrap_or(std::cmp::Ordering::Less))
-        .map(|(key, value)| match value {
-            crate::mm_metrics::PreparedMetric::Unsigned(v) => format!("{}={:?}", key, v),
-            crate::mm_metrics::PreparedMetric::Float(v) => format!("{}={:?}", key, v),
-            crate::mm_metrics::PreparedMetric::Histogram(v) => format!("{}={:?}", key, v.to_tag_message()),
-        })
-        .join(" ")
+        .sorted_by(|x, y| x.partial_cmp(y).unwrap_or(std::cmp::Ordering::Less));
+
+    sort.map(|(key, value)| match value {
+        crate::mm_metrics::PreparedMetric::Unsigned(v) => format!("{}={:?}", key, v),
+        crate::mm_metrics::PreparedMetric::Float(v) => format!("{}={:?}", key, v),
+        crate::mm_metrics::PreparedMetric::Histogram(v) => format!("{}={:?}", key, v.to_tag_message()),
+    })
+    .join(" ")
 }
 
 #[derive(PartialEq, PartialOrd)]
@@ -275,7 +276,7 @@ pub mod prometheus {
         address: SocketAddr,
         shutdown_detector: impl Future<Output = ()> + 'static + Send,
         credentials: Option<PrometheusCredentials>,
-    ) -> Result<(), String> {
+    ) -> Result<(), MmMetricsError> {
         let make_svc = make_service_fn(move |_conn| {
             let metrics = metrics.clone();
             let credentials = credentials.clone();
@@ -285,7 +286,7 @@ pub mod prometheus {
         });
 
         let server = Server::try_bind(&address)
-            .map_err(|e| e.to_string())?
+            .map_err(|e| MmMetricsError::Internal(e.to_string()))?
             .http1_half_close(false) // https://github.com/hyperium/hyper/issues/1764
             .serve(make_svc)
             .with_graceful_shutdown(shutdown_detector);
@@ -307,7 +308,7 @@ pub mod prometheus {
         credentials: Option<PrometheusCredentials>,
     ) -> Result<Response<Body>, http::Error> {
         fn on_error(status: StatusCode, error: MmError<MmMetricsError>) -> Result<Response<Body>, http::Error> {
-            error!("{}", error.to_string());
+            error!("{:?}", error);
             Response::builder().status(status).body(Body::empty()).map_err(|err| {
                 error!("{}", err);
                 err
@@ -410,7 +411,7 @@ mod test {
         mm_gauge!(metrics, "rpc.connection.count", 3.0, "coin" => "KMD");
         mm_gauge!(metrics, "rpc.connection.count", 5.0, "coin" => "KMD");
 
-        let delta = 34382022725155.0 - 34381019796149.0;
+        let delta = Duration::from_secs(1);
         mm_timing!(metrics,
                    "rpc.query.spent_time",
                    // ~ 1 second
@@ -418,7 +419,6 @@ mod test {
                    "coin" => "KMD",
                    "method" => "blockchain.transaction.get");
 
-        let delta = 34384023173373.0 - 34382022774105.0;
         mm_timing!(metrics,
                    "rpc.query.spent_time",
                    // ~ 2 second
@@ -456,8 +456,8 @@ mod test {
                     "count": 2.0,
                     "key": "rpc.query.spent_time",
                     "labels": { "coin": "KMD", "method": "blockchain.transaction.get" },
-                    "max": 2000399268.0,
-                    "min": 1002929006.0,
+                    "max": 1.0,
+                    "min": 1.0,
                     "type": "histogram"
                 },
                 {
