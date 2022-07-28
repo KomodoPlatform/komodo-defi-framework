@@ -513,6 +513,11 @@ where
     Box::new(rf)
 }
 
+/// An alternative to the `std::convert::Infallible` that implements `Serialize`.
+/// Replace it with `!` when it's stable.
+#[derive(Clone, Deserialize, Serialize)]
+pub enum SerdeInfallible {}
+
 /// An mmrpc 2.0 compatible error variant that is used when the serialization of an RPC response is failed.
 #[derive(Serialize, SerializeErrorType)]
 #[serde(tag = "error_type", content = "error_data")]

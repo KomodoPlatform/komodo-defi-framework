@@ -10,6 +10,7 @@ use crate::{mm2::lp_stats::{add_node_to_version_stat, remove_node_from_version_s
 use coins::hd_wallet::get_new_address;
 use coins::my_tx_history_v2::my_tx_history_v2_rpc;
 use coins::rpc_command::account_balance::account_balance;
+use coins::rpc_command::init_account_balance::{init_account_balance, init_account_balance_status};
 use coins::rpc_command::init_create_account::{init_create_new_account, init_create_new_account_status,
                                               init_create_new_account_user_action};
 use coins::rpc_command::init_scan_for_new_addresses::{init_scan_for_new_addresses, init_scan_for_new_addresses_status};
@@ -130,6 +131,8 @@ async fn dispatcher_v2(request: MmRpcRequest, ctx: MmArc) -> DispatcherResult<Re
         "get_public_key_hash" => handle_mmrpc(ctx, request, get_public_key_hash).await,
         "get_raw_transaction" => handle_mmrpc(ctx, request, get_raw_transaction).await,
         "get_staking_infos" => handle_mmrpc(ctx, request, get_staking_infos).await,
+        "init_account_balance" => handle_mmrpc(ctx, request, init_account_balance).await,
+        "init_account_balance_status" => handle_mmrpc(ctx, request, init_account_balance_status).await,
         "init_create_new_account" => handle_mmrpc(ctx, request, init_create_new_account).await,
         "init_create_new_account_status" => handle_mmrpc(ctx, request, init_create_new_account_status).await,
         "init_create_new_account_user_action" => handle_mmrpc(ctx, request, init_create_new_account_user_action).await,

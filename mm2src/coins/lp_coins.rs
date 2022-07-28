@@ -247,6 +247,7 @@ use hd_wallet::{HDAddress, HDAddressId};
 use qrc20::Qrc20ActivationParams;
 use qrc20::{qrc20_coin_from_conf_and_params, Qrc20Coin, Qrc20FeeDetails};
 use qtum::{Qrc20AddressError, ScriptHashTypeNotSupported};
+use rpc_command::init_account_balance::{AccountBalanceTaskManager, AccountBalanceTaskManagerShared};
 use rpc_command::init_create_account::{CreateAccountTaskManager, CreateAccountTaskManagerShared};
 use rpc_command::init_scan_for_new_addresses::{ScanAddressesTaskManager, ScanAddressesTaskManagerShared};
 use rpc_command::init_withdraw::{WithdrawTaskManager, WithdrawTaskManagerShared};
@@ -1883,9 +1884,10 @@ pub struct CoinsContext {
     /// Similar to `LP_coins`.
     coins: AsyncMutex<HashMap<String, MmCoinEnum>>,
     balance_update_handlers: AsyncMutex<Vec<Box<dyn BalanceTradeFeeUpdatedHandler + Send + Sync>>>,
-    withdraw_task_manager: WithdrawTaskManagerShared,
+    account_balance_task_manager: AccountBalanceTaskManagerShared,
     create_account_manager: CreateAccountTaskManagerShared,
     scan_addresses_manager: ScanAddressesTaskManagerShared,
+    withdraw_task_manager: WithdrawTaskManagerShared,
     #[cfg(target_arch = "wasm32")]
     tx_history_db: SharedDb<TxHistoryDb>,
     #[cfg(target_arch = "wasm32")]
@@ -1909,6 +1911,7 @@ impl CoinsContext {
             Ok(CoinsContext {
                 coins: AsyncMutex::new(HashMap::new()),
                 balance_update_handlers: AsyncMutex::new(vec![]),
+                account_balance_task_manager: AccountBalanceTaskManager::new_shared(),
                 withdraw_task_manager: WithdrawTaskManager::new_shared(),
                 create_account_manager: CreateAccountTaskManager::new_shared(),
                 scan_addresses_manager: ScanAddressesTaskManager::new_shared(),

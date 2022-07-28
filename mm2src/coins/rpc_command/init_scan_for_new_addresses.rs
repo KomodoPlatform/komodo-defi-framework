@@ -2,12 +2,15 @@ use crate::coin_balance::HDAddressBalance;
 use crate::rpc_command::hd_account_balance_rpc_error::HDAccountBalanceRpcError;
 use crate::{lp_coinfind_or_err, CoinsContext, MmCoinEnum};
 use async_trait::async_trait;
+use common::SerdeInfallible;
 use crypto::RpcDerivationPath;
 use mm2_core::mm_ctx::MmArc;
 use mm2_err_handle::prelude::*;
 use rpc_task::rpc_common::{InitRpcTaskResponse, RpcTaskStatusError, RpcTaskStatusRequest};
 use rpc_task::{RpcTask, RpcTaskHandle, RpcTaskManager, RpcTaskManagerShared, RpcTaskStatus, RpcTaskTypes};
 
+pub type ScanAddressesUserAction = SerdeInfallible;
+pub type ScanAddressesAwaitingStatus = SerdeInfallible;
 pub type ScanAddressesTaskManager = RpcTaskManager<InitScanAddressesTask>;
 pub type ScanAddressesTaskManagerShared = RpcTaskManagerShared<InitScanAddressesTask>;
 pub type ScanAddressesTaskHandle = RpcTaskHandle<InitScanAddressesTask>;
@@ -42,16 +45,6 @@ pub struct ScanAddressesParams {
 pub enum ScanAddressesInProgressStatus {
     InProgress,
 }
-
-/// We can't use `std::convert::Infallible` as [`RpcTaskTypes::UserAction`] because it doesn't implement `Serialize`.
-/// Use `!` when it's stable.
-#[derive(Clone, Serialize)]
-pub enum ScanAddressesUserAction {}
-
-/// We can't use `std::convert::Infallible` as [`RpcTaskTypes::AwaitingStatus`] because it doesn't implement `Serialize`.
-/// Use `!` when it's stable.
-#[derive(Clone, Serialize)]
-pub enum ScanAddressesAwaitingStatus {}
 
 #[async_trait]
 pub trait InitScanAddressesRpcOps {
