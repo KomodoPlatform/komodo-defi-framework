@@ -121,7 +121,6 @@ impl MetricsOps for Metrics {
 }
 
 #[derive(Debug)]
-#[allow(dead_code)]
 pub struct TagMetric {
     pub tags: Vec<Tag>,
     pub message: String,
@@ -207,16 +206,15 @@ pub(crate) fn labels_to_tags(labels: Iter<Label>) -> Vec<Tag> {
 
 /// Used for parsing `MetricNameValueMap` into Message(loggable string).
 pub(crate) fn name_value_map_to_message(name_value_map: &MetricNameValueMap) -> String {
-    let sort = name_value_map
+    name_value_map
         .iter()
-        .sorted_by(|x, y| x.partial_cmp(y).unwrap_or(std::cmp::Ordering::Less));
-
-    sort.map(|(key, value)| match value {
-        crate::mm_metrics::PreparedMetric::Unsigned(v) => format!("{}={:?}", key, v),
-        crate::mm_metrics::PreparedMetric::Float(v) => format!("{}={:?}", key, v),
-        crate::mm_metrics::PreparedMetric::Histogram(v) => format!("{}={:?}", key, v.to_tag_message()),
-    })
-    .join(" ")
+        .sorted_by(|x, y| x.partial_cmp(y).unwrap_or(std::cmp::Ordering::Less))
+        .map(|(key, value)| match value {
+            crate::mm_metrics::PreparedMetric::Unsigned(v) => format!("{}={:?}", key, v),
+            crate::mm_metrics::PreparedMetric::Float(v) => format!("{}={:?}", key, v),
+            crate::mm_metrics::PreparedMetric::Histogram(v) => format!("{}={:?}", key, v.to_tag_message()),
+        })
+        .join(" ")
 }
 
 #[derive(PartialEq, PartialOrd)]
@@ -308,7 +306,7 @@ pub mod prometheus {
         credentials: Option<PrometheusCredentials>,
     ) -> Result<Response<Body>, http::Error> {
         fn on_error(status: StatusCode, error: MmError<MmMetricsError>) -> Result<Response<Body>, http::Error> {
-            error!("{:?}", error);
+            error!("{}", error);
             Response::builder().status(status).body(Body::empty()).map_err(|err| {
                 error!("{}", err);
                 err
@@ -318,10 +316,7 @@ pub mod prometheus {
         if req.uri() != "/metrics" {
             return on_error(
                 StatusCode::BAD_REQUEST,
-                MmError::new(MmMetricsError::Internal(format!(
-                    "Warning Prometheus: unexpected URI {}",
-                    req.uri()
-                ))),
+                MmError::new(MmMetricsError::UnexpectedUri(req.uri().to_string())),
             );
         }
 
@@ -336,9 +331,7 @@ pub mod prometheus {
             _ => {
                 return on_error(
                     StatusCode::BAD_REQUEST,
-                    MmError::new(MmMetricsError::Internal(
-                        "Warning Prometheus: metrics system unavailable".to_string(),
-                    )),
+                    MmError::new(MmMetricsError::MetricsSystemUnavailable),
                 )
             },
         };
@@ -359,22 +352,15 @@ pub mod prometheus {
         let header_value = req
             .headers()
             .get(header::AUTHORIZATION)
-            .ok_or_else(|| {
-                MmMetricsError::PrometheusTransport("Warning Prometheus: authorization required".to_string())
-            })
-            .and_then(|header| {
-                Ok(header
-                    .to_str()
-                    .map_err(|e| MmMetricsError::PrometheusTransport(e.to_string())))?
-            })?;
+            .ok_or(MmMetricsError::PrometheusAuthorizationRequired)
+            .and_then(|header| Ok(header.to_str().map_err(|err| MmMetricsError::Internal(err.to_string())))?)?;
 
         let expected = format!("Basic {}", base64::encode_config(&expected.userpass, base64::URL_SAFE));
 
         if header_value != expected {
-            return Err(MmError::new(MmMetricsError::Internal(format!(
-                "Warning Prometheus: invalid credentials: {}",
-                header_value
-            ))));
+            return Err(MmError::new(MmMetricsError::PrometheusInvalidCredentials(
+                header_value.to_string(),
+            )));
         }
 
         Ok(())
@@ -535,4 +521,35 @@ mod test {
 
         block_on(async { Timer::sleep(6.).await });
     }
+
+    //    #[test]
+    //    fn test_prometheus_format() {
+    //        let mm_metrics = MetricsArc::new();
+    //
+    //        mm_metrics.init();
+    //
+    //        mm_counter!(mm_metrics, "rpc.traffic.tx", 62, "coin" => "BTC");
+    //        mm_counter!(mm_metrics, "rpc.traffic.rx", 105, "coin" => "BTC");
+    //
+    //        mm_counter!(mm_metrics, "rpc.traffic.tx", 30, "coin" => "BTC");
+    //        mm_counter!(mm_metrics, "rpc.traffic.rx", 44, "coin" => "BTC");
+    //
+    //        mm_counter!(mm_metrics, "rpc.traffic.tx", 54, "coin" => "KMD");
+    //        mm_counter!(mm_metrics, "rpc.traffic.rx", 158, "coin" => "KMD");
+    //
+    //        mm_gauge!(mm_metrics, "rpc.connection.count", 3.0, "coin" => "KMD");
+    //        mm_gauge!(mm_metrics, "rpc.connection.count", 5.0, "coin" => "KMD");
+    //
+    //        mm_timing!(mm_metrics,
+    //                     "rpc.query.spent_time",
+    //                     4.5,
+    //                     "coin"=> "KMD",
+    //                     "method"=>"blockchain.transaction.get");
+    //
+    //        let actual = mm_metrics.0.collect_prometheus_format();
+    //        let expected = concat!("# TYPE rpc_traffic_tx counter\nrpc_traffic_tx{coin=\"BTC\"} \
+    //        92\nrpc_traffic_tx{coin=\"KMD\"} 54\n\n# TYPE rpc_traffic_rx counter\nrpc_traffic_rx{coin=\"BTC\"} 149\nrpc_traffic_rx{coin=\"KMD\"} 158\n\n# TYPE rpc_connection_count gauge\nrpc_connection_count{coin=\"KMD\"} 5\n\n# TYPE rpc_query_spent_time histogram\nrpc_query_spent_time_sum 4.5\nrpc_query_spent_time_count 1\n\n");
+    //
+    //        assert_eq!(expected, actual.to_string());
+    //    }
 }

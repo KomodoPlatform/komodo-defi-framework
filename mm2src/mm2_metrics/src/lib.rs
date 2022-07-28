@@ -20,9 +20,16 @@ pub type MmMetricsResult<T> = Result<T, MmError<MmMetricsError>>;
 
 #[derive(Debug, Display)]
 pub enum MmMetricsError {
-    PrometheusTransport(String),
     #[display(fmt = "Internal: {}", _0)]
     Internal(String),
+    #[display(fmt = "Warning Prometheus: metrics system unavailable")]
+    MetricsSystemUnavailable,
+    #[display(fmt = "Warning Prometheus: authorization required")]
+    PrometheusAuthorizationRequired,
+    #[display(fmt = "Warning Prometheus: invalid credentials: {}", _0)]
+    PrometheusInvalidCredentials(String),
+    #[display(fmt = "Warning Prometheus: unexpected URI {}", _0)]
+    UnexpectedUri(String),
 }
 
 pub trait MetricsOps {
