@@ -507,13 +507,13 @@ pub enum OrdermatchRequest {
         action: BestOrdersAction,
         volume: BigRational,
     },
+    OrderbookDepth {
+        pairs: Vec<(String, String)>,
+    },
     BestOrdersByNumber {
         coin: String,
         action: BestOrdersAction,
         number: usize,
-    },
-    OrderbookDepth {
-        pairs: Vec<(String, String)>,
     },
 }
 
