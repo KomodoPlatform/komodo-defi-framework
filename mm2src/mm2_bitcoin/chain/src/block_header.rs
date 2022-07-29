@@ -241,7 +241,7 @@ impl Deserializable for BlockHeader {
         };
         let nonce = if version == 4 {
             BlockHeaderNonce::H256(reader.read()?)
-        } else if matches!(version, KAWPOW_VERSION | MTP_POW_VERSION) && time >= PROG_POW_SWITCH_TIME {
+        } else if version == KAWPOW_VERSION || version == MTP_POW_VERSION && time >= PROG_POW_SWITCH_TIME {
             BlockHeaderNonce::U32(0)
         } else {
             BlockHeaderNonce::U32(reader.read()?)
