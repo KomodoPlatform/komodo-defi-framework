@@ -110,11 +110,10 @@ impl TokenOf for EthCoin {
 
 impl RegisterTokenInfo<EthCoin> for EthCoin {
     fn register_token_info(&self, token: &EthCoin) {
-        let fut = self.add_erc_token_info(token.ticker().to_string(), Erc20TokenInfo {
+        self.add_erc_token_info(token.ticker().to_string(), Erc20TokenInfo {
             token_address: token.erc20_token_address().unwrap(),
             decimals: token.decimals(),
         });
-        futures::executor::block_on(fut);
     }
 }
 

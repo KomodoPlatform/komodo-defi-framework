@@ -360,7 +360,7 @@ pub struct EthCoinImpl {
     /// the block range used for eth_getLogs
     logs_block_range: u64,
     nonce_lock: Arc<AsyncMutex<()>>,
-    erc20_tokens_infos: Arc<AsyncMutex<HashMap<String, Erc20TokenInfo>>>,
+    erc20_tokens_infos: Arc<Mutex<HashMap<String, Erc20TokenInfo>>>,
 }
 
 #[derive(Clone, Debug)]
@@ -369,7 +369,7 @@ pub struct Web3Instance {
     is_parity: bool,
 }
 
-#[derive(Clone)]
+#[derive(Clone, Debug)]
 pub struct Erc20TokenInfo {
     pub token_address: Address,
     pub decimals: u8,
@@ -601,12 +601,16 @@ impl EthCoinImpl {
         }
     }
 
-    pub async fn add_erc_token_info(&self, ticker: String, info: Erc20TokenInfo) {
-        self.erc20_tokens_infos.lock().await.insert(ticker, info);
+    pub fn add_erc_token_info(&self, ticker: String, info: Erc20TokenInfo) {
+        self.erc20_tokens_infos.lock().unwrap().insert(ticker, info);
     }
 
-    pub async fn get_erc_tokens_infos(&self) -> futures::lock::MutexGuard<'_, HashMap<String, Erc20TokenInfo>> {
-        self.erc20_tokens_infos.lock().await
+    /// WARNING
+    /// Be very careful using this function since it returns dereferenced clone
+    /// of value behind the MutexGuard and makes it non-thread-safe.
+    pub fn get_erc_tokens_infos(&self) -> HashMap<String, Erc20TokenInfo> {
+        let guard = self.erc20_tokens_infos.lock().unwrap();
+        (*guard).clone()
     }
 }
 
@@ -2549,7 +2553,7 @@ impl EthCoin {
     pub async fn get_tokens_balance_list(&self) -> Result<HashMap<String, CoinBalance>, MmError<BalanceError>> {
         let coin = self.clone();
         let mut token_balances = HashMap::new();
-        for (token_ticker, info) in self.get_erc_tokens_infos().await.iter() {
+        for (token_ticker, info) in self.get_erc_tokens_infos().iter() {
             let balance_as_u256 = coin.get_token_balance_by_address(info.token_address).await?;
             let balance_as_big_decimal = u256_to_big_decimal(balance_as_u256, info.decimals)?;
             let balance = CoinBalance {
