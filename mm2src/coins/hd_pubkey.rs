@@ -1,4 +1,4 @@
-use crate::hd_wallet::{HDWalletRpcError, NewAccountCreatingError};
+use crate::hd_wallet::NewAccountCreatingError;
 use async_trait::async_trait;
 use crypto::hw_rpc_task::{HwConnectStatuses, TrezorRpcTaskConnectProcessor};
 use crypto::trezor::trezor_rpc_task::TrezorRpcTaskProcessor;
@@ -64,19 +64,6 @@ impl From<HDExtractPubkeyError> for NewAccountCreatingError {
                 NewAccountCreatingError::HardwareWalletError(HwError::InvalidXpub(xpub))
             },
             HDExtractPubkeyError::Internal(internal) => NewAccountCreatingError::Internal(internal),
-        }
-    }
-}
-
-impl From<HDExtractPubkeyError> for HDWalletRpcError {
-    fn from(e: HDExtractPubkeyError) -> Self {
-        match e {
-            HDExtractPubkeyError::HwContextNotInitialized => HDWalletRpcError::HwContextNotInitialized,
-            HDExtractPubkeyError::CoinDoesntSupportTrezor => HDWalletRpcError::CoinDoesntSupportTrezor,
-            HDExtractPubkeyError::RpcTaskError(rpc) => HDWalletRpcError::from(rpc),
-            HDExtractPubkeyError::HardwareWalletError(hw) => HDWalletRpcError::from(hw),
-            HDExtractPubkeyError::InvalidXpub(xpub) => HDWalletRpcError::from(HwError::InvalidXpub(xpub)),
-            HDExtractPubkeyError::Internal(internal) => HDWalletRpcError::Internal(internal),
         }
     }
 }

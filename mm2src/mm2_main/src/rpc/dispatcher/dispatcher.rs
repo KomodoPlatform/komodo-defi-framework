@@ -7,9 +7,9 @@ use crate::{mm2::lp_stats::{add_node_to_version_stat, remove_node_from_version_s
                             stop_version_stat_collection, update_version_stat_collection},
             mm2::lp_swap::{recreate_swap_data, trade_preimage_rpc},
             mm2::rpc::lp_commands::{get_public_key, get_public_key_hash}};
-use coins::hd_wallet::get_new_address;
 use coins::my_tx_history_v2::my_tx_history_v2_rpc;
 use coins::rpc_command::account_balance::account_balance;
+use coins::rpc_command::get_new_address::get_new_address;
 use coins::rpc_command::init_account_balance::{init_account_balance, init_account_balance_status};
 use coins::rpc_command::init_create_account::{init_create_new_account, init_create_new_account_status,
                                               init_create_new_account_user_action};

@@ -1,15 +1,20 @@
 use crate::coin_balance::HDAccountBalance;
-use crate::hd_pubkey::{HDXPubExtractor, RpcTaskXPubExtractor};
-use crate::hd_wallet::HDWalletRpcError;
-use crate::{lp_coinfind_or_err, CoinBalance, CoinWithDerivationMethod, CoinsContext, MmCoinEnum};
+use crate::hd_pubkey::{HDExtractPubkeyError, HDXPubExtractor, RpcTaskXPubExtractor};
+use crate::hd_wallet::NewAccountCreatingError;
+use crate::{lp_coinfind_or_err, BalanceError, CoinBalance, CoinFindError, CoinWithDerivationMethod, CoinsContext,
+            MmCoinEnum, UnexpectedDerivationMethod};
 use async_trait::async_trait;
-use common::{true_f, SuccessResponse};
+use common::{true_f, HttpStatusCode, SuccessResponse};
 use crypto::hw_rpc_task::{HwConnectStatuses, HwRpcTaskAwaitingStatus, HwRpcTaskUserAction, HwRpcTaskUserActionRequest};
-use crypto::RpcDerivationPath;
+use crypto::{from_hw_error, Bip44Chain, HwError, HwRpcError, RpcDerivationPath, WithHwRpcError};
+use derive_more::Display;
+use enum_from::EnumFromTrait;
+use http::StatusCode;
 use mm2_core::mm_ctx::MmArc;
 use mm2_err_handle::prelude::*;
 use rpc_task::rpc_common::{InitRpcTaskResponse, RpcTaskStatusError, RpcTaskStatusRequest, RpcTaskUserActionError};
-use rpc_task::{RpcTask, RpcTaskHandle, RpcTaskManager, RpcTaskManagerShared, RpcTaskStatus, RpcTaskTypes};
+use rpc_task::{RpcTask, RpcTaskError, RpcTaskHandle, RpcTaskManager, RpcTaskManagerShared, RpcTaskStatus, RpcTaskTypes};
+use std::time::Duration;
 
 pub type CreateAccountUserAction = HwRpcTaskUserAction;
 pub type CreateAccountAwaitingStatus = HwRpcTaskAwaitingStatus;
@@ -17,9 +22,131 @@ pub type CreateAccountTaskManager = RpcTaskManager<InitCreateAccountTask>;
 pub type CreateAccountTaskManagerShared = RpcTaskManagerShared<InitCreateAccountTask>;
 pub type CreateAccountTaskHandle = RpcTaskHandle<InitCreateAccountTask>;
 pub type CreateAccountRpcTaskStatus =
-    RpcTaskStatus<HDAccountBalance, HDWalletRpcError, CreateAccountInProgressStatus, CreateAccountAwaitingStatus>;
+    RpcTaskStatus<HDAccountBalance, CreateAccountRpcError, CreateAccountInProgressStatus, CreateAccountAwaitingStatus>;
 
 type CreateAccountXPubExtractor<'task> = RpcTaskXPubExtractor<'task, InitCreateAccountTask>;
+
+#[derive(Clone, Debug, Display, EnumFromTrait, Serialize, SerializeErrorType)]
+#[serde(tag = "error_type", content = "error_data")]
+pub enum CreateAccountRpcError {
+    #[display(fmt = "Hardware Wallet context is not initialized")]
+    HwContextNotInitialized,
+    #[display(fmt = "No such coin {}", coin)]
+    NoSuchCoin { coin: String },
+    #[from_trait(WithTimeout::timeout)]
+    #[display(fmt = "RPC timed out {:?}", _0)]
+    Timeout(Duration),
+    #[display(fmt = "Coin is expected to be activated with the HD wallet derivation method")]
+    CoinIsActivatedNotWithHDWallet,
+    #[display(fmt = "Coin doesn't support the given BIP44 chain: {:?}", chain)]
+    InvalidBip44Chain { chain: Bip44Chain },
+    #[display(fmt = "Accounts limit reached. Max number of accounts: {}", max_accounts_number)]
+    AccountLimitReached { max_accounts_number: u32 },
+    #[display(fmt = "Electrum/Native RPC invalid response: {}", _0)]
+    RpcInvalidResponse(String),
+    #[display(fmt = "HD wallet storage error: {}", _0)]
+    WalletStorageError(String),
+    #[from_trait(WithHwRpcError::hw_rpc_error)]
+    #[display(fmt = "{}", _0)]
+    HwError(HwRpcError),
+    #[display(fmt = "Transport: {}", _0)]
+    Transport(String),
+    #[from_trait(WithInternal::internal)]
+    #[display(fmt = "Internal: {}", _0)]
+    Internal(String),
+}
+
+impl From<CoinFindError> for CreateAccountRpcError {
+    fn from(e: CoinFindError) -> Self {
+        match e {
+            CoinFindError::NoSuchCoin { coin } => CreateAccountRpcError::NoSuchCoin { coin },
+        }
+    }
+}
+
+impl From<UnexpectedDerivationMethod> for CreateAccountRpcError {
+    fn from(e: UnexpectedDerivationMethod) -> Self {
+        match e {
+            UnexpectedDerivationMethod::HDWalletUnavailable => CreateAccountRpcError::CoinIsActivatedNotWithHDWallet,
+            unexpected_error => CreateAccountRpcError::Internal(unexpected_error.to_string()),
+        }
+    }
+}
+
+impl From<NewAccountCreatingError> for CreateAccountRpcError {
+    fn from(e: NewAccountCreatingError) -> Self {
+        match e {
+            NewAccountCreatingError::HwContextNotInitialized => CreateAccountRpcError::HwContextNotInitialized,
+            NewAccountCreatingError::HDWalletUnavailable => CreateAccountRpcError::CoinIsActivatedNotWithHDWallet,
+            NewAccountCreatingError::CoinDoesntSupportTrezor => {
+                CreateAccountRpcError::Internal("Coin must support Trezor at this point".to_string())
+            },
+            NewAccountCreatingError::RpcTaskError(rpc) => CreateAccountRpcError::from(rpc),
+            NewAccountCreatingError::HardwareWalletError(hw) => CreateAccountRpcError::from(hw),
+            NewAccountCreatingError::AccountLimitReached { max_accounts_number } => {
+                CreateAccountRpcError::AccountLimitReached { max_accounts_number }
+            },
+            NewAccountCreatingError::ErrorSavingAccountToStorage(e) => {
+                let error = format!("Error uploading HD account info to the storage: {}", e);
+                CreateAccountRpcError::WalletStorageError(error)
+            },
+            NewAccountCreatingError::Internal(internal) => CreateAccountRpcError::Internal(internal),
+        }
+    }
+}
+
+impl From<BalanceError> for CreateAccountRpcError {
+    fn from(e: BalanceError) -> Self {
+        match e {
+            BalanceError::Transport(transport) => CreateAccountRpcError::Transport(transport),
+            BalanceError::InvalidResponse(rpc) => CreateAccountRpcError::RpcInvalidResponse(rpc),
+            BalanceError::UnexpectedDerivationMethod(der_path) => CreateAccountRpcError::from(der_path),
+            BalanceError::WalletStorageError(internal) | BalanceError::Internal(internal) => {
+                CreateAccountRpcError::Internal(internal)
+            },
+        }
+    }
+}
+
+impl From<HDExtractPubkeyError> for CreateAccountRpcError {
+    fn from(e: HDExtractPubkeyError) -> Self { CreateAccountRpcError::from(NewAccountCreatingError::from(e)) }
+}
+
+impl From<RpcTaskError> for CreateAccountRpcError {
+    fn from(e: RpcTaskError) -> Self {
+        let error = e.to_string();
+        match e {
+            RpcTaskError::Canceled => CreateAccountRpcError::Internal("Canceled".to_owned()),
+            RpcTaskError::Timeout(timeout) => CreateAccountRpcError::Timeout(timeout),
+            RpcTaskError::NoSuchTask(_) | RpcTaskError::UnexpectedTaskStatus { .. } => {
+                CreateAccountRpcError::Internal(error)
+            },
+            RpcTaskError::Internal(internal) => CreateAccountRpcError::Internal(internal),
+        }
+    }
+}
+
+impl From<HwError> for CreateAccountRpcError {
+    fn from(e: HwError) -> Self { from_hw_error(e) }
+}
+
+impl HttpStatusCode for CreateAccountRpcError {
+    fn status_code(&self) -> StatusCode {
+        match self {
+            CreateAccountRpcError::HwContextNotInitialized
+            | CreateAccountRpcError::NoSuchCoin { .. }
+            | CreateAccountRpcError::CoinIsActivatedNotWithHDWallet
+            | CreateAccountRpcError::InvalidBip44Chain { .. }
+            | CreateAccountRpcError::AccountLimitReached { .. } => StatusCode::BAD_REQUEST,
+            CreateAccountRpcError::HwError(_) => StatusCode::GONE,
+            CreateAccountRpcError::Timeout(_) => StatusCode::REQUEST_TIMEOUT,
+            CreateAccountRpcError::Transport(_)
+            | CreateAccountRpcError::RpcInvalidResponse(_)
+            | CreateAccountRpcError::WalletStorageError(_)
+            | CreateAccountRpcError::Internal(_) => StatusCode::INTERNAL_SERVER_ERROR,
+        }
+    }
+}
 
 #[derive(Deserialize)]
 pub struct CreateNewAccountRequest {
@@ -52,7 +179,7 @@ pub trait InitCreateHDAccountRpcOps {
         &self,
         params: CreateNewAccountParams,
         xpub_extractor: &XPubExtractor,
-    ) -> MmResult<HDAccountBalance, HDWalletRpcError>
+    ) -> MmResult<HDAccountBalance, CreateAccountRpcError>
     where
         XPubExtractor: HDXPubExtractor + Sync;
 }
@@ -65,7 +192,7 @@ pub struct InitCreateAccountTask {
 
 impl RpcTaskTypes for InitCreateAccountTask {
     type Item = HDAccountBalance;
-    type Error = HDWalletRpcError;
+    type Error = CreateAccountRpcError;
     type InProgressStatus = CreateAccountInProgressStatus;
     type AwaitingStatus = CreateAccountAwaitingStatus;
     type UserAction = CreateAccountUserAction;
@@ -81,7 +208,7 @@ impl RpcTask for InitCreateAccountTask {
             coin: Coin,
             params: CreateNewAccountParams,
             task_handle: &CreateAccountTaskHandle,
-        ) -> MmResult<HDAccountBalance, HDWalletRpcError>
+        ) -> MmResult<HDAccountBalance, CreateAccountRpcError>
         where
             Coin: InitCreateHDAccountRpcOps + Send + Sync,
         {
@@ -104,7 +231,7 @@ impl RpcTask for InitCreateAccountTask {
             MmCoinEnum::QtumCoin(qtum) => {
                 create_new_account_helper(&self.ctx, qtum, self.req.params, task_handle).await
             },
-            _ => MmError::err(HDWalletRpcError::CoinIsActivatedNotWithHDWallet),
+            _ => MmError::err(CreateAccountRpcError::CoinIsActivatedNotWithHDWallet),
         }
     }
 }
@@ -112,9 +239,9 @@ impl RpcTask for InitCreateAccountTask {
 pub async fn init_create_new_account(
     ctx: MmArc,
     req: CreateNewAccountRequest,
-) -> MmResult<InitRpcTaskResponse, HDWalletRpcError> {
+) -> MmResult<InitRpcTaskResponse, CreateAccountRpcError> {
     let coin = lp_coinfind_or_err(&ctx, &req.coin).await?;
-    let coins_ctx = CoinsContext::from_ctx(&ctx).map_to_mm(HDWalletRpcError::Internal)?;
+    let coins_ctx = CoinsContext::from_ctx(&ctx).map_to_mm(CreateAccountRpcError::Internal)?;
     let task = InitCreateAccountTask { ctx, coin, req };
     let task_id = CreateAccountTaskManager::spawn_rpc_task(&coins_ctx.create_account_manager, task)?;
     Ok(InitRpcTaskResponse { task_id })
@@ -157,7 +284,7 @@ pub(crate) mod common_impl {
         coin: &Coin,
         params: CreateNewAccountParams,
         xpub_extractor: &XPubExtractor,
-    ) -> MmResult<HDAccountBalance, HDWalletRpcError>
+    ) -> MmResult<HDAccountBalance, CreateAccountRpcError>
     where
         Coin: HDWalletBalanceOps
             + CoinWithDerivationMethod<HDWallet = <Coin as HDWalletCoinOps>::HDWallet>

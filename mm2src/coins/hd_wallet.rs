@@ -1,21 +1,14 @@
-use crate::coin_balance::HDAddressBalance;
 use crate::hd_pubkey::HDXPubExtractor;
 use crate::hd_wallet_storage::HDWalletStorageError;
-use crate::{lp_coinfind_or_err, BalanceError, CoinFindError, CoinWithDerivationMethod, MmCoinEnum,
-            UnexpectedDerivationMethod, WithdrawError};
+use crate::{BalanceError, WithdrawError};
 use async_trait::async_trait;
-use common::HttpStatusCode;
-use crypto::{from_hw_error, Bip32DerPathError, Bip32Error, Bip44Chain, Bip44DerPathError, Bip44DerivationPath,
-             ChildNumber, DerivationPath, HwError, HwRpcError, WithHwRpcError};
+use crypto::{Bip32DerPathError, Bip32Error, Bip44Chain, Bip44DerPathError, Bip44DerivationPath, ChildNumber,
+             DerivationPath, HwError};
 use derive_more::Display;
-use enum_from::EnumFromTrait;
-use http::StatusCode;
-use mm2_core::mm_ctx::MmArc;
 use mm2_err_handle::prelude::*;
 use rpc_task::RpcTaskError;
 use serde::Serialize;
 use std::collections::BTreeMap;
-use std::time::Duration;
 
 pub use futures::lock::{MappedMutexGuard as AsyncMappedMutexGuard, Mutex as AsyncMutex, MutexGuard as AsyncMutexGuard};
 
@@ -120,26 +113,6 @@ impl From<HDWalletStorageError> for NewAccountCreatingError {
     }
 }
 
-impl From<NewAccountCreatingError> for HDWalletRpcError {
-    fn from(e: NewAccountCreatingError) -> Self {
-        match e {
-            NewAccountCreatingError::HwContextNotInitialized => HDWalletRpcError::HwContextNotInitialized,
-            NewAccountCreatingError::HDWalletUnavailable => HDWalletRpcError::CoinIsActivatedNotWithHDWallet,
-            NewAccountCreatingError::CoinDoesntSupportTrezor => HDWalletRpcError::CoinDoesntSupportTrezor,
-            NewAccountCreatingError::RpcTaskError(rpc) => HDWalletRpcError::from(rpc),
-            NewAccountCreatingError::HardwareWalletError(hw) => HDWalletRpcError::from(hw),
-            NewAccountCreatingError::AccountLimitReached { max_accounts_number } => {
-                HDWalletRpcError::AccountLimitReached { max_accounts_number }
-            },
-            NewAccountCreatingError::ErrorSavingAccountToStorage(e) => {
-                let error = format!("Error uploading HD account info to the storage: {}", e);
-                HDWalletRpcError::WalletStorageError(error)
-            },
-            NewAccountCreatingError::Internal(internal) => HDWalletRpcError::Internal(internal),
-        }
-    }
-}
-
 /// Currently, we suppose that ETH/ERC20/QRC20 don't have [`Bip44Chain::Internal`] addresses.
 #[derive(Display)]
 #[display(fmt = "Coin doesn't support the given BIP44 chain: {:?}", chain)]
@@ -171,143 +144,6 @@ impl From<AccountUpdatingError> for BalanceError {
                 BalanceError::Internal(format!("Unexpected internal error: {}", error))
             },
             AccountUpdatingError::WalletStorageError(_) => BalanceError::WalletStorageError(error),
-        }
-    }
-}
-
-#[derive(Clone, Debug, Display, EnumFromTrait, Serialize, SerializeErrorType)]
-#[serde(tag = "error_type", content = "error_data")]
-pub enum HDWalletRpcError {
-    #[display(
-        fmt = "Coin doesn't support Trezor hardware wallet. Please consider adding the 'trezor_coin' field to the coins config"
-    )]
-    CoinDoesntSupportTrezor,
-    #[display(fmt = "Hardware Wallet context is not initialized")]
-    HwContextNotInitialized,
-    #[display(fmt = "No such coin {}", coin)]
-    NoSuchCoin { coin: String },
-    #[from_trait(WithTimeout::timeout)]
-    #[display(fmt = "RPC timed out {:?}", _0)]
-    Timeout(Duration),
-    #[display(fmt = "Coin is expected to be activated with the HD wallet derivation method")]
-    CoinIsActivatedNotWithHDWallet,
-    #[display(fmt = "HD account '{}' is not activated", account_id)]
-    UnknownAccount { account_id: u32 },
-    #[display(fmt = "Coin doesn't support the given BIP44 chain: {:?}", chain)]
-    InvalidBip44Chain { chain: Bip44Chain },
-    #[display(fmt = "Error deriving an address: {}", _0)]
-    ErrorDerivingAddress(String),
-    #[display(fmt = "Accounts limit reached. Max number of accounts: {}", max_accounts_number)]
-    AccountLimitReached { max_accounts_number: u32 },
-    #[display(fmt = "Addresses limit reached. Max number of addresses: {}", max_addresses_number)]
-    AddressLimitReached { max_addresses_number: u32 },
-    #[display(fmt = "Electrum/Native RPC invalid response: {}", _0)]
-    RpcInvalidResponse(String),
-    #[display(fmt = "HD wallet storage error: {}", _0)]
-    WalletStorageError(String),
-    #[from_trait(WithHwRpcError::hw_rpc_error)]
-    #[display(fmt = "{}", _0)]
-    HwError(HwRpcError),
-    #[display(fmt = "Transport: {}", _0)]
-    Transport(String),
-    #[from_trait(WithInternal::internal)]
-    #[display(fmt = "Internal: {}", _0)]
-    Internal(String),
-}
-
-impl From<CoinFindError> for HDWalletRpcError {
-    fn from(e: CoinFindError) -> Self {
-        match e {
-            CoinFindError::NoSuchCoin { coin } => HDWalletRpcError::NoSuchCoin { coin },
-        }
-    }
-}
-
-impl From<UnexpectedDerivationMethod> for HDWalletRpcError {
-    fn from(e: UnexpectedDerivationMethod) -> Self {
-        match e {
-            UnexpectedDerivationMethod::HDWalletUnavailable => HDWalletRpcError::CoinIsActivatedNotWithHDWallet,
-            unexpected_error => HDWalletRpcError::Internal(unexpected_error.to_string()),
-        }
-    }
-}
-
-impl From<BalanceError> for HDWalletRpcError {
-    fn from(e: BalanceError) -> Self {
-        match e {
-            BalanceError::Transport(transport) => HDWalletRpcError::Transport(transport),
-            BalanceError::InvalidResponse(rpc) => HDWalletRpcError::RpcInvalidResponse(rpc),
-            BalanceError::UnexpectedDerivationMethod(der_path) => HDWalletRpcError::from(der_path),
-            BalanceError::WalletStorageError(internal) | BalanceError::Internal(internal) => {
-                HDWalletRpcError::Internal(internal)
-            },
-        }
-    }
-}
-
-impl From<InvalidBip44ChainError> for HDWalletRpcError {
-    fn from(e: InvalidBip44ChainError) -> Self { HDWalletRpcError::InvalidBip44Chain { chain: e.chain } }
-}
-
-impl From<AddressDerivingError> for HDWalletRpcError {
-    fn from(e: AddressDerivingError) -> Self {
-        match e {
-            AddressDerivingError::Bip32Error(bip32) => HDWalletRpcError::ErrorDerivingAddress(bip32.to_string()),
-        }
-    }
-}
-
-impl From<NewAddressDerivingError> for HDWalletRpcError {
-    fn from(e: NewAddressDerivingError) -> HDWalletRpcError {
-        match e {
-            NewAddressDerivingError::AddressLimitReached { max_addresses_number } => {
-                HDWalletRpcError::AddressLimitReached { max_addresses_number }
-            },
-            NewAddressDerivingError::InvalidBip44Chain { chain } => HDWalletRpcError::InvalidBip44Chain { chain },
-            NewAddressDerivingError::Bip32Error(bip32) => HDWalletRpcError::Internal(bip32.to_string()),
-            NewAddressDerivingError::WalletStorageError(storage) => {
-                HDWalletRpcError::WalletStorageError(storage.to_string())
-            },
-        }
-    }
-}
-
-impl From<RpcTaskError> for HDWalletRpcError {
-    fn from(e: RpcTaskError) -> Self {
-        let error = e.to_string();
-        match e {
-            RpcTaskError::Canceled => HDWalletRpcError::Internal("Canceled".to_owned()),
-            RpcTaskError::Timeout(timeout) => HDWalletRpcError::Timeout(timeout),
-            RpcTaskError::NoSuchTask(_) | RpcTaskError::UnexpectedTaskStatus { .. } => {
-                HDWalletRpcError::Internal(error)
-            },
-            RpcTaskError::Internal(internal) => HDWalletRpcError::Internal(internal),
-        }
-    }
-}
-
-impl From<HwError> for HDWalletRpcError {
-    fn from(e: HwError) -> Self { from_hw_error(e) }
-}
-
-impl HttpStatusCode for HDWalletRpcError {
-    fn status_code(&self) -> StatusCode {
-        match self {
-            HDWalletRpcError::CoinDoesntSupportTrezor
-            | HDWalletRpcError::HwContextNotInitialized
-            | HDWalletRpcError::NoSuchCoin { .. }
-            | HDWalletRpcError::CoinIsActivatedNotWithHDWallet
-            | HDWalletRpcError::UnknownAccount { .. }
-            | HDWalletRpcError::InvalidBip44Chain { .. }
-            | HDWalletRpcError::ErrorDerivingAddress(_)
-            | HDWalletRpcError::AddressLimitReached { .. }
-            | HDWalletRpcError::AccountLimitReached { .. } => StatusCode::BAD_REQUEST,
-            HDWalletRpcError::HwError(_) => StatusCode::GONE,
-            HDWalletRpcError::Timeout(_) => StatusCode::REQUEST_TIMEOUT,
-            HDWalletRpcError::Transport(_)
-            | HDWalletRpcError::RpcInvalidResponse(_)
-            | HDWalletRpcError::WalletStorageError(_)
-            | HDWalletRpcError::Internal(_) => StatusCode::INTERNAL_SERVER_ERROR,
         }
     }
 }
@@ -444,92 +280,5 @@ pub trait HDAccountOps: Send + Sync {
     fn is_address_activated(&self, chain: Bip44Chain, address_id: u32) -> MmResult<bool, InvalidBip44ChainError> {
         let is_activated = address_id < self.known_addresses_number(chain)?;
         Ok(is_activated)
-    }
-}
-
-#[derive(Deserialize)]
-pub struct GetNewHDAddressRequest {
-    coin: String,
-    #[serde(flatten)]
-    params: GetNewHDAddressParams,
-}
-
-#[derive(Deserialize)]
-pub struct GetNewHDAddressParams {
-    account_id: u32,
-    chain: Bip44Chain,
-}
-
-#[derive(Serialize)]
-pub struct GetNewHDAddressResponse {
-    new_address: HDAddressBalance,
-}
-
-#[async_trait]
-pub trait HDWalletRpcOps {
-    async fn get_new_address_rpc(
-        &self,
-        params: GetNewHDAddressParams,
-    ) -> MmResult<GetNewHDAddressResponse, HDWalletRpcError>;
-}
-
-pub async fn get_new_address(
-    ctx: MmArc,
-    req: GetNewHDAddressRequest,
-) -> MmResult<GetNewHDAddressResponse, HDWalletRpcError> {
-    let coin = lp_coinfind_or_err(&ctx, &req.coin).await?;
-    match coin {
-        MmCoinEnum::UtxoCoin(utxo) => utxo.get_new_address_rpc(req.params).await,
-        MmCoinEnum::QtumCoin(qtum) => qtum.get_new_address_rpc(req.params).await,
-        _ => MmError::err(HDWalletRpcError::CoinIsActivatedNotWithHDWallet),
-    }
-}
-
-pub mod common_impl {
-    use super::*;
-    use crate::coin_balance::HDWalletBalanceOps;
-    use crate::MarketCoinOps;
-    use crypto::RpcDerivationPath;
-    use std::fmt;
-    use std::ops::DerefMut;
-
-    pub async fn get_new_address_rpc<Coin>(
-        coin: &Coin,
-        params: GetNewHDAddressParams,
-    ) -> MmResult<GetNewHDAddressResponse, HDWalletRpcError>
-    where
-        Coin: HDWalletBalanceOps
-            + CoinWithDerivationMethod<HDWallet = <Coin as HDWalletCoinOps>::HDWallet>
-            + MarketCoinOps
-            + Sync
-            + Send,
-        <Coin as HDWalletCoinOps>::Address: fmt::Display,
-    {
-        let account_id = params.account_id;
-        let chain = params.chain;
-
-        let hd_wallet = coin.derivation_method().hd_wallet_or_err()?;
-        let mut hd_account = hd_wallet
-            .get_account_mut(params.account_id)
-            .await
-            .or_mm_err(|| HDWalletRpcError::UnknownAccount { account_id })?;
-
-        let HDAddress {
-            address,
-            derivation_path,
-            ..
-        } = coin
-            .generate_new_address(hd_wallet, hd_account.deref_mut(), chain)
-            .await?;
-        let balance = coin.known_address_balance(&address).await?;
-
-        Ok(GetNewHDAddressResponse {
-            new_address: HDAddressBalance {
-                address: address.to_string(),
-                derivation_path: RpcDerivationPath(derivation_path),
-                chain,
-                balance,
-            },
-        })
     }
 }

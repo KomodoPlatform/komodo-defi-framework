@@ -2,14 +2,15 @@ use super::*;
 use crate::coin_balance::{self, EnableCoinBalanceError, HDAccountBalance, HDAddressBalance, HDWalletBalance,
                           HDWalletBalanceOps};
 use crate::hd_pubkey::{ExtractExtendedPubkey, HDExtractPubkeyError, HDXPubExtractor};
-use crate::hd_wallet::{self, AccountUpdatingError, AddressDerivingError, GetNewHDAddressParams,
-                       GetNewHDAddressResponse, HDAccountMut, HDWalletRpcError, HDWalletRpcOps,
-                       NewAccountCreatingError};
+use crate::hd_wallet::{AccountUpdatingError, AddressDerivingError, HDAccountMut, NewAccountCreatingError};
 use crate::hd_wallet_storage::HDWalletCoinWithStorageOps;
 use crate::rpc_command::account_balance::{self, AccountBalanceParams, AccountBalanceRpcOps, HDAccountBalanceResponse};
+use crate::rpc_command::get_new_address::{self, CanGetNewAddressResponse, GetNewAddressParams, GetNewAddressResponse,
+                                          GetNewAddressRpcError, GetNewAddressRpcOps};
 use crate::rpc_command::hd_account_balance_rpc_error::HDAccountBalanceRpcError;
 use crate::rpc_command::init_account_balance::{self, InitAccountBalanceParams, InitAccountBalanceRpcOps};
-use crate::rpc_command::init_create_account::{self, CreateNewAccountParams, InitCreateHDAccountRpcOps};
+use crate::rpc_command::init_create_account::{self, CreateAccountRpcError, CreateNewAccountParams,
+                                              InitCreateHDAccountRpcOps};
 use crate::rpc_command::init_scan_for_new_addresses::{self, InitScanAddressesRpcOps, ScanAddressesParams,
                                                       ScanAddressesResponse};
 use crate::rpc_command::init_withdraw::{InitWithdrawCoin, WithdrawTaskHandle};
@@ -1024,12 +1025,19 @@ impl HDWalletCoinWithStorageOps for QtumCoin {
 }
 
 #[async_trait]
-impl HDWalletRpcOps for QtumCoin {
+impl GetNewAddressRpcOps for QtumCoin {
+    async fn can_get_new_address_rpc(
+        &self,
+        params: GetNewAddressParams,
+    ) -> MmResult<CanGetNewAddressResponse, GetNewAddressRpcError> {
+        get_new_address::common_impl::can_get_new_address_rpc(self, params).await
+    }
+
     async fn get_new_address_rpc(
         &self,
-        params: GetNewHDAddressParams,
-    ) -> MmResult<GetNewHDAddressResponse, HDWalletRpcError> {
-        hd_wallet::common_impl::get_new_address_rpc(self, params).await
+        params: GetNewAddressParams,
+    ) -> MmResult<GetNewAddressResponse, GetNewAddressRpcError> {
+        get_new_address::common_impl::get_new_address_rpc(self, params).await
     }
 }
 
@@ -1069,7 +1077,7 @@ impl InitCreateHDAccountRpcOps for QtumCoin {
         &self,
         params: CreateNewAccountParams,
         xpub_extractor: &XPubExtractor,
-    ) -> MmResult<HDAccountBalance, HDWalletRpcError>
+    ) -> MmResult<HDAccountBalance, CreateAccountRpcError>
     where
         XPubExtractor: HDXPubExtractor + Sync,
     {
