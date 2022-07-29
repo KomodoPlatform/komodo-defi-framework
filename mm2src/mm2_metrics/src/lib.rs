@@ -28,6 +28,8 @@ pub enum MmMetricsError {
     PrometheusAuthorizationRequired,
     #[display(fmt = "Warning Prometheus: invalid credentials: {}", _0)]
     PrometheusInvalidCredentials(String),
+    #[display(fmt = "Prometheus Server Error: {}", _0)]
+    PrometheusServerError(String),
     #[display(fmt = "Warning Prometheus: unexpected URI {}", _0)]
     UnexpectedUri(String),
 }
