@@ -34,7 +34,9 @@ pub async fn connect_to_node(
     node_addr: SocketAddr,
     peer_manager: Arc<PeerManager>,
 ) -> ConnectToNodeResult<ConnectToNodeRes> {
-    if peer_manager.get_peer_node_ids().contains(&pubkey) {
+    let peer_manager_ref = peer_manager.clone();
+    let peer_node_ids = async_blocking(move || peer_manager_ref.get_peer_node_ids()).await;
+    if peer_node_ids.contains(&pubkey) {
         return Ok(ConnectToNodeRes::AlreadyConnected { pubkey, node_addr });
     }
 
@@ -61,7 +63,9 @@ pub async fn connect_to_node(
             std::task::Poll::Pending => {},
         }
 
-        if peer_manager.get_peer_node_ids().contains(&pubkey) {
+        let peer_manager = peer_manager.clone();
+        let peer_node_ids = async_blocking(move || peer_manager.get_peer_node_ids()).await;
+        if peer_node_ids.contains(&pubkey) {
             break;
         }
 
@@ -132,7 +136,8 @@ pub async fn ln_node_announcement_loop(
                 continue;
             },
         };
-        channel_manager.broadcast_node_announcement(node_color, node_name, addresses);
+        let channel_manager = channel_manager.clone();
+        async_blocking(move || channel_manager.broadcast_node_announcement(node_color, node_name, addresses)).await;
 
         Timer::sleep(BROADCAST_NODE_ANNOUNCEMENT_INTERVAL as f64).await;
     }

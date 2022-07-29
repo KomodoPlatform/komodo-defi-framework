@@ -1169,8 +1169,8 @@ pub async fn get_channel_details(
         _ => return MmError::err(GetChannelDetailsError::UnsupportedCoin(coin.ticker().to_string())),
     };
     let channel_details = match ln_coin
-        .channel_manager
         .list_channels()
+        .await
         .into_iter()
         .find(|chan| chan.user_channel_id == req.rpc_channel_id)
     {
@@ -1219,14 +1219,17 @@ pub async fn generate_invoice(
                 node_pubkey
             ));
     }
+
     let network = ln_coin.platform.network.clone().into();
-    let invoice = create_invoice_from_channelmanager(
-        &ln_coin.channel_manager,
-        ln_coin.keys_manager,
-        network,
-        req.amount_in_msat,
-        req.description.clone(),
-    )?;
+    let channel_manager = ln_coin.channel_manager.clone();
+    let keys_manager = ln_coin.keys_manager.clone();
+    let amount_in_msat = req.amount_in_msat;
+    let description = req.description.clone();
+    let invoice = async_blocking(move || {
+        create_invoice_from_channelmanager(&channel_manager, keys_manager, network, amount_in_msat, description)
+    })
+    .await?;
+
     let payment_hash = invoice.payment_hash().into_inner();
     let payment_info = DBPaymentInfo {
         payment_hash: PaymentHash(payment_hash),
@@ -1615,14 +1618,17 @@ pub async fn get_claimable_balances(
     let ignored_channels = if req.include_open_channels_balances {
         Vec::new()
     } else {
-        ln_coin.channel_manager.list_channels()
+        ln_coin.list_channels().await
     };
-    let claimable_balances = ln_coin
-        .chain_monitor
-        .get_claimable_balances(&ignored_channels.iter().collect::<Vec<_>>()[..])
-        .into_iter()
-        .map(From::from)
-        .collect();
+    let claimable_balances = async_blocking(move || {
+        ln_coin
+            .chain_monitor
+            .get_claimable_balances(&ignored_channels.iter().collect::<Vec<_>>()[..])
+            .into_iter()
+            .map(From::from)
+            .collect()
+    })
+    .await;
 
     Ok(claimable_balances)
 }

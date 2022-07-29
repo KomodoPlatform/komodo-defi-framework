@@ -10,6 +10,7 @@ use serialization::serialize_list;
 use spv_validation::helpers_validation::SPVError;
 use spv_validation::spv_proof::{SPVProof, TRY_SPV_PROOF_INTERVAL};
 
+#[derive(Clone)]
 pub struct ConfirmedTransactionInfo {
     pub tx: UtxoTx,
     pub header: BlockHeader,

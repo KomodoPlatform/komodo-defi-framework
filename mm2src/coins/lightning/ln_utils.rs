@@ -149,7 +149,6 @@ pub async fn init_channel_manager(
     let best_block = RpcBestBlock::from(best_header.clone());
     let best_block_hash = BlockHash::from_hash(sha256d::Hash::from_inner(best_block.hash.0));
 
-    // Todo: Simplify this
     let channel_manager = if persister.manager_path().exists() {
         let chain_monitor_for_args = chain_monitor.clone();
 
@@ -182,21 +181,30 @@ pub async fn init_channel_manager(
 
         // Sync ChannelMonitors and ChannelManager to chain tip if the node is restarting and has open channels
         platform
-            .process_txs_confirmations(&rpc_client, &db, &chain_monitor, &channel_manager)
+            .process_txs_confirmations(
+                &rpc_client,
+                &db,
+                Arc::clone(&chain_monitor),
+                Arc::clone(&channel_manager),
+            )
             .await;
         if channel_manager_blockhash != best_block_hash {
             platform
-                .process_txs_unconfirmations(&chain_monitor, &channel_manager)
+                .process_txs_unconfirmations(Arc::clone(&chain_monitor), Arc::clone(&channel_manager))
                 .await;
-            update_best_block(&chain_monitor, &channel_manager, best_header).await;
+            update_best_block(Arc::clone(&chain_monitor), Arc::clone(&channel_manager), best_header).await;
         }
 
         // Give ChannelMonitors to ChainMonitor
         for (_, channel_monitor) in channelmonitors.into_iter() {
             let funding_outpoint = channel_monitor.get_funding_txo().0;
-            chain_monitor
-                .watch_channel(funding_outpoint, channel_monitor)
-                .map_to_mm(|e| EnableLightningError::IOError(format!("{:?}", e)))?;
+            let chain_monitor = chain_monitor.clone();
+            async_blocking(move || {
+                chain_monitor
+                    .watch_channel(funding_outpoint, channel_monitor)
+                    .map_to_mm(|e| EnableLightningError::IOError(format!("{:?}", e)))
+            })
+            .await?;
         }
         channel_manager
     } else {
@@ -245,7 +253,7 @@ pub async fn get_open_channels_nodes_addresses(
     persister: LightningPersisterShared,
     channel_manager: Arc<ChannelManager>,
 ) -> EnableLightningResult<NodesAddressesMap> {
-    let channels = channel_manager.list_channels();
+    let channels = async_blocking(move || channel_manager.list_channels()).await;
     let mut nodes_addresses = persister.get_nodes_addresses().await?;
     nodes_addresses.retain(|pubkey, _node_addr| {
         channels
