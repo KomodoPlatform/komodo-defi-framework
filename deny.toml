@@ -48,10 +48,8 @@ notice = "warn"
 # A list of advisory IDs to ignore. Note that ignored advisories will still
 # output a note when they are encountered.
 
-# RUSTSEC-2021-0113 is related to metrics-util crate that is not actively used for now despite being still present in deps tree
 # RUSTSEC-2020-0071 is related to time crate, which is used only by chrono in our deps tree, remove when https://github.com/chronotope/chrono/issues/700 is resolved
 ignore = [
-    "RUSTSEC-2021-0113",
     "RUSTSEC-2020-0071",
     #"RUSTSEC-0000-0000",
 ]

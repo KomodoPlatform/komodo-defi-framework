@@ -397,7 +397,7 @@ mod test {
         mm_gauge!(metrics, "rpc.connection.count", 3.0, "coin" => "KMD");
         mm_gauge!(metrics, "rpc.connection.count", 5.0, "coin" => "KMD");
 
-        let delta = Duration::from_secs(2);
+        let delta = Duration::from_secs(1);
         mm_timing!(metrics,
                    "rpc.query.spent_time",
                    // ~ 1 second
@@ -405,6 +405,7 @@ mod test {
                    "coin" => "KMD",
                    "method" => "blockchain.transaction.get");
 
+        let delta = Duration::from_secs(2);
         mm_timing!(metrics,
                    "rpc.query.spent_time",
                    // ~ 2 second
@@ -443,7 +444,7 @@ mod test {
                     "key": "rpc.query.spent_time",
                     "labels": { "coin": "KMD", "method": "blockchain.transaction.get" },
                     "max": 2.0,
-                    "min": 2.0,
+                    "min": 1.0,
                     "type": "histogram"
                 },
                 {
