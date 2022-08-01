@@ -22,7 +22,7 @@ use crypto::trezor::utxo::TrezorUtxoCoin;
 use crypto::Bip44Chain;
 use futures::{FutureExt, TryFutureExt};
 use mm2_number::MmNumber;
-use serialization::CoinVariant;
+use serialization::coin_variant_by_ticker;
 use utxo_signer::UtxoSignerOps;
 
 #[derive(Clone, Debug)]
@@ -163,7 +163,8 @@ impl UtxoCommonOps for UtxoStandardCoin {
     }
 
     async fn get_current_mtp(&self) -> UtxoRpcResult<u32> {
-        utxo_common::get_current_mtp(&self.utxo_arc, CoinVariant::Standard).await
+        let coin_variant = coin_variant_by_ticker(self.ticker());
+        utxo_common::get_current_mtp(&self.utxo_arc, coin_variant).await
     }
 
     fn is_unspent_mature(&self, output: &RpcTransaction) -> bool {

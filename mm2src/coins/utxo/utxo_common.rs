@@ -1,4 +1,3 @@
-use super::rpc_clients::TxMerkleBranch;
 use super::*;
 use crate::coin_balance::{AddressBalanceStatus, HDAddressBalance, HDWalletBalanceOps};
 use crate::hd_pubkey::{ExtractExtendedPubkey, HDExtractPubkeyError, HDXPubExtractor};
@@ -8,6 +7,7 @@ use crate::hd_wallet_storage::{HDWalletCoinWithStorageOps, HDWalletStorageResult
 use crate::rpc_command::init_withdraw::WithdrawTaskHandle;
 use crate::utxo::rpc_clients::{electrum_script_hash, BlockHashOrHeight, UnspentInfo, UnspentMap, UtxoRpcClientEnum,
                                UtxoRpcClientOps, UtxoRpcResult};
+use crate::utxo::spv::SimplePaymentVerification;
 use crate::utxo::tx_cache::TxCacheResult;
 use crate::utxo::utxo_withdraw::{InitUtxoWithdraw, StandardUtxoWithdraw, UtxoWithdraw};
 use crate::{CanRefundHtlc, CoinBalance, CoinWithDerivationMethod, GetWithdrawSenderAddress, HDAddressId,
@@ -18,7 +18,7 @@ use crate::{CanRefundHtlc, CoinBalance, CoinWithDerivationMethod, GetWithdrawSen
 use bitcrypto::dhash256;
 pub use bitcrypto::{dhash160, sha256, ChecksumType};
 use chain::constants::SEQUENCE_FINAL;
-use chain::{BlockHeader, OutPoint, RawBlockHeader, TransactionOutput};
+use chain::{OutPoint, TransactionOutput};
 use common::executor::Timer;
 use common::jsonrpc_client::JsonRpcErrorType;
 use common::log::{debug, error, info, warn};
@@ -40,16 +40,14 @@ use rpc::v1::types::{Bytes as BytesJson, ToTxHash, TransactionInputEnum, H256 as
 use script::{Builder, Opcode, Script, ScriptAddress, TransactionInputSigner, UnsignedTransactionInput};
 use secp256k1::{PublicKey, Signature};
 use serde_json::{self as json};
-use serialization::{deserialize, serialize, serialize_list, serialize_with_flags, CoinVariant, CompactInteger,
-                    Serializable, Stream, SERIALIZE_TRANSACTION_WITNESS};
+use serialization::{deserialize, serialize, serialize_with_flags, CoinVariant, CompactInteger, Serializable, Stream,
+                    SERIALIZE_TRANSACTION_WITNESS};
 use spv_validation::helpers_validation::validate_headers;
-use spv_validation::helpers_validation::SPVError;
-use spv_validation::spv_proof::{SPVProof, TRY_SPV_PROOF_INTERVAL};
+use spv_validation::storage::BlockHeaderStorageOps;
 use std::cmp::Ordering;
 use std::collections::hash_map::{Entry, HashMap};
 use std::str::FromStr;
 use std::sync::atomic::Ordering as AtomicOrdering;
-use utxo_block_header_storage::BlockHeaderStorageOps;
 use utxo_signer::with_key_pair::p2sh_spend;
 use utxo_signer::UtxoSignerOps;
 
@@ -59,7 +57,6 @@ pub const DEFAULT_FEE_VOUT: usize = 0;
 pub const DEFAULT_SWAP_TX_SPEND_SIZE: u64 = 305;
 pub const DEFAULT_SWAP_VOUT: usize = 0;
 const MIN_BTC_TRADING_VOL: &str = "0.00777";
-pub const NO_TX_ERROR_CODE: &str = "'code': -5";
 
 macro_rules! true_or {
     ($cond: expr, $etype: expr) => {
@@ -3078,130 +3075,6 @@ pub fn address_from_pubkey(
     }
 }
 
-pub async fn validate_spv_proof<T: UtxoCommonOps>(
-    coin: T,
-    tx: UtxoTx,
-    try_spv_proof_until: u64,
-) -> Result<(), MmError<SPVError>> {
-    let client = match &coin.as_ref().rpc_client {
-        UtxoRpcClientEnum::Native(_) => return Ok(()),
-        UtxoRpcClientEnum::Electrum(electrum_client) => electrum_client,
-    };
-    if tx.outputs.is_empty() {
-        return MmError::err(SPVError::InvalidVout);
-    }
-
-    let (merkle_branch, block_header) = spv_proof_retry_pool(&coin, client, &tx, try_spv_proof_until).await?;
-    let raw_header = RawBlockHeader::new(block_header.raw().take())?;
-    let intermediate_nodes: Vec<H256> = merkle_branch
-        .merkle
-        .into_iter()
-        .map(|hash| hash.reversed().into())
-        .collect();
-
-    let proof = SPVProof {
-        tx_id: tx.hash(),
-        vin: serialize_list(&tx.inputs).take(),
-        vout: serialize_list(&tx.outputs).take(),
-        index: merkle_branch.pos as u64,
-        confirming_header: block_header,
-        raw_header,
-        intermediate_nodes,
-    };
-
-    proof.validate().map_err(MmError::new)
-}
-
-async fn spv_proof_retry_pool<T: UtxoCommonOps>(
-    coin: &T,
-    client: &ElectrumClient,
-    tx: &UtxoTx,
-    try_spv_proof_until: u64,
-) -> Result<(TxMerkleBranch, BlockHeader), MmError<SPVError>> {
-    let mut height: Option<u64> = None;
-    let mut merkle_branch: Option<TxMerkleBranch> = None;
-
-    loop {
-        if now_ms() / 1000 > try_spv_proof_until {
-            error!(
-                "Waited too long until {} for transaction {:?} to validate spv proof",
-                try_spv_proof_until,
-                tx.hash(),
-            );
-            return Err(SPVError::Timeout.into());
-        }
-
-        if height.is_none() {
-            match get_tx_height(tx, client).await {
-                Ok(h) => height = Some(h),
-                Err(e) => {
-                    debug!("`get_tx_height` returned an error {:?}", e);
-                    error!("{:?} for tx {:?}", SPVError::InvalidHeight, tx);
-                },
-            }
-        }
-
-        if height.is_some() && merkle_branch.is_none() {
-            match client
-                .blockchain_transaction_get_merkle(tx.hash().reversed().into(), height.unwrap())
-                .compat()
-                .await
-            {
-                Ok(m) => merkle_branch = Some(m),
-                Err(e) => {
-                    debug!("`blockchain_transaction_get_merkle` returned an error {:?}", e);
-                    error!(
-                        "{:?} by tx: {:?}, height: {}",
-                        SPVError::UnableToGetMerkle,
-                        H256Json::from(tx.hash().reversed()),
-                        height.unwrap()
-                    );
-                },
-            }
-        }
-
-        if height.is_some() && merkle_branch.is_some() {
-            match block_header_from_storage_or_rpc(&coin, height.unwrap(), &coin.as_ref().block_headers_storage, client)
-                .await
-            {
-                Ok(block_header) => {
-                    return Ok((merkle_branch.unwrap(), block_header));
-                },
-                Err(e) => {
-                    debug!("`block_header_from_storage_or_rpc` returned an error {:?}", e);
-                    error!(
-                        "{:?}, Received header likely not compatible with header format in mm2",
-                        SPVError::UnableToGetHeader
-                    );
-                },
-            }
-        }
-
-        error!(
-            "Failed spv proof validation for transaction {:?}, retrying in {} seconds.",
-            tx.hash(),
-            TRY_SPV_PROOF_INTERVAL,
-        );
-
-        Timer::sleep(TRY_SPV_PROOF_INTERVAL as f64).await;
-    }
-}
-
-pub async fn get_tx_height(tx: &UtxoTx, client: &ElectrumClient) -> Result<u64, MmError<GetTxHeightError>> {
-    for output in tx.outputs.clone() {
-        let script_pubkey_str = hex::encode(electrum_script_hash(&output.script_pubkey));
-        if let Ok(history) = client.scripthash_get_history(script_pubkey_str.as_str()).compat().await {
-            if let Some(item) = history
-                .into_iter()
-                .find(|item| item.tx_hash.reversed() == H256Json(*tx.hash()) && item.height > 0)
-            {
-                return Ok(item.height as u64);
-            }
-        }
-    }
-    MmError::err(GetTxHeightError::HeightNotFound)
-}
-
 #[allow(clippy::too_many_arguments)]
 #[cfg_attr(test, mockable)]
 pub fn validate_payment<T: UtxoCommonOps>(
@@ -3268,16 +3141,16 @@ pub fn validate_payment<T: UtxoCommonOps>(
                 );
             }
 
-            if !coin.as_ref().conf.enable_spv_proof {
-                return Ok(());
+            if let UtxoRpcClientEnum::Electrum(client) = &coin.as_ref().rpc_client {
+                if coin.as_ref().conf.enable_spv_proof && confirmations != 0 {
+                    client
+                        .validate_spv_proof(&tx, try_spv_proof_until)
+                        .await
+                        .map_err(|e| format!("{:?}", e))?;
+                }
             }
 
-            return match confirmations {
-                0 => Ok(()),
-                _ => validate_spv_proof(coin, tx, try_spv_proof_until)
-                    .await
-                    .map_err(|e| format!("{:?}", e)),
-            };
+            return Ok(());
         }
     };
     Box::new(fut.boxed().compat())
@@ -3561,61 +3434,6 @@ fn increase_by_percent(num: u64, percent: f64) -> u64 {
     num + (percent.round() as u64)
 }
 
-pub async fn valid_block_header_from_storage<T>(
-    coin: &T,
-    height: u64,
-    storage: &BlockHeaderStorage,
-    client: &ElectrumClient,
-) -> Result<BlockHeader, MmError<GetBlockHeaderError>>
-where
-    T: AsRef<UtxoCoinFields>,
-{
-    match storage
-        .get_block_header(coin.as_ref().conf.ticker.as_str(), height)
-        .await?
-    {
-        None => {
-            let bytes = client.blockchain_block_header(height).compat().await?;
-            let header: BlockHeader = deserialize(bytes.0.as_slice())?;
-            let params = &storage.params;
-            let blocks_limit = params.blocks_limit_to_check;
-            let (headers_registry, headers) = client.retrieve_last_headers(blocks_limit, height).compat().await?;
-            match spv_validation::helpers_validation::validate_headers(
-                headers,
-                params.difficulty_check,
-                params.constant_difficulty,
-            ) {
-                Ok(_) => {
-                    storage
-                        .add_block_headers_to_storage(coin.as_ref().conf.ticker.as_str(), headers_registry)
-                        .await?;
-                    Ok(header)
-                },
-                Err(err) => MmError::err(GetBlockHeaderError::SPVError(err)),
-            }
-        },
-        Some(header) => Ok(header),
-    }
-}
-
-#[inline]
-pub async fn block_header_from_storage_or_rpc<T>(
-    coin: &T,
-    height: u64,
-    storage: &Option<BlockHeaderStorage>,
-    client: &ElectrumClient,
-) -> Result<BlockHeader, MmError<GetBlockHeaderError>>
-where
-    T: AsRef<UtxoCoinFields>,
-{
-    match storage {
-        Some(ref storage) => valid_block_header_from_storage(&coin, height, storage, client).await,
-        None => Ok(deserialize(
-            client.blockchain_block_header(height).compat().await?.as_slice(),
-        )?),
-    }
-}
-
 pub async fn block_header_utxo_loop<T: UtxoCommonOps>(weak: UtxoWeak, constructor: impl Fn(UtxoArc) -> T) {
     {
         let coin = match weak.upgrade() {
@@ -3623,9 +3441,12 @@ pub async fn block_header_utxo_loop<T: UtxoCommonOps>(weak: UtxoWeak, constructo
             None => return,
         };
         let ticker = coin.as_ref().conf.ticker.as_str();
-        let storage = match &coin.as_ref().block_headers_storage {
-            None => return,
-            Some(storage) => storage,
+        let storage = match &coin.as_ref().rpc_client {
+            UtxoRpcClientEnum::Native(_) => return,
+            UtxoRpcClientEnum::Electrum(e) => match e.block_headers_storage() {
+                None => return,
+                Some(storage) => storage,
+            },
         };
         match storage.is_initialized_for(ticker).await {
             Ok(true) => info!("Block Header Storage already initialized for {}", ticker),
@@ -3644,8 +3465,12 @@ pub async fn block_header_utxo_loop<T: UtxoCommonOps>(weak: UtxoWeak, constructo
     }
     while let Some(arc) = weak.upgrade() {
         let coin = constructor(arc);
-        let storage = match &coin.as_ref().block_headers_storage {
-            None => break,
+        let client = match &coin.as_ref().rpc_client {
+            UtxoRpcClientEnum::Native(_) => break,
+            UtxoRpcClientEnum::Electrum(client) => client,
+        };
+        let storage = match client.block_headers_storage() {
+            None => return,
             Some(storage) => storage,
         };
         let params = storage.params.clone();
@@ -3657,10 +3482,6 @@ pub async fn block_header_utxo_loop<T: UtxoCommonOps>(weak: UtxoWeak, constructo
         );
         let height =
             ok_or_continue_after_sleep!(coin.as_ref().rpc_client.get_block_count().compat().await, check_every);
-        let client = match &coin.as_ref().rpc_client {
-            UtxoRpcClientEnum::Native(_) => break,
-            UtxoRpcClientEnum::Electrum(client) => client,
-        };
         let (block_registry, block_headers) = ok_or_continue_after_sleep!(
             client
                 .retrieve_last_headers(blocks_limit_to_check, height)

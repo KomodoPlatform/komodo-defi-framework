@@ -1,7 +1,8 @@
 #![cfg_attr(target_arch = "wasm32", allow(unused_macros))]
 #![cfg_attr(target_arch = "wasm32", allow(dead_code))]
 
-use crate::utxo::{output_script, sat_from_big_decimal};
+use crate::utxo::utxo_block_header_storage::BlockHeaderStorage;
+use crate::utxo::{output_script, sat_from_big_decimal, GetBlockHeaderError, GetTxError, GetTxHeightError};
 use crate::{big_decimal_from_sat_unsigned, NumConversError, RpcTransportEventHandler, RpcTransportEventHandlerShared};
 use async_trait::async_trait;
 use chain::{BlockHeader, BlockHeaderBits, BlockHeaderNonce, OutPoint, Transaction as UtxoTx};
@@ -31,11 +32,14 @@ use mm2_number::{BigDecimal, BigInt, MmNumber};
 #[cfg(test)] use mocktopus::macros::*;
 use rpc::v1::types::{Bytes as BytesJson, Transaction as RpcTransaction, H256 as H256Json};
 use serde_json::{self as json, Value as Json};
-use serialization::{deserialize, serialize, serialize_with_flags, CoinVariant, CompactInteger, Reader,
-                    SERIALIZE_TRANSACTION_WITNESS};
+use serialization::{coin_variant_by_ticker, deserialize, serialize, serialize_with_flags, CoinVariant, CompactInteger,
+                    Reader, SERIALIZE_TRANSACTION_WITNESS};
 use sha2::{Digest, Sha256};
+use spv_validation::helpers_validation::{validate_headers, SPVError};
+use spv_validation::storage::{BlockHeaderStorageError, BlockHeaderStorageOps};
 use std::collections::hash_map::Entry;
 use std::collections::HashMap;
+use std::convert::TryInto;
 use std::fmt;
 use std::io;
 use std::net::{SocketAddr, ToSocketAddrs};
@@ -62,6 +66,8 @@ cfg_native! {
     use tokio_rustls::webpki::DnsNameRef;
     use webpki_roots::TLS_SERVER_ROOTS;
 }
+
+pub const NO_TX_ERROR_CODE: &str = "'code': -5";
 
 pub type AddressesByLabelResult = HashMap<String, AddressPurpose>;
 pub type JsonRpcPendingRequestsShared = Arc<AsyncMutex<JsonRpcPendingRequests>>;
@@ -338,6 +344,28 @@ pub trait UtxoRpcClientOps: fmt::Debug + Send + Sync + 'static {
 
     /// Returns block time in seconds since epoch (Jan 1 1970 GMT).
     async fn get_block_timestamp(&self, height: u64) -> Result<u64, MmError<UtxoRpcError>>;
+
+    /// Returns verbose transaction by the given `txid` if it's on-chain or None if it's not.
+    async fn get_tx_if_onchain(&self, tx_hash: &H256Json) -> Result<Option<UtxoTx>, MmError<GetTxError>> {
+        match self
+            .get_transaction_bytes(tx_hash)
+            .compat()
+            .await
+            .map_err(|e| e.into_inner())
+        {
+            Ok(bytes) => Ok(Some(deserialize(bytes.as_slice())?)),
+            Err(err) => {
+                if let UtxoRpcError::ResponseParseError(ref json_err) = err {
+                    if let JsonRpcErrorType::Response(_, json) = &json_err.error {
+                        if json["message"].as_str().unwrap_or_default().contains(NO_TX_ERROR_CODE) {
+                            return Ok(None);
+                        }
+                    }
+                }
+                Err(err.into())
+            },
+        }
+    }
 }
 
 #[derive(Clone, Deserialize, Debug)]
@@ -1168,6 +1196,7 @@ impl ElectrumBlockHeaderV12 {
             version: self.version as u32,
             previous_header_hash: self.prev_block_hash.into(),
             merkle_root_hash: self.merkle_root.into(),
+            claim_trie_root: None,
             hash_final_sapling_root: None,
             time: self.timestamp as u32,
             bits: BlockHeaderBits::U32(self.bits as u32),
@@ -1538,6 +1567,7 @@ pub struct ElectrumClientImpl {
     protocol_version: OrdRange<f32>,
     get_balance_concurrent_map: ConcurrentRequestMap<String, ElectrumBalance>,
     list_unspent_concurrent_map: ConcurrentRequestMap<String, Vec<ElectrumUnspent>>,
+    block_headers_storage: Option<BlockHeaderStorage>,
 }
 
 async fn electrum_request_multi(
@@ -1678,6 +1708,9 @@ impl ElectrumClientImpl {
 
     /// Get available protocol versions.
     pub fn protocol_version(&self) -> &OrdRange<f32> { &self.protocol_version }
+
+    /// Get block headers storage.
+    pub fn block_headers_storage(&self) -> &Option<BlockHeaderStorage> { &self.block_headers_storage }
 }
 
 #[derive(Clone, Debug)]
@@ -1841,6 +1874,7 @@ impl ElectrumClient {
         blocks_limit_to_check: NonZeroU64,
         block_height: u64,
     ) -> UtxoRpcFut<(HashMap<u64, BlockHeader>, Vec<BlockHeader>)> {
+        let coin_name = self.coin_ticker.clone();
         let (from, count) = {
             let from = if block_height < blocks_limit_to_check.get() {
                 0
@@ -1860,7 +1894,8 @@ impl ElectrumClient {
                         let len = CompactInteger::from(headers.count);
                         let mut serialized = serialize(&len).take();
                         serialized.extend(headers.hex.0.into_iter());
-                        let mut reader = Reader::new_with_coin_variant(serialized.as_slice(), CoinVariant::Standard);
+                        let coin_variant = coin_variant_by_ticker(&coin_name);
+                        let mut reader = Reader::new_with_coin_variant(serialized.as_slice(), coin_variant);
                         let maybe_block_headers = reader.read_list::<BlockHeader>();
                         let block_headers = match maybe_block_headers {
                             Ok(headers) => headers,
@@ -1882,6 +1917,93 @@ impl ElectrumClient {
     /// https://electrumx.readthedocs.io/en/latest/protocol-methods.html#blockchain-transaction-get-merkle
     pub fn blockchain_transaction_get_merkle(&self, txid: H256Json, height: u64) -> RpcRes<TxMerkleBranch> {
         rpc_func!(self, "blockchain.transaction.get_merkle", txid, height)
+    }
+
+    async fn get_tx_height(&self, tx: &UtxoTx) -> Result<u64, MmError<GetTxHeightError>> {
+        for output in tx.outputs.clone() {
+            let script_pubkey_str = hex::encode(electrum_script_hash(&output.script_pubkey));
+            if let Ok(history) = self.scripthash_get_history(script_pubkey_str.as_str()).compat().await {
+                if let Some(item) = history
+                    .into_iter()
+                    .find(|item| item.tx_hash.reversed() == H256Json(*tx.hash()) && item.height > 0)
+                {
+                    return Ok(item.height as u64);
+                }
+            }
+        }
+        MmError::err(GetTxHeightError::HeightNotFound(
+            "Couldn't find height through electrum!".into(),
+        ))
+    }
+
+    async fn tx_height_from_storage_or_rpc(&self, tx: &UtxoTx) -> Result<u64, MmError<GetTxHeightError>> {
+        if let Some(storage) = &self.block_headers_storage {
+            let ticker = self.coin_name();
+            let tx_hash = tx.hash().reversed();
+            let blockhash = self.get_verbose_transaction(&tx_hash.into()).compat().await?.blockhash;
+            if let Ok(Some(height)) = storage.get_block_height_by_hash(ticker, blockhash.into()).await {
+                if let Ok(height) = height.try_into() {
+                    return Ok(height);
+                }
+            }
+        }
+
+        self.get_tx_height(tx).await
+    }
+
+    async fn valid_block_header_from_storage(&self, height: u64) -> Result<BlockHeader, MmError<GetBlockHeaderError>> {
+        let storage = match &self.block_headers_storage {
+            Some(storage) => storage,
+            None => {
+                return MmError::err(GetBlockHeaderError::StorageError(BlockHeaderStorageError::Internal(
+                    "block_headers_storage is not initialized".to_owned(),
+                )))
+            },
+        };
+        let ticker = self.coin_name();
+        match storage.get_block_header(ticker, height).await? {
+            None => {
+                let bytes = self.blockchain_block_header(height).compat().await?;
+                let header: BlockHeader = deserialize(bytes.0.as_slice())?;
+                let params = &storage.params;
+                let blocks_limit = params.blocks_limit_to_check;
+                let (headers_registry, headers) = self.retrieve_last_headers(blocks_limit, height).compat().await?;
+                match validate_headers(headers, params.difficulty_check, params.constant_difficulty) {
+                    Ok(_) => {
+                        storage.add_block_headers_to_storage(ticker, headers_registry).await?;
+                        Ok(header)
+                    },
+                    Err(err) => MmError::err(GetBlockHeaderError::SPVError(err)),
+                }
+            },
+            Some(header) => Ok(header),
+        }
+    }
+
+    async fn block_header_from_storage_or_rpc(&self, height: u64) -> Result<BlockHeader, MmError<GetBlockHeaderError>> {
+        match &self.block_headers_storage {
+            Some(_) => self.valid_block_header_from_storage(height).await,
+            None => Ok(deserialize(
+                self.blockchain_block_header(height).compat().await?.as_slice(),
+            )?),
+        }
+    }
+
+    pub async fn get_merkle_and_header(
+        &self,
+        tx: &UtxoTx,
+    ) -> Result<(TxMerkleBranch, BlockHeader, u64), MmError<SPVError>> {
+        let height = self.tx_height_from_storage_or_rpc(tx).await?;
+
+        let merkle_branch = self
+            .blockchain_transaction_get_merkle(tx.hash().reversed().into(), height)
+            .compat()
+            .await
+            .map_to_mm(|e| SPVError::UnableToGetMerkle(e.to_string()))?;
+
+        let header = self.block_header_from_storage_or_rpc(height).await?;
+
+        Ok((merkle_branch, header, height))
     }
 }
 
@@ -2114,7 +2236,11 @@ impl UtxoRpcClientOps for ElectrumClient {
 
 #[cfg_attr(test, mockable)]
 impl ElectrumClientImpl {
-    pub fn new(coin_ticker: String, event_handlers: Vec<RpcTransportEventHandlerShared>) -> ElectrumClientImpl {
+    pub fn new(
+        coin_ticker: String,
+        event_handlers: Vec<RpcTransportEventHandlerShared>,
+        block_headers_storage: Option<BlockHeaderStorage>,
+    ) -> ElectrumClientImpl {
         let protocol_version = OrdRange::new(1.2, 1.4).unwrap();
         ElectrumClientImpl {
             coin_ticker,
@@ -2124,6 +2250,7 @@ impl ElectrumClientImpl {
             protocol_version,
             get_balance_concurrent_map: ConcurrentRequestMap::new(),
             list_unspent_concurrent_map: ConcurrentRequestMap::new(),
+            block_headers_storage,
         }
     }
 
@@ -2132,10 +2259,11 @@ impl ElectrumClientImpl {
         coin_ticker: String,
         event_handlers: Vec<RpcTransportEventHandlerShared>,
         protocol_version: OrdRange<f32>,
+        block_headers_storage: Option<BlockHeaderStorage>,
     ) -> ElectrumClientImpl {
         ElectrumClientImpl {
             protocol_version,
-            ..ElectrumClientImpl::new(coin_ticker, event_handlers)
+            ..ElectrumClientImpl::new(coin_ticker, event_handlers, block_headers_storage)
         }
     }
 }

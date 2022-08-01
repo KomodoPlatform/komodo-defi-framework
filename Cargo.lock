@@ -529,7 +529,6 @@ checksum = "9a41df6ad9642c5c15ae312dd3d074de38fd3eb7cc87ad4ce10f90292a83fe4d"
 dependencies = [
  "bech32",
  "bitcoin_hashes",
- "bitcoinconsensus",
  "secp256k1",
 ]
 
@@ -538,16 +537,6 @@ name = "bitcoin_hashes"
 version = "0.10.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "006cc91e1a1d99819bc5b8214be3555c1f0611b169f527a1fdc54ed1f2b745b0"
-
-[[package]]
-name = "bitcoinconsensus"
-version = "0.19.0-3"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "1a8aa43b5cd02f856cb126a9af819e77b8910fdd74dd1407be649f2f5fe3a1b5"
-dependencies = [
- "cc",
- "libc",
-]
 
 [[package]]
 name = "bitcrypto"
@@ -2212,7 +2201,7 @@ dependencies = [
  "impl-rlp",
  "impl-serde",
  "primitive-types",
- "uint 0.9.1",
+ "uint 0.9.3",
 ]
 
 [[package]]
@@ -3915,19 +3904,16 @@ version = "0.0.106"
 source = "git+https://github.com/shamardy/rust-lightning?branch=0.0.106#af4a89c08c22d0110d386df0e288b2f825aaebbc"
 dependencies = [
  "bitcoin",
- "hex 0.4.2",
- "regex",
  "secp256k1",
 ]
 
 [[package]]
 name = "lightning-background-processor"
 version = "0.0.106"
+source = "git+https://github.com/shamardy/rust-lightning?branch=0.0.106#af4a89c08c22d0110d386df0e288b2f825aaebbc"
 dependencies = [
  "bitcoin",
- "db_common",
  "lightning",
- "lightning-invoice",
  "lightning-persister",
 ]
 
@@ -3956,21 +3942,11 @@ dependencies = [
 [[package]]
 name = "lightning-persister"
 version = "0.0.106"
+source = "git+https://github.com/shamardy/rust-lightning?branch=0.0.106#af4a89c08c22d0110d386df0e288b2f825aaebbc"
 dependencies = [
- "async-trait",
  "bitcoin",
- "common",
- "db_common",
- "derive_more",
- "hex 0.4.2",
  "libc",
  "lightning",
- "mm2_io",
- "parking_lot 0.12.0",
- "rand 0.7.3",
- "secp256k1",
- "serde",
- "serde_json",
  "winapi",
 ]
 
@@ -5253,16 +5229,17 @@ dependencies = [
  "impl-rlp",
  "impl-serde",
  "scale-info",
- "uint 0.9.1",
+ "uint 0.9.3",
 ]
 
 [[package]]
 name = "primitives"
 version = "0.1.0"
 dependencies = [
+ "bitcoin_hashes",
  "byteorder 1.4.3",
  "rustc-hex 2.1.0",
- "uint 0.9.1",
+ "uint 0.9.3",
 ]
 
 [[package]]
@@ -7548,7 +7525,12 @@ dependencies = [
 name = "spv_validation"
 version = "0.1.0"
 dependencies = [
+ "async-trait",
  "chain",
+ "common",
+ "derive_more",
+ "keys",
+ "lazy_static",
  "primitives",
  "ripemd160",
  "rustc-hex 2.1.0",
@@ -8587,9 +8569,9 @@ dependencies = [
 
 [[package]]
 name = "uint"
-version = "0.9.1"
+version = "0.9.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "6470ab50f482bde894a037a57064480a246dbfdd5960bd65a44824693f08da5f"
+checksum = "12f03af7ccf01dd611cc450a0d10dbc9b745770d096473e2faf0ca6e2d66d1e0"
 dependencies = [
  "byteorder 1.4.3",
  "crunchy 0.2.2",
