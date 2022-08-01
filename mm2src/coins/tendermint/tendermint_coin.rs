@@ -16,9 +16,10 @@ use cosmrs::proto::cosmos::auth::v1beta1::{BaseAccount, QueryAccountRequest, Que
 use cosmrs::proto::cosmos::bank::v1beta1::{QueryBalanceRequest, QueryBalanceResponse};
 use cosmrs::tendermint::abci::Path as AbciPath;
 use cosmrs::tendermint::chain::Id as ChainId;
-use cosmrs::tx::{self, Fee, Msg, Raw, SignDoc, SignerInfo};
+use cosmrs::tx::{self, AccountNumber, Fee, Msg, Raw, SignDoc, SignerInfo};
 use cosmrs::{AccountId, Coin, Denom};
 use derive_more::Display;
+use futures::lock::Mutex as AsyncMutex;
 use futures::{FutureExt, TryFutureExt};
 use futures01::Future;
 use keys::KeyPair;
@@ -45,21 +46,21 @@ pub struct TendermintActivationParams {
     rpc_urls: Vec<String>,
 }
 
-#[allow(dead_code)]
-#[derive(Debug)]
 pub struct TendermintCoinImpl {
     ticker: String,
     rpc_client: HttpClient,
     /// My address
-    account_id: AccountId,
+    pub account_id: AccountId,
+    account_number: AccountNumber,
     account_prefix: String,
     priv_key: Vec<u8>,
     decimals: u8,
     denom: Denom,
     chain_id: ChainId,
+    sequence_lock: AsyncMutex<()>,
 }
 
-#[derive(Clone, Debug)]
+#[derive(Clone)]
 pub struct TendermintCoin(Arc<TendermintCoinImpl>);
 
 impl Deref for TendermintCoin {
@@ -77,10 +78,21 @@ pub struct TendermintInitError {
 pub enum TendermintInitErrorKind {
     InvalidPrivKey(String),
     CouldNotGenerateAccountId(String),
+    EmptyRpcUrls,
     RpcClientInitError(String),
     InvalidChainId(String),
     InvalidDenom(String),
     RpcError(String),
+}
+
+fn account_id_from_privkey(priv_key: &[u8], prefix: &str) -> MmResult<AccountId, TendermintInitErrorKind> {
+    let signing_key =
+        SigningKey::from_bytes(priv_key).map_to_mm(|e| TendermintInitErrorKind::InvalidPrivKey(e.to_string()))?;
+
+    signing_key
+        .public_key()
+        .account_id(prefix)
+        .map_to_mm(|e| TendermintInitErrorKind::CouldNotGenerateAccountId(e.to_string()))
 }
 
 impl TendermintCoin {
@@ -90,17 +102,17 @@ impl TendermintCoin {
         activation_params: TendermintActivationParams,
         priv_key: &[u8],
     ) -> MmResult<Self, TendermintInitError> {
-        let signing_key = SigningKey::from_bytes(priv_key).map_to_mm(|e| TendermintInitError {
-            ticker: ticker.clone(),
-            kind: TendermintInitErrorKind::InvalidPrivKey(e.to_string()),
-        })?;
-
-        let account_id = signing_key
-            .public_key()
-            .account_id(&protocol_info.account_prefix)
-            .map_to_mm(|e| TendermintInitError {
+        if activation_params.rpc_urls.is_empty() {
+            return MmError::err(TendermintInitError {
                 ticker: ticker.clone(),
-                kind: TendermintInitErrorKind::CouldNotGenerateAccountId(e.to_string()),
+                kind: TendermintInitErrorKind::EmptyRpcUrls,
+            });
+        }
+
+        let account_id =
+            account_id_from_privkey(priv_key, &protocol_info.account_prefix).mm_err(|kind| TendermintInitError {
+                ticker: ticker.clone(),
+                kind,
             })?;
 
         let rpc_client =
@@ -119,15 +131,41 @@ impl TendermintCoin {
             kind: TendermintInitErrorKind::InvalidDenom(e.to_string()),
         })?;
 
+        let path = AbciPath::from_str("/cosmos.auth.v1beta1.Query/Account").expect("valid path");
+        let request = QueryAccountRequest {
+            address: account_id.to_string(),
+        };
+        let request = AbciRequest::new(Some(path), request.encode_to_vec(), None, false);
+
+        let response = rpc_client.perform(request).await.map_to_mm(|e| TendermintInitError {
+            ticker: ticker.clone(),
+            kind: TendermintInitErrorKind::RpcError(e.to_string()),
+        })?;
+        let account_response =
+            QueryAccountResponse::decode(response.response.value.as_slice()).map_to_mm(|e| TendermintInitError {
+                ticker: ticker.clone(),
+                kind: TendermintInitErrorKind::RpcError(e.to_string()),
+            })?;
+        let account = account_response.account.or_mm_err(|| TendermintInitError {
+            ticker: ticker.clone(),
+            kind: TendermintInitErrorKind::RpcError("No account field in account response".into()),
+        })?;
+        let account_info = BaseAccount::decode(account.value.as_slice()).map_to_mm(|e| TendermintInitError {
+            ticker: ticker.clone(),
+            kind: TendermintInitErrorKind::RpcError(e.to_string()),
+        })?;
+
         Ok(TendermintCoin(Arc::new(TendermintCoinImpl {
             ticker,
             rpc_client,
             account_id,
+            account_number: account_info.account_number,
             account_prefix: protocol_info.account_prefix,
             priv_key: priv_key.to_vec(),
             decimals: protocol_info.decimals,
             denom,
             chain_id,
+            sequence_lock: AsyncMutex::new(()),
         })))
     }
 }
@@ -140,25 +178,6 @@ impl MmCoin for TendermintCoin {
     fn withdraw(&self, req: WithdrawRequest) -> WithdrawFut {
         let coin = self.clone();
         let fut = async move {
-            let path = AbciPath::from_str("/cosmos.auth.v1beta1.Query/Account").expect("valid path");
-            let request = QueryAccountRequest {
-                address: coin.account_id.to_string(),
-            };
-            let request = AbciRequest::new(Some(path), request.encode_to_vec(), None, false);
-
-            let response = coin
-                .rpc_client
-                .perform(request)
-                .await
-                .map_to_mm(|e| WithdrawError::Transport(e.to_string()))?;
-            // let any = Any::decode(response.response.value.as_slice())
-            // .map_to_mm(|e| WithdrawError::Transport(e.to_string()))?;
-            common::log::info!("Abci Response {:?}", response);
-            let account_response = QueryAccountResponse::decode(response.response.value.as_slice())
-                .map_to_mm(|e| WithdrawError::Transport(e.to_string()))?;
-            let account_info = BaseAccount::decode(account_response.account.unwrap().value.as_slice())
-                .map_to_mm(|e| WithdrawError::Transport(e.to_string()))?;
-
             let current_block = coin
                 .current_block()
                 .compat()
@@ -174,34 +193,67 @@ impl MmCoin for TendermintCoin {
             }
 
             let amount = sat_from_big_decimal(&req.amount, coin.decimals)?;
-            let amount = Coin {
-                denom: coin.denom.clone(),
-                amount: amount.into(),
-            };
             let msg_send = MsgSend {
                 from_address: coin.account_id.clone(),
                 to_address,
-                amount: vec![amount.clone()],
+                amount: vec![Coin {
+                    denom: coin.denom.clone(),
+                    amount: amount.into(),
+                }],
             }
             .to_any()
-            .unwrap();
+            .map_to_mm(|e| WithdrawError::InternalError(e.to_string()))?;
 
-            let sequence_number = 0;
+            let _sequence_lock = coin.sequence_lock.lock().await;
+            let path = AbciPath::from_str("/cosmos.auth.v1beta1.Query/Account").expect("valid path");
+            let request = QueryAccountRequest {
+                address: coin.account_id.to_string(),
+            };
+            let request = AbciRequest::new(Some(path), request.encode_to_vec(), None, false);
+
+            let response = coin
+                .rpc_client
+                .perform(request)
+                .await
+                .map_to_mm(|e| WithdrawError::Transport(e.to_string()))?;
+            let account_response = QueryAccountResponse::decode(response.response.value.as_slice())
+                .map_to_mm(|e| WithdrawError::Transport(e.to_string()))?;
+            let account = account_response
+                .account
+                .or_mm_err(|| WithdrawError::Transport("No account field in account_response".into()))?;
+
+            let account_info =
+                BaseAccount::decode(account.value.as_slice()).map_to_mm(|e| WithdrawError::Transport(e.to_string()))?;
+
+            let sequence_number = account_info.sequence;
+
             let gas = 100_000;
-            let fee = Fee::from_amount_and_gas(amount, gas);
+            let fee_amount = Coin {
+                denom: coin.denom.clone(),
+                amount: 1000u16.into(),
+            };
+            let fee = Fee::from_amount_and_gas(fee_amount, gas);
             let timeout_height = current_block + 100;
 
-            let privkey = SigningKey::from_bytes(&coin.priv_key).unwrap();
+            let privkey =
+                SigningKey::from_bytes(&coin.priv_key).map_to_mm(|e| WithdrawError::InternalError(e.to_string()))?;
 
             let tx_body = tx::Body::new(vec![msg_send], "", timeout_height as u32);
             let auth_info = SignerInfo::single_direct(Some(privkey.public_key()), sequence_number).auth_info(fee);
-            let sign_doc = SignDoc::new(&tx_body, &auth_info, &coin.chain_id, account_info.account_number).unwrap();
-            let tx_raw = sign_doc.sign(&privkey).unwrap();
+            let sign_doc = SignDoc::new(&tx_body, &auth_info, &coin.chain_id, coin.account_number)
+                .map_to_mm(|e| WithdrawError::InternalError(e.to_string()))?;
+            let tx_raw = sign_doc
+                .sign(&privkey)
+                .map_to_mm(|e| WithdrawError::InternalError(e.to_string()))?;
+
             Ok(TransactionDetails {
-                tx_hex: tx_raw.to_bytes().unwrap().into(),
+                tx_hex: tx_raw
+                    .to_bytes()
+                    .map_to_mm(|e| WithdrawError::InternalError(e.to_string()))?
+                    .into(),
                 tx_hash: "".to_string(),
-                from: vec![],
-                to: vec![],
+                from: vec![coin.account_id.to_string()],
+                to: vec![req.to],
                 total_amount: Default::default(),
                 spent_by_me: Default::default(),
                 received_by_me: Default::default(),
@@ -312,16 +364,18 @@ impl MarketCoinOps for TendermintCoin {
         Box::new(fut.boxed().compat())
     }
 
-    fn base_coin_balance(&self) -> BalanceFut<BigDecimal> { todo!() }
+    fn base_coin_balance(&self) -> BalanceFut<BigDecimal> {
+        Box::new(self.my_balance().map(|coin_balance| coin_balance.spendable))
+    }
 
-    fn platform_ticker(&self) -> &str { todo!() }
+    fn platform_ticker(&self) -> &str { &self.ticker }
 
     fn send_raw_tx(&self, tx: &str) -> Box<dyn Future<Item = String, Error = String> + Send> {
         let tx_bytes = try_fus!(hex::decode(tx));
         let tx = try_fus!(Raw::from_bytes(&tx_bytes));
         let coin = self.clone();
         let fut = async move {
-            let broadcast_res = try_s!(tx.broadcast_commit(&coin.rpc_client).await);
+            let broadcast_res = try_s!(coin.rpc_client.broadcast_tx_commit(tx_bytes.into()).await);
             if !broadcast_res.check_tx.code.is_ok() {
                 return ERR!("Tx check failed {:?}", broadcast_res.check_tx);
             }
@@ -334,7 +388,25 @@ impl MarketCoinOps for TendermintCoin {
         Box::new(fut.boxed().compat())
     }
 
-    fn send_raw_tx_bytes(&self, tx: &[u8]) -> Box<dyn Future<Item = String, Error = String> + Send> { todo!() }
+    fn send_raw_tx_bytes(&self, tx: &[u8]) -> Box<dyn Future<Item = String, Error = String> + Send> {
+        // as sanity check
+        try_fus!(Raw::from_bytes(tx));
+
+        let coin = self.clone();
+        let tx_bytes = tx.to_owned();
+        let fut = async move {
+            let broadcast_res = try_s!(coin.rpc_client.broadcast_tx_commit(tx_bytes.into()).await);
+            if !broadcast_res.check_tx.code.is_ok() {
+                return ERR!("Tx check failed {:?}", broadcast_res.check_tx);
+            }
+
+            if !broadcast_res.deliver_tx.code.is_ok() {
+                return ERR!("Tx deliver failed {:?}", broadcast_res.deliver_tx);
+            }
+            Ok(broadcast_res.hash.to_string())
+        };
+        Box::new(fut.boxed().compat())
+    }
 
     fn wait_for_confirmations(
         &self,
@@ -368,7 +440,7 @@ impl MarketCoinOps for TendermintCoin {
         Box::new(fut.boxed().compat())
     }
 
-    fn display_priv_key(&self) -> Result<String, String> { todo!() }
+    fn display_priv_key(&self) -> Result<String, String> { Ok(hex::encode(&self.priv_key)) }
 
     fn min_tx_amount(&self) -> BigDecimal { todo!() }
 

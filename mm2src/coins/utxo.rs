@@ -509,7 +509,6 @@ pub struct UtxoCoinConf {
     pub enable_spv_proof: bool,
 }
 
-#[derive(Debug)]
 pub struct UtxoCoinFields {
     /// UTXO coin config
     pub conf: UtxoCoinConf,
@@ -977,7 +976,7 @@ pub trait UtxoStandardOps {
     ) -> UtxoRpcResult<()>;
 }
 
-#[derive(Clone, Debug)]
+#[derive(Clone)]
 pub struct UtxoArc(Arc<UtxoCoinFields>);
 impl Deref for UtxoArc {
     type Target = UtxoCoinFields;
@@ -1004,7 +1003,7 @@ impl UtxoArc {
     }
 }
 
-#[derive(Clone, Debug)]
+#[derive(Clone)]
 pub struct UtxoWeak(Weak<UtxoCoinFields>);
 
 impl From<Weak<UtxoCoinFields>> for UtxoWeak {

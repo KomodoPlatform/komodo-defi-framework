@@ -258,7 +258,7 @@ impl<'a> QtumCoinBuilder<'a> {
     }
 }
 
-#[derive(Clone, Debug)]
+#[derive(Clone)]
 pub struct QtumCoin {
     utxo_arc: UtxoArc,
 }

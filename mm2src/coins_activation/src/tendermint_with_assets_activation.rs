@@ -3,7 +3,8 @@ use crate::platform_coin_with_tokens::{EnablePlatformCoinWithTokensError, GetPla
 use crate::prelude::*;
 use async_trait::async_trait;
 use coins::my_tx_history_v2::TxHistoryStorage;
-use coins::tendermint::{TendermintActivationParams, TendermintCoin, TendermintInitError, TendermintProtocolInfo};
+use coins::tendermint::{TendermintActivationParams, TendermintCoin, TendermintInitError, TendermintInitErrorKind,
+                        TendermintProtocolInfo};
 use coins::{CoinBalance, CoinProtocol, MarketCoinOps};
 use common::executor::spawn;
 use common::log::warn;
@@ -11,7 +12,7 @@ use common::mm_metrics::MetricsArc;
 use common::Future01CompatExt;
 use futures::future::{abortable, AbortHandle, FutureExt};
 use mm2_core::mm_ctx::MmArc;
-use mm2_err_handle::mm_error::MmError;
+use mm2_err_handle::prelude::*;
 use mm2_number::BigDecimal;
 use serde::Serialize;
 use serde_json::Value as Json;
@@ -80,10 +81,20 @@ impl PlatformWithTokensActivationOps for TendermintCoin {
     }
 
     async fn get_activation_result(&self) -> Result<Self::ActivationResult, MmError<Self::ActivationError>> {
+        let current_block = self.current_block().compat().await.map_to_mm(|e| TendermintInitError {
+            ticker: self.ticker().to_owned(),
+            kind: TendermintInitErrorKind::RpcError(e),
+        })?;
+
+        let balance = self.my_balance().compat().await.mm_err(|e| TendermintInitError {
+            ticker: self.ticker().to_owned(),
+            kind: TendermintInitErrorKind::RpcError(e.to_string()),
+        })?;
+
         Ok(TendermintActivationResult {
-            address: self.my_address().unwrap(),
-            current_block: self.current_block().compat().await.unwrap(),
-            balance: self.my_balance().compat().await.unwrap(),
+            address: self.account_id.to_string(),
+            current_block,
+            balance,
         })
     }
 

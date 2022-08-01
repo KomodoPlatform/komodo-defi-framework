@@ -25,7 +25,7 @@ use mm2_number::MmNumber;
 use serialization::coin_variant_by_ticker;
 use utxo_signer::UtxoSignerOps;
 
-#[derive(Clone, Debug)]
+#[derive(Clone)]
 pub struct UtxoStandardCoin {
     utxo_arc: UtxoArc,
 }

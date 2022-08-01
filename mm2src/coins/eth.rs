@@ -279,7 +279,6 @@ enum EthCoinType {
 }
 
 /// pImpl idiom.
-#[derive(Debug)]
 pub struct EthCoinImpl {
     ticker: String,
     coin_type: EthCoinType,
@@ -670,7 +669,7 @@ async fn withdraw_impl(coin: EthCoin, req: WithdrawRequest) -> WithdrawResult {
     })
 }
 
-#[derive(Clone, Debug)]
+#[derive(Clone)]
 pub struct EthCoin(Arc<EthCoinImpl>);
 impl Deref for EthCoin {
     type Target = EthCoinImpl;

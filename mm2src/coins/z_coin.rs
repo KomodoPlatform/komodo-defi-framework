@@ -155,16 +155,6 @@ pub struct ZCoinFields {
     sync_state_connector: AsyncMutex<SaplingSyncConnector>,
 }
 
-impl std::fmt::Debug for ZCoinFields {
-    fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
-        write!(
-            f,
-            "ZCoinFields {{ my_z_addr: {:?}, my_z_addr_encoded: {} }}",
-            self.my_z_addr, self.my_z_addr_encoded
-        )
-    }
-}
-
 impl Transaction for ZTransaction {
     fn tx_hex(&self) -> Vec<u8> {
         let mut hex = Vec::with_capacity(1024);
@@ -179,7 +169,7 @@ impl Transaction for ZTransaction {
     }
 }
 
-#[derive(Clone, Debug)]
+#[derive(Clone)]
 pub struct ZCoin {
     utxo_arc: UtxoArc,
     z_fields: Arc<ZCoinFields>,

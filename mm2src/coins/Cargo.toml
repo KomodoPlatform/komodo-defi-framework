@@ -92,6 +92,8 @@ cosmrs = { version = "0.7" }
 js-sys = { version = "0.3.27" }
 mm2_db = { path = "../mm2_db" }
 mm2_test_helpers = { path = "../mm2_test_helpers" }
+# using the same version as cosmrs
+tendermint-rpc = { version = "=0.23.7", default-features = false }
 wasm-bindgen = { version = "0.2.50", features = ["nightly"] }
 wasm-bindgen-futures = { version = "0.4.1" }
 wasm-bindgen-test = { version = "0.3.2" }
