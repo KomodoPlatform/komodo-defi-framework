@@ -19,6 +19,7 @@
 //  lp_ordermatch.rs
 //  marketmaker
 //
+
 use async_trait::async_trait;
 use best_orders::BestOrdersAction;
 use blake2::digest::{Update, VariableOutput};
