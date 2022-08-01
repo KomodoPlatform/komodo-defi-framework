@@ -11,7 +11,7 @@ categories = ["network-programming", "asynchronous"]
 
 [dependencies]
 base64 = "0.11.0"
-bytes = "0.5.4"
+bytes = "1.2.1"
 byteorder = "1.3.2"
 common = { path = "../common" }
 fnv = "1.0.6"
