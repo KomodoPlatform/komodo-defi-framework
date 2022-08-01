@@ -124,5 +124,5 @@ winapi = "0.3"
 mm2_test_helpers = { path = "../mm2_test_helpers" }
 
 [build-dependencies]
-prost-build = { version = "0.10.3", default-features = false }
+prost-build = { version = "0.11.0", default-features = false }
 tonic-build = { version = "0.7", features = ["prost", "compression"] }
