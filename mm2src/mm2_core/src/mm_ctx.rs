@@ -491,7 +491,7 @@ impl MmArc {
 
         let address: SocketAddr = format!("127.0.0.1:{}", prometheusport)
             .parse()
-            .map_err(|e: AddrParseError| MmMetricsError::Internal(e.to_string()))?;
+            .map_err(|e: AddrParseError| MmMetricsError::PrometheusServerError(e.to_string()))?;
 
         let credentials =
             self.conf["prometheus_credentials"]

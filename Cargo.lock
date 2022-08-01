@@ -1059,7 +1059,6 @@ dependencies = [
  "lightning-invoice",
  "lightning-net-tokio",
  "lightning-persister",
- "metrics",
  "mm2_core",
  "mm2_db",
  "mm2_err_handle",
@@ -4259,10 +4258,10 @@ dependencies = [
  "metrics-exporter-prometheus",
  "metrics-util",
  "mm2_err_handle",
- "quanta",
  "serde",
  "serde_derive",
  "serde_json",
+ "wasm-timer",
 ]
 
 [[package]]

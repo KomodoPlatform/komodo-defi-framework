@@ -208,11 +208,11 @@ pub(crate) fn labels_to_tags(labels: Iter<Label>) -> Vec<Tag> {
 pub(crate) fn name_value_map_to_message(name_value_map: &MetricNameValueMap) -> String {
     name_value_map
         .iter()
-        .sorted_by(|x, y| x.partial_cmp(y).unwrap_or(std::cmp::Ordering::Less))
+        .sorted_by(|x, y| x.partial_cmp(y).unwrap_or(std::cmp::Ordering::Equal))
         .map(|(key, value)| match value {
-            crate::mm_metrics::PreparedMetric::Unsigned(v) => format!("{}={:?}", key, v),
-            crate::mm_metrics::PreparedMetric::Float(v) => format!("{}={:?}", key, v),
-            crate::mm_metrics::PreparedMetric::Histogram(v) => format!("{}={:?}", key, v.to_tag_message()),
+            PreparedMetric::Unsigned(v) => format!("{}={:?}", key, v),
+            PreparedMetric::Float(v) => format!("{}={:?}", key, v),
+            PreparedMetric::Histogram(v) => format!("{}={:?}", key, v.to_tag_message()),
         })
         .join(" ")
 }
@@ -353,7 +353,11 @@ pub mod prometheus {
             .headers()
             .get(header::AUTHORIZATION)
             .ok_or(MmMetricsError::PrometheusAuthorizationRequired)
-            .and_then(|header| Ok(header.to_str().map_err(|err| MmMetricsError::Internal(err.to_string())))?)?;
+            .and_then(|header| {
+                Ok(header
+                    .to_str()
+                    .map_err(|err| MmMetricsError::PrometheusServerError(err.to_string())))?
+            })?;
 
         let expected = format!("Basic {}", base64::encode_config(&expected.userpass, base64::URL_SAFE));
 
@@ -369,7 +373,6 @@ pub mod prometheus {
 
 #[cfg(test)]
 mod test {
-
     use std::time::Duration;
 
     use crate::{MetricsArc, MetricsOps};
@@ -377,7 +380,7 @@ mod test {
     use common::{block_on,
                  executor::Timer,
                  log::{LogArc, LogState}};
-    use quanta::Clock;
+    use wasm_timer::Instant;
 
     #[test]
     fn test_collect_json() {
@@ -480,8 +483,8 @@ mod test {
 
         mm_metrics.init_with_dashboard(log_state.weak(), 6.).unwrap();
 
-        let clock = Clock::new();
-        let last: quanta::Instant = clock.now();
+        let clock = Instant::now();
+        let last = clock.elapsed();
 
         mm_counter!(mm_metrics, "rpc.traffic.tx", 62, "coin" => "BTC");
         mm_counter!(mm_metrics, "rpc.traffic.rx", 105, "coin"=> "BTC");
@@ -493,7 +496,7 @@ mod test {
 
         block_on(async { Timer::sleep(6.).await });
 
-        let delta: Duration = clock.now() - last;
+        let delta: Duration = clock.elapsed() - last;
         mm_timing!(mm_metrics,
                     "rpc.query.spent_time",
                     delta,
@@ -507,7 +510,7 @@ mod test {
 
         mm_gauge!(mm_metrics, "rpc.connection.count", 5.0, "coin" => "KMD");
 
-        let delta: Duration = clock.now() - last;
+        let delta = clock.elapsed() - last;
         mm_timing!(mm_metrics,
                     "rpc.query.spent_time",
                     delta,
@@ -517,7 +520,7 @@ mod test {
         // measure without labels
         mm_counter!(mm_metrics, "test.counter", 0);
         mm_gauge!(mm_metrics, "test.gauge", 1.0);
-        let delta: Duration = clock.now() - last;
+        let delta: Duration = clock.elapsed() - last;
         mm_timing!(mm_metrics, "test.uptime", delta);
 
         block_on(async { Timer::sleep(6.).await });

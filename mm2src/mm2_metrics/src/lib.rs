@@ -8,6 +8,7 @@ pub use metrics;
 #[cfg(not(target_arch = "wasm32"))]
 pub use mm_metrics::prometheus;
 
+use common::log::LogWeak;
 use derive_more::Display;
 use mm2_err_handle::prelude::MmError;
 use mm_metrics::Metrics;
@@ -41,7 +42,7 @@ pub trait MetricsOps {
         Self: Sized;
 
     /// Initializes mm2 Metrics with dashboard.
-    fn init_with_dashboard(&self, log_state: common::log::LogWeak, interval: f64) -> MmMetricsResult<()>;
+    fn init_with_dashboard(&self, log_state: LogWeak, interval: f64) -> MmMetricsResult<()>;
 
     /// Collect the metrics in a Json data format.
     fn collect_json(&self) -> MmMetricsResult<crate::Json>;
@@ -66,13 +67,13 @@ impl MetricsArc {
 }
 
 impl TryRecorder for MetricsArc {
-    fn try_recorder(&self) -> Option<Arc<MmRecorder>> { Some(self.0.recorder.to_owned()) }
+    fn try_recorder(&self) -> Option<Arc<MmRecorder>> { Some(Arc::clone(&self.0.recorder)) }
 }
 
 impl MetricsOps for MetricsArc {
     fn init(&self) { self.0.init(); }
 
-    fn init_with_dashboard(&self, log_state: common::log::LogWeak, interval: f64) -> MmMetricsResult<()> {
+    fn init_with_dashboard(&self, log_state: LogWeak, interval: f64) -> MmMetricsResult<()> {
         self.0.init_with_dashboard(log_state, interval)
     }
 

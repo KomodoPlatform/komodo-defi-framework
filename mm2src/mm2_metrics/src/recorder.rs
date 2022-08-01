@@ -33,7 +33,7 @@ impl MmRecorder {
     fn get_metrics(&self) -> Snapshot {
         let mut counters = HashMap::new();
         for (key, counter) in self.registry.get_counter_handles() {
-            key_value_to_snapshot_entry(&mut counters, key, counter.get_inner().load(Ordering::Acquire), 0);
+            key_value_to_snapshot_entry(&mut counters, key, counter.get_inner().load(Ordering::Acquire));
         }
 
         let mut gauges = HashMap::new();
@@ -42,13 +42,12 @@ impl MmRecorder {
                 &mut gauges,
                 key,
                 f64::from_bits(gauge.get_inner().load(Ordering::Acquire)),
-                0.0,
             );
         }
 
         let mut histograms = HashMap::new();
         for (key, histogram) in self.registry.get_histogram_handles() {
-            key_value_to_snapshot_entry(&mut histograms, key, histogram.get_inner().data(), vec![]);
+            key_value_to_snapshot_entry(&mut histograms, key, histogram.get_inner().data());
         }
 
         Snapshot {
@@ -154,20 +153,16 @@ impl MmRecorder {
     }
 }
 
+use std::collections::hash_map::Entry::{Occupied, Vacant};
+
 #[cfg(not(target_arch = "wasm32"))]
-fn key_value_to_snapshot_entry<V>(
-    metrics: &mut HashMap<String, HashMap<Vec<String>, V>>,
-    key: Key,
-    value: V,
-    default: V,
-) {
+fn key_value_to_snapshot_entry<V>(metrics: &mut HashMap<String, HashMap<Vec<String>, V>>, key: Key, value: V) {
     let (key_name, labels) = key_to_parts(&key, None);
-    let entry = metrics
-        .entry(key_name)
-        .or_insert_with(HashMap::new)
-        .entry(labels)
-        .or_insert(default);
-    *entry = value;
+    let val = match metrics.entry(key_name) {
+        Vacant(entry) => entry.insert(HashMap::new()),
+        Occupied(entry) => entry.into_mut(),
+    };
+    val.insert(labels, value);
 }
 
 impl Recorder for MmRecorder {

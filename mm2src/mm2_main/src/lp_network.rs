@@ -37,7 +37,7 @@ use parking_lot::Mutex as PaMutex;
 use serde::de;
 use std::net::ToSocketAddrs;
 use std::sync::Arc;
-use std::time::Instant;
+use wasm_timer::Instant;
 
 use crate::mm2::{lp_ordermatch, lp_stats, lp_swap};
 
