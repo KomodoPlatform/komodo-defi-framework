@@ -43,7 +43,8 @@ async fn auth(json: &Json, ctx: &MmArc, client: &SocketAddr) -> Result<(), Strin
 
 /// Using async/await (futures 0.3) in `dispatcher`
 /// will pave the way for porting the remaining system threading code to async/await green threads.
-fn hyres(handler: impl Future03<Output = Result<Response<Vec<u8>>, String>> + Send + 'static) -> HyRes {
+fn hyres<T: ToString>(handler: impl Future03<Output = Result<Response<Vec<u8>>, T>> + Send + 'static) -> HyRes {
+    let handler = handler.map_err(|err| err.to_string());
     Box::new(handler.boxed().compat())
 }
 

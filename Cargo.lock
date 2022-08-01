@@ -1154,6 +1154,7 @@ dependencies = [
  "chrono",
  "crossbeam",
  "crossterm",
+ "derive_more",
  "findshlibs",
  "fnv",
  "futures 0.1.29",

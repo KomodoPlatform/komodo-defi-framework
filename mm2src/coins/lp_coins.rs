@@ -232,6 +232,7 @@ use utxo::{BlockchainNetwork, GenerateTxError, UtxoFeeDetails, UtxoTx};
 pub type BalanceResult<T> = Result<T, MmError<BalanceError>>;
 pub type BalanceFut<T> = Box<dyn Future<Item = T, Error = MmError<BalanceError>> + Send>;
 pub type NonZeroBalanceFut<T> = Box<dyn Future<Item = T, Error = MmError<GetNonZeroBalance>> + Send>;
+pub type CoinContextResult<T> = Result<T, MmError<CoinContextError>>;
 pub type NumConversResult<T> = Result<T, MmError<NumConversError>>;
 pub type StakingInfosResult = Result<StakingInfos, MmError<StakingInfosError>>;
 pub type StakingInfosFut = Box<dyn Future<Item = StakingInfos, Error = MmError<StakingInfosError>> + Send>;
@@ -1874,6 +1875,12 @@ pub struct CoinsContext {
     hd_wallet_db: SharedDb<HDWalletDb>,
 }
 
+#[derive(Debug, Display)]
+pub enum CoinContextError {
+    #[display(fmt = "{}", _0)]
+    Internal(String),
+}
+
 #[derive(Debug)]
 pub struct CoinIsAlreadyActivatedErr {
     pub ticker: String,
@@ -1886,8 +1893,8 @@ pub struct PlatformIsAlreadyActivatedErr {
 
 impl CoinsContext {
     /// Obtains a reference to this crate context, creating it if necessary.
-    pub fn from_ctx(ctx: &MmArc) -> Result<Arc<CoinsContext>, String> {
-        Ok(try_s!(from_ctx(&ctx.coins_ctx, move || {
+    pub fn from_ctx(ctx: &MmArc) -> CoinContextResult<Arc<CoinsContext>> {
+        Ok(from_ctx(&ctx.coins_ctx, move || {
             Ok(CoinsContext {
                 coins: AsyncMutex::new(HashMap::new()),
                 balance_update_handlers: AsyncMutex::new(vec![]),
@@ -1899,7 +1906,8 @@ impl CoinsContext {
                 #[cfg(target_arch = "wasm32")]
                 hd_wallet_db: ConstructibleDb::new_shared(ctx),
             })
-        })))
+        })
+        .map_err(|err| MmError::new(CoinContextError::Internal(err)))?)
     }
 
     pub async fn add_coin(&self, coin: MmCoinEnum) -> Result<(), MmError<CoinIsAlreadyActivatedErr>> {
@@ -2365,7 +2373,7 @@ pub async fn lp_register_coin(
     params: RegisterCoinParams,
 ) -> Result<(), MmError<RegisterCoinError>> {
     let RegisterCoinParams { ticker, tx_history } = params;
-    let cctx = CoinsContext::from_ctx(ctx).map_to_mm(RegisterCoinError::Internal)?;
+    let cctx = CoinsContext::from_ctx(ctx).map_err(|err| MmError::new(RegisterCoinError::Internal(err.to_string())))?;
 
     // TODO AP: locking the coins list during the entire initialization prevents different coins from being
     // activated concurrently which results in long activation time: https://github.com/KomodoPlatform/atomicDEX/issues/24

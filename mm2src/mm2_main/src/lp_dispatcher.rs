@@ -1,8 +1,12 @@
 use crate::mm2::lp_ordermatch::TradingBotEvent;
 use crate::mm2::lp_swap::MakerSwapStatusChanged;
 use async_std::sync::RwLock;
-use mm2_core::{event_dispatcher::{Dispatcher, EventUniqueId},
-               mm_ctx::{from_ctx, MmArc}};
+use derive_more::Display;
+use mm2_core::{
+    event_dispatcher::{Dispatcher, EventUniqueId},
+    mm_ctx::{from_ctx, MmArc},
+};
+use mm2_err_handle::prelude::MmError;
 use std::any::TypeId;
 use std::sync::Arc;
 
@@ -10,7 +14,9 @@ use std::sync::Arc;
 pub struct StopCtxEvent;
 
 impl StopCtxEvent {
-    pub fn event_id() -> TypeId { TypeId::of::<StopCtxEvent>() }
+    pub fn event_id() -> TypeId {
+        TypeId::of::<StopCtxEvent>()
+    }
 }
 
 #[derive(Clone)]
@@ -21,11 +27,15 @@ pub enum LpEvents {
 }
 
 impl From<TradingBotEvent> for LpEvents {
-    fn from(evt: TradingBotEvent) -> Self { LpEvents::TradingBotEvent(evt) }
+    fn from(evt: TradingBotEvent) -> Self {
+        LpEvents::TradingBotEvent(evt)
+    }
 }
 
 impl From<StopCtxEvent> for LpEvents {
-    fn from(evt: StopCtxEvent) -> Self { LpEvents::StopCtxEvent(evt) }
+    fn from(evt: StopCtxEvent) -> Self {
+        LpEvents::StopCtxEvent(evt)
+    }
 }
 
 impl EventUniqueId for LpEvents {
@@ -43,12 +53,17 @@ pub struct DispatcherContext {
     pub dispatcher: RwLock<Dispatcher<LpEvents>>,
 }
 
+#[derive(Debug, Display)]
+pub enum DispatchContextError {
+    #[display(fmt = "{}: ", _0)]
+    Internal(String),
+}
+
 impl DispatcherContext {
     /// Obtains a reference to this crate context, creating it if necessary.
-    pub fn from_ctx(ctx: &MmArc) -> Result<Arc<DispatcherContext>, String> {
-        Ok(try_s!(from_ctx(&ctx.dispatcher_ctx, move || {
-            Ok(DispatcherContext::default())
-        })))
+    pub fn from_ctx(ctx: &MmArc) -> Result<Arc<DispatcherContext>, MmError<DispatchContextError>> {
+        Ok(from_ctx(&ctx.dispatcher_ctx, move || Ok(DispatcherContext::default()))
+            .map_err(|err| MmError::new(DispatchContextError::Internal(err)))?)
     }
 }
 

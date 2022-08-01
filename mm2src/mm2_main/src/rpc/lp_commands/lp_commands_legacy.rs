@@ -24,9 +24,11 @@ use common::executor::{spawn, Timer};
 use common::log::error;
 use common::mm_metrics::MetricsOps;
 use common::{rpc_err_response, rpc_response, HyRes};
+use derive_more::Display;
 use futures::compat::Future01CompatExt;
 use http::Response;
 use mm2_core::mm_ctx::MmArc;
+use mm2_err_handle::prelude::*;
 use mm2_number::{construct_detailed, BigDecimal};
 use serde_json::{self as json, Value as Json};
 use std::borrow::Cow;
@@ -37,15 +39,72 @@ use crate::mm2::lp_ordermatch::{cancel_orders_by, CancelBy};
 use crate::mm2::lp_swap::{active_swaps_using_coin, tx_helper_topic};
 use crate::mm2::MmVersionResult;
 
-/// Attempts to disable the coin
-pub async fn disable_coin(ctx: MmArc, req: Json) -> Result<Response<Vec<u8>>, String> {
-    let ticker = try_s!(req["coin"].as_str().ok_or("No 'coin' field")).to_owned();
-    let _coin = match lp_coinfind(&ctx, &ticker).await {
+type LpCommandsLegacyResult<T> = Result<T, MmError<LpCommandsLegacyError>>;
+
+#[derive(Debug, Display)]
+pub enum LpCommandsLegacyError {
+    #[display(fmt = "{}", _0)]
+    ActiveSwapsError(String),
+    #[display(fmt = "{}", _0)]
+    BalanceError(String),
+    #[display(fmt = "Error stopping MmCtx: {}", _0)]
+    CtxStopError(String),
+    #[display(fmt = "Coin {} already initialized", _0)]
+    CoinAlreadyInitialized(String),
+    #[display(fmt = "{}", _0)]
+    Internal(String),
+    #[display(fmt = "{}", _0)]
+    JsonError(String),
+    #[display(fmt = "No 'coin' field")]
+    NoCoinField,
+    #[display(fmt = "No such coin: {}", _0)]
+    NoSuchCoin(String),
+    #[display(fmt = "No such mode: {}", _0)]
+    NoSuchMode(String),
+    #[display(fmt = "!lp_coinfind({}): {}", _0, _1)]
+    LpCoinFindError(String, String),
+    #[display(fmt = "{}: ", _0)]
+    LpResponseError(String),
+    #[display(fmt = "Peer ID is not initialized: ")]
+    PeerIDNotInitialized,
+}
+
+impl From<LpCommandsLegacyError> for String {
+    fn from(err: LpCommandsLegacyError) -> Self {
+        err.to_string()
+    }
+}
+
+async fn lp_coinfind_coin_enum_and_ticker(ctx: &MmArc, req: &Json) -> LpCommandsLegacyResult<(String, MmCoinEnum)> {
+    let ticker = req["coin"]
+        .as_str()
+        .ok_or(LpCommandsLegacyError::NoCoinField)
+        .map_to_mm(|e| e)?
+        .to_owned();
+    let coin = match lp_coinfind(&ctx, &ticker).await {
         Ok(Some(t)) => t,
-        Ok(None) => return ERR!("No such coin: {}", ticker),
-        Err(err) => return ERR!("!lp_coinfind({}): ", err),
+        Ok(None) => return Err(MmError::new(LpCommandsLegacyError::NoSuchCoin(ticker))),
+        Err(err) => return Err(MmError::new(LpCommandsLegacyError::LpCoinFindError(ticker, err))),
     };
-    let swaps = try_s!(active_swaps_using_coin(&ctx, &ticker));
+    Ok((ticker, coin))
+}
+
+async fn lp_coininit_coin_enum_and_ticker(ctx: &MmArc, req: &Json) -> LpCommandsLegacyResult<(String, MmCoinEnum)> {
+    let ticker = req["coin"]
+        .as_str()
+        .ok_or(LpCommandsLegacyError::NoCoinField)
+        .map_to_mm(|e| e)?
+        .to_owned();
+    let coin: MmCoinEnum = lp_coininit(&ctx, &ticker, &req)
+        .await
+        .map_to_mm(|err| LpCommandsLegacyError::CoinAlreadyInitialized(err))?;
+    Ok((ticker, coin))
+}
+
+/// Attempts to disable the coin
+pub async fn disable_coin(ctx: MmArc, req: Json) -> LpCommandsLegacyResult<Response<Vec<u8>>> {
+    let (ticker, coin) = lp_coinfind_coin_enum_and_ticker(&ctx, &req).await?;
+    let swaps = active_swaps_using_coin(&ctx, &ticker).map_to_mm(|err| LpCommandsLegacyError::ActiveSwapsError(err))?;
     if !swaps.is_empty() {
         let err = json!({
             "error": format!("There're active swaps using {}", ticker),
@@ -54,9 +113,11 @@ pub async fn disable_coin(ctx: MmArc, req: Json) -> Result<Response<Vec<u8>>, St
         return Response::builder()
             .status(500)
             .body(json::to_vec(&err).unwrap())
-            .map_err(|e| ERRL!("{}", e));
+            .map_to_mm(|err| LpCommandsLegacyError::LpResponseError(err.to_string()));
     }
-    let (cancelled, still_matching) = try_s!(cancel_orders_by(&ctx, CancelBy::Coin { ticker: ticker.clone() }).await);
+    let (cancelled, still_matching) = cancel_orders_by(&ctx, CancelBy::Coin { ticker: ticker.clone() })
+        .await
+        .map_to_mm(|err| LpCommandsLegacyError::Internal(err))?;
     if !still_matching.is_empty() {
         let err = json!({
             "error": format!("There're currently matching orders using {}", ticker),
@@ -68,10 +129,12 @@ pub async fn disable_coin(ctx: MmArc, req: Json) -> Result<Response<Vec<u8>>, St
         return Response::builder()
             .status(500)
             .body(json::to_vec(&err).unwrap())
-            .map_err(|e| ERRL!("{}", e));
+            .map_to_mm(|err| LpCommandsLegacyError::LpResponseError(err.to_string()));
     }
 
-    try_s!(disable_coin_impl(&ctx, &ticker).await);
+    disable_coin_impl(&ctx, &ticker)
+        .await
+        .map_to_mm(|err| LpCommandsLegacyError::Internal(err))?;
     let res = json!({
         "result": {
             "coin": ticker,
@@ -80,7 +143,7 @@ pub async fn disable_coin(ctx: MmArc, req: Json) -> Result<Response<Vec<u8>>, St
     });
     Response::builder()
         .body(json::to_vec(&res).unwrap())
-        .map_err(|e| ERRL!("{}", e))
+        .map_to_mm(|err| LpCommandsLegacyError::LpResponseError(err.to_string()))
 }
 
 #[derive(Serialize)]
@@ -97,13 +160,18 @@ struct CoinInitResponse<'a> {
 }
 
 /// Enable a coin in the Electrum mode.
-pub async fn electrum(ctx: MmArc, req: Json) -> Result<Response<Vec<u8>>, String> {
-    let ticker = try_s!(req["coin"].as_str().ok_or("No 'coin' field")).to_owned();
-    let coin: MmCoinEnum = try_s!(lp_coininit(&ctx, &ticker, &req).await);
-    let balance = try_s!(coin.my_balance().compat().await);
+pub async fn electrum(ctx: MmArc, req: Json) -> LpCommandsLegacyResult<Response<Vec<u8>>> {
+    let (ticker, coin) = lp_coininit_coin_enum_and_ticker(&ctx, &req).await?;
+    let balance = coin
+        .my_balance()
+        .compat()
+        .await
+        .map_err(|err| MmError::new(LpCommandsLegacyError::BalanceError(err.to_string())))?;
     let res = CoinInitResponse {
         result: "success",
-        address: try_s!(coin.my_address()),
+        address: coin
+            .my_address()
+            .map_to_mm(|err| LpCommandsLegacyError::Internal(err))?,
         balance: balance.spendable,
         unspendable_balance: balance.unspendable,
         coin: coin.ticker(),
@@ -111,18 +179,25 @@ pub async fn electrum(ctx: MmArc, req: Json) -> Result<Response<Vec<u8>>, String
         requires_notarization: coin.requires_notarization(),
         mature_confirmations: coin.mature_confirmations(),
     };
-    let res = try_s!(json::to_vec(&res));
-    Ok(try_s!(Response::builder().body(res)))
+    let res = json::to_vec(&res).map_to_mm(|err| LpCommandsLegacyError::JsonError(err.to_string()))?;
+    Ok(Response::builder()
+        .body(res)
+        .map_to_mm(|err| LpCommandsLegacyError::LpResponseError(err.to_string()))?)
 }
 
 /// Enable a coin in the local wallet mode.
-pub async fn enable(ctx: MmArc, req: Json) -> Result<Response<Vec<u8>>, String> {
-    let ticker = try_s!(req["coin"].as_str().ok_or("No 'coin' field")).to_owned();
-    let coin: MmCoinEnum = try_s!(lp_coininit(&ctx, &ticker, &req).await);
-    let balance = try_s!(coin.my_balance().compat().await);
+pub async fn enable(ctx: MmArc, req: Json) -> LpCommandsLegacyResult<Response<Vec<u8>>> {
+    let (ticker, coin) = lp_coininit_coin_enum_and_ticker(&ctx, &req).await?;
+    let balance = coin
+        .my_balance()
+        .compat()
+        .await
+        .map_err(|err| MmError::new(LpCommandsLegacyError::BalanceError(err.to_string())))?;
     let res = CoinInitResponse {
         result: "success",
-        address: try_s!(coin.my_address()),
+        address: coin
+            .my_address()
+            .map_to_mm(|err| LpCommandsLegacyError::Internal(err))?,
         balance: balance.spendable,
         unspendable_balance: balance.unspendable,
         coin: coin.ticker(),
@@ -130,8 +205,10 @@ pub async fn enable(ctx: MmArc, req: Json) -> Result<Response<Vec<u8>>, String> 
         requires_notarization: coin.requires_notarization(),
         mature_confirmations: coin.mature_confirmations(),
     };
-    let res = try_s!(json::to_vec(&res));
-    let res = try_s!(Response::builder().body(res));
+    let res = json::to_vec(&res).map_to_mm(|err| LpCommandsLegacyError::JsonError(err.to_string()))?;
+    let res = Response::builder()
+        .body(res)
+        .map_to_mm(|err| LpCommandsLegacyError::LpResponseError(err.to_string()))?;
 
     if coin.is_utxo_in_native_mode() {
         subscribe_to_topic(&ctx, tx_helper_topic(coin.ticker()));
@@ -182,25 +259,26 @@ pub fn metrics(ctx: MmArc) -> HyRes {
 }
 
 /// Get my_balance of a coin
-pub async fn my_balance(ctx: MmArc, req: Json) -> Result<Response<Vec<u8>>, String> {
-    let ticker = try_s!(req["coin"].as_str().ok_or("No 'coin' field")).to_owned();
-    let coin = match lp_coinfind(&ctx, &ticker).await {
-        Ok(Some(t)) => t,
-        Ok(None) => return ERR!("No such coin: {}", ticker),
-        Err(err) => return ERR!("!lp_coinfind({}): {}", ticker, err),
-    };
-    let my_balance = try_s!(coin.my_balance().compat().await);
+pub async fn my_balance(ctx: MmArc, req: Json) -> LpCommandsLegacyResult<Response<Vec<u8>>> {
+    let (ticker, coin) = lp_coinfind_coin_enum_and_ticker(&ctx, &req).await?;
+    let balance = coin
+        .my_balance()
+        .compat()
+        .await
+        .map_err(|err| MmError::new(LpCommandsLegacyError::BalanceError(err.to_string())))?;
     let res = json!({
         "coin": ticker,
-        "balance": my_balance.spendable,
-        "unspendable_balance": my_balance.unspendable,
-        "address": try_s!(coin.my_address()),
+        "balance": balance.spendable,
+        "unspendable_balance": balance.unspendable,
+        "address": coin.my_address().map_to_mm(|err| LpCommandsLegacyError::Internal(err))?,
     });
-    let res = try_s!(json::to_vec(&res));
-    Ok(try_s!(Response::builder().body(res)))
+    let res = json::to_vec(&res).map_to_mm(|err| LpCommandsLegacyError::JsonError(err.to_string()))?;
+    Ok(Response::builder()
+        .body(res)
+        .map_to_mm(|err| LpCommandsLegacyError::LpResponseError(err.to_string()))?)
 }
 
-pub async fn stop(ctx: MmArc) -> Result<Response<Vec<u8>>, String> {
+pub async fn stop(ctx: MmArc) -> LpCommandsLegacyResult<Response<Vec<u8>>> {
     dispatch_lp_event(ctx.clone(), StopCtxEvent.into()).await;
     // Should delay the shutdown a bit in order not to trip the "stop" RPC call in unit tests.
     // Stopping immediately leads to the "stop" RPC call failing with the "errno 10054" sometimes.
@@ -213,17 +291,19 @@ pub async fn stop(ctx: MmArc) -> Result<Response<Vec<u8>>, String> {
     let res = json!({
         "result": "success"
     });
-    let res = try_s!(json::to_vec(&res));
-    Ok(try_s!(Response::builder().body(res)))
+    let res = json::to_vec(&res).map_to_mm(|err| LpCommandsLegacyError::JsonError(err.to_string()))?;
+    Ok(Response::builder()
+        .body(res)
+        .map_to_mm(|err| LpCommandsLegacyError::LpResponseError(err.to_string()))?)
 }
 
-pub async fn sim_panic(req: Json) -> Result<Response<Vec<u8>>, String> {
+pub async fn sim_panic(req: Json) -> LpCommandsLegacyResult<Response<Vec<u8>>> {
     #[derive(Deserialize)]
     struct Req {
         #[serde(default)]
         mode: String,
     }
-    let req: Req = try_s!(json::from_value(req));
+    let req: Req = json::from_value(req).map_to_mm(|err| LpCommandsLegacyError::JsonError(err.to_string()))?;
 
     #[derive(Serialize)]
     struct Ret<'a> {
@@ -240,16 +320,20 @@ pub async fn sim_panic(req: Json) -> Result<Response<Vec<u8>>, String> {
     } else if req.mode == "simple" {
         panic!("sim_panic: simple")
     } else {
-        return ERR!("No such mode: {}", req.mode);
+        return Err(MmError::new(LpCommandsLegacyError::NoSuchMode(req.mode)));
     }
 
-    let js = try_s!(json::to_vec(&ret));
-    Ok(try_s!(Response::builder().body(js)))
+    let js = json::to_vec(&ret).map_to_mm(|err| LpCommandsLegacyError::JsonError(err.to_string()))?;
+    Ok(Response::builder()
+        .body(js)
+        .map_to_mm(|err| LpCommandsLegacyError::LpResponseError(err.to_string()))?)
 }
 
-pub fn version() -> HyRes { rpc_response(200, MmVersionResult::new().to_json().to_string()) }
+pub fn version() -> HyRes {
+    rpc_response(200, MmVersionResult::new().to_json().to_string())
+}
 
-pub async fn get_peers_info(ctx: MmArc) -> Result<Response<Vec<u8>>, String> {
+pub async fn get_peers_info(ctx: MmArc) -> LpCommandsLegacyResult<Response<Vec<u8>>> {
     use crate::mm2::lp_network::P2PContext;
     use mm2_libp2p::atomicdex_behaviour::get_peers_info;
     let ctx = P2PContext::fetch_from_mm_arc(&ctx);
@@ -258,11 +342,13 @@ pub async fn get_peers_info(ctx: MmArc) -> Result<Response<Vec<u8>>, String> {
     let result = json!({
         "result": result,
     });
-    let res = try_s!(json::to_vec(&result));
-    Ok(try_s!(Response::builder().body(res)))
+    let res = json::to_vec(&result).map_to_mm(|err| LpCommandsLegacyError::JsonError(err.to_string()))?;
+    Ok(Response::builder()
+        .body(res)
+        .map_to_mm(|err| LpCommandsLegacyError::LpResponseError(err.to_string()))?)
 }
 
-pub async fn get_gossip_mesh(ctx: MmArc) -> Result<Response<Vec<u8>>, String> {
+pub async fn get_gossip_mesh(ctx: MmArc) -> LpCommandsLegacyResult<Response<Vec<u8>>> {
     use crate::mm2::lp_network::P2PContext;
     use mm2_libp2p::atomicdex_behaviour::get_gossip_mesh;
     let ctx = P2PContext::fetch_from_mm_arc(&ctx);
@@ -271,11 +357,13 @@ pub async fn get_gossip_mesh(ctx: MmArc) -> Result<Response<Vec<u8>>, String> {
     let result = json!({
         "result": result,
     });
-    let res = try_s!(json::to_vec(&result));
-    Ok(try_s!(Response::builder().body(res)))
+    let res = json::to_vec(&result).map_to_mm(|err| LpCommandsLegacyError::JsonError(err.to_string()))?;
+    Ok(Response::builder()
+        .body(res)
+        .map_to_mm(|err| LpCommandsLegacyError::LpResponseError(err.to_string()))?)
 }
 
-pub async fn get_gossip_peer_topics(ctx: MmArc) -> Result<Response<Vec<u8>>, String> {
+pub async fn get_gossip_peer_topics(ctx: MmArc) -> LpCommandsLegacyResult<Response<Vec<u8>>> {
     use crate::mm2::lp_network::P2PContext;
     use mm2_libp2p::atomicdex_behaviour::get_gossip_peer_topics;
     let ctx = P2PContext::fetch_from_mm_arc(&ctx);
@@ -284,11 +372,13 @@ pub async fn get_gossip_peer_topics(ctx: MmArc) -> Result<Response<Vec<u8>>, Str
     let result = json!({
         "result": result,
     });
-    let res = try_s!(json::to_vec(&result));
-    Ok(try_s!(Response::builder().body(res)))
+    let res = json::to_vec(&result).map_to_mm(|err| LpCommandsLegacyError::JsonError(err.to_string()))?;
+    Ok(Response::builder()
+        .body(res)
+        .map_to_mm(|err| LpCommandsLegacyError::LpResponseError(err.to_string()))?)
 }
 
-pub async fn get_gossip_topic_peers(ctx: MmArc) -> Result<Response<Vec<u8>>, String> {
+pub async fn get_gossip_topic_peers(ctx: MmArc) -> LpCommandsLegacyResult<Response<Vec<u8>>> {
     use crate::mm2::lp_network::P2PContext;
     use mm2_libp2p::atomicdex_behaviour::get_gossip_topic_peers;
     let ctx = P2PContext::fetch_from_mm_arc(&ctx);
@@ -297,11 +387,13 @@ pub async fn get_gossip_topic_peers(ctx: MmArc) -> Result<Response<Vec<u8>>, Str
     let result = json!({
         "result": result,
     });
-    let res = try_s!(json::to_vec(&result));
-    Ok(try_s!(Response::builder().body(res)))
+    let res = json::to_vec(&result).map_to_mm(|err| LpCommandsLegacyError::JsonError(err.to_string()))?;
+    Ok(Response::builder()
+        .body(res)
+        .map_to_mm(|err| LpCommandsLegacyError::LpResponseError(err.to_string()))?)
 }
 
-pub async fn get_relay_mesh(ctx: MmArc) -> Result<Response<Vec<u8>>, String> {
+pub async fn get_relay_mesh(ctx: MmArc) -> LpCommandsLegacyResult<Response<Vec<u8>>> {
     use crate::mm2::lp_network::P2PContext;
     use mm2_libp2p::atomicdex_behaviour::get_relay_mesh;
     let ctx = P2PContext::fetch_from_mm_arc(&ctx);
@@ -310,17 +402,24 @@ pub async fn get_relay_mesh(ctx: MmArc) -> Result<Response<Vec<u8>>, String> {
     let result = json!({
         "result": result,
     });
-    let res = try_s!(json::to_vec(&result));
-    Ok(try_s!(Response::builder().body(res)))
+    let res = json::to_vec(&result).map_to_mm(|err| LpCommandsLegacyError::JsonError(err.to_string()))?;
+    Ok(Response::builder()
+        .body(res)
+        .map_to_mm(|err| LpCommandsLegacyError::LpResponseError(err.to_string()))?)
 }
 
-pub async fn get_my_peer_id(ctx: MmArc) -> Result<Response<Vec<u8>>, String> {
-    let peer_id = try_s!(ctx.peer_id.ok_or("Peer ID is not initialized"));
+pub async fn get_my_peer_id(ctx: MmArc) -> LpCommandsLegacyResult<Response<Vec<u8>>> {
+    let peer_id = ctx
+        .peer_id
+        .ok_or(LpCommandsLegacyError::PeerIDNotInitialized)
+        .map_to_mm(|e| e)?;
     let result = json!({
         "result": peer_id,
     });
-    let res = try_s!(json::to_vec(&result));
-    Ok(try_s!(Response::builder().body(res)))
+    let res = json::to_vec(&result).map_to_mm(|err| LpCommandsLegacyError::JsonError(err.to_string()))?;
+    Ok(Response::builder()
+        .body(res)
+        .map_to_mm(|err| LpCommandsLegacyError::LpResponseError(err.to_string()))?)
 }
 
 construct_detailed!(DetailedMinTradingVol, min_trading_vol);
@@ -333,13 +432,8 @@ struct MinTradingVolResponse<'a> {
 }
 
 /// Get min_trading_vol of a coin
-pub async fn min_trading_vol(ctx: MmArc, req: Json) -> Result<Response<Vec<u8>>, String> {
-    let ticker = try_s!(req["coin"].as_str().ok_or("No 'coin' field")).to_owned();
-    let coin = match lp_coinfind(&ctx, &ticker).await {
-        Ok(Some(t)) => t,
-        Ok(None) => return ERR!("No such coin: {}", ticker),
-        Err(err) => return ERR!("!lp_coinfind({}): {}", ticker, err),
-    };
+pub async fn min_trading_vol(ctx: MmArc, req: Json) -> LpCommandsLegacyResult<Response<Vec<u8>>> {
+    let (ticker, coin) = lp_coinfind_coin_enum_and_ticker(&ctx, &req).await?;
     let min_trading_vol = coin.min_trading_vol();
     let response = MinTradingVolResponse {
         coin: &ticker,
@@ -348,6 +442,8 @@ pub async fn min_trading_vol(ctx: MmArc, req: Json) -> Result<Response<Vec<u8>>,
     let res = json!({
         "result": response,
     });
-    let res = try_s!(json::to_vec(&res));
-    Ok(try_s!(Response::builder().body(res)))
+    let res = json::to_vec(&res).map_to_mm(|err| LpCommandsLegacyError::JsonError(err.to_string()))?;
+    Ok(Response::builder()
+        .body(res)
+        .map_to_mm(|err| LpCommandsLegacyError::LpResponseError(err.to_string()))?)
 }

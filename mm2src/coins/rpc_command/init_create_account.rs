@@ -114,7 +114,8 @@ pub async fn init_create_new_account(
     req: CreateNewAccountRequest,
 ) -> MmResult<InitRpcTaskResponse, HDWalletRpcError> {
     let coin = lp_coinfind_or_err(&ctx, &req.coin).await?;
-    let coins_ctx = CoinsContext::from_ctx(&ctx).map_to_mm(HDWalletRpcError::Internal)?;
+    let coins_ctx =
+        CoinsContext::from_ctx(&ctx).map_err(|err| MmError::new(HDWalletRpcError::Internal(err.to_string())))?;
     let task = InitCreateAccountTask { ctx, coin, req };
     let task_id = CreateAccountTaskManager::spawn_rpc_task(&coins_ctx.create_account_manager, task)?;
     Ok(InitRpcTaskResponse { task_id })
@@ -124,7 +125,8 @@ pub async fn init_create_new_account_status(
     ctx: MmArc,
     req: RpcTaskStatusRequest,
 ) -> MmResult<CreateAccountRpcTaskStatus, RpcTaskStatusError> {
-    let coins_ctx = CoinsContext::from_ctx(&ctx).map_to_mm(RpcTaskStatusError::Internal)?;
+    let coins_ctx =
+        CoinsContext::from_ctx(&ctx).map_err(|err| MmError::new(RpcTaskStatusError::Internal(err.to_string())))?;
     let mut task_manager = coins_ctx
         .create_account_manager
         .lock()
@@ -138,7 +140,8 @@ pub async fn init_create_new_account_user_action(
     ctx: MmArc,
     req: HwRpcTaskUserActionRequest,
 ) -> MmResult<SuccessResponse, RpcTaskUserActionError> {
-    let coins_ctx = CoinsContext::from_ctx(&ctx).map_to_mm(RpcTaskUserActionError::Internal)?;
+    let coins_ctx =
+        CoinsContext::from_ctx(&ctx).map_err(|err| MmError::new(RpcTaskUserActionError::Internal(err.to_string())))?;
     let mut task_manager = coins_ctx
         .create_account_manager
         .lock()

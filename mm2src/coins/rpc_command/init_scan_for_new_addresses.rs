@@ -93,7 +93,8 @@ pub async fn init_scan_for_new_addresses(
     req: ScanAddressesRequest,
 ) -> MmResult<InitRpcTaskResponse, HDAccountBalanceRpcError> {
     let coin = lp_coinfind_or_err(&ctx, &req.coin).await?;
-    let coins_ctx = CoinsContext::from_ctx(&ctx).map_to_mm(HDAccountBalanceRpcError::Internal)?;
+    let coins_ctx = CoinsContext::from_ctx(&ctx)
+        .map_err(|err| MmError::new(HDAccountBalanceRpcError::Internal(err.to_string())))?;
     let task = InitScanAddressesTask { req, coin };
     let task_id = ScanAddressesTaskManager::spawn_rpc_task(&coins_ctx.scan_addresses_manager, task)?;
     Ok(InitRpcTaskResponse { task_id })
@@ -103,7 +104,8 @@ pub async fn init_scan_for_new_addresses_status(
     ctx: MmArc,
     req: RpcTaskStatusRequest,
 ) -> MmResult<ScanAddressesRpcTaskStatus, RpcTaskStatusError> {
-    let coins_ctx = CoinsContext::from_ctx(&ctx).map_to_mm(RpcTaskStatusError::Internal)?;
+    let coins_ctx =
+        CoinsContext::from_ctx(&ctx).map_err(|err| MmError::new(RpcTaskStatusError::Internal(err.to_string())))?;
     let mut task_manager = coins_ctx
         .scan_addresses_manager
         .lock()
