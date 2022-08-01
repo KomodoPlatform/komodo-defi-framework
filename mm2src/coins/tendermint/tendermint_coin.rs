@@ -1,3 +1,6 @@
+#[cfg(not(target_arch = "wasm32"))]
+use super::tendermint_native_rpc::*;
+#[cfg(target_arch = "wasm32")] use super::tendermint_wasm_rpc::*;
 use crate::utxo::sat_from_big_decimal;
 use crate::{big_decimal_from_sat_unsigned, BalanceError, BalanceFut, BigDecimal, CoinBalance, FeeApproxStage,
             FoundSwapTxSpend, HistorySyncState, MarketCoinOps, MmCoin, NegotiateSwapContractAddrErr,
@@ -11,9 +14,6 @@ use cosmrs::bank::MsgSend;
 use cosmrs::crypto::secp256k1::SigningKey;
 use cosmrs::proto::cosmos::auth::v1beta1::{BaseAccount, QueryAccountRequest, QueryAccountResponse};
 use cosmrs::proto::cosmos::bank::v1beta1::{QueryBalanceRequest, QueryBalanceResponse};
-use cosmrs::rpc::endpoint::abci_query::Request as AbciRequest;
-use cosmrs::rpc::Client;
-use cosmrs::rpc::HttpClient;
 use cosmrs::tendermint::abci::Path as AbciPath;
 use cosmrs::tendermint::chain::Id as ChainId;
 use cosmrs::tx::{self, Fee, Msg, Raw, SignDoc, SignerInfo};
@@ -163,7 +163,7 @@ impl MmCoin for TendermintCoin {
                 .current_block()
                 .compat()
                 .await
-                .map_to_mm(|e| WithdrawError::Transport(e))?;
+                .map_to_mm(WithdrawError::Transport)?;
             let to_address =
                 AccountId::from_str(&req.to).map_to_mm(|e| WithdrawError::InvalidAddress(e.to_string()))?;
             if to_address.prefix() != coin.account_prefix {
