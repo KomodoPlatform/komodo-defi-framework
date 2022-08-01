@@ -52,7 +52,7 @@ libc = "0.2"
 lightning = { git = "https://github.com/shamardy/rust-lightning", branch = "0.0.106" }
 lightning-background-processor = { path = "lightning_background_processor" }
 lightning-invoice = { git = "https://github.com/shamardy/rust-lightning", branch = "0.0.106" }
-metrics = "0.12"
+metrics = "0.20"
 mm2_core = { path = "../mm2_core" }
 mm2_err_handle = { path = "../mm2_err_handle" }
 mm2_io = { path = "../mm2_io" }
