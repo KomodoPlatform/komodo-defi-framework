@@ -17,6 +17,9 @@ pub type HDAccountsMutex<HDAccount> = AsyncMutex<HDAccountsMap<HDAccount>>;
 pub type HDAccountsMut<'a, HDAccount> = AsyncMutexGuard<'a, HDAccountsMap<HDAccount>>;
 pub type HDAccountMut<'a, HDAccount> = AsyncMappedMutexGuard<'a, HDAccountsMap<HDAccount>, HDAccount>;
 
+const DEFAULT_ADDRESS_LIMIT: u32 = ChildNumber::HARDENED_FLAG;
+const DEFAULT_ACCOUNT_LIMIT: u32 = ChildNumber::HARDENED_FLAG;
+
 #[derive(Display)]
 pub enum AddressDerivingError {
     #[display(fmt = "BIP32 address deriving error: {}", _0)]
@@ -196,10 +199,9 @@ pub trait HDWalletCoinOps {
         let known_addresses_number = hd_account.known_addresses_number(chain)?;
         // Address IDs start from 0, so the `known_addresses_number = last_known_address_id + 1`.
         let new_address_id = known_addresses_number;
-        if new_address_id >= ChildNumber::HARDENED_FLAG {
-            return MmError::err(NewAddressDerivingError::AddressLimitReached {
-                max_addresses_number: ChildNumber::HARDENED_FLAG,
-            });
+        let max_addresses_number = hd_wallet.address_limit();
+        if new_address_id >= max_addresses_number {
+            return MmError::err(NewAddressDerivingError::AddressLimitReached { max_addresses_number });
         }
         let new_address = self
             .derive_address(hd_account, chain, new_address_id)
@@ -235,6 +237,12 @@ pub trait HDWalletOps: Send + Sync {
     fn coin_type(&self) -> u32;
 
     fn gap_limit(&self) -> u32;
+
+    /// Returns limit on the number of addresses.
+    fn address_limit(&self) -> u32 { DEFAULT_ADDRESS_LIMIT }
+
+    /// Returns limit on the number of accounts.
+    fn account_limit(&self) -> u32 { DEFAULT_ACCOUNT_LIMIT }
 
     fn get_accounts_mutex(&self) -> &HDAccountsMutex<Self::HDAccount>;
 

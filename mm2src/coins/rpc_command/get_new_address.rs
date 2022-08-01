@@ -4,7 +4,6 @@ use crate::{lp_coinfind_or_err, BalanceError, CoinFindError, MmCoinEnum, Unexpec
 use async_trait::async_trait;
 use common::HttpStatusCode;
 use crypto::Bip44Chain;
-use crypto::ChildNumber;
 use derive_more::Display;
 use http::StatusCode;
 use mm2_core::mm_ctx::MmArc;
@@ -228,7 +227,7 @@ pub mod common_impl {
             .await
             .or_mm_err(|| GetNewAddressRpcError::UnknownAccount { account_id })?;
 
-        can_get_new_address(coin, &hd_account, params.chain)
+        can_get_new_address(coin, hd_wallet, &hd_account, params.chain)
             .await
             .mm_err(GetNewAddressRpcError::from)
     }
@@ -252,7 +251,7 @@ pub mod common_impl {
             .or_mm_err(|| GetNewAddressRpcError::UnknownAccount { account_id })?;
 
         // Check if we can generate new address.
-        match can_get_new_address(coin, &hd_account, chain).await?.reason {
+        match can_get_new_address(coin, hd_wallet, &hd_account, chain).await?.reason {
             Some(CantGetNewAddressReason::AddressLimitReached { max_addresses_number }) => {
                 return MmError::err(GetNewAddressRpcError::AddressLimitReached { max_addresses_number })
             },
@@ -284,6 +283,7 @@ pub mod common_impl {
 
     async fn can_get_new_address<Coin>(
         coin: &Coin,
+        hd_wallet: &Coin::HDWallet,
         hd_account: &Coin::HDAccount,
         chain: Bip44Chain,
     ) -> MmResult<CanGetNewAddressResponse, GetNewAddressRpcError>
@@ -295,11 +295,10 @@ pub mod common_impl {
         if known_addresses_number == 0 {
             return Ok(CanGetNewAddressResponse::allowed());
         }
-        if known_addresses_number >= ChildNumber::HARDENED_FLAG {
+        let max_addresses_number = hd_wallet.address_limit();
+        if known_addresses_number >= max_addresses_number {
             return Ok(CanGetNewAddressResponse::not_allowed(
-                CantGetNewAddressReason::AddressLimitReached {
-                    max_addresses_number: ChildNumber::HARDENED_FLAG,
-                },
+                CantGetNewAddressReason::AddressLimitReached { max_addresses_number },
             ));
         }
 

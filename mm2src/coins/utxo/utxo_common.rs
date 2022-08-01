@@ -149,10 +149,9 @@ where
         .last()
         .map(|(account_id, _account)| *account_id + 1)
         .unwrap_or(INIT_ACCOUNT_ID);
-    if new_account_id >= ChildNumber::HARDENED_FLAG {
-        return MmError::err(NewAccountCreatingError::AccountLimitReached {
-            max_accounts_number: ChildNumber::HARDENED_FLAG,
-        });
+    let max_accounts_number = hd_wallet.account_limit();
+    if new_account_id >= max_accounts_number {
+        return MmError::err(NewAccountCreatingError::AccountLimitReached { max_accounts_number });
     }
 
     let account_child_hardened = true;
@@ -203,10 +202,9 @@ pub async fn set_known_addresses_number<T>(
 where
     T: HDWalletCoinWithStorageOps<HDWallet = UtxoHDWallet, HDAccount = UtxoHDAccount> + Sync,
 {
-    if new_known_addresses_number >= ChildNumber::HARDENED_FLAG {
-        return MmError::err(AccountUpdatingError::AddressLimitReached {
-            max_addresses_number: ChildNumber::HARDENED_FLAG,
-        });
+    let max_addresses_number = hd_wallet.address_limit();
+    if new_known_addresses_number >= max_addresses_number {
+        return MmError::err(AccountUpdatingError::AddressLimitReached { max_addresses_number });
     }
     match chain {
         Bip44Chain::External => {
@@ -288,7 +286,8 @@ where
         .mm_err(|e| BalanceError::Internal(e.to_string()))?;
 
     let mut unused_addresses_counter = 0;
-    while checking_address_id < ChildNumber::HARDENED_FLAG && unused_addresses_counter < gap_limit {
+    let max_addresses_number = hd_wallet.address_limit();
+    while checking_address_id < max_addresses_number && unused_addresses_counter < gap_limit {
         let HDAddress {
             address: checking_address,
             derivation_path: checking_address_der_path,
