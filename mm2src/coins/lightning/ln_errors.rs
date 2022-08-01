@@ -72,6 +72,10 @@ impl From<SqlError> for EnableLightningError {
     fn from(err: SqlError) -> EnableLightningError { EnableLightningError::DbError(err.to_string()) }
 }
 
+impl From<UtxoRpcError> for EnableLightningError {
+    fn from(e: UtxoRpcError) -> Self { EnableLightningError::RpcError(e.to_string()) }
+}
+
 #[derive(Debug, Deserialize, Display, Serialize, SerializeErrorType)]
 #[serde(tag = "error_type", content = "error_data")]
 pub enum ConnectToNodeError {

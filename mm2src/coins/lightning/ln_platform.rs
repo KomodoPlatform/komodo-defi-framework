@@ -1,7 +1,7 @@
 use super::*;
 use crate::lightning::ln_errors::{SaveChannelClosingError, SaveChannelClosingResult};
 use crate::utxo::rpc_clients::{BestBlock as RpcBestBlock, BlockHashOrHeight, ElectrumBlockHeader, ElectrumClient,
-                               ElectrumNonce, EstimateFeeMethod, UtxoRpcClientEnum};
+                               ElectrumNonce, EstimateFeeMethod, UtxoRpcClientEnum, UtxoRpcResult};
 use crate::utxo::spv::{ConfirmedTransactionInfo, SimplePaymentVerification};
 use crate::utxo::utxo_standard::UtxoStandardCoin;
 use crate::{MarketCoinOps, MmCoin};
@@ -22,11 +22,19 @@ use rpc::v1::types::{Bytes as BytesJson, H256 as H256Json};
 use spv_validation::spv_proof::TRY_SPV_PROOF_INTERVAL;
 use std::cmp;
 use std::convert::{TryFrom, TryInto};
-use std::sync::atomic::{AtomicU64, Ordering as AtomicOrdering};
+use std::sync::atomic::{AtomicU64, Ordering as AtomicOrdering, Ordering};
 
 const CHECK_FOR_NEW_BEST_BLOCK_INTERVAL: f64 = 60.;
 const MIN_ALLOWED_FEE_PER_1000_WEIGHT: u32 = 253;
 const TRY_LOOP_INTERVAL: f64 = 60.;
+
+static DEFAULT_BACKGROUND_FEES_PER_VB: AtomicU64 = AtomicU64::new(1012);
+static DEFAULT_NORMAL_FEES_PER_VB: AtomicU64 = AtomicU64::new(8000);
+static DEFAULT_HIGH_PRIORITY_FEES_PER_VB: AtomicU64 = AtomicU64::new(20000);
+
+fn set_default_background_fees(fee: u64) { DEFAULT_BACKGROUND_FEES_PER_VB.store(fee, Ordering::Relaxed); }
+fn set_default_normal_fees(fee: u64) { DEFAULT_BACKGROUND_FEES_PER_VB.store(fee, Ordering::Relaxed); }
+fn set_default_high_priority_fees(fee: u64) { DEFAULT_BACKGROUND_FEES_PER_VB.store(fee, Ordering::Relaxed); }
 
 #[inline]
 pub fn h256_json_from_txid(txid: Txid) -> H256Json { H256Json::from(txid.as_hash().into_inner()).reversed() }
@@ -139,9 +147,8 @@ pub struct Platform {
     pub network: BlockchainNetwork,
     /// The best block height.
     pub best_block_height: AtomicU64,
-    /// Default fees to and confirmation targets to be used for FeeEstimator. Default fees are used when the call for
-    /// estimate_fee_sat fails.
-    pub default_fees_and_confirmations: PlatformCoinConfirmations,
+    /// Number of blocks for every Confirmation target. This is used in the FeeEstimator.
+    pub confirmations_targets: PlatformCoinConfirmationTargets,
     /// This cache stores the transactions that the LN node has interest in.
     pub registered_txs: PaMutex<HashSet<Txid>>,
     /// This cache stores the outputs that the LN node has interest in.
@@ -155,13 +162,13 @@ impl Platform {
     pub fn new(
         coin: UtxoStandardCoin,
         network: BlockchainNetwork,
-        default_fees_and_confirmations: PlatformCoinConfirmations,
+        default_fees_and_confirmations: PlatformCoinConfirmationTargets,
     ) -> Self {
         Platform {
             coin,
             network,
             best_block_height: AtomicU64::new(0),
-            default_fees_and_confirmations,
+            confirmations_targets: default_fees_and_confirmations,
             registered_txs: PaMutex::new(HashSet::new()),
             registered_outputs: PaMutex::new(Vec::new()),
             unsigned_funding_txs: PaMutex::new(HashMap::new()),
@@ -170,6 +177,52 @@ impl Platform {
 
     #[inline]
     fn rpc_client(&self) -> &UtxoRpcClientEnum { &self.coin.as_ref().rpc_client }
+
+    pub async fn set_default_fees(&self) -> UtxoRpcResult<()> {
+        let platform_coin = &self.coin;
+        let conf = &platform_coin.as_ref().conf;
+
+        let default_background_fees = self
+            .rpc_client()
+            .estimate_fee_sat(
+                platform_coin.decimals(),
+                // Todo: when implementing Native client detect_fee_method should be used for Native and EstimateFeeMethod::Standard for Electrum
+                &EstimateFeeMethod::Standard,
+                &conf.estimate_fee_mode,
+                self.confirmations_targets.background,
+            )
+            .compat()
+            .await?;
+        set_default_background_fees(default_background_fees);
+
+        let default_normal_fees = self
+            .rpc_client()
+            .estimate_fee_sat(
+                platform_coin.decimals(),
+                // Todo: when implementing Native client detect_fee_method should be used for Native and EstimateFeeMethod::Standard for Electrum
+                &EstimateFeeMethod::Standard,
+                &conf.estimate_fee_mode,
+                self.confirmations_targets.normal,
+            )
+            .compat()
+            .await?;
+        set_default_normal_fees(default_normal_fees);
+
+        let default_high_priority_fees = self
+            .rpc_client()
+            .estimate_fee_sat(
+                platform_coin.decimals(),
+                // Todo: when implementing Native client detect_fee_method should be used for Native and EstimateFeeMethod::Standard for Electrum
+                &EstimateFeeMethod::Standard,
+                &conf.estimate_fee_mode,
+                self.confirmations_targets.high_priority,
+            )
+            .compat()
+            .await?;
+        set_default_high_priority_fees(default_high_priority_fees);
+
+        Ok(())
+    }
 
     #[inline]
     pub fn update_best_block_height(&self, new_height: u64) {
@@ -444,16 +497,16 @@ impl FeeEstimator for Platform {
         let platform_coin = &self.coin;
 
         let default_fee = match confirmation_target {
-            ConfirmationTarget::Background => self.default_fees_and_confirmations.background.default_fee_per_kb,
-            ConfirmationTarget::Normal => self.default_fees_and_confirmations.normal.default_fee_per_kb,
-            ConfirmationTarget::HighPriority => self.default_fees_and_confirmations.high_priority.default_fee_per_kb,
+            ConfirmationTarget::Background => DEFAULT_BACKGROUND_FEES_PER_VB.load(Ordering::Relaxed),
+            ConfirmationTarget::Normal => DEFAULT_NORMAL_FEES_PER_VB.load(Ordering::Relaxed),
+            ConfirmationTarget::HighPriority => DEFAULT_HIGH_PRIORITY_FEES_PER_VB.load(Ordering::Relaxed),
         };
 
         let conf = &platform_coin.as_ref().conf;
         let n_blocks = match confirmation_target {
-            ConfirmationTarget::Background => self.default_fees_and_confirmations.background.n_blocks,
-            ConfirmationTarget::Normal => self.default_fees_and_confirmations.normal.n_blocks,
-            ConfirmationTarget::HighPriority => self.default_fees_and_confirmations.high_priority.n_blocks,
+            ConfirmationTarget::Background => self.confirmations_targets.background,
+            ConfirmationTarget::Normal => self.confirmations_targets.normal,
+            ConfirmationTarget::HighPriority => self.confirmations_targets.high_priority,
         };
         let fee_per_kb = tokio::task::block_in_place(move || {
             self.rpc_client()
@@ -468,6 +521,14 @@ impl FeeEstimator for Platform {
                 .wait()
                 .unwrap_or(default_fee)
         });
+
+        // Set default fee to last known fee for the corresponding confirmation target
+        match confirmation_target {
+            ConfirmationTarget::Background => DEFAULT_BACKGROUND_FEES_PER_VB.store(fee_per_kb, Ordering::Relaxed),
+            ConfirmationTarget::Normal => DEFAULT_NORMAL_FEES_PER_VB.store(fee_per_kb, Ordering::Relaxed),
+            ConfirmationTarget::HighPriority => DEFAULT_HIGH_PRIORITY_FEES_PER_VB.store(fee_per_kb, Ordering::Relaxed),
+        };
+
         // Must be no smaller than 253 (ie 1 satoshi-per-byte rounded up to ensure later round-downs don’t put us below 1 satoshi-per-byte).
         // https://docs.rs/lightning/0.0.101/lightning/chain/chaininterface/trait.FeeEstimator.html#tymethod.get_est_sat_per_1000_weight
         cmp::max((fee_per_kb as f64 / 4.0).ceil() as u32, MIN_ALLOWED_FEE_PER_1000_WEIGHT)

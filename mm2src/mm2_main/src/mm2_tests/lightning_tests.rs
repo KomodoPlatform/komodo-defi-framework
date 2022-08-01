@@ -47,19 +47,10 @@ fn start_lightning_nodes() -> (MarketMakerIt, MarketMakerIt, String, String) {
               "protocol_data":{
                 "platform": "tBTC-TEST-segwit",
                 "network": "testnet",
-                "confirmations": {
-                  "background": {
-                    "default_fee_per_kb": 1012,
-                    "n_blocks": 12
-                  },
-                  "normal": {
-                    "default_fee_per_kb": 8000,
-                    "n_blocks": 6
-                  },
-                  "high_priority": {
-                    "default_fee_per_kb": 20000,
-                    "n_blocks": 1
-                  }
+                "confirmation_targets": {
+                  "background": 12,
+                  "normal": 6,
+                  "high_priority": 1
                 }
               }
             }
@@ -148,19 +139,10 @@ fn test_enable_lightning() {
               "protocol_data":{
                 "platform": "tBTC-TEST-segwit",
                 "network": "testnet",
-                "confirmations": {
-                  "background": {
-                    "default_fee_per_kb": 1012,
-                    "n_blocks": 12
-                  },
-                  "normal": {
-                    "default_fee_per_kb": 8000,
-                    "n_blocks": 6
-                  },
-                  "high_priority": {
-                    "default_fee_per_kb": 20000,
-                    "n_blocks": 1
-                  }
+                "confirmation_targets": {
+                  "background": 12,
+                  "normal": 6,
+                  "high_priority": 1
                 }
               }
             }
@@ -346,19 +328,10 @@ fn test_sign_verify_message_lightning() {
           "protocol_data":{
             "platform": "tBTC-TEST-segwit",
             "network": "testnet",
-            "confirmations": {
-              "background": {
-                "default_fee_per_kb": 1012,
-                "n_blocks": 12
-              },
-              "normal": {
-                "default_fee_per_kb": 8000,
-                "n_blocks": 6
-              },
-              "high_priority": {
-                "default_fee_per_kb": 20000,
-                "n_blocks": 1
-              }
+            "confirmation_targets": {
+              "background": 12,
+              "normal": 6,
+              "high_priority": 1
             }
           }
         }

@@ -45,7 +45,7 @@ use lightning_background_processor::BackgroundProcessor;
 use lightning_invoice::payment;
 use lightning_invoice::utils::{create_invoice_from_channelmanager, DefaultRouter};
 use lightning_invoice::{Invoice, InvoiceDescription};
-use ln_conf::{ChannelOptions, LightningCoinConf, LightningProtocolConf, PlatformCoinConfirmations};
+use ln_conf::{ChannelOptions, LightningCoinConf, LightningProtocolConf, PlatformCoinConfirmationTargets};
 use ln_db::{ClosedChannelsFilter, DBChannelDetails, DBPaymentInfo, DBPaymentsFilter, HTLCStatus, LightningDB,
             PaymentType};
 use ln_errors::{ClaimableBalancesError, ClaimableBalancesResult, CloseChannelError, CloseChannelResult,
@@ -641,8 +641,9 @@ pub async fn start_lightning(
     let platform = Arc::new(Platform::new(
         platform_coin.clone(),
         protocol_conf.network.clone(),
-        protocol_conf.confirmations,
+        protocol_conf.confirmation_targets,
     ));
+    platform.set_default_fees().await?;
 
     // Initialize the Logger
     let logger = ctx.log.0.clone();

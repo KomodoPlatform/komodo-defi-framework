@@ -2,23 +2,17 @@ use crate::utxo::BlockchainNetwork;
 use lightning::util::config::{ChannelConfig, ChannelHandshakeConfig, ChannelHandshakeLimits, UserConfig};
 
 #[derive(Clone, Debug, Deserialize, Serialize)]
-pub struct DefaultFeesAndConfirmations {
-    pub default_fee_per_kb: u64,
-    pub n_blocks: u32,
-}
-
-#[derive(Clone, Debug, Deserialize, Serialize)]
-pub struct PlatformCoinConfirmations {
-    pub background: DefaultFeesAndConfirmations,
-    pub normal: DefaultFeesAndConfirmations,
-    pub high_priority: DefaultFeesAndConfirmations,
+pub struct PlatformCoinConfirmationTargets {
+    pub background: u32,
+    pub normal: u32,
+    pub high_priority: u32,
 }
 
 #[derive(Debug)]
 pub struct LightningProtocolConf {
     pub platform_coin_ticker: String,
     pub network: BlockchainNetwork,
-    pub confirmations: PlatformCoinConfirmations,
+    pub confirmation_targets: PlatformCoinConfirmationTargets,
 }
 
 #[derive(Clone, Debug, Deserialize, PartialEq)]
