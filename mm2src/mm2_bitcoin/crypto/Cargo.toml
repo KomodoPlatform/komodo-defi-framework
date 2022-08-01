@@ -7,7 +7,7 @@ authors = ["debris <marek.kotewicz@gmail.com>"]
 groestl = "0.9"
 primitives = { path = "../primitives" }
 ripemd160 = "0.9.0"
-sha-1 = "0.9"
+sha-1 = "0.10"
 sha2 = "0.9"
 sha3 = "0.9"
 siphasher = "0.1.1"
