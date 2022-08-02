@@ -54,57 +54,124 @@ pub enum ExtractGasEnum {
     GasPrice = 2,
 }
 
-pub fn extract_gas_from_script(script: &Script, extract: ExtractGasEnum) -> Result<u64, String> {
+#[derive(Debug, Display)]
+pub enum ScriptExtractionError {
+    #[display(fmt = "DecodeContractNnumberErr: {}", _0)]
+    DecodeContractNnumberErr(String),
+    #[display(fmt = "An empty contract call data")]
+    EmptyInstructionData,
+    #[display(fmt = "Non-empty instruction data expected")]
+    EmptyContractCallData,
+    #[display(fmt = "ContractParamExtractionErr: {:?}", _0)]
+    GasExtractionErr(String),
+    #[display(fmt = "ContractParamExtractionErr: {:?}", _0)]
+    ContractParamExtractionErr(String),
+    #[display(fmt = "TokenAddressExtractionErr: {:?}", _0)]
+    TokenAddressExtractionErr(String),
+    #[display(fmt = "Opcode::OP_PUSHBYTES_[X] expected, found: {}", _0)]
+    UnExpectedContractOpcode(String),
+    #[display(fmt = "Opcode::OP_PUSHBYTES_[X] expected, found: {}", _0)]
+    UnExpectedGasOpcode(String),
+    #[display(fmt = "Unexpected instruction's opcode {}", _0)]
+    UnExpectedInstructionOpcode(String),
+    #[display(fmt = "Internal: {}", _0)]
+    Internal(String),
+}
+
+pub fn extract_gas_from_script(script: &Script, extract: ExtractGasEnum) -> Result<u64, MmError<ScriptExtractionError>> {
     let instruction = script
         .get_instruction(extract as usize)
-        .ok_or(ERRL!("Couldn't extract {:?} from script pubkey", extract as usize))?
-        .map_err(|e| ERRL!("Error on extract {:?} from pubkey: {}", extract, e))?;
+        .ok_or_else(|| {
+            MmError::new(ScriptExtractionError::GasExtractionErr(format!(
+                "Couldn't extract {:?} from script pubkey",
+                extract as usize
+            )))
+        })?
+        .map_err(|e| {
+            MmError::new(ScriptExtractionError::GasExtractionErr(format!(
+                "Error on extract {:?} from pubkey: {}",
+                extract, e
+            )))
+        })?;
 
     let opcode = instruction.opcode as usize;
     if !(1..75).contains(&opcode) {
-        return ERR!("Opcode::OP_PUSHBYTES_[X] expected, found {:?}", instruction.opcode);
+        return Err(MmError::new(ScriptExtractionError::UnExpectedGasOpcode(
+            instruction.opcode.to_string(),
+        )));
     }
 
     let number = match instruction.data {
-        Some(d) => try_s!(decode_contract_number(d)),
-        _ => return ERR!("Non-empty instruction data expected"),
+        Some(d) => {
+            decode_contract_number(d).map_err(|err| MmError::new(ScriptExtractionError::DecodeContractNnumberErr(err)))?
+        },
+        _ => return Err(MmError::new(ScriptExtractionError::EmptyInstructionData)),
     };
 
     Ok(number as u64)
 }
 
-pub fn extract_contract_call_from_script(script: &Script) -> Result<Vec<u8>, String> {
+pub fn extract_contract_call_from_script(script: &Script) -> Result<Vec<u8>, MmError<ScriptExtractionError>> {
     const CONTRACT_CALL_IDX: usize = 3;
     let instruction = script
         .get_instruction(CONTRACT_CALL_IDX)
-        .ok_or(ERRL!("Couldn't extract 'contract_params' from script pubkey"))?
-        .map_err(|e| ERRL!("Error on extract 'contract_params' from pubkey: {}", e))?;
+        .ok_or_else(|| {
+            MmError::new(ScriptExtractionError::ContractParamExtractionErr(
+                "Couldn't extract 'contract_params' from script pubkey".to_string(),
+            ))
+        })?
+        .map_err(|e| {
+            MmError::new(ScriptExtractionError::ContractParamExtractionErr(format!(
+                "Error on extract 'contract_params' from pubkey: {}",
+                e
+            )))
+        })?;
 
     match instruction.opcode {
         Opcode::OP_PUSHDATA1 | Opcode::OP_PUSHDATA2 | Opcode::OP_PUSHDATA4 => (),
         opcode if (1..75).contains(&(opcode as usize)) => (),
-        _ => return ERR!("Unexpected instruction's opcode {}", instruction.opcode),
+        _ => {
+            return Err(MmError::new(ScriptExtractionError::UnExpectedInstructionOpcode(
+                instruction.opcode.to_string(),
+            )))
+        },
     }
 
     instruction
         .data
-        .ok_or(ERRL!("An empty contract call data"))
+        .ok_or_else(|| MmError::new(ScriptExtractionError::EmptyContractCallData))
         .map(Vec::from)
 }
 
-pub fn extract_contract_addr_from_script(script: &Script) -> Result<H160, String> {
+pub fn extract_contract_addr_from_script(script: &Script) -> Result<H160, MmError<ScriptExtractionError>> {
     const CONTRACT_ADDRESS_IDX: usize = 4;
     let instruction = script
         .get_instruction(CONTRACT_ADDRESS_IDX)
-        .ok_or(ERRL!("Couldn't extract 'token_address' from script pubkey"))?
-        .map_err(|e| ERRL!("Error on extract 'token_address' from pubkey: {}", e))?;
+        .ok_or_else(|| {
+            MmError::new(ScriptExtractionError::TokenAddressExtractionErr(
+                "Couldn't extract 'token_address' from script pubkey".to_string(),
+            ))
+        })?
+        .map_err(|e| {
+            MmError::new(ScriptExtractionError::TokenAddressExtractionErr(format!(
+                "Error on extract 'token_address' from pubkey: {}",
+                e
+            )))
+        })?;
 
     match instruction.opcode {
         opcode if (1..75).contains(&(opcode as usize)) => (),
-        _ => return ERR!("Unexpected instruction's opcode {}", instruction.opcode),
+        _ => {
+            return Err(MmError::new(ScriptExtractionError::UnExpectedContractOpcode(
+                instruction.opcode.to_string(),
+            )))
+        },
     }
 
-    Ok(instruction.data.ok_or(ERRL!("An empty contract call data"))?.into())
+    Ok(instruction
+        .data
+        .ok_or_else(|| MmError::new(ScriptExtractionError::EmptyContractCallData))?
+        .into())
 }
 
 /// Serialize the `number` similar to BigEndian but in QRC20 specific format.

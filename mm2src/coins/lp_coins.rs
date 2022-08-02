@@ -1894,7 +1894,7 @@ pub struct PlatformIsAlreadyActivatedErr {
 impl CoinsContext {
     /// Obtains a reference to this crate context, creating it if necessary.
     pub fn from_ctx(ctx: &MmArc) -> CoinContextResult<Arc<CoinsContext>> {
-        Ok(from_ctx(&ctx.coins_ctx, move || {
+        from_ctx(&ctx.coins_ctx, move || {
             Ok(CoinsContext {
                 coins: AsyncMutex::new(HashMap::new()),
                 balance_update_handlers: AsyncMutex::new(vec![]),
@@ -1907,7 +1907,7 @@ impl CoinsContext {
                 hd_wallet_db: ConstructibleDb::new_shared(ctx),
             })
         })
-        .map_err(|err| MmError::new(CoinContextError::Internal(err)))?)
+        .map_err(|err| MmError::new(CoinContextError::Internal(err)))
     }
 
     pub async fn add_coin(&self, coin: MmCoinEnum) -> Result<(), MmError<CoinIsAlreadyActivatedErr>> {

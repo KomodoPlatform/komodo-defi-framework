@@ -14,6 +14,37 @@ type TxTransferMap = HashMap<TxInternalId, TransactionDetails>;
 type HistoryMapByHash = HashMap<H256Json, TxTransferMap>;
 type TxIds = Vec<(H256Json, u64)>;
 
+pub type Qrc20CoinTxHistoryResult<T> = Result<T, MmError<Qrc20CoinTxHistoryError>>;
+
+#[derive(Debug, Display)]
+pub enum Qrc20CoinTxHistoryError {
+    ContractAddressError(String),
+    #[display(fmt = "GasExtractionError: {}.to_string(", _0)]
+    GasExtractionError(String),
+    #[display(fmt = "JsonRpcError: {}", _0)]
+    JsonRpcError(String),
+    NoQtumFeeDetails,
+    #[display(fmt = "NumConversError: {}", _0)]
+    NumConversError(String),
+    #[display(fmt = "TxDeserializationError: {}", _0)]
+    TxDeserializationError(String),
+    #[display(fmt = "Unexpected fee details {:?}", _0)]
+    TransactionDetailsError(String),
+    #[display(fmt = "TxDetails: {}", _0)]
+    TxFeeDetailsError(String),
+    #[display(fmt = "Length of the transaction {:?} outputs less than output_index {}", _0, _1)]
+    QtumTxOutputLengthLessThanRequired(H256Json, u64),
+    #[display(fmt = "QtumTransactionDetailsError: {}", _0)]
+    QtumTransactionDetailsError(String),
+    #[display(fmt = "Incorrect bytes len {}, expected {}", _0, _1)]
+    UnExpectedBytesLen(usize, usize),
+    #[display(fmt = "UnExpectedDerivationMethod: {}", _0)]
+    UnExpectedDerivationMethod(String),
+    #[display(fmt = "UnExpectedTxFeeDetails: {}", _0)]
+    UnExpectedTxFeeDetails(String),
+    Internal(String),
+}
+
 #[derive(Clone, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
 pub struct TxInternalId {
     tx_hash: H256Json,
@@ -31,12 +62,15 @@ impl TxInternalId {
     }
 
     /// TODO use parity_bitcoin::serialization instead of this custom implementation
-    pub fn from_bytes(bytes: &BytesJson) -> Result<TxInternalId, String> {
+    pub fn from_bytes(bytes: &BytesJson) -> Qrc20CoinTxHistoryResult<TxInternalId> {
         // H256(32 bytes) + output_index(8 bytes) + log_index(8 bytes)
         const EXPECTED_LEN: usize = 32 + 8 + 8;
 
         if bytes.len() != EXPECTED_LEN {
-            return ERR!("Incorrect bytes len {}, expected {}", bytes.len(), EXPECTED_LEN);
+            return Err(MmError::new(Qrc20CoinTxHistoryError::UnExpectedBytesLen(
+                bytes.len(),
+                EXPECTED_LEN,
+            )));
         }
 
         let tx_hash: H256Json = bytes[0..32].into();
@@ -188,19 +222,33 @@ impl Qrc20Coin {
         }
     }
 
-    pub async fn transfer_details_by_hash(&self, tx_hash: H256Json) -> Result<TxTransferMap, String> {
-        let receipts = try_s!(self.utxo.rpc_client.get_transaction_receipts(&tx_hash).compat().await);
+    pub async fn transfer_details_by_hash(&self, tx_hash: H256Json) -> Qrc20CoinTxHistoryResult<TxTransferMap> {
+        let receipts = self
+            .utxo
+            .rpc_client
+            .get_transaction_receipts(&tx_hash)
+            .compat()
+            .await
+            .map_err(|err| MmError::new(Qrc20CoinTxHistoryError::JsonRpcError(err.to_string())))?;
         // request Qtum transaction details to get a tx_hex, timestamp, block_height and calculate a miner_fee
         let mut input_transactions = HistoryUtxoTxMap::new();
-        let qtum_details = try_s!(utxo_common::tx_details_by_hash(self, &tx_hash.0, &mut input_transactions).await);
+        let qtum_details = utxo_common::tx_details_by_hash(self, &tx_hash.0, &mut input_transactions)
+            .await
+            .map_err(|err| MmError::new(Qrc20CoinTxHistoryError::QtumTransactionDetailsError(err)))?;
         // Deserialize the UtxoTx to get a script pubkey
-        let qtum_tx: UtxoTx = try_s!(deserialize(qtum_details.tx_hex.as_slice()).map_err(|e| ERRL!("{:?}", e)));
+        let qtum_tx: UtxoTx = deserialize(qtum_details.tx_hex.as_slice())
+            .map_err(|err| MmError::new(Qrc20CoinTxHistoryError::TxDeserializationError(err.to_string())))?;
 
         let miner_fee = {
             let total_qtum_fee = match qtum_details.fee_details {
                 Some(TxFeeDetails::Utxo(UtxoFeeDetails { ref amount, .. })) => amount.clone(),
-                Some(ref fee) => return ERR!("Unexpected fee details {:?}", fee),
-                None => return ERR!("No Qtum fee details"),
+                Some(ref fee) => {
+                    return Err(MmError::new(Qrc20CoinTxHistoryError::UnExpectedTxFeeDetails(format!(
+                        "{:?}",
+                        fee
+                    ))))
+                },
+                None => return Err(MmError::new(Qrc20CoinTxHistoryError::NoQtumFeeDetails)),
             };
             let total_gas_used = receipts.iter().fold(0, |gas, receipt| gas + receipt.gas_used);
             let total_gas_used = big_decimal_from_sat(total_gas_used as i64, self.utxo.decimals);
@@ -210,7 +258,7 @@ impl Qrc20Coin {
         let mut details = TxTransferMap::new();
         for receipt in receipts {
             let log_details =
-                try_s!(self.transfer_details_from_receipt(&qtum_tx, &qtum_details, receipt, miner_fee.clone()));
+                self.transfer_details_from_receipt(&qtum_tx, &qtum_details, receipt, miner_fee.clone())?;
             details.extend(log_details.into_iter())
         }
 
@@ -223,23 +271,28 @@ impl Qrc20Coin {
         qtum_details: &TransactionDetails,
         receipt: TxReceipt,
         miner_fee: BigDecimal,
-    ) -> Result<TxTransferMap, String> {
-        let my_address = try_s!(self.utxo.derivation_method.iguana_or_err());
-        let tx_hash: H256Json = try_s!(H256Json::from_str(&qtum_details.tx_hash));
+    ) -> Qrc20CoinTxHistoryResult<TxTransferMap> {
+        let my_address = self
+            .utxo
+            .derivation_method
+            .iguana_or_err()
+            .map_err(|err| Qrc20CoinTxHistoryError::UnExpectedDerivationMethod(err.to_string()))?;
+        let tx_hash: H256Json = H256Json::from_str(&qtum_details.tx_hash)
+            .map_err(|err| Qrc20CoinTxHistoryError::TransactionDetailsError(err.to_string()))?;
         if qtum_tx.outputs.len() <= (receipt.output_index as usize) {
-            return ERR!(
-                "Length of the transaction {:?} outputs less than output_index {}",
-                tx_hash,
-                receipt.output_index
-            );
+            return Err(MmError::new(
+                Qrc20CoinTxHistoryError::QtumTxOutputLengthLessThanRequired(tx_hash, receipt.output_index),
+            ));
         }
         let script_pubkey: Script = qtum_tx.outputs[receipt.output_index as usize]
             .script_pubkey
             .clone()
             .into();
         let fee_details = {
-            let gas_limit = try_s!(extract_gas_from_script(&script_pubkey, ExtractGasEnum::GasLimit));
-            let gas_price = try_s!(extract_gas_from_script(&script_pubkey, ExtractGasEnum::GasPrice));
+            let gas_limit = extract_gas_from_script(&script_pubkey, ExtractGasEnum::GasLimit)
+                .map_err(|err| Qrc20CoinTxHistoryError::GasExtractionError(err.to_string()))?;
+            let gas_price = extract_gas_from_script(&script_pubkey, ExtractGasEnum::GasPrice)
+                .map_err(|err| Qrc20CoinTxHistoryError::GasExtractionError(err.to_string()))?;
 
             let total_gas_fee = utxo_common::big_decimal_from_sat(receipt.gas_used as i64, self.utxo.decimals);
             Qrc20FeeDetails {
@@ -262,18 +315,20 @@ impl Qrc20Coin {
             if log_entry.topics[0] != QRC20_TRANSFER_TOPIC {
                 continue;
             }
-            if try_s!(log_entry.parse_address()) != self.contract_address {
+            if log_entry.parse_address().map_err(Qrc20CoinTxHistoryError::Internal)? != self.contract_address {
                 continue;
             }
 
             let (total_amount, from, to) = {
-                let event = try_s!(transfer_event_from_log(&log_entry));
+                let event =
+                    transfer_event_from_log(&log_entry).map_err(Qrc20CoinTxHistoryError::Internal)?;
                 // https://github.com/qtumproject/qtum-electrum/blob/v4.0.2/electrum/wallet.py#L2093
                 if event.contract_address != self.contract_address {
                     // contract address mismatch
                     continue;
                 }
-                let amount = try_s!(u256_to_big_decimal(event.amount, self.decimals()));
+                let amount = u256_to_big_decimal(event.amount, self.decimals())
+                    .map_err(|err| Qrc20CoinTxHistoryError::NumConversError(err.to_string()))?;
                 let from = self.utxo_addr_from_contract_addr(event.sender);
                 let to = self.utxo_addr_from_contract_addr(event.receiver);
                 (amount, from, to)
@@ -302,15 +357,19 @@ impl Qrc20Coin {
             let internal_id = TxInternalId::new(tx_hash, receipt.output_index, log_index as u64);
 
             let from = if is_transferred_from_contract(&script_pubkey) {
-                try_s!(qtum::display_as_contract_address(from))
+                qtum::display_as_contract_address(from)
+                    .map_err(|err| Qrc20CoinTxHistoryError::ContractAddressError(err.to_string()))?
             } else {
-                try_s!(from.display_address())
+                from.display_address()
+                    .map_err(Qrc20CoinTxHistoryError::ContractAddressError)?
             };
 
             let to = if is_transferred_to_contract(&script_pubkey) {
-                try_s!(qtum::display_as_contract_address(to))
+                qtum::display_as_contract_address(to)
+                    .map_err(|err| Qrc20CoinTxHistoryError::ContractAddressError(err.to_string()))?
             } else {
-                try_s!(to.display_address())
+                to.display_address()
+                    .map_err(Qrc20CoinTxHistoryError::ContractAddressError)?
             };
 
             let tx_details = TransactionDetails {

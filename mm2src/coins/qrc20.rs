@@ -71,6 +71,13 @@ const QRC20_SENDER_REFUNDED_TOPIC: &str = "1797d500133f8e427eb9da9523aa4a25cb40f
 
 pub type Qrc20AbiResult<T> = Result<T, MmError<Qrc20AbiError>>;
 
+#[derive(Debug, Display)]
+pub enum Qrc20CoinError {
+    UtxoCoinBuildError(UtxoCoinBuildError),
+    UtxoRpcError(UtxoRpcError),
+    Internal(String),
+}
+
 #[derive(Display)]
 pub enum Qrc20GenTxError {
     ErrorGeneratingUtxoTx(GenerateTxError),
@@ -284,7 +291,7 @@ pub async fn qrc20_coin_from_conf_and_params(
     params: &Qrc20ActivationParams,
     priv_key: &[u8],
     contract_address: H160,
-) -> Result<Qrc20Coin, String> {
+) -> Result<Qrc20Coin, MmError<Qrc20CoinError>> {
     let builder = Qrc20CoinBuilder::new(
         ctx,
         ticker,
@@ -294,7 +301,7 @@ pub async fn qrc20_coin_from_conf_and_params(
         platform.to_owned(),
         contract_address,
     );
-    Ok(try_s!(builder.build().await))
+    builder.build().await.mm_err(Qrc20CoinError::UtxoCoinBuildError)
 }
 
 #[derive(Debug)]
@@ -446,8 +453,8 @@ impl From<Qrc20AbiError> for UtxoRpcError {
 impl Qrc20Coin {
     /// `gas_fee` should be calculated by: gas_limit * gas_price * (count of contract calls),
     /// or should be sum of gas fee of all contract calls.
-    pub async fn get_qrc20_tx_fee(&self, gas_fee: u64) -> Result<u64, String> {
-        match try_s!(self.get_tx_fee().await) {
+    pub async fn get_qrc20_tx_fee(&self, gas_fee: u64) -> Result<u64, MmError<Qrc20CoinError>> {
+        match self.get_tx_fee().await.mm_err(Qrc20CoinError::UtxoRpcError)? {
             ActualTxFee::Dynamic(amount) | ActualTxFee::FixedPerKb(amount) => Ok(amount + gas_fee),
         }
     }
@@ -882,6 +889,7 @@ impl SwapOps for Qrc20Coin {
             selfi
                 .validate_fee_impl(fee_tx_hash, fee_addr, expected_value, min_block_number)
                 .await
+                .map_err(|err| err.to_string())
         };
         Box::new(fut.boxed().compat())
     }
@@ -903,6 +911,7 @@ impl SwapOps for Qrc20Coin {
                     swap_contract_address,
                 )
                 .await
+                .map_err(|err| err.to_string())
         };
         Box::new(fut.boxed().compat())
     }
@@ -924,6 +933,7 @@ impl SwapOps for Qrc20Coin {
                     swap_contract_address,
                 )
                 .await
+                .map_err(|err| err.to_string())
         };
         Box::new(fut.boxed().compat())
     }
@@ -945,6 +955,7 @@ impl SwapOps for Qrc20Coin {
             selfi
                 .check_if_my_payment_sent_impl(swap_contract_address, swap_id, search_from_block)
                 .await
+                .map_err(|err| err.to_string())
         };
         Box::new(fut.boxed().compat())
     }
@@ -953,10 +964,11 @@ impl SwapOps for Qrc20Coin {
         &self,
         input: SearchForSwapTxSpendInput<'_>,
     ) -> Result<Option<FoundSwapTxSpend>, String> {
-        let tx: UtxoTx = try_s!(deserialize(input.tx).map_err(|e| ERRL!("{:?}", e)));
+        let tx: UtxoTx = deserialize(input.tx).map_err(|err| err.to_string())?;
 
         self.search_for_swap_tx_spend(input.time_lock, input.secret_hash, tx, input.search_from_block)
             .await
+            .map_err(|err| err.to_string())
     }
 
     async fn search_for_swap_tx_spend_other(
@@ -967,10 +979,12 @@ impl SwapOps for Qrc20Coin {
 
         self.search_for_swap_tx_spend(input.time_lock, input.secret_hash, tx, input.search_from_block)
             .await
+            .map_err(|err| err.to_string())
     }
 
     fn extract_secret(&self, secret_hash: &[u8], spend_tx: &[u8]) -> Result<Vec<u8>, String> {
         self.extract_secret_impl(secret_hash, spend_tx)
+            .map_err(|err| err.to_string())
     }
 
     fn negotiate_swap_contract_addr(
@@ -1088,6 +1102,7 @@ impl MarketCoinOps for Qrc20Coin {
             selfi
                 .wait_for_confirmations_and_check_result(tx, confirmations, requires_nota, wait_until, check_every)
                 .await
+                .map_err(|err| err.to_string())
         };
         Box::new(fut.boxed().compat())
     }
@@ -1105,7 +1120,7 @@ impl MarketCoinOps for Qrc20Coin {
         let fut = async move {
             selfi
                 .wait_for_tx_spend_impl(tx, wait_until, from_block)
-                .map_err(TransactionErr::Plain)
+                .map_err(|err| TransactionErr::Plain(err.to_string()))
                 .await
         };
         Box::new(fut.boxed().compat())

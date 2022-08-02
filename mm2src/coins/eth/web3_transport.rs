@@ -1,8 +1,10 @@
 use super::{RpcTransportEventHandler, RpcTransportEventHandlerShared};
+use derive_more::Display;
 #[cfg(not(target_arch = "wasm32"))] use futures::FutureExt;
 use futures::TryFutureExt;
 use futures01::{Future, Poll};
 use jsonrpc_core::{Call, Response};
+use mm2_err_handle::prelude::MmError;
 use serde_json::Value as Json;
 #[cfg(not(target_arch = "wasm32"))] use std::ops::Deref;
 use std::sync::atomic::{AtomicUsize, Ordering};
@@ -12,6 +14,8 @@ use web3::error::{Error, ErrorKind};
 use web3::helpers::{self, build_request, to_result_from_output, to_string, CallFuture};
 use web3::types::{BlockNumber, U256};
 use web3::{RequestId, Transport};
+
+pub type Web3TransportResult<T> = Result<T, MmError<Web3TransportError>>;
 
 /// eth_feeHistory support is missing even in the latest rust-web3
 /// It's the custom namespace implementing it
@@ -74,12 +78,21 @@ pub struct Web3Transport {
     event_handlers: Vec<RpcTransportEventHandlerShared>,
 }
 
+#[derive(Debug, Display)]
+pub enum Web3TransportError {
+    #[display(fmt = "{}: ", _0)]
+    InvalidUri(String),
+}
+
 impl Web3Transport {
     #[allow(dead_code)]
-    pub fn new(urls: Vec<String>) -> Result<Self, String> {
+    pub fn new(urls: Vec<String>) -> Web3TransportResult<Self> {
         let mut uris = vec![];
         for url in urls.iter() {
-            uris.push(try_s!(url.parse()));
+            uris.push(
+                url.parse::<http::Uri>()
+                    .map_err(|err| Web3TransportError::InvalidUri(err.to_string()))?,
+            );
         }
         Ok(Web3Transport {
             id: Arc::new(AtomicUsize::new(0)),
@@ -91,10 +104,13 @@ impl Web3Transport {
     pub fn with_event_handlers(
         urls: Vec<String>,
         event_handlers: Vec<RpcTransportEventHandlerShared>,
-    ) -> Result<Self, String> {
+    ) -> Web3TransportResult<Self> {
         let mut uris = vec![];
         for url in urls.iter() {
-            uris.push(try_s!(url.parse()));
+            uris.push(
+                url.parse::<http::Uri>()
+                    .map_err(|err| Web3TransportError::InvalidUri(err.to_string()))?,
+            );
         }
         Ok(Web3Transport {
             id: Arc::new(AtomicUsize::new(0)),

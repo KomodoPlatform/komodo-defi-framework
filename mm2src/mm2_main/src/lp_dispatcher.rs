@@ -62,8 +62,8 @@ pub enum DispatchContextError {
 impl DispatcherContext {
     /// Obtains a reference to this crate context, creating it if necessary.
     pub fn from_ctx(ctx: &MmArc) -> Result<Arc<DispatcherContext>, MmError<DispatchContextError>> {
-        Ok(from_ctx(&ctx.dispatcher_ctx, move || Ok(DispatcherContext::default()))
-            .map_err(|err| MmError::new(DispatchContextError::Internal(err)))?)
+        from_ctx(&ctx.dispatcher_ctx, move || Ok(DispatcherContext::default()))
+            .map_err(|err| MmError::new(DispatchContextError::Internal(err)))
     }
 }
 
