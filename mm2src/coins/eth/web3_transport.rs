@@ -164,6 +164,46 @@ impl Transport for Web3Transport {
     }
 }
 
+/// Generates a signed message and inserts it into request
+/// payload if gui_auth is activated. Returns false on errors.
+fn handle_gui_auth_payload_if_activated(
+    gui_auth_validation_generator: &Option<GuiAuthValidationGenerator>,
+    node: &Web3TransportNode,
+    request: &Call,
+    errors: &mut Vec<String>,
+) -> Result<String, bool> {
+    if !node.gui_auth {
+        return Err(true);
+    }
+
+    let generator = match gui_auth_validation_generator.clone() {
+        Some(gen) => gen,
+        None => {
+            errors.push(ERRL!("GuiAuthValidationGenerator is not provided for {:?} node", node));
+            return Err(false);
+        },
+    };
+
+    let signed_message = match EthCoin::generate_gui_auth_signed_validation(generator) {
+        Ok(t) => t,
+        Err(e) => {
+            errors.push(ERRL!(
+                "GuiAuth signed message generation failed for {:?} node, error: {:?}",
+                node,
+                e
+            ));
+            return Err(false);
+        },
+    };
+
+    let auth_request = AuthPayload {
+        request,
+        signed_message,
+    };
+
+    Ok(to_string(&auth_request))
+}
+
 #[cfg(not(target_arch = "wasm32"))]
 async fn send_request(
     request: Call,
@@ -185,33 +225,12 @@ async fn send_request(
     let serialized_request = to_string(&request);
 
     for node in nodes.iter() {
-        let mut serialized_request = serialized_request.clone();
-        if node.gui_auth {
-            if let Some(generator) = gui_auth_validation_generator.clone() {
-                let signed_message = match EthCoin::generate_gui_auth_signed_validation(generator) {
-                    Ok(t) => t,
-                    Err(e) => {
-                        errors.push(ERRL!(
-                            "GuiAuth signed message generation failed for {:?} node, error: {:?}",
-                            node,
-                            e
-                        ));
-                        continue;
-                    },
-                };
-
-                let auth_request = AuthPayload {
-                    request: &request,
-                    signed_message,
-                };
-
-                serialized_request = to_string(&auth_request);
-            } else {
-                errors.push(ERRL!("GuiAuthValidationGenerator is not provided for {:?} node", node));
-                continue;
-            }
-        }
-        common::drop_mutability!(serialized_request);
+        let serialized_request =
+            match handle_gui_auth_payload_if_activated(&gui_auth_validation_generator, node, &request, &mut errors) {
+                Ok(r) => r,
+                Err(true) => serialized_request.clone(),
+                Err(false) => continue,
+            };
 
         event_handlers.on_outgoing_request(serialized_request.as_bytes());
 
@@ -273,34 +292,17 @@ async fn send_request(
     let serialized_request = to_string(&request);
 
     let mut transport_errors = Vec::new();
-    for node in nodes {
-        let mut serialized_request = serialized_request.clone();
-        if node.gui_auth {
-            if let Some(generator) = gui_auth_validation_generator.clone() {
-                let signed_message = match EthCoin::generate_gui_auth_signed_validation(generator) {
-                    Ok(t) => t,
-                    Err(e) => {
-                        transport_errors.push(ERRL!(
-                            "GuiAuth signed message generation failed for {:?} node, error: {:?}",
-                            node,
-                            e
-                        ));
-                        continue;
-                    },
-                };
-
-                let auth_request = AuthPayload {
-                    request: &request,
-                    signed_message,
-                };
-
-                serialized_request = to_string(&auth_request);
-            } else {
-                transport_errors.push(ERRL!("GuiAuthValidationGenerator is not provided for {:?} node", node));
-                continue;
-            }
-        }
-        common::drop_mutability!(serialized_request);
+    for node in nodes.iter() {
+        let serialized_request = match handle_gui_auth_payload_if_activated(
+            &gui_auth_validation_generator,
+            node,
+            &request,
+            &mut transport_errors,
+        ) {
+            Ok(r) => r,
+            Err(true) => serialized_request.clone(),
+            Err(false) => continue,
+        };
 
         match send_request_once(serialized_request.clone(), &node.uri, &event_handlers).await {
             Ok(response_json) => return Ok(response_json),

@@ -4,8 +4,9 @@ use crate::{platform_coin_with_tokens::{EnablePlatformCoinWithTokensError, GetPl
                                         TokenInitializer, TokenOf},
             prelude::*};
 use async_trait::async_trait;
-use coins::{eth::{eth_coin_from_conf_and_request_v2, Erc20Protocol, Erc20TokenActivationError,
-                  Erc20TokenActivationRequest, Erc20TokenInfo, EthActivationV2Error, EthActivationV2Request, EthCoin},
+use coins::{eth::{v2_activation::{eth_coin_from_conf_and_request_v2, Erc20Protocol, Erc20TokenActivationError,
+                                  Erc20TokenActivationRequest, EthActivationV2Error, EthActivationV2Request},
+                  Erc20TokenInfo, EthCoin},
             my_tx_history_v2::TxHistoryStorage,
             CoinBalance, CoinProtocol, MarketCoinOps, MmCoin};
 use common::{mm_metrics::MetricsArc, Future01CompatExt};

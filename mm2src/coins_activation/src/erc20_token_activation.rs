@@ -1,7 +1,8 @@
 use crate::{prelude::{TryFromCoinProtocol, TryPlatformCoinFromMmCoinEnum},
             token::{EnableTokenError, TokenActivationOps, TokenProtocolParams}};
 use async_trait::async_trait;
-use coins::{eth::{valid_addr_from_str, Erc20Protocol, Erc20TokenActivationError, Erc20TokenActivationRequest, EthCoin},
+use coins::{eth::{v2_activation::{Erc20Protocol, Erc20TokenActivationError, Erc20TokenActivationRequest},
+                  valid_addr_from_str, EthCoin},
             CoinBalance, CoinProtocol, MarketCoinOps, MmCoin, MmCoinEnum};
 use common::Future01CompatExt;
 use mm2_err_handle::prelude::MmError;
