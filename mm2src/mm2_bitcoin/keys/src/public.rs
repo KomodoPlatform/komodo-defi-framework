@@ -70,13 +70,15 @@ impl Public {
         Ok(public)
     }
 
-    pub fn unprefixed(&self) -> [u8; 32] {
+    pub fn compressed_unprefixed(&self) -> Option<[u8; 32]> {
         let mut res = [0; 32];
         match self {
-            Public::Compressed(pubkey) => res.copy_from_slice(&pubkey.as_slice()[1..33]),
-            Public::Normal(_) => unimplemented!(),
+            Public::Compressed(pubkey) => {
+                res.copy_from_slice(&pubkey.as_slice()[1..33]);
+                Some(res)
+            },
+            Public::Normal(_) => None,
         }
-        res
     }
 }
 

@@ -1657,7 +1657,7 @@ mod lp_swap_tests {
 
         let mut maker_swap = MakerSwap::new(
             maker_ctx.clone(),
-            taker_key_pair.public().unprefixed().into(),
+            taker_key_pair.public().compressed_unprefixed().unwrap().into(),
             maker_amount.clone(),
             taker_amount.clone(),
             maker_key_pair.public_slice().into(),
@@ -1675,7 +1675,7 @@ mod lp_swap_tests {
 
         let mut taker_swap = TakerSwap::new(
             taker_ctx.clone(),
-            maker_key_pair.public().unprefixed().into(),
+            maker_key_pair.public().compressed_unprefixed().unwrap().into(),
             maker_amount.into(),
             taker_amount.into(),
             taker_key_pair.public_slice().into(),
