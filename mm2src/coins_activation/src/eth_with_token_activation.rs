@@ -6,7 +6,7 @@ use crate::{platform_coin_with_tokens::{EnablePlatformCoinWithTokensError, GetPl
 use async_trait::async_trait;
 use coins::{eth::{v2_activation::{eth_coin_from_conf_and_request_v2, Erc20Protocol, Erc20TokenActivationError,
                                   Erc20TokenActivationRequest, EthActivationV2Error, EthActivationV2Request},
-                  Erc20TokenInfo, EthCoin},
+                  Erc20TokenInfo, EthCoin, EthCoinType},
             my_tx_history_v2::TxHistoryStorage,
             CoinBalance, CoinProtocol, MarketCoinOps, MmCoin};
 use common::{log::error, mm_metrics::MetricsArc, Future01CompatExt};
@@ -40,12 +40,15 @@ impl From<EthActivationV2Error> for EnablePlatformCoinWithTokensError {
     }
 }
 
-impl TryFromCoinProtocol for CoinProtocol {
+impl TryFromCoinProtocol for EthCoinType {
     fn try_from_coin_protocol(proto: CoinProtocol) -> Result<Self, MmError<CoinProtocol>>
     where
         Self: Sized,
     {
-        Ok(proto)
+        match proto {
+            CoinProtocol::ETH => Ok(EthCoinType::Eth),
+            protocol => MmError::err(protocol),
+        }
     }
 }
 
@@ -142,7 +145,7 @@ impl CurrentBlock for EthWithTokensActivationResult {
 #[async_trait]
 impl PlatformWithTokensActivationOps for EthCoin {
     type ActivationRequest = EthWithTokensActivationRequest;
-    type PlatformProtocolInfo = CoinProtocol;
+    type PlatformProtocolInfo = EthCoinType;
     type ActivationResult = EthWithTokensActivationResult;
     type ActivationError = EthActivationV2Error;
 
@@ -151,7 +154,7 @@ impl PlatformWithTokensActivationOps for EthCoin {
         ticker: String,
         platform_conf: Json,
         activation_request: Self::ActivationRequest,
-        protocol: Self::PlatformProtocolInfo,
+        _protocol: Self::PlatformProtocolInfo,
         priv_key: &[u8],
     ) -> Result<Self, MmError<Self::ActivationError>> {
         let platform_coin = eth_coin_from_conf_and_request_v2(
@@ -160,7 +163,6 @@ impl PlatformWithTokensActivationOps for EthCoin {
             &platform_conf,
             activation_request.platform_request,
             priv_key,
-            protocol,
         )
         .await?;
 

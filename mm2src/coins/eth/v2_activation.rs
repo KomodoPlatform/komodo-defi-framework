@@ -121,7 +121,6 @@ pub async fn eth_coin_from_conf_and_request_v2(
     conf: &Json,
     req: EthActivationV2Request,
     priv_key: &[u8],
-    protocol: CoinProtocol,
 ) -> Result<EthCoin, MmError<EthActivationV2Error>> {
     if req.nodes.is_empty() {
         return Err(EthActivationV2Error::AtLeastOneNodeRequired.into());
@@ -207,26 +206,6 @@ pub async fn eth_coin_from_conf_and_request_v2(
 
     let web3 = Web3::new(transport);
 
-    let (coin_type, decimals) = match protocol {
-        CoinProtocol::ETH => (EthCoinType::Eth, 18),
-        CoinProtocol::ERC20 {
-            platform,
-            contract_address,
-        } => {
-            let token_addr = valid_addr_from_str(&contract_address).map_err(EthActivationV2Error::InternalError)?;
-            let decimals = match conf["decimals"].as_u64() {
-                None | Some(0) => get_token_decimals(&web3, token_addr)
-                    .await
-                    .map_err(EthActivationV2Error::InternalError)?,
-                Some(d) => d as u8,
-            };
-            (EthCoinType::Erc20 { platform, token_addr }, decimals)
-        },
-        _ => {
-            return Err(EthActivationV2Error::InvalidPayload("Expect ETH or ERC20 protocol".to_string()).into());
-        },
-    };
-
     // param from request should override the config
     let required_confirmations = req
         .required_confirmations
@@ -245,22 +224,17 @@ pub async fn eth_coin_from_conf_and_request_v2(
         HistorySyncState::NotEnabled
     };
 
-    let key_lock = match &coin_type {
-        EthCoinType::Eth => String::from(ticker),
-        EthCoinType::Erc20 { ref platform, .. } => String::from(platform),
-    };
-
     let mut map = NONCE_LOCK.lock().unwrap();
-    let nonce_lock = map.entry(key_lock).or_insert_with(new_nonce_lock).clone();
+    let nonce_lock = map.entry(ticker.to_string()).or_insert_with(new_nonce_lock).clone();
 
     let coin = EthCoinImpl {
         key_pair: key_pair.clone(),
         my_address: key_pair.address(),
-        coin_type,
+        coin_type: EthCoinType::Eth,
         sign_message_prefix,
         swap_contract_address: req.swap_contract_address,
         fallback_swap_contract: req.fallback_swap_contract,
-        decimals,
+        decimals: ETH_DECIMALS,
         ticker: ticker.into(),
         gas_station_url: req.gas_station_url,
         gas_station_decimals: req.gas_station_decimals.unwrap_or(ETH_GAS_STATION_DECIMALS),

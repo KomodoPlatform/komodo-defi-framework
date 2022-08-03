@@ -99,6 +99,8 @@ const DEFAULT_LOGS_BLOCK_RANGE: u64 = 1000;
 
 const DEFAULT_REQUIRED_CONFIRMATIONS: u8 = 1;
 
+const ETH_DECIMALS: u8 = 18;
+
 /// Take into account that the dynamic fee may increase by 3% during the swap.
 const GAS_PRICE_APPROXIMATION_PERCENT_ON_START_SWAP: u64 = 3;
 /// Take into account that the dynamic fee may increase at each of the following stages:
@@ -277,7 +279,7 @@ struct SavedErc20Events {
 }
 
 #[derive(Debug, PartialEq, Eq)]
-enum EthCoinType {
+pub enum EthCoinType {
     /// Ethereum itself or it's forks: ETC/others
     Eth,
     /// ERC20 token with smart contract address
@@ -1171,7 +1173,7 @@ impl MarketCoinOps for EthCoin {
     fn base_coin_balance(&self) -> BalanceFut<BigDecimal> {
         Box::new(
             self.eth_balance()
-                .and_then(move |result| Ok(u256_to_big_decimal(result, 18)?)),
+                .and_then(move |result| Ok(u256_to_big_decimal(result, ETH_DECIMALS)?)),
         )
     }
 
@@ -1759,7 +1761,7 @@ impl EthCoin {
                     None => None,
                 };
 
-                let total_amount: BigDecimal = u256_to_big_decimal(call_data.value, 18).unwrap();
+                let total_amount: BigDecimal = u256_to_big_decimal(call_data.value, ETH_DECIMALS).unwrap();
                 let mut received_by_me = 0.into();
                 let mut spent_by_me = 0.into();
 
@@ -3009,8 +3011,8 @@ impl EthTxFeeDetails {
     fn new(gas: U256, gas_price: U256, coin: &str) -> NumConversResult<EthTxFeeDetails> {
         let total_fee = gas * gas_price;
         // Fees are always paid in ETH, can use 18 decimals by default
-        let total_fee = u256_to_big_decimal(total_fee, 18)?;
-        let gas_price = u256_to_big_decimal(gas_price, 18)?;
+        let total_fee = u256_to_big_decimal(total_fee, ETH_DECIMALS)?;
+        let gas_price = u256_to_big_decimal(gas_price, ETH_DECIMALS)?;
 
         Ok(EthTxFeeDetails {
             coin: coin.to_owned(),
@@ -3092,7 +3094,7 @@ impl MmCoin for EthCoin {
                     };
                     Ok(TradeFee {
                         coin: fee_coin.into(),
-                        amount: try_s!(u256_to_big_decimal(fee, 18)).into(),
+                        amount: try_s!(u256_to_big_decimal(fee, ETH_DECIMALS)).into(),
                         paid_from_trading_vol: false,
                     })
                 }),
@@ -3140,7 +3142,7 @@ impl MmCoin for EthCoin {
         };
 
         let total_fee = gas_limit * gas_price;
-        let amount = u256_to_big_decimal(total_fee, 18)?;
+        let amount = u256_to_big_decimal(total_fee, ETH_DECIMALS)?;
         let fee_coin = match &self.coin_type {
             EthCoinType::Eth => &self.ticker,
             EthCoinType::Erc20 { platform, .. } => platform,
@@ -3158,7 +3160,7 @@ impl MmCoin for EthCoin {
             let gas_price = coin.get_gas_price().compat().await?;
             let gas_price = increase_gas_price_by_stage(gas_price, &stage);
             let total_fee = gas_price * U256::from(150_000);
-            let amount = u256_to_big_decimal(total_fee, 18)?;
+            let amount = u256_to_big_decimal(total_fee, ETH_DECIMALS)?;
             let fee_coin = match &coin.coin_type {
                 EthCoinType::Eth => &coin.ticker,
                 EthCoinType::Erc20 { platform, .. } => platform,
@@ -3208,7 +3210,7 @@ impl MmCoin for EthCoin {
         // Ideally we should determine the case when we have the insufficient balance and return `TradePreimageError::NotSufficientBalance` error.
         let gas_limit = self.estimate_gas(estimate_gas_req).compat().await?;
         let total_fee = gas_limit * gas_price;
-        let amount = u256_to_big_decimal(total_fee, 18)?;
+        let amount = u256_to_big_decimal(total_fee, ETH_DECIMALS)?;
         Ok(TradeFee {
             coin: fee_coin.into(),
             amount: amount.into(),
@@ -3530,7 +3532,7 @@ pub async fn eth_coin_from_conf_and_request(
     let web3 = Web3::new(transport);
 
     let (coin_type, decimals) = match protocol {
-        CoinProtocol::ETH => (EthCoinType::Eth, 18),
+        CoinProtocol::ETH => (EthCoinType::Eth, ETH_DECIMALS),
         CoinProtocol::ERC20 {
             platform,
             contract_address,
