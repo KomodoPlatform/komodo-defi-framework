@@ -271,6 +271,17 @@ pub trait HDWalletOps: Send + Sync {
 
     /// Returns a mutable reference to all activated accounts.
     async fn get_accounts_mut(&self) -> HDAccountsMut<'_, Self::HDAccount> { self.get_accounts_mutex().lock().await }
+
+    async fn remove_account_if_last(&self, account_id: u32) -> Option<Self::HDAccount> {
+        let mut x = self.get_accounts_mutex().lock().await;
+        // `BTreeMap::last_entry` is still unstable.
+        let (last_account_id, _) = x.iter().last()?;
+        if *last_account_id == account_id {
+            x.remove(&account_id)
+        } else {
+            None
+        }
+    }
 }
 
 pub trait HDAccountOps: Send + Sync {

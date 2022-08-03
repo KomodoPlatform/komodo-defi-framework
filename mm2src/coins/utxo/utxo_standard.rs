@@ -9,8 +9,8 @@ use crate::rpc_command::get_new_address::{self, CanGetNewAddressResponse, GetNew
                                           GetNewAddressRpcError, GetNewAddressRpcOps};
 use crate::rpc_command::hd_account_balance_rpc_error::HDAccountBalanceRpcError;
 use crate::rpc_command::init_account_balance::{self, InitAccountBalanceParams, InitAccountBalanceRpcOps};
-use crate::rpc_command::init_create_account::{self, CreateAccountRpcError, CreateNewAccountParams,
-                                              InitCreateHDAccountRpcOps};
+use crate::rpc_command::init_create_account::{self, CreateAccountRpcError, CreateAccountState, CreateNewAccountParams,
+                                              InitCreateAccountRpcOps};
 use crate::rpc_command::init_scan_for_new_addresses::{self, InitScanAddressesRpcOps, ScanAddressesParams,
                                                       ScanAddressesResponse};
 use crate::rpc_command::init_withdraw::{InitWithdrawCoin, WithdrawTaskHandle};
@@ -841,15 +841,20 @@ impl InitScanAddressesRpcOps for UtxoStandardCoin {
 }
 
 #[async_trait]
-impl InitCreateHDAccountRpcOps for UtxoStandardCoin {
+impl InitCreateAccountRpcOps for UtxoStandardCoin {
     async fn init_create_account_rpc<XPubExtractor>(
         &self,
         params: CreateNewAccountParams,
+        state: CreateAccountState,
         xpub_extractor: &XPubExtractor,
     ) -> MmResult<HDAccountBalance, CreateAccountRpcError>
     where
         XPubExtractor: HDXPubExtractor + Sync,
     {
-        init_create_account::common_impl::init_create_new_account_rpc(self, params, xpub_extractor).await
+        init_create_account::common_impl::init_create_new_account_rpc(self, params, state, xpub_extractor).await
+    }
+
+    async fn revert_creating_account(&self, account_id: u32) {
+        init_create_account::common_impl::revert_creating_account(self, account_id).await
     }
 }

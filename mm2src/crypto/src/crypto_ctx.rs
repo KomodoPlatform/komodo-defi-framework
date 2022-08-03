@@ -142,6 +142,11 @@ impl CryptoCtx {
         *self.hw_ctx.write() = new_state;
         res.mm_err(HwCtxInitError::from)
     }
+
+    pub fn reset_hw_ctx(&self) {
+        let mut state = self.hw_ctx.write();
+        *state = HardwareWalletCtxState::NotInitialized;
+    }
 }
 
 async fn init_check_hw_ctx_with_trezor<Processor>(

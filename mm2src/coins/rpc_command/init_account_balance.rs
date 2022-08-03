@@ -2,10 +2,11 @@ use crate::coin_balance::HDAccountBalance;
 use crate::rpc_command::hd_account_balance_rpc_error::HDAccountBalanceRpcError;
 use crate::{lp_coinfind_or_err, CoinsContext, MmCoinEnum};
 use async_trait::async_trait;
-use common::SerdeInfallible;
+use common::{SerdeInfallible, SuccessResponse};
 use mm2_core::mm_ctx::MmArc;
 use mm2_err_handle::prelude::*;
-use rpc_task::rpc_common::{InitRpcTaskResponse, RpcTaskStatusError, RpcTaskStatusRequest};
+use rpc_task::rpc_common::{CancelRpcTaskError, CancelRpcTaskRequest, InitRpcTaskResponse, RpcTaskStatusError,
+                           RpcTaskStatusRequest};
 use rpc_task::{RpcTask, RpcTaskHandle, RpcTaskManager, RpcTaskManagerShared, RpcTaskStatus, RpcTaskTypes};
 
 pub type AccountBalanceUserAction = SerdeInfallible;
@@ -32,7 +33,7 @@ pub struct InitAccountBalanceRequest {
     params: InitAccountBalanceParams,
 }
 
-#[derive(Deserialize)]
+#[derive(Clone, Deserialize)]
 pub struct InitAccountBalanceParams {
     account_index: u32,
 }
@@ -62,10 +63,13 @@ impl RpcTaskTypes for InitAccountBalanceTask {
 impl RpcTask for InitAccountBalanceTask {
     fn initial_status(&self) -> Self::InProgressStatus { AccountBalanceInProgressStatus::RequestingAccountBalance }
 
-    async fn run(self, _task_handle: &InitAccountBalanceTaskHandle) -> Result<Self::Item, MmError<Self::Error>> {
+    // Do nothing if the task has been cancelled.
+    async fn cancel(self) {}
+
+    async fn run(&mut self, _task_handle: &InitAccountBalanceTaskHandle) -> Result<Self::Item, MmError<Self::Error>> {
         match self.coin {
-            MmCoinEnum::UtxoCoin(utxo) => utxo.init_account_balance_rpc(self.req.params).await,
-            MmCoinEnum::QtumCoin(qtum) => qtum.init_account_balance_rpc(self.req.params).await,
+            MmCoinEnum::UtxoCoin(ref utxo) => utxo.init_account_balance_rpc(self.req.params.clone()).await,
+            MmCoinEnum::QtumCoin(ref qtum) => qtum.init_account_balance_rpc(self.req.params.clone()).await,
             _ => MmError::err(HDAccountBalanceRpcError::CoinIsActivatedNotWithHDWallet),
         }
     }
@@ -94,6 +98,19 @@ pub async fn init_account_balance_status(
     task_manager
         .task_status(req.task_id, req.forget_if_finished)
         .or_mm_err(|| RpcTaskStatusError::NoSuchTask(req.task_id))
+}
+
+pub async fn cancel_account_balance(
+    ctx: MmArc,
+    req: CancelRpcTaskRequest,
+) -> MmResult<SuccessResponse, CancelRpcTaskError> {
+    let coins_ctx = CoinsContext::from_ctx(&ctx).map_to_mm(CancelRpcTaskError::Internal)?;
+    let mut task_manager = coins_ctx
+        .account_balance_task_manager
+        .lock()
+        .map_to_mm(|e| CancelRpcTaskError::Internal(e.to_string()))?;
+    task_manager.cancel_task(req.task_id)?;
+    Ok(SuccessResponse::new())
 }
 
 pub mod common_impl {

@@ -10,7 +10,8 @@ use enum_from::EnumFromTrait;
 use http::StatusCode;
 use mm2_core::mm_ctx::MmArc;
 use mm2_err_handle::prelude::*;
-use rpc_task::rpc_common::{InitRpcTaskResponse, RpcTaskStatusError, RpcTaskStatusRequest, RpcTaskUserActionError};
+use rpc_task::rpc_common::{CancelRpcTaskError, CancelRpcTaskRequest, InitRpcTaskResponse, RpcTaskStatusError,
+                           RpcTaskStatusRequest, RpcTaskUserActionError};
 use rpc_task::{RpcTask, RpcTaskError, RpcTaskHandle, RpcTaskManager, RpcTaskManagerShared, RpcTaskStatus, RpcTaskTypes};
 use std::time::Duration;
 
@@ -117,7 +118,14 @@ impl RpcTaskTypes for InitHwTask {
 impl RpcTask for InitHwTask {
     fn initial_status(&self) -> Self::InProgressStatus { InitHwInProgressStatus::Initializing }
 
-    async fn run(self, task_handle: &InitHwTaskHandle) -> Result<Self::Item, MmError<Self::Error>> {
+    async fn cancel(self) {
+        common::log::info!("Cancel `InitHwTask`");
+        if let Ok(crypto_ctx) = CryptoCtx::from_ctx(&self.ctx) {
+            crypto_ctx.reset_hw_ctx()
+        }
+    }
+
+    async fn run(&mut self, task_handle: &InitHwTaskHandle) -> Result<Self::Item, MmError<Self::Error>> {
         let crypto_ctx = CryptoCtx::from_ctx(&self.ctx)?;
 
         let device_pubkey = match self.hw_wallet_type {
@@ -175,5 +183,18 @@ pub async fn init_trezor_user_action(
         .lock()
         .map_to_mm(|e| RpcTaskUserActionError::Internal(e.to_string()))?;
     task_manager.on_user_action(req.task_id, req.user_action)?;
+    Ok(SuccessResponse::new())
+}
+
+pub async fn cancel_init_trezor(
+    ctx: MmArc,
+    req: CancelRpcTaskRequest,
+) -> MmResult<SuccessResponse, CancelRpcTaskError> {
+    let coins_ctx = MmInitContext::from_ctx(&ctx).map_to_mm(CancelRpcTaskError::Internal)?;
+    let mut task_manager = coins_ctx
+        .init_hw_task_manager
+        .lock()
+        .map_to_mm(|e| CancelRpcTaskError::Internal(e.to_string()))?;
+    task_manager.cancel_task(req.task_id)?;
     Ok(SuccessResponse::new())
 }

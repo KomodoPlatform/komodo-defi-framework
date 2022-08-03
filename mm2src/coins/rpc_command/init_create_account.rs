@@ -12,8 +12,11 @@ use enum_from::EnumFromTrait;
 use http::StatusCode;
 use mm2_core::mm_ctx::MmArc;
 use mm2_err_handle::prelude::*;
-use rpc_task::rpc_common::{InitRpcTaskResponse, RpcTaskStatusError, RpcTaskStatusRequest, RpcTaskUserActionError};
+use parking_lot::Mutex as PaMutex;
+use rpc_task::rpc_common::{CancelRpcTaskError, CancelRpcTaskRequest, InitRpcTaskResponse, RpcTaskStatusError,
+                           RpcTaskStatusRequest, RpcTaskUserActionError};
 use rpc_task::{RpcTask, RpcTaskError, RpcTaskHandle, RpcTaskManager, RpcTaskManagerShared, RpcTaskStatus, RpcTaskTypes};
+use std::sync::Arc;
 use std::time::Duration;
 
 pub type CreateAccountUserAction = HwRpcTaskUserAction;
@@ -155,7 +158,7 @@ pub struct CreateNewAccountRequest {
     params: CreateNewAccountParams,
 }
 
-#[derive(Deserialize)]
+#[derive(Clone, Deserialize)]
 pub struct CreateNewAccountParams {
     #[serde(default = "true_f")]
     scan: bool,
@@ -173,21 +176,40 @@ pub enum CreateAccountInProgressStatus {
     WaitingForUserToConfirmPubkey,
 }
 
+#[derive(Default)]
+struct StateData {
+    account_id: Option<u32>,
+}
+
+#[derive(Clone, Default)]
+pub struct CreateAccountState(Arc<PaMutex<StateData>>);
+
+impl CreateAccountState {
+    pub fn on_account_created(&self, account_id: u32) { self.0.lock().account_id = Some(account_id); }
+
+    pub fn create_account_id(&self) -> Option<u32> { self.0.lock().account_id }
+}
+
 #[async_trait]
-pub trait InitCreateHDAccountRpcOps {
+pub trait InitCreateAccountRpcOps {
     async fn init_create_account_rpc<XPubExtractor>(
         &self,
         params: CreateNewAccountParams,
+        state: CreateAccountState,
         xpub_extractor: &XPubExtractor,
     ) -> MmResult<HDAccountBalance, CreateAccountRpcError>
     where
         XPubExtractor: HDXPubExtractor + Sync;
+
+    async fn revert_creating_account(&self, account_id: u32);
 }
 
 pub struct InitCreateAccountTask {
     ctx: MmArc,
     coin: MmCoinEnum,
     req: CreateNewAccountRequest,
+    /// The state of the account creation. It's used to revert changes if the task has been cancelled.
+    task_state: CreateAccountState,
 }
 
 impl RpcTaskTypes for InitCreateAccountTask {
@@ -202,15 +224,27 @@ impl RpcTaskTypes for InitCreateAccountTask {
 impl RpcTask for InitCreateAccountTask {
     fn initial_status(&self) -> Self::InProgressStatus { CreateAccountInProgressStatus::Preparing }
 
-    async fn run(self, task_handle: &CreateAccountTaskHandle) -> Result<Self::Item, MmError<Self::Error>> {
+    async fn cancel(self) {
+        if let Some(account_id) = self.task_state.create_account_id() {
+            // We created the account already, so need to revert the changes.
+            match self.coin {
+                MmCoinEnum::UtxoCoin(utxo) => utxo.revert_creating_account(account_id).await,
+                MmCoinEnum::QtumCoin(qtum) => qtum.revert_creating_account(account_id).await,
+                _ => (),
+            }
+        }
+    }
+
+    async fn run(&mut self, task_handle: &CreateAccountTaskHandle) -> Result<Self::Item, MmError<Self::Error>> {
         async fn create_new_account_helper<Coin>(
             ctx: &MmArc,
-            coin: Coin,
+            coin: &Coin,
             params: CreateNewAccountParams,
+            state: CreateAccountState,
             task_handle: &CreateAccountTaskHandle,
         ) -> MmResult<HDAccountBalance, CreateAccountRpcError>
         where
-            Coin: InitCreateHDAccountRpcOps + Send + Sync,
+            Coin: InitCreateAccountRpcOps + Send + Sync,
         {
             let hw_statuses = HwConnectStatuses {
                 on_connect: CreateAccountInProgressStatus::WaitingForTrezorToConnect,
@@ -221,15 +255,29 @@ impl RpcTask for InitCreateAccountTask {
                 on_ready: CreateAccountInProgressStatus::RequestingAccountBalance,
             };
             let xpub_extractor = CreateAccountXPubExtractor::new(ctx, task_handle, hw_statuses)?;
-            coin.init_create_account_rpc(params, &xpub_extractor).await
+            coin.init_create_account_rpc(params, state, &xpub_extractor).await
         }
 
         match self.coin {
-            MmCoinEnum::UtxoCoin(utxo) => {
-                create_new_account_helper(&self.ctx, utxo, self.req.params, task_handle).await
+            MmCoinEnum::UtxoCoin(ref utxo) => {
+                create_new_account_helper(
+                    &self.ctx,
+                    utxo,
+                    self.req.params.clone(),
+                    self.task_state.clone(),
+                    task_handle,
+                )
+                .await
             },
-            MmCoinEnum::QtumCoin(qtum) => {
-                create_new_account_helper(&self.ctx, qtum, self.req.params, task_handle).await
+            MmCoinEnum::QtumCoin(ref qtum) => {
+                create_new_account_helper(
+                    &self.ctx,
+                    qtum,
+                    self.req.params.clone(),
+                    self.task_state.clone(),
+                    task_handle,
+                )
+                .await
             },
             _ => MmError::err(CreateAccountRpcError::CoinIsActivatedNotWithHDWallet),
         }
@@ -242,7 +290,12 @@ pub async fn init_create_new_account(
 ) -> MmResult<InitRpcTaskResponse, CreateAccountRpcError> {
     let coin = lp_coinfind_or_err(&ctx, &req.coin).await?;
     let coins_ctx = CoinsContext::from_ctx(&ctx).map_to_mm(CreateAccountRpcError::Internal)?;
-    let task = InitCreateAccountTask { ctx, coin, req };
+    let task = InitCreateAccountTask {
+        ctx,
+        coin,
+        req,
+        task_state: CreateAccountState::default(),
+    };
     let task_id = CreateAccountTaskManager::spawn_rpc_task(&coins_ctx.create_account_manager, task)?;
     Ok(InitRpcTaskResponse { task_id })
 }
@@ -274,34 +327,47 @@ pub async fn init_create_new_account_user_action(
     Ok(SuccessResponse::new())
 }
 
+pub async fn cancel_create_new_account(
+    ctx: MmArc,
+    req: CancelRpcTaskRequest,
+) -> MmResult<SuccessResponse, CancelRpcTaskError> {
+    let coins_ctx = CoinsContext::from_ctx(&ctx).map_to_mm(CancelRpcTaskError::Internal)?;
+    let mut task_manager = coins_ctx
+        .create_account_manager
+        .lock()
+        .map_to_mm(|e| CancelRpcTaskError::Internal(e.to_string()))?;
+    task_manager.cancel_task(req.task_id)?;
+    Ok(SuccessResponse::new())
+}
+
 pub(crate) mod common_impl {
     use super::*;
     use crate::coin_balance::HDWalletBalanceOps;
     use crate::hd_wallet::{HDAccountOps, HDWalletCoinOps, HDWalletOps};
-    use crate::MarketCoinOps;
 
     pub async fn init_create_new_account_rpc<'a, Coin, XPubExtractor>(
         coin: &Coin,
         params: CreateNewAccountParams,
+        state: CreateAccountState,
         xpub_extractor: &XPubExtractor,
     ) -> MmResult<HDAccountBalance, CreateAccountRpcError>
     where
-        Coin: HDWalletBalanceOps
-            + CoinWithDerivationMethod<HDWallet = <Coin as HDWalletCoinOps>::HDWallet>
-            + Send
-            + Sync
-            + MarketCoinOps,
+        Coin:
+            HDWalletBalanceOps + CoinWithDerivationMethod<HDWallet = <Coin as HDWalletCoinOps>::HDWallet> + Send + Sync,
         XPubExtractor: HDXPubExtractor + Sync,
     {
         let hd_wallet = coin.derivation_method().hd_wallet_or_err()?;
 
         let mut new_account = coin.create_new_account(hd_wallet, xpub_extractor).await?;
-        let address_scanner = coin.produce_hd_address_scanner().await?;
         let account_index = new_account.account_id();
         let account_derivation_path = new_account.account_derivation_path();
 
+        // Change the task state.
+        state.on_account_created(account_index);
+
         let addresses = if params.scan {
             let gap_limit = params.gap_limit.unwrap_or_else(|| hd_wallet.gap_limit());
+            let address_scanner = coin.produce_hd_address_scanner().await?;
             coin.scan_for_new_addresses(hd_wallet, &mut new_account, &address_scanner, gap_limit)
                 .await?
         } else {
@@ -320,5 +386,14 @@ pub(crate) mod common_impl {
             total_balance,
             addresses,
         })
+    }
+
+    pub async fn revert_creating_account<Coin>(coin: &Coin, account_id: u32)
+    where
+        Coin: HDWalletBalanceOps + CoinWithDerivationMethod<HDWallet = <Coin as HDWalletCoinOps>::HDWallet> + Sync,
+    {
+        if let Some(hd_wallet) = coin.derivation_method().hd_wallet() {
+            hd_wallet.remove_account_if_last(account_id).await;
+        }
     }
 }

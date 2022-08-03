@@ -5,7 +5,8 @@ use common::SuccessResponse;
 use crypto::hw_rpc_task::{HwRpcTaskAwaitingStatus, HwRpcTaskUserAction, HwRpcTaskUserActionRequest};
 use mm2_core::mm_ctx::MmArc;
 use mm2_err_handle::prelude::*;
-use rpc_task::rpc_common::{InitRpcTaskResponse, RpcTaskStatusError, RpcTaskStatusRequest, RpcTaskUserActionError};
+use rpc_task::rpc_common::{CancelRpcTaskError, CancelRpcTaskRequest, InitRpcTaskResponse, RpcTaskStatusError,
+                           RpcTaskStatusRequest, RpcTaskUserActionError};
 use rpc_task::{RpcTask, RpcTaskHandle, RpcTaskManager, RpcTaskManagerShared, RpcTaskStatusAlias, RpcTaskTypes};
 
 pub type WithdrawAwaitingStatus = HwRpcTaskAwaitingStatus;
@@ -82,6 +83,16 @@ pub async fn withdraw_user_action(
     Ok(SuccessResponse::new())
 }
 
+pub async fn cancel_withdraw(ctx: MmArc, req: CancelRpcTaskRequest) -> MmResult<SuccessResponse, CancelRpcTaskError> {
+    let coins_ctx = CoinsContext::from_ctx(&ctx).map_to_mm(CancelRpcTaskError::Internal)?;
+    let mut task_manager = coins_ctx
+        .withdraw_task_manager
+        .lock()
+        .map_to_mm(|e| CancelRpcTaskError::Internal(e.to_string()))?;
+    task_manager.cancel_task(req.task_id)?;
+    Ok(SuccessResponse::new())
+}
+
 #[async_trait]
 pub trait InitWithdrawCoin {
     async fn init_withdraw(
@@ -110,14 +121,17 @@ impl RpcTaskTypes for WithdrawTask {
 impl RpcTask for WithdrawTask {
     fn initial_status(&self) -> Self::InProgressStatus { WithdrawInProgressStatus::Preparing }
 
-    async fn run(self, task_handle: &WithdrawTaskHandle) -> Result<Self::Item, MmError<Self::Error>> {
+    // Do nothing if the task has been cancelled.
+    async fn cancel(self) {}
+
+    async fn run(&mut self, task_handle: &WithdrawTaskHandle) -> Result<Self::Item, MmError<Self::Error>> {
+        let ctx = self.ctx.clone();
+        let request = self.request.clone();
         match self.coin {
-            MmCoinEnum::UtxoCoin(ref standard_utxo) => {
-                standard_utxo.init_withdraw(self.ctx, self.request, task_handle).await
-            },
-            MmCoinEnum::QtumCoin(ref qtum) => qtum.init_withdraw(self.ctx, self.request, task_handle).await,
+            MmCoinEnum::UtxoCoin(ref standard_utxo) => standard_utxo.init_withdraw(ctx, request, task_handle).await,
+            MmCoinEnum::QtumCoin(ref qtum) => qtum.init_withdraw(ctx, request, task_handle).await,
             #[cfg(not(target_arch = "wasm32"))]
-            MmCoinEnum::ZCoin(ref z) => z.init_withdraw(self.ctx, self.request, task_handle).await,
+            MmCoinEnum::ZCoin(ref z) => z.init_withdraw(ctx, request, task_handle).await,
             _ => MmError::err(WithdrawError::CoinDoesntSupportInitWithdraw {
                 coin: self.coin.ticker().to_owned(),
             }),

@@ -20,6 +20,7 @@ use serde_json::Value as Json;
 pub type UtxoStandardTaskManagerShared = InitStandaloneCoinTaskManagerShared<UtxoStandardCoin>;
 pub type UtxoStandardRpcTaskHandle = InitStandaloneCoinTaskHandle<UtxoStandardCoin>;
 
+#[derive(Clone)]
 pub struct UtxoStandardProtocolInfo;
 
 impl TryFromCoinProtocol for UtxoStandardProtocolInfo {

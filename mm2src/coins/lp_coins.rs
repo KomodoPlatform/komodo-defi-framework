@@ -665,7 +665,7 @@ pub trait MarketCoinOps {
     fn is_privacy(&self) -> bool { false }
 }
 
-#[derive(Debug, Deserialize, PartialEq)]
+#[derive(Clone, Debug, Deserialize, PartialEq)]
 #[serde(tag = "type")]
 pub enum WithdrawFee {
     UtxoFixed {
@@ -727,7 +727,7 @@ pub enum WithdrawFrom {
     },
 }
 
-#[derive(Deserialize)]
+#[derive(Clone, Deserialize)]
 pub struct WithdrawRequest {
     coin: String,
     from: Option<WithdrawFrom>,

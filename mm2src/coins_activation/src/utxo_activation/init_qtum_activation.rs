@@ -20,6 +20,7 @@ use serde_json::Value as Json;
 pub type QtumTaskManagerShared = InitStandaloneCoinTaskManagerShared<QtumCoin>;
 pub type QtumRpcTaskHandle = InitStandaloneCoinTaskHandle<QtumCoin>;
 
+#[derive(Clone)]
 pub struct QtumProtocolInfo;
 
 impl TryFromCoinProtocol for QtumProtocolInfo {

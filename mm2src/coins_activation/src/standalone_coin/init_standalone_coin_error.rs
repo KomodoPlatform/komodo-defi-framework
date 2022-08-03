@@ -3,7 +3,7 @@ use coins::CoinProtocol;
 use common::{HttpStatusCode, StatusCode};
 use crypto::HwRpcError;
 use derive_more::Display;
-use rpc_task::rpc_common::{RpcTaskStatusError, RpcTaskUserActionError};
+use rpc_task::rpc_common::{CancelRpcTaskError, RpcTaskStatusError, RpcTaskUserActionError};
 use rpc_task::{RpcTaskError, TaskId};
 use ser_error_derive::SerializeErrorType;
 use serde_derive::Serialize;
@@ -11,6 +11,7 @@ use std::time::Duration;
 
 pub type InitStandaloneCoinStatusError = RpcTaskStatusError;
 pub type InitStandaloneCoinUserActionError = RpcTaskUserActionError;
+pub type CancelInitStandaloneCoinError = CancelRpcTaskError;
 
 #[derive(Clone, Debug, Display, Serialize, SerializeErrorType)]
 #[serde(tag = "error_type", content = "error_data")]

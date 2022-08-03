@@ -15,11 +15,6 @@ pub struct RpcTaskHandle<Task: RpcTask> {
 }
 
 impl<Task: RpcTask> RpcTaskHandle<Task> {
-    pub(crate) fn abort(self) {
-        self.lock_and_then(|mut task_manager| task_manager.cancel_task(self.task_id))
-            .ok();
-    }
-
     fn lock_and_then<F, T>(&self, f: F) -> RpcTaskResult<T>
     where
         F: FnOnce(TaskManagerLock<Task>) -> RpcTaskResult<T>,

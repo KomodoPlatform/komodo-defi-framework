@@ -1,14 +1,15 @@
 use crate::context::CoinsActivationContext;
 use crate::prelude::*;
-use crate::standalone_coin::init_standalone_coin_error::{InitStandaloneCoinError, InitStandaloneCoinStatusError,
+use crate::standalone_coin::init_standalone_coin_error::{CancelInitStandaloneCoinError, InitStandaloneCoinError,
+                                                         InitStandaloneCoinStatusError,
                                                          InitStandaloneCoinUserActionError};
 use async_trait::async_trait;
-use coins::{lp_coinfind, lp_register_coin, MmCoinEnum, RegisterCoinError, RegisterCoinParams};
+use coins::{disable_coin, lp_coinfind, lp_register_coin, MmCoinEnum, RegisterCoinError, RegisterCoinParams};
 use common::{log, SuccessResponse};
 use crypto::trezor::trezor_rpc_task::RpcTaskHandle;
 use mm2_core::mm_ctx::MmArc;
 use mm2_err_handle::prelude::*;
-use rpc_task::rpc_common::{InitRpcTaskResponse, RpcTaskStatusRequest, RpcTaskUserActionRequest};
+use rpc_task::rpc_common::{CancelRpcTaskRequest, InitRpcTaskResponse, RpcTaskStatusRequest, RpcTaskUserActionRequest};
 use rpc_task::{RpcTask, RpcTaskManager, RpcTaskManagerShared, RpcTaskStatus, RpcTaskTypes};
 use serde_derive::Deserialize;
 use serde_json::Value as Json;
@@ -28,8 +29,8 @@ pub struct InitStandaloneCoinReq<T> {
 #[async_trait]
 pub trait InitStandaloneCoinActivationOps: Into<MmCoinEnum> + Send + Sync + 'static {
     type ActivationRequest: TxHistory + Sync + Send;
-    type StandaloneProtocol: TryFromCoinProtocol + Send;
-    // The following types are related to `RpcTask` management.
+    type StandaloneProtocol: TryFromCoinProtocol + Clone + Send + Sync; // TODO Sync
+                                                                        // The following types are related to `RpcTask` management.
     type ActivationResult: serde::Serialize + Clone + CurrentBlock + Send + Sync + 'static;
     type ActivationError: From<RegisterCoinError>
         + Into<InitStandaloneCoinError>
@@ -132,6 +133,18 @@ pub async fn init_standalone_coin_user_action<Standalone: InitStandaloneCoinActi
     Ok(SuccessResponse::new())
 }
 
+pub async fn cancel_init_standalone_coin<Standalone: InitStandaloneCoinActivationOps>(
+    ctx: MmArc,
+    req: CancelRpcTaskRequest,
+) -> MmResult<SuccessResponse, CancelInitStandaloneCoinError> {
+    let coins_act_ctx = CoinsActivationContext::from_ctx(&ctx).map_to_mm(CancelInitStandaloneCoinError::Internal)?;
+    let mut task_manager = Standalone::rpc_task_manager(&coins_act_ctx)
+        .lock()
+        .map_to_mm(|poison| CancelInitStandaloneCoinError::Internal(poison.to_string()))?;
+    task_manager.cancel_task(req.task_id)?;
+    Ok(SuccessResponse::new())
+}
+
 pub struct InitStandaloneCoinTask<Standalone: InitStandaloneCoinActivationOps> {
     ctx: MmArc,
     request: InitStandaloneCoinReq<Standalone::ActivationRequest>,
@@ -156,14 +169,17 @@ where
         <Standalone::InProgressStatus as InitStandaloneCoinInitialStatus>::initial_status()
     }
 
-    async fn run(self, task_handle: &RpcTaskHandle<Self>) -> Result<Self::Item, MmError<Self::Error>> {
+    /// Try to disable the coin in case if we managed to register it already.
+    async fn cancel(self) { disable_coin(&self.ctx, &self.request.ticker).await.ok(); }
+
+    async fn run(&mut self, task_handle: &RpcTaskHandle<Self>) -> Result<Self::Item, MmError<Self::Error>> {
         let ticker = self.request.ticker.clone();
         let coin = Standalone::init_standalone_coin(
             self.ctx.clone(),
             ticker.clone(),
-            self.coin_conf,
+            self.coin_conf.clone(),
             &self.request.activation_params,
-            self.protocol_info,
+            self.protocol_info.clone(),
             task_handle,
         )
         .await?;
