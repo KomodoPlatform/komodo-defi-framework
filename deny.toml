@@ -259,6 +259,8 @@ skip = [
     { name = "rustls-pemfile", version = "*" },
     { name = "scopeguard", version = "*" },
     { name = "sct", version = "*" },
+    { name = "secp256k1", version = "*" },
+    { name = "secp256k1-sys", version = "*" },
     { name = "semver", version = "*" },
     { name = "send_wrapper", version = "*" },
     { name = "sha2", version = "*" },

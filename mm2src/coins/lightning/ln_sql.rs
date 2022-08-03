@@ -9,7 +9,7 @@ use db_common::sqlite::{h256_option_slice_from_row, h256_slice_from_row, offset_
                         sql_text_conversion_err, string_from_row, validate_table_name, SqlNamedParams,
                         SqliteConnShared, CHECK_TABLE_EXISTS_SQL};
 use lightning::ln::{PaymentHash, PaymentPreimage, PaymentSecret};
-use secp256k1::PublicKey;
+use secp256k1v22::PublicKey;
 use std::convert::TryInto;
 use std::str::FromStr;
 
@@ -890,7 +890,7 @@ mod tests {
     use db_common::sqlite::rusqlite::Connection;
     use rand::distributions::Alphanumeric;
     use rand::{Rng, RngCore};
-    use secp256k1::{Secp256k1, SecretKey};
+    use secp256k1v22::{Secp256k1, SecretKey};
     use std::num::NonZeroUsize;
     use std::sync::{Arc, Mutex};
 

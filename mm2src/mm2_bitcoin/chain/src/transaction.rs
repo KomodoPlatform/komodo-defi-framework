@@ -6,6 +6,7 @@ use constants::{LOCKTIME_THRESHOLD, SEQUENCE_FINAL};
 use crypto::{dhash256, sha256};
 use ext_bitcoin::blockdata::transaction::{OutPoint as ExtOutpoint, Transaction as ExtTransaction, TxIn, TxOut};
 use ext_bitcoin::hash_types::Txid;
+use ext_bitcoin::Witness;
 use hash::{CipherText, EncCipherText, OutCipherText, ZkProof, ZkProofSapling, H256, H512, H64};
 use hex::FromHex;
 use ser::{deserialize, serialize, serialize_with_flags, SERIALIZE_TRANSACTION_WITNESS};
@@ -75,7 +76,7 @@ impl From<TransactionInput> for TxIn {
             previous_output: txin.previous_output.into(),
             script_sig: txin.script_sig.take().into(),
             sequence: txin.sequence,
-            witness: txin.script_witness.into_iter().map(|s| s.take()).collect(),
+            witness: Witness::from_vec(txin.script_witness.into_iter().map(|s| s.take()).collect()),
         }
     }
 }

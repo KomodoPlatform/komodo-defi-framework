@@ -4,33 +4,29 @@ use crate::lightning::ln_utils::{ChainMonitor, ChannelManager};
 use async_trait::async_trait;
 use bitcoin::blockdata::constants::genesis_block;
 use bitcoin::Network;
-use bitcoin_hashes::hex::ToHex;
 use common::async_blocking;
 use common::log::LogState;
-use lightning::chain::channelmonitor::{ChannelMonitor, ChannelMonitorUpdate};
-use lightning::chain::keysinterface::{InMemorySigner, KeysManager, Sign};
-use lightning::chain::transaction::OutPoint;
-use lightning::chain::{chainmonitor, ChannelMonitorUpdateErr};
-use lightning::routing::network_graph::NetworkGraph;
-use lightning::routing::scoring::ProbabilisticScoringParameters;
-use lightning::util::ser::{Readable, ReadableArgs, Writeable};
-use lightning_background_processor::Persister;
+use lightning::chain::keysinterface::{InMemorySigner, KeysManager};
+use lightning::routing::gossip::NetworkGraph;
+use lightning::routing::scoring::{ProbabilisticScorer, ProbabilisticScoringParameters};
+use lightning::util::persist::{KVStorePersister, Persister};
+use lightning::util::ser::{ReadableArgs, Writeable};
 use lightning_persister::FilesystemPersister;
 use mm2_io::fs::check_dir_operations;
-use secp256k1::PublicKey;
+use secp256k1v22::PublicKey;
 use std::collections::HashMap;
 use std::fs;
-use std::io::{BufReader, BufWriter};
+use std::io::{BufReader, BufWriter, Error};
 use std::net::SocketAddr;
 use std::ops::Deref;
-use std::path::{Path, PathBuf};
+use std::path::PathBuf;
 use std::str::FromStr;
 use std::sync::{Arc, Mutex};
 
-#[cfg(target_family = "unix")] use std::os::unix::io::AsRawFd;
+// #[cfg(target_family = "unix")] use std::os::unix::io::AsRawFd;
 
-#[cfg(target_family = "windows")]
-use {std::ffi::OsStr, std::os::windows::ffi::OsStrExt};
+// #[cfg(target_family = "windows")]
+// use {std::ffi::OsStr, std::os::windows::ffi::OsStrExt};
 
 pub struct LightningFilesystemPersister {
     main_path: PathBuf,
@@ -103,6 +99,12 @@ impl LightningFilesystemPersister {
     }
 }
 
+impl KVStorePersister for LightningFilesystemPersister {
+    fn persist<W: Writeable>(&self, key: &str, object: &W) -> std::io::Result<()> {
+        self.channels_persister.persist(key, object)
+    }
+}
+
 #[derive(Clone)]
 pub struct LightningPersisterShared(pub Arc<LightningFilesystemPersister>);
 
@@ -111,11 +113,20 @@ impl Deref for LightningPersisterShared {
     fn deref(&self) -> &LightningFilesystemPersister { self.0.deref() }
 }
 
-impl Persister<InMemorySigner, Arc<ChainMonitor>, Arc<Platform>, Arc<KeysManager>, Arc<Platform>, Arc<LogState>>
-    for LightningPersisterShared
+impl
+    Persister<
+        '_,
+        InMemorySigner,
+        Arc<ChainMonitor>,
+        Arc<Platform>,
+        Arc<KeysManager>,
+        Arc<Platform>,
+        Arc<LogState>,
+        Scorer,
+    > for LightningPersisterShared
 {
-    fn persist_manager(&self, channel_manager: &ChannelManager) -> Result<(), std::io::Error> {
-        FilesystemPersister::persist_manager(self.0.main_path().display().to_string(), channel_manager)?;
+    fn persist_manager(&self, channel_manager: &ChannelManager) -> Result<(), Error> {
+        self.persist("manager", channel_manager)?;
         if let Some(backup_path) = self.0.backup_path() {
             let file = fs::OpenOptions::new()
                 .create(true)
@@ -127,9 +138,8 @@ impl Persister<InMemorySigner, Arc<ChainMonitor>, Arc<Platform>, Arc<KeysManager
         Ok(())
     }
 
-    fn persist_graph(&self, network_graph: &NetworkGraph) -> Result<(), std::io::Error> {
-        if FilesystemPersister::persist_network_graph(self.0.main_path().display().to_string(), network_graph).is_err()
-        {
+    fn persist_graph(&self, network_graph: &NetworkGraph<Arc<LogState>>) -> Result<(), Error> {
+        if self.persist("network_graph", network_graph).is_err() {
             // Persistence errors here are non-fatal as we can just fetch the routing graph
             // again later, but they may indicate a disk error which could be fatal elsewhere.
             eprintln!("Warning: Failed to persist network graph, check your disk and permissions");
@@ -137,120 +147,122 @@ impl Persister<InMemorySigner, Arc<ChainMonitor>, Arc<Platform>, Arc<KeysManager
 
         Ok(())
     }
+
+    fn persist_scorer(&self, _scorer: &Scorer) -> Result<(), Error> { todo!() }
 }
 
-#[cfg(target_family = "windows")]
-macro_rules! call {
-    ($e: expr) => {
-        if $e != 0 {
-            return Ok(());
-        } else {
-            return Err(std::io::Error::last_os_error());
-        }
-    };
-}
+// #[cfg(target_family = "windows")]
+// macro_rules! call {
+//     ($e: expr) => {
+//         if $e != 0 {
+//             return Ok(());
+//         } else {
+//             return Err(std::io::Error::last_os_error());
+//         }
+//     };
+// }
 
-#[cfg(target_family = "windows")]
-fn path_to_windows_str<T: AsRef<OsStr>>(path: T) -> Vec<winapi::shared::ntdef::WCHAR> {
-    path.as_ref().encode_wide().chain(Some(0)).collect()
-}
+// #[cfg(target_family = "windows")]
+// fn path_to_windows_str<T: AsRef<OsStr>>(path: T) -> Vec<winapi::shared::ntdef::WCHAR> {
+//     path.as_ref().encode_wide().chain(Some(0)).collect()
+// }
 
-fn write_monitor_to_file<ChannelSigner: Sign>(
-    mut path: PathBuf,
-    filename: String,
-    monitor: &ChannelMonitor<ChannelSigner>,
-) -> std::io::Result<()> {
-    // Do a crazy dance with lots of fsync()s to be overly cautious here...
-    // We never want to end up in a state where we've lost the old data, or end up using the
-    // old data on power loss after we've returned.
-    // The way to atomically write a file on Unix platforms is:
-    // open(tmpname), write(tmpfile), fsync(tmpfile), close(tmpfile), rename(), fsync(dir)
-    path.push(filename);
-    let filename_with_path = path.display().to_string();
-    let tmp_filename = format!("{}.tmp", filename_with_path);
+// fn write_monitor_to_file<ChannelSigner: Sign>(
+//     mut path: PathBuf,
+//     filename: String,
+//     monitor: &ChannelMonitor<ChannelSigner>,
+// ) -> std::io::Result<()> {
+//     // Do a crazy dance with lots of fsync()s to be overly cautious here...
+//     // We never want to end up in a state where we've lost the old data, or end up using the
+//     // old data on power loss after we've returned.
+//     // The way to atomically write a file on Unix platforms is:
+//     // open(tmpname), write(tmpfile), fsync(tmpfile), close(tmpfile), rename(), fsync(dir)
+//     path.push(filename);
+//     let filename_with_path = path.display().to_string();
+//     let tmp_filename = format!("{}.tmp", filename_with_path);
+//
+//     {
+//         let mut f = fs::File::create(&tmp_filename)?;
+//         monitor.write(&mut f)?;
+//         f.sync_all()?;
+//     }
+//     // Fsync the parent directory on Unix.
+//     #[cfg(target_family = "unix")]
+//     {
+//         fs::rename(&tmp_filename, &filename_with_path)?;
+//         let path = Path::new(&filename_with_path).parent().ok_or_else(|| {
+//             std::io::Error::new(
+//                 std::io::ErrorKind::NotFound,
+//                 format!("can't find parent dir for {}", filename_with_path),
+//             )
+//         })?;
+//         let dir_file = fs::OpenOptions::new().read(true).open(path)?;
+//         unsafe {
+//             libc::fsync(dir_file.as_raw_fd());
+//         }
+//     }
+//     #[cfg(target_family = "windows")]
+//     {
+//         let src = PathBuf::from(tmp_filename);
+//         let dst = PathBuf::from(filename_with_path.clone());
+//         if Path::new(&filename_with_path).exists() {
+//             unsafe {
+//                 winapi::um::winbase::ReplaceFileW(
+//                     path_to_windows_str(dst).as_ptr(),
+//                     path_to_windows_str(src).as_ptr(),
+//                     std::ptr::null(),
+//                     winapi::um::winbase::REPLACEFILE_IGNORE_MERGE_ERRORS,
+//                     std::ptr::null_mut() as *mut winapi::ctypes::c_void,
+//                     std::ptr::null_mut() as *mut winapi::ctypes::c_void,
+//                 )
+//             };
+//         } else {
+//             call!(unsafe {
+//                 winapi::um::winbase::MoveFileExW(
+//                     path_to_windows_str(src).as_ptr(),
+//                     path_to_windows_str(dst).as_ptr(),
+//                     winapi::um::winbase::MOVEFILE_WRITE_THROUGH | winapi::um::winbase::MOVEFILE_REPLACE_EXISTING,
+//                 )
+//             });
+//         }
+//     }
+//     Ok(())
+// }
 
-    {
-        let mut f = fs::File::create(&tmp_filename)?;
-        monitor.write(&mut f)?;
-        f.sync_all()?;
-    }
-    // Fsync the parent directory on Unix.
-    #[cfg(target_family = "unix")]
-    {
-        fs::rename(&tmp_filename, &filename_with_path)?;
-        let path = Path::new(&filename_with_path).parent().ok_or_else(|| {
-            std::io::Error::new(
-                std::io::ErrorKind::NotFound,
-                format!("can't find parent dir for {}", filename_with_path),
-            )
-        })?;
-        let dir_file = fs::OpenOptions::new().read(true).open(path)?;
-        unsafe {
-            libc::fsync(dir_file.as_raw_fd());
-        }
-    }
-    #[cfg(target_family = "windows")]
-    {
-        let src = PathBuf::from(tmp_filename);
-        let dst = PathBuf::from(filename_with_path.clone());
-        if Path::new(&filename_with_path).exists() {
-            unsafe {
-                winapi::um::winbase::ReplaceFileW(
-                    path_to_windows_str(dst).as_ptr(),
-                    path_to_windows_str(src).as_ptr(),
-                    std::ptr::null(),
-                    winapi::um::winbase::REPLACEFILE_IGNORE_MERGE_ERRORS,
-                    std::ptr::null_mut() as *mut winapi::ctypes::c_void,
-                    std::ptr::null_mut() as *mut winapi::ctypes::c_void,
-                )
-            };
-        } else {
-            call!(unsafe {
-                winapi::um::winbase::MoveFileExW(
-                    path_to_windows_str(src).as_ptr(),
-                    path_to_windows_str(dst).as_ptr(),
-                    winapi::um::winbase::MOVEFILE_WRITE_THROUGH | winapi::um::winbase::MOVEFILE_REPLACE_EXISTING,
-                )
-            });
-        }
-    }
-    Ok(())
-}
-
-impl<ChannelSigner: Sign> chainmonitor::Persist<ChannelSigner> for LightningFilesystemPersister {
-    fn persist_new_channel(
-        &self,
-        funding_txo: OutPoint,
-        monitor: &ChannelMonitor<ChannelSigner>,
-        update_id: chainmonitor::MonitorUpdateId,
-    ) -> Result<(), ChannelMonitorUpdateErr> {
-        self.channels_persister
-            .persist_new_channel(funding_txo, monitor, update_id)?;
-        if let Some(backup_path) = self.monitor_backup_path() {
-            let filename = format!("{}_{}", funding_txo.txid.to_hex(), funding_txo.index);
-            write_monitor_to_file(backup_path, filename, monitor)
-                .map_err(|_| ChannelMonitorUpdateErr::PermanentFailure)?;
-        }
-        Ok(())
-    }
-
-    fn update_persisted_channel(
-        &self,
-        funding_txo: OutPoint,
-        update: &Option<ChannelMonitorUpdate>,
-        monitor: &ChannelMonitor<ChannelSigner>,
-        update_id: chainmonitor::MonitorUpdateId,
-    ) -> Result<(), ChannelMonitorUpdateErr> {
-        self.channels_persister
-            .update_persisted_channel(funding_txo, update, monitor, update_id)?;
-        if let Some(backup_path) = self.monitor_backup_path() {
-            let filename = format!("{}_{}", funding_txo.txid.to_hex(), funding_txo.index);
-            write_monitor_to_file(backup_path, filename, monitor)
-                .map_err(|_| ChannelMonitorUpdateErr::PermanentFailure)?;
-        }
-        Ok(())
-    }
-}
+// impl<ChannelSigner: Sign> chainmonitor::Persist<ChannelSigner> for LightningFilesystemPersister {
+//     fn persist_new_channel(
+//         &self,
+//         funding_txo: OutPoint,
+//         monitor: &ChannelMonitor<ChannelSigner>,
+//         update_id: chainmonitor::MonitorUpdateId,
+//     ) -> Result<(), ChannelMonitorUpdateErr> {
+//         self.channels_persister
+//             .persist_new_channel(funding_txo, monitor, update_id)?;
+//         if let Some(backup_path) = self.monitor_backup_path() {
+//             let filename = format!("{}_{}", funding_txo.txid.to_hex(), funding_txo.index);
+//             write_monitor_to_file(backup_path, filename, monitor)
+//                 .map_err(|_| ChannelMonitorUpdateErr::PermanentFailure)?;
+//         }
+//         Ok(())
+//     }
+//
+//     fn update_persisted_channel(
+//         &self,
+//         funding_txo: OutPoint,
+//         update: &Option<ChannelMonitorUpdate>,
+//         monitor: &ChannelMonitor<ChannelSigner>,
+//         update_id: chainmonitor::MonitorUpdateId,
+//     ) -> Result<(), ChannelMonitorUpdateErr> {
+//         self.channels_persister
+//             .update_persisted_channel(funding_txo, update, monitor, update_id)?;
+//         if let Some(backup_path) = self.monitor_backup_path() {
+//             let filename = format!("{}_{}", funding_txo.txid.to_hex(), funding_txo.index);
+//             write_monitor_to_file(backup_path, filename, monitor)
+//                 .map_err(|_| ChannelMonitorUpdateErr::PermanentFailure)?;
+//         }
+//         Ok(())
+//     }
+// }
 
 #[async_trait]
 impl LightningStorage for LightningFilesystemPersister {
@@ -353,40 +365,52 @@ impl LightningStorage for LightningFilesystemPersister {
         .await
     }
 
-    async fn get_network_graph(&self, network: Network) -> Result<NetworkGraph, Self::Error> {
+    async fn get_network_graph(
+        &self,
+        network: Network,
+        logger: Arc<LogState>,
+    ) -> Result<NetworkGraph<Arc<LogState>>, Self::Error> {
         let path = self.network_graph_path();
         if !path.exists() {
-            return Ok(NetworkGraph::new(genesis_block(network).header.block_hash()));
+            return Ok(NetworkGraph::new(genesis_block(network).header.block_hash(), logger));
         }
         async_blocking(move || {
             let file = fs::File::open(path)?;
             common::log::info!("Reading the saved lightning network graph from file, this can take some time!");
-            NetworkGraph::read(&mut BufReader::new(file))
+            NetworkGraph::read(&mut BufReader::new(file), logger)
                 .map_err(|e| std::io::Error::new(std::io::ErrorKind::InvalidData, e.to_string()))
         })
         .await
     }
 
-    async fn get_scorer(&self, network_graph: Arc<NetworkGraph>) -> Result<Scorer, Self::Error> {
+    async fn get_scorer(
+        &self,
+        network_graph: Arc<NetworkGraph<Arc<LogState>>>,
+        logger: Arc<LogState>,
+    ) -> Result<Scorer, Self::Error> {
         let path = self.scorer_path();
         if !path.exists() {
-            return Ok(Scorer::new(ProbabilisticScoringParameters::default(), network_graph));
+            return Ok(Mutex::new(ProbabilisticScorer::new(
+                ProbabilisticScoringParameters::default(),
+                network_graph,
+                logger,
+            )));
         }
         async_blocking(move || {
             let file = fs::File::open(path)?;
-            Scorer::read(
+            let scorer = ProbabilisticScorer::read(
                 &mut BufReader::new(file),
-                (ProbabilisticScoringParameters::default(), network_graph),
+                (ProbabilisticScoringParameters::default(), network_graph, logger),
             )
-            .map_err(|e| std::io::Error::new(std::io::ErrorKind::InvalidData, e.to_string()))
+            .map_err(|e| std::io::Error::new(std::io::ErrorKind::InvalidData, e.to_string()))?;
+            Ok(Mutex::new(scorer))
         })
         .await
     }
 
-    async fn save_scorer(&self, scorer: Arc<Mutex<Scorer>>) -> Result<(), Self::Error> {
+    async fn save_scorer(&self, scorer: Arc<Scorer>) -> Result<(), Self::Error> {
         let path = self.scorer_path();
         async_blocking(move || {
-            let scorer = scorer.lock().unwrap();
             let file = fs::OpenOptions::new()
                 .create(true)
                 .write(true)

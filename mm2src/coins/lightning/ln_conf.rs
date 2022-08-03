@@ -153,6 +153,8 @@ impl From<OurChannelsConfig> for ChannelHandshakeConfig {
 pub struct CounterpartyLimits {
     /// Minimum allowed satoshis when an inbound channel is funded.
     pub min_funding_sats: Option<u64>,
+    /// Maximum allowed satoshis when an inbound channel is funded.
+    pub max_funding_sats: Option<u64>,
     /// The remote node sets a limit on the minimum size of HTLCs we can send to them. This allows
     /// us to limit the maximum minimum-size they can require.
     pub max_htlc_minimum_msat: Option<u64>,
@@ -172,6 +174,9 @@ pub struct CounterpartyLimits {
     pub force_announced_channel_preference: Option<bool>,
     /// Set to the amount of time we're willing to wait to claim money back to us.
     pub our_locktime_limit: Option<u16>,
+    /// When set an outbound channel can be used straight away without waiting for any on-chain confirmations.
+    /// https://docs.rs/lightning/latest/lightning/util/config/struct.ChannelHandshakeLimits.html#structfield.trust_own_funding_0conf
+    pub allow_outbound_0conf: Option<bool>,
 }
 
 impl From<CounterpartyLimits> for ChannelHandshakeLimits {
@@ -180,6 +185,10 @@ impl From<CounterpartyLimits> for ChannelHandshakeLimits {
 
         if let Some(sats) = limits.min_funding_sats {
             channel_handshake_limits.min_funding_satoshis = sats;
+        }
+
+        if let Some(sats) = limits.max_funding_sats {
+            channel_handshake_limits.max_funding_satoshis = sats;
         }
 
         if let Some(msat) = limits.max_htlc_minimum_msat {
@@ -208,6 +217,10 @@ impl From<CounterpartyLimits> for ChannelHandshakeLimits {
 
         if let Some(blocks) = limits.our_locktime_limit {
             channel_handshake_limits.their_to_self_delay = blocks;
+        }
+
+        if let Some(is_0conf) = limits.allow_outbound_0conf {
+            channel_handshake_limits.trust_own_funding_0conf = is_0conf;
         }
 
         channel_handshake_limits

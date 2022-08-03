@@ -16,7 +16,7 @@ use lightning::util::events::{Event, EventHandler, PaymentPurpose};
 use parking_lot::Mutex as PaMutex;
 use rand::Rng;
 use script::{Builder, SignatureVersion};
-use secp256k1::Secp256k1;
+use secp256k1v22::Secp256k1;
 use std::convert::TryFrom;
 use std::sync::Arc;
 use utxo_signer::with_key_pair::sign_tx;
@@ -39,18 +39,20 @@ impl EventHandler for LightningEventHandler {
                 channel_value_satoshis,
                 output_script,
                 user_channel_id,
+                counterparty_node_id,
             } => self.handle_funding_generation_ready(
                 *temporary_channel_id,
                 *channel_value_satoshis,
                 output_script,
                 *user_channel_id,
+                counterparty_node_id,
             ),
 
             Event::PaymentReceived {
                 payment_hash,
-                amt,
+                amount_msat,
                 purpose,
-            } => self.handle_payment_received(*payment_hash, *amt, purpose),
+            } => self.handle_payment_received(*payment_hash, *amount_msat, purpose),
 
             Event::PaymentSent {
                 payment_preimage,
@@ -59,6 +61,8 @@ impl EventHandler for LightningEventHandler {
                 ..
             } => self.handle_payment_sent(*payment_preimage, *payment_hash, *fee_paid_msat),
 
+            Event::PaymentClaimed { payment_hash, amount_msat, purpose } => self.handle_payment_claimed(*payment_hash, *amount_msat, purpose),
+
             Event::PaymentFailed { payment_hash, .. } => self.handle_payment_failed(*payment_hash),
 
             Event::PendingHTLCsForwardable { time_forwardable } => self.handle_pending_htlcs_forwards(*time_forwardable),
@@ -66,9 +70,11 @@ impl EventHandler for LightningEventHandler {
             Event::SpendableOutputs { outputs } => self.handle_spendable_outputs(outputs.clone()),
 
             // Todo: an RPC for total amount earned
-            Event::PaymentForwarded { fee_earned_msat, claim_from_onchain_tx } => info!(
-                "Received a fee of {} milli-satoshis for a successfully forwarded payment through our {} lightning node. Was the forwarded HTLC claimed by our counterparty via an on-chain transaction?: {}",
+            Event::PaymentForwarded { fee_earned_msat, claim_from_onchain_tx,  prev_channel_id, next_channel_id} => info!(
+                "Received a fee of {} milli-satoshis for a successfully forwarded payment from {} to {} through our {} lightning node. Was the forwarded HTLC claimed by our counterparty via an on-chain transaction?: {}",
                 fee_earned_msat.unwrap_or_default(),
+                prev_channel_id.map(hex::encode).unwrap_or_else(|| "unknown".into()),
+                next_channel_id.map(hex::encode).unwrap_or_else(|| "unknown".into()),
                 self.platform.coin.ticker(),
                 claim_from_onchain_tx,
             ),
@@ -250,10 +256,11 @@ impl LightningEventHandler {
         channel_value_satoshis: u64,
         output_script: &Script,
         user_channel_id: u64,
+        counterparty_node_id: &LnPublicKey,
     ) {
         info!(
-            "Handling FundingGenerationReady event for internal channel id: {}",
-            user_channel_id
+            "Handling FundingGenerationReady event for internal channel id: {} with: {}",
+            user_channel_id, counterparty_node_id
         );
         let funding_tx = match sign_funding_transaction(user_channel_id, output_script, self.platform.clone()) {
             Ok(tx) => tx,
@@ -268,9 +275,9 @@ impl LightningEventHandler {
         };
         let funding_txid = funding_tx.txid();
         // Give the funding transaction back to LDK for opening the channel.
-        if let Err(e) = self
-            .channel_manager
-            .funding_transaction_generated(&temporary_channel_id, funding_tx)
+        if let Err(e) =
+            self.channel_manager
+                .funding_transaction_generated(&temporary_channel_id, counterparty_node_id, funding_tx)
         {
             error!("{:?}", e);
             return;
@@ -290,55 +297,50 @@ impl LightningEventHandler {
         });
     }
 
-    fn handle_payment_received(&self, payment_hash: PaymentHash, amt: u64, purpose: &PaymentPurpose) {
+    fn handle_payment_received(&self, payment_hash: PaymentHash, _amount_msat: u64, purpose: &PaymentPurpose) {
         info!(
             "Handling PaymentReceived event for payment_hash: {}",
             hex::encode(payment_hash.0)
         );
-        let (payment_preimage, payment_secret) = match purpose {
-            PaymentPurpose::InvoicePayment {
-                payment_preimage,
-                payment_secret,
-            } => match payment_preimage {
-                Some(preimage) => (*preimage, Some(*payment_secret)),
+        let payment_preimage = match purpose {
+            PaymentPurpose::InvoicePayment { payment_preimage, .. } => match payment_preimage {
+                Some(preimage) => *preimage,
                 None => return,
             },
-            PaymentPurpose::SpontaneousPayment(preimage) => (*preimage, None),
+            PaymentPurpose::SpontaneousPayment(preimage) => *preimage,
         };
-        let status = match self.channel_manager.claim_funds(payment_preimage) {
-            true => {
-                info!(
-                    "Received an amount of {} millisatoshis for payment hash {}",
-                    amt,
-                    hex::encode(payment_hash.0)
-                );
-                HTLCStatus::Succeeded
-            },
-            false => HTLCStatus::Failed,
-        };
+        self.channel_manager.claim_funds(payment_preimage);
+    }
+
+    fn handle_payment_claimed(&self, payment_hash: PaymentHash, amount_msat: u64, purpose: &PaymentPurpose) {
+        info!(
+            "Received an amount of {} millisatoshis for payment hash {}",
+            amount_msat,
+            hex::encode(payment_hash.0)
+        );
         let db = self.db.clone();
-        match purpose {
-            PaymentPurpose::InvoicePayment { .. } => spawn(async move {
+        match *purpose {
+            PaymentPurpose::InvoicePayment { payment_preimage, .. } => spawn(async move {
                 if let Ok(Some(mut payment_info)) = db.get_payment_from_db(payment_hash).await.error_log_passthrough() {
-                    payment_info.preimage = Some(payment_preimage);
+                    payment_info.preimage = payment_preimage;
                     payment_info.status = HTLCStatus::Succeeded;
-                    payment_info.amt_msat = Some(amt as i64);
+                    payment_info.amt_msat = Some(amount_msat as i64);
                     payment_info.last_updated = (now_ms() / 1000) as i64;
                     if let Err(e) = db.add_or_update_payment_in_db(payment_info).await {
                         error!("Unable to update payment information in DB: {}", e);
                     }
                 }
             }),
-            PaymentPurpose::SpontaneousPayment(_) => {
+            PaymentPurpose::SpontaneousPayment(payment_preimage) => {
                 let payment_info = DBPaymentInfo {
                     payment_hash,
                     payment_type: PaymentType::InboundPayment,
                     description: "".into(),
                     preimage: Some(payment_preimage),
-                    secret: payment_secret,
-                    amt_msat: Some(amt as i64),
+                    secret: None,
+                    amt_msat: Some(amount_msat as i64),
                     fee_paid_msat: None,
-                    status,
+                    status: HTLCStatus::Succeeded,
                     created_at: (now_ms() / 1000) as i64,
                     last_updated: (now_ms() / 1000) as i64,
                 };
@@ -522,7 +524,7 @@ impl LightningEventHandler {
     fn handle_open_channel_request(
         &self,
         temporary_channel_id: [u8; 32],
-        counterparty_node_id: PublicKey,
+        counterparty_node_id: LnPublicKey,
         funding_satoshis: u64,
         push_msat: u64,
     ) {
@@ -538,7 +540,7 @@ impl LightningEventHandler {
             if let Ok(last_channel_rpc_id) = db.get_last_channel_rpc_id().await.error_log_passthrough() {
                 let user_channel_id = last_channel_rpc_id as u64 + 1;
                 if channel_manager
-                    .accept_inbound_channel(&temporary_channel_id, user_channel_id)
+                    .accept_inbound_channel(&temporary_channel_id, &counterparty_node_id, user_channel_id)
                     .is_ok()
                 {
                     let is_public = match channel_manager

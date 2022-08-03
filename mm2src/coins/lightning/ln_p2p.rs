@@ -5,18 +5,18 @@ use derive_more::Display;
 use lightning::chain::Access;
 use lightning::ln::msgs::NetAddress;
 use lightning::ln::peer_handler::{IgnoringMessageHandler, MessageHandler, SimpleArcPeerManager};
-use lightning::routing::network_graph::{NetGraphMsgHandler, NetworkGraph};
+use lightning::routing::gossip::{NetworkGraph, P2PGossipSync};
 use lightning_net_tokio::SocketDescriptor;
 use mm2_net::ip_addr::fetch_external_ip;
 use rand::RngCore;
-use secp256k1::SecretKey;
+use secp256k1v22::{PublicKey, SecretKey};
 use std::net::{IpAddr, Ipv4Addr};
 use tokio::net::TcpListener;
 
 const TRY_RECONNECTING_TO_NODE_INTERVAL: f64 = 60.;
 const BROADCAST_NODE_ANNOUNCEMENT_INTERVAL: u64 = 600;
 
-type NetworkGossip = NetGraphMsgHandler<Arc<NetworkGraph>, Arc<dyn Access + Send + Sync>, Arc<LogState>>;
+pub type NetworkGossip = P2PGossipSync<Arc<NetworkGraph<Arc<LogState>>>, Arc<dyn Access + Send + Sync>, Arc<LogState>>;
 
 pub type PeerManager =
     SimpleArcPeerManager<SocketDescriptor, ChainMonitor, Platform, Platform, dyn Access + Send + Sync, LogState>;
@@ -168,7 +168,7 @@ pub async fn init_peer_manager(
     ctx: MmArc,
     listening_port: u16,
     channel_manager: Arc<ChannelManager>,
-    network_gossip: Arc<NetworkGossip>,
+    gossip_sync: Arc<NetworkGossip>,
     node_secret: SecretKey,
     logger: Arc<LogState>,
 ) -> EnableLightningResult<Arc<PeerManager>> {
@@ -185,7 +185,7 @@ pub async fn init_peer_manager(
     rand::thread_rng().fill_bytes(&mut ephemeral_bytes);
     let lightning_msg_handler = MessageHandler {
         chan_handler: channel_manager,
-        route_handler: network_gossip,
+        route_handler: gossip_sync,
     };
 
     // IgnoringMessageHandler is used as custom message types (experimental and application-specific messages) is not needed

@@ -12,6 +12,7 @@ mod ln_utils;
 
 use super::{lp_coinfind_or_err, DerivationMethod, MmCoinEnum};
 use crate::lightning::ln_events::init_events_abort_handlers;
+use crate::lightning::ln_serialization::PublicKeyForRPC;
 use crate::lightning::ln_sql::SqliteLightningDB;
 use crate::utxo::rpc_clients::UtxoRpcClientEnum;
 use crate::utxo::utxo_common::{big_decimal_from_sat_unsigned, UtxoTxBuilder};
@@ -39,12 +40,13 @@ use lightning::chain::keysinterface::{KeysInterface, KeysManager, Recipient};
 use lightning::chain::Access;
 use lightning::ln::channelmanager::{ChannelDetails, MIN_FINAL_CLTV_EXPIRY};
 use lightning::ln::{PaymentHash, PaymentPreimage};
-use lightning::routing::network_graph::{NetGraphMsgHandler, NetworkGraph};
+use lightning::routing::gossip::{NetworkGraph, P2PGossipSync};
 use lightning::util::config::UserConfig;
-use lightning_background_processor::BackgroundProcessor;
+use lightning_background_processor::{BackgroundProcessor, GossipSync};
 use lightning_invoice::payment;
 use lightning_invoice::utils::{create_invoice_from_channelmanager, DefaultRouter};
 use lightning_invoice::{Invoice, InvoiceDescription};
+use lightning_rapid_gossip_sync::RapidGossipSync;
 use ln_conf::{ChannelOptions, LightningCoinConf, LightningProtocolConf, PlatformCoinConfirmationTargets};
 use ln_db::{ClosedChannelsFilter, DBChannelDetails, DBPaymentInfo, DBPaymentsFilter, HTLCStatus, LightningDB,
             PaymentType};
@@ -58,7 +60,7 @@ use ln_events::LightningEventHandler;
 use ln_filesystem_persister::{LightningFilesystemPersister, LightningPersisterShared};
 use ln_p2p::{connect_to_node, ConnectToNodeRes, PeerManager};
 use ln_platform::{h256_json_from_txid, Platform};
-use ln_serialization::{InvoiceForRPC, NodeAddress, PublicKeyForRPC};
+use ln_serialization::{InvoiceForRPC, NodeAddress};
 use ln_storage::{LightningStorage, NodesAddressesMapShared, Scorer};
 use ln_utils::{ChainMonitor, ChannelManager};
 use mm2_core::mm_ctx::MmArc;
@@ -69,6 +71,7 @@ use parking_lot::Mutex as PaMutex;
 use rpc::v1::types::{Bytes as BytesJson, H256 as H256Json};
 use script::{Builder, TransactionInputSigner};
 use secp256k1::PublicKey;
+use secp256k1v22::PublicKey as LnPublicKey;
 use serde::{Deserialize, Serialize};
 use serde_json::Value as Json;
 use std::collections::hash_map::Entry;
@@ -76,10 +79,12 @@ use std::collections::{HashMap, HashSet};
 use std::fmt;
 use std::net::SocketAddr;
 use std::str::FromStr;
-use std::sync::{Arc, Mutex};
+use std::sync::Arc;
 
-type Router = DefaultRouter<Arc<NetworkGraph>, Arc<LogState>>;
-type InvoicePayer<E> = payment::InvoicePayer<Arc<ChannelManager>, Router, Arc<Mutex<Scorer>>, Arc<LogState>, E>;
+pub const DEFAULT_INVOICE_EXPIRY: u32 = 3600;
+
+type Router = DefaultRouter<Arc<NetworkGraph<Arc<LogState>>>, Arc<LogState>>;
+type InvoicePayer<E> = payment::InvoicePayer<Arc<ChannelManager>, Router, Arc<Scorer>, Arc<LogState>, E>;
 
 #[derive(Clone)]
 pub struct LightningCoin {
@@ -175,7 +180,7 @@ impl LightningCoin {
 
     async fn keysend(
         &self,
-        destination: PublicKey,
+        destination: LnPublicKey,
         amount_msat: u64,
         final_cltv_expiry_delta: u32,
     ) -> SendPaymentResult<DBPaymentInfo> {
@@ -510,6 +515,7 @@ impl MarketCoinOps for LightningCoin {
             .keys_manager
             .get_node_secret(Recipient::Node)
             .map_err(|_| "Unsupported recipient".to_string())?
+            .display_secret()
             .to_string())
     }
 
@@ -654,10 +660,14 @@ pub async fn start_lightning(
     // Initialize the KeysManager
     let keys_manager = ln_utils::init_keys_manager(ctx)?;
 
-    // Initialize the NetGraphMsgHandler. This is used for providing routes to send payments over
-    let network_graph = Arc::new(persister.get_network_graph(protocol_conf.network.into()).await?);
+    // Initialize the P2PGossipSync. This is used for providing routes to send payments over
+    let network_graph = Arc::new(
+        persister
+            .get_network_graph(protocol_conf.network.into(), logger.clone())
+            .await?,
+    );
 
-    let network_gossip = Arc::new(NetGraphMsgHandler::new(
+    let gossip_sync = Arc::new(P2PGossipSync::new(
         network_graph.clone(),
         None::<Arc<dyn Access + Send + Sync>>,
         logger.clone(),
@@ -682,7 +692,7 @@ pub async fn start_lightning(
         ctx.clone(),
         params.listening_port,
         channel_manager.clone(),
-        network_gossip.clone(),
+        gossip_sync.clone(),
         keys_manager
             .get_node_secret(Recipient::Node)
             .map_to_mm(|_| EnableLightningError::UnsupportedMode("'start_lightning'".into(), "local node".into()))?,
@@ -702,7 +712,7 @@ pub async fn start_lightning(
     ));
 
     // Initialize routing Scorer
-    let scorer = Arc::new(Mutex::new(persister.get_scorer(network_graph.clone()).await?));
+    let scorer = Arc::new(persister.get_scorer(network_graph.clone(), logger.clone()).await?);
     spawn(ln_utils::persist_scorer_loop(persister.clone(), scorer.clone()));
 
     // Create InvoicePayer
@@ -716,11 +726,16 @@ pub async fn start_lightning(
     let invoice_payer = Arc::new(InvoicePayer::new(
         channel_manager.clone(),
         router,
-        scorer,
+        scorer.clone(),
         logger.clone(),
         event_handler,
-        payment::RetryAttempts(params.payment_retries.unwrap_or(5)),
+        payment::Retry::Attempts(params.payment_retries.unwrap_or(5)),
     ));
+
+    let p2p_gossip_sync =
+        GossipSync::<_, Arc<RapidGossipSync<Arc<NetworkGraph<Arc<LogState>>>, Arc<LogState>>>, _, _, _>::P2P(
+            gossip_sync.clone(),
+        );
 
     // Start Background Processing. Runs tasks periodically in the background to keep LN node operational.
     // InvoicePayer will act as our event handler as it handles some of the payments related events before
@@ -731,9 +746,10 @@ pub async fn start_lightning(
         invoice_payer.clone(),
         chain_monitor.clone(),
         channel_manager.clone(),
-        Some(network_gossip),
+        p2p_gossip_sync,
         peer_manager.clone(),
         logger,
+        Some(scorer),
     ));
 
     // If channel_nodes_data file exists, read channels nodes data from disk and reconnect to channel nodes/peers if possible.
@@ -987,7 +1003,7 @@ fn apply_open_channel_filter(channel_details: &ChannelDetailsForRPC, filter: &Op
     let is_to_inbound_capacity_msat = filter.to_inbound_capacity_msat.is_none()
         || Some(&channel_details.inbound_capacity_msat) <= filter.to_inbound_capacity_msat.as_ref();
 
-    let is_confirmed = filter.confirmed.is_none() || Some(&channel_details.confirmed) == filter.confirmed.as_ref();
+    let is_confirmed = filter.confirmed.is_none() || Some(&channel_details.is_ready) == filter.confirmed.as_ref();
 
     let is_usable = filter.is_usable.is_none() || Some(&channel_details.is_usable) == filter.is_usable.as_ref();
 
@@ -1035,8 +1051,8 @@ pub struct ChannelDetailsForRPC {
     pub inbound_capacity_msat: u64,
     // Channel is confirmed onchain, this means that funding_locked messages have been exchanged,
     // the channel is not currently being shut down, and the required confirmation count has been reached.
-    pub confirmed: bool,
-    // Channel is confirmed and funding_locked messages have been exchanged, the peer is connected,
+    pub is_ready: bool,
+    // Channel is confirmed and channel_ready messages have been exchanged, the peer is connected,
     // and the channel is not currently negotiating a shutdown.
     pub is_usable: bool,
     // A publicly-announced channel.
@@ -1056,7 +1072,7 @@ impl From<ChannelDetails> for ChannelDetailsForRPC {
             balance_msat: details.balance_msat,
             outbound_capacity_msat: details.outbound_capacity_msat,
             inbound_capacity_msat: details.inbound_capacity_msat,
-            confirmed: details.is_funding_locked,
+            is_ready: details.is_channel_ready,
             is_usable: details.is_usable,
             is_public: details.is_public,
         }
@@ -1193,6 +1209,7 @@ pub struct GenerateInvoiceRequest {
     pub coin: String,
     pub amount_in_msat: Option<u64>,
     pub description: String,
+    pub expiry: Option<u32>,
 }
 
 #[derive(Serialize)]
@@ -1226,8 +1243,16 @@ pub async fn generate_invoice(
     let keys_manager = ln_coin.keys_manager.clone();
     let amount_in_msat = req.amount_in_msat;
     let description = req.description.clone();
+    let expiry = req.expiry.unwrap_or(DEFAULT_INVOICE_EXPIRY);
     let invoice = async_blocking(move || {
-        create_invoice_from_channelmanager(&channel_manager, keys_manager, network, amount_in_msat, description)
+        create_invoice_from_channelmanager(
+            &channel_manager,
+            keys_manager,
+            network,
+            amount_in_msat,
+            description,
+            expiry,
+        )
     })
     .await?;
 
@@ -1486,6 +1511,7 @@ pub async fn get_payment_details(
 pub struct CloseChannelReq {
     pub coin: String,
     pub channel_id: H256Json,
+    pub counterparty_node_id: PublicKeyForRPC,
     #[serde(default)]
     pub force_close: bool,
 }
@@ -1497,11 +1523,12 @@ pub async fn close_channel(ctx: MmArc, req: CloseChannelReq) -> CloseChannelResu
         _ => return MmError::err(CloseChannelError::UnsupportedCoin(coin.ticker().to_string())),
     };
     let channel_id = req.channel_id.0;
+    let counterparty_node_id: LnPublicKey = req.counterparty_node_id.into();
     if req.force_close {
         async_blocking(move || {
             ln_coin
                 .channel_manager
-                .force_close_channel(&channel_id)
+                .force_close_channel(&channel_id, &counterparty_node_id)
                 .map_to_mm(|e| CloseChannelError::CloseChannelError(format!("{:?}", e)))
         })
         .await?;
@@ -1509,7 +1536,7 @@ pub async fn close_channel(ctx: MmArc, req: CloseChannelReq) -> CloseChannelResu
         async_blocking(move || {
             ln_coin
                 .channel_manager
-                .close_channel(&channel_id)
+                .close_channel(&channel_id, &counterparty_node_id)
                 .map_to_mm(|e| CloseChannelError::CloseChannelError(format!("{:?}", e)))
         })
         .await?;

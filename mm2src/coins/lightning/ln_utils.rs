@@ -18,7 +18,7 @@ use lightning::util::ser::ReadableArgs;
 use mm2_core::mm_ctx::MmArc;
 use std::fs::File;
 use std::path::PathBuf;
-use std::sync::{Arc, Mutex};
+use std::sync::Arc;
 use std::time::SystemTime;
 
 const SCORER_PERSIST_INTERVAL: u64 = 600;
@@ -237,7 +237,7 @@ pub async fn init_channel_manager(
     Ok((chain_monitor, channel_manager))
 }
 
-pub async fn persist_scorer_loop(persister: LightningPersisterShared, scorer: Arc<Mutex<Scorer>>) {
+pub async fn persist_scorer_loop(persister: LightningPersisterShared, scorer: Arc<Scorer>) {
     loop {
         if let Err(e) = persister.save_scorer(scorer.clone()).await {
             log::warn!(

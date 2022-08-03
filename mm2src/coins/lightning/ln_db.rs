@@ -3,7 +3,7 @@ use common::{now_ms, PagingOptionsEnum};
 use db_common::sqlite::rusqlite::types::FromSqlError;
 use derive_more::Display;
 use lightning::ln::{PaymentHash, PaymentPreimage, PaymentSecret};
-use secp256k1::PublicKey;
+use secp256k1v22::PublicKey;
 use serde::{Deserialize, Serialize};
 use std::str::FromStr;
 
