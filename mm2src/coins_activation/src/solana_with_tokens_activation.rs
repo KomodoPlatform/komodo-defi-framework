@@ -169,7 +169,10 @@ impl PlatformWithTokensActivationOps for SolanaCoin {
         let platform_coin =
             solana_coin_from_conf_and_params(&ticker, &platform_conf, activation_request.platform_request, priv_key)
                 .await
-                .map_to_mm(|error| SolanaWithTokensActivationError::PlatformCoinCreationError { ticker, error })?;
+                .mm_err(|err| SolanaWithTokensActivationError::PlatformCoinCreationError {
+                    ticker,
+                    error: err.to_string(),
+                })?;
         Ok(platform_coin)
     }
 
@@ -184,7 +187,7 @@ impl PlatformWithTokensActivationOps for SolanaCoin {
     async fn get_activation_result(&self) -> Result<Self::ActivationResult, MmError<Self::ActivationError>> {
         let my_address = self
             .my_address()
-            .map_to_mm(Self::ActivationError::UnableToRetrieveMyAddress)?;
+            .mm_err(|err| Self::ActivationError::UnableToRetrieveMyAddress(err.to_string()))?;
         let current_block = self
             .current_block()
             .compat()

@@ -59,6 +59,8 @@ use web3::types::{Action as TraceAction, BlockId, BlockNumber, Bytes, CallReques
 use web3::{self, Web3};
 use web3_transport::{EthFeeHistoryNamespace, Web3Transport};
 
+use crate::{MyAddressError, SendRawTransactionError};
+
 use super::{AsyncMutex, BalanceError, BalanceFut, CoinBalance, CoinProtocol, CoinTransportMetrics, CoinsContext,
             FeeApproxStage, FoundSwapTxSpend, HistorySyncState, MarketCoinOps, MmCoin, NegotiateSwapContractAddrErr,
             NumConversError, NumConversResult, RawTransactionError, RawTransactionFut, RawTransactionRequest,
@@ -570,7 +572,9 @@ async fn withdraw_impl(coin: EthCoin, req: WithdrawRequest) -> WithdrawResult {
         EthCoinType::Eth => (wei_amount, vec![], to_addr, coin.ticker()),
         EthCoinType::Erc20 { platform, token_addr } => {
             let function = ERC20_CONTRACT.function("transfer")?;
-            let data = function.encode_input(&[Token::Address(to_addr), Token::Uint(wei_amount)])?;
+            let data = function
+                .encode_input(&[Token::Address(to_addr), Token::Uint(wei_amount)])
+                .map_to_mm(|err| WithdrawError::InternalError(err.to_string()))?;
             (0.into(), data, *token_addr, platform.as_str())
         },
     };
@@ -650,7 +654,9 @@ async fn withdraw_impl(coin: EthCoin, req: WithdrawRequest) -> WithdrawResult {
     if coin.coin_type == EthCoinType::Eth {
         spent_by_me += &fee_details.total_fee;
     }
-    let my_address = coin.my_address().map_to_mm(WithdrawError::InternalError)?;
+    let my_address = coin
+        .my_address()
+        .mm_err(|err| WithdrawError::InternalError(err.to_string()))?;
     Ok(TransactionDetails {
         to: vec![checksum_address(&format!("{:#02x}", to_addr))],
         from: vec![my_address],
@@ -1083,7 +1089,9 @@ impl SwapOps for EthCoin {
 impl MarketCoinOps for EthCoin {
     fn ticker(&self) -> &str { &self.ticker[..] }
 
-    fn my_address(&self) -> Result<String, String> { Ok(checksum_address(&format!("{:#02x}", self.my_address))) }
+    fn my_address(&self) -> Result<String, MmError<MyAddressError>> {
+        Ok(checksum_address(&format!("{:#02x}", self.my_address)))
+    }
 
     fn get_public_key(&self) -> Result<String, MmError<UnexpectedDerivationMethod>> { unimplemented!() }
 
@@ -1159,13 +1167,16 @@ impl MarketCoinOps for EthCoin {
         )
     }
 
-    fn send_raw_tx_bytes(&self, tx: &[u8]) -> Box<dyn Future<Item = String, Error = String> + Send> {
+    fn send_raw_tx_bytes(
+        &self,
+        tx: &[u8],
+    ) -> Box<dyn Future<Item = String, Error = MmError<SendRawTransactionError>> + Send> {
         Box::new(
             self.web3
                 .eth()
                 .send_raw_transaction(tx.into())
                 .map(|res| format!("{:02x}", res))
-                .map_err(|e| ERRL!("{}", e)),
+                .map_err(|err| MmError::new(SendRawTransactionError::NotSupported(err.to_string()))),
         )
     }
 

@@ -123,7 +123,9 @@ impl QtumCoin {
         }
         let delegation_output = self.remove_delegation_output(QRC20_GAS_LIMIT_DEFAULT, QRC20_GAS_PRICE_DEFAULT)?;
         let outputs = vec![delegation_output];
-        let my_address = self.my_address().map_to_mm(DelegationError::InternalError)?;
+        let my_address = self
+            .my_address()
+            .mm_err(|err| DelegationError::InternalError(err.to_string()))?;
         self.generate_delegation_transaction(
             outputs,
             my_address,
@@ -252,7 +254,9 @@ impl QtumCoin {
         )?;
 
         let outputs = vec![delegation_output];
-        let my_address = self.my_address().map_to_mm(DelegationError::InternalError)?;
+        let my_address = self
+            .my_address()
+            .mm_err(|err| DelegationError::InternalError(err.to_string()))?;
         self.generate_delegation_transaction(
             outputs,
             my_address,
@@ -317,7 +321,9 @@ impl QtumCoin {
             gas_price: QRC20_GAS_PRICE_DEFAULT,
             total_gas_fee: utxo_common::big_decimal_from_sat(generated_tx.gas_fee as i64, utxo.decimals),
         };
-        let my_address_string = self.my_address().map_to_mm(DelegationError::InternalError)?;
+        let my_address_string = self
+            .my_address()
+            .mm_err(|err| DelegationError::InternalError(err.to_string()))?;
 
         let spent_by_me = utxo_common::big_decimal_from_sat(data.spent_by_me as i64, utxo.decimals);
         let qtum_amount = spent_by_me.clone();

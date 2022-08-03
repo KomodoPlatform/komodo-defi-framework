@@ -1489,7 +1489,8 @@ fn test_unavailable_electrum_proto_version() {
         &ctx, "RICK", &conf, &params, &[1u8; 32],
     ))
     .err()
-    .unwrap();
+    .unwrap()
+    .to_string();
     log!("Error: {}", error);
     assert!(error.contains("There are no Electrums with the required protocol version"));
 }

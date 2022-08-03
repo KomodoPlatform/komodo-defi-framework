@@ -93,6 +93,7 @@ use self::rpc_clients::{electrum_script_hash, ElectrumClient, ElectrumRpcRequest
                         NativeClient, UnspentInfo, UnspentMap, UtxoRpcClientEnum, UtxoRpcError, UtxoRpcFut,
                         UtxoRpcResult};
 use self::utxo_block_header_storage::BlockHeaderVerificationParams;
+use self::utxo_builder::UtxoConfError;
 use super::{big_decimal_from_sat_unsigned, BalanceError, BalanceFut, BalanceResult, CoinBalance, CoinsContext,
             DerivationMethod, FeeApproxStage, FoundSwapTxSpend, HistorySyncState, KmdRewardsDetails, MarketCoinOps,
             MmCoin, NumConversError, NumConversResult, PrivKeyActivationPolicy, PrivKeyNotAllowed, PrivKeyPolicy,
@@ -104,7 +105,7 @@ use crate::coin_balance::{EnableCoinScanPolicy, HDAddressBalanceScanner};
 use crate::hd_wallet::{HDAccountOps, HDAccountsMutex, HDAddress, HDWalletCoinOps, HDWalletOps, InvalidBip44ChainError};
 use crate::hd_wallet_storage::{HDAccountStorageItem, HDWalletCoinStorage, HDWalletStorageError, HDWalletStorageResult};
 use crate::utxo::tx_cache::UtxoVerboseCacheShared;
-use crate::TransactionErr;
+use crate::{RpcTransportEventHandlerError, TransactionErr};
 
 pub mod tx_cache;
 #[cfg(target_arch = "wasm32")]
@@ -1104,9 +1105,21 @@ impl VerboseTransactionFrom {
     }
 }
 
-pub fn compressed_key_pair_from_bytes(raw: &[u8], prefix: u8, checksum_type: ChecksumType) -> Result<KeyPair, String> {
+#[derive(Debug, Display)]
+pub enum CompressedKeyPairError {
+    #[display(fmt = "Internal: {}", _0)]
+    Internal(String),
+    #[display(fmt = "Invalid raw priv key len {}", _0)]
+    InvalidKeyPairLength(usize),
+}
+
+pub fn compressed_key_pair_from_bytes(
+    raw: &[u8],
+    prefix: u8,
+    checksum_type: ChecksumType,
+) -> Result<KeyPair, MmError<CompressedKeyPairError>> {
     if raw.len() != 32 {
-        return ERR!("Invalid raw priv key len {}", raw.len());
+        return MmError::err(CompressedKeyPairError::InvalidKeyPairLength(raw.len()));
     }
 
     let private = Private {
@@ -1115,11 +1128,14 @@ pub fn compressed_key_pair_from_bytes(raw: &[u8], prefix: u8, checksum_type: Che
         secret: Secret::from(raw),
         checksum_type,
     };
-    Ok(try_s!(KeyPair::from_private(private)))
+    KeyPair::from_private(private).map_err(|err| MmError::new(CompressedKeyPairError::Internal(err.to_string())))
 }
 
-pub fn compressed_pub_key_from_priv_raw(raw_priv: &[u8], sum_type: ChecksumType) -> Result<H264, String> {
-    let key_pair: KeyPair = try_s!(compressed_key_pair_from_bytes(raw_priv, 0, sum_type));
+pub fn compressed_pub_key_from_priv_raw(
+    raw_priv: &[u8],
+    sum_type: ChecksumType,
+) -> Result<H264, MmError<CompressedKeyPairError>> {
+    let key_pair: KeyPair = compressed_key_pair_from_bytes(raw_priv, 0, sum_type)?;
     Ok(H264::from(&**key_pair.public()))
 }
 
@@ -1200,9 +1216,10 @@ impl RpcTransportEventHandler for ElectrumProtoVerifier {
 
     fn on_incoming_response(&self, _data: &[u8]) {}
 
-    fn on_connected(&self, address: String) -> Result<(), String> {
-        try_s!(self.on_connect_tx.unbounded_send(address));
-        Ok(())
+    fn on_connected(&self, address: String) -> Result<(), MmError<RpcTransportEventHandlerError>> {
+        self.on_connect_tx
+            .unbounded_send(address)
+            .map_to_mm(|err| RpcTransportEventHandlerError::ConnectionError(err.to_string()))
     }
 }
 
@@ -1521,28 +1538,52 @@ pub struct KmdRewardsInfoElement {
     accrue_stop_at: Option<u64>,
 }
 
+#[derive(Debug, Display)]
+pub enum KmdRewardsInfoError {
+    #[display(fmt = "ObtainRewardInfoError: rewards info can be obtained for KMD only")]
+    ObtainRewardInfoError,
+    UnexpectedDerivationMethod(UnexpectedDerivationMethod),
+    UtxoRpcError(Box<UtxoRpcError>),
+}
+
 /// Get rewards info of unspent outputs.
 /// The list is ordered by the output value.
-pub async fn kmd_rewards_info<T: UtxoCommonOps>(coin: &T) -> Result<Vec<KmdRewardsInfoElement>, String> {
+pub async fn kmd_rewards_info<T: UtxoCommonOps>(
+    coin: &T,
+) -> Result<Vec<KmdRewardsInfoElement>, MmError<KmdRewardsInfoError>> {
     if coin.as_ref().conf.ticker != "KMD" {
-        return ERR!("rewards info can be obtained for KMD only");
+        return MmError::err(KmdRewardsInfoError::ObtainRewardInfoError);
     }
 
     let utxo = coin.as_ref();
-    let my_address = try_s!(utxo.derivation_method.iguana_or_err());
+    let my_address = utxo
+        .derivation_method
+        .iguana_or_err()
+        .mm_err(KmdRewardsInfoError::UnexpectedDerivationMethod)?;
     let rpc_client = &utxo.rpc_client;
-    let mut unspents = try_s!(rpc_client.list_unspent(my_address, utxo.decimals).compat().await);
+    let mut unspents = rpc_client
+        .list_unspent(my_address, utxo.decimals)
+        .compat()
+        .await
+        .mm_err(|err| KmdRewardsInfoError::UtxoRpcError(Box::new(err)))?;
     // Reorder from highest to lowest unspent outputs.
     unspents.sort_unstable_by(|x, y| y.value.cmp(&x.value));
 
     let mut result = Vec::with_capacity(unspents.len());
     for unspent in unspents {
         let tx_hash: H256Json = unspent.outpoint.hash.reversed().into();
-        let tx_info = try_s!(rpc_client.get_verbose_transaction(&tx_hash).compat().await);
+        let tx_info = rpc_client
+            .get_verbose_transaction(&tx_hash)
+            .compat()
+            .await
+            .mm_err(|err| KmdRewardsInfoError::UtxoRpcError(Box::new(err)))?;
 
         let value = unspent.value;
         let locktime = tx_info.locktime as u64;
-        let current_time = try_s!(coin.get_current_mtp().await) as u64;
+        let current_time = coin
+            .get_current_mtp()
+            .await
+            .mm_err(|err| KmdRewardsInfoError::UtxoRpcError(Box::new(err)))? as u64;
         let accrued_rewards = match kmd_interest(tx_info.height, value, locktime, current_time) {
             Ok(interest) => {
                 KmdRewardsAccrueInfo::Accrued(big_decimal_from_sat(interest as i64, coin.as_ref().decimals))
@@ -1668,12 +1709,19 @@ pub fn output_script(address: &Address, script_type: ScriptType) -> Script {
     }
 }
 
+#[derive(Debug, Display)]
+pub enum AddrFromConfError {
+    #[display(fmt = "Internal: {}", _0)]
+    Internal(String),
+    UtxoConfError(UtxoConfError),
+}
+
 pub fn address_by_conf_and_pubkey_str(
     coin: &str,
     conf: &Json,
     pubkey: &str,
     addr_format: UtxoAddressFormat,
-) -> Result<String, String> {
+) -> Result<String, MmError<AddrFromConfError>> {
     // using a reasonable default here
     let params = UtxoActivationParams {
         mode: UtxoRpcMode::Native,
@@ -1688,8 +1736,8 @@ pub fn address_by_conf_and_pubkey_str(
         check_utxo_maturity: None,
     };
     let conf_builder = UtxoConfBuilder::new(conf, &params, coin);
-    let utxo_conf = try_s!(conf_builder.build());
-    let pubkey_bytes = try_s!(hex::decode(pubkey));
+    let utxo_conf = conf_builder.build().mm_err(AddrFromConfError::UtxoConfError)?;
+    let pubkey_bytes = hex::decode(pubkey).map_err(|err| MmError::new(AddrFromConfError::Internal(err.to_string())))?;
     let hash = dhash160(&pubkey_bytes);
 
     let address = Address {
@@ -1700,7 +1748,9 @@ pub fn address_by_conf_and_pubkey_str(
         hrp: utxo_conf.bech32_hrp,
         addr_format,
     };
-    address.display_address()
+    address
+        .display_address()
+        .map_err(|err| MmError::new(AddrFromConfError::Internal(err)))
 }
 
 fn parse_hex_encoded_u32(hex_encoded: &str) -> Result<u32, MmError<String>> {

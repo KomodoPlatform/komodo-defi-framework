@@ -12,11 +12,12 @@ use crate::utxo::{sat_from_big_decimal, utxo_common, ActualTxFee, AdditionalTxDa
                   UtxoCommonOps, UtxoFeeDetails, UtxoRpcMode, UtxoTxBroadcastOps, UtxoTxGenerationOps,
                   VerboseTransactionFrom};
 use crate::{BalanceError, BalanceFut, CoinBalance, FeeApproxStage, FoundSwapTxSpend, HistorySyncState, MarketCoinOps,
-            MmCoin, NegotiateSwapContractAddrErr, NumConversError, PrivKeyActivationPolicy, RawTransactionFut,
-            RawTransactionRequest, SearchForSwapTxSpendInput, SignatureError, SignatureResult, SwapOps, TradeFee,
-            TradePreimageFut, TradePreimageResult, TradePreimageValue, TransactionDetails, TransactionEnum,
-            TransactionFut, TxFeeDetails, UnexpectedDerivationMethod, ValidateAddressResult, ValidatePaymentInput,
-            VerificationError, VerificationResult, WithdrawFut, WithdrawRequest};
+            MmCoin, MyAddressError, NegotiateSwapContractAddrErr, NumConversError, PrivKeyActivationPolicy,
+            RawTransactionFut, RawTransactionRequest, SearchForSwapTxSpendInput, SendRawTransactionError,
+            SignatureError, SignatureResult, SwapOps, TradeFee, TradePreimageFut, TradePreimageResult,
+            TradePreimageValue, TransactionDetails, TransactionEnum, TransactionFut, TxFeeDetails,
+            UnexpectedDerivationMethod, ValidateAddressResult, ValidatePaymentInput, VerificationError,
+            VerificationResult, WithdrawFut, WithdrawRequest};
 use crate::{Transaction, WithdrawError};
 use async_trait::async_trait;
 use bitcrypto::{dhash160, dhash256};
@@ -880,7 +881,7 @@ async fn z_coin_from_conf_and_params_with_z_key(
 impl MarketCoinOps for ZCoin {
     fn ticker(&self) -> &str { &self.utxo_arc.conf.ticker }
 
-    fn my_address(&self) -> Result<String, String> { Ok(self.z_fields.my_z_addr_encoded.clone()) }
+    fn my_address(&self) -> Result<String, MmError<MyAddressError>> { Ok(self.z_fields.my_z_addr_encoded.clone()) }
 
     fn get_public_key(&self) -> Result<String, MmError<UnexpectedDerivationMethod>> {
         let pubkey = utxo_common::my_public_key(self.as_ref())?;
@@ -933,14 +934,22 @@ impl MarketCoinOps for ZCoin {
         Box::new(fut.boxed().compat())
     }
 
-    fn send_raw_tx_bytes(&self, tx: &[u8]) -> Box<dyn Future<Item = String, Error = String> + Send> {
-        let z_tx = try_fus!(ZTransaction::read(tx));
+    fn send_raw_tx_bytes(
+        &self,
+        tx: &[u8],
+    ) -> Box<dyn Future<Item = String, Error = MmError<SendRawTransactionError>> + Send> {
+        let z_tx = ZTransaction::read(tx)
+            .map_to_mm(|err| SendRawTransactionError::TxReadError(err.to_string()))
+            .unwrap();
 
         let this = self.clone();
         let tx = tx.to_owned();
 
         let fut = async move {
-            let mut sync_guard = try_s!(this.wait_for_gen_tx_blockchain_sync().await);
+            let mut sync_guard = this
+                .wait_for_gen_tx_blockchain_sync()
+                .await
+                .mm_err(SendRawTransactionError::BlockchainScanStopped)?;
             let tx_hash = utxo_common::send_raw_tx_bytes(this.as_ref(), &tx).compat().await?;
             sync_guard.respawn_guard.watch_for_tx(z_tx.txid());
             Ok(tx_hash)

@@ -1,11 +1,11 @@
 use super::{CoinBalance, HistorySyncState, MarketCoinOps, MmCoin, SwapOps, TradeFee, TransactionEnum};
 use crate::solana::solana_common::{ui_amount_to_amount, PrepareTransferData, SufficientBalanceError};
 use crate::solana::{solana_common, AccountError, SolanaCommonOps, SolanaFeeDetails};
-use crate::{BalanceFut, FeeApproxStage, FoundSwapTxSpend, NegotiateSwapContractAddrErr, RawTransactionFut,
-            RawTransactionRequest, SearchForSwapTxSpendInput, SignatureResult, SolanaCoin, TradePreimageFut,
-            TradePreimageResult, TradePreimageValue, TransactionDetails, TransactionFut, TransactionType,
-            UnexpectedDerivationMethod, ValidateAddressResult, ValidatePaymentInput, VerificationResult,
-            WithdrawError, WithdrawFut, WithdrawRequest, WithdrawResult};
+use crate::{BalanceFut, FeeApproxStage, FoundSwapTxSpend, MyAddressError, NegotiateSwapContractAddrErr,
+            RawTransactionFut, RawTransactionRequest, SearchForSwapTxSpendInput, SendRawTransactionError,
+            SignatureResult, SolanaCoin, TradePreimageFut, TradePreimageResult, TradePreimageValue,
+            TransactionDetails, TransactionFut, TransactionType, UnexpectedDerivationMethod, ValidateAddressResult,
+            ValidatePaymentInput, VerificationResult, WithdrawError, WithdrawFut, WithdrawRequest, WithdrawResult};
 use async_trait::async_trait;
 use bincode::serialize;
 use common::{async_blocking, now_ms};
@@ -213,7 +213,7 @@ impl SplToken {
 impl MarketCoinOps for SplToken {
     fn ticker(&self) -> &str { &self.conf.ticker }
 
-    fn my_address(&self) -> Result<String, String> { Ok(self.platform_coin.my_address.clone()) }
+    fn my_address(&self) -> Result<String, MmError<MyAddressError>> { Ok(self.platform_coin.my_address.clone()) }
 
     fn get_public_key(&self) -> Result<String, MmError<UnexpectedDerivationMethod>> { unimplemented!() }
 
@@ -242,7 +242,10 @@ impl MarketCoinOps for SplToken {
     }
 
     #[inline(always)]
-    fn send_raw_tx_bytes(&self, tx: &[u8]) -> Box<dyn Future<Item = String, Error = String> + Send> {
+    fn send_raw_tx_bytes(
+        &self,
+        tx: &[u8],
+    ) -> Box<dyn Future<Item = String, Error = MmError<SendRawTransactionError>> + Send> {
         self.platform_coin.send_raw_tx_bytes(tx)
     }
 

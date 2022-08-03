@@ -17,11 +17,11 @@ use crate::utxo::rpc_clients::UtxoRpcClientEnum;
 use crate::utxo::utxo_common::{big_decimal_from_sat_unsigned, UtxoTxBuilder};
 use crate::utxo::{sat_from_big_decimal, BlockchainNetwork, FeePolicy, GetUtxoListOps, UtxoTxGenerationOps};
 use crate::{BalanceFut, CoinBalance, FeeApproxStage, FoundSwapTxSpend, HistorySyncState, MarketCoinOps, MmCoin,
-            NegotiateSwapContractAddrErr, RawTransactionFut, RawTransactionRequest, SearchForSwapTxSpendInput,
-            SignatureError, SignatureResult, SwapOps, TradeFee, TradePreimageFut, TradePreimageResult,
-            TradePreimageValue, TransactionEnum, TransactionFut, UnexpectedDerivationMethod, UtxoStandardCoin,
-            ValidateAddressResult, ValidatePaymentInput, VerificationError, VerificationResult, WithdrawError,
-            WithdrawFut, WithdrawRequest};
+            MyAddressError, NegotiateSwapContractAddrErr, RawTransactionFut, RawTransactionRequest,
+            SearchForSwapTxSpendInput, SendRawTransactionError, SignatureError, SignatureResult, SwapOps, TradeFee,
+            TradePreimageFut, TradePreimageResult, TradePreimageValue, TransactionEnum, TransactionFut,
+            UnexpectedDerivationMethod, UtxoStandardCoin, ValidateAddressResult, ValidatePaymentInput,
+            VerificationError, VerificationResult, WithdrawError, WithdrawFut, WithdrawRequest};
 use async_trait::async_trait;
 use bitcoin::hashes::Hash;
 use bitcoin_hashes::sha256::Hash as Sha256;
@@ -386,7 +386,7 @@ impl SwapOps for LightningCoin {
 impl MarketCoinOps for LightningCoin {
     fn ticker(&self) -> &str { &self.conf.ticker }
 
-    fn my_address(&self) -> Result<String, String> { Ok(self.my_node_id()) }
+    fn my_address(&self) -> Result<String, MmError<MyAddressError>> { Ok(self.my_node_id()) }
 
     fn get_public_key(&self) -> Result<String, MmError<UnexpectedDerivationMethod>> { unimplemented!() }
 
@@ -449,13 +449,15 @@ impl MarketCoinOps for LightningCoin {
         ))
     }
 
-    fn send_raw_tx_bytes(&self, _tx: &[u8]) -> Box<dyn Future<Item = String, Error = String> + Send> {
-        Box::new(futures01::future::err(
-            MmError::new(
+    fn send_raw_tx_bytes(
+        &self,
+        _tx: &[u8],
+    ) -> Box<dyn Future<Item = String, Error = MmError<SendRawTransactionError>> + Send> {
+        Box::new(futures01::future::err(MmError::new(
+            SendRawTransactionError::NotSupported(
                 "send_raw_tx is not supported for lightning, please use send_payment method instead.".to_string(),
-            )
-            .to_string(),
-        ))
+            ),
+        )))
     }
 
     // Todo: Implement this when implementing swaps for lightning as it's is used mainly for swaps

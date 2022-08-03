@@ -1,3 +1,4 @@
+use super::utxo_builder::UtxoCoinBuildError;
 use super::*;
 use crate::coin_balance::{self, EnableCoinBalanceError, HDAccountBalance, HDAddressBalance, HDWalletBalance,
                           HDWalletBalanceOps};
@@ -13,10 +14,10 @@ use crate::rpc_command::init_scan_for_new_addresses::{self, InitScanAddressesRpc
                                                       ScanAddressesResponse};
 use crate::rpc_command::init_withdraw::{InitWithdrawCoin, WithdrawTaskHandle};
 use crate::utxo::utxo_builder::{UtxoArcBuilder, UtxoCoinBuilder};
-use crate::{CanRefundHtlc, CoinBalance, CoinWithDerivationMethod, GetWithdrawSenderAddress,
-            NegotiateSwapContractAddrErr, PrivKeyBuildPolicy, SearchForSwapTxSpendInput, SignatureResult, SwapOps,
-            TradePreimageValue, TransactionFut, ValidateAddressResult, ValidatePaymentInput, VerificationResult,
-            WithdrawFut, WithdrawSenderAddress};
+use crate::{CanRefundHtlc, CoinBalance, CoinWithDerivationMethod, GetWithdrawSenderAddress, MyAddressError,
+            NegotiateSwapContractAddrErr, PrivKeyBuildPolicy, SearchForSwapTxSpendInput, SendRawTransactionError,
+            SignatureResult, SwapOps, TradePreimageValue, TransactionFut, ValidateAddressResult, ValidatePaymentInput,
+            VerificationResult, WithdrawFut, WithdrawSenderAddress};
 use common::mm_metrics::MetricsArc;
 use crypto::trezor::utxo::TrezorUtxoCoin;
 use crypto::Bip44Chain;
@@ -24,6 +25,11 @@ use futures::{FutureExt, TryFutureExt};
 use mm2_number::MmNumber;
 use serialization::coin_variant_by_ticker;
 use utxo_signer::UtxoSignerOps;
+
+#[derive(Debug, Display)]
+pub enum UtxoStandardCoinWtihPrivKeyError {
+    UtxoCoinBuildError(UtxoCoinBuildError),
+}
 
 #[derive(Clone, Debug)]
 pub struct UtxoStandardCoin {
@@ -48,20 +54,19 @@ pub async fn utxo_standard_coin_with_priv_key(
     conf: &Json,
     activation_params: &UtxoActivationParams,
     priv_key: &[u8],
-) -> Result<UtxoStandardCoin, String> {
+) -> Result<UtxoStandardCoin, MmError<UtxoStandardCoinWtihPrivKeyError>> {
     let priv_key_policy = PrivKeyBuildPolicy::IguanaPrivKey(priv_key);
-    let coin = try_s!(
-        UtxoArcBuilder::new(
-            ctx,
-            ticker,
-            conf,
-            activation_params,
-            priv_key_policy,
-            UtxoStandardCoin::from
-        )
-        .build()
-        .await
-    );
+    let coin = UtxoArcBuilder::new(
+        ctx,
+        ticker,
+        conf,
+        activation_params,
+        priv_key_policy,
+        UtxoStandardCoin::from,
+    )
+    .build()
+    .await
+    .mm_err(UtxoStandardCoinWtihPrivKeyError::UtxoCoinBuildError)?;
     Ok(coin)
 }
 
@@ -475,7 +480,7 @@ impl MarketCoinOps for UtxoStandardCoin {
         Ok(pubkey.to_string())
     }
 
-    fn my_address(&self) -> Result<String, String> { utxo_common::my_address(self) }
+    fn my_address(&self) -> Result<String, MmError<MyAddressError>> { utxo_common::my_address(self) }
 
     fn sign_message_hash(&self, message: &str) -> Option<[u8; 32]> {
         utxo_common::sign_message_hash(self.as_ref(), message)
@@ -501,7 +506,10 @@ impl MarketCoinOps for UtxoStandardCoin {
     }
 
     #[inline(always)]
-    fn send_raw_tx_bytes(&self, tx: &[u8]) -> Box<dyn Future<Item = String, Error = String> + Send> {
+    fn send_raw_tx_bytes(
+        &self,
+        tx: &[u8],
+    ) -> Box<dyn Future<Item = String, Error = MmError<SendRawTransactionError>> + Send> {
         utxo_common::send_raw_tx_bytes(&self.utxo_arc, tx)
     }
 

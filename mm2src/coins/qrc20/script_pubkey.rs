@@ -78,7 +78,10 @@ pub enum ScriptExtractionError {
     Internal(String),
 }
 
-pub fn extract_gas_from_script(script: &Script, extract: ExtractGasEnum) -> Result<u64, MmError<ScriptExtractionError>> {
+pub fn extract_gas_from_script(
+    script: &Script,
+    extract: ExtractGasEnum,
+) -> Result<u64, MmError<ScriptExtractionError>> {
     let instruction = script
         .get_instruction(extract as usize)
         .ok_or_else(|| {
@@ -102,9 +105,8 @@ pub fn extract_gas_from_script(script: &Script, extract: ExtractGasEnum) -> Resu
     }
 
     let number = match instruction.data {
-        Some(d) => {
-            decode_contract_number(d).map_err(|err| MmError::new(ScriptExtractionError::DecodeContractNnumberErr(err)))?
-        },
+        Some(d) => decode_contract_number(d)
+            .map_err(|err| MmError::new(ScriptExtractionError::DecodeContractNnumberErr(err)))?,
         _ => return Err(MmError::new(ScriptExtractionError::EmptyInstructionData)),
     };
 

@@ -85,6 +85,7 @@ impl From<BalanceError> for EnableTokenError {
             BalanceError::Transport(e) | BalanceError::InvalidResponse(e) => EnableTokenError::Transport(e),
             BalanceError::UnexpectedDerivationMethod(e) => EnableTokenError::UnexpectedDerivationMethod(e),
             BalanceError::Internal(e) | BalanceError::WalletStorageError(e) => EnableTokenError::Internal(e),
+            BalanceError::MyAddressError(internal) => EnableTokenError::Internal(internal.to_string()),
         }
     }
 }

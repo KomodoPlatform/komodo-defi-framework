@@ -24,7 +24,7 @@ use async_trait::async_trait;
 use best_orders::BestOrdersAction;
 use blake2::digest::{Update, VariableOutput};
 use blake2::Blake2bVar;
-use coins::utxo::{compressed_pub_key_from_priv_raw, ChecksumType, UtxoAddressFormat};
+use coins::utxo::{compressed_pub_key_from_priv_raw, AddrFromConfError, ChecksumType, UtxoAddressFormat};
 use coins::{coin_conf, find_pair, lp_coinfind, BalanceTradeFeeUpdatedHandler, CoinProtocol, CoinsContext,
             FeeApproxStage, MmCoinEnum};
 use common::executor::{spawn, Timer};
@@ -5524,6 +5524,7 @@ pub enum OrderbookAddress {
 
 #[derive(Debug, Display)]
 enum OrderbookAddrErr {
+    AddrFromConfError(AddrFromConfError),
     AddrFromPubkeyError(String),
     CoinIsNotSupported(String),
     DeserializationError(json::Error),
@@ -5550,7 +5551,7 @@ fn orderbook_address(
         CoinProtocol::UTXO | CoinProtocol::QTUM | CoinProtocol::QRC20 { .. } | CoinProtocol::BCH { .. } => {
             coins::utxo::address_by_conf_and_pubkey_str(coin, conf, pubkey, addr_format)
                 .map(OrderbookAddress::Transparent)
-                .map_to_mm(OrderbookAddrErr::AddrFromPubkeyError)
+                .mm_err(OrderbookAddrErr::AddrFromConfError)
         },
         CoinProtocol::SLPTOKEN { platform, .. } => {
             let platform_conf = coin_conf(ctx, &platform);

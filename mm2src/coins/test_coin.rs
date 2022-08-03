@@ -1,8 +1,9 @@
 use super::{CoinBalance, HistorySyncState, MarketCoinOps, MmCoin, RawTransactionFut, RawTransactionRequest, SwapOps,
             TradeFee, TransactionEnum, TransactionFut};
-use crate::{BalanceFut, FeeApproxStage, FoundSwapTxSpend, NegotiateSwapContractAddrErr, SearchForSwapTxSpendInput,
-            SignatureResult, TradePreimageFut, TradePreimageResult, TradePreimageValue, UnexpectedDerivationMethod,
-            ValidateAddressResult, ValidatePaymentInput, VerificationResult, WithdrawFut, WithdrawRequest};
+use crate::{BalanceFut, FeeApproxStage, FoundSwapTxSpend, MyAddressError, NegotiateSwapContractAddrErr,
+            SearchForSwapTxSpendInput, SendRawTransactionError, SignatureResult, TradePreimageFut,
+            TradePreimageResult, TradePreimageValue, UnexpectedDerivationMethod, ValidateAddressResult,
+            ValidatePaymentInput, VerificationResult, WithdrawFut, WithdrawRequest};
 use async_trait::async_trait;
 use futures01::Future;
 use keys::KeyPair;
@@ -33,7 +34,7 @@ impl TestCoin {
 impl MarketCoinOps for TestCoin {
     fn ticker(&self) -> &str { &self.ticker }
 
-    fn my_address(&self) -> Result<String, String> { unimplemented!() }
+    fn my_address(&self) -> Result<String, MmError<MyAddressError>> { unimplemented!() }
 
     fn get_public_key(&self) -> Result<String, MmError<UnexpectedDerivationMethod>> { unimplemented!() }
 
@@ -54,7 +55,12 @@ impl MarketCoinOps for TestCoin {
     /// Receives raw transaction bytes in hexadecimal format as input and returns tx hash in hexadecimal format
     fn send_raw_tx(&self, tx: &str) -> Box<dyn Future<Item = String, Error = String> + Send> { unimplemented!() }
 
-    fn send_raw_tx_bytes(&self, tx: &[u8]) -> Box<dyn Future<Item = String, Error = String> + Send> { unimplemented!() }
+    fn send_raw_tx_bytes(
+        &self,
+        tx: &[u8],
+    ) -> Box<dyn Future<Item = String, Error = MmError<SendRawTransactionError>> + Send> {
+        unimplemented!()
+    }
 
     fn wait_for_confirmations(
         &self,

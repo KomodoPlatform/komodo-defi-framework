@@ -11,10 +11,10 @@ use crate::utxo::spv::SimplePaymentVerification;
 use crate::utxo::tx_cache::TxCacheResult;
 use crate::utxo::utxo_withdraw::{InitUtxoWithdraw, StandardUtxoWithdraw, UtxoWithdraw};
 use crate::{CanRefundHtlc, CoinBalance, CoinWithDerivationMethod, GetWithdrawSenderAddress, HDAddressId,
-            RawTransactionError, RawTransactionRequest, RawTransactionRes, SearchForSwapTxSpendInput, SignatureError,
-            SignatureResult, SwapOps, TradePreimageValue, TransactionFut, TxFeeDetails, ValidateAddressResult,
-            ValidatePaymentInput, VerificationError, VerificationResult, WithdrawFrom, WithdrawResult,
-            WithdrawSenderAddress};
+            MyAddressError, RawTransactionError, RawTransactionRequest, RawTransactionRes, SearchForSwapTxSpendInput,
+            SendRawTransactionError, SignatureError, SignatureResult, SwapOps, TradePreimageValue, TransactionFut,
+            TxFeeDetails, ValidateAddressResult, ValidatePaymentInput, VerificationError, VerificationResult,
+            WithdrawFrom, WithdrawResult, WithdrawSenderAddress};
 use bitcrypto::dhash256;
 pub use bitcrypto::{dhash160, sha256, ChecksumType};
 use chain::constants::SEQUENCE_FINAL;
@@ -1678,10 +1678,12 @@ pub fn extract_secret(secret_hash: &[u8], spend_tx: &[u8]) -> Result<Vec<u8>, St
     ERR!("Couldn't extract secret")
 }
 
-pub fn my_address<T: UtxoCommonOps>(coin: &T) -> Result<String, String> {
+pub fn my_address<T: UtxoCommonOps>(coin: &T) -> Result<String, MmError<MyAddressError>> {
     match coin.as_ref().derivation_method {
-        DerivationMethod::Iguana(ref my_address) => my_address.display_address(),
-        DerivationMethod::HDWallet(_) => ERR!("'my_address' is deprecated for HD wallets"),
+        DerivationMethod::Iguana(ref my_address) => my_address
+            .display_address()
+            .map_err(|err| MmError::new(MyAddressError::Internal(err))),
+        DerivationMethod::HDWallet(_) => MmError::err(MyAddressError::DeprecatedWalletAddr),
     }
 }
 
@@ -1748,11 +1750,11 @@ pub fn send_raw_tx(coin: &UtxoCoinFields, tx: &str) -> Box<dyn Future<Item = Str
 pub fn send_raw_tx_bytes(
     coin: &UtxoCoinFields,
     tx_bytes: &[u8],
-) -> Box<dyn Future<Item = String, Error = String> + Send> {
+) -> Box<dyn Future<Item = String, Error = MmError<SendRawTransactionError>> + Send> {
     Box::new(
         coin.rpc_client
             .send_raw_transaction(tx_bytes.into())
-            .map_err(|e| ERRL!("{}", e))
+            .map_err(|err| MmError::new(SendRawTransactionError::UtxoRpcError(err.to_string())))
             .map(|hash| format!("{:?}", hash)),
     )
 }
@@ -2563,7 +2565,9 @@ where
         }));
     }
 
-    let my_address = &coin.my_address().map_to_mm(UtxoRpcError::Internal)?;
+    let my_address = &coin
+        .my_address()
+        .mm_err(|err| UtxoRpcError::Internal(err.to_string()))?;
     let claimed_by_me = tx_details.from.iter().all(|from| from == my_address) && tx_details.to.contains(my_address);
 
     tx_details.kmd_rewards = Some(KmdRewardsDetails {

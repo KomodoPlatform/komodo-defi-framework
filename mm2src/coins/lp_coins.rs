@@ -61,6 +61,7 @@ use std::str::FromStr;
 use std::sync::Arc;
 use std::time::Duration;
 use utxo_signer::with_key_pair::UtxoSignWithKeyPairError;
+use z_coin::BlockchainScanStopped;
 
 cfg_native! {
     use crate::lightning::LightningCoin;
@@ -558,12 +559,39 @@ pub trait SwapOps {
     fn derive_htlc_key_pair(&self, swap_unique_data: &[u8]) -> KeyPair;
 }
 
+#[derive(Debug, Display)]
+pub enum SendRawTransactionError {
+    BlockchainScanStopped(BlockchainScanStopped),
+    BroadcastTxErr(String),
+    #[display(fmt = "Client Error: {}", _0)]
+    ClientError(String),
+    #[display(fmt = "Deserialize Error: {}", _0)]
+    DeserializationError(String),
+    #[display(fmt = "NotSupported: {}", _0)]
+    NotSupported(String),
+    #[display(fmt = "Transaction Reading Error: {}", _0)]
+    TxReadError(String),
+    UtxoRpcError(String),
+}
+
+#[derive(Debug, Display, PartialEq)]
+pub enum MyAddressError {
+    #[display(fmt = "DeprecatedWalletAddr: 'my_address' is deprecated for HD wallets")]
+    DeprecatedWalletAddr,
+    UnexpectedDerivationMethod(UnexpectedDerivationMethod),
+    #[display(fmt = "Internal: {}", _0)]
+    Internal(String),
+    #[display(fmt = "Transaction Reading Error: {}", _0)]
+    TxReadError(String),
+    UtxoRpcError(String),
+}
+
 /// Operations that coins have independently from the MarketMaker.
 /// That is, things implemented by the coin wallets or public coin services.
 pub trait MarketCoinOps {
     fn ticker(&self) -> &str;
 
-    fn my_address(&self) -> Result<String, String>;
+    fn my_address(&self) -> Result<String, MmError<MyAddressError>>;
 
     fn get_public_key(&self) -> Result<String, MmError<UnexpectedDerivationMethod>>;
 
@@ -597,7 +625,10 @@ pub trait MarketCoinOps {
     fn send_raw_tx(&self, tx: &str) -> Box<dyn Future<Item = String, Error = String> + Send>;
 
     /// Receives raw transaction bytes as input and returns tx hash in hexadecimal format
-    fn send_raw_tx_bytes(&self, tx: &[u8]) -> Box<dyn Future<Item = String, Error = String> + Send>;
+    fn send_raw_tx_bytes(
+        &self,
+        tx: &[u8],
+    ) -> Box<dyn Future<Item = String, Error = MmError<SendRawTransactionError>> + Send>;
 
     fn wait_for_confirmations(
         &self,
@@ -1127,10 +1158,11 @@ impl NumConversError {
 
 #[derive(Debug, Display, PartialEq)]
 pub enum BalanceError {
-    #[display(fmt = "Transport: {}", _0)]
-    Transport(String),
+    MyAddressError(MyAddressError),
     #[display(fmt = "Invalid response: {}", _0)]
     InvalidResponse(String),
+    #[display(fmt = "Transport: {}", _0)]
+    Transport(String),
     UnexpectedDerivationMethod(UnexpectedDerivationMethod),
     #[display(fmt = "Wallet storage error: {}", _0)]
     WalletStorageError(String),
@@ -1302,6 +1334,7 @@ impl From<BalanceError> for DelegationError {
             },
             e @ BalanceError::WalletStorageError(_) => DelegationError::InternalError(e.to_string()),
             BalanceError::Internal(internal) => DelegationError::InternalError(internal),
+            BalanceError::MyAddressError(e) => DelegationError::InternalError(e.to_string()),
         }
     }
 }
@@ -1474,6 +1507,7 @@ impl From<BalanceError> for WithdrawError {
             BalanceError::UnexpectedDerivationMethod(e) => WithdrawError::from(e),
             e @ BalanceError::WalletStorageError(_) => WithdrawError::InternalError(e.to_string()),
             BalanceError::Internal(internal) => WithdrawError::InternalError(internal),
+            BalanceError::MyAddressError(e) => WithdrawError::InternalError(e.to_string()),
         }
     }
 }
@@ -2093,6 +2127,12 @@ pub enum CoinProtocol {
 
 pub type RpcTransportEventHandlerShared = Arc<dyn RpcTransportEventHandler + Send + Sync + 'static>;
 
+#[derive(Debug, Display)]
+pub enum RpcTransportEventHandlerError {
+    #[display(fmt = "ConnectionError: {}", _0)]
+    ConnectionError(String),
+}
+
 /// Common methods to measure the outgoing requests and incoming responses statistics.
 pub trait RpcTransportEventHandler {
     fn debug_info(&self) -> String;
@@ -2101,7 +2141,7 @@ pub trait RpcTransportEventHandler {
 
     fn on_incoming_response(&self, data: &[u8]);
 
-    fn on_connected(&self, address: String) -> Result<(), String>;
+    fn on_connected(&self, address: String) -> Result<(), MmError<RpcTransportEventHandlerError>>;
 }
 
 impl fmt::Debug for dyn RpcTransportEventHandler + Send + Sync {
@@ -2115,7 +2155,9 @@ impl RpcTransportEventHandler for RpcTransportEventHandlerShared {
 
     fn on_incoming_response(&self, data: &[u8]) { self.as_ref().on_incoming_response(data) }
 
-    fn on_connected(&self, address: String) -> Result<(), String> { self.as_ref().on_connected(address) }
+    fn on_connected(&self, address: String) -> Result<(), MmError<RpcTransportEventHandlerError>> {
+        self.as_ref().on_connected(address)
+    }
 }
 
 impl<T: RpcTransportEventHandler> RpcTransportEventHandler for Vec<T> {
@@ -2136,9 +2178,9 @@ impl<T: RpcTransportEventHandler> RpcTransportEventHandler for Vec<T> {
         }
     }
 
-    fn on_connected(&self, address: String) -> Result<(), String> {
+    fn on_connected(&self, address: String) -> Result<(), MmError<RpcTransportEventHandlerError>> {
         for handler in self {
-            try_s!(handler.on_connected(address.clone()))
+            handler.on_connected(address.clone())?
         }
         Ok(())
     }
@@ -2199,7 +2241,7 @@ impl RpcTransportEventHandler for CoinTransportMetrics {
             "coin" => self.ticker.clone(), "client" => self.client.clone());
     }
 
-    fn on_connected(&self, _address: String) -> Result<(), String> {
+    fn on_connected(&self, _address: String) -> Result<(), MmError<RpcTransportEventHandlerError>> {
         // Handle a new connected endpoint if necessary.
         // Now just return the Ok
         Ok(())
@@ -2876,7 +2918,7 @@ pub fn address_by_coin_conf_and_pubkey_str(
     match protocol {
         CoinProtocol::ERC20 { .. } | CoinProtocol::ETH => eth::addr_from_pubkey_str(pubkey),
         CoinProtocol::UTXO | CoinProtocol::QTUM | CoinProtocol::QRC20 { .. } | CoinProtocol::BCH { .. } => {
-            utxo::address_by_conf_and_pubkey_str(coin, conf, pubkey, addr_format)
+            utxo::address_by_conf_and_pubkey_str(coin, conf, pubkey, addr_format).map_err(|err| err.to_string())
         },
         CoinProtocol::SLPTOKEN { platform, .. } => {
             let platform_conf = coin_conf(ctx, &platform);

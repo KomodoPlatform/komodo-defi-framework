@@ -16,9 +16,10 @@ use crate::utxo::utxo_builder::{BlockHeaderUtxoArcOps, MergeUtxoArcOps, UtxoCoin
                                 UtxoCoinBuilderCommonOps, UtxoFieldsWithHardwareWalletBuilder,
                                 UtxoFieldsWithIguanaPrivKeyBuilder};
 use crate::{eth, CanRefundHtlc, CoinBalance, CoinWithDerivationMethod, DelegationError, DelegationFut,
-            GetWithdrawSenderAddress, NegotiateSwapContractAddrErr, PrivKeyBuildPolicy, SearchForSwapTxSpendInput,
-            SignatureResult, StakingInfosFut, SwapOps, TradePreimageValue, TransactionFut, UnexpectedDerivationMethod,
-            ValidateAddressResult, ValidatePaymentInput, VerificationResult, WithdrawFut, WithdrawSenderAddress};
+            GetWithdrawSenderAddress, MyAddressError, NegotiateSwapContractAddrErr, PrivKeyBuildPolicy,
+            SearchForSwapTxSpendInput, SendRawTransactionError, SignatureResult, StakingInfosFut, SwapOps,
+            TradePreimageValue, TransactionFut, UnexpectedDerivationMethod, ValidateAddressResult,
+            ValidatePaymentInput, VerificationResult, WithdrawFut, WithdrawSenderAddress};
 use common::mm_metrics::MetricsArc;
 use crypto::trezor::utxo::TrezorUtxoCoin;
 use crypto::Bip44Chain;
@@ -713,7 +714,7 @@ impl SwapOps for QtumCoin {
 impl MarketCoinOps for QtumCoin {
     fn ticker(&self) -> &str { &self.utxo_arc.conf.ticker }
 
-    fn my_address(&self) -> Result<String, String> { utxo_common::my_address(self) }
+    fn my_address(&self) -> Result<String, MmError<MyAddressError>> { utxo_common::my_address(self) }
 
     fn get_public_key(&self) -> Result<String, MmError<UnexpectedDerivationMethod>> {
         let pubkey = utxo_common::my_public_key(&self.utxo_arc)?;
@@ -744,7 +745,10 @@ impl MarketCoinOps for QtumCoin {
     }
 
     #[inline(always)]
-    fn send_raw_tx_bytes(&self, tx: &[u8]) -> Box<dyn Future<Item = String, Error = String> + Send> {
+    fn send_raw_tx_bytes(
+        &self,
+        tx: &[u8],
+    ) -> Box<dyn Future<Item = String, Error = MmError<SendRawTransactionError>> + Send> {
         utxo_common::send_raw_tx_bytes(&self.utxo_arc, tx)
     }
 

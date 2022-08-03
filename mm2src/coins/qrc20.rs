@@ -14,11 +14,12 @@ use crate::utxo::{qtum, ActualTxFee, AdditionalTxData, BroadcastTxErr, FeePolicy
                   UtxoActivationParams, UtxoAddressFormat, UtxoCoinFields, UtxoCommonOps, UtxoFromLegacyReqErr,
                   UtxoTx, UtxoTxBroadcastOps, UtxoTxGenerationOps, VerboseTransactionFrom, UTXO_LOCK};
 use crate::{BalanceError, BalanceFut, CoinBalance, FeeApproxStage, FoundSwapTxSpend, HistorySyncState, MarketCoinOps,
-            MmCoin, NegotiateSwapContractAddrErr, PrivKeyNotAllowed, RawTransactionFut, RawTransactionRequest,
-            SearchForSwapTxSpendInput, SignatureResult, SwapOps, TradeFee, TradePreimageError, TradePreimageFut,
-            TradePreimageResult, TradePreimageValue, TransactionDetails, TransactionEnum, TransactionErr,
-            TransactionFut, TransactionType, UnexpectedDerivationMethod, ValidateAddressResult, ValidatePaymentInput,
-            VerificationResult, WithdrawError, WithdrawFee, WithdrawFut, WithdrawRequest, WithdrawResult};
+            MmCoin, MyAddressError, NegotiateSwapContractAddrErr, PrivKeyNotAllowed, RawTransactionFut,
+            RawTransactionRequest, SearchForSwapTxSpendInput, SendRawTransactionError, SignatureResult, SwapOps,
+            TradeFee, TradePreimageError, TradePreimageFut, TradePreimageResult, TradePreimageValue,
+            TransactionDetails, TransactionEnum, TransactionErr, TransactionFut, TransactionType,
+            UnexpectedDerivationMethod, ValidateAddressResult, ValidatePaymentInput, VerificationResult,
+            WithdrawError, WithdrawFee, WithdrawFut, WithdrawRequest, WithdrawResult};
 use async_trait::async_trait;
 use bitcrypto::{dhash160, sha256};
 use chain::TransactionOutput;
@@ -70,13 +71,6 @@ const QRC20_RECEIVER_SPENT_TOPIC: &str = "36c177bcb01c6d568244f05261e2946c8c977f
 const QRC20_SENDER_REFUNDED_TOPIC: &str = "1797d500133f8e427eb9da9523aa4a25cb40f50ebc7dbda3c7c81778973f35ba";
 
 pub type Qrc20AbiResult<T> = Result<T, MmError<Qrc20AbiError>>;
-
-#[derive(Debug, Display)]
-pub enum Qrc20CoinError {
-    UtxoCoinBuildError(UtxoCoinBuildError),
-    UtxoRpcError(UtxoRpcError),
-    Internal(String),
-}
 
 #[derive(Display)]
 pub enum Qrc20GenTxError {
@@ -291,7 +285,7 @@ pub async fn qrc20_coin_from_conf_and_params(
     params: &Qrc20ActivationParams,
     priv_key: &[u8],
     contract_address: H160,
-) -> Result<Qrc20Coin, MmError<Qrc20CoinError>> {
+) -> Result<Qrc20Coin, MmError<UtxoCoinBuildError>> {
     let builder = Qrc20CoinBuilder::new(
         ctx,
         ticker,
@@ -301,7 +295,7 @@ pub async fn qrc20_coin_from_conf_and_params(
         platform.to_owned(),
         contract_address,
     );
-    builder.build().await.mm_err(Qrc20CoinError::UtxoCoinBuildError)
+    builder.build().await
 }
 
 #[derive(Debug)]
@@ -453,8 +447,8 @@ impl From<Qrc20AbiError> for UtxoRpcError {
 impl Qrc20Coin {
     /// `gas_fee` should be calculated by: gas_limit * gas_price * (count of contract calls),
     /// or should be sum of gas fee of all contract calls.
-    pub async fn get_qrc20_tx_fee(&self, gas_fee: u64) -> Result<u64, MmError<Qrc20CoinError>> {
-        match self.get_tx_fee().await.mm_err(Qrc20CoinError::UtxoRpcError)? {
+    pub async fn get_qrc20_tx_fee(&self, gas_fee: u64) -> Result<u64, MmError<UtxoRpcError>> {
+        match self.get_tx_fee().await? {
             ActualTxFee::Dynamic(amount) | ActualTxFee::FixedPerKb(amount) => Ok(amount + gas_fee),
         }
     }
@@ -1021,7 +1015,7 @@ impl SwapOps for Qrc20Coin {
 impl MarketCoinOps for Qrc20Coin {
     fn ticker(&self) -> &str { &self.utxo.conf.ticker }
 
-    fn my_address(&self) -> Result<String, String> { utxo_common::my_address(self) }
+    fn my_address(&self) -> Result<String, MmError<MyAddressError>> { utxo_common::my_address(self) }
 
     fn get_public_key(&self) -> Result<String, MmError<UnexpectedDerivationMethod>> {
         let pubkey = utxo_common::my_public_key(self.as_ref())?;
@@ -1084,7 +1078,10 @@ impl MarketCoinOps for Qrc20Coin {
     }
 
     #[inline(always)]
-    fn send_raw_tx_bytes(&self, tx: &[u8]) -> Box<dyn Future<Item = String, Error = String> + Send> {
+    fn send_raw_tx_bytes(
+        &self,
+        tx: &[u8],
+    ) -> Box<dyn Future<Item = String, Error = MmError<SendRawTransactionError>> + Send> {
         utxo_common::send_raw_tx_bytes(&self.utxo, tx)
     }
 
@@ -1400,7 +1397,9 @@ async fn qrc20_withdraw(coin: Qrc20Coin, req: WithdrawRequest) -> WithdrawResult
     let my_balance_change = &received_by_me - &qrc20_amount;
 
     // [`MarketCoinOps::my_address`] and [`UtxoCommonOps::display_address`] shouldn't fail
-    let my_address_string = coin.my_address().map_to_mm(WithdrawError::InternalError)?;
+    let my_address_string = coin
+        .my_address()
+        .mm_err(|err| WithdrawError::InternalError(err.to_string()))?;
     let to_address = to_addr.display_address().map_to_mm(WithdrawError::InternalError)?;
 
     let fee_details = Qrc20FeeDetails {

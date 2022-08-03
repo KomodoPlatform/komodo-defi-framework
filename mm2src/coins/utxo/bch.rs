@@ -6,10 +6,11 @@ use crate::utxo::slp::{parse_slp_script, ParseSlpScriptError, SlpGenesisParams, 
                        SlpUnspent};
 use crate::utxo::utxo_builder::{UtxoArcBuilder, UtxoCoinBuilder};
 use crate::utxo::utxo_common::big_decimal_from_sat_unsigned;
-use crate::{BlockHeightAndTime, CanRefundHtlc, CoinBalance, CoinProtocol, NegotiateSwapContractAddrErr,
-            PrivKeyBuildPolicy, RawTransactionFut, RawTransactionRequest, SearchForSwapTxSpendInput, SignatureResult,
-            SwapOps, TradePreimageValue, TransactionFut, TransactionType, TxFeeDetails, UnexpectedDerivationMethod,
-            ValidateAddressResult, ValidatePaymentInput, VerificationResult, WithdrawFut};
+use crate::{BlockHeightAndTime, CanRefundHtlc, CoinBalance, CoinProtocol, MyAddressError,
+            NegotiateSwapContractAddrErr, PrivKeyBuildPolicy, RawTransactionFut, RawTransactionRequest,
+            SearchForSwapTxSpendInput, SendRawTransactionError, SignatureResult, SwapOps, TradePreimageValue,
+            TransactionFut, TransactionType, TxFeeDetails, UnexpectedDerivationMethod, ValidateAddressResult,
+            ValidatePaymentInput, VerificationResult, WithdrawFut};
 use common::log::warn;
 use common::mm_metrics::MetricsArc;
 use derive_more::Display;
@@ -1053,7 +1054,7 @@ fn total_unspent_value<'a>(unspents: impl IntoIterator<Item = &'a UnspentInfo>) 
 impl MarketCoinOps for BchCoin {
     fn ticker(&self) -> &str { &self.utxo_arc.conf.ticker }
 
-    fn my_address(&self) -> Result<String, String> { utxo_common::my_address(self) }
+    fn my_address(&self) -> Result<String, MmError<MyAddressError>> { utxo_common::my_address(self) }
 
     fn get_public_key(&self) -> Result<String, MmError<UnexpectedDerivationMethod>> {
         let pubkey = utxo_common::my_public_key(&self.utxo_arc)?;
@@ -1092,7 +1093,10 @@ impl MarketCoinOps for BchCoin {
     }
 
     #[inline(always)]
-    fn send_raw_tx_bytes(&self, tx: &[u8]) -> Box<dyn Future<Item = String, Error = String> + Send> {
+    fn send_raw_tx_bytes(
+        &self,
+        tx: &[u8],
+    ) -> Box<dyn Future<Item = String, Error = MmError<SendRawTransactionError>> + Send> {
         utxo_common::send_raw_tx_bytes(&self.utxo_arc, tx)
     }
 

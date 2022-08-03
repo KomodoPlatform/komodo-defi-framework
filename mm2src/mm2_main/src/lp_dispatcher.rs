@@ -2,10 +2,8 @@ use crate::mm2::lp_ordermatch::TradingBotEvent;
 use crate::mm2::lp_swap::MakerSwapStatusChanged;
 use async_std::sync::RwLock;
 use derive_more::Display;
-use mm2_core::{
-    event_dispatcher::{Dispatcher, EventUniqueId},
-    mm_ctx::{from_ctx, MmArc},
-};
+use mm2_core::{event_dispatcher::{Dispatcher, EventUniqueId},
+               mm_ctx::{from_ctx, MmArc}};
 use mm2_err_handle::prelude::MmError;
 use std::any::TypeId;
 use std::sync::Arc;
@@ -14,9 +12,7 @@ use std::sync::Arc;
 pub struct StopCtxEvent;
 
 impl StopCtxEvent {
-    pub fn event_id() -> TypeId {
-        TypeId::of::<StopCtxEvent>()
-    }
+    pub fn event_id() -> TypeId { TypeId::of::<StopCtxEvent>() }
 }
 
 #[derive(Clone)]
@@ -27,15 +23,11 @@ pub enum LpEvents {
 }
 
 impl From<TradingBotEvent> for LpEvents {
-    fn from(evt: TradingBotEvent) -> Self {
-        LpEvents::TradingBotEvent(evt)
-    }
+    fn from(evt: TradingBotEvent) -> Self { LpEvents::TradingBotEvent(evt) }
 }
 
 impl From<StopCtxEvent> for LpEvents {
-    fn from(evt: StopCtxEvent) -> Self {
-        LpEvents::StopCtxEvent(evt)
-    }
+    fn from(evt: StopCtxEvent) -> Self { LpEvents::StopCtxEvent(evt) }
 }
 
 impl EventUniqueId for LpEvents {
