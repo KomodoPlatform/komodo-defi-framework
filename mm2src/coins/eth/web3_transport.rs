@@ -113,6 +113,21 @@ impl Web3Transport {
             gui_auth_validation_generator: None,
         }
     }
+
+    #[allow(dead_code)]
+    pub fn single_node(url: &'static str, gui_auth: bool) -> Self {
+        let nodes = vec![Web3TransportNode {
+            uri: url.parse().unwrap(),
+            gui_auth,
+        }];
+
+        Web3Transport {
+            id: Arc::new(AtomicUsize::new(0)),
+            nodes,
+            event_handlers: Default::default(),
+            gui_auth_validation_generator: None,
+        }
+    }
 }
 
 struct SendFuture<T>(T);

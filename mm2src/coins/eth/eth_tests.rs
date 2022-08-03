@@ -213,10 +213,7 @@ fn send_and_refund_erc20_payment() {
         &hex::decode("809465b17d0a4ddb3e4c69e8f23c2cabad868f51f8bed5c765ad1d6516c3306f").unwrap(),
     )
     .unwrap();
-    let transport = Web3Transport::new(vec![Web3TransportNode {
-        uri: "http://195.201.0.6:8545".parse().unwrap(),
-        gui_auth: false,
-    }]);
+    let transport = Web3Transport::single_node("http://195.201.0.6:8545", false);
     let web3 = Web3::new(transport);
     let ctx = MmCtxBuilder::new().into_mm_arc();
     let coin = EthCoin(Arc::new(EthCoinImpl {
@@ -287,10 +284,7 @@ fn send_and_refund_eth_payment() {
         &hex::decode("809465b17d0a4ddb3e4c69e8f23c2cabad868f51f8bed5c765ad1d6516c3306f").unwrap(),
     )
     .unwrap();
-    let transport = Web3Transport::new(vec![Web3TransportNode {
-        uri: "http://195.201.0.6:8545".parse().unwrap(),
-        gui_auth: false,
-    }]);
+    let transport = Web3Transport::single_node("http://195.201.0.6:8545", false);
     let web3 = Web3::new(transport);
     let ctx = MmCtxBuilder::new().into_mm_arc();
     let coin = EthCoin(Arc::new(EthCoinImpl {
@@ -357,21 +351,11 @@ fn test_nonce_several_urls() {
         &hex::decode("809465b17d0a4ddb3e4c69e8f23c2cabad868f51f8bed5c765ad1d6516c3306f").unwrap(),
     )
     .unwrap();
-    let infura_transport = Web3Transport::new(vec![Web3TransportNode {
-        uri: "https://ropsten.infura.io/v3/c01c1b4cf66642528547624e1d6d9d6b"
-            .parse()
-            .unwrap(),
-        gui_auth: false,
-    }]);
-    let linkpool_transport = Web3Transport::new(vec![Web3TransportNode {
-        uri: "https://ropsten-rpc.linkpool.io".parse().unwrap(),
-        gui_auth: false,
-    }]);
+    let infura_transport =
+        Web3Transport::single_node("https://ropsten.infura.io/v3/c01c1b4cf66642528547624e1d6d9d6b", false);
+    let linkpool_transport = Web3Transport::single_node("https://ropsten-rpc.linkpool.io", false);
     // get nonce must succeed if some nodes are down at the moment for some reason
-    let failing_transport = Web3Transport::new(vec![Web3TransportNode {
-        uri: "http://195.201.0.6:8989".parse().unwrap(),
-        gui_auth: false,
-    }]);
+    let failing_transport = Web3Transport::single_node("http://195.201.0.6:8989", false);
 
     let web3_infura = Web3::new(infura_transport);
     let web3_linkpool = Web3::new(linkpool_transport);
@@ -434,10 +418,7 @@ fn test_wait_for_payment_spend_timeout() {
         &hex::decode("809465b17d0a4ddb3e4c69e8f23c2cabad868f51f8bed5c765ad1d6516c3306f").unwrap(),
     )
     .unwrap();
-    let transport = Web3Transport::new(vec![Web3TransportNode {
-        uri: "http://195.201.0.6:8555".parse().unwrap(),
-        gui_auth: false,
-    }]);
+    let transport = Web3Transport::single_node("http://195.201.0.6:8555", false);
     let web3 = Web3::new(transport);
     let ctx = MmCtxBuilder::new().into_mm_arc();
 
@@ -496,12 +477,7 @@ fn test_search_for_swap_tx_spend_was_spent() {
         &hex::decode("809465b17d0a4ddb3e4c69e8f23c2cabad868f51f8bed5c765ad1d6516c3306f").unwrap(),
     )
     .unwrap();
-    let transport = Web3Transport::new(vec![Web3TransportNode {
-        uri: "https://ropsten.infura.io/v3/c01c1b4cf66642528547624e1d6d9d6b"
-            .parse()
-            .unwrap(),
-        gui_auth: false,
-    }]);
+    let transport = Web3Transport::single_node("https://ropsten.infura.io/v3/c01c1b4cf66642528547624e1d6d9d6b", false);
     let web3 = Web3::new(transport);
     let ctx = MmCtxBuilder::new().into_mm_arc();
 
@@ -605,12 +581,7 @@ fn test_search_for_swap_tx_spend_was_refunded() {
         &hex::decode("809465b17d0a4ddb3e4c69e8f23c2cabad868f51f8bed5c765ad1d6516c3306f").unwrap(),
     )
     .unwrap();
-    let transport = Web3Transport::new(vec![Web3TransportNode {
-        uri: "https://ropsten.infura.io/v3/c01c1b4cf66642528547624e1d6d9d6b"
-            .parse()
-            .unwrap(),
-        gui_auth: false,
-    }]);
+    let transport = Web3Transport::single_node("https://ropsten.infura.io/v3/c01c1b4cf66642528547624e1d6d9d6b", false);
     let web3 = Web3::new(transport);
     let ctx = MmCtxBuilder::new().into_mm_arc();
 
@@ -1301,10 +1272,7 @@ fn test_message_hash() {
         &hex::decode("809465b17d0a4ddb3e4c69e8f23c2cabad868f51f8bed5c765ad1d6516c3306f").unwrap(),
     )
     .unwrap();
-    let transport = Web3Transport::new(vec![Web3TransportNode {
-        uri: "http://195.201.0.6:8545".parse().unwrap(),
-        gui_auth: false,
-    }]);
+    let transport = Web3Transport::single_node("http://195.201.0.6:8545", false);
     let web3 = Web3::new(transport);
     let ctx = MmCtxBuilder::new().into_mm_arc();
     let coin = EthCoin(Arc::new(EthCoinImpl {
@@ -1346,10 +1314,7 @@ fn test_sign_verify_message() {
         &hex::decode("809465b17d0a4ddb3e4c69e8f23c2cabad868f51f8bed5c765ad1d6516c3306f").unwrap(),
     )
     .unwrap();
-    let transport = Web3Transport::new(vec![Web3TransportNode {
-        uri: "http://195.201.0.6:8545".parse().unwrap(),
-        gui_auth: false,
-    }]);
+    let transport = Web3Transport::single_node("http://195.201.0.6:8545", false);
 
     let web3 = Web3::new(transport);
     let ctx = MmCtxBuilder::new().into_mm_arc();
