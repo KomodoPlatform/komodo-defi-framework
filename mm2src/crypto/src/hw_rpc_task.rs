@@ -9,7 +9,7 @@ use std::time::Duration;
 use trezor::trezor_rpc_task::{RpcTask, RpcTaskError, RpcTaskHandle, TrezorRequestStatuses, TrezorRpcTaskProcessor};
 use trezor::{TrezorProcessingError, TrezorRequestProcessor};
 
-const CONNECT_DEFAULT_TIMEOUT: Duration = Duration::from_secs(60);
+const CONNECT_DEFAULT_TIMEOUT: Duration = Duration::from_secs(300);
 
 pub type HwRpcTaskUserActionRequest = RpcTaskUserActionRequest<HwRpcTaskUserAction>;
 

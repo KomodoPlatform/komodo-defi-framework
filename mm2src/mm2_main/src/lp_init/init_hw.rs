@@ -119,7 +119,6 @@ impl RpcTask for InitHwTask {
     fn initial_status(&self) -> Self::InProgressStatus { InitHwInProgressStatus::Initializing }
 
     async fn cancel(self) {
-        common::log::info!("Cancel `InitHwTask`");
         if let Ok(crypto_ctx) = CryptoCtx::from_ctx(&self.ctx) {
             crypto_ctx.reset_hw_ctx()
         }
