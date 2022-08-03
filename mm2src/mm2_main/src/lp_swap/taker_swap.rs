@@ -1697,11 +1697,9 @@ impl TakerSwap {
                 ),
             },
             None => {
-                if now_ms() / 1000 < self.r().data.taker_payment_lock + 3700 {
-                    return ERR!(
-                        "Too early to refund, wait until {}",
-                        self.r().data.taker_payment_lock + 3700
-                    );
+                let can_refund = try_s!(self.taker_coin.can_refund_htlc(taker_payment_lock).compat().await);
+                if let CanRefundHtlc::HaveToWait(seconds_to_wait) = can_refund {
+                    return ERR!("Too early to refund, wait until {}", now_ms() / 1000 + seconds_to_wait);
                 }
 
                 let fut = self.taker_coin.send_taker_refunds_payment(

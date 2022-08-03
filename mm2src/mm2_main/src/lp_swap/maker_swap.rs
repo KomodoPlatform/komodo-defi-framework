@@ -1254,13 +1254,14 @@ impl MakerSwap {
             ),
             Err(e) => ERR!("Error {} when trying to find maker payment spend", e),
             Ok(None) => {
-                // our payment is not spent, try to refund
-                info!("Trying to refund MakerPayment");
-                if now_ms() / 1000 < self.r().data.maker_payment_lock + 3700 {
-                    return ERR!(
-                        "Too early to refund, wait until {}",
-                        self.r().data.maker_payment_lock + 3700
-                    );
+                let can_refund_htlc = try_s!(
+                    self.maker_coin
+                        .can_refund_htlc(maker_payment_lock as u64)
+                        .compat()
+                        .await
+                );
+                if let CanRefundHtlc::HaveToWait(seconds_to_wait) = can_refund_htlc {
+                    return ERR!("Too early to refund, wait until {}", now_ms() / 1000 + seconds_to_wait);
                 }
                 let fut = self.maker_coin.send_maker_refunds_payment(
                     &maker_payment,
