@@ -2060,6 +2060,9 @@ mod maker_swap_tests {
 
         TestCoin::ticker.mock_safe(|_| MockResult::Return("ticker"));
         TestCoin::swap_contract_address.mock_safe(|_| MockResult::Return(None));
+        TestCoin::can_refund_htlc
+            .mock_safe(|_, _| MockResult::Return(Box::new(futures01::future::ok(CanRefundHtlc::CanRefundNow))));
+
         static mut MY_PAYMENT_SENT_CALLED: bool = false;
         TestCoin::check_if_my_payment_sent.mock_safe(|_, _, _, _, _, _, _| {
             unsafe { MY_PAYMENT_SENT_CALLED = true };
@@ -2099,8 +2102,10 @@ mod maker_swap_tests {
 
         TestCoin::ticker.mock_safe(|_| MockResult::Return("ticker"));
         TestCoin::swap_contract_address.mock_safe(|_| MockResult::Return(None));
-        static mut MAKER_REFUND_CALLED: bool = false;
+        TestCoin::can_refund_htlc
+            .mock_safe(|_, _| MockResult::Return(Box::new(futures01::future::ok(CanRefundHtlc::CanRefundNow))));
 
+        static mut MAKER_REFUND_CALLED: bool = false;
         TestCoin::send_maker_refunds_payment.mock_safe(|_, _, _, _, _, _, _| {
             unsafe { MAKER_REFUND_CALLED = true };
             MockResult::Return(Box::new(futures01::future::ok(eth_tx_for_test().into())))
@@ -2202,13 +2207,15 @@ mod maker_swap_tests {
             unsafe { MY_PAYMENT_SENT_CALLED = true };
             MockResult::Return(Box::new(futures01::future::ok(Some(eth_tx_for_test().into()))))
         });
+        TestCoin::can_refund_htlc
+            .mock_safe(|_, _| MockResult::Return(Box::new(futures01::future::ok(CanRefundHtlc::HaveToWait(1000)))));
         TestCoin::search_for_swap_tx_spend_my
             .mock_safe(|_, _| MockResult::Return(Box::pin(futures::future::ready(Ok(None)))));
         let maker_coin = MmCoinEnum::Test(TestCoin::default());
         let taker_coin = MmCoinEnum::Test(TestCoin::default());
         let (maker_swap, _) = MakerSwap::load_from_saved(ctx, maker_coin, taker_coin, maker_saved_swap).unwrap();
-        maker_swap.w().data.maker_payment_lock = (now_ms() / 1000) - 3690;
-        assert!(block_on(maker_swap.recover_funds()).is_err());
+        let error = block_on(maker_swap.recover_funds()).unwrap_err();
+        assert!(error.contains("Too early to refund"));
         assert!(unsafe { MY_PAYMENT_SENT_CALLED });
     }
 
