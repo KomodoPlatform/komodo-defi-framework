@@ -97,6 +97,8 @@ const GAS_PRICE_PERCENT: u64 = 10;
 const BASE_BLOCK_FEE_DIFF_PCT: u64 = 13;
 const DEFAULT_LOGS_BLOCK_RANGE: u64 = 1000;
 
+const DEFAULT_REQUIRED_CONFIRMATIONS: u8 = 1;
+
 /// Take into account that the dynamic fee may increase by 3% during the swap.
 const GAS_PRICE_APPROXIMATION_PERCENT_ON_START_SWAP: u64 = 3;
 /// Take into account that the dynamic fee may increase at each of the following stages:
@@ -304,7 +306,7 @@ pub struct EthCoinImpl {
     required_confirmations: AtomicU64,
     /// Coin needs access to the context in order to reuse the logging and shutdown facilities.
     /// Using a weak reference by default in order to avoid circular references and leaks.
-    ctx: MmWeak,
+    pub ctx: MmWeak,
     chain_id: Option<u64>,
     /// the block range used for eth_getLogs
     logs_block_range: u64,
@@ -3546,7 +3548,11 @@ pub async fn eth_coin_from_conf_and_request(
     // param from request should override the config
     let required_confirmations = req["required_confirmations"]
         .as_u64()
-        .unwrap_or_else(|| conf["required_confirmations"].as_u64().unwrap_or(1))
+        .unwrap_or_else(|| {
+            conf["required_confirmations"]
+                .as_u64()
+                .unwrap_or(DEFAULT_REQUIRED_CONFIRMATIONS as u64)
+        })
         .into();
 
     if req["requires_notarization"].as_bool().is_some() {

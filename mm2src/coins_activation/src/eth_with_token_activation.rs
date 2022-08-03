@@ -9,8 +9,8 @@ use coins::{eth::{v2_activation::{eth_coin_from_conf_and_request_v2, Erc20Protoc
                   Erc20TokenInfo, EthCoin},
             my_tx_history_v2::TxHistoryStorage,
             CoinBalance, CoinProtocol, MarketCoinOps, MmCoin};
-use common::{mm_metrics::MetricsArc, Future01CompatExt};
-use futures::future::AbortHandle;
+use common::{log::error, mm_metrics::MetricsArc, Future01CompatExt};
+use futures::future::{abortable, AbortHandle};
 use mm2_core::mm_ctx::MmArc;
 use mm2_err_handle::prelude::*;
 use mm2_number::BigDecimal;
@@ -228,6 +228,11 @@ impl PlatformWithTokensActivationOps for EthCoin {
         _storage: impl TxHistoryStorage + Send + 'static,
         _initial_balance: BigDecimal,
     ) -> AbortHandle {
-        todo!()
+        error!(
+            "tx_history is not allowed for {}. It works very slowly and requires a lot of disk space.",
+            self.ticker()
+        );
+        let (_, abort_handle) = abortable(async {});
+        abort_handle
     }
 }

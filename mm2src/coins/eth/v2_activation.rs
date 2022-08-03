@@ -230,10 +230,14 @@ pub async fn eth_coin_from_conf_and_request_v2(
     // param from request should override the config
     let required_confirmations = req
         .required_confirmations
-        .unwrap_or_else(|| conf["required_confirmations"].as_u64().unwrap_or(1))
+        .unwrap_or_else(|| {
+            conf["required_confirmations"]
+                .as_u64()
+                .unwrap_or(DEFAULT_REQUIRED_CONFIRMATIONS as u64)
+        })
         .into();
 
-    let sign_message_prefix: Option<String> = json::from_value(conf["sign_message_prefix"].clone()).unwrap_or(None);
+    let sign_message_prefix: Option<String> = json::from_value(conf["sign_message_prefix"].clone()).ok();
 
     let initial_history_state = if req.tx_history {
         HistorySyncState::NotStarted
