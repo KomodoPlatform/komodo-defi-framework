@@ -8,7 +8,7 @@ pub const MIN_RAW_HEADER_SIZE: usize = 80_usize;
 
 /// Hex-encoded block
 #[derive(Default, PartialEq, Clone, Eq, Hash)]
-pub struct RawBlockHeader(Bytes);
+pub struct RawBlockHeader(pub Bytes);
 
 #[derive(Debug, PartialEq, Eq, Clone)]
 pub enum RawHeaderError {

@@ -1,5 +1,9 @@
 use super::*;
+use crate::lightning::ln_db::LightningDB;
+use crate::lightning::ln_filesystem_persister::LightningPersisterShared;
 use crate::lightning::ln_platform::{get_best_header, ln_best_block_update_loop, update_best_block};
+use crate::lightning::ln_sql::SqliteLightningDB;
+use crate::lightning::ln_storage::{LightningStorage, NodesAddressesMap, Scorer};
 use crate::utxo::rpc_clients::BestBlock as RpcBestBlock;
 use bitcoin::hash_types::BlockHash;
 use bitcoin_hashes::{sha256d, Hash};
@@ -10,18 +14,14 @@ use lightning::chain::keysinterface::{InMemorySigner, KeysManager};
 use lightning::chain::{chainmonitor, BestBlock, Watch};
 use lightning::ln::channelmanager;
 use lightning::ln::channelmanager::{ChainParameters, ChannelManagerReadArgs, SimpleArcChannelManager};
-use lightning::routing::network_graph::NetworkGraph;
 use lightning::util::config::UserConfig;
 use lightning::util::ser::ReadableArgs;
-use lightning_persister::storage::{DbStorage, FileSystemStorage, NodesAddressesMap, Scorer};
-use lightning_persister::LightningPersister;
 use mm2_core::mm_ctx::MmArc;
 use std::fs::File;
 use std::path::PathBuf;
 use std::sync::{Arc, Mutex};
 use std::time::SystemTime;
 
-const NETWORK_GRAPH_PERSIST_INTERVAL: u64 = 600;
 const SCORER_PERSIST_INTERVAL: u64 = 600;
 
 pub type ChainMonitor = chainmonitor::ChainMonitor<
@@ -30,7 +30,7 @@ pub type ChainMonitor = chainmonitor::ChainMonitor<
     Arc<Platform>,
     Arc<Platform>,
     Arc<LogState>,
-    Arc<LightningPersister>,
+    LightningPersisterShared,
 >;
 
 pub type ChannelManager = SimpleArcChannelManager<ChainMonitor, Platform, Platform, LogState>;
@@ -50,54 +50,39 @@ fn ln_data_backup_dir(ctx: &MmArc, path: Option<String>, ticker: &str) -> Option
 
 pub async fn init_persister(
     ctx: &MmArc,
-    platform: Arc<Platform>,
     ticker: String,
     backup_path: Option<String>,
-) -> EnableLightningResult<Arc<LightningPersister>> {
+) -> EnableLightningResult<LightningPersisterShared> {
     let ln_data_dir = ln_data_dir(ctx, &ticker);
     let ln_data_backup_dir = ln_data_backup_dir(ctx, backup_path, &ticker);
-    let persister = Arc::new(LightningPersister::new(
-        ticker.replace('-', "_"),
+    let persister = LightningPersisterShared(Arc::new(LightningFilesystemPersister::new(
         ln_data_dir,
         ln_data_backup_dir,
+    )));
+
+    let is_initialized = persister.is_fs_initialized().await?;
+    if !is_initialized {
+        persister.init_fs().await?;
+    }
+
+    Ok(persister)
+}
+
+pub async fn init_db(ctx: &MmArc, ticker: String) -> EnableLightningResult<SqliteLightningDB> {
+    let db = SqliteLightningDB::new(
+        ticker,
         ctx.sqlite_connection
             .ok_or(MmError::new(EnableLightningError::DbError(
                 "sqlite_connection is not initialized".into(),
             )))?
             .clone(),
-    ));
-    let is_initialized = persister.is_fs_initialized().await?;
-    if !is_initialized {
-        persister.init_fs().await?;
-    }
-    let is_db_initialized = persister.is_db_initialized().await?;
-    if !is_db_initialized {
-        persister.init_db().await?;
+    );
+
+    if !db.is_db_initialized().await? {
+        db.init_db().await?;
     }
 
-    let closed_channels_without_closing_tx = persister.get_closed_channels_with_no_closing_tx().await?;
-    for channel_details in closed_channels_without_closing_tx {
-        let platform = platform.clone();
-        let persister = persister.clone();
-        let user_channel_id = channel_details.rpc_id;
-        spawn(async move {
-            if let Ok(closing_tx_hash) = platform
-                .get_channel_closing_tx(channel_details)
-                .await
-                .error_log_passthrough()
-            {
-                if let Err(e) = persister.add_closing_tx_to_db(user_channel_id, closing_tx_hash).await {
-                    log::error!(
-                        "Unable to update channel {} closing details in DB: {}",
-                        user_channel_id,
-                        e
-                    );
-                }
-            }
-        });
-    }
-
-    Ok(persister)
+    Ok(db)
 }
 
 pub fn init_keys_manager(ctx: &MmArc) -> EnableLightningResult<Arc<KeysManager>> {
@@ -113,7 +98,8 @@ pub fn init_keys_manager(ctx: &MmArc) -> EnableLightningResult<Arc<KeysManager>>
 pub async fn init_channel_manager(
     platform: Arc<Platform>,
     logger: Arc<LogState>,
-    persister: Arc<LightningPersister>,
+    persister: LightningPersisterShared,
+    db: SqliteLightningDB,
     keys_manager: Arc<KeysManager>,
     user_config: UserConfig,
 ) -> EnableLightningResult<(Arc<ChainMonitor>, Arc<ChannelManager>)> {
@@ -135,6 +121,7 @@ pub async fn init_channel_manager(
 
     // Read ChannelMonitor state from disk, important for lightning node is restarting and has at least 1 channel
     let mut channelmonitors = persister
+        .channels_persister()
         .read_channelmonitors(keys_manager.clone())
         .map_to_mm(|e| EnableLightningError::IOError(e.to_string()))?;
 
@@ -155,9 +142,7 @@ pub async fn init_channel_manager(
     let best_header = get_best_header(&rpc_client).await?;
     platform.update_best_block_height(best_header.block_height());
     let best_block = RpcBestBlock::from(best_header.clone());
-    let best_block_hash = BlockHash::from_hash(
-        sha256d::Hash::from_slice(&best_block.hash.0).map_to_mm(|e| EnableLightningError::HashError(e.to_string()))?,
-    );
+    let best_block_hash = BlockHash::from_hash(sha256d::Hash::from_inner(best_block.hash.0));
     let (channel_manager_blockhash, channel_manager) = {
         if let Ok(mut f) = File::open(persister.manager_path()) {
             let mut channel_monitor_mut_references = Vec::new();
@@ -198,12 +183,12 @@ pub async fn init_channel_manager(
     let channel_manager: Arc<ChannelManager> = Arc::new(channel_manager);
 
     // Sync ChannelMonitors and ChannelManager to chain tip if the node is restarting and has open channels
+    platform
+        .process_txs_confirmations(&rpc_client, &db, &chain_monitor, &channel_manager)
+        .await;
     if channel_manager_blockhash != best_block_hash {
         platform
             .process_txs_unconfirmations(&chain_monitor, &channel_manager)
-            .await;
-        platform
-            .process_txs_confirmations(&rpc_client, &persister, &chain_monitor, &channel_manager)
             .await;
         update_best_block(&chain_monitor, &channel_manager, best_header).await;
     }
@@ -218,9 +203,8 @@ pub async fn init_channel_manager(
 
     // Update best block whenever there's a new chain tip or a block has been newly disconnected
     spawn(ln_best_block_update_loop(
-        // It's safe to use unwrap here for now until implementing Native Client for Lightning
         platform,
-        persister.clone(),
+        db,
         chain_monitor.clone(),
         channel_manager.clone(),
         rpc_client.clone(),
@@ -230,19 +214,7 @@ pub async fn init_channel_manager(
     Ok((chain_monitor, channel_manager))
 }
 
-pub async fn persist_network_graph_loop(persister: Arc<LightningPersister>, network_graph: Arc<NetworkGraph>) {
-    loop {
-        if let Err(e) = persister.save_network_graph(network_graph.clone()).await {
-            log::warn!(
-                "Failed to persist network graph error: {}, please check disk space and permissions",
-                e
-            );
-        }
-        Timer::sleep(NETWORK_GRAPH_PERSIST_INTERVAL as f64).await;
-    }
-}
-
-pub async fn persist_scorer_loop(persister: Arc<LightningPersister>, scorer: Arc<Mutex<Scorer>>) {
+pub async fn persist_scorer_loop(persister: LightningPersisterShared, scorer: Arc<Mutex<Scorer>>) {
     loop {
         if let Err(e) = persister.save_scorer(scorer.clone()).await {
             log::warn!(
@@ -255,7 +227,7 @@ pub async fn persist_scorer_loop(persister: Arc<LightningPersister>, scorer: Arc
 }
 
 pub async fn get_open_channels_nodes_addresses(
-    persister: Arc<LightningPersister>,
+    persister: LightningPersisterShared,
     channel_manager: Arc<ChannelManager>,
 ) -> EnableLightningResult<NodesAddressesMap> {
     let channels = channel_manager.list_channels();

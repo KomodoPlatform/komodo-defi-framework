@@ -10,6 +10,7 @@ use crate::{mm2::lp_stats::{add_node_to_version_stat, remove_node_from_version_s
 use coins::hd_wallet::get_new_address;
 use coins::my_tx_history_v2::my_tx_history_v2_rpc;
 use coins::rpc_command::account_balance::account_balance;
+use coins::rpc_command::get_current_mtp::get_current_mtp_rpc;
 use coins::rpc_command::init_create_account::{init_create_new_account, init_create_new_account_status,
                                               init_create_new_account_user_action};
 use coins::rpc_command::init_scan_for_new_addresses::{init_scan_for_new_addresses, init_scan_for_new_addresses_status};
@@ -125,6 +126,7 @@ async fn dispatcher_v2(request: MmRpcRequest, ctx: MmArc) -> DispatcherResult<Re
         "best_orders" => handle_mmrpc(ctx, request, best_orders_rpc_v2).await,
         "enable_bch_with_tokens" => handle_mmrpc(ctx, request, enable_platform_coin_with_tokens::<BchCoin>).await,
         "enable_slp" => handle_mmrpc(ctx, request, enable_token::<SlpToken>).await,
+        "get_current_mtp" => handle_mmrpc(ctx, request, get_current_mtp_rpc).await,
         "get_new_address" => handle_mmrpc(ctx, request, get_new_address).await,
         "get_public_key" => handle_mmrpc(ctx, request, get_public_key).await,
         "get_public_key_hash" => handle_mmrpc(ctx, request, get_public_key_hash).await,

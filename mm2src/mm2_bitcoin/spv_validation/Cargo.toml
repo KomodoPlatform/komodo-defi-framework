@@ -2,9 +2,13 @@
 name = "spv_validation"
 version = "0.1.0"
 authors = ["Roman Sztergbaum <rmscastle@gmail.com>"]
+edition = "2018"
 
 [dependencies]
+async-trait = "0.1"
 chain = {path = "../chain"}
+derive_more = "0.99"
+keys = {path = "../keys"}
 primitives = { path = "../primitives" }
 ripemd160 = "0.9.0"
 rustc-hex = "2"
@@ -13,5 +17,7 @@ sha2 = "0.9"
 test_helpers = { path = "../test_helpers" }
 
 [dev-dependencies]
+common = { path = "../../common" }
+lazy_static = "1.4"
 serde = { version = "1.0", features = ["derive"] }
 serde_json = "1.0"

@@ -7,7 +7,6 @@ use lightning::ln::msgs::NetAddress;
 use lightning::ln::peer_handler::{IgnoringMessageHandler, MessageHandler, SimpleArcPeerManager};
 use lightning::routing::network_graph::{NetGraphMsgHandler, NetworkGraph};
 use lightning_net_tokio::SocketDescriptor;
-use lightning_persister::storage::NodesAddressesMapShared;
 use mm2_net::ip_addr::fetch_external_ip;
 use rand::RngCore;
 use secp256k1::SecretKey;

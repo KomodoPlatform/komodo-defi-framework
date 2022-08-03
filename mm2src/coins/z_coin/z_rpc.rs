@@ -1,5 +1,5 @@
 use super::{z_coin_errors::*, ZcoinConsensusParams};
-use crate::utxo::utxo_common;
+use crate::utxo::rpc_clients;
 use common::executor::Timer;
 use common::log::{debug, error, info};
 use common::{async_blocking, spawn_abortable, AbortOnDropHandle};
@@ -367,7 +367,7 @@ impl SaplingSyncLoopHandle {
                     Ok(_) => break,
                     Err(e) => {
                         error!("Error on getting tx {}", tx_id);
-                        if e.message().contains(utxo_common::NO_TX_ERROR_CODE) {
+                        if e.message().contains(rpc_clients::NO_TX_ERROR_CODE) {
                             if attempts >= 3 {
                                 self.watch_for_tx = None;
                                 return;
