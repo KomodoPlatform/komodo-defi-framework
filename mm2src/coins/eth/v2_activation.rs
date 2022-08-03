@@ -16,6 +16,7 @@ pub enum EthActivationV2Error {
     #[display(fmt = "Enable request for ETH coin must have at least 1 node")]
     AtLeastOneNodeRequired,
     InternalError(String),
+    TxHistoryNotAllowed(String),
 }
 
 #[derive(Clone, Deserialize)]

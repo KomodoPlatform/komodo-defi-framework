@@ -165,7 +165,7 @@ pub trait PlatformWithTokensActivationOps: Into<MmCoinEnum> {
         metrics: MetricsArc,
         storage: impl TxHistoryStorage,
         initial_balance: BigDecimal,
-    ) -> AbortHandle;
+    ) -> Result<AbortHandle, MmError<Self::ActivationError>>;
 }
 
 #[derive(Debug, Deserialize)]
@@ -216,6 +216,7 @@ pub enum EnablePlatformCoinWithTokensError {
     AtLeastOneNodeRequired(String),
     InvalidPayload(String),
     Internal(String),
+    TxHistoryNotAllowed(String),
 }
 
 impl From<CoinConfWithProtocolError> for EnablePlatformCoinWithTokensError {
@@ -281,6 +282,7 @@ impl HttpStatusCode for EnablePlatformCoinWithTokensError {
             | EnablePlatformCoinWithTokensError::UnexpectedPlatformProtocol { .. }
             | EnablePlatformCoinWithTokensError::InvalidPayload { .. }
             | EnablePlatformCoinWithTokensError::AtLeastOneNodeRequired(_)
+            | EnablePlatformCoinWithTokensError::TxHistoryNotAllowed(_)
             | EnablePlatformCoinWithTokensError::UnexpectedTokenProtocol { .. } => StatusCode::BAD_REQUEST,
         }
     }
@@ -328,7 +330,7 @@ where
             ctx.metrics.clone(),
             TxHistoryStorageBuilder::new(&ctx).build()?,
             activation_result.get_platform_balance(),
-        );
+        )?;
         ctx.abort_handlers.lock().unwrap().push(abort_handler);
     }
 

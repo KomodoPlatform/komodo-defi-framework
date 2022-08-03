@@ -273,7 +273,7 @@ impl PlatformWithTokensActivationOps for BchCoin {
         metrics: MetricsArc,
         storage: impl TxHistoryStorage + Send + 'static,
         initial_balance: BigDecimal,
-    ) -> AbortHandle {
+    ) -> Result<AbortHandle, MmError<BchWithTokensActivationError>> {
         let ticker = self.ticker().to_owned();
         let (fut, abort_handle) = abortable(bch_and_slp_history_loop(
             self.clone(),
@@ -286,6 +286,7 @@ impl PlatformWithTokensActivationOps for BchCoin {
                 info!("bch_and_slp_history_loop stopped for {}, reason {}", ticker, e);
             }
         });
-        abort_handle
+
+        Ok(abort_handle)
     }
 }
