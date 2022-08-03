@@ -14,10 +14,10 @@ use crate::rpc_command::init_scan_for_new_addresses::{self, InitScanAddressesRpc
                                                       ScanAddressesResponse};
 use crate::rpc_command::init_withdraw::{InitWithdrawCoin, WithdrawTaskHandle};
 use crate::utxo::utxo_builder::{UtxoArcBuilder, UtxoCoinBuilder};
-use crate::{CanRefundHtlc, CoinBalance, CoinWithDerivationMethod, GetWithdrawSenderAddress, MyAddressError,
-            NegotiateSwapContractAddrErr, PrivKeyBuildPolicy, SearchForSwapTxSpendInput, SendRawTransactionError,
-            SignatureResult, SwapOps, TradePreimageValue, TransactionFut, ValidateAddressResult, ValidatePaymentInput,
-            VerificationResult, WithdrawFut, WithdrawSenderAddress};
+use crate::{CanRefundHtlc, CoinBalance, CoinWithDerivationMethod, FoundSwapTxSpendErr, GetWithdrawSenderAddress,
+            MyAddressError, NegotiateSwapContractAddrErr, PrivKeyBuildPolicy, SearchForSwapTxSpendInput,
+            SendRawTransactionError, SignatureResult, SwapOps, TradePreimageValue, TransactionFut,
+            ValidateAddressResult, ValidatePaymentInput, VerificationResult, WithdrawFut, WithdrawSenderAddress};
 use common::mm_metrics::MetricsArc;
 use crypto::trezor::utxo::TrezorUtxoCoin;
 use crypto::Bip44Chain;
@@ -436,14 +436,14 @@ impl SwapOps for UtxoStandardCoin {
     async fn search_for_swap_tx_spend_my(
         &self,
         input: SearchForSwapTxSpendInput<'_>,
-    ) -> Result<Option<FoundSwapTxSpend>, String> {
+    ) -> Result<Option<FoundSwapTxSpend>, MmError<FoundSwapTxSpendErr>> {
         utxo_common::search_for_swap_tx_spend_my(self, input, utxo_common::DEFAULT_SWAP_VOUT).await
     }
 
     async fn search_for_swap_tx_spend_other(
         &self,
         input: SearchForSwapTxSpendInput<'_>,
-    ) -> Result<Option<FoundSwapTxSpend>, String> {
+    ) -> Result<Option<FoundSwapTxSpend>, MmError<FoundSwapTxSpendErr>> {
         utxo_common::search_for_swap_tx_spend_other(self, input, utxo_common::DEFAULT_SWAP_VOUT).await
     }
 

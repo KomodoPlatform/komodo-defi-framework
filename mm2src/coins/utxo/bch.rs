@@ -6,7 +6,7 @@ use crate::utxo::slp::{parse_slp_script, ParseSlpScriptError, SlpGenesisParams, 
                        SlpUnspent};
 use crate::utxo::utxo_builder::{UtxoArcBuilder, UtxoCoinBuilder};
 use crate::utxo::utxo_common::big_decimal_from_sat_unsigned;
-use crate::{BlockHeightAndTime, CanRefundHtlc, CoinBalance, CoinProtocol, MyAddressError,
+use crate::{BlockHeightAndTime, CanRefundHtlc, CoinBalance, CoinProtocol, FoundSwapTxSpendErr, MyAddressError,
             NegotiateSwapContractAddrErr, PrivKeyBuildPolicy, RawTransactionFut, RawTransactionRequest,
             SearchForSwapTxSpendInput, SendRawTransactionError, SignatureResult, SwapOps, TradePreimageValue,
             TransactionFut, TransactionType, TxFeeDetails, UnexpectedDerivationMethod, ValidateAddressResult,
@@ -1011,14 +1011,14 @@ impl SwapOps for BchCoin {
     async fn search_for_swap_tx_spend_my(
         &self,
         input: SearchForSwapTxSpendInput<'_>,
-    ) -> Result<Option<FoundSwapTxSpend>, String> {
+    ) -> Result<Option<FoundSwapTxSpend>, MmError<FoundSwapTxSpendErr>> {
         utxo_common::search_for_swap_tx_spend_my(self, input, utxo_common::DEFAULT_SWAP_VOUT).await
     }
 
     async fn search_for_swap_tx_spend_other(
         &self,
         input: SearchForSwapTxSpendInput<'_>,
-    ) -> Result<Option<FoundSwapTxSpend>, String> {
+    ) -> Result<Option<FoundSwapTxSpend>, MmError<FoundSwapTxSpendErr>> {
         utxo_common::search_for_swap_tx_spend_other(self, input, utxo_common::DEFAULT_SWAP_VOUT).await
     }
 

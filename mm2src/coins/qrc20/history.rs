@@ -320,7 +320,8 @@ impl Qrc20Coin {
             }
 
             let (total_amount, from, to) = {
-                let event = transfer_event_from_log(&log_entry).map_err(Qrc20CoinTxHistoryError::Internal)?;
+                let event = transfer_event_from_log(&log_entry)
+                    .map_err(|err| Qrc20CoinTxHistoryError::Internal(err.to_string()))?;
                 // https://github.com/qtumproject/qtum-electrum/blob/v4.0.2/electrum/wallet.py#L2093
                 if event.contract_address != self.contract_address {
                     // contract address mismatch

@@ -1,9 +1,9 @@
 use super::{CoinBalance, HistorySyncState, MarketCoinOps, MmCoin, RawTransactionFut, RawTransactionRequest, SwapOps,
             TradeFee, TransactionEnum, TransactionFut};
-use crate::{BalanceFut, FeeApproxStage, FoundSwapTxSpend, MyAddressError, NegotiateSwapContractAddrErr,
-            SearchForSwapTxSpendInput, SendRawTransactionError, SignatureResult, TradePreimageFut,
-            TradePreimageResult, TradePreimageValue, UnexpectedDerivationMethod, ValidateAddressResult,
-            ValidatePaymentInput, VerificationResult, WithdrawFut, WithdrawRequest};
+use crate::{BalanceFut, FeeApproxStage, FoundSwapTxSpend, FoundSwapTxSpendErr, MyAddressError,
+            NegotiateSwapContractAddrErr, SearchForSwapTxSpendInput, SendRawTransactionError, SignatureResult,
+            TradePreimageFut, TradePreimageResult, TradePreimageValue, UnexpectedDerivationMethod,
+            ValidateAddressResult, ValidatePaymentInput, VerificationResult, WithdrawFut, WithdrawRequest};
 use async_trait::async_trait;
 use futures01::Future;
 use keys::KeyPair;
@@ -213,14 +213,14 @@ impl SwapOps for TestCoin {
     async fn search_for_swap_tx_spend_my(
         &self,
         _: SearchForSwapTxSpendInput<'_>,
-    ) -> Result<Option<FoundSwapTxSpend>, String> {
+    ) -> Result<Option<FoundSwapTxSpend>, MmError<FoundSwapTxSpendErr>> {
         unimplemented!()
     }
 
     async fn search_for_swap_tx_spend_other(
         &self,
         _: SearchForSwapTxSpendInput<'_>,
-    ) -> Result<Option<FoundSwapTxSpend>, String> {
+    ) -> Result<Option<FoundSwapTxSpend>, MmError<FoundSwapTxSpendErr>> {
         unimplemented!()
     }
 

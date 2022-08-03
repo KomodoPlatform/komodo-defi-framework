@@ -13,11 +13,11 @@ use crate::utxo::{qtum, ActualTxFee, AdditionalTxData, BroadcastTxErr, FeePolicy
                   HistoryUtxoTx, HistoryUtxoTxMap, MatureUnspentList, RecentlySpentOutPointsGuard,
                   UtxoActivationParams, UtxoAddressFormat, UtxoCoinFields, UtxoCommonOps, UtxoFromLegacyReqErr,
                   UtxoTx, UtxoTxBroadcastOps, UtxoTxGenerationOps, VerboseTransactionFrom, UTXO_LOCK};
-use crate::{BalanceError, BalanceFut, CoinBalance, FeeApproxStage, FoundSwapTxSpend, HistorySyncState, MarketCoinOps,
-            MmCoin, MyAddressError, NegotiateSwapContractAddrErr, PrivKeyNotAllowed, RawTransactionFut,
-            RawTransactionRequest, SearchForSwapTxSpendInput, SendRawTransactionError, SignatureResult, SwapOps,
-            TradeFee, TradePreimageError, TradePreimageFut, TradePreimageResult, TradePreimageValue,
-            TransactionDetails, TransactionEnum, TransactionErr, TransactionFut, TransactionType,
+use crate::{BalanceError, BalanceFut, CoinBalance, FeeApproxStage, FoundSwapTxSpend, FoundSwapTxSpendErr,
+            HistorySyncState, MarketCoinOps, MmCoin, MyAddressError, NegotiateSwapContractAddrErr, PrivKeyNotAllowed,
+            RawTransactionFut, RawTransactionRequest, SearchForSwapTxSpendInput, SendRawTransactionError,
+            SignatureResult, SwapOps, TradeFee, TradePreimageError, TradePreimageFut, TradePreimageResult,
+            TradePreimageValue, TransactionDetails, TransactionEnum, TransactionErr, TransactionFut, TransactionType,
             UnexpectedDerivationMethod, ValidateAddressResult, ValidatePaymentInput, VerificationResult,
             WithdrawError, WithdrawFee, WithdrawFut, WithdrawRequest, WithdrawResult};
 use async_trait::async_trait;
@@ -957,23 +957,21 @@ impl SwapOps for Qrc20Coin {
     async fn search_for_swap_tx_spend_my(
         &self,
         input: SearchForSwapTxSpendInput<'_>,
-    ) -> Result<Option<FoundSwapTxSpend>, String> {
-        let tx: UtxoTx = deserialize(input.tx).map_err(|err| err.to_string())?;
+    ) -> Result<Option<FoundSwapTxSpend>, MmError<FoundSwapTxSpendErr>> {
+        let tx: UtxoTx = deserialize(input.tx).map_to_mm(FoundSwapTxSpendErr::DeserialzationError)?;
 
         self.search_for_swap_tx_spend(input.time_lock, input.secret_hash, tx, input.search_from_block)
             .await
-            .map_err(|err| err.to_string())
     }
 
     async fn search_for_swap_tx_spend_other(
         &self,
         input: SearchForSwapTxSpendInput<'_>,
-    ) -> Result<Option<FoundSwapTxSpend>, String> {
-        let tx: UtxoTx = try_s!(deserialize(input.tx).map_err(|e| ERRL!("{:?}", e)));
+    ) -> Result<Option<FoundSwapTxSpend>, MmError<FoundSwapTxSpendErr>> {
+        let tx: UtxoTx = deserialize(input.tx).map_to_mm(FoundSwapTxSpendErr::DeserialzationError)?;
 
         self.search_for_swap_tx_spend(input.time_lock, input.secret_hash, tx, input.search_from_block)
             .await
-            .map_err(|err| err.to_string())
     }
 
     fn extract_secret(&self, secret_hash: &[u8], spend_tx: &[u8]) -> Result<Vec<u8>, String> {
@@ -1430,17 +1428,17 @@ async fn qrc20_withdraw(coin: Qrc20Coin, req: WithdrawRequest) -> WithdrawResult
 }
 
 /// Parse the given topic to `H160` address.
-fn address_from_log_topic(topic: &str) -> Result<H160, String> {
+fn address_from_log_topic(topic: &str) -> Result<H160, MmError<String>> {
     if topic.len() != 64 {
-        return ERR!(
+        return MmError::err(format!(
             "Topic {:?} is expected to be H256 encoded topic (with length of 64)",
             topic
-        );
+        ));
     }
 
     // skip the first 24 characters to parse the last 40 characters to H160.
     // https://github.com/qtumproject/qtum-electrum/blob/v4.0.2/electrum/wallet.py#L2112
-    let hash = try_s!(H160Json::from_str(&topic[24..]));
+    let hash = H160Json::from_str(&topic[24..]).map_to_mm(|err| err.to_string())?;
     Ok(hash.0.into())
 }
 
@@ -1458,25 +1456,33 @@ pub struct TransferEventDetails {
     receiver: H160,
 }
 
-fn transfer_event_from_log(log: &LogEntry) -> Result<TransferEventDetails, String> {
+#[derive(Debug, Display)]
+pub enum TransferEventDetailsError {
+    #[display(fmt = "Internal: {}", _0)]
+    Internal(String),
+    #[display(fmt = "'Transfer' event must have 3 topics, found, {}", _0)]
+    UnexpectedNumOfTopics(usize),
+}
+
+fn transfer_event_from_log(log: &LogEntry) -> Result<TransferEventDetails, MmError<TransferEventDetailsError>> {
     let contract_address = if log.address.starts_with("0x") {
-        try_s!(qtum::contract_addr_from_str(&log.address))
+        qtum::contract_addr_from_str(&log.address).map_to_mm(TransferEventDetailsError::Internal)?
     } else {
         let address = format!("0x{}", log.address);
-        try_s!(qtum::contract_addr_from_str(&address))
+        qtum::contract_addr_from_str(&address).map_to_mm(TransferEventDetailsError::Internal)?
     };
 
     if log.topics.len() != 3 {
-        return ERR!("'Transfer' event must have 3 topics, found, {}", log.topics.len());
+        return MmError::err(TransferEventDetailsError::UnexpectedNumOfTopics(log.topics.len()));
     }
 
     // https://github.com/qtumproject/qtum-electrum/blob/v4.0.2/electrum/wallet.py#L2111
-    let amount = try_s!(U256::from_str(&log.data));
+    let amount = U256::from_str(&log.data).map_to_mm(|err| TransferEventDetailsError::Internal(err.to_string()))?;
 
     // https://github.com/qtumproject/qtum-electrum/blob/v4.0.2/electrum/wallet.py#L2112
-    let sender = try_s!(address_from_log_topic(&log.topics[1]));
+    let sender = address_from_log_topic(&log.topics[1]).mm_err(TransferEventDetailsError::Internal)?;
     // https://github.com/qtumproject/qtum-electrum/blob/v4.0.2/electrum/wallet.py#L2113
-    let receiver = try_s!(address_from_log_topic(&log.topics[2]));
+    let receiver = address_from_log_topic(&log.topics[2]).mm_err(TransferEventDetailsError::Internal)?;
     Ok(TransferEventDetails {
         contract_address,
         amount,

@@ -61,7 +61,6 @@ use std::str::FromStr;
 use std::sync::Arc;
 use std::time::Duration;
 use utxo_signer::with_key_pair::UtxoSignWithKeyPairError;
-use z_coin::BlockchainScanStopped;
 
 cfg_native! {
     use crate::lightning::LightningCoin;
@@ -399,6 +398,26 @@ pub enum FoundSwapTxSpend {
     Refunded(TransactionEnum),
 }
 
+#[derive(Debug, Display)]
+pub enum FoundSwapTxSpendErr {
+    #[display(fmt = "ContractCallError Error: {}", _0)]
+    ContractCallError(String),
+    #[display(fmt = "Deserialzation Error: {:?}", _0)]
+    DeserialzationError(serialization::Error),
+    #[display(fmt = "'erc20Payment' was not confirmed yet. Please wait for at least one confirmation")]
+    Erc20PaymentNotConfirmed,
+    #[display(fmt = "Internal {}", _0)]
+    Internal(String),
+    #[display(fmt = "MissingTransaction {}", _0)]
+    MissingTransaction(String),
+    ScriptHashTypeNotSupported(ScriptHashTypeNotSupported),
+    #[display(fmt = "SwapContractAddrError {}", _0)]
+    SwapContractAddrError(String),
+    UtxoRpcError(Box<UtxoRpcError>),
+    UnexpectedDerivationMethod(UnexpectedDerivationMethod),
+    #[display(fmt = "Unexpected swap_id: {}", _0)]
+    UnexpectedSwapID(String),
+}
 pub enum CanRefundHtlc {
     CanRefundNow,
     // returns the number of seconds to sleep before HTLC becomes refundable
@@ -529,12 +548,12 @@ pub trait SwapOps {
     async fn search_for_swap_tx_spend_my(
         &self,
         input: SearchForSwapTxSpendInput<'_>,
-    ) -> Result<Option<FoundSwapTxSpend>, String>;
+    ) -> Result<Option<FoundSwapTxSpend>, MmError<FoundSwapTxSpendErr>>;
 
     async fn search_for_swap_tx_spend_other(
         &self,
         input: SearchForSwapTxSpendInput<'_>,
-    ) -> Result<Option<FoundSwapTxSpend>, String>;
+    ) -> Result<Option<FoundSwapTxSpend>, MmError<FoundSwapTxSpendErr>>;
 
     fn extract_secret(&self, secret_hash: &[u8], spend_tx: &[u8]) -> Result<Vec<u8>, String>;
 
@@ -561,7 +580,7 @@ pub trait SwapOps {
 
 #[derive(Debug, Display)]
 pub enum SendRawTransactionError {
-    BlockchainScanStopped(BlockchainScanStopped),
+    BlockchainScanStopped(String),
     BroadcastTxErr(String),
     #[display(fmt = "Client Error: {}", _0)]
     ClientError(String),
@@ -2954,7 +2973,9 @@ where
 {
     let ctx = ctx.clone();
     let ticker = coin.ticker().to_owned();
-    let my_address = try_f!(coin.my_address().map_to_mm(TxHistoryError::InternalError));
+    let my_address = try_f!(coin
+        .my_address()
+        .mm_err(|err| TxHistoryError::InternalError(err.to_string())));
 
     let fut = async move {
         let coins_ctx = CoinsContext::from_ctx(&ctx).unwrap();
@@ -3028,12 +3049,14 @@ where
 {
     let ctx = ctx.clone();
     let ticker = coin.ticker().to_owned();
-    let my_address = try_f!(coin.my_address().map_to_mm(TxHistoryError::InternalError));
+    let my_address = try_f!(coin
+        .my_address()
+        .mm_err(|err| TxHistoryError::InternalError(err.to_string())));
 
     history.sort_unstable_by(compare_transactions);
 
     let fut = async move {
-        let coins_ctx = CoinsContext::from_ctx(&ctx).unwrap();
+        let coins_ctx = CoinsContext::from_ctx(&ctx).mm_err(|err| TxHistoryError::InternalError(err.to_string()))?;
         let db = coins_ctx.tx_history_db().await?;
         save_tx_history(&db, &ticker, &my_address, history).await?;
         Ok(())

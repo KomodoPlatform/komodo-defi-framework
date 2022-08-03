@@ -10,11 +10,11 @@ use crate::utxo::rpc_clients::{electrum_script_hash, BlockHashOrHeight, UnspentI
 use crate::utxo::spv::SimplePaymentVerification;
 use crate::utxo::tx_cache::TxCacheResult;
 use crate::utxo::utxo_withdraw::{InitUtxoWithdraw, StandardUtxoWithdraw, UtxoWithdraw};
-use crate::{CanRefundHtlc, CoinBalance, CoinWithDerivationMethod, GetWithdrawSenderAddress, HDAddressId,
-            MyAddressError, RawTransactionError, RawTransactionRequest, RawTransactionRes, SearchForSwapTxSpendInput,
-            SendRawTransactionError, SignatureError, SignatureResult, SwapOps, TradePreimageValue, TransactionFut,
-            TxFeeDetails, ValidateAddressResult, ValidatePaymentInput, VerificationError, VerificationResult,
-            WithdrawFrom, WithdrawResult, WithdrawSenderAddress};
+use crate::{CanRefundHtlc, CoinBalance, CoinWithDerivationMethod, FoundSwapTxSpendErr, GetWithdrawSenderAddress,
+            HDAddressId, MyAddressError, RawTransactionError, RawTransactionRequest, RawTransactionRes,
+            SearchForSwapTxSpendInput, SendRawTransactionError, SignatureError, SignatureResult, SwapOps,
+            TradePreimageValue, TransactionFut, TxFeeDetails, ValidateAddressResult, ValidatePaymentInput,
+            VerificationError, VerificationResult, WithdrawFrom, WithdrawResult, WithdrawSenderAddress};
 use bitcrypto::dhash256;
 pub use bitcrypto::{dhash160, sha256, ChecksumType};
 use chain::constants::SEQUENCE_FINAL;
@@ -1597,12 +1597,12 @@ pub async fn search_for_swap_tx_spend_my<T: AsRef<UtxoCoinFields> + SwapOps>(
     coin: &T,
     input: SearchForSwapTxSpendInput<'_>,
     output_index: usize,
-) -> Result<Option<FoundSwapTxSpend>, String> {
+) -> Result<Option<FoundSwapTxSpend>, MmError<FoundSwapTxSpendErr>> {
     search_for_swap_output_spend(
         coin.as_ref(),
         input.time_lock,
         coin.derive_htlc_key_pair(input.swap_unique_data).public(),
-        &try_s!(Public::from_slice(input.other_pub)),
+        &Public::from_slice(input.other_pub).map_to_mm(|err| FoundSwapTxSpendErr::Internal(err.to_string()))?,
         input.secret_hash,
         input.tx,
         output_index,
@@ -1615,11 +1615,11 @@ pub async fn search_for_swap_tx_spend_other<T: AsRef<UtxoCoinFields> + SwapOps>(
     coin: &T,
     input: SearchForSwapTxSpendInput<'_>,
     output_index: usize,
-) -> Result<Option<FoundSwapTxSpend>, String> {
+) -> Result<Option<FoundSwapTxSpend>, MmError<FoundSwapTxSpendErr>> {
     search_for_swap_output_spend(
         coin.as_ref(),
         input.time_lock,
-        &try_s!(Public::from_slice(input.other_pub)),
+        &Public::from_slice(input.other_pub).map_to_mm(|err| FoundSwapTxSpendErr::Internal(err.to_string()))?,
         coin.derive_htlc_key_pair(input.swap_unique_data).public(),
         input.secret_hash,
         input.tx,
@@ -3170,30 +3170,29 @@ async fn search_for_swap_output_spend(
     tx: &[u8],
     output_index: usize,
     search_from_block: u64,
-) -> Result<Option<FoundSwapTxSpend>, String> {
-    let mut tx: UtxoTx = try_s!(deserialize(tx).map_err(|e| ERRL!("{:?}", e)));
+) -> Result<Option<FoundSwapTxSpend>, MmError<FoundSwapTxSpendErr>> {
+    let mut tx: UtxoTx = deserialize(tx).map_to_mm(FoundSwapTxSpendErr::DeserialzationError)?;
     tx.tx_hash_algo = coin.tx_hash_algo;
     let script = payment_script(time_lock, secret_hash, first_pub, second_pub);
     let expected_script_pubkey = Builder::build_p2sh(&dhash160(&script).into()).to_bytes();
     if tx.outputs[0].script_pubkey != expected_script_pubkey {
-        return ERR!(
-            "Transaction {:?} output 0 script_pubkey doesn't match expected {:?}",
-            tx,
-            expected_script_pubkey
-        );
+        return MmError::err(FoundSwapTxSpendErr::Internal(format!(
+            "{:?} output 0 script_pubkey doesn't match expected {:?}",
+            tx, expected_script_pubkey
+        )));
     }
 
-    let spend = try_s!(
-        coin.rpc_client
-            .find_output_spend(
-                tx.hash(),
-                &tx.outputs[output_index].script_pubkey,
-                output_index,
-                BlockHashOrHeight::Height(search_from_block as i64)
-            )
-            .compat()
-            .await
-    );
+    let spend = coin
+        .rpc_client
+        .find_output_spend(
+            tx.hash(),
+            &tx.outputs[output_index].script_pubkey,
+            output_index,
+            BlockHashOrHeight::Height(search_from_block as i64),
+        )
+        .compat()
+        .await
+        .map_to_mm(FoundSwapTxSpendErr::Internal)?;
     match spend {
         Some(spent_output_info) => {
             let mut tx = spent_output_info.spending_tx;
@@ -3211,10 +3210,10 @@ async fn search_for_swap_output_spend(
                 }
             }
 
-            ERR!(
+            MmError::err(FoundSwapTxSpendErr::Internal(format!(
                 "Couldn't find required instruction in script_sig of input 0 of tx {:?}",
-                tx
-            )
+                tx,
+            )))
         },
         None => Ok(None),
     }

@@ -31,7 +31,8 @@ impl IndexedDbTxHistoryStorage {
     where
         Self: Sized,
     {
-        let coins_ctx = CoinsContext::from_ctx(ctx).map_to_mm(CreateTxHistoryStorageError::Internal)?;
+        let coins_ctx =
+            CoinsContext::from_ctx(ctx).mm_err(|err| CreateTxHistoryStorageError::Internal(err.to_string()))?;
         Ok(IndexedDbTxHistoryStorage {
             db: coins_ctx.tx_history_db.clone(),
         })

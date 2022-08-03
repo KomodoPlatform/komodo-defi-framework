@@ -16,9 +16,9 @@ use crate::utxo::utxo_builder::{BlockHeaderUtxoArcOps, MergeUtxoArcOps, UtxoCoin
                                 UtxoCoinBuilderCommonOps, UtxoFieldsWithHardwareWalletBuilder,
                                 UtxoFieldsWithIguanaPrivKeyBuilder};
 use crate::{eth, CanRefundHtlc, CoinBalance, CoinWithDerivationMethod, DelegationError, DelegationFut,
-            GetWithdrawSenderAddress, MyAddressError, NegotiateSwapContractAddrErr, PrivKeyBuildPolicy,
-            SearchForSwapTxSpendInput, SendRawTransactionError, SignatureResult, StakingInfosFut, SwapOps,
-            TradePreimageValue, TransactionFut, UnexpectedDerivationMethod, ValidateAddressResult,
+            FoundSwapTxSpendErr, GetWithdrawSenderAddress, MyAddressError, NegotiateSwapContractAddrErr,
+            PrivKeyBuildPolicy, SearchForSwapTxSpendInput, SendRawTransactionError, SignatureResult, StakingInfosFut,
+            SwapOps, TradePreimageValue, TransactionFut, UnexpectedDerivationMethod, ValidateAddressResult,
             ValidatePaymentInput, VerificationResult, WithdrawFut, WithdrawSenderAddress};
 use common::mm_metrics::MetricsArc;
 use crypto::trezor::utxo::TrezorUtxoCoin;
@@ -675,14 +675,14 @@ impl SwapOps for QtumCoin {
     async fn search_for_swap_tx_spend_my(
         &self,
         input: SearchForSwapTxSpendInput<'_>,
-    ) -> Result<Option<FoundSwapTxSpend>, String> {
+    ) -> Result<Option<FoundSwapTxSpend>, MmError<FoundSwapTxSpendErr>> {
         utxo_common::search_for_swap_tx_spend_my(self, input, utxo_common::DEFAULT_SWAP_VOUT).await
     }
 
     async fn search_for_swap_tx_spend_other(
         &self,
         input: SearchForSwapTxSpendInput<'_>,
-    ) -> Result<Option<FoundSwapTxSpend>, String> {
+    ) -> Result<Option<FoundSwapTxSpend>, MmError<FoundSwapTxSpendErr>> {
         utxo_common::search_for_swap_tx_spend_other(self, input, utxo_common::DEFAULT_SWAP_VOUT).await
     }
 
