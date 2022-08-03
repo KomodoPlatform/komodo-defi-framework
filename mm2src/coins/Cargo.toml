@@ -51,7 +51,6 @@ keys = { path = "../mm2_bitcoin/keys" }
 lazy_static = "1.4"
 libc = "0.2"
 lightning = { git = "https://github.com/shamardy/rust-lightning", branch = "0.0.106" }
-lightning-background-processor = { path = "lightning_background_processor" }
 lightning-invoice = { git = "https://github.com/shamardy/rust-lightning", branch = "0.0.106" }
 metrics = "0.12"
 mm2_core = { path = "../mm2_core" }
@@ -100,7 +99,8 @@ web-sys = { version = "0.3.55", features = ["console", "Headers", "Request", "Re
 
 [target.'cfg(not(target_arch = "wasm32"))'.dependencies]
 dirs = { version = "1" }
-lightning-persister = { path = "lightning_persister" }
+lightning-background-processor = { git = "https://github.com/shamardy/rust-lightning", branch = "0.0.106" }
+lightning-persister = { git = "https://github.com/shamardy/rust-lightning", branch = "0.0.106" }
 lightning-net-tokio = { git = "https://github.com/shamardy/rust-lightning", branch = "0.0.106" }
 rust-ini = { version = "0.13" }
 rustls = { version = "0.20", features = ["dangerous_configuration"] }

@@ -11,7 +11,7 @@ wasm_bindgen_test_configure!(run_in_browser);
 const TEST_COIN_NAME: &'static str = "RICK";
 
 pub async fn electrum_client_for_test(servers: &[&str]) -> ElectrumClient {
-    let client = ElectrumClientImpl::new(TEST_COIN_NAME.into(), Default::default());
+    let client = ElectrumClientImpl::new(TEST_COIN_NAME.into(), Default::default(), None);
     for server in servers {
         client
             .add_server(&ElectrumRpcRequest {

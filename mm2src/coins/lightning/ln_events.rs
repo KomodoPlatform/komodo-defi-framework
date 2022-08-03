@@ -1,14 +1,18 @@
 use super::*;
+use crate::lightning::ln_db::{DBChannelDetails, HTLCStatus, LightningDB, PaymentType};
 use crate::lightning::ln_errors::{SaveChannelClosingError, SaveChannelClosingResult};
+use crate::lightning::ln_sql::SqliteLightningDB;
 use bitcoin::blockdata::script::Script;
 use bitcoin::blockdata::transaction::Transaction;
+use bitcoin::consensus::encode::serialize_hex;
 use common::executor::{spawn, Timer};
 use common::log::{error, info};
-use common::now_ms;
+use common::{now_ms, spawn_abortable, AbortOnDropHandle};
 use core::time::Duration;
-use lightning::chain::chaininterface::{BroadcasterInterface, ConfirmationTarget, FeeEstimator};
+use lightning::chain::chaininterface::{ConfirmationTarget, FeeEstimator};
 use lightning::chain::keysinterface::SpendableOutputDescriptor;
 use lightning::util::events::{Event, EventHandler, PaymentPurpose};
+use parking_lot::Mutex as PaMutex;
 use rand::Rng;
 use script::{Builder, SignatureVersion};
 use secp256k1::Secp256k1;
@@ -22,7 +26,8 @@ pub struct LightningEventHandler {
     platform: Arc<Platform>,
     channel_manager: Arc<ChannelManager>,
     keys_manager: Arc<KeysManager>,
-    persister: Arc<LightningPersister>,
+    db: SqliteLightningDB,
+    abort_handlers: Arc<PaMutex<Vec<AbortOnDropHandle>>>,
 }
 
 impl EventHandler for LightningEventHandler {
@@ -114,20 +119,39 @@ impl EventHandler for LightningEventHandler {
                 funding_satoshis,
                 push_msat,
                 channel_type: _,
-            } => {
-                info!(
-                    "Handling OpenChannelRequest from node: {} with funding value: {} and starting balance: {}",
-                    counterparty_node_id,
-                    funding_satoshis,
-                    push_msat,
-                );
-                if self.channel_manager.accept_inbound_channel(temporary_channel_id, 0).is_ok() {
-                    // Todo: once the rust-lightning PR for user_channel_id in accept_inbound_channel is released
-                    // use user_channel_id to get the funding tx here once the funding tx is available.
-                }
-            },
+            } => self.handle_open_channel_request(*temporary_channel_id, *counterparty_node_id, *funding_satoshis, *push_msat),
         }
     }
+}
+
+pub async fn init_events_abort_handlers(
+    platform: Arc<Platform>,
+    db: SqliteLightningDB,
+) -> EnableLightningResult<Arc<PaMutex<Vec<AbortOnDropHandle>>>> {
+    let abort_handlers = Arc::new(PaMutex::new(Vec::new()));
+    let closed_channels_without_closing_tx = db.get_closed_channels_with_no_closing_tx().await?;
+    for channel_details in closed_channels_without_closing_tx {
+        let platform = platform.clone();
+        let db = db.clone();
+        let user_channel_id = channel_details.rpc_id;
+        let abort_handler = spawn_abortable(async move {
+            if let Ok(closing_tx_hash) = platform
+                .get_channel_closing_tx(channel_details)
+                .await
+                .error_log_passthrough()
+            {
+                if let Err(e) = db.add_closing_tx_to_db(user_channel_id, closing_tx_hash).await {
+                    log::error!(
+                        "Unable to update channel {} closing details in DB: {}",
+                        user_channel_id,
+                        e
+                    );
+                }
+            }
+        });
+        abort_handlers.lock().push(abort_handler);
+    }
+    Ok(abort_handlers)
 }
 
 // Generates the raw funding transaction with one output equal to the channel value.
@@ -167,25 +191,39 @@ fn sign_funding_transaction(
 }
 
 async fn save_channel_closing_details(
-    persister: Arc<LightningPersister>,
+    db: SqliteLightningDB,
     platform: Arc<Platform>,
     user_channel_id: u64,
     reason: String,
 ) -> SaveChannelClosingResult<()> {
-    persister
-        .update_channel_to_closed(user_channel_id, reason, now_ms() / 1000)
+    db.update_channel_to_closed(user_channel_id as i64, reason, (now_ms() / 1000) as i64)
         .await?;
 
-    let channel_details = persister
+    let channel_details = db
         .get_channel_from_db(user_channel_id)
         .await?
         .ok_or_else(|| MmError::new(SaveChannelClosingError::ChannelNotFound(user_channel_id)))?;
 
     let closing_tx_hash = platform.get_channel_closing_tx(channel_details).await?;
 
-    persister.add_closing_tx_to_db(user_channel_id, closing_tx_hash).await?;
+    db.add_closing_tx_to_db(user_channel_id as i64, closing_tx_hash).await?;
 
     Ok(())
+}
+
+async fn add_claiming_tx_to_db_loop(
+    db: SqliteLightningDB,
+    closing_txid: String,
+    claiming_txid: String,
+    claimed_balance: f64,
+) {
+    while let Err(e) = db
+        .add_claiming_tx_to_db(closing_txid.clone(), claiming_txid.clone(), claimed_balance)
+        .await
+    {
+        error!("error {}", e);
+        Timer::sleep(TRY_LOOP_INTERVAL).await;
+    }
 }
 
 impl LightningEventHandler {
@@ -193,13 +231,15 @@ impl LightningEventHandler {
         platform: Arc<Platform>,
         channel_manager: Arc<ChannelManager>,
         keys_manager: Arc<KeysManager>,
-        persister: Arc<LightningPersister>,
+        db: SqliteLightningDB,
+        abort_handlers: Arc<PaMutex<Vec<AbortOnDropHandle>>>,
     ) -> Self {
         LightningEventHandler {
             platform,
             channel_manager,
             keys_manager,
-            persister,
+            db,
+            abort_handlers,
         }
     }
 
@@ -235,18 +275,17 @@ impl LightningEventHandler {
             return;
         }
         let platform = self.platform.clone();
-        let persister = self.persister.clone();
+        let db = self.db.clone();
         spawn(async move {
             let best_block_height = platform.best_block_height();
-            persister
-                .add_funding_tx_to_db(
-                    user_channel_id,
-                    funding_txid.to_string(),
-                    channel_value_satoshis,
-                    best_block_height,
-                )
-                .await
-                .error_log();
+            db.add_funding_tx_to_db(
+                user_channel_id as i64,
+                funding_txid.to_string(),
+                channel_value_satoshis as i64,
+                best_block_height as i64,
+            )
+            .await
+            .error_log();
         });
     }
 
@@ -276,38 +315,34 @@ impl LightningEventHandler {
             },
             false => HTLCStatus::Failed,
         };
-        let persister = self.persister.clone();
+        let db = self.db.clone();
         match purpose {
             PaymentPurpose::InvoicePayment { .. } => spawn(async move {
-                if let Ok(Some(mut payment_info)) = persister
-                    .get_payment_from_db(payment_hash)
-                    .await
-                    .error_log_passthrough()
-                {
+                if let Ok(Some(mut payment_info)) = db.get_payment_from_db(payment_hash).await.error_log_passthrough() {
                     payment_info.preimage = Some(payment_preimage);
                     payment_info.status = HTLCStatus::Succeeded;
-                    payment_info.amt_msat = Some(amt);
-                    payment_info.last_updated = now_ms() / 1000;
-                    if let Err(e) = persister.add_or_update_payment_in_db(payment_info).await {
+                    payment_info.amt_msat = Some(amt as i64);
+                    payment_info.last_updated = (now_ms() / 1000) as i64;
+                    if let Err(e) = db.add_or_update_payment_in_db(payment_info).await {
                         error!("Unable to update payment information in DB: {}", e);
                     }
                 }
             }),
             PaymentPurpose::SpontaneousPayment(_) => {
-                let payment_info = PaymentInfo {
+                let payment_info = DBPaymentInfo {
                     payment_hash,
                     payment_type: PaymentType::InboundPayment,
                     description: "".into(),
                     preimage: Some(payment_preimage),
                     secret: payment_secret,
-                    amt_msat: Some(amt),
+                    amt_msat: Some(amt as i64),
                     fee_paid_msat: None,
                     status,
-                    created_at: now_ms() / 1000,
-                    last_updated: now_ms() / 1000,
+                    created_at: (now_ms() / 1000) as i64,
+                    last_updated: (now_ms() / 1000) as i64,
                 };
                 spawn(async move {
-                    if let Err(e) = persister.add_or_update_payment_in_db(payment_info).await {
+                    if let Err(e) = db.add_or_update_payment_in_db(payment_info).await {
                         error!("Unable to update payment information in DB: {}", e);
                     }
                 });
@@ -325,19 +360,15 @@ impl LightningEventHandler {
             "Handling PaymentSent event for payment_hash: {}",
             hex::encode(payment_hash.0)
         );
-        let persister = self.persister.clone();
+        let db = self.db.clone();
         spawn(async move {
-            if let Ok(Some(mut payment_info)) = persister
-                .get_payment_from_db(payment_hash)
-                .await
-                .error_log_passthrough()
-            {
+            if let Ok(Some(mut payment_info)) = db.get_payment_from_db(payment_hash).await.error_log_passthrough() {
                 payment_info.preimage = Some(payment_preimage);
                 payment_info.status = HTLCStatus::Succeeded;
-                payment_info.fee_paid_msat = fee_paid_msat;
-                payment_info.last_updated = now_ms() / 1000;
+                payment_info.fee_paid_msat = fee_paid_msat.map(|f| f as i64);
+                payment_info.last_updated = (now_ms() / 1000) as i64;
                 let amt_msat = payment_info.amt_msat;
-                if let Err(e) = persister.add_or_update_payment_in_db(payment_info).await {
+                if let Err(e) = db.add_or_update_payment_in_db(payment_info).await {
                     error!("Unable to update payment information in DB: {}", e);
                 }
                 info!(
@@ -355,21 +386,20 @@ impl LightningEventHandler {
             hex::encode(channel_id),
             reason
         );
-        let persister = self.persister.clone();
+        let db = self.db.clone();
         let platform = self.platform.clone();
-        // Todo: Handle inbound channels closure case after updating to latest version of rust-lightning
-        // as it has a new OpenChannelRequest event where we can give an inbound channel a user_channel_id
-        // other than 0 in sql
-        if user_channel_id != 0 {
-            spawn(async move {
-                if let Err(e) = save_channel_closing_details(persister, platform, user_channel_id, reason).await {
+        let abort_handler = spawn_abortable(async move {
+            if let Err(e) = save_channel_closing_details(db, platform, user_channel_id, reason).await {
+                // This is the case when a channel is closed before funding is broadcasted due to the counterparty disconnecting or other incompatibility issue.
+                if e != SaveChannelClosingError::FundingTxNull.into() {
                     error!(
                         "Unable to update channel {} closing details in DB: {}",
                         user_channel_id, e
                     );
                 }
-            });
-        }
+            }
+        });
+        self.abort_handlers.lock().push(abort_handler);
     }
 
     fn handle_payment_failed(&self, payment_hash: PaymentHash) {
@@ -377,16 +407,12 @@ impl LightningEventHandler {
             "Handling PaymentFailed event for payment_hash: {}",
             hex::encode(payment_hash.0)
         );
-        let persister = self.persister.clone();
+        let db = self.db.clone();
         spawn(async move {
-            if let Ok(Some(mut payment_info)) = persister
-                .get_payment_from_db(payment_hash)
-                .await
-                .error_log_passthrough()
-            {
+            if let Ok(Some(mut payment_info)) = db.get_payment_from_db(payment_hash).await.error_log_passthrough() {
                 payment_info.status = HTLCStatus::Failed;
-                payment_info.last_updated = now_ms() / 1000;
-                if let Err(e) = persister.add_or_update_payment_in_db(payment_info).await {
+                payment_info.last_updated = (now_ms() / 1000) as i64;
+                if let Err(e) = db.add_or_update_payment_in_db(payment_info).await {
                     error!("Unable to update payment information in DB: {}", e);
                 }
             }
@@ -418,7 +444,7 @@ impl LightningEventHandler {
         let change_destination_script = Builder::build_witness_script(&my_address.hash).to_bytes().take().into();
         let feerate_sat_per_1000_weight = self.platform.get_est_sat_per_1000_weight(ConfirmationTarget::Normal);
         let output_descriptors = &outputs.iter().collect::<Vec<_>>();
-        let spending_tx = match self.keys_manager.spend_spendable_outputs(
+        let claiming_tx = match self.keys_manager.spend_spendable_outputs(
             output_descriptors,
             Vec::new(),
             change_destination_script,
@@ -432,12 +458,23 @@ impl LightningEventHandler {
             },
         };
 
+        let claiming_txid = claiming_tx.txid();
+        let tx_hex = serialize_hex(&claiming_tx);
+        if let Err(e) = tokio::task::block_in_place(move || self.platform.coin.send_raw_tx(&tx_hex).wait()) {
+            // TODO: broadcast transaction through p2p network in this case
+            error!(
+                "Broadcasting of the claiming transaction {} failed: {}",
+                claiming_txid, e
+            );
+            return;
+        }
+
         let claiming_tx_inputs_value = outputs.iter().fold(0, |sum, output| match output {
             SpendableOutputDescriptor::StaticOutput { output, .. } => sum + output.value,
             SpendableOutputDescriptor::DelayedPaymentOutput(descriptor) => sum + descriptor.output.value,
             SpendableOutputDescriptor::StaticPaymentOutput(descriptor) => sum + descriptor.output.value,
         });
-        let claiming_tx_outputs_value = spending_tx.output.iter().fold(0, |sum, txout| sum + txout.value);
+        let claiming_tx_outputs_value = claiming_tx.output.iter().fold(0, |sum, txout| sum + txout.value);
         if claiming_tx_inputs_value < claiming_tx_outputs_value {
             error!(
                 "Claiming transaction input value {} can't be less than outputs value {}!",
@@ -460,22 +497,90 @@ impl LightningEventHandler {
                     (descriptor.outpoint.txid.to_string(), descriptor.output.value)
                 },
             };
-            let claiming_txid = spending_tx.txid().to_string();
-            let persister = self.persister.clone();
-            spawn(async move {
-                ok_or_retry_after_sleep!(
-                    persister
-                        .add_claiming_tx_to_db(
-                            closing_txid.clone(),
-                            claiming_txid.clone(),
-                            (claimed_balance as f64) - claiming_tx_fee_per_channel,
-                        )
-                        .await,
-                    TRY_LOOP_INTERVAL
-                );
-            });
+            let db = self.db.clone();
 
-            self.platform.broadcast_transaction(&spending_tx);
+            // This doesn't need to be respawned on restart unlike add_closing_tx_to_db since Event::SpendableOutputs will be re-fired on restart
+            // if the spending_tx is not broadcasted.
+            let abort_handler = spawn_abortable(add_claiming_tx_to_db_loop(
+                db,
+                closing_txid,
+                claiming_txid.to_string(),
+                (claimed_balance as f64) - claiming_tx_fee_per_channel,
+            ));
+            self.abort_handlers.lock().push(abort_handler);
         }
+    }
+
+    fn handle_open_channel_request(
+        &self,
+        temporary_channel_id: [u8; 32],
+        counterparty_node_id: PublicKey,
+        funding_satoshis: u64,
+        push_msat: u64,
+    ) {
+        info!(
+            "Handling OpenChannelRequest from node: {} with funding value: {} and starting balance: {}",
+            counterparty_node_id, funding_satoshis, push_msat,
+        );
+
+        let db = self.db.clone();
+        let channel_manager = self.channel_manager.clone();
+        let platform = self.platform.clone();
+        spawn(async move {
+            if let Ok(last_channel_rpc_id) = db.get_last_channel_rpc_id().await.error_log_passthrough() {
+                let user_channel_id = last_channel_rpc_id as u64 + 1;
+                if channel_manager
+                    .accept_inbound_channel(&temporary_channel_id, user_channel_id)
+                    .is_ok()
+                {
+                    let is_public = match channel_manager
+                        .list_channels()
+                        .into_iter()
+                        .find(|chan| chan.user_channel_id == user_channel_id)
+                    {
+                        Some(details) => details.is_public,
+                        None => {
+                            error!(
+                                "Inbound channel {} details should be found by list_channels!",
+                                user_channel_id
+                            );
+                            return;
+                        },
+                    };
+
+                    let pending_channel_details = DBChannelDetails::new(
+                        user_channel_id,
+                        temporary_channel_id,
+                        counterparty_node_id,
+                        false,
+                        is_public,
+                    );
+                    if let Err(e) = db.add_channel_to_db(pending_channel_details).await {
+                        error!("Unable to add new inbound channel {} to db: {}", user_channel_id, e);
+                    }
+
+                    while let Some(details) = channel_manager
+                        .list_channels()
+                        .into_iter()
+                        .find(|chan| chan.user_channel_id == user_channel_id)
+                    {
+                        if let Some(funding_tx) = details.funding_txo {
+                            let best_block_height = platform.best_block_height();
+                            db.add_funding_tx_to_db(
+                                user_channel_id as i64,
+                                funding_tx.txid.to_string(),
+                                funding_satoshis as i64,
+                                best_block_height as i64,
+                            )
+                            .await
+                            .error_log();
+                            break;
+                        }
+
+                        Timer::sleep(TRY_LOOP_INTERVAL).await;
+                    }
+                }
+            }
+        });
     }
 }

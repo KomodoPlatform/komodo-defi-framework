@@ -10,6 +10,7 @@ use crate::utxo::rpc_clients::{BlockHashOrHeight, ElectrumBalance, ElectrumClien
                                GetAddressInfoRes, ListSinceBlockRes, ListTransactionsItem, NativeClient,
                                NativeClientImpl, NativeUnspent, NetworkInfo, UtxoRpcClientOps, ValidateAddressRes,
                                VerboseBlock};
+use crate::utxo::spv::SimplePaymentVerification;
 use crate::utxo::tx_cache::dummy_tx_cache::DummyVerboseCache;
 use crate::utxo::tx_cache::UtxoVerboseCacheOps;
 use crate::utxo::utxo_builder::{UtxoArcBuilder, UtxoCoinBuilderCommonOps};
@@ -69,7 +70,7 @@ pub fn electrum_client_for_test(servers: &[&str]) -> ElectrumClient {
     };
 
     let servers = servers.into_iter().map(|s| json::from_value(s).unwrap()).collect();
-    block_on(builder.electrum_client(args, servers)).unwrap()
+    block_on(builder.electrum_client(args, servers, None)).unwrap()
 }
 
 /// Returned client won't work by default, requires some mocks to be usable
@@ -165,7 +166,6 @@ fn utxo_coin_fields_for_test(
         derivation_method,
         history_sync_state: Mutex::new(HistorySyncState::NotEnabled),
         tx_cache: DummyVerboseCache::default().into_shared(),
-        block_headers_storage: None,
         recently_spent_outpoints: AsyncMutex::new(RecentlySpentOutPoints::new(my_script_pubkey)),
         tx_hash_algo: TxHashAlgo::DSHA256,
         check_utxo_maturity: false,
@@ -469,7 +469,7 @@ fn test_wait_for_payment_spend_timeout_electrum() {
         MockResult::Return(Box::new(futures01::future::ok(None)))
     });
 
-    let client = ElectrumClientImpl::new(TEST_COIN_NAME.into(), Default::default());
+    let client = ElectrumClientImpl::new(TEST_COIN_NAME.into(), Default::default(), None);
     let client = UtxoRpcClientEnum::Electrum(ElectrumClient(Arc::new(client)));
     let coin = utxo_coin_for_test(client, None, false);
     let transaction = hex::decode("01000000000102fff7f7881a8099afa6940d42d1e7f6362bec38171ea3edf433541db4e4ad969f00000000494830450221008b9d1dc26ba6a9cb62127b02742fa9d754cd3bebf337f7a55d114c8e5cdd30be022040529b194ba3f9281a99f2b1c0a19c0489bc22ede944ccf4ecbab4cc618ef3ed01eeffffffef51e1b804cc89d182d279655c3aa89e815b1b309fe287d9b2b55d57b90ec68a0100000000ffffffff02202cb206000000001976a9148280b37df378db99f66f85c95a783a76ac7a6d5988ac9093510d000000001976a9143bde42dbee7e4dbe6a21b2d50ce2f0167faa815988ac000247304402203609e17b84f6a7d30c80bfa610b5b4542f32a8a0d5447a12fb1366d7f01cc44a0220573a954c4518331561406f90300e8f3358f51928d43c212a8caed02de67eebee0121025476c2e83188368da1ff3e292e7acafcdb3566bb0ad253f62fc70f07aeee635711000000")
@@ -956,18 +956,13 @@ fn test_utxo_lock() {
 #[test]
 fn test_spv_proof() {
     let client = electrum_client_for_test(RICK_ELECTRUM_ADDRS);
-    let coin = utxo_coin_for_test(
-        client.into(),
-        Some("spice describe gravity federal blast come thank unfair canal monkey style afraid"),
-        false,
-    );
 
     // https://rick.explorer.dexstats.info/tx/78ea7839f6d1b0dafda2ba7e34c1d8218676a58bd1b33f03a5f76391f61b72b0
     let tx_str = "0400008085202f8902bf17bf7d1daace52e08f732a6b8771743ca4b1cb765a187e72fd091a0aabfd52000000006a47304402203eaaa3c4da101240f80f9c5e9de716a22b1ec6d66080de6a0cca32011cd77223022040d9082b6242d6acf9a1a8e658779e1c655d708379862f235e8ba7b8ca4e69c6012102031d4256c4bc9f99ac88bf3dba21773132281f65f9bf23a59928bce08961e2f3ffffffffff023ca13c0e9e085dd13f481f193e8a3e8fd609020936e98b5587342d994f4d020000006b483045022100c0ba56adb8de923975052312467347d83238bd8d480ce66e8b709a7997373994022048507bcac921fdb2302fa5224ce86e41b7efc1a2e20ae63aa738dfa99b7be826012102031d4256c4bc9f99ac88bf3dba21773132281f65f9bf23a59928bce08961e2f3ffffffff0300e1f5050000000017a9141ee6d4c38a3c078eab87ad1a5e4b00f21259b10d870000000000000000166a1400000000000000000000000000000000000000001b94d736000000001976a91405aab5342166f8594baf17a7d9bef5d56744332788ac2d08e35e000000000000000000000000000000";
     let tx: UtxoTx = tx_str.into();
 
-    let res = block_on(utxo_common::validate_spv_proof(coin.clone(), tx, now_ms() / 1000 + 30));
-    res.unwrap()
+    let res = block_on(client.validate_spv_proof(&tx, now_ms() / 1000 + 30));
+    res.unwrap();
 }
 
 #[test]
@@ -1473,11 +1468,12 @@ fn test_network_info_negative_time_offset() {
 
 #[test]
 fn test_unavailable_electrum_proto_version() {
-    ElectrumClientImpl::new.mock_safe(|coin_ticker, event_handlers| {
+    ElectrumClientImpl::new.mock_safe(|coin_ticker, event_handlers, _| {
         MockResult::Return(ElectrumClientImpl::with_protocol_version(
             coin_ticker,
             event_handlers,
             OrdRange::new(1.8, 1.9).unwrap(),
+            None,
         ))
     });
 
