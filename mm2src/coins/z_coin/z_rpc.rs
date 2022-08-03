@@ -296,7 +296,11 @@ impl SaplingSyncLoopHandle {
         let current_blockchain_block = self.grpc_client.get_latest_block(request).await?;
         let current_block_in_db = block_in_place(|| self.blocks_db.get_latest_block())?;
 
-        let from_block = current_block_in_db as u64 + 1;
+        let from_block = self
+            .consensus_params
+            .sapling_activation_height
+            .max(current_block_in_db as u32 + 1) as u64;
+
         let current_block: u64 = current_blockchain_block.into_inner().height;
 
         if current_block >= from_block {

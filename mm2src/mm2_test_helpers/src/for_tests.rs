@@ -104,6 +104,8 @@ pub const MORTY: &str = "MORTY";
 pub const ZOMBIE_TICKER: &str = "ZOMBIE";
 pub const ZOMBIE_ELECTRUMS: &[&str] = &["zombie.sirseven.me:10033"];
 pub const ZOMBIE_LIGHTWALLETD_URLS: &[&str] = &["http://zombie.sirseven.me:443"];
+pub const PIRATE_ELECTRUMS: &[&str] = &["pirate.sirseven.me:10032"];
+pub const PIRATE_LIGHTWALLETD_URLS: &[&str] = &["http://pirate.sirseven.me:443"];
 const DEFAULT_RPC_PASSWORD: &str = "pass";
 
 pub struct Mm2TestConf {
@@ -172,6 +174,35 @@ pub fn zombie_conf() -> Json {
                 "consensus_params": {
                     "overwinter_activation_height": 0,
                     "sapling_activation_height": 1,
+                    "blossom_activation_height": null,
+                    "heartwood_activation_height": null,
+                    "canopy_activation_height": null,
+                    "coin_type": 133,
+                    "hrp_sapling_extended_spending_key": "secret-extended-key-main",
+                    "hrp_sapling_extended_full_viewing_key": "zxviews",
+                    "hrp_sapling_payment_address": "zs",
+                    "b58_pubkey_address_prefix": [ 28, 184 ],
+                    "b58_script_address_prefix": [ 28, 189 ]
+                }
+            }
+        },
+        "required_confirmations":0
+    })
+}
+
+pub fn pirate_conf() -> Json {
+    json!({
+        "coin":"ARRR",
+        "asset":"PIRATE",
+        "txversion":4,
+        "overwintered":1,
+        "mm2":1,
+        "protocol":{
+            "type":"ZHTLC",
+            "protocol_data": {
+                "consensus_params": {
+                    "overwinter_activation_height": 0,
+                    "sapling_activation_height": 152855,
                     "blossom_activation_height": null,
                     "heartwood_activation_height": null,
                     "canopy_activation_height": null,

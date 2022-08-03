@@ -1,7 +1,8 @@
 use super::*;
 use common::now_ms;
-use mm2_test_helpers::for_tests::{init_withdraw, rick_conf, send_raw_transaction, withdraw_status, z_coin_tx_history,
-                                  zombie_conf, Mm2TestConf, RICK, ZOMBIE_ELECTRUMS, ZOMBIE_LIGHTWALLETD_URLS,
+use mm2_test_helpers::for_tests::{init_withdraw, pirate_conf, rick_conf, send_raw_transaction, withdraw_status,
+                                  z_coin_tx_history, zombie_conf, Mm2TestConf, PIRATE_ELECTRUMS,
+                                  PIRATE_LIGHTWALLETD_URLS, RICK, ZOMBIE_ELECTRUMS, ZOMBIE_LIGHTWALLETD_URLS,
                                   ZOMBIE_TICKER};
 use std::collections::HashSet;
 use std::iter::FromIterator;
@@ -434,4 +435,28 @@ fn trade_rick_zombie_light() {
     block_on(mm_bob.wait_for_log(900., |log| log.contains(&format!("[swap uuid={}] Finished", uuid)))).unwrap();
 
     block_on(mm_alice.wait_for_log(900., |log| log.contains(&format!("[swap uuid={}] Finished", uuid)))).unwrap();
+}
+
+// ignored because it requires a long-running Zcoin initialization process
+#[test]
+#[ignore]
+fn activate_pirate_light() {
+    let coins = json!([pirate_conf()]);
+
+    let conf = Mm2TestConf::seednode(ZOMBIE_TEST_BALANCE_SEED, &coins);
+    let mm = MarketMakerIt::start(conf.conf, conf.rpc_password, conf.local).unwrap();
+
+    let activation_result = block_on(enable_z_coin_light(
+        &mm,
+        "ARRR",
+        PIRATE_ELECTRUMS,
+        PIRATE_LIGHTWALLETD_URLS,
+        &blocks_cache_path(&mm, ZOMBIE_TEST_BALANCE_SEED, "ARRR"),
+    ));
+
+    let balance = match activation_result.wallet_balance {
+        EnableCoinBalance::Iguana(iguana) => iguana,
+        _ => panic!("Expected EnableCoinBalance::Iguana"),
+    };
+    // assert_eq!(balance.balance.spendable, BigDecimal::from_str("3.1").unwrap());
 }
