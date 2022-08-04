@@ -48,13 +48,13 @@ pub fn enum_from_inner(input: TokenStream) -> TokenStream {
 /// # Usage
 ///
 /// ```rust
-/// use enum_from::EnumFromInner;
+/// use enum_from::EnumFromTrait;
 ///
-/// #[derive(EnumFromInner)]
+/// #[derive(EnumFromTrait)]
 /// enum FooBar {
 ///     #[from_trait(Foo::foo)]
 ///     Foo(i32),
-///     #[from_inner]
+///     #[from_trait(Bar::bar)]
 ///     Bar(&'static str),
 /// }
 ///
