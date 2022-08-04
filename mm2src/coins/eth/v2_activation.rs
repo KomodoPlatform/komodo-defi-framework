@@ -29,7 +29,6 @@ pub struct EthActivationV2Request {
     pub gas_station_policy: GasStationPricePolicy,
     pub mm2: Option<u8>,
     #[serde(default)]
-    pub tx_history: bool,
     pub required_confirmations: Option<u64>,
 }
 
@@ -218,12 +217,6 @@ pub async fn eth_coin_from_conf_and_request_v2(
 
     let sign_message_prefix: Option<String> = json::from_value(conf["sign_message_prefix"].clone()).ok();
 
-    let initial_history_state = if req.tx_history {
-        HistorySyncState::NotStarted
-    } else {
-        HistorySyncState::NotEnabled
-    };
-
     let mut map = NONCE_LOCK.lock().unwrap();
     let nonce_lock = map.entry(ticker.to_string()).or_insert_with(new_nonce_lock).clone();
 
@@ -241,7 +234,7 @@ pub async fn eth_coin_from_conf_and_request_v2(
         gas_station_policy: req.gas_station_policy,
         web3,
         web3_instances,
-        history_sync_state: Mutex::new(initial_history_state),
+        history_sync_state: Mutex::new(HistorySyncState::NotEnabled),
         ctx: ctx.weak(),
         required_confirmations,
         chain_id: conf["chain_id"].as_u64(),
