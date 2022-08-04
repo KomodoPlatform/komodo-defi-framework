@@ -4,6 +4,7 @@ use metrics::{Counter, Gauge, Histogram, Key, KeyName, Label, Recorder, Unit};
 #[cfg(not(target_arch = "wasm32"))]
 use metrics_exporter_prometheus::formatting::{key_to_parts, write_metric_line, write_type_line};
 use metrics_util::registry::{GenerationalAtomicStorage, GenerationalStorage, Registry};
+use std::collections::hash_map::Entry::{Occupied, Vacant};
 use std::sync::{atomic::Ordering, Arc};
 use std::{collections::HashMap, slice::Iter};
 
@@ -153,16 +154,11 @@ impl MmRecorder {
     }
 }
 
-use std::collections::hash_map::Entry::{Occupied, Vacant};
-
 #[cfg(not(target_arch = "wasm32"))]
 fn key_value_to_snapshot_entry<V>(metrics: &mut HashMap<String, HashMap<Vec<String>, V>>, key: Key, value: V) {
     let (key_name, labels) = key_to_parts(&key, None);
-    let val = match metrics.entry(key_name) {
-        Vacant(entry) => entry.insert(HashMap::new()),
-        Occupied(entry) => entry.into_mut(),
-    };
-    val.insert(labels, value);
+    let metrics = metrics.entry(key_name).or_insert_with(|| HashMap::new());
+    metrics.insert(labels, value);
 }
 
 impl Recorder for MmRecorder {
