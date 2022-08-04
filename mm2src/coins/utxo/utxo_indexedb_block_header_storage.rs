@@ -46,8 +46,8 @@ impl BlockHeaderStorageOps for IndexedDBBlockHeadersStorage {
 
     async fn get_block_height_by_hash(
         &self,
-        for_coin: &str,
-        hash: H256,
+        _for_coin: &str,
+        _hash: H256,
     ) -> Result<Option<i64>, BlockHeaderStorageError> {
         Ok(None)
     }

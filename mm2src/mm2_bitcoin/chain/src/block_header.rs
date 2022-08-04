@@ -1,6 +1,8 @@
 use compact::Compact;
 use crypto::dhash256;
+#[cfg(not(target_arch = "wasm32"))]
 use ext_bitcoin::blockdata::block::BlockHeader as ExtBlockHeader;
+#[cfg(not(target_arch = "wasm32"))]
 use ext_bitcoin::hash_types::{BlockHash as ExtBlockHash, TxMerkleNode as ExtTxMerkleNode};
 use hash::H256;
 use hex::FromHex;
@@ -348,6 +350,7 @@ impl TryFrom<String> for BlockHeader {
     }
 }
 
+#[cfg(not(target_arch = "wasm32"))]
 impl From<BlockHeader> for ExtBlockHeader {
     fn from(header: BlockHeader) -> Self {
         let prev_blockhash = ExtBlockHash::from_hash(header.previous_header_hash.to_sha256d());

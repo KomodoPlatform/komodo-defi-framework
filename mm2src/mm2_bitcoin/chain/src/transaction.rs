@@ -4,9 +4,11 @@
 use bytes::Bytes;
 use constants::{LOCKTIME_THRESHOLD, SEQUENCE_FINAL};
 use crypto::{dhash256, sha256};
+#[cfg(not(target_arch = "wasm32"))]
 use ext_bitcoin::blockdata::transaction::{OutPoint as ExtOutpoint, Transaction as ExtTransaction, TxIn, TxOut};
+#[cfg(not(target_arch = "wasm32"))]
 use ext_bitcoin::hash_types::Txid;
-use ext_bitcoin::Witness;
+#[cfg(not(target_arch = "wasm32"))] use ext_bitcoin::Witness;
 use hash::{CipherText, EncCipherText, OutCipherText, ZkProof, ZkProofSapling, H256, H512, H64};
 use hex::FromHex;
 use ser::{deserialize, serialize, serialize_with_flags, SERIALIZE_TRANSACTION_WITNESS};
@@ -38,6 +40,7 @@ impl OutPoint {
     pub fn is_null(&self) -> bool { self.hash.is_zero() && self.index == u32::MAX }
 }
 
+#[cfg(not(target_arch = "wasm32"))]
 impl From<OutPoint> for ExtOutpoint {
     fn from(outpoint: OutPoint) -> Self {
         ExtOutpoint {
@@ -70,6 +73,7 @@ impl TransactionInput {
     pub fn has_witness(&self) -> bool { !self.script_witness.is_empty() }
 }
 
+#[cfg(not(target_arch = "wasm32"))]
 impl From<TransactionInput> for TxIn {
     fn from(txin: TransactionInput) -> Self {
         TxIn {
@@ -96,6 +100,7 @@ impl Default for TransactionOutput {
     }
 }
 
+#[cfg(not(target_arch = "wasm32"))]
 impl From<TransactionOutput> for TxOut {
     fn from(txout: TransactionOutput) -> Self {
         TxOut {
@@ -227,6 +232,7 @@ impl From<&'static str> for Transaction {
     fn from(s: &'static str) -> Self { deserialize(&s.from_hex::<Vec<u8>>().unwrap() as &[u8]).unwrap() }
 }
 
+#[cfg(not(target_arch = "wasm32"))]
 impl From<Transaction> for ExtTransaction {
     fn from(tx: Transaction) -> Self {
         ExtTransaction {
