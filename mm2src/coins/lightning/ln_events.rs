@@ -256,7 +256,7 @@ impl LightningEventHandler {
         channel_value_satoshis: u64,
         output_script: &Script,
         user_channel_id: u64,
-        counterparty_node_id: &LnPublicKey,
+        counterparty_node_id: &PublicKey,
     ) {
         info!(
             "Handling FundingGenerationReady event for internal channel id: {} with: {}",
@@ -297,10 +297,11 @@ impl LightningEventHandler {
         });
     }
 
-    fn handle_payment_received(&self, payment_hash: PaymentHash, _amount_msat: u64, purpose: &PaymentPurpose) {
+    fn handle_payment_received(&self, payment_hash: PaymentHash, amount_msat: u64, purpose: &PaymentPurpose) {
         info!(
-            "Handling PaymentReceived event for payment_hash: {}",
-            hex::encode(payment_hash.0)
+            "Handling PaymentReceived event for payment_hash: {} with amount {}",
+            hex::encode(payment_hash.0),
+            amount_msat
         );
         let payment_preimage = match purpose {
             PaymentPurpose::InvoicePayment { payment_preimage, .. } => match payment_preimage {
@@ -524,7 +525,7 @@ impl LightningEventHandler {
     fn handle_open_channel_request(
         &self,
         temporary_channel_id: [u8; 32],
-        counterparty_node_id: LnPublicKey,
+        counterparty_node_id: PublicKey,
         funding_satoshis: u64,
         push_msat: u64,
     ) {

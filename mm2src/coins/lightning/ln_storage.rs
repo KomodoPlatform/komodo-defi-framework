@@ -1,7 +1,7 @@
 use async_trait::async_trait;
 use bitcoin::Network;
 use common::log::LogState;
-use lightning::routing::gossip::NetworkGraph;
+use lightning::routing::gossip;
 use lightning::routing::scoring::ProbabilisticScorer;
 use parking_lot::Mutex as PaMutex;
 use secp256k1v22::PublicKey;
@@ -12,7 +12,8 @@ use std::sync::{Arc, Mutex};
 pub type NodesAddressesMap = HashMap<PublicKey, SocketAddr>;
 pub type NodesAddressesMapShared = Arc<PaMutex<NodesAddressesMap>>;
 
-pub type Scorer = Mutex<ProbabilisticScorer<Arc<NetworkGraph<Arc<LogState>>>, Arc<LogState>>>;
+pub type NetworkGraph = gossip::NetworkGraph<Arc<LogState>>;
+pub type Scorer = Mutex<ProbabilisticScorer<Arc<NetworkGraph>, Arc<LogState>>>;
 
 #[async_trait]
 pub trait LightningStorage {
@@ -27,17 +28,7 @@ pub trait LightningStorage {
 
     async fn save_nodes_addresses(&self, nodes_addresses: NodesAddressesMapShared) -> Result<(), Self::Error>;
 
-    async fn get_network_graph(
-        &self,
-        network: Network,
-        logger: Arc<LogState>,
-    ) -> Result<NetworkGraph<Arc<LogState>>, Self::Error>;
+    async fn get_network_graph(&self, network: Network, logger: Arc<LogState>) -> Result<NetworkGraph, Self::Error>;
 
-    async fn get_scorer(
-        &self,
-        network_graph: Arc<NetworkGraph<Arc<LogState>>>,
-        logger: Arc<LogState>,
-    ) -> Result<Scorer, Self::Error>;
-
-    async fn save_scorer(&self, scorer: Arc<Scorer>) -> Result<(), Self::Error>;
+    async fn get_scorer(&self, network_graph: Arc<NetworkGraph>, logger: Arc<LogState>) -> Result<Scorer, Self::Error>;
 }

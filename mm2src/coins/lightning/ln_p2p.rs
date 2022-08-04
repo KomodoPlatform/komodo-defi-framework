@@ -5,7 +5,7 @@ use derive_more::Display;
 use lightning::chain::Access;
 use lightning::ln::msgs::NetAddress;
 use lightning::ln::peer_handler::{IgnoringMessageHandler, MessageHandler, SimpleArcPeerManager};
-use lightning::routing::gossip::{NetworkGraph, P2PGossipSync};
+use lightning::routing::gossip;
 use lightning_net_tokio::SocketDescriptor;
 use mm2_net::ip_addr::fetch_external_ip;
 use rand::RngCore;
@@ -16,7 +16,7 @@ use tokio::net::TcpListener;
 const TRY_RECONNECTING_TO_NODE_INTERVAL: f64 = 60.;
 const BROADCAST_NODE_ANNOUNCEMENT_INTERVAL: u64 = 600;
 
-pub type NetworkGossip = P2PGossipSync<Arc<NetworkGraph<Arc<LogState>>>, Arc<dyn Access + Send + Sync>, Arc<LogState>>;
+pub type NetworkGossip = gossip::P2PGossipSync<Arc<NetworkGraph>, Arc<dyn Access + Send + Sync>, Arc<LogState>>;
 
 pub type PeerManager =
     SimpleArcPeerManager<SocketDescriptor, ChainMonitor, Platform, Platform, dyn Access + Send + Sync, LogState>;

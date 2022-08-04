@@ -14,6 +14,7 @@ use super::{lp_coinfind_or_err, DerivationMethod, MmCoinEnum};
 use crate::lightning::ln_events::init_events_abort_handlers;
 use crate::lightning::ln_serialization::PublicKeyForRPC;
 use crate::lightning::ln_sql::SqliteLightningDB;
+use crate::lightning::ln_storage::NetworkGraph;
 use crate::utxo::rpc_clients::UtxoRpcClientEnum;
 use crate::utxo::utxo_common::{big_decimal_from_sat_unsigned, UtxoTxBuilder};
 use crate::utxo::{sat_from_big_decimal, BlockchainNetwork, FeePolicy, GetUtxoListOps, UtxoTxGenerationOps};
@@ -40,7 +41,7 @@ use lightning::chain::keysinterface::{KeysInterface, KeysManager, Recipient};
 use lightning::chain::Access;
 use lightning::ln::channelmanager::{ChannelDetails, MIN_FINAL_CLTV_EXPIRY};
 use lightning::ln::{PaymentHash, PaymentPreimage};
-use lightning::routing::gossip::{NetworkGraph, P2PGossipSync};
+use lightning::routing::gossip;
 use lightning::util::config::UserConfig;
 use lightning_background_processor::{BackgroundProcessor, GossipSync};
 use lightning_invoice::payment;
@@ -57,7 +58,7 @@ use ln_errors::{ClaimableBalancesError, ClaimableBalancesResult, CloseChannelErr
                 ListPaymentsError, ListPaymentsResult, OpenChannelError, OpenChannelResult, SendPaymentError,
                 SendPaymentResult};
 use ln_events::LightningEventHandler;
-use ln_filesystem_persister::{LightningFilesystemPersister, LightningPersisterShared};
+use ln_filesystem_persister::LightningFilesystemPersister;
 use ln_p2p::{connect_to_node, ConnectToNodeRes, PeerManager};
 use ln_platform::{h256_json_from_txid, Platform};
 use ln_serialization::{InvoiceForRPC, NodeAddress};
@@ -70,8 +71,7 @@ use mm2_number::{BigDecimal, MmNumber};
 use parking_lot::Mutex as PaMutex;
 use rpc::v1::types::{Bytes as BytesJson, H256 as H256Json};
 use script::{Builder, TransactionInputSigner};
-use secp256k1::PublicKey;
-use secp256k1v22::PublicKey as LnPublicKey;
+use secp256k1v22::PublicKey;
 use serde::{Deserialize, Serialize};
 use serde_json::Value as Json;
 use std::collections::hash_map::Entry;
@@ -83,7 +83,7 @@ use std::sync::Arc;
 
 pub const DEFAULT_INVOICE_EXPIRY: u32 = 3600;
 
-type Router = DefaultRouter<Arc<NetworkGraph<Arc<LogState>>>, Arc<LogState>>;
+type Router = DefaultRouter<Arc<NetworkGraph>, Arc<LogState>>;
 type InvoicePayer<E> = payment::InvoicePayer<Arc<ChannelManager>, Router, Arc<Scorer>, Arc<LogState>, E>;
 
 #[derive(Clone)]
@@ -104,7 +104,7 @@ pub struct LightningCoin {
     /// The lightning node invoice payer.
     pub invoice_payer: Arc<InvoicePayer<Arc<LightningEventHandler>>>,
     /// The lightning node persister that takes care of writing/reading data from storage.
-    pub persister: LightningPersisterShared,
+    pub persister: Arc<LightningFilesystemPersister>,
     /// The lightning node db struct that takes care of reading/writing data from/to db.
     pub db: SqliteLightningDB,
     /// The mutex storing the addresses of the nodes that the lightning node has open channels with,
@@ -180,7 +180,7 @@ impl LightningCoin {
 
     async fn keysend(
         &self,
-        destination: LnPublicKey,
+        destination: PublicKey,
         amount_msat: u64,
         final_cltv_expiry_delta: u32,
     ) -> SendPaymentResult<DBPaymentInfo> {
@@ -667,7 +667,7 @@ pub async fn start_lightning(
             .await?,
     );
 
-    let gossip_sync = Arc::new(P2PGossipSync::new(
+    let gossip_sync = Arc::new(gossip::P2PGossipSync::new(
         network_graph.clone(),
         None::<Arc<dyn Access + Send + Sync>>,
         logger.clone(),
@@ -713,7 +713,6 @@ pub async fn start_lightning(
 
     // Initialize routing Scorer
     let scorer = Arc::new(persister.get_scorer(network_graph.clone(), logger.clone()).await?);
-    spawn(ln_utils::persist_scorer_loop(persister.clone(), scorer.clone()));
 
     // Create InvoicePayer
     // random_seed_bytes are additional random seed to improve privacy by adding a random CLTV expiry offset to each path's final hop.
@@ -733,9 +732,7 @@ pub async fn start_lightning(
     ));
 
     let p2p_gossip_sync =
-        GossipSync::<_, Arc<RapidGossipSync<Arc<NetworkGraph<Arc<LogState>>>, Arc<LogState>>>, _, _, _>::P2P(
-            gossip_sync.clone(),
-        );
+        GossipSync::<_, Arc<RapidGossipSync<Arc<NetworkGraph>, Arc<LogState>>>, _, _, _>::P2P(gossip_sync.clone());
 
     // Start Background Processing. Runs tasks periodically in the background to keep LN node operational.
     // InvoicePayer will act as our event handler as it handles some of the payments related events before
@@ -965,7 +962,7 @@ pub struct OpenChannelsFilter {
     pub to_outbound_capacity_msat: Option<u64>,
     pub from_inbound_capacity_msat: Option<u64>,
     pub to_inbound_capacity_msat: Option<u64>,
-    pub confirmed: Option<bool>,
+    pub is_ready: Option<bool>,
     pub is_usable: Option<bool>,
     pub is_public: Option<bool>,
 }
@@ -1003,7 +1000,7 @@ fn apply_open_channel_filter(channel_details: &ChannelDetailsForRPC, filter: &Op
     let is_to_inbound_capacity_msat = filter.to_inbound_capacity_msat.is_none()
         || Some(&channel_details.inbound_capacity_msat) <= filter.to_inbound_capacity_msat.as_ref();
 
-    let is_confirmed = filter.confirmed.is_none() || Some(&channel_details.is_ready) == filter.confirmed.as_ref();
+    let is_confirmed = filter.is_ready.is_none() || Some(&channel_details.is_ready) == filter.is_ready.as_ref();
 
     let is_usable = filter.is_usable.is_none() || Some(&channel_details.is_usable) == filter.is_usable.as_ref();
 
@@ -1516,6 +1513,7 @@ pub struct CloseChannelReq {
     pub force_close: bool,
 }
 
+// Todo: use either counterparty_node_id or channel_id to close channel/s
 pub async fn close_channel(ctx: MmArc, req: CloseChannelReq) -> CloseChannelResult<String> {
     let coin = lp_coinfind_or_err(&ctx, &req.coin).await?;
     let ln_coin = match coin {
@@ -1523,7 +1521,7 @@ pub async fn close_channel(ctx: MmArc, req: CloseChannelReq) -> CloseChannelResu
         _ => return MmError::err(CloseChannelError::UnsupportedCoin(coin.ticker().to_string())),
     };
     let channel_id = req.channel_id.0;
-    let counterparty_node_id: LnPublicKey = req.counterparty_node_id.into();
+    let counterparty_node_id: PublicKey = req.counterparty_node_id.into();
     if req.force_close {
         async_blocking(move || {
             ln_coin
