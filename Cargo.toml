@@ -1,8 +1,6 @@
 [workspace]
 members = [
     "mm2src/coins",
-    "mm2src/coins/lightning_persister",
-    "mm2src/coins/lightning_background_processor",
     "mm2src/coins/utxo_signer",
     "mm2src/coins_activation",
     "mm2src/common/shared_ref_counter",

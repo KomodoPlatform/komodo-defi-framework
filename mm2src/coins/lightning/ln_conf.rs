@@ -124,6 +124,11 @@ pub struct OurChannelsConfig {
     /// The smallest value HTLC we will accept to process. The channel gets closed any time
     /// our counterparty misbehaves by sending us an HTLC with a value smaller than this.
     pub our_htlc_minimum_msat: Option<u64>,
+    /// If set, we attempt to negotiate the `scid_privacy` (referred to as `scid_alias` in the
+    /// BOLTs) option for outbound private channels. This provides better privacy by not including
+    /// our real on-chain channel UTXO in each invoice and requiring that our counterparty only
+    /// relay HTLCs to us using the channel's SCID alias.
+    pub negotiate_scid_privacy: Option<bool>,
 }
 
 impl From<OurChannelsConfig> for ChannelHandshakeConfig {
@@ -140,6 +145,10 @@ impl From<OurChannelsConfig> for ChannelHandshakeConfig {
 
         if let Some(min) = config.our_htlc_minimum_msat {
             channel_handshake_config.our_htlc_minimum_msat = min;
+        }
+
+        if let Some(scid_privacy) = config.negotiate_scid_privacy {
+            channel_handshake_config.negotiate_scid_privacy = scid_privacy
         }
 
         channel_handshake_config

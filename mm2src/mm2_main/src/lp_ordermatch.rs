@@ -28,7 +28,7 @@ use coins::utxo::{compressed_pub_key_from_priv_raw, ChecksumType, UtxoAddressFor
 use coins::{coin_conf, find_pair, lp_coinfind, BalanceTradeFeeUpdatedHandler, CoinProtocol, CoinsContext,
             FeeApproxStage, MmCoinEnum};
 use common::executor::{spawn, Timer};
-use common::log::{error, LogOnError};
+use common::log::{error, warn, LogOnError};
 use common::time_cache::TimeCache;
 use common::{bits256, log, new_uuid, now_ms, spawn_abortable, AbortOnDropHandle};
 use crypto::privkey::SerializableSecp256k1Keypair;
@@ -342,7 +342,7 @@ async fn request_and_fill_orderbook(ctx: &MmArc, base: &str, rel: &str) -> Resul
     let ordermatch_ctx = OrdermatchContext::from_ctx(ctx).unwrap();
     let mut orderbook = ordermatch_ctx.orderbook.lock();
 
-    let my_pubkey = ctx.secp256k1_key_pair().public();
+    let keypair = ctx.secp256k1_key_pair_as_option();
     let alb_pair = alb_ordered_pair(base, rel);
     for (pubkey, GetOrderbookPubkeyItem { orders, .. }) in pubkey_orders {
         let pubkey_bytes = match hex::decode(&pubkey) {
@@ -352,8 +352,10 @@ async fn request_and_fill_orderbook(ctx: &MmArc, base: &str, rel: &str) -> Resul
                 continue;
             },
         };
-        if pubkey_bytes.as_slice() == my_pubkey.as_ref() {
-            continue;
+        if let Some(keypair) = keypair {
+            if pubkey_bytes.as_slice() == keypair.public().as_ref() {
+                continue;
+            }
         }
 
         if is_pubkey_banned(ctx, &pubkey_bytes[1..].into()) {
@@ -506,13 +508,13 @@ pub enum OrdermatchRequest {
         action: BestOrdersAction,
         volume: BigRational,
     },
+    OrderbookDepth {
+        pairs: Vec<(String, String)>,
+    },
     BestOrdersByNumber {
         coin: String,
         action: BestOrdersAction,
         number: usize,
-    },
-    OrderbookDepth {
-        pairs: Vec<(String, String)>,
     },
 }
 
@@ -624,10 +626,16 @@ fn get_pubkeys_orders(orderbook: &Orderbook, base: String, rel: String) -> GetPu
     let mut protocol_infos = HashMap::new();
     let mut conf_infos = HashMap::new();
     for uuid in orders {
-        let order = orderbook
-            .order_set
-            .get(uuid)
-            .expect("Orderbook::ordered contains an uuid that is not in Orderbook::order_set");
+        let order = match orderbook.order_set.get(uuid) {
+            Some(o) => o,
+            None => {
+                warn!(
+                    "Orderbook::ordered contains uuid {} that is not in Orderbook::order_set",
+                    uuid
+                );
+                continue;
+            },
+        };
         let uuids = uuids_by_pubkey.entry(order.pubkey.clone()).or_insert_with(Vec::new);
         protocol_infos.insert(order.uuid, order.base_rel_proto_info());
         if let Some(info) = order.conf_settings {

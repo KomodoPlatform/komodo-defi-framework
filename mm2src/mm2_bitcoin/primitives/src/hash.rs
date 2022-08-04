@@ -1,5 +1,6 @@
 //! Fixed-size hashes
 
+use bitcoin_hashes::{sha256d, Hash as ExtHash};
 use hex::{FromHex, FromHexError, ToHex};
 use std::hash::{Hash, Hasher};
 use std::{cmp, fmt, ops, str};
@@ -165,4 +166,7 @@ impl H256 {
 
     #[inline]
     pub fn to_reversed_str(self) -> String { self.reversed().to_string() }
+
+    #[inline]
+    pub fn to_sha256d(self) -> sha256d::Hash { sha256d::Hash::from_inner(self.take()) }
 }

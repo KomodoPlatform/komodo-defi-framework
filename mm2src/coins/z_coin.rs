@@ -1,9 +1,11 @@
+use crate::my_tx_history_v2::{MyTxHistoryErrorV2, MyTxHistoryRequestV2, MyTxHistoryResponseV2};
 use crate::rpc_command::init_withdraw::{InitWithdrawCoin, WithdrawInProgressStatus, WithdrawTaskHandle};
 use crate::utxo::rpc_clients::{ElectrumRpcRequest, UnspentInfo, UtxoRpcClientEnum, UtxoRpcError, UtxoRpcFut,
                                UtxoRpcResult};
 use crate::utxo::utxo_builder::{UtxoCoinBuilderCommonOps, UtxoCoinWithIguanaPrivKeyBuilder,
                                 UtxoFieldsWithIguanaPrivKeyBuilder};
-use crate::utxo::utxo_common::{big_decimal_from_sat_unsigned, payment_script};
+use crate::utxo::utxo_common::{addresses_from_script, big_decimal_from_sat, big_decimal_from_sat_unsigned,
+                               payment_script};
 use crate::utxo::{sat_from_big_decimal, utxo_common, ActualTxFee, AdditionalTxData, Address, BroadcastTxErr,
                   FeePolicy, GetUtxoListOps, HistoryUtxoTx, HistoryUtxoTxMap, MatureUnspentList,
                   RecentlySpentOutPointsGuard, UtxoActivationParams, UtxoAddressFormat, UtxoArc, UtxoCoinFields,
@@ -20,8 +22,11 @@ use async_trait::async_trait;
 use bitcrypto::{dhash160, dhash256};
 use chain::constants::SEQUENCE_FINAL;
 use chain::{Transaction as UtxoTx, TransactionOutput};
-use common::{async_blocking, log};
+use common::{async_blocking, calc_total_pages, log, PagingOptionsEnum};
 use crypto::privkey::{key_pair_from_secret, secp_privkey_from_hash};
+use db_common::sqlite::offset_by_id;
+use db_common::sqlite::rusqlite::{Error as SqlError, Row, NO_PARAMS};
+use db_common::sqlite::sql_builder::{name, SqlBuilder, SqlName};
 use futures::compat::Future01CompatExt;
 use futures::lock::Mutex as AsyncMutex;
 use futures::{FutureExt, TryFutureExt};
@@ -94,6 +99,8 @@ macro_rules! try_ztx_s {
 
 const DEX_FEE_OVK: OutgoingViewingKey = OutgoingViewingKey([7; 32]);
 const DEX_FEE_Z_ADDR: &str = "zs1rp6426e9r6jkq2nsanl66tkd34enewrmr0uvj0zelhkcwmsy0uvxz2fhm9eu9rl3ukxvgzy2v9f";
+const TRANSACTIONS_TABLE: &str = "transactions";
+const BLOCKS_TABLE: &str = "blocks";
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct ZcoinConsensusParams {
@@ -141,6 +148,7 @@ pub struct ZCoinFields {
     my_z_addr: PaymentAddress,
     my_z_addr_encoded: String,
     z_spending_key: ExtendedSpendingKey,
+    evk: ExtendedFullViewingKey,
     z_tx_prover: Arc<LocalTxProver>,
     light_wallet_db: WalletDbShared,
     consensus_params: ZcoinConsensusParams,
@@ -182,6 +190,62 @@ pub struct ZOutput {
     pub amount: Amount,
     pub viewing_key: Option<OutgoingViewingKey>,
     pub memo: Option<MemoBytes>,
+}
+
+struct ZCoinSqlTxHistoryItem {
+    tx_hash: Vec<u8>,
+    internal_id: i64,
+    height: i64,
+    timestamp: i64,
+    received_amount: i64,
+    spent_amount: i64,
+}
+
+impl ZCoinSqlTxHistoryItem {
+    fn try_from_sql_row(row: &Row<'_>) -> Result<Self, SqlError> {
+        let mut tx_hash: Vec<u8> = row.get(0)?;
+        tx_hash.reverse();
+        Ok(ZCoinSqlTxHistoryItem {
+            tx_hash,
+            internal_id: row.get(1)?,
+            height: row.get(2)?,
+            timestamp: row.get(3)?,
+            received_amount: row.get(4)?,
+            spent_amount: row.get(5)?,
+        })
+    }
+}
+
+struct SqlTxHistoryRes {
+    transactions: Vec<ZCoinSqlTxHistoryItem>,
+    total_tx_count: u32,
+    skipped: usize,
+}
+
+#[derive(Serialize)]
+pub struct ZcoinTxDetails {
+    /// Transaction hash in hexadecimal format
+    tx_hash: String,
+    /// Coins are sent from these addresses
+    from: HashSet<String>,
+    /// Coins are sent to these addresses
+    to: HashSet<String>,
+    /// The amount spent from "my" address
+    spent_by_me: BigDecimal,
+    /// The amount received by "my" address
+    received_by_me: BigDecimal,
+    /// Resulting "my" balance change
+    my_balance_change: BigDecimal,
+    /// Block height
+    block_height: i64,
+    confirmations: i64,
+    /// Transaction timestamp
+    timestamp: i64,
+    transaction_fee: BigDecimal,
+    /// The coin transaction belongs to
+    coin: String,
+    /// Internal MM2 id used for internal transaction identification, for some coins it might be equal to transaction hash
+    internal_id: i64,
 }
 
 impl ZCoin {
@@ -331,7 +395,7 @@ impl ZCoin {
             received_by_me += change_sat;
 
             tx_builder.add_sapling_output(
-                None,
+                Some(self.z_fields.evk.fvk.ovk),
                 self.z_fields.my_z_addr.clone(),
                 Amount::from_u64(change_sat).map_to_mm(|_| {
                     GenTxError::NumConversion(NumConversError(format!(
@@ -379,6 +443,230 @@ impl ZCoin {
 
         sync_guard.respawn_guard.watch_for_tx(tx.txid());
         Ok(tx)
+    }
+
+    async fn tx_history_from_sql(
+        &self,
+        limit: usize,
+        paging_options: PagingOptionsEnum<i64>,
+    ) -> Result<SqlTxHistoryRes, MmError<SqlTxHistoryError>> {
+        let wallet_db = self.z_fields.light_wallet_db.clone();
+        async_blocking(move || {
+            let db_guard = wallet_db.lock();
+            let conn = db_guard.sql_conn();
+
+            let total_sql = SqlBuilder::select_from(TRANSACTIONS_TABLE)
+                .field("COUNT(id_tx)")
+                .sql()
+                .expect("valid SQL");
+            let total_tx_count = conn.query_row(&total_sql, NO_PARAMS, |row| row.get(0))?;
+
+            let mut sql_builder = SqlBuilder::select_from(name!(TRANSACTIONS_TABLE; "txes"));
+            sql_builder
+                .field("txes.txid")
+                .field("txes.id_tx as internal_id")
+                .field("txes.block as block");
+
+            let offset = match paging_options {
+                PagingOptionsEnum::PageNumber(page) => (page.get() - 1) * limit,
+                PagingOptionsEnum::FromId(id) => {
+                    offset_by_id(conn, &sql_builder, [id], "id_tx", "block DESC, id_tx ASC", "id_tx = ?1")?
+                        .ok_or(SqlTxHistoryError::FromIdDoesNotExist(id))?
+                },
+            };
+
+            let sql = sql_builder
+                .field("blocks.time")
+                .field("COALESCE(rn.received_amount, 0)")
+                .field("COALESCE(sn.sent_amount, 0)")
+                .left()
+                .join("(SELECT tx, SUM(value) as received_amount FROM received_notes GROUP BY tx) as rn")
+                .on("txes.id_tx = rn.tx")
+                // detecting spent amount by "spent" field in received_notes table
+                .join("(SELECT spent, SUM(value) as sent_amount FROM received_notes GROUP BY spent) as sn")
+                .on("txes.id_tx = sn.spent")
+                .join(BLOCKS_TABLE)
+                .on("txes.block = blocks.height")
+                .group_by("internal_id")
+                .order_by("block", true)
+                .order_by("internal_id", false)
+                .offset(offset)
+                .limit(limit)
+                .sql()
+                .expect("valid query");
+
+            let sql_items = conn
+                .prepare(&sql)?
+                .query_map(NO_PARAMS, ZCoinSqlTxHistoryItem::try_from_sql_row)?
+                .collect::<Result<Vec<_>, _>>()?;
+
+            Ok(SqlTxHistoryRes {
+                transactions: sql_items,
+                total_tx_count,
+                skipped: offset,
+            })
+        })
+        .await
+    }
+
+    async fn z_transactions_from_cache_or_rpc(
+        &self,
+        hashes: HashSet<H256Json>,
+    ) -> UtxoRpcResult<HashMap<H256Json, ZTransaction>> {
+        self.get_verbose_transactions_from_cache_or_rpc(hashes)
+            .compat()
+            .await?
+            .into_iter()
+            .map(|(hash, tx)| -> Result<_, std::io::Error> {
+                Ok((hash, ZTransaction::read(tx.into_inner().hex.as_slice())?))
+            })
+            .collect::<Result<_, _>>()
+            .map_to_mm(|e| UtxoRpcError::InvalidResponse(e.to_string()))
+    }
+
+    fn tx_details_from_sql_item(
+        &self,
+        sql_item: ZCoinSqlTxHistoryItem,
+        transactions: &mut HashMap<H256Json, ZTransaction>,
+        prev_transactions: &HashMap<H256Json, ZTransaction>,
+        current_block: u64,
+    ) -> Result<ZcoinTxDetails, MmError<NoInfoAboutTx>> {
+        let mut from = HashSet::new();
+
+        let mut confirmations = current_block as i64 - sql_item.height + 1;
+        if confirmations < 0 {
+            confirmations = 0;
+        }
+
+        let mut transparent_input_amount = Amount::zero();
+        let hash = H256Json::from(sql_item.tx_hash.as_slice());
+        let z_tx = transactions.remove(&hash).or_mm_err(|| NoInfoAboutTx(hash))?;
+        for input in z_tx.vin.iter() {
+            let mut hash = H256Json::from(*input.prevout.hash());
+            hash.0.reverse();
+            let prev_tx = prev_transactions.get(&hash).or_mm_err(|| NoInfoAboutTx(hash))?;
+
+            if let Some(spent_output) = prev_tx.vout.get(input.prevout.n() as usize) {
+                transparent_input_amount += spent_output.value;
+                if let Ok(addresses) = addresses_from_script(self, &spent_output.script_pubkey.0.clone().into()) {
+                    from.extend(addresses.into_iter().map(|a| a.to_string()));
+                }
+            }
+        }
+
+        let transparent_output_amount = z_tx
+            .vout
+            .iter()
+            .fold(Amount::zero(), |current, out| current + out.value);
+
+        let mut to = HashSet::new();
+        for out in z_tx.vout.iter() {
+            if let Ok(addresses) = addresses_from_script(self, &out.script_pubkey.0.clone().into()) {
+                to.extend(addresses.into_iter().map(|a| a.to_string()));
+            }
+        }
+
+        let fee_amount = z_tx.value_balance + transparent_input_amount - transparent_output_amount;
+        if sql_item.spent_amount > 0 {
+            from.insert(self.my_z_address_encoded());
+        }
+
+        if sql_item.received_amount > 0 {
+            to.insert(self.my_z_address_encoded());
+        }
+
+        for z_out in z_tx.shielded_outputs.iter() {
+            if let Some((_, address, _)) = try_sapling_output_recovery(
+                self.consensus_params_ref(),
+                BlockHeight::from_u32(current_block as u32),
+                &self.z_fields.evk.fvk.ovk,
+                z_out,
+            ) {
+                to.insert(encode_payment_address(
+                    self.consensus_params_ref().hrp_sapling_payment_address(),
+                    &address,
+                ));
+            }
+
+            if let Some((_, address, _)) = try_sapling_output_recovery(
+                self.consensus_params_ref(),
+                BlockHeight::from_u32(current_block as u32),
+                &DEX_FEE_OVK,
+                z_out,
+            ) {
+                to.insert(encode_payment_address(
+                    self.consensus_params_ref().hrp_sapling_payment_address(),
+                    &address,
+                ));
+            }
+        }
+
+        let spent_by_me = big_decimal_from_sat(sql_item.spent_amount, self.decimals());
+        let received_by_me = big_decimal_from_sat(sql_item.received_amount, self.decimals());
+        Ok(ZcoinTxDetails {
+            tx_hash: hex::encode(sql_item.tx_hash),
+            from,
+            to,
+            my_balance_change: &received_by_me - &spent_by_me,
+            spent_by_me,
+            received_by_me,
+            block_height: sql_item.height,
+            confirmations,
+            timestamp: sql_item.timestamp,
+            transaction_fee: big_decimal_from_sat(fee_amount.into(), self.decimals()),
+            coin: self.ticker().into(),
+            internal_id: sql_item.internal_id,
+        })
+    }
+
+    pub async fn tx_history(
+        &self,
+        request: MyTxHistoryRequestV2<i64>,
+    ) -> Result<MyTxHistoryResponseV2<ZcoinTxDetails, i64>, MmError<MyTxHistoryErrorV2>> {
+        let current_block = self.utxo_rpc_client().get_block_count().compat().await?;
+        let sql_result = self
+            .tx_history_from_sql(request.limit, request.paging_options.clone())
+            .await?;
+
+        let hashes_for_verbose = sql_result
+            .transactions
+            .iter()
+            .map(|item| H256Json::from(item.tx_hash.as_slice()))
+            .collect();
+        let mut transactions = self.z_transactions_from_cache_or_rpc(hashes_for_verbose).await?;
+
+        let prev_tx_hashes: HashSet<_> = transactions
+            .iter()
+            .flat_map(|(_, tx)| {
+                tx.vin.iter().map(|vin| {
+                    let mut hash = *vin.prevout.hash();
+                    hash.reverse();
+                    H256Json::from(hash)
+                })
+            })
+            .collect();
+        let prev_transactions = self.z_transactions_from_cache_or_rpc(prev_tx_hashes).await?;
+
+        let transactions = sql_result
+            .transactions
+            .into_iter()
+            .map(|sql_item| {
+                self.tx_details_from_sql_item(sql_item, &mut transactions, &prev_transactions, current_block)
+            })
+            .collect::<Result<_, _>>()?;
+
+        Ok(MyTxHistoryResponseV2 {
+            coin: self.ticker().into(),
+            current_block,
+            transactions,
+            // Zcoin is activated only after the state is synced
+            sync_status: HistorySyncState::Finished,
+            limit: request.limit,
+            skipped: sql_result.skipped,
+            total: sql_result.total_tx_count as usize,
+            total_pages: calc_total_pages(sql_result.total_tx_count as usize, request.limit),
+            paging_options: request.paging_options,
+        })
     }
 }
 
@@ -502,6 +790,7 @@ impl<'a> UtxoCoinWithIguanaPrivKeyBuilder for ZCoinBuilder<'a> {
             dex_fee_addr,
             my_z_addr,
             my_z_addr_encoded,
+            evk: ExtendedFullViewingKey::from(&self.z_spending_key),
             z_spending_key: self.z_spending_key,
             z_tx_prover: Arc::new(z_tx_prover),
             light_wallet_db,
@@ -534,6 +823,8 @@ impl<'a> ZCoinBuilder<'a> {
             ZcoinRpcMode::Native => UtxoRpcMode::Native,
             ZcoinRpcMode::Light { electrum_servers, .. } => UtxoRpcMode::Electrum {
                 servers: electrum_servers.clone(),
+                // TODO: Implement spv validation for zcoin
+                block_header_params: None,
             },
         };
         let utxo_params = UtxoActivationParams {
@@ -1347,7 +1638,7 @@ impl InitWithdrawCoin for ZCoin {
             amount: Amount::from_u64(satoshi)
                 .map_to_mm(|_| NumConversError(format!("Failed to get ZCash amount from {}", amount)))?,
             // TODO add optional viewing_key and memo fields to the WithdrawRequest
-            viewing_key: None,
+            viewing_key: Some(self.z_fields.evk.fvk.ovk),
             memo: None,
         };
 
