@@ -4,7 +4,6 @@ use metrics::{Counter, Gauge, Histogram, Key, KeyName, Label, Recorder, Unit};
 #[cfg(not(target_arch = "wasm32"))]
 use metrics_exporter_prometheus::formatting::{key_to_parts, write_metric_line, write_type_line};
 use metrics_util::registry::{GenerationalAtomicStorage, GenerationalStorage, Registry};
-use std::collections::hash_map::Entry::{Occupied, Vacant};
 use std::sync::{atomic::Ordering, Arc};
 use std::{collections::HashMap, slice::Iter};
 
