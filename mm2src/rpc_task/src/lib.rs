@@ -63,7 +63,7 @@ pub enum TaskStatusError {
 }
 
 impl TaskStatusError {
-    fn is_finished(&self) -> bool { matches!(self, TaskStatusError::InProgress) }
+    fn is_finished(&self) -> bool { matches!(self, TaskStatusError::Finished) }
 }
 
 impl From<TimeoutError> for RpcTaskError {
