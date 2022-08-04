@@ -573,8 +573,8 @@ fn test_search_for_swap_tx_spend_taker_spent() {
         swap_contract_address: &maker_coin.swap_contract_address(),
         swap_unique_data: &[],
     };
-    let actual = block_on(maker_coin.search_for_swap_tx_spend_my(search_input));
-    let expected = Ok(Some(FoundSwapTxSpend::Spent(spend)));
+    let actual = block_on(maker_coin.search_for_swap_tx_spend_my(search_input)).unwrap();
+    let expected = Some(FoundSwapTxSpend::Spent(spend));
     assert_eq!(actual, expected);
 }
 
@@ -643,8 +643,8 @@ fn test_search_for_swap_tx_spend_maker_refunded() {
         swap_contract_address: &maker_coin.swap_contract_address(),
         swap_unique_data: &[],
     };
-    let actual = block_on(maker_coin.search_for_swap_tx_spend_my(search_input));
-    let expected = Ok(Some(FoundSwapTxSpend::Refunded(refund)));
+    let actual = block_on(maker_coin.search_for_swap_tx_spend_my(search_input)).unwrap();
+    let expected = Some(FoundSwapTxSpend::Refunded(refund));
     assert_eq!(actual, expected);
 }
 
@@ -692,9 +692,9 @@ fn test_search_for_swap_tx_spend_not_spent() {
         swap_contract_address: &maker_coin.swap_contract_address(),
         swap_unique_data: &[],
     };
-    let actual = block_on(maker_coin.search_for_swap_tx_spend_my(search_input));
+    let actual = block_on(maker_coin.search_for_swap_tx_spend_my(search_input)).unwrap();
     // maker payment hasn't been spent or refunded yet
-    assert_eq!(actual, Ok(None));
+    assert_eq!(actual, None);
 }
 
 #[test]

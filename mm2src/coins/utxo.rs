@@ -815,7 +815,7 @@ pub trait UtxoCommonOps:
 {
     async fn get_htlc_spend_fee(&self, tx_size: u64) -> UtxoRpcResult<u64>;
 
-    fn addresses_from_script(&self, script: &Script) -> Result<Vec<Address>, String>;
+    fn addresses_from_script(&self, script: &Script) -> Result<Vec<Address>, MmError<String>>;
 
     fn denominate_satoshis(&self, satoshi: i64) -> f64;
 
@@ -830,7 +830,7 @@ pub trait UtxoCommonOps:
 
     /// Try to parse address from string using specified on asset enable format,
     /// and if it failed inform user that he used a wrong format.
-    fn address_from_str(&self, address: &str) -> Result<Address, String>;
+    fn address_from_str(&self, address: &str) -> Result<Address, MmError<String>>;
 
     async fn get_current_mtp(&self) -> UtxoRpcResult<u32>;
 
@@ -848,7 +848,7 @@ pub trait UtxoCommonOps:
         utxo_tx_map: &'b mut HistoryUtxoTxMap,
     ) -> UtxoRpcResult<&'b mut HistoryUtxoTx>;
 
-    async fn p2sh_spending_tx(&self, input: utxo_common::P2SHSpendingTxInput<'_>) -> Result<UtxoTx, String>;
+    async fn p2sh_spending_tx(&self, input: utxo_common::P2SHSpendingTxInput<'_>) -> Result<UtxoTx, MmError<String>>;
 
     /// Loads verbose transactions from cache or requests it using RPC client.
     fn get_verbose_transactions_from_cache_or_rpc(

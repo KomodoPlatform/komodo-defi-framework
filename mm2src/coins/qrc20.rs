@@ -15,11 +15,11 @@ use crate::utxo::{qtum, ActualTxFee, AdditionalTxData, BroadcastTxErr, FeePolicy
                   UtxoTx, UtxoTxBroadcastOps, UtxoTxGenerationOps, VerboseTransactionFrom, UTXO_LOCK};
 use crate::{BalanceError, BalanceFut, CoinBalance, FeeApproxStage, FoundSwapTxSpend, FoundSwapTxSpendErr,
             HistorySyncState, MarketCoinOps, MmCoin, MyAddressError, NegotiateSwapContractAddrErr, PrivKeyNotAllowed,
-            RawTransactionFut, RawTransactionRequest, SearchForSwapTxSpendInput, SendRawTransactionError,
-            SignatureResult, SwapOps, TradeFee, TradePreimageError, TradePreimageFut, TradePreimageResult,
-            TradePreimageValue, TransactionDetails, TransactionEnum, TransactionErr, TransactionFut, TransactionType,
-            UnexpectedDerivationMethod, ValidateAddressResult, ValidatePaymentInput, VerificationResult,
-            WithdrawError, WithdrawFee, WithdrawFut, WithdrawRequest, WithdrawResult};
+            RawTransactionFut, RawTransactionRequest, SearchForSwapTxSpendInput, SignatureResult, SwapOps, TradeFee,
+            TradePreimageError, TradePreimageFut, TradePreimageResult, TradePreimageValue, TransactionDetails,
+            TransactionEnum, TransactionErr, TransactionFut, TransactionType, UnexpectedDerivationMethod,
+            ValidateAddressResult, ValidatePaymentInput, VerificationResult, WithdrawError, WithdrawFee, WithdrawFut,
+            WithdrawRequest, WithdrawResult};
 use async_trait::async_trait;
 use bitcrypto::{dhash160, sha256};
 use chain::TransactionOutput;
@@ -613,7 +613,7 @@ impl UtxoCommonOps for Qrc20Coin {
         utxo_common::get_htlc_spend_fee(self, tx_size).await
     }
 
-    fn addresses_from_script(&self, script: &Script) -> Result<Vec<UtxoAddress>, String> {
+    fn addresses_from_script(&self, script: &Script) -> Result<Vec<UtxoAddress>, MmError<String>> {
         utxo_common::addresses_from_script(self, script)
     }
 
@@ -623,7 +623,7 @@ impl UtxoCommonOps for Qrc20Coin {
         utxo_common::my_public_key(self.as_ref())
     }
 
-    fn address_from_str(&self, address: &str) -> Result<UtxoAddress, String> {
+    fn address_from_str(&self, address: &str) -> Result<UtxoAddress, MmError<String>> {
         utxo_common::checked_address_from_str(self, address)
     }
 
@@ -651,7 +651,7 @@ impl UtxoCommonOps for Qrc20Coin {
         utxo_common::get_mut_verbose_transaction_from_map_or_rpc(self, tx_hash, utxo_tx_map).await
     }
 
-    async fn p2sh_spending_tx(&self, input: utxo_common::P2SHSpendingTxInput<'_>) -> Result<UtxoTx, String> {
+    async fn p2sh_spending_tx(&self, input: utxo_common::P2SHSpendingTxInput<'_>) -> Result<UtxoTx, MmError<String>> {
         utxo_common::p2sh_spending_tx(self, input).await
     }
 
@@ -866,32 +866,36 @@ impl SwapOps for Qrc20Coin {
         amount: &BigDecimal,
         min_block_number: u64,
         _uuid: &[u8],
-    ) -> Box<dyn Future<Item = (), Error = String> + Send> {
+    ) -> Box<dyn Future<Item = (), Error = MmError<String>> + Send> {
         let fee_tx = match fee_tx {
             TransactionEnum::UtxoTx(tx) => tx,
             _ => panic!("Unexpected TransactionEnum"),
         };
         let fee_tx_hash = fee_tx.hash().reversed().into();
-        if !try_fus!(check_all_inputs_signed_by_pub(fee_tx, expected_sender)) {
-            return Box::new(futures01::future::err(ERRL!("The dex fee was sent from wrong address")));
+        if !try_m_fus!(check_all_inputs_signed_by_pub(fee_tx, expected_sender)) {
+            return Box::new(futures01::future::err(MmError::new(
+                "The dex fee was sent from wrong address".to_string(),
+            )));
         }
-        let fee_addr = try_fus!(self.contract_address_from_raw_pubkey(fee_addr));
-        let expected_value = try_fus!(wei_from_big_decimal(amount, self.utxo.decimals));
+        let fee_addr = try_m_fus!(self.contract_address_from_raw_pubkey(fee_addr));
+        let expected_value = try_m_fus!(wei_from_big_decimal(amount, self.utxo.decimals));
 
         let selfi = self.clone();
         let fut = async move {
             selfi
                 .validate_fee_impl(fee_tx_hash, fee_addr, expected_value, min_block_number)
                 .await
-                .map_err(|err| err.to_string())
         };
         Box::new(fut.boxed().compat())
     }
 
-    fn validate_maker_payment(&self, input: ValidatePaymentInput) -> Box<dyn Future<Item = (), Error = String> + Send> {
-        let payment_tx: UtxoTx = try_fus!(deserialize(input.payment_tx.as_slice()).map_err(|e| ERRL!("{:?}", e)));
-        let sender = try_fus!(self.contract_address_from_raw_pubkey(&input.other_pub));
-        let swap_contract_address = try_fus!(input.swap_contract_address.try_to_address());
+    fn validate_maker_payment(
+        &self,
+        input: ValidatePaymentInput,
+    ) -> Box<dyn Future<Item = (), Error = MmError<String>> + Send> {
+        let payment_tx: UtxoTx = try_m_fus!(deserialize(input.payment_tx.as_slice()).map_err(|e| ERRL!("{:?}", e)));
+        let sender = try_m_fus!(self.contract_address_from_raw_pubkey(&input.other_pub));
+        let swap_contract_address = try_m_fus!(input.swap_contract_address.try_to_address());
 
         let selfi = self.clone();
         let fut = async move {
@@ -905,15 +909,18 @@ impl SwapOps for Qrc20Coin {
                     swap_contract_address,
                 )
                 .await
-                .map_err(|err| err.to_string())
+                .mm_err(|err| err.to_string())
         };
         Box::new(fut.boxed().compat())
     }
 
-    fn validate_taker_payment(&self, input: ValidatePaymentInput) -> Box<dyn Future<Item = (), Error = String> + Send> {
-        let swap_contract_address = try_fus!(input.swap_contract_address.try_to_address());
-        let payment_tx: UtxoTx = try_fus!(deserialize(input.payment_tx.as_slice()).map_err(|e| ERRL!("{:?}", e)));
-        let sender = try_fus!(self.contract_address_from_raw_pubkey(&input.other_pub));
+    fn validate_taker_payment(
+        &self,
+        input: ValidatePaymentInput,
+    ) -> Box<dyn Future<Item = (), Error = MmError<String>> + Send> {
+        let swap_contract_address = try_m_fus!(input.swap_contract_address.try_to_address());
+        let payment_tx: UtxoTx = try_m_fus!(deserialize(input.payment_tx.as_slice()).map_err(|e| ERRL!("{:?}", e)));
+        let sender = try_m_fus!(self.contract_address_from_raw_pubkey(&input.other_pub));
 
         let selfi = self.clone();
         let fut = async move {
@@ -927,7 +934,7 @@ impl SwapOps for Qrc20Coin {
                     swap_contract_address,
                 )
                 .await
-                .map_err(|err| err.to_string())
+                .mm_err(|err| err.to_string())
         };
         Box::new(fut.boxed().compat())
     }
@@ -1071,15 +1078,12 @@ impl MarketCoinOps for Qrc20Coin {
     fn platform_ticker(&self) -> &str { &self.0.platform }
 
     #[inline(always)]
-    fn send_raw_tx(&self, tx: &str) -> Box<dyn Future<Item = String, Error = String> + Send> {
+    fn send_raw_tx(&self, tx: &str) -> Box<dyn Future<Item = String, Error = MmError<String>> + Send> {
         utxo_common::send_raw_tx(&self.utxo, tx)
     }
 
     #[inline(always)]
-    fn send_raw_tx_bytes(
-        &self,
-        tx: &[u8],
-    ) -> Box<dyn Future<Item = String, Error = MmError<SendRawTransactionError>> + Send> {
+    fn send_raw_tx_bytes(&self, tx: &[u8]) -> Box<dyn Future<Item = String, Error = MmError<String>> + Send> {
         utxo_common::send_raw_tx_bytes(&self.utxo, tx)
     }
 

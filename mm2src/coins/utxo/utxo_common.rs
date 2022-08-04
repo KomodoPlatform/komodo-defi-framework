@@ -12,9 +12,9 @@ use crate::utxo::tx_cache::TxCacheResult;
 use crate::utxo::utxo_withdraw::{InitUtxoWithdraw, StandardUtxoWithdraw, UtxoWithdraw};
 use crate::{CanRefundHtlc, CoinBalance, CoinWithDerivationMethod, FoundSwapTxSpendErr, GetWithdrawSenderAddress,
             HDAddressId, MyAddressError, RawTransactionError, RawTransactionRequest, RawTransactionRes,
-            SearchForSwapTxSpendInput, SendRawTransactionError, SignatureError, SignatureResult, SwapOps,
-            TradePreimageValue, TransactionFut, TxFeeDetails, ValidateAddressResult, ValidatePaymentInput,
-            VerificationError, VerificationResult, WithdrawFrom, WithdrawResult, WithdrawSenderAddress};
+            SearchForSwapTxSpendInput, SignatureError, SignatureResult, SwapOps, TradePreimageValue, TransactionFut,
+            TxFeeDetails, ValidateAddressResult, ValidatePaymentInput, VerificationError, VerificationResult,
+            WithdrawFrom, WithdrawResult, WithdrawSenderAddress};
 use bitcrypto::dhash256;
 pub use bitcrypto::{dhash160, sha256, ChecksumType};
 use chain::constants::SEQUENCE_FINAL;
@@ -487,8 +487,8 @@ pub async fn get_htlc_spend_fee<T: UtxoCommonOps>(coin: &T, tx_size: u64) -> Utx
     Ok(fee)
 }
 
-pub fn addresses_from_script<T: UtxoCommonOps>(coin: &T, script: &Script) -> Result<Vec<Address>, String> {
-    let destinations: Vec<ScriptAddress> = try_s!(script.extract_destinations());
+pub fn addresses_from_script<T: UtxoCommonOps>(coin: &T, script: &Script) -> Result<Vec<Address>, MmError<String>> {
+    let destinations: Vec<ScriptAddress> = script.extract_destinations().map_to_mm(|err| err.to_string())?;
 
     let conf = &coin.as_ref().conf;
 
@@ -570,9 +570,9 @@ pub fn my_public_key(coin: &UtxoCoinFields) -> Result<&Public, MmError<Unexpecte
     }
 }
 
-pub fn checked_address_from_str<T: UtxoCommonOps>(coin: &T, address: &str) -> Result<Address, String> {
-    let addr = try_s!(address_from_str_unchecked(coin.as_ref(), address));
-    try_s!(check_withdraw_address_supported(coin, &addr));
+pub fn checked_address_from_str<T: UtxoCommonOps>(coin: &T, address: &str) -> Result<Address, MmError<String>> {
+    let addr = address_from_str_unchecked(coin.as_ref(), address).map_to_mm(|err| err)?;
+    check_withdraw_address_supported(coin, &addr).mm_err(|err| err.to_string())?;
     Ok(addr)
 }
 
@@ -961,8 +961,14 @@ pub struct P2SHSpendingTxInput<'a> {
     keypair: &'a KeyPair,
 }
 
-pub async fn p2sh_spending_tx<T: UtxoCommonOps>(coin: &T, input: P2SHSpendingTxInput<'_>) -> Result<UtxoTx, String> {
-    let lock_time = try_s!(coin.p2sh_tx_locktime(input.lock_time).await);
+pub async fn p2sh_spending_tx<T: UtxoCommonOps>(
+    coin: &T,
+    input: P2SHSpendingTxInput<'_>,
+) -> Result<UtxoTx, MmError<String>> {
+    let lock_time = coin
+        .p2sh_tx_locktime(input.lock_time)
+        .await
+        .mm_err(|err| err.to_string())?;
     let n_time = if coin.as_ref().conf.is_pos {
         Some((now_ms() / 1000) as u32)
     } else {
@@ -1000,15 +1006,16 @@ pub async fn p2sh_spending_tx<T: UtxoCommonOps>(coin: &T, input: P2SHSpendingTxI
         str_d_zeel,
         hash_algo,
     };
-    let signed_input = try_s!(p2sh_spend(
+    let signed_input = p2sh_spend(
         &unsigned,
         DEFAULT_SWAP_VOUT,
         input.keypair,
         input.script_data,
         input.redeem_script.into(),
         coin.as_ref().conf.signature_version,
-        coin.as_ref().conf.fork_id
-    ));
+        coin.as_ref().conf.fork_id,
+    )
+    .mm_err(|err| err.to_string())?;
     Ok(UtxoTx {
         version: unsigned.version,
         n_time: unsigned.n_time,
@@ -1329,55 +1336,59 @@ pub fn send_maker_refunds_payment<T: UtxoCommonOps + SwapOps>(
 }
 
 /// Extracts pubkey from script sig
-fn pubkey_from_script_sig(script: &Script) -> Result<H264, String> {
+fn pubkey_from_script_sig(script: &Script) -> Result<H264, MmError<String>> {
     match script.get_instruction(0) {
         Some(Ok(instruction)) => match instruction.opcode {
             Opcode::OP_PUSHBYTES_70 | Opcode::OP_PUSHBYTES_71 | Opcode::OP_PUSHBYTES_72 => match instruction.data {
-                Some(bytes) => try_s!(Signature::from_der(&bytes[..bytes.len() - 1])),
-                None => return ERR!("No data at instruction 0 of script {:?}", script),
+                Some(bytes) => Signature::from_der(&bytes[..bytes.len() - 1]).map_to_mm(|err| err.to_string())?,
+                None => return MmError::err(format!("No data at instruction 0 of script {:?}", script)),
             },
-            _ => return ERR!("Unexpected opcode {:?}", instruction.opcode),
+            _ => return MmError::err(format!("Unexpected opcode {:?}", instruction.opcode)),
         },
-        Some(Err(e)) => return ERR!("Error {} on getting instruction 0 of script {:?}", e, script),
-        None => return ERR!("None instruction 0 of script {:?}", script),
+        Some(Err(e)) => return MmError::err(format!("Error {} on getting instruction 0 of script {:?}", e, script)),
+        None => return MmError::err(format!("None instruction 0 of script {:?}", script)),
     };
 
     let pubkey = match script.get_instruction(1) {
         Some(Ok(instruction)) => match instruction.opcode {
             Opcode::OP_PUSHBYTES_33 => match instruction.data {
-                Some(bytes) => try_s!(PublicKey::from_slice(bytes)),
-                None => return ERR!("No data at instruction 1 of script {:?}", script),
+                Some(bytes) => PublicKey::from_slice(bytes).map_to_mm(|err| err.to_string())?,
+                None => return MmError::err(format!("No data at instruction 1 of script {:?}", script)),
             },
-            _ => return ERR!("Unexpected opcode {:?}", instruction.opcode),
+            _ => return MmError::err(format!("Unexpected opcode {:?}", instruction.opcode)),
         },
-        Some(Err(e)) => return ERR!("Error {} on getting instruction 1 of script {:?}", e, script),
-        None => return ERR!("None instruction 1 of script {:?}", script),
+        Some(Err(e)) => return MmError::err(format!("Error {} on getting instruction 1 of script {:?}", e, script)),
+        None => return MmError::err(format!("None instruction 1 of script {:?}", script)),
     };
 
     if script.get_instruction(2).is_some() {
-        return ERR!("Unexpected instruction at position 2 of script {:?}", script);
+        return MmError::err(format!("Unexpected instruction at position 2 of script {:?}", script));
     }
     Ok(pubkey.serialize().into())
 }
 
 /// Extracts pubkey from witness script
-fn pubkey_from_witness_script(witness_script: &[Bytes]) -> Result<H264, String> {
+fn pubkey_from_witness_script(witness_script: &[Bytes]) -> Result<H264, MmError<String>> {
     if witness_script.len() != 2 {
-        return ERR!("Invalid witness length {}", witness_script.len());
+        return MmError::err(format!("Invalid witness length {}", witness_script.len()));
     }
 
     let signature = witness_script[0].clone().take();
     if signature.is_empty() {
-        return ERR!("Empty signature data in witness script");
+        return MmError::err("Empty signature data in witness script".to_string());
     }
-    try_s!(Signature::from_der(&signature[..signature.len() - 1]));
+    Signature::from_der(&signature[..signature.len() - 1]).map_to_mm(|err| err.to_string())?;
 
-    let pubkey = try_s!(PublicKey::from_slice(&witness_script[1]));
+    let pubkey = PublicKey::from_slice(&witness_script[1]).map_to_mm(|err| err.to_string())?;
 
     Ok(pubkey.serialize().into())
 }
 
-pub async fn is_tx_confirmed_before_block<T>(coin: &T, tx: &RpcTransaction, block_number: u64) -> Result<bool, String>
+pub async fn is_tx_confirmed_before_block<T>(
+    coin: &T,
+    tx: &RpcTransaction,
+    block_number: u64,
+) -> Result<bool, MmError<String>>
 where
     T: UtxoCommonOps,
 {
@@ -1386,7 +1397,13 @@ where
         // fallback to a number of confirmations
         None => {
             if tx.confirmations > 0 {
-                let current_block = try_s!(coin.as_ref().rpc_client.get_block_count().compat().await);
+                let current_block = coin
+                    .as_ref()
+                    .rpc_client
+                    .get_block_count()
+                    .compat()
+                    .await
+                    .mm_err(|err| err.to_string())?;
                 let confirmed_at = current_block + 1 - tx.confirmations as u64;
                 Ok(confirmed_at <= block_number)
             } else {
@@ -1396,13 +1413,13 @@ where
     }
 }
 
-pub fn check_all_inputs_signed_by_pub(tx: &UtxoTx, expected_pub: &[u8]) -> Result<bool, String> {
+pub fn check_all_inputs_signed_by_pub(tx: &UtxoTx, expected_pub: &[u8]) -> Result<bool, MmError<String>> {
     for input in &tx.inputs {
         let pubkey = if input.has_witness() {
-            try_s!(pubkey_from_witness_script(&input.script_witness))
+            pubkey_from_witness_script(&input.script_witness).mm_err(|err| err)?
         } else {
             let script: Script = input.script_sig.clone().into();
-            try_s!(pubkey_from_script_sig(&script))
+            pubkey_from_script_sig(&script).mm_err(|err| err)?
         };
         if *pubkey != expected_pub {
             return Ok(false);
@@ -1420,9 +1437,9 @@ pub fn validate_fee<T: UtxoCommonOps>(
     amount: &BigDecimal,
     min_block_number: u64,
     fee_addr: &[u8],
-) -> Box<dyn Future<Item = (), Error = String> + Send> {
+) -> Box<dyn Future<Item = (), Error = MmError<String>> + Send> {
     let amount = amount.clone();
-    let address = try_fus!(address_from_raw_pubkey(
+    let address = try_m_fus!(address_from_raw_pubkey(
         fee_addr,
         coin.as_ref().conf.pub_addr_prefix,
         coin.as_ref().conf.pub_t_addr_prefix,
@@ -1431,56 +1448,57 @@ pub fn validate_fee<T: UtxoCommonOps>(
         coin.addr_format().clone(),
     ));
 
-    if !try_fus!(check_all_inputs_signed_by_pub(&tx, sender_pubkey)) {
-        return Box::new(futures01::future::err(ERRL!("The dex fee was sent from wrong address")));
+    if !try_m_fus!(check_all_inputs_signed_by_pub(&tx, sender_pubkey)) {
+        return Box::new(futures01::future::err(MmError::new(
+            "The dex fee was sent from wrong address".to_string(),
+        )));
     }
     let fut = async move {
-        let amount = try_s!(sat_from_big_decimal(&amount, coin.as_ref().decimals));
-        let tx_from_rpc = try_s!(
-            coin.as_ref()
-                .rpc_client
-                .get_verbose_transaction(&tx.hash().reversed().into())
-                .compat()
-                .await
-        );
+        let amount = sat_from_big_decimal(&amount, coin.as_ref().decimals).mm_err(|err| err.to_string())?;
+        let tx_from_rpc = coin
+            .as_ref()
+            .rpc_client
+            .get_verbose_transaction(&tx.hash().reversed().into())
+            .compat()
+            .await
+            .mm_err(|err| err.to_string())?;
 
-        if try_s!(is_tx_confirmed_before_block(&coin, &tx_from_rpc, min_block_number).await) {
-            return ERR!(
+        if is_tx_confirmed_before_block(&coin, &tx_from_rpc, min_block_number).await? {
+            return MmError::err(format!(
                 "Fee tx {:?} confirmed before min_block {}",
-                tx_from_rpc,
-                min_block_number,
-            );
+                tx_from_rpc, min_block_number,
+            ));
         }
         if tx_from_rpc.hex.0 != serialize(&tx).take()
             && tx_from_rpc.hex.0 != serialize_with_flags(&tx, SERIALIZE_TRANSACTION_WITNESS).take()
         {
-            return ERR!(
+            return MmError::err(format!(
                 "Provided dex fee tx {:?} doesn't match tx data from rpc {:?}",
-                tx,
-                tx_from_rpc
-            );
+                tx, tx_from_rpc
+            ));
         }
 
         match tx.outputs.get(output_index) {
             Some(out) => {
                 let expected_script_pubkey = Builder::build_p2pkh(&address.hash).to_bytes();
                 if out.script_pubkey != expected_script_pubkey {
-                    return ERR!(
+                    return MmError::err(format!(
                         "Provided dex fee tx output script_pubkey doesn't match expected {:?} {:?}",
-                        out.script_pubkey,
-                        expected_script_pubkey
-                    );
+                        out.script_pubkey, expected_script_pubkey
+                    ));
                 }
                 if out.value < amount {
-                    return ERR!(
+                    return MmError::err(format!(
                         "Provided dex fee tx output value is less than expected {:?} {:?}",
-                        out.value,
-                        amount
-                    );
+                        out.value, amount
+                    ));
                 }
             },
             None => {
-                return ERR!("Provided dex fee tx {:?} does not have output {}", tx, output_index);
+                return MmError::err(format!(
+                    "Provided dex fee tx {:?} does not have output {}",
+                    tx, output_index
+                ));
             },
         }
         Ok(())
@@ -1491,8 +1509,8 @@ pub fn validate_fee<T: UtxoCommonOps>(
 pub fn validate_maker_payment<T: UtxoCommonOps + SwapOps>(
     coin: &T,
     input: ValidatePaymentInput,
-) -> Box<dyn Future<Item = (), Error = String> + Send> {
-    let mut tx: UtxoTx = try_fus!(deserialize(input.payment_tx.as_slice()).map_err(|e| ERRL!("{:?}", e)));
+) -> Box<dyn Future<Item = (), Error = MmError<String>> + Send> {
+    let mut tx: UtxoTx = try_m_fus!(deserialize(input.payment_tx.as_slice()).map_err(|e| e.to_string()));
     tx.tx_hash_algo = coin.as_ref().tx_hash_algo;
 
     let htlc_keypair = coin.derive_htlc_key_pair(&input.unique_swap_data);
@@ -1500,7 +1518,7 @@ pub fn validate_maker_payment<T: UtxoCommonOps + SwapOps>(
         coin.clone(),
         tx,
         DEFAULT_SWAP_VOUT,
-        &try_fus!(Public::from_slice(&input.other_pub)),
+        &try_m_fus!(Public::from_slice(&input.other_pub)),
         htlc_keypair.public(),
         &input.secret_hash,
         input.amount,
@@ -1513,8 +1531,8 @@ pub fn validate_maker_payment<T: UtxoCommonOps + SwapOps>(
 pub fn validate_taker_payment<T: UtxoCommonOps + SwapOps>(
     coin: &T,
     input: ValidatePaymentInput,
-) -> Box<dyn Future<Item = (), Error = String> + Send> {
-    let mut tx: UtxoTx = try_fus!(deserialize(input.payment_tx.as_slice()).map_err(|e| ERRL!("{:?}", e)));
+) -> Box<dyn Future<Item = (), Error = MmError<String>> + Send> {
+    let mut tx: UtxoTx = try_m_fus!(deserialize(input.payment_tx.as_slice()));
     tx.tx_hash_algo = coin.as_ref().tx_hash_algo;
 
     let htlc_keypair = coin.derive_htlc_key_pair(&input.unique_swap_data);
@@ -1522,7 +1540,7 @@ pub fn validate_taker_payment<T: UtxoCommonOps + SwapOps>(
         coin.clone(),
         tx,
         DEFAULT_SWAP_VOUT,
-        &try_fus!(Public::from_slice(&input.other_pub)),
+        &try_m_fus!(Public::from_slice(&input.other_pub)),
         htlc_keypair.public(),
         &input.secret_hash,
         input.amount,
@@ -1717,7 +1735,7 @@ pub fn verify_message<T: UtxoCommonOps>(
     let message_hash = sign_message_hash(coin.as_ref(), message).ok_or(VerificationError::PrefixNotFound)?;
     let signature = CompactSignature::from(base64::decode(signature_base64)?);
     let recovered_pubkey = Public::recover_compact(&H256::from(message_hash), &signature)?;
-    let received_address = checked_address_from_str(coin, address).map_err(VerificationError::AddressDecodingError)?;
+    let received_address = checked_address_from_str(coin, address).mm_err(VerificationError::AddressDecodingError)?;
     Ok(AddressHashEnum::from(recovered_pubkey.address_hash()) == received_address.hash)
 }
 
@@ -1736,12 +1754,12 @@ where
 }
 
 /// Takes raw transaction as input and returns tx hash in hexadecimal format
-pub fn send_raw_tx(coin: &UtxoCoinFields, tx: &str) -> Box<dyn Future<Item = String, Error = String> + Send> {
-    let bytes = try_fus!(hex::decode(tx));
+pub fn send_raw_tx(coin: &UtxoCoinFields, tx: &str) -> Box<dyn Future<Item = String, Error = MmError<String>> + Send> {
+    let bytes = try_m_fus!(hex::decode(tx));
     Box::new(
         coin.rpc_client
             .send_raw_transaction(bytes.into())
-            .map_err(|e| ERRL!("{}", e))
+            .map_err(|err| MmError::new(err.to_string()))
             .map(|hash| format!("{:?}", hash)),
     )
 }
@@ -1750,11 +1768,11 @@ pub fn send_raw_tx(coin: &UtxoCoinFields, tx: &str) -> Box<dyn Future<Item = Str
 pub fn send_raw_tx_bytes(
     coin: &UtxoCoinFields,
     tx_bytes: &[u8],
-) -> Box<dyn Future<Item = String, Error = MmError<SendRawTransactionError>> + Send> {
+) -> Box<dyn Future<Item = String, Error = MmError<String>> + Send> {
     Box::new(
         coin.rpc_client
             .send_raw_transaction(tx_bytes.into())
-            .map_err(|err| MmError::new(SendRawTransactionError::UtxoRpcError(err.to_string())))
+            .map_err(|err| MmError::new(err.to_string()))
             .map(|hash| format!("{:?}", hash)),
     )
 }
@@ -2008,7 +2026,7 @@ pub fn validate_address<T: UtxoCommonOps>(coin: &T, address: &str) -> ValidateAd
         Err(e) => {
             return ValidateAddressResult {
                 is_valid: false,
-                reason: Some(e),
+                reason: Some(e.to_string()),
             }
         },
     };
@@ -2754,7 +2772,7 @@ where
     // `generate_swap_payment_outputs` may fail due to either invalid `other_pub` or a number conversation error
     let SwapPaymentOutputsResult { outputs, .. } =
         generate_swap_payment_outputs(&coin, time_lock, my_pub, other_pub, secret_hash, amount)
-            .map_to_mm(TradePreimageError::InternalError)?;
+            .mm_err(|err| TradePreimageError::InternalError(err.to_string()))?;
     let gas_fee = None;
     let fee_amount = coin
         .preimage_trade_fee_required_to_send_outputs(outputs, fee_policy, gas_fee, &stage)
@@ -3050,11 +3068,14 @@ pub fn address_from_raw_pubkey(
     checksum_type: ChecksumType,
     hrp: Option<String>,
     addr_format: UtxoAddressFormat,
-) -> Result<Address, String> {
+) -> Result<Address, MmError<String>> {
     Ok(Address {
         t_addr_prefix,
         prefix,
-        hash: try_s!(Public::from_slice(pub_key)).address_hash().into(),
+        hash: Public::from_slice(pub_key)
+            .map_to_mm(|err| err.to_string())?
+            .address_hash()
+            .into(),
         checksum_type,
         hrp,
         addr_format,
@@ -3092,8 +3113,8 @@ pub fn validate_payment<T: UtxoCommonOps>(
     time_lock: u32,
     try_spv_proof_until: u64,
     confirmations: u64,
-) -> Box<dyn Future<Item = (), Error = String> + Send> {
-    let amount = try_fus!(sat_from_big_decimal(&amount, coin.as_ref().decimals));
+) -> Box<dyn Future<Item = (), Error = MmError<String>> + Send> {
+    let amount = try_m_fus!(sat_from_big_decimal(&amount, coin.as_ref().decimals));
 
     let expected_redeem = payment_script(time_lock, priv_bn_hash, first_pub0, second_pub0);
     let fut = async move {
@@ -3109,11 +3130,11 @@ pub fn validate_payment<T: UtxoCommonOps>(
                 Ok(t) => t,
                 Err(e) => {
                     if attempts > 2 {
-                        return ERR!(
+                        return MmError::err(format!(
                             "Got error {:?} after 3 attempts of getting tx {:?} from RPC",
                             e,
-                            tx.tx_hash()
-                        );
+                            tx.tx_hash(),
+                        ));
                     };
                     attempts += 1;
                     error!("Error getting tx {:?} from rpc: {:?}", tx.tx_hash(), e);
@@ -3124,11 +3145,10 @@ pub fn validate_payment<T: UtxoCommonOps>(
             if serialize(&tx).take() != tx_from_rpc.0
                 && serialize_with_flags(&tx, SERIALIZE_TRANSACTION_WITNESS).take() != tx_from_rpc.0
             {
-                return ERR!(
+                return MmError::err(format!(
                     "Provided payment tx {:?} doesn't match tx data from rpc {:?}",
-                    tx,
-                    tx_from_rpc
-                );
+                    tx, tx_from_rpc
+                ));
             }
 
             let expected_output = TransactionOutput {
@@ -3138,11 +3158,10 @@ pub fn validate_payment<T: UtxoCommonOps>(
 
             let actual_output = tx.outputs.get(output_index);
             if actual_output != Some(&expected_output) {
-                return ERR!(
+                return MmError::err(format!(
                     "Provided payment tx output doesn't match expected {:?} {:?}",
-                    actual_output,
-                    expected_output
-                );
+                    actual_output, expected_output
+                ));
             }
 
             if let UtxoRpcClientEnum::Electrum(client) = &coin.as_ref().rpc_client {
@@ -3224,6 +3243,12 @@ struct SwapPaymentOutputsResult {
     outputs: Vec<TransactionOutput>,
 }
 
+#[derive(Debug, Display)]
+pub enum SwapPaymentOutputsError {
+    Internal(String),
+    NumConversError(NumConversError),
+}
+
 fn generate_swap_payment_outputs<T>(
     coin: T,
     time_lock: u32,
@@ -3231,19 +3256,20 @@ fn generate_swap_payment_outputs<T>(
     other_pub: &[u8],
     secret_hash: &[u8],
     amount: BigDecimal,
-) -> Result<SwapPaymentOutputsResult, String>
+) -> Result<SwapPaymentOutputsResult, MmError<SwapPaymentOutputsError>>
 where
     T: AsRef<UtxoCoinFields>,
 {
-    let my_public = try_s!(Public::from_slice(my_pub));
+    let my_public = Public::from_slice(my_pub).map_to_mm(|err| SwapPaymentOutputsError::Internal(err.to_string()))?;
     let redeem_script = payment_script(
         time_lock,
         secret_hash,
         &my_public,
-        &try_s!(Public::from_slice(other_pub)),
+        &Public::from_slice(other_pub).map_to_mm(|err| SwapPaymentOutputsError::Internal(err.to_string()))?,
     );
     let redeem_script_hash = dhash160(&redeem_script);
-    let amount = try_s!(sat_from_big_decimal(&amount, coin.as_ref().decimals));
+    let amount =
+        sat_from_big_decimal(&amount, coin.as_ref().decimals).mm_err(SwapPaymentOutputsError::NumConversError)?;
     let htlc_out = TransactionOutput {
         value: amount,
         script_pubkey: Builder::build_p2sh(&redeem_script_hash.into()).into(),

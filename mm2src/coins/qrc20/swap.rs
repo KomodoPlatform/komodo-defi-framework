@@ -56,8 +56,10 @@ pub enum ValidatePaymentError {
     NumConversError(NumConversError),
     ScriptHashTypeNotSupported(ScriptHashTypeNotSupported),
     UnExpectedDerivationMethod(UnexpectedDerivationMethod),
+    #[display(fmt = "Payment tx was sent from wrong address, expected {:?}", _0)]
+    UnexpectedPaymentFromAddress(H160),
     #[display(fmt = "Payment tx was sent to wrong address, expected {:?}", _0)]
-    UnexpectedPaymentAddress(H160),
+    UnexpectedPaymentToAddress(H160),
     #[display(fmt = "Internal: {}", _0)]
     Internal(String),
 }
@@ -203,11 +205,11 @@ impl Qrc20Coin {
         }
 
         if sender != erc20_payment.sender {
-            return MmError::err(ValidatePaymentError::UnexpectedPaymentAddress(sender));
+            return MmError::err(ValidatePaymentError::UnexpectedPaymentFromAddress(sender));
         }
 
         if expected_swap_contract_address != erc20_payment.swap_contract_address {
-            return MmError::err(ValidatePaymentError::UnexpectedPaymentAddress(
+            return MmError::err(ValidatePaymentError::UnexpectedPaymentToAddress(
                 expected_swap_contract_address,
             ));
         }
@@ -231,7 +233,7 @@ impl Qrc20Coin {
             .mm_err(|err| err.to_string())?;
 
         let conf_before_block = utxo_common::is_tx_confirmed_before_block(self, &verbose_tx, min_block_number);
-        if conf_before_block.await.map_to_mm(|err| err)? {
+        if conf_before_block.await? {
             return MmError::err(format!(
                 "Fee tx {:?} confirmed before min_block {}",
                 verbose_tx, min_block_number,

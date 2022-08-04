@@ -3,9 +3,9 @@ use crate::solana::solana_common::{lamports_to_sol, PrepareTransferData, Suffici
 use crate::solana::spl::SplTokenInfo;
 use crate::{BalanceError, BalanceFut, FeeApproxStage, FoundSwapTxSpend, FoundSwapTxSpendErr, MyAddressError,
             NegotiateSwapContractAddrErr, RawTransactionFut, RawTransactionRequest, SearchForSwapTxSpendInput,
-            SendRawTransactionError, SignatureResult, TradePreimageFut, TradePreimageResult, TradePreimageValue,
-            TransactionDetails, TransactionFut, TransactionType, UnexpectedDerivationMethod, ValidateAddressResult,
-            ValidatePaymentInput, VerificationResult, WithdrawError, WithdrawFut, WithdrawRequest, WithdrawResult};
+            SignatureResult, TradePreimageFut, TradePreimageResult, TradePreimageValue, TransactionDetails,
+            TransactionFut, TransactionType, UnexpectedDerivationMethod, ValidateAddressResult, ValidatePaymentInput,
+            VerificationResult, WithdrawError, WithdrawFut, WithdrawRequest, WithdrawResult};
 use async_trait::async_trait;
 use base58::ToBase58;
 use bincode::{deserialize, serialize};
@@ -390,35 +390,29 @@ impl MarketCoinOps for SolanaCoin {
 
     fn platform_ticker(&self) -> &str { self.ticker() }
 
-    fn send_raw_tx(&self, tx: &str) -> Box<dyn Future<Item = String, Error = String> + Send> {
+    fn send_raw_tx(&self, tx: &str) -> Box<dyn Future<Item = String, Error = MmError<String>> + Send> {
         let coin = self.clone();
         let tx = tx.to_owned();
         let fut = async_blocking(move || {
-            let bytes = hex::decode(tx).map_to_mm(|e| e).map_err(|e| format!("{:?}", e))?;
-            let tx: Transaction = deserialize(bytes.as_slice())
-                .map_to_mm(|e| e)
-                .map_err(|e| format!("{:?}", e))?;
+            let bytes = hex::decode(tx).map_err(|err| MmError::new(err.to_string()))?;
+            let tx: Transaction = deserialize(bytes.as_slice()).map_err(|err| MmError::new(err.to_string()))?;
             // this is blocking IO
-            let signature = coin.rpc().send_transaction(&tx).map_err(|e| format!("{:?}", e))?;
+            let signature = coin
+                .rpc()
+                .send_transaction(&tx)
+                .map_err(|e| MmError::new(e.to_string()))?;
             Ok(signature.to_string())
         });
         Box::new(fut.boxed().compat())
     }
 
-    fn send_raw_tx_bytes(
-        &self,
-        tx: &[u8],
-    ) -> Box<dyn Future<Item = String, Error = MmError<SendRawTransactionError>> + Send> {
+    fn send_raw_tx_bytes(&self, tx: &[u8]) -> Box<dyn Future<Item = String, Error = MmError<String>> + Send> {
         let coin = self.clone();
         let tx = tx.to_owned();
         let fut = async_blocking(move || {
-            let tx = deserialize(tx.as_slice())
-                .map_to_mm(|err| SendRawTransactionError::DeserializationError(err.to_string()))?;
+            let tx = deserialize(tx.as_slice()).map_to_mm(|err| err.to_string())?;
             // this is blocking IO
-            let signature = coin
-                .rpc()
-                .send_transaction(&tx)
-                .map_to_mm(|err| SendRawTransactionError::ClientError(err.to_string()))?;
+            let signature = coin.rpc().send_transaction(&tx).map_to_mm(|err| err.to_string())?;
             Ok(signature.to_string())
         });
         Box::new(fut.boxed().compat())
@@ -545,15 +539,21 @@ impl SwapOps for SolanaCoin {
         _amount: &BigDecimal,
         _min_block_number: u64,
         _uuid: &[u8],
-    ) -> Box<dyn Future<Item = (), Error = String> + Send> {
+    ) -> Box<dyn Future<Item = (), Error = MmError<String>> + Send> {
         unimplemented!()
     }
 
-    fn validate_maker_payment(&self, input: ValidatePaymentInput) -> Box<dyn Future<Item = (), Error = String> + Send> {
+    fn validate_maker_payment(
+        &self,
+        input: ValidatePaymentInput,
+    ) -> Box<dyn Future<Item = (), Error = MmError<String>> + Send> {
         unimplemented!()
     }
 
-    fn validate_taker_payment(&self, input: ValidatePaymentInput) -> Box<dyn Future<Item = (), Error = String> + Send> {
+    fn validate_taker_payment(
+        &self,
+        input: ValidatePaymentInput,
+    ) -> Box<dyn Future<Item = (), Error = MmError<String>> + Send> {
         unimplemented!()
     }
 

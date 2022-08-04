@@ -1011,7 +1011,8 @@ fn validate_dex_fee_invalid_sender_eth() {
             &[],
         )
         .wait()
-        .unwrap_err();
+        .unwrap_err()
+        .to_string();
     assert!(validate_err.contains("was sent from wrong address"));
 }
 
@@ -1048,7 +1049,8 @@ fn validate_dex_fee_invalid_sender_erc() {
             &[],
         )
         .wait()
-        .unwrap_err();
+        .unwrap_err()
+        .to_string();
     assert!(validate_err.contains("was sent from wrong address"));
 }
 
@@ -1093,7 +1095,8 @@ fn validate_dex_fee_eth_confirmed_before_min_block() {
             &[],
         )
         .wait()
-        .unwrap_err();
+        .unwrap_err()
+        .to_string();
     assert!(validate_err.contains("confirmed before min_block"));
 }
 
@@ -1133,7 +1136,8 @@ fn validate_dex_fee_erc_confirmed_before_min_block() {
             &[],
         )
         .wait()
-        .unwrap_err();
+        .unwrap_err()
+        .to_string();
     assert!(validate_err.contains("confirmed before min_block"));
 }
 

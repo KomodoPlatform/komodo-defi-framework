@@ -90,6 +90,15 @@ macro_rules! try_fus {
     };
 }
 
+macro_rules! try_m_fus {
+    ($e: expr) => {
+        match $e {
+            Ok(ok) => ok,
+            Err(err) => return Box::new(futures01::future::err(MmError::new(format!("{:?}", err)))),
+        }
+    };
+}
+
 macro_rules! try_f {
     ($e: expr) => {
         match $e {
@@ -529,11 +538,17 @@ pub trait SwapOps {
         amount: &BigDecimal,
         min_block_number: u64,
         uuid: &[u8],
-    ) -> Box<dyn Future<Item = (), Error = String> + Send>;
+    ) -> Box<dyn Future<Item = (), Error = MmError<String>> + Send>;
 
-    fn validate_maker_payment(&self, input: ValidatePaymentInput) -> Box<dyn Future<Item = (), Error = String> + Send>;
+    fn validate_maker_payment(
+        &self,
+        input: ValidatePaymentInput,
+    ) -> Box<dyn Future<Item = (), Error = MmError<String>> + Send>;
 
-    fn validate_taker_payment(&self, input: ValidatePaymentInput) -> Box<dyn Future<Item = (), Error = String> + Send>;
+    fn validate_taker_payment(
+        &self,
+        input: ValidatePaymentInput,
+    ) -> Box<dyn Future<Item = (), Error = MmError<String>> + Send>;
 
     fn check_if_my_payment_sent(
         &self,
@@ -576,21 +591,6 @@ pub trait SwapOps {
     ) -> Result<Option<BytesJson>, MmError<NegotiateSwapContractAddrErr>>;
 
     fn derive_htlc_key_pair(&self, swap_unique_data: &[u8]) -> KeyPair;
-}
-
-#[derive(Debug, Display)]
-pub enum SendRawTransactionError {
-    BlockchainScanStopped(String),
-    BroadcastTxErr(String),
-    #[display(fmt = "Client Error: {}", _0)]
-    ClientError(String),
-    #[display(fmt = "Deserialize Error: {}", _0)]
-    DeserializationError(String),
-    #[display(fmt = "NotSupported: {}", _0)]
-    NotSupported(String),
-    #[display(fmt = "Transaction Reading Error: {}", _0)]
-    TxReadError(String),
-    UtxoRpcError(String),
 }
 
 #[derive(Debug, Display, PartialEq)]
@@ -641,13 +641,10 @@ pub trait MarketCoinOps {
     fn platform_ticker(&self) -> &str;
 
     /// Receives raw transaction bytes in hexadecimal format as input and returns tx hash in hexadecimal format
-    fn send_raw_tx(&self, tx: &str) -> Box<dyn Future<Item = String, Error = String> + Send>;
+    fn send_raw_tx(&self, tx: &str) -> Box<dyn Future<Item = String, Error = MmError<String>> + Send>;
 
     /// Receives raw transaction bytes as input and returns tx hash in hexadecimal format
-    fn send_raw_tx_bytes(
-        &self,
-        tx: &[u8],
-    ) -> Box<dyn Future<Item = String, Error = MmError<SendRawTransactionError>> + Send>;
+    fn send_raw_tx_bytes(&self, tx: &[u8]) -> Box<dyn Future<Item = String, Error = MmError<String>> + Send>;
 
     fn wait_for_confirmations(
         &self,

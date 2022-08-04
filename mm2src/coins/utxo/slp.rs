@@ -14,11 +14,11 @@ use crate::utxo::{generate_and_send_tx, sat_from_big_decimal, ActualTxFee, Addit
                   UtxoCommonOps, UtxoTx, UtxoTxBroadcastOps, UtxoTxGenerationOps};
 use crate::{BalanceFut, CoinBalance, FeeApproxStage, FoundSwapTxSpend, FoundSwapTxSpendErr, HistorySyncState,
             MarketCoinOps, MmCoin, MyAddressError, NegotiateSwapContractAddrErr, NumConversError, PrivKeyNotAllowed,
-            RawTransactionFut, RawTransactionRequest, SearchForSwapTxSpendInput, SendRawTransactionError,
-            SignatureResult, SwapOps, TradeFee, TradePreimageError, TradePreimageFut, TradePreimageResult,
-            TradePreimageValue, TransactionDetails, TransactionEnum, TransactionErr, TransactionFut, TxFeeDetails,
-            UnexpectedDerivationMethod, ValidateAddressResult, ValidatePaymentInput, VerificationError,
-            VerificationResult, WithdrawError, WithdrawFee, WithdrawFut, WithdrawRequest};
+            RawTransactionFut, RawTransactionRequest, SearchForSwapTxSpendInput, SignatureResult, SwapOps, TradeFee,
+            TradePreimageError, TradePreimageFut, TradePreimageResult, TradePreimageValue, TransactionDetails,
+            TransactionEnum, TransactionErr, TransactionFut, TxFeeDetails, UnexpectedDerivationMethod,
+            ValidateAddressResult, ValidatePaymentInput, VerificationError, VerificationResult, WithdrawError,
+            WithdrawFee, WithdrawFut, WithdrawRequest};
 use async_trait::async_trait;
 use bitcrypto::dhash160;
 use chain::constants::SEQUENCE_FINAL;
@@ -490,7 +490,7 @@ impl SlpToken {
         validate_fut
             .compat()
             .await
-            .map_to_mm(ValidateHtlcError::ValidatePaymentError)?;
+            .mm_err(ValidateHtlcError::ValidatePaymentError)?;
 
         Ok(())
     }
@@ -735,7 +735,7 @@ impl SlpToken {
         validate_fut
             .compat()
             .await
-            .map_to_mm(ValidateDexFeeError::ValidatePaymentError)?;
+            .mm_err(ValidateDexFeeError::ValidatePaymentError)?;
 
         Ok(())
     }
@@ -1114,32 +1114,25 @@ impl MarketCoinOps for SlpToken {
     fn platform_ticker(&self) -> &str { self.platform_coin.ticker() }
 
     /// Receives raw transaction bytes in hexadecimal format as input and returns tx hash in hexadecimal format
-    fn send_raw_tx(&self, tx: &str) -> Box<dyn Future<Item = String, Error = String> + Send> {
+    fn send_raw_tx(&self, tx: &str) -> Box<dyn Future<Item = String, Error = MmError<String>> + Send> {
         let selfi = self.clone();
         let tx = tx.to_owned();
         let fut = async move {
-            let bytes = hex::decode(tx).map_to_mm(|e| e).map_err(|e| format!("{:?}", e))?;
-            let tx = try_s!(deserialize(bytes.as_slice()));
-            let hash = selfi.broadcast_tx(&tx).await.map_err(|e| format!("{:?}", e))?;
+            let bytes = hex::decode(tx).map_to_mm(|e| e.to_string())?;
+            let tx = deserialize(bytes.as_slice()).map_to_mm(|err| err.to_string())?;
+            let hash = selfi.broadcast_tx(&tx).await.map_err(|err| err.to_string())?;
             Ok(format!("{:?}", hash))
         };
 
         Box::new(fut.boxed().compat())
     }
 
-    fn send_raw_tx_bytes(
-        &self,
-        tx: &[u8],
-    ) -> Box<dyn Future<Item = String, Error = MmError<SendRawTransactionError>> + Send> {
+    fn send_raw_tx_bytes(&self, tx: &[u8]) -> Box<dyn Future<Item = String, Error = MmError<String>> + Send> {
         let selfi = self.clone();
         let bytes = tx.to_owned();
         let fut = async move {
-            let tx = deserialize(bytes.as_slice())
-                .map_to_mm(|err| SendRawTransactionError::DeserializationError(err.to_string()))?;
-            let hash = selfi
-                .broadcast_tx(&tx)
-                .await
-                .mm_err(|err| SendRawTransactionError::BroadcastTxErr(err.to_string()))?;
+            let tx = deserialize(bytes.as_slice()).map_to_mm(|err| err.to_string())?;
+            let hash = selfi.broadcast_tx(&tx).await.mm_err(|err| err.to_string())?;
             Ok(format!("{:?}", hash))
         };
 
@@ -1370,7 +1363,7 @@ impl SwapOps for SlpToken {
         amount: &BigDecimal,
         min_block_number: u64,
         _uuid: &[u8],
-    ) -> Box<dyn Future<Item = (), Error = String> + Send> {
+    ) -> Box<dyn Future<Item = (), Error = MmError<String>> + Send> {
         let tx = match fee_tx {
             TransactionEnum::UtxoTx(tx) => tx.clone(),
             _ => panic!(),
@@ -1389,7 +1382,10 @@ impl SwapOps for SlpToken {
         Box::new(fut.boxed().compat())
     }
 
-    fn validate_maker_payment(&self, input: ValidatePaymentInput) -> Box<dyn Future<Item = (), Error = String> + Send> {
+    fn validate_maker_payment(
+        &self,
+        input: ValidatePaymentInput,
+    ) -> Box<dyn Future<Item = (), Error = MmError<String>> + Send> {
         let coin = self.clone();
         let fut = async move {
             coin.validate_htlc(input).await.map_err(|err| err.to_string())?;
@@ -1398,7 +1394,10 @@ impl SwapOps for SlpToken {
         Box::new(fut.boxed().compat())
     }
 
-    fn validate_taker_payment(&self, input: ValidatePaymentInput) -> Box<dyn Future<Item = (), Error = String> + Send> {
+    fn validate_taker_payment(
+        &self,
+        input: ValidatePaymentInput,
+    ) -> Box<dyn Future<Item = (), Error = MmError<String>> + Send> {
         let coin = self.clone();
         let fut = async move {
             coin.validate_htlc(input).await.map_err(|err| err.to_string())?;
@@ -2054,7 +2053,7 @@ mod slp_tests {
         ];
 
         let tx_bytes_str = hex::encode(tx_bytes);
-        let err = fusd.send_raw_tx(&tx_bytes_str).wait().unwrap_err();
+        let err = fusd.send_raw_tx(&tx_bytes_str).wait().unwrap_err().to_string();
         println!("{:?}", err);
         assert!(err.contains("is not valid with reason outputs greater than inputs"));
 

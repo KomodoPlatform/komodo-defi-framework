@@ -1414,7 +1414,8 @@ fn test_address_from_str_with_cashaddress_activated() {
     let error = coin
         .address_from_str("bitcoincash:000000000000000000000000000000000000000000")
         .err()
-        .unwrap();
+        .unwrap()
+        .to_string();
     assert!(error.contains("Invalid address: bitcoincash:000000000000000000000000000000000000000000"));
 }
 
@@ -1448,14 +1449,16 @@ fn test_address_from_str_with_legacy_address_activated() {
     let error = coin
         .address_from_str("bitcoincash:qzxqqt9lh4feptf0mplnk58gnajfepzwcq9f2rxk55")
         .err()
-        .unwrap();
+        .unwrap()
+        .to_string();
     assert!(error.contains("Legacy address format activated for BCH, but CashAddress format used instead"));
 
     // other error on parse
     let error = coin
         .address_from_str("0000000000000000000000000000000000")
         .err()
-        .unwrap();
+        .unwrap()
+        .to_string();
     assert!(error.contains("Invalid address: 0000000000000000000000000000000000"));
 }
 
@@ -2526,7 +2529,8 @@ fn test_validate_fee_wrong_sender() {
             &[],
         )
         .wait()
-        .unwrap_err();
+        .unwrap_err()
+        .to_string();
     assert!(validate_err.contains("was sent from wrong address"));
 }
 
@@ -2553,7 +2557,8 @@ fn test_validate_fee_min_block() {
             &[],
         )
         .wait()
-        .unwrap_err();
+        .unwrap_err()
+        .to_string();
     assert!(validate_err.contains("confirmed before min_block"));
 }
 

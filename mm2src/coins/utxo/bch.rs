@@ -8,9 +8,9 @@ use crate::utxo::utxo_builder::{UtxoArcBuilder, UtxoCoinBuilder};
 use crate::utxo::utxo_common::big_decimal_from_sat_unsigned;
 use crate::{BlockHeightAndTime, CanRefundHtlc, CoinBalance, CoinProtocol, FoundSwapTxSpendErr, MyAddressError,
             NegotiateSwapContractAddrErr, PrivKeyBuildPolicy, RawTransactionFut, RawTransactionRequest,
-            SearchForSwapTxSpendInput, SendRawTransactionError, SignatureResult, SwapOps, TradePreimageValue,
-            TransactionFut, TransactionType, TxFeeDetails, UnexpectedDerivationMethod, ValidateAddressResult,
-            ValidatePaymentInput, VerificationResult, WithdrawFut};
+            SearchForSwapTxSpendInput, SignatureResult, SwapOps, TradePreimageValue, TransactionFut, TransactionType,
+            TxFeeDetails, UnexpectedDerivationMethod, ValidateAddressResult, ValidatePaymentInput, VerificationResult,
+            WithdrawFut};
 use common::log::warn;
 use common::mm_metrics::MetricsArc;
 use derive_more::Display;
@@ -476,7 +476,7 @@ impl BchCoin {
             let prev_script = prev_tx.outputs[index as usize].script_pubkey.clone().into();
             let addresses = self
                 .addresses_from_script(&prev_script)
-                .map_to_mm(GetTxDetailsError::AddressesFromScriptError)?;
+                .mm_err(GetTxDetailsError::AddressesFromScriptError)?;
             if addresses.len() != 1 {
                 let msg = format!(
                     "{} tx {:02x} output script resulted into unexpected number of addresses",
@@ -555,7 +555,7 @@ impl BchCoin {
                 Some(output) => {
                     let addresses = self
                         .addresses_from_script(&output.script_pubkey.clone().into())
-                        .map_to_mm(GetTxDetailsError::AddressesFromScriptError)?;
+                        .mm_err(GetTxDetailsError::AddressesFromScriptError)?;
                     if addresses.len() != 1 {
                         let msg = format!(
                             "{} tx {:?} output script resulted into unexpected number of addresses",
@@ -751,7 +751,7 @@ impl UtxoCommonOps for BchCoin {
         utxo_common::get_htlc_spend_fee(self, tx_size).await
     }
 
-    fn addresses_from_script(&self, script: &Script) -> Result<Vec<Address>, String> {
+    fn addresses_from_script(&self, script: &Script) -> Result<Vec<Address>, MmError<String>> {
         utxo_common::addresses_from_script(self, script)
     }
 
@@ -761,7 +761,7 @@ impl UtxoCommonOps for BchCoin {
         utxo_common::my_public_key(self.as_ref())
     }
 
-    fn address_from_str(&self, address: &str) -> Result<Address, String> {
+    fn address_from_str(&self, address: &str) -> Result<Address, MmError<String>> {
         utxo_common::checked_address_from_str(self, address)
     }
 
@@ -785,7 +785,7 @@ impl UtxoCommonOps for BchCoin {
         utxo_common::get_mut_verbose_transaction_from_map_or_rpc(self, tx_hash, utxo_tx_map).await
     }
 
-    async fn p2sh_spending_tx(&self, input: utxo_common::P2SHSpendingTxInput<'_>) -> Result<UtxoTx, String> {
+    async fn p2sh_spending_tx(&self, input: utxo_common::P2SHSpendingTxInput<'_>) -> Result<UtxoTx, MmError<String>> {
         utxo_common::p2sh_spending_tx(self, input).await
     }
 
@@ -972,7 +972,7 @@ impl SwapOps for BchCoin {
         amount: &BigDecimal,
         min_block_number: u64,
         _uuid: &[u8],
-    ) -> Box<dyn Future<Item = (), Error = String> + Send> {
+    ) -> Box<dyn Future<Item = (), Error = MmError<String>> + Send> {
         let tx = match fee_tx {
             TransactionEnum::UtxoTx(tx) => tx.clone(),
             _ => panic!(),
@@ -988,11 +988,17 @@ impl SwapOps for BchCoin {
         )
     }
 
-    fn validate_maker_payment(&self, input: ValidatePaymentInput) -> Box<dyn Future<Item = (), Error = String> + Send> {
+    fn validate_maker_payment(
+        &self,
+        input: ValidatePaymentInput,
+    ) -> Box<dyn Future<Item = (), Error = MmError<String>> + Send> {
         utxo_common::validate_maker_payment(self, input)
     }
 
-    fn validate_taker_payment(&self, input: ValidatePaymentInput) -> Box<dyn Future<Item = (), Error = String> + Send> {
+    fn validate_taker_payment(
+        &self,
+        input: ValidatePaymentInput,
+    ) -> Box<dyn Future<Item = (), Error = MmError<String>> + Send> {
         utxo_common::validate_taker_payment(self, input)
     }
 
@@ -1088,15 +1094,12 @@ impl MarketCoinOps for BchCoin {
     fn platform_ticker(&self) -> &str { self.ticker() }
 
     #[inline(always)]
-    fn send_raw_tx(&self, tx: &str) -> Box<dyn Future<Item = String, Error = String> + Send> {
+    fn send_raw_tx(&self, tx: &str) -> Box<dyn Future<Item = String, Error = MmError<String>> + Send> {
         utxo_common::send_raw_tx(&self.utxo_arc, tx)
     }
 
     #[inline(always)]
-    fn send_raw_tx_bytes(
-        &self,
-        tx: &[u8],
-    ) -> Box<dyn Future<Item = String, Error = MmError<SendRawTransactionError>> + Send> {
+    fn send_raw_tx_bytes(&self, tx: &[u8]) -> Box<dyn Future<Item = String, Error = MmError<String>> + Send> {
         utxo_common::send_raw_tx_bytes(&self.utxo_arc, tx)
     }
 
