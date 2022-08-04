@@ -79,6 +79,7 @@ pub enum HwRpcError {
     FoundUnexpectedDevice,
 }
 
+/// The trait is implemented for those error enumerations that have `HwRpcError` variant.
 pub trait WithHwRpcError {
     fn hw_rpc_error(hw_rpc_error: HwRpcError) -> Self;
 }

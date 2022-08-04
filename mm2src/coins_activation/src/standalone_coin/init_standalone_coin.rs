@@ -29,8 +29,8 @@ pub struct InitStandaloneCoinReq<T> {
 #[async_trait]
 pub trait InitStandaloneCoinActivationOps: Into<MmCoinEnum> + Send + Sync + 'static {
     type ActivationRequest: TxHistory + Sync + Send;
-    type StandaloneProtocol: TryFromCoinProtocol + Clone + Send + Sync; // TODO Sync
-                                                                        // The following types are related to `RpcTask` management.
+    type StandaloneProtocol: TryFromCoinProtocol + Clone + Send + Sync;
+    // The following types are related to `RpcTask` management.
     type ActivationResult: serde::Serialize + Clone + CurrentBlock + Send + Sync + 'static;
     type ActivationError: From<RegisterCoinError>
         + Into<InitStandaloneCoinError>
