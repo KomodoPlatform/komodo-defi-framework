@@ -9,8 +9,8 @@ use coins::{eth::{v2_activation::{eth_coin_from_conf_and_request_v2, Erc20Protoc
                   Erc20TokenInfo, EthCoin, EthCoinType},
             my_tx_history_v2::TxHistoryStorage,
             CoinBalance, CoinProtocol, MarketCoinOps, MmCoin};
-use common::{mm_metrics::MetricsArc, Future01CompatExt};
-use futures::future::AbortHandle;
+use common::{log::error, mm_metrics::MetricsArc, Future01CompatExt};
+use futures::future::{abortable, AbortHandle};
 use mm2_core::mm_ctx::MmArc;
 use mm2_err_handle::prelude::*;
 use mm2_number::BigDecimal;
@@ -36,7 +36,6 @@ impl From<EthActivationV2Error> for EnablePlatformCoinWithTokensError {
                 EnablePlatformCoinWithTokensError::Transport(e)
             },
             EthActivationV2Error::InternalError(e) => EnablePlatformCoinWithTokensError::Internal(e),
-            EthActivationV2Error::TxHistoryNotAllowed(e) => EnablePlatformCoinWithTokensError::TxHistoryNotAllowed(e),
         }
     }
 }
@@ -82,7 +81,7 @@ impl TokenInitializer for Erc20Initializer {
     async fn enable_tokens(
         &self,
         activation_params: Vec<TokenActivationParams<Erc20TokenActivationRequest, Erc20Protocol>>,
-    ) -> Result<Vec<EthCoin>, MmError<Self::InitTokensError>> {
+    ) -> Result<Vec<EthCoin>, MmError<Erc20TokenActivationError>> {
         let mut tokens = vec![];
         for param in activation_params {
             let token: EthCoin = self
@@ -178,7 +177,7 @@ impl PlatformWithTokensActivationOps for EthCoin {
         })]
     }
 
-    async fn get_activation_result(&self) -> Result<EthWithTokensActivationResult, MmError<Self::ActivationError>> {
+    async fn get_activation_result(&self) -> Result<EthWithTokensActivationResult, MmError<EthActivationV2Error>> {
         let my_address = self.my_address().map_err(EthActivationV2Error::InternalError)?;
         let pubkey = self
             .get_public_key()
@@ -230,10 +229,12 @@ impl PlatformWithTokensActivationOps for EthCoin {
         _metrics: MetricsArc,
         _storage: impl TxHistoryStorage + Send + 'static,
         _initial_balance: BigDecimal,
-    ) -> Result<AbortHandle, MmError<Self::ActivationError>> {
-        return MmError::err(EthActivationV2Error::TxHistoryNotAllowed(format!(
+    ) -> AbortHandle {
+        error!(
             "tx_history is not allowed for {}. It works very slowly and requires a lot of disk space.",
             self.ticker()
-        )));
+        );
+        let (_, abort_handle) = abortable(async {});
+        abort_handle
     }
 }

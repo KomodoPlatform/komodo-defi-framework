@@ -105,7 +105,6 @@ pub enum SolanaWithTokensActivationError {
     GetBalanceError(BalanceError),
     Transport(String),
     Internal(String),
-    TxHistoryNotAllowed(String),
 }
 
 impl From<SolanaWithTokensActivationError> for EnablePlatformCoinWithTokensError {
@@ -122,9 +121,6 @@ impl From<SolanaWithTokensActivationError> for EnablePlatformCoinWithTokensError
             },
             SolanaWithTokensActivationError::Transport(e) => EnablePlatformCoinWithTokensError::Transport(e),
             SolanaWithTokensActivationError::Internal(e) => EnablePlatformCoinWithTokensError::Internal(e),
-            SolanaWithTokensActivationError::TxHistoryNotAllowed(e) => {
-                EnablePlatformCoinWithTokensError::TxHistoryNotAllowed(e)
-            },
         }
     }
 }
@@ -231,10 +227,7 @@ impl PlatformWithTokensActivationOps for SolanaCoin {
         _metrics: MetricsArc,
         _storage: impl TxHistoryStorage + Send + 'static,
         _initial_balance: BigDecimal,
-    ) -> Result<AbortHandle, MmError<Self::ActivationError>> {
-        return MmError::err(SolanaWithTokensActivationError::TxHistoryNotAllowed(format!(
-            "tx_history is not allowed for {}.",
-            self.ticker()
-        )));
+    ) -> AbortHandle {
+        todo!()
     }
 }
