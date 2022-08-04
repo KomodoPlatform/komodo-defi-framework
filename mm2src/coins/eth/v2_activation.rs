@@ -28,7 +28,6 @@ pub struct EthActivationV2Request {
     #[serde(default)]
     pub gas_station_policy: GasStationPricePolicy,
     pub mm2: Option<u8>,
-    #[serde(default)]
     pub required_confirmations: Option<u64>,
 }
 
