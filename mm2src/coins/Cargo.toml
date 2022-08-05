@@ -100,7 +100,6 @@ lightning = "0.0.108"
 lightning-background-processor = "0.0.108"
 lightning-invoice = "0.16.0"
 lightning-net-tokio = "0.0.108"
-lightning-persister = "0.0.108"
 lightning-rapid-gossip-sync = "0.0.108"
 rust-ini = { version = "0.13" }
 rustls = { version = "0.20", features = ["dangerous_configuration"] }

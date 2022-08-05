@@ -187,7 +187,6 @@ fn write_to_file<W: Writeable>(dest_file: PathBuf, data: &W) -> std::io::Result<
     let mut tmp_file = dest_file.clone();
     tmp_file.set_extension("tmp");
 
-    let parent_directory = dest_file.parent().unwrap();
     // Do a crazy dance with lots of fsync()s to be overly cautious here...
     // We never want to end up in a state where we've lost the old data, or end up using the
     // old data on power loss after we've returned.
@@ -203,6 +202,7 @@ fn write_to_file<W: Writeable>(dest_file: PathBuf, data: &W) -> std::io::Result<
     // Fsync the parent directory on Unix.
     #[cfg(target_family = "unix")]
     {
+        let parent_directory = dest_file.parent().unwrap();
         fs::rename(&tmp_file, &dest_file)?;
         let dir_file = fs::OpenOptions::new().read(true).open(parent_directory)?;
         unsafe {

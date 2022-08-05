@@ -1057,7 +1057,6 @@ dependencies = [
  "lightning-background-processor",
  "lightning-invoice",
  "lightning-net-tokio",
- "lightning-persister",
  "lightning-rapid-gossip-sync",
  "metrics",
  "mm2_core",
@@ -3758,18 +3757,6 @@ dependencies = [
  "bitcoin",
  "lightning",
  "tokio",
-]
-
-[[package]]
-name = "lightning-persister"
-version = "0.0.108"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "6e9f154ee5b60e576973da61379767569e2ad7b61a361d716a7d15f37df7e0bc"
-dependencies = [
- "bitcoin",
- "libc",
- "lightning",
- "winapi",
 ]
 
 [[package]]
