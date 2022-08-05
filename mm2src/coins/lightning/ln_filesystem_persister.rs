@@ -1,4 +1,5 @@
-use crate::lightning::ln_storage::{LightningStorage, NetworkGraph, NodesAddressesMap, NodesAddressesMapShared, Scorer};
+use crate::lightning::ln_storage::{LightningStorage, NetworkGraph, NodesAddressesMap, NodesAddressesMapShared, Scorer,
+                                   TrustedNodesShared};
 use async_trait::async_trait;
 use bitcoin::blockdata::constants::genesis_block;
 use bitcoin::{BlockHash, Network, Txid};
@@ -12,7 +13,7 @@ use lightning::util::persist::KVStorePersister;
 use lightning::util::ser::{ReadableArgs, Writeable};
 use mm2_io::fs::check_dir_operations;
 use secp256k1v22::PublicKey;
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::fs;
 use std::io::{BufReader, BufWriter, Cursor};
 use std::net::SocketAddr;
@@ -68,6 +69,12 @@ impl LightningFilesystemPersister {
     pub fn scorer_path(&self) -> PathBuf {
         let mut path = self.main_path();
         path.push("scorer");
+        path
+    }
+
+    pub fn trusted_nodes_path(&self) -> PathBuf {
+        let mut path = self.main_path();
+        path.push("trusted_nodes");
         path
     }
 
@@ -367,6 +374,44 @@ impl LightningStorage for LightningFilesystemPersister {
             )
             .map_err(|e| std::io::Error::new(std::io::ErrorKind::InvalidData, e.to_string()))?;
             Ok(Mutex::new(scorer))
+        })
+        .await
+    }
+
+    async fn get_trusted_nodes(&self) -> Result<HashSet<PublicKey>, Self::Error> {
+        let path = self.trusted_nodes_path();
+        if !path.exists() {
+            return Ok(HashSet::new());
+        }
+        async_blocking(move || {
+            let file = fs::File::open(path)?;
+            let reader = BufReader::new(file);
+            let trusted_nodes: HashSet<String> =
+                serde_json::from_reader(reader).map_err(|e| std::io::Error::new(std::io::ErrorKind::InvalidData, e))?;
+            trusted_nodes
+                .iter()
+                .map(|pubkey_str| {
+                    let pubkey = PublicKey::from_str(pubkey_str)
+                        .map_err(|e| std::io::Error::new(std::io::ErrorKind::InvalidData, e))?;
+                    Ok(pubkey)
+                })
+                .collect()
+        })
+        .await
+    }
+
+    async fn save_trusted_nodes(&self, trusted_nodes: TrustedNodesShared) -> Result<(), Self::Error> {
+        let path = self.trusted_nodes_path();
+        async_blocking(move || {
+            let trusted_nodes: HashSet<String> = trusted_nodes.lock().iter().map(|pubkey| pubkey.to_string()).collect();
+
+            let file = fs::OpenOptions::new()
+                .create(true)
+                .write(true)
+                .truncate(true)
+                .open(path)?;
+            serde_json::to_writer(file, &trusted_nodes)
+                .map_err(|e| std::io::Error::new(std::io::ErrorKind::InvalidData, e))
         })
         .await
     }

@@ -11,10 +11,11 @@ mod ln_storage;
 mod ln_utils;
 
 use super::{lp_coinfind_or_err, DerivationMethod, MmCoinEnum};
+use crate::lightning::ln_errors::{TrustedNodeError, TrustedNodeResult};
 use crate::lightning::ln_events::init_events_abort_handlers;
 use crate::lightning::ln_serialization::PublicKeyForRPC;
 use crate::lightning::ln_sql::SqliteLightningDB;
-use crate::lightning::ln_storage::NetworkGraph;
+use crate::lightning::ln_storage::{NetworkGraph, TrustedNodesShared};
 use crate::utxo::rpc_clients::UtxoRpcClientEnum;
 use crate::utxo::utxo_common::{big_decimal_from_sat_unsigned, UtxoTxBuilder};
 use crate::utxo::{sat_from_big_decimal, BlockchainNetwork, FeePolicy, GetUtxoListOps, UtxoTxGenerationOps};
@@ -110,6 +111,9 @@ pub struct LightningCoin {
     /// The mutex storing the addresses of the nodes that the lightning node has open channels with,
     /// these addresses are used for reconnecting.
     pub open_channels_nodes: NodesAddressesMapShared,
+    /// The mutex storing the public keys of the nodes that our lightning node trusts to allow 0 confirmation
+    /// inbound channels from.
+    pub trusted_nodes: TrustedNodesShared,
 }
 
 impl fmt::Debug for LightningCoin {
@@ -700,6 +704,8 @@ pub async fn start_lightning(
     )
     .await?;
 
+    let trusted_nodes = Arc::new(PaMutex::new(persister.get_trusted_nodes().await?));
+
     let events_abort_handlers = init_events_abort_handlers(platform.clone(), db.clone()).await?;
 
     // Initialize the event handler
@@ -708,6 +714,7 @@ pub async fn start_lightning(
         channel_manager.clone(),
         keys_manager.clone(),
         db.clone(),
+        trusted_nodes.clone(),
         events_abort_handlers,
     ));
 
@@ -778,6 +785,7 @@ pub async fn start_lightning(
         persister,
         db,
         open_channels_nodes,
+        trusted_nodes,
     })
 }
 
@@ -1657,4 +1665,44 @@ pub async fn get_claimable_balances(
     .await;
 
     Ok(claimable_balances)
+}
+
+#[derive(Deserialize)]
+pub struct AddTrustedNodeReq {
+    pub coin: String,
+    pub node_id: PublicKeyForRPC,
+}
+
+pub async fn add_trusted_node(ctx: MmArc, req: AddTrustedNodeReq) -> TrustedNodeResult<String> {
+    let coin = lp_coinfind_or_err(&ctx, &req.coin).await?;
+    let ln_coin = match coin {
+        MmCoinEnum::LightningCoin(c) => c,
+        _ => return MmError::err(TrustedNodeError::UnsupportedCoin(coin.ticker().to_string())),
+    };
+
+    if ln_coin.trusted_nodes.lock().insert(req.node_id.into()) {
+        ln_coin.persister.save_trusted_nodes(ln_coin.trusted_nodes).await?;
+    }
+
+    Ok("success".into())
+}
+
+#[derive(Deserialize)]
+pub struct RemoveTrustedNodeReq {
+    pub coin: String,
+    pub node_id: PublicKeyForRPC,
+}
+
+pub async fn remove_trusted_node(ctx: MmArc, req: RemoveTrustedNodeReq) -> TrustedNodeResult<String> {
+    let coin = lp_coinfind_or_err(&ctx, &req.coin).await?;
+    let ln_coin = match coin {
+        MmCoinEnum::LightningCoin(c) => c,
+        _ => return MmError::err(TrustedNodeError::UnsupportedCoin(coin.ticker().to_string())),
+    };
+
+    if ln_coin.trusted_nodes.lock().remove(&req.node_id.into()) {
+        ln_coin.persister.save_trusted_nodes(ln_coin.trusted_nodes).await?;
+    }
+
+    Ok("success".into())
 }

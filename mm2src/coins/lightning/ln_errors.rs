@@ -23,6 +23,7 @@ pub type GetPaymentDetailsResult<T> = Result<T, MmError<GetPaymentDetailsError>>
 pub type CloseChannelResult<T> = Result<T, MmError<CloseChannelError>>;
 pub type ClaimableBalancesResult<T> = Result<T, MmError<ClaimableBalancesError>>;
 pub type SaveChannelClosingResult<T> = Result<T, MmError<SaveChannelClosingError>>;
+pub type TrustedNodeResult<T> = Result<T, MmError<TrustedNodeError>>;
 
 #[derive(Debug, Deserialize, Display, Serialize, SerializeErrorType)]
 #[serde(tag = "error_type", content = "error_data")]
@@ -517,4 +518,37 @@ impl From<SqlError> for SaveChannelClosingError {
 
 impl From<TryFromIntError> for SaveChannelClosingError {
     fn from(err: TryFromIntError) -> SaveChannelClosingError { SaveChannelClosingError::ConversionError(err) }
+}
+
+#[derive(Debug, Deserialize, Display, Serialize, SerializeErrorType)]
+#[serde(tag = "error_type", content = "error_data")]
+pub enum TrustedNodeError {
+    #[display(fmt = "Lightning network is not supported for {}", _0)]
+    UnsupportedCoin(String),
+    #[display(fmt = "No such coin {}", _0)]
+    NoSuchCoin(String),
+    #[display(fmt = "I/O error {}", _0)]
+    IOError(String),
+}
+
+impl HttpStatusCode for TrustedNodeError {
+    fn status_code(&self) -> StatusCode {
+        match self {
+            TrustedNodeError::UnsupportedCoin(_) => StatusCode::BAD_REQUEST,
+            TrustedNodeError::NoSuchCoin(_) => StatusCode::PRECONDITION_REQUIRED,
+            TrustedNodeError::IOError(_) => StatusCode::INTERNAL_SERVER_ERROR,
+        }
+    }
+}
+
+impl From<CoinFindError> for TrustedNodeError {
+    fn from(e: CoinFindError) -> Self {
+        match e {
+            CoinFindError::NoSuchCoin { coin } => TrustedNodeError::NoSuchCoin(coin),
+        }
+    }
+}
+
+impl From<std::io::Error> for TrustedNodeError {
+    fn from(err: std::io::Error) -> TrustedNodeError { TrustedNodeError::IOError(err.to_string()) }
 }

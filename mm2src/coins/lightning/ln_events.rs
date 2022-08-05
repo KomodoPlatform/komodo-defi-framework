@@ -28,6 +28,7 @@ pub struct LightningEventHandler {
     channel_manager: Arc<ChannelManager>,
     keys_manager: Arc<KeysManager>,
     db: SqliteLightningDB,
+    trusted_nodes: TrustedNodesShared,
     abort_handlers: Arc<PaMutex<Vec<AbortOnDropHandle>>>,
 }
 
@@ -52,7 +53,7 @@ impl EventHandler for LightningEventHandler {
                 payment_hash,
                 amount_msat,
                 purpose,
-            } => self.handle_payment_received(*payment_hash, *amount_msat, purpose),
+            } => self.handle_payment_received(payment_hash, *amount_msat, purpose),
 
             Event::PaymentSent {
                 payment_preimage,
@@ -239,6 +240,7 @@ impl LightningEventHandler {
         channel_manager: Arc<ChannelManager>,
         keys_manager: Arc<KeysManager>,
         db: SqliteLightningDB,
+        trusted_nodes: TrustedNodesShared,
         abort_handlers: Arc<PaMutex<Vec<AbortOnDropHandle>>>,
     ) -> Self {
         LightningEventHandler {
@@ -246,6 +248,7 @@ impl LightningEventHandler {
             channel_manager,
             keys_manager,
             db,
+            trusted_nodes,
             abort_handlers,
         }
     }
@@ -297,16 +300,21 @@ impl LightningEventHandler {
         });
     }
 
-    fn handle_payment_received(&self, payment_hash: PaymentHash, amount_msat: u64, purpose: &PaymentPurpose) {
+    fn handle_payment_received(&self, payment_hash: &PaymentHash, received_amount: u64, purpose: &PaymentPurpose) {
         info!(
             "Handling PaymentReceived event for payment_hash: {} with amount {}",
             hex::encode(payment_hash.0),
-            amount_msat
+            received_amount
         );
         let payment_preimage = match purpose {
             PaymentPurpose::InvoicePayment { payment_preimage, .. } => match payment_preimage {
                 Some(preimage) => *preimage,
-                None => return,
+                None => {
+                    // Free the htlc immediately if we don't have the preimage required to claim the payment
+                    // to allow for this inbound liquidity to be used for other inbound payments.
+                    self.channel_manager.fail_htlc_backwards(payment_hash);
+                    return;
+                },
             },
             PaymentPurpose::SpontaneousPayment(preimage) => *preimage,
         };
@@ -535,14 +543,23 @@ impl LightningEventHandler {
         );
 
         let db = self.db.clone();
+        let trusted_nodes = self.trusted_nodes.clone();
         let channel_manager = self.channel_manager.clone();
         let platform = self.platform.clone();
         spawn(async move {
             if let Ok(last_channel_rpc_id) = db.get_last_channel_rpc_id().await.error_log_passthrough() {
                 let user_channel_id = last_channel_rpc_id as u64 + 1;
-                if channel_manager
-                    .accept_inbound_channel(&temporary_channel_id, &counterparty_node_id, user_channel_id)
-                    .is_ok()
+                if (trusted_nodes.lock().contains(&counterparty_node_id)
+                    && channel_manager
+                        .accept_inbound_channel_from_trusted_peer_0conf(
+                            &temporary_channel_id,
+                            &counterparty_node_id,
+                            user_channel_id,
+                        )
+                        .is_ok())
+                    || channel_manager
+                        .accept_inbound_channel(&temporary_channel_id, &counterparty_node_id, user_channel_id)
+                        .is_ok()
                 {
                     let is_public = match channel_manager
                         .list_channels()
