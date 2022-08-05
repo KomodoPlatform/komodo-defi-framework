@@ -343,6 +343,9 @@ impl SolanaCoin {
         self.spl_tokens_infos.lock().unwrap().insert(ticker, info);
     }
 
+    /// WARNING
+    /// Be very careful using this function since it returns dereferenced clone
+    /// of value behind the MutexGuard and makes it non-thread-safe.
     pub fn get_spl_tokens_infos(&self) -> HashMap<String, SplTokenInfo> {
         let guard = self.spl_tokens_infos.lock().unwrap();
         (*guard).clone()

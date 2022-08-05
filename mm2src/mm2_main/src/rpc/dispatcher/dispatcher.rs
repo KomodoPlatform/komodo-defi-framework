@@ -7,6 +7,7 @@ use crate::{mm2::lp_stats::{add_node_to_version_stat, remove_node_from_version_s
                             stop_version_stat_collection, update_version_stat_collection},
             mm2::lp_swap::{recreate_swap_data, trade_preimage_rpc},
             mm2::rpc::lp_commands::{get_public_key, get_public_key_hash}};
+use coins::eth::EthCoin;
 use coins::hd_wallet::get_new_address;
 use coins::my_tx_history_v2::my_tx_history_v2_rpc;
 use coins::rpc_command::account_balance::account_balance;
@@ -126,6 +127,8 @@ async fn dispatcher_v2(request: MmRpcRequest, ctx: MmArc) -> DispatcherResult<Re
         "best_orders" => handle_mmrpc(ctx, request, best_orders_rpc_v2).await,
         "enable_bch_with_tokens" => handle_mmrpc(ctx, request, enable_platform_coin_with_tokens::<BchCoin>).await,
         "enable_slp" => handle_mmrpc(ctx, request, enable_token::<SlpToken>).await,
+        "enable_eth_with_tokens" => handle_mmrpc(ctx, request, enable_platform_coin_with_tokens::<EthCoin>).await,
+        "enable_erc20" => handle_mmrpc(ctx, request, enable_token::<EthCoin>).await,
         "get_current_mtp" => handle_mmrpc(ctx, request, get_current_mtp_rpc).await,
         "get_new_address" => handle_mmrpc(ctx, request, get_new_address).await,
         "get_public_key" => handle_mmrpc(ctx, request, get_public_key).await,

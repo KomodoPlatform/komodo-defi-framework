@@ -84,6 +84,14 @@ macro_rules! try_h {
     };
 }
 
+/// Drops mutability of given variable
+#[macro_export]
+macro_rules! drop_mutability {
+    ($t: ident) => {
+        let $t = $t;
+    };
+}
+
 #[macro_use]
 pub mod jsonrpc_client;
 #[macro_use]
@@ -113,6 +121,7 @@ pub mod executor;
 #[cfg(target_arch = "wasm32")] pub use wasm::*;
 
 use backtrace::SymbolName;
+use chrono::Utc;
 pub use futures::compat::Future01CompatExt;
 use futures::future::{abortable, AbortHandle, FutureExt};
 use futures01::{future, Future};
@@ -938,3 +947,6 @@ pub fn spawn_abortable(fut: impl Future03<Output = ()> + Send + 'static) -> Abor
     spawn(abortable.then(|_| async {}));
     AbortOnDropHandle(handle)
 }
+
+#[inline(always)]
+pub fn get_utc_timestamp() -> i64 { Utc::now().timestamp() }

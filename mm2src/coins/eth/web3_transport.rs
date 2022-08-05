@@ -1,8 +1,9 @@
-use super::{RpcTransportEventHandler, RpcTransportEventHandlerShared};
+use super::{EthCoin, GuiAuthMessages, RpcTransportEventHandler, RpcTransportEventHandlerShared, Web3RpcError};
 #[cfg(not(target_arch = "wasm32"))] use futures::FutureExt;
 use futures::TryFutureExt;
 use futures01::{Future, Poll};
 use jsonrpc_core::{Call, Response};
+use mm2_net::transport::{GuiAuthValidation, GuiAuthValidationGenerator};
 use serde_json::Value as Json;
 #[cfg(not(target_arch = "wasm32"))] use std::ops::Deref;
 use std::sync::atomic::{AtomicUsize, Ordering};
@@ -18,6 +19,13 @@ use web3::{RequestId, Transport};
 #[derive(Debug, Clone)]
 pub struct EthFeeHistoryNamespace<T> {
     transport: T,
+}
+
+#[derive(Serialize, Clone)]
+pub struct AuthPayload<'a> {
+    #[serde(flatten)]
+    pub request: &'a Call,
+    pub signed_message: GuiAuthValidation,
 }
 
 impl<T: Transport> Namespace<T> for EthFeeHistoryNamespace<T> {
@@ -70,37 +78,55 @@ fn single_response<T: Deref<Target = [u8]>>(response: T, rpc_url: &str) -> Resul
 #[derive(Clone, Debug)]
 pub struct Web3Transport {
     id: Arc<AtomicUsize>,
-    uris: Vec<http::Uri>,
+    nodes: Vec<Web3TransportNode>,
     event_handlers: Vec<RpcTransportEventHandlerShared>,
+    pub(crate) gui_auth_validation_generator: Option<GuiAuthValidationGenerator>,
+}
+
+#[derive(Clone, Debug)]
+pub struct Web3TransportNode {
+    pub(crate) uri: http::Uri,
+    pub(crate) gui_auth: bool,
 }
 
 impl Web3Transport {
     #[allow(dead_code)]
-    pub fn new(urls: Vec<String>) -> Result<Self, String> {
-        let mut uris = vec![];
-        for url in urls.iter() {
-            uris.push(try_s!(url.parse()));
-        }
-        Ok(Web3Transport {
+    #[inline]
+    pub fn new(nodes: Vec<Web3TransportNode>) -> Self {
+        Web3Transport {
             id: Arc::new(AtomicUsize::new(0)),
-            uris,
+            nodes,
             event_handlers: Default::default(),
-        })
+            gui_auth_validation_generator: None,
+        }
     }
 
+    #[inline]
     pub fn with_event_handlers(
-        urls: Vec<String>,
+        nodes: Vec<Web3TransportNode>,
         event_handlers: Vec<RpcTransportEventHandlerShared>,
-    ) -> Result<Self, String> {
-        let mut uris = vec![];
-        for url in urls.iter() {
-            uris.push(try_s!(url.parse()));
-        }
-        Ok(Web3Transport {
+    ) -> Self {
+        Web3Transport {
             id: Arc::new(AtomicUsize::new(0)),
-            uris,
+            nodes,
             event_handlers,
-        })
+            gui_auth_validation_generator: None,
+        }
+    }
+
+    #[allow(dead_code)]
+    pub fn single_node(url: &'static str, gui_auth: bool) -> Self {
+        let nodes = vec![Web3TransportNode {
+            uri: url.parse().unwrap(),
+            gui_auth,
+        }];
+
+        Web3Transport {
+            id: Arc::new(AtomicUsize::new(0)),
+            nodes,
+            event_handlers: Default::default(),
+            gui_auth_validation_generator: None,
+        }
     }
 }
 
@@ -130,24 +156,74 @@ impl Transport for Web3Transport {
     #[cfg(not(target_arch = "wasm32"))]
     fn send(&self, _id: RequestId, request: Call) -> Self::Out {
         Box::new(
-            send_request(request, self.uris.clone(), self.event_handlers.clone())
-                .boxed()
-                .compat(),
+            send_request(
+                request,
+                self.nodes.clone(),
+                self.event_handlers.clone(),
+                self.gui_auth_validation_generator.clone(),
+            )
+            .boxed()
+            .compat(),
         )
     }
 
     #[cfg(target_arch = "wasm32")]
     fn send(&self, _id: RequestId, request: Call) -> Self::Out {
-        let fut = send_request(request, self.uris.clone(), self.event_handlers.clone());
+        let fut = send_request(
+            request,
+            self.nodes.clone(),
+            self.event_handlers.clone(),
+            self.gui_auth_validation_generator.clone(),
+        );
         Box::new(SendFuture(Box::pin(fut).compat()))
     }
+}
+
+/// Generates a signed message and inserts it into request
+/// payload if gui_auth is activated. Returns false on errors.
+fn handle_gui_auth_payload_if_activated(
+    gui_auth_validation_generator: &Option<GuiAuthValidationGenerator>,
+    node: &Web3TransportNode,
+    request: &Call,
+) -> Result<Option<String>, Web3RpcError> {
+    if !node.gui_auth {
+        return Ok(None);
+    }
+
+    let generator = match gui_auth_validation_generator.clone() {
+        Some(gen) => gen,
+        None => {
+            return Err(Web3RpcError::Internal(format!(
+                "GuiAuthValidationGenerator is not provided for {:?} node",
+                node
+            )));
+        },
+    };
+
+    let signed_message = match EthCoin::generate_gui_auth_signed_validation(generator) {
+        Ok(t) => t,
+        Err(e) => {
+            return Err(Web3RpcError::Internal(format!(
+                "GuiAuth signed message generation failed for {:?} node, error: {:?}",
+                node, e
+            )));
+        },
+    };
+
+    let auth_request = AuthPayload {
+        request,
+        signed_message,
+    };
+
+    Ok(Some(to_string(&auth_request)))
 }
 
 #[cfg(not(target_arch = "wasm32"))]
 async fn send_request(
     request: Call,
-    uris: Vec<http::Uri>,
+    nodes: Vec<Web3TransportNode>,
     event_handlers: Vec<RpcTransportEventHandlerShared>,
+    gui_auth_validation_generator: Option<GuiAuthValidationGenerator>,
 ) -> Result<Json, Error> {
     use common::executor::Timer;
     use common::log::warn;
@@ -159,13 +235,25 @@ async fn send_request(
     const REQUEST_TIMEOUT_S: f64 = 60.;
 
     let mut errors = Vec::new();
-    for uri in uris.iter() {
-        let request = to_string(&request);
-        event_handlers.on_outgoing_request(request.as_bytes());
 
-        let mut req = http::Request::new(request.clone().into_bytes());
+    let serialized_request = to_string(&request);
+
+    for node in nodes.iter() {
+        let serialized_request =
+            match handle_gui_auth_payload_if_activated(&gui_auth_validation_generator, node, &request) {
+                Ok(Some(r)) => r,
+                Ok(None) => serialized_request.clone(),
+                Err(e) => {
+                    errors.push(e);
+                    continue;
+                },
+            };
+
+        event_handlers.on_outgoing_request(serialized_request.as_bytes());
+
+        let mut req = http::Request::new(serialized_request.clone().into_bytes());
         *req.method_mut() = http::Method::POST;
-        *req.uri_mut() = uri.clone();
+        *req.uri_mut() = node.uri.clone();
         req.headers_mut()
             .insert(http::header::CONTENT_TYPE, HeaderValue::from_static("application/json"));
         let timeout = Timer::sleep(REQUEST_TIMEOUT_S);
@@ -174,9 +262,12 @@ async fn send_request(
         let res = match rc {
             Either::Left((r, _t)) => r,
             Either::Right((_t, _r)) => {
-                let error = ERRL!("Error requesting '{}': {}s timeout expired", uri, REQUEST_TIMEOUT_S);
+                let error = format!(
+                    "Error requesting '{}': {}s timeout expired",
+                    node.uri, REQUEST_TIMEOUT_S
+                );
                 warn!("{}", error);
-                errors.push(error);
+                errors.push(Web3RpcError::Transport(error));
                 continue;
             },
         };
@@ -184,7 +275,7 @@ async fn send_request(
         let (status, _headers, body) = match res {
             Ok(r) => r,
             Err(err) => {
-                errors.push(err.to_string());
+                errors.push(Web3RpcError::Transport(err.to_string()));
                 continue;
             },
         };
@@ -192,34 +283,46 @@ async fn send_request(
         event_handlers.on_incoming_response(&body);
 
         if !status.is_success() {
-            errors.push(ERRL!(
-                "Server '{}' response !200: {}, {}",
-                uri,
+            errors.push(Web3RpcError::Transport(format!(
+                "Server '{:?}' response !200: {}, {}",
+                node,
                 status,
                 binprint(&body, b'.')
-            ));
+            )));
             continue;
         }
 
-        return single_response(body, &uri.to_string());
+        return single_response(body, &node.uri.to_string());
     }
+
     Err(request_failed_error(&request, &errors))
 }
 
 #[cfg(target_arch = "wasm32")]
 async fn send_request(
     request: Call,
-    uris: Vec<http::Uri>,
+    nodes: Vec<Web3TransportNode>,
     event_handlers: Vec<RpcTransportEventHandlerShared>,
+    gui_auth_validation_generator: Option<GuiAuthValidationGenerator>,
 ) -> Result<Json, Error> {
-    let request_payload = to_string(&request);
+    let serialized_request = to_string(&request);
 
     let mut transport_errors = Vec::new();
-    for uri in uris {
-        match send_request_once(request_payload.clone(), &uri, &event_handlers).await {
+    for node in nodes.iter() {
+        let serialized_request =
+            match handle_gui_auth_payload_if_activated(&gui_auth_validation_generator, node, &request) {
+                Ok(Some(r)) => r,
+                Ok(None) => serialized_request.clone(),
+                Err(e) => {
+                    transport_errors.push(e);
+                    continue;
+                },
+            };
+
+        match send_request_once(serialized_request.clone(), &node.uri, &event_handlers).await {
             Ok(response_json) => return Ok(response_json),
             Err(Error(ErrorKind::Transport(e), _)) => {
-                transport_errors.push(e.to_string());
+                transport_errors.push(Web3RpcError::Transport(e));
             },
             Err(e) => return Err(e),
         }
@@ -276,8 +379,8 @@ async fn send_request_once(
     }
 }
 
-fn request_failed_error(request: &Call, errors: &[String]) -> Error {
-    let errors = errors.join("; ");
+fn request_failed_error(request: &Call, errors: &[Web3RpcError]) -> Error {
+    let errors: String = errors.iter().map(|e| format!("{:?}; ", e)).collect();
     let error = format!("request {:?} failed: {}", request, errors);
     Error::from(ErrorKind::Transport(error))
 }
