@@ -31,10 +31,7 @@ use solana_sdk::{pubkey::Pubkey,
 use std::collections::HashMap;
 use std::str::FromStr;
 use std::sync::Mutex;
-use std::{convert::TryFrom,
-          fmt::{Debug, Formatter, Result as FmtResult},
-          ops::Deref,
-          sync::Arc};
+use std::{convert::TryFrom, fmt::Debug, ops::Deref, sync::Arc};
 
 pub mod solana_common;
 #[cfg(test)] mod solana_common_tests;

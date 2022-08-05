@@ -210,7 +210,7 @@ pub use solana::{solana_coin_from_conf_and_params, SolanaActivationParams, Solan
 pub mod utxo;
 #[cfg(not(target_arch = "wasm32"))] pub mod z_coin;
 
-use crate::tendermint::{TendermintCoin, TendermintProtocolInfo};
+use crate::tendermint::{TendermintCoin, TendermintFeeDetails, TendermintProtocolInfo};
 use eth::{eth_coin_from_conf_and_request, EthCoin, EthTxFeeDetails, SignedEthTx};
 use hd_wallet::{HDAddress, HDAddressId};
 use qrc20::Qrc20ActivationParams;
@@ -809,6 +809,7 @@ pub enum TxFeeDetails {
     Eth(EthTxFeeDetails),
     Qrc20(Qrc20FeeDetails),
     Slp(SlpFeeDetails),
+    Tendermint(TendermintFeeDetails),
     #[cfg(not(target_arch = "wasm32"))]
     Solana(SolanaFeeDetails),
 }
