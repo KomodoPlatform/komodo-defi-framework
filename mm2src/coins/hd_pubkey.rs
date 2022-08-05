@@ -1,15 +1,14 @@
 use crate::hd_wallet::NewAccountCreatingError;
 use async_trait::async_trait;
 use crypto::hw_rpc_task::{HwConnectStatuses, TrezorRpcTaskConnectProcessor};
-use crypto::trezor::trezor_rpc_task::TrezorRpcTaskProcessor;
+use crypto::trezor::trezor_rpc_task::{TrezorRpcTaskProcessor, TryIntoUserAction};
 use crypto::trezor::utxo::TrezorUtxoCoin;
-use crypto::trezor::{ProcessTrezorResponse, TrezorError, TrezorPinMatrix3x3Response, TrezorProcessingError};
+use crypto::trezor::{ProcessTrezorResponse, TrezorError, TrezorProcessingError};
 use crypto::{Bip32Error, CryptoCtx, CryptoInitError, DerivationPath, EcdsaCurve, HardwareWalletArc, HwError,
              HwProcessingError, XPub};
 use mm2_core::mm_ctx::MmArc;
 use mm2_err_handle::prelude::*;
 use rpc_task::{RpcTask, RpcTaskError, RpcTaskHandle};
-use std::convert::TryInto;
 
 const SHOW_PUBKEY_ON_DISPLAY: bool = false;
 
@@ -102,7 +101,7 @@ pub enum RpcTaskXPubExtractor<'task, Task: RpcTask> {
 impl<'task, Task> HDXPubExtractor for RpcTaskXPubExtractor<'task, Task>
 where
     Task: RpcTask,
-    Task::UserAction: TryInto<TrezorPinMatrix3x3Response, Error = RpcTaskError> + Send,
+    Task::UserAction: TryIntoUserAction + Send,
 {
     async fn extract_utxo_xpub(
         &self,
@@ -125,7 +124,7 @@ where
 impl<'task, Task> RpcTaskXPubExtractor<'task, Task>
 where
     Task: RpcTask,
-    Task::UserAction: TryInto<TrezorPinMatrix3x3Response, Error = RpcTaskError> + Send,
+    Task::UserAction: TryIntoUserAction + Send,
 {
     pub fn new(
         ctx: &MmArc,

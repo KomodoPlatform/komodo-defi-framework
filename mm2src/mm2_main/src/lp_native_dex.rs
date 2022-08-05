@@ -212,7 +212,9 @@ impl From<RpcTaskError> for MmInitError {
         match e {
             RpcTaskError::Canceled => MmInitError::Canceled,
             RpcTaskError::Timeout(timeout) => MmInitError::Timeout(timeout),
-            RpcTaskError::NoSuchTask(_) | RpcTaskError::UnexpectedTaskStatus { .. } => MmInitError::Internal(error),
+            RpcTaskError::NoSuchTask(_)
+            | RpcTaskError::UnexpectedTaskStatus { .. }
+            | RpcTaskError::UnexpectedUserAction { .. } => MmInitError::Internal(error),
             RpcTaskError::Internal(internal) => MmInitError::Internal(internal),
         }
     }

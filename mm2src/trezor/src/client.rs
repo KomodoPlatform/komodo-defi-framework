@@ -70,6 +70,10 @@ impl<'a> TrezorSession<'a> {
                 let req_msg = resp.into_message()?;
                 Ok(TrezorResponse::new_pin_matrix_request(self, req_msg, result_handler))
             },
+            MessageType::PassphraseRequest => {
+                let req_msg = resp.into_message()?;
+                Ok(TrezorResponse::new_passphrase_request(self, req_msg, result_handler))
+            },
             mtype => MmError::err(TrezorError::UnexpectedMessageType(mtype)),
         }
     }

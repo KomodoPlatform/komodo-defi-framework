@@ -50,6 +50,10 @@ pub enum RpcTaskError {
         actual: TaskStatusError,
         expected: TaskStatusError,
     },
+    #[display(fmt = "RPC 'task' is awaiting '{}' user action", expected)]
+    UnexpectedUserAction {
+        expected: String,
+    },
     Canceled,
     Internal(String),
 }

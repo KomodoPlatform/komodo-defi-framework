@@ -1,3 +1,4 @@
+use crate::user_interaction::TrezorPassphraseResponse;
 use crate::{TrezorError, TrezorPinMatrix3x3Response};
 use async_trait::async_trait;
 use derive_more::Display;
@@ -23,6 +24,8 @@ pub trait TrezorRequestProcessor {
     async fn on_button_request(&self) -> MmResult<(), TrezorProcessingError<Self::Error>>;
 
     async fn on_pin_request(&self) -> MmResult<TrezorPinMatrix3x3Response, TrezorProcessingError<Self::Error>>;
+
+    async fn on_passphrase_request(&self) -> MmResult<TrezorPassphraseResponse, TrezorProcessingError<Self::Error>>;
 
     async fn on_ready(&self) -> MmResult<(), TrezorProcessingError<Self::Error>>;
 }

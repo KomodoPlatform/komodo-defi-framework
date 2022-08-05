@@ -5,6 +5,7 @@ use derive_more::Display;
 pub enum TrezorUserInteraction {
     ButtonRequest,
     PinMatrix3x3,
+    PassphraseRequest,
     Other(String),
 }
 
@@ -16,4 +17,11 @@ pub enum TrezorUserInteraction {
 #[derive(Debug, Deserialize, Serialize)]
 pub struct TrezorPinMatrix3x3Response {
     pub pin: String,
+}
+
+#[derive(Debug, Deserialize, Serialize)]
+pub struct TrezorPassphraseResponse {
+    /// A non-empty passphrase if the user is willing to use a hidden wallet,
+    /// otherwise an empty passphrase.
+    pub passphrase: String,
 }

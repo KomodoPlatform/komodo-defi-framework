@@ -36,6 +36,8 @@ pub enum CreateAccountRpcError {
     HwContextNotInitialized,
     #[display(fmt = "No such coin {}", coin)]
     NoSuchCoin { coin: String },
+    #[display(fmt = "RPC 'task' is awaiting '{}' user action", expected)]
+    UnexpectedUserAction { expected: String },
     #[from_trait(WithTimeout::timeout)]
     #[display(fmt = "RPC timed out {:?}", _0)]
     Timeout(Duration),
@@ -124,6 +126,7 @@ impl From<RpcTaskError> for CreateAccountRpcError {
             RpcTaskError::NoSuchTask(_) | RpcTaskError::UnexpectedTaskStatus { .. } => {
                 CreateAccountRpcError::Internal(error)
             },
+            RpcTaskError::UnexpectedUserAction { expected } => CreateAccountRpcError::UnexpectedUserAction { expected },
             RpcTaskError::Internal(internal) => CreateAccountRpcError::Internal(internal),
         }
     }
@@ -138,6 +141,7 @@ impl HttpStatusCode for CreateAccountRpcError {
         match self {
             CreateAccountRpcError::HwContextNotInitialized
             | CreateAccountRpcError::NoSuchCoin { .. }
+            | CreateAccountRpcError::UnexpectedUserAction { .. }
             | CreateAccountRpcError::CoinIsActivatedNotWithHDWallet
             | CreateAccountRpcError::InvalidBip44Chain { .. }
             | CreateAccountRpcError::AccountLimitReached { .. } => StatusCode::BAD_REQUEST,
@@ -252,6 +256,7 @@ impl RpcTask for InitCreateAccountTask {
                 on_connection_failed: CreateAccountInProgressStatus::Finishing,
                 on_button_request: CreateAccountInProgressStatus::WaitingForUserToConfirmPubkey,
                 on_pin_request: CreateAccountAwaitingStatus::EnterTrezorPin,
+                on_passphrase_request: CreateAccountAwaitingStatus::EnterPassphrase,
                 on_ready: CreateAccountInProgressStatus::RequestingAccountBalance,
             };
             let xpub_extractor = CreateAccountXPubExtractor::new(ctx, task_handle, hw_statuses)?;

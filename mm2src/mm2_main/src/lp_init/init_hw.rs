@@ -33,6 +33,8 @@ pub enum InitHwError {
     #[from_trait(WithHwRpcError::hw_rpc_error)]
     #[display(fmt = "{}", _0)]
     HwError(HwRpcError),
+    #[display(fmt = "RPC 'task' is awaiting '{}' user action", expected)]
+    UnexpectedUserAction { expected: String },
     #[from_trait(WithTimeout::timeout)]
     #[display(fmt = "RPC timed out {:?}", _0)]
     Timeout(Duration),
@@ -67,6 +69,7 @@ impl From<RpcTaskError> for InitHwError {
             RpcTaskError::Canceled => InitHwError::Internal("Canceled".to_owned()),
             RpcTaskError::Timeout(timeout) => InitHwError::Timeout(timeout),
             RpcTaskError::NoSuchTask(_) | RpcTaskError::UnexpectedTaskStatus { .. } => InitHwError::Internal(error),
+            RpcTaskError::UnexpectedUserAction { expected } => InitHwError::UnexpectedUserAction { expected },
             RpcTaskError::Internal(internal) => InitHwError::Internal(internal),
         }
     }
@@ -75,7 +78,9 @@ impl From<RpcTaskError> for InitHwError {
 impl HttpStatusCode for InitHwError {
     fn status_code(&self) -> StatusCode {
         match self {
-            InitHwError::HwContextInitializingAlready => StatusCode::BAD_REQUEST,
+            InitHwError::HwContextInitializingAlready | InitHwError::UnexpectedUserAction { .. } => {
+                StatusCode::BAD_REQUEST
+            },
             InitHwError::HwError(_) => StatusCode::GONE,
             InitHwError::Timeout(_) => StatusCode::REQUEST_TIMEOUT,
             InitHwError::Internal(_) => StatusCode::INTERNAL_SERVER_ERROR,
@@ -135,6 +140,7 @@ impl RpcTask for InitHwTask {
                     on_connection_failed: InitHwInProgressStatus::Initializing,
                     on_button_request: InitHwInProgressStatus::WaitingForUserToConfirmPubkey,
                     on_pin_request: InitHwAwaitingStatus::EnterTrezorPin,
+                    on_passphrase_request: InitHwAwaitingStatus::EnterPassphrase,
                     on_ready: InitHwInProgressStatus::Initializing,
                 })
                 .with_connect_timeout(TREZOR_CONNECT_TIMEOUT)

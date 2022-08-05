@@ -83,6 +83,7 @@ impl From<RpcTaskError> for WithdrawError {
             RpcTaskError::NoSuchTask(_) | RpcTaskError::UnexpectedTaskStatus { .. } => {
                 WithdrawError::InternalError(error)
             },
+            RpcTaskError::UnexpectedUserAction { expected } => WithdrawError::UnexpectedUserAction { expected },
             RpcTaskError::Internal(internal) => WithdrawError::InternalError(internal),
         }
     }
@@ -374,6 +375,7 @@ impl<'a, Coin> InitUtxoWithdraw<'a, Coin> {
             on_connection_failed: WithdrawInProgressStatus::Finishing,
             on_button_request: WithdrawInProgressStatus::WaitingForUserToConfirmPubkey,
             on_pin_request: WithdrawAwaitingStatus::EnterTrezorPin,
+            on_passphrase_request: WithdrawAwaitingStatus::EnterPassphrase,
             on_ready: WithdrawInProgressStatus::Preparing,
         })
         .with_connect_timeout(TREZOR_CONNECT_TIMEOUT)

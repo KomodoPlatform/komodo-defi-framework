@@ -1419,6 +1419,8 @@ pub enum WithdrawError {
     UnexpectedFromAddress(String),
     #[display(fmt = "Unknown '{}' account", account_id)]
     UnknownAccount { account_id: u32 },
+    #[display(fmt = "RPC 'task' is awaiting '{}' user action", expected)]
+    UnexpectedUserAction { expected: String },
     #[from_trait(WithHwRpcError::hw_rpc_error)]
     #[display(fmt = "{}", _0)]
     HwError(HwRpcError),
@@ -1442,7 +1444,8 @@ impl HttpStatusCode for WithdrawError {
             | WithdrawError::InvalidFeePolicy(_)
             | WithdrawError::FromAddressNotFound
             | WithdrawError::UnexpectedFromAddress(_)
-            | WithdrawError::UnknownAccount { .. } => StatusCode::BAD_REQUEST,
+            | WithdrawError::UnknownAccount { .. }
+            | WithdrawError::UnexpectedUserAction { .. } => StatusCode::BAD_REQUEST,
             WithdrawError::HwError(_) => StatusCode::GONE,
             WithdrawError::Transport(_) | WithdrawError::InternalError(_) => StatusCode::INTERNAL_SERVER_ERROR,
         }
