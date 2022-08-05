@@ -725,7 +725,9 @@ pub async fn insert_new_swap_to_db(
 
 #[cfg(not(target_arch = "wasm32"))]
 fn add_swap_to_db_index(ctx: &MmArc, swap: &SavedSwap) {
-    crate::mm2::database::stats_swaps::add_swap_to_index(&ctx.sqlite_connection(), swap)
+    if let Some(conn) = ctx.sqlite_conn_opt() {
+        crate::mm2::database::stats_swaps::add_swap_to_index(&conn, swap)
+    }
 }
 
 #[cfg(not(target_arch = "wasm32"))]
@@ -1227,11 +1229,20 @@ pub async fn active_swaps_rpc(ctx: MmArc, req: Json) -> Result<Response<Vec<u8>>
     Ok(try_s!(Response::builder().body(res)))
 }
 
-#[cfg(test)]
+#[cfg(all(test, not(target_arch = "wasm32")))]
 mod lp_swap_tests {
-    use serialization::{deserialize, serialize};
-
     use super::*;
+    use crate::mm2::lp_native_dex::{fix_directories, init_p2p};
+    use coins::utxo::rpc_clients::ElectrumRpcRequest;
+    use coins::utxo::utxo_standard::utxo_standard_coin_with_priv_key;
+    use coins::utxo::{UtxoActivationParams, UtxoRpcMode};
+    use coins::MarketCoinOps;
+    use coins::PrivKeyActivationPolicy;
+    use common::block_on;
+    use crypto::privkey::key_pair_from_seed;
+    use mm2_core::mm_ctx::MmCtxBuilder;
+    use mm2_test_helpers::for_tests::{morty_conf, rick_conf, MORTY_ELECTRUM_ADDRS, RICK_ELECTRUM_ADDRS};
+    use serialization::{deserialize, serialize};
 
     #[test]
     fn test_dex_fee_amount() {
@@ -1522,5 +1533,179 @@ mod lp_swap_tests {
         let deserialized: NegotiationDataMsg = rmp_serde::from_read_ref(serialized.as_slice()).unwrap();
 
         assert_eq!(deserialized, v3);
+    }
+
+    fn utxo_activation_params(electrums: &[&str]) -> UtxoActivationParams {
+        UtxoActivationParams {
+            mode: UtxoRpcMode::Electrum {
+                servers: electrums
+                    .into_iter()
+                    .map(|url| ElectrumRpcRequest {
+                        url: url.to_string(),
+                        protocol: Default::default(),
+                        disable_cert_verification: false,
+                    })
+                    .collect(),
+                block_header_params: None,
+            },
+            utxo_merge_params: None,
+            tx_history: false,
+            required_confirmations: Some(0),
+            requires_notarization: None,
+            address_format: None,
+            gap_limit: None,
+            scan_policy: Default::default(),
+            priv_key_policy: PrivKeyActivationPolicy::IguanaPrivKey,
+            check_utxo_maturity: None,
+        }
+    }
+
+    #[test]
+    #[ignore]
+    fn gen_recoverable_swap() {
+        let maker_passphrase = std::env::var("BOB_PASSPHRASE").expect("BOB_PASSPHRASE env must be set");
+        let maker_fail_at = std::env::var("MAKER_FAIL_AT").map(maker_swap::FailAt::from).ok();
+        let taker_passphrase = std::env::var("ALICE_PASSPHRASE").expect("ALICE_PASSPHRASE env must be set");
+        let taker_fail_at = std::env::var("TAKER_FAIL_AT").map(taker_swap::FailAt::from).ok();
+
+        if maker_fail_at.is_none() && taker_fail_at.is_none() {
+            panic!("At least one of MAKER_FAIL_AT/TAKER_FAIL_AT must be provided");
+        }
+
+        let maker_ctx_conf = json!({
+            "netid": 1234,
+            "p2p_in_memory": true,
+            "p2p_in_memory_port": 777,
+            "i_am_seed": true,
+        });
+
+        let maker_key_pair = key_pair_from_seed(&maker_passphrase).unwrap();
+        let maker_ctx = MmCtxBuilder::default()
+            .with_secp256k1_key_pair(maker_key_pair.clone())
+            .with_conf(maker_ctx_conf)
+            .into_mm_arc();
+        fix_directories(&maker_ctx).unwrap();
+        block_on(init_p2p(maker_ctx.clone())).unwrap();
+
+        let rick_activation_params = utxo_activation_params(RICK_ELECTRUM_ADDRS);
+        let morty_activation_params = utxo_activation_params(MORTY_ELECTRUM_ADDRS);
+
+        let rick_maker = block_on(utxo_standard_coin_with_priv_key(
+            &maker_ctx,
+            "RICK",
+            &rick_conf(),
+            &rick_activation_params,
+            maker_key_pair.private_ref(),
+        ))
+        .unwrap();
+
+        println!("Maker address {}", rick_maker.my_address().unwrap());
+
+        let morty_maker = block_on(utxo_standard_coin_with_priv_key(
+            &maker_ctx,
+            "MORTY",
+            &morty_conf(),
+            &morty_activation_params,
+            maker_key_pair.private_ref(),
+        ))
+        .unwrap();
+
+        let taker_key_pair = key_pair_from_seed(&taker_passphrase).unwrap();
+
+        let taker_ctx_conf = json!({
+            "netid": 1234,
+            "p2p_in_memory": true,
+            "seednodes": vec!["/memory/777"]
+        });
+        let taker_ctx = MmCtxBuilder::default()
+            .with_secp256k1_key_pair(taker_key_pair.clone())
+            .with_conf(taker_ctx_conf)
+            .into_mm_arc();
+        fix_directories(&taker_ctx).unwrap();
+        block_on(init_p2p(taker_ctx.clone())).unwrap();
+
+        let rick_taker = block_on(utxo_standard_coin_with_priv_key(
+            &taker_ctx,
+            "RICK",
+            &rick_conf(),
+            &rick_activation_params,
+            taker_key_pair.private_ref(),
+        ))
+        .unwrap();
+
+        let morty_taker = block_on(utxo_standard_coin_with_priv_key(
+            &taker_ctx,
+            "MORTY",
+            &morty_conf(),
+            &morty_activation_params,
+            taker_key_pair.private_ref(),
+        ))
+        .unwrap();
+
+        println!("Taker address {}", rick_taker.my_address().unwrap());
+
+        let uuid = Uuid::new_v4();
+        let maker_amount = BigDecimal::from_str("0.1").unwrap();
+        let taker_amount = BigDecimal::from_str("0.1").unwrap();
+        let conf_settings = SwapConfirmationsSettings {
+            maker_coin_confs: 0,
+            maker_coin_nota: false,
+            taker_coin_confs: 0,
+            taker_coin_nota: false,
+        };
+        let payment_locktime = 30;
+
+        let mut maker_swap = MakerSwap::new(
+            maker_ctx.clone(),
+            taker_key_pair.public().compressed_unprefixed().unwrap().into(),
+            maker_amount.clone(),
+            taker_amount.clone(),
+            maker_key_pair.public_slice().into(),
+            uuid,
+            None,
+            conf_settings,
+            rick_maker.into(),
+            morty_maker.into(),
+            payment_locktime,
+            None,
+            Default::default(),
+        );
+
+        maker_swap.fail_at = maker_fail_at;
+
+        let mut taker_swap = TakerSwap::new(
+            taker_ctx.clone(),
+            maker_key_pair.public().compressed_unprefixed().unwrap().into(),
+            maker_amount.into(),
+            taker_amount.into(),
+            taker_key_pair.public_slice().into(),
+            uuid,
+            None,
+            conf_settings,
+            rick_taker.into(),
+            morty_taker.into(),
+            payment_locktime,
+            None,
+        );
+
+        taker_swap.fail_at = taker_fail_at;
+
+        block_on(futures::future::join(
+            run_maker_swap(RunMakerSwapInput::StartNew(maker_swap), maker_ctx.clone()),
+            run_taker_swap(RunTakerSwapInput::StartNew(taker_swap), taker_ctx.clone()),
+        ));
+
+        println!(
+            "Maker swap path {}",
+            std::fs::canonicalize(my_swap_file_path(&maker_ctx, &uuid))
+                .unwrap()
+                .display()
+        );
+        println!(
+            "Taker swap path {}",
+            std::fs::canonicalize(my_swap_file_path(&taker_ctx, &uuid))
+                .unwrap()
+                .display()
+        );
     }
 }

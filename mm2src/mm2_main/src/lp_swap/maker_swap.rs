@@ -175,6 +175,24 @@ pub struct MakerSwapMut {
     maker_payment_refund: Option<TransactionIdentifier>,
 }
 
+#[cfg(test)]
+#[derive(Eq, PartialEq)]
+pub(super) enum FailAt {
+    TakerPaymentSpend,
+    MakerPaymentRefund,
+}
+
+#[cfg(test)]
+impl From<String> for FailAt {
+    fn from(str: String) -> Self {
+        match str.as_str() {
+            "taker_payment_spend" => FailAt::TakerPaymentSpend,
+            "maker_payment_refund" => FailAt::MakerPaymentRefund,
+            _ => panic!("Invalid MAKER_FAIL_AT value"),
+        }
+    }
+}
+
 pub struct MakerSwap {
     ctx: MmArc,
     maker_coin: MmCoinEnum,
@@ -195,6 +213,8 @@ pub struct MakerSwap {
     /// Temporary privkey used to sign P2P messages when applicable
     p2p_privkey: Option<KeyPair>,
     secret: H256,
+    #[cfg(test)]
+    pub(super) fail_at: Option<FailAt>,
 }
 
 impl MakerSwap {
@@ -342,6 +362,8 @@ impl MakerSwap {
             }),
             ctx,
             secret,
+            #[cfg(test)]
+            fail_at: None,
         }
     }
 
@@ -843,6 +865,13 @@ impl MakerSwap {
     }
 
     async fn spend_taker_payment(&self) -> Result<(Option<MakerSwapCommand>, Vec<MakerSwapEvent>), String> {
+        #[cfg(test)]
+        if self.fail_at == Some(FailAt::TakerPaymentSpend) {
+            return Ok((Some(MakerSwapCommand::Finish), vec![
+                MakerSwapEvent::TakerPaymentSpendFailed("explicit failure".into()),
+            ]));
+        }
+
         let duration = (self.r().data.lock_duration * 4) / 5;
         let timeout = self.r().data.started_at + duration;
 
@@ -940,6 +969,13 @@ impl MakerSwap {
     }
 
     async fn refund_maker_payment(&self) -> Result<(Option<MakerSwapCommand>, Vec<MakerSwapEvent>), String> {
+        #[cfg(test)]
+        if self.fail_at == Some(FailAt::MakerPaymentRefund) {
+            return Ok((Some(MakerSwapCommand::Finish), vec![
+                MakerSwapEvent::MakerPaymentRefundFailed("explicit failure".into()),
+            ]));
+        }
+
         let locktime = self.r().data.maker_payment_lock;
         loop {
             match self.maker_coin.can_refund_htlc(locktime).compat().await {
@@ -1218,13 +1254,14 @@ impl MakerSwap {
             ),
             Err(e) => ERR!("Error {} when trying to find maker payment spend", e),
             Ok(None) => {
-                // our payment is not spent, try to refund
-                info!("Trying to refund MakerPayment");
-                if now_ms() / 1000 < self.r().data.maker_payment_lock + 3700 {
-                    return ERR!(
-                        "Too early to refund, wait until {}",
-                        self.r().data.maker_payment_lock + 3700
-                    );
+                let can_refund_htlc = try_s!(
+                    self.maker_coin
+                        .can_refund_htlc(maker_payment_lock as u64)
+                        .compat()
+                        .await
+                );
+                if let CanRefundHtlc::HaveToWait(seconds_to_wait) = can_refund_htlc {
+                    return ERR!("Too early to refund, wait until {}", now_ms() / 1000 + seconds_to_wait);
                 }
                 let fut = self.maker_coin.send_maker_refunds_payment(
                     &maker_payment,
@@ -2023,6 +2060,9 @@ mod maker_swap_tests {
 
         TestCoin::ticker.mock_safe(|_| MockResult::Return("ticker"));
         TestCoin::swap_contract_address.mock_safe(|_| MockResult::Return(None));
+        TestCoin::can_refund_htlc
+            .mock_safe(|_, _| MockResult::Return(Box::new(futures01::future::ok(CanRefundHtlc::CanRefundNow))));
+
         static mut MY_PAYMENT_SENT_CALLED: bool = false;
         TestCoin::check_if_my_payment_sent.mock_safe(|_, _, _, _, _, _, _| {
             unsafe { MY_PAYMENT_SENT_CALLED = true };
@@ -2062,8 +2102,10 @@ mod maker_swap_tests {
 
         TestCoin::ticker.mock_safe(|_| MockResult::Return("ticker"));
         TestCoin::swap_contract_address.mock_safe(|_| MockResult::Return(None));
-        static mut MAKER_REFUND_CALLED: bool = false;
+        TestCoin::can_refund_htlc
+            .mock_safe(|_, _| MockResult::Return(Box::new(futures01::future::ok(CanRefundHtlc::CanRefundNow))));
 
+        static mut MAKER_REFUND_CALLED: bool = false;
         TestCoin::send_maker_refunds_payment.mock_safe(|_, _, _, _, _, _, _| {
             unsafe { MAKER_REFUND_CALLED = true };
             MockResult::Return(Box::new(futures01::future::ok(eth_tx_for_test().into())))
@@ -2165,13 +2207,15 @@ mod maker_swap_tests {
             unsafe { MY_PAYMENT_SENT_CALLED = true };
             MockResult::Return(Box::new(futures01::future::ok(Some(eth_tx_for_test().into()))))
         });
+        TestCoin::can_refund_htlc
+            .mock_safe(|_, _| MockResult::Return(Box::new(futures01::future::ok(CanRefundHtlc::HaveToWait(1000)))));
         TestCoin::search_for_swap_tx_spend_my
             .mock_safe(|_, _| MockResult::Return(Box::pin(futures::future::ready(Ok(None)))));
         let maker_coin = MmCoinEnum::Test(TestCoin::default());
         let taker_coin = MmCoinEnum::Test(TestCoin::default());
         let (maker_swap, _) = MakerSwap::load_from_saved(ctx, maker_coin, taker_coin, maker_saved_swap).unwrap();
-        maker_swap.w().data.maker_payment_lock = (now_ms() / 1000) - 3690;
-        assert!(block_on(maker_swap.recover_funds()).is_err());
+        let error = block_on(maker_swap.recover_funds()).unwrap_err();
+        assert!(error.contains("Too early to refund"));
         assert!(unsafe { MY_PAYMENT_SENT_CALLED });
     }
 

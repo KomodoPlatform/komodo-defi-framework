@@ -28,6 +28,7 @@ use futures::future::join_all;
 use futures::TryFutureExt;
 use mm2_core::mm_ctx::MmCtxBuilder;
 use mm2_number::bigdecimal::{BigDecimal, Signed};
+use mm2_test_helpers::for_tests::RICK_ELECTRUM_ADDRS;
 use mocktopus::mocking::*;
 use rpc::v1::types::H256 as H256Json;
 use serialization::{deserialize, CoinVariant};
@@ -39,11 +40,6 @@ use std::num::NonZeroUsize;
 const TEST_COIN_NAME: &'static str = "RICK";
 // Made-up hrp for rick to test p2wpkh script
 const TEST_COIN_HRP: &'static str = "rck";
-const RICK_ELECTRUM_ADDRS: &[&'static str] = &[
-    "electrum1.cipig.net:10017",
-    "electrum2.cipig.net:10017",
-    "electrum3.cipig.net:10017",
-];
 const TEST_COIN_DECIMALS: u8 = 8;
 
 pub fn electrum_client_for_test(servers: &[&str]) -> ElectrumClient {

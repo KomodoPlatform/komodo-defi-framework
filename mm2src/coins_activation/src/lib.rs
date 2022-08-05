@@ -1,5 +1,7 @@
 mod bch_with_tokens_activation;
 mod context;
+mod erc20_token_activation;
+mod eth_with_token_activation;
 mod l2;
 #[cfg(not(target_arch = "wasm32"))] mod lightning_activation;
 mod platform_coin_with_tokens;

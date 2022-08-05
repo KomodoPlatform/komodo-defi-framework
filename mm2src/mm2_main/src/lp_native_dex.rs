@@ -260,7 +260,7 @@ fn default_seednodes(netid: u16) -> Vec<RelayAddress> {
 }
 
 #[cfg(not(target_arch = "wasm32"))]
-fn fix_directories(ctx: &MmCtx) -> MmInitResult<()> {
+pub fn fix_directories(ctx: &MmCtx) -> MmInitResult<()> {
     let dbdir = ctx.dbdir();
     std::fs::create_dir_all(&dbdir).map_to_mm(|e| MmInitError::ErrorCreatingDbDir {
         path: dbdir.clone(),
@@ -442,7 +442,7 @@ async fn kick_start(ctx: MmArc) -> MmInitResult<()> {
     Ok(())
 }
 
-async fn init_p2p(ctx: MmArc) -> P2PResult<()> {
+pub async fn init_p2p(ctx: MmArc) -> P2PResult<()> {
     let i_am_seed = ctx.conf["i_am_seed"].as_bool().unwrap_or(false);
     let netid = ctx.netid();
 
