@@ -9,6 +9,7 @@ edition = "2018"
 async-trait = "0.1"
 coins = { path = "../coins" }
 common = { path = "../common" }
+ethereum-types = { version = "0.4", default-features = false, features = ["std", "serialize"] }
 mm2_core = { path = "../mm2_core" }
 mm2_err_handle = { path = "../mm2_err_handle" }
 mm2_number = { path = "../mm2_number" }

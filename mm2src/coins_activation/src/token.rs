@@ -58,6 +58,7 @@ pub enum EnableTokenError {
     },
     #[display(fmt = "{}", _0)]
     UnexpectedDerivationMethod(UnexpectedDerivationMethod),
+    CouldNotFetchBalance(String),
     Transport(String),
     Internal(String),
 }
@@ -156,6 +157,7 @@ impl HttpStatusCode for EnableTokenError {
             | EnableTokenError::UnsupportedPlatformCoin { .. }
             | EnableTokenError::UnexpectedDerivationMethod(_)
             | EnableTokenError::Transport(_)
+            | EnableTokenError::CouldNotFetchBalance(_)
             | EnableTokenError::Internal(_) => StatusCode::INTERNAL_SERVER_ERROR,
         }
     }
