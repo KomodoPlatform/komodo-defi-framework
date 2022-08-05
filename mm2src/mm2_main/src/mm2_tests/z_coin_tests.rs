@@ -458,5 +458,6 @@ fn activate_pirate_light() {
         EnableCoinBalance::Iguana(iguana) => iguana,
         _ => panic!("Expected EnableCoinBalance::Iguana"),
     };
+    println!("{:?}", balance);
     // assert_eq!(balance.balance.spendable, BigDecimal::from_str("3.1").unwrap());
 }

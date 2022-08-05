@@ -184,8 +184,8 @@ async fn enable_z_coin_light(
     lightwalletd_urls: &[&str],
     blocks_cache_path: &dyn AsRef<Path>,
 ) -> ZcoinActivationResult {
-    const TEST_CACHE_ZOMBIE: &str = "../coins/ARRR_light_cache.db";
-    std::fs::copy(TEST_CACHE_ZOMBIE, blocks_cache_path).unwrap();
+    const TEST_CACHE_ZOMBIE: &str = "../coins/test_cache_zombie.db";
+    // std::fs::copy(TEST_CACHE_ZOMBIE, blocks_cache_path).unwrap();
 
     let init = init_z_coin_light(mm, coin, electrums, lightwalletd_urls).await;
     let init: RpcV2Response<InitTaskResult> = json::from_value(init).unwrap();
