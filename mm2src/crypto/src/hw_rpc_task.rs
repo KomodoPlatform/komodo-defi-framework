@@ -20,7 +20,7 @@ pub type HwRpcTaskUserActionRequest = RpcTaskUserActionRequest<HwRpcTaskUserActi
 #[derive(Clone, Serialize)]
 pub enum HwRpcTaskAwaitingStatus {
     EnterTrezorPin,
-    EnterPassphrase,
+    EnterTrezorPassphrase,
 }
 
 /// When it comes to interacting with a HW device,

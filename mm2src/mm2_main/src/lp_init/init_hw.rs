@@ -140,7 +140,7 @@ impl RpcTask for InitHwTask {
                     on_connection_failed: InitHwInProgressStatus::Initializing,
                     on_button_request: InitHwInProgressStatus::WaitingForUserToConfirmPubkey,
                     on_pin_request: InitHwAwaitingStatus::EnterTrezorPin,
-                    on_passphrase_request: InitHwAwaitingStatus::EnterPassphrase,
+                    on_passphrase_request: InitHwAwaitingStatus::EnterTrezorPassphrase,
                     on_ready: InitHwInProgressStatus::Initializing,
                 })
                 .with_connect_timeout(TREZOR_CONNECT_TIMEOUT)

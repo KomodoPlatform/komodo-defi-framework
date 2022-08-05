@@ -256,7 +256,7 @@ impl RpcTask for InitCreateAccountTask {
                 on_connection_failed: CreateAccountInProgressStatus::Finishing,
                 on_button_request: CreateAccountInProgressStatus::WaitingForUserToConfirmPubkey,
                 on_pin_request: CreateAccountAwaitingStatus::EnterTrezorPin,
-                on_passphrase_request: CreateAccountAwaitingStatus::EnterPassphrase,
+                on_passphrase_request: CreateAccountAwaitingStatus::EnterTrezorPassphrase,
                 on_ready: CreateAccountInProgressStatus::RequestingAccountBalance,
             };
             let xpub_extractor = CreateAccountXPubExtractor::new(ctx, task_handle, hw_statuses)?;
