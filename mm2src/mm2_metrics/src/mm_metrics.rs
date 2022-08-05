@@ -12,8 +12,7 @@ use crate::MmMetricsError;
 use crate::{common::log::Tag, MetricsOps, MmMetricsResult, MmRecorder};
 
 type MetricLabels = Vec<Label>;
-
-pub(crate) type MetricNameValueMap = HashMap<String, PreparedMetric>;
+type MetricNameValueMap = HashMap<String, PreparedMetric>;
 
 /// Construct Vec<Label> from a slice of strings.
 #[macro_export]

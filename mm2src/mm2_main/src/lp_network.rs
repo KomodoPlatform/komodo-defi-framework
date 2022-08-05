@@ -329,8 +329,8 @@ pub async fn request_one_peer<T: de::DeserializeOwned>(
 ) -> P2PRequestResult<Option<T>> {
     let start = Instant::now();
     let mut responses = request_peers::<T>(ctx.clone(), req, vec![peer.clone()]).await?;
-    let end = start.elapsed();
-    mm_timing!(ctx.metrics, "peer.outgoing_request.timing", end, "peer" => peer);
+    let elapsed = start.elapsed();
+    mm_timing!(ctx.metrics, "peer.outgoing_request.timing", elapsed, "peer" => peer);
     if responses.len() != 1 {
         return MmError::err(P2PRequestError::ExpectedSingleResponseError(responses.len()));
     }
