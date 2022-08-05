@@ -271,7 +271,9 @@ impl MmCtx {
     }
 
     #[cfg(not(target_arch = "wasm32"))]
-    pub fn sqlite_initialized(&self) -> bool { self.sqlite_connection.is_some() }
+    pub fn sqlite_conn_opt(&self) -> Option<MutexGuard<Connection>> {
+        self.sqlite_connection.as_option().map(|conn| conn.lock().unwrap())
+    }
 
     #[cfg(not(target_arch = "wasm32"))]
     pub fn sqlite_connection(&self) -> MutexGuard<Connection> {
