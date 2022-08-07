@@ -2408,6 +2408,21 @@ pub async fn lp_coinfind(ctx: &MmArc, ticker: &str) -> Result<Option<MmCoinEnum>
     Ok(coins.get(ticker).cloned())
 }
 
+/// Returns topic list only if the coin names are valid
+pub fn lp_topic_list_validation(ctx: &MmArc, mut topics: Vec<String>, topic_seperator: char) -> Vec<String> {
+    if let Some(conf) = ctx.conf["coins"].as_array() {
+        topics.retain(|topic| {
+            if let Some(coin) = topic.split(topic_seperator).last() {
+                conf.iter().any(|c| c["coin"].as_str() == Some(coin))
+            } else {
+                false
+            }
+        });
+    }
+
+    topics
+}
+
 /// Attempts to find a pair of active coins returning None if one is not enabled
 pub async fn find_pair(ctx: &MmArc, base: &str, rel: &str) -> Result<Option<(MmCoinEnum, MmCoinEnum)>, String> {
     let fut_base = lp_coinfind(ctx, base);

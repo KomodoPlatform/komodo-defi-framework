@@ -15,6 +15,10 @@
 
 #[path = "mm2.rs"] mod mm2;
 
+#[cfg(all(target_os = "linux", target_arch = "x86_64", target_env = "gnu"))]
+#[global_allocator]
+static GLOBAL: jemallocator::Jemalloc = jemallocator::Jemalloc;
+
 fn main() {
     #[cfg(not(target_arch = "wasm32"))]
     {

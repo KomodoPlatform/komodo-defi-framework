@@ -18,7 +18,7 @@
 //  lp_network.rs
 //  marketmaker
 //
-use coins::lp_coinfind;
+use coins::{lp_coinfind, lp_topic_list_validation};
 use common::executor::spawn;
 use common::mm_metrics::{ClockOps, MetricsOps};
 use common::{log, Future01CompatExt};
@@ -133,14 +133,19 @@ async fn process_p2p_message(
     ctx: MmArc,
     peer_id: PeerId,
     message_id: MessageId,
-    message: GossipsubMessage,
+    mut message: GossipsubMessage,
     i_am_relay: bool,
 ) {
     let mut to_propagate = false;
     let mut orderbook_pairs = vec![];
 
-    for topic in message.topics {
-        let mut split = topic.as_str().split(TOPIC_SEPARATOR);
+    message.topics.dedup();
+
+    let valid_topics: Vec<String> = message.topics.iter().map(|topic| topic.to_string()).collect();
+    let valid_topics = lp_topic_list_validation(&ctx, valid_topics, TOPIC_SEPARATOR);
+
+    for topic in valid_topics.iter() {
+        let mut split = topic.split(TOPIC_SEPARATOR);
         match split.next() {
             Some(lp_ordermatch::ORDERBOOK_PREFIX) => {
                 if let Some(pair) = split.next() {
@@ -154,10 +159,18 @@ async fn process_p2p_message(
             Some(lp_swap::TX_HELPER_PREFIX) => {
                 if let Some(pair) = split.next() {
                     if let Ok(Some(coin)) = lp_coinfind(&ctx, pair).await {
-                        match coin.send_raw_tx_bytes(&message.data).compat().await {
-                            Ok(id) => log::debug!("Transaction broadcasted successfully: {:?} ", id),
-                            Err(e) => log::error!("Broadcast transaction failed. {}", e),
-                        }
+                        if let Err(e) = coin.tx_enum_from_bytes(&message.data) {
+                            log::error!("Given transaction isn't valid. {}", e);
+                            continue;
+                        };
+
+                        let fut = coin.send_raw_tx_bytes(&message.data).compat();
+                        spawn(async {
+                            match fut.await {
+                                Ok(id) => log::debug!("Transaction broadcasted successfully: {:?} ", id),
+                                Err(e) => log::error!("Broadcast transaction failed. {}", e),
+                            };
+                        })
                     }
                 }
             },
