@@ -24,7 +24,7 @@ use async_trait::async_trait;
 use bitcrypto::{keccak256, sha256};
 use common::executor::Timer;
 use common::log::{error, info, warn};
-use common::{now_ms, small_rng, DEX_FEE_ADDR_RAW_PUBKEY};
+use common::{get_utc_timestamp, now_ms, small_rng, DEX_FEE_ADDR_RAW_PUBKEY};
 use crypto::privkey::key_pair_from_secret;
 use derive_more::Display;
 use ethabi::{Contract, Token};
@@ -39,7 +39,7 @@ use futures01::Future;
 use http::StatusCode;
 use mm2_core::mm_ctx::{MmArc, MmWeak};
 use mm2_err_handle::prelude::*;
-use mm2_net::transport::{slurp_url, SlurpError};
+use mm2_net::transport::{slurp_url, GuiAuthValidation, GuiAuthValidationGenerator, SlurpError};
 use mm2_number::{BigDecimal, MmNumber};
 #[cfg(test)] use mocktopus::macros::*;
 use rand::seq::SliceRandom;
@@ -57,12 +57,12 @@ use std::sync::{Arc, Mutex};
 use web3::types::{Action as TraceAction, BlockId, BlockNumber, Bytes, CallRequest, FilterBuilder, Log, Trace,
                   TraceFilterBuilder, Transaction as Web3Transaction, TransactionId};
 use web3::{self, Web3};
-use web3_transport::{EthFeeHistoryNamespace, Web3Transport};
+use web3_transport::{EthFeeHistoryNamespace, Web3Transport, Web3TransportNode};
 
-use super::{AsyncMutex, BalanceError, BalanceFut, CoinBalance, CoinProtocol, CoinTransportMetrics, CoinsContext,
-            FeeApproxStage, FoundSwapTxSpend, HistorySyncState, MarketCoinOps, MmCoin, NegotiateSwapContractAddrErr,
-            NumConversError, NumConversResult, RawTransactionError, RawTransactionFut, RawTransactionRequest,
-            RawTransactionRes, RawTransactionResult, RpcClientType, RpcTransportEventHandler,
+use super::{coin_conf, AsyncMutex, BalanceError, BalanceFut, CoinBalance, CoinProtocol, CoinTransportMetrics,
+            CoinsContext, FeeApproxStage, FoundSwapTxSpend, HistorySyncState, MarketCoinOps, MmCoin,
+            NegotiateSwapContractAddrErr, NumConversError, NumConversResult, RawTransactionError, RawTransactionFut,
+            RawTransactionRequest, RawTransactionRes, RawTransactionResult, RpcClientType, RpcTransportEventHandler,
             RpcTransportEventHandlerShared, SearchForSwapTxSpendInput, SignatureError, SignatureResult, SwapOps,
             TradeFee, TradePreimageError, TradePreimageFut, TradePreimageResult, TradePreimageValue, Transaction,
             TransactionDetails, TransactionEnum, TransactionErr, TransactionFut, UnexpectedDerivationMethod,
@@ -74,6 +74,8 @@ pub use rlp;
 #[cfg(test)] mod eth_tests;
 #[cfg(target_arch = "wasm32")] mod eth_wasm_tests;
 mod web3_transport;
+
+#[path = "eth/v2_activation.rs"] pub mod v2_activation;
 
 /// https://github.com/artemii235/etomic-swap/blob/master/contracts/EtomicSwap.sol
 /// Dev chain (195.201.0.6:8565) contract address: 0xa09ad3cd7e96586ebd05a2607ee56b56fb2db8fd
@@ -95,6 +97,10 @@ const GAS_PRICE_PERCENT: u64 = 10;
 const BASE_BLOCK_FEE_DIFF_PCT: u64 = 13;
 const DEFAULT_LOGS_BLOCK_RANGE: u64 = 1000;
 
+const DEFAULT_REQUIRED_CONFIRMATIONS: u8 = 1;
+
+const ETH_DECIMALS: u8 = 18;
+
 /// Take into account that the dynamic fee may increase by 3% during the swap.
 const GAS_PRICE_APPROXIMATION_PERCENT_ON_START_SWAP: u64 = 3;
 /// Take into account that the dynamic fee may increase at each of the following stages:
@@ -106,6 +112,9 @@ const GAS_PRICE_APPROXIMATION_PERCENT_ON_ORDER_ISSUE: u64 = 5;
 /// - it may increase by 2% until a swap is started;
 /// - it may increase by 3% during the swap.
 const GAS_PRICE_APPROXIMATION_PERCENT_ON_TRADE_PREIMAGE: u64 = 7;
+
+/// Lifetime of generated signed message for gui-auth requests
+const GUI_AUTH_SIGNED_MESSAGE_LIFETIME_SEC: i64 = 90;
 
 lazy_static! {
     pub static ref SWAP_CONTRACT: Contract = Contract::load(SWAP_CONTRACT_ABI.as_bytes()).unwrap();
@@ -270,7 +279,7 @@ struct SavedErc20Events {
 }
 
 #[derive(Debug, PartialEq, Eq)]
-enum EthCoinType {
+pub enum EthCoinType {
     /// Ethereum itself or it's forks: ETC/others
     Eth,
     /// ERC20 token with smart contract address
@@ -299,17 +308,24 @@ pub struct EthCoinImpl {
     required_confirmations: AtomicU64,
     /// Coin needs access to the context in order to reuse the logging and shutdown facilities.
     /// Using a weak reference by default in order to avoid circular references and leaks.
-    ctx: MmWeak,
+    pub ctx: MmWeak,
     chain_id: Option<u64>,
     /// the block range used for eth_getLogs
     logs_block_range: u64,
     nonce_lock: Arc<AsyncMutex<()>>,
+    erc20_tokens_infos: Arc<Mutex<HashMap<String, Erc20TokenInfo>>>,
 }
 
 #[derive(Clone, Debug)]
 pub struct Web3Instance {
     web3: Web3<Web3Transport>,
     is_parity: bool,
+}
+
+#[derive(Clone, Debug)]
+pub struct Erc20TokenInfo {
+    pub token_address: Address,
+    pub decimals: u8,
 }
 
 #[derive(Deserialize, Serialize)]
@@ -529,6 +545,25 @@ impl EthCoinImpl {
     /// Try to parse address from string.
     pub fn address_from_str(&self, address: &str) -> Result<Address, String> {
         Ok(try_s!(valid_addr_from_str(address)))
+    }
+
+    pub fn erc20_token_address(&self) -> Option<Address> {
+        match self.coin_type {
+            EthCoinType::Erc20 { token_addr, .. } => Some(token_addr),
+            EthCoinType::Eth => None,
+        }
+    }
+
+    pub fn add_erc_token_info(&self, ticker: String, info: Erc20TokenInfo) {
+        self.erc20_tokens_infos.lock().unwrap().insert(ticker, info);
+    }
+
+    /// WARNING
+    /// Be very careful using this function since it returns dereferenced clone
+    /// of value behind the MutexGuard and makes it non-thread-safe.
+    pub fn get_erc_tokens_infos(&self) -> HashMap<String, Erc20TokenInfo> {
+        let guard = self.erc20_tokens_infos.lock().unwrap();
+        (*guard).clone()
     }
 }
 
@@ -1085,12 +1120,16 @@ impl MarketCoinOps for EthCoin {
 
     fn my_address(&self) -> Result<String, String> { Ok(checksum_address(&format!("{:#02x}", self.my_address))) }
 
-    fn get_public_key(&self) -> Result<String, MmError<UnexpectedDerivationMethod>> { unimplemented!() }
+    fn get_public_key(&self) -> Result<String, MmError<UnexpectedDerivationMethod>> {
+        let uncompressed_without_prefix = hex::encode(self.key_pair.public());
+        Ok(format!("04{}", uncompressed_without_prefix))
+    }
 
     /// Hash message for signature using Ethereum's message signing format.
     /// keccak256(PREFIX_LENGTH + PREFIX + MESSAGE_LENGTH + MESSAGE)
     fn sign_message_hash(&self, message: &str) -> Option<[u8; 32]> {
         let message_prefix = self.sign_message_prefix.as_ref()?;
+
         let mut stream = Stream::new();
         let prefix_len = CompactInteger::from(message_prefix.len());
         prefix_len.serialize(&mut stream);
@@ -1134,7 +1173,7 @@ impl MarketCoinOps for EthCoin {
     fn base_coin_balance(&self) -> BalanceFut<BigDecimal> {
         Box::new(
             self.eth_balance()
-                .and_then(move |result| Ok(u256_to_big_decimal(result, 18)?)),
+                .and_then(move |result| Ok(u256_to_big_decimal(result, ETH_DECIMALS)?)),
         )
     }
 
@@ -1722,7 +1761,7 @@ impl EthCoin {
                     None => None,
                 };
 
-                let total_amount: BigDecimal = u256_to_big_decimal(call_data.value, 18).unwrap();
+                let total_amount: BigDecimal = u256_to_big_decimal(call_data.value, ETH_DECIMALS).unwrap();
                 let mut received_by_me = 0.into();
                 let mut spent_by_me = 0.into();
 
@@ -2464,6 +2503,41 @@ impl EthCoin {
         Box::new(fut.boxed().compat())
     }
 
+    pub async fn get_tokens_balance_list(&self) -> Result<HashMap<String, CoinBalance>, MmError<BalanceError>> {
+        let coin = self.clone();
+        let mut token_balances = HashMap::new();
+        for (token_ticker, info) in self.get_erc_tokens_infos().iter() {
+            let balance_as_u256 = coin.get_token_balance_by_address(info.token_address).await?;
+            let balance_as_big_decimal = u256_to_big_decimal(balance_as_u256, info.decimals)?;
+            let balance = CoinBalance {
+                spendable: balance_as_big_decimal,
+                unspendable: BigDecimal::from(0),
+            };
+            token_balances.insert(token_ticker.clone(), balance);
+        }
+
+        Ok(token_balances)
+    }
+
+    async fn get_token_balance_by_address(&self, token_address: Address) -> Result<U256, MmError<BalanceError>> {
+        let coin = self.clone();
+        let function = ERC20_CONTRACT.function("balanceOf")?;
+        let data = function.encode_input(&[Token::Address(coin.my_address)])?;
+        let res = coin
+            .call_request(token_address, None, Some(data.into()))
+            .compat()
+            .await?;
+        let decoded = function.decode_output(&res.0)?;
+
+        match decoded[0] {
+            Token::Uint(number) => Ok(number),
+            _ => {
+                let error = format!("Expected U256 as balanceOf result but got {:?}", decoded);
+                MmError::err(BalanceError::InvalidResponse(error))
+            },
+        }
+    }
+
     /// Estimates how much gas is necessary to allow the contract call to complete.
     /// `contract_addr` can be a ERC20 token address or any other contract address.
     ///
@@ -2937,8 +3011,8 @@ impl EthTxFeeDetails {
     fn new(gas: U256, gas_price: U256, coin: &str) -> NumConversResult<EthTxFeeDetails> {
         let total_fee = gas * gas_price;
         // Fees are always paid in ETH, can use 18 decimals by default
-        let total_fee = u256_to_big_decimal(total_fee, 18)?;
-        let gas_price = u256_to_big_decimal(gas_price, 18)?;
+        let total_fee = u256_to_big_decimal(total_fee, ETH_DECIMALS)?;
+        let gas_price = u256_to_big_decimal(gas_price, ETH_DECIMALS)?;
 
         Ok(EthTxFeeDetails {
             coin: coin.to_owned(),
@@ -3020,7 +3094,7 @@ impl MmCoin for EthCoin {
                     };
                     Ok(TradeFee {
                         coin: fee_coin.into(),
-                        amount: try_s!(u256_to_big_decimal(fee, 18)).into(),
+                        amount: try_s!(u256_to_big_decimal(fee, ETH_DECIMALS)).into(),
                         paid_from_trading_vol: false,
                     })
                 }),
@@ -3068,7 +3142,7 @@ impl MmCoin for EthCoin {
         };
 
         let total_fee = gas_limit * gas_price;
-        let amount = u256_to_big_decimal(total_fee, 18)?;
+        let amount = u256_to_big_decimal(total_fee, ETH_DECIMALS)?;
         let fee_coin = match &self.coin_type {
             EthCoinType::Eth => &self.ticker,
             EthCoinType::Erc20 { platform, .. } => platform,
@@ -3086,7 +3160,7 @@ impl MmCoin for EthCoin {
             let gas_price = coin.get_gas_price().compat().await?;
             let gas_price = increase_gas_price_by_stage(gas_price, &stage);
             let total_fee = gas_price * U256::from(150_000);
-            let amount = u256_to_big_decimal(total_fee, 18)?;
+            let amount = u256_to_big_decimal(total_fee, ETH_DECIMALS)?;
             let fee_coin = match &coin.coin_type {
                 EthCoinType::Eth => &coin.ticker,
                 EthCoinType::Erc20 { platform, .. } => platform,
@@ -3136,7 +3210,7 @@ impl MmCoin for EthCoin {
         // Ideally we should determine the case when we have the insufficient balance and return `TradePreimageError::NotSufficientBalance` error.
         let gas_limit = self.estimate_gas(estimate_gas_req).compat().await?;
         let total_fee = gas_limit * gas_price;
-        let amount = u256_to_big_decimal(total_fee, 18)?;
+        let amount = u256_to_big_decimal(total_fee, ETH_DECIMALS)?;
         Ok(TradeFee {
             coin: fee_coin.into(),
             amount: amount.into(),
@@ -3182,6 +3256,44 @@ impl<T: TryToAddress> TryToAddress for Option<T> {
             Some(ref inner) => inner.try_to_address(),
             None => ERR!("Cannot convert None to address"),
         }
+    }
+}
+
+pub trait GuiAuthMessages {
+    fn gui_auth_sign_message_hash(message: String) -> Option<[u8; 32]>;
+    fn generate_gui_auth_signed_validation(generator: GuiAuthValidationGenerator)
+        -> SignatureResult<GuiAuthValidation>;
+}
+
+impl GuiAuthMessages for EthCoin {
+    fn gui_auth_sign_message_hash(message: String) -> Option<[u8; 32]> {
+        let message_prefix = "atomicDEX Auth Ethereum Signed Message:\n";
+        let prefix_len = CompactInteger::from(message_prefix.len());
+
+        let mut stream = Stream::new();
+        prefix_len.serialize(&mut stream);
+        stream.append_slice(message_prefix.as_bytes());
+        stream.append_slice(message.len().to_string().as_bytes());
+        stream.append_slice(message.as_bytes());
+
+        Some(keccak256(&stream.out()).take())
+    }
+
+    fn generate_gui_auth_signed_validation(
+        generator: GuiAuthValidationGenerator,
+    ) -> SignatureResult<GuiAuthValidation> {
+        let timestamp_message = get_utc_timestamp() + GUI_AUTH_SIGNED_MESSAGE_LIFETIME_SEC;
+
+        let message_hash =
+            EthCoin::gui_auth_sign_message_hash(timestamp_message.to_string()).ok_or(SignatureError::PrefixNotFound)?;
+        let signature = sign(&generator.secret, &H256::from(message_hash))?;
+
+        Ok(GuiAuthValidation {
+            coin_ticker: generator.coin_ticker,
+            address: generator.address,
+            timestamp_message,
+            signature: format!("0x{}", signature),
+        })
     }
 }
 
@@ -3273,7 +3385,7 @@ pub struct GasStationData {
 /// Using tagged representation to allow adding variants with coefficients, percentage, etc in the future.
 #[derive(Clone, Copy, Debug, Deserialize)]
 #[serde(tag = "policy", content = "additional_data")]
-enum GasStationPricePolicy {
+pub enum GasStationPricePolicy {
     /// Use mean between average and fast values, default and recommended to use on ETH mainnet due to
     /// gas price big spikes.
     MeanAverageFast,
@@ -3331,7 +3443,7 @@ async fn get_token_decimals(web3: &Web3<Web3Transport>, token_addr: Address) -> 
     Ok(decimals as u8)
 }
 
-fn valid_addr_from_str(addr_str: &str) -> Result<Address, String> {
+pub fn valid_addr_from_str(addr_str: &str) -> Result<Address, String> {
     let addr = try_s!(addr_from_str(addr_str));
     if !is_valid_checksum_addr(addr_str) {
         return ERR!("Invalid address checksum");
@@ -3370,6 +3482,15 @@ pub async fn eth_coin_from_conf_and_request(
     let mut rng = small_rng();
     urls.as_mut_slice().shuffle(&mut rng);
 
+    let mut nodes = vec![];
+    for url in urls.iter() {
+        nodes.push(Web3TransportNode {
+            uri: try_s!(url.parse()),
+            gui_auth: false,
+        });
+    }
+    drop_mutability!(nodes);
+
     let swap_contract_address: Address = try_s!(json::from_value(req["swap_contract_address"].clone()));
     if swap_contract_address == Address::default() {
         return ERR!("swap_contract_address can't be zero address");
@@ -3387,16 +3508,13 @@ pub async fn eth_coin_from_conf_and_request(
 
     let mut web3_instances = vec![];
     let event_handlers = rpc_event_handlers_for_eth_transport(ctx, ticker.to_string());
-    for url in urls.iter() {
-        let transport = try_s!(Web3Transport::with_event_handlers(
-            vec![url.clone()],
-            event_handlers.clone()
-        ));
+    for node in nodes.iter() {
+        let transport = Web3Transport::with_event_handlers(vec![node.clone()], event_handlers.clone());
         let web3 = Web3::new(transport);
         let version = match web3.web3().client_version().compat().await {
             Ok(v) => v,
             Err(e) => {
-                error!("Couldn't get client version for url {}: {}", url, e);
+                error!("Couldn't get client version for url {}: {}", node.uri, e);
                 continue;
             },
         };
@@ -3410,11 +3528,11 @@ pub async fn eth_coin_from_conf_and_request(
         return ERR!("Failed to get client version for all urls");
     }
 
-    let transport = try_s!(Web3Transport::with_event_handlers(urls, event_handlers));
+    let transport = Web3Transport::with_event_handlers(nodes, event_handlers);
     let web3 = Web3::new(transport);
 
     let (coin_type, decimals) = match protocol {
-        CoinProtocol::ETH => (EthCoinType::Eth, 18),
+        CoinProtocol::ETH => (EthCoinType::Eth, ETH_DECIMALS),
         CoinProtocol::ERC20 {
             platform,
             contract_address,
@@ -3432,7 +3550,11 @@ pub async fn eth_coin_from_conf_and_request(
     // param from request should override the config
     let required_confirmations = req["required_confirmations"]
         .as_u64()
-        .unwrap_or_else(|| conf["required_confirmations"].as_u64().unwrap_or(1))
+        .unwrap_or_else(|| {
+            conf["required_confirmations"]
+                .as_u64()
+                .unwrap_or(DEFAULT_REQUIRED_CONFIRMATIONS as u64)
+        })
         .into();
 
     if req["requires_notarization"].as_bool().is_some() {
@@ -3480,6 +3602,7 @@ pub async fn eth_coin_from_conf_and_request(
         chain_id: conf["chain_id"].as_u64(),
         logs_block_range: conf["logs_block_range"].as_u64().unwrap_or(DEFAULT_LOGS_BLOCK_RANGE),
         nonce_lock,
+        erc20_tokens_infos: Default::default(),
     };
     Ok(EthCoin(Arc::new(coin)))
 }

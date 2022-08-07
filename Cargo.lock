@@ -940,9 +940,9 @@ dependencies = [
 
 [[package]]
 name = "chrono"
-version = "0.4.11"
+version = "0.4.20"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "80094f509cf8b5ae86a4966a39b3ff66cd7e2a3e594accec3743ff3fabeab5b2"
+checksum = "6127248204b9aba09a362f6c930ef6a78f2c1b2215f8a7b398c06e1083f17af0"
 dependencies = [
  "js-sys",
  "num-integer",
@@ -950,6 +950,7 @@ dependencies = [
  "serde",
  "time 0.1.43",
  "wasm-bindgen",
+ "winapi",
 ]
 
 [[package]]
@@ -1125,6 +1126,7 @@ dependencies = [
  "common",
  "crypto",
  "derive_more",
+ "ethereum-types 0.4.2",
  "futures 0.3.15",
  "hex 0.4.2",
  "mm2_core",
@@ -4277,6 +4279,7 @@ dependencies = [
  "cfg-if 1.0.0",
  "common",
  "derive_more",
+ "ethkey",
  "futures 0.3.15",
  "gstuff",
  "http 0.2.7",
