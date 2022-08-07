@@ -140,6 +140,7 @@ async fn process_p2p_message(
     let mut orderbook_pairs = vec![];
 
     message.topics.dedup();
+    drop_mutability!(message);
 
     let valid_topics: Vec<String> = message.topics.iter().map(|topic| topic.to_string()).collect();
     let valid_topics = lp_topic_list_validation(&ctx, valid_topics, TOPIC_SEPARATOR);
