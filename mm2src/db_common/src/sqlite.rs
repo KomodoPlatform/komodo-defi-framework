@@ -309,8 +309,9 @@ impl SqlParamsBuilder {
     pub(crate) fn params(&self) -> &OwnedSqlParams { &self.params }
 }
 
+/// TODO move it to `mm2_err_handle::common_errors` when it's merged.
 #[derive(Debug)]
-pub(crate) struct StringError(String);
+pub struct StringError(String);
 
 impl fmt::Display for StringError {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result { write!(f, "{}", self.0) }
@@ -320,6 +321,10 @@ impl StdError for StringError {}
 
 impl From<&'static str> for StringError {
     fn from(s: &str) -> Self { StringError(s.to_owned()) }
+}
+
+impl From<String> for StringError {
+    fn from(s: String) -> Self { StringError(s) }
 }
 
 impl StringError {

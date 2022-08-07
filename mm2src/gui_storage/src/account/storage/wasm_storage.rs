@@ -44,16 +44,6 @@ impl From<InitDbError> for AccountStorageError {
     fn from(e: InitDbError) -> Self { AccountStorageError::Internal(e.to_string()) }
 }
 
-impl AccountStorageError {
-    fn unknown_account_in_enabled_table(account_id: AccountId) -> AccountStorageError {
-        let error = format!(
-            "'EnabledAccountTable' contains an account {:?} that is not in 'AccountTable'",
-            account_id
-        );
-        AccountStorageError::Internal(error)
-    }
-}
-
 pub(crate) struct WasmAccountStorage {
     account_db: SharedDb<AccountDb>,
 }

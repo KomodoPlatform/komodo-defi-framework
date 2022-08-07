@@ -5,6 +5,7 @@ use mm2_core::mm_ctx::MmArc;
 use mm2_err_handle::prelude::*;
 use mm2_number::BigDecimal;
 use std::collections::BTreeMap;
+use std::error::Error as StdError;
 
 #[cfg(not(target_arch = "wasm32"))] mod sqlite_storage;
 #[cfg(target_arch = "wasm32")] mod wasm_storage;
@@ -12,7 +13,7 @@ use std::collections::BTreeMap;
 pub(crate) type AccountStorageBoxed = Box<dyn AccountStorage + Send + Sync>;
 pub type AccountStorageResult<T> = MmResult<T, AccountStorageError>;
 
-#[derive(Display)]
+#[derive(Debug, Display)]
 pub enum AccountStorageError {
     #[display(fmt = "No such account {:?}", _0)]
     NoSuchAccount(AccountId),
@@ -30,6 +31,18 @@ pub enum AccountStorageError {
     ErrorSerializing(String),
     #[display(fmt = "Internal error: {}", _0)]
     Internal(String),
+}
+
+impl StdError for AccountStorageError {}
+
+impl AccountStorageError {
+    pub(crate) fn unknown_account_in_enabled_table(account_id: AccountId) -> AccountStorageError {
+        let error = format!(
+            "'EnabledAccountTable' contains an account {:?} that is not in 'AccountTable'",
+            account_id
+        );
+        AccountStorageError::Internal(error)
+    }
 }
 
 impl AccountId {

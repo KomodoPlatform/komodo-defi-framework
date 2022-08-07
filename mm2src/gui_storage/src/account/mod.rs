@@ -15,7 +15,7 @@ pub(crate) enum AccountType {
     HW,
 }
 
-#[derive(Clone, Copy, Debug, Deserialize, Eq, Ord, PartialEq, PartialOrd, Serialize)]
+#[derive(Clone, Debug, Deserialize, Eq, Ord, PartialEq, PartialOrd, Serialize)]
 #[serde(tag = "type")]
 pub enum AccountId {
     Iguana,
