@@ -9,7 +9,6 @@ use crate::{mm2::lp_stats::{add_node_to_version_stat, remove_node_from_version_s
             mm2::rpc::lp_commands::{get_public_key, get_public_key_hash}};
 use coins::eth::EthCoin;
 use coins::hd_wallet::get_new_address;
-use coins::lightning::{add_trusted_node, list_trusted_node, remove_trusted_node};
 use coins::my_tx_history_v2::my_tx_history_v2_rpc;
 use coins::rpc_command::account_balance::account_balance;
 use coins::rpc_command::get_current_mtp::get_current_mtp_rpc;
@@ -37,9 +36,9 @@ use serde_json::{self as json, Value as Json};
 use std::net::SocketAddr;
 
 cfg_native! {
-    use coins::lightning::{close_channel, connect_to_lightning_node, generate_invoice, get_channel_details,
-        get_claimable_balances, get_payment_details, list_closed_channels_by_filter, list_open_channels_by_filter, list_payments_by_filter, open_channel,
-        send_payment, LightningCoin};
+    use coins::lightning::{add_trusted_node, close_channel, connect_to_lightning_node, generate_invoice, get_channel_details,
+        get_claimable_balances, get_payment_details, list_closed_channels_by_filter, list_open_channels_by_filter,
+        list_payments_by_filter, list_trusted_node, open_channel, remove_trusted_node, send_payment, LightningCoin};
     use coins::{SolanaCoin, SplToken};
     use coins::z_coin::ZCoin;
 }
