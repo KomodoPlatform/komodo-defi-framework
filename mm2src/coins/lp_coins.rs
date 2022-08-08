@@ -2411,13 +2411,47 @@ pub async fn lp_coinfind(ctx: &MmArc, ticker: &str) -> Result<Option<MmCoinEnum>
 }
 
 /// Returns topic list only if the coin names are valid
-pub fn lp_topic_list_validation(ctx: &MmArc, mut topics: Vec<String>, topic_seperator: char) -> Vec<String> {
+pub fn lp_topic_list_validation(
+    ctx: &MmArc,
+    mut topics: Vec<String>,
+    topic_seperator: char,
+    txhlp_prefix: &str,
+    orderbook_prefix: &str,
+    swap_prefix: &str,
+) -> Vec<String> {
     if let Some(conf) = ctx.conf["coins"].as_array() {
         topics.retain(|topic| {
-            if let Some(coin) = topic.split(topic_seperator).last() {
-                conf.iter().any(|c| c["coin"].as_str() == Some(coin))
-            } else {
-                false
+            let mut split = topic.split(topic_seperator);
+            let topic_prefix = split.next();
+            match topic_prefix {
+                Some(prefix) if prefix == txhlp_prefix => {
+                    if let Some(coin) = split.last() {
+                        conf.iter().any(|c| c["coin"].as_str() == Some(coin))
+                    } else {
+                        false
+                    }
+                },
+                Some(prefix) if prefix == orderbook_prefix => {
+                    if let Some(pair) = split.last() {
+                        let coins = pair.split(':');
+
+                        if coins.clone().count() != 2 {
+                            return false;
+                        }
+
+                        for coin in coins {
+                            if !conf.iter().any(|c| c["coin"].as_str() == Some(coin)) {
+                                return false;
+                            }
+                        }
+
+                        true
+                    } else {
+                        false
+                    }
+                },
+                Some(prefix) if prefix == swap_prefix => true,
+                _ => false,
             }
         });
     }

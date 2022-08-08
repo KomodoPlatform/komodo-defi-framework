@@ -38,6 +38,8 @@ use serde::de;
 use std::net::ToSocketAddrs;
 use std::sync::Arc;
 
+use crate::mm2::lp_ordermatch::ORDERBOOK_PREFIX;
+use crate::mm2::lp_swap::{SWAP_PREFIX, TX_HELPER_PREFIX};
 use crate::mm2::{lp_ordermatch, lp_stats, lp_swap};
 
 pub type P2PRequestResult<T> = Result<T, MmError<P2PRequestError>>;
@@ -143,9 +145,16 @@ async fn process_p2p_message(
     drop_mutability!(message);
 
     let valid_topics: Vec<String> = message.topics.iter().map(|topic| topic.to_string()).collect();
-    let valid_topics = lp_topic_list_validation(&ctx, valid_topics, TOPIC_SEPARATOR);
+    let valid_topics = lp_topic_list_validation(
+        &ctx,
+        valid_topics,
+        TOPIC_SEPARATOR,
+        TX_HELPER_PREFIX,
+        ORDERBOOK_PREFIX,
+        SWAP_PREFIX,
+    );
 
-    for topic in valid_topics.iter() {
+    for topic in valid_topics {
         let mut split = topic.split(TOPIC_SEPARATOR);
         match split.next() {
             Some(lp_ordermatch::ORDERBOOK_PREFIX) => {
@@ -165,9 +174,9 @@ async fn process_p2p_message(
                             continue;
                         };
 
-                        let fut = coin.send_raw_tx_bytes(&message.data).compat();
+                        let fut = coin.send_raw_tx_bytes(&message.data);
                         spawn(async {
-                            match fut.await {
+                            match fut.compat().await {
                                 Ok(id) => log::debug!("Transaction broadcasted successfully: {:?} ", id),
                                 Err(e) => log::error!("Broadcast transaction failed. {}", e),
                             };
