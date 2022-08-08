@@ -1,7 +1,7 @@
-use crate::mm2::mm2_tests::structs::{RpcV2Response, TendermintActivationResult, TransactionDetails};
+use crate::mm2::mm2_tests::structs::{MyBalanceResponse, RpcV2Response, TendermintActivationResult, TransactionDetails};
 use common::block_on;
 use mm2_number::BigDecimal;
-use mm2_test_helpers::for_tests::{atom_testnet_conf, enable_tendermint, send_raw_transaction, withdraw_v1,
+use mm2_test_helpers::for_tests::{atom_testnet_conf, enable_tendermint, my_balance, send_raw_transaction, withdraw_v1,
                                   MarketMakerIt, Mm2TestConf};
 use serde_json as json;
 
@@ -11,8 +11,9 @@ const ATOM_TICKER: &str = "ATOM";
 const ATOM_TENDERMINT_RPC_URLS: &[&str] = &["https://cosmos-testnet-rpc.allthatnode.com:26657"];
 
 #[test]
-fn test_tendermint_activation() {
+fn test_tendermint_activation_and_balance() {
     let coins = json!([atom_testnet_conf()]);
+    let expected_address = "cosmos1svaw0aqc4584x825ju7ua03g5xtxwd0ahl86hz";
 
     let conf = Mm2TestConf::seednode(ATOM_TEST_BALANCE_SEED, &coins);
     let mm = MarketMakerIt::start(conf.conf, conf.rpc_password, conf.local).unwrap();
@@ -20,9 +21,17 @@ fn test_tendermint_activation() {
     let activation_result = block_on(enable_tendermint(&mm, ATOM_TICKER, ATOM_TENDERMINT_RPC_URLS));
 
     let result: RpcV2Response<TendermintActivationResult> = json::from_value(activation_result).unwrap();
-    assert_eq!(result.result.address, "cosmos1svaw0aqc4584x825ju7ua03g5xtxwd0ahl86hz");
+    assert_eq!(result.result.address, expected_address);
     let expected_balance: BigDecimal = "0.0959".parse().unwrap();
     assert_eq!(result.result.balance.spendable, expected_balance);
+
+    let my_balance_result = block_on(my_balance(&mm, ATOM_TICKER));
+    let my_balance: MyBalanceResponse = json::from_value(my_balance_result).unwrap();
+
+    assert_eq!(my_balance.balance, expected_balance);
+    assert_eq!(my_balance.unspendable_balance, BigDecimal::default());
+    assert_eq!(my_balance.address, expected_address);
+    assert_eq!(my_balance.coin, ATOM_TICKER);
 }
 
 #[test]

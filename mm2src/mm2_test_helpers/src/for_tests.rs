@@ -1604,6 +1604,19 @@ pub async fn send_raw_transaction(mm: &MarketMakerIt, coin: &str, tx: &str) -> J
     json::from_str(&request.1).unwrap()
 }
 
+pub async fn my_balance(mm: &MarketMakerIt, coin: &str) -> Json {
+    let request = mm
+        .rpc(&json! ({
+            "userpass": mm.userpass,
+            "method": "my_balance",
+            "coin": coin
+        }))
+        .await
+        .unwrap();
+    assert_eq!(request.0, StatusCode::OK, "'my_balance' failed: {}", request.1);
+    json::from_str(&request.1).unwrap()
+}
+
 pub async fn enable_tendermint(mm: &MarketMakerIt, coin: &str, rpc_urls: &[&str]) -> Json {
     let request = mm
         .rpc(&json! ({
