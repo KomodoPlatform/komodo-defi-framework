@@ -1,5 +1,6 @@
 use super::utxo_builder::UtxoCoinBuildError;
 use super::*;
+use super::utxo_common::{ValidatePaymentError, SendRawTxError};
 use crate::coin_balance::{self, EnableCoinBalanceError, HDAccountBalance, HDAddressBalance, HDWalletBalance,
                           HDWalletBalanceOps};
 use crate::hd_pubkey::{ExtractExtendedPubkey, HDExtractPubkeyError, HDXPubExtractor};
@@ -17,7 +18,7 @@ use crate::utxo::utxo_builder::{UtxoArcBuilder, UtxoCoinBuilder};
 use crate::{CanRefundHtlc, CoinBalance, CoinWithDerivationMethod, FoundSwapTxSpendErr, GetWithdrawSenderAddress,
             MyAddressError, NegotiateSwapContractAddrErr, PrivKeyBuildPolicy, SearchForSwapTxSpendInput,
             SignatureResult, SwapOps, TradePreimageValue, TransactionFut, ValidateAddressResult, ValidatePaymentInput,
-            VerificationResult, WithdrawFut, WithdrawSenderAddress};
+            VerificationResult, WithdrawFut, WithdrawSenderAddress, ValidateSwapTxError};
 use common::mm_metrics::MetricsArc;
 use crypto::trezor::utxo::TrezorUtxoCoin;
 use crypto::Bip44Chain;
@@ -397,7 +398,7 @@ impl SwapOps for UtxoStandardCoin {
         amount: &BigDecimal,
         min_block_number: u64,
         _uuid: &[u8],
-    ) -> Box<dyn Future<Item = (), Error = MmError<String>> + Send> {
+    ) -> Box<dyn Future<Item = (), Error = MmError<ValidateSwapTxError>> + Send> {
         let tx = match fee_tx {
             TransactionEnum::UtxoTx(tx) => tx.clone(),
             _ => panic!(),
@@ -416,14 +417,14 @@ impl SwapOps for UtxoStandardCoin {
     fn validate_maker_payment(
         &self,
         input: ValidatePaymentInput,
-    ) -> Box<dyn Future<Item = (), Error = MmError<String>> + Send> {
+    ) -> Box<dyn Future<Item = (), Error = MmError<ValidatePaymentError>> + Send> {
         utxo_common::validate_maker_payment(self, input)
     }
 
     fn validate_taker_payment(
         &self,
         input: ValidatePaymentInput,
-    ) -> Box<dyn Future<Item = (), Error = MmError<String>> + Send> {
+    ) -> Box<dyn Future<Item = (), Error = MmError<ValidatePaymentError>> + Send> {
         utxo_common::validate_taker_payment(self, input)
     }
 
@@ -507,12 +508,12 @@ impl MarketCoinOps for UtxoStandardCoin {
     fn platform_ticker(&self) -> &str { self.ticker() }
 
     #[inline(always)]
-    fn send_raw_tx(&self, tx: &str) -> Box<dyn Future<Item = String, Error = MmError<String>> + Send> {
+    fn send_raw_tx(&self, tx: &str) -> Box<dyn Future<Item = String, Error = MmError<SendRawTxError>> + Send> {
         utxo_common::send_raw_tx(&self.utxo_arc, tx)
     }
 
     #[inline(always)]
-    fn send_raw_tx_bytes(&self, tx: &[u8]) -> Box<dyn Future<Item = String, Error = MmError<String>> + Send> {
+    fn send_raw_tx_bytes(&self, tx: &[u8]) -> Box<dyn Future<Item = String, Error = MmError<SendRawTxError>> + Send> {
         utxo_common::send_raw_tx_bytes(&self.utxo_arc, tx)
     }
 

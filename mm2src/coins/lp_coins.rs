@@ -48,6 +48,7 @@ use mm2_core::mm_ctx::{from_ctx, MmArc};
 use mm2_err_handle::prelude::*;
 use mm2_number::bigdecimal::{BigDecimal, ParseBigDecimalError, Zero};
 use mm2_number::MmNumber;
+use qrc20::script_pubkey::ScriptExtractionError;
 use rpc::v1::types::{Bytes as BytesJson, H256 as H256Json};
 use serde::{Deserialize, Deserializer, Serialize};
 use serde_json::{self as json, Value as Json};
@@ -90,11 +91,11 @@ macro_rules! try_fus {
     };
 }
 
-macro_rules! try_m_fus {
+macro_rules! try_validate_fus {
     ($e: expr) => {
         match $e {
             Ok(ok) => ok,
-            Err(err) => return Box::new(futures01::future::err(MmError::new(format!("{:?}", err)))),
+            Err(err) => return Box::new(futures01::future::err(err.into())),
         }
     };
 }
@@ -218,7 +219,7 @@ pub use solana::{solana_coin_from_conf_and_params, SolanaActivationParams, Solan
 pub mod utxo;
 #[cfg(not(target_arch = "wasm32"))] pub mod z_coin;
 
-use eth::{eth_coin_from_conf_and_request, EthCoin, EthTxFeeDetails, SignedEthTx};
+use eth::{eth_coin_from_conf_and_request, AddrFromPubKeyError, EthCoin, EthTxFeeDetails, SignedEthTx};
 use hd_wallet::{HDAddress, HDAddressId};
 use qrc20::Qrc20ActivationParams;
 use qrc20::{qrc20_coin_from_conf_and_params, Qrc20Coin, Qrc20FeeDetails};
@@ -227,12 +228,12 @@ use rpc_command::init_create_account::{CreateAccountTaskManager, CreateAccountTa
 use rpc_command::init_scan_for_new_addresses::{ScanAddressesTaskManager, ScanAddressesTaskManagerShared};
 use rpc_command::init_withdraw::{WithdrawTaskManager, WithdrawTaskManagerShared};
 use utxo::bch::{bch_coin_from_conf_and_params, BchActivationRequest, BchCoin};
-use utxo::qtum::{self, qtum_coin_with_priv_key, QtumCoin};
+use utxo::qtum::{self, qtum_coin_with_priv_key, ContractAddrFromPubKeyError, QtumCoin};
 use utxo::qtum::{QtumDelegationOps, QtumDelegationRequest, QtumStakingInfosDetails};
 use utxo::rpc_clients::UtxoRpcError;
-use utxo::slp::SlpToken;
 use utxo::slp::{slp_addr_from_pubkey_str, SlpFeeDetails};
-use utxo::utxo_common::big_decimal_from_sat_unsigned;
+use utxo::slp::{SlpToken, ValidateDexFeeError};
+use utxo::utxo_common::{big_decimal_from_sat_unsigned, SendRawTxError, ValidatePaymentError};
 use utxo::utxo_standard::{utxo_standard_coin_with_priv_key, UtxoStandardCoin};
 use utxo::UtxoActivationParams;
 use utxo::{BlockchainNetwork, GenerateTxError, UtxoFeeDetails, UtxoTx};
@@ -409,8 +410,6 @@ pub enum FoundSwapTxSpend {
 
 #[derive(Debug, Display)]
 pub enum FoundSwapTxSpendErr {
-    #[display(fmt = "ContractCallError Error: {}", _0)]
-    ContractCallError(String),
     #[display(fmt = "Deserialzation Error: {:?}", _0)]
     DeserialzationError(serialization::Error),
     #[display(fmt = "'erc20Payment' was not confirmed yet. Please wait for at least one confirmation")]
@@ -427,6 +426,11 @@ pub enum FoundSwapTxSpendErr {
     #[display(fmt = "Unexpected swap_id: {}", _0)]
     UnexpectedSwapID(String),
 }
+
+impl From<ethabi::Error> for FoundSwapTxSpendErr {
+    fn from(err: ethabi::Error) -> Self { Self::Internal(err.to_string()) }
+}
+
 pub enum CanRefundHtlc {
     CanRefundNow,
     // returns the number of seconds to sleep before HTLC becomes refundable
@@ -463,6 +467,60 @@ pub struct SearchForSwapTxSpendInput<'a> {
     pub search_from_block: u64,
     pub swap_contract_address: &'a Option<BytesJson>,
     pub swap_unique_data: &'a [u8],
+}
+
+#[derive(Debug, Display, PartialEq)]
+pub enum ValidateSwapTxError {
+    #[display(fmt = "InternalError: {:?}", _0)]
+    InternalError(String),
+    NumConversError(String),
+    ScriptExtractionError(String),
+    TxConfirmationError(String),
+    UnexpectedFeeOutput(String),
+    UnexpectedTxAddr(String),
+    UtxoRpcError(String),
+    ValidateDexFeeError(String),
+    ValidatePaymentError(String),
+}
+
+impl From<serialization::Error> for ValidateSwapTxError {
+    fn from(err: serialization::Error) -> Self { Self::InternalError(err.to_string()) }
+}
+
+impl From<ethabi::Error> for ValidateSwapTxError {
+    fn from(err: ethabi::Error) -> Self { Self::InternalError(err.to_string()) }
+}
+
+impl From<web3::Error> for ValidateSwapTxError {
+    fn from(err: web3::Error) -> Self { Self::InternalError(err.to_string()) }
+}
+
+impl From<NumConversError> for ValidateSwapTxError {
+    fn from(err: NumConversError) -> Self { Self::NumConversError(err.to_string()) }
+}
+
+impl From<ScriptExtractionError> for ValidateSwapTxError {
+    fn from(err: ScriptExtractionError) -> Self { Self::InternalError(err.to_string()) }
+}
+
+impl From<UtxoRpcError> for ValidateSwapTxError {
+    fn from(err: UtxoRpcError) -> Self { Self::UtxoRpcError(err.to_string()) }
+}
+
+impl From<ValidateDexFeeError> for ValidateSwapTxError {
+    fn from(err: ValidateDexFeeError) -> Self { Self::ValidateDexFeeError(err.to_string()) }
+}
+
+impl From<ValidatePaymentError> for ValidateSwapTxError {
+    fn from(err: ValidatePaymentError) -> Self { Self::ValidatePaymentError(err.to_string()) }
+}
+
+impl From<AddrFromPubKeyError> for ValidateSwapTxError {
+    fn from(err: AddrFromPubKeyError) -> Self { Self::InternalError(err.to_string()) }
+}
+
+impl From<ContractAddrFromPubKeyError> for ValidateSwapTxError {
+    fn from(err: ContractAddrFromPubKeyError) -> Self { Self::InternalError(err.to_string()) }
 }
 
 /// Swap operations (mostly based on the Hash/Time locked transactions implemented by coin wallets).
@@ -538,17 +596,17 @@ pub trait SwapOps {
         amount: &BigDecimal,
         min_block_number: u64,
         uuid: &[u8],
-    ) -> Box<dyn Future<Item = (), Error = MmError<String>> + Send>;
+    ) -> Box<dyn Future<Item = (), Error = MmError<ValidateSwapTxError>> + Send>;
 
     fn validate_maker_payment(
         &self,
         input: ValidatePaymentInput,
-    ) -> Box<dyn Future<Item = (), Error = MmError<String>> + Send>;
+    ) -> Box<dyn Future<Item = (), Error = MmError<ValidatePaymentError>> + Send>;
 
     fn validate_taker_payment(
         &self,
         input: ValidatePaymentInput,
-    ) -> Box<dyn Future<Item = (), Error = MmError<String>> + Send>;
+    ) -> Box<dyn Future<Item = (), Error = MmError<ValidatePaymentError>> + Send>;
 
     fn check_if_my_payment_sent(
         &self,
@@ -641,10 +699,10 @@ pub trait MarketCoinOps {
     fn platform_ticker(&self) -> &str;
 
     /// Receives raw transaction bytes in hexadecimal format as input and returns tx hash in hexadecimal format
-    fn send_raw_tx(&self, tx: &str) -> Box<dyn Future<Item = String, Error = MmError<String>> + Send>;
+    fn send_raw_tx(&self, tx: &str) -> Box<dyn Future<Item = String, Error = MmError<SendRawTxError>> + Send>;
 
     /// Receives raw transaction bytes as input and returns tx hash in hexadecimal format
-    fn send_raw_tx_bytes(&self, tx: &[u8]) -> Box<dyn Future<Item = String, Error = MmError<String>> + Send>;
+    fn send_raw_tx_bytes(&self, tx: &[u8]) -> Box<dyn Future<Item = String, Error = MmError<SendRawTxError>> + Send>;
 
     fn wait_for_confirmations(
         &self,
@@ -2929,37 +2987,44 @@ pub fn address_by_coin_conf_and_pubkey_str(
     conf: &Json,
     pubkey: &str,
     addr_format: UtxoAddressFormat,
-) -> Result<String, String> {
-    let protocol: CoinProtocol = try_s!(json::from_value(conf["protocol"].clone()));
+) -> Result<String, MmError<AddrFromPubKeyError>> {
+    let protocol: CoinProtocol = json::from_value(conf["protocol"].clone())?;
     match protocol {
         CoinProtocol::ERC20 { .. } | CoinProtocol::ETH => eth::addr_from_pubkey_str(pubkey),
         CoinProtocol::UTXO | CoinProtocol::QTUM | CoinProtocol::QRC20 { .. } | CoinProtocol::BCH { .. } => {
-            utxo::address_by_conf_and_pubkey_str(coin, conf, pubkey, addr_format).map_err(|err| err.to_string())
+            utxo::address_by_conf_and_pubkey_str(coin, conf, pubkey, addr_format)
         },
         CoinProtocol::SLPTOKEN { platform, .. } => {
             let platform_conf = coin_conf(ctx, &platform);
             if platform_conf.is_null() {
-                return ERR!("platform {} conf is null", platform);
+                return MmError::err(AddrFromPubKeyError::Internal(format!(
+                    "platform {} conf is null",
+                    platform
+                )));
             }
             // TODO is there any way to make it better without duplicating the prefix in the SLP conf?
-            let platform_protocol: CoinProtocol = try_s!(json::from_value(platform_conf["protocol"].clone()));
+            let platform_protocol: CoinProtocol = json::from_value(platform_conf["protocol"].clone())?;
             match platform_protocol {
-                CoinProtocol::BCH { slp_prefix } => {
-                    slp_addr_from_pubkey_str(pubkey, &slp_prefix).map_err(|e| ERRL!("{}", e))
-                },
-                _ => ERR!("Platform protocol {:?} is not BCH", platform_protocol),
+                CoinProtocol::BCH { slp_prefix } => slp_addr_from_pubkey_str(pubkey, &slp_prefix)
+                    .mm_err(|err| AddrFromPubKeyError::Internal(err.to_string())),
+                _ => MmError::err(AddrFromPubKeyError::Internal(format!(
+                    "Platform protocol {:?} is not BCH",
+                    platform_protocol
+                ))),
             }
         },
         #[cfg(not(target_arch = "wasm32"))]
-        CoinProtocol::LIGHTNING { .. } => {
-            ERR!("address_by_coin_conf_and_pubkey_str is not implemented for lightning protocol yet!")
-        },
+        CoinProtocol::LIGHTNING { .. } => MmError::err(AddrFromPubKeyError::Internal(
+            "address_by_coin_conf_and_pubkey_str is not implemented for lightning protocol yet!".to_string(),
+        )),
         #[cfg(not(target_arch = "wasm32"))]
-        CoinProtocol::SOLANA | CoinProtocol::SPLTOKEN { .. } => {
-            ERR!("Solana pubkey is the public address - you do not need to use this rpc call.")
-        },
+        CoinProtocol::SOLANA | CoinProtocol::SPLTOKEN { .. } => MmError::err(AddrFromPubKeyError::Internal(
+            "Solana pubkey is the public address - you do not need to use this rpc call.".to_string(),
+        )),
         #[cfg(not(target_arch = "wasm32"))]
-        CoinProtocol::ZHTLC { .. } => ERR!("address_by_coin_conf_and_pubkey_str is not supported for ZHTLC protocol!"),
+        CoinProtocol::ZHTLC { .. } => MmError::err(AddrFromPubKeyError::Internal(
+            "address_by_coin_conf_and_pubkey_str is not supported for ZHTLC protocol!".to_string(),
+        )),
     }
 }
 

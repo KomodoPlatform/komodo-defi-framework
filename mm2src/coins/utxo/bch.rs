@@ -1,4 +1,5 @@
 use super::*;
+use super::utxo_common::{ValidatePaymentError, SendRawTxError};
 use crate::my_tx_history_v2::{CoinWithTxHistoryV2, TxDetailsBuilder, TxHistoryStorage, TxHistoryStorageError};
 use crate::tx_history_storage::{GetTxHistoryFilters, WalletId};
 use crate::utxo::rpc_clients::UtxoRpcFut;
@@ -10,7 +11,7 @@ use crate::{BlockHeightAndTime, CanRefundHtlc, CoinBalance, CoinProtocol, FoundS
             NegotiateSwapContractAddrErr, PrivKeyBuildPolicy, RawTransactionFut, RawTransactionRequest,
             SearchForSwapTxSpendInput, SignatureResult, SwapOps, TradePreimageValue, TransactionFut, TransactionType,
             TxFeeDetails, UnexpectedDerivationMethod, ValidateAddressResult, ValidatePaymentInput, VerificationResult,
-            WithdrawFut};
+            WithdrawFut, ValidateSwapTxError};
 use common::log::warn;
 use common::mm_metrics::MetricsArc;
 use derive_more::Display;
@@ -972,7 +973,7 @@ impl SwapOps for BchCoin {
         amount: &BigDecimal,
         min_block_number: u64,
         _uuid: &[u8],
-    ) -> Box<dyn Future<Item = (), Error = MmError<String>> + Send> {
+    ) -> Box<dyn Future<Item = (), Error = MmError<ValidateSwapTxError>> + Send> {
         let tx = match fee_tx {
             TransactionEnum::UtxoTx(tx) => tx.clone(),
             _ => panic!(),
@@ -991,14 +992,14 @@ impl SwapOps for BchCoin {
     fn validate_maker_payment(
         &self,
         input: ValidatePaymentInput,
-    ) -> Box<dyn Future<Item = (), Error = MmError<String>> + Send> {
+    ) -> Box<dyn Future<Item = (), Error = MmError<ValidatePaymentError>> + Send> {
         utxo_common::validate_maker_payment(self, input)
     }
 
     fn validate_taker_payment(
         &self,
         input: ValidatePaymentInput,
-    ) -> Box<dyn Future<Item = (), Error = MmError<String>> + Send> {
+    ) -> Box<dyn Future<Item = (), Error = MmError<ValidatePaymentError>> + Send> {
         utxo_common::validate_taker_payment(self, input)
     }
 
@@ -1094,12 +1095,12 @@ impl MarketCoinOps for BchCoin {
     fn platform_ticker(&self) -> &str { self.ticker() }
 
     #[inline(always)]
-    fn send_raw_tx(&self, tx: &str) -> Box<dyn Future<Item = String, Error = MmError<String>> + Send> {
+    fn send_raw_tx(&self, tx: &str) -> Box<dyn Future<Item = String, Error = MmError<SendRawTxError>> + Send> {
         utxo_common::send_raw_tx(&self.utxo_arc, tx)
     }
 
     #[inline(always)]
-    fn send_raw_tx_bytes(&self, tx: &[u8]) -> Box<dyn Future<Item = String, Error = MmError<String>> + Send> {
+    fn send_raw_tx_bytes(&self, tx: &[u8]) -> Box<dyn Future<Item = String, Error = MmError<SendRawTxError>> + Send> {
         utxo_common::send_raw_tx_bytes(&self.utxo_arc, tx)
     }
 

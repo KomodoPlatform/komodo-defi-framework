@@ -1,6 +1,8 @@
+use super::utxo_common::{ValidatePaymentError, SendRawTxError};
 use super::*;
 use crate::coin_balance::{self, EnableCoinBalanceError, HDAccountBalance, HDAddressBalance, HDWalletBalance,
                           HDWalletBalanceOps};
+use crate::eth::AddrFromPubKeyError;
 use crate::hd_pubkey::{ExtractExtendedPubkey, HDExtractPubkeyError, HDXPubExtractor};
 use crate::hd_wallet::{self, AccountUpdatingError, AddressDerivingError, GetNewHDAddressParams,
                        GetNewHDAddressResponse, HDAccountMut, HDWalletRpcError, HDWalletRpcOps,
@@ -19,7 +21,7 @@ use crate::{eth, CanRefundHtlc, CoinBalance, CoinWithDerivationMethod, Delegatio
             FoundSwapTxSpendErr, GetWithdrawSenderAddress, MyAddressError, NegotiateSwapContractAddrErr,
             PrivKeyBuildPolicy, SearchForSwapTxSpendInput, SignatureResult, StakingInfosFut, SwapOps,
             TradePreimageValue, TransactionFut, UnexpectedDerivationMethod, ValidateAddressResult,
-            ValidatePaymentInput, VerificationResult, WithdrawFut, WithdrawSenderAddress};
+            ValidatePaymentInput, ValidateSwapTxError, VerificationResult, WithdrawFut, WithdrawSenderAddress};
 use common::mm_metrics::MetricsArc;
 use crypto::trezor::utxo::TrezorUtxoCoin;
 use crypto::Bip44Chain;
@@ -56,6 +58,10 @@ pub struct ScriptHashTypeNotSupported {
 
 impl From<ScriptHashTypeNotSupported> for WithdrawError {
     fn from(e: ScriptHashTypeNotSupported) -> Self { WithdrawError::InvalidAddress(e.to_string()) }
+}
+
+impl From<ScriptHashTypeNotSupported> for ContractAddrFromPubKeyError {
+    fn from(e: ScriptHashTypeNotSupported) -> Self { ContractAddrFromPubKeyError::Internal(e.to_string()) }
 }
 
 #[path = "qtum_delegation.rs"] mod qtum_delegation;
@@ -163,17 +169,17 @@ pub trait QtumBasedCoin: UtxoCommonOps + MarketCoinOps {
         }
     }
 
-    fn contract_address_from_raw_pubkey(&self, pubkey: &[u8]) -> Result<H160, String> {
+    fn contract_address_from_raw_pubkey(&self, pubkey: &[u8]) -> Result<H160, MmError<ContractAddrFromPubKeyError>> {
         let utxo = self.as_ref();
-        let qtum_address = try_s!(utxo_common::address_from_raw_pubkey(
+        let qtum_address = utxo_common::address_from_raw_pubkey(
             pubkey,
             utxo.conf.pub_addr_prefix,
             utxo.conf.pub_t_addr_prefix,
             utxo.conf.checksum_type,
             utxo.conf.bech32_hrp.clone(),
-            self.addr_format().clone()
-        ));
-        let contract_addr = try_s!(contract_addr_from_utxo_addr(qtum_address));
+            self.addr_format().clone(),
+        )?;
+        let contract_addr = contract_addr_from_utxo_addr(qtum_address)?;
         Ok(contract_addr)
     }
 
@@ -636,7 +642,7 @@ impl SwapOps for QtumCoin {
         amount: &BigDecimal,
         min_block_number: u64,
         _uuid: &[u8],
-    ) -> Box<dyn Future<Item = (), Error = MmError<String>> + Send> {
+    ) -> Box<dyn Future<Item = (), Error = MmError<ValidateSwapTxError>> + Send> {
         let tx = match fee_tx {
             TransactionEnum::UtxoTx(tx) => tx.clone(),
             _ => panic!(),
@@ -655,14 +661,14 @@ impl SwapOps for QtumCoin {
     fn validate_maker_payment(
         &self,
         input: ValidatePaymentInput,
-    ) -> Box<dyn Future<Item = (), Error = MmError<String>> + Send> {
+    ) -> Box<dyn Future<Item = (), Error = MmError<ValidatePaymentError>> + Send> {
         utxo_common::validate_maker_payment(self, input)
     }
 
     fn validate_taker_payment(
         &self,
         input: ValidatePaymentInput,
-    ) -> Box<dyn Future<Item = (), Error = MmError<String>> + Send> {
+    ) -> Box<dyn Future<Item = (), Error = MmError<ValidatePaymentError>> + Send> {
         utxo_common::validate_taker_payment(self, input)
     }
 
@@ -746,12 +752,12 @@ impl MarketCoinOps for QtumCoin {
     fn platform_ticker(&self) -> &str { self.ticker() }
 
     #[inline(always)]
-    fn send_raw_tx(&self, tx: &str) -> Box<dyn Future<Item = String, Error = MmError<String>> + Send> {
+    fn send_raw_tx(&self, tx: &str) -> Box<dyn Future<Item = String, Error = MmError<SendRawTxError>> + Send> {
         utxo_common::send_raw_tx(&self.utxo_arc, tx)
     }
 
     #[inline(always)]
-    fn send_raw_tx_bytes(&self, tx: &[u8]) -> Box<dyn Future<Item = String, Error = MmError<String>> + Send> {
+    fn send_raw_tx_bytes(&self, tx: &[u8]) -> Box<dyn Future<Item = String, Error = MmError<SendRawTxError>> + Send> {
         utxo_common::send_raw_tx_bytes(&self.utxo_arc, tx)
     }
 
@@ -1086,9 +1092,20 @@ impl InitCreateHDAccountRpcOps for QtumCoin {
     }
 }
 
+#[derive(Debug, Display)]
+pub enum ContractAddrFromPubKeyError {
+    Internal(String),
+}
+
+impl From<AddrFromPubKeyError> for ContractAddrFromPubKeyError {
+    fn from(err: AddrFromPubKeyError) -> Self { Self::Internal(err.to_string()) }
+}
+
 /// Parse contract address (H160) from string.
 /// Qtum Contract addresses have another checksum verification algorithm, because of this do not use [`eth::valid_addr_from_str`].
-pub fn contract_addr_from_str(addr: &str) -> Result<H160, String> { eth::addr_from_str(addr) }
+pub fn contract_addr_from_str(addr: &str) -> Result<H160, MmError<ContractAddrFromPubKeyError>> {
+    Ok(eth::addr_from_str(addr)?)
+}
 
 pub fn contract_addr_from_utxo_addr(address: Address) -> MmResult<H160, ScriptHashTypeNotSupported> {
     match address.hash {

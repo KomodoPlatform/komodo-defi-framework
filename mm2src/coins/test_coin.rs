@@ -3,7 +3,7 @@ use super::{CoinBalance, HistorySyncState, MarketCoinOps, MmCoin, RawTransaction
 use crate::{BalanceFut, FeeApproxStage, FoundSwapTxSpend, FoundSwapTxSpendErr, MyAddressError,
             NegotiateSwapContractAddrErr, SearchForSwapTxSpendInput, SignatureResult, TradePreimageFut,
             TradePreimageResult, TradePreimageValue, UnexpectedDerivationMethod, ValidateAddressResult,
-            ValidatePaymentInput, VerificationResult, WithdrawFut, WithdrawRequest};
+            ValidatePaymentInput, VerificationResult, WithdrawFut, WithdrawRequest, ValidateSwapTxError, utxo::utxo_common::{ValidatePaymentError, SendRawTxError}};
 use async_trait::async_trait;
 use futures01::Future;
 use keys::KeyPair;
@@ -53,11 +53,11 @@ impl MarketCoinOps for TestCoin {
     fn platform_ticker(&self) -> &str { unimplemented!() }
 
     /// Receives raw transaction bytes in hexadecimal format as input and returns tx hash in hexadecimal format
-    fn send_raw_tx(&self, tx: &str) -> Box<dyn Future<Item = String, Error = MmError<String>> + Send> {
+    fn send_raw_tx(&self, tx: &str) -> Box<dyn Future<Item = String, Error = MmError<SendRawTxError>> + Send> {
         unimplemented!()
     }
 
-    fn send_raw_tx_bytes(&self, tx: &[u8]) -> Box<dyn Future<Item = String, Error = MmError<String>> + Send> {
+    fn send_raw_tx_bytes(&self, tx: &[u8]) -> Box<dyn Future<Item = String, Error = MmError<SendRawTxError>> + Send> {
         unimplemented!()
     }
 
@@ -179,21 +179,21 @@ impl SwapOps for TestCoin {
         amount: &BigDecimal,
         min_block_number: u64,
         _uuid: &[u8],
-    ) -> Box<dyn Future<Item = (), Error = MmError<String>> + Send> {
+    ) -> Box<dyn Future<Item = (), Error = MmError<ValidateSwapTxError>> + Send> {
         unimplemented!()
     }
 
     fn validate_maker_payment(
         &self,
         _input: ValidatePaymentInput,
-    ) -> Box<dyn Future<Item = (), Error = MmError<String>> + Send> {
+    ) -> Box<dyn Future<Item = (), Error = MmError<ValidatePaymentError>> + Send> {
         unimplemented!()
     }
 
     fn validate_taker_payment(
         &self,
         _input: ValidatePaymentInput,
-    ) -> Box<dyn Future<Item = (), Error = MmError<String>> + Send> {
+    ) -> Box<dyn Future<Item = (), Error = MmError<ValidatePaymentError>> + Send> {
         unimplemented!()
     }
 

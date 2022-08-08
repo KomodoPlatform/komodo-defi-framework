@@ -4,7 +4,7 @@ use derive_more::Display;
 use futures::TryFutureExt;
 use futures01::{Future, Poll};
 use jsonrpc_core::{Call, Response};
-use mm2_err_handle::prelude::MmError;
+use mm2_err_handle::prelude::*;
 use serde_json::Value as Json;
 #[cfg(not(target_arch = "wasm32"))] use std::ops::Deref;
 use std::sync::atomic::{AtomicUsize, Ordering};
@@ -81,7 +81,11 @@ pub struct Web3Transport {
 #[derive(Debug, Display)]
 pub enum Web3TransportError {
     #[display(fmt = "{}: ", _0)]
-    InvalidUri(String),
+    InvalidUri(http::uri::InvalidUri),
+}
+
+impl From<http::uri::InvalidUri> for Web3TransportError {
+    fn from(err: http::uri::InvalidUri) -> Self { Self::InvalidUri(err) }
 }
 
 impl Web3Transport {
@@ -89,10 +93,7 @@ impl Web3Transport {
     pub fn new(urls: Vec<String>) -> Web3TransportResult<Self> {
         let mut uris = vec![];
         for url in urls.iter() {
-            uris.push(
-                url.parse::<http::Uri>()
-                    .map_err(|err| Web3TransportError::InvalidUri(err.to_string()))?,
-            );
+            uris.push(url.parse::<http::Uri>()?);
         }
         Ok(Web3Transport {
             id: Arc::new(AtomicUsize::new(0)),
@@ -107,10 +108,7 @@ impl Web3Transport {
     ) -> Web3TransportResult<Self> {
         let mut uris = vec![];
         for url in urls.iter() {
-            uris.push(
-                url.parse::<http::Uri>()
-                    .map_err(|err| Web3TransportError::InvalidUri(err.to_string()))?,
-            );
+            uris.push(url.parse::<http::Uri>()?);
         }
         Ok(Web3Transport {
             id: Arc::new(AtomicUsize::new(0)),

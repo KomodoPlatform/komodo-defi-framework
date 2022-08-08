@@ -93,7 +93,6 @@ use self::rpc_clients::{electrum_script_hash, ElectrumClient, ElectrumRpcRequest
                         NativeClient, UnspentInfo, UnspentMap, UtxoRpcClientEnum, UtxoRpcError, UtxoRpcFut,
                         UtxoRpcResult};
 use self::utxo_block_header_storage::BlockHeaderVerificationParams;
-use self::utxo_builder::UtxoConfError;
 use super::{big_decimal_from_sat_unsigned, BalanceError, BalanceFut, BalanceResult, CoinBalance, CoinsContext,
             DerivationMethod, FeeApproxStage, FoundSwapTxSpend, HistorySyncState, KmdRewardsDetails, MarketCoinOps,
             MmCoin, NumConversError, NumConversResult, PrivKeyActivationPolicy, PrivKeyNotAllowed, PrivKeyPolicy,
@@ -102,6 +101,7 @@ use super::{big_decimal_from_sat_unsigned, BalanceError, BalanceFut, BalanceResu
             Transaction, TransactionDetails, TransactionEnum, UnexpectedDerivationMethod, WithdrawError,
             WithdrawRequest};
 use crate::coin_balance::{EnableCoinScanPolicy, HDAddressBalanceScanner};
+use crate::eth::AddrFromPubKeyError;
 use crate::hd_wallet::{HDAccountOps, HDAccountsMutex, HDAddress, HDWalletCoinOps, HDWalletOps, InvalidBip44ChainError};
 use crate::hd_wallet_storage::{HDAccountStorageItem, HDWalletCoinStorage, HDWalletStorageError, HDWalletStorageResult};
 use crate::utxo::tx_cache::UtxoVerboseCacheShared;
@@ -1709,19 +1709,12 @@ pub fn output_script(address: &Address, script_type: ScriptType) -> Script {
     }
 }
 
-#[derive(Debug, Display)]
-pub enum AddrFromConfError {
-    #[display(fmt = "Internal: {}", _0)]
-    Internal(String),
-    UtxoConfError(UtxoConfError),
-}
-
 pub fn address_by_conf_and_pubkey_str(
     coin: &str,
     conf: &Json,
     pubkey: &str,
     addr_format: UtxoAddressFormat,
-) -> Result<String, MmError<AddrFromConfError>> {
+) -> Result<String, MmError<AddrFromPubKeyError>> {
     // using a reasonable default here
     let params = UtxoActivationParams {
         mode: UtxoRpcMode::Native,
@@ -1736,8 +1729,8 @@ pub fn address_by_conf_and_pubkey_str(
         check_utxo_maturity: None,
     };
     let conf_builder = UtxoConfBuilder::new(conf, &params, coin);
-    let utxo_conf = conf_builder.build().mm_err(AddrFromConfError::UtxoConfError)?;
-    let pubkey_bytes = hex::decode(pubkey).map_err(|err| MmError::new(AddrFromConfError::Internal(err.to_string())))?;
+    let utxo_conf = conf_builder.build()?;
+    let pubkey_bytes = hex::decode(pubkey)?;
     let hash = dhash160(&pubkey_bytes);
 
     let address = Address {
@@ -1750,7 +1743,7 @@ pub fn address_by_conf_and_pubkey_str(
     };
     address
         .display_address()
-        .map_err(|err| MmError::new(AddrFromConfError::Internal(err)))
+        .map_err(|err| MmError::new(AddrFromPubKeyError::Internal(err)))
 }
 
 fn parse_hex_encoded_u32(hex_encoded: &str) -> Result<u32, MmError<String>> {

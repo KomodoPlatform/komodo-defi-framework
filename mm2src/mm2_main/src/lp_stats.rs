@@ -12,8 +12,10 @@ use serde_json::{self as json, Value as Json};
 use std::collections::{HashMap, HashSet};
 use std::sync::Arc;
 
-use crate::mm2::lp_network::{add_reserved_peer_addresses, lp_network_ports, request_peers, NetIdError, P2PRequest,
-                             ParseAddressError, PeerDecodedResponse};
+use crate::mm2::lp_network::{
+    add_reserved_peer_addresses, lp_network_ports, request_peers, NetIdError, P2PRequest, ParseAddressError,
+    PeerDecodedResponse,
+};
 use std::str::FromStr;
 
 pub type NodeVersionResult<T> = Result<T, MmError<NodeVersionError>>;
@@ -55,19 +57,27 @@ impl HttpStatusCode for NodeVersionError {
 }
 
 impl From<serde_json::Error> for NodeVersionError {
-    fn from(e: serde_json::Error) -> Self { NodeVersionError::InvalidRequest(e.to_string()) }
+    fn from(e: serde_json::Error) -> Self {
+        NodeVersionError::InvalidRequest(e.to_string())
+    }
 }
 
 impl From<NetIdError> for NodeVersionError {
-    fn from(e: NetIdError) -> Self { NodeVersionError::InvalidAddress(e.to_string()) }
+    fn from(e: NetIdError) -> Self {
+        NodeVersionError::InvalidAddress(e.to_string())
+    }
 }
 
 impl From<ParseAddressError> for NodeVersionError {
-    fn from(e: ParseAddressError) -> Self { NodeVersionError::InvalidAddress(e.to_string()) }
+    fn from(e: ParseAddressError) -> Self {
+        NodeVersionError::InvalidAddress(e.to_string())
+    }
 }
 
 impl From<RelayAddressError> for NodeVersionError {
-    fn from(e: RelayAddressError) -> Self { NodeVersionError::InvalidAddress(e.to_string()) }
+    fn from(e: RelayAddressError) -> Self {
+        NodeVersionError::InvalidAddress(e.to_string())
+    }
 }
 
 #[derive(Serialize, Deserialize)]
@@ -86,7 +96,9 @@ pub struct NodeVersionStat {
 }
 
 #[cfg(target_arch = "wasm32")]
-fn insert_node_info_to_db(_ctx: &MmArc, _node_info: &NodeInfo) -> Result<(), String> { Ok(()) }
+fn insert_node_info_to_db(_ctx: &MmArc, _node_info: &NodeInfo) -> Result<(), String> {
+    Ok(())
+}
 
 #[cfg(not(target_arch = "wasm32"))]
 fn insert_node_info_to_db(ctx: &MmArc, node_info: &NodeInfo) -> Result<(), String> {
@@ -94,7 +106,9 @@ fn insert_node_info_to_db(ctx: &MmArc, node_info: &NodeInfo) -> Result<(), Strin
 }
 
 #[cfg(target_arch = "wasm32")]
-fn insert_node_version_stat_to_db(_ctx: &MmArc, _node_version_stat: NodeVersionStat) -> Result<(), String> { Ok(()) }
+fn insert_node_version_stat_to_db(_ctx: &MmArc, _node_version_stat: NodeVersionStat) -> Result<(), String> {
+    Ok(())
+}
 
 #[cfg(not(target_arch = "wasm32"))]
 fn insert_node_version_stat_to_db(ctx: &MmArc, node_version_stat: NodeVersionStat) -> Result<(), String> {
@@ -102,7 +116,9 @@ fn insert_node_version_stat_to_db(ctx: &MmArc, node_version_stat: NodeVersionSta
 }
 
 #[cfg(target_arch = "wasm32")]
-fn delete_node_info_from_db(_ctx: &MmArc, _name: String) -> Result<(), String> { Ok(()) }
+fn delete_node_info_from_db(_ctx: &MmArc, _name: String) -> Result<(), String> {
+    Ok(())
+}
 
 #[cfg(not(target_arch = "wasm32"))]
 fn delete_node_info_from_db(ctx: &MmArc, name: String) -> Result<(), String> {
@@ -110,7 +126,9 @@ fn delete_node_info_from_db(ctx: &MmArc, name: String) -> Result<(), String> {
 }
 
 #[cfg(target_arch = "wasm32")]
-fn select_peers_addresses_from_db(_ctx: &MmArc) -> Result<Vec<(String, String)>, String> { Ok(Vec::new()) }
+fn select_peers_addresses_from_db(_ctx: &MmArc) -> Result<Vec<(String, String)>, String> {
+    Ok(Vec::new())
+}
 
 #[cfg(not(target_arch = "wasm32"))]
 fn select_peers_addresses_from_db(ctx: &MmArc) -> Result<Vec<(String, String)>, String> {
@@ -175,13 +193,27 @@ pub enum NetworkInfoRequest {
     GetMm2Version,
 }
 
-fn process_get_version_request(ctx: MmArc) -> Result<Option<Vec<u8>>, String> {
+#[derive(Debug, Display)]
+pub enum NetWorkInfoRequestError {
+    EncodeError(rmp_serde::encode::Error),
+}
+
+impl From<rmp_serde::encode::Error> for NetWorkInfoRequestError {
+    fn from(err: rmp_serde::encode::Error) -> Self {
+        Self::EncodeError(err)
+    }
+}
+
+fn process_get_version_request(ctx: MmArc) -> Result<Option<Vec<u8>>, NetWorkInfoRequestError> {
     let response = ctx.mm_version().to_string();
-    let encoded = try_s!(encode_message(&response));
+    let encoded = encode_message(&response)?;
     Ok(Some(encoded))
 }
 
-pub fn process_info_request(ctx: MmArc, request: NetworkInfoRequest) -> Result<Option<Vec<u8>>, String> {
+pub fn process_info_request(
+    ctx: MmArc,
+    request: NetworkInfoRequest,
+) -> Result<Option<Vec<u8>>, NetWorkInfoRequestError> {
     log::debug!("Got stats request {:?}", request);
     match request {
         NetworkInfoRequest::GetMm2Version => process_get_version_request(ctx),
@@ -197,7 +229,9 @@ enum StatsCollectionStatus {
 }
 
 impl Default for StatsCollectionStatus {
-    fn default() -> Self { StatsCollectionStatus::Stopped }
+    fn default() -> Self {
+        StatsCollectionStatus::Stopped
+    }
 }
 
 #[cfg_attr(not(target_arch = "wasm32"), derive(Default))]
@@ -205,12 +239,22 @@ struct StatsContext {
     pub status: AsyncMutex<StatsCollectionStatus>,
 }
 
+#[cfg_attr(not(target_arch = "wasm32"), derive(Debug, Display))]
+pub enum StatsContextError {
+    Internal(String),
+}
+
+#[cfg(not(target_arch = "wasm32"))]
+impl From<String> for StatsContextError {
+    fn from(err: String) -> Self {
+        Self::Internal(err)
+    }
+}
+
 #[cfg(not(target_arch = "wasm32"))]
 impl StatsContext {
-    fn from_ctx(ctx: &MmArc) -> Result<Arc<StatsContext>, String> {
-        Ok(try_s!(from_ctx(&ctx.stats_ctx, move || {
-            Ok(StatsContext::default())
-        })))
+    fn from_ctx(ctx: &MmArc) -> Result<Arc<StatsContext>, MmError<StatsContextError>> {
+        Ok(from_ctx(&ctx.stats_ctx, move || Ok(StatsContext::default()))?)
     }
 }
 

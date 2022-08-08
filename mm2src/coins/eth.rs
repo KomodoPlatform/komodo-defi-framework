@@ -59,7 +59,9 @@ use web3::types::{Action as TraceAction, BlockId, BlockNumber, Bytes, CallReques
 use web3::{self, Web3};
 use web3_transport::{EthFeeHistoryNamespace, Web3Transport};
 
-use crate::{FoundSwapTxSpendErr, MyAddressError};
+use crate::utxo::utxo_builder::UtxoConfError;
+use crate::utxo::utxo_common::{SendRawTxError, ValidatePaymentError};
+use crate::{FoundSwapTxSpendErr, MyAddressError, ValidateSwapTxError};
 
 use super::{AsyncMutex, BalanceError, BalanceFut, CoinBalance, CoinProtocol, CoinTransportMetrics, CoinsContext,
             FeeApproxStage, FoundSwapTxSpend, HistorySyncState, MarketCoinOps, MmCoin, NegotiateSwapContractAddrErr,
@@ -249,6 +251,10 @@ impl From<ethabi::Error> for BalanceError {
 
 impl From<web3::Error> for BalanceError {
     fn from(e: web3::Error) -> Self { BalanceError::Transport(e.to_string()) }
+}
+
+impl From<ethkey::Error> for ValidatePaymentError {
+    fn from(err: ethkey::Error) -> Self { Self::InternalError(err.to_string()) }
 }
 
 #[derive(Debug, Deserialize, Serialize)]
@@ -572,9 +578,7 @@ async fn withdraw_impl(coin: EthCoin, req: WithdrawRequest) -> WithdrawResult {
         EthCoinType::Eth => (wei_amount, vec![], to_addr, coin.ticker()),
         EthCoinType::Erc20 { platform, token_addr } => {
             let function = ERC20_CONTRACT.function("transfer")?;
-            let data = function
-                .encode_input(&[Token::Address(to_addr), Token::Uint(wei_amount)])
-                .map_to_mm(|err| WithdrawError::InternalError(err.to_string()))?;
+            let data = function.encode_input(&[Token::Address(to_addr), Token::Uint(wei_amount)])?;
             (0.into(), data, *token_addr, platform.as_str())
         },
     };
@@ -827,59 +831,63 @@ impl SwapOps for EthCoin {
         amount: &BigDecimal,
         min_block_number: u64,
         _uuid: &[u8],
-    ) -> Box<dyn Future<Item = (), Error = MmError<String>> + Send> {
+    ) -> Box<dyn Future<Item = (), Error = MmError<ValidateSwapTxError>> + Send> {
         let selfi = self.clone();
         let tx = match fee_tx {
             TransactionEnum::SignedEthTx(t) => t.clone(),
             _ => panic!(),
         };
-        let sender_addr = try_m_fus!(addr_from_raw_pubkey(expected_sender));
-        let fee_addr = try_m_fus!(addr_from_raw_pubkey(fee_addr));
+        let sender_addr = try_validate_fus!(addr_from_raw_pubkey(expected_sender));
+        let fee_addr = try_validate_fus!(addr_from_raw_pubkey(fee_addr));
         let amount = amount.clone();
 
         let fut = async move {
-            let expected_value = wei_from_big_decimal(&amount, selfi.decimals).map_err(|err| err.to_string())?;
+            let expected_value = wei_from_big_decimal(&amount, selfi.decimals)?;
             let tx_from_rpc = selfi
                 .web3
                 .eth()
                 .transaction(TransactionId::Hash(tx.hash))
                 .compat()
-                .await
-                .map_err(|err| err.to_string())?;
+                .await?;
             let tx_from_rpc = match tx_from_rpc {
                 Some(t) => t,
-                None => return MmError::err(format!("Didn't find provided tx {:?} on ETH node", tx)),
+                None => {
+                    return MmError::err(ValidateSwapTxError::InternalError(format!(
+                        "Didn't find provided tx {:?} on ETH node",
+                        tx
+                    )))
+                },
             };
 
             if tx_from_rpc.from != sender_addr {
-                return MmError::err(format!(
+                return MmError::err(ValidateSwapTxError::InternalError(format!(
                     "Fee tx {:?} was sent from wrong address, expected {:?}",
                     tx_from_rpc, sender_addr
-                ));
+                )));
             }
 
             if let Some(block_number) = tx_from_rpc.block_number {
                 if block_number <= min_block_number.into() {
-                    return MmError::err(format!(
+                    return MmError::err(ValidateSwapTxError::InternalError(format!(
                         "Fee tx {:?} confirmed before min_block {}",
                         tx_from_rpc, min_block_number,
-                    ));
+                    )));
                 }
             }
             match &selfi.coin_type {
                 EthCoinType::Eth => {
                     if tx_from_rpc.to != Some(fee_addr) {
-                        return MmError::err(format!(
+                        return MmError::err(ValidateSwapTxError::InternalError(format!(
                             "Fee tx {:?} was sent to wrong address, expected {:?}",
                             tx_from_rpc, fee_addr
-                        ));
+                        )));
                     }
 
                     if tx_from_rpc.value < expected_value {
-                        return MmError::err(format!(
+                        return MmError::err(ValidateSwapTxError::InternalError(format!(
                             "Fee tx {:?} value is less than expected {:?}",
                             tx_from_rpc, expected_value
-                        ));
+                        )));
                     }
                 },
                 EthCoinType::Erc20 {
@@ -887,34 +895,37 @@ impl SwapOps for EthCoin {
                     token_addr,
                 } => {
                     if tx_from_rpc.to != Some(*token_addr) {
-                        return MmError::err(format!(
+                        return MmError::err(ValidateSwapTxError::InternalError(format!(
                             "ERC20 Fee tx {:?} called wrong smart contract, expected {:?}",
                             tx_from_rpc, token_addr
-                        ));
+                        )));
                     }
 
-                    let function = ERC20_CONTRACT.function("transfer").map_to_mm(|err| err.to_string())?;
-                    let decoded_input = function
-                        .decode_input(&tx_from_rpc.input.0)
-                        .map_to_mm(|err| err.to_string())?;
+                    let function = ERC20_CONTRACT.function("transfer")?;
+                    let decoded_input = function.decode_input(&tx_from_rpc.input.0)?;
 
                     if decoded_input[0] != Token::Address(fee_addr) {
-                        return MmError::err(format!(
+                        return MmError::err(ValidateSwapTxError::InternalError(format!(
                             "ERC20 Fee tx was sent to wrong address {:?}, expected {:?}",
                             decoded_input[0], fee_addr
-                        ));
+                        )));
                     }
 
                     match decoded_input[1] {
                         Token::Uint(value) => {
                             if value < expected_value {
-                                return MmError::err(format!(
+                                return MmError::err(ValidateSwapTxError::InternalError(format!(
                                     "ERC20 Fee tx value {} is less than expected {}",
                                     value, expected_value
-                                ));
+                                )));
                             }
                         },
-                        _ => return MmError::err(format!("Should have got uint token but got {:?}", decoded_input[1])),
+                        _ => {
+                            return MmError::err(ValidateSwapTxError::InternalError(format!(
+                                "Should have got uint token but got {:?}",
+                                decoded_input[1]
+                            )))
+                        },
                     }
                 },
             }
@@ -927,8 +938,11 @@ impl SwapOps for EthCoin {
     fn validate_maker_payment(
         &self,
         input: ValidatePaymentInput,
-    ) -> Box<dyn Future<Item = (), Error = MmError<String>> + Send> {
-        let swap_contract_address = try_m_fus!(input.swap_contract_address.try_to_address());
+    ) -> Box<dyn Future<Item = (), Error = MmError<ValidatePaymentError>> + Send> {
+        let swap_contract_address = try_validate_fus!(input
+            .swap_contract_address
+            .try_to_address()
+            .map_to_mm(ValidatePaymentError::InternalError));
         self.validate_payment(
             &input.payment_tx,
             input.time_lock,
@@ -942,8 +956,11 @@ impl SwapOps for EthCoin {
     fn validate_taker_payment(
         &self,
         input: ValidatePaymentInput,
-    ) -> Box<dyn Future<Item = (), Error = MmError<String>> + Send> {
-        let swap_contract_address = try_m_fus!(input.swap_contract_address.try_to_address());
+    ) -> Box<dyn Future<Item = (), Error = MmError<ValidatePaymentError>> + Send> {
+        let swap_contract_address = try_validate_fus!(input
+            .swap_contract_address
+            .try_to_address()
+            .map_to_mm(ValidatePaymentError::InternalError));
         self.validate_payment(
             &input.payment_tx,
             input.time_lock,
@@ -1163,27 +1180,27 @@ impl MarketCoinOps for EthCoin {
         }
     }
 
-    fn send_raw_tx(&self, mut tx: &str) -> Box<dyn Future<Item = String, Error = MmError<String>> + Send> {
+    fn send_raw_tx(&self, mut tx: &str) -> Box<dyn Future<Item = String, Error = MmError<SendRawTxError>> + Send> {
         if tx.starts_with("0x") {
             tx = &tx[2..];
         }
-        let bytes = try_m_fus!(hex::decode(tx).map_to_mm(|err| err.to_string()));
+        let bytes = try_validate_fus!(hex::decode(tx));
         Box::new(
             self.web3
                 .eth()
                 .send_raw_transaction(bytes.into())
                 .map(|res| format!("{:02x}", res))
-                .map_err(|e| MmError::new(e.to_string())),
+                .map_err(|e| MmError::new(SendRawTxError::Internal(e.to_string()))),
         )
     }
 
-    fn send_raw_tx_bytes(&self, tx: &[u8]) -> Box<dyn Future<Item = String, Error = MmError<String>> + Send> {
+    fn send_raw_tx_bytes(&self, tx: &[u8]) -> Box<dyn Future<Item = String, Error = MmError<SendRawTxError>> + Send> {
         Box::new(
             self.web3
                 .eth()
                 .send_raw_transaction(tx.into())
                 .map(|res| format!("{:02x}", res))
-                .map_err(|e| MmError::new(e.to_string())),
+                .map_err(|e| MmError::new(SendRawTxError::Internal(e.to_string()))),
         )
     }
 
@@ -2613,11 +2630,11 @@ impl EthCoin {
         secret_hash: &[u8],
         amount: BigDecimal,
         expected_swap_contract_address: Address,
-    ) -> Box<dyn Future<Item = (), Error = MmError<String>> + Send> {
-        let unsigned: UnverifiedTransaction = try_m_fus!(rlp::decode(payment_tx));
-        let tx = try_m_fus!(SignedEthTx::new(unsigned));
-        let sender = try_m_fus!(addr_from_raw_pubkey(sender_pub));
-        let expected_value = try_m_fus!(wei_from_big_decimal(&amount, self.decimals));
+    ) -> Box<dyn Future<Item = (), Error = MmError<ValidatePaymentError>> + Send> {
+        let unsigned: UnverifiedTransaction = try_validate_fus!(rlp::decode(payment_tx));
+        let tx = try_validate_fus!(SignedEthTx::new(unsigned));
+        let sender = try_validate_fus!(addr_from_raw_pubkey(sender_pub));
+        let expected_value = try_validate_fus!(wei_from_big_decimal(&amount, self.decimals));
         let selfi = self.clone();
         let secret_hash = secret_hash.to_vec();
         let fut = async move {
@@ -2626,9 +2643,12 @@ impl EthCoin {
                 .payment_status(expected_swap_contract_address, Token::FixedBytes(swap_id.clone()))
                 .compat()
                 .await
-                .map_err(|err| err)?;
+                .map_err(ValidatePaymentError::InternalError)?; //TODO
             if status != PAYMENT_STATE_SENT.into() {
-                return MmError::err(format!("Payment state is not PAYMENT_STATE_SENT, got {}", status));
+                return MmError::err(ValidatePaymentError::InternalError(format!(
+                    "Payment state is not PAYMENT_STATE_SENT, got {}",
+                    status
+                )));
             }
 
             let tx_from_rpc = selfi
@@ -2636,66 +2656,71 @@ impl EthCoin {
                 .eth()
                 .transaction(TransactionId::Hash(tx.hash))
                 .compat()
-                .await
-                .map_err(|err| err.to_string())?;
+                .await?;
             let tx_from_rpc = match tx_from_rpc {
                 Some(t) => t,
-                None => return MmError::err(format!("Didn't find provided tx {:?} on ETH node", tx)),
+                None => {
+                    return MmError::err(ValidatePaymentError::InternalError(format!(
+                        "Didn't find provided tx {:?} on ETH node",
+                        tx
+                    )))
+                },
             };
 
             if tx_from_rpc.from != sender {
-                return MmError::err(format!(
+                return MmError::err(ValidatePaymentError::InternalError(format!(
                     "Payment tx {:?} was sent from wrong address, expected {:?}",
                     tx_from_rpc, sender
-                ));
+                )));
             }
 
             match &selfi.coin_type {
                 EthCoinType::Eth => {
                     if tx_from_rpc.to != Some(expected_swap_contract_address) {
-                        return MmError::err(format!(
+                        return MmError::err(ValidatePaymentError::InternalError(format!(
                             "Payment tx {:?} was sent to wrong address, expected {:?}",
                             tx_from_rpc, expected_swap_contract_address
-                        ));
+                        )));
                     }
 
                     if tx_from_rpc.value != expected_value {
-                        return MmError::err(format!(
+                        return MmError::err(ValidatePaymentError::InternalError(format!(
                             "Payment tx {:?} value is invalid, expected {:?}",
                             tx_from_rpc, expected_value
-                        ));
+                        )));
                     }
 
-                    let function = SWAP_CONTRACT.function("ethPayment").map_err(|err| err.to_string())?;
-                    let decoded = function
-                        .decode_input(&tx_from_rpc.input.0)
-                        .map_err(|err| err.to_string())?;
+                    let function = SWAP_CONTRACT.function("ethPayment")?;
+                    let decoded = function.decode_input(&tx_from_rpc.input.0)?;
                     if decoded[0] != Token::FixedBytes(swap_id.clone()) {
-                        return MmError::err(format!("Invalid 'swap_id' {:?}, expected {:?}", decoded, swap_id));
+                        return MmError::err(ValidatePaymentError::InternalError(format!(
+                            "Invalid 'swap_id' {:?}, expected {:?}",
+                            decoded, swap_id
+                        )));
                     }
 
                     if decoded[1] != Token::Address(selfi.my_address) {
-                        return MmError::err(format!(
+                        return MmError::err(ValidatePaymentError::InternalError(format!(
                             "Payment tx receiver arg {:?} is invalid, expected {:?}",
                             decoded[1],
                             Token::Address(selfi.my_address)
-                        ));
+                        )));
                     }
 
                     if decoded[2] != Token::FixedBytes(secret_hash.to_vec()) {
-                        return MmError::err(format!(
+                        return MmError::err(ValidatePaymentError::InternalError(format!(
                             "Payment tx secret_hash arg {:?} is invalid, expected {:?}",
                             decoded[2],
                             Token::FixedBytes(secret_hash.to_vec())
-                        ));
+                        )));
                     }
 
                     if decoded[3] != Token::Uint(U256::from(time_lock)) {
-                        return MmError::err(format!(
+                        return MmError::err(ValidatePaymentError::InternalError(format!(
                             "Payment tx time_lock arg {:?} is invalid, expected {:?}",
                             decoded[3],
                             Token::Uint(U256::from(time_lock))
-                        ));
+                        )));
                     }
                 },
                 EthCoinType::Erc20 {
@@ -2703,58 +2728,59 @@ impl EthCoin {
                     token_addr,
                 } => {
                     if tx_from_rpc.to != Some(expected_swap_contract_address) {
-                        return MmError::err(format!(
+                        return MmError::err(ValidatePaymentError::InternalError(format!(
                             "Payment tx {:?} was sent to wrong address, expected {:?}",
                             tx_from_rpc, expected_swap_contract_address
-                        ));
+                        )));
                     }
 
-                    let function = SWAP_CONTRACT.function("erc20Payment").map_err(|err| err.to_string())?;
-                    let decoded = function
-                        .decode_input(&tx_from_rpc.input.0)
-                        .map_err(|err| err.to_string())?;
+                    let function = SWAP_CONTRACT.function("erc20Payment")?;
+                    let decoded = function.decode_input(&tx_from_rpc.input.0)?;
                     if decoded[0] != Token::FixedBytes(swap_id.clone()) {
-                        return MmError::err(format!("Invalid 'swap_id' {:?}, expected {:?}", decoded, swap_id));
+                        return MmError::err(ValidatePaymentError::InternalError(format!(
+                            "Invalid 'swap_id' {:?}, expected {:?}",
+                            decoded, swap_id
+                        )));
                     }
 
                     if decoded[1] != Token::Uint(expected_value) {
-                        return MmError::err(format!(
+                        return MmError::err(ValidatePaymentError::InternalError(format!(
                             "Payment tx value arg {:?} is invalid, expected {:?}",
                             decoded[1],
                             Token::Uint(expected_value)
-                        ));
+                        )));
                     }
 
                     if decoded[2] != Token::Address(*token_addr) {
-                        return MmError::err(format!(
+                        return MmError::err(ValidatePaymentError::InternalError(format!(
                             "Payment tx token_addr arg {:?} is invalid, expected {:?}",
                             decoded[2],
                             Token::Address(*token_addr)
-                        ));
+                        )));
                     }
 
                     if decoded[3] != Token::Address(selfi.my_address) {
-                        return MmError::err(format!(
+                        return MmError::err(ValidatePaymentError::InternalError(format!(
                             "Payment tx receiver arg {:?} is invalid, expected {:?}",
                             decoded[3],
                             Token::Address(selfi.my_address)
-                        ));
+                        )));
                     }
 
                     if decoded[4] != Token::FixedBytes(secret_hash.to_vec()) {
-                        return MmError::err(format!(
+                        return MmError::err(ValidatePaymentError::InternalError(format!(
                             "Payment tx secret_hash arg {:?} is invalid, expected {:?}",
                             decoded[4],
                             Token::FixedBytes(secret_hash.to_vec())
-                        ));
+                        )));
                     }
 
                     if decoded[5] != Token::Uint(U256::from(time_lock)) {
-                        return MmError::err(format!(
+                        return MmError::err(ValidatePaymentError::InternalError(format!(
                             "Payment tx time_lock arg {:?} is invalid, expected {:?}",
                             decoded[5],
                             Token::Uint(U256::from(time_lock))
-                        ));
+                        )));
                     }
                 },
             }
@@ -2803,7 +2829,7 @@ impl EthCoin {
 
         let payment_func = SWAP_CONTRACT
             .function(func_name)
-            .map_to_mm(|err| FoundSwapTxSpendErr::ContractCallError(err.to_string()))?;
+            .map_to_mm(|err| FoundSwapTxSpendErr::Internal(err.to_string()))?;
         let decoded = payment_func
             .decode_input(&tx.data)
             .map_to_mm(|err| FoundSwapTxSpendErr::Internal(err.to_string()))?;
@@ -2830,7 +2856,7 @@ impl EthCoin {
                 .spend_events(swap_contract_address, from_block, to_block)
                 .compat()
                 .await
-                .map_to_mm(FoundSwapTxSpendErr::ContractCallError)?;
+                .map_to_mm(FoundSwapTxSpendErr::Internal)?;
             let found = spend_events.iter().find(|event| &event.data.0[..32] == id.as_slice());
 
             if let Some(event) = found {
@@ -2842,7 +2868,7 @@ impl EthCoin {
                             .transaction(TransactionId::Hash(tx_hash))
                             .compat()
                             .await
-                            .map_to_mm(|err| FoundSwapTxSpendErr::ContractCallError(err.to_string()))?
+                            .map_to_mm(|err| FoundSwapTxSpendErr::Internal(err.to_string()))?
                         {
                             Some(t) => t,
                             None => {
@@ -2869,7 +2895,7 @@ impl EthCoin {
                 .refund_events(swap_contract_address, from_block, to_block)
                 .compat()
                 .await
-                .map_to_mm(FoundSwapTxSpendErr::ContractCallError)?;
+                .map_to_mm(FoundSwapTxSpendErr::Internal)?;
             let found = refund_events.iter().find(|event| &event.data.0[..32] == id.as_slice());
 
             if let Some(event) = found {
@@ -2881,7 +2907,7 @@ impl EthCoin {
                             .transaction(TransactionId::Hash(tx_hash))
                             .compat()
                             .await
-                            .map_to_mm(|err| FoundSwapTxSpendErr::ContractCallError(err.to_string()))?
+                            .map_to_mm(|err| FoundSwapTxSpendErr::Internal(err.to_string()))?
                         {
                             Some(t) => t,
                             None => {
@@ -2893,7 +2919,7 @@ impl EthCoin {
                         };
 
                         return Ok(Some(FoundSwapTxSpend::Refunded(TransactionEnum::from(
-                            signed_tx_from_web3_tx(transaction).map_to_mm(FoundSwapTxSpendErr::ContractCallError)?,
+                            signed_tx_from_web3_tx(transaction).map_to_mm(FoundSwapTxSpendErr::Internal)?,
                         ))));
                     },
                     None => {
@@ -3230,15 +3256,46 @@ impl<T: TryToAddress> TryToAddress for Option<T> {
     }
 }
 
-pub fn addr_from_raw_pubkey(pubkey: &[u8]) -> Result<Address, String> {
-    let pubkey = try_s!(PublicKey::from_slice(pubkey).map_err(|e| ERRL!("{:?}", e)));
+#[derive(Debug, Display)]
+pub enum AddrFromPubKeyError {
+    #[display(fmt = "Internal: {}", _0)]
+    Internal(String),
+    UtxoConfError(String),
+}
+
+impl From<secp256k1::Error> for AddrFromPubKeyError {
+    fn from(err: secp256k1::Error) -> AddrFromPubKeyError { AddrFromPubKeyError::Internal(err.to_string()) }
+}
+
+impl From<hex::FromHexError> for AddrFromPubKeyError {
+    fn from(err: hex::FromHexError) -> AddrFromPubKeyError { AddrFromPubKeyError::Internal(err.to_string()) }
+}
+
+impl From<keys::Error> for AddrFromPubKeyError {
+    fn from(err: keys::Error) -> AddrFromPubKeyError { AddrFromPubKeyError::Internal(err.to_string()) }
+}
+
+impl From<AddrFromPubKeyError> for ValidatePaymentError {
+    fn from(err: AddrFromPubKeyError) -> ValidatePaymentError { ValidatePaymentError::InternalError(err.to_string()) }
+}
+
+impl From<serde_json::Error> for AddrFromPubKeyError {
+    fn from(err: serde_json::Error) -> AddrFromPubKeyError { AddrFromPubKeyError::Internal(err.to_string()) }
+}
+
+impl From<UtxoConfError> for AddrFromPubKeyError {
+    fn from(err: UtxoConfError) -> AddrFromPubKeyError { AddrFromPubKeyError::Internal(err.to_string()) }
+}
+
+pub fn addr_from_raw_pubkey(pubkey: &[u8]) -> Result<Address, MmError<AddrFromPubKeyError>> {
+    let pubkey = PublicKey::from_slice(pubkey)?;
     let eth_public = Public::from(&pubkey.serialize_uncompressed()[1..65]);
     Ok(public_to_address(&eth_public))
 }
 
-pub fn addr_from_pubkey_str(pubkey: &str) -> Result<String, String> {
-    let pubkey_bytes = try_s!(hex::decode(pubkey));
-    let addr = try_s!(addr_from_raw_pubkey(&pubkey_bytes));
+pub fn addr_from_pubkey_str(pubkey: &str) -> Result<String, MmError<AddrFromPubKeyError>> {
+    let pubkey_bytes = hex::decode(pubkey)?;
+    let addr = addr_from_raw_pubkey(&pubkey_bytes)?;
     Ok(format!("{:#02x}", addr))
 }
 
@@ -3376,20 +3433,22 @@ async fn get_token_decimals(web3: &Web3<Web3Transport>, token_addr: Address) -> 
     Ok(decimals as u8)
 }
 
-fn valid_addr_from_str(addr_str: &str) -> Result<Address, String> {
-    let addr = try_s!(addr_from_str(addr_str));
+fn valid_addr_from_str(addr_str: &str) -> Result<Address, MmError<AddrFromPubKeyError>> {
+    let addr = addr_from_str(addr_str)?;
     if !is_valid_checksum_addr(addr_str) {
-        return ERR!("Invalid address checksum");
+        return MmError::err(AddrFromPubKeyError::Internal("Invalid address checksum".to_string()));
     }
     Ok(addr)
 }
 
-pub fn addr_from_str(addr_str: &str) -> Result<Address, String> {
+pub fn addr_from_str(addr_str: &str) -> Result<Address, MmError<AddrFromPubKeyError>> {
     if !addr_str.starts_with("0x") {
-        return ERR!("Address must be prefixed with 0x");
+        return MmError::err(AddrFromPubKeyError::Internal(
+            "Address must be prefixed with 0x".to_string(),
+        ));
     };
 
-    Ok(try_s!(Address::from_str(&addr_str[2..])))
+    Address::from_str(&addr_str[2..]).map_to_mm(|err| AddrFromPubKeyError::Internal(err.to_string()))
 }
 
 fn rpc_event_handlers_for_eth_transport(ctx: &MmArc, ticker: String) -> Vec<RpcTransportEventHandlerShared> {

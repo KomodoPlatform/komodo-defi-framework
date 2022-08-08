@@ -1,11 +1,12 @@
 use super::{CoinBalance, HistorySyncState, MarketCoinOps, MmCoin, SwapOps, TradeFee, TransactionEnum};
 use crate::solana::solana_common::{lamports_to_sol, PrepareTransferData, SufficientBalanceError};
 use crate::solana::spl::SplTokenInfo;
+use crate::utxo::utxo_common::{SendRawTxError, ValidatePaymentError};
 use crate::{BalanceError, BalanceFut, FeeApproxStage, FoundSwapTxSpend, FoundSwapTxSpendErr, MyAddressError,
             NegotiateSwapContractAddrErr, RawTransactionFut, RawTransactionRequest, SearchForSwapTxSpendInput,
             SignatureResult, TradePreimageFut, TradePreimageResult, TradePreimageValue, TransactionDetails,
             TransactionFut, TransactionType, UnexpectedDerivationMethod, ValidateAddressResult, ValidatePaymentInput,
-            VerificationResult, WithdrawError, WithdrawFut, WithdrawRequest, WithdrawResult};
+            ValidateSwapTxError, VerificationResult, WithdrawError, WithdrawFut, WithdrawRequest, WithdrawResult};
 use async_trait::async_trait;
 use base58::ToBase58;
 use bincode::{deserialize, serialize};
@@ -354,6 +355,14 @@ impl SolanaCoin {
     }
 }
 
+impl From<ClientError> for SendRawTxError {
+    fn from(err: ClientError) -> Self { Self::ClientError(err.to_string()) }
+}
+
+impl From<Box<bincode::ErrorKind>> for SendRawTxError {
+    fn from(err: Box<bincode::ErrorKind>) -> Self { Self::DeserializationErr(err.to_string()) }
+}
+
 impl MarketCoinOps for SolanaCoin {
     fn ticker(&self) -> &str { &self.ticker }
 
@@ -390,29 +399,26 @@ impl MarketCoinOps for SolanaCoin {
 
     fn platform_ticker(&self) -> &str { self.ticker() }
 
-    fn send_raw_tx(&self, tx: &str) -> Box<dyn Future<Item = String, Error = MmError<String>> + Send> {
+    fn send_raw_tx(&self, tx: &str) -> Box<dyn Future<Item = String, Error = MmError<SendRawTxError>> + Send> {
         let coin = self.clone();
         let tx = tx.to_owned();
         let fut = async_blocking(move || {
-            let bytes = hex::decode(tx).map_err(|err| MmError::new(err.to_string()))?;
-            let tx: Transaction = deserialize(bytes.as_slice()).map_err(|err| MmError::new(err.to_string()))?;
+            let bytes = hex::decode(tx)?;
+            let tx: Transaction = deserialize(bytes.as_slice())?;
             // this is blocking IO
-            let signature = coin
-                .rpc()
-                .send_transaction(&tx)
-                .map_err(|e| MmError::new(e.to_string()))?;
+            let signature = coin.rpc().send_transaction(&tx)?;
             Ok(signature.to_string())
         });
         Box::new(fut.boxed().compat())
     }
 
-    fn send_raw_tx_bytes(&self, tx: &[u8]) -> Box<dyn Future<Item = String, Error = MmError<String>> + Send> {
+    fn send_raw_tx_bytes(&self, tx: &[u8]) -> Box<dyn Future<Item = String, Error = MmError<SendRawTxError>> + Send> {
         let coin = self.clone();
         let tx = tx.to_owned();
         let fut = async_blocking(move || {
-            let tx = deserialize(tx.as_slice()).map_to_mm(|err| err.to_string())?;
+            let tx = deserialize(tx.as_slice())?;
             // this is blocking IO
-            let signature = coin.rpc().send_transaction(&tx).map_to_mm(|err| err.to_string())?;
+            let signature = coin.rpc().send_transaction(&tx)?;
             Ok(signature.to_string())
         });
         Box::new(fut.boxed().compat())
@@ -539,21 +545,21 @@ impl SwapOps for SolanaCoin {
         _amount: &BigDecimal,
         _min_block_number: u64,
         _uuid: &[u8],
-    ) -> Box<dyn Future<Item = (), Error = MmError<String>> + Send> {
+    ) -> Box<dyn Future<Item = (), Error = MmError<ValidateSwapTxError>> + Send> {
         unimplemented!()
     }
 
     fn validate_maker_payment(
         &self,
         input: ValidatePaymentInput,
-    ) -> Box<dyn Future<Item = (), Error = MmError<String>> + Send> {
+    ) -> Box<dyn Future<Item = (), Error = MmError<ValidatePaymentError>> + Send> {
         unimplemented!()
     }
 
     fn validate_taker_payment(
         &self,
         input: ValidatePaymentInput,
-    ) -> Box<dyn Future<Item = (), Error = MmError<String>> + Send> {
+    ) -> Box<dyn Future<Item = (), Error = MmError<ValidatePaymentError>> + Send> {
         unimplemented!()
     }
 

@@ -5,7 +5,7 @@ use crate::utxo::rpc_clients::{ElectrumRpcRequest, UnspentInfo, UtxoRpcClientEnu
 use crate::utxo::utxo_builder::{UtxoCoinBuilderCommonOps, UtxoCoinWithIguanaPrivKeyBuilder,
                                 UtxoFieldsWithIguanaPrivKeyBuilder};
 use crate::utxo::utxo_common::{addresses_from_script, big_decimal_from_sat, big_decimal_from_sat_unsigned,
-                               payment_script};
+                               payment_script, SendRawTxError, ValidatePaymentError};
 use crate::utxo::{sat_from_big_decimal, utxo_common, ActualTxFee, AdditionalTxData, Address, BroadcastTxErr,
                   FeePolicy, GetUtxoListOps, HistoryUtxoTx, HistoryUtxoTxMap, MatureUnspentList,
                   RecentlySpentOutPointsGuard, UtxoActivationParams, UtxoAddressFormat, UtxoArc, UtxoCoinFields,
@@ -16,8 +16,8 @@ use crate::{BalanceError, BalanceFut, CoinBalance, FeeApproxStage, FoundSwapTxSp
             PrivKeyActivationPolicy, RawTransactionFut, RawTransactionRequest, SearchForSwapTxSpendInput,
             SignatureError, SignatureResult, SwapOps, TradeFee, TradePreimageFut, TradePreimageResult,
             TradePreimageValue, TransactionDetails, TransactionEnum, TransactionFut, TxFeeDetails,
-            UnexpectedDerivationMethod, ValidateAddressResult, ValidatePaymentInput, VerificationError,
-            VerificationResult, WithdrawFut, WithdrawRequest};
+            UnexpectedDerivationMethod, ValidateAddressResult, ValidatePaymentInput, ValidateSwapTxError,
+            VerificationError, VerificationResult, WithdrawFut, WithdrawRequest};
 use crate::{Transaction, WithdrawError};
 use async_trait::async_trait;
 use bitcrypto::{dhash160, dhash256};
@@ -878,6 +878,10 @@ async fn z_coin_from_conf_and_params_with_z_key(
     builder.build().await
 }
 
+impl From<std::io::Error> for SendRawTxError {
+    fn from(err: std::io::Error) -> Self { Self::Internal(err.to_string()) }
+}
+
 impl MarketCoinOps for ZCoin {
     fn ticker(&self) -> &str { &self.utxo_arc.conf.ticker }
 
@@ -918,43 +922,33 @@ impl MarketCoinOps for ZCoin {
 
     fn platform_ticker(&self) -> &str { self.ticker() }
 
-    fn send_raw_tx(&self, tx: &str) -> Box<dyn Future<Item = String, Error = MmError<String>> + Send> {
-        let tx_bytes = try_m_fus!(hex::decode(tx));
-        let z_tx = try_m_fus!(ZTransaction::read(tx_bytes.as_slice()));
+    fn send_raw_tx(&self, tx: &str) -> Box<dyn Future<Item = String, Error = MmError<SendRawTxError>> + Send> {
+        let tx_bytes = try_validate_fus!(hex::decode(tx));
+        let z_tx = try_validate_fus!(
+            ZTransaction::read(tx_bytes.as_slice()).map_err(|err| SendRawTxError::Internal(err.to_string()))
+        );
 
         let this = self.clone();
         let tx = tx.to_owned();
 
         let fut = async move {
-            let mut sync_guard = this
-                .wait_for_gen_tx_blockchain_sync()
-                .await
-                .mm_err(|err| err.to_string())?;
-            let tx_hash = utxo_common::send_raw_tx(this.as_ref(), &tx)
-                .compat()
-                .await
-                .mm_err(|err| err)?;
+            let mut sync_guard = this.wait_for_gen_tx_blockchain_sync().await?;
+            let tx_hash = utxo_common::send_raw_tx(this.as_ref(), &tx).compat().await?;
             sync_guard.respawn_guard.watch_for_tx(z_tx.txid());
             Ok(tx_hash)
         };
         Box::new(fut.boxed().compat())
     }
 
-    fn send_raw_tx_bytes(&self, tx: &[u8]) -> Box<dyn Future<Item = String, Error = MmError<String>> + Send> {
-        let z_tx = try_m_fus!(ZTransaction::read(tx));
+    fn send_raw_tx_bytes(&self, tx: &[u8]) -> Box<dyn Future<Item = String, Error = MmError<SendRawTxError>> + Send> {
+        let z_tx = try_validate_fus!(ZTransaction::read(tx));
 
         let this = self.clone();
         let tx = tx.to_owned();
 
         let fut = async move {
-            let mut sync_guard = this
-                .wait_for_gen_tx_blockchain_sync()
-                .await
-                .mm_err(|err| err.to_string())?;
-            let tx_hash = utxo_common::send_raw_tx_bytes(this.as_ref(), &tx)
-                .compat()
-                .await
-                .mm_err(|err| err)?;
+            let mut sync_guard = this.wait_for_gen_tx_blockchain_sync().await?;
+            let tx_hash = utxo_common::send_raw_tx_bytes(this.as_ref(), &tx).compat().await?;
             sync_guard.respawn_guard.watch_for_tx(z_tx.txid());
             Ok(tx_hash)
         };
@@ -1236,12 +1230,12 @@ impl SwapOps for ZCoin {
         amount: &BigDecimal,
         min_block_number: u64,
         uuid: &[u8],
-    ) -> Box<dyn Future<Item = (), Error = MmError<String>> + Send> {
+    ) -> Box<dyn Future<Item = (), Error = MmError<ValidateSwapTxError>> + Send> {
         let z_tx = match fee_tx {
             TransactionEnum::ZTransaction(t) => t.clone(),
             _ => panic!("Unexpected tx {:?}", fee_tx),
         };
-        let amount_sat = try_m_fus!(sat_from_big_decimal(amount, self.utxo_arc.decimals));
+        let amount_sat = try_validate_fus!(sat_from_big_decimal(amount, self.utxo_arc.decimals));
         let expected_memo = MemoBytes::from_bytes(uuid).expect("Uuid length < 512");
 
         let coin = self.clone();
@@ -1251,24 +1245,23 @@ impl SwapOps for ZCoin {
                 .utxo_rpc_client()
                 .get_verbose_transaction(&tx_hash.into())
                 .compat()
-                .await
-                .mm_err(|err| err.to_string())?;
+                .await?;
             let mut encoded = Vec::with_capacity(1024);
             z_tx.write(&mut encoded).expect("Writing should not fail");
             if encoded != tx_from_rpc.hex.0 {
-                return MmError::err(format!(
+                return MmError::err(ValidateSwapTxError::InternalError(format!(
                     "Encoded transaction {:?} does not match the tx {:?} from RPC",
                     encoded, tx_from_rpc
-                ));
+                )));
             }
 
             let block_height = match tx_from_rpc.height {
                 Some(h) => {
                     if h < min_block_number {
-                        return MmError::err(format!(
+                        return MmError::err(ValidateSwapTxError::TxConfirmationError(format!(
                             "Dex fee tx {:?} confirmed before min block {}",
                             z_tx, min_block_number
-                        ));
+                        )));
                     } else {
                         BlockHeight::from_u32(h as u32)
                     }
@@ -1287,34 +1280,34 @@ impl SwapOps for ZCoin {
                             z_mainnet_constants::HRP_SAPLING_PAYMENT_ADDRESS,
                             &coin.z_fields.dex_fee_addr,
                         );
-                        return MmError::err(format!(
+                        return MmError::err(ValidateSwapTxError::ValidateDexFeeError(format!(
                             "Dex fee was sent to the invalid address {}, expected {}",
                             encoded, expected
-                        ));
+                        )));
                     }
 
                     if note.value != amount_sat {
-                        return MmError::err(format!(
+                        return MmError::err(ValidateSwapTxError::ValidateDexFeeError(format!(
                             "Dex fee has invalid amount {}, expected {}",
                             note.value, amount_sat
-                        ));
+                        )));
                     }
 
                     if memo != expected_memo {
-                        return MmError::err(format!(
+                        return MmError::err(ValidateSwapTxError::ValidateDexFeeError(format!(
                             "Dex fee has invalid memo {:?}, expected {:?}",
                             memo, expected_memo
-                        ));
+                        )));
                     }
 
                     return Ok(());
                 }
             }
 
-            return MmError::err(format!(
+            return MmError::err(ValidateSwapTxError::ValidateDexFeeError(format!(
                 "The dex fee tx {:?} has no shielded outputs or outputs decryption failed",
                 z_tx
-            ));
+            )));
         };
 
         Box::new(fut.boxed().compat())
@@ -1323,14 +1316,14 @@ impl SwapOps for ZCoin {
     fn validate_maker_payment(
         &self,
         input: ValidatePaymentInput,
-    ) -> Box<dyn Future<Item = (), Error = MmError<String>> + Send> {
+    ) -> Box<dyn Future<Item = (), Error = MmError<ValidatePaymentError>> + Send> {
         utxo_common::validate_maker_payment(self, input)
     }
 
     fn validate_taker_payment(
         &self,
         input: ValidatePaymentInput,
-    ) -> Box<dyn Future<Item = (), Error = MmError<String>> + Send> {
+    ) -> Box<dyn Future<Item = (), Error = MmError<ValidatePaymentError>> + Send> {
         utxo_common::validate_taker_payment(self, input)
     }
 

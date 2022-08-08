@@ -18,7 +18,6 @@ pub type Qrc20CoinTxHistoryResult<T> = Result<T, MmError<Qrc20CoinTxHistoryError
 
 #[derive(Debug, Display)]
 pub enum Qrc20CoinTxHistoryError {
-    ContractAddressError(String),
     #[display(fmt = "GasExtractionError: {}.to_string(", _0)]
     GasExtractionError(String),
     #[display(fmt = "JsonRpcError: {}", _0)]
@@ -43,6 +42,14 @@ pub enum Qrc20CoinTxHistoryError {
     #[display(fmt = "UnExpectedTxFeeDetails: {}", _0)]
     UnExpectedTxFeeDetails(String),
     Internal(String),
+}
+
+impl From<qtum::ContractAddrFromPubKeyError> for Qrc20CoinTxHistoryError {
+    fn from(err: qtum::ContractAddrFromPubKeyError) -> Self { Self::Internal(err.to_string()) }
+}
+
+impl From<qtum::ScriptHashTypeNotSupported> for Qrc20CoinTxHistoryError {
+    fn from(err: qtum::ScriptHashTypeNotSupported) -> Self { Self::Internal(err.to_string()) }
 }
 
 #[derive(Clone, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
@@ -315,7 +322,7 @@ impl Qrc20Coin {
             if log_entry.topics[0] != QRC20_TRANSFER_TOPIC {
                 continue;
             }
-            if log_entry.parse_address().map_err(Qrc20CoinTxHistoryError::Internal)? != self.contract_address {
+            if log_entry.parse_address()? != self.contract_address {
                 continue;
             }
 
@@ -357,19 +364,17 @@ impl Qrc20Coin {
             let internal_id = TxInternalId::new(tx_hash, receipt.output_index, log_index as u64);
 
             let from = if is_transferred_from_contract(&script_pubkey) {
-                qtum::display_as_contract_address(from)
-                    .map_err(|err| Qrc20CoinTxHistoryError::ContractAddressError(err.to_string()))?
+                qtum::display_as_contract_address(from)?
             } else {
                 from.display_address()
-                    .map_err(Qrc20CoinTxHistoryError::ContractAddressError)?
+                    .map_err(Qrc20CoinTxHistoryError::Internal)?
             };
 
             let to = if is_transferred_to_contract(&script_pubkey) {
-                qtum::display_as_contract_address(to)
-                    .map_err(|err| Qrc20CoinTxHistoryError::ContractAddressError(err.to_string()))?
+                qtum::display_as_contract_address(to)?
             } else {
                 to.display_address()
-                    .map_err(Qrc20CoinTxHistoryError::ContractAddressError)?
+                    .map_err(Qrc20CoinTxHistoryError::Internal)?
             };
 
             let tx_details = TransactionDetails {

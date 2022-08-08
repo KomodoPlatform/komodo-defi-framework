@@ -8,7 +8,8 @@ use crate::utxo::rpc_clients::{ElectrumClient, NativeClient, UnspentInfo, UtxoRp
 use crate::utxo::tx_cache::{UtxoVerboseCacheOps, UtxoVerboseCacheShared};
 use crate::utxo::utxo_builder::{UtxoCoinBuildError, UtxoCoinBuildResult, UtxoCoinBuilderCommonOps,
                                 UtxoCoinWithIguanaPrivKeyBuilder, UtxoFieldsWithIguanaPrivKeyBuilder};
-use crate::utxo::utxo_common::{self, big_decimal_from_sat, check_all_inputs_signed_by_pub, UtxoTxBuilder};
+use crate::utxo::utxo_common::{self, big_decimal_from_sat, check_all_inputs_signed_by_pub, SendRawTxError,
+                               UtxoTxBuilder, ValidatePaymentError};
 use crate::utxo::{qtum, ActualTxFee, AdditionalTxData, BroadcastTxErr, FeePolicy, GenerateTxError, GetUtxoListOps,
                   HistoryUtxoTx, HistoryUtxoTxMap, MatureUnspentList, RecentlySpentOutPointsGuard,
                   UtxoActivationParams, UtxoAddressFormat, UtxoCoinFields, UtxoCommonOps, UtxoFromLegacyReqErr,
@@ -18,8 +19,8 @@ use crate::{BalanceError, BalanceFut, CoinBalance, FeeApproxStage, FoundSwapTxSp
             RawTransactionFut, RawTransactionRequest, SearchForSwapTxSpendInput, SignatureResult, SwapOps, TradeFee,
             TradePreimageError, TradePreimageFut, TradePreimageResult, TradePreimageValue, TransactionDetails,
             TransactionEnum, TransactionErr, TransactionFut, TransactionType, UnexpectedDerivationMethod,
-            ValidateAddressResult, ValidatePaymentInput, VerificationResult, WithdrawError, WithdrawFee, WithdrawFut,
-            WithdrawRequest, WithdrawResult};
+            ValidateAddressResult, ValidatePaymentInput, ValidateSwapTxError, VerificationResult, WithdrawError,
+            WithdrawFee, WithdrawFut, WithdrawRequest, WithdrawResult};
 use async_trait::async_trait;
 use bitcrypto::{dhash160, sha256};
 use chain::TransactionOutput;
@@ -441,6 +442,13 @@ impl From<Qrc20AbiError> for UtxoRpcError {
     fn from(e: Qrc20AbiError) -> Self {
         // `Qrc20ABIError` is always an internal error
         UtxoRpcError::Internal(e.to_string())
+    }
+}
+
+impl From<Qrc20AbiError> for ValidatePaymentError {
+    fn from(e: Qrc20AbiError) -> Self {
+        // `Qrc20ABIError` is always an internal error
+        ValidatePaymentError::InternalError(e.to_string())
     }
 }
 
@@ -866,19 +874,21 @@ impl SwapOps for Qrc20Coin {
         amount: &BigDecimal,
         min_block_number: u64,
         _uuid: &[u8],
-    ) -> Box<dyn Future<Item = (), Error = MmError<String>> + Send> {
+    ) -> Box<dyn Future<Item = (), Error = MmError<ValidateSwapTxError>> + Send> {
         let fee_tx = match fee_tx {
             TransactionEnum::UtxoTx(tx) => tx,
             _ => panic!("Unexpected TransactionEnum"),
         };
         let fee_tx_hash = fee_tx.hash().reversed().into();
-        if !try_m_fus!(check_all_inputs_signed_by_pub(fee_tx, expected_sender)) {
+        if !try_validate_fus!(
+            check_all_inputs_signed_by_pub(fee_tx, expected_sender).mm_err(ValidateSwapTxError::InternalError)
+        ) {
             return Box::new(futures01::future::err(MmError::new(
-                "The dex fee was sent from wrong address".to_string(),
+                ValidateSwapTxError::InternalError("The dex fee was sent from wrong address".to_string()),
             )));
         }
-        let fee_addr = try_m_fus!(self.contract_address_from_raw_pubkey(fee_addr));
-        let expected_value = try_m_fus!(wei_from_big_decimal(amount, self.utxo.decimals));
+        let fee_addr = try_validate_fus!(self.contract_address_from_raw_pubkey(fee_addr));
+        let expected_value = try_validate_fus!(wei_from_big_decimal(amount, self.utxo.decimals));
 
         let selfi = self.clone();
         let fut = async move {
@@ -892,10 +902,13 @@ impl SwapOps for Qrc20Coin {
     fn validate_maker_payment(
         &self,
         input: ValidatePaymentInput,
-    ) -> Box<dyn Future<Item = (), Error = MmError<String>> + Send> {
-        let payment_tx: UtxoTx = try_m_fus!(deserialize(input.payment_tx.as_slice()).map_err(|e| ERRL!("{:?}", e)));
-        let sender = try_m_fus!(self.contract_address_from_raw_pubkey(&input.other_pub));
-        let swap_contract_address = try_m_fus!(input.swap_contract_address.try_to_address());
+    ) -> Box<dyn Future<Item = (), Error = MmError<ValidatePaymentError>> + Send> {
+        let payment_tx: UtxoTx = try_validate_fus!(deserialize(input.payment_tx.as_slice()));
+        let sender = try_validate_fus!(self.contract_address_from_raw_pubkey(&input.other_pub));
+        let swap_contract_address = try_validate_fus!(input
+            .swap_contract_address
+            .try_to_address()
+            .map_to_mm(ValidatePaymentError::InternalError));
 
         let selfi = self.clone();
         let fut = async move {
@@ -909,7 +922,6 @@ impl SwapOps for Qrc20Coin {
                     swap_contract_address,
                 )
                 .await
-                .mm_err(|err| err.to_string())
         };
         Box::new(fut.boxed().compat())
     }
@@ -917,10 +929,13 @@ impl SwapOps for Qrc20Coin {
     fn validate_taker_payment(
         &self,
         input: ValidatePaymentInput,
-    ) -> Box<dyn Future<Item = (), Error = MmError<String>> + Send> {
-        let swap_contract_address = try_m_fus!(input.swap_contract_address.try_to_address());
-        let payment_tx: UtxoTx = try_m_fus!(deserialize(input.payment_tx.as_slice()).map_err(|e| ERRL!("{:?}", e)));
-        let sender = try_m_fus!(self.contract_address_from_raw_pubkey(&input.other_pub));
+    ) -> Box<dyn Future<Item = (), Error = MmError<ValidatePaymentError>> + Send> {
+        let swap_contract_address = try_validate_fus!(input
+            .swap_contract_address
+            .try_to_address()
+            .map_to_mm(ValidatePaymentError::InternalError));
+        let payment_tx: UtxoTx = try_validate_fus!(deserialize(input.payment_tx.as_slice()));
+        let sender = try_validate_fus!(self.contract_address_from_raw_pubkey(&input.other_pub));
 
         let selfi = self.clone();
         let fut = async move {
@@ -934,7 +949,6 @@ impl SwapOps for Qrc20Coin {
                     swap_contract_address,
                 )
                 .await
-                .mm_err(|err| err.to_string())
         };
         Box::new(fut.boxed().compat())
     }
@@ -1078,12 +1092,12 @@ impl MarketCoinOps for Qrc20Coin {
     fn platform_ticker(&self) -> &str { &self.0.platform }
 
     #[inline(always)]
-    fn send_raw_tx(&self, tx: &str) -> Box<dyn Future<Item = String, Error = MmError<String>> + Send> {
+    fn send_raw_tx(&self, tx: &str) -> Box<dyn Future<Item = String, Error = MmError<SendRawTxError>> + Send> {
         utxo_common::send_raw_tx(&self.utxo, tx)
     }
 
     #[inline(always)]
-    fn send_raw_tx_bytes(&self, tx: &[u8]) -> Box<dyn Future<Item = String, Error = MmError<String>> + Send> {
+    fn send_raw_tx_bytes(&self, tx: &[u8]) -> Box<dyn Future<Item = String, Error = MmError<SendRawTxError>> + Send> {
         utxo_common::send_raw_tx_bytes(&self.utxo, tx)
     }
 
@@ -1468,16 +1482,24 @@ pub enum TransferEventDetailsError {
     UnexpectedNumOfTopics(usize),
 }
 
+impl From<qtum::ContractAddrFromPubKeyError> for TransferEventDetailsError {
+    fn from(err: qtum::ContractAddrFromPubKeyError) -> Self { Self::Internal(err.to_string()) }
+}
+
+impl From<usize> for TransferEventDetailsError {
+    fn from(err: usize) -> Self { Self::UnexpectedNumOfTopics(err) }
+}
+
 fn transfer_event_from_log(log: &LogEntry) -> Result<TransferEventDetails, MmError<TransferEventDetailsError>> {
     let contract_address = if log.address.starts_with("0x") {
-        qtum::contract_addr_from_str(&log.address).map_to_mm(TransferEventDetailsError::Internal)?
+        qtum::contract_addr_from_str(&log.address)?
     } else {
         let address = format!("0x{}", log.address);
-        qtum::contract_addr_from_str(&address).map_to_mm(TransferEventDetailsError::Internal)?
+        qtum::contract_addr_from_str(&address)?
     };
 
     if log.topics.len() != 3 {
-        return MmError::err(TransferEventDetailsError::UnexpectedNumOfTopics(log.topics.len()));
+        return MmError::err(TransferEventDetailsError::from(log.topics.len()));
     }
 
     // https://github.com/qtumproject/qtum-electrum/blob/v4.0.2/electrum/wallet.py#L2111

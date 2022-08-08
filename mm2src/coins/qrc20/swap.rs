@@ -1,6 +1,3 @@
-use crate::utxo::qtum::ScriptHashTypeNotSupported;
-use crate::NumConversError;
-
 use super::*;
 use super::{history::TransferHistoryBuilder, script_pubkey::ScriptExtractionError};
 use common::jsonrpc_client::JsonRpcError;
@@ -35,6 +32,12 @@ pub enum Erc20PaymentDetailsError {
     Internal(String),
 }
 
+impl From<Erc20PaymentDetailsError> for ValidatePaymentError {
+    fn from(err: Erc20PaymentDetailsError) -> ValidatePaymentError {
+        ValidatePaymentError::Erc20PaymentDetailsError(err.to_string())
+    }
+}
+
 /// `receiverSpend` call details consist of values obtained from [`TransactionOutput::script_pubkey`].
 #[derive(Debug)]
 pub struct ReceiverSpendDetails {
@@ -46,25 +49,6 @@ pub struct ReceiverSpendDetails {
 }
 
 #[derive(Debug, Display)]
-pub enum ValidatePaymentError {
-    Qrc20AbiError(Qrc20AbiError),
-    #[display(fmt = "ContractCallError: {}", _0)]
-    ContractCallError(String),
-    #[display(fmt = "Erc20PaymentError: {}", _0)]
-    Erc20PaymentError(String),
-    PaymentStatusError(Box<PaymentStatusError>),
-    NumConversError(NumConversError),
-    ScriptHashTypeNotSupported(ScriptHashTypeNotSupported),
-    UnExpectedDerivationMethod(UnexpectedDerivationMethod),
-    #[display(fmt = "Payment tx was sent from wrong address, expected {:?}", _0)]
-    UnexpectedPaymentFromAddress(H160),
-    #[display(fmt = "Payment tx was sent to wrong address, expected {:?}", _0)]
-    UnexpectedPaymentToAddress(H160),
-    #[display(fmt = "Internal: {}", _0)]
-    Internal(String),
-}
-
-#[derive(Debug, Display)]
 pub enum PaymentStatusError {
     #[display(fmt = "Expected at least 3 tokens in \"payments\" call, found {}", _0)]
     UnexpectedNumOfTokens(usize),
@@ -72,6 +56,10 @@ pub enum PaymentStatusError {
     UtxoRpcError(Box<UtxoRpcError>),
     #[display(fmt = "Internal: {}", _0)]
     Internal(String),
+}
+
+impl From<PaymentStatusError> for ValidatePaymentError {
+    fn from(err: PaymentStatusError) -> Self { Self::InternalError(err.to_string()) }
 }
 
 impl Qrc20Coin {
@@ -163,116 +151,113 @@ impl Qrc20Coin {
         let expected_swap_id = qrc20_swap_id(time_lock, &secret_hash);
         let status = self
             .payment_status(&expected_swap_contract_address, expected_swap_id.clone())
-            .await
-            .mm_err(|err| ValidatePaymentError::PaymentStatusError(Box::new(err)))?;
+            .await?;
         if status != eth::PAYMENT_STATE_SENT.into() {
-            return MmError::err(ValidatePaymentError::Erc20PaymentError(format!(
+            return MmError::err(ValidatePaymentError::InternalError(format!(
                 "Payment state is not PAYMENT_STATE_SENT, got {}",
                 status
             )));
         }
 
         let expected_call_bytes = {
-            let expected_value =
-                wei_from_big_decimal(&amount, self.utxo.decimals).mm_err(ValidatePaymentError::NumConversError)?;
-            let my_address = self
-                .utxo
-                .derivation_method
-                .iguana_or_err()
-                .mm_err(ValidatePaymentError::UnExpectedDerivationMethod)?
-                .clone();
-            let expected_receiver = qtum::contract_addr_from_utxo_addr(my_address)
-                .mm_err(ValidatePaymentError::ScriptHashTypeNotSupported)?;
+            let expected_value = wei_from_big_decimal(&amount, self.utxo.decimals)?;
+            let my_address = self.utxo.derivation_method.iguana_or_err()?.clone();
+            let expected_receiver = qtum::contract_addr_from_utxo_addr(my_address)?;
             self.erc20_payment_call_bytes(
                 expected_swap_id,
                 expected_value,
                 time_lock,
                 &secret_hash,
                 expected_receiver,
-            )
-            .mm_err(ValidatePaymentError::Qrc20AbiError)?
+            )?
         };
 
-        let erc20_payment = self
-            .erc20_payment_details_from_tx(&payment_tx)
-            .await
-            .mm_err(|err| ValidatePaymentError::Erc20PaymentError(err.to_string()))?;
+        let erc20_payment = self.erc20_payment_details_from_tx(&payment_tx).await?;
         if erc20_payment.contract_call_bytes != expected_call_bytes {
-            return MmError::err(ValidatePaymentError::ContractCallError(format!(
+            return MmError::err(ValidatePaymentError::InternalError(format!(
                 "Unexpected 'erc20Payment' contract call bytes: {:?}",
                 erc20_payment.contract_call_bytes
             )));
         }
 
         if sender != erc20_payment.sender {
-            return MmError::err(ValidatePaymentError::UnexpectedPaymentFromAddress(sender));
+            return MmError::err(ValidatePaymentError::InternalError(format!(
+                "Payment tx was sent from wrong address, expected {:?}",
+                sender
+            )));
         }
 
         if expected_swap_contract_address != erc20_payment.swap_contract_address {
-            return MmError::err(ValidatePaymentError::UnexpectedPaymentToAddress(
-                expected_swap_contract_address,
-            ));
+            return MmError::err(ValidatePaymentError::InternalError(format!(
+                "Payment tx was sent to wrong address, expected {:?}",
+                expected_swap_contract_address
+            )));
         }
 
         Ok(())
     }
-
     pub async fn validate_fee_impl(
         &self,
         fee_tx_hash: H256Json,
         fee_addr: H160,
         expected_value: U256,
         min_block_number: u64,
-    ) -> Result<(), MmError<String>> {
+    ) -> Result<(), MmError<ValidateSwapTxError>> {
         let verbose_tx = self
             .utxo
             .rpc_client
             .get_verbose_transaction(&fee_tx_hash)
             .compat()
-            .await
-            .mm_err(|err| err.to_string())?;
+            .await?;
 
         let conf_before_block = utxo_common::is_tx_confirmed_before_block(self, &verbose_tx, min_block_number);
-        if conf_before_block.await? {
-            return MmError::err(format!(
+        if conf_before_block.await.mm_err(ValidateSwapTxError::InternalError)? {
+            return MmError::err(ValidateSwapTxError::TxConfirmationError(format!(
                 "Fee tx {:?} confirmed before min_block {}",
                 verbose_tx, min_block_number,
-            ));
+            )));
         }
-        let qtum_tx: UtxoTx = deserialize(verbose_tx.hex.as_slice()).map_to_mm(|err| err.to_string())?;
+        let qtum_tx: UtxoTx = deserialize(verbose_tx.hex.as_slice())?;
 
         // The transaction could not being mined, just check the transfer tokens.
-        let output = qtum_tx
-            .outputs
-            .first()
-            .ok_or_else(|| MmError::new(format!("Provided dex fee tx {:?} has no outputs", qtum_tx)))?;
+        let output = qtum_tx.outputs.first().ok_or_else(|| {
+            MmError::new(ValidateSwapTxError::ValidateDexFeeError(format!(
+                "Provided dex fee tx {:?} has no outputs",
+                qtum_tx
+            )))
+        })?;
         let script_pubkey: Script = output.script_pubkey.clone().into();
 
         let (receiver, value) = match transfer_call_details_from_script_pubkey(&script_pubkey) {
             Ok((rec, val)) => (rec, val),
-            Err(e) => return MmError::err(format!("Provided dex fee tx {:?} is incorrect: {}", qtum_tx, e)),
+            Err(e) => {
+                return MmError::err(ValidateSwapTxError::ValidateDexFeeError(format!(
+                    "Provided dex fee tx {:?} is incorrect: {}",
+                    qtum_tx, e
+                )))
+            },
         };
 
         if receiver != fee_addr {
-            return MmError::err(format!(
+            return MmError::err(ValidateSwapTxError::UnexpectedTxAddr(format!(
                 "QRC20 Fee tx was sent to wrong address {:?}, expected {:?}",
                 receiver, fee_addr
-            ));
+            )));
         }
 
         if value < expected_value {
-            return MmError::err(format!(
+            return MmError::err(ValidateSwapTxError::UnexpectedFeeOutput(format!(
                 "QRC20 Fee tx value {} is less than expected {}",
                 value, expected_value
-            ));
+            )));
         }
 
-        let token_addr = extract_contract_addr_from_script(&script_pubkey).mm_err(|err| err.to_string())?;
+        let token_addr = extract_contract_addr_from_script(&script_pubkey)?;
         if token_addr != self.contract_address {
-            return MmError::err(format!(
+            return MmError::err(ValidateSwapTxError::UnexpectedTxAddr(format!(
                 "QRC20 Fee tx {:?} called wrong smart contract, expected {:?}",
                 qtum_tx, self.contract_address
-            ));
+            )));
         }
 
         Ok(())

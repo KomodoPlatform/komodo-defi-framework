@@ -27,18 +27,24 @@ use futures::{channel::oneshot, StreamExt};
 use keys::KeyPair;
 use mm2_core::mm_ctx::{MmArc, MmWeak};
 use mm2_err_handle::prelude::*;
-use mm2_libp2p::atomicdex_behaviour::{AdexBehaviourCmd, AdexBehaviourEvent, AdexCmdTx, AdexEventRx, AdexResponse,
-                                      AdexResponseChannel};
+use mm2_libp2p::atomicdex_behaviour::{
+    AdexBehaviourCmd, AdexBehaviourEvent, AdexCmdTx, AdexEventRx, AdexResponse, AdexResponseChannel,
+};
 use mm2_libp2p::peers_exchange::PeerAddresses;
-use mm2_libp2p::{decode_message, encode_message, DecodingError, GossipsubMessage, Libp2pPublic, Libp2pSecpPublic,
-                 MessageId, NetworkPorts, PeerId, TOPIC_SEPARATOR};
-#[cfg(test)] use mocktopus::macros::*;
+use mm2_libp2p::{
+    decode_message, encode_message, DecodingError, GossipsubMessage, Libp2pPublic, Libp2pSecpPublic, MessageId,
+    NetworkPorts, PeerId, TOPIC_SEPARATOR,
+};
+#[cfg(test)]
+use mocktopus::macros::*;
 use parking_lot::Mutex as PaMutex;
 use serde::de;
 use std::net::ToSocketAddrs;
 use std::sync::Arc;
 
 use crate::mm2::{lp_ordermatch, lp_stats, lp_swap};
+
+use super::lp_stats::NetWorkInfoRequestError;
 
 pub type P2PRequestResult<T> = Result<T, MmError<P2PRequestError>>;
 
@@ -48,7 +54,9 @@ pub trait Libp2pPeerId {
 
 impl Libp2pPeerId for KeyPair {
     #[inline(always)]
-    fn libp2p_peer_id(&self) -> PeerId { peer_id_from_secp_public(self.public_slice()).expect("valid public") }
+    fn libp2p_peer_id(&self) -> PeerId {
+        peer_id_from_secp_public(self.public_slice()).expect("valid public")
+    }
 }
 
 #[derive(Debug, Display)]
@@ -63,11 +71,21 @@ pub enum P2PRequestError {
 }
 
 impl From<rmp_serde::encode::Error> for P2PRequestError {
-    fn from(e: rmp_serde::encode::Error) -> Self { P2PRequestError::EncodeError(e.to_string()) }
+    fn from(e: rmp_serde::encode::Error) -> Self {
+        P2PRequestError::EncodeError(e.to_string())
+    }
 }
 
 impl From<rmp_serde::decode::Error> for P2PRequestError {
-    fn from(e: rmp_serde::decode::Error) -> Self { P2PRequestError::DecodeError(e.to_string()) }
+    fn from(e: rmp_serde::decode::Error) -> Self {
+        P2PRequestError::DecodeError(e.to_string())
+    }
+}
+
+impl From<NetWorkInfoRequestError> for P2PRequestError {
+    fn from(e: NetWorkInfoRequestError) -> Self {
+        P2PRequestError::DecodeError(e.to_string())
+    }
 }
 
 #[derive(Eq, Debug, Deserialize, PartialEq, Serialize)]
@@ -89,7 +107,9 @@ impl P2PContext {
         }
     }
 
-    pub fn store_to_mm_arc(self, ctx: &MmArc) { *ctx.p2p_ctx.lock().unwrap() = Some(Arc::new(self)) }
+    pub fn store_to_mm_arc(self, ctx: &MmArc) {
+        *ctx.p2p_ctx.lock().unwrap() = Some(Arc::new(self))
+    }
 
     pub fn fetch_from_mm_arc(ctx: &MmArc) -> Arc<Self> {
         ctx.p2p_ctx
@@ -193,7 +213,7 @@ fn process_p2p_request(
     let request = decode_message::<P2PRequest>(&request)?;
     let result = match request {
         P2PRequest::Ordermatch(req) => lp_ordermatch::process_peer_request(ctx.clone(), req),
-        P2PRequest::NetworkInfo(req) => lp_stats::process_info_request(ctx.clone(), req),
+        P2PRequest::NetworkInfo(req) => lp_stats::process_info_request(ctx.clone(), req).map_err(|err| err.to_string()),
     };
 
     let res = match result {

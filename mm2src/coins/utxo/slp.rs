@@ -17,8 +17,8 @@ use crate::{BalanceFut, CoinBalance, FeeApproxStage, FoundSwapTxSpend, FoundSwap
             RawTransactionFut, RawTransactionRequest, SearchForSwapTxSpendInput, SignatureResult, SwapOps, TradeFee,
             TradePreimageError, TradePreimageFut, TradePreimageResult, TradePreimageValue, TransactionDetails,
             TransactionEnum, TransactionErr, TransactionFut, TxFeeDetails, UnexpectedDerivationMethod,
-            ValidateAddressResult, ValidatePaymentInput, VerificationError, VerificationResult, WithdrawError,
-            WithdrawFee, WithdrawFut, WithdrawRequest};
+            ValidateAddressResult, ValidatePaymentInput, ValidateSwapTxError, VerificationError, VerificationResult,
+            WithdrawError, WithdrawFee, WithdrawFut, WithdrawRequest};
 use async_trait::async_trait;
 use bitcrypto::dhash160;
 use chain::constants::SEQUENCE_FINAL;
@@ -36,6 +36,7 @@ use keys::{AddressHashEnum, CashAddrType, CashAddress, CompactSignature, KeyPair
 use mm2_core::mm_ctx::MmArc;
 use mm2_err_handle::prelude::*;
 use mm2_number::{BigDecimal, MmNumber};
+use num_traits::Zero;
 use primitives::hash::H256;
 use rpc::v1::types::{Bytes as BytesJson, ToTxHash, H256 as H256Json};
 use script::bytes::Bytes;
@@ -47,6 +48,8 @@ use std::convert::TryInto;
 use std::sync::atomic::{AtomicU64, Ordering as AtomicOrdering};
 use std::sync::Arc;
 use utxo_signer::with_key_pair::{p2pkh_spend, p2sh_spend, sign_tx, UtxoSignWithKeyPairError};
+
+use super::utxo_common::{SendRawTxError, ValidatePaymentError};
 
 const SLP_SWAP_VOUT: usize = 1;
 const SLP_FEE_VOUT: usize = 1;
@@ -108,7 +111,7 @@ enum ValidateHtlcError {
     InvalidSlpDetails,
     InvalidSlpUtxo(ValidateSlpUtxosErr),
     NumConversionErr(NumConversError),
-    ValidatePaymentError(String),
+    ValidatePaymentError(ValidatePaymentError),
     UnexpectedDerivationMethod(UnexpectedDerivationMethod),
     OtherPubInvalid(keys::Error),
 }
@@ -129,18 +132,29 @@ impl From<UnexpectedDerivationMethod> for ValidateHtlcError {
     fn from(e: UnexpectedDerivationMethod) -> Self { ValidateHtlcError::UnexpectedDerivationMethod(e) }
 }
 
+impl From<ValidateHtlcError> for ValidatePaymentError {
+    fn from(e: ValidateHtlcError) -> ValidatePaymentError { ValidatePaymentError::ValidateHtlcError(e.to_string()) }
+}
+
 #[derive(Debug, Display)]
-enum ValidateDexFeeError {
+pub enum ValidateDexFeeError {
     TxLackOfOutputs,
     #[display(fmt = "OpReturnParseError: {:?}", _0)]
     OpReturnParseError(ParseSlpScriptError),
     InvalidSlpDetails,
     NumConversionErr(NumConversError),
     ValidatePaymentError(String),
+    ValidateSwapTxError(String),
 }
 
 impl From<NumConversError> for ValidateDexFeeError {
     fn from(err: NumConversError) -> ValidateDexFeeError { ValidateDexFeeError::NumConversionErr(err) }
+}
+
+impl From<ValidateSwapTxError> for ValidateDexFeeError {
+    fn from(err: ValidateSwapTxError) -> ValidateDexFeeError {
+        ValidateDexFeeError::ValidateSwapTxError(err.to_string())
+    }
 }
 
 impl From<ParseSlpScriptError> for ValidateDexFeeError {
@@ -490,7 +504,7 @@ impl SlpToken {
         validate_fut
             .compat()
             .await
-            .mm_err(ValidateHtlcError::ValidatePaymentError)?;
+            .mm_err(ValidateHtlcError::ValidatePaymentError)?; //TODO
 
         Ok(())
     }
@@ -732,10 +746,7 @@ impl SlpToken {
             fee_addr,
         );
 
-        validate_fut
-            .compat()
-            .await
-            .mm_err(ValidateDexFeeError::ValidatePaymentError)?;
+        validate_fut.compat().await?;
 
         Ok(())
     }
@@ -1114,25 +1125,25 @@ impl MarketCoinOps for SlpToken {
     fn platform_ticker(&self) -> &str { self.platform_coin.ticker() }
 
     /// Receives raw transaction bytes in hexadecimal format as input and returns tx hash in hexadecimal format
-    fn send_raw_tx(&self, tx: &str) -> Box<dyn Future<Item = String, Error = MmError<String>> + Send> {
+    fn send_raw_tx(&self, tx: &str) -> Box<dyn Future<Item = String, Error = MmError<SendRawTxError>> + Send> {
         let selfi = self.clone();
         let tx = tx.to_owned();
         let fut = async move {
-            let bytes = hex::decode(tx).map_to_mm(|e| e.to_string())?;
-            let tx = deserialize(bytes.as_slice()).map_to_mm(|err| err.to_string())?;
-            let hash = selfi.broadcast_tx(&tx).await.map_err(|err| err.to_string())?;
+            let bytes = hex::decode(tx)?;
+            let tx = deserialize(bytes.as_slice())?;
+            let hash = selfi.broadcast_tx(&tx).await?;
             Ok(format!("{:?}", hash))
         };
 
         Box::new(fut.boxed().compat())
     }
 
-    fn send_raw_tx_bytes(&self, tx: &[u8]) -> Box<dyn Future<Item = String, Error = MmError<String>> + Send> {
+    fn send_raw_tx_bytes(&self, tx: &[u8]) -> Box<dyn Future<Item = String, Error = MmError<SendRawTxError>> + Send> {
         let selfi = self.clone();
         let bytes = tx.to_owned();
         let fut = async move {
-            let tx = deserialize(bytes.as_slice()).map_to_mm(|err| err.to_string())?;
-            let hash = selfi.broadcast_tx(&tx).await.mm_err(|err| err.to_string())?;
+            let tx = deserialize(bytes.as_slice())?;
+            let hash = selfi.broadcast_tx(&tx).await?;
             Ok(format!("{:?}", hash))
         };
 
@@ -1178,6 +1189,22 @@ impl MarketCoinOps for SlpToken {
     fn min_tx_amount(&self) -> BigDecimal { big_decimal_from_sat_unsigned(1, self.decimals()) }
 
     fn min_trading_vol(&self) -> MmNumber { big_decimal_from_sat_unsigned(1, self.decimals()).into() }
+
+    fn get_non_zero_balance(&self) -> crate::NonZeroBalanceFut<MmNumber> {
+        let closure = |spendable: BigDecimal| {
+            if spendable.is_zero() {
+                return MmError::err(crate::GetNonZeroBalance::BalanceIsZero);
+            }
+            Ok(MmNumber::from(spendable))
+        };
+        Box::new(self.my_spendable_balance().map_err(From::from).and_then(closure))
+    }
+
+    fn my_spendable_balance(&self) -> BalanceFut<BigDecimal> {
+        Box::new(self.my_balance().map(|CoinBalance { spendable, .. }| spendable))
+    }
+
+    fn is_privacy(&self) -> bool { false }
 }
 
 #[async_trait]
@@ -1363,7 +1390,7 @@ impl SwapOps for SlpToken {
         amount: &BigDecimal,
         min_block_number: u64,
         _uuid: &[u8],
-    ) -> Box<dyn Future<Item = (), Error = MmError<String>> + Send> {
+    ) -> Box<dyn Future<Item = (), Error = MmError<ValidateSwapTxError>> + Send> {
         let tx = match fee_tx {
             TransactionEnum::UtxoTx(tx) => tx.clone(),
             _ => panic!(),
@@ -1375,8 +1402,7 @@ impl SwapOps for SlpToken {
 
         let fut = async move {
             coin.validate_dex_fee(tx, &expected_sender, &fee_addr, amount, min_block_number)
-                .await
-                .map_err(|err| err.to_string())?;
+                .await?;
             Ok(())
         };
         Box::new(fut.boxed().compat())
@@ -1385,10 +1411,10 @@ impl SwapOps for SlpToken {
     fn validate_maker_payment(
         &self,
         input: ValidatePaymentInput,
-    ) -> Box<dyn Future<Item = (), Error = MmError<String>> + Send> {
+    ) -> Box<dyn Future<Item = (), Error = MmError<ValidatePaymentError>> + Send> {
         let coin = self.clone();
         let fut = async move {
-            coin.validate_htlc(input).await.map_err(|err| err.to_string())?;
+            coin.validate_htlc(input).await?;
             Ok(())
         };
         Box::new(fut.boxed().compat())
@@ -1397,10 +1423,10 @@ impl SwapOps for SlpToken {
     fn validate_taker_payment(
         &self,
         input: ValidatePaymentInput,
-    ) -> Box<dyn Future<Item = (), Error = MmError<String>> + Send> {
+    ) -> Box<dyn Future<Item = (), Error = MmError<ValidatePaymentError>> + Send> {
         let coin = self.clone();
         let fut = async move {
-            coin.validate_htlc(input).await.map_err(|err| err.to_string())?;
+            coin.validate_htlc(input).await?;
             Ok(())
         };
         Box::new(fut.boxed().compat())
