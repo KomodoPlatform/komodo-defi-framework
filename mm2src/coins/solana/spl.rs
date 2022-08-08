@@ -3,9 +3,9 @@ use crate::solana::solana_common::{ui_amount_to_amount, PrepareTransferData, Suf
 use crate::solana::{solana_common, AccountError, SolanaCommonOps, SolanaFeeDetails};
 use crate::{BalanceFut, FeeApproxStage, FoundSwapTxSpend, NegotiateSwapContractAddrErr, RawTransactionFut,
             RawTransactionRequest, SearchForSwapTxSpendInput, SignatureResult, SolanaCoin, TradePreimageFut,
-            TradePreimageResult, TradePreimageValue, TransactionDetails, TransactionFut, TransactionType,
-            UnexpectedDerivationMethod, ValidateAddressResult, ValidatePaymentInput, VerificationResult,
-            WithdrawError, WithdrawFut, WithdrawRequest, WithdrawResult};
+            TradePreimageResult, TradePreimageValue, TransactionDetails, TransactionErr, TransactionFut,
+            TransactionType, UnexpectedDerivationMethod, ValidateAddressResult, ValidatePaymentInput,
+            VerificationResult, WithdrawError, WithdrawFut, WithdrawRequest, WithdrawResult};
 use async_trait::async_trait;
 use bincode::serialize;
 use common::{async_blocking, now_ms};
@@ -267,7 +267,11 @@ impl MarketCoinOps for SplToken {
         unimplemented!()
     }
 
-    fn tx_enum_from_bytes(&self, _bytes: &[u8]) -> Result<TransactionEnum, String> { unimplemented!() }
+    fn tx_enum_from_bytes(&self, bytes: &[u8]) -> Result<TransactionEnum, MmError<TransactionErr>> {
+        MmError::err(TransactionErr::Plain(
+            "tx_enum_from_bytes is not supported for Spl yet.".to_string(),
+        ))
+    }
 
     fn current_block(&self) -> Box<dyn Future<Item = u64, Error = String> + Send> { self.platform_coin.current_block() }
 

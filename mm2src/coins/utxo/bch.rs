@@ -1130,7 +1130,7 @@ impl MarketCoinOps for BchCoin {
         )
     }
 
-    fn tx_enum_from_bytes(&self, bytes: &[u8]) -> Result<TransactionEnum, String> {
+    fn tx_enum_from_bytes(&self, bytes: &[u8]) -> Result<TransactionEnum, MmError<TransactionErr>> {
         utxo_common::tx_enum_from_bytes(self.as_ref(), bytes)
     }
 

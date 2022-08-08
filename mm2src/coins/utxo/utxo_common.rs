@@ -1823,8 +1823,12 @@ pub fn wait_for_output_spend(
     Box::new(fut.boxed().compat())
 }
 
-pub fn tx_enum_from_bytes(coin: &UtxoCoinFields, bytes: &[u8]) -> Result<TransactionEnum, String> {
-    let mut transaction: UtxoTx = try_s!(deserialize(bytes).map_err(|err| format!("{:?}", err)));
+pub fn tx_enum_from_bytes(coin: &UtxoCoinFields, bytes: &[u8]) -> Result<TransactionEnum, MmError<TransactionErr>> {
+    let mut transaction: UtxoTx = match deserialize(bytes) {
+        Ok(tx) => tx,
+        Err(e) => return MmError::err(TransactionErr::InvalidTx(e.to_string())),
+    };
+
     transaction.tx_hash_algo = coin.tx_hash_algo;
     Ok(transaction.into())
 }

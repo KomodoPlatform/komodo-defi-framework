@@ -1160,7 +1160,7 @@ impl MarketCoinOps for SlpToken {
         )
     }
 
-    fn tx_enum_from_bytes(&self, bytes: &[u8]) -> Result<TransactionEnum, String> {
+    fn tx_enum_from_bytes(&self, bytes: &[u8]) -> Result<TransactionEnum, MmError<TransactionErr>> {
         self.platform_coin.tx_enum_from_bytes(bytes)
     }
 
@@ -2016,6 +2016,7 @@ mod slp_tests {
         let err = match tx_err.clone() {
             TransactionErr::TxRecoverable(_tx, err) => err,
             TransactionErr::Plain(err) => err,
+            TransactionErr::InvalidTx(err) => err,
         };
 
         println!("{:?}", err);

@@ -161,7 +161,7 @@ async fn process_p2p_message(
                 if let Some(pair) = split.next() {
                     if let Ok(Some(coin)) = lp_coinfind(&ctx, pair).await {
                         if let Err(e) = coin.tx_enum_from_bytes(&message.data) {
-                            log::error!("Given transaction isn't valid. {}", e);
+                            log::error!("Message cannot continue the process due to: {:?}", e);
                             continue;
                         };
 

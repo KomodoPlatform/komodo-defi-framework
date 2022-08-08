@@ -367,6 +367,7 @@ pub enum TransactionErr {
     TxRecoverable(TransactionEnum, String),
     /// Simply for plain error messages.
     Plain(String),
+    InvalidTx(String),
 }
 
 impl TransactionErr {
@@ -385,6 +386,7 @@ impl TransactionErr {
         match self {
             TransactionErr::TxRecoverable(_, err) => err.to_string(),
             TransactionErr::Plain(err) => err.to_string(),
+            TransactionErr::InvalidTx(err) => err.to_string(),
         }
     }
 }
@@ -615,7 +617,7 @@ pub trait MarketCoinOps {
         swap_contract_address: &Option<BytesJson>,
     ) -> TransactionFut;
 
-    fn tx_enum_from_bytes(&self, bytes: &[u8]) -> Result<TransactionEnum, String>;
+    fn tx_enum_from_bytes(&self, bytes: &[u8]) -> Result<TransactionEnum, MmError<TransactionErr>>;
 
     fn current_block(&self) -> Box<dyn Future<Item = u64, Error = String> + Send>;
 
