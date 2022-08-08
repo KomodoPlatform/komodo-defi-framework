@@ -18,7 +18,7 @@ use std::fs;
 use std::io::{BufReader, BufWriter, Cursor};
 use std::net::SocketAddr;
 use std::ops::Deref;
-use std::path::{Path, PathBuf};
+use std::path::PathBuf;
 use std::str::FromStr;
 use std::sync::{Arc, Mutex};
 
@@ -84,6 +84,20 @@ impl LightningFilesystemPersister {
         path
     }
 
+    pub fn monitors_path(&self) -> PathBuf {
+        let mut path = self.main_path();
+        path.push("monitors");
+        path
+    }
+
+    pub fn monitors_backup_path(&self) -> Option<PathBuf> {
+        if let Some(mut backup_path) = self.backup_path() {
+            backup_path.push("monitors");
+            return Some(backup_path);
+        }
+        None
+    }
+
     /// Read `ChannelMonitor`s from disk.
     pub fn read_channelmonitors<Signer: Sign, K: Deref>(
         &self,
@@ -92,9 +106,8 @@ impl LightningFilesystemPersister {
     where
         K::Target: KeysInterface<Signer = Signer> + Sized,
     {
-        let mut path = self.main_path();
-        path.push("monitors");
-        if !Path::new(&path).exists() {
+        let path = self.monitors_path();
+        if !path.exists() {
             return Ok(Vec::new());
         }
         let mut res = Vec::new();
@@ -102,6 +115,9 @@ impl LightningFilesystemPersister {
             let file = file_option.unwrap();
             let owned_file_name = file.file_name();
             let filename = owned_file_name.to_str();
+            if filename.is_some() && filename.unwrap() == "checkval" {
+                continue;
+            }
             if filename.is_none() || !filename.unwrap().is_ascii() || filename.unwrap().len() < 65 {
                 return Err(std::io::Error::new(
                     std::io::ErrorKind::InvalidData,
@@ -247,22 +263,24 @@ impl LightningStorage for LightningFilesystemPersister {
     type Error = std::io::Error;
 
     async fn init_fs(&self) -> Result<(), Self::Error> {
-        let path = self.main_path();
-        let backup_path = self.backup_path();
+        let path = self.monitors_path();
+        let backup_path = self.monitors_backup_path();
         async_blocking(move || {
             fs::create_dir_all(path.clone())?;
             if let Some(path) = backup_path {
                 fs::create_dir_all(path.clone())?;
                 check_dir_operations(&path)?;
+                check_dir_operations(path.parent().unwrap())?;
             }
-            check_dir_operations(&path)
+            check_dir_operations(&path)?;
+            check_dir_operations(path.parent().unwrap())
         })
         .await
     }
 
     async fn is_fs_initialized(&self) -> Result<bool, Self::Error> {
-        let dir_path = self.main_path();
-        let backup_dir_path = self.backup_path();
+        let dir_path = self.monitors_path();
+        let backup_dir_path = self.monitors_backup_path();
         async_blocking(move || {
             if !dir_path.exists() || backup_dir_path.as_ref().map(|path| !path.exists()).unwrap_or(false) {
                 Ok(false)

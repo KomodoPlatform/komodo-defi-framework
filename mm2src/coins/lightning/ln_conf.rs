@@ -123,6 +123,9 @@ pub struct OurChannelsConfig {
     /// our real on-chain channel UTXO in each invoice and requiring that our counterparty only
     /// relay HTLCs to us using the channel's SCID alias.
     pub negotiate_scid_privacy: Option<bool>,
+    /// Sets the percentage of the channel value we will cap the total value of outstanding inbound
+    /// HTLCs to.
+    pub max_inbound_in_flight_htlc_percent: Option<u8>,
 }
 
 impl From<OurChannelsConfig> for ChannelHandshakeConfig {
@@ -143,6 +146,10 @@ impl From<OurChannelsConfig> for ChannelHandshakeConfig {
 
         if let Some(scid_privacy) = config.negotiate_scid_privacy {
             channel_handshake_config.negotiate_scid_privacy = scid_privacy
+        }
+
+        if let Some(max_inbound_htlc) = config.max_inbound_in_flight_htlc_percent {
+            channel_handshake_config.max_inbound_htlc_value_in_flight_percent_of_channel = max_inbound_htlc
         }
 
         channel_handshake_config

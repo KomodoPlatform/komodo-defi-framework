@@ -40,6 +40,7 @@ impl SimplePaymentVerification for ElectrumClient {
 
         let (merkle_branch, header, height) = loop {
             if now_ms() / 1000 > try_spv_proof_until {
+                // Todo: find a way to not show this error when height is still 0
                 error!(
                     "Waited too long until {} for transaction {:?} to validate spv proof",
                     try_spv_proof_until,

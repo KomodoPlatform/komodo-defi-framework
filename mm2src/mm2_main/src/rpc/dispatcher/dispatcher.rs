@@ -9,6 +9,7 @@ use crate::{mm2::lp_stats::{add_node_to_version_stat, remove_node_from_version_s
             mm2::rpc::lp_commands::{get_public_key, get_public_key_hash}};
 use coins::eth::EthCoin;
 use coins::hd_wallet::get_new_address;
+use coins::lightning::{add_trusted_node, list_trusted_node, remove_trusted_node};
 use coins::my_tx_history_v2::my_tx_history_v2_rpc;
 use coins::rpc_command::account_balance::account_balance;
 use coins::rpc_command::get_current_mtp::get_current_mtp_rpc;
@@ -170,6 +171,7 @@ async fn dispatcher_v2(request: MmRpcRequest, ctx: MmArc) -> DispatcherResult<Re
         "withdraw_user_action" => handle_mmrpc(ctx, request, withdraw_user_action).await,
         #[cfg(not(target_arch = "wasm32"))]
         native_only_methods => match native_only_methods {
+            "add_trusted_node" => handle_mmrpc(ctx, request, add_trusted_node).await,
             "close_channel" => handle_mmrpc(ctx, request, close_channel).await,
             "connect_to_lightning_node" => handle_mmrpc(ctx, request, connect_to_lightning_node).await,
             "enable_lightning" => handle_mmrpc(ctx, request, enable_l2::<LightningCoin>).await,
@@ -183,7 +185,9 @@ async fn dispatcher_v2(request: MmRpcRequest, ctx: MmArc) -> DispatcherResult<Re
             "list_closed_channels_by_filter" => handle_mmrpc(ctx, request, list_closed_channels_by_filter).await,
             "list_open_channels_by_filter" => handle_mmrpc(ctx, request, list_open_channels_by_filter).await,
             "list_payments_by_filter" => handle_mmrpc(ctx, request, list_payments_by_filter).await,
+            "list_trusted_node" => handle_mmrpc(ctx, request, list_trusted_node).await,
             "open_channel" => handle_mmrpc(ctx, request, open_channel).await,
+            "remove_trusted_node" => handle_mmrpc(ctx, request, remove_trusted_node).await,
             "send_payment" => handle_mmrpc(ctx, request, send_payment).await,
             "enable_solana_with_tokens" => {
                 handle_mmrpc(ctx, request, enable_platform_coin_with_tokens::<SolanaCoin>).await

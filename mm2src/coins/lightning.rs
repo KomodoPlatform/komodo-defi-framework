@@ -735,6 +735,7 @@ pub async fn start_lightning(
         scorer.clone(),
         logger.clone(),
         event_handler,
+        // Todo: Add option for choosing payment::Retry::Timeout instead of Attempts in LightningParams
         payment::Retry::Attempts(params.payment_retries.unwrap_or(5)),
     ));
 
@@ -1705,4 +1706,28 @@ pub async fn remove_trusted_node(ctx: MmArc, req: RemoveTrustedNodeReq) -> Trust
     }
 
     Ok("success".into())
+}
+
+#[derive(Deserialize)]
+pub struct ListTrustedNodesReq {
+    pub coin: String,
+}
+
+#[derive(Serialize)]
+pub struct ListTrustedNodesResponse {
+    trusted_nodes: Vec<PublicKeyForRPC>,
+}
+
+pub async fn list_trusted_node(ctx: MmArc, req: ListTrustedNodesReq) -> TrustedNodeResult<ListTrustedNodesResponse> {
+    let coin = lp_coinfind_or_err(&ctx, &req.coin).await?;
+    let ln_coin = match coin {
+        MmCoinEnum::LightningCoin(c) => c,
+        _ => return MmError::err(TrustedNodeError::UnsupportedCoin(coin.ticker().to_string())),
+    };
+
+    let trusted_nodes = ln_coin.trusted_nodes.lock().clone();
+
+    Ok(ListTrustedNodesResponse {
+        trusted_nodes: trusted_nodes.into_iter().map(PublicKeyForRPC).collect(),
+    })
 }

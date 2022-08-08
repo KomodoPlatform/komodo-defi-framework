@@ -7,7 +7,7 @@ const T_BTC_ELECTRUMS: &[&str] = &[
     "electrum3.cipig.net:10068",
 ];
 
-fn start_lightning_nodes() -> (MarketMakerIt, MarketMakerIt, String, String) {
+fn start_lightning_nodes(enable_0_confs: bool) -> (MarketMakerIt, MarketMakerIt, String, String) {
     let node_1_seed = "become nominee mountain person volume business diet zone govern voice debris hidden";
     let node_2_seed = "february coast tortoise grab shadow vast volcano affair ordinary gesture brass oxygen";
 
@@ -40,7 +40,10 @@ fn start_lightning_nodes() -> (MarketMakerIt, MarketMakerIt, String, String) {
               "inbound_channels_confirmations": 1
             },
             "counterparty_channel_config_limits": {
-              "outbound_channels_confirmations": 1
+              "outbound_channels_confirmations": 1,
+              // If true, this enables sending payments between the 2 nodes straight away without waiting for on-chain confirmations
+              // if the other node added this node as trusted. It also overrides "outbound_channels_confirmations".
+              "allow_outbound_0conf": enable_0_confs
             },
             "protocol": {
               "type": "LIGHTNING",
@@ -74,7 +77,8 @@ fn start_lightning_nodes() -> (MarketMakerIt, MarketMakerIt, String, String) {
     let (_dump_log, _dump_dashboard) = mm_node_1.mm_dump();
     log!("bob log path: {}", mm_node_1.log_path.display());
 
-    let _electrum = block_on(enable_electrum(&mm_node_1, "tBTC-TEST-segwit", false, T_BTC_ELECTRUMS));
+    let electrum = block_on(enable_electrum(&mm_node_1, "tBTC-TEST-segwit", false, T_BTC_ELECTRUMS));
+    log!("Node 1 tBTC address: {}", electrum.address);
 
     let enable_lightning_1 = block_on(enable_lightning(&mm_node_1, "tBTC-TEST-lightning"));
     let node_1_address = enable_lightning_1["result"]["address"].as_str().unwrap().to_string();
@@ -96,7 +100,8 @@ fn start_lightning_nodes() -> (MarketMakerIt, MarketMakerIt, String, String) {
     let (_dump_log, _dump_dashboard) = mm_node_2.mm_dump();
     log!("alice log path: {}", mm_node_2.log_path.display());
 
-    let _electrum = block_on(enable_electrum(&mm_node_2, "tBTC-TEST-segwit", false, T_BTC_ELECTRUMS));
+    let electrum = block_on(enable_electrum(&mm_node_2, "tBTC-TEST-segwit", false, T_BTC_ELECTRUMS));
+    log!("Node 2 tBTC address: {}", electrum.address);
 
     let enable_lightning_2 = block_on(enable_lightning(&mm_node_2, "tBTC-TEST-lightning"));
     let node_2_address = enable_lightning_2["result"]["address"].as_str().unwrap().to_string();
@@ -184,7 +189,7 @@ fn test_enable_lightning() {
 #[test]
 #[cfg(not(target_arch = "wasm32"))]
 fn test_connect_to_lightning_node() {
-    let (mm_node_1, mm_node_2, node_1_id, _) = start_lightning_nodes();
+    let (mm_node_1, mm_node_2, node_1_id, _) = start_lightning_nodes(false);
     let node_1_address = format!("{}@{}:9735", node_1_id, mm_node_1.ip.to_string());
 
     let connect = block_on(mm_node_2.rpc(&json! ({
@@ -207,10 +212,11 @@ fn test_connect_to_lightning_node() {
 }
 
 #[test]
+// This test is ignored because it requires refilling the tBTC addresses with test coins periodically.
 #[ignore]
 #[cfg(not(target_arch = "wasm32"))]
 fn test_open_channel() {
-    let (mm_node_1, mut mm_node_2, node_1_id, node_2_id) = start_lightning_nodes();
+    let (mm_node_1, mut mm_node_2, node_1_id, node_2_id) = start_lightning_nodes(false);
     let node_1_address = format!("{}@{}:9735", node_1_id, mm_node_1.ip.to_string());
 
     let open_channel = block_on(mm_node_2.rpc(&json! ({
@@ -221,8 +227,8 @@ fn test_open_channel() {
             "coin": "tBTC-TEST-lightning",
             "node_address": node_1_address,
             "amount": {
-                "type":"Exact",
-                "value":0.00002,
+                "type": "Exact",
+                "value": 0.0002,
             },
         },
     })))
@@ -234,7 +240,7 @@ fn test_open_channel() {
     let list_channels_node_1 = block_on(mm_node_1.rpc(&json! ({
         "userpass": mm_node_1.userpass,
         "mmrpc": "2.0",
-        "method": "list_channels",
+        "method": "list_open_channels_by_filter",
         "params": {
             "coin": "tBTC-TEST-lightning",
         },
@@ -263,7 +269,7 @@ fn test_open_channel() {
     let list_channels_node_2 = block_on(mm_node_2.rpc(&json! ({
       "userpass": mm_node_2.userpass,
       "mmrpc": "2.0",
-      "method": "list_channels",
+      "method": "list_open_channels_by_filter",
       "params": {
           "coin": "tBTC-TEST-lightning",
       },
@@ -285,8 +291,120 @@ fn test_open_channel() {
     );
     assert_eq!(
         list_channels_node_2_res["result"]["open_channels"][0]["balance_msat"],
-        2000000
+        20000000
     );
+
+    block_on(mm_node_1.stop()).unwrap();
+    block_on(mm_node_2.stop()).unwrap();
+}
+
+#[test]
+// This test is ignored because it requires refilling the tBTC addresses with test coins periodically.
+#[ignore]
+#[cfg(not(target_arch = "wasm32"))]
+// This also tests 0_confs_channels
+fn test_send_payment() {
+    let (mut mm_node_2, mm_node_1, node_2_id, node_1_id) = start_lightning_nodes(true);
+    let node_1_address = format!("{}@{}:9735", node_1_id, mm_node_1.ip.to_string());
+
+    let add_trusted_node = block_on(mm_node_1.rpc(&json! ({
+        "userpass": mm_node_1.userpass,
+        "mmrpc": "2.0",
+        "method": "add_trusted_node",
+        "params": {
+            "coin": "tBTC-TEST-lightning",
+            "node_id": node_2_id
+        },
+    })))
+    .unwrap();
+    assert!(add_trusted_node.0.is_success(), "!open_channel: {}", add_trusted_node.1);
+
+    let open_channel = block_on(mm_node_2.rpc(&json! ({
+        "userpass": mm_node_2.userpass,
+        "mmrpc": "2.0",
+        "method": "open_channel",
+        "params": {
+            "coin": "tBTC-TEST-lightning",
+            "node_address": node_1_address,
+            "amount": {
+                "type": "Exact",
+                "value": 0.0002,
+            },
+        },
+    })))
+    .unwrap();
+    assert!(open_channel.0.is_success(), "!open_channel: {}", open_channel.1);
+
+    block_on(mm_node_2.wait_for_log(60., |log| log.contains("Received message ChannelReady"))).unwrap();
+
+    let send_payment = block_on(mm_node_2.rpc(&json! ({
+        "userpass": mm_node_2.userpass,
+        "mmrpc": "2.0",
+        "method": "send_payment",
+        "params": {
+            "coin": "tBTC-TEST-lightning",
+            "payment": {
+                "type": "keysend",
+                "destination": node_1_id,
+                "amount_in_msat": 1000,
+                "expiry": 24
+            }
+        },
+    })))
+    .unwrap();
+    assert!(send_payment.0.is_success(), "!send_payment: {}", send_payment.1);
+
+    let send_payment_res: Json = json::from_str(&send_payment.1).unwrap();
+    log!("send_payment_res {:?}", send_payment_res);
+    let payment_hash = send_payment_res["result"]["payment_hash"].as_str().unwrap();
+
+    block_on(mm_node_2.wait_for_log(60., |log| log.contains("Successfully sent payment"))).unwrap();
+
+    // Check payment on the sending node side
+    let get_payment_details = block_on(mm_node_2.rpc(&json! ({
+      "userpass": mm_node_2.userpass,
+      "mmrpc": "2.0",
+      "method": "get_payment_details",
+      "params": {
+          "coin": "tBTC-TEST-lightning",
+          "payment_hash": payment_hash
+      },
+    })))
+    .unwrap();
+    assert!(
+        get_payment_details.0.is_success(),
+        "!get_payment_details: {}",
+        get_payment_details.1
+    );
+
+    let get_payment_details_res: Json = json::from_str(&get_payment_details.1).unwrap();
+    let payment = &get_payment_details_res["result"]["payment_details"];
+    assert_eq!(payment["status"], "succeeded");
+    assert_eq!(payment["amount_in_msat"], 1000);
+    assert_eq!(payment["payment_type"]["type"], "Outbound Payment");
+
+    // Check payment on the receiving node side
+    let get_payment_details = block_on(mm_node_1.rpc(&json! ({
+      "userpass": mm_node_1.userpass,
+      "mmrpc": "2.0",
+      "method": "get_payment_details",
+      "params": {
+          "coin": "tBTC-TEST-lightning",
+          "payment_hash": payment_hash
+      },
+    })))
+    .unwrap();
+    assert!(
+        get_payment_details.0.is_success(),
+        "!get_payment_details: {}",
+        get_payment_details.1
+    );
+
+    let get_payment_details_res: Json = json::from_str(&get_payment_details.1).unwrap();
+    let payment = &get_payment_details_res["result"]["payment_details"];
+    assert_eq!(payment["status"], "succeeded");
+    assert_eq!(payment["amount_in_msat"], 1000);
+    assert_eq!(payment["payment_type"]["type"], "Inbound Payment");
 
     block_on(mm_node_1.stop()).unwrap();
     block_on(mm_node_2.stop()).unwrap();
