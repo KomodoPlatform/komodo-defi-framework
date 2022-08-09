@@ -503,30 +503,26 @@ where
         None
     };
 
-    if reader.is_finished() {
-        Ok(Transaction {
-            version,
-            n_time,
-            overwintered,
-            version_group_id,
-            expiry_height,
-            value_balance,
-            inputs,
-            outputs,
-            lock_time,
-            binding_sig,
-            join_split_pubkey,
-            join_split_sig,
-            join_splits,
-            shielded_spends,
-            shielded_outputs,
-            zcash,
-            str_d_zeel,
-            tx_hash_algo: TxHashAlgo::DSHA256,
-        })
-    } else {
-        Err(Error::UnreadData)
-    }
+    Ok(Transaction {
+        version,
+        n_time,
+        overwintered,
+        version_group_id,
+        expiry_height,
+        value_balance,
+        inputs,
+        outputs,
+        lock_time,
+        binding_sig,
+        join_split_pubkey,
+        join_split_sig,
+        join_splits,
+        shielded_spends,
+        shielded_outputs,
+        zcash,
+        str_d_zeel,
+        tx_hash_algo: TxHashAlgo::DSHA256,
+    })
 }
 
 impl Deserializable for Transaction {
@@ -541,13 +537,21 @@ impl Deserializable for Transaction {
         // specific use case
         let mut buffer = vec![];
         reader.read_to_end(&mut buffer)?;
-        if let Ok(t) = deserialize_tx(&mut Reader::from_read(buffer.as_slice()), TxType::StandardWithWitness) {
-            return Ok(t);
+
+        let tx = if let Ok(t) = deserialize_tx(&mut Reader::from_read(buffer.as_slice()), TxType::StandardWithWitness) {
+            t
+        } else if let Ok(t) = deserialize_tx(&mut Reader::from_read(buffer.as_slice()), TxType::PosWithNTime) {
+            t
+        } else {
+            deserialize_tx(&mut Reader::from_read(buffer.as_slice()), TxType::Zcash)?
+        };
+
+        // Backwards comparison
+        if serialize(&tx).len() == buffer.len() {
+            Ok(tx)
+        } else {
+            Err(Error::MalformedData)
         }
-        if let Ok(t) = deserialize_tx(&mut Reader::from_read(buffer.as_slice()), TxType::PosWithNTime) {
-            return Ok(t);
-        }
-        deserialize_tx(&mut Reader::from_read(buffer.as_slice()), TxType::Zcash)
     }
 }
 
