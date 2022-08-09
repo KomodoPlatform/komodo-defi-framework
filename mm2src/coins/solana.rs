@@ -166,7 +166,11 @@ fn generate_keypair_from_slice(priv_key: &[u8]) -> Result<Keypair, MmError<KeyPa
 
 #[derive(Debug, Display)]
 pub enum SolanaCoinFromConfError {
-    KeyPairFromSeed(KeyPairCreationError),
+    KeyPairCreationError(KeyPairCreationError),
+}
+
+impl From<KeyPairCreationError> for SolanaCoinFromConfError {
+    fn from(err: KeyPairCreationError) -> Self { Self::KeyPairCreationError(err) }
 }
 
 pub async fn solana_coin_from_conf_and_params(
@@ -179,7 +183,7 @@ pub async fn solana_coin_from_conf_and_params(
         commitment: params.confirmation_commitment,
     });
     let decimals = conf["decimals"].as_u64().unwrap_or(SOLANA_DEFAULT_DECIMALS) as u8;
-    let key_pair = generate_keypair_from_slice(priv_key).mm_err(SolanaCoinFromConfError::KeyPairFromSeed)?;
+    let key_pair = generate_keypair_from_slice(priv_key)?;
     let my_address = key_pair.pubkey().to_string();
     let spl_tokens_infos = Arc::new(Mutex::new(HashMap::new()));
     let solana_coin = SolanaCoin(Arc::new(SolanaCoinImpl {

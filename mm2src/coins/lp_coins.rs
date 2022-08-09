@@ -50,6 +50,7 @@ use mm2_number::bigdecimal::{BigDecimal, ParseBigDecimalError, Zero};
 use mm2_number::MmNumber;
 use qrc20::script_pubkey::ScriptExtractionError;
 use rpc::v1::types::{Bytes as BytesJson, H256 as H256Json};
+use rpc_task::rpc_common::{RpcTaskStatusError, RpcTaskUserActionError};
 use serde::{Deserialize, Deserializer, Serialize};
 use serde_json::{self as json, Value as Json};
 use std::cmp::Ordering;
@@ -323,7 +324,7 @@ pub enum TxHistoryError {
     FromIdNotFound {
         internal_id: BytesJson,
     },
-    Method(String),
+    NotSupported(String),
     InternalError(String),
 }
 
@@ -2033,6 +2034,22 @@ pub struct CoinsContext {
 pub enum CoinContextError {
     #[display(fmt = "{}", _0)]
     Internal(String),
+}
+
+impl From<CoinContextError> for hd_wallet_storage::HDWalletStorageError {
+    fn from(err: CoinContextError) -> Self { Self::Internal(err.to_string()) }
+}
+
+impl From<RpcTaskStatusError> for CoinContextError {
+    fn from(err: RpcTaskStatusError) -> Self { Self::Internal(err.to_string()) }
+}
+
+impl From<CoinContextError> for RpcTaskStatusError {
+    fn from(err: CoinContextError) -> Self { Self::Internal(err.to_string()) }
+}
+
+impl From<CoinContextError> for RpcTaskUserActionError {
+    fn from(err: CoinContextError) -> Self { Self::Internal(err.to_string()) }
 }
 
 #[derive(Debug)]

@@ -173,7 +173,7 @@ impl HDWalletStorageInternalOps for HDWalletIndexedDbStorage {
     where
         Self: Sized,
     {
-        let coins_ctx = CoinsContext::from_ctx(ctx).mm_err(|err| HDWalletStorageError::Internal(err.to_string()))?;
+        let coins_ctx = CoinsContext::from_ctx(ctx)?;
         let db = SharedDb::downgrade(&coins_ctx.hd_wallet_db);
         Ok(HDWalletIndexedDbStorage { db })
     }

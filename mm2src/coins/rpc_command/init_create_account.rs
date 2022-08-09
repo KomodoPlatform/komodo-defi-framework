@@ -125,8 +125,7 @@ pub async fn init_create_new_account_status(
     ctx: MmArc,
     req: RpcTaskStatusRequest,
 ) -> MmResult<CreateAccountRpcTaskStatus, RpcTaskStatusError> {
-    let coins_ctx =
-        CoinsContext::from_ctx(&ctx).map_err(|err| MmError::new(RpcTaskStatusError::Internal(err.to_string())))?;
+    let coins_ctx = CoinsContext::from_ctx(&ctx)?;
     let mut task_manager = coins_ctx
         .create_account_manager
         .lock()
@@ -140,8 +139,7 @@ pub async fn init_create_new_account_user_action(
     ctx: MmArc,
     req: HwRpcTaskUserActionRequest,
 ) -> MmResult<SuccessResponse, RpcTaskUserActionError> {
-    let coins_ctx =
-        CoinsContext::from_ctx(&ctx).map_err(|err| MmError::new(RpcTaskUserActionError::Internal(err.to_string())))?;
+    let coins_ctx = CoinsContext::from_ctx(&ctx)?;
     let mut task_manager = coins_ctx
         .create_account_manager
         .lock()

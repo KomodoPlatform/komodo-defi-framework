@@ -1,5 +1,5 @@
 use crate::hd_wallet::{AddressDerivingError, InvalidBip44ChainError};
-use crate::{BalanceError, CoinFindError, UnexpectedDerivationMethod};
+use crate::{BalanceError, CoinContextError, CoinFindError, UnexpectedDerivationMethod};
 use common::HttpStatusCode;
 use crypto::Bip44Chain;
 use derive_more::Display;
@@ -47,6 +47,10 @@ impl HttpStatusCode for HDAccountBalanceRpcError {
             | HDAccountBalanceRpcError::Internal(_) => StatusCode::INTERNAL_SERVER_ERROR,
         }
     }
+}
+
+impl From<CoinContextError> for HDAccountBalanceRpcError {
+    fn from(err: CoinContextError) -> Self { Self::Internal(err.to_string()) }
 }
 
 impl From<CoinFindError> for HDAccountBalanceRpcError {

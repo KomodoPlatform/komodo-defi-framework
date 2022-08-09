@@ -69,11 +69,9 @@ pub enum ScriptExtractionError {
     #[display(fmt = "TokenAddressExtractionErr: {:?}", _0)]
     TokenAddressExtractionErr(String),
     #[display(fmt = "Opcode::OP_PUSHBYTES_[X] expected, found: {}", _0)]
-    UnExpectedContractOpcode(String),
-    #[display(fmt = "Opcode::OP_PUSHBYTES_[X] expected, found: {}", _0)]
-    UnExpectedGasOpcode(String),
+    UnexpectedGasOpcode(String),
     #[display(fmt = "Unexpected instruction's opcode {}", _0)]
-    UnExpectedInstructionOpcode(String),
+    UnexpectedInstructionOpcode(String),
     #[display(fmt = "Internal: {}", _0)]
     Internal(String),
 }
@@ -99,14 +97,13 @@ pub fn extract_gas_from_script(
 
     let opcode = instruction.opcode as usize;
     if !(1..75).contains(&opcode) {
-        return Err(MmError::new(ScriptExtractionError::UnExpectedGasOpcode(
+        return Err(MmError::new(ScriptExtractionError::UnexpectedGasOpcode(
             instruction.opcode.to_string(),
         )));
     }
 
     let number = match instruction.data {
-        Some(d) => decode_contract_number(d)
-            .map_err(|err| MmError::new(ScriptExtractionError::DecodeContractNnumberErr(err)))?,
+        Some(d) => decode_contract_number(d).map_to_mm(ScriptExtractionError::DecodeContractNnumberErr)?,
         _ => return Err(MmError::new(ScriptExtractionError::EmptyInstructionData)),
     };
 
@@ -133,7 +130,7 @@ pub fn extract_contract_call_from_script(script: &Script) -> Result<Vec<u8>, MmE
         Opcode::OP_PUSHDATA1 | Opcode::OP_PUSHDATA2 | Opcode::OP_PUSHDATA4 => (),
         opcode if (1..75).contains(&(opcode as usize)) => (),
         _ => {
-            return Err(MmError::new(ScriptExtractionError::UnExpectedInstructionOpcode(
+            return Err(MmError::new(ScriptExtractionError::UnexpectedInstructionOpcode(
                 instruction.opcode.to_string(),
             )))
         },
@@ -164,7 +161,7 @@ pub fn extract_contract_addr_from_script(script: &Script) -> Result<H160, MmErro
     match instruction.opcode {
         opcode if (1..75).contains(&(opcode as usize)) => (),
         _ => {
-            return Err(MmError::new(ScriptExtractionError::UnExpectedContractOpcode(
+            return Err(MmError::new(ScriptExtractionError::UnexpectedInstructionOpcode(
                 instruction.opcode.to_string(),
             )))
         },
