@@ -100,7 +100,17 @@ pub const TAKER_ERROR_EVENTS: [&str; 13] = [
 ];
 
 pub const RICK: &str = "RICK";
+pub const RICK_ELECTRUM_ADDRS: &[&str] = &[
+    "electrum1.cipig.net:10017",
+    "electrum2.cipig.net:10017",
+    "electrum3.cipig.net:10017",
+];
 pub const MORTY: &str = "MORTY";
+pub const MORTY_ELECTRUM_ADDRS: &[&str] = &[
+    "electrum1.cipig.net:10018",
+    "electrum2.cipig.net:10018",
+    "electrum3.cipig.net:10018",
+];
 pub const ZOMBIE_TICKER: &str = "ZOMBIE";
 pub const ZOMBIE_ELECTRUMS: &[&str] = &["zombie.sirseven.me:10033"];
 pub const ZOMBIE_LIGHTWALLETD_URLS: &[&str] = &["http://zombie.sirseven.me:443"];
