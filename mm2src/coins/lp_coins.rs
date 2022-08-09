@@ -2422,17 +2422,21 @@ pub fn lp_topic_list_validation(
     if let Some(conf) = ctx.conf["coins"].as_array() {
         topics.retain(|topic| {
             let mut split = topic.split(topic_seperator);
-            let topic_prefix = split.next();
-            match topic_prefix {
+
+            if split.clone().count() != 2 {
+                return false;
+            }
+
+            match split.next() {
                 Some(prefix) if prefix == txhlp_prefix => {
-                    if let Some(coin) = split.last() {
+                    if let Some(coin) = split.next() {
                         conf.iter().any(|c| c["coin"].as_str() == Some(coin))
                     } else {
                         false
                     }
                 },
                 Some(prefix) if prefix == orderbook_prefix => {
-                    if let Some(pair) = split.last() {
+                    if let Some(pair) = split.next() {
                         let coins = pair.split(':');
 
                         if coins.clone().count() != 2 {
