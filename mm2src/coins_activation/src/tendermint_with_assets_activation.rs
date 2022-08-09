@@ -29,11 +29,11 @@ impl TryFromCoinProtocol for TendermintProtocolInfo {
 }
 
 #[derive(Serialize)]
-#[allow(dead_code)]
 pub struct TendermintActivationResult {
     address: String,
     current_block: u64,
     balance: CoinBalance,
+    ticker: String,
 }
 
 impl CurrentBlock for TendermintActivationResult {
@@ -93,6 +93,7 @@ impl PlatformWithTokensActivationOps for TendermintCoin {
             address: self.account_id.to_string(),
             current_block,
             balance,
+            ticker: self.ticker().to_owned(),
         })
     }
 

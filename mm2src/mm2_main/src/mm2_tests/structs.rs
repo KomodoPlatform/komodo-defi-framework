@@ -938,4 +938,5 @@ pub struct TendermintActivationResult {
     pub address: String,
     pub current_block: u64,
     pub balance: CoinBalance,
+    pub ticker: String,
 }

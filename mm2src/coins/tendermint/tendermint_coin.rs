@@ -434,20 +434,7 @@ impl MarketCoinOps for TendermintCoin {
 
     fn send_raw_tx(&self, tx: &str) -> Box<dyn Future<Item = String, Error = String> + Send> {
         let tx_bytes = try_fus!(hex::decode(tx));
-        let tx = try_fus!(Raw::from_bytes(&tx_bytes));
-        let coin = self.clone();
-        let fut = async move {
-            let broadcast_res = try_s!(coin.rpc_client.broadcast_tx_commit(tx_bytes.into()).await);
-            if !broadcast_res.check_tx.code.is_ok() {
-                return ERR!("Tx check failed {:?}", broadcast_res.check_tx);
-            }
-
-            if !broadcast_res.deliver_tx.code.is_ok() {
-                return ERR!("Tx deliver failed {:?}", broadcast_res.deliver_tx);
-            }
-            Ok(broadcast_res.hash.to_string())
-        };
-        Box::new(fut.boxed().compat())
+        self.send_raw_tx_bytes(&tx_bytes)
     }
 
     fn send_raw_tx_bytes(&self, tx: &[u8]) -> Box<dyn Future<Item = String, Error = String> + Send> {

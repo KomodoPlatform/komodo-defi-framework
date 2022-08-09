@@ -182,21 +182,37 @@ pub mod coin_balance;
 #[doc(hidden)]
 #[cfg(test)]
 pub mod coins_tests;
+
 pub mod eth;
+use eth::{eth_coin_from_conf_and_request, EthCoin, EthTxFeeDetails, SignedEthTx};
+
 pub mod hd_pubkey;
+
 pub mod hd_wallet;
+use hd_wallet::{HDAddress, HDAddressId};
+
 pub mod hd_wallet_storage;
 #[cfg(not(target_arch = "wasm32"))] pub mod lightning;
 #[cfg_attr(target_arch = "wasm32", allow(dead_code, unused_imports))]
 pub mod my_tx_history_v2;
+
 pub mod qrc20;
+use qrc20::{qrc20_coin_from_conf_and_params, Qrc20ActivationParams, Qrc20Coin, Qrc20FeeDetails};
+
 pub mod rpc_command;
+use rpc_command::{init_create_account::{CreateAccountTaskManager, CreateAccountTaskManagerShared},
+                  init_scan_for_new_addresses::{ScanAddressesTaskManager, ScanAddressesTaskManagerShared},
+                  init_withdraw::{WithdrawTaskManager, WithdrawTaskManagerShared}};
+
 pub mod tendermint;
+use tendermint::{TendermintCoin, TendermintFeeDetails, TendermintProtocolInfo};
+
 #[doc(hidden)]
 #[allow(unused_variables)]
 pub mod test_coin;
-pub mod tx_history_storage;
 pub use test_coin::TestCoin;
+
+pub mod tx_history_storage;
 
 #[doc(hidden)]
 #[allow(unused_variables)]
@@ -208,20 +224,9 @@ pub use solana::spl::SplToken;
 pub use solana::{solana_coin_from_conf_and_params, SolanaActivationParams, SolanaCoin, SolanaFeeDetails};
 
 pub mod utxo;
-#[cfg(not(target_arch = "wasm32"))] pub mod z_coin;
-
-use crate::tendermint::{TendermintCoin, TendermintFeeDetails, TendermintProtocolInfo};
-use eth::{eth_coin_from_conf_and_request, EthCoin, EthTxFeeDetails, SignedEthTx};
-use hd_wallet::{HDAddress, HDAddressId};
-use qrc20::Qrc20ActivationParams;
-use qrc20::{qrc20_coin_from_conf_and_params, Qrc20Coin, Qrc20FeeDetails};
-use qtum::{Qrc20AddressError, ScriptHashTypeNotSupported};
-use rpc_command::{init_create_account::{CreateAccountTaskManager, CreateAccountTaskManagerShared},
-                  init_scan_for_new_addresses::{ScanAddressesTaskManager, ScanAddressesTaskManagerShared},
-                  init_withdraw::{WithdrawTaskManager, WithdrawTaskManagerShared}};
 use utxo::bch::{bch_coin_from_conf_and_params, BchActivationRequest, BchCoin};
-use utxo::qtum::{self, qtum_coin_with_priv_key, QtumCoin};
-use utxo::qtum::{QtumDelegationOps, QtumDelegationRequest, QtumStakingInfosDetails};
+use utxo::qtum::{self, qtum_coin_with_priv_key, Qrc20AddressError, QtumCoin, QtumDelegationOps, QtumDelegationRequest,
+                 QtumStakingInfosDetails, ScriptHashTypeNotSupported};
 use utxo::rpc_clients::UtxoRpcError;
 use utxo::slp::SlpToken;
 use utxo::slp::{slp_addr_from_pubkey_str, SlpFeeDetails};
@@ -229,6 +234,8 @@ use utxo::utxo_common::big_decimal_from_sat_unsigned;
 use utxo::utxo_standard::{utxo_standard_coin_with_priv_key, UtxoStandardCoin};
 use utxo::UtxoActivationParams;
 use utxo::{BlockchainNetwork, GenerateTxError, UtxoFeeDetails, UtxoTx};
+
+#[cfg(not(target_arch = "wasm32"))] pub mod z_coin;
 #[cfg(not(target_arch = "wasm32"))] use z_coin::ZCoin;
 
 pub type BalanceResult<T> = Result<T, MmError<BalanceError>>;
