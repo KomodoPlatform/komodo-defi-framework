@@ -5,6 +5,7 @@ use futures::compat::Future01CompatExt;
 use futures::{Future as Future03, FutureExt, TryFutureExt};
 use http::Response;
 use mm2_core::mm_ctx::MmArc;
+use mm2_err_handle::prelude::*;
 use serde_json::{self as json, Value as Json};
 use std::net::SocketAddr;
 
@@ -138,46 +139,65 @@ where
     Box::new(CPUPOOL.spawn_fn(f))
 }
 
+#[derive(Debug, derive_more::Display, PartialEq)]
+pub enum ProcessSingleReqError {
+    AuthenticationError(String),
+    #[display(fmt = "Selected method can be called from localhost only!")]
+    MethodCallOnlyAllowedFromLocalhost,
+    #[display(fmt = "Your ip is banned")]
+    IpIsBanned,
+    #[display(fmt = "No such method.")]
+    NoSuchMethod,
+    Transport(String),
+}
+
 pub async fn process_single_request(
     ctx: MmArc,
     req: Json,
     client: SocketAddr,
     local_only: bool,
-) -> Result<Response<Vec<u8>>, String> {
+) -> Result<Response<Vec<u8>>, MmError<ProcessSingleReqError>> {
     // https://github.com/artemii235/SuperNET/issues/368
     if local_only && !client.ip().is_loopback() && !PUBLIC_METHODS.contains(&req["method"].as_str()) {
-        return ERR!("Selected method can be called from localhost only!");
+        return MmError::err(ProcessSingleReqError::MethodCallOnlyAllowedFromLocalhost);
     }
     let rate_limit_ctx = RateLimitContext::from_ctx(&ctx).unwrap();
     if rate_limit_ctx.is_banned(client.ip()).await {
-        return ERR!("Your ip is banned.");
+        return MmError::err(ProcessSingleReqError::IpIsBanned);
     }
-    try_s!(auth(&req, &ctx, &client).await);
+    auth(&req, &ctx, &client)
+        .await
+        .map_to_mm(ProcessSingleReqError::AuthenticationError)?;
 
     let handler = match dispatcher(req, ctx.clone()) {
-        DispatcherRes::Match(handler) => handler,
-        DispatcherRes::NoMatch(_) => return ERR!("No such method."),
+        DispatcherRes::Match(handler) => handler.map_to_mm_fut(ProcessSingleReqError::Transport),
+        DispatcherRes::NoMatch(_) => return MmError::err(ProcessSingleReqError::NoSuchMethod),
     };
-    Ok(try_s!(handler.compat().await))
+    handler.compat().await
 }
 
 /// The set of functions that convert the result of the updated handlers into the legacy format.
 mod into_legacy {
+    use coins::{TradePreimageError, WithdrawError};
+    use mm2_err_handle::prelude::*;
+
     use super::*;
     use crate::mm2::lp_swap;
 
-    pub async fn withdraw(ctx: MmArc, req: Json) -> Result<Response<Vec<u8>>, String> {
-        let params = try_s!(json::from_value(req));
-        let result = try_s!(coins::withdraw(ctx, params).await);
-        let body = try_s!(json::to_vec(&result));
-        Ok(try_s!(Response::builder().body(body)))
+    pub async fn withdraw(ctx: MmArc, req: Json) -> Result<Response<Vec<u8>>, MmError<WithdrawError>> {
+        let params = json::from_value(req)?;
+        let result = coins::withdraw(ctx, params).await?;
+        let body = json::to_vec(&result)?;
+        Ok(Response::builder().body(body)?)
     }
 
-    pub async fn trade_preimage(ctx: MmArc, req: Json) -> Result<Response<Vec<u8>>, String> {
-        let params = try_s!(json::from_value(req));
-        let result = try_s!(lp_swap::trade_preimage_rpc(ctx, params).await);
+    pub async fn trade_preimage(ctx: MmArc, req: Json) -> Result<Response<Vec<u8>>, MmError<TradePreimageError>> {
+        let params = json::from_value(req)?;
+        let result = lp_swap::trade_preimage_rpc(ctx, params)
+            .await
+            .map_err(|err| TradePreimageError::Transport(err.to_string()))?;
         let res = json!({ "result": result });
-        let body = try_s!(json::to_vec(&res));
-        Ok(try_s!(Response::builder().body(body)))
+        let body = json::to_vec(&res)?;
+        Ok(Response::builder().body(body)?)
     }
 }

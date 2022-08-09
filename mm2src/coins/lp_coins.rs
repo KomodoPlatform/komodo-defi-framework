@@ -1149,6 +1149,14 @@ impl From<UnexpectedDerivationMethod> for TradePreimageError {
     fn from(e: UnexpectedDerivationMethod) -> Self { TradePreimageError::InternalError(e.to_string()) }
 }
 
+impl From<serde_json::Error> for TradePreimageError {
+    fn from(err: serde_json::Error) -> Self { Self::InternalError(err.to_string()) }
+}
+
+impl From<http::Error> for TradePreimageError {
+    fn from(err: http::Error) -> Self { Self::InternalError(err.to_string()) }
+}
+
 impl TradePreimageError {
     /// Construct [`TradePreimageError`] from [`GenerateTxError`] using additional `coin` and `decimals`.
     pub fn from_generate_tx_error(
@@ -1607,6 +1615,14 @@ impl From<UnexpectedDerivationMethod> for WithdrawError {
 
 impl From<PrivKeyNotAllowed> for WithdrawError {
     fn from(e: PrivKeyNotAllowed) -> Self { WithdrawError::InternalError(e.to_string()) }
+}
+
+impl From<serde_json::Error> for WithdrawError {
+    fn from(err: serde_json::Error) -> Self { Self::InternalError(err.to_string()) }
+}
+
+impl From<http::Error> for WithdrawError {
+    fn from(err: http::Error) -> Self { Self::InternalError(err.to_string()) }
 }
 
 impl WithdrawError {

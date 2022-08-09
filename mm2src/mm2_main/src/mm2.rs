@@ -51,7 +51,7 @@ use std::ptr::null;
 use std::str;
 
 #[path = "lp_native_dex.rs"] mod lp_native_dex;
-use self::lp_native_dex::lp_init;
+use self::lp_native_dex::{lp_init, MmInitError};
 use coins::update_coins_config;
 use mm2_err_handle::prelude::*;
 
@@ -237,8 +237,28 @@ fn initialize_payment_locktime(conf: &Json) {
     };
 }
 
+#[derive(Debug, Display)]
+pub enum LpMainError {
+    #[display(fmt = "rpc_password must not be empty")]
+    EmptyRpcPassword,
+    #[display(fmt = "rpc_password must be string")]
+    ExpectedStringPassword,
+    #[display(fmt = "Internal: {}", _0)]
+    Internal(String),
+    MmInitError(MmInitError),
+    PasswordPolicyError(PasswordPolicyError),
+}
+
+impl From<PasswordPolicyError> for LpMainError {
+    fn from(err: PasswordPolicyError) -> Self { Self::PasswordPolicyError(err) }
+}
+
+impl From<MmInitError> for LpMainError {
+    fn from(err: MmInitError) -> Self { Self::MmInitError(err) }
+}
+
 /// * `ctx_cb` - callback used to share the `MmCtx` ID with the call site.
-pub async fn lp_main(params: LpMainParams, ctx_cb: &dyn Fn(u32)) -> Result<(), String> {
+pub async fn lp_main(params: LpMainParams, ctx_cb: &dyn Fn(u32)) -> Result<(), MmError<LpMainError>> {
     let log_filter = params.filter.unwrap_or_default();
     // Logger can be initialized once.
     // If `mm2` is linked as a library, and `mm2` is restarted, `init_logger` returns an error.
@@ -247,19 +267,19 @@ pub async fn lp_main(params: LpMainParams, ctx_cb: &dyn Fn(u32)) -> Result<(), S
     let conf = params.conf;
     if !conf["rpc_password"].is_null() {
         if !conf["rpc_password"].is_string() {
-            return ERR!("rpc_password must be string");
+            return MmError::err(LpMainError::EmptyRpcPassword);
         }
 
         let is_weak_password_accepted = conf["allow_weak_password"].as_bool() == Some(true);
 
         if conf["rpc_password"].as_str() == Some("") {
-            return ERR!("rpc_password must not be empty");
+            return MmError::err(LpMainError::ExpectedStringPassword);
         }
 
         if !is_weak_password_accepted && cfg!(not(test)) {
             match password_policy(conf["rpc_password"].as_str().unwrap()) {
                 Ok(_) => {},
-                Err(err) => return Err(format!("{}", err)),
+                Err(err) => return MmError::err(err.into_inner().into()),
             }
         }
     }
@@ -272,8 +292,8 @@ pub async fn lp_main(params: LpMainParams, ctx_cb: &dyn Fn(u32)) -> Result<(), S
         .with_log_level(log_filter)
         .with_version(MM_VERSION.into())
         .into_mm_arc();
-    ctx_cb(try_s!(ctx.ffi_handle()));
-    try_s!(lp_init(ctx).await);
+    ctx_cb(ctx.ffi_handle().map_to_mm(LpMainError::Internal)?);
+    lp_init(ctx).await?;
     Ok(())
 }
 
@@ -397,45 +417,77 @@ pub fn mm2_main() {
 }
 
 #[cfg(not(target_arch = "wasm32"))]
+#[derive(Debug, Display)]
+pub enum Mm2ConfigError {
+    #[display(fmt = "Expected coin list")]
+    ExpectedCoinList,
+    Internal(String),
+    #[display(fmt = "Expect path to the source coins config.")]
+    UnexpectedCoinConfigPath,
+    #[display(fmt = "Expect destination path.")]
+    UnexpectedDestinationPath,
+}
+
+#[cfg(not(target_arch = "wasm32"))]
+impl From<str::Utf8Error> for Mm2ConfigError {
+    fn from(err: str::Utf8Error) -> Self { Self::Internal(err.to_string()) }
+}
+
+#[cfg(not(target_arch = "wasm32"))]
+impl From<Mm2ConfigError> for LpMainError {
+    fn from(err: Mm2ConfigError) -> Self { Self::Internal(err.to_string()) }
+}
+
+#[cfg(not(target_arch = "wasm32"))]
+impl From<serde_json::Error> for Mm2ConfigError {
+    fn from(err: serde_json::Error) -> Self { Self::Internal(err.to_string()) }
+}
+
+#[cfg(not(target_arch = "wasm32"))]
+impl From<std::io::Error> for Mm2ConfigError {
+    fn from(err: std::io::Error) -> Self { Self::Internal(err.to_string()) }
+}
+
+#[cfg(not(target_arch = "wasm32"))]
 /// Parses and returns the `first_arg` as JSON.
 /// Attempts to load the config from `MM2.json` file if `first_arg` is None
-pub fn get_mm2config(first_arg: Option<&str>) -> Result<Json, String> {
+pub fn get_mm2config(first_arg: Option<&str>) -> Result<Json, MmError<Mm2ConfigError>> {
     let conf_path = env::var("MM_CONF_PATH").unwrap_or_else(|_| "MM2.json".into());
     let conf_from_file = slurp(&conf_path);
     let conf = match first_arg {
         Some(s) => s,
         None => {
             if conf_from_file.is_empty() {
-                return ERR!(
+                return MmError::err(Mm2ConfigError::Internal(format!(
                     "Config is not set from command line arg and {} file doesn't exist.",
                     conf_path
-                );
+                )));
             }
-            try_s!(std::str::from_utf8(&conf_from_file))
+            std::str::from_utf8(&conf_from_file)?
         },
     };
 
     let mut conf: Json = match json::from_str(conf) {
         Ok(json) => json,
-        Err(err) => return ERR!("Couldn't parse.({}).{}", conf, err),
+        Err(err) => return MmError::err(Mm2ConfigError::Internal(format!("Couldn't parse.({}).{}", conf, err))),
     };
 
     if conf["coins"].is_null() {
         let coins_path = env::var("MM_COINS_PATH").unwrap_or_else(|_| "coins".into());
         let coins_from_file = slurp(&coins_path);
         if coins_from_file.is_empty() {
-            return ERR!(
+            return MmError::err(Mm2ConfigError::Internal(format!(
                 "No coins are set in JSON config and '{}' file doesn't exist",
                 coins_path
-            );
+            )));
         }
         conf["coins"] = match json::from_slice(&coins_from_file) {
             Ok(j) => j,
             Err(e) => {
-                return ERR!(
+                return MmError::err(Mm2ConfigError::Internal(format!(
                     "Error {} parsing the coins file, please ensure it contains valid json",
                     e
-                )
+                )))
             },
         }
     }
@@ -448,33 +500,33 @@ pub fn get_mm2config(first_arg: Option<&str>) -> Result<Json, String> {
 /// * `ctx_cb` - Invoked with the MM context handle,
 ///              allowing the `run_lp_main` caller to communicate with MM.
 #[cfg(not(target_arch = "wasm32"))]
-pub fn run_lp_main(first_arg: Option<&str>, ctx_cb: &dyn Fn(u32)) -> Result<(), String> {
+pub fn run_lp_main(first_arg: Option<&str>, ctx_cb: &dyn Fn(u32)) -> Result<(), MmError<LpMainError>> {
     let conf = get_mm2config(first_arg)?;
 
     let log_filter = LogLevel::from_env();
 
     let params = LpMainParams::with_conf(conf).log_filter(log_filter);
-    try_s!(block_on(lp_main(params, ctx_cb)));
+    block_on(lp_main(params, ctx_cb))?;
     Ok(())
 }
 
 #[cfg(not(target_arch = "wasm32"))]
-fn on_update_config(args: &[OsString]) -> Result<(), String> {
+fn on_update_config(args: &[OsString]) -> Result<(), MmError<Mm2ConfigError>> {
     use mm2_io::fs::safe_slurp;
 
-    let src_path = args.get(2).ok_or(ERRL!("Expect path to the source coins config."))?;
-    let dst_path = args.get(3).ok_or(ERRL!("Expect destination path."))?;
+    let src_path = args.get(2).ok_or(Mm2ConfigError::UnexpectedCoinConfigPath)?;
+    let dst_path = args.get(3).ok_or(Mm2ConfigError::UnexpectedDestinationPath)?;
 
-    let config = try_s!(safe_slurp(src_path));
-    let mut config: Json = try_s!(json::from_slice(&config));
+    let config = safe_slurp(src_path).map_to_mm(Mm2ConfigError::Internal)?;
+    let mut config: Json = json::from_slice(&config)?;
 
     let result = if config.is_array() {
-        try_s!(update_coins_config(config))
+        update_coins_config(config).map_to_mm(Mm2ConfigError::Internal)? //TODO
     } else {
         // try to get config["coins"] as array
-        let conf_obj = config.as_object_mut().ok_or(ERRL!("Expected coin list"))?;
-        let coins = conf_obj.remove("coins").ok_or(ERRL!("Expected coin list"))?;
-        let updated_coins = try_s!(update_coins_config(coins));
+        let conf_obj = config.as_object_mut().ok_or(Mm2ConfigError::ExpectedCoinList)?;
+        let coins = conf_obj.remove("coins").ok_or(Mm2ConfigError::ExpectedCoinList)?;
+        let updated_coins = update_coins_config(coins).map_to_mm(Mm2ConfigError::Internal)?; //TODO
         conf_obj.insert("coins".into(), updated_coins);
         config
     };
@@ -482,8 +534,8 @@ fn on_update_config(args: &[OsString]) -> Result<(), String> {
     let buf = Vec::new();
     let formatter = json::ser::PrettyFormatter::with_indent(b"\t");
     let mut ser = json::Serializer::with_formatter(buf, formatter);
-    try_s!(result.serialize(&mut ser));
-    try_s!(std::fs::write(&dst_path, ser.into_inner()));
+    result.serialize(&mut ser)?;
+    std::fs::write(&dst_path, ser.into_inner())?;
     Ok(())
 }
 
