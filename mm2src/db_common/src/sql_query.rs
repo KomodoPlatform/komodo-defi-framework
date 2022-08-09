@@ -1,9 +1,11 @@
+use crate::sql_value::{FromQuoted, SqlValue, SqlValueOptional, SqlValueToString, SqlValuesToStrings};
 use crate::sqlite::{query_single_row, validate_ident, validate_table_name, OwnedSqlParam, OwnedSqlParams,
-                    SqlParamsBuilder, SqlValue, StringError, ToValidSqlIdent, ToValidSqlTable};
+                    SqlParamsBuilder, StringError, ToValidSqlIdent, ToValidSqlTable};
 use log::debug;
 use rusqlite::{Connection, Error as SqlError, Result as SqlResult, Row};
 use sql_builder::SqlBuilder;
 
+/// A `SELECT` SQL query builder.
 #[derive(Clone)]
 pub struct SqlQuery<'a> {
     conn: &'a Connection,
@@ -173,7 +175,7 @@ impl<'a> SqlQuery<'a> {
     }
 
     /// Add WHERE condition for equal parts.
-    /// For more details see [`SqlBuilder::and_where_eq`].
+    /// For more details see [`SqlBuilder::and_where_eq`] and [`SqlBuilder::and_where_is_null`].
     ///
     /// Please note the function validates the given `field` name,
     /// and `value` is considered a valid as it's able to be converted into `SqlValue`.
@@ -181,10 +183,13 @@ impl<'a> SqlQuery<'a> {
     pub fn and_where_eq<S, T>(&mut self, field: S, value: T) -> SqlResult<&mut Self>
     where
         S: ToValidSqlIdent,
-        SqlValue: From<T>,
+        SqlValueOptional: From<T>,
     {
-        self.sql_builder
-            .and_where_eq(field.to_valid_sql_ident()?, SqlValue::value_to_string(value));
+        let field = field.to_valid_sql_ident()?;
+        match SqlValueOptional::from(value) {
+            SqlValueOptional::Some(value) => self.sql_builder.and_where_eq(field, SqlValue::value_to_string(value)),
+            SqlValueOptional::Null => self.sql_builder.and_where_is_null(field),
+        };
         Ok(self)
     }
 
@@ -226,19 +231,19 @@ impl<'a> SqlQuery<'a> {
     /// Please note the function validates the given `field`,
     /// and `values` are considered valid as they're able to be converted into `SqlValue`.
     #[inline]
-    pub fn and_where_in_quoted<S, I>(&mut self, field: S, values: I) -> SqlResult<&mut Self>
+    pub fn and_where_in_quoted<S, I, T>(&mut self, field: S, values: I) -> SqlResult<&mut Self>
     where
         S: ToValidSqlIdent,
-        I: IntoIterator<Item = &'static str>,
+        I: IntoIterator<Item = T>,
+        SqlValue: FromQuoted<T>,
     {
-        let values: Vec<_> = values.into_iter().collect();
-        self.sql_builder
-            .and_where_in_quoted(field.to_valid_sql_ident()?, &values);
+        let values = SqlValue::quoted_values_to_strings(values);
+        self.sql_builder.and_where_in(field.to_valid_sql_ident()?, &values);
         Ok(self)
     }
 
     /// Add WHERE field IN (string list) with the specified `params`.
-    /// For more details see [`SqlBuilder::and_where_in_quoted`].
+    /// For more details see [`SqlBuilder::and_where_in`].
     ///
     /// Please note the function validates the given `field`.
     #[inline]
@@ -262,10 +267,13 @@ impl<'a> SqlQuery<'a> {
     pub fn or_where_eq<S, T>(&mut self, field: S, value: T) -> SqlResult<&mut Self>
     where
         S: ToValidSqlIdent,
-        SqlValue: From<T>,
+        SqlValueOptional: From<T>,
     {
-        self.sql_builder
-            .or_where_eq(field.to_valid_sql_ident()?, SqlValue::value_to_string(value));
+        let field = field.to_valid_sql_ident()?;
+        match SqlValueOptional::from(value) {
+            SqlValueOptional::Some(value) => self.sql_builder.or_where_eq(field, SqlValue::value_to_string(value)),
+            SqlValueOptional::Null => self.sql_builder.or_where_is_null(field),
+        };
         Ok(self)
     }
 
@@ -302,7 +310,7 @@ impl<'a> SqlQuery<'a> {
     }
 
     /// Add OR field IN (string list) to the last WHERE condition.
-    /// For more details see [`SqlBuilder::and_where_in_quoted`].
+    /// For more details see [`SqlBuilder::and_where_in`].
     ///
     /// Please note the function validates the given `field`,
     /// and `values` are considered valid as they're able to be converted into `SqlValue`.
@@ -310,11 +318,11 @@ impl<'a> SqlQuery<'a> {
     pub fn or_where_in_quoted<S, I, T>(&mut self, field: S, values: I) -> SqlResult<&mut Self>
     where
         S: ToValidSqlIdent,
-        I: IntoIterator<Item = &'static str>,
+        I: IntoIterator<Item = T>,
+        SqlValue: FromQuoted<T>,
     {
-        let values: Vec<_> = values.into_iter().collect();
-        self.sql_builder
-            .or_where_in_quoted(field.to_valid_sql_ident()?, &values);
+        let values: Vec<_> = values.into_iter().map(SqlValue::quoted_value_to_string).collect();
+        self.sql_builder.or_where_in(field.to_valid_sql_ident()?, &values);
         Ok(self)
     }
 
@@ -487,39 +495,44 @@ impl SqlOrdering {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::sql_insert::SqlInsert;
     use rusqlite::NO_PARAMS;
 
     const CREATE_TX_HISTORY_TABLE: &str = "CREATE TABLE tx_history (
         tx_hash VARCHAR(255) NOT NULL UNIQUE,
         height INTEGER NOT NULL,
-        total_amount INTEGER NOT NULL
+        total_amount INTEGER NOT NULL,
+        kmd_rewards INTEGER
     );";
     const CREATE_TX_ADDRESS_TABLE: &str = "CREATE TABLE tx_address (
         tx_hash VARCHAR(255) NOT NULL,
         address VARCHAR(255) NOT NULL
     );";
-    const INSERT_TX_TO_HISTORY_TABLE: &str =
-        "INSERT INTO tx_history (tx_hash, height, total_amount) VALUES (?1, ?2, ?3)";
-    const INSERT_TX_TO_ADDRESS_TABLE: &str = "INSERT INTO tx_address (tx_hash, address) VALUES (?1, ?2)";
 
     fn init_table_for_test(conn: &Connection) {
         conn.execute(CREATE_TX_HISTORY_TABLE, NO_PARAMS).unwrap();
         conn.execute(CREATE_TX_ADDRESS_TABLE, NO_PARAMS).unwrap();
 
         let history_items = vec![
-            ("tx_hash_1", 699545, 23),
-            ("tx_hash_2", 699547, 10),
-            ("tx_hash_3", 699547, 11),
-            ("tx_hash_4", 699530, 100),
-            ("tx_hash_5", 699532, 19),
+            ("tx_hash_1", 699545, 23, Some(0.5)),
+            ("tx_hash_2", 699547, 10, Some(0.2)),
+            ("tx_hash_3", 699547, 11, None),
+            ("tx_hash_4", 699530, 100, Some(1.01)),
+            ("tx_hash_5", 699532, 19, None),
         ];
-        for (tx_hash, height, total_amount) in history_items {
-            conn.execute(INSERT_TX_TO_HISTORY_TABLE, &[
-                tx_hash.to_owned(),
-                height.to_string(),
-                total_amount.to_string(),
-            ])
-            .unwrap();
+
+        for (tx_hash, height, total_amount, kmd_rewards) in history_items {
+            let mut insert_sql = SqlInsert::new(conn, "tx_history");
+            insert_sql
+                .column_quoted("tx_hash", tx_hash)
+                .unwrap()
+                .column("height", height)
+                .unwrap()
+                .column("total_amount", total_amount)
+                .unwrap()
+                .column("kmd_rewards", kmd_rewards)
+                .unwrap();
+            insert_sql.insert().unwrap();
         }
 
         let address_table_items = vec![
@@ -534,8 +547,13 @@ mod tests {
             ("tx_hash_5", "address_1"),
         ];
         for (tx_hash, address) in address_table_items {
-            conn.execute(INSERT_TX_TO_ADDRESS_TABLE, &[tx_hash.to_owned(), address.to_string()])
+            let mut insert_sql = SqlInsert::new(conn, "tx_address");
+            insert_sql
+                .column_quoted("tx_hash", tx_hash)
+                .unwrap()
+                .column_quoted("address", address)
                 .unwrap();
+            insert_sql.insert().unwrap();
         }
     }
 
@@ -588,6 +606,29 @@ mod tests {
 
         let actual: Vec<String> = query.query(|row| row.get(0)).unwrap();
         let expected = vec!["tx_hash_2".to_owned(), "tx_hash_3".to_owned(), "tx_hash_4".to_owned()];
+        assert_eq!(actual, expected);
+    }
+
+    #[test]
+    fn test_query_where_eq_null() {
+        const NO_KMD_REWARDS: Option<f64> = None;
+
+        let conn = Connection::open_in_memory().unwrap();
+        init_table_for_test(&conn);
+
+        let mut query = SqlQuery::select_from(&conn, "tx_history").unwrap();
+        query
+            .field("tx_hash")
+            .unwrap()
+            .and_where_eq("kmd_rewards", NO_KMD_REWARDS)
+            .unwrap();
+        assert_eq!(
+            query.clone().sql().unwrap(),
+            "SELECT tx_hash FROM tx_history WHERE kmd_rewards IS NULL;"
+        );
+
+        let actual: Vec<String> = query.query(|row| row.get(0)).unwrap();
+        let expected = vec!["tx_hash_3".to_owned(), "tx_hash_5".to_owned()];
         assert_eq!(actual, expected);
     }
 

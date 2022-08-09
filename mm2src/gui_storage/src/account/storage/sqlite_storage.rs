@@ -171,6 +171,47 @@ impl SqliteAccountStorage {
             .or_mm_err(|| AccountStorageError::NoEnabledAccount)
     }
 
+    /// Loads `AccountWithCoins`.
+    /// This method takes `conn` to ensure data coherence.
+    fn load_account_with_coins(
+        conn: &Connection,
+        account_id: &AccountId,
+    ) -> AccountStorageResult<Option<AccountWithCoins>> {
+        let account_info = match Self::load_account(conn, account_id)? {
+            Some(acc) => acc,
+            None => return Ok(None),
+        };
+        let mut query = SqlQuery::select_from(conn, account_coins_table::TABLE_NAME)?;
+
+        let (account_type, account_id) = account_id.to_pair();
+        query
+            .field(account_coins_table::COIN)?
+            .and_where_eq_param(account_table::ACCOUNT_TYPE, account_type.to_string())?
+            .and_where_eq(account_table::ACCOUNT_IDX, account_id.map(|id| id as i64))?;
+        let coins = query.query(|row| row.get::<_, String>(0))?.into_iter().collect();
+        Ok(Some(AccountWithCoins { account_info, coins }))
+    }
+
+    /// Tries to load an account info.
+    /// This method takes `conn` to ensure data coherence.
+    fn load_account(conn: &Connection, account_id: &AccountId) -> AccountStorageResult<Option<AccountInfo>> {
+        let mut query = SqlQuery::select_from(conn, account_table::TABLE_NAME)?;
+        query
+            .field(account_table::ACCOUNT_TYPE)?
+            .field(account_table::ACCOUNT_IDX)?
+            .field(account_table::NAME)?
+            .field(account_table::DESCRIPTION)?
+            .field(account_table::BALANCE_USD)?;
+
+        let (account_type, account_id) = account_id.to_pair();
+        query
+            .and_where_eq_param(account_table::ACCOUNT_TYPE, account_type.to_string())?
+            .and_where_eq(account_table::ACCOUNT_IDX, account_id.map(|id| id as i64))?;
+        query
+            .query_single_row(account_from_row)
+            .map_to_mm(AccountStorageError::from)
+    }
+
     fn load_accounts(conn: &Connection) -> AccountStorageResult<BTreeMap<AccountId, AccountInfo>> {
         let mut query = SqlQuery::select_from(conn, account_table::TABLE_NAME)?;
         query
@@ -205,7 +246,7 @@ impl AccountStorage for SqliteAccountStorage {
     async fn load_accounts_with_enabled_flag(
         &self,
     ) -> AccountStorageResult<BTreeMap<AccountId, AccountWithEnabledFlag>> {
-        let mut conn = self.lock_conn()?;
+        let conn = self.lock_conn()?;
         let enabled_account_id = Self::load_enabled_account_id(&conn)?;
 
         let mut found_enabled = false;
@@ -228,9 +269,18 @@ impl AccountStorage for SqliteAccountStorage {
         Ok(accounts)
     }
 
-    async fn load_enabled_account_id(&self) -> AccountStorageResult<AccountId> { todo!() }
+    async fn load_enabled_account_id(&self) -> AccountStorageResult<AccountId> {
+        let conn = self.lock_conn()?;
+        Self::load_enabled_account_id(&conn)
+    }
 
-    async fn load_enabled_account_with_coins(&self) -> AccountStorageResult<AccountWithCoins> { todo!() }
+    async fn load_enabled_account_with_coins(&self) -> AccountStorageResult<AccountWithCoins> {
+        let conn = self.lock_conn()?;
+        let account_id = Self::load_enabled_account_id(&conn)?;
+
+        Self::load_account_with_coins(&conn, &account_id)?
+            .or_mm_err(|| AccountStorageError::unknown_account_in_enabled_table(account_id))
+    }
 
     async fn enable_account(&self, account_id: AccountId) -> AccountStorageResult<()> { todo!() }
 

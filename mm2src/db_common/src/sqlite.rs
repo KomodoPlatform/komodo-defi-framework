@@ -233,52 +233,6 @@ impl<S: ToString> ToValidSqlIdent for S {
     }
 }
 
-/// A valid SQL value that can be passed as an argument to the `SqlBuilder` or `SqlQuery` safely.
-pub enum SqlValue {
-    String(&'static str),
-    StringQuoted(&'static str),
-    Decimal(i64),
-}
-
-impl SqlValue {
-    /// Converts the given `value` to string if it implements `Into<SqlValue>`.
-    /// The resulting string is considered a safe SQL value.
-    pub(crate) fn value_to_string<S>(value: S) -> String
-    where
-        SqlValue: From<S>,
-    {
-        SqlValue::from(value).to_string()
-    }
-
-    /// Converts the given `values` to `Vec<String>` if they implement `Into<SqlValue>`.
-    /// /// The resulting strings are considered safe SQL values.
-    pub(crate) fn values_to_strings<I, S>(values: I) -> Vec<String>
-    where
-        I: IntoIterator<Item = S>,
-        SqlValue: From<S>,
-    {
-        values.into_iter().map(SqlValue::value_to_string).collect()
-    }
-}
-
-impl fmt::Display for SqlValue {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        match self {
-            SqlValue::String(string) => write!(f, "{}", string),
-            SqlValue::StringQuoted(string) => write!(f, "'{}'", string),
-            SqlValue::Decimal(decimal) => write!(f, "{}", decimal),
-        }
-    }
-}
-
-impl From<&'static str> for SqlValue {
-    fn from(string: &'static str) -> Self { SqlValue::String(string) }
-}
-
-impl From<i64> for SqlValue {
-    fn from(decimal: i64) -> Self { SqlValue::Decimal(decimal) }
-}
-
 /// This structure manages the SQL parameters.
 #[derive(Clone, Default)]
 pub(crate) struct SqlParamsBuilder {

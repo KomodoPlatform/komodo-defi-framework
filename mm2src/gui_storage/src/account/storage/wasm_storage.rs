@@ -98,7 +98,7 @@ impl WasmAccountStorage {
     /// This method takes `db_transaction` to ensure data coherence.
     async fn load_account_with_coins(
         db_transaction: &DbTransaction<'_>,
-        account_id: AccountId,
+        account_id: &AccountId,
     ) -> AccountStorageResult<Option<AccountWithCoins>> {
         let table = db_transaction.table::<AccountTable>().await?;
 
@@ -112,7 +112,7 @@ impl WasmAccountStorage {
 
     /// Checks whether an account with the given `account_id` exists.
     /// This method takes `db_transaction` to ensure data coherence.
-    async fn account_exists(db_transaction: &DbTransaction<'_>, account_id: AccountId) -> AccountStorageResult<bool> {
+    async fn account_exists(db_transaction: &DbTransaction<'_>, account_id: &AccountId) -> AccountStorageResult<bool> {
         let table = db_transaction.table::<AccountTable>().await?;
 
         let index_keys = AccountTable::account_id_to_index(account_id)?;
@@ -130,7 +130,7 @@ impl WasmAccountStorage {
         let transaction = locked_db.inner.transaction().await?;
         let table = transaction.table::<AccountTable>().await?;
 
-        let index_keys = AccountTable::account_id_to_index(account_id)?;
+        let index_keys = AccountTable::account_id_to_index(&account_id)?;
         let (item_id, mut account) = table
             .get_item_by_unique_multi_index(index_keys)
             .await?
@@ -187,7 +187,7 @@ impl AccountStorage for WasmAccountStorage {
 
         let account_id = Self::load_enabled_account_id(&transaction).await?;
 
-        Self::load_account_with_coins(&transaction, account_id)
+        Self::load_account_with_coins(&transaction, &account_id)
             .await?
             .or_mm_err(|| AccountStorageError::unknown_account_in_enabled_table(account_id))
     }
@@ -197,7 +197,7 @@ impl AccountStorage for WasmAccountStorage {
         let transaction = locked_db.inner.transaction().await?;
 
         // First, check if the account exists.
-        if !Self::account_exists(&transaction, account_id).await? {
+        if !Self::account_exists(&transaction, &account_id).await? {
             return MmError::err(AccountStorageError::NoSuchAccount(account_id));
         }
 
@@ -214,7 +214,7 @@ impl AccountStorage for WasmAccountStorage {
         let transaction = locked_db.inner.transaction().await?;
 
         // First, check if the account doesn't exist.
-        if Self::account_exists(&transaction, account_info.account_id).await? {
+        if Self::account_exists(&transaction, &account_info.account_id).await? {
             return MmError::err(AccountStorageError::AccountExistsAlready(account_info.account_id));
         }
 
@@ -288,7 +288,7 @@ impl AccountTable {
     /// * account_id - optional integer ID
     const ACCOUNT_ID_INDEX: &'static str = "account_id";
 
-    fn account_id_to_index(account_id: AccountId) -> AccountStorageResult<MultiIndex> {
+    fn account_id_to_index(account_id: &AccountId) -> AccountStorageResult<MultiIndex> {
         let (account_type, account_idx) = account_id.to_pair();
         MultiIndex::new(AccountTable::ACCOUNT_ID_INDEX)
             .with_value(account_type)?

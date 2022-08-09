@@ -1,5 +1,6 @@
 use crate::sql_constraint::SqlConstraint;
-use crate::sqlite::{SqlValue, StringError};
+use crate::sql_value::{FromQuoted, SqlValue};
+use crate::sqlite::StringError;
 use common::fmt::{WriteSafe, WriteSafeJoin};
 use common::write_safe;
 use rusqlite::{Connection, Error as SqlError, Result as SqlResult, NO_PARAMS};
@@ -70,8 +71,11 @@ impl SqlColumn {
         self
     }
 
-    pub fn default_quoted(mut self, default: &'static str) -> SqlColumn {
-        self.default = Some(SqlValue::StringQuoted(default));
+    pub fn default_quoted<T>(mut self, default: T) -> SqlColumn
+    where
+        SqlValue: FromQuoted<T>,
+    {
+        self.default = Some(SqlValue::from_quoted(default));
         self
     }
 
