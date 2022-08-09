@@ -48,6 +48,7 @@ pub enum ZcoinInProgressStatus {
         current_scanned_block: u64,
         latest_block: u64,
     },
+    TemporaryError(String),
     RequestingWalletBalance,
     Finishing,
     /// This status doesn't require the user to send `UserAction`,
@@ -206,6 +207,7 @@ impl InitStandaloneCoinActivationOps for ZCoin {
                     current_scanned_block,
                     latest_block,
                 },
+                SyncStatus::TemporaryError(e) => ZcoinInProgressStatus::TemporaryError(e),
                 SyncStatus::Finished { .. } => break,
             };
             task_handle.update_in_progress_status(in_progress_status)?;

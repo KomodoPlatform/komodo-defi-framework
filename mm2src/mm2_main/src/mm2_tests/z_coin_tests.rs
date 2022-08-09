@@ -1,7 +1,7 @@
 use super::*;
 use common::now_ms;
 use mm2_test_helpers::for_tests::{init_withdraw, pirate_conf, rick_conf, send_raw_transaction, withdraw_status,
-                                  z_coin_tx_history, zombie_conf, Mm2TestConf, PIRATE_ELECTRUMS,
+                                  z_coin_tx_history, zombie_conf, Mm2TestConf, ARRR, PIRATE_ELECTRUMS,
                                   PIRATE_LIGHTWALLETD_URLS, RICK, ZOMBIE_ELECTRUMS, ZOMBIE_LIGHTWALLETD_URLS,
                                   ZOMBIE_TICKER};
 use std::collections::HashSet;
@@ -9,6 +9,7 @@ use std::iter::FromIterator;
 use std::num::NonZeroUsize;
 
 const ZOMBIE_TEST_BALANCE_SEED: &str = "zombie test seed";
+const ARRR_TEST_ACTIVATION_SEED: &str = "arrr test activation seed";
 const ZOMBIE_TEST_HISTORY_SEED: &str = "zombie test history seed";
 const ZOMBIE_TEST_WITHDRAW_SEED: &str = "zombie withdraw test seed";
 const ZOMBIE_TRADE_BOB_SEED: &str = "RICK ZOMBIE BOB";
@@ -51,7 +52,6 @@ fn activate_z_coin_light() {
         ZOMBIE_TICKER,
         ZOMBIE_ELECTRUMS,
         ZOMBIE_LIGHTWALLETD_URLS,
-        &blocks_cache_path(&mm, ZOMBIE_TEST_BALANCE_SEED, ZOMBIE_TICKER),
     ));
 
     let balance = match activation_result.wallet_balance {
@@ -75,7 +75,6 @@ fn test_z_coin_tx_history() {
         ZOMBIE_TICKER,
         ZOMBIE_ELECTRUMS,
         ZOMBIE_LIGHTWALLETD_URLS,
-        &blocks_cache_path(&mm, ZOMBIE_TEST_HISTORY_SEED, ZOMBIE_TICKER),
     ));
 
     let tx_history = block_on(z_coin_tx_history(&mm, ZOMBIE_TICKER, 5, None));
@@ -319,7 +318,6 @@ fn withdraw_z_coin_light() {
         ZOMBIE_TICKER,
         ZOMBIE_ELECTRUMS,
         ZOMBIE_LIGHTWALLETD_URLS,
-        &blocks_cache_path(&mm, ZOMBIE_TEST_WITHDRAW_SEED, ZOMBIE_TICKER),
     ));
 
     println!("{:?}", activation_result);
@@ -361,7 +359,6 @@ fn trade_rick_zombie_light() {
         ZOMBIE_TICKER,
         ZOMBIE_ELECTRUMS,
         ZOMBIE_LIGHTWALLETD_URLS,
-        &blocks_cache_path(&mm_bob, bob_passphrase, ZOMBIE_TICKER),
     ));
 
     println!("Bob ZOMBIE activation {:?}", zombie_activation);
@@ -394,7 +391,6 @@ fn trade_rick_zombie_light() {
         ZOMBIE_TICKER,
         ZOMBIE_ELECTRUMS,
         ZOMBIE_LIGHTWALLETD_URLS,
-        &blocks_cache_path(&mm_alice, alice_passphrase, ZOMBIE_TICKER),
     ));
 
     println!("Alice ZOMBIE activation {:?}", zombie_activation);
@@ -443,15 +439,14 @@ fn trade_rick_zombie_light() {
 fn activate_pirate_light() {
     let coins = json!([pirate_conf()]);
 
-    let conf = Mm2TestConf::seednode(ZOMBIE_TEST_BALANCE_SEED, &coins);
+    let conf = Mm2TestConf::seednode(ARRR_TEST_ACTIVATION_SEED, &coins);
     let mm = MarketMakerIt::start(conf.conf, conf.rpc_password, conf.local).unwrap();
 
     let activation_result = block_on(enable_z_coin_light(
         &mm,
-        "ARRR",
+        ARRR,
         PIRATE_ELECTRUMS,
         PIRATE_LIGHTWALLETD_URLS,
-        &blocks_cache_path(&mm, ZOMBIE_TEST_BALANCE_SEED, "ARRR"),
     ));
 
     let balance = match activation_result.wallet_balance {
@@ -459,5 +454,5 @@ fn activate_pirate_light() {
         _ => panic!("Expected EnableCoinBalance::Iguana"),
     };
     println!("{:?}", balance);
-    // assert_eq!(balance.balance.spendable, BigDecimal::from_str("3.1").unwrap());
+    assert_eq!(balance.balance.spendable, BigDecimal::default());
 }

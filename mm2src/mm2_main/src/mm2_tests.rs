@@ -170,23 +170,12 @@ fn rmd160_from_passphrase(passphrase: &str) -> [u8; 20] {
     key_pair_from_seed(passphrase).unwrap().public().address_hash().take()
 }
 
-#[cfg(not(target_arch = "wasm32"))]
-fn blocks_cache_path(mm: &MarketMakerIt, seed: &str, coin: &str) -> PathBuf {
-    let rmd = rmd160_from_passphrase(seed);
-    let db_name = format!("{}_light_cache.db", coin);
-    mm.folder.join("DB").join(hex::encode(rmd)).join(db_name)
-}
-
 async fn enable_z_coin_light(
     mm: &MarketMakerIt,
     coin: &str,
     electrums: &[&str],
     lightwalletd_urls: &[&str],
-    blocks_cache_path: &dyn AsRef<Path>,
 ) -> ZcoinActivationResult {
-    const TEST_CACHE_ZOMBIE: &str = "../coins/test_cache_zombie.db";
-    // std::fs::copy(TEST_CACHE_ZOMBIE, blocks_cache_path).unwrap();
-
     let init = init_z_coin_light(mm, coin, electrums, lightwalletd_urls).await;
     let init: RpcV2Response<InitTaskResult> = json::from_value(init).unwrap();
     let timeout = now_ms() + 12000000;
@@ -202,7 +191,6 @@ async fn enable_z_coin_light(
         if let InitZcoinStatus::Ready(rpc_result) = status.result {
             match rpc_result {
                 MmRpcResult::Ok { result } => {
-                    // std::fs::copy(blocks_cache_path, TEST_CACHE_ZOMBIE).unwrap();
                     break result;
                 },
                 MmRpcResult::Err(e) => panic!("{} initialization error {:?}", coin, e),

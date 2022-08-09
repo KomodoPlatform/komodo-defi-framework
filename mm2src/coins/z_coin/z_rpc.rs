@@ -250,6 +250,7 @@ pub enum SyncStatus {
         current_scanned_block: u64,
         latest_block: u64,
     },
+    TemporaryError(String),
     Finished {
         block_number: u64,
     },
@@ -290,6 +291,16 @@ impl SaplingSyncLoopHandle {
                 current_scanned_block,
                 latest_block,
             })
+            .is_err()
+        {
+            debug!("No one seems interested in SyncStatus");
+        }
+    }
+
+    fn notify_on_error(&mut self, error: String) {
+        if self
+            .sync_status_notifier
+            .try_send(SyncStatus::TemporaryError(error))
             .is_err()
         {
             debug!("No one seems interested in SyncStatus");
@@ -449,12 +460,14 @@ async fn light_wallet_db_sync_loop(mut sync_handle: SaplingSyncLoopHandle) {
     loop {
         if let Err(e) = sync_handle.update_blocks_cache().await {
             error!("Error {} on blocks cache update", e);
+            sync_handle.notify_on_error(e.to_string());
             Timer::sleep(10.).await;
             continue;
         }
 
         if let Err(e) = block_in_place(|| sync_handle.scan_blocks()) {
             error!("Error {} on scan_blocks", e);
+            sync_handle.notify_on_error(e.to_string());
             Timer::sleep(10.).await;
             continue;
         }
