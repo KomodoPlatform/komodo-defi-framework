@@ -503,26 +503,30 @@ where
         None
     };
 
-    Ok(Transaction {
-        version,
-        n_time,
-        overwintered,
-        version_group_id,
-        expiry_height,
-        value_balance,
-        inputs,
-        outputs,
-        lock_time,
-        binding_sig,
-        join_split_pubkey,
-        join_split_sig,
-        join_splits,
-        shielded_spends,
-        shielded_outputs,
-        zcash,
-        str_d_zeel,
-        tx_hash_algo: TxHashAlgo::DSHA256,
-    })
+    if reader.is_finished() {
+        Ok(Transaction {
+            version,
+            n_time,
+            overwintered,
+            version_group_id,
+            expiry_height,
+            value_balance,
+            inputs,
+            outputs,
+            lock_time,
+            binding_sig,
+            join_split_pubkey,
+            join_split_sig,
+            join_splits,
+            shielded_spends,
+            shielded_outputs,
+            zcash,
+            str_d_zeel,
+            tx_hash_algo: TxHashAlgo::DSHA256,
+        })
+    } else {
+        Err(Error::UnreadData)
+    }
 }
 
 impl Deserializable for Transaction {
