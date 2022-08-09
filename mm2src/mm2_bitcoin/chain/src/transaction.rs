@@ -537,21 +537,13 @@ impl Deserializable for Transaction {
         // specific use case
         let mut buffer = vec![];
         reader.read_to_end(&mut buffer)?;
-
-        let tx = if let Ok(t) = deserialize_tx(&mut Reader::from_read(buffer.as_slice()), TxType::StandardWithWitness) {
-            t
-        } else if let Ok(t) = deserialize_tx(&mut Reader::from_read(buffer.as_slice()), TxType::PosWithNTime) {
-            t
-        } else {
-            deserialize_tx(&mut Reader::from_read(buffer.as_slice()), TxType::Zcash)?
-        };
-
-        // Backwards comparison
-        if serialize(&tx).len() == buffer.len() {
-            Ok(tx)
-        } else {
-            Err(Error::MalformedData)
+        if let Ok(t) = deserialize_tx(&mut Reader::from_read(buffer.as_slice()), TxType::StandardWithWitness) {
+            return Ok(t);
         }
+        if let Ok(t) = deserialize_tx(&mut Reader::from_read(buffer.as_slice()), TxType::PosWithNTime) {
+            return Ok(t);
+        }
+        deserialize_tx(&mut Reader::from_read(buffer.as_slice()), TxType::Zcash)
     }
 }
 
