@@ -1,5 +1,7 @@
+use common::APPLICATION_JSON;
 use cosmrs::tendermint::abci::Transaction;
 use derive_more::Display;
+use http::header::{ACCEPT, CONTENT_TYPE};
 use http::uri::InvalidUri;
 use http::{StatusCode, Uri};
 use mm2_net::transport::SlurpError;
@@ -58,8 +60,8 @@ impl HttpClient {
         let (status_code, response_str) = FetchRequest::post(&self.uri)
             .cors()
             .body_utf8(request_str)
-            .header("Accept", "application/json")
-            .header("Content-Type", "application/json")
+            .header(ACCEPT.as_str(), APPLICATION_JSON)
+            .header(CONTENT_TYPE.as_str(), APPLICATION_JSON)
             .request_str()
             .await
             .map_err(|e| e.into_inner())?;

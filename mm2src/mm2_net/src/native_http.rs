@@ -1,7 +1,8 @@
 use crate::transport::{SlurpError, SlurpResult};
 use common::wio::{drive03, HYPER};
+use common::APPLICATION_JSON;
 use futures::channel::oneshot::Canceled;
-use http::{header, HeaderValue, Request};
+use http::{header, Request};
 use hyper::Body;
 use mm2_err_handle::prelude::*;
 
@@ -59,7 +60,7 @@ pub async fn slurp_post_json(url: &str, body: String) -> SlurpResult {
     let request = Request::builder()
         .method("POST")
         .uri(url)
-        .header(header::CONTENT_TYPE, HeaderValue::from_static("application/json"))
+        .header(header::CONTENT_TYPE, APPLICATION_JSON)
         .body(body.into())?;
     slurp_req(request).await
 }

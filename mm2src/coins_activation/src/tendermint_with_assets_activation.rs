@@ -6,11 +6,9 @@ use coins::my_tx_history_v2::TxHistoryStorage;
 use coins::tendermint::{TendermintActivationParams, TendermintCoin, TendermintInitError, TendermintInitErrorKind,
                         TendermintProtocolInfo};
 use coins::{CoinBalance, CoinProtocol, MarketCoinOps};
-use common::executor::spawn;
-use common::log::warn;
 use common::mm_metrics::MetricsArc;
 use common::Future01CompatExt;
-use futures::future::{abortable, AbortHandle, FutureExt};
+use futures::future::AbortHandle;
 use mm2_core::mm_ctx::MmArc;
 use mm2_err_handle::prelude::*;
 use mm2_number::BigDecimal;
@@ -104,9 +102,6 @@ impl PlatformWithTokensActivationOps for TendermintCoin {
         storage: impl TxHistoryStorage,
         initial_balance: BigDecimal,
     ) -> AbortHandle {
-        warn!("Tx history is not implemented for Tendermint yet!");
-        let (fut, handle) = abortable(async {});
-        spawn(fut.then(|_| async {}));
-        handle
+        unimplemented!()
     }
 }
