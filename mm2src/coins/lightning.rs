@@ -18,7 +18,7 @@ use crate::utxo::utxo_common::{big_decimal_from_sat_unsigned, CheckPaymentSentEr
                                SendRawTxError, UtxoTxBuilder, ValidatePaymentError};
 use crate::utxo::{sat_from_big_decimal, BlockchainNetwork, FeePolicy, GetUtxoListOps, UtxoTxGenerationOps};
 use crate::{BalanceFut, CoinBalance, FeeApproxStage, FoundSwapTxSpend, FoundSwapTxSpendErr, HistorySyncState,
-            MarketCoinOps, MmCoin, MyAddressError, NegotiateSwapContractAddrErr, RawTransactionFut,
+            MarketCoinOps, MmAddressError, MmCoin, NegotiateSwapContractAddrErr, RawTransactionFut,
             RawTransactionRequest, SearchForSwapTxSpendInput, SignatureError, SignatureResult, SwapOps, TradeFee,
             TradePreimageFut, TradePreimageResult, TradePreimageValue, TransactionEnum, TransactionFut,
             UnexpectedDerivationMethod, UtxoStandardCoin, ValidateAddressResult, ValidatePaymentInput,
@@ -389,7 +389,7 @@ impl SwapOps for LightningCoin {
 impl MarketCoinOps for LightningCoin {
     fn ticker(&self) -> &str { &self.conf.ticker }
 
-    fn my_address(&self) -> Result<String, MmError<MyAddressError>> { Ok(self.my_node_id()) }
+    fn my_address(&self) -> Result<String, MmError<MmAddressError>> { Ok(self.my_node_id()) }
 
     fn get_public_key(&self) -> Result<String, MmError<UnexpectedDerivationMethod>> { unimplemented!() }
 
@@ -521,8 +521,10 @@ impl MmCoin for LightningCoin {
 
     fn decimals(&self) -> u8 { self.conf.decimals }
 
-    fn convert_to_address(&self, _from: &str, _to_address_format: Json) -> Result<String, String> {
-        Err(MmError::new("Address conversion is not available for LightningCoin".to_string()).to_string())
+    fn convert_to_address(&self, _from: &str, _to_address_format: Json) -> Result<String, MmError<MmAddressError>> {
+        MmError::err(MmAddressError::MethodNotSupported(
+            "Address conversion is not available for LightningCoin".to_string(),
+        ))
     }
 
     fn validate_address(&self, address: &str) -> ValidateAddressResult {

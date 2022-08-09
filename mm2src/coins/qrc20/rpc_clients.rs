@@ -1,6 +1,5 @@
 use super::*;
-use crate::utxo::{qtum::ContractAddrFromLocationError,
-                  rpc_clients::{UtxoRpcError, UtxoRpcFut}};
+use crate::utxo::rpc_clients::{UtxoRpcError, UtxoRpcFut};
 use rpc::v1::types::H256;
 
 impl From<ethabi::Error> for UtxoRpcError {
@@ -238,7 +237,7 @@ pub struct LogEntry {
 }
 
 impl LogEntry {
-    pub fn parse_address(&self) -> Result<H160, MmError<ContractAddrFromLocationError>> {
+    pub fn parse_address(&self) -> Result<H160, MmError<MmAddressError>> {
         if self.address.starts_with("0x") {
             qtum::contract_addr_from_str(&self.address)
         } else {

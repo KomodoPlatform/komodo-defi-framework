@@ -49,7 +49,7 @@ impl From<BalanceError> for SufficientBalanceError {
             BalanceError::UnexpectedDerivationMethod(e) => SufficientBalanceError::UnexpectedDerivationMethod(e),
             BalanceError::Internal(e) => SufficientBalanceError::Internal(e),
             BalanceError::WalletStorageError(e) => SufficientBalanceError::WalletStorageError(e),
-            BalanceError::MyAddressError(e) => SufficientBalanceError::Internal(e.to_string()),
+            BalanceError::MmAddressError(e) => SufficientBalanceError::Internal(e.to_string()),
         }
     }
 }

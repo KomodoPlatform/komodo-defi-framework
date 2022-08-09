@@ -19,7 +19,7 @@
 //  marketmaker
 //
 
-use coins::{disable_coin as disable_coin_impl, lp_coinfind, lp_coininit, BalanceError, MmCoinEnum, MyAddressError};
+use coins::{disable_coin as disable_coin_impl, lp_coinfind, lp_coininit, BalanceError, MmAddressError, MmCoinEnum};
 use common::executor::{spawn, Timer};
 use common::log::error;
 use common::mm_metrics::MetricsOps;
@@ -157,7 +157,7 @@ pub enum CoinInitResponseError {
     Internal(String),
     #[display(fmt = "InvalidResponse: {}", _0)]
     InvalidResponse(String),
-    MyAddressError(MyAddressError),
+    MmAddressError(MmAddressError),
 }
 
 /// Enable a coin in the Electrum mode.
@@ -172,7 +172,7 @@ pub async fn electrum(ctx: MmArc, req: Json) -> Result<Response<Vec<u8>>, MmErro
         .mm_err(CoinInitResponseError::BalanceError)?;
     let res = CoinInitResponse {
         result: "success",
-        address: coin.my_address().mm_err(CoinInitResponseError::MyAddressError)?,
+        address: coin.my_address().mm_err(CoinInitResponseError::MmAddressError)?,
         balance: balance.spendable,
         unspendable_balance: balance.unspendable,
         coin: coin.ticker(),
@@ -198,7 +198,7 @@ pub async fn enable(ctx: MmArc, req: Json) -> Result<Response<Vec<u8>>, MmError<
         .mm_err(CoinInitResponseError::BalanceError)?;
     let res = CoinInitResponse {
         result: "success",
-        address: coin.my_address().mm_err(CoinInitResponseError::MyAddressError)?,
+        address: coin.my_address().mm_err(CoinInitResponseError::MmAddressError)?,
         balance: balance.spendable,
         unspendable_balance: balance.unspendable,
         coin: coin.ticker(),
@@ -269,7 +269,7 @@ pub async fn my_balance(ctx: MmArc, req: Json) -> Result<Response<Vec<u8>>, MmEr
         "coin": ticker,
         "balance": balance.spendable,
         "unspendable_balance": balance.unspendable,
-        "address": coin.my_address().mm_err(BalanceError::MyAddressError)?,
+        "address": coin.my_address().mm_err(BalanceError::MmAddressError)?,
     });
     let res = json::to_vec(&res).map_to_mm(|err| BalanceError::Internal(err.to_string()))?;
     Response::builder()

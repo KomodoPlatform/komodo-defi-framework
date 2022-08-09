@@ -61,7 +61,7 @@ use web3_transport::{EthFeeHistoryNamespace, Web3Transport, Web3TransportNode};
 
 use crate::utxo::utxo_builder::UtxoConfError;
 use crate::utxo::utxo_common::{CheckPaymentSentError, ExtractSecretError, SendRawTxError, ValidatePaymentError};
-use crate::{FoundSwapTxSpendErr, MyAddressError, ValidateSwapTxError};
+use crate::{FoundSwapTxSpendErr, MmAddressError, ValidateSwapTxError};
 
 use super::{coin_conf, AsyncMutex, BalanceError, BalanceFut, CoinBalance, CoinProtocol, CoinTransportMetrics,
             CoinsContext, FeeApproxStage, FoundSwapTxSpend, HistorySyncState, MarketCoinOps, MmCoin,
@@ -551,7 +551,7 @@ impl EthCoinImpl {
     }
 
     /// Try to parse address from string.
-    pub fn address_from_str(&self, address: &str) -> Result<Address, MmError<AddrFromLocationError>> {
+    pub fn address_from_str(&self, address: &str) -> Result<Address, MmError<MmAddressError>> {
         valid_addr_from_str(address)
     }
 
@@ -1140,7 +1140,7 @@ impl SwapOps for EthCoin {
 impl MarketCoinOps for EthCoin {
     fn ticker(&self) -> &str { &self.ticker[..] }
 
-    fn my_address(&self) -> Result<String, MmError<MyAddressError>> {
+    fn my_address(&self) -> Result<String, MmError<MmAddressError>> {
         Ok(checksum_address(&format!("{:#02x}", self.my_address)))
     }
 
@@ -3097,13 +3097,15 @@ impl MmCoin for EthCoin {
 
     fn decimals(&self) -> u8 { self.decimals }
 
-    fn convert_to_address(&self, from: &str, to_address_format: Json) -> Result<String, String> {
-        let to_address_format: EthAddressFormat =
-            json::from_value(to_address_format).map_err(|e| ERRL!("Error on parse ETH address format {:?}", e))?;
+    fn convert_to_address(&self, from: &str, to_address_format: Json) -> Result<String, MmError<MmAddressError>> {
+        let to_address_format: EthAddressFormat = json::from_value(to_address_format)
+            .map_to_mm(|e| MmAddressError::Internal(format!("Error on parse ETH address format {:?}", e)))?;
         match to_address_format {
-            EthAddressFormat::SingleCase => ERR!("conversion is available only to mixed-case"),
+            EthAddressFormat::SingleCase => MmError::err(MmAddressError::Internal(
+                "conversion is available only to mixed-case".to_string(),
+            )),
             EthAddressFormat::MixedCase => {
-                let _addr = try_s!(addr_from_str(from));
+                let _addr = addr_from_str(from)?;
                 Ok(checksum_address(from))
             },
         }
@@ -3552,22 +3554,20 @@ async fn get_token_decimals(web3: &Web3<Web3Transport>, token_addr: Address) -> 
     Ok(decimals as u8)
 }
 
-pub fn valid_addr_from_str(addr_str: &str) -> Result<Address, MmError<AddrFromLocationError>> {
+pub fn valid_addr_from_str(addr_str: &str) -> Result<Address, MmError<MmAddressError>> {
     let addr = addr_from_str(addr_str)?;
     if !is_valid_checksum_addr(addr_str) {
-        return MmError::err(AddrFromLocationError::Internal("Invalid address checksum".to_string()));
+        return MmError::err(MmAddressError::Internal("Invalid address checksum".to_string()));
     }
     Ok(addr)
 }
 
-pub fn addr_from_str(addr_str: &str) -> Result<Address, MmError<AddrFromLocationError>> {
+pub fn addr_from_str(addr_str: &str) -> Result<Address, MmError<MmAddressError>> {
     if !addr_str.starts_with("0x") {
-        return MmError::err(AddrFromLocationError::Internal(
-            "Address must be prefixed with 0x".to_string(),
-        ));
+        return MmError::err(MmAddressError::Internal("Address must be prefixed with 0x".to_string()));
     };
 
-    Address::from_str(&addr_str[2..]).map_to_mm(|err| AddrFromLocationError::Internal(err.to_string()))
+    Address::from_str(&addr_str[2..]).map_to_mm(|err| MmAddressError::Internal(err.to_string()))
 }
 
 fn rpc_event_handlers_for_eth_transport(ctx: &MmArc, ticker: String) -> Vec<RpcTransportEventHandlerShared> {

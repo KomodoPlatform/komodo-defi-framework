@@ -1412,6 +1412,7 @@ fn test_address_from_str_with_cashaddress_activated() {
         .err()
         .unwrap()
         .to_string();
+    println!("{}", error);
     assert!(error.contains("Invalid address: bitcoincash:000000000000000000000000000000000000000000"));
 }
 

@@ -224,12 +224,12 @@ use eth::{eth_coin_from_conf_and_request, AddrFromLocationError, EthCoin, EthTxF
 use hd_wallet::{HDAddress, HDAddressId};
 use qrc20::Qrc20ActivationParams;
 use qrc20::{qrc20_coin_from_conf_and_params, Qrc20Coin, Qrc20FeeDetails};
-use qtum::{Qrc20AddressError, ScriptHashTypeNotSupported};
+use qtum::ScriptHashTypeNotSupported;
 use rpc_command::{init_create_account::{CreateAccountTaskManager, CreateAccountTaskManagerShared},
                   init_scan_for_new_addresses::{ScanAddressesTaskManager, ScanAddressesTaskManagerShared},
                   init_withdraw::{WithdrawTaskManager, WithdrawTaskManagerShared}};
 use utxo::bch::{bch_coin_from_conf_and_params, BchActivationRequest, BchCoin};
-use utxo::qtum::{self, qtum_coin_with_priv_key, ContractAddrFromLocationError, QtumCoin};
+use utxo::qtum::{self, qtum_coin_with_priv_key, QtumCoin};
 use utxo::qtum::{QtumDelegationOps, QtumDelegationRequest, QtumStakingInfosDetails};
 use utxo::rpc_clients::UtxoRpcError;
 use utxo::slp::{slp_addr_from_pubkey_str, SlpFeeDetails};
@@ -237,8 +237,8 @@ use utxo::slp::{SlpToken, ValidateDexFeeError};
 use utxo::utxo_common::{big_decimal_from_sat_unsigned, CheckPaymentSentError, ExtractSecretError, SendRawTxError,
                         ValidatePaymentError};
 use utxo::utxo_standard::{utxo_standard_coin_with_priv_key, UtxoStandardCoin};
-use utxo::UtxoActivationParams;
 use utxo::{BlockchainNetwork, GenerateTxError, UtxoFeeDetails, UtxoTx};
+use utxo::{UnsupportedAddr, UtxoActivationParams};
 #[cfg(not(target_arch = "wasm32"))] use z_coin::ZCoin;
 
 pub type BalanceResult<T> = Result<T, MmError<BalanceError>>;
@@ -323,14 +323,14 @@ pub enum TxHistoryError {
     FromIdNotFound {
         internal_id: BytesJson,
     },
-    NotSupported(String),
+    Method(String),
     InternalError(String),
 }
 
 #[derive(Debug, Display)]
 pub enum PrivKeyNotAllowed {
     #[display(fmt = "Hardware Wallet is not supported")]
-    HardwareWalletNotSupported,
+    HardwareWalletMethod,
 }
 
 #[derive(Debug, Display, PartialEq, Serialize)]
@@ -412,6 +412,7 @@ pub enum FoundSwapTxSpend {
 
 #[derive(Debug, Display)]
 pub enum FoundSwapTxSpendErr {
+    MmAddressError(MmAddressError),
     #[display(fmt = "Deserialzation Error: {:?}", _0)]
     DeserialzationError(serialization::Error),
     #[display(fmt = "'erc20Payment' was not confirmed yet. Please wait for at least one confirmation")]
@@ -420,7 +421,6 @@ pub enum FoundSwapTxSpendErr {
     Internal(String),
     #[display(fmt = "MissingTransaction {}", _0)]
     MissingTransaction(String),
-    ScriptHashTypeNotSupported(ScriptHashTypeNotSupported),
     TryToAddressError(TryToAddressError),
     UtxoRpcError(Box<UtxoRpcError>),
     UnexpectedDerivationMethod(UnexpectedDerivationMethod),
@@ -430,6 +430,10 @@ pub enum FoundSwapTxSpendErr {
 
 impl From<ethabi::Error> for FoundSwapTxSpendErr {
     fn from(err: ethabi::Error) -> Self { Self::Internal(err.to_string()) }
+}
+
+impl From<MmAddressError> for FoundSwapTxSpendErr {
+    fn from(err: MmAddressError) -> Self { Self::MmAddressError(err) }
 }
 
 pub enum CanRefundHtlc {
@@ -520,8 +524,8 @@ impl From<AddrFromLocationError> for ValidateSwapTxError {
     fn from(err: AddrFromLocationError) -> Self { Self::InternalError(err.to_string()) }
 }
 
-impl From<ContractAddrFromLocationError> for ValidateSwapTxError {
-    fn from(err: ContractAddrFromLocationError) -> Self { Self::InternalError(err.to_string()) }
+impl From<MmAddressError> for ValidateSwapTxError {
+    fn from(err: MmAddressError) -> Self { Self::InternalError(err.to_string()) }
 }
 
 /// Swap operations (mostly based on the Hash/Time locked transactions implemented by coin wallets).
@@ -653,15 +657,35 @@ pub trait SwapOps {
 }
 
 #[derive(Debug, Display, PartialEq)]
-pub enum MyAddressError {
+pub enum MmAddressError {
+    AddrConversionErr(String),
     #[display(fmt = "DeprecatedWalletAddr: 'my_address' is deprecated for HD wallets")]
     DeprecatedWalletAddr,
-    UnexpectedDerivationMethod(UnexpectedDerivationMethod),
-    #[display(fmt = "Internal: {}", _0)]
     Internal(String),
+    #[display(fmt = "Invalid address: {}", _0)]
+    InvalidAddress(String),
+    UnsupportedAddr(String),
+    MethodNotSupported(String),
+    ScriptHashTypeNotSupported {
+        script_hash_type: String,
+    },
+    ToCashAddressErr(String),
     #[display(fmt = "Transaction Reading Error: {}", _0)]
     TxReadError(String),
+    UnexpectedDerivationMethod(UnexpectedDerivationMethod),
     UtxoRpcError(String),
+}
+
+impl From<UnexpectedDerivationMethod> for MmAddressError {
+    fn from(e: UnexpectedDerivationMethod) -> Self { MmAddressError::UnexpectedDerivationMethod(e) }
+}
+
+impl From<keys::Error> for MmAddressError {
+    fn from(e: keys::Error) -> Self { MmAddressError::Internal(e.to_string()) }
+}
+
+impl From<UnsupportedAddr> for MmAddressError {
+    fn from(e: UnsupportedAddr) -> Self { MmAddressError::UnsupportedAddr(e.to_string()) }
 }
 
 /// Operations that coins have independently from the MarketMaker.
@@ -669,7 +693,7 @@ pub enum MyAddressError {
 pub trait MarketCoinOps {
     fn ticker(&self) -> &str;
 
-    fn my_address(&self) -> Result<String, MmError<MyAddressError>>;
+    fn my_address(&self) -> Result<String, MmError<MmAddressError>>;
 
     fn get_public_key(&self) -> Result<String, MmError<UnexpectedDerivationMethod>>;
 
@@ -1241,7 +1265,7 @@ impl NumConversError {
 
 #[derive(Debug, Display, PartialEq)]
 pub enum BalanceError {
-    MyAddressError(MyAddressError),
+    MmAddressError(MmAddressError),
     #[display(fmt = "Invalid response: {}", _0)]
     InvalidResponse(String),
     #[display(fmt = "Transport: {}", _0)]
@@ -1308,15 +1332,8 @@ impl From<UnexpectedDerivationMethod> for StakingInfosError {
     fn from(e: UnexpectedDerivationMethod) -> Self { StakingInfosError::UnexpectedDerivationMethod(e.to_string()) }
 }
 
-impl From<Qrc20AddressError> for StakingInfosError {
-    fn from(e: Qrc20AddressError) -> Self {
-        match e {
-            Qrc20AddressError::UnexpectedDerivationMethod(e) => StakingInfosError::UnexpectedDerivationMethod(e),
-            Qrc20AddressError::ScriptHashTypeNotSupported { script_hash_type } => {
-                StakingInfosError::Internal(format!("Script hash type '{}' is not supported", script_hash_type))
-            },
-        }
-    }
+impl From<MmAddressError> for StakingInfosError {
+    fn from(e: MmAddressError) -> Self { StakingInfosError::Internal(e.to_string()) }
 }
 
 impl HttpStatusCode for StakingInfosError {
@@ -1408,6 +1425,10 @@ impl From<CoinFindError> for DelegationError {
     }
 }
 
+impl From<MmAddressError> for DelegationError {
+    fn from(e: MmAddressError) -> Self { Self::AddressError(e.to_string()) }
+}
+
 impl From<BalanceError> for DelegationError {
     fn from(e: BalanceError) -> Self {
         match e {
@@ -1417,7 +1438,7 @@ impl From<BalanceError> for DelegationError {
             },
             e @ BalanceError::WalletStorageError(_) => DelegationError::InternalError(e.to_string()),
             BalanceError::Internal(internal) => DelegationError::InternalError(internal),
-            BalanceError::MyAddressError(e) => DelegationError::InternalError(e.to_string()),
+            BalanceError::MmAddressError(e) => DelegationError::InternalError(e.to_string()),
         }
     }
 }
@@ -1590,7 +1611,7 @@ impl From<BalanceError> for WithdrawError {
             BalanceError::UnexpectedDerivationMethod(e) => WithdrawError::from(e),
             e @ BalanceError::WalletStorageError(_) => WithdrawError::InternalError(e.to_string()),
             BalanceError::Internal(internal) => WithdrawError::InternalError(internal),
-            BalanceError::MyAddressError(e) => WithdrawError::InternalError(e.to_string()),
+            BalanceError::MmAddressError(e) => WithdrawError::InternalError(e.to_string()),
         }
     }
 }
@@ -1626,8 +1647,8 @@ impl From<http::Error> for WithdrawError {
     fn from(err: http::Error) -> Self { Self::InternalError(err.to_string()) }
 }
 
-impl From<AddrFromLocationError> for WithdrawError {
-    fn from(err: AddrFromLocationError) -> Self { Self::InvalidAddress(err.to_string()) }
+impl From<MmAddressError> for WithdrawError {
+    fn from(err: MmAddressError) -> Self { Self::InvalidAddress(err.to_string()) }
 }
 
 impl WithdrawError {
@@ -1777,6 +1798,10 @@ impl From<CoinFindError> for VerificationError {
     fn from(e: CoinFindError) -> Self { VerificationError::CoinIsNotFound(e.to_string()) }
 }
 
+impl From<MmAddressError> for VerificationError {
+    fn from(e: MmAddressError) -> Self { VerificationError::CoinIsNotFound(e.to_string()) }
+}
+
 /// NB: Implementations are expected to follow the pImpl idiom, providing cheap reference-counted cloning and garbage collection.
 #[async_trait]
 pub trait MmCoin: SwapOps + MarketCoinOps + fmt::Debug + Send + Sync + 'static {
@@ -1802,7 +1827,7 @@ pub trait MmCoin: SwapOps + MarketCoinOps + fmt::Debug + Send + Sync + 'static {
     fn decimals(&self) -> u8;
 
     /// Convert input address to the specified address format.
-    fn convert_to_address(&self, from: &str, to_address_format: Json) -> Result<String, String>;
+    fn convert_to_address(&self, from: &str, to_address_format: Json) -> Result<String, MmError<MmAddressError>>;
 
     fn validate_address(&self, address: &str) -> ValidateAddressResult;
 
@@ -2110,8 +2135,7 @@ impl<T> PrivKeyPolicy<T> {
     }
 
     pub fn key_pair_or_err(&self) -> Result<&T, MmError<PrivKeyNotAllowed>> {
-        self.key_pair()
-            .or_mm_err(|| PrivKeyNotAllowed::HardwareWalletNotSupported)
+        self.key_pair().or_mm_err(|| PrivKeyNotAllowed::HardwareWalletMethod)
     }
 }
 

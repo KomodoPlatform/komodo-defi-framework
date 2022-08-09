@@ -16,7 +16,7 @@ use crate::rpc_command::init_scan_for_new_addresses::{self, InitScanAddressesRpc
 use crate::rpc_command::init_withdraw::{InitWithdrawCoin, WithdrawTaskHandle};
 use crate::utxo::utxo_builder::{UtxoArcBuilder, UtxoCoinBuilder};
 use crate::{CanRefundHtlc, CoinBalance, CoinWithDerivationMethod, FoundSwapTxSpendErr, GetWithdrawSenderAddress,
-            MyAddressError, NegotiateSwapContractAddrErr, PrivKeyBuildPolicy, SearchForSwapTxSpendInput,
+            MmAddressError, NegotiateSwapContractAddrErr, PrivKeyBuildPolicy, SearchForSwapTxSpendInput,
             SignatureResult, SwapOps, TradePreimageValue, TransactionFut, ValidateAddressResult, ValidatePaymentInput,
             ValidateSwapTxError, VerificationResult, WithdrawFut, WithdrawSenderAddress};
 use common::mm_metrics::MetricsArc;
@@ -164,7 +164,7 @@ impl UtxoCommonOps for UtxoStandardCoin {
         utxo_common::my_public_key(self.as_ref())
     }
 
-    fn address_from_str(&self, address: &str) -> Result<Address, MmError<String>> {
+    fn address_from_str(&self, address: &str) -> Result<Address, MmError<MmAddressError>> {
         utxo_common::checked_address_from_str(self, address)
     }
 
@@ -487,7 +487,7 @@ impl MarketCoinOps for UtxoStandardCoin {
         Ok(pubkey.to_string())
     }
 
-    fn my_address(&self) -> Result<String, MmError<MyAddressError>> { utxo_common::my_address(self) }
+    fn my_address(&self) -> Result<String, MmError<MmAddressError>> { utxo_common::my_address(self) }
 
     fn sign_message_hash(&self, message: &str) -> Option<[u8; 32]> {
         utxo_common::sign_message_hash(self.as_ref(), message)
@@ -580,7 +580,7 @@ impl MmCoin for UtxoStandardCoin {
 
     fn decimals(&self) -> u8 { utxo_common::decimals(&self.utxo_arc) }
 
-    fn convert_to_address(&self, from: &str, to_address_format: Json) -> Result<String, String> {
+    fn convert_to_address(&self, from: &str, to_address_format: Json) -> Result<String, MmError<MmAddressError>> {
         utxo_common::convert_to_address(self, from, to_address_format)
     }
 

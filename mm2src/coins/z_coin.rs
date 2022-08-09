@@ -13,7 +13,7 @@ use crate::utxo::{sat_from_big_decimal, utxo_common, ActualTxFee, AdditionalTxDa
                   UtxoCommonOps, UtxoFeeDetails, UtxoRpcMode, UtxoTxBroadcastOps, UtxoTxGenerationOps,
                   VerboseTransactionFrom};
 use crate::{BalanceError, BalanceFut, CoinBalance, FeeApproxStage, FoundSwapTxSpend, FoundSwapTxSpendErr,
-            HistorySyncState, MarketCoinOps, MmCoin, MyAddressError, NegotiateSwapContractAddrErr, NumConversError,
+            HistorySyncState, MarketCoinOps, MmAddressError, MmCoin, NegotiateSwapContractAddrErr, NumConversError,
             PrivKeyActivationPolicy, RawTransactionFut, RawTransactionRequest, SearchForSwapTxSpendInput,
             SignatureError, SignatureResult, SwapOps, TradeFee, TradePreimageFut, TradePreimageResult,
             TradePreimageValue, TransactionDetails, TransactionEnum, TransactionFut, TxFeeDetails,
@@ -886,7 +886,7 @@ impl From<std::io::Error> for SendRawTxError {
 impl MarketCoinOps for ZCoin {
     fn ticker(&self) -> &str { &self.utxo_arc.conf.ticker }
 
-    fn my_address(&self) -> Result<String, MmError<MyAddressError>> { Ok(self.z_fields.my_z_addr_encoded.clone()) }
+    fn my_address(&self) -> Result<String, MmError<MmAddressError>> { Ok(self.z_fields.my_z_addr_encoded.clone()) }
 
     fn get_public_key(&self) -> Result<String, MmError<UnexpectedDerivationMethod>> {
         let pubkey = utxo_common::my_public_key(self.as_ref())?;
@@ -1390,8 +1390,10 @@ impl MmCoin for ZCoin {
 
     fn decimals(&self) -> u8 { self.utxo_arc.decimals }
 
-    fn convert_to_address(&self, _from: &str, _to_address_format: Json) -> Result<String, String> {
-        Err(MmError::new("Address conversion is not available for ZCoin".to_string()).to_string())
+    fn convert_to_address(&self, _from: &str, _to_address_format: Json) -> Result<String, MmError<MmAddressError>> {
+        MmError::err(MmAddressError::AddrConversionErr(
+            "Address conversion is not available for ZCoin".to_string(),
+        ))
     }
 
     fn validate_address(&self, address: &str) -> ValidateAddressResult {
@@ -1538,7 +1540,7 @@ impl UtxoCommonOps for ZCoin {
         utxo_common::my_public_key(self.as_ref())
     }
 
-    fn address_from_str(&self, address: &str) -> Result<Address, MmError<String>> {
+    fn address_from_str(&self, address: &str) -> Result<Address, MmError<MmAddressError>> {
         utxo_common::checked_address_from_str(self, address)
     }
 

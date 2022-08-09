@@ -245,7 +245,7 @@ impl From<BalanceError> for HDWalletRpcError {
             BalanceError::WalletStorageError(internal) | BalanceError::Internal(internal) => {
                 HDWalletRpcError::Internal(internal)
             },
-            BalanceError::MyAddressError(internal) => HDWalletRpcError::Internal(internal.to_string()),
+            BalanceError::MmAddressError(internal) => HDWalletRpcError::Internal(internal.to_string()),
         }
     }
 }

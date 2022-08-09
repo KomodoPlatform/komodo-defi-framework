@@ -7,7 +7,7 @@ use crate::utxo::slp::{parse_slp_script, ParseSlpScriptError, SlpGenesisParams, 
                        SlpUnspent};
 use crate::utxo::utxo_builder::{UtxoArcBuilder, UtxoCoinBuilder};
 use crate::utxo::utxo_common::big_decimal_from_sat_unsigned;
-use crate::{BlockHeightAndTime, CanRefundHtlc, CoinBalance, CoinProtocol, FoundSwapTxSpendErr, MyAddressError,
+use crate::{BlockHeightAndTime, CanRefundHtlc, CoinBalance, CoinProtocol, FoundSwapTxSpendErr, MmAddressError,
             NegotiateSwapContractAddrErr, PrivKeyBuildPolicy, RawTransactionFut, RawTransactionRequest,
             SearchForSwapTxSpendInput, SignatureResult, SwapOps, TradePreimageValue, TransactionFut, TransactionType,
             TxFeeDetails, UnexpectedDerivationMethod, ValidateAddressResult, ValidatePaymentInput,
@@ -762,7 +762,7 @@ impl UtxoCommonOps for BchCoin {
         utxo_common::my_public_key(self.as_ref())
     }
 
-    fn address_from_str(&self, address: &str) -> Result<Address, MmError<String>> {
+    fn address_from_str(&self, address: &str) -> Result<Address, MmError<MmAddressError>> {
         utxo_common::checked_address_from_str(self, address)
     }
 
@@ -1061,7 +1061,7 @@ fn total_unspent_value<'a>(unspents: impl IntoIterator<Item = &'a UnspentInfo>) 
 impl MarketCoinOps for BchCoin {
     fn ticker(&self) -> &str { &self.utxo_arc.conf.ticker }
 
-    fn my_address(&self) -> Result<String, MmError<MyAddressError>> { utxo_common::my_address(self) }
+    fn my_address(&self) -> Result<String, MmError<MmAddressError>> { utxo_common::my_address(self) }
 
     fn get_public_key(&self) -> Result<String, MmError<UnexpectedDerivationMethod>> {
         let pubkey = utxo_common::my_public_key(&self.utxo_arc)?;
@@ -1190,7 +1190,7 @@ impl MmCoin for BchCoin {
 
     fn decimals(&self) -> u8 { utxo_common::decimals(&self.utxo_arc) }
 
-    fn convert_to_address(&self, from: &str, to_address_format: Json) -> Result<String, String> {
+    fn convert_to_address(&self, from: &str, to_address_format: Json) -> Result<String, MmError<MmAddressError>> {
         utxo_common::convert_to_address(self, from, to_address_format)
     }
 

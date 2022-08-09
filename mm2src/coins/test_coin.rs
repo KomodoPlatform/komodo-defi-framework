@@ -1,7 +1,7 @@
 use super::{CoinBalance, HistorySyncState, MarketCoinOps, MmCoin, RawTransactionFut, RawTransactionRequest, SwapOps,
             TradeFee, TransactionEnum, TransactionFut};
 use crate::{utxo::utxo_common::{CheckPaymentSentError, ExtractSecretError, SendRawTxError, ValidatePaymentError},
-            BalanceFut, CanRefundHtlc, FeeApproxStage, FoundSwapTxSpend, FoundSwapTxSpendErr, MyAddressError,
+            BalanceFut, CanRefundHtlc, FeeApproxStage, FoundSwapTxSpend, FoundSwapTxSpendErr, MmAddressError,
             NegotiateSwapContractAddrErr, SearchForSwapTxSpendInput, SignatureResult, TradePreimageFut,
             TradePreimageResult, TradePreimageValue, UnexpectedDerivationMethod, ValidateAddressResult,
             ValidatePaymentInput, ValidateSwapTxError, VerificationResult, WithdrawFut, WithdrawRequest};
@@ -35,7 +35,7 @@ impl TestCoin {
 impl MarketCoinOps for TestCoin {
     fn ticker(&self) -> &str { &self.ticker }
 
-    fn my_address(&self) -> Result<String, MmError<MyAddressError>> { unimplemented!() }
+    fn my_address(&self) -> Result<String, MmError<MmAddressError>> { unimplemented!() }
 
     fn get_public_key(&self) -> Result<String, MmError<UnexpectedDerivationMethod>> { unimplemented!() }
 
@@ -254,7 +254,9 @@ impl MmCoin for TestCoin {
 
     fn decimals(&self) -> u8 { unimplemented!() }
 
-    fn convert_to_address(&self, from: &str, to_address_format: Json) -> Result<String, String> { unimplemented!() }
+    fn convert_to_address(&self, from: &str, to_address_format: Json) -> Result<String, MmError<MmAddressError>> {
+        unimplemented!()
+    }
 
     fn validate_address(&self, address: &str) -> ValidateAddressResult { unimplemented!() }
 

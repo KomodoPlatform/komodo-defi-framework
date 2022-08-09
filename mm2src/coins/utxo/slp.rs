@@ -13,7 +13,7 @@ use crate::utxo::{generate_and_send_tx, sat_from_big_decimal, ActualTxFee, Addit
                   FeePolicy, GenerateTxError, RecentlySpentOutPointsGuard, UtxoCoinConf, UtxoCoinFields,
                   UtxoCommonOps, UtxoTx, UtxoTxBroadcastOps, UtxoTxGenerationOps};
 use crate::{BalanceFut, CoinBalance, FeeApproxStage, FoundSwapTxSpend, FoundSwapTxSpendErr, HistorySyncState,
-            MarketCoinOps, MmCoin, MyAddressError, NegotiateSwapContractAddrErr, NumConversError, PrivKeyNotAllowed,
+            MarketCoinOps, MmAddressError, MmCoin, NegotiateSwapContractAddrErr, NumConversError, PrivKeyNotAllowed,
             RawTransactionFut, RawTransactionRequest, SearchForSwapTxSpendInput, SignatureResult, SwapOps, TradeFee,
             TradePreimageError, TradePreimageFut, TradePreimageResult, TradePreimageValue, TransactionDetails,
             TransactionEnum, TransactionErr, TransactionFut, TxFeeDetails, UnexpectedDerivationMethod,
@@ -1070,17 +1070,17 @@ impl UtxoTxGenerationOps for SlpToken {
 impl MarketCoinOps for SlpToken {
     fn ticker(&self) -> &str { &self.conf.ticker }
 
-    fn my_address(&self) -> Result<String, MmError<MyAddressError>> {
+    fn my_address(&self) -> Result<String, MmError<MmAddressError>> {
         let my_address = self
             .as_ref()
             .derivation_method
             .iguana_or_err()
-            .mm_err(MyAddressError::UnexpectedDerivationMethod)?;
+            .mm_err(MmAddressError::UnexpectedDerivationMethod)?;
         let slp_address = self
             .platform_coin
             .slp_address(my_address)
-            .map_to_mm(MyAddressError::Internal)?;
-        slp_address.encode().map_to_mm(MyAddressError::Internal)
+            .map_to_mm(MmAddressError::Internal)?;
+        slp_address.encode().map_to_mm(MmAddressError::Internal)
     }
 
     fn get_public_key(&self) -> Result<String, MmError<UnexpectedDerivationMethod>> {
@@ -1642,7 +1642,7 @@ impl MmCoin for SlpToken {
 
     fn decimals(&self) -> u8 { self.decimals() }
 
-    fn convert_to_address(&self, from: &str, to_address_format: Json) -> Result<String, String> {
+    fn convert_to_address(&self, from: &str, to_address_format: Json) -> Result<String, MmError<MmAddressError>> {
         utxo_common::convert_to_address(&self.platform_coin, from, to_address_format)
     }
 

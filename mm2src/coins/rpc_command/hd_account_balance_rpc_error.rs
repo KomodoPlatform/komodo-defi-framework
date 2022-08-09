@@ -74,7 +74,7 @@ impl From<BalanceError> for HDAccountBalanceRpcError {
             BalanceError::UnexpectedDerivationMethod(der_method) => HDAccountBalanceRpcError::from(der_method),
             BalanceError::WalletStorageError(e) => HDAccountBalanceRpcError::Internal(e),
             BalanceError::Internal(internal) => HDAccountBalanceRpcError::Internal(internal),
-            BalanceError::MyAddressError(internal) => HDAccountBalanceRpcError::Internal(internal.to_string()),
+            BalanceError::MmAddressError(internal) => HDAccountBalanceRpcError::Internal(internal.to_string()),
         }
     }
 }

@@ -310,8 +310,7 @@ impl Qrc20Coin {
             .iguana_or_err()
             .mm_err(FoundSwapTxSpendErr::UnexpectedDerivationMethod)?
             .to_owned();
-        let sender =
-            qtum::contract_addr_from_utxo_addr(my_address).mm_err(FoundSwapTxSpendErr::ScriptHashTypeNotSupported)?;
+        let sender = qtum::contract_addr_from_utxo_addr(my_address)?;
         let refund_txs = self
             .sender_refund_transactions(sender, search_from_block)
             .await

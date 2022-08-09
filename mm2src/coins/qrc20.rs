@@ -15,7 +15,7 @@ use crate::utxo::{qtum, ActualTxFee, AdditionalTxData, BroadcastTxErr, FeePolicy
                   UtxoActivationParams, UtxoAddressFormat, UtxoCoinFields, UtxoCommonOps, UtxoFromLegacyReqErr,
                   UtxoTx, UtxoTxBroadcastOps, UtxoTxGenerationOps, VerboseTransactionFrom, UTXO_LOCK};
 use crate::{BalanceError, BalanceFut, CoinBalance, FeeApproxStage, FoundSwapTxSpend, FoundSwapTxSpendErr,
-            HistorySyncState, MarketCoinOps, MmCoin, MyAddressError, NegotiateSwapContractAddrErr, PrivKeyNotAllowed,
+            HistorySyncState, MarketCoinOps, MmAddressError, MmCoin, NegotiateSwapContractAddrErr, PrivKeyNotAllowed,
             RawTransactionFut, RawTransactionRequest, SearchForSwapTxSpendInput, SignatureResult, SwapOps, TradeFee,
             TradePreimageError, TradePreimageFut, TradePreimageResult, TradePreimageValue, TransactionDetails,
             TransactionEnum, TransactionErr, TransactionFut, TransactionType, UnexpectedDerivationMethod,
@@ -631,7 +631,7 @@ impl UtxoCommonOps for Qrc20Coin {
         utxo_common::my_public_key(self.as_ref())
     }
 
-    fn address_from_str(&self, address: &str) -> Result<UtxoAddress, MmError<String>> {
+    fn address_from_str(&self, address: &str) -> Result<UtxoAddress, MmError<MmAddressError>> {
         utxo_common::checked_address_from_str(self, address)
     }
 
@@ -1027,7 +1027,7 @@ impl SwapOps for Qrc20Coin {
 impl MarketCoinOps for Qrc20Coin {
     fn ticker(&self) -> &str { &self.utxo.conf.ticker }
 
-    fn my_address(&self) -> Result<String, MmError<MyAddressError>> { utxo_common::my_address(self) }
+    fn my_address(&self) -> Result<String, MmError<MmAddressError>> { utxo_common::my_address(self) }
 
     fn get_public_key(&self) -> Result<String, MmError<UnexpectedDerivationMethod>> {
         let pubkey = utxo_common::my_public_key(self.as_ref())?;
@@ -1164,7 +1164,7 @@ impl MmCoin for Qrc20Coin {
 
     fn decimals(&self) -> u8 { utxo_common::decimals(&self.utxo) }
 
-    fn convert_to_address(&self, from: &str, to_address_format: Json) -> Result<String, String> {
+    fn convert_to_address(&self, from: &str, to_address_format: Json) -> Result<String, MmError<MmAddressError>> {
         qtum::QtumBasedCoin::convert_to_address(self, from, to_address_format)
     }
 
@@ -1475,8 +1475,8 @@ pub enum TransferEventDetailsError {
     UnexpectedNumOfTopics(usize),
 }
 
-impl From<qtum::ContractAddrFromLocationError> for TransferEventDetailsError {
-    fn from(err: qtum::ContractAddrFromLocationError) -> Self { Self::Internal(err.to_string()) }
+impl From<MmAddressError> for TransferEventDetailsError {
+    fn from(err: MmAddressError) -> Self { Self::Internal(err.to_string()) }
 }
 
 impl From<usize> for TransferEventDetailsError {

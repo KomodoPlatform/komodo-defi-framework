@@ -2,7 +2,7 @@ use super::{CoinBalance, HistorySyncState, MarketCoinOps, MmCoin, SwapOps, Trade
 use crate::solana::solana_common::{lamports_to_sol, PrepareTransferData, SufficientBalanceError};
 use crate::solana::spl::SplTokenInfo;
 use crate::utxo::utxo_common::{CheckPaymentSentError, ExtractSecretError, SendRawTxError, ValidatePaymentError};
-use crate::{BalanceError, BalanceFut, FeeApproxStage, FoundSwapTxSpend, FoundSwapTxSpendErr, MyAddressError,
+use crate::{BalanceError, BalanceFut, FeeApproxStage, FoundSwapTxSpend, FoundSwapTxSpendErr, MmAddressError,
             NegotiateSwapContractAddrErr, RawTransactionFut, RawTransactionRequest, SearchForSwapTxSpendInput,
             SignatureResult, TradePreimageFut, TradePreimageResult, TradePreimageValue, TransactionDetails,
             TransactionFut, TransactionType, UnexpectedDerivationMethod, ValidateAddressResult, ValidatePaymentInput,
@@ -369,7 +369,7 @@ impl From<Box<bincode::ErrorKind>> for SendRawTxError {
 impl MarketCoinOps for SolanaCoin {
     fn ticker(&self) -> &str { &self.ticker }
 
-    fn my_address(&self) -> Result<String, MmError<MyAddressError>> { Ok(self.my_address.clone()) }
+    fn my_address(&self) -> Result<String, MmError<MmAddressError>> { Ok(self.my_address.clone()) }
 
     fn get_public_key(&self) -> Result<String, MmError<UnexpectedDerivationMethod>> { unimplemented!() }
 
@@ -619,7 +619,9 @@ impl MmCoin for SolanaCoin {
 
     fn decimals(&self) -> u8 { self.decimals }
 
-    fn convert_to_address(&self, _from: &str, _to_address_format: Json) -> Result<String, String> { unimplemented!() }
+    fn convert_to_address(&self, _from: &str, _to_address_format: Json) -> Result<String, MmError<MmAddressError>> {
+        unimplemented!()
+    }
 
     fn validate_address(&self, address: &str) -> ValidateAddressResult {
         if address.len() != 44 {

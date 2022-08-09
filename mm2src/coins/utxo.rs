@@ -105,7 +105,7 @@ use crate::eth::AddrFromLocationError;
 use crate::hd_wallet::{HDAccountOps, HDAccountsMutex, HDAddress, HDWalletCoinOps, HDWalletOps, InvalidBip44ChainError};
 use crate::hd_wallet_storage::{HDAccountStorageItem, HDWalletCoinStorage, HDWalletStorageError, HDWalletStorageResult};
 use crate::utxo::tx_cache::UtxoVerboseCacheShared;
-use crate::{RpcTransportEventHandlerError, TransactionErr};
+use crate::{MmAddressError, RpcTransportEventHandlerError, TransactionErr};
 
 pub mod tx_cache;
 #[cfg(target_arch = "wasm32")]
@@ -830,7 +830,7 @@ pub trait UtxoCommonOps:
 
     /// Try to parse address from string using specified on asset enable format,
     /// and if it failed inform user that he used a wrong format.
-    fn address_from_str(&self, address: &str) -> Result<Address, MmError<String>>;
+    fn address_from_str(&self, address: &str) -> Result<Address, MmError<MmAddressError>>;
 
     async fn get_current_mtp(&self) -> UtxoRpcResult<u32>;
 

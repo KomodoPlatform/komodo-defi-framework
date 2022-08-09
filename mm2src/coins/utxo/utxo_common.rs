@@ -1,7 +1,7 @@
-use super::qtum::{ContractAddrFromLocationError, ScriptHashTypeNotSupported};
+use super::qtum::ScriptHashTypeNotSupported;
 use super::*;
 use crate::coin_balance::{AddressBalanceStatus, HDAddressBalance, HDWalletBalanceOps};
-use crate::eth::{AddrFromLocationError, TryToAddressError};
+use crate::eth::TryToAddressError;
 use crate::hd_pubkey::{ExtractExtendedPubkey, HDExtractPubkeyError, HDXPubExtractor};
 use crate::hd_wallet::{AccountUpdatingError, AddressDerivingError, HDAccountMut, HDAccountsMap,
                        NewAccountCreatingError};
@@ -13,7 +13,7 @@ use crate::utxo::spv::SimplePaymentVerification;
 use crate::utxo::tx_cache::TxCacheResult;
 use crate::utxo::utxo_withdraw::{InitUtxoWithdraw, StandardUtxoWithdraw, UtxoWithdraw};
 use crate::{CanRefundHtlc, CoinBalance, CoinWithDerivationMethod, FoundSwapTxSpendErr, GetWithdrawSenderAddress,
-            HDAddressId, MyAddressError, RawTransactionError, RawTransactionRequest, RawTransactionRes,
+            HDAddressId, MmAddressError, RawTransactionError, RawTransactionRequest, RawTransactionRes,
             SearchForSwapTxSpendInput, SignatureError, SignatureResult, SwapOps, TradePreimageValue, TransactionFut,
             TxFeeDetails, ValidateAddressResult, ValidatePaymentInput, ValidateSwapTxError, VerificationError,
             VerificationResult, WithdrawFrom, WithdrawResult, WithdrawSenderAddress};
@@ -537,7 +537,7 @@ where
     coin.my_spendable_balance()
 }
 
-pub fn address_from_str_unchecked(coin: &UtxoCoinFields, address: &str) -> Result<Address, String> {
+pub fn address_from_str_unchecked(coin: &UtxoCoinFields, address: &str) -> Result<Address, MmError<MmAddressError>> {
     if let Ok(legacy) = Address::from_str(address) {
         return Ok(legacy);
     }
@@ -561,7 +561,7 @@ pub fn address_from_str_unchecked(coin: &UtxoCoinFields, address: &str) -> Resul
         return Ok(cashaddress);
     }
 
-    return ERR!("Invalid address: {}", address);
+    MmError::err(MmAddressError::InvalidAddress(address.to_string()))
 }
 
 pub fn my_public_key(coin: &UtxoCoinFields) -> Result<&Public, MmError<UnexpectedDerivationMethod>> {
@@ -572,9 +572,9 @@ pub fn my_public_key(coin: &UtxoCoinFields) -> Result<&Public, MmError<Unexpecte
     }
 }
 
-pub fn checked_address_from_str<T: UtxoCommonOps>(coin: &T, address: &str) -> Result<Address, MmError<String>> {
-    let addr = address_from_str_unchecked(coin.as_ref(), address).map_to_mm(|err| err)?;
-    check_withdraw_address_supported(coin, &addr).mm_err(|err| err.to_string())?;
+pub fn checked_address_from_str<T: UtxoCommonOps>(coin: &T, address: &str) -> Result<Address, MmError<MmAddressError>> {
+    let addr = address_from_str_unchecked(coin.as_ref(), address)?;
+    check_withdraw_address_supported(coin, &addr)?;
     Ok(addr)
 }
 
@@ -1756,12 +1756,12 @@ pub fn extract_secret(secret_hash: &[u8], spend_tx: &[u8]) -> Result<Vec<u8>, Mm
     MmError::err(ExtractSecretError::Internal("Couldn't extract secret".to_string()))
 }
 
-pub fn my_address<T: UtxoCommonOps>(coin: &T) -> Result<String, MmError<MyAddressError>> {
+pub fn my_address<T: UtxoCommonOps>(coin: &T) -> Result<String, MmError<MmAddressError>> {
     match coin.as_ref().derivation_method {
         DerivationMethod::Iguana(ref my_address) => my_address
             .display_address()
-            .map_err(|err| MmError::new(MyAddressError::Internal(err))),
-        DerivationMethod::HDWallet(_) => MmError::err(MyAddressError::DeprecatedWalletAddr),
+            .map_err(|err| MmError::new(MmAddressError::Internal(err))),
+        DerivationMethod::HDWallet(_) => MmError::err(MmAddressError::DeprecatedWalletAddr),
     }
 }
 
@@ -1795,7 +1795,7 @@ pub fn verify_message<T: UtxoCommonOps>(
     let message_hash = sign_message_hash(coin.as_ref(), message).ok_or(VerificationError::PrefixNotFound)?;
     let signature = CompactSignature::from(base64::decode(signature_base64)?);
     let recovered_pubkey = Public::recover_compact(&H256::from(message_hash), &signature)?;
-    let received_address = checked_address_from_str(coin, address).mm_err(VerificationError::AddressDecodingError)?;
+    let received_address = checked_address_from_str(coin, address)?;
     Ok(AddressHashEnum::from(recovered_pubkey.address_hash()) == received_address.hash)
 }
 
@@ -2083,10 +2083,14 @@ where
 
 pub fn decimals(coin: &UtxoCoinFields) -> u8 { coin.decimals }
 
-pub fn convert_to_address<T: UtxoCommonOps>(coin: &T, from: &str, to_address_format: Json) -> Result<String, String> {
-    let to_address_format: UtxoAddressFormat =
-        json::from_value(to_address_format).map_err(|e| ERRL!("Error on parse UTXO address format {:?}", e))?;
-    let mut from_address = try_s!(coin.address_from_str(from));
+pub fn convert_to_address<T: UtxoCommonOps>(
+    coin: &T,
+    from: &str,
+    to_address_format: Json,
+) -> Result<String, MmError<MmAddressError>> {
+    let to_address_format: UtxoAddressFormat = json::from_value(to_address_format)
+        .map_to_mm(|e| MmAddressError::Internal(format!("Error on parse UTXO address format {:?}", e)))?;
+    let mut from_address = coin.address_from_str(from)?;
     match to_address_format {
         UtxoAddressFormat::Standard => {
             from_address.addr_format = UtxoAddressFormat::Standard;
@@ -2096,16 +2100,19 @@ pub fn convert_to_address<T: UtxoCommonOps>(coin: &T, from: &str, to_address_for
             let bech32_hrp = &coin.as_ref().conf.bech32_hrp;
             match bech32_hrp {
                 Some(hrp) => Ok(SegwitAddress::new(&from_address.hash, hrp.clone()).to_string()),
-                None => ERR!("Cannot convert to a segwit address for a coin with no bech32_hrp in config"),
+                None => MmError::err(MmAddressError::AddrConversionErr(
+                    "Cannot convert to a segwit address for a coin with no bech32_hrp in config".to_string(),
+                )),
             }
         },
-        UtxoAddressFormat::CashAddress { network, .. } => Ok(try_s!(from_address
+        UtxoAddressFormat::CashAddress { network, .. } => Ok(from_address
             .to_cashaddress(
                 &network,
                 coin.as_ref().conf.pub_addr_prefix,
-                coin.as_ref().conf.p2sh_addr_prefix
+                coin.as_ref().conf.p2sh_addr_prefix,
             )
-            .and_then(|cashaddress| cashaddress.encode()))),
+            .and_then(|cashaddress| cashaddress.encode())
+            .map_to_mm(MmAddressError::ToCashAddressErr)?),
     }
 }
 
@@ -3158,7 +3165,7 @@ pub fn address_from_raw_pubkey(
     checksum_type: ChecksumType,
     hrp: Option<String>,
     addr_format: UtxoAddressFormat,
-) -> Result<Address, MmError<AddrFromLocationError>> {
+) -> Result<Address, MmError<MmAddressError>> {
     Ok(Address {
         t_addr_prefix,
         prefix,
@@ -3189,12 +3196,12 @@ pub fn address_from_pubkey(
 
 #[derive(Debug, Display, PartialEq)]
 pub enum ValidatePaymentError {
-    AddrFromLocationError(String),
     Erc20PaymentDetailsError(String),
     #[display(fmt = "Iguana private key is unavailable")]
     IguanaPrivKeyUnavailable,
     #[display(fmt = "InternalError: {}", _0)]
     InternalError(String),
+    MmAddressError(String),
     TryToAddressError(TryToAddressError),
     UtxoRpcError(String),
     UnexpectedPaymentOutput(String),
@@ -3242,8 +3249,8 @@ impl From<UtxoRpcError> for ValidatePaymentError {
     fn from(err: UtxoRpcError) -> Self { Self::UtxoRpcError(err.to_string()) }
 }
 
-impl From<ContractAddrFromLocationError> for ValidatePaymentError {
-    fn from(err: ContractAddrFromLocationError) -> Self { Self::AddrFromLocationError(err.to_string()) }
+impl From<MmAddressError> for ValidatePaymentError {
+    fn from(err: MmAddressError) -> Self { Self::MmAddressError(err.to_string()) }
 }
 
 #[allow(clippy::too_many_arguments)]
