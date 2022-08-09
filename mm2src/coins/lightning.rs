@@ -843,6 +843,8 @@ pub struct OpenChannelRequest {
     pub channel_options: Option<ChannelOptions>,
     pub counterparty_locktime: Option<u16>,
     pub our_htlc_minimum_msat: Option<u64>,
+    pub commit_upfront_shutdown_pubkey: Option<bool>,
+    pub announce_channel: Option<bool>,
 }
 
 #[derive(Serialize)]
@@ -912,10 +914,16 @@ pub async fn open_channel(ctx: MmArc, req: OpenChannelRequest) -> OpenChannelRes
 
     let mut user_config: UserConfig = conf.into();
     if let Some(locktime) = req.counterparty_locktime {
-        user_config.own_channel_config.our_to_self_delay = locktime;
+        user_config.channel_handshake_config.our_to_self_delay = locktime;
     }
     if let Some(min) = req.our_htlc_minimum_msat {
-        user_config.own_channel_config.our_htlc_minimum_msat = min;
+        user_config.channel_handshake_config.our_htlc_minimum_msat = min;
+    }
+    if let Some(commit) = req.commit_upfront_shutdown_pubkey {
+        user_config.channel_handshake_config.commit_upfront_shutdown_pubkey = commit;
+    }
+    if let Some(announce) = req.announce_channel {
+        user_config.channel_handshake_config.announced_channel = announce;
     }
 
     let rpc_channel_id = ln_coin.db.get_last_channel_rpc_id().await? as u64 + 1;
@@ -937,7 +945,7 @@ pub async fn open_channel(ctx: MmArc, req: OpenChannelRequest) -> OpenChannelRes
         temp_channel_id,
         node_pubkey,
         true,
-        user_config.channel_options.announced_channel,
+        user_config.channel_handshake_config.announced_channel,
     );
 
     // Saving node data to reconnect to it on restart
@@ -1535,7 +1543,7 @@ pub async fn close_channel(ctx: MmArc, req: CloseChannelReq) -> CloseChannelResu
         async_blocking(move || {
             ln_coin
                 .channel_manager
-                .force_close_channel(&channel_id, &counterparty_node_id)
+                .force_close_broadcasting_latest_txn(&channel_id, &counterparty_node_id)
                 .map_to_mm(|e| CloseChannelError::CloseChannelError(format!("{:?}", e)))
         })
         .await?;

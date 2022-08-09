@@ -24,9 +24,6 @@ pub struct ChannelOptions {
     /// excess of proportional_fee_in_millionths_sats.
     pub base_fee_msat: Option<u32>,
     pub cltv_expiry_delta: Option<u16>,
-    /// Set to announce the channel publicly and notify all nodes that they can route via this
-    /// channel.
-    pub announced_channel: Option<bool>,
     /// When set, we commit to an upfront shutdown_pubkey at channel open.
     pub commit_upfront_shutdown_pubkey: Option<bool>,
     /// Limit our total exposure to in-flight HTLCs which are burned to fees as they are too
@@ -49,10 +46,6 @@ impl ChannelOptions {
 
         if let Some(expiry) = options.cltv_expiry_delta {
             self.cltv_expiry_delta = Some(expiry);
-        }
-
-        if let Some(announce) = options.announced_channel {
-            self.announced_channel = Some(announce);
         }
 
         if let Some(commit) = options.commit_upfront_shutdown_pubkey {
@@ -83,14 +76,6 @@ impl From<ChannelOptions> for ChannelConfig {
 
         if let Some(expiry) = options.cltv_expiry_delta {
             channel_config.cltv_expiry_delta = expiry;
-        }
-
-        if let Some(announce) = options.announced_channel {
-            channel_config.announced_channel = announce;
-        }
-
-        if let Some(commit) = options.commit_upfront_shutdown_pubkey {
-            channel_config.commit_upfront_shutdown_pubkey = commit;
         }
 
         if let Some(dust) = options.max_dust_htlc_exposure_msat {
@@ -126,6 +111,9 @@ pub struct OurChannelsConfig {
     /// Sets the percentage of the channel value we will cap the total value of outstanding inbound
     /// HTLCs to.
     pub max_inbound_in_flight_htlc_percent: Option<u8>,
+    /// Set to announce the channel publicly and notify all nodes that they can route via this
+    /// channel.
+    pub announced_channel: Option<bool>,
 }
 
 impl From<OurChannelsConfig> for ChannelHandshakeConfig {
@@ -150,6 +138,10 @@ impl From<OurChannelsConfig> for ChannelHandshakeConfig {
 
         if let Some(max_inbound_htlc) = config.max_inbound_in_flight_htlc_percent {
             channel_handshake_config.max_inbound_htlc_value_in_flight_percent_of_channel = max_inbound_htlc
+        }
+
+        if let Some(announce) = config.announced_channel {
+            channel_handshake_config.announced_channel = announce;
         }
 
         channel_handshake_config
@@ -251,13 +243,13 @@ impl From<LightningCoinConf> for UserConfig {
     fn from(conf: LightningCoinConf) -> Self {
         let mut user_config = UserConfig::default();
         if let Some(config) = conf.our_channels_config {
-            user_config.own_channel_config = config.into();
+            user_config.channel_handshake_config = config.into();
         }
         if let Some(limits) = conf.counterparty_channel_config_limits {
-            user_config.peer_channel_config_limits = limits.into();
+            user_config.channel_handshake_limits = limits.into();
         }
         if let Some(options) = conf.channel_options {
-            user_config.channel_options = options.into();
+            user_config.channel_config = options.into();
         }
         if let Some(accept_forwards) = conf.accept_forwards_to_priv_channels {
             user_config.accept_forwards_to_priv_channels = accept_forwards;

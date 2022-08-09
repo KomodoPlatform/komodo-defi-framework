@@ -128,6 +128,21 @@ impl EventHandler for LightningEventHandler {
                 push_msat,
                 channel_type: _,
             } => self.handle_open_channel_request(*temporary_channel_id, *counterparty_node_id, *funding_satoshis, *push_msat),
+
+            // Todo
+            Event::HTLCHandlingFailed {
+                prev_channel_id, failed_next_destination
+            } => error!(
+                "Failed to handle htlc from {} to {:?}",
+                hex::encode(prev_channel_id),
+                failed_next_destination,
+            ),
+
+            // Todo
+            Event::ProbeSuccessful { .. } => (),
+
+            // Todo
+            Event::ProbeFailed { .. } => (),
         }
     }
 }

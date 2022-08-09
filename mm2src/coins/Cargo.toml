@@ -96,11 +96,11 @@ web-sys = { version = "0.3.55", features = ["console", "Headers", "Request", "Re
 [target.'cfg(not(target_arch = "wasm32"))'.dependencies]
 dirs = { version = "1" }
 bitcoin = "0.28.1"
-lightning = "0.0.108"
-lightning-background-processor = "0.0.108"
-lightning-invoice = "0.16.0"
-lightning-net-tokio = "0.0.108"
-lightning-rapid-gossip-sync = "0.0.108"
+lightning = "0.0.110"
+lightning-background-processor = "0.0.110"
+lightning-invoice = "0.18.0"
+lightning-net-tokio = "0.0.110"
+lightning-rapid-gossip-sync = "0.0.110"
 rust-ini = { version = "0.13" }
 rustls = { version = "0.20", features = ["dangerous_configuration"] }
 secp256k1v22 = { version = "0.22", package = "secp256k1" }
