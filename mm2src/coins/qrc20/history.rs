@@ -366,15 +366,13 @@ impl Qrc20Coin {
             let from = if is_transferred_from_contract(&script_pubkey) {
                 qtum::display_as_contract_address(from)?
             } else {
-                from.display_address()
-                    .map_err(Qrc20CoinTxHistoryError::Internal)?
+                from.display_address().map_err(Qrc20CoinTxHistoryError::Internal)?
             };
 
             let to = if is_transferred_to_contract(&script_pubkey) {
                 qtum::display_as_contract_address(to)?
             } else {
-                to.display_address()
-                    .map_err(Qrc20CoinTxHistoryError::Internal)?
+                to.display_address().map_err(Qrc20CoinTxHistoryError::Internal)?
             };
 
             let tx_details = TransactionDetails {

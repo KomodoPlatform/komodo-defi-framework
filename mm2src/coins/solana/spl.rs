@@ -1,12 +1,13 @@
 use super::{CoinBalance, HistorySyncState, MarketCoinOps, MmCoin, SwapOps, TradeFee, TransactionEnum};
 use crate::solana::solana_common::{ui_amount_to_amount, PrepareTransferData, SufficientBalanceError};
 use crate::solana::{solana_common, AccountError, SolanaCommonOps, SolanaFeeDetails};
-use crate::utxo::utxo_common::{ValidatePaymentError, SendRawTxError};
+use crate::utxo::utxo_common::{SendRawTxError, ValidatePaymentError};
 use crate::{BalanceFut, FeeApproxStage, FoundSwapTxSpend, FoundSwapTxSpendErr, MyAddressError,
             NegotiateSwapContractAddrErr, RawTransactionFut, RawTransactionRequest, SearchForSwapTxSpendInput,
             SignatureResult, SolanaCoin, TradePreimageFut, TradePreimageResult, TradePreimageValue,
             TransactionDetails, TransactionFut, TransactionType, UnexpectedDerivationMethod, ValidateAddressResult,
-            ValidatePaymentInput, VerificationResult, WithdrawError, WithdrawFut, WithdrawRequest, WithdrawResult, ValidateSwapTxError};
+            ValidatePaymentInput, ValidateSwapTxError, VerificationResult, WithdrawError, WithdrawFut,
+            WithdrawRequest, WithdrawResult};
 use async_trait::async_trait;
 use bincode::serialize;
 use common::{async_blocking, now_ms};

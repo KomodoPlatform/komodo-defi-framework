@@ -82,7 +82,7 @@ impl TokenActivationOps for EthCoin {
             .initialize_erc20_token(activation_params, protocol_conf, ticker)
             .await?;
 
-        let address = token.my_address().map_err(Erc20TokenActivationError::InternalError)?;
+        let address = token.my_address()?;
         let token_contract_address = token
             .erc20_token_address()
             .ok_or_else(|| Erc20TokenActivationError::InternalError("Token contract address is missing".to_string()))?;

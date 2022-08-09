@@ -1,5 +1,6 @@
 use super::*;
-use crate::utxo::{rpc_clients::{UtxoRpcError, UtxoRpcFut}, qtum::ContractAddrFromPubKeyError};
+use crate::utxo::{qtum::ContractAddrFromPubKeyError,
+                  rpc_clients::{UtxoRpcError, UtxoRpcFut}};
 use rpc::v1::types::H256;
 
 impl From<ethabi::Error> for UtxoRpcError {

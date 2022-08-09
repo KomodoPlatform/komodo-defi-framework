@@ -1,6 +1,6 @@
 use super::utxo_builder::UtxoCoinBuildError;
+use super::utxo_common::{SendRawTxError, ValidatePaymentError};
 use super::*;
-use super::utxo_common::{ValidatePaymentError, SendRawTxError};
 use crate::coin_balance::{self, EnableCoinBalanceError, HDAccountBalance, HDAddressBalance, HDWalletBalance,
                           HDWalletBalanceOps};
 use crate::hd_pubkey::{ExtractExtendedPubkey, HDExtractPubkeyError, HDXPubExtractor};
@@ -18,7 +18,7 @@ use crate::utxo::utxo_builder::{UtxoArcBuilder, UtxoCoinBuilder};
 use crate::{CanRefundHtlc, CoinBalance, CoinWithDerivationMethod, FoundSwapTxSpendErr, GetWithdrawSenderAddress,
             MyAddressError, NegotiateSwapContractAddrErr, PrivKeyBuildPolicy, SearchForSwapTxSpendInput,
             SignatureResult, SwapOps, TradePreimageValue, TransactionFut, ValidateAddressResult, ValidatePaymentInput,
-            VerificationResult, WithdrawFut, WithdrawSenderAddress, ValidateSwapTxError};
+            ValidateSwapTxError, VerificationResult, WithdrawFut, WithdrawSenderAddress};
 use common::mm_metrics::MetricsArc;
 use crypto::trezor::utxo::TrezorUtxoCoin;
 use crypto::Bip44Chain;

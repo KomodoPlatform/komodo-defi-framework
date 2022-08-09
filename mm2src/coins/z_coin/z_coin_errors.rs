@@ -1,6 +1,7 @@
 use crate::my_tx_history_v2::MyTxHistoryErrorV2;
 use crate::utxo::rpc_clients::UtxoRpcError;
 use crate::utxo::utxo_builder::UtxoCoinBuildError;
+use crate::utxo::utxo_common::SendRawTxError;
 use crate::WithdrawError;
 use crate::{NumConversError, PrivKeyNotAllowed};
 use db_common::sqlite::rusqlite::Error as SqliteError;
@@ -45,6 +46,10 @@ impl From<ZcashClientError> for ZcoinLightClientInitError {
 #[derive(Debug, Display)]
 #[display(fmt = "Blockchain scan process stopped")]
 pub struct BlockchainScanStopped {}
+
+impl From<BlockchainScanStopped> for SendRawTxError {
+    fn from(err: BlockchainScanStopped) -> Self { Self::BlockchainScanStopped(err.to_string()) }
+}
 
 #[derive(Debug, Display)]
 pub enum GenTxError {

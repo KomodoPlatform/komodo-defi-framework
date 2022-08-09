@@ -1,4 +1,4 @@
-use super::utxo_common::{ValidatePaymentError, SendRawTxError};
+use super::utxo_common::{SendRawTxError, ValidatePaymentError};
 use super::*;
 use crate::coin_balance::{self, EnableCoinBalanceError, HDAccountBalance, HDAddressBalance, HDWalletBalance,
                           HDWalletBalanceOps};

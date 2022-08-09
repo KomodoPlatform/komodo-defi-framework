@@ -1,5 +1,5 @@
+use super::utxo_common::{SendRawTxError, ValidatePaymentError};
 use super::*;
-use super::utxo_common::{ValidatePaymentError, SendRawTxError};
 use crate::my_tx_history_v2::{CoinWithTxHistoryV2, TxDetailsBuilder, TxHistoryStorage, TxHistoryStorageError};
 use crate::tx_history_storage::{GetTxHistoryFilters, WalletId};
 use crate::utxo::rpc_clients::UtxoRpcFut;
@@ -10,8 +10,8 @@ use crate::utxo::utxo_common::big_decimal_from_sat_unsigned;
 use crate::{BlockHeightAndTime, CanRefundHtlc, CoinBalance, CoinProtocol, FoundSwapTxSpendErr, MyAddressError,
             NegotiateSwapContractAddrErr, PrivKeyBuildPolicy, RawTransactionFut, RawTransactionRequest,
             SearchForSwapTxSpendInput, SignatureResult, SwapOps, TradePreimageValue, TransactionFut, TransactionType,
-            TxFeeDetails, UnexpectedDerivationMethod, ValidateAddressResult, ValidatePaymentInput, VerificationResult,
-            WithdrawFut, ValidateSwapTxError};
+            TxFeeDetails, UnexpectedDerivationMethod, ValidateAddressResult, ValidatePaymentInput,
+            ValidateSwapTxError, VerificationResult, WithdrawFut};
 use common::log::warn;
 use common::mm_metrics::MetricsArc;
 use derive_more::Display;

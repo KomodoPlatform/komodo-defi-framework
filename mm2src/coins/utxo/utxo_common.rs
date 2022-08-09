@@ -12,7 +12,6 @@ use crate::utxo::rpc_clients::{electrum_script_hash, BlockHashOrHeight, UnspentI
 use crate::utxo::spv::SimplePaymentVerification;
 use crate::utxo::tx_cache::TxCacheResult;
 use crate::utxo::utxo_withdraw::{InitUtxoWithdraw, StandardUtxoWithdraw, UtxoWithdraw};
-use crate::z_coin::BlockchainScanStopped;
 use crate::{CanRefundHtlc, CoinBalance, CoinWithDerivationMethod, FoundSwapTxSpendErr, GetWithdrawSenderAddress,
             HDAddressId, MyAddressError, RawTransactionError, RawTransactionRequest, RawTransactionRes,
             SearchForSwapTxSpendInput, SignatureError, SignatureResult, SwapOps, TradePreimageValue, TransactionFut,
@@ -1764,7 +1763,7 @@ where
 #[derive(Debug, Display)]
 pub enum SendRawTxError {
     BroadcastTxErr(BroadcastTxErr),
-    BlockchainScanStopped(BlockchainScanStopped),
+    BlockchainScanStopped(String),
     ClientError(String),
     DeserializationErr(String),
     Internal(String),
@@ -1774,10 +1773,6 @@ pub enum SendRawTxError {
 
 impl From<BroadcastTxErr> for SendRawTxError {
     fn from(err: BroadcastTxErr) -> Self { Self::BroadcastTxErr(err) }
-}
-
-impl From<BlockchainScanStopped> for SendRawTxError {
-    fn from(err: BlockchainScanStopped) -> Self { Self::BlockchainScanStopped(err) }
 }
 
 impl From<hex::FromHexError> for SendRawTxError {

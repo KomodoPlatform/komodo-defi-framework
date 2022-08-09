@@ -1,9 +1,10 @@
 use super::{CoinBalance, HistorySyncState, MarketCoinOps, MmCoin, RawTransactionFut, RawTransactionRequest, SwapOps,
             TradeFee, TransactionEnum, TransactionFut};
-use crate::{BalanceFut, CanRefundHtlc, FeeApproxStage, FoundSwapTxSpend, NegotiateSwapContractAddrErr,
-            SearchForSwapTxSpendInput, SignatureResult, TradePreimageFut, TradePreimageResult, TradePreimageValue,
-            UnexpectedDerivationMethod, ValidateAddressResult, ValidatePaymentInput, VerificationResult, WithdrawFut,
-            WithdrawRequest};
+use crate::{utxo::utxo_common::{SendRawTxError, ValidatePaymentError},
+            BalanceFut, CanRefundHtlc, FeeApproxStage, FoundSwapTxSpend, FoundSwapTxSpendErr, MyAddressError,
+            NegotiateSwapContractAddrErr, SearchForSwapTxSpendInput, SignatureResult, TradePreimageFut,
+            TradePreimageResult, TradePreimageValue, UnexpectedDerivationMethod, ValidateAddressResult,
+            ValidatePaymentInput, ValidateSwapTxError, VerificationResult, WithdrawFut, WithdrawRequest};
 use async_trait::async_trait;
 use futures01::Future;
 use keys::KeyPair;
@@ -34,7 +35,7 @@ impl TestCoin {
 impl MarketCoinOps for TestCoin {
     fn ticker(&self) -> &str { &self.ticker }
 
-    fn my_address(&self) -> Result<String, String> { unimplemented!() }
+    fn my_address(&self) -> Result<String, MmError<MyAddressError>> { unimplemented!() }
 
     fn get_public_key(&self) -> Result<String, MmError<UnexpectedDerivationMethod>> { unimplemented!() }
 
@@ -53,9 +54,13 @@ impl MarketCoinOps for TestCoin {
     fn platform_ticker(&self) -> &str { unimplemented!() }
 
     /// Receives raw transaction bytes in hexadecimal format as input and returns tx hash in hexadecimal format
-    fn send_raw_tx(&self, tx: &str) -> Box<dyn Future<Item = String, Error = String> + Send> { unimplemented!() }
+    fn send_raw_tx(&self, tx: &str) -> Box<dyn Future<Item = String, Error = MmError<SendRawTxError>> + Send> {
+        unimplemented!()
+    }
 
-    fn send_raw_tx_bytes(&self, tx: &[u8]) -> Box<dyn Future<Item = String, Error = String> + Send> { unimplemented!() }
+    fn send_raw_tx_bytes(&self, tx: &[u8]) -> Box<dyn Future<Item = String, Error = MmError<SendRawTxError>> + Send> {
+        unimplemented!()
+    }
 
     fn wait_for_confirmations(
         &self,
@@ -175,21 +180,21 @@ impl SwapOps for TestCoin {
         amount: &BigDecimal,
         min_block_number: u64,
         _uuid: &[u8],
-    ) -> Box<dyn Future<Item = (), Error = String> + Send> {
+    ) -> Box<dyn Future<Item = (), Error = MmError<ValidateSwapTxError>> + Send> {
         unimplemented!()
     }
 
     fn validate_maker_payment(
         &self,
         _input: ValidatePaymentInput,
-    ) -> Box<dyn Future<Item = (), Error = String> + Send> {
+    ) -> Box<dyn Future<Item = (), Error = MmError<ValidatePaymentError>> + Send> {
         unimplemented!()
     }
 
     fn validate_taker_payment(
         &self,
         _input: ValidatePaymentInput,
-    ) -> Box<dyn Future<Item = (), Error = String> + Send> {
+    ) -> Box<dyn Future<Item = (), Error = MmError<ValidatePaymentError>> + Send> {
         unimplemented!()
     }
 
@@ -208,14 +213,14 @@ impl SwapOps for TestCoin {
     async fn search_for_swap_tx_spend_my(
         &self,
         _: SearchForSwapTxSpendInput<'_>,
-    ) -> Result<Option<FoundSwapTxSpend>, String> {
+    ) -> Result<Option<FoundSwapTxSpend>, MmError<FoundSwapTxSpendErr>> {
         unimplemented!()
     }
 
     async fn search_for_swap_tx_spend_other(
         &self,
         _: SearchForSwapTxSpendInput<'_>,
-    ) -> Result<Option<FoundSwapTxSpend>, String> {
+    ) -> Result<Option<FoundSwapTxSpend>, MmError<FoundSwapTxSpendErr>> {
         unimplemented!()
     }
 

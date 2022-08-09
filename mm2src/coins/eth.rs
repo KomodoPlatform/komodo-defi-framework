@@ -3545,7 +3545,7 @@ async fn get_token_decimals(web3: &Web3<Web3Transport>, token_addr: Address) -> 
     Ok(decimals as u8)
 }
 
-fn valid_addr_from_str(addr_str: &str) -> Result<Address, MmError<AddrFromPubKeyError>> {
+pub fn valid_addr_from_str(addr_str: &str) -> Result<Address, MmError<AddrFromPubKeyError>> {
     let addr = addr_from_str(addr_str)?;
     if !is_valid_checksum_addr(addr_str) {
         return MmError::err(AddrFromPubKeyError::Internal("Invalid address checksum".to_string()));

@@ -14,14 +14,14 @@ use super::{lp_coinfind_or_err, DerivationMethod, MmCoinEnum};
 use crate::lightning::ln_events::init_events_abort_handlers;
 use crate::lightning::ln_sql::SqliteLightningDB;
 use crate::utxo::rpc_clients::UtxoRpcClientEnum;
-use crate::utxo::utxo_common::{big_decimal_from_sat_unsigned, UtxoTxBuilder, ValidatePaymentError, SendRawTxError};
+use crate::utxo::utxo_common::{big_decimal_from_sat_unsigned, SendRawTxError, UtxoTxBuilder, ValidatePaymentError};
 use crate::utxo::{sat_from_big_decimal, BlockchainNetwork, FeePolicy, GetUtxoListOps, UtxoTxGenerationOps};
 use crate::{BalanceFut, CoinBalance, FeeApproxStage, FoundSwapTxSpend, FoundSwapTxSpendErr, HistorySyncState,
             MarketCoinOps, MmCoin, MyAddressError, NegotiateSwapContractAddrErr, RawTransactionFut,
             RawTransactionRequest, SearchForSwapTxSpendInput, SignatureError, SignatureResult, SwapOps, TradeFee,
             TradePreimageFut, TradePreimageResult, TradePreimageValue, TransactionEnum, TransactionFut,
             UnexpectedDerivationMethod, UtxoStandardCoin, ValidateAddressResult, ValidatePaymentInput,
-            VerificationError, VerificationResult, WithdrawError, WithdrawFut, WithdrawRequest, ValidateSwapTxError};
+            ValidateSwapTxError, VerificationError, VerificationResult, WithdrawError, WithdrawFut, WithdrawRequest};
 use async_trait::async_trait;
 use bitcoin::hashes::Hash;
 use bitcoin_hashes::sha256::Hash as Sha256;
@@ -442,13 +442,17 @@ impl MarketCoinOps for LightningCoin {
 
     fn send_raw_tx(&self, _tx: &str) -> Box<dyn Future<Item = String, Error = MmError<SendRawTxError>> + Send> {
         Box::new(futures01::future::err(MmError::new(
-            SendRawTxError::MethodNotSupported("send_raw_tx is not supported for lightning, please use send_payment method instead.".to_string()),
+            SendRawTxError::MethodNotSupported(
+                "send_raw_tx is not supported for lightning, please use send_payment method instead.".to_string(),
+            ),
         )))
     }
 
     fn send_raw_tx_bytes(&self, _tx: &[u8]) -> Box<dyn Future<Item = String, Error = MmError<SendRawTxError>> + Send> {
         Box::new(futures01::future::err(MmError::new(
-            SendRawTxError::MethodNotSupported("send_raw_tx is not supported for lightning, please use send_payment method instead.".to_string()),
+            SendRawTxError::MethodNotSupported(
+                "send_raw_tx is not supported for lightning, please use send_payment method instead.".to_string(),
+            ),
         )))
     }
 
