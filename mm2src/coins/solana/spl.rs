@@ -267,7 +267,7 @@ impl MarketCoinOps for SplToken {
         unimplemented!()
     }
 
-    fn tx_enum_from_bytes(&self, bytes: &[u8]) -> Result<TransactionEnum, MmError<TransactionErr>> {
+    fn tx_enum_from_bytes(&self, _bytes: &[u8]) -> Result<TransactionEnum, MmError<TransactionErr>> {
         MmError::err(TransactionErr::Plain(
             "tx_enum_from_bytes is not supported for Spl yet.".to_string(),
         ))
