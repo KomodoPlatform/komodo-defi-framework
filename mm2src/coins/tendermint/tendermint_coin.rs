@@ -35,6 +35,8 @@ use std::ops::Deref;
 use std::str::FromStr;
 use std::sync::Arc;
 
+const TIMEOUT_HEIGHT_DELTA: u64 = 100;
+
 #[derive(Clone, Debug, PartialEq, Serialize)]
 pub struct TendermintFeeDetails {
     coin: String,
@@ -308,7 +310,7 @@ impl MmCoin for TendermintCoin {
                 amount: fee_denom.into(),
             };
             let fee = Fee::from_amount_and_gas(fee_amount, gas_limit);
-            let timeout_height = current_block + 100;
+            let timeout_height = current_block + TIMEOUT_HEIGHT_DELTA;
 
             let privkey =
                 SigningKey::from_bytes(&coin.priv_key).map_to_mm(|e| WithdrawError::InternalError(e.to_string()))?;
