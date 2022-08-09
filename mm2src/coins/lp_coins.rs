@@ -91,7 +91,7 @@ macro_rules! try_fus {
     };
 }
 
-macro_rules! try_validate_fus {
+macro_rules! try_mm_err_fus {
     ($e: expr) => {
         match $e {
             Ok(ok) => ok,
@@ -219,7 +219,7 @@ pub use solana::{solana_coin_from_conf_and_params, SolanaActivationParams, Solan
 pub mod utxo;
 #[cfg(not(target_arch = "wasm32"))] pub mod z_coin;
 
-use eth::{eth_coin_from_conf_and_request, AddrFromPubKeyError, EthCoin, EthTxFeeDetails, SignedEthTx};
+use eth::{eth_coin_from_conf_and_request, AddrFromPubKeyError, EthCoin, EthTxFeeDetails, SignedEthTx, TryToAddressError};
 use hd_wallet::{HDAddress, HDAddressId};
 use qrc20::Qrc20ActivationParams;
 use qrc20::{qrc20_coin_from_conf_and_params, Qrc20Coin, Qrc20FeeDetails};
@@ -233,7 +233,7 @@ use utxo::qtum::{QtumDelegationOps, QtumDelegationRequest, QtumStakingInfosDetai
 use utxo::rpc_clients::UtxoRpcError;
 use utxo::slp::{slp_addr_from_pubkey_str, SlpFeeDetails};
 use utxo::slp::{SlpToken, ValidateDexFeeError};
-use utxo::utxo_common::{big_decimal_from_sat_unsigned, SendRawTxError, ValidatePaymentError};
+use utxo::utxo_common::{big_decimal_from_sat_unsigned, SendRawTxError, ValidatePaymentError, CheckPaymentSentError};
 use utxo::utxo_standard::{utxo_standard_coin_with_priv_key, UtxoStandardCoin};
 use utxo::UtxoActivationParams;
 use utxo::{BlockchainNetwork, GenerateTxError, UtxoFeeDetails, UtxoTx};
@@ -419,8 +419,7 @@ pub enum FoundSwapTxSpendErr {
     #[display(fmt = "MissingTransaction {}", _0)]
     MissingTransaction(String),
     ScriptHashTypeNotSupported(ScriptHashTypeNotSupported),
-    #[display(fmt = "SwapContractAddrError {}", _0)]
-    SwapContractAddrError(String),
+    TryToAddressError(TryToAddressError),
     UtxoRpcError(Box<UtxoRpcError>),
     UnexpectedDerivationMethod(UnexpectedDerivationMethod),
     #[display(fmt = "Unexpected swap_id: {}", _0)]
@@ -616,7 +615,7 @@ pub trait SwapOps {
         search_from_block: u64,
         swap_contract_address: &Option<BytesJson>,
         swap_unique_data: &[u8],
-    ) -> Box<dyn Future<Item = Option<TransactionEnum>, Error = String> + Send>;
+    ) -> Box<dyn Future<Item = Option<TransactionEnum>, Error = MmError<CheckPaymentSentError>> + Send>;
 
     async fn search_for_swap_tx_spend_my(
         &self,

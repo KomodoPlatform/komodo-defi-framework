@@ -1,4 +1,4 @@
-use super::utxo_common::{SendRawTxError, ValidatePaymentError};
+use super::utxo_common::{SendRawTxError, ValidatePaymentError, CheckPaymentSentError};
 use super::*;
 use crate::my_tx_history_v2::{CoinWithTxHistoryV2, TxDetailsBuilder, TxHistoryStorage, TxHistoryStorageError};
 use crate::tx_history_storage::{GetTxHistoryFilters, WalletId};
@@ -1011,7 +1011,7 @@ impl SwapOps for BchCoin {
         _search_from_block: u64,
         _swap_contract_address: &Option<BytesJson>,
         swap_unique_data: &[u8],
-    ) -> Box<dyn Future<Item = Option<TransactionEnum>, Error = String> + Send> {
+    ) -> Box<dyn Future<Item = Option<TransactionEnum>, Error = MmError<CheckPaymentSentError>> + Send> {
         utxo_common::check_if_my_payment_sent(self.clone(), time_lock, other_pub, secret_hash, swap_unique_data)
     }
 

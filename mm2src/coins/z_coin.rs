@@ -5,7 +5,7 @@ use crate::utxo::rpc_clients::{ElectrumRpcRequest, UnspentInfo, UtxoRpcClientEnu
 use crate::utxo::utxo_builder::{UtxoCoinBuilderCommonOps, UtxoCoinWithIguanaPrivKeyBuilder,
                                 UtxoFieldsWithIguanaPrivKeyBuilder};
 use crate::utxo::utxo_common::{addresses_from_script, big_decimal_from_sat, big_decimal_from_sat_unsigned,
-                               payment_script, SendRawTxError, ValidatePaymentError};
+                               payment_script, SendRawTxError, ValidatePaymentError, CheckPaymentSentError};
 use crate::utxo::{sat_from_big_decimal, utxo_common, ActualTxFee, AdditionalTxData, Address, BroadcastTxErr,
                   FeePolicy, GetUtxoListOps, HistoryUtxoTx, HistoryUtxoTxMap, MatureUnspentList,
                   RecentlySpentOutPointsGuard, UtxoActivationParams, UtxoAddressFormat, UtxoArc, UtxoCoinFields,
@@ -923,8 +923,8 @@ impl MarketCoinOps for ZCoin {
     fn platform_ticker(&self) -> &str { self.ticker() }
 
     fn send_raw_tx(&self, tx: &str) -> Box<dyn Future<Item = String, Error = MmError<SendRawTxError>> + Send> {
-        let tx_bytes = try_validate_fus!(hex::decode(tx));
-        let z_tx = try_validate_fus!(
+        let tx_bytes = try_mm_err_fus!(hex::decode(tx));
+        let z_tx = try_mm_err_fus!(
             ZTransaction::read(tx_bytes.as_slice()).map_err(|err| SendRawTxError::Internal(err.to_string()))
         );
 
@@ -941,7 +941,7 @@ impl MarketCoinOps for ZCoin {
     }
 
     fn send_raw_tx_bytes(&self, tx: &[u8]) -> Box<dyn Future<Item = String, Error = MmError<SendRawTxError>> + Send> {
-        let z_tx = try_validate_fus!(ZTransaction::read(tx));
+        let z_tx = try_mm_err_fus!(ZTransaction::read(tx));
 
         let this = self.clone();
         let tx = tx.to_owned();
@@ -1235,7 +1235,7 @@ impl SwapOps for ZCoin {
             TransactionEnum::ZTransaction(t) => t.clone(),
             _ => panic!("Unexpected tx {:?}", fee_tx),
         };
-        let amount_sat = try_validate_fus!(sat_from_big_decimal(amount, self.utxo_arc.decimals));
+        let amount_sat = try_mm_err_fus!(sat_from_big_decimal(amount, self.utxo_arc.decimals));
         let expected_memo = MemoBytes::from_bytes(uuid).expect("Uuid length < 512");
 
         let coin = self.clone();
@@ -1335,7 +1335,7 @@ impl SwapOps for ZCoin {
         _search_from_block: u64,
         _swap_contract_address: &Option<BytesJson>,
         swap_unique_data: &[u8],
-    ) -> Box<dyn Future<Item = Option<TransactionEnum>, Error = String> + Send> {
+    ) -> Box<dyn Future<Item = Option<TransactionEnum>, Error = MmError<CheckPaymentSentError>> + Send> {
         utxo_common::check_if_my_payment_sent(self.clone(), time_lock, other_pub, secret_hash, swap_unique_data)
     }
 

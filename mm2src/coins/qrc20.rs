@@ -8,8 +8,8 @@ use crate::utxo::rpc_clients::{ElectrumClient, NativeClient, UnspentInfo, UtxoRp
 use crate::utxo::tx_cache::{UtxoVerboseCacheOps, UtxoVerboseCacheShared};
 use crate::utxo::utxo_builder::{UtxoCoinBuildError, UtxoCoinBuildResult, UtxoCoinBuilderCommonOps,
                                 UtxoCoinWithIguanaPrivKeyBuilder, UtxoFieldsWithIguanaPrivKeyBuilder};
-use crate::utxo::utxo_common::{self, big_decimal_from_sat, check_all_inputs_signed_by_pub, SendRawTxError,
-                               UtxoTxBuilder, ValidatePaymentError};
+use crate::utxo::utxo_common::{self, big_decimal_from_sat, check_all_inputs_signed_by_pub, CheckPaymentSentError,
+                               SendRawTxError, UtxoTxBuilder, ValidatePaymentError};
 use crate::utxo::{qtum, ActualTxFee, AdditionalTxData, BroadcastTxErr, FeePolicy, GenerateTxError, GetUtxoListOps,
                   HistoryUtxoTx, HistoryUtxoTxMap, MatureUnspentList, RecentlySpentOutPointsGuard,
                   UtxoActivationParams, UtxoAddressFormat, UtxoCoinFields, UtxoCommonOps, UtxoFromLegacyReqErr,
@@ -880,15 +880,15 @@ impl SwapOps for Qrc20Coin {
             _ => panic!("Unexpected TransactionEnum"),
         };
         let fee_tx_hash = fee_tx.hash().reversed().into();
-        if !try_validate_fus!(
+        if !try_mm_err_fus!(
             check_all_inputs_signed_by_pub(fee_tx, expected_sender).mm_err(ValidateSwapTxError::InternalError)
         ) {
             return Box::new(futures01::future::err(MmError::new(
                 ValidateSwapTxError::InternalError("The dex fee was sent from wrong address".to_string()),
             )));
         }
-        let fee_addr = try_validate_fus!(self.contract_address_from_raw_pubkey(fee_addr));
-        let expected_value = try_validate_fus!(wei_from_big_decimal(amount, self.utxo.decimals));
+        let fee_addr = try_mm_err_fus!(self.contract_address_from_raw_pubkey(fee_addr));
+        let expected_value = try_mm_err_fus!(wei_from_big_decimal(amount, self.utxo.decimals));
 
         let selfi = self.clone();
         let fut = async move {
@@ -903,12 +903,9 @@ impl SwapOps for Qrc20Coin {
         &self,
         input: ValidatePaymentInput,
     ) -> Box<dyn Future<Item = (), Error = MmError<ValidatePaymentError>> + Send> {
-        let payment_tx: UtxoTx = try_validate_fus!(deserialize(input.payment_tx.as_slice()));
-        let sender = try_validate_fus!(self.contract_address_from_raw_pubkey(&input.other_pub));
-        let swap_contract_address = try_validate_fus!(input
-            .swap_contract_address
-            .try_to_address()
-            .map_to_mm(ValidatePaymentError::InternalError));
+        let payment_tx: UtxoTx = try_mm_err_fus!(deserialize(input.payment_tx.as_slice()));
+        let sender = try_mm_err_fus!(self.contract_address_from_raw_pubkey(&input.other_pub));
+        let swap_contract_address = try_mm_err_fus!(input.swap_contract_address.try_to_address());
 
         let selfi = self.clone();
         let fut = async move {
@@ -930,12 +927,9 @@ impl SwapOps for Qrc20Coin {
         &self,
         input: ValidatePaymentInput,
     ) -> Box<dyn Future<Item = (), Error = MmError<ValidatePaymentError>> + Send> {
-        let swap_contract_address = try_validate_fus!(input
-            .swap_contract_address
-            .try_to_address()
-            .map_to_mm(ValidatePaymentError::InternalError));
-        let payment_tx: UtxoTx = try_validate_fus!(deserialize(input.payment_tx.as_slice()));
-        let sender = try_validate_fus!(self.contract_address_from_raw_pubkey(&input.other_pub));
+        let swap_contract_address = try_mm_err_fus!(input.swap_contract_address.try_to_address());
+        let payment_tx: UtxoTx = try_mm_err_fus!(deserialize(input.payment_tx.as_slice()));
+        let sender = try_mm_err_fus!(self.contract_address_from_raw_pubkey(&input.other_pub));
 
         let selfi = self.clone();
         let fut = async move {
@@ -961,16 +955,16 @@ impl SwapOps for Qrc20Coin {
         search_from_block: u64,
         swap_contract_address: &Option<BytesJson>,
         _swap_unique_data: &[u8],
-    ) -> Box<dyn Future<Item = Option<TransactionEnum>, Error = String> + Send> {
+    ) -> Box<dyn Future<Item = Option<TransactionEnum>, Error = MmError<CheckPaymentSentError>> + Send> {
         let swap_id = qrc20_swap_id(time_lock, secret_hash);
-        let swap_contract_address = try_fus!(swap_contract_address.try_to_address());
+        let swap_contract_address = try_mm_err_fus!(swap_contract_address.try_to_address());
 
         let selfi = self.clone();
         let fut = async move {
             selfi
                 .check_if_my_payment_sent_impl(swap_contract_address, swap_id, search_from_block)
                 .await
-                .map_err(|err| err.to_string())
+                .mm_err(CheckPaymentSentError::Internal)
         };
         Box::new(fut.boxed().compat())
     }

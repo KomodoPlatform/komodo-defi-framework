@@ -49,7 +49,7 @@ use std::sync::atomic::{AtomicU64, Ordering as AtomicOrdering};
 use std::sync::Arc;
 use utxo_signer::with_key_pair::{p2pkh_spend, p2sh_spend, sign_tx, UtxoSignWithKeyPairError};
 
-use super::utxo_common::{SendRawTxError, ValidatePaymentError};
+use super::utxo_common::{SendRawTxError, ValidatePaymentError, CheckPaymentSentError};
 
 const SLP_SWAP_VOUT: usize = 1;
 const SLP_FEE_VOUT: usize = 1;
@@ -1440,7 +1440,7 @@ impl SwapOps for SlpToken {
         _search_from_block: u64,
         _swap_contract_address: &Option<BytesJson>,
         swap_unique_data: &[u8],
-    ) -> Box<dyn Future<Item = Option<TransactionEnum>, Error = String> + Send> {
+    ) -> Box<dyn Future<Item = Option<TransactionEnum>, Error = MmError<CheckPaymentSentError>> + Send> {
         utxo_common::check_if_my_payment_sent(
             self.platform_coin.clone(),
             time_lock,
