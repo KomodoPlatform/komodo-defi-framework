@@ -5,7 +5,8 @@ use crate::utxo::rpc_clients::{ElectrumRpcRequest, UnspentInfo, UtxoRpcClientEnu
 use crate::utxo::utxo_builder::{UtxoCoinBuilderCommonOps, UtxoCoinWithIguanaPrivKeyBuilder,
                                 UtxoFieldsWithIguanaPrivKeyBuilder};
 use crate::utxo::utxo_common::{addresses_from_script, big_decimal_from_sat, big_decimal_from_sat_unsigned,
-                               payment_script, SendRawTxError, ValidatePaymentError, CheckPaymentSentError};
+                               payment_script, CheckPaymentSentError, ExtractSecretError, SendRawTxError,
+                               ValidatePaymentError};
 use crate::utxo::{sat_from_big_decimal, utxo_common, ActualTxFee, AdditionalTxData, Address, BroadcastTxErr,
                   FeePolicy, GetUtxoListOps, HistoryUtxoTx, HistoryUtxoTxMap, MatureUnspentList,
                   RecentlySpentOutPointsGuard, UtxoActivationParams, UtxoAddressFormat, UtxoArc, UtxoCoinFields,
@@ -1353,7 +1354,7 @@ impl SwapOps for ZCoin {
         utxo_common::search_for_swap_tx_spend_other(self, input, utxo_common::DEFAULT_SWAP_VOUT).await
     }
 
-    fn extract_secret(&self, secret_hash: &[u8], spend_tx: &[u8]) -> Result<Vec<u8>, String> {
+    fn extract_secret(&self, secret_hash: &[u8], spend_tx: &[u8]) -> Result<Vec<u8>, MmError<ExtractSecretError>> {
         utxo_common::extract_secret(secret_hash, spend_tx)
     }
 

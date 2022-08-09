@@ -358,8 +358,12 @@ impl Qrc20Coin {
         Ok(found)
     }
 
-    pub fn extract_secret_impl(&self, secret_hash: &[u8], spend_tx: &[u8]) -> Result<Vec<u8>, MmError<String>> {
-        let spend_tx: UtxoTx = deserialize(spend_tx).map_err(|err| MmError::new(err.to_string()))?;
+    pub fn extract_secret_impl(
+        &self,
+        secret_hash: &[u8],
+        spend_tx: &[u8],
+    ) -> Result<Vec<u8>, MmError<ExtractSecretError>> {
+        let spend_tx: UtxoTx = deserialize(spend_tx)?;
         let spend_tx_hash: H256Json = spend_tx.hash().reversed().into();
         for output in spend_tx.outputs {
             let script_pubkey: Script = output.script_pubkey.into();
@@ -385,7 +389,10 @@ impl Qrc20Coin {
             return Ok(secret);
         }
 
-        MmError::err(format!("Couldn't obtain the 'secret' from {:?} tx", spend_tx_hash))
+        MmError::err(ExtractSecretError::Internal(format!(
+            "Couldn't obtain the 'secret' from {:?} tx",
+            spend_tx_hash
+        )))
     }
 
     pub async fn wait_for_tx_spend_impl(

@@ -9,7 +9,7 @@ use crate::utxo::tx_cache::{UtxoVerboseCacheOps, UtxoVerboseCacheShared};
 use crate::utxo::utxo_builder::{UtxoCoinBuildError, UtxoCoinBuildResult, UtxoCoinBuilderCommonOps,
                                 UtxoCoinWithIguanaPrivKeyBuilder, UtxoFieldsWithIguanaPrivKeyBuilder};
 use crate::utxo::utxo_common::{self, big_decimal_from_sat, check_all_inputs_signed_by_pub, CheckPaymentSentError,
-                               SendRawTxError, UtxoTxBuilder, ValidatePaymentError};
+                               ExtractSecretError, SendRawTxError, UtxoTxBuilder, ValidatePaymentError};
 use crate::utxo::{qtum, ActualTxFee, AdditionalTxData, BroadcastTxErr, FeePolicy, GenerateTxError, GetUtxoListOps,
                   HistoryUtxoTx, HistoryUtxoTxMap, MatureUnspentList, RecentlySpentOutPointsGuard,
                   UtxoActivationParams, UtxoAddressFormat, UtxoCoinFields, UtxoCommonOps, UtxoFromLegacyReqErr,
@@ -989,9 +989,8 @@ impl SwapOps for Qrc20Coin {
             .await
     }
 
-    fn extract_secret(&self, secret_hash: &[u8], spend_tx: &[u8]) -> Result<Vec<u8>, String> {
+    fn extract_secret(&self, secret_hash: &[u8], spend_tx: &[u8]) -> Result<Vec<u8>, MmError<ExtractSecretError>> {
         self.extract_secret_impl(secret_hash, spend_tx)
-            .map_err(|err| err.to_string())
     }
 
     fn negotiate_swap_contract_addr(
@@ -1476,8 +1475,8 @@ pub enum TransferEventDetailsError {
     UnexpectedNumOfTopics(usize),
 }
 
-impl From<qtum::ContractAddrFromPubKeyError> for TransferEventDetailsError {
-    fn from(err: qtum::ContractAddrFromPubKeyError) -> Self { Self::Internal(err.to_string()) }
+impl From<qtum::ContractAddrFromLocationError> for TransferEventDetailsError {
+    fn from(err: qtum::ContractAddrFromLocationError) -> Self { Self::Internal(err.to_string()) }
 }
 
 impl From<usize> for TransferEventDetailsError {

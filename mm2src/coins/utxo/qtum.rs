@@ -1,8 +1,8 @@
-use super::utxo_common::{SendRawTxError, ValidatePaymentError, CheckPaymentSentError};
+use super::utxo_common::{CheckPaymentSentError, ExtractSecretError, SendRawTxError, ValidatePaymentError};
 use super::*;
 use crate::coin_balance::{self, EnableCoinBalanceError, HDAccountBalance, HDAddressBalance, HDWalletBalance,
                           HDWalletBalanceOps};
-use crate::eth::AddrFromPubKeyError;
+use crate::eth::AddrFromLocationError;
 use crate::hd_pubkey::{ExtractExtendedPubkey, HDExtractPubkeyError, HDXPubExtractor};
 use crate::hd_wallet::{self, AccountUpdatingError, AddressDerivingError, GetNewHDAddressParams,
                        GetNewHDAddressResponse, HDAccountMut, HDWalletRpcError, HDWalletRpcOps,
@@ -60,8 +60,8 @@ impl From<ScriptHashTypeNotSupported> for WithdrawError {
     fn from(e: ScriptHashTypeNotSupported) -> Self { WithdrawError::InvalidAddress(e.to_string()) }
 }
 
-impl From<ScriptHashTypeNotSupported> for ContractAddrFromPubKeyError {
-    fn from(e: ScriptHashTypeNotSupported) -> Self { ContractAddrFromPubKeyError::Internal(e.to_string()) }
+impl From<ScriptHashTypeNotSupported> for ContractAddrFromLocationError {
+    fn from(e: ScriptHashTypeNotSupported) -> Self { ContractAddrFromLocationError::Internal(e.to_string()) }
 }
 
 #[path = "qtum_delegation.rs"] mod qtum_delegation;
@@ -169,7 +169,7 @@ pub trait QtumBasedCoin: UtxoCommonOps + MarketCoinOps {
         }
     }
 
-    fn contract_address_from_raw_pubkey(&self, pubkey: &[u8]) -> Result<H160, MmError<ContractAddrFromPubKeyError>> {
+    fn contract_address_from_raw_pubkey(&self, pubkey: &[u8]) -> Result<H160, MmError<ContractAddrFromLocationError>> {
         let utxo = self.as_ref();
         let qtum_address = utxo_common::address_from_raw_pubkey(
             pubkey,
@@ -698,7 +698,7 @@ impl SwapOps for QtumCoin {
         utxo_common::search_for_swap_tx_spend_other(self, input, utxo_common::DEFAULT_SWAP_VOUT).await
     }
 
-    fn extract_secret(&self, secret_hash: &[u8], spend_tx: &[u8]) -> Result<Vec<u8>, String> {
+    fn extract_secret(&self, secret_hash: &[u8], spend_tx: &[u8]) -> Result<Vec<u8>, MmError<ExtractSecretError>> {
         utxo_common::extract_secret(secret_hash, spend_tx)
     }
 
@@ -1093,17 +1093,17 @@ impl InitCreateHDAccountRpcOps for QtumCoin {
 }
 
 #[derive(Debug, Display)]
-pub enum ContractAddrFromPubKeyError {
+pub enum ContractAddrFromLocationError {
     Internal(String),
 }
 
-impl From<AddrFromPubKeyError> for ContractAddrFromPubKeyError {
-    fn from(err: AddrFromPubKeyError) -> Self { Self::Internal(err.to_string()) }
+impl From<AddrFromLocationError> for ContractAddrFromLocationError {
+    fn from(err: AddrFromLocationError) -> Self { Self::Internal(err.to_string()) }
 }
 
 /// Parse contract address (H160) from string.
 /// Qtum Contract addresses have another checksum verification algorithm, because of this do not use [`eth::valid_addr_from_str`].
-pub fn contract_addr_from_str(addr: &str) -> Result<H160, MmError<ContractAddrFromPubKeyError>> {
+pub fn contract_addr_from_str(addr: &str) -> Result<H160, MmError<ContractAddrFromLocationError>> {
     Ok(eth::addr_from_str(addr)?)
 }
 

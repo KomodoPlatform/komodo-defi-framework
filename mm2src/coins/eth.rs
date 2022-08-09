@@ -60,7 +60,7 @@ use web3::{self, Web3};
 use web3_transport::{EthFeeHistoryNamespace, Web3Transport, Web3TransportNode};
 
 use crate::utxo::utxo_builder::UtxoConfError;
-use crate::utxo::utxo_common::{CheckPaymentSentError, SendRawTxError, ValidatePaymentError};
+use crate::utxo::utxo_common::{CheckPaymentSentError, ExtractSecretError, SendRawTxError, ValidatePaymentError};
 use crate::{FoundSwapTxSpendErr, MyAddressError, ValidateSwapTxError};
 
 use super::{coin_conf, AsyncMutex, BalanceError, BalanceFut, CoinBalance, CoinProtocol, CoinTransportMetrics,
@@ -551,8 +551,8 @@ impl EthCoinImpl {
     }
 
     /// Try to parse address from string.
-    pub fn address_from_str(&self, address: &str) -> Result<Address, String> {
-        Ok(try_s!(valid_addr_from_str(address)))
+    pub fn address_from_str(&self, address: &str) -> Result<Address, MmError<AddrFromLocationError>> {
+        valid_addr_from_str(address)
     }
 
     pub fn erc20_token_address(&self) -> Option<Address> {
@@ -590,9 +590,7 @@ async fn get_raw_transaction_impl(coin: EthCoin, req: RawTransactionRequest) -> 
 }
 
 async fn withdraw_impl(coin: EthCoin, req: WithdrawRequest) -> WithdrawResult {
-    let to_addr = coin
-        .address_from_str(&req.to)
-        .map_to_mm(WithdrawError::InvalidAddress)?;
+    let to_addr = coin.address_from_str(&req.to)?;
     let my_balance = coin.my_balance().compat().await?;
     let my_balance_dec = u256_to_big_decimal(my_balance, coin.decimals)?;
 
@@ -1094,19 +1092,16 @@ impl SwapOps for EthCoin {
             .await
     }
 
-    fn extract_secret(&self, _secret_hash: &[u8], spend_tx: &[u8]) -> Result<Vec<u8>, String> {
-        let unverified: UnverifiedTransaction = try_s!(rlp::decode(spend_tx));
-        let function = try_s!(SWAP_CONTRACT.function("receiverSpend"));
-        let tokens = try_s!(function.decode_input(&unverified.data));
+    fn extract_secret(&self, _secret_hash: &[u8], spend_tx: &[u8]) -> Result<Vec<u8>, MmError<ExtractSecretError>> {
+        let unverified: UnverifiedTransaction = rlp::decode(spend_tx)?;
+        let function = SWAP_CONTRACT.function("receiverSpend")?;
+        let tokens = function.decode_input(&unverified.data)?;
         if tokens.len() < 3 {
-            return ERR!("Invalid arguments in 'receiverSpend' call: {:?}", tokens);
+            return MmError::err(ExtractSecretError::InvalidArguments(tokens));
         }
         match &tokens[2] {
             Token::FixedBytes(secret) => Ok(secret.to_vec()),
-            _ => ERR!(
-                "Expected secret to be fixed bytes, decoded function data is {:?}",
-                tokens
-            ),
+            _ => MmError::err(ExtractSecretError::ExpectedFixedBytes(tokens)),
         }
     }
 
@@ -1181,7 +1176,7 @@ impl MarketCoinOps for EthCoin {
             .ok_or(VerificationError::PrefixNotFound)?;
         let address = self
             .address_from_str(address)
-            .map_err(VerificationError::AddressDecodingError)?;
+            .mm_err(|err| VerificationError::AddressDecodingError(err.to_string()))?;
         let signature = Signature::from_str(signature.strip_prefix("0x").unwrap_or(signature))?;
         let is_verified = verify_address(&address, &signature, &H256::from(message_hash))?;
         Ok(is_verified)
@@ -3115,7 +3110,7 @@ impl MmCoin for EthCoin {
     }
 
     fn validate_address(&self, address: &str) -> ValidateAddressResult {
-        let result = self.address_from_str(address);
+        let result = self.address_from_str(address).map_err(|err| err.to_string());
         ValidateAddressResult {
             is_valid: result.is_ok(),
             reason: result.err(),
@@ -3381,43 +3376,43 @@ impl GuiAuthMessages for EthCoin {
 }
 
 #[derive(Debug, Display)]
-pub enum AddrFromPubKeyError {
+pub enum AddrFromLocationError {
     #[display(fmt = "Internal: {}", _0)]
     Internal(String),
     UtxoConfError(String),
 }
 
-impl From<secp256k1::Error> for AddrFromPubKeyError {
-    fn from(err: secp256k1::Error) -> AddrFromPubKeyError { AddrFromPubKeyError::Internal(err.to_string()) }
+impl From<secp256k1::Error> for AddrFromLocationError {
+    fn from(err: secp256k1::Error) -> AddrFromLocationError { AddrFromLocationError::Internal(err.to_string()) }
 }
 
-impl From<hex::FromHexError> for AddrFromPubKeyError {
-    fn from(err: hex::FromHexError) -> AddrFromPubKeyError { AddrFromPubKeyError::Internal(err.to_string()) }
+impl From<hex::FromHexError> for AddrFromLocationError {
+    fn from(err: hex::FromHexError) -> AddrFromLocationError { AddrFromLocationError::Internal(err.to_string()) }
 }
 
-impl From<keys::Error> for AddrFromPubKeyError {
-    fn from(err: keys::Error) -> AddrFromPubKeyError { AddrFromPubKeyError::Internal(err.to_string()) }
+impl From<keys::Error> for AddrFromLocationError {
+    fn from(err: keys::Error) -> AddrFromLocationError { AddrFromLocationError::Internal(err.to_string()) }
 }
 
-impl From<AddrFromPubKeyError> for ValidatePaymentError {
-    fn from(err: AddrFromPubKeyError) -> ValidatePaymentError { ValidatePaymentError::InternalError(err.to_string()) }
+impl From<AddrFromLocationError> for ValidatePaymentError {
+    fn from(err: AddrFromLocationError) -> ValidatePaymentError { ValidatePaymentError::InternalError(err.to_string()) }
 }
 
-impl From<serde_json::Error> for AddrFromPubKeyError {
-    fn from(err: serde_json::Error) -> AddrFromPubKeyError { AddrFromPubKeyError::Internal(err.to_string()) }
+impl From<serde_json::Error> for AddrFromLocationError {
+    fn from(err: serde_json::Error) -> AddrFromLocationError { AddrFromLocationError::Internal(err.to_string()) }
 }
 
-impl From<UtxoConfError> for AddrFromPubKeyError {
-    fn from(err: UtxoConfError) -> AddrFromPubKeyError { AddrFromPubKeyError::Internal(err.to_string()) }
+impl From<UtxoConfError> for AddrFromLocationError {
+    fn from(err: UtxoConfError) -> AddrFromLocationError { AddrFromLocationError::Internal(err.to_string()) }
 }
 
-pub fn addr_from_raw_pubkey(pubkey: &[u8]) -> Result<Address, MmError<AddrFromPubKeyError>> {
+pub fn addr_from_raw_pubkey(pubkey: &[u8]) -> Result<Address, MmError<AddrFromLocationError>> {
     let pubkey = PublicKey::from_slice(pubkey)?;
     let eth_public = Public::from(&pubkey.serialize_uncompressed()[1..65]);
     Ok(public_to_address(&eth_public))
 }
 
-pub fn addr_from_pubkey_str(pubkey: &str) -> Result<String, MmError<AddrFromPubKeyError>> {
+pub fn addr_from_pubkey_str(pubkey: &str) -> Result<String, MmError<AddrFromLocationError>> {
     let pubkey_bytes = hex::decode(pubkey)?;
     let addr = addr_from_raw_pubkey(&pubkey_bytes)?;
     Ok(format!("{:#02x}", addr))
@@ -3557,22 +3552,22 @@ async fn get_token_decimals(web3: &Web3<Web3Transport>, token_addr: Address) -> 
     Ok(decimals as u8)
 }
 
-pub fn valid_addr_from_str(addr_str: &str) -> Result<Address, MmError<AddrFromPubKeyError>> {
+pub fn valid_addr_from_str(addr_str: &str) -> Result<Address, MmError<AddrFromLocationError>> {
     let addr = addr_from_str(addr_str)?;
     if !is_valid_checksum_addr(addr_str) {
-        return MmError::err(AddrFromPubKeyError::Internal("Invalid address checksum".to_string()));
+        return MmError::err(AddrFromLocationError::Internal("Invalid address checksum".to_string()));
     }
     Ok(addr)
 }
 
-pub fn addr_from_str(addr_str: &str) -> Result<Address, MmError<AddrFromPubKeyError>> {
+pub fn addr_from_str(addr_str: &str) -> Result<Address, MmError<AddrFromLocationError>> {
     if !addr_str.starts_with("0x") {
-        return MmError::err(AddrFromPubKeyError::Internal(
+        return MmError::err(AddrFromLocationError::Internal(
             "Address must be prefixed with 0x".to_string(),
         ));
     };
 
-    Address::from_str(&addr_str[2..]).map_to_mm(|err| AddrFromPubKeyError::Internal(err.to_string()))
+    Address::from_str(&addr_str[2..]).map_to_mm(|err| AddrFromLocationError::Internal(err.to_string()))
 }
 
 fn rpc_event_handlers_for_eth_transport(ctx: &MmArc, ticker: String) -> Vec<RpcTransportEventHandlerShared> {

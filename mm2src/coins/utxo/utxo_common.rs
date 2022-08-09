@@ -1,7 +1,7 @@
-use super::qtum::{ContractAddrFromPubKeyError, ScriptHashTypeNotSupported};
+use super::qtum::{ContractAddrFromLocationError, ScriptHashTypeNotSupported};
 use super::*;
 use crate::coin_balance::{AddressBalanceStatus, HDAddressBalance, HDWalletBalanceOps};
-use crate::eth::{AddrFromPubKeyError, TryToAddressError};
+use crate::eth::{AddrFromLocationError, TryToAddressError};
 use crate::hd_pubkey::{ExtractExtendedPubkey, HDExtractPubkeyError, HDXPubExtractor};
 use crate::hd_wallet::{AccountUpdatingError, AddressDerivingError, HDAccountMut, HDAccountsMap,
                        NewAccountCreatingError};
@@ -1450,8 +1450,7 @@ pub fn validate_fee<T: UtxoCommonOps>(
         coin.addr_format().clone(),
     ));
 
-    if !try_mm_err_fus!(check_all_inputs_signed_by_pub(&tx, sender_pubkey).mm_err(ValidateSwapTxError::InternalError))
-    {
+    if !try_mm_err_fus!(check_all_inputs_signed_by_pub(&tx, sender_pubkey).mm_err(ValidateSwapTxError::InternalError)) {
         return Box::new(futures01::future::err(MmError::new(
             ValidateSwapTxError::InternalError("The dex fee was sent from wrong address".to_string()),
         )));
@@ -1685,10 +1684,33 @@ pub async fn search_for_swap_tx_spend_other<T: AsRef<UtxoCoinFields> + SwapOps>(
     .await
 }
 
+#[derive(Debug, Display, PartialEq)]
+pub enum ExtractSecretError {
+    DeserializationErr(String),
+    DecodingError(String),
+    Internal(String),
+    #[display(fmt = "Invalid arguments in 'receiverSpend' call: {:?}", _0)]
+    InvalidArguments(Vec<ethabi::Token>),
+    #[display(fmt = "Expected secret to be fixed bytes, decoded function data is {:?}", _0)]
+    ExpectedFixedBytes(Vec<ethabi::Token>),
+}
+
+impl From<ethabi::Error> for ExtractSecretError {
+    fn from(err: ethabi::Error) -> Self { Self::DecodingError(err.to_string()) }
+}
+
+impl From<rlp::DecoderError> for ExtractSecretError {
+    fn from(err: rlp::DecoderError) -> Self { Self::DecodingError(err.to_string()) }
+}
+
+impl From<serialization::Error> for ExtractSecretError {
+    fn from(err: serialization::Error) -> Self { Self::DeserializationErr(err.to_string()) }
+}
+
 /// Extract a secret from the `spend_tx`.
 /// Note spender could generate the spend with several inputs where the only one input is the p2sh script.
-pub fn extract_secret(secret_hash: &[u8], spend_tx: &[u8]) -> Result<Vec<u8>, String> {
-    let spend_tx: UtxoTx = try_s!(deserialize(spend_tx).map_err(|e| ERRL!("{:?}", e)));
+pub fn extract_secret(secret_hash: &[u8], spend_tx: &[u8]) -> Result<Vec<u8>, MmError<ExtractSecretError>> {
+    let spend_tx: UtxoTx = deserialize(spend_tx)?;
     for (input_idx, input) in spend_tx.inputs.into_iter().enumerate() {
         let script: Script = input.script_sig.clone().into();
         let instruction = match script.get_instruction(1) {
@@ -1731,7 +1753,7 @@ pub fn extract_secret(secret_hash: &[u8], spend_tx: &[u8]) -> Result<Vec<u8>, St
         }
         return Ok(secret);
     }
-    ERR!("Couldn't extract secret")
+    MmError::err(ExtractSecretError::Internal("Couldn't extract secret".to_string()))
 }
 
 pub fn my_address<T: UtxoCommonOps>(coin: &T) -> Result<String, MmError<MyAddressError>> {
@@ -3136,7 +3158,7 @@ pub fn address_from_raw_pubkey(
     checksum_type: ChecksumType,
     hrp: Option<String>,
     addr_format: UtxoAddressFormat,
-) -> Result<Address, MmError<AddrFromPubKeyError>> {
+) -> Result<Address, MmError<AddrFromLocationError>> {
     Ok(Address {
         t_addr_prefix,
         prefix,
@@ -3167,7 +3189,7 @@ pub fn address_from_pubkey(
 
 #[derive(Debug, Display, PartialEq)]
 pub enum ValidatePaymentError {
-    AddrFromPubKeyError(String),
+    AddrFromLocationError(String),
     Erc20PaymentDetailsError(String),
     #[display(fmt = "Iguana private key is unavailable")]
     IguanaPrivKeyUnavailable,
@@ -3220,8 +3242,8 @@ impl From<UtxoRpcError> for ValidatePaymentError {
     fn from(err: UtxoRpcError) -> Self { Self::UtxoRpcError(err.to_string()) }
 }
 
-impl From<ContractAddrFromPubKeyError> for ValidatePaymentError {
-    fn from(err: ContractAddrFromPubKeyError) -> Self { Self::AddrFromPubKeyError(err.to_string()) }
+impl From<ContractAddrFromLocationError> for ValidatePaymentError {
+    fn from(err: ContractAddrFromLocationError) -> Self { Self::AddrFromLocationError(err.to_string()) }
 }
 
 #[allow(clippy::too_many_arguments)]

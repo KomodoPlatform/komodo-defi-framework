@@ -219,7 +219,8 @@ pub use solana::{solana_coin_from_conf_and_params, SolanaActivationParams, Solan
 pub mod utxo;
 #[cfg(not(target_arch = "wasm32"))] pub mod z_coin;
 
-use eth::{eth_coin_from_conf_and_request, AddrFromPubKeyError, EthCoin, EthTxFeeDetails, SignedEthTx, TryToAddressError};
+use eth::{eth_coin_from_conf_and_request, AddrFromLocationError, EthCoin, EthTxFeeDetails, SignedEthTx,
+          TryToAddressError};
 use hd_wallet::{HDAddress, HDAddressId};
 use qrc20::Qrc20ActivationParams;
 use qrc20::{qrc20_coin_from_conf_and_params, Qrc20Coin, Qrc20FeeDetails};
@@ -228,12 +229,13 @@ use rpc_command::{init_create_account::{CreateAccountTaskManager, CreateAccountT
                   init_scan_for_new_addresses::{ScanAddressesTaskManager, ScanAddressesTaskManagerShared},
                   init_withdraw::{WithdrawTaskManager, WithdrawTaskManagerShared}};
 use utxo::bch::{bch_coin_from_conf_and_params, BchActivationRequest, BchCoin};
-use utxo::qtum::{self, qtum_coin_with_priv_key, ContractAddrFromPubKeyError, QtumCoin};
+use utxo::qtum::{self, qtum_coin_with_priv_key, ContractAddrFromLocationError, QtumCoin};
 use utxo::qtum::{QtumDelegationOps, QtumDelegationRequest, QtumStakingInfosDetails};
 use utxo::rpc_clients::UtxoRpcError;
 use utxo::slp::{slp_addr_from_pubkey_str, SlpFeeDetails};
 use utxo::slp::{SlpToken, ValidateDexFeeError};
-use utxo::utxo_common::{big_decimal_from_sat_unsigned, SendRawTxError, ValidatePaymentError, CheckPaymentSentError};
+use utxo::utxo_common::{big_decimal_from_sat_unsigned, CheckPaymentSentError, ExtractSecretError, SendRawTxError,
+                        ValidatePaymentError};
 use utxo::utxo_standard::{utxo_standard_coin_with_priv_key, UtxoStandardCoin};
 use utxo::UtxoActivationParams;
 use utxo::{BlockchainNetwork, GenerateTxError, UtxoFeeDetails, UtxoTx};
@@ -514,12 +516,12 @@ impl From<ValidatePaymentError> for ValidateSwapTxError {
     fn from(err: ValidatePaymentError) -> Self { Self::ValidatePaymentError(err.to_string()) }
 }
 
-impl From<AddrFromPubKeyError> for ValidateSwapTxError {
-    fn from(err: AddrFromPubKeyError) -> Self { Self::InternalError(err.to_string()) }
+impl From<AddrFromLocationError> for ValidateSwapTxError {
+    fn from(err: AddrFromLocationError) -> Self { Self::InternalError(err.to_string()) }
 }
 
-impl From<ContractAddrFromPubKeyError> for ValidateSwapTxError {
-    fn from(err: ContractAddrFromPubKeyError) -> Self { Self::InternalError(err.to_string()) }
+impl From<ContractAddrFromLocationError> for ValidateSwapTxError {
+    fn from(err: ContractAddrFromLocationError) -> Self { Self::InternalError(err.to_string()) }
 }
 
 /// Swap operations (mostly based on the Hash/Time locked transactions implemented by coin wallets).
@@ -627,7 +629,7 @@ pub trait SwapOps {
         input: SearchForSwapTxSpendInput<'_>,
     ) -> Result<Option<FoundSwapTxSpend>, MmError<FoundSwapTxSpendErr>>;
 
-    fn extract_secret(&self, secret_hash: &[u8], spend_tx: &[u8]) -> Result<Vec<u8>, String>;
+    fn extract_secret(&self, secret_hash: &[u8], spend_tx: &[u8]) -> Result<Vec<u8>, MmError<ExtractSecretError>>;
 
     /// Whether the refund transaction can be sent now
     /// For example: there are no additional conditions for ETH, but for some UTXO coins we should wait for
@@ -1622,6 +1624,10 @@ impl From<serde_json::Error> for WithdrawError {
 
 impl From<http::Error> for WithdrawError {
     fn from(err: http::Error) -> Self { Self::InternalError(err.to_string()) }
+}
+
+impl From<AddrFromLocationError> for WithdrawError {
+    fn from(err: AddrFromLocationError) -> Self { Self::InvalidAddress(err.to_string()) }
 }
 
 impl WithdrawError {
@@ -3002,7 +3008,7 @@ pub fn address_by_coin_conf_and_pubkey_str(
     conf: &Json,
     pubkey: &str,
     addr_format: UtxoAddressFormat,
-) -> Result<String, MmError<AddrFromPubKeyError>> {
+) -> Result<String, MmError<AddrFromLocationError>> {
     let protocol: CoinProtocol = json::from_value(conf["protocol"].clone())?;
     match protocol {
         CoinProtocol::ERC20 { .. } | CoinProtocol::ETH => eth::addr_from_pubkey_str(pubkey),
@@ -3012,7 +3018,7 @@ pub fn address_by_coin_conf_and_pubkey_str(
         CoinProtocol::SLPTOKEN { platform, .. } => {
             let platform_conf = coin_conf(ctx, &platform);
             if platform_conf.is_null() {
-                return MmError::err(AddrFromPubKeyError::Internal(format!(
+                return MmError::err(AddrFromLocationError::Internal(format!(
                     "platform {} conf is null",
                     platform
                 )));
@@ -3021,23 +3027,23 @@ pub fn address_by_coin_conf_and_pubkey_str(
             let platform_protocol: CoinProtocol = json::from_value(platform_conf["protocol"].clone())?;
             match platform_protocol {
                 CoinProtocol::BCH { slp_prefix } => slp_addr_from_pubkey_str(pubkey, &slp_prefix)
-                    .mm_err(|err| AddrFromPubKeyError::Internal(err.to_string())),
-                _ => MmError::err(AddrFromPubKeyError::Internal(format!(
+                    .mm_err(|err| AddrFromLocationError::Internal(err.to_string())),
+                _ => MmError::err(AddrFromLocationError::Internal(format!(
                     "Platform protocol {:?} is not BCH",
                     platform_protocol
                 ))),
             }
         },
         #[cfg(not(target_arch = "wasm32"))]
-        CoinProtocol::LIGHTNING { .. } => MmError::err(AddrFromPubKeyError::Internal(
+        CoinProtocol::LIGHTNING { .. } => MmError::err(AddrFromLocationError::Internal(
             "address_by_coin_conf_and_pubkey_str is not implemented for lightning protocol yet!".to_string(),
         )),
         #[cfg(not(target_arch = "wasm32"))]
-        CoinProtocol::SOLANA | CoinProtocol::SPLTOKEN { .. } => MmError::err(AddrFromPubKeyError::Internal(
+        CoinProtocol::SOLANA | CoinProtocol::SPLTOKEN { .. } => MmError::err(AddrFromLocationError::Internal(
             "Solana pubkey is the public address - you do not need to use this rpc call.".to_string(),
         )),
         #[cfg(not(target_arch = "wasm32"))]
-        CoinProtocol::ZHTLC { .. } => MmError::err(AddrFromPubKeyError::Internal(
+        CoinProtocol::ZHTLC { .. } => MmError::err(AddrFromLocationError::Internal(
             "address_by_coin_conf_and_pubkey_str is not supported for ZHTLC protocol!".to_string(),
         )),
     }

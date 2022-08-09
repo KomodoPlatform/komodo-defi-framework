@@ -49,7 +49,7 @@ use std::sync::atomic::{AtomicU64, Ordering as AtomicOrdering};
 use std::sync::Arc;
 use utxo_signer::with_key_pair::{p2pkh_spend, p2sh_spend, sign_tx, UtxoSignWithKeyPairError};
 
-use super::utxo_common::{SendRawTxError, ValidatePaymentError, CheckPaymentSentError};
+use super::utxo_common::{CheckPaymentSentError, ExtractSecretError, SendRawTxError, ValidatePaymentError};
 
 const SLP_SWAP_VOUT: usize = 1;
 const SLP_FEE_VOUT: usize = 1;
@@ -1464,7 +1464,7 @@ impl SwapOps for SlpToken {
         utxo_common::search_for_swap_tx_spend_other(&self.platform_coin, input, SLP_SWAP_VOUT).await
     }
 
-    fn extract_secret(&self, secret_hash: &[u8], spend_tx: &[u8]) -> Result<Vec<u8>, String> {
+    fn extract_secret(&self, secret_hash: &[u8], spend_tx: &[u8]) -> Result<Vec<u8>, MmError<ExtractSecretError>> {
         utxo_common::extract_secret(secret_hash, spend_tx)
     }
 

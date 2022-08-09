@@ -14,7 +14,8 @@ use super::{lp_coinfind_or_err, DerivationMethod, MmCoinEnum};
 use crate::lightning::ln_events::init_events_abort_handlers;
 use crate::lightning::ln_sql::SqliteLightningDB;
 use crate::utxo::rpc_clients::UtxoRpcClientEnum;
-use crate::utxo::utxo_common::{big_decimal_from_sat_unsigned, SendRawTxError, UtxoTxBuilder, ValidatePaymentError, CheckPaymentSentError};
+use crate::utxo::utxo_common::{big_decimal_from_sat_unsigned, CheckPaymentSentError, ExtractSecretError,
+                               SendRawTxError, UtxoTxBuilder, ValidatePaymentError};
 use crate::utxo::{sat_from_big_decimal, BlockchainNetwork, FeePolicy, GetUtxoListOps, UtxoTxGenerationOps};
 use crate::{BalanceFut, CoinBalance, FeeApproxStage, FoundSwapTxSpend, FoundSwapTxSpendErr, HistorySyncState,
             MarketCoinOps, MmCoin, MyAddressError, NegotiateSwapContractAddrErr, RawTransactionFut,
@@ -371,7 +372,9 @@ impl SwapOps for LightningCoin {
         unimplemented!()
     }
 
-    fn extract_secret(&self, _secret_hash: &[u8], _spend_tx: &[u8]) -> Result<Vec<u8>, String> { unimplemented!() }
+    fn extract_secret(&self, _secret_hash: &[u8], _spend_tx: &[u8]) -> Result<Vec<u8>, MmError<ExtractSecretError>> {
+        unimplemented!()
+    }
 
     fn negotiate_swap_contract_addr(
         &self,

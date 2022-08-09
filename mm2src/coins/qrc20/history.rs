@@ -44,8 +44,8 @@ pub enum Qrc20CoinTxHistoryError {
     Internal(String),
 }
 
-impl From<qtum::ContractAddrFromPubKeyError> for Qrc20CoinTxHistoryError {
-    fn from(err: qtum::ContractAddrFromPubKeyError) -> Self { Self::Internal(err.to_string()) }
+impl From<qtum::ContractAddrFromLocationError> for Qrc20CoinTxHistoryError {
+    fn from(err: qtum::ContractAddrFromLocationError) -> Self { Self::Internal(err.to_string()) }
 }
 
 impl From<qtum::ScriptHashTypeNotSupported> for Qrc20CoinTxHistoryError {

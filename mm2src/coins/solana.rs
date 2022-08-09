@@ -1,7 +1,7 @@
 use super::{CoinBalance, HistorySyncState, MarketCoinOps, MmCoin, SwapOps, TradeFee, TransactionEnum};
 use crate::solana::solana_common::{lamports_to_sol, PrepareTransferData, SufficientBalanceError};
 use crate::solana::spl::SplTokenInfo;
-use crate::utxo::utxo_common::{SendRawTxError, ValidatePaymentError, CheckPaymentSentError};
+use crate::utxo::utxo_common::{CheckPaymentSentError, ExtractSecretError, SendRawTxError, ValidatePaymentError};
 use crate::{BalanceError, BalanceFut, FeeApproxStage, FoundSwapTxSpend, FoundSwapTxSpendErr, MyAddressError,
             NegotiateSwapContractAddrErr, RawTransactionFut, RawTransactionRequest, SearchForSwapTxSpendInput,
             SignatureResult, TradePreimageFut, TradePreimageResult, TradePreimageValue, TransactionDetails,
@@ -592,7 +592,9 @@ impl SwapOps for SolanaCoin {
         unimplemented!()
     }
 
-    fn extract_secret(&self, secret_hash: &[u8], spend_tx: &[u8]) -> Result<Vec<u8>, String> { unimplemented!() }
+    fn extract_secret(&self, secret_hash: &[u8], spend_tx: &[u8]) -> Result<Vec<u8>, MmError<ExtractSecretError>> {
+        unimplemented!()
+    }
 
     fn negotiate_swap_contract_addr(
         &self,

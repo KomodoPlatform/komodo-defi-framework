@@ -101,7 +101,7 @@ use super::{big_decimal_from_sat_unsigned, BalanceError, BalanceFut, BalanceResu
             Transaction, TransactionDetails, TransactionEnum, UnexpectedDerivationMethod, WithdrawError,
             WithdrawRequest};
 use crate::coin_balance::{EnableCoinScanPolicy, HDAddressBalanceScanner};
-use crate::eth::AddrFromPubKeyError;
+use crate::eth::AddrFromLocationError;
 use crate::hd_wallet::{HDAccountOps, HDAccountsMutex, HDAddress, HDWalletCoinOps, HDWalletOps, InvalidBip44ChainError};
 use crate::hd_wallet_storage::{HDAccountStorageItem, HDWalletCoinStorage, HDWalletStorageError, HDWalletStorageResult};
 use crate::utxo::tx_cache::UtxoVerboseCacheShared;
@@ -1714,7 +1714,7 @@ pub fn address_by_conf_and_pubkey_str(
     conf: &Json,
     pubkey: &str,
     addr_format: UtxoAddressFormat,
-) -> Result<String, MmError<AddrFromPubKeyError>> {
+) -> Result<String, MmError<AddrFromLocationError>> {
     // using a reasonable default here
     let params = UtxoActivationParams {
         mode: UtxoRpcMode::Native,
@@ -1743,7 +1743,7 @@ pub fn address_by_conf_and_pubkey_str(
     };
     address
         .display_address()
-        .map_err(|err| MmError::new(AddrFromPubKeyError::Internal(err)))
+        .map_err(|err| MmError::new(AddrFromLocationError::Internal(err)))
 }
 
 fn parse_hex_encoded_u32(hex_encoded: &str) -> Result<u32, MmError<String>> {

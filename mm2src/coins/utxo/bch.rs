@@ -1,4 +1,4 @@
-use super::utxo_common::{SendRawTxError, ValidatePaymentError, CheckPaymentSentError};
+use super::utxo_common::{CheckPaymentSentError, ExtractSecretError, SendRawTxError, ValidatePaymentError};
 use super::*;
 use crate::my_tx_history_v2::{CoinWithTxHistoryV2, TxDetailsBuilder, TxHistoryStorage, TxHistoryStorageError};
 use crate::tx_history_storage::{GetTxHistoryFilters, WalletId};
@@ -1029,7 +1029,7 @@ impl SwapOps for BchCoin {
         utxo_common::search_for_swap_tx_spend_other(self, input, utxo_common::DEFAULT_SWAP_VOUT).await
     }
 
-    fn extract_secret(&self, secret_hash: &[u8], spend_tx: &[u8]) -> Result<Vec<u8>, String> {
+    fn extract_secret(&self, secret_hash: &[u8], spend_tx: &[u8]) -> Result<Vec<u8>, MmError<ExtractSecretError>> {
         utxo_common::extract_secret(secret_hash, spend_tx)
     }
 

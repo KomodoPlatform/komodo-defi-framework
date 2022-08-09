@@ -1,6 +1,6 @@
 use super::{CoinBalance, HistorySyncState, MarketCoinOps, MmCoin, RawTransactionFut, RawTransactionRequest, SwapOps,
             TradeFee, TransactionEnum, TransactionFut};
-use crate::{utxo::utxo_common::{SendRawTxError, ValidatePaymentError, CheckPaymentSentError},
+use crate::{utxo::utxo_common::{CheckPaymentSentError, ExtractSecretError, SendRawTxError, ValidatePaymentError},
             BalanceFut, CanRefundHtlc, FeeApproxStage, FoundSwapTxSpend, FoundSwapTxSpendErr, MyAddressError,
             NegotiateSwapContractAddrErr, SearchForSwapTxSpendInput, SignatureResult, TradePreimageFut,
             TradePreimageResult, TradePreimageValue, UnexpectedDerivationMethod, ValidateAddressResult,
@@ -224,7 +224,9 @@ impl SwapOps for TestCoin {
         unimplemented!()
     }
 
-    fn extract_secret(&self, secret_hash: &[u8], spend_tx: &[u8]) -> Result<Vec<u8>, String> { unimplemented!() }
+    fn extract_secret(&self, secret_hash: &[u8], spend_tx: &[u8]) -> Result<Vec<u8>, MmError<ExtractSecretError>> {
+        unimplemented!()
+    }
 
     fn negotiate_swap_contract_addr(
         &self,
