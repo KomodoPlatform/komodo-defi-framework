@@ -20,12 +20,10 @@ use lightning::chain::{chaininterface::{BroadcasterInterface, ConfirmationTarget
                        Confirm, Filter, WatchedOutput};
 use rpc::v1::types::{Bytes as BytesJson, H256 as H256Json};
 use spv_validation::spv_proof::TRY_SPV_PROOF_INTERVAL;
-use std::cmp;
 use std::convert::{TryFrom, TryInto};
 use std::sync::atomic::{AtomicU64, Ordering as AtomicOrdering, Ordering};
 
 const CHECK_FOR_NEW_BEST_BLOCK_INTERVAL: f64 = 60.;
-const MIN_ALLOWED_FEE_PER_1000_WEIGHT: u32 = 253;
 const TRY_LOOP_INTERVAL: f64 = 60.;
 
 static DEFAULT_BACKGROUND_FEES_PER_VB: AtomicU64 = AtomicU64::new(1012);
@@ -531,7 +529,9 @@ impl FeeEstimator for Platform {
 
         // Must be no smaller than 253 (ie 1 satoshi-per-byte rounded up to ensure later round-downs don’t put us below 1 satoshi-per-byte).
         // https://docs.rs/lightning/0.0.101/lightning/chain/chaininterface/trait.FeeEstimator.html#tymethod.get_est_sat_per_1000_weight
-        cmp::max((fee_per_kb as f64 / 4.0).ceil() as u32, MIN_ALLOWED_FEE_PER_1000_WEIGHT)
+        // This has changed in rust-lightning v0.0.110 as LDK currently wraps get_est_sat_per_1000_weight to ensure that the value returned is
+        // no smaller than 253. https://github.com/lightningdevkit/rust-lightning/pull/1552
+        (fee_per_kb as f64 / 4.0).ceil() as u32
     }
 }
 

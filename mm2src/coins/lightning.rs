@@ -11,6 +11,7 @@ mod ln_storage;
 mod ln_utils;
 
 use super::{lp_coinfind_or_err, DerivationMethod, MmCoinEnum};
+use crate::lightning::ln_conf::OurChannelsConfigs;
 use crate::lightning::ln_errors::{TrustedNodeError, TrustedNodeResult};
 use crate::lightning::ln_events::init_events_abort_handlers;
 use crate::lightning::ln_serialization::PublicKeyForRPC;
@@ -48,7 +49,6 @@ use lightning_background_processor::{BackgroundProcessor, GossipSync};
 use lightning_invoice::payment;
 use lightning_invoice::utils::{create_invoice_from_channelmanager, DefaultRouter};
 use lightning_invoice::{Invoice, InvoiceDescription};
-use lightning_rapid_gossip_sync::RapidGossipSync;
 use ln_conf::{ChannelOptions, LightningCoinConf, LightningProtocolConf, PlatformCoinConfirmationTargets};
 use ln_db::{ClosedChannelsFilter, DBChannelDetails, DBPaymentInfo, DBPaymentsFilter, HTLCStatus, LightningDB,
             PaymentType};
@@ -739,9 +739,6 @@ pub async fn start_lightning(
         payment::Retry::Attempts(params.payment_retries.unwrap_or(5)),
     ));
 
-    let p2p_gossip_sync =
-        GossipSync::<_, Arc<RapidGossipSync<Arc<NetworkGraph>, Arc<LogState>>>, _, _, _>::P2P(gossip_sync.clone());
-
     // Start Background Processing. Runs tasks periodically in the background to keep LN node operational.
     // InvoicePayer will act as our event handler as it handles some of the payments related events before
     // delegating it to LightningEventHandler.
@@ -751,7 +748,7 @@ pub async fn start_lightning(
         invoice_payer.clone(),
         chain_monitor.clone(),
         channel_manager.clone(),
-        p2p_gossip_sync,
+        GossipSync::p2p(gossip_sync),
         peer_manager.clone(),
         logger,
         Some(scorer),
@@ -841,10 +838,7 @@ pub struct OpenChannelRequest {
     #[serde(default)]
     pub push_msat: u64,
     pub channel_options: Option<ChannelOptions>,
-    pub counterparty_locktime: Option<u16>,
-    pub our_htlc_minimum_msat: Option<u64>,
-    pub commit_upfront_shutdown_pubkey: Option<bool>,
-    pub announce_channel: Option<bool>,
+    pub channel_configs: Option<OurChannelsConfigs>,
 }
 
 #[derive(Serialize)]
@@ -911,20 +905,13 @@ pub async fn open_channel(ctx: MmArc, req: OpenChannelRequest) -> OpenChannelRes
             None => conf.channel_options = Some(options),
         }
     }
-
-    let mut user_config: UserConfig = conf.into();
-    if let Some(locktime) = req.counterparty_locktime {
-        user_config.channel_handshake_config.our_to_self_delay = locktime;
+    if let Some(configs) = req.channel_configs {
+        match conf.our_channels_configs.as_mut() {
+            Some(o) => o.update(configs),
+            None => conf.our_channels_configs = Some(configs),
+        }
     }
-    if let Some(min) = req.our_htlc_minimum_msat {
-        user_config.channel_handshake_config.our_htlc_minimum_msat = min;
-    }
-    if let Some(commit) = req.commit_upfront_shutdown_pubkey {
-        user_config.channel_handshake_config.commit_upfront_shutdown_pubkey = commit;
-    }
-    if let Some(announce) = req.announce_channel {
-        user_config.channel_handshake_config.announced_channel = announce;
-    }
+    let user_config: UserConfig = conf.into();
 
     let rpc_channel_id = ln_coin.db.get_last_channel_rpc_id().await? as u64 + 1;
 

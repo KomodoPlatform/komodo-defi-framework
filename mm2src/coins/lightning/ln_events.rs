@@ -129,7 +129,8 @@ impl EventHandler for LightningEventHandler {
                 channel_type: _,
             } => self.handle_open_channel_request(*temporary_channel_id, *counterparty_node_id, *funding_satoshis, *push_msat),
 
-            // Todo
+            // Just log an error for now, but this event can be used along PaymentForwarded for a new RPC that shows stats about how a node
+            // forward payments over it's outbound channels which can be useful for a user that wants to run a forwarding node for some profits.
             Event::HTLCHandlingFailed {
                 prev_channel_id, failed_next_destination
             } => error!(
@@ -138,10 +139,9 @@ impl EventHandler for LightningEventHandler {
                 failed_next_destination,
             ),
 
-            // Todo
+            // ProbeSuccessful and ProbeFailed are events in response to a send_probe function call which sends a payment that probes a given route for liquidity.
+            // send_probe is not used for now but may be used in order matching in the future to check if a swap can happen or not.
             Event::ProbeSuccessful { .. } => (),
-
-            // Todo
             Event::ProbeFailed { .. } => (),
         }
     }
