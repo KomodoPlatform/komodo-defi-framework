@@ -38,7 +38,8 @@ use std::net::SocketAddr;
 cfg_native! {
     use coins::lightning::{add_trusted_node, close_channel, connect_to_lightning_node, generate_invoice, get_channel_details,
         get_claimable_balances, get_payment_details, list_closed_channels_by_filter, list_open_channels_by_filter,
-        list_payments_by_filter, list_trusted_node, open_channel, remove_trusted_node, send_payment, LightningCoin};
+        list_payments_by_filter, list_trusted_node, open_channel, remove_trusted_node, send_payment, update_channel,
+        LightningCoin};
     use coins::{SolanaCoin, SplToken};
     use coins::z_coin::ZCoin;
 }
@@ -174,6 +175,10 @@ async fn dispatcher_v2(request: MmRpcRequest, ctx: MmArc) -> DispatcherResult<Re
             "close_channel" => handle_mmrpc(ctx, request, close_channel).await,
             "connect_to_lightning_node" => handle_mmrpc(ctx, request, connect_to_lightning_node).await,
             "enable_lightning" => handle_mmrpc(ctx, request, enable_l2::<LightningCoin>).await,
+            "enable_solana_with_tokens" => {
+                handle_mmrpc(ctx, request, enable_platform_coin_with_tokens::<SolanaCoin>).await
+            },
+            "enable_spl" => handle_mmrpc(ctx, request, enable_token::<SplToken>).await,
             "generate_invoice" => handle_mmrpc(ctx, request, generate_invoice).await,
             "get_channel_details" => handle_mmrpc(ctx, request, get_channel_details).await,
             "get_claimable_balances" => handle_mmrpc(ctx, request, get_claimable_balances).await,
@@ -188,10 +193,7 @@ async fn dispatcher_v2(request: MmRpcRequest, ctx: MmArc) -> DispatcherResult<Re
             "open_channel" => handle_mmrpc(ctx, request, open_channel).await,
             "remove_trusted_node" => handle_mmrpc(ctx, request, remove_trusted_node).await,
             "send_payment" => handle_mmrpc(ctx, request, send_payment).await,
-            "enable_solana_with_tokens" => {
-                handle_mmrpc(ctx, request, enable_platform_coin_with_tokens::<SolanaCoin>).await
-            },
-            "enable_spl" => handle_mmrpc(ctx, request, enable_token::<SplToken>).await,
+            "update_channel" => handle_mmrpc(ctx, request, update_channel).await,
             "z_coin_tx_history" => handle_mmrpc(ctx, request, coins::my_tx_history_v2::z_coin_tx_history_rpc).await,
             _ => MmError::err(DispatcherError::NoSuchMethod),
         },

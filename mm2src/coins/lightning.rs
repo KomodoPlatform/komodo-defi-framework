@@ -12,7 +12,7 @@ mod ln_utils;
 
 use super::{lp_coinfind_or_err, DerivationMethod, MmCoinEnum};
 use crate::lightning::ln_conf::OurChannelsConfigs;
-use crate::lightning::ln_errors::{TrustedNodeError, TrustedNodeResult};
+use crate::lightning::ln_errors::{TrustedNodeError, TrustedNodeResult, UpdateChannelError, UpdateChannelResult};
 use crate::lightning::ln_events::init_events_abort_handlers;
 use crate::lightning::ln_serialization::PublicKeyForRPC;
 use crate::lightning::ln_sql::SqliteLightningDB;
@@ -950,6 +950,39 @@ pub async fn open_channel(ctx: MmArc, req: OpenChannelRequest) -> OpenChannelRes
         rpc_channel_id,
         node_address: req.node_address,
     })
+}
+
+#[derive(Deserialize)]
+pub struct UpdateChannelReq {
+    pub coin: String,
+    pub channel_id: H256Json,
+    pub counterparty_node_id: PublicKeyForRPC,
+    pub options: ChannelOptions,
+}
+
+/// Updates configuration for an open channel.
+pub async fn update_channel(ctx: MmArc, req: UpdateChannelReq) -> UpdateChannelResult<String> {
+    let coin = lp_coinfind_or_err(&ctx, &req.coin).await?;
+    let ln_coin = match coin {
+        MmCoinEnum::LightningCoin(c) => c,
+        _ => return MmError::err(UpdateChannelError::UnsupportedCoin(coin.ticker().to_string())),
+    };
+
+    async_blocking(move || {
+        let mut channel_options = ln_coin.conf.channel_options.unwrap_or_else(|| req.options.clone());
+        if channel_options != req.options {
+            channel_options.update(req.options.clone());
+        }
+        let channel_ids = vec![req.channel_id.0];
+        let counterparty_node_id = req.counterparty_node_id.clone();
+        ln_coin
+            .channel_manager
+            .update_channel_config(&counterparty_node_id.into(), &channel_ids, &channel_options.into())
+            .map_to_mm(|e| UpdateChannelError::FailureToUpdateChannel(req.channel_id.to_string(), format!("{:?}", e)))
+    })
+    .await?;
+
+    Ok("success".into())
 }
 
 #[derive(Deserialize)]

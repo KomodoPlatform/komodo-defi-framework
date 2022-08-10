@@ -7,7 +7,7 @@ use futures::future::AbortHandle;
 use gstuff::{try_s, Constructible, ERR, ERRL};
 use keys::KeyPair;
 use lazy_static::lazy_static;
-use mm2_metrics::{MetricsArc, MetricsOps, MmMetricsError};
+use mm2_metrics::{MetricsArc, MetricsOps};
 use primitives::hash::H160;
 use rand::Rng;
 use serde::{Deserialize, Serialize};
@@ -18,7 +18,6 @@ use std::any::Any;
 use std::collections::hash_map::{Entry, HashMap};
 use std::collections::HashSet;
 use std::fmt;
-use std::net::AddrParseError;
 use std::ops::Deref;
 use std::path::{Path, PathBuf};
 use std::sync::{Arc, Mutex};
@@ -29,9 +28,9 @@ cfg_wasm32! {
 }
 
 cfg_native! {
-    use mm2_metrics::prometheus;
+    use mm2_metrics::{prometheus, MmMetricsError};
     use db_common::sqlite::rusqlite::Connection;
-    use std::net::{IpAddr, SocketAddr};
+    use std::net::{AddrParseError, IpAddr, SocketAddr};
     use std::sync::MutexGuard;
 }
 

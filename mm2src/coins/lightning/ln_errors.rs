@@ -14,6 +14,7 @@ use utxo_signer::with_key_pair::UtxoSignWithKeyPairError;
 pub type EnableLightningResult<T> = Result<T, MmError<EnableLightningError>>;
 pub type ConnectToNodeResult<T> = Result<T, MmError<ConnectToNodeError>>;
 pub type OpenChannelResult<T> = Result<T, MmError<OpenChannelError>>;
+pub type UpdateChannelResult<T> = Result<T, MmError<UpdateChannelError>>;
 pub type ListChannelsResult<T> = Result<T, MmError<ListChannelsError>>;
 pub type GetChannelDetailsResult<T> = Result<T, MmError<GetChannelDetailsError>>;
 pub type GenerateInvoiceResult<T> = Result<T, MmError<GenerateInvoiceError>>;
@@ -216,6 +217,35 @@ impl From<std::io::Error> for OpenChannelError {
 
 impl From<SqlError> for OpenChannelError {
     fn from(err: SqlError) -> OpenChannelError { OpenChannelError::DbError(err.to_string()) }
+}
+
+#[derive(Debug, Deserialize, Display, Serialize, SerializeErrorType)]
+#[serde(tag = "error_type", content = "error_data")]
+pub enum UpdateChannelError {
+    #[display(fmt = "Lightning network is not supported for {}", _0)]
+    UnsupportedCoin(String),
+    #[display(fmt = "No such coin {}", _0)]
+    NoSuchCoin(String),
+    #[display(fmt = "Failure to channel {}: {}", _0, _1)]
+    FailureToUpdateChannel(String, String),
+}
+
+impl HttpStatusCode for UpdateChannelError {
+    fn status_code(&self) -> StatusCode {
+        match self {
+            UpdateChannelError::UnsupportedCoin(_) => StatusCode::BAD_REQUEST,
+            UpdateChannelError::NoSuchCoin(_) => StatusCode::PRECONDITION_REQUIRED,
+            UpdateChannelError::FailureToUpdateChannel(_, _) => StatusCode::INTERNAL_SERVER_ERROR,
+        }
+    }
+}
+
+impl From<CoinFindError> for UpdateChannelError {
+    fn from(e: CoinFindError) -> Self {
+        match e {
+            CoinFindError::NoSuchCoin { coin } => UpdateChannelError::NoSuchCoin(coin),
+        }
+    }
 }
 
 #[derive(Debug, Deserialize, Display, Serialize, SerializeErrorType)]
