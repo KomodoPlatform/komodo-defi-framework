@@ -1,7 +1,7 @@
 use super::{z_coin_errors::*, CheckPointBlockInfo, ZcoinConsensusParams};
 use crate::utxo::utxo_common;
 use common::executor::Timer;
-use common::log::{debug, error, info};
+use common::log::{debug, error, info, LogOnError};
 use common::{async_blocking, spawn_abortable, AbortOnDropHandle};
 use db_common::sqlite::rusqlite::{params, Connection, Error as SqliteError, NO_PARAMS};
 use db_common::sqlite::{query_single_row, run_optimization_pragmas};
@@ -272,51 +272,35 @@ pub struct SaplingSyncLoopHandle {
 
 impl SaplingSyncLoopHandle {
     fn notify_blocks_cache_status(&mut self, current_scanned_block: u64, latest_block: u64) {
-        if self
-            .sync_status_notifier
+        self.sync_status_notifier
             .try_send(SyncStatus::UpdatingBlocksCache {
                 current_scanned_block,
                 latest_block,
             })
-            .is_err()
-        {
-            debug!("No one seems interested in SyncStatus");
-        }
+            .debug_log_with_msg("No one seems interested in SyncStatus");
     }
 
     fn notify_building_wallet_db(&mut self, current_scanned_block: u64, latest_block: u64) {
-        if self
-            .sync_status_notifier
+        self.sync_status_notifier
             .try_send(SyncStatus::BuildingWalletDb {
                 current_scanned_block,
                 latest_block,
             })
-            .is_err()
-        {
-            debug!("No one seems interested in SyncStatus");
-        }
+            .debug_log_with_msg("No one seems interested in SyncStatus");
     }
 
     fn notify_on_error(&mut self, error: String) {
-        if self
-            .sync_status_notifier
+        self.sync_status_notifier
             .try_send(SyncStatus::TemporaryError(error))
-            .is_err()
-        {
-            debug!("No one seems interested in SyncStatus");
-        }
+            .debug_log_with_msg("No one seems interested in SyncStatus");
     }
 
     fn notify_sync_finished(&mut self) {
-        if self
-            .sync_status_notifier
+        self.sync_status_notifier
             .try_send(SyncStatus::Finished {
                 block_number: self.current_block.into(),
             })
-            .is_err()
-        {
-            debug!("No one seems interested in SyncStatus");
-        }
+            .debug_log_with_msg("No one seems interested in SyncStatus");
     }
 
     async fn update_blocks_cache(&mut self) -> Result<(), MmError<UpdateBlocksCacheErr>> {
@@ -328,7 +312,7 @@ impl SaplingSyncLoopHandle {
         let mut from_block = self
             .consensus_params
             .sapling_activation_height
-            .max(current_block_in_db as u32 + 1) as u64;
+            .max(current_block_in_db + 1) as u64;
 
         if let Some((_, max_in_wallet)) = extrema {
             from_block = from_block.max(max_in_wallet.into());
