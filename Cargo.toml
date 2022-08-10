@@ -42,8 +42,9 @@ resolver = "2"
 # Due to the "overrides" only affects our workspace crates, as intended.
 debug = true
 debug-assertions = false
-# For better or worse, might affect the stack traces in our portion of the code.
-#opt-level = 1
+# For some reason, opt-level 3 started causing infinite Windows builds after Cosmos integration
+# TODO troubleshoot it
+opt-level = 2
 
 [profile.test]
 # required to avoid a long running process of librustcash additional chain validation that is enabled with debug assertions
