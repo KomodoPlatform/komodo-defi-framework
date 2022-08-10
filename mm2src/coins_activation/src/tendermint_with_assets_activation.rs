@@ -6,11 +6,11 @@ use coins::my_tx_history_v2::TxHistoryStorage;
 use coins::tendermint::{TendermintActivationParams, TendermintCoin, TendermintInitError, TendermintInitErrorKind,
                         TendermintProtocolInfo};
 use coins::{CoinBalance, CoinProtocol, MarketCoinOps};
-use common::mm_metrics::MetricsArc;
 use common::Future01CompatExt;
 use futures::future::AbortHandle;
 use mm2_core::mm_ctx::MmArc;
 use mm2_err_handle::prelude::*;
+use mm2_metrics::MetricsArc;
 use mm2_number::BigDecimal;
 use serde::Serialize;
 use serde_json::Value as Json;
