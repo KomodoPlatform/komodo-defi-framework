@@ -28,13 +28,13 @@
 #[macro_use] extern crate common;
 #[macro_use] extern crate gstuff;
 #[macro_use] extern crate lazy_static;
+#[macro_use] extern crate mm2_metrics;
 #[macro_use] extern crate serde_derive;
 #[macro_use] extern crate serde_json;
 #[macro_use] extern crate ser_error_derive;
 
 use async_trait::async_trait;
 use base58::FromBase58Error;
-use common::mm_metrics::MetricsWeak;
 use common::{calc_total_pages, now_ms, ten, HttpStatusCode};
 use crypto::{Bip32Error, CryptoCtx, DerivationPath};
 use derive_more::Display;
@@ -46,8 +46,9 @@ use http::{Response, StatusCode};
 use keys::{AddressFormat as UtxoAddressFormat, KeyPair, NetworkPrefix as CashAddrPrefix};
 use mm2_core::mm_ctx::{from_ctx, MmArc};
 use mm2_err_handle::prelude::*;
-use mm2_number::bigdecimal::{BigDecimal, ParseBigDecimalError, Zero};
-use mm2_number::MmNumber;
+use mm2_metrics::MetricsWeak;
+use mm2_number::{bigdecimal::{BigDecimal, ParseBigDecimalError, Zero},
+                 MmNumber};
 use rpc::v1::types::{Bytes as BytesJson, H256 as H256Json};
 use serde::{Deserialize, Deserializer, Serialize};
 use serde_json::{self as json, Value as Json};
@@ -69,7 +70,7 @@ cfg_native! {
     use futures::AsyncWriteExt;
     use std::io;
     use zcash_primitives::transaction::Transaction as ZTransaction;
-    use z_coin::ZcoinConsensusParams;
+    use z_coin::ZcoinProtocolInfo;
 }
 
 cfg_wasm32! {
@@ -2078,9 +2079,7 @@ pub enum CoinProtocol {
         decimals: u8,
     },
     #[cfg(not(target_arch = "wasm32"))]
-    ZHTLC {
-        consensus_params: ZcoinConsensusParams,
-    },
+    ZHTLC(ZcoinProtocolInfo),
 }
 
 pub type RpcTransportEventHandlerShared = Arc<dyn RpcTransportEventHandler + Send + Sync + 'static>;
@@ -2179,16 +2178,16 @@ impl RpcTransportEventHandler for CoinTransportMetrics {
 
     fn on_outgoing_request(&self, data: &[u8]) {
         mm_counter!(self.metrics, "rpc_client.traffic.out", data.len() as u64,
-            "coin" => self.ticker.clone(), "client" => self.client.clone());
+            "coin" => self.ticker.to_owned(), "client" => self.client.to_owned());
         mm_counter!(self.metrics, "rpc_client.request.count", 1,
-            "coin" => self.ticker.clone(), "client" => self.client.clone());
+            "coin" => self.ticker.to_owned(), "client" => self.client.to_owned());
     }
 
     fn on_incoming_response(&self, data: &[u8]) {
         mm_counter!(self.metrics, "rpc_client.traffic.in", data.len() as u64,
-            "coin" => self.ticker.clone(), "client" => self.client.clone());
+            "coin" => self.ticker.to_owned(), "client" => self.client.to_owned());
         mm_counter!(self.metrics, "rpc_client.response.count", 1,
-            "coin" => self.ticker.clone(), "client" => self.client.clone());
+            "coin" => self.ticker.to_owned(), "client" => self.client.to_owned());
     }
 
     fn on_connected(&self, _address: String) -> Result<(), String> {

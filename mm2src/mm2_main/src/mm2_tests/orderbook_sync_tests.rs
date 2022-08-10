@@ -1372,7 +1372,6 @@ fn zhtlc_orders_sync_alice_connected_before_creation() {
         ZOMBIE_TICKER,
         ZOMBIE_ELECTRUMS,
         ZOMBIE_LIGHTWALLETD_URLS,
-        &blocks_cache_path(&mm_bob, &bob_passphrase, ZOMBIE_TICKER),
     ));
 
     let set_price_json = json!({
@@ -1435,7 +1434,6 @@ fn zhtlc_orders_sync_alice_connected_after_creation() {
         ZOMBIE_TICKER,
         ZOMBIE_ELECTRUMS,
         ZOMBIE_LIGHTWALLETD_URLS,
-        &blocks_cache_path(&mm_bob, &bob_passphrase, ZOMBIE_TICKER),
     ));
 
     let set_price_json = json!({
@@ -1464,7 +1462,6 @@ fn zhtlc_orders_sync_alice_connected_after_creation() {
         ZOMBIE_TICKER,
         ZOMBIE_ELECTRUMS,
         ZOMBIE_LIGHTWALLETD_URLS,
-        &blocks_cache_path(&mm_alice, &alice_passphrase, ZOMBIE_TICKER),
     ));
 
     let set_price_json = json!({

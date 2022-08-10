@@ -17,6 +17,7 @@ futures = { version = "0.3", package = "futures", features = ["compat", "async-a
 hex = "0.4.2"
 keys = { path = "../mm2_bitcoin/keys" }
 lazy_static = "1.4"
+mm2_metrics = { path = "../mm2_metrics" }
 primitives = { path = "../mm2_bitcoin/primitives" }
 rand = { version = "0.7", features = ["std", "small_rng", "wasm-bindgen"] }
 serde = "1"

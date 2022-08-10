@@ -19,12 +19,12 @@ use crate::{eth, CanRefundHtlc, CoinBalance, CoinWithDerivationMethod, Delegatio
             GetWithdrawSenderAddress, NegotiateSwapContractAddrErr, PrivKeyBuildPolicy, SearchForSwapTxSpendInput,
             SignatureResult, StakingInfosFut, SwapOps, TradePreimageValue, TransactionFut, UnexpectedDerivationMethod,
             ValidateAddressResult, ValidatePaymentInput, VerificationResult, WithdrawFut, WithdrawSenderAddress};
-use common::mm_metrics::MetricsArc;
 use crypto::trezor::utxo::TrezorUtxoCoin;
 use crypto::Bip44Chain;
 use ethereum_types::H160;
 use futures::{FutureExt, TryFutureExt};
 use keys::AddressHashEnum;
+use mm2_metrics::MetricsArc;
 use mm2_number::MmNumber;
 use serde::Serialize;
 use serialization::CoinVariant;
