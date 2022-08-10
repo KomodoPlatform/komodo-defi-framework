@@ -166,6 +166,7 @@ impl TendermintCoin {
                 kind,
             })?;
 
+        // TODO multiple rpc_urls support will be added on the next iteration
         let rpc_client =
             HttpClient::new(activation_params.rpc_urls[0].as_str()).map_to_mm(|e| TendermintInitError {
                 ticker: ticker.clone(),
