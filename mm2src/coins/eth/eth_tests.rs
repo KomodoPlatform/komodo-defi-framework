@@ -26,7 +26,17 @@ fn eth_coin_for_test(
         &hex::decode("809465b17d0a4ddb3e4c69e8f23c2cabad868f51f8bed5c765ad1d6516c3306f").unwrap(),
     )
     .unwrap();
-    let transport = Web3Transport::new(urls).unwrap();
+
+    let mut nodes = vec![];
+    for url in urls.iter() {
+        nodes.push(Web3TransportNode {
+            uri: url.parse().unwrap(),
+            gui_auth: false,
+        });
+    }
+    drop_mutability!(nodes);
+
+    let transport = Web3Transport::new(nodes);
     let web3 = Web3::new(transport);
     let conf = json!({
         "coins":[
@@ -63,6 +73,7 @@ fn eth_coin_for_test(
         chain_id: None,
         logs_block_range: DEFAULT_LOGS_BLOCK_RANGE,
         nonce_lock: new_nonce_lock(),
+        erc20_tokens_infos: Default::default(),
     }));
     (ctx, eth_coin)
 }
@@ -202,7 +213,7 @@ fn send_and_refund_erc20_payment() {
         &hex::decode("809465b17d0a4ddb3e4c69e8f23c2cabad868f51f8bed5c765ad1d6516c3306f").unwrap(),
     )
     .unwrap();
-    let transport = Web3Transport::new(vec!["http://195.201.0.6:8545".into()]).unwrap();
+    let transport = Web3Transport::single_node("http://195.201.0.6:8545", false);
     let web3 = Web3::new(transport);
     let ctx = MmCtxBuilder::new().into_mm_arc();
     let coin = EthCoin(Arc::new(EthCoinImpl {
@@ -231,6 +242,7 @@ fn send_and_refund_erc20_payment() {
         chain_id: None,
         logs_block_range: DEFAULT_LOGS_BLOCK_RANGE,
         nonce_lock: new_nonce_lock(),
+        erc20_tokens_infos: Default::default(),
     }));
 
     let payment = coin
@@ -272,7 +284,7 @@ fn send_and_refund_eth_payment() {
         &hex::decode("809465b17d0a4ddb3e4c69e8f23c2cabad868f51f8bed5c765ad1d6516c3306f").unwrap(),
     )
     .unwrap();
-    let transport = Web3Transport::new(vec!["http://195.201.0.6:8545".into()]).unwrap();
+    let transport = Web3Transport::single_node("http://195.201.0.6:8545", false);
     let web3 = Web3::new(transport);
     let ctx = MmCtxBuilder::new().into_mm_arc();
     let coin = EthCoin(Arc::new(EthCoinImpl {
@@ -298,6 +310,7 @@ fn send_and_refund_eth_payment() {
         chain_id: None,
         logs_block_range: DEFAULT_LOGS_BLOCK_RANGE,
         nonce_lock: new_nonce_lock(),
+        erc20_tokens_infos: Default::default(),
     }));
 
     let payment = coin
@@ -338,13 +351,11 @@ fn test_nonce_several_urls() {
         &hex::decode("809465b17d0a4ddb3e4c69e8f23c2cabad868f51f8bed5c765ad1d6516c3306f").unwrap(),
     )
     .unwrap();
-    let infura_transport = Web3Transport::new(vec![
-        "https://ropsten.infura.io/v3/c01c1b4cf66642528547624e1d6d9d6b".into()
-    ])
-    .unwrap();
-    let linkpool_transport = Web3Transport::new(vec!["https://ropsten-rpc.linkpool.io".into()]).unwrap();
+    let infura_transport =
+        Web3Transport::single_node("https://ropsten.infura.io/v3/c01c1b4cf66642528547624e1d6d9d6b", false);
+    let linkpool_transport = Web3Transport::single_node("https://ropsten-rpc.linkpool.io", false);
     // get nonce must succeed if some nodes are down at the moment for some reason
-    let failing_transport = Web3Transport::new(vec!["http://195.201.0.6:8989".into()]).unwrap();
+    let failing_transport = Web3Transport::single_node("http://195.201.0.6:8989", false);
 
     let web3_infura = Web3::new(infura_transport);
     let web3_linkpool = Web3::new(linkpool_transport);
@@ -384,6 +395,7 @@ fn test_nonce_several_urls() {
         chain_id: None,
         logs_block_range: DEFAULT_LOGS_BLOCK_RANGE,
         nonce_lock: new_nonce_lock(),
+        erc20_tokens_infos: Default::default(),
     }));
 
     log!("My address {:?}", coin.my_address);
@@ -406,7 +418,7 @@ fn test_wait_for_payment_spend_timeout() {
         &hex::decode("809465b17d0a4ddb3e4c69e8f23c2cabad868f51f8bed5c765ad1d6516c3306f").unwrap(),
     )
     .unwrap();
-    let transport = Web3Transport::new(vec!["http://195.201.0.6:8555".into()]).unwrap();
+    let transport = Web3Transport::single_node("http://195.201.0.6:8555", false);
     let web3 = Web3::new(transport);
     let ctx = MmCtxBuilder::new().into_mm_arc();
 
@@ -433,6 +445,7 @@ fn test_wait_for_payment_spend_timeout() {
         chain_id: None,
         logs_block_range: DEFAULT_LOGS_BLOCK_RANGE,
         nonce_lock: new_nonce_lock(),
+        erc20_tokens_infos: Default::default(),
     };
 
     let coin = EthCoin(Arc::new(coin));
@@ -464,10 +477,7 @@ fn test_search_for_swap_tx_spend_was_spent() {
         &hex::decode("809465b17d0a4ddb3e4c69e8f23c2cabad868f51f8bed5c765ad1d6516c3306f").unwrap(),
     )
     .unwrap();
-    let transport = Web3Transport::new(vec![
-        "https://ropsten.infura.io/v3/c01c1b4cf66642528547624e1d6d9d6b".into()
-    ])
-    .unwrap();
+    let transport = Web3Transport::single_node("https://ropsten.infura.io/v3/c01c1b4cf66642528547624e1d6d9d6b", false);
     let web3 = Web3::new(transport);
     let ctx = MmCtxBuilder::new().into_mm_arc();
 
@@ -495,6 +505,7 @@ fn test_search_for_swap_tx_spend_was_spent() {
         chain_id: None,
         logs_block_range: DEFAULT_LOGS_BLOCK_RANGE,
         nonce_lock: new_nonce_lock(),
+        erc20_tokens_infos: Default::default(),
     }));
 
     // raw transaction bytes of https://ropsten.etherscan.io/tx/0xb1c987e2ac79581bb8718267b5cb49a18274890494299239d1d0dfdb58d6d76a
@@ -570,10 +581,7 @@ fn test_search_for_swap_tx_spend_was_refunded() {
         &hex::decode("809465b17d0a4ddb3e4c69e8f23c2cabad868f51f8bed5c765ad1d6516c3306f").unwrap(),
     )
     .unwrap();
-    let transport = Web3Transport::new(vec![
-        "https://ropsten.infura.io/v3/c01c1b4cf66642528547624e1d6d9d6b".into()
-    ])
-    .unwrap();
+    let transport = Web3Transport::single_node("https://ropsten.infura.io/v3/c01c1b4cf66642528547624e1d6d9d6b", false);
     let web3 = Web3::new(transport);
     let ctx = MmCtxBuilder::new().into_mm_arc();
 
@@ -604,6 +612,7 @@ fn test_search_for_swap_tx_spend_was_refunded() {
         chain_id: None,
         logs_block_range: DEFAULT_LOGS_BLOCK_RANGE,
         nonce_lock: new_nonce_lock(),
+        erc20_tokens_infos: Default::default(),
     }));
 
     // raw transaction bytes of https://ropsten.etherscan.io/tx/0xe18bbca69dea9a4624e1f5b0b2021d5fe4c8daa03f36084a8ba011b08e5cd938
@@ -1263,7 +1272,7 @@ fn test_message_hash() {
         &hex::decode("809465b17d0a4ddb3e4c69e8f23c2cabad868f51f8bed5c765ad1d6516c3306f").unwrap(),
     )
     .unwrap();
-    let transport = Web3Transport::new(vec!["http://195.201.0.6:8545".into()]).unwrap();
+    let transport = Web3Transport::single_node("http://195.201.0.6:8545", false);
     let web3 = Web3::new(transport);
     let ctx = MmCtxBuilder::new().into_mm_arc();
     let coin = EthCoin(Arc::new(EthCoinImpl {
@@ -1289,6 +1298,7 @@ fn test_message_hash() {
         chain_id: None,
         logs_block_range: DEFAULT_LOGS_BLOCK_RANGE,
         nonce_lock: new_nonce_lock(),
+        erc20_tokens_infos: Default::default(),
     }));
 
     let message_hash = coin.sign_message_hash("test").unwrap();
@@ -1304,7 +1314,8 @@ fn test_sign_verify_message() {
         &hex::decode("809465b17d0a4ddb3e4c69e8f23c2cabad868f51f8bed5c765ad1d6516c3306f").unwrap(),
     )
     .unwrap();
-    let transport = Web3Transport::new(vec!["http://195.201.0.6:8545".into()]).unwrap();
+    let transport = Web3Transport::single_node("http://195.201.0.6:8545", false);
+
     let web3 = Web3::new(transport);
     let ctx = MmCtxBuilder::new().into_mm_arc();
     let coin = EthCoin(Arc::new(EthCoinImpl {
@@ -1330,6 +1341,7 @@ fn test_sign_verify_message() {
         chain_id: None,
         logs_block_range: DEFAULT_LOGS_BLOCK_RANGE,
         nonce_lock: new_nonce_lock(),
+        erc20_tokens_infos: Default::default(),
     }));
 
     let message = "test";

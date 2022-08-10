@@ -469,6 +469,26 @@ pub struct TakerSwapMut {
     secret: H256Json,
 }
 
+#[cfg(test)]
+#[derive(Eq, PartialEq)]
+pub(super) enum FailAt {
+    TakerPayment,
+    MakerPaymentSpend,
+    TakerPaymentRefund,
+}
+
+#[cfg(test)]
+impl From<String> for FailAt {
+    fn from(str: String) -> Self {
+        match str.as_str() {
+            "taker_payment" => FailAt::TakerPayment,
+            "maker_payment_spend" => FailAt::MakerPaymentSpend,
+            "taker_payment_refund" => FailAt::TakerPaymentRefund,
+            _ => panic!("Invalid TAKER_FAIL_AT value"),
+        }
+    }
+}
+
 pub struct TakerSwap {
     ctx: MmArc,
     maker_coin: MmCoinEnum,
@@ -487,6 +507,8 @@ pub struct TakerSwap {
     conf_settings: SwapConfirmationsSettings,
     payment_locktime: u64,
     p2p_privkey: Option<KeyPair>,
+    #[cfg(test)]
+    pub(super) fail_at: Option<FailAt>,
 }
 
 #[derive(Clone, Debug, Deserialize, PartialEq, Serialize)]
@@ -754,6 +776,8 @@ impl TakerSwap {
                 secret: H256Json::default(),
             }),
             ctx,
+            #[cfg(test)]
+            fail_at: None,
         }
     }
 
@@ -1155,6 +1179,13 @@ impl TakerSwap {
     }
 
     async fn send_taker_payment(&self) -> Result<(Option<TakerSwapCommand>, Vec<TakerSwapEvent>), String> {
+        #[cfg(test)]
+        if self.fail_at == Some(FailAt::TakerPayment) {
+            return Ok((Some(TakerSwapCommand::Finish), vec![
+                TakerSwapEvent::TakerPaymentTransactionFailed("Explicit test failure".into()),
+            ]));
+        }
+
         let timeout = self.r().data.started_at + self.r().data.lock_duration / 3;
         let now = now_ms() / 1000;
         if now > timeout {
@@ -1290,6 +1321,12 @@ impl TakerSwap {
     }
 
     async fn spend_maker_payment(&self) -> Result<(Option<TakerSwapCommand>, Vec<TakerSwapEvent>), String> {
+        #[cfg(test)]
+        if self.fail_at == Some(FailAt::MakerPaymentSpend) {
+            return Ok((Some(TakerSwapCommand::Finish), vec![
+                TakerSwapEvent::MakerPaymentSpendFailed("Explicit test failure".into()),
+            ]));
+        }
         let spend_fut = self.maker_coin.send_taker_spends_maker_payment(
             &self.r().maker_payment.clone().unwrap().tx_hex,
             self.maker_payment_lock.load(Ordering::Relaxed) as u32,
@@ -1336,6 +1373,13 @@ impl TakerSwap {
     }
 
     async fn refund_taker_payment(&self) -> Result<(Option<TakerSwapCommand>, Vec<TakerSwapEvent>), String> {
+        #[cfg(test)]
+        if self.fail_at == Some(FailAt::TakerPaymentRefund) {
+            return Ok((Some(TakerSwapCommand::Finish), vec![
+                TakerSwapEvent::TakerPaymentRefundFailed("Explicit test failure".into()),
+            ]));
+        }
+
         let locktime = self.r().data.taker_payment_lock;
         loop {
             match self.taker_coin.can_refund_htlc(locktime).compat().await {
@@ -1653,11 +1697,9 @@ impl TakerSwap {
                 ),
             },
             None => {
-                if now_ms() / 1000 < self.r().data.taker_payment_lock + 3700 {
-                    return ERR!(
-                        "Too early to refund, wait until {}",
-                        self.r().data.taker_payment_lock + 3700
-                    );
+                let can_refund = try_s!(self.taker_coin.can_refund_htlc(taker_payment_lock).compat().await);
+                if let CanRefundHtlc::HaveToWait(seconds_to_wait) = can_refund {
+                    return ERR!("Too early to refund, wait until {}", now_ms() / 1000 + seconds_to_wait);
                 }
 
                 let fut = self.taker_coin.send_taker_refunds_payment(
@@ -2141,6 +2183,8 @@ mod taker_swap_tests {
 
         TestCoin::ticker.mock_safe(|_| MockResult::Return("ticker"));
         TestCoin::swap_contract_address.mock_safe(|_| MockResult::Return(None));
+        TestCoin::can_refund_htlc
+            .mock_safe(|_, _| MockResult::Return(Box::new(futures01::future::ok(CanRefundHtlc::CanRefundNow))));
 
         static mut MY_PAYMENT_SENT_CALLED: bool = false;
         TestCoin::check_if_my_payment_sent.mock_safe(|_, _, _, _, _, _, _| {
@@ -2234,6 +2278,8 @@ mod taker_swap_tests {
 
         TestCoin::ticker.mock_safe(|_| MockResult::Return("ticker"));
         TestCoin::swap_contract_address.mock_safe(|_| MockResult::Return(None));
+        TestCoin::can_refund_htlc
+            .mock_safe(|_, _| MockResult::Return(Box::new(futures01::future::ok(CanRefundHtlc::CanRefundNow))));
 
         static mut SEARCH_TX_SPEND_CALLED: bool = false;
         TestCoin::search_for_swap_tx_spend_my.mock_safe(|_, _| {
@@ -2271,6 +2317,8 @@ mod taker_swap_tests {
 
         TestCoin::ticker.mock_safe(|_| MockResult::Return("ticker"));
         TestCoin::swap_contract_address.mock_safe(|_| MockResult::Return(None));
+        TestCoin::can_refund_htlc
+            .mock_safe(|_, _| MockResult::Return(Box::new(futures01::future::ok(CanRefundHtlc::HaveToWait(1000)))));
 
         static mut SEARCH_TX_SPEND_CALLED: bool = false;
         TestCoin::search_for_swap_tx_spend_my.mock_safe(|_, _| {
@@ -2280,8 +2328,8 @@ mod taker_swap_tests {
         let maker_coin = MmCoinEnum::Test(TestCoin::default());
         let taker_coin = MmCoinEnum::Test(TestCoin::default());
         let (taker_swap, _) = TakerSwap::load_from_saved(ctx, maker_coin, taker_coin, taker_saved_swap).unwrap();
-        taker_swap.w().data.taker_payment_lock = (now_ms() / 1000) - 3690;
-        assert!(block_on(taker_swap.recover_funds()).is_err());
+        let error = block_on(taker_swap.recover_funds()).unwrap_err();
+        assert!(error.contains("Too early to refund"));
         assert!(unsafe { SEARCH_TX_SPEND_CALLED });
     }
 
