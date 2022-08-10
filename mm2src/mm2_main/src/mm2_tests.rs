@@ -1,11 +1,12 @@
 use super::{lp_main, LpMainParams};
 use crate::mm2::lp_ordermatch::MIN_ORDER_KEEP_ALIVE_INTERVAL;
+
 use common::executor::Timer;
 use common::log::LogLevel;
-use common::mm_metrics::{MetricType, MetricsJson};
 use common::now_ms;
 use crypto::privkey::key_pair_from_seed;
 use http::{HeaderMap, StatusCode};
+use mm2_metrics::{MetricType, MetricsJson};
 use mm2_number::{BigDecimal, BigRational, Fraction, MmNumber};
 use mm2_test_helpers::for_tests::{check_my_swap_status, check_recent_swaps, check_stats_swap_status,
                                   enable_native as enable_native_impl, enable_qrc20, find_metrics_in_json,

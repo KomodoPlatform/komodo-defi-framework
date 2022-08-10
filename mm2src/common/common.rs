@@ -96,8 +96,6 @@ macro_rules! drop_mutability {
 pub mod jsonrpc_client;
 #[macro_use]
 pub mod log;
-#[macro_use]
-pub mod mm_metrics;
 
 pub mod crash_reports;
 pub mod custom_futures;

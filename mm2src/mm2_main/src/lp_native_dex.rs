@@ -27,6 +27,7 @@ use derive_more::Display;
 use mm2_core::mm_ctx::{MmArc, MmCtx};
 use mm2_err_handle::prelude::*;
 use mm2_libp2p::{spawn_gossipsub, AdexBehaviourError, NodeType, RelayAddress, RelayAddressError, WssCerts};
+use mm2_metrics::mm_gauge;
 use rpc_task::RpcTaskError;
 use serde_json::{self as json};
 use std::fs;
@@ -471,28 +472,28 @@ pub async fn init_p2p(ctx: MmArc) -> P2PResult<()> {
         mm_gauge!(
             ctx_on_poll.metrics,
             "p2p.connected_relays.len",
-            behaviour.connected_relays_len() as i64
+            behaviour.connected_relays_len() as f64
         );
         mm_gauge!(
             ctx_on_poll.metrics,
             "p2p.relay_mesh.len",
-            behaviour.relay_mesh_len() as i64
+            behaviour.relay_mesh_len() as f64
         );
         let (period, received_msgs) = behaviour.received_messages_in_period();
         mm_gauge!(
             ctx_on_poll.metrics,
             "p2p.received_messages.period_in_secs",
-            period.as_secs() as i64
+            period.as_secs() as f64
         );
 
-        mm_gauge!(ctx_on_poll.metrics, "p2p.received_messages.count", received_msgs as i64);
+        mm_gauge!(ctx_on_poll.metrics, "p2p.received_messages.count", received_msgs as f64);
 
         let connected_peers_count = behaviour.connected_peers_len();
 
         mm_gauge!(
             ctx_on_poll.metrics,
             "p2p.connected_peers.count",
-            connected_peers_count as i64
+            connected_peers_count as f64
         );
     })
     .await;

@@ -16,9 +16,9 @@ use uuid::Uuid;
 
 use common::executor::Timer;
 use common::log;
-use common::mm_metrics::{MetricType, MetricsJson};
 use common::{cfg_native, now_float, now_ms, PagingOptionsEnum};
 use mm2_core::mm_ctx::{MmArc, MmCtxBuilder};
+use mm2_metrics::{MetricType, MetricsJson};
 
 cfg_native! {
     use common::block_on;

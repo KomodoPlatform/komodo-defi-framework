@@ -3,8 +3,8 @@ use crate::utxo::{RequestTxHistoryResult, UtxoFeeDetails};
 use crate::{CoinsContext, TxFeeDetails, TxHistoryResult};
 use byteorder::{BigEndian, ReadBytesExt, WriteBytesExt};
 use common::jsonrpc_client::JsonRpcErrorType;
-use common::mm_metrics::MetricsArc;
 use itertools::Itertools;
+use mm2_metrics::MetricsArc;
 use script_pubkey::{extract_contract_call_from_script, extract_gas_from_script, ExtractGasEnum};
 use std::collections::HashMap;
 use std::io::Cursor;
@@ -813,7 +813,7 @@ fn is_transfer_event_log(log: &LogEntry) -> bool {
 mod tests {
     use super::*;
     use common::block_on;
-    use common::mm_metrics::{MetricType, MetricsJson, MetricsOps};
+    use mm2_metrics::{MetricType, MetricsJson, MetricsOps};
     use mm2_test_helpers::for_tests::find_metrics_in_json;
     use qrc20_tests::qrc20_coin_for_test;
 
@@ -840,7 +840,7 @@ mod tests {
             72, 172, 110, 180, 13, 123, 179, 10, 49,
         ];
         let (ctx, coin) = qrc20_coin_for_test(&priv_key, None);
-        ctx.metrics.init().unwrap();
+        ctx.metrics.init();
 
         let tx_hash: H256Json = hex::decode("85ede12ccc12fb1709c4d9e403e96c0c394b0916f2f6098d41d8dfa00013fcdb")
             .unwrap()
@@ -872,7 +872,7 @@ mod tests {
             72, 172, 110, 180, 13, 123, 179, 10, 49,
         ];
         let (ctx, coin) = qrc20_coin_for_test(&priv_key, None);
-        ctx.metrics.init().unwrap();
+        ctx.metrics.init();
 
         let tx_hash: H256Json = hex::decode("85ede12ccc12fb1709c4d9e403e96c0c394b0916f2f6098d41d8dfa00013fcdb")
             .unwrap()
@@ -914,7 +914,7 @@ mod tests {
             72, 172, 110, 180, 13, 123, 179, 10, 49,
         ];
         let (ctx, coin) = qrc20_coin_for_test(&priv_key, None);
-        ctx.metrics.init().unwrap();
+        ctx.metrics.init();
 
         let tx_hash: H256Json = hex::decode("85ede12ccc12fb1709c4d9e403e96c0c394b0916f2f6098d41d8dfa00013fcdb")
             .unwrap()
@@ -1008,7 +1008,7 @@ mod tests {
         let (ctx, coin) = qrc20_coin_for_test(&priv_key, None);
 
         let metrics = MetricsArc::new();
-        metrics.init().unwrap();
+        metrics.init();
 
         let tx_hash_invalid: H256Json = hex::decode("0000000000000000000000000000000000000000000000000000000000000000")
             .unwrap()
