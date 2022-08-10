@@ -98,7 +98,7 @@ dirs = { version = "1" }
 bitcoin = "0.28.1"
 lightning = "0.0.110"
 lightning-background-processor = "0.0.110"
-lightning-invoice = "0.18.0"
+lightning-invoice = { version = "0.18.0", features = ["serde"] }
 lightning-net-tokio = "0.0.110"
 lightning-rapid-gossip-sync = "0.0.110"
 rust-ini = { version = "0.13" }

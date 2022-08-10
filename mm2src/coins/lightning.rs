@@ -62,7 +62,7 @@ use ln_events::LightningEventHandler;
 use ln_filesystem_persister::LightningFilesystemPersister;
 use ln_p2p::{connect_to_node, ConnectToNodeRes, PeerManager};
 use ln_platform::{h256_json_from_txid, Platform};
-use ln_serialization::{InvoiceForRPC, NodeAddress};
+use ln_serialization::NodeAddress;
 use ln_storage::{LightningStorage, NodesAddressesMapShared, Scorer};
 use ln_utils::{ChainMonitor, ChannelManager};
 use mm2_core::mm_ctx::MmArc;
@@ -1229,7 +1229,7 @@ pub struct GenerateInvoiceRequest {
 #[derive(Serialize)]
 pub struct GenerateInvoiceResponse {
     payment_hash: H256Json,
-    invoice: InvoiceForRPC,
+    invoice: Invoice,
 }
 
 /// Generates an invoice (request for payment) that can be paid on the lightning network by another node using send_payment.
@@ -1286,7 +1286,7 @@ pub async fn generate_invoice(
     ln_coin.db.add_or_update_payment_in_db(payment_info).await?;
     Ok(GenerateInvoiceResponse {
         payment_hash: payment_hash.into(),
-        invoice: invoice.into(),
+        invoice,
     })
 }
 
@@ -1294,7 +1294,7 @@ pub async fn generate_invoice(
 #[serde(tag = "type")]
 pub enum Payment {
     #[serde(rename = "invoice")]
-    Invoice { invoice: InvoiceForRPC },
+    Invoice { invoice: Invoice },
     #[serde(rename = "keysend")]
     Keysend {
         // The recieving node pubkey (node ID)
@@ -1335,7 +1335,7 @@ pub async fn send_payment(ctx: MmArc, req: SendPaymentReq) -> SendPaymentResult<
             ));
     }
     let payment_info = match req.payment {
-        Payment::Invoice { invoice } => ln_coin.pay_invoice(invoice.into()).await?,
+        Payment::Invoice { invoice } => ln_coin.pay_invoice(invoice).await?,
         Payment::Keysend {
             destination,
             amount_in_msat,

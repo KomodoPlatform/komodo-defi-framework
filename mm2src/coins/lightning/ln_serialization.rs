@@ -1,50 +1,8 @@
-use lightning_invoice::Invoice;
 use secp256k1v22::PublicKey;
 use serde::{de, Serialize, Serializer};
 use std::fmt;
 use std::net::{SocketAddr, ToSocketAddrs};
 use std::str::FromStr;
-
-#[derive(Clone, Debug, PartialEq)]
-pub struct InvoiceForRPC(Invoice);
-
-impl From<Invoice> for InvoiceForRPC {
-    fn from(i: Invoice) -> Self { InvoiceForRPC(i) }
-}
-
-impl From<InvoiceForRPC> for Invoice {
-    fn from(i: InvoiceForRPC) -> Self { i.0 }
-}
-
-impl Serialize for InvoiceForRPC {
-    fn serialize<S: Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
-        serializer.serialize_str(&self.0.to_string())
-    }
-}
-
-impl<'de> de::Deserialize<'de> for InvoiceForRPC {
-    fn deserialize<D: de::Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
-        struct InvoiceForRPCVisitor;
-
-        impl<'de> de::Visitor<'de> for InvoiceForRPCVisitor {
-            type Value = InvoiceForRPC;
-
-            fn expecting(&self, formatter: &mut fmt::Formatter) -> fmt::Result {
-                write!(formatter, "a lightning invoice")
-            }
-
-            fn visit_str<E: de::Error>(self, v: &str) -> Result<Self::Value, E> {
-                let invoice = Invoice::from_str(v).map_err(|e| {
-                    let err = format!("Could not parse lightning invoice from str {}, err {}", v, e);
-                    de::Error::custom(err)
-                })?;
-                Ok(InvoiceForRPC(invoice))
-            }
-        }
-
-        deserializer.deserialize_str(InvoiceForRPCVisitor)
-    }
-}
 
 // TODO: support connection to onion addresses
 #[derive(Debug, PartialEq)]
@@ -140,22 +98,6 @@ impl<'de> de::Deserialize<'de> for PublicKeyForRPC {
 mod tests {
     use super::*;
     use serde_json as json;
-
-    #[test]
-    fn test_invoice_for_rpc_serialize() {
-        let invoice_for_rpc = InvoiceForRPC(str::parse::<Invoice>("lntb20u1p3zqmvrpp52hej7trefx6y633aujj6nltjs8cf7lzyp78tfn5y5wpa3udk5tvqdp8xys9xcmpd3sjqsmgd9czq3njv9c8qatrvd5kumcxqrrsscqp79qy9qsqsp5ccy2qgmptg8dthxsjvw2c43uyvqkg6cqey3jpks4xf0tv7xfrqrq3xfnuffau2h2k8defphv2xsktzn2qj5n2l8d9l9zx64fg6jcmdg9kmpevneyyhfnzrpspqdrky8u7l4c6qdnquh8lnevswwrtcd9ypcq89ga09").unwrap());
-        let expected = r#""lntb20u1p3zqmvrpp52hej7trefx6y633aujj6nltjs8cf7lzyp78tfn5y5wpa3udk5tvqdp8xys9xcmpd3sjqsmgd9czq3njv9c8qatrvd5kumcxqrrsscqp79qy9qsqsp5ccy2qgmptg8dthxsjvw2c43uyvqkg6cqey3jpks4xf0tv7xfrqrq3xfnuffau2h2k8defphv2xsktzn2qj5n2l8d9l9zx64fg6jcmdg9kmpevneyyhfnzrpspqdrky8u7l4c6qdnquh8lnevswwrtcd9ypcq89ga09""#;
-        let actual = json::to_string(&invoice_for_rpc).unwrap();
-        assert_eq!(expected, actual);
-    }
-
-    #[test]
-    fn test_invoice_for_rpc_deserialize() {
-        let invoice_for_rpc = r#""lntb20u1p3zqmvrpp52hej7trefx6y633aujj6nltjs8cf7lzyp78tfn5y5wpa3udk5tvqdp8xys9xcmpd3sjqsmgd9czq3njv9c8qatrvd5kumcxqrrsscqp79qy9qsqsp5ccy2qgmptg8dthxsjvw2c43uyvqkg6cqey3jpks4xf0tv7xfrqrq3xfnuffau2h2k8defphv2xsktzn2qj5n2l8d9l9zx64fg6jcmdg9kmpevneyyhfnzrpspqdrky8u7l4c6qdnquh8lnevswwrtcd9ypcq89ga09""#;
-        let expected = InvoiceForRPC(str::parse::<Invoice>("lntb20u1p3zqmvrpp52hej7trefx6y633aujj6nltjs8cf7lzyp78tfn5y5wpa3udk5tvqdp8xys9xcmpd3sjqsmgd9czq3njv9c8qatrvd5kumcxqrrsscqp79qy9qsqsp5ccy2qgmptg8dthxsjvw2c43uyvqkg6cqey3jpks4xf0tv7xfrqrq3xfnuffau2h2k8defphv2xsktzn2qj5n2l8d9l9zx64fg6jcmdg9kmpevneyyhfnzrpspqdrky8u7l4c6qdnquh8lnevswwrtcd9ypcq89ga09").unwrap());
-        let actual = json::from_str(invoice_for_rpc).unwrap();
-        assert_eq!(expected, actual);
-    }
 
     #[test]
     fn test_node_address_serialize() {

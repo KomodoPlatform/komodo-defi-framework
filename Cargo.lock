@@ -3746,6 +3746,7 @@ dependencies = [
  "lightning",
  "num-traits",
  "secp256k1 0.22.1",
+ "serde",
 ]
 
 [[package]]
