@@ -710,22 +710,12 @@ pub async fn z_coin_from_conf_and_params(
     ticker: &str,
     conf: &Json,
     params: &ZcoinActivationParams,
-    consensus_params: ZcoinProtocolInfo,
+    protocol_info: ZcoinProtocolInfo,
     secp_priv_key: &[u8],
 ) -> Result<ZCoin, MmError<ZCoinBuildError>> {
     let z_key = ExtendedSpendingKey::master(secp_priv_key);
     let db_dir = ctx.dbdir();
-    z_coin_from_conf_and_params_with_z_key(
-        ctx,
-        ticker,
-        conf,
-        params,
-        secp_priv_key,
-        db_dir,
-        z_key,
-        consensus_params,
-    )
-    .await
+    z_coin_from_conf_and_params_with_z_key(ctx, ticker, conf, params, secp_priv_key, db_dir, z_key, protocol_info).await
 }
 
 pub struct ZCoinBuilder<'a> {
