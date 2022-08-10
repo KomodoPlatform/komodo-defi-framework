@@ -976,10 +976,9 @@ impl MarketCoinOps for ZCoin {
     }
 
     fn tx_enum_from_bytes(&self, bytes: &[u8]) -> Result<TransactionEnum, MmError<TransactionErr>> {
-        match ZTransaction::read(bytes) {
-            Ok(tx) => Ok(tx.into()),
-            Err(e) => MmError::err(TransactionErr::InvalidTx(e.to_string())),
-        }
+        ZTransaction::read(bytes)
+            .map(TransactionEnum::from)
+            .map_to_mm(|e| TransactionErr::InvalidTx(e.to_string()))
     }
 
     fn current_block(&self) -> Box<dyn Future<Item = u64, Error = String> + Send> {

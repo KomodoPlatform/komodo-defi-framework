@@ -129,46 +129,6 @@ pub async fn p2p_event_process_loop(ctx: MmWeak, mut rx: AdexEventRx, i_am_relay
     }
 }
 
-/// Validate topic by checking it's prefix and coin, exclude if invalid.
-fn topic_prefix_and_coin_validation(ctx: &MmArc, mut topics: Vec<String>) -> Vec<String> {
-    if let Some(conf) = ctx.conf["coins"].as_array() {
-        topics.retain(|topic| {
-            let mut split = topic.split(TOPIC_SEPARATOR);
-
-            if split.clone().count() != 2 {
-                return false;
-            }
-
-            match split.next() {
-                Some(lp_swap::TX_HELPER_PREFIX) => {
-                    if let Some(coin) = split.next() {
-                        conf.iter().any(|c| c["coin"].as_str() == Some(coin))
-                    } else {
-                        false
-                    }
-                },
-                Some(lp_ordermatch::ORDERBOOK_PREFIX) => {
-                    if let Some(pair) = split.next() {
-                        match lp_ordermatch::parse_orderbook_pair_from_topic(pair) {
-                            Some((coin1, coin2)) => {
-                                conf.iter().any(|c| c["coin"].as_str() == Some(coin1))
-                                    && conf.iter().any(|c| c["coin"].as_str() == Some(coin2))
-                            },
-                            None => false,
-                        }
-                    } else {
-                        false
-                    }
-                },
-                Some(lp_swap::SWAP_PREFIX) => true,
-                _ => false,
-            }
-        });
-    }
-
-    topics
-}
-
 async fn process_p2p_message(
     ctx: MmArc,
     peer_id: PeerId,
@@ -182,11 +142,8 @@ async fn process_p2p_message(
     message.topics.dedup();
     drop_mutability!(message);
 
-    let valid_topics: Vec<String> = message.topics.iter().map(|topic| topic.to_string()).collect();
-    let valid_topics = topic_prefix_and_coin_validation(&ctx, valid_topics);
-
-    for topic in valid_topics {
-        let mut split = topic.split(TOPIC_SEPARATOR);
+    for topic in message.topics {
+        let mut split = topic.as_str().split(TOPIC_SEPARATOR);
         match split.next() {
             Some(lp_ordermatch::ORDERBOOK_PREFIX) => {
                 if let Some(pair) = split.next() {

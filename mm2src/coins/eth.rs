@@ -1378,10 +1378,9 @@ impl MarketCoinOps for EthCoin {
     }
 
     fn tx_enum_from_bytes(&self, bytes: &[u8]) -> Result<TransactionEnum, MmError<TransactionErr>> {
-        match signed_eth_tx_from_bytes(bytes) {
-            Ok(tx) => Ok(tx.into()),
-            Err(e) => MmError::err(TransactionErr::InvalidTx(e)),
-        }
+        signed_eth_tx_from_bytes(bytes)
+            .map(TransactionEnum::from)
+            .map_to_mm(TransactionErr::InvalidTx)
     }
 
     fn current_block(&self) -> Box<dyn Future<Item = u64, Error = String> + Send> {
