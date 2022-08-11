@@ -185,7 +185,7 @@ impl From<ethkey::Error> for SignedEthTxError {
 
 #[derive(Debug, Display)]
 pub enum SendRawTxError {
-    BroadcastTxErr(BroadcastTxErr),
+    BroadcastTxErr(String),
     BlockchainScanStopped(String),
     ClientError(String),
     DeserializationErr(String),
@@ -194,11 +194,11 @@ pub enum SendRawTxError {
     MethodNotSupported(String),
     TransportError(String),
     TxReadError(String),
-    UtxoRpcError(UtxoRpcError),
+    UtxoRpcError(String),
 }
 
 impl From<BroadcastTxErr> for SendRawTxError {
-    fn from(err: BroadcastTxErr) -> Self { Self::BroadcastTxErr(err) }
+    fn from(err: BroadcastTxErr) -> Self { Self::BroadcastTxErr(err.to_string()) }
 }
 
 impl From<hex::FromHexError> for SendRawTxError {
@@ -210,7 +210,7 @@ impl From<serialization::Error> for SendRawTxError {
 }
 
 impl From<UtxoRpcError> for SendRawTxError {
-    fn from(err: UtxoRpcError) -> Self { Self::UtxoRpcError(err) }
+    fn from(err: UtxoRpcError) -> Self { Self::UtxoRpcError(err.to_string()) }
 }
 
 #[derive(Debug, Display, PartialEq)]

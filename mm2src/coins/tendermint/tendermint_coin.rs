@@ -1,13 +1,16 @@
 #[cfg(not(target_arch = "wasm32"))]
 use super::tendermint_native_rpc::*;
 #[cfg(target_arch = "wasm32")] use super::tendermint_wasm_rpc::*;
+use crate::coin_errors::{AddressParseError, CheckPaymentSentError, ExtractSecretError, GetTradeFeeError,
+                         MyAddressError, SendRawTxError, WaitForConfirmationsErr};
 use crate::utxo::sat_from_big_decimal;
 use crate::{big_decimal_from_sat_unsigned, BalanceError, BalanceFut, BigDecimal, CoinBalance, FeeApproxStage,
-            FoundSwapTxSpend, HistorySyncState, MarketCoinOps, MmCoin, NegotiateSwapContractAddrErr,
-            RawTransactionFut, RawTransactionRequest, SearchForSwapTxSpendInput, SignatureResult, SwapOps, TradeFee,
-            TradePreimageFut, TradePreimageResult, TradePreimageValue, TransactionDetails, TransactionEnum,
-            TransactionFut, TransactionType, TxFeeDetails, UnexpectedDerivationMethod, ValidateAddressResult,
-            ValidatePaymentInput, VerificationResult, WithdrawError, WithdrawFut, WithdrawRequest};
+            FoundSwapTxSpend, FoundSwapTxSpendErr, HistorySyncState, MarketCoinOps, MmCoin,
+            NegotiateSwapContractAddrErr, RawTransactionFut, RawTransactionRequest, SearchForSwapTxSpendInput,
+            SignatureResult, SwapOps, TradeFee, TradePreimageFut, TradePreimageResult, TradePreimageValue,
+            TransactionDetails, TransactionEnum, TransactionFut, TransactionType, TxFeeDetails,
+            UnexpectedDerivationMethod, ValidateAddressResult, ValidatePaymentFut, ValidatePaymentInput,
+            ValidateSwapTxError, VerificationResult, WithdrawError, WithdrawFut, WithdrawRequest};
 use async_trait::async_trait;
 use bitcrypto::sha256;
 use common::Future01CompatExt;
@@ -358,7 +361,9 @@ impl MmCoin for TendermintCoin {
 
     fn decimals(&self) -> u8 { self.decimals }
 
-    fn convert_to_address(&self, from: &str, to_address_format: Json) -> Result<String, String> { todo!() }
+    fn convert_to_address(&self, from: &str, to_address_format: Json) -> Result<String, MmError<AddressParseError>> {
+        todo!()
+    }
 
     fn validate_address(&self, address: &str) -> ValidateAddressResult { todo!() }
 
@@ -366,7 +371,7 @@ impl MmCoin for TendermintCoin {
 
     fn history_sync_status(&self) -> HistorySyncState { todo!() }
 
-    fn get_trade_fee(&self) -> Box<dyn Future<Item = TradeFee, Error = String> + Send> { todo!() }
+    fn get_trade_fee(&self) -> Box<dyn Future<Item = TradeFee, Error = MmError<GetTradeFeeError>> + Send> { todo!() }
 
     async fn get_sender_trade_fee(
         &self,
@@ -407,7 +412,7 @@ impl MmCoin for TendermintCoin {
 impl MarketCoinOps for TendermintCoin {
     fn ticker(&self) -> &str { &self.ticker }
 
-    fn my_address(&self) -> Result<String, String> { Ok(self.account_id.to_string()) }
+    fn my_address(&self) -> Result<String, MmError<MyAddressError>> { Ok(self.account_id.to_string()) }
 
     fn get_public_key(&self) -> Result<String, MmError<UnexpectedDerivationMethod>> { todo!() }
 
@@ -435,25 +440,35 @@ impl MarketCoinOps for TendermintCoin {
 
     fn platform_ticker(&self) -> &str { &self.ticker }
 
-    fn send_raw_tx(&self, tx: &str) -> Box<dyn Future<Item = String, Error = String> + Send> {
-        let tx_bytes = try_fus!(hex::decode(tx));
+    fn send_raw_tx(&self, tx: &str) -> Box<dyn Future<Item = String, Error = MmError<SendRawTxError>> + Send> {
+        let tx_bytes = try_mm_err_fus!(hex::decode(tx));
         self.send_raw_tx_bytes(&tx_bytes)
     }
 
-    fn send_raw_tx_bytes(&self, tx: &[u8]) -> Box<dyn Future<Item = String, Error = String> + Send> {
+    fn send_raw_tx_bytes(&self, tx: &[u8]) -> Box<dyn Future<Item = String, Error = MmError<SendRawTxError>> + Send> {
         // as sanity check
-        try_fus!(Raw::from_bytes(tx));
+        try_mm_err_fus!(Raw::from_bytes(tx).map_to_mm(|err| SendRawTxError::DeserializationErr(err.to_string())));
 
         let coin = self.clone();
         let tx_bytes = tx.to_owned();
         let fut = async move {
-            let broadcast_res = try_s!(coin.rpc_client.broadcast_tx_commit(tx_bytes.into()).await);
+            let broadcast_res = coin
+                .rpc_client
+                .broadcast_tx_commit(tx_bytes.into())
+                .await
+                .map_to_mm(|err| SendRawTxError::BroadcastTxErr(err.to_string()))?;
             if !broadcast_res.check_tx.code.is_ok() {
-                return ERR!("Tx check failed {:?}", broadcast_res.check_tx);
+                return MmError::err(SendRawTxError::Internal(format!(
+                    "Tx check failed {:?}",
+                    broadcast_res.check_tx
+                )));
             }
 
             if !broadcast_res.deliver_tx.code.is_ok() {
-                return ERR!("Tx deliver failed {:?}", broadcast_res.deliver_tx);
+                return MmError::err(SendRawTxError::Internal(format!(
+                    "Tx deliver failed {:?}",
+                    broadcast_res.deliver_tx
+                )));
             }
             Ok(broadcast_res.hash.to_string())
         };
@@ -467,7 +482,7 @@ impl MarketCoinOps for TendermintCoin {
         requires_nota: bool,
         wait_until: u64,
         check_every: u64,
-    ) -> Box<dyn Future<Item = (), Error = String> + Send> {
+    ) -> Box<dyn Future<Item = (), Error = MmError<WaitForConfirmationsErr>> + Send> {
         todo!()
     }
 
@@ -584,17 +599,13 @@ impl SwapOps for TendermintCoin {
         amount: &BigDecimal,
         min_block_number: u64,
         uuid: &[u8],
-    ) -> Box<dyn Future<Item = (), Error = String> + Send> {
+    ) -> Box<dyn Future<Item = (), Error = MmError<ValidateSwapTxError>> + Send> {
         todo!()
     }
 
-    fn validate_maker_payment(&self, input: ValidatePaymentInput) -> Box<dyn Future<Item = (), Error = String> + Send> {
-        todo!()
-    }
+    fn validate_maker_payment(&self, input: ValidatePaymentInput) -> ValidatePaymentFut<()> { todo!() }
 
-    fn validate_taker_payment(&self, input: ValidatePaymentInput) -> Box<dyn Future<Item = (), Error = String> + Send> {
-        todo!()
-    }
+    fn validate_taker_payment(&self, input: ValidatePaymentInput) -> ValidatePaymentFut<()> { todo!() }
 
     fn check_if_my_payment_sent(
         &self,
@@ -604,25 +615,27 @@ impl SwapOps for TendermintCoin {
         search_from_block: u64,
         swap_contract_address: &Option<BytesJson>,
         swap_unique_data: &[u8],
-    ) -> Box<dyn Future<Item = Option<TransactionEnum>, Error = String> + Send> {
+    ) -> Box<dyn Future<Item = Option<TransactionEnum>, Error = MmError<CheckPaymentSentError>> + Send> {
         todo!()
     }
 
     async fn search_for_swap_tx_spend_my(
         &self,
         input: SearchForSwapTxSpendInput<'_>,
-    ) -> Result<Option<FoundSwapTxSpend>, String> {
+    ) -> Result<Option<FoundSwapTxSpend>, MmError<FoundSwapTxSpendErr>> {
         todo!()
     }
 
     async fn search_for_swap_tx_spend_other(
         &self,
         input: SearchForSwapTxSpendInput<'_>,
-    ) -> Result<Option<FoundSwapTxSpend>, String> {
+    ) -> Result<Option<FoundSwapTxSpend>, MmError<FoundSwapTxSpendErr>> {
         todo!()
     }
 
-    fn extract_secret(&self, secret_hash: &[u8], spend_tx: &[u8]) -> Result<Vec<u8>, String> { todo!() }
+    fn extract_secret(&self, secret_hash: &[u8], spend_tx: &[u8]) -> Result<Vec<u8>, MmError<ExtractSecretError>> {
+        todo!()
+    }
 
     fn negotiate_swap_contract_addr(
         &self,

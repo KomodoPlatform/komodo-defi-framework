@@ -20,8 +20,6 @@ use crate::{CanRefundHtlc, CoinBalance, CoinWithDerivationMethod, FoundSwapTxSpe
             NegotiateSwapContractAddrErr, PrivKeyBuildPolicy, SearchForSwapTxSpendInput, SignatureResult, SwapOps,
             TradePreimageValue, TransactionFut, ValidateAddressResult, ValidatePaymentInput, ValidateSwapTxError,
             VerificationResult, WithdrawFut, WithdrawSenderAddress};
-            TradePreimageValue, TransactionFut, ValidateAddressResult, ValidatePaymentInput, VerificationResult,
-            WithdrawFut, WithdrawSenderAddress};
 use crypto::trezor::utxo::TrezorUtxoCoin;
 use crypto::Bip44Chain;
 use futures::{FutureExt, TryFutureExt};
@@ -35,7 +33,7 @@ pub enum UtxoStandardCoinWtihPrivKeyError {
     UtxoCoinBuildError(UtxoCoinBuildError),
 }
 
-#[derive(Clone, Debug)]
+#[derive(Clone)]
 pub struct UtxoStandardCoin {
     utxo_arc: UtxoArc,
 }

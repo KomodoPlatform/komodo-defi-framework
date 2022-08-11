@@ -198,7 +198,7 @@ pub mod coin_errors;
 pub mod coins_tests;
 
 pub mod eth;
-use eth::{eth_coin_from_conf_and_request, EthCoin, EthTxFeeDetails, SignedEthTx};
+use eth::{eth_coin_from_conf_and_request, EthCoin, EthTxFeeDetails, SignedEthTx, TryToAddressError};
 
 pub mod hd_pubkey;
 
@@ -212,7 +212,6 @@ pub mod my_tx_history_v2;
 
 pub mod qrc20;
 use qrc20::{qrc20_coin_from_conf_and_params, Qrc20ActivationParams, Qrc20Coin, Qrc20FeeDetails};
-use qtum::ScriptHashTypeNotSupported;
 
 pub mod rpc_command;
 use rpc_command::{init_create_account::{CreateAccountTaskManager, CreateAccountTaskManagerShared},
@@ -240,7 +239,7 @@ pub use solana::{solana_coin_from_conf_and_params, SolanaActivationParams, Solan
 
 pub mod utxo;
 use utxo::bch::{bch_coin_from_conf_and_params, BchActivationRequest, BchCoin};
-use utxo::qtum::{self, qtum_coin_with_priv_key, Qrc20AddressError, QtumCoin, QtumDelegationOps, QtumDelegationRequest,
+use utxo::qtum::{self, qtum_coin_with_priv_key, QtumCoin, QtumDelegationOps, QtumDelegationRequest,
                  QtumStakingInfosDetails, ScriptHashTypeNotSupported};
 use utxo::rpc_clients::UtxoRpcError;
 use utxo::slp::{slp_addr_from_pubkey_str, SlpFeeDetails};
@@ -3076,9 +3075,9 @@ pub fn address_by_coin_conf_and_pubkey_str(
                 ))),
             }
         },
-        CoinProtocol::TENDERMINT { .. } => {
-            ERR!("address_by_coin_conf_and_pubkey_str is not implemented for TENDERMINT protocol yet!")
-        },
+        CoinProtocol::TENDERMINT { .. } => MmError::err(AddressParseError::UnsupportedProtocol(
+            "address_by_coin_conf_and_pubkey_str is not implemented for TENDERMINT protocol yet!".to_string(),
+        )),
         #[cfg(not(target_arch = "wasm32"))]
         CoinProtocol::LIGHTNING { .. } => MmError::err(AddressParseError::UnsupportedProtocol(
             "address_by_coin_conf_and_pubkey_str is not implemented for lightning protocol yet!".to_string(),
