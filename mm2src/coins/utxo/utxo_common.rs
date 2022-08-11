@@ -1826,6 +1826,10 @@ pub fn wait_for_output_spend(
 pub fn tx_enum_from_bytes(coin: &UtxoCoinFields, bytes: &[u8]) -> Result<TransactionEnum, MmError<TransactionErr>> {
     let mut transaction: UtxoTx = deserialize(bytes).map_to_mm(|e| TransactionErr::InvalidTx(e.to_string()))?;
 
+    if bytes.len() != transaction.tx_hex().len() {
+        return MmError::err(TransactionErr::InvalidTx("Transaction isn't valid.".to_string()));
+    }
+
     transaction.tx_hash_algo = coin.tx_hash_algo;
     Ok(transaction.into())
 }
