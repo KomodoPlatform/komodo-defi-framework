@@ -3,6 +3,8 @@
 //! Tracking issue: https://github.com/KomodoPlatform/atomicDEX-API/issues/701
 //! More info about the protocol and implementation guides can be found at https://slp.dev/
 
+use crate::coin_errors::{AddressParseError, CheckPaymentSentError, ExtractSecretError, GetTradeFeeError,
+                         MyAddressError, SendRawTxError, ValidatePaymentError};
 use crate::my_tx_history_v2::CoinWithTxHistoryV2;
 use crate::tx_history_storage::{GetTxHistoryFilters, WalletId};
 use crate::utxo::bch::BchCoin;
@@ -13,12 +15,12 @@ use crate::utxo::{generate_and_send_tx, sat_from_big_decimal, ActualTxFee, Addit
                   FeePolicy, GenerateTxError, RecentlySpentOutPointsGuard, UtxoCoinConf, UtxoCoinFields,
                   UtxoCommonOps, UtxoTx, UtxoTxBroadcastOps, UtxoTxGenerationOps};
 use crate::{BalanceFut, CoinBalance, FeeApproxStage, FoundSwapTxSpend, FoundSwapTxSpendErr, HistorySyncState,
-            MarketCoinOps, MmAddressError, MmCoin, NegotiateSwapContractAddrErr, NumConversError, PrivKeyNotAllowed,
+            MarketCoinOps, MmCoin, NegotiateSwapContractAddrErr, NumConversError, PrivKeyNotAllowed,
             RawTransactionFut, RawTransactionRequest, SearchForSwapTxSpendInput, SignatureResult, SwapOps, TradeFee,
             TradePreimageError, TradePreimageFut, TradePreimageResult, TradePreimageValue, TransactionDetails,
             TransactionEnum, TransactionErr, TransactionFut, TxFeeDetails, UnexpectedDerivationMethod,
-            ValidateAddressResult, ValidatePaymentInput, ValidateSwapTxError, VerificationError, VerificationResult,
-            WithdrawError, WithdrawFee, WithdrawFut, WithdrawRequest};
+            ValidateAddressResult, ValidatePaymentFut, ValidatePaymentInput, ValidateSwapTxError, VerificationError,
+            VerificationResult, WithdrawError, WithdrawFee, WithdrawFut, WithdrawRequest};
 use async_trait::async_trait;
 use bitcrypto::dhash160;
 use chain::constants::SEQUENCE_FINAL;
@@ -29,7 +31,6 @@ use derive_more::Display;
 use futures::compat::Future01CompatExt;
 use futures::{FutureExt, TryFutureExt};
 use futures01::Future;
-use hex::FromHexError;
 use keys::hash::H160;
 use keys::{AddressHashEnum, CashAddrType, CashAddress, CompactSignature, KeyPair, NetworkPrefix as CashAddrPrefix,
            Public};
@@ -48,8 +49,6 @@ use std::convert::TryInto;
 use std::sync::atomic::{AtomicU64, Ordering as AtomicOrdering};
 use std::sync::Arc;
 use utxo_signer::with_key_pair::{p2pkh_spend, p2sh_spend, sign_tx, UtxoSignWithKeyPairError};
-
-use super::utxo_common::{CheckPaymentSentError, ExtractSecretError, SendRawTxError, ValidatePaymentError};
 
 const SLP_SWAP_VOUT: usize = 1;
 const SLP_FEE_VOUT: usize = 1;
@@ -134,6 +133,10 @@ impl From<UnexpectedDerivationMethod> for ValidateHtlcError {
 
 impl From<ValidateHtlcError> for ValidatePaymentError {
     fn from(e: ValidateHtlcError) -> ValidatePaymentError { ValidatePaymentError::ValidateHtlcError(e.to_string()) }
+}
+
+impl From<AddressParseError> for ValidateSwapTxError {
+    fn from(err: AddressParseError) -> Self { Self::AddressError(err.to_string()) }
 }
 
 #[derive(Debug, Display)]
@@ -1070,17 +1073,17 @@ impl UtxoTxGenerationOps for SlpToken {
 impl MarketCoinOps for SlpToken {
     fn ticker(&self) -> &str { &self.conf.ticker }
 
-    fn my_address(&self) -> Result<String, MmError<MmAddressError>> {
+    fn my_address(&self) -> Result<String, MmError<MyAddressError>> {
         let my_address = self
             .as_ref()
             .derivation_method
             .iguana_or_err()
-            .mm_err(MmAddressError::UnexpectedDerivationMethod)?;
+            .mm_err(MyAddressError::UnexpectedDerivationMethod)?;
         let slp_address = self
             .platform_coin
             .slp_address(my_address)
-            .map_to_mm(MmAddressError::Internal)?;
-        slp_address.encode().map_to_mm(MmAddressError::Internal)
+            .map_to_mm(MyAddressError::CashAddressErr)?;
+        slp_address.encode().map_to_mm(MyAddressError::EncodingError)
     }
 
     fn get_public_key(&self) -> Result<String, MmError<UnexpectedDerivationMethod>> {
@@ -1408,10 +1411,7 @@ impl SwapOps for SlpToken {
         Box::new(fut.boxed().compat())
     }
 
-    fn validate_maker_payment(
-        &self,
-        input: ValidatePaymentInput,
-    ) -> Box<dyn Future<Item = (), Error = MmError<ValidatePaymentError>> + Send> {
+    fn validate_maker_payment(&self, input: ValidatePaymentInput) -> ValidatePaymentFut<()> {
         let coin = self.clone();
         let fut = async move {
             coin.validate_htlc(input).await?;
@@ -1420,10 +1420,7 @@ impl SwapOps for SlpToken {
         Box::new(fut.boxed().compat())
     }
 
-    fn validate_taker_payment(
-        &self,
-        input: ValidatePaymentInput,
-    ) -> Box<dyn Future<Item = (), Error = MmError<ValidatePaymentError>> + Send> {
+    fn validate_taker_payment(&self, input: ValidatePaymentInput) -> ValidatePaymentFut<()> {
         let coin = self.clone();
         let fut = async move {
             coin.validate_htlc(input).await?;
@@ -1642,7 +1639,7 @@ impl MmCoin for SlpToken {
 
     fn decimals(&self) -> u8 { self.decimals() }
 
-    fn convert_to_address(&self, from: &str, to_address_format: Json) -> Result<String, MmError<MmAddressError>> {
+    fn convert_to_address(&self, from: &str, to_address_format: Json) -> Result<String, MmError<AddressParseError>> {
         utxo_common::convert_to_address(&self.platform_coin, from, to_address_format)
     }
 
@@ -1683,7 +1680,7 @@ impl MmCoin for SlpToken {
     fn history_sync_status(&self) -> HistorySyncState { self.platform_coin.history_sync_status() }
 
     /// Get fee to be paid per 1 swap transaction
-    fn get_trade_fee(&self) -> Box<dyn Future<Item = TradeFee, Error = String> + Send> {
+    fn get_trade_fee(&self) -> Box<dyn Future<Item = TradeFee, Error = MmError<GetTradeFeeError>> + Send> {
         utxo_common::get_trade_fee(self.platform_coin.clone())
     }
 
@@ -1797,23 +1794,12 @@ impl CoinWithTxHistoryV2 for SlpToken {
     }
 }
 
-#[derive(Debug, Display)]
-pub enum SlpAddrFromPubkeyErr {
-    InvalidHex(hex::FromHexError),
-    CashAddrError(String),
-    EncodeError(String),
-}
-
-impl From<hex::FromHexError> for SlpAddrFromPubkeyErr {
-    fn from(err: FromHexError) -> SlpAddrFromPubkeyErr { SlpAddrFromPubkeyErr::InvalidHex(err) }
-}
-
-pub fn slp_addr_from_pubkey_str(pubkey: &str, prefix: &str) -> Result<String, MmError<SlpAddrFromPubkeyErr>> {
+pub fn slp_addr_from_pubkey_str(pubkey: &str, prefix: &str) -> Result<String, MmError<AddressParseError>> {
     let pubkey_bytes = hex::decode(pubkey)?;
     let hash = dhash160(&pubkey_bytes);
     let addr =
-        CashAddress::new(prefix, hash.to_vec(), CashAddrType::P2PKH).map_to_mm(SlpAddrFromPubkeyErr::CashAddrError)?;
-    addr.encode().map_to_mm(SlpAddrFromPubkeyErr::EncodeError)
+        CashAddress::new(prefix, hash.to_vec(), CashAddrType::P2PKH).map_to_mm(AddressParseError::CashAddressErr)?;
+    addr.encode().map_to_mm(AddressParseError::EncodeError)
 }
 
 #[cfg(test)]

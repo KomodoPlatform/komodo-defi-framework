@@ -259,7 +259,7 @@ impl From<BalanceError> for TradePreimageRpcError {
             BalanceError::Transport(transport) | BalanceError::InvalidResponse(transport) => {
                 TradePreimageRpcError::Transport(transport)
             },
-            e @ BalanceError::MmAddressError(_) => TradePreimageRpcError::InternalError(e.to_string()),
+            e @ BalanceError::AddressError(_) => TradePreimageRpcError::InternalError(e.to_string()),
             e @ BalanceError::UnexpectedDerivationMethod(_) => TradePreimageRpcError::InternalError(e.to_string()),
             e @ BalanceError::WalletStorageError(_) => TradePreimageRpcError::InternalError(e.to_string()),
             BalanceError::Internal(internal) => TradePreimageRpcError::InternalError(internal),

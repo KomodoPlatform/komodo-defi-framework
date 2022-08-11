@@ -1,12 +1,13 @@
 use crate::l2::{EnableL2Error, L2ActivationOps, L2ProtocolParams};
 use crate::prelude::*;
 use async_trait::async_trait;
+use coins::coin_errors::MyAddressError;
 use coins::lightning::ln_conf::{LightningCoinConf, LightningProtocolConf};
 use coins::lightning::ln_errors::EnableLightningError;
 use coins::lightning::{start_lightning, LightningCoin, LightningParams};
 use coins::utxo::utxo_standard::UtxoStandardCoin;
 use coins::utxo::UtxoCommonOps;
-use coins::{BalanceError, CoinBalance, CoinProtocol, MarketCoinOps, MmAddressError, MmCoinEnum};
+use coins::{BalanceError, CoinBalance, CoinProtocol, MarketCoinOps, MmCoinEnum};
 use derive_more::Display;
 use futures::compat::Future01CompatExt;
 use mm2_core::mm_ctx::MmArc;
@@ -93,7 +94,7 @@ pub enum LightningInitError {
     EnableLightningError(EnableLightningError),
     LightningValidationErr(LightningValidationErr),
     MyBalanceError(BalanceError),
-    MmAddressError(MmAddressError),
+    MyAddressError(String),
 }
 
 impl From<LightningInitError> for EnableL2Error {
@@ -109,7 +110,7 @@ impl From<LightningInitError> for EnableL2Error {
                 BalanceError::Transport(e) => EnableL2Error::Transport(e),
                 balance_error => EnableL2Error::Internal(balance_error.to_string()),
             },
-            LightningInitError::MmAddressError(e) => EnableL2Error::Internal(e.to_string()),
+            LightningInitError::MyAddressError(e) => EnableL2Error::Internal(e),
         }
     }
 }
@@ -120,6 +121,10 @@ impl From<EnableLightningError> for LightningInitError {
 
 impl From<LightningValidationErr> for LightningInitError {
     fn from(err: LightningValidationErr) -> Self { LightningInitError::LightningValidationErr(err) }
+}
+
+impl From<MyAddressError> for LightningInitError {
+    fn from(err: MyAddressError) -> Self { LightningInitError::MyAddressError(err.to_string()) }
 }
 
 #[async_trait]
@@ -190,7 +195,7 @@ impl L2ActivationOps for LightningCoin {
     ) -> Result<(Self, Self::ActivationResult), MmError<Self::ActivationError>> {
         let lightning_coin =
             start_lightning(ctx, platform_coin.clone(), protocol_conf, coin_conf, validated_params).await?;
-        let address = lightning_coin.my_address().mm_err(LightningInitError::MmAddressError)?;
+        let address = lightning_coin.my_address()?;
         let balance = lightning_coin
             .my_balance()
             .compat()

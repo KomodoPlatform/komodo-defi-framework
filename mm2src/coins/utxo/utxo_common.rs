@@ -1,7 +1,7 @@
-use super::qtum::ScriptHashTypeNotSupported;
 use super::*;
 use crate::coin_balance::{AddressBalanceStatus, HDAddressBalance, HDWalletBalanceOps};
-use crate::eth::TryToAddressError;
+use crate::coin_errors::{CheckPaymentSentError, ExtractSecretError, GetTradeFeeError, MyAddressError, SendRawTxError,
+                         ValidatePaymentError};
 use crate::hd_pubkey::{ExtractExtendedPubkey, HDExtractPubkeyError, HDXPubExtractor};
 use crate::hd_wallet::{AccountUpdatingError, AddressDerivingError, HDAccountMut, HDAccountsMap,
                        NewAccountCreatingError};
@@ -13,9 +13,9 @@ use crate::utxo::spv::SimplePaymentVerification;
 use crate::utxo::tx_cache::TxCacheResult;
 use crate::utxo::utxo_withdraw::{InitUtxoWithdraw, StandardUtxoWithdraw, UtxoWithdraw};
 use crate::{CanRefundHtlc, CoinBalance, CoinWithDerivationMethod, FoundSwapTxSpendErr, GetWithdrawSenderAddress,
-            HDAddressId, MmAddressError, RawTransactionError, RawTransactionRequest, RawTransactionRes,
-            SearchForSwapTxSpendInput, SignatureError, SignatureResult, SwapOps, TradePreimageValue, TransactionFut,
-            TxFeeDetails, ValidateAddressResult, ValidatePaymentInput, ValidateSwapTxError, VerificationError,
+            HDAddressId, RawTransactionError, RawTransactionRequest, RawTransactionRes, SearchForSwapTxSpendInput,
+            SignatureError, SignatureResult, SwapOps, TradePreimageValue, TransactionFut, TxFeeDetails,
+            ValidateAddressResult, ValidatePaymentFut, ValidatePaymentInput, ValidateSwapTxError, VerificationError,
             VerificationResult, WithdrawFrom, WithdrawResult, WithdrawSenderAddress};
 use bitcrypto::dhash256;
 pub use bitcrypto::{dhash160, sha256, ChecksumType};
@@ -537,7 +537,7 @@ where
     coin.my_spendable_balance()
 }
 
-pub fn address_from_str_unchecked(coin: &UtxoCoinFields, address: &str) -> Result<Address, MmError<MmAddressError>> {
+pub fn address_from_str_unchecked(coin: &UtxoCoinFields, address: &str) -> Result<Address, MmError<AddressParseError>> {
     if let Ok(legacy) = Address::from_str(address) {
         return Ok(legacy);
     }
@@ -561,7 +561,7 @@ pub fn address_from_str_unchecked(coin: &UtxoCoinFields, address: &str) -> Resul
         return Ok(cashaddress);
     }
 
-    MmError::err(MmAddressError::InvalidAddress(address.to_string()))
+    MmError::err(AddressParseError::InvalidAddress(address.to_string()))
 }
 
 pub fn my_public_key(coin: &UtxoCoinFields) -> Result<&Public, MmError<UnexpectedDerivationMethod>> {
@@ -572,7 +572,10 @@ pub fn my_public_key(coin: &UtxoCoinFields) -> Result<&Public, MmError<Unexpecte
     }
 }
 
-pub fn checked_address_from_str<T: UtxoCommonOps>(coin: &T, address: &str) -> Result<Address, MmError<MmAddressError>> {
+pub fn checked_address_from_str<T: UtxoCommonOps>(
+    coin: &T,
+    address: &str,
+) -> Result<Address, MmError<AddressParseError>> {
     let addr = address_from_str_unchecked(coin.as_ref(), address)?;
     check_withdraw_address_supported(coin, &addr)?;
     Ok(addr)
@@ -1452,7 +1455,7 @@ pub fn validate_fee<T: UtxoCommonOps>(
 
     if !try_mm_err_fus!(check_all_inputs_signed_by_pub(&tx, sender_pubkey).mm_err(ValidateSwapTxError::InternalError)) {
         return Box::new(futures01::future::err(MmError::new(
-            ValidateSwapTxError::InternalError("The dex fee was sent from wrong address".to_string()),
+            ValidateSwapTxError::WrongSenderAddress("The dex fee was sent from wrong address".to_string()),
         )));
     }
     let fut = async move {
@@ -1515,7 +1518,7 @@ pub fn validate_fee<T: UtxoCommonOps>(
 pub fn validate_maker_payment<T: UtxoCommonOps + SwapOps>(
     coin: &T,
     input: ValidatePaymentInput,
-) -> Box<dyn Future<Item = (), Error = MmError<ValidatePaymentError>> + Send> {
+) -> ValidatePaymentFut<()> {
     let mut tx: UtxoTx = try_mm_err_fus!(deserialize(input.payment_tx.as_slice()));
     tx.tx_hash_algo = coin.as_ref().tx_hash_algo;
 
@@ -1537,7 +1540,7 @@ pub fn validate_maker_payment<T: UtxoCommonOps + SwapOps>(
 pub fn validate_taker_payment<T: UtxoCommonOps + SwapOps>(
     coin: &T,
     input: ValidatePaymentInput,
-) -> Box<dyn Future<Item = (), Error = MmError<ValidatePaymentError>> + Send> {
+) -> ValidatePaymentFut<()> {
     let mut tx: UtxoTx = try_mm_err_fus!(deserialize(input.payment_tx.as_slice()));
     tx.tx_hash_algo = coin.as_ref().tx_hash_algo;
 
@@ -1554,31 +1557,6 @@ pub fn validate_taker_payment<T: UtxoCommonOps + SwapOps>(
         input.try_spv_proof_until,
         input.confirmations,
     )
-}
-
-#[derive(Debug, Display)]
-pub enum CheckPaymentSentError {
-    DeserializationErr(String),
-    Internal(String),
-    JsonRpcError(JsonRpcError),
-    TryToAddressError(TryToAddressError),
-    UtxoRpcError(UtxoRpcError),
-}
-
-impl From<keys::Error> for CheckPaymentSentError {
-    fn from(err: keys::Error) -> Self { Self::Internal(err.to_string()) }
-}
-
-impl From<JsonRpcError> for CheckPaymentSentError {
-    fn from(err: JsonRpcError) -> Self { Self::JsonRpcError(err) }
-}
-
-impl From<UtxoRpcError> for CheckPaymentSentError {
-    fn from(err: UtxoRpcError) -> Self { Self::UtxoRpcError(err) }
-}
-
-impl From<serialization::Error> for CheckPaymentSentError {
-    fn from(err: serialization::Error) -> Self { Self::DeserializationErr(err.to_string()) }
 }
 
 pub fn check_if_my_payment_sent<T: UtxoCommonOps + SwapOps>(
@@ -1628,7 +1606,7 @@ pub fn check_if_my_payment_sent<T: UtxoCommonOps + SwapOps>(
                 let is_imported = client
                     .is_address_imported(&target_addr)
                     .await
-                    .map_to_mm(CheckPaymentSentError::Internal)?;
+                    .map_to_mm(CheckPaymentSentError::AddrImportFailed)?;
                 if !is_imported {
                     return Ok(None);
                 }
@@ -1657,7 +1635,7 @@ pub async fn search_for_swap_tx_spend_my<T: AsRef<UtxoCoinFields> + SwapOps>(
         coin.as_ref(),
         input.time_lock,
         coin.derive_htlc_key_pair(input.swap_unique_data).public(),
-        &Public::from_slice(input.other_pub).map_to_mm(|err| FoundSwapTxSpendErr::Internal(err.to_string()))?,
+        &Public::from_slice(input.other_pub)?,
         input.secret_hash,
         input.tx,
         output_index,
@@ -1674,7 +1652,7 @@ pub async fn search_for_swap_tx_spend_other<T: AsRef<UtxoCoinFields> + SwapOps>(
     search_for_swap_output_spend(
         coin.as_ref(),
         input.time_lock,
-        &Public::from_slice(input.other_pub).map_to_mm(|err| FoundSwapTxSpendErr::Internal(err.to_string()))?,
+        &Public::from_slice(input.other_pub)?,
         coin.derive_htlc_key_pair(input.swap_unique_data).public(),
         input.secret_hash,
         input.tx,
@@ -1682,29 +1660,6 @@ pub async fn search_for_swap_tx_spend_other<T: AsRef<UtxoCoinFields> + SwapOps>(
         input.search_from_block,
     )
     .await
-}
-
-#[derive(Debug, Display, PartialEq)]
-pub enum ExtractSecretError {
-    DeserializationErr(String),
-    DecodingError(String),
-    Internal(String),
-    #[display(fmt = "Invalid arguments in 'receiverSpend' call: {:?}", _0)]
-    InvalidArguments(Vec<ethabi::Token>),
-    #[display(fmt = "Expected secret to be fixed bytes, decoded function data is {:?}", _0)]
-    ExpectedFixedBytes(Vec<ethabi::Token>),
-}
-
-impl From<ethabi::Error> for ExtractSecretError {
-    fn from(err: ethabi::Error) -> Self { Self::DecodingError(err.to_string()) }
-}
-
-impl From<rlp::DecoderError> for ExtractSecretError {
-    fn from(err: rlp::DecoderError) -> Self { Self::DecodingError(err.to_string()) }
-}
-
-impl From<serialization::Error> for ExtractSecretError {
-    fn from(err: serialization::Error) -> Self { Self::DeserializationErr(err.to_string()) }
 }
 
 /// Extract a secret from the `spend_tx`.
@@ -1753,15 +1708,17 @@ pub fn extract_secret(secret_hash: &[u8], spend_tx: &[u8]) -> Result<Vec<u8>, Mm
         }
         return Ok(secret);
     }
-    MmError::err(ExtractSecretError::Internal("Couldn't extract secret".to_string()))
+    MmError::err(ExtractSecretError::ExtractionFailed(
+        "Couldn't extract secret".to_string(),
+    ))
 }
 
-pub fn my_address<T: UtxoCommonOps>(coin: &T) -> Result<String, MmError<MmAddressError>> {
+pub fn my_address<T: UtxoCommonOps>(coin: &T) -> Result<String, MmError<MyAddressError>> {
     match coin.as_ref().derivation_method {
         DerivationMethod::Iguana(ref my_address) => my_address
             .display_address()
-            .map_err(|err| MmError::new(MmAddressError::Internal(err))),
-        DerivationMethod::HDWallet(_) => MmError::err(MmAddressError::DeprecatedWalletAddr),
+            .map_err(|err| MmError::new(MyAddressError::AddrDisplayError(err))),
+        DerivationMethod::HDWallet(_) => MmError::err(MyAddressError::DeprecatedWalletAddr),
     }
 }
 
@@ -1811,33 +1768,6 @@ where
     .clone();
     let fut = async move { address_balance(&coin, &my_address).await };
     Box::new(fut.boxed().compat())
-}
-
-#[derive(Debug, Display)]
-pub enum SendRawTxError {
-    BroadcastTxErr(BroadcastTxErr),
-    BlockchainScanStopped(String),
-    ClientError(String),
-    DeserializationErr(String),
-    Internal(String),
-    MethodNotSupported(String),
-    UtxoRpcError(UtxoRpcError),
-}
-
-impl From<BroadcastTxErr> for SendRawTxError {
-    fn from(err: BroadcastTxErr) -> Self { Self::BroadcastTxErr(err) }
-}
-
-impl From<hex::FromHexError> for SendRawTxError {
-    fn from(err: hex::FromHexError) -> Self { Self::Internal(err.to_string()) }
-}
-
-impl From<serialization::Error> for SendRawTxError {
-    fn from(err: serialization::Error) -> Self { Self::DeserializationErr(err.to_string()) }
-}
-
-impl From<UtxoRpcError> for SendRawTxError {
-    fn from(err: UtxoRpcError) -> Self { Self::UtxoRpcError(err) }
 }
 
 /// Takes raw transaction as input and returns tx hash in hexadecimal format
@@ -2087,9 +2017,10 @@ pub fn convert_to_address<T: UtxoCommonOps>(
     coin: &T,
     from: &str,
     to_address_format: Json,
-) -> Result<String, MmError<MmAddressError>> {
-    let to_address_format: UtxoAddressFormat = json::from_value(to_address_format)
-        .map_to_mm(|e| MmAddressError::Internal(format!("Error on parse UTXO address format {:?}", e)))?;
+) -> Result<String, MmError<AddressParseError>> {
+    let to_address_format: UtxoAddressFormat = json::from_value(to_address_format).map_to_mm(|e| {
+        AddressParseError::AddrFormatParseError(format!("Error on parse UTXO address format {:?}", e))
+    })?;
     let mut from_address = coin.address_from_str(from)?;
     match to_address_format {
         UtxoAddressFormat::Standard => {
@@ -2100,7 +2031,7 @@ pub fn convert_to_address<T: UtxoCommonOps>(
             let bech32_hrp = &coin.as_ref().conf.bech32_hrp;
             match bech32_hrp {
                 Some(hrp) => Ok(SegwitAddress::new(&from_address.hash, hrp.clone()).to_string()),
-                None => MmError::err(MmAddressError::AddrConversionErr(
+                None => MmError::err(AddressParseError::AddrConversionErr(
                     "Cannot convert to a segwit address for a coin with no bech32_hrp in config".to_string(),
                 )),
             }
@@ -2112,7 +2043,7 @@ pub fn convert_to_address<T: UtxoCommonOps>(
                 coin.as_ref().conf.p2sh_addr_prefix,
             )
             .and_then(|cashaddress| cashaddress.encode())
-            .map_to_mm(MmAddressError::ToCashAddressErr)?),
+            .map_to_mm(AddressParseError::CashAddressErr)?),
     }
 }
 
@@ -2728,11 +2659,13 @@ pub fn history_sync_status(coin: &UtxoCoinFields) -> HistorySyncState {
     coin.history_sync_state.lock().unwrap().clone()
 }
 
-pub fn get_trade_fee<T: UtxoCommonOps>(coin: T) -> Box<dyn Future<Item = TradeFee, Error = String> + Send> {
+pub fn get_trade_fee<T: UtxoCommonOps>(
+    coin: T,
+) -> Box<dyn Future<Item = TradeFee, Error = MmError<GetTradeFeeError>> + Send> {
     let ticker = coin.as_ref().conf.ticker.clone();
     let decimals = coin.as_ref().decimals;
     let fut = async move {
-        let fee = try_s!(coin.get_tx_fee().await);
+        let fee = coin.get_tx_fee().await?;
         let amount = match fee {
             ActualTxFee::Dynamic(f) => f,
             ActualTxFee::FixedPerKb(f) => f,
@@ -3165,7 +3098,7 @@ pub fn address_from_raw_pubkey(
     checksum_type: ChecksumType,
     hrp: Option<String>,
     addr_format: UtxoAddressFormat,
-) -> Result<Address, MmError<MmAddressError>> {
+) -> Result<Address, MmError<AddressParseError>> {
     Ok(Address {
         t_addr_prefix,
         prefix,
@@ -3194,65 +3127,6 @@ pub fn address_from_pubkey(
     }
 }
 
-#[derive(Debug, Display, PartialEq)]
-pub enum ValidatePaymentError {
-    Erc20PaymentDetailsError(String),
-    #[display(fmt = "Iguana private key is unavailable")]
-    IguanaPrivKeyUnavailable,
-    #[display(fmt = "InternalError: {}", _0)]
-    InternalError(String),
-    MmAddressError(String),
-    TryToAddressError(TryToAddressError),
-    UtxoRpcError(String),
-    UnexpectedPaymentOutput(String),
-    UnexpectedDerivationMethod(UnexpectedDerivationMethod),
-    ValidateHtlcError(String),
-}
-
-impl From<rlp::DecoderError> for ValidatePaymentError {
-    fn from(err: rlp::DecoderError) -> Self { Self::InternalError(err.to_string()) }
-}
-
-impl From<ethabi::Error> for ValidatePaymentError {
-    fn from(err: ethabi::Error) -> Self { Self::InternalError(err.to_string()) }
-}
-
-impl From<keys::Error> for ValidatePaymentError {
-    fn from(err: keys::Error) -> Self { Self::InternalError(err.to_string()) }
-}
-
-impl From<web3::Error> for ValidatePaymentError {
-    fn from(err: web3::Error) -> Self { Self::InternalError(err.to_string()) }
-}
-
-impl From<NumConversError> for ValidatePaymentError {
-    fn from(err: NumConversError) -> Self { Self::InternalError(err.to_string()) }
-}
-
-impl From<SPVError> for ValidatePaymentError {
-    fn from(err: SPVError) -> Self { Self::InternalError(err.to_string()) }
-}
-
-impl From<serialization::Error> for ValidatePaymentError {
-    fn from(err: serialization::Error) -> Self { Self::InternalError(err.to_string()) }
-}
-
-impl From<ScriptHashTypeNotSupported> for ValidatePaymentError {
-    fn from(err: ScriptHashTypeNotSupported) -> Self { Self::InternalError(err.to_string()) }
-}
-
-impl From<UnexpectedDerivationMethod> for ValidatePaymentError {
-    fn from(err: UnexpectedDerivationMethod) -> Self { Self::UnexpectedDerivationMethod(err) }
-}
-
-impl From<UtxoRpcError> for ValidatePaymentError {
-    fn from(err: UtxoRpcError) -> Self { Self::UtxoRpcError(err.to_string()) }
-}
-
-impl From<MmAddressError> for ValidatePaymentError {
-    fn from(err: MmAddressError) -> Self { Self::MmAddressError(err.to_string()) }
-}
-
 #[allow(clippy::too_many_arguments)]
 #[cfg_attr(test, mockable)]
 pub fn validate_payment<T: UtxoCommonOps>(
@@ -3266,7 +3140,7 @@ pub fn validate_payment<T: UtxoCommonOps>(
     time_lock: u32,
     try_spv_proof_until: u64,
     confirmations: u64,
-) -> Box<dyn Future<Item = (), Error = MmError<ValidatePaymentError>> + Send> {
+) -> ValidatePaymentFut<()> {
     let amount = try_mm_err_fus!(sat_from_big_decimal(&amount, coin.as_ref().decimals));
 
     let expected_redeem = payment_script(time_lock, priv_bn_hash, first_pub0, second_pub0);
@@ -3345,7 +3219,7 @@ async fn search_for_swap_output_spend(
     let script = payment_script(time_lock, secret_hash, first_pub, second_pub);
     let expected_script_pubkey = Builder::build_p2sh(&dhash160(&script).into()).to_bytes();
     if tx.outputs[0].script_pubkey != expected_script_pubkey {
-        return MmError::err(FoundSwapTxSpendErr::Internal(format!(
+        return MmError::err(FoundSwapTxSpendErr::UnexpectedScriptPubKey(format!(
             "{:?} output 0 script_pubkey doesn't match expected {:?}",
             tx, expected_script_pubkey
         )));
@@ -3361,7 +3235,7 @@ async fn search_for_swap_output_spend(
         )
         .compat()
         .await
-        .map_to_mm(FoundSwapTxSpendErr::Internal)?;
+        .map_to_mm(FoundSwapTxSpendErr::MissingTransaction)?;
     match spend {
         Some(spent_output_info) => {
             let mut tx = spent_output_info.spending_tx;
@@ -3379,7 +3253,7 @@ async fn search_for_swap_output_spend(
                 }
             }
 
-            MmError::err(FoundSwapTxSpendErr::Internal(format!(
+            MmError::err(FoundSwapTxSpendErr::MissingTxInstruction(format!(
                 "Couldn't find required instruction in script_sig of input 0 of tx {:?}",
                 tx,
             )))

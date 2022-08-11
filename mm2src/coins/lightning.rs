@@ -11,18 +11,19 @@ mod ln_storage;
 mod ln_utils;
 
 use super::{lp_coinfind_or_err, DerivationMethod, MmCoinEnum};
+use crate::coin_errors::{AddressParseError, CheckPaymentSentError, ExtractSecretError, GetTradeFeeError,
+                         MyAddressError, SendRawTxError};
 use crate::lightning::ln_events::init_events_abort_handlers;
 use crate::lightning::ln_sql::SqliteLightningDB;
 use crate::utxo::rpc_clients::UtxoRpcClientEnum;
-use crate::utxo::utxo_common::{big_decimal_from_sat_unsigned, CheckPaymentSentError, ExtractSecretError,
-                               SendRawTxError, UtxoTxBuilder, ValidatePaymentError};
+use crate::utxo::utxo_common::{big_decimal_from_sat_unsigned, UtxoTxBuilder};
 use crate::utxo::{sat_from_big_decimal, BlockchainNetwork, FeePolicy, GetUtxoListOps, UtxoTxGenerationOps};
 use crate::{BalanceFut, CoinBalance, FeeApproxStage, FoundSwapTxSpend, FoundSwapTxSpendErr, HistorySyncState,
-            MarketCoinOps, MmAddressError, MmCoin, NegotiateSwapContractAddrErr, RawTransactionFut,
-            RawTransactionRequest, SearchForSwapTxSpendInput, SignatureError, SignatureResult, SwapOps, TradeFee,
-            TradePreimageFut, TradePreimageResult, TradePreimageValue, TransactionEnum, TransactionFut,
-            UnexpectedDerivationMethod, UtxoStandardCoin, ValidateAddressResult, ValidatePaymentInput,
-            ValidateSwapTxError, VerificationError, VerificationResult, WithdrawError, WithdrawFut, WithdrawRequest};
+            MarketCoinOps, MmCoin, NegotiateSwapContractAddrErr, RawTransactionFut, RawTransactionRequest,
+            SearchForSwapTxSpendInput, SignatureError, SignatureResult, SwapOps, TradeFee, TradePreimageFut,
+            TradePreimageResult, TradePreimageValue, TransactionEnum, TransactionFut, UnexpectedDerivationMethod,
+            UtxoStandardCoin, ValidateAddressResult, ValidatePaymentFut, ValidatePaymentInput, ValidateSwapTxError,
+            VerificationError, VerificationResult, WithdrawError, WithdrawFut, WithdrawRequest};
 use async_trait::async_trait;
 use bitcoin::hashes::Hash;
 use bitcoin_hashes::sha256::Hash as Sha256;
@@ -332,19 +333,9 @@ impl SwapOps for LightningCoin {
         unimplemented!()
     }
 
-    fn validate_maker_payment(
-        &self,
-        _input: ValidatePaymentInput,
-    ) -> Box<dyn Future<Item = (), Error = MmError<ValidatePaymentError>> + Send> {
-        unimplemented!()
-    }
+    fn validate_maker_payment(&self, _input: ValidatePaymentInput) -> ValidatePaymentFut<()> { unimplemented!() }
 
-    fn validate_taker_payment(
-        &self,
-        _input: ValidatePaymentInput,
-    ) -> Box<dyn Future<Item = (), Error = MmError<ValidatePaymentError>> + Send> {
-        unimplemented!()
-    }
+    fn validate_taker_payment(&self, _input: ValidatePaymentInput) -> ValidatePaymentFut<()> { unimplemented!() }
 
     fn check_if_my_payment_sent(
         &self,
@@ -389,7 +380,7 @@ impl SwapOps for LightningCoin {
 impl MarketCoinOps for LightningCoin {
     fn ticker(&self) -> &str { &self.conf.ticker }
 
-    fn my_address(&self) -> Result<String, MmError<MmAddressError>> { Ok(self.my_node_id()) }
+    fn my_address(&self) -> Result<String, MmError<MyAddressError>> { Ok(self.my_node_id()) }
 
     fn get_public_key(&self) -> Result<String, MmError<UnexpectedDerivationMethod>> { unimplemented!() }
 
@@ -521,8 +512,8 @@ impl MmCoin for LightningCoin {
 
     fn decimals(&self) -> u8 { self.conf.decimals }
 
-    fn convert_to_address(&self, _from: &str, _to_address_format: Json) -> Result<String, MmError<MmAddressError>> {
-        MmError::err(MmAddressError::MethodNotSupported(
+    fn convert_to_address(&self, _from: &str, _to_address_format: Json) -> Result<String, MmError<AddressParseError>> {
+        MmError::err(AddressParseError::UnsupportedProtocol(
             "Address conversion is not available for LightningCoin".to_string(),
         ))
     }
@@ -547,7 +538,9 @@ impl MmCoin for LightningCoin {
     fn history_sync_status(&self) -> HistorySyncState { unimplemented!() }
 
     // Todo: Implement this when implementing swaps for lightning as it's is used only for swaps
-    fn get_trade_fee(&self) -> Box<dyn Future<Item = TradeFee, Error = String> + Send> { unimplemented!() }
+    fn get_trade_fee(&self) -> Box<dyn Future<Item = TradeFee, Error = MmError<GetTradeFeeError>> + Send> {
+        unimplemented!()
+    }
 
     // Todo: Implement this when implementing swaps for lightning as it's is used only for swaps
     async fn get_sender_trade_fee(

@@ -1,7 +1,7 @@
-use super::utxo_common::{CheckPaymentSentError, ExtractSecretError, SendRawTxError, ValidatePaymentError};
 use super::*;
 use crate::coin_balance::{self, EnableCoinBalanceError, HDAccountBalance, HDAddressBalance, HDWalletBalance,
                           HDWalletBalanceOps};
+use crate::coin_errors::{CheckPaymentSentError, ExtractSecretError, GetTradeFeeError, MyAddressError, SendRawTxError};
 use crate::hd_pubkey::{ExtractExtendedPubkey, HDExtractPubkeyError, HDXPubExtractor};
 use crate::hd_wallet::{self, AccountUpdatingError, AddressDerivingError, GetNewHDAddressParams,
                        GetNewHDAddressResponse, HDAccountMut, HDWalletRpcError, HDWalletRpcOps,
@@ -17,10 +17,10 @@ use crate::utxo::utxo_builder::{BlockHeaderUtxoArcOps, MergeUtxoArcOps, UtxoCoin
                                 UtxoCoinBuilderCommonOps, UtxoFieldsWithHardwareWalletBuilder,
                                 UtxoFieldsWithIguanaPrivKeyBuilder};
 use crate::{eth, CanRefundHtlc, CoinBalance, CoinWithDerivationMethod, DelegationError, DelegationFut,
-            FoundSwapTxSpendErr, GetWithdrawSenderAddress, MmAddressError, NegotiateSwapContractAddrErr,
-            PrivKeyBuildPolicy, SearchForSwapTxSpendInput, SignatureResult, StakingInfosFut, SwapOps,
-            TradePreimageValue, TransactionFut, UnexpectedDerivationMethod, ValidateAddressResult,
-            ValidatePaymentInput, ValidateSwapTxError, VerificationResult, WithdrawFut, WithdrawSenderAddress};
+            FoundSwapTxSpendErr, GetWithdrawSenderAddress, NegotiateSwapContractAddrErr, PrivKeyBuildPolicy,
+            SearchForSwapTxSpendInput, SignatureResult, StakingInfosFut, SwapOps, TradePreimageValue, TransactionFut,
+            UnexpectedDerivationMethod, ValidateAddressResult, ValidatePaymentFut, ValidatePaymentInput,
+            ValidateSwapTxError, VerificationResult, WithdrawFut, WithdrawSenderAddress};
 use common::mm_metrics::MetricsArc;
 use crypto::trezor::utxo::TrezorUtxoCoin;
 use crypto::Bip44Chain;
@@ -41,8 +41,8 @@ impl From<ScriptHashTypeNotSupported> for WithdrawError {
     fn from(e: ScriptHashTypeNotSupported) -> Self { WithdrawError::InvalidAddress(e.to_string()) }
 }
 
-impl From<ScriptHashTypeNotSupported> for MmAddressError {
-    fn from(e: ScriptHashTypeNotSupported) -> Self { MmAddressError::Internal(e.to_string()) }
+impl From<ScriptHashTypeNotSupported> for MyAddressError {
+    fn from(e: ScriptHashTypeNotSupported) -> Self { MyAddressError::Internal(e.to_string()) }
 }
 
 #[path = "qtum_delegation.rs"] mod qtum_delegation;
@@ -70,9 +70,9 @@ pub trait QtumDelegationOps {
 
 #[async_trait]
 pub trait QtumBasedCoin: UtxoCommonOps + MarketCoinOps {
-    fn convert_to_address(&self, from: &str, to_address_format: Json) -> Result<String, MmError<MmAddressError>> {
+    fn convert_to_address(&self, from: &str, to_address_format: Json) -> Result<String, MmError<AddressParseError>> {
         let to_address_format: QtumAddressFormat = json::from_value(to_address_format)
-            .map_to_mm(|e| MmAddressError::Internal(format!("Error on parse Qtum address format {:?}", e)))?;
+            .map_to_mm(|e| AddressParseError::ParsingError(format!("Error on parse Qtum address format {:?}", e)))?;
         let from_address = self.utxo_address_from_any_format(from)?;
         match to_address_format {
             QtumAddressFormat::Wallet => Ok(from_address.to_string()),
@@ -81,7 +81,7 @@ pub trait QtumBasedCoin: UtxoCommonOps + MarketCoinOps {
     }
 
     /// Try to parse address from either wallet (UTXO) format or contract format.
-    fn utxo_address_from_any_format(&self, from: &str) -> Result<Address, MmError<MmAddressError>> {
+    fn utxo_address_from_any_format(&self, from: &str) -> Result<Address, MmError<AddressParseError>> {
         let utxo_err = match Address::from_str(from) {
             Ok(addr) => {
                 let is_p2pkh = addr.prefix == self.as_ref().conf.pub_addr_prefix
@@ -113,7 +113,7 @@ pub trait QtumBasedCoin: UtxoCommonOps + MarketCoinOps {
             Ok(contract_addr) => return Ok(self.utxo_addr_from_contract_addr(contract_addr)),
             Err(e) => e,
         };
-        MmError::err(MmAddressError::Internal(format!(
+        MmError::err(AddressParseError::ParsingError(format!(
             "error on parse wallet address: {:?}, {:?}, error on parse contract address: {:?}",
             utxo_err, utxo_segwit_err, contract_err,
         )))
@@ -131,9 +131,9 @@ pub trait QtumBasedCoin: UtxoCommonOps + MarketCoinOps {
         }
     }
 
-    fn my_addr_as_contract_addr(&self) -> MmResult<H160, MmAddressError> {
+    fn my_addr_as_contract_addr(&self) -> MmResult<H160, MyAddressError> {
         let my_address = self.as_ref().derivation_method.iguana_or_err()?.clone();
-        contract_addr_from_utxo_addr(my_address)
+        Ok(contract_addr_from_utxo_addr(my_address)?)
     }
 
     fn utxo_address_from_contract_addr(&self, address: H160) -> Address {
@@ -148,7 +148,7 @@ pub trait QtumBasedCoin: UtxoCommonOps + MarketCoinOps {
         }
     }
 
-    fn contract_address_from_raw_pubkey(&self, pubkey: &[u8]) -> Result<H160, MmError<MmAddressError>> {
+    fn contract_address_from_raw_pubkey(&self, pubkey: &[u8]) -> Result<H160, MmError<AddressParseError>> {
         let utxo = self.as_ref();
         let qtum_address = utxo_common::address_from_raw_pubkey(
             pubkey,
@@ -384,7 +384,7 @@ impl UtxoCommonOps for QtumCoin {
         utxo_common::my_public_key(self.as_ref())
     }
 
-    fn address_from_str(&self, address: &str) -> Result<Address, MmError<MmAddressError>> {
+    fn address_from_str(&self, address: &str) -> Result<Address, MmError<AddressParseError>> {
         utxo_common::checked_address_from_str(self, address)
     }
 
@@ -637,17 +637,11 @@ impl SwapOps for QtumCoin {
         )
     }
 
-    fn validate_maker_payment(
-        &self,
-        input: ValidatePaymentInput,
-    ) -> Box<dyn Future<Item = (), Error = MmError<ValidatePaymentError>> + Send> {
+    fn validate_maker_payment(&self, input: ValidatePaymentInput) -> ValidatePaymentFut<()> {
         utxo_common::validate_maker_payment(self, input)
     }
 
-    fn validate_taker_payment(
-        &self,
-        input: ValidatePaymentInput,
-    ) -> Box<dyn Future<Item = (), Error = MmError<ValidatePaymentError>> + Send> {
+    fn validate_taker_payment(&self, input: ValidatePaymentInput) -> ValidatePaymentFut<()> {
         utxo_common::validate_taker_payment(self, input)
     }
 
@@ -705,7 +699,7 @@ impl SwapOps for QtumCoin {
 impl MarketCoinOps for QtumCoin {
     fn ticker(&self) -> &str { &self.utxo_arc.conf.ticker }
 
-    fn my_address(&self) -> Result<String, MmError<MmAddressError>> { utxo_common::my_address(self) }
+    fn my_address(&self) -> Result<String, MmError<MyAddressError>> { utxo_common::my_address(self) }
 
     fn get_public_key(&self) -> Result<String, MmError<UnexpectedDerivationMethod>> {
         let pubkey = utxo_common::my_public_key(&self.utxo_arc)?;
@@ -804,7 +798,7 @@ impl MmCoin for QtumCoin {
     fn decimals(&self) -> u8 { utxo_common::decimals(&self.utxo_arc) }
 
     /// Check if the `to_address_format` is standard and if the `from` address is standard UTXO address.
-    fn convert_to_address(&self, from: &str, to_address_format: Json) -> Result<String, MmError<MmAddressError>> {
+    fn convert_to_address(&self, from: &str, to_address_format: Json) -> Result<String, MmError<AddressParseError>> {
         QtumBasedCoin::convert_to_address(self, from, to_address_format)
     }
 
@@ -821,7 +815,7 @@ impl MmCoin for QtumCoin {
 
     fn history_sync_status(&self) -> HistorySyncState { utxo_common::history_sync_status(&self.utxo_arc) }
 
-    fn get_trade_fee(&self) -> Box<dyn Future<Item = TradeFee, Error = String> + Send> {
+    fn get_trade_fee(&self) -> Box<dyn Future<Item = TradeFee, Error = MmError<GetTradeFeeError>> + Send> {
         utxo_common::get_trade_fee(self.clone())
     }
 
@@ -1073,18 +1067,18 @@ impl InitCreateHDAccountRpcOps for QtumCoin {
 
 /// Parse contract address (H160) from string.
 /// Qtum Contract addresses have another checksum verification algorithm, because of this do not use [`eth::valid_addr_from_str`].
-pub fn contract_addr_from_str(addr: &str) -> Result<H160, MmError<MmAddressError>> { eth::addr_from_str(addr) }
+pub fn contract_addr_from_str(addr: &str) -> Result<H160, MmError<AddressParseError>> { eth::addr_from_str(addr) }
 
-pub fn contract_addr_from_utxo_addr(address: Address) -> MmResult<H160, MmAddressError> {
+pub fn contract_addr_from_utxo_addr(address: Address) -> MmResult<H160, AddressParseError> {
     match address.hash {
         AddressHashEnum::AddressHash(h) => Ok(h.take().into()),
-        AddressHashEnum::WitnessScriptHash(_) => MmError::err(MmAddressError::ScriptHashTypeNotSupported {
+        AddressHashEnum::WitnessScriptHash(_) => MmError::err(AddressParseError::ScriptHashTypeNotSupported {
             script_hash_type: "Witness".to_string(),
         }),
     }
 }
 
-pub fn display_as_contract_address(address: Address) -> MmResult<String, MmAddressError> {
+pub fn display_as_contract_address(address: Address) -> MmResult<String, AddressParseError> {
     let address = qtum::contract_addr_from_utxo_addr(address)?;
     Ok(format!("{:#02x}", address))
 }

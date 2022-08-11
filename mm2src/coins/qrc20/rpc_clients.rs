@@ -237,7 +237,7 @@ pub struct LogEntry {
 }
 
 impl LogEntry {
-    pub fn parse_address(&self) -> Result<H160, MmError<MmAddressError>> {
+    pub fn parse_address(&self) -> Result<H160, MmError<AddressParseError>> {
         if self.address.starts_with("0x") {
             qtum::contract_addr_from_str(&self.address)
         } else {

@@ -23,6 +23,7 @@ impl From<EthActivationV2Error> for EnablePlatformCoinWithTokensError {
         match err {
             EthActivationV2Error::InvalidPayload(e)
             | EthActivationV2Error::InvalidSwapContractAddr(e)
+            | EthActivationV2Error::InvalidAddress(e)
             | EthActivationV2Error::InvalidFallbackSwapContract(e) => {
                 EnablePlatformCoinWithTokensError::InvalidPayload(e)
             },
@@ -60,6 +61,7 @@ impl From<Erc20TokenActivationError> for InitTokensAsMmCoinsError {
     fn from(error: Erc20TokenActivationError) -> Self {
         match error {
             Erc20TokenActivationError::InternalError(e) => InitTokensAsMmCoinsError::Internal(e),
+            Erc20TokenActivationError::InvalidAddress(e) => InitTokensAsMmCoinsError::Internal(e),
             Erc20TokenActivationError::CouldNotFetchBalance(e) => InitTokensAsMmCoinsError::CouldNotFetchBalance(e),
         }
     }

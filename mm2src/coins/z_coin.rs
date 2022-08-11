@@ -1,3 +1,5 @@
+use crate::coin_errors::{AddressParseError, CheckPaymentSentError, ExtractSecretError, GetTradeFeeError,
+                         MyAddressError, SendRawTxError};
 use crate::my_tx_history_v2::{MyTxHistoryErrorV2, MyTxHistoryRequestV2, MyTxHistoryResponseV2};
 use crate::rpc_command::init_withdraw::{InitWithdrawCoin, WithdrawInProgressStatus, WithdrawTaskHandle};
 use crate::utxo::rpc_clients::{ElectrumRpcRequest, UnspentInfo, UtxoRpcClientEnum, UtxoRpcError, UtxoRpcFut,
@@ -5,20 +7,19 @@ use crate::utxo::rpc_clients::{ElectrumRpcRequest, UnspentInfo, UtxoRpcClientEnu
 use crate::utxo::utxo_builder::{UtxoCoinBuilderCommonOps, UtxoCoinWithIguanaPrivKeyBuilder,
                                 UtxoFieldsWithIguanaPrivKeyBuilder};
 use crate::utxo::utxo_common::{addresses_from_script, big_decimal_from_sat, big_decimal_from_sat_unsigned,
-                               payment_script, CheckPaymentSentError, ExtractSecretError, SendRawTxError,
-                               ValidatePaymentError};
+                               payment_script};
 use crate::utxo::{sat_from_big_decimal, utxo_common, ActualTxFee, AdditionalTxData, Address, BroadcastTxErr,
                   FeePolicy, GetUtxoListOps, HistoryUtxoTx, HistoryUtxoTxMap, MatureUnspentList,
                   RecentlySpentOutPointsGuard, UtxoActivationParams, UtxoAddressFormat, UtxoArc, UtxoCoinFields,
                   UtxoCommonOps, UtxoFeeDetails, UtxoRpcMode, UtxoTxBroadcastOps, UtxoTxGenerationOps,
                   VerboseTransactionFrom};
 use crate::{BalanceError, BalanceFut, CoinBalance, FeeApproxStage, FoundSwapTxSpend, FoundSwapTxSpendErr,
-            HistorySyncState, MarketCoinOps, MmAddressError, MmCoin, NegotiateSwapContractAddrErr, NumConversError,
+            HistorySyncState, MarketCoinOps, MmCoin, NegotiateSwapContractAddrErr, NumConversError,
             PrivKeyActivationPolicy, RawTransactionFut, RawTransactionRequest, SearchForSwapTxSpendInput,
             SignatureError, SignatureResult, SwapOps, TradeFee, TradePreimageFut, TradePreimageResult,
             TradePreimageValue, TransactionDetails, TransactionEnum, TransactionFut, TxFeeDetails,
-            UnexpectedDerivationMethod, ValidateAddressResult, ValidatePaymentInput, ValidateSwapTxError,
-            VerificationError, VerificationResult, WithdrawFut, WithdrawRequest};
+            UnexpectedDerivationMethod, ValidateAddressResult, ValidatePaymentFut, ValidatePaymentInput,
+            ValidateSwapTxError, VerificationError, VerificationResult, WithdrawFut, WithdrawRequest};
 use crate::{Transaction, WithdrawError};
 use async_trait::async_trait;
 use bitcrypto::{dhash160, dhash256};
@@ -886,7 +887,7 @@ impl From<std::io::Error> for SendRawTxError {
 impl MarketCoinOps for ZCoin {
     fn ticker(&self) -> &str { &self.utxo_arc.conf.ticker }
 
-    fn my_address(&self) -> Result<String, MmError<MmAddressError>> { Ok(self.z_fields.my_z_addr_encoded.clone()) }
+    fn my_address(&self) -> Result<String, MmError<MyAddressError>> { Ok(self.z_fields.my_z_addr_encoded.clone()) }
 
     fn get_public_key(&self) -> Result<String, MmError<UnexpectedDerivationMethod>> {
         let pubkey = utxo_common::my_public_key(self.as_ref())?;
@@ -926,7 +927,7 @@ impl MarketCoinOps for ZCoin {
     fn send_raw_tx(&self, tx: &str) -> Box<dyn Future<Item = String, Error = MmError<SendRawTxError>> + Send> {
         let tx_bytes = try_mm_err_fus!(hex::decode(tx));
         let z_tx = try_mm_err_fus!(
-            ZTransaction::read(tx_bytes.as_slice()).map_err(|err| SendRawTxError::Internal(err.to_string()))
+            ZTransaction::read(tx_bytes.as_slice()).map_err(|err| SendRawTxError::TxReadError(err.to_string()))
         );
 
         let this = self.clone();
@@ -1250,7 +1251,7 @@ impl SwapOps for ZCoin {
             let mut encoded = Vec::with_capacity(1024);
             z_tx.write(&mut encoded).expect("Writing should not fail");
             if encoded != tx_from_rpc.hex.0 {
-                return MmError::err(ValidateSwapTxError::InternalError(format!(
+                return MmError::err(ValidateSwapTxError::UnableToMatchEncodedTx(format!(
                     "Encoded transaction {:?} does not match the tx {:?} from RPC",
                     encoded, tx_from_rpc
                 )));
@@ -1314,17 +1315,11 @@ impl SwapOps for ZCoin {
         Box::new(fut.boxed().compat())
     }
 
-    fn validate_maker_payment(
-        &self,
-        input: ValidatePaymentInput,
-    ) -> Box<dyn Future<Item = (), Error = MmError<ValidatePaymentError>> + Send> {
+    fn validate_maker_payment(&self, input: ValidatePaymentInput) -> ValidatePaymentFut<()> {
         utxo_common::validate_maker_payment(self, input)
     }
 
-    fn validate_taker_payment(
-        &self,
-        input: ValidatePaymentInput,
-    ) -> Box<dyn Future<Item = (), Error = MmError<ValidatePaymentError>> + Send> {
+    fn validate_taker_payment(&self, input: ValidatePaymentInput) -> ValidatePaymentFut<()> {
         utxo_common::validate_taker_payment(self, input)
     }
 
@@ -1390,8 +1385,8 @@ impl MmCoin for ZCoin {
 
     fn decimals(&self) -> u8 { self.utxo_arc.decimals }
 
-    fn convert_to_address(&self, _from: &str, _to_address_format: Json) -> Result<String, MmError<MmAddressError>> {
-        MmError::err(MmAddressError::AddrConversionErr(
+    fn convert_to_address(&self, _from: &str, _to_address_format: Json) -> Result<String, MmError<AddressParseError>> {
+        MmError::err(AddressParseError::UnsupportedProtocol(
             "Address conversion is not available for ZCoin".to_string(),
         ))
     }
@@ -1420,7 +1415,7 @@ impl MmCoin for ZCoin {
 
     fn history_sync_status(&self) -> HistorySyncState { HistorySyncState::NotEnabled }
 
-    fn get_trade_fee(&self) -> Box<dyn Future<Item = TradeFee, Error = String> + Send> {
+    fn get_trade_fee(&self) -> Box<dyn Future<Item = TradeFee, Error = MmError<GetTradeFeeError>> + Send> {
         utxo_common::get_trade_fee(self.clone())
     }
 
@@ -1540,7 +1535,7 @@ impl UtxoCommonOps for ZCoin {
         utxo_common::my_public_key(self.as_ref())
     }
 
-    fn address_from_str(&self, address: &str) -> Result<Address, MmError<MmAddressError>> {
+    fn address_from_str(&self, address: &str) -> Result<Address, MmError<AddressParseError>> {
         utxo_common::checked_address_from_str(self, address)
     }
 

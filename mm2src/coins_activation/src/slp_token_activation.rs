@@ -1,10 +1,11 @@
 use crate::prelude::*;
 use crate::token::{EnableTokenError, TokenActivationOps, TokenProtocolParams};
 use async_trait::async_trait;
+use coins::coin_errors::MyAddressError;
 use coins::utxo::bch::BchCoin;
 use coins::utxo::rpc_clients::UtxoRpcError;
 use coins::utxo::slp::{SlpProtocolConf, SlpToken};
-use coins::{CoinBalance, CoinProtocol, MarketCoinOps, MmAddressError, MmCoin, MmCoinEnum};
+use coins::{CoinBalance, CoinProtocol, MarketCoinOps, MmCoin, MmCoinEnum};
 use mm2_err_handle::prelude::*;
 use rpc::v1::types::H256 as H256Json;
 use serde_derive::{Deserialize, Serialize};
@@ -57,7 +58,7 @@ impl From<SlpInitError> for EnableTokenError {
     fn from(err: SlpInitError) -> Self {
         match err {
             SlpInitError::GetBalanceError(rpc_err) => rpc_err.into(),
-            SlpInitError::MmAddressError(e) => EnableTokenError::Internal(e.to_string()),
+            SlpInitError::MyAddressError(e) => EnableTokenError::Internal(e.to_string()),
         }
     }
 }
@@ -74,7 +75,7 @@ pub struct SlpInitResult {
 #[allow(clippy::large_enum_variant)]
 pub enum SlpInitError {
     GetBalanceError(UtxoRpcError),
-    MmAddressError(MmAddressError),
+    MyAddressError(MyAddressError),
 }
 
 #[async_trait]
@@ -106,7 +107,7 @@ impl TokenActivationOps for SlpToken {
             required_confirmations,
         );
         let balance = token.my_coin_balance().await.mm_err(SlpInitError::GetBalanceError)?;
-        let my_address = token.my_address().mm_err(SlpInitError::MmAddressError)?;
+        let my_address = token.my_address().mm_err(SlpInitError::MyAddressError)?;
         let mut balances = HashMap::new();
         balances.insert(my_address, balance);
         let init_result = SlpInitResult {

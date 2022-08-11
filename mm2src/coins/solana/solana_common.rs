@@ -23,8 +23,12 @@ pub enum SufficientBalanceError {
         available: BigDecimal,
         required: BigDecimal,
     },
+    AddressError(String),
     #[display(fmt = "The amount {} is too small, required at least {}", amount, threshold)]
-    AmountTooLow { amount: BigDecimal, threshold: BigDecimal },
+    AmountTooLow {
+        amount: BigDecimal,
+        threshold: BigDecimal,
+    },
     #[display(fmt = "{}", _0)]
     UnexpectedDerivationMethod(UnexpectedDerivationMethod),
     #[display(fmt = "Wallet storage error: {}", _0)]
@@ -49,7 +53,7 @@ impl From<BalanceError> for SufficientBalanceError {
             BalanceError::UnexpectedDerivationMethod(e) => SufficientBalanceError::UnexpectedDerivationMethod(e),
             BalanceError::Internal(e) => SufficientBalanceError::Internal(e),
             BalanceError::WalletStorageError(e) => SufficientBalanceError::WalletStorageError(e),
-            BalanceError::MmAddressError(e) => SufficientBalanceError::Internal(e.to_string()),
+            BalanceError::AddressError(e) => SufficientBalanceError::AddressError(e),
         }
     }
 }
@@ -75,6 +79,7 @@ impl From<SufficientBalanceError> for WithdrawError {
             SufficientBalanceError::AmountTooLow { amount, threshold } => {
                 WithdrawError::AmountTooLow { amount, threshold }
             },
+            SufficientBalanceError::AddressError(e) => WithdrawError::InvalidAddress(e),
         }
     }
 }

@@ -1,7 +1,7 @@
+use crate::coin_errors::SendRawTxError;
 use crate::my_tx_history_v2::MyTxHistoryErrorV2;
 use crate::utxo::rpc_clients::UtxoRpcError;
 use crate::utxo::utxo_builder::UtxoCoinBuildError;
-use crate::utxo::utxo_common::SendRawTxError;
 use crate::WithdrawError;
 use crate::{NumConversError, PrivKeyNotAllowed};
 use db_common::sqlite::rusqlite::Error as SqliteError;

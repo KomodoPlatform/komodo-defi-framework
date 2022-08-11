@@ -19,7 +19,8 @@
 //  marketmaker
 //
 
-use coins::{disable_coin as disable_coin_impl, lp_coinfind, lp_coininit, BalanceError, MmAddressError, MmCoinEnum};
+use coins::coin_errors::MyAddressError;
+use coins::{disable_coin as disable_coin_impl, lp_coinfind, lp_coininit, BalanceError, MmCoinEnum};
 use common::executor::{spawn, Timer};
 use common::log::error;
 use common::mm_metrics::MetricsOps;
@@ -56,6 +57,10 @@ pub enum LpCommandsLegacyError {
     NoSuchCoin(String),
     #[display(fmt = "No such mode: {}", _0)]
     NoSuchMode(String),
+}
+
+impl From<http::Error> for LpCommandsLegacyError {
+    fn from(err: http::Error) -> Self { Self::InvalidResponse(err.to_string()) }
 }
 
 async fn lp_coinfind_coin_enum_and_ticker(
@@ -99,10 +104,7 @@ pub async fn disable_coin(ctx: MmArc, req: Json) -> Result<Response<Vec<u8>>, Mm
             "error": format!("There're active swaps using {}", ticker),
             "swaps": swaps,
         });
-        return Response::builder()
-            .status(500)
-            .body(json::to_vec(&err).unwrap())
-            .map_to_mm(|err| LpCommandsLegacyError::InvalidResponse(err.to_string()));
+        return Ok(Response::builder().status(500).body(json::to_vec(&err).unwrap())?);
     }
     let (cancelled, still_matching) = cancel_orders_by(&ctx, CancelBy::Coin { ticker: ticker.clone() })
         .await
@@ -115,10 +117,7 @@ pub async fn disable_coin(ctx: MmArc, req: Json) -> Result<Response<Vec<u8>>, Mm
                 "cancelled": cancelled,
             }
         });
-        return Response::builder()
-            .status(500)
-            .body(json::to_vec(&err).unwrap())
-            .map_to_mm(|err| LpCommandsLegacyError::InvalidResponse(err.to_string()));
+        return Ok(Response::builder().status(500).body(json::to_vec(&err).unwrap())?);
     }
 
     disable_coin_impl(&ctx, &ticker)
@@ -130,9 +129,7 @@ pub async fn disable_coin(ctx: MmArc, req: Json) -> Result<Response<Vec<u8>>, Mm
             "cancelled_orders": cancelled,
         }
     });
-    Response::builder()
-        .body(json::to_vec(&res).unwrap())
-        .map_to_mm(|err| LpCommandsLegacyError::InvalidResponse(err.to_string()))
+    Ok(Response::builder().body(json::to_vec(&res).unwrap())?)
 }
 
 #[derive(Serialize)]
@@ -157,7 +154,15 @@ pub enum CoinInitResponseError {
     Internal(String),
     #[display(fmt = "InvalidResponse: {}", _0)]
     InvalidResponse(String),
-    MmAddressError(MmAddressError),
+    AddressError(String),
+}
+
+impl From<http::Error> for CoinInitResponseError {
+    fn from(err: http::Error) -> Self { Self::InvalidResponse(err.to_string()) }
+}
+
+impl From<MyAddressError> for CoinInitResponseError {
+    fn from(err: MyAddressError) -> Self { Self::AddressError(err.to_string()) }
 }
 
 /// Enable a coin in the Electrum mode.
@@ -172,7 +177,7 @@ pub async fn electrum(ctx: MmArc, req: Json) -> Result<Response<Vec<u8>>, MmErro
         .mm_err(CoinInitResponseError::BalanceError)?;
     let res = CoinInitResponse {
         result: "success",
-        address: coin.my_address().mm_err(CoinInitResponseError::MmAddressError)?,
+        address: coin.my_address()?,
         balance: balance.spendable,
         unspendable_balance: balance.unspendable,
         coin: coin.ticker(),
@@ -181,9 +186,7 @@ pub async fn electrum(ctx: MmArc, req: Json) -> Result<Response<Vec<u8>>, MmErro
         mature_confirmations: coin.mature_confirmations(),
     };
     let res = json::to_vec(&res).map_to_mm(|err| CoinInitResponseError::Internal(err.to_string()))?;
-    Response::builder()
-        .body(res)
-        .map_to_mm(|err| CoinInitResponseError::InvalidResponse(err.to_string()))
+    Ok(Response::builder().body(res)?)
 }
 
 /// Enable a coin in the local wallet mode.
@@ -198,7 +201,7 @@ pub async fn enable(ctx: MmArc, req: Json) -> Result<Response<Vec<u8>>, MmError<
         .mm_err(CoinInitResponseError::BalanceError)?;
     let res = CoinInitResponse {
         result: "success",
-        address: coin.my_address().mm_err(CoinInitResponseError::MmAddressError)?,
+        address: coin.my_address()?,
         balance: balance.spendable,
         unspendable_balance: balance.unspendable,
         coin: coin.ticker(),
@@ -207,9 +210,7 @@ pub async fn enable(ctx: MmArc, req: Json) -> Result<Response<Vec<u8>>, MmError<
         mature_confirmations: coin.mature_confirmations(),
     };
     let res = json::to_vec(&res).map_to_mm(|err| CoinInitResponseError::Internal(err.to_string()))?;
-    let res = Response::builder()
-        .body(res)
-        .map_to_mm(|err| CoinInitResponseError::InvalidResponse(err.to_string()))?;
+    let res = Response::builder().body(res)?;
 
     if coin.is_utxo_in_native_mode() {
         subscribe_to_topic(&ctx, tx_helper_topic(coin.ticker()));
@@ -269,7 +270,7 @@ pub async fn my_balance(ctx: MmArc, req: Json) -> Result<Response<Vec<u8>>, MmEr
         "coin": ticker,
         "balance": balance.spendable,
         "unspendable_balance": balance.unspendable,
-        "address": coin.my_address().mm_err(BalanceError::MmAddressError)?,
+        "address": coin.my_address()?,
     });
     let res = json::to_vec(&res).map_to_mm(|err| BalanceError::Internal(err.to_string()))?;
     Response::builder()
@@ -291,9 +292,7 @@ pub async fn stop(ctx: MmArc) -> Result<Response<Vec<u8>>, MmError<LpCommandsLeg
         "result": "success"
     });
     let res = json::to_vec(&res).map_to_mm(|err| LpCommandsLegacyError::Internal(err.to_string()))?;
-    Response::builder()
-        .body(res)
-        .map_to_mm(|err| LpCommandsLegacyError::InvalidResponse(err.to_string()))
+    Ok(Response::builder().body(res)?)
 }
 
 pub async fn sim_panic(req: Json) -> Result<Response<Vec<u8>>, MmError<LpCommandsLegacyError>> {
@@ -340,6 +339,10 @@ pub enum GossipPeerError {
     PeerIDNotInitialized,
 }
 
+impl From<http::Error> for GossipPeerError {
+    fn from(err: http::Error) -> Self { Self::InvalidResponse(err.to_string()) }
+}
+
 pub async fn get_peers_info(ctx: MmArc) -> Result<Response<Vec<u8>>, MmError<GossipPeerError>> {
     use crate::mm2::lp_network::P2PContext;
     use mm2_libp2p::atomicdex_behaviour::get_peers_info;
@@ -350,9 +353,7 @@ pub async fn get_peers_info(ctx: MmArc) -> Result<Response<Vec<u8>>, MmError<Gos
         "result": result,
     });
     let res = json::to_vec(&result).map_to_mm(|err| GossipPeerError::Internal(err.to_string()))?;
-    Response::builder()
-        .body(res)
-        .map_to_mm(|err| GossipPeerError::InvalidResponse(err.to_string()))
+    Ok(Response::builder().body(res)?)
 }
 
 pub async fn get_gossip_mesh(ctx: MmArc) -> Result<Response<Vec<u8>>, MmError<GossipPeerError>> {
@@ -365,9 +366,7 @@ pub async fn get_gossip_mesh(ctx: MmArc) -> Result<Response<Vec<u8>>, MmError<Go
         "result": result,
     });
     let res = json::to_vec(&result).map_to_mm(|err| GossipPeerError::Internal(err.to_string()))?;
-    Response::builder()
-        .body(res)
-        .map_to_mm(|err| GossipPeerError::InvalidResponse(err.to_string()))
+    Ok(Response::builder().body(res)?)
 }
 
 pub async fn get_gossip_peer_topics(ctx: MmArc) -> Result<Response<Vec<u8>>, MmError<GossipPeerError>> {
@@ -380,9 +379,7 @@ pub async fn get_gossip_peer_topics(ctx: MmArc) -> Result<Response<Vec<u8>>, MmE
         "result": result,
     });
     let res = json::to_vec(&result).map_to_mm(|err| GossipPeerError::Internal(err.to_string()))?;
-    Response::builder()
-        .body(res)
-        .map_to_mm(|err| GossipPeerError::InvalidResponse(err.to_string()))
+    Ok(Response::builder().body(res)?)
 }
 
 pub async fn get_gossip_topic_peers(ctx: MmArc) -> Result<Response<Vec<u8>>, MmError<GossipPeerError>> {
@@ -395,9 +392,7 @@ pub async fn get_gossip_topic_peers(ctx: MmArc) -> Result<Response<Vec<u8>>, MmE
         "result": result,
     });
     let res = json::to_vec(&result).map_to_mm(|err| GossipPeerError::Internal(err.to_string()))?;
-    Response::builder()
-        .body(res)
-        .map_to_mm(|err| GossipPeerError::InvalidResponse(err.to_string()))
+    Ok(Response::builder().body(res)?)
 }
 
 pub async fn get_relay_mesh(ctx: MmArc) -> Result<Response<Vec<u8>>, MmError<GossipPeerError>> {
@@ -410,9 +405,7 @@ pub async fn get_relay_mesh(ctx: MmArc) -> Result<Response<Vec<u8>>, MmError<Gos
         "result": result,
     });
     let res = json::to_vec(&result).map_to_mm(|err| GossipPeerError::Internal(err.to_string()))?;
-    Response::builder()
-        .body(res)
-        .map_to_mm(|err| GossipPeerError::InvalidResponse(err.to_string()))
+    Ok(Response::builder().body(res)?)
 }
 
 pub async fn get_my_peer_id(ctx: MmArc) -> Result<Response<Vec<u8>>, MmError<GossipPeerError>> {
@@ -424,9 +417,7 @@ pub async fn get_my_peer_id(ctx: MmArc) -> Result<Response<Vec<u8>>, MmError<Gos
         "result": peer_id,
     });
     let res = json::to_vec(&result).map_to_mm(|err| GossipPeerError::Internal(err.to_string()))?;
-    Response::builder()
-        .body(res)
-        .map_to_mm(|err| GossipPeerError::InvalidResponse(err.to_string()))
+    Ok(Response::builder().body(res)?)
 }
 
 construct_detailed!(DetailedMinTradingVol, min_trading_vol);
@@ -448,6 +439,10 @@ pub enum MinTradingVolResponseError {
     InvalidResponse(String),
 }
 
+impl From<http::Error> for MinTradingVolResponseError {
+    fn from(err: http::Error) -> Self { Self::InvalidResponse(err.to_string()) }
+}
+
 /// Get min_trading_vol of a coin
 pub async fn min_trading_vol(ctx: MmArc, req: Json) -> Result<Response<Vec<u8>>, MmError<MinTradingVolResponseError>> {
     let (ticker, coin) = lp_coinfind_coin_enum_and_ticker(&ctx, &req)
@@ -462,7 +457,5 @@ pub async fn min_trading_vol(ctx: MmArc, req: Json) -> Result<Response<Vec<u8>>,
         "result": response,
     });
     let res = json::to_vec(&res).map_to_mm(|err| MinTradingVolResponseError::Internal(err.to_string()))?;
-    Response::builder()
-        .body(res)
-        .map_to_mm(|err| MinTradingVolResponseError::InvalidResponse(err.to_string()))
+    Ok(Response::builder().body(res)?)
 }

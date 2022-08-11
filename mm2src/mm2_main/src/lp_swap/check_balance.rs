@@ -221,7 +221,7 @@ impl From<BalanceError> for CheckBalanceError {
             BalanceError::Transport(transport) | BalanceError::InvalidResponse(transport) => {
                 CheckBalanceError::Transport(transport)
             },
-            e @ BalanceError::MmAddressError(_)
+            e @ BalanceError::AddressError(_)
             | e @ BalanceError::UnexpectedDerivationMethod(_)
             | e @ BalanceError::WalletStorageError(_) => CheckBalanceError::InternalError(e.to_string()),
             BalanceError::Internal(internal) => CheckBalanceError::InternalError(internal),

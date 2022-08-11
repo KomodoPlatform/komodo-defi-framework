@@ -1,8 +1,9 @@
 use crate::prelude::{TryFromCoinProtocol, TryPlatformCoinFromMmCoinEnum};
 use crate::token::{EnableTokenError, TokenActivationOps, TokenProtocolParams};
 use async_trait::async_trait;
+use coins::coin_errors::MyAddressError;
 use coins::solana::spl::{SplProtocolConf, SplTokenCreationError};
-use coins::{BalanceError, CoinBalance, CoinProtocol, MarketCoinOps, MmAddressError, MmCoinEnum, SolanaCoin, SplToken};
+use coins::{BalanceError, CoinBalance, CoinProtocol, MarketCoinOps, MmCoinEnum, SolanaCoin, SplToken};
 use common::Future01CompatExt;
 use mm2_err_handle::prelude::*;
 use serde_derive::{Deserialize, Serialize};
@@ -59,7 +60,7 @@ pub struct SplInitResult {
 pub enum SplInitError {
     GetBalanceError(BalanceError),
     TokenCreationFailed(SplTokenCreationError),
-    MmAddressError(MmAddressError),
+    MyAddressError(MyAddressError),
 }
 
 impl From<SplTokenCreationError> for SplInitError {
@@ -71,7 +72,7 @@ impl From<SplInitError> for EnableTokenError {
         match err {
             SplInitError::GetBalanceError(rpc_err) => rpc_err.into(),
             SplInitError::TokenCreationFailed(e) => EnableTokenError::Internal(format! {"{:?}", e}),
-            SplInitError::MmAddressError(e) => EnableTokenError::Internal(e.to_string()),
+            SplInitError::MyAddressError(e) => EnableTokenError::Internal(e.to_string()),
         }
     }
 }
@@ -101,7 +102,7 @@ impl TokenActivationOps for SplToken {
             .compat()
             .await
             .map_err(|e| SplInitError::GetBalanceError(e.into_inner()))?;
-        let my_address = token.my_address().mm_err(SplInitError::MmAddressError)?;
+        let my_address = token.my_address().mm_err(SplInitError::MyAddressError)?;
         let mut balances = HashMap::new();
         balances.insert(my_address, balance);
         let init_result = SplInitResult {

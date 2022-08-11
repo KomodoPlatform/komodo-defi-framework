@@ -1,7 +1,8 @@
 use super::{CoinBalance, HistorySyncState, MarketCoinOps, MmCoin, RawTransactionFut, RawTransactionRequest, SwapOps,
             TradeFee, TransactionEnum, TransactionFut};
-use crate::{utxo::utxo_common::{CheckPaymentSentError, ExtractSecretError, SendRawTxError, ValidatePaymentError},
-            BalanceFut, CanRefundHtlc, FeeApproxStage, FoundSwapTxSpend, FoundSwapTxSpendErr, MmAddressError,
+use crate::{coin_errors::{AddressParseError, CheckPaymentSentError, ExtractSecretError, GetTradeFeeError,
+                          MyAddressError, SendRawTxError, ValidatePaymentError},
+            BalanceFut, CanRefundHtlc, FeeApproxStage, FoundSwapTxSpend, FoundSwapTxSpendErr,
             NegotiateSwapContractAddrErr, SearchForSwapTxSpendInput, SignatureResult, TradePreimageFut,
             TradePreimageResult, TradePreimageValue, UnexpectedDerivationMethod, ValidateAddressResult,
             ValidatePaymentInput, ValidateSwapTxError, VerificationResult, WithdrawFut, WithdrawRequest};
@@ -35,7 +36,7 @@ impl TestCoin {
 impl MarketCoinOps for TestCoin {
     fn ticker(&self) -> &str { &self.ticker }
 
-    fn my_address(&self) -> Result<String, MmError<MmAddressError>> { unimplemented!() }
+    fn my_address(&self) -> Result<String, MmError<MyAddressError>> { unimplemented!() }
 
     fn get_public_key(&self) -> Result<String, MmError<UnexpectedDerivationMethod>> { unimplemented!() }
 
@@ -254,7 +255,7 @@ impl MmCoin for TestCoin {
 
     fn decimals(&self) -> u8 { unimplemented!() }
 
-    fn convert_to_address(&self, from: &str, to_address_format: Json) -> Result<String, MmError<MmAddressError>> {
+    fn convert_to_address(&self, from: &str, to_address_format: Json) -> Result<String, MmError<AddressParseError>> {
         unimplemented!()
     }
 
@@ -265,7 +266,9 @@ impl MmCoin for TestCoin {
     fn history_sync_status(&self) -> HistorySyncState { unimplemented!() }
 
     /// Get fee to be paid per 1 swap transaction
-    fn get_trade_fee(&self) -> Box<dyn Future<Item = TradeFee, Error = String> + Send> { unimplemented!() }
+    fn get_trade_fee(&self) -> Box<dyn Future<Item = TradeFee, Error = MmError<GetTradeFeeError>> + Send> {
+        unimplemented!()
+    }
 
     async fn get_sender_trade_fee(
         &self,

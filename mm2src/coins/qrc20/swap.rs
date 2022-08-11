@@ -38,6 +38,14 @@ impl From<Erc20PaymentDetailsError> for ValidatePaymentError {
     }
 }
 
+impl From<ScriptExtractionError> for ValidateSwapTxError {
+    fn from(err: ScriptExtractionError) -> Self { Self::ScriptExtractionError(err.to_string()) }
+}
+
+impl From<Erc20PaymentDetailsError> for FoundSwapTxSpendErr {
+    fn from(err: Erc20PaymentDetailsError) -> Self { Self::Erc20PaymentDetailsError(err.to_string()) }
+}
+
 /// `receiverSpend` call details consist of values obtained from [`TransactionOutput::script_pubkey`].
 #[derive(Debug)]
 pub struct ReceiverSpendDetails {
@@ -211,7 +219,10 @@ impl Qrc20Coin {
             .await?;
 
         let conf_before_block = utxo_common::is_tx_confirmed_before_block(self, &verbose_tx, min_block_number);
-        if conf_before_block.await.mm_err(ValidateSwapTxError::InternalError)? {
+        if conf_before_block
+            .await
+            .mm_err(ValidateSwapTxError::TxConfirmationError)?
+        {
             return MmError::err(ValidateSwapTxError::TxConfirmationError(format!(
                 "Fee tx {:?} confirmed before min_block {}",
                 verbose_tx, min_block_number,
@@ -239,7 +250,7 @@ impl Qrc20Coin {
         };
 
         if receiver != fee_addr {
-            return MmError::err(ValidateSwapTxError::UnexpectedTxAddr(format!(
+            return MmError::err(ValidateSwapTxError::WrongReceiverAddress(format!(
                 "QRC20 Fee tx was sent to wrong address {:?}, expected {:?}",
                 receiver, fee_addr
             )));
@@ -254,7 +265,7 @@ impl Qrc20Coin {
 
         let token_addr = extract_contract_addr_from_script(&script_pubkey)?;
         if token_addr != self.contract_address {
-            return MmError::err(ValidateSwapTxError::UnexpectedTxAddr(format!(
+            return MmError::err(ValidateSwapTxError::UnexpectedTxSmartContractCall(format!(
                 "QRC20 Fee tx {:?} called wrong smart contract, expected {:?}",
                 qtum_tx, self.contract_address
             )));
@@ -269,23 +280,14 @@ impl Qrc20Coin {
         secret_hash: &[u8],
         tx: UtxoTx,
         search_from_block: u64,
-    ) -> Result<Option<FoundSwapTxSpend>, MmError<FoundSwapTxSpendErr>> {
+    ) -> MmResult<Option<FoundSwapTxSpend>, FoundSwapTxSpendErr> {
         let tx_hash = tx.hash().reversed().into();
-        let verbose_tx = self
-            .utxo
-            .rpc_client
-            .get_verbose_transaction(&tx_hash)
-            .compat()
-            .await
-            .mm_err(|err| FoundSwapTxSpendErr::UtxoRpcError(Box::new(err)))?;
+        let verbose_tx = self.utxo.rpc_client.get_verbose_transaction(&tx_hash).compat().await?;
         if verbose_tx.confirmations < 1 {
             return MmError::err(FoundSwapTxSpendErr::Erc20PaymentNotConfirmed);
         }
 
-        let Erc20PaymentDetails { swap_id, receiver, .. } = self
-            .erc20_payment_details_from_tx(&tx)
-            .await
-            .mm_err(|err| FoundSwapTxSpendErr::Internal(err.to_string()))?;
+        let Erc20PaymentDetails { swap_id, receiver, .. } = self.erc20_payment_details_from_tx(&tx).await?;
         let expected_swap_id = qrc20_swap_id(time_lock, secret_hash);
         if expected_swap_id != swap_id {
             return MmError::err(FoundSwapTxSpendErr::UnexpectedSwapID(hex::encode(swap_id)));
@@ -295,7 +297,7 @@ impl Qrc20Coin {
         let spend_txs = self
             .receiver_spend_transactions(receiver, search_from_block)
             .await
-            .mm_err(FoundSwapTxSpendErr::Internal)?;
+            .mm_err(FoundSwapTxSpendErr::ReceiverSpendTxError)?;
         let found = spend_txs
             .into_iter()
             .find(|tx| find_receiver_spend_with_swap_id_and_secret_hash(tx, &expected_swap_id, secret_hash).is_some());
@@ -314,7 +316,7 @@ impl Qrc20Coin {
         let refund_txs = self
             .sender_refund_transactions(sender, search_from_block)
             .await
-            .mm_err(FoundSwapTxSpendErr::Internal)?;
+            .mm_err(FoundSwapTxSpendErr::SenderTxRefundError)?;
         let found = refund_txs.into_iter().find(|tx| {
             find_swap_contract_call_with_swap_id(MutContractCallType::SenderRefund, tx, &expected_swap_id).is_some()
         });
@@ -388,7 +390,7 @@ impl Qrc20Coin {
             return Ok(secret);
         }
 
-        MmError::err(ExtractSecretError::Internal(format!(
+        MmError::err(ExtractSecretError::CouldNotObtainSecret(format!(
             "Couldn't obtain the 'secret' from {:?} tx",
             spend_tx_hash
         )))

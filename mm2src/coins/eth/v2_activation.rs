@@ -4,6 +4,7 @@ use super::*;
 #[serde(tag = "error_type", content = "error_data")]
 pub enum EthActivationV2Error {
     InvalidPayload(String),
+    InvalidAddress(String),
     InvalidSwapContractAddr(String),
     InvalidFallbackSwapContract(String),
     #[display(fmt = "Platform coin {} activation failed. {}", ticker, error)]
@@ -18,8 +19,12 @@ pub enum EthActivationV2Error {
     InternalError(String),
 }
 
-impl From<MmAddressError> for EthActivationV2Error {
-    fn from(err: MmAddressError) -> Self { Self::InternalError(err.to_string()) }
+impl From<AddressParseError> for EthActivationV2Error {
+    fn from(err: AddressParseError) -> Self { Self::InvalidAddress(err.to_string()) }
+}
+
+impl From<MyAddressError> for EthActivationV2Error {
+    fn from(err: MyAddressError) -> Self { Self::InvalidAddress(err.to_string()) }
 }
 
 #[derive(Clone, Deserialize)]
@@ -44,12 +49,21 @@ pub struct EthNode {
 #[derive(Serialize, SerializeErrorType)]
 #[serde(tag = "error_type", content = "error_data")]
 pub enum Erc20TokenActivationError {
+    InvalidAddress(String),
     InternalError(String),
     CouldNotFetchBalance(String),
 }
 
-impl From<MmAddressError> for Erc20TokenActivationError {
-    fn from(err: MmAddressError) -> Self { Self::InternalError(err.to_string()) }
+impl From<AddressParseError> for Erc20TokenActivationError {
+    fn from(err: AddressParseError) -> Self { Self::InvalidAddress(err.to_string()) }
+}
+
+impl From<MyAddressError> for Erc20TokenActivationError {
+    fn from(err: MyAddressError) -> Self { Self::InvalidAddress(err.to_string()) }
+}
+
+impl From<TokenDecimalsError> for Erc20TokenActivationError {
+    fn from(err: TokenDecimalsError) -> Self { Self::InternalError(err.to_string()) }
 }
 
 #[derive(Clone, Deserialize)]
@@ -80,9 +94,7 @@ impl EthCoin {
         let conf = coin_conf(&ctx, &ticker);
 
         let decimals = match conf["decimals"].as_u64() {
-            None | Some(0) => get_token_decimals(&self.web3, protocol.token_addr)
-                .await
-                .map_err(Erc20TokenActivationError::InternalError)?,
+            None | Some(0) => get_token_decimals(&self.web3, protocol.token_addr).await?,
             Some(d) => d as u8,
         };
 

@@ -1621,28 +1621,26 @@ async fn electrum_request_to(
     client: ElectrumClient,
     request: JsonRpcRequestEnum,
     to_addr: String,
-) -> Result<(JsonRpcRemoteAddr, JsonRpcResponseEnum), String> {
+) -> Result<(JsonRpcRemoteAddr, JsonRpcResponseEnum), MmError<ElectrumRpcRequestErr>> {
     let (tx, responses) = {
         let connections = client.connections.lock().await;
         let connection = connections
             .iter()
             .find(|c| c.addr == to_addr)
-            .ok_or(ERRL!("Unknown destination address {}", to_addr))?;
+            .ok_or_else(|| MmError::new(ElectrumRpcRequestErr::UnknownDestAddr(to_addr.clone())))?;
         let responses = connection.responses.clone();
         let tx = {
             match &*connection.tx.lock().await {
                 Some(tx) => tx.clone(),
-                None => return ERR!("Connection {} is not established yet", to_addr),
+                None => return MmError::err(ElectrumRpcRequestErr::ConnectionError(to_addr)),
             }
         };
         (tx, responses)
     };
 
-    let response = try_s!(
-        electrum_request(request.clone(), tx, responses, ELECTRUM_TIMEOUT)
-            .compat()
-            .await
-    );
+    let response = electrum_request(request.clone(), tx, responses, ELECTRUM_TIMEOUT)
+        .compat()
+        .await?;
     Ok((JsonRpcRemoteAddr(to_addr.to_owned()), response))
 }
 
@@ -1742,7 +1740,12 @@ impl JsonRpcBatchClient for ElectrumClient {}
 
 impl JsonRpcMultiClient for ElectrumClient {
     fn transport_exact(&self, to_addr: String, request: JsonRpcRequestEnum) -> JsonRpcResponseFut {
-        Box::new(electrum_request_to(self.clone(), request, to_addr).boxed().compat())
+        Box::new(
+            electrum_request_to(self.clone(), request, to_addr)
+                .boxed()
+                .compat()
+                .map_err(|err| err.to_string()),
+        )
     }
 }
 
@@ -2709,14 +2712,32 @@ fn electrum_connect(
     }
 }
 
+#[derive(Debug, Display)]
+pub enum ElectrumRpcRequestErr {
+    #[display(fmt = "Connection {} is not established yet", _0)]
+    ConnectionError(String),
+    Internal(String),
+    SendError(String),
+    #[display(fmt = "Unknown destination address {}", _0)]
+    UnknownDestAddr(String),
+}
+
+impl From<serde_json::Error> for ElectrumRpcRequestErr {
+    fn from(err: serde_json::Error) -> Self { Self::Internal(err.to_string()) }
+}
+
+impl From<futures::channel::mpsc::SendError> for ElectrumRpcRequestErr {
+    fn from(err: futures::channel::mpsc::SendError) -> Self { Self::Internal(err.to_string()) }
+}
+
 fn electrum_request(
     request: JsonRpcRequestEnum,
     tx: mpsc::Sender<Vec<u8>>,
     responses: JsonRpcPendingRequestsShared,
     timeout: u64,
-) -> Box<dyn Future<Item = JsonRpcResponseEnum, Error = String> + Send + 'static> {
+) -> Box<dyn Future<Item = JsonRpcResponseEnum, Error = MmError<ElectrumRpcRequestErr>> + Send + 'static> {
     let send_fut = async move {
-        let mut json = try_s!(json::to_string(&request));
+        let mut json = json::to_string(&request)?;
         #[cfg(not(target_arch = "wasm"))]
         {
             // Electrum request and responses must end with \n
@@ -2726,8 +2747,13 @@ fn electrum_request(
 
         let (req_tx, resp_rx) = async_oneshot::channel();
         responses.lock().await.insert(request.rpc_id(), req_tx);
-        try_s!(tx.send(json.into_bytes()).compat().await);
-        let resps = try_s!(resp_rx.await);
+        tx.send(json.into_bytes())
+            .compat()
+            .await
+            .map_to_mm(|err| ElectrumRpcRequestErr::SendError(err.to_string()))?;
+        let resps = resp_rx
+            .await
+            .map_to_mm(|err| ElectrumRpcRequestErr::Internal(err.to_string()))?;
         Ok(resps)
     };
     let send_fut = send_fut
@@ -2736,9 +2762,8 @@ fn electrum_request(
         .compat()
         .then(|res| match res {
             Ok(response) => response,
-            Err(timeout_error) => ERR!("{}", timeout_error),
-        })
-        .map_err(|e| ERRL!("{}", e));
+            Err(timeout_error) => MmError::err(ElectrumRpcRequestErr::Internal(timeout_error.to_string())),
+        });
     Box::new(send_fut)
 }
 

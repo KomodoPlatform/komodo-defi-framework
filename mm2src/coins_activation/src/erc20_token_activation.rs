@@ -22,6 +22,7 @@ impl From<Erc20TokenActivationError> for EnableTokenError {
         match err {
             Erc20TokenActivationError::InternalError(e) => EnableTokenError::Internal(e),
             Erc20TokenActivationError::CouldNotFetchBalance(e) => EnableTokenError::Transport(e),
+            Erc20TokenActivationError::InvalidAddress(e) => EnableTokenError::Internal(e),
         }
     }
 }

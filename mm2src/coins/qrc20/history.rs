@@ -22,7 +22,7 @@ pub enum Qrc20CoinTxHistoryError {
     #[display(fmt = "GasExtractionError: {}", _0)]
     GasExtractionError(String),
     JsonRpcError(JsonRpcError),
-    MmAddressError(String),
+    AddressError(String),
     NoQtumFeeDetails,
     NumConversError(NumConversError),
     TransferEventDetailsError(TransferEventDetailsError),
@@ -48,8 +48,8 @@ impl From<serialization::Error> for Qrc20CoinTxHistoryError {
     fn from(err: serialization::Error) -> Self { Self::TxDeserializationError(err) }
 }
 
-impl From<MmAddressError> for Qrc20CoinTxHistoryError {
-    fn from(err: MmAddressError) -> Self { Self::MmAddressError(err.to_string()) }
+impl From<AddressParseError> for Qrc20CoinTxHistoryError {
+    fn from(err: AddressParseError) -> Self { Self::AddressError(err.to_string()) }
 }
 
 impl From<qtum::ScriptHashTypeNotSupported> for Qrc20CoinTxHistoryError {
@@ -373,14 +373,13 @@ impl Qrc20Coin {
                 qtum::display_as_contract_address(from)?
             } else {
                 from.display_address()
-                    .map_to_mm(Qrc20CoinTxHistoryError::MmAddressError)?
+                    .map_to_mm(Qrc20CoinTxHistoryError::AddressError)?
             };
 
             let to = if is_transferred_to_contract(&script_pubkey) {
                 qtum::display_as_contract_address(to)?
             } else {
-                to.display_address()
-                    .map_to_mm(Qrc20CoinTxHistoryError::MmAddressError)?
+                to.display_address().map_to_mm(Qrc20CoinTxHistoryError::AddressError)?
             };
 
             let tx_details = TransactionDetails {

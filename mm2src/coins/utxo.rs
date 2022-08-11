@@ -101,11 +101,11 @@ use super::{big_decimal_from_sat_unsigned, BalanceError, BalanceFut, BalanceResu
             Transaction, TransactionDetails, TransactionEnum, UnexpectedDerivationMethod, WithdrawError,
             WithdrawRequest};
 use crate::coin_balance::{EnableCoinScanPolicy, HDAddressBalanceScanner};
-use crate::eth::AddrFromLocationError;
+use crate::coin_errors::AddressParseError;
 use crate::hd_wallet::{HDAccountOps, HDAccountsMutex, HDAddress, HDWalletCoinOps, HDWalletOps, InvalidBip44ChainError};
 use crate::hd_wallet_storage::{HDAccountStorageItem, HDWalletCoinStorage, HDWalletStorageError, HDWalletStorageResult};
 use crate::utxo::tx_cache::UtxoVerboseCacheShared;
-use crate::{MmAddressError, RpcTransportEventHandlerError, TransactionErr};
+use crate::{RpcTransportEventHandlerError, TransactionErr};
 
 pub mod tx_cache;
 #[cfg(target_arch = "wasm32")]
@@ -567,6 +567,10 @@ impl From<UnsupportedAddr> for WithdrawError {
     fn from(e: UnsupportedAddr) -> Self { WithdrawError::InvalidAddress(e.to_string()) }
 }
 
+impl From<UnsupportedAddr> for AddressParseError {
+    fn from(e: UnsupportedAddr) -> Self { AddressParseError::UnsupportedAddr(e.to_string()) }
+}
+
 #[derive(Debug)]
 #[allow(clippy::large_enum_variant)]
 pub enum GetTxError {
@@ -830,7 +834,7 @@ pub trait UtxoCommonOps:
 
     /// Try to parse address from string using specified on asset enable format,
     /// and if it failed inform user that he used a wrong format.
-    fn address_from_str(&self, address: &str) -> Result<Address, MmError<MmAddressError>>;
+    fn address_from_str(&self, address: &str) -> Result<Address, MmError<AddressParseError>>;
 
     async fn get_current_mtp(&self) -> UtxoRpcResult<u32>;
 
@@ -1714,7 +1718,7 @@ pub fn address_by_conf_and_pubkey_str(
     conf: &Json,
     pubkey: &str,
     addr_format: UtxoAddressFormat,
-) -> Result<String, MmError<AddrFromLocationError>> {
+) -> Result<String, MmError<AddressParseError>> {
     // using a reasonable default here
     let params = UtxoActivationParams {
         mode: UtxoRpcMode::Native,
@@ -1741,9 +1745,7 @@ pub fn address_by_conf_and_pubkey_str(
         hrp: utxo_conf.bech32_hrp,
         addr_format,
     };
-    address
-        .display_address()
-        .map_err(|err| MmError::new(AddrFromLocationError::Internal(err)))
+    address.display_address().map_to_mm(AddressParseError::AddrDisplayError)
 }
 
 fn parse_hex_encoded_u32(hex_encoded: &str) -> Result<u32, MmError<String>> {

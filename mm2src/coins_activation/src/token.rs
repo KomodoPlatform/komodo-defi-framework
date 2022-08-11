@@ -58,6 +58,7 @@ pub enum EnableTokenError {
     },
     #[display(fmt = "{}", _0)]
     UnexpectedDerivationMethod(UnexpectedDerivationMethod),
+    AddressError(String),
     CouldNotFetchBalance(String),
     Transport(String),
     Internal(String),
@@ -86,7 +87,7 @@ impl From<BalanceError> for EnableTokenError {
             BalanceError::Transport(e) | BalanceError::InvalidResponse(e) => EnableTokenError::Transport(e),
             BalanceError::UnexpectedDerivationMethod(e) => EnableTokenError::UnexpectedDerivationMethod(e),
             BalanceError::Internal(e) | BalanceError::WalletStorageError(e) => EnableTokenError::Internal(e),
-            BalanceError::MmAddressError(internal) => EnableTokenError::Internal(internal.to_string()),
+            BalanceError::AddressError(internal) => EnableTokenError::Internal(internal),
         }
     }
 }
@@ -159,6 +160,7 @@ impl HttpStatusCode for EnableTokenError {
             | EnableTokenError::UnexpectedDerivationMethod(_)
             | EnableTokenError::Transport(_)
             | EnableTokenError::CouldNotFetchBalance(_)
+            | EnableTokenError::AddressError(_)
             | EnableTokenError::Internal(_) => StatusCode::INTERNAL_SERVER_ERROR,
         }
     }
