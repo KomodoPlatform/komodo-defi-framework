@@ -1,6 +1,7 @@
 #[macro_use] extern crate serde_derive;
 
 pub mod client;
+pub mod device_info;
 pub mod error;
 mod proto;
 pub mod response;

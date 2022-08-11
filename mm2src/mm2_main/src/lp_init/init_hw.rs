@@ -3,8 +3,8 @@ use async_trait::async_trait;
 use common::{HttpStatusCode, SuccessResponse};
 use crypto::hw_rpc_task::{HwConnectStatuses, HwRpcTaskAwaitingStatus, HwRpcTaskUserAction, HwRpcTaskUserActionRequest,
                           TrezorRpcTaskConnectProcessor};
-use crypto::{from_hw_error, CryptoCtx, CryptoInitError, HwCtxInitError, HwError, HwPubkey, HwRpcError, HwWalletType,
-             WithHwRpcError};
+use crypto::{from_hw_error, CryptoCtx, CryptoInitError, HwCtxInitError, HwDeviceInfo, HwError, HwPubkey, HwRpcError,
+             HwWalletType, WithHwRpcError};
 use derive_more::Display;
 use enum_from::EnumFromTrait;
 use http::StatusCode;
@@ -92,7 +92,7 @@ impl HttpStatusCode for InitHwError {
 pub enum InitHwInProgressStatus {
     Initializing,
     WaitingForTrezorToConnect,
-    WaitingForUserToConfirmPubkey,
+    FollowHwDeviceInstructions,
 }
 
 #[derive(Deserialize)]
@@ -102,6 +102,8 @@ pub struct InitHwRequest {
 
 #[derive(Clone, Serialize)]
 pub struct InitHwResponse {
+    #[serde(flatten)]
+    device_info: HwDeviceInfo,
     device_pubkey: HwPubkey,
 }
 
@@ -132,13 +134,13 @@ impl RpcTask for InitHwTask {
     async fn run(&mut self, task_handle: &InitHwTaskHandle) -> Result<Self::Item, MmError<Self::Error>> {
         let crypto_ctx = CryptoCtx::from_ctx(&self.ctx)?;
 
-        let device_pubkey = match self.hw_wallet_type {
+        match self.hw_wallet_type {
             HwWalletType::Trezor => {
                 let trezor_connect_processor = TrezorRpcTaskConnectProcessor::new(task_handle, HwConnectStatuses {
                     on_connect: InitHwInProgressStatus::WaitingForTrezorToConnect,
                     on_connected: InitHwInProgressStatus::Initializing,
                     on_connection_failed: InitHwInProgressStatus::Initializing,
-                    on_button_request: InitHwInProgressStatus::WaitingForUserToConfirmPubkey,
+                    on_button_request: InitHwInProgressStatus::FollowHwDeviceInstructions,
                     on_pin_request: InitHwAwaitingStatus::EnterTrezorPin,
                     on_passphrase_request: InitHwAwaitingStatus::EnterTrezorPassphrase,
                     on_ready: InitHwInProgressStatus::Initializing,
@@ -146,13 +148,16 @@ impl RpcTask for InitHwTask {
                 .with_connect_timeout(TREZOR_CONNECT_TIMEOUT)
                 .with_pin_timeout(TREZOR_PIN_TIMEOUT);
 
-                let hw_ctx = crypto_ctx
+                let (device_info, hw_ctx) = crypto_ctx
                     .init_hw_ctx_with_trezor(&trezor_connect_processor, self.req.device_pubkey)
                     .await?;
-                hw_ctx.hw_pubkey()
+                let device_pubkey = hw_ctx.hw_pubkey();
+                Ok(InitHwResponse {
+                    device_info,
+                    device_pubkey,
+                })
             },
-        };
-        Ok(InitHwResponse { device_pubkey })
+        }
     }
 }
 

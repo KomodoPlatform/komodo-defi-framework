@@ -13,7 +13,7 @@ pub enum UtxoStandardInProgressStatus {
     /// This status doesn't require the user to send `UserAction`,
     /// but it tells the user that he should confirm/decline an address on his device.
     WaitingForTrezorToConnect,
-    WaitingForUserToConfirmPubkey,
+    FollowHwDeviceInstructions,
 }
 
 impl InitStandaloneCoinInitialStatus for UtxoStandardInProgressStatus {

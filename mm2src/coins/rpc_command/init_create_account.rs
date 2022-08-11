@@ -177,7 +177,7 @@ pub enum CreateAccountInProgressStatus {
     /// The following statuses don't require the user to send `UserAction`,
     /// but they tell the user that he should confirm/decline the operation on his device.
     WaitingForTrezorToConnect,
-    WaitingForUserToConfirmPubkey,
+    FollowHwDeviceInstructions,
 }
 
 #[derive(Default)]
@@ -254,7 +254,7 @@ impl RpcTask for InitCreateAccountTask {
                 on_connect: CreateAccountInProgressStatus::WaitingForTrezorToConnect,
                 on_connected: CreateAccountInProgressStatus::Preparing,
                 on_connection_failed: CreateAccountInProgressStatus::Finishing,
-                on_button_request: CreateAccountInProgressStatus::WaitingForUserToConfirmPubkey,
+                on_button_request: CreateAccountInProgressStatus::FollowHwDeviceInstructions,
                 on_pin_request: CreateAccountAwaitingStatus::EnterTrezorPin,
                 on_passphrase_request: CreateAccountAwaitingStatus::EnterTrezorPassphrase,
                 on_ready: CreateAccountInProgressStatus::RequestingAccountBalance,

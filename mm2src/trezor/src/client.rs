@@ -1,5 +1,6 @@
 //! This file is inspired by https://github.com/tezedge/tezedge-client/blob/master/trezor_api/src/client.rs
 
+use crate::device_info::TrezorDeviceInfo;
 use crate::error::OperationFailure;
 use crate::proto::messages::MessageType;
 use crate::proto::messages_common as proto_common;
@@ -31,11 +32,20 @@ impl TrezorClient {
     /// Initialize a Trezor session by sending
     /// [Initialize](https://docs.trezor.io/trezor-firmware/common/communication/sessions.html#examples).
     pub async fn session(&self) -> TrezorResult<TrezorSession<'_>> {
+        self.session_and_device_info()
+            .await
+            .map(|(_device_info, session)| session)
+    }
+
+    /// Initialize a Trezor session by sending
+    /// [Initialize](https://docs.trezor.io/trezor-firmware/common/communication/sessions.html#examples).
+    /// Returns `TrezorDeviceInfo` and `TrezorSession`.
+    pub async fn session_and_device_info(&self) -> TrezorResult<(TrezorDeviceInfo, TrezorSession<'_>)> {
         let mut session = TrezorSession {
             inner: self.inner.lock().await,
         };
-        session.initialize_device().await?;
-        Ok(session)
+        let features = session.initialize_device().await?;
+        Ok((TrezorDeviceInfo::from(features), session))
     }
 }
 
@@ -80,7 +90,7 @@ impl<'a> TrezorSession<'a> {
 
     /// Sends a message and returns the raw ProtoMessage struct that was
     /// responded by the device.
-    async fn call_raw<'b, S: TrezorMessage>(&'b mut self, message: S) -> TrezorResult<ProtoMessage> {
+    async fn call_raw<S: TrezorMessage>(&mut self, message: S) -> TrezorResult<ProtoMessage> {
         let mut buf = Vec::with_capacity(message.encoded_len());
         message.encode(&mut buf)?;
 
@@ -98,7 +108,7 @@ impl<'a> TrezorSession<'a> {
     /// # Usage
     ///
     /// Must be called before sending requests to Trezor.
-    async fn initialize_device<'b>(&'b mut self) -> TrezorResult<proto_management::Features> {
+    async fn initialize_device(&mut self) -> TrezorResult<proto_management::Features> {
         // Don't set the session_id since currently there is no need to restore the previous session.
         // https://docs.trezor.io/trezor-firmware/common/communication/sessions.html#session-lifecycle
         let req = proto_management::Initialize { session_id: None };
@@ -107,7 +117,7 @@ impl<'a> TrezorSession<'a> {
         self.call(req, result_handler).await?.ok()
     }
 
-    pub(crate) async fn cancel_last_op<'b>(&'b mut self) {
+    pub(crate) async fn cancel_last_op(&mut self) {
         let req = proto_management::Cancel {};
         let result_handler = ResultHandler::new(|_m: proto_common::Failure| Ok(()));
         // Ignore result.

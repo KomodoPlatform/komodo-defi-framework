@@ -1,4 +1,4 @@
-use crate::hw_client::{HwClient, HwProcessingError, HwPubkey, TrezorConnectProcessor};
+use crate::hw_client::{HwClient, HwDeviceInfo, HwProcessingError, HwPubkey, TrezorConnectProcessor};
 use crate::hw_error::HwError;
 use crate::trezor::TrezorSession;
 use crate::HwWalletType;
@@ -55,21 +55,25 @@ pub struct HardwareWalletCtx {
 impl HardwareWalletCtx {
     pub(crate) async fn init_with_trezor<Processor>(
         processor: &Processor,
-    ) -> MmResult<HardwareWalletArc, HwProcessingError<Processor::Error>>
+    ) -> MmResult<(HwDeviceInfo, HardwareWalletArc), HwProcessingError<Processor::Error>>
     where
         Processor: TrezorConnectProcessor + Sync,
     {
         let trezor = HwClient::trezor(processor).await?;
-        let hw_internal_pubkey = {
-            let mut session = trezor.session().await?;
-            HardwareWalletCtx::trezor_mm_internal_pubkey(&mut session, processor).await?
+
+        let (hw_device_info, hw_internal_pubkey) = {
+            let (device_info, mut session) = trezor.session_and_device_info().await?;
+            let hw_internal_pubkey = HardwareWalletCtx::trezor_mm_internal_pubkey(&mut session, processor).await?;
+            (HwDeviceInfo::Trezor(device_info), hw_internal_pubkey)
         };
+
         let hw_client = HwClient::Trezor(trezor);
-        Ok(HardwareWalletArc::new(HardwareWalletCtx {
+        let hw_ctx = HardwareWalletArc::new(HardwareWalletCtx {
             hw_internal_pubkey,
             hw_wallet_type: hw_client.hw_wallet_type(),
             hw_wallet: AsyncMutex::new(Some(hw_client)),
-        }))
+        });
+        Ok((hw_device_info, hw_ctx))
     }
 
     pub fn hw_wallet_type(&self) -> HwWalletType { self.hw_wallet_type }

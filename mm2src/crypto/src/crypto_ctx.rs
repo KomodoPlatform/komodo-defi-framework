@@ -1,4 +1,4 @@
-use crate::hw_client::{HwProcessingError, HwPubkey, TrezorConnectProcessor};
+use crate::hw_client::{HwDeviceInfo, HwProcessingError, HwPubkey, TrezorConnectProcessor};
 use crate::hw_ctx::{HardwareWalletArc, HardwareWalletCtx};
 use crate::hw_error::HwError;
 use crate::key_pair_ctx::IguanaArc;
@@ -121,7 +121,7 @@ impl CryptoCtx {
         &self,
         processor: &Processor,
         expected_pubkey: Option<HwPubkey>,
-    ) -> MmResult<HardwareWalletArc, HwCtxInitError<Processor::Error>>
+    ) -> MmResult<(HwDeviceInfo, HardwareWalletArc), HwCtxInitError<Processor::Error>>
     where
         Processor: TrezorConnectProcessor + Sync,
     {
@@ -134,13 +134,14 @@ impl CryptoCtx {
             *state = HardwareWalletCtxState::Initializing;
         }
 
-        let (res, new_state) = match init_check_hw_ctx_with_trezor(processor, expected_pubkey).await {
-            Ok(hw_ctx) => (Ok(hw_ctx.clone()), HardwareWalletCtxState::Ready(hw_ctx)),
-            Err(e) => (Err(e), HardwareWalletCtxState::NotInitialized),
+        let result = init_check_hw_ctx_with_trezor(processor, expected_pubkey).await;
+        let new_state = match result {
+            Ok((_, ref hw_ctx)) => HardwareWalletCtxState::Ready(hw_ctx.clone()),
+            Err(_) => HardwareWalletCtxState::NotInitialized,
         };
 
         *self.hw_ctx.write() = new_state;
-        res.mm_err(HwCtxInitError::from)
+        result.mm_err(HwCtxInitError::from)
     }
 
     pub fn reset_hw_ctx(&self) {
@@ -152,14 +153,14 @@ impl CryptoCtx {
 async fn init_check_hw_ctx_with_trezor<Processor>(
     processor: &Processor,
     expected_pubkey: Option<HwPubkey>,
-) -> MmResult<HardwareWalletArc, HwCtxInitError<Processor::Error>>
+) -> MmResult<(HwDeviceInfo, HardwareWalletArc), HwCtxInitError<Processor::Error>>
 where
     Processor: TrezorConnectProcessor + Sync,
 {
-    let hw_ctx = HardwareWalletCtx::init_with_trezor(processor).await?;
+    let (hw_device_info, hw_ctx) = HardwareWalletCtx::init_with_trezor(processor).await?;
     let expected_pubkey = match expected_pubkey {
         Some(expected) => expected,
-        None => return Ok(hw_ctx),
+        None => return Ok((hw_device_info, hw_ctx)),
     };
     let actual_pubkey = hw_ctx.hw_pubkey();
 
@@ -170,7 +171,7 @@ where
             expected_pubkey,
         });
     }
-    Ok(hw_ctx)
+    Ok((hw_device_info, hw_ctx))
 }
 
 enum HardwareWalletCtxState {

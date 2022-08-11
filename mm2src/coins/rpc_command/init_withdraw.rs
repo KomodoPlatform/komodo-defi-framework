@@ -66,7 +66,7 @@ pub enum WithdrawInProgressStatus {
     /// The following statuses don't require the user to send `UserAction`,
     /// but they tell the user that he should confirm/decline the operation on his device.
     WaitingForTrezorToConnect,
-    WaitingForUserToConfirmPubkey,
+    FollowHwDeviceInstructions,
     WaitingForUserToConfirmSigning,
 }
 

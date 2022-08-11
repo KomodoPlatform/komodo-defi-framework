@@ -373,7 +373,7 @@ impl<'a, Coin> InitUtxoWithdraw<'a, Coin> {
             on_connect: WithdrawInProgressStatus::WaitingForTrezorToConnect,
             on_connected: WithdrawInProgressStatus::Preparing,
             on_connection_failed: WithdrawInProgressStatus::Finishing,
-            on_button_request: WithdrawInProgressStatus::WaitingForUserToConfirmPubkey,
+            on_button_request: WithdrawInProgressStatus::FollowHwDeviceInstructions,
             on_pin_request: WithdrawAwaitingStatus::EnterTrezorPin,
             on_passphrase_request: WithdrawAwaitingStatus::EnterTrezorPassphrase,
             on_ready: WithdrawInProgressStatus::Preparing,

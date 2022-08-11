@@ -7,6 +7,7 @@ use mm2_err_handle::prelude::*;
 use rpc::v1::types::H160 as H160Json;
 use std::time::Duration;
 use trezor::client::TrezorClient;
+use trezor::device_info::TrezorDeviceInfo;
 use trezor::{TrezorError, TrezorProcessingError, TrezorRequestProcessor};
 
 pub type HwPubkey = H160Json;
@@ -40,6 +41,12 @@ impl<E> NotEqual for HwProcessingError<E> {}
 #[derive(Clone, Copy, Deserialize)]
 pub enum HwWalletType {
     Trezor,
+}
+
+#[derive(Clone, Debug, Serialize)]
+#[serde(tag = "type")]
+pub enum HwDeviceInfo {
+    Trezor(TrezorDeviceInfo),
 }
 
 #[async_trait]
