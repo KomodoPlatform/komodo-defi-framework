@@ -79,7 +79,7 @@ mod z_coin_errors;
 pub use z_coin_errors::*;
 
 #[cfg(all(test, feature = "zhtlc-native-tests"))]
-mod z_coin_tests;
+mod z_coin_native_tests;
 
 /// `ZP2SHSpendError` compatible `TransactionErr` handling macro.
 macro_rules! try_ztx_s {
@@ -122,6 +122,20 @@ pub struct ZcoinConsensusParams {
     b58_script_address_prefix: [u8; 2],
 }
 
+#[derive(Clone, Debug, Serialize, Deserialize)]
+pub struct CheckPointBlockInfo {
+    height: u32,
+    hash: H256Json,
+    time: u32,
+    sapling_tree: BytesJson,
+}
+
+#[derive(Clone, Debug, Serialize, Deserialize)]
+pub struct ZcoinProtocolInfo {
+    consensus_params: ZcoinConsensusParams,
+    check_point_block: Option<CheckPointBlockInfo>,
+}
+
 impl Parameters for ZcoinConsensusParams {
     fn activation_height(&self, nu: NetworkUpgrade) -> Option<BlockHeight> {
         match nu {
@@ -158,16 +172,6 @@ pub struct ZCoinFields {
     sync_state_connector: AsyncMutex<SaplingSyncConnector>,
 }
 
-impl std::fmt::Debug for ZCoinFields {
-    fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
-        write!(
-            f,
-            "ZCoinFields {{ my_z_addr: {:?}, my_z_addr_encoded: {} }}",
-            self.my_z_addr, self.my_z_addr_encoded
-        )
-    }
-}
-
 impl Transaction for ZTransaction {
     fn tx_hex(&self) -> Vec<u8> {
         let mut hex = Vec::with_capacity(1024);
@@ -182,7 +186,7 @@ impl Transaction for ZTransaction {
     }
 }
 
-#[derive(Clone, Debug)]
+#[derive(Clone)]
 pub struct ZCoin {
     utxo_arc: UtxoArc,
     z_fields: Arc<ZCoinFields>,
@@ -699,22 +703,12 @@ pub async fn z_coin_from_conf_and_params(
     ticker: &str,
     conf: &Json,
     params: &ZcoinActivationParams,
-    consensus_params: ZcoinConsensusParams,
+    protocol_info: ZcoinProtocolInfo,
     secp_priv_key: &[u8],
 ) -> Result<ZCoin, MmError<ZCoinBuildError>> {
     let z_key = ExtendedSpendingKey::master(secp_priv_key);
     let db_dir = ctx.dbdir();
-    z_coin_from_conf_and_params_with_z_key(
-        ctx,
-        ticker,
-        conf,
-        params,
-        secp_priv_key,
-        db_dir,
-        z_key,
-        consensus_params,
-    )
-    .await
+    z_coin_from_conf_and_params_with_z_key(ctx, ticker, conf, params, secp_priv_key, db_dir, z_key, protocol_info).await
 }
 
 pub struct ZCoinBuilder<'a> {
@@ -726,7 +720,7 @@ pub struct ZCoinBuilder<'a> {
     secp_priv_key: &'a [u8],
     db_dir_path: PathBuf,
     z_spending_key: ExtendedSpendingKey,
-    consensus_params: ZcoinConsensusParams,
+    protocol_info: ZcoinProtocolInfo,
 }
 
 impl<'a> UtxoCoinBuilderCommonOps for ZCoinBuilder<'a> {
@@ -758,15 +752,21 @@ impl<'a> UtxoCoinWithIguanaPrivKeyBuilder for ZCoinBuilder<'a> {
             .default_address()
             .map_err(|_| MmError::new(ZCoinBuildError::GetAddressError))?;
 
-        let dex_fee_addr = decode_payment_address(self.consensus_params.hrp_sapling_payment_address(), DEX_FEE_Z_ADDR)
-            .expect("DEX_FEE_Z_ADDR is a valid z-address")
-            .expect("DEX_FEE_Z_ADDR is a valid z-address");
+        let dex_fee_addr = decode_payment_address(
+            self.protocol_info.consensus_params.hrp_sapling_payment_address(),
+            DEX_FEE_Z_ADDR,
+        )
+        .expect("DEX_FEE_Z_ADDR is a valid z-address")
+        .expect("DEX_FEE_Z_ADDR is a valid z-address");
 
         let z_tx_prover = async_blocking(LocalTxProver::with_default_location)
             .await
             .or_mm_err(|| ZCoinBuildError::ZCashParamsNotFound)?;
 
-        let my_z_addr_encoded = encode_payment_address(self.consensus_params.hrp_sapling_payment_address(), &my_z_addr);
+        let my_z_addr_encoded = encode_payment_address(
+            self.protocol_info.consensus_params.hrp_sapling_payment_address(),
+            &my_z_addr,
+        );
 
         let evk = ExtendedFullViewingKey::from(&self.z_spending_key);
         let (sync_state_connector, light_wallet_db) = match &self.z_coin_params.mode {
@@ -785,7 +785,15 @@ impl<'a> UtxoCoinWithIguanaPrivKeyBuilder for ZCoinBuilder<'a> {
                         .or_mm_err(|| ZCoinBuildError::EmptyLightwalletdUris)?,
                 )?;
 
-                init_light_client(uri, cache_db_path, wallet_db_path, self.consensus_params.clone(), evk).await?
+                init_light_client(
+                    uri,
+                    cache_db_path,
+                    wallet_db_path,
+                    self.protocol_info.consensus_params.clone(),
+                    self.protocol_info.check_point_block,
+                    evk,
+                )
+                .await?
             },
         };
 
@@ -797,7 +805,7 @@ impl<'a> UtxoCoinWithIguanaPrivKeyBuilder for ZCoinBuilder<'a> {
             z_spending_key: self.z_spending_key,
             z_tx_prover: Arc::new(z_tx_prover),
             light_wallet_db,
-            consensus_params: self.consensus_params,
+            consensus_params: self.protocol_info.consensus_params,
             sync_state_connector,
         };
 
@@ -820,7 +828,7 @@ impl<'a> ZCoinBuilder<'a> {
         secp_priv_key: &'a [u8],
         db_dir_path: PathBuf,
         z_spending_key: ExtendedSpendingKey,
-        consensus_params: ZcoinConsensusParams,
+        protocol_info: ZcoinProtocolInfo,
     ) -> ZCoinBuilder<'a> {
         let utxo_mode = match &z_coin_params.mode {
             ZcoinRpcMode::Native => UtxoRpcMode::Native,
@@ -851,7 +859,7 @@ impl<'a> ZCoinBuilder<'a> {
             secp_priv_key,
             db_dir_path,
             z_spending_key,
-            consensus_params,
+            protocol_info,
         }
     }
 }
@@ -865,7 +873,7 @@ async fn z_coin_from_conf_and_params_with_z_key(
     secp_priv_key: &[u8],
     db_dir_path: PathBuf,
     z_spending_key: ExtendedSpendingKey,
-    consensus_params: ZcoinConsensusParams,
+    protocol_info: ZcoinProtocolInfo,
 ) -> Result<ZCoin, MmError<ZCoinBuildError>> {
     let builder = ZCoinBuilder::new(
         ctx,
@@ -875,7 +883,7 @@ async fn z_coin_from_conf_and_params_with_z_key(
         secp_priv_key,
         db_dir_path,
         z_spending_key,
-        consensus_params,
+        protocol_info,
     );
     builder.build().await
 }

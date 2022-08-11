@@ -9,10 +9,11 @@ use coins::{eth::{v2_activation::{eth_coin_from_conf_and_request_v2, Erc20Protoc
                   Erc20TokenInfo, EthCoin, EthCoinType},
             my_tx_history_v2::TxHistoryStorage,
             CoinBalance, CoinProtocol, MarketCoinOps, MmCoin};
-use common::{mm_metrics::MetricsArc, Future01CompatExt};
+use common::Future01CompatExt;
 use futures::future::AbortHandle;
 use mm2_core::mm_ctx::MmArc;
 use mm2_err_handle::prelude::*;
+use mm2_metrics::MetricsArc;
 use mm2_number::BigDecimal;
 use serde::{Deserialize, Serialize};
 use serde_json::Value as Json;

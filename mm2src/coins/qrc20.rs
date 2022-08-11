@@ -300,7 +300,6 @@ pub async fn qrc20_coin_from_conf_and_params(
     builder.build().await
 }
 
-#[derive(Debug)]
 pub struct Qrc20CoinFields {
     pub utxo: UtxoCoinFields,
     pub platform: String,
@@ -309,7 +308,7 @@ pub struct Qrc20CoinFields {
     pub fallback_swap_contract: Option<H160>,
 }
 
-#[derive(Clone, Debug)]
+#[derive(Clone)]
 pub struct Qrc20Coin(Arc<Qrc20CoinFields>);
 
 impl Deref for Qrc20Coin {

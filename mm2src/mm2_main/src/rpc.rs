@@ -23,10 +23,10 @@
 use crate::mm2::rpc::rate_limiter::RateLimitError;
 #[cfg(not(target_arch = "wasm32"))] use common::log::warn;
 use common::log::{error, info};
-use common::{err_to_rpc_json_string, err_tp_rpc_json, HttpStatusCode};
+use common::{err_to_rpc_json_string, err_tp_rpc_json, HttpStatusCode, APPLICATION_JSON};
 use derive_more::Display;
 use futures::future::{join_all, FutureExt};
-use http::header::{HeaderValue, ACCESS_CONTROL_ALLOW_ORIGIN};
+use http::header::{HeaderValue, ACCESS_CONTROL_ALLOW_ORIGIN, CONTENT_TYPE};
 use http::request::Parts;
 use http::{Method, Request, Response, StatusCode};
 #[cfg(not(target_arch = "wasm32"))]
@@ -277,7 +277,7 @@ async fn rpc_service(req: Request<Body>, ctx_h: u32, client: SocketAddr) -> Resp
     if is_invalid_input {
         return Response::builder()
             .status(500)
-            .header("Content-Type", "application/json")
+            .header(CONTENT_TYPE, APPLICATION_JSON)
             .body(Body::from(err_to_rpc_json_string("Invalid input")))
             .unwrap();
     }
@@ -294,7 +294,7 @@ async fn rpc_service(req: Request<Body>, ctx_h: u32, client: SocketAddr) -> Resp
         Err(_) => {
             return Response::builder()
                 .status(500)
-                .header("Content-Type", "application/json")
+                .header(CONTENT_TYPE, APPLICATION_JSON)
                 .body(Body::from(err_to_rpc_json_string("Non UTF-8 output")))
                 .unwrap();
         },

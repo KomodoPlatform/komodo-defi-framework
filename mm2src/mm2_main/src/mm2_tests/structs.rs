@@ -931,3 +931,12 @@ pub struct VerificationResponse {
 #[derive(Debug, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct WithdrawResult {}
+
+#[derive(Debug, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct TendermintActivationResult {
+    pub address: String,
+    pub current_block: u64,
+    pub balance: CoinBalance,
+    pub ticker: String,
+}

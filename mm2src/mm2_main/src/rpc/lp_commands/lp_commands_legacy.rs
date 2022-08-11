@@ -23,13 +23,13 @@ use coins::coin_errors::MyAddressError;
 use coins::{disable_coin as disable_coin_impl, lp_coinfind, lp_coininit, BalanceError, MmCoinEnum};
 use common::executor::{spawn, Timer};
 use common::log::error;
-use common::mm_metrics::MetricsOps;
 use common::{rpc_err_response, rpc_response, HyRes};
 use derive_more::Display;
 use futures::compat::Future01CompatExt;
 use http::Response;
 use mm2_core::mm_ctx::MmArc;
 use mm2_err_handle::prelude::*;
+use mm2_metrics::MetricsOps;
 use mm2_number::{construct_detailed, BigDecimal};
 use serde_json::{self as json, Value as Json};
 use std::borrow::Cow;
@@ -256,7 +256,7 @@ pub fn help() -> HyRes {
 pub fn metrics(ctx: MmArc) -> HyRes {
     match ctx.metrics.collect_json().map(|value| value.to_string()) {
         Ok(response) => rpc_response(200, response),
-        Err(err) => rpc_err_response(500, &err),
+        Err(err) => rpc_err_response(500, &err.to_string()),
     }
 }
 

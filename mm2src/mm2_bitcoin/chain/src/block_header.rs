@@ -61,6 +61,7 @@ impl From<BlockHeaderBits> for Compact {
 }
 
 const AUX_POW_VERSION_DOGE: u32 = 6422788;
+const AUX_POW_VERSION_NMC: u32 = 65796;
 const AUX_POW_VERSION_SYS: u32 = 537919744;
 const MTP_POW_VERSION: u32 = 0x20001000u32;
 const PROG_POW_SWITCH_TIME: u32 = 1635228000;
@@ -248,7 +249,10 @@ impl Deserializable for BlockHeader {
         let solution = if version == 4 { Some(reader.read_list()?) } else { None };
 
         // https://en.bitcoin.it/wiki/Merged_mining_specification#Merged_mining_coinbase
-        let aux_pow = if version == AUX_POW_VERSION_DOGE || version == AUX_POW_VERSION_SYS {
+        let aux_pow = if matches!(
+            version,
+            AUX_POW_VERSION_DOGE | AUX_POW_VERSION_SYS | AUX_POW_VERSION_NMC
+        ) {
             let coinbase_tx = deserialize_tx(reader, TxType::StandardWithWitness)?;
             let parent_block_hash = reader.read()?;
             let coinbase_branch = reader.read()?;
@@ -371,9 +375,11 @@ impl From<BlockHeader> for ExtBlockHeader {
 #[cfg(test)]
 mod tests {
     use super::ExtBlockHeader;
-    use block_header::{BlockHeader, BlockHeaderBits, BlockHeaderNonce, AUX_POW_VERSION_DOGE, AUX_POW_VERSION_SYS,
-                       BIP9_NO_SOFT_FORK_BLOCK_HEADER_VERSION, KAWPOW_VERSION, MTP_POW_VERSION, PROG_POW_SWITCH_TIME};
+    use block_header::{BlockHeader, BlockHeaderBits, BlockHeaderNonce, AUX_POW_VERSION_DOGE, AUX_POW_VERSION_NMC,
+                       AUX_POW_VERSION_SYS, BIP9_NO_SOFT_FORK_BLOCK_HEADER_VERSION, KAWPOW_VERSION, MTP_POW_VERSION,
+                       PROG_POW_SWITCH_TIME};
     use hex::FromHex;
+    use primitives::bytes::Bytes;
     use ser::{deserialize, serialize, serialize_list, CoinVariant, Error as ReaderError, Reader, Stream};
 
     #[test]
@@ -1029,6 +1035,24 @@ mod tests {
         let headers = reader.read_list::<BlockHeader>().unwrap();
         for header in headers.iter() {
             assert_eq!(header.version, BIP9_NO_SOFT_FORK_BLOCK_HEADER_VERSION);
+        }
+        let serialized = serialize_list(&headers);
+        assert_eq!(serialized.take(), headers_bytes);
+    }
+
+    #[test]
+    fn test_nmc_block_headers_serde_11() {
+        // NMC block headers
+        // start - #622807
+        // end - #622796
+        // Ref: https://chainz.cryptoid.info/nmc/block.dws?622807.htm
+        let headers_bytes: Bytes = include_str!("for_tests/nmc_block_headers_hex").into();
+        let headers_bytes = headers_bytes.as_slice();
+        let mut reader = Reader::new(headers_bytes);
+        let headers = reader.read_list::<BlockHeader>().unwrap();
+        for header in headers.iter() {
+            assert_eq!(header.version, AUX_POW_VERSION_NMC);
+            assert!(header.aux_pow.is_some());
         }
         let serialized = serialize_list(&headers);
         assert_eq!(serialized.take(), headers_bytes);
