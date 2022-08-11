@@ -28,13 +28,13 @@
 #[macro_use] extern crate common;
 #[macro_use] extern crate gstuff;
 #[macro_use] extern crate lazy_static;
+#[macro_use] extern crate mm2_metrics;
 #[macro_use] extern crate serde_derive;
 #[macro_use] extern crate serde_json;
 #[macro_use] extern crate ser_error_derive;
 
 use async_trait::async_trait;
 use base58::FromBase58Error;
-use common::mm_metrics::MetricsWeak;
 use common::{calc_total_pages, now_ms, ten, HttpStatusCode};
 use crypto::{Bip32Error, CryptoCtx, DerivationPath, HwRpcError, WithHwRpcError};
 use derive_more::Display;
@@ -47,8 +47,9 @@ use http::{Response, StatusCode};
 use keys::{AddressFormat as UtxoAddressFormat, KeyPair, NetworkPrefix as CashAddrPrefix};
 use mm2_core::mm_ctx::{from_ctx, MmArc};
 use mm2_err_handle::prelude::*;
-use mm2_number::bigdecimal::{BigDecimal, ParseBigDecimalError, Zero};
-use mm2_number::MmNumber;
+use mm2_metrics::MetricsWeak;
+use mm2_number::{bigdecimal::{BigDecimal, ParseBigDecimalError, Zero},
+                 MmNumber};
 use rpc::v1::types::{Bytes as BytesJson, H256 as H256Json};
 use serde::{Deserialize, Deserializer, Serialize};
 use serde_json::{self as json, Value as Json};
@@ -70,7 +71,7 @@ cfg_native! {
     use futures::AsyncWriteExt;
     use std::io;
     use zcash_primitives::transaction::Transaction as ZTransaction;
-    use z_coin::ZcoinConsensusParams;
+    use z_coin::ZcoinProtocolInfo;
 }
 
 cfg_wasm32! {
@@ -183,20 +184,38 @@ pub mod coin_balance;
 #[doc(hidden)]
 #[cfg(test)]
 pub mod coins_tests;
+
 pub mod eth;
+use eth::{eth_coin_from_conf_and_request, EthCoin, EthTxFeeDetails, SignedEthTx};
+
 pub mod hd_pubkey;
+
 pub mod hd_wallet;
+use hd_wallet::{HDAddress, HDAddressId};
+
 pub mod hd_wallet_storage;
 #[cfg(not(target_arch = "wasm32"))] pub mod lightning;
 #[cfg_attr(target_arch = "wasm32", allow(dead_code, unused_imports))]
 pub mod my_tx_history_v2;
+
 pub mod qrc20;
+use qrc20::{qrc20_coin_from_conf_and_params, Qrc20ActivationParams, Qrc20Coin, Qrc20FeeDetails};
+
 pub mod rpc_command;
+use rpc_command::{init_account_balance::{AccountBalanceTaskManager, AccountBalanceTaskManagerShared},
+                  init_create_account::{CreateAccountTaskManager, CreateAccountTaskManagerShared},
+                  init_scan_for_new_addresses::{ScanAddressesTaskManager, ScanAddressesTaskManagerShared},
+                  init_withdraw::{WithdrawTaskManager, WithdrawTaskManagerShared}};
+
+pub mod tendermint;
+use tendermint::{TendermintCoin, TendermintFeeDetails, TendermintProtocolInfo};
+
 #[doc(hidden)]
 #[allow(unused_variables)]
 pub mod test_coin;
-pub mod tx_history_storage;
 pub use test_coin::TestCoin;
+
+pub mod tx_history_storage;
 
 #[doc(hidden)]
 #[allow(unused_variables)]
@@ -208,20 +227,9 @@ pub use solana::spl::SplToken;
 pub use solana::{solana_coin_from_conf_and_params, SolanaActivationParams, SolanaCoin, SolanaFeeDetails};
 
 pub mod utxo;
-#[cfg(not(target_arch = "wasm32"))] pub mod z_coin;
-
-use eth::{eth_coin_from_conf_and_request, EthCoin, EthTxFeeDetails, SignedEthTx};
-use hd_wallet::{HDAddress, HDAddressId};
-use qrc20::Qrc20ActivationParams;
-use qrc20::{qrc20_coin_from_conf_and_params, Qrc20Coin, Qrc20FeeDetails};
-use qtum::{Qrc20AddressError, ScriptHashTypeNotSupported};
-use rpc_command::{init_account_balance::{AccountBalanceTaskManager, AccountBalanceTaskManagerShared},
-                  init_create_account::{CreateAccountTaskManager, CreateAccountTaskManagerShared},
-                  init_scan_for_new_addresses::{ScanAddressesTaskManager, ScanAddressesTaskManagerShared},
-                  init_withdraw::{WithdrawTaskManager, WithdrawTaskManagerShared}};
 use utxo::bch::{bch_coin_from_conf_and_params, BchActivationRequest, BchCoin};
-use utxo::qtum::{self, qtum_coin_with_priv_key, QtumCoin};
-use utxo::qtum::{QtumDelegationOps, QtumDelegationRequest, QtumStakingInfosDetails};
+use utxo::qtum::{self, qtum_coin_with_priv_key, Qrc20AddressError, QtumCoin, QtumDelegationOps, QtumDelegationRequest,
+                 QtumStakingInfosDetails, ScriptHashTypeNotSupported};
 use utxo::rpc_clients::UtxoRpcError;
 use utxo::slp::SlpToken;
 use utxo::slp::{slp_addr_from_pubkey_str, SlpFeeDetails};
@@ -229,6 +237,8 @@ use utxo::utxo_common::big_decimal_from_sat_unsigned;
 use utxo::utxo_standard::{utxo_standard_coin_with_priv_key, UtxoStandardCoin};
 use utxo::UtxoActivationParams;
 use utxo::{BlockchainNetwork, GenerateTxError, UtxoFeeDetails, UtxoTx};
+
+#[cfg(not(target_arch = "wasm32"))] pub mod z_coin;
 #[cfg(not(target_arch = "wasm32"))] use z_coin::ZCoin;
 
 pub type BalanceResult<T> = Result<T, MmError<BalanceError>>;
@@ -810,6 +820,7 @@ pub enum TxFeeDetails {
     Eth(EthTxFeeDetails),
     Qrc20(Qrc20FeeDetails),
     Slp(SlpFeeDetails),
+    Tendermint(TendermintFeeDetails),
     #[cfg(not(target_arch = "wasm32"))]
     Solana(SolanaFeeDetails),
 }
@@ -1639,7 +1650,7 @@ impl From<CoinFindError> for VerificationError {
 
 /// NB: Implementations are expected to follow the pImpl idiom, providing cheap reference-counted cloning and garbage collection.
 #[async_trait]
-pub trait MmCoin: SwapOps + MarketCoinOps + fmt::Debug + Send + Sync + 'static {
+pub trait MmCoin: SwapOps + MarketCoinOps + Send + Sync + 'static {
     // `MmCoin` is an extension fulcrum for something that doesn't fit the `MarketCoinOps`. Practical examples:
     // name (might be required for some APIs, CoinMarketCap for instance);
     // coin statistics that we might want to share with UI;
@@ -1738,7 +1749,7 @@ pub trait MmCoin: SwapOps + MarketCoinOps + fmt::Debug + Send + Sync + 'static {
     fn is_coin_protocol_supported(&self, info: &Option<Vec<u8>>) -> bool;
 }
 
-#[derive(Clone, Debug)]
+#[derive(Clone)]
 #[allow(clippy::large_enum_variant)]
 pub enum MmCoinEnum {
     UtxoCoin(UtxoStandardCoin),
@@ -1749,6 +1760,7 @@ pub enum MmCoinEnum {
     ZCoin(ZCoin),
     Bch(BchCoin),
     SlpToken(SlpToken),
+    Tendermint(TendermintCoin),
     #[cfg(not(target_arch = "wasm32"))]
     SolanaCoin(SolanaCoin),
     #[cfg(not(target_arch = "wasm32"))]
@@ -1796,6 +1808,10 @@ impl From<SlpToken> for MmCoinEnum {
     fn from(c: SlpToken) -> MmCoinEnum { MmCoinEnum::SlpToken(c) }
 }
 
+impl From<TendermintCoin> for MmCoinEnum {
+    fn from(c: TendermintCoin) -> Self { MmCoinEnum::Tendermint(c) }
+}
+
 #[cfg(not(target_arch = "wasm32"))]
 impl From<LightningCoin> for MmCoinEnum {
     fn from(c: LightningCoin) -> MmCoinEnum { MmCoinEnum::LightningCoin(c) }
@@ -1817,6 +1833,7 @@ impl Deref for MmCoinEnum {
             MmCoinEnum::EthCoin(ref c) => c,
             MmCoinEnum::Bch(ref c) => c,
             MmCoinEnum::SlpToken(ref c) => c,
+            MmCoinEnum::Tendermint(ref c) => c,
             #[cfg(not(target_arch = "wasm32"))]
             MmCoinEnum::LightningCoin(ref c) => c,
             #[cfg(not(target_arch = "wasm32"))]
@@ -2055,6 +2072,7 @@ pub enum CoinProtocol {
     BCH {
         slp_prefix: String,
     },
+    TENDERMINT(TendermintProtocolInfo),
     #[cfg(not(target_arch = "wasm32"))]
     LIGHTNING {
         platform: String,
@@ -2070,9 +2088,7 @@ pub enum CoinProtocol {
         decimals: u8,
     },
     #[cfg(not(target_arch = "wasm32"))]
-    ZHTLC {
-        consensus_params: ZcoinConsensusParams,
-    },
+    ZHTLC(ZcoinProtocolInfo),
 }
 
 pub type RpcTransportEventHandlerShared = Arc<dyn RpcTransportEventHandler + Send + Sync + 'static>;
@@ -2171,16 +2187,16 @@ impl RpcTransportEventHandler for CoinTransportMetrics {
 
     fn on_outgoing_request(&self, data: &[u8]) {
         mm_counter!(self.metrics, "rpc_client.traffic.out", data.len() as u64,
-            "coin" => self.ticker.clone(), "client" => self.client.clone());
+            "coin" => self.ticker.to_owned(), "client" => self.client.to_owned());
         mm_counter!(self.metrics, "rpc_client.request.count", 1,
-            "coin" => self.ticker.clone(), "client" => self.client.clone());
+            "coin" => self.ticker.to_owned(), "client" => self.client.to_owned());
     }
 
     fn on_incoming_response(&self, data: &[u8]) {
         mm_counter!(self.metrics, "rpc_client.traffic.in", data.len() as u64,
-            "coin" => self.ticker.clone(), "client" => self.client.clone());
+            "coin" => self.ticker.to_owned(), "client" => self.client.to_owned());
         mm_counter!(self.metrics, "rpc_client.response.count", 1,
-            "coin" => self.ticker.clone(), "client" => self.client.clone());
+            "coin" => self.ticker.to_owned(), "client" => self.client.to_owned());
     }
 
     fn on_connected(&self, _address: String) -> Result<(), String> {
@@ -2315,6 +2331,7 @@ pub async fn lp_coininit(ctx: &MmArc, ticker: &str, req: &Json) -> Result<MmCoin
             let token = SlpToken::new(*decimals, ticker.into(), (*token_id).into(), platform_coin, confs);
             token.into()
         },
+        CoinProtocol::TENDERMINT { .. } => return ERR!("TENDERMINT protocol is not supported by lp_coininit"),
         #[cfg(not(target_arch = "wasm32"))]
         CoinProtocol::ZHTLC { .. } => return ERR!("ZHTLC protocol is not supported by lp_coininit"),
         #[cfg(not(target_arch = "wasm32"))]
@@ -2875,6 +2892,9 @@ pub fn address_by_coin_conf_and_pubkey_str(
                 },
                 _ => ERR!("Platform protocol {:?} is not BCH", platform_protocol),
             }
+        },
+        CoinProtocol::TENDERMINT { .. } => {
+            ERR!("address_by_coin_conf_and_pubkey_str is not implemented for TENDERMINT protocol yet!")
         },
         #[cfg(not(target_arch = "wasm32"))]
         CoinProtocol::LIGHTNING { .. } => {

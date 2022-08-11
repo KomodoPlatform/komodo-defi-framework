@@ -1,7 +1,9 @@
 use super::{EthCoin, GuiAuthMessages, RpcTransportEventHandler, RpcTransportEventHandlerShared, Web3RpcError};
+use common::APPLICATION_JSON;
 #[cfg(not(target_arch = "wasm32"))] use futures::FutureExt;
 use futures::TryFutureExt;
 use futures01::{Future, Poll};
+use http::header::CONTENT_TYPE;
 use jsonrpc_core::{Call, Response};
 use mm2_net::transport::{GuiAuthValidation, GuiAuthValidationGenerator};
 use serde_json::Value as Json;
@@ -255,7 +257,7 @@ async fn send_request(
         *req.method_mut() = http::Method::POST;
         *req.uri_mut() = node.uri.clone();
         req.headers_mut()
-            .insert(http::header::CONTENT_TYPE, HeaderValue::from_static("application/json"));
+            .insert(CONTENT_TYPE, HeaderValue::from_static(APPLICATION_JSON));
         let timeout = Timer::sleep(REQUEST_TIMEOUT_S);
         let req = Box::pin(slurp_req(req));
         let rc = select(req, timeout).await;
@@ -337,6 +339,7 @@ async fn send_request_once(
     uri: &http::Uri,
     event_handlers: &Vec<RpcTransportEventHandlerShared>,
 ) -> Result<Json, Error> {
+    use http::header::ACCEPT;
     use mm2_net::wasm_http::FetchRequest;
 
     macro_rules! try_or {
@@ -354,8 +357,8 @@ async fn send_request_once(
     let result = FetchRequest::post(&uri.to_string())
         .cors()
         .body_utf8(request_payload)
-        .header("Accept", "application/json")
-        .header("Content-Type", "application/json")
+        .header(ACCEPT.as_str(), APPLICATION_JSON)
+        .header(CONTENT_TYPE.as_str(), APPLICATION_JSON)
         .request_str()
         .await;
     let (status_code, response_str) = try_or!(result, Transport);

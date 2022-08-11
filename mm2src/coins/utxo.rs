@@ -46,7 +46,6 @@ use chain::{OutPoint, TransactionOutput, TxHashAlgo};
 #[cfg(not(target_arch = "wasm32"))]
 use common::first_char_to_upper;
 use common::jsonrpc_client::JsonRpcError;
-use common::mm_metrics::MetricsArc;
 use common::now_ms;
 use crypto::trezor::utxo::TrezorUtxoCoin;
 use crypto::{Bip32DerPathOps, Bip32Error, Bip44Chain, Bip44DerPathError, Bip44PathToAccount, Bip44PathToCoin,
@@ -63,6 +62,7 @@ pub use keys::{Address, AddressFormat as UtxoAddressFormat, AddressHashEnum, Key
 use lightning_invoice::Currency as LightningCurrency;
 use mm2_core::mm_ctx::MmArc;
 use mm2_err_handle::prelude::*;
+use mm2_metrics::MetricsArc;
 use mm2_number::BigDecimal;
 #[cfg(test)] use mocktopus::macros::*;
 use num_traits::ToPrimitive;
@@ -509,7 +509,6 @@ pub struct UtxoCoinConf {
     pub enable_spv_proof: bool,
 }
 
-#[derive(Debug)]
 pub struct UtxoCoinFields {
     /// UTXO coin config
     pub conf: UtxoCoinConf,
@@ -977,7 +976,7 @@ pub trait UtxoStandardOps {
     ) -> UtxoRpcResult<()>;
 }
 
-#[derive(Clone, Debug)]
+#[derive(Clone)]
 pub struct UtxoArc(Arc<UtxoCoinFields>);
 impl Deref for UtxoArc {
     type Target = UtxoCoinFields;
@@ -1004,7 +1003,7 @@ impl UtxoArc {
     }
 }
 
-#[derive(Clone, Debug)]
+#[derive(Clone)]
 pub struct UtxoWeak(Weak<UtxoCoinFields>);
 
 impl From<Weak<UtxoCoinFields>> for UtxoWeak {

@@ -1,0 +1,27 @@
+[package]
+name = "mm2_metrics"
+version = "0.1.0"
+edition = "2021"
+
+# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
+
+[dependencies]
+base64 = "0.10.0"
+common = { path = "../common" }
+derive_more = "0.99"
+futures = { version = "0.3", package = "futures", features = ["compat", "async-await", "thread-pool"] }
+itertools = "0.10"
+metrics = { version = "0.19" }
+metrics-util = { version = "0.13" }
+mm2_err_handle = { path = "../mm2_err_handle" }
+serde = "1"
+serde_derive = "1"
+serde_json = { version = "1.0", features = ["preserve_order", "raw_value"] }
+wasm-timer = "0.2.4"
+
+[target.'cfg(not(target_arch = "wasm32"))'.dependencies]
+hyper = { version = "0.14.11", features = ["client", "http2", "server", "tcp"] }
+# using webpki-tokio to avoid rejecting valid certificates
+# got "invalid certificate: UnknownIssuer" for https://ropsten.infura.io on iOS using default-features
+hyper-rustls = { version = "0.23", default-features = false, features = ["http1", "http2", "webpki-tokio"] }
+metrics-exporter-prometheus = "0.10.0"

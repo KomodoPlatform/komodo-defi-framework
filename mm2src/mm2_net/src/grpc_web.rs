@@ -4,15 +4,17 @@
 use crate::transport::SlurpError;
 use bytes::{Buf, BufMut, Bytes, BytesMut};
 use common::{cfg_native, cfg_wasm32};
+use http::header::{ACCEPT, CONTENT_TYPE};
 use mm2_err_handle::prelude::*;
 use prost::DecodeError;
 
 cfg_native! {
+    use common::APPLICATION_GRPC_WEB;
     use crate::transport::slurp_req;
-    use http::header::{ACCEPT, CONTENT_TYPE};
 }
 
 cfg_wasm32! {
+    use common::{X_GRPC_WEB, APPLICATION_GRPC_WEB_PROTO};
     use crate::wasm_http::FetchRequest;
 }
 
@@ -136,8 +138,8 @@ where
         .version(http::Version::HTTP_11)
         .method(http::Method::POST)
         .uri(url)
-        .header(CONTENT_TYPE, "application/grpc-web")
-        .header(ACCEPT, "application/grpc-web")
+        .header(CONTENT_TYPE, APPLICATION_GRPC_WEB)
+        .header(ACCEPT, APPLICATION_GRPC_WEB)
         .body(encode_body(req)?)?;
 
     let response = slurp_req(request).await?;
@@ -156,10 +158,10 @@ where
     let body = encode_body(req)?;
     let request = FetchRequest::post(url)
         .body_bytes(body)
-        .header("content-type", "application/grpc-web+proto")
-        .header("accept", "application/grpc-web+proto")
+        .header(CONTENT_TYPE.as_str(), APPLICATION_GRPC_WEB_PROTO)
+        .header(ACCEPT.as_str(), APPLICATION_GRPC_WEB_PROTO)
         // https://github.com/grpc/grpc-web/issues/85#issue-217223001
-        .header("x-grpc-web", "1");
+        .header(X_GRPC_WEB, "1");
 
     let response = request.request_array().await?;
 

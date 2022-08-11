@@ -10,11 +10,11 @@ use coins::my_tx_history_v2::TxHistoryStorage;
 use coins::solana::spl::{SplProtocolConf, SplTokenCreationError};
 use coins::{solana_coin_from_conf_and_params, BalanceError, CoinBalance, CoinProtocol, MarketCoinOps,
             SolanaActivationParams, SolanaCoin, SplToken};
-use common::mm_metrics::MetricsArc;
 use common::Future01CompatExt;
 use futures::future::AbortHandle;
 use mm2_core::mm_ctx::MmArc;
 use mm2_err_handle::prelude::*;
+use mm2_metrics::MetricsArc;
 use mm2_number::BigDecimal;
 use serde_derive::{Deserialize, Serialize};
 use serde_json::Value as Json;
