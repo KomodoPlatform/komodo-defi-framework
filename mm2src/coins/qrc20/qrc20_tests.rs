@@ -239,7 +239,8 @@ fn test_wait_for_confirmations_excepted() {
     let error = coin
         .wait_for_confirmations(&payment_tx, confirmations, requires_nota, wait_until, check_every)
         .wait()
-        .unwrap_err();
+        .unwrap_err()
+        .to_string();
     log!("error: {:?}", error);
     assert!(error.contains("Contract call failed with an error: Revert"));
 
@@ -249,7 +250,8 @@ fn test_wait_for_confirmations_excepted() {
     let error = coin
         .wait_for_confirmations(&payment_tx, confirmations, requires_nota, wait_until, check_every)
         .wait()
-        .unwrap_err();
+        .unwrap_err()
+        .to_string();
     log!("error: {:?}", error);
     assert!(error.contains("Contract call failed with an error: Revert"));
 }

@@ -1,3 +1,5 @@
+use crate::coin_errors::{PaymentStatusError, WaitForConfirmationsErr};
+
 use super::*;
 use super::{history::TransferHistoryBuilder, script_pubkey::ScriptExtractionError};
 use common::jsonrpc_client::JsonRpcError;
@@ -21,21 +23,38 @@ pub struct Erc20PaymentDetails {
 
 #[derive(Debug, Display)]
 pub enum Erc20PaymentDetailsError {
-    #[display(fmt = "ContractCallError: {}", _0)]
-    ContractCallError(String),
-    // #[display(fmt = "'erc20Payment' was not confirmed yet. Please wait for at least one confirmation")]
-    // Erc20PaymentNotConfirmed,
-    JsonRpcError(Box<JsonRpcError>),
+    BadTxEvent(String),
+    CheckContractCallError(CheckContractCallError),
+    DifferentTransferReceivers(String),
+    EthAbiError(String),
+    JsonRpcError(String),
+    InvalidTxArgument(String),
+    MissingTxArgument(String),
+    MissingTxContractCall(String),
     ScriptExtractionError(ScriptExtractionError),
+    TransferEventDetailsError(TransferEventDetailsError),
     #[display(fmt = "OutputIndexOutOfBounds: TxReceipt::output_index out of bounds")]
     OutputIndexOutOfBounds,
+    UnexpectedTokenAddr(String),
+    UnexpectedTxArgument(String),
+    UnexpectedTransferAMount(String),
     Internal(String),
 }
 
+impl From<JsonRpcError> for Erc20PaymentDetailsError {
+    fn from(err: JsonRpcError) -> Self { Self::JsonRpcError(err.to_string()) }
+}
+
+impl From<ethabi::Error> for Erc20PaymentDetailsError {
+    fn from(err: ethabi::Error) -> Self { Self::EthAbiError(err.to_string()) }
+}
+
+impl From<TransferEventDetailsError> for Erc20PaymentDetailsError {
+    fn from(err: TransferEventDetailsError) -> Self { Self::TransferEventDetailsError(err) }
+}
+
 impl From<Erc20PaymentDetailsError> for ValidatePaymentError {
-    fn from(err: Erc20PaymentDetailsError) -> ValidatePaymentError {
-        ValidatePaymentError::Erc20PaymentDetailsError(err.to_string())
-    }
+    fn from(err: Erc20PaymentDetailsError) -> Self { Self::Erc20PaymentDetailsError(err.to_string()) }
 }
 
 impl From<ScriptExtractionError> for ValidateSwapTxError {
@@ -43,6 +62,10 @@ impl From<ScriptExtractionError> for ValidateSwapTxError {
 }
 
 impl From<Erc20PaymentDetailsError> for FoundSwapTxSpendErr {
+    fn from(err: Erc20PaymentDetailsError) -> Self { Self::Erc20PaymentDetailsError(err.to_string()) }
+}
+
+impl From<Erc20PaymentDetailsError> for CheckPaymentSentError {
     fn from(err: Erc20PaymentDetailsError) -> Self { Self::Erc20PaymentDetailsError(err.to_string()) }
 }
 
@@ -56,19 +79,19 @@ pub struct ReceiverSpendDetails {
     pub sender: H160,
 }
 
-#[derive(Debug, Display)]
-pub enum PaymentStatusError {
-    #[display(fmt = "Expected at least 3 tokens in \"payments\" call, found {}", _0)]
-    UnexpectedNumOfTokens(usize),
-    #[display(fmt = "Payment tx was sent to wrong address, expected {:?}", _0)]
-    UtxoRpcError(Box<UtxoRpcError>),
-    #[display(fmt = "Internal: {}", _0)]
-    Internal(String),
-}
+// #[derive(Debug, Display)]
+// pub enum PaymentStatusError {
+//     #[display(fmt = "Expected at least 3 tokens in \"payments\" call, found {}", _0)]
+//     UnexpectedNumOfTokens(usize),
+//     #[display(fmt = "Payment tx was sent to wrong address, expected {:?}", _0)]
+//     UtxoRpcError(Box<UtxoRpcError>),
+//     #[display(fmt = "Internal: {}", _0)]
+//     Internal(String),
+// }
 
-impl From<PaymentStatusError> for ValidatePaymentError {
-    fn from(err: PaymentStatusError) -> Self { Self::InternalError(err.to_string()) }
-}
+// impl From<PaymentStatusError> for ValidatePaymentError {
+//     fn from(err: PaymentStatusError) -> Self { Self::InternalError(err.to_string()) }
+// }
 
 impl Qrc20Coin {
     pub async fn send_hash_time_locked_payment(
@@ -332,26 +355,15 @@ impl Qrc20Coin {
         swap_contract_address: H160,
         swap_id: Vec<u8>,
         search_from_block: u64,
-    ) -> Result<Option<TransactionEnum>, MmError<String>> {
-        let status = self
-            .payment_status(&swap_contract_address, swap_id.clone())
-            .await
-            .mm_err(|err| err.to_string())?;
+    ) -> Result<Option<TransactionEnum>, MmError<CheckPaymentSentError>> {
+        let status = self.payment_status(&swap_contract_address, swap_id.clone()).await?;
         if status == eth::PAYMENT_STATE_UNINITIALIZED.into() {
             return Ok(None);
         };
 
-        let my_address = self
-            .utxo
-            .derivation_method
-            .iguana_or_err()
-            .mm_err(|err| err.to_string())?
-            .clone();
-        let sender = qtum::contract_addr_from_utxo_addr(my_address).mm_err(|err| err.to_string())?;
-        let erc20_payment_txs = self
-            .erc20_payment_transactions(sender, search_from_block)
-            .await
-            .mm_err(|err| err.to_string())?;
+        let my_address = self.utxo.derivation_method.iguana_or_err()?.clone();
+        let sender = qtum::contract_addr_from_utxo_addr(my_address)?;
+        let erc20_payment_txs = self.erc20_payment_transactions(sender, search_from_block).await?;
         let found = erc20_payment_txs
             .into_iter()
             .find(|tx| find_swap_contract_call_with_swap_id(MutContractCallType::Erc20Payment, tx, &swap_id).is_some())
@@ -441,7 +453,7 @@ impl Qrc20Coin {
         requires_nota: bool,
         wait_until: u64,
         check_every: u64,
-    ) -> Result<(), MmError<String>> {
+    ) -> Result<(), MmError<WaitForConfirmationsErr>> {
         let tx_hash = H256Json::from(qtum_tx.hash().reversed());
 
         self.utxo
@@ -455,29 +467,23 @@ impl Qrc20Coin {
                 check_every,
             )
             .compat()
-            .await
-            .map_to_mm(|err| err)?;
-        let receipts = self
-            .utxo
-            .rpc_client
-            .get_transaction_receipts(&tx_hash)
-            .compat()
-            .await
-            .map_to_mm(|err| err.to_string())?;
+            .await?;
+        let receipts = self.utxo.rpc_client.get_transaction_receipts(&tx_hash).compat().await?;
 
         for receipt in receipts {
-            let output = qtum_tx.outputs.get(receipt.output_index as usize).ok_or_else(|| {
-                MmError::new("OutputIndexOutOfBounds: TxReceipt::output_index out of bounds".to_string())
-            })?;
+            let output = qtum_tx
+                .outputs
+                .get(receipt.output_index as usize)
+                .ok_or_else(|| MmError::new(WaitForConfirmationsErr::OutputIndexOutOfBounds))?;
             let script_pubkey: Script = output.script_pubkey.clone().into();
             if !is_contract_call(&script_pubkey) {
                 continue;
             }
 
-            let contract_call_bytes =
-                extract_contract_call_from_script(&script_pubkey).mm_err(|err| err.to_string())?;
+            let contract_call_bytes = extract_contract_call_from_script(&script_pubkey)?;
 
-            let call_type = MutContractCallType::from_script_pubkey(&contract_call_bytes).map_to_mm(|err| err)?;
+            let call_type = MutContractCallType::from_script_pubkey(&contract_call_bytes)
+                .map_to_mm(WaitForConfirmationsErr::Transport)?;
             match call_type {
                 Some(MutContractCallType::Erc20Payment)
                 | Some(MutContractCallType::ReceiverSpend)
@@ -485,7 +491,7 @@ impl Qrc20Coin {
                 _ => continue, // skip not etomic swap contract calls
             }
 
-            check_if_contract_call_completed(&receipt).mm_err(|err| err)?;
+            check_if_contract_call_completed(&receipt)?;
         }
 
         Ok(())
@@ -576,14 +582,14 @@ impl Qrc20Coin {
             ])
             .compat()
             .await
-            .mm_err(|err| PaymentStatusError::UtxoRpcError(Box::new(err)))?;
+            .mm_err(|err| PaymentStatusError::UtxoRpcError(err.to_string()))?;
         if decoded.len() < 3 {
-            return MmError::err(PaymentStatusError::UnexpectedNumOfTokens(decoded.len()));
+            return MmError::err(PaymentStatusError::UnexpectedTokenNumbers(decoded.len()));
         }
 
         match decoded[2] {
             Token::Uint(state) => Ok(state),
-            _ => MmError::err(PaymentStatusError::Internal(format!(
+            _ => MmError::err(PaymentStatusError::InvalidTx(format!(
                 "Payment status must be uint, got {:?}",
                 decoded[2]
             )))?,
@@ -736,13 +742,7 @@ impl Qrc20Coin {
         qtum_tx: &UtxoTx,
     ) -> Result<Erc20PaymentDetails, MmError<Erc20PaymentDetailsError>> {
         let tx_hash: H256Json = qtum_tx.hash().reversed().into();
-        let receipts = self
-            .utxo
-            .rpc_client
-            .get_transaction_receipts(&tx_hash)
-            .compat()
-            .await
-            .map_err(|err| Erc20PaymentDetailsError::JsonRpcError(Box::new(err)))?;
+        let receipts = self.utxo.rpc_client.get_transaction_receipts(&tx_hash).compat().await?;
 
         for receipt in receipts {
             let output = qtum_tx
@@ -764,27 +764,23 @@ impl Qrc20Coin {
                 _ => continue, // skip non-erc20Payment contract calls
             }
 
-            check_if_contract_call_completed(&receipt).mm_err(Erc20PaymentDetailsError::ContractCallError)?;
+            check_if_contract_call_completed(&receipt)?;
 
-            let function = eth::SWAP_CONTRACT
-                .function("erc20Payment")
-                .map_to_mm(|err| Erc20PaymentDetailsError::ContractCallError(err.to_string()))?;
-            let decoded = function
-                .decode_input(&contract_call_bytes)
-                .map_to_mm(|err| Erc20PaymentDetailsError::ContractCallError(err.to_string()))?;
+            let function = eth::SWAP_CONTRACT.function("erc20Payment")?;
+            let decoded = function.decode_input(&contract_call_bytes)?;
 
             let mut decoded = decoded.into_iter();
 
             let swap_id = match decoded.next() {
                 Some(Token::FixedBytes(id)) => id,
                 Some(token) => {
-                    return MmError::err(Erc20PaymentDetailsError::ContractCallError(format!(
+                    return MmError::err(Erc20PaymentDetailsError::InvalidTxArgument(format!(
                         "Payment tx 'swap_id' arg is invalid, found {:?}",
                         token
                     )))
                 },
                 None => {
-                    return MmError::err(Erc20PaymentDetailsError::ContractCallError(
+                    return MmError::err(Erc20PaymentDetailsError::MissingTxArgument(
                         "Couldn't find 'swap_id' in erc20Payment call".to_string(),
                     ))
                 },
@@ -793,13 +789,13 @@ impl Qrc20Coin {
             let value = match decoded.next() {
                 Some(Token::Uint(value)) => value,
                 Some(token) => {
-                    return MmError::err(Erc20PaymentDetailsError::ContractCallError(format!(
+                    return MmError::err(Erc20PaymentDetailsError::InvalidTxArgument(format!(
                         "Payment tx 'value' arg is invalid, found {:?}",
                         token
                     )))
                 },
                 None => {
-                    return MmError::err(Erc20PaymentDetailsError::ContractCallError(
+                    return MmError::err(Erc20PaymentDetailsError::MissingTxArgument(
                         "Couldn't find 'value' in erc20Payment call".to_string(),
                     ))
                 },
@@ -808,13 +804,13 @@ impl Qrc20Coin {
             let token_address = match decoded.next() {
                 Some(Token::Address(addr)) => addr,
                 Some(token) => {
-                    return MmError::err(Erc20PaymentDetailsError::ContractCallError(format!(
+                    return MmError::err(Erc20PaymentDetailsError::InvalidTxArgument(format!(
                         "Payment tx 'token_address' arg is invalid, found {:?}",
                         token
                     )))
                 },
                 None => {
-                    return MmError::err(Erc20PaymentDetailsError::ContractCallError(
+                    return MmError::err(Erc20PaymentDetailsError::MissingTxArgument(
                         "Couldn't find 'token_address' in erc20Payment call".to_string(),
                     ))
                 },
@@ -823,13 +819,13 @@ impl Qrc20Coin {
             let receiver = match decoded.next() {
                 Some(Token::Address(addr)) => addr,
                 Some(token) => {
-                    return MmError::err(Erc20PaymentDetailsError::ContractCallError(format!(
+                    return MmError::err(Erc20PaymentDetailsError::InvalidTxArgument(format!(
                         "Payment tx 'receiver' arg is invalid, found {:?}",
                         token
                     )))
                 },
                 None => {
-                    return MmError::err(Erc20PaymentDetailsError::ContractCallError(
+                    return MmError::err(Erc20PaymentDetailsError::MissingTxArgument(
                         "Couldn't find 'receiver' in erc20Payment call".to_string(),
                     ))
                 },
@@ -838,13 +834,13 @@ impl Qrc20Coin {
             let secret_hash = match decoded.next() {
                 Some(Token::FixedBytes(hash)) => hash,
                 Some(token) => {
-                    return MmError::err(Erc20PaymentDetailsError::ContractCallError(format!(
+                    return MmError::err(Erc20PaymentDetailsError::InvalidTxArgument(format!(
                         "Payment tx 'secret_hash' arg is invalid, found {:?}",
                         token
                     )))
                 },
                 None => {
-                    return MmError::err(Erc20PaymentDetailsError::ContractCallError(
+                    return MmError::err(Erc20PaymentDetailsError::MissingTxArgument(
                         "Couldn't find 'secret_hash' in erc20Payment call".to_string(),
                     ))
                 },
@@ -853,13 +849,13 @@ impl Qrc20Coin {
             let timelock = match decoded.next() {
                 Some(Token::Uint(t)) => t,
                 Some(token) => {
-                    return MmError::err(Erc20PaymentDetailsError::ContractCallError(format!(
+                    return MmError::err(Erc20PaymentDetailsError::InvalidTxArgument(format!(
                         "Payment tx 'timelock' arg is invalid, found {:?}",
                         token
                     )))
                 },
                 None => {
-                    return MmError::err(Erc20PaymentDetailsError::ContractCallError(
+                    return MmError::err(Erc20PaymentDetailsError::MissingTxArgument(
                         "Couldn't find 'timelock' in erc20Payment call".to_string(),
                     ))
                 },
@@ -867,38 +863,36 @@ impl Qrc20Coin {
 
             // check if there is no arguments more
             if let Some(token) = decoded.next() {
-                return MmError::err(Erc20PaymentDetailsError::ContractCallError(format!(
+                return MmError::err(Erc20PaymentDetailsError::UnexpectedTxArgument(format!(
                     "Unexpected additional arg {:?}",
                     token
                 )));
             }
 
-            let mut events = transfer_events_from_receipt(&receipt)
-                .mm_err(|err| Erc20PaymentDetailsError::ContractCallError(err.to_string()))?
-                .into_iter();
+            let mut events = transfer_events_from_receipt(&receipt)?.into_iter();
             let event = match events.next() {
                 Some(e) => e,
                 None => {
-                    return MmError::err(Erc20PaymentDetailsError::ContractCallError(
+                    return MmError::err(Erc20PaymentDetailsError::InvalidTxArgument(
                         "Couldn't find 'Transfer' event from logs".to_string(),
                     ))
                 },
             };
             // check if the erc20Payment emitted only one Transfer event
             if events.next().is_some() {
-                return MmError::err(Erc20PaymentDetailsError::ContractCallError(
+                return MmError::err(Erc20PaymentDetailsError::BadTxEvent(
                     "'erc20Payment' should emit only one 'Transfer' event".to_string(),
                 ));
             }
 
             if event.contract_address != self.contract_address {
-                return MmError::err(Erc20PaymentDetailsError::ContractCallError(format!(
+                return MmError::err(Erc20PaymentDetailsError::UnexpectedTokenAddr(format!(
                     "Unexpected token address {:#02x} in 'Transfer' event, expected {:#02x}",
                     event.contract_address, self.contract_address
                 )));
             }
             if event.amount != value {
-                return MmError::err(Erc20PaymentDetailsError::ContractCallError(format!(
+                return MmError::err(Erc20PaymentDetailsError::UnexpectedTransferAMount(format!(
                     "Unexpected amount {} in 'Transfer' event, expected {}",
                     event.amount, value
                 )));
@@ -908,7 +902,7 @@ impl Qrc20Coin {
                 .mm_err(Erc20PaymentDetailsError::ScriptExtractionError)?;
             // `erc20Payment` function should emit a `Transfer` event where the receiver is the swap contract
             if event.receiver != contract_address_from_script {
-                return MmError::err(Erc20PaymentDetailsError::ContractCallError(format!(
+                return MmError::err(Erc20PaymentDetailsError::DifferentTransferReceivers(format!(
                     "Contract address {:#02x} from script pubkey and receiver {:#02x} in 'Transfer' event are different",
                     contract_address_from_script,
                     event.receiver
@@ -928,7 +922,7 @@ impl Qrc20Coin {
                 contract_call_bytes,
             });
         }
-        MmError::err(Erc20PaymentDetailsError::ContractCallError(format!(
+        MmError::err(Erc20PaymentDetailsError::MissingTxContractCall(format!(
             "Couldn't find erc20Payment contract call in {:?} tx",
             tx_hash
         )))
@@ -1221,14 +1215,30 @@ fn find_swap_contract_call_with_swap_id(
     None
 }
 
-fn check_if_contract_call_completed(receipt: &TxReceipt) -> Result<(), MmError<String>> {
+#[derive(Debug, Display)]
+pub enum CheckContractCallError {
+    Transport(String),
+}
+
+impl From<CheckContractCallError> for Erc20PaymentDetailsError {
+    fn from(err: CheckContractCallError) -> Self { Self::CheckContractCallError(err) }
+}
+
+impl From<CheckContractCallError> for WaitForConfirmationsErr {
+    fn from(err: CheckContractCallError) -> Self { Self::CheckContractCallError(err.to_string()) }
+}
+
+fn check_if_contract_call_completed(receipt: &TxReceipt) -> Result<(), MmError<CheckContractCallError>> {
     match receipt.excepted {
         Some(ref ex) if ex != "None" && ex != "none" => {
             let msg = match receipt.excepted_message {
                 Some(ref m) if !m.is_empty() => format!(": {}", m),
                 _ => String::default(),
             };
-            MmError::err(format!("Contract call failed with an error: {}{}", ex, msg))
+            MmError::err(CheckContractCallError::Transport(format!(
+                "Contract call failed with an error: {}{}",
+                ex, msg
+            )))
         },
         _ => Ok(()),
     }

@@ -1,7 +1,7 @@
 use super::*;
 use crate::coin_balance::{AddressBalanceStatus, HDAddressBalance, HDWalletBalanceOps};
 use crate::coin_errors::{CheckPaymentSentError, ExtractSecretError, GetTradeFeeError, MyAddressError, SendRawTxError,
-                         ValidatePaymentError};
+                         ValidatePaymentError, WaitForConfirmationsErr};
 use crate::hd_pubkey::{ExtractExtendedPubkey, HDExtractPubkeyError, HDXPubExtractor};
 use crate::hd_wallet::{AccountUpdatingError, AddressDerivingError, HDAccountMut, HDAccountsMap,
                        NewAccountCreatingError};
@@ -1804,8 +1804,8 @@ pub fn wait_for_confirmations(
     requires_nota: bool,
     wait_until: u64,
     check_every: u64,
-) -> Box<dyn Future<Item = (), Error = String> + Send> {
-    let mut tx: UtxoTx = try_fus!(deserialize(tx).map_err(|e| ERRL!("{:?}", e)));
+) -> Box<dyn Future<Item = (), Error = MmError<WaitForConfirmationsErr>> + Send> {
+    let mut tx: UtxoTx = try_mm_err_fus!(deserialize(tx));
     tx.tx_hash_algo = coin.tx_hash_algo;
     coin.rpc_client.wait_for_confirmations(
         tx.hash().reversed().into(),

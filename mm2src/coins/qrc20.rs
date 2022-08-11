@@ -1,5 +1,5 @@
 use crate::coin_errors::{AddressParseError, CheckPaymentSentError, ExtractSecretError, GetTradeFeeError,
-                         MyAddressError, SendRawTxError, ValidatePaymentError};
+                         MyAddressError, SendRawTxError, ValidatePaymentError, WaitForConfirmationsErr};
 use crate::eth::{self, u256_to_big_decimal, wei_from_big_decimal, TryToAddress};
 use crate::qrc20::rpc_clients::{LogEntry, Qrc20ElectrumOps, Qrc20NativeOps, Qrc20RpcOps, TopicFilter, TxReceipt,
                                 ViewContractCallType};
@@ -959,7 +959,6 @@ impl SwapOps for Qrc20Coin {
             selfi
                 .check_if_my_payment_sent_impl(swap_contract_address, swap_id, search_from_block)
                 .await
-                .mm_err(CheckPaymentSentError::PaymentSentErr)
         };
         Box::new(fut.boxed().compat())
     }
@@ -1096,14 +1095,13 @@ impl MarketCoinOps for Qrc20Coin {
         requires_nota: bool,
         wait_until: u64,
         check_every: u64,
-    ) -> Box<dyn Future<Item = (), Error = String> + Send> {
-        let tx: UtxoTx = try_fus!(deserialize(tx).map_err(|e| ERRL!("{:?}", e)));
+    ) -> Box<dyn Future<Item = (), Error = MmError<WaitForConfirmationsErr>> + Send> {
+        let tx: UtxoTx = try_mm_err_fus!(deserialize(tx));
         let selfi = self.clone();
         let fut = async move {
             selfi
                 .wait_for_confirmations_and_check_result(tx, confirmations, requires_nota, wait_until, check_every)
                 .await
-                .map_err(|err| err.to_string())
         };
         Box::new(fut.boxed().compat())
     }

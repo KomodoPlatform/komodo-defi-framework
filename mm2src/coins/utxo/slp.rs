@@ -4,7 +4,7 @@
 //! More info about the protocol and implementation guides can be found at https://slp.dev/
 
 use crate::coin_errors::{AddressParseError, CheckPaymentSentError, ExtractSecretError, GetTradeFeeError,
-                         MyAddressError, SendRawTxError, ValidatePaymentError};
+                         MyAddressError, SendRawTxError, ValidatePaymentError, WaitForConfirmationsErr};
 use crate::my_tx_history_v2::CoinWithTxHistoryV2;
 use crate::tx_history_storage::{GetTxHistoryFilters, WalletId};
 use crate::utxo::bch::BchCoin;
@@ -1160,7 +1160,7 @@ impl MarketCoinOps for SlpToken {
         requires_nota: bool,
         wait_until: u64,
         check_every: u64,
-    ) -> Box<dyn Future<Item = (), Error = String> + Send> {
+    ) -> Box<dyn Future<Item = (), Error = MmError<WaitForConfirmationsErr>> + Send> {
         self.platform_coin
             .wait_for_confirmations(tx, confirmations, requires_nota, wait_until, check_every)
     }

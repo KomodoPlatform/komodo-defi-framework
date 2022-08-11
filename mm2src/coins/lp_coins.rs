@@ -35,7 +35,7 @@
 use async_trait::async_trait;
 use base58::FromBase58Error;
 use coin_errors::{AddressParseError, CheckPaymentSentError, ExtractSecretError, GetTradeFeeError, MyAddressError,
-                  SendRawTxError, ValidatePaymentError};
+                  SendRawTxError, ValidatePaymentError, WaitForConfirmationsErr};
 use common::mm_metrics::MetricsWeak;
 use common::{calc_total_pages, now_ms, ten, HttpStatusCode};
 use crypto::{Bip32Error, CryptoCtx, DerivationPath};
@@ -500,11 +500,11 @@ pub enum ValidateSwapTxError {
     Transport(String),
     TxConfirmationError(String),
     TxIsMissing(String),
+    InvalidTx(String),
     UnableToMatchEncodedTx(String),
     UnexpectedFeeOutput(String),
     UnexpectedTxSmartContractCall(String),
     UnexpectedTxFeeValue(String),
-    UnexpectedTxToken(String),
     UtxoRpcError(String),
     WrongSenderAddress(String),
     WrongReceiverAddress(String),
@@ -702,7 +702,7 @@ pub trait MarketCoinOps {
         requires_nota: bool,
         wait_until: u64,
         check_every: u64,
-    ) -> Box<dyn Future<Item = (), Error = String> + Send>;
+    ) -> Box<dyn Future<Item = (), Error = MmError<WaitForConfirmationsErr>> + Send>;
 
     fn wait_for_tx_spend(
         &self,
@@ -1630,6 +1630,10 @@ impl From<http::Error> for WithdrawError {
 
 impl From<AddressParseError> for WithdrawError {
     fn from(err: AddressParseError) -> Self { Self::InvalidAddress(err.to_string()) }
+}
+
+impl From<MyAddressError> for WithdrawError {
+    fn from(err: MyAddressError) -> Self { Self::InvalidAddress(err.to_string()) }
 }
 
 impl WithdrawError {

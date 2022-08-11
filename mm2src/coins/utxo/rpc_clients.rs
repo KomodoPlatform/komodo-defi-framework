@@ -1,6 +1,7 @@
 #![cfg_attr(target_arch = "wasm32", allow(unused_macros))]
 #![cfg_attr(target_arch = "wasm32", allow(dead_code))]
 
+use crate::coin_errors::WaitForConfirmationsErr;
 use crate::utxo::utxo_block_header_storage::BlockHeaderStorage;
 use crate::utxo::{output_script, sat_from_big_decimal, GetBlockHeaderError, GetTxError, GetTxHeightError};
 use crate::{big_decimal_from_sat_unsigned, NumConversError, RpcTransportEventHandler, RpcTransportEventHandlerShared};
@@ -143,17 +144,15 @@ impl UtxoRpcClientEnum {
         requires_notarization: bool,
         wait_until: u64,
         check_every: u64,
-    ) -> Box<dyn Future<Item = (), Error = String> + Send> {
+    ) -> Box<dyn Future<Item = (), Error = MmError<WaitForConfirmationsErr>> + Send> {
         let selfi = self.clone();
         let fut = async move {
             loop {
                 if now_ms() / 1000 > wait_until {
-                    return ERR!(
+                    return MmError::err(WaitForConfirmationsErr::TxWaitTimeDue(format!(
                         "Waited too long until {} for transaction {:?} to be confirmed {} times",
-                        wait_until,
-                        tx_hash,
-                        confirmations
-                    );
+                        wait_until, tx_hash, confirmations
+                    )));
                 }
 
                 match selfi.get_verbose_transaction(&tx_hash).compat().await {
@@ -184,7 +183,10 @@ impl UtxoRpcClientEnum {
                             };
 
                             if block > expiry_height as u64 {
-                                return ERR!("The transaction {:?} has expired, current block {}", tx_hash, block);
+                                return MmError::err(WaitForConfirmationsErr::TxExpired(format!(
+                                    "The transaction {:?} has expired, current block {}",
+                                    tx_hash, block
+                                )));
                             }
                         }
                         error!(

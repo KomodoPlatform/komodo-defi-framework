@@ -4,22 +4,25 @@ use hex::FromHexError;
 use spv_validation::helpers_validation::SPVError;
 
 use crate::{eth::{TokenDecimalsError, TryToAddressError, Web3RpcError},
+            qrc20::script_pubkey::ScriptExtractionError,
             utxo::{qtum::ScriptHashTypeNotSupported, rpc_clients::UtxoRpcError, utxo_builder::UtxoConfError,
                    BroadcastTxErr, UnsupportedAddr},
             NumConversError, UnexpectedDerivationMethod};
 
 #[derive(Debug, Display)]
 pub enum CheckPaymentSentError {
+    AddressParseError(String),
     AddrImportFailed(String),
+    Erc20PaymentDetailsError(String),
     DeserializationErr(String),
     JsonRpcError(JsonRpcError),
-    PaymentSentErr(String),
+    PaymentStatusError(String),
     PublicKeyErr(String),
     SignTxError(String),
-    Transport(String),
+    TransportError(String),
     TryToAddressError(TryToAddressError),
     UtxoRpcError(UtxoRpcError),
-    PaymentStatusError(String),
+    UnexpectedDerivationMethod(UnexpectedDerivationMethod),
 }
 
 impl From<keys::Error> for CheckPaymentSentError {
@@ -38,8 +41,16 @@ impl From<UtxoRpcError> for CheckPaymentSentError {
     fn from(err: UtxoRpcError) -> Self { Self::UtxoRpcError(err) }
 }
 
+impl From<AddressParseError> for CheckPaymentSentError {
+    fn from(err: AddressParseError) -> Self { Self::AddressParseError(err.to_string()) }
+}
+
 impl From<serialization::Error> for CheckPaymentSentError {
     fn from(err: serialization::Error) -> Self { Self::DeserializationErr(err.to_string()) }
+}
+
+impl From<UnexpectedDerivationMethod> for CheckPaymentSentError {
+    fn from(err: UnexpectedDerivationMethod) -> Self { Self::UnexpectedDerivationMethod(err) }
 }
 
 #[derive(Debug, Display, PartialEq)]
@@ -263,10 +274,6 @@ impl From<UnexpectedDerivationMethod> for ValidatePaymentError {
     fn from(err: UnexpectedDerivationMethod) -> Self { Self::UnexpectedDerivationMethod(err) }
 }
 
-impl From<UtxoRpcError> for ValidatePaymentError {
-    fn from(err: UtxoRpcError) -> Self { Self::UtxoRpcError(err.to_string()) }
-}
-
 impl From<AddressParseError> for ValidatePaymentError {
     fn from(err: AddressParseError) -> Self { Self::AddressError(err.to_string()) }
 }
@@ -279,8 +286,12 @@ impl From<MyAddressError> for ValidatePaymentError {
 pub enum PaymentStatusError {
     EthAbiError(ethabi::Error),
     ExpectedUintForPaymentStatus(String),
+    InvalidTx(String),
     PaymentStatusError(ValidatePaymentError),
     Transport(String),
+    #[display(fmt = "Expected at least 3 tokens in \"payments\" call, found {}", _0)]
+    UnexpectedTokenNumbers(usize),
+    UtxoRpcError(String),
 }
 
 impl From<ethabi::Error> for PaymentStatusError {
@@ -289,6 +300,10 @@ impl From<ethabi::Error> for PaymentStatusError {
 
 impl From<PaymentStatusError> for ValidatePaymentError {
     fn from(err: PaymentStatusError) -> Self { Self::PaymentStatusError(err.to_string()) }
+}
+
+impl From<UtxoRpcError> for ValidatePaymentError {
+    fn from(err: UtxoRpcError) -> Self { Self::UtxoRpcError(err.to_string()) }
 }
 
 #[derive(Debug, Display)]
@@ -340,4 +355,41 @@ impl From<NumConversError> for GetTradeFeeError {
 
 impl From<UtxoRpcError> for GetTradeFeeError {
     fn from(err: UtxoRpcError) -> Self { Self::UtxoRpcError(err.to_string()) }
+}
+
+#[derive(Debug, Display)]
+pub enum WaitForConfirmationsErr {
+    CheckContractCallError(String),
+    DecoderError(String),
+    DeserializationErr(String),
+    Internal(String),
+    JsonRpcError(String),
+    #[display(fmt = "OutputIndexOutOfBounds: TxReceipt::output_index out of bounds")]
+    OutputIndexOutOfBounds,
+    ScriptExtractionError(String),
+    SignedEthTx(String),
+    Transport(String),
+    TxExpired(String),
+    TxStatusFailed(String),
+    TxWaitTimeDue(String),
+}
+
+impl From<rlp::DecoderError> for WaitForConfirmationsErr {
+    fn from(err: rlp::DecoderError) -> Self { Self::DecoderError(err.to_string()) }
+}
+
+impl From<serialization::Error> for WaitForConfirmationsErr {
+    fn from(err: serialization::Error) -> Self { Self::DeserializationErr(err.to_string()) }
+}
+
+impl From<JsonRpcError> for WaitForConfirmationsErr {
+    fn from(err: JsonRpcError) -> Self { Self::JsonRpcError(err.to_string()) }
+}
+
+impl From<ScriptExtractionError> for WaitForConfirmationsErr {
+    fn from(err: ScriptExtractionError) -> Self { Self::ScriptExtractionError(err.to_string()) }
+}
+
+impl From<ethkey::Error> for WaitForConfirmationsErr {
+    fn from(err: ethkey::Error) -> Self { Self::SignedEthTx(err.to_string()) }
 }

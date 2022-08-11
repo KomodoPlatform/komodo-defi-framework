@@ -61,7 +61,7 @@ use web3_transport::{EthFeeHistoryNamespace, Web3Transport, Web3TransportNode};
 
 use crate::coin_errors::{AddressParseError, CheckPaymentSentError, EthCoinParseError, ExtractSecretError,
                          GetTradeFeeError, MyAddressError, PaymentStatusError, SendRawTxError, SignedEthTxError,
-                         ValidatePaymentError};
+                         ValidatePaymentError, WaitForConfirmationsErr};
 use crate::ValidatePaymentFut;
 
 use super::{coin_conf, AsyncMutex, BalanceError, BalanceFut, CoinBalance, CoinProtocol, CoinTransportMetrics,
@@ -725,9 +725,7 @@ async fn withdraw_impl(coin: EthCoin, req: WithdrawRequest) -> WithdrawResult {
     if coin.coin_type == EthCoinType::Eth {
         spent_by_me += &fee_details.total_fee;
     }
-    let my_address = coin
-        .my_address()
-        .mm_err(|err| WithdrawError::InternalError(err.to_string()))?;
+    let my_address = coin.my_address()?;
     Ok(TransactionDetails {
         to: vec![checksum_address(&format!("{:#02x}", to_addr))],
         from: vec![my_address],
@@ -988,7 +986,7 @@ impl SwapOps for EthCoin {
                             }
                         },
                         _ => {
-                            return MmError::err(ValidateSwapTxError::UnexpectedTxToken(format!(
+                            return MmError::err(ValidateSwapTxError::InvalidTx(format!(
                                 "Should have got uint token but got {:?}",
                                 decoded_input[1]
                             )))
@@ -1052,7 +1050,7 @@ impl SwapOps for EthCoin {
                 .current_block()
                 .compat()
                 .await
-                .map_to_mm(CheckPaymentSentError::Transport)?;
+                .map_to_mm(CheckPaymentSentError::TransportError)?;
             if current_block < from_block {
                 current_block = from_block;
             }
@@ -1066,7 +1064,7 @@ impl SwapOps for EthCoin {
                     .payment_sent_events(swap_contract_address, from_block, to_block)
                     .compat()
                     .await
-                    .map_to_mm(CheckPaymentSentError::PaymentSentErr)?;
+                    .map_to_mm(CheckPaymentSentError::TransportError)?;
                 let found = events.iter().find(|event| &event.data.0[..32] == id.as_slice());
 
                 match found {
@@ -1077,7 +1075,7 @@ impl SwapOps for EthCoin {
                             .transaction(TransactionId::Hash(event.transaction_hash.unwrap()))
                             .compat()
                             .await
-                            .map_to_mm(|err| CheckPaymentSentError::Transport(err.to_string()))?;
+                            .map_to_mm(|err| CheckPaymentSentError::TransportError(err.to_string()))?;
                         match transaction {
                             Some(t) => break Ok(Some(signed_tx_from_web3_tx(t)?.into())),
                             None => break Ok(None),
@@ -1260,14 +1258,15 @@ impl MarketCoinOps for EthCoin {
         _requires_nota: bool,
         wait_until: u64,
         check_every: u64,
-    ) -> Box<dyn Future<Item = (), Error = String> + Send> {
-        let ctx = try_fus!(MmArc::from_weak(&self.ctx).ok_or("No context"));
+    ) -> Box<dyn Future<Item = (), Error = MmError<WaitForConfirmationsErr>> + Send> {
+        let ctx = try_mm_err_fus!(MmArc::from_weak(&self.ctx)
+            .ok_or_else(|| MmError::new(WaitForConfirmationsErr::Internal("No context".to_string()))));
         let mut status = ctx.log.status_handle();
         status.status(&[&self.ticker], "Waiting for confirmations…");
         status.deadline(wait_until * 1000);
 
-        let unsigned: UnverifiedTransaction = try_fus!(rlp::decode(tx));
-        let tx = try_fus!(SignedEthTx::new(unsigned));
+        let unsigned: UnverifiedTransaction = try_mm_err_fus!(rlp::decode(tx));
+        let tx = try_mm_err_fus!(SignedEthTx::new(unsigned));
 
         let required_confirms = U256::from(confirmations);
         let selfi = self.clone();
@@ -1275,11 +1274,10 @@ impl MarketCoinOps for EthCoin {
             loop {
                 if status.ms2deadline().unwrap() < 0 {
                     status.append(" Timed out.");
-                    return ERR!(
+                    return MmError::err(WaitForConfirmationsErr::TxWaitTimeDue(format!(
                         "Waited too long until {} for transaction {:?} confirmation ",
-                        wait_until,
-                        tx
-                    );
+                        wait_until, tx
+                    )));
                 }
 
                 let web3_receipt = match selfi.web3.eth().transaction_receipt(tx.hash()).compat().await {
@@ -1298,12 +1296,12 @@ impl MarketCoinOps for EthCoin {
                 if let Some(receipt) = web3_receipt {
                     if receipt.status != Some(1.into()) {
                         status.append(" Failed.");
-                        return ERR!(
+                        return MmError::err(WaitForConfirmationsErr::TxStatusFailed(format!(
                             "Tx receipt {:?} status of {} tx {:?} is failed",
                             receipt,
                             selfi.ticker(),
                             tx.tx_hash()
-                        );
+                        )));
                     }
 
                     if let Some(confirmed_at) = receipt.block_number {
@@ -2732,15 +2730,9 @@ impl EthCoin {
                 .transaction(TransactionId::Hash(tx.hash))
                 .compat()
                 .await?;
-            let tx_from_rpc = match tx_from_rpc {
-                Some(t) => t,
-                None => {
-                    return MmError::err(ValidatePaymentError::MissingTx(format!(
-                        "Didn't find provided tx {:?} on ETH node",
-                        tx
-                    )))
-                },
-            };
+            let tx_from_rpc = tx_from_rpc.or_mm_err(|| {
+                ValidatePaymentError::MissingTx(format!("Didn't find provided tx {:?} on ETH node", tx))
+            })?;
 
             if tx_from_rpc.from != sender {
                 return MmError::err(ValidatePaymentError::WrongSenderAddress(format!(
