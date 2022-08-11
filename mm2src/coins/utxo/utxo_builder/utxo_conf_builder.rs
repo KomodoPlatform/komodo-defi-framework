@@ -3,7 +3,6 @@ use crate::utxo::{parse_hex_encoded_u32, UtxoCoinConf, DEFAULT_DYNAMIC_FEE_VOLAT
                   MATURE_CONFIRMATIONS_DEFAULT};
 use crate::UtxoActivationParams;
 use bitcrypto::ChecksumType;
-use crypto::trezor::utxo::TrezorUtxoCoin;
 use crypto::{Bip32Error, ChildNumber};
 use derive_more::Display;
 pub use keys::{Address, AddressFormat as UtxoAddressFormat, AddressHashEnum, KeyPair, Private, Public, Secret,
@@ -283,9 +282,7 @@ impl<'a> UtxoConfBuilder<'a> {
 
     fn estimate_fee_blocks(&self) -> u32 { json::from_value(self.conf["estimate_fee_blocks"].clone()).unwrap_or(1) }
 
-    fn trezor_coin(&self) -> Option<TrezorUtxoCoin> {
-        json::from_value(self.conf["trezor_coin"].clone()).unwrap_or_default()
-    }
+    fn trezor_coin(&self) -> Option<String> { self.conf["trezor_coin"].as_str().map(|coin| coin.to_string()) }
 
     fn enable_spv_proof(&self) -> bool { self.conf["enable_spv_proof"].as_bool().unwrap_or(false) }
 }

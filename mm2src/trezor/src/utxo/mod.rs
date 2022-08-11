@@ -1,5 +1,3 @@
-use derive_more::Display;
-
 mod prev_tx;
 mod sign_utxo;
 mod unsigned_tx;
@@ -12,10 +10,3 @@ pub use unsigned_tx::{TrezorInputScriptType, TrezorOutputScriptType, TxOutput, U
 pub type TxHash = Vec<u8>;
 pub type Signature = Vec<u8>;
 pub type ScriptPubkey = Vec<u8>;
-
-#[derive(Clone, Copy, Debug, Display, Deserialize, Serialize)]
-pub enum TrezorUtxoCoin {
-    Bitcoin,
-    Komodo,
-    Qtum,
-}

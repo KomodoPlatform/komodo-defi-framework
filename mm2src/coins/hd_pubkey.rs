@@ -2,7 +2,6 @@ use crate::hd_wallet::NewAccountCreatingError;
 use async_trait::async_trait;
 use crypto::hw_rpc_task::{HwConnectStatuses, TrezorRpcTaskConnectProcessor};
 use crypto::trezor::trezor_rpc_task::{TrezorRpcTaskProcessor, TryIntoUserAction};
-use crypto::trezor::utxo::TrezorUtxoCoin;
 use crypto::trezor::{ProcessTrezorResponse, TrezorError, TrezorProcessingError};
 use crypto::{Bip32Error, CryptoCtx, CryptoInitError, DerivationPath, EcdsaCurve, HardwareWalletArc, HwError,
              HwProcessingError, XPub};
@@ -84,7 +83,7 @@ pub trait ExtractExtendedPubkey {
 pub trait HDXPubExtractor {
     async fn extract_utxo_xpub(
         &self,
-        trezor_utxo_coin: TrezorUtxoCoin,
+        trezor_utxo_coin: String,
         derivation_path: DerivationPath,
     ) -> MmResult<XPub, HDExtractPubkeyError>;
 }
@@ -105,7 +104,7 @@ where
 {
     async fn extract_utxo_xpub(
         &self,
-        trezor_utxo_coin: TrezorUtxoCoin,
+        trezor_utxo_coin: String,
         derivation_path: DerivationPath,
     ) -> MmResult<XPub, HDExtractPubkeyError> {
         match self {
@@ -155,7 +154,7 @@ where
         hw_ctx: &HardwareWalletArc,
         task_handle: &RpcTaskHandle<Task>,
         statuses: &HwConnectStatuses<Task::InProgressStatus, Task::AwaitingStatus>,
-        trezor_coin: TrezorUtxoCoin,
+        trezor_coin: String,
         derivation_path: DerivationPath,
     ) -> MmResult<XPub, HDExtractPubkeyError> {
         let connect_processor = TrezorRpcTaskConnectProcessor::new(task_handle, statuses.clone());
@@ -189,7 +188,7 @@ where
 {
     async fn extract_utxo_xpub(
         &self,
-        trezor_utxo_coin: TrezorUtxoCoin,
+        trezor_utxo_coin: String,
         derivation_path: DerivationPath,
     ) -> MmResult<XPub, HDExtractPubkeyError> {
         self.0

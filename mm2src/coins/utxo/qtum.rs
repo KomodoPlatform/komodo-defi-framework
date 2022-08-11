@@ -21,7 +21,6 @@ use crate::{eth, CanRefundHtlc, CoinBalance, CoinWithDerivationMethod, Delegatio
             GetWithdrawSenderAddress, NegotiateSwapContractAddrErr, PrivKeyBuildPolicy, SearchForSwapTxSpendInput,
             SignatureResult, StakingInfosFut, SwapOps, TradePreimageValue, TransactionFut, UnexpectedDerivationMethod,
             ValidateAddressResult, ValidatePaymentInput, VerificationResult, WithdrawFut, WithdrawSenderAddress};
-use crypto::trezor::utxo::TrezorUtxoCoin;
 use crypto::Bip44Chain;
 use ethereum_types::H160;
 use futures::{FutureExt, TryFutureExt};
@@ -906,10 +905,11 @@ impl InitWithdrawCoin for QtumCoin {
 impl UtxoSignerOps for QtumCoin {
     type TxGetter = UtxoRpcClientEnum;
 
-    fn trezor_coin(&self) -> UtxoSignTxResult<TrezorUtxoCoin> {
+    fn trezor_coin(&self) -> UtxoSignTxResult<String> {
         self.utxo_arc
             .conf
             .trezor_coin
+            .clone()
             .or_mm_err(|| UtxoSignTxError::CoinNotSupportedWithTrezor {
                 coin: self.utxo_arc.conf.ticker.clone(),
             })

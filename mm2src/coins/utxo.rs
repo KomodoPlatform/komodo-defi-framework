@@ -47,7 +47,6 @@ use chain::{OutPoint, TransactionOutput, TxHashAlgo};
 use common::first_char_to_upper;
 use common::jsonrpc_client::JsonRpcError;
 use common::now_ms;
-use crypto::trezor::utxo::TrezorUtxoCoin;
 use crypto::{Bip32DerPathOps, Bip32Error, Bip44Chain, Bip44DerPathError, Bip44PathToAccount, Bip44PathToCoin,
              ChildNumber, DerivationPath, Secp256k1ExtendedPublicKey};
 use derive_more::Display;
@@ -504,7 +503,7 @@ pub struct UtxoCoinConf {
     /// The number of blocks used for estimate_fee/estimate_smart_fee RPC calls
     pub estimate_fee_blocks: u32,
     /// The name of the coin with which Trezor wallet associates this asset.
-    pub trezor_coin: Option<TrezorUtxoCoin>,
+    pub trezor_coin: Option<String>,
     /// Used in condition where the coin will validate spv proof or not
     pub enable_spv_proof: bool,
 }

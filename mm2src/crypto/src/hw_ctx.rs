@@ -13,7 +13,6 @@ use std::ops::Deref;
 use std::str::FromStr;
 use std::sync::Arc;
 use trezor::client::TrezorClient;
-use trezor::utxo::TrezorUtxoCoin;
 use trezor::{ProcessTrezorResponse, TrezorRequestProcessor};
 
 /// The derivation path generally consists of:
@@ -25,7 +24,7 @@ use trezor::{ProcessTrezorResponse, TrezorRequestProcessor};
 /// * `change = 0`, `address_index = 0` - nothing special.
 const MM2_INTERNAL_DERIVATION_PATH: &str = "m/44'/141'/2147483647/0/0";
 const MM2_INTERNAL_ECDSA_CURVE: EcdsaCurve = EcdsaCurve::Secp256k1;
-const MM2_TREZOR_INTERNAL_COIN: TrezorUtxoCoin = TrezorUtxoCoin::Komodo;
+const MM2_TREZOR_INTERNAL_COIN: &str = "Komodo";
 const SHOW_PUBKEY_ON_DISPLAY: bool = false;
 
 #[derive(Clone)]
@@ -126,7 +125,7 @@ impl HardwareWalletCtx {
         let mm2_internal_xpub = trezor
             .get_public_key(
                 path,
-                MM2_TREZOR_INTERNAL_COIN,
+                MM2_TREZOR_INTERNAL_COIN.to_string(),
                 MM2_INTERNAL_ECDSA_CURVE,
                 SHOW_PUBKEY_ON_DISPLAY,
             )

@@ -454,6 +454,7 @@ where
 {
     let trezor_coin = conf
         .trezor_coin
+        .clone()
         .or_mm_err(|| HDExtractPubkeyError::CoinDoesntSupportTrezor)?;
     let xpub = xpub_extractor.extract_utxo_xpub(trezor_coin, derivation_path).await?;
     Secp256k1ExtendedPublicKey::from_str(&xpub).map_to_mm(HDExtractPubkeyError::InvalidXpub)

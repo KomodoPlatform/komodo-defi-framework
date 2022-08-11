@@ -19,7 +19,6 @@ use crate::{CanRefundHtlc, CoinBalance, CoinWithDerivationMethod, GetWithdrawSen
             NegotiateSwapContractAddrErr, PrivKeyBuildPolicy, SearchForSwapTxSpendInput, SignatureResult, SwapOps,
             TradePreimageValue, TransactionFut, ValidateAddressResult, ValidatePaymentInput, VerificationResult,
             WithdrawFut, WithdrawSenderAddress};
-use crypto::trezor::utxo::TrezorUtxoCoin;
 use crypto::Bip44Chain;
 use futures::{FutureExt, TryFutureExt};
 use mm2_metrics::MetricsArc;
@@ -662,10 +661,11 @@ impl InitWithdrawCoin for UtxoStandardCoin {
 impl UtxoSignerOps for UtxoStandardCoin {
     type TxGetter = UtxoRpcClientEnum;
 
-    fn trezor_coin(&self) -> UtxoSignTxResult<TrezorUtxoCoin> {
+    fn trezor_coin(&self) -> UtxoSignTxResult<String> {
         self.utxo_arc
             .conf
             .trezor_coin
+            .clone()
             .or_mm_err(|| UtxoSignTxError::CoinNotSupportedWithTrezor {
                 coin: self.utxo_arc.conf.ticker.clone(),
             })

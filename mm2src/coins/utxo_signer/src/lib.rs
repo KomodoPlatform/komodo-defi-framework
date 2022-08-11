@@ -1,7 +1,6 @@
 use async_trait::async_trait;
 use chain::Transaction as UtxoTx;
 use crypto::trezor::client::TrezorClient;
-use crypto::trezor::utxo::TrezorUtxoCoin;
 use crypto::trezor::TrezorError;
 use derive_more::Display;
 use keys::bytes::Bytes;
@@ -120,7 +119,7 @@ pub enum SignPolicy<'a> {
 pub trait UtxoSignerOps {
     type TxGetter: TxProvider + Send + Sync;
 
-    fn trezor_coin(&self) -> UtxoSignTxResult<TrezorUtxoCoin>;
+    fn trezor_coin(&self) -> UtxoSignTxResult<String>;
 
     fn fork_id(&self) -> u32;
 

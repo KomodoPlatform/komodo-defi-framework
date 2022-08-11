@@ -3,8 +3,8 @@ use crate::sign_params::{SendingOutputInfo, SpendingInputInfo, UtxoSignTxParams}
 use crate::{TxProvider, UtxoSignTxError, UtxoSignTxResult};
 use chain::{Transaction as UtxoTx, TransactionOutput};
 use common::log::debug;
-use crypto::trezor::utxo::{PrevTx, PrevTxInput, PrevTxOutput, TrezorInputScriptType, TrezorUtxoCoin, TxOutput,
-                           TxSignResult, UnsignedTxInput, UnsignedUtxoTx};
+use crypto::trezor::utxo::{PrevTx, PrevTxInput, PrevTxOutput, TrezorInputScriptType, TxOutput, TxSignResult,
+                           UnsignedTxInput, UnsignedUtxoTx};
 use crypto::trezor::TrezorClient;
 use keys::bytes::Bytes;
 use mm2_err_handle::prelude::*;
@@ -15,7 +15,7 @@ use serialization::deserialize;
 pub struct TrezorTxSigner<TxP> {
     pub trezor: TrezorClient,
     pub tx_provider: TxP,
-    pub trezor_coin: TrezorUtxoCoin,
+    pub trezor_coin: String,
     pub params: UtxoSignTxParams,
     pub fork_id: u32,
     pub branch_id: u32,
@@ -69,7 +69,7 @@ impl<TxP: TxProvider + Send + Sync> TrezorTxSigner<TxP> {
             .collect();
 
         Ok(UnsignedUtxoTx {
-            coin: self.trezor_coin,
+            coin: self.trezor_coin.clone(),
             inputs,
             outputs,
             version: self.params.unsigned_tx.version as u32,
