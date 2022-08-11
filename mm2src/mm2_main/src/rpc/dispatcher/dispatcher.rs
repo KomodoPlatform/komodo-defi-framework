@@ -11,6 +11,7 @@ use coins::eth::EthCoin;
 use coins::my_tx_history_v2::my_tx_history_v2_rpc;
 use coins::rpc_command::{account_balance::account_balance,
                          get_current_mtp::get_current_mtp_rpc,
+                         get_enabled_coins::get_enabled_coins,
                          get_new_address::{can_get_new_address, get_new_address},
                          init_account_balance::{cancel_account_balance, init_account_balance,
                                                 init_account_balance_status},
@@ -143,6 +144,7 @@ async fn dispatcher_v2(request: MmRpcRequest, ctx: MmArc) -> DispatcherResult<Re
             handle_mmrpc(ctx, request, enable_platform_coin_with_tokens::<TendermintCoin>).await
         },
         "get_current_mtp" => handle_mmrpc(ctx, request, get_current_mtp_rpc).await,
+        "get_enabled_coins" => handle_mmrpc(ctx, request, get_enabled_coins).await,
         "get_new_address" => handle_mmrpc(ctx, request, get_new_address).await,
         "get_public_key" => handle_mmrpc(ctx, request, get_public_key).await,
         "get_public_key_hash" => handle_mmrpc(ctx, request, get_public_key_hash).await,
