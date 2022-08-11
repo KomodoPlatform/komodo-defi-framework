@@ -31,10 +31,7 @@ use solana_sdk::{pubkey::Pubkey,
 use std::collections::HashMap;
 use std::str::FromStr;
 use std::sync::Mutex;
-use std::{convert::TryFrom,
-          fmt::{Debug, Formatter, Result as FmtResult},
-          ops::Deref,
-          sync::Arc};
+use std::{convert::TryFrom, fmt::Debug, ops::Deref, sync::Arc};
 
 pub mod solana_common;
 #[cfg(test)] mod solana_common_tests;
@@ -197,11 +194,7 @@ pub struct SolanaCoinImpl {
     spl_tokens_infos: Arc<Mutex<HashMap<String, SplTokenInfo>>>,
 }
 
-impl Debug for SolanaCoinImpl {
-    fn fmt(&self, f: &mut Formatter<'_>) -> FmtResult { f.write_str(&*self.ticker) }
-}
-
-#[derive(Clone, Debug)]
+#[derive(Clone)]
 pub struct SolanaCoin(Arc<SolanaCoinImpl>);
 impl Deref for SolanaCoin {
     type Target = SolanaCoinImpl;

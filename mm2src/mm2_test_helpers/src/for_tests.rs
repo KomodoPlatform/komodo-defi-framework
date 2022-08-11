@@ -16,9 +16,9 @@ use uuid::Uuid;
 
 use common::executor::Timer;
 use common::log;
-use common::mm_metrics::{MetricType, MetricsJson};
 use common::{cfg_native, now_float, now_ms, PagingOptionsEnum};
 use mm2_core::mm_ctx::{MmArc, MmCtxBuilder};
+use mm2_metrics::{MetricType, MetricsJson};
 
 cfg_native! {
     use common::block_on;
@@ -112,8 +112,11 @@ pub const MORTY_ELECTRUM_ADDRS: &[&str] = &[
     "electrum3.cipig.net:10018",
 ];
 pub const ZOMBIE_TICKER: &str = "ZOMBIE";
+pub const ARRR: &str = "ARRR";
 pub const ZOMBIE_ELECTRUMS: &[&str] = &["zombie.sirseven.me:10033"];
 pub const ZOMBIE_LIGHTWALLETD_URLS: &[&str] = &["http://zombie.sirseven.me:443"];
+pub const PIRATE_ELECTRUMS: &[&str] = &["pirate.sirseven.me:10032"];
+pub const PIRATE_LIGHTWALLETD_URLS: &[&str] = &["http://pirate.sirseven.me:443"];
 const DEFAULT_RPC_PASSWORD: &str = "pass";
 
 pub struct Mm2TestConf {
@@ -198,6 +201,41 @@ pub fn zombie_conf() -> Json {
     })
 }
 
+pub fn pirate_conf() -> Json {
+    json!({
+        "coin":"ARRR",
+        "asset":"PIRATE",
+        "txversion":4,
+        "overwintered":1,
+        "mm2":1,
+        "protocol":{
+            "type":"ZHTLC",
+            "protocol_data": {
+                "consensus_params": {
+                    "overwinter_activation_height": 152855,
+                    "sapling_activation_height": 152855,
+                    "blossom_activation_height": null,
+                    "heartwood_activation_height": null,
+                    "canopy_activation_height": null,
+                    "coin_type": 133,
+                    "hrp_sapling_extended_spending_key": "secret-extended-key-main",
+                    "hrp_sapling_extended_full_viewing_key": "zxviews",
+                    "hrp_sapling_payment_address": "zs",
+                    "b58_pubkey_address_prefix": [ 28, 184 ],
+                    "b58_script_address_prefix": [ 28, 189 ]
+                },
+                "check_point_block": {
+                    "height": 2010000,
+                    "time": 1659288887,
+                    "hash": "b9024dc7a9b1bb0fe5c3f84175be91c572706d3268f1dc74bbe5121a00000000",
+                    "sapling_tree": "019b6df2c6f4f42d867ac881f9f728e7954ed2e6922801a60c492b4ff85ef5f0400135609f387dd5034be026b7223ec5a85037b6a9d58f9afac8b7373e2606a5be6f150104bdb768da2504afb2f1963c340668490873885c22a06a7a9ac866320f10030d010e2e8e76a1e8bf8a1146661b48296ff36d5ce2082284193346b8ee7e4ec0e33600012f7f502f94a659eee3425e22a66ab4656fb7791ca0a2ac8a558a5fca7e4fbf630000019a9f3d2f985e10841c71bd70b84bb209a51a15680943842fa232e8ad4dc0b8590001b289928cbcc0c951720f14d35db6ea6383e67e62cebbf6d60103f4b0faadbd63000001ff9a30c61d63bb599e967dcac24ab6fedc0e8daa618a0efbd0314366fa05994200014d7ad3b2f0ee6ec7fa8cb4a0e9fadbaac4a3ed7d07f5643171a8eba26f93fc5a0001efa2884b5610614c3676441010863dc4fa6959f4df7a8018e74b93bb26b9d412014b705396332773077e58f73fe5a4c2c1d7ad2a1058bd5856670fb9529d1cd61c01e29681aab902f9876726a6fada746879e13af24d3675ae53fcc20629a85e196b010b5fd8e7610754075f936463780e85841f3ab8ca2978f9afdf7c2c250f16a75f01db56bc66eb1cd54ec6861e5cf24af2f4a17991556a52ca781007569e95b9842401c03877ecdd98378b321250640a1885604d675aaa50380e49da8cfa6ff7deaf15"
+                },
+            }
+        },
+        "required_confirmations":0
+    })
+}
+
 pub fn rick_conf() -> Json {
     json!({
         "coin":"RICK",
@@ -220,6 +258,21 @@ pub fn morty_conf() -> Json {
         "overwintered":1,
         "protocol":{
             "type":"UTXO"
+        }
+    })
+}
+
+pub fn atom_testnet_conf() -> Json {
+    json!({
+        "coin":"ATOM",
+        "protocol":{
+            "type":"TENDERMINT",
+            "protocol_data": {
+                "decimals": 6,
+                "denom": "uatom",
+                "account_prefix": "cosmos",
+                "chain_id": "theta-testnet-001",
+            },
         }
     })
 }
@@ -1438,6 +1491,21 @@ pub async fn init_withdraw(mm: &MarketMakerIt, coin: &str, to: &str, amount: &st
     json::from_str(&request.1).unwrap()
 }
 
+pub async fn withdraw_v1(mm: &MarketMakerIt, coin: &str, to: &str, amount: &str) -> Json {
+    let request = mm
+        .rpc(&json! ({
+            "userpass": mm.userpass,
+            "method": "withdraw",
+            "coin": coin,
+            "to": to,
+            "amount": amount,
+        }))
+        .await
+        .unwrap();
+    assert_eq!(request.0, StatusCode::OK, "'withdraw' failed: {}", request.1);
+    json::from_str(&request.1).unwrap()
+}
+
 pub async fn withdraw_status(mm: &MarketMakerIt, task_id: u64) -> Json {
     let request = mm
         .rpc(&json! ({
@@ -1569,6 +1637,41 @@ pub async fn send_raw_transaction(mm: &MarketMakerIt, coin: &str, tx: &str) -> J
         request.0,
         StatusCode::OK,
         "'send_raw_transaction' failed: {}",
+        request.1
+    );
+    json::from_str(&request.1).unwrap()
+}
+
+pub async fn my_balance(mm: &MarketMakerIt, coin: &str) -> Json {
+    let request = mm
+        .rpc(&json! ({
+            "userpass": mm.userpass,
+            "method": "my_balance",
+            "coin": coin
+        }))
+        .await
+        .unwrap();
+    assert_eq!(request.0, StatusCode::OK, "'my_balance' failed: {}", request.1);
+    json::from_str(&request.1).unwrap()
+}
+
+pub async fn enable_tendermint(mm: &MarketMakerIt, coin: &str, rpc_urls: &[&str]) -> Json {
+    let request = mm
+        .rpc(&json! ({
+            "userpass": mm.userpass,
+            "method": "enable_tendermint_with_assets",
+            "mmrpc": "2.0",
+            "params": {
+                "ticker": coin,
+                "rpc_urls": rpc_urls,
+            }
+        }))
+        .await
+        .unwrap();
+    assert_eq!(
+        request.0,
+        StatusCode::OK,
+        "'enable_tendermint_with_assets' failed: {}",
         request.1
     );
     json::from_str(&request.1).unwrap()

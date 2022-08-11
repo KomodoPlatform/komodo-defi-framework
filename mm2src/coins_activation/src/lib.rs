@@ -11,6 +11,7 @@ mod slp_token_activation;
 mod solana_with_tokens_activation;
 #[cfg(not(target_arch = "wasm32"))] mod spl_token_activation;
 mod standalone_coin;
+mod tendermint_with_assets_activation;
 mod token;
 mod utxo_activation;
 #[cfg(not(target_arch = "wasm32"))] mod z_coin_activation;

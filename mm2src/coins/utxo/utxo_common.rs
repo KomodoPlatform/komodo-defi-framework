@@ -22,7 +22,6 @@ use chain::{OutPoint, TransactionOutput};
 use common::executor::Timer;
 use common::jsonrpc_client::JsonRpcErrorType;
 use common::log::{debug, error, info, warn};
-use common::mm_metrics::MetricsArc;
 use common::{now_ms, one_hundred, ten_f64};
 use crypto::{Bip32DerPathOps, Bip44Chain, Bip44DerPathError, Bip44DerivationPath, RpcDerivationPath};
 use futures::compat::Future01CompatExt;

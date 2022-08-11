@@ -73,7 +73,7 @@ pub struct SlpTokenInfo {
     pub decimals: u8,
 }
 
-#[derive(Clone, Debug)]
+#[derive(Clone)]
 pub struct SlpToken {
     conf: Arc<SlpTokenConf>,
     platform_coin: BchCoin,
