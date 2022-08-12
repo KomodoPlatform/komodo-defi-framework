@@ -167,6 +167,9 @@ async fn process_p2p_message(
                         spawn(async {
                             match fut.compat().await {
                                 Ok(id) => log::debug!("Transaction broadcasted successfully: {:?} ", id),
+                                // TODO (After https://github.com/KomodoPlatform/atomicDEX-API/pull/1433)
+                                // Maybe do not log an error if the transaction is already sent to
+                                // the blockchain
                                 Err(e) => log::error!("Broadcast transaction failed (ignore this error if the transaction already sent by another seednode). {}", e),
                             };
                         })

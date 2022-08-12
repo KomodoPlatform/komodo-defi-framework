@@ -19,7 +19,7 @@ use crate::utxo::{sat_from_big_decimal, BlockchainNetwork, FeePolicy, GetUtxoLis
 use crate::{BalanceFut, CoinBalance, FeeApproxStage, FoundSwapTxSpend, HistorySyncState, MarketCoinOps, MmCoin,
             NegotiateSwapContractAddrErr, RawTransactionFut, RawTransactionRequest, SearchForSwapTxSpendInput,
             SignatureError, SignatureResult, SwapOps, TradeFee, TradePreimageFut, TradePreimageResult,
-            TradePreimageValue, TransactionEnum, TransactionErr, TransactionFut, UnexpectedDerivationMethod,
+            TradePreimageValue, TransactionEnum, TransactionFut, TxMarshalingErr, UnexpectedDerivationMethod,
             UtxoStandardCoin, ValidateAddressResult, ValidatePaymentInput, VerificationError, VerificationResult,
             WithdrawError, WithdrawFut, WithdrawRequest};
 use async_trait::async_trait;
@@ -482,8 +482,8 @@ impl MarketCoinOps for LightningCoin {
     }
 
     // Todo: Implement this when implementing swaps for lightning as it's is used mainly for swaps
-    fn tx_enum_from_bytes(&self, _bytes: &[u8]) -> Result<TransactionEnum, MmError<TransactionErr>> {
-        MmError::err(TransactionErr::Plain(
+    fn tx_enum_from_bytes(&self, _bytes: &[u8]) -> Result<TransactionEnum, MmError<TxMarshalingErr>> {
+        MmError::err(TxMarshalingErr::NotSupported(
             "tx_enum_from_bytes is not supported for Lightning yet.".to_string(),
         ))
     }
