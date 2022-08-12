@@ -93,8 +93,6 @@ pub struct LightningCoin {
     pub conf: LightningCoinConf,
     /// The lightning node peer manager that takes care of connecting to peers, etc..
     pub peer_manager: Arc<PeerManager>,
-    /// The lightning node background processor that takes care of tasks that need to happen periodically.
-    pub background_processor: Arc<BackgroundProcessor>,
     /// The lightning node channel manager which keeps track of the number of open channels and sends messages to the appropriate
     /// channel, also tracks HTLC preimages and forwards onion packets appropriately.
     pub channel_manager: Arc<ChannelManager>,
@@ -127,8 +125,8 @@ impl LightningCoin {
     fn my_node_id(&self) -> String { self.channel_manager.get_our_node_id().to_string() }
 
     async fn list_channels(&self) -> Vec<ChannelDetails> {
-        let selfi = self.clone();
-        async_blocking(move || selfi.channel_manager.list_channels()).await
+        let channel_manager = self.channel_manager.clone();
+        async_blocking(move || channel_manager.list_channels()).await
     }
 
     async fn get_balance_msat(&self) -> (u64, u64) {
@@ -743,7 +741,7 @@ pub async fn start_lightning(
     // InvoicePayer will act as our event handler as it handles some of the payments related events before
     // delegating it to LightningEventHandler.
     // note: background_processor stops automatically when dropped since BackgroundProcessor implements the Drop trait.
-    let background_processor = Arc::new(BackgroundProcessor::start(
+    let background_processor = BackgroundProcessor::start(
         persister.clone(),
         invoice_payer.clone(),
         chain_monitor.clone(),
@@ -752,7 +750,11 @@ pub async fn start_lightning(
         peer_manager.clone(),
         logger,
         Some(scorer),
-    ));
+    );
+    ctx.background_processors
+        .lock()
+        .unwrap()
+        .insert(conf.ticker.clone(), background_processor);
 
     // If channel_nodes_data file exists, read channels nodes data from disk and reconnect to channel nodes/peers if possible.
     let open_channels_nodes = Arc::new(PaMutex::new(
@@ -775,7 +777,6 @@ pub async fn start_lightning(
         platform,
         conf,
         peer_manager,
-        background_processor,
         channel_manager,
         chain_monitor,
         keys_manager,

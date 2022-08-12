@@ -7,6 +7,8 @@ use futures::future::AbortHandle;
 use gstuff::{try_s, Constructible, ERR, ERRL};
 use keys::KeyPair;
 use lazy_static::lazy_static;
+#[cfg(not(target_arch = "wasm32"))]
+use lightning_background_processor::BackgroundProcessor;
 use mm2_metrics::{MetricsArc, MetricsOps};
 use primitives::hash::H160;
 use rand::Rng;
@@ -103,6 +105,11 @@ pub struct MmCtx {
     pub swaps_ctx: Mutex<Option<Arc<dyn Any + 'static + Send + Sync>>>,
     /// The context belonging to the `lp_stats` mod: `StatsContext`
     pub stats_ctx: Mutex<Option<Arc<dyn Any + 'static + Send + Sync>>>,
+    /// Lightning background processors, these need to be dropped when stopping mm2 to
+    /// persist the latest states to the filesystem. This can be moved to LightningCoin
+    /// Struct in the future if the LightningCoin and other coins are dropped when mm2 stops.
+    #[cfg(not(target_arch = "wasm32"))]
+    pub background_processors: Mutex<HashMap<String, BackgroundProcessor>>,
     /// The RPC sender forwarding requests to writing part of underlying stream.
     #[cfg(target_arch = "wasm32")]
     pub wasm_rpc: Constructible<WasmRpcSender>,
@@ -141,6 +148,8 @@ impl MmCtx {
             coins_needed_for_kick_start: Mutex::new(HashSet::new()),
             swaps_ctx: Mutex::new(None),
             stats_ctx: Mutex::new(None),
+            #[cfg(not(target_arch = "wasm32"))]
+            background_processors: Mutex::new(HashMap::new()),
             #[cfg(target_arch = "wasm32")]
             wasm_rpc: Constructible::default(),
             #[cfg(not(target_arch = "wasm32"))]
@@ -381,6 +390,10 @@ impl MmArc {
         for handler in self.abort_handlers.lock().unwrap().drain(..) {
             handler.abort();
         }
+
+        #[cfg(not(target_arch = "wasm32"))]
+        self.background_processors.lock().unwrap().drain();
+
         let mut stop_listeners = self.stop_listeners.lock().expect("Can't lock stop_listeners");
         // NB: It is important that we `drain` the `stop_listeners` rather than simply iterating over them
         // because otherwise there might be reference counting instances remaining in a listener

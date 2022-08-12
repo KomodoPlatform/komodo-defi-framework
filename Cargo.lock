@@ -4087,6 +4087,7 @@ dependencies = [
  "hex 0.4.2",
  "keys",
  "lazy_static",
+ "lightning-background-processor",
  "mm2_metrics",
  "mm2_rpc",
  "primitives",

@@ -94,6 +94,7 @@ impl EventHandler for LightningEventHandler {
             ),
 
             // Handling updating channel penalties after successfully routing a payment along a path is done by the InvoicePayer.
+            // Todo: Maybe add information to db about why a payment succeeded using this event
             Event::PaymentPathSuccessful {
                 payment_id,
                 payment_hash,
@@ -106,7 +107,8 @@ impl EventHandler for LightningEventHandler {
             ),
 
             // Handling updating channel penalties after a payment fails to route through a channel is done by the InvoicePayer.
-            // Also abandoning or retrying a payment is handled by the InvoicePayer. 
+            // Also abandoning or retrying a payment is handled by the InvoicePayer.
+            // Todo: Add information to db about why a payment failed using this event
             Event::PaymentPathFailed {
                 payment_hash,
                 rejected_by_dest,
