@@ -19,7 +19,7 @@ use crate::utxo::utxo_common_tests;
 use crate::utxo::utxo_standard::{utxo_standard_coin_with_priv_key, UtxoStandardCoin};
 #[cfg(not(target_arch = "wasm32"))] use crate::WithdrawFee;
 use crate::{CoinBalance, PrivKeyBuildPolicy, SearchForSwapTxSpendInput, StakingInfosDetails, SwapOps,
-            TradePreimageValue, TxFeeDetails};
+            TradePreimageValue, TxFeeDetails, TxMarshalingErr};
 use chain::OutPoint;
 use common::executor::Timer;
 use common::{block_on, now_ms, OrdRange, PagingOptionsEnum, DEX_FEE_ADDR_RAW_PUBKEY};
@@ -4012,6 +4012,6 @@ fn test_tx_enum_from_bytes() {
     let err = coin.tx_enum_from_bytes(&vec![0; 1000000]).unwrap_err().into_inner();
     assert_eq!(
         discriminant(&err),
-        discriminant(&TransactionErr::InvalidTx(String::new()))
+        discriminant(&TxMarshalingErr::CrossCheckFailed(String::new()))
     );
 }
