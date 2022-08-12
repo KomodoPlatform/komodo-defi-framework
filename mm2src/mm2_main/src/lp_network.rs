@@ -167,7 +167,7 @@ async fn process_p2p_message(
                         spawn(async {
                             match fut.compat().await {
                                 Ok(id) => log::debug!("Transaction broadcasted successfully: {:?} ", id),
-                                Err(e) => log::error!("Broadcast transaction failed. {}", e),
+                                Err(e) => log::error!("Broadcast transaction failed (ignore this error if the transaction already sent by another seednode). {}", e),
                             };
                         })
                     }
