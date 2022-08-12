@@ -4,6 +4,9 @@ use crate::result_handler::ResultHandler;
 use crate::{ecdsa_curve_to_string, serialize_derivation_path, TrezorResponse, TrezorResult};
 use hw_common::primitives::{DerivationPath, EcdsaCurve, XPub};
 
+pub const IGNORE_XPUB_MAGIC: bool = true;
+pub const KEEP_XPUB_MAGIC: bool = false;
+
 // Bitcoin(UTXO) operations.
 impl<'a> TrezorSession<'a> {
     pub async fn get_utxo_address<'b>(
@@ -30,6 +33,7 @@ impl<'a> TrezorSession<'a> {
         coin: String,
         ecdsa_curve: EcdsaCurve,
         show_display: bool,
+        ignore_xpub_magic: bool,
     ) -> TrezorResult<TrezorResponse<'a, 'b, XPub>> {
         let req = proto_bitcoin::GetPublicKey {
             address_n: serialize_derivation_path(&path),
@@ -37,7 +41,7 @@ impl<'a> TrezorSession<'a> {
             show_display: Some(show_display),
             coin_name: Some(coin),
             script_type: None,
-            ignore_xpub_magic: None,
+            ignore_xpub_magic: Some(ignore_xpub_magic),
         };
 
         let result_handler = ResultHandler::new(|m: proto_bitcoin::PublicKey| Ok(m.xpub));

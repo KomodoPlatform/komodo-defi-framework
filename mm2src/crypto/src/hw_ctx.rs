@@ -13,6 +13,7 @@ use std::ops::Deref;
 use std::str::FromStr;
 use std::sync::Arc;
 use trezor::client::TrezorClient;
+use trezor::utxo::IGNORE_XPUB_MAGIC;
 use trezor::{ProcessTrezorResponse, TrezorRequestProcessor};
 
 /// The derivation path generally consists of:
@@ -128,6 +129,7 @@ impl HardwareWalletCtx {
                 MM2_TREZOR_INTERNAL_COIN.to_string(),
                 MM2_INTERNAL_ECDSA_CURVE,
                 SHOW_PUBKEY_ON_DISPLAY,
+                IGNORE_XPUB_MAGIC,
             )
             .await?
             .process(processor)

@@ -2,9 +2,10 @@ use crate::hd_wallet::NewAccountCreatingError;
 use async_trait::async_trait;
 use crypto::hw_rpc_task::{HwConnectStatuses, TrezorRpcTaskConnectProcessor};
 use crypto::trezor::trezor_rpc_task::{TrezorRpcTaskProcessor, TryIntoUserAction};
+use crypto::trezor::utxo::IGNORE_XPUB_MAGIC;
 use crypto::trezor::{ProcessTrezorResponse, TrezorError, TrezorProcessingError};
-use crypto::{Bip32Error, CryptoCtx, CryptoInitError, DerivationPath, EcdsaCurve, HardwareWalletArc, HwError,
-             HwProcessingError, XPub};
+use crypto::{CryptoCtx, CryptoInitError, DerivationPath, EcdsaCurve, HardwareWalletArc, HwError, HwProcessingError,
+             XPub, XPubConverter, XpubError};
 use mm2_core::mm_ctx::MmArc;
 use mm2_err_handle::prelude::*;
 use rpc_task::{RpcTask, RpcTaskError, RpcTaskHandle};
@@ -17,7 +18,7 @@ pub enum HDExtractPubkeyError {
     CoinDoesntSupportTrezor,
     RpcTaskError(RpcTaskError),
     HardwareWalletError(HwError),
-    InvalidXpub(Bip32Error),
+    InvalidXpub(String),
     Internal(String),
 }
 
@@ -49,6 +50,10 @@ impl From<HwProcessingError<RpcTaskError>> for HDExtractPubkeyError {
             HwProcessingError::ProcessorError(rpc) => HDExtractPubkeyError::RpcTaskError(rpc),
         }
     }
+}
+
+impl From<XpubError> for HDExtractPubkeyError {
+    fn from(e: XpubError) -> Self { HDExtractPubkeyError::InvalidXpub(e.to_string()) }
 }
 
 impl From<HDExtractPubkeyError> for NewAccountCreatingError {
@@ -162,17 +167,22 @@ where
         let mut trezor_session = trezor.session().await?;
 
         let pubkey_processor = TrezorRpcTaskProcessor::new(task_handle, statuses.to_trezor_request_statuses());
-        trezor_session
+        let xpub = trezor_session
             .get_public_key(
                 derivation_path,
                 trezor_coin,
                 EcdsaCurve::Secp256k1,
                 SHOW_PUBKEY_ON_DISPLAY,
+                IGNORE_XPUB_MAGIC,
             )
             .await?
             .process(&pubkey_processor)
-            .await
-            .mm_err(HDExtractPubkeyError::from)
+            .await?;
+
+        // Despite we pass `IGNORE_XPUB_MAGIC` to the [`TrezorSession::get_public_key`] method,
+        // Trezor sometimes returns pubkeys with magic prefixes like `dgub` prefix for DOGE coin.
+        // So we need to replace the magic prefix manually.
+        XPubConverter::replace_magic_prefix(xpub).mm_err(HDExtractPubkeyError::from)
     }
 }
 

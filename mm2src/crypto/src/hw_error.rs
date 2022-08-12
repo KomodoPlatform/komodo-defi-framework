@@ -35,7 +35,7 @@ pub enum HwError {
         transport: String,
     },
     #[display(fmt = "Invalid xpub received from a device: '{}'", _0)]
-    InvalidXpub(Bip32Error),
+    InvalidXpub(String),
     Failure(String),
     UnderlyingError(String),
     ProtocolError(String),
@@ -61,7 +61,7 @@ impl From<TrezorError> for HwError {
 }
 
 impl From<Bip32Error> for HwError {
-    fn from(e: Bip32Error) -> Self { HwError::InvalidXpub(e) }
+    fn from(e: Bip32Error) -> Self { HwError::InvalidXpub(e.to_string()) }
 }
 
 /// This error enumeration is involved to be used as a part of another RPC error.

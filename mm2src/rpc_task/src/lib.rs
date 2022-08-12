@@ -2,7 +2,6 @@ use common::custom_futures::TimeoutError;
 use derive_more::Display;
 use futures::channel::oneshot;
 use mm2_err_handle::prelude::*;
-use mm2_rpc::mm_protocol::MmRpcResult;
 use serde::Serialize;
 use std::sync::atomic::AtomicU64;
 use std::time::Duration;
@@ -19,7 +18,6 @@ pub use handle::RpcTaskHandle;
 pub use manager::{RpcTaskManager, RpcTaskManagerShared};
 pub use task::{RpcTask, RpcTaskTypes};
 
-pub type FinishedTaskResult<Item, Error> = MmRpcResult<Item, Error>;
 pub type RpcTaskResult<T> = Result<T, MmError<RpcTaskError>>;
 pub type TaskId = u64;
 pub type RpcTaskStatusAlias<Task> = RpcTaskStatus<
@@ -82,7 +80,8 @@ where
     Item: Serialize,
     Error: SerMmErrorType,
 {
-    Ready(FinishedTaskResult<Item, Error>),
+    Ok(Item),
+    Error(MmError<Error>),
     InProgress(InProgressStatus),
     UserActionRequired(AwaitingStatus),
 }
@@ -92,13 +91,16 @@ where
     Item: Serialize,
     Error: SerMmErrorType,
 {
+    pub fn is_ready(&self) -> bool { matches!(self, RpcTaskStatus::Ok(_) | RpcTaskStatus::Error(_)) }
+
     pub fn map_err<NewError, F>(self, f: F) -> RpcTaskStatus<Item, NewError, InProgressStatus, AwaitingStatus>
     where
         F: FnOnce(Error) -> NewError,
         NewError: SerMmErrorType,
     {
         match self {
-            RpcTaskStatus::Ready(result) => RpcTaskStatus::Ready(result.map_err(f)),
+            RpcTaskStatus::Ok(result) => RpcTaskStatus::Ok(result),
+            RpcTaskStatus::Error(error) => RpcTaskStatus::Error(error.map(f)),
             RpcTaskStatus::InProgress(in_progress) => RpcTaskStatus::InProgress(in_progress),
             RpcTaskStatus::UserActionRequired(awaiting) => RpcTaskStatus::UserActionRequired(awaiting),
         }
@@ -106,7 +108,8 @@ where
 }
 
 enum TaskStatus<Task: RpcTaskTypes> {
-    Ready(FinishedTaskResult<Task::Item, Task::Error>),
+    Ok(Task::Item),
+    Error(MmError<Task::Error>),
     InProgress(Task::InProgressStatus),
     UserActionRequired {
         awaiting_status: Task::AwaitingStatus,

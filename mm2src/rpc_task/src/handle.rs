@@ -1,5 +1,5 @@
 use crate::manager::{RpcTaskManager, RpcTaskManagerWeak};
-use crate::{FinishedTaskResult, RpcTask, RpcTaskError, RpcTaskResult, TaskId, TaskStatus};
+use crate::{RpcTask, RpcTaskError, RpcTaskResult, TaskId, TaskStatus};
 use common::custom_futures::FutureTimerExt;
 use common::log::LogOnError;
 use futures::channel::oneshot;
@@ -57,19 +57,15 @@ impl<Task: RpcTask> RpcTaskHandle<Task> {
     }
 
     pub(crate) fn finish(self, result: Result<Task::Item, MmError<Task::Error>>) {
-        let task_result = Self::prepare_task_result(result);
-        self.lock_and_then(|mut task_manager| {
-            task_manager.update_task_status(self.task_id, TaskStatus::Ready(task_result))
-        })
-        .warn_log();
+        let task_status = Self::prepare_task_result(result);
+        self.lock_and_then(|mut task_manager| task_manager.update_task_status(self.task_id, task_status))
+            .warn_log();
     }
 
-    fn prepare_task_result(
-        result: Result<Task::Item, MmError<Task::Error>>,
-    ) -> FinishedTaskResult<Task::Item, Task::Error> {
+    fn prepare_task_result(result: Result<Task::Item, MmError<Task::Error>>) -> TaskStatus<Task> {
         match result {
-            Ok(task_item) => FinishedTaskResult::ok(task_item),
-            Err(task_error) => FinishedTaskResult::Err(task_error),
+            Ok(task_item) => TaskStatus::Ok(task_item),
+            Err(task_error) => TaskStatus::Error(task_error),
         }
     }
 }

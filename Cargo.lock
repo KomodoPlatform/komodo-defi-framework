@@ -1522,6 +1522,7 @@ dependencies = [
  "async-trait",
  "bip32 0.2.2",
  "bitcrypto",
+ "bs58",
  "common",
  "derive_more",
  "enum-primitive-derive",

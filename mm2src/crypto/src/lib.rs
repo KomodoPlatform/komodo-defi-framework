@@ -9,6 +9,7 @@ mod hw_error;
 pub mod hw_rpc_task;
 mod key_pair_ctx;
 pub mod privkey;
+mod xpub;
 
 pub use bip32_child::{Bip32Child, Bip32DerPathError, Bip32DerPathOps, Bip44Tail};
 pub use bip44::{Bip44Chain, Bip44DerPathError, Bip44DerivationPath, Bip44PathToAccount, Bip44PathToCoin,
@@ -21,6 +22,7 @@ pub use hw_ctx::{HardwareWalletArc, HardwareWalletCtx};
 pub use hw_error::{from_hw_error, HwError, HwResult, HwRpcError, WithHwRpcError};
 pub use key_pair_ctx::{IguanaArc, IguanaCtx};
 pub use trezor;
+pub use xpub::{XPubConverter, XpubError};
 
 use serde::de::Error;
 use serde::{Deserialize, Deserializer, Serialize, Serializer};

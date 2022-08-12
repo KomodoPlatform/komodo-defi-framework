@@ -457,7 +457,7 @@ where
         .clone()
         .or_mm_err(|| HDExtractPubkeyError::CoinDoesntSupportTrezor)?;
     let xpub = xpub_extractor.extract_utxo_xpub(trezor_coin, derivation_path).await?;
-    Secp256k1ExtendedPublicKey::from_str(&xpub).map_to_mm(HDExtractPubkeyError::InvalidXpub)
+    Secp256k1ExtendedPublicKey::from_str(&xpub).map_to_mm(|e| HDExtractPubkeyError::InvalidXpub(e.to_string()))
 }
 
 /// returns the fee required to be paid for HTLC spend transaction

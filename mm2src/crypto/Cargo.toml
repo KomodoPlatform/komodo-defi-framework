@@ -11,6 +11,7 @@ mm2_err_handle = { path = "../mm2_err_handle" }
 async-trait = "0.1"
 bip32 = { version = "0.2.2", default-features = false, features = ["alloc", "secp256k1-ffi"] }
 bitcrypto = { path = "../mm2_bitcoin/crypto" }
+bs58 = "0.4.0"
 common = { path = "../common" }
 mm2_core = { path = "../mm2_core" }
 derive_more = "0.99"
