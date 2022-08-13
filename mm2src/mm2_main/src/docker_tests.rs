@@ -7,7 +7,8 @@
 #![feature(map_first_last)]
 #![recursion_limit = "512"]
 
-#[cfg(test)] use docker_tests::docker_tests_runner;
+#[cfg(test)]
+use docker_tests::docker_tests_runner;
 
 #[cfg(test)]
 #[macro_use]
@@ -30,13 +31,16 @@ extern crate serialization_derive;
 #[cfg(test)]
 #[macro_use]
 extern crate ser_error_derive;
-#[cfg(test)] extern crate test;
+#[cfg(test)]
+extern crate test;
 
 #[cfg(test)]
 #[path = "mm2.rs"]
 pub mod mm2;
 
-fn main() { unimplemented!() }
+fn main() {
+    unimplemented!()
+}
 
 /// rustfmt cannot resolve the module path within docker_tests.
 /// Specify the path manually outside the docker_tests.
@@ -109,8 +113,10 @@ mod docker_tests {
     use coins::utxo::utxo_common::send_outputs_from_my_address;
     use coins::utxo::utxo_standard::{utxo_standard_coin_with_priv_key, UtxoStandardCoin};
     use coins::utxo::{dhash160, GetUtxoListOps, UtxoActivationParams, UtxoCommonOps};
-    use coins::{CoinProtocol, FoundSwapTxSpend, MarketCoinOps, MmCoin, SearchForSwapTxSpendInput, SwapOps,
-                Transaction, TransactionEnum, WithdrawRequest};
+    use coins::{
+        CoinProtocol, FoundSwapTxSpend, MarketCoinOps, MmCoin, SearchForSwapTxSpendInput, SwapOps, Transaction,
+        TransactionEnum, WithdrawRequest,
+    };
     use common::{block_on, now_ms};
     use crypto::privkey::{key_pair_from_secret, key_pair_from_seed};
     use futures01::Future;
@@ -229,7 +235,9 @@ mod docker_tests {
     }
 
     impl CoinDockerOps for UtxoAssetDockerOps {
-        fn rpc_client(&self) -> &UtxoRpcClientEnum { &self.coin.as_ref().rpc_client }
+        fn rpc_client(&self) -> &UtxoRpcClientEnum {
+            &self.coin.as_ref().rpc_client
+        }
     }
 
     impl UtxoAssetDockerOps {
@@ -386,7 +394,9 @@ mod docker_tests {
     }
 
     impl CoinDockerOps for BchDockerOps {
-        fn rpc_client(&self) -> &UtxoRpcClientEnum { &self.coin.as_ref().rpc_client }
+        fn rpc_client(&self) -> &UtxoRpcClientEnum {
+            &self.coin.as_ref().rpc_client
+        }
     }
 
     /// Generate random privkey, create a UTXO coin and fill it's address with the specified balance.
@@ -443,6 +453,33 @@ mod docker_tests {
     }
 
     #[test]
+    fn test_for_non_existent_tx_hex_utxo() {
+        let timeout = (now_ms() / 1000) + 120; // timeout if test takes more than 120 seconds to run
+        let (_ctx, coin, _) = generate_utxo_coin_with_random_privkey("MYCOIN", 1000u64.into());
+        let hex = vec![
+            4, 0, 0, 128, 133, 32, 47, 137, 1, 81, 146, 94, 240, 227, 116, 153, 194, 232, 25, 255, 192, 110, 155, 208,
+            14, 157, 197, 189, 65, 107, 229, 129, 124, 136, 215, 10, 63, 13, 218, 183, 206, 1, 0, 0, 0, 107, 72, 48,
+            69, 2, 33, 0, 255, 148, 80, 199, 101, 182, 102, 18, 1, 46, 26, 48, 212, 144, 162, 81, 21, 157, 233, 80,
+            159, 130, 184, 56, 98, 183, 189, 115, 233, 233, 30, 60, 2, 32, 124, 220, 236, 219, 101, 75, 139, 241, 185,
+            174, 16, 112, 127, 128, 159, 9, 104, 156, 39, 2, 81, 187, 198, 209, 255, 79, 84, 61, 238, 53, 243, 35, 1,
+            33, 3, 192, 45, 65, 142, 227, 32, 245, 206, 82, 10, 140, 237, 131, 171, 113, 63, 246, 56, 118, 88, 57, 29,
+            11, 37, 227, 59, 106, 136, 90, 252, 3, 72, 255, 255, 255, 255, 3, 0, 225, 245, 5, 0, 0, 0, 0, 23, 169, 20,
+            27, 130, 67, 246, 162, 41, 162, 144, 64, 214, 12, 227, 165, 136, 151, 82, 145, 176, 74, 245, 135, 0, 0, 0,
+            0, 0, 0, 0, 0, 22, 106, 20, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 24, 3, 129, 66, 23,
+            0, 0, 0, 25, 118, 169, 20, 158, 220, 162, 160, 79, 133, 71, 112, 148, 22, 186, 113, 239, 163, 18, 241, 138,
+            161, 220, 132, 136, 172, 174, 23, 247, 98, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+        ];
+
+        let actual = coin
+            .wait_for_confirmations(&hex, 1, false, timeout, 1)
+            .wait()
+            .err()
+            .unwrap();
+
+        assert_eq!(true, actual.contains("Transaction b4f8d0f3665ccb7a7e1d98cfaba9c77ed4cbe245deaf529a5578b6977d91253c doesn't exist on chain yet"))
+    }
+
+    #[test]
     fn test_search_for_swap_tx_spend_native_was_refunded_maker() {
         let timeout = (now_ms() / 1000) + 120; // timeout if test takes more than 120 seconds to run
         let (_ctx, coin, _) = generate_utxo_coin_with_random_privkey("MYCOIN", 1000u64.into());
@@ -454,6 +491,7 @@ mod docker_tests {
             .wait()
             .unwrap();
 
+        print!("{:?}", tx.tx_hex());
         coin.wait_for_confirmations(&tx.tx_hex(), 1, false, timeout, 1)
             .wait()
             .unwrap();
@@ -2438,11 +2476,16 @@ mod docker_tests {
 
         log!("{:?}", block_on(enable_native(&mm_alice, "MYCOIN1", &[])));
         log!("{:?}", block_on(enable_native(&mm_alice, "MYCOIN", &[])));
-        let electrum = block_on(enable_electrum(&mm_alice, "KMD", false, &[
-            "electrum1.cipig.net:10001",
-            "electrum2.cipig.net:10001",
-            "electrum3.cipig.net:10001",
-        ]));
+        let electrum = block_on(enable_electrum(
+            &mm_alice,
+            "KMD",
+            false,
+            &[
+                "electrum1.cipig.net:10001",
+                "electrum2.cipig.net:10001",
+                "electrum3.cipig.net:10001",
+            ],
+        ));
         log!("{:?}", electrum);
         let rc = block_on(mm_alice.rpc(&json! ({
             "userpass": mm_alice.userpass,

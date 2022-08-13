@@ -173,6 +173,10 @@ impl UtxoRpcClientEnum {
                         }
                     },
                     Err(e) => {
+                        if let true = matches!(&e.get_inner(), UtxoRpcError::Transport(_)) {
+                            return ERR!("Transaction {:?} doesn't exist on chain yet", tx_hash);
+                        };
+
                         if expiry_height > 0 {
                             let block = match selfi.get_block_count().compat().await {
                                 Ok(b) => b,
