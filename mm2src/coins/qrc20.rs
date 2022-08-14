@@ -1,5 +1,5 @@
 use crate::coin_errors::{AddressParseError, CheckPaymentSentError, ExtractSecretError, GetTradeFeeError,
-                         MyAddressError, SendRawTxError, ValidatePaymentError, WaitForConfirmationsErr};
+                         MyAddressError, SendRawTxError, ValidatePaymentError, WaitForConfirmationsErr, TxEnumsBytesError};
 use crate::eth::{self, u256_to_big_decimal, wei_from_big_decimal, TryToAddress};
 use crate::qrc20::rpc_clients::{LogEntry, Qrc20ElectrumOps, Qrc20NativeOps, Qrc20RpcOps, TopicFilter, TxReceipt,
                                 ViewContractCallType};
@@ -1124,7 +1124,7 @@ impl MarketCoinOps for Qrc20Coin {
         Box::new(fut.boxed().compat())
     }
 
-    fn tx_enum_from_bytes(&self, bytes: &[u8]) -> Result<TransactionEnum, String> {
+    fn tx_enum_from_bytes(&self, bytes: &[u8]) -> MmResult<TransactionEnum, TxEnumsBytesError> {
         utxo_common::tx_enum_from_bytes(self.as_ref(), bytes)
     }
 

@@ -1,5 +1,5 @@
 use crate::coin_errors::{AddressParseError, CheckPaymentSentError, ExtractSecretError, GetTradeFeeError,
-                         MyAddressError, SendRawTxError, WaitForConfirmationsErr};
+                         MyAddressError, SendRawTxError, TxEnumsBytesError, WaitForConfirmationsErr};
 use crate::my_tx_history_v2::{MyTxHistoryErrorV2, MyTxHistoryRequestV2, MyTxHistoryResponseV2};
 use crate::rpc_command::init_withdraw::{InitWithdrawCoin, WithdrawInProgressStatus, WithdrawTaskHandle};
 use crate::utxo::rpc_clients::{ElectrumRpcRequest, UnspentInfo, UtxoRpcClientEnum, UtxoRpcError, UtxoRpcFut,
@@ -992,8 +992,8 @@ impl MarketCoinOps for ZCoin {
         )
     }
 
-    fn tx_enum_from_bytes(&self, bytes: &[u8]) -> Result<TransactionEnum, String> {
-        ZTransaction::read(bytes).map(|tx| tx.into()).map_err(|e| e.to_string())
+    fn tx_enum_from_bytes(&self, bytes: &[u8]) -> MmResult<TransactionEnum, TxEnumsBytesError> {
+        Ok(ZTransaction::read(bytes).map(|tx| tx.into())?)
     }
 
     fn current_block(&self) -> Box<dyn Future<Item = u64, Error = String> + Send> {

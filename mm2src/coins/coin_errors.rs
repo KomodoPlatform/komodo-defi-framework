@@ -1,6 +1,7 @@
 use common::jsonrpc_client::JsonRpcError;
 use derive_more::Display;
 use hex::FromHexError;
+use mm2_number::bigdecimal::ParseBigDecimalError;
 use spv_validation::helpers_validation::SPVError;
 
 use crate::{eth::{TokenDecimalsError, TryToAddressError, Web3RpcError},
@@ -392,4 +393,50 @@ impl From<ScriptExtractionError> for WaitForConfirmationsErr {
 
 impl From<ethkey::Error> for WaitForConfirmationsErr {
     fn from(err: ethkey::Error) -> Self { Self::SignedEthTx(err.to_string()) }
+}
+
+#[derive(Debug, Display)]
+pub enum TxDetailsHashError {
+    AddressParseError(String),
+    DeserialzationError(String),
+    DisplayAddrError(String),
+    Internal(String),
+    ParseBigDecimalError(String),
+    UnexpectedDerivationMethod(String),
+    UtxoRpcError(String),
+}
+
+impl From<UtxoRpcError> for TxDetailsHashError {
+    fn from(err: UtxoRpcError) -> Self { Self::UtxoRpcError(err.to_string()) }
+}
+
+impl From<serialization::Error> for TxDetailsHashError {
+    fn from(err: serialization::Error) -> Self { Self::DeserialzationError(err.to_string()) }
+}
+
+impl From<UnexpectedDerivationMethod> for TxDetailsHashError {
+    fn from(err: UnexpectedDerivationMethod) -> Self { Self::UnexpectedDerivationMethod(err.to_string()) }
+}
+
+impl From<ParseBigDecimalError> for TxDetailsHashError {
+    fn from(err: ParseBigDecimalError) -> Self { Self::ParseBigDecimalError(err.to_string()) }
+}
+
+#[derive(Debug, Display)]
+pub enum TxEnumsBytesError {
+    DeserializationErr(String),
+    ReadingZCoinTxError(String),
+    SignedEthTxError(String),
+}
+
+impl From<std::io::Error> for TxEnumsBytesError {
+    fn from(err: std::io::Error) -> Self { Self::ReadingZCoinTxError(err.to_string()) }
+}
+
+impl From<SignedEthTxError> for TxEnumsBytesError {
+    fn from(err: SignedEthTxError) -> Self { Self::SignedEthTxError(err.to_string()) }
+}
+
+impl From<serialization::Error> for TxEnumsBytesError {
+    fn from(err: serialization::Error) -> Self { Self::DeserializationErr(err.to_string()) }
 }

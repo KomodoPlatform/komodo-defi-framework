@@ -12,7 +12,7 @@ mod ln_utils;
 
 use super::{lp_coinfind_or_err, DerivationMethod, MmCoinEnum};
 use crate::coin_errors::{AddressParseError, CheckPaymentSentError, ExtractSecretError, GetTradeFeeError,
-                         MyAddressError, SendRawTxError, WaitForConfirmationsErr};
+                         MyAddressError, SendRawTxError, WaitForConfirmationsErr, TxEnumsBytesError};
 use crate::lightning::ln_events::init_events_abort_handlers;
 use crate::lightning::ln_sql::SqliteLightningDB;
 use crate::utxo::rpc_clients::UtxoRpcClientEnum;
@@ -474,7 +474,7 @@ impl MarketCoinOps for LightningCoin {
     }
 
     // Todo: Implement this when implementing swaps for lightning as it's is used mainly for swaps
-    fn tx_enum_from_bytes(&self, _bytes: &[u8]) -> Result<TransactionEnum, String> { unimplemented!() }
+    fn tx_enum_from_bytes(&self, _bytes: &[u8]) -> MmResult<TransactionEnum, TxEnumsBytesError> { unimplemented!() }
 
     fn current_block(&self) -> Box<dyn Future<Item = u64, Error = String> + Send> { Box::new(futures01::future::ok(0)) }
 

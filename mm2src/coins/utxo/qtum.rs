@@ -2,7 +2,7 @@ use super::*;
 use crate::coin_balance::{self, EnableCoinBalanceError, HDAccountBalance, HDAddressBalance, HDWalletBalance,
                           HDWalletBalanceOps};
 use crate::coin_errors::{CheckPaymentSentError, ExtractSecretError, GetTradeFeeError, MyAddressError, SendRawTxError,
-                         WaitForConfirmationsErr};
+                         WaitForConfirmationsErr, TxEnumsBytesError};
 use crate::hd_pubkey::{ExtractExtendedPubkey, HDExtractPubkeyError, HDXPubExtractor};
 use crate::hd_wallet::{self, AccountUpdatingError, AddressDerivingError, GetNewHDAddressParams,
                        GetNewHDAddressResponse, HDAccountMut, HDWalletRpcError, HDWalletRpcOps,
@@ -477,7 +477,7 @@ impl UtxoStandardOps for QtumCoin {
         &self,
         hash: &[u8],
         input_transactions: &mut HistoryUtxoTxMap,
-    ) -> Result<TransactionDetails, String> {
+    ) -> MmResult<TransactionDetails, TxDetailsHashError> {
         utxo_common::tx_details_by_hash(self, hash, input_transactions).await
     }
 
@@ -769,7 +769,7 @@ impl MarketCoinOps for QtumCoin {
         )
     }
 
-    fn tx_enum_from_bytes(&self, bytes: &[u8]) -> Result<TransactionEnum, String> {
+    fn tx_enum_from_bytes(&self, bytes: &[u8]) -> MmResult<TransactionEnum, TxEnumsBytesError> {
         utxo_common::tx_enum_from_bytes(self.as_ref(), bytes)
     }
 

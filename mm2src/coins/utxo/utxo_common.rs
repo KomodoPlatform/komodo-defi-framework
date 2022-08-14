@@ -1,7 +1,7 @@
 use super::*;
 use crate::coin_balance::{AddressBalanceStatus, HDAddressBalance, HDWalletBalanceOps};
 use crate::coin_errors::{CheckPaymentSentError, ExtractSecretError, GetTradeFeeError, MyAddressError, SendRawTxError,
-                         ValidatePaymentError, WaitForConfirmationsErr};
+                         TxDetailsHashError, ValidatePaymentError, WaitForConfirmationsErr, TxEnumsBytesError};
 use crate::hd_pubkey::{ExtractExtendedPubkey, HDExtractPubkeyError, HDXPubExtractor};
 use crate::hd_wallet::{AccountUpdatingError, AddressDerivingError, HDAccountMut, HDAccountsMap,
                        NewAccountCreatingError};
@@ -1862,8 +1862,10 @@ pub fn wait_for_output_spend(
     Box::new(fut.boxed().compat())
 }
 
-pub fn tx_enum_from_bytes(coin: &UtxoCoinFields, bytes: &[u8]) -> Result<TransactionEnum, String> {
-    let mut transaction: UtxoTx = try_s!(deserialize(bytes).map_err(|err| format!("{:?}", err)));
+
+
+pub fn tx_enum_from_bytes(coin: &UtxoCoinFields, bytes: &[u8]) -> MmResult<TransactionEnum, TxEnumsBytesError> {
+    let mut transaction: UtxoTx = deserialize(bytes)?;
     transaction.tx_hash_algo = coin.tx_hash_algo;
     Ok(transaction.into())
 }
@@ -2409,13 +2411,13 @@ pub async fn tx_details_by_hash<T: UtxoCommonOps>(
     coin: &T,
     hash: &[u8],
     input_transactions: &mut HistoryUtxoTxMap,
-) -> Result<TransactionDetails, String> {
+) -> MmResult<TransactionDetails, TxDetailsHashError> {
     let ticker = &coin.as_ref().conf.ticker;
     let hash = H256Json::from(hash);
-    let verbose_tx = try_s!(coin.as_ref().rpc_client.get_verbose_transaction(&hash).compat().await);
-    let mut tx: UtxoTx = try_s!(deserialize(verbose_tx.hex.as_slice()).map_err(|e| ERRL!("{:?}", e)));
+    let verbose_tx = coin.as_ref().rpc_client.get_verbose_transaction(&hash).compat().await?;
+    let mut tx: UtxoTx = deserialize(verbose_tx.hex.as_slice())?;
     tx.tx_hash_algo = coin.as_ref().tx_hash_algo;
-    let my_address = try_s!(coin.as_ref().derivation_method.iguana_or_err());
+    let my_address = coin.as_ref().derivation_method.iguana_or_err()?;
 
     input_transactions.insert(hash, HistoryUtxoTx {
         tx: tx.clone(),
@@ -2436,21 +2438,22 @@ pub async fn tx_details_by_hash<T: UtxoCommonOps>(
         }
 
         let prev_tx_hash: H256Json = input.previous_output.hash.reversed().into();
-        let prev_tx = try_s!(
-            coin.get_mut_verbose_transaction_from_map_or_rpc(prev_tx_hash, input_transactions)
-                .await
-        );
+        let prev_tx = coin
+            .get_mut_verbose_transaction_from_map_or_rpc(prev_tx_hash, input_transactions)
+            .await?;
         let prev_tx = &mut prev_tx.tx;
         prev_tx.tx_hash_algo = coin.as_ref().tx_hash_algo;
 
         let prev_tx_value = prev_tx.outputs[input.previous_output.index as usize].value;
         input_amount += prev_tx_value;
-        let from: Vec<Address> = try_s!(coin.addresses_from_script(
-            &prev_tx.outputs[input.previous_output.index as usize]
-                .script_pubkey
-                .clone()
-                .into()
-        ));
+        let from: Vec<Address> = coin
+            .addresses_from_script(
+                &prev_tx.outputs[input.previous_output.index as usize]
+                    .script_pubkey
+                    .clone()
+                    .into(),
+            )
+            .mm_err(TxDetailsHashError::AddressParseError)?;
         if from.contains(my_address) {
             spent_by_me += prev_tx_value;
         }
@@ -2459,7 +2462,9 @@ pub async fn tx_details_by_hash<T: UtxoCommonOps>(
 
     for output in tx.outputs.iter() {
         output_amount += output.value;
-        let to = try_s!(coin.addresses_from_script(&output.script_pubkey.clone().into()));
+        let to = coin
+            .addresses_from_script(&output.script_pubkey.clone().into())
+            .mm_err(TxDetailsHashError::AddressParseError)?;
         if to.contains(my_address) {
             received_by_me += output.value;
         }
@@ -2506,7 +2511,8 @@ pub async fn tx_details_by_hash<T: UtxoCommonOps>(
             };
             cur + fee
         });
-        (try_s!(fee.try_into()), None)
+        // let e = fee.try_into();
+        (fee.try_into()?, None)
     } else {
         let fee = input_amount as i64 - output_amount as i64;
         (big_decimal_from_sat(fee, coin.as_ref().decimals), None)
@@ -2514,13 +2520,19 @@ pub async fn tx_details_by_hash<T: UtxoCommonOps>(
 
     // remove address duplicates in case several inputs were spent from same address
     // or several outputs are sent to same address
-    let mut from_addresses: Vec<String> =
-        try_s!(from_addresses.into_iter().map(|addr| addr.display_address()).collect());
-    from_addresses.sort();
-    from_addresses.dedup();
-    let mut to_addresses: Vec<String> = try_s!(to_addresses.into_iter().map(|addr| addr.display_address()).collect());
-    to_addresses.sort();
-    to_addresses.dedup();
+    let mut from_addresses_mut = vec![];
+    for (_, addr) in from_addresses.iter().enumerate() {
+        from_addresses_mut.push(addr.display_address().map_to_mm(TxDetailsHashError::DisplayAddrError)?)
+    }
+    from_addresses_mut.sort();
+    from_addresses_mut.dedup();
+
+    let mut to_addresses_mut = vec![];
+    for (_, addr) in to_addresses.iter().enumerate() {
+        to_addresses_mut.push(addr.display_address().map_to_mm(TxDetailsHashError::DisplayAddrError)?)
+    }
+    to_addresses_mut.sort();
+    to_addresses_mut.dedup();
 
     let fee_details = UtxoFeeDetails {
         coin: Some(coin.as_ref().conf.ticker.clone()),
@@ -2528,8 +2540,8 @@ pub async fn tx_details_by_hash<T: UtxoCommonOps>(
     };
 
     Ok(TransactionDetails {
-        from: from_addresses,
-        to: to_addresses,
+        from: from_addresses_mut,
+        to: to_addresses_mut,
         received_by_me: big_decimal_from_sat_unsigned(received_by_me, coin.as_ref().decimals),
         spent_by_me: big_decimal_from_sat_unsigned(spent_by_me, coin.as_ref().decimals),
         my_balance_change: big_decimal_from_sat(received_by_me as i64 - spent_by_me as i64, coin.as_ref().decimals),

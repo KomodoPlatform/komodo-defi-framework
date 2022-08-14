@@ -1,6 +1,6 @@
 use super::{CoinBalance, HistorySyncState, MarketCoinOps, MmCoin, SwapOps, TradeFee, TransactionEnum};
 use crate::coin_errors::{AddressParseError, CheckPaymentSentError, ExtractSecretError, GetTradeFeeError,
-                         MyAddressError, SendRawTxError, ValidatePaymentError, WaitForConfirmationsErr};
+                         MyAddressError, SendRawTxError, ValidatePaymentError, WaitForConfirmationsErr, TxEnumsBytesError};
 use crate::solana::solana_common::{ui_amount_to_amount, PrepareTransferData, SufficientBalanceError};
 use crate::solana::{solana_common, AccountError, SolanaCommonOps, SolanaFeeDetails};
 use crate::{BalanceFut, FeeApproxStage, FoundSwapTxSpend, FoundSwapTxSpendErr, NegotiateSwapContractAddrErr,
@@ -269,7 +269,7 @@ impl MarketCoinOps for SplToken {
         unimplemented!()
     }
 
-    fn tx_enum_from_bytes(&self, _bytes: &[u8]) -> Result<TransactionEnum, String> { unimplemented!() }
+    fn tx_enum_from_bytes(&self, _bytes: &[u8]) -> MmResult<TransactionEnum, TxEnumsBytesError> { unimplemented!() }
 
     fn current_block(&self) -> Box<dyn Future<Item = u64, Error = String> + Send> { self.platform_coin.current_block() }
 

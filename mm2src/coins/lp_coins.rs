@@ -36,7 +36,7 @@
 use async_trait::async_trait;
 use base58::FromBase58Error;
 use coin_errors::{AddressParseError, CheckPaymentSentError, ExtractSecretError, GetTradeFeeError, MyAddressError,
-                  SendRawTxError, ValidatePaymentError, WaitForConfirmationsErr};
+                  SendRawTxError, ValidatePaymentError, WaitForConfirmationsErr, TxEnumsBytesError};
 use common::{calc_total_pages, now_ms, ten, HttpStatusCode};
 use crypto::{Bip32Error, CryptoCtx, DerivationPath};
 use derive_more::Display;
@@ -722,7 +722,7 @@ pub trait MarketCoinOps {
         swap_contract_address: &Option<BytesJson>,
     ) -> TransactionFut;
 
-    fn tx_enum_from_bytes(&self, bytes: &[u8]) -> Result<TransactionEnum, String>;
+    fn tx_enum_from_bytes(&self, bytes: &[u8]) -> MmResult<TransactionEnum, TxEnumsBytesError>;
 
     fn current_block(&self) -> Box<dyn Future<Item = u64, Error = String> + Send>;
 

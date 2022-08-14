@@ -1,7 +1,7 @@
 use super::{CoinBalance, HistorySyncState, MarketCoinOps, MmCoin, RawTransactionFut, RawTransactionRequest, SwapOps,
             TradeFee, TransactionEnum, TransactionFut};
 use crate::{coin_errors::{AddressParseError, CheckPaymentSentError, ExtractSecretError, GetTradeFeeError,
-                          MyAddressError, SendRawTxError, ValidatePaymentError, WaitForConfirmationsErr},
+                          MyAddressError, SendRawTxError, ValidatePaymentError, WaitForConfirmationsErr, TxEnumsBytesError},
             BalanceFut, CanRefundHtlc, FeeApproxStage, FoundSwapTxSpend, FoundSwapTxSpendErr,
             NegotiateSwapContractAddrErr, SearchForSwapTxSpendInput, SignatureResult, TradePreimageFut,
             TradePreimageResult, TradePreimageValue, UnexpectedDerivationMethod, ValidateAddressResult,
@@ -84,7 +84,7 @@ impl MarketCoinOps for TestCoin {
         unimplemented!()
     }
 
-    fn tx_enum_from_bytes(&self, bytes: &[u8]) -> Result<TransactionEnum, String> { unimplemented!() }
+    fn tx_enum_from_bytes(&self, bytes: &[u8]) -> MmResult<TransactionEnum, TxEnumsBytesError> { unimplemented!() }
 
     fn current_block(&self) -> Box<dyn Future<Item = u64, Error = String> + Send> { unimplemented!() }
 

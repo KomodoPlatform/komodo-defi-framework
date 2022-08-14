@@ -101,7 +101,7 @@ use super::{big_decimal_from_sat_unsigned, BalanceError, BalanceFut, BalanceResu
             Transaction, TransactionDetails, TransactionEnum, UnexpectedDerivationMethod, WithdrawError,
             WithdrawRequest};
 use crate::coin_balance::{EnableCoinScanPolicy, HDAddressBalanceScanner};
-use crate::coin_errors::AddressParseError;
+use crate::coin_errors::{AddressParseError, TxDetailsHashError};
 use crate::hd_wallet::{HDAccountOps, HDAccountsMutex, HDAddress, HDWalletCoinOps, HDWalletOps, InvalidBip44ChainError};
 use crate::hd_wallet_storage::{HDAccountStorageItem, HDWalletCoinStorage, HDWalletStorageError, HDWalletStorageResult};
 use crate::utxo::tx_cache::UtxoVerboseCacheShared;
@@ -967,7 +967,7 @@ pub trait UtxoStandardOps {
         &self,
         hash: &[u8],
         input_transactions: &mut HistoryUtxoTxMap,
-    ) -> Result<TransactionDetails, String>;
+    ) -> MmResult<TransactionDetails, TxDetailsHashError>;
 
     async fn request_tx_history(&self, metrics: MetricsArc) -> RequestTxHistoryResult;
 

@@ -1,6 +1,6 @@
 use super::*;
 use crate::coin_errors::{CheckPaymentSentError, ExtractSecretError, GetTradeFeeError, MyAddressError, SendRawTxError,
-                         WaitForConfirmationsErr};
+                         WaitForConfirmationsErr, TxEnumsBytesError};
 use crate::my_tx_history_v2::{CoinWithTxHistoryV2, TxDetailsBuilder, TxHistoryStorage, TxHistoryStorageError};
 use crate::tx_history_storage::{GetTxHistoryFilters, WalletId};
 use crate::utxo::rpc_clients::UtxoRpcFut;
@@ -1133,7 +1133,7 @@ impl MarketCoinOps for BchCoin {
         )
     }
 
-    fn tx_enum_from_bytes(&self, bytes: &[u8]) -> Result<TransactionEnum, String> {
+    fn tx_enum_from_bytes(&self, bytes: &[u8]) -> MmResult<TransactionEnum, TxEnumsBytesError> {
         utxo_common::tx_enum_from_bytes(self.as_ref(), bytes)
     }
 
@@ -1154,7 +1154,7 @@ impl UtxoStandardOps for BchCoin {
         &self,
         hash: &[u8],
         input_transactions: &mut HistoryUtxoTxMap,
-    ) -> Result<TransactionDetails, String> {
+    ) -> MmResult<TransactionDetails, TxDetailsHashError> {
         utxo_common::tx_details_by_hash(self, hash, input_transactions).await
     }
 

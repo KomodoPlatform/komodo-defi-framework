@@ -61,7 +61,7 @@ use web3_transport::{EthFeeHistoryNamespace, Web3Transport, Web3TransportNode};
 
 use crate::coin_errors::{AddressParseError, CheckPaymentSentError, EthCoinParseError, ExtractSecretError,
                          GetTradeFeeError, MyAddressError, PaymentStatusError, SendRawTxError, SignedEthTxError,
-                         ValidatePaymentError, WaitForConfirmationsErr};
+                         TxEnumsBytesError, ValidatePaymentError, WaitForConfirmationsErr};
 use crate::ValidatePaymentFut;
 
 use super::{coin_conf, AsyncMutex, BalanceError, BalanceFut, CoinBalance, CoinProtocol, CoinTransportMetrics,
@@ -1419,8 +1419,8 @@ impl MarketCoinOps for EthCoin {
         Box::new(fut.boxed().compat())
     }
 
-    fn tx_enum_from_bytes(&self, bytes: &[u8]) -> Result<TransactionEnum, String> {
-        Ok(signed_eth_tx_from_bytes(bytes).map_err(|err| err.to_string())?.into())
+    fn tx_enum_from_bytes(&self, bytes: &[u8]) -> MmResult<TransactionEnum, TxEnumsBytesError> {
+        Ok(signed_eth_tx_from_bytes(bytes)?.into())
     }
 
     fn current_block(&self) -> Box<dyn Future<Item = u64, Error = String> + Send> {

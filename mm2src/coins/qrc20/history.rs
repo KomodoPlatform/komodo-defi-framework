@@ -1,5 +1,6 @@
 use super::script_pubkey::ScriptExtractionError;
 use super::*;
+use crate::coin_errors::TxDetailsHashError;
 use crate::utxo::{RequestTxHistoryResult, UtxoFeeDetails};
 use crate::{CoinsContext, NumConversError, TxFeeDetails, TxHistoryResult};
 use byteorder::{BigEndian, ReadBytesExt, WriteBytesExt};
@@ -30,7 +31,7 @@ pub enum Qrc20CoinTxHistoryError {
     #[display(fmt = "Length of the transaction {:?} outputs less than output_index {}", _0, _1)]
     TxOutputLengthLessThanRequired(H256Json, u64),
     #[display(fmt = "QtumTxDetailsError: {}", _0)]
-    QtumTxDetailsError(String),
+    TxDetailsHashError(TxDetailsHashError),
     #[display(fmt = "Incorrect bytes len {}, expected {}", _0, _1)]
     UnExpectedBytesLen(usize, usize),
     #[display(fmt = "UnExpectedDerivationMethod: {}", _0)]
@@ -42,6 +43,10 @@ pub enum Qrc20CoinTxHistoryError {
 
 impl From<JsonRpcError> for Qrc20CoinTxHistoryError {
     fn from(err: JsonRpcError) -> Self { Self::JsonRpcError(err) }
+}
+
+impl From<TxDetailsHashError> for Qrc20CoinTxHistoryError {
+    fn from(err: TxDetailsHashError) -> Self { Self::TxDetailsHashError(err) }
 }
 
 impl From<serialization::Error> for Qrc20CoinTxHistoryError {
@@ -253,9 +258,7 @@ impl Qrc20Coin {
         let receipts = self.utxo.rpc_client.get_transaction_receipts(&tx_hash).compat().await?;
         // request Qtum transaction details to get a tx_hex, timestamp, block_height and calculate a miner_fee
         let mut input_transactions = HistoryUtxoTxMap::new();
-        let qtum_details = utxo_common::tx_details_by_hash(self, &tx_hash.0, &mut input_transactions)
-            .await
-            .map_to_mm(Qrc20CoinTxHistoryError::QtumTxDetailsError)?;
+        let qtum_details = utxo_common::tx_details_by_hash(self, &tx_hash.0, &mut input_transactions).await?;
         // Deserialize the UtxoTx to get a script pubkey
         let qtum_tx: UtxoTx = deserialize(qtum_details.tx_hex.as_slice())?;
 

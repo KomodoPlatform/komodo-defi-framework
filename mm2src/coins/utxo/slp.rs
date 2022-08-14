@@ -4,7 +4,7 @@
 //! More info about the protocol and implementation guides can be found at https://slp.dev/
 
 use crate::coin_errors::{AddressParseError, CheckPaymentSentError, ExtractSecretError, GetTradeFeeError,
-                         MyAddressError, SendRawTxError, ValidatePaymentError, WaitForConfirmationsErr};
+                         MyAddressError, SendRawTxError, ValidatePaymentError, WaitForConfirmationsErr, TxEnumsBytesError};
 use crate::my_tx_history_v2::CoinWithTxHistoryV2;
 use crate::tx_history_storage::{GetTxHistoryFilters, WalletId};
 use crate::utxo::bch::BchCoin;
@@ -1181,7 +1181,7 @@ impl MarketCoinOps for SlpToken {
         )
     }
 
-    fn tx_enum_from_bytes(&self, bytes: &[u8]) -> Result<TransactionEnum, String> {
+    fn tx_enum_from_bytes(&self, bytes: &[u8]) -> MmResult<TransactionEnum, TxEnumsBytesError> {
         self.platform_coin.tx_enum_from_bytes(bytes)
     }
 
