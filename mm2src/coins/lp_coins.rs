@@ -36,7 +36,7 @@
 use async_trait::async_trait;
 use base58::FromBase58Error;
 use coin_errors::{AddressParseError, CheckPaymentSentError, ExtractSecretError, GetTradeFeeError, MyAddressError,
-                  SendRawTxError, ValidatePaymentError, WaitForConfirmationsErr, TxEnumsBytesError};
+                  SendRawTxError, TxEnumsBytesError, ValidatePaymentError, WaitForConfirmationsErr};
 use common::{calc_total_pages, now_ms, ten, HttpStatusCode};
 use crypto::{Bip32Error, CryptoCtx, DerivationPath};
 use derive_more::Display;

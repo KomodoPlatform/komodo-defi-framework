@@ -1,7 +1,7 @@
 use super::*;
 use crate::coin_balance::{AddressBalanceStatus, HDAddressBalance, HDWalletBalanceOps};
 use crate::coin_errors::{CheckPaymentSentError, ExtractSecretError, GetTradeFeeError, MyAddressError, SendRawTxError,
-                         TxDetailsHashError, ValidatePaymentError, WaitForConfirmationsErr, TxEnumsBytesError};
+                         TxDetailsHashError, TxEnumsBytesError, ValidatePaymentError, WaitForConfirmationsErr};
 use crate::hd_pubkey::{ExtractExtendedPubkey, HDExtractPubkeyError, HDXPubExtractor};
 use crate::hd_wallet::{AccountUpdatingError, AddressDerivingError, HDAccountMut, HDAccountsMap,
                        NewAccountCreatingError};
@@ -1861,8 +1861,6 @@ pub fn wait_for_output_spend(
     };
     Box::new(fut.boxed().compat())
 }
-
-
 
 pub fn tx_enum_from_bytes(coin: &UtxoCoinFields, bytes: &[u8]) -> MmResult<TransactionEnum, TxEnumsBytesError> {
     let mut transaction: UtxoTx = deserialize(bytes)?;

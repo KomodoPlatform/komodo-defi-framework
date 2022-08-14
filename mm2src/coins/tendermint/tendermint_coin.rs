@@ -2,7 +2,7 @@
 use super::tendermint_native_rpc::*;
 #[cfg(target_arch = "wasm32")] use super::tendermint_wasm_rpc::*;
 use crate::coin_errors::{AddressParseError, CheckPaymentSentError, ExtractSecretError, GetTradeFeeError,
-                         MyAddressError, SendRawTxError, WaitForConfirmationsErr, TxEnumsBytesError};
+                         MyAddressError, SendRawTxError, TxEnumsBytesError, WaitForConfirmationsErr};
 use crate::utxo::sat_from_big_decimal;
 use crate::{big_decimal_from_sat_unsigned, BalanceError, BalanceFut, BigDecimal, CoinBalance, FeeApproxStage,
             FoundSwapTxSpend, FoundSwapTxSpendErr, HistorySyncState, MarketCoinOps, MmCoin,
