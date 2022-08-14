@@ -62,7 +62,7 @@ impl HardwareWalletCtx {
         let trezor = HwClient::trezor(processor).await?;
 
         let (hw_device_info, hw_internal_pubkey) = {
-            let (device_info, mut session) = trezor.session_and_device_info().await?;
+            let (device_info, mut session) = trezor.new_session().await?;
             let hw_internal_pubkey = HardwareWalletCtx::trezor_mm_internal_pubkey(&mut session, processor).await?;
             (HwDeviceInfo::Trezor(device_info), hw_internal_pubkey)
         };
