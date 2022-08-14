@@ -1,8 +1,6 @@
 [workspace]
 members = [
     "mm2src/coins",
-    "mm2src/coins/lightning_persister",
-    "mm2src/coins/lightning_background_processor",
     "mm2src/coins/utxo_signer",
     "mm2src/coins_activation",
     "mm2src/common/shared_ref_counter",
@@ -27,6 +25,7 @@ members = [
     "mm2src/mm2_err_handle",
     "mm2src/mm2_io",
     "mm2src/mm2_libp2p",
+    "mm2src/mm2_metrics",
     "mm2src/mm2_main",
     "mm2src/mm2_net",
     "mm2src/mm2_number",
@@ -46,8 +45,9 @@ resolver = "2"
 # Due to the "overrides" only affects our workspace crates, as intended.
 debug = true
 debug-assertions = false
-# For better or worse, might affect the stack traces in our portion of the code.
-#opt-level = 1
+# For some reason, opt-level 3 started causing infinite Windows builds after Cosmos integration
+# TODO troubleshoot it
+opt-level = 2
 
 [profile.test]
 # required to avoid a long running process of librustcash additional chain validation that is enabled with debug assertions

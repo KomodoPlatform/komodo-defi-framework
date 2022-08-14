@@ -28,7 +28,7 @@ use coins::utxo::{compressed_pub_key_from_priv_raw, ChecksumType, UtxoAddressFor
 use coins::{coin_conf, find_pair, lp_coinfind, BalanceTradeFeeUpdatedHandler, CoinProtocol, CoinsContext,
             FeeApproxStage, MmCoinEnum};
 use common::executor::{spawn, Timer};
-use common::log::{error, LogOnError};
+use common::log::{error, warn, LogOnError};
 use common::time_cache::TimeCache;
 use common::{bits256, log, new_uuid, now_ms, spawn_abortable, AbortOnDropHandle};
 use crypto::privkey::SerializableSecp256k1Keypair;
@@ -42,6 +42,7 @@ use keys::{AddressFormat, KeyPair};
 use mm2_core::mm_ctx::{from_ctx, MmArc, MmWeak};
 use mm2_err_handle::prelude::*;
 use mm2_libp2p::{decode_signed, encode_and_sign, encode_message, pub_sub_topic, TopicPrefix, TOPIC_SEPARATOR};
+use mm2_metrics::{mm_gauge, mm_label};
 use mm2_number::{construct_detailed, BigDecimal, BigRational, Fraction, MmNumber, MmNumberMultiRepr};
 #[cfg(test)] use mocktopus::macros::*;
 use num_traits::identities::Zero;
@@ -507,13 +508,13 @@ pub enum OrdermatchRequest {
         action: BestOrdersAction,
         volume: BigRational,
     },
+    OrderbookDepth {
+        pairs: Vec<(String, String)>,
+    },
     BestOrdersByNumber {
         coin: String,
         action: BestOrdersAction,
         number: usize,
-    },
-    OrderbookDepth {
-        pairs: Vec<(String, String)>,
     },
 }
 
@@ -625,10 +626,16 @@ fn get_pubkeys_orders(orderbook: &Orderbook, base: String, rel: String) -> GetPu
     let mut protocol_infos = HashMap::new();
     let mut conf_infos = HashMap::new();
     for uuid in orders {
-        let order = orderbook
-            .order_set
-            .get(uuid)
-            .expect("Orderbook::ordered contains an uuid that is not in Orderbook::order_set");
+        let order = match orderbook.order_set.get(uuid) {
+            Some(o) => o,
+            None => {
+                warn!(
+                    "Orderbook::ordered contains uuid {} that is not in Orderbook::order_set",
+                    uuid
+                );
+                continue;
+            },
+        };
         let uuids = uuids_by_pubkey.entry(order.pubkey.clone()).or_insert_with(Vec::new);
         protocol_infos.insert(order.uuid, order.base_rel_proto_info());
         if let Some(info) = order.conf_settings {
@@ -2374,13 +2381,13 @@ fn collect_orderbook_metrics(ctx: &MmArc, orderbook: &Orderbook) {
     }
 
     let memory_db_size = malloc_size(&orderbook.memory_db);
-    mm_gauge!(ctx.metrics, "orderbook.len", orderbook.order_set.len() as i64);
-    mm_gauge!(ctx.metrics, "orderbook.memory_db", memory_db_size as i64);
+    mm_gauge!(ctx.metrics, "orderbook.len", orderbook.order_set.len() as f64);
+    mm_gauge!(ctx.metrics, "orderbook.memory_db", memory_db_size as f64);
 
     // TODO remove metrics below after testing
     for (pubkey, pubkey_state) in orderbook.pubkeys_state.iter() {
-        mm_gauge!(ctx.metrics, "orders_uuids", pubkey_state.orders_uuids.len() as i64, "pubkey" => pubkey.clone());
-        mm_gauge!(ctx.metrics, "history.commited_changes", history_committed_changes(&pubkey_state.order_pairs_trie_state_history), "pubkey" => pubkey.clone());
+        mm_gauge!(ctx.metrics, "orders_uuids", pubkey_state.orders_uuids.len() as f64, "pubkey" => pubkey.clone());
+        mm_gauge!(ctx.metrics, "history.commited_changes", history_committed_changes(&pubkey_state.order_pairs_trie_state_history) as f64, "pubkey" => pubkey.clone());
     }
 }
 
@@ -5566,11 +5573,11 @@ fn orderbook_address(
                 _ => MmError::err(OrderbookAddrErr::InvalidPlatformCoinProtocol(platform)),
             }
         },
+        CoinProtocol::TENDERMINT(_) => MmError::err(OrderbookAddrErr::CoinIsNotSupported(coin.to_owned())),
         #[cfg(not(target_arch = "wasm32"))]
-        // TODO ask Slyris
-        CoinProtocol::SOLANA | CoinProtocol::SPLTOKEN { .. } => unimplemented!(),
-        #[cfg(not(target_arch = "wasm32"))]
-        CoinProtocol::LIGHTNING { .. } => MmError::err(OrderbookAddrErr::CoinIsNotSupported(coin.to_owned())),
+        CoinProtocol::LIGHTNING { .. } | CoinProtocol::SOLANA | CoinProtocol::SPLTOKEN { .. } => {
+            MmError::err(OrderbookAddrErr::CoinIsNotSupported(coin.to_owned()))
+        },
         #[cfg(not(target_arch = "wasm32"))]
         CoinProtocol::ZHTLC { .. } => Ok(OrderbookAddress::Shielded),
     }

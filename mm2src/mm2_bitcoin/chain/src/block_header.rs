@@ -1,10 +1,13 @@
 use compact::Compact;
 use crypto::dhash256;
+use ext_bitcoin::blockdata::block::BlockHeader as ExtBlockHeader;
+use ext_bitcoin::hash_types::{BlockHash as ExtBlockHash, TxMerkleNode as ExtTxMerkleNode};
 use hash::H256;
 use hex::FromHex;
 use primitives::bytes::Bytes;
 use primitives::U256;
 use ser::{deserialize, serialize, Deserializable, Reader, Serializable, Stream};
+use std::convert::TryFrom;
 use std::io;
 use transaction::{deserialize_tx, TxType};
 use {OutPoint, Transaction};
@@ -39,7 +42,26 @@ impl Serializable for BlockHeaderBits {
     }
 }
 
+impl From<BlockHeaderBits> for u32 {
+    fn from(bits: BlockHeaderBits) -> Self {
+        match bits {
+            BlockHeaderBits::Compact(c) => c.into(),
+            BlockHeaderBits::U32(n) => n,
+        }
+    }
+}
+
+impl From<BlockHeaderBits> for Compact {
+    fn from(bits: BlockHeaderBits) -> Self {
+        match bits {
+            BlockHeaderBits::Compact(c) => c,
+            BlockHeaderBits::U32(n) => Compact::new(n),
+        }
+    }
+}
+
 const AUX_POW_VERSION_DOGE: u32 = 6422788;
+const AUX_POW_VERSION_NMC: u32 = 65796;
 const AUX_POW_VERSION_SYS: u32 = 537919744;
 const MTP_POW_VERSION: u32 = 0x20001000u32;
 const PROG_POW_SWITCH_TIME: u32 = 1635228000;
@@ -227,7 +249,10 @@ impl Deserializable for BlockHeader {
         let solution = if version == 4 { Some(reader.read_list()?) } else { None };
 
         // https://en.bitcoin.it/wiki/Merged_mining_specification#Merged_mining_coinbase
-        let aux_pow = if version == AUX_POW_VERSION_DOGE || version == AUX_POW_VERSION_SYS {
+        let aux_pow = if matches!(
+            version,
+            AUX_POW_VERSION_DOGE | AUX_POW_VERSION_SYS | AUX_POW_VERSION_NMC
+        ) {
             let coinbase_tx = deserialize_tx(reader, TxType::StandardWithWitness)?;
             let parent_block_hash = reader.read()?;
             let coinbase_branch = reader.read()?;
@@ -317,11 +342,44 @@ impl From<&'static str> for BlockHeader {
     fn from(s: &'static str) -> Self { deserialize(&s.from_hex::<Vec<u8>>().unwrap() as &[u8]).unwrap() }
 }
 
+impl TryFrom<String> for BlockHeader {
+    type Error = ser::Error;
+    fn try_from(s: String) -> Result<Self, Self::Error> {
+        deserialize(
+            &s.from_hex::<Vec<u8>>()
+                .map_err(|e| Self::Error::Custom(e.to_string()))? as &[u8],
+        )
+    }
+}
+
+impl From<BlockHeader> for ExtBlockHeader {
+    fn from(header: BlockHeader) -> Self {
+        let prev_blockhash = ExtBlockHash::from_hash(header.previous_header_hash.to_sha256d());
+        let merkle_root = ExtTxMerkleNode::from_hash(header.merkle_root_hash.to_sha256d());
+        // note: H256 nonce is not supported for bitcoin, we will just set nonce to 0 in this case since this will never happen
+        let nonce = match header.nonce {
+            BlockHeaderNonce::U32(n) => n,
+            _ => 0,
+        };
+        ExtBlockHeader {
+            version: header.version as i32,
+            prev_blockhash,
+            merkle_root,
+            time: header.time,
+            bits: header.bits.into(),
+            nonce,
+        }
+    }
+}
+
 #[cfg(test)]
 mod tests {
-    use block_header::{BlockHeader, BlockHeaderBits, BlockHeaderNonce, AUX_POW_VERSION_DOGE, AUX_POW_VERSION_SYS,
-                       BIP9_NO_SOFT_FORK_BLOCK_HEADER_VERSION, KAWPOW_VERSION, MTP_POW_VERSION, PROG_POW_SWITCH_TIME};
+    use super::ExtBlockHeader;
+    use block_header::{BlockHeader, BlockHeaderBits, BlockHeaderNonce, AUX_POW_VERSION_DOGE, AUX_POW_VERSION_NMC,
+                       AUX_POW_VERSION_SYS, BIP9_NO_SOFT_FORK_BLOCK_HEADER_VERSION, KAWPOW_VERSION, MTP_POW_VERSION,
+                       PROG_POW_SWITCH_TIME};
     use hex::FromHex;
+    use primitives::bytes::Bytes;
     use ser::{deserialize, serialize, serialize_list, CoinVariant, Error as ReaderError, Reader, Stream};
 
     #[test]
@@ -977,6 +1035,24 @@ mod tests {
         let headers = reader.read_list::<BlockHeader>().unwrap();
         for header in headers.iter() {
             assert_eq!(header.version, BIP9_NO_SOFT_FORK_BLOCK_HEADER_VERSION);
+        }
+        let serialized = serialize_list(&headers);
+        assert_eq!(serialized.take(), headers_bytes);
+    }
+
+    #[test]
+    fn test_nmc_block_headers_serde_11() {
+        // NMC block headers
+        // start - #622807
+        // end - #622796
+        // Ref: https://chainz.cryptoid.info/nmc/block.dws?622807.htm
+        let headers_bytes: Bytes = include_str!("for_tests/nmc_block_headers_hex").into();
+        let headers_bytes = headers_bytes.as_slice();
+        let mut reader = Reader::new(headers_bytes);
+        let headers = reader.read_list::<BlockHeader>().unwrap();
+        for header in headers.iter() {
+            assert_eq!(header.version, AUX_POW_VERSION_NMC);
+            assert!(header.aux_pow.is_some());
         }
         let serialized = serialize_list(&headers);
         assert_eq!(serialized.take(), headers_bytes);
@@ -2386,5 +2462,16 @@ mod tests {
         }
         let serialized = serialize_list(&headers);
         assert_eq!(serialized.take(), headers_bytes);
+    }
+
+    #[test]
+    fn test_from_blockheader_to_ext_blockheader() {
+        // https://live.blockcypher.com/btc/block/00000000000000000020cf2bdc6563fb25c424af588d5fb7223461e72715e4a9/
+        let header: BlockHeader = "0200000066720b99e07d284bd4fe67ff8c49a5db1dd8514fcdab610000000000000000007829844f4c3a41a537b3131ca992643eaa9d093b2383e4cdc060ad7dc548118751eb505ac1910018de19b302".into();
+        let ext_header = ExtBlockHeader::from(header.clone());
+        assert_eq!(
+            header.hash().reversed().to_string(),
+            ext_header.block_hash().to_string()
+        );
     }
 }

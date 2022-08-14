@@ -84,14 +84,20 @@ macro_rules! try_h {
     };
 }
 
+/// Drops mutability of given variable
+#[macro_export]
+macro_rules! drop_mutability {
+    ($t: ident) => {
+        let $t = $t;
+    };
+}
+
 #[macro_use]
 pub mod jsonrpc_client;
 #[macro_use]
 pub mod fmt;
 #[macro_use]
 pub mod log;
-#[macro_use]
-pub mod mm_metrics;
 
 pub mod crash_reports;
 pub mod custom_futures;
@@ -118,10 +124,11 @@ pub mod executor;
 #[cfg(target_arch = "wasm32")] pub use wasm::*;
 
 use backtrace::SymbolName;
+use chrono::Utc;
 pub use futures::compat::Future01CompatExt;
 use futures::future::{abortable, AbortHandle, FutureExt};
 use futures01::{future, Future};
-use http::header::{HeaderValue, CONTENT_TYPE};
+use http::header::CONTENT_TYPE;
 use http::Response;
 use parking_lot::{Mutex as PaMutex, MutexGuard as PaMutexGuard};
 use rand::{rngs::SmallRng, SeedableRng};
@@ -156,6 +163,11 @@ cfg_native! {
 cfg_wasm32! {
     use std::sync::atomic::AtomicUsize;
 }
+
+pub const X_GRPC_WEB: &str = "x-grpc-web";
+pub const APPLICATION_JSON: &str = "application/json";
+pub const APPLICATION_GRPC_WEB: &str = "application/grpc-web";
+pub const APPLICATION_GRPC_WEB_PROTO: &str = "application/grpc-web+proto";
 
 pub const SATOSHIS: u64 = 100_000_000;
 
@@ -504,7 +516,7 @@ where
 {
     let rf = match Response::builder()
         .status(status)
-        .header(CONTENT_TYPE, HeaderValue::from_static("application/json"))
+        .header(CONTENT_TYPE, APPLICATION_JSON)
         .body(Vec::from(body))
     {
         Ok(r) => future::ok::<Response<Vec<u8>>, String>(r),
@@ -941,3 +953,6 @@ pub fn spawn_abortable(fut: impl Future03<Output = ()> + Send + 'static) -> Abor
     spawn(abortable.then(|_| async {}));
     AbortOnDropHandle(handle)
 }
+
+#[inline(always)]
+pub fn get_utc_timestamp() -> i64 { Utc::now().timestamp() }

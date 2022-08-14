@@ -1,5 +1,7 @@
 mod bch_with_tokens_activation;
 mod context;
+mod erc20_token_activation;
+mod eth_with_token_activation;
 mod l2;
 #[cfg(not(target_arch = "wasm32"))] mod lightning_activation;
 mod platform_coin_with_tokens;
@@ -9,6 +11,7 @@ mod slp_token_activation;
 mod solana_with_tokens_activation;
 #[cfg(not(target_arch = "wasm32"))] mod spl_token_activation;
 mod standalone_coin;
+mod tendermint_with_assets_activation;
 mod token;
 mod utxo_activation;
 #[cfg(not(target_arch = "wasm32"))] mod z_coin_activation;

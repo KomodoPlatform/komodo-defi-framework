@@ -1,8 +1,6 @@
 use crate::utxo::rpc_clients::UtxoRpcError;
 use crate::utxo::GenerateTxError;
 use crate::{BalanceError, CoinFindError, NumConversError, PrivKeyNotAllowed, UnexpectedDerivationMethod};
-use bitcoin::consensus::encode;
-use common::jsonrpc_client::JsonRpcError;
 use common::HttpStatusCode;
 use db_common::sqlite::rusqlite::Error as SqlError;
 use derive_more::Display;
@@ -10,6 +8,7 @@ use http::StatusCode;
 use lightning_invoice::SignOrCreationError;
 use mm2_err_handle::prelude::*;
 use rpc::v1::types::H256 as H256Json;
+use std::num::TryFromIntError;
 use utxo_signer::with_key_pair::UtxoSignWithKeyPairError;
 
 pub type EnableLightningResult<T> = Result<T, MmError<EnableLightningError>>;
@@ -42,8 +41,6 @@ pub enum EnableLightningError {
     InvalidPath(String),
     #[display(fmt = "System time error {}", _0)]
     SystemTimeError(String),
-    #[display(fmt = "Hash error {}", _0)]
-    HashError(String),
     #[display(fmt = "RPC error {}", _0)]
     RpcError(String),
     #[display(fmt = "DB error {}", _0)]
@@ -60,7 +57,6 @@ impl HttpStatusCode for EnableLightningError {
             | EnableLightningError::InvalidPath(_)
             | EnableLightningError::SystemTimeError(_)
             | EnableLightningError::IOError(_)
-            | EnableLightningError::HashError(_)
             | EnableLightningError::ConnectToNodeError(_)
             | EnableLightningError::InvalidConfiguration(_)
             | EnableLightningError::DbError(_) => StatusCode::INTERNAL_SERVER_ERROR,
@@ -493,7 +489,7 @@ impl From<CoinFindError> for ClaimableBalancesError {
     }
 }
 
-#[derive(Display)]
+#[derive(Display, PartialEq)]
 pub enum SaveChannelClosingError {
     #[display(fmt = "DB error: {}", _0)]
     DbError(String),
@@ -507,55 +503,14 @@ pub enum SaveChannelClosingError {
     FundingTxParseError(String),
     #[display(fmt = "Error while waiting for the funding transaction to be spent: {}", _0)]
     WaitForFundingTxSpendError(String),
+    #[display(fmt = "Error while converting types: {}", _0)]
+    ConversionError(TryFromIntError),
 }
 
 impl From<SqlError> for SaveChannelClosingError {
     fn from(err: SqlError) -> SaveChannelClosingError { SaveChannelClosingError::DbError(err.to_string()) }
 }
 
-#[derive(Debug)]
-#[allow(clippy::large_enum_variant)]
-pub enum GetTxError {
-    Rpc(UtxoRpcError),
-    TxDeserialization(encode::Error),
-}
-
-impl From<UtxoRpcError> for GetTxError {
-    fn from(err: UtxoRpcError) -> GetTxError { GetTxError::Rpc(err) }
-}
-
-impl From<encode::Error> for GetTxError {
-    fn from(err: encode::Error) -> GetTxError { GetTxError::TxDeserialization(err) }
-}
-
-#[derive(Debug)]
-#[allow(clippy::large_enum_variant)]
-pub enum GetHeaderError {
-    Rpc(JsonRpcError),
-    HeaderDeserialization(encode::Error),
-}
-
-impl From<JsonRpcError> for GetHeaderError {
-    fn from(err: JsonRpcError) -> GetHeaderError { GetHeaderError::Rpc(err) }
-}
-
-impl From<encode::Error> for GetHeaderError {
-    fn from(err: encode::Error) -> GetHeaderError { GetHeaderError::HeaderDeserialization(err) }
-}
-
-#[derive(Debug)]
-#[allow(clippy::large_enum_variant)]
-pub enum FindWatchedOutputSpendError {
-    HashNotHeight,
-    DeserializationErr(encode::Error),
-    RpcError(String),
-    GetHeaderError(GetHeaderError),
-}
-
-impl From<JsonRpcError> for FindWatchedOutputSpendError {
-    fn from(err: JsonRpcError) -> Self { FindWatchedOutputSpendError::RpcError(err.to_string()) }
-}
-
-impl From<encode::Error> for FindWatchedOutputSpendError {
-    fn from(err: encode::Error) -> Self { FindWatchedOutputSpendError::DeserializationErr(err) }
+impl From<TryFromIntError> for SaveChannelClosingError {
+    fn from(err: TryFromIntError) -> SaveChannelClosingError { SaveChannelClosingError::ConversionError(err) }
 }

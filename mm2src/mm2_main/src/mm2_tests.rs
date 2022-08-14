@@ -1,11 +1,12 @@
 use super::{lp_main, LpMainParams};
 use crate::mm2::lp_ordermatch::MIN_ORDER_KEEP_ALIVE_INTERVAL;
+
 use common::executor::Timer;
 use common::log::LogLevel;
-use common::mm_metrics::{MetricType, MetricsJson};
 use common::now_ms;
 use crypto::privkey::key_pair_from_seed;
 use http::{HeaderMap, StatusCode};
+use mm2_metrics::{MetricType, MetricsJson};
 use mm2_number::{BigDecimal, BigRational, Fraction, MmNumber};
 use mm2_test_helpers::for_tests::{check_my_swap_status, check_recent_swaps, check_stats_swap_status,
                                   enable_native as enable_native_impl, enable_qrc20, find_metrics_in_json,
@@ -101,6 +102,10 @@ mod lp_bot_tests;
 mod orderbook_sync_tests;
 
 #[cfg(all(test, not(target_arch = "wasm32")))]
+#[path = "mm2_tests/tendermint_tests.rs"]
+mod tendermint_tests;
+
+#[cfg(all(test, not(target_arch = "wasm32")))]
 #[path = "mm2_tests/z_coin_tests.rs"]
 mod z_coin_tests;
 
@@ -170,26 +175,15 @@ fn rmd160_from_passphrase(passphrase: &str) -> [u8; 20] {
     key_pair_from_seed(passphrase).unwrap().public().address_hash().take()
 }
 
-#[cfg(not(target_arch = "wasm32"))]
-fn blocks_cache_path(mm: &MarketMakerIt, seed: &str, coin: &str) -> PathBuf {
-    let rmd = rmd160_from_passphrase(seed);
-    let db_name = format!("{}_light_cache.db", coin);
-    mm.folder.join("DB").join(hex::encode(rmd)).join(db_name)
-}
-
 async fn enable_z_coin_light(
     mm: &MarketMakerIt,
     coin: &str,
     electrums: &[&str],
     lightwalletd_urls: &[&str],
-    blocks_cache_path: &dyn AsRef<Path>,
 ) -> ZcoinActivationResult {
-    const TEST_CACHE_ZOMBIE: &str = "../coins/test_cache_zombie.db";
-    std::fs::copy(TEST_CACHE_ZOMBIE, blocks_cache_path).unwrap();
-
     let init = init_z_coin_light(mm, coin, electrums, lightwalletd_urls).await;
     let init: RpcV2Response<InitTaskResult> = json::from_value(init).unwrap();
-    let timeout = now_ms() + 600000;
+    let timeout = now_ms() + 12000000;
 
     loop {
         if now_ms() > timeout {
@@ -202,7 +196,6 @@ async fn enable_z_coin_light(
         if let InitZcoinStatus::Ready(rpc_result) = status.result {
             match rpc_result {
                 MmRpcResult::Ok { result } => {
-                    std::fs::copy(blocks_cache_path, TEST_CACHE_ZOMBIE).unwrap();
                     break result;
                 },
                 MmRpcResult::Err(e) => panic!("{} initialization error {:?}", coin, e),
@@ -6788,6 +6781,45 @@ fn test_mm2_db_migration() {
         None,
     )
     .unwrap();
+}
+
+#[test]
+#[cfg(not(target_arch = "wasm32"))]
+fn test_get_current_mtp() {
+    use mm2_test_helpers::for_tests::Mm2TestConf;
+
+    // KMD coin config used for this test
+    let coins = json!([
+        {"coin":"KMD","txversion":4,"overwintered":1,"txfee":10000,"protocol":{"type":"UTXO"}},
+    ]);
+    let passphrase = "cMhHM3PMpMrChygR4bLF7QsTdenhWpFrrmf2UezBG3eeFsz41rtL";
+
+    let conf = Mm2TestConf::seednode(&passphrase, &coins);
+    let mm = MarketMakerIt::start(conf.conf, conf.rpc_password, conf.local).unwrap();
+    let (_dump_log, _dump_dashboard) = mm.mm_dump();
+
+    let electrum = block_on(enable_electrum(&mm, "KMD", false, &[
+        "electrum1.cipig.net:10001",
+        "electrum2.cipig.net:10001",
+        "electrum3.cipig.net:10001",
+    ]));
+    log!("{:?}", electrum);
+
+    let rc = block_on(mm.rpc(&json!({
+        "userpass": mm.userpass,
+        "mmrpc": "2.0",
+        "method": "get_current_mtp",
+        "params": {
+            "coin": "KMD",
+        },
+    })))
+    .unwrap();
+
+    // Test if request is successful before proceeding.
+    assert_eq!(true, rc.0.is_success());
+    let mtp_result: Json = json::from_str(&rc.1).unwrap();
+    // Test if mtp returns a u32 Number.
+    assert_eq!(true, mtp_result["result"]["mtp"].is_number());
 }
 
 #[test]

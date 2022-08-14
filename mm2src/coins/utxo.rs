@@ -31,6 +31,7 @@ mod bchd_pb;
 pub mod qtum;
 pub mod rpc_clients;
 pub mod slp;
+pub mod spv;
 pub mod utxo_block_header_storage;
 pub mod utxo_builder;
 pub mod utxo_common;
@@ -45,7 +46,6 @@ use chain::{OutPoint, TransactionOutput, TxHashAlgo};
 #[cfg(not(target_arch = "wasm32"))]
 use common::first_char_to_upper;
 use common::jsonrpc_client::JsonRpcError;
-use common::mm_metrics::MetricsArc;
 use common::now_ms;
 use crypto::trezor::utxo::TrezorUtxoCoin;
 use crypto::{Bip32DerPathOps, Bip32Error, Bip44Chain, Bip44DerPathError, Bip44PathToAccount, Bip44PathToCoin,
@@ -62,6 +62,7 @@ pub use keys::{Address, AddressFormat as UtxoAddressFormat, AddressHashEnum, Key
 use lightning_invoice::Currency as LightningCurrency;
 use mm2_core::mm_ctx::MmArc;
 use mm2_err_handle::prelude::*;
+use mm2_metrics::MetricsArc;
 use mm2_number::BigDecimal;
 #[cfg(test)] use mocktopus::macros::*;
 use num_traits::ToPrimitive;
@@ -69,8 +70,9 @@ use primitives::hash::{H256, H264};
 use rpc::v1::types::{Bytes as BytesJson, Transaction as RpcTransaction, H256 as H256Json};
 use script::{Builder, Script, SignatureVersion, TransactionInputSigner};
 use serde_json::{self as json, Value as Json};
-use serialization::{serialize, serialize_with_flags, SERIALIZE_TRANSACTION_WITNESS};
+use serialization::{serialize, serialize_with_flags, Error as SerError, SERIALIZE_TRANSACTION_WITNESS};
 use spv_validation::helpers_validation::SPVError;
+use spv_validation::storage::BlockHeaderStorageError;
 use std::array::TryFromSliceError;
 use std::collections::{HashMap, HashSet};
 use std::convert::TryInto;
@@ -90,6 +92,7 @@ use utxo_signer::{TxProvider, TxProviderError, UtxoSignTxError, UtxoSignTxResult
 use self::rpc_clients::{electrum_script_hash, ElectrumClient, ElectrumRpcRequest, EstimateFeeMethod, EstimateFeeMode,
                         NativeClient, UnspentInfo, UnspentMap, UtxoRpcClientEnum, UtxoRpcError, UtxoRpcFut,
                         UtxoRpcResult};
+use self::utxo_block_header_storage::BlockHeaderVerificationParams;
 use super::{big_decimal_from_sat_unsigned, BalanceError, BalanceFut, BalanceResult, CoinBalance, CoinsContext,
             DerivationMethod, FeeApproxStage, FoundSwapTxSpend, HistorySyncState, KmdRewardsDetails, MarketCoinOps,
             MmCoin, NumConversError, NumConversResult, PrivKeyActivationPolicy, PrivKeyNotAllowed, PrivKeyPolicy,
@@ -101,9 +104,7 @@ use crate::coin_balance::{EnableCoinScanPolicy, HDAddressBalanceScanner};
 use crate::hd_wallet::{HDAccountOps, HDAccountsMutex, HDAddress, HDWalletCoinOps, HDWalletOps, InvalidBip44ChainError};
 use crate::hd_wallet_storage::{HDAccountStorageItem, HDWalletCoinStorage, HDWalletStorageError, HDWalletStorageResult};
 use crate::utxo::tx_cache::UtxoVerboseCacheShared;
-use crate::utxo::utxo_block_header_storage::BlockHeaderStorageError;
 use crate::TransactionErr;
-use utxo_block_header_storage::BlockHeaderStorage;
 
 pub mod tx_cache;
 #[cfg(target_arch = "wasm32")]
@@ -508,7 +509,6 @@ pub struct UtxoCoinConf {
     pub enable_spv_proof: bool,
 }
 
-#[derive(Debug)]
 pub struct UtxoCoinFields {
     /// UTXO coin config
     pub conf: UtxoCoinConf,
@@ -530,7 +530,6 @@ pub struct UtxoCoinFields {
     pub history_sync_state: Mutex<HistorySyncState>,
     /// The cache of verbose transactions.
     pub tx_cache: UtxoVerboseCacheShared,
-    pub block_headers_storage: Option<BlockHeaderStorage>,
     /// The cache of recently send transactions used to track the spent UTXOs and replace them with new outputs
     /// The daemon needs some time to update the listunspent list for address which makes it return already spent UTXOs
     /// This cache helps to prevent UTXO reuse in such cases
@@ -567,26 +566,50 @@ impl From<UnsupportedAddr> for WithdrawError {
 }
 
 #[derive(Debug)]
+#[allow(clippy::large_enum_variant)]
+pub enum GetTxError {
+    Rpc(UtxoRpcError),
+    TxDeserialization(SerError),
+}
+
+impl From<UtxoRpcError> for GetTxError {
+    fn from(err: UtxoRpcError) -> GetTxError { GetTxError::Rpc(err) }
+}
+
+impl From<SerError> for GetTxError {
+    fn from(err: SerError) -> GetTxError { GetTxError::TxDeserialization(err) }
+}
+
+#[derive(Debug)]
 pub enum GetTxHeightError {
-    HeightNotFound,
+    HeightNotFound(String),
 }
 
 impl From<GetTxHeightError> for SPVError {
     fn from(e: GetTxHeightError) -> Self {
         match e {
-            GetTxHeightError::HeightNotFound => SPVError::InvalidHeight,
+            GetTxHeightError::HeightNotFound(e) => SPVError::InvalidHeight(e),
         }
     }
 }
 
-#[derive(Debug)]
+impl From<UtxoRpcError> for GetTxHeightError {
+    fn from(e: UtxoRpcError) -> Self { GetTxHeightError::HeightNotFound(e.to_string()) }
+}
+
+#[derive(Debug, Display)]
 pub enum GetBlockHeaderError {
+    #[display(fmt = "Block header storage error: {}", _0)]
     StorageError(BlockHeaderStorageError),
+    #[display(fmt = "RPC error: {}", _0)]
     RpcError(JsonRpcError),
+    #[display(fmt = "Serialization error: {}", _0)]
     SerializationError(serialization::Error),
+    #[display(fmt = "Invalid response: {}", _0)]
     InvalidResponse(String),
+    #[display(fmt = "Error validating headers: {}", _0)]
     SPVError(SPVError),
-    NativeNotSupported(String),
+    #[display(fmt = "Internal error: {}", _0)]
     Internal(String),
 }
 
@@ -604,16 +627,16 @@ impl From<UtxoRpcError> for GetBlockHeaderError {
     }
 }
 
-impl From<SPVError> for GetBlockHeaderError {
-    fn from(e: SPVError) -> Self { GetBlockHeaderError::SPVError(e) }
-}
-
 impl From<serialization::Error> for GetBlockHeaderError {
     fn from(err: serialization::Error) -> Self { GetBlockHeaderError::SerializationError(err) }
 }
 
 impl From<BlockHeaderStorageError> for GetBlockHeaderError {
     fn from(err: BlockHeaderStorageError) -> Self { GetBlockHeaderError::StorageError(err) }
+}
+
+impl From<GetBlockHeaderError> for SPVError {
+    fn from(e: GetBlockHeaderError) -> Self { SPVError::UnableToGetHeader(e.to_string()) }
 }
 
 impl UtxoCoinFields {
@@ -953,7 +976,7 @@ pub trait UtxoStandardOps {
     ) -> UtxoRpcResult<()>;
 }
 
-#[derive(Clone, Debug)]
+#[derive(Clone)]
 pub struct UtxoArc(Arc<UtxoCoinFields>);
 impl Deref for UtxoArc {
     type Target = UtxoCoinFields;
@@ -980,7 +1003,7 @@ impl UtxoArc {
     }
 }
 
-#[derive(Clone, Debug)]
+#[derive(Clone)]
 pub struct UtxoWeak(Weak<UtxoCoinFields>);
 
 impl From<Weak<UtxoCoinFields>> for UtxoWeak {
@@ -1192,14 +1215,6 @@ pub struct UtxoMergeParams {
 }
 
 #[derive(Clone, Debug, Deserialize, Serialize)]
-pub struct UtxoBlockHeaderVerificationParams {
-    pub difficulty_check: bool,
-    pub constant_difficulty: bool,
-    pub blocks_limit_to_check: NonZeroU64,
-    pub check_every: f64,
-}
-
-#[derive(Clone, Debug, Deserialize, Serialize)]
 pub struct UtxoActivationParams {
     pub mode: UtxoRpcMode,
     pub utxo_merge_params: Option<UtxoMergeParams>,
@@ -1239,7 +1254,12 @@ impl UtxoActivationParams {
             Some("electrum") => {
                 let servers =
                     json::from_value(req["servers"].clone()).map_to_mm(UtxoFromLegacyReqErr::InvalidElectrumServers)?;
-                UtxoRpcMode::Electrum { servers }
+                let block_header_params = json::from_value(req["block_header_params"].clone())
+                    .map_to_mm(UtxoFromLegacyReqErr::InvalidBlockHeaderVerificationParams)?;
+                UtxoRpcMode::Electrum {
+                    servers,
+                    block_header_params,
+                }
             },
             _ => return MmError::err(UtxoFromLegacyReqErr::UnexpectedMethod),
         };
@@ -1281,7 +1301,10 @@ impl UtxoActivationParams {
 #[serde(tag = "rpc", content = "rpc_data")]
 pub enum UtxoRpcMode {
     Native,
-    Electrum { servers: Vec<ElectrumRpcRequest> },
+    Electrum {
+        servers: Vec<ElectrumRpcRequest>,
+        block_header_params: Option<BlockHeaderVerificationParams>,
+    },
 }
 
 #[derive(Debug)]

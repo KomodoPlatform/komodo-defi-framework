@@ -6,7 +6,7 @@ use crate::standalone_coin::{InitStandaloneCoinActivationOps, InitStandaloneCoin
 use async_trait::async_trait;
 use coins::coin_balance::{EnableCoinBalance, IguanaWalletBalance};
 use coins::z_coin::{z_coin_from_conf_and_params, BlockchainScanStopped, SyncStatus, ZCoin, ZCoinBuildError,
-                    ZcoinActivationParams, ZcoinConsensusParams};
+                    ZcoinActivationParams, ZcoinProtocolInfo};
 use coins::{BalanceError, CoinProtocol, MarketCoinOps, RegisterCoinError};
 use crypto::hw_rpc_task::{HwRpcTaskAwaitingStatus, HwRpcTaskUserAction};
 use crypto::CryptoInitError;
@@ -44,7 +44,11 @@ pub enum ZcoinInProgressStatus {
         current_scanned_block: u64,
         latest_block: u64,
     },
-    BuildingWalletDb,
+    BuildingWalletDb {
+        current_scanned_block: u64,
+        latest_block: u64,
+    },
+    TemporaryError(String),
     RequestingWalletBalance,
     Finishing,
     /// This status doesn't require the user to send `UserAction`,
@@ -141,13 +145,13 @@ impl From<ZcoinInitError> for InitStandaloneCoinError {
     }
 }
 
-impl TryFromCoinProtocol for ZcoinConsensusParams {
+impl TryFromCoinProtocol for ZcoinProtocolInfo {
     fn try_from_coin_protocol(proto: CoinProtocol) -> Result<Self, MmError<CoinProtocol>>
     where
         Self: Sized,
     {
         match proto {
-            CoinProtocol::ZHTLC { consensus_params } => Ok(consensus_params),
+            CoinProtocol::ZHTLC(info) => Ok(info),
             protocol => MmError::err(protocol),
         }
     }
@@ -156,7 +160,7 @@ impl TryFromCoinProtocol for ZcoinConsensusParams {
 #[async_trait]
 impl InitStandaloneCoinActivationOps for ZCoin {
     type ActivationRequest = ZcoinActivationParams;
-    type StandaloneProtocol = ZcoinConsensusParams;
+    type StandaloneProtocol = ZcoinProtocolInfo;
     type ActivationResult = ZcoinActivationResult;
     type ActivationError = ZcoinInitError;
     type InProgressStatus = ZcoinInProgressStatus;
@@ -172,7 +176,7 @@ impl InitStandaloneCoinActivationOps for ZCoin {
         ticker: String,
         coin_conf: Json,
         activation_request: &ZcoinActivationParams,
-        protocol_info: ZcoinConsensusParams,
+        protocol_info: ZcoinProtocolInfo,
         task_handle: &ZcoinRpcTaskHandle,
     ) -> MmResult<Self, ZcoinInitError> {
         let secp_privkey = ctx.secp256k1_key_pair().private().secret;
@@ -196,7 +200,14 @@ impl InitStandaloneCoinActivationOps for ZCoin {
                     current_scanned_block,
                     latest_block,
                 },
-                SyncStatus::BuildingWalletDb => ZcoinInProgressStatus::BuildingWalletDb,
+                SyncStatus::BuildingWalletDb {
+                    current_scanned_block,
+                    latest_block,
+                } => ZcoinInProgressStatus::BuildingWalletDb {
+                    current_scanned_block,
+                    latest_block,
+                },
+                SyncStatus::TemporaryError(e) => ZcoinInProgressStatus::TemporaryError(e),
                 SyncStatus::Finished { .. } => break,
             };
             task_handle.update_in_progress_status(in_progress_status)?;

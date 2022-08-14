@@ -239,6 +239,9 @@ pub trait LogOnError {
     fn error_log_with_msg(self, msg: &str);
 
     fn error_log_passthrough(self) -> Self;
+
+    // Log the error, caller location and the given message to DEBUG level here.
+    fn debug_log_with_msg(self, msg: &str);
 }
 
 impl<T, E: fmt::Display> LogOnError for Result<T, E> {
@@ -291,6 +294,16 @@ impl<T, E: fmt::Display> LogOnError for Result<T, E> {
             error!("{}:{}] {}", file, line, e);
         }
         self
+    }
+
+    #[track_caller]
+    fn debug_log_with_msg(self, msg: &str) {
+        if let Err(e) = self {
+            let location = std::panic::Location::caller();
+            let file = filename(location.file());
+            let line = location.line();
+            debug!("{}:{}] {}: {}", file, line, msg, e);
+        }
     }
 }
 
