@@ -1,5 +1,6 @@
 use crate::account::storage::{AccountStorage, AccountStorageError, AccountStorageResult};
-use crate::account::{AccountId, AccountInfo, AccountType, AccountWithCoins, AccountWithEnabledFlag};
+use crate::account::{AccountId, AccountInfo, AccountType, AccountWithCoins, AccountWithEnabledFlag, EnabledAccountId,
+                     EnabledAccountType};
 use async_trait::async_trait;
 use common::mm_number::BigDecimal;
 use mm2_core::mm_ctx::MmArc;
@@ -192,9 +193,11 @@ impl AccountStorage for WasmAccountStorage {
             .or_mm_err(|| AccountStorageError::unknown_account_in_enabled_table(account_id))
     }
 
-    async fn enable_account(&self, account_id: AccountId) -> AccountStorageResult<()> {
+    async fn enable_account(&self, enabled_account_id: EnabledAccountId) -> AccountStorageResult<()> {
         let locked_db = self.lock_db().await?;
         let transaction = locked_db.inner.transaction().await?;
+
+        let account_id = AccountId::from(enabled_account_id);
 
         // First, check if the account exists.
         if !Self::account_exists(&transaction, &account_id).await? {
@@ -205,7 +208,7 @@ impl AccountStorage for WasmAccountStorage {
         // Remove previous enabled account.
         table.clear().await?;
 
-        table.add_item(&EnabledAccountTable::from(account_id)).await?;
+        table.add_item(&EnabledAccountTable::from(enabled_account_id)).await?;
         Ok(())
     }
 
@@ -355,13 +358,13 @@ impl TryFrom<AccountTable> for AccountWithCoins {
 /// or the table is empty.
 #[derive(Deserialize, Serialize)]
 struct EnabledAccountTable {
-    account_type: AccountType,
+    account_type: EnabledAccountType,
     /// `None` if [`EnabledAccountTable::account_type`] is [`EnabledAccountTable::Iguana`].
     account_idx: Option<u32>,
 }
 
-impl From<AccountId> for EnabledAccountTable {
-    fn from(account_id: AccountId) -> Self {
+impl From<EnabledAccountId> for EnabledAccountTable {
+    fn from(account_id: EnabledAccountId) -> Self {
         let (account_type, account_idx) = account_id.to_pair();
         EnabledAccountTable {
             account_type,
@@ -370,11 +373,11 @@ impl From<AccountId> for EnabledAccountTable {
     }
 }
 
-impl TryFrom<EnabledAccountTable> for AccountId {
+impl TryFrom<EnabledAccountTable> for EnabledAccountId {
     type Error = MmError<AccountStorageError>;
 
     fn try_from(value: EnabledAccountTable) -> Result<Self, Self::Error> {
-        AccountId::try_from_pair(value.account_type, value.account_idx)
+        EnabledAccountId::try_from_pair(value.account_type, value.account_idx)
     }
 }
 

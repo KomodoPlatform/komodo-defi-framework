@@ -1,4 +1,5 @@
-use crate::account::{AccountId, AccountInfo, AccountType, AccountWithCoins, AccountWithEnabledFlag};
+use crate::account::{AccountId, AccountInfo, AccountType, AccountWithCoins, AccountWithEnabledFlag, EnabledAccountId,
+                     EnabledAccountType};
 use async_trait::async_trait;
 use derive_more::Display;
 use mm2_core::mm_ctx::MmArc;
@@ -76,6 +77,33 @@ impl AccountId {
     }
 }
 
+impl EnabledAccountId {
+    pub(crate) fn to_pair(&self) -> (EnabledAccountType, Option<u32>) {
+        match self {
+            EnabledAccountId::Iguana => (EnabledAccountType::Iguana, None),
+            EnabledAccountId::HD { account_idx } => (EnabledAccountType::Iguana, Some(*account_idx)),
+        }
+    }
+
+    pub(crate) fn try_from_pair(
+        account_type: EnabledAccountType,
+        account_idx: Option<u32>,
+    ) -> AccountStorageResult<EnabledAccountId> {
+        match (account_type, account_idx) {
+            (EnabledAccountType::Iguana, None) => Ok(EnabledAccountId::Iguana),
+            (EnabledAccountType::Iguana, Some(_)) => {
+                let error = "'account_id' should be None if 'account_type' is Iguana".to_owned();
+                MmError::err(AccountStorageError::ErrorDeserializing(error))
+            },
+            (EnabledAccountType::HD, Some(account_idx)) => Ok(EnabledAccountId::HD { account_idx }),
+            (EnabledAccountType::HD, None) => {
+                let error = "'account_idx' should be Some(id) if 'account_type' is HD".to_owned();
+                MmError::err(AccountStorageError::ErrorDeserializing(error))
+            },
+        }
+    }
+}
+
 /// `AccountStorageBoxed` builder.
 /// The implementation depends on the target architecture.
 pub(crate) struct AccountStorageBuilder<'a> {
@@ -104,13 +132,13 @@ pub(crate) trait AccountStorage {
     ) -> AccountStorageResult<BTreeMap<AccountId, AccountWithEnabledFlag>>;
 
     /// Loads an enabled account ID, or returns an error if there is no enabled account yet.
-    async fn load_enabled_account_id(&self) -> AccountStorageResult<AccountId>;
+    async fn load_enabled_account_id(&self) -> AccountStorageResult<EnabledAccountId>;
 
     /// Loads an enabled account with activated coins, or returns an error if there is no enabled account yet.
     async fn load_enabled_account_with_coins(&self) -> AccountStorageResult<AccountWithCoins>;
 
     /// Checks whether the given account exists in the storage and sets it as an enabled account.
-    async fn enable_account(&self, account_id: AccountId) -> AccountStorageResult<()>;
+    async fn enable_account(&self, account_id: EnabledAccountId) -> AccountStorageResult<()>;
 
     /// Checks whether the given account doesn't exist in the storage and uploads it.
     async fn upload_account(&self, account: AccountInfo) -> AccountStorageResult<()>;

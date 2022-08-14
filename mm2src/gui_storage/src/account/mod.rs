@@ -15,12 +15,44 @@ pub(crate) enum AccountType {
     HW,
 }
 
+/// An enable account type.
+/// We should not allow the user to enable [`AccountType::HW`].
+#[derive(Clone, Copy, Debug, Deserialize, Serialize)]
+pub(crate) enum EnabledAccountType {
+    Iguana,
+    HD,
+}
+
+impl From<EnabledAccountType> for AccountType {
+    fn from(t: EnabledAccountType) -> Self {
+        match t {
+            EnabledAccountType::Iguana => AccountType::Iguana,
+            EnabledAccountType::HD => AccountType::HD,
+        }
+    }
+}
+
 #[derive(Clone, Debug, Deserialize, Eq, Ord, PartialEq, PartialOrd, Serialize)]
 #[serde(tag = "type")]
 pub enum AccountId {
     Iguana,
     HD { account_idx: u32 },
     HW { account_idx: u32 },
+}
+
+#[derive(Copy, Clone, Debug, Deserialize, Eq, Ord, PartialEq, PartialOrd, Serialize)]
+pub enum EnabledAccountId {
+    Iguana,
+    HD { account_idx: u32 },
+}
+
+impl From<EnabledAccountId> for AccountId {
+    fn from(id: EnabledAccountId) -> Self {
+        match id {
+            EnabledAccountId::Iguana => AccountId::Iguana,
+            EnabledAccountId::HD { account_idx } => AccountId::HD { account_idx },
+        }
+    }
 }
 
 #[derive(Serialize)]

@@ -1,6 +1,6 @@
 use crate::account::storage::{AccountStorage, AccountStorageError, AccountStorageResult};
-use crate::account::{AccountId, AccountInfo, AccountType, AccountWithCoins, AccountWithEnabledFlag,
-                     MAX_ACCOUNT_DESCRIPTION_LENGTH, MAX_ACCOUNT_NAME_LENGTH, MAX_COIN_LENGTH};
+use crate::account::{AccountId, AccountInfo, AccountType, AccountWithCoins, AccountWithEnabledFlag, EnabledAccountId,
+                     EnabledAccountType, MAX_ACCOUNT_DESCRIPTION_LENGTH, MAX_ACCOUNT_NAME_LENGTH, MAX_COIN_LENGTH};
 use async_trait::async_trait;
 use db_common::sql_constraint::UniqueConstraint;
 use db_common::sql_create::{SqlColumn, SqlCreateTable, SqlType};
@@ -11,8 +11,6 @@ use db_common::sqlite::{SqliteConnShared, StringError};
 use mm2_err_handle::prelude::*;
 use mm2_number::BigDecimal;
 use std::collections::BTreeMap;
-use std::fmt;
-use std::fmt::Formatter;
 use std::sync::MutexGuard;
 
 mod account_table {
@@ -69,13 +67,19 @@ impl From<SqlError> for AccountStorageError {
 }
 
 impl AccountType {
-    const MAX_ACCOUNT_TYPE_LENGTH: usize = 12;
+    fn to_column(&self) -> u8 {
+        match self {
+            AccountType::Iguana => 0,
+            AccountType::HD => 1,
+            AccountType::HW => 2,
+        }
+    }
 
-    fn from_str_column(column_idx: usize, s: &str) -> Result<AccountType, SqlError> {
-        match s {
-            "iguana" => Ok(AccountType::Iguana),
-            "hd" => Ok(AccountType::HD),
-            "hw" => Ok(AccountType::HW),
+    fn from_column(column_idx: usize, value: u8) -> Result<AccountType, SqlError> {
+        match value {
+            0 => Ok(AccountType::Iguana),
+            1 => Ok(AccountType::HD),
+            2 => Ok(AccountType::HW),
             other => {
                 let error = StringError::from(format!("Unknown 'account_type' value: {}", other)).into_boxed();
                 Err(SqlError::FromSqlConversionFailure(column_idx, Type::Text, error))
@@ -84,12 +88,17 @@ impl AccountType {
     }
 }
 
-impl fmt::Display for AccountType {
-    fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
-        match self {
-            AccountType::Iguana => write!(f, "iguana"),
-            AccountType::HD => write!(f, "hd"),
-            AccountType::HW => write!(f, "hw"),
+impl EnabledAccountType {
+    fn to_column(&self) -> u8 { AccountType::from(*self).to_column() }
+
+    fn from_column(column_idx: usize, value: u8) -> Result<EnabledAccountType, SqlError> {
+        match AccountType::from_column(column_idx, value)? {
+            AccountType::Iguana => Ok(EnabledAccountType::Iguana),
+            AccountType::HD => Ok(EnabledAccountType::HD),
+            AccountType::HW => {
+                let error = StringError::from("HW account cannot be enabled").into_boxed();
+                Err(SqlError::FromSqlConversionFailure(column_idx, Type::Text, error))
+            },
         }
     }
 }
@@ -150,24 +159,18 @@ impl SqliteAccountStorage {
         let mut create_sql = SqlCreateTable::new(conn, enabled_account_table::TABLE_NAME);
         create_sql
             .if_not_exist()
-            .column(
-                SqlColumn::new(
-                    enabled_account_table::ACCOUNT_TYPE,
-                    SqlType::Varchar(AccountType::MAX_ACCOUNT_TYPE_LENGTH),
-                )
-                .not_null(),
-            )
+            .column(SqlColumn::new(enabled_account_table::ACCOUNT_TYPE, SqlType::Integer).not_null())
             .column(SqlColumn::new(enabled_account_table::ACCOUNT_IDX, SqlType::Integer));
         create_sql.create().map_to_mm(AccountStorageError::from)
     }
 
-    fn load_enabled_account_id(conn: &Connection) -> AccountStorageResult<AccountId> {
+    fn load_enabled_account_id(conn: &Connection) -> AccountStorageResult<EnabledAccountId> {
         let mut query = SqlQuery::select_from(conn, enabled_account_table::TABLE_NAME)?;
         query
             .field(enabled_account_table::ACCOUNT_TYPE)?
             .field(enabled_account_table::ACCOUNT_IDX)?;
         query
-            .query_single_row(account_id_from_row)?
+            .query_single_row(enabled_account_id_from_row)?
             .or_mm_err(|| AccountStorageError::NoEnabledAccount)
     }
 
@@ -186,7 +189,7 @@ impl SqliteAccountStorage {
         let (account_type, account_id) = account_id.to_pair();
         query
             .field(account_coins_table::COIN)?
-            .and_where_eq_param(account_table::ACCOUNT_TYPE, account_type.to_string())?
+            .and_where_eq_param(account_table::ACCOUNT_TYPE, account_type.to_column())?
             .and_where_eq(account_table::ACCOUNT_IDX, account_id.map(|id| id as i64))?;
         let coins = query.query(|row| row.get::<_, String>(0))?.into_iter().collect();
         Ok(Some(AccountWithCoins { account_info, coins }))
@@ -205,7 +208,7 @@ impl SqliteAccountStorage {
 
         let (account_type, account_id) = account_id.to_pair();
         query
-            .and_where_eq_param(account_table::ACCOUNT_TYPE, account_type.to_string())?
+            .and_where_eq_param(account_table::ACCOUNT_TYPE, account_type.to_column())?
             .and_where_eq(account_table::ACCOUNT_IDX, account_id.map(|id| id as i64))?;
         query
             .query_single_row(account_from_row)
@@ -247,7 +250,7 @@ impl AccountStorage for SqliteAccountStorage {
         &self,
     ) -> AccountStorageResult<BTreeMap<AccountId, AccountWithEnabledFlag>> {
         let conn = self.lock_conn()?;
-        let enabled_account_id = Self::load_enabled_account_id(&conn)?;
+        let enabled_account_id = AccountId::from(Self::load_enabled_account_id(&conn)?);
 
         let mut found_enabled = false;
         let accounts = Self::load_accounts(&conn)?
@@ -269,20 +272,20 @@ impl AccountStorage for SqliteAccountStorage {
         Ok(accounts)
     }
 
-    async fn load_enabled_account_id(&self) -> AccountStorageResult<AccountId> {
+    async fn load_enabled_account_id(&self) -> AccountStorageResult<EnabledAccountId> {
         let conn = self.lock_conn()?;
         Self::load_enabled_account_id(&conn)
     }
 
     async fn load_enabled_account_with_coins(&self) -> AccountStorageResult<AccountWithCoins> {
         let conn = self.lock_conn()?;
-        let account_id = Self::load_enabled_account_id(&conn)?;
+        let account_id = AccountId::from(Self::load_enabled_account_id(&conn)?);
 
         Self::load_account_with_coins(&conn, &account_id)?
             .or_mm_err(|| AccountStorageError::unknown_account_in_enabled_table(account_id))
     }
 
-    async fn enable_account(&self, account_id: AccountId) -> AccountStorageResult<()> { todo!() }
+    async fn enable_account(&self, account_id: EnabledAccountId) -> AccountStorageResult<()> { todo!() }
 
     async fn upload_account(&self, account: AccountInfo) -> AccountStorageResult<()> { todo!() }
 
@@ -298,10 +301,18 @@ impl AccountStorage for SqliteAccountStorage {
 }
 
 fn account_id_from_row(row: &Row<'_>) -> Result<AccountId, SqlError> {
-    let account_type: String = row.get(0)?;
-    let account_type = AccountType::from_str_column(0, &account_type)?;
+    let account_type: u8 = row.get(0)?;
+    let account_type = AccountType::from_column(0, account_type)?;
     let account_idx: Option<u32> = row.get(1)?;
     AccountId::try_from_pair(account_type, account_idx)
+        .map_err(|e| SqlError::FromSqlConversionFailure(0, Type::Text, Box::new(e)))
+}
+
+fn enabled_account_id_from_row(row: &Row<'_>) -> Result<EnabledAccountId, SqlError> {
+    let account_type: u8 = row.get(0)?;
+    let account_type = EnabledAccountType::from_column(0, account_type)?;
+    let account_idx: Option<u32> = row.get(1)?;
+    EnabledAccountId::try_from_pair(account_type, account_idx)
         .map_err(|e| SqlError::FromSqlConversionFailure(0, Type::Text, Box::new(e)))
 }
 

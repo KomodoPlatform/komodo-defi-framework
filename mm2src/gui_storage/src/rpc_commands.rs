@@ -1,5 +1,5 @@
 use crate::account::storage::AccountStorageError;
-use crate::account::{AccountId, AccountInfo, AccountWithEnabledFlag};
+use crate::account::{AccountId, AccountInfo, AccountWithEnabledFlag, EnabledAccountId};
 use crate::context::AccountContext;
 use common::{HttpStatusCode, StatusCode, SuccessResponse};
 use derive_more::Display;
@@ -57,17 +57,20 @@ impl HttpStatusCode for AccountRpcError {
 }
 
 #[derive(Deserialize)]
-pub struct NewAccount {
-    account_id: AccountId,
+pub struct NewAccount<Id> {
+    account_id: Id,
     name: String,
     #[serde(default)]
     description: String,
 }
 
-impl From<NewAccount> for AccountInfo {
-    fn from(orig: NewAccount) -> Self {
+impl<Id> From<NewAccount<Id>> for AccountInfo
+where
+    AccountId: From<Id>,
+{
+    fn from(orig: NewAccount<Id>) -> Self {
         AccountInfo {
-            account_id: orig.account_id,
+            account_id: AccountId::from(orig.account_id),
             name: orig.name,
             description: orig.description,
             balance_usd: BigDecimal::default(),
@@ -84,14 +87,14 @@ pub struct EnableAccountRequest {
 #[derive(Deserialize)]
 #[serde(tag = "policy")]
 pub enum EnableAccountPolicy {
-    Exist(AccountId),
-    New(NewAccount),
+    Exist(EnabledAccountId),
+    New(NewAccount<EnabledAccountId>),
 }
 
 #[derive(Deserialize)]
 pub struct AddAccountRequest {
     #[serde(flatten)]
-    account: NewAccount,
+    account: NewAccount<AccountId>,
 }
 
 #[derive(Deserialize)]
