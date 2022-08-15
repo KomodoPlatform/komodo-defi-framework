@@ -1,13 +1,13 @@
 use crate::account::storage::{AccountStorage, AccountStorageError, AccountStorageResult};
 use crate::account::{AccountId, AccountInfo, AccountType, AccountWithCoins, AccountWithEnabledFlag, EnabledAccountId,
-                     EnabledAccountType};
+                     EnabledAccountType, HwPubkey};
 use async_trait::async_trait;
-use common::mm_number::BigDecimal;
 use mm2_core::mm_ctx::MmArc;
 use mm2_db::indexed_db::{ConstructibleDb, DbIdentifier, DbInstance, DbLocked, DbTransaction, DbTransactionError,
                          DbUpgrader, IndexedDb, IndexedDbBuilder, InitDbError, InitDbResult, MultiIndex,
                          OnUpgradeResult, SharedDb, TableSignature};
 use mm2_err_handle::prelude::*;
+use mm2_number::BigDecimal;
 use serde::{Deserialize, Serialize};
 use std::collections::{BTreeMap, HashSet};
 
@@ -75,14 +75,14 @@ impl WasmAccountStorage {
             .into_iter()
             .map(|(_item_id, account)| {
                 let account_info = AccountInfo::try_from(account)?;
-                Ok((account_info.account_id, account_info))
+                Ok((account_info.account_id.clone(), account_info))
             })
             .collect()
     }
 
     /// Loads `AccountId` of an enabled account or returns an error if there is no enabled account yet.
     /// This method takes `db_transaction` to ensure data coherence.
-    async fn load_enabled_account_id(db_transaction: &DbTransaction<'_>) -> AccountStorageResult<AccountId> {
+    async fn load_enabled_account_id(db_transaction: &DbTransaction<'_>) -> AccountStorageResult<EnabledAccountId> {
         let enabled_table = db_transaction.table::<EnabledAccountTable>().await?;
         let enabled_accounts = enabled_table.get_all_items().await?;
         if enabled_accounts.len() > 1 {
@@ -90,7 +90,7 @@ impl WasmAccountStorage {
             return MmError::err(AccountStorageError::Internal(error));
         }
         match enabled_accounts.into_iter().next() {
-            Some((_item_id, enabled_account)) => AccountId::try_from(enabled_account),
+            Some((_item_id, enabled_account)) => EnabledAccountId::try_from(enabled_account),
             None => MmError::err(AccountStorageError::NoEnabledAccount),
         }
     }
@@ -153,7 +153,7 @@ impl AccountStorage for WasmAccountStorage {
         let locked_db = self.lock_db().await?;
         let transaction = locked_db.inner.transaction().await?;
 
-        let enabled_account_id = Self::load_enabled_account_id(&transaction).await?;
+        let enabled_account_id = AccountId::from(Self::load_enabled_account_id(&transaction).await?);
 
         let mut found_enabled = false;
         let accounts = Self::load_accounts(&transaction)
@@ -176,7 +176,7 @@ impl AccountStorage for WasmAccountStorage {
         Ok(accounts)
     }
 
-    async fn load_enabled_account_id(&self) -> AccountStorageResult<AccountId> {
+    async fn load_enabled_account_id(&self) -> AccountStorageResult<EnabledAccountId> {
         let locked_db = self.lock_db().await?;
         let transaction = locked_db.inner.transaction().await?;
         Self::load_enabled_account_id(&transaction).await
@@ -186,7 +186,7 @@ impl AccountStorage for WasmAccountStorage {
         let locked_db = self.lock_db().await?;
         let transaction = locked_db.inner.transaction().await?;
 
-        let account_id = Self::load_enabled_account_id(&transaction).await?;
+        let account_id = AccountId::from(Self::load_enabled_account_id(&transaction).await?);
 
         Self::load_account_with_coins(&transaction, &account_id)
             .await?
@@ -277,8 +277,10 @@ impl DbInstance for AccountDb {
 #[derive(Deserialize, Serialize)]
 struct AccountTable {
     account_type: AccountType,
-    /// `None` if [`AccountTable::account_type`] is [`AccountType::Iguana`].
+    /// `None` if [`AccountTable::account_type`] is [`AccountType::Iguana`] or [`AccountType::HW`].
     account_idx: Option<u32>,
+    /// `None` if [`AccountTable::account_type`] is [`AccountType::Iguana`] or [`AccountType::HD`].
+    device_pubkey: Option<HwPubkey>,
     name: String,
     description: String,
     balance_usd: BigDecimal,
@@ -292,10 +294,11 @@ impl AccountTable {
     const ACCOUNT_ID_INDEX: &'static str = "account_id";
 
     fn account_id_to_index(account_id: &AccountId) -> AccountStorageResult<MultiIndex> {
-        let (account_type, account_idx) = account_id.to_pair();
+        let (account_type, account_idx, device_pubkey) = account_id.to_tuple();
         MultiIndex::new(AccountTable::ACCOUNT_ID_INDEX)
             .with_value(account_type)?
-            .with_value(account_idx)
+            .with_value(account_idx)?
+            .with_value(device_pubkey)
             .mm_err(AccountStorageError::from)
     }
 }
@@ -307,7 +310,11 @@ impl TableSignature for AccountTable {
         match (old_version, new_version) {
             (0, 1) => {
                 let table = upgrader.create_table(Self::table_name())?;
-                table.create_multi_index(AccountTable::ACCOUNT_ID_INDEX, &["account_type", "account_idx"], true)?;
+                table.create_multi_index(
+                    AccountTable::ACCOUNT_ID_INDEX,
+                    &["account_type", "account_idx", "device_pubkey"],
+                    true,
+                )?;
             },
             _ => (),
         }
@@ -317,10 +324,11 @@ impl TableSignature for AccountTable {
 
 impl From<AccountInfo> for AccountTable {
     fn from(orig: AccountInfo) -> Self {
-        let (account_type, account_idx) = orig.account_id.to_pair();
+        let (account_type, account_idx, device_pubkey) = orig.account_id.to_tuple();
         AccountTable {
             account_type,
             account_idx,
+            device_pubkey,
             name: orig.name,
             description: orig.description,
             balance_usd: orig.balance_usd,
@@ -334,7 +342,7 @@ impl TryFrom<AccountTable> for AccountInfo {
 
     fn try_from(value: AccountTable) -> Result<Self, Self::Error> {
         Ok(AccountInfo {
-            account_id: AccountId::try_from_pair(value.account_type, value.account_idx)?,
+            account_id: AccountId::try_from_tuple(value.account_type, value.account_idx, value.device_pubkey)?,
             name: value.name,
             description: value.description,
             balance_usd: value.balance_usd,

@@ -1,5 +1,5 @@
 use crate::account::{AccountId, AccountInfo, AccountType, AccountWithCoins, AccountWithEnabledFlag, EnabledAccountId,
-                     EnabledAccountType};
+                     EnabledAccountType, HwPubkey};
 use async_trait::async_trait;
 use derive_more::Display;
 use mm2_core::mm_ctx::MmArc;
@@ -48,29 +48,29 @@ impl AccountStorageError {
 
 impl AccountId {
     /// Splits `AccountId` to the pair.
-    pub(crate) fn to_pair(&self) -> (AccountType, Option<u32>) {
+    pub(crate) fn to_tuple(&self) -> (AccountType, Option<u32>, Option<HwPubkey>) {
         match self {
-            AccountId::Iguana => (AccountType::Iguana, None),
-            AccountId::HD { account_idx } => (AccountType::HD, Some(*account_idx)),
-            AccountId::HW { account_idx } => (AccountType::HW, Some(*account_idx)),
+            AccountId::Iguana => (AccountType::Iguana, None, None),
+            AccountId::HD { account_idx } => (AccountType::HD, Some(*account_idx), None),
+            AccountId::HW { device_pubkey } => (AccountType::HW, None, Some(device_pubkey.clone())),
         }
     }
 
     /// Tries to construct `AccountId` from the pair.
-    pub(crate) fn try_from_pair(
+    pub(crate) fn try_from_tuple(
         account_type: AccountType,
         account_idx: Option<u32>,
+        device_pubkey: Option<HwPubkey>,
     ) -> AccountStorageResult<AccountId> {
-        match (account_type, account_idx) {
-            (AccountType::Iguana, None) => Ok(AccountId::Iguana),
-            (AccountType::Iguana, Some(_)) => {
-                let error = "'account_id' should be None if 'account_type' is Iguana".to_owned();
-                MmError::err(AccountStorageError::ErrorDeserializing(error))
-            },
-            (AccountType::HD, Some(account_idx)) => Ok(AccountId::HD { account_idx }),
-            (AccountType::HW, Some(account_idx)) => Ok(AccountId::HW { account_idx }),
-            (_, None) => {
-                let error = "'account_idx' should be Some(id) if 'account_type' is HD or HW".to_owned();
+        match (account_type, account_idx, device_pubkey) {
+            (AccountType::Iguana, None, None) => Ok(AccountId::Iguana),
+            (AccountType::HD, Some(account_idx), None) => Ok(AccountId::HD { account_idx }),
+            (AccountType::HW, None, Some(device_pubkey)) => Ok(AccountId::HW { device_pubkey }),
+            (account_type, account_idx, device_pubkey) => {
+                let error = format!(
+                    "An invalid AccountId tuple: {:?}/{:?}/{:?}",
+                    account_type, account_idx, device_pubkey
+                );
                 MmError::err(AccountStorageError::ErrorDeserializing(error))
             },
         }
@@ -91,13 +91,9 @@ impl EnabledAccountId {
     ) -> AccountStorageResult<EnabledAccountId> {
         match (account_type, account_idx) {
             (EnabledAccountType::Iguana, None) => Ok(EnabledAccountId::Iguana),
-            (EnabledAccountType::Iguana, Some(_)) => {
-                let error = "'account_id' should be None if 'account_type' is Iguana".to_owned();
-                MmError::err(AccountStorageError::ErrorDeserializing(error))
-            },
             (EnabledAccountType::HD, Some(account_idx)) => Ok(EnabledAccountId::HD { account_idx }),
-            (EnabledAccountType::HD, None) => {
-                let error = "'account_idx' should be Some(id) if 'account_type' is HD".to_owned();
+            (account_type, account_idx) => {
+                let error = format!("An invalid AccountId tuple: {:?}/{:?}", account_type, account_idx);
                 MmError::err(AccountStorageError::ErrorDeserializing(error))
             },
         }

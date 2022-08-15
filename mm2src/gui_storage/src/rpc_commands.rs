@@ -1,5 +1,6 @@
 use crate::account::storage::AccountStorageError;
-use crate::account::{AccountId, AccountInfo, AccountWithEnabledFlag, EnabledAccountId};
+use crate::account::{AccountId, AccountInfo, AccountWithEnabledFlag, EnabledAccountId, MAX_ACCOUNT_DESCRIPTION_LENGTH,
+                     MAX_ACCOUNT_NAME_LENGTH, MAX_TICKER_LENGTH};
 use crate::context::AccountContext;
 use common::{HttpStatusCode, StatusCode, SuccessResponse};
 use derive_more::Display;
@@ -12,6 +13,12 @@ use serde::{Deserialize, Serialize};
 #[derive(Display, Serialize, SerializeErrorType)]
 #[serde(tag = "error_type", content = "error_data")]
 pub enum AccountRpcError {
+    #[display(fmt = "Account name is too long, expected shorter or equal to {}", max_len)]
+    NameTooLong { max_len: usize },
+    #[display(fmt = "Account description is too long, expected shorter or equal to {}", max_len)]
+    DescriptionTooLong { max_len: usize },
+    #[display(fmt = "Coin ticker is too long, expected shorter or equal to {}", max_len)]
+    TickerTooLong { max_len: usize },
     #[display(fmt = "No such account {:?}", _0)]
     NoSuchAccount(AccountId),
     #[display(fmt = "No enabled account yet. Consider using 'enable_account' RPC")]
@@ -46,7 +53,10 @@ impl From<AccountStorageError> for AccountRpcError {
 impl HttpStatusCode for AccountRpcError {
     fn status_code(&self) -> StatusCode {
         match self {
-            AccountRpcError::NoSuchAccount(_)
+            AccountRpcError::NameTooLong { .. }
+            | AccountRpcError::DescriptionTooLong { .. }
+            | AccountRpcError::TickerTooLong { .. }
+            | AccountRpcError::NoSuchAccount(_)
             | AccountRpcError::NoEnabledAccount
             | AccountRpcError::AccountExistsAlready(_) => StatusCode::BAD_REQUEST,
             AccountRpcError::ErrorLoadingAccount(_)
@@ -163,6 +173,7 @@ pub async fn enable_account(ctx: MmArc, req: EnableAccountRequest) -> MmResult<S
 /// This RPC affects the storage **only**. It doesn't affect MarketMaker.
 pub async fn add_account(ctx: MmArc, req: AddAccountRequest) -> MmResult<SuccessResponse, AccountRpcError> {
     let account_ctx = AccountContext::from_ctx(&ctx).map_to_mm(AccountRpcError::Internal)?;
+    validate_new_account(&req.account)?;
     account_ctx
         .storage
         .upload_account(AccountInfo::from(req.account))
@@ -194,6 +205,7 @@ pub async fn get_accounts(
 
 /// Sets account name by its [`SetAccountNameRequest::account_id`].
 pub async fn set_account_name(ctx: MmArc, req: SetAccountNameRequest) -> MmResult<SuccessResponse, AccountRpcError> {
+    validate_account_name(&req.name)?;
     let account_ctx = AccountContext::from_ctx(&ctx).map_to_mm(AccountRpcError::Internal)?;
     account_ctx.storage.set_name(req.account_id, req.name).await?;
     Ok(SuccessResponse::new())
@@ -204,6 +216,7 @@ pub async fn set_account_description(
     ctx: MmArc,
     req: SetAccountDescriptionRequest,
 ) -> MmResult<SuccessResponse, AccountRpcError> {
+    validate_account_desc(&req.description)?;
     let account_ctx = AccountContext::from_ctx(&ctx).map_to_mm(AccountRpcError::Internal)?;
     account_ctx
         .storage
@@ -238,6 +251,7 @@ pub async fn set_account_description(
 /// This RPC affects the storage **only**. It doesn't affect MarketMaker.
 pub async fn activate_coin(ctx: MmArc, req: CoinRequest) -> MmResult<SuccessResponse, AccountRpcError> {
     let account_ctx = AccountContext::from_ctx(&ctx).map_to_mm(AccountRpcError::Internal)?;
+    validate_ticker(&req.ticker)?;
     account_ctx.storage.activate_coin(req.account_id, req.ticker).await?;
     Ok(SuccessResponse::new())
 }
@@ -251,4 +265,36 @@ pub async fn deactivate_coin(ctx: MmArc, req: CoinRequest) -> MmResult<SuccessRe
     let account_ctx = AccountContext::from_ctx(&ctx).map_to_mm(AccountRpcError::Internal)?;
     account_ctx.storage.deactivate_coin(req.account_id, &req.ticker).await?;
     Ok(SuccessResponse::new())
+}
+
+fn validate_new_account<Id>(account: &NewAccount<Id>) -> MmResult<(), AccountRpcError> {
+    validate_account_name(&account.name)?;
+    validate_account_desc(&account.description)
+}
+
+fn validate_account_name(name: &str) -> MmResult<(), AccountRpcError> {
+    if name.len() > MAX_ACCOUNT_NAME_LENGTH {
+        return MmError::err(AccountRpcError::NameTooLong {
+            max_len: MAX_ACCOUNT_NAME_LENGTH,
+        });
+    }
+    Ok(())
+}
+
+fn validate_account_desc(description: &str) -> MmResult<(), AccountRpcError> {
+    if description.len() > MAX_ACCOUNT_DESCRIPTION_LENGTH {
+        return MmError::err(AccountRpcError::DescriptionTooLong {
+            max_len: MAX_ACCOUNT_NAME_LENGTH,
+        });
+    }
+    Ok(())
+}
+
+fn validate_ticker(coin: &str) -> MmResult<(), AccountRpcError> {
+    if coin.len() > MAX_TICKER_LENGTH {
+        return MmError::err(AccountRpcError::TickerTooLong {
+            max_len: MAX_TICKER_LENGTH,
+        });
+    }
+    Ok(())
 }

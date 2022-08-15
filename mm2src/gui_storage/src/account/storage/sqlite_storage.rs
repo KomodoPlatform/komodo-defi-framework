@@ -1,17 +1,21 @@
 use crate::account::storage::{AccountStorage, AccountStorageError, AccountStorageResult};
 use crate::account::{AccountId, AccountInfo, AccountType, AccountWithCoins, AccountWithEnabledFlag, EnabledAccountId,
-                     EnabledAccountType, MAX_ACCOUNT_DESCRIPTION_LENGTH, MAX_ACCOUNT_NAME_LENGTH, MAX_COIN_LENGTH};
+                     EnabledAccountType, HwPubkey, MAX_ACCOUNT_DESCRIPTION_LENGTH, MAX_ACCOUNT_NAME_LENGTH,
+                     MAX_TICKER_LENGTH};
 use async_trait::async_trait;
 use db_common::sql_constraint::UniqueConstraint;
 use db_common::sql_create::{SqlColumn, SqlCreateTable, SqlType};
 use db_common::sql_query::SqlQuery;
 use db_common::sqlite::rusqlite::types::Type;
 use db_common::sqlite::rusqlite::{Connection, Error as SqlError, Row};
-use db_common::sqlite::{SqliteConnShared, StringError};
+use db_common::sqlite::SqliteConnShared;
 use mm2_err_handle::prelude::*;
 use mm2_number::BigDecimal;
 use std::collections::BTreeMap;
+use std::str::FromStr;
 use std::sync::MutexGuard;
+
+const DEVICE_PUBKEY_MAX_LENGTH: usize = 20;
 
 mod account_table {
     /// The table name.
@@ -20,12 +24,13 @@ mod account_table {
     // The following constants are the column names.
     pub(super) const ACCOUNT_TYPE: &str = "account_type";
     pub(super) const ACCOUNT_IDX: &str = "account_idx";
+    pub(super) const DEVICE_PUBKEY: &str = "device_pubkey";
     pub(super) const NAME: &str = "name";
     pub(super) const DESCRIPTION: &str = "description";
     pub(super) const BALANCE_USD: &str = "balance_usd";
 
     /// The table constraint.
-    pub(super) const ACCOUNT_TYPE_IDX_CONSTRAINT: &str = "account_type_idx_constraint";
+    pub(super) const ACCOUNT_ID_CONSTRAINT: &str = "account_id_constraint";
 }
 
 mod account_coins_table {
@@ -35,10 +40,11 @@ mod account_coins_table {
     // The following constants are the column names.
     pub(super) const ACCOUNT_TYPE: &str = "account_type";
     pub(super) const ACCOUNT_IDX: &str = "account_idx";
+    pub(super) const DEVICE_PUBKEY: &str = "device_pubkey";
     pub(super) const COIN: &str = "coin";
 
     /// The table constraint.
-    pub(super) const ACCOUNT_TYPE_IDX_COIN_CONSTRAINT: &str = "account_type_idx_coin_constraint";
+    pub(super) const ACCOUNT_ID_COIN_CONSTRAINT: &str = "account_id_coin_constraint";
 }
 
 mod enabled_account_table {
@@ -66,40 +72,48 @@ impl From<SqlError> for AccountStorageError {
     }
 }
 
-impl AccountType {
-    fn to_column(&self) -> u8 {
-        match self {
-            AccountType::Iguana => 0,
-            AccountType::HD => 1,
-            AccountType::HW => 2,
-        }
+impl AccountId {
+    /// An alternative to [`AccountId::to_tuple`] that returns SQL compatible types.
+    fn to_sql_tuple(&self) -> (i64, Option<i64>, Option<String>) {
+        let (account_type, account_idx, device_pubkey) = self.to_tuple();
+        (
+            account_type as i64,
+            account_idx.map(|idx| idx as i64),
+            device_pubkey.map(|pubkey| pubkey.to_string()),
+        )
     }
 
-    fn from_column(column_idx: usize, value: u8) -> Result<AccountType, SqlError> {
-        match value {
-            0 => Ok(AccountType::Iguana),
-            1 => Ok(AccountType::HD),
-            2 => Ok(AccountType::HW),
-            other => {
-                let error = StringError::from(format!("Unknown 'account_type' value: {}", other)).into_boxed();
-                Err(SqlError::FromSqlConversionFailure(column_idx, Type::Text, error))
-            },
-        }
+    /// An alternative to [`AccountId::try_from_tuple`] that takes SQL compatible types.
+    pub(crate) fn try_from_sql_tuple(
+        account_type: i64,
+        account_idx: Option<u32>,
+        device_pubkey: Option<String>,
+    ) -> AccountStorageResult<AccountId> {
+        let account_type = AccountType::try_from(account_type)?;
+        let device_pubkey = device_pubkey
+            // Map `Option<String>` into `Option<Result<HwPubkey, _>>`
+            .map(|pubkey| HwPubkey::from_str(&pubkey))
+            // Transpose `Option<Result<HwPubkey, _>>` into `Result<Option<HwPubkey, _>>`
+            .transpose()
+            .map_to_mm(|e| AccountStorageError::ErrorDeserializing(e.to_string()))?;
+        AccountId::try_from_tuple(account_type, account_idx, device_pubkey)
     }
 }
 
-impl EnabledAccountType {
-    fn to_column(&self) -> u8 { AccountType::from(*self).to_column() }
+impl EnabledAccountId {
+    /// An alternative to [`EnabledAccountId::to_pair`] that returns SQL compatible types.
+    fn to_sql_pair(&self) -> (i64, Option<i64>) {
+        let (account_type, account_idx) = self.to_pair();
+        (account_type as i64, account_idx.map(|idx| idx as i64))
+    }
 
-    fn from_column(column_idx: usize, value: u8) -> Result<EnabledAccountType, SqlError> {
-        match AccountType::from_column(column_idx, value)? {
-            AccountType::Iguana => Ok(EnabledAccountType::Iguana),
-            AccountType::HD => Ok(EnabledAccountType::HD),
-            AccountType::HW => {
-                let error = StringError::from("HW account cannot be enabled").into_boxed();
-                Err(SqlError::FromSqlConversionFailure(column_idx, Type::Text, error))
-            },
-        }
+    /// An alternative to [`EnabledAccountId::try_from_pair`] that takes SQL compatible types.
+    pub(crate) fn try_from_sql_pair(
+        account_type: i64,
+        account_idx: Option<u32>,
+    ) -> AccountStorageResult<EnabledAccountId> {
+        let account_type = EnabledAccountType::try_from(account_type)?;
+        EnabledAccountId::try_from_pair(account_type, account_idx)
     }
 }
 
@@ -120,6 +134,10 @@ impl SqliteAccountStorage {
             .if_not_exist()
             .column(SqlColumn::new(account_table::ACCOUNT_TYPE, SqlType::Integer).not_null())
             .column(SqlColumn::new(account_table::ACCOUNT_IDX, SqlType::Integer))
+            .column(SqlColumn::new(
+                account_table::DEVICE_PUBKEY,
+                SqlType::Varchar(DEVICE_PUBKEY_MAX_LENGTH),
+            ))
             .column(
                 SqlColumn::new(account_table::NAME, SqlType::Varchar(MAX_ACCOUNT_NAME_LENGTH))
                     .not_null()
@@ -131,8 +149,12 @@ impl SqliteAccountStorage {
             ))
             .column(SqlColumn::new(account_table::BALANCE_USD, SqlType::Real).not_null())
             .constraint(
-                UniqueConstraint::new([account_table::ACCOUNT_TYPE, account_table::ACCOUNT_IDX])?
-                    .name(account_table::ACCOUNT_TYPE_IDX_CONSTRAINT),
+                UniqueConstraint::new([
+                    account_table::ACCOUNT_TYPE,
+                    account_table::ACCOUNT_IDX,
+                    account_table::DEVICE_PUBKEY,
+                ])?
+                .name(account_table::ACCOUNT_ID_CONSTRAINT),
             );
         create_sql.create().map_to_mm(AccountStorageError::from)
     }
@@ -143,14 +165,19 @@ impl SqliteAccountStorage {
             .if_not_exist()
             .column(SqlColumn::new(account_coins_table::ACCOUNT_TYPE, SqlType::Integer).not_null())
             .column(SqlColumn::new(account_coins_table::ACCOUNT_IDX, SqlType::Integer))
-            .column(SqlColumn::new(account_coins_table::COIN, SqlType::Varchar(MAX_COIN_LENGTH)).not_null())
+            .column(SqlColumn::new(
+                account_coins_table::DEVICE_PUBKEY,
+                SqlType::Varchar(DEVICE_PUBKEY_MAX_LENGTH),
+            ))
+            .column(SqlColumn::new(account_coins_table::COIN, SqlType::Varchar(MAX_TICKER_LENGTH)).not_null())
             .constraint(
                 UniqueConstraint::new([
                     account_coins_table::ACCOUNT_TYPE,
                     account_coins_table::ACCOUNT_IDX,
+                    account_coins_table::DEVICE_PUBKEY,
                     account_coins_table::COIN,
                 ])?
-                .name(account_coins_table::ACCOUNT_TYPE_IDX_COIN_CONSTRAINT),
+                .name(account_coins_table::ACCOUNT_ID_COIN_CONSTRAINT),
             );
         create_sql.create().map_to_mm(AccountStorageError::from)
     }
@@ -186,11 +213,12 @@ impl SqliteAccountStorage {
         };
         let mut query = SqlQuery::select_from(conn, account_coins_table::TABLE_NAME)?;
 
-        let (account_type, account_id) = account_id.to_pair();
+        let (account_type, account_id, device_pubkey) = account_id.to_sql_tuple();
         query
             .field(account_coins_table::COIN)?
-            .and_where_eq_param(account_table::ACCOUNT_TYPE, account_type.to_column())?
-            .and_where_eq(account_table::ACCOUNT_IDX, account_id.map(|id| id as i64))?;
+            .and_where_eq(account_table::ACCOUNT_TYPE, account_type)?
+            .and_where_eq(account_table::ACCOUNT_IDX, account_id)?
+            .and_where_eq_param(account_table::DEVICE_PUBKEY, device_pubkey)?;
         let coins = query.query(|row| row.get::<_, String>(0))?.into_iter().collect();
         Ok(Some(AccountWithCoins { account_info, coins }))
     }
@@ -206,10 +234,11 @@ impl SqliteAccountStorage {
             .field(account_table::DESCRIPTION)?
             .field(account_table::BALANCE_USD)?;
 
-        let (account_type, account_id) = account_id.to_pair();
+        let (account_type, account_id, device_pubkey) = account_id.to_sql_tuple();
         query
-            .and_where_eq_param(account_table::ACCOUNT_TYPE, account_type.to_column())?
-            .and_where_eq(account_table::ACCOUNT_IDX, account_id.map(|id| id as i64))?;
+            .and_where_eq(account_table::ACCOUNT_TYPE, account_type)?
+            .and_where_eq(account_table::ACCOUNT_IDX, account_id)?
+            .and_where_eq_param(account_table::DEVICE_PUBKEY, device_pubkey)?;
         query
             .query_single_row(account_from_row)
             .map_to_mm(AccountStorageError::from)
@@ -220,6 +249,7 @@ impl SqliteAccountStorage {
         query
             .field(account_table::ACCOUNT_TYPE)?
             .field(account_table::ACCOUNT_IDX)?
+            .field(account_table::DEVICE_PUBKEY)?
             .field(account_table::NAME)?
             .field(account_table::DESCRIPTION)?
             .field(account_table::BALANCE_USD)?;
@@ -301,26 +331,25 @@ impl AccountStorage for SqliteAccountStorage {
 }
 
 fn account_id_from_row(row: &Row<'_>) -> Result<AccountId, SqlError> {
-    let account_type: u8 = row.get(0)?;
-    let account_type = AccountType::from_column(0, account_type)?;
+    let account_type: i64 = row.get(0)?;
     let account_idx: Option<u32> = row.get(1)?;
-    AccountId::try_from_pair(account_type, account_idx)
+    let device_pubkey: Option<String> = row.get(2)?;
+    AccountId::try_from_sql_tuple(account_type, account_idx, device_pubkey)
         .map_err(|e| SqlError::FromSqlConversionFailure(0, Type::Text, Box::new(e)))
 }
 
 fn enabled_account_id_from_row(row: &Row<'_>) -> Result<EnabledAccountId, SqlError> {
-    let account_type: u8 = row.get(0)?;
-    let account_type = EnabledAccountType::from_column(0, account_type)?;
+    let account_type: i64 = row.get(0)?;
     let account_idx: Option<u32> = row.get(1)?;
-    EnabledAccountId::try_from_pair(account_type, account_idx)
+    EnabledAccountId::try_from_sql_pair(account_type, account_idx)
         .map_err(|e| SqlError::FromSqlConversionFailure(0, Type::Text, Box::new(e)))
 }
 
 fn account_from_row(row: &Row<'_>) -> Result<AccountInfo, SqlError> {
     let account_id = account_id_from_row(row)?;
-    let name = row.get(2)?;
-    let description = row.get(3)?;
-    let balance_usd = bigdecimal_from_row(row, 4)?;
+    let name = row.get(3)?;
+    let description = row.get(4)?;
+    let balance_usd = bigdecimal_from_row(row, 5)?;
     Ok(AccountInfo {
         account_id,
         name,
