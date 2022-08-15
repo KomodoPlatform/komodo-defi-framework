@@ -3,6 +3,7 @@ use chain::{BlockHeader, BlockHeaderBits};
 use derive_more::Display;
 use primitives::compact::Compact;
 use primitives::U256;
+use serde::{Deserialize, Serialize};
 use std::cmp;
 
 const RETARGETING_FACTOR: u32 = 4;
@@ -21,28 +22,25 @@ pub const MAX_BITS_BTC: u32 = 486604799;
 
 fn is_retarget_height(height: u32) -> bool { height % RETARGETING_INTERVAL == 0 }
 
-#[derive(Debug, Display)]
+#[derive(Clone, Debug, Display, Eq, PartialEq)]
 pub enum NextBlockBitsError {
     #[display(fmt = "Block headers storage error: {}", _0)]
     StorageError(BlockHeaderStorageError),
     #[display(fmt = "Can't find Block header for {} with height {}", height, coin)]
-    NoSuchBlockHeader {
-        coin: String,
-        height: u64,
-    },
+    NoSuchBlockHeader { coin: String, height: u64 },
     #[display(fmt = "Can't find a Block header for {} with no max bits", coin)]
-    NoBlockHeaderWithNoMaxBits {
-        coin: String,
-    },
-    Internal(String),
+    NoBlockHeaderWithNoMaxBits { coin: String },
 }
 
 impl From<BlockHeaderStorageError> for NextBlockBitsError {
     fn from(e: BlockHeaderStorageError) -> Self { NextBlockBitsError::StorageError(e) }
 }
 
+#[derive(Clone, Debug, Deserialize, Serialize)]
 pub enum DifficultyAlgorithm {
+    #[serde(rename = "Bitcoin Mainnet")]
     BitcoinMainnet,
+    #[serde(rename = "Bitcoin Testnet")]
     BitcoinTestnet,
 }
 
@@ -52,7 +50,7 @@ pub async fn next_block_bits(
     last_block_header: BlockHeader,
     last_block_height: u32,
     storage: &dyn BlockHeaderStorageOps,
-    algorithm: DifficultyAlgorithm,
+    algorithm: &DifficultyAlgorithm,
 ) -> Result<BlockHeaderBits, NextBlockBitsError> {
     match algorithm {
         DifficultyAlgorithm::BitcoinMainnet => {
@@ -125,7 +123,7 @@ async fn btc_mainnet_next_block_bits(
     storage: &dyn BlockHeaderStorageOps,
 ) -> Result<BlockHeaderBits, NextBlockBitsError> {
     if last_block_height == 0 {
-        return Err(NextBlockBitsError::Internal("Last block height can't be zero".into()));
+        return Ok(BlockHeaderBits::Compact(MAX_BITS_BTC.into()));
     }
 
     let height = last_block_height + 1;
@@ -145,14 +143,14 @@ async fn btc_testnet_next_block_bits(
     last_block_height: u32,
     storage: &dyn BlockHeaderStorageOps,
 ) -> Result<BlockHeaderBits, NextBlockBitsError> {
+    let max_bits = BlockHeaderBits::Compact(MAX_BITS_BTC.into());
     if last_block_height == 0 {
-        return Err(NextBlockBitsError::Internal("Last block height can't be zero".into()));
+        return Ok(max_bits);
     }
 
     let height = last_block_height + 1;
     let last_block_bits = last_block_header.bits.clone();
     let max_time_gap = last_block_header.time + 2 * TARGET_SPACING_SECONDS;
-    let max_bits = BlockHeaderBits::Compact(MAX_BITS_BTC.into());
 
     if is_retarget_height(height) {
         btc_retarget_bits(coin, height, last_block_header, storage).await
@@ -170,7 +168,7 @@ async fn btc_testnet_next_block_bits(
 }
 
 #[cfg(test)]
-mod tests {
+pub(crate) mod tests {
     use super::*;
     use crate::storage::{BlockHeaderStorageError, BlockHeaderStorageOps};
     use async_trait::async_trait;
@@ -203,7 +201,7 @@ mod tests {
             .collect()
     }
 
-    struct TestBlockHeadersStorage {}
+    pub(crate) struct TestBlockHeadersStorage {}
 
     #[async_trait]
     impl BlockHeaderStorageOps for TestBlockHeadersStorage {

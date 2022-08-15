@@ -1968,7 +1968,25 @@ impl ElectrumClient {
                 let params = &storage.params;
                 let blocks_limit = params.blocks_limit_to_check;
                 let (headers_registry, headers) = self.retrieve_last_headers(blocks_limit, height).compat().await?;
-                match validate_headers(headers, params.difficulty_check, params.constant_difficulty) {
+                let previous_header_height = if height < blocks_limit.get() {
+                    0
+                } else {
+                    height - blocks_limit.get()
+                };
+                // Todo: remove unwrap, move this inside validate_headers function, maybe also move ticker inside storage?
+                let previous_header = storage.get_block_header(ticker, previous_header_height).await?.unwrap();
+                match validate_headers(
+                    ticker,
+                    previous_header,
+                    previous_header_height as u32,
+                    headers,
+                    params.difficulty_check,
+                    params.constant_difficulty,
+                    storage,
+                    &params.difficulty_algorithm,
+                )
+                .await
+                {
                     Ok(_) => {
                         storage.add_block_headers_to_storage(ticker, headers_registry).await?;
                         Ok(header)

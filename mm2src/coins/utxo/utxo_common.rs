@@ -3473,12 +3473,15 @@ pub async fn block_header_utxo_loop<T: UtxoCommonOps>(weak: UtxoWeak, constructo
             Some(storage) => storage,
         };
         let params = storage.params.clone();
-        let (check_every, blocks_limit_to_check, difficulty_check, constant_difficulty) = (
+        let (check_every, blocks_limit_to_check, difficulty_check, constant_difficulty, difficulty_algorithm) = (
             params.check_every,
             params.blocks_limit_to_check,
             params.difficulty_check,
             params.constant_difficulty,
+            params.difficulty_algorithm,
         );
+        // Todo: what about if electrums are down for a long time, a header will be skipped and all the next validations will fail, we shouldn't get it from
+        // Todo: get_block_count but from storage when there is a new block (check it's the last one in storage), block_header_utxo_loop logic might completely change
         let height =
             ok_or_continue_after_sleep!(coin.as_ref().rpc_client.get_block_count().compat().await, check_every);
         let (block_registry, block_headers) = ok_or_continue_after_sleep!(
@@ -3488,12 +3491,33 @@ pub async fn block_header_utxo_loop<T: UtxoCommonOps>(weak: UtxoWeak, constructo
                 .await,
             check_every
         );
+        let ticker = coin.as_ref().conf.ticker.as_str();
+        let previous_header_height = if height < blocks_limit_to_check.get() {
+            0
+        } else {
+            height - blocks_limit_to_check.get()
+        };
+        // Todo: remove unwrap, move this inside validate_headers function, maybe also move ticker inside storage?
+        let previous_header = ok_or_continue_after_sleep!(
+            storage.get_block_header(ticker, previous_header_height).await,
+            check_every
+        )
+        .unwrap();
         ok_or_continue_after_sleep!(
-            validate_headers(block_headers, difficulty_check, constant_difficulty),
+            validate_headers(
+                ticker,
+                previous_header,
+                previous_header_height as u32,
+                block_headers,
+                difficulty_check,
+                constant_difficulty,
+                storage,
+                &difficulty_algorithm
+            )
+            .await,
             check_every
         );
 
-        let ticker = coin.as_ref().conf.ticker.as_str();
         ok_or_continue_after_sleep!(
             storage.add_block_headers_to_storage(ticker, block_registry).await,
             check_every

@@ -7,6 +7,7 @@ use chain::BlockHeader;
 use mm2_core::mm_ctx::MmArc;
 use primitives::hash::H256;
 use spv_validation::storage::{BlockHeaderStorageError, BlockHeaderStorageOps};
+use spv_validation::work::DifficultyAlgorithm;
 use std::collections::HashMap;
 use std::fmt::{Debug, Formatter};
 use std::num::NonZeroU64;
@@ -19,6 +20,7 @@ pub struct BlockHeaderVerificationParams {
     // This should to be equal to or greater than the number of blocks needed before the chain is safe from reorganization (e.g. 6 blocks for BTC)
     pub blocks_limit_to_check: NonZeroU64,
     pub check_every: f64,
+    pub difficulty_algorithm: Option<DifficultyAlgorithm>,
 }
 
 pub struct BlockHeaderStorage {

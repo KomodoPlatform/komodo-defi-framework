@@ -4,7 +4,7 @@ use derive_more::Display;
 use primitives::hash::H256;
 use std::collections::HashMap;
 
-#[derive(Debug, Display)]
+#[derive(Clone, Debug, Display, Eq, PartialEq)]
 pub enum BlockHeaderStorageError {
     #[display(fmt = "Can't add to the storage for {} - reason: {}", coin, reason)]
     AddToStorageError {

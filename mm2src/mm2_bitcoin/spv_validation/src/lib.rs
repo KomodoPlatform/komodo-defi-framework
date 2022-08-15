@@ -4,6 +4,7 @@ extern crate keys;
 extern crate primitives;
 extern crate ripemd160;
 extern crate rustc_hex as hex;
+extern crate serde;
 extern crate serialization;
 extern crate sha2;
 extern crate test_helpers;
