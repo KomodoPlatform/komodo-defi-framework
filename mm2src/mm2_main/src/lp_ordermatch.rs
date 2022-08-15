@@ -892,7 +892,7 @@ fn test_alb_ordered_pair() {
 }
 
 #[allow(dead_code)]
-fn parse_orderbook_pair_from_topic(topic: &str) -> Option<(&str, &str)> {
+pub fn parse_orderbook_pair_from_topic(topic: &str) -> Option<(&str, &str)> {
     let mut split = topic.split(|maybe_sep| maybe_sep == TOPIC_SEPARATOR);
     match split.next() {
         Some(ORDERBOOK_PREFIX) => match split.next() {

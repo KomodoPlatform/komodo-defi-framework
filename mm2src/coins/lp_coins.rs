@@ -379,6 +379,15 @@ impl Deref for TransactionEnum {
     }
 }
 
+/// Error type for handling tx serialization/deserialization operations.
+#[derive(Debug, Clone)]
+pub enum TxMarshalingErr {
+    InvalidInput(String),
+    /// For cases where serialized and deserialized values doesn't verify each other.
+    CrossCheckFailed(String),
+    NotSupported(String),
+}
+
 #[derive(Debug, Clone)]
 #[allow(clippy::large_enum_variant)]
 pub enum TransactionErr {
@@ -634,7 +643,7 @@ pub trait MarketCoinOps {
         swap_contract_address: &Option<BytesJson>,
     ) -> TransactionFut;
 
-    fn tx_enum_from_bytes(&self, bytes: &[u8]) -> Result<TransactionEnum, String>;
+    fn tx_enum_from_bytes(&self, bytes: &[u8]) -> Result<TransactionEnum, MmError<TxMarshalingErr>>;
 
     fn current_block(&self) -> Box<dyn Future<Item = u64, Error = String> + Send>;
 
