@@ -466,7 +466,7 @@ mod docker_tests {
             .err()
             .unwrap();
 
-        assert_eq!(true, actual.contains("Transaction b4f8d0f3665ccb7a7e1d98cfaba9c77ed4cbe245deaf529a5578b6977d91253c doesn't exist on chain yet"))
+        assert_eq!(true, actual.contains("Invalid Tx Hash b4f8d0f3665ccb7a7e1d98cfaba9c77ed4cbe245deaf529a5578b6977d91253c: Tx is Unavailable on chain yet"))
     }
 
     #[test]

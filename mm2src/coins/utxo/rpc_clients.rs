@@ -173,8 +173,10 @@ impl UtxoRpcClientEnum {
                         }
                     },
                     Err(e) => {
-                        if let true = matches!(&e.get_inner(), UtxoRpcError::Transport(_)) {
-                            return ERR!("Transaction {:?} doesn't exist on chain yet", tx_hash);
+                        if matches!(&e.get_inner(), UtxoRpcError::Transport(_))
+                            && e.to_string().contains("No information available about transaction")
+                        {
+                            return ERR!("Invalid Tx Hash {:?}: Tx is Unavailable on chain yet", tx_hash);
                         };
 
                         if expiry_height > 0 {
