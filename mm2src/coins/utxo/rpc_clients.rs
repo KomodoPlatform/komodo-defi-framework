@@ -11,7 +11,8 @@ use common::custom_iter::{CollectInto, TryIntoGroupMap};
 use common::executor::{spawn, Timer};
 use common::jsonrpc_client::{JsonRpcBatchClient, JsonRpcBatchResponse, JsonRpcClient, JsonRpcError, JsonRpcErrorType,
                              JsonRpcId, JsonRpcMultiClient, JsonRpcRemoteAddr, JsonRpcRequest, JsonRpcRequestEnum,
-                             JsonRpcResponse, JsonRpcResponseEnum, JsonRpcResponseFut, RpcRes};
+                             JsonRpcResponse, JsonRpcResponseEnum, RpcRes};
+use common::jsonrpc_client::{JsonRpcTransportErrFut, JsonRpcTransportError};
 use common::log::{error, info, warn};
 use common::{median, now_float, now_ms, OrdRange};
 use derive_more::Display;
@@ -134,6 +135,17 @@ impl Clone for UtxoRpcClientEnum {
     }
 }
 
+fn check_if_tx_onchain(err: &UtxoRpcError) -> bool {
+    if let UtxoRpcError::Transport(trans) = err {
+        if let JsonRpcErrorType::Transport(JsonRpcTransportError::Transport(_, _, body)) = &trans.error {
+            if body.error.code == -5 {
+                return true;
+            }
+        }
+    };
+    false
+}
+
 impl UtxoRpcClientEnum {
     pub fn wait_for_confirmations(
         &self,
@@ -173,9 +185,7 @@ impl UtxoRpcClientEnum {
                         }
                     },
                     Err(e) => {
-                        if matches!(&e.get_inner(), UtxoRpcError::Transport(_))
-                            && e.to_string().contains("No information available about transaction")
-                        {
+                        if check_if_tx_onchain(e.get_inner()) {
                             return ERR!("Invalid Tx Hash {:?}: Tx is Unavailable on chain yet", tx_hash);
                         };
 
@@ -636,23 +646,23 @@ impl JsonRpcClient for NativeClientImpl {
     fn client_info(&self) -> String { UtxoJsonRpcClientInfo::client_info(self) }
 
     #[cfg(target_arch = "wasm32")]
-    fn transport(&self, _request: JsonRpcRequestEnum) -> JsonRpcResponseFut {
-        Box::new(futures01::future::err(ERRL!(
-            "'NativeClientImpl' must be used in native mode only"
+    fn transport(&self, _request: JsonRpcRequestEnum) -> JsonRpcTransportErrFut {
+        Box::new(futures01::future::err(JsonRpcTransportError::NativeClientImplError(
+            "'NativeClientImpl' must be used in native mode only".to_string(),
         )))
     }
 
     #[cfg(not(target_arch = "wasm32"))]
-    fn transport(&self, request: JsonRpcRequestEnum) -> JsonRpcResponseFut {
+    fn transport(&self, request: JsonRpcRequestEnum) -> JsonRpcTransportErrFut {
         use mm2_net::transport::slurp_req;
 
-        let request_body = try_fus!(json::to_string(&request));
+        let request_body = try_mm_fus!(json::to_string(&request));
         // measure now only body length, because the `hyper` crate doesn't allow to get total HTTP packet length
         self.event_handlers.on_outgoing_request(request_body.as_bytes());
 
         let uri = self.uri.clone();
 
-        let http_request = try_fus!(Request::builder()
+        let http_request = try_mm_fus!(Request::builder()
             .method("POST")
             .header(AUTHORIZATION, self.auth.clone())
             .uri(uri.clone())
@@ -660,23 +670,22 @@ impl JsonRpcClient for NativeClientImpl {
 
         let event_handles = self.event_handlers.clone();
         Box::new(slurp_req(http_request).boxed().compat().then(
-            move |result| -> Result<(JsonRpcRemoteAddr, JsonRpcResponseEnum), String> {
-                let res = try_s!(result);
+            move |result| -> Result<(JsonRpcRemoteAddr, JsonRpcResponseEnum), JsonRpcTransportError> {
+                let res = result.map_err(|err| JsonRpcTransportError::SlurpError(err.to_string()))?;
                 // measure now only body length, because the `hyper` crate doesn't allow to get total HTTP packet length
                 event_handles.on_incoming_response(&res.2);
 
-                let body = try_s!(std::str::from_utf8(&res.2));
+                let body = std::str::from_utf8(&res.2)?;
 
                 if res.0 != StatusCode::OK {
-                    return ERR!(
-                        "Rpc request {:?} failed with HTTP status code {}, response body: {}",
+                    return Err(JsonRpcTransportError::Transport(
                         request,
                         res.0,
-                        body
-                    );
+                        serde_json::from_str(body)?,
+                    ));
                 }
 
-                let response = try_s!(json::from_str(body));
+                let response = json::from_str(body)?;
                 Ok((uri.into(), response))
             },
         ))
@@ -1739,16 +1748,26 @@ impl JsonRpcClient for ElectrumClient {
 
     fn client_info(&self) -> String { UtxoJsonRpcClientInfo::client_info(self) }
 
-    fn transport(&self, request: JsonRpcRequestEnum) -> JsonRpcResponseFut {
-        Box::new(electrum_request_multi(self.clone(), request).boxed().compat())
+    fn transport(&self, request: JsonRpcRequestEnum) -> JsonRpcTransportErrFut {
+        Box::new(
+            electrum_request_multi(self.clone(), request)
+                .boxed()
+                .compat()
+                .map_err(JsonRpcTransportError::ElectrumRequestMulti),
+        )
     }
 }
 
 impl JsonRpcBatchClient for ElectrumClient {}
 
 impl JsonRpcMultiClient for ElectrumClient {
-    fn transport_exact(&self, to_addr: String, request: JsonRpcRequestEnum) -> JsonRpcResponseFut {
-        Box::new(electrum_request_to(self.clone(), request, to_addr).boxed().compat())
+    fn transport_exact(&self, to_addr: String, request: JsonRpcRequestEnum) -> JsonRpcTransportErrFut {
+        Box::new(
+            electrum_request_to(self.clone(), request, to_addr)
+                .boxed()
+                .compat()
+                .map_err(JsonRpcTransportError::ElectrumRequestMulti),
+        )
     }
 }
 
