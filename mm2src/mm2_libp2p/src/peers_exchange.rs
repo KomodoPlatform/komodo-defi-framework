@@ -108,7 +108,11 @@ impl PeersExchange {
     }
 
     fn get_random_known_peers(&mut self, num: usize) -> HashMap<PeerIdSerde, PeerAddresses> {
-        let mut result = HashMap::with_capacity(num);
+        let mut result = if num > DEFAULT_PEERS_NUM {
+            HashMap::with_capacity(DEFAULT_PEERS_NUM)
+        } else {
+            HashMap::with_capacity(num)
+        };
         let mut rng = rand::thread_rng();
         let peer_ids = self
             .known_peers
