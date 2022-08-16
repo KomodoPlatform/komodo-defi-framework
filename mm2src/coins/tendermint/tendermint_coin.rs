@@ -58,6 +58,7 @@ pub struct TendermintActivationParams {
     rpc_urls: Vec<String>,
 }
 
+#[derive(Debug)]
 pub struct TendermintCoinImpl {
     ticker: String,
     rpc_client: HttpClient,
@@ -71,7 +72,7 @@ pub struct TendermintCoinImpl {
     sequence_lock: AsyncMutex<()>,
 }
 
-#[derive(Clone)]
+#[derive(Clone, Debug)]
 pub struct TendermintCoin(Arc<TendermintCoinImpl>);
 
 impl Deref for TendermintCoin {
@@ -80,12 +81,13 @@ impl Deref for TendermintCoin {
     fn deref(&self) -> &Self::Target { &self.0 }
 }
 
+#[derive(Debug)]
 pub struct TendermintInitError {
     pub ticker: String,
     pub kind: TendermintInitErrorKind,
 }
 
-#[derive(Display)]
+#[derive(Display, Debug)]
 pub enum TendermintInitErrorKind {
     InvalidPrivKey(String),
     CouldNotGenerateAccountId(String),
@@ -651,5 +653,43 @@ mod tendermint_coin_tests {
         let tx_bytes = hex::decode(tx_hex).unwrap();
         let hash = sha256(&tx_bytes);
         assert_eq!(upper_hex(hash.as_slice()), expected_hash);
+    }
+
+    /// Not an actual test.
+    /// Created for development purposes
+    #[test]
+    #[ignore]
+    fn iris_poc() {
+        let activation_request = TendermintActivationParams {
+            rpc_urls: vec!["http://35.234.10.84:26657".to_string()],
+        };
+
+        let protocol_conf = TendermintProtocolInfo {
+            decimals: 6,
+            denom: String::from("unyan"),
+            account_prefix: String::from("iaa"),
+            chain_id: String::from("nyancat-8"),
+        };
+
+        let ctx = mm2_core::mm_ctx::MmCtxBuilder::default()
+            .with_secp256k1_key_pair(crypto::privkey::key_pair_from_seed("iris test seed").unwrap())
+            .into_mm_arc();
+
+        let priv_key = &*ctx.secp256k1_key_pair().private().secret;
+
+        let coin = common::block_on(TendermintCoin::init(
+            "IRIS".to_string(),
+            protocol_conf,
+            activation_request,
+            priv_key,
+        ))
+        .unwrap();
+        dbg!(coin.clone());
+
+        let my_balance = common::block_on(coin.my_balance().compat()).unwrap();
+        dbg!(my_balance);
+
+        // fail intentionally
+        assert!(false);
     }
 }
