@@ -89,7 +89,6 @@ pub struct MmCtx {
     pub message_service_ctx: Mutex<Option<Arc<dyn Any + 'static + Send + Sync>>>,
     pub p2p_ctx: Mutex<Option<Arc<dyn Any + 'static + Send + Sync>>>,
     pub peer_id: Constructible<String>,
-    #[cfg(feature = "gui-storage")]
     pub account_ctx: Mutex<Option<Arc<dyn Any + 'static + Send + Sync>>>,
     /// The context belonging to the `coins` crate: `CoinsContext`.
     pub coins_ctx: Mutex<Option<Arc<dyn Any + 'static + Send + Sync>>>,
@@ -136,7 +135,6 @@ impl MmCtx {
             message_service_ctx: Mutex::new(None),
             p2p_ctx: Mutex::new(None),
             peer_id: Constructible::default(),
-            #[cfg(feature = "gui-storage")]
             account_ctx: Mutex::new(None),
             coins_ctx: Mutex::new(None),
             coins_activation_ctx: Mutex::new(None),

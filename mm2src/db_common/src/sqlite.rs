@@ -246,6 +246,11 @@ impl SqlParamsBuilder {
     where
         OwnedSqlParam: From<P>,
     {
+        self.push_owned_param(OwnedSqlParam::from(param))
+    }
+
+    /// Pushes the given `param` and returns its `:<IDX>` identifier.
+    pub(crate) fn push_owned_param(&mut self, param: OwnedSqlParam) -> ParamId {
         self.params.push(OwnedSqlParam::from(param));
         self.next_param_id += 1;
         format!(":{}", self.next_param_id)

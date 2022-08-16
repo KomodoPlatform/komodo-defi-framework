@@ -5,17 +5,20 @@ use crate::account::{AccountId, AccountInfo, AccountType, AccountWithCoins, Acco
 use async_trait::async_trait;
 use db_common::sql_constraint::UniqueConstraint;
 use db_common::sql_create::{SqlColumn, SqlCreateTable, SqlType};
+use db_common::sql_insert::SqlInsert;
 use db_common::sql_query::SqlQuery;
 use db_common::sqlite::rusqlite::types::Type;
 use db_common::sqlite::rusqlite::{Connection, Error as SqlError, Row};
 use db_common::sqlite::SqliteConnShared;
+use mm2_core::mm_ctx::MmArc;
 use mm2_err_handle::prelude::*;
 use mm2_number::BigDecimal;
 use std::collections::BTreeMap;
 use std::str::FromStr;
-use std::sync::MutexGuard;
+use std::sync::{Arc, MutexGuard};
 
 const DEVICE_PUBKEY_MAX_LENGTH: usize = 20;
+const BALANCE_MAX_LENGTH: usize = 255;
 
 mod account_table {
     /// The table name.
@@ -122,6 +125,16 @@ pub(crate) struct SqliteAccountStorage {
 }
 
 impl SqliteAccountStorage {
+    pub(crate) fn new(ctx: &MmArc) -> AccountStorageResult<SqliteAccountStorage> {
+        let shared = ctx
+            .sqlite_connection
+            .as_option()
+            .or_mm_err(|| AccountStorageError::Internal("'MmCtx::sqlite_connection' is not initialized".to_owned()))?;
+        Ok(SqliteAccountStorage {
+            conn: Arc::clone(shared),
+        })
+    }
+
     fn lock_conn(&self) -> AccountStorageResult<MutexGuard<Connection>> {
         self.conn
             .lock()
@@ -147,7 +160,7 @@ impl SqliteAccountStorage {
                 account_table::DESCRIPTION,
                 SqlType::Varchar(MAX_ACCOUNT_DESCRIPTION_LENGTH),
             ))
-            .column(SqlColumn::new(account_table::BALANCE_USD, SqlType::Real).not_null())
+            .column(SqlColumn::new(account_table::BALANCE_USD, SqlType::Varchar(BALANCE_MAX_LENGTH)).not_null())
             .constraint(
                 UniqueConstraint::new([
                     account_table::ACCOUNT_TYPE,
@@ -260,6 +273,38 @@ impl SqliteAccountStorage {
             .collect();
         Ok(accounts)
     }
+
+    fn account_exists(conn: &Connection, account_id: &AccountId) -> AccountStorageResult<bool> {
+        let mut query = SqlQuery::select_from(conn, account_table::TABLE_NAME)?;
+        query.count(account_table::NAME)?;
+
+        let (account_type, account_idx, device_pubkey) = account_id.to_sql_tuple();
+        query
+            .and_where_eq(account_table::ACCOUNT_TYPE, account_type)?
+            .and_where_eq(account_table::ACCOUNT_IDX, account_idx)?
+            .and_where_eq_param(account_table::DEVICE_PUBKEY, device_pubkey)?;
+
+        let accounts = query
+            .query_single_row(count_from_row)?
+            .or_mm_err(|| AccountStorageError::Internal("'count' should have returned one row exactly".to_string()))?;
+
+        Ok(accounts > 0)
+    }
+
+    fn add_account(conn: &Connection, account: AccountInfo) -> AccountStorageResult<()> {
+        let mut sql_insert = SqlInsert::new(&conn, account_table::TABLE_NAME);
+
+        let (account_type, account_idx, device_pubkey) = account.account_id.to_sql_tuple();
+        sql_insert
+            .column(account_table::ACCOUNT_TYPE, account_type)?
+            .column(account_table::ACCOUNT_IDX, account_idx)?
+            .column_param(account_table::DEVICE_PUBKEY, device_pubkey)?
+            .column_param(account_table::NAME, account.name)?
+            .column_param(account_table::DESCRIPTION, account.description)?
+            .column_param(account_table::BALANCE_USD, account.balance_usd.to_string())?;
+        sql_insert.insert()?;
+        Ok(())
+    }
 }
 
 #[async_trait]
@@ -317,7 +362,16 @@ impl AccountStorage for SqliteAccountStorage {
 
     async fn enable_account(&self, account_id: EnabledAccountId) -> AccountStorageResult<()> { todo!() }
 
-    async fn upload_account(&self, account: AccountInfo) -> AccountStorageResult<()> { todo!() }
+    async fn upload_account(&self, account: AccountInfo) -> AccountStorageResult<()> {
+        let conn = self.lock_conn()?;
+
+        // First, check if the account doesn't exist.
+        if Self::account_exists(&conn, &account.account_id)? {
+            return MmError::err(AccountStorageError::AccountExistsAlready(account.account_id));
+        }
+
+        Self::add_account(&conn, account)
+    }
 
     async fn set_name(&self, account_id: AccountId, name: String) -> AccountStorageResult<()> { todo!() }
 
@@ -358,7 +412,9 @@ fn account_from_row(row: &Row<'_>) -> Result<AccountInfo, SqlError> {
     })
 }
 
+fn count_from_row(row: &Row<'_>) -> Result<i64, SqlError> { row.get(0) }
+
 fn bigdecimal_from_row(row: &Row<'_>, idx: usize) -> Result<BigDecimal, SqlError> {
-    let decimal: f64 = row.get(idx)?;
-    BigDecimal::try_from(decimal).map_err(|e| SqlError::FromSqlConversionFailure(idx, Type::Real, Box::new(e)))
+    let decimal: String = row.get(idx)?;
+    BigDecimal::from_str(&decimal).map_err(|e| SqlError::FromSqlConversionFailure(idx, Type::Text, Box::new(e)))
 }

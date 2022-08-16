@@ -8,10 +8,12 @@ use mm2_number::BigDecimal;
 use std::collections::BTreeMap;
 use std::error::Error as StdError;
 
+#[cfg(any(test, target_arch = "wasm32"))]
+mod account_storage_tests;
 #[cfg(not(target_arch = "wasm32"))] mod sqlite_storage;
 #[cfg(target_arch = "wasm32")] mod wasm_storage;
 
-pub(crate) type AccountStorageBoxed = Box<dyn AccountStorage + Send + Sync>;
+pub(crate) type AccountStorageBoxed = Box<dyn AccountStorage>;
 pub type AccountStorageResult<T> = MmResult<T, AccountStorageError>;
 
 #[derive(Debug, Display)]
@@ -107,18 +109,22 @@ pub(crate) struct AccountStorageBuilder<'a> {
 }
 
 impl<'a> AccountStorageBuilder<'a> {
-    pub(crate) fn new(ctx: &'a MmArc) -> Self { AccountStorageBuilder { ctx } }
-
-    #[cfg(target_arch = "wasm32")]
-    pub(crate) fn build(self) -> AccountStorageBoxed { Box::new(wasm_storage::WasmAccountStorage::new(self.ctx)) }
+    pub fn new(ctx: &'a MmArc) -> Self { AccountStorageBuilder { ctx } }
 
     #[cfg(not(target_arch = "wasm32"))]
-    pub(crate) fn build(self) -> AccountStorageBoxed { todo!() }
+    pub fn build(self) -> AccountStorageResult<AccountStorageBoxed> {
+        sqlite_storage::SqliteAccountStorage::new(self.ctx).map(|storage| -> AccountStorageBoxed { Box::new(storage) })
+    }
+
+    #[cfg(target_arch = "wasm32")]
+    pub fn build(self) -> AccountStorageResult<AccountStorageBoxed> {
+        Ok(Box::new(wasm_storage::WasmAccountStorage::new(self.ctx)))
+    }
 }
 
 /// An account storage interface.
 #[async_trait]
-pub(crate) trait AccountStorage {
+pub(crate) trait AccountStorage: Send + Sync {
     /// Initialize the storage.
     async fn init(&self) -> AccountStorageResult<()>;
 

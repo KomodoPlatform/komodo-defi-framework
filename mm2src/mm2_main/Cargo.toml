@@ -15,7 +15,6 @@ default-run = "mm2"
 wasm-opt = false
 
 [features]
-gui-storage = ["gui_storage", "mm2_core/gui-storage"]
 custom-swap-locktime = [] # only for testing purposes, should never be activated on release builds.
 native = [] # Deprecated
 track-ctx-pointer = ["common/track-ctx-pointer"]
@@ -41,7 +40,6 @@ doctest = false
 bench = false
 
 [dependencies]
-gui_storage = { path = "../gui_storage", optional = true }
 async-std = { version = "1.5", features = ["unstable"] }
 async-trait = "0.1"
 bitcrypto = { path = "../mm2_bitcoin/crypto" }
@@ -64,6 +62,7 @@ futures01 = { version = "0.1", package = "futures" }
 futures-cpupool = "0.1"
 futures = { version = "0.3.1", package = "futures", features = ["compat", "async-await"] }
 gstuff = { version = "0.7", features = ["nightly"] }
+gui_storage = { path = "../gui_storage" }
 hash256-std-hasher = "0.15.2"
 hash-db = "0.15.2"
 hex = "0.4.2"

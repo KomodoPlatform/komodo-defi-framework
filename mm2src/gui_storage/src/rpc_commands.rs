@@ -155,13 +155,14 @@ pub async fn enable_account(ctx: MmArc, req: EnableAccountRequest) -> MmResult<S
         EnableAccountPolicy::New(new_account) => {
             let account_id = new_account.account_id.clone();
             account_ctx
-                .storage
+                .storage()
+                .await?
                 .upload_account(AccountInfo::from(new_account))
                 .await?;
             account_id
         },
     };
-    account_ctx.storage.enable_account(account_id).await?;
+    account_ctx.storage().await?.enable_account(account_id).await?;
     Ok(SuccessResponse::new())
 }
 
@@ -175,7 +176,8 @@ pub async fn add_account(ctx: MmArc, req: AddAccountRequest) -> MmResult<Success
     let account_ctx = AccountContext::from_ctx(&ctx).map_to_mm(AccountRpcError::Internal)?;
     validate_new_account(&req.account)?;
     account_ctx
-        .storage
+        .storage()
+        .await?
         .upload_account(AccountInfo::from(req.account))
         .await?;
     Ok(SuccessResponse::new())
@@ -193,7 +195,8 @@ pub async fn get_accounts(
 ) -> MmResult<Vec<AccountWithEnabledFlag>, AccountRpcError> {
     let account_ctx = AccountContext::from_ctx(&ctx).map_to_mm(AccountRpcError::Internal)?;
     let accounts = account_ctx
-        .storage
+        .storage()
+        .await?
         .load_accounts_with_enabled_flag()
         .await?
         // The given `BTreeMap<AccountId, AccountWithEnabledFlag>` accounts are sorted by `AccountId`.
@@ -207,7 +210,7 @@ pub async fn get_accounts(
 pub async fn set_account_name(ctx: MmArc, req: SetAccountNameRequest) -> MmResult<SuccessResponse, AccountRpcError> {
     validate_account_name(&req.name)?;
     let account_ctx = AccountContext::from_ctx(&ctx).map_to_mm(AccountRpcError::Internal)?;
-    account_ctx.storage.set_name(req.account_id, req.name).await?;
+    account_ctx.storage().await?.set_name(req.account_id, req.name).await?;
     Ok(SuccessResponse::new())
 }
 
@@ -219,7 +222,8 @@ pub async fn set_account_description(
     validate_account_desc(&req.description)?;
     let account_ctx = AccountContext::from_ctx(&ctx).map_to_mm(AccountRpcError::Internal)?;
     account_ctx
-        .storage
+        .storage()
+        .await?
         .set_description(req.account_id, req.description)
         .await?;
     Ok(SuccessResponse::new())
@@ -252,7 +256,11 @@ pub async fn set_account_description(
 pub async fn activate_coin(ctx: MmArc, req: CoinRequest) -> MmResult<SuccessResponse, AccountRpcError> {
     let account_ctx = AccountContext::from_ctx(&ctx).map_to_mm(AccountRpcError::Internal)?;
     validate_ticker(&req.ticker)?;
-    account_ctx.storage.activate_coin(req.account_id, req.ticker).await?;
+    account_ctx
+        .storage()
+        .await?
+        .activate_coin(req.account_id, req.ticker)
+        .await?;
     Ok(SuccessResponse::new())
 }
 
@@ -263,7 +271,11 @@ pub async fn activate_coin(ctx: MmArc, req: CoinRequest) -> MmResult<SuccessResp
 /// This RPC affects the storage **only**. It doesn't affect MarketMaker.
 pub async fn deactivate_coin(ctx: MmArc, req: CoinRequest) -> MmResult<SuccessResponse, AccountRpcError> {
     let account_ctx = AccountContext::from_ctx(&ctx).map_to_mm(AccountRpcError::Internal)?;
-    account_ctx.storage.deactivate_coin(req.account_id, &req.ticker).await?;
+    account_ctx
+        .storage()
+        .await?
+        .deactivate_coin(req.account_id, &req.ticker)
+        .await?;
     Ok(SuccessResponse::new())
 }
 

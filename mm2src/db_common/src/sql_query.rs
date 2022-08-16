@@ -203,8 +203,13 @@ impl<'a> SqlQuery<'a> {
         S: ToValidSqlIdent,
         OwnedSqlParam: From<T>,
     {
-        self.sql_builder
-            .and_where_eq(field.to_valid_sql_ident()?, self.params.push_param(param));
+        let field = field.to_valid_sql_ident()?;
+        match OwnedSqlParam::from(param) {
+            OwnedSqlParam::Null => self.sql_builder.and_where_is_null(field),
+            not_null => self
+                .sql_builder
+                .and_where_eq(field, self.params.push_owned_param(not_null)),
+        };
         Ok(self)
     }
 
@@ -287,8 +292,13 @@ impl<'a> SqlQuery<'a> {
         S: ToValidSqlIdent,
         OwnedSqlParam: From<T>,
     {
-        self.sql_builder
-            .or_where_eq(field.to_valid_sql_ident()?, self.params.push_param(param));
+        let field = field.to_valid_sql_ident()?;
+        match OwnedSqlParam::from(param) {
+            OwnedSqlParam::Null => self.sql_builder.or_where_is_null(field),
+            not_null => self
+                .sql_builder
+                .or_where_eq(field, self.params.push_owned_param(not_null)),
+        };
         Ok(self)
     }
 
@@ -616,20 +626,31 @@ mod tests {
         let conn = Connection::open_in_memory().unwrap();
         init_table_for_test(&conn);
 
-        let mut query = SqlQuery::select_from(&conn, "tx_history").unwrap();
-        query
-            .field("tx_hash")
-            .unwrap()
-            .and_where_eq("kmd_rewards", NO_KMD_REWARDS)
-            .unwrap();
-        assert_eq!(
-            query.clone().sql().unwrap(),
-            "SELECT tx_hash FROM tx_history WHERE kmd_rewards IS NULL;"
-        );
+        macro_rules! run_test {
+            ($fun: ident) => {{
+                let mut query = SqlQuery::select_from(&conn, "tx_history").unwrap();
+                query
+                    .field("tx_hash")
+                    .unwrap()
+                    .$fun("kmd_rewards", NO_KMD_REWARDS)
+                    .unwrap();
 
-        let actual: Vec<String> = query.query(|row| row.get(0)).unwrap();
-        let expected = vec!["tx_hash_3".to_owned(), "tx_hash_5".to_owned()];
-        assert_eq!(actual, expected);
+                // Check if the `kmd_rewards IS NULL` instead of `kmd_rewards = NULL` or `kmd_rewards = :1`.
+                assert_eq!(
+                    query.clone().sql().unwrap(),
+                    "SELECT tx_hash FROM tx_history WHERE kmd_rewards IS NULL;"
+                );
+
+                let actual: Vec<String> = query.query(|row| row.get(0)).unwrap();
+                let expected = vec!["tx_hash_3".to_owned(), "tx_hash_5".to_owned()];
+                assert_eq!(actual, expected);
+            }};
+        }
+
+        run_test!(and_where_eq);
+        run_test!(or_where_eq);
+        run_test!(and_where_eq_param);
+        run_test!(or_where_eq_param);
     }
 
     #[test]

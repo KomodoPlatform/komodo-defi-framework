@@ -121,7 +121,6 @@ async fn auth(request: &MmRpcRequest, ctx: &MmArc, client: &SocketAddr) -> Dispa
 }
 
 async fn dispatcher_v2(request: MmRpcRequest, ctx: MmArc) -> DispatcherResult<Response<Vec<u8>>> {
-    #[cfg(feature = "gui-storage")]
     if let Some(gui_storage_method) = request.method.strip_prefix("gui_storage::") {
         let gui_storage_method = gui_storage_method.to_owned();
         return gui_storage_dispatcher(request, ctx, gui_storage_method).await;
@@ -212,7 +211,6 @@ async fn dispatcher_v2(request: MmRpcRequest, ctx: MmArc) -> DispatcherResult<Re
 /// # Note
 ///
 /// `gui_storage_method` is a method name with the `gui_storage::` prefix removed.
-#[cfg(feature = "gui-storage")]
 async fn gui_storage_dispatcher(
     request: MmRpcRequest,
     ctx: MmArc,

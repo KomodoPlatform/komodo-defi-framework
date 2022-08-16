@@ -288,18 +288,28 @@ struct AccountTable {
 }
 
 impl AccountTable {
+    /// An index that consists of `account_type` property only.
+    const IGUANA_ID_INDEX: &'static str = "iguana_id";
     /// An **unique** index that consists of the following properties:
-    /// * account_type - "Iguana", "HD" or "HW"
-    /// * account_id - optional integer ID
-    const ACCOUNT_ID_INDEX: &'static str = "account_id";
+    /// * account_type - "HD"
+    /// * account_idx - HD account identifier
+    const HD_ID_INDEX: &'static str = "hd_id";
+    /// An **unique** index that consists of the following properties:
+    /// * account_type - "HW"
+    /// * device_pubkey - HW device pubkey
+    const HW_ID_INDEX: &'static str = "hw_id";
 
     fn account_id_to_index(account_id: &AccountId) -> AccountStorageResult<MultiIndex> {
-        let (account_type, account_idx, device_pubkey) = account_id.to_tuple();
-        MultiIndex::new(AccountTable::ACCOUNT_ID_INDEX)
-            .with_value(account_type)?
-            .with_value(account_idx)?
-            .with_value(device_pubkey)
-            .mm_err(AccountStorageError::from)
+        let multi_index = match account_id {
+            AccountId::Iguana => MultiIndex::new(AccountTable::IGUANA_ID_INDEX).with_value(AccountType::Iguana)?,
+            AccountId::HD { account_idx } => MultiIndex::new(AccountTable::HD_ID_INDEX)
+                .with_value(AccountType::HD)?
+                .with_value(*account_idx)?,
+            AccountId::HW { device_pubkey } => MultiIndex::new(AccountTable::HW_ID_INDEX)
+                .with_value(AccountType::HW)?
+                .with_value(device_pubkey.clone())?,
+        };
+        Ok(multi_index)
     }
 }
 
@@ -310,11 +320,9 @@ impl TableSignature for AccountTable {
         match (old_version, new_version) {
             (0, 1) => {
                 let table = upgrader.create_table(Self::table_name())?;
-                table.create_multi_index(
-                    AccountTable::ACCOUNT_ID_INDEX,
-                    &["account_type", "account_idx", "device_pubkey"],
-                    true,
-                )?;
+                table.create_multi_index(AccountTable::IGUANA_ID_INDEX, &["account_type"], false)?;
+                table.create_multi_index(AccountTable::HD_ID_INDEX, &["account_type", "account_idx"], true)?;
+                table.create_multi_index(AccountTable::HW_ID_INDEX, &["account_type", "device_pubkey"], true)?;
             },
             _ => (),
         }

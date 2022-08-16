@@ -93,7 +93,7 @@ impl From<EnabledAccountId> for AccountId {
     }
 }
 
-#[derive(Serialize)]
+#[derive(Clone, Debug, Serialize)]
 pub struct AccountInfo {
     pub(crate) account_id: AccountId,
     pub(crate) name: String,
@@ -101,7 +101,7 @@ pub struct AccountInfo {
     pub(crate) balance_usd: BigDecimal,
 }
 
-#[derive(Serialize)]
+#[derive(Debug, Serialize)]
 pub struct AccountWithEnabledFlag {
     #[serde(flatten)]
     account_info: AccountInfo,

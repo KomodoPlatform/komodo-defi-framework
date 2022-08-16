@@ -10,7 +10,7 @@ crypto = { path = "../crypto" }
 db_common = { path = "../db_common" }
 derive_more = "0.99"
 mm2_db = { path = "../mm2_db" }
-mm2_core = { path = "../mm2_core", features = ["gui-storage"] }
+mm2_core = { path = "../mm2_core" }
 mm2_err_handle = { path = "../mm2_err_handle" }
 mm2_number = { path = "../mm2_number" }
 rpc = { path = "../mm2_bitcoin/rpc" }
@@ -19,3 +19,10 @@ serde_json = "1.0"
 serde_repr = "0.1"
 ser_error = { path = "../derives/ser_error" }
 ser_error_derive = { path = "../derives/ser_error_derive" }
+
+[target.'cfg(target_arch = "wasm32")'.dependencies]
+mm2_test_helpers = { path = "../mm2_test_helpers" }
+wasm-bindgen-test = { version = "0.3.2" }
+
+[dev-dependencies]
+mm2_test_helpers = { path = "../mm2_test_helpers" }

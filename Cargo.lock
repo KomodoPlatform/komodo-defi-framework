@@ -2732,12 +2732,14 @@ dependencies = [
  "mm2_db",
  "mm2_err_handle",
  "mm2_number",
+ "mm2_test_helpers",
  "rpc",
  "ser_error",
  "ser_error_derive",
  "serde",
  "serde_json",
  "serde_repr",
+ "wasm-bindgen-test",
 ]
 
 [[package]]

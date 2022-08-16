@@ -10,6 +10,7 @@ members = [
     "mm2src/derives/ser_error_derive",
     "mm2src/floodsub",
     "mm2src/gossipsub",
+    "mm2src/gui_storage",
     "mm2src/hw_common",
     "mm2src/mm2_bitcoin/crypto",
     "mm2src/mm2_bitcoin/chain",
@@ -34,9 +35,6 @@ members = [
     "mm2src/mm2_test_helpers",
     "mm2src/trezor",
 ]
-# Exclude `mm2src/gui_storage` dependency from the workspace not to compile it
-# if the `gui-storage` feature is not enabled.
-exclude = ["mm2src/gui_storage"]
 
 # https://doc.rust-lang.org/beta/cargo/reference/features.html#feature-resolver-version-2
 resolver = "2"
