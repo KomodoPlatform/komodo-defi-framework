@@ -35,6 +35,7 @@
 
 use async_trait::async_trait;
 use base58::FromBase58Error;
+use coin_errors::ValidatePaymentError;
 use common::{calc_total_pages, now_ms, ten, HttpStatusCode};
 use crypto::{Bip32Error, CryptoCtx, DerivationPath};
 use derive_more::Display;
@@ -87,6 +88,15 @@ macro_rules! try_fus {
         match $e {
             Ok(ok) => ok,
             Err(err) => return Box::new(futures01::future::err(ERRL!("{}", err))),
+        }
+    };
+}
+
+macro_rules! try_mm_err_fus {
+    ($e: expr) => {
+        match $e {
+            Ok(ok) => ok,
+            Err(err) => return Box::new(futures01::future::err(err.into())),
         }
     };
 }
@@ -180,6 +190,7 @@ macro_rules! ok_or_continue_after_sleep {
 }
 
 pub mod coin_balance;
+pub mod coin_errors;
 #[doc(hidden)]
 #[cfg(test)]
 pub mod coins_tests;
@@ -257,6 +268,7 @@ pub type TxHistoryResult<T> = Result<T, MmError<TxHistoryError>>;
 pub type RawTransactionResult = Result<RawTransactionRes, MmError<RawTransactionError>>;
 pub type RawTransactionFut<'a> =
     Box<dyn Future<Item = RawTransactionRes, Error = MmError<RawTransactionError>> + Send + 'a>;
+pub type ValidatePaymentFut<T> = Box<dyn Future<Item = T, Error = MmError<ValidatePaymentError>> + Send>;
 
 #[derive(Debug, Deserialize, Display, Serialize, SerializeErrorType)]
 #[serde(tag = "error_type", content = "error_data")]
@@ -529,9 +541,9 @@ pub trait SwapOps {
         uuid: &[u8],
     ) -> Box<dyn Future<Item = (), Error = String> + Send>;
 
-    fn validate_maker_payment(&self, input: ValidatePaymentInput) -> Box<dyn Future<Item = (), Error = String> + Send>;
+    fn validate_maker_payment(&self, input: ValidatePaymentInput) -> ValidatePaymentFut<()>;
 
-    fn validate_taker_payment(&self, input: ValidatePaymentInput) -> Box<dyn Future<Item = (), Error = String> + Send>;
+    fn validate_taker_payment(&self, input: ValidatePaymentInput) -> ValidatePaymentFut<()>;
 
     fn check_if_my_payment_sent(
         &self,

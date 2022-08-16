@@ -3,7 +3,7 @@ use super::{CoinBalance, HistorySyncState, MarketCoinOps, MmCoin, RawTransaction
 use crate::{BalanceFut, CanRefundHtlc, FeeApproxStage, FoundSwapTxSpend, NegotiateSwapContractAddrErr,
             SearchForSwapTxSpendInput, SignatureResult, TradePreimageFut, TradePreimageResult, TradePreimageValue,
             TxMarshalingErr, UnexpectedDerivationMethod, ValidateAddressResult, ValidatePaymentInput,
-            VerificationResult, WithdrawFut, WithdrawRequest};
+            VerificationResult, WithdrawFut, WithdrawRequest, ValidatePaymentFut};
 use async_trait::async_trait;
 use futures01::Future;
 use keys::KeyPair;
@@ -186,14 +186,14 @@ impl SwapOps for TestCoin {
     fn validate_maker_payment(
         &self,
         _input: ValidatePaymentInput,
-    ) -> Box<dyn Future<Item = (), Error = String> + Send> {
+    ) -> ValidatePaymentFut<()> {
         unimplemented!()
     }
 
     fn validate_taker_payment(
         &self,
         _input: ValidatePaymentInput,
-    ) -> Box<dyn Future<Item = (), Error = String> + Send> {
+    ) -> ValidatePaymentFut<()> {
         unimplemented!()
     }
 

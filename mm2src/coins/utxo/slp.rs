@@ -3,6 +3,7 @@
 //! Tracking issue: https://github.com/KomodoPlatform/atomicDEX-API/issues/701
 //! More info about the protocol and implementation guides can be found at https://slp.dev/
 
+use crate::coin_errors::ValidatePaymentError;
 use crate::my_tx_history_v2::CoinWithTxHistoryV2;
 use crate::tx_history_storage::{GetTxHistoryFilters, WalletId};
 use crate::utxo::bch::BchCoin;
@@ -17,8 +18,8 @@ use crate::{BalanceFut, CoinBalance, FeeApproxStage, FoundSwapTxSpend, HistorySy
             RawTransactionRequest, SearchForSwapTxSpendInput, SignatureResult, SwapOps, TradeFee, TradePreimageError,
             TradePreimageFut, TradePreimageResult, TradePreimageValue, TransactionDetails, TransactionEnum,
             TransactionErr, TransactionFut, TxFeeDetails, TxMarshalingErr, UnexpectedDerivationMethod,
-            ValidateAddressResult, ValidatePaymentInput, VerificationError, VerificationResult, WithdrawError,
-            WithdrawFee, WithdrawFut, WithdrawRequest};
+            ValidateAddressResult, ValidatePaymentFut, ValidatePaymentInput, VerificationError, VerificationResult,
+            WithdrawError, WithdrawFee, WithdrawFut, WithdrawRequest};
 use async_trait::async_trait;
 use bitcrypto::dhash160;
 use chain::constants::SEQUENCE_FINAL;
@@ -127,6 +128,14 @@ impl From<ValidateSlpUtxosErr> for ValidateHtlcError {
 
 impl From<UnexpectedDerivationMethod> for ValidateHtlcError {
     fn from(e: UnexpectedDerivationMethod) -> Self { ValidateHtlcError::UnexpectedDerivationMethod(e) }
+}
+
+impl From<ValidateHtlcError> for ValidatePaymentError {
+    fn from(e: ValidateHtlcError) -> Self { ValidatePaymentError::ValidateHtlcError(e.to_string()) }
+}
+
+impl From<ValidatePaymentError> for ValidateHtlcError {
+    fn from(e: ValidatePaymentError) -> Self { ValidateHtlcError::ValidatePaymentError(e.to_string()) }
 }
 
 #[derive(Debug, Display)]
@@ -487,10 +496,7 @@ impl SlpToken {
             input.confirmations,
         );
 
-        validate_fut
-            .compat()
-            .await
-            .map_to_mm(ValidateHtlcError::ValidatePaymentError)?;
+        validate_fut.compat().await?;
 
         Ok(())
     }
@@ -1376,19 +1382,19 @@ impl SwapOps for SlpToken {
         Box::new(fut.boxed().compat())
     }
 
-    fn validate_maker_payment(&self, input: ValidatePaymentInput) -> Box<dyn Future<Item = (), Error = String> + Send> {
+    fn validate_maker_payment(&self, input: ValidatePaymentInput) -> ValidatePaymentFut<()> {
         let coin = self.clone();
         let fut = async move {
-            try_s!(coin.validate_htlc(input).await);
+            coin.validate_htlc(input).await?;
             Ok(())
         };
         Box::new(fut.boxed().compat())
     }
 
-    fn validate_taker_payment(&self, input: ValidatePaymentInput) -> Box<dyn Future<Item = (), Error = String> + Send> {
+    fn validate_taker_payment(&self, input: ValidatePaymentInput) -> ValidatePaymentFut<()> {
         let coin = self.clone();
         let fut = async move {
-            try_s!(coin.validate_htlc(input).await);
+            coin.validate_htlc(input).await?;
             Ok(())
         };
         Box::new(fut.boxed().compat())

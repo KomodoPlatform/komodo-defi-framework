@@ -5,7 +5,7 @@ use crate::{BalanceError, BalanceFut, FeeApproxStage, FoundSwapTxSpend, Negotiat
             RawTransactionFut, RawTransactionRequest, SearchForSwapTxSpendInput, SignatureResult, TradePreimageFut,
             TradePreimageResult, TradePreimageValue, TransactionDetails, TransactionFut, TransactionType,
             TxMarshalingErr, UnexpectedDerivationMethod, ValidateAddressResult, ValidatePaymentInput,
-            VerificationResult, WithdrawError, WithdrawFut, WithdrawRequest, WithdrawResult};
+            VerificationResult, WithdrawError, WithdrawFut, WithdrawRequest, WithdrawResult, ValidatePaymentFut};
 use async_trait::async_trait;
 use base58::ToBase58;
 use bincode::{deserialize, serialize};
@@ -537,11 +537,11 @@ impl SwapOps for SolanaCoin {
         unimplemented!()
     }
 
-    fn validate_maker_payment(&self, input: ValidatePaymentInput) -> Box<dyn Future<Item = (), Error = String> + Send> {
+    fn validate_maker_payment(&self, input: ValidatePaymentInput) -> ValidatePaymentFut<()> {
         unimplemented!()
     }
 
-    fn validate_taker_payment(&self, input: ValidatePaymentInput) -> Box<dyn Future<Item = (), Error = String> + Send> {
+    fn validate_taker_payment(&self, input: ValidatePaymentInput) -> ValidatePaymentFut<()> {
         unimplemented!()
     }
 
