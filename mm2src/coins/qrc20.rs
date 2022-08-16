@@ -420,7 +420,7 @@ impl From<ethabi::Error> for Qrc20AbiError {
 }
 
 impl From<Qrc20AbiError> for ValidatePaymentError {
-    fn from(e: Qrc20AbiError) -> ValidatePaymentError { ValidatePaymentError::AbiError(e.to_string()) }
+    fn from(e: Qrc20AbiError) -> ValidatePaymentError { ValidatePaymentError::InvalidPaymentTxData(e.to_string()) }
 }
 
 impl From<Qrc20AbiError> for GenerateTxError {
@@ -892,11 +892,11 @@ impl SwapOps for Qrc20Coin {
     }
 
     fn validate_maker_payment(&self, input: ValidatePaymentInput) -> ValidatePaymentFut<()> {
-        let payment_tx: UtxoTx = try_mm_err_fus!(deserialize(input.payment_tx.as_slice()));
-        let sender = try_mm_err_fus!(self
+        let payment_tx: UtxoTx = try_f!(deserialize(input.payment_tx.as_slice()));
+        let sender = try_f!(self
             .contract_address_from_raw_pubkey(&input.other_pub)
-            .map_to_mm(ValidatePaymentError::AddressParseError));
-        let swap_contract_address = try_mm_err_fus!(input
+            .map_to_mm(ValidatePaymentError::InvalidInput));
+        let swap_contract_address = try_f!(input
             .swap_contract_address
             .try_to_address()
             .map_to_mm(ValidatePaymentError::AddressParseError));
@@ -918,12 +918,12 @@ impl SwapOps for Qrc20Coin {
     }
 
     fn validate_taker_payment(&self, input: ValidatePaymentInput) -> ValidatePaymentFut<()> {
-        let swap_contract_address = try_mm_err_fus!(input
+        let swap_contract_address = try_f!(input
             .swap_contract_address
             .try_to_address()
             .map_to_mm(ValidatePaymentError::AddressParseError));
-        let payment_tx: UtxoTx = try_mm_err_fus!(deserialize(input.payment_tx.as_slice()));
-        let sender = try_mm_err_fus!(self
+        let payment_tx: UtxoTx = try_f!(deserialize(input.payment_tx.as_slice()));
+        let sender = try_f!(self
             .contract_address_from_raw_pubkey(&input.other_pub)
             .map_to_mm(ValidatePaymentError::AddressParseError));
 

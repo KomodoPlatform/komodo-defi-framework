@@ -1492,7 +1492,7 @@ pub fn validate_maker_payment<T: UtxoCommonOps + SwapOps>(
     coin: &T,
     input: ValidatePaymentInput,
 ) -> ValidatePaymentFut<()> {
-    let mut tx: UtxoTx = try_mm_err_fus!(deserialize(input.payment_tx.as_slice()));
+    let mut tx: UtxoTx = try_f!(deserialize(input.payment_tx.as_slice()));
     tx.tx_hash_algo = coin.as_ref().tx_hash_algo;
 
     let htlc_keypair = coin.derive_htlc_key_pair(&input.unique_swap_data);
@@ -1500,7 +1500,7 @@ pub fn validate_maker_payment<T: UtxoCommonOps + SwapOps>(
         coin.clone(),
         tx,
         DEFAULT_SWAP_VOUT,
-        &try_mm_err_fus!(Public::from_slice(&input.other_pub)),
+        &try_f!(Public::from_slice(&input.other_pub)),
         htlc_keypair.public(),
         &input.secret_hash,
         input.amount,
@@ -1514,7 +1514,7 @@ pub fn validate_taker_payment<T: UtxoCommonOps + SwapOps>(
     coin: &T,
     input: ValidatePaymentInput,
 ) -> ValidatePaymentFut<()> {
-    let mut tx: UtxoTx = try_mm_err_fus!(deserialize(input.payment_tx.as_slice()));
+    let mut tx: UtxoTx = try_f!(deserialize(input.payment_tx.as_slice()));
     tx.tx_hash_algo = coin.as_ref().tx_hash_algo;
 
     let htlc_keypair = coin.derive_htlc_key_pair(&input.unique_swap_data);
@@ -1522,7 +1522,7 @@ pub fn validate_taker_payment<T: UtxoCommonOps + SwapOps>(
         coin.clone(),
         tx,
         DEFAULT_SWAP_VOUT,
-        &try_mm_err_fus!(Public::from_slice(&input.other_pub)),
+        &try_f!(Public::from_slice(&input.other_pub)),
         htlc_keypair.public(),
         &input.secret_hash,
         input.amount,
@@ -3099,7 +3099,7 @@ pub fn validate_payment<T: UtxoCommonOps>(
     try_spv_proof_until: u64,
     confirmations: u64,
 ) -> ValidatePaymentFut<()> {
-    let amount = try_mm_err_fus!(sat_from_big_decimal(&amount, coin.as_ref().decimals));
+    let amount = try_f!(sat_from_big_decimal(&amount, coin.as_ref().decimals));
 
     let expected_redeem = payment_script(time_lock, priv_bn_hash, first_pub0, second_pub0);
     let fut = async move {

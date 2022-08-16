@@ -118,7 +118,7 @@ impl Qrc20Coin {
         let status = self
             .payment_status(&expected_swap_contract_address, expected_swap_id.clone())
             .await
-            .map_to_mm(ValidatePaymentError::PaymentStatusError)?;
+            .map_to_mm(ValidatePaymentError::TransportError)?;
         if status != eth::PAYMENT_STATE_SENT.into() {
             return MmError::err(ValidatePaymentError::UnexpectedPaymentState(format!(
                 "Payment state is not PAYMENT_STATE_SENT, got {}",
@@ -150,17 +150,14 @@ impl Qrc20Coin {
         }
 
         if sender != erc20_payment.sender {
-            return MmError::err(ValidatePaymentError::WrongSenderAddress(format!(
-                "Payment tx was sent from wrong address, expected {:?}",
-                sender
-            )));
+            return MmError::err(ValidatePaymentError::wrong_sender_addr(erc20_payment.sender, sender));
         }
 
         if expected_swap_contract_address != erc20_payment.swap_contract_address {
-            return MmError::err(ValidatePaymentError::WrongReceiverAddress(format!(
-                "Payment tx was sent to wrong address, expected {:?}",
-                expected_swap_contract_address
-            )));
+            return MmError::err(ValidatePaymentError::wrong_receiver(
+                erc20_payment.swap_contract_address,
+                expected_swap_contract_address,
+            ));
         }
 
         Ok(())

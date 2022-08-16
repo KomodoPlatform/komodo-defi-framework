@@ -92,20 +92,11 @@ macro_rules! try_fus {
     };
 }
 
-macro_rules! try_mm_err_fus {
-    ($e: expr) => {
-        match $e {
-            Ok(ok) => ok,
-            Err(err) => return Box::new(futures01::future::err(err.into())),
-        }
-    };
-}
-
 macro_rules! try_f {
     ($e: expr) => {
         match $e {
             Ok(ok) => ok,
-            Err(e) => return Box::new(futures01::future::err(e)),
+            Err(e) => return Box::new(futures01::future::err(e.into())),
         }
     };
 }
