@@ -19,7 +19,7 @@ use crate::utxo::utxo_common_tests;
 use crate::utxo::utxo_standard::{utxo_standard_coin_with_priv_key, UtxoStandardCoin};
 #[cfg(not(target_arch = "wasm32"))] use crate::WithdrawFee;
 use crate::{CoinBalance, PrivKeyBuildPolicy, SearchForSwapTxSpendInput, StakingInfosDetails, SwapOps,
-            TradePreimageValue, TxFeeDetails};
+            TradePreimageValue, TxFeeDetails, TxMarshalingErr};
 use chain::OutPoint;
 use common::executor::Timer;
 use common::{block_on, now_ms, OrdRange, PagingOptionsEnum, DEX_FEE_ADDR_RAW_PUBKEY};
@@ -3993,4 +3993,25 @@ fn test_sign_verify_message_segwit() {
         .verify_message(&signature, message, "R9o9xTocqr6CeEDGDH6mEYpwLoMz6jNjMW")
         .unwrap();
     assert!(is_valid);
+}
+
+#[test]
+fn test_tx_enum_from_bytes() {
+    let client = electrum_client_for_test(RICK_ELECTRUM_ADDRS);
+    let coin = utxo_coin_for_test(client.into(), None, false);
+
+    let tx_hex = hex::decode("01000000017b1eabe0209b1fe794124575ef807057c77ada2138ae4fa8d6c4de0398a14f3f00000000494830450221008949f0cb400094ad2b5eb399d59d01c14d73d8fe6e96df1a7150deb388ab8935022079656090d7f6bac4c9a94e0aad311a4268e082a725f8aeae0573fb12ff866a5f01ffffffff01f0ca052a010000001976a914cbc20a7664f2f69e5355aa427045bc15e7c6c77288ac00000000").unwrap();
+    coin.tx_enum_from_bytes(&tx_hex).unwrap();
+
+    let tx_hex = hex::decode("0100000002440f1a2929eb08c350cc8d2385c77c40411560c3b43b65efb5b06f997fc67672020000006b483045022100f82e88af256d2487afe0c30a166c9ecf6b7013e764e1407317c712d47f7731bd0220358a4d7987bfde2271599b5c4376d26f9ce9f1df2e04f5de8f89593352607110012103c6a78589e18b482aea046975e6d0acbdea7bf7dbf04d9d5bd67fda917815e3edfffffffffb9c2fd7a19b55a4ffbda2ce5065d988a4f4efcf1ae567b4ddb6d97529c8fb0c000000006b483045022100dd75291db32dc859657a5eead13b85c340b4d508e57d2450ebfad76484f254130220727fcd65dda046ea62b449ab217da264dbf7c7ca7e63b39c8835973a152752c1012103c6a78589e18b482aea046975e6d0acbdea7bf7dbf04d9d5bd67fda917815e3edffffffff03102700000000000017a9148d0ad41545dea44e914c419d33d422148c35a274870000000000000000166a149c0a919d4e9a23f0234df916a7dd21f9e2fdaa8f931d0000000000001976a9146d9d2b554d768232320587df75c4338ecc8bf37d88acbd8ff160").unwrap();
+    coin.tx_enum_from_bytes(&tx_hex).unwrap();
+
+    let tx_hex = hex::decode("0200000000010192a4497268107d7999e9551be733f5e0eab479be7d995a061a7bbdc43ef0e5ed0000000000feffffff02cd857a00000000001600145cb39bfcd68d520e29cadc990bceb5cd1562c507a0860100000000001600149a85cc05e9a722575feb770a217c73fd6145cf01024730440220030e0fb58889ab939c701f12d950f00b64836a1a33ec0d6697fd3053d469d244022053e33d72ef53b37b86eea8dfebbafffb0f919ef952dcb6ea6058b81576d8dc86012102225de6aed071dc29d0ca10b9f64a4b502e33e55b3c0759eedd8e333834c6a7d07a1f2000").unwrap();
+    coin.tx_enum_from_bytes(&tx_hex).unwrap();
+
+    let err = coin.tx_enum_from_bytes(&vec![0; 1000000]).unwrap_err().into_inner();
+    assert_eq!(
+        discriminant(&err),
+        discriminant(&TxMarshalingErr::CrossCheckFailed(String::new()))
+    );
 }

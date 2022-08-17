@@ -12,9 +12,9 @@ use crate::utxo::tx_cache::TxCacheResult;
 use crate::utxo::utxo_withdraw::{InitUtxoWithdraw, StandardUtxoWithdraw, UtxoWithdraw};
 use crate::{CanRefundHtlc, CoinBalance, CoinWithDerivationMethod, GetWithdrawSenderAddress, HDAddressId,
             RawTransactionError, RawTransactionRequest, RawTransactionRes, SearchForSwapTxSpendInput, SignatureError,
-            SignatureResult, SwapOps, TradePreimageValue, TransactionFut, TxFeeDetails, ValidateAddressResult,
-            ValidatePaymentInput, VerificationError, VerificationResult, WithdrawFrom, WithdrawResult,
-            WithdrawSenderAddress};
+            SignatureResult, SwapOps, TradePreimageValue, TransactionFut, TxFeeDetails, TxMarshalingErr,
+            ValidateAddressResult, ValidatePaymentInput, VerificationError, VerificationResult, WithdrawFrom,
+            WithdrawResult, WithdrawSenderAddress};
 use bitcrypto::dhash256;
 pub use bitcrypto::{dhash160, sha256, ChecksumType};
 use chain::constants::SEQUENCE_FINAL;
@@ -1822,8 +1822,18 @@ pub fn wait_for_output_spend(
     Box::new(fut.boxed().compat())
 }
 
-pub fn tx_enum_from_bytes(coin: &UtxoCoinFields, bytes: &[u8]) -> Result<TransactionEnum, String> {
-    let mut transaction: UtxoTx = try_s!(deserialize(bytes).map_err(|err| format!("{:?}", err)));
+pub fn tx_enum_from_bytes(coin: &UtxoCoinFields, bytes: &[u8]) -> Result<TransactionEnum, MmError<TxMarshalingErr>> {
+    let mut transaction: UtxoTx = deserialize(bytes).map_to_mm(|e| TxMarshalingErr::InvalidInput(e.to_string()))?;
+
+    let serialized_length = transaction.tx_hex().len();
+    if bytes.len() != serialized_length {
+        return MmError::err(TxMarshalingErr::CrossCheckFailed(format!(
+            "Expected '{}' lenght of the serialized transaction, found '{}'",
+            bytes.len(),
+            transaction.tx_hex().len()
+        )));
+    }
+
     transaction.tx_hash_algo = coin.tx_hash_algo;
     Ok(transaction.into())
 }
