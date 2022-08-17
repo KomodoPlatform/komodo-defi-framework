@@ -144,6 +144,7 @@ pub trait MergeUtxoArcOps<T: UtxoCommonOps + GetUtxoListOps>: UtxoCoinBuilderCom
 }
 
 pub trait BlockHeaderUtxoArcOps<T>: UtxoCoinBuilderCommonOps {
+    // Todo: this should be called only if storing headers is enabled and should be called after syncing the latest header on coin activation
     fn spawn_block_header_utxo_loop_if_required<F>(
         &self,
         weak: UtxoWeak,
@@ -154,21 +155,20 @@ pub trait BlockHeaderUtxoArcOps<T>: UtxoCoinBuilderCommonOps {
         F: Fn(UtxoArc) -> T + Send + Sync + 'static,
         T: UtxoCommonOps,
     {
-        if let UtxoRpcClientEnum::Electrum(electrum) = rpc_client {
-            if electrum.block_headers_storage().is_some() {
-                let ticker = self.ticker().to_owned();
-                let (fut, abort_handle) = abortable(block_header_utxo_loop(weak, constructor));
-                info!("Starting UTXO block header loop for coin {}", ticker);
-                spawn(async move {
-                    if let Err(e) = fut.await {
-                        info!(
-                            "spawn_block_header_utxo_loop_if_required stopped for {}, reason {}",
-                            ticker, e
-                        );
-                    }
-                });
-                return Some(abort_handle);
-            }
+        // Todo: can this be a normal if condition or add a method for is_native, is_electrum?
+        if let UtxoRpcClientEnum::Electrum(_) = rpc_client {
+            let ticker = self.ticker().to_owned();
+            let (fut, abort_handle) = abortable(block_header_utxo_loop(weak, constructor));
+            info!("Starting UTXO block header loop for coin {}", ticker);
+            spawn(async move {
+                if let Err(e) = fut.await {
+                    info!(
+                        "spawn_block_header_utxo_loop_if_required stopped for {}, reason {}",
+                        ticker, e
+                    );
+                }
+            });
+            return Some(abort_handle);
         }
         None
     }

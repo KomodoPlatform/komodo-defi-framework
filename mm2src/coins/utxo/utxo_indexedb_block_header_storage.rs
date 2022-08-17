@@ -37,6 +37,10 @@ impl BlockHeaderStorageOps for IndexedDBBlockHeadersStorage {
         Ok(None)
     }
 
+    async fn get_last_block_height(&self, _for_coin: &str) -> Result<i64, BlockHeaderStorageError> {
+        Err(BlockHeaderStorageError::Internal("Not implemented".into()))
+    }
+
     async fn get_last_block_header_with_non_max_bits(
         &self,
         _for_coin: &str,

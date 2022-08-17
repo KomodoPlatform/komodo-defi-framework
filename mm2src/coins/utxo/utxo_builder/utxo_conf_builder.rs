@@ -11,6 +11,7 @@ pub use keys::{Address, AddressFormat as UtxoAddressFormat, AddressHashEnum, Key
 use mm2_err_handle::prelude::*;
 use script::SignatureVersion;
 use serde_json::{self as json, Value as Json};
+use spv_validation::helpers_validation::BlockHeaderVerificationParams;
 use std::num::NonZeroU64;
 use std::sync::atomic::AtomicBool;
 
@@ -98,6 +99,7 @@ impl<'a> UtxoConfBuilder<'a> {
         let estimate_fee_blocks = self.estimate_fee_blocks();
         let trezor_coin = self.trezor_coin();
         let enable_spv_proof = self.enable_spv_proof();
+        let block_headers_verification_params = self.block_headers_verification_params();
 
         Ok(UtxoCoinConf {
             ticker: self.ticker.to_owned(),
@@ -130,6 +132,7 @@ impl<'a> UtxoConfBuilder<'a> {
             estimate_fee_blocks,
             trezor_coin,
             enable_spv_proof,
+            block_headers_verification_params,
         })
     }
 
@@ -288,4 +291,8 @@ impl<'a> UtxoConfBuilder<'a> {
     }
 
     fn enable_spv_proof(&self) -> bool { self.conf["enable_spv_proof"].as_bool().unwrap_or(false) }
+
+    fn block_headers_verification_params(&self) -> Option<BlockHeaderVerificationParams> {
+        json::from_value(self.conf["block_headers_verification_params"].clone()).unwrap_or(None)
+    }
 }

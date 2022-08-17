@@ -841,8 +841,6 @@ impl<'a> ZCoinBuilder<'a> {
             ZcoinRpcMode::Native => UtxoRpcMode::Native,
             ZcoinRpcMode::Light { electrum_servers, .. } => UtxoRpcMode::Electrum {
                 servers: electrum_servers.clone(),
-                // TODO: Implement spv validation for zcoin
-                block_header_params: None,
             },
         };
         let utxo_params = UtxoActivationParams {

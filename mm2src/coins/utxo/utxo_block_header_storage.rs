@@ -7,57 +7,41 @@ use chain::BlockHeader;
 use mm2_core::mm_ctx::MmArc;
 use primitives::hash::H256;
 use spv_validation::storage::{BlockHeaderStorageError, BlockHeaderStorageOps};
-use spv_validation::work::DifficultyAlgorithm;
 use std::collections::HashMap;
 use std::fmt::{Debug, Formatter};
-use std::num::NonZeroU64;
-
-/// SPV headers verification parameters
-#[derive(Clone, Debug, Deserialize, Serialize)]
-pub struct BlockHeaderVerificationParams {
-    pub difficulty_check: bool,
-    pub constant_difficulty: bool,
-    // This should to be equal to or greater than the number of blocks needed before the chain is safe from reorganization (e.g. 6 blocks for BTC)
-    pub blocks_limit_to_check: NonZeroU64,
-    pub check_every: f64,
-    pub difficulty_algorithm: Option<DifficultyAlgorithm>,
-}
 
 pub struct BlockHeaderStorage {
     pub inner: Box<dyn BlockHeaderStorageOps>,
-    pub params: BlockHeaderVerificationParams,
+    // Todo: BlockHeaderVerificationParams should be initialized with coin activation when spv is enabled (will be used in lopp only)
+    // pub params: BlockHeaderVerificationParams,
 }
 
 impl Debug for BlockHeaderStorage {
     fn fmt(&self, _f: &mut Formatter<'_>) -> std::fmt::Result { Ok(()) }
 }
 
+// Todo: check if it's better to remove this?
 pub trait InitBlockHeaderStorageOps: Send + Sync + 'static {
-    fn new_from_ctx(
-        ctx: MmArc,
-        params: BlockHeaderVerificationParams,
-    ) -> Result<BlockHeaderStorage, BlockHeaderStorageError>
+    fn new_from_ctx(ctx: MmArc) -> Result<BlockHeaderStorage, BlockHeaderStorageError>
     where
         Self: Sized;
 }
 
 impl InitBlockHeaderStorageOps for BlockHeaderStorage {
     #[cfg(not(target_arch = "wasm32"))]
-    fn new_from_ctx(ctx: MmArc, params: BlockHeaderVerificationParams) -> Result<Self, BlockHeaderStorageError> {
+    fn new_from_ctx(ctx: MmArc) -> Result<Self, BlockHeaderStorageError> {
         let sqlite_connection = ctx.sqlite_connection.ok_or(BlockHeaderStorageError::Internal(
             "sqlite_connection is not initialized".to_owned(),
         ))?;
         Ok(BlockHeaderStorage {
             inner: Box::new(SqliteBlockHeadersStorage(sqlite_connection.clone())),
-            params,
         })
     }
 
     #[cfg(target_arch = "wasm32")]
-    fn new_from_ctx(_ctx: MmArc, params: BlockHeaderVerificationParams) -> Result<Self, BlockHeaderStorageError> {
+    fn new_from_ctx(_ctx: MmArc) -> Result<Self, BlockHeaderStorageError> {
         Ok(BlockHeaderStorage {
             inner: Box::new(IndexedDBBlockHeadersStorage {}),
-            params,
         })
     }
 }
@@ -92,6 +76,10 @@ impl BlockHeaderStorageOps for BlockHeaderStorage {
         height: u64,
     ) -> Result<Option<String>, BlockHeaderStorageError> {
         self.inner.get_block_header_raw(for_coin, height).await
+    }
+
+    async fn get_last_block_height(&self, for_coin: &str) -> Result<i64, BlockHeaderStorageError> {
+        self.inner.get_last_block_height(for_coin).await
     }
 
     async fn get_last_block_header_with_non_max_bits(

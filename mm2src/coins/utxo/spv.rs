@@ -29,6 +29,7 @@ pub trait SimplePaymentVerification {
 
 #[async_trait]
 impl SimplePaymentVerification for ElectrumClient {
+    // Todo: this is not working right should get a header from DB to use for validation
     async fn validate_spv_proof(
         &self,
         tx: &UtxoTx,
@@ -49,7 +50,8 @@ impl SimplePaymentVerification for ElectrumClient {
                 return MmError::err(SPVError::Timeout);
             }
 
-            match self.get_merkle_and_header(tx).await {
+            // Todo: should get merkle from RPC and header from storage (also check where we get headers every where and get it from storage or RPC)
+            match self.get_merkle_and_header_from_rpc(tx).await {
                 Ok(res) => break res,
                 Err(e) => {
                     error!(
@@ -81,6 +83,7 @@ impl SimplePaymentVerification for ElectrumClient {
             intermediate_nodes,
         };
 
+        // Todo: refactor validate function along validate_spv_proof
         proof.validate().map_err(MmError::new)?;
 
         Ok(ConfirmedTransactionInfo {

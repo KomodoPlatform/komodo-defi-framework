@@ -1546,7 +1546,6 @@ mod lp_swap_tests {
                         disable_cert_verification: false,
                     })
                     .collect(),
-                block_header_params: None,
             },
             utxo_merge_params: None,
             tx_history: false,

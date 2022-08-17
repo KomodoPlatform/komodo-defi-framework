@@ -73,13 +73,13 @@ use rpc::v1::types::{Bytes as BytesJson, Transaction as RpcTransaction, H256 as 
 use script::{Builder, Script, SignatureVersion, TransactionInputSigner};
 use serde_json::{self as json, Value as Json};
 use serialization::{serialize, serialize_with_flags, Error as SerError, SERIALIZE_TRANSACTION_WITNESS};
-use spv_validation::helpers_validation::SPVError;
+use spv_validation::helpers_validation::{BlockHeaderVerificationParams, SPVError};
 use spv_validation::storage::BlockHeaderStorageError;
 use std::array::TryFromSliceError;
 use std::collections::{HashMap, HashSet};
 use std::convert::TryInto;
 use std::hash::Hash;
-use std::num::NonZeroU64;
+use std::num::{NonZeroU64, TryFromIntError};
 use std::ops::Deref;
 #[cfg(not(target_arch = "wasm32"))]
 use std::path::{Path, PathBuf};
@@ -94,7 +94,6 @@ use utxo_signer::{TxProvider, TxProviderError, UtxoSignTxError, UtxoSignTxResult
 use self::rpc_clients::{electrum_script_hash, ElectrumClient, ElectrumRpcRequest, EstimateFeeMethod, EstimateFeeMode,
                         NativeClient, UnspentInfo, UnspentMap, UtxoRpcClientEnum, UtxoRpcError, UtxoRpcFut,
                         UtxoRpcResult};
-use self::utxo_block_header_storage::BlockHeaderVerificationParams;
 use super::{big_decimal_from_sat_unsigned, BalanceError, BalanceFut, BalanceResult, CoinBalance, CoinsContext,
             DerivationMethod, FeeApproxStage, FoundSwapTxSpend, HistorySyncState, KmdRewardsDetails, MarketCoinOps,
             MmCoin, NumConversError, NumConversResult, PrivKeyActivationPolicy, PrivKeyNotAllowed, PrivKeyPolicy,
@@ -511,6 +510,9 @@ pub struct UtxoCoinConf {
     pub trezor_coin: Option<TrezorUtxoCoin>,
     /// Used in condition where the coin will validate spv proof or not
     pub enable_spv_proof: bool,
+    /// The parameters that specify how the coin block headers should be verified if spv proof is enabled
+    // Todo: "if spv proof is enabled"? maybe if block headers storage is enabled
+    pub block_headers_verification_params: Option<BlockHeaderVerificationParams>,
 }
 
 #[derive(Debug)]
@@ -585,21 +587,33 @@ impl From<SerError> for GetTxError {
     fn from(err: SerError) -> GetTxError { GetTxError::TxDeserialization(err) }
 }
 
-#[derive(Debug)]
+#[derive(Debug, Display)]
 pub enum GetTxHeightError {
     HeightNotFound(String),
+    StorageError(BlockHeaderStorageError),
+    ConversionError(TryFromIntError),
 }
 
 impl From<GetTxHeightError> for SPVError {
     fn from(e: GetTxHeightError) -> Self {
         match e {
             GetTxHeightError::HeightNotFound(e) => SPVError::InvalidHeight(e),
+            GetTxHeightError::StorageError(e) => SPVError::HeaderStorageError(e),
+            GetTxHeightError::ConversionError(e) => SPVError::Internal(e.to_string()),
         }
     }
 }
 
 impl From<UtxoRpcError> for GetTxHeightError {
     fn from(e: UtxoRpcError) -> Self { GetTxHeightError::HeightNotFound(e.to_string()) }
+}
+
+impl From<BlockHeaderStorageError> for GetTxHeightError {
+    fn from(e: BlockHeaderStorageError) -> Self { GetTxHeightError::StorageError(e) }
+}
+
+impl From<TryFromIntError> for GetTxHeightError {
+    fn from(err: TryFromIntError) -> GetTxHeightError { GetTxHeightError::ConversionError(err) }
 }
 
 #[derive(Debug, Display)]
@@ -1259,12 +1273,7 @@ impl UtxoActivationParams {
             Some("electrum") => {
                 let servers =
                     json::from_value(req["servers"].clone()).map_to_mm(UtxoFromLegacyReqErr::InvalidElectrumServers)?;
-                let block_header_params = json::from_value(req["block_header_params"].clone())
-                    .map_to_mm(UtxoFromLegacyReqErr::InvalidBlockHeaderVerificationParams)?;
-                UtxoRpcMode::Electrum {
-                    servers,
-                    block_header_params,
-                }
+                UtxoRpcMode::Electrum { servers }
             },
             _ => return MmError::err(UtxoFromLegacyReqErr::UnexpectedMethod),
         };
@@ -1306,10 +1315,7 @@ impl UtxoActivationParams {
 #[serde(tag = "rpc", content = "rpc_data")]
 pub enum UtxoRpcMode {
     Native,
-    Electrum {
-        servers: Vec<ElectrumRpcRequest>,
-        block_header_params: Option<BlockHeaderVerificationParams>,
-    },
+    Electrum { servers: Vec<ElectrumRpcRequest> },
 }
 
 #[derive(Debug)]
