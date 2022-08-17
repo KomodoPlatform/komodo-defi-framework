@@ -6,6 +6,7 @@ use crate::prelude::*;
 use crate::prelude::{CoinAddressInfo, TokenBalances, TryFromCoinProtocol, TxHistory};
 use crate::spl_token_activation::SplActivationRequest;
 use async_trait::async_trait;
+use coins::coin_errors::MyAddressError;
 use coins::my_tx_history_v2::TxHistoryStorage;
 use coins::solana::spl::{SplProtocolConf, SplTokenCreationError};
 use coins::{solana_coin_from_conf_and_params, BalanceError, CoinBalance, CoinProtocol, MarketCoinOps,
@@ -107,6 +108,10 @@ pub enum SolanaWithTokensActivationError {
     Internal(String),
 }
 
+impl From<MyAddressError> for SolanaWithTokensActivationError {
+    fn from(err: MyAddressError) -> Self { Self::UnableToRetrieveMyAddress(err.to_string()) }
+}
+
 impl From<SolanaWithTokensActivationError> for EnablePlatformCoinWithTokensError {
     fn from(e: SolanaWithTokensActivationError) -> Self {
         match e {
@@ -182,9 +187,7 @@ impl PlatformWithTokensActivationOps for SolanaCoin {
     }
 
     async fn get_activation_result(&self) -> Result<Self::ActivationResult, MmError<Self::ActivationError>> {
-        let my_address = self
-            .my_address()
-            .map_to_mm(Self::ActivationError::UnableToRetrieveMyAddress)?;
+        let my_address = self.my_address()?;
         let current_block = self
             .current_block()
             .compat()

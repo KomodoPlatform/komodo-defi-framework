@@ -1,4 +1,5 @@
-use crate::{utxo::qtum::ScriptHashTypeNotSupported, NumConversError, UnexpectedDerivationMethod};
+use crate::{utxo::{qtum::ScriptHashTypeNotSupported, rpc_clients::UtxoRpcError},
+            DelegationError, NumConversError, UnexpectedDerivationMethod, WithdrawError};
 use spv_validation::helpers_validation::SPVError;
 
 #[derive(Debug, Display, PartialEq)]
@@ -185,4 +186,31 @@ impl ValidatePaymentError {
             expected: format!("{:?}", expected),
         }
     }
+}
+
+#[derive(Debug, Display)]
+pub enum MyAddressError {
+    UnexpectedDerivationMethod(UnexpectedDerivationMethod),
+    Deprecated(String),
+    InternalError(String),
+}
+
+impl From<UnexpectedDerivationMethod> for MyAddressError {
+    fn from(err: UnexpectedDerivationMethod) -> Self { Self::UnexpectedDerivationMethod(err) }
+}
+
+impl From<String> for MyAddressError {
+    fn from(err: String) -> Self { Self::InternalError(err) }
+}
+
+impl From<MyAddressError> for WithdrawError {
+    fn from(err: MyAddressError) -> Self { Self::InternalError(err.to_string()) }
+}
+
+impl From<MyAddressError> for UtxoRpcError {
+    fn from(err: MyAddressError) -> Self { Self::Internal(err.to_string()) }
+}
+
+impl From<MyAddressError> for DelegationError {
+    fn from(err: MyAddressError) -> Self { Self::InternalError(err.to_string()) }
 }

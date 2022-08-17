@@ -3,7 +3,7 @@
 //! Tracking issue: https://github.com/KomodoPlatform/atomicDEX-API/issues/701
 //! More info about the protocol and implementation guides can be found at https://slp.dev/
 
-use crate::coin_errors::ValidatePaymentError;
+use crate::coin_errors::{MyAddressError, ValidatePaymentError};
 use crate::my_tx_history_v2::CoinWithTxHistoryV2;
 use crate::tx_history_storage::{GetTxHistoryFilters, WalletId};
 use crate::utxo::bch::BchCoin;
@@ -1065,10 +1065,10 @@ impl UtxoTxGenerationOps for SlpToken {
 impl MarketCoinOps for SlpToken {
     fn ticker(&self) -> &str { &self.conf.ticker }
 
-    fn my_address(&self) -> Result<String, String> {
-        let my_address = try_s!(self.as_ref().derivation_method.iguana_or_err());
-        let slp_address = try_s!(self.platform_coin.slp_address(my_address));
-        slp_address.encode()
+    fn my_address(&self) -> MmResult<String, MyAddressError> {
+        let my_address = self.as_ref().derivation_method.iguana_or_err()?;
+        let slp_address = self.platform_coin.slp_address(my_address)?;
+        Ok(slp_address.encode()?)
     }
 
     fn get_public_key(&self) -> Result<String, MmError<UnexpectedDerivationMethod>> {
@@ -1572,7 +1572,7 @@ impl MmCoin for SlpToken {
                 amount: big_decimal_from_sat_unsigned(tx_data.fee_amount, coin.platform_decimals()),
                 coin: coin.platform_coin.ticker().into(),
             };
-            let my_address_string = coin.my_address().map_to_mm(WithdrawError::InternalError)?;
+            let my_address_string = coin.my_address()?;
             let to_address = address.encode().map_to_mm(WithdrawError::InternalError)?;
 
             let total_amount = big_decimal_from_sat_unsigned(amount, coin.decimals());

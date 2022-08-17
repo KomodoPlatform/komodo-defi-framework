@@ -35,7 +35,7 @@
 
 use async_trait::async_trait;
 use base58::FromBase58Error;
-use coin_errors::ValidatePaymentError;
+use coin_errors::{MyAddressError, ValidatePaymentError};
 use common::{calc_total_pages, now_ms, ten, HttpStatusCode};
 use crypto::{Bip32Error, CryptoCtx, DerivationPath};
 use derive_more::Display;
@@ -584,7 +584,7 @@ pub trait SwapOps {
 pub trait MarketCoinOps {
     fn ticker(&self) -> &str;
 
-    fn my_address(&self) -> Result<String, String>;
+    fn my_address(&self) -> MmResult<String, MyAddressError>;
 
     fn get_public_key(&self) -> Result<String, MmError<UnexpectedDerivationMethod>>;
 

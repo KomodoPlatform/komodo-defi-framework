@@ -1,6 +1,7 @@
 use crate::prelude::*;
 use crate::token::{EnableTokenError, TokenActivationOps, TokenProtocolParams};
 use async_trait::async_trait;
+use coins::coin_errors::MyAddressError;
 use coins::utxo::bch::BchCoin;
 use coins::utxo::rpc_clients::UtxoRpcError;
 use coins::utxo::slp::{SlpProtocolConf, SlpToken};
@@ -77,6 +78,10 @@ pub enum SlpInitError {
     MyAddressError(String),
 }
 
+impl From<MyAddressError> for SlpInitError {
+    fn from(err: MyAddressError) -> Self { Self::MyAddressError(err.to_string()) }
+}
+
 #[async_trait]
 impl TokenActivationOps for SlpToken {
     type PlatformCoin = BchCoin;
@@ -106,7 +111,7 @@ impl TokenActivationOps for SlpToken {
             required_confirmations,
         );
         let balance = token.my_coin_balance().await.mm_err(SlpInitError::GetBalanceError)?;
-        let my_address = token.my_address().map_to_mm(SlpInitError::MyAddressError)?;
+        let my_address = token.my_address()?;
         let mut balances = HashMap::new();
         balances.insert(my_address, balance);
         let init_result = SlpInitResult {

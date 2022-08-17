@@ -1,6 +1,7 @@
 use crate::l2::{EnableL2Error, L2ActivationOps, L2ProtocolParams};
 use crate::prelude::*;
 use async_trait::async_trait;
+use coins::coin_errors::MyAddressError;
 use coins::lightning::ln_conf::{LightningCoinConf, LightningProtocolConf};
 use coins::lightning::ln_errors::EnableLightningError;
 use coins::lightning::{start_lightning, LightningCoin, LightningParams};
@@ -94,6 +95,10 @@ pub enum LightningInitError {
     LightningValidationErr(LightningValidationErr),
     MyBalanceError(BalanceError),
     MyAddressError(String),
+}
+
+impl From<MyAddressError> for LightningInitError {
+    fn from(err: MyAddressError) -> Self { Self::MyAddressError(err.to_string()) }
 }
 
 impl From<LightningInitError> for EnableL2Error {
@@ -190,9 +195,7 @@ impl L2ActivationOps for LightningCoin {
     ) -> Result<(Self, Self::ActivationResult), MmError<Self::ActivationError>> {
         let lightning_coin =
             start_lightning(ctx, platform_coin.clone(), protocol_conf, coin_conf, validated_params).await?;
-        let address = lightning_coin
-            .my_address()
-            .map_to_mm(LightningInitError::MyAddressError)?;
+        let address = lightning_coin.my_address()?;
         let balance = lightning_coin
             .my_balance()
             .compat()
