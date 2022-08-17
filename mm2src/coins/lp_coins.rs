@@ -327,6 +327,10 @@ pub enum TxHistoryError {
     InternalError(String),
 }
 
+impl From<MyAddressError> for TxHistoryError {
+    fn from(err: MyAddressError) -> Self { Self::InternalError(err.to_string()) }
+}
+
 #[derive(Debug, Display)]
 pub enum PrivKeyNotAllowed {
     #[display(fmt = "Hardware Wallet is not supported")]
@@ -2936,7 +2940,7 @@ where
 {
     let ctx = ctx.clone();
     let ticker = coin.ticker().to_owned();
-    let my_address = try_f!(coin.my_address().map_to_mm(TxHistoryError::InternalError));
+    let my_address = try_f!(coin.my_address());
 
     let fut = async move {
         let coins_ctx = CoinsContext::from_ctx(&ctx).unwrap();
@@ -3010,7 +3014,7 @@ where
 {
     let ctx = ctx.clone();
     let ticker = coin.ticker().to_owned();
-    let my_address = try_f!(coin.my_address().map_to_mm(TxHistoryError::InternalError));
+    let my_address = try_f!(coin.my_address());
 
     history.sort_unstable_by(compare_transactions);
 
