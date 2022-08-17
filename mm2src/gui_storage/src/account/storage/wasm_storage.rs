@@ -205,7 +205,7 @@ impl AccountStorage for WasmAccountStorage {
         }
 
         let table = transaction.table::<EnabledAccountTable>().await?;
-        // Remove previous enabled account.
+        // Remove the previous enabled account by clearing the table.
         table.clear().await?;
 
         table.add_item(&EnabledAccountTable::from(enabled_account_id)).await?;

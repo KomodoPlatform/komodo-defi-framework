@@ -83,7 +83,7 @@ impl EnabledAccountId {
     pub(crate) fn to_pair(&self) -> (EnabledAccountType, Option<u32>) {
         match self {
             EnabledAccountId::Iguana => (EnabledAccountType::Iguana, None),
-            EnabledAccountId::HD { account_idx } => (EnabledAccountType::Iguana, Some(*account_idx)),
+            EnabledAccountId::HD { account_idx } => (EnabledAccountType::HD, Some(*account_idx)),
         }
     }
 
