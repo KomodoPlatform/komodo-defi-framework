@@ -466,7 +466,7 @@ mod docker_tests {
             .err()
             .unwrap();
 
-        assert_eq!(true, actual.contains("Invalid Tx Hash b4f8d0f3665ccb7a7e1d98cfaba9c77ed4cbe245deaf529a5578b6977d91253c: Tx is Unavailable on chain yet"))
+        assert!(actual.contains("Invalid Tx Hash b4f8d0f3665ccb7a7e1d98cfaba9c77ed4cbe245deaf529a5578b6977d91253c: Tx is Unavailable on chain yet"))
     }
 
     #[test]
@@ -481,7 +481,6 @@ mod docker_tests {
             .wait()
             .unwrap();
 
-        print!("{:?}", tx.tx_hex());
         coin.wait_for_confirmations(&tx.tx_hex(), 1, false, timeout, 1)
             .wait()
             .unwrap();
