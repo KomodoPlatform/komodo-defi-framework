@@ -970,6 +970,7 @@ pub fn parse_slp_script(script: &[u8]) -> Result<SlpTxDetails, MmError<ParseSlpS
     Ok(details)
 }
 
+#[allow(clippy::large_enum_variant)]
 #[derive(Debug, Display)]
 enum GenSlpSpendErr {
     RpcError(UtxoRpcError),
