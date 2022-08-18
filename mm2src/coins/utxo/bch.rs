@@ -622,7 +622,7 @@ impl BchCoin {
         Ok(slp_tx_details_builder.build())
     }
 
-    pub async fn get_block_timestamp(&self, height: u64) -> Result<u64, MmError<UtxoRpcError>> {
+    pub async fn get_block_timestamp(&self, height: u64) -> Result<u64, MmError<GetBlockHeaderError>> {
         self.as_ref().rpc_client.get_block_timestamp(height).await
     }
 }

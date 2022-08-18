@@ -1,6 +1,6 @@
 use crate::utxo::rpc_clients::ElectrumClient;
 use async_trait::async_trait;
-use chain::{BlockHeader, RawBlockHeader, Transaction as UtxoTx};
+use chain::{BlockHeader, Transaction as UtxoTx};
 use common::executor::Timer;
 use common::log::error;
 use common::now_ms;
@@ -29,7 +29,6 @@ pub trait SimplePaymentVerification {
 
 #[async_trait]
 impl SimplePaymentVerification for ElectrumClient {
-    // Todo: this is not working right should get a header from DB to use for validation
     async fn validate_spv_proof(
         &self,
         tx: &UtxoTx,
@@ -39,7 +38,7 @@ impl SimplePaymentVerification for ElectrumClient {
             return MmError::err(SPVError::InvalidVout);
         }
 
-        let (merkle_branch, header, height) = loop {
+        let (merkle_branch, validated_header, height) = loop {
             if now_ms() / 1000 > try_spv_proof_until {
                 // Todo: find a way to not show this error when height is still 0
                 error!(
@@ -50,8 +49,8 @@ impl SimplePaymentVerification for ElectrumClient {
                 return MmError::err(SPVError::Timeout);
             }
 
-            // Todo: should get merkle from RPC and header from storage (also check where we get headers every where and get it from storage or RPC)
-            match self.get_merkle_and_header_from_rpc(tx).await {
+            // Todo: break up this function to blockchain_transaction_get_merkle, block_header_from_storage
+            match self.get_merkle_and_validated_header(tx).await {
                 Ok(res) => break res,
                 Err(e) => {
                     error!(
@@ -66,7 +65,6 @@ impl SimplePaymentVerification for ElectrumClient {
             }
         };
 
-        let raw_header = RawBlockHeader::new(header.raw().take())?;
         let intermediate_nodes: Vec<H256> = merkle_branch
             .merkle
             .into_iter()
@@ -78,17 +76,14 @@ impl SimplePaymentVerification for ElectrumClient {
             vin: serialize_list(&tx.inputs).take(),
             vout: serialize_list(&tx.outputs).take(),
             index: merkle_branch.pos as u64,
-            confirming_header: header.clone(),
-            raw_header,
             intermediate_nodes,
         };
 
-        // Todo: refactor validate function along validate_spv_proof
-        proof.validate().map_err(MmError::new)?;
+        proof.validate(&validated_header).map_err(MmError::new)?;
 
         Ok(ConfirmedTransactionInfo {
             tx: tx.clone(),
-            header,
+            header: validated_header,
             index: proof.index,
             height,
         })

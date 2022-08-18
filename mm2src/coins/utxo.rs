@@ -511,7 +511,8 @@ pub struct UtxoCoinConf {
     /// Used in condition where the coin will validate spv proof or not
     pub enable_spv_proof: bool,
     /// The parameters that specify how the coin block headers should be verified if spv proof is enabled
-    // Todo: "if spv proof is enabled"? maybe if block headers storage is enabled
+    // Todo: "if spv proof is enabled"? maybe if block headers storage is enabled (enable spv can't be on without having blockheaders in storage)
+    // Todo: maybe refacor enable_spv_proof, block_headers_verification_params
     pub block_headers_verification_params: Option<BlockHeaderVerificationParams>,
 }
 
