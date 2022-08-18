@@ -92,3 +92,64 @@ fn test_tendermint_withdraw() {
     let send_raw_tx = block_on(send_raw_transaction(&mm, ATOM_TICKER, &tx_details.tx_hex));
     println!("Send raw tx {}", json::to_string(&send_raw_tx).unwrap());
 }
+
+#[test]
+#[ignore]
+fn test_iris_withdraw() {
+    let coins = json!([atom_testnet_conf()]);
+
+    let conf = Mm2TestConf::seednode("iris test seed", &coins);
+    let mm = MarketMakerIt::start(conf.conf, conf.rpc_password, conf.local).unwrap();
+
+    let activation_res = block_on(enable_tendermint(&mm, "IRIS", &vec!["http://35.234.10.84:26657"]));
+    println!("Activation {}", json::to_string(&activation_res).unwrap());
+
+    // just call withdraw without sending to check response correctness
+    let withdraw_result = block_on(withdraw_v1(
+        &mm,
+        "IRIS",
+        "iaa1e0rx87mdj79zejewuc4jg7ql9ud2286g2us8f2",
+        "0.1",
+    ));
+    println!("Withdraw to other {}", json::to_string(&withdraw_result).unwrap());
+    let tx_details: TransactionDetails = json::from_value(withdraw_result).unwrap();
+    let expected_total: BigDecimal = "0.101".parse().unwrap();
+    // assert_eq!(tx_details.total_amount, expected_total);
+    // assert_eq!(tx_details.spent_by_me, expected_total);
+    // assert_eq!(tx_details.my_balance_change, expected_total * BigDecimal::from(-1));
+    // assert_eq!(tx_details.received_by_me, BigDecimal::default());
+    // assert_eq!(tx_details.to, vec![
+    //     "cosmos1svaw0aqc4584x825ju7ua03g5xtxwd0ahl86hz".to_owned()
+    // ]);
+    // assert_eq!(tx_details.from, vec![
+    //     "cosmos1w5h6wud7a8zpa539rc99ehgl9gwkad3wjsjq8v".to_owned()
+    // ]);
+
+    // withdraw and send transaction to ourselves
+    let withdraw_result = block_on(withdraw_v1(
+        &mm,
+        "IRIS",
+        "iaa1erfnkjsmalkwtvj44qnfr2drfzdt4n9ldh0kjv",
+        "0.1",
+    ));
+    println!("Withdraw to self {}", json::to_string(&withdraw_result).unwrap());
+
+    let tx_details: TransactionDetails = json::from_value(withdraw_result).unwrap();
+    let expected_total: BigDecimal = "0.101".parse().unwrap();
+    let expected_received: BigDecimal = "0.1".parse().unwrap();
+    let expected_balance_change: BigDecimal = "-0.001".parse().unwrap();
+    //assert_eq!(tx_details.total_amount, expected_total);
+    //assert_eq!(tx_details.spent_by_me, expected_total);
+    //assert_eq!(tx_details.my_balance_change, expected_balance_change);
+    //assert_eq!(tx_details.received_by_me, expected_received);
+    //assert_eq!(tx_details.to, vec![
+    //    "cosmos1w5h6wud7a8zpa539rc99ehgl9gwkad3wjsjq8v".to_owned()
+    //]);
+    //assert_eq!(tx_details.from, vec![
+    //    "cosmos1w5h6wud7a8zpa539rc99ehgl9gwkad3wjsjq8v".to_owned()
+    //]);
+
+    let send_raw_tx = block_on(send_raw_transaction(&mm, "IRIS", &tx_details.tx_hex));
+    println!("Send raw tx {}", json::to_string(&send_raw_tx).unwrap());
+    assert!(false);
+}

@@ -98,7 +98,7 @@ pub enum TendermintInitErrorKind {
     RpcError(String),
 }
 
-#[derive(Display)]
+#[derive(Display, Debug)]
 enum TendermintCoinRpcError {
     Prost(prost::DecodeError),
     InvalidResponse(String),
@@ -450,7 +450,8 @@ impl MarketCoinOps for TendermintCoin {
         let coin = self.clone();
         let tx_bytes = tx.to_owned();
         let fut = async move {
-            let broadcast_res = try_s!(coin.rpc_client.broadcast_tx_commit(tx_bytes.into()).await);
+            let tx: cosmrs::tendermint::abci::Transaction = tx_bytes.into();
+            let broadcast_res = try_s!(coin.rpc_client.broadcast_tx_commit(tx).await);
             if !broadcast_res.check_tx.code.is_ok() {
                 return ERR!("Tx check failed {:?}", broadcast_res.check_tx);
             }
@@ -655,11 +656,52 @@ mod tendermint_coin_tests {
         assert_eq!(upper_hex(hash.as_slice()), expected_hash);
     }
 
+    #[derive(serialization_derive::Serializable, Serialize, Clone, Debug, Eq, PartialEq, PartialOrd, Ord)]
+    pub struct MsgCreateHTLC {
+        sender: String,
+        to: String,
+        receiver_on_other_chain: String,
+        sender_on_other_chain: String,
+        amount: Vec<Coin2>,
+        hash_lock: String,
+        timestamp: i64,
+        time_lock: i64,
+        transfer: bool,
+    }
+
+    #[derive(serialization_derive::Serializable, Serialize, Clone, Debug, Eq, PartialEq, PartialOrd, Ord)]
+    pub struct Coin2 {
+        pub amount: String,
+        pub denom: String,
+    }
+
     /// Not an actual test.
     /// Created for development purposes
     #[test]
     #[ignore]
     fn iris_poc() {
+        // DUMMY INFO
+        // Current address: iaa1e0rx87mdj79zejewuc4jg7ql9ud2286g2us8f2 (iris test seed)
+        // Receiver address: iaa1erfnkjsmalkwtvj44qnfr2drfzdt4n9ldh0kjv (iris test2 seed)
+        //
+        //
+        // In order to create a HTLC the required params are as following:
+        // - sender (string)
+        // - to (string)
+        // - receiver_on_other_chain (string)
+        // - sender_on_other_chain (string)
+        // - amount (Vec<Coin>)
+        // - hash_lock (string)
+        // - timestamp (i64)
+        // - time_lock (i64)
+        // - transfer (bool)
+        //
+        //
+        // Coin {
+        //     denom: string,
+        //     amount: string
+        // }
+
         let activation_request = TendermintActivationParams {
             rpc_urls: vec!["http://35.234.10.84:26657".to_string()],
         };
@@ -668,7 +710,7 @@ mod tendermint_coin_tests {
             decimals: 6,
             denom: String::from("unyan"),
             account_prefix: String::from("iaa"),
-            chain_id: String::from("nyancat-8"),
+            chain_id: String::from("nyancat-9"),
         };
 
         let ctx = mm2_core::mm_ctx::MmCtxBuilder::default()
@@ -684,6 +726,90 @@ mod tendermint_coin_tests {
             priv_key,
         ))
         .unwrap();
+
+        /////////////////////////////////
+
+        // let payload = json!({
+        //     "sender": "iaa1e0rx87mdj79zejewuc4jg7ql9ud2286g2us8f2",
+        //     "to": "iaa1erfnkjsmalkwtvj44qnfr2drfzdt4n9ldh0kjv",
+        //     "receiver_on_other_chain": "tbnb1c88qvyufqkh4ea422fr6wc6g2t5zrpxekdl0my",
+        //     "sender_on_other_chain": "tbnb1cegl4x48qy6mq5vg5wtryk806n2vjtyhk3sj6v",
+        //     "amount": [
+        //         {
+        //             "denom": "htltbcbnb",
+        //             "amount": 1003
+        //         }
+        //     ],
+        //     "hash_lock": "f2e68d53eca99f02fc791cdb665f7ade28beb2b65c99dd302ead733c1950062a",
+        //     "timestamp": "1617353946",
+        //     "time_lock": "250",
+        //     "transfer": true
+        // });
+
+        let coin_payload = Coin2 {
+            amount: "1000000000".to_string(),
+            denom: "htltbcbusd".to_string(),
+        };
+
+        let payload = MsgCreateHTLC {
+            sender: "iaa1l7qf5gjxsygp9a59dm2xsjjwdelrf7yne5rl20".to_string(),
+            to: "iaa1svannhv2zaxefq83m7treg078udfk37l5rkxtf".to_string(),
+            receiver_on_other_chain: "".to_string(),
+            sender_on_other_chain: "".to_string(),
+            amount: vec![coin_payload],
+            hash_lock: "594b5d2c87d6513925b75c79f73dc60165050d0a1523692db250ea0aa8f0098e".to_string(),
+            timestamp: 1630396816,
+            time_lock: 1000,
+            transfer: true,
+        };
+
+        // let mut payload: MsgCreateHTLC = serde_json::from_str(&payload.to_string()).unwrap();
+
+        let fut = coin.current_block().compat();
+        let current_block = common::block_on(async { fut.await.unwrap() });
+
+        let fut = coin.my_account_info();
+        let account_info = common::block_on(async { fut.await.unwrap() });
+
+        let timeout_height = current_block + TIMEOUT_HEIGHT_DELTA;
+
+        let gas_limit = 100_000;
+        let fee_amount = Coin {
+            denom: coin.denom.clone(),
+            amount: 1000_u64.into(),
+        };
+        let fee = Fee::from_amount_and_gas(fee_amount, gas_limit);
+
+        let mut stream = serialization::Stream::default();
+        stream.append(&payload);
+        let buf = stream.out();
+        let lol = cosmrs::Any {
+            type_url: "/irismod.htlc.MsgCreateHTLC".to_string(),
+            // type_url: "/cosmos.bank.v1beta1.MsgSend".to_string(),
+            value: buf.to_vec(),
+        };
+
+        let signkey = SigningKey::from_bytes(&coin.priv_key).unwrap();
+        let tx_body = tx::Body::new(vec![lol], "", timeout_height as u32);
+        let auth_info = SignerInfo::single_direct(Some(signkey.public_key()), account_info.sequence).auth_info(fee);
+        let sign_doc = SignDoc::new(&tx_body, &auth_info, &coin.chain_id, account_info.account_number).unwrap();
+        let tx_raw = sign_doc.sign(&signkey).unwrap();
+        let tx_bytes = tx_raw.to_bytes().unwrap();
+        println!("{:?}", tx_bytes.clone());
+
+        let fut = coin.send_raw_tx_bytes(&tx_bytes);
+        common::block_on(async {
+            match fut.compat().await {
+                Ok(id) => println!("Transaction broadcasted successfully: {:?} ", id),
+                // TODO (After https://github.com/KomodoPlatform/atomicDEX-API/pull/1433)
+                // Maybe do not log an error if the transaction is already sent to
+                // the blockchain
+                Err(e) => println!("ERRORRRRRRRRRRRRRRRR {}", e),
+            };
+        });
+
+        /////////////////////////////////////
+
         dbg!(coin.clone());
 
         let my_balance = common::block_on(coin.my_balance().compat()).unwrap();
