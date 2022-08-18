@@ -1,3 +1,4 @@
+#[path = "iris/htlc.rs"] mod htlc;
 /// Module implementing Tendermint (Cosmos) integration
 /// Useful resources
 /// https://docs.cosmos.network/

@@ -264,14 +264,14 @@ pub fn morty_conf() -> Json {
 
 pub fn atom_testnet_conf() -> Json {
     json!({
-        "coin":"IRIS",
+        "coin":"ATOM",
         "protocol":{
             "type":"TENDERMINT",
             "protocol_data": {
                 "decimals": 6,
-                "denom": "unyan",
-                "account_prefix": "iaa",
-                "chain_id": "nyancat-9",
+                "denom": "uatom",
+                "account_prefix": "cosmos",
+                "chain_id": "theta-testnet-001",
             },
         }
     })
