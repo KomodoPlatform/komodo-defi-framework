@@ -11,6 +11,7 @@ use spv_validation::storage::{BlockHeaderStorageError, BlockHeaderStorageOps};
 use spv_validation::work::MAX_BITS_BTC;
 use std::collections::HashMap;
 use std::convert::TryInto;
+use std::num::TryFromIntError;
 use std::sync::{Arc, Mutex};
 
 fn block_headers_cache_table(ticker: &str) -> String { ticker.to_owned() + "_block_headers_cache" }
@@ -221,7 +222,7 @@ impl BlockHeaderStorageOps for SqliteBlockHeadersStorage {
         })
     }
 
-    async fn get_last_block_height(&self, for_coin: &str) -> Result<i64, BlockHeaderStorageError> {
+    async fn get_last_block_height(&self, for_coin: &str) -> Result<u64, BlockHeaderStorageError> {
         let sql = get_last_block_height_sql(for_coin)?;
         let selfi = self.clone();
 
@@ -234,7 +235,12 @@ impl BlockHeaderStorageOps for SqliteBlockHeadersStorage {
             coin: for_coin.to_string(),
             reason: e.to_string(),
         })?
-        .ok_or_else(|| BlockHeaderStorageError::Internal("Database is empty".into()))
+        .unwrap_or(0i64)
+        .try_into()
+        .map_err(|e: TryFromIntError| BlockHeaderStorageError::DecodeError {
+            coin: for_coin.to_string(),
+            reason: e.to_string(),
+        }) // last_block_height is 0 if the database is empty
     }
 
     async fn get_last_block_header_with_non_max_bits(

@@ -145,6 +145,7 @@ pub trait MergeUtxoArcOps<T: UtxoCommonOps + GetUtxoListOps>: UtxoCoinBuilderCom
 
 pub trait BlockHeaderUtxoArcOps<T>: UtxoCoinBuilderCommonOps {
     // Todo: this should be called only if storing headers is enabled and should be called after syncing the latest header on coin activation
+    // Todo: probably this function needs to be refactored
     fn spawn_block_header_utxo_loop_if_required<F>(
         &self,
         weak: UtxoWeak,
@@ -155,8 +156,7 @@ pub trait BlockHeaderUtxoArcOps<T>: UtxoCoinBuilderCommonOps {
         F: Fn(UtxoArc) -> T + Send + Sync + 'static,
         T: UtxoCommonOps,
     {
-        // Todo: can this be a normal if condition or add a method for is_native, is_electrum?
-        if let UtxoRpcClientEnum::Electrum(_) = rpc_client {
+        if !rpc_client.is_native() {
             let ticker = self.ticker().to_owned();
             let (fut, abort_handle) = abortable(block_header_utxo_loop(weak, constructor));
             info!("Starting UTXO block header loop for coin {}", ticker);

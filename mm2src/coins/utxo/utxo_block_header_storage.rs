@@ -78,7 +78,7 @@ impl BlockHeaderStorageOps for BlockHeaderStorage {
         self.inner.get_block_header_raw(for_coin, height).await
     }
 
-    async fn get_last_block_height(&self, for_coin: &str) -> Result<i64, BlockHeaderStorageError> {
+    async fn get_last_block_height(&self, for_coin: &str) -> Result<u64, BlockHeaderStorageError> {
         self.inner.get_last_block_height(for_coin).await
     }
 

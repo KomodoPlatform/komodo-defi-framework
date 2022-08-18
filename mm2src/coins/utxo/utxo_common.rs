@@ -3447,7 +3447,6 @@ pub async fn block_header_utxo_loop<T: UtxoCommonOps>(weak: UtxoWeak, constructo
             UtxoRpcClientEnum::Native(_) => return,
             UtxoRpcClientEnum::Electrum(e) => e.block_headers_storage(),
         };
-        // Todo: this needs to be moved to coin activation probably
         match storage.is_initialized_for(ticker).await {
             Ok(true) => info!("Block Header Storage already initialized for {}", ticker),
             Ok(false) => {
@@ -3472,17 +3471,16 @@ pub async fn block_header_utxo_loop<T: UtxoCommonOps>(weak: UtxoWeak, constructo
 
         let ticker = coin.as_ref().conf.ticker.as_str();
         let storage = client.block_headers_storage();
-        // Todo: remove unwraps
-        let last_stored_block_height: u64 = storage.get_last_block_height(ticker).await.unwrap().try_into().unwrap();
+        let from_block_height =
+            ok_or_continue_after_sleep!(storage.get_last_block_height(ticker).await, BLOCK_HEADERS_LOOP_INTERVAL) + 1;
         // Todo: what to do about chain reorganization??
-        let height = ok_or_continue_after_sleep!(
+        let to_block_height = ok_or_continue_after_sleep!(
             coin.as_ref().rpc_client.get_block_count().compat().await,
             BLOCK_HEADERS_LOOP_INTERVAL
         );
         let (block_registry, block_headers) = ok_or_continue_after_sleep!(
-            // Todo: last_stored_block_height + 1 is repeated (add a variable)
             client
-                .retrieve_headers(last_stored_block_height + 1, height)
+                .retrieve_headers(from_block_height, to_block_height)
                 .compat()
                 .await,
             BLOCK_HEADERS_LOOP_INTERVAL
@@ -3490,7 +3488,7 @@ pub async fn block_header_utxo_loop<T: UtxoCommonOps>(weak: UtxoWeak, constructo
         // Todo: check this again (now if block_headers_verification_params is none in coin config headers will be added without validation)
         if let Some(params) = &coin.as_ref().conf.block_headers_verification_params {
             ok_or_continue_after_sleep!(
-                validate_headers(ticker, last_stored_block_height + 1, block_headers, storage, params,).await,
+                validate_headers(ticker, from_block_height, block_headers, storage, params,).await,
                 BLOCK_HEADERS_LOOP_INTERVAL
             );
         }

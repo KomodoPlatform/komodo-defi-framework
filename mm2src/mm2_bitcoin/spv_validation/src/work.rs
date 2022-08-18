@@ -177,7 +177,6 @@ pub(crate) mod tests {
     use primitives::hash::H256;
     use serde::Deserialize;
     use std::collections::HashMap;
-    use std::convert::TryInto;
 
     const BLOCK_HEADERS_STR: &str = include_str!("./for_tests/workTestVectors.json");
 
@@ -234,12 +233,10 @@ pub(crate) mod tests {
             Ok(None)
         }
 
-        async fn get_last_block_height(&self, for_coin: &str) -> Result<i64, BlockHeaderStorageError> {
+        async fn get_last_block_height(&self, for_coin: &str) -> Result<u64, BlockHeaderStorageError> {
             Ok(get_block_headers_for_coin(for_coin)
                 .into_keys()
                 .max_by(|a, b| a.cmp(b))
-                .unwrap()
-                .try_into()
                 .unwrap())
         }
 
