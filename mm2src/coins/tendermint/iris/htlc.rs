@@ -103,5 +103,5 @@ impl From<&MsgCreateHtlc> for HtlcProtoRep {
 }
 
 impl MsgProto for HtlcProtoRep {
-    const TYPE_URL: &'static str = "/irismod.htlc.MsgMsgCreateHtlc";
+    const TYPE_URL: &'static str = "/irismod.htlc.MsgCreateHTLC";
 }

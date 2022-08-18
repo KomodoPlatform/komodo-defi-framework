@@ -644,6 +644,7 @@ impl SwapOps for TendermintCoin {
 #[cfg(test)]
 mod tendermint_coin_tests {
     use crate::tendermint::htlc::MsgCreateHtlc;
+    use common::get_utc_timestamp;
 
     use super::*;
 
@@ -692,7 +693,10 @@ mod tendermint_coin_tests {
         .unwrap();
 
         ////////////////// HTLC P.O.C
-
+        let timestamp = get_utc_timestamp() as u64;
+        let mut hash_lock_hash = vec![];
+        hash_lock_hash.extend_from_slice(&timestamp.to_le_bytes());
+        hash_lock_hash.extend_from_slice(&[1; 20]);
         let htlc_payload = MsgCreateHtlc {
             sender: coin.account_id.clone(),
             to: "iaa1svannhv2zaxefq83m7treg078udfk37l5rkxtf".parse().unwrap(),
@@ -700,12 +704,10 @@ mod tendermint_coin_tests {
             sender_on_other_chain: "".to_string(),
             amount: vec![Coin {
                 denom: "unyan".parse().unwrap(),
-                amount: 90_u64.into(),
+                amount: 1_u64.into(),
             }],
-            /// TODO
-            /// create hash_lock with secret
-            hash_lock: "f2e68d53eca99f02fc791cdb665f7ade28beb2b65c99dd302ead733c1950062a".to_string(),
-            timestamp: 1660832906,
+            hash_lock: sha256(&hash_lock_hash).to_string(),
+            timestamp,
             time_lock: 1000,
             transfer: false,
         }
