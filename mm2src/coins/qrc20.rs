@@ -899,7 +899,7 @@ impl SwapOps for Qrc20Coin {
         let swap_contract_address = try_f!(input
             .swap_contract_address
             .try_to_address()
-            .map_to_mm(ValidatePaymentError::AddressParseError));
+            .map_to_mm(ValidatePaymentError::InvalidInput));
 
         let selfi = self.clone();
         let fut = async move {
@@ -921,11 +921,11 @@ impl SwapOps for Qrc20Coin {
         let swap_contract_address = try_f!(input
             .swap_contract_address
             .try_to_address()
-            .map_to_mm(ValidatePaymentError::AddressParseError));
+            .map_to_mm(ValidatePaymentError::InvalidInput));
         let payment_tx: UtxoTx = try_f!(deserialize(input.payment_tx.as_slice()));
         let sender = try_f!(self
             .contract_address_from_raw_pubkey(&input.other_pub)
-            .map_to_mm(ValidatePaymentError::AddressParseError));
+            .map_to_mm(ValidatePaymentError::InvalidInput));
 
         let selfi = self.clone();
         let fut = async move {

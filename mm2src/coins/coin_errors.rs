@@ -1,51 +1,23 @@
-use crate::{utxo::{qtum::ScriptHashTypeNotSupported, rpc_clients::UtxoRpcError},
-            DelegationError, NumConversError, UnexpectedDerivationMethod, WithdrawError};
+use crate::{utxo::rpc_clients::UtxoRpcError, DelegationError, NumConversError, UnexpectedDerivationMethod,
+            WithdrawError};
+use futures01::Future;
+use mm2_err_handle::prelude::MmError;
 use spv_validation::helpers_validation::SPVError;
+
+pub type ValidatePaymentFut<T> = Box<dyn Future<Item = T, Error = MmError<ValidatePaymentError>> + Send>;
 
 #[derive(Debug, Display, PartialEq)]
 pub enum ValidatePaymentError {
-    AddressParseError(String),
     InternalError(String),
     InvalidPaymentTxData(String),
     InvalidInput(String),
     ScriptHashTypeNotSupported(String),
-    SPVError(String),
+    SPVError(SPVError),
     TransportError(String),
     UnexpectedDerivationMethod(UnexpectedDerivationMethod),
-    UnexpectedErc20PaymentData(String),
     UnexpectedPaymentState(String),
-    UnexpectedPaymentTx(String),
+    WrongPaymentTx(String),
     ValidateHtlcError(String),
-    #[display(fmt = "Payment tx token_addr arg {:?} is invalid, expected {:?}", found, expected)]
-    WrongTokenAddress {
-        found: String,
-        expected: String,
-    },
-    #[display(fmt = "Payment tx value arg {:?} is invalid, expected {:?}", found, expected)]
-    WrongValue {
-        found: String,
-        expected: String,
-    },
-    #[display(fmt = "Payment tx time_lock arg {:?} is invalid, expected {:?}", found, expected)]
-    WrongTimeLock {
-        found: String,
-        expected: String,
-    },
-    #[display(fmt = "Invalid 'swap_id' {:?}, expected {:?}", found, expected)]
-    WrongSwapId {
-        found: String,
-        expected: String,
-    },
-    #[display(fmt = "Payment tx receiver arg {:?} is invalid, expected {:?}", found, expected)]
-    WrongReceiver {
-        found: String,
-        expected: String,
-    },
-    #[display(fmt = "Payment tx secret_hash arg {:?} is invalid, expected {:?}", found, expected)]
-    WrongSecretHash {
-        found: String,
-        expected: String,
-    },
     #[display(fmt = "Payment tx {:?} was sent to wrong address, expected {:?}", found, expected)]
     WrongReceiverAddress {
         found: String,
@@ -79,15 +51,11 @@ impl From<NumConversError> for ValidatePaymentError {
 }
 
 impl From<SPVError> for ValidatePaymentError {
-    fn from(err: SPVError) -> Self { Self::SPVError(err.to_string()) }
+    fn from(err: SPVError) -> Self { Self::SPVError(err) }
 }
 
 impl From<serialization::Error> for ValidatePaymentError {
-    fn from(err: serialization::Error) -> Self { Self::InternalError(err.to_string()) }
-}
-
-impl From<ScriptHashTypeNotSupported> for ValidatePaymentError {
-    fn from(err: ScriptHashTypeNotSupported) -> Self { Self::ScriptHashTypeNotSupported(err.to_string()) }
+    fn from(err: serialization::Error) -> Self { Self::InvalidPaymentTxData(err.to_string()) }
 }
 
 impl From<UnexpectedDerivationMethod> for ValidatePaymentError {
@@ -120,72 +88,6 @@ impl ValidatePaymentError {
             expected: format!("{:?}", expected),
         }
     }
-
-    pub fn wrong_token_addr<Found, Expected>(found: Found, expected: Expected) -> ValidatePaymentError
-    where
-        Found: std::fmt::Debug,
-        Expected: std::fmt::Debug,
-    {
-        ValidatePaymentError::WrongTokenAddress {
-            found: format!("{:?}", found),
-            expected: format!("{:?}", expected),
-        }
-    }
-
-    pub fn wrong_swap_id<Found, Expected>(found: Found, expected: Expected) -> ValidatePaymentError
-    where
-        Found: std::fmt::Debug,
-        Expected: std::fmt::Debug,
-    {
-        ValidatePaymentError::WrongSwapId {
-            found: format!("{:?}", found),
-            expected: format!("{:?}", expected),
-        }
-    }
-
-    pub fn wrong_receiver<Found, Expected>(found: Found, expected: Expected) -> ValidatePaymentError
-    where
-        Found: std::fmt::Debug,
-        Expected: std::fmt::Debug,
-    {
-        ValidatePaymentError::WrongReceiver {
-            found: format!("{:?}", found),
-            expected: format!("{:?}", expected),
-        }
-    }
-
-    pub fn wrong_secret_hash<Found, Expected>(found: Found, expected: Expected) -> ValidatePaymentError
-    where
-        Found: std::fmt::Debug,
-        Expected: std::fmt::Debug,
-    {
-        ValidatePaymentError::WrongSecretHash {
-            found: format!("{:?}", found),
-            expected: format!("{:?}", expected),
-        }
-    }
-
-    pub fn wrong_timelock<Found, Expected>(found: Found, expected: Expected) -> ValidatePaymentError
-    where
-        Found: std::fmt::Debug,
-        Expected: std::fmt::Debug,
-    {
-        ValidatePaymentError::WrongTimeLock {
-            found: format!("{:?}", found),
-            expected: format!("{:?}", expected),
-        }
-    }
-
-    pub fn wrong_value<Found, Expected>(found: Found, expected: Expected) -> ValidatePaymentError
-    where
-        Found: std::fmt::Debug,
-        Expected: std::fmt::Debug,
-    {
-        ValidatePaymentError::WrongValue {
-            found: format!("{:?}", found),
-            expected: format!("{:?}", expected),
-        }
-    }
 }
 
 #[derive(Debug, Display)]
@@ -197,10 +99,6 @@ pub enum MyAddressError {
 
 impl From<UnexpectedDerivationMethod> for MyAddressError {
     fn from(err: UnexpectedDerivationMethod) -> Self { Self::UnexpectedDerivationMethod(err) }
-}
-
-impl From<String> for MyAddressError {
-    fn from(err: String) -> Self { Self::InternalError(err) }
 }
 
 impl From<MyAddressError> for WithdrawError {

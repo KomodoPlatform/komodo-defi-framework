@@ -66,10 +66,9 @@ use super::{coin_conf, AsyncMutex, BalanceError, BalanceFut, CoinBalance, CoinPr
             RpcTransportEventHandlerShared, SearchForSwapTxSpendInput, SignatureError, SignatureResult, SwapOps,
             TradeFee, TradePreimageError, TradePreimageFut, TradePreimageResult, TradePreimageValue, Transaction,
             TransactionDetails, TransactionEnum, TransactionErr, TransactionFut, TxMarshalingErr,
-            UnexpectedDerivationMethod, ValidateAddressResult, ValidatePaymentError, ValidatePaymentInput,
-            VerificationError, VerificationResult, WithdrawError, WithdrawFee, WithdrawFut, WithdrawRequest,
-            WithdrawResult};
-use crate::ValidatePaymentFut;
+            UnexpectedDerivationMethod, ValidateAddressResult, ValidatePaymentError, ValidatePaymentFut,
+            ValidatePaymentInput, VerificationError, VerificationResult, WithdrawError, WithdrawFee, WithdrawFut,
+            WithdrawRequest, WithdrawResult};
 
 pub use rlp;
 
@@ -2695,7 +2694,7 @@ impl EthCoin {
                 .await
                 .map_to_mm(ValidatePaymentError::TransportError)?;
             if status != PAYMENT_STATE_SENT.into() {
-                return MmError::err(ValidatePaymentError::TransportError(format!(
+                return MmError::err(ValidatePaymentError::UnexpectedPaymentState(format!(
                     "Payment state is not PAYMENT_STATE_SENT, got {}",
                     status
                 )));
@@ -2731,34 +2730,43 @@ impl EthCoin {
                     }
 
                     if tx_from_rpc.value != expected_value {
-                        return MmError::err(ValidatePaymentError::wrong_value(tx_from_rpc, expected_value));
+                        return MmError::err(ValidatePaymentError::WrongPaymentTx(format!(
+                            "Payment tx value arg {:?} is invalid, expected {:?}",
+                            tx_from_rpc, expected_value
+                        )));
                     }
 
                     let function = SWAP_CONTRACT.function("ethPayment")?;
                     let decoded = function.decode_input(&tx_from_rpc.input.0)?;
                     if decoded[0] != Token::FixedBytes(swap_id.clone()) {
-                        return MmError::err(ValidatePaymentError::wrong_swap_id(decoded, swap_id));
+                        return MmError::err(ValidatePaymentError::WrongPaymentTx(format!(
+                            "Invalid 'swap_id' {:?}, expected {:?}",
+                            decoded, swap_id
+                        )));
                     }
 
                     if decoded[1] != Token::Address(selfi.my_address) {
-                        return MmError::err(ValidatePaymentError::wrong_receiver(
+                        return MmError::err(ValidatePaymentError::WrongPaymentTx(format!(
+                            "Payment tx receiver arg {:?} is invalid, expected {:?}",
                             &decoded[1],
-                            Token::Address(selfi.my_address),
-                        ));
+                            Token::Address(selfi.my_address)
+                        )));
                     }
 
                     if decoded[2] != Token::FixedBytes(secret_hash.to_vec()) {
-                        return MmError::err(ValidatePaymentError::wrong_secret_hash(
+                        return MmError::err(ValidatePaymentError::WrongPaymentTx(format!(
+                            "Payment tx secret_hash arg {:?} is invalid, expected {:?}",
                             &decoded[2],
                             Token::FixedBytes(secret_hash.to_vec()),
-                        ));
+                        )));
                     }
 
                     if decoded[3] != Token::Uint(U256::from(time_lock)) {
-                        return MmError::err(ValidatePaymentError::wrong_timelock(
+                        return MmError::err(ValidatePaymentError::WrongPaymentTx(format!(
+                            "Payment tx time_lock arg {:?} is invalid, expected {:?}",
                             &decoded[3],
                             Token::Uint(U256::from(time_lock)),
-                        ));
+                        )));
                     }
                 },
                 EthCoinType::Erc20 {
@@ -2775,42 +2783,50 @@ impl EthCoin {
                     let function = SWAP_CONTRACT.function("erc20Payment")?;
                     let decoded = function.decode_input(&tx_from_rpc.input.0)?;
                     if decoded[0] != Token::FixedBytes(swap_id.clone()) {
-                        return MmError::err(ValidatePaymentError::wrong_swap_id(decoded, swap_id));
+                        return MmError::err(ValidatePaymentError::WrongPaymentTx(format!(
+                            "Invalid 'swap_id' {:?}, expected {:?}",
+                            decoded, swap_id
+                        )));
                     }
 
                     if decoded[1] != Token::Uint(expected_value) {
-                        return MmError::err(ValidatePaymentError::wrong_value(
+                        return MmError::err(ValidatePaymentError::WrongPaymentTx(format!(
+                            "Payment tx value arg {:?} is invalid, expected {:?}",
                             &decoded[1],
                             Token::Uint(expected_value),
-                        ));
+                        )));
                     }
 
                     if decoded[2] != Token::Address(*token_addr) {
-                        return MmError::err(ValidatePaymentError::wrong_token_addr(
+                        return MmError::err(ValidatePaymentError::WrongPaymentTx(format!(
+                            "Payment tx token_addr arg {:?} is invalid, expected {:?}",
                             &decoded[2],
-                            Token::Address(*token_addr),
-                        ));
+                            Token::Address(*token_addr)
+                        )));
                     }
 
                     if decoded[3] != Token::Address(selfi.my_address) {
-                        return MmError::err(ValidatePaymentError::wrong_receiver(
+                        return MmError::err(ValidatePaymentError::WrongPaymentTx(format!(
+                            "Payment tx receiver arg {:?} is invalid, expected {:?}",
                             &decoded[3],
                             Token::Address(selfi.my_address),
-                        ));
+                        )));
                     }
 
                     if decoded[4] != Token::FixedBytes(secret_hash.to_vec()) {
-                        return MmError::err(ValidatePaymentError::wrong_secret_hash(
+                        return MmError::err(ValidatePaymentError::WrongPaymentTx(format!(
+                            "Payment tx secret_hash arg {:?} is invalid, expected {:?}",
                             &decoded[4],
                             Token::FixedBytes(secret_hash.to_vec()),
-                        ));
+                        )));
                     }
 
                     if decoded[5] != Token::Uint(U256::from(time_lock)) {
-                        return MmError::err(ValidatePaymentError::wrong_timelock(
+                        return MmError::err(ValidatePaymentError::WrongPaymentTx(format!(
+                            "Payment tx time_lock arg {:?} is invalid, expected {:?}",
                             &decoded[5],
                             Token::Uint(U256::from(time_lock)),
-                        ));
+                        )));
                     }
                 },
             }

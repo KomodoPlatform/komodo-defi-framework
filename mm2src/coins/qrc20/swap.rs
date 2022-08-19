@@ -129,7 +129,8 @@ impl Qrc20Coin {
         let expected_call_bytes = {
             let expected_value = wei_from_big_decimal(&amount, self.utxo.decimals)?;
             let my_address = self.utxo.derivation_method.iguana_or_err()?.clone();
-            let expected_receiver = qtum::contract_addr_from_utxo_addr(my_address)?;
+            let expected_receiver = qtum::contract_addr_from_utxo_addr(my_address)
+                .mm_err(|err| ValidatePaymentError::InvalidPaymentTxData(err.to_string()))?;
             self.erc20_payment_call_bytes(
                 expected_swap_id,
                 expected_value,
@@ -141,9 +142,9 @@ impl Qrc20Coin {
         let erc20_payment = self
             .erc20_payment_details_from_tx(&payment_tx)
             .await
-            .map_to_mm(ValidatePaymentError::UnexpectedErc20PaymentData)?;
+            .map_to_mm(ValidatePaymentError::InvalidPaymentTxData)?;
         if erc20_payment.contract_call_bytes != expected_call_bytes {
-            return MmError::err(ValidatePaymentError::UnexpectedErc20PaymentData(format!(
+            return MmError::err(ValidatePaymentError::InvalidPaymentTxData(format!(
                 "Unexpected 'erc20Payment' contract call bytes: {:?}",
                 erc20_payment.contract_call_bytes
             )));
@@ -154,10 +155,10 @@ impl Qrc20Coin {
         }
 
         if expected_swap_contract_address != erc20_payment.swap_contract_address {
-            return MmError::err(ValidatePaymentError::wrong_receiver(
-                erc20_payment.swap_contract_address,
-                expected_swap_contract_address,
-            ));
+            return MmError::err(ValidatePaymentError::WrongPaymentTx(format!(
+                "Payment tx receiver arg {:?} is invalid, expected {:?}",
+                erc20_payment.swap_contract_address, expected_swap_contract_address,
+            )));
         }
 
         Ok(())

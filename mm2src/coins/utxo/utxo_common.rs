@@ -3134,7 +3134,7 @@ pub fn validate_payment<T: UtxoCommonOps>(
             if serialize(&tx).take() != tx_from_rpc.0
                 && serialize_with_flags(&tx, SERIALIZE_TRANSACTION_WITNESS).take() != tx_from_rpc.0
             {
-                return MmError::err(ValidatePaymentError::UnexpectedPaymentTx(format!(
+                return MmError::err(ValidatePaymentError::WrongPaymentTx(format!(
                     "Provided payment tx {:?} doesn't match tx data from rpc {:?}",
                     tx, tx_from_rpc
                 )));
@@ -3147,7 +3147,7 @@ pub fn validate_payment<T: UtxoCommonOps>(
 
             let actual_output = tx.outputs.get(output_index);
             if actual_output != Some(&expected_output) {
-                return MmError::err(ValidatePaymentError::UnexpectedPaymentTx(format!(
+                return MmError::err(ValidatePaymentError::WrongPaymentTx(format!(
                     "Provided payment tx output doesn't match expected {:?} {:?}",
                     actual_output, expected_output
                 )));

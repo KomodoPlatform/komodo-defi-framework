@@ -50,7 +50,7 @@ impl From<ScriptHashTypeNotSupported> for Qrc20AddressError {
     }
 }
 
-#[derive(Debug, Display)]
+#[derive(Debug, Display, PartialEq)]
 pub struct ScriptHashTypeNotSupported {
     pub script_hash_type: String,
 }
