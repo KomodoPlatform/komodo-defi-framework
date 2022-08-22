@@ -2,8 +2,10 @@ use cosmrs::{tx::{Msg, MsgProto},
              AccountId, Coin, ErrorReport};
 use std::convert::TryFrom;
 
+// Creating
+
 #[derive(Clone, PartialEq, ::prost::Message)]
-pub struct HtlcProtoRep {
+pub struct CreateHtlcProtoRep {
     #[prost(string, tag = "1")]
     pub sender: ::prost::alloc::string::String,
     #[prost(string, tag = "2")]
@@ -55,19 +57,19 @@ pub struct MsgCreateHtlc {
 }
 
 impl Msg for MsgCreateHtlc {
-    type Proto = HtlcProtoRep;
+    type Proto = CreateHtlcProtoRep;
 }
 
-impl TryFrom<HtlcProtoRep> for MsgCreateHtlc {
+impl TryFrom<CreateHtlcProtoRep> for MsgCreateHtlc {
     type Error = ErrorReport;
 
-    fn try_from(proto: HtlcProtoRep) -> Result<MsgCreateHtlc, Self::Error> { MsgCreateHtlc::try_from(&proto) }
+    fn try_from(proto: CreateHtlcProtoRep) -> Result<MsgCreateHtlc, Self::Error> { MsgCreateHtlc::try_from(&proto) }
 }
 
-impl TryFrom<&HtlcProtoRep> for MsgCreateHtlc {
+impl TryFrom<&CreateHtlcProtoRep> for MsgCreateHtlc {
     type Error = ErrorReport;
 
-    fn try_from(proto: &HtlcProtoRep) -> Result<MsgCreateHtlc, Self::Error> {
+    fn try_from(proto: &CreateHtlcProtoRep) -> Result<MsgCreateHtlc, Self::Error> {
         Ok(MsgCreateHtlc {
             sender: proto.sender.parse()?,
             to: proto.to.parse()?,
@@ -82,13 +84,13 @@ impl TryFrom<&HtlcProtoRep> for MsgCreateHtlc {
     }
 }
 
-impl From<MsgCreateHtlc> for HtlcProtoRep {
-    fn from(coin: MsgCreateHtlc) -> HtlcProtoRep { HtlcProtoRep::from(&coin) }
+impl From<MsgCreateHtlc> for CreateHtlcProtoRep {
+    fn from(coin: MsgCreateHtlc) -> CreateHtlcProtoRep { CreateHtlcProtoRep::from(&coin) }
 }
 
-impl From<&MsgCreateHtlc> for HtlcProtoRep {
-    fn from(msg: &MsgCreateHtlc) -> HtlcProtoRep {
-        HtlcProtoRep {
+impl From<&MsgCreateHtlc> for CreateHtlcProtoRep {
+    fn from(msg: &MsgCreateHtlc) -> CreateHtlcProtoRep {
+        CreateHtlcProtoRep {
             sender: msg.sender.to_string(),
             to: msg.to.to_string(),
             amount: msg.amount.iter().map(Into::into).collect(),
@@ -102,6 +104,70 @@ impl From<&MsgCreateHtlc> for HtlcProtoRep {
     }
 }
 
-impl MsgProto for HtlcProtoRep {
+impl MsgProto for CreateHtlcProtoRep {
     const TYPE_URL: &'static str = "/irismod.htlc.MsgCreateHTLC";
+}
+
+// Claiming
+
+#[derive(Clone, PartialEq, ::prost::Message)]
+pub struct ClaimHtlcProtoRep {
+    #[prost(string, tag = "1")]
+    pub sender: ::prost::alloc::string::String,
+    #[prost(string, tag = "2")]
+    pub id: ::prost::alloc::string::String,
+    #[prost(string, tag = "3")]
+    pub secret: ::prost::alloc::string::String,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq, PartialOrd, Ord)]
+pub struct MsgClaimHtlc {
+    /// Sender's address.
+    pub sender: AccountId,
+
+    /// Generated HTLC ID
+    pub id: String,
+
+    /// Secret that has been used for generating hash_lock
+    pub secret: String,
+}
+
+impl Msg for MsgClaimHtlc {
+    type Proto = ClaimHtlcProtoRep;
+}
+
+impl TryFrom<ClaimHtlcProtoRep> for MsgClaimHtlc {
+    type Error = ErrorReport;
+
+    fn try_from(proto: ClaimHtlcProtoRep) -> Result<MsgClaimHtlc, Self::Error> { MsgClaimHtlc::try_from(&proto) }
+}
+
+impl TryFrom<&ClaimHtlcProtoRep> for MsgClaimHtlc {
+    type Error = ErrorReport;
+
+    fn try_from(proto: &ClaimHtlcProtoRep) -> Result<MsgClaimHtlc, Self::Error> {
+        Ok(MsgClaimHtlc {
+            sender: proto.sender.parse()?,
+            id: proto.id.clone(),
+            secret: proto.secret.clone(),
+        })
+    }
+}
+
+impl From<MsgClaimHtlc> for ClaimHtlcProtoRep {
+    fn from(coin: MsgClaimHtlc) -> ClaimHtlcProtoRep { ClaimHtlcProtoRep::from(&coin) }
+}
+
+impl From<&MsgClaimHtlc> for ClaimHtlcProtoRep {
+    fn from(msg: &MsgClaimHtlc) -> ClaimHtlcProtoRep {
+        ClaimHtlcProtoRep {
+            sender: msg.sender.to_string(),
+            id: msg.id.clone(),
+            secret: msg.secret.clone(),
+        }
+    }
+}
+
+impl MsgProto for ClaimHtlcProtoRep {
+    const TYPE_URL: &'static str = "/irismod.htlc.MsgClaimHTLC";
 }

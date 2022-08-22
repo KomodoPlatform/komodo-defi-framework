@@ -643,7 +643,7 @@ impl SwapOps for TendermintCoin {
 
 #[cfg(test)]
 mod tendermint_coin_tests {
-    use crate::tendermint::htlc::MsgCreateHtlc;
+    use crate::tendermint::htlc::{MsgClaimHtlc, MsgCreateHtlc};
     use common::get_utc_timestamp;
 
     use super::*;
@@ -668,7 +668,7 @@ mod tendermint_coin_tests {
         // Receiver address: iaa1erfnkjsmalkwtvj44qnfr2drfzdt4n9ldh0kjv (iris test2 seed)
 
         let activation_request = TendermintActivationParams {
-            rpc_urls: vec!["http://35.234.10.84:26657".to_string()],
+            rpc_urls: vec!["http://34.80.202.172:26657".to_string()],
         };
 
         let protocol_conf = TendermintProtocolInfo {
@@ -692,24 +692,92 @@ mod tendermint_coin_tests {
         ))
         .unwrap();
 
-        ////////////////// HTLC P.O.C
+        // BEGIN HTLC CREATION
         let timestamp = get_utc_timestamp() as u64;
         let mut hash_lock_hash = vec![];
-        hash_lock_hash.extend_from_slice(&timestamp.to_le_bytes());
-        hash_lock_hash.extend_from_slice(&[1; 20]);
+        let sec = &[1; 32];
+        hash_lock_hash.extend_from_slice(sec);
+        hash_lock_hash.extend_from_slice(&timestamp.to_be_bytes());
+
+        let to: AccountId = "iaa1svannhv2zaxefq83m7treg078udfk37l5rkxtf".parse().unwrap();
+
+        let mut amount = vec![Coin {
+            denom: "unyan".parse().unwrap(),
+            amount: 1_u64.into(),
+        }];
+        // Needs to be sorted for creating proper HTLC id
+        amount.sort();
+
         let htlc_payload = MsgCreateHtlc {
             sender: coin.account_id.clone(),
-            to: "iaa1svannhv2zaxefq83m7treg078udfk37l5rkxtf".parse().unwrap(),
+            to: to.clone(),
             receiver_on_other_chain: "".to_string(),
             sender_on_other_chain: "".to_string(),
-            amount: vec![Coin {
-                denom: "unyan".parse().unwrap(),
-                amount: 1_u64.into(),
-            }],
+            amount: amount.clone(),
             hash_lock: sha256(&hash_lock_hash).to_string(),
             timestamp,
             time_lock: 1000,
             transfer: false,
+        }
+        .to_any()
+        .unwrap();
+
+        // begin htlc id generation
+        let mut htlc_id = vec![];
+        htlc_id.extend_from_slice(sha256(&hash_lock_hash).as_slice());
+        htlc_id.extend_from_slice(&coin.account_id.to_bytes());
+        htlc_id.extend_from_slice(&to.to_bytes());
+        let mut coins_string = String::new();
+        for c in amount.iter() {
+            if Some(c) != amount.last() {
+                coins_string = format!("{}{}{},", coins_string, c.amount.to_string(), c.denom.to_string());
+            } else {
+                coins_string = format!("{}{}{}", coins_string, c.amount.to_string(), c.denom.to_string());
+            }
+        }
+        htlc_id.extend_from_slice(coins_string.as_bytes());
+        let htlc_id = sha256(&htlc_id).to_string().to_uppercase();
+        // end htlc id generataion
+
+        let fut = coin.current_block().compat();
+        let current_block = common::block_on(async { fut.await.unwrap() });
+
+        let fut = coin.my_account_info();
+        let account_info = common::block_on(async { fut.await.unwrap() });
+
+        let timeout_height = current_block + TIMEOUT_HEIGHT_DELTA;
+
+        let gas_limit = 100_000;
+        let fee_amount = Coin {
+            denom: coin.denom.clone(),
+            amount: 1000_u64.into(),
+        };
+
+        let fee = Fee::from_amount_and_gas(fee_amount, gas_limit);
+
+        let signkey = SigningKey::from_bytes(&coin.priv_key).unwrap();
+        let tx_body = tx::Body::new(vec![htlc_payload], "", timeout_height as u32);
+        let auth_info =
+            SignerInfo::single_direct(Some(signkey.public_key()), account_info.sequence).auth_info(fee.clone());
+        let sign_doc = SignDoc::new(&tx_body, &auth_info, &coin.chain_id, account_info.account_number).unwrap();
+        let tx_raw = sign_doc.sign(&signkey).unwrap();
+        let tx_bytes = tx_raw.to_bytes().unwrap();
+
+        let fut = coin.send_raw_tx_bytes(&tx_bytes);
+        common::block_on(async {
+            match fut.compat().await {
+                Ok(id) => println!("Transaction broadcasted successfully: {:?} ", id),
+                Err(e) => panic!("ERROR {}", e),
+            }
+        });
+
+        // END HTLC CREATION
+
+        // BEGIN HTLC CLAIMING
+        let htlc_payload = MsgClaimHtlc {
+            sender: coin.account_id.clone(),
+            id: htlc_id,
+            secret: hex::encode(sec),
         }
         .to_any()
         .unwrap();
@@ -740,12 +808,16 @@ mod tendermint_coin_tests {
         let fut = coin.send_raw_tx_bytes(&tx_bytes);
         common::block_on(async {
             match fut.compat().await {
-                Ok(id) => println!("Transaction broadcasted successfully: {:?} ", id),
-                Err(e) => println!("ERROR {}", e),
-            };
+                Ok(id) => {
+                    println!("Transaction broadcasted successfully: {:?} ", id);
+                    id
+                },
+                Err(e) => {
+                    panic!("ERROR {}", e);
+                },
+            }
         });
-
-        ////////////////// HTLC P.O.C
+        // END HTLC CLAIMING
 
         dbg!(coin.clone());
 
