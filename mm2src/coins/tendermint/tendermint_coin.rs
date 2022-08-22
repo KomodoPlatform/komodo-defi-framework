@@ -699,7 +699,7 @@ mod tendermint_coin_tests {
         hash_lock_hash.extend_from_slice(sec);
         hash_lock_hash.extend_from_slice(&timestamp.to_be_bytes());
 
-        let to: AccountId = "iaa1svannhv2zaxefq83m7treg078udfk37l5rkxtf".parse().unwrap();
+        let to: AccountId = "iaa1erfnkjsmalkwtvj44qnfr2drfzdt4n9ldh0kjv".parse().unwrap();
 
         let mut amount = vec![Coin {
             denom: "unyan".parse().unwrap(),
