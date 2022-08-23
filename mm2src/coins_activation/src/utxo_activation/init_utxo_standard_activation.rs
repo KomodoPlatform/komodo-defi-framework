@@ -91,7 +91,6 @@ impl InitStandaloneCoinActivationOps for UtxoStandardCoin {
 
         if let Some(mut sync_watcher) = maybe_sync_watcher {
             loop {
-                // todo:  should this be a timeouterror?
                 let in_progress_status =
                     match sync_watcher
                         .next()
@@ -108,7 +107,6 @@ impl InitStandaloneCoinActivationOps for UtxoStandardCoin {
                             latest_block,
                         },
                         UtxoSyncStatus::TemporaryError(e) => UtxoStandardInProgressStatus::TemporaryError(e),
-                        // Todo: should it be a new error type other than CoinCreationError or maybe internal??
                         UtxoSyncStatus::PermanentError(e) => {
                             return Err(InitUtxoStandardError::CoinCreationError {
                                 ticker: ticker.clone(),

@@ -60,6 +60,7 @@ pub fn electrum_client_for_test(servers: &[&str]) -> ElectrumClient {
         &Json::Null,
         &params,
         priv_key_policy,
+        None,
         UtxoStandardCoin::from,
     );
     let args = ElectrumBuilderArgs {
