@@ -11,8 +11,8 @@ use common::custom_iter::{CollectInto, TryIntoGroupMap};
 use common::executor::{spawn, Timer};
 use common::jsonrpc_client::{JsonRpcBatchClient, JsonRpcBatchResponse, JsonRpcClient, JsonRpcError, JsonRpcErrorType,
                              JsonRpcId, JsonRpcMultiClient, JsonRpcRemoteAddr, JsonRpcRequest, JsonRpcRequestEnum,
-                             JsonRpcResponse, JsonRpcResponseEnum, JsonRpcTransportErrFut, JsonRpcTransportError,
-                             RpcRes};
+                             JsonRpcResponse, JsonRpcResponseEnum, JsonRpcResponseFut, RpcRes};
+
 use common::log::{error, info, warn};
 use common::{median, now_float, now_ms, OrdRange};
 use derive_more::Display;
@@ -100,17 +100,6 @@ impl rustls::client::ServerCertVerifier for NoCertificateVerification {
     ) -> Result<ServerCertVerified, rustls::Error> {
         Ok(rustls::client::ServerCertVerified::assertion())
     }
-}
-
-fn check_if_tx_onchain(err: &UtxoRpcError) -> bool {
-    if let UtxoRpcError::Transport(trans) = err {
-        if let JsonRpcErrorType::Transport(JsonRpcTransportError::Transport(_, _, body)) = &trans.error {
-            if body.error.code == -5 {
-                return true;
-            }
-        }
-    };
-    false
 }
 
 #[derive(Debug)]
@@ -293,6 +282,17 @@ impl From<serialization::Error> for UtxoRpcError {
 
 impl From<NumConversError> for UtxoRpcError {
     fn from(e: NumConversError) -> Self { UtxoRpcError::Internal(e.to_string()) }
+}
+
+fn check_if_tx_onchain(err: &UtxoRpcError) -> bool {
+    if let UtxoRpcError::ResponseParseError(ref json_err) = err {
+        if let JsonRpcErrorType::Response(_, json) = &json_err.error {
+            if json["error"]["code"] == -5 {
+                return true;
+            }
+        }
+    };
+    false
 }
 
 /// Common operations that both types of UTXO clients have but implement them differently
@@ -646,17 +646,21 @@ impl JsonRpcClient for NativeClientImpl {
     fn client_info(&self) -> String { UtxoJsonRpcClientInfo::client_info(self) }
 
     #[cfg(target_arch = "wasm32")]
-    fn transport(&self, _request: JsonRpcRequestEnum) -> JsonRpcTransportErrFut {
-        Box::new(futures01::future::err(JsonRpcTransportError::NativeClientImplError(
+    fn transport(&self, _request: JsonRpcRequestEnum) -> JsonRpcResponseFut {
+        Box::new(futures01::future::err(ERRL!(
             "'NativeClientImpl' must be used in native mode only".to_string(),
         )))
     }
 
     #[cfg(not(target_arch = "wasm32"))]
-    fn transport(&self, request: JsonRpcRequestEnum) -> JsonRpcTransportErrFut {
+    fn transport(&self, request: JsonRpcRequestEnum) -> JsonRpcResponseFut {
         use mm2_net::transport::slurp_req;
 
-        let request_body = try_f!(json::to_string(&request));
+        let request_body = try_f!(json::to_string(&request).map_err(|e| JsonRpcError {
+            client_info: common::jsonrpc_client::JsonRpcClient::client_info(self),
+            request: request.clone(),
+            error: JsonRpcErrorType::InvalidRequest(e.to_string()),
+        }));
         // measure now only body length, because the `hyper` crate doesn't allow to get total HTTP packet length
         self.event_handlers.on_outgoing_request(request_body.as_bytes());
 
@@ -666,26 +670,49 @@ impl JsonRpcClient for NativeClientImpl {
             .method("POST")
             .header(AUTHORIZATION, self.auth.clone())
             .uri(uri.clone())
-            .body(Vec::from(request_body)));
+            .body(Vec::from(request_body))
+            .map_err(|e| JsonRpcError {
+                client_info: common::jsonrpc_client::JsonRpcClient::client_info(self),
+                request: request.clone(),
+                error: JsonRpcErrorType::InvalidRequest(e.to_string()),
+            }));
 
         let event_handles = self.event_handlers.clone();
+        let client_info = UtxoJsonRpcClientInfo::client_info(self);
         Box::new(slurp_req(http_request).boxed().compat().then(
-            move |result| -> Result<(JsonRpcRemoteAddr, JsonRpcResponseEnum), JsonRpcTransportError> {
-                let res = result.map_err(|err| JsonRpcTransportError::SlurpError(err.to_string()))?;
+            move |result| -> Result<(JsonRpcRemoteAddr, JsonRpcResponseEnum), JsonRpcError> {
+                let res = result.map_err(|e| JsonRpcError {
+                    client_info: client_info.clone(),
+                    request: request.clone(),
+                    error: JsonRpcErrorType::InvalidRequest(e.to_string()),
+                })?;
                 // measure now only body length, because the `hyper` crate doesn't allow to get total HTTP packet length
                 event_handles.on_incoming_response(&res.2);
 
-                let body = std::str::from_utf8(&res.2)?;
+                let body = std::str::from_utf8(&res.2).map_err(|e| JsonRpcError {
+                    client_info: client_info.clone(),
+                    request: request.clone(),
+                    error: JsonRpcErrorType::InvalidRequest(e.to_string()),
+                })?;
 
                 if res.0 != StatusCode::OK {
-                    return Err(JsonRpcTransportError::Transport(
-                        request,
-                        res.0,
-                        serde_json::from_str(body)?,
-                    ));
+                    let res_value = serde_json::from_slice(&res.2).map_err(|e| JsonRpcError {
+                        client_info: client_info.clone(),
+                        request: request.clone(),
+                        error: JsonRpcErrorType::InvalidRequest(e.to_string()),
+                    })?;
+                    return Err(JsonRpcError {
+                        client_info: client_info.clone(),
+                        request: request.clone(),
+                        error: JsonRpcErrorType::Response(uri.into(), res_value),
+                    });
                 }
 
-                let response = json::from_str(body)?;
+                let response = json::from_str(body).map_err(|e| JsonRpcError {
+                    client_info: client_info.clone(),
+                    request: request.clone(),
+                    error: JsonRpcErrorType::InvalidRequest(e.to_string()),
+                })?;
                 Ok((uri.into(), response))
             },
         ))
@@ -1588,7 +1615,7 @@ pub struct ElectrumClientImpl {
 async fn electrum_request_multi(
     client: ElectrumClient,
     request: JsonRpcRequestEnum,
-) -> Result<(JsonRpcRemoteAddr, JsonRpcResponseEnum), String> {
+) -> Result<(JsonRpcRemoteAddr, JsonRpcResponseEnum), JsonRpcError> {
     let mut futures = vec![];
     let connections = client.connections.lock().await;
     for (i, connection) in connections.iter().enumerate() {
@@ -1609,25 +1636,34 @@ async fn electrum_request_multi(
     }
     drop(connections);
     if futures.is_empty() {
-        return ERR!("All electrums are currently disconnected");
+        return Err(JsonRpcError {
+            client_info: UtxoJsonRpcClientInfo::client_info(&client),
+            request: request.clone(),
+            error: JsonRpcErrorType::Transport("All electrums are currently disconnected".to_string()),
+        });
     }
 
-    match request {
+    match &request {
         JsonRpcRequestEnum::Single(single) if single.method == "server.ping" => {
             // server.ping must be sent to all servers to keep all connections alive
             return select_ok(futures)
                 .map(|(result, _)| result)
-                .map_err(|e| ERRL!("{:?}", e))
+                .map_err(|_| JsonRpcError {
+                    client_info: UtxoJsonRpcClientInfo::client_info(&client),
+                    request,
+                    error: JsonRpcErrorType::Transport("All electrums are currently disconnected".to_string()),
+                })
                 .compat()
                 .await;
         },
         _ => (),
     }
 
-    let (res, no_of_failed_requests) = select_ok_sequential(futures)
-        .compat()
-        .await
-        .map_err(|e| ERRL!("{:?}", e))?;
+    let (res, no_of_failed_requests) = select_ok_sequential(futures).compat().await.map_err(|_| JsonRpcError {
+        client_info: UtxoJsonRpcClientInfo::client_info(&client),
+        request: request.clone(),
+        error: JsonRpcErrorType::Transport("All electrums are currently disconnected".to_string()),
+    })?;
     client.rotate_servers(no_of_failed_requests).await;
     Ok(res)
 }
@@ -1636,28 +1672,38 @@ async fn electrum_request_to(
     client: ElectrumClient,
     request: JsonRpcRequestEnum,
     to_addr: String,
-) -> Result<(JsonRpcRemoteAddr, JsonRpcResponseEnum), String> {
+) -> Result<(JsonRpcRemoteAddr, JsonRpcResponseEnum), JsonRpcError> {
     let (tx, responses) = {
         let connections = client.connections.lock().await;
-        let connection = connections
-            .iter()
-            .find(|c| c.addr == to_addr)
-            .ok_or(ERRL!("Unknown destination address {}", to_addr))?;
+        let connection = connections.iter().find(|c| c.addr == to_addr).ok_or(JsonRpcError {
+            client_info: UtxoJsonRpcClientInfo::client_info(&client),
+            request: request.clone(),
+            error: JsonRpcErrorType::Transport(format!("Connection {} is not established yet", to_addr)),
+        })?;
         let responses = connection.responses.clone();
         let tx = {
             match &*connection.tx.lock().await {
                 Some(tx) => tx.clone(),
-                None => return ERR!("Connection {} is not established yet", to_addr),
+                None => {
+                    return Err(JsonRpcError {
+                        client_info: UtxoJsonRpcClientInfo::client_info(&client),
+                        request: request.clone(),
+                        error: JsonRpcErrorType::Transport(format!("Connection {} is not established yet", to_addr)),
+                    })
+                },
             }
         };
         (tx, responses)
     };
 
-    let response = try_s!(
-        electrum_request(request.clone(), tx, responses, ELECTRUM_TIMEOUT)
-            .compat()
-            .await
-    );
+    let response = electrum_request(request.clone(), tx, responses, ELECTRUM_TIMEOUT)
+        .compat()
+        .await
+        .map_err(|err| JsonRpcError {
+            client_info: UtxoJsonRpcClientInfo::client_info(&client),
+            request,
+            error: JsonRpcErrorType::Transport(err),
+        })?;
     Ok((JsonRpcRemoteAddr(to_addr.to_owned()), response))
 }
 
@@ -1748,26 +1794,16 @@ impl JsonRpcClient for ElectrumClient {
 
     fn client_info(&self) -> String { UtxoJsonRpcClientInfo::client_info(self) }
 
-    fn transport(&self, request: JsonRpcRequestEnum) -> JsonRpcTransportErrFut {
-        Box::new(
-            electrum_request_multi(self.clone(), request)
-                .boxed()
-                .compat()
-                .map_err(JsonRpcTransportError::ElectrumRequestMulti),
-        )
+    fn transport(&self, request: JsonRpcRequestEnum) -> JsonRpcResponseFut {
+        Box::new(electrum_request_multi(self.clone(), request).boxed().compat())
     }
 }
 
 impl JsonRpcBatchClient for ElectrumClient {}
 
 impl JsonRpcMultiClient for ElectrumClient {
-    fn transport_exact(&self, to_addr: String, request: JsonRpcRequestEnum) -> JsonRpcTransportErrFut {
-        Box::new(
-            electrum_request_to(self.clone(), request, to_addr)
-                .boxed()
-                .compat()
-                .map_err(JsonRpcTransportError::ElectrumRequestMulti),
-        )
+    fn transport_exact(&self, to_addr: String, request: JsonRpcRequestEnum) -> JsonRpcResponseFut {
+        Box::new(electrum_request_to(self.clone(), request, to_addr).boxed().compat())
     }
 }
 

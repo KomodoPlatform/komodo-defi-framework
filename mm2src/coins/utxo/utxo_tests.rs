@@ -3875,6 +3875,76 @@ fn test_electrum_display_balances() {
 }
 
 #[test]
+fn test_for_non_existent_tx_hex_utxo_electrum() {
+    static mut OUTPUT_SPEND_CALLED: bool = false;
+    ElectrumClient::find_output_spend.mock_safe(|_, _, _, _, _| {
+        unsafe { OUTPUT_SPEND_CALLED = true };
+        MockResult::Return(Box::new(futures01::future::ok(None)))
+    });
+
+    let client = ElectrumClientImpl::new(TEST_COIN_NAME.into(), Default::default(), None);
+    let client = UtxoRpcClientEnum::Electrum(ElectrumClient(Arc::new(client)));
+    let coin = utxo_coin_for_test(client, None, false);
+    let tx = vec![
+        4, 0, 0, 128, 133, 32, 47, 137, 1, 81, 146, 94, 240, 227, 116, 153, 194, 232, 25, 255, 192, 110, 155, 208, 14,
+        157, 197, 189, 65, 107, 229, 129, 124, 136, 215, 10, 63, 13, 218, 183, 206, 1, 0, 0, 0, 107, 72, 48, 69, 2, 33,
+        0, 255, 148, 80, 199, 101, 182, 102, 18, 1, 46, 26, 48, 212, 144, 162, 81, 21, 157, 233, 80, 159, 130, 184, 56,
+        98, 183, 189, 115, 233, 233, 30, 60, 2, 32, 124, 220, 236, 219, 101, 75, 139, 241, 185, 174, 16, 112, 127, 128,
+        159, 9, 104, 156, 39, 2, 81, 187, 198, 209, 255, 79, 84, 61, 238, 53, 243, 35, 1, 33, 3, 192, 45, 65, 142, 227,
+        32, 245, 206, 82, 10, 140, 237, 131, 171, 113, 63, 246, 56, 118, 88, 57, 29, 11, 37, 227, 59, 106, 136, 90,
+        252, 3, 72, 255, 255, 255, 255, 3, 0, 225, 245, 5, 0, 0, 0, 0, 23, 169, 20, 27, 130, 67, 246, 162, 41, 162,
+        144, 64, 214, 12, 227, 165, 136, 151, 82, 145, 176, 74, 245, 135, 0, 0, 0, 0, 0, 0, 0, 0, 22, 106, 20, 0, 0, 0,
+        0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 24, 3, 129, 66, 23, 0, 0, 0, 25, 118, 169, 20, 158, 220,
+        162, 160, 79, 133, 71, 112, 148, 22, 186, 113, 239, 163, 18, 241, 138, 161, 220, 132, 136, 172, 174, 23, 247,
+        98, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+    ]; // Bad transaction hex
+    let timeout = (now_ms() / 1000) + 120;
+    let from_block = 1000;
+
+    let actual = coin
+        .wait_for_confirmations(&tx, 1, false, timeout, 1)
+        .wait()
+        .err()
+        .unwrap();
+    assert!(actual.contains("Invalid Tx Hash b4f8d0f3665ccb7a7e1d98cfaba9c77ed4cbe245deaf529a5578b6977d91253c: Tx is Unavailable on chain yet"))
+}
+
+#[test]
+#[cfg(not(target_arch = "wasm32"))]
+fn test_for_non_existent_tx_hex_utxo_native() {
+    let client = NativeClientImpl::default();
+
+    static mut OUTPUT_SPEND_CALLED: bool = false;
+    NativeClient::find_output_spend.mock_safe(|_, _, _, _, _| {
+        unsafe { OUTPUT_SPEND_CALLED = true };
+        MockResult::Return(Box::new(futures01::future::ok(None)))
+    });
+    let client = UtxoRpcClientEnum::Native(NativeClient(Arc::new(client)));
+    let coin = utxo_coin_for_test(client, None, false);
+    let tx = vec![
+        4, 0, 0, 128, 133, 32, 47, 137, 1, 81, 146, 94, 240, 227, 116, 153, 194, 232, 25, 255, 192, 110, 155, 208, 14,
+        157, 197, 189, 65, 107, 229, 129, 124, 136, 215, 10, 63, 13, 218, 183, 206, 1, 0, 0, 0, 107, 72, 48, 69, 2, 33,
+        0, 255, 148, 80, 199, 101, 182, 102, 18, 1, 46, 26, 48, 212, 144, 162, 81, 21, 157, 233, 80, 159, 130, 184, 56,
+        98, 183, 189, 115, 233, 233, 30, 60, 2, 32, 124, 220, 236, 219, 101, 75, 139, 241, 185, 174, 16, 112, 127, 128,
+        159, 9, 104, 156, 39, 2, 81, 187, 198, 209, 255, 79, 84, 61, 238, 53, 243, 35, 1, 33, 3, 192, 45, 65, 142, 227,
+        32, 245, 206, 82, 10, 140, 237, 131, 171, 113, 63, 246, 56, 118, 88, 57, 29, 11, 37, 227, 59, 106, 136, 90,
+        252, 3, 72, 255, 255, 255, 255, 3, 0, 225, 245, 5, 0, 0, 0, 0, 23, 169, 20, 27, 130, 67, 246, 162, 41, 162,
+        144, 64, 214, 12, 227, 165, 136, 151, 82, 145, 176, 74, 245, 135, 0, 0, 0, 0, 0, 0, 0, 0, 22, 106, 20, 0, 0, 0,
+        0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 24, 3, 129, 66, 23, 0, 0, 0, 25, 118, 169, 20, 158, 220,
+        162, 160, 79, 133, 71, 112, 148, 22, 186, 113, 239, 163, 18, 241, 138, 161, 220, 132, 136, 172, 174, 23, 247,
+        98, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+    ]; // Bad transaction hex
+    let timeout = (now_ms() / 1000) + 120;
+
+    let actual = coin
+        .wait_for_confirmations(&tx, 1, false, timeout, 1)
+        .wait()
+        .err()
+        .unwrap();
+    assert!(actual.contains("Invalid Tx Hash b4f8d0f3665ccb7a7e1d98cfaba9c77ed4cbe245deaf529a5578b6977d91253c: Tx is Unavailable on chain yet"))
+}
+
+#[test]
 fn test_native_display_balances() {
     let unspents = vec![
         NativeUnspent {

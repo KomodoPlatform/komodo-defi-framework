@@ -48,9 +48,7 @@ macro_rules! rpc_req {
 }
 
 pub type JsonRpcResponseFut =
-    Box<dyn Future<Item = (JsonRpcRemoteAddr, JsonRpcResponseEnum), Error = String> + Send + 'static>;
-pub type JsonRpcTransportErrFut =
-    Box<dyn Future<Item = (JsonRpcRemoteAddr, JsonRpcResponseEnum), Error = JsonRpcTransportError> + Send + 'static>;
+    Box<dyn Future<Item = (JsonRpcRemoteAddr, JsonRpcResponseEnum), Error = JsonRpcError> + Send + 'static>;
 pub type RpcRes<T> = Box<dyn Future<Item = T, Error = JsonRpcError> + Send + 'static>;
 
 /// Address of server from which an Rpc response was received
@@ -239,12 +237,22 @@ impl fmt::Display for JsonRpcError {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result { write!(f, "{:?}", self) }
 }
 
+impl JsonRpcError {
+    pub fn new(client_info: String, request: JsonRpcRequestEnum, error: JsonRpcErrorType) -> Self {
+        Self {
+            client_info,
+            request,
+            error,
+        }
+    }
+}
+
 #[derive(Clone, Debug)]
 pub enum JsonRpcErrorType {
     /// Invalid outgoing request error
     InvalidRequest(String),
     /// Error from transport layer
-    Transport(JsonRpcTransportError),
+    Transport(String),
     /// Response parse error
     Parse(JsonRpcRemoteAddr, String),
     /// The JSON-RPC error returned from server
@@ -270,7 +278,7 @@ pub trait JsonRpcClient {
     /// Sends the given `request` to the remote.
     /// Returns either an address `JsonRpcRemoteAddr` of the responder and the `JsonRpcResponseEnum` response,
     /// or a stringified error.
-    fn transport(&self, request: JsonRpcRequestEnum) -> JsonRpcTransportErrFut;
+    fn transport(&self, request: JsonRpcRequestEnum) -> JsonRpcResponseFut;
 
     /// Sends the given single `request` to the remote and tries to decode the response into `T`.
     fn send_request<T: DeserializeOwned + Send + 'static>(&self, request: JsonRpcRequest) -> RpcRes<T> {
@@ -327,7 +335,7 @@ pub trait JsonRpcMultiClient: JsonRpcClient {
     /// Sends the given `request` to the specified `to_addr` remote.
     /// Returns either an address `JsonRpcRemoteAddr` of the responder and the `JsonRpcResponseEnum` response,
     /// or a stringified error.
-    fn transport_exact(&self, to_addr: String, request: JsonRpcRequestEnum) -> JsonRpcTransportErrFut;
+    fn transport_exact(&self, to_addr: String, request: JsonRpcRequestEnum) -> JsonRpcResponseFut;
 
     /// Sends the given single `request` to the specified `to_addr` remote and tries to decode the response into `T`.
     fn send_request_to<T: DeserializeOwned + Send + 'static>(
@@ -346,7 +354,7 @@ pub trait JsonRpcMultiClient: JsonRpcClient {
 /// Checks if the given `result` is success and contains `JsonRpcResponse`.
 /// Tries to decode the batch response into `T`.
 fn process_transport_single_result<T: DeserializeOwned + Send + 'static>(
-    result: Result<(JsonRpcRemoteAddr, JsonRpcResponseEnum), JsonRpcTransportError>,
+    result: Result<(JsonRpcRemoteAddr, JsonRpcResponseEnum), JsonRpcError>,
     client_info: String,
     request: JsonRpcRequest,
 ) -> Result<T, JsonRpcError> {
@@ -364,21 +372,14 @@ fn process_transport_single_result<T: DeserializeOwned + Send + 'static>(
                 error: JsonRpcErrorType::Parse(remote_addr, error),
             })
         },
-        Err(e) => {
-            println!("{\n}", e);
-            Err(JsonRpcError {
-                client_info,
-                request,
-                error: JsonRpcErrorType::Transport(e),
-            })
-        },
+        Err(e) => Err(e),
     }
 }
 
 /// Checks if the given `result` is success and contains `JsonRpcBatchResponse`.
 /// Tries to decode the batch response into `Vec<T>` in the same order in which they were requested.
 fn process_transport_batch_result<T: DeserializeOwned + Send + 'static>(
-    result: Result<(JsonRpcRemoteAddr, JsonRpcResponseEnum), JsonRpcTransportError>,
+    result: Result<(JsonRpcRemoteAddr, JsonRpcResponseEnum), JsonRpcError>,
     client_info: String,
     request: JsonRpcBatchRequest,
 ) -> Result<Vec<T>, JsonRpcError> {
@@ -395,13 +396,7 @@ fn process_transport_batch_result<T: DeserializeOwned + Send + 'static>(
                 error: JsonRpcErrorType::Parse(remote_addr, error),
             });
         },
-        Err(e) => {
-            return Err(JsonRpcError {
-                client_info,
-                request,
-                error: JsonRpcErrorType::Transport(e),
-            })
-        },
+        Err(e) => return Err(e),
     };
 
     // Turn the vector of responses into a hashmap by their IDs to get quick access to the content of the responses.
@@ -439,7 +434,7 @@ fn process_transport_batch_result<T: DeserializeOwned + Send + 'static>(
             remote_addr.clone(),
             request.clone(),
             single_resp,
-        )?);
+        )?)
     }
     Ok(result)
 }
@@ -468,58 +463,4 @@ fn process_single_response<T: DeserializeOwned + Send + 'static>(
             ERRL!("error {:?} parsing result from response {:?}", e, response),
         ),
     })
-}
-
-use derive_more::Display;
-#[derive(Clone, Debug, Display)]
-pub enum JsonRpcTransportError {
-    ElectrumRequestMulti(String),
-    ElectrumRequestTo(String),
-    HttpError(String),
-    JsonParseError(String),
-    Internal(String),
-    NativeClientImplError(String),
-    SlurpError(String),
-    #[display(
-        fmt = "JsonRpcTransportError: Rpc request {:?} failed with HTTP status code {}, response body: {}",
-        _0,
-        _1,
-        _2
-    )]
-    Transport(JsonRpcRequestEnum, http::StatusCode, TransportErrorBody),
-}
-
-impl From<http::Error> for JsonRpcTransportError {
-    fn from(err: http::Error) -> Self { Self::HttpError(err.to_string()) }
-}
-
-impl From<serde_json::Error> for JsonRpcTransportError {
-    fn from(err: serde_json::Error) -> Self { Self::JsonParseError(err.to_string()) }
-}
-
-impl From<std::str::Utf8Error> for JsonRpcTransportError {
-    fn from(err: std::str::Utf8Error) -> Self { Self::Internal(err.to_string()) }
-}
-
-#[derive(Debug, Serialize, Deserialize, Clone)]
-pub struct TransportErrorBody {
-    pub result: Option<String>,
-    pub error: TransportErrorBodyInner,
-    pub id: String,
-}
-
-impl fmt::Display for TransportErrorBody {
-    fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> fmt::Result {
-        write!(
-            f,
-            "(result: {:?}, error: {:?}, id: {})",
-            self.result, self.error, self.id
-        )
-    }
-}
-
-#[derive(Debug, Serialize, Deserialize, Clone)]
-pub struct TransportErrorBodyInner {
-    pub code: i8,
-    pub message: String,
 }
