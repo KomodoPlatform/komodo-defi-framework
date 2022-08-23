@@ -668,7 +668,8 @@ mod tendermint_coin_tests {
         // Receiver address: iaa1erfnkjsmalkwtvj44qnfr2drfzdt4n9ldh0kjv (iris test2 seed)
 
         let activation_request = TendermintActivationParams {
-            rpc_urls: vec!["http://34.80.202.172:26657".to_string()],
+            rpc_urls: vec!["http://34.80.202.172:26657".to_string()], // testnet
+                                                                      // rpc_urls: vec!["http://seed-2.mainnet.irisnet.org:26657/".to_string()], // mainnet
         };
 
         let protocol_conf = TendermintProtocolInfo {
@@ -702,7 +703,9 @@ mod tendermint_coin_tests {
         let to: AccountId = "iaa1erfnkjsmalkwtvj44qnfr2drfzdt4n9ldh0kjv".parse().unwrap();
 
         let mut amount = vec![Coin {
-            denom: "unyan".parse().unwrap(),
+            denom: "ibc/5C465997B4F582F602CD64E12031C6A6E18CAF1E6EDC9B5D808822DC0B5F850C" // USDC
+                .parse()
+                .unwrap(),
             amount: 1_u64.into(),
         }];
         // Needs to be sorted for creating proper HTLC id
