@@ -174,8 +174,6 @@ impl UtxoRpcClientEnum {
                         }
                     },
                     Err(e) => {
-                        println!("outside {:?}", &e);
-
                         if check_if_tx_onchain(e.get_inner()) {
                             return ERR!("Invalid Tx Hash {:?}: Tx is Unavailable on chain yet", tx_hash);
                         };
@@ -288,7 +286,6 @@ impl From<NumConversError> for UtxoRpcError {
 
 fn check_if_tx_onchain(err: &UtxoRpcError) -> bool {
     if let UtxoRpcError::ResponseParseError(ref json_err) = err {
-        println!("INSIDE {:?}", json_err);
         if let JsonRpcErrorType::Response(_, json) = &json_err.error {
             if json["error"]["code"] == -5 {
                 return true;
@@ -654,10 +651,12 @@ impl JsonRpcClient for NativeClientImpl {
     fn client_info(&self) -> String { UtxoJsonRpcClientInfo::client_info(self) }
 
     #[cfg(target_arch = "wasm32")]
-    fn transport(&self, _request: JsonRpcRequestEnum) -> JsonRpcResponseFut {
-        Box::new(futures01::future::err(ERRL!(
-            "'NativeClientImpl' must be used in native mode only".to_string(),
-        )))
+    fn transport(&self, request: JsonRpcRequestEnum) -> JsonRpcResponseFut {
+        Box::new(futures01::future::err(JsonRpcError {
+            client_info: UtxoJsonRpcClientInfo::client_info(self),
+            request,
+            error: JsonRpcErrorType::Transport("'NativeClientImpl' must be used in native mode only".to_string()),
+        }))
     }
 
     #[cfg(not(target_arch = "wasm32"))]
@@ -665,7 +664,6 @@ impl JsonRpcClient for NativeClientImpl {
         use mm2_net::transport::slurp_req;
 
         let request_body = try_f!(json::to_string(&request).map_err(|e| {
-            println!("body {}", e);
             JsonRpcError {
                 client_info: common::jsonrpc_client::JsonRpcClient::client_info(self),
                 request: request.clone(),
@@ -683,7 +681,6 @@ impl JsonRpcClient for NativeClientImpl {
             .uri(uri.clone())
             .body(Vec::from(request_body))
             .map_err(|e| {
-                println!("hellow orld http_request {}", e);
                 JsonRpcError {
                     client_info: common::jsonrpc_client::JsonRpcClient::client_info(self),
                     request: request.clone(),
@@ -695,36 +692,25 @@ impl JsonRpcClient for NativeClientImpl {
         let client_info = UtxoJsonRpcClientInfo::client_info(self);
         Box::new(slurp_req(http_request).boxed().compat().then(
             move |result| -> Result<(JsonRpcRemoteAddr, JsonRpcResponseEnum), JsonRpcError> {
-                let res = result.map_err(|e| {
-                    println!("hellow orld slurp_req(http_request) {}", e);
-
-                    JsonRpcError {
-                        client_info: client_info.clone(),
-                        request: request.clone(),
-                        error: JsonRpcErrorType::InvalidRequest(e.to_string()),
-                    }
+                let res = result.map_err(|e| JsonRpcError {
+                    client_info: client_info.clone(),
+                    request: request.clone(),
+                    error: JsonRpcErrorType::InvalidRequest(e.to_string()),
                 })?;
                 // measure now only body length, because the `hyper` crate doesn't allow to get total HTTP packet length
                 event_handles.on_incoming_response(&res.2);
 
-                let body = std::str::from_utf8(&res.2).map_err(|e| {
-                    println!("body {}", e);
-
-                    JsonRpcError {
-                        client_info: client_info.clone(),
-                        request: request.clone(),
-                        error: JsonRpcErrorType::InvalidRequest(e.to_string()),
-                    }
+                let body = std::str::from_utf8(&res.2).map_err(|e| JsonRpcError {
+                    client_info: client_info.clone(),
+                    request: request.clone(),
+                    error: JsonRpcErrorType::InvalidRequest(e.to_string()),
                 })?;
 
                 if res.0 != StatusCode::OK {
-                    let res_value = serde_json::from_slice(&res.2).map_err(|e| {
-                        println!("hellow orld StatusCode {}", e);
-                        JsonRpcError {
-                            client_info: client_info.clone(),
-                            request: request.clone(),
-                            error: JsonRpcErrorType::InvalidRequest(e.to_string()),
-                        }
+                    let res_value = serde_json::from_slice(&res.2).map_err(|e| JsonRpcError {
+                        client_info: client_info.clone(),
+                        request: request.clone(),
+                        error: JsonRpcErrorType::InvalidRequest(e.to_string()),
                     })?;
                     return Err(JsonRpcError {
                         client_info: client_info.clone(),
@@ -733,13 +719,10 @@ impl JsonRpcClient for NativeClientImpl {
                     });
                 }
 
-                let response = json::from_str(body).map_err(|e| {
-                    println!("hresponse {}", e);
-                    JsonRpcError {
-                        client_info: client_info.clone(),
-                        request: request.clone(),
-                        error: JsonRpcErrorType::InvalidRequest(e.to_string()),
-                    }
+                let response = json::from_str(body).map_err(|e| JsonRpcError {
+                    client_info: client_info.clone(),
+                    request: request.clone(),
+                    error: JsonRpcErrorType::InvalidRequest(e.to_string()),
                 })?;
                 Ok((uri.into(), response))
             },
