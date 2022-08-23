@@ -6,11 +6,45 @@ use crate::utxo::{GetUtxoListOps, UtxoArc, UtxoCommonOps, UtxoWeak};
 use crate::{PrivKeyBuildPolicy, UtxoActivationParams};
 use async_trait::async_trait;
 use common::executor::spawn;
-use common::log::info;
+use common::log::{info, LogOnError};
+use futures::channel::mpsc::Sender as AsyncSender;
 use futures::future::{abortable, AbortHandle};
 use mm2_core::mm_ctx::MmArc;
 use mm2_err_handle::prelude::*;
 use serde_json::Value as Json;
+
+pub enum UtxoSyncStatus {
+    SyncingBlockHeaders {
+        current_scanned_block: u64,
+        latest_block: u64,
+    },
+    TemporaryError(String),
+    PermanentError(String),
+    Finished {
+        block_number: u64,
+    },
+}
+
+#[derive(Clone)]
+pub struct UtxoSyncStatusLoopHandle(AsyncSender<UtxoSyncStatus>);
+
+impl UtxoSyncStatusLoopHandle {
+    pub fn new(sync_status_notifier: AsyncSender<UtxoSyncStatus>) -> Self {
+        UtxoSyncStatusLoopHandle(sync_status_notifier)
+    }
+
+    pub fn notify_on_temp_error(&mut self, error: String) {
+        self.0
+            .try_send(UtxoSyncStatus::TemporaryError(error))
+            .debug_log_with_msg("No one seems interested in UtxoSyncStatus");
+    }
+
+    pub fn notify_on_permanent_error(&mut self, error: String) {
+        self.0
+            .try_send(UtxoSyncStatus::PermanentError(error))
+            .debug_log_with_msg("No one seems interested in UtxoSyncStatus");
+    }
+}
 
 pub struct UtxoArcBuilder<'a, F, T>
 where
@@ -21,6 +55,7 @@ where
     conf: &'a Json,
     activation_params: &'a UtxoActivationParams,
     priv_key_policy: PrivKeyBuildPolicy<'a>,
+    sync_status_loop_handle: Option<UtxoSyncStatusLoopHandle>,
     constructor: F,
 }
 
@@ -34,6 +69,7 @@ where
         conf: &'a Json,
         activation_params: &'a UtxoActivationParams,
         priv_key_policy: PrivKeyBuildPolicy<'a>,
+        sync_status_loop_handle: Option<UtxoSyncStatusLoopHandle>,
         constructor: F,
     ) -> UtxoArcBuilder<'a, F, T> {
         UtxoArcBuilder {
@@ -42,6 +78,7 @@ where
             conf,
             activation_params,
             priv_key_policy,
+            sync_status_loop_handle,
             constructor,
         }
     }
@@ -59,6 +96,8 @@ where
     fn activation_params(&self) -> &UtxoActivationParams { self.activation_params }
 
     fn ticker(&self) -> &str { self.ticker }
+
+    fn sync_status_loop_handle(&self) -> Option<UtxoSyncStatusLoopHandle> { self.sync_status_loop_handle.clone() }
 }
 
 impl<'a, F, T> UtxoFieldsWithIguanaPrivKeyBuilder for UtxoArcBuilder<'a, F, T> where
@@ -94,6 +133,7 @@ where
             self.ctx.abort_handlers.lock().unwrap().push(abort_handler);
         }
 
+        // Todo: find a better way for this
         if let Some(abort_handler) =
             self.spawn_block_header_utxo_loop_if_required(utxo_weak, &rpc_client, self.constructor.clone())
         {
@@ -156,20 +196,25 @@ pub trait BlockHeaderUtxoArcOps<T>: UtxoCoinBuilderCommonOps {
         F: Fn(UtxoArc) -> T + Send + Sync + 'static,
         T: UtxoCommonOps,
     {
-        if !rpc_client.is_native() {
-            let ticker = self.ticker().to_owned();
-            let (fut, abort_handle) = abortable(block_header_utxo_loop(weak, constructor));
-            info!("Starting UTXO block header loop for coin {}", ticker);
-            spawn(async move {
-                if let Err(e) = fut.await {
-                    info!(
-                        "spawn_block_header_utxo_loop_if_required stopped for {}, reason {}",
-                        ticker, e
-                    );
-                }
-            });
-            return Some(abort_handle);
+        // Todo:  add condition for enable_spv_proof (should block headers be saved when enable_spv_proof is true only? what about for getting tx height?)
+        // Todo: because of sync_status_loop_handle this whole function might be refactored (rpc_client.is_native() should be checked when creating sync_status_loop_handle)
+        if let Some(sync_status_loop_handle) = self.sync_status_loop_handle() {
+            if !rpc_client.is_native() {
+                let ticker = self.ticker().to_owned();
+                let (fut, abort_handle) = abortable(block_header_utxo_loop(weak, constructor, sync_status_loop_handle));
+                info!("Starting UTXO block header loop for coin {}", ticker);
+                spawn(async move {
+                    if let Err(e) = fut.await {
+                        info!(
+                            "spawn_block_header_utxo_loop_if_required stopped for {}, reason {}",
+                            ticker, e
+                        );
+                    }
+                });
+                return Some(abort_handle);
+            }
         }
+
         None
     }
 }

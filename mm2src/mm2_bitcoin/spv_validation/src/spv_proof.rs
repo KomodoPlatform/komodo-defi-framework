@@ -31,7 +31,6 @@ pub struct SPVProof {
 /// # Notes
 /// Re-write with our own types based on `bitcoin_spv::std_types::SPVProof::validate`
 impl SPVProof {
-    // Todo: This can be a part of block headers storage trait or a trait implemented for it (or maybe pass blockheader storage to this function)
     pub fn validate(&self, validated_header: &BlockHeader) -> Result<(), SPVError> {
         if !validate_vin(self.vin.as_slice()) {
             return Err(SPVError::InvalidVin);

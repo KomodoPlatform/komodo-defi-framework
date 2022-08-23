@@ -49,7 +49,6 @@ impl SimplePaymentVerification for ElectrumClient {
                 return MmError::err(SPVError::Timeout);
             }
 
-            // Todo: break up this function to blockchain_transaction_get_merkle, block_header_from_storage
             match self.get_merkle_and_validated_header(tx).await {
                 Ok(res) => break res,
                 Err(e) => {

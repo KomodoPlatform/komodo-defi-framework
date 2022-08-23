@@ -12,24 +12,15 @@ use std::fmt::{Debug, Formatter};
 
 pub struct BlockHeaderStorage {
     pub inner: Box<dyn BlockHeaderStorageOps>,
-    // Todo: BlockHeaderVerificationParams should be initialized with coin activation when spv is enabled (will be used in lopp only)
-    // pub params: BlockHeaderVerificationParams,
 }
 
 impl Debug for BlockHeaderStorage {
     fn fmt(&self, _f: &mut Formatter<'_>) -> std::fmt::Result { Ok(()) }
 }
 
-// Todo: check if it's better to remove this?
-pub trait InitBlockHeaderStorageOps: Send + Sync + 'static {
-    fn new_from_ctx(ctx: MmArc) -> Result<BlockHeaderStorage, BlockHeaderStorageError>
-    where
-        Self: Sized;
-}
-
-impl InitBlockHeaderStorageOps for BlockHeaderStorage {
+impl BlockHeaderStorage {
     #[cfg(not(target_arch = "wasm32"))]
-    fn new_from_ctx(ctx: MmArc) -> Result<Self, BlockHeaderStorageError> {
+    pub(crate) fn new_from_ctx(ctx: MmArc) -> Result<Self, BlockHeaderStorageError> {
         let sqlite_connection = ctx.sqlite_connection.ok_or(BlockHeaderStorageError::Internal(
             "sqlite_connection is not initialized".to_owned(),
         ))?;
@@ -39,7 +30,7 @@ impl InitBlockHeaderStorageOps for BlockHeaderStorage {
     }
 
     #[cfg(target_arch = "wasm32")]
-    fn new_from_ctx(_ctx: MmArc) -> Result<Self, BlockHeaderStorageError> {
+    pub(crate) fn new_from_ctx(_ctx: MmArc) -> Result<Self, BlockHeaderStorageError> {
         Ok(BlockHeaderStorage {
             inner: Box::new(IndexedDBBlockHeadersStorage {}),
         })

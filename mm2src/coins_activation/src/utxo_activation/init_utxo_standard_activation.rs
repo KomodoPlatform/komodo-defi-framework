@@ -8,11 +8,13 @@ use crate::utxo_activation::init_utxo_standard_statuses::{UtxoStandardAwaitingSt
                                                           UtxoStandardUserAction};
 use crate::utxo_activation::utxo_standard_activation_result::UtxoStandardActivationResult;
 use async_trait::async_trait;
-use coins::utxo::utxo_builder::{UtxoArcBuilder, UtxoCoinBuilder};
+use coins::utxo::utxo_builder::{UtxoArcBuilder, UtxoCoinBuilder, UtxoSyncStatus, UtxoSyncStatusLoopHandle};
 use coins::utxo::utxo_standard::UtxoStandardCoin;
 use coins::utxo::UtxoActivationParams;
 use coins::CoinProtocol;
 use crypto::CryptoCtx;
+use futures::channel::mpsc::channel;
+use futures::StreamExt;
 use mm2_core::mm_ctx::MmArc;
 use mm2_err_handle::prelude::*;
 use serde_json::Value as Json;
@@ -48,16 +50,31 @@ impl InitStandaloneCoinActivationOps for UtxoStandardCoin {
         &activation_ctx.init_utxo_standard_task_manager
     }
 
+    // Todo:  in test should check that it will continue syncing after the coin is activated
     async fn init_standalone_coin(
         ctx: MmArc,
         ticker: String,
         coin_conf: Json,
         activation_request: &Self::ActivationRequest,
         _protocol_info: Self::StandaloneProtocol,
-        _task_handle: &UtxoStandardRpcTaskHandle,
+        task_handle: &UtxoStandardRpcTaskHandle,
     ) -> MmResult<Self, InitUtxoStandardError> {
         let crypto_ctx = CryptoCtx::from_ctx(&ctx)?;
         let priv_key_policy = priv_key_build_policy(&crypto_ctx, activation_request.priv_key_policy);
+
+        // todo: add a function for this instead of coin.as_ref().conf.enable_spv_proof && !coin.as_ref().rpc_client.is_native()
+        // Todo: should this step be used before this or maybe inside UtxoArcBuilder??
+        // Todo: channel can be used to send errors after coin init to rotate_servers etc..
+        let (sync_status_loop_handle, maybe_sync_watcher) =
+            if coin_conf["enable_spv_proof"].as_bool().unwrap_or(false) && !activation_request.mode.is_native() {
+                let (sync_status_notifier, sync_watcher) = channel(1);
+                (
+                    Some(UtxoSyncStatusLoopHandle::new(sync_status_notifier)),
+                    Some(sync_watcher),
+                )
+            } else {
+                (None, None)
+            };
 
         let coin = UtxoArcBuilder::new(
             &ctx,
@@ -65,11 +82,46 @@ impl InitStandaloneCoinActivationOps for UtxoStandardCoin {
             &coin_conf,
             activation_request,
             priv_key_policy,
+            sync_status_loop_handle,
             UtxoStandardCoin::from,
         )
         .build()
         .await
         .mm_err(|e| InitUtxoStandardError::from_build_err(e, ticker.clone()))?;
+
+        if let Some(mut sync_watcher) = maybe_sync_watcher {
+            loop {
+                // todo:  should this be a timeouterror?
+                let in_progress_status =
+                    match sync_watcher
+                        .next()
+                        .await
+                        .ok_or(InitUtxoStandardError::CoinCreationError {
+                            ticker: ticker.clone(),
+                            error: "Error waiting for block headers synchronization status!".into(),
+                        })? {
+                        UtxoSyncStatus::SyncingBlockHeaders {
+                            current_scanned_block,
+                            latest_block,
+                        } => UtxoStandardInProgressStatus::SyncingBlockHeaders {
+                            current_scanned_block,
+                            latest_block,
+                        },
+                        UtxoSyncStatus::TemporaryError(e) => UtxoStandardInProgressStatus::TemporaryError(e),
+                        // Todo: should it be a new error type other than CoinCreationError or maybe internal??
+                        UtxoSyncStatus::PermanentError(e) => {
+                            return Err(InitUtxoStandardError::CoinCreationError {
+                                ticker: ticker.clone(),
+                                error: e,
+                            }
+                            .into())
+                        },
+                        UtxoSyncStatus::Finished { .. } => break,
+                    };
+                task_handle.update_in_progress_status(in_progress_status)?;
+            }
+        }
+
         Ok(coin)
     }
 

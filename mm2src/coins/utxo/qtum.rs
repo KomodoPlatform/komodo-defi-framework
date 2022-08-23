@@ -14,7 +14,7 @@ use crate::rpc_command::init_scan_for_new_addresses::{self, InitScanAddressesRpc
 use crate::rpc_command::init_withdraw::{InitWithdrawCoin, WithdrawTaskHandle};
 use crate::utxo::utxo_builder::{BlockHeaderUtxoArcOps, MergeUtxoArcOps, UtxoCoinBuildError, UtxoCoinBuilder,
                                 UtxoCoinBuilderCommonOps, UtxoFieldsWithHardwareWalletBuilder,
-                                UtxoFieldsWithIguanaPrivKeyBuilder};
+                                UtxoFieldsWithIguanaPrivKeyBuilder, UtxoSyncStatusLoopHandle};
 use crate::{eth, CanRefundHtlc, CoinBalance, CoinWithDerivationMethod, DelegationError, DelegationFut,
             GetWithdrawSenderAddress, NegotiateSwapContractAddrErr, PrivKeyBuildPolicy, SearchForSwapTxSpendInput,
             SignatureResult, StakingInfosFut, SwapOps, TradePreimageValue, TransactionFut, UnexpectedDerivationMethod,
@@ -201,6 +201,8 @@ impl<'a> UtxoCoinBuilderCommonOps for QtumCoinBuilder<'a> {
 
     fn ticker(&self) -> &str { self.ticker }
 
+    fn sync_status_loop_handle(&self) -> Option<UtxoSyncStatusLoopHandle> { None }
+
     fn check_utxo_maturity(&self) -> bool { self.activation_params().check_utxo_maturity.unwrap_or(true) }
 }
 
@@ -217,20 +219,22 @@ impl<'a> UtxoCoinBuilder for QtumCoinBuilder<'a> {
 
     async fn build(self) -> MmResult<Self::ResultCoin, Self::Error> {
         let utxo = self.build_utxo_fields().await?;
-        let rpc_client = utxo.rpc_client.clone();
+        // Todo: Remove this if other comment is removed
+        // let rpc_client = utxo.rpc_client.clone();
         let utxo_arc = UtxoArc::new(utxo);
         let utxo_weak = utxo_arc.downgrade();
         let result_coin = QtumCoin::from(utxo_arc);
 
-        if let Some(abort_handler) = self.spawn_merge_utxo_loop_if_required(utxo_weak.clone(), QtumCoin::from) {
+        if let Some(abort_handler) = self.spawn_merge_utxo_loop_if_required(utxo_weak, QtumCoin::from) {
             self.ctx.abort_handlers.lock().unwrap().push(abort_handler);
         }
 
-        if let Some(abort_handler) =
-            self.spawn_block_header_utxo_loop_if_required(utxo_weak, &rpc_client, QtumCoin::from)
-        {
-            self.ctx.abort_handlers.lock().unwrap().push(abort_handler);
-        }
+        // Todo: Remove this or add it to qtum
+        // if let Some(abort_handler) =
+        //     self.spawn_block_header_utxo_loop_if_required(utxo_weak, &rpc_client, QtumCoin::from, self.sync_status_notifier)
+        // {
+        //     self.ctx.abort_handlers.lock().unwrap().push(abort_handler);
+        // }
 
         Ok(result_coin)
     }

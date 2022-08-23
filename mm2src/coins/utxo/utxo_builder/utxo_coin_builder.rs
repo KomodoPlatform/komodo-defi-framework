@@ -3,7 +3,8 @@ use crate::hd_wallet_storage::{HDWalletCoinStorage, HDWalletStorageError};
 use crate::utxo::rpc_clients::{ElectrumClient, ElectrumClientImpl, ElectrumRpcRequest, EstimateFeeMethod,
                                UtxoRpcClientEnum};
 use crate::utxo::tx_cache::{UtxoVerboseCacheOps, UtxoVerboseCacheShared};
-use crate::utxo::utxo_block_header_storage::{BlockHeaderStorage, InitBlockHeaderStorageOps};
+use crate::utxo::utxo_block_header_storage::BlockHeaderStorage;
+use crate::utxo::utxo_builder::utxo_arc_builder::UtxoSyncStatusLoopHandle;
 use crate::utxo::utxo_builder::utxo_conf_builder::{UtxoConfBuilder, UtxoConfError, UtxoConfResult};
 use crate::utxo::{output_script, utxo_common, ElectrumBuilderArgs, ElectrumProtoVerifier, RecentlySpentOutPoints,
                   TxFee, UtxoCoinConf, UtxoCoinFields, UtxoHDAccount, UtxoHDWallet, UtxoRpcMode, DEFAULT_GAP_LIMIT,
@@ -284,6 +285,8 @@ pub trait UtxoCoinBuilderCommonOps {
     fn activation_params(&self) -> &UtxoActivationParams;
 
     fn ticker(&self) -> &str;
+
+    fn sync_status_loop_handle(&self) -> Option<UtxoSyncStatusLoopHandle>;
 
     fn address_format(&self) -> UtxoCoinBuildResult<UtxoAddressFormat> {
         let format_from_req = self.activation_params().address_format.clone();

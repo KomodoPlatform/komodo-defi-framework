@@ -50,13 +50,13 @@ use std::sync::atomic::Ordering as AtomicOrdering;
 use utxo_signer::with_key_pair::p2sh_spend;
 use utxo_signer::UtxoSignerOps;
 
+use crate::utxo::utxo_builder::UtxoSyncStatusLoopHandle;
 pub use chain::Transaction as UtxoTx;
 
 pub const DEFAULT_FEE_VOUT: usize = 0;
 pub const DEFAULT_SWAP_TX_SPEND_SIZE: u64 = 305;
 pub const DEFAULT_SWAP_VOUT: usize = 0;
 const MIN_BTC_TRADING_VOL: &str = "0.00777";
-// Todo: should I keep this or get it from config
 const BLOCK_HEADERS_LOOP_INTERVAL: f64 = 60.;
 
 macro_rules! true_or {
@@ -3435,8 +3435,13 @@ fn increase_by_percent(num: u64, percent: f64) -> u64 {
     num + (percent.round() as u64)
 }
 
-// Todo: This loop needs to be called when getting headers is enabled in conf only after getting all the headers when activating coin
-pub async fn block_header_utxo_loop<T: UtxoCommonOps>(weak: UtxoWeak, constructor: impl Fn(UtxoArc) -> T) {
+// Todo:  This loop needs to be called when getting headers is enabled in conf only after getting all the headers when activating coin
+// Todo:  add test for enabling utxo with enable_spv_proof to check that all the headers are retrieved right (should be ignored cause it will take a long time)
+pub async fn block_header_utxo_loop<T: UtxoCommonOps>(
+    weak: UtxoWeak,
+    constructor: impl Fn(UtxoArc) -> T,
+    mut sync_status_loop_handle: UtxoSyncStatusLoopHandle,
+) {
     {
         let coin = match weak.upgrade() {
             Some(arc) => constructor(arc),
@@ -3462,37 +3467,64 @@ pub async fn block_header_utxo_loop<T: UtxoCommonOps>(weak: UtxoWeak, constructo
             Err(_e) => return,
         };
     }
+    // Todo: should notify the status not only the errors
     while let Some(arc) = weak.upgrade() {
         let coin = constructor(arc);
         let client = match &coin.as_ref().rpc_client {
+            // Todo:  should I send UtxoSyncStatus::Finished here just in case?
             UtxoRpcClientEnum::Native(_) => break,
             UtxoRpcClientEnum::Electrum(client) => client,
         };
 
         let ticker = coin.as_ref().conf.ticker.as_str();
         let storage = client.block_headers_storage();
-        let from_block_height =
-            ok_or_continue_after_sleep!(storage.get_last_block_height(ticker).await, BLOCK_HEADERS_LOOP_INTERVAL) + 1;
+        let from_block_height = match storage.get_last_block_height(ticker).await {
+            Ok(h) => h + 1,
+            Err(e) => {
+                error!("Error {} on getting the height of the last stored header in DB!", e);
+                sync_status_loop_handle.notify_on_temp_error(e.to_string());
+                Timer::sleep(BLOCK_HEADERS_LOOP_INTERVAL).await;
+                continue;
+            },
+        };
+
         // Todo: what to do about chain reorganization??
-        let to_block_height = ok_or_continue_after_sleep!(
-            coin.as_ref().rpc_client.get_block_count().compat().await,
-            BLOCK_HEADERS_LOOP_INTERVAL
-        );
-        let (block_registry, block_headers) = ok_or_continue_after_sleep!(
-            client
-                .retrieve_headers(from_block_height, to_block_height)
-                .compat()
-                .await,
-            BLOCK_HEADERS_LOOP_INTERVAL
-        );
-        // Todo: check this again (now if block_headers_verification_params is none in coin config headers will be added without validation)
+        let to_block_height = match coin.as_ref().rpc_client.get_block_count().compat().await {
+            Ok(h) => h,
+            Err(e) => {
+                error!("Error {} on getting the height of the latest block from rpc!", e);
+                sync_status_loop_handle.notify_on_temp_error(e.to_string());
+                Timer::sleep(BLOCK_HEADERS_LOOP_INTERVAL).await;
+                continue;
+            },
+        };
+
+        let (block_registry, block_headers) = match client
+            .retrieve_headers(from_block_height, to_block_height)
+            .compat()
+            .await
+        {
+            Ok(res) => res,
+            Err(e) => {
+                error!("Error {} on retrieving the latest headers from rpc!", e);
+                sync_status_loop_handle.notify_on_temp_error(e.to_string());
+                Timer::sleep(BLOCK_HEADERS_LOOP_INTERVAL).await;
+                continue;
+            },
+        };
+
+        // Todo: an attack can be used to send a fake header to fail validating and can't confirm a tx, should use a different server in such case (watch towers shall help)
         if let Some(params) = &coin.as_ref().conf.block_headers_verification_params {
-            ok_or_continue_after_sleep!(
-                validate_headers(ticker, from_block_height, block_headers, storage, params,).await,
-                BLOCK_HEADERS_LOOP_INTERVAL
-            );
+            if let Err(e) = validate_headers(ticker, from_block_height, block_headers, storage, params).await {
+                error!("Error {} on validating the latest headers!", e);
+                sync_status_loop_handle.notify_on_permanent_error(e.to_string());
+                // Todo: should rotate_servers here, if error is not due to rpc (instead of waiting)??? (should also check if error is due to RPC or not before sending permanent_error)
+                Timer::sleep(BLOCK_HEADERS_LOOP_INTERVAL).await;
+                continue;
+            }
         }
 
+        // Todo: remove ok_or_continue_after_sleep
         ok_or_continue_after_sleep!(
             storage.add_block_headers_to_storage(ticker, block_registry).await,
             BLOCK_HEADERS_LOOP_INTERVAL

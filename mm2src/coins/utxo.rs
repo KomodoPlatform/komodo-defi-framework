@@ -508,11 +508,11 @@ pub struct UtxoCoinConf {
     pub estimate_fee_blocks: u32,
     /// The name of the coin with which Trezor wallet associates this asset.
     pub trezor_coin: Option<TrezorUtxoCoin>,
-    /// Used in condition where the coin will validate spv proof or not
+    /// Whether to verify swaps and lightning transactions using spv or not. When enabled, block headers will be retrieved, verified according
+    /// to block_headers_verification_params and stored in the DB. Can be false if the coin's RPC server is trusted.
     pub enable_spv_proof: bool,
-    /// The parameters that specify how the coin block headers should be verified if spv proof is enabled
-    // Todo: "if spv proof is enabled"? maybe if block headers storage is enabled (enable spv can't be on without having blockheaders in storage)
-    // Todo: maybe refacor enable_spv_proof, block_headers_verification_params
+    /// The parameters that specify how the coin block headers should be verified. If None and enable_spv_proof is true,
+    /// headers will be saved in DB without verification, can be none if the coin's RPC server is trusted.
     pub block_headers_verification_params: Option<BlockHeaderVerificationParams>,
 }
 
@@ -1317,6 +1317,11 @@ impl UtxoActivationParams {
 pub enum UtxoRpcMode {
     Native,
     Electrum { servers: Vec<ElectrumRpcRequest> },
+}
+
+impl UtxoRpcMode {
+    #[inline]
+    pub fn is_native(&self) -> bool { matches!(*self, UtxoRpcMode::Native) }
 }
 
 #[derive(Debug)]
