@@ -88,8 +88,8 @@ mod tests {
     }
 
     #[test]
-    fn test_xpub_new_replacing_magic_prefix() {
-        let xpub = XPubConverter::new_replacing_magic_prefix("dgub8sze3tX1SkRjWEwiuLhVpYk7qMCp4fyawZRdg2BLaBzeuYBNvVGupd7BBHmRaLR725Ppmgg7X9oYkSqoaYLqFaWJCdykX5u3em5nu7kmxtZ".to_string()).unwrap();
+    fn test_xpub_replace_magic_prefix() {
+        let xpub = XPubConverter::replace_magic_prefix("dgub8sze3tX1SkRjWEwiuLhVpYk7qMCp4fyawZRdg2BLaBzeuYBNvVGupd7BBHmRaLR725Ppmgg7X9oYkSqoaYLqFaWJCdykX5u3em5nu7kmxtZ".to_string()).unwrap();
         assert_eq!(xpub, "xpub6DUpU8UQuf4KL15Mc3tYPTTCb44K16q4u7E76iB7FyCvMLmuypkZ9a2UpDGSCN1e2LswKnyov9bbjiXn1oh6FkekAwaEzp7wJAoBBY6GsKm");
     }
 }
