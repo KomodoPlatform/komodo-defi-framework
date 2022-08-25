@@ -24,8 +24,8 @@ pub enum GetNewAddressRpcError {
     ErrorDerivingAddress(String),
     #[display(fmt = "Addresses limit reached. Max number of addresses: {}", max_addresses_number)]
     AddressLimitReached { max_addresses_number: u32 },
-    #[display(fmt = "Last address '{}' is still unused", address)]
-    LastAddressNotUsed { address: String },
+    #[display(fmt = "Empty addresses limit reached. Gap limit: {}", gap_limit)]
+    EmptyAddressesLimitReached { gap_limit: u32 },
     #[display(fmt = "Electrum/Native RPC invalid response: {}", _0)]
     RpcInvalidResponse(String),
     #[display(fmt = "HD wallet storage error: {}", _0)]
@@ -102,7 +102,7 @@ impl HttpStatusCode for GetNewAddressRpcError {
             | GetNewAddressRpcError::InvalidBip44Chain { .. }
             | GetNewAddressRpcError::ErrorDerivingAddress(_)
             | GetNewAddressRpcError::AddressLimitReached { .. }
-            | GetNewAddressRpcError::LastAddressNotUsed { .. } => StatusCode::BAD_REQUEST,
+            | GetNewAddressRpcError::EmptyAddressesLimitReached { .. } => StatusCode::BAD_REQUEST,
             GetNewAddressRpcError::Transport(_)
             | GetNewAddressRpcError::RpcInvalidResponse(_)
             | GetNewAddressRpcError::WalletStorageError(_)
@@ -120,8 +120,9 @@ pub struct GetNewAddressRequest {
 
 #[derive(Deserialize)]
 pub struct GetNewAddressParams {
-    account_id: u32,
-    chain: Bip44Chain,
+    pub(crate) account_id: u32,
+    pub(crate) chain: Option<Bip44Chain>,
+    pub(crate) gap_limit: Option<u32>,
 }
 
 #[derive(Serialize)]
@@ -129,16 +130,16 @@ pub struct GetNewAddressResponse {
     new_address: HDAddressBalance,
 }
 
-#[derive(Serialize)]
+#[derive(Debug, PartialEq, Serialize)]
 #[serde(tag = "reason", content = "details")]
 pub enum CantGetNewAddressReason {
     /// The addresses limit reached.
     AddressLimitReached { max_addresses_number: u32 },
-    /// Last address is still unused.
-    LastAddressNotUsed { address: String },
+    /// Last `gap_limit` addresses are still unused.
+    EmptyAddressesLimitReached { gap_limit: u32 },
 }
 
-#[derive(Serialize)]
+#[derive(Debug, PartialEq, Serialize)]
 pub struct CanGetNewAddressResponse {
     allowed: bool,
     #[serde(flatten)]
@@ -147,14 +148,14 @@ pub struct CanGetNewAddressResponse {
 }
 
 impl CanGetNewAddressResponse {
-    fn allowed() -> CanGetNewAddressResponse {
+    pub(crate) fn allowed() -> CanGetNewAddressResponse {
         CanGetNewAddressResponse {
             allowed: true,
             reason: None,
         }
     }
 
-    fn not_allowed(reason: CantGetNewAddressReason) -> CanGetNewAddressResponse {
+    pub(crate) fn not_allowed(reason: CantGetNewAddressReason) -> CanGetNewAddressResponse {
         CanGetNewAddressResponse {
             allowed: false,
             reason: Some(reason),
@@ -203,7 +204,7 @@ pub async fn get_new_address(
 
 pub mod common_impl {
     use super::*;
-    use crate::coin_balance::{AddressBalanceStatus, HDWalletBalanceOps};
+    use crate::coin_balance::{HDAddressBalanceScanner, HDWalletBalanceOps};
     use crate::hd_wallet::{HDAccountOps, HDWalletCoinOps, HDWalletOps};
     use crate::{CoinWithDerivationMethod, HDAddress};
     use crypto::RpcDerivationPath;
@@ -227,7 +228,9 @@ pub mod common_impl {
             .await
             .or_mm_err(|| GetNewAddressRpcError::UnknownAccount { account_id })?;
 
-        can_get_new_address(coin, hd_wallet, &hd_account, params.chain)
+        let chain = params.chain.unwrap_or_else(|| hd_wallet.default_receiver_chain());
+        let gap_limit = params.gap_limit.unwrap_or_else(|| hd_wallet.gap_limit());
+        can_get_new_address(coin, hd_wallet, &hd_account, chain, gap_limit)
             .await
             .mm_err(GetNewAddressRpcError::from)
     }
@@ -241,22 +244,27 @@ pub mod common_impl {
             HDWalletBalanceOps + CoinWithDerivationMethod<HDWallet = <Coin as HDWalletCoinOps>::HDWallet> + Sync + Send,
         <Coin as HDWalletCoinOps>::Address: fmt::Display,
     {
-        let account_id = params.account_id;
-        let chain = params.chain;
-
         let hd_wallet = coin.derivation_method().hd_wallet_or_err()?;
+
+        let account_id = params.account_id;
         let mut hd_account = hd_wallet
-            .get_account_mut(params.account_id)
+            .get_account_mut(account_id)
             .await
             .or_mm_err(|| GetNewAddressRpcError::UnknownAccount { account_id })?;
 
+        let chain = params.chain.unwrap_or_else(|| hd_wallet.default_receiver_chain());
+        let gap_limit = params.gap_limit.unwrap_or_else(|| hd_wallet.gap_limit());
+
         // Check if we can generate new address.
-        match can_get_new_address(coin, hd_wallet, &hd_account, chain).await?.reason {
+        match can_get_new_address(coin, hd_wallet, &hd_account, chain, gap_limit)
+            .await?
+            .reason
+        {
             Some(CantGetNewAddressReason::AddressLimitReached { max_addresses_number }) => {
                 return MmError::err(GetNewAddressRpcError::AddressLimitReached { max_addresses_number })
             },
-            Some(CantGetNewAddressReason::LastAddressNotUsed { address }) => {
-                return MmError::err(GetNewAddressRpcError::LastAddressNotUsed { address })
+            Some(CantGetNewAddressReason::EmptyAddressesLimitReached { gap_limit }) => {
+                return MmError::err(GetNewAddressRpcError::EmptyAddressesLimitReached { gap_limit })
             },
             // We can generate new address. Proceed.
             None => (),
@@ -286,15 +294,17 @@ pub mod common_impl {
         hd_wallet: &Coin::HDWallet,
         hd_account: &Coin::HDAccount,
         chain: Bip44Chain,
+        gap_limit: u32,
     ) -> MmResult<CanGetNewAddressResponse, GetNewAddressRpcError>
     where
         Coin: HDWalletBalanceOps + Sync,
         <Coin as HDWalletCoinOps>::Address: fmt::Display,
     {
         let known_addresses_number = hd_account.known_addresses_number(chain)?;
-        if known_addresses_number == 0 {
+        if known_addresses_number == 0 || gap_limit >= known_addresses_number {
             return Ok(CanGetNewAddressResponse::allowed());
         }
+
         let max_addresses_number = hd_wallet.address_limit();
         if known_addresses_number >= max_addresses_number {
             return Ok(CanGetNewAddressResponse::not_allowed(
@@ -302,19 +312,26 @@ pub mod common_impl {
             ));
         }
 
+        let address_scanner = coin.produce_hd_address_scanner().await?;
+
         // Address IDs start from 0, so the `last_known_address_id = known_addresses_number - 1`.
         // At this point we are sure that `known_addresses_number > 0`.
         let last_address_id = known_addresses_number - 1;
-        let HDAddress { address, .. } = coin.derive_address(hd_account, chain, last_address_id)?;
 
-        let address_scanner = coin.produce_hd_address_scanner().await?;
-        match coin.is_address_used(&address, &address_scanner).await? {
-            AddressBalanceStatus::Used(_) => Ok(CanGetNewAddressResponse::allowed()),
-            AddressBalanceStatus::NotUsed => Ok(CanGetNewAddressResponse::not_allowed(
-                CantGetNewAddressReason::LastAddressNotUsed {
-                    address: address.to_string(),
-                },
-            )),
+        for address_id in (0..=last_address_id).rev() {
+            let empty_addresses_number = last_address_id - address_id;
+            if empty_addresses_number > gap_limit {
+                return Ok(CanGetNewAddressResponse::not_allowed(
+                    CantGetNewAddressReason::EmptyAddressesLimitReached { gap_limit },
+                ));
+            }
+
+            let HDAddress { address, .. } = coin.derive_address(hd_account, chain, address_id)?;
+            if address_scanner.is_address_used(&address).await? {
+                return Ok(CanGetNewAddressResponse::allowed());
+            }
         }
+
+        Ok(CanGetNewAddressResponse::allowed())
     }
 }

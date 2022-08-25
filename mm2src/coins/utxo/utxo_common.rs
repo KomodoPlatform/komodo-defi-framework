@@ -283,7 +283,7 @@ where
 
     let mut unused_addresses_counter = 0;
     let max_addresses_number = hd_wallet.address_limit();
-    while checking_address_id < max_addresses_number && unused_addresses_counter < gap_limit {
+    while checking_address_id < max_addresses_number && unused_addresses_counter <= gap_limit {
         let HDAddress {
             address: checking_address,
             derivation_path: checking_address_der_path,

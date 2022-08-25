@@ -1,6 +1,6 @@
 use super::*;
-use crate::coin_balance::{self, EnableCoinBalanceError, HDAccountBalance, HDAddressBalance, HDWalletBalance,
-                          HDWalletBalanceOps};
+use crate::coin_balance::{self, EnableCoinBalanceError, EnabledCoinBalanceParams, HDAccountBalance, HDAddressBalance,
+                          HDWalletBalance, HDWalletBalanceOps};
 use crate::hd_pubkey::{ExtractExtendedPubkey, HDExtractPubkeyError, HDXPubExtractor};
 use crate::hd_wallet::{AccountUpdatingError, AddressDerivingError, HDAccountMut, NewAccountCreatingError};
 use crate::hd_wallet_storage::HDWalletCoinWithStorageOps;
@@ -997,12 +997,12 @@ impl HDWalletBalanceOps for QtumCoin {
         &self,
         hd_wallet: &Self::HDWallet,
         xpub_extractor: &XPubExtractor,
-        scan_policy: EnableCoinScanPolicy,
+        params: EnabledCoinBalanceParams,
     ) -> MmResult<HDWalletBalance, EnableCoinBalanceError>
     where
         XPubExtractor: HDXPubExtractor + Sync,
     {
-        coin_balance::common_impl::enable_hd_wallet(self, hd_wallet, xpub_extractor, scan_policy).await
+        coin_balance::common_impl::enable_hd_wallet(self, hd_wallet, xpub_extractor, params).await
     }
 
     async fn scan_for_new_addresses(

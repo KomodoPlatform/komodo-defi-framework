@@ -1,6 +1,6 @@
 use crate::standalone_coin::InitStandaloneCoinError;
 use coins::coin_balance::EnableCoinBalanceError;
-use coins::hd_wallet::NewAccountCreatingError;
+use coins::hd_wallet::{NewAccountCreatingError, NewAddressDerivingError};
 use coins::utxo::utxo_builder::UtxoCoinBuildError;
 use coins::{BalanceError, RegisterCoinError};
 use crypto::{CryptoInitError, HwError, HwRpcError};
@@ -71,8 +71,18 @@ impl InitUtxoStandardError {
 
     pub fn from_enable_coin_balance_err(enable_coin_balance_err: EnableCoinBalanceError, ticker: String) -> Self {
         match enable_coin_balance_err {
+            EnableCoinBalanceError::NewAddressDerivingError(addr) => {
+                Self::from_new_address_deriving_error(addr, ticker)
+            },
             EnableCoinBalanceError::NewAccountCreatingError(acc) => Self::from_new_account_err(acc, ticker),
             EnableCoinBalanceError::BalanceError(balance) => Self::from_balance_err(balance, ticker),
+        }
+    }
+
+    fn from_new_address_deriving_error(new_addr_err: NewAddressDerivingError, ticker: String) -> Self {
+        InitUtxoStandardError::CoinCreationError {
+            ticker,
+            error: new_addr_err.to_string(),
         }
     }
 

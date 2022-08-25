@@ -41,7 +41,7 @@ where
     let xpub_extractor = RpcTaskXPubExtractor::new_unchecked(ctx, task_handle, xpub_extractor_rpc_statuses());
     task_handle.update_in_progress_status(UtxoStandardInProgressStatus::RequestingWalletBalance)?;
     let wallet_balance = coin
-        .enable_coin_balance(&xpub_extractor, activation_params.scan_policy)
+        .enable_coin_balance(&xpub_extractor, activation_params.enable_params.clone())
         .await
         .mm_err(|enable_err| InitUtxoStandardError::from_enable_coin_balance_err(enable_err, ticker.clone()))?;
     task_handle.update_in_progress_status(UtxoStandardInProgressStatus::ActivatingCoin)?;

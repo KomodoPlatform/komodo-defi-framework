@@ -19,8 +19,9 @@ pub type HDAccountMut<'a, HDAccount> = AsyncMappedMutexGuard<'a, HDAccountsMap<H
 
 const DEFAULT_ADDRESS_LIMIT: u32 = ChildNumber::HARDENED_FLAG;
 const DEFAULT_ACCOUNT_LIMIT: u32 = ChildNumber::HARDENED_FLAG;
+const DEFAULT_RECEIVER_CHAIN: Bip44Chain = Bip44Chain::External;
 
-#[derive(Display)]
+#[derive(Debug, Display)]
 pub enum AddressDerivingError {
     #[display(fmt = "BIP32 address deriving error: {}", _0)]
     Bip32Error(Bip32Error),
@@ -42,10 +43,15 @@ impl From<AddressDerivingError> for WithdrawError {
     fn from(e: AddressDerivingError) -> Self { WithdrawError::UnexpectedFromAddress(e.to_string()) }
 }
 
+#[derive(Display)]
 pub enum NewAddressDerivingError {
+    #[display(fmt = "Addresses limit reached. Max number of addresses: {}", max_addresses_number)]
     AddressLimitReached { max_addresses_number: u32 },
+    #[display(fmt = "Coin doesn't support the given BIP44 chain: {:?}", chain)]
     InvalidBip44Chain { chain: Bip44Chain },
+    #[display(fmt = "BIP32 address deriving error: {}", _0)]
     Bip32Error(Bip32Error),
+    #[display(fmt = "Wallet storage error: {}", _0)]
     WalletStorageError(HDWalletStorageError),
 }
 
@@ -243,6 +249,9 @@ pub trait HDWalletOps: Send + Sync {
 
     /// Returns limit on the number of accounts.
     fn account_limit(&self) -> u32 { DEFAULT_ACCOUNT_LIMIT }
+
+    /// Returns a BIP44 chain that is considered as default for receiver addresses.
+    fn default_receiver_chain(&self) -> Bip44Chain { DEFAULT_RECEIVER_CHAIN }
 
     fn get_accounts_mutex(&self) -> &HDAccountsMutex<Self::HDAccount>;
 
