@@ -15,8 +15,8 @@ use crate::{BalanceError, BalanceFut, CoinBalance, FeeApproxStage, FoundSwapTxSp
             MmCoin, NegotiateSwapContractAddrErr, NumConversError, PrivKeyActivationPolicy, RawTransactionFut,
             RawTransactionRequest, SearchForSwapTxSpendInput, SignatureError, SignatureResult, SwapOps, TradeFee,
             TradePreimageFut, TradePreimageResult, TradePreimageValue, TransactionDetails, TransactionEnum,
-            TransactionFut, TxFeeDetails, UnexpectedDerivationMethod, ValidateAddressResult, ValidatePaymentInput,
-            VerificationError, VerificationResult, WithdrawFut, WithdrawRequest};
+            TransactionFut, TxFeeDetails, TxMarshalingErr, UnexpectedDerivationMethod, ValidateAddressResult,
+            ValidatePaymentInput, VerificationError, VerificationResult, WithdrawFut, WithdrawRequest};
 use crate::{Transaction, WithdrawError};
 use async_trait::async_trait;
 use bitcrypto::{dhash160, dhash256};
@@ -169,16 +169,6 @@ pub struct ZCoinFields {
     sync_state_connector: AsyncMutex<SaplingSyncConnector>,
 }
 
-impl std::fmt::Debug for ZCoinFields {
-    fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
-        write!(
-            f,
-            "ZCoinFields {{ my_z_addr: {:?}, my_z_addr_encoded: {} }}",
-            self.my_z_addr, self.my_z_addr_encoded
-        )
-    }
-}
-
 impl Transaction for ZTransaction {
     fn tx_hex(&self) -> Vec<u8> {
         let mut hex = Vec::with_capacity(1024);
@@ -193,7 +183,7 @@ impl Transaction for ZTransaction {
     }
 }
 
-#[derive(Clone, Debug)]
+#[derive(Clone)]
 pub struct ZCoin {
     utxo_arc: UtxoArc,
     z_fields: Arc<ZCoinFields>,
@@ -993,8 +983,10 @@ impl MarketCoinOps for ZCoin {
         )
     }
 
-    fn tx_enum_from_bytes(&self, bytes: &[u8]) -> Result<TransactionEnum, String> {
-        ZTransaction::read(bytes).map(|tx| tx.into()).map_err(|e| e.to_string())
+    fn tx_enum_from_bytes(&self, bytes: &[u8]) -> Result<TransactionEnum, MmError<TxMarshalingErr>> {
+        ZTransaction::read(bytes)
+            .map(TransactionEnum::from)
+            .map_to_mm(|e| TxMarshalingErr::InvalidInput(e.to_string()))
     }
 
     fn current_block(&self) -> Box<dyn Future<Item = u64, Error = String> + Send> {

@@ -86,15 +86,19 @@ web3 = { git = "https://github.com/artemii235/rust-web3", default-features = fal
 zbase32 = "0.1.2"
 
 [target.'cfg(target_arch = "wasm32")'.dependencies]
+cosmrs = { version = "0.7" }
 js-sys = { version = "0.3.27" }
 mm2_db = { path = "../mm2_db" }
 mm2_test_helpers = { path = "../mm2_test_helpers" }
+# using the same version as cosmrs
+tendermint-rpc = { version = "=0.23.7", default-features = false }
 wasm-bindgen = { version = "0.2.50", features = ["nightly"] }
 wasm-bindgen-futures = { version = "0.4.1" }
 wasm-bindgen-test = { version = "0.3.2" }
 web-sys = { version = "0.3.55", features = ["console", "Headers", "Request", "RequestInit", "RequestMode", "Response", "Window"] }
 
 [target.'cfg(not(target_arch = "wasm32"))'.dependencies]
+cosmrs = { version = "0.7", features = ["rpc"] }
 dirs = { version = "1" }
 bitcoin = "0.28.1"
 lightning = "0.0.110"

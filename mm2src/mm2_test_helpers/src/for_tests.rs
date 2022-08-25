@@ -262,6 +262,21 @@ pub fn morty_conf() -> Json {
     })
 }
 
+pub fn atom_testnet_conf() -> Json {
+    json!({
+        "coin":"ATOM",
+        "protocol":{
+            "type":"TENDERMINT",
+            "protocol_data": {
+                "decimals": 6,
+                "denom": "uatom",
+                "account_prefix": "cosmos",
+                "chain_id": "theta-testnet-001",
+            },
+        }
+    })
+}
+
 pub fn btc_with_spv_conf() -> Json {
     json!({
         "coin": "BTC",
@@ -1526,6 +1541,21 @@ pub async fn init_withdraw(mm: &MarketMakerIt, coin: &str, to: &str, amount: &st
     json::from_str(&request.1).unwrap()
 }
 
+pub async fn withdraw_v1(mm: &MarketMakerIt, coin: &str, to: &str, amount: &str) -> Json {
+    let request = mm
+        .rpc(&json! ({
+            "userpass": mm.userpass,
+            "method": "withdraw",
+            "coin": coin,
+            "to": to,
+            "amount": amount,
+        }))
+        .await
+        .unwrap();
+    assert_eq!(request.0, StatusCode::OK, "'withdraw' failed: {}", request.1);
+    json::from_str(&request.1).unwrap()
+}
+
 pub async fn withdraw_status(mm: &MarketMakerIt, task_id: u64) -> Json {
     let request = mm
         .rpc(&json! ({
@@ -1657,6 +1687,41 @@ pub async fn send_raw_transaction(mm: &MarketMakerIt, coin: &str, tx: &str) -> J
         request.0,
         StatusCode::OK,
         "'send_raw_transaction' failed: {}",
+        request.1
+    );
+    json::from_str(&request.1).unwrap()
+}
+
+pub async fn my_balance(mm: &MarketMakerIt, coin: &str) -> Json {
+    let request = mm
+        .rpc(&json! ({
+            "userpass": mm.userpass,
+            "method": "my_balance",
+            "coin": coin
+        }))
+        .await
+        .unwrap();
+    assert_eq!(request.0, StatusCode::OK, "'my_balance' failed: {}", request.1);
+    json::from_str(&request.1).unwrap()
+}
+
+pub async fn enable_tendermint(mm: &MarketMakerIt, coin: &str, rpc_urls: &[&str]) -> Json {
+    let request = mm
+        .rpc(&json! ({
+            "userpass": mm.userpass,
+            "method": "enable_tendermint_with_assets",
+            "mmrpc": "2.0",
+            "params": {
+                "ticker": coin,
+                "rpc_urls": rpc_urls,
+            }
+        }))
+        .await
+        .unwrap();
+    assert_eq!(
+        request.0,
+        StatusCode::OK,
+        "'enable_tendermint_with_assets' failed: {}",
         request.1
     );
     json::from_str(&request.1).unwrap()

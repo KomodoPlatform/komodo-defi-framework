@@ -125,7 +125,7 @@ use chrono::Utc;
 pub use futures::compat::Future01CompatExt;
 use futures::future::{abortable, AbortHandle, FutureExt};
 use futures01::{future, Future};
-use http::header::{HeaderValue, CONTENT_TYPE};
+use http::header::CONTENT_TYPE;
 use http::Response;
 use parking_lot::{Mutex as PaMutex, MutexGuard as PaMutexGuard};
 use rand::{rngs::SmallRng, SeedableRng};
@@ -160,6 +160,11 @@ cfg_native! {
 cfg_wasm32! {
     use std::sync::atomic::AtomicUsize;
 }
+
+pub const X_GRPC_WEB: &str = "x-grpc-web";
+pub const APPLICATION_JSON: &str = "application/json";
+pub const APPLICATION_GRPC_WEB: &str = "application/grpc-web";
+pub const APPLICATION_GRPC_WEB_PROTO: &str = "application/grpc-web+proto";
 
 pub const SATOSHIS: u64 = 100_000_000;
 
@@ -508,7 +513,7 @@ where
 {
     let rf = match Response::builder()
         .status(status)
-        .header(CONTENT_TYPE, HeaderValue::from_static("application/json"))
+        .header(CONTENT_TYPE, APPLICATION_JSON)
         .body(Vec::from(body))
     {
         Ok(r) => future::ok::<Response<Vec<u8>>, String>(r),
