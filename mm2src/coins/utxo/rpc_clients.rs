@@ -1870,7 +1870,11 @@ impl ElectrumClient {
         rpc_func!(self, "blockchain.block.headers", start_height, count)
     }
 
-    pub fn retrieve_headers(&self, from: u64, to: u64) -> UtxoRpcFut<(HashMap<u64, BlockHeader>, Vec<BlockHeader>)> {
+    pub fn retrieve_headers(
+        &self,
+        from: u64,
+        to: u64,
+    ) -> UtxoRpcFut<(HashMap<u64, BlockHeader>, Vec<BlockHeader>, u64)> {
         let coin_name = self.coin_ticker.clone();
         if from == 0 || to < from {
             return Box::new(futures01::future::err(
@@ -1885,7 +1889,7 @@ impl ElectrumClient {
             self.blockchain_block_headers(from, count)
                 .map_to_mm_fut(UtxoRpcError::from)
                 .and_then(move |headers| {
-                    let (block_registry, block_headers) = {
+                    let (block_registry, block_headers, last_height) = {
                         if headers.count == 0 {
                             return MmError::err(UtxoRpcError::Internal("No headers available".to_string()));
                         }
@@ -1905,9 +1909,9 @@ impl ElectrumClient {
                             block_registry.insert(starting_height, block_header.clone());
                             starting_height += 1;
                         }
-                        (block_registry, block_headers)
+                        (block_registry, block_headers, starting_height - 1)
                     };
-                    Ok((block_registry, block_headers))
+                    Ok((block_registry, block_headers, last_height))
                 }),
         )
     }
@@ -1920,12 +1924,11 @@ impl ElectrumClient {
     // get_tx_height_from_rpc is costly since it loops through history after requesting the whole history of the script pubkey
     // This method should always be used if the block headers are saved to the DB
     async fn get_tx_height_from_storage(&self, tx: &UtxoTx) -> Result<u64, MmError<GetTxHeightError>> {
-        let ticker = self.coin_name();
         let tx_hash = tx.hash().reversed();
         let blockhash = self.get_verbose_transaction(&tx_hash.into()).compat().await?.blockhash;
         Ok(self
             .block_headers_storage()
-            .get_block_height_by_hash(ticker, blockhash.into())
+            .get_block_height_by_hash(blockhash.into())
             .await?
             .ok_or_else(|| GetTxHeightError::HeightNotFound("Transaction block header is not found in storage".into()))?
             .try_into()?)
@@ -1953,9 +1956,8 @@ impl ElectrumClient {
     }
 
     async fn block_header_from_storage(&self, height: u64) -> Result<BlockHeader, MmError<GetBlockHeaderError>> {
-        let ticker = self.coin_name();
         self.block_headers_storage()
-            .get_block_header(ticker, height)
+            .get_block_header(height)
             .await?
             .ok_or_else(|| GetBlockHeaderError::Internal("Header not in storage!".into()).into())
     }

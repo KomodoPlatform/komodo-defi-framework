@@ -15,7 +15,6 @@ impl BlockHeaderStorageOps for IndexedDBBlockHeadersStorage {
 
     async fn add_block_headers_to_storage(
         &self,
-        _for_coin: &str,
         _headers: HashMap<u64, BlockHeader>,
     ) -> Result<(), BlockHeaderStorageError> {
         Ok(())
@@ -29,30 +28,15 @@ impl BlockHeaderStorageOps for IndexedDBBlockHeadersStorage {
         Ok(None)
     }
 
-    async fn get_block_header_raw(
-        &self,
-        _for_coin: &str,
-        _height: u64,
-    ) -> Result<Option<String>, BlockHeaderStorageError> {
-        Ok(None)
-    }
+    async fn get_block_header_raw(&self, _height: u64) -> Result<Option<String>, BlockHeaderStorageError> { Ok(None) }
 
     async fn get_last_block_height(&self, _for_coin: &str) -> Result<u64, BlockHeaderStorageError> {
         Err(BlockHeaderStorageError::Internal("Not implemented".into()))
     }
 
-    async fn get_last_block_header_with_non_max_bits(
-        &self,
-        _for_coin: &str,
-    ) -> Result<Option<BlockHeader>, BlockHeaderStorageError> {
+    async fn get_last_block_header_with_non_max_bits(&self) -> Result<Option<BlockHeader>, BlockHeaderStorageError> {
         Ok(None)
     }
 
-    async fn get_block_height_by_hash(
-        &self,
-        _for_coin: &str,
-        _hash: H256,
-    ) -> Result<Option<i64>, BlockHeaderStorageError> {
-        Ok(None)
-    }
+    async fn get_block_height_by_hash(&self, _hash: H256) -> Result<Option<i64>, BlockHeaderStorageError> { Ok(None) }
 }

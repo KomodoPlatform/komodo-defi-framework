@@ -27,8 +27,8 @@ pub enum SPVError {
     InsufficientWork,
     #[display(fmt = "Couldn't calculate the required difficulty for the block: {}", _0)]
     DifficultyCalculationError(NextBlockBitsError),
-    #[display(fmt = "Header in chain does not correctly reference parent header")]
-    InvalidChain,
+    #[display(fmt = "Header {} in chain does not correctly reference parent header", _0)]
+    InvalidChain(u64),
     #[display(fmt = "When validating a `BitcoinHeader`, the `hash` field is not the digest of the raw header")]
     WrongDigest,
     #[display(
@@ -339,12 +339,13 @@ pub async fn validate_headers(
     storage: &dyn BlockHeaderStorageOps,
     params: &BlockHeaderVerificationParams,
 ) -> Result<(), SPVError> {
+    let mut previous_height = previous_height;
     let mut previous_header = if previous_height == 0 {
         // Todo: add validation earlier in coin activation (convert to blockheader struct there)
         BlockHeader::try_from(params.genesis_block_header.clone()).map_err(|e| SPVError::Internal(e.to_string()))?
     } else {
         storage
-            .get_block_header(coin, previous_height)
+            .get_block_header(previous_height)
             .await?
             .ok_or(BlockHeaderStorageError::GetFromStorageError {
                 coin: coin.to_string(),
@@ -357,8 +358,9 @@ pub async fn validate_headers(
         if previous_height == 0 {
             // previous_header is genesis header in this case, checking that the first header hash is the same as the genesis header hash is enough
             if header.hash() != previous_hash {
-                return Err(SPVError::InvalidChain);
+                return Err(SPVError::InvalidChain(previous_height + 1));
             }
+            previous_height += 1;
             continue;
         }
         let cur_bits = header.bits.clone();
@@ -366,7 +368,7 @@ pub async fn validate_headers(
             return Err(SPVError::UnexpectedDifficultyChange);
         }
         if !validate_header_prev_hash(&header.previous_header_hash, &previous_hash) {
-            return Err(SPVError::InvalidChain);
+            return Err(SPVError::InvalidChain(previous_height + 1));
         }
         if let Some(algorithm) = &params.difficulty_algorithm {
             if !params.constant_difficulty
@@ -388,6 +390,7 @@ pub async fn validate_headers(
         prev_bits = cur_bits;
         previous_header = header;
         previous_hash = previous_header.hash();
+        previous_height += 1;
     }
     Ok(())
 }
@@ -599,7 +602,7 @@ mod tests {
             "MORTY",
             1330480,
             headers,
-            &TestBlockHeadersStorage {},
+            &TestBlockHeadersStorage { ticker: "MORTY".into() },
             &params,
         ))
         .unwrap()
@@ -622,7 +625,7 @@ mod tests {
             "BTC",
             724608,
             headers,
-            &TestBlockHeadersStorage {},
+            &TestBlockHeadersStorage { ticker: "BTC".into() },
             &params,
         ))
         .unwrap()

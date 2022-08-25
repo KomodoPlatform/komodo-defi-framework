@@ -22,7 +22,7 @@ use crate::utxo::utxo_standard::{utxo_standard_coin_with_priv_key, UtxoStandardC
 #[cfg(not(target_arch = "wasm32"))] use crate::WithdrawFee;
 use crate::{CoinBalance, PrivKeyBuildPolicy, SearchForSwapTxSpendInput, StakingInfosDetails, SwapOps,
             TradePreimageValue, TxFeeDetails};
-use chain::OutPoint;
+use chain::{BlockHeader, OutPoint};
 use common::executor::Timer;
 use common::{block_on, now_ms, OrdRange, PagingOptionsEnum, DEX_FEE_ADDR_RAW_PUBKEY};
 use crypto::{privkey::key_pair_from_seed, Bip44Chain, RpcDerivationPath};
@@ -35,6 +35,7 @@ use mm2_test_helpers::for_tests::RICK_ELECTRUM_ADDRS;
 use mocktopus::mocking::*;
 use rpc::v1::types::H256 as H256Json;
 use serialization::{deserialize, CoinVariant};
+use spv_validation::storage::BlockHeaderStorageOps;
 use std::convert::TryFrom;
 use std::iter;
 use std::mem::discriminant;
@@ -471,9 +472,10 @@ fn test_wait_for_payment_spend_timeout_electrum() {
     });
 
     let block_headers_storage = BlockHeaderStorage {
-        inner: Box::new(SqliteBlockHeadersStorage(Arc::new(Mutex::new(
-            Connection::open_in_memory().unwrap(),
-        )))),
+        inner: Box::new(SqliteBlockHeadersStorage {
+            ticker: TEST_COIN_NAME.into(),
+            conn: Arc::new(Mutex::new(Connection::open_in_memory().unwrap())),
+        }),
     };
     let client = ElectrumClientImpl::new(TEST_COIN_NAME.into(), Default::default(), block_headers_storage);
     let client = UtxoRpcClientEnum::Electrum(ElectrumClient(Arc::new(client)));
@@ -966,6 +968,18 @@ fn test_spv_proof() {
     // https://rick.explorer.dexstats.info/tx/78ea7839f6d1b0dafda2ba7e34c1d8218676a58bd1b33f03a5f76391f61b72b0
     let tx_str = "0400008085202f8902bf17bf7d1daace52e08f732a6b8771743ca4b1cb765a187e72fd091a0aabfd52000000006a47304402203eaaa3c4da101240f80f9c5e9de716a22b1ec6d66080de6a0cca32011cd77223022040d9082b6242d6acf9a1a8e658779e1c655d708379862f235e8ba7b8ca4e69c6012102031d4256c4bc9f99ac88bf3dba21773132281f65f9bf23a59928bce08961e2f3ffffffffff023ca13c0e9e085dd13f481f193e8a3e8fd609020936e98b5587342d994f4d020000006b483045022100c0ba56adb8de923975052312467347d83238bd8d480ce66e8b709a7997373994022048507bcac921fdb2302fa5224ce86e41b7efc1a2e20ae63aa738dfa99b7be826012102031d4256c4bc9f99ac88bf3dba21773132281f65f9bf23a59928bce08961e2f3ffffffff0300e1f5050000000017a9141ee6d4c38a3c078eab87ad1a5e4b00f21259b10d870000000000000000166a1400000000000000000000000000000000000000001b94d736000000001976a91405aab5342166f8594baf17a7d9bef5d56744332788ac2d08e35e000000000000000000000000000000";
     let tx: UtxoTx = tx_str.into();
+
+    let header: BlockHeader = deserialize(
+        block_on(client.blockchain_block_header(452248).compat())
+            .unwrap()
+            .as_slice(),
+    )
+    .unwrap();
+
+    let mut headers = HashMap::new();
+    headers.insert(452248, header);
+    let storage = client.block_headers_storage();
+    block_on(storage.add_block_headers_to_storage(headers)).unwrap();
 
     let res = block_on(client.validate_spv_proof(&tx, now_ms() / 1000 + 30));
     res.unwrap();

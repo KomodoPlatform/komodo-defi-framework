@@ -7,6 +7,7 @@ use db_common::{sqlite::rusqlite::Error as SqlError,
                 sqlite::validate_table_name,
                 sqlite::CHECK_TABLE_EXISTS_SQL};
 use primitives::hash::H256;
+use serialization::{coin_variant_by_ticker, Reader};
 use spv_validation::storage::{BlockHeaderStorageError, BlockHeaderStorageOps};
 use spv_validation::work::MAX_BITS_BTC;
 use std::collections::HashMap;
@@ -85,7 +86,10 @@ fn get_block_height_by_hash(for_coin: &str) -> Result<String, BlockHeaderStorage
 }
 
 #[derive(Clone, Debug)]
-pub struct SqliteBlockHeadersStorage(pub Arc<Mutex<Connection>>);
+pub struct SqliteBlockHeadersStorage {
+    pub ticker: String,
+    pub conn: Arc<Mutex<Connection>>,
+}
 
 fn query_single_row<T, P, F>(
     conn: &Connection,
@@ -106,12 +110,12 @@ where
 
 #[async_trait]
 impl BlockHeaderStorageOps for SqliteBlockHeadersStorage {
-    async fn init(&self, for_coin: &str) -> Result<(), BlockHeaderStorageError> {
+    async fn init(&self) -> Result<(), BlockHeaderStorageError> {
+        let coin = self.ticker.clone();
         let selfi = self.clone();
-        let sql_cache = create_block_header_cache_table_sql(for_coin)?;
-        let coin = for_coin.to_owned();
+        let sql_cache = create_block_header_cache_table_sql(&coin)?;
         async_blocking(move || {
-            let conn = selfi.0.lock().unwrap();
+            let conn = selfi.conn.lock().unwrap();
             conn.execute(&sql_cache, NO_PARAMS).map(|_| ()).map_err(|e| {
                 BlockHeaderStorageError::InitializationError {
                     coin,
@@ -123,11 +127,12 @@ impl BlockHeaderStorageOps for SqliteBlockHeadersStorage {
         .await
     }
 
-    async fn is_initialized_for(&self, for_coin: &str) -> Result<bool, BlockHeaderStorageError> {
-        let block_headers_cache_table = get_table_name_and_validate(for_coin)?;
+    async fn is_initialized_for(&self) -> Result<bool, BlockHeaderStorageError> {
+        let coin = self.ticker.clone();
+        let block_headers_cache_table = get_table_name_and_validate(&coin)?;
         let selfi = self.clone();
         async_blocking(move || {
-            let conn = selfi.0.lock().unwrap();
+            let conn = selfi.conn.lock().unwrap();
             let cache_initialized = query_single_row(
                 &conn,
                 CHECK_TABLE_EXISTS_SQL,
@@ -141,17 +146,16 @@ impl BlockHeaderStorageOps for SqliteBlockHeadersStorage {
 
     async fn add_block_headers_to_storage(
         &self,
-        for_coin: &str,
         headers: HashMap<u64, BlockHeader>,
     ) -> Result<(), BlockHeaderStorageError> {
-        let for_coin = for_coin.to_owned();
+        let coin = self.ticker.clone();
         let selfi = self.clone();
         async_blocking(move || {
-            let mut conn = selfi.0.lock().unwrap();
+            let mut conn = selfi.conn.lock().unwrap();
             let sql_transaction = conn
                 .transaction()
                 .map_err(|e| BlockHeaderStorageError::AddToStorageError {
-                    coin: for_coin.to_string(),
+                    coin: coin.clone(),
                     reason: e.to_string(),
                 })?;
 
@@ -167,16 +171,16 @@ impl BlockHeaderStorageOps for SqliteBlockHeadersStorage {
                     &hash as &dyn ToSql,
                 ];
                 sql_transaction
-                    .execute(&insert_block_header_in_cache_sql(&for_coin)?, block_cache_params)
+                    .execute(&insert_block_header_in_cache_sql(&coin.clone())?, block_cache_params)
                     .map_err(|e| BlockHeaderStorageError::AddToStorageError {
-                        coin: for_coin.to_string(),
+                        coin: coin.clone(),
                         reason: e.to_string(),
                     })?;
             }
             sql_transaction
                 .commit()
                 .map_err(|e| BlockHeaderStorageError::AddToStorageError {
-                    coin: for_coin.to_string(),
+                    coin: coin.clone(),
                     reason: e.to_string(),
                 })?;
             Ok(())
@@ -184,17 +188,20 @@ impl BlockHeaderStorageOps for SqliteBlockHeadersStorage {
         .await
     }
 
-    async fn get_block_header(
-        &self,
-        for_coin: &str,
-        height: u64,
-    ) -> Result<Option<BlockHeader>, BlockHeaderStorageError> {
-        if let Some(header_raw) = self.get_block_header_raw(for_coin, height).await? {
+    async fn get_block_header(&self, height: u64) -> Result<Option<BlockHeader>, BlockHeaderStorageError> {
+        let coin = self.ticker.clone();
+        if let Some(header_raw) = self.get_block_header_raw(height).await? {
+            let serialized = &hex::decode(header_raw).map_err(|e| BlockHeaderStorageError::DecodeError {
+                coin: coin.clone(),
+                reason: e.to_string(),
+            })?;
+            let coin_variant = coin_variant_by_ticker(&coin);
+            let mut reader = Reader::new_with_coin_variant(serialized, coin_variant);
             let header: BlockHeader =
-                header_raw
-                    .try_into()
+                reader
+                    .read()
                     .map_err(|e: serialization::Error| BlockHeaderStorageError::DecodeError {
-                        coin: for_coin.to_string(),
+                        coin,
                         reason: e.to_string(),
                     })?;
             return Ok(Some(header));
@@ -202,61 +209,57 @@ impl BlockHeaderStorageOps for SqliteBlockHeadersStorage {
         Ok(None)
     }
 
-    async fn get_block_header_raw(
-        &self,
-        for_coin: &str,
-        height: u64,
-    ) -> Result<Option<String>, BlockHeaderStorageError> {
+    async fn get_block_header_raw(&self, height: u64) -> Result<Option<String>, BlockHeaderStorageError> {
+        let coin = self.ticker.clone();
         let params = [height as i64];
-        let sql = get_block_header_by_height(for_coin)?;
+        let sql = get_block_header_by_height(&coin)?;
         let selfi = self.clone();
 
         async_blocking(move || {
-            let conn = selfi.0.lock().unwrap();
+            let conn = selfi.conn.lock().unwrap();
             query_single_row(&conn, &sql, params, string_from_row)
         })
         .await
         .map_err(|e| BlockHeaderStorageError::GetFromStorageError {
-            coin: for_coin.to_string(),
+            coin,
             reason: e.to_string(),
         })
     }
 
-    async fn get_last_block_height(&self, for_coin: &str) -> Result<u64, BlockHeaderStorageError> {
-        let sql = get_last_block_height_sql(for_coin)?;
+    async fn get_last_block_height(&self) -> Result<u64, BlockHeaderStorageError> {
+        let coin = self.ticker.clone();
+        let sql = get_last_block_height_sql(&coin)?;
         let selfi = self.clone();
 
         async_blocking(move || {
-            let conn = selfi.0.lock().unwrap();
+            let conn = selfi.conn.lock().unwrap();
             query_single_row(&conn, &sql, NO_PARAMS, |row| row.get(0))
         })
         .await
         .map_err(|e| BlockHeaderStorageError::GetFromStorageError {
-            coin: for_coin.to_string(),
+            coin: coin.clone(),
             reason: e.to_string(),
         })?
         .unwrap_or(0i64)
         .try_into()
         .map_err(|e: TryFromIntError| BlockHeaderStorageError::DecodeError {
-            coin: for_coin.to_string(),
+            coin,
             reason: e.to_string(),
         }) // last_block_height is 0 if the database is empty
     }
 
-    async fn get_last_block_header_with_non_max_bits(
-        &self,
-        for_coin: &str,
-    ) -> Result<Option<BlockHeader>, BlockHeaderStorageError> {
-        let sql = get_last_block_header_with_non_max_bits_sql(for_coin)?;
+    async fn get_last_block_header_with_non_max_bits(&self) -> Result<Option<BlockHeader>, BlockHeaderStorageError> {
+        let coin = self.ticker.clone();
+        let sql = get_last_block_header_with_non_max_bits_sql(&coin)?;
         let selfi = self.clone();
 
         let maybe_header_raw = async_blocking(move || {
-            let conn = selfi.0.lock().unwrap();
+            let conn = selfi.conn.lock().unwrap();
             query_single_row(&conn, &sql, NO_PARAMS, string_from_row)
         })
         .await
         .map_err(|e| BlockHeaderStorageError::GetFromStorageError {
-            coin: for_coin.to_string(),
+            coin: coin.clone(),
             reason: e.to_string(),
         })?;
 
@@ -265,7 +268,7 @@ impl BlockHeaderStorageOps for SqliteBlockHeadersStorage {
                 header_raw
                     .try_into()
                     .map_err(|e: serialization::Error| BlockHeaderStorageError::DecodeError {
-                        coin: for_coin.to_string(),
+                        coin,
                         reason: e.to_string(),
                     })?;
             return Ok(Some(header));
@@ -273,22 +276,19 @@ impl BlockHeaderStorageOps for SqliteBlockHeadersStorage {
         Ok(None)
     }
 
-    async fn get_block_height_by_hash(
-        &self,
-        for_coin: &str,
-        hash: H256,
-    ) -> Result<Option<i64>, BlockHeaderStorageError> {
+    async fn get_block_height_by_hash(&self, hash: H256) -> Result<Option<i64>, BlockHeaderStorageError> {
+        let coin = self.ticker.clone();
         let params = [hash.to_string()];
-        let sql = get_block_height_by_hash(for_coin)?;
+        let sql = get_block_height_by_hash(&coin)?;
         let selfi = self.clone();
 
         async_blocking(move || {
-            let conn = selfi.0.lock().unwrap();
+            let conn = selfi.conn.lock().unwrap();
             query_single_row(&conn, &sql, params, |row| row.get(0))
         })
         .await
         .map_err(|e| BlockHeaderStorageError::GetFromStorageError {
-            coin: for_coin.to_string(),
+            coin,
             reason: e.to_string(),
         })
     }
@@ -296,14 +296,17 @@ impl BlockHeaderStorageOps for SqliteBlockHeadersStorage {
 
 #[cfg(test)]
 impl SqliteBlockHeadersStorage {
-    pub fn in_memory() -> Self {
-        SqliteBlockHeadersStorage(Arc::new(Mutex::new(Connection::open_in_memory().unwrap())))
+    pub fn in_memory(ticker: String) -> Self {
+        SqliteBlockHeadersStorage {
+            ticker,
+            conn: Arc::new(Mutex::new(Connection::open_in_memory().unwrap())),
+        }
     }
 
     fn is_table_empty(&self, table_name: &str) -> bool {
         validate_table_name(table_name).unwrap();
         let sql = "SELECT COUNT(block_height) FROM ".to_owned() + table_name + ";";
-        let conn = self.0.lock().unwrap();
+        let conn = self.conn.lock().unwrap();
         let rows_count: u32 = conn.query_row(&sql, NO_PARAMS, |row| row.get(0)).unwrap();
         rows_count == 0
     }
@@ -319,75 +322,71 @@ mod sql_block_headers_storage_tests {
     #[test]
     fn test_init_collection() {
         let for_coin = "init_collection";
-        let storage = SqliteBlockHeadersStorage::in_memory();
-        let initialized = block_on(storage.is_initialized_for(for_coin)).unwrap();
+        let storage = SqliteBlockHeadersStorage::in_memory(for_coin.into());
+        let initialized = block_on(storage.is_initialized_for()).unwrap();
         assert!(!initialized);
 
-        block_on(storage.init(for_coin)).unwrap();
+        block_on(storage.init()).unwrap();
         // repetitive init must not fail
-        block_on(storage.init(for_coin)).unwrap();
+        block_on(storage.init()).unwrap();
 
-        let initialized = block_on(storage.is_initialized_for(for_coin)).unwrap();
+        let initialized = block_on(storage.is_initialized_for()).unwrap();
         assert!(initialized);
     }
 
     #[test]
     fn test_add_block_headers() {
         let for_coin = "insert";
-        let storage = SqliteBlockHeadersStorage::in_memory();
+        let storage = SqliteBlockHeadersStorage::in_memory(for_coin.into());
         let table = block_headers_cache_table(for_coin);
-        block_on(storage.init(for_coin)).unwrap();
+        block_on(storage.init()).unwrap();
 
-        let initialized = block_on(storage.is_initialized_for(for_coin)).unwrap();
+        let initialized = block_on(storage.is_initialized_for()).unwrap();
         assert!(initialized);
 
         let mut headers = HashMap::with_capacity(1);
         let block_header: BlockHeader = "0000002076d41d3e4b0bfd4c0d3b30aa69fdff3ed35d85829efd04000000000000000000b386498b583390959d9bac72346986e3015e83ac0b54bc7747a11a494ac35c94bb3ce65a53fb45177f7e311c".into();
         headers.insert(520481, block_header);
-        block_on(storage.add_block_headers_to_storage(for_coin, headers)).unwrap();
+        block_on(storage.add_block_headers_to_storage(headers)).unwrap();
         assert!(!storage.is_table_empty(&table));
     }
 
     #[test]
     fn test_get_block_header() {
         let for_coin = "get";
-        let storage = SqliteBlockHeadersStorage::in_memory();
+        let storage = SqliteBlockHeadersStorage::in_memory(for_coin.into());
         let table = block_headers_cache_table(for_coin);
-        block_on(storage.init(for_coin)).unwrap();
+        block_on(storage.init()).unwrap();
 
-        let initialized = block_on(storage.is_initialized_for(for_coin)).unwrap();
+        let initialized = block_on(storage.is_initialized_for()).unwrap();
         assert!(initialized);
 
         let mut headers = HashMap::with_capacity(1);
         let block_header: BlockHeader = "0000002076d41d3e4b0bfd4c0d3b30aa69fdff3ed35d85829efd04000000000000000000b386498b583390959d9bac72346986e3015e83ac0b54bc7747a11a494ac35c94bb3ce65a53fb45177f7e311c".into();
         headers.insert(520481, block_header);
 
-        block_on(storage.add_block_headers_to_storage(for_coin, headers)).unwrap();
+        block_on(storage.add_block_headers_to_storage(headers)).unwrap();
         assert!(!storage.is_table_empty(&table));
 
-        let hex = block_on(storage.get_block_header_raw(for_coin, 520481))
-            .unwrap()
-            .unwrap();
+        let hex = block_on(storage.get_block_header_raw(520481)).unwrap().unwrap();
         assert_eq!(hex, "0000002076d41d3e4b0bfd4c0d3b30aa69fdff3ed35d85829efd04000000000000000000b386498b583390959d9bac72346986e3015e83ac0b54bc7747a11a494ac35c94bb3ce65a53fb45177f7e311c".to_string());
 
-        let block_header = block_on(storage.get_block_header(for_coin, 520481)).unwrap().unwrap();
+        let block_header = block_on(storage.get_block_header(520481)).unwrap().unwrap();
         let block_hash: H256 = "0000000000000000002e31d0714a5ab23100945ff87ba2d856cd566a3c9344ec".into();
         assert_eq!(block_header.hash(), block_hash.reversed());
 
-        let height = block_on(storage.get_block_height_by_hash(for_coin, block_hash))
-            .unwrap()
-            .unwrap();
+        let height = block_on(storage.get_block_height_by_hash(block_hash)).unwrap().unwrap();
         assert_eq!(height, 520481);
     }
 
     #[test]
     fn test_get_last_block_header_with_non_max_bits() {
         let for_coin = "get";
-        let storage = SqliteBlockHeadersStorage::in_memory();
+        let storage = SqliteBlockHeadersStorage::in_memory(for_coin.into());
         let table = block_headers_cache_table(for_coin);
-        block_on(storage.init(for_coin)).unwrap();
+        block_on(storage.init()).unwrap();
 
-        let initialized = block_on(storage.is_initialized_for(for_coin)).unwrap();
+        let initialized = block_on(storage.is_initialized_for()).unwrap();
         assert!(initialized);
 
         let mut headers = HashMap::with_capacity(2);
@@ -406,10 +405,10 @@ mod sql_block_headers_storage_tests {
         let block_header: BlockHeader = "020000001f38c8e30b30af912fbd4c3e781506713cfb43e73dff6250348e060000000000afa8f3eede276ccb4c4ee649ad9823fc181632f262848ca330733e7e7e541beb9be51353ffff001d00a63037".into();
         headers.insert(201593, block_header);
 
-        block_on(storage.add_block_headers_to_storage(for_coin, headers)).unwrap();
+        block_on(storage.add_block_headers_to_storage(headers)).unwrap();
         assert!(!storage.is_table_empty(&table));
 
-        let actual_block_header = block_on(storage.get_last_block_header_with_non_max_bits(for_coin))
+        let actual_block_header = block_on(storage.get_last_block_header_with_non_max_bits())
             .unwrap()
             .unwrap();
         assert_ne!(actual_block_header.bits, BlockHeaderBits::Compact(MAX_BITS_BTC.into()));
@@ -419,11 +418,11 @@ mod sql_block_headers_storage_tests {
     #[test]
     fn test_get_last_block_height() {
         let for_coin = "get";
-        let storage = SqliteBlockHeadersStorage::in_memory();
+        let storage = SqliteBlockHeadersStorage::in_memory(for_coin.into());
         let table = block_headers_cache_table(for_coin);
-        block_on(storage.init(for_coin)).unwrap();
+        block_on(storage.init()).unwrap();
 
-        let initialized = block_on(storage.is_initialized_for(for_coin)).unwrap();
+        let initialized = block_on(storage.is_initialized_for()).unwrap();
         assert!(initialized);
 
         let mut headers = HashMap::with_capacity(2);
@@ -440,10 +439,10 @@ mod sql_block_headers_storage_tests {
         let block_header: BlockHeader = "020000001f38c8e30b30af912fbd4c3e781506713cfb43e73dff6250348e060000000000afa8f3eede276ccb4c4ee649ad9823fc181632f262848ca330733e7e7e541beb9be51353ffff001d00a63037".into();
         headers.insert(201593, block_header);
 
-        block_on(storage.add_block_headers_to_storage(for_coin, headers)).unwrap();
+        block_on(storage.add_block_headers_to_storage(headers)).unwrap();
         assert!(!storage.is_table_empty(&table));
 
-        let last_block_height = block_on(storage.get_last_block_height(for_coin)).unwrap();
+        let last_block_height = block_on(storage.get_last_block_height()).unwrap();
         assert_eq!(last_block_height, 201595);
     }
 }

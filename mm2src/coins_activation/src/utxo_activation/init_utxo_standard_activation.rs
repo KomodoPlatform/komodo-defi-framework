@@ -99,12 +99,8 @@ impl InitStandaloneCoinActivationOps for UtxoStandardCoin {
                             ticker: ticker.clone(),
                             error: "Error waiting for block headers synchronization status!".into(),
                         })? {
-                        UtxoSyncStatus::SyncingBlockHeaders {
-                            current_scanned_block,
-                            latest_block,
-                        } => UtxoStandardInProgressStatus::SyncingBlockHeaders {
-                            current_scanned_block,
-                            latest_block,
+                        UtxoSyncStatus::SyncingBlockHeaders { from, to } => {
+                            UtxoStandardInProgressStatus::SyncingBlockHeaders { from, to }
                         },
                         UtxoSyncStatus::TemporaryError(e) => UtxoStandardInProgressStatus::TemporaryError(e),
                         UtxoSyncStatus::PermanentError(e) => {

@@ -14,15 +14,10 @@ use mm2_err_handle::prelude::*;
 use serde_json::Value as Json;
 
 pub enum UtxoSyncStatus {
-    SyncingBlockHeaders {
-        current_scanned_block: u64,
-        latest_block: u64,
-    },
+    SyncingBlockHeaders { from: u64, to: u64 },
     TemporaryError(String),
     PermanentError(String),
-    Finished {
-        block_number: u64,
-    },
+    Finished { block_number: u64 },
 }
 
 #[derive(Clone)]
@@ -31,6 +26,12 @@ pub struct UtxoSyncStatusLoopHandle(AsyncSender<UtxoSyncStatus>);
 impl UtxoSyncStatusLoopHandle {
     pub fn new(sync_status_notifier: AsyncSender<UtxoSyncStatus>) -> Self {
         UtxoSyncStatusLoopHandle(sync_status_notifier)
+    }
+
+    pub fn notify_blocks_headers_sync_status(&mut self, from: u64, to: u64) {
+        self.0
+            .try_send(UtxoSyncStatus::SyncingBlockHeaders { from, to })
+            .debug_log_with_msg("No one seems interested in UtxoSyncStatus");
     }
 
     pub fn notify_on_temp_error(&mut self, error: String) {
@@ -42,6 +43,12 @@ impl UtxoSyncStatusLoopHandle {
     pub fn notify_on_permanent_error(&mut self, error: String) {
         self.0
             .try_send(UtxoSyncStatus::PermanentError(error))
+            .debug_log_with_msg("No one seems interested in UtxoSyncStatus");
+    }
+
+    pub fn notify_sync_finished(&mut self, block_number: u64) {
+        self.0
+            .try_send(UtxoSyncStatus::Finished { block_number })
             .debug_log_with_msg("No one seems interested in UtxoSyncStatus");
     }
 }

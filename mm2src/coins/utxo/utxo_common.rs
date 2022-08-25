@@ -21,7 +21,7 @@ use chain::constants::SEQUENCE_FINAL;
 use chain::{OutPoint, TransactionOutput};
 use common::executor::Timer;
 use common::jsonrpc_client::JsonRpcErrorType;
-use common::log::{debug, error, info, warn};
+use common::log::{error, info, warn};
 use common::{now_ms, one_hundred, ten_f64};
 use crypto::{Bip32DerPathOps, Bip44Chain, Bip44DerPathError, Bip44DerivationPath, RpcDerivationPath};
 use futures::compat::Future01CompatExt;
@@ -3442,31 +3442,6 @@ pub async fn block_header_utxo_loop<T: UtxoCommonOps>(
     constructor: impl Fn(UtxoArc) -> T,
     mut sync_status_loop_handle: UtxoSyncStatusLoopHandle,
 ) {
-    {
-        let coin = match weak.upgrade() {
-            Some(arc) => constructor(arc),
-            None => return,
-        };
-        let ticker = coin.as_ref().conf.ticker.as_str();
-        let storage = match &coin.as_ref().rpc_client {
-            UtxoRpcClientEnum::Native(_) => return,
-            UtxoRpcClientEnum::Electrum(e) => e.block_headers_storage(),
-        };
-        match storage.is_initialized_for(ticker).await {
-            Ok(true) => info!("Block Header Storage already initialized for {}", ticker),
-            Ok(false) => {
-                if let Err(e) = storage.init(ticker).await {
-                    error!(
-                        "Couldn't initiate storage - aborting the block_header_utxo_loop: {:?}",
-                        e
-                    );
-                    return;
-                }
-                info!("Block Header Storage successfully initialized for {}", ticker);
-            },
-            Err(_e) => return,
-        };
-    }
     // Todo: should notify the status not only the errors
     while let Some(arc) = weak.upgrade() {
         let coin = constructor(arc);
@@ -3476,14 +3451,13 @@ pub async fn block_header_utxo_loop<T: UtxoCommonOps>(
             UtxoRpcClientEnum::Electrum(client) => client,
         };
 
-        let ticker = coin.as_ref().conf.ticker.as_str();
         let storage = client.block_headers_storage();
-        let from_block_height = match storage.get_last_block_height(ticker).await {
-            Ok(h) => h + 1,
+        let from_block_height = match storage.get_last_block_height().await {
+            Ok(h) => h,
             Err(e) => {
                 error!("Error {} on getting the height of the last stored header in DB!", e);
                 sync_status_loop_handle.notify_on_temp_error(e.to_string());
-                Timer::sleep(BLOCK_HEADERS_LOOP_INTERVAL).await;
+                Timer::sleep(10.).await;
                 continue;
             },
         };
@@ -3494,13 +3468,20 @@ pub async fn block_header_utxo_loop<T: UtxoCommonOps>(
             Err(e) => {
                 error!("Error {} on getting the height of the latest block from rpc!", e);
                 sync_status_loop_handle.notify_on_temp_error(e.to_string());
-                Timer::sleep(BLOCK_HEADERS_LOOP_INTERVAL).await;
+                Timer::sleep(10.).await;
                 continue;
             },
         };
 
-        let (block_registry, block_headers) = match client
-            .retrieve_headers(from_block_height, to_block_height)
+        if from_block_height == to_block_height {
+            Timer::sleep(BLOCK_HEADERS_LOOP_INTERVAL).await;
+            continue;
+        }
+
+        sync_status_loop_handle.notify_blocks_headers_sync_status(from_block_height + 1, to_block_height);
+
+        let (block_registry, block_headers, last_retrieved_height) = match client
+            .retrieve_headers(from_block_height + 1, to_block_height)
             .compat()
             .await
         {
@@ -3508,29 +3489,35 @@ pub async fn block_header_utxo_loop<T: UtxoCommonOps>(
             Err(e) => {
                 error!("Error {} on retrieving the latest headers from rpc!", e);
                 sync_status_loop_handle.notify_on_temp_error(e.to_string());
-                Timer::sleep(BLOCK_HEADERS_LOOP_INTERVAL).await;
+                Timer::sleep(10.).await;
                 continue;
             },
         };
 
+        let ticker = coin.as_ref().conf.ticker.as_str();
         // Todo: an attack can be used to send a fake header to fail validating and can't confirm a tx, should use a different server in such case (watch towers shall help)
         if let Some(params) = &coin.as_ref().conf.block_headers_verification_params {
             if let Err(e) = validate_headers(ticker, from_block_height, block_headers, storage, params).await {
                 error!("Error {} on validating the latest headers!", e);
                 sync_status_loop_handle.notify_on_permanent_error(e.to_string());
                 // Todo: should rotate_servers here, if error is not due to rpc (instead of waiting)??? (should also check if error is due to RPC or not before sending permanent_error)
-                Timer::sleep(BLOCK_HEADERS_LOOP_INTERVAL).await;
-                continue;
+                // Todo: when using rotate_servers add sleep and continue again
+                // Timer::sleep(10.).await;
+                // continue;
+                break;
             }
         }
 
-        // Todo: remove ok_or_continue_after_sleep
         ok_or_continue_after_sleep!(
-            storage.add_block_headers_to_storage(ticker, block_registry).await,
+            storage.add_block_headers_to_storage(block_registry).await,
             BLOCK_HEADERS_LOOP_INTERVAL
         );
-        debug!("tick block_header_utxo_loop for {}", coin.as_ref().conf.ticker);
-        Timer::sleep(BLOCK_HEADERS_LOOP_INTERVAL).await;
+
+        // blockchain.block.headers returns a maximum of 2016 headers (tested for btc) so the loop needs to continue until we have all headers up to the current one.
+        if last_retrieved_height == to_block_height {
+            sync_status_loop_handle.notify_sync_finished(to_block_height);
+            Timer::sleep(BLOCK_HEADERS_LOOP_INTERVAL).await;
+        }
     }
 }
 

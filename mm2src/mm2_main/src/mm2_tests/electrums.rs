@@ -40,6 +40,25 @@ pub fn morty_electrums() -> Vec<Json> {
 
 #[allow(dead_code)]
 #[cfg(target_arch = "wasm32")]
+pub fn btc_electrums() -> Vec<Json> {
+    vec![
+        json!({ "url": "electrum1.cipig.net:30000", "protocol": "WSS" }),
+        json!({ "url": "electrum2.cipig.net:30000", "protocol": "WSS" }),
+        json!({ "url": "electrum3.cipig.net:30000", "protocol": "WSS" }),
+    ]
+}
+
+#[cfg(not(target_arch = "wasm32"))]
+pub fn btc_electrums() -> Vec<Json> {
+    vec![
+        json!({ "url": "electrum1.cipig.net:10000" }),
+        json!({ "url": "electrum2.cipig.net:10000" }),
+        json!({ "url": "electrum3.cipig.net:10000" }),
+    ]
+}
+
+#[allow(dead_code)]
+#[cfg(target_arch = "wasm32")]
 pub fn tbtc_electrums() -> Vec<Json> {
     vec![
         json!({ "url": "electrum1.cipig.net:30068", "protocol": "WSS" }),

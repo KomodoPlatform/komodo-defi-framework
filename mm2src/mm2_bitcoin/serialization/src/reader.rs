@@ -54,18 +54,27 @@ pub enum CoinVariant {
     LBC,
     Standard,
     Qtum,
+    // Todo: https://github.com/KomodoPlatform/atomicDEX-API/issues/1345
+    BTC,
 }
 
 impl CoinVariant {
     pub fn is_qtum(&self) -> bool { matches!(self, CoinVariant::Qtum) }
 
     pub fn is_lbc(&self) -> bool { matches!(self, CoinVariant::LBC) }
+
+    pub fn is_btc(&self) -> bool { matches!(self, CoinVariant::BTC) }
 }
 
 pub fn coin_variant_by_ticker(ticker: &str) -> CoinVariant {
-    match ticker {
-        "LBC" => CoinVariant::LBC,
-        _ => CoinVariant::Standard,
+    if ticker == "BTC" || ticker.contains("BTC-") || ticker.contains("BTC_") {
+        // "BTC", "BTC-segwit", "tBTC", "tBTC-segwit", etc..
+        CoinVariant::BTC
+    } else if ticker == "LBC" || ticker.contains("LBC-") || ticker.contains("LBC_") {
+        // "LBC", "LBC-segwit", etc..
+        CoinVariant::LBC
+    } else {
+        CoinVariant::Standard
     }
 }
 

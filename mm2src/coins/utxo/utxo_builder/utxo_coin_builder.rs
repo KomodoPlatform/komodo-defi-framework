@@ -30,6 +30,7 @@ use mm2_err_handle::prelude::*;
 use primitives::hash::H256;
 use rand::seq::SliceRandom;
 use serde_json::{self as json, Value as Json};
+use spv_validation::storage::{BlockHeaderStorageError, BlockHeaderStorageOps};
 use std::sync::{Arc, Mutex, Weak};
 
 cfg_native! {
@@ -77,6 +78,7 @@ pub enum UtxoCoinBuildError {
         fmt = "Coin doesn't support Trezor hardware wallet. Please consider adding the 'trezor_coin' field to the coins config"
     )]
     CoinDoesntSupportTrezor,
+    BlockHeaderStorageError(BlockHeaderStorageError),
     #[display(fmt = "Internal error: {}", _0)]
     Internal(String),
 }
@@ -96,6 +98,10 @@ impl From<Bip32DerPathError> for UtxoCoinBuildError {
 
 impl From<HDWalletStorageError> for UtxoCoinBuildError {
     fn from(e: HDWalletStorageError) -> Self { UtxoCoinBuildError::HDWalletStorageError(e) }
+}
+
+impl From<BlockHeaderStorageError> for UtxoCoinBuildError {
+    fn from(e: BlockHeaderStorageError) -> Self { UtxoCoinBuildError::BlockHeaderStorageError(e) }
 }
 
 #[async_trait]
@@ -422,8 +428,12 @@ pub trait UtxoCoinBuilderCommonOps {
             event_handlers.push(ElectrumProtoVerifier { on_connect_tx }.into_shared());
         }
 
-        let block_headers_storage = BlockHeaderStorage::new_from_ctx(self.ctx().clone())
+        let storage_ticker = self.ticker().replace('-', "_");
+        let block_headers_storage = BlockHeaderStorage::new_from_ctx(self.ctx().clone(), storage_ticker)
             .map_to_mm(|e| UtxoCoinBuildError::Internal(e.to_string()))?;
+        if !block_headers_storage.is_initialized_for().await? {
+            block_headers_storage.init().await?;
+        }
 
         let mut rng = small_rng();
         servers.as_mut_slice().shuffle(&mut rng);
