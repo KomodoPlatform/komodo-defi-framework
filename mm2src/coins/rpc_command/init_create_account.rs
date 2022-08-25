@@ -166,6 +166,8 @@ pub struct CreateNewAccountRequest {
 pub struct CreateNewAccountParams {
     #[serde(default = "true_f")]
     scan: bool,
+    // The max number of empty addresses in a row.
+    // If transactions were sent to an address outside the `gap_limit`, they will not be identified.
     gap_limit: Option<u32>,
 }
 

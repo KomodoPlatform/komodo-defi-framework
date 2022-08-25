@@ -122,6 +122,9 @@ pub struct GetNewAddressRequest {
 pub struct GetNewAddressParams {
     pub(crate) account_id: u32,
     pub(crate) chain: Option<Bip44Chain>,
+    // The max number of empty addresses in a row.
+    // If there are more or equal to the `gap_limit` last empty addresses in a row,
+    // we'll not allow to generate new address.
     pub(crate) gap_limit: Option<u32>,
 }
 

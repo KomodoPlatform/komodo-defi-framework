@@ -39,6 +39,8 @@ pub struct ScanAddressesRequest {
 #[derive(Clone, Deserialize)]
 pub struct ScanAddressesParams {
     pub account_index: u32,
+    // The max number of empty addresses in a row.
+    // If transactions were sent to an address outside the `gap_limit`, they will not be identified.
     pub gap_limit: Option<u32>,
 }
 

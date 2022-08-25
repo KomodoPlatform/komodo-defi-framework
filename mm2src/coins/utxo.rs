@@ -1223,6 +1223,8 @@ pub struct UtxoActivationParams {
     pub required_confirmations: Option<u64>,
     pub requires_notarization: Option<bool>,
     pub address_format: Option<UtxoAddressFormat>,
+    // The max number of empty addresses in a row.
+    // If transactions were sent to an address outside the `gap_limit`, they will not be identified.
     pub gap_limit: Option<u32>,
     #[serde(flatten)]
     pub enable_params: EnabledCoinBalanceParams,
@@ -1342,6 +1344,8 @@ pub struct UtxoHDWallet {
     pub derivation_path: Bip44PathToCoin,
     /// User accounts.
     pub accounts: HDAccountsMutex<UtxoHDAccount>,
+    // The max number of empty addresses in a row.
+    // If transactions were sent to an address outside the `gap_limit`, they will not be identified.
     pub gap_limit: u32,
 }
 
