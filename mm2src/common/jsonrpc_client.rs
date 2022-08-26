@@ -238,9 +238,9 @@ impl fmt::Display for JsonRpcError {
 }
 
 impl JsonRpcError {
-    pub fn new(client_info: String, request: JsonRpcRequestEnum, error: JsonRpcErrorType) -> Self {
+    pub fn new(client_info: &str, request: JsonRpcRequestEnum, error: JsonRpcErrorType) -> Self {
         Self {
-            client_info,
+            client_info: format!("coin: {}", client_info),
             request,
             error,
         }
@@ -261,7 +261,7 @@ pub enum JsonRpcErrorType {
 }
 
 impl JsonRpcErrorType {
-    pub fn to_parse(remote_addr: &str, err: String) -> Self { Self::Parse(remote_addr.to_string().into(), err) }
+    pub fn parse_error(remote_addr: &str, err: String) -> Self { Self::Parse(remote_addr.to_string().into(), err) }
     /// Whether the error type is [`JsonRpcErrorType::Transport`].
     #[inline]
     pub fn is_transport(&self) -> bool { matches!(self, JsonRpcErrorType::Transport(_)) }
@@ -436,7 +436,7 @@ fn process_transport_batch_result<T: DeserializeOwned + Send + 'static>(
             remote_addr.clone(),
             request.clone(),
             single_resp,
-        )?)
+        )?);
     }
     Ok(result)
 }

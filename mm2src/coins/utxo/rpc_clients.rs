@@ -650,11 +650,11 @@ impl JsonRpcClient for NativeClientImpl {
 
     #[cfg(target_arch = "wasm32")]
     fn transport(&self, request: JsonRpcRequestEnum) -> JsonRpcResponseFut {
-        Box::new(futures01::future::err(JsonRpcError {
-            client_info: UtxoJsonRpcClientInfo::client_info(self),
+        Box::new(futures01::future::err(JsonRpcError::new(
+            &self.coin_name(),
             request,
-            error: JsonRpcErrorType::Transport("'NativeClientImpl' must be used in native mode only".to_string()),
-        }))
+            JsonRpcErrorType::Transport("'NativeClientImpl' must be used in native mode only".to_string()),
+        )))
     }
 
     #[cfg(not(target_arch = "wasm32"))]
@@ -663,7 +663,7 @@ impl JsonRpcClient for NativeClientImpl {
 
         let request_body = try_f!(json::to_string(&request).map_err(|e| {
             JsonRpcError::new(
-                common::jsonrpc_client::JsonRpcClient::client_info(self),
+                self.coin_name(),
                 request.clone(),
                 JsonRpcErrorType::InvalidRequest(e.to_string()),
             )
@@ -680,19 +680,19 @@ impl JsonRpcClient for NativeClientImpl {
             .body(Vec::from(request_body))
             .map_err(|e| {
                 JsonRpcError::new(
-                    common::jsonrpc_client::JsonRpcClient::client_info(self),
+                    self.coin_name(),
                     request.clone(),
                     JsonRpcErrorType::InvalidRequest(e.to_string()),
                 )
             }));
 
         let event_handles = self.event_handlers.clone();
-        let client_info = UtxoJsonRpcClientInfo::client_info(self);
+        let client_info = self.coin_name().to_owned();
         Box::new(slurp_req(http_request).boxed().compat().then(
             move |result| -> Result<(JsonRpcRemoteAddr, JsonRpcResponseEnum), JsonRpcError> {
                 let res = result.map_err(|e| {
                     JsonRpcError::new(
-                        client_info.clone(),
+                        &client_info,
                         request.clone(),
                         JsonRpcErrorType::SlurpError(e.to_string()),
                     )
@@ -702,22 +702,22 @@ impl JsonRpcClient for NativeClientImpl {
 
                 let body = std::str::from_utf8(&res.2).map_err(|e| {
                     JsonRpcError::new(
-                        client_info.clone(),
+                        &client_info,
                         request.clone(),
-                        JsonRpcErrorType::to_parse(&uri, e.to_string()),
+                        JsonRpcErrorType::parse_error(&uri, e.to_string()),
                     )
                 })?;
 
                 if res.0 != StatusCode::OK {
                     let res_value = serde_json::from_slice(&res.2).map_err(|e| {
                         JsonRpcError::new(
-                            client_info.clone(),
+                            &client_info,
                             request.clone(),
-                            JsonRpcErrorType::to_parse(&uri, e.to_string()),
+                            JsonRpcErrorType::parse_error(&uri, e.to_string()),
                         )
                     })?;
                     return Err(JsonRpcError::new(
-                        client_info.clone(),
+                        &client_info,
                         request.clone(),
                         JsonRpcErrorType::Response(res.0.as_str().to_string().into(), res_value),
                     ));
@@ -725,9 +725,9 @@ impl JsonRpcClient for NativeClientImpl {
 
                 let response = json::from_str(body).map_err(|e| {
                     JsonRpcError::new(
-                        client_info.clone(),
+                        &client_info,
                         request.clone(),
-                        JsonRpcErrorType::to_parse(&uri, e.to_string()),
+                        JsonRpcErrorType::parse_error(&uri, e.to_string()),
                     )
                 })?;
                 Ok((uri.into(), response))
@@ -1654,7 +1654,7 @@ async fn electrum_request_multi(
     drop(connections);
     if futures.is_empty() {
         return Err(JsonRpcError::new(
-            UtxoJsonRpcClientInfo::client_info(&client),
+            client.coin_name(),
             request.clone(),
             JsonRpcErrorType::Transport("All electrums are currently disconnected".to_string()),
         ));
@@ -1665,10 +1665,12 @@ async fn electrum_request_multi(
             // server.ping must be sent to all servers to keep all connections alive
             return select_ok(futures)
                 .map(|(result, _)| result)
-                .map_err(|_| JsonRpcError {
-                    client_info: UtxoJsonRpcClientInfo::client_info(&client),
-                    request,
-                    error: JsonRpcErrorType::Transport("All electrums are currently disconnected".to_string()),
+                .map_err(|_| {
+                    JsonRpcError::new(
+                        client.coin_name(),
+                        request,
+                        JsonRpcErrorType::Transport("All electrums are currently disconnected".to_string()),
+                    )
                 })
                 .compat()
                 .await;
@@ -1676,10 +1678,12 @@ async fn electrum_request_multi(
         _ => (),
     }
 
-    let (res, no_of_failed_requests) = select_ok_sequential(futures).compat().await.map_err(|_| JsonRpcError {
-        client_info: UtxoJsonRpcClientInfo::client_info(&client),
-        request: request.clone(),
-        error: JsonRpcErrorType::Transport("All electrums are currently disconnected".to_string()),
+    let (res, no_of_failed_requests) = select_ok_sequential(futures).compat().await.map_err(|_| {
+        JsonRpcError::new(
+            client.coin_name(),
+            request.clone(),
+            JsonRpcErrorType::Transport("All electrums are currently disconnected".to_string()),
+        )
     })?;
     client.rotate_servers(no_of_failed_requests).await;
     Ok(res)
@@ -1692,21 +1696,23 @@ async fn electrum_request_to(
 ) -> Result<(JsonRpcRemoteAddr, JsonRpcResponseEnum), JsonRpcError> {
     let (tx, responses) = {
         let connections = client.connections.lock().await;
-        let connection = connections.iter().find(|c| c.addr == to_addr).ok_or(JsonRpcError {
-            client_info: UtxoJsonRpcClientInfo::client_info(&client),
-            request: request.clone(),
-            error: JsonRpcErrorType::Transport(format!("Connection {} is not established yet", to_addr)),
+        let connection = connections.iter().find(|c| c.addr == to_addr).ok_or_else(|| {
+            JsonRpcError::new(
+                client.coin_name(),
+                request.clone(),
+                JsonRpcErrorType::Transport(format!("Connection {} is not established yet", to_addr)),
+            )
         })?;
         let responses = connection.responses.clone();
         let tx = {
             match &*connection.tx.lock().await {
                 Some(tx) => tx.clone(),
                 None => {
-                    return Err(JsonRpcError {
-                        client_info: UtxoJsonRpcClientInfo::client_info(&client),
-                        request: request.clone(),
-                        error: JsonRpcErrorType::Transport(format!("Connection {} is not established yet", to_addr)),
-                    })
+                    return Err(JsonRpcError::new(
+                        client.coin_name(),
+                        request.clone(),
+                        JsonRpcErrorType::Transport(format!("Connection {} is not established yet", to_addr)),
+                    ))
                 },
             }
         };
@@ -1716,11 +1722,7 @@ async fn electrum_request_to(
     let response = electrum_request(request.clone(), tx, responses, ELECTRUM_TIMEOUT)
         .compat()
         .await
-        .map_err(|err| JsonRpcError {
-            client_info: UtxoJsonRpcClientInfo::client_info(&client),
-            request,
-            error: JsonRpcErrorType::Transport(err),
-        })?;
+        .map_err(|err| JsonRpcError::new(client.coin_name(), request, JsonRpcErrorType::Transport(err)))?;
     Ok((JsonRpcRemoteAddr(to_addr.to_owned()), response))
 }
 

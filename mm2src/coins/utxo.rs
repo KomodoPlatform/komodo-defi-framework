@@ -597,7 +597,6 @@ impl From<UtxoRpcError> for GetTxHeightError {
     fn from(e: UtxoRpcError) -> Self { GetTxHeightError::HeightNotFound(e.to_string()) }
 }
 
-#[allow(clippy::large_enum_variant)]
 #[derive(Debug, Display)]
 pub enum GetBlockHeaderError {
     #[display(fmt = "Block header storage error: {}", _0)]
@@ -681,8 +680,8 @@ impl UtxoCoinFields {
     }
 }
 
-#[derive(Debug, Display)]
 #[allow(clippy::large_enum_variant)]
+#[derive(Debug, Display)]
 pub enum BroadcastTxErr {
     /// RPC client error
     Rpc(UtxoRpcError),
