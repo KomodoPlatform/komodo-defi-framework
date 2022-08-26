@@ -1751,7 +1751,7 @@ pub struct ListTrustedNodesResponse {
     trusted_nodes: Vec<PublicKeyForRPC>,
 }
 
-pub async fn list_trusted_node(ctx: MmArc, req: ListTrustedNodesReq) -> TrustedNodeResult<ListTrustedNodesResponse> {
+pub async fn list_trusted_nodes(ctx: MmArc, req: ListTrustedNodesReq) -> TrustedNodeResult<ListTrustedNodesResponse> {
     let coin = lp_coinfind_or_err(&ctx, &req.coin).await?;
     let ln_coin = match coin {
         MmCoinEnum::LightningCoin(c) => c,

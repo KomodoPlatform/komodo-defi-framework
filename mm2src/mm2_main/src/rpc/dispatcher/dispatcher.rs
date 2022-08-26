@@ -39,7 +39,7 @@ use std::net::SocketAddr;
 cfg_native! {
     use coins::lightning::{add_trusted_node, close_channel, connect_to_lightning_node, generate_invoice, get_channel_details,
         get_claimable_balances, get_payment_details, list_closed_channels_by_filter, list_open_channels_by_filter,
-        list_payments_by_filter, list_trusted_node, open_channel, remove_trusted_node, send_payment, update_channel,
+        list_payments_by_filter, list_trusted_nodes, open_channel, remove_trusted_node, send_payment, update_channel,
         LightningCoin};
     use coins::{SolanaCoin, SplToken};
     use coins::z_coin::ZCoin;
@@ -193,7 +193,7 @@ async fn dispatcher_v2(request: MmRpcRequest, ctx: MmArc) -> DispatcherResult<Re
             "list_closed_channels_by_filter" => handle_mmrpc(ctx, request, list_closed_channels_by_filter).await,
             "list_open_channels_by_filter" => handle_mmrpc(ctx, request, list_open_channels_by_filter).await,
             "list_payments_by_filter" => handle_mmrpc(ctx, request, list_payments_by_filter).await,
-            "list_trusted_node" => handle_mmrpc(ctx, request, list_trusted_node).await,
+            "list_trusted_nodes" => handle_mmrpc(ctx, request, list_trusted_nodes).await,
             "open_channel" => handle_mmrpc(ctx, request, open_channel).await,
             "remove_trusted_node" => handle_mmrpc(ctx, request, remove_trusted_node).await,
             "send_payment" => handle_mmrpc(ctx, request, send_payment).await,
