@@ -341,7 +341,6 @@ pub async fn validate_headers(
 ) -> Result<(), SPVError> {
     let mut previous_height = previous_height;
     let mut previous_header = if previous_height == 0 {
-        // Todo: add validation earlier in coin activation (convert to blockheader struct there)
         BlockHeader::try_from(params.genesis_block_header.clone()).map_err(|e| SPVError::Internal(e.to_string()))?
     } else {
         storage

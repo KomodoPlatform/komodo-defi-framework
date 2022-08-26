@@ -9,8 +9,8 @@ pub type UtxoStandardUserAction = HwRpcTaskUserAction;
 pub enum UtxoStandardInProgressStatus {
     ActivatingCoin,
     SyncingBlockHeaders {
-        from: u64,
-        to: u64,
+        current_scanned_block: u64,
+        last_block: u64,
     },
     TemporaryError(String),
     RequestingWalletBalance,

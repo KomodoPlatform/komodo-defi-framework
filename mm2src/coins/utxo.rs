@@ -658,6 +658,31 @@ impl From<GetBlockHeaderError> for SPVError {
     fn from(e: GetBlockHeaderError) -> Self { SPVError::UnableToGetHeader(e.to_string()) }
 }
 
+#[derive(Debug, Display)]
+pub enum GetConfirmedTxError {
+    HeightNotFound(GetTxHeightError),
+    UnableToGetHeader(GetBlockHeaderError),
+    RpcError(JsonRpcError),
+    SerializationError(serialization::Error),
+    SPVError(SPVError),
+}
+
+impl From<GetTxHeightError> for GetConfirmedTxError {
+    fn from(err: GetTxHeightError) -> Self { GetConfirmedTxError::HeightNotFound(err) }
+}
+
+impl From<GetBlockHeaderError> for GetConfirmedTxError {
+    fn from(err: GetBlockHeaderError) -> Self { GetConfirmedTxError::UnableToGetHeader(err) }
+}
+
+impl From<JsonRpcError> for GetConfirmedTxError {
+    fn from(err: JsonRpcError) -> Self { GetConfirmedTxError::RpcError(err) }
+}
+
+impl From<serialization::Error> for GetConfirmedTxError {
+    fn from(err: serialization::Error) -> Self { GetConfirmedTxError::SerializationError(err) }
+}
+
 impl UtxoCoinFields {
     pub fn transaction_preimage(&self) -> TransactionInputSigner {
         let lock_time = if self.conf.ticker == "KMD" {

@@ -3157,7 +3157,7 @@ pub fn validate_payment<T: UtxoCommonOps>(
                     client
                         .validate_spv_proof(&tx, try_spv_proof_until)
                         .await
-                        .map_err(|e| format!("{:?}", e))?;
+                        .map_err(|e| format!("{}", e))?;
                 }
             }
 
@@ -3445,18 +3445,14 @@ fn increase_by_percent(num: u64, percent: f64) -> u64 {
     num + (percent.round() as u64)
 }
 
-// Todo:  This loop needs to be called when getting headers is enabled in conf only after getting all the headers when activating coin
-// Todo:  add test for enabling utxo with enable_spv_proof to check that all the headers are retrieved right (should be ignored cause it will take a long time)
 pub async fn block_header_utxo_loop<T: UtxoCommonOps>(
     weak: UtxoWeak,
     constructor: impl Fn(UtxoArc) -> T,
     mut sync_status_loop_handle: UtxoSyncStatusLoopHandle,
 ) {
-    // Todo: should notify the status not only the errors
     while let Some(arc) = weak.upgrade() {
         let coin = constructor(arc);
         let client = match &coin.as_ref().rpc_client {
-            // Todo:  should I send UtxoSyncStatus::Finished here just in case?
             UtxoRpcClientEnum::Native(_) => break,
             UtxoRpcClientEnum::Electrum(client) => client,
         };
@@ -3472,7 +3468,6 @@ pub async fn block_header_utxo_loop<T: UtxoCommonOps>(
             },
         };
 
-        // Todo: what to do about chain reorganization??
         let to_block_height = match coin.as_ref().rpc_client.get_block_count().compat().await {
             Ok(h) => h,
             Err(e) => {
@@ -3483,6 +3478,7 @@ pub async fn block_header_utxo_loop<T: UtxoCommonOps>(
             },
         };
 
+        // Todo: Add code for the case if a chain reorganization happens
         if from_block_height == to_block_height {
             Timer::sleep(BLOCK_HEADERS_LOOP_INTERVAL).await;
             continue;

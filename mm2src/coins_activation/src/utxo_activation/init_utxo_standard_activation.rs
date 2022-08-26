@@ -50,7 +50,6 @@ impl InitStandaloneCoinActivationOps for UtxoStandardCoin {
         &activation_ctx.init_utxo_standard_task_manager
     }
 
-    // Todo:  in test should check that it will continue syncing after the coin is activated
     async fn init_standalone_coin(
         ctx: MmArc,
         ticker: String,
@@ -99,8 +98,12 @@ impl InitStandaloneCoinActivationOps for UtxoStandardCoin {
                             ticker: ticker.clone(),
                             error: "Error waiting for block headers synchronization status!".into(),
                         })? {
-                        UtxoSyncStatus::SyncingBlockHeaders { from, to } => {
-                            UtxoStandardInProgressStatus::SyncingBlockHeaders { from, to }
+                        UtxoSyncStatus::SyncingBlockHeaders {
+                            current_scanned_block,
+                            last_block,
+                        } => UtxoStandardInProgressStatus::SyncingBlockHeaders {
+                            current_scanned_block,
+                            last_block,
                         },
                         UtxoSyncStatus::TemporaryError(e) => UtxoStandardInProgressStatus::TemporaryError(e),
                         UtxoSyncStatus::PermanentError(e) => {

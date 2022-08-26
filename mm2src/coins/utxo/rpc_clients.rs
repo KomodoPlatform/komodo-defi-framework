@@ -2,7 +2,8 @@
 #![cfg_attr(target_arch = "wasm32", allow(dead_code))]
 
 use crate::utxo::utxo_block_header_storage::BlockHeaderStorage;
-use crate::utxo::{output_script, sat_from_big_decimal, GetBlockHeaderError, GetTxError, GetTxHeightError};
+use crate::utxo::{output_script, sat_from_big_decimal, GetBlockHeaderError, GetConfirmedTxError, GetTxError,
+                  GetTxHeightError};
 use crate::{big_decimal_from_sat_unsigned, NumConversError, RpcTransportEventHandler, RpcTransportEventHandlerShared};
 use async_trait::async_trait;
 use chain::{BlockHeader, BlockHeaderBits, BlockHeaderNonce, OutPoint, Transaction as UtxoTx};
@@ -1256,6 +1257,14 @@ pub struct TxMerkleBranch {
     pub pos: usize,
 }
 
+#[derive(Clone)]
+pub struct ConfirmedTransactionInfo {
+    pub tx: UtxoTx,
+    pub header: BlockHeader,
+    pub index: u64,
+    pub height: u64,
+}
+
 #[derive(Debug, PartialEq)]
 pub struct BestBlock {
     pub height: u64,
@@ -1567,7 +1576,6 @@ pub struct ElectrumClientImpl {
     protocol_version: OrdRange<f32>,
     get_balance_concurrent_map: ConcurrentRequestMap<String, ElectrumBalance>,
     list_unspent_concurrent_map: ConcurrentRequestMap<String, Vec<ElectrumUnspent>>,
-    // Todo: make this not optional and check if spv is enabled to do other stuff (in coins activation add it to task manager maybe)
     block_headers_storage: BlockHeaderStorage,
 }
 
@@ -1936,9 +1944,7 @@ impl ElectrumClient {
 
     // get_tx_height_from_storage is always preferred to be used instead of this, but if there is no headers in storage (storing headers is not enabled)
     // this function can be used instead
-    // Todo: This can be used in lightning if spv is not enabled for platform coin (connected to trusted server), will remove #[allow(dead_code)] after it's used
-    #[allow(dead_code)]
-    async fn get_tx_height_from_rpc(&self, tx: &UtxoTx) -> Result<u64, MmError<GetTxHeightError>> {
+    async fn get_tx_height_from_rpc(&self, tx: &UtxoTx) -> Result<u64, GetTxHeightError> {
         for output in tx.outputs.clone() {
             let script_pubkey_str = hex::encode(electrum_script_hash(&output.script_pubkey));
             if let Ok(history) = self.scripthash_get_history(script_pubkey_str.as_str()).compat().await {
@@ -1950,7 +1956,7 @@ impl ElectrumClient {
                 }
             }
         }
-        MmError::err(GetTxHeightError::HeightNotFound(
+        Err(GetTxHeightError::HeightNotFound(
             "Couldn't find height through electrum!".into(),
         ))
     }
@@ -1969,6 +1975,27 @@ impl ElectrumClient {
                 self.blockchain_block_header(height).compat().await?.as_slice(),
             )?),
         }
+    }
+
+    pub async fn get_confirmed_tx_info_from_rpc(
+        &self,
+        tx: &UtxoTx,
+    ) -> Result<ConfirmedTransactionInfo, GetConfirmedTxError> {
+        let height = self.get_tx_height_from_rpc(tx).await?;
+
+        let merkle_branch = self
+            .blockchain_transaction_get_merkle(tx.hash().reversed().into(), height)
+            .compat()
+            .await?;
+
+        let header = deserialize(self.blockchain_block_header(height).compat().await?.as_slice())?;
+
+        Ok(ConfirmedTransactionInfo {
+            tx: tx.clone(),
+            header,
+            index: merkle_branch.pos as u64,
+            height,
+        })
     }
 
     pub async fn get_merkle_and_validated_header(

@@ -1,22 +1,13 @@
-use crate::utxo::rpc_clients::ElectrumClient;
+use crate::utxo::rpc_clients::{ConfirmedTransactionInfo, ElectrumClient};
 use async_trait::async_trait;
-use chain::{BlockHeader, Transaction as UtxoTx};
+use chain::Transaction as UtxoTx;
 use common::executor::Timer;
 use common::log::error;
 use common::now_ms;
 use keys::hash::H256;
-use mm2_err_handle::prelude::*;
 use serialization::serialize_list;
 use spv_validation::helpers_validation::SPVError;
 use spv_validation::spv_proof::{SPVProof, TRY_SPV_PROOF_INTERVAL};
-
-#[derive(Clone)]
-pub struct ConfirmedTransactionInfo {
-    pub tx: UtxoTx,
-    pub header: BlockHeader,
-    pub index: u64,
-    pub height: u64,
-}
 
 #[async_trait]
 pub trait SimplePaymentVerification {
@@ -24,7 +15,7 @@ pub trait SimplePaymentVerification {
         &self,
         tx: &UtxoTx,
         try_spv_proof_until: u64,
-    ) -> Result<ConfirmedTransactionInfo, MmError<SPVError>>;
+    ) -> Result<ConfirmedTransactionInfo, SPVError>;
 }
 
 #[async_trait]
@@ -33,9 +24,9 @@ impl SimplePaymentVerification for ElectrumClient {
         &self,
         tx: &UtxoTx,
         try_spv_proof_until: u64,
-    ) -> Result<ConfirmedTransactionInfo, MmError<SPVError>> {
+    ) -> Result<ConfirmedTransactionInfo, SPVError> {
         if tx.outputs.is_empty() {
-            return MmError::err(SPVError::InvalidVout);
+            return Err(SPVError::InvalidVout);
         }
 
         let (merkle_branch, validated_header, height) = loop {
@@ -46,7 +37,7 @@ impl SimplePaymentVerification for ElectrumClient {
                     try_spv_proof_until,
                     tx.hash().reversed(),
                 );
-                return MmError::err(SPVError::Timeout);
+                return Err(SPVError::Timeout);
             }
 
             match self.get_merkle_and_validated_header(tx).await {
@@ -78,7 +69,7 @@ impl SimplePaymentVerification for ElectrumClient {
             intermediate_nodes,
         };
 
-        proof.validate(&validated_header).map_err(MmError::new)?;
+        proof.validate(&validated_header)?;
 
         Ok(ConfirmedTransactionInfo {
             tx: tx.clone(),

@@ -1,4 +1,3 @@
-use crate::utxo::rpc_clients::UtxoRpcClientEnum;
 use crate::utxo::utxo_builder::{UtxoCoinBuildError, UtxoCoinBuilder, UtxoCoinBuilderCommonOps,
                                 UtxoFieldsWithHardwareWalletBuilder, UtxoFieldsWithIguanaPrivKeyBuilder};
 use crate::utxo::utxo_common::{block_header_utxo_loop, merge_utxo_loop};
@@ -14,10 +13,15 @@ use mm2_err_handle::prelude::*;
 use serde_json::Value as Json;
 
 pub enum UtxoSyncStatus {
-    SyncingBlockHeaders { from: u64, to: u64 },
+    SyncingBlockHeaders {
+        current_scanned_block: u64,
+        last_block: u64,
+    },
     TemporaryError(String),
     PermanentError(String),
-    Finished { block_number: u64 },
+    Finished {
+        block_number: u64,
+    },
 }
 
 #[derive(Clone)]
@@ -28,9 +32,12 @@ impl UtxoSyncStatusLoopHandle {
         UtxoSyncStatusLoopHandle(sync_status_notifier)
     }
 
-    pub fn notify_blocks_headers_sync_status(&mut self, from: u64, to: u64) {
+    pub fn notify_blocks_headers_sync_status(&mut self, current_scanned_block: u64, last_block: u64) {
         self.0
-            .try_send(UtxoSyncStatus::SyncingBlockHeaders { from, to })
+            .try_send(UtxoSyncStatus::SyncingBlockHeaders {
+                current_scanned_block,
+                last_block,
+            })
             .debug_log_with_msg("No one seems interested in UtxoSyncStatus");
     }
 
@@ -130,7 +137,6 @@ where
 
     async fn build(self) -> MmResult<Self::ResultCoin, Self::Error> {
         let utxo = self.build_utxo_fields().await?;
-        let rpc_client = utxo.rpc_client.clone();
         let utxo_arc = UtxoArc::new(utxo);
         let utxo_weak = utxo_arc.downgrade();
         let result_coin = (self.constructor)(utxo_arc);
@@ -141,8 +147,7 @@ where
         }
 
         // Todo: find a better way for this
-        if let Some(abort_handler) =
-            self.spawn_block_header_utxo_loop_if_required(utxo_weak, &rpc_client, self.constructor.clone())
+        if let Some(abort_handler) = self.spawn_block_header_utxo_loop_if_required(utxo_weak, self.constructor.clone())
         {
             self.ctx.abort_handlers.lock().unwrap().push(abort_handler);
         }
@@ -193,33 +198,25 @@ pub trait MergeUtxoArcOps<T: UtxoCommonOps + GetUtxoListOps>: UtxoCoinBuilderCom
 pub trait BlockHeaderUtxoArcOps<T>: UtxoCoinBuilderCommonOps {
     // Todo: this should be called only if storing headers is enabled and should be called after syncing the latest header on coin activation
     // Todo: probably this function needs to be refactored
-    fn spawn_block_header_utxo_loop_if_required<F>(
-        &self,
-        weak: UtxoWeak,
-        rpc_client: &UtxoRpcClientEnum,
-        constructor: F,
-    ) -> Option<AbortHandle>
+    fn spawn_block_header_utxo_loop_if_required<F>(&self, weak: UtxoWeak, constructor: F) -> Option<AbortHandle>
     where
         F: Fn(UtxoArc) -> T + Send + Sync + 'static,
         T: UtxoCommonOps,
     {
         // Todo:  add condition for enable_spv_proof (should block headers be saved when enable_spv_proof is true only? what about for getting tx height?)
-        // Todo: because of sync_status_loop_handle this whole function might be refactored (rpc_client.is_native() should be checked when creating sync_status_loop_handle)
         if let Some(sync_status_loop_handle) = self.sync_status_loop_handle() {
-            if !rpc_client.is_native() {
-                let ticker = self.ticker().to_owned();
-                let (fut, abort_handle) = abortable(block_header_utxo_loop(weak, constructor, sync_status_loop_handle));
-                info!("Starting UTXO block header loop for coin {}", ticker);
-                spawn(async move {
-                    if let Err(e) = fut.await {
-                        info!(
-                            "spawn_block_header_utxo_loop_if_required stopped for {}, reason {}",
-                            ticker, e
-                        );
-                    }
-                });
-                return Some(abort_handle);
-            }
+            let ticker = self.ticker().to_owned();
+            let (fut, abort_handle) = abortable(block_header_utxo_loop(weak, constructor, sync_status_loop_handle));
+            info!("Starting UTXO block header loop for coin {}", ticker);
+            spawn(async move {
+                if let Err(e) = fut.await {
+                    info!(
+                        "spawn_block_header_utxo_loop_if_required stopped for {}, reason {}",
+                        ticker, e
+                    );
+                }
+            });
+            return Some(abort_handle);
         }
 
         None

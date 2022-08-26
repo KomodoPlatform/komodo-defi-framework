@@ -36,7 +36,7 @@ fn start_lightning_nodes(enable_0_confs: bool) -> (MarketMakerIt, MarketMakerIt,
             "coin": "tBTC-TEST-lightning",
             "mm2": 1,
             "decimals": 11,
-            "our_channels_config": {
+            "our_channels_configs": {
               "inbound_channels_confirmations": 1
             },
             "counterparty_channel_config_limits": {

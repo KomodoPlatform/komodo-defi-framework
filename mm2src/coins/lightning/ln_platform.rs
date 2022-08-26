@@ -1,9 +1,11 @@
 use super::*;
 use crate::lightning::ln_errors::{SaveChannelClosingError, SaveChannelClosingResult};
-use crate::utxo::rpc_clients::{BestBlock as RpcBestBlock, BlockHashOrHeight, ElectrumBlockHeader, ElectrumClient,
-                               ElectrumNonce, EstimateFeeMethod, UtxoRpcClientEnum, UtxoRpcResult};
-use crate::utxo::spv::{ConfirmedTransactionInfo, SimplePaymentVerification};
+use crate::utxo::rpc_clients::{BestBlock as RpcBestBlock, BlockHashOrHeight, ConfirmedTransactionInfo,
+                               ElectrumBlockHeader, ElectrumClient, ElectrumNonce, EstimateFeeMethod,
+                               UtxoRpcClientEnum, UtxoRpcResult};
+use crate::utxo::spv::SimplePaymentVerification;
 use crate::utxo::utxo_standard::UtxoStandardCoin;
+use crate::utxo::GetConfirmedTxError;
 use crate::{MarketCoinOps, MmCoin};
 use bitcoin::blockdata::block::BlockHeader;
 use bitcoin::blockdata::script::Script;
@@ -310,11 +312,17 @@ impl Platform {
                 },
             });
 
+        let is_spv_enabled = self.coin.as_ref().conf.enable_spv_proof;
         let confirmed_transactions_futs = on_chain_txs
             .map(|transaction| async move {
-                client
-                    .validate_spv_proof(&transaction, (now_ms() / 1000) + TRY_SPV_PROOF_INTERVAL)
-                    .await
+                if is_spv_enabled {
+                    client
+                        .validate_spv_proof(&transaction, (now_ms() / 1000) + TRY_SPV_PROOF_INTERVAL)
+                        .await
+                        .map_err(GetConfirmedTxError::SPVError)
+                } else {
+                    client.get_confirmed_tx_info_from_rpc(&transaction).await
+                }
             })
             .collect::<Vec<_>>();
         join_all(confirmed_transactions_futs)
@@ -372,12 +380,18 @@ impl Platform {
                 .any(|info| info.tx.hash() == output.spending_tx.hash())
         });
 
+        let is_spv_enabled = self.coin.as_ref().conf.enable_spv_proof;
         let confirmed_transactions_futs = spent_outputs_info
             .into_iter()
             .map(|output| async move {
-                client
-                    .validate_spv_proof(&output.spending_tx, (now_ms() / 1000) + TRY_SPV_PROOF_INTERVAL)
-                    .await
+                if is_spv_enabled {
+                    client
+                        .validate_spv_proof(&output.spending_tx, (now_ms() / 1000) + TRY_SPV_PROOF_INTERVAL)
+                        .await
+                        .map_err(GetConfirmedTxError::SPVError)
+                } else {
+                    client.get_confirmed_tx_info_from_rpc(&output.spending_tx).await
+                }
             })
             .collect::<Vec<_>>();
         let mut confirmed_transaction_info = join_all(confirmed_transactions_futs)
