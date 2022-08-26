@@ -95,7 +95,7 @@ macro_rules! try_f {
     ($e: expr) => {
         match $e {
             Ok(ok) => ok,
-            Err(e) => return Box::new(futures01::future::err(e.into())),
+            Err(e) => return Box::new(futures01::future::err(e)),
         }
     };
 }

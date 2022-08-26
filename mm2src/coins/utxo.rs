@@ -565,8 +565,8 @@ impl From<UnsupportedAddr> for WithdrawError {
     fn from(e: UnsupportedAddr) -> Self { WithdrawError::InvalidAddress(e.to_string()) }
 }
 
-#[derive(Debug)]
 #[allow(clippy::large_enum_variant)]
+#[derive(Debug)]
 pub enum GetTxError {
     Rpc(UtxoRpcError),
     TxDeserialization(SerError),

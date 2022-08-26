@@ -350,15 +350,13 @@ impl Qrc20Coin {
                                 }
                             }
                         },
-                        JsonRpcErrorType::InvalidRequest(err) | JsonRpcErrorType::Parse(_, err) => {
+                        JsonRpcErrorType::InvalidRequest(err)
+                        | JsonRpcErrorType::Parse(_, err)
+                        | JsonRpcErrorType::Transport(err)
+                        | JsonRpcErrorType::SlurpError(err) => {
                             return RequestTxHistoryResult::Retry {
                                 error: ERRL!("Error {} on blockchain_contract_event_get_history", err),
                             };
-                        },
-                        JsonRpcErrorType::Transport(err) => {
-                            return RequestTxHistoryResult::Retry {
-                                error: ERRL!("Error {} on blockchain_contract_event_get_history", err),
-                            }
                         },
                     }
                 },

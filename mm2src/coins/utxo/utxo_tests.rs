@@ -3902,7 +3902,9 @@ fn test_for_non_existent_tx_hex_utxo_electrum() {
         .wait()
         .err()
         .unwrap();
-    assert!(actual.contains("Invalid Tx Hash b4f8d0f3665ccb7a7e1d98cfaba9c77ed4cbe245deaf529a5578b6977d91253c: Tx is Unavailable on chain yet"))
+    assert!(
+        actual.contains("Tx b4f8d0f3665ccb7a7e1d98cfaba9c77ed4cbe245deaf529a5578b6977d91253c is not on chain anymore")
+    )
 }
 
 #[test]

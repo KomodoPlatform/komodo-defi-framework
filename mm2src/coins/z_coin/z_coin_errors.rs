@@ -51,7 +51,6 @@ impl From<ZcashClientError> for ZcoinLightClientInitError {
 #[display(fmt = "Blockchain scan process stopped")]
 pub struct BlockchainScanStopped {}
 
-#[allow(clippy::large_enum_variant)]
 #[derive(Debug, Display)]
 pub enum GenTxError {
     DecryptedOutputNotFound,
@@ -172,7 +171,6 @@ impl From<SqliteError> for GetUnspentWitnessErr {
     fn from(err: SqliteError) -> GetUnspentWitnessErr { GetUnspentWitnessErr::Sql(err) }
 }
 
-#[allow(clippy::large_enum_variant)]
 #[derive(Debug, Display)]
 pub enum ZCoinBuildError {
     UtxoBuilderError(UtxoCoinBuildError),

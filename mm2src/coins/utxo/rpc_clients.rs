@@ -12,7 +12,6 @@ use common::executor::{spawn, Timer};
 use common::jsonrpc_client::{JsonRpcBatchClient, JsonRpcBatchResponse, JsonRpcClient, JsonRpcError, JsonRpcErrorType,
                              JsonRpcId, JsonRpcMultiClient, JsonRpcRemoteAddr, JsonRpcRequest, JsonRpcRequestEnum,
                              JsonRpcResponse, JsonRpcResponseEnum, JsonRpcResponseFut, RpcRes};
-
 use common::log::{error, info, warn};
 use common::{median, now_float, now_ms, OrdRange};
 use derive_more::Display;
@@ -174,8 +173,8 @@ impl UtxoRpcClientEnum {
                         }
                     },
                     Err(e) => {
-                        if check_if_tx_onchain(e.get_inner()) {
-                            return ERR!("Invalid Tx Hash {:?}: Tx is Unavailable on chain yet", tx_hash);
+                        if e.get_inner().is_tx_not_found_error() {
+                            return ERR!("Tx {} is not on chain anymore", tx_hash);
                         };
 
                         if expiry_height > 0 {
@@ -269,7 +268,9 @@ pub enum UtxoRpcError {
 impl From<JsonRpcError> for UtxoRpcError {
     fn from(e: JsonRpcError) -> Self {
         match e.error {
-            JsonRpcErrorType::InvalidRequest(_) => UtxoRpcError::Internal(e.to_string()),
+            JsonRpcErrorType::InvalidRequest(_) | JsonRpcErrorType::SlurpError(_) => {
+                UtxoRpcError::Internal(e.to_string())
+            },
             JsonRpcErrorType::Transport(_) => UtxoRpcError::Transport(e),
             JsonRpcErrorType::Parse(_, _) | JsonRpcErrorType::Response(_, _) => UtxoRpcError::ResponseParseError(e),
         }
@@ -284,22 +285,23 @@ impl From<NumConversError> for UtxoRpcError {
     fn from(e: NumConversError) -> Self { UtxoRpcError::Internal(e.to_string()) }
 }
 
-fn check_if_tx_onchain(err: &UtxoRpcError) -> bool {
-    if let UtxoRpcError::ResponseParseError(ref json_err) = err {
-        if let JsonRpcErrorType::Response(_, json) = &json_err.error {
-            if json["error"]["code"] == -5 {
-                return true;
-            };
-            // electrum compatible
-            if json["message"].as_str().unwrap_or_default().contains(NO_TX_ERROR_CODE) {
-                return true;
-            };
-        }
-    };
+impl UtxoRpcError {
+    pub fn is_tx_not_found_error(&self) -> bool {
+        if let UtxoRpcError::ResponseParseError(ref json_err) = self {
+            if let JsonRpcErrorType::Response(_, json) = &json_err.error {
+                if json["error"]["code"] == -5 {
+                    return true;
+                };
+                // electrum compatible
+                if json["message"].as_str().unwrap_or_default().contains(NO_TX_ERROR_CODE) {
+                    return true;
+                };
+            }
+        };
 
-    false
+        false
+    }
 }
-
 /// Common operations that both types of UTXO clients have but implement them differently
 #[async_trait]
 pub trait UtxoRpcClientOps: fmt::Debug + Send + Sync + 'static {
@@ -376,12 +378,8 @@ pub trait UtxoRpcClientOps: fmt::Debug + Send + Sync + 'static {
         {
             Ok(bytes) => Ok(Some(deserialize(bytes.as_slice())?)),
             Err(err) => {
-                if let UtxoRpcError::ResponseParseError(ref json_err) = err {
-                    if let JsonRpcErrorType::Response(_, json) = &json_err.error {
-                        if json["message"].as_str().unwrap_or_default().contains(NO_TX_ERROR_CODE) {
-                            return Ok(None);
-                        }
-                    }
+                if err.is_tx_not_found_error() {
+                    return Ok(None);
                 }
                 Err(err.into())
             },
@@ -664,11 +662,11 @@ impl JsonRpcClient for NativeClientImpl {
         use mm2_net::transport::slurp_req;
 
         let request_body = try_f!(json::to_string(&request).map_err(|e| {
-            JsonRpcError {
-                client_info: common::jsonrpc_client::JsonRpcClient::client_info(self),
-                request: request.clone(),
-                error: JsonRpcErrorType::InvalidRequest(e.to_string()),
-            }
+            JsonRpcError::new(
+                common::jsonrpc_client::JsonRpcClient::client_info(self),
+                request.clone(),
+                JsonRpcErrorType::InvalidRequest(e.to_string()),
+            )
         }));
         // measure now only body length, because the `hyper` crate doesn't allow to get total HTTP packet length
         self.event_handlers.on_outgoing_request(request_body.as_bytes());
@@ -681,48 +679,56 @@ impl JsonRpcClient for NativeClientImpl {
             .uri(uri.clone())
             .body(Vec::from(request_body))
             .map_err(|e| {
-                JsonRpcError {
-                    client_info: common::jsonrpc_client::JsonRpcClient::client_info(self),
-                    request: request.clone(),
-                    error: JsonRpcErrorType::InvalidRequest(e.to_string()),
-                }
+                JsonRpcError::new(
+                    common::jsonrpc_client::JsonRpcClient::client_info(self),
+                    request.clone(),
+                    JsonRpcErrorType::InvalidRequest(e.to_string()),
+                )
             }));
 
         let event_handles = self.event_handlers.clone();
         let client_info = UtxoJsonRpcClientInfo::client_info(self);
         Box::new(slurp_req(http_request).boxed().compat().then(
             move |result| -> Result<(JsonRpcRemoteAddr, JsonRpcResponseEnum), JsonRpcError> {
-                let res = result.map_err(|e| JsonRpcError {
-                    client_info: client_info.clone(),
-                    request: request.clone(),
-                    error: JsonRpcErrorType::InvalidRequest(e.to_string()),
+                let res = result.map_err(|e| {
+                    JsonRpcError::new(
+                        client_info.clone(),
+                        request.clone(),
+                        JsonRpcErrorType::SlurpError(e.to_string()),
+                    )
                 })?;
                 // measure now only body length, because the `hyper` crate doesn't allow to get total HTTP packet length
                 event_handles.on_incoming_response(&res.2);
 
-                let body = std::str::from_utf8(&res.2).map_err(|e| JsonRpcError {
-                    client_info: client_info.clone(),
-                    request: request.clone(),
-                    error: JsonRpcErrorType::InvalidRequest(e.to_string()),
+                let body = std::str::from_utf8(&res.2).map_err(|e| {
+                    JsonRpcError::new(
+                        client_info.clone(),
+                        request.clone(),
+                        JsonRpcErrorType::to_parse(&uri, e.to_string()),
+                    )
                 })?;
 
                 if res.0 != StatusCode::OK {
-                    let res_value = serde_json::from_slice(&res.2).map_err(|e| JsonRpcError {
-                        client_info: client_info.clone(),
-                        request: request.clone(),
-                        error: JsonRpcErrorType::InvalidRequest(e.to_string()),
+                    let res_value = serde_json::from_slice(&res.2).map_err(|e| {
+                        JsonRpcError::new(
+                            client_info.clone(),
+                            request.clone(),
+                            JsonRpcErrorType::to_parse(&uri, e.to_string()),
+                        )
                     })?;
-                    return Err(JsonRpcError {
-                        client_info: client_info.clone(),
-                        request: request.clone(),
-                        error: JsonRpcErrorType::Response(uri.into(), res_value),
-                    });
+                    return Err(JsonRpcError::new(
+                        client_info.clone(),
+                        request.clone(),
+                        JsonRpcErrorType::Response(res.0.as_str().to_string().into(), res_value),
+                    ));
                 }
 
-                let response = json::from_str(body).map_err(|e| JsonRpcError {
-                    client_info: client_info.clone(),
-                    request: request.clone(),
-                    error: JsonRpcErrorType::InvalidRequest(e.to_string()),
+                let response = json::from_str(body).map_err(|e| {
+                    JsonRpcError::new(
+                        client_info.clone(),
+                        request.clone(),
+                        JsonRpcErrorType::to_parse(&uri, e.to_string()),
+                    )
                 })?;
                 Ok((uri.into(), response))
             },
@@ -1647,11 +1653,11 @@ async fn electrum_request_multi(
     }
     drop(connections);
     if futures.is_empty() {
-        return Err(JsonRpcError {
-            client_info: UtxoJsonRpcClientInfo::client_info(&client),
-            request: request.clone(),
-            error: JsonRpcErrorType::Transport("All electrums are currently disconnected".to_string()),
-        });
+        return Err(JsonRpcError::new(
+            UtxoJsonRpcClientInfo::client_info(&client),
+            request.clone(),
+            JsonRpcErrorType::Transport("All electrums are currently disconnected".to_string()),
+        ));
     }
 
     match &request {
