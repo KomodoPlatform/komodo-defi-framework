@@ -1,9 +1,15 @@
+/// IRIS HTLC implementation in Rust on top of Cosmos SDK(cosmrs) for AtomicDEX.
+///
+/// This module includes HTLC creating & claiming representation structstures
+/// and their trait implementations.
 use cosmrs::{tx::{Msg, MsgProto},
              AccountId, Coin, ErrorReport};
 use std::convert::TryFrom;
 
-// Creating
+const CREATE_HTLC_TYPE_URL: &str = "/irismod.htlc.MsgCreateHTLC";
+const CLAIM_HTLC_TYPE_URL: &str = "/irismod.htlc.MsgClaimHTLC";
 
+/// Proto representation of create HTLC message
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct CreateHtlcProtoRep {
     #[prost(string, tag = "1")]
@@ -105,11 +111,10 @@ impl From<&MsgCreateHtlc> for CreateHtlcProtoRep {
 }
 
 impl MsgProto for CreateHtlcProtoRep {
-    const TYPE_URL: &'static str = "/irismod.htlc.MsgCreateHTLC";
+    const TYPE_URL: &'static str = CREATE_HTLC_TYPE_URL;
 }
 
-// Claiming
-
+/// Proto representation of claim HTLC message
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct ClaimHtlcProtoRep {
     #[prost(string, tag = "1")]
@@ -169,5 +174,5 @@ impl From<&MsgClaimHtlc> for ClaimHtlcProtoRep {
 }
 
 impl MsgProto for ClaimHtlcProtoRep {
-    const TYPE_URL: &'static str = "/irismod.htlc.MsgClaimHTLC";
+    const TYPE_URL: &'static str = CLAIM_HTLC_TYPE_URL;
 }
