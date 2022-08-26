@@ -146,7 +146,7 @@ where
             self.ctx.abort_handlers.lock().unwrap().push(abort_handler);
         }
 
-        // Todo: find a better way for this
+        // This only works for v2 utxo activation since sync_status_loop_handle is initialized there only.
         if let Some(abort_handler) = self.spawn_block_header_utxo_loop_if_required(utxo_weak, self.constructor.clone())
         {
             self.ctx.abort_handlers.lock().unwrap().push(abort_handler);
@@ -196,14 +196,11 @@ pub trait MergeUtxoArcOps<T: UtxoCommonOps + GetUtxoListOps>: UtxoCoinBuilderCom
 }
 
 pub trait BlockHeaderUtxoArcOps<T>: UtxoCoinBuilderCommonOps {
-    // Todo: this should be called only if storing headers is enabled and should be called after syncing the latest header on coin activation
-    // Todo: probably this function needs to be refactored
     fn spawn_block_header_utxo_loop_if_required<F>(&self, weak: UtxoWeak, constructor: F) -> Option<AbortHandle>
     where
         F: Fn(UtxoArc) -> T + Send + Sync + 'static,
         T: UtxoCommonOps,
     {
-        // Todo:  add condition for enable_spv_proof (should block headers be saved when enable_spv_proof is true only? what about for getting tx height?)
         if let Some(sync_status_loop_handle) = self.sync_status_loop_handle() {
             let ticker = self.ticker().to_owned();
             let (fut, abort_handle) = abortable(block_header_utxo_loop(weak, constructor, sync_status_loop_handle));

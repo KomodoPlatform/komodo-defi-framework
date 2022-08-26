@@ -61,9 +61,6 @@ impl InitStandaloneCoinActivationOps for UtxoStandardCoin {
         let crypto_ctx = CryptoCtx::from_ctx(&ctx)?;
         let priv_key_policy = priv_key_build_policy(&crypto_ctx, activation_request.priv_key_policy);
 
-        // todo: add a function for this instead of coin.as_ref().conf.enable_spv_proof && !coin.as_ref().rpc_client.is_native()
-        // Todo: should this step be used before this or maybe inside UtxoArcBuilder??
-        // Todo: channel can be used to send errors after coin init to rotate_servers etc..
         let (sync_status_loop_handle, maybe_sync_watcher) =
             if coin_conf["enable_spv_proof"].as_bool().unwrap_or(false) && !activation_request.mode.is_native() {
                 let (sync_status_notifier, sync_watcher) = channel(1);

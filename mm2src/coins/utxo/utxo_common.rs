@@ -3501,15 +3501,11 @@ pub async fn block_header_utxo_loop<T: UtxoCommonOps>(
         };
 
         let ticker = coin.as_ref().conf.ticker.as_str();
-        // Todo: an attack can be used to send a fake header to fail validating and can't confirm a tx, should use a different server in such case (watch towers shall help)
         if let Some(params) = &coin.as_ref().conf.block_headers_verification_params {
             if let Err(e) = validate_headers(ticker, from_block_height, block_headers, storage, params).await {
                 error!("Error {} on validating the latest headers!", e);
+                // Todo: remove this electrum server and use another in this case since the headers from this server are invalid
                 sync_status_loop_handle.notify_on_permanent_error(e.to_string());
-                // Todo: should rotate_servers here, if error is not due to rpc (instead of waiting)??? (should also check if error is due to RPC or not before sending permanent_error)
-                // Todo: when using rotate_servers add sleep and continue again
-                // Timer::sleep(10.).await;
-                // continue;
                 break;
             }
         }

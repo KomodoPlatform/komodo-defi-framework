@@ -220,8 +220,6 @@ impl<'a> UtxoCoinBuilder for QtumCoinBuilder<'a> {
 
     async fn build(self) -> MmResult<Self::ResultCoin, Self::Error> {
         let utxo = self.build_utxo_fields().await?;
-        // Todo: Remove this if other comment is removed
-        // let rpc_client = utxo.rpc_client.clone();
         let utxo_arc = UtxoArc::new(utxo);
         let utxo_weak = utxo_arc.downgrade();
         let result_coin = QtumCoin::from(utxo_arc);
@@ -229,13 +227,6 @@ impl<'a> UtxoCoinBuilder for QtumCoinBuilder<'a> {
         if let Some(abort_handler) = self.spawn_merge_utxo_loop_if_required(utxo_weak, QtumCoin::from) {
             self.ctx.abort_handlers.lock().unwrap().push(abort_handler);
         }
-
-        // Todo: Remove this or add it to qtum
-        // if let Some(abort_handler) =
-        //     self.spawn_block_header_utxo_loop_if_required(utxo_weak, &rpc_client, QtumCoin::from, self.sync_status_notifier)
-        // {
-        //     self.ctx.abort_handlers.lock().unwrap().push(abort_handler);
-        // }
 
         Ok(result_coin)
     }
