@@ -148,6 +148,7 @@ impl<'a> SqlCreateTable<'a> {
         Ok(())
     }
 
+    /// Generates a string SQL request.
     pub fn sql(&self) -> SqlResult<String> {
         if self.columns.is_empty() {
             let error = "SQL CREATE TABLE columns must be specified before `SqlQuery::create` is called";

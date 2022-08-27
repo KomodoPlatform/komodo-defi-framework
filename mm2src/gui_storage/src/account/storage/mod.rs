@@ -54,7 +54,7 @@ impl AccountId {
         match self {
             AccountId::Iguana => (AccountType::Iguana, None, None),
             AccountId::HD { account_idx } => (AccountType::HD, Some(*account_idx), None),
-            AccountId::HW { device_pubkey } => (AccountType::HW, None, Some(device_pubkey.clone())),
+            AccountId::HW { device_pubkey } => (AccountType::HW, None, Some(*device_pubkey)),
         }
     }
 
@@ -80,10 +80,10 @@ impl AccountId {
 }
 
 impl EnabledAccountId {
-    pub(crate) fn to_pair(&self) -> (EnabledAccountType, Option<u32>) {
+    pub(crate) fn to_pair(self) -> (EnabledAccountType, Option<u32>) {
         match self {
             EnabledAccountId::Iguana => (EnabledAccountType::Iguana, None),
-            EnabledAccountId::HD { account_idx } => (EnabledAccountType::HD, Some(*account_idx)),
+            EnabledAccountId::HD { account_idx } => (EnabledAccountType::HD, Some(account_idx)),
         }
     }
 
@@ -127,6 +127,9 @@ impl<'a> AccountStorageBuilder<'a> {
 pub(crate) trait AccountStorage: Send + Sync {
     /// Initialize the storage.
     async fn init(&self) -> AccountStorageResult<()>;
+
+    /// Loads accounts from the storage.
+    async fn load_accounts(&self) -> AccountStorageResult<BTreeMap<AccountId, AccountInfo>>;
 
     /// Loads accounts from the storage and marks **only** one account as enabled.
     async fn load_accounts_with_enabled_flag(

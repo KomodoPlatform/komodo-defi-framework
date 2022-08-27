@@ -147,6 +147,13 @@ impl AccountStorage for WasmAccountStorage {
     /// [`WasmAccountStorage::lock_db`] initializes the database on the first call.
     async fn init(&self) -> AccountStorageResult<()> { self.lock_db().await.map(|_locked_db| ()) }
 
+    async fn load_accounts(&self) -> AccountStorageResult<BTreeMap<AccountId, AccountInfo>> {
+        let locked_db = self.lock_db().await?;
+        let transaction = locked_db.inner.transaction().await?;
+
+        Self::load_accounts(&transaction).await
+    }
+
     async fn load_accounts_with_enabled_flag(
         &self,
     ) -> AccountStorageResult<BTreeMap<AccountId, AccountWithEnabledFlag>> {

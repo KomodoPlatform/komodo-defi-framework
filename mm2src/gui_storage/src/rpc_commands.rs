@@ -153,7 +153,7 @@ pub async fn enable_account(ctx: MmArc, req: EnableAccountRequest) -> MmResult<S
     let account_id = match req.policy {
         EnableAccountPolicy::Exist(account_id) => account_id,
         EnableAccountPolicy::New(new_account) => {
-            let account_id = new_account.account_id.clone();
+            let account_id = new_account.account_id;
             account_ctx
                 .storage()
                 .await?

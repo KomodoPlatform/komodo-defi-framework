@@ -235,7 +235,7 @@ impl<S: ToString> ToValidSqlIdent for S {
 
 /// This structure manages the SQL parameters.
 #[derive(Clone, Default)]
-pub(crate) struct SqlParamsBuilder {
+pub struct SqlParamsBuilder {
     next_param_id: usize,
     params: OwnedSqlParams,
 }
@@ -251,7 +251,7 @@ impl SqlParamsBuilder {
 
     /// Pushes the given `param` and returns its `:<IDX>` identifier.
     pub(crate) fn push_owned_param(&mut self, param: OwnedSqlParam) -> ParamId {
-        self.params.push(OwnedSqlParam::from(param));
+        self.params.push(param);
         self.next_param_id += 1;
         format!(":{}", self.next_param_id)
     }

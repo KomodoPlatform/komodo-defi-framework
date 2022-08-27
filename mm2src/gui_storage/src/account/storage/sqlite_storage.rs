@@ -3,11 +3,7 @@ use crate::account::{AccountId, AccountInfo, AccountType, AccountWithCoins, Acco
                      EnabledAccountType, HwPubkey, MAX_ACCOUNT_DESCRIPTION_LENGTH, MAX_ACCOUNT_NAME_LENGTH,
                      MAX_TICKER_LENGTH};
 use async_trait::async_trait;
-use db_common::sql_constraint::UniqueConstraint;
-use db_common::sql_create::{SqlColumn, SqlCreateTable, SqlType};
-use db_common::sql_delete::SqlDelete;
-use db_common::sql_insert::SqlInsert;
-use db_common::sql_query::SqlQuery;
+use db_common::sql_build::*;
 use db_common::sqlite::rusqlite::types::Type;
 use db_common::sqlite::rusqlite::{Connection, Error as SqlError, Row};
 use db_common::sqlite::SqliteConnShared;
@@ -106,7 +102,7 @@ impl AccountId {
 
 impl EnabledAccountId {
     /// An alternative to [`EnabledAccountId::to_pair`] that returns SQL compatible types.
-    fn to_sql_pair(&self) -> (i64, Option<i64>) {
+    fn to_sql_pair(self) -> (i64, Option<i64>) {
         let (account_type, account_idx) = self.to_pair();
         (account_type as i64, account_idx.map(|idx| idx as i64))
     }
@@ -289,7 +285,7 @@ impl SqliteAccountStorage {
     }
 
     fn upload_account(conn: &Connection, account: AccountInfo) -> AccountStorageResult<()> {
-        let mut sql_insert = SqlInsert::new(&conn, account_table::TABLE_NAME);
+        let mut sql_insert = SqlInsert::new(conn, account_table::TABLE_NAME);
 
         let (account_type, account_idx, device_pubkey) = account.account_id.to_sql_tuple();
         sql_insert
@@ -316,6 +312,11 @@ impl AccountStorage for SqliteAccountStorage {
 
         transaction.commit()?;
         Ok(())
+    }
+
+    async fn load_accounts(&self) -> AccountStorageResult<BTreeMap<AccountId, AccountInfo>> {
+        let conn = self.lock_conn()?;
+        Self::load_accounts(&conn)
     }
 
     async fn load_accounts_with_enabled_flag(
@@ -367,7 +368,7 @@ impl AccountStorage for SqliteAccountStorage {
         }
 
         // Remove the previous enabled account by clearing the table.
-        SqlDelete::new(&conn, enabled_account_table::TABLE_NAME).delete()?;
+        SqlDelete::new(&conn, enabled_account_table::TABLE_NAME)?.delete()?;
 
         let mut sql_insert = SqlInsert::new(&conn, enabled_account_table::TABLE_NAME);
 
@@ -391,7 +392,26 @@ impl AccountStorage for SqliteAccountStorage {
         Self::upload_account(&conn, account)
     }
 
-    async fn set_name(&self, account_id: AccountId, name: String) -> AccountStorageResult<()> { todo!() }
+    async fn set_name(&self, account_id: AccountId, name: String) -> AccountStorageResult<()> {
+        let conn = self.lock_conn()?;
+
+        // First, check if the account exists.
+        if !Self::account_exists(&conn, &account_id)? {
+            return MmError::err(AccountStorageError::NoSuchAccount(account_id));
+        }
+
+        let mut sql_update = SqlUpdate::new(&conn, account_table::TABLE_NAME)?;
+
+        let (account_type, account_idx, device_pubkey) = account_id.to_sql_tuple();
+        sql_update
+            .set_param(account_table::NAME, name)?
+            .and_where_eq(account_table::ACCOUNT_TYPE, account_type)?
+            .and_where_eq(account_table::ACCOUNT_IDX, account_idx)?
+            .and_where_eq_param(account_table::DEVICE_PUBKEY, device_pubkey)?;
+
+        sql_update.update()?;
+        Ok(())
+    }
 
     async fn set_description(&self, account_id: AccountId, description: String) -> AccountStorageResult<()> { todo!() }
 

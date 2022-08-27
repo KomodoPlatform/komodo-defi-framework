@@ -120,6 +120,7 @@ impl<'a> SqlInsert<'a> {
     #[inline]
     pub fn params(&self) -> &OwnedSqlParams { self.params.params() }
 
+    /// Generates a string SQL request.
     pub fn sql(&self) -> SqlResult<String> {
         let mut sql = String::with_capacity(Self::INSERT_CAPACITY + self.columns.len() * Self::VALUE_CAPACITY);
 
