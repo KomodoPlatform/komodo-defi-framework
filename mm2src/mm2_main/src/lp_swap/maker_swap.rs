@@ -620,7 +620,7 @@ impl MakerSwap {
             Ok(tx) => tx,
             Err(e) => {
                 return Ok((Some(MakerSwapCommand::Finish), vec![
-                    MakerSwapEvent::TakerFeeValidateFailed(ERRL!("{}", e).into()),
+                    MakerSwapEvent::TakerFeeValidateFailed(ERRL!("{:?}", e).into()),
                 ]))
             },
         };
@@ -790,7 +790,9 @@ impl MakerSwap {
             Ok(tx) => tx,
             Err(err) => {
                 return Ok((Some(MakerSwapCommand::RefundMakerPayment), vec![
-                    MakerSwapEvent::TakerPaymentValidateFailed(ERRL!("!taker_coin.tx_enum_from_bytes: {}", err).into()),
+                    MakerSwapEvent::TakerPaymentValidateFailed(
+                        ERRL!("!taker_coin.tx_enum_from_bytes: {:?}", err).into(),
+                    ),
                     MakerSwapEvent::MakerPaymentWaitRefundStarted {
                         wait_until: self.wait_refund_until(),
                     },

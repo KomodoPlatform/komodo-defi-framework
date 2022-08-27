@@ -134,11 +134,14 @@ async fn process_p2p_message(
     ctx: MmArc,
     peer_id: PeerId,
     message_id: MessageId,
-    message: GossipsubMessage,
+    mut message: GossipsubMessage,
     i_am_relay: bool,
 ) {
     let mut to_propagate = false;
     let mut orderbook_pairs = vec![];
+
+    message.topics.dedup();
+    drop_mutability!(message);
 
     for topic in message.topics {
         let mut split = topic.as_str().split(TOPIC_SEPARATOR);
@@ -155,10 +158,21 @@ async fn process_p2p_message(
             Some(lp_swap::TX_HELPER_PREFIX) => {
                 if let Some(pair) = split.next() {
                     if let Ok(Some(coin)) = lp_coinfind(&ctx, pair).await {
-                        match coin.send_raw_tx_bytes(&message.data).compat().await {
-                            Ok(id) => log::debug!("Transaction broadcasted successfully: {:?} ", id),
-                            Err(e) => log::error!("Broadcast transaction failed. {}", e),
-                        }
+                        if let Err(e) = coin.tx_enum_from_bytes(&message.data) {
+                            log::error!("Message cannot continue the process due to: {:?}", e);
+                            continue;
+                        };
+
+                        let fut = coin.send_raw_tx_bytes(&message.data);
+                        spawn(async {
+                            match fut.compat().await {
+                                Ok(id) => log::debug!("Transaction broadcasted successfully: {:?} ", id),
+                                // TODO (After https://github.com/KomodoPlatform/atomicDEX-API/pull/1433)
+                                // Maybe do not log an error if the transaction is already sent to
+                                // the blockchain
+                                Err(e) => log::error!("Broadcast transaction failed (ignore this error if the transaction already sent by another seednode). {}", e),
+                            };
+                        })
                     }
                 }
             },

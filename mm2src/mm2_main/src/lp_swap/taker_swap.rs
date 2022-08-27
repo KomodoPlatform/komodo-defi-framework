@@ -1116,7 +1116,7 @@ impl TakerSwap {
             Err(e) => {
                 return Ok((Some(TakerSwapCommand::Finish), vec![
                     TakerSwapEvent::MakerPaymentValidateFailed(
-                        ERRL!("Error parsing the 'maker-payment': {}", e).into(),
+                        ERRL!("Error parsing the 'maker-payment': {:?}", e).into(),
                     ),
                 ]))
             },
