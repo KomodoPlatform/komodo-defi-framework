@@ -5,7 +5,7 @@ use crate::account::{AccountId, AccountInfo, AccountType, AccountWithCoins, Acco
 use async_trait::async_trait;
 use db_common::sql_build::*;
 use db_common::sqlite::rusqlite::types::Type;
-use db_common::sqlite::rusqlite::{Connection, Error as SqlError, Row};
+use db_common::sqlite::rusqlite::{Connection, Error as SqlError, Result as SqlResult, Row};
 use db_common::sqlite::SqliteConnShared;
 use mm2_core::mm_ctx::MmArc;
 use mm2_err_handle::prelude::*;
@@ -298,6 +298,29 @@ impl SqliteAccountStorage {
         sql_insert.insert()?;
         Ok(())
     }
+
+    /// Updates the given `account_id` account by applying the `update_cb` callback to an `SqlUpdate` SQL builder.
+    fn update_account<F>(conn: &Connection, account_id: AccountId, update_cb: F) -> AccountStorageResult<()>
+    where
+        F: FnOnce(&mut SqlUpdate) -> SqlResult<()>,
+    {
+        // First, check if the account exists.
+        if !Self::account_exists(&conn, &account_id)? {
+            return MmError::err(AccountStorageError::NoSuchAccount(account_id));
+        }
+
+        let mut sql_update = SqlUpdate::new(&conn, account_table::TABLE_NAME)?;
+        update_cb(&mut sql_update)?;
+
+        let (account_type, account_idx, device_pubkey) = account_id.to_sql_tuple();
+        sql_update
+            .and_where_eq(account_table::ACCOUNT_TYPE, account_type)?
+            .and_where_eq(account_table::ACCOUNT_IDX, account_idx)?
+            .and_where_eq_param(account_table::DEVICE_PUBKEY, device_pubkey)?;
+
+        sql_update.update()?;
+        Ok(())
+    }
 }
 
 #[async_trait]
@@ -395,27 +418,29 @@ impl AccountStorage for SqliteAccountStorage {
     async fn set_name(&self, account_id: AccountId, name: String) -> AccountStorageResult<()> {
         let conn = self.lock_conn()?;
 
-        // First, check if the account exists.
-        if !Self::account_exists(&conn, &account_id)? {
-            return MmError::err(AccountStorageError::NoSuchAccount(account_id));
-        }
-
-        let mut sql_update = SqlUpdate::new(&conn, account_table::TABLE_NAME)?;
-
-        let (account_type, account_idx, device_pubkey) = account_id.to_sql_tuple();
-        sql_update
-            .set_param(account_table::NAME, name)?
-            .and_where_eq(account_table::ACCOUNT_TYPE, account_type)?
-            .and_where_eq(account_table::ACCOUNT_IDX, account_idx)?
-            .and_where_eq_param(account_table::DEVICE_PUBKEY, device_pubkey)?;
-
-        sql_update.update()?;
-        Ok(())
+        Self::update_account(&conn, account_id, |sql_update| {
+            sql_update.set_param(account_table::NAME, name)?;
+            Ok(())
+        })
     }
 
-    async fn set_description(&self, account_id: AccountId, description: String) -> AccountStorageResult<()> { todo!() }
+    async fn set_description(&self, account_id: AccountId, description: String) -> AccountStorageResult<()> {
+        let conn = self.lock_conn()?;
 
-    async fn set_balance(&self, account_id: AccountId, balance_usd: BigDecimal) -> AccountStorageResult<()> { todo!() }
+        Self::update_account(&conn, account_id, |sql_update| {
+            sql_update.set_param(account_table::DESCRIPTION, description)?;
+            Ok(())
+        })
+    }
+
+    async fn set_balance(&self, account_id: AccountId, balance_usd: BigDecimal) -> AccountStorageResult<()> {
+        let conn = self.lock_conn()?;
+
+        Self::update_account(&conn, account_id, |sql_update| {
+            sql_update.set_param(account_table::BALANCE_USD, balance_usd.to_string())?;
+            Ok(())
+        })
+    }
 
     async fn activate_coin(&self, account_id: AccountId, ticker: String) -> AccountStorageResult<()> { todo!() }
 

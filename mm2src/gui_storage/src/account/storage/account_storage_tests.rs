@@ -116,7 +116,7 @@ async fn test_enable_account_impl() {
     assert_eq!(actual_enabled, EnabledAccountId::HD { account_idx: 1 });
 }
 
-async fn test_set_name_impl() {
+async fn test_set_name_desc_balance_impl() {
     let ctx = mm_ctx_with_custom_db();
     let storage = AccountStorageBuilder::new(&ctx).build().unwrap();
     storage.init().await.unwrap();
@@ -125,13 +125,13 @@ async fn test_set_name_impl() {
     storage.enable_account(EnabledAccountId::Iguana).await.unwrap();
 
     storage
-        .set_name(AccountId::Iguana, "New name 1".to_string())
+        .set_name(AccountId::Iguana, "New name".to_string())
         .await
         .unwrap();
 
     let hd_1_id = AccountId::HD { account_idx: 1 };
     storage
-        .set_name(hd_1_id.clone(), "New name 2".to_string())
+        .set_description(hd_1_id.clone(), "New description".to_string())
         .await
         .unwrap();
 
@@ -139,14 +139,14 @@ async fn test_set_name_impl() {
         device_pubkey: HwPubkey::from("69a20008cea0c15ee483b5bbdff942752634aa07"),
     };
     storage
-        .set_name(hw_3_id.clone(), "New name 3".to_string())
+        .set_balance(hw_3_id.clone(), BigDecimal::from(23))
         .await
         .unwrap();
 
     let mut expected = accounts_map_for_test();
-    expected.get_mut(&AccountId::Iguana).unwrap().name = "New name 1".to_string();
-    expected.get_mut(&hd_1_id).unwrap().name = "New name 2".to_string();
-    expected.get_mut(&hw_3_id).unwrap().name = "New name 3".to_string();
+    expected.get_mut(&AccountId::Iguana).unwrap().name = "New name".to_string();
+    expected.get_mut(&hd_1_id).unwrap().description = "New description".to_string();
+    expected.get_mut(&hw_3_id).unwrap().balance_usd = BigDecimal::from(23);
 
     let actual = storage.load_accounts().await.unwrap();
     assert_eq!(actual, expected);
@@ -176,7 +176,7 @@ mod native_tests {
     fn test_enable_account() { block_on(super::test_enable_account_impl()) }
 
     #[test]
-    fn test_set_name() { block_on(super::test_set_name_impl()) }
+    fn test_set_name_desc_balance() { block_on(super::test_set_name_desc_balance_impl()) }
 }
 
 #[cfg(target_arch = "wasm32")]
@@ -195,5 +195,5 @@ mod wasm_tests {
     async fn test_enable_account() { super::test_enable_account_impl().await }
 
     #[wasm_bindgen_test]
-    async fn test_set_name() { super::test_set_name_impl().await }
+    async fn test_set_name_desc_balance() { super::test_set_name_desc_balance_impl().await }
 }
