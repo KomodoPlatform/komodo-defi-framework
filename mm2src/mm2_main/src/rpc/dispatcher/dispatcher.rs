@@ -224,8 +224,8 @@ async fn gui_storage_dispatcher(
         "get_accounts" => handle_mmrpc(ctx, request, gui_storage_rpc::get_accounts).await,
         "set_account_name" => handle_mmrpc(ctx, request, gui_storage_rpc::set_account_name).await,
         "set_account_description" => handle_mmrpc(ctx, request, gui_storage_rpc::set_account_description).await,
-        "activate_coin" => handle_mmrpc(ctx, request, gui_storage_rpc::activate_coin).await,
-        "deactivate_coin" => handle_mmrpc(ctx, request, gui_storage_rpc::deactivate_coin).await,
+        "activate_coins" => handle_mmrpc(ctx, request, gui_storage_rpc::activate_coins).await,
+        "deactivate_coins" => handle_mmrpc(ctx, request, gui_storage_rpc::deactivate_coins).await,
         _ => MmError::err(DispatcherError::NoSuchMethod),
     }
 }

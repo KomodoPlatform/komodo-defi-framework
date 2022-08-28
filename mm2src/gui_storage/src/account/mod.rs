@@ -4,7 +4,7 @@ use mm2_number::BigDecimal;
 use rpc::v1::types::H160 as H160Json;
 use serde::{Deserialize, Serialize};
 use serde_repr::{Deserialize_repr, Serialize_repr};
-use std::collections::HashSet;
+use std::collections::BTreeSet;
 
 pub(crate) mod storage;
 
@@ -110,9 +110,9 @@ pub struct AccountWithEnabledFlag {
     enabled: bool,
 }
 
-#[derive(Serialize)]
+#[derive(Debug, PartialEq, Serialize)]
 pub struct AccountWithCoins {
     #[serde(flatten)]
     account_info: AccountInfo,
-    coins: HashSet<String>,
+    coins: BTreeSet<String>,
 }

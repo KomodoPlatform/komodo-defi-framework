@@ -1,8 +1,8 @@
 use crate::account::storage::{AccountStorage, AccountStorageBuilder, AccountStorageError, AccountStorageResult};
-use crate::account::{AccountId, AccountInfo, EnabledAccountId, HwPubkey};
+use crate::account::{AccountId, AccountInfo, AccountWithCoins, EnabledAccountId, HwPubkey};
 use mm2_number::BigDecimal;
 use mm2_test_helpers::for_tests::mm_ctx_with_custom_db;
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, BTreeSet};
 
 fn account_ids_for_test() -> Vec<AccountId> {
     vec![
@@ -34,8 +34,8 @@ fn accounts_for_test() -> Vec<AccountInfo> {
         .collect()
 }
 
-fn accounts_map_for_test() -> BTreeMap<AccountId, AccountInfo> {
-    accounts_for_test()
+fn accounts_to_map(accounts: Vec<AccountInfo>) -> BTreeMap<AccountId, AccountInfo> {
+    accounts
         .into_iter()
         .map(|account| (account.account_id.clone(), account))
         .collect()
@@ -91,7 +91,7 @@ async fn test_enable_account_impl() {
         other => panic!("Expected 'NoSuchAccount(Iguana)', found {:?}", other),
     }
 
-    let accounts = accounts_map_for_test();
+    let accounts = accounts_to_map(accounts_for_test());
 
     let account_iguana = accounts.get(&AccountId::Iguana).unwrap().clone();
     storage.upload_account(account_iguana).await.unwrap();
@@ -121,7 +121,9 @@ async fn test_set_name_desc_balance_impl() {
     let storage = AccountStorageBuilder::new(&ctx).build().unwrap();
     storage.init().await.unwrap();
 
-    fill_storage(storage.as_ref(), accounts_for_test()).await.unwrap();
+    let accounts = accounts_for_test();
+
+    fill_storage(storage.as_ref(), accounts.clone()).await.unwrap();
     storage.enable_account(EnabledAccountId::Iguana).await.unwrap();
 
     storage
@@ -143,7 +145,7 @@ async fn test_set_name_desc_balance_impl() {
         .await
         .unwrap();
 
-    let mut expected = accounts_map_for_test();
+    let mut expected = accounts_to_map(accounts);
     expected.get_mut(&AccountId::Iguana).unwrap().name = "New name".to_string();
     expected.get_mut(&hd_1_id).unwrap().description = "New description".to_string();
     expected.get_mut(&hw_3_id).unwrap().balance_usd = BigDecimal::from(23);
@@ -158,7 +160,113 @@ async fn test_set_name_desc_balance_impl() {
 
     match error.into_inner() {
         AccountStorageError::NoSuchAccount(AccountId::HD { account_idx: 2 }) => (),
-        other => panic!("Expected 'AccountStorageError::NoSuchAccount' error, found: {}", other),
+        other => panic!("Expected 'NoSuchAccount(HD)' error, found: {}", other),
+    }
+}
+
+async fn test_activate_deactivate_coins_impl() {
+    let ctx = mm_ctx_with_custom_db();
+    let storage = AccountStorageBuilder::new(&ctx).build().unwrap();
+    storage.init().await.unwrap();
+
+    let accounts = accounts_for_test();
+    let accounts_map = accounts_to_map(accounts.clone());
+    fill_storage(storage.as_ref(), accounts).await.unwrap();
+    storage.enable_account(EnabledAccountId::Iguana).await.unwrap();
+
+    // Deactivating unknown coins should never fail.
+    storage
+        .deactivate_coins(AccountId::Iguana, vec!["RICK".to_string(), "MORTY".to_string()])
+        .await
+        .unwrap();
+
+    storage
+        .activate_coins(AccountId::Iguana, vec!["RICK".to_string()])
+        .await
+        .unwrap();
+    // Try reactivate `RICK` coin, it should be ignored.
+    storage
+        .activate_coins(AccountId::Iguana, vec!["RICK".to_string(), "MORTY".to_string()])
+        .await
+        .unwrap();
+    storage
+        .activate_coins(AccountId::HD { account_idx: 0 }, vec![
+            "MORTY".to_string(),
+            "QTUM".to_string(),
+            "KMD".to_string(),
+        ])
+        .await
+        .unwrap();
+
+    let actual = storage.load_enabled_account_with_coins().await.unwrap();
+    let expected = AccountWithCoins {
+        account_info: accounts_map.get(&AccountId::Iguana).unwrap().clone(),
+        coins: vec!["RICK".to_string(), "MORTY".to_string()].into_iter().collect(),
+    };
+    assert_eq!(actual, expected);
+
+    // Enable `HD{0}` account to load its activated coins.
+    storage
+        .enable_account(EnabledAccountId::HD { account_idx: 0 })
+        .await
+        .unwrap();
+    let actual = storage.load_enabled_account_with_coins().await.unwrap();
+    let expected = AccountWithCoins {
+        account_info: accounts_map.get(&AccountId::HD { account_idx: 0 }).unwrap().clone(),
+        coins: vec!["MORTY".to_string(), "QTUM".to_string(), "KMD".to_string()]
+            .into_iter()
+            .collect(),
+    };
+    assert_eq!(actual, expected);
+
+    // Deactivate `QTUM` and an unknown `BCH` coins for the `HD{0}` account.
+    storage
+        .deactivate_coins(AccountId::HD { account_idx: 0 }, vec![
+            "BCH".to_string(),
+            "QTUM".to_string(),
+        ])
+        .await
+        .unwrap();
+    let actual = storage.load_enabled_account_with_coins().await.unwrap();
+    let expected = AccountWithCoins {
+        account_info: accounts_map.get(&AccountId::HD { account_idx: 0 }).unwrap().clone(),
+        coins: vec!["MORTY".to_string(), "KMD".to_string()].into_iter().collect(),
+    };
+    assert_eq!(actual, expected);
+
+    // Deactivate all `HD{0}` account's coins.
+    storage
+        .deactivate_coins(AccountId::HD { account_idx: 0 }, vec![
+            "MORTY".to_string(),
+            "KMD".to_string(),
+        ])
+        .await
+        .unwrap();
+    let actual = storage.load_enabled_account_with_coins().await.unwrap();
+    let expected = AccountWithCoins {
+        account_info: accounts_map.get(&AccountId::HD { account_idx: 0 }).unwrap().clone(),
+        coins: BTreeSet::new(),
+    };
+    assert_eq!(actual, expected);
+
+    // Try to activate a coin for an unknown `HD{2}` account.
+    let error = storage
+        .activate_coins(AccountId::HD { account_idx: 2 }, vec!["RICK".to_string()])
+        .await
+        .expect_err("'AccountStorage::activate_coins' should have failed due to an unknown account_id");
+    match error.into_inner() {
+        AccountStorageError::NoSuchAccount(AccountId::HD { account_idx: 2 }) => (),
+        other => panic!("Expected 'NoSuchAccount(HD)' error, found: {}", other),
+    }
+
+    // Try to deactivate a coin for an unknown `HD{3}` account.
+    let error = storage
+        .deactivate_coins(AccountId::HD { account_idx: 3 }, vec!["MORTY".to_string()])
+        .await
+        .expect_err("'AccountStorage::deactivate_coins' should have failed due to an unknown account_id");
+    match error.into_inner() {
+        AccountStorageError::NoSuchAccount(AccountId::HD { account_idx: 3 }) => (),
+        other => panic!("Expected 'NoSuchAccount(HD)' error, found: {}", other),
     }
 }
 
@@ -177,6 +285,9 @@ mod native_tests {
 
     #[test]
     fn test_set_name_desc_balance() { block_on(super::test_set_name_desc_balance_impl()) }
+
+    #[test]
+    fn test_activate_deactivate_coins() { block_on(super::test_activate_deactivate_coins_impl()) }
 }
 
 #[cfg(target_arch = "wasm32")]
@@ -196,4 +307,7 @@ mod wasm_tests {
 
     #[wasm_bindgen_test]
     async fn test_set_name_desc_balance() { super::test_set_name_desc_balance_impl().await }
+
+    #[wasm_bindgen_test]
+    async fn test_activate_deactivate_coins() { super::test_activate_deactivate_coins_impl().await }
 }

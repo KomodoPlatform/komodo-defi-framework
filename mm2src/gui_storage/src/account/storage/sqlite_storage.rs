@@ -236,6 +236,7 @@ impl SqliteAccountStorage {
         query
             .field(account_table::ACCOUNT_TYPE)?
             .field(account_table::ACCOUNT_IDX)?
+            .field(account_table::DEVICE_PUBKEY)?
             .field(account_table::NAME)?
             .field(account_table::DESCRIPTION)?
             .field(account_table::BALANCE_USD)?;
@@ -442,9 +443,53 @@ impl AccountStorage for SqliteAccountStorage {
         })
     }
 
-    async fn activate_coin(&self, account_id: AccountId, ticker: String) -> AccountStorageResult<()> { todo!() }
+    async fn activate_coins(&self, account_id: AccountId, tickers: Vec<String>) -> AccountStorageResult<()> {
+        let mut conn = self.lock_conn()?;
+        let transaction = conn.transaction()?;
 
-    async fn deactivate_coin(&self, account_id: AccountId, ticker: &str) -> AccountStorageResult<()> { todo!() }
+        // First, check if the account exists.
+        if !Self::account_exists(&transaction, &account_id)? {
+            return MmError::err(AccountStorageError::NoSuchAccount(account_id));
+        }
+
+        for ticker in tickers {
+            let mut sql_insert = SqlInsert::new(&transaction, account_coins_table::TABLE_NAME);
+
+            let (account_type, account_id, device_pubkey) = account_id.to_sql_tuple();
+            sql_insert
+                .or_ignore()
+                .column(account_coins_table::ACCOUNT_TYPE, account_type)?
+                .column(account_coins_table::ACCOUNT_IDX, account_id)?
+                .column_param(account_coins_table::DEVICE_PUBKEY, device_pubkey)?
+                .column_param(account_coins_table::COIN, ticker)?;
+
+            sql_insert.insert()?;
+        }
+
+        transaction.commit()?;
+        Ok(())
+    }
+
+    async fn deactivate_coins(&self, account_id: AccountId, tickers: Vec<String>) -> AccountStorageResult<()> {
+        let conn = self.lock_conn()?;
+
+        // First, check if the account exists.
+        if !Self::account_exists(&conn, &account_id)? {
+            return MmError::err(AccountStorageError::NoSuchAccount(account_id));
+        }
+
+        let mut sql_delete = SqlDelete::new(&conn, account_coins_table::TABLE_NAME)?;
+
+        let (account_type, account_id, device_pubkey) = account_id.to_sql_tuple();
+        sql_delete
+            .and_where_eq(account_coins_table::ACCOUNT_TYPE, account_type)?
+            .and_where_eq(account_coins_table::ACCOUNT_IDX, account_id)?
+            .and_where_eq_param(account_coins_table::DEVICE_PUBKEY, device_pubkey)?
+            .and_where_in_params(account_coins_table::COIN, tickers)?;
+
+        sql_delete.delete()?;
+        Ok(())
+    }
 }
 
 fn account_id_from_row(row: &Row<'_>) -> Result<AccountId, SqlError> {

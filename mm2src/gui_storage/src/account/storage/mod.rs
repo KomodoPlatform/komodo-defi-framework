@@ -157,9 +157,9 @@ pub(crate) trait AccountStorage: Send + Sync {
     /// Sets the account balance.
     async fn set_balance(&self, account_id: AccountId, balance_usd: BigDecimal) -> AccountStorageResult<()>;
 
-    /// Puts the given `ticker` coin to the account's activated coins in the storage.
-    async fn activate_coin(&self, account_id: AccountId, ticker: String) -> AccountStorageResult<()>;
+    /// Puts the given `tickers` coins to the account's activated coins in the storage.
+    async fn activate_coins(&self, account_id: AccountId, tickers: Vec<String>) -> AccountStorageResult<()>;
 
-    /// Erases the given `ticker` coin from the account's activated coins in the storage.
-    async fn deactivate_coin(&self, account_id: AccountId, ticker: &str) -> AccountStorageResult<()>;
+    /// Erases the given `tickers` coins from the account's activated coins in the storage.
+    async fn deactivate_coins(&self, account_id: AccountId, tickers: Vec<String>) -> AccountStorageResult<()>;
 }

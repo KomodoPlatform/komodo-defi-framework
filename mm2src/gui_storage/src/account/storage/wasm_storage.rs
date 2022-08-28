@@ -9,7 +9,7 @@ use mm2_db::indexed_db::{ConstructibleDb, DbIdentifier, DbInstance, DbLocked, Db
 use mm2_err_handle::prelude::*;
 use mm2_number::BigDecimal;
 use serde::{Deserialize, Serialize};
-use std::collections::{BTreeMap, HashSet};
+use std::collections::{BTreeMap, BTreeSet};
 
 const DB_NAME: &str = "gui_account_storage";
 const DB_VERSION: u32 = 1;
@@ -247,16 +247,16 @@ impl AccountStorage for WasmAccountStorage {
             .await
     }
 
-    async fn activate_coin(&self, account_id: AccountId, ticker: String) -> AccountStorageResult<()> {
-        self.update_account(account_id, |account| {
-            account.activated_coins.insert(ticker);
-        })
-        .await
+    async fn activate_coins(&self, account_id: AccountId, tickers: Vec<String>) -> AccountStorageResult<()> {
+        self.update_account(account_id, |account| account.activated_coins.extend(tickers))
+            .await
     }
 
-    async fn deactivate_coin(&self, account_id: AccountId, ticker: &str) -> AccountStorageResult<()> {
+    async fn deactivate_coins(&self, account_id: AccountId, tickers: Vec<String>) -> AccountStorageResult<()> {
         self.update_account(account_id, |account| {
-            account.activated_coins.remove(ticker);
+            for ticker in tickers.iter() {
+                account.activated_coins.remove(ticker);
+            }
         })
         .await
     }
@@ -291,7 +291,7 @@ struct AccountTable {
     name: String,
     description: String,
     balance_usd: BigDecimal,
-    activated_coins: HashSet<String>,
+    activated_coins: BTreeSet<String>,
 }
 
 impl AccountTable {
@@ -347,7 +347,7 @@ impl From<AccountInfo> for AccountTable {
             name: orig.name,
             description: orig.description,
             balance_usd: orig.balance_usd,
-            activated_coins: HashSet::new(),
+            activated_coins: BTreeSet::new(),
         }
     }
 }

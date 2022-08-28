@@ -122,7 +122,7 @@ pub struct SetAccountDescriptionRequest {
 #[derive(Deserialize)]
 pub struct CoinRequest {
     account_id: AccountId,
-    ticker: String,
+    tickers: Vec<String>,
 }
 
 #[derive(Deserialize)]
@@ -248,33 +248,33 @@ pub async fn set_account_description(
 //     })
 // }
 
-/// Activates the given [`CoinRequest::ticker`] for the specified [`CoinRequest::account_id`] account.
+/// Activates the given [`CoinRequest::tickers`] for the specified [`CoinRequest::account_id`] account.
 ///
 /// # Important
 ///
 /// This RPC affects the storage **only**. It doesn't affect MarketMaker.
-pub async fn activate_coin(ctx: MmArc, req: CoinRequest) -> MmResult<SuccessResponse, AccountRpcError> {
+pub async fn activate_coins(ctx: MmArc, req: CoinRequest) -> MmResult<SuccessResponse, AccountRpcError> {
     let account_ctx = AccountContext::from_ctx(&ctx).map_to_mm(AccountRpcError::Internal)?;
-    validate_ticker(&req.ticker)?;
+    validate_tickers(&req.tickers)?;
     account_ctx
         .storage()
         .await?
-        .activate_coin(req.account_id, req.ticker)
+        .activate_coins(req.account_id, req.tickers)
         .await?;
     Ok(SuccessResponse::new())
 }
 
-/// Deactivates the given [`CoinRequest::ticker`] for the specified [`CoinRequest::account_id`] account.
+/// Deactivates the given [`CoinRequest::tickers`] for the specified [`CoinRequest::account_id`] account.
 ///
 /// # Important
 ///
 /// This RPC affects the storage **only**. It doesn't affect MarketMaker.
-pub async fn deactivate_coin(ctx: MmArc, req: CoinRequest) -> MmResult<SuccessResponse, AccountRpcError> {
+pub async fn deactivate_coins(ctx: MmArc, req: CoinRequest) -> MmResult<SuccessResponse, AccountRpcError> {
     let account_ctx = AccountContext::from_ctx(&ctx).map_to_mm(AccountRpcError::Internal)?;
     account_ctx
         .storage()
         .await?
-        .deactivate_coin(req.account_id, &req.ticker)
+        .deactivate_coins(req.account_id, req.tickers)
         .await?;
     Ok(SuccessResponse::new())
 }
@@ -302,11 +302,13 @@ fn validate_account_desc(description: &str) -> MmResult<(), AccountRpcError> {
     Ok(())
 }
 
-fn validate_ticker(coin: &str) -> MmResult<(), AccountRpcError> {
-    if coin.len() > MAX_TICKER_LENGTH {
-        return MmError::err(AccountRpcError::TickerTooLong {
-            max_len: MAX_TICKER_LENGTH,
-        });
+fn validate_tickers(tickers: &[String]) -> MmResult<(), AccountRpcError> {
+    for ticker in tickers {
+        if ticker.len() > MAX_TICKER_LENGTH {
+            return MmError::err(AccountRpcError::TickerTooLong {
+                max_len: MAX_TICKER_LENGTH,
+            });
+        }
     }
     Ok(())
 }
