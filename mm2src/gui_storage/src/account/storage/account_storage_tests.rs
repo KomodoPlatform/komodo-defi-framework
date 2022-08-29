@@ -1,5 +1,5 @@
 use crate::account::storage::{AccountStorage, AccountStorageBuilder, AccountStorageError, AccountStorageResult};
-use crate::account::{AccountId, AccountInfo, AccountWithCoins, EnabledAccountId, HwPubkey};
+use crate::account::{AccountId, AccountInfo, AccountWithCoins, AccountWithEnabledFlag, EnabledAccountId, HwPubkey};
 use mm2_number::BigDecimal;
 use mm2_test_helpers::for_tests::mm_ctx_with_custom_db;
 use std::collections::{BTreeMap, BTreeSet};
@@ -38,6 +38,21 @@ fn accounts_to_map(accounts: Vec<AccountInfo>) -> BTreeMap<AccountId, AccountInf
     accounts
         .into_iter()
         .map(|account| (account.account_id.clone(), account))
+        .collect()
+}
+
+fn tag_with_enabled_flag(
+    accounts: BTreeMap<AccountId, AccountInfo>,
+    enabled: AccountId,
+) -> BTreeMap<AccountId, AccountWithEnabledFlag> {
+    accounts
+        .into_iter()
+        .map(|(account_id, account_info)| {
+            (account_id.clone(), AccountWithEnabledFlag {
+                account_info,
+                enabled: account_id == enabled,
+            })
+        })
         .collect()
 }
 
@@ -270,6 +285,55 @@ async fn test_activate_deactivate_coins_impl() {
     }
 }
 
+async fn test_load_accounts_with_enabled_flag_impl() {
+    let ctx = mm_ctx_with_custom_db();
+    let storage = AccountStorageBuilder::new(&ctx).build().unwrap();
+    storage.init().await.unwrap();
+
+    let accounts = accounts_for_test();
+    let accounts_map = accounts_to_map(accounts.clone());
+
+    fill_storage(storage.as_ref(), accounts.clone()).await.unwrap();
+
+    let error = storage.load_accounts_with_enabled_flag().await.expect_err(
+        "'AccountStorage::load_accounts_with_enabled_flag' should have failed since no account was enabled",
+    );
+    match error.into_inner() {
+        AccountStorageError::NoEnabledAccount => (),
+        other => panic!("Expected 'NoEnabledAccount' error, found: {}", other),
+    }
+
+    storage
+        .enable_account(EnabledAccountId::HD { account_idx: 0 })
+        .await
+        .unwrap();
+    let actual = storage.load_accounts_with_enabled_flag().await.unwrap();
+    let expected = tag_with_enabled_flag(accounts_map.clone(), AccountId::HD { account_idx: 0 });
+    assert_eq!(actual, expected);
+
+    storage
+        .enable_account(EnabledAccountId::HD { account_idx: 1 })
+        .await
+        .unwrap();
+    let actual = storage.load_accounts_with_enabled_flag().await.unwrap();
+    let expected = tag_with_enabled_flag(accounts_map.clone(), AccountId::HD { account_idx: 1 });
+    assert_eq!(actual, expected);
+
+    // Try to re-enable the same `HD{1}` account.
+    storage
+        .enable_account(EnabledAccountId::HD { account_idx: 1 })
+        .await
+        .unwrap();
+    let actual = storage.load_accounts_with_enabled_flag().await.unwrap();
+    let expected = tag_with_enabled_flag(accounts_map.clone(), AccountId::HD { account_idx: 1 });
+    assert_eq!(actual, expected);
+
+    storage.enable_account(EnabledAccountId::Iguana).await.unwrap();
+    let actual = storage.load_accounts_with_enabled_flag().await.unwrap();
+    let expected = tag_with_enabled_flag(accounts_map.clone(), AccountId::Iguana);
+    assert_eq!(actual, expected);
+}
+
 #[cfg(not(target_arch = "wasm32"))]
 mod native_tests {
     use common::block_on;
@@ -288,6 +352,9 @@ mod native_tests {
 
     #[test]
     fn test_activate_deactivate_coins() { block_on(super::test_activate_deactivate_coins_impl()) }
+
+    #[test]
+    fn test_load_accounts_with_enabled_flag() { block_on(super::test_load_accounts_with_enabled_flag_impl()) }
 }
 
 #[cfg(target_arch = "wasm32")]
@@ -310,4 +377,7 @@ mod wasm_tests {
 
     #[wasm_bindgen_test]
     async fn test_activate_deactivate_coins() { super::test_activate_deactivate_coins_impl().await }
+
+    #[wasm_bindgen_test]
+    async fn test_load_accounts_with_enabled_flag() { super::test_load_accounts_with_enabled_flag_impl().await }
 }

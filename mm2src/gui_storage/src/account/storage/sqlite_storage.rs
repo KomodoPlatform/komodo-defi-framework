@@ -306,11 +306,11 @@ impl SqliteAccountStorage {
         F: FnOnce(&mut SqlUpdate) -> SqlResult<()>,
     {
         // First, check if the account exists.
-        if !Self::account_exists(&conn, &account_id)? {
+        if !Self::account_exists(conn, &account_id)? {
             return MmError::err(AccountStorageError::NoSuchAccount(account_id));
         }
 
-        let mut sql_update = SqlUpdate::new(&conn, account_table::TABLE_NAME)?;
+        let mut sql_update = SqlUpdate::new(conn, account_table::TABLE_NAME)?;
         update_cb(&mut sql_update)?;
 
         let (account_type, account_idx, device_pubkey) = account_id.to_sql_tuple();
