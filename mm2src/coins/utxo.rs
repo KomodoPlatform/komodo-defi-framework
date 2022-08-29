@@ -565,8 +565,8 @@ impl From<UnsupportedAddr> for WithdrawError {
     fn from(e: UnsupportedAddr) -> Self { WithdrawError::InvalidAddress(e.to_string()) }
 }
 
-#[allow(clippy::large_enum_variant)]
 #[derive(Debug)]
+#[allow(clippy::large_enum_variant)]
 pub enum GetTxError {
     Rpc(UtxoRpcError),
     TxDeserialization(SerError),
@@ -680,8 +680,8 @@ impl UtxoCoinFields {
     }
 }
 
-#[allow(clippy::large_enum_variant)]
 #[derive(Debug, Display)]
+#[allow(clippy::large_enum_variant)]
 pub enum BroadcastTxErr {
     /// RPC client error
     Rpc(UtxoRpcError),

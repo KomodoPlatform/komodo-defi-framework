@@ -302,6 +302,7 @@ impl UtxoRpcError {
         false
     }
 }
+
 /// Common operations that both types of UTXO clients have but implement them differently
 #[async_trait]
 pub trait UtxoRpcClientOps: fmt::Debug + Send + Sync + 'static {
