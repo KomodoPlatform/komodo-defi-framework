@@ -148,6 +148,9 @@ pub(crate) trait AccountStorage: Send + Sync {
     /// Checks whether the given account doesn't exist in the storage and uploads it.
     async fn upload_account(&self, account: AccountInfo) -> AccountStorageResult<()>;
 
+    /// Checks whether the given account exists in the storage and deletes it.
+    async fn delete_account(&self, account_id: AccountId) -> AccountStorageResult<()>;
+
     /// Sets the account name.
     async fn set_name(&self, account_id: AccountId, name: String) -> AccountStorageResult<()>;
 

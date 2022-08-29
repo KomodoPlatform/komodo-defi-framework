@@ -197,7 +197,8 @@ impl SqliteAccountStorage {
         create_sql.create().map_to_mm(AccountStorageError::from)
     }
 
-    fn load_enabled_account_id(conn: &Connection) -> AccountStorageResult<EnabledAccountId> {
+    /// Loads `AccountId` of an enabled account or returns an error if there is no enabled account yet.
+    fn load_enabled_account_id_or_err(conn: &Connection) -> AccountStorageResult<EnabledAccountId> {
         let mut query = SqlQuery::select_from(conn, enabled_account_table::TABLE_NAME)?;
         query
             .field(enabled_account_table::ACCOUNT_TYPE)?
@@ -300,6 +301,46 @@ impl SqliteAccountStorage {
         Ok(())
     }
 
+    fn delete_account(conn: &mut Connection, account_id: AccountId) -> AccountStorageResult<()> {
+        let transaction = conn.transaction()?;
+
+        // Check if the account can be enabled.
+        if let Some(enabled_account_id) = account_id.try_to_enabled() {
+            // Delete the account from `enabled_account_table` if **only** it's enabled.
+            let (account_type, account_idx) = enabled_account_id.to_sql_pair();
+            let mut sql_delete_enabled = SqlDelete::new(&transaction, enabled_account_table::TABLE_NAME)?;
+            sql_delete_enabled
+                .and_where_eq(enabled_account_table::ACCOUNT_TYPE, account_type)?
+                .and_where_eq(enabled_account_table::ACCOUNT_IDX, account_idx)?;
+            sql_delete_enabled.delete()?;
+        }
+
+        let (account_type, account_idx, device_pubkey) = account_id.to_sql_tuple();
+
+        // Remove the account info.
+        {
+            let mut sql_delete_account = SqlDelete::new(&transaction, account_table::TABLE_NAME)?;
+            sql_delete_account
+                .and_where_eq(account_table::ACCOUNT_TYPE, account_type)?
+                .and_where_eq(account_table::ACCOUNT_IDX, account_idx)?
+                .and_where_eq_param(account_table::DEVICE_PUBKEY, device_pubkey.clone())?;
+            sql_delete_account.delete()?;
+        }
+
+        // Remove all associated coins.
+        {
+            let mut sql_delete_coins = SqlDelete::new(&transaction, account_coins_table::TABLE_NAME)?;
+            sql_delete_coins
+                .and_where_eq(account_coins_table::ACCOUNT_TYPE, account_type)?
+                .and_where_eq(account_coins_table::ACCOUNT_IDX, account_idx)?
+                .and_where_eq_param(account_coins_table::DEVICE_PUBKEY, device_pubkey)?;
+            sql_delete_coins.delete()?;
+        }
+
+        transaction.commit()?;
+        Ok(())
+    }
+
     /// Updates the given `account_id` account by applying the `update_cb` callback to an `SqlUpdate` SQL builder.
     fn update_account<F>(conn: &Connection, account_id: AccountId, update_cb: F) -> AccountStorageResult<()>
     where
@@ -347,7 +388,7 @@ impl AccountStorage for SqliteAccountStorage {
         &self,
     ) -> AccountStorageResult<BTreeMap<AccountId, AccountWithEnabledFlag>> {
         let conn = self.lock_conn()?;
-        let enabled_account_id = AccountId::from(Self::load_enabled_account_id(&conn)?);
+        let enabled_account_id = AccountId::from(Self::load_enabled_account_id_or_err(&conn)?);
 
         let mut found_enabled = false;
         let accounts = Self::load_accounts(&conn)?
@@ -359,7 +400,7 @@ impl AccountStorage for SqliteAccountStorage {
             })
             .collect::<AccountStorageResult<BTreeMap<_, _>>>()?;
 
-        // If `AccountStorage::load_enabled_account_id` returns an `AccountId`,
+        // If `AccountStorage::load_enabled_account_id_or_err` returns an `AccountId`,
         // then corresponding account must be in `AccountTable`.
         if !found_enabled {
             return MmError::err(AccountStorageError::unknown_account_in_enabled_table(
@@ -371,12 +412,12 @@ impl AccountStorage for SqliteAccountStorage {
 
     async fn load_enabled_account_id(&self) -> AccountStorageResult<EnabledAccountId> {
         let conn = self.lock_conn()?;
-        Self::load_enabled_account_id(&conn)
+        Self::load_enabled_account_id_or_err(&conn)
     }
 
     async fn load_enabled_account_with_coins(&self) -> AccountStorageResult<AccountWithCoins> {
         let conn = self.lock_conn()?;
-        let account_id = AccountId::from(Self::load_enabled_account_id(&conn)?);
+        let account_id = AccountId::from(Self::load_enabled_account_id_or_err(&conn)?);
 
         Self::load_account_with_coins(&conn, &account_id)?
             .or_mm_err(|| AccountStorageError::unknown_account_in_enabled_table(account_id))
@@ -414,6 +455,17 @@ impl AccountStorage for SqliteAccountStorage {
         }
 
         Self::upload_account(&conn, account)
+    }
+
+    async fn delete_account(&self, account_id: AccountId) -> AccountStorageResult<()> {
+        let mut conn = self.lock_conn()?;
+
+        // First, check if the account exists already.
+        if !Self::account_exists(&conn, &account_id)? {
+            return MmError::err(AccountStorageError::NoSuchAccount(account_id));
+        }
+
+        Self::delete_account(&mut conn, account_id)
     }
 
     async fn set_name(&self, account_id: AccountId, name: String) -> AccountStorageResult<()> {

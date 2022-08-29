@@ -146,24 +146,21 @@ async fn test_set_name_desc_balance_impl() {
         .await
         .unwrap();
 
-    let hd_1_id = AccountId::HD { account_idx: 1 };
+    let hd_id = AccountId::HD { account_idx: 1 };
     storage
-        .set_description(hd_1_id.clone(), "New description".to_string())
+        .set_description(hd_id.clone(), "New description".to_string())
         .await
         .unwrap();
 
-    let hw_3_id = AccountId::HW {
+    let hw_id = AccountId::HW {
         device_pubkey: HwPubkey::from("69a20008cea0c15ee483b5bbdff942752634aa07"),
     };
-    storage
-        .set_balance(hw_3_id.clone(), BigDecimal::from(23))
-        .await
-        .unwrap();
+    storage.set_balance(hw_id.clone(), BigDecimal::from(23)).await.unwrap();
 
     let mut expected = accounts_to_map(accounts);
     expected.get_mut(&AccountId::Iguana).unwrap().name = "New name".to_string();
-    expected.get_mut(&hd_1_id).unwrap().description = "New description".to_string();
-    expected.get_mut(&hw_3_id).unwrap().balance_usd = BigDecimal::from(23);
+    expected.get_mut(&hd_id).unwrap().description = "New description".to_string();
+    expected.get_mut(&hw_id).unwrap().balance_usd = BigDecimal::from(23);
 
     let actual = storage.load_accounts().await.unwrap();
     assert_eq!(actual, expected);
@@ -334,6 +331,119 @@ async fn test_load_accounts_with_enabled_flag_impl() {
     assert_eq!(actual, expected);
 }
 
+async fn test_delete_account_impl() {
+    let ctx = mm_ctx_with_custom_db();
+    let storage = AccountStorageBuilder::new(&ctx).build().unwrap();
+    storage.init().await.unwrap();
+
+    let accounts = accounts_for_test();
+    let accounts_map = accounts_to_map(accounts.clone());
+
+    fill_storage(storage.as_ref(), accounts).await.unwrap();
+
+    let hw_id = AccountId::HW {
+        device_pubkey: HwPubkey::from("69a20008cea0c15ee483b5bbdff942752634aa07"),
+    };
+    storage.delete_account(hw_id.clone()).await.unwrap();
+    let actual_accounts = storage.load_accounts().await.unwrap();
+    let mut expected_accounts = accounts_map.clone();
+    expected_accounts.remove(&hw_id);
+    assert_eq!(actual_accounts, expected_accounts);
+
+    // Try to delete the same account twice.
+    let error = storage
+        .delete_account(hw_id)
+        .await
+        .expect_err("'AccountStorage::delete_account' should have failed due to unknown account");
+    match error.into_inner() {
+        AccountStorageError::NoSuchAccount(AccountId::HW { .. }) => (),
+        other => panic!("Expected 'NoSuchAccount' error, found: {}", other),
+    }
+
+    // Enable `HD{1}` account and try to remove `HD{0}` to check if `HD{1}` will stay enabled.
+    storage
+        .enable_account(EnabledAccountId::HD { account_idx: 1 })
+        .await
+        .unwrap();
+    storage.delete_account(AccountId::HD { account_idx: 0 }).await.unwrap();
+    let actual = storage.load_enabled_account_with_coins().await.unwrap();
+    let expected = AccountWithCoins {
+        account_info: accounts_map.get(&AccountId::HD { account_idx: 1 }).unwrap().clone(),
+        coins: BTreeSet::new(),
+    };
+    assert_eq!(actual, expected);
+
+    // Delete `HD{1}` account, and then try to get an enabled account with coins.
+    storage
+        .enable_account(EnabledAccountId::HD { account_idx: 1 })
+        .await
+        .unwrap();
+    storage.delete_account(AccountId::HD { account_idx: 1 }).await.unwrap();
+    let error = storage
+        .load_enabled_account_with_coins()
+        .await
+        .expect_err("'AccountStorage::load_enabled_account_with_coins' should have failed since no enabled account");
+    match error.into_inner() {
+        AccountStorageError::NoEnabledAccount => (),
+        other => panic!("Expected 'NoEnabledAccount' error, found: {}", other),
+    }
+}
+
+async fn test_delete_account_clears_coins_impl() {
+    let ctx = mm_ctx_with_custom_db();
+    let storage = AccountStorageBuilder::new(&ctx).build().unwrap();
+    storage.init().await.unwrap();
+
+    let accounts = accounts_for_test();
+    let accounts_map = accounts_to_map(accounts.clone());
+
+    fill_storage(storage.as_ref(), accounts).await.unwrap();
+
+    // Activate coins, delete the account and re-activate it again to make sure that all associated coins were deleted.
+    storage
+        .activate_coins(AccountId::Iguana, vec!["RICK".to_string(), "MORTY".to_string()])
+        .await
+        .unwrap();
+    // Activate also coins for another account.
+    storage
+        .activate_coins(AccountId::HD { account_idx: 0 }, vec![
+            "RICK".to_string(),
+            "KMD".to_string(),
+        ])
+        .await
+        .unwrap();
+
+    storage.delete_account(AccountId::Iguana).await.unwrap();
+
+    let new_iguana = AccountInfo {
+        account_id: AccountId::Iguana,
+        name: "My iguana".to_string(),
+        description: "My description".to_string(),
+        balance_usd: BigDecimal::from(123),
+    };
+    storage.upload_account(new_iguana.clone()).await.unwrap();
+    storage.enable_account(EnabledAccountId::Iguana).await.unwrap();
+
+    let actual = storage.load_enabled_account_with_coins().await.unwrap();
+    let expected = AccountWithCoins {
+        account_info: new_iguana,
+        coins: BTreeSet::new(),
+    };
+    assert_eq!(actual, expected);
+
+    // Check if `HD{0}` coins haven't been cleared.
+    storage
+        .enable_account(EnabledAccountId::HD { account_idx: 0 })
+        .await
+        .unwrap();
+    let actual = storage.load_enabled_account_with_coins().await.unwrap();
+    let expected = AccountWithCoins {
+        account_info: accounts_map.get(&AccountId::HD { account_idx: 0 }).unwrap().clone(),
+        coins: vec!["RICK".to_string(), "KMD".to_string()].into_iter().collect(),
+    };
+    assert_eq!(actual, expected);
+}
+
 #[cfg(not(target_arch = "wasm32"))]
 mod native_tests {
     use common::block_on;
@@ -355,6 +465,12 @@ mod native_tests {
 
     #[test]
     fn test_load_accounts_with_enabled_flag() { block_on(super::test_load_accounts_with_enabled_flag_impl()) }
+
+    #[test]
+    fn test_delete_account() { block_on(super::test_delete_account_impl()) }
+
+    #[test]
+    fn test_delete_account_clears_coins() { block_on(super::test_delete_account_clears_coins_impl()) }
 }
 
 #[cfg(target_arch = "wasm32")]
@@ -380,4 +496,10 @@ mod wasm_tests {
 
     #[wasm_bindgen_test]
     async fn test_load_accounts_with_enabled_flag() { super::test_load_accounts_with_enabled_flag_impl().await }
+
+    #[wasm_bindgen_test]
+    async fn test_delete_account() { super::test_delete_account_impl().await }
+
+    #[wasm_bindgen_test]
+    async fn test_delete_account_clears_coins() { super::test_delete_account_clears_coins_impl().await }
 }

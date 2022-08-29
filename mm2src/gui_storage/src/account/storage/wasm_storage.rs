@@ -80,9 +80,11 @@ impl WasmAccountStorage {
             .collect()
     }
 
-    /// Loads `AccountId` of an enabled account or returns an error if there is no enabled account yet.
+    /// Loads `AccountId` of an enabled account.
     /// This method takes `db_transaction` to ensure data coherence.
-    async fn load_enabled_account_id(db_transaction: &DbTransaction<'_>) -> AccountStorageResult<EnabledAccountId> {
+    async fn load_enabled_account_id(
+        db_transaction: &DbTransaction<'_>,
+    ) -> AccountStorageResult<Option<EnabledAccountId>> {
         let enabled_table = db_transaction.table::<EnabledAccountTable>().await?;
         let enabled_accounts = enabled_table.get_all_items().await?;
         if enabled_accounts.len() > 1 {
@@ -90,9 +92,20 @@ impl WasmAccountStorage {
             return MmError::err(AccountStorageError::Internal(error));
         }
         match enabled_accounts.into_iter().next() {
-            Some((_item_id, enabled_account)) => EnabledAccountId::try_from(enabled_account),
-            None => MmError::err(AccountStorageError::NoEnabledAccount),
+            Some((_item_id, enabled_account)) => EnabledAccountId::try_from(enabled_account).map(Some),
+            None => Ok(None),
         }
+    }
+
+    /// Loads `AccountId` of an enabled account or returns an error if there is no enabled account yet.
+    /// This method takes `db_transaction` to ensure data coherence.
+    async fn load_enabled_account_id_or_err(
+        db_transaction: &DbTransaction<'_>,
+    ) -> AccountStorageResult<EnabledAccountId> {
+        let enabled_acc_id = Self::load_enabled_account_id(db_transaction)
+            .await?
+            .or_mm_err(|| AccountStorageError::NoEnabledAccount)?;
+        Ok(enabled_acc_id)
     }
 
     /// Loads `AccountWithCoins`.
@@ -119,6 +132,24 @@ impl WasmAccountStorage {
         let index_keys = AccountTable::account_id_to_index(account_id)?;
         let count = table.count_by_multi_index(index_keys).await?;
         Ok(count > 0)
+    }
+
+    /// Disable the given account if it's enabled.
+    /// This method takes `db_transaction` to ensure data coherence.
+    async fn disable_account_if_enabled(
+        db_transaction: &DbTransaction<'_>,
+        enabled_account_id: EnabledAccountId,
+    ) -> AccountStorageResult<()> {
+        match Self::load_enabled_account_id(&db_transaction).await? {
+            // If there is an enabled account **and** its ID is the same as `enabled_account_id`.
+            Some(actual_enabled) if actual_enabled == enabled_account_id => (),
+            _ => return Ok(()),
+        }
+
+        let table = db_transaction.table::<EnabledAccountTable>().await?;
+        // Remove the account by clearing the table.
+        table.clear().await?;
+        Ok(())
     }
 
     /// Loads an account by `AccountId`, applies the given `f` function to it,
@@ -160,7 +191,7 @@ impl AccountStorage for WasmAccountStorage {
         let locked_db = self.lock_db().await?;
         let transaction = locked_db.inner.transaction().await?;
 
-        let enabled_account_id = AccountId::from(Self::load_enabled_account_id(&transaction).await?);
+        let enabled_account_id = AccountId::from(Self::load_enabled_account_id_or_err(&transaction).await?);
 
         let mut found_enabled = false;
         let accounts = Self::load_accounts(&transaction)
@@ -186,14 +217,14 @@ impl AccountStorage for WasmAccountStorage {
     async fn load_enabled_account_id(&self) -> AccountStorageResult<EnabledAccountId> {
         let locked_db = self.lock_db().await?;
         let transaction = locked_db.inner.transaction().await?;
-        Self::load_enabled_account_id(&transaction).await
+        Self::load_enabled_account_id_or_err(&transaction).await
     }
 
     async fn load_enabled_account_with_coins(&self) -> AccountStorageResult<AccountWithCoins> {
         let locked_db = self.lock_db().await?;
         let transaction = locked_db.inner.transaction().await?;
 
-        let account_id = AccountId::from(Self::load_enabled_account_id(&transaction).await?);
+        let account_id = AccountId::from(Self::load_enabled_account_id_or_err(&transaction).await?);
 
         Self::load_account_with_coins(&transaction, &account_id)
             .await?
@@ -230,6 +261,27 @@ impl AccountStorage for WasmAccountStorage {
 
         let table = transaction.table::<AccountTable>().await?;
         table.add_item(&AccountTable::from(account_info)).await?;
+        Ok(())
+    }
+
+    async fn delete_account(&self, account_id: AccountId) -> AccountStorageResult<()> {
+        let locked_db = self.lock_db().await?;
+        let transaction = locked_db.inner.transaction().await?;
+
+        // First, check if the account exists already.
+        if !Self::account_exists(&transaction, &account_id).await? {
+            return MmError::err(AccountStorageError::NoSuchAccount(account_id));
+        }
+
+        // Check if the account can be enabled.
+        if let Some(enabled_account_id) = account_id.try_to_enabled() {
+            Self::disable_account_if_enabled(&transaction, enabled_account_id).await?;
+        }
+
+        // Remove the account info.
+        let table = transaction.table::<AccountTable>().await?;
+        let index_keys = AccountTable::account_id_to_index(&account_id)?;
+        table.delete_item_by_unique_multi_index(index_keys).await?;
         Ok(())
     }
 

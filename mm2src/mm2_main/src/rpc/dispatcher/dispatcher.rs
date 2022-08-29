@@ -219,13 +219,15 @@ async fn gui_storage_dispatcher(
     use gui_storage::rpc_commands as gui_storage_rpc;
 
     match gui_storage_method.as_str() {
-        "enable_account" => handle_mmrpc(ctx, request, gui_storage_rpc::enable_account).await,
-        "add_account" => handle_mmrpc(ctx, request, gui_storage_rpc::add_account).await,
-        "get_accounts" => handle_mmrpc(ctx, request, gui_storage_rpc::get_accounts).await,
-        "set_account_name" => handle_mmrpc(ctx, request, gui_storage_rpc::set_account_name).await,
-        "set_account_description" => handle_mmrpc(ctx, request, gui_storage_rpc::set_account_description).await,
         "activate_coins" => handle_mmrpc(ctx, request, gui_storage_rpc::activate_coins).await,
+        "add_account" => handle_mmrpc(ctx, request, gui_storage_rpc::add_account).await,
         "deactivate_coins" => handle_mmrpc(ctx, request, gui_storage_rpc::deactivate_coins).await,
+        "delete_account" => handle_mmrpc(ctx, request, gui_storage_rpc::delete_account).await,
+        "enable_account" => handle_mmrpc(ctx, request, gui_storage_rpc::enable_account).await,
+        "get_accounts" => handle_mmrpc(ctx, request, gui_storage_rpc::get_accounts).await,
+        "set_account_balance" => handle_mmrpc(ctx, request, gui_storage_rpc::set_account_balance).await,
+        "set_account_description" => handle_mmrpc(ctx, request, gui_storage_rpc::set_account_description).await,
+        "set_account_name" => handle_mmrpc(ctx, request, gui_storage_rpc::set_account_name).await,
         _ => MmError::err(DispatcherError::NoSuchMethod),
     }
 }

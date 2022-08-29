@@ -72,6 +72,8 @@ pub struct NewAccount<Id> {
     name: String,
     #[serde(default)]
     description: String,
+    #[serde(default)]
+    balance_usd: BigDecimal,
 }
 
 impl<Id> From<NewAccount<Id>> for AccountInfo
@@ -83,7 +85,7 @@ where
             account_id: AccountId::from(orig.account_id),
             name: orig.name,
             description: orig.description,
-            balance_usd: BigDecimal::default(),
+            balance_usd: orig.balance_usd,
         }
     }
 }
@@ -96,8 +98,9 @@ pub struct EnableAccountRequest {
 
 #[derive(Deserialize)]
 #[serde(tag = "policy")]
+#[serde(rename_all = "snake_case")]
 pub enum EnableAccountPolicy {
-    Exist(EnabledAccountId),
+    Existing(EnabledAccountId),
     New(NewAccount<EnabledAccountId>),
 }
 
@@ -105,6 +108,11 @@ pub enum EnableAccountPolicy {
 pub struct AddAccountRequest {
     #[serde(flatten)]
     account: NewAccount<AccountId>,
+}
+
+#[derive(Deserialize)]
+pub struct DeleteAccountRequest {
+    account_id: AccountId,
 }
 
 #[derive(Deserialize)]
@@ -128,11 +136,11 @@ pub struct CoinRequest {
 #[derive(Deserialize)]
 pub struct GetAccountsRequest;
 
-// #[derive(Deserialize)]
-// pub struct UpdateBalanceResponse {
-//     ticker: String,
-//     balance_usd: BigDecimal,
-// }
+#[derive(Deserialize)]
+pub struct SetBalanceRequest {
+    account_id: AccountId,
+    balance_usd: BigDecimal,
+}
 
 /// Sets the given account as an enabled (current active account).
 /// The behaviour depends on [`EnableAccountRequest::policy`]:
@@ -151,7 +159,7 @@ pub struct GetAccountsRequest;
 pub async fn enable_account(ctx: MmArc, req: EnableAccountRequest) -> MmResult<SuccessResponse, AccountRpcError> {
     let account_ctx = AccountContext::from_ctx(&ctx).map_to_mm(AccountRpcError::Internal)?;
     let account_id = match req.policy {
-        EnableAccountPolicy::Exist(account_id) => account_id,
+        EnableAccountPolicy::Existing(account_id) => account_id,
         EnableAccountPolicy::New(new_account) => {
             let account_id = new_account.account_id;
             account_ctx
@@ -183,6 +191,18 @@ pub async fn add_account(ctx: MmArc, req: AddAccountRequest) -> MmResult<Success
     Ok(SuccessResponse::new())
 }
 
+/// Deletes the given [`AddAccountRequest::account_id`] account from the storage.
+/// Returns [`AccountRpcError::NoSuchAccount`] if there is no account with the same `AccountId`.
+///
+/// # Important
+///
+/// This RPC affects the storage **only**. It doesn't affect MarketMaker.
+pub async fn delete_account(ctx: MmArc, req: DeleteAccountRequest) -> MmResult<SuccessResponse, AccountRpcError> {
+    let account_ctx = AccountContext::from_ctx(&ctx).map_to_mm(AccountRpcError::Internal)?;
+    account_ctx.storage().await?.delete_account(req.account_id).await?;
+    Ok(SuccessResponse::new())
+}
+
 /// Loads accounts from the storage and marks one account as enabled **only**.
 /// If an account has not been enabled yet, this RPC returns [`AccountRpcError::NoEnabledAccount`] error.
 ///
@@ -206,7 +226,7 @@ pub async fn get_accounts(
     Ok(accounts)
 }
 
-/// Sets account name by its [`SetAccountNameRequest::account_id`].
+/// Sets the account name.
 pub async fn set_account_name(ctx: MmArc, req: SetAccountNameRequest) -> MmResult<SuccessResponse, AccountRpcError> {
     validate_account_name(&req.name)?;
     let account_ctx = AccountContext::from_ctx(&ctx).map_to_mm(AccountRpcError::Internal)?;
@@ -214,7 +234,7 @@ pub async fn set_account_name(ctx: MmArc, req: SetAccountNameRequest) -> MmResul
     Ok(SuccessResponse::new())
 }
 
-/// Sets account description by its [`SetAccountNameRequest::account_id`].
+/// Sets the account description.
 pub async fn set_account_description(
     ctx: MmArc,
     req: SetAccountDescriptionRequest,
@@ -229,24 +249,20 @@ pub async fn set_account_description(
     Ok(SuccessResponse::new())
 }
 
-// /// Requests the balance of each activated coin, sums them up to get the total account USD balance,
-// /// uploads to the storage, and returns as a result.
-// ///
-// /// # Important
-// ///
-// /// This RPC affects the storage **only**. It doesn't affect MarketMaker.
-// pub async fn update_balance(ctx: MmArc, req: CoinRequest) -> MmResult<UpdateBalanceResponse, AccountRpcError> {
-//     let account_ctx = AccountContext::from_ctx(&ctx).map_to_mm(AccountRpcError::Internal)?;
-//     let balance_usd: BigDecimal = todo!();
-//     account_ctx
-//         .storage
-//         .set_balance(req.account_id, balance_usd.clone())
-//         .await?;
-//     Ok(UpdateBalanceResponse {
-//         ticker: req.ticker,
-//         balance_usd,
-//     })
-// }
+/// Sets the account USD balance.
+///
+/// # Important
+///
+/// This RPC affects the storage **only**. It doesn't affect MarketMaker.
+pub async fn set_account_balance(ctx: MmArc, req: SetBalanceRequest) -> MmResult<SuccessResponse, AccountRpcError> {
+    let account_ctx = AccountContext::from_ctx(&ctx).map_to_mm(AccountRpcError::Internal)?;
+    account_ctx
+        .storage()
+        .await?
+        .set_balance(req.account_id, req.balance_usd)
+        .await?;
+    Ok(SuccessResponse::new())
+}
 
 /// Activates the given [`CoinRequest::tickers`] for the specified [`CoinRequest::account_id`] account.
 ///
