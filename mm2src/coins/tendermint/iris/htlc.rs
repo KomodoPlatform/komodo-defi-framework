@@ -9,6 +9,17 @@ use std::convert::TryFrom;
 const CREATE_HTLC_TYPE_URL: &str = "/irismod.htlc.MsgCreateHTLC";
 const CLAIM_HTLC_TYPE_URL: &str = "/irismod.htlc.MsgClaimHTLC";
 
+pub struct IrisHtlc {
+    /// Generated HTLC's ID.
+    pub id: String,
+
+    /// Transaction fee
+    pub fee: Coin,
+
+    /// Message payload to be sent
+    pub msg_payload: cosmrs::Any,
+}
+
 /// Proto representation of create HTLC message
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct CreateHtlcProtoRep {
