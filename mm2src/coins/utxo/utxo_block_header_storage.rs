@@ -45,7 +45,7 @@ impl BlockHeaderStorage {
         use std::sync::{Arc, Mutex};
 
         let conn = Arc::new(Mutex::new(Connection::open_in_memory().unwrap()));
-        let conn = ctx.sqlite_connection.clone_or(sqlite_connection);
+        let conn = ctx.sqlite_connection.clone_or(conn);
 
         Ok(BlockHeaderStorage {
             inner: Box::new(SqliteBlockHeadersStorage { ticker, conn }),
