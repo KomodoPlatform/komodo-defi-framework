@@ -1,6 +1,8 @@
+use super::htlc::MsgCreateHtlc;
 #[cfg(not(target_arch = "wasm32"))]
 use super::tendermint_native_rpc::*;
 #[cfg(target_arch = "wasm32")] use super::tendermint_wasm_rpc::*;
+use crate::tendermint::htlc::MsgClaimHtlc;
 use crate::utxo::sat_from_big_decimal;
 use crate::{big_decimal_from_sat_unsigned, BalanceError, BalanceFut, BigDecimal, CoinBalance, FeeApproxStage,
             FoundSwapTxSpend, HistorySyncState, MarketCoinOps, MmCoin, NegotiateSwapContractAddrErr,
@@ -11,7 +13,7 @@ use crate::{big_decimal_from_sat_unsigned, BalanceError, BalanceFut, BigDecimal,
             WithdrawRequest};
 use async_trait::async_trait;
 use bitcrypto::sha256;
-use common::Future01CompatExt;
+use common::{get_utc_timestamp, Future01CompatExt};
 use cosmrs::bank::MsgSend;
 use cosmrs::crypto::secp256k1::SigningKey;
 use cosmrs::proto::cosmos::auth::v1beta1::{BaseAccount, QueryAccountRequest, QueryAccountResponse};
@@ -231,6 +233,114 @@ impl TendermintCoin {
             .parse()
             .map_to_mm(|e| TendermintCoinRpcError::InvalidResponse(format!("balance is not u64, err {}", e)))
     }
+
+    fn create_htlc_tx(
+        &self,
+        base_denom: Denom,
+        to: &AccountId,
+        amount: cosmrs::Decimal,
+        secret_hash: &[u8],
+        time_lock: u64,
+    ) -> IrisHtlc {
+        let timestamp = get_utc_timestamp() as u64;
+        let mut hash_lock_hash = vec![];
+        hash_lock_hash.extend_from_slice(secret_hash);
+        hash_lock_hash.extend_from_slice(&timestamp.to_be_bytes());
+
+        let amount = vec![Coin {
+            denom: self.denom.clone(),
+            amount,
+        }];
+
+        // Needs to be sorted if cointains multiple coins
+        // amount.sort();
+
+        // begin htlc id generation
+        let mut htlc_id = vec![];
+        htlc_id.extend_from_slice(sha256(&hash_lock_hash).as_slice());
+        htlc_id.extend_from_slice(&self.account_id.to_bytes());
+        htlc_id.extend_from_slice(&to.to_bytes());
+        let mut coins_string = String::new();
+        for c in amount.iter() {
+            if Some(c) != amount.last() {
+                coins_string = format!("{}{}{},", coins_string, c.amount.to_string(), c.denom.to_string());
+            } else {
+                coins_string = format!("{}{}{}", coins_string, c.amount.to_string(), c.denom.to_string());
+            }
+        }
+        htlc_id.extend_from_slice(coins_string.as_bytes());
+        let htlc_id = sha256(&htlc_id).to_string().to_uppercase();
+        // end htlc id generataion
+
+        let msg_payload = MsgCreateHtlc {
+            sender: self.account_id.clone(),
+            to: to.clone(),
+            receiver_on_other_chain: "".to_string(),
+            sender_on_other_chain: "".to_string(),
+            amount: amount.clone(),
+            hash_lock: sha256(&hash_lock_hash).to_string(),
+            timestamp,
+            time_lock,
+            transfer: false,
+        };
+
+        IrisHtlc {
+            id: htlc_id,
+            fee: Coin {
+                denom: base_denom,
+                amount: 200_u64.into(),
+            },
+            msg_payload: msg_payload.to_any().unwrap(),
+        }
+    }
+
+    fn claim_htlc_tx(&self, base_denom: Denom, htlc_id: String, secret_hash: &[u8]) -> IrisHtlc {
+        let msg_payload = MsgClaimHtlc {
+            id: htlc_id.clone(),
+            sender: self.account_id.clone(),
+            secret: hex::encode(secret_hash),
+        };
+
+        IrisHtlc {
+            id: htlc_id,
+            fee: Coin {
+                denom: base_denom,
+                amount: 200_u64.into(),
+            },
+            msg_payload: msg_payload.to_any().unwrap(),
+        }
+    }
+
+    async fn broadcast_htlc_tx(&self, htlc: &IrisHtlc) -> Result<String, String> {
+        let current_block = self.current_block().compat().await.unwrap();
+        let timeout_height = current_block + TIMEOUT_HEIGHT_DELTA;
+
+        let account_info = self.my_account_info().await.unwrap();
+
+        let gas_limit = 100_000;
+        let fee = Fee::from_amount_and_gas(htlc.fee.clone(), gas_limit);
+
+        let signkey = SigningKey::from_bytes(&self.priv_key).unwrap();
+        let tx_body = tx::Body::new(vec![htlc.msg_payload.clone()], "", timeout_height as u32);
+        let auth_info =
+            SignerInfo::single_direct(Some(signkey.public_key()), account_info.sequence).auth_info(fee.clone());
+        let sign_doc = SignDoc::new(&tx_body, &auth_info, &self.chain_id, account_info.account_number).unwrap();
+        let tx_raw = sign_doc.sign(&signkey).unwrap();
+        let tx_bytes = tx_raw.to_bytes().unwrap();
+
+        self.send_raw_tx_bytes(&tx_bytes).compat().await
+    }
+}
+
+pub struct IrisHtlc {
+    /// Generated HTLC's ID.
+    pub id: String,
+
+    /// Transaction fee
+    pub fee: Coin,
+
+    /// Message payload to be sent
+    pub msg_payload: cosmrs::Any,
 }
 
 #[async_trait]
@@ -643,9 +753,6 @@ impl SwapOps for TendermintCoin {
 
 #[cfg(test)]
 mod tendermint_coin_tests {
-    use crate::tendermint::htlc::{MsgClaimHtlc, MsgCreateHtlc};
-    use common::get_utc_timestamp;
-
     use super::*;
 
     #[test]
@@ -674,7 +781,7 @@ mod tendermint_coin_tests {
 
         let protocol_conf = TendermintProtocolInfo {
             decimals: 6,
-            denom: String::from("unyan"),
+            denom: String::from("ibc/5C465997B4F582F602CD64E12031C6A6E18CAF1E6EDC9B5D808822DC0B5F850C"), // USDC
             account_prefix: String::from("iaa"),
             chain_id: String::from("nyancat-9"),
         };
@@ -686,131 +793,41 @@ mod tendermint_coin_tests {
         let priv_key = &*ctx.secp256k1_key_pair().private().secret;
 
         let coin = common::block_on(TendermintCoin::init(
-            "IRIS".to_string(),
+            "USDC-IBC".to_string(),
             protocol_conf,
             activation_request,
             priv_key,
         ))
         .unwrap();
 
+        dbg!(coin.clone());
+
+        let my_balance = common::block_on(coin.my_balance().compat()).unwrap();
+        dbg!(my_balance);
+
         // BEGIN HTLC CREATION
-        let timestamp = get_utc_timestamp() as u64;
-        let mut hash_lock_hash = vec![];
-        let sec = &[1; 32];
-        hash_lock_hash.extend_from_slice(sec);
-        hash_lock_hash.extend_from_slice(&timestamp.to_be_bytes());
-
+        let base_denom: Denom = "unyan".parse().unwrap();
         let to: AccountId = "iaa1erfnkjsmalkwtvj44qnfr2drfzdt4n9ldh0kjv".parse().unwrap();
+        let amount: cosmrs::Decimal = 1_u64.into();
+        let sec = &[1; 32];
+        let time_lock = 1000;
 
-        let mut amount = vec![Coin {
-            denom: "ibc/5C465997B4F582F602CD64E12031C6A6E18CAF1E6EDC9B5D808822DC0B5F850C" // USDC
-                .parse()
-                .unwrap(),
-            amount: 1_u64.into(),
-        }];
-        // Needs to be sorted for creating proper HTLC id
-        amount.sort();
+        let create_htlc_tx = coin.create_htlc_tx(base_denom.clone(), &to, amount, sec, time_lock);
+        let fut = coin.broadcast_htlc_tx(&create_htlc_tx);
 
-        let htlc_payload = MsgCreateHtlc {
-            sender: coin.account_id.clone(),
-            to: to.clone(),
-            receiver_on_other_chain: "".to_string(),
-            sender_on_other_chain: "".to_string(),
-            amount: amount.clone(),
-            hash_lock: sha256(&hash_lock_hash).to_string(),
-            timestamp,
-            time_lock: 1000,
-            transfer: false,
-        }
-        .to_any()
-        .unwrap();
-
-        // begin htlc id generation
-        let mut htlc_id = vec![];
-        htlc_id.extend_from_slice(sha256(&hash_lock_hash).as_slice());
-        htlc_id.extend_from_slice(&coin.account_id.to_bytes());
-        htlc_id.extend_from_slice(&to.to_bytes());
-        let mut coins_string = String::new();
-        for c in amount.iter() {
-            if Some(c) != amount.last() {
-                coins_string = format!("{}{}{},", coins_string, c.amount.to_string(), c.denom.to_string());
-            } else {
-                coins_string = format!("{}{}{}", coins_string, c.amount.to_string(), c.denom.to_string());
-            }
-        }
-        htlc_id.extend_from_slice(coins_string.as_bytes());
-        let htlc_id = sha256(&htlc_id).to_string().to_uppercase();
-        // end htlc id generataion
-
-        let fut = coin.current_block().compat();
-        let current_block = common::block_on(async { fut.await.unwrap() });
-
-        let fut = coin.my_account_info();
-        let account_info = common::block_on(async { fut.await.unwrap() });
-
-        let timeout_height = current_block + TIMEOUT_HEIGHT_DELTA;
-
-        let gas_limit = 100_000;
-        let fee_amount = Coin {
-            denom: coin.denom.clone(),
-            amount: 1000_u64.into(),
-        };
-
-        let fee = Fee::from_amount_and_gas(fee_amount, gas_limit);
-
-        let signkey = SigningKey::from_bytes(&coin.priv_key).unwrap();
-        let tx_body = tx::Body::new(vec![htlc_payload], "", timeout_height as u32);
-        let auth_info =
-            SignerInfo::single_direct(Some(signkey.public_key()), account_info.sequence).auth_info(fee.clone());
-        let sign_doc = SignDoc::new(&tx_body, &auth_info, &coin.chain_id, account_info.account_number).unwrap();
-        let tx_raw = sign_doc.sign(&signkey).unwrap();
-        let tx_bytes = tx_raw.to_bytes().unwrap();
-
-        let fut = coin.send_raw_tx_bytes(&tx_bytes);
         common::block_on(async {
-            match fut.compat().await {
+            match fut.await {
                 Ok(id) => println!("Transaction broadcasted successfully: {:?} ", id),
                 Err(e) => panic!("ERROR {}", e),
             }
         });
-
         // END HTLC CREATION
 
         // BEGIN HTLC CLAIMING
-        let htlc_payload = MsgClaimHtlc {
-            sender: coin.account_id.clone(),
-            id: htlc_id,
-            secret: hex::encode(sec),
-        }
-        .to_any()
-        .unwrap();
-
-        let fut = coin.current_block().compat();
-        let current_block = common::block_on(async { fut.await.unwrap() });
-
-        let fut = coin.my_account_info();
-        let account_info = common::block_on(async { fut.await.unwrap() });
-
-        let timeout_height = current_block + TIMEOUT_HEIGHT_DELTA;
-
-        let gas_limit = 100_000;
-        let fee_amount = Coin {
-            denom: coin.denom.clone(),
-            amount: 1000_u64.into(),
-        };
-
-        let fee = Fee::from_amount_and_gas(fee_amount, gas_limit);
-
-        let signkey = SigningKey::from_bytes(&coin.priv_key).unwrap();
-        let tx_body = tx::Body::new(vec![htlc_payload], "", timeout_height as u32);
-        let auth_info = SignerInfo::single_direct(Some(signkey.public_key()), account_info.sequence).auth_info(fee);
-        let sign_doc = SignDoc::new(&tx_body, &auth_info, &coin.chain_id, account_info.account_number).unwrap();
-        let tx_raw = sign_doc.sign(&signkey).unwrap();
-        let tx_bytes = tx_raw.to_bytes().unwrap();
-
-        let fut = coin.send_raw_tx_bytes(&tx_bytes);
+        let claim_htlc_tx = coin.claim_htlc_tx(base_denom, create_htlc_tx.id, sec);
+        let fut = coin.broadcast_htlc_tx(&claim_htlc_tx);
         common::block_on(async {
-            match fut.compat().await {
+            match fut.await {
                 Ok(id) => {
                     println!("Transaction broadcasted successfully: {:?} ", id);
                     id
@@ -821,11 +838,6 @@ mod tendermint_coin_tests {
             }
         });
         // END HTLC CLAIMING
-
-        dbg!(coin.clone());
-
-        let my_balance = common::block_on(coin.my_balance().compat()).unwrap();
-        dbg!(my_balance);
 
         // fail intentionally
         assert!(false);
