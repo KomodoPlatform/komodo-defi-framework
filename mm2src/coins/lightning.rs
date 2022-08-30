@@ -962,11 +962,16 @@ pub struct UpdateChannelReq {
     pub coin: String,
     pub channel_id: H256Json,
     pub counterparty_node_id: PublicKeyForRPC,
-    pub options: ChannelOptions,
+    pub channel_options: ChannelOptions,
+}
+
+#[derive(Serialize)]
+pub struct UpdateChannelResponse {
+    channel_options: ChannelOptions,
 }
 
 /// Updates configuration for an open channel.
-pub async fn update_channel(ctx: MmArc, req: UpdateChannelReq) -> UpdateChannelResult<String> {
+pub async fn update_channel(ctx: MmArc, req: UpdateChannelReq) -> UpdateChannelResult<UpdateChannelResponse> {
     let coin = lp_coinfind_or_err(&ctx, &req.coin).await?;
     let ln_coin = match coin {
         MmCoinEnum::LightningCoin(c) => c,
@@ -974,20 +979,28 @@ pub async fn update_channel(ctx: MmArc, req: UpdateChannelReq) -> UpdateChannelR
     };
 
     async_blocking(move || {
-        let mut channel_options = ln_coin.conf.channel_options.unwrap_or_else(|| req.options.clone());
-        if channel_options != req.options {
-            channel_options.update(req.options.clone());
+        let mut channel_options = ln_coin
+            .conf
+            .channel_options
+            .unwrap_or_else(|| req.channel_options.clone());
+        if channel_options != req.channel_options {
+            channel_options.update(req.channel_options.clone());
         }
         let channel_ids = vec![req.channel_id.0];
         let counterparty_node_id = req.counterparty_node_id.clone();
         ln_coin
             .channel_manager
-            .update_channel_config(&counterparty_node_id.into(), &channel_ids, &channel_options.into())
-            .map_to_mm(|e| UpdateChannelError::FailureToUpdateChannel(req.channel_id.to_string(), format!("{:?}", e)))
+            .update_channel_config(
+                &counterparty_node_id.into(),
+                &channel_ids,
+                &channel_options.clone().into(),
+            )
+            .map_to_mm(|e| {
+                UpdateChannelError::FailureToUpdateChannel(req.channel_id.to_string(), format!("{:?}", e))
+            })?;
+        Ok(UpdateChannelResponse { channel_options })
     })
-    .await?;
-
-    Ok("success".into())
+    .await
 }
 
 #[derive(Deserialize)]
@@ -1707,18 +1720,25 @@ pub struct AddTrustedNodeReq {
     pub node_id: PublicKeyForRPC,
 }
 
-pub async fn add_trusted_node(ctx: MmArc, req: AddTrustedNodeReq) -> TrustedNodeResult<String> {
+#[derive(Serialize)]
+pub struct AddTrustedNodeResponse {
+    pub added_node: PublicKeyForRPC,
+}
+
+pub async fn add_trusted_node(ctx: MmArc, req: AddTrustedNodeReq) -> TrustedNodeResult<AddTrustedNodeResponse> {
     let coin = lp_coinfind_or_err(&ctx, &req.coin).await?;
     let ln_coin = match coin {
         MmCoinEnum::LightningCoin(c) => c,
         _ => return MmError::err(TrustedNodeError::UnsupportedCoin(coin.ticker().to_string())),
     };
 
-    if ln_coin.trusted_nodes.lock().insert(req.node_id.into()) {
+    if ln_coin.trusted_nodes.lock().insert(req.node_id.clone().into()) {
         ln_coin.persister.save_trusted_nodes(ln_coin.trusted_nodes).await?;
     }
 
-    Ok("success".into())
+    Ok(AddTrustedNodeResponse {
+        added_node: req.node_id,
+    })
 }
 
 #[derive(Deserialize)]
@@ -1727,18 +1747,28 @@ pub struct RemoveTrustedNodeReq {
     pub node_id: PublicKeyForRPC,
 }
 
-pub async fn remove_trusted_node(ctx: MmArc, req: RemoveTrustedNodeReq) -> TrustedNodeResult<String> {
+#[derive(Serialize)]
+pub struct RemoveTrustedNodeResponse {
+    pub removed_node: PublicKeyForRPC,
+}
+
+pub async fn remove_trusted_node(
+    ctx: MmArc,
+    req: RemoveTrustedNodeReq,
+) -> TrustedNodeResult<RemoveTrustedNodeResponse> {
     let coin = lp_coinfind_or_err(&ctx, &req.coin).await?;
     let ln_coin = match coin {
         MmCoinEnum::LightningCoin(c) => c,
         _ => return MmError::err(TrustedNodeError::UnsupportedCoin(coin.ticker().to_string())),
     };
 
-    if ln_coin.trusted_nodes.lock().remove(&req.node_id.into()) {
+    if ln_coin.trusted_nodes.lock().remove(&req.node_id.clone().into()) {
         ln_coin.persister.save_trusted_nodes(ln_coin.trusted_nodes).await?;
     }
 
-    Ok("success".into())
+    Ok(RemoveTrustedNodeResponse {
+        removed_node: req.node_id,
+    })
 }
 
 #[derive(Deserialize)]
@@ -1752,10 +1782,9 @@ pub struct ListTrustedNodesResponse {
 }
 
 pub async fn list_trusted_nodes(ctx: MmArc, req: ListTrustedNodesReq) -> TrustedNodeResult<ListTrustedNodesResponse> {
-    let coin = lp_coinfind_or_err(&ctx, &req.coin).await?;
-    let ln_coin = match coin {
+    let ln_coin = match lp_coinfind_or_err(&ctx, &req.coin).await? {
         MmCoinEnum::LightningCoin(c) => c,
-        _ => return MmError::err(TrustedNodeError::UnsupportedCoin(coin.ticker().to_string())),
+        e => return MmError::err(TrustedNodeError::UnsupportedCoin(e.ticker().to_string())),
     };
 
     let trusted_nodes = ln_coin.trusted_nodes.lock().clone();

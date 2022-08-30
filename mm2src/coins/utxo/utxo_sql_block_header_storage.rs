@@ -7,7 +7,7 @@ use db_common::{sqlite::rusqlite::Error as SqlError,
                 sqlite::validate_table_name,
                 sqlite::CHECK_TABLE_EXISTS_SQL};
 use primitives::hash::H256;
-use serialization::{coin_variant_by_ticker, Reader};
+use serialization::Reader;
 use spv_validation::storage::{BlockHeaderStorageError, BlockHeaderStorageOps};
 use spv_validation::work::MAX_BITS_BTC;
 use std::collections::HashMap;
@@ -195,8 +195,7 @@ impl BlockHeaderStorageOps for SqliteBlockHeadersStorage {
                 coin: coin.clone(),
                 reason: e.to_string(),
             })?;
-            let coin_variant = coin_variant_by_ticker(&coin);
-            let mut reader = Reader::new_with_coin_variant(serialized, coin_variant);
+            let mut reader = Reader::new_with_coin_variant(serialized, coin.as_str().into());
             let header: BlockHeader =
                 reader
                     .read()

@@ -33,8 +33,8 @@ use mm2_number::{BigDecimal, BigInt, MmNumber};
 #[cfg(test)] use mocktopus::macros::*;
 use rpc::v1::types::{Bytes as BytesJson, Transaction as RpcTransaction, H256 as H256Json};
 use serde_json::{self as json, Value as Json};
-use serialization::{coin_variant_by_ticker, deserialize, serialize, serialize_with_flags, CoinVariant, CompactInteger,
-                    Reader, SERIALIZE_TRANSACTION_WITNESS};
+use serialization::{deserialize, serialize, serialize_with_flags, CoinVariant, CompactInteger, Reader,
+                    SERIALIZE_TRANSACTION_WITNESS};
 use sha2::{Digest, Sha256};
 use spv_validation::helpers_validation::SPVError;
 use spv_validation::storage::BlockHeaderStorageOps;
@@ -1904,8 +1904,8 @@ impl ElectrumClient {
                         let len = CompactInteger::from(headers.count);
                         let mut serialized = serialize(&len).take();
                         serialized.extend(headers.hex.0.into_iter());
-                        let coin_variant = coin_variant_by_ticker(&coin_name);
-                        let mut reader = Reader::new_with_coin_variant(serialized.as_slice(), coin_variant);
+                        let mut reader =
+                            Reader::new_with_coin_variant(serialized.as_slice(), coin_name.as_str().into());
                         let maybe_block_headers = reader.read_list::<BlockHeader>();
                         let block_headers = match maybe_block_headers {
                             Ok(headers) => headers,

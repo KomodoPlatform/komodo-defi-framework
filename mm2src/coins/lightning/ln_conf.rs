@@ -15,7 +15,7 @@ pub struct LightningProtocolConf {
     pub confirmation_targets: PlatformCoinConfirmationTargets,
 }
 
-#[derive(Clone, Debug, Deserialize, PartialEq)]
+#[derive(Clone, Debug, Deserialize, PartialEq, Serialize)]
 pub struct ChannelOptions {
     /// Amount (in millionths of a satoshi) charged per satoshi for payments forwarded outbound
     /// over the channel.
