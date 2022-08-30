@@ -1630,6 +1630,7 @@ async fn electrum_request_multi(
         match &*connection.tx.lock().await {
             Some(tx) => {
                 let fut = electrum_request(
+                    &client,
                     request.clone(),
                     tx.clone(),
                     connection.responses.clone(),
@@ -1705,7 +1706,7 @@ async fn electrum_request_to(
         (tx, responses)
     };
 
-    let response = electrum_request(request.clone(), tx, responses, ELECTRUM_TIMEOUT)
+    let response = electrum_request(&client, request.clone(), tx, responses, ELECTRUM_TIMEOUT)
         .compat()
         .await?;
     Ok((JsonRpcRemoteAddr(to_addr.to_owned()), response))
@@ -2775,14 +2776,25 @@ fn electrum_connect(
 }
 
 fn electrum_request(
+    client: &ElectrumClient,
     request: JsonRpcRequestEnum,
     tx: mpsc::Sender<Vec<u8>>,
     responses: JsonRpcPendingRequestsShared,
     timeout: u64,
 ) -> Box<dyn Future<Item = JsonRpcResponseEnum, Error = JsonRpcError> + Send + 'static> {
     let req = request.clone();
+    let client_info = client.coin_name().to_owned();
     let send_fut = async move {
-        let mut json = try_s!(json::to_string(&req));
+        let mut json = match json::to_string(&req) {
+            Ok(res) => res,
+            Err(err) => {
+                return Err(JsonRpcError::new(
+                    &client_info,
+                    &req,
+                    JsonRpcErrorType::InvalidRequest(err.to_string()),
+                ))
+            },
+        };
         #[cfg(not(target_arch = "wasm"))]
         {
             // Electrum request and responses must end with \n
@@ -2792,19 +2804,41 @@ fn electrum_request(
 
         let (req_tx, resp_rx) = async_oneshot::channel();
         responses.lock().await.insert(req.rpc_id(), req_tx);
-        try_s!(tx.send(json.into_bytes()).compat().await);
-        let resps = try_s!(resp_rx.await);
+        match tx.send(json.into_bytes()).compat().await {
+            Ok(res) => res,
+            Err(err) => {
+                return Err(JsonRpcError::new(
+                    &client_info,
+                    &req,
+                    JsonRpcErrorType::Transport(err.to_string()),
+                ))
+            },
+        };
+        let resps = match resp_rx.await {
+            Ok(res) => res,
+            Err(err) => {
+                return Err(JsonRpcError::new(
+                    &client_info,
+                    &req,
+                    JsonRpcErrorType::Transport(err.to_string()),
+                ))
+            },
+        };
         Ok(resps)
     };
+    let client_info = client.coin_name().to_owned();
     let send_fut = send_fut
         .boxed()
         .timeout(Duration::from_secs(timeout))
         .compat()
-        .then(|res| match res {
+        .then(move |res| match res {
             Ok(response) => response,
-            Err(timeout_error) => ERR!("{}", timeout_error),
-        })
-        .map_err(move |e| JsonRpcError::new("", &request, JsonRpcErrorType::Transport(e)));
+            Err(timeout_error) => Err(JsonRpcError::new(
+                &client_info,
+                &request,
+                JsonRpcErrorType::Transport(timeout_error.to_string()),
+            )),
+        });
     Box::new(send_fut)
 }
 
