@@ -11,7 +11,7 @@ use itertools::Itertools;
 #[cfg(not(target_arch = "wasm32"))]
 use lightning::util::logger::{Level as LightningLevel, Logger as LightningLogger, Record as LightningRecord};
 use log::{Level, Record};
-use parking_lot::Mutex;
+use parking_lot::Mutex as PaMutex;
 use serde_json::Value as Json;
 use std::cell::RefCell;
 use std::collections::hash_map::DefaultHasher;
@@ -48,7 +48,7 @@ lazy_static! {
     /// If this C callback is present then all the logging output should happen through it
     /// (and leaving stdout untouched).
     /// The *gravity* logging still gets a copy in order for the log-based tests to work.
-    pub static ref LOG_CALLBACK: Mutex<Option<LogCallbackBoxed>> = Mutex::new(None);
+    pub static ref LOG_CALLBACK: PaMutex<Option<LogCallbackBoxed>> = PaMutex::new(None);
 }
 
 pub type LogCallbackBoxed = Box<dyn LogCallback>;
@@ -77,7 +77,7 @@ struct Gravity {
     /// Log chunks received from satellite threads.
     landing: SegQueue<String>,
     /// Keeps a portion of a recently flushed gravity log in RAM for inspection by the unit tests.
-    tail: Mutex<VecDeque<String>>,
+    tail: PaMutex<VecDeque<String>>,
 }
 
 impl Gravity {
@@ -370,8 +370,8 @@ impl fmt::Debug for Tag {
 
 /// The status entry kept in the dashboard.
 pub struct Status {
-    pub tags: Mutex<Vec<Tag>>,
-    pub line: Mutex<String>,
+    pub tags: PaMutex<Vec<Tag>>,
+    pub line: PaMutex<String>,
     /// The time, in milliseconds since UNIX epoch, when the tracked operation started.
     pub start: AtomicU64,
     /// Expected time limit of the tracked operation, in milliseconds since UNIX epoch.  
@@ -384,8 +384,8 @@ impl Clone for Status {
         let tags = self.tags.lock().clone();
         let line = self.line.lock().clone();
         Status {
-            tags: Mutex::new(tags),
-            line: Mutex::new(line),
+            tags: PaMutex::new(tags),
+            line: PaMutex::new(line),
             start: AtomicU64::new(self.start.load(Ordering::SeqCst)),
             deadline: AtomicU64::new(self.deadline.load(Ordering::SeqCst)),
         }
@@ -409,7 +409,11 @@ impl Hash for Status {
 
 impl Status {
     /// Invoked when the `StatusHandle` is dropped, marking the status as finished.
-    fn finished(status: &Arc<Status>, dashboard: &Arc<Mutex<Vec<Arc<Status>>>>, tail: &Arc<Mutex<VecDeque<LogEntry>>>) {
+    fn finished(
+        status: &Arc<Status>,
+        dashboard: &Arc<PaMutex<Vec<Arc<Status>>>>,
+        tail: &Arc<PaMutex<VecDeque<LogEntry>>>,
+    ) {
         {
             let mut dashboard = dashboard.lock();
             if let Some(idx) = dashboard.iter().position(|e| Arc::ptr_eq(e, status)) {
@@ -473,8 +477,8 @@ impl LogEntry {
 /// Dropping the handle tells us that the operation was "finished" and that we can dump the final status into the log.
 pub struct StatusHandle {
     status: Option<Arc<Status>>,
-    dashboard: Arc<Mutex<Vec<Arc<Status>>>>,
-    tail: Arc<Mutex<VecDeque<LogEntry>>>,
+    dashboard: Arc<PaMutex<Vec<Arc<Status>>>>,
+    tail: Arc<PaMutex<VecDeque<LogEntry>>>,
 }
 
 impl StatusHandle {
@@ -500,8 +504,8 @@ impl StatusHandle {
             *status.line.lock() = String::from(line);
         } else {
             let status = Arc::new(Status {
-                tags: Mutex::new(tagsʹ),
-                line: Mutex::new(line.into()),
+                tags: PaMutex::new(tagsʹ),
+                line: PaMutex::new(line.into()),
                 start: AtomicU64::new(now_ms()),
                 deadline: AtomicU64::new(0),
             });
@@ -587,14 +591,14 @@ pub fn dashboard_path(log_path: &Path) -> Result<PathBuf, String> {
 /// Carried around by the MarketMaker state, `MmCtx`.  
 /// Keeps track of the log file and the status dashboard.
 pub struct LogState {
-    dashboard: Arc<Mutex<Vec<Arc<Status>>>>,
+    dashboard: Arc<PaMutex<Vec<Arc<Status>>>>,
     /// Keeps recent log entries in memory in case we need them for debugging.  
     /// Should allow us to examine the log from withing the unit tests, core dumps and live debugging sessions.
-    tail: Arc<Mutex<VecDeque<LogEntry>>>,
+    tail: Arc<PaMutex<VecDeque<LogEntry>>>,
     /// Initialized when we need the logging to happen through a certain thread
     /// (this thread becomes a center of gravity for the other registered threads).
     /// In the future we might also use `gravity` to log into a file.
-    gravity: Mutex<Option<Arc<Gravity>>>,
+    gravity: PaMutex<Option<Arc<Gravity>>>,
     /// Keeps track of the log level that the log state is initiated with
     level: LogLevel,
 }
@@ -704,7 +708,7 @@ fn log_dashboard_sometimesʹ(dashboard: Vec<Arc<Status>>, dl: &mut DashboardLogg
     chunk2log(buf, LogLevel::Info)
 }
 
-async fn log_dashboard_sometimes(dashboardʷ: Weak<Mutex<Vec<Arc<Status>>>>) {
+async fn log_dashboard_sometimes(dashboardʷ: Weak<PaMutex<Vec<Arc<Status>>>>) {
     let mut dashboard_logging = DashboardLogging::default();
     loop {
         Timer::sleep(0.777).await;
@@ -722,23 +726,23 @@ impl LogState {
     /// Log into memory, for unit testing.
     pub fn in_memory() -> LogState {
         LogState {
-            dashboard: Arc::new(Mutex::new(Vec::new())),
-            tail: Arc::new(Mutex::new(VecDeque::with_capacity(64))),
-            gravity: Mutex::new(None),
+            dashboard: Arc::new(PaMutex::new(Vec::new())),
+            tail: Arc::new(PaMutex::new(VecDeque::with_capacity(64))),
+            gravity: PaMutex::new(None),
             level: LogLevel::default(),
         }
     }
 
     /// Initialize according to the MM command-line configuration.
     pub fn mm(_conf: &Json) -> LogState {
-        let dashboard = Arc::new(Mutex::new(Vec::new()));
+        let dashboard = Arc::new(PaMutex::new(Vec::new()));
 
         spawn(log_dashboard_sometimes(Arc::downgrade(&dashboard)));
 
         LogState {
             dashboard,
-            tail: Arc::new(Mutex::new(VecDeque::with_capacity(64))),
-            gravity: Mutex::new(None),
+            tail: Arc::new(PaMutex::new(VecDeque::with_capacity(64))),
+            gravity: PaMutex::new(None),
             level: LogLevel::default(),
         }
     }
@@ -769,8 +773,7 @@ impl LogState {
     }
 
     pub fn with_gravity_tail(&self, cb: &mut dyn FnMut(&VecDeque<String>)) {
-        let gravity = self.gravity.lock().clone();
-        if let Some(gravity) = gravity {
+        if let Some(gravity) = self.gravity.lock().clone() {
             gravity.flush();
             let tail = gravity.tail.lock();
             cb(&*tail);
@@ -946,7 +949,7 @@ impl LogState {
             *gravity = Some(Arc::new(Gravity {
                 target_thread_id: thread::current().id(),
                 landing: SegQueue::new(),
-                tail: Mutex::new(VecDeque::with_capacity(64)),
+                tail: PaMutex::new(VecDeque::with_capacity(64)),
             }));
             Ok(())
         }
@@ -1005,8 +1008,7 @@ impl Drop for LogState {
     ///     One way to fight this might be adding a flushing RAII struct into a unit test.
     /// NB: The `drop` will not be happening if some of the satellite threads still hold to the context.
     fn drop(&mut self) {
-        let gravity = self.gravity.lock().clone();
-        if let Some(gravity) = gravity {
+        if let Some(gravity) = self.gravity.lock().clone() {
             gravity.flush()
         }
 
