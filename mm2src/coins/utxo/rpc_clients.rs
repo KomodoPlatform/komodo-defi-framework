@@ -648,7 +648,7 @@ impl JsonRpcClient for NativeClientImpl {
     fn transport(&self, request: JsonRpcRequestEnum) -> JsonRpcResponseFut {
         Box::new(futures01::future::err(JsonRpcError::new(
             &self.coin_name(),
-            request,
+            &request,
             JsonRpcErrorType::Internal("'NativeClientImpl' must be used in native mode only".to_string()),
         )))
     }
@@ -2804,7 +2804,7 @@ fn electrum_request(
             Ok(response) => response,
             Err(timeout_error) => ERR!("{}", timeout_error),
         })
-        .map_err(move |e| JsonRpcError::new("", &request, JsonRpcErrorType::Internal(e)));
+        .map_err(move |e| JsonRpcError::new("", &request, JsonRpcErrorType::Transport(e)));
     Box::new(send_fut)
 }
 
