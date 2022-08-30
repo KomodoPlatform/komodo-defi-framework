@@ -2725,7 +2725,6 @@ version = "0.1.0"
 dependencies = [
  "async-trait",
  "common",
- "crypto",
  "db_common",
  "derive_more",
  "mm2_core",
