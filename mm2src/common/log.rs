@@ -773,7 +773,8 @@ impl LogState {
     }
 
     pub fn with_gravity_tail(&self, cb: &mut dyn FnMut(&VecDeque<String>)) {
-        if let Some(gravity) = self.gravity.lock().clone() {
+        let gravity = self.gravity.lock().clone();
+        if let Some(ref gravity) = gravity {
             gravity.flush();
             let tail = gravity.tail.lock();
             cb(&*tail);
@@ -1008,7 +1009,8 @@ impl Drop for LogState {
     ///     One way to fight this might be adding a flushing RAII struct into a unit test.
     /// NB: The `drop` will not be happening if some of the satellite threads still hold to the context.
     fn drop(&mut self) {
-        if let Some(gravity) = self.gravity.lock().clone() {
+        let gravity = self.gravity.lock().clone();
+        if let Some(gravity) = gravity {
             gravity.flush()
         }
 
