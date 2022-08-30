@@ -353,7 +353,7 @@ impl Qrc20Coin {
                         JsonRpcErrorType::InvalidRequest(err)
                         | JsonRpcErrorType::Transport(err)
                         | JsonRpcErrorType::Parse(_, err)
-                        | JsonRpcErrorType::SlurpError(err) => {
+                        | JsonRpcErrorType::Internal(err) => {
                             return RequestTxHistoryResult::Retry {
                                 error: ERRL!("Error {} on blockchain_contract_event_get_history", err),
                             };

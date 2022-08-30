@@ -2331,7 +2331,7 @@ where
                     JsonRpcErrorType::InvalidRequest(e)
                     | JsonRpcErrorType::Parse(_, e)
                     | JsonRpcErrorType::Transport(e)
-                    | JsonRpcErrorType::SlurpError(e) => {
+                    | JsonRpcErrorType::Internal(e) => {
                         return RequestTxHistoryResult::Retry {
                             error: ERRL!("Error {} on scripthash_get_history", e),
                         };
