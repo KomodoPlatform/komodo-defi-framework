@@ -52,6 +52,7 @@ use crypto::{Bip32DerPathOps, Bip32Error, Bip44Chain, Bip44DerPathError, Bip44Pa
              ChildNumber, DerivationPath, Secp256k1ExtendedPublicKey};
 use derive_more::Display;
 #[cfg(not(target_arch = "wasm32"))] use dirs::home_dir;
+use enum_from_displaying::EnumFromDisplaying;
 use futures::channel::mpsc;
 use futures::compat::Future01CompatExt;
 use futures::lock::{Mutex as AsyncMutex, MutexGuard as AsyncMutexGuard};
@@ -565,19 +566,13 @@ impl From<UnsupportedAddr> for WithdrawError {
     fn from(e: UnsupportedAddr) -> Self { WithdrawError::InvalidAddress(e.to_string()) }
 }
 
-#[derive(Debug)]
+#[derive(Debug, EnumFromDisplaying)]
 #[allow(clippy::large_enum_variant)]
 pub enum GetTxError {
+    #[enum_from_displaying("UtxoRpcError")]
     Rpc(UtxoRpcError),
+    #[enum_from_displaying("SerError")]
     TxDeserialization(SerError),
-}
-
-impl From<UtxoRpcError> for GetTxError {
-    fn from(err: UtxoRpcError) -> GetTxError { GetTxError::Rpc(err) }
-}
-
-impl From<SerError> for GetTxError {
-    fn from(err: SerError) -> GetTxError { GetTxError::TxDeserialization(err) }
 }
 
 #[derive(Debug)]
