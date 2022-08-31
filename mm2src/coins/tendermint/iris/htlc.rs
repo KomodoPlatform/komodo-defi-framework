@@ -10,68 +10,69 @@ use std::convert::TryFrom;
 const CREATE_HTLC_TYPE_URL: &str = "/irismod.htlc.MsgCreateHTLC";
 const CLAIM_HTLC_TYPE_URL: &str = "/irismod.htlc.MsgClaimHTLC";
 
-pub struct IrisHtlc {
+#[allow(dead_code)]
+pub(crate) struct IrisHtlc {
     /// Generated HTLC's ID.
-    pub id: String,
+    pub(crate) id: String,
 
     /// Transaction fee
-    pub fee: Coin,
+    pub(crate) fee: Coin,
 
     /// Message payload to be sent
-    pub msg_payload: cosmrs::Any,
+    pub(crate) msg_payload: cosmrs::Any,
 }
 
 /// Proto representation of create HTLC message
 #[derive(Clone, PartialEq, ::prost::Message)]
-pub struct CreateHtlcProtoRep {
+pub(crate) struct CreateHtlcProtoRep {
     #[prost(string, tag = "1")]
-    pub sender: ::prost::alloc::string::String,
+    pub(crate) sender: ::prost::alloc::string::String,
     #[prost(string, tag = "2")]
-    pub to: ::prost::alloc::string::String,
+    pub(crate) to: ::prost::alloc::string::String,
     #[prost(string, tag = "3")]
-    pub receiver_on_other_chain: ::prost::alloc::string::String,
+    pub(crate) receiver_on_other_chain: ::prost::alloc::string::String,
     #[prost(string, tag = "4")]
-    pub sender_on_other_chain: ::prost::alloc::string::String,
+    pub(crate) sender_on_other_chain: ::prost::alloc::string::String,
     #[prost(message, repeated, tag = "5")]
-    pub amount: ::prost::alloc::vec::Vec<cosmrs::proto::cosmos::base::v1beta1::Coin>,
+    pub(crate) amount: ::prost::alloc::vec::Vec<cosmrs::proto::cosmos::base::v1beta1::Coin>,
     #[prost(string, tag = "6")]
-    pub hash_lock: ::prost::alloc::string::String,
+    pub(crate) hash_lock: ::prost::alloc::string::String,
     #[prost(uint64, tag = "7")]
-    pub timestamp: u64,
+    pub(crate) timestamp: u64,
     #[prost(uint64, tag = "8")]
-    pub time_lock: u64,
+    pub(crate) time_lock: u64,
     #[prost(bool, tag = "9")]
-    pub transfer: bool,
+    pub(crate) transfer: bool,
 }
 
 #[derive(Clone, Debug, Eq, PartialEq, PartialOrd, Ord)]
-pub struct MsgCreateHtlc {
+pub(crate) struct MsgCreateHtlc {
     /// Sender's address.
-    pub to: AccountId,
+    pub(crate) to: AccountId,
 
     /// Recipient's address.
-    pub sender: AccountId,
+    pub(crate) sender: AccountId,
 
     /// The claim receiving address on the other chain.
-    pub receiver_on_other_chain: String,
+    pub(crate) receiver_on_other_chain: String,
 
     /// The counterparty creator address on the other chain.
-    pub sender_on_other_chain: String,
+    pub(crate) sender_on_other_chain: String,
 
     /// Amount to send.
-    pub amount: Vec<Coin>,
+    pub(crate) amount: Vec<Coin>,
 
     /// The sha256 hash generated from secret and timestamp.
-    pub hash_lock: String,
+    pub(crate) hash_lock: String,
 
     /// The number of blocks to wait before the asset may be returned to.
-    pub time_lock: u64,
+    pub(crate) time_lock: u64,
 
     /// The timestamp in seconds for generating hash lock if provided.
-    pub timestamp: u64,
+    pub(crate) timestamp: u64,
 
     /// Whether it is an HTLT transaction.
-    pub transfer: bool,
+    pub(crate) transfer: bool,
 }
 
 impl Msg for MsgCreateHtlc {
@@ -128,25 +129,25 @@ impl MsgProto for CreateHtlcProtoRep {
 
 /// Proto representation of claim HTLC message
 #[derive(Clone, PartialEq, ::prost::Message)]
-pub struct ClaimHtlcProtoRep {
+pub(crate) struct ClaimHtlcProtoRep {
     #[prost(string, tag = "1")]
-    pub sender: ::prost::alloc::string::String,
+    pub(crate) sender: ::prost::alloc::string::String,
     #[prost(string, tag = "2")]
-    pub id: ::prost::alloc::string::String,
+    pub(crate) id: ::prost::alloc::string::String,
     #[prost(string, tag = "3")]
-    pub secret: ::prost::alloc::string::String,
+    pub(crate) secret: ::prost::alloc::string::String,
 }
 
 #[derive(Clone, Debug, Eq, PartialEq, PartialOrd, Ord)]
-pub struct MsgClaimHtlc {
+pub(crate) struct MsgClaimHtlc {
     /// Sender's address.
-    pub sender: AccountId,
+    pub(crate) sender: AccountId,
 
     /// Generated HTLC ID
-    pub id: String,
+    pub(crate) id: String,
 
     /// Secret that has been used for generating hash_lock
-    pub secret: String,
+    pub(crate) secret: String,
 }
 
 impl Msg for MsgClaimHtlc {
