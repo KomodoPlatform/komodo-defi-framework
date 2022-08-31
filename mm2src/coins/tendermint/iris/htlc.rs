@@ -1,7 +1,8 @@
-/// IRIS HTLC implementation in Rust on top of Cosmos SDK(cosmrs) for AtomicDEX.
-///
-/// This module includes HTLC creating & claiming representation structstures
-/// and their trait implementations.
+// IRIS HTLC implementation in Rust on top of Cosmos SDK(cosmrs) for AtomicDEX.
+//
+// This module includes HTLC creating & claiming representation structstures
+// and their trait implementations.
+
 use cosmrs::{tx::{Msg, MsgProto},
              AccountId, Coin, ErrorReport};
 use std::convert::TryFrom;

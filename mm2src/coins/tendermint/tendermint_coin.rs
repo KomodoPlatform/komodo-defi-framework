@@ -234,6 +234,7 @@ impl TendermintCoin {
             .map_to_mm(|e| TendermintCoinRpcError::InvalidResponse(format!("balance is not u64, err {}", e)))
     }
 
+    #[allow(dead_code)]
     fn gen_create_htlc_tx(
         &self,
         base_denom: Denom,
@@ -296,6 +297,7 @@ impl TendermintCoin {
         })
     }
 
+    #[allow(dead_code)]
     fn gen_claim_htlc_tx(
         &self,
         base_denom: Denom,
@@ -741,6 +743,23 @@ impl SwapOps for TendermintCoin {
 mod tendermint_coin_tests {
     use super::*;
 
+    const IRIS_TESTNET_HTLC_PAIR1_SEED: &str = "iris test seed";
+    // const IRIS_TESTNET_HTLC_PAIR1_ADDRESS: &str = "iaa1e0rx87mdj79zejewuc4jg7ql9ud2286g2us8f2";
+
+    // const IRIS_TESTNET_HTLC_PAIR2_SEED: &str = "iris test2 seed";
+    const IRIS_TESTNET_HTLC_PAIR2_ADDRESS: &str = "iaa1erfnkjsmalkwtvj44qnfr2drfzdt4n9ldh0kjv";
+
+    const IRIS_TESTNET_RPC_URL: &str = "http://34.80.202.172:26657";
+
+    fn get_iris_usdc_ibc_protocol() -> TendermintProtocolInfo {
+        TendermintProtocolInfo {
+            decimals: 6,
+            denom: String::from("ibc/5C465997B4F582F602CD64E12031C6A6E18CAF1E6EDC9B5D808822DC0B5F850C"),
+            account_prefix: String::from("iaa"),
+            chain_id: String::from("nyancat-9"),
+        }
+    }
+
     #[test]
     fn test_tx_hash_str_from_bytes() {
         let tx_hex = "0a97010a8f010a1c2f636f736d6f732e62616e6b2e763162657461312e4d736753656e64126f0a2d636f736d6f7331737661773061716334353834783832356a753775613033673578747877643061686c3836687a122d636f736d6f7331737661773061716334353834783832356a753775613033673578747877643061686c3836687a1a0f0a057561746f6d120631303030303018d998bf0512670a500a460a1f2f636f736d6f732e63727970746f2e736563703235366b312e5075624b657912230a2102000eef4ab169e7b26a4a16c47420c4176ab702119ba57a8820fb3e53c8e7506212040a020801180312130a0d0a057561746f6d12043130303010a08d061a4093e5aec96f7d311d129f5ec8714b21ad06a75e483ba32afab86354400b2ac8350bfc98731bbb05934bf138282750d71aadbe08ceb6bb195f2b55e1bbfdddaaad";
@@ -753,23 +772,14 @@ mod tendermint_coin_tests {
 
     #[test]
     fn test_htlc_create_and_claim() {
-        // DUMMY INFO
-        // Current address: iaa1e0rx87mdj79zejewuc4jg7ql9ud2286g2us8f2 (iris test seed)
-        // Receiver address: iaa1erfnkjsmalkwtvj44qnfr2drfzdt4n9ldh0kjv (iris test2 seed)
-
         let activation_request = TendermintActivationParams {
-            rpc_urls: vec!["http://34.80.202.172:26657".to_string()],
+            rpc_urls: vec![IRIS_TESTNET_RPC_URL.to_string()],
         };
 
-        let protocol_conf = TendermintProtocolInfo {
-            decimals: 6,
-            denom: String::from("ibc/5C465997B4F582F602CD64E12031C6A6E18CAF1E6EDC9B5D808822DC0B5F850C"), // USDC
-            account_prefix: String::from("iaa"),
-            chain_id: String::from("nyancat-9"),
-        };
+        let protocol_conf = get_iris_usdc_ibc_protocol();
 
         let ctx = mm2_core::mm_ctx::MmCtxBuilder::default()
-            .with_secp256k1_key_pair(crypto::privkey::key_pair_from_seed("iris test seed").unwrap())
+            .with_secp256k1_key_pair(crypto::privkey::key_pair_from_seed(IRIS_TESTNET_HTLC_PAIR1_SEED).unwrap())
             .into_mm_arc();
 
         let priv_key = &*ctx.secp256k1_key_pair().private().secret;
@@ -782,14 +792,9 @@ mod tendermint_coin_tests {
         ))
         .unwrap();
 
-        dbg!(coin.clone());
-
-        let my_balance = common::block_on(coin.my_balance().compat()).unwrap();
-        dbg!(my_balance);
-
         // BEGIN HTLC CREATION
         let base_denom: Denom = "unyan".parse().unwrap();
-        let to: AccountId = "iaa1erfnkjsmalkwtvj44qnfr2drfzdt4n9ldh0kjv".parse().unwrap();
+        let to: AccountId = IRIS_TESTNET_HTLC_PAIR2_ADDRESS.parse().unwrap();
         let amount: cosmrs::Decimal = 1_u64.into();
         let sec = &[1; 32];
         let time_lock = 1000;
