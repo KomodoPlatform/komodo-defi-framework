@@ -1,5 +1,5 @@
 use crate::sign_common::{complete_tx, p2pkh_spend_with_signature};
-use crate::sign_params::{SendingOutputInfo, SpendingInputInfo, UtxoSignTxParams};
+use crate::sign_params::{OutputDestination, SendingOutputInfo, SpendingInputInfo, UtxoSignTxParams};
 use crate::{TxProvider, UtxoSignTxError, UtxoSignTxResult};
 use chain::{Transaction as UtxoTx, TransactionOutput};
 use common::log::debug;
@@ -80,8 +80,13 @@ impl<TxP: TxProvider + Send + Sync> TrezorTxSigner<TxP> {
     }
 
     fn get_trezor_output(&self, tx_output: &TransactionOutput, output_info: &SendingOutputInfo) -> TxOutput {
+        let (address, address_derivation_path) = match output_info.destination_address {
+            OutputDestination::Plain { ref address } => (Some(address.clone()), None),
+            OutputDestination::Change { ref derivation_path } => (None, Some(derivation_path.clone())),
+        };
         TxOutput {
-            address: output_info.destination_address.clone(),
+            address,
+            address_derivation_path,
             amount: tx_output.value,
             script_type: output_info.trezor_output_script_type(),
         }

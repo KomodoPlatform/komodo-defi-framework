@@ -21,7 +21,7 @@ use script::{Builder, Script, SignatureVersion, TransactionInputSigner};
 use serialization::{serialize, serialize_with_flags, SERIALIZE_TRANSACTION_WITNESS};
 use std::iter::once;
 use std::time::Duration;
-use utxo_signer::sign_params::{SendingOutputInfo, SpendingInputInfo, UtxoSignTxParamsBuilder};
+use utxo_signer::sign_params::{OutputDestination, SendingOutputInfo, SpendingInputInfo, UtxoSignTxParamsBuilder};
 use utxo_signer::{with_key_pair, UtxoSignTxError};
 use utxo_signer::{SignPolicy, UtxoSignerOps};
 
@@ -284,8 +284,9 @@ where
             address_derivation_path: self.from_derivation_path.clone(),
             address_pubkey: self.from_pubkey,
         }));
+
         sign_params.add_outputs_infos(once(SendingOutputInfo {
-            destination_address: self.req.to.clone(),
+            destination_address: OutputDestination::plain(self.req.to.clone()),
         }));
         match unsigned_tx.outputs.len() {
             // There is no change output.
@@ -293,7 +294,7 @@ where
             // There is a change output.
             2 => {
                 sign_params.add_outputs_infos(once(SendingOutputInfo {
-                    destination_address: self.from_address_string.clone(),
+                    destination_address: OutputDestination::change(self.from_derivation_path.clone()),
                 }));
             },
             unexpected => {
