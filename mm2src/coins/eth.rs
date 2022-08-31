@@ -2681,7 +2681,8 @@ impl EthCoin {
         expected_swap_contract_address: Address,
     ) -> ValidatePaymentFut<()> {
         let unsigned: UnverifiedTransaction = try_f!(rlp::decode(payment_tx));
-        let tx = try_f!(SignedEthTx::new(unsigned));
+        let tx =
+            try_f!(SignedEthTx::new(unsigned).map_to_mm(|err| ValidatePaymentError::InvalidInput(err.to_string())));
         let sender = try_f!(addr_from_raw_pubkey(sender_pub).map_to_mm(ValidatePaymentError::InvalidInput));
         let expected_value = try_f!(wei_from_big_decimal(&amount, self.decimals));
         let selfi = self.clone();
@@ -2692,7 +2693,7 @@ impl EthCoin {
                 .payment_status(expected_swap_contract_address, Token::FixedBytes(swap_id.clone()))
                 .compat()
                 .await
-                .map_to_mm(ValidatePaymentError::TransportError)?;
+                .map_to_mm(|e| ValidatePaymentError::Web3RpcError(Web3RpcError::Internal(e)))?;
             if status != PAYMENT_STATE_SENT.into() {
                 return MmError::err(ValidatePaymentError::UnexpectedPaymentState(format!(
                     "Payment state is not PAYMENT_STATE_SENT, got {}",

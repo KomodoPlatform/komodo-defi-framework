@@ -1500,7 +1500,9 @@ pub fn validate_maker_payment<T: UtxoCommonOps + SwapOps>(
         coin.clone(),
         tx,
         DEFAULT_SWAP_VOUT,
-        &try_f!(Public::from_slice(&input.other_pub)),
+        &try_f!(
+            Public::from_slice(&input.other_pub).map_to_mm(|err| ValidatePaymentError::InvalidInput(err.to_string()))
+        ),
         htlc_keypair.public(),
         &input.secret_hash,
         input.amount,
@@ -1522,7 +1524,9 @@ pub fn validate_taker_payment<T: UtxoCommonOps + SwapOps>(
         coin.clone(),
         tx,
         DEFAULT_SWAP_VOUT,
-        &try_f!(Public::from_slice(&input.other_pub)),
+        &try_f!(
+            Public::from_slice(&input.other_pub).map_to_mm(|err| ValidatePaymentError::InvalidInput(err.to_string()))
+        ),
         htlc_keypair.public(),
         &input.secret_hash,
         input.amount,
@@ -1683,7 +1687,7 @@ pub fn my_address<T: UtxoCommonOps>(coin: &T) -> MmResult<String, MyAddressError
         DerivationMethod::Iguana(ref my_address) => {
             my_address.display_address().map_to_mm(MyAddressError::InternalError)
         },
-        DerivationMethod::HDWallet(_) => MmError::err(MyAddressError::Deprecated(
+        DerivationMethod::HDWallet(_) => MmError::err(MyAddressError::InternalError(
             "'my_address' is deprecated for HD wallets".to_string(),
         )),
     }
@@ -3119,11 +3123,11 @@ pub fn validate_payment<T: UtxoCommonOps>(
                 Ok(t) => t,
                 Err(e) => {
                     if attempts > 2 {
-                        return MmError::err(ValidatePaymentError::InternalError(format!(
+                        return MmError::err(ValidatePaymentError::UtxoRpcError(UtxoRpcError::Internal(format!(
                             "Got error {:?} after 3 attempts of getting tx {:?} from RPC",
                             e,
                             tx.tx_hash(),
-                        )));
+                        ))));
                     };
                     attempts += 1;
                     error!("Error getting tx {:?} from rpc: {:?}", tx.tx_hash(), e);

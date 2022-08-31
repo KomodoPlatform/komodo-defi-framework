@@ -1,21 +1,20 @@
-use crate::{utxo::rpc_clients::UtxoRpcError, DelegationError, NumConversError, UnexpectedDerivationMethod,
-            WithdrawError};
+use crate::{eth::Web3RpcError, utxo::rpc_clients::UtxoRpcError, DelegationError, NumConversError,
+            UnexpectedDerivationMethod, WithdrawError};
 use futures01::Future;
 use mm2_err_handle::prelude::MmError;
 use spv_validation::helpers_validation::SPVError;
 
 pub type ValidatePaymentFut<T> = Box<dyn Future<Item = T, Error = MmError<ValidatePaymentError>> + Send>;
 
-#[derive(Debug, Display, PartialEq)]
+#[derive(Debug, Display)]
 pub enum ValidatePaymentError {
     InternalError(String),
     InvalidPaymentTxData(String),
     InvalidInput(String),
-    ScriptHashTypeNotSupported(String),
     SPVError(SPVError),
-    TransportError(String),
-    UnexpectedDerivationMethod(UnexpectedDerivationMethod),
     UnexpectedPaymentState(String),
+    UtxoRpcError(UtxoRpcError),
+    Web3RpcError(Web3RpcError),
     WrongPaymentTx(String),
     ValidateHtlcError(String),
     #[display(fmt = "Payment tx {:?} was sent to wrong address, expected {:?}", found, expected)]
@@ -31,19 +30,15 @@ pub enum ValidatePaymentError {
 }
 
 impl From<ethabi::Error> for ValidatePaymentError {
-    fn from(err: ethabi::Error) -> Self { Self::InvalidPaymentTxData(err.to_string()) }
+    fn from(err: ethabi::Error) -> Self { Self::Web3RpcError(err.into()) }
 }
 
 impl From<rlp::DecoderError> for ValidatePaymentError {
     fn from(err: rlp::DecoderError) -> Self { Self::InvalidPaymentTxData(err.to_string()) }
 }
 
-impl From<keys::Error> for ValidatePaymentError {
-    fn from(err: keys::Error) -> Self { Self::InternalError(err.to_string()) }
-}
-
 impl From<web3::Error> for ValidatePaymentError {
-    fn from(err: web3::Error) -> Self { Self::TransportError(err.to_string()) }
+    fn from(err: web3::Error) -> Self { Self::Web3RpcError(err.into()) }
 }
 
 impl From<NumConversError> for ValidatePaymentError {
@@ -59,11 +54,11 @@ impl From<serialization::Error> for ValidatePaymentError {
 }
 
 impl From<UnexpectedDerivationMethod> for ValidatePaymentError {
-    fn from(err: UnexpectedDerivationMethod) -> Self { Self::UnexpectedDerivationMethod(err) }
+    fn from(err: UnexpectedDerivationMethod) -> Self { Self::InternalError(err.to_string()) }
 }
 
-impl From<ethkey::Error> for ValidatePaymentError {
-    fn from(err: ethkey::Error) -> Self { ValidatePaymentError::InvalidPaymentTxData(err.to_string()) }
+impl From<UtxoRpcError> for ValidatePaymentError {
+    fn from(err: UtxoRpcError) -> Self { Self::UtxoRpcError(err) }
 }
 
 impl ValidatePaymentError {
@@ -93,7 +88,6 @@ impl ValidatePaymentError {
 #[derive(Debug, Display)]
 pub enum MyAddressError {
     UnexpectedDerivationMethod(UnexpectedDerivationMethod),
-    Deprecated(String),
     InternalError(String),
 }
 

@@ -117,8 +117,7 @@ impl Qrc20Coin {
         let expected_swap_id = qrc20_swap_id(time_lock, &secret_hash);
         let status = self
             .payment_status(&expected_swap_contract_address, expected_swap_id.clone())
-            .await
-            .map_to_mm(ValidatePaymentError::TransportError)?;
+            .await?;
         if status != eth::PAYMENT_STATE_SENT.into() {
             return MmError::err(ValidatePaymentError::UnexpectedPaymentState(format!(
                 "Payment state is not PAYMENT_STATE_SENT, got {}",
@@ -130,7 +129,7 @@ impl Qrc20Coin {
             let expected_value = wei_from_big_decimal(&amount, self.utxo.decimals)?;
             let my_address = self.utxo.derivation_method.iguana_or_err()?.clone();
             let expected_receiver = qtum::contract_addr_from_utxo_addr(my_address)
-                .mm_err(|err| ValidatePaymentError::InvalidPaymentTxData(err.to_string()))?;
+                .mm_err(|err| ValidatePaymentError::InternalError(err.to_string()))?;
             self.erc20_payment_call_bytes(
                 expected_swap_id,
                 expected_value,
@@ -472,26 +471,28 @@ impl Qrc20Coin {
 
     /// Get payment status by `swap_id`.
     /// Do not use self swap_contract_address, because it could be updated during restart.
-    async fn payment_status(&self, swap_contract_address: &H160, swap_id: Vec<u8>) -> Result<U256, String> {
-        let decoded = try_s!(
-            self.utxo
-                .rpc_client
-                .rpc_contract_call(ViewContractCallType::Payments, swap_contract_address, &[
-                    Token::FixedBytes(swap_id)
-                ])
-                .compat()
-                .await
-        );
+    async fn payment_status(&self, swap_contract_address: &H160, swap_id: Vec<u8>) -> MmResult<U256, UtxoRpcError> {
+        let decoded = self
+            .utxo
+            .rpc_client
+            .rpc_contract_call(ViewContractCallType::Payments, swap_contract_address, &[
+                Token::FixedBytes(swap_id),
+            ])
+            .compat()
+            .await?;
         if decoded.len() < 3 {
-            return ERR!(
+            return MmError::err(UtxoRpcError::Internal(format!(
                 "Expected at least 3 tokens in \"payments\" call, found {}",
                 decoded.len()
-            );
+            )));
         }
 
         match decoded[2] {
             Token::Uint(state) => Ok(state),
-            _ => ERR!("Payment status must be uint, got {:?}", decoded[2]),
+            _ => MmError::err(UtxoRpcError::Internal(format!(
+                "Payment status must be uint, got {:?}",
+                decoded[2]
+            ))),
         }
     }
 
