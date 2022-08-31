@@ -56,7 +56,7 @@ impl WasmAccountStorage {
         }
     }
 
-    async fn lock_db(&self) -> AccountStorageResult<AccountDbLocked<'_>> {
+    async fn lock_db_mutex(&self) -> AccountStorageResult<AccountDbLocked<'_>> {
         self.account_db
             .get_or_initialize()
             .await
@@ -158,7 +158,7 @@ impl WasmAccountStorage {
     where
         F: FnOnce(&mut AccountTable),
     {
-        let locked_db = self.lock_db().await?;
+        let locked_db = self.lock_db_mutex().await?;
         let transaction = locked_db.inner.transaction().await?;
         let table = transaction.table::<AccountTable>().await?;
 
@@ -175,11 +175,11 @@ impl WasmAccountStorage {
 
 #[async_trait]
 impl AccountStorage for WasmAccountStorage {
-    /// [`WasmAccountStorage::lock_db`] initializes the database on the first call.
-    async fn init(&self) -> AccountStorageResult<()> { self.lock_db().await.map(|_locked_db| ()) }
+    /// [`WasmAccountStorage::lock_db_mutex`] initializes the database on the first call.
+    async fn init(&self) -> AccountStorageResult<()> { self.lock_db_mutex().await.map(|_locked_db| ()) }
 
     async fn load_accounts(&self) -> AccountStorageResult<BTreeMap<AccountId, AccountInfo>> {
-        let locked_db = self.lock_db().await?;
+        let locked_db = self.lock_db_mutex().await?;
         let transaction = locked_db.inner.transaction().await?;
 
         Self::load_accounts(&transaction).await
@@ -188,7 +188,7 @@ impl AccountStorage for WasmAccountStorage {
     async fn load_accounts_with_enabled_flag(
         &self,
     ) -> AccountStorageResult<BTreeMap<AccountId, AccountWithEnabledFlag>> {
-        let locked_db = self.lock_db().await?;
+        let locked_db = self.lock_db_mutex().await?;
         let transaction = locked_db.inner.transaction().await?;
 
         let enabled_account_id = AccountId::from(Self::load_enabled_account_id_or_err(&transaction).await?);
@@ -215,13 +215,13 @@ impl AccountStorage for WasmAccountStorage {
     }
 
     async fn load_enabled_account_id(&self) -> AccountStorageResult<EnabledAccountId> {
-        let locked_db = self.lock_db().await?;
+        let locked_db = self.lock_db_mutex().await?;
         let transaction = locked_db.inner.transaction().await?;
         Self::load_enabled_account_id_or_err(&transaction).await
     }
 
     async fn load_enabled_account_with_coins(&self) -> AccountStorageResult<AccountWithCoins> {
-        let locked_db = self.lock_db().await?;
+        let locked_db = self.lock_db_mutex().await?;
         let transaction = locked_db.inner.transaction().await?;
 
         let account_id = AccountId::from(Self::load_enabled_account_id_or_err(&transaction).await?);
@@ -232,7 +232,7 @@ impl AccountStorage for WasmAccountStorage {
     }
 
     async fn enable_account(&self, enabled_account_id: EnabledAccountId) -> AccountStorageResult<()> {
-        let locked_db = self.lock_db().await?;
+        let locked_db = self.lock_db_mutex().await?;
         let transaction = locked_db.inner.transaction().await?;
 
         let account_id = AccountId::from(enabled_account_id);
@@ -251,7 +251,7 @@ impl AccountStorage for WasmAccountStorage {
     }
 
     async fn upload_account(&self, account_info: AccountInfo) -> AccountStorageResult<()> {
-        let locked_db = self.lock_db().await?;
+        let locked_db = self.lock_db_mutex().await?;
         let transaction = locked_db.inner.transaction().await?;
 
         // First, check if the account doesn't exist.
@@ -265,7 +265,7 @@ impl AccountStorage for WasmAccountStorage {
     }
 
     async fn delete_account(&self, account_id: AccountId) -> AccountStorageResult<()> {
-        let locked_db = self.lock_db().await?;
+        let locked_db = self.lock_db_mutex().await?;
         let transaction = locked_db.inner.transaction().await?;
 
         // First, check if the account exists already.

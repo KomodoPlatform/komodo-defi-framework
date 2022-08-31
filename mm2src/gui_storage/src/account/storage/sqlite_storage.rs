@@ -132,7 +132,7 @@ impl SqliteAccountStorage {
         })
     }
 
-    fn lock_conn(&self) -> AccountStorageResult<MutexGuard<Connection>> {
+    fn lock_conn_mutex(&self) -> AccountStorageResult<MutexGuard<Connection>> {
         self.conn
             .lock()
             .map_to_mm(|e| AccountStorageError::Internal(format!("Error locking sqlite connection: {}", e)))
@@ -368,7 +368,7 @@ impl SqliteAccountStorage {
 #[async_trait]
 impl AccountStorage for SqliteAccountStorage {
     async fn init(&self) -> AccountStorageResult<()> {
-        let mut conn = self.lock_conn()?;
+        let mut conn = self.lock_conn_mutex()?;
         let transaction = conn.transaction()?;
 
         SqliteAccountStorage::init_account_table(&transaction)?;
@@ -380,14 +380,14 @@ impl AccountStorage for SqliteAccountStorage {
     }
 
     async fn load_accounts(&self) -> AccountStorageResult<BTreeMap<AccountId, AccountInfo>> {
-        let conn = self.lock_conn()?;
+        let conn = self.lock_conn_mutex()?;
         Self::load_accounts(&conn)
     }
 
     async fn load_accounts_with_enabled_flag(
         &self,
     ) -> AccountStorageResult<BTreeMap<AccountId, AccountWithEnabledFlag>> {
-        let conn = self.lock_conn()?;
+        let conn = self.lock_conn_mutex()?;
         let enabled_account_id = AccountId::from(Self::load_enabled_account_id_or_err(&conn)?);
 
         let mut found_enabled = false;
@@ -411,12 +411,12 @@ impl AccountStorage for SqliteAccountStorage {
     }
 
     async fn load_enabled_account_id(&self) -> AccountStorageResult<EnabledAccountId> {
-        let conn = self.lock_conn()?;
+        let conn = self.lock_conn_mutex()?;
         Self::load_enabled_account_id_or_err(&conn)
     }
 
     async fn load_enabled_account_with_coins(&self) -> AccountStorageResult<AccountWithCoins> {
-        let conn = self.lock_conn()?;
+        let conn = self.lock_conn_mutex()?;
         let account_id = AccountId::from(Self::load_enabled_account_id_or_err(&conn)?);
 
         Self::load_account_with_coins(&conn, &account_id)?
@@ -424,7 +424,7 @@ impl AccountStorage for SqliteAccountStorage {
     }
 
     async fn enable_account(&self, enabled_account_id: EnabledAccountId) -> AccountStorageResult<()> {
-        let conn = self.lock_conn()?;
+        let conn = self.lock_conn_mutex()?;
 
         // First, check if the account exists.
         let account_id = AccountId::from(enabled_account_id);
@@ -447,7 +447,7 @@ impl AccountStorage for SqliteAccountStorage {
     }
 
     async fn upload_account(&self, account: AccountInfo) -> AccountStorageResult<()> {
-        let conn = self.lock_conn()?;
+        let conn = self.lock_conn_mutex()?;
 
         // First, check if the account doesn't exist.
         if Self::account_exists(&conn, &account.account_id)? {
@@ -458,7 +458,7 @@ impl AccountStorage for SqliteAccountStorage {
     }
 
     async fn delete_account(&self, account_id: AccountId) -> AccountStorageResult<()> {
-        let mut conn = self.lock_conn()?;
+        let mut conn = self.lock_conn_mutex()?;
 
         // First, check if the account exists already.
         if !Self::account_exists(&conn, &account_id)? {
@@ -469,7 +469,7 @@ impl AccountStorage for SqliteAccountStorage {
     }
 
     async fn set_name(&self, account_id: AccountId, name: String) -> AccountStorageResult<()> {
-        let conn = self.lock_conn()?;
+        let conn = self.lock_conn_mutex()?;
 
         Self::update_account(&conn, account_id, |sql_update| {
             sql_update.set_param(account_table::NAME, name)?;
@@ -478,7 +478,7 @@ impl AccountStorage for SqliteAccountStorage {
     }
 
     async fn set_description(&self, account_id: AccountId, description: String) -> AccountStorageResult<()> {
-        let conn = self.lock_conn()?;
+        let conn = self.lock_conn_mutex()?;
 
         Self::update_account(&conn, account_id, |sql_update| {
             sql_update.set_param(account_table::DESCRIPTION, description)?;
@@ -487,7 +487,7 @@ impl AccountStorage for SqliteAccountStorage {
     }
 
     async fn set_balance(&self, account_id: AccountId, balance_usd: BigDecimal) -> AccountStorageResult<()> {
-        let conn = self.lock_conn()?;
+        let conn = self.lock_conn_mutex()?;
 
         Self::update_account(&conn, account_id, |sql_update| {
             sql_update.set_param(account_table::BALANCE_USD, balance_usd.to_string())?;
@@ -496,7 +496,7 @@ impl AccountStorage for SqliteAccountStorage {
     }
 
     async fn activate_coins(&self, account_id: AccountId, tickers: Vec<String>) -> AccountStorageResult<()> {
-        let mut conn = self.lock_conn()?;
+        let mut conn = self.lock_conn_mutex()?;
         let transaction = conn.transaction()?;
 
         // First, check if the account exists.
@@ -523,7 +523,7 @@ impl AccountStorage for SqliteAccountStorage {
     }
 
     async fn deactivate_coins(&self, account_id: AccountId, tickers: Vec<String>) -> AccountStorageResult<()> {
-        let conn = self.lock_conn()?;
+        let conn = self.lock_conn_mutex()?;
 
         // First, check if the account exists.
         if !Self::account_exists(&conn, &account_id)? {
