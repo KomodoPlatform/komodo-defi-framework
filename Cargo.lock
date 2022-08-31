@@ -2063,8 +2063,6 @@ dependencies = [
 name = "enum_from_displaying"
 version = "0.1.0"
 dependencies = [
- "derive_more",
- "expand",
  "proc-macro2 1.0.39",
  "quote 1.0.18",
  "syn 1.0.95",
@@ -2243,17 +2241,6 @@ dependencies = [
  "serde",
  "serde_derive",
  "tiny-keccak 1.4.4",
-]
-
-[[package]]
-name = "expand"
-version = "0.2.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "0cd6d31b20fba7232909816f339b2811368618a89c7940f2e1f58a470d6919fc"
-dependencies = [
- "proc-macro2 1.0.39",
- "quote 1.0.18",
- "syn 1.0.95",
 ]
 
 [[package]]
