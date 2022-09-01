@@ -8,10 +8,6 @@ edition = "2021"
 [lib]
 proc-macro = true
 
-[[test]]
-name = "tests"
-path = "tests.rs"
-
 [dev-dependencies]
 trybuild = { version = "1.0.49", features = ["diff"] }
 
