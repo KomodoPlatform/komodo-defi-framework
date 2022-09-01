@@ -101,17 +101,14 @@ struct SlpTxPreimage {
 
 #[derive(Debug, Display)]
 enum ValidateHtlcError {
-    TxLackOfOutputs,
     #[display(fmt = "TxParseError: {:?}", _0)]
     TxParseError(SerError),
     #[display(fmt = "OpReturnParseError: {:?}", _0)]
     OpReturnParseError(ParseSlpScriptError),
-    InvalidSlpDetails,
     InvalidSlpUtxo(ValidateSlpUtxosErr),
     NumConversionErr(NumConversError),
     ValidatePaymentError(String),
     UnexpectedDerivationMethod(UnexpectedDerivationMethod),
-    OtherPubInvalid(keys::Error),
 }
 
 impl From<NumConversError> for ValidateHtlcError {
@@ -441,11 +438,13 @@ impl SlpToken {
         .await
     }
 
-    async fn validate_htlc(&self, input: ValidatePaymentInput) -> Result<(), MmError<ValidateHtlcError>> {
+    async fn validate_htlc(&self, input: ValidatePaymentInput) -> Result<(), MmError<ValidatePaymentError>> {
         let mut tx: UtxoTx = deserialize(input.payment_tx.as_slice()).map_to_mm(ValidateHtlcError::TxParseError)?;
         tx.tx_hash_algo = self.platform_coin.as_ref().tx_hash_algo;
         if tx.outputs.len() < 2 {
-            return MmError::err(ValidateHtlcError::TxLackOfOutputs);
+            return MmError::err(ValidatePaymentError::InvalidPaymentTxData(
+                "Not enough transaction output".to_string(),
+            ));
         }
 
         let slp_satoshis = sat_from_big_decimal(&input.amount, self.decimals())?;
@@ -463,23 +462,26 @@ impl SlpToken {
         };
         validate_slp_utxos(self.platform_coin.bchd_urls(), &[slp_unspent], self.token_id()).await?;
 
-        let slp_tx: SlpTxDetails = parse_slp_script(tx.outputs[0].script_pubkey.as_slice())?;
+        let slp_tx: SlpTxDetails = parse_slp_script(tx.outputs[0].script_pubkey.as_slice())
+            .mm_err(|err| ValidatePaymentError::InternalError(err.to_string()))?;
 
         match slp_tx.transaction {
             SlpTransaction::Send { token_id, amounts } => {
                 if token_id != self.token_id() {
-                    return MmError::err(ValidateHtlcError::InvalidSlpDetails);
+                    return MmError::err(ValidatePaymentError::InvalidInput("Invalid tx token_id".to_string()));
                 }
 
                 if amounts.is_empty() {
-                    return MmError::err(ValidateHtlcError::InvalidSlpDetails);
+                    return MmError::err(ValidatePaymentError::InvalidInput(
+                        "Input amount can't be empty".to_string(),
+                    ));
                 }
 
                 if amounts[0] != slp_satoshis {
-                    return MmError::err(ValidateHtlcError::InvalidSlpDetails);
+                    return MmError::err(ValidatePaymentError::InvalidInput("Invalid input amount".to_string()));
                 }
             },
-            _ => return MmError::err(ValidateHtlcError::InvalidSlpDetails),
+            _ => return MmError::err(ValidatePaymentError::InvalidInput("Invalid Slp Details".to_string())),
         }
 
         let htlc_keypair = self.derive_htlc_key_pair(&input.unique_swap_data);
@@ -487,7 +489,8 @@ impl SlpToken {
             self.platform_coin.clone(),
             tx,
             SLP_SWAP_VOUT,
-            &Public::from_slice(&input.other_pub).map_to_mm(ValidateHtlcError::OtherPubInvalid)?,
+            &Public::from_slice(&input.other_pub)
+                .map_to_mm(|err| ValidatePaymentError::InvalidInput(err.to_string()))?,
             htlc_keypair.public(),
             &input.secret_hash,
             self.platform_dust_dec(),
@@ -2121,7 +2124,7 @@ mod slp_tests {
         };
         let validity_err = block_on(fusd.validate_htlc(input)).unwrap_err();
         match validity_err.into_inner() {
-            ValidateHtlcError::InvalidSlpUtxo(e) => println!("{:?}", e),
+            ValidatePaymentError::InvalidInput(e) => println!("{:?}", e),
             err @ _ => panic!("Unexpected err {:?}", err),
         };
     }

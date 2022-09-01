@@ -3123,11 +3123,11 @@ pub fn validate_payment<T: UtxoCommonOps>(
                 Ok(t) => t,
                 Err(e) => {
                     if attempts > 2 {
-                        return MmError::err(ValidatePaymentError::UtxoRpcError(UtxoRpcError::Internal(format!(
+                        return MmError::err(ValidatePaymentError::InvalidRpcResponse(format!(
                             "Got error {:?} after 3 attempts of getting tx {:?} from RPC",
                             e,
                             tx.tx_hash(),
-                        ))));
+                        )));
                     };
                     attempts += 1;
                     error!("Error getting tx {:?} from rpc: {:?}", tx.tx_hash(), e);

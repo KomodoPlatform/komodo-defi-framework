@@ -1,7 +1,7 @@
 /// https://bchd.cash/
 /// https://bchd.fountainhead.cash/
 use super::bchd_pb::*;
-use crate::utxo::slp::SlpUnspent;
+use crate::{coin_errors::ValidatePaymentError, utxo::slp::SlpUnspent};
 use chain::OutPoint;
 use derive_more::Display;
 use futures::future::join_all;
@@ -77,6 +77,10 @@ pub enum ValidateSlpUtxosErrKind {
 pub struct ValidateSlpUtxosErr {
     to_url: String,
     kind: ValidateSlpUtxosErrKind,
+}
+
+impl From<ValidateSlpUtxosErr> for ValidatePaymentError {
+    fn from(err: ValidateSlpUtxosErr) -> Self { Self::InvalidPaymentTxData(err.to_string()) }
 }
 
 impl From<GrpcWebMultiUrlReqErr> for ValidateSlpUtxosErr {

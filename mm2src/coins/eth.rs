@@ -2681,8 +2681,9 @@ impl EthCoin {
         expected_swap_contract_address: Address,
     ) -> ValidatePaymentFut<()> {
         let unsigned: UnverifiedTransaction = try_f!(rlp::decode(payment_tx));
-        let tx =
-            try_f!(SignedEthTx::new(unsigned).map_to_mm(|err| ValidatePaymentError::InvalidInput(err.to_string())));
+        let tx = try_f!(
+            SignedEthTx::new(unsigned).map_to_mm(|err| ValidatePaymentError::InvalidPaymentTxData(err.to_string()))
+        );
         let sender = try_f!(addr_from_raw_pubkey(sender_pub).map_to_mm(ValidatePaymentError::InvalidInput));
         let expected_value = try_f!(wei_from_big_decimal(&amount, self.decimals));
         let selfi = self.clone();
@@ -2693,7 +2694,7 @@ impl EthCoin {
                 .payment_status(expected_swap_contract_address, Token::FixedBytes(swap_id.clone()))
                 .compat()
                 .await
-                .map_to_mm(|e| ValidatePaymentError::Web3RpcError(Web3RpcError::Internal(e)))?;
+                .map_to_mm(ValidatePaymentError::Transport)?;
             if status != PAYMENT_STATE_SENT.into() {
                 return MmError::err(ValidatePaymentError::UnexpectedPaymentState(format!(
                     "Payment state is not PAYMENT_STATE_SENT, got {}",
@@ -2737,8 +2738,12 @@ impl EthCoin {
                         )));
                     }
 
-                    let function = SWAP_CONTRACT.function("ethPayment")?;
-                    let decoded = function.decode_input(&tx_from_rpc.input.0)?;
+                    let function = SWAP_CONTRACT
+                        .function("ethPayment")
+                        .map_to_mm(|err| ValidatePaymentError::InvalidPaymentTxData(err.to_string()))?;
+                    let decoded = function
+                        .decode_input(&tx_from_rpc.input.0)
+                        .map_to_mm(|err| ValidatePaymentError::InvalidPaymentTxData(err.to_string()))?;
                     if decoded[0] != Token::FixedBytes(swap_id.clone()) {
                         return MmError::err(ValidatePaymentError::WrongPaymentTx(format!(
                             "Invalid 'swap_id' {:?}, expected {:?}",
@@ -2749,7 +2754,7 @@ impl EthCoin {
                     if decoded[1] != Token::Address(selfi.my_address) {
                         return MmError::err(ValidatePaymentError::WrongPaymentTx(format!(
                             "Payment tx receiver arg {:?} is invalid, expected {:?}",
-                            &decoded[1],
+                            decoded[1],
                             Token::Address(selfi.my_address)
                         )));
                     }
@@ -2757,7 +2762,7 @@ impl EthCoin {
                     if decoded[2] != Token::FixedBytes(secret_hash.to_vec()) {
                         return MmError::err(ValidatePaymentError::WrongPaymentTx(format!(
                             "Payment tx secret_hash arg {:?} is invalid, expected {:?}",
-                            &decoded[2],
+                            decoded[2],
                             Token::FixedBytes(secret_hash.to_vec()),
                         )));
                     }
@@ -2765,7 +2770,7 @@ impl EthCoin {
                     if decoded[3] != Token::Uint(U256::from(time_lock)) {
                         return MmError::err(ValidatePaymentError::WrongPaymentTx(format!(
                             "Payment tx time_lock arg {:?} is invalid, expected {:?}",
-                            &decoded[3],
+                            decoded[3],
                             Token::Uint(U256::from(time_lock)),
                         )));
                     }
@@ -2781,8 +2786,12 @@ impl EthCoin {
                         ));
                     }
 
-                    let function = SWAP_CONTRACT.function("erc20Payment")?;
-                    let decoded = function.decode_input(&tx_from_rpc.input.0)?;
+                    let function = SWAP_CONTRACT
+                        .function("erc20Payment")
+                        .map_to_mm(|err| ValidatePaymentError::InvalidPaymentTxData(err.to_string()))?;
+                    let decoded = function
+                        .decode_input(&tx_from_rpc.input.0)
+                        .map_to_mm(|err| ValidatePaymentError::InvalidPaymentTxData(err.to_string()))?;
                     if decoded[0] != Token::FixedBytes(swap_id.clone()) {
                         return MmError::err(ValidatePaymentError::WrongPaymentTx(format!(
                             "Invalid 'swap_id' {:?}, expected {:?}",

@@ -481,7 +481,7 @@ impl Qrc20Coin {
             .compat()
             .await?;
         if decoded.len() < 3 {
-            return MmError::err(UtxoRpcError::Internal(format!(
+            return MmError::err(UtxoRpcError::InvalidResponse(format!(
                 "Expected at least 3 tokens in \"payments\" call, found {}",
                 decoded.len()
             )));
@@ -489,7 +489,7 @@ impl Qrc20Coin {
 
         match decoded[2] {
             Token::Uint(state) => Ok(state),
-            _ => MmError::err(UtxoRpcError::Internal(format!(
+            _ => MmError::err(UtxoRpcError::InvalidResponse(format!(
                 "Payment status must be uint, got {:?}",
                 decoded[2]
             ))),

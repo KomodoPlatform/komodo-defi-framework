@@ -1,4 +1,4 @@
-use crate::{eth::Web3RpcError, utxo::rpc_clients::UtxoRpcError, DelegationError, NumConversError,
+use crate::{utxo::rpc_clients::UtxoRpcError, DelegationError, NumConversError, TxHistoryError,
             UnexpectedDerivationMethod, WithdrawError};
 use futures01::Future;
 use mm2_err_handle::prelude::MmError;
@@ -11,10 +11,10 @@ pub enum ValidatePaymentError {
     InternalError(String),
     InvalidPaymentTxData(String),
     InvalidInput(String),
+    InvalidRpcResponse(String),
     SPVError(SPVError),
     UnexpectedPaymentState(String),
-    UtxoRpcError(UtxoRpcError),
-    Web3RpcError(Web3RpcError),
+    Transport(String),
     WrongPaymentTx(String),
     ValidateHtlcError(String),
     #[display(fmt = "Payment tx {} was sent to wrong address, expected {}", found, expected)]
@@ -29,16 +29,12 @@ pub enum ValidatePaymentError {
     },
 }
 
-impl From<ethabi::Error> for ValidatePaymentError {
-    fn from(err: ethabi::Error) -> Self { Self::Web3RpcError(err.into()) }
-}
-
 impl From<rlp::DecoderError> for ValidatePaymentError {
     fn from(err: rlp::DecoderError) -> Self { Self::InvalidPaymentTxData(err.to_string()) }
 }
 
 impl From<web3::Error> for ValidatePaymentError {
-    fn from(err: web3::Error) -> Self { Self::Web3RpcError(err.into()) }
+    fn from(err: web3::Error) -> Self { Self::Transport(err.to_string()) }
 }
 
 impl From<NumConversError> for ValidatePaymentError {
@@ -58,7 +54,13 @@ impl From<UnexpectedDerivationMethod> for ValidatePaymentError {
 }
 
 impl From<UtxoRpcError> for ValidatePaymentError {
-    fn from(err: UtxoRpcError) -> Self { Self::UtxoRpcError(err) }
+    fn from(err: UtxoRpcError) -> Self {
+        match err {
+            UtxoRpcError::Transport(e) => Self::Transport(e.to_string()),
+            UtxoRpcError::Internal(e) => Self::InternalError(e),
+            _ => Self::InvalidRpcResponse(err.to_string()),
+        }
+    }
 }
 
 impl ValidatePaymentError {
@@ -104,5 +106,9 @@ impl From<MyAddressError> for UtxoRpcError {
 }
 
 impl From<MyAddressError> for DelegationError {
+    fn from(err: MyAddressError) -> Self { Self::InternalError(err.to_string()) }
+}
+
+impl From<MyAddressError> for TxHistoryError {
     fn from(err: MyAddressError) -> Self { Self::InternalError(err.to_string()) }
 }

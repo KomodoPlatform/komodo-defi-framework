@@ -35,7 +35,6 @@
 
 use async_trait::async_trait;
 use base58::FromBase58Error;
-use coin_errors::{MyAddressError, ValidatePaymentError, ValidatePaymentFut};
 use common::{calc_total_pages, now_ms, ten, HttpStatusCode};
 use crypto::{Bip32Error, CryptoCtx, DerivationPath};
 use derive_more::Display;
@@ -181,7 +180,10 @@ macro_rules! ok_or_continue_after_sleep {
 }
 
 pub mod coin_balance;
+
 pub mod coin_errors;
+use coin_errors::{MyAddressError, ValidatePaymentError, ValidatePaymentFut};
+
 #[doc(hidden)]
 #[cfg(test)]
 pub mod coins_tests;
@@ -324,10 +326,6 @@ pub enum TxHistoryError {
     },
     NotSupported(String),
     InternalError(String),
-}
-
-impl From<MyAddressError> for TxHistoryError {
-    fn from(err: MyAddressError) -> Self { Self::InternalError(err.to_string()) }
 }
 
 #[derive(Debug, Display)]
