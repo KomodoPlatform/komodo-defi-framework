@@ -17,12 +17,12 @@ pub enum ValidatePaymentError {
     Web3RpcError(Web3RpcError),
     WrongPaymentTx(String),
     ValidateHtlcError(String),
-    #[display(fmt = "Payment tx {:?} was sent to wrong address, expected {:?}", found, expected)]
+    #[display(fmt = "Payment tx {} was sent to wrong address, expected {}", found, expected)]
     WrongReceiverAddress {
         found: String,
         expected: String,
     },
-    #[display(fmt = "Payment tx {:?} was sent from wrong address, expected {:?}", found, expected)]
+    #[display(fmt = "Payment tx {} was sent from wrong address, expected {}", found, expected)]
     WrongSenderAddress {
         found: String,
         expected: String,

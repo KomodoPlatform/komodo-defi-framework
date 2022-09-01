@@ -177,7 +177,7 @@ fn test_validate_maker_payment() {
         .to_string();
     log!("error: {:?}", error);
     assert!(
-        error.contains("Payment tx was sent from wrong address, expected 0x783cf0be521101942da509846ea476e683aad832")
+        error.contains("Payment tx 0x9e032d4b0090a11dc40fe6c47601499a35d55fbb was sent from wrong address, expected 0x783cf0be521101942da509846ea476e683aad832")
     );
     input.other_pub = correct_maker_pub;
 
