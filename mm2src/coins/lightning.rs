@@ -145,6 +145,13 @@ impl LightningCoin {
             })
     }
 
+    async fn get_channel_by_rpc_id(&self, rpc_id: u64) -> Option<ChannelDetails> {
+        self.list_channels()
+            .await
+            .into_iter()
+            .find(|chan| chan.user_channel_id == rpc_id)
+    }
+
     async fn pay_invoice(&self, invoice: Invoice) -> SendPaymentResult<DBPaymentInfo> {
         let payment_hash = PaymentHash((invoice.payment_hash()).into_inner());
         let payment_type = PaymentType::OutboundPayment {
@@ -906,13 +913,13 @@ pub async fn open_channel(ctx: MmArc, req: OpenChannelRequest) -> OpenChannelRes
     let mut conf = ln_coin.conf.clone();
     if let Some(options) = req.channel_options {
         match conf.channel_options.as_mut() {
-            Some(o) => o.update(options),
+            Some(o) => o.update_according_to(options),
             None => conf.channel_options = Some(options),
         }
     }
     if let Some(configs) = req.channel_configs {
         match conf.our_channels_configs.as_mut() {
-            Some(o) => o.update(configs),
+            Some(o) => o.update_according_to(configs),
             None => conf.our_channels_configs = Some(configs),
         }
     }
@@ -960,8 +967,7 @@ pub async fn open_channel(ctx: MmArc, req: OpenChannelRequest) -> OpenChannelRes
 #[derive(Deserialize)]
 pub struct UpdateChannelReq {
     pub coin: String,
-    pub channel_id: H256Json,
-    pub counterparty_node_id: PublicKeyForRPC,
+    pub rpc_channel_id: u64,
     pub channel_options: ChannelOptions,
 }
 
@@ -978,26 +984,25 @@ pub async fn update_channel(ctx: MmArc, req: UpdateChannelReq) -> UpdateChannelR
         _ => return MmError::err(UpdateChannelError::UnsupportedCoin(coin.ticker().to_string())),
     };
 
+    let channel_details = ln_coin
+        .get_channel_by_rpc_id(req.rpc_channel_id)
+        .await
+        .ok_or(UpdateChannelError::NoSuchChannel(req.rpc_channel_id))?;
+
     async_blocking(move || {
         let mut channel_options = ln_coin
             .conf
             .channel_options
             .unwrap_or_else(|| req.channel_options.clone());
         if channel_options != req.channel_options {
-            channel_options.update(req.channel_options.clone());
+            channel_options.update_according_to(req.channel_options.clone());
         }
-        let channel_ids = vec![req.channel_id.0];
-        let counterparty_node_id = req.counterparty_node_id.clone();
+        let channel_ids = vec![channel_details.channel_id];
+        let counterparty_node_id = channel_details.counterparty.node_id;
         ln_coin
             .channel_manager
-            .update_channel_config(
-                &counterparty_node_id.into(),
-                &channel_ids,
-                &channel_options.clone().into(),
-            )
-            .map_to_mm(|e| {
-                UpdateChannelError::FailureToUpdateChannel(req.channel_id.to_string(), format!("{:?}", e))
-            })?;
+            .update_channel_config(&counterparty_node_id, &channel_ids, &channel_options.clone().into())
+            .map_to_mm(|e| UpdateChannelError::FailureToUpdateChannel(req.rpc_channel_id, format!("{:?}", e)))?;
         Ok(UpdateChannelResponse { channel_options })
     })
     .await
@@ -1237,12 +1242,8 @@ pub async fn get_channel_details(
         MmCoinEnum::LightningCoin(c) => c,
         _ => return MmError::err(GetChannelDetailsError::UnsupportedCoin(coin.ticker().to_string())),
     };
-    let channel_details = match ln_coin
-        .list_channels()
-        .await
-        .into_iter()
-        .find(|chan| chan.user_channel_id == req.rpc_channel_id)
-    {
+
+    let channel_details = match ln_coin.get_channel_by_rpc_id(req.rpc_channel_id).await {
         Some(details) => GetChannelDetailsResponse::Open(details.into()),
         None => GetChannelDetailsResponse::Closed(
             ln_coin
@@ -1562,21 +1563,25 @@ pub async fn get_payment_details(
 #[derive(Deserialize)]
 pub struct CloseChannelReq {
     pub coin: String,
-    pub channel_id: H256Json,
-    pub counterparty_node_id: PublicKeyForRPC,
+    pub rpc_channel_id: u64,
     #[serde(default)]
     pub force_close: bool,
 }
 
-// Todo: use either counterparty_node_id or channel_id to close channel/s
 pub async fn close_channel(ctx: MmArc, req: CloseChannelReq) -> CloseChannelResult<String> {
     let coin = lp_coinfind_or_err(&ctx, &req.coin).await?;
     let ln_coin = match coin {
         MmCoinEnum::LightningCoin(c) => c,
         _ => return MmError::err(CloseChannelError::UnsupportedCoin(coin.ticker().to_string())),
     };
-    let channel_id = req.channel_id.0;
-    let counterparty_node_id: PublicKey = req.counterparty_node_id.into();
+
+    let channel_details = ln_coin
+        .get_channel_by_rpc_id(req.rpc_channel_id)
+        .await
+        .ok_or(CloseChannelError::NoSuchChannel(req.rpc_channel_id))?;
+    let channel_id = channel_details.channel_id;
+    let counterparty_node_id = channel_details.counterparty.node_id;
+
     if req.force_close {
         async_blocking(move || {
             ln_coin
@@ -1595,7 +1600,10 @@ pub async fn close_channel(ctx: MmArc, req: CloseChannelReq) -> CloseChannelResu
         .await?;
     }
 
-    Ok(format!("Initiated closing of channel: {:?}", req.channel_id))
+    Ok(format!(
+        "Initiated closing of channel with rpc_channel_id: {}",
+        req.rpc_channel_id
+    ))
 }
 
 /// Details about the balance(s) available for spending once the channel appears on chain.

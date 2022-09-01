@@ -226,14 +226,17 @@ pub enum UpdateChannelError {
     UnsupportedCoin(String),
     #[display(fmt = "No such coin {}", _0)]
     NoSuchCoin(String),
+    #[display(fmt = "No such channel with rpc_channel_id {}", _0)]
+    NoSuchChannel(u64),
     #[display(fmt = "Failure to channel {}: {}", _0, _1)]
-    FailureToUpdateChannel(String, String),
+    FailureToUpdateChannel(u64, String),
 }
 
 impl HttpStatusCode for UpdateChannelError {
     fn status_code(&self) -> StatusCode {
         match self {
             UpdateChannelError::UnsupportedCoin(_) => StatusCode::BAD_REQUEST,
+            UpdateChannelError::NoSuchChannel(_) => StatusCode::NOT_FOUND,
             UpdateChannelError::NoSuchCoin(_) => StatusCode::PRECONDITION_REQUIRED,
             UpdateChannelError::FailureToUpdateChannel(_, _) => StatusCode::INTERNAL_SERVER_ERROR,
         }
@@ -476,6 +479,8 @@ pub enum CloseChannelError {
     UnsupportedCoin(String),
     #[display(fmt = "No such coin {}", _0)]
     NoSuchCoin(String),
+    #[display(fmt = "No such channel with rpc_channel_id {}", _0)]
+    NoSuchChannel(u64),
     #[display(fmt = "Closing channel error: {}", _0)]
     CloseChannelError(String),
 }
@@ -484,6 +489,7 @@ impl HttpStatusCode for CloseChannelError {
     fn status_code(&self) -> StatusCode {
         match self {
             CloseChannelError::UnsupportedCoin(_) => StatusCode::BAD_REQUEST,
+            CloseChannelError::NoSuchChannel(_) => StatusCode::NOT_FOUND,
             CloseChannelError::NoSuchCoin(_) => StatusCode::PRECONDITION_REQUIRED,
             CloseChannelError::CloseChannelError(_) => StatusCode::INTERNAL_SERVER_ERROR,
         }

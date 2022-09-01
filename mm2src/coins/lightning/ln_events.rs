@@ -352,9 +352,9 @@ impl LightningEventHandler {
                     payment_info.status = HTLCStatus::Succeeded;
                     payment_info.amt_msat = Some(amount_msat as i64);
                     payment_info.last_updated = (now_ms() / 1000) as i64;
-                    if let Err(e) = db.add_or_update_payment_in_db(payment_info).await {
-                        error!("Unable to update payment information in DB: {}", e);
-                    }
+                    db.add_or_update_payment_in_db(payment_info)
+                        .await
+                        .error_log_with_msg("Unable to update payment information in DB!");
                 }
             }),
             PaymentPurpose::SpontaneousPayment(payment_preimage) => {
@@ -371,9 +371,9 @@ impl LightningEventHandler {
                     last_updated: (now_ms() / 1000) as i64,
                 };
                 spawn(async move {
-                    if let Err(e) = db.add_or_update_payment_in_db(payment_info).await {
-                        error!("Unable to update payment information in DB: {}", e);
-                    }
+                    db.add_or_update_payment_in_db(payment_info)
+                        .await
+                        .error_log_with_msg("Unable to update payment information in DB!");
                 });
             },
         }
@@ -397,9 +397,9 @@ impl LightningEventHandler {
                 payment_info.fee_paid_msat = fee_paid_msat.map(|f| f as i64);
                 payment_info.last_updated = (now_ms() / 1000) as i64;
                 let amt_msat = payment_info.amt_msat;
-                if let Err(e) = db.add_or_update_payment_in_db(payment_info).await {
-                    error!("Unable to update payment information in DB: {}", e);
-                }
+                db.add_or_update_payment_in_db(payment_info)
+                    .await
+                    .error_log_with_msg("Unable to update payment information in DB!");
                 info!(
                     "Successfully sent payment of {} millisatoshis with payment hash {}",
                     amt_msat.unwrap_or_default(),
@@ -441,9 +441,9 @@ impl LightningEventHandler {
             if let Ok(Some(mut payment_info)) = db.get_payment_from_db(payment_hash).await.error_log_passthrough() {
                 payment_info.status = HTLCStatus::Failed;
                 payment_info.last_updated = (now_ms() / 1000) as i64;
-                if let Err(e) = db.add_or_update_payment_in_db(payment_info).await {
-                    error!("Unable to update payment information in DB: {}", e);
-                }
+                db.add_or_update_payment_in_db(payment_info)
+                    .await
+                    .error_log_with_msg("Unable to update payment information in DB!");
             }
         });
     }
@@ -461,6 +461,11 @@ impl LightningEventHandler {
 
     fn handle_spendable_outputs(&self, outputs: Vec<SpendableOutputDescriptor>) {
         info!("Handling SpendableOutputs event!");
+        if outputs.is_empty() {
+            error!("Received SpendableOutputs event with no outputs!");
+            return;
+        }
+
         // Todo: add support for Hardware wallets for funding transactions and spending spendable outputs (channel closing transactions)
         let my_address = match self.platform.coin.as_ref().derivation_method.iguana_or_err() {
             Ok(addr) => addr.clone(),
@@ -566,14 +571,18 @@ impl LightningEventHandler {
         spawn(async move {
             if let Ok(last_channel_rpc_id) = db.get_last_channel_rpc_id().await.error_log_passthrough() {
                 let user_channel_id = last_channel_rpc_id as u64 + 1;
-                if (trusted_nodes.lock().contains(&counterparty_node_id)
+
+                let trusted_nodes = trusted_nodes.lock().clone();
+                let accepted_inbound_channel_with_0conf = trusted_nodes.contains(&counterparty_node_id)
                     && channel_manager
                         .accept_inbound_channel_from_trusted_peer_0conf(
                             &temporary_channel_id,
                             &counterparty_node_id,
                             user_channel_id,
                         )
-                        .is_ok())
+                        .is_ok();
+
+                if accepted_inbound_channel_with_0conf
                     || channel_manager
                         .accept_inbound_channel(&temporary_channel_id, &counterparty_node_id, user_channel_id)
                         .is_ok()

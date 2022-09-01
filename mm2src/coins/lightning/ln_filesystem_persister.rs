@@ -11,7 +11,7 @@ use lightning::chain::keysinterface::{KeysInterface, Sign};
 use lightning::routing::scoring::{ProbabilisticScorer, ProbabilisticScoringParameters};
 use lightning::util::persist::KVStorePersister;
 use lightning::util::ser::{ReadableArgs, Writeable};
-use mm2_io::fs::check_dir_operations;
+use mm2_io::fs::{check_dir_operations, read_json, write_json};
 use secp256k1v22::PublicKey;
 use std::collections::{HashMap, HashSet};
 use std::fs;
@@ -26,6 +26,8 @@ use std::sync::{Arc, Mutex};
 
 #[cfg(target_family = "windows")]
 use {std::ffi::OsStr, std::os::windows::ffi::OsStrExt};
+
+const USE_TMP_FILE: bool = true;
 
 pub struct LightningFilesystemPersister {
     main_path: PathBuf,
@@ -53,11 +55,10 @@ impl LightningFilesystemPersister {
     }
 
     pub fn nodes_addresses_backup_path(&self) -> Option<PathBuf> {
-        if let Some(mut backup_path) = self.backup_path() {
+        self.backup_path().map(|mut backup_path| {
             backup_path.push("channel_nodes_data");
-            return Some(backup_path);
-        }
-        None
+            backup_path
+        })
     }
 
     pub fn network_graph_path(&self) -> PathBuf {
@@ -91,11 +92,10 @@ impl LightningFilesystemPersister {
     }
 
     pub fn monitors_backup_path(&self) -> Option<PathBuf> {
-        if let Some(mut backup_path) = self.backup_path() {
+        self.backup_path().map(|mut backup_path| {
             backup_path.push("monitors");
-            return Some(backup_path);
-        }
-        None
+            backup_path
+        })
     }
 
     /// Read `ChannelMonitor`s from disk.
@@ -114,45 +114,57 @@ impl LightningFilesystemPersister {
         for file_option in fs::read_dir(path).unwrap() {
             let file = file_option.unwrap();
             let owned_file_name = file.file_name();
-            let filename = owned_file_name.to_str();
-            if filename.is_some() && filename.unwrap() == "checkval" {
+            let filename = match owned_file_name.to_str() {
+                Some(name) => name,
+                None => {
+                    return Err(std::io::Error::new(
+                        std::io::ErrorKind::InvalidData,
+                        format!("Invalid ChannelMonitor file name: {:?}", owned_file_name),
+                    ))
+                },
+            };
+            if filename == "checkval" {
                 continue;
             }
-            if filename.is_none() || !filename.unwrap().is_ascii() || filename.unwrap().len() < 65 {
+            if !filename.is_ascii() || filename.len() < 65 {
                 return Err(std::io::Error::new(
                     std::io::ErrorKind::InvalidData,
-                    "Invalid ChannelMonitor file name",
+                    format!("Invalid ChannelMonitor file name: {}", filename),
                 ));
             }
-            if filename.unwrap().ends_with(".tmp") {
+            if filename.ends_with(".tmp") {
                 // If we were in the middle of committing an new update and crashed, it should be
                 // safe to ignore the update - we should never have returned to the caller and
                 // irrevocably committed to the new state in any way.
                 continue;
             }
 
-            let txid = Txid::from_hex(filename.unwrap().split_at(64).0);
-            if txid.is_err() {
-                return Err(std::io::Error::new(
-                    std::io::ErrorKind::InvalidData,
-                    "Invalid tx ID in filename",
-                ));
-            }
+            let txid = match Txid::from_hex(filename.split_at(64).0) {
+                Ok(tx_id) => tx_id,
+                Err(e) => {
+                    return Err(std::io::Error::new(
+                        std::io::ErrorKind::InvalidData,
+                        format!("Invalid tx ID in filename error: {}", e),
+                    ))
+                },
+            };
 
-            let index = filename.unwrap().split_at(65).1.parse::<u16>();
-            if index.is_err() {
-                return Err(std::io::Error::new(
-                    std::io::ErrorKind::InvalidData,
-                    "Invalid tx index in filename",
-                ));
-            }
+            let index = match filename.split_at(65).1.parse::<u16>() {
+                Ok(i) => i,
+                Err(e) => {
+                    return Err(std::io::Error::new(
+                        std::io::ErrorKind::InvalidData,
+                        format!("Invalid tx index in filename error: {}", e),
+                    ))
+                },
+            };
 
             let contents = fs::read(&file.path())?;
             let mut buffer = Cursor::new(&contents);
             match <(BlockHash, ChannelMonitor<Signer>)>::read(&mut buffer, &*keys_manager) {
                 Ok((blockhash, channel_monitor)) => {
-                    if channel_monitor.get_funding_txo().0.txid != txid.unwrap()
-                        || channel_monitor.get_funding_txo().0.index != index.unwrap()
+                    if channel_monitor.get_funding_txo().0.txid != txid
+                        || channel_monitor.get_funding_txo().0.index != index
                     {
                         return Err(std::io::Error::new(
                             std::io::ErrorKind::InvalidData,
@@ -311,54 +323,43 @@ impl LightningStorage for LightningFilesystemPersister {
         if !path.exists() {
             return Ok(HashMap::new());
         }
-        async_blocking(move || {
-            let file = fs::File::open(path)?;
-            let reader = BufReader::new(file);
-            let nodes_addresses: HashMap<String, SocketAddr> =
-                serde_json::from_reader(reader).map_err(|e| std::io::Error::new(std::io::ErrorKind::InvalidData, e))?;
-            nodes_addresses
-                .iter()
-                .map(|(pubkey_str, addr)| {
-                    let pubkey = PublicKey::from_str(pubkey_str)
-                        .map_err(|e| std::io::Error::new(std::io::ErrorKind::InvalidData, e))?;
-                    Ok((pubkey, *addr))
-                })
-                .collect()
-        })
-        .await
+
+        let nodes_addresses: HashMap<String, SocketAddr> = read_json(&path)
+            .await
+            .map_err(|e| std::io::Error::new(std::io::ErrorKind::InvalidData, e.to_string()))?
+            .ok_or_else(|| std::io::Error::from(std::io::ErrorKind::NotFound))?;
+
+        nodes_addresses
+            .iter()
+            .map(|(pubkey_str, addr)| {
+                let pubkey = PublicKey::from_str(pubkey_str)
+                    .map_err(|e| std::io::Error::new(std::io::ErrorKind::InvalidData, e))?;
+                Ok((pubkey, *addr))
+            })
+            .collect()
     }
 
     async fn save_nodes_addresses(&self, nodes_addresses: NodesAddressesMapShared) -> Result<(), Self::Error> {
         let path = self.nodes_addresses_path();
         let backup_path = self.nodes_addresses_backup_path();
-        async_blocking(move || {
-            let nodes_addresses: HashMap<String, SocketAddr> = nodes_addresses
-                .lock()
-                .iter()
-                .map(|(pubkey, addr)| (pubkey.to_string(), *addr))
-                .collect();
 
-            let file = fs::OpenOptions::new()
-                .create(true)
-                .write(true)
-                .truncate(true)
-                .open(path)?;
-            serde_json::to_writer(file, &nodes_addresses)
-                .map_err(|e| std::io::Error::new(std::io::ErrorKind::InvalidData, e))?;
+        let nodes_addresses: HashMap<String, SocketAddr> = nodes_addresses
+            .lock()
+            .iter()
+            .map(|(pubkey, addr)| (pubkey.to_string(), *addr))
+            .collect();
 
-            if let Some(path) = backup_path {
-                let file = fs::OpenOptions::new()
-                    .create(true)
-                    .write(true)
-                    .truncate(true)
-                    .open(path)?;
-                serde_json::to_writer(file, &nodes_addresses)
-                    .map_err(|e| std::io::Error::new(std::io::ErrorKind::InvalidData, e))?;
-            }
+        write_json(&nodes_addresses, &path, USE_TMP_FILE)
+            .await
+            .map_err(|e| std::io::Error::new(std::io::ErrorKind::InvalidData, e.to_string()))?;
 
-            Ok(())
-        })
-        .await
+        if let Some(path) = backup_path {
+            write_json(&nodes_addresses, &path, USE_TMP_FILE)
+                .await
+                .map_err(|e| std::io::Error::new(std::io::ErrorKind::InvalidData, e.to_string()))?;
+        }
+
+        Ok(())
     }
 
     async fn get_network_graph(&self, network: Network, logger: Arc<LogState>) -> Result<NetworkGraph, Self::Error> {
@@ -401,36 +402,27 @@ impl LightningStorage for LightningFilesystemPersister {
         if !path.exists() {
             return Ok(HashSet::new());
         }
-        async_blocking(move || {
-            let file = fs::File::open(path)?;
-            let reader = BufReader::new(file);
-            let trusted_nodes: HashSet<String> =
-                serde_json::from_reader(reader).map_err(|e| std::io::Error::new(std::io::ErrorKind::InvalidData, e))?;
-            trusted_nodes
-                .iter()
-                .map(|pubkey_str| {
-                    let pubkey = PublicKey::from_str(pubkey_str)
-                        .map_err(|e| std::io::Error::new(std::io::ErrorKind::InvalidData, e))?;
-                    Ok(pubkey)
-                })
-                .collect()
-        })
-        .await
+
+        let trusted_nodes: HashSet<String> = read_json(&path)
+            .await
+            .map_err(|e| std::io::Error::new(std::io::ErrorKind::InvalidData, e.to_string()))?
+            .ok_or_else(|| std::io::Error::from(std::io::ErrorKind::NotFound))?;
+
+        trusted_nodes
+            .iter()
+            .map(|pubkey_str| {
+                let pubkey = PublicKey::from_str(pubkey_str)
+                    .map_err(|e| std::io::Error::new(std::io::ErrorKind::InvalidData, e))?;
+                Ok(pubkey)
+            })
+            .collect()
     }
 
     async fn save_trusted_nodes(&self, trusted_nodes: TrustedNodesShared) -> Result<(), Self::Error> {
         let path = self.trusted_nodes_path();
-        async_blocking(move || {
-            let trusted_nodes: HashSet<String> = trusted_nodes.lock().iter().map(|pubkey| pubkey.to_string()).collect();
-
-            let file = fs::OpenOptions::new()
-                .create(true)
-                .write(true)
-                .truncate(true)
-                .open(path)?;
-            serde_json::to_writer(file, &trusted_nodes)
-                .map_err(|e| std::io::Error::new(std::io::ErrorKind::InvalidData, e))
-        })
-        .await
+        let trusted_nodes: HashSet<String> = trusted_nodes.lock().iter().map(|pubkey| pubkey.to_string()).collect();
+        write_json(&trusted_nodes, &path, USE_TMP_FILE)
+            .await
+            .map_err(|e| std::io::Error::new(std::io::ErrorKind::InvalidData, e.to_string()))
     }
 }

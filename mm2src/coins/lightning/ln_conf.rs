@@ -33,7 +33,7 @@ pub struct ChannelOptions {
 }
 
 impl ChannelOptions {
-    pub fn update(&mut self, options: ChannelOptions) {
+    pub fn update_according_to(&mut self, options: ChannelOptions) {
         if let Some(fee) = options.proportional_fee_in_millionths_sats {
             self.proportional_fee_in_millionths_sats = Some(fee);
         }
@@ -113,7 +113,7 @@ pub struct OurChannelsConfigs {
 }
 
 impl OurChannelsConfigs {
-    pub fn update(&mut self, config: OurChannelsConfigs) {
+    pub fn update_according_to(&mut self, config: OurChannelsConfigs) {
         if let Some(confs) = config.inbound_channels_confirmations {
             self.inbound_channels_confirmations = Some(confs);
         }
