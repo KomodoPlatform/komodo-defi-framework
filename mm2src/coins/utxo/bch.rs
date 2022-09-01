@@ -8,8 +8,9 @@ use crate::utxo::utxo_builder::{UtxoArcBuilder, UtxoCoinBuilder};
 use crate::utxo::utxo_common::big_decimal_from_sat_unsigned;
 use crate::{BlockHeightAndTime, CanRefundHtlc, CoinBalance, CoinProtocol, NegotiateSwapContractAddrErr,
             PrivKeyBuildPolicy, RawTransactionFut, RawTransactionRequest, SearchForSwapTxSpendInput, SignatureResult,
-            SwapOps, TradePreimageValue, TransactionFut, TransactionType, TxFeeDetails, UnexpectedDerivationMethod,
-            ValidateAddressResult, ValidatePaymentInput, VerificationResult, WithdrawFut};
+            SignedTransactionFut, SwapOps, TradePreimageValue, TransactionFut, TransactionType, TxFeeDetails,
+            UnexpectedDerivationMethod, ValidateAddressResult, ValidatePaymentInput, VerificationResult,
+            WatcherSpendsMakerPaymentInput, WatcherValidatePaymentInput, WithdrawFut};
 use common::log::warn;
 use derive_more::Display;
 use futures::{FutureExt, TryFutureExt};
@@ -925,6 +926,28 @@ impl SwapOps for BchCoin {
         )
     }
 
+    fn send_watcher_spends_maker_payment(&self, input: WatcherSpendsMakerPaymentInput) -> TransactionFut {
+        utxo_common::send_watcher_spends_maker_payment(self.clone(), input)
+    }
+
+    fn sign_maker_payment(
+        &self,
+        maker_payment_tx: &[u8],
+        time_lock: u32,
+        maker_pub: &[u8],
+        secret_hash: &[u8],
+        swap_unique_data: &[u8],
+    ) -> SignedTransactionFut {
+        utxo_common::sign_maker_payment(
+            self.clone(),
+            maker_payment_tx,
+            time_lock,
+            maker_pub,
+            secret_hash,
+            swap_unique_data,
+        )
+    }
+
     fn send_taker_refunds_payment(
         &self,
         taker_tx: &[u8],
@@ -993,6 +1016,13 @@ impl SwapOps for BchCoin {
 
     fn validate_taker_payment(&self, input: ValidatePaymentInput) -> Box<dyn Future<Item = (), Error = String> + Send> {
         utxo_common::validate_taker_payment(self, input)
+    }
+
+    fn watcher_validate_taker_payment(
+        &self,
+        input: WatcherValidatePaymentInput,
+    ) -> Box<dyn Future<Item = (), Error = String> + Send> {
+        utxo_common::watcher_validate_taker_payment(self, input)
     }
 
     fn check_if_my_payment_sent(

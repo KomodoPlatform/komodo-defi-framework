@@ -1,8 +1,9 @@
 use super::{CoinBalance, HistorySyncState, MarketCoinOps, MmCoin, RawTransactionFut, RawTransactionRequest, SwapOps,
             TradeFee, TransactionEnum, TransactionFut};
 use crate::{BalanceFut, CanRefundHtlc, FeeApproxStage, FoundSwapTxSpend, NegotiateSwapContractAddrErr,
-            SearchForSwapTxSpendInput, SignatureResult, TradePreimageFut, TradePreimageResult, TradePreimageValue,
-            UnexpectedDerivationMethod, ValidateAddressResult, ValidatePaymentInput, VerificationResult, WithdrawFut,
+            SearchForSwapTxSpendInput, SignatureResult, SignedTransactionFut, TradePreimageFut, TradePreimageResult,
+            TradePreimageValue, UnexpectedDerivationMethod, ValidateAddressResult, ValidatePaymentInput,
+            VerificationResult, WatcherSpendsMakerPaymentInput, WatcherValidatePaymentInput, WithdrawFut,
             WithdrawRequest};
 use async_trait::async_trait;
 use futures01::Future;
@@ -143,6 +144,21 @@ impl SwapOps for TestCoin {
         unimplemented!()
     }
 
+    fn send_watcher_spends_maker_payment(&self, _input: WatcherSpendsMakerPaymentInput) -> TransactionFut {
+        unimplemented!();
+    }
+
+    fn sign_maker_payment(
+        &self,
+        _maker_payment_tx: &[u8],
+        _time_lock: u32,
+        _maker_pub: &[u8],
+        _secret_hash: &[u8],
+        _swap_unique_data: &[u8],
+    ) -> SignedTransactionFut {
+        unimplemented!();
+    }
+
     fn send_taker_refunds_payment(
         &self,
         taker_payment_tx: &[u8],
@@ -191,6 +207,13 @@ impl SwapOps for TestCoin {
         _input: ValidatePaymentInput,
     ) -> Box<dyn Future<Item = (), Error = String> + Send> {
         unimplemented!()
+    }
+
+    fn watcher_validate_taker_payment(
+        &self,
+        _input: WatcherValidatePaymentInput,
+    ) -> Box<dyn Future<Item = (), Error = String> + Send> {
+        unimplemented!();
     }
 
     fn check_if_my_payment_sent(

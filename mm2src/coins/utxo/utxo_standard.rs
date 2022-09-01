@@ -13,10 +13,11 @@ use crate::rpc_command::init_scan_for_new_addresses::{self, InitScanAddressesRpc
                                                       ScanAddressesResponse};
 use crate::rpc_command::init_withdraw::{InitWithdrawCoin, WithdrawTaskHandle};
 use crate::utxo::utxo_builder::{UtxoArcBuilder, UtxoCoinBuilder};
+use crate::WatcherSpendsMakerPaymentInput;
 use crate::{CanRefundHtlc, CoinBalance, CoinWithDerivationMethod, GetWithdrawSenderAddress,
-            NegotiateSwapContractAddrErr, PrivKeyBuildPolicy, SearchForSwapTxSpendInput, SignatureResult, SwapOps,
-            TradePreimageValue, TransactionFut, ValidateAddressResult, ValidatePaymentInput, VerificationResult,
-            WithdrawFut, WithdrawSenderAddress};
+            NegotiateSwapContractAddrErr, PrivKeyBuildPolicy, SearchForSwapTxSpendInput, SignatureResult,
+            SignedTransactionFut, SwapOps, TradePreimageValue, TransactionFut, ValidateAddressResult,
+            ValidatePaymentInput, VerificationResult, WatcherValidatePaymentInput, WithdrawFut, WithdrawSenderAddress};
 use crypto::trezor::utxo::TrezorUtxoCoin;
 use crypto::Bip44Chain;
 use futures::{FutureExt, TryFutureExt};
@@ -187,6 +188,14 @@ impl UtxoCommonOps for UtxoStandardCoin {
         utxo_common::p2sh_spending_tx(self, input).await
     }
 
+    async fn watcher_p2sh_spending_tx(
+        &self,
+        input: utxo_common::WatcherP2SHSpendingTxInput,
+        signature: Bytes,
+    ) -> Result<UtxoTx, String> {
+        utxo_common::watcher_p2sh_spending_tx(self, input, signature).await
+    }
+
     fn get_verbose_transactions_from_cache_or_rpc(
         &self,
         tx_ids: HashSet<H256Json>,
@@ -346,6 +355,28 @@ impl SwapOps for UtxoStandardCoin {
         )
     }
 
+    fn sign_maker_payment(
+        &self,
+        maker_payment_tx: &[u8],
+        time_lock: u32,
+        maker_pub: &[u8],
+        secret_hash: &[u8],
+        swap_unique_data: &[u8],
+    ) -> SignedTransactionFut {
+        utxo_common::sign_maker_payment(
+            self.clone(),
+            maker_payment_tx,
+            time_lock,
+            maker_pub,
+            secret_hash,
+            swap_unique_data,
+        )
+    }
+
+    fn send_watcher_spends_maker_payment(&self, input: WatcherSpendsMakerPaymentInput) -> TransactionFut {
+        utxo_common::send_watcher_spends_maker_payment(self.clone(), input)
+    }
+
     fn send_taker_refunds_payment(
         &self,
         taker_tx: &[u8],
@@ -414,6 +445,13 @@ impl SwapOps for UtxoStandardCoin {
 
     fn validate_taker_payment(&self, input: ValidatePaymentInput) -> Box<dyn Future<Item = (), Error = String> + Send> {
         utxo_common::validate_taker_payment(self, input)
+    }
+
+    fn watcher_validate_taker_payment(
+        &self,
+        input: WatcherValidatePaymentInput,
+    ) -> Box<dyn Future<Item = (), Error = String> + Send> {
+        utxo_common::watcher_validate_taker_payment(self, input)
     }
 
     fn check_if_my_payment_sent(

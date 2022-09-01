@@ -4,10 +4,11 @@ use super::tendermint_native_rpc::*;
 use crate::utxo::sat_from_big_decimal;
 use crate::{big_decimal_from_sat_unsigned, BalanceError, BalanceFut, BigDecimal, CoinBalance, FeeApproxStage,
             FoundSwapTxSpend, HistorySyncState, MarketCoinOps, MmCoin, NegotiateSwapContractAddrErr,
-            RawTransactionFut, RawTransactionRequest, SearchForSwapTxSpendInput, SignatureResult, SwapOps, TradeFee,
-            TradePreimageFut, TradePreimageResult, TradePreimageValue, TransactionDetails, TransactionEnum,
-            TransactionFut, TransactionType, TxFeeDetails, UnexpectedDerivationMethod, ValidateAddressResult,
-            ValidatePaymentInput, VerificationResult, WithdrawError, WithdrawFut, WithdrawRequest};
+            RawTransactionFut, RawTransactionRequest, SearchForSwapTxSpendInput, SignatureResult,
+            SignedTransactionFut, SwapOps, TradeFee, TradePreimageFut, TradePreimageResult, TradePreimageValue,
+            TransactionDetails, TransactionEnum, TransactionFut, TransactionType, TxFeeDetails,
+            UnexpectedDerivationMethod, ValidateAddressResult, ValidatePaymentInput, VerificationResult,
+            WatcherSpendsMakerPaymentInput, WatcherValidatePaymentInput, WithdrawError, WithdrawFut, WithdrawRequest};
 use async_trait::async_trait;
 use bitcrypto::sha256;
 use common::Future01CompatExt;
@@ -552,6 +553,21 @@ impl SwapOps for TendermintCoin {
         todo!()
     }
 
+    fn send_watcher_spends_maker_payment(&self, _input: WatcherSpendsMakerPaymentInput) -> TransactionFut {
+        unimplemented!();
+    }
+
+    fn sign_maker_payment(
+        &self,
+        _maker_payment_tx: &[u8],
+        _time_lock: u32,
+        _maker_pub: &[u8],
+        _secret_hash: &[u8],
+        _swap_unique_data: &[u8],
+    ) -> SignedTransactionFut {
+        unimplemented!();
+    }
+
     fn send_taker_refunds_payment(
         &self,
         taker_payment_tx: &[u8],
@@ -594,6 +610,13 @@ impl SwapOps for TendermintCoin {
 
     fn validate_taker_payment(&self, input: ValidatePaymentInput) -> Box<dyn Future<Item = (), Error = String> + Send> {
         todo!()
+    }
+
+    fn watcher_validate_taker_payment(
+        &self,
+        _input: WatcherValidatePaymentInput,
+    ) -> Box<dyn Future<Item = (), Error = String> + Send> {
+        unimplemented!();
     }
 
     fn check_if_my_payment_sent(

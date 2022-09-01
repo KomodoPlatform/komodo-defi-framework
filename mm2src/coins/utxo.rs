@@ -848,6 +848,14 @@ pub trait UtxoCommonOps:
 
     async fn p2sh_spending_tx(&self, input: utxo_common::P2SHSpendingTxInput<'_>) -> Result<UtxoTx, String>;
 
+    async fn watcher_p2sh_spending_tx(
+        &self,
+        _input: utxo_common::WatcherP2SHSpendingTxInput,
+        _signature: Bytes,
+    ) -> Result<UtxoTx, String> {
+        unimplemented!();
+    }
+
     /// Loads verbose transactions from cache or requests it using RPC client.
     fn get_verbose_transactions_from_cache_or_rpc(
         &self,

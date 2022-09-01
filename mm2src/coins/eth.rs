@@ -63,10 +63,11 @@ use super::{coin_conf, AsyncMutex, BalanceError, BalanceFut, CoinBalance, CoinPr
             CoinsContext, FeeApproxStage, FoundSwapTxSpend, HistorySyncState, MarketCoinOps, MmCoin,
             NegotiateSwapContractAddrErr, NumConversError, NumConversResult, RawTransactionError, RawTransactionFut,
             RawTransactionRequest, RawTransactionRes, RawTransactionResult, RpcClientType, RpcTransportEventHandler,
-            RpcTransportEventHandlerShared, SearchForSwapTxSpendInput, SignatureError, SignatureResult, SwapOps,
-            TradeFee, TradePreimageError, TradePreimageFut, TradePreimageResult, TradePreimageValue, Transaction,
-            TransactionDetails, TransactionEnum, TransactionErr, TransactionFut, UnexpectedDerivationMethod,
-            ValidateAddressResult, ValidatePaymentInput, VerificationError, VerificationResult, WithdrawError,
+            RpcTransportEventHandlerShared, SearchForSwapTxSpendInput, SignatureError, SignatureResult,
+            SignedTransactionFut, SwapOps, TradeFee, TradePreimageError, TradePreimageFut, TradePreimageResult,
+            TradePreimageValue, Transaction, TransactionDetails, TransactionEnum, TransactionErr, TransactionFut,
+            UnexpectedDerivationMethod, ValidateAddressResult, ValidatePaymentInput, VerificationError,
+            VerificationResult, WatcherSpendsMakerPaymentInput, WatcherValidatePaymentInput, WithdrawError,
             WithdrawFee, WithdrawFut, WithdrawRequest, WithdrawResult};
 
 pub use rlp;
@@ -791,6 +792,21 @@ impl SwapOps for EthCoin {
         )
     }
 
+    fn send_watcher_spends_maker_payment(&self, _input: WatcherSpendsMakerPaymentInput) -> TransactionFut {
+        unimplemented!();
+    }
+
+    fn sign_maker_payment(
+        &self,
+        _maker_payment_tx: &[u8],
+        _time_lock: u32,
+        _maker_pub: &[u8],
+        _secret_hash: &[u8],
+        _swap_unique_data: &[u8],
+    ) -> SignedTransactionFut {
+        unimplemented!();
+    }
+
     fn send_taker_spends_maker_payment(
         &self,
         maker_payment_tx: &[u8],
@@ -976,6 +992,13 @@ impl SwapOps for EthCoin {
             input.amount,
             swap_contract_address,
         )
+    }
+
+    fn watcher_validate_taker_payment(
+        &self,
+        _input: WatcherValidatePaymentInput,
+    ) -> Box<dyn Future<Item = (), Error = String> + Send> {
+        unimplemented!();
     }
 
     fn check_if_my_payment_sent(
