@@ -4,7 +4,7 @@ use crate::solana::{solana_common, AccountError, SolanaCommonOps, SolanaFeeDetai
 use crate::{BalanceFut, FeeApproxStage, FoundSwapTxSpend, NegotiateSwapContractAddrErr, RawTransactionFut,
             RawTransactionRequest, SearchForSwapTxSpendInput, SignatureResult, SignedTransactionFut, SolanaCoin,
             TradePreimageFut, TradePreimageResult, TradePreimageValue, TransactionDetails, TransactionFut,
-            TransactionType, UnexpectedDerivationMethod, ValidateAddressResult, ValidatePaymentInput,
+            TransactionType, TxMarshalingErr, UnexpectedDerivationMethod, ValidateAddressResult, ValidatePaymentInput,
             VerificationResult, WatcherSpendsMakerPaymentInput, WatcherValidatePaymentInput, WithdrawError,
             WithdrawFut, WithdrawRequest, WithdrawResult};
 use async_trait::async_trait;
@@ -268,7 +268,11 @@ impl MarketCoinOps for SplToken {
         unimplemented!()
     }
 
-    fn tx_enum_from_bytes(&self, _bytes: &[u8]) -> Result<TransactionEnum, String> { unimplemented!() }
+    fn tx_enum_from_bytes(&self, _bytes: &[u8]) -> Result<TransactionEnum, MmError<TxMarshalingErr>> {
+        MmError::err(TxMarshalingErr::NotSupported(
+            "tx_enum_from_bytes is not supported for Spl yet.".to_string(),
+        ))
+    }
 
     fn current_block(&self) -> Box<dyn Future<Item = u64, Error = String> + Send> { self.platform_coin.current_block() }
 

@@ -16,7 +16,7 @@ use crate::{BalanceFut, CoinBalance, FeeApproxStage, FoundSwapTxSpend, HistorySy
             NegotiateSwapContractAddrErr, NumConversError, PrivKeyNotAllowed, RawTransactionFut,
             RawTransactionRequest, SearchForSwapTxSpendInput, SignatureResult, SignedTransactionFut, SwapOps,
             TradeFee, TradePreimageError, TradePreimageFut, TradePreimageResult, TradePreimageValue,
-            TransactionDetails, TransactionEnum, TransactionErr, TransactionFut, TxFeeDetails,
+            TransactionDetails, TransactionEnum, TransactionErr, TransactionFut, TxFeeDetails, TxMarshalingErr,
             UnexpectedDerivationMethod, ValidateAddressResult, ValidatePaymentInput, VerificationError,
             VerificationResult, WatcherSpendsMakerPaymentInput, WatcherValidatePaymentInput, WithdrawError,
             WithdrawFee, WithdrawFut, WithdrawRequest};
@@ -1161,7 +1161,7 @@ impl MarketCoinOps for SlpToken {
         )
     }
 
-    fn tx_enum_from_bytes(&self, bytes: &[u8]) -> Result<TransactionEnum, String> {
+    fn tx_enum_from_bytes(&self, bytes: &[u8]) -> Result<TransactionEnum, MmError<TxMarshalingErr>> {
         self.platform_coin.tx_enum_from_bytes(bytes)
     }
 

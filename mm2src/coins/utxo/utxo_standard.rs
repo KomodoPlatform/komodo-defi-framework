@@ -16,7 +16,7 @@ use crate::utxo::utxo_builder::{UtxoArcBuilder, UtxoCoinBuilder};
 use crate::WatcherSpendsMakerPaymentInput;
 use crate::{CanRefundHtlc, CoinBalance, CoinWithDerivationMethod, GetWithdrawSenderAddress,
             NegotiateSwapContractAddrErr, PrivKeyBuildPolicy, SearchForSwapTxSpendInput, SignatureResult,
-            SignedTransactionFut, SwapOps, TradePreimageValue, TransactionFut, ValidateAddressResult,
+            SignedTransactionFut, SwapOps, TradePreimageValue, TransactionFut, TxMarshalingErr, ValidateAddressResult,
             ValidatePaymentInput, VerificationResult, WatcherValidatePaymentInput, WithdrawFut, WithdrawSenderAddress};
 use crypto::trezor::utxo::TrezorUtxoCoin;
 use crypto::Bip44Chain;
@@ -577,7 +577,7 @@ impl MarketCoinOps for UtxoStandardCoin {
         )
     }
 
-    fn tx_enum_from_bytes(&self, bytes: &[u8]) -> Result<TransactionEnum, String> {
+    fn tx_enum_from_bytes(&self, bytes: &[u8]) -> Result<TransactionEnum, MmError<TxMarshalingErr>> {
         utxo_common::tx_enum_from_bytes(self.as_ref(), bytes)
     }
 

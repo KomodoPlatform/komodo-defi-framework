@@ -9,8 +9,8 @@ use crate::utxo::utxo_common::big_decimal_from_sat_unsigned;
 use crate::{BlockHeightAndTime, CanRefundHtlc, CoinBalance, CoinProtocol, NegotiateSwapContractAddrErr,
             PrivKeyBuildPolicy, RawTransactionFut, RawTransactionRequest, SearchForSwapTxSpendInput, SignatureResult,
             SignedTransactionFut, SwapOps, TradePreimageValue, TransactionFut, TransactionType, TxFeeDetails,
-            UnexpectedDerivationMethod, ValidateAddressResult, ValidatePaymentInput, VerificationResult,
-            WatcherSpendsMakerPaymentInput, WatcherValidatePaymentInput, WithdrawFut};
+            TxMarshalingErr, UnexpectedDerivationMethod, ValidateAddressResult, ValidatePaymentInput,
+            VerificationResult, WatcherSpendsMakerPaymentInput, WatcherValidatePaymentInput, WithdrawFut};
 use common::log::warn;
 use derive_more::Display;
 use futures::{FutureExt, TryFutureExt};
@@ -1160,7 +1160,7 @@ impl MarketCoinOps for BchCoin {
         )
     }
 
-    fn tx_enum_from_bytes(&self, bytes: &[u8]) -> Result<TransactionEnum, String> {
+    fn tx_enum_from_bytes(&self, bytes: &[u8]) -> Result<TransactionEnum, MmError<TxMarshalingErr>> {
         utxo_common::tx_enum_from_bytes(self.as_ref(), bytes)
     }
 
