@@ -1,28 +1,23 @@
 use super::{z_coin_errors::*, CheckPointBlockInfo, ZcoinConsensusParams};
-use crate::utxo::rpc_clients::{JsonRpcPendingRequests, JsonRpcPendingRequestsShared, NativeClient, UtxoRpcClientOps,
-                               NO_TX_ERROR_CODE};
+use crate::utxo::rpc_clients::{NativeClient, UtxoRpcClientOps, NO_TX_ERROR_CODE};
 use async_trait::async_trait;
-use common::executor::{spawn, Timer};
-use common::log::{debug, error, info, warn, LogOnError};
-use common::{async_blocking, small_rng, spawn_abortable, AbortOnDropHandle, Future01CompatExt};
+use common::executor::Timer;
+use common::log::{debug, error, info, LogOnError};
+use common::{async_blocking, spawn_abortable, AbortOnDropHandle, Future01CompatExt};
 use db_common::sqlite::rusqlite::{params, Connection, Error as SqliteError, NO_PARAMS};
 use db_common::sqlite::{query_single_row, run_optimization_pragmas};
 use futures::channel::mpsc::{channel, Receiver as AsyncReceiver, Sender as AsyncSender};
 use futures::channel::oneshot::{channel as oneshot_channel, Sender as OneshotSender};
-use futures::future::{select as select_func, FutureExt};
 use futures::lock::{Mutex as AsyncMutex, MutexGuard as AsyncMutexGuard};
 use futures::StreamExt;
-use futures01::sync::{mpsc, oneshot};
 use group::GroupEncoding;
 use http::Uri;
 use mm2_err_handle::prelude::*;
 use parking_lot::Mutex;
 use prost::Message;
 use protobuf::Message as ProtobufMessage;
-use rand::seq::SliceRandom;
 use std::ops::Deref;
 use std::path::{Path, PathBuf};
-use std::sync::atomic::AtomicU64;
 use std::sync::Arc;
 use tokio::task::block_in_place;
 use tonic::transport::{Channel, ClientTlsConfig};
@@ -41,7 +36,7 @@ use zcash_primitives::zip32::ExtendedFullViewingKey;
 mod z_coin_grpc {
     tonic::include_proto!("cash.z.wallet.sdk.rpc");
 }
-use crate::{RpcTransportEventHandlerShared, ZTransaction};
+use crate::ZTransaction;
 use rpc::v1::types::H256 as H256Json;
 use z_coin_grpc::compact_tx_streamer_client::CompactTxStreamerClient;
 use z_coin_grpc::{BlockId, BlockRange, ChainSpec, CompactBlock as TonicCompactBlock,
@@ -231,127 +226,6 @@ impl ZRpcOps for NativeClient {
     }
 }
 
-#[derive(Debug)]
-struct LightwalletdConnection {
-    /// The lightwalletd connected to this SocketAddr
-    addr: String,
-    /// The Sender forwarding requests to writing part of underlying stream
-    tx: Arc<AsyncMutex<Option<mpsc::Sender<Vec<u8>>>>>,
-    /// The Sender used to shutdown the background connection loop when LightwalletdConnection is dropped
-    shutdown_tx: Option<oneshot::Sender<()>>,
-    /// Responses are stored here
-    responses: JsonRpcPendingRequestsShared,
-}
-
-impl LightwalletdConnection {
-    async fn is_connected(&self) -> bool { self.tx.lock().await.is_some() }
-}
-
-impl Drop for LightwalletdConnection {
-    fn drop(&mut self) {
-        if let Some(shutdown_tx) = self.shutdown_tx.take() {
-            if shutdown_tx.send(()).is_err() {
-                warn!("lightwalletd_connection_drop] Warning, shutdown_tx already closed");
-            }
-        }
-    }
-}
-
-struct LightwalletdImpl {
-    connections: AsyncMutex<Vec<LightwalletdConnection>>,
-    next_id: AtomicU64,
-    event_handlers: Vec<RpcTransportEventHandlerShared>,
-}
-
-impl LightwalletdImpl {
-    fn new() -> LightwalletdImpl {
-        LightwalletdImpl {
-            connections: AsyncMutex::new(vec![]),
-            next_id: 0.into(),
-            event_handlers: vec![],
-        }
-    }
-
-    // Create an Lightwalletd connection and spawn a green thread actor to handle it.
-    pub async fn add_server(&self, url: &String) -> Result<(), String> {
-        let connection = try_s!(spawn_connect(url, self.event_handlers.clone()));
-        self.connections.lock().await.push(connection);
-        Ok(())
-    }
-
-    /// Remove an Lightwalletd connection and stop corresponding spawned actor.
-    pub async fn remove_server(&self, server_addr: &str) -> Result<(), String> {
-        let mut connections = self.connections.lock().await;
-        // do not use retain, we would have to return an error if we did not find connection by the passd address
-        let pos = connections
-            .iter()
-            .position(|con| con.addr == server_addr)
-            .ok_or(ERRL!("Unknown lightwalletd address {}", server_addr))?;
-        // shutdown_tx will be closed immediately on the connection drop
-        connections.remove(pos);
-        Ok(())
-    }
-
-    /// Moves the lightwalletd servers that fail in a multi request to the end.
-    pub async fn rotate_servers(&self, no_of_rotations: usize) {
-        let mut connections = self.connections.lock().await;
-        connections.rotate_left(no_of_rotations);
-    }
-
-    /// Check if one of the spawned connections is connected.
-    pub async fn is_connected(&self) -> bool {
-        for connection in self.connections.lock().await.iter() {
-            if connection.is_connected().await {
-                return true;
-            }
-        }
-        false
-    }
-
-    pub async fn count_connections(&self) -> usize { self.connections.lock().await.len() }
-}
-
-/// Attempts to process the request (parse url, etc), build up the config and create new lightwalletd connection
-#[cfg(not(target_arch = "wasm32"))]
-fn spawn_connect(
-    url: &String,
-    event_handlers: Vec<RpcTransportEventHandlerShared>,
-) -> Result<LightwalletdConnection, String> {
-    let uri: Uri = try_s!(url.parse());
-    uri.host().ok_or(ERRL!("Couldn't retrieve host from addr {}", url))?;
-
-    Ok(lightwalletd_connect(url.clone(), event_handlers))
-}
-
-/// Builds up the lightwalletd connection, spawns endless loop that attempts to reconnect to the server
-/// in case of connection errors
-fn lightwalletd_connect(addr: String, event_handlers: Vec<RpcTransportEventHandlerShared>) -> LightwalletdConnection {
-    let (shutdown_tx, shutdown_rx) = oneshot::channel::<()>();
-    let responses = Arc::new(AsyncMutex::new(JsonRpcPendingRequests::default()));
-    let tx = Arc::new(AsyncMutex::new(None));
-
-    let connect_loop = connect_loop(addr.clone(), responses.clone(), tx.clone(), event_handlers);
-
-    let connect_loop = select_func(connect_loop.boxed(), shutdown_rx.compat());
-    spawn(connect_loop.map(|_| ()));
-    LightwalletdConnection {
-        addr,
-        tx,
-        shutdown_tx: Some(shutdown_tx),
-        responses,
-    }
-}
-
-#[cfg(not(target_arch = "wasm32"))]
-async fn connect_loop(
-    addr: String,
-    responses: JsonRpcPendingRequestsShared,
-    connection_tx: Arc<AsyncMutex<Option<mpsc::Sender<Vec<u8>>>>>,
-    event_handlers: Vec<RpcTransportEventHandlerShared>,
-) -> Result<(), ()> {
-    todo!()
-}
-
 /// A wrapper for the SQLite connection to the block cache database.
 pub struct BlockDb(Connection);
 
@@ -478,7 +352,7 @@ async fn create_wallet_db(
 }
 
 pub(super) async fn init_light_client(
-    mut lightwalletd_urls: &Vec<String>,
+    lightwalletd_url: Uri,
     cache_db_path: PathBuf,
     wallet_db_path: PathBuf,
     consensus_params: ZcoinConsensusParams,
@@ -504,21 +378,6 @@ pub(super) async fn init_light_client(
         on_tx_gen_watcher,
         watch_for_tx: None,
     };
-
-    let mut rng = small_rng();
-    lightwalletd_urls.as_mut_slice().shuffle(&mut rng);
-
-    let lightwalletd_impl = LightwalletdImpl::new();
-
-    for lightwalletd_server in lightwalletd_urls.iter() {
-        match lightwalletd_impl.add_server(lightwalletd_server).await {
-            Ok(_) => (),
-            Err(e) => error!(
-                "Error {:?} connecting to {:?}. Address won't be used",
-                e, lightwalletd_server
-            ),
-        }
-    }
 
     let tonic_channel = Channel::builder(lightwalletd_url)
         .tls_config(ClientTlsConfig::new())
