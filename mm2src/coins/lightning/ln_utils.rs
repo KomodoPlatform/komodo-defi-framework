@@ -146,10 +146,7 @@ pub async fn init_channel_manager(
         let chain_monitor_for_args = chain_monitor.clone();
 
         let (channel_manager_blockhash, channel_manager, channelmonitors) = async_blocking(move || {
-            let mut manager_file = match File::open(persister.manager_path()) {
-                Ok(f) => f,
-                Err(e) => return Err(e.into()),
-            };
+            let mut manager_file = File::open(persister.manager_path())?;
 
             let mut channel_monitor_mut_references = Vec::new();
             for (_, channel_monitor) in channelmonitors.iter_mut() {

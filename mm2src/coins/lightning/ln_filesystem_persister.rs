@@ -189,11 +189,13 @@ impl KVStorePersister for LightningFilesystemPersister {
     fn persist<W: Writeable>(&self, key: &str, object: &W) -> std::io::Result<()> {
         let mut dest_file = self.main_path();
         dest_file.push(key);
+        drop_mutability!(dest_file);
         write_to_file(dest_file, object)?;
 
         if !matches!(key, "network_graph" | "scorer") {
             if let Some(mut dest_file) = self.backup_path() {
                 dest_file.push(key);
+                drop_mutability!(dest_file);
                 write_to_file(dest_file, object)?;
             }
         }
@@ -221,6 +223,7 @@ fn path_to_windows_str<T: AsRef<OsStr>>(path: T) -> Vec<winapi::shared::ntdef::W
 fn write_to_file<W: Writeable>(dest_file: PathBuf, data: &W) -> std::io::Result<()> {
     let mut tmp_file = dest_file.clone();
     tmp_file.set_extension("tmp");
+    drop_mutability!(tmp_file);
 
     // Do a crazy dance with lots of fsync()s to be overly cautious here...
     // We never want to end up in a state where we've lost the old data, or end up using the

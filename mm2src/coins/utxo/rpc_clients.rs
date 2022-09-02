@@ -1904,6 +1904,7 @@ impl ElectrumClient {
                         let len = CompactInteger::from(headers.count);
                         let mut serialized = serialize(&len).take();
                         serialized.extend(headers.hex.0.into_iter());
+                        drop_mutability!(serialized);
                         let mut reader =
                             Reader::new_with_coin_variant(serialized.as_slice(), coin_name.as_str().into());
                         let maybe_block_headers = reader.read_list::<BlockHeader>();
