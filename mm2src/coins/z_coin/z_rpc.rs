@@ -1,15 +1,18 @@
 use super::{z_coin_errors::*, CheckPointBlockInfo, ZcoinConsensusParams};
-use crate::utxo::rpc_clients::{NativeClient, UtxoRpcClientOps, NO_TX_ERROR_CODE};
+use crate::utxo::rpc_clients::{JsonRpcPendingRequests, JsonRpcPendingRequestsShared, NativeClient, UtxoRpcClientOps,
+                               NO_TX_ERROR_CODE};
 use async_trait::async_trait;
-use common::executor::Timer;
-use common::log::{debug, error, info, LogOnError};
-use common::{async_blocking, spawn_abortable, AbortOnDropHandle, Future01CompatExt};
+use common::executor::{spawn, Timer};
+use common::log::{debug, error, info, warn, LogOnError};
+use common::{async_blocking, now_float, now_ms, spawn_abortable, AbortOnDropHandle, Future01CompatExt};
 use db_common::sqlite::rusqlite::{params, Connection, Error as SqliteError, NO_PARAMS};
 use db_common::sqlite::{query_single_row, run_optimization_pragmas};
 use futures::channel::mpsc::{channel, Receiver as AsyncReceiver, Sender as AsyncSender};
 use futures::channel::oneshot::{channel as oneshot_channel, Sender as OneshotSender};
+use futures::future::{select as select_func, FutureExt};
 use futures::lock::{Mutex as AsyncMutex, MutexGuard as AsyncMutexGuard};
 use futures::StreamExt;
+use futures01::sync::{mpsc, oneshot};
 use group::GroupEncoding;
 use http::Uri;
 use mm2_err_handle::prelude::*;
@@ -18,6 +21,8 @@ use prost::Message;
 use protobuf::Message as ProtobufMessage;
 use std::ops::Deref;
 use std::path::{Path, PathBuf};
+use std::str::FromStr;
+use std::sync::atomic::{AtomicU64, Ordering as AtomicOrdering};
 use std::sync::Arc;
 use tokio::task::block_in_place;
 use tonic::transport::{Channel, ClientTlsConfig};
@@ -36,7 +41,7 @@ use zcash_primitives::zip32::ExtendedFullViewingKey;
 mod z_coin_grpc {
     tonic::include_proto!("cash.z.wallet.sdk.rpc");
 }
-use crate::ZTransaction;
+use crate::{RpcTransportEventHandler, RpcTransportEventHandlerShared, ZTransaction};
 use rpc::v1::types::H256 as H256Json;
 use z_coin_grpc::compact_tx_streamer_client::CompactTxStreamerClient;
 use z_coin_grpc::{BlockId, BlockRange, ChainSpec, CompactBlock as TonicCompactBlock,
@@ -226,6 +231,203 @@ impl ZRpcOps for NativeClient {
     }
 }
 
+#[allow(dead_code)]
+fn increase_delay(delay: &AtomicU64) {
+    if delay.load(AtomicOrdering::Relaxed) < 60 {
+        delay.fetch_add(5, AtomicOrdering::Relaxed);
+    }
+}
+
+macro_rules! try_loop {
+    ($e:expr, $addr: ident, $delay: ident) => {
+        match $e {
+            Ok(res) => res,
+            Err(e) => {
+                error!("{:?} error {:?}", $addr, e);
+                increase_delay(&$delay);
+                continue;
+            },
+        }
+    };
+}
+
+#[allow(dead_code)]
+struct LightwalletdConnection<C> {
+    /// The lightwalletd connected to this Addr
+    addr: String,
+    /// The Sender forwarding requests to writing part of underlying stream
+    rpc_client: Arc<AsyncMutex<Option<mpsc::Sender<CompactTxStreamerClient<C>>>>>,
+    /// The Sender used to shutdown the background connection loop when LightwalletdConnection is dropped
+    shutdown_tx: Option<oneshot::Sender<()>>,
+    /// Responses are stored here
+    responses: JsonRpcPendingRequestsShared,
+    /// Selected protocol version. The value is initialized after the server.version RPC call.
+    protocol_version: AsyncMutex<Option<f32>>,
+}
+
+#[allow(dead_code)]
+impl LightwalletdConnection<Channel> {
+    async fn is_connected(&self) -> bool { self.rpc_client.lock().await.is_some() }
+}
+
+impl<C> Drop for LightwalletdConnection<C> {
+    fn drop(&mut self) {
+        if let Some(shutdown_tx) = self.shutdown_tx.take() {
+            if shutdown_tx.send(()).is_err() {
+                warn!("lightwalletd_connection_drop] Warning, shutdown_tx already closed");
+            }
+        }
+    }
+}
+
+#[allow(dead_code)]
+pub struct LightwalletdBuilderArgs {
+    pub spawn_ping: bool,
+    pub negotiate_version: bool,
+}
+
+impl Default for LightwalletdBuilderArgs {
+    fn default() -> Self {
+        LightwalletdBuilderArgs {
+            spawn_ping: true,
+            negotiate_version: true,
+        }
+    }
+}
+
+#[allow(dead_code)]
+struct LightwalletdImpl {
+    connections: AsyncMutex<Vec<LightwalletdConnection<Channel>>>,
+    next_id: AtomicU64,
+    event_handlers: Vec<RpcTransportEventHandlerShared>,
+}
+
+#[allow(dead_code)]
+impl LightwalletdImpl {
+    fn new() -> LightwalletdImpl {
+        LightwalletdImpl {
+            connections: AsyncMutex::new(vec![]),
+            next_id: 0.into(),
+            event_handlers: vec![],
+        }
+    }
+
+    // Create an Lightwalletd connection and spawn a green thread actor to handle it.
+    pub async fn add_server(&self, url: &String) -> Result<(), String> {
+        let connection = try_s!(spawn_connect(url, self.event_handlers.clone()));
+        self.connections.lock().await.push(connection);
+        Ok(())
+    }
+
+    /// Remove an Lightwalletd connection and stop corresponding spawned actor.
+    pub async fn remove_server(&self, server_addr: &str) -> Result<(), String> {
+        let mut connections = self.connections.lock().await;
+        // do not use retain, we would have to return an error if we did not find connection by the passed address
+        let pos = connections
+            .iter()
+            .position(|con| con.addr == server_addr)
+            .ok_or(ERRL!("Unknown lightwalletd address {}", server_addr))?;
+        // shutdown_tx will be closed immediately on the connection drop
+        connections.remove(pos);
+        Ok(())
+    }
+
+    /// Moves the lightwalletd servers that fail in a multi request to the end.
+    pub async fn rotate_servers(&self, no_of_rotations: usize) {
+        let mut connections = self.connections.lock().await;
+        connections.rotate_left(no_of_rotations);
+    }
+
+    /// Check if one of the spawned connections is connected.
+    pub async fn is_connected(&self) -> bool {
+        for connection in self.connections.lock().await.iter() {
+            if connection.is_connected().await {
+                return true;
+            }
+        }
+        false
+    }
+
+    pub async fn count_connections(&self) -> usize { self.connections.lock().await.len() }
+}
+
+/// Attempts to process the request (parse url, etc), build up the config and create new lightwalletd connection
+#[cfg(not(target_arch = "wasm32"))]
+#[allow(dead_code)]
+fn spawn_connect(
+    url: &String,
+    event_handlers: Vec<RpcTransportEventHandlerShared>,
+) -> Result<LightwalletdConnection<Channel>, String> {
+    let uri: Uri = try_s!(url.parse());
+    uri.host().ok_or(ERRL!("Couldn't retrieve host from addr {}", url))?;
+
+    Ok(lightwalletd_connect(url.clone(), event_handlers))
+}
+
+/// Builds up the lightwalletd connection, spawns endless loop that attempts to reconnect to the server
+/// in case of connection errors
+#[allow(dead_code)]
+fn lightwalletd_connect(
+    addr: String,
+    event_handlers: Vec<RpcTransportEventHandlerShared>,
+) -> LightwalletdConnection<Channel> {
+    let (shutdown_tx, shutdown_rx) = oneshot::channel::<()>();
+    // todo check working with proto format
+    let responses = Arc::new(AsyncMutex::new(JsonRpcPendingRequests::default()));
+    let rpc_client = Arc::new(AsyncMutex::new(None));
+
+    let connect_loop = connect_loop(addr.clone(), responses.clone(), rpc_client.clone(), event_handlers);
+
+    let connect_loop = select_func(connect_loop.boxed(), shutdown_rx.compat());
+    spawn(connect_loop.map(|_| ()));
+    LightwalletdConnection {
+        addr,
+        rpc_client,
+        shutdown_tx: Some(shutdown_tx),
+        responses,
+        protocol_version: AsyncMutex::new(None),
+    }
+}
+
+#[cfg(not(target_arch = "wasm32"))]
+#[allow(dead_code)]
+async fn connect_loop<T>(
+    addr: String,
+    _responses: JsonRpcPendingRequestsShared,
+    connection_rpc_client: Arc<AsyncMutex<Option<mpsc::Sender<CompactTxStreamerClient<T>>>>>,
+    event_handlers: Vec<RpcTransportEventHandlerShared>,
+) -> Result<(), ()> {
+    let delay = Arc::new(AtomicU64::new(0));
+
+    loop {
+        let current_delay = delay.load(AtomicOrdering::Relaxed);
+        if current_delay > 0 {
+            Timer::sleep(current_delay as f64).await;
+        };
+        let uri = try_loop!(Uri::from_str(addr.as_str()), addr, delay);
+
+        let tonic_channel = try_loop!(
+            Channel::builder(uri)
+                .tls_config(ClientTlsConfig::new())
+                .unwrap()
+                .connect()
+                .await,
+            addr,
+            delay
+        );
+        let _client = CompactTxStreamerClient::new(tonic_channel);
+        info!("Light client connected to {}", addr);
+        try_loop!(event_handlers.on_connected(addr.clone()), addr, delay);
+        let last_chunk = Arc::new(AtomicU64::new(now_ms()));
+        let _last_chunk_f = light_last_chunk_loop(last_chunk.clone()).boxed().fuse();
+
+        let (tx, _rx) = mpsc::channel(0);
+        // TODO change event_handlers
+        *connection_rpc_client.lock().await = Some(tx);
+        unimplemented!()
+    }
+}
+
 /// A wrapper for the SQLite connection to the block cache database.
 pub struct BlockDb(Connection);
 
@@ -352,6 +554,7 @@ async fn create_wallet_db(
 }
 
 pub(super) async fn init_light_client(
+    _lightwalletd_urls: Vec<String>,
     lightwalletd_url: Uri,
     cache_db_path: PathBuf,
     wallet_db_path: PathBuf,
@@ -724,4 +927,21 @@ impl SaplingSyncConnector {
 pub(super) struct SaplingSyncGuard<'a> {
     pub(super) _connector_guard: AsyncMutexGuard<'a, SaplingSyncConnector>,
     pub(super) respawn_guard: SaplingSyncRespawnGuard,
+}
+
+const LIGHT_TIMEOUT: u64 = 60;
+
+#[allow(dead_code)]
+async fn light_last_chunk_loop(last_chunk: Arc<AtomicU64>) {
+    loop {
+        Timer::sleep(LIGHT_TIMEOUT as f64).await;
+        let last = (last_chunk.load(AtomicOrdering::Relaxed) / 1000) as f64;
+        if now_float() - last > LIGHT_TIMEOUT as f64 {
+            warn!(
+                "Didn't receive any data since {}. Shutting down the connection.",
+                last as i64
+            );
+            break;
+        }
+    }
 }
