@@ -3,12 +3,12 @@ use super::check_balance::{check_my_coin_balance_for_swap, CheckBalanceError, Ch
 use super::pubkey_banning::ban_pubkey_on_failed_swap;
 use super::swap_lock::{SwapLock, SwapLockOps};
 use super::trade_preimage::{TradePreimageRequest, TradePreimageRpcError, TradePreimageRpcResult};
-use super::{broadcast_my_swap_status, broadcast_swap_message_every, check_other_coin_balance_for_swap,
-            dex_fee_amount_from_taker_coin, dex_fee_rate, dex_fee_threshold, get_locked_amount, recv_swap_msg,
-            swap_topic, watcher_topic, AtomicSwap, LockedAmount, MySwapInfo, NegotiationDataMsg, NegotiationDataV2,
-            NegotiationDataV3, RecoveredSwap, RecoveredSwapAction, SavedSwap, SavedSwapIo, SavedTradeFee,
-            SwapConfirmationsSettings, SwapError, SwapMsg, SwapsContext, TransactionIdentifier, WatcherData,
-            WAIT_CONFIRM_INTERVAL};
+use super::{broadcast_my_swap_status, broadcast_swap_message, broadcast_swap_message_every,
+            check_other_coin_balance_for_swap, dex_fee_amount_from_taker_coin, dex_fee_rate, dex_fee_threshold,
+            get_locked_amount, recv_swap_msg, swap_topic, watcher_topic, AtomicSwap, LockedAmount, MySwapInfo,
+            NegotiationDataMsg, NegotiationDataV2, NegotiationDataV3, RecoveredSwap, RecoveredSwapAction, SavedSwap,
+            SavedSwapIo, SavedTradeFee, SwapConfirmationsSettings, SwapError, SwapMsg, SwapsContext,
+            TransactionIdentifier, WatcherData, WAIT_CONFIRM_INTERVAL};
 use crate::mm2::lp_network::subscribe_to_topic;
 use crate::mm2::lp_ordermatch::{MatchBy, OrderConfirmationsSettings, TakerAction, TakerOrderBuilder};
 use crate::mm2::lp_price::fetch_swap_coins_price;
@@ -1236,20 +1236,6 @@ impl TakerSwap {
             },
         };
 
-        let tx_hash = transaction.tx_hash();
-        info!("Taker payment tx hash {:02x}", tx_hash);
-        let tx_ident = TransactionIdentifier {
-            tx_hex: transaction.tx_hex().into(),
-            tx_hash,
-        };
-
-        Ok((Some(TakerSwapCommand::WaitForTakerPaymentSpend), vec![
-            TakerSwapEvent::TakerPaymentSent(tx_ident),
-        ]))
-    }
-
-    async fn wait_for_taker_payment_spend(&self) -> Result<(Option<TakerSwapCommand>, Vec<TakerSwapEvent>), String> {
-        let mut watcher_abort_handle = None;
         if self.ctx.use_watchers() {
             let presign_fut = self.taker_coin.sign_maker_payment(
                 &self.r().maker_payment.as_ref().unwrap().tx_hex,
@@ -1269,7 +1255,7 @@ impl TakerSwap {
                     uuid: self.uuid,
                     taker_coin: self.r().data.taker_coin.clone(),
                     maker_coin: self.r().data.maker_coin.clone(),
-                    taker_payment_hex: self.r().taker_payment.as_ref().unwrap().tx_hex.0.clone(),
+                    taker_payment_hex: transaction.tx_hex(),
                     maker_payment_hex: self.r().maker_payment.as_ref().unwrap().tx_hex.0.clone(),
                     taker_payment_lock: self.r().data.taker_payment_lock,
                     maker_payment_lock: self.maker_payment_lock.load(Ordering::Relaxed) as u32,
@@ -1285,17 +1271,28 @@ impl TakerSwap {
                     taker_amount: self.r().data.taker_amount.clone(),
                 };
                 let swpmsg_watcher = SwapMsg::WatcherMessage(Box::new(watcher_data));
-                // Taker coin or maker coin for the topic?
-                watcher_abort_handle = Some(broadcast_swap_message_every(
-                    self.ctx.clone(),
+                broadcast_swap_message(
+                    &self.ctx,
                     watcher_topic(&self.r().data.taker_coin),
                     swpmsg_watcher,
-                    600.,
-                    self.p2p_privkey,
-                ));
+                    &self.p2p_privkey,
+                );
             }
         }
 
+        let tx_hash = transaction.tx_hash();
+        info!("Taker payment tx hash {:02x}", tx_hash);
+        let tx_ident = TransactionIdentifier {
+            tx_hex: transaction.tx_hex().into(),
+            tx_hash,
+        };
+
+        Ok((Some(TakerSwapCommand::WaitForTakerPaymentSpend), vec![
+            TakerSwapEvent::TakerPaymentSent(tx_ident),
+        ]))
+    }
+
+    async fn wait_for_taker_payment_spend(&self) -> Result<(Option<TakerSwapCommand>, Vec<TakerSwapEvent>), String> {
         let tx_hex = self.r().taker_payment.as_ref().unwrap().tx_hex.0.clone();
         let msg = SwapMsg::TakerPayment(tx_hex);
         let send_abort_handle =
@@ -1342,9 +1339,6 @@ impl TakerSwap {
             },
         };
         drop(send_abort_handle);
-        if let Some(handle) = watcher_abort_handle {
-            drop(handle);
-        }
         let tx_hash = tx.tx_hash();
         info!("Taker payment spend tx {:02x}", tx_hash);
         let tx_ident = TransactionIdentifier {
