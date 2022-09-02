@@ -28,14 +28,6 @@ use std::sync::atomic::{AtomicU64, Ordering as AtomicOrdering, Ordering};
 const CHECK_FOR_NEW_BEST_BLOCK_INTERVAL: f64 = 60.;
 const TRY_LOOP_INTERVAL: f64 = 60.;
 
-static DEFAULT_BACKGROUND_FEES_PER_VB: AtomicU64 = AtomicU64::new(1012);
-static DEFAULT_NORMAL_FEES_PER_VB: AtomicU64 = AtomicU64::new(8000);
-static DEFAULT_HIGH_PRIORITY_FEES_PER_VB: AtomicU64 = AtomicU64::new(20000);
-
-fn set_default_background_fees(fee: u64) { DEFAULT_BACKGROUND_FEES_PER_VB.store(fee, Ordering::Relaxed); }
-fn set_default_normal_fees(fee: u64) { DEFAULT_BACKGROUND_FEES_PER_VB.store(fee, Ordering::Relaxed); }
-fn set_default_high_priority_fees(fee: u64) { DEFAULT_BACKGROUND_FEES_PER_VB.store(fee, Ordering::Relaxed); }
-
 #[inline]
 pub fn h256_json_from_txid(txid: Txid) -> H256Json { H256Json::from(txid.as_hash().into_inner()).reversed() }
 
@@ -141,6 +133,23 @@ async fn get_funding_tx_bytes_loop(rpc_client: &UtxoRpcClientEnum, tx_hash: H256
     }
 }
 
+pub struct LatestFees {
+    background: AtomicU64,
+    normal: AtomicU64,
+    high_priority: AtomicU64,
+}
+
+impl LatestFees {
+    #[inline]
+    fn set_background_fees(&self, fee: u64) { self.background.store(fee, Ordering::Relaxed); }
+
+    #[inline]
+    fn set_normal_fees(&self, fee: u64) { self.normal.store(fee, Ordering::Relaxed); }
+
+    #[inline]
+    fn set_high_priority_fees(&self, fee: u64) { self.high_priority.store(fee, Ordering::Relaxed); }
+}
+
 pub struct Platform {
     pub coin: UtxoStandardCoin,
     /// Main/testnet/signet/regtest Needed for lightning node to know which network to connect to
@@ -149,6 +158,8 @@ pub struct Platform {
     pub best_block_height: AtomicU64,
     /// Number of blocks for every Confirmation target. This is used in the FeeEstimator.
     pub confirmations_targets: PlatformCoinConfirmationTargets,
+    /// Latest fees are used when the call for estimate_fee_sat fails.
+    pub latest_fees: LatestFees,
     /// This cache stores the transactions that the LN node has interest in.
     pub registered_txs: PaMutex<HashSet<Txid>>,
     /// This cache stores the outputs that the LN node has interest in.
@@ -162,13 +173,18 @@ impl Platform {
     pub fn new(
         coin: UtxoStandardCoin,
         network: BlockchainNetwork,
-        default_fees_and_confirmations: PlatformCoinConfirmationTargets,
+        confirmations_targets: PlatformCoinConfirmationTargets,
     ) -> Self {
         Platform {
             coin,
             network,
             best_block_height: AtomicU64::new(0),
-            confirmations_targets: default_fees_and_confirmations,
+            confirmations_targets,
+            latest_fees: LatestFees {
+                background: AtomicU64::new(0),
+                normal: AtomicU64::new(0),
+                high_priority: AtomicU64::new(0),
+            },
             registered_txs: PaMutex::new(HashSet::new()),
             registered_outputs: PaMutex::new(Vec::new()),
             unsigned_funding_txs: PaMutex::new(HashMap::new()),
@@ -178,11 +194,11 @@ impl Platform {
     #[inline]
     fn rpc_client(&self) -> &UtxoRpcClientEnum { &self.coin.as_ref().rpc_client }
 
-    pub async fn set_default_fees(&self) -> UtxoRpcResult<()> {
+    pub async fn set_latest_fees(&self) -> UtxoRpcResult<()> {
         let platform_coin = &self.coin;
         let conf = &platform_coin.as_ref().conf;
 
-        let default_background_fees = self
+        let latest_background_fees = self
             .rpc_client()
             .estimate_fee_sat(
                 platform_coin.decimals(),
@@ -193,9 +209,9 @@ impl Platform {
             )
             .compat()
             .await?;
-        set_default_background_fees(default_background_fees);
+        self.latest_fees.set_background_fees(latest_background_fees);
 
-        let default_normal_fees = self
+        let latest_normal_fees = self
             .rpc_client()
             .estimate_fee_sat(
                 platform_coin.decimals(),
@@ -206,9 +222,9 @@ impl Platform {
             )
             .compat()
             .await?;
-        set_default_normal_fees(default_normal_fees);
+        self.latest_fees.set_normal_fees(latest_normal_fees);
 
-        let default_high_priority_fees = self
+        let latest_high_priority_fees = self
             .rpc_client()
             .estimate_fee_sat(
                 platform_coin.decimals(),
@@ -219,7 +235,7 @@ impl Platform {
             )
             .compat()
             .await?;
-        set_default_high_priority_fees(default_high_priority_fees);
+        self.latest_fees.set_high_priority_fees(latest_high_priority_fees);
 
         Ok(())
     }
@@ -508,10 +524,10 @@ impl FeeEstimator for Platform {
     fn get_est_sat_per_1000_weight(&self, confirmation_target: ConfirmationTarget) -> u32 {
         let platform_coin = &self.coin;
 
-        let default_fee = match confirmation_target {
-            ConfirmationTarget::Background => DEFAULT_BACKGROUND_FEES_PER_VB.load(Ordering::Relaxed),
-            ConfirmationTarget::Normal => DEFAULT_NORMAL_FEES_PER_VB.load(Ordering::Relaxed),
-            ConfirmationTarget::HighPriority => DEFAULT_HIGH_PRIORITY_FEES_PER_VB.load(Ordering::Relaxed),
+        let latest_fees = match confirmation_target {
+            ConfirmationTarget::Background => self.latest_fees.background.load(Ordering::Relaxed),
+            ConfirmationTarget::Normal => self.latest_fees.normal.load(Ordering::Relaxed),
+            ConfirmationTarget::HighPriority => self.latest_fees.high_priority.load(Ordering::Relaxed),
         };
 
         let conf = &platform_coin.as_ref().conf;
@@ -531,14 +547,14 @@ impl FeeEstimator for Platform {
                     n_blocks,
                 )
                 .wait()
-                .unwrap_or(default_fee)
+                .unwrap_or(latest_fees)
         });
 
         // Set default fee to last known fee for the corresponding confirmation target
         match confirmation_target {
-            ConfirmationTarget::Background => DEFAULT_BACKGROUND_FEES_PER_VB.store(fee_per_kb, Ordering::Relaxed),
-            ConfirmationTarget::Normal => DEFAULT_NORMAL_FEES_PER_VB.store(fee_per_kb, Ordering::Relaxed),
-            ConfirmationTarget::HighPriority => DEFAULT_HIGH_PRIORITY_FEES_PER_VB.store(fee_per_kb, Ordering::Relaxed),
+            ConfirmationTarget::Background => self.latest_fees.set_background_fees(fee_per_kb),
+            ConfirmationTarget::Normal => self.latest_fees.set_normal_fees(fee_per_kb),
+            ConfirmationTarget::HighPriority => self.latest_fees.set_high_priority_fees(fee_per_kb),
         };
 
         // Must be no smaller than 253 (ie 1 satoshi-per-byte rounded up to ensure later round-downs don’t put us below 1 satoshi-per-byte).

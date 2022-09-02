@@ -662,7 +662,7 @@ pub async fn start_lightning(
         protocol_conf.network.clone(),
         protocol_conf.confirmation_targets,
     ));
-    platform.set_default_fees().await?;
+    platform.set_latest_fees().await?;
 
     // Initialize the Logger
     let logger = ctx.log.0.clone();
