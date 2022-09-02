@@ -171,8 +171,8 @@ impl ZRpcOps for NativeClient {
                         outputs.push(compact_out);
                     }
                     // Shadowing mut variables as immutable. No longer need to update them.
-                    let spends = spends;
-                    let outputs = outputs;
+                    drop_mutability!(spends);
+                    drop_mutability!(outputs);
                     let mut hash_tx_vec = hash_tx.0.to_vec();
                     hash_tx_vec.reverse();
 
@@ -192,9 +192,9 @@ impl ZRpcOps for NativeClient {
             let mut prev_hash = block.previousblockhash.unwrap_or_default().0.to_vec();
             prev_hash.reverse();
             // Shadowing mut variables as immutable.
-            let hash = hash;
-            let prev_hash = prev_hash;
-            let compact_txs = compact_txs;
+            drop_mutability!(hash);
+            drop_mutability!(prev_hash);
+            drop_mutability!(compact_txs);
 
             let compact_block = TonicCompactBlock {
                 proto_version: 0,
@@ -253,7 +253,7 @@ macro_rules! try_loop {
 
 #[allow(dead_code)]
 struct LightwalletdConnection<C> {
-    /// The lightwalletd connected to this Addr
+    /// The lightwalletd connected to this addr
     addr: String,
     /// The Sender forwarding requests to writing part of underlying stream
     rpc_client: Arc<AsyncMutex<Option<mpsc::Sender<CompactTxStreamerClient<C>>>>>,
