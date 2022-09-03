@@ -73,6 +73,7 @@ use mm2_libp2p::{decode_signed, encode_and_sign, pub_sub_topic, TopicPrefix};
 use mm2_number::{BigDecimal, BigRational, MmNumber};
 use primitives::hash::{H160, H264};
 use rpc::v1::types::{Bytes as BytesJson, H256 as H256Json};
+use serde::Serialize;
 use serde_json::{self as json, Value as Json};
 use std::collections::{HashMap, HashSet};
 use std::num::NonZeroUsize;
@@ -110,7 +111,7 @@ use pubkey_banning::BanReason;
 pub use pubkey_banning::{ban_pubkey_rpc, is_pubkey_banned, list_banned_pubkeys_rpc, unban_pubkeys_rpc};
 pub use recreate_swap_data::recreate_swap_data;
 pub use saved_swap::{SavedSwap, SavedSwapError, SavedSwapIo, SavedSwapResult};
-use swap_watcher::{run_watcher, RunWatcherInput, Watcher, TakerSwapWatcherData};
+use swap_watcher::{run_watcher, RunWatcherInput, TakerSwapWatcherData, Watcher};
 use taker_swap::TakerSwapEvent;
 pub use taker_swap::{calc_max_taker_vol, check_balance_for_taker_swap, max_taker_vol, max_taker_vol_from_available,
                      run_taker_swap, taker_swap_trade_preimage, RunTakerSwapInput, TakerSavedSwap, TakerSwap,
@@ -138,7 +139,11 @@ pub enum SwapMsg {
     TakerFee(Vec<u8>),
     MakerPayment(Vec<u8>),
     TakerPayment(Vec<u8>),
-    WatcherMessage(Box<TakerSwapWatcherData>),
+}
+
+#[derive(Clone, Debug, Deserialize, Serialize)]
+pub enum SwapWatcherMsg {
+    TakerSwapWatcherMsg(Box<TakerSwapWatcherData>),
 }
 
 #[derive(Debug, Default)]
@@ -180,7 +185,7 @@ pub fn broadcast_swap_message_every(
 }
 
 /// Broadcast the swap message once
-pub fn broadcast_swap_message(ctx: &MmArc, topic: String, msg: SwapMsg, p2p_privkey: &Option<KeyPair>) {
+pub fn broadcast_swap_message<T: Serialize>(ctx: &MmArc, topic: String, msg: T, p2p_privkey: &Option<KeyPair>) {
     let (p2p_private, from) = match p2p_privkey {
         Some(keypair) => (keypair.private_bytes(), Some(keypair.libp2p_peer_id())),
         None => (ctx.secp256k1_key_pair().private().secret.take(), None),
@@ -201,6 +206,11 @@ pub fn broadcast_p2p_tx_msg(ctx: &MmArc, topic: String, msg: &TransactionEnum, p
 }
 
 pub async fn process_msg(ctx: MmArc, topic: &str, msg: &[u8]) {
+    let uuid = match Uuid::from_str(topic) {
+        Ok(u) => u,
+        Err(_) => return,
+    };
+
     let msg = match decode_signed::<SwapMsg>(msg) {
         Ok(m) => m,
         Err(swap_msg_err) => {
@@ -223,53 +233,6 @@ pub async fn process_msg(ctx: MmArc, topic: &str, msg: &[u8]) {
         },
     };
 
-    if let SwapMsg::WatcherMessage(watcher_data) = msg.0 {
-        spawn(async move {
-            let taker_coin = match lp_coinfind(&ctx, &watcher_data.taker_coin).await {
-                Ok(Some(c)) => c,
-                Ok(None) => {
-                    log::error!("Coin {} is not found/enabled", watcher_data.taker_coin);
-                    return;
-                },
-                Err(e) => {
-                    log::error!("!lp_coinfind({}): {}", watcher_data.taker_coin, e);
-                    return;
-                },
-            };
-
-            let maker_coin = match lp_coinfind(&ctx, &watcher_data.maker_coin).await {
-                Ok(Some(c)) => c,
-                Ok(None) => {
-                    log::error!("Coin {} is not found/enabled", watcher_data.maker_coin);
-                    return;
-                },
-                Err(e) => {
-                    log::error!("!lp_coinfind({}): {}", watcher_data.maker_coin, e);
-                    return;
-                },
-            };
-
-            let uuid = watcher_data.uuid;
-            log_tag!(
-                ctx,
-                "";
-                fmt = "Entering the watcher_swap_loop {}/{} with uuid: {}",
-                maker_coin.ticker(),
-                taker_coin.ticker(),
-                uuid
-            );
-
-            let watcher = Watcher::new(watcher_data.uuid, ctx.clone(), maker_coin, taker_coin, *watcher_data);
-            run_watcher(RunWatcherInput::StartNew(watcher), ctx).await
-        });
-        return;
-    }
-
-    let uuid = match Uuid::from_str(topic) {
-        Ok(u) => u,
-        Err(_) => return,
-    };
-
     debug!("Processing swap msg {:?} for uuid {}", msg, uuid);
     let swap_ctx = SwapsContext::from_ctx(&ctx).unwrap();
     let mut msgs = swap_ctx.swap_msgs.lock().unwrap();
@@ -282,12 +245,68 @@ pub async fn process_msg(ctx: MmArc, topic: &str, msg: &[u8]) {
                 SwapMsg::TakerFee(taker_fee) => msg_store.taker_fee = Some(taker_fee),
                 SwapMsg::MakerPayment(maker_payment) => msg_store.maker_payment = Some(maker_payment),
                 SwapMsg::TakerPayment(taker_payment) => msg_store.taker_payment = Some(taker_payment),
-                _ => (),
             }
         } else {
             warn!("Received message from unexpected sender for swap {}", uuid);
         }
     }
+}
+
+pub async fn process_watcher_msg(ctx: MmArc, msg: &[u8]) {
+    let msg = match decode_signed::<SwapWatcherMsg>(msg) {
+        Ok(m) => m,
+        Err(watcher_msg_err) => {
+            error!("Couldn't deserialize 'SwapWatcherMsg': {:?}", watcher_msg_err);
+            // Drop it to avoid dead_code warning
+            drop(watcher_msg_err);
+            return;
+        },
+    };
+
+    match msg.0 {
+        SwapWatcherMsg::TakerSwapWatcherMsg(watcher_data) => spawn_taker_swap_watcher(ctx, *watcher_data),
+    }
+}
+
+fn spawn_taker_swap_watcher(ctx: MmArc, watcher_data: TakerSwapWatcherData) {
+    spawn(async move {
+        let taker_coin = match lp_coinfind(&ctx, &watcher_data.taker_coin).await {
+            Ok(Some(c)) => c,
+            Ok(None) => {
+                log::error!("Coin {} is not found/enabled", watcher_data.taker_coin);
+                return;
+            },
+            Err(e) => {
+                log::error!("!lp_coinfind({}): {}", watcher_data.taker_coin, e);
+                return;
+            },
+        };
+
+        let maker_coin = match lp_coinfind(&ctx, &watcher_data.maker_coin).await {
+            Ok(Some(c)) => c,
+            Ok(None) => {
+                log::error!("Coin {} is not found/enabled", watcher_data.maker_coin);
+                return;
+            },
+            Err(e) => {
+                log::error!("!lp_coinfind({}): {}", watcher_data.maker_coin, e);
+                return;
+            },
+        };
+
+        let uuid = watcher_data.uuid;
+        log_tag!(
+            ctx,
+            "";
+            fmt = "Entering the watcher_swap_loop {}/{} with uuid: {}",
+            maker_coin.ticker(),
+            taker_coin.ticker(),
+            uuid
+        );
+
+        let watcher = Watcher::new(watcher_data.uuid, ctx.clone(), maker_coin, taker_coin, watcher_data);
+        run_watcher(RunWatcherInput::StartNew(watcher), ctx).await
+    });
 }
 
 pub fn swap_topic(uuid: &Uuid) -> String { pub_sub_topic(SWAP_PREFIX, &uuid.to_string()) }

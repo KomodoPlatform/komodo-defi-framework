@@ -157,7 +157,7 @@ async fn process_p2p_message(
             },
             Some(lp_swap::WATCHER_PREFIX) => {
                 if ctx.is_watcher() {
-                    lp_swap::process_msg(ctx.clone(), split.next().unwrap_or_default(), &message.data).await;
+                    lp_swap::process_watcher_msg(ctx.clone(), &message.data).await;
                     to_propagate = true;
                 }
             },

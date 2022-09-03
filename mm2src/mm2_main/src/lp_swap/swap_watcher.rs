@@ -166,7 +166,13 @@ impl Watcher {
     }
 
     #[allow(clippy::too_many_arguments)]
-    pub fn new(uuid: Uuid, ctx: MmArc, maker_coin: MmCoinEnum, taker_coin: MmCoinEnum, data: TakerSwapWatcherData) -> Self {
+    pub fn new(
+        uuid: Uuid,
+        ctx: MmArc,
+        maker_coin: MmCoinEnum,
+        taker_coin: MmCoinEnum,
+        data: TakerSwapWatcherData,
+    ) -> Self {
         Watcher {
             uuid,
             ctx,

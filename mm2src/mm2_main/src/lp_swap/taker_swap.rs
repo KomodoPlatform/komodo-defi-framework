@@ -7,8 +7,8 @@ use super::{broadcast_my_swap_status, broadcast_swap_message, broadcast_swap_mes
             check_other_coin_balance_for_swap, dex_fee_amount_from_taker_coin, dex_fee_rate, dex_fee_threshold,
             get_locked_amount, recv_swap_msg, swap_topic, watcher_topic, AtomicSwap, LockedAmount, MySwapInfo,
             NegotiationDataMsg, NegotiationDataV2, NegotiationDataV3, RecoveredSwap, RecoveredSwapAction, SavedSwap,
-            SavedSwapIo, SavedTradeFee, SwapConfirmationsSettings, SwapError, SwapMsg, SwapsContext,
-            TransactionIdentifier, TakerSwapWatcherData, WAIT_CONFIRM_INTERVAL};
+            SavedSwapIo, SavedTradeFee, SwapConfirmationsSettings, SwapError, SwapMsg, SwapWatcherMsg, SwapsContext,
+            TakerSwapWatcherData, TransactionIdentifier, WAIT_CONFIRM_INTERVAL};
 use crate::mm2::lp_network::subscribe_to_topic;
 use crate::mm2::lp_ordermatch::{MatchBy, OrderConfirmationsSettings, TakerAction, TakerOrderBuilder};
 use crate::mm2::lp_price::fetch_swap_coins_price;
@@ -1270,7 +1270,7 @@ impl TakerSwap {
                     taker_payment_requires_nota: self.r().data.taker_payment_requires_nota,
                     taker_amount: self.r().data.taker_amount.clone(),
                 };
-                let swpmsg_watcher = SwapMsg::WatcherMessage(Box::new(watcher_data));
+                let swpmsg_watcher = SwapWatcherMsg::TakerSwapWatcherMsg(Box::new(watcher_data));
                 broadcast_swap_message(
                     &self.ctx,
                     watcher_topic(&self.r().data.taker_coin),
