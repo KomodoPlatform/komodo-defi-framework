@@ -20,7 +20,7 @@ pub struct Watcher {
     maker_coin: MmCoinEnum,
     mutable: RwLock<WatcherMut>,
     errors: PaMutex<Vec<WatcherError>>,
-    data: WatcherData,
+    data: TakerSwapWatcherData,
 }
 
 pub struct WatcherMut {
@@ -30,7 +30,7 @@ pub struct WatcherMut {
 }
 
 #[derive(Clone, Debug, Default, Deserialize, PartialEq, Serialize)]
-pub struct WatcherData {
+pub struct TakerSwapWatcherData {
     pub uuid: Uuid,
     pub secret_hash: Vec<u8>,
     pub signature: Vec<u8>,
@@ -166,7 +166,7 @@ impl Watcher {
     }
 
     #[allow(clippy::too_many_arguments)]
-    pub fn new(uuid: Uuid, ctx: MmArc, maker_coin: MmCoinEnum, taker_coin: MmCoinEnum, data: WatcherData) -> Self {
+    pub fn new(uuid: Uuid, ctx: MmArc, maker_coin: MmCoinEnum, taker_coin: MmCoinEnum, data: TakerSwapWatcherData) -> Self {
         Watcher {
             uuid,
             ctx,

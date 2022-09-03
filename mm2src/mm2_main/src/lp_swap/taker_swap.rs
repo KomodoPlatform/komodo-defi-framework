@@ -8,7 +8,7 @@ use super::{broadcast_my_swap_status, broadcast_swap_message, broadcast_swap_mes
             get_locked_amount, recv_swap_msg, swap_topic, watcher_topic, AtomicSwap, LockedAmount, MySwapInfo,
             NegotiationDataMsg, NegotiationDataV2, NegotiationDataV3, RecoveredSwap, RecoveredSwapAction, SavedSwap,
             SavedSwapIo, SavedTradeFee, SwapConfirmationsSettings, SwapError, SwapMsg, SwapsContext,
-            TransactionIdentifier, WatcherData, WAIT_CONFIRM_INTERVAL};
+            TransactionIdentifier, TakerSwapWatcherData, WAIT_CONFIRM_INTERVAL};
 use crate::mm2::lp_network::subscribe_to_topic;
 use crate::mm2::lp_ordermatch::{MatchBy, OrderConfirmationsSettings, TakerAction, TakerOrderBuilder};
 use crate::mm2::lp_price::fetch_swap_coins_price;
@@ -1251,7 +1251,7 @@ impl TakerSwap {
             if sig_result.is_ok() {
                 let signature = sig_result.unwrap();
 
-                let watcher_data = WatcherData {
+                let watcher_data = TakerSwapWatcherData {
                     uuid: self.uuid,
                     taker_coin: self.r().data.taker_coin.clone(),
                     maker_coin: self.r().data.maker_coin.clone(),
