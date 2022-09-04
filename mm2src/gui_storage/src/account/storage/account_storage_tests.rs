@@ -112,6 +112,19 @@ async fn test_enable_account_impl() {
     storage.upload_account(account_iguana).await.unwrap();
     storage.enable_account(EnabledAccountId::Iguana).await.unwrap();
 
+    // Try to enable an unknown account and check if `Iguana` is still enabled.
+    let error = storage
+        .enable_account(EnabledAccountId::HD { account_idx: 3 })
+        .await
+        .expect_err("'enable_account' should have failed due to the selected account is not present in the storage");
+    match error.into_inner() {
+        AccountStorageError::NoSuchAccount(AccountId::HD { account_idx: 3 }) => (),
+        other => panic!("Expected 'NoSuchAccount(HD)', found {:?}", other),
+    }
+    let actual_enabled = storage.load_enabled_account_id().await.unwrap();
+    assert_eq!(actual_enabled, EnabledAccountId::Iguana);
+
+    // Upload new accounts.
     let account_hd_1 = accounts.get(&AccountId::HD { account_idx: 0 }).unwrap().clone();
     storage.upload_account(account_hd_1).await.unwrap();
 
@@ -196,7 +209,7 @@ async fn test_activate_deactivate_coins_impl() {
         .activate_coins(AccountId::Iguana, vec!["RICK".to_string()])
         .await
         .unwrap();
-    // Try reactivate `RICK` coin, it should be ignored.
+    // Try to reactivate `RICK` coin, it should be ignored.
     storage
         .activate_coins(AccountId::Iguana, vec!["RICK".to_string(), "MORTY".to_string()])
         .await

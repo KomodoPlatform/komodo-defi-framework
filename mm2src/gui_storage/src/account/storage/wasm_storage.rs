@@ -45,6 +45,18 @@ impl From<InitDbError> for AccountStorageError {
     fn from(e: InitDbError) -> Self { AccountStorageError::Internal(e.to_string()) }
 }
 
+impl AccountId {
+    fn try_to_enabled(&self) -> Option<EnabledAccountId> {
+        match self {
+            AccountId::Iguana => Some(EnabledAccountId::Iguana),
+            AccountId::HD { account_idx } => Some(EnabledAccountId::HD {
+                account_idx: *account_idx,
+            }),
+            AccountId::HW { .. } => None,
+        }
+    }
+}
+
 pub(crate) struct WasmAccountStorage {
     account_db: SharedDb<AccountDb>,
 }
@@ -337,9 +349,9 @@ impl DbInstance for AccountDb {
 struct AccountTable {
     account_type: AccountType,
     /// `None` if [`AccountTable::account_type`] is [`AccountType::Iguana`] or [`AccountType::HW`].
-    account_idx: Option<u32>,
+    account_idx: u32,
     /// `None` if [`AccountTable::account_type`] is [`AccountType::Iguana`] or [`AccountType::HD`].
-    device_pubkey: Option<HwPubkey>,
+    device_pubkey: HwPubkey,
     name: String,
     description: String,
     balance_usd: BigDecimal,
@@ -347,27 +359,19 @@ struct AccountTable {
 }
 
 impl AccountTable {
-    /// An index that consists of `account_type` property only.
-    const IGUANA_ID_INDEX: &'static str = "iguana_id";
     /// An **unique** index that consists of the following properties:
-    /// * account_type - "HD"
-    /// * account_idx - HD account identifier
-    const HD_ID_INDEX: &'static str = "hd_id";
-    /// An **unique** index that consists of the following properties:
-    /// * account_type - "HW"
-    /// * device_pubkey - HW device pubkey
-    const HW_ID_INDEX: &'static str = "hw_id";
+    /// * account_type
+    /// * account_idx
+    /// * device_pubkey
+    const ACCOUNT_ID_INDEX: &'static str = "account_id";
 
     fn account_id_to_index(account_id: &AccountId) -> AccountStorageResult<MultiIndex> {
-        let multi_index = match account_id {
-            AccountId::Iguana => MultiIndex::new(AccountTable::IGUANA_ID_INDEX).with_value(AccountType::Iguana)?,
-            AccountId::HD { account_idx } => MultiIndex::new(AccountTable::HD_ID_INDEX)
-                .with_value(AccountType::HD)?
-                .with_value(*account_idx)?,
-            AccountId::HW { device_pubkey } => MultiIndex::new(AccountTable::HW_ID_INDEX)
-                .with_value(AccountType::HW)?
-                .with_value(device_pubkey.clone())?,
-        };
+        let (account_type, account_idx, device_pubkey) = account_id.to_tuple();
+
+        let multi_index = MultiIndex::new(AccountTable::ACCOUNT_ID_INDEX)
+            .with_value(account_type)?
+            .with_value(account_idx)?
+            .with_value(device_pubkey)?;
         Ok(multi_index)
     }
 }
@@ -379,9 +383,11 @@ impl TableSignature for AccountTable {
         match (old_version, new_version) {
             (0, 1) => {
                 let table = upgrader.create_table(Self::table_name())?;
-                table.create_multi_index(AccountTable::IGUANA_ID_INDEX, &["account_type"], false)?;
-                table.create_multi_index(AccountTable::HD_ID_INDEX, &["account_type", "account_idx"], true)?;
-                table.create_multi_index(AccountTable::HW_ID_INDEX, &["account_type", "device_pubkey"], true)?;
+                table.create_multi_index(
+                    AccountTable::ACCOUNT_ID_INDEX,
+                    &["account_type", "account_idx", "device_pubkey"],
+                    true,
+                )?;
             },
             _ => (),
         }
@@ -435,12 +441,12 @@ impl TryFrom<AccountTable> for AccountWithCoins {
 struct EnabledAccountTable {
     account_type: EnabledAccountType,
     /// `None` if [`EnabledAccountTable::account_type`] is [`EnabledAccountTable::Iguana`].
-    account_idx: Option<u32>,
+    account_idx: u32,
 }
 
 impl From<EnabledAccountId> for EnabledAccountTable {
     fn from(account_id: EnabledAccountId) -> Self {
-        let (account_type, account_idx) = account_id.to_pair();
+        let (account_type, account_idx, _device_pubkey) = account_id.to_tuple();
         EnabledAccountTable {
             account_type,
             account_idx,

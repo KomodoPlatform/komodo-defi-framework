@@ -13,6 +13,9 @@ mod account_storage_tests;
 #[cfg(not(target_arch = "wasm32"))] mod sqlite_storage;
 #[cfg(target_arch = "wasm32")] mod wasm_storage;
 
+const DEFAULT_ACCOUNT_IDX: u32 = 0;
+const DEFAULT_DEVICE_PUB: HwPubkey = HwPubkey::const_default();
+
 pub(crate) type AccountStorageBoxed = Box<dyn AccountStorage>;
 pub type AccountStorageResult<T> = MmResult<T, AccountStorageError>;
 
@@ -49,26 +52,36 @@ impl AccountStorageError {
 }
 
 impl AccountId {
-    /// Splits `AccountId` to the pair.
-    pub(crate) fn to_tuple(&self) -> (AccountType, Option<u32>, Option<HwPubkey>) {
+    /// Splits `AccountId` to the tuple.
+    ///
+    /// # Note
+    ///
+    // The method can return default values for `account_idx` and/or `device_pubkey`
+    // depending on `account_type`.
+    pub(crate) fn to_tuple(&self) -> (AccountType, u32, HwPubkey) {
         match self {
-            AccountId::Iguana => (AccountType::Iguana, None, None),
-            AccountId::HD { account_idx } => (AccountType::HD, Some(*account_idx), None),
-            AccountId::HW { device_pubkey } => (AccountType::HW, None, Some(*device_pubkey)),
+            AccountId::Iguana => (AccountType::Iguana, DEFAULT_ACCOUNT_IDX, DEFAULT_DEVICE_PUB),
+            AccountId::HD { account_idx } => (AccountType::HD, *account_idx, DEFAULT_DEVICE_PUB),
+            AccountId::HW { device_pubkey } => (AccountType::HW, DEFAULT_ACCOUNT_IDX, *device_pubkey),
         }
     }
 
-    /// Tries to construct `AccountId` from the pair.
+    /// Tries to construct `AccountId` from the tuple.
+    ///
+    /// # Note
+    ///
+    /// The function can expect default values for `account_idx` and/or `device_pubkey`
+    /// depending on `account_type`.
     pub(crate) fn try_from_tuple(
         account_type: AccountType,
-        account_idx: Option<u32>,
-        device_pubkey: Option<HwPubkey>,
+        account_idx: u32,
+        device_pubkey: HwPubkey,
     ) -> AccountStorageResult<AccountId> {
-        match (account_type, account_idx, device_pubkey) {
-            (AccountType::Iguana, None, None) => Ok(AccountId::Iguana),
-            (AccountType::HD, Some(account_idx), None) => Ok(AccountId::HD { account_idx }),
-            (AccountType::HW, None, Some(device_pubkey)) => Ok(AccountId::HW { device_pubkey }),
-            (account_type, account_idx, device_pubkey) => {
+        match (account_type, account_idx) {
+            (AccountType::Iguana, DEFAULT_ACCOUNT_IDX) if device_pubkey == DEFAULT_DEVICE_PUB => Ok(AccountId::Iguana),
+            (AccountType::HD, account_idx) if device_pubkey == DEFAULT_DEVICE_PUB => Ok(AccountId::HD { account_idx }),
+            (AccountType::HW, DEFAULT_ACCOUNT_IDX) => Ok(AccountId::HW { device_pubkey }),
+            (_, _) => {
                 let error = format!(
                     "An invalid AccountId tuple: {:?}/{:?}/{:?}",
                     account_type, account_idx, device_pubkey
@@ -80,21 +93,25 @@ impl AccountId {
 }
 
 impl EnabledAccountId {
-    pub(crate) fn to_pair(self) -> (EnabledAccountType, Option<u32>) {
+    /// # Note
+    ///
+    /// Returns a default `device_pubkey` always.
+    pub(crate) fn to_tuple(self) -> (EnabledAccountType, u32, HwPubkey) {
         match self {
-            EnabledAccountId::Iguana => (EnabledAccountType::Iguana, None),
-            EnabledAccountId::HD { account_idx } => (EnabledAccountType::HD, Some(account_idx)),
+            EnabledAccountId::Iguana => (EnabledAccountType::Iguana, DEFAULT_ACCOUNT_IDX, DEFAULT_DEVICE_PUB),
+            EnabledAccountId::HD { account_idx } => (EnabledAccountType::HD, account_idx, DEFAULT_DEVICE_PUB),
         }
     }
 
+    /// Tries to construct `EnabledAccountType` from the pair.
     pub(crate) fn try_from_pair(
         account_type: EnabledAccountType,
-        account_idx: Option<u32>,
+        account_idx: u32,
     ) -> AccountStorageResult<EnabledAccountId> {
         match (account_type, account_idx) {
-            (EnabledAccountType::Iguana, None) => Ok(EnabledAccountId::Iguana),
-            (EnabledAccountType::HD, Some(account_idx)) => Ok(EnabledAccountId::HD { account_idx }),
-            (account_type, account_idx) => {
+            (EnabledAccountType::Iguana, DEFAULT_ACCOUNT_IDX) => Ok(EnabledAccountId::Iguana),
+            (EnabledAccountType::HD, account_idx) => Ok(EnabledAccountId::HD { account_idx }),
+            (_, _) => {
                 let error = format!("An invalid AccountId tuple: {:?}/{:?}", account_type, account_idx);
                 MmError::err(AccountStorageError::ErrorDeserializing(error))
             },

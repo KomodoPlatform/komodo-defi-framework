@@ -80,24 +80,26 @@ pub mod foreign_key {
     use super::*;
     use std::fmt;
 
-    /// The column name.
-    pub struct Column(pub &'static str);
-
-    impl Column {
-        /// Links the child's table `_0` column to the given `parent_table_column`.
-        pub fn references(self, parent_table_column: &'static str) -> ColumnReference {
-            ColumnReference {
-                column: self.0,
-                parent_table_column,
-            }
-        }
+    #[macro_export]
+    macro_rules! foreign_columns {
+        ($($referenced_col:expr => $parent_col:expr),+ $(,)?) => {
+            [
+                $((
+                    $crate::sql_build::foreign_key::ReferencedColumn($referenced_col),
+                    $crate::sql_build::foreign_key::ParentColumn($parent_col),
+                )),+
+            ]
+        };
     }
 
-    /// This structure represents child's table `column` and a corresponding parent's table `parent_table_column`.
-    pub struct ColumnReference {
-        column: &'static str,
-        parent_table_column: &'static str,
-    }
+    /// The parent table name.
+    pub struct ParentTable(pub &'static str);
+
+    /// The column name in a referenced table.
+    pub struct ReferencedColumn(pub &'static str);
+
+    /// The column name in a parent table.
+    pub struct ParentColumn(pub &'static str);
 
     /// Foreign key `ON DELETE` and `ON UPDATE` clauses are used to configure actions that take place
     /// when deleting rows from the parent table (`ON DELETE`),
@@ -159,16 +161,16 @@ pub mod foreign_key {
     /// https://www.w3schools.com/sql/sql_foreignkey.asp
     pub struct ForeignKey {
         parent_table_name: &'static str,
-        columns: Vec<ColumnReference>,
+        columns: Vec<(ReferencedColumn, ParentColumn)>,
         on_events: BTreeMap<Event, Action>,
     }
 
     impl ForeignKey {
         const CONSTRAINT: &'static str = "FOREIGN KEY";
 
-        pub fn new<I>(parent_table_name: &'static str, columns: I) -> SqlResult<ForeignKey>
+        pub fn new<I>(parent_table_name: ParentTable, columns: I) -> SqlResult<ForeignKey>
         where
-            I: IntoIterator<Item = ColumnReference>,
+            I: IntoIterator<Item = (ReferencedColumn, ParentColumn)>,
         {
             let columns: Vec<_> = columns.into_iter().collect();
             if columns.is_empty() {
@@ -176,7 +178,7 @@ pub mod foreign_key {
             }
 
             Ok(ForeignKey {
-                parent_table_name,
+                parent_table_name: parent_table_name.0,
                 columns,
                 on_events: BTreeMap::new(),
             })
@@ -203,13 +205,16 @@ pub mod foreign_key {
             // Write "FOREIGN KEY (".
             write!(f, "{} (", Self::CONSTRAINT)?;
             // Write columns of the child table.
-            self.columns.iter().map(|col| col.column).write_join(f, ", ")?;
+            self.columns
+                .iter()
+                .map(|(referenced_col, _parent_col)| referenced_col.0)
+                .write_join(f, ", ")?;
 
             write!(f, ") REFERENCES {}(", self.parent_table_name)?;
             // Write columns of the parent table.
             self.columns
                 .iter()
-                .map(|col| col.parent_table_column)
+                .map(|(_referenced_col, parent_col)| parent_col.0)
                 .write_join(f, ", ")?;
 
             write!(f, ")")?;
@@ -246,6 +251,7 @@ fn no_columns_error(constraint: &str) -> SqlError {
 mod tests {
     use super::foreign_key::*;
     use super::*;
+    use crate::foreign_columns;
 
     macro_rules! test_named_constraint {
         ($test_name:ident, $constraint_ident:ident, $constraint_str:literal) => {
@@ -272,28 +278,28 @@ mod tests {
 
     #[test]
     fn test_foreign_key() {
-        let constraint = ForeignKey::new("user", [
-            Column("user_id").references("id"),
-            Column("user_login").references("login"),
-        ])
+        let constraint = ForeignKey::new(
+            ParentTable("user"),
+            foreign_columns!["user_id" => "id", "user_login" => "login"],
+        )
         .unwrap();
         let actual = constraint.to_string();
         let expected = "FOREIGN KEY (user_id, user_login) REFERENCES user(id, login)";
         assert_eq!(actual, expected);
 
-        let constraint = ForeignKey::new("client", [Column("client_id").references("id")]).unwrap();
+        let constraint = ForeignKey::new(ParentTable("client"), foreign_columns!["client_id" => "id"]).unwrap();
         let actual = constraint.to_string();
         let expected = "FOREIGN KEY (client_id) REFERENCES client(id)";
         assert_eq!(actual, expected);
 
-        let constraint = ForeignKey::new("client", [Column("client_id").references("id")])
+        let constraint = ForeignKey::new(ParentTable("client"), foreign_columns!["client_id" => "id"])
             .unwrap()
             .on_event(Event::OnDelete, Action::Cascade);
         let actual = constraint.to_string();
         let expected = "FOREIGN KEY (client_id) REFERENCES client(id) ON DELETE CASCADE";
         assert_eq!(actual, expected);
 
-        let constraint = ForeignKey::new("client", [Column("client_id").references("id")])
+        let constraint = ForeignKey::new(ParentTable("client"), foreign_columns!["client_id" => "id"])
             .unwrap()
             .on_event(Event::OnDelete, Action::Cascade)
             .on_event(Event::OnUpdate, Action::Restrict);

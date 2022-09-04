@@ -84,15 +84,14 @@ impl<'a> SqlUpdate<'a> {
     pub fn params(&self) -> &OwnedSqlParams { self.params.params() }
 
     /// Convenience method to execute the `UPDATE` request.
+    /// Returns a number of updated records.
     /// For more details see [`SqlBuilder::execute`].
-    pub fn update(self) -> SqlResult<()> {
+    pub fn update(self) -> SqlResult<usize> {
         let sql = self.sql()?;
 
         let params = self.params();
         debug!("Trying to execute SQL query {} with params {:?}", sql, params);
-        self.conn.execute(&sql, params)?;
-
-        Ok(())
+        self.conn.execute(&sql, params)
     }
 }
 

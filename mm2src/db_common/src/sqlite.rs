@@ -208,6 +208,13 @@ pub fn execute_batch(statement: &'static [&str]) -> Vec<(&'static str, Vec<Strin
     statement.iter().map(|sql| (*sql, vec![])).collect()
 }
 
+pub fn is_constraint_error(error: &SqlError) -> bool {
+    match error {
+        SqlError::SqliteFailure(failure, _error) => failure.code == rusqlite::ErrorCode::ConstraintViolation,
+        _ => false,
+    }
+}
+
 pub trait ToValidSqlTable {
     /// Converts `self` to a valid SQL table name or returns an error.
     fn to_valid_sql_table(&self) -> SqlResult<String>;

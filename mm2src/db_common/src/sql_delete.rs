@@ -29,15 +29,14 @@ impl<'a> SqlDelete<'a> {
     pub fn params(&self) -> &OwnedSqlParams { self.params.params() }
 
     /// Convenience method to execute the `DELETE` request.
+    /// Returns a number of deleted records.
     /// For more details see [`SqlBuilder::execute`].
-    pub fn delete(self) -> SqlResult<()> {
+    pub fn delete(self) -> SqlResult<usize> {
         let sql = self.sql()?;
 
         let params = self.params();
         debug!("Trying to execute SQL query {} with params {:?}", sql, params);
-        self.conn.execute(&sql, params)?;
-
-        Ok(())
+        self.conn.execute(&sql, params)
     }
 
     /// Generates a string SQL request.

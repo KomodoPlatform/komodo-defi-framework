@@ -106,14 +106,13 @@ impl<'a> SqlInsert<'a> {
     }
 
     /// Convenience method to execute an insertion.
-    pub fn insert(&self) -> SqlResult<()> {
+    /// Returns a number of inserted records.
+    pub fn insert(&self) -> SqlResult<usize> {
         let sql = self.sql()?;
 
         debug!("Trying to execute SQL query {} with params {:?}", sql, self.params());
         let mut stmt = self.conn.prepare(&sql)?;
-        stmt.execute(self.params())?;
-
-        Ok(())
+        stmt.execute(self.params())
     }
 
     /// Returns the reference to the specified SQL parameters.

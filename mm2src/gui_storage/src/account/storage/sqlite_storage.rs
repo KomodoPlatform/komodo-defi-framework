@@ -3,10 +3,11 @@ use crate::account::{AccountId, AccountInfo, AccountType, AccountWithCoins, Acco
                      EnabledAccountType, HwPubkey, MAX_ACCOUNT_DESCRIPTION_LENGTH, MAX_ACCOUNT_NAME_LENGTH,
                      MAX_TICKER_LENGTH};
 use async_trait::async_trait;
+use db_common::foreign_columns;
 use db_common::sql_build::*;
 use db_common::sqlite::rusqlite::types::Type;
 use db_common::sqlite::rusqlite::{Connection, Error as SqlError, Result as SqlResult, Row};
-use db_common::sqlite::SqliteConnShared;
+use db_common::sqlite::{is_constraint_error, SqliteConnShared};
 use mm2_core::mm_ctx::MmArc;
 use mm2_err_handle::prelude::*;
 use mm2_number::BigDecimal;
@@ -29,8 +30,8 @@ mod account_table {
     pub(super) const DESCRIPTION: &str = "description";
     pub(super) const BALANCE_USD: &str = "balance_usd";
 
-    /// The table constraint.
-    pub(super) const ACCOUNT_ID_CONSTRAINT: &str = "account_id_constraint";
+    /// The table PRIMARY KEY name.
+    pub(super) const ACCOUNT_ID_PRIMARY_KEY: &str = "account_id_primary";
 }
 
 mod account_coins_table {
@@ -43,7 +44,7 @@ mod account_coins_table {
     pub(super) const DEVICE_PUBKEY: &str = "device_pubkey";
     pub(super) const COIN: &str = "coin";
 
-    /// The table constraint.
+    /// The table UNIQUE constraint.
     pub(super) const ACCOUNT_ID_COIN_CONSTRAINT: &str = "account_id_coin_constraint";
 }
 
@@ -54,6 +55,7 @@ mod enabled_account_table {
     // The following constants are the column names.
     pub(super) const ACCOUNT_TYPE: &str = "account_type";
     pub(super) const ACCOUNT_IDX: &str = "account_idx";
+    pub(super) const DEVICE_PUBKEY: &str = "device_pubkey";
 }
 
 impl From<SqlError> for AccountStorageError {
@@ -74,44 +76,34 @@ impl From<SqlError> for AccountStorageError {
 
 impl AccountId {
     /// An alternative to [`AccountId::to_tuple`] that returns SQL compatible types.
-    fn to_sql_tuple(&self) -> (i64, Option<i64>, Option<String>) {
+    fn to_sql_tuple(&self) -> (i64, i64, String) {
         let (account_type, account_idx, device_pubkey) = self.to_tuple();
-        (
-            account_type as i64,
-            account_idx.map(|idx| idx as i64),
-            device_pubkey.map(|pubkey| pubkey.to_string()),
-        )
+        (account_type as i64, account_idx as i64, device_pubkey.to_string())
     }
 
     /// An alternative to [`AccountId::try_from_tuple`] that takes SQL compatible types.
     pub(crate) fn try_from_sql_tuple(
         account_type: i64,
-        account_idx: Option<u32>,
-        device_pubkey: Option<String>,
+        account_idx: u32,
+        device_pubkey: &str,
     ) -> AccountStorageResult<AccountId> {
         let account_type = AccountType::try_from(account_type)?;
-        let device_pubkey = device_pubkey
-            // Map `Option<String>` into `Option<Result<HwPubkey, _>>`
-            .map(|pubkey| HwPubkey::from_str(&pubkey))
-            // Transpose `Option<Result<HwPubkey, _>>` into `Result<Option<HwPubkey, _>>`
-            .transpose()
-            .map_to_mm(|e| AccountStorageError::ErrorDeserializing(e.to_string()))?;
+        let device_pubkey =
+            HwPubkey::from_str(device_pubkey).map_to_mm(|e| AccountStorageError::ErrorDeserializing(e.to_string()))?;
         AccountId::try_from_tuple(account_type, account_idx, device_pubkey)
     }
 }
 
 impl EnabledAccountId {
     /// An alternative to [`EnabledAccountId::to_pair`] that returns SQL compatible types.
-    fn to_sql_pair(self) -> (i64, Option<i64>) {
-        let (account_type, account_idx) = self.to_pair();
-        (account_type as i64, account_idx.map(|idx| idx as i64))
+    /// Please note `device_pubkey` is always default.
+    fn to_sql_tuple(self) -> (i64, i64, String) {
+        let (account_type, account_idx, device_pubkey) = self.to_tuple();
+        (account_type as i64, account_idx as i64, device_pubkey.to_string())
     }
 
     /// An alternative to [`EnabledAccountId::try_from_pair`] that takes SQL compatible types.
-    pub(crate) fn try_from_sql_pair(
-        account_type: i64,
-        account_idx: Option<u32>,
-    ) -> AccountStorageResult<EnabledAccountId> {
+    pub(crate) fn try_from_sql_pair(account_type: i64, account_idx: u32) -> AccountStorageResult<EnabledAccountId> {
         let account_type = EnabledAccountType::try_from(account_type)?;
         EnabledAccountId::try_from_pair(account_type, account_idx)
     }
@@ -143,18 +135,15 @@ impl SqliteAccountStorage {
         create_sql
             .if_not_exist()
             .column(SqlColumn::new(account_table::ACCOUNT_TYPE, SqlType::Integer).not_null())
-            .column(SqlColumn::new(account_table::ACCOUNT_IDX, SqlType::Integer))
-            .column(SqlColumn::new(
-                account_table::DEVICE_PUBKEY,
-                SqlType::Varchar(DEVICE_PUBKEY_MAX_LENGTH),
-            ))
+            .column(SqlColumn::new(account_table::ACCOUNT_IDX, SqlType::Integer).not_null())
+            .column(SqlColumn::new(account_table::DEVICE_PUBKEY, SqlType::Varchar(DEVICE_PUBKEY_MAX_LENGTH)).not_null())
             .column(SqlColumn::new(account_table::NAME, SqlType::Varchar(MAX_ACCOUNT_NAME_LENGTH)).not_null())
             .column(SqlColumn::new(
                 account_table::DESCRIPTION,
                 SqlType::Varchar(MAX_ACCOUNT_DESCRIPTION_LENGTH),
             ))
             .column(SqlColumn::new(account_table::BALANCE_USD, SqlType::Varchar(BALANCE_MAX_LENGTH)).not_null())
-            .constraint(Unique::new(account_table::ACCOUNT_ID_CONSTRAINT, [
+            .constraint(PrimaryKey::new(account_table::ACCOUNT_ID_PRIMARY_KEY, [
                 account_table::ACCOUNT_TYPE,
                 account_table::ACCOUNT_IDX,
                 account_table::DEVICE_PUBKEY,
@@ -167,12 +156,24 @@ impl SqliteAccountStorage {
         create_sql
             .if_not_exist()
             .column(SqlColumn::new(account_coins_table::ACCOUNT_TYPE, SqlType::Integer).not_null())
-            .column(SqlColumn::new(account_coins_table::ACCOUNT_IDX, SqlType::Integer))
-            .column(SqlColumn::new(
-                account_coins_table::DEVICE_PUBKEY,
-                SqlType::Varchar(DEVICE_PUBKEY_MAX_LENGTH),
-            ))
+            .column(SqlColumn::new(account_coins_table::ACCOUNT_IDX, SqlType::Integer).not_null())
+            .column(
+                SqlColumn::new(
+                    account_coins_table::DEVICE_PUBKEY,
+                    SqlType::Varchar(DEVICE_PUBKEY_MAX_LENGTH),
+                )
+                .not_null(),
+            )
             .column(SqlColumn::new(account_coins_table::COIN, SqlType::Varchar(MAX_TICKER_LENGTH)).not_null())
+            .constraint(
+                ForeignKey::new(foreign_key::ParentTable(account_table::TABLE_NAME), foreign_columns![
+                    account_coins_table::ACCOUNT_TYPE => account_table::ACCOUNT_TYPE,
+                    account_coins_table::ACCOUNT_IDX => account_table::ACCOUNT_IDX,
+                    account_coins_table::DEVICE_PUBKEY => account_table::DEVICE_PUBKEY
+                ])?
+                // Delete all coins from `account_coins_table` if the corresponding `account_table` record has been deleted.
+                .on_event(foreign_key::Event::OnDelete, foreign_key::Action::Cascade),
+            )
             .constraint(Unique::new(account_coins_table::ACCOUNT_ID_COIN_CONSTRAINT, [
                 account_coins_table::ACCOUNT_TYPE,
                 account_coins_table::ACCOUNT_IDX,
@@ -187,7 +188,24 @@ impl SqliteAccountStorage {
         create_sql
             .if_not_exist()
             .column(SqlColumn::new(enabled_account_table::ACCOUNT_TYPE, SqlType::Integer).not_null())
-            .column(SqlColumn::new(enabled_account_table::ACCOUNT_IDX, SqlType::Integer));
+            .column(SqlColumn::new(enabled_account_table::ACCOUNT_IDX, SqlType::Integer).not_null())
+            // `device_pubkey` column is used to declare a foreign key that refers to the `account_table` primary key.
+            .column(
+                SqlColumn::new(
+                    enabled_account_table::DEVICE_PUBKEY,
+                    SqlType::Varchar(DEVICE_PUBKEY_MAX_LENGTH),
+                )
+                .not_null(),
+            )
+            .constraint(
+                ForeignKey::new(foreign_key::ParentTable(account_table::TABLE_NAME), foreign_columns![
+                    enabled_account_table::ACCOUNT_TYPE => account_table::ACCOUNT_TYPE,
+                    enabled_account_table::ACCOUNT_IDX => account_table::ACCOUNT_IDX,
+                    enabled_account_table::DEVICE_PUBKEY => account_table::DEVICE_PUBKEY,
+                ])?
+                // Delete an enabled account from `enabled_account_table` if the corresponding `account_table` record has been deleted.
+                .on_event(foreign_key::Event::OnDelete, foreign_key::Action::Cascade),
+            );
         create_sql.create().map_to_mm(AccountStorageError::from)
     }
 
@@ -291,47 +309,30 @@ impl SqliteAccountStorage {
             .column_param(account_table::NAME, account.name)?
             .column_param(account_table::DESCRIPTION, account.description)?
             .column_param(account_table::BALANCE_USD, account.balance_usd.to_string())?;
-        sql_insert.insert()?;
+
+        // A constraint error occurs if there is an account with the same primary key (`account_id`).
+        handle_constraint_error(sql_insert.insert(), || {
+            AccountStorageError::AccountExistsAlready(account.account_id)
+        })?;
         Ok(())
     }
 
-    fn delete_account(conn: &mut Connection, account_id: AccountId) -> AccountStorageResult<()> {
-        let transaction = conn.transaction()?;
-
-        // Check if the account can be enabled.
-        if let Some(enabled_account_id) = account_id.try_to_enabled() {
-            // Delete the account from `enabled_account_table` if **only** it's enabled.
-            let (account_type, account_idx) = enabled_account_id.to_sql_pair();
-            let mut sql_delete_enabled = SqlDelete::new(&transaction, enabled_account_table::TABLE_NAME)?;
-            sql_delete_enabled
-                .and_where_eq(enabled_account_table::ACCOUNT_TYPE, account_type)?
-                .and_where_eq(enabled_account_table::ACCOUNT_IDX, account_idx)?;
-            sql_delete_enabled.delete()?;
-        }
-
+    fn delete_account(conn: &Connection, account_id: AccountId) -> AccountStorageResult<()> {
         let (account_type, account_idx, device_pubkey) = account_id.to_sql_tuple();
 
         // Remove the account info.
-        {
-            let mut sql_delete_account = SqlDelete::new(&transaction, account_table::TABLE_NAME)?;
-            sql_delete_account
-                .and_where_eq(account_table::ACCOUNT_TYPE, account_type)?
-                .and_where_eq(account_table::ACCOUNT_IDX, account_idx)?
-                .and_where_eq_param(account_table::DEVICE_PUBKEY, device_pubkey.clone())?;
-            sql_delete_account.delete()?;
+        let mut sql_delete_account = SqlDelete::new(conn, account_table::TABLE_NAME)?;
+        sql_delete_account
+            .and_where_eq(account_table::ACCOUNT_TYPE, account_type)?
+            .and_where_eq(account_table::ACCOUNT_IDX, account_idx)?
+            .and_where_eq_param(account_table::DEVICE_PUBKEY, device_pubkey.clone())?;
+
+        let deleted = sql_delete_account.delete()?;
+        // The number of deleted accounts is 0 if only there is no account with the given `account_id`.
+        if deleted == 0 {
+            return MmError::err(AccountStorageError::NoSuchAccount(account_id));
         }
 
-        // Remove all associated coins.
-        {
-            let mut sql_delete_coins = SqlDelete::new(&transaction, account_coins_table::TABLE_NAME)?;
-            sql_delete_coins
-                .and_where_eq(account_coins_table::ACCOUNT_TYPE, account_type)?
-                .and_where_eq(account_coins_table::ACCOUNT_IDX, account_idx)?
-                .and_where_eq_param(account_coins_table::DEVICE_PUBKEY, device_pubkey)?;
-            sql_delete_coins.delete()?;
-        }
-
-        transaction.commit()?;
         Ok(())
     }
 
@@ -340,11 +341,6 @@ impl SqliteAccountStorage {
     where
         F: FnOnce(&mut SqlUpdate) -> SqlResult<()>,
     {
-        // First, check if the account exists.
-        if !Self::account_exists(conn, &account_id)? {
-            return MmError::err(AccountStorageError::NoSuchAccount(account_id));
-        }
-
         let mut sql_update = SqlUpdate::new(conn, account_table::TABLE_NAME)?;
         update_cb(&mut sql_update)?;
 
@@ -354,7 +350,11 @@ impl SqliteAccountStorage {
             .and_where_eq(account_table::ACCOUNT_IDX, account_idx)?
             .and_where_eq_param(account_table::DEVICE_PUBKEY, device_pubkey)?;
 
-        sql_update.update()?;
+        let updated = sql_update.update()?;
+        // The number of updated accounts is 0 if only there is no account with the given `account_id`.
+        if updated == 0 {
+            return MmError::err(AccountStorageError::NoSuchAccount(account_id));
+        }
         Ok(())
     }
 }
@@ -418,48 +418,42 @@ impl AccountStorage for SqliteAccountStorage {
     }
 
     async fn enable_account(&self, enabled_account_id: EnabledAccountId) -> AccountStorageResult<()> {
-        let conn = self.lock_conn_mutex()?;
-
-        // First, check if the account exists.
-        let account_id = AccountId::from(enabled_account_id);
-        if !Self::account_exists(&conn, &account_id)? {
-            return MmError::err(AccountStorageError::NoSuchAccount(account_id));
-        }
+        let mut conn = self.lock_conn_mutex()?;
+        let transaction = conn.transaction()?;
 
         // Remove the previous enabled account by clearing the table.
-        SqlDelete::new(&conn, enabled_account_table::TABLE_NAME)?.delete()?;
+        SqlDelete::new(&transaction, enabled_account_table::TABLE_NAME)?.delete()?;
 
-        let mut sql_insert = SqlInsert::new(&conn, enabled_account_table::TABLE_NAME);
+        let mut sql_insert = SqlInsert::new(&transaction, enabled_account_table::TABLE_NAME);
 
-        let (account_type, account_idx) = enabled_account_id.to_sql_pair();
+        let (account_type, account_idx, _device_pubkey) = enabled_account_id.to_sql_tuple();
         sql_insert
             .column(enabled_account_table::ACCOUNT_TYPE, account_type)?
-            .column(enabled_account_table::ACCOUNT_IDX, account_idx)?;
+            .column(enabled_account_table::ACCOUNT_IDX, account_idx)?
+            .column_param(enabled_account_table::DEVICE_PUBKEY, _device_pubkey)?;
 
-        sql_insert.insert()?;
+        // A constraint error occurs if there is no account in `account_table` with the given `account_id`.
+        let inserted = handle_constraint_error(sql_insert.insert(), || {
+            AccountStorageError::NoSuchAccount(AccountId::from(enabled_account_id))
+        })?;
+        // The number of inserted accounts is expected to be '1'.
+        if inserted != 1 {
+            let error = format!("Expected exactly '1' inserted account, found '{}'", inserted);
+            return MmError::err(AccountStorageError::Internal(error));
+        }
+
+        transaction.commit()?;
         Ok(())
     }
 
     async fn upload_account(&self, account: AccountInfo) -> AccountStorageResult<()> {
         let conn = self.lock_conn_mutex()?;
-
-        // First, check if the account doesn't exist.
-        if Self::account_exists(&conn, &account.account_id)? {
-            return MmError::err(AccountStorageError::AccountExistsAlready(account.account_id));
-        }
-
         Self::upload_account(&conn, account)
     }
 
     async fn delete_account(&self, account_id: AccountId) -> AccountStorageResult<()> {
-        let mut conn = self.lock_conn_mutex()?;
-
-        // First, check if the account exists already.
-        if !Self::account_exists(&conn, &account_id)? {
-            return MmError::err(AccountStorageError::NoSuchAccount(account_id));
-        }
-
-        Self::delete_account(&mut conn, account_id)
+        let conn = self.lock_conn_mutex()?;
+        Self::delete_account(&conn, account_id)
     }
 
     async fn set_name(&self, account_id: AccountId, name: String) -> AccountStorageResult<()> {
@@ -493,23 +487,22 @@ impl AccountStorage for SqliteAccountStorage {
         let mut conn = self.lock_conn_mutex()?;
         let transaction = conn.transaction()?;
 
-        // First, check if the account exists.
-        if !Self::account_exists(&transaction, &account_id)? {
-            return MmError::err(AccountStorageError::NoSuchAccount(account_id));
-        }
-
         for ticker in tickers {
             let mut sql_insert = SqlInsert::new(&transaction, account_coins_table::TABLE_NAME);
 
-            let (account_type, account_id, device_pubkey) = account_id.to_sql_tuple();
+            let (account_type, account_idx, device_pubkey) = account_id.to_sql_tuple();
             sql_insert
                 .or_ignore()
                 .column(account_coins_table::ACCOUNT_TYPE, account_type)?
-                .column(account_coins_table::ACCOUNT_IDX, account_id)?
+                .column(account_coins_table::ACCOUNT_IDX, account_idx)?
                 .column_param(account_coins_table::DEVICE_PUBKEY, device_pubkey)?
                 .column_param(account_coins_table::COIN, ticker)?;
 
-            sql_insert.insert()?;
+            // A constraint error occurs if **only** there is no account in `account_table` with the given `account_id`.
+            // If there is the same coin for the given `account_id` already, then the insertion will be ignored.
+            handle_constraint_error(sql_insert.insert(), || {
+                AccountStorageError::NoSuchAccount(account_id.clone())
+            })?;
         }
 
         transaction.commit()?;
@@ -519,36 +512,41 @@ impl AccountStorage for SqliteAccountStorage {
     async fn deactivate_coins(&self, account_id: AccountId, tickers: Vec<String>) -> AccountStorageResult<()> {
         let conn = self.lock_conn_mutex()?;
 
-        // First, check if the account exists.
-        if !Self::account_exists(&conn, &account_id)? {
-            return MmError::err(AccountStorageError::NoSuchAccount(account_id));
-        }
-
         let mut sql_delete = SqlDelete::new(&conn, account_coins_table::TABLE_NAME)?;
 
-        let (account_type, account_id, device_pubkey) = account_id.to_sql_tuple();
+        let (account_type, account_idx, device_pubkey) = account_id.to_sql_tuple();
         sql_delete
             .and_where_eq(account_coins_table::ACCOUNT_TYPE, account_type)?
-            .and_where_eq(account_coins_table::ACCOUNT_IDX, account_id)?
+            .and_where_eq(account_coins_table::ACCOUNT_IDX, account_idx)?
             .and_where_eq_param(account_coins_table::DEVICE_PUBKEY, device_pubkey)?
             .and_where_in_params(account_coins_table::COIN, tickers)?;
 
-        sql_delete.delete()?;
-        Ok(())
+        let deleted = sql_delete.delete()?;
+        if deleted > 0 {
+            // We're sure that the account exists since there were coins associated with it.
+            return Ok(());
+        }
+
+        // Check if the account exists.
+        if Self::account_exists(&conn, &account_id)? {
+            Ok(())
+        } else {
+            return MmError::err(AccountStorageError::NoSuchAccount(account_id));
+        }
     }
 }
 
 fn account_id_from_row(row: &Row<'_>) -> Result<AccountId, SqlError> {
     let account_type: i64 = row.get(0)?;
-    let account_idx: Option<u32> = row.get(1)?;
-    let device_pubkey: Option<String> = row.get(2)?;
-    AccountId::try_from_sql_tuple(account_type, account_idx, device_pubkey)
+    let account_idx: u32 = row.get(1)?;
+    let device_pubkey: String = row.get(2)?;
+    AccountId::try_from_sql_tuple(account_type, account_idx, &device_pubkey)
         .map_err(|e| SqlError::FromSqlConversionFailure(0, Type::Text, Box::new(e)))
 }
 
 fn enabled_account_id_from_row(row: &Row<'_>) -> Result<EnabledAccountId, SqlError> {
     let account_type: i64 = row.get(0)?;
-    let account_idx: Option<u32> = row.get(1)?;
+    let account_idx: u32 = row.get(1)?;
     EnabledAccountId::try_from_sql_pair(account_type, account_idx)
         .map_err(|e| SqlError::FromSqlConversionFailure(0, Type::Text, Box::new(e)))
 }
@@ -571,4 +569,17 @@ fn count_from_row(row: &Row<'_>) -> Result<i64, SqlError> { row.get(0) }
 fn bigdecimal_from_row(row: &Row<'_>, idx: usize) -> Result<BigDecimal, SqlError> {
     let decimal: String = row.get(idx)?;
     BigDecimal::from_str(&decimal).map_err(|e| SqlError::FromSqlConversionFailure(idx, Type::Text, Box::new(e)))
+}
+
+fn handle_constraint_error<T, F>(result: SqlResult<T>, on_constraint_error: F) -> AccountStorageResult<T>
+where
+    F: FnOnce() -> AccountStorageError,
+{
+    result.map_to_mm(|e| {
+        if is_constraint_error(&e) {
+            on_constraint_error()
+        } else {
+            AccountStorageError::from(e)
+        }
+    })
 }

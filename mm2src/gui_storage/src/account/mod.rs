@@ -79,18 +79,6 @@ pub enum AccountId {
     HW { device_pubkey: HwPubkey },
 }
 
-impl AccountId {
-    fn try_to_enabled(&self) -> Option<EnabledAccountId> {
-        match self {
-            AccountId::Iguana => Some(EnabledAccountId::Iguana),
-            AccountId::HD { account_idx } => Some(EnabledAccountId::HD {
-                account_idx: *account_idx,
-            }),
-            AccountId::HW { .. } => None,
-        }
-    }
-}
-
 #[derive(Copy, Clone, Debug, Deserialize, Eq, Ord, PartialEq, PartialOrd, Serialize)]
 #[serde(tag = "type")]
 #[serde(rename_all = "lowercase")]
