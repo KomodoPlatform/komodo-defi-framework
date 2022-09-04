@@ -942,8 +942,8 @@ pub struct TendermintActivationResult {
 }
 
 pub mod gui_storage {
-    use std::collections::BTreeSet;
     use mm2_number::BigDecimal;
+    use std::collections::BTreeSet;
 
     #[derive(Debug, Deserialize, PartialEq)]
     #[serde(tag = "type")]
