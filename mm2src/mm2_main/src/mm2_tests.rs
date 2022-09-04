@@ -7669,7 +7669,9 @@ fn test_gui_storage() {
         name: "My Iguana wallet".to_string(),
         description: String::new(),
         balance_usd: BigDecimal::from(0i32),
-        coins: vec!["RICK", "MORTY", "KMD"].into_iter().collect(),
+        coins: vec!["RICK".to_string(), "MORTY".to_string(), "KMD".to_string()]
+            .into_iter()
+            .collect(),
     };
-    assert_eq!(actual, expected);
+    assert_eq!(actual.result, expected);
 }
