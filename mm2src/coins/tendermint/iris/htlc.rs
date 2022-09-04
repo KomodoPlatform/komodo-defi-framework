@@ -3,7 +3,7 @@
 // This module includes HTLC creating & claiming representation structstures
 // and their trait implementations.
 
-use cosmrs::{tx::{Msg, MsgProto},
+use cosmrs::{tx::{Fee, Msg, MsgProto},
              AccountId, Coin, ErrorReport};
 use std::convert::TryFrom;
 
@@ -16,7 +16,7 @@ pub(crate) struct IrisHtlc {
     pub(crate) id: String,
 
     /// Transaction fee
-    pub(crate) fee: Coin,
+    pub(crate) fee: Fee,
 
     /// Message payload to be sent
     pub(crate) msg_payload: cosmrs::Any,

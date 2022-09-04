@@ -39,6 +39,7 @@ use std::str::FromStr;
 use std::sync::Arc;
 
 const TIMEOUT_HEIGHT_DELTA: u64 = 100;
+pub const GAS_LIMIT_DEFAULT: u64 = 100_000;
 
 #[derive(Clone, Debug, PartialEq, Serialize)]
 pub struct TendermintFeeDetails {
@@ -256,22 +257,22 @@ impl TendermintCoin {
         // Needs to be sorted if cointains multiple coins
         // amount.sort();
 
-        // begin htlc id generation
+        // << BEGIN HTLC id calculation
         let mut htlc_id = vec![];
         htlc_id.extend_from_slice(sha256(&hash_lock_hash).as_slice());
         htlc_id.extend_from_slice(&self.account_id.to_bytes());
         htlc_id.extend_from_slice(&to.to_bytes());
         let mut coins_string = String::new();
-        for c in amount.iter() {
-            if Some(c) != amount.last() {
-                coins_string = format!("{}{}{},", coins_string, c.amount, c.denom);
+        for (index, item) in amount.iter().enumerate() {
+            if index == 0 {
+                coins_string = format!("{}{}{}", coins_string, item.amount, item.denom);
             } else {
-                coins_string = format!("{}{}{}", coins_string, c.amount, c.denom);
+                coins_string = format!(",{}{}{}", coins_string, item.amount, item.denom);
             }
         }
         htlc_id.extend_from_slice(coins_string.as_bytes());
         let htlc_id = sha256(&htlc_id).to_string().to_uppercase();
-        // end htlc id generataion
+        // >> END HTLC id calculation
 
         let msg_payload = MsgCreateHtlc {
             sender: self.account_id.clone(),
@@ -285,12 +286,18 @@ impl TendermintCoin {
             transfer: false,
         };
 
+        let fee_amount = Coin {
+            denom: base_denom,
+            // TODO
+            // Calculate current fee
+            amount: 200_u64.into(),
+        };
+
+        let fee = Fee::from_amount_and_gas(fee_amount, GAS_LIMIT_DEFAULT);
+
         Ok(IrisHtlc {
             id: htlc_id,
-            fee: Coin {
-                denom: base_denom,
-                amount: 200_u64.into(),
-            },
+            fee,
             msg_payload: msg_payload
                 .to_any()
                 .map_err(|e| MmError::new(TxMarshalingErr::InvalidInput(e.to_string())))?,
@@ -310,12 +317,18 @@ impl TendermintCoin {
             secret: hex::encode(secret_hash),
         };
 
+        let fee_amount = Coin {
+            denom: base_denom,
+            // TODO
+            // Calculate current fee
+            amount: 200_u64.into(),
+        };
+
+        let fee = Fee::from_amount_and_gas(fee_amount, GAS_LIMIT_DEFAULT);
+
         Ok(IrisHtlc {
             id: htlc_id,
-            fee: Coin {
-                denom: base_denom,
-                amount: 200_u64.into(),
-            },
+            fee,
             msg_payload: msg_payload
                 .to_any()
                 .map_err(|e| MmError::new(TxMarshalingErr::InvalidInput(e.to_string())))?,
@@ -412,12 +425,11 @@ impl MmCoin for TendermintCoin {
             let _sequence_lock = coin.sequence_lock.lock().await;
             let account_info = coin.my_account_info().await?;
 
-            let gas_limit = 100_000;
             let fee_amount = Coin {
                 denom: coin.denom.clone(),
                 amount: fee_denom.into(),
             };
-            let fee = Fee::from_amount_and_gas(fee_amount, gas_limit);
+            let fee = Fee::from_amount_and_gas(fee_amount, GAS_LIMIT_DEFAULT);
             let timeout_height = current_block + TIMEOUT_HEIGHT_DELTA;
 
             let tx_raw = coin
@@ -444,7 +456,7 @@ impl MmCoin for TendermintCoin {
                 fee_details: Some(TxFeeDetails::Tendermint(TendermintFeeDetails {
                     coin: coin.ticker.clone(),
                     amount: fee_amount_dec,
-                    gas_limit,
+                    gas_limit: GAS_LIMIT_DEFAULT,
                 })),
                 coin: coin.ticker.to_string(),
                 internal_id: hash.to_vec().into(),
@@ -807,14 +819,6 @@ mod tendermint_coin_tests {
         let current_block = common::block_on(async { current_block_fut.await.unwrap() });
         let timeout_height = current_block + TIMEOUT_HEIGHT_DELTA;
 
-        let gas_limit = 100_000;
-        let fee_amount = Coin {
-            denom: base_denom.clone(),
-            amount: 200_u64.into(),
-        };
-
-        let fee = Fee::from_amount_and_gas(fee_amount, gas_limit);
-
         let account_info_fut = coin.my_account_info();
         let account_info = common::block_on(async { account_info_fut.await.unwrap() });
 
@@ -822,7 +826,7 @@ mod tendermint_coin_tests {
             coin.any_to_raw_tx(
                 account_info.clone(),
                 create_htlc_tx.msg_payload.clone(),
-                fee.clone(),
+                create_htlc_tx.fee.clone(),
                 timeout_height,
             )
             .await
@@ -847,9 +851,14 @@ mod tendermint_coin_tests {
         let account_info = common::block_on(async { account_info_fut.await.unwrap() });
 
         let raw_tx = common::block_on(async {
-            coin.any_to_raw_tx(account_info, claim_htlc_tx.msg_payload, fee, timeout_height)
-                .await
-                .unwrap()
+            coin.any_to_raw_tx(
+                account_info,
+                claim_htlc_tx.msg_payload,
+                claim_htlc_tx.fee,
+                timeout_height,
+            )
+            .await
+            .unwrap()
         });
 
         let send_tx_fut = coin.send_raw_tx_bytes(&raw_tx.to_bytes().unwrap()).compat();
