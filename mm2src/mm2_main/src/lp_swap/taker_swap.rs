@@ -1237,7 +1237,7 @@ impl TakerSwap {
         };
 
         if self.ctx.use_watchers() {
-            let presign_fut = self.taker_coin.sign_maker_payment(
+            let preimage_fut = self.taker_coin.create_taker_spends_maker_payment_preimage(
                 &self.r().maker_payment.as_ref().unwrap().tx_hex,
                 self.maker_payment_lock.load(Ordering::Relaxed) as u32,
                 self.r().other_maker_coin_htlc_pub.as_slice(),
@@ -1245,31 +1245,30 @@ impl TakerSwap {
                 &self.unique_swap_data()[..],
             );
 
-            let sig_result = presign_fut.compat().await;
+            let preimage_result = preimage_fut.compat().await;
 
             // If the watcher message can not be sent, the swap still continues
-            if sig_result.is_ok() {
-                let signature = sig_result.unwrap();
+            if preimage_result.is_ok() {
+                let preimage = preimage_result.unwrap();
 
                 let watcher_data = TakerSwapWatcherData {
                     uuid: self.uuid,
-                    taker_coin: self.r().data.taker_coin.clone(),
-                    maker_coin: self.r().data.maker_coin.clone(),
-                    taker_payment_hex: transaction.tx_hex(),
-                    maker_payment_hex: self.r().maker_payment.as_ref().unwrap().tx_hex.0.clone(),
-                    taker_payment_lock: self.r().data.taker_payment_lock,
-                    maker_payment_lock: self.maker_payment_lock.load(Ordering::Relaxed) as u32,
-                    taker_coin_start_block: self.r().data.taker_coin_start_block,
                     secret_hash: self.r().secret_hash.into(),
-                    maker_pub: self.r().other_maker_coin_htlc_pub.to_vec(),
-                    taker_pub: self.r().data.taker_coin_htlc_pubkey.unwrap().into(),
-                    signature: signature.take(),
+                    taker_spends_maker_payment_preimage: preimage.tx_hex(),
                     swap_started_at: self.r().data.started_at,
                     lock_duration: self.r().data.lock_duration,
+                    taker_coin: self.r().data.taker_coin.clone(),
+                    taker_payment_hex: transaction.tx_hex(),
+                    taker_payment_lock: self.r().data.taker_payment_lock,
+                    taker_pub: self.r().data.taker_coin_htlc_pubkey.unwrap().into(),
+                    taker_coin_start_block: self.r().data.taker_coin_start_block,
                     taker_payment_confirmations: self.r().data.taker_payment_confirmations,
                     taker_payment_requires_nota: self.r().data.taker_payment_requires_nota,
                     taker_amount: self.r().data.taker_amount.clone(),
+                    maker_coin: self.r().data.maker_coin.clone(),
+                    maker_pub: self.r().other_maker_coin_htlc_pub.to_vec(),
                 };
+
                 let swpmsg_watcher = SwapWatcherMsg::TakerSwapWatcherMsg(Box::new(watcher_data));
                 broadcast_swap_message(
                     &self.ctx,

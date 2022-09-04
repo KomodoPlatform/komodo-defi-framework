@@ -1,7 +1,7 @@
 use super::swap_lock::{SwapLock, SwapLockOps};
 use super::{broadcast_p2p_tx_msg, tx_helper_topic, AtomicSwap, H256Json, LockedAmount, SwapsContext,
             TransactionIdentifier, WAIT_CONFIRM_INTERVAL};
-use coins::{MmCoinEnum, WatcherSpendsMakerPaymentInput, WatcherValidatePaymentInput};
+use coins::{MmCoinEnum, WatcherValidatePaymentInput};
 use common::executor::Timer;
 use common::log::{error, info, warn};
 use futures::compat::Future01CompatExt;
@@ -33,7 +33,7 @@ pub struct WatcherMut {
 pub struct TakerSwapWatcherData {
     pub uuid: Uuid,
     pub secret_hash: Vec<u8>,
-    pub signature: Vec<u8>,
+    pub taker_spends_maker_payment_preimage: Vec<u8>,
     pub swap_started_at: u64,
     pub lock_duration: u64,
     pub taker_coin: String,
@@ -45,8 +45,6 @@ pub struct TakerSwapWatcherData {
     pub taker_payment_requires_nota: Option<bool>,
     pub taker_amount: BigDecimal,
     pub maker_coin: String,
-    pub maker_payment_hex: Vec<u8>,
-    pub maker_payment_lock: u32,
     pub maker_pub: Vec<u8>,
 }
 
@@ -288,16 +286,11 @@ impl Watcher {
     }
 
     async fn spend_maker_payment(&self) -> Result<(Option<WatcherCommand>, Vec<WatcherEvent>), String> {
-        let payment_input = WatcherSpendsMakerPaymentInput {
-            maker_payment_tx: &self.data.maker_payment_hex,
-            time_lock: self.data.maker_payment_lock,
-            maker_pub: &self.data.maker_pub,
-            taker_pub: &self.data.taker_pub,
-            secret: &self.r().secret.0.clone(),
-            signature: &self.data.signature,
-        };
+        let spend_fut = self.maker_coin.send_taker_spends_maker_payment_preimage(
+            &self.data.taker_spends_maker_payment_preimage,
+            &self.r().secret.0.clone(),
+        );
 
-        let spend_fut = self.maker_coin.send_watcher_spends_maker_payment(payment_input);
         let transaction = match spend_fut.compat().await {
             Ok(t) => t,
             Err(err) => {

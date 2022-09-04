@@ -8,9 +8,9 @@ use crate::utxo::utxo_builder::{UtxoArcBuilder, UtxoCoinBuilder};
 use crate::utxo::utxo_common::big_decimal_from_sat_unsigned;
 use crate::{BlockHeightAndTime, CanRefundHtlc, CoinBalance, CoinProtocol, NegotiateSwapContractAddrErr,
             PrivKeyBuildPolicy, RawTransactionFut, RawTransactionRequest, SearchForSwapTxSpendInput, SignatureResult,
-            SignedTransactionFut, SwapOps, TradePreimageValue, TransactionFut, TransactionType, TxFeeDetails,
-            TxMarshalingErr, UnexpectedDerivationMethod, ValidateAddressResult, ValidatePaymentInput,
-            VerificationResult, WatcherSpendsMakerPaymentInput, WatcherValidatePaymentInput, WithdrawFut};
+            SwapOps, TradePreimageValue, TransactionFut, TransactionType, TxFeeDetails, TxMarshalingErr,
+            UnexpectedDerivationMethod, ValidateAddressResult, ValidatePaymentInput, VerificationResult,
+            WatcherValidatePaymentInput, WithdrawFut};
 use common::log::warn;
 use derive_more::Display;
 use futures::{FutureExt, TryFutureExt};
@@ -907,6 +907,24 @@ impl SwapOps for BchCoin {
         )
     }
 
+    fn create_taker_spends_maker_payment_preimage(
+        &self,
+        maker_payment_tx: &[u8],
+        time_lock: u32,
+        maker_pub: &[u8],
+        secret_hash: &[u8],
+        swap_unique_data: &[u8],
+    ) -> TransactionFut {
+        utxo_common::create_taker_spends_maker_payment_preimage(
+            self.clone(),
+            maker_payment_tx,
+            time_lock,
+            maker_pub,
+            secret_hash,
+            swap_unique_data,
+        )
+    }
+
     fn send_taker_spends_maker_payment(
         &self,
         maker_payment_tx: &[u8],
@@ -926,26 +944,8 @@ impl SwapOps for BchCoin {
         )
     }
 
-    fn send_watcher_spends_maker_payment(&self, input: WatcherSpendsMakerPaymentInput) -> TransactionFut {
-        utxo_common::send_watcher_spends_maker_payment(self.clone(), input)
-    }
-
-    fn sign_maker_payment(
-        &self,
-        maker_payment_tx: &[u8],
-        time_lock: u32,
-        maker_pub: &[u8],
-        secret_hash: &[u8],
-        swap_unique_data: &[u8],
-    ) -> SignedTransactionFut {
-        utxo_common::sign_maker_payment(
-            self.clone(),
-            maker_payment_tx,
-            time_lock,
-            maker_pub,
-            secret_hash,
-            swap_unique_data,
-        )
+    fn send_taker_spends_maker_payment_preimage(&self, preimage: &[u8], secret: &[u8]) -> TransactionFut {
+        utxo_common::send_taker_spends_maker_payment_preimage(self.clone(), preimage, secret)
     }
 
     fn send_taker_refunds_payment(

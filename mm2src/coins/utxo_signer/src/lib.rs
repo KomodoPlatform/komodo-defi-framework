@@ -10,7 +10,7 @@ use mm2_err_handle::prelude::*;
 use rpc::v1::types::{Transaction as RpcTransaction, H256 as H256Json};
 use script::Script;
 
-pub mod sign_common;
+mod sign_common;
 pub mod sign_params;
 pub mod with_key_pair;
 pub mod with_trezor;

@@ -59,7 +59,7 @@ pub(crate) fn p2pkh_spend_with_signature(
     }
 }
 
-pub fn p2sh_spend_with_signature(
+pub(crate) fn p2sh_spend_with_signature(
     unsigned_input: &UnsignedTransactionInput,
     redeem_script: Script,
     script_data: Script,
