@@ -7614,7 +7614,6 @@ fn test_gui_storage() {
     .unwrap();
     assert!(resp.0.is_success(), "!gui_storage::activate_coins: {}", resp.1);
 
-    // mm using same DB dir that should kick start the order
     let mut new_conf = Mm2TestConf::seednode(passphrase, &json!([]));
     new_conf.conf["dbdir"] = mm.folder.join("DB").to_str().unwrap().into();
     new_conf.conf["log"] = mm.folder.join("mm2_dup.log").to_str().unwrap().into();
@@ -7656,4 +7655,21 @@ fn test_gui_storage() {
         },
     ];
     assert_eq!(actual.result, expected);
+
+    let resp = block_on(mm.rpc(&json!({
+        "userpass": mm.userpass,
+        "mmrpc": "2.0",
+        "method": "gui_storage::get_enabled_account",
+    })))
+    .unwrap();
+    assert!(resp.0.is_success(), "!gui_storage::get_enabled_account: {}", resp.1);
+    let actual: RpcV2Response<gui_storage::AccountWithCoins> = json::from_str(&resp.1).unwrap();
+    let expected = gui_storage::AccountWithCoins {
+        account_id: gui_storage::AccountId::Iguana,
+        name: "My Iguana wallet".to_string(),
+        description: String::new(),
+        balance_usd: BigDecimal::from(0i32),
+        coins: vec!["RICK", "MORTY", "KMD"].into_iter().collect(),
+    };
+    assert_eq!(actual, expected);
 }

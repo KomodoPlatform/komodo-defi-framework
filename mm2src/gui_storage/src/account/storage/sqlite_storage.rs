@@ -11,7 +11,7 @@ use db_common::sqlite::{is_constraint_error, SqliteConnShared};
 use mm2_core::mm_ctx::MmArc;
 use mm2_err_handle::prelude::*;
 use mm2_number::BigDecimal;
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, BTreeSet};
 use std::str::FromStr;
 use std::sync::{Arc, MutexGuard};
 
@@ -220,6 +220,24 @@ impl SqliteAccountStorage {
             .or_mm_err(|| AccountStorageError::NoEnabledAccount)
     }
 
+    /// Loads the given `accoint_id` activated coins.
+    ///
+    /// # Note
+    ///
+    /// The function doesn't check if the account is present in `account_table`.
+    fn load_account_coins(conn: &Connection, account_id: &AccountId) -> AccountStorageResult<BTreeSet<String>> {
+        let mut query = SqlQuery::select_from(conn, account_coins_table::TABLE_NAME)?;
+
+        let (account_type, account_id, device_pubkey) = account_id.to_sql_tuple();
+        query
+            .field(account_coins_table::COIN)?
+            .and_where_eq(account_table::ACCOUNT_TYPE, account_type)?
+            .and_where_eq(account_table::ACCOUNT_IDX, account_id)?
+            .and_where_eq_param(account_table::DEVICE_PUBKEY, device_pubkey)?;
+        let coins = query.query(|row| row.get::<_, String>(0))?.into_iter().collect();
+        Ok(coins)
+    }
+
     /// Loads `AccountWithCoins`.
     /// This method takes `conn` to ensure data coherence.
     fn load_account_with_coins(
@@ -230,15 +248,8 @@ impl SqliteAccountStorage {
             Some(acc) => acc,
             None => return Ok(None),
         };
-        let mut query = SqlQuery::select_from(conn, account_coins_table::TABLE_NAME)?;
 
-        let (account_type, account_id, device_pubkey) = account_id.to_sql_tuple();
-        query
-            .field(account_coins_table::COIN)?
-            .and_where_eq(account_table::ACCOUNT_TYPE, account_type)?
-            .and_where_eq(account_table::ACCOUNT_IDX, account_id)?
-            .and_where_eq_param(account_table::DEVICE_PUBKEY, device_pubkey)?;
-        let coins = query.query(|row| row.get::<_, String>(0))?.into_iter().collect();
+        let coins = Self::load_account_coins(conn, account_id)?;
         Ok(Some(AccountWithCoins { account_info, coins }))
     }
 
@@ -325,7 +336,7 @@ impl SqliteAccountStorage {
         sql_delete_account
             .and_where_eq(account_table::ACCOUNT_TYPE, account_type)?
             .and_where_eq(account_table::ACCOUNT_IDX, account_idx)?
-            .and_where_eq_param(account_table::DEVICE_PUBKEY, device_pubkey.clone())?;
+            .and_where_eq_param(account_table::DEVICE_PUBKEY, device_pubkey)?;
 
         let deleted = sql_delete_account.delete()?;
         // The number of deleted accounts is 0 if only there is no account with the given `account_id`.
@@ -371,6 +382,18 @@ impl AccountStorage for SqliteAccountStorage {
 
         transaction.commit()?;
         Ok(())
+    }
+
+    async fn load_account_coins(&self, account_id: AccountId) -> AccountStorageResult<BTreeSet<String>> {
+        let conn = self.lock_conn_mutex()?;
+        let coins = Self::load_account_coins(&conn, &account_id)?;
+
+        // Check if the account is present in `account_table` if **only** there are no activated coins.
+        // Otherwise we're sure that the account exists.
+        if coins.is_empty() && !Self::account_exists(&conn, &account_id)? {
+            return MmError::err(AccountStorageError::NoSuchAccount(account_id));
+        }
+        Ok(coins)
     }
 
     async fn load_accounts(&self) -> AccountStorageResult<BTreeMap<AccountId, AccountInfo>> {

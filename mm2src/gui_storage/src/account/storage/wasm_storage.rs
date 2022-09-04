@@ -190,6 +190,16 @@ impl AccountStorage for WasmAccountStorage {
     /// [`WasmAccountStorage::lock_db_mutex`] initializes the database on the first call.
     async fn init(&self) -> AccountStorageResult<()> { self.lock_db_mutex().await.map(|_locked_db| ()) }
 
+    async fn load_account_coins(&self, account_id: AccountId) -> AccountStorageResult<BTreeSet<String>> {
+        let locked_db = self.lock_db_mutex().await?;
+        let transaction = locked_db.inner.transaction().await?;
+
+        let account = Self::load_account_with_coins(&transaction, &account_id)
+            .await?
+            .or_mm_err(|| AccountStorageError::NoSuchAccount(account_id))?;
+        Ok(account.coins)
+    }
+
     async fn load_accounts(&self) -> AccountStorageResult<BTreeMap<AccountId, AccountInfo>> {
         let locked_db = self.lock_db_mutex().await?;
         let transaction = locked_db.inner.transaction().await?;

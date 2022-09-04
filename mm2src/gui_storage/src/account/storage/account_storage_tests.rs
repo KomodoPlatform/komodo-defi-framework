@@ -4,10 +4,15 @@ use mm2_number::BigDecimal;
 use mm2_test_helpers::for_tests::mm_ctx_with_custom_db;
 use std::collections::{BTreeMap, BTreeSet};
 
+const HD_0_ACCOUNT: AccountId = AccountId::HD { account_idx: 0 };
+const HD_1_ACCOUNT: AccountId = AccountId::HD { account_idx: 1 };
+const HD_2_ACCOUNT: AccountId = AccountId::HD { account_idx: 2 };
+const HD_3_ACCOUNT: AccountId = AccountId::HD { account_idx: 3 };
+
 fn account_ids_for_test() -> Vec<AccountId> {
     vec![
         AccountId::Iguana,
-        AccountId::HD { account_idx: 0 },
+        HD_0_ACCOUNT,
         AccountId::HW {
             device_pubkey: HwPubkey::from("1549128bbfb33b997949b4105b6a6371c998e212"),
         },
@@ -17,7 +22,7 @@ fn account_ids_for_test() -> Vec<AccountId> {
         AccountId::HW {
             device_pubkey: HwPubkey::from("69a20008cea0c15ee483b5bbdff942752634aa07"),
         },
-        AccountId::HD { account_idx: 1 },
+        HD_1_ACCOUNT,
     ]
 }
 
@@ -118,17 +123,17 @@ async fn test_enable_account_impl() {
         .await
         .expect_err("'enable_account' should have failed due to the selected account is not present in the storage");
     match error.into_inner() {
-        AccountStorageError::NoSuchAccount(AccountId::HD { account_idx: 3 }) => (),
+        AccountStorageError::NoSuchAccount(HD_3_ACCOUNT) => (),
         other => panic!("Expected 'NoSuchAccount(HD)', found {:?}", other),
     }
     let actual_enabled = storage.load_enabled_account_id().await.unwrap();
     assert_eq!(actual_enabled, EnabledAccountId::Iguana);
 
     // Upload new accounts.
-    let account_hd_1 = accounts.get(&AccountId::HD { account_idx: 0 }).unwrap().clone();
+    let account_hd_1 = accounts.get(&HD_0_ACCOUNT).unwrap().clone();
     storage.upload_account(account_hd_1).await.unwrap();
 
-    let account_hd_2 = accounts.get(&AccountId::HD { account_idx: 1 }).unwrap().clone();
+    let account_hd_2 = accounts.get(&HD_1_ACCOUNT).unwrap().clone();
     storage.upload_account(account_hd_2).await.unwrap();
 
     // Check if Iguana account is still enabled.
@@ -159,9 +164,8 @@ async fn test_set_name_desc_balance_impl() {
         .await
         .unwrap();
 
-    let hd_id = AccountId::HD { account_idx: 1 };
     storage
-        .set_description(hd_id.clone(), "New description".to_string())
+        .set_description(HD_1_ACCOUNT, "New description".to_string())
         .await
         .unwrap();
 
@@ -172,19 +176,19 @@ async fn test_set_name_desc_balance_impl() {
 
     let mut expected = accounts_to_map(accounts);
     expected.get_mut(&AccountId::Iguana).unwrap().name = "New name".to_string();
-    expected.get_mut(&hd_id).unwrap().description = "New description".to_string();
+    expected.get_mut(&HD_1_ACCOUNT).unwrap().description = "New description".to_string();
     expected.get_mut(&hw_id).unwrap().balance_usd = BigDecimal::from(23);
 
     let actual = storage.load_accounts().await.unwrap();
     assert_eq!(actual, expected);
 
     let error = storage
-        .set_name(AccountId::HD { account_idx: 2 }, "New name 4".to_string())
+        .set_name(HD_2_ACCOUNT, "New name 4".to_string())
         .await
         .expect_err("'AccountStorage::set_name' should have failed due to an unknown 'AccountId'");
 
     match error.into_inner() {
-        AccountStorageError::NoSuchAccount(AccountId::HD { account_idx: 2 }) => (),
+        AccountStorageError::NoSuchAccount(HD_2_ACCOUNT) => (),
         other => panic!("Expected 'NoSuchAccount(HD)' error, found: {}", other),
     }
 }
@@ -195,9 +199,16 @@ async fn test_activate_deactivate_coins_impl() {
     storage.init().await.unwrap();
 
     let accounts = accounts_for_test();
-    let accounts_map = accounts_to_map(accounts.clone());
+
+    let error = storage.load_account_coins(AccountId::Iguana).await.expect_err(
+        "'AccountStorage::load_enabled_account_with_coins' should have failed since no account was enabled",
+    );
+    match error.into_inner() {
+        AccountStorageError::NoSuchAccount(AccountId::Iguana) => (),
+        other => panic!("Expected 'NoSuchAccount(Iguana)' error, found: {}", other),
+    }
+
     fill_storage(storage.as_ref(), accounts).await.unwrap();
-    storage.enable_account(EnabledAccountId::Iguana).await.unwrap();
 
     // Deactivating unknown coins should never fail.
     storage
@@ -205,17 +216,100 @@ async fn test_activate_deactivate_coins_impl() {
         .await
         .unwrap();
 
+    // Try to reactivate `RICK` coin, it should be ignored.
     storage
         .activate_coins(AccountId::Iguana, vec!["RICK".to_string()])
         .await
         .unwrap();
-    // Try to reactivate `RICK` coin, it should be ignored.
+    // Try to reactivate `MORTY` and activate `BTC` coins, `MORTY` should be ignored.
+    storage
+        .activate_coins(AccountId::Iguana, vec!["MORTY".to_string(), "BTC".to_string()])
+        .await
+        .unwrap();
+    storage
+        .activate_coins(HD_0_ACCOUNT, vec![
+            "MORTY".to_string(),
+            "QTUM".to_string(),
+            "KMD".to_string(),
+        ])
+        .await
+        .unwrap();
+
+    let actual = storage.load_account_coins(AccountId::Iguana).await.unwrap();
+    let expected = vec!["RICK".to_string(), "MORTY".to_string(), "BTC".to_string()]
+        .into_iter()
+        .collect();
+    assert_eq!(actual, expected);
+
+    let actual = storage.load_account_coins(HD_0_ACCOUNT).await.unwrap();
+    let expected = vec!["MORTY".to_string(), "QTUM".to_string(), "KMD".to_string()]
+        .into_iter()
+        .collect();
+    assert_eq!(actual, expected);
+
+    // Deactivate `QTUM` and an unknown `BCH` coins for the `HD{0}` account.
+    storage
+        .deactivate_coins(HD_0_ACCOUNT, vec!["BCH".to_string(), "QTUM".to_string()])
+        .await
+        .unwrap();
+    let actual = storage.load_account_coins(HD_0_ACCOUNT).await.unwrap();
+    let expected = vec!["MORTY".to_string(), "KMD".to_string()].into_iter().collect();
+    assert_eq!(actual, expected);
+
+    // Deactivate all `HD{0}` account's coins.
+    storage
+        .deactivate_coins(HD_0_ACCOUNT, vec!["MORTY".to_string(), "KMD".to_string()])
+        .await
+        .unwrap();
+    let actual = storage.load_account_coins(HD_0_ACCOUNT).await.unwrap();
+    assert!(actual.is_empty());
+
+    // Try to activate a coin for an unknown `HD{2}` account.
+    let error = storage
+        .activate_coins(HD_2_ACCOUNT, vec!["RICK".to_string()])
+        .await
+        .expect_err("'AccountStorage::activate_coins' should have failed due to an unknown account_id");
+    match error.into_inner() {
+        AccountStorageError::NoSuchAccount(HD_2_ACCOUNT) => (),
+        other => panic!("Expected 'NoSuchAccount(HD)' error, found: {}", other),
+    }
+
+    // Try to deactivate a coin for an unknown `HD{3}` account.
+    let error = storage
+        .deactivate_coins(HD_3_ACCOUNT, vec!["MORTY".to_string()])
+        .await
+        .expect_err("'AccountStorage::deactivate_coins' should have failed due to an unknown account_id");
+    match error.into_inner() {
+        AccountStorageError::NoSuchAccount(HD_3_ACCOUNT) => (),
+        other => panic!("Expected 'NoSuchAccount(HD)' error, found: {}", other),
+    }
+}
+
+async fn test_load_enabled_account_with_coins_impl() {
+    let ctx = mm_ctx_with_custom_db();
+    let storage = AccountStorageBuilder::new(&ctx).build().unwrap();
+    storage.init().await.unwrap();
+
+    let accounts = accounts_for_test();
+    let accounts_map = accounts_to_map(accounts.clone());
+    fill_storage(storage.as_ref(), accounts).await.unwrap();
+
+    let error = storage.load_enabled_account_with_coins().await.expect_err(
+        "'AccountStorage::load_enabled_account_with_coins' should have failed since no account was enabled",
+    );
+    match error.into_inner() {
+        AccountStorageError::NoEnabledAccount => (),
+        other => panic!("Expected 'NoEnabledAccount' error, found: {}", other),
+    }
+
+    storage.enable_account(EnabledAccountId::Iguana).await.unwrap();
+
     storage
         .activate_coins(AccountId::Iguana, vec!["RICK".to_string(), "MORTY".to_string()])
         .await
         .unwrap();
     storage
-        .activate_coins(AccountId::HD { account_idx: 0 }, vec![
+        .activate_coins(HD_0_ACCOUNT, vec![
             "MORTY".to_string(),
             "QTUM".to_string(),
             "KMD".to_string(),
@@ -230,69 +324,35 @@ async fn test_activate_deactivate_coins_impl() {
     };
     assert_eq!(actual, expected);
 
-    // Enable `HD{0}` account to load its activated coins.
+    // Enable `HD{0}` account and load its activated coins.
     storage
         .enable_account(EnabledAccountId::HD { account_idx: 0 })
         .await
         .unwrap();
     let actual = storage.load_enabled_account_with_coins().await.unwrap();
     let expected = AccountWithCoins {
-        account_info: accounts_map.get(&AccountId::HD { account_idx: 0 }).unwrap().clone(),
+        account_info: accounts_map.get(&HD_0_ACCOUNT).unwrap().clone(),
         coins: vec!["MORTY".to_string(), "QTUM".to_string(), "KMD".to_string()]
             .into_iter()
             .collect(),
     };
     assert_eq!(actual, expected);
 
-    // Deactivate `QTUM` and an unknown `BCH` coins for the `HD{0}` account.
-    storage
-        .deactivate_coins(AccountId::HD { account_idx: 0 }, vec![
-            "BCH".to_string(),
-            "QTUM".to_string(),
-        ])
-        .await
-        .unwrap();
-    let actual = storage.load_enabled_account_with_coins().await.unwrap();
-    let expected = AccountWithCoins {
-        account_info: accounts_map.get(&AccountId::HD { account_idx: 0 }).unwrap().clone(),
-        coins: vec!["MORTY".to_string(), "KMD".to_string()].into_iter().collect(),
-    };
-    assert_eq!(actual, expected);
-
     // Deactivate all `HD{0}` account's coins.
     storage
-        .deactivate_coins(AccountId::HD { account_idx: 0 }, vec![
+        .deactivate_coins(HD_0_ACCOUNT, vec![
             "MORTY".to_string(),
+            "QTUM".to_string(),
             "KMD".to_string(),
         ])
         .await
         .unwrap();
     let actual = storage.load_enabled_account_with_coins().await.unwrap();
     let expected = AccountWithCoins {
-        account_info: accounts_map.get(&AccountId::HD { account_idx: 0 }).unwrap().clone(),
+        account_info: accounts_map.get(&HD_0_ACCOUNT).unwrap().clone(),
         coins: BTreeSet::new(),
     };
     assert_eq!(actual, expected);
-
-    // Try to activate a coin for an unknown `HD{2}` account.
-    let error = storage
-        .activate_coins(AccountId::HD { account_idx: 2 }, vec!["RICK".to_string()])
-        .await
-        .expect_err("'AccountStorage::activate_coins' should have failed due to an unknown account_id");
-    match error.into_inner() {
-        AccountStorageError::NoSuchAccount(AccountId::HD { account_idx: 2 }) => (),
-        other => panic!("Expected 'NoSuchAccount(HD)' error, found: {}", other),
-    }
-
-    // Try to deactivate a coin for an unknown `HD{3}` account.
-    let error = storage
-        .deactivate_coins(AccountId::HD { account_idx: 3 }, vec!["MORTY".to_string()])
-        .await
-        .expect_err("'AccountStorage::deactivate_coins' should have failed due to an unknown account_id");
-    match error.into_inner() {
-        AccountStorageError::NoSuchAccount(AccountId::HD { account_idx: 3 }) => (),
-        other => panic!("Expected 'NoSuchAccount(HD)' error, found: {}", other),
-    }
 }
 
 async fn test_load_accounts_with_enabled_flag_impl() {
@@ -318,7 +378,7 @@ async fn test_load_accounts_with_enabled_flag_impl() {
         .await
         .unwrap();
     let actual = storage.load_accounts_with_enabled_flag().await.unwrap();
-    let expected = tag_with_enabled_flag(accounts_map.clone(), AccountId::HD { account_idx: 0 });
+    let expected = tag_with_enabled_flag(accounts_map.clone(), HD_0_ACCOUNT);
     assert_eq!(actual, expected);
 
     storage
@@ -326,7 +386,7 @@ async fn test_load_accounts_with_enabled_flag_impl() {
         .await
         .unwrap();
     let actual = storage.load_accounts_with_enabled_flag().await.unwrap();
-    let expected = tag_with_enabled_flag(accounts_map.clone(), AccountId::HD { account_idx: 1 });
+    let expected = tag_with_enabled_flag(accounts_map.clone(), HD_1_ACCOUNT);
     assert_eq!(actual, expected);
 
     // Try to re-enable the same `HD{1}` account.
@@ -335,7 +395,7 @@ async fn test_load_accounts_with_enabled_flag_impl() {
         .await
         .unwrap();
     let actual = storage.load_accounts_with_enabled_flag().await.unwrap();
-    let expected = tag_with_enabled_flag(accounts_map.clone(), AccountId::HD { account_idx: 1 });
+    let expected = tag_with_enabled_flag(accounts_map.clone(), HD_1_ACCOUNT);
     assert_eq!(actual, expected);
 
     storage.enable_account(EnabledAccountId::Iguana).await.unwrap();
@@ -378,10 +438,10 @@ async fn test_delete_account_impl() {
         .enable_account(EnabledAccountId::HD { account_idx: 1 })
         .await
         .unwrap();
-    storage.delete_account(AccountId::HD { account_idx: 0 }).await.unwrap();
+    storage.delete_account(HD_0_ACCOUNT).await.unwrap();
     let actual = storage.load_enabled_account_with_coins().await.unwrap();
     let expected = AccountWithCoins {
-        account_info: accounts_map.get(&AccountId::HD { account_idx: 1 }).unwrap().clone(),
+        account_info: accounts_map.get(&HD_1_ACCOUNT).unwrap().clone(),
         coins: BTreeSet::new(),
     };
     assert_eq!(actual, expected);
@@ -391,7 +451,7 @@ async fn test_delete_account_impl() {
         .enable_account(EnabledAccountId::HD { account_idx: 1 })
         .await
         .unwrap();
-    storage.delete_account(AccountId::HD { account_idx: 1 }).await.unwrap();
+    storage.delete_account(HD_1_ACCOUNT).await.unwrap();
     let error = storage
         .load_enabled_account_with_coins()
         .await
@@ -419,10 +479,7 @@ async fn test_delete_account_clears_coins_impl() {
         .unwrap();
     // Activate also coins for another account.
     storage
-        .activate_coins(AccountId::HD { account_idx: 0 }, vec![
-            "RICK".to_string(),
-            "KMD".to_string(),
-        ])
+        .activate_coins(HD_0_ACCOUNT, vec!["RICK".to_string(), "KMD".to_string()])
         .await
         .unwrap();
 
@@ -451,7 +508,7 @@ async fn test_delete_account_clears_coins_impl() {
         .unwrap();
     let actual = storage.load_enabled_account_with_coins().await.unwrap();
     let expected = AccountWithCoins {
-        account_info: accounts_map.get(&AccountId::HD { account_idx: 0 }).unwrap().clone(),
+        account_info: accounts_map.get(&HD_0_ACCOUNT).unwrap().clone(),
         coins: vec!["RICK".to_string(), "KMD".to_string()].into_iter().collect(),
     };
     assert_eq!(actual, expected);
@@ -475,6 +532,9 @@ mod native_tests {
 
     #[test]
     fn test_activate_deactivate_coins() { block_on(super::test_activate_deactivate_coins_impl()) }
+
+    #[test]
+    fn test_load_enabled_account_with_coins() { block_on(super::test_load_enabled_account_with_coins_impl()) }
 
     #[test]
     fn test_load_accounts_with_enabled_flag() { block_on(super::test_load_accounts_with_enabled_flag_impl()) }
@@ -506,6 +566,9 @@ mod wasm_tests {
 
     #[wasm_bindgen_test]
     async fn test_activate_deactivate_coins() { super::test_activate_deactivate_coins_impl().await }
+
+    #[wasm_bindgen_test]
+    async fn test_load_enabled_account_with_coins() { super::test_load_enabled_account_with_coins_impl().await }
 
     #[wasm_bindgen_test]
     async fn test_load_accounts_with_enabled_flag() { super::test_load_accounts_with_enabled_flag_impl().await }

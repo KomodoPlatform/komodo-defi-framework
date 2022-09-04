@@ -1,6 +1,6 @@
 use crate::account::storage::AccountStorageError;
-use crate::account::{AccountId, AccountInfo, AccountWithEnabledFlag, EnabledAccountId, MAX_ACCOUNT_DESCRIPTION_LENGTH,
-                     MAX_ACCOUNT_NAME_LENGTH, MAX_TICKER_LENGTH};
+use crate::account::{AccountId, AccountInfo, AccountWithCoins, AccountWithEnabledFlag, EnabledAccountId,
+                     MAX_ACCOUNT_DESCRIPTION_LENGTH, MAX_ACCOUNT_NAME_LENGTH, MAX_TICKER_LENGTH};
 use crate::context::AccountContext;
 use common::{HttpStatusCode, StatusCode, SuccessResponse};
 use derive_more::Display;
@@ -9,6 +9,7 @@ use mm2_err_handle::prelude::*;
 use mm2_number::BigDecimal;
 use ser_error_derive::SerializeErrorType;
 use serde::{Deserialize, Serialize};
+use std::collections::BTreeSet;
 
 #[derive(Display, Serialize, SerializeErrorType)]
 #[serde(tag = "error_type", content = "error_data")]
@@ -137,6 +138,20 @@ pub struct CoinRequest {
 pub struct GetAccountsRequest;
 
 #[derive(Deserialize)]
+pub struct GetAccountCoinsRequest {
+    account_id: AccountId,
+}
+
+#[derive(Serialize)]
+pub struct GetAccountCoinsResponse {
+    account_id: AccountId,
+    coins: BTreeSet<String>,
+}
+
+#[derive(Deserialize)]
+pub struct GetEnabledAccountRequest;
+
+#[derive(Deserialize)]
 pub struct SetBalanceRequest {
     account_id: AccountId,
     balance_usd: BigDecimal,
@@ -204,7 +219,7 @@ pub async fn delete_account(ctx: MmArc, req: DeleteAccountRequest) -> MmResult<S
 }
 
 /// Loads accounts from the storage and marks one account as enabled **only**.
-/// If an account has not been enabled yet, this RPC returns [`AccountRpcError::NoEnabledAccount`] error.
+/// If no account has been enabled yet, this RPC returns [`AccountRpcError::NoEnabledAccount`] error.
 ///
 /// # Note
 ///
@@ -224,6 +239,42 @@ pub async fn get_accounts(
         .map(|(_account_id, account)| account)
         .collect();
     Ok(accounts)
+}
+
+/// Loads activated coins of the given `account_id` from the storage.
+///
+/// # Note
+///
+/// The returned coins are sorted.
+pub async fn get_account_coins(
+    ctx: MmArc,
+    req: GetAccountCoinsRequest,
+) -> MmResult<GetAccountCoinsResponse, AccountRpcError> {
+    let account_ctx = AccountContext::from_ctx(&ctx).map_to_mm(AccountRpcError::Internal)?;
+    let coins = account_ctx
+        .storage()
+        .await?
+        .load_account_coins(req.account_id.clone())
+        .await?;
+    Ok(GetAccountCoinsResponse {
+        account_id: req.account_id,
+        coins,
+    })
+}
+
+/// Loads an enabled account with activated coins from the storage.
+/// If no account has been enabled yet, this RPC returns [`AccountRpcError::NoEnabledAccount`] error.
+///
+/// # Note
+///
+/// The account coins are sorted.
+pub async fn get_enabled_account(
+    ctx: MmArc,
+    _req: GetEnabledAccountRequest,
+) -> MmResult<AccountWithCoins, AccountRpcError> {
+    let account_ctx = AccountContext::from_ctx(&ctx).map_to_mm(AccountRpcError::Internal)?;
+    let account = account_ctx.storage().await?.load_enabled_account_with_coins().await?;
+    Ok(account)
 }
 
 /// Sets the account name.

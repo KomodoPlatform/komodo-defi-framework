@@ -942,6 +942,7 @@ pub struct TendermintActivationResult {
 }
 
 pub mod gui_storage {
+    use std::collections::BTreeSet;
     use mm2_number::BigDecimal;
 
     #[derive(Debug, Deserialize, PartialEq)]
@@ -961,5 +962,15 @@ pub mod gui_storage {
         pub description: String,
         pub balance_usd: BigDecimal,
         pub enabled: bool,
+    }
+
+    #[derive(Debug, Deserialize, PartialEq)]
+    #[serde(deny_unknown_fields)]
+    pub struct AccountWithCoins {
+        pub account_id: AccountId,
+        pub name: String,
+        pub description: String,
+        pub balance_usd: BigDecimal,
+        pub coins: BTreeSet<String>,
     }
 }

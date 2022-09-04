@@ -5,7 +5,7 @@ use derive_more::Display;
 use mm2_core::mm_ctx::MmArc;
 use mm2_err_handle::prelude::*;
 use mm2_number::BigDecimal;
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, BTreeSet};
 use std::error::Error as StdError;
 
 #[cfg(any(test, target_arch = "wasm32"))]
@@ -144,6 +144,9 @@ impl<'a> AccountStorageBuilder<'a> {
 pub(crate) trait AccountStorage: Send + Sync {
     /// Initialize the storage.
     async fn init(&self) -> AccountStorageResult<()>;
+
+    /// Loads activated coins of the given `account_id`.
+    async fn load_account_coins(&self, account_id: AccountId) -> AccountStorageResult<BTreeSet<String>>;
 
     /// Loads accounts from the storage.
     async fn load_accounts(&self) -> AccountStorageResult<BTreeMap<AccountId, AccountInfo>>;
