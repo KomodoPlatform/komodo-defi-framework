@@ -200,6 +200,7 @@ pub fn run_optimization_pragmas(conn: &Connection) -> Result<(), SqlError> {
     conn.query_row("pragma journal_mode = WAL;", NO_PARAMS, |row| row.get::<_, String>(0))?;
     conn.execute("pragma synchronous = normal;", NO_PARAMS)?;
     conn.execute("pragma temp_store = memory;", NO_PARAMS)?;
+    conn.execute("pragma foreign_keys = ON;", NO_PARAMS)?;
     Ok(())
 }
 

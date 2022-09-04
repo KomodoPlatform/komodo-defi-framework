@@ -177,7 +177,7 @@ impl<'a> SqlCreateTable<'a> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::sql_constraint::UniqueConstraint;
+    use crate::sql_constraint::Unique;
 
     #[test]
     fn test_sql_create() {
@@ -246,11 +246,7 @@ mod tests {
         create
             .column(SqlColumn::new("id", SqlType::Integer).not_null().primary())
             .column(SqlColumn::new("uuid", SqlType::Varchar(255)).not_null())
-            .constraint(
-                UniqueConstraint::new(["id", "uuid"])
-                    .unwrap()
-                    .name("id_uuid_constraint"),
-            );
+            .constraint(Unique::new("id_uuid_constraint", ["id", "uuid"]).unwrap());
         let actual = create.sql().unwrap();
         let expected = "CREATE TABLE my_swaps (\
             id INTEGER NOT NULL PRIMARY KEY, \

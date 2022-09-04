@@ -154,14 +154,11 @@ impl SqliteAccountStorage {
                 SqlType::Varchar(MAX_ACCOUNT_DESCRIPTION_LENGTH),
             ))
             .column(SqlColumn::new(account_table::BALANCE_USD, SqlType::Varchar(BALANCE_MAX_LENGTH)).not_null())
-            .constraint(
-                UniqueConstraint::new([
-                    account_table::ACCOUNT_TYPE,
-                    account_table::ACCOUNT_IDX,
-                    account_table::DEVICE_PUBKEY,
-                ])?
-                .name(account_table::ACCOUNT_ID_CONSTRAINT),
-            );
+            .constraint(Unique::new(account_table::ACCOUNT_ID_CONSTRAINT, [
+                account_table::ACCOUNT_TYPE,
+                account_table::ACCOUNT_IDX,
+                account_table::DEVICE_PUBKEY,
+            ])?);
         create_sql.create().map_to_mm(AccountStorageError::from)
     }
 
@@ -176,15 +173,12 @@ impl SqliteAccountStorage {
                 SqlType::Varchar(DEVICE_PUBKEY_MAX_LENGTH),
             ))
             .column(SqlColumn::new(account_coins_table::COIN, SqlType::Varchar(MAX_TICKER_LENGTH)).not_null())
-            .constraint(
-                UniqueConstraint::new([
-                    account_coins_table::ACCOUNT_TYPE,
-                    account_coins_table::ACCOUNT_IDX,
-                    account_coins_table::DEVICE_PUBKEY,
-                    account_coins_table::COIN,
-                ])?
-                .name(account_coins_table::ACCOUNT_ID_COIN_CONSTRAINT),
-            );
+            .constraint(Unique::new(account_coins_table::ACCOUNT_ID_COIN_CONSTRAINT, [
+                account_coins_table::ACCOUNT_TYPE,
+                account_coins_table::ACCOUNT_IDX,
+                account_coins_table::DEVICE_PUBKEY,
+                account_coins_table::COIN,
+            ])?);
         create_sql.create().map_to_mm(AccountStorageError::from)
     }
 

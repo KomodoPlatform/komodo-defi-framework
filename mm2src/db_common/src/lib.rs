@@ -11,7 +11,7 @@
 #[cfg(not(target_arch = "wasm32"))]
 pub mod sql_build {
     pub use crate::sql_condition::SqlCondition;
-    pub use crate::sql_constraint::{SqlConstraint, UniqueConstraint};
+    pub use crate::sql_constraint::{foreign_key, ForeignKey, PrimaryKey, SqlConstraint, Unique};
     pub use crate::sql_create::{SqlColumn, SqlCreateTable, SqlType, TableKey};
     pub use crate::sql_delete::SqlDelete;
     pub use crate::sql_insert::SqlInsert;
