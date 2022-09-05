@@ -150,7 +150,10 @@ impl Qrc20Coin {
         }
 
         if sender != erc20_payment.sender {
-            return MmError::err(ValidatePaymentError::wrong_sender_addr(erc20_payment.sender, sender));
+            return MmError::err(ValidatePaymentError::WrongPaymentTx(format!(
+                "Payment tx {:?} was sent from wrong address, expected {:?}",
+                erc20_payment.sender, sender
+            )));
         }
 
         if expected_swap_contract_address != erc20_payment.swap_contract_address {

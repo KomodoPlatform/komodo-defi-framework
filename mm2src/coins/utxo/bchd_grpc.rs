@@ -80,7 +80,12 @@ pub struct ValidateSlpUtxosErr {
 }
 
 impl From<ValidateSlpUtxosErr> for ValidatePaymentError {
-    fn from(err: ValidateSlpUtxosErr) -> Self { Self::InvalidPaymentTxData(err.to_string()) }
+    fn from(err: ValidateSlpUtxosErr) -> Self {
+        match err.kind {
+            ValidateSlpUtxosErrKind::MultiReqErr(_) => Self::Transport(err.to_string()),
+            _ => Self::InvalidRpcResponse(err.to_string()),
+        }
+    }
 }
 
 impl From<GrpcWebMultiUrlReqErr> for ValidateSlpUtxosErr {

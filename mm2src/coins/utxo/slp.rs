@@ -101,13 +101,10 @@ struct SlpTxPreimage {
 
 #[derive(Debug, Display)]
 enum ValidateHtlcError {
-    #[display(fmt = "TxParseError: {:?}", _0)]
-    TxParseError(SerError),
     #[display(fmt = "OpReturnParseError: {:?}", _0)]
     OpReturnParseError(ParseSlpScriptError),
     InvalidSlpUtxo(ValidateSlpUtxosErr),
     NumConversionErr(NumConversError),
-    ValidatePaymentError(String),
     UnexpectedDerivationMethod(UnexpectedDerivationMethod),
 }
 
@@ -125,14 +122,6 @@ impl From<ValidateSlpUtxosErr> for ValidateHtlcError {
 
 impl From<UnexpectedDerivationMethod> for ValidateHtlcError {
     fn from(e: UnexpectedDerivationMethod) -> Self { ValidateHtlcError::UnexpectedDerivationMethod(e) }
-}
-
-impl From<ValidateHtlcError> for ValidatePaymentError {
-    fn from(e: ValidateHtlcError) -> Self { ValidatePaymentError::ValidateHtlcError(e.to_string()) }
-}
-
-impl From<ValidatePaymentError> for ValidateHtlcError {
-    fn from(e: ValidatePaymentError) -> Self { ValidateHtlcError::ValidatePaymentError(e.to_string()) }
 }
 
 #[derive(Debug, Display)]
@@ -439,7 +428,8 @@ impl SlpToken {
     }
 
     async fn validate_htlc(&self, input: ValidatePaymentInput) -> Result<(), MmError<ValidatePaymentError>> {
-        let mut tx: UtxoTx = deserialize(input.payment_tx.as_slice()).map_to_mm(ValidateHtlcError::TxParseError)?;
+        let mut tx: UtxoTx = deserialize(input.payment_tx.as_slice())
+            .map_to_mm(|err| ValidatePaymentError::InvalidInput(err.to_string()))?;
         tx.tx_hash_algo = self.platform_coin.as_ref().tx_hash_algo;
         if tx.outputs.len() < 2 {
             return MmError::err(ValidatePaymentError::InvalidPaymentTxData(
@@ -468,20 +458,24 @@ impl SlpToken {
         match slp_tx.transaction {
             SlpTransaction::Send { token_id, amounts } => {
                 if token_id != self.token_id() {
-                    return MmError::err(ValidatePaymentError::InvalidInput("Invalid tx token_id".to_string()));
+                    return MmError::err(ValidatePaymentError::WrongPaymentTx("Invalid tx token_id".to_string()));
                 }
 
                 if amounts.is_empty() {
-                    return MmError::err(ValidatePaymentError::InvalidInput(
+                    return MmError::err(ValidatePaymentError::WrongPaymentTx(
                         "Input amount can't be empty".to_string(),
                     ));
                 }
 
                 if amounts[0] != slp_satoshis {
-                    return MmError::err(ValidatePaymentError::InvalidInput("Invalid input amount".to_string()));
+                    return MmError::err(ValidatePaymentError::WrongPaymentTx("Invalid input amount".to_string()));
                 }
             },
-            _ => return MmError::err(ValidatePaymentError::InvalidInput("Invalid Slp Details".to_string())),
+            _ => {
+                return MmError::err(ValidatePaymentError::InvalidPaymentTxData(
+                    "Invalid Slp Details".to_string(),
+                ))
+            },
         }
 
         let htlc_keypair = self.derive_htlc_key_pair(&input.unique_swap_data);

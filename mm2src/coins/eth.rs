@@ -2719,16 +2719,19 @@ impl EthCoin {
             };
 
             if tx_from_rpc.from != sender {
-                return MmError::err(ValidatePaymentError::wrong_sender_addr(tx_from_rpc, sender));
+                return MmError::err(ValidatePaymentError::WrongPaymentTx(format!(
+                    "Payment tx {:?} was sent from wrong address, expected {:?}",
+                    tx_from_rpc, sender
+                )));
             }
 
             match &selfi.coin_type {
                 EthCoinType::Eth => {
                     if tx_from_rpc.to != Some(expected_swap_contract_address) {
-                        return MmError::err(ValidatePaymentError::wrong_receiver_addr(
-                            tx_from_rpc,
-                            expected_swap_contract_address,
-                        ));
+                        return MmError::err(ValidatePaymentError::WrongPaymentTx(format!(
+                            "Payment tx {:?} was sent to wrong address, expected {:?}",
+                            tx_from_rpc, expected_swap_contract_address,
+                        )));
                     }
 
                     if tx_from_rpc.value != expected_value {
@@ -2780,10 +2783,10 @@ impl EthCoin {
                     token_addr,
                 } => {
                     if tx_from_rpc.to != Some(expected_swap_contract_address) {
-                        return MmError::err(ValidatePaymentError::wrong_receiver_addr(
-                            tx_from_rpc,
-                            expected_swap_contract_address,
-                        ));
+                        return MmError::err(ValidatePaymentError::WrongPaymentTx(format!(
+                            "Payment tx {:?} was sent to wrong address, expected {:?}",
+                            tx_from_rpc, expected_swap_contract_address,
+                        )));
                     }
 
                     let function = SWAP_CONTRACT
@@ -2802,7 +2805,7 @@ impl EthCoin {
                     if decoded[1] != Token::Uint(expected_value) {
                         return MmError::err(ValidatePaymentError::WrongPaymentTx(format!(
                             "Payment tx value arg {:?} is invalid, expected {:?}",
-                            &decoded[1],
+                            decoded[1],
                             Token::Uint(expected_value),
                         )));
                     }
@@ -2810,7 +2813,7 @@ impl EthCoin {
                     if decoded[2] != Token::Address(*token_addr) {
                         return MmError::err(ValidatePaymentError::WrongPaymentTx(format!(
                             "Payment tx token_addr arg {:?} is invalid, expected {:?}",
-                            &decoded[2],
+                            decoded[2],
                             Token::Address(*token_addr)
                         )));
                     }
@@ -2818,7 +2821,7 @@ impl EthCoin {
                     if decoded[3] != Token::Address(selfi.my_address) {
                         return MmError::err(ValidatePaymentError::WrongPaymentTx(format!(
                             "Payment tx receiver arg {:?} is invalid, expected {:?}",
-                            &decoded[3],
+                            decoded[3],
                             Token::Address(selfi.my_address),
                         )));
                     }
@@ -2826,7 +2829,7 @@ impl EthCoin {
                     if decoded[4] != Token::FixedBytes(secret_hash.to_vec()) {
                         return MmError::err(ValidatePaymentError::WrongPaymentTx(format!(
                             "Payment tx secret_hash arg {:?} is invalid, expected {:?}",
-                            &decoded[4],
+                            decoded[4],
                             Token::FixedBytes(secret_hash.to_vec()),
                         )));
                     }
@@ -2834,7 +2837,7 @@ impl EthCoin {
                     if decoded[5] != Token::Uint(U256::from(time_lock)) {
                         return MmError::err(ValidatePaymentError::WrongPaymentTx(format!(
                             "Payment tx time_lock arg {:?} is invalid, expected {:?}",
-                            &decoded[5],
+                            decoded[5],
                             Token::Uint(U256::from(time_lock)),
                         )));
                     }

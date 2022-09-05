@@ -1496,13 +1496,14 @@ pub fn validate_maker_payment<T: UtxoCommonOps + SwapOps>(
     tx.tx_hash_algo = coin.as_ref().tx_hash_algo;
 
     let htlc_keypair = coin.derive_htlc_key_pair(&input.unique_swap_data);
+    let other_pub = &try_f!(
+        Public::from_slice(&input.other_pub).map_to_mm(|err| ValidatePaymentError::InvalidInput(err.to_string()))
+    );
     validate_payment(
         coin.clone(),
         tx,
         DEFAULT_SWAP_VOUT,
-        &try_f!(
-            Public::from_slice(&input.other_pub).map_to_mm(|err| ValidatePaymentError::InvalidInput(err.to_string()))
-        ),
+        other_pub,
         htlc_keypair.public(),
         &input.secret_hash,
         input.amount,
@@ -1520,13 +1521,14 @@ pub fn validate_taker_payment<T: UtxoCommonOps + SwapOps>(
     tx.tx_hash_algo = coin.as_ref().tx_hash_algo;
 
     let htlc_keypair = coin.derive_htlc_key_pair(&input.unique_swap_data);
+    let other_pub = &try_f!(
+        Public::from_slice(&input.other_pub).map_to_mm(|err| ValidatePaymentError::InvalidInput(err.to_string()))
+    );
     validate_payment(
         coin.clone(),
         tx,
         DEFAULT_SWAP_VOUT,
-        &try_f!(
-            Public::from_slice(&input.other_pub).map_to_mm(|err| ValidatePaymentError::InvalidInput(err.to_string()))
-        ),
+        other_pub,
         htlc_keypair.public(),
         &input.secret_hash,
         input.amount,
@@ -3123,11 +3125,14 @@ pub fn validate_payment<T: UtxoCommonOps>(
                 Ok(t) => t,
                 Err(e) => {
                     if attempts > 2 {
-                        return MmError::err(ValidatePaymentError::InvalidRpcResponse(format!(
-                            "Got error {:?} after 3 attempts of getting tx {:?} from RPC",
-                            e,
-                            tx.tx_hash(),
-                        )));
+                        return MmError::err(ValidatePaymentError::WrongPaymentTx(
+                            UtxoRpcError::Internal(format!(
+                                "Got error {:?} after 3 attempts of getting tx {:?} from RPC",
+                                e,
+                                tx.tx_hash(),
+                            ))
+                            .to_string(),
+                        ));
                     };
                     attempts += 1;
                     error!("Error getting tx {:?} from rpc: {:?}", tx.tx_hash(), e);

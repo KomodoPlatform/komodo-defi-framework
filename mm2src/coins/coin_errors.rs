@@ -17,16 +17,6 @@ pub enum ValidatePaymentError {
     Transport(String),
     WrongPaymentTx(String),
     ValidateHtlcError(String),
-    #[display(fmt = "Payment tx {} was sent to wrong address, expected {}", found, expected)]
-    WrongReceiverAddress {
-        found: String,
-        expected: String,
-    },
-    #[display(fmt = "Payment tx {} was sent from wrong address, expected {}", found, expected)]
-    WrongSenderAddress {
-        found: String,
-        expected: String,
-    },
 }
 
 impl From<rlp::DecoderError> for ValidatePaymentError {
@@ -59,30 +49,6 @@ impl From<UtxoRpcError> for ValidatePaymentError {
             UtxoRpcError::Transport(e) => Self::Transport(e.to_string()),
             UtxoRpcError::Internal(e) => Self::InternalError(e),
             _ => Self::InvalidRpcResponse(err.to_string()),
-        }
-    }
-}
-
-impl ValidatePaymentError {
-    pub fn wrong_receiver_addr<Found, Expected>(found: Found, expected: Expected) -> ValidatePaymentError
-    where
-        Found: std::fmt::Debug,
-        Expected: std::fmt::Debug,
-    {
-        ValidatePaymentError::WrongReceiverAddress {
-            found: format!("{:?}", found),
-            expected: format!("{:?}", expected),
-        }
-    }
-
-    pub fn wrong_sender_addr<Found, Expected>(found: Found, expected: Expected) -> ValidatePaymentError
-    where
-        Found: std::fmt::Debug,
-        Expected: std::fmt::Debug,
-    {
-        ValidatePaymentError::WrongSenderAddress {
-            found: format!("{:?}", found),
-            expected: format!("{:?}", expected),
         }
     }
 }
