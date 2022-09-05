@@ -984,7 +984,12 @@ pub async fn p2sh_spending_tx<T: UtxoCommonOps>(coin: &T, input: P2SHSpendingTxI
                 hash: input.prev_transaction.hash(),
                 index: DEFAULT_SWAP_VOUT as u32,
             },
-            amount: input.prev_transaction.outputs[0].value,
+            amount: (*input
+                .prev_transaction
+                .outputs
+                .get(0)
+                .ok_or("Transaction doesn't have any outputs")?)
+            .value,
             witness: Vec::new(),
         }],
         outputs: input.outputs,
