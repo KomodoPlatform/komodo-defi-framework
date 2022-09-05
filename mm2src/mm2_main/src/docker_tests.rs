@@ -389,27 +389,6 @@ mod docker_tests {
         fn rpc_client(&self) -> &UtxoRpcClientEnum { &self.coin.as_ref().rpc_client }
     }
 
-    /// Generate random privkey, create a UTXO coin and fill it's address with the specified balance.
-    fn generate_utxo_coin_with_random_privkey(
-        ticker: &str,
-        balance: BigDecimal,
-    ) -> (MmArc, UtxoStandardCoin, [u8; 32]) {
-        let priv_key = SecretKey::new(&mut rand6::thread_rng());
-        let (ctx, coin) = utxo_coin_from_privkey(ticker, priv_key.as_ref());
-        let timeout = 30; // timeout if test takes more than 30 seconds to run
-        let my_address = coin.my_address().expect("!my_address");
-        fill_address(&coin, &my_address, balance, timeout);
-        (ctx, coin, *priv_key.as_ref())
-    }
-
-    /// Generate random privkey, create a UTXO coin and fill it's address with the specified balance.
-    fn generate_utxo_coin_with_privkey(ticker: &str, balance: BigDecimal, priv_key: &[u8]) {
-        let (_, coin) = utxo_coin_from_privkey(ticker, priv_key);
-        let timeout = 30; // timeout if test takes more than 30 seconds to run
-        let my_address = coin.my_address().expect("!my_address");
-        fill_address(&coin, &my_address, balance, timeout);
-    }
-
     #[test]
     fn test_search_for_swap_tx_spend_native_was_refunded_taker() {
         let timeout = (now_ms() / 1000) + 120; // timeout if test takes more than 120 seconds to run
