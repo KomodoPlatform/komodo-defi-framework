@@ -1,64 +1,16 @@
 use crate::utxo::utxo_builder::{UtxoCoinBuildError, UtxoCoinBuilder, UtxoCoinBuilderCommonOps,
-                                UtxoFieldsWithHardwareWalletBuilder, UtxoFieldsWithIguanaPrivKeyBuilder};
+                                UtxoFieldsWithHardwareWalletBuilder, UtxoFieldsWithIguanaPrivKeyBuilder,
+                                UtxoSyncStatusLoopHandle};
 use crate::utxo::utxo_common::{block_header_utxo_loop, merge_utxo_loop};
 use crate::utxo::{GetUtxoListOps, UtxoArc, UtxoCommonOps, UtxoWeak};
 use crate::{PrivKeyBuildPolicy, UtxoActivationParams};
 use async_trait::async_trait;
 use common::executor::spawn;
-use common::log::{info, LogOnError};
-use futures::channel::mpsc::Sender as AsyncSender;
+use common::log::info;
 use futures::future::{abortable, AbortHandle};
 use mm2_core::mm_ctx::MmArc;
 use mm2_err_handle::prelude::*;
 use serde_json::Value as Json;
-
-pub enum UtxoSyncStatus {
-    SyncingBlockHeaders {
-        current_scanned_block: u64,
-        last_block: u64,
-    },
-    TemporaryError(String),
-    PermanentError(String),
-    Finished {
-        block_number: u64,
-    },
-}
-
-#[derive(Clone)]
-pub struct UtxoSyncStatusLoopHandle(AsyncSender<UtxoSyncStatus>);
-
-impl UtxoSyncStatusLoopHandle {
-    pub fn new(sync_status_notifier: AsyncSender<UtxoSyncStatus>) -> Self {
-        UtxoSyncStatusLoopHandle(sync_status_notifier)
-    }
-
-    pub fn notify_blocks_headers_sync_status(&mut self, current_scanned_block: u64, last_block: u64) {
-        self.0
-            .try_send(UtxoSyncStatus::SyncingBlockHeaders {
-                current_scanned_block,
-                last_block,
-            })
-            .debug_log_with_msg("No one seems interested in UtxoSyncStatus");
-    }
-
-    pub fn notify_on_temp_error(&mut self, error: String) {
-        self.0
-            .try_send(UtxoSyncStatus::TemporaryError(error))
-            .debug_log_with_msg("No one seems interested in UtxoSyncStatus");
-    }
-
-    pub fn notify_on_permanent_error(&mut self, error: String) {
-        self.0
-            .try_send(UtxoSyncStatus::PermanentError(error))
-            .debug_log_with_msg("No one seems interested in UtxoSyncStatus");
-    }
-
-    pub fn notify_sync_finished(&mut self, block_number: u64) {
-        self.0
-            .try_send(UtxoSyncStatus::Finished { block_number })
-            .debug_log_with_msg("No one seems interested in UtxoSyncStatus");
-    }
-}
 
 pub struct UtxoArcBuilder<'a, F, T>
 where

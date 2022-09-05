@@ -4,7 +4,6 @@ use crate::utxo::rpc_clients::{ElectrumClient, ElectrumClientImpl, ElectrumRpcRe
                                UtxoRpcClientEnum};
 use crate::utxo::tx_cache::{UtxoVerboseCacheOps, UtxoVerboseCacheShared};
 use crate::utxo::utxo_block_header_storage::BlockHeaderStorage;
-use crate::utxo::utxo_builder::utxo_arc_builder::UtxoSyncStatusLoopHandle;
 use crate::utxo::utxo_builder::utxo_conf_builder::{UtxoConfBuilder, UtxoConfError, UtxoConfResult};
 use crate::utxo::{output_script, utxo_common, ElectrumBuilderArgs, ElectrumProtoVerifier, RecentlySpentOutPoints,
                   TxFee, UtxoCoinConf, UtxoCoinFields, UtxoHDAccount, UtxoHDWallet, UtxoRpcMode, DEFAULT_GAP_LIMIT,
@@ -14,11 +13,12 @@ use crate::{BlockchainNetwork, CoinTransportMetrics, DerivationMethod, HistorySy
 use async_trait::async_trait;
 use chain::TxHashAlgo;
 use common::executor::{spawn, Timer};
-use common::log::{error, info};
+use common::log::{error, info, LogOnError};
 use common::small_rng;
 use crypto::{Bip32DerPathError, Bip44DerPathError, Bip44PathToCoin, CryptoCtx, CryptoInitError, HwWalletType};
 use derive_more::Display;
 use futures::channel::mpsc;
+use futures::channel::mpsc::Sender as AsyncSender;
 use futures::compat::Future01CompatExt;
 use futures::lock::Mutex as AsyncMutex;
 use futures::StreamExt;
@@ -102,6 +102,54 @@ impl From<HDWalletStorageError> for UtxoCoinBuildError {
 
 impl From<BlockHeaderStorageError> for UtxoCoinBuildError {
     fn from(e: BlockHeaderStorageError) -> Self { UtxoCoinBuildError::BlockHeaderStorageError(e) }
+}
+
+pub enum UtxoSyncStatus {
+    SyncingBlockHeaders {
+        current_scanned_block: u64,
+        last_block: u64,
+    },
+    TemporaryError(String),
+    PermanentError(String),
+    Finished {
+        block_number: u64,
+    },
+}
+
+#[derive(Clone)]
+pub struct UtxoSyncStatusLoopHandle(AsyncSender<UtxoSyncStatus>);
+
+impl UtxoSyncStatusLoopHandle {
+    pub fn new(sync_status_notifier: AsyncSender<UtxoSyncStatus>) -> Self {
+        UtxoSyncStatusLoopHandle(sync_status_notifier)
+    }
+
+    pub fn notify_blocks_headers_sync_status(&mut self, current_scanned_block: u64, last_block: u64) {
+        self.0
+            .try_send(UtxoSyncStatus::SyncingBlockHeaders {
+                current_scanned_block,
+                last_block,
+            })
+            .debug_log_with_msg("No one seems interested in UtxoSyncStatus");
+    }
+
+    pub fn notify_on_temp_error(&mut self, error: String) {
+        self.0
+            .try_send(UtxoSyncStatus::TemporaryError(error))
+            .debug_log_with_msg("No one seems interested in UtxoSyncStatus");
+    }
+
+    pub fn notify_on_permanent_error(&mut self, error: String) {
+        self.0
+            .try_send(UtxoSyncStatus::PermanentError(error))
+            .debug_log_with_msg("No one seems interested in UtxoSyncStatus");
+    }
+
+    pub fn notify_sync_finished(&mut self, block_number: u64) {
+        self.0
+            .try_send(UtxoSyncStatus::Finished { block_number })
+            .debug_log_with_msg("No one seems interested in UtxoSyncStatus");
+    }
 }
 
 #[async_trait]

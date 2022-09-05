@@ -141,13 +141,13 @@ pub struct LatestFees {
 
 impl LatestFees {
     #[inline]
-    fn set_background_fees(&self, fee: u64) { self.background.store(fee, Ordering::Relaxed); }
+    fn set_background_fees(&self, fee: u64) { self.background.store(fee, Ordering::Release); }
 
     #[inline]
-    fn set_normal_fees(&self, fee: u64) { self.normal.store(fee, Ordering::Relaxed); }
+    fn set_normal_fees(&self, fee: u64) { self.normal.store(fee, Ordering::Release); }
 
     #[inline]
-    fn set_high_priority_fees(&self, fee: u64) { self.high_priority.store(fee, Ordering::Relaxed); }
+    fn set_high_priority_fees(&self, fee: u64) { self.high_priority.store(fee, Ordering::Release); }
 }
 
 pub struct Platform {
@@ -242,11 +242,11 @@ impl Platform {
 
     #[inline]
     pub fn update_best_block_height(&self, new_height: u64) {
-        self.best_block_height.store(new_height, AtomicOrdering::Relaxed);
+        self.best_block_height.store(new_height, AtomicOrdering::Release);
     }
 
     #[inline]
-    pub fn best_block_height(&self) -> u64 { self.best_block_height.load(AtomicOrdering::Relaxed) }
+    pub fn best_block_height(&self) -> u64 { self.best_block_height.load(AtomicOrdering::Acquire) }
 
     pub fn add_tx(&self, txid: Txid) {
         let mut registered_txs = self.registered_txs.lock();
@@ -525,9 +525,9 @@ impl FeeEstimator for Platform {
         let platform_coin = &self.coin;
 
         let latest_fees = match confirmation_target {
-            ConfirmationTarget::Background => self.latest_fees.background.load(Ordering::Relaxed),
-            ConfirmationTarget::Normal => self.latest_fees.normal.load(Ordering::Relaxed),
-            ConfirmationTarget::HighPriority => self.latest_fees.high_priority.load(Ordering::Relaxed),
+            ConfirmationTarget::Background => self.latest_fees.background.load(Ordering::Acquire),
+            ConfirmationTarget::Normal => self.latest_fees.normal.load(Ordering::Acquire),
+            ConfirmationTarget::HighPriority => self.latest_fees.high_priority.load(Ordering::Acquire),
         };
 
         let conf = &platform_coin.as_ref().conf;

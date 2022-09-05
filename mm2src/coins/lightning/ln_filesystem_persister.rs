@@ -11,7 +11,7 @@ use lightning::chain::keysinterface::{KeysInterface, Sign};
 use lightning::routing::scoring::{ProbabilisticScorer, ProbabilisticScoringParameters};
 use lightning::util::persist::KVStorePersister;
 use lightning::util::ser::{ReadableArgs, Writeable};
-use mm2_io::fs::{check_dir_operations, read_json, write_json};
+use mm2_io::fs::{check_dir_operations, invalid_data_err, read_json, write_json};
 use secp256k1v22::PublicKey;
 use std::collections::{HashMap, HashSet};
 use std::fs;
@@ -111,26 +111,17 @@ impl LightningFilesystemPersister {
             return Ok(Vec::new());
         }
         let mut res = Vec::new();
-        for file_option in fs::read_dir(path).unwrap() {
-            let file = file_option.unwrap();
+        for file_option in fs::read_dir(path)? {
+            let file = file_option?;
             let owned_file_name = file.file_name();
-            let filename = match owned_file_name.to_str() {
-                Some(name) => name,
-                None => {
-                    return Err(std::io::Error::new(
-                        std::io::ErrorKind::InvalidData,
-                        format!("Invalid ChannelMonitor file name: {:?}", owned_file_name),
-                    ))
-                },
-            };
+            let filename = owned_file_name.to_str().ok_or_else(|| {
+                invalid_data_err("Invalid ChannelMonitor file name", format!("{:?}", owned_file_name))
+            })?;
             if filename == "checkval" {
                 continue;
             }
             if !filename.is_ascii() || filename.len() < 65 {
-                return Err(std::io::Error::new(
-                    std::io::ErrorKind::InvalidData,
-                    format!("Invalid ChannelMonitor file name: {}", filename),
-                ));
+                return Err(invalid_data_err("Invalid ChannelMonitor file name", filename));
             }
             if filename.ends_with(".tmp") {
                 // If we were in the middle of committing an new update and crashed, it should be
@@ -139,47 +130,28 @@ impl LightningFilesystemPersister {
                 continue;
             }
 
-            let txid = match Txid::from_hex(filename.split_at(64).0) {
-                Ok(tx_id) => tx_id,
-                Err(e) => {
-                    return Err(std::io::Error::new(
-                        std::io::ErrorKind::InvalidData,
-                        format!("Invalid tx ID in filename error: {}", e),
-                    ))
-                },
-            };
+            let txid = Txid::from_hex(filename.split_at(64).0)
+                .map_err(|e| invalid_data_err("Invalid tx ID in filename error", e))?;
 
-            let index = match filename.split_at(65).1.parse::<u16>() {
-                Ok(i) => i,
-                Err(e) => {
-                    return Err(std::io::Error::new(
-                        std::io::ErrorKind::InvalidData,
-                        format!("Invalid tx index in filename error: {}", e),
-                    ))
-                },
-            };
+            let index = filename
+                .split_at(65)
+                .1
+                .parse::<u16>()
+                .map_err(|e| invalid_data_err("Invalid tx index in filename error", e))?;
 
             let contents = fs::read(&file.path())?;
             let mut buffer = Cursor::new(&contents);
-            match <(BlockHash, ChannelMonitor<Signer>)>::read(&mut buffer, &*keys_manager) {
-                Ok((blockhash, channel_monitor)) => {
-                    if channel_monitor.get_funding_txo().0.txid != txid
-                        || channel_monitor.get_funding_txo().0.index != index
-                    {
-                        return Err(std::io::Error::new(
-                            std::io::ErrorKind::InvalidData,
-                            "ChannelMonitor was stored in the wrong file",
-                        ));
-                    }
-                    res.push((blockhash, channel_monitor));
-                },
-                Err(e) => {
-                    return Err(std::io::Error::new(
-                        std::io::ErrorKind::InvalidData,
-                        format!("Failed to deserialize ChannelMonitor: {}", e),
-                    ))
-                },
+            let (blockhash, channel_monitor) = <(BlockHash, ChannelMonitor<Signer>)>::read(&mut buffer, &*keys_manager)
+                .map_err(|e| invalid_data_err("Failed to deserialize ChannelMonito", e))?;
+
+            if channel_monitor.get_funding_txo().0.txid != txid || channel_monitor.get_funding_txo().0.index != index {
+                return Err(invalid_data_err(
+                    "ChannelMonitor was stored in the wrong file",
+                    filename,
+                ));
             }
+
+            res.push((blockhash, channel_monitor));
         }
         Ok(res)
     }
@@ -329,14 +301,13 @@ impl LightningStorage for LightningFilesystemPersister {
 
         let nodes_addresses: HashMap<String, SocketAddr> = read_json(&path)
             .await
-            .map_err(|e| std::io::Error::new(std::io::ErrorKind::InvalidData, e.to_string()))?
+            .map_err(|e| invalid_data_err("Error", e))?
             .ok_or_else(|| std::io::Error::from(std::io::ErrorKind::NotFound))?;
 
         nodes_addresses
             .iter()
             .map(|(pubkey_str, addr)| {
-                let pubkey = PublicKey::from_str(pubkey_str)
-                    .map_err(|e| std::io::Error::new(std::io::ErrorKind::InvalidData, e))?;
+                let pubkey = PublicKey::from_str(pubkey_str).map_err(|e| invalid_data_err("Error", e))?;
                 Ok((pubkey, *addr))
             })
             .collect()
@@ -354,12 +325,12 @@ impl LightningStorage for LightningFilesystemPersister {
 
         write_json(&nodes_addresses, &path, USE_TMP_FILE)
             .await
-            .map_err(|e| std::io::Error::new(std::io::ErrorKind::InvalidData, e.to_string()))?;
+            .map_err(|e| invalid_data_err("Error", e))?;
 
         if let Some(path) = backup_path {
             write_json(&nodes_addresses, &path, USE_TMP_FILE)
                 .await
-                .map_err(|e| std::io::Error::new(std::io::ErrorKind::InvalidData, e.to_string()))?;
+                .map_err(|e| invalid_data_err("Error", e))?;
         }
 
         Ok(())
@@ -373,8 +344,7 @@ impl LightningStorage for LightningFilesystemPersister {
         async_blocking(move || {
             let file = fs::File::open(path)?;
             common::log::info!("Reading the saved lightning network graph from file, this can take some time!");
-            NetworkGraph::read(&mut BufReader::new(file), logger)
-                .map_err(|e| std::io::Error::new(std::io::ErrorKind::InvalidData, e.to_string()))
+            NetworkGraph::read(&mut BufReader::new(file), logger).map_err(|e| invalid_data_err("Error", e))
         })
         .await
     }
@@ -394,7 +364,7 @@ impl LightningStorage for LightningFilesystemPersister {
                 &mut BufReader::new(file),
                 (ProbabilisticScoringParameters::default(), network_graph, logger),
             )
-            .map_err(|e| std::io::Error::new(std::io::ErrorKind::InvalidData, e.to_string()))?;
+            .map_err(|e| invalid_data_err("Error", e))?;
             Ok(Mutex::new(scorer))
         })
         .await
@@ -408,14 +378,13 @@ impl LightningStorage for LightningFilesystemPersister {
 
         let trusted_nodes: HashSet<String> = read_json(&path)
             .await
-            .map_err(|e| std::io::Error::new(std::io::ErrorKind::InvalidData, e.to_string()))?
+            .map_err(|e| invalid_data_err("Error", e))?
             .ok_or_else(|| std::io::Error::from(std::io::ErrorKind::NotFound))?;
 
         trusted_nodes
             .iter()
             .map(|pubkey_str| {
-                let pubkey = PublicKey::from_str(pubkey_str)
-                    .map_err(|e| std::io::Error::new(std::io::ErrorKind::InvalidData, e))?;
+                let pubkey = PublicKey::from_str(pubkey_str).map_err(|e| invalid_data_err("Error", e))?;
                 Ok(pubkey)
             })
             .collect()
@@ -426,6 +395,6 @@ impl LightningStorage for LightningFilesystemPersister {
         let trusted_nodes: HashSet<String> = trusted_nodes.lock().iter().map(|pubkey| pubkey.to_string()).collect();
         write_json(&trusted_nodes, &path, USE_TMP_FILE)
             .await
-            .map_err(|e| std::io::Error::new(std::io::ErrorKind::InvalidData, e.to_string()))
+            .map_err(|e| invalid_data_err("Error", e))
     }
 }
