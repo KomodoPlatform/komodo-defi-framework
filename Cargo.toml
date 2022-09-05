@@ -10,7 +10,7 @@ members = [
     "mm2src/derives/ser_error_derive",
     "mm2src/floodsub",
     "mm2src/gossipsub",
-    "mm2src/gui_storage",
+    "mm2src/mm2_gui_storage",
     "mm2src/hw_common",
     "mm2src/mm2_bitcoin/crypto",
     "mm2src/mm2_bitcoin/chain",

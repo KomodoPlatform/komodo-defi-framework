@@ -206,7 +206,7 @@ async fn dispatcher_v2(request: MmRpcRequest, ctx: MmArc) -> DispatcherResult<Re
     }
 }
 
-/// `gui_storage_rpc` dispatcher.
+/// `gui_storage` dispatcher.
 ///
 /// # Note
 ///
@@ -216,7 +216,7 @@ async fn gui_storage_dispatcher(
     ctx: MmArc,
     gui_storage_method: String,
 ) -> DispatcherResult<Response<Vec<u8>>> {
-    use gui_storage::rpc_commands as gui_storage_rpc;
+    use mm2_gui_storage::rpc_commands as gui_storage_rpc;
 
     match gui_storage_method.as_str() {
         "activate_coins" => handle_mmrpc(ctx, request, gui_storage_rpc::activate_coins).await,

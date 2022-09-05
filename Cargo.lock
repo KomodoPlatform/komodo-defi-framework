@@ -2720,28 +2720,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "gui_storage"
-version = "0.1.0"
-dependencies = [
- "async-trait",
- "common",
- "db_common",
- "derive_more",
- "mm2_core",
- "mm2_db",
- "mm2_err_handle",
- "mm2_number",
- "mm2_test_helpers",
- "rpc",
- "ser_error",
- "ser_error_derive",
- "serde",
- "serde_json",
- "serde_repr",
- "wasm-bindgen-test",
-]
-
-[[package]]
 name = "h2"
 version = "0.3.13"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -4351,6 +4329,28 @@ dependencies = [
 ]
 
 [[package]]
+name = "mm2_gui_storage"
+version = "0.1.0"
+dependencies = [
+ "async-trait",
+ "common",
+ "db_common",
+ "derive_more",
+ "mm2_core",
+ "mm2_db",
+ "mm2_err_handle",
+ "mm2_number",
+ "mm2_test_helpers",
+ "rpc",
+ "ser_error",
+ "ser_error_derive",
+ "serde",
+ "serde_json",
+ "serde_repr",
+ "wasm-bindgen-test",
+]
+
+[[package]]
 name = "mm2_io"
 version = "0.1.0"
 dependencies = [
@@ -4394,7 +4394,6 @@ dependencies = [
  "futures-cpupool",
  "futures-rustls 0.21.1",
  "gstuff",
- "gui_storage",
  "hash-db",
  "hash256-std-hasher",
  "hex 0.4.2",
@@ -4412,6 +4411,7 @@ dependencies = [
  "mm2_core",
  "mm2_db",
  "mm2_err_handle",
+ "mm2_gui_storage",
  "mm2_io",
  "mm2_metrics",
  "mm2_net",

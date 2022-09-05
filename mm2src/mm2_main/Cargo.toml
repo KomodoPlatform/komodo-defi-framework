@@ -62,7 +62,7 @@ futures01 = { version = "0.1", package = "futures" }
 futures-cpupool = "0.1"
 futures = { version = "0.3.1", package = "futures", features = ["compat", "async-await"] }
 gstuff = { version = "0.7", features = ["nightly"] }
-gui_storage = { path = "../gui_storage" }
+mm2_gui_storage = { path = "../mm2_gui_storage" }
 hash256-std-hasher = "0.15.2"
 hash-db = "0.15.2"
 hex = "0.4.2"
