@@ -23,20 +23,20 @@ pub(crate) struct IrisHtlc {
 }
 
 /// Proto representation of create HTLC message
-#[derive(::prost::Message)]
+#[derive(prost::Message)]
 pub(crate) struct CreateHtlcProtoRep {
     #[prost(string, tag = "1")]
-    pub(crate) sender: ::prost::alloc::string::String,
+    pub(crate) sender: prost::alloc::string::String,
     #[prost(string, tag = "2")]
-    pub(crate) to: ::prost::alloc::string::String,
+    pub(crate) to: prost::alloc::string::String,
     #[prost(string, tag = "3")]
-    pub(crate) receiver_on_other_chain: ::prost::alloc::string::String,
+    pub(crate) receiver_on_other_chain: prost::alloc::string::String,
     #[prost(string, tag = "4")]
-    pub(crate) sender_on_other_chain: ::prost::alloc::string::String,
+    pub(crate) sender_on_other_chain: prost::alloc::string::String,
     #[prost(message, repeated, tag = "5")]
-    pub(crate) amount: ::prost::alloc::vec::Vec<cosmrs::proto::cosmos::base::v1beta1::Coin>,
+    pub(crate) amount: prost::alloc::vec::Vec<cosmrs::proto::cosmos::base::v1beta1::Coin>,
     #[prost(string, tag = "6")]
-    pub(crate) hash_lock: ::prost::alloc::string::String,
+    pub(crate) hash_lock: prost::alloc::string::String,
     #[prost(uint64, tag = "7")]
     pub(crate) timestamp: u64,
     #[prost(uint64, tag = "8")]
@@ -128,14 +128,14 @@ impl MsgProto for CreateHtlcProtoRep {
 }
 
 /// Proto representation of claim HTLC message
-#[derive(::prost::Message)]
+#[derive(prost::Message)]
 pub(crate) struct ClaimHtlcProtoRep {
     #[prost(string, tag = "1")]
-    pub(crate) sender: ::prost::alloc::string::String,
+    pub(crate) sender: prost::alloc::string::String,
     #[prost(string, tag = "2")]
-    pub(crate) id: ::prost::alloc::string::String,
+    pub(crate) id: prost::alloc::string::String,
     #[prost(string, tag = "3")]
-    pub(crate) secret: ::prost::alloc::string::String,
+    pub(crate) secret: prost::alloc::string::String,
 }
 
 #[derive(Clone)]
