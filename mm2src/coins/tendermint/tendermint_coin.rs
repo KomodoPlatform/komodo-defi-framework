@@ -803,7 +803,7 @@ mod tendermint_coin_tests {
         ))
         .unwrap();
 
-        // BEGIN HTLC CREATION
+        // << BEGIN HTLC CREATION
         let base_denom: Denom = "unyan".parse().unwrap();
         let to: AccountId = IRIS_TESTNET_HTLC_PAIR2_ADDRESS.parse().unwrap();
         let amount: cosmrs::Decimal = 1_u64.into();
@@ -835,9 +835,9 @@ mod tendermint_coin_tests {
         common::block_on(async {
             send_tx_fut.await.unwrap();
         });
-        // END HTLC CREATION
+        // >> END HTLC CREATION
 
-        // BEGIN HTLC CLAIMING
+        // << BEGIN HTLC CLAIMING
         let claim_htlc_tx = coin
             .gen_claim_htlc_tx(base_denom.clone(), create_htlc_tx.id, sec)
             .unwrap();
@@ -864,6 +864,6 @@ mod tendermint_coin_tests {
         common::block_on(async {
             send_tx_fut.await.unwrap();
         });
-        // END HTLC CLAIMING
+        // >> END HTLC CLAIMING
     }
 }
