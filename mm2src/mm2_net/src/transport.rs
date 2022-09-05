@@ -30,11 +30,10 @@ pub enum SlurpError {
 impl From<SlurpError> for JsonRpcErrorType {
     fn from(err: SlurpError) -> Self {
         match err {
-            SlurpError::ErrorDeserializing { .. } | SlurpError::Timeout { .. } | SlurpError::Internal(_) => {
-                Self::Internal(err.to_string())
-            },
             SlurpError::InvalidRequest(err) => Self::InvalidRequest(err),
-            SlurpError::Transport { .. } => Self::Transport(err.to_string()),
+            SlurpError::Transport { .. } | SlurpError::Timeout { .. } => Self::Transport(err.to_string()),
+            SlurpError::ErrorDeserializing { uri, error } => Self::Parse(uri.into(), error),
+            SlurpError::Internal(_) => Self::Internal(err.to_string()),
         }
     }
 }

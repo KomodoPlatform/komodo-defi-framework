@@ -238,10 +238,10 @@ impl fmt::Display for JsonRpcError {
 }
 
 impl JsonRpcError {
-    pub fn new(client_info: &str, request: &JsonRpcRequestEnum, error: JsonRpcErrorType) -> Self {
+    pub fn new(client_info: &str, request: JsonRpcRequestEnum, error: JsonRpcErrorType) -> Self {
         Self {
             client_info: format!("coin: {}", client_info),
-            request: request.to_owned(),
+            request,
             error,
         }
     }
