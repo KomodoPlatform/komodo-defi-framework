@@ -7656,7 +7656,7 @@ fn test_gui_storage() {
     ];
     assert_eq!(actual.result, expected);
 
-    let resp = block_on(mm.rpc(&json!({
+    let resp = block_on(mm_new.rpc(&json!({
         "userpass": mm.userpass,
         "mmrpc": "2.0",
         "method": "gui_storage::get_enabled_account",
