@@ -6794,7 +6794,7 @@ fn test_get_current_mtp() {
     ]);
     let passphrase = "cMhHM3PMpMrChygR4bLF7QsTdenhWpFrrmf2UezBG3eeFsz41rtL";
 
-    let conf = Mm2TestConf::seednode(&passphrase, &coins);
+    let conf = Mm2TestConf::seednode(&passphrase, &coins, false, false);
     let mm = MarketMakerIt::start(conf.conf, conf.rpc_password, conf.local).unwrap();
     let (_dump_log, _dump_dashboard) = mm.mm_dump();
 
@@ -7403,7 +7403,7 @@ fn test_sign_verify_message_eth() {
 fn test_no_login() {
     let coins = json!([rick_conf(), morty_conf()]);
     let seednode_passphrase = get_passphrase(&".env.seed", "BOB_PASSPHRASE").unwrap();
-    let seednode_conf = Mm2TestConf::seednode(&seednode_passphrase, &coins);
+    let seednode_conf = Mm2TestConf::seednode(&seednode_passphrase, &coins, false, false);
     let seednode = MarketMakerIt::start(seednode_conf.conf, seednode_conf.rpc_password, seednode_conf.local).unwrap();
     let (_dump_log, _dump_dashboard) = seednode.mm_dump();
     log!("log path: {}", seednode.log_path.display());

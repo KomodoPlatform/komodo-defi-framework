@@ -128,7 +128,7 @@ pub struct Mm2TestConf {
 }
 
 impl Mm2TestConf {
-    pub fn seednode(passphrase: &str, coins: &Json) -> Self {
+    pub fn seednode(passphrase: &str, coins: &Json, use_watchers: bool, is_watcher: bool) -> Self {
         Mm2TestConf {
             conf: json!({
                 "gui": "nogui",
@@ -137,13 +137,21 @@ impl Mm2TestConf {
                 "coins": coins,
                 "rpc_password": DEFAULT_RPC_PASSWORD,
                 "i_am_seed": true,
+                "use_watchers": use_watchers,
+                "is_watcher": is_watcher
             }),
             rpc_password: DEFAULT_RPC_PASSWORD.into(),
             local: None,
         }
     }
 
-    pub fn light_node(passphrase: &str, coins: &Json, seednodes: &[&str]) -> Self {
+    pub fn light_node(
+        passphrase: &str,
+        coins: &Json,
+        seednodes: &[&str],
+        use_watchers: bool,
+        is_watcher: bool,
+    ) -> Self {
         Mm2TestConf {
             conf: json!({
                 "gui": "nogui",
@@ -152,6 +160,8 @@ impl Mm2TestConf {
                 "coins": coins,
                 "rpc_password": DEFAULT_RPC_PASSWORD,
                 "seednodes": seednodes,
+                "use_watchers": use_watchers,
+                "is_watcher": is_watcher
             }),
             rpc_password: DEFAULT_RPC_PASSWORD.into(),
             local: None,

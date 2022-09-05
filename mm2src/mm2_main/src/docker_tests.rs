@@ -117,7 +117,7 @@ mod docker_tests {
     use keys::{Address, KeyPair, NetworkPrefix as CashAddrPrefix, Private};
     use mm2_core::mm_ctx::{MmArc, MmCtxBuilder};
     use mm2_number::{BigDecimal, MmNumber};
-    use mm2_test_helpers::for_tests::{check_my_swap_status_amounts, enable_electrum};
+    use mm2_test_helpers::for_tests::{check_my_swap_status_amounts, enable_electrum, Mm2TestConf};
     use qrc20_tests::{qtum_docker_node, QtumDockerOps, QTUM_REGTEST_DOCKER_IMAGE};
     use script::Builder;
     use secp256k1::SecretKey;
@@ -1134,51 +1134,30 @@ mod docker_tests {
             {"coin":"MYCOIN1","asset":"MYCOIN1","txversion":4,"overwintered":1,"txfee":1000,"protocol":{"type":"UTXO"}},
         ]);
 
-        let alice_conf = json! ({
-            "gui": "nogui",
-            "netid": 9000,
-            "dht": "on",  // Enable DHT without delay.
-            "passphrase": format!("0x{}", hex::encode(alice_priv_key)),
-            "coins": coins,
-            "rpc_password": "pass",
-            "use_watchers": true,
-            "i_am_seed": true,
-        });
-
+        let alice_conf = Mm2TestConf::seednode(&format!("0x{}", hex::encode(alice_priv_key)), &coins, true, false).conf;
         let mut mm_alice = MarketMakerIt::start(alice_conf.clone(), "pass".to_string(), None).unwrap();
         let (_alice_dump_log, _alice_dump_dashboard) = mm_dump(&mm_alice.log_path);
 
-        let mm_bob = MarketMakerIt::start(
-            json! ({
-                "gui": "nogui",
-                "netid": 9000,
-                "dht": "on",  // Enable DHT without delay.
-                "passphrase": format!("0x{}", hex::encode(bob_priv_key)),
-                "coins": coins,
-                "rpc_password": "pass",
-                "seednodes": vec![format!("{}", mm_alice.ip)],
-            }),
-            "pass".to_string(),
-            None,
+        let bob_conf = Mm2TestConf::light_node(
+            &format!("0x{}", hex::encode(bob_priv_key)),
+            &coins,
+            &[&mm_alice.ip.to_string()],
+            false,
+            false,
         )
-        .unwrap();
+        .conf;
+        let mm_bob = MarketMakerIt::start(bob_conf, "pass".to_string(), None).unwrap();
         let (_bob_dump_log, _bob_dump_dashboard) = mm_dump(&mm_bob.log_path);
 
-        let mut mm_watcher = MarketMakerIt::start(
-            json! ({
-                "gui": "nogui",
-                "netid": 9000,
-                "dht": "on",  // Enable DHT without delay.
-                "passphrase": format!("0x{}", hex::encode(watcher_priv_key)),
-                "coins": coins,
-                "rpc_password": "pass",
-                "is_watcher": true,
-                "seednodes": vec![format!("{}", mm_alice.ip)]
-            }),
-            "pass".to_string(),
-            None,
+        let watcher_conf = Mm2TestConf::light_node(
+            &format!("0x{}", hex::encode(watcher_priv_key)),
+            &coins,
+            &[&mm_alice.ip.to_string()],
+            false,
+            true,
         )
-        .unwrap();
+        .conf;
+        let mut mm_watcher = MarketMakerIt::start(watcher_conf, "pass".to_string(), None).unwrap();
         let (_watcher_dump_log, _watcher_dump_dashboard) = mm_dump(&mm_watcher.log_path);
 
         log!("{:?}", block_on(enable_native(&mm_bob, "MYCOIN", &[])));
