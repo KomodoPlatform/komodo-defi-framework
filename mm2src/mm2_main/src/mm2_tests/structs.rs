@@ -973,4 +973,11 @@ pub mod gui_storage {
         pub balance_usd: BigDecimal,
         pub coins: BTreeSet<String>,
     }
+
+    #[derive(Debug, Deserialize, PartialEq)]
+    #[serde(deny_unknown_fields)]
+    pub struct AccountCoins {
+        pub account_id: AccountId,
+        pub coins: BTreeSet<String>,
+    }
 }
