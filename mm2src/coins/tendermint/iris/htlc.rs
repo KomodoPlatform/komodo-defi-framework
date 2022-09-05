@@ -23,7 +23,7 @@ pub(crate) struct IrisHtlc {
 }
 
 /// Proto representation of create HTLC message
-#[derive(Clone, PartialEq, ::prost::Message)]
+#[derive(::prost::Message)]
 pub(crate) struct CreateHtlcProtoRep {
     #[prost(string, tag = "1")]
     pub(crate) sender: ::prost::alloc::string::String,
@@ -45,7 +45,7 @@ pub(crate) struct CreateHtlcProtoRep {
     pub(crate) transfer: bool,
 }
 
-#[derive(Clone, Debug, Eq, PartialEq, PartialOrd, Ord)]
+#[derive(Clone)]
 pub(crate) struct MsgCreateHtlc {
     /// Sender's address.
     pub(crate) to: AccountId,
@@ -128,7 +128,7 @@ impl MsgProto for CreateHtlcProtoRep {
 }
 
 /// Proto representation of claim HTLC message
-#[derive(Clone, PartialEq, ::prost::Message)]
+#[derive(::prost::Message)]
 pub(crate) struct ClaimHtlcProtoRep {
     #[prost(string, tag = "1")]
     pub(crate) sender: ::prost::alloc::string::String,
@@ -138,7 +138,7 @@ pub(crate) struct ClaimHtlcProtoRep {
     pub(crate) secret: ::prost::alloc::string::String,
 }
 
-#[derive(Clone, Debug, Eq, PartialEq, PartialOrd, Ord)]
+#[derive(Clone)]
 pub(crate) struct MsgClaimHtlc {
     /// Sender's address.
     pub(crate) sender: AccountId,

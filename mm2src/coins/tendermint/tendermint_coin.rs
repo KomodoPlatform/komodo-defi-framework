@@ -61,7 +61,6 @@ pub struct TendermintActivationParams {
     rpc_urls: Vec<String>,
 }
 
-#[derive(Debug)]
 pub struct TendermintCoinImpl {
     ticker: String,
     rpc_client: HttpClient,
@@ -75,7 +74,7 @@ pub struct TendermintCoinImpl {
     sequence_lock: AsyncMutex<()>,
 }
 
-#[derive(Clone, Debug)]
+#[derive(Clone)]
 pub struct TendermintCoin(Arc<TendermintCoinImpl>);
 
 impl Deref for TendermintCoin {
