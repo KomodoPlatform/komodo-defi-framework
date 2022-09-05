@@ -168,10 +168,10 @@ impl SwapMsgStore {
 
 /// Spawns the loop that broadcasts message every `interval` seconds returning the AbortOnDropHandle
 /// to stop it
-pub fn broadcast_swap_message_every(
+pub fn broadcast_swap_message_every<T: 'static + Serialize + Clone + Send>(
     ctx: MmArc,
     topic: String,
-    msg: SwapMsg,
+    msg: T,
     interval: f64,
     p2p_privkey: Option<KeyPair>,
 ) -> AbortOnDropHandle {
