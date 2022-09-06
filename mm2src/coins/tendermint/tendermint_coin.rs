@@ -40,6 +40,7 @@ use std::sync::Arc;
 
 const TIMEOUT_HEIGHT_DELTA: u64 = 100;
 pub const GAS_LIMIT_DEFAULT: u64 = 100_000;
+pub const TX_DEFAULT_MEMO: &str = "";
 
 #[derive(Clone, Debug, PartialEq, Serialize)]
 pub struct TendermintFeeDetails {
@@ -257,18 +258,20 @@ impl TendermintCoin {
         // amount.sort();
 
         // << BEGIN HTLC id calculation
+        // This is converted from irismod and cosmos-sdk source codes written in golang.
+        // Refs:
+        //  - Main algorithm: https://github.com/irisnet/irismod/blob/main/modules/htlc/types/htlc.go#L157
+        //  - Coins string building https://github.com/cosmos/cosmos-sdk/blob/main/types/coin.go#L210-L225
+        let coins_string = amount
+            .iter()
+            .map(|t| format!("{}{}", t.amount, t.denom))
+            .collect::<Vec<String>>()
+            .join(",");
+
         let mut htlc_id = vec![];
         htlc_id.extend_from_slice(sha256(&hash_lock_hash).as_slice());
         htlc_id.extend_from_slice(&self.account_id.to_bytes());
         htlc_id.extend_from_slice(&to.to_bytes());
-        let mut coins_string = String::new();
-        for (index, item) in amount.iter().enumerate() {
-            if index == 0 {
-                coins_string = format!("{}{}{}", coins_string, item.amount, item.denom);
-            } else {
-                coins_string = format!(",{}{}{}", coins_string, item.amount, item.denom);
-            }
-        }
         htlc_id.extend_from_slice(coins_string.as_bytes());
         let htlc_id = sha256(&htlc_id).to_string().to_uppercase();
         // >> END HTLC id calculation
@@ -276,8 +279,8 @@ impl TendermintCoin {
         let msg_payload = MsgCreateHtlc {
             sender: self.account_id.clone(),
             to: to.clone(),
-            receiver_on_other_chain: "".to_string(),
-            sender_on_other_chain: "".to_string(),
+            receiver_on_other_chain: "tbnb1c88qvyufqkh4ea422fr6wc6g2t5zrpxekdl0my".to_string(),
+            sender_on_other_chain: "tbnb1cegl4x48qy6mq5vg5wtryk806n2vjtyhk3sj6v".to_string(),
             amount,
             hash_lock: sha256(&hash_lock_hash).to_string(),
             timestamp,
@@ -334,7 +337,7 @@ impl TendermintCoin {
         })
     }
 
-    async fn any_to_raw_tx(
+    async fn any_to_signed_raw_tx(
         &self,
         account_info: BaseAccount,
         tx_payload: Any,
@@ -342,7 +345,7 @@ impl TendermintCoin {
         timeout_height: u64,
     ) -> cosmrs::Result<Raw> {
         let signkey = SigningKey::from_bytes(&self.priv_key)?;
-        let tx_body = tx::Body::new(vec![tx_payload], "", timeout_height as u32);
+        let tx_body = tx::Body::new(vec![tx_payload], TX_DEFAULT_MEMO, timeout_height as u32);
         let auth_info = SignerInfo::single_direct(Some(signkey.public_key()), account_info.sequence).auth_info(fee);
         let sign_doc = SignDoc::new(&tx_body, &auth_info, &self.chain_id, account_info.account_number)?;
         sign_doc.sign(&signkey)
@@ -432,7 +435,7 @@ impl MmCoin for TendermintCoin {
             let timeout_height = current_block + TIMEOUT_HEIGHT_DELTA;
 
             let tx_raw = coin
-                .any_to_raw_tx(account_info, msg_send, fee, timeout_height)
+                .any_to_signed_raw_tx(account_info, msg_send, fee, timeout_height)
                 .await
                 .map_to_mm(|e| WithdrawError::InternalError(e.to_string()))?;
 
@@ -822,7 +825,7 @@ mod tendermint_coin_tests {
         let account_info = common::block_on(async { account_info_fut.await.unwrap() });
 
         let raw_tx = common::block_on(async {
-            coin.any_to_raw_tx(
+            coin.any_to_signed_raw_tx(
                 account_info.clone(),
                 create_htlc_tx.msg_payload.clone(),
                 create_htlc_tx.fee.clone(),
@@ -850,7 +853,7 @@ mod tendermint_coin_tests {
         let account_info = common::block_on(async { account_info_fut.await.unwrap() });
 
         let raw_tx = common::block_on(async {
-            coin.any_to_raw_tx(
+            coin.any_to_signed_raw_tx(
                 account_info,
                 claim_htlc_tx.msg_payload,
                 claim_htlc_tx.fee,
