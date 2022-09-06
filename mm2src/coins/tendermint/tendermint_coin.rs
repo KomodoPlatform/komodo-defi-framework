@@ -337,7 +337,7 @@ impl TendermintCoin {
         })
     }
 
-    async fn any_to_signed_raw_tx(
+    fn any_to_signed_raw_tx(
         &self,
         account_info: BaseAccount,
         tx_payload: Any,
@@ -436,7 +436,6 @@ impl MmCoin for TendermintCoin {
 
             let tx_raw = coin
                 .any_to_signed_raw_tx(account_info, msg_send, fee, timeout_height)
-                .await
                 .map_to_mm(|e| WithdrawError::InternalError(e.to_string()))?;
 
             let tx_bytes = tx_raw
@@ -831,7 +830,6 @@ mod tendermint_coin_tests {
                 create_htlc_tx.fee.clone(),
                 timeout_height,
             )
-            .await
             .unwrap()
         });
         let send_tx_fut = coin.send_raw_tx_bytes(&raw_tx.to_bytes().unwrap()).compat();
@@ -859,7 +857,6 @@ mod tendermint_coin_tests {
                 claim_htlc_tx.fee,
                 timeout_height,
             )
-            .await
             .unwrap()
         });
 
