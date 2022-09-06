@@ -22,18 +22,15 @@ pub trait WriteJoin: Iterator + Sized
 where
     Self::Item: fmt::Display,
 {
-    fn write_join<W>(self, writer: &mut W, sep: &str) -> fmt::Result
+    fn write_join<W>(mut self, writer: &mut W, sep: &str) -> fmt::Result
     where
         W: fmt::Write,
     {
-        let mut first = true;
+        if let Some(item) = self.next() {
+            write!(writer, "{}", item)?;
+        }
         for item in self {
-            if first {
-                write!(writer, "{}", item)?;
-            } else {
-                write!(writer, "{}{}", sep, item)?;
-            }
-            first = false;
+            write!(writer, "{}{}", sep, item)?;
         }
         Ok(())
     }
@@ -50,18 +47,15 @@ pub trait WriteSafeJoin: Iterator + Sized
 where
     Self::Item: fmt::Display,
 {
-    fn write_safe_join<W>(self, writer: &mut W, sep: &str)
+    fn write_safe_join<W>(mut self, writer: &mut W, sep: &str)
     where
         W: WriteSafe,
     {
-        let mut first = true;
+        if let Some(item) = self.next() {
+            write_safe!(writer, "{}", item);
+        }
         for item in self {
-            if first {
-                write_safe!(writer, "{}", item);
-            } else {
-                write_safe!(writer, "{}{}", sep, item);
-            }
-            first = false;
+            write_safe!(writer, "{}{}", sep, item);
         }
     }
 }
