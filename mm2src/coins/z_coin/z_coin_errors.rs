@@ -196,7 +196,7 @@ pub enum ZCoinBuildError {
     Io(std::io::Error),
     EmptyLightwalletdUris,
     InvalidLightwalletdUri(InvalidUri),
-    ClientInitErr(ZcoinClientInitError),
+    RpcClientInitErr(ZcoinClientInitError),
     ZCashParamsNotFound,
 }
 
@@ -221,7 +221,7 @@ impl From<InvalidUri> for ZCoinBuildError {
 }
 
 impl From<ZcoinClientInitError> for ZCoinBuildError {
-    fn from(err: ZcoinClientInitError) -> Self { ZCoinBuildError::ClientInitErr(err) }
+    fn from(err: ZcoinClientInitError) -> Self { ZCoinBuildError::RpcClientInitErr(err) }
 }
 
 pub(super) enum SqlTxHistoryError {

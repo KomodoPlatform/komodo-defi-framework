@@ -766,11 +766,12 @@ impl<'a> UtxoCoinWithIguanaPrivKeyBuilder for ZCoinBuilder<'a> {
         );
 
         let evk = ExtendedFullViewingKey::from(&self.z_spending_key);
+        let cache_db_path = self.db_dir_path.join(format!("{}_cache.db", self.ticker));
+        let wallet_db_path = self.db_dir_path.join(format!("{}_wallet.db", self.ticker));
         let (sync_state_connector, light_wallet_db) = match &self.z_coin_params.mode {
             ZcoinRpcMode::Native => {
+                // todo should be the error handle instead of unwrap
                 let native_client: NativeClient = self.native_client().unwrap();
-                let cache_db_path = self.db_dir_path.join(format!("{}_native_cache.db", self.ticker));
-                let wallet_db_path = self.db_dir_path.join(format!("{}_native_wallet.db", self.ticker));
                 init_native_client(
                     native_client,
                     cache_db_path,
@@ -784,8 +785,6 @@ impl<'a> UtxoCoinWithIguanaPrivKeyBuilder for ZCoinBuilder<'a> {
             ZcoinRpcMode::Light {
                 light_wallet_d_servers, ..
             } => {
-                let cache_db_path = self.db_dir_path.join(format!("{}_light_cache.db", self.ticker));
-                let wallet_db_path = self.db_dir_path.join(format!("{}_light_wallet.db", self.ticker));
                 // TODO multi lightwalletd servers support will be added on the next iteration
                 let uri = Uri::from_str(
                     light_wallet_d_servers

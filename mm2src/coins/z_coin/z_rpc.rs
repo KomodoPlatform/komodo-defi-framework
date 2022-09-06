@@ -66,7 +66,7 @@ pub trait ZRpcOps {
         on_block: &mut (dyn FnMut(TonicCompactBlock) -> Result<(), MmError<UpdateBlocksCacheErr>> + Send + Sync),
     ) -> Result<(), MmError<UpdateBlocksCacheErr>>;
 
-    async fn check_watch_for_tx(&mut self, tx_id: TxId, attempts: &mut i32, watch_for_tx: &mut Option<TxId>);
+    async fn check_watch_for_tx(&mut self, tx_id: TxId, watch_for_tx: &mut Option<TxId>);
 }
 
 #[async_trait]
@@ -102,7 +102,8 @@ impl ZRpcOps for CompactTxStreamerClient<Channel> {
         Ok(())
     }
 
-    async fn check_watch_for_tx(&mut self, tx_id: TxId, attempts: &mut i32, watch_for_tx: &mut Option<TxId>) {
+    async fn check_watch_for_tx(&mut self, tx_id: TxId, watch_for_tx: &mut Option<TxId>) {
+        let mut attempts = 0;
         loop {
             let filter = TxFilter {
                 block: None,
@@ -115,11 +116,11 @@ impl ZRpcOps for CompactTxStreamerClient<Channel> {
                 Err(e) => {
                     error!("Error on getting tx {}", tx_id);
                     if e.message().contains(NO_TX_ERROR_CODE) {
-                        if *attempts >= 3 {
+                        if attempts >= 3 {
                             *watch_for_tx = None;
                             return;
                         }
-                        *attempts += 1;
+                        attempts += 1;
                     }
                     Timer::sleep(30.).await;
                 },
@@ -211,18 +212,19 @@ impl ZRpcOps for NativeClient {
         Ok(())
     }
 
-    async fn check_watch_for_tx(&mut self, tx_id: TxId, attempts: &mut i32, watch_for_tx: &mut Option<TxId>) {
+    async fn check_watch_for_tx(&mut self, tx_id: TxId, watch_for_tx: &mut Option<TxId>) {
+        let mut attempts = 0;
         loop {
             match self.get_raw_transaction_bytes(&H256Json::from(tx_id.0)).compat().await {
                 Ok(_) => break,
                 Err(e) => {
                     error!("Error on getting tx {}", tx_id);
                     if e.to_string().contains(NO_TX_ERROR_CODE) {
-                        if *attempts >= 3 {
+                        if attempts >= 3 {
                             *watch_for_tx = None;
                             return;
                         }
-                        *attempts += 1;
+                        attempts += 1;
                     }
                     Timer::sleep(30.).await;
                 },
@@ -608,6 +610,7 @@ pub(super) async fn init_native_client(
     let blocks_db =
         async_blocking(|| BlockDb::for_path(cache_db_path).map_to_mm(ZcoinClientInitError::BlocksDbInitFailure))
             .await?;
+    // todo check async_blocking for wallet_db as it was previously
     let wallet_db = create_wallet_db(wallet_db_path, consensus_params.clone(), check_point_block, evk).await?;
     let (sync_status_notifier, sync_watcher) = channel(1);
     let (on_tx_gen_notifier, on_tx_gen_watcher) = channel(1);
@@ -807,9 +810,8 @@ impl SaplingSyncLoopHandle {
 
     async fn check_watch_for_tx_existence(&mut self, rpc: &mut (dyn ZRpcOps + Send)) {
         if let Some(tx_id) = self.watch_for_tx {
-            let mut attempts = 0;
-            rpc.check_watch_for_tx(tx_id, &mut attempts, &mut self.watch_for_tx)
-                .await;
+            // todo watch_for_tx must be controlled by the code that calls check_watch_for_tx
+            rpc.check_watch_for_tx(tx_id, &mut self.watch_for_tx).await;
         }
     }
 }
