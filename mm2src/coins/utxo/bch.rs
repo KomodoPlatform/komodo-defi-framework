@@ -6,6 +6,7 @@ use crate::utxo::slp::{parse_slp_script, ParseSlpScriptError, SlpGenesisParams, 
                        SlpUnspent};
 use crate::utxo::utxo_builder::{UtxoArcBuilder, UtxoCoinBuilder};
 use crate::utxo::utxo_common::big_decimal_from_sat_unsigned;
+use crate::utxo::utxo_tx_history_v2::UtxoTxHistoryOps;
 use crate::{BlockHeightAndTime, CanRefundHtlc, CoinBalance, CoinProtocol, NegotiateSwapContractAddrErr,
             PrivKeyBuildPolicy, RawTransactionFut, RawTransactionRequest, SearchForSwapTxSpendInput, SignatureResult,
             SwapOps, TradePreimageValue, TransactionFut, TransactionType, TxFeeDetails, TxMarshalingErr,
@@ -1146,29 +1147,6 @@ impl MarketCoinOps for BchCoin {
 }
 
 #[async_trait]
-impl UtxoStandardOps for BchCoin {
-    async fn tx_details_by_hash(
-        &self,
-        hash: &[u8],
-        input_transactions: &mut HistoryUtxoTxMap,
-    ) -> Result<TransactionDetails, String> {
-        utxo_common::tx_details_by_hash(self, hash, input_transactions).await
-    }
-
-    async fn request_tx_history(&self, metrics: MetricsArc) -> RequestTxHistoryResult {
-        utxo_common::request_tx_history(self, metrics).await
-    }
-
-    async fn update_kmd_rewards(
-        &self,
-        tx_details: &mut TransactionDetails,
-        input_transactions: &mut HistoryUtxoTxMap,
-    ) -> UtxoRpcResult<()> {
-        utxo_common::update_kmd_rewards(self, tx_details, input_transactions).await
-    }
-}
-
-#[async_trait]
 impl MmCoin for BchCoin {
     fn is_asset_chain(&self) -> bool { utxo_common::is_asset_chain(&self.utxo_arc) }
 
@@ -1188,13 +1166,9 @@ impl MmCoin for BchCoin {
 
     fn validate_address(&self, address: &str) -> ValidateAddressResult { utxo_common::validate_address(self, address) }
 
-    fn process_history_loop(&self, ctx: MmArc) -> Box<dyn Future<Item = (), Error = ()> + Send> {
-        Box::new(
-            utxo_common::process_history_loop(self.clone(), ctx)
-                .map(|_| Ok(()))
-                .boxed()
-                .compat(),
-        )
+    fn process_history_loop(&self, _ctx: MmArc) -> Box<dyn Future<Item = (), Error = ()> + Send> {
+        warn!("'process_history_loop' is not deprecated for BchCoin! Consider using 'my_tx_history_v2'");
+        Box::new(futures01::future::err(()))
     }
 
     fn history_sync_status(&self) -> HistorySyncState { utxo_common::history_sync_status(&self.utxo_arc) }
@@ -1251,6 +1225,35 @@ impl CoinWithTxHistoryV2 for BchCoin {
 
     /// There are not specific filters for `BchCoin`.
     fn get_tx_history_filters(&self) -> GetTxHistoryFilters { GetTxHistoryFilters::new() }
+}
+
+#[async_trait]
+impl UtxoTxHistoryOps for BchCoin {
+    async fn tx_details_by_hash<T>(
+        &self,
+        hash: &H256Json,
+        block_height_and_time: Option<BlockHeightAndTime>,
+        storage: &T,
+    ) -> Result<Vec<TransactionDetails>, String>
+    where
+        T: TxHistoryStorage,
+    {
+        self.transaction_details_with_token_transfers(hash, block_height_and_time, storage)
+            .await
+            .map_err(|e| format!("{:?}", e))
+    }
+
+    async fn request_tx_history(&self, metrics: MetricsArc) -> RequestTxHistoryResult {
+        utxo_common::request_tx_history(self, metrics).await
+    }
+
+    async fn get_block_timestamp(&self, height: u64) -> MmResult<u64, UtxoRpcError> {
+        self.get_block_timestamp(height).await
+    }
+
+    fn set_history_sync_state(&self, new_state: HistorySyncState) {
+        *self.as_ref().history_sync_state.lock().unwrap() = new_state;
+    }
 }
 
 // testnet

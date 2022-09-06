@@ -4,32 +4,56 @@ use super::RequestTxHistoryResult;
 use crate::my_tx_history_v2::{CoinWithTxHistoryV2, TxHistoryStorage};
 use crate::utxo::bch::BchCoin;
 use crate::utxo::utxo_common;
-use crate::utxo::UtxoStandardOps;
-use crate::{BlockHeightAndTime, HistorySyncState, MarketCoinOps};
+use crate::{BlockHeightAndTime, HistorySyncState, MarketCoinOps, TransactionDetails, UtxoRpcError};
 use async_trait::async_trait;
 use common::executor::Timer;
 use common::log::{error, info};
 use common::state_machine::prelude::*;
-use futures::compat::Future01CompatExt;
+use keys::Address;
+use mm2_err_handle::prelude::*;
 use mm2_metrics::MetricsArc;
 use mm2_number::BigDecimal;
 use rpc::v1::types::H256 as H256Json;
 use std::collections::HashMap;
 use std::str::FromStr;
 
-struct BchAndSlpHistoryCtx<Storage: TxHistoryStorage> {
-    coin: BchCoin,
+#[async_trait]
+pub trait UtxoTxHistoryOps: CoinWithTxHistoryV2 + MarketCoinOps + Send + Sync + 'static {
+    /// Gets tx details by hash requesting the coin RPC if required.
+    ///
+    /// # Todo
+    ///
+    /// Consider returning a specific error.
+    /// In the meantime, return the string as an error since we just output it to the log.
+    async fn tx_details_by_hash<T>(
+        &self,
+        hash: &H256Json,
+        block_height_and_time: Option<BlockHeightAndTime>,
+        storage: &T,
+    ) -> Result<Vec<TransactionDetails>, String>
+    where
+        T: TxHistoryStorage;
+
+    async fn request_tx_history(&self, metrics: MetricsArc) -> RequestTxHistoryResult;
+
+    async fn get_block_timestamp(&self, height: u64) -> MmResult<u64, UtxoRpcError>;
+
+    fn set_history_sync_state(&self, new_state: HistorySyncState);
+}
+
+struct UtxoTxHistoryCtx<Coin: UtxoTxHistoryOps, Storage: TxHistoryStorage> {
+    coin: Coin,
     storage: Storage,
     metrics: MetricsArc,
-    current_balance: BigDecimal,
+    balances: HashMap<Address, BigDecimal>,
 }
 
 // States have to be generic over storage type because BchAndSlpHistoryCtx is generic over it
-struct Init<T> {
-    phantom: std::marker::PhantomData<T>,
+struct Init<Coin, Storage> {
+    phantom: std::marker::PhantomData<(Coin, Storage)>,
 }
 
-impl<T> Init<T> {
+impl<Coin, Storage> Init<Coin, Storage> {
     fn new() -> Self {
         Init {
             phantom: Default::default(),
@@ -37,15 +61,19 @@ impl<T> Init<T> {
     }
 }
 
-impl<T, E> TransitionFrom<Init<T>> for Stopped<T, E> {}
+impl<Coin, Storage> TransitionFrom<Init<Coin, Storage>> for Stopped<Coin, Storage> {}
 
 #[async_trait]
-impl<T: TxHistoryStorage> State for Init<T> {
-    type Ctx = BchAndSlpHistoryCtx<T>;
+impl<Coin, Storage> State for Init<Coin, Storage>
+where
+    Coin: UtxoTxHistoryOps,
+    Storage: TxHistoryStorage,
+{
+    type Ctx = UtxoTxHistoryCtx<Coin, Storage>;
     type Result = ();
 
-    async fn on_changed(self: Box<Self>, ctx: &mut BchAndSlpHistoryCtx<T>) -> StateResult<BchAndSlpHistoryCtx<T>, ()> {
-        *ctx.coin.as_ref().history_sync_state.lock().unwrap() = HistorySyncState::NotStarted;
+    async fn on_changed(self: Box<Self>, ctx: &mut Self::Ctx) -> StateResult<Self::Ctx, Self::Result> {
+        ctx.coin.set_history_sync_state(HistorySyncState::NotStarted);
 
         if let Err(e) = ctx.storage.init(&ctx.coin.history_wallet_id()).await {
             return Self::change_state(Stopped::storage_error(e));
@@ -56,11 +84,11 @@ impl<T: TxHistoryStorage> State for Init<T> {
 }
 
 // States have to be generic over storage type because BchAndSlpHistoryCtx is generic over it
-struct FetchingTxHashes<T> {
-    phantom: std::marker::PhantomData<T>,
+struct FetchingTxHashes<Coin, Storage> {
+    phantom: std::marker::PhantomData<(Coin, Storage)>,
 }
 
-impl<T> FetchingTxHashes<T> {
+impl<Coin, Storage> FetchingTxHashes<Coin, Storage> {
     fn new() -> Self {
         FetchingTxHashes {
             phantom: Default::default(),
@@ -68,16 +96,20 @@ impl<T> FetchingTxHashes<T> {
     }
 }
 
-impl<T> TransitionFrom<Init<T>> for FetchingTxHashes<T> {}
-impl<T> TransitionFrom<OnIoErrorCooldown<T>> for FetchingTxHashes<T> {}
-impl<T> TransitionFrom<WaitForHistoryUpdateTrigger<T>> for FetchingTxHashes<T> {}
+impl<Coin, Storage> TransitionFrom<Init<Coin, Storage>> for FetchingTxHashes<Coin, Storage> {}
+impl<Coin, Storage> TransitionFrom<OnIoErrorCooldown<Coin, Storage>> for FetchingTxHashes<Coin, Storage> {}
+impl<Coin, Storage> TransitionFrom<WaitForHistoryUpdateTrigger<Coin, Storage>> for FetchingTxHashes<Coin, Storage> {}
 
 #[async_trait]
-impl<T: TxHistoryStorage> State for FetchingTxHashes<T> {
-    type Ctx = BchAndSlpHistoryCtx<T>;
+impl<Coin, Storage> State for FetchingTxHashes<Coin, Storage>
+where
+    Coin: UtxoTxHistoryOps,
+    Storage: TxHistoryStorage,
+{
+    type Ctx = UtxoTxHistoryCtx<Coin, Storage>;
     type Result = ();
 
-    async fn on_changed(self: Box<Self>, ctx: &mut BchAndSlpHistoryCtx<T>) -> StateResult<BchAndSlpHistoryCtx<T>, ()> {
+    async fn on_changed(self: Box<Self>, ctx: &mut Self::Ctx) -> StateResult<Self::Ctx, Self::Result> {
         let wallet_id = ctx.coin.history_wallet_id();
         if let Err(e) = ctx.storage.init(&wallet_id).await {
             return Self::change_state(Stopped::storage_error(e));
@@ -92,13 +124,14 @@ impl<T: TxHistoryStorage> State for FetchingTxHashes<T> {
                 };
                 if all_tx_ids_with_height.len() > in_storage {
                     let txes_left = all_tx_ids_with_height.len() - in_storage;
-                    *ctx.coin.as_ref().history_sync_state.lock().unwrap() =
-                        HistorySyncState::InProgress(json!({ "transactions_left": txes_left }));
+                    let new_state_json = json!({ "transactions_left": txes_left });
+                    ctx.coin
+                        .set_history_sync_state(HistorySyncState::InProgress(new_state_json));
                 }
 
                 Self::change_state(UpdatingUnconfirmedTxes::new(all_tx_ids_with_height))
             },
-            RequestTxHistoryResult::HistoryTooLarge => Self::change_state(Stopped::<T, T::Error>::history_too_large()),
+            RequestTxHistoryResult::HistoryTooLarge => Self::change_state(Stopped::history_too_large()),
             RequestTxHistoryResult::Retry { error } => {
                 error!("Error {} on requesting tx history for {}", error, ctx.coin.ticker());
                 Self::change_state(OnIoErrorCooldown::new())
@@ -109,18 +142,18 @@ impl<T: TxHistoryStorage> State for FetchingTxHashes<T> {
                     e,
                     ctx.coin.ticker()
                 );
-                Self::change_state(Stopped::<T, T::Error>::unknown(e))
+                Self::change_state(Stopped::unknown(e))
             },
         }
     }
 }
 
 // States have to be generic over storage type because BchAndSlpHistoryCtx is generic over it
-struct OnIoErrorCooldown<T> {
-    phantom: std::marker::PhantomData<T>,
+struct OnIoErrorCooldown<Coin, Storage> {
+    phantom: std::marker::PhantomData<(Coin, Storage)>,
 }
 
-impl<T> OnIoErrorCooldown<T> {
+impl<Coin, Storage> OnIoErrorCooldown<Coin, Storage> {
     fn new() -> Self {
         OnIoErrorCooldown {
             phantom: Default::default(),
@@ -128,27 +161,31 @@ impl<T> OnIoErrorCooldown<T> {
     }
 }
 
-impl<T> TransitionFrom<FetchingTxHashes<T>> for OnIoErrorCooldown<T> {}
-impl<T> TransitionFrom<FetchingTransactionsData<T>> for OnIoErrorCooldown<T> {}
-impl<T> TransitionFrom<UpdatingUnconfirmedTxes<T>> for OnIoErrorCooldown<T> {}
+impl<Coin, Storage> TransitionFrom<FetchingTxHashes<Coin, Storage>> for OnIoErrorCooldown<Coin, Storage> {}
+impl<Coin, Storage> TransitionFrom<FetchingTransactionsData<Coin, Storage>> for OnIoErrorCooldown<Coin, Storage> {}
+impl<Coin, Storage> TransitionFrom<UpdatingUnconfirmedTxes<Coin, Storage>> for OnIoErrorCooldown<Coin, Storage> {}
 
 #[async_trait]
-impl<T: TxHistoryStorage> State for OnIoErrorCooldown<T> {
-    type Ctx = BchAndSlpHistoryCtx<T>;
+impl<Coin, Storage> State for OnIoErrorCooldown<Coin, Storage>
+where
+    Coin: UtxoTxHistoryOps,
+    Storage: TxHistoryStorage,
+{
+    type Ctx = UtxoTxHistoryCtx<Coin, Storage>;
     type Result = ();
 
-    async fn on_changed(self: Box<Self>, _ctx: &mut BchAndSlpHistoryCtx<T>) -> StateResult<BchAndSlpHistoryCtx<T>, ()> {
+    async fn on_changed(self: Box<Self>, _ctx: &mut Self::Ctx) -> StateResult<Self::Ctx, Self::Result> {
         Timer::sleep(30.).await;
         Self::change_state(FetchingTxHashes::new())
     }
 }
 
 // States have to be generic over storage type because BchAndSlpHistoryCtx is generic over it
-struct WaitForHistoryUpdateTrigger<T> {
-    phantom: std::marker::PhantomData<T>,
+struct WaitForHistoryUpdateTrigger<Coin, Storage> {
+    phantom: std::marker::PhantomData<(Coin, Storage)>,
 }
 
-impl<T> WaitForHistoryUpdateTrigger<T> {
+impl<Coin, Storage> WaitForHistoryUpdateTrigger<Coin, Storage> {
     fn new() -> Self {
         WaitForHistoryUpdateTrigger {
             phantom: Default::default(),
@@ -156,14 +193,21 @@ impl<T> WaitForHistoryUpdateTrigger<T> {
     }
 }
 
-impl<T> TransitionFrom<FetchingTransactionsData<T>> for WaitForHistoryUpdateTrigger<T> {}
+impl<Coin, Storage> TransitionFrom<FetchingTransactionsData<Coin, Storage>>
+    for WaitForHistoryUpdateTrigger<Coin, Storage>
+{
+}
 
 #[async_trait]
-impl<T: TxHistoryStorage> State for WaitForHistoryUpdateTrigger<T> {
-    type Ctx = BchAndSlpHistoryCtx<T>;
+impl<Coin, Storage> State for WaitForHistoryUpdateTrigger<Coin, Storage>
+where
+    Coin: UtxoTxHistoryOps,
+    Storage: TxHistoryStorage,
+{
+    type Ctx = UtxoTxHistoryCtx<Coin, Storage>;
     type Result = ();
 
-    async fn on_changed(self: Box<Self>, ctx: &mut BchAndSlpHistoryCtx<T>) -> StateResult<Self::Ctx, Self::Result> {
+    async fn on_changed(self: Box<Self>, ctx: &mut Self::Ctx) -> StateResult<Self::Ctx, Self::Result> {
         let wallet_id = ctx.coin.history_wallet_id();
         loop {
             Timer::sleep(30.).await;
@@ -176,29 +220,30 @@ impl<T: TxHistoryStorage> State for WaitForHistoryUpdateTrigger<T> {
                 Err(e) => return Self::change_state(Stopped::storage_error(e)),
             }
 
-            match ctx.coin.my_balance().compat().await {
-                Ok(balance) => {
-                    let total_balance = balance.into_total();
-                    if ctx.current_balance != total_balance {
-                        ctx.current_balance = total_balance;
-                        return Self::change_state(FetchingTxHashes::new());
-                    }
-                },
-                Err(e) => {
-                    error!("Error {} on balance fetching for the coin {}", e, ctx.coin.ticker());
-                },
-            }
+            todo!()
+            // match ctx.coin.my_balance().compat().await {
+            //     Ok(balance) => {
+            //         let total_balance = balance.into_total();
+            //         if ctx.current_balance != total_balance {
+            //             ctx.current_balance = total_balance;
+            //             return Self::change_state(FetchingTxHashes::new());
+            //         }
+            //     },
+            //     Err(e) => {
+            //         error!("Error {} on balance fetching for the coin {}", e, ctx.coin.ticker());
+            //     },
+            // }
         }
     }
 }
 
 // States have to be generic over storage type because BchAndSlpHistoryCtx is generic over it
-struct UpdatingUnconfirmedTxes<T> {
-    phantom: std::marker::PhantomData<T>,
+struct UpdatingUnconfirmedTxes<Coin, Storage> {
+    phantom: std::marker::PhantomData<(Coin, Storage)>,
     all_tx_ids_with_height: Vec<(H256Json, u64)>,
 }
 
-impl<T> UpdatingUnconfirmedTxes<T> {
+impl<Coin, Storage> UpdatingUnconfirmedTxes<Coin, Storage> {
     fn new(all_tx_ids_with_height: Vec<(H256Json, u64)>) -> Self {
         UpdatingUnconfirmedTxes {
             phantom: Default::default(),
@@ -207,14 +252,18 @@ impl<T> UpdatingUnconfirmedTxes<T> {
     }
 }
 
-impl<T> TransitionFrom<FetchingTxHashes<T>> for UpdatingUnconfirmedTxes<T> {}
+impl<Coin, Storage> TransitionFrom<FetchingTxHashes<Coin, Storage>> for UpdatingUnconfirmedTxes<Coin, Storage> {}
 
 #[async_trait]
-impl<T: TxHistoryStorage> State for UpdatingUnconfirmedTxes<T> {
-    type Ctx = BchAndSlpHistoryCtx<T>;
+impl<Coin, Storage> State for UpdatingUnconfirmedTxes<Coin, Storage>
+where
+    Coin: UtxoTxHistoryOps,
+    Storage: TxHistoryStorage,
+{
+    type Ctx = UtxoTxHistoryCtx<Coin, Storage>;
     type Result = ();
 
-    async fn on_changed(self: Box<Self>, ctx: &mut BchAndSlpHistoryCtx<T>) -> StateResult<BchAndSlpHistoryCtx<T>, ()> {
+    async fn on_changed(self: Box<Self>, ctx: &mut Self::Ctx) -> StateResult<Self::Ctx, Self::Result> {
         let wallet_id = ctx.coin.history_wallet_id();
         match ctx.storage.get_unconfirmed_txes_from_history(&wallet_id).await {
             Ok(unconfirmed) => {
@@ -255,14 +304,14 @@ impl<T: TxHistoryStorage> State for UpdatingUnconfirmedTxes<T> {
 }
 
 // States have to be generic over storage type because BchAndSlpHistoryCtx is generic over it
-struct FetchingTransactionsData<T> {
-    phantom: std::marker::PhantomData<T>,
+struct FetchingTransactionsData<Coin, Storage> {
+    phantom: std::marker::PhantomData<(Coin, Storage)>,
     all_tx_ids_with_height: Vec<(H256Json, u64)>,
 }
 
-impl<T> TransitionFrom<UpdatingUnconfirmedTxes<T>> for FetchingTransactionsData<T> {}
+impl<Coin, Storage> TransitionFrom<UpdatingUnconfirmedTxes<Coin, Storage>> for FetchingTransactionsData<Coin, Storage> {}
 
-impl<T> FetchingTransactionsData<T> {
+impl<Coin, Storage> FetchingTransactionsData<Coin, Storage> {
     fn new(all_tx_ids_with_height: Vec<(H256Json, u64)>) -> Self {
         FetchingTransactionsData {
             phantom: Default::default(),
@@ -272,11 +321,15 @@ impl<T> FetchingTransactionsData<T> {
 }
 
 #[async_trait]
-impl<T: TxHistoryStorage> State for FetchingTransactionsData<T> {
-    type Ctx = BchAndSlpHistoryCtx<T>;
+impl<Coin, Storage> State for FetchingTransactionsData<Coin, Storage>
+where
+    Coin: UtxoTxHistoryOps,
+    Storage: TxHistoryStorage,
+{
+    type Ctx = UtxoTxHistoryCtx<Coin, Storage>;
     type Result = ();
 
-    async fn on_changed(self: Box<Self>, ctx: &mut BchAndSlpHistoryCtx<T>) -> StateResult<BchAndSlpHistoryCtx<T>, ()> {
+    async fn on_changed(self: Box<Self>, ctx: &mut Self::Ctx) -> StateResult<Self::Ctx, Self::Result> {
         let wallet_id = ctx.coin.history_wallet_id();
         for (tx_hash, height) in self.all_tx_ids_with_height {
             let tx_hash_string = format!("{:02x}", tx_hash);
@@ -297,7 +350,7 @@ impl<T: TxHistoryStorage> State for FetchingTransactionsData<T> {
             };
             let tx_details = match ctx
                 .coin
-                .transaction_details_with_token_transfers(&tx_hash, block_height_and_time, &ctx.storage)
+                .tx_details_by_hash(&tx_hash, block_height_and_time, &ctx.storage)
                 .await
             {
                 Ok(tx) => tx,
@@ -320,24 +373,24 @@ impl<T: TxHistoryStorage> State for FetchingTransactionsData<T> {
             Timer::sleep(1.).await;
         }
         info!("Tx history fetching finished for {}", ctx.coin.ticker());
-        *ctx.coin.as_ref().history_sync_state.lock().unwrap() = HistorySyncState::Finished;
+        ctx.coin.set_history_sync_state(HistorySyncState::Finished);
         Self::change_state(WaitForHistoryUpdateTrigger::new())
     }
 }
 
 #[derive(Debug)]
-enum StopReason<E> {
+enum StopReason {
     HistoryTooLarge,
-    StorageError(E),
+    StorageError(String),
     UnknownError(String),
 }
 
-struct Stopped<T, E> {
-    phantom: std::marker::PhantomData<T>,
-    stop_reason: StopReason<E>,
+struct Stopped<Coin, Storage> {
+    phantom: std::marker::PhantomData<(Coin, Storage)>,
+    stop_reason: StopReason,
 }
 
-impl<T, E> Stopped<T, E> {
+impl<Coin, Storage> Stopped<Coin, Storage> {
     fn history_too_large() -> Self {
         Stopped {
             phantom: Default::default(),
@@ -345,10 +398,13 @@ impl<T, E> Stopped<T, E> {
         }
     }
 
-    fn storage_error(e: E) -> Self {
+    fn storage_error<E>(e: E) -> Self
+    where
+        E: std::fmt::Debug,
+    {
         Stopped {
             phantom: Default::default(),
-            stop_reason: StopReason::StorageError(e),
+            stop_reason: StopReason::StorageError(format!("{:?}", e)),
         }
     }
 
@@ -360,14 +416,18 @@ impl<T, E> Stopped<T, E> {
     }
 }
 
-impl<T, E> TransitionFrom<FetchingTxHashes<T>> for Stopped<T, E> {}
-impl<T, E> TransitionFrom<UpdatingUnconfirmedTxes<T>> for Stopped<T, E> {}
-impl<T, E> TransitionFrom<WaitForHistoryUpdateTrigger<T>> for Stopped<T, E> {}
-impl<T, E> TransitionFrom<FetchingTransactionsData<T>> for Stopped<T, E> {}
+impl<Coin, Storage> TransitionFrom<FetchingTxHashes<Coin, Storage>> for Stopped<Coin, Storage> {}
+impl<Coin, Storage> TransitionFrom<UpdatingUnconfirmedTxes<Coin, Storage>> for Stopped<Coin, Storage> {}
+impl<Coin, Storage> TransitionFrom<WaitForHistoryUpdateTrigger<Coin, Storage>> for Stopped<Coin, Storage> {}
+impl<Coin, Storage> TransitionFrom<FetchingTransactionsData<Coin, Storage>> for Stopped<Coin, Storage> {}
 
 #[async_trait]
-impl<T: TxHistoryStorage, E: std::fmt::Debug + Send + 'static> LastState for Stopped<T, E> {
-    type Ctx = BchAndSlpHistoryCtx<T>;
+impl<Coin, Storage> LastState for Stopped<Coin, Storage>
+where
+    Coin: UtxoTxHistoryOps,
+    Storage: TxHistoryStorage,
+{
+    type Ctx = UtxoTxHistoryCtx<Coin, Storage>;
     type Result = ();
 
     async fn on_changed(self: Box<Self>, ctx: &mut Self::Ctx) -> Self::Result {
@@ -385,7 +445,7 @@ impl<T: TxHistoryStorage, E: std::fmt::Debug + Send + 'static> LastState for Sto
                 "message": format!("{:?}", reason),
             }),
         };
-        *ctx.coin.as_ref().history_sync_state.lock().unwrap() = HistorySyncState::Error(new_state_json);
+        ctx.coin.set_history_sync_state(HistorySyncState::Error(new_state_json));
     }
 }
 
@@ -395,11 +455,22 @@ pub async fn bch_and_slp_history_loop(
     metrics: MetricsArc,
     current_balance: BigDecimal,
 ) {
-    let ctx = BchAndSlpHistoryCtx {
+    let my_address = match coin.as_ref().derivation_method.iguana_or_err() {
+        Ok(my_address) => my_address.clone(),
+        Err(e) => {
+            error!("Expected Iguana derivation method: {}", e);
+            return;
+        },
+    };
+    let mut balances = HashMap::new();
+    balances.insert(my_address, current_balance);
+    drop_mutability!(balances);
+
+    let ctx = UtxoTxHistoryCtx {
         coin,
         storage,
         metrics,
-        current_balance,
+        balances,
     };
     let state_machine: StateMachine<_, ()> = StateMachine::from_ctx(ctx);
     state_machine.run(Init::new()).await;

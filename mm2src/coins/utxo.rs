@@ -22,7 +22,6 @@
 //
 
 pub mod bch;
-pub mod bch_and_slp_tx_history;
 mod bchd_grpc;
 #[allow(clippy::all)]
 #[rustfmt::skip]
@@ -36,6 +35,7 @@ pub mod utxo_block_header_storage;
 pub mod utxo_builder;
 pub mod utxo_common;
 pub mod utxo_standard;
+pub mod utxo_tx_history_v2;
 pub mod utxo_withdraw;
 
 use async_trait::async_trait;
