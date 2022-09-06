@@ -1336,7 +1336,7 @@ impl NetworkBehaviour for Gossipsub {
         debug!("Peer disconnected: {:?}", peer_id);
         {
             let topics = match self.peer_topics.get(peer_id) {
-                Some(topics) => (topics),
+                Some(topics) => topics,
                 None => {
                     warn!("Disconnected node, not in connected nodes");
                     return;
