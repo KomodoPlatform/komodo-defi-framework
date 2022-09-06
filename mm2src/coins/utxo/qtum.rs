@@ -14,7 +14,7 @@ use crate::rpc_command::init_scan_for_new_addresses::{self, InitScanAddressesRpc
 use crate::rpc_command::init_withdraw::{InitWithdrawCoin, WithdrawTaskHandle};
 use crate::utxo::utxo_builder::{BlockHeaderUtxoArcOps, MergeUtxoArcOps, UtxoCoinBuildError, UtxoCoinBuilder,
                                 UtxoCoinBuilderCommonOps, UtxoFieldsWithHardwareWalletBuilder,
-                                UtxoFieldsWithIguanaPrivKeyBuilder, UtxoSyncStatusLoopHandle};
+                                UtxoFieldsWithIguanaPrivKeyBuilder};
 use crate::{eth, CanRefundHtlc, CoinBalance, CoinWithDerivationMethod, DelegationError, DelegationFut,
             GetWithdrawSenderAddress, NegotiateSwapContractAddrErr, PrivKeyBuildPolicy, SearchForSwapTxSpendInput,
             SignatureResult, StakingInfosFut, SwapOps, TradePreimageValue, TransactionFut, TxMarshalingErr,
@@ -201,8 +201,6 @@ impl<'a> UtxoCoinBuilderCommonOps for QtumCoinBuilder<'a> {
     fn activation_params(&self) -> &UtxoActivationParams { self.activation_params }
 
     fn ticker(&self) -> &str { self.ticker }
-
-    fn sync_status_loop_handle(&self) -> Option<UtxoSyncStatusLoopHandle> { None }
 
     fn check_utxo_maturity(&self) -> bool { self.activation_params().check_utxo_maturity.unwrap_or(true) }
 }

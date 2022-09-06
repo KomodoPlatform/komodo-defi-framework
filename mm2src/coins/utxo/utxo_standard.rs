@@ -56,7 +56,6 @@ pub async fn utxo_standard_coin_with_priv_key(
             conf,
             activation_params,
             priv_key_policy,
-            None,
             UtxoStandardCoin::from
         )
         .build()

@@ -47,13 +47,14 @@ use chain::{OutPoint, TransactionOutput, TxHashAlgo};
 #[cfg(not(target_arch = "wasm32"))]
 use common::first_char_to_upper;
 use common::jsonrpc_client::JsonRpcError;
+use common::log::LogOnError;
 use common::now_ms;
 use crypto::trezor::utxo::TrezorUtxoCoin;
 use crypto::{Bip32DerPathOps, Bip32Error, Bip44Chain, Bip44DerPathError, Bip44PathToAccount, Bip44PathToCoin,
              ChildNumber, DerivationPath, Secp256k1ExtendedPublicKey};
 use derive_more::Display;
 #[cfg(not(target_arch = "wasm32"))] use dirs::home_dir;
-use futures::channel::mpsc;
+use futures::channel::mpsc::{Receiver as AsyncReceiver, Sender as AsyncSender, UnboundedSender};
 use futures::compat::Future01CompatExt;
 use futures::lock::{Mutex as AsyncMutex, MutexGuard as AsyncMutexGuard};
 use futures01::Future;
@@ -440,6 +441,54 @@ impl From<BlockchainNetwork> for LightningCurrency {
     }
 }
 
+pub enum UtxoSyncStatus {
+    SyncingBlockHeaders {
+        current_scanned_block: u64,
+        last_block: u64,
+    },
+    TemporaryError(String),
+    PermanentError(String),
+    Finished {
+        block_number: u64,
+    },
+}
+
+#[derive(Clone)]
+pub struct UtxoSyncStatusLoopHandle(AsyncSender<UtxoSyncStatus>);
+
+impl UtxoSyncStatusLoopHandle {
+    pub fn new(sync_status_notifier: AsyncSender<UtxoSyncStatus>) -> Self {
+        UtxoSyncStatusLoopHandle(sync_status_notifier)
+    }
+
+    pub fn notify_blocks_headers_sync_status(&mut self, current_scanned_block: u64, last_block: u64) {
+        self.0
+            .try_send(UtxoSyncStatus::SyncingBlockHeaders {
+                current_scanned_block,
+                last_block,
+            })
+            .debug_log_with_msg("No one seems interested in UtxoSyncStatus");
+    }
+
+    pub fn notify_on_temp_error(&mut self, error: String) {
+        self.0
+            .try_send(UtxoSyncStatus::TemporaryError(error))
+            .debug_log_with_msg("No one seems interested in UtxoSyncStatus");
+    }
+
+    pub fn notify_on_permanent_error(&mut self, error: String) {
+        self.0
+            .try_send(UtxoSyncStatus::PermanentError(error))
+            .debug_log_with_msg("No one seems interested in UtxoSyncStatus");
+    }
+
+    pub fn notify_sync_finished(&mut self, block_number: u64) {
+        self.0
+            .try_send(UtxoSyncStatus::Finished { block_number })
+            .debug_log_with_msg("No one seems interested in UtxoSyncStatus");
+    }
+}
+
 #[derive(Debug)]
 pub struct UtxoCoinConf {
     pub ticker: String,
@@ -545,6 +594,12 @@ pub struct UtxoCoinFields {
     /// The flag determines whether to use mature unspent outputs *only* to generate transactions.
     /// https://github.com/KomodoPlatform/atomicDEX-API/issues/1181
     pub check_utxo_maturity: bool,
+    /// The notifier/sender of the block headers synchronization status,
+    /// initialized only for non-native mode if spv is enabled for the coin.
+    pub block_headers_status_notifier: Option<UtxoSyncStatusLoopHandle>,
+    /// The watcher/receiver of the block headers synchronization status,
+    /// initialized only for non-native mode if spv is enabled for the coin.
+    pub block_headers_status_watcher: Option<AsyncMutex<AsyncReceiver<UtxoSyncStatus>>>,
 }
 
 #[derive(Debug, Display)]
@@ -1229,7 +1284,7 @@ pub fn coin_daemon_data_dir(name: &str, is_asset_chain: bool) -> PathBuf {
 /// Electrum protocol version verifier.
 /// The structure is used to handle the `on_connected` event and notify `electrum_version_loop`.
 struct ElectrumProtoVerifier {
-    on_connect_tx: mpsc::UnboundedSender<String>,
+    on_connect_tx: UnboundedSender<String>,
 }
 
 impl ElectrumProtoVerifier {

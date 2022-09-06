@@ -21,7 +21,7 @@ use chain::constants::SEQUENCE_FINAL;
 use chain::{OutPoint, TransactionOutput};
 use common::executor::Timer;
 use common::jsonrpc_client::JsonRpcErrorType;
-use common::log::{error, info, warn};
+use common::log::{error, warn};
 use common::{now_ms, one_hundred, ten_f64};
 use crypto::{Bip32DerPathOps, Bip44Chain, Bip44DerPathError, Bip44DerivationPath, RpcDerivationPath};
 use futures::compat::Future01CompatExt;
@@ -41,8 +41,6 @@ use secp256k1::{PublicKey, Signature};
 use serde_json::{self as json};
 use serialization::{deserialize, serialize, serialize_with_flags, CoinVariant, CompactInteger, Serializable, Stream,
                     SERIALIZE_TRANSACTION_WITNESS};
-use spv_validation::helpers_validation::validate_headers;
-use spv_validation::storage::BlockHeaderStorageOps;
 use std::cmp::Ordering;
 use std::collections::hash_map::{Entry, HashMap};
 use std::str::FromStr;
@@ -50,14 +48,12 @@ use std::sync::atomic::Ordering as AtomicOrdering;
 use utxo_signer::with_key_pair::p2sh_spend;
 use utxo_signer::UtxoSignerOps;
 
-use crate::utxo::utxo_builder::UtxoSyncStatusLoopHandle;
 pub use chain::Transaction as UtxoTx;
 
 pub const DEFAULT_FEE_VOUT: usize = 0;
 pub const DEFAULT_SWAP_TX_SPEND_SIZE: u64 = 305;
 pub const DEFAULT_SWAP_VOUT: usize = 0;
 const MIN_BTC_TRADING_VOL: &str = "0.00777";
-const BLOCK_HEADERS_LOOP_INTERVAL: f64 = 60.;
 
 macro_rules! true_or {
     ($cond: expr, $etype: expr) => {
@@ -3443,143 +3439,6 @@ where
 fn increase_by_percent(num: u64, percent: f64) -> u64 {
     let percent = num as f64 / 100. * percent;
     num + (percent.round() as u64)
-}
-
-pub async fn block_header_utxo_loop<T: UtxoCommonOps>(
-    weak: UtxoWeak,
-    constructor: impl Fn(UtxoArc) -> T,
-    mut sync_status_loop_handle: UtxoSyncStatusLoopHandle,
-) {
-    while let Some(arc) = weak.upgrade() {
-        let coin = constructor(arc);
-        let client = match &coin.as_ref().rpc_client {
-            UtxoRpcClientEnum::Native(_) => break,
-            UtxoRpcClientEnum::Electrum(client) => client,
-        };
-
-        let storage = client.block_headers_storage();
-        let from_block_height = match storage.get_last_block_height().await {
-            Ok(h) => h,
-            Err(e) => {
-                error!("Error {} on getting the height of the last stored header in DB!", e);
-                sync_status_loop_handle.notify_on_temp_error(e.to_string());
-                Timer::sleep(10.).await;
-                continue;
-            },
-        };
-
-        let to_block_height = match coin.as_ref().rpc_client.get_block_count().compat().await {
-            Ok(h) => h,
-            Err(e) => {
-                error!("Error {} on getting the height of the latest block from rpc!", e);
-                sync_status_loop_handle.notify_on_temp_error(e.to_string());
-                Timer::sleep(10.).await;
-                continue;
-            },
-        };
-
-        // Todo: Add code for the case if a chain reorganization happens
-        if from_block_height == to_block_height {
-            Timer::sleep(BLOCK_HEADERS_LOOP_INTERVAL).await;
-            continue;
-        }
-
-        sync_status_loop_handle.notify_blocks_headers_sync_status(from_block_height + 1, to_block_height);
-
-        let (block_registry, block_headers, last_retrieved_height) = match client
-            .retrieve_headers(from_block_height + 1, to_block_height)
-            .compat()
-            .await
-        {
-            Ok(res) => res,
-            Err(e) => {
-                error!("Error {} on retrieving the latest headers from rpc!", e);
-                sync_status_loop_handle.notify_on_temp_error(e.to_string());
-                Timer::sleep(10.).await;
-                continue;
-            },
-        };
-
-        let ticker = coin.as_ref().conf.ticker.as_str();
-        if let Some(params) = &coin.as_ref().conf.block_headers_verification_params {
-            if let Err(e) = validate_headers(ticker, from_block_height, block_headers, storage, params).await {
-                error!("Error {} on validating the latest headers!", e);
-                // Todo: remove this electrum server and use another in this case since the headers from this server are invalid
-                sync_status_loop_handle.notify_on_permanent_error(e.to_string());
-                break;
-            }
-        }
-
-        ok_or_continue_after_sleep!(
-            storage.add_block_headers_to_storage(block_registry).await,
-            BLOCK_HEADERS_LOOP_INTERVAL
-        );
-
-        // blockchain.block.headers returns a maximum of 2016 headers (tested for btc) so the loop needs to continue until we have all headers up to the current one.
-        if last_retrieved_height == to_block_height {
-            sync_status_loop_handle.notify_sync_finished(to_block_height);
-            Timer::sleep(BLOCK_HEADERS_LOOP_INTERVAL).await;
-        }
-    }
-}
-
-pub async fn merge_utxo_loop<T>(
-    weak: UtxoWeak,
-    merge_at: usize,
-    check_every: f64,
-    max_merge_at_once: usize,
-    constructor: impl Fn(UtxoArc) -> T,
-) where
-    T: UtxoCommonOps + GetUtxoListOps,
-{
-    loop {
-        Timer::sleep(check_every).await;
-
-        let coin = match weak.upgrade() {
-            Some(arc) => constructor(arc),
-            None => break,
-        };
-
-        let my_address = match coin.as_ref().derivation_method {
-            DerivationMethod::Iguana(ref my_address) => my_address,
-            DerivationMethod::HDWallet(_) => {
-                warn!("'merge_utxo_loop' is currently not used for HD wallets");
-                return;
-            },
-        };
-
-        let ticker = &coin.as_ref().conf.ticker;
-        let (unspents, recently_spent) = match coin.get_unspent_ordered_list(my_address).await {
-            Ok((unspents, recently_spent)) => (unspents, recently_spent),
-            Err(e) => {
-                error!("Error {} on get_unspent_ordered_list of coin {}", e, ticker);
-                continue;
-            },
-        };
-        if unspents.len() >= merge_at {
-            let unspents: Vec<_> = unspents.into_iter().take(max_merge_at_once).collect();
-            info!("Trying to merge {} UTXOs of coin {}", unspents.len(), ticker);
-            let value = unspents.iter().fold(0, |sum, unspent| sum + unspent.value);
-            let script_pubkey = Builder::build_p2pkh(&my_address.hash).to_bytes();
-            let output = TransactionOutput { value, script_pubkey };
-            let merge_tx_fut = generate_and_send_tx(
-                &coin,
-                unspents,
-                None,
-                FeePolicy::DeductFromOutput(0),
-                recently_spent,
-                vec![output],
-            );
-            match merge_tx_fut.await {
-                Ok(tx) => info!(
-                    "UTXO merge successful for coin {}, tx_hash {:?}",
-                    ticker,
-                    tx.hash().reversed()
-                ),
-                Err(e) => error!("Error {:?} on UTXO merge attempt for coin {}", e, ticker),
-            }
-        }
-    }
 }
 
 pub async fn can_refund_htlc<T>(coin: &T, locktime: u64) -> Result<CanRefundHtlc, MmError<UtxoRpcError>>

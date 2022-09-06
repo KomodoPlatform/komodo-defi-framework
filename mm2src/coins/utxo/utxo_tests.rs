@@ -61,7 +61,6 @@ pub fn electrum_client_for_test(servers: &[&str]) -> ElectrumClient {
         &Json::Null,
         &params,
         priv_key_policy,
-        None,
         UtxoStandardCoin::from,
     );
     let args = ElectrumBuilderArgs {
@@ -171,6 +170,8 @@ fn utxo_coin_fields_for_test(
         recently_spent_outpoints: AsyncMutex::new(RecentlySpentOutPoints::new(my_script_pubkey)),
         tx_hash_algo: TxHashAlgo::DSHA256,
         check_utxo_maturity: false,
+        block_headers_status_notifier: None,
+        block_headers_status_watcher: None,
     }
 }
 

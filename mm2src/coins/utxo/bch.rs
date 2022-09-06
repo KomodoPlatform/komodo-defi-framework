@@ -656,17 +656,9 @@ pub async fn bch_coin_from_conf_and_params(
 
     let priv_key_policy = PrivKeyBuildPolicy::IguanaPrivKey(priv_key);
     let coin = try_s!(
-        UtxoArcBuilder::new(
-            ctx,
-            ticker,
-            conf,
-            &params.utxo_params,
-            priv_key_policy,
-            None,
-            constructor
-        )
-        .build()
-        .await
+        UtxoArcBuilder::new(ctx, ticker, conf, &params.utxo_params, priv_key_policy, constructor)
+            .build()
+            .await
     );
     Ok(coin)
 }

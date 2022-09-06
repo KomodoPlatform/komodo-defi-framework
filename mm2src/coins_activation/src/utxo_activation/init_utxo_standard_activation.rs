@@ -8,12 +8,11 @@ use crate::utxo_activation::init_utxo_standard_statuses::{UtxoStandardAwaitingSt
                                                           UtxoStandardUserAction};
 use crate::utxo_activation::utxo_standard_activation_result::UtxoStandardActivationResult;
 use async_trait::async_trait;
-use coins::utxo::utxo_builder::{UtxoArcBuilder, UtxoCoinBuilder, UtxoSyncStatus, UtxoSyncStatusLoopHandle};
+use coins::utxo::utxo_builder::{UtxoArcBuilder, UtxoCoinBuilder};
 use coins::utxo::utxo_standard::UtxoStandardCoin;
-use coins::utxo::UtxoActivationParams;
+use coins::utxo::{UtxoActivationParams, UtxoSyncStatus};
 use coins::CoinProtocol;
 use crypto::CryptoCtx;
-use futures::channel::mpsc::channel;
 use futures::StreamExt;
 use mm2_core::mm_ctx::MmArc;
 use mm2_err_handle::prelude::*;
@@ -61,31 +60,20 @@ impl InitStandaloneCoinActivationOps for UtxoStandardCoin {
         let crypto_ctx = CryptoCtx::from_ctx(&ctx)?;
         let priv_key_policy = priv_key_build_policy(&crypto_ctx, activation_request.priv_key_policy);
 
-        let (sync_status_loop_handle, maybe_sync_watcher) =
-            if coin_conf["enable_spv_proof"].as_bool().unwrap_or(false) && !activation_request.mode.is_native() {
-                let (sync_status_notifier, sync_watcher) = channel(1);
-                (
-                    Some(UtxoSyncStatusLoopHandle::new(sync_status_notifier)),
-                    Some(sync_watcher),
-                )
-            } else {
-                (None, None)
-            };
-
         let coin = UtxoArcBuilder::new(
             &ctx,
             &ticker,
             &coin_conf,
             activation_request,
             priv_key_policy,
-            sync_status_loop_handle,
             UtxoStandardCoin::from,
         )
         .build()
         .await
         .mm_err(|e| InitUtxoStandardError::from_build_err(e, ticker.clone()))?;
 
-        if let Some(mut sync_watcher) = maybe_sync_watcher {
+        if let Some(sync_watcher_mutex) = &coin.as_ref().block_headers_status_watcher {
+            let mut sync_watcher = sync_watcher_mutex.lock().await;
             loop {
                 let in_progress_status =
                     match sync_watcher
