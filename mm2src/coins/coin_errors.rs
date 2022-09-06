@@ -55,12 +55,12 @@ impl From<UtxoRpcError> for ValidatePaymentError {
 
 #[derive(Debug, Display)]
 pub enum MyAddressError {
-    UnexpectedDerivationMethod(UnexpectedDerivationMethod),
+    UnexpectedDerivationMethod(String),
     InternalError(String),
 }
 
 impl From<UnexpectedDerivationMethod> for MyAddressError {
-    fn from(err: UnexpectedDerivationMethod) -> Self { Self::UnexpectedDerivationMethod(err) }
+    fn from(err: UnexpectedDerivationMethod) -> Self { Self::UnexpectedDerivationMethod(err.to_string()) }
 }
 
 impl From<MyAddressError> for WithdrawError {

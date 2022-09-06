@@ -1689,7 +1689,7 @@ pub fn my_address<T: UtxoCommonOps>(coin: &T) -> MmResult<String, MyAddressError
         DerivationMethod::Iguana(ref my_address) => {
             my_address.display_address().map_to_mm(MyAddressError::InternalError)
         },
-        DerivationMethod::HDWallet(_) => MmError::err(MyAddressError::InternalError(
+        DerivationMethod::HDWallet(_) => MmError::err(MyAddressError::UnexpectedDerivationMethod(
             "'my_address' is deprecated for HD wallets".to_string(),
         )),
     }
@@ -3125,14 +3125,7 @@ pub fn validate_payment<T: UtxoCommonOps>(
                 Ok(t) => t,
                 Err(e) => {
                     if attempts > 2 {
-                        return MmError::err(ValidatePaymentError::WrongPaymentTx(
-                            UtxoRpcError::Internal(format!(
-                                "Got error {:?} after 3 attempts of getting tx {:?} from RPC",
-                                e,
-                                tx.tx_hash(),
-                            ))
-                            .to_string(),
-                        ));
+                        return MmError::err(ValidatePaymentError::from(e.into_inner()));
                     };
                     attempts += 1;
                     error!("Error getting tx {:?} from rpc: {:?}", tx.tx_hash(), e);

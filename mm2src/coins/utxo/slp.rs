@@ -100,31 +100,6 @@ struct SlpTxPreimage {
 }
 
 #[derive(Debug, Display)]
-enum ValidateHtlcError {
-    #[display(fmt = "OpReturnParseError: {:?}", _0)]
-    OpReturnParseError(ParseSlpScriptError),
-    InvalidSlpUtxo(ValidateSlpUtxosErr),
-    NumConversionErr(NumConversError),
-    UnexpectedDerivationMethod(UnexpectedDerivationMethod),
-}
-
-impl From<NumConversError> for ValidateHtlcError {
-    fn from(err: NumConversError) -> ValidateHtlcError { ValidateHtlcError::NumConversionErr(err) }
-}
-
-impl From<ParseSlpScriptError> for ValidateHtlcError {
-    fn from(err: ParseSlpScriptError) -> Self { ValidateHtlcError::OpReturnParseError(err) }
-}
-
-impl From<ValidateSlpUtxosErr> for ValidateHtlcError {
-    fn from(err: ValidateSlpUtxosErr) -> Self { ValidateHtlcError::InvalidSlpUtxo(err) }
-}
-
-impl From<UnexpectedDerivationMethod> for ValidateHtlcError {
-    fn from(e: UnexpectedDerivationMethod) -> Self { ValidateHtlcError::UnexpectedDerivationMethod(e) }
-}
-
-#[derive(Debug, Display)]
 enum ValidateDexFeeError {
     TxLackOfOutputs,
     #[display(fmt = "OpReturnParseError: {:?}", _0)]
@@ -429,7 +404,7 @@ impl SlpToken {
 
     async fn validate_htlc(&self, input: ValidatePaymentInput) -> Result<(), MmError<ValidatePaymentError>> {
         let mut tx: UtxoTx = deserialize(input.payment_tx.as_slice())
-            .map_to_mm(|err| ValidatePaymentError::InvalidInput(err.to_string()))?;
+            .map_to_mm(|err| ValidatePaymentError::InvalidPaymentTxData(err.to_string()))?;
         tx.tx_hash_algo = self.platform_coin.as_ref().tx_hash_algo;
         if tx.outputs.len() < 2 {
             return MmError::err(ValidatePaymentError::InvalidPaymentTxData(
@@ -452,13 +427,16 @@ impl SlpToken {
         };
         validate_slp_utxos(self.platform_coin.bchd_urls(), &[slp_unspent], self.token_id()).await?;
 
-        let slp_tx: SlpTxDetails = parse_slp_script(tx.outputs[0].script_pubkey.as_slice())
-            .mm_err(|err| ValidatePaymentError::InternalError(err.to_string()))?;
+        let slp_tx: SlpTxDetails = parse_slp_script(tx.outputs[0].script_pubkey.as_slice())?;
 
         match slp_tx.transaction {
             SlpTransaction::Send { token_id, amounts } => {
                 if token_id != self.token_id() {
-                    return MmError::err(ValidatePaymentError::WrongPaymentTx("Invalid tx token_id".to_string()));
+                    return MmError::err(ValidatePaymentError::WrongPaymentTx(format!(
+                        "Invalid tx token_id, Expected: {}, found: {}",
+                        token_id,
+                        self.token_id()
+                    )));
                 }
 
                 if amounts.is_empty() {
@@ -468,7 +446,10 @@ impl SlpToken {
                 }
 
                 if amounts[0] != slp_satoshis {
-                    return MmError::err(ValidatePaymentError::WrongPaymentTx("Invalid input amount".to_string()));
+                    return MmError::err(ValidatePaymentError::WrongPaymentTx(format!(
+                        "Invalid input amount. Expected: {}, found: {}",
+                        slp_satoshis, amounts[0]
+                    )));
                 }
             },
             _ => {
@@ -479,12 +460,13 @@ impl SlpToken {
         }
 
         let htlc_keypair = self.derive_htlc_key_pair(&input.unique_swap_data);
+        let first_pub = &Public::from_slice(&input.other_pub)
+            .map_to_mm(|err| ValidatePaymentError::InvalidInput(err.to_string()))?;
         let validate_fut = utxo_common::validate_payment(
             self.platform_coin.clone(),
             tx,
             SLP_SWAP_VOUT,
-            &Public::from_slice(&input.other_pub)
-                .map_to_mm(|err| ValidatePaymentError::InvalidInput(err.to_string()))?,
+            first_pub,
             htlc_keypair.public(),
             &input.secret_hash,
             self.platform_dust_dec(),
@@ -492,10 +474,7 @@ impl SlpToken {
             now_ms() / 1000 + 60,
             input.confirmations,
         );
-
-        validate_fut.compat().await?;
-
-        Ok(())
+        validate_fut.compat().await
     }
 
     pub async fn refund_htlc(
@@ -954,6 +933,10 @@ pub enum ParseSlpScriptError {
 
 impl From<SerError> for ParseSlpScriptError {
     fn from(err: SerError) -> ParseSlpScriptError { ParseSlpScriptError::DeserializeFailed(err) }
+}
+
+impl From<ParseSlpScriptError> for ValidatePaymentError {
+    fn from(err: ParseSlpScriptError) -> Self { Self::InvalidPaymentTxData(err.to_string()) }
 }
 
 pub fn parse_slp_script(script: &[u8]) -> Result<SlpTxDetails, MmError<ParseSlpScriptError>> {

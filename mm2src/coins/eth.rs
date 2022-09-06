@@ -2743,7 +2743,7 @@ impl EthCoin {
 
                     let function = SWAP_CONTRACT
                         .function("ethPayment")
-                        .map_to_mm(|err| ValidatePaymentError::InvalidPaymentTxData(err.to_string()))?;
+                        .map_to_mm(|err| ValidatePaymentError::InternalError(err.to_string()))?;
                     let decoded = function
                         .decode_input(&tx_from_rpc.input.0)
                         .map_to_mm(|err| ValidatePaymentError::InvalidPaymentTxData(err.to_string()))?;
@@ -2791,7 +2791,7 @@ impl EthCoin {
 
                     let function = SWAP_CONTRACT
                         .function("erc20Payment")
-                        .map_to_mm(|err| ValidatePaymentError::InvalidPaymentTxData(err.to_string()))?;
+                        .map_to_mm(|err| ValidatePaymentError::InternalError(err.to_string()))?;
                     let decoded = function
                         .decode_input(&tx_from_rpc.input.0)
                         .map_to_mm(|err| ValidatePaymentError::InvalidPaymentTxData(err.to_string()))?;
