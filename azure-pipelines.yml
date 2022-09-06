@@ -22,6 +22,7 @@ trigger:
 pr: # https://docs.microsoft.com/en-us/azure/devops/pipelines/yaml-schema?view=azure-devops&tabs=schema%2Cparameter-schema#pr-trigger
   drafts: false
 
+# https://docs.microsoft.com/ru-ru/azure/devops/pipelines/process/scheduled-triggers?view=azure-devops&tabs=yaml#scheduled-triggers
 schedules:
   - cron: "0 0 * * *"
     displayName: Scheduled clean midnight UTC build
