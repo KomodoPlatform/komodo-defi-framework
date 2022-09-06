@@ -238,9 +238,9 @@ impl fmt::Display for JsonRpcError {
 }
 
 impl JsonRpcError {
-    pub fn new(client_info: &str, request: JsonRpcRequestEnum, error: JsonRpcErrorType) -> Self {
+    pub fn new(client_info: String, request: JsonRpcRequestEnum, error: JsonRpcErrorType) -> Self {
         Self {
-            client_info: format!("coin: {}", client_info),
+            client_info,
             request,
             error,
         }
@@ -289,7 +289,7 @@ pub trait JsonRpcClient {
         Box::new(
             self.transport(request.clone())
                 .then(move |result| process_transport_single_result(result))
-                .map_err(move |e| JsonRpcError::new(&client_info, request, e)),
+                .map_err(|e| JsonRpcError::new(client_info, request, e)),
         )
     }
 }
@@ -319,7 +319,7 @@ pub trait JsonRpcBatchClient: JsonRpcClient {
         Box::new(
             self.transport(batch_request.clone())
                 .then(move |result| process_transport_batch_result(result, request))
-                .map_err(move |e| JsonRpcError::new(&client_info, batch_request, e)),
+                .map_err(|e| JsonRpcError::new(client_info, batch_request, e)),
         )
     }
 
@@ -354,7 +354,7 @@ pub trait JsonRpcMultiClient: JsonRpcClient {
         Box::new(
             self.transport_exact(to_addr.to_owned(), request.clone())
                 .then(move |result| process_transport_single_result(result))
-                .map_err(move |e| JsonRpcError::new(&client_info, request, e)),
+                .map_err(|e| JsonRpcError::new(client_info, request, e)),
         )
     }
 }
@@ -368,7 +368,7 @@ fn process_transport_single_result<T: DeserializeOwned + Send + 'static>(
         Ok((remote_addr, JsonRpcResponseEnum::Single(single))) => process_single_response(remote_addr, single),
         Ok((remote_addr, JsonRpcResponseEnum::Batch(batch))) => Err(JsonRpcErrorType::Parse(
             remote_addr,
-            ERRL!("Expeced single response, found batch response: {:?}", batch),
+            ERRL!("Expected single response, found batch response: {:?}", batch),
         )),
         Err(e) => Err(e),
     }

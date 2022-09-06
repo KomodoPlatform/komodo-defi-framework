@@ -2729,7 +2729,7 @@ fn electrum_connect(
     }
 }
 
-// electrun_request should always return JsonRpcErrorType::Transport Error
+// electrum_request should always return JsonRpcErrorType::Transport Error
 fn electrum_request(
     mut req_json: String,
     rpc_id: JsonRpcId,
