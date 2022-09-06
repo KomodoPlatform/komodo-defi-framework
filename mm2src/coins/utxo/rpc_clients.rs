@@ -1629,13 +1629,24 @@ async fn electrum_request_multi(
     let connections = client.connections.lock().await;
     for (i, connection) in connections.iter().enumerate() {
         let connection_addr = connection.addr.clone();
+        let json = match json::to_string(&request) {
+            Ok(res) => res,
+            Err(err) => {
+                return Err(JsonRpcError::new(
+                    &UtxoJsonRpcClientInfo::client_info(&client),
+                    request.clone(),
+                    JsonRpcErrorType::InvalidRequest(err.to_string()),
+                ))
+            },
+        };
         match &*connection.tx.lock().await {
             Some(tx) => {
                 let fut = electrum_request(
-                    request.clone(),
+                    request.rpc_id(),
                     tx.clone(),
                     connection.responses.clone(),
                     ELECTRUM_TIMEOUT / (connections.len() - i) as u64,
+                    json,
                 )
                 .map(|response| (JsonRpcRemoteAddr(connection_addr), response));
                 futures.push(fut)
@@ -1704,8 +1715,17 @@ async fn electrum_request_to(
         };
         (tx, responses)
     };
-
-    let response = electrum_request(request.clone(), tx, responses, ELECTRUM_TIMEOUT)
+    let json = match json::to_string(&request) {
+        Ok(res) => res,
+        Err(err) => {
+            return Err(JsonRpcError::new(
+                &UtxoJsonRpcClientInfo::client_info(&client),
+                request.clone(),
+                JsonRpcErrorType::InvalidRequest(err.to_string()),
+            ))
+        },
+    };
+    let response = electrum_request(request.rpc_id(), tx, responses, ELECTRUM_TIMEOUT, json)
         .compat()
         .await
         .map_err(|err| JsonRpcError::new(client.coin_name(), request.clone(), err))?;
@@ -2775,28 +2795,24 @@ fn electrum_connect(
     }
 }
 
+// electrun_request should always return JsonRpcErrorType::Transport Error
 fn electrum_request(
-    request: JsonRpcRequestEnum,
+    rpc_id: JsonRpcId,
     tx: mpsc::Sender<Vec<u8>>,
     responses: JsonRpcPendingRequestsShared,
     timeout: u64,
+    mut req_json: String,
 ) -> Box<dyn Future<Item = JsonRpcResponseEnum, Error = JsonRpcErrorType> + Send + 'static> {
-    let req = request;
     let send_fut = async move {
-        let mut json = match json::to_string(&req) {
-            Ok(res) => res,
-            Err(err) => return Err(JsonRpcErrorType::Transport(err.to_string())),
-        };
         #[cfg(not(target_arch = "wasm"))]
         {
             // Electrum request and responses must end with \n
             // https://electrumx.readthedocs.io/en/latest/protocol-basics.html#message-stream
-            json.push('\n');
+            req_json.push('\n');
         }
-
         let (req_tx, resp_rx) = async_oneshot::channel();
-        responses.lock().await.insert(req.rpc_id(), req_tx);
-        match tx.send(json.into_bytes()).compat().await {
+        responses.lock().await.insert(rpc_id, req_tx);
+        match tx.send(req_json.into_bytes()).compat().await {
             Ok(res) => res,
             Err(err) => return Err(JsonRpcErrorType::Transport(err.to_string())),
         };
