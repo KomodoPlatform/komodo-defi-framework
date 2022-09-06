@@ -23,11 +23,11 @@ pr: # https://docs.microsoft.com/en-us/azure/devops/pipelines/yaml-schema?view=a
   drafts: false
 
 schedules:
-  - cron: "12 13 * * *"
-    displayName: Scheduled clean build
+  - cron: "0 0 * * *"
+    displayName: Scheduled clean midnight UTC build
     branches:
       include:
-        - scheduled-clean-builds
+        - dev
 
 stages:
   - stage: Lint
