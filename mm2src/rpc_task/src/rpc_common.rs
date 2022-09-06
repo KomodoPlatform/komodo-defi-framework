@@ -82,7 +82,8 @@ impl From<RpcTaskError> for CancelRpcTaskError {
 impl HttpStatusCode for CancelRpcTaskError {
     fn status_code(&self) -> StatusCode {
         match self {
-            CancelRpcTaskError::NoSuchTask(_) | CancelRpcTaskError::TaskFinished(_) => StatusCode::BAD_REQUEST,
+            CancelRpcTaskError::NoSuchTask(_) => StatusCode::NOT_FOUND,
+            CancelRpcTaskError::TaskFinished(_) => StatusCode::CONFLICT,
             CancelRpcTaskError::Internal(_) => StatusCode::INTERNAL_SERVER_ERROR,
         }
     }
