@@ -276,7 +276,9 @@ pub mod common_impl {
             );
         }
 
-        gen_new_addresses_if_required(coin, hd_wallet, hd_account, &mut addresses, min_addresses_number).await?;
+        if let Some(min_addresses_number) = min_addresses_number {
+            gen_new_addresses(coin, hd_wallet, hd_account, &mut addresses, min_addresses_number).await?
+        }
 
         let total_balance = addresses.iter().fold(CoinBalance::default(), |total, addr_balance| {
             total + addr_balance.balance.clone()
@@ -360,22 +362,17 @@ pub mod common_impl {
     }
 
     /// Generate new address so that the total number of `result_addresses` addresses is at least `min_addresses_number`.
-    async fn gen_new_addresses_if_required<Coin>(
+    async fn gen_new_addresses<Coin>(
         coin: &Coin,
         hd_wallet: &Coin::HDWallet,
         hd_account: &mut Coin::HDAccount,
         result_addresses: &mut Vec<HDAddressBalance>,
-        min_addresses_number: Option<u32>,
+        min_addresses_number: u32,
     ) -> MmResult<(), EnableCoinBalanceError>
     where
         Coin: HDWalletBalanceOps + MarketCoinOps + Sync,
         Coin::Address: fmt::Display,
     {
-        let min_addresses_number = match min_addresses_number {
-            Some(min) => min,
-            None => return Ok(()),
-        };
-
         let max_addresses_number = hd_wallet.address_limit();
         if min_addresses_number >= max_addresses_number {
             return MmError::err(EnableCoinBalanceError::NewAddressDerivingError(
@@ -418,10 +415,9 @@ pub mod common_impl {
             .known_addresses_balances(addresses_to_request)
             .await?
             .into_iter()
-            .map(|(_address, balance)| balance)
             // The balances are guaranteed to be in the same order as they were requests.
             .zip(new_addresses)
-            .map(|(balance, mut address_info)| {
+            .map(|((_address, balance), mut address_info)| {
                 address_info.balance = balance;
                 address_info
             });

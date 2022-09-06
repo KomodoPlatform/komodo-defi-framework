@@ -1281,7 +1281,7 @@ impl UtxoActivationParams {
         let scan_policy = json::from_value::<Option<EnableCoinScanPolicy>>(req["scan_policy"].clone())
             .map_to_mm(UtxoFromLegacyReqErr::InvalidScanPolicy)?
             .unwrap_or_default();
-        let min_addresses_number = json::from_value(req["requires_notarization"].clone())
+        let min_addresses_number = json::from_value(req["min_addresses_number"].clone())
             .map_to_mm(UtxoFromLegacyReqErr::InvalidMinAddressesNumber)?;
         let enable_params = EnabledCoinBalanceParams {
             scan_policy,

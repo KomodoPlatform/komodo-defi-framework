@@ -5,7 +5,6 @@ use crate::{ecdsa_curve_to_string, serialize_derivation_path, TrezorResponse, Tr
 use hw_common::primitives::{DerivationPath, EcdsaCurve, XPub};
 
 pub const IGNORE_XPUB_MAGIC: bool = true;
-pub const KEEP_XPUB_MAGIC: bool = false;
 
 // Bitcoin(UTXO) operations.
 impl<'a> TrezorSession<'a> {
