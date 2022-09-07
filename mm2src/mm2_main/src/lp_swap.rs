@@ -264,11 +264,21 @@ pub async fn process_watcher_msg(ctx: MmArc, msg: &[u8]) {
     };
 
     match msg.0 {
-        SwapWatcherMsg::TakerSwapWatcherMsg(watcher_data) => spawn_taker_swap_watcher(ctx, *watcher_data),
+        SwapWatcherMsg::TakerSwapWatcherMsg(watcher_data) => spawn_taker_swap_watcher(ctx, *watcher_data).await,
     }
 }
 
-fn spawn_taker_swap_watcher(ctx: MmArc, watcher_data: TakerSwapWatcherData) {
+async fn spawn_taker_swap_watcher(ctx: MmArc, watcher_data: TakerSwapWatcherData) {
+    let swap_ctx = SwapsContext::from_ctx(&ctx).unwrap();
+    let msgs = swap_ctx.swap_msgs.lock().unwrap();
+    let mut taker_swap_watchers = swap_ctx.taker_swap_watchers.lock().unwrap();
+    // Return if taker, maker or watcher swap already exists
+    // This needs discussion
+    if msgs.contains_key(&watcher_data.uuid) || taker_swap_watchers.contains(&watcher_data.uuid) {
+        return;
+    }
+    taker_swap_watchers.insert(watcher_data.uuid);
+
     spawn(async move {
         let taker_coin = match lp_coinfind(&ctx, &watcher_data.taker_coin).await {
             Ok(Some(c)) => c,
@@ -436,6 +446,7 @@ struct SwapsContext {
     /// Very unpleasant consequences
     shutdown_rx: async_std_sync::Receiver<()>,
     swap_msgs: Mutex<HashMap<Uuid, SwapMsgStore>>,
+    taker_swap_watchers: Mutex<HashSet<Uuid>>,
     #[cfg(target_arch = "wasm32")]
     swap_db: ConstructibleDb<SwapDb>,
 }
@@ -463,6 +474,7 @@ impl SwapsContext {
                 banned_pubkeys: Mutex::new(HashMap::new()),
                 shutdown_rx,
                 swap_msgs: Mutex::new(HashMap::new()),
+                taker_swap_watchers: Mutex::new(HashSet::new()),
                 #[cfg(target_arch = "wasm32")]
                 swap_db: ConstructibleDb::new(ctx),
             })
