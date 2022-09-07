@@ -536,23 +536,28 @@ async fn create_wallet_db(
     check_point_block: Option<CheckPointBlockInfo>,
     evk: ExtendedFullViewingKey,
 ) -> Result<WalletDb<ZcoinConsensusParams>, MmError<ZcoinClientInitError>> {
-    let db =
-        WalletDb::for_path(wallet_db_path, consensus_params).map_to_mm(ZcoinClientInitError::WalletDbInitFailure)?;
-    run_optimization_pragmas(db.sql_conn()).map_to_mm(ZcoinClientInitError::WalletDbInitFailure)?;
-    init_wallet_db(&db).map_to_mm(ZcoinClientInitError::WalletDbInitFailure)?;
-    if db.get_extended_full_viewing_keys()?.is_empty() {
-        init_accounts_table(&db, &[evk])?;
-        if let Some(check_point) = check_point_block {
-            init_blocks_table(
-                &db,
-                BlockHeight::from_u32(check_point.height),
-                BlockHash(check_point.hash.0),
-                check_point.time,
-                &check_point.sapling_tree.0,
-            )?;
+    async_blocking({
+        move || -> Result<WalletDb<ZcoinConsensusParams>, MmError<ZcoinClientInitError>> {
+            let db = WalletDb::for_path(wallet_db_path, consensus_params)
+                .map_to_mm(ZcoinClientInitError::WalletDbInitFailure)?;
+            run_optimization_pragmas(db.sql_conn()).map_to_mm(ZcoinClientInitError::WalletDbInitFailure)?;
+            init_wallet_db(&db).map_to_mm(ZcoinClientInitError::WalletDbInitFailure)?;
+            if db.get_extended_full_viewing_keys()?.is_empty() {
+                init_accounts_table(&db, &[evk])?;
+                if let Some(check_point) = check_point_block {
+                    init_blocks_table(
+                        &db,
+                        BlockHeight::from_u32(check_point.height),
+                        BlockHash(check_point.hash.0),
+                        check_point.time,
+                        &check_point.sapling_tree.0,
+                    )?;
+                }
+            }
+            Ok(db)
         }
-    }
-    Ok(db)
+    })
+    .await
 }
 
 pub(super) async fn init_light_client(
@@ -610,7 +615,6 @@ pub(super) async fn init_native_client(
     let blocks_db =
         async_blocking(|| BlockDb::for_path(cache_db_path).map_to_mm(ZcoinClientInitError::BlocksDbInitFailure))
             .await?;
-    // todo check async_blocking for wallet_db as it was previously
     let wallet_db = create_wallet_db(wallet_db_path, consensus_params.clone(), check_point_block, evk).await?;
     let (sync_status_notifier, sync_watcher) = channel(1);
     let (on_tx_gen_notifier, on_tx_gen_watcher) = channel(1);
