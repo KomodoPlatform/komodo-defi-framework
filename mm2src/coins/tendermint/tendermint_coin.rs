@@ -1,6 +1,8 @@
+use super::htlc::{IrisHtlc, MsgCreateHtlc};
 #[cfg(not(target_arch = "wasm32"))]
 use super::tendermint_native_rpc::*;
 #[cfg(target_arch = "wasm32")] use super::tendermint_wasm_rpc::*;
+use crate::tendermint::htlc::MsgClaimHtlc;
 use crate::utxo::sat_from_big_decimal;
 use crate::{big_decimal_from_sat_unsigned, BalanceError, BalanceFut, BigDecimal, CoinBalance, FeeApproxStage,
             FoundSwapTxSpend, HistorySyncState, MarketCoinOps, MmCoin, NegotiateSwapContractAddrErr,
@@ -11,7 +13,7 @@ use crate::{big_decimal_from_sat_unsigned, BalanceError, BalanceFut, BigDecimal,
             WithdrawRequest};
 use async_trait::async_trait;
 use bitcrypto::sha256;
-use common::Future01CompatExt;
+use common::{get_utc_timestamp, Future01CompatExt};
 use cosmrs::bank::MsgSend;
 use cosmrs::crypto::secp256k1::SigningKey;
 use cosmrs::proto::cosmos::auth::v1beta1::{BaseAccount, QueryAccountRequest, QueryAccountResponse};
@@ -19,7 +21,7 @@ use cosmrs::proto::cosmos::bank::v1beta1::{QueryBalanceRequest, QueryBalanceResp
 use cosmrs::tendermint::abci::Path as AbciPath;
 use cosmrs::tendermint::chain::Id as ChainId;
 use cosmrs::tx::{self, Fee, Msg, Raw, SignDoc, SignerInfo};
-use cosmrs::{AccountId, Coin, Denom};
+use cosmrs::{AccountId, Any, Coin, Denom};
 use derive_more::Display;
 use futures::lock::Mutex as AsyncMutex;
 use futures::{FutureExt, TryFutureExt};
@@ -37,6 +39,8 @@ use std::str::FromStr;
 use std::sync::Arc;
 
 const TIMEOUT_HEIGHT_DELTA: u64 = 100;
+pub const GAS_LIMIT_DEFAULT: u64 = 100_000;
+pub const TX_DEFAULT_MEMO: &str = "";
 
 #[derive(Clone, Debug, PartialEq, Serialize)]
 pub struct TendermintFeeDetails {
@@ -80,12 +84,13 @@ impl Deref for TendermintCoin {
     fn deref(&self) -> &Self::Target { &self.0 }
 }
 
+#[derive(Debug)]
 pub struct TendermintInitError {
     pub ticker: String,
     pub kind: TendermintInitErrorKind,
 }
 
-#[derive(Display)]
+#[derive(Display, Debug)]
 pub enum TendermintInitErrorKind {
     InvalidPrivKey(String),
     CouldNotGenerateAccountId(String),
@@ -96,7 +101,7 @@ pub enum TendermintInitErrorKind {
     RpcError(String),
 }
 
-#[derive(Display)]
+#[derive(Display, Debug)]
 enum TendermintCoinRpcError {
     Prost(prost::DecodeError),
     InvalidResponse(String),
@@ -229,6 +234,123 @@ impl TendermintCoin {
             .parse()
             .map_to_mm(|e| TendermintCoinRpcError::InvalidResponse(format!("balance is not u64, err {}", e)))
     }
+
+    #[allow(dead_code)]
+    fn gen_create_htlc_tx(
+        &self,
+        base_denom: Denom,
+        to: &AccountId,
+        amount: cosmrs::Decimal,
+        secret_hash: &[u8],
+        time_lock: u64,
+    ) -> MmResult<IrisHtlc, TxMarshalingErr> {
+        let timestamp = get_utc_timestamp() as u64;
+        let mut hash_lock_hash = vec![];
+        hash_lock_hash.extend_from_slice(secret_hash);
+        hash_lock_hash.extend_from_slice(&timestamp.to_be_bytes());
+        drop_mutability!(hash_lock_hash);
+
+        let amount = vec![Coin {
+            denom: self.denom.clone(),
+            amount,
+        }];
+
+        // Needs to be sorted if cointains multiple coins
+        // amount.sort();
+
+        // << BEGIN HTLC id calculation
+        // This is converted from irismod and cosmos-sdk source codes written in golang.
+        // Refs:
+        //  - Main algorithm: https://github.com/irisnet/irismod/blob/main/modules/htlc/types/htlc.go#L157
+        //  - Coins string building https://github.com/cosmos/cosmos-sdk/blob/main/types/coin.go#L210-L225
+        let coins_string = amount
+            .iter()
+            .map(|t| format!("{}{}", t.amount, t.denom))
+            .collect::<Vec<String>>()
+            .join(",");
+
+        let mut htlc_id = vec![];
+        htlc_id.extend_from_slice(sha256(&hash_lock_hash).as_slice());
+        htlc_id.extend_from_slice(&self.account_id.to_bytes());
+        htlc_id.extend_from_slice(&to.to_bytes());
+        htlc_id.extend_from_slice(coins_string.as_bytes());
+        let htlc_id = sha256(&htlc_id).to_string().to_uppercase();
+        // >> END HTLC id calculation
+
+        let msg_payload = MsgCreateHtlc {
+            sender: self.account_id.clone(),
+            to: to.clone(),
+            receiver_on_other_chain: "".to_string(),
+            sender_on_other_chain: "".to_string(),
+            amount,
+            hash_lock: sha256(&hash_lock_hash).to_string(),
+            timestamp,
+            time_lock,
+            transfer: false,
+        };
+
+        let fee_amount = Coin {
+            denom: base_denom,
+            // TODO
+            // Calculate current fee
+            amount: 200_u64.into(),
+        };
+
+        let fee = Fee::from_amount_and_gas(fee_amount, GAS_LIMIT_DEFAULT);
+
+        Ok(IrisHtlc {
+            id: htlc_id,
+            fee,
+            msg_payload: msg_payload
+                .to_any()
+                .map_err(|e| MmError::new(TxMarshalingErr::InvalidInput(e.to_string())))?,
+        })
+    }
+
+    #[allow(dead_code)]
+    fn gen_claim_htlc_tx(
+        &self,
+        base_denom: Denom,
+        htlc_id: String,
+        secret_hash: &[u8],
+    ) -> MmResult<IrisHtlc, TxMarshalingErr> {
+        let msg_payload = MsgClaimHtlc {
+            id: htlc_id.clone(),
+            sender: self.account_id.clone(),
+            secret: hex::encode(secret_hash),
+        };
+
+        let fee_amount = Coin {
+            denom: base_denom,
+            // TODO
+            // Calculate current fee
+            amount: 200_u64.into(),
+        };
+
+        let fee = Fee::from_amount_and_gas(fee_amount, GAS_LIMIT_DEFAULT);
+
+        Ok(IrisHtlc {
+            id: htlc_id,
+            fee,
+            msg_payload: msg_payload
+                .to_any()
+                .map_err(|e| MmError::new(TxMarshalingErr::InvalidInput(e.to_string())))?,
+        })
+    }
+
+    fn any_to_signed_raw_tx(
+        &self,
+        account_info: BaseAccount,
+        tx_payload: Any,
+        fee: Fee,
+        timeout_height: u64,
+    ) -> cosmrs::Result<Raw> {
+        let signkey = SigningKey::from_bytes(&self.priv_key)?;
+        let tx_body = tx::Body::new(vec![tx_payload], TX_DEFAULT_MEMO, timeout_height as u32);
+        let auth_info = SignerInfo::single_direct(Some(signkey.public_key()), account_info.sequence).auth_info(fee);
+        let sign_doc = SignDoc::new(&tx_body, &auth_info, &self.chain_id, account_info.account_number)?;
+        sign_doc.sign(&signkey)
+    }
 }
 
 #[async_trait]
@@ -306,23 +428,15 @@ impl MmCoin for TendermintCoin {
             let _sequence_lock = coin.sequence_lock.lock().await;
             let account_info = coin.my_account_info().await?;
 
-            let gas_limit = 100_000;
             let fee_amount = Coin {
                 denom: coin.denom.clone(),
                 amount: fee_denom.into(),
             };
-            let fee = Fee::from_amount_and_gas(fee_amount, gas_limit);
+            let fee = Fee::from_amount_and_gas(fee_amount, GAS_LIMIT_DEFAULT);
             let timeout_height = current_block + TIMEOUT_HEIGHT_DELTA;
 
-            let privkey =
-                SigningKey::from_bytes(&coin.priv_key).map_to_mm(|e| WithdrawError::InternalError(e.to_string()))?;
-
-            let tx_body = tx::Body::new(vec![msg_send], "", timeout_height as u32);
-            let auth_info = SignerInfo::single_direct(Some(privkey.public_key()), account_info.sequence).auth_info(fee);
-            let sign_doc = SignDoc::new(&tx_body, &auth_info, &coin.chain_id, account_info.account_number)
-                .map_to_mm(|e| WithdrawError::InternalError(e.to_string()))?;
-            let tx_raw = sign_doc
-                .sign(&privkey)
+            let tx_raw = coin
+                .any_to_signed_raw_tx(account_info, msg_send, fee, timeout_height)
                 .map_to_mm(|e| WithdrawError::InternalError(e.to_string()))?;
 
             let tx_bytes = tx_raw
@@ -344,7 +458,7 @@ impl MmCoin for TendermintCoin {
                 fee_details: Some(TxFeeDetails::Tendermint(TendermintFeeDetails {
                     coin: coin.ticker.clone(),
                     amount: fee_amount_dec,
-                    gas_limit,
+                    gas_limit: GAS_LIMIT_DEFAULT,
                 })),
                 coin: coin.ticker.to_string(),
                 internal_id: hash.to_vec().into(),
@@ -643,6 +757,23 @@ impl SwapOps for TendermintCoin {
 mod tendermint_coin_tests {
     use super::*;
 
+    const IRIS_TESTNET_HTLC_PAIR1_SEED: &str = "iris test seed";
+    // const IRIS_TESTNET_HTLC_PAIR1_ADDRESS: &str = "iaa1e0rx87mdj79zejewuc4jg7ql9ud2286g2us8f2";
+
+    // const IRIS_TESTNET_HTLC_PAIR2_SEED: &str = "iris test2 seed";
+    const IRIS_TESTNET_HTLC_PAIR2_ADDRESS: &str = "iaa1erfnkjsmalkwtvj44qnfr2drfzdt4n9ldh0kjv";
+
+    const IRIS_TESTNET_RPC_URL: &str = "http://34.80.202.172:26657";
+
+    fn get_iris_usdc_ibc_protocol() -> TendermintProtocolInfo {
+        TendermintProtocolInfo {
+            decimals: 6,
+            denom: String::from("ibc/5C465997B4F582F602CD64E12031C6A6E18CAF1E6EDC9B5D808822DC0B5F850C"),
+            account_prefix: String::from("iaa"),
+            chain_id: String::from("nyancat-9"),
+        }
+    }
+
     #[test]
     fn test_tx_hash_str_from_bytes() {
         let tx_hex = "0a97010a8f010a1c2f636f736d6f732e62616e6b2e763162657461312e4d736753656e64126f0a2d636f736d6f7331737661773061716334353834783832356a753775613033673578747877643061686c3836687a122d636f736d6f7331737661773061716334353834783832356a753775613033673578747877643061686c3836687a1a0f0a057561746f6d120631303030303018d998bf0512670a500a460a1f2f636f736d6f732e63727970746f2e736563703235366b312e5075624b657912230a2102000eef4ab169e7b26a4a16c47420c4176ab702119ba57a8820fb3e53c8e7506212040a020801180312130a0d0a057561746f6d12043130303010a08d061a4093e5aec96f7d311d129f5ec8714b21ad06a75e483ba32afab86354400b2ac8350bfc98731bbb05934bf138282750d71aadbe08ceb6bb195f2b55e1bbfdddaaad";
@@ -651,5 +782,89 @@ mod tendermint_coin_tests {
         let tx_bytes = hex::decode(tx_hex).unwrap();
         let hash = sha256(&tx_bytes);
         assert_eq!(upper_hex(hash.as_slice()), expected_hash);
+    }
+
+    #[test]
+    fn test_htlc_create_and_claim() {
+        let activation_request = TendermintActivationParams {
+            rpc_urls: vec![IRIS_TESTNET_RPC_URL.to_string()],
+        };
+
+        let protocol_conf = get_iris_usdc_ibc_protocol();
+
+        let ctx = mm2_core::mm_ctx::MmCtxBuilder::default()
+            .with_secp256k1_key_pair(crypto::privkey::key_pair_from_seed(IRIS_TESTNET_HTLC_PAIR1_SEED).unwrap())
+            .into_mm_arc();
+
+        let priv_key = &*ctx.secp256k1_key_pair().private().secret;
+
+        let coin = common::block_on(TendermintCoin::init(
+            "USDC-IBC".to_string(),
+            protocol_conf,
+            activation_request,
+            priv_key,
+        ))
+        .unwrap();
+
+        // << BEGIN HTLC CREATION
+        let base_denom: Denom = "unyan".parse().unwrap();
+        let to: AccountId = IRIS_TESTNET_HTLC_PAIR2_ADDRESS.parse().unwrap();
+        let amount: cosmrs::Decimal = 1_u64.into();
+        let sec = &[1; 32];
+        let time_lock = 1000;
+
+        let create_htlc_tx = coin
+            .gen_create_htlc_tx(base_denom.clone(), &to, amount, sec, time_lock)
+            .unwrap();
+
+        let current_block_fut = coin.current_block().compat();
+        let current_block = common::block_on(async { current_block_fut.await.unwrap() });
+        let timeout_height = current_block + TIMEOUT_HEIGHT_DELTA;
+
+        let account_info_fut = coin.my_account_info();
+        let account_info = common::block_on(async { account_info_fut.await.unwrap() });
+
+        let raw_tx = common::block_on(async {
+            coin.any_to_signed_raw_tx(
+                account_info.clone(),
+                create_htlc_tx.msg_payload.clone(),
+                create_htlc_tx.fee.clone(),
+                timeout_height,
+            )
+            .unwrap()
+        });
+        let send_tx_fut = coin.send_raw_tx_bytes(&raw_tx.to_bytes().unwrap()).compat();
+        common::block_on(async {
+            send_tx_fut.await.unwrap();
+        });
+        // >> END HTLC CREATION
+
+        // << BEGIN HTLC CLAIMING
+        let claim_htlc_tx = coin
+            .gen_claim_htlc_tx(base_denom.clone(), create_htlc_tx.id, sec)
+            .unwrap();
+
+        let current_block_fut = coin.current_block().compat();
+        let current_block = common::block_on(async { current_block_fut.await.unwrap() });
+        let timeout_height = current_block + TIMEOUT_HEIGHT_DELTA;
+
+        let account_info_fut = coin.my_account_info();
+        let account_info = common::block_on(async { account_info_fut.await.unwrap() });
+
+        let raw_tx = common::block_on(async {
+            coin.any_to_signed_raw_tx(
+                account_info,
+                claim_htlc_tx.msg_payload,
+                claim_htlc_tx.fee,
+                timeout_height,
+            )
+            .unwrap()
+        });
+
+        let send_tx_fut = coin.send_raw_tx_bytes(&raw_tx.to_bytes().unwrap()).compat();
+        common::block_on(async {
+            send_tx_fut.await.unwrap();
+        });
+        // >> END HTLC CLAIMING
     }
 }
