@@ -280,8 +280,8 @@ impl TendermintCoin {
         let msg_payload = MsgCreateHtlc {
             sender: self.account_id.clone(),
             to: to.clone(),
-            receiver_on_other_chain: "tbnb1c88qvyufqkh4ea422fr6wc6g2t5zrpxekdl0my".to_string(),
-            sender_on_other_chain: "tbnb1cegl4x48qy6mq5vg5wtryk806n2vjtyhk3sj6v".to_string(),
+            receiver_on_other_chain: "".to_string(),
+            sender_on_other_chain: "".to_string(),
             amount,
             hash_lock: sha256(&hash_lock_hash).to_string(),
             timestamp,
