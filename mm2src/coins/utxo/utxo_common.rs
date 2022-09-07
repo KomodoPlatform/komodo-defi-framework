@@ -1143,6 +1143,7 @@ pub fn send_maker_spends_taker_payment<T: UtxoCommonOps + SwapOps>(
     let my_address = try_tx_fus!(coin.as_ref().derivation_method.iguana_or_err()).clone();
     let mut prev_transaction: UtxoTx = try_tx_fus!(deserialize(taker_payment_tx).map_err(|e| ERRL!("{:?}", e)));
     prev_transaction.tx_hash_algo = coin.as_ref().tx_hash_algo;
+    let prev_transaction = prev_transaction; //discard mut
 
     let key_pair = coin.derive_htlc_key_pair(swap_unique_data);
     let script_data = Builder::default()
@@ -1156,9 +1157,15 @@ pub fn send_maker_spends_taker_payment<T: UtxoCommonOps + SwapOps>(
         key_pair.public(),
     )
     .into();
-
     let fut = async move {
         let fee = try_tx_s!(coin.get_htlc_spend_fee(DEFAULT_SWAP_TX_SPEND_SIZE).await);
+        if fee >= prev_transaction.outputs[0].value {
+            return TX_PLAIN_ERR!(
+                "HTLC spend fee {} is greater than transaction output {}",
+                fee,
+                prev_transaction.outputs[0].value
+            );
+        }
         let script_pubkey = output_script(&my_address, ScriptType::P2PKH).to_bytes();
         let output = TransactionOutput {
             value: prev_transaction.outputs[0].value - fee,
@@ -1234,8 +1241,10 @@ pub fn create_taker_spends_maker_payment_preimage<T: UtxoCommonOps + SwapOps>(
     let my_address = try_tx_fus!(coin.as_ref().derivation_method.iguana_or_err()).clone();
     let mut prev_transaction: UtxoTx = try_tx_fus!(deserialize(maker_payment_tx).map_err(|e| ERRL!("{:?}", e)));
     prev_transaction.tx_hash_algo = coin.as_ref().tx_hash_algo;
+    let prev_transaction = prev_transaction; //discard mut
 
     let key_pair = coin.derive_htlc_key_pair(swap_unique_data);
+
     let script_data = Builder::default().into_script();
     let redeem_script = payment_script(
         time_lock,
@@ -1286,6 +1295,7 @@ pub fn send_taker_spends_maker_payment<T: UtxoCommonOps + SwapOps>(
     let my_address = try_tx_fus!(coin.as_ref().derivation_method.iguana_or_err()).clone();
     let mut prev_transaction: UtxoTx = try_tx_fus!(deserialize(maker_payment_tx).map_err(|e| ERRL!("{:?}", e)));
     prev_transaction.tx_hash_algo = coin.as_ref().tx_hash_algo;
+    let prev_transaction = prev_transaction; //discard mut
 
     let key_pair = coin.derive_htlc_key_pair(swap_unique_data);
 
@@ -1346,6 +1356,7 @@ pub fn send_taker_refunds_payment<T: UtxoCommonOps + SwapOps>(
     let mut prev_transaction: UtxoTx =
         try_tx_fus!(deserialize(taker_payment_tx).map_err(|e| TransactionErr::Plain(format!("{:?}", e))));
     prev_transaction.tx_hash_algo = coin.as_ref().tx_hash_algo;
+    let prev_transaction = prev_transaction; //discard mut
 
     let key_pair = coin.derive_htlc_key_pair(swap_unique_data);
     let script_data = Builder::default().push_opcode(Opcode::OP_1).into_script();
@@ -1401,6 +1412,7 @@ pub fn send_maker_refunds_payment<T: UtxoCommonOps + SwapOps>(
     let my_address = try_tx_fus!(coin.as_ref().derivation_method.iguana_or_err()).clone();
     let mut prev_transaction: UtxoTx = try_tx_fus!(deserialize(maker_payment_tx).map_err(|e| ERRL!("{:?}", e)));
     prev_transaction.tx_hash_algo = coin.as_ref().tx_hash_algo;
+    let prev_transaction = prev_transaction; //discard mut
 
     let key_pair = coin.derive_htlc_key_pair(swap_unique_data);
     let script_data = Builder::default().push_opcode(Opcode::OP_1).into_script();
