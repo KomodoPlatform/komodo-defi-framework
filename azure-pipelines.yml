@@ -10,6 +10,8 @@ trigger:
   branches:
     include:
       - refs/heads/*
+    exclude:
+      - refs/heads/mm2.1-cross
   paths:
     exclude:
       - docs/*
