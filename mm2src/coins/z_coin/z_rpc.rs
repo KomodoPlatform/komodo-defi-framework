@@ -66,7 +66,7 @@ pub trait ZRpcOps {
         on_block: &mut (dyn FnMut(TonicCompactBlock) -> Result<(), MmError<UpdateBlocksCacheErr>> + Send + Sync),
     ) -> Result<(), MmError<UpdateBlocksCacheErr>>;
 
-    async fn check_watch_for_tx(&mut self, tx_id: TxId, watch_for_tx: &mut Option<TxId>);
+    async fn check_watch_for_tx(&mut self, tx_id: TxId) -> Result<(), ()>;
 }
 
 #[async_trait]
@@ -102,7 +102,7 @@ impl ZRpcOps for CompactTxStreamerClient<Channel> {
         Ok(())
     }
 
-    async fn check_watch_for_tx(&mut self, tx_id: TxId, watch_for_tx: &mut Option<TxId>) {
+    async fn check_watch_for_tx(&mut self, tx_id: TxId) -> Result<(), ()> {
         let mut attempts = 0;
         loop {
             let filter = TxFilter {
@@ -117,8 +117,7 @@ impl ZRpcOps for CompactTxStreamerClient<Channel> {
                     error!("Error on getting tx {}", tx_id);
                     if e.message().contains(NO_TX_ERROR_CODE) {
                         if attempts >= 3 {
-                            *watch_for_tx = None;
-                            return;
+                            return Err(());
                         }
                         attempts += 1;
                     }
@@ -126,6 +125,7 @@ impl ZRpcOps for CompactTxStreamerClient<Channel> {
                 },
             }
         }
+        Ok(())
     }
 }
 
@@ -212,7 +212,7 @@ impl ZRpcOps for NativeClient {
         Ok(())
     }
 
-    async fn check_watch_for_tx(&mut self, tx_id: TxId, watch_for_tx: &mut Option<TxId>) {
+    async fn check_watch_for_tx(&mut self, tx_id: TxId) -> Result<(), ()> {
         let mut attempts = 0;
         loop {
             match self.get_raw_transaction_bytes(&H256Json::from(tx_id.0)).compat().await {
@@ -221,8 +221,7 @@ impl ZRpcOps for NativeClient {
                     error!("Error on getting tx {}", tx_id);
                     if e.to_string().contains(NO_TX_ERROR_CODE) {
                         if attempts >= 3 {
-                            *watch_for_tx = None;
-                            return;
+                            return Err(());
                         }
                         attempts += 1;
                     }
@@ -230,6 +229,7 @@ impl ZRpcOps for NativeClient {
                 },
             }
         }
+        Ok(())
     }
 }
 
@@ -810,8 +810,9 @@ impl SaplingSyncLoopHandle {
 
     async fn check_watch_for_tx_existence(&mut self, rpc: &mut (dyn ZRpcOps + Send)) {
         if let Some(tx_id) = self.watch_for_tx {
-            // todo watch_for_tx must be controlled by the code that calls check_watch_for_tx
-            rpc.check_watch_for_tx(tx_id, &mut self.watch_for_tx).await;
+            if rpc.check_watch_for_tx(tx_id).await.is_err() {
+                self.watch_for_tx = None;
+            }
         }
     }
 }

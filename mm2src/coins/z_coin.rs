@@ -1,7 +1,7 @@
 use crate::my_tx_history_v2::{MyTxHistoryErrorV2, MyTxHistoryRequestV2, MyTxHistoryResponseV2};
 use crate::rpc_command::init_withdraw::{InitWithdrawCoin, WithdrawInProgressStatus, WithdrawTaskHandle};
-use crate::utxo::rpc_clients::{ElectrumRpcRequest, NativeClient, UnspentInfo, UtxoRpcClientEnum, UtxoRpcError,
-                               UtxoRpcFut, UtxoRpcResult};
+use crate::utxo::rpc_clients::{ElectrumRpcRequest, UnspentInfo, UtxoRpcClientEnum, UtxoRpcError, UtxoRpcFut,
+                               UtxoRpcResult};
 use crate::utxo::utxo_builder::{UtxoCoinBuilderCommonOps, UtxoCoinWithIguanaPrivKeyBuilder,
                                 UtxoFieldsWithIguanaPrivKeyBuilder};
 use crate::utxo::utxo_common::{addresses_from_script, big_decimal_from_sat, big_decimal_from_sat_unsigned,
@@ -770,8 +770,7 @@ impl<'a> UtxoCoinWithIguanaPrivKeyBuilder for ZCoinBuilder<'a> {
         let wallet_db_path = self.db_dir_path.join(format!("{}_wallet.db", self.ticker));
         let (sync_state_connector, light_wallet_db) = match &self.z_coin_params.mode {
             ZcoinRpcMode::Native => {
-                // todo should be the error handle instead of unwrap
-                let native_client: NativeClient = self.native_client().unwrap();
+                let native_client = self.native_client()?;
                 init_native_client(
                     native_client,
                     cache_db_path,
