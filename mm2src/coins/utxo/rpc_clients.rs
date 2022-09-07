@@ -1656,10 +1656,7 @@ async fn electrum_request_to(
         };
         (tx, responses)
     };
-    let json = match json::to_string(&request) {
-        Ok(res) => res,
-        Err(err) => return Err(JsonRpcErrorType::InvalidRequest(err.to_string())),
-    };
+    let json = json::to_string(&request).map_err(|err| JsonRpcErrorType::InvalidRequest(err.to_string()))?;
     let response = electrum_request(json, request.rpc_id(), tx, responses, ELECTRUM_TIMEOUT)
         .compat()
         .await?;
@@ -2746,24 +2743,18 @@ fn electrum_request(
         }
         let (req_tx, resp_rx) = async_oneshot::channel();
         responses.lock().await.insert(rpc_id, req_tx);
-        match tx.send(req_json.into_bytes()).compat().await {
-            Ok(res) => res,
-            Err(err) => return Err(JsonRpcErrorType::Transport(err.to_string())),
-        };
-        let resps = match resp_rx.await {
-            Ok(res) => res,
-            Err(err) => return Err(JsonRpcErrorType::Transport(err.to_string())),
-        };
+        tx.send(req_json.into_bytes())
+            .compat()
+            .await
+            .map_err(|err| JsonRpcErrorType::Transport(err.to_string()))?;
+        let resps = resp_rx.await.map_err(|e| JsonRpcErrorType::Transport(e.to_string()))?;
         Ok(resps)
     };
     let send_fut = send_fut
         .boxed()
         .timeout(Duration::from_secs(timeout))
         .compat()
-        .then(move |res| match res {
-            Ok(response) => response,
-            Err(timeout_error) => Err(JsonRpcErrorType::Transport(timeout_error.to_string())),
-        });
+        .then(move |res| res.map_err(|err| JsonRpcErrorType::Transport(err.to_string()))?);
     Box::new(send_fut)
 }
 
