@@ -264,11 +264,11 @@ pub async fn process_watcher_msg(ctx: MmArc, msg: &[u8]) {
     };
 
     match msg.0 {
-        SwapWatcherMsg::TakerSwapWatcherMsg(watcher_data) => spawn_taker_swap_watcher(ctx, *watcher_data).await,
+        SwapWatcherMsg::TakerSwapWatcherMsg(watcher_data) => spawn_taker_swap_watcher(ctx, *watcher_data),
     }
 }
 
-async fn spawn_taker_swap_watcher(ctx: MmArc, watcher_data: TakerSwapWatcherData) {
+fn spawn_taker_swap_watcher(ctx: MmArc, watcher_data: TakerSwapWatcherData) {
     let swap_ctx = SwapsContext::from_ctx(&ctx).unwrap();
     let msgs = swap_ctx.swap_msgs.lock().unwrap();
     let mut taker_swap_watchers = swap_ctx.taker_swap_watchers.lock().unwrap();
