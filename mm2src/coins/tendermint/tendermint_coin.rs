@@ -248,6 +248,7 @@ impl TendermintCoin {
         let mut hash_lock_hash = vec![];
         hash_lock_hash.extend_from_slice(secret_hash);
         hash_lock_hash.extend_from_slice(&timestamp.to_be_bytes());
+        drop_mutability!(hash_lock_hash);
 
         let amount = vec![Coin {
             denom: self.denom.clone(),
