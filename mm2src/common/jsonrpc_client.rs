@@ -262,6 +262,7 @@ pub enum JsonRpcErrorType {
 
 impl JsonRpcErrorType {
     pub fn parse_error(remote_addr: &str, err: String) -> Self { Self::Parse(remote_addr.to_string().into(), err) }
+
     /// Whether the error type is [`JsonRpcErrorType::Transport`].
     #[inline]
     pub fn is_transport(&self) -> bool { matches!(self, JsonRpcErrorType::Transport(_)) }

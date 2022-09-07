@@ -683,7 +683,7 @@ impl JsonRpcClient for NativeClientImpl {
                 if res.0 != StatusCode::OK {
                     let res_value = serde_json::from_slice(&res.2)
                         .map_err(|e| JsonRpcErrorType::parse_error(&uri, e.to_string()))?;
-                    return Err(JsonRpcErrorType::Response(res.0.as_str().to_string().into(), res_value));
+                    return Err(JsonRpcErrorType::Response(uri.into(), res_value));
                 }
 
                 let response = json::from_str(body).map_err(|e| JsonRpcErrorType::parse_error(&uri, e.to_string()))?;
@@ -2726,7 +2726,8 @@ fn electrum_connect(
     }
 }
 
-// electrum_request should always return JsonRpcErrorType::Transport Error
+/// # Important
+/// electrum_request should always return JsonRpcErrorType::Transport Error
 fn electrum_request(
     mut req_json: String,
     rpc_id: JsonRpcId,

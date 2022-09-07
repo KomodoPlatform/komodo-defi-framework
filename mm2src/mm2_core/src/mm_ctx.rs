@@ -7,8 +7,6 @@ use futures::future::AbortHandle;
 use gstuff::{try_s, Constructible, ERR, ERRL};
 use keys::KeyPair;
 use lazy_static::lazy_static;
-#[cfg(not(target_arch = "wasm32"))]
-use mm2_metrics::MmMetricsError;
 use mm2_metrics::{MetricsArc, MetricsOps};
 use primitives::hash::H160;
 use rand::Rng;
@@ -20,7 +18,6 @@ use std::any::Any;
 use std::collections::hash_map::{Entry, HashMap};
 use std::collections::HashSet;
 use std::fmt;
-#[cfg(not(target_arch = "wasm32"))] use std::net::AddrParseError;
 use std::ops::Deref;
 use std::path::{Path, PathBuf};
 use std::sync::{Arc, Mutex};
@@ -32,8 +29,9 @@ cfg_wasm32! {
 
 cfg_native! {
     use mm2_metrics::prometheus;
+    use mm2_metrics::MmMetricsError;
     use db_common::sqlite::rusqlite::Connection;
-    use std::net::{IpAddr, SocketAddr};
+    use std::net::{IpAddr, SocketAddr, AddrParseError};
     use std::sync::MutexGuard;
 }
 
