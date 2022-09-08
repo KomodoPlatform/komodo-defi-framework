@@ -66,6 +66,7 @@ use common::{bits256, calc_total_pages,
              log::{error, info},
              now_ms, spawn_abortable, var, AbortOnDropHandle, PagingOptions};
 use derive_more::Display;
+use futures::lock::Mutex as AsyncMutex;
 use http::Response;
 use mm2_core::mm_ctx::{from_ctx, MmArc};
 use mm2_err_handle::prelude::*;
@@ -370,7 +371,7 @@ struct SwapsContext {
     /// Very unpleasant consequences
     shutdown_rx: async_std_sync::Receiver<()>,
     swap_msgs: Mutex<HashMap<Uuid, SwapMsgStore>>,
-    taker_swap_watchers: Mutex<HashSet<Uuid>>,
+    taker_swap_watchers: AsyncMutex<HashSet<Uuid>>,
     #[cfg(target_arch = "wasm32")]
     swap_db: ConstructibleDb<SwapDb>,
 }
@@ -398,7 +399,7 @@ impl SwapsContext {
                 banned_pubkeys: Mutex::new(HashMap::new()),
                 shutdown_rx,
                 swap_msgs: Mutex::new(HashMap::new()),
-                taker_swap_watchers: Mutex::new(HashSet::new()),
+                taker_swap_watchers: AsyncMutex::new(HashSet::new()),
                 #[cfg(target_arch = "wasm32")]
                 swap_db: ConstructibleDb::new(ctx),
             })
