@@ -18,6 +18,6 @@ jobs:
         displayName: Clean Up
         failOnStderr: false
         continueOnError: true
-      -bash: |
-        cargo lipo --targets x86_64-apple-ios,aarch64-apple-ios --release
-        displayName: Build iOS lib
+      - bash: |
+          cargo lipo --targets x86_64-apple-ios,aarch64-apple-ios --release
+        displayName: 'Build iOS lib'

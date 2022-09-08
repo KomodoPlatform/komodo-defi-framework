@@ -18,6 +18,6 @@ jobs:
         displayName: Clean Up
         failOnStderr: false
         continueOnError: true
-      -bash: |
-        CC_armv7_linux_androideabi=armv7a-linux-androideabi21-clang CARGO_TARGET_ARMV7_LINUX_ANDROIDEABI_LINKER=armv7a-linux-androideabi21-clang cargo build --target=armv7-linux-androideabi --release --lib
-        displayName: Build armv7 arch
+      - bash: |
+          CC_armv7_linux_androideabi=armv7a-linux-androideabi21-clang CARGO_TARGET_ARMV7_LINUX_ANDROIDEABI_LINKER=armv7a-linux-androideabi21-clang cargo build --target=armv7-linux-androideabi --release --lib
+        displayName: 'Build armv7 arch'
