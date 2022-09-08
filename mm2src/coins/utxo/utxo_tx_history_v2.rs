@@ -9,7 +9,6 @@ use async_trait::async_trait;
 use common::executor::Timer;
 use common::log::{error, info};
 use common::state_machine::prelude::*;
-use keys::Address;
 use mm2_err_handle::prelude::*;
 use mm2_metrics::MetricsArc;
 use mm2_number::BigDecimal;
@@ -45,7 +44,7 @@ struct UtxoTxHistoryCtx<Coin: UtxoTxHistoryOps, Storage: TxHistoryStorage> {
     coin: Coin,
     storage: Storage,
     metrics: MetricsArc,
-    balances: HashMap<Address, BigDecimal>,
+    balances: HashMap<String, BigDecimal>,
 }
 
 // States have to be generic over storage type because BchAndSlpHistoryCtx is generic over it
@@ -455,10 +454,10 @@ pub async fn bch_and_slp_history_loop(
     metrics: MetricsArc,
     current_balance: BigDecimal,
 ) {
-    let my_address = match coin.as_ref().derivation_method.iguana_or_err() {
-        Ok(my_address) => my_address.clone(),
+    let my_address = match coin.my_address() {
+        Ok(my_address) => my_address,
         Err(e) => {
-            error!("Expected Iguana derivation method: {}", e);
+            error!("{}", e);
             return;
         },
     };
@@ -471,6 +470,25 @@ pub async fn bch_and_slp_history_loop(
         storage,
         metrics,
         balances,
+    };
+    let state_machine: StateMachine<_, ()> = StateMachine::from_ctx(ctx);
+    state_machine.run(Init::new()).await;
+}
+
+pub async fn utxo_history_loop<Coin, Storage>(
+    coin: Coin,
+    storage: Storage,
+    metrics: MetricsArc,
+    current_balances: HashMap<String, BigDecimal>,
+) where
+    Coin: UtxoTxHistoryOps,
+    Storage: TxHistoryStorage,
+{
+    let ctx = UtxoTxHistoryCtx {
+        coin,
+        storage,
+        metrics,
+        balances: current_balances,
     };
     let state_machine: StateMachine<_, ()> = StateMachine::from_ctx(ctx);
     state_machine.run(Init::new()).await;

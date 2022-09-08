@@ -361,6 +361,8 @@ pub async fn my_tx_history_v2_rpc(
     match lp_coinfind_or_err(&ctx, &request.coin).await? {
         MmCoinEnum::Bch(bch) => my_tx_history_v2_impl(ctx, &bch, request).await,
         MmCoinEnum::SlpToken(slp_token) => my_tx_history_v2_impl(ctx, &slp_token, request).await,
+        MmCoinEnum::UtxoCoin(utxo) => my_tx_history_v2_impl(ctx, &utxo, request).await,
+        MmCoinEnum::QtumCoin(qtum) => my_tx_history_v2_impl(ctx, &qtum, request).await,
         other => MmError::err(MyTxHistoryErrorV2::NotSupportedFor(other.ticker().to_owned())),
     }
 }
