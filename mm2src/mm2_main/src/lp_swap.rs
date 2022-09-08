@@ -60,7 +60,7 @@
 use crate::mm2::lp_network::{broadcast_p2p_msg, Libp2pPeerId};
 use async_std::sync as async_std_sync;
 use coins::{lp_coinfind, MmCoinEnum, TradeFee, TransactionEnum};
-use common::log::{self, debug, warn};
+use common::log::{debug, warn};
 use common::{bits256, calc_total_pages,
              executor::{spawn, Timer},
              log::{error, info},
@@ -111,14 +111,12 @@ use pubkey_banning::BanReason;
 pub use pubkey_banning::{ban_pubkey_rpc, is_pubkey_banned, list_banned_pubkeys_rpc, unban_pubkeys_rpc};
 pub use recreate_swap_data::recreate_swap_data;
 pub use saved_swap::{SavedSwap, SavedSwapError, SavedSwapIo, SavedSwapResult};
-use swap_watcher::{run_watcher, RunWatcherInput, TakerSwapWatcherData, Watcher};
+pub use swap_watcher::{process_watcher_msg, watcher_topic, TakerSwapWatcherData, WATCHER_PREFIX};
 use taker_swap::TakerSwapEvent;
 pub use taker_swap::{calc_max_taker_vol, check_balance_for_taker_swap, max_taker_vol, max_taker_vol_from_available,
                      run_taker_swap, taker_swap_trade_preimage, RunTakerSwapInput, TakerSavedSwap, TakerSwap,
                      TakerSwapData, TakerSwapPreparedParams, TakerTradePreimage};
 pub use trade_preimage::trade_preimage_rpc;
-
-pub const WATCHER_PREFIX: TopicPrefix = "swpwtchr";
 
 pub const SWAP_PREFIX: TopicPrefix = "swap";
 
@@ -139,11 +137,6 @@ pub enum SwapMsg {
     TakerFee(Vec<u8>),
     MakerPayment(Vec<u8>),
     TakerPayment(Vec<u8>),
-}
-
-#[derive(Clone, Debug, Deserialize, Serialize)]
-pub enum SwapWatcherMsg {
-    TakerSwapWatcherMsg(Box<TakerSwapWatcherData>),
 }
 
 #[derive(Debug, Default)]
@@ -252,76 +245,7 @@ pub async fn process_msg(ctx: MmArc, topic: &str, msg: &[u8]) {
     }
 }
 
-pub async fn process_watcher_msg(ctx: MmArc, msg: &[u8]) {
-    let msg = match decode_signed::<SwapWatcherMsg>(msg) {
-        Ok(m) => m,
-        Err(watcher_msg_err) => {
-            error!("Couldn't deserialize 'SwapWatcherMsg': {:?}", watcher_msg_err);
-            // Drop it to avoid dead_code warning
-            drop(watcher_msg_err);
-            return;
-        },
-    };
-
-    match msg.0 {
-        SwapWatcherMsg::TakerSwapWatcherMsg(watcher_data) => spawn_taker_swap_watcher(ctx, *watcher_data),
-    }
-}
-
-fn spawn_taker_swap_watcher(ctx: MmArc, watcher_data: TakerSwapWatcherData) {
-    let swap_ctx = SwapsContext::from_ctx(&ctx).unwrap();
-    let msgs = swap_ctx.swap_msgs.lock().unwrap();
-    let mut taker_swap_watchers = swap_ctx.taker_swap_watchers.lock().unwrap();
-    // Return if taker, maker or watcher swap already exists
-    // This needs discussion
-    if msgs.contains_key(&watcher_data.uuid) || taker_swap_watchers.contains(&watcher_data.uuid) {
-        return;
-    }
-    taker_swap_watchers.insert(watcher_data.uuid);
-
-    spawn(async move {
-        let taker_coin = match lp_coinfind(&ctx, &watcher_data.taker_coin).await {
-            Ok(Some(c)) => c,
-            Ok(None) => {
-                log::error!("Coin {} is not found/enabled", watcher_data.taker_coin);
-                return;
-            },
-            Err(e) => {
-                log::error!("!lp_coinfind({}): {}", watcher_data.taker_coin, e);
-                return;
-            },
-        };
-
-        let maker_coin = match lp_coinfind(&ctx, &watcher_data.maker_coin).await {
-            Ok(Some(c)) => c,
-            Ok(None) => {
-                log::error!("Coin {} is not found/enabled", watcher_data.maker_coin);
-                return;
-            },
-            Err(e) => {
-                log::error!("!lp_coinfind({}): {}", watcher_data.maker_coin, e);
-                return;
-            },
-        };
-
-        let uuid = watcher_data.uuid;
-        log_tag!(
-            ctx,
-            "";
-            fmt = "Entering the watcher_swap_loop {}/{} with uuid: {}",
-            maker_coin.ticker(),
-            taker_coin.ticker(),
-            uuid
-        );
-
-        let watcher = Watcher::new(watcher_data.uuid, ctx.clone(), maker_coin, taker_coin, watcher_data);
-        run_watcher(RunWatcherInput::StartNew(watcher), ctx).await
-    });
-}
-
 pub fn swap_topic(uuid: &Uuid) -> String { pub_sub_topic(SWAP_PREFIX, &uuid.to_string()) }
-
-pub fn watcher_topic(ticker: &str) -> String { pub_sub_topic(WATCHER_PREFIX, ticker) }
 
 /// Formats and returns a topic format for `txhlp`.
 ///
