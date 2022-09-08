@@ -1,15 +1,13 @@
 use super::{z_coin_errors::*, CheckPointBlockInfo, ZcoinConsensusParams};
-use crate::utxo::rpc_clients::{JsonRpcPendingRequests, JsonRpcPendingRequestsShared, NativeClient, UtxoRpcClientOps,
-                               NO_TX_ERROR_CODE};
+use crate::utxo::rpc_clients::{NativeClient, UtxoRpcClientOps, NO_TX_ERROR_CODE};
 use async_trait::async_trait;
-use common::executor::{spawn, Timer};
+use common::executor::Timer;
 use common::log::{debug, error, info, warn, LogOnError};
-use common::{async_blocking, now_float, now_ms, spawn_abortable, AbortOnDropHandle, Future01CompatExt};
+use common::{async_blocking, now_float, spawn_abortable, AbortOnDropHandle, Future01CompatExt};
 use db_common::sqlite::rusqlite::{params, Connection, Error as SqliteError, NO_PARAMS};
 use db_common::sqlite::{query_single_row, run_optimization_pragmas};
 use futures::channel::mpsc::{channel, Receiver as AsyncReceiver, Sender as AsyncSender};
 use futures::channel::oneshot::{channel as oneshot_channel, Sender as OneshotSender};
-use futures::future::{select as select_func, FutureExt};
 use futures::lock::{Mutex as AsyncMutex, MutexGuard as AsyncMutexGuard};
 use futures::StreamExt;
 use futures01::sync::{mpsc, oneshot};
@@ -21,7 +19,6 @@ use prost::Message;
 use protobuf::Message as ProtobufMessage;
 use std::ops::Deref;
 use std::path::{Path, PathBuf};
-use std::str::FromStr;
 use std::sync::atomic::{AtomicU64, Ordering as AtomicOrdering};
 use std::sync::Arc;
 use tokio::task::block_in_place;
@@ -41,7 +38,7 @@ use zcash_primitives::zip32::ExtendedFullViewingKey;
 mod z_coin_grpc {
     tonic::include_proto!("cash.z.wallet.sdk.rpc");
 }
-use crate::{RpcTransportEventHandler, RpcTransportEventHandlerShared, ZTransaction};
+use crate::{RpcTransportEventHandlerShared, ZTransaction};
 use rpc::v1::types::H256 as H256Json;
 use z_coin_grpc::compact_tx_streamer_client::CompactTxStreamerClient;
 use z_coin_grpc::{BlockId, BlockRange, ChainSpec, CompactBlock as TonicCompactBlock,
@@ -240,19 +237,6 @@ fn increase_delay(delay: &AtomicU64) {
     }
 }
 
-macro_rules! try_loop {
-    ($e:expr, $addr: ident, $delay: ident) => {
-        match $e {
-            Ok(res) => res,
-            Err(e) => {
-                error!("{:?} error {:?}", $addr, e);
-                increase_delay(&$delay);
-                continue;
-            },
-        }
-    };
-}
-
 #[allow(dead_code)]
 struct LightwalletdConnection<C> {
     /// The lightwalletd connected to this addr
@@ -261,8 +245,6 @@ struct LightwalletdConnection<C> {
     rpc_client: Arc<AsyncMutex<Option<mpsc::Sender<CompactTxStreamerClient<C>>>>>,
     /// The Sender used to shutdown the background connection loop when LightwalletdConnection is dropped
     shutdown_tx: Option<oneshot::Sender<()>>,
-    /// Responses are stored here
-    responses: JsonRpcPendingRequestsShared,
     /// Selected protocol version. The value is initialized after the server.version RPC call.
     protocol_version: AsyncMutex<Option<f32>>,
 }
@@ -371,62 +353,16 @@ fn spawn_connect(
 #[allow(dead_code)]
 fn lightwalletd_connect(
     addr: String,
-    event_handlers: Vec<RpcTransportEventHandlerShared>,
+    _event_handlers: Vec<RpcTransportEventHandlerShared>,
 ) -> LightwalletdConnection<Channel> {
-    let (shutdown_tx, shutdown_rx) = oneshot::channel::<()>();
-    // todo check working with proto format
-    let responses = Arc::new(AsyncMutex::new(JsonRpcPendingRequests::default()));
+    let (shutdown_tx, _shutdown_rx) = oneshot::channel::<()>();
     let rpc_client = Arc::new(AsyncMutex::new(None));
 
-    let connect_loop = connect_loop(addr.clone(), responses.clone(), rpc_client.clone(), event_handlers);
-
-    let connect_loop = select_func(connect_loop.boxed(), shutdown_rx.compat());
-    spawn(connect_loop.map(|_| ()));
     LightwalletdConnection {
         addr,
         rpc_client,
         shutdown_tx: Some(shutdown_tx),
-        responses,
         protocol_version: AsyncMutex::new(None),
-    }
-}
-
-#[cfg(not(target_arch = "wasm32"))]
-#[allow(dead_code)]
-async fn connect_loop<T>(
-    addr: String,
-    _responses: JsonRpcPendingRequestsShared,
-    connection_rpc_client: Arc<AsyncMutex<Option<mpsc::Sender<CompactTxStreamerClient<T>>>>>,
-    event_handlers: Vec<RpcTransportEventHandlerShared>,
-) -> Result<(), ()> {
-    let delay = Arc::new(AtomicU64::new(0));
-
-    loop {
-        let current_delay = delay.load(AtomicOrdering::Relaxed);
-        if current_delay > 0 {
-            Timer::sleep(current_delay as f64).await;
-        };
-        let uri = try_loop!(Uri::from_str(addr.as_str()), addr, delay);
-
-        let tonic_channel = try_loop!(
-            Channel::builder(uri)
-                .tls_config(ClientTlsConfig::new())
-                .unwrap()
-                .connect()
-                .await,
-            addr,
-            delay
-        );
-        let _client = CompactTxStreamerClient::new(tonic_channel);
-        info!("Light client connected to {}", addr);
-        try_loop!(event_handlers.on_connected(addr.clone()), addr, delay);
-        let last_chunk = Arc::new(AtomicU64::new(now_ms()));
-        let _last_chunk_f = light_last_chunk_loop(last_chunk.clone()).boxed().fuse();
-
-        let (tx, _rx) = mpsc::channel(0);
-        // TODO change event_handlers
-        *connection_rpc_client.lock().await = Some(tx);
-        unimplemented!()
     }
 }
 
