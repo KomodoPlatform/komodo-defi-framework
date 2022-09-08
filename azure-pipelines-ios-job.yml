@@ -19,5 +19,5 @@ jobs:
         failOnStderr: false
         continueOnError: true
       - bash: |
-          cargo lipo --targets x86_64-apple-ios,aarch64-apple-ios --release
+          cargo build --targets aarch64-apple-ios --lib
         displayName: 'Build iOS lib'
