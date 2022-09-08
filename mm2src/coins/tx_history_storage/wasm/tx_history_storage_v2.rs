@@ -260,9 +260,9 @@ impl TxHistoryStorage for IndexedDbTxHistoryStorage {
         paging: PagingOptionsEnum<BytesJson>,
         limit: usize,
     ) -> MmResult<GetHistoryResult, Self::Error> {
-        // Check if [`GetTxHistoryFilters::for_addresses`] is specified and empty.
+        // Check if [`GetTxHistoryFilters::for_addresses`] is empty.
         // If it is, it's much more efficient to return an empty result before we do any query.
-        if matches!(filters.for_addresses, Some(ref for_addresses) if for_addresses.is_empty()) {
+        if filters.for_addresses.is_empty() {
             return Ok(GetHistoryResult {
                 transactions: Vec::new(),
                 skipped: 0,
@@ -291,21 +291,14 @@ impl TxHistoryStorage for IndexedDbTxHistoryStorage {
 }
 
 impl IndexedDbTxHistoryStorage {
-    fn take_according_to_filtering_addresses<I>(
-        txs: I,
-        for_addresses: &Option<FilteringAddresses>,
-    ) -> Vec<TxHistoryTableV2>
+    fn take_according_to_filtering_addresses<I>(txs: I, for_addresses: &FilteringAddresses) -> Vec<TxHistoryTableV2>
     where
         I: Iterator<Item = TxHistoryTableV2>,
     {
-        match for_addresses {
-            Some(for_addresses) => txs
-                .filter(|tx| {
-                    tx.from_addresses.has_intersection(for_addresses) || tx.to_addresses.has_intersection(for_addresses)
-                })
-                .collect(),
-            None => txs.collect(),
-        }
+        txs.filter(|tx| {
+            tx.from_addresses.has_intersection(for_addresses) || tx.to_addresses.has_intersection(for_addresses)
+        })
+        .collect()
     }
 
     pub(super) fn take_according_to_paging_opts(

@@ -1,9 +1,11 @@
+use crate::hd_wallet::{AddressDerivingError, InvalidBip44ChainError};
 use crate::tx_history_storage::{CreateTxHistoryStorageError, GetTxHistoryFilters, TxHistoryStorageBuilder, WalletId};
-use crate::{lp_coinfind_or_err, BlockHeightAndTime, CoinFindError, HistorySyncState, MmCoin, MmCoinEnum, Transaction,
-            TransactionDetails, TransactionType, TxFeeDetails, UtxoRpcError};
+use crate::{lp_coinfind_or_err, BlockHeightAndTime, CoinFindError, HDAddressId, HistorySyncState, MmCoin, MmCoinEnum,
+            Transaction, TransactionDetails, TransactionType, TxFeeDetails, UtxoRpcError};
 use async_trait::async_trait;
 use bitcrypto::sha256;
 use common::{calc_total_pages, ten, HttpStatusCode, PagingOptionsEnum, StatusCode};
+use crypto::Bip44DerivationPath;
 use derive_more::Display;
 use futures::compat::Future01CompatExt;
 use keys::{Address, CashAddress};
@@ -228,6 +230,19 @@ impl<'a, Addr: Clone + DisplayAddress + Eq + std::hash::Hash, Tx: Transaction> T
     }
 }
 
+#[derive(Clone, Debug, Deserialize, Serialize)]
+#[serde(untagged)]
+pub enum MyTxHistoryTarget {
+    Iguana,
+    AccountId { account_id: u32 },
+    AddressId(HDAddressId),
+    AddressDerivationPath(Bip44DerivationPath),
+}
+
+impl Default for MyTxHistoryTarget {
+    fn default() -> Self { MyTxHistoryTarget::Iguana }
+}
+
 #[derive(Deserialize)]
 pub struct MyTxHistoryRequestV2<T> {
     coin: String,
@@ -235,6 +250,8 @@ pub struct MyTxHistoryRequestV2<T> {
     pub(crate) limit: usize,
     #[serde(default)]
     pub(crate) paging_options: PagingOptionsEnum<T>,
+    #[serde(default)]
+    pub(crate) target: MyTxHistoryTarget,
 }
 
 #[derive(Serialize)]
@@ -247,6 +264,7 @@ pub struct MyTxHistoryDetails {
 #[derive(Serialize)]
 pub struct MyTxHistoryResponseV2<Tx, Id> {
     pub(crate) coin: String,
+    pub(crate) target: MyTxHistoryTarget,
     pub(crate) current_block: u64,
     pub(crate) transactions: Vec<Tx>,
     pub(crate) sync_status: HistorySyncState,
@@ -261,11 +279,18 @@ pub struct MyTxHistoryResponseV2<Tx, Id> {
 #[serde(tag = "error_type", content = "error_data")]
 pub enum MyTxHistoryErrorV2 {
     CoinIsNotActive(String),
+    InvalidTarget(String),
     StorageIsNotInitialized(String),
     StorageError(String),
     RpcError(String),
     NotSupportedFor(String),
     Internal(String),
+}
+
+impl MyTxHistoryErrorV2 {
+    pub fn with_expected_target(actual: MyTxHistoryTarget, expected: &str) -> MyTxHistoryErrorV2 {
+        MyTxHistoryErrorV2::InvalidTarget(format!("Expected {:?} target, found: {:?}", expected, actual))
+    }
 }
 
 impl HttpStatusCode for MyTxHistoryErrorV2 {
@@ -276,7 +301,7 @@ impl HttpStatusCode for MyTxHistoryErrorV2 {
             | MyTxHistoryErrorV2::StorageError(_)
             | MyTxHistoryErrorV2::RpcError(_)
             | MyTxHistoryErrorV2::Internal(_) => StatusCode::INTERNAL_SERVER_ERROR,
-            MyTxHistoryErrorV2::NotSupportedFor(_) => StatusCode::BAD_REQUEST,
+            MyTxHistoryErrorV2::NotSupportedFor(_) | MyTxHistoryErrorV2::InvalidTarget(_) => StatusCode::BAD_REQUEST,
         }
     }
 }
@@ -304,10 +329,27 @@ impl From<UtxoRpcError> for MyTxHistoryErrorV2 {
     fn from(err: UtxoRpcError) -> Self { MyTxHistoryErrorV2::RpcError(err.to_string()) }
 }
 
+impl From<AddressDerivingError> for MyTxHistoryErrorV2 {
+    fn from(e: AddressDerivingError) -> Self {
+        match e {
+            AddressDerivingError::InvalidBip44Chain { .. } => MyTxHistoryErrorV2::InvalidTarget(e.to_string()),
+            AddressDerivingError::Bip32Error(_) => MyTxHistoryErrorV2::Internal(e.to_string()),
+        }
+    }
+}
+
+impl From<InvalidBip44ChainError> for MyTxHistoryErrorV2 {
+    fn from(e: InvalidBip44ChainError) -> Self { MyTxHistoryErrorV2::InvalidTarget(e.to_string()) }
+}
+
+#[async_trait]
 pub trait CoinWithTxHistoryV2 {
     fn history_wallet_id(&self) -> WalletId;
 
-    fn get_tx_history_filters(&self) -> GetTxHistoryFilters;
+    async fn get_tx_history_filters(
+        &self,
+        target: MyTxHistoryTarget,
+    ) -> MmResult<GetTxHistoryFilters, MyTxHistoryErrorV2>;
 }
 
 /// According to the [comment](https://github.com/KomodoPlatform/atomicDEX-API/pull/1285#discussion_r888410390),
@@ -345,7 +387,7 @@ where
         .await
         .map_to_mm(MyTxHistoryErrorV2::RpcError)?;
 
-    let filters = coin.get_tx_history_filters();
+    let filters = coin.get_tx_history_filters(request.target.clone()).await?;
     let history = tx_history_storage
         .get_history(&wallet_id, filters, request.paging_options.clone(), request.limit)
         .await?;
@@ -369,6 +411,7 @@ where
 
     Ok(MyTxHistoryResponseV2 {
         coin: request.coin,
+        target: request.target,
         current_block,
         transactions,
         sync_status: coin.history_sync_status(),

@@ -35,20 +35,6 @@ fn assert_get_history_result(actual: GetHistoryResult, expected_ids: Vec<BytesJs
     assert_eq!(actual.total, total, "!total");
 }
 
-async fn get_coin_history<Storage: TxHistoryStorage>(
-    storage: &Storage,
-    wallet_id: &WalletId,
-) -> Vec<TransactionDetails> {
-    let filters = GetTxHistoryFilters::new();
-    let paging_options = PagingOptionsEnum::PageNumber(NonZeroUsize::new(1).unwrap());
-    let limit = u32::MAX as usize;
-    storage
-        .get_history(wallet_id, filters, paging_options, limit)
-        .await
-        .unwrap()
-        .transactions
-}
-
 async fn test_add_transactions_impl() {
     let wallet_id = wallet_id_for_test("TEST_ADD_TRANSACTIONS");
 
@@ -60,12 +46,20 @@ async fn test_add_transactions_impl() {
     let tx1 = get_bch_tx_details("6686ee013620d31ba645b27d581fed85437ce00f46b595a576718afac4dd5b69");
     let transactions = [tx1.clone(), tx1.clone()];
 
+    let filters = GetTxHistoryFilters::for_address("bchtest:qzx0llpyp8gxxsmad25twksqnwd62xm3lsnnczzt66".to_string());
+    let paging_options = PagingOptionsEnum::PageNumber(NonZeroUsize::new(1).unwrap());
+    let limit = u32::MAX as usize;
+
     // must fail because we are adding transactions with the same internal_id
     storage
         .add_transactions_to_history(&wallet_id, transactions)
         .await
         .unwrap_err();
-    let actual_txs = get_coin_history(&storage, &wallet_id).await;
+    let actual_txs = storage
+        .get_history(&wallet_id, filters.clone(), paging_options.clone(), limit)
+        .await
+        .unwrap()
+        .transactions;
     assert!(actual_txs.is_empty());
 
     let tx2 = get_bch_tx_details("c07836722bbdfa2404d8fe0ea56700d02e2012cb9dc100ccaf1138f334a759ce");
@@ -74,7 +68,11 @@ async fn test_add_transactions_impl() {
         .add_transactions_to_history(&wallet_id, transactions.clone())
         .await
         .unwrap();
-    let actual_txs = get_coin_history(&storage, &wallet_id).await;
+    let actual_txs = storage
+        .get_history(&wallet_id, filters, paging_options, limit)
+        .await
+        .unwrap()
+        .transactions;
     assert_eq!(actual_txs, transactions);
 }
 
@@ -351,7 +349,7 @@ async fn test_get_history_page_number_impl() {
         .await
         .unwrap();
 
-    let filters = GetTxHistoryFilters::new();
+    let filters = GetTxHistoryFilters::for_address("bchtest:qzx0llpyp8gxxsmad25twksqnwd62xm3lsnnczzt66".to_string());
     let paging = PagingOptionsEnum::PageNumber(NonZeroUsize::new(1).unwrap());
     let limit = 4;
 
@@ -365,10 +363,10 @@ async fn test_get_history_page_number_impl() {
     ];
     assert_get_history_result(result, expected_internal_ids, 0, 123);
 
-    let filters = GetTxHistoryFilters::new()
+    let filters = GetTxHistoryFilters::for_address("slptest:qzx0llpyp8gxxsmad25twksqnwd62xm3lsg8lecug8".to_string())
         .with_token_id("bb309e48930671582bea508f9a1d9b491e49b69be3d6f372dc08da2ac6e90eb7".to_owned());
     let paging = PagingOptionsEnum::PageNumber(NonZeroUsize::new(2).unwrap());
-    let limit = 5;
+    let limit = 3;
 
     let result = storage.get_history(&wallet_id, filters, paging, limit).await.unwrap();
 
@@ -376,10 +374,8 @@ async fn test_get_history_page_number_impl() {
         "433b641bc89e1b59c22717918583c60ec98421805c8e85b064691705d9aeb970".into(),
         "cd6ec10b0cd9747ddc66ac5c97c2d7b493e8cea191bc2d847b3498719d4bd989".into(),
         "1c1e68357cf5a6dacb53881f13aa5d2048fe0d0fab24b76c9ec48f53884bed97".into(),
-        "c4304b5ef4f1b88ed4939534a8ca9eca79f592939233174ae08002e8454e3f06".into(),
-        "b0035434a1e7be5af2ed991ee2a21a90b271c5852a684a0b7d315c5a770d1b1c".into(),
     ];
-    assert_get_history_result(result, expected_internal_ids, 5, 121);
+    assert_get_history_result(result, expected_internal_ids, 3, 119);
 }
 
 async fn test_get_history_from_id_impl() {
@@ -395,7 +391,7 @@ async fn test_get_history_from_id_impl() {
         .await
         .unwrap();
 
-    let filters = GetTxHistoryFilters::new();
+    let filters = GetTxHistoryFilters::for_address("bchtest:qzx0llpyp8gxxsmad25twksqnwd62xm3lsnnczzt66".to_string());
     let paging = PagingOptionsEnum::FromId("6686ee013620d31ba645b27d581fed85437ce00f46b595a576718afac4dd5b69".into());
     let limit = 3;
 
@@ -408,7 +404,7 @@ async fn test_get_history_from_id_impl() {
     ];
     assert_get_history_result(result, expected_internal_ids, 1, 123);
 
-    let filters = GetTxHistoryFilters::new()
+    let filters = GetTxHistoryFilters::for_address("slptest:qzx0llpyp8gxxsmad25twksqnwd62xm3lsg8lecug8".to_string())
         .with_token_id("bb309e48930671582bea508f9a1d9b491e49b69be3d6f372dc08da2ac6e90eb7".to_owned());
     let paging = PagingOptionsEnum::FromId("433b641bc89e1b59c22717918583c60ec98421805c8e85b064691705d9aeb970".into());
     let limit = 4;
@@ -421,7 +417,7 @@ async fn test_get_history_from_id_impl() {
         "c4304b5ef4f1b88ed4939534a8ca9eca79f592939233174ae08002e8454e3f06".into(),
         "b0035434a1e7be5af2ed991ee2a21a90b271c5852a684a0b7d315c5a770d1b1c".into(),
     ];
-    assert_get_history_result(result, expected_internal_ids, 6, 121);
+    assert_get_history_result(result, expected_internal_ids, 4, 119);
 }
 
 async fn test_get_history_for_addresses_impl() {
@@ -441,8 +437,7 @@ async fn test_get_history_for_addresses_impl() {
         "slptest:ppfdp6t2qs7rc79wxjppwv0hwvr776x5vu2enth4zh".to_owned(),
         "slptest:pqgk69yyj6dzag4mdyur9lykye89ucz9vskelzwhck".to_owned(),
     ];
-    let filters = GetTxHistoryFilters::new()
-        .with_for_addresses(for_addresses)
+    let filters = GetTxHistoryFilters::for_addresses(for_addresses)
         .with_token_id("bb309e48930671582bea508f9a1d9b491e49b69be3d6f372dc08da2ac6e90eb7".to_owned());
     let paging = PagingOptionsEnum::PageNumber(NonZeroUsize::new(1).unwrap());
     let limit = 5;
@@ -462,8 +457,7 @@ async fn test_get_history_for_addresses_impl() {
         "slptest:ppfdp6t2qs7rc79wxjppwv0hwvr776x5vu2enth4zh".to_owned(),
         "slptest:pqgk69yyj6dzag4mdyur9lykye89ucz9vskelzwhck".to_owned(),
     ];
-    let filters = GetTxHistoryFilters::new()
-        .with_for_addresses(for_addresses)
+    let filters = GetTxHistoryFilters::for_addresses(for_addresses)
         .with_token_id("bb309e48930671582bea508f9a1d9b491e49b69be3d6f372dc08da2ac6e90eb7".to_owned());
     let paging = PagingOptionsEnum::FromId("e46fa0836be0534f7799b2ef5b538551ea25b6f430b7e015a95731efb7a0cd4f".into());
     let limit = 4;
@@ -482,8 +476,7 @@ async fn test_get_history_for_addresses_impl() {
         "slptest:ppfdp6t2qs7rc79wxjppwv0hwvr776x5vu2enth4zh".to_owned(),
         "slptest:pqgk69yyj6dzag4mdyur9lykye89ucz9vskelzwhck".to_owned(),
     ];
-    let filters = GetTxHistoryFilters::new()
-        .with_for_addresses(for_addresses)
+    let filters = GetTxHistoryFilters::for_addresses(for_addresses)
         .with_token_id("bb309e48930671582bea508f9a1d9b491e49b69be3d6f372dc08da2ac6e90eb7".to_owned());
     let paging = PagingOptionsEnum::FromId("6686ee013620d31ba645b27d581fed85437ce00f46b595a576718afac4dd5b69".into());
     let limit = 2;
@@ -498,8 +491,7 @@ async fn test_get_history_for_addresses_impl() {
         "slptest:ppfdp6t2qs7rc79wxjppwv0hwvr776x5vu2enth4zh".to_owned(),
         "slptest:pqgk69yyj6dzag4mdyur9lykye89ucz9vskelzwhck".to_owned(),
     ];
-    let filters = GetTxHistoryFilters::new()
-        .with_for_addresses(for_addresses)
+    let filters = GetTxHistoryFilters::for_addresses(for_addresses)
         .with_token_id("bb309e48930671582bea508f9a1d9b491e49b69be3d6f372dc08da2ac6e90eb7".to_owned());
     let paging = PagingOptionsEnum::PageNumber(NonZeroUsize::new(2).unwrap());
     let limit = 4;

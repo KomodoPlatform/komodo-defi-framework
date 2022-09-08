@@ -85,6 +85,7 @@ impl From<InvalidBip44ChainError> for HDAccountBalanceRpcError {
 impl From<AddressDerivingError> for HDAccountBalanceRpcError {
     fn from(e: AddressDerivingError) -> Self {
         match e {
+            AddressDerivingError::InvalidBip44Chain { chain } => HDAccountBalanceRpcError::InvalidBip44Chain { chain },
             AddressDerivingError::Bip32Error(bip32) => {
                 HDAccountBalanceRpcError::ErrorDerivingAddress(bip32.to_string())
             },

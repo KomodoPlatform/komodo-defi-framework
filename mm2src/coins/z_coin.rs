@@ -661,6 +661,7 @@ impl ZCoin {
 
         Ok(MyTxHistoryResponseV2 {
             coin: self.ticker().into(),
+            target: request.target,
             current_block,
             transactions,
             // Zcoin is activated only after the state is synced

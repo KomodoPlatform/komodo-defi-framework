@@ -23,10 +23,18 @@ pub type HDAccountsMutex<HDAccount> = AsyncMutex<HDAccountsMap<HDAccount>>;
 pub type HDAccountsMut<'a, HDAccount> = AsyncMutexGuard<'a, HDAccountsMap<HDAccount>>;
 pub type HDAccountMut<'a, HDAccount> = AsyncMappedMutexGuard<'a, HDAccountsMap<HDAccount>, HDAccount>;
 
+pub type AddressDerivingResult<T> = MmResult<T, AddressDerivingError>;
+
 #[derive(Display)]
 pub enum AddressDerivingError {
+    #[display(fmt = "Coin doesn't support the given BIP44 chain: {:?}", chain)]
+    InvalidBip44Chain { chain: Bip44Chain },
     #[display(fmt = "BIP32 address deriving error: {}", _0)]
     Bip32Error(Bip32Error),
+}
+
+impl From<InvalidBip44ChainError> for AddressDerivingError {
+    fn from(e: InvalidBip44ChainError) -> Self { AddressDerivingError::InvalidBip44Chain { chain: e.chain } }
 }
 
 impl From<Bip32Error> for AddressDerivingError {
@@ -36,7 +44,9 @@ impl From<Bip32Error> for AddressDerivingError {
 impl From<AddressDerivingError> for BalanceError {
     fn from(e: AddressDerivingError) -> Self {
         match e {
-            AddressDerivingError::Bip32Error(bip32) => BalanceError::Internal(bip32.to_string()),
+            AddressDerivingError::InvalidBip44Chain { .. } | AddressDerivingError::Bip32Error(_) => {
+                BalanceError::Internal(e.to_string())
+            },
         }
     }
 }
@@ -59,6 +69,7 @@ impl From<Bip32Error> for NewAddressDerivingError {
 impl From<AddressDerivingError> for NewAddressDerivingError {
     fn from(e: AddressDerivingError) -> Self {
         match e {
+            AddressDerivingError::InvalidBip44Chain { chain } => NewAddressDerivingError::InvalidBip44Chain { chain },
             AddressDerivingError::Bip32Error(bip32) => NewAddressDerivingError::Bip32Error(bip32),
         }
     }
@@ -256,6 +267,7 @@ impl From<InvalidBip44ChainError> for HDWalletRpcError {
 impl From<AddressDerivingError> for HDWalletRpcError {
     fn from(e: AddressDerivingError) -> Self {
         match e {
+            AddressDerivingError::InvalidBip44Chain { chain } => HDWalletRpcError::InvalidBip44Chain { chain },
             AddressDerivingError::Bip32Error(bip32) => HDWalletRpcError::ErrorDerivingAddress(bip32.to_string()),
         }
     }
@@ -332,7 +344,7 @@ pub struct HDAddress<Address, Pubkey> {
     pub derivation_path: DerivationPath,
 }
 
-#[derive(Clone, Deserialize, Serialize)]
+#[derive(Clone, Debug, Deserialize, Serialize)]
 pub struct HDAddressId {
     pub account_id: u32,
     pub chain: Bip44Chain,
@@ -362,7 +374,20 @@ pub trait HDWalletCoinOps {
         hd_account: &Self::HDAccount,
         chain: Bip44Chain,
         address_id: u32,
-    ) -> MmResult<HDAddress<Self::Address, Self::Pubkey>, AddressDerivingError>;
+    ) -> AddressDerivingResult<HDAddress<Self::Address, Self::Pubkey>>;
+
+    /// Derives all known addresses for the given `hd_account` at the specified `chain`
+    fn derive_known_addresses(
+        &self,
+        hd_account: &Self::HDAccount,
+        chain: Bip44Chain,
+    ) -> AddressDerivingResult<Vec<HDAddress<Self::Address, Self::Pubkey>>> {
+        let known_addresses_number = hd_account.known_addresses_number(chain)?;
+        (0..known_addresses_number)
+            .into_iter()
+            .map(|address_id| self.derive_address(hd_account, chain, address_id))
+            .collect()
+    }
 
     /// Generates a new address and updates the corresponding number of used `hd_account` addresses.
     async fn generate_new_address(

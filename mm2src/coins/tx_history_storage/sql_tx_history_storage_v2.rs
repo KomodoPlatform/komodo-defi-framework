@@ -231,24 +231,22 @@ fn get_history_builder_preimage<'a>(
     connection: &'a Connection,
     wallet_id: &WalletId,
     token_id: String,
-    for_addresses: Option<FilteringAddresses>,
+    for_addresses: FilteringAddresses,
 ) -> Result<SqlQuery<'a>, MmError<SqlError>> {
     let mut sql_builder = SqlQuery::select_from_alias(connection, &tx_history_table(wallet_id), "tx_history")?;
 
-    // Check if we need to join the [`tx_address_table(wallet_id)`] table
-    // to query transactions that were sent from/to `for_addresses` addresses.
-    if let Some(for_addresses) = for_addresses {
-        let tx_address_table_name = tx_address_table(wallet_id);
+    // Query transactions that were sent from/to `for_addresses` addresses.
+    let tx_address_table_name = tx_address_table(wallet_id);
 
-        sql_builder
-            .join_alias(&tx_address_table_name, "tx_address")?
-            .on_join_eq("tx_history.internal_id", "tx_address.internal_id")?;
+    sql_builder
+        .join_alias(&tx_address_table_name, "tx_address")?
+        .on_join_eq("tx_history.internal_id", "tx_address.internal_id")?;
 
-        sql_builder
-            .and_where_in_params("tx_address.address", for_addresses)?
-            .group_by("tx_history.internal_id")?;
-    }
+    sql_builder
+        .and_where_in_params("tx_address.address", for_addresses)?
+        .group_by("tx_history.internal_id")?;
 
+    // Set other query conditions.
     sql_builder
         .and_where_eq_param("tx_history.token_id", token_id)?
         .order_asc("tx_history.confirmation_status")?
@@ -583,9 +581,9 @@ impl TxHistoryStorage for SqliteTxHistoryStorage {
         paging: PagingOptionsEnum<BytesJson>,
         limit: usize,
     ) -> Result<GetHistoryResult, MmError<Self::Error>> {
-        // Check if [`GetTxHistoryFilters::for_addresses`] is specified and empty.
+        // Check if [`GetTxHistoryFilters::for_addresses`] is empty.
         // If it is, it's much more efficient to return an empty result before we do any query.
-        if matches!(filters.for_addresses, Some(ref for_addresses) if for_addresses.is_empty()) {
+        if filters.for_addresses.is_empty() {
             return Ok(GetHistoryResult {
                 transactions: Vec::new(),
                 skipped: 0,
