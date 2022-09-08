@@ -10,8 +10,6 @@ trigger:
   branches:
     include:
       - refs/heads/*
-    exclude:
-      - refs/heads/mm2.1-cross
   paths:
     exclude:
       - docs/*
@@ -57,9 +55,20 @@ stages:
           alice_userpass: 'ALICE_USERPASS_LINUX'
           telegram_api_key: 'TELEGRAM_API_KEY'
 
+  - stage: Mobile
+    displayName: Mobile libs build
+    condition: succeeded('WASM')
+    jobs:
+      - template: azure-pipelines-android-job.yml
+        parameters:
+          os: 'Linux'
+      - template: azure-pipelines-ios-job.yml
+        parameters:
+          os: 'Darwin'
+
   - stage: Build
     displayName: Build and test Debug
-    condition: succeeded('WASM')
+    condition: succeeded('Mobile')
     jobs:
       - template: azure-pipelines-build-stage-job.yml  # Template reference
         parameters:

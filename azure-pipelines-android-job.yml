@@ -1,0 +1,23 @@
+parameters:
+  os: ''
+
+jobs:
+  - job: MM2_Android
+    timeoutInMinutes: 0 # 0 means infinite for self-hosted agent
+    pool:
+      name: Default
+      demands: agent.os -equals ${{ parameters.os }}
+    steps:
+      - checkout: self  # self represents the repo where the initial Pipelines YAML file was found
+        clean: ${{ eq( variables['Build.Reason'], 'Schedule' ) }} # clean up only on Scheduled build
+      - bash: |
+          if [ $CLEANUP = "true" ]
+          then
+            git clean -ffdx
+          fi
+        displayName: Clean Up
+        failOnStderr: false
+        continueOnError: true
+      -bash: |
+        CC_armv7_linux_androideabi=armv7a-linux-androideabi21-clang CARGO_TARGET_ARMV7_LINUX_ANDROIDEABI_LINKER=armv7a-linux-androideabi21-clang cargo build --target=armv7-linux-androideabi --release --lib
+        displayName: Build armv7 arch

@@ -1,0 +1,23 @@
+parameters:
+  os: ''
+
+jobs:
+  - job: MM2_iOS
+    timeoutInMinutes: 0 # 0 means infinite for self-hosted agent
+    pool:
+      name: Default
+      demands: agent.os -equals ${{ parameters.os }}
+    steps:
+      - checkout: self  # self represents the repo where the initial Pipelines YAML file was found
+        clean: ${{ eq( variables['Build.Reason'], 'Schedule' ) }} # clean up only on Scheduled build
+      - bash: |
+          if [ $CLEANUP = "true" ]
+          then
+            git clean -ffdx
+          fi
+        displayName: Clean Up
+        failOnStderr: false
+        continueOnError: true
+      -bash: |
+        cargo lipo --targets x86_64-apple-ios,aarch64-apple-ios --release
+        displayName: Build iOS lib
