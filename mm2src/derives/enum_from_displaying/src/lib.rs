@@ -12,7 +12,7 @@ use syn::punctuated::Punctuated;
 use syn::token::Comma;
 use syn::{parse_macro_input, DeriveInput};
 
-/// `EnumFromEnum` is very useful for generating `From<T>` trait from one enum to another enum
+/// `EnumFromDisplaying` is very useful for generating `From<T>` trait from one enum to another enum
 /// Currently, this crate can only convert enum variant with only some basic inner type such as `String`, and `Enum`
 /// type just like the example below. Can not be used for tuple, struct etc for now .
 ///
@@ -21,16 +21,16 @@ use syn::{parse_macro_input, DeriveInput};
 ///
 /// ### USAGE:
 /// ```rust
-/// use enum_from_enum::EnumFromEnum;
+/// use enum_from_enum::EnumFromDisplaying;
 /// use derive_more::Display;
 
 ///  // E.G, this converts from whatever Bar is to Foo::Bar(String) and
 /// // whatever FooBar is to Foo::FooBar(FooBar)
-/// #[derive(Debug, EnumFromEnum)]
+/// #[derive(Debug, EnumFromDisplaying)]
 /// pub enum Foo {
-///     #[enum_from_enum("Bar")]
+///     #[enum_from_displaying("Bar")]
 ///     Bar(String),
-///     #[enum_from_enum("FooBar")]
+///     #[enum_from_displaying("FooBar")]
 ///     FooBar(FooBar),
 /// }
 
