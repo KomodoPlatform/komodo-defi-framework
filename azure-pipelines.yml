@@ -68,7 +68,8 @@ stages:
 
   - stage: Desktop
     displayName: Desktop Build and test
-    condition: or(succeeded('Mobile'), and(skipped('Mobile'), succeeded('WASM'))
+    condition: or(eq(dependencies.Mobile.result, 'Succeeded'), and(eq(dependencies.Mobile.result, 'Skipped'), succeeded('WASM')))
+    dependsOn: Mobile
     jobs:
       - template: azure-pipelines-build-stage-job.yml  # Template reference
         parameters:
