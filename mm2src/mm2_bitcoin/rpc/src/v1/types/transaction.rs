@@ -2039,4 +2039,44 @@ mod tests {
 
         let _tx: Transaction = serde_json::from_str(json_str).unwrap();
     }
+
+    #[test]
+    fn test_nav_cold_staking_script_pubkey() {
+        let json_str = r#"[
+                {
+                  "value": 10,
+                  "valuesat": 1000000000,
+                  "n": 0,
+                  "scriptPubKey": {
+                    "asm": "OP_DUP OP_HASH160 e6761d199b7a3137c98056e49b7339b9a7ab3f5e OP_EQUALVERIFY OP_CHECKSIG",
+                    "hex": "76a914e6761d199b7a3137c98056e49b7339b9a7ab3f5e88ac",
+                    "reqSigs": 1,
+                    "type": "pubkeyhash",
+                    "addresses": [
+                      "NgvY6ZMtLoo2Zseh9MBgTTHN2Uvt6R5XsB"
+                    ]
+                  },
+                  "spentTxId": "4cc8e8ff9b4128f8c013c6bea74d756b44f5f2c7faf9a6303acf9ffc1c4cdb46",
+                  "spentHeight": 6506904
+                },
+                {
+                  "value": 11403.679,
+                  "valuesat": 1140367900000,
+                  "n": 1,
+                  "scriptPubKey": {
+                    "asm": "OP_COINSTAKE OP_IF OP_DUP OP_HASH160 d5169fad89fc585816fb53615440b4cec510e460 OP_EQUALVERIFY OP_CHECKSIG OP_ELSE OP_DUP OP_HASH160 2523d5cf81a07f0a7591af6733ea582da3643069 OP_EQUALVERIFY OP_CHECKSIG OP_ENDIF",
+                    "hex": "c66376a914d5169fad89fc585816fb53615440b4cec510e46088ac6776a9142523d5cf81a07f0a7591af6733ea582da364306988ac68",
+                    "reqSigs": 1,
+                    "type": "cold_staking",
+                    "addresses": [
+                      "NfLgDYL4C3KKXDS8tLRAFM7spvLykV8v9A",
+                      "NPJM7j7P9VhChdXCKRWFto1feWPYcAPQqW"
+                    ]
+                  }
+                }
+		]"#;
+
+        let vout: Vec<SignedTransactionOutput> = serde_json::from_str(json_str).unwrap();
+        assert_eq!(vout[1].script.script_type, ScriptType::ColdStaking);
+    }
 }
