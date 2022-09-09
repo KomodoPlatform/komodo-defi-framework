@@ -5,8 +5,8 @@ use crate::hd_pubkey::{ExtractExtendedPubkey, HDExtractPubkeyError, HDXPubExtrac
 use crate::hd_wallet::{AccountUpdatingError, AddressDerivingError, HDAccountMut, NewAccountCreatingError};
 use crate::hd_wallet_storage::HDWalletCoinWithStorageOps;
 use crate::rpc_command::account_balance::{self, AccountBalanceParams, AccountBalanceRpcOps, HDAccountBalanceResponse};
-use crate::rpc_command::get_new_address::{self, CanGetNewAddressResponse, GetNewAddressParams, GetNewAddressResponse,
-                                          GetNewAddressRpcError, GetNewAddressRpcOps};
+use crate::rpc_command::get_new_address::{self, GetNewAddressParams, GetNewAddressResponse, GetNewAddressRpcError,
+                                          GetNewAddressRpcOps};
 use crate::rpc_command::hd_account_balance_rpc_error::HDAccountBalanceRpcError;
 use crate::rpc_command::init_account_balance::{self, InitAccountBalanceParams, InitAccountBalanceRpcOps};
 use crate::rpc_command::init_create_account::{self, CreateAccountRpcError, CreateAccountState, CreateNewAccountParams,
@@ -743,13 +743,6 @@ impl HDWalletCoinOps for UtxoStandardCoin {
 
 #[async_trait]
 impl GetNewAddressRpcOps for UtxoStandardCoin {
-    async fn can_get_new_address_rpc(
-        &self,
-        params: GetNewAddressParams,
-    ) -> MmResult<CanGetNewAddressResponse, GetNewAddressRpcError> {
-        get_new_address::common_impl::can_get_new_address_rpc(self, params).await
-    }
-
     async fn get_new_address_rpc(
         &self,
         params: GetNewAddressParams,

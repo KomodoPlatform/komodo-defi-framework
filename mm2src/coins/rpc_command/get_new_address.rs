@@ -133,63 +133,12 @@ pub struct GetNewAddressResponse {
     new_address: HDAddressBalance,
 }
 
-#[derive(Debug, PartialEq, Serialize)]
-#[serde(tag = "reason", content = "details")]
-pub enum CantGetNewAddressReason {
-    /// The addresses limit reached.
-    AddressLimitReached { max_addresses_number: u32 },
-    /// Last `gap_limit` addresses are still unused.
-    EmptyAddressesLimitReached { gap_limit: u32 },
-}
-
-#[derive(Debug, PartialEq, Serialize)]
-pub struct CanGetNewAddressResponse {
-    allowed: bool,
-    #[serde(flatten)]
-    #[serde(skip_serializing_if = "Option::is_none")]
-    reason: Option<CantGetNewAddressReason>,
-}
-
-impl CanGetNewAddressResponse {
-    pub(crate) fn allowed() -> CanGetNewAddressResponse {
-        CanGetNewAddressResponse {
-            allowed: true,
-            reason: None,
-        }
-    }
-
-    pub(crate) fn not_allowed(reason: CantGetNewAddressReason) -> CanGetNewAddressResponse {
-        CanGetNewAddressResponse {
-            allowed: false,
-            reason: Some(reason),
-        }
-    }
-}
-
 #[async_trait]
 pub trait GetNewAddressRpcOps {
-    async fn can_get_new_address_rpc(
-        &self,
-        params: GetNewAddressParams,
-    ) -> MmResult<CanGetNewAddressResponse, GetNewAddressRpcError>;
-
     async fn get_new_address_rpc(
         &self,
         params: GetNewAddressParams,
     ) -> MmResult<GetNewAddressResponse, GetNewAddressRpcError>;
-}
-
-/// Returns whether the user can generate new address or not.
-pub async fn can_get_new_address(
-    ctx: MmArc,
-    req: GetNewAddressRequest,
-) -> MmResult<CanGetNewAddressResponse, GetNewAddressRpcError> {
-    let coin = lp_coinfind_or_err(&ctx, &req.coin).await?;
-    match coin {
-        MmCoinEnum::UtxoCoin(utxo) => utxo.can_get_new_address_rpc(req.params).await,
-        MmCoinEnum::QtumCoin(qtum) => qtum.can_get_new_address_rpc(req.params).await,
-        _ => MmError::err(GetNewAddressRpcError::CoinIsActivatedNotWithHDWallet),
-    }
 }
 
 /// Generates a new address.
@@ -214,30 +163,6 @@ pub mod common_impl {
     use std::fmt;
     use std::ops::DerefMut;
 
-    pub async fn can_get_new_address_rpc<Coin>(
-        coin: &Coin,
-        params: GetNewAddressParams,
-    ) -> MmResult<CanGetNewAddressResponse, GetNewAddressRpcError>
-    where
-        Coin:
-            HDWalletBalanceOps + CoinWithDerivationMethod<HDWallet = <Coin as HDWalletCoinOps>::HDWallet> + Sync + Send,
-        <Coin as HDWalletCoinOps>::Address: fmt::Display,
-    {
-        let account_id = params.account_id;
-
-        let hd_wallet = coin.derivation_method().hd_wallet_or_err()?;
-        let hd_account = hd_wallet
-            .get_account_mut(account_id)
-            .await
-            .or_mm_err(|| GetNewAddressRpcError::UnknownAccount { account_id })?;
-
-        let chain = params.chain.unwrap_or_else(|| hd_wallet.default_receiver_chain());
-        let gap_limit = params.gap_limit.unwrap_or_else(|| hd_wallet.gap_limit());
-        can_get_new_address(coin, hd_wallet, &hd_account, chain, gap_limit)
-            .await
-            .mm_err(GetNewAddressRpcError::from)
-    }
-
     pub async fn get_new_address_rpc<Coin>(
         coin: &Coin,
         params: GetNewAddressParams,
@@ -259,19 +184,7 @@ pub mod common_impl {
         let gap_limit = params.gap_limit.unwrap_or_else(|| hd_wallet.gap_limit());
 
         // Check if we can generate new address.
-        match can_get_new_address(coin, hd_wallet, &hd_account, chain, gap_limit)
-            .await?
-            .reason
-        {
-            Some(CantGetNewAddressReason::AddressLimitReached { max_addresses_number }) => {
-                return MmError::err(GetNewAddressRpcError::AddressLimitReached { max_addresses_number })
-            },
-            Some(CantGetNewAddressReason::EmptyAddressesLimitReached { gap_limit }) => {
-                return MmError::err(GetNewAddressRpcError::EmptyAddressesLimitReached { gap_limit })
-            },
-            // We can generate new address. Proceed.
-            None => (),
-        }
+        check_if_can_get_new_address(coin, hd_wallet, &hd_account, chain, gap_limit).await?;
 
         let HDAddress {
             address,
@@ -292,27 +205,25 @@ pub mod common_impl {
         })
     }
 
-    async fn can_get_new_address<Coin>(
+    async fn check_if_can_get_new_address<Coin>(
         coin: &Coin,
         hd_wallet: &Coin::HDWallet,
         hd_account: &Coin::HDAccount,
         chain: Bip44Chain,
         gap_limit: u32,
-    ) -> MmResult<CanGetNewAddressResponse, GetNewAddressRpcError>
+    ) -> MmResult<(), GetNewAddressRpcError>
     where
         Coin: HDWalletBalanceOps + Sync,
         <Coin as HDWalletCoinOps>::Address: fmt::Display,
     {
         let known_addresses_number = hd_account.known_addresses_number(chain)?;
-        if known_addresses_number == 0 || gap_limit >= known_addresses_number {
-            return Ok(CanGetNewAddressResponse::allowed());
+        if known_addresses_number == 0 || gap_limit > known_addresses_number {
+            return Ok(());
         }
 
         let max_addresses_number = hd_wallet.address_limit();
         if known_addresses_number >= max_addresses_number {
-            return Ok(CanGetNewAddressResponse::not_allowed(
-                CantGetNewAddressReason::AddressLimitReached { max_addresses_number },
-            ));
+            return MmError::err(GetNewAddressRpcError::AddressLimitReached { max_addresses_number });
         }
 
         let address_scanner = coin.produce_hd_address_scanner().await?;
@@ -322,19 +233,18 @@ pub mod common_impl {
         let last_address_id = known_addresses_number - 1;
 
         for address_id in (0..=last_address_id).rev() {
-            let empty_addresses_number = last_address_id - address_id;
-            if empty_addresses_number > gap_limit {
-                return Ok(CanGetNewAddressResponse::not_allowed(
-                    CantGetNewAddressReason::EmptyAddressesLimitReached { gap_limit },
-                ));
-            }
-
             let HDAddress { address, .. } = coin.derive_address(hd_account, chain, address_id)?;
             if address_scanner.is_address_used(&address).await? {
-                return Ok(CanGetNewAddressResponse::allowed());
+                return Ok(());
+            }
+
+            let empty_addresses_number = last_address_id - address_id + 1;
+            if empty_addresses_number >= gap_limit {
+                // We already have `gap_limit` empty addresses.
+                return MmError::err(GetNewAddressRpcError::EmptyAddressesLimitReached { gap_limit });
             }
         }
 
-        Ok(CanGetNewAddressResponse::allowed())
+        Ok(())
     }
 }
