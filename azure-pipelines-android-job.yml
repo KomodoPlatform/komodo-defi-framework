@@ -20,10 +20,9 @@ jobs:
         continueOnError: true
       - bash: |
           export PATH=$PATH:/home/azureagent/android-ndk/arch-ndk/x86_64/android-ndk/bin
-          CC_armv7_linux_androideabi=armv7a-linux-androideabi21-clang CARGO_TARGET_ARMV7_LINUX_ANDROIDEABI_LINKER=armv7a-linux-androideabi21-clang cargo build --target=armv7-linux-androideabi --lib
+          CC_armv7_linux_androideabi=armv7a-linux-androideabi21-clang CARGO_TARGET_ARMV7_LINUX_ANDROIDEABI_LINKER=armv7a-linux-androideabi21-clang cargo build --target=armv7-linux-androideabi --lib --release
         displayName: 'Build armv7'
       - bash: |
           export PATH=$PATH:/home/azureagent/android-ndk/arch-ndk/x86_64/android-ndk/bin
-          CC_aarch64_linux_android=aarch64-linux-android21-clang CARGO_TARGET_AARCH64_LINUX_ANDROID_LINKER=aarch64-linux-android21-clang cargo build --features native --target=aarch64-linux-android --lib
+          CC_aarch64_linux_android=aarch64-linux-android21-clang CARGO_TARGET_AARCH64_LINUX_ANDROID_LINKER=aarch64-linux-android21-clang cargo build --features native --target=aarch64-linux-android --lib --release
         displayName: 'Build aarch64'
-
