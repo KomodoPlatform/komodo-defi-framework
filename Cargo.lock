@@ -6020,6 +6020,7 @@ version = "0.1.0"
 dependencies = [
  "chain",
  "keys",
+ "lazy_static",
  "log 0.4.14",
  "primitives",
  "rustc-hex 2.1.0",
