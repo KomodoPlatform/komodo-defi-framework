@@ -123,7 +123,7 @@ async fn auth(request: &MmRpcRequest, ctx: &MmArc, client: &SocketAddr) -> Dispa
 async fn dispatcher_v2(request: MmRpcRequest, ctx: MmArc) -> DispatcherResult<Response<Vec<u8>>> {
     if let Some(gui_storage_method) = request.method.strip_prefix("gui_storage::") {
         let gui_storage_method = gui_storage_method.to_owned();
-        return gui_storage_dispatcher(request, ctx, gui_storage_method).await;
+        return gui_storage_dispatcher(request, ctx, &gui_storage_method).await;
     }
 
     match request.method.as_str() {
@@ -214,11 +214,11 @@ async fn dispatcher_v2(request: MmRpcRequest, ctx: MmArc) -> DispatcherResult<Re
 async fn gui_storage_dispatcher(
     request: MmRpcRequest,
     ctx: MmArc,
-    gui_storage_method: String,
+    gui_storage_method: &str,
 ) -> DispatcherResult<Response<Vec<u8>>> {
     use mm2_gui_storage::rpc_commands as gui_storage_rpc;
 
-    match gui_storage_method.as_str() {
+    match gui_storage_method {
         "activate_coins" => handle_mmrpc(ctx, request, gui_storage_rpc::activate_coins).await,
         "add_account" => handle_mmrpc(ctx, request, gui_storage_rpc::add_account).await,
         "deactivate_coins" => handle_mmrpc(ctx, request, gui_storage_rpc::deactivate_coins).await,
