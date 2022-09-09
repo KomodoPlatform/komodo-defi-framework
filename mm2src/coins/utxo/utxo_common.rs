@@ -1198,6 +1198,9 @@ pub fn send_taker_spends_maker_payment_preimage<T: UtxoCommonOps + SwapOps>(
     secret: &[u8],
 ) -> TransactionFut {
     let mut transaction: UtxoTx = try_tx_fus!(deserialize(preimage).map_err(|e| ERRL!("{:?}", e)));
+    if transaction.inputs.is_empty() {
+        return try_tx_fus!(TX_PLAIN_ERR!("Transaction doesn't have any input"));
+    }
     let script = Script::from(transaction.inputs[0].script_sig.clone());
     let mut instructions = script.iter();
 
@@ -1253,6 +1256,7 @@ pub fn create_taker_spends_maker_payment_preimage<T: UtxoCommonOps + SwapOps>(
     }
 
     let key_pair = coin.derive_htlc_key_pair(swap_unique_data);
+
     let script_data = Builder::default().into_script();
     let redeem_script = payment_script(
         time_lock,
