@@ -50,6 +50,9 @@ struct CompactBlockRow {
     data: Vec<u8>,
 }
 
+pub type OnCompactBlockFn<'a> =
+    dyn FnMut(TonicCompactBlock) -> Result<(), MmError<UpdateBlocksCacheErr>> + Send + Sync + 'a;
+
 #[async_trait]
 pub trait ZRpcOps {
     async fn get_block_height(&mut self) -> Result<u64, MmError<UpdateBlocksCacheErr>>;
@@ -58,7 +61,7 @@ pub trait ZRpcOps {
         &mut self,
         start_block: u64,
         last_block: u64,
-        on_block: &mut (dyn FnMut(TonicCompactBlock) -> Result<(), MmError<UpdateBlocksCacheErr>> + Send + Sync),
+        on_block: &mut OnCompactBlockFn,
     ) -> Result<(), MmError<UpdateBlocksCacheErr>>;
 
     async fn check_watch_for_tx(&mut self, tx_id: TxId) -> Result<(), ()>;
@@ -77,7 +80,7 @@ impl ZRpcOps for CompactTxStreamerClient<Channel> {
         &mut self,
         start_block: u64,
         last_block: u64,
-        on_block: &mut (dyn FnMut(TonicCompactBlock) -> Result<(), MmError<UpdateBlocksCacheErr>> + Send + Sync),
+        on_block: &mut OnCompactBlockFn,
     ) -> Result<(), MmError<UpdateBlocksCacheErr>> {
         let request = tonic::Request::new(BlockRange {
             start: Some(BlockId {
@@ -134,7 +137,7 @@ impl ZRpcOps for NativeClient {
         &mut self,
         start_block: u64,
         last_block: u64,
-        on_block: &mut (dyn FnMut(TonicCompactBlock) -> Result<(), MmError<UpdateBlocksCacheErr>> + Send + Sync),
+        on_block: &mut OnCompactBlockFn,
     ) -> Result<(), MmError<UpdateBlocksCacheErr>> {
         for height in start_block..=last_block {
             let block = self.get_block_by_height(height).await?;
