@@ -43,7 +43,6 @@ use futures::lock::Mutex as AsyncMutex;
 use futures::{FutureExt, TryFutureExt};
 use futures01::Future;
 use http::{Response, StatusCode};
-use keys::bytes::Bytes;
 use keys::{AddressFormat as UtxoAddressFormat, KeyPair, NetworkPrefix as CashAddrPrefix};
 use mm2_core::mm_ctx::{from_ctx, MmArc};
 use mm2_err_handle::prelude::*;
@@ -410,7 +409,6 @@ impl TransactionErr {
 }
 
 pub type TransactionFut = Box<dyn Future<Item = TransactionEnum, Error = TransactionErr> + Send>;
-pub type SignedTransactionFut = Box<dyn Future<Item = Bytes, Error = TransactionErr> + Send>;
 
 #[derive(Debug, PartialEq)]
 pub enum FoundSwapTxSpend {
@@ -466,16 +464,6 @@ pub struct SearchForSwapTxSpendInput<'a> {
     pub search_from_block: u64,
     pub swap_contract_address: &'a Option<BytesJson>,
     pub swap_unique_data: &'a [u8],
-}
-
-#[derive(Debug, Serialize)]
-pub struct WatcherSpendsMakerPaymentInput<'a> {
-    pub maker_payment_tx: &'a [u8],
-    pub time_lock: u32,
-    pub maker_pub: &'a [u8],
-    pub taker_pub: &'a [u8],
-    pub secret: &'a [u8],
-    pub signature: &'a [u8],
 }
 
 /// Swap operations (mostly based on the Hash/Time locked transactions implemented by coin wallets).
