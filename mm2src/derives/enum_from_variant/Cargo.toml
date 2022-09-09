@@ -1,5 +1,5 @@
 [package]
-name = "enum_from_displaying"
+name = "enum_from_variant"
 version = "0.1.0"
 edition = "2021"
 

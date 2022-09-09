@@ -12,7 +12,7 @@ use syn::punctuated::Punctuated;
 use syn::token::Comma;
 use syn::{parse_macro_input, DeriveInput};
 
-/// `EnumFromDisplaying` is very useful for generating `From<T>` trait from one enum to another enum
+/// `EnumFromVariant` is very useful for generating `From<T>` trait from one enum to another enum
 /// Currently, this crate can only convert enum variant with only some basic inner type such as `String`, and `Enum`
 /// type just like the example below. Can not be used for tuple, struct etc for now .
 ///
@@ -21,16 +21,16 @@ use syn::{parse_macro_input, DeriveInput};
 ///
 /// ### USAGE:
 /// ```rust
-/// use enum_from_enum::EnumFromDisplaying;
+/// use enum_from_enum::EnumFromVariant;
 /// use derive_more::Display;
 
 ///  // E.G, this converts from whatever Bar is to Foo::Bar(String) and
 /// // whatever FooBar is to Foo::FooBar(FooBar)
-/// #[derive(Debug, EnumFromDisplaying)]
+/// #[derive(Debug, EnumFromVariant)]
 /// pub enum Foo {
-///     #[enum_from_displaying("Bar")]
+///     #[enum_from_variant("Bar")]
 ///     Bar(String),
-///     #[enum_from_displaying("FooBar")]
+///     #[enum_from_variant("FooBar")]
 ///     FooBar(FooBar),
 /// }
 
@@ -55,7 +55,7 @@ use syn::{parse_macro_input, DeriveInput};
 ///
 ///
 
-#[proc_macro_derive(EnumFromDisplaying, attributes(enum_from_displaying))]
+#[proc_macro_derive(EnumFromVariant, attributes(enum_from_variant))]
 pub fn derive(input: TokenStream) -> TokenStream {
     let ast = parse_macro_input!(input as DeriveInput);
     let enum_name = &ast.ident;
@@ -154,7 +154,7 @@ pub(crate) fn get_attributes(variants: syn::Variant) -> Result<MapEnumDataPunctu
                 _ => {
                     return syn::Result::Err(syn::Error::new_spanned(
                         attribute.tokens,
-                        "expected #[enum_from_displaying(..)]".to_string(),
+                        "expected #[enum_from_variant(..)]".to_string(),
                     ));
                 },
             };

@@ -52,7 +52,7 @@ use crypto::{Bip32DerPathOps, Bip32Error, Bip44Chain, Bip44DerPathError, Bip44Pa
              ChildNumber, DerivationPath, Secp256k1ExtendedPublicKey};
 use derive_more::Display;
 #[cfg(not(target_arch = "wasm32"))] use dirs::home_dir;
-use enum_from_displaying::EnumFromDisplaying;
+use enum_from_variant::EnumFromVariant;
 use futures::channel::mpsc;
 use futures::compat::Future01CompatExt;
 use futures::lock::{Mutex as AsyncMutex, MutexGuard as AsyncMutexGuard};
@@ -541,7 +541,7 @@ pub struct UtxoCoinFields {
     pub check_utxo_maturity: bool,
 }
 
-#[derive(Debug, Display)]
+#[derive(Debug, Display, EnumFromVariants)]
 pub enum UnsupportedAddr {
     #[display(
         fmt = "{} address format activated for {}, but {} format used instead",
@@ -559,19 +559,16 @@ pub enum UnsupportedAddr {
     #[display(fmt = "Address hrp {} is not a valid hrp for {}", hrp, ticker)]
     HrpError { ticker: String, hrp: String },
     #[display(fmt = "Segwit not activated in the config for {}", _0)]
+    #[enum_from_variant("UnsupportedAddr")]
     SegwitNotActivated(String),
 }
 
-impl From<UnsupportedAddr> for WithdrawError {
-    fn from(e: UnsupportedAddr) -> Self { WithdrawError::InvalidAddress(e.to_string()) }
-}
-
-#[derive(Debug, EnumFromDisplaying)]
+#[derive(Debug, EnumFromVariant)]
 #[allow(clippy::large_enum_variant)]
 pub enum GetTxError {
-    #[enum_from_displaying("UtxoRpcError")]
+    #[enum_from_variant("UtxoRpcError")]
     Rpc(UtxoRpcError),
-    #[enum_from_displaying("SerError")]
+    #[enum_from_variant("SerError")]
     TxDeserialization(SerError),
 }
 
@@ -592,7 +589,7 @@ impl From<UtxoRpcError> for GetTxHeightError {
     fn from(e: UtxoRpcError) -> Self { GetTxHeightError::HeightNotFound(e.to_string()) }
 }
 
-#[derive(Debug, Display)]
+#[derive(Debug, Display, EnumFromVariant)]
 pub enum GetBlockHeaderError {
     #[display(fmt = "Block header storage error: {}", _0)]
     StorageError(BlockHeaderStorageError),

@@ -1054,7 +1054,7 @@ dependencies = [
  "dirs",
  "ed25519-dalek",
  "ed25519-dalek-bip32 0.2.0",
- "enum_from_displaying",
+ "enum_from_variant",
  "ethabi",
  "ethcore-transaction",
  "ethereum-types 0.4.2",
@@ -2060,7 +2060,7 @@ dependencies = [
 ]
 
 [[package]]
-name = "enum_from_displaying"
+name = "enum_from_variant"
 version = "0.1.0"
 dependencies = [
  "proc-macro2 1.0.39",
