@@ -23,18 +23,6 @@ pr: # https://docs.microsoft.com/en-us/azure/devops/pipelines/yaml-schema?view=a
   drafts: false
 
 stages:
-  - stage: Mobile
-    displayName: Mobile libs build
-    condition: or(eq(variables['Build.Reason'], 'PullRequest'), eq(variables['Build.SourceBranchName'], 'mm2.1'), eq(variables['Build.SourceBranchName'], 'dev'), eq(variables['Build.SourceBranchName'], 'mm2.1-cross'))
-    # condition: and(succeeded('Desktop'), or(eq(variables['Build.Reason'], 'PullRequest'), eq(variables['Build.SourceBranchName'], 'mm2.1'), eq(variables['Build.SourceBranchName'], 'dev'), eq(variables['Build.SourceBranchName'], 'mm2.1-cross')))
-    jobs:
-      - template: azure-pipelines-android-job.yml
-        parameters:
-          os: 'Linux'
-      - template: azure-pipelines-ios-job.yml
-        parameters:
-          os: 'Darwin'
-
   - stage: Lint
     displayName: Formatting, Clippy, and other checks
     jobs:
@@ -100,3 +88,14 @@ stages:
           alice_passphrase: 'ALICE_PASSPHRASE_WIN'
           alice_userpass: 'ALICE_USERPASS_WIN'
           telegram_api_key: 'TELEGRAM_API_KEY'
+
+  - stage: Mobile
+    displayName: Mobile libs build
+    condition: and(succeeded('Desktop'), or(eq(variables['Build.Reason'], 'PullRequest'), eq(variables['Build.SourceBranchName'], 'mm2.1'), eq(variables['Build.SourceBranchName'], 'dev')))
+    jobs:
+      - template: azure-pipelines-android-job.yml
+        parameters:
+          os: 'Linux'
+      - template: azure-pipelines-ios-job.yml
+        parameters:
+          os: 'Darwin'
