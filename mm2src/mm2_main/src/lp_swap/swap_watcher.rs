@@ -13,12 +13,14 @@ use mm2_core::mm_ctx::MmArc;
 use mm2_libp2p::{decode_signed, pub_sub_topic, TopicPrefix};
 use mm2_number::BigDecimal;
 use parking_lot::Mutex as PaMutex;
+use std::cmp::min;
 use std::collections::HashSet;
 use std::sync::Arc;
 use std::sync::{RwLock, RwLockReadGuard, RwLockWriteGuard};
 use uuid::Uuid;
 
 pub const WATCHER_PREFIX: TopicPrefix = "swpwtchr";
+const TAKER_SWAP_CONFIRMATIONS: u64 = 1;
 
 #[derive(Clone, Debug, Deserialize, Serialize)]
 pub enum SwapWatcherMsg {
@@ -205,7 +207,7 @@ impl Watcher {
     async fn validate_taker_payment(&self) -> Result<(Option<WatcherCommand>, Vec<WatcherEvent>), String> {
         let wait_duration = (self.data.lock_duration * 4) / 5;
         let wait_taker_payment = self.data.swap_started_at + wait_duration;
-        let confirmations = self.data.taker_payment_confirmations;
+        let confirmations = min(self.data.taker_payment_confirmations, TAKER_SWAP_CONFIRMATIONS);
 
         // Does the watcher have to wait for the confirmations like the maker does?
         let wait_f = self
