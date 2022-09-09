@@ -483,15 +483,32 @@ impl MmCoin for TendermintCoin {
 
     fn get_trade_fee(&self) -> Box<dyn Future<Item = TradeFee, Error = String> + Send> { todo!() }
 
+    /// !! This function includes dummy implementation for P.O.C work
     async fn get_sender_trade_fee(
         &self,
         value: TradePreimageValue,
         stage: FeeApproxStage,
     ) -> TradePreimageResult<TradeFee> {
-        todo!()
+        Ok(TradeFee {
+            coin: self.ticker().to_string(),
+            amount: MmNumber::from(1_u64).into(),
+            paid_from_trading_vol: false,
+        })
     }
 
-    fn get_receiver_trade_fee(&self, stage: FeeApproxStage) -> TradePreimageFut<TradeFee> { todo!() }
+    /// !! This function includes dummy implementation for P.O.C work
+    fn get_receiver_trade_fee(&self, stage: FeeApproxStage) -> TradePreimageFut<TradeFee> {
+        let coin = self.clone();
+        let fut = async move {
+            Ok(TradeFee {
+                coin: coin.ticker().to_string(),
+                amount: MmNumber::from(1_u64).into(),
+                paid_from_trading_vol: false,
+            })
+        };
+
+        Box::new(fut.boxed().compat())
+    }
 
     async fn get_fee_to_send_taker_fee(
         &self,
@@ -501,9 +518,11 @@ impl MmCoin for TendermintCoin {
         todo!()
     }
 
-    fn required_confirmations(&self) -> u64 { todo!() }
+    /// !! This function includes dummy implementation for P.O.C work
+    fn required_confirmations(&self) -> u64 { 0 }
 
-    fn requires_notarization(&self) -> bool { todo!() }
+    /// !! This function includes dummy implementation for P.O.C work
+    fn requires_notarization(&self) -> bool { false }
 
     fn set_required_confirmations(&self, confirmations: u64) { todo!() }
 
@@ -615,7 +634,8 @@ impl MarketCoinOps for TendermintCoin {
 
     fn min_tx_amount(&self) -> BigDecimal { todo!() }
 
-    fn min_trading_vol(&self) -> MmNumber { todo!() }
+    /// !! This function includes dummy implementation for P.O.C work
+    fn min_trading_vol(&self) -> MmNumber { MmNumber::from("0.00777") }
 }
 
 #[async_trait]
