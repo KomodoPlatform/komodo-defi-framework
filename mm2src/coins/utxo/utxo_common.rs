@@ -1199,9 +1199,14 @@ pub fn send_taker_spends_maker_payment_preimage<T: UtxoCommonOps + SwapOps>(
 ) -> TransactionFut {
     let mut transaction: UtxoTx = try_tx_fus!(deserialize(preimage).map_err(|e| ERRL!("{:?}", e)));
     let script = Script::from(transaction.inputs[0].script_sig.clone());
+    let mut instructions = script.iter();
 
-    let instruction_1 = try_tx_fus!(script.get_instruction_at(0));
-    let instruction_2 = try_tx_fus!(script.get_instruction_at(instruction_1.step));
+    let instruction_1 = try_tx_fus!(try_tx_fus!(instructions
+        .next()
+        .ok_or(TransactionErr::Plain("Instruction not found".into()))));
+    let instruction_2 = try_tx_fus!(try_tx_fus!(instructions
+        .next()
+        .ok_or(TransactionErr::Plain("Instruction not found".into()))));
 
     let script_sig = try_tx_fus!(instruction_1
         .data
@@ -1248,7 +1253,6 @@ pub fn create_taker_spends_maker_payment_preimage<T: UtxoCommonOps + SwapOps>(
     }
 
     let key_pair = coin.derive_htlc_key_pair(swap_unique_data);
-
     let script_data = Builder::default().into_script();
     let redeem_script = payment_script(
         time_lock,
