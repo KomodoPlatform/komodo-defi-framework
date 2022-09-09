@@ -38,6 +38,7 @@ use mm2_core::mm_ctx::MmArc;
 use mm2_err_handle::prelude::*;
 use mm2_number::{BigDecimal, MmNumber};
 #[cfg(test)] use mocktopus::macros::*;
+use parking_lot::Mutex;
 use primitives::bytes::Bytes;
 use rpc::v1::types::{Bytes as BytesJson, Transaction as RpcTransaction, H256 as H256Json};
 use script::{Builder as ScriptBuilder, Opcode, Script, TransactionInputSigner};
@@ -73,6 +74,7 @@ pub use z_rpc::SyncStatus;
 use z_rpc::{init_light_client, init_native_client, SaplingSyncConnector, SaplingSyncGuard, WalletDbShared};
 
 mod z_coin_errors;
+use crate::z_coin::z_rpc::{create_wallet_db, BlockDb};
 pub use z_coin_errors::*;
 
 #[cfg(all(test, feature = "zhtlc-native-tests"))]
@@ -768,16 +770,25 @@ impl<'a> UtxoCoinWithIguanaPrivKeyBuilder for ZCoinBuilder<'a> {
         let evk = ExtendedFullViewingKey::from(&self.z_spending_key);
         let cache_db_path = self.db_dir_path.join(format!("{}_cache.db", self.ticker));
         let wallet_db_path = self.db_dir_path.join(format!("{}_wallet.db", self.ticker));
+        let blocks_db =
+            async_blocking(|| BlockDb::for_path(cache_db_path).map_to_mm(ZcoinClientInitError::BlocksDbInitFailure))
+                .await?;
+        let wallet_db = create_wallet_db(
+            wallet_db_path,
+            self.protocol_info.consensus_params.clone(),
+            self.protocol_info.check_point_block.clone(),
+            evk,
+        )
+        .await?;
+        let wallet_db = Arc::new(Mutex::new(wallet_db));
         let (sync_state_connector, light_wallet_db) = match &self.z_coin_params.mode {
             ZcoinRpcMode::Native => {
                 let native_client = self.native_client()?;
                 init_native_client(
                     native_client,
-                    cache_db_path,
-                    wallet_db_path,
+                    blocks_db,
+                    wallet_db,
                     self.protocol_info.consensus_params.clone(),
-                    self.protocol_info.check_point_block,
-                    evk,
                 )
                 .await?
             },
@@ -794,11 +805,9 @@ impl<'a> UtxoCoinWithIguanaPrivKeyBuilder for ZCoinBuilder<'a> {
                 init_light_client(
                     light_wallet_d_servers.clone(),
                     uri,
-                    cache_db_path,
-                    wallet_db_path,
+                    blocks_db,
+                    wallet_db,
                     self.protocol_info.consensus_params.clone(),
-                    self.protocol_info.check_point_block,
-                    evk,
                 )
                 .await?
             },

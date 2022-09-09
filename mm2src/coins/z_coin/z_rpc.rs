@@ -64,7 +64,7 @@ pub trait ZRpcOps {
         on_block: &mut OnCompactBlockFn,
     ) -> Result<(), MmError<UpdateBlocksCacheErr>>;
 
-    async fn check_watch_for_tx(&mut self, tx_id: TxId) -> Result<(), ()>;
+    async fn check_tx_existence(&mut self, tx_id: TxId) -> bool;
 }
 
 #[async_trait]
@@ -100,7 +100,7 @@ impl ZRpcOps for CompactTxStreamerClient<Channel> {
         Ok(())
     }
 
-    async fn check_watch_for_tx(&mut self, tx_id: TxId) -> Result<(), ()> {
+    async fn check_tx_existence(&mut self, tx_id: TxId) -> bool {
         let mut attempts = 0;
         loop {
             let filter = TxFilter {
@@ -115,7 +115,7 @@ impl ZRpcOps for CompactTxStreamerClient<Channel> {
                     error!("Error on getting tx {}", tx_id);
                     if e.message().contains(NO_TX_ERROR_CODE) {
                         if attempts >= 3 {
-                            return Err(());
+                            return false;
                         }
                         attempts += 1;
                     }
@@ -123,7 +123,7 @@ impl ZRpcOps for CompactTxStreamerClient<Channel> {
                 },
             }
         }
-        Ok(())
+        true
     }
 }
 
@@ -210,7 +210,7 @@ impl ZRpcOps for NativeClient {
         Ok(())
     }
 
-    async fn check_watch_for_tx(&mut self, tx_id: TxId) -> Result<(), ()> {
+    async fn check_tx_existence(&mut self, tx_id: TxId) -> bool {
         let mut attempts = 0;
         loop {
             match self.get_raw_transaction_bytes(&H256Json::from(tx_id.0)).compat().await {
@@ -219,7 +219,7 @@ impl ZRpcOps for NativeClient {
                     error!("Error on getting tx {}", tx_id);
                     if e.to_string().contains(NO_TX_ERROR_CODE) {
                         if attempts >= 3 {
-                            return Err(());
+                            return false;
                         }
                         attempts += 1;
                     }
@@ -227,7 +227,7 @@ impl ZRpcOps for NativeClient {
                 },
             }
         }
-        Ok(())
+        true
     }
 }
 
@@ -331,7 +331,7 @@ impl BlockSource for BlockDb {
     }
 }
 
-async fn create_wallet_db(
+pub async fn create_wallet_db(
     wallet_db_path: PathBuf,
     consensus_params: ZcoinConsensusParams,
     check_point_block: Option<CheckPointBlockInfo>,
@@ -364,22 +364,13 @@ async fn create_wallet_db(
 pub(super) async fn init_light_client(
     _lightwalletd_urls: Vec<String>,
     lightwalletd_url: Uri,
-    cache_db_path: PathBuf,
-    wallet_db_path: PathBuf,
+    blocks_db: BlockDb,
+    wallet_db: WalletDbShared,
     consensus_params: ZcoinConsensusParams,
-    check_point_block: Option<CheckPointBlockInfo>,
-    evk: ExtendedFullViewingKey,
 ) -> Result<(AsyncMutex<SaplingSyncConnector>, WalletDbShared), MmError<ZcoinClientInitError>> {
-    let blocks_db =
-        async_blocking(|| BlockDb::for_path(cache_db_path).map_to_mm(ZcoinClientInitError::BlocksDbInitFailure))
-            .await?;
-
-    let wallet_db = create_wallet_db(wallet_db_path, consensus_params.clone(), check_point_block, evk).await?;
-
     let (sync_status_notifier, sync_watcher) = channel(1);
     let (on_tx_gen_notifier, on_tx_gen_watcher) = channel(1);
 
-    let wallet_db = Arc::new(Mutex::new(wallet_db));
     let sync_handle = SaplingSyncLoopHandle {
         current_block: BlockHeight::from_u32(0),
         blocks_db: Mutex::new(blocks_db),
@@ -407,20 +398,13 @@ pub(super) async fn init_light_client(
 
 pub(super) async fn init_native_client(
     native_client: NativeClient,
-    cache_db_path: PathBuf,
-    wallet_db_path: PathBuf,
+    blocks_db: BlockDb,
+    wallet_db: WalletDbShared,
     consensus_params: ZcoinConsensusParams,
-    check_point_block: Option<CheckPointBlockInfo>,
-    evk: ExtendedFullViewingKey,
 ) -> Result<(AsyncMutex<SaplingSyncConnector>, WalletDbShared), MmError<ZcoinClientInitError>> {
-    let blocks_db =
-        async_blocking(|| BlockDb::for_path(cache_db_path).map_to_mm(ZcoinClientInitError::BlocksDbInitFailure))
-            .await?;
-    let wallet_db = create_wallet_db(wallet_db_path, consensus_params.clone(), check_point_block, evk).await?;
     let (sync_status_notifier, sync_watcher) = channel(1);
     let (on_tx_gen_notifier, on_tx_gen_watcher) = channel(1);
 
-    let wallet_db = Arc::new(Mutex::new(wallet_db));
     let sync_handle = SaplingSyncLoopHandle {
         current_block: BlockHeight::from_u32(0),
         blocks_db: Mutex::new(blocks_db),
@@ -615,7 +599,7 @@ impl SaplingSyncLoopHandle {
 
     async fn check_watch_for_tx_existence(&mut self, rpc: &mut (dyn ZRpcOps + Send)) {
         if let Some(tx_id) = self.watch_for_tx {
-            if rpc.check_watch_for_tx(tx_id).await.is_err() {
+            if !rpc.check_tx_existence(tx_id).await {
                 self.watch_for_tx = None;
             }
         }
