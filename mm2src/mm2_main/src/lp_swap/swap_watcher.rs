@@ -175,7 +175,6 @@ impl Watcher {
         }
     }
 
-    #[allow(clippy::too_many_arguments)]
     pub fn new(
         uuid: Uuid,
         ctx: MmArc,
@@ -355,7 +354,6 @@ impl AtomicSwap for Watcher {
 pub async fn run_watcher(swap: RunWatcherInput, ctx: MmArc, mut taker_swap_watchers: MutexGuard<'_, HashSet<Uuid>>) {
     let uuid = swap.uuid().to_owned();
     let mut attempts = 0;
-
     let swap_lock = loop {
         match SwapLock::lock(&ctx, uuid, 40.).await {
             Ok(Some(l)) => break l,

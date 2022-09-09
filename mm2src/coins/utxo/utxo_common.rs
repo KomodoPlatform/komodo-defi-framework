@@ -3351,7 +3351,7 @@ async fn search_for_swap_output_spend(
 ) -> Result<Option<FoundSwapTxSpend>, String> {
     let mut tx: UtxoTx = try_s!(deserialize(tx).map_err(|e| ERRL!("{:?}", e)));
     tx.tx_hash_algo = coin.tx_hash_algo;
-    let tx = tx; // discard mut
+    drop_mutability!(tx);
     if tx.outputs.is_empty() {
         return ERR!("Transaction doesn't have any output");
     }
