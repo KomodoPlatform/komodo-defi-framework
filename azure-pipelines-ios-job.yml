@@ -19,5 +19,27 @@ jobs:
         failOnStderr: false
         continueOnError: true
       - bash: |
+          export TAG="$(git rev-parse --short=9 HEAD)"
+          echo "##vso[task.setvariable variable=COMMIT_HASH]${TAG}"
+        displayName: Setup ENV
+      - bash: |
+          VERSION=2.1.$(Build.BuildId)_$(Build.SourceBranchName)_$(COMMIT_HASH)_ios_aarch64_Release
+          if ! grep -q $VERSION MM_VERSION; then
+            echo $VERSION > MM_VERSION
+          fi
+          cat MM_VERSION
           cargo build --target aarch64-apple-ios --lib --release
         displayName: 'Build iOS lib'
+      - bash: |
+          rm -rf upload
+          mkdir upload
+          zip upload/mm2-$(COMMIT_HASH)-ios-aarch64-Release target/aarch64-apple-ios/release/libmm2.a -j
+        displayName: 'Prepare upload'
+      - task: CopyFilesOverSSH@0
+        inputs:
+          sshEndpoint: nightly_build_server
+          sourceFolder: 'upload' # Optional
+          contents: "**"
+          targetFolder: "uploads/$(Build.SourceBranchName)" # Optional
+          overwrite: true
+        displayName: 'Upload nightly'

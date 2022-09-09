@@ -25,6 +25,8 @@ pr: # https://docs.microsoft.com/en-us/azure/devops/pipelines/yaml-schema?view=a
 stages:
   - stage: Mobile
     displayName: Mobile libs build
+    condition: or(eq(variables['Build.Reason'], 'PullRequest'), eq(variables['Build.SourceBranchName'], 'mm2.1'), eq(variables['Build.SourceBranchName'], 'dev'), eq(variables['Build.SourceBranchName'], 'mm2.1-cross'))
+    # condition: and(succeeded('Desktop'), or(eq(variables['Build.Reason'], 'PullRequest'), eq(variables['Build.SourceBranchName'], 'mm2.1'), eq(variables['Build.SourceBranchName'], 'dev'), eq(variables['Build.SourceBranchName'], 'mm2.1-cross')))
     jobs:
       - template: azure-pipelines-android-job.yml
         parameters:
@@ -35,7 +37,6 @@ stages:
 
   - stage: Lint
     displayName: Formatting, Clippy, and other checks
-    condition: succeeded('Mobile')
     jobs:
       - template: azure-pipelines-lint-stage-job.yml  # Template reference
         parameters:
@@ -66,8 +67,8 @@ stages:
           alice_userpass: 'ALICE_USERPASS_LINUX'
           telegram_api_key: 'TELEGRAM_API_KEY'
 
-  - stage: Build
-    displayName: Build and test Debug
+  - stage: Desktop
+    displayName: Desktop Build and test
     condition: succeeded('WASM')
     jobs:
       - template: azure-pipelines-build-stage-job.yml  # Template reference
