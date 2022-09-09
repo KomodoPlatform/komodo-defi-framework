@@ -382,6 +382,7 @@ pub async fn run_watcher(swap: RunWatcherInput, ctx: MmArc, mut taker_swap_watch
         RunWatcherInput::StartNew(swap) => (swap, WatcherCommand::Start),
     };
     taker_swap_watchers.insert(uuid);
+    drop(taker_swap_watchers);
 
     let mut touch_loop = Box::pin(
         async move {
@@ -432,14 +433,17 @@ pub async fn run_watcher(swap: RunWatcherInput, ctx: MmArc, mut taker_swap_watch
     let do_nothing = (); // to fix https://rust-lang.github.io/rust-clippy/master/index.html#unused_unit
     select! {
         _swap = swap_fut => {
+            let mut taker_swap_watchers = swap_ctx.taker_swap_watchers.lock().await;
             taker_swap_watchers.remove(&uuid);
             do_nothing
         }, // swap finished normally
         _shutdown = shutdown_fut => {
+            let mut taker_swap_watchers = swap_ctx.taker_swap_watchers.lock().await;
             taker_swap_watchers.remove(&uuid);
             info!("swap {} stopped!", swap_for_log.uuid)
         },
         _touch = touch_loop => {
+            let mut taker_swap_watchers = swap_ctx.taker_swap_watchers.lock().await;
             taker_swap_watchers.remove(&uuid);
             unreachable!("Touch loop can not stop!")
         },
