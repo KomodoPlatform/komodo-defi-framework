@@ -19,5 +19,5 @@ jobs:
         failOnStderr: false
         continueOnError: true
       - bash: |
-          cargo build --targets aarch64-apple-ios --lib
+          cargo build --target aarch64-apple-ios --lib
         displayName: 'Build iOS lib'
