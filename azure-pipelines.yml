@@ -55,9 +55,20 @@ stages:
           alice_userpass: 'ALICE_USERPASS_LINUX'
           telegram_api_key: 'TELEGRAM_API_KEY'
 
+  - stage: Mobile
+    displayName: Mobile libs build
+    condition: and(succeeded('WASM'), or(eq(variables['Build.Reason'], 'PullRequest'), eq(variables['Build.SourceBranchName'], 'mm2.1'), eq(variables['Build.SourceBranchName'], 'dev')))
+    jobs:
+      - template: azure-pipelines-android-job.yml
+        parameters:
+          os: 'Linux'
+      - template: azure-pipelines-ios-job.yml
+        parameters:
+          os: 'Darwin'
+
   - stage: Desktop
     displayName: Desktop Build and test
-    condition: succeeded('WASM')
+    condition: or(succeeded('Mobile'), and(skipped('Mobile'), succeeded('WASM'))
     jobs:
       - template: azure-pipelines-build-stage-job.yml  # Template reference
         parameters:
@@ -89,13 +100,3 @@ stages:
           alice_userpass: 'ALICE_USERPASS_WIN'
           telegram_api_key: 'TELEGRAM_API_KEY'
 
-  - stage: Mobile
-    displayName: Mobile libs build
-    condition: and(succeeded('Desktop'), or(eq(variables['Build.Reason'], 'PullRequest'), eq(variables['Build.SourceBranchName'], 'mm2.1'), eq(variables['Build.SourceBranchName'], 'dev')))
-    jobs:
-      - template: azure-pipelines-android-job.yml
-        parameters:
-          os: 'Linux'
-      - template: azure-pipelines-ios-job.yml
-        parameters:
-          os: 'Darwin'
