@@ -3878,6 +3878,7 @@ fn test_electrum_display_balances() {
 fn test_for_non_existent_tx_hex_utxo_electrum() {
     // This test shouldn't wait till timeout!
     let timeout = (now_ms() / 1000) + 120;
+    let expected_timeout = (now_ms() / 1000) + 5;
     let client = electrum_client_for_test(RICK_ELECTRUM_ADDRS);
     let coin = utxo_coin_for_test(
         client.into(),
@@ -3893,7 +3894,8 @@ fn test_for_non_existent_tx_hex_utxo_electrum() {
         .unwrap();
     assert!(
         actual.contains("Tx d342ff9da528a2e262bddf2b6f9a27d1beb7aeb03f0fc8d9eac2987266447e44 is not on chain anymore")
-    )
+    );
+    assert!((now_ms() / 1000) < expected_timeout);
 }
 
 #[test]
