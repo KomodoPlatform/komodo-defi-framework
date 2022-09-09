@@ -31,7 +31,6 @@ use futures::compat::Future01CompatExt;
 use futures::lock::Mutex as AsyncMutex;
 use futures::{FutureExt, TryFutureExt};
 use futures01::Future;
-use http::Uri;
 use keys::hash::H256;
 use keys::{KeyPair, Message, Public};
 use mm2_core::mm_ctx::MmArc;
@@ -46,7 +45,6 @@ use serde_json::Value as Json;
 use serialization::CoinVariant;
 use std::collections::{HashMap, HashSet};
 use std::path::PathBuf;
-use std::str::FromStr;
 use std::sync::Arc;
 use zcash_client_backend::data_api::WalletRead;
 use zcash_client_backend::encoding::{decode_payment_address, encode_extended_spending_key, encode_payment_address};
@@ -796,15 +794,8 @@ impl<'a> UtxoCoinWithIguanaPrivKeyBuilder for ZCoinBuilder<'a> {
                 light_wallet_d_servers, ..
             } => {
                 // TODO multi lightwalletd servers support will be added on the next iteration
-                let uri = Uri::from_str(
-                    light_wallet_d_servers
-                        .first()
-                        .or_mm_err(|| ZCoinBuildError::EmptyLightwalletdUris)?,
-                )?;
-
                 init_light_client(
-                    light_wallet_d_servers.clone(),
-                    uri,
+                    light_wallet_d_servers,
                     blocks_db,
                     wallet_db,
                     self.protocol_info.consensus_params.clone(),

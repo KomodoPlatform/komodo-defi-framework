@@ -53,10 +53,16 @@ pub enum ZcoinClientInitError {
     BlocksDbInitFailure(SqliteError),
     WalletDbInitFailure(SqliteError),
     ZcashSqliteError(ZcashClientError),
+    EmptyLightwalletdUris,
+    InvalidUri(InvalidUri),
 }
 
 impl From<ZcashClientError> for ZcoinClientInitError {
     fn from(err: ZcashClientError) -> Self { ZcoinClientInitError::ZcashSqliteError(err) }
+}
+
+impl From<InvalidUri> for ZcoinClientInitError {
+    fn from(err: InvalidUri) -> Self { ZcoinClientInitError::InvalidUri(err) }
 }
 
 #[derive(Debug, Display)]
@@ -194,8 +200,6 @@ pub enum ZCoinBuildError {
         path: String,
     },
     Io(std::io::Error),
-    EmptyLightwalletdUris,
-    InvalidLightwalletdUri(InvalidUri),
     RpcClientInitErr(ZcoinClientInitError),
     ZCashParamsNotFound,
 }
@@ -214,10 +218,6 @@ impl From<UtxoCoinBuildError> for ZCoinBuildError {
 
 impl From<std::io::Error> for ZCoinBuildError {
     fn from(err: std::io::Error) -> ZCoinBuildError { ZCoinBuildError::Io(err) }
-}
-
-impl From<InvalidUri> for ZCoinBuildError {
-    fn from(err: InvalidUri) -> Self { ZCoinBuildError::InvalidLightwalletdUri(err) }
 }
 
 impl From<ZcoinClientInitError> for ZCoinBuildError {

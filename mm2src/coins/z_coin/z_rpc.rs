@@ -18,6 +18,7 @@ use prost::Message;
 use protobuf::Message as ProtobufMessage;
 use std::ops::Deref;
 use std::path::{Path, PathBuf};
+use std::str::FromStr;
 use std::sync::Arc;
 use tokio::task::block_in_place;
 use tonic::transport::{Channel, ClientTlsConfig};
@@ -362,14 +363,19 @@ pub async fn create_wallet_db(
 }
 
 pub(super) async fn init_light_client(
-    _lightwalletd_urls: Vec<String>,
-    lightwalletd_url: Uri,
+    lightwalletd_urls: &Vec<String>,
     blocks_db: BlockDb,
     wallet_db: WalletDbShared,
     consensus_params: ZcoinConsensusParams,
 ) -> Result<(AsyncMutex<SaplingSyncConnector>, WalletDbShared), MmError<ZcoinClientInitError>> {
     let (sync_status_notifier, sync_watcher) = channel(1);
     let (on_tx_gen_notifier, on_tx_gen_watcher) = channel(1);
+
+    let lightwalletd_url = Uri::from_str(
+        lightwalletd_urls
+            .first()
+            .or_mm_err(|| ZcoinClientInitError::EmptyLightwalletdUris)?,
+    )?;
 
     let sync_handle = SaplingSyncLoopHandle {
         current_block: BlockHeight::from_u32(0),
