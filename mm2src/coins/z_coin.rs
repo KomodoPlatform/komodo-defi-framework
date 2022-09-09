@@ -795,7 +795,7 @@ impl<'a> UtxoCoinWithIguanaPrivKeyBuilder for ZCoinBuilder<'a> {
             } => {
                 // TODO multi lightwalletd servers support will be added on the next iteration
                 init_light_client(
-                    light_wallet_d_servers,
+                    light_wallet_d_servers.clone(),
                     blocks_db,
                     wallet_db,
                     self.protocol_info.consensus_params.clone(),

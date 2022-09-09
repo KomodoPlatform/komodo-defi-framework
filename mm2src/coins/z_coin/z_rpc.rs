@@ -363,7 +363,7 @@ pub async fn create_wallet_db(
 }
 
 pub(super) async fn init_light_client(
-    lightwalletd_urls: &Vec<String>,
+    lightwalletd_urls: Vec<String>,
     blocks_db: BlockDb,
     wallet_db: WalletDbShared,
     consensus_params: ZcoinConsensusParams,
