@@ -4,7 +4,7 @@ use super::RequestTxHistoryResult;
 use crate::my_tx_history_v2::{CoinWithTxHistoryV2, TxHistoryStorage};
 use crate::utxo::bch::BchCoin;
 use crate::utxo::utxo_common;
-use crate::{BlockHeightAndTime, HistorySyncState, MarketCoinOps, TransactionDetails, UtxoRpcError};
+use crate::{BalanceResult, BlockHeightAndTime, HistorySyncState, MarketCoinOps, TransactionDetails, UtxoRpcError};
 use async_trait::async_trait;
 use common::executor::Timer;
 use common::log::{error, info};
@@ -13,7 +13,7 @@ use mm2_err_handle::prelude::*;
 use mm2_metrics::MetricsArc;
 use mm2_number::BigDecimal;
 use rpc::v1::types::H256 as H256Json;
-use std::collections::HashMap;
+use std::collections::{hash_map::Entry, HashMap};
 use std::str::FromStr;
 
 #[async_trait]
@@ -33,10 +33,16 @@ pub trait UtxoTxHistoryOps: CoinWithTxHistoryV2 + MarketCoinOps + Send + Sync + 
     where
         T: TxHistoryStorage;
 
+    /// Requests transaction history.
     async fn request_tx_history(&self, metrics: MetricsArc) -> RequestTxHistoryResult;
 
+    /// Requests timestamp of the given block.
     async fn get_block_timestamp(&self, height: u64) -> MmResult<u64, UtxoRpcError>;
 
+    /// Requests balances of all activated coin's addresses.
+    async fn get_addresses_balances(&self) -> BalanceResult<HashMap<String, BigDecimal>>;
+
+    /// Sets the history sync state.
     fn set_history_sync_state(&self, new_state: HistorySyncState);
 }
 
@@ -219,19 +225,33 @@ where
                 Err(e) => return Self::change_state(Stopped::storage_error(e)),
             }
 
-            todo!()
-            // match ctx.coin.my_balance().compat().await {
-            //     Ok(balance) => {
-            //         let total_balance = balance.into_total();
-            //         if ctx.current_balance != total_balance {
-            //             ctx.current_balance = total_balance;
-            //             return Self::change_state(FetchingTxHashes::new());
-            //         }
-            //     },
-            //     Err(e) => {
-            //         error!("Error {} on balance fetching for the coin {}", e, ctx.coin.ticker());
-            //     },
-            // }
+            let current_balances = match ctx.coin.get_addresses_balances().await {
+                Ok(balances) => balances,
+                Err(e) => {
+                    error!("Error {e:?} on balance fetching for the coin {}", ctx.coin.ticker());
+                    continue;
+                },
+            };
+
+            let mut to_update = false;
+            for (address, current_balance) in current_balances {
+                match ctx.balances.entry(address) {
+                    // Do nothing if the balance hasn't been changed.
+                    Entry::Occupied(entry) if *entry.get() == current_balance => {},
+                    Entry::Occupied(mut entry) => {
+                        to_update = true;
+                        entry.insert(current_balance);
+                    },
+                    Entry::Vacant(entry) => {
+                        to_update = true;
+                        entry.insert(current_balance);
+                    },
+                }
+            }
+
+            if to_update {
+                return Self::change_state(FetchingTxHashes::new());
+            }
         }
     }
 }

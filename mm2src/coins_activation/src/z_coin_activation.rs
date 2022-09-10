@@ -4,7 +4,7 @@ use crate::standalone_coin::{InitStandaloneCoinActivationOps, InitStandaloneCoin
                              InitStandaloneCoinInitialStatus, InitStandaloneCoinTaskHandle,
                              InitStandaloneCoinTaskManagerShared};
 use async_trait::async_trait;
-use coins::coin_balance::{EnableCoinBalance, IguanaWalletBalance};
+use coins::coin_balance::{CoinBalanceReport, IguanaWalletBalance};
 use coins::my_tx_history_v2::TxHistoryStorage;
 use coins::tx_history_storage::CreateTxHistoryStorageError;
 use coins::z_coin::{z_coin_from_conf_and_params, BlockchainScanStopped, SyncStatus, ZCoin, ZCoinBuildError,
@@ -35,7 +35,7 @@ pub type ZcoinUserAction = HwRpcTaskUserAction;
 pub struct ZcoinActivationResult {
     pub ticker: String,
     pub current_block: u64,
-    pub wallet_balance: EnableCoinBalance,
+    pub wallet_balance: CoinBalanceReport,
 }
 
 impl CurrentBlock for ZcoinActivationResult {
@@ -43,7 +43,9 @@ impl CurrentBlock for ZcoinActivationResult {
 }
 
 impl GetAddressesBalances for ZcoinActivationResult {
-    fn get_addresses_balances(&self) -> HashMap<String, BigDecimal> { self.wallet_balance.get_addresses_balances() }
+    fn get_addresses_balances(&self) -> HashMap<String, BigDecimal> {
+        self.wallet_balance.to_addresses_total_balances()
+    }
 }
 
 #[derive(Clone, Serialize)]
@@ -251,7 +253,7 @@ impl InitStandaloneCoinActivationOps for ZCoin {
         Ok(ZcoinActivationResult {
             ticker: self.ticker().into(),
             current_block,
-            wallet_balance: EnableCoinBalance::Iguana(IguanaWalletBalance {
+            wallet_balance: CoinBalanceReport::Iguana(IguanaWalletBalance {
                 address: self.my_z_address_encoded(),
                 balance,
             }),

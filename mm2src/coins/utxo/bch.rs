@@ -1277,6 +1277,12 @@ impl UtxoTxHistoryOps for BchCoin {
         self.get_block_timestamp(height).await
     }
 
+    async fn get_addresses_balances(&self) -> BalanceResult<HashMap<String, BigDecimal>> {
+        let my_address = self.my_address().map_to_mm(BalanceError::Internal)?;
+        let my_balance = self.my_balance().compat().await?;
+        Ok(std::iter::once((my_address, my_balance.into_total())).collect())
+    }
+
     fn set_history_sync_state(&self, new_state: HistorySyncState) {
         *self.as_ref().history_sync_state.lock().unwrap() = new_state;
     }

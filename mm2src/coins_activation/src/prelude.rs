@@ -1,4 +1,3 @@
-use coins::coin_balance::{EnableCoinBalance, HDWalletBalance, IguanaWalletBalance};
 use coins::utxo::UtxoActivationParams;
 #[cfg(not(target_arch = "wasm32"))]
 use coins::z_coin::ZcoinActivationParams;
@@ -9,7 +8,6 @@ use mm2_number::BigDecimal;
 use serde_derive::Serialize;
 use serde_json::{self as json, Value as Json};
 use std::collections::HashMap;
-use std::iter;
 
 pub trait CurrentBlock {
     fn current_block(&self) -> u64;
@@ -30,26 +28,6 @@ impl TxHistory for ZcoinActivationParams {
 
 pub trait GetAddressesBalances {
     fn get_addresses_balances(&self) -> HashMap<String, BigDecimal>;
-}
-
-impl GetAddressesBalances for EnableCoinBalance {
-    fn get_addresses_balances(&self) -> HashMap<String, BigDecimal> {
-        match self {
-            EnableCoinBalance::Iguana(IguanaWalletBalance {
-                ref address,
-                ref balance,
-            }) => iter::once((address.clone(), balance.get_total())).collect(),
-            EnableCoinBalance::HD(HDWalletBalance { ref accounts }) => accounts
-                .iter()
-                .flat_map(|account_balance| {
-                    account_balance
-                        .addresses
-                        .iter()
-                        .map(|addr_balance| (addr_balance.address.clone(), addr_balance.balance.get_total()))
-                })
-                .collect(),
-        }
-    }
 }
 
 #[derive(Clone, Debug, Serialize)]

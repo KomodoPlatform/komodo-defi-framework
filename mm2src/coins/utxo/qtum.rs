@@ -1114,11 +1114,15 @@ impl UtxoTxHistoryOps for QtumCoin {
     }
 
     async fn request_tx_history(&self, metrics: MetricsArc) -> RequestTxHistoryResult {
-        utxo_common::request_tx_history(self, metrics).await
+        utxo_common::utxo_tx_history_common::request_tx_history_with_der_method(self, metrics).await
     }
 
     async fn get_block_timestamp(&self, height: u64) -> MmResult<u64, UtxoRpcError> {
         self.as_ref().rpc_client.get_block_timestamp(height).await
+    }
+
+    async fn get_addresses_balances(&self) -> BalanceResult<HashMap<String, BigDecimal>> {
+        utxo_common::utxo_tx_history_common::get_addresses_balances(self).await
     }
 
     fn set_history_sync_state(&self, new_state: HistorySyncState) {

@@ -2365,9 +2365,13 @@ pub async fn lp_coininit(ctx: &MmArc, ticker: &str, req: &Json) -> Result<MmCoin
 
     let register_params = RegisterCoinParams {
         ticker: ticker.to_owned(),
-        tx_history: req["tx_history"].as_bool().unwrap_or(false),
     };
     try_s!(lp_register_coin(ctx, coin.clone(), register_params).await);
+
+    let tx_history = req["tx_history"].as_bool().unwrap_or(false);
+    if tx_history {
+        try_s!(lp_spawn_tx_history(ctx.clone(), coin.clone()).map_to_mm(RegisterCoinError::Internal));
+    }
     Ok(coin)
 }
 
@@ -2382,7 +2386,6 @@ pub enum RegisterCoinError {
 
 pub struct RegisterCoinParams {
     pub ticker: String,
-    pub tx_history: bool,
 }
 
 pub async fn lp_register_coin(
@@ -2390,7 +2393,7 @@ pub async fn lp_register_coin(
     coin: MmCoinEnum,
     params: RegisterCoinParams,
 ) -> Result<(), MmError<RegisterCoinError>> {
-    let RegisterCoinParams { ticker, tx_history } = params;
+    let RegisterCoinParams { ticker } = params;
     let cctx = CoinsContext::from_ctx(ctx).map_to_mm(RegisterCoinError::Internal)?;
 
     // TODO AP: locking the coins list during the entire initialization prevents different coins from being
@@ -2402,11 +2405,8 @@ pub async fn lp_register_coin(
         RawEntryMut::Occupied(_oe) => {
             return MmError::err(RegisterCoinError::CoinIsInitializedAlready { coin: ticker.clone() })
         },
-        RawEntryMut::Vacant(ve) => ve.insert(ticker.clone(), coin.clone()),
+        RawEntryMut::Vacant(ve) => ve.insert(ticker.clone(), coin),
     };
-    if tx_history {
-        lp_spawn_tx_history(ctx.clone(), coin).map_to_mm(RegisterCoinError::Internal)?;
-    }
     Ok(())
 }
 
@@ -3009,7 +3009,7 @@ where
     let ticker = coin.ticker().to_owned();
     let my_address = try_f!(coin.my_address().map_to_mm(TxHistoryError::InternalError));
 
-    history.sort_unstable_by(compare_transactions);
+    history.sort_unstable_by(compare_transaction_details);
 
     let fut = async move {
         let coins_ctx = CoinsContext::from_ctx(&ctx).unwrap();
@@ -3028,7 +3028,7 @@ where
     let history_path = coin.tx_history_path(ctx);
     let tmp_file = format!("{}.tmp", history_path.display());
 
-    history.sort_unstable_by(compare_transactions);
+    history.sort_unstable_by(compare_transaction_details);
 
     let fut = async move {
         let content = json::to_vec(&history).map_to_mm(|e| TxHistoryError::ErrorSerializing(e.to_string()))?;
@@ -3051,10 +3051,28 @@ where
     Box::new(fut.boxed().compat())
 }
 
-fn compare_transactions(a: &TransactionDetails, b: &TransactionDetails) -> Ordering {
+fn compare_transaction_details(a: &TransactionDetails, b: &TransactionDetails) -> Ordering {
+    let a = TxIdHeight::new(a.block_height, a.internal_id.deref());
+    let b = TxIdHeight::new(b.block_height, b.internal_id.deref());
+    compare_transactions(a, b)
+}
+
+pub(crate) struct TxIdHeight<Id> {
+    block_height: u64,
+    tx_id: Id,
+}
+
+impl<Id> TxIdHeight<Id> {
+    pub(crate) fn new(block_height: u64, tx_id: Id) -> TxIdHeight<Id> { TxIdHeight { block_height, tx_id } }
+}
+
+pub(crate) fn compare_transactions<Id>(a: TxIdHeight<Id>, b: TxIdHeight<Id>) -> Ordering
+where
+    Id: Ord,
+{
     // the transactions with block_height == 0 are the most recent so we need to separately handle them while sorting
     if a.block_height == b.block_height {
-        a.internal_id.cmp(&b.internal_id)
+        a.tx_id.cmp(&b.tx_id)
     } else if a.block_height == 0 {
         Ordering::Less
     } else if b.block_height == 0 {

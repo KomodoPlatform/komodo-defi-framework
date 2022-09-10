@@ -199,7 +199,7 @@ where
             }
         }
 
-        lp_register_coin(&self.ctx, coin.into(), RegisterCoinParams { ticker, tx_history }).await?;
+        lp_register_coin(&self.ctx, coin.into(), RegisterCoinParams { ticker }).await?;
 
         Ok(result)
     }
