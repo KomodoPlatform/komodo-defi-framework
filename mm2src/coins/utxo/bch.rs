@@ -1266,13 +1266,24 @@ impl UtxoTxHistoryOps for BchCoin {
         Ok(std::iter::once(my_address.clone()).collect())
     }
 
-    async fn tx_details_by_hash<T>(&self, params: UtxoTxDetailsParams<'_, T>) -> Result<Vec<TransactionDetails>, String>
+    async fn tx_details_by_hash<Storage>(
+        &self,
+        params: UtxoTxDetailsParams<'_, Storage>,
+    ) -> Result<Vec<TransactionDetails>, String>
     where
-        T: TxHistoryStorage,
+        Storage: TxHistoryStorage,
     {
         self.transaction_details_with_token_transfers(params)
             .await
             .map_err(|e| format!("{:?}", e))
+    }
+
+    async fn tx_from_storage_or_rpc<Storage: TxHistoryStorage>(
+        &self,
+        tx_hash: &H256Json,
+        storage: &Storage,
+    ) -> Result<UtxoTx, String> {
+        utxo_common::utxo_tx_history_v2_common::tx_from_storage_or_rpc(self, tx_hash, storage).await
     }
 
     async fn request_tx_history(&self, metrics: MetricsArc) -> RequestTxHistoryResult {

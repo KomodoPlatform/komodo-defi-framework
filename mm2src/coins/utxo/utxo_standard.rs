@@ -856,15 +856,22 @@ impl UtxoTxHistoryOps for UtxoStandardCoin {
         utxo_common::utxo_tx_history_v2_common::my_addresses(self).await
     }
 
-    async fn tx_details_by_hash<T>(&self, params: UtxoTxDetailsParams<'_, T>) -> Result<Vec<TransactionDetails>, String>
+    async fn tx_details_by_hash<Storage>(
+        &self,
+        params: UtxoTxDetailsParams<'_, Storage>,
+    ) -> Result<Vec<TransactionDetails>, String>
     where
-        T: TxHistoryStorage,
+        Storage: TxHistoryStorage,
     {
-        let mut input_transactions = HistoryUtxoTxMap::new();
-        // TODO add an optimized version of `utxo_common::tx_details_by_hash` that takes `block_height_and_time` and `storage` args.
-        utxo_common::tx_details_by_hash(self, &params.hash.0, &mut input_transactions)
-            .await
-            .map(|tx_details| vec![tx_details])
+        utxo_common::utxo_tx_history_v2_common::tx_details_by_hash(self, params).await
+    }
+
+    async fn tx_from_storage_or_rpc<Storage: TxHistoryStorage>(
+        &self,
+        tx_hash: &H256Json,
+        storage: &Storage,
+    ) -> Result<UtxoTx, String> {
+        utxo_common::utxo_tx_history_v2_common::tx_from_storage_or_rpc(self, tx_hash, storage).await
     }
 
     async fn request_tx_history(&self, metrics: MetricsArc) -> RequestTxHistoryResult {

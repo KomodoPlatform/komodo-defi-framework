@@ -1,12 +1,15 @@
 use crate::coin_balance::CoinBalanceReportOps;
 use crate::hd_wallet::{AddressDerivingResult, HDAccountOps, HDWalletCoinOps, HDWalletOps};
-use crate::my_tx_history_v2::{DisplayAddress, MyTxHistoryErrorV2, MyTxHistoryTarget};
+use crate::my_tx_history_v2::{CoinWithTxHistoryV2, DisplayAddress, MyTxHistoryErrorV2, MyTxHistoryTarget,
+                              TxDetailsBuilder, TxHistoryStorage};
 use crate::tx_history_storage::{GetTxHistoryFilters, WalletId};
 use crate::utxo::rpc_clients::{electrum_script_hash, ElectrumClient, NativeClient, UtxoRpcClientEnum};
-use crate::utxo::utxo_common::HISTORY_TOO_LARGE_ERROR;
+use crate::utxo::utxo_common::{big_decimal_from_sat, HISTORY_TOO_LARGE_ERROR};
+use crate::utxo::utxo_tx_history_v2::{UtxoTxDetailsParams, UtxoTxHistoryOps};
 use crate::utxo::{output_script, RequestTxHistoryResult, UtxoCoinFields, UtxoCommonOps, UtxoHDAccount};
-use crate::{compare_transactions, BalanceResult, CoinWithDerivationMethod, DerivationMethod, HDAddressId,
-            MarketCoinOps, TxIdHeight};
+use crate::{big_decimal_from_sat_unsigned, compare_transactions, BalanceResult, CoinWithDerivationMethod,
+            DerivationMethod, HDAddressId, MarketCoinOps, TransactionDetails, TxFeeDetails, TxIdHeight,
+            UtxoFeeDetails, UtxoTx};
 use common::jsonrpc_client::JsonRpcErrorType;
 use crypto::Bip44Chain;
 use futures::compat::Future01CompatExt;
@@ -15,7 +18,10 @@ use keys::{Address, Type as ScriptType};
 use mm2_err_handle::prelude::*;
 use mm2_metrics::MetricsArc;
 use mm2_number::BigDecimal;
+use rpc::v1::types::{TransactionInputEnum, H256 as H256Json};
+use serialization::deserialize;
 use std::collections::{HashMap, HashSet};
+use std::convert::TryFrom;
 use std::iter;
 
 fn pass_through<T>(t: T) -> T { t }
@@ -74,7 +80,7 @@ where
         .or_mm_err(|| MyTxHistoryErrorV2::InvalidTarget(format!("No such account_id={account_id}")))?;
 
     let external_addresses = coin.derive_known_addresses(&hd_account, Bip44Chain::External)?;
-    let internal_addresses = coin.derive_known_addresses(&hd_account, Bip44Chain::External)?;
+    let internal_addresses = coin.derive_known_addresses(&hd_account, Bip44Chain::Internal)?;
 
     let addresses_iter = external_addresses
         .into_iter()
@@ -110,13 +116,134 @@ where
     let hd_address = coin.derive_address(&hd_account, hd_address_id.chain, hd_address_id.address_id)?;
     Ok(GetTxHistoryFilters::for_address(hd_address.address.display_address()))
 }
-
+/// [`UtxoTxHistoryOps::my_addresses`] implementation.
 pub async fn my_addresses<Coin>(coin: &Coin) -> Result<HashSet<Address>, String>
 where
     Coin: HDWalletCoinOps<Address = Address, HDAccount = UtxoHDAccount> + UtxoCommonOps,
 {
     // TODO return a corresponding error instead of `String`.
     Ok(try_s!(get_tx_addresses_mapped(coin, pass_through).await))
+}
+
+/// [`UtxoTxHistoryOps::tx_details_by_hash`] implementation.
+pub async fn tx_details_by_hash<Coin, Storage>(
+    coin: &Coin,
+    params: UtxoTxDetailsParams<'_, Storage>,
+) -> Result<Vec<TransactionDetails>, String>
+where
+    Coin: UtxoTxHistoryOps + UtxoCommonOps + MarketCoinOps,
+    Storage: TxHistoryStorage,
+{
+    let ticker = coin.ticker();
+    let decimals = coin.as_ref().decimals;
+
+    let verbose_tx = try_s!(
+        coin.as_ref()
+            .rpc_client
+            .get_verbose_transaction(params.hash)
+            .compat()
+            .await
+    );
+    let tx: UtxoTx = try_s!(deserialize(verbose_tx.hex.as_slice()).map_err(|e| ERRL!("{:?}", e)));
+
+    let mut tx_builder = TxDetailsBuilder::new(
+        ticker.to_string(),
+        &tx,
+        params.block_height_and_time,
+        params.my_addresses.clone(),
+    );
+
+    let mut input_amount = 0;
+    let mut output_amount = 0;
+
+    for input in tx.inputs.iter() {
+        // input transaction is zero if the tx is the coinbase transaction
+        if input.previous_output.hash.is_zero() {
+            continue;
+        }
+
+        let prev_tx_hash: H256Json = input.previous_output.hash.reversed().into();
+
+        let prev_tx = try_s!(coin.tx_from_storage_or_rpc(&prev_tx_hash, params.storage).await);
+
+        let prev_output_index = input.previous_output.index as usize;
+        let prev_tx_value = prev_tx.outputs[prev_output_index].value;
+        let prev_script = prev_tx.outputs[prev_output_index].script_pubkey.clone().into();
+
+        input_amount += prev_tx_value;
+        let amount = big_decimal_from_sat_unsigned(prev_tx_value, decimals);
+
+        let from: Vec<Address> = try_s!(coin.addresses_from_script(&prev_script));
+        for address in from {
+            tx_builder.transferred_from(address, &amount);
+        }
+    }
+
+    for output in tx.outputs.iter() {
+        let to = try_s!(coin.addresses_from_script(&output.script_pubkey.clone().into()));
+        if to.is_empty() {
+            continue;
+        }
+
+        output_amount += output.value;
+        let amount = big_decimal_from_sat_unsigned(output.value, decimals);
+        for address in to {
+            tx_builder.transferred_to(address, &amount);
+        }
+    }
+
+    let fee = if input_amount == 0 {
+        let fee = verbose_tx.vin.iter().fold(0., |cur, input| {
+            let fee = match input {
+                TransactionInputEnum::Lelantus(lelantus) => lelantus.n_fees,
+                _ => 0.,
+            };
+            cur + fee
+        });
+        try_s!(BigDecimal::try_from(fee))
+    } else {
+        let fee = input_amount as i64 - output_amount as i64;
+        big_decimal_from_sat(fee, decimals)
+    };
+
+    let fee_details = UtxoFeeDetails {
+        coin: Some(ticker.to_string()),
+        amount: fee,
+    };
+
+    tx_builder.set_tx_fee(Some(TxFeeDetails::from(fee_details)));
+    Ok(vec![tx_builder.build()])
+}
+
+/// [`UtxoTxHistoryOps::tx_from_storage_or_rpc`] implementation.
+pub async fn tx_from_storage_or_rpc<Coin, Storage>(
+    coin: &Coin,
+    tx_hash: &H256Json,
+    storage: &Storage,
+) -> Result<UtxoTx, String>
+where
+    Coin: CoinWithTxHistoryV2 + UtxoCommonOps,
+    Storage: TxHistoryStorage,
+{
+    let tx_hash_str = format!("{:02x}", tx_hash);
+    let wallet_id = coin.history_wallet_id();
+    let tx_bytes = match storage
+        .tx_bytes_from_cache(&wallet_id, &tx_hash_str)
+        .await
+        .map_err(|e| ERRL!("{:?}", e))?
+    {
+        Some(tx_bytes) => tx_bytes,
+        None => {
+            let tx_bytes = try_s!(coin.as_ref().rpc_client.get_transaction_bytes(tx_hash).compat().await);
+            storage
+                .add_tx_to_cache(&wallet_id, &tx_hash_str, &tx_bytes)
+                .await
+                .map_err(|e| ERRL!("{:?}", e))?;
+            tx_bytes
+        },
+    };
+    let tx = try_s!(deserialize(tx_bytes.0.as_slice()));
+    Ok(tx)
 }
 
 /// [`UtxoTxHistoryOps::get_addresses_balances`] implementation.
@@ -150,10 +277,11 @@ async fn request_tx_history_with_native<Coin>(
 where
     Coin: HDWalletCoinOps<Address = Address, HDAccount = UtxoHDAccount> + UtxoCommonOps + MarketCoinOps,
 {
-    let addresses: HashSet<String> = match get_tx_addresses_mapped(coin, |addr| addr.to_string()).await {
-        Ok(addresses) => addresses,
-        Err(e) => return RequestTxHistoryResult::CriticalError(e.to_string()),
-    };
+    let addresses: HashSet<String> =
+        match get_tx_addresses_mapped(coin, |addr| DisplayAddress::display_address(&addr)).await {
+            Ok(addresses) => addresses,
+            Err(e) => return RequestTxHistoryResult::CriticalError(e.to_string()),
+        };
 
     let ticker = coin.ticker();
 
@@ -269,7 +397,7 @@ where
     RequestTxHistoryResult::Ok(ordered_history)
 }
 
-/// `request_tx_history_with_native` and `request_tx_history_with_electrum` functions' helper.
+/// `my_addresses`, `request_tx_history_with_native` and `request_tx_history_with_electrum` functions' helper.
 /// This function is optimized to get all addresses mapped before they're collected into `R`.
 /// - `R` is a result collection of the addresses.
 /// - `F` is a function that maps `Address` into an `Item`.
@@ -289,7 +417,7 @@ where
 
             for (_, hd_account) in hd_accounts {
                 let external_addresses = coin.derive_known_addresses(&hd_account, Bip44Chain::External)?;
-                let internal_addresses = coin.derive_known_addresses(&hd_account, Bip44Chain::External)?;
+                let internal_addresses = coin.derive_known_addresses(&hd_account, Bip44Chain::Internal)?;
 
                 let addresses_it = external_addresses
                     .into_iter()

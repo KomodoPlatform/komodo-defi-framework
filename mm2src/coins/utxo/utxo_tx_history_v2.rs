@@ -4,7 +4,8 @@ use super::RequestTxHistoryResult;
 use crate::my_tx_history_v2::{CoinWithTxHistoryV2, TxHistoryStorage};
 use crate::utxo::bch::BchCoin;
 use crate::utxo::utxo_common;
-use crate::{BalanceResult, BlockHeightAndTime, HistorySyncState, MarketCoinOps, TransactionDetails, UtxoRpcError};
+use crate::{BalanceResult, BlockHeightAndTime, HistorySyncState, MarketCoinOps, TransactionDetails, UtxoRpcError,
+            UtxoTx};
 use async_trait::async_trait;
 use common::executor::Timer;
 use common::log::{error, info};
@@ -43,6 +44,15 @@ pub trait UtxoTxHistoryOps: CoinWithTxHistoryV2 + MarketCoinOps + Send + Sync + 
     ) -> Result<Vec<TransactionDetails>, String>
     where
         T: TxHistoryStorage;
+
+    /// # Todo
+    ///
+    /// Consider returning a specific error.
+    async fn tx_from_storage_or_rpc<Storage: TxHistoryStorage>(
+        &self,
+        tx_hash: &H256Json,
+        storage: &Storage,
+    ) -> Result<UtxoTx, String>;
 
     /// Requests transaction history.
     async fn request_tx_history(&self, metrics: MetricsArc) -> RequestTxHistoryResult;
