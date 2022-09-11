@@ -3878,7 +3878,7 @@ fn test_electrum_display_balances() {
 fn test_for_non_existent_tx_hex_utxo_electrum() {
     // This test shouldn't wait till timeout!
     let timeout = (now_ms() / 1000) + 120;
-    let expected_timeout = (now_ms() / 1000) + 5;
+    let expected_timeout = (now_ms() / 1000) + 10;
     let client = electrum_client_for_test(RICK_ELECTRUM_ADDRS);
     let coin = utxo_coin_for_test(
         client.into(),
