@@ -607,6 +607,13 @@ pub struct HDAddressBalance {
     pub balance: CoinBalance,
 }
 
+#[derive(Clone, Debug, Deserialize, Serialize)]
+pub struct HDAddressId {
+    pub account_id: u32,
+    pub chain: Bip44Chain,
+    pub address_id: u32,
+}
+
 #[derive(Debug, Deserialize)]
 #[serde(deny_unknown_fields, tag = "wallet_type")]
 pub enum EnableCoinBalance {
@@ -827,6 +834,7 @@ pub type ZcoinHistoryRes = MyTxHistoryV2Response<ZcoinTransactionDetails, i64>;
 #[serde(deny_unknown_fields)]
 pub struct MyTxHistoryV2Response<Tx, Id> {
     pub coin: String,
+    pub target: MyTxHistoryTarget,
     pub current_block: u64,
     pub transactions: Vec<Tx>,
     pub sync_status: Json,
@@ -835,6 +843,16 @@ pub struct MyTxHistoryV2Response<Tx, Id> {
     pub total: usize,
     pub total_pages: usize,
     pub paging_options: PagingOptionsEnum<Id>,
+}
+
+#[derive(Clone, Debug, Deserialize, Serialize)]
+#[serde(tag = "type")]
+#[serde(rename_all = "snake_case")]
+pub enum MyTxHistoryTarget {
+    Iguana,
+    AccountId { account_id: u32 },
+    AddressId(HDAddressId),
+    AddressDerivationPath(String),
 }
 
 #[derive(Debug, Deserialize)]
