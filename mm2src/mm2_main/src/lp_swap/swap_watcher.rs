@@ -7,14 +7,12 @@ use common::executor::Timer;
 use common::log;
 use common::log::{error, info, warn};
 use futures::compat::Future01CompatExt;
-use futures::lock::MutexGuard;
 use futures::{select, FutureExt};
 use mm2_core::mm_ctx::MmArc;
 use mm2_libp2p::{decode_signed, pub_sub_topic, TopicPrefix};
 use mm2_number::BigDecimal;
 use parking_lot::Mutex as PaMutex;
 use std::cmp::min;
-use std::collections::HashSet;
 use std::sync::Arc;
 use std::sync::{RwLock, RwLockReadGuard, RwLockWriteGuard};
 use uuid::Uuid;
@@ -353,9 +351,11 @@ impl AtomicSwap for Watcher {
     fn unique_swap_data(&self) -> Vec<u8> { unimplemented!() }
 }
 
-pub async fn run_watcher(swap: RunWatcherInput, ctx: MmArc, mut taker_swap_watchers: MutexGuard<'_, HashSet<Uuid>>) {
+pub async fn run_watcher(swap: RunWatcherInput, ctx: MmArc) {
+    let swap_ctx = SwapsContext::from_ctx(&ctx).unwrap();
     let uuid = swap.uuid().to_owned();
     let mut attempts = 0;
+
     let swap_lock = loop {
         match SwapLock::lock(&ctx, uuid, 40.).await {
             Ok(Some(l)) => break l,
@@ -365,6 +365,7 @@ pub async fn run_watcher(swap: RunWatcherInput, ctx: MmArc, mut taker_swap_watch
                         "Swap {} file lock is acquired by another process/thread, aborting",
                         uuid
                     );
+                    swap_ctx.taker_swap_watchers.lock().await.remove(&uuid);
                     return;
                 } else {
                     attempts += 1;
@@ -373,6 +374,7 @@ pub async fn run_watcher(swap: RunWatcherInput, ctx: MmArc, mut taker_swap_watch
             },
             Err(e) => {
                 error!("Swap {} file lock error: {}", uuid, e);
+                swap_ctx.taker_swap_watchers.lock().await.remove(&uuid);
                 return;
             },
         }
@@ -381,8 +383,6 @@ pub async fn run_watcher(swap: RunWatcherInput, ctx: MmArc, mut taker_swap_watch
     let (swap, mut command) = match swap {
         RunWatcherInput::StartNew(swap) => (swap, WatcherCommand::Start),
     };
-    taker_swap_watchers.insert(uuid);
-    drop(taker_swap_watchers);
 
     let mut touch_loop = Box::pin(
         async move {
@@ -402,7 +402,6 @@ pub async fn run_watcher(swap: RunWatcherInput, ctx: MmArc, mut taker_swap_watch
     let uuid_str = swap.uuid.to_string();
     let running_swap = Arc::new(swap);
     let weak_ref = Arc::downgrade(&running_swap);
-    let swap_ctx = SwapsContext::from_ctx(&ctx).unwrap();
     swap_ctx.running_swaps.lock().unwrap().push(weak_ref);
     let shutdown_rx = swap_ctx.shutdown_rx.clone();
     let swap_for_log = running_swap.clone();
@@ -433,18 +432,15 @@ pub async fn run_watcher(swap: RunWatcherInput, ctx: MmArc, mut taker_swap_watch
     let do_nothing = (); // to fix https://rust-lang.github.io/rust-clippy/master/index.html#unused_unit
     select! {
         _swap = swap_fut => {
-            let mut taker_swap_watchers = swap_ctx.taker_swap_watchers.lock().await;
-            taker_swap_watchers.remove(&uuid);
+            swap_ctx.taker_swap_watchers.lock().await.remove(&uuid);
             do_nothing
         }, // swap finished normally
         _shutdown = shutdown_fut => {
-            let mut taker_swap_watchers = swap_ctx.taker_swap_watchers.lock().await;
-            taker_swap_watchers.remove(&uuid);
+            swap_ctx.taker_swap_watchers.lock().await.remove(&uuid);
             info!("swap {} stopped!", swap_for_log.uuid)
         },
         _touch = touch_loop => {
-            let mut taker_swap_watchers = swap_ctx.taker_swap_watchers.lock().await;
-            taker_swap_watchers.remove(&uuid);
+            swap_ctx.taker_swap_watchers.lock().await.remove(&uuid);
             unreachable!("Touch loop can not stop!")
         },
     };
@@ -476,7 +472,7 @@ fn spawn_taker_swap_watcher(ctx: MmArc, watcher_data: TakerSwapWatcherData) {
 
     spawn(async move {
         let swap_ctx = SwapsContext::from_ctx(&ctx).unwrap();
-        let taker_swap_watchers = match swap_ctx.taker_swap_watchers.try_lock() {
+        let mut taker_swap_watchers = match swap_ctx.taker_swap_watchers.try_lock() {
             Some(lock) => lock,
             None => return,
         };
@@ -484,15 +480,19 @@ fn spawn_taker_swap_watcher(ctx: MmArc, watcher_data: TakerSwapWatcherData) {
         if taker_swap_watchers.contains(&watcher_data.uuid) {
             return;
         }
+        taker_swap_watchers.insert(watcher_data.uuid);
+        drop(taker_swap_watchers);
 
         let taker_coin = match lp_coinfind(&ctx, &watcher_data.taker_coin).await {
             Ok(Some(c)) => c,
             Ok(None) => {
                 log::error!("Coin {} is not found/enabled", watcher_data.taker_coin);
+                swap_ctx.taker_swap_watchers.lock().await.remove(&watcher_data.uuid);
                 return;
             },
             Err(e) => {
                 log::error!("!lp_coinfind({}): {}", watcher_data.taker_coin, e);
+                swap_ctx.taker_swap_watchers.lock().await.remove(&watcher_data.uuid);
                 return;
             },
         };
@@ -501,10 +501,12 @@ fn spawn_taker_swap_watcher(ctx: MmArc, watcher_data: TakerSwapWatcherData) {
             Ok(Some(c)) => c,
             Ok(None) => {
                 log::error!("Coin {} is not found/enabled", watcher_data.maker_coin);
+                swap_ctx.taker_swap_watchers.lock().await.remove(&watcher_data.uuid);
                 return;
             },
             Err(e) => {
                 log::error!("!lp_coinfind({}): {}", watcher_data.maker_coin, e);
+                swap_ctx.taker_swap_watchers.lock().await.remove(&watcher_data.uuid);
                 return;
             },
         };
@@ -520,7 +522,7 @@ fn spawn_taker_swap_watcher(ctx: MmArc, watcher_data: TakerSwapWatcherData) {
         );
 
         let watcher = Watcher::new(watcher_data.uuid, ctx.clone(), maker_coin, taker_coin, watcher_data);
-        run_watcher(RunWatcherInput::StartNew(watcher), ctx, taker_swap_watchers).await
+        run_watcher(RunWatcherInput::StartNew(watcher), ctx).await
     });
 }
 
