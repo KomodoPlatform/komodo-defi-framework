@@ -273,8 +273,8 @@ where
 }
 
 /// [`UtxoTxHistoryOps::request_tx_history`] implementation.
-/// Requests transaction history according to the `DerivationMethod` and `UtxoRpcClientEnum`.
-pub async fn request_tx_history_with_der_method<Coin>(
+/// Requests transaction history according to `UtxoRpcClientEnum`.
+pub async fn request_tx_history<Coin>(
     coin: &Coin,
     metrics: MetricsArc,
     my_addresses: &HashSet<Address>,

@@ -1121,7 +1121,7 @@ impl UtxoTxHistoryOps for QtumCoin {
     }
 
     async fn request_tx_history(&self, metrics: MetricsArc, my_addresses: &HashSet<Address>) -> RequestTxHistoryResult {
-        utxo_common::utxo_tx_history_v2_common::request_tx_history_with_der_method(self, metrics, my_addresses).await
+        utxo_common::utxo_tx_history_v2_common::request_tx_history(self, metrics, my_addresses).await
     }
 
     async fn get_block_timestamp(&self, height: u64) -> MmResult<u64, UtxoRpcError> {

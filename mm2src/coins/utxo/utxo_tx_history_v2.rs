@@ -4,6 +4,7 @@ use super::RequestTxHistoryResult;
 use crate::hd_wallet::AddressDerivingError;
 use crate::my_tx_history_v2::{CoinWithTxHistoryV2, TxHistoryStorage, TxHistoryStorageError};
 use crate::utxo::bch::BchCoin;
+use crate::utxo::slp::ParseSlpScriptError;
 use crate::utxo::utxo_common;
 use crate::{BalanceResult, BlockHeightAndTime, HistorySyncState, MarketCoinOps, NumConversError, ParseBigDecimalError,
             TransactionDetails, UnexpectedDerivationMethod, UtxoRpcError, UtxoTx};
@@ -49,6 +50,8 @@ pub enum UtxoTxDetailsError {
     NumConversionErr(NumConversError),
     #[display(fmt = "RPC error: {}", _0)]
     RpcError(UtxoRpcError),
+    #[display(fmt = "Internal error: {}", _0)]
+    Internal(String),
 }
 
 impl From<serialization::Error> for UtxoTxDetailsError {
@@ -65,6 +68,12 @@ impl From<NumConversError> for UtxoTxDetailsError {
 
 impl From<ParseBigDecimalError> for UtxoTxDetailsError {
     fn from(e: ParseBigDecimalError) -> Self { UtxoTxDetailsError::from(NumConversError::from(e)) }
+}
+
+impl From<ParseSlpScriptError> for UtxoTxDetailsError {
+    fn from(err: ParseSlpScriptError) -> Self {
+        UtxoTxDetailsError::InvalidTransaction(format!("Error parsing SLP script: {err}"))
+    }
 }
 
 impl<StorageErr> From<StorageErr> for UtxoTxDetailsError
