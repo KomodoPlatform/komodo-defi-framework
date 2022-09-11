@@ -1204,12 +1204,8 @@ pub fn send_taker_spends_maker_payment_preimage<T: UtxoCommonOps + SwapOps>(
     let script = Script::from(transaction.inputs[0].script_sig.clone());
     let mut instructions = script.iter();
 
-    let instruction_1 = try_tx_fus!(try_tx_fus!(instructions
-        .next()
-        .ok_or(TransactionErr::Plain("Instruction not found".into()))));
-    let instruction_2 = try_tx_fus!(try_tx_fus!(instructions
-        .next()
-        .ok_or(TransactionErr::Plain("Instruction not found".into()))));
+    let instruction_1 = try_tx_fus!(try_tx_fus!(instructions.next().ok_or("Instruction not found")));
+    let instruction_2 = try_tx_fus!(try_tx_fus!(instructions.next().ok_or("Instruction not found")));
 
     let script_sig = try_tx_fus!(instruction_1
         .data
