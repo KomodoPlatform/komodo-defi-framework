@@ -9,15 +9,28 @@ use async_trait::async_trait;
 use common::executor::Timer;
 use common::log::{error, info};
 use common::state_machine::prelude::*;
+use keys::Address;
 use mm2_err_handle::prelude::*;
 use mm2_metrics::MetricsArc;
 use mm2_number::BigDecimal;
 use rpc::v1::types::H256 as H256Json;
-use std::collections::{hash_map::Entry, HashMap};
+use std::collections::{hash_map::Entry, HashMap, HashSet};
 use std::str::FromStr;
+
+pub struct UtxoTxDetailsParams<'a, Storage> {
+    pub hash: &'a H256Json,
+    pub block_height_and_time: Option<BlockHeightAndTime>,
+    pub storage: &'a Storage,
+    pub my_addresses: &'a HashSet<Address>,
+}
 
 #[async_trait]
 pub trait UtxoTxHistoryOps: CoinWithTxHistoryV2 + MarketCoinOps + Send + Sync + 'static {
+    /// # Todo
+    ///
+    /// Consider returning a specific error.
+    async fn my_addresses(&self) -> Result<HashSet<Address>, String>;
+
     /// Gets tx details by hash requesting the coin RPC if required.
     ///
     /// # Todo
@@ -26,9 +39,7 @@ pub trait UtxoTxHistoryOps: CoinWithTxHistoryV2 + MarketCoinOps + Send + Sync + 
     /// In the meantime, return the string as an error since we just output it to the log.
     async fn tx_details_by_hash<T>(
         &self,
-        hash: &H256Json,
-        block_height_and_time: Option<BlockHeightAndTime>,
-        storage: &T,
+        params: UtxoTxDetailsParams<'_, T>,
     ) -> Result<Vec<TransactionDetails>, String>
     where
         T: TxHistoryStorage;
@@ -50,6 +61,8 @@ struct UtxoTxHistoryCtx<Coin: UtxoTxHistoryOps, Storage: TxHistoryStorage> {
     coin: Coin,
     storage: Storage,
     metrics: MetricsArc,
+    /// Last requested balances of the activated coin's addresses.
+    /// TODO add a `CoinBalanceState` structure and replace [`HashMap<String, BigDecimal>`] everywhere.
     balances: HashMap<String, BigDecimal>,
 }
 
@@ -350,6 +363,11 @@ where
 
     async fn on_changed(self: Box<Self>, ctx: &mut Self::Ctx) -> StateResult<Self::Ctx, Self::Result> {
         let wallet_id = ctx.coin.history_wallet_id();
+        let my_addresses = match ctx.coin.my_addresses().await {
+            Ok(addresses) => addresses,
+            Err(e) => return Self::change_state(Stopped::unknown(format!("Error on getting my addresses: {e}"))),
+        };
+
         for (tx_hash, height) in self.all_tx_ids_with_height {
             let tx_hash_string = format!("{:02x}", tx_hash);
             match ctx.storage.history_has_tx_hash(&wallet_id, &tx_hash_string).await {
@@ -367,11 +385,13 @@ where
             } else {
                 None
             };
-            let tx_details = match ctx
-                .coin
-                .tx_details_by_hash(&tx_hash, block_height_and_time, &ctx.storage)
-                .await
-            {
+            let params = UtxoTxDetailsParams {
+                hash: &tx_hash,
+                block_height_and_time,
+                storage: &ctx.storage,
+                my_addresses: &my_addresses,
+            };
+            let tx_details = match ctx.coin.tx_details_by_hash(params).await {
                 Ok(tx) => tx,
                 Err(e) => {
                     error!(

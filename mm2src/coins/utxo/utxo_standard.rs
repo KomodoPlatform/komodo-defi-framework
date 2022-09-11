@@ -15,8 +15,8 @@ use crate::rpc_command::init_scan_for_new_addresses::{self, InitScanAddressesRpc
 use crate::rpc_command::init_withdraw::{InitWithdrawCoin, WithdrawTaskHandle};
 use crate::tx_history_storage::{GetTxHistoryFilters, WalletId};
 use crate::utxo::utxo_builder::{UtxoArcBuilder, UtxoCoinBuilder};
-use crate::utxo::utxo_tx_history_v2::UtxoTxHistoryOps;
-use crate::{BlockHeightAndTime, CanRefundHtlc, CoinBalance, CoinWithDerivationMethod, GetWithdrawSenderAddress,
+use crate::utxo::utxo_tx_history_v2::{UtxoTxDetailsParams, UtxoTxHistoryOps};
+use crate::{CanRefundHtlc, CoinBalance, CoinWithDerivationMethod, GetWithdrawSenderAddress,
             NegotiateSwapContractAddrErr, PrivKeyBuildPolicy, SearchForSwapTxSpendInput, SignatureResult, SwapOps,
             TradePreimageValue, TransactionFut, TxMarshalingErr, ValidateAddressResult, ValidatePaymentInput,
             VerificationResult, WithdrawFut, WithdrawSenderAddress};
@@ -840,36 +840,35 @@ impl InitCreateHDAccountRpcOps for UtxoStandardCoin {
 
 #[async_trait]
 impl CoinWithTxHistoryV2 for UtxoStandardCoin {
-    fn history_wallet_id(&self) -> WalletId { utxo_common::utxo_tx_history_common::history_wallet_id(self.as_ref()) }
+    fn history_wallet_id(&self) -> WalletId { utxo_common::utxo_tx_history_v2_common::history_wallet_id(self.as_ref()) }
 
     async fn get_tx_history_filters(
         &self,
         target: MyTxHistoryTarget,
     ) -> MmResult<GetTxHistoryFilters, MyTxHistoryErrorV2> {
-        utxo_common::utxo_tx_history_common::get_tx_history_filters(self, target).await
+        utxo_common::utxo_tx_history_v2_common::get_tx_history_filters(self, target).await
     }
 }
 
 #[async_trait]
 impl UtxoTxHistoryOps for UtxoStandardCoin {
-    async fn tx_details_by_hash<T>(
-        &self,
-        hash: &H256Json,
-        _block_height_and_time: Option<BlockHeightAndTime>,
-        _storage: &T,
-    ) -> Result<Vec<TransactionDetails>, String>
+    async fn my_addresses(&self) -> Result<HashSet<Address>, String> {
+        utxo_common::utxo_tx_history_v2_common::my_addresses(self).await
+    }
+
+    async fn tx_details_by_hash<T>(&self, params: UtxoTxDetailsParams<'_, T>) -> Result<Vec<TransactionDetails>, String>
     where
         T: TxHistoryStorage,
     {
         let mut input_transactions = HistoryUtxoTxMap::new();
         // TODO add an optimized version of `utxo_common::tx_details_by_hash` that takes `block_height_and_time` and `storage` args.
-        utxo_common::tx_details_by_hash(self, &hash.0, &mut input_transactions)
+        utxo_common::tx_details_by_hash(self, &params.hash.0, &mut input_transactions)
             .await
             .map(|tx_details| vec![tx_details])
     }
 
     async fn request_tx_history(&self, metrics: MetricsArc) -> RequestTxHistoryResult {
-        utxo_common::utxo_tx_history_common::request_tx_history_with_der_method(self, metrics).await
+        utxo_common::utxo_tx_history_v2_common::request_tx_history_with_der_method(self, metrics).await
     }
 
     async fn get_block_timestamp(&self, height: u64) -> MmResult<u64, UtxoRpcError> {
@@ -877,7 +876,7 @@ impl UtxoTxHistoryOps for UtxoStandardCoin {
     }
 
     async fn get_addresses_balances(&self) -> BalanceResult<HashMap<String, BigDecimal>> {
-        utxo_common::utxo_tx_history_common::get_addresses_balances(self).await
+        utxo_common::utxo_tx_history_v2_common::get_addresses_balances(self).await
     }
 
     fn set_history_sync_state(&self, new_state: HistorySyncState) {

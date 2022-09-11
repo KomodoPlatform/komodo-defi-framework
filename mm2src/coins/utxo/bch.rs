@@ -7,7 +7,7 @@ use crate::utxo::slp::{parse_slp_script, ParseSlpScriptError, SlpGenesisParams, 
                        SlpUnspent};
 use crate::utxo::utxo_builder::{UtxoArcBuilder, UtxoCoinBuilder};
 use crate::utxo::utxo_common::big_decimal_from_sat_unsigned;
-use crate::utxo::utxo_tx_history_v2::UtxoTxHistoryOps;
+use crate::utxo::utxo_tx_history_v2::{UtxoTxDetailsParams, UtxoTxHistoryOps};
 use crate::{BlockHeightAndTime, CanRefundHtlc, CoinBalance, CoinProtocol, CoinWithDerivationMethod,
             NegotiateSwapContractAddrErr, PrivKeyBuildPolicy, RawTransactionFut, RawTransactionRequest,
             SearchForSwapTxSpendInput, SignatureResult, SwapOps, TradePreimageValue, TransactionFut, TransactionType,
@@ -403,14 +403,18 @@ impl BchCoin {
     /// Returns multiple details by tx hash if token transfers also occurred in the transaction
     pub async fn transaction_details_with_token_transfers<T: TxHistoryStorage>(
         &self,
-        tx_hash: &H256Json,
-        block_height_and_time: Option<BlockHeightAndTime>,
-        storage: &T,
+        params: UtxoTxDetailsParams<'_, T>,
     ) -> Result<Vec<TransactionDetails>, MmError<GetTxDetailsError<T::Error>>> {
-        let tx = self.tx_from_storage_or_rpc(tx_hash, storage).await?;
+        let tx = self.tx_from_storage_or_rpc(params.hash, params.storage).await?;
 
         let bch_tx_details = self
-            .bch_tx_details(tx_hash, &tx, block_height_and_time, storage)
+            .bch_tx_details(
+                params.hash,
+                &tx,
+                params.block_height_and_time,
+                params.storage,
+                params.my_addresses,
+            )
             .await?;
         let maybe_op_return: Script = tx.outputs[0].script_pubkey.clone().into();
         if !(maybe_op_return.is_pay_to_public_key_hash()
@@ -422,9 +426,10 @@ impl BchCoin {
                     .slp_tx_details(
                         &tx,
                         slp_details.transaction,
-                        block_height_and_time,
+                        params.block_height_and_time,
                         bch_tx_details.fee_details.clone(),
-                        storage,
+                        params.storage,
+                        params.my_addresses,
                     )
                     .await?;
                 return Ok(vec![bch_tx_details, slp_tx_details]);
@@ -440,10 +445,9 @@ impl BchCoin {
         tx: &UtxoTx,
         height_and_time: Option<BlockHeightAndTime>,
         storage: &T,
+        my_addresses: &HashSet<Address>,
     ) -> Result<TransactionDetails, MmError<GetTxDetailsError<T::Error>>> {
-        let my_address = self.as_ref().derivation_method.iguana_or_err()?;
-        let my_addresses = [my_address.clone()];
-        let mut tx_builder = TxDetailsBuilder::new(self.ticker().to_owned(), tx, height_and_time, my_addresses);
+        let mut tx_builder = TxDetailsBuilder::new(self.ticker().to_owned(), tx, height_and_time, my_addresses.clone());
         for output in &tx.outputs {
             let addresses = match self.addresses_from_script(&output.script_pubkey.clone().into()) {
                 Ok(a) => a,
@@ -585,20 +589,21 @@ impl BchCoin {
         height_and_time: Option<BlockHeightAndTime>,
         tx_fee: Option<TxFeeDetails>,
         storage: &Storage,
+        my_addresses: &HashSet<Address>,
     ) -> Result<TransactionDetails, MmError<GetTxDetailsError<Storage::Error>>> {
         let token_id = match slp_tx.token_id() {
             Some(id) => id,
             None => tx.hash().reversed(),
         };
 
-        let my_address = self.as_ref().derivation_method.iguana_or_err()?;
-        let slp_address = self
-            .slp_address(my_address)
+        let slp_addresses: Vec<_> = my_addresses
+            .iter()
+            .map(|addr| self.slp_address(addr))
+            .collect::<Result<_, _>>()
             .map_to_mm(GetTxDetailsError::ToSlpAddressError)?;
-        let addresses = [slp_address];
 
         let mut slp_tx_details_builder =
-            TxDetailsBuilder::new(self.ticker().to_owned(), tx, height_and_time, addresses);
+            TxDetailsBuilder::new(self.ticker().to_owned(), tx, height_and_time, slp_addresses);
         let slp_transferred_amounts = self.slp_transferred_amounts(tx, slp_tx, storage).await?;
         for (_, (address, amount)) in slp_transferred_amounts {
             slp_tx_details_builder.transferred_to(address, &amount);
@@ -1255,16 +1260,17 @@ impl CoinWithTxHistoryV2 for BchCoin {
 
 #[async_trait]
 impl UtxoTxHistoryOps for BchCoin {
-    async fn tx_details_by_hash<T>(
-        &self,
-        hash: &H256Json,
-        block_height_and_time: Option<BlockHeightAndTime>,
-        storage: &T,
-    ) -> Result<Vec<TransactionDetails>, String>
+    async fn my_addresses(&self) -> Result<HashSet<Address>, String> {
+        // TODO return a corresponding error instead of `String`.
+        let my_address = try_s!(self.as_ref().derivation_method.iguana_or_err());
+        Ok(std::iter::once(my_address.clone()).collect())
+    }
+
+    async fn tx_details_by_hash<T>(&self, params: UtxoTxDetailsParams<'_, T>) -> Result<Vec<TransactionDetails>, String>
     where
         T: TxHistoryStorage,
     {
-        self.transaction_details_with_token_transfers(hash, block_height_and_time, storage)
+        self.transaction_details_with_token_transfers(params)
             .await
             .map_err(|e| format!("{:?}", e))
     }
@@ -1386,7 +1392,8 @@ mod bch_tests {
         let hash = "a8dcc3c6776e93e7bd21fb81551e853447c55e2d8ac141b418583bc8095ce390".into();
         let tx = block_on(coin.tx_from_storage_or_rpc(&hash, &storage)).unwrap();
 
-        let details = block_on(coin.bch_tx_details(&hash, &tx, None, &storage)).unwrap();
+        let my_addresses = block_on(coin.my_addresses()).unwrap();
+        let details = block_on(coin.bch_tx_details(&hash, &tx, None, &storage, &my_addresses)).unwrap();
         let expected_total: BigDecimal = "0.11407782".parse().unwrap();
         assert_eq!(expected_total, details.total_amount);
 
@@ -1430,7 +1437,9 @@ mod bch_tests {
 
         let slp_details = parse_slp_script(&tx.outputs[0].script_pubkey).unwrap();
 
-        let slp_tx_details = block_on(coin.slp_tx_details(&tx, slp_details.transaction, None, None, &storage)).unwrap();
+        let my_addresses = block_on(coin.my_addresses()).unwrap();
+        let slp_tx_details =
+            block_on(coin.slp_tx_details(&tx, slp_details.transaction, None, None, &storage, &my_addresses)).unwrap();
 
         let expected_total: BigDecimal = "6.2974".parse().unwrap();
         assert_eq!(expected_total, slp_tx_details.total_amount);

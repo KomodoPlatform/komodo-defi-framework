@@ -18,6 +18,8 @@ use mm2_number::BigDecimal;
 use std::collections::{HashMap, HashSet};
 use std::iter;
 
+fn pass_through<T>(t: T) -> T { t }
+
 /// [`CoinWithTxHistoryV2::history_wallet_id`] implementation.
 pub fn history_wallet_id(coin: &UtxoCoinFields) -> WalletId { WalletId::new(coin.conf.ticker.clone()) }
 
@@ -107,6 +109,14 @@ where
 
     let hd_address = coin.derive_address(&hd_account, hd_address_id.chain, hd_address_id.address_id)?;
     Ok(GetTxHistoryFilters::for_address(hd_address.address.display_address()))
+}
+
+pub async fn my_addresses<Coin>(coin: &Coin) -> Result<HashSet<Address>, String>
+where
+    Coin: HDWalletCoinOps<Address = Address, HDAccount = UtxoHDAccount> + UtxoCommonOps,
+{
+    // TODO return a corresponding error instead of `String`.
+    Ok(try_s!(get_tx_addresses_mapped(coin, pass_through).await))
 }
 
 /// [`UtxoTxHistoryOps::get_addresses_balances`] implementation.
@@ -208,10 +218,11 @@ where
         Ok(hashes) => hashes,
         Err(e) => return RequestTxHistoryResult::CriticalError(e.to_string()),
     };
+    let script_hashes_count = script_hashes.len() as u64;
 
     let ticker = coin.ticker();
 
-    mm_counter!(metrics, "tx.history.request.count", script_hashes.len(),
+    mm_counter!(metrics, "tx.history.request.count", script_hashes_count,
         "coin" => ticker, "client" => "electrum", "method" => "blockchain.scripthash.get_history");
 
     let hashes_history = match electrum.scripthash_get_history_batch(script_hashes).compat().await {
@@ -249,7 +260,7 @@ where
         })
         .collect();
 
-    mm_counter!(metrics, "tx.history.response.count", script_hashes.len(),
+    mm_counter!(metrics, "tx.history.response.count", script_hashes_count,
         "coin" => ticker, "client" => "electrum", "method" => "blockchain.scripthash.get_history");
 
     mm_counter!(metrics, "tx.history.response.total_length", ordered_history.len() as u64,

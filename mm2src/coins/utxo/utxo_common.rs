@@ -52,7 +52,7 @@ use utxo_signer::UtxoSignerOps;
 
 pub use chain::Transaction as UtxoTx;
 
-pub mod utxo_tx_history_common;
+pub mod utxo_tx_history_v2_common;
 
 pub const DEFAULT_FEE_VOUT: usize = 0;
 pub const DEFAULT_SWAP_TX_SPEND_SIZE: u64 = 305;
