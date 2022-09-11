@@ -7,8 +7,8 @@ use crate::utxo::slp::{parse_slp_script, ParseSlpScriptError, SlpGenesisParams, 
                        SlpUnspent};
 use crate::utxo::utxo_builder::{UtxoArcBuilder, UtxoCoinBuilder};
 use crate::utxo::utxo_common::big_decimal_from_sat_unsigned;
-use crate::utxo::utxo_tx_history_v2::{UtxoTxDetailsError, UtxoTxDetailsParams, UtxoTxHistoryOps,
-                                      UtxoMyAddressesHistoryError};
+use crate::utxo::utxo_tx_history_v2::{UtxoMyAddressesHistoryError, UtxoTxDetailsError, UtxoTxDetailsParams,
+                                      UtxoTxHistoryOps};
 use crate::{BlockHeightAndTime, CanRefundHtlc, CoinBalance, CoinProtocol, CoinWithDerivationMethod,
             NegotiateSwapContractAddrErr, PrivKeyBuildPolicy, RawTransactionFut, RawTransactionRequest,
             SearchForSwapTxSpendInput, SignatureResult, SwapOps, TradePreimageValue, TransactionFut, TransactionType,
