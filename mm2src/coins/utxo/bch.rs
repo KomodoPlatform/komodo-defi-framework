@@ -7,7 +7,7 @@ use crate::utxo::slp::{parse_slp_script, ParseSlpScriptError, SlpGenesisParams, 
                        SlpUnspent};
 use crate::utxo::utxo_builder::{UtxoArcBuilder, UtxoCoinBuilder};
 use crate::utxo::utxo_common::big_decimal_from_sat_unsigned;
-use crate::utxo::utxo_tx_history_v2::{UtxoTxDetailsParams, UtxoTxHistoryOps};
+use crate::utxo::utxo_tx_history_v2::{UtxoTxDetailsError, UtxoTxDetailsParams, UtxoTxHistoryOps};
 use crate::{BlockHeightAndTime, CanRefundHtlc, CoinBalance, CoinProtocol, CoinWithDerivationMethod,
             NegotiateSwapContractAddrErr, PrivKeyBuildPolicy, RawTransactionFut, RawTransactionRequest,
             SearchForSwapTxSpendInput, SignatureResult, SwapOps, TradePreimageValue, TransactionFut, TransactionType,
@@ -154,7 +154,6 @@ pub enum GetTxDetailsError<E: TxHistoryStorageError> {
     ParseSlpScriptError(ParseSlpScriptError),
     ToSlpAddressError(String),
     InvalidSlpTransaction(H256),
-    AddressDerivationError(UnexpectedDerivationMethod),
 }
 
 impl<E: TxHistoryStorageError> From<UtxoRpcError> for GetTxDetailsError<E> {
@@ -173,8 +172,21 @@ impl<E: TxHistoryStorageError> From<ParseSlpScriptError> for GetTxDetailsError<E
     fn from(err: ParseSlpScriptError) -> Self { GetTxDetailsError::ParseSlpScriptError(err) }
 }
 
-impl<E: TxHistoryStorageError> From<UnexpectedDerivationMethod> for GetTxDetailsError<E> {
-    fn from(err: UnexpectedDerivationMethod) -> Self { GetTxDetailsError::AddressDerivationError(err) }
+impl<E: TxHistoryStorageError> From<GetTxDetailsError<E>> for UtxoTxDetailsError {
+    fn from(e: GetTxDetailsError<E>) -> Self {
+        match e {
+            GetTxDetailsError::StorageError(storage) => UtxoTxDetailsError::from(storage),
+            GetTxDetailsError::AddressesFromScriptError(addr) | GetTxDetailsError::ToSlpAddressError(addr) => {
+                UtxoTxDetailsError::TxAddressDeserializationError(addr)
+            },
+            GetTxDetailsError::SlpTokenIdIsNotGenesisTx(_) | GetTxDetailsError::InvalidSlpTransaction(_) => {
+                UtxoTxDetailsError::InvalidTransaction(format!("{e:?}"))
+            },
+            GetTxDetailsError::TxDeserializationError(ser) => UtxoTxDetailsError::TxDeserializationError(ser),
+            GetTxDetailsError::RpcError(rpc) => UtxoTxDetailsError::RpcError(rpc),
+            GetTxDetailsError::ParseSlpScriptError(parse) => UtxoTxDetailsError::InvalidTransaction(parse.to_string()),
+        }
+    }
 }
 
 impl BchCoin {
@@ -1269,20 +1281,18 @@ impl UtxoTxHistoryOps for BchCoin {
     async fn tx_details_by_hash<Storage>(
         &self,
         params: UtxoTxDetailsParams<'_, Storage>,
-    ) -> Result<Vec<TransactionDetails>, String>
+    ) -> MmResult<Vec<TransactionDetails>, UtxoTxDetailsError>
     where
         Storage: TxHistoryStorage,
     {
-        self.transaction_details_with_token_transfers(params)
-            .await
-            .map_err(|e| format!("{:?}", e))
+        Ok(self.transaction_details_with_token_transfers(params).await?)
     }
 
     async fn tx_from_storage_or_rpc<Storage: TxHistoryStorage>(
         &self,
         tx_hash: &H256Json,
         storage: &Storage,
-    ) -> Result<UtxoTx, String> {
+    ) -> MmResult<UtxoTx, UtxoTxDetailsError> {
         utxo_common::utxo_tx_history_v2_common::tx_from_storage_or_rpc(self, tx_hash, storage).await
     }
 

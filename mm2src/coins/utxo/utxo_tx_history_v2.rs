@@ -1,15 +1,16 @@
 /// This module is named bch_and_slp_tx_history temporary. We will most likely use the same approach for every
 /// supported UTXO coin.
 use super::RequestTxHistoryResult;
-use crate::my_tx_history_v2::{CoinWithTxHistoryV2, TxHistoryStorage};
+use crate::my_tx_history_v2::{CoinWithTxHistoryV2, TxHistoryStorage, TxHistoryStorageError};
 use crate::utxo::bch::BchCoin;
 use crate::utxo::utxo_common;
-use crate::{BalanceResult, BlockHeightAndTime, HistorySyncState, MarketCoinOps, TransactionDetails, UtxoRpcError,
-            UtxoTx};
+use crate::{BalanceResult, BlockHeightAndTime, HistorySyncState, MarketCoinOps, NumConversError, ParseBigDecimalError,
+            TransactionDetails, UtxoRpcError, UtxoTx};
 use async_trait::async_trait;
 use common::executor::Timer;
 use common::log::{error, info};
 use common::state_machine::prelude::*;
+use derive_more::Display;
 use keys::Address;
 use mm2_err_handle::prelude::*;
 use mm2_metrics::MetricsArc;
@@ -17,6 +18,46 @@ use mm2_number::BigDecimal;
 use rpc::v1::types::H256 as H256Json;
 use std::collections::{hash_map::Entry, HashMap, HashSet};
 use std::str::FromStr;
+
+#[allow(clippy::large_enum_variant)]
+#[derive(Display)]
+pub enum UtxoTxDetailsError {
+    #[display(fmt = "Storage error: {}", _0)]
+    StorageError(String),
+    #[display(fmt = "Transaction deserialization error: {}", _0)]
+    TxDeserializationError(serialization::Error),
+    #[display(fmt = "Invalid transaction: {}", _0)]
+    InvalidTransaction(String),
+    #[display(fmt = "TX Address deserialization error: {}", _0)]
+    TxAddressDeserializationError(String),
+    #[display(fmt = "{}", _0)]
+    NumConversionErr(NumConversError),
+    #[display(fmt = "RPC error: {}", _0)]
+    RpcError(UtxoRpcError),
+}
+
+impl From<serialization::Error> for UtxoTxDetailsError {
+    fn from(e: serialization::Error) -> Self { UtxoTxDetailsError::TxDeserializationError(e) }
+}
+
+impl From<UtxoRpcError> for UtxoTxDetailsError {
+    fn from(e: UtxoRpcError) -> Self { UtxoTxDetailsError::RpcError(e) }
+}
+
+impl From<NumConversError> for UtxoTxDetailsError {
+    fn from(e: NumConversError) -> Self { UtxoTxDetailsError::NumConversionErr(e) }
+}
+
+impl From<ParseBigDecimalError> for UtxoTxDetailsError {
+    fn from(e: ParseBigDecimalError) -> Self { UtxoTxDetailsError::from(NumConversError::from(e)) }
+}
+
+impl<StorageErr> From<StorageErr> for UtxoTxDetailsError
+where
+    StorageErr: TxHistoryStorageError,
+{
+    fn from(e: StorageErr) -> Self { UtxoTxDetailsError::StorageError(format!("{:?}", e)) }
+}
 
 pub struct UtxoTxDetailsParams<'a, Storage> {
     pub hash: &'a H256Json,
@@ -32,27 +73,20 @@ pub trait UtxoTxHistoryOps: CoinWithTxHistoryV2 + MarketCoinOps + Send + Sync + 
     /// Consider returning a specific error.
     async fn my_addresses(&self) -> Result<HashSet<Address>, String>;
 
-    /// Gets tx details by hash requesting the coin RPC if required.
-    ///
-    /// # Todo
-    ///
-    /// Consider returning a specific error.
-    /// In the meantime, return the string as an error since we just output it to the log.
+    /// Returns Transaction details by hash using the coin RPC if required.
     async fn tx_details_by_hash<T>(
         &self,
         params: UtxoTxDetailsParams<'_, T>,
-    ) -> Result<Vec<TransactionDetails>, String>
+    ) -> MmResult<Vec<TransactionDetails>, UtxoTxDetailsError>
     where
         T: TxHistoryStorage;
 
-    /// # Todo
-    ///
-    /// Consider returning a specific error.
+    /// Loads transaction from `storage` or requests it using coin RPC.
     async fn tx_from_storage_or_rpc<Storage: TxHistoryStorage>(
         &self,
         tx_hash: &H256Json,
         storage: &Storage,
-    ) -> Result<UtxoTx, String>;
+    ) -> MmResult<UtxoTx, UtxoTxDetailsError>;
 
     /// Requests transaction history.
     async fn request_tx_history(&self, metrics: MetricsArc) -> RequestTxHistoryResult;
@@ -372,7 +406,9 @@ where
     type Result = ();
 
     async fn on_changed(self: Box<Self>, ctx: &mut Self::Ctx) -> StateResult<Self::Ctx, Self::Result> {
+        let ticker = ctx.coin.ticker();
         let wallet_id = ctx.coin.history_wallet_id();
+
         let my_addresses = match ctx.coin.my_addresses().await {
             Ok(addresses) => addresses,
             Err(e) => return Self::change_state(Stopped::unknown(format!("Error on getting my addresses: {e}"))),
@@ -404,12 +440,7 @@ where
             let tx_details = match ctx.coin.tx_details_by_hash(params).await {
                 Ok(tx) => tx,
                 Err(e) => {
-                    error!(
-                        "Error {:?} on getting {} tx details for hash {:02x}",
-                        e,
-                        ctx.coin.ticker(),
-                        tx_hash
-                    );
+                    error!("Error on getting {ticker} tx details for hash {tx_hash:02x}: {e}");
                     return Self::change_state(OnIoErrorCooldown::new());
                 },
             };
@@ -421,7 +452,7 @@ where
             // wait for for one second to reduce the number of requests to electrum servers
             Timer::sleep(1.).await;
         }
-        info!("Tx history fetching finished for {}", ctx.coin.ticker());
+        info!("Tx history fetching finished for {ticker}");
         ctx.coin.set_history_sync_state(HistorySyncState::Finished);
         Self::change_state(WaitForHistoryUpdateTrigger::new())
     }

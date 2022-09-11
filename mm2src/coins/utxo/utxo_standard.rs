@@ -15,7 +15,7 @@ use crate::rpc_command::init_scan_for_new_addresses::{self, InitScanAddressesRpc
 use crate::rpc_command::init_withdraw::{InitWithdrawCoin, WithdrawTaskHandle};
 use crate::tx_history_storage::{GetTxHistoryFilters, WalletId};
 use crate::utxo::utxo_builder::{UtxoArcBuilder, UtxoCoinBuilder};
-use crate::utxo::utxo_tx_history_v2::{UtxoTxDetailsParams, UtxoTxHistoryOps};
+use crate::utxo::utxo_tx_history_v2::{UtxoTxDetailsError, UtxoTxDetailsParams, UtxoTxHistoryOps};
 use crate::{CanRefundHtlc, CoinBalance, CoinWithDerivationMethod, GetWithdrawSenderAddress,
             NegotiateSwapContractAddrErr, PrivKeyBuildPolicy, SearchForSwapTxSpendInput, SignatureResult, SwapOps,
             TradePreimageValue, TransactionFut, TxMarshalingErr, ValidateAddressResult, ValidatePaymentInput,
@@ -859,7 +859,7 @@ impl UtxoTxHistoryOps for UtxoStandardCoin {
     async fn tx_details_by_hash<Storage>(
         &self,
         params: UtxoTxDetailsParams<'_, Storage>,
-    ) -> Result<Vec<TransactionDetails>, String>
+    ) -> MmResult<Vec<TransactionDetails>, UtxoTxDetailsError>
     where
         Storage: TxHistoryStorage,
     {
@@ -870,7 +870,7 @@ impl UtxoTxHistoryOps for UtxoStandardCoin {
         &self,
         tx_hash: &H256Json,
         storage: &Storage,
-    ) -> Result<UtxoTx, String> {
+    ) -> MmResult<UtxoTx, UtxoTxDetailsError> {
         utxo_common::utxo_tx_history_v2_common::tx_from_storage_or_rpc(self, tx_hash, storage).await
     }
 

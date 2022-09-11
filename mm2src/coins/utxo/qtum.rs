@@ -17,7 +17,7 @@ use crate::tx_history_storage::{GetTxHistoryFilters, WalletId};
 use crate::utxo::utxo_builder::{BlockHeaderUtxoArcOps, MergeUtxoArcOps, UtxoCoinBuildError, UtxoCoinBuilder,
                                 UtxoCoinBuilderCommonOps, UtxoFieldsWithHardwareWalletBuilder,
                                 UtxoFieldsWithIguanaPrivKeyBuilder};
-use crate::utxo::utxo_tx_history_v2::{UtxoTxDetailsParams, UtxoTxHistoryOps};
+use crate::utxo::utxo_tx_history_v2::{UtxoTxDetailsError, UtxoTxDetailsParams, UtxoTxHistoryOps};
 use crate::{eth, CanRefundHtlc, CoinBalance, CoinWithDerivationMethod, DelegationError, DelegationFut,
             GetWithdrawSenderAddress, NegotiateSwapContractAddrErr, PrivKeyBuildPolicy, SearchForSwapTxSpendInput,
             SignatureResult, StakingInfosFut, SwapOps, TradePreimageValue, TransactionFut, TxMarshalingErr,
@@ -1104,7 +1104,7 @@ impl UtxoTxHistoryOps for QtumCoin {
     async fn tx_details_by_hash<Storage>(
         &self,
         params: UtxoTxDetailsParams<'_, Storage>,
-    ) -> Result<Vec<TransactionDetails>, String>
+    ) -> MmResult<Vec<TransactionDetails>, UtxoTxDetailsError>
     where
         Storage: TxHistoryStorage,
     {
@@ -1115,7 +1115,7 @@ impl UtxoTxHistoryOps for QtumCoin {
         &self,
         tx_hash: &H256Json,
         storage: &Storage,
-    ) -> Result<UtxoTx, String> {
+    ) -> MmResult<UtxoTx, UtxoTxDetailsError> {
         utxo_common::utxo_tx_history_v2_common::tx_from_storage_or_rpc(self, tx_hash, storage).await
     }
 

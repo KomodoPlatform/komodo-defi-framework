@@ -5,7 +5,7 @@ use crate::my_tx_history_v2::{CoinWithTxHistoryV2, DisplayAddress, MyTxHistoryEr
 use crate::tx_history_storage::{GetTxHistoryFilters, WalletId};
 use crate::utxo::rpc_clients::{electrum_script_hash, ElectrumClient, NativeClient, UtxoRpcClientEnum};
 use crate::utxo::utxo_common::{big_decimal_from_sat, HISTORY_TOO_LARGE_ERROR};
-use crate::utxo::utxo_tx_history_v2::{UtxoTxDetailsParams, UtxoTxHistoryOps};
+use crate::utxo::utxo_tx_history_v2::{UtxoTxDetailsError, UtxoTxDetailsParams, UtxoTxHistoryOps};
 use crate::utxo::{output_script, RequestTxHistoryResult, UtxoCoinFields, UtxoCommonOps, UtxoHDAccount};
 use crate::{big_decimal_from_sat_unsigned, compare_transactions, BalanceResult, CoinWithDerivationMethod,
             DerivationMethod, HDAddressId, MarketCoinOps, TransactionDetails, TxFeeDetails, TxIdHeight,
@@ -129,7 +129,7 @@ where
 pub async fn tx_details_by_hash<Coin, Storage>(
     coin: &Coin,
     params: UtxoTxDetailsParams<'_, Storage>,
-) -> Result<Vec<TransactionDetails>, String>
+) -> MmResult<Vec<TransactionDetails>, UtxoTxDetailsError>
 where
     Coin: UtxoTxHistoryOps + UtxoCommonOps + MarketCoinOps,
     Storage: TxHistoryStorage,
@@ -137,14 +137,13 @@ where
     let ticker = coin.ticker();
     let decimals = coin.as_ref().decimals;
 
-    let verbose_tx = try_s!(
-        coin.as_ref()
-            .rpc_client
-            .get_verbose_transaction(params.hash)
-            .compat()
-            .await
-    );
-    let tx: UtxoTx = try_s!(deserialize(verbose_tx.hex.as_slice()).map_err(|e| ERRL!("{:?}", e)));
+    let verbose_tx = coin
+        .as_ref()
+        .rpc_client
+        .get_verbose_transaction(params.hash)
+        .compat()
+        .await?;
+    let tx: UtxoTx = deserialize(verbose_tx.hex.as_slice())?;
 
     let mut tx_builder = TxDetailsBuilder::new(
         ticker.to_string(),
@@ -164,7 +163,7 @@ where
 
         let prev_tx_hash: H256Json = input.previous_output.hash.reversed().into();
 
-        let prev_tx = try_s!(coin.tx_from_storage_or_rpc(&prev_tx_hash, params.storage).await);
+        let prev_tx = coin.tx_from_storage_or_rpc(&prev_tx_hash, params.storage).await?;
 
         let prev_output_index = input.previous_output.index as usize;
         let prev_tx_value = prev_tx.outputs[prev_output_index].value;
@@ -173,14 +172,19 @@ where
         input_amount += prev_tx_value;
         let amount = big_decimal_from_sat_unsigned(prev_tx_value, decimals);
 
-        let from: Vec<Address> = try_s!(coin.addresses_from_script(&prev_script));
+        let from: Vec<Address> = coin
+            .addresses_from_script(&prev_script)
+            .map_to_mm(UtxoTxDetailsError::TxAddressDeserializationError)?;
         for address in from {
             tx_builder.transferred_from(address, &amount);
         }
     }
 
     for output in tx.outputs.iter() {
-        let to = try_s!(coin.addresses_from_script(&output.script_pubkey.clone().into()));
+        let output_script = output.script_pubkey.clone().into();
+        let to = coin
+            .addresses_from_script(&output_script)
+            .map_to_mm(UtxoTxDetailsError::TxAddressDeserializationError)?;
         if to.is_empty() {
             continue;
         }
@@ -200,7 +204,7 @@ where
             };
             cur + fee
         });
-        try_s!(BigDecimal::try_from(fee))
+        BigDecimal::try_from(fee)?
     } else {
         let fee = input_amount as i64 - output_amount as i64;
         big_decimal_from_sat(fee, decimals)
@@ -220,29 +224,22 @@ pub async fn tx_from_storage_or_rpc<Coin, Storage>(
     coin: &Coin,
     tx_hash: &H256Json,
     storage: &Storage,
-) -> Result<UtxoTx, String>
+) -> MmResult<UtxoTx, UtxoTxDetailsError>
 where
     Coin: CoinWithTxHistoryV2 + UtxoCommonOps,
     Storage: TxHistoryStorage,
 {
     let tx_hash_str = format!("{:02x}", tx_hash);
     let wallet_id = coin.history_wallet_id();
-    let tx_bytes = match storage
-        .tx_bytes_from_cache(&wallet_id, &tx_hash_str)
-        .await
-        .map_err(|e| ERRL!("{:?}", e))?
-    {
+    let tx_bytes = match storage.tx_bytes_from_cache(&wallet_id, &tx_hash_str).await? {
         Some(tx_bytes) => tx_bytes,
         None => {
-            let tx_bytes = try_s!(coin.as_ref().rpc_client.get_transaction_bytes(tx_hash).compat().await);
-            storage
-                .add_tx_to_cache(&wallet_id, &tx_hash_str, &tx_bytes)
-                .await
-                .map_err(|e| ERRL!("{:?}", e))?;
+            let tx_bytes = coin.as_ref().rpc_client.get_transaction_bytes(tx_hash).compat().await?;
+            storage.add_tx_to_cache(&wallet_id, &tx_hash_str, &tx_bytes).await?;
             tx_bytes
         },
     };
-    let tx = try_s!(deserialize(tx_bytes.0.as_slice()));
+    let tx = deserialize(tx_bytes.0.as_slice())?;
     Ok(tx)
 }
 
