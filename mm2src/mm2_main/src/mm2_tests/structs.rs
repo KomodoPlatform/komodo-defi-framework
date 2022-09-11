@@ -577,7 +577,7 @@ pub struct IguanaWalletBalance {
     pub balance: CoinBalance,
 }
 
-#[derive(Debug, Deserialize)]
+#[derive(Clone, Debug, Deserialize, Serialize)]
 pub enum Bip44Chain {
     External = 0,
     Internal = 1,
