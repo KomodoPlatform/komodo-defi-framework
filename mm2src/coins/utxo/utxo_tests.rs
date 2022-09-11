@@ -2,6 +2,8 @@ use super::*;
 use crate::coin_balance::HDAddressBalance;
 use crate::hd_wallet::HDAccountsMap;
 use crate::hd_wallet_storage::{HDWalletMockStorage, HDWalletStorageInternalOps};
+use crate::my_tx_history_v2::for_tests::init_storage_for;
+use crate::my_tx_history_v2::CoinWithTxHistoryV2;
 use crate::rpc_command::account_balance::{AccountBalanceParams, AccountBalanceRpcOps, HDAccountBalanceResponse};
 use crate::rpc_command::init_scan_for_new_addresses::{InitScanAddressesRpcOps, ScanAddressesParams,
                                                       ScanAddressesResponse};
@@ -17,9 +19,10 @@ use crate::utxo::utxo_builder::{UtxoArcBuilder, UtxoCoinBuilderCommonOps};
 use crate::utxo::utxo_common::UtxoTxBuilder;
 use crate::utxo::utxo_common_tests;
 use crate::utxo::utxo_standard::{utxo_standard_coin_with_priv_key, UtxoStandardCoin};
+use crate::utxo::utxo_tx_history_v2::{UtxoTxDetailsParams, UtxoTxHistoryOps};
 #[cfg(not(target_arch = "wasm32"))] use crate::WithdrawFee;
-use crate::{CoinBalance, PrivKeyBuildPolicy, SearchForSwapTxSpendInput, StakingInfosDetails, SwapOps,
-            TradePreimageValue, TxFeeDetails, TxMarshalingErr};
+use crate::{BlockHeightAndTime, CoinBalance, PrivKeyBuildPolicy, SearchForSwapTxSpendInput, StakingInfosDetails,
+            SwapOps, TradePreimageValue, TxFeeDetails, TxMarshalingErr};
 use chain::OutPoint;
 use common::executor::Timer;
 use common::{block_on, now_ms, OrdRange, PagingOptionsEnum, DEX_FEE_ADDR_RAW_PUBKEY};
@@ -179,6 +182,51 @@ fn utxo_coin_for_test(
     is_segwit_coin: bool,
 ) -> UtxoStandardCoin {
     utxo_coin_from_fields(utxo_coin_fields_for_test(rpc_client, force_seed, is_segwit_coin))
+}
+
+/// Returns `TransactionDetails` of the given `tx_hash` via [`UtxoStandardOps::tx_details_by_hash`].
+#[track_caller]
+fn get_tx_details_by_hash<Coin: UtxoStandardOps>(coin: &Coin, tx_hash: &str) -> TransactionDetails {
+    let hash = hex::decode(tx_hash).unwrap();
+    let mut input_transactions = HistoryUtxoTxMap::new();
+
+    block_on(UtxoStandardOps::tx_details_by_hash(
+        coin,
+        &hash,
+        &mut input_transactions,
+    ))
+    .unwrap()
+}
+
+/// Returns `TransactionDetails` of the given `tx_hash` via [`UtxoTxHistoryOps::tx_details_by_hash`].
+fn get_tx_details_by_hash_v2<Coin>(coin: &Coin, tx_hash: &str, height: u64, timestamp: u64) -> Vec<TransactionDetails>
+where
+    Coin: CoinWithTxHistoryV2 + UtxoTxHistoryOps,
+{
+    let my_addresses = block_on(coin.my_addresses()).unwrap();
+    let (_ctx, storage) = init_storage_for(coin);
+    let params = UtxoTxDetailsParams {
+        hash: &hex::decode(tx_hash).unwrap().as_slice().into(),
+        block_height_and_time: Some(BlockHeightAndTime { height, timestamp }),
+        storage: &storage,
+        my_addresses: &my_addresses,
+    };
+
+    block_on(UtxoTxHistoryOps::tx_details_by_hash(coin, params)).unwrap()
+}
+
+/// Returns `TransactionDetails` of the given `tx_hash` and checks that
+/// [`UtxoTxHistoryOps::tx_details_by_hash`] and [`UtxoStandardOps::tx_details_by_hash`] return the same TX details.
+#[track_caller]
+fn get_tx_details_eq_for_both_versions<Coin>(coin: &Coin, tx_hash: &str) -> TransactionDetails
+where
+    Coin: CoinWithTxHistoryV2 + UtxoTxHistoryOps + UtxoStandardOps,
+{
+    let tx_details_v1 = get_tx_details_by_hash(coin, tx_hash);
+    let tx_details_v2 = get_tx_details_by_hash_v2(coin, tx_hash, tx_details_v1.block_height, tx_details_v1.timestamp);
+
+    assert_eq!(vec![tx_details_v1.clone()], tx_details_v2);
+    tx_details_v1
 }
 
 #[test]
@@ -971,6 +1019,10 @@ fn list_since_block_btc_serde() {
 #[test]
 // https://github.com/KomodoPlatform/atomicDEX-API/issues/587
 fn get_tx_details_coinbase_transaction() {
+    /// Hash of coinbase transaction
+    /// https://morty.explorer.dexstats.info/tx/b59b093ed97c1798f2a88ee3375a0c11d0822b6e4468478777f899891abd34a5
+    const TX_HASH: &str = "b59b093ed97c1798f2a88ee3375a0c11d0822b6e4468478777f899891abd34a5";
+
     let client = electrum_client_for_test(&[
         "electrum1.cipig.net:10018",
         "electrum2.cipig.net:10018",
@@ -982,16 +1034,8 @@ fn get_tx_details_coinbase_transaction() {
         false,
     );
 
-    let fut = async move {
-        // hash of coinbase transaction https://morty.explorer.dexstats.info/tx/b59b093ed97c1798f2a88ee3375a0c11d0822b6e4468478777f899891abd34a5
-        let hash = hex::decode("b59b093ed97c1798f2a88ee3375a0c11d0822b6e4468478777f899891abd34a5").unwrap();
-
-        let mut input_transactions = HistoryUtxoTxMap::new();
-        let tx_details = coin.tx_details_by_hash(&hash, &mut input_transactions).await.unwrap();
-        assert!(tx_details.from.is_empty());
-    };
-
-    block_on(fut);
+    let tx_details = get_tx_details_eq_for_both_versions(&coin, TX_HASH);
+    assert!(tx_details.from.is_empty());
 }
 
 #[test]
@@ -1333,6 +1377,8 @@ fn test_get_median_time_past_from_native_does_not_have_median_in_get_block() {
 
 #[test]
 fn test_cashaddresses_in_tx_details_by_hash() {
+    const TX_HASH: &str = "0f2f6e0c8f440c641895023782783426c3aca1acc78d7c0db7751995e8aa5751";
+
     let conf = json!({
         "coin": "BCH",
         "pubtype": 0,
@@ -1359,23 +1405,17 @@ fn test_cashaddresses_in_tx_details_by_hash() {
     ))
     .unwrap();
 
-    let hash = hex::decode("0f2f6e0c8f440c641895023782783426c3aca1acc78d7c0db7751995e8aa5751").unwrap();
-    let fut = async {
-        let mut input_transactions = HistoryUtxoTxMap::new();
-        let tx_details = coin.tx_details_by_hash(&hash, &mut input_transactions).await.unwrap();
-        log!("{:?}", tx_details);
+    let tx_details = get_tx_details_eq_for_both_versions(&coin, TX_HASH);
+    log!("{:?}", tx_details);
 
-        assert!(tx_details
-            .from
-            .iter()
-            .any(|addr| addr == "bchtest:qze8g4gx3z428jjcxzpycpxl7ke7d947gca2a7n2la"));
-        assert!(tx_details
-            .to
-            .iter()
-            .any(|addr| addr == "bchtest:qr39na5d25wdeecgw3euh9fkd4ygvd4pnsury96597"));
-    };
-
-    block_on(fut);
+    assert!(tx_details
+        .from
+        .iter()
+        .any(|addr| addr == "bchtest:qze8g4gx3z428jjcxzpycpxl7ke7d947gca2a7n2la"));
+    assert!(tx_details
+        .to
+        .iter()
+        .any(|addr| addr == "bchtest:qr39na5d25wdeecgw3euh9fkd4ygvd4pnsury96597"));
 }
 
 #[test]
@@ -2635,10 +2675,11 @@ fn firo_lelantus_tx_details() {
         "electrumx03.firo.org:50001",
     ]);
     let coin = utxo_coin_for_test(electrum.into(), None, false);
-    let mut map = HashMap::new();
 
-    let tx_hash = hex::decode("ad812911f5cba3eab7c193b6cd7020ea02fb5c25634ae64959c3171a6bd5a74d").unwrap();
-    let tx_details = block_on(coin.tx_details_by_hash(&tx_hash, &mut map)).unwrap();
+    let tx_details = get_tx_details_eq_for_both_versions(
+        &coin,
+        "ad812911f5cba3eab7c193b6cd7020ea02fb5c25634ae64959c3171a6bd5a74d",
+    );
 
     let expected_fee = TxFeeDetails::Utxo(UtxoFeeDetails {
         coin: Some(TEST_COIN_NAME.into()),
@@ -2646,8 +2687,10 @@ fn firo_lelantus_tx_details() {
     });
     assert_eq!(Some(expected_fee), tx_details.fee_details);
 
-    let tx_hash = hex::decode("06ed4b75010edcf404a315be70903473f44050c978bc37fbcee90e0b49114ba8").unwrap();
-    let tx_details = block_on(coin.tx_details_by_hash(&tx_hash, &mut map)).unwrap();
+    let tx_details = get_tx_details_eq_for_both_versions(
+        &coin,
+        "06ed4b75010edcf404a315be70903473f44050c978bc37fbcee90e0b49114ba8",
+    );
 
     let expected_fee = TxFeeDetails::Utxo(UtxoFeeDetails {
         coin: Some(TEST_COIN_NAME.into()),
@@ -2869,9 +2912,10 @@ fn test_tx_details_kmd_rewards() {
     fields.derivation_method = DerivationMethod::Iguana(Address::from("RMGJ9tRST45RnwEKHPGgBLuY3moSYP7Mhk"));
     let coin = utxo_coin_from_fields(fields);
 
-    let mut input_transactions = HistoryUtxoTxMap::new();
-    let hash = hex::decode("535ffa3387d3fca14f4a4d373daf7edf00e463982755afce89bc8c48d8168024").unwrap();
-    let tx_details = block_on(coin.tx_details_by_hash(&hash, &mut input_transactions)).expect("!tx_details_by_hash");
+    let tx_details = get_tx_details_eq_for_both_versions(
+        &coin,
+        "535ffa3387d3fca14f4a4d373daf7edf00e463982755afce89bc8c48d8168024",
+    );
 
     let expected_fee = TxFeeDetails::Utxo(UtxoFeeDetails {
         coin: Some("KMD".into()),
@@ -2893,6 +2937,8 @@ fn test_tx_details_kmd_rewards() {
 #[ignore]
 #[cfg(not(target_arch = "wasm32"))]
 fn test_tx_details_kmd_rewards_claimed_by_other() {
+    const TX_HASH: &str = "f09e8894959e74c1e727ffa5a753a30bf2dc6d5d677cc1f24b7ee5bb64e32c7d";
+
     let electrum = electrum_client_for_test(&[
         "electrum1.cipig.net:10001",
         "electrum2.cipig.net:10001",
@@ -2903,9 +2949,7 @@ fn test_tx_details_kmd_rewards_claimed_by_other() {
     fields.derivation_method = DerivationMethod::Iguana(Address::from("RMGJ9tRST45RnwEKHPGgBLuY3moSYP7Mhk"));
     let coin = utxo_coin_from_fields(fields);
 
-    let mut input_transactions = HistoryUtxoTxMap::new();
-    let hash = hex::decode("f09e8894959e74c1e727ffa5a753a30bf2dc6d5d677cc1f24b7ee5bb64e32c7d").unwrap();
-    let tx_details = block_on(coin.tx_details_by_hash(&hash, &mut input_transactions)).expect("!tx_details_by_hash");
+    let tx_details = get_tx_details_eq_for_both_versions(&coin, TX_HASH);
 
     let expected_fee = TxFeeDetails::Utxo(UtxoFeeDetails {
         coin: Some("KMD".into()),
@@ -2922,6 +2966,8 @@ fn test_tx_details_kmd_rewards_claimed_by_other() {
 
 #[test]
 fn test_tx_details_bch_no_rewards() {
+    const TX_HASH: &str = "eb13d926f15cbb896e0bcc7a1a77a4ec63504e57a1524c13a7a9b80f43ecb05c";
+
     let electrum = electrum_client_for_test(&[
         "electroncash.de:50003",
         "tbch.loping.net:60001",
@@ -2931,10 +2977,7 @@ fn test_tx_details_bch_no_rewards() {
     ]);
     let coin = utxo_coin_for_test(electrum.into(), None, false);
 
-    let mut input_transactions = HistoryUtxoTxMap::new();
-    let hash = hex::decode("eb13d926f15cbb896e0bcc7a1a77a4ec63504e57a1524c13a7a9b80f43ecb05c").unwrap();
-    let tx_details = block_on(coin.tx_details_by_hash(&hash, &mut input_transactions)).expect("!tx_details_by_hash");
-
+    let tx_details = get_tx_details_eq_for_both_versions(&coin, TX_HASH);
     let expected_fee = TxFeeDetails::Utxo(UtxoFeeDetails {
         coin: Some(TEST_COIN_NAME.into()),
         amount: BigDecimal::from_str("0.00000452").unwrap(),

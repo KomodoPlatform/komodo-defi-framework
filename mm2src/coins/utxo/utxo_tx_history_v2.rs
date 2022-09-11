@@ -20,7 +20,7 @@ use std::collections::{hash_map::Entry, HashMap, HashSet};
 use std::str::FromStr;
 
 #[allow(clippy::large_enum_variant)]
-#[derive(Display)]
+#[derive(Debug, Display)]
 pub enum UtxoTxDetailsError {
     #[display(fmt = "Storage error: {}", _0)]
     StorageError(String),

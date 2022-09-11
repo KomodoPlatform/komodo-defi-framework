@@ -436,3 +436,19 @@ pub async fn z_coin_tx_history_rpc(
         other => MmError::err(MyTxHistoryErrorV2::NotSupportedFor(other.ticker().to_owned())),
     }
 }
+
+#[cfg(test)]
+pub(crate) mod for_tests {
+    use super::{CoinWithTxHistoryV2, TxHistoryStorage};
+    use crate::tx_history_storage::TxHistoryStorageBuilder;
+    use common::block_on;
+    use mm2_core::mm_ctx::MmArc;
+    use mm2_test_helpers::for_tests::mm_ctx_with_custom_db;
+
+    pub fn init_storage_for<Coin: CoinWithTxHistoryV2>(coin: &Coin) -> (MmArc, impl TxHistoryStorage) {
+        let ctx = mm_ctx_with_custom_db();
+        let storage = TxHistoryStorageBuilder::new(&ctx).build().unwrap();
+        block_on(storage.init(&coin.history_wallet_id())).unwrap();
+        (ctx, storage)
+    }
+}

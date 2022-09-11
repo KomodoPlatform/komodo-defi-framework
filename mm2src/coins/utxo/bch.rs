@@ -1382,17 +1382,9 @@ pub fn bch_coin_for_test() -> BchCoin {
 #[cfg(test)]
 mod bch_tests {
     use super::*;
-    use crate::tx_history_storage::TxHistoryStorageBuilder;
+    use crate::my_tx_history_v2::for_tests::init_storage_for;
     use crate::{TransactionType, TxFeeDetails};
     use common::block_on;
-    use mm2_test_helpers::for_tests::mm_ctx_with_custom_db;
-
-    fn init_storage_for<Coin: CoinWithTxHistoryV2>(coin: &Coin) -> (MmArc, impl TxHistoryStorage) {
-        let ctx = mm_ctx_with_custom_db();
-        let storage = TxHistoryStorageBuilder::new(&ctx).build().unwrap();
-        block_on(storage.init(&coin.history_wallet_id())).unwrap();
-        (ctx, storage)
-    }
 
     #[test]
     fn test_get_slp_genesis_params() {
