@@ -457,6 +457,7 @@ mod docker_tests {
             .unwrap();
         assert!(actual
             .contains("Tx d342ff9da528a2e262bddf2b6f9a27d1beb7aeb03f0fc8d9eac2987266447e44 is not on chain anymore"));
+        println!("now {}: expected {}", now_ms() / 1000, expected_timeout);
         assert!((now_ms() / 1000) < expected_timeout);
     }
 
