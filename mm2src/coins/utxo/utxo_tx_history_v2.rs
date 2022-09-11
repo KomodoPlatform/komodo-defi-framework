@@ -1,11 +1,12 @@
 /// This module is named bch_and_slp_tx_history temporary. We will most likely use the same approach for every
 /// supported UTXO coin.
 use super::RequestTxHistoryResult;
+use crate::hd_wallet::AddressDerivingError;
 use crate::my_tx_history_v2::{CoinWithTxHistoryV2, TxHistoryStorage, TxHistoryStorageError};
 use crate::utxo::bch::BchCoin;
 use crate::utxo::utxo_common;
 use crate::{BalanceResult, BlockHeightAndTime, HistorySyncState, MarketCoinOps, NumConversError, ParseBigDecimalError,
-            TransactionDetails, UtxoRpcError, UtxoTx};
+            TransactionDetails, UnexpectedDerivationMethod, UtxoRpcError, UtxoTx};
 use async_trait::async_trait;
 use common::executor::Timer;
 use common::log::{error, info};
@@ -18,6 +19,20 @@ use mm2_number::BigDecimal;
 use rpc::v1::types::H256 as H256Json;
 use std::collections::{hash_map::Entry, HashMap, HashSet};
 use std::str::FromStr;
+
+#[derive(Debug, Display)]
+pub enum UtxoMyAddressesHistoryError {
+    AddressDerivingError(AddressDerivingError),
+    UnexpectedDerivationMethod(UnexpectedDerivationMethod),
+}
+
+impl From<AddressDerivingError> for UtxoMyAddressesHistoryError {
+    fn from(e: AddressDerivingError) -> Self { UtxoMyAddressesHistoryError::AddressDerivingError(e) }
+}
+
+impl From<UnexpectedDerivationMethod> for UtxoMyAddressesHistoryError {
+    fn from(e: UnexpectedDerivationMethod) -> Self { UtxoMyAddressesHistoryError::UnexpectedDerivationMethod(e) }
+}
 
 #[allow(clippy::large_enum_variant)]
 #[derive(Debug, Display)]
@@ -68,10 +83,8 @@ pub struct UtxoTxDetailsParams<'a, Storage> {
 
 #[async_trait]
 pub trait UtxoTxHistoryOps: CoinWithTxHistoryV2 + MarketCoinOps + Send + Sync + 'static {
-    /// # Todo
-    ///
-    /// Consider returning a specific error.
-    async fn my_addresses(&self) -> Result<HashSet<Address>, String>;
+    /// Returns addresses for those we need to request Transaction history.
+    async fn my_addresses(&self) -> MmResult<HashSet<Address>, UtxoMyAddressesHistoryError>;
 
     /// Returns Transaction details by hash using the coin RPC if required.
     async fn tx_details_by_hash<T>(
@@ -89,7 +102,7 @@ pub trait UtxoTxHistoryOps: CoinWithTxHistoryV2 + MarketCoinOps + Send + Sync + 
     ) -> MmResult<UtxoTx, UtxoTxDetailsError>;
 
     /// Requests transaction history.
-    async fn request_tx_history(&self, metrics: MetricsArc) -> RequestTxHistoryResult;
+    async fn request_tx_history(&self, metrics: MetricsArc, my_addresses: &HashSet<Address>) -> RequestTxHistoryResult;
 
     /// Requests timestamp of the given block.
     async fn get_block_timestamp(&self, height: u64) -> MmResult<u64, UtxoRpcError>;
@@ -177,7 +190,12 @@ where
             return Self::change_state(Stopped::storage_error(e));
         }
 
-        let maybe_tx_ids = ctx.coin.request_tx_history(ctx.metrics.clone()).await;
+        let my_addresses = match ctx.coin.my_addresses().await {
+            Ok(my_addresses) => my_addresses,
+            Err(e) => return Self::change_state(Stopped::unknown(format!("Error on getting my addresses: {e}"))),
+        };
+
+        let maybe_tx_ids = ctx.coin.request_tx_history(ctx.metrics.clone(), &my_addresses).await;
         match maybe_tx_ids {
             RequestTxHistoryResult::Ok(all_tx_ids_with_height) => {
                 let in_storage = match ctx.storage.unique_tx_hashes_num_in_history(&wallet_id).await {

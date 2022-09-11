@@ -25,7 +25,7 @@ pub type HDAccountMut<'a, HDAccount> = AsyncMappedMutexGuard<'a, HDAccountsMap<H
 
 pub type AddressDerivingResult<T> = MmResult<T, AddressDerivingError>;
 
-#[derive(Display)]
+#[derive(Debug, Display)]
 pub enum AddressDerivingError {
     #[display(fmt = "Coin doesn't support the given BIP44 chain: {:?}", chain)]
     InvalidBip44Chain { chain: Bip44Chain },

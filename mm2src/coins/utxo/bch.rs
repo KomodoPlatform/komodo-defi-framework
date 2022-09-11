@@ -7,7 +7,8 @@ use crate::utxo::slp::{parse_slp_script, ParseSlpScriptError, SlpGenesisParams, 
                        SlpUnspent};
 use crate::utxo::utxo_builder::{UtxoArcBuilder, UtxoCoinBuilder};
 use crate::utxo::utxo_common::big_decimal_from_sat_unsigned;
-use crate::utxo::utxo_tx_history_v2::{UtxoTxDetailsError, UtxoTxDetailsParams, UtxoTxHistoryOps};
+use crate::utxo::utxo_tx_history_v2::{UtxoTxDetailsError, UtxoTxDetailsParams, UtxoTxHistoryOps,
+                                      UtxoMyAddressesHistoryError};
 use crate::{BlockHeightAndTime, CanRefundHtlc, CoinBalance, CoinProtocol, CoinWithDerivationMethod,
             NegotiateSwapContractAddrErr, PrivKeyBuildPolicy, RawTransactionFut, RawTransactionRequest,
             SearchForSwapTxSpendInput, SignatureResult, SwapOps, TradePreimageValue, TransactionFut, TransactionType,
@@ -1272,9 +1273,8 @@ impl CoinWithTxHistoryV2 for BchCoin {
 
 #[async_trait]
 impl UtxoTxHistoryOps for BchCoin {
-    async fn my_addresses(&self) -> Result<HashSet<Address>, String> {
-        // TODO return a corresponding error instead of `String`.
-        let my_address = try_s!(self.as_ref().derivation_method.iguana_or_err());
+    async fn my_addresses(&self) -> MmResult<HashSet<Address>, UtxoMyAddressesHistoryError> {
+        let my_address = self.as_ref().derivation_method.iguana_or_err()?;
         Ok(std::iter::once(my_address.clone()).collect())
     }
 
@@ -1296,8 +1296,8 @@ impl UtxoTxHistoryOps for BchCoin {
         utxo_common::utxo_tx_history_v2_common::tx_from_storage_or_rpc(self, tx_hash, storage).await
     }
 
-    async fn request_tx_history(&self, metrics: MetricsArc) -> RequestTxHistoryResult {
-        utxo_common::request_tx_history(self, metrics).await
+    async fn request_tx_history(&self, metrics: MetricsArc, my_addresses: &HashSet<Address>) -> RequestTxHistoryResult {
+        utxo_common::utxo_tx_history_v2_common::request_tx_history_with_der_method(self, metrics, my_addresses).await
     }
 
     async fn get_block_timestamp(&self, height: u64) -> MmResult<u64, UtxoRpcError> {
