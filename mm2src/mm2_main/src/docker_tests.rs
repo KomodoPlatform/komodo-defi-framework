@@ -1134,29 +1134,23 @@ mod docker_tests {
             {"coin":"MYCOIN1","asset":"MYCOIN1","txversion":4,"overwintered":1,"txfee":1000,"protocol":{"type":"UTXO"}},
         ]);
 
-        let alice_conf = Mm2TestConf::seednode(&format!("0x{}", hex::encode(alice_priv_key)), &coins, true, false).conf;
+        let alice_conf =
+            Mm2TestConf::seednode_using_watchers(&format!("0x{}", hex::encode(alice_priv_key)), &coins).conf;
         let mut mm_alice = MarketMakerIt::start(alice_conf.clone(), "pass".to_string(), None).unwrap();
         let (_alice_dump_log, _alice_dump_dashboard) = mm_dump(&mm_alice.log_path);
 
-        let bob_conf = Mm2TestConf::light_node(
-            &format!("0x{}", hex::encode(bob_priv_key)),
-            &coins,
-            &[&mm_alice.ip.to_string()],
-            false,
-            false,
-        )
+        let bob_conf = Mm2TestConf::light_node(&format!("0x{}", hex::encode(bob_priv_key)), &coins, &[&mm_alice
+            .ip
+            .to_string()])
         .conf;
         let mm_bob = MarketMakerIt::start(bob_conf, "pass".to_string(), None).unwrap();
         let (_bob_dump_log, _bob_dump_dashboard) = mm_dump(&mm_bob.log_path);
 
-        let watcher_conf = Mm2TestConf::light_node(
-            &format!("0x{}", hex::encode(watcher_priv_key)),
-            &coins,
-            &[&mm_alice.ip.to_string()],
-            false,
-            true,
-        )
-        .conf;
+        let watcher_conf =
+            Mm2TestConf::watcher_light_node(&format!("0x{}", hex::encode(watcher_priv_key)), &coins, &[&mm_alice
+                .ip
+                .to_string()])
+            .conf;
         let mut mm_watcher = MarketMakerIt::start(watcher_conf, "pass".to_string(), None).unwrap();
         let (_watcher_dump_log, _watcher_dump_dashboard) = mm_dump(&mm_watcher.log_path);
 
