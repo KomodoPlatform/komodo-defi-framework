@@ -1,28 +1,23 @@
 use super::*;
 use crate::lightning::ln_db::LightningDB;
-use crate::lightning::ln_filesystem_persister::LightningPersisterShared;
 use crate::lightning::ln_platform::{get_best_header, ln_best_block_update_loop, update_best_block};
 use crate::lightning::ln_sql::SqliteLightningDB;
-use crate::lightning::ln_storage::{LightningStorage, NodesAddressesMap, Scorer};
+use crate::lightning::ln_storage::{LightningStorage, NodesAddressesMap};
 use crate::utxo::rpc_clients::BestBlock as RpcBestBlock;
 use bitcoin::hash_types::BlockHash;
 use bitcoin_hashes::{sha256d, Hash};
-use common::executor::{spawn, Timer};
-use common::log;
+use common::executor::spawn;
 use common::log::LogState;
 use lightning::chain::keysinterface::{InMemorySigner, KeysManager};
 use lightning::chain::{chainmonitor, BestBlock, Watch};
-use lightning::ln::channelmanager;
 use lightning::ln::channelmanager::{ChainParameters, ChannelManagerReadArgs, SimpleArcChannelManager};
 use lightning::util::config::UserConfig;
 use lightning::util::ser::ReadableArgs;
 use mm2_core::mm_ctx::MmArc;
 use std::fs::File;
 use std::path::PathBuf;
-use std::sync::{Arc, Mutex};
+use std::sync::Arc;
 use std::time::SystemTime;
-
-const SCORER_PERSIST_INTERVAL: u64 = 600;
 
 pub type ChainMonitor = chainmonitor::ChainMonitor<
     InMemorySigner,
@@ -30,7 +25,7 @@ pub type ChainMonitor = chainmonitor::ChainMonitor<
     Arc<Platform>,
     Arc<Platform>,
     Arc<LogState>,
-    LightningPersisterShared,
+    Arc<LightningFilesystemPersister>,
 >;
 
 pub type ChannelManager = SimpleArcChannelManager<ChainMonitor, Platform, Platform, LogState>;
@@ -52,13 +47,10 @@ pub async fn init_persister(
     ctx: &MmArc,
     ticker: String,
     backup_path: Option<String>,
-) -> EnableLightningResult<LightningPersisterShared> {
+) -> EnableLightningResult<Arc<LightningFilesystemPersister>> {
     let ln_data_dir = ln_data_dir(ctx, &ticker);
     let ln_data_backup_dir = ln_data_backup_dir(ctx, backup_path, &ticker);
-    let persister = LightningPersisterShared(Arc::new(LightningFilesystemPersister::new(
-        ln_data_dir,
-        ln_data_backup_dir,
-    )));
+    let persister = Arc::new(LightningFilesystemPersister::new(ln_data_dir, ln_data_backup_dir));
 
     let is_initialized = persister.is_fs_initialized().await?;
     if !is_initialized {
@@ -98,7 +90,7 @@ pub fn init_keys_manager(ctx: &MmArc) -> EnableLightningResult<Arc<KeysManager>>
 pub async fn init_channel_manager(
     platform: Arc<Platform>,
     logger: Arc<LogState>,
-    persister: LightningPersisterShared,
+    persister: Arc<LightningFilesystemPersister>,
     db: SqliteLightningDB,
     keys_manager: Arc<KeysManager>,
     user_config: UserConfig,
@@ -120,13 +112,19 @@ pub async fn init_channel_manager(
     ));
 
     // Read ChannelMonitor state from disk, important for lightning node is restarting and has at least 1 channel
-    let mut channelmonitors = persister
-        .channels_persister()
-        .read_channelmonitors(keys_manager.clone())
-        .map_to_mm(|e| EnableLightningError::IOError(e.to_string()))?;
+    let channels_persister = persister.clone();
+    let channels_keys_manager = keys_manager.clone();
+    let mut channelmonitors = async_blocking(move || {
+        channels_persister
+            .read_channelmonitors(channels_keys_manager)
+            .map_to_mm(|e| EnableLightningError::IOError(e.to_string()))
+    })
+    .await?;
 
     // This is used for Electrum only to prepare for chain synchronization
     for (_, chan_mon) in channelmonitors.iter() {
+        // Although there is a mutex lock inside the load_outputs_to_watch fn
+        // it shouldn't be held by anything yet, so async_blocking is not needed.
         chan_mon.load_outputs_to_watch(&platform);
     }
 
@@ -143,63 +141,78 @@ pub async fn init_channel_manager(
     platform.update_best_block_height(best_header.block_height());
     let best_block = RpcBestBlock::from(best_header.clone());
     let best_block_hash = BlockHash::from_hash(sha256d::Hash::from_inner(best_block.hash.0));
-    let (channel_manager_blockhash, channel_manager) = {
-        if let Ok(mut f) = File::open(persister.manager_path()) {
+
+    let channel_manager = if persister.manager_path().exists() {
+        let chain_monitor_for_args = chain_monitor.clone();
+
+        let (channel_manager_blockhash, channel_manager, channelmonitors) = async_blocking(move || {
+            let mut manager_file = File::open(persister.manager_path())?;
+
             let mut channel_monitor_mut_references = Vec::new();
             for (_, channel_monitor) in channelmonitors.iter_mut() {
                 channel_monitor_mut_references.push(channel_monitor);
             }
+
             // Read ChannelManager data from the file
             let read_args = ChannelManagerReadArgs::new(
                 keys_manager.clone(),
                 fee_estimator.clone(),
-                chain_monitor.clone(),
+                chain_monitor_for_args,
                 broadcaster.clone(),
                 logger.clone(),
                 user_config,
                 channel_monitor_mut_references,
             );
-            <(BlockHash, ChannelManager)>::read(&mut f, read_args)
-                .map_to_mm(|e| EnableLightningError::IOError(e.to_string()))?
-        } else {
-            // Initialize the ChannelManager to starting a new node without history
-            let chain_params = ChainParameters {
-                network: platform.network.clone().into(),
-                best_block: BestBlock::new(best_block_hash, best_block.height as u32),
-            };
-            let new_channel_manager = channelmanager::ChannelManager::new(
-                fee_estimator.clone(),
-                chain_monitor.clone(),
-                broadcaster.clone(),
-                logger.clone(),
-                keys_manager.clone(),
-                user_config,
-                chain_params,
-            );
-            (best_block_hash, new_channel_manager)
-        }
-    };
+            <(BlockHash, Arc<ChannelManager>)>::read(&mut manager_file, read_args)
+                .map(|(h, c)| (h, c, channelmonitors))
+                .map_to_mm(|e| EnableLightningError::IOError(e.to_string()))
+        })
+        .await?;
 
-    let channel_manager: Arc<ChannelManager> = Arc::new(channel_manager);
-
-    // Sync ChannelMonitors and ChannelManager to chain tip if the node is restarting and has open channels
-    platform
-        .process_txs_confirmations(&rpc_client, &db, &chain_monitor, &channel_manager)
-        .await;
-    if channel_manager_blockhash != best_block_hash {
+        // Sync ChannelMonitors and ChannelManager to chain tip if the node is restarting and has open channels
         platform
-            .process_txs_unconfirmations(&chain_monitor, &channel_manager)
+            .process_txs_confirmations(
+                &rpc_client,
+                &db,
+                Arc::clone(&chain_monitor),
+                Arc::clone(&channel_manager),
+            )
             .await;
-        update_best_block(&chain_monitor, &channel_manager, best_header).await;
-    }
+        if channel_manager_blockhash != best_block_hash {
+            platform
+                .process_txs_unconfirmations(Arc::clone(&chain_monitor), Arc::clone(&channel_manager))
+                .await;
+            update_best_block(Arc::clone(&chain_monitor), Arc::clone(&channel_manager), best_header).await;
+        }
 
-    // Give ChannelMonitors to ChainMonitor
-    for (_, channel_monitor) in channelmonitors.drain(..) {
-        let funding_outpoint = channel_monitor.get_funding_txo().0;
-        chain_monitor
-            .watch_channel(funding_outpoint, channel_monitor)
-            .map_to_mm(|e| EnableLightningError::IOError(format!("{:?}", e)))?;
-    }
+        // Give ChannelMonitors to ChainMonitor
+        for (_, channel_monitor) in channelmonitors.into_iter() {
+            let funding_outpoint = channel_monitor.get_funding_txo().0;
+            let chain_monitor = chain_monitor.clone();
+            async_blocking(move || {
+                chain_monitor
+                    .watch_channel(funding_outpoint, channel_monitor)
+                    .map_to_mm(|e| EnableLightningError::IOError(format!("{:?}", e)))
+            })
+            .await?;
+        }
+        channel_manager
+    } else {
+        // Initialize the ChannelManager to starting a new node without history
+        let chain_params = ChainParameters {
+            network: platform.network.clone().into(),
+            best_block: BestBlock::new(best_block_hash, best_block.height as u32),
+        };
+        Arc::new(ChannelManager::new(
+            fee_estimator.clone(),
+            chain_monitor.clone(),
+            broadcaster.clone(),
+            logger.clone(),
+            keys_manager.clone(),
+            user_config,
+            chain_params,
+        ))
+    };
 
     // Update best block whenever there's a new chain tip or a block has been newly disconnected
     spawn(ln_best_block_update_loop(
@@ -214,23 +227,11 @@ pub async fn init_channel_manager(
     Ok((chain_monitor, channel_manager))
 }
 
-pub async fn persist_scorer_loop(persister: LightningPersisterShared, scorer: Arc<Mutex<Scorer>>) {
-    loop {
-        if let Err(e) = persister.save_scorer(scorer.clone()).await {
-            log::warn!(
-                "Failed to persist scorer error: {}, please check disk space and permissions",
-                e
-            );
-        }
-        Timer::sleep(SCORER_PERSIST_INTERVAL as f64).await;
-    }
-}
-
 pub async fn get_open_channels_nodes_addresses(
-    persister: LightningPersisterShared,
+    persister: Arc<LightningFilesystemPersister>,
     channel_manager: Arc<ChannelManager>,
 ) -> EnableLightningResult<NodesAddressesMap> {
-    let channels = channel_manager.list_channels();
+    let channels = async_blocking(move || channel_manager.list_channels()).await;
     let mut nodes_addresses = persister.get_nodes_addresses().await?;
     nodes_addresses.retain(|pubkey, _node_addr| {
         channels

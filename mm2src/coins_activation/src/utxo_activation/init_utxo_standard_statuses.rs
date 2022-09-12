@@ -8,6 +8,11 @@ pub type UtxoStandardUserAction = HwRpcTaskUserAction;
 #[derive(Clone, Serialize)]
 pub enum UtxoStandardInProgressStatus {
     ActivatingCoin,
+    SyncingBlockHeaders {
+        current_scanned_block: u64,
+        last_block: u64,
+    },
+    TemporaryError(String),
     RequestingWalletBalance,
     Finishing,
     /// This status doesn't require the user to send `UserAction`,

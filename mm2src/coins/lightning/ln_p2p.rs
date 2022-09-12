@@ -5,18 +5,18 @@ use derive_more::Display;
 use lightning::chain::Access;
 use lightning::ln::msgs::NetAddress;
 use lightning::ln::peer_handler::{IgnoringMessageHandler, MessageHandler, SimpleArcPeerManager};
-use lightning::routing::network_graph::{NetGraphMsgHandler, NetworkGraph};
+use lightning::routing::gossip;
 use lightning_net_tokio::SocketDescriptor;
 use mm2_net::ip_addr::fetch_external_ip;
 use rand::RngCore;
-use secp256k1::SecretKey;
+use secp256k1v22::{PublicKey, SecretKey};
 use std::net::{IpAddr, Ipv4Addr};
 use tokio::net::TcpListener;
 
 const TRY_RECONNECTING_TO_NODE_INTERVAL: f64 = 60.;
 const BROADCAST_NODE_ANNOUNCEMENT_INTERVAL: u64 = 600;
 
-type NetworkGossip = NetGraphMsgHandler<Arc<NetworkGraph>, Arc<dyn Access + Send + Sync>, Arc<LogState>>;
+pub type NetworkGossip = gossip::P2PGossipSync<Arc<NetworkGraph>, Arc<dyn Access + Send + Sync>, Arc<LogState>>;
 
 pub type PeerManager =
     SimpleArcPeerManager<SocketDescriptor, ChainMonitor, Platform, Platform, dyn Access + Send + Sync, LogState>;
@@ -34,7 +34,9 @@ pub async fn connect_to_node(
     node_addr: SocketAddr,
     peer_manager: Arc<PeerManager>,
 ) -> ConnectToNodeResult<ConnectToNodeRes> {
-    if peer_manager.get_peer_node_ids().contains(&pubkey) {
+    let peer_manager_ref = peer_manager.clone();
+    let peer_node_ids = async_blocking(move || peer_manager_ref.get_peer_node_ids()).await;
+    if peer_node_ids.contains(&pubkey) {
         return Ok(ConnectToNodeRes::AlreadyConnected { pubkey, node_addr });
     }
 
@@ -61,7 +63,9 @@ pub async fn connect_to_node(
             std::task::Poll::Pending => {},
         }
 
-        if peer_manager.get_peer_node_ids().contains(&pubkey) {
+        let peer_manager = peer_manager.clone();
+        let peer_node_ids = async_blocking(move || peer_manager.get_peer_node_ids()).await;
+        if peer_node_ids.contains(&pubkey) {
             break;
         }
 
@@ -132,7 +136,8 @@ pub async fn ln_node_announcement_loop(
                 continue;
             },
         };
-        channel_manager.broadcast_node_announcement(node_color, node_name, addresses);
+        let channel_manager = channel_manager.clone();
+        async_blocking(move || channel_manager.broadcast_node_announcement(node_color, node_name, addresses)).await;
 
         Timer::sleep(BROADCAST_NODE_ANNOUNCEMENT_INTERVAL as f64).await;
     }
@@ -163,7 +168,7 @@ pub async fn init_peer_manager(
     ctx: MmArc,
     listening_port: u16,
     channel_manager: Arc<ChannelManager>,
-    network_gossip: Arc<NetworkGossip>,
+    gossip_sync: Arc<NetworkGossip>,
     node_secret: SecretKey,
     logger: Arc<LogState>,
 ) -> EnableLightningResult<Arc<PeerManager>> {
@@ -180,7 +185,7 @@ pub async fn init_peer_manager(
     rand::thread_rng().fill_bytes(&mut ephemeral_bytes);
     let lightning_msg_handler = MessageHandler {
         chan_handler: channel_manager,
-        route_handler: network_gossip,
+        route_handler: gossip_sync,
     };
 
     // IgnoringMessageHandler is used as custom message types (experimental and application-specific messages) is not needed
