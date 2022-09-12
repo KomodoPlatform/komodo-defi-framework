@@ -125,7 +125,7 @@ pub async fn trade_base_rel_iris(
             base,
             rel
         );
-        let rc = match mm_alice
+        let rc = mm_alice
             .rpc(&json! ({
                 "userpass": mm_alice.userpass,
                 "method": "orderbook",
@@ -133,14 +133,7 @@ pub async fn trade_base_rel_iris(
                 "rel": rel,
             }))
             .await
-        {
-            Ok(t) => t,
-            Err(_) => {
-                Timer::sleep(5.).await;
-                dbg!(mm_alice.log_as_utf8().unwrap());
-                panic!();
-            },
-        };
+            .unwrap();
         assert!(rc.0.is_success(), "!orderbook: {}", rc.1);
         Timer::sleep(1.).await;
         common::log::info!("Issue alice {}/{} buy request", base, rel);
@@ -160,7 +153,75 @@ pub async fn trade_base_rel_iris(
         uuids.push(buy_json["result"]["uuid"].as_str().unwrap().to_owned());
     }
 
-    dbg!(mm_alice.log_as_utf8().unwrap());
+    for (base, rel) in pairs.iter() {
+        // ensure the swaps are started
+        let expected_log = format!("Entering the taker_swap_loop {}/{}", base, rel);
+        mm_alice
+            .wait_for_log(5., |log| log.contains(&expected_log))
+            .await
+            .unwrap();
+        let expected_log = format!("Entering the maker_swap_loop {}/{}", base, rel);
+        mm_bob
+            .wait_for_log(5., |log| log.contains(&expected_log))
+            .await
+            .unwrap()
+    }
+
+    for uuid in uuids.iter() {
+        // ensure the swaps are indexed to the SQLite database
+        let expected_log = format!("Inserting new swap {} to the SQLite database", uuid);
+        mm_alice
+            .wait_for_log(5., |log| log.contains(&expected_log))
+            .await
+            .unwrap();
+        mm_bob
+            .wait_for_log(5., |log| log.contains(&expected_log))
+            .await
+            .unwrap()
+    }
+
+    // Timer::sleep(10.);
+    Timer::sleep(20.).await;
+    println!("{}", mm_bob.log_as_utf8().unwrap());
+
+    // TODO
+    // implement fn swap_contract_address(&self) in tendermint_coin
+
+    // for uuid in uuids.iter() {
+    //     mm_bob
+    //         .wait_for_log(900., |log| log.contains(&format!("[swap uuid={}] Finished", uuid)))
+    //         .await
+    //         .unwrap();
+
+    //     mm_alice
+    //         .wait_for_log(900., |log| log.contains(&format!("[swap uuid={}] Finished", uuid)))
+    //         .await
+    //         .unwrap();
+
+    //     log!("Waiting a few second for the fresh swap status to be saved..");
+
+    //     log!("Checking alice/taker status..");
+    //     check_my_swap_status(
+    //         &mm_alice,
+    //         uuid,
+    //         &TAKER_SUCCESS_EVENTS,
+    //         &TAKER_ERROR_EVENTS,
+    //         BigDecimal::try_from(volume).unwrap(),
+    //         BigDecimal::try_from(volume).unwrap(),
+    //     )
+    //     .await;
+
+    //     log!("Checking bob/maker status..");
+    //     check_my_swap_status(
+    //         &mm_bob,
+    //         uuid,
+    //         &MAKER_SUCCESS_EVENTS,
+    //         &MAKER_ERROR_EVENTS,
+    //         BigDecimal::try_from(volume).unwrap(),
+    //         BigDecimal::try_from(volume).unwrap(),
+    //     )
+    //     .await;
+    // }
 
     println!("\n `fn trade_base_rel_iris` hit end! \n");
 }
