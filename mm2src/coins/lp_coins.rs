@@ -66,7 +66,7 @@ use utxo_signer::with_key_pair::UtxoSignWithKeyPairError;
 
 cfg_native! {
     use crate::lightning::LightningCoin;
-    use crate::lightning::ln_conf::PlatformCoinConfirmations;
+    use crate::lightning::ln_conf::PlatformCoinConfirmationTargets;
     use async_std::fs;
     use futures::AsyncWriteExt;
     use std::io;
@@ -2087,7 +2087,7 @@ pub enum CoinProtocol {
     LIGHTNING {
         platform: String,
         network: BlockchainNetwork,
-        confirmations: PlatformCoinConfirmations,
+        confirmation_targets: PlatformCoinConfirmationTargets,
     },
     #[cfg(not(target_arch = "wasm32"))]
     SOLANA,

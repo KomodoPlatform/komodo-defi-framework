@@ -51,21 +51,32 @@ pub trait Deserializable {
 
 #[derive(Debug)]
 pub enum CoinVariant {
+    // Todo: https://github.com/KomodoPlatform/atomicDEX-API/issues/1345
+    BTC,
+    Qtum,
     LBC,
     Standard,
-    Qtum,
 }
 
 impl CoinVariant {
+    pub fn is_btc(&self) -> bool { matches!(self, CoinVariant::BTC) }
+
     pub fn is_qtum(&self) -> bool { matches!(self, CoinVariant::Qtum) }
 
     pub fn is_lbc(&self) -> bool { matches!(self, CoinVariant::LBC) }
 }
 
-pub fn coin_variant_by_ticker(ticker: &str) -> CoinVariant {
-    match ticker {
-        "LBC" => CoinVariant::LBC,
-        _ => CoinVariant::Standard,
+impl From<&str> for CoinVariant {
+    fn from(ticker: &str) -> Self {
+        match ticker {
+            // "BTC", "BTC-segwit", "tBTC", "tBTC-segwit", etc..
+            t if t == "BTC" || t.contains("BTC-") || t.contains("BTC_") => CoinVariant::BTC,
+            // "QTUM", "QTUM-segwit", "tQTUM", "tQTUM-segwit", etc..
+            t if t == "QTUM" || t.contains("QTUM-") || t.contains("QTUM_") => CoinVariant::Qtum,
+            // "LBC", "LBC-segwit", etc..
+            t if t == "LBC" || t.contains("LBC-") || t.contains("LBC_") => CoinVariant::LBC,
+            _ => CoinVariant::Standard,
+        }
     }
 }
 

@@ -2,26 +2,20 @@ use crate::utxo::BlockchainNetwork;
 use lightning::util::config::{ChannelConfig, ChannelHandshakeConfig, ChannelHandshakeLimits, UserConfig};
 
 #[derive(Clone, Debug, Deserialize, Serialize)]
-pub struct DefaultFeesAndConfirmations {
-    pub default_fee_per_kb: u64,
-    pub n_blocks: u32,
-}
-
-#[derive(Clone, Debug, Deserialize, Serialize)]
-pub struct PlatformCoinConfirmations {
-    pub background: DefaultFeesAndConfirmations,
-    pub normal: DefaultFeesAndConfirmations,
-    pub high_priority: DefaultFeesAndConfirmations,
+pub struct PlatformCoinConfirmationTargets {
+    pub background: u32,
+    pub normal: u32,
+    pub high_priority: u32,
 }
 
 #[derive(Debug)]
 pub struct LightningProtocolConf {
     pub platform_coin_ticker: String,
     pub network: BlockchainNetwork,
-    pub confirmations: PlatformCoinConfirmations,
+    pub confirmation_targets: PlatformCoinConfirmationTargets,
 }
 
-#[derive(Clone, Debug, Deserialize, PartialEq)]
+#[derive(Clone, Debug, Deserialize, PartialEq, Serialize)]
 pub struct ChannelOptions {
     /// Amount (in millionths of a satoshi) charged per satoshi for payments forwarded outbound
     /// over the channel.
@@ -30,11 +24,6 @@ pub struct ChannelOptions {
     /// excess of proportional_fee_in_millionths_sats.
     pub base_fee_msat: Option<u32>,
     pub cltv_expiry_delta: Option<u16>,
-    /// Set to announce the channel publicly and notify all nodes that they can route via this
-    /// channel.
-    pub announced_channel: Option<bool>,
-    /// When set, we commit to an upfront shutdown_pubkey at channel open.
-    pub commit_upfront_shutdown_pubkey: Option<bool>,
     /// Limit our total exposure to in-flight HTLCs which are burned to fees as they are too
     /// small to claim on-chain.
     pub max_dust_htlc_exposure_msat: Option<u64>,
@@ -44,7 +33,7 @@ pub struct ChannelOptions {
 }
 
 impl ChannelOptions {
-    pub fn update(&mut self, options: ChannelOptions) {
+    pub fn update_according_to(&mut self, options: ChannelOptions) {
         if let Some(fee) = options.proportional_fee_in_millionths_sats {
             self.proportional_fee_in_millionths_sats = Some(fee);
         }
@@ -55,14 +44,6 @@ impl ChannelOptions {
 
         if let Some(expiry) = options.cltv_expiry_delta {
             self.cltv_expiry_delta = Some(expiry);
-        }
-
-        if let Some(announce) = options.announced_channel {
-            self.announced_channel = Some(announce);
-        }
-
-        if let Some(commit) = options.commit_upfront_shutdown_pubkey {
-            self.commit_upfront_shutdown_pubkey = Some(commit);
         }
 
         if let Some(dust) = options.max_dust_htlc_exposure_msat {
@@ -91,14 +72,6 @@ impl From<ChannelOptions> for ChannelConfig {
             channel_config.cltv_expiry_delta = expiry;
         }
 
-        if let Some(announce) = options.announced_channel {
-            channel_config.announced_channel = announce;
-        }
-
-        if let Some(commit) = options.commit_upfront_shutdown_pubkey {
-            channel_config.commit_upfront_shutdown_pubkey = commit;
-        }
-
         if let Some(dust) = options.max_dust_htlc_exposure_msat {
             channel_config.max_dust_htlc_exposure_msat = dust;
         }
@@ -112,7 +85,7 @@ impl From<ChannelOptions> for ChannelConfig {
 }
 
 #[derive(Clone, Debug, Deserialize)]
-pub struct OurChannelsConfig {
+pub struct OurChannelsConfigs {
     /// Confirmations we will wait for before considering an inbound channel locked in.
     pub inbound_channels_confirmations: Option<u32>,
     /// The number of blocks we require our counterparty to wait to claim their money on chain
@@ -129,10 +102,50 @@ pub struct OurChannelsConfig {
     /// our real on-chain channel UTXO in each invoice and requiring that our counterparty only
     /// relay HTLCs to us using the channel's SCID alias.
     pub negotiate_scid_privacy: Option<bool>,
+    /// Sets the percentage of the channel value we will cap the total value of outstanding inbound
+    /// HTLCs to.
+    pub max_inbound_in_flight_htlc_percent: Option<u8>,
+    /// Set to announce the channel publicly and notify all nodes that they can route via this
+    /// channel.
+    pub announced_channel: Option<bool>,
+    /// When set, we commit to an upfront shutdown_pubkey at channel open.
+    pub commit_upfront_shutdown_pubkey: Option<bool>,
 }
 
-impl From<OurChannelsConfig> for ChannelHandshakeConfig {
-    fn from(config: OurChannelsConfig) -> Self {
+impl OurChannelsConfigs {
+    pub fn update_according_to(&mut self, config: OurChannelsConfigs) {
+        if let Some(confs) = config.inbound_channels_confirmations {
+            self.inbound_channels_confirmations = Some(confs);
+        }
+
+        if let Some(delay) = config.counterparty_locktime {
+            self.counterparty_locktime = Some(delay);
+        }
+
+        if let Some(min) = config.our_htlc_minimum_msat {
+            self.our_htlc_minimum_msat = Some(min);
+        }
+
+        if let Some(scid_privacy) = config.negotiate_scid_privacy {
+            self.negotiate_scid_privacy = Some(scid_privacy);
+        }
+
+        if let Some(max_inbound_htlc) = config.max_inbound_in_flight_htlc_percent {
+            self.max_inbound_in_flight_htlc_percent = Some(max_inbound_htlc);
+        }
+
+        if let Some(announce) = config.announced_channel {
+            self.announced_channel = Some(announce);
+        }
+
+        if let Some(commit) = config.commit_upfront_shutdown_pubkey {
+            self.commit_upfront_shutdown_pubkey = Some(commit);
+        }
+    }
+}
+
+impl From<OurChannelsConfigs> for ChannelHandshakeConfig {
+    fn from(config: OurChannelsConfigs) -> Self {
         let mut channel_handshake_config = ChannelHandshakeConfig::default();
 
         if let Some(confs) = config.inbound_channels_confirmations {
@@ -148,7 +161,19 @@ impl From<OurChannelsConfig> for ChannelHandshakeConfig {
         }
 
         if let Some(scid_privacy) = config.negotiate_scid_privacy {
-            channel_handshake_config.negotiate_scid_privacy = scid_privacy
+            channel_handshake_config.negotiate_scid_privacy = scid_privacy;
+        }
+
+        if let Some(max_inbound_htlc) = config.max_inbound_in_flight_htlc_percent {
+            channel_handshake_config.max_inbound_htlc_value_in_flight_percent_of_channel = max_inbound_htlc;
+        }
+
+        if let Some(announce) = config.announced_channel {
+            channel_handshake_config.announced_channel = announce;
+        }
+
+        if let Some(commit) = config.commit_upfront_shutdown_pubkey {
+            channel_handshake_config.commit_upfront_shutdown_pubkey = commit;
         }
 
         channel_handshake_config
@@ -159,6 +184,8 @@ impl From<OurChannelsConfig> for ChannelHandshakeConfig {
 pub struct CounterpartyLimits {
     /// Minimum allowed satoshis when an inbound channel is funded.
     pub min_funding_sats: Option<u64>,
+    /// Maximum allowed satoshis when an inbound channel is funded.
+    pub max_funding_sats: Option<u64>,
     /// The remote node sets a limit on the minimum size of HTLCs we can send to them. This allows
     /// us to limit the maximum minimum-size they can require.
     pub max_htlc_minimum_msat: Option<u64>,
@@ -178,6 +205,9 @@ pub struct CounterpartyLimits {
     pub force_announced_channel_preference: Option<bool>,
     /// Set to the amount of time we're willing to wait to claim money back to us.
     pub our_locktime_limit: Option<u16>,
+    /// When set an outbound channel can be used straight away without waiting for any on-chain confirmations.
+    /// https://docs.rs/lightning/latest/lightning/util/config/struct.ChannelHandshakeLimits.html#structfield.trust_own_funding_0conf
+    pub allow_outbound_0conf: Option<bool>,
 }
 
 impl From<CounterpartyLimits> for ChannelHandshakeLimits {
@@ -186,6 +216,10 @@ impl From<CounterpartyLimits> for ChannelHandshakeLimits {
 
         if let Some(sats) = limits.min_funding_sats {
             channel_handshake_limits.min_funding_satoshis = sats;
+        }
+
+        if let Some(sats) = limits.max_funding_sats {
+            channel_handshake_limits.max_funding_satoshis = sats;
         }
 
         if let Some(msat) = limits.max_htlc_minimum_msat {
@@ -208,6 +242,10 @@ impl From<CounterpartyLimits> for ChannelHandshakeLimits {
             channel_handshake_limits.max_minimum_depth = confs;
         }
 
+        if let Some(is_0conf) = limits.allow_outbound_0conf {
+            channel_handshake_limits.trust_own_funding_0conf = is_0conf;
+        }
+
         if let Some(pref) = limits.force_announced_channel_preference {
             channel_handshake_limits.force_announced_channel_preference = pref;
         }
@@ -228,7 +266,7 @@ pub struct LightningCoinConf {
     pub accept_inbound_channels: Option<bool>,
     pub accept_forwards_to_priv_channels: Option<bool>,
     pub channel_options: Option<ChannelOptions>,
-    pub our_channels_config: Option<OurChannelsConfig>,
+    pub our_channels_configs: Option<OurChannelsConfigs>,
     pub counterparty_channel_config_limits: Option<CounterpartyLimits>,
     pub sign_message_prefix: Option<String>,
 }
@@ -236,14 +274,14 @@ pub struct LightningCoinConf {
 impl From<LightningCoinConf> for UserConfig {
     fn from(conf: LightningCoinConf) -> Self {
         let mut user_config = UserConfig::default();
-        if let Some(config) = conf.our_channels_config {
-            user_config.own_channel_config = config.into();
+        if let Some(config) = conf.our_channels_configs {
+            user_config.channel_handshake_config = config.into();
         }
         if let Some(limits) = conf.counterparty_channel_config_limits {
-            user_config.peer_channel_config_limits = limits.into();
+            user_config.channel_handshake_limits = limits.into();
         }
         if let Some(options) = conf.channel_options {
-            user_config.channel_options = options.into();
+            user_config.channel_config = options.into();
         }
         if let Some(accept_forwards) = conf.accept_forwards_to_priv_channels {
             user_config.accept_forwards_to_priv_channels = accept_forwards;

@@ -7,7 +7,9 @@ use futures::future::AbortHandle;
 use gstuff::{try_s, Constructible, ERR, ERRL};
 use keys::KeyPair;
 use lazy_static::lazy_static;
-use mm2_metrics::{MetricsArc, MetricsOps, MmMetricsError};
+#[cfg(not(target_arch = "wasm32"))]
+use lightning_background_processor::BackgroundProcessor;
+use mm2_metrics::{MetricsArc, MetricsOps};
 use primitives::hash::H160;
 use rand::Rng;
 use serde::{Deserialize, Serialize};
@@ -18,7 +20,6 @@ use std::any::Any;
 use std::collections::hash_map::{Entry, HashMap};
 use std::collections::HashSet;
 use std::fmt;
-use std::net::AddrParseError;
 use std::ops::Deref;
 use std::path::{Path, PathBuf};
 use std::sync::{Arc, Mutex};
@@ -29,9 +30,9 @@ cfg_wasm32! {
 }
 
 cfg_native! {
-    use mm2_metrics::prometheus;
+    use mm2_metrics::{prometheus, MmMetricsError};
     use db_common::sqlite::rusqlite::Connection;
-    use std::net::{IpAddr, SocketAddr};
+    use std::net::{AddrParseError, IpAddr, SocketAddr};
     use std::sync::MutexGuard;
 }
 
@@ -105,6 +106,11 @@ pub struct MmCtx {
     pub swaps_ctx: Mutex<Option<Arc<dyn Any + 'static + Send + Sync>>>,
     /// The context belonging to the `lp_stats` mod: `StatsContext`
     pub stats_ctx: Mutex<Option<Arc<dyn Any + 'static + Send + Sync>>>,
+    /// Lightning background processors, these need to be dropped when stopping mm2 to
+    /// persist the latest states to the filesystem. This can be moved to LightningCoin
+    /// Struct in the future if the LightningCoin and other coins are dropped when mm2 stops.
+    #[cfg(not(target_arch = "wasm32"))]
+    pub background_processors: Mutex<HashMap<String, BackgroundProcessor>>,
     /// The RPC sender forwarding requests to writing part of underlying stream.
     #[cfg(target_arch = "wasm32")]
     pub wasm_rpc: Constructible<WasmRpcSender>,
@@ -144,6 +150,8 @@ impl MmCtx {
             coins_needed_for_kick_start: Mutex::new(HashSet::new()),
             swaps_ctx: Mutex::new(None),
             stats_ctx: Mutex::new(None),
+            #[cfg(not(target_arch = "wasm32"))]
+            background_processors: Mutex::new(HashMap::new()),
             #[cfg(target_arch = "wasm32")]
             wasm_rpc: Constructible::default(),
             #[cfg(not(target_arch = "wasm32"))]
@@ -384,6 +392,10 @@ impl MmArc {
         for handler in self.abort_handlers.lock().unwrap().drain(..) {
             handler.abort();
         }
+
+        #[cfg(not(target_arch = "wasm32"))]
+        self.background_processors.lock().unwrap().drain();
+
         let mut stop_listeners = self.stop_listeners.lock().expect("Can't lock stop_listeners");
         // NB: It is important that we `drain` the `stop_listeners` rather than simply iterating over them
         // because otherwise there might be reference counting instances remaining in a listener

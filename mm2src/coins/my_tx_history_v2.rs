@@ -271,7 +271,7 @@ pub enum MyTxHistoryErrorV2 {
 impl HttpStatusCode for MyTxHistoryErrorV2 {
     fn status_code(&self) -> StatusCode {
         match self {
-            MyTxHistoryErrorV2::CoinIsNotActive(_) => StatusCode::PRECONDITION_REQUIRED,
+            MyTxHistoryErrorV2::CoinIsNotActive(_) => StatusCode::NOT_FOUND,
             MyTxHistoryErrorV2::StorageIsNotInitialized(_)
             | MyTxHistoryErrorV2::StorageError(_)
             | MyTxHistoryErrorV2::RpcError(_)

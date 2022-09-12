@@ -38,11 +38,11 @@ impl TryFromCoinProtocol for LightningProtocolConf {
             CoinProtocol::LIGHTNING {
                 platform,
                 network,
-                confirmations,
+                confirmation_targets,
             } => Ok(LightningProtocolConf {
                 platform_coin_ticker: platform,
                 network,
-                confirmations,
+                confirmation_targets,
             }),
             proto => MmError::err(proto),
         }
