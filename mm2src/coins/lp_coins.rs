@@ -2910,9 +2910,9 @@ pub fn address_by_coin_conf_and_pubkey_str(
                 _ => ERR!("Platform protocol {:?} is not BCH", platform_protocol),
             }
         },
-        CoinProtocol::TENDERMINT { .. } => {
-            ERR!("address_by_coin_conf_and_pubkey_str is not implemented for TENDERMINT protocol yet!")
-        },
+        CoinProtocol::TENDERMINT(protocol) => tendermint::account_id_from_ctx(ctx, &protocol.account_prefix)
+            .map(|t| t.to_string())
+            .map_err(|e| e.to_string()),
         #[cfg(not(target_arch = "wasm32"))]
         CoinProtocol::LIGHTNING { .. } => {
             ERR!("address_by_coin_conf_and_pubkey_str is not implemented for lightning protocol yet!")

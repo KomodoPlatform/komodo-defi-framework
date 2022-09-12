@@ -53,7 +53,7 @@ pub struct TendermintFeeDetails {
 pub struct TendermintProtocolInfo {
     decimals: u8,
     denom: String,
-    account_prefix: String,
+    pub(crate) account_prefix: String,
     chain_id: String,
 }
 
@@ -137,6 +137,18 @@ impl From<PerformError> for TendermintCoinRpcError {
 }
 
 fn account_id_from_privkey(priv_key: &[u8], prefix: &str) -> MmResult<AccountId, TendermintInitErrorKind> {
+    let signing_key =
+        SigningKey::from_bytes(priv_key).map_to_mm(|e| TendermintInitErrorKind::InvalidPrivKey(e.to_string()))?;
+
+    signing_key
+        .public_key()
+        .account_id(prefix)
+        .map_to_mm(|e| TendermintInitErrorKind::CouldNotGenerateAccountId(e.to_string()))
+}
+
+pub(crate) fn account_id_from_ctx(ctx: &MmArc, prefix: &str) -> MmResult<AccountId, TendermintInitErrorKind> {
+    let priv_key = &*ctx.secp256k1_key_pair().private().secret;
+
     let signing_key =
         SigningKey::from_bytes(priv_key).map_to_mm(|e| TendermintInitErrorKind::InvalidPrivKey(e.to_string()))?;
 
@@ -510,12 +522,17 @@ impl MmCoin for TendermintCoin {
         Box::new(fut.boxed().compat())
     }
 
+    /// !! This function includes dummy implementation for P.O.C work
     async fn get_fee_to_send_taker_fee(
         &self,
         dex_fee_amount: BigDecimal,
         stage: FeeApproxStage,
     ) -> TradePreimageResult<TradeFee> {
-        todo!()
+        Ok(TradeFee {
+            coin: self.ticker().to_string(),
+            amount: MmNumber::from(1_u64).into(),
+            paid_from_trading_vol: false,
+        })
     }
 
     /// !! This function includes dummy implementation for P.O.C work
@@ -632,7 +649,8 @@ impl MarketCoinOps for TendermintCoin {
 
     fn display_priv_key(&self) -> Result<String, String> { Ok(hex::encode(&self.priv_key)) }
 
-    fn min_tx_amount(&self) -> BigDecimal { todo!() }
+    /// !! This function includes dummy implementation for P.O.C work
+    fn min_tx_amount(&self) -> BigDecimal { BigDecimal::from(0) }
 
     /// !! This function includes dummy implementation for P.O.C work
     fn min_trading_vol(&self) -> MmNumber { MmNumber::from("0.00777") }

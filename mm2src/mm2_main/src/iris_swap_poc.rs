@@ -5,7 +5,7 @@ use mm2_test_helpers::for_tests::enable_tendermint;
 #[ignore]
 // cargo test mm2::mm2_tests::iris_swap_poc::test -- --exact --ignored
 fn test() {
-    block_on(trade_base_rel_iris(&[("IRIS-TEST", "IRIS-USDC-IBC")], 1, 2, 0.1));
+    block_on(trade_base_rel_iris(&[("IRIS-TEST", "IRIS-NIMDA")], 1, 2, 0.1));
 
     assert!(false);
 }
@@ -26,6 +26,17 @@ pub async fn trade_base_rel_iris(
                 "protocol_data": {
                     "decimals": 6,
                     "denom": "ibc/5C465997B4F582F602CD64E12031C6A6E18CAF1E6EDC9B5D808822DC0B5F850C",
+                    "account_prefix": "iaa",
+                    "chain_id": "nyancat-9",
+                },
+            }
+        },
+        {"coin":"IRIS-NIMDA",
+            "protocol":{
+                "type":"TENDERMINT",
+                "protocol_data": {
+                    "decimals": 6,
+                    "denom": "nim",
                     "account_prefix": "iaa",
                     "chain_id": "nyancat-9",
                 },
@@ -85,14 +96,14 @@ pub async fn trade_base_rel_iris(
     .unwrap();
 
     dbg!(enable_tendermint(&mm_bob, "IRIS-TEST", &["http://34.80.202.172:26657"]).await);
-    dbg!(enable_tendermint(&mm_bob, "IRIS-USDC-IBC", &["http://34.80.202.172:26657"]).await);
+    dbg!(enable_tendermint(&mm_bob, "IRIS-NIMDA", &["http://34.80.202.172:26657"]).await);
 
     dbg!(enable_tendermint(&mm_alice, "IRIS-TEST", &["http://34.80.202.172:26657"]).await);
-    dbg!(enable_tendermint(&mm_alice, "IRIS-USDC-IBC", &["http://34.80.202.172:26657"]).await);
+    dbg!(enable_tendermint(&mm_alice, "IRIS-NIMDA", &["http://34.80.202.172:26657"]).await);
 
     for (base, rel) in pairs.iter() {
         log!("Issue bob {}/{} sell request", base, rel);
-        let rc = match mm_bob
+        let rc = mm_bob
             .rpc(&json! ({
                 "userpass": mm_bob.userpass,
                 "method": "setprice",
@@ -102,14 +113,54 @@ pub async fn trade_base_rel_iris(
                 "volume": volume
             }))
             .await
+            .unwrap();
+        assert!(rc.0.is_success(), "!setprice: {}", rc.1);
+    }
+
+    let mut uuids = vec![];
+
+    for (base, rel) in pairs.iter() {
+        common::log::info!(
+            "Trigger alice subscription to {}/{} orderbook topic first and sleep for 1 second",
+            base,
+            rel
+        );
+        let rc = match mm_alice
+            .rpc(&json! ({
+                "userpass": mm_alice.userpass,
+                "method": "orderbook",
+                "base": base,
+                "rel": rel,
+            }))
+            .await
         {
             Ok(t) => t,
             Err(_) => {
                 Timer::sleep(5.).await;
-                dbg!(mm_bob.log_as_utf8().unwrap());
+                dbg!(mm_alice.log_as_utf8().unwrap());
                 panic!();
             },
         };
-        assert!(rc.0.is_success(), "!setprice: {}", rc.1);
+        assert!(rc.0.is_success(), "!orderbook: {}", rc.1);
+        Timer::sleep(1.).await;
+        common::log::info!("Issue alice {}/{} buy request", base, rel);
+        let rc = mm_alice
+            .rpc(&json! ({
+                "userpass": mm_alice.userpass,
+                "method": "buy",
+                "base": base,
+                "rel": rel,
+                "volume": volume,
+                "price": taker_price
+            }))
+            .await
+            .unwrap();
+        assert!(rc.0.is_success(), "!buy: {}", rc.1);
+        let buy_json: Json = serde_json::from_str(&rc.1).unwrap();
+        uuids.push(buy_json["result"]["uuid"].as_str().unwrap().to_owned());
     }
+
+    dbg!(mm_alice.log_as_utf8().unwrap());
+
+    println!("\n `fn trade_base_rel_iris` hit end! \n");
 }
