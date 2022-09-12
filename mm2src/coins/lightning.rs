@@ -21,14 +21,12 @@ use crate::lightning::ln_storage::{NetworkGraph, TrustedNodesShared};
 use crate::utxo::rpc_clients::UtxoRpcClientEnum;
 use crate::utxo::utxo_common::{big_decimal_from_sat_unsigned, UtxoTxBuilder};
 use crate::utxo::{sat_from_big_decimal, BlockchainNetwork, FeePolicy, GetUtxoListOps, UtxoTxGenerationOps};
-use crate::{
-    BalanceFut, CoinBalance, FeeApproxStage, FoundSwapTxSpend, HistorySyncState, MarketCoinOps, MmCoin,
-    NegotiateSwapContractAddrErr, RawTransactionFut, RawTransactionRequest, SearchForSwapTxSpendInput, SignatureError,
-    SignatureResult, SwapOps, TradeFee, TradePreimageFut, TradePreimageResult, TradePreimageValue, TransactionEnum,
-    TransactionFut, TxMarshalingErr, UnexpectedDerivationMethod, UtxoStandardCoin, ValidateAddressResult,
-    ValidatePaymentFut, ValidatePaymentInput, VerificationError, VerificationResult, WithdrawError, WithdrawFut,
-    WithdrawRequest,
-};
+use crate::{BalanceFut, CoinBalance, FeeApproxStage, FoundSwapTxSpend, HistorySyncState, MarketCoinOps, MmCoin,
+            NegotiateSwapContractAddrErr, RawTransactionFut, RawTransactionRequest, SearchForSwapTxSpendInput,
+            SignatureError, SignatureResult, SwapOps, TradeFee, TradePreimageFut, TradePreimageResult,
+            TradePreimageValue, TransactionEnum, TransactionFut, TxMarshalingErr, UnexpectedDerivationMethod,
+            UtxoStandardCoin, ValidateAddressResult, ValidatePaymentFut, ValidatePaymentInput, VerificationError,
+            VerificationResult, WithdrawError, WithdrawFut, WithdrawRequest};
 use async_trait::async_trait;
 use bitcoin::hashes::Hash;
 use bitcoin_hashes::sha256::Hash as Sha256;
@@ -53,16 +51,14 @@ use lightning_invoice::payment;
 use lightning_invoice::utils::{create_invoice_from_channelmanager, DefaultRouter};
 use lightning_invoice::{Invoice, InvoiceDescription};
 use ln_conf::{ChannelOptions, LightningCoinConf, LightningProtocolConf, PlatformCoinConfirmationTargets};
-use ln_db::{
-    ClosedChannelsFilter, DBChannelDetails, DBPaymentInfo, DBPaymentsFilter, HTLCStatus, LightningDB, PaymentType,
-};
-use ln_errors::{
-    ClaimableBalancesError, ClaimableBalancesResult, CloseChannelError, CloseChannelResult, ConnectToNodeError,
-    ConnectToNodeResult, EnableLightningError, EnableLightningResult, GenerateInvoiceError, GenerateInvoiceResult,
-    GetChannelDetailsError, GetChannelDetailsResult, GetPaymentDetailsError, GetPaymentDetailsResult,
-    ListChannelsError, ListChannelsResult, ListPaymentsError, ListPaymentsResult, OpenChannelError, OpenChannelResult,
-    SendPaymentError, SendPaymentResult,
-};
+use ln_db::{ClosedChannelsFilter, DBChannelDetails, DBPaymentInfo, DBPaymentsFilter, HTLCStatus, LightningDB,
+            PaymentType};
+use ln_errors::{ClaimableBalancesError, ClaimableBalancesResult, CloseChannelError, CloseChannelResult,
+                ConnectToNodeError, ConnectToNodeResult, EnableLightningError, EnableLightningResult,
+                GenerateInvoiceError, GenerateInvoiceResult, GetChannelDetailsError, GetChannelDetailsResult,
+                GetPaymentDetailsError, GetPaymentDetailsResult, ListChannelsError, ListChannelsResult,
+                ListPaymentsError, ListPaymentsResult, OpenChannelError, OpenChannelResult, SendPaymentError,
+                SendPaymentResult};
 use ln_events::LightningEventHandler;
 use ln_filesystem_persister::LightningFilesystemPersister;
 use ln_p2p::{connect_to_node, ConnectToNodeRes, PeerManager};
@@ -120,20 +116,14 @@ pub struct LightningCoin {
 }
 
 impl fmt::Debug for LightningCoin {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(f, "LightningCoin {{ conf: {:?} }}", self.conf)
-    }
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result { write!(f, "LightningCoin {{ conf: {:?} }}", self.conf) }
 }
 
 impl LightningCoin {
-    fn platform_coin(&self) -> &UtxoStandardCoin {
-        &self.platform.coin
-    }
+    fn platform_coin(&self) -> &UtxoStandardCoin { &self.platform.coin }
 
     #[inline]
-    fn my_node_id(&self) -> String {
-        self.channel_manager.get_our_node_id().to_string()
-    }
+    fn my_node_id(&self) -> String { self.channel_manager.get_our_node_id().to_string() }
 
     async fn list_channels(&self) -> Vec<ChannelDetails> {
         let channel_manager = self.channel_manager.clone();
@@ -287,9 +277,7 @@ impl LightningCoin {
 #[async_trait]
 // Todo: Implement this when implementing swaps for lightning as it's is used only for swaps
 impl SwapOps for LightningCoin {
-    fn send_taker_fee(&self, _fee_addr: &[u8], _amount: BigDecimal, _uuid: &[u8]) -> TransactionFut {
-        unimplemented!()
-    }
+    fn send_taker_fee(&self, _fee_addr: &[u8], _amount: BigDecimal, _uuid: &[u8]) -> TransactionFut { unimplemented!() }
 
     fn send_maker_payment(
         &self,
@@ -375,13 +363,9 @@ impl SwapOps for LightningCoin {
         unimplemented!()
     }
 
-    fn validate_maker_payment(&self, _input: ValidatePaymentInput) -> ValidatePaymentFut<()> {
-        unimplemented!()
-    }
+    fn validate_maker_payment(&self, _input: ValidatePaymentInput) -> ValidatePaymentFut<()> { unimplemented!() }
 
-    fn validate_taker_payment(&self, _input: ValidatePaymentInput) -> ValidatePaymentFut<()> {
-        unimplemented!()
-    }
+    fn validate_taker_payment(&self, _input: ValidatePaymentInput) -> ValidatePaymentFut<()> { unimplemented!() }
 
     fn check_if_my_payment_sent(
         &self,
@@ -409,9 +393,7 @@ impl SwapOps for LightningCoin {
         unimplemented!()
     }
 
-    fn extract_secret(&self, _secret_hash: &[u8], _spend_tx: &[u8]) -> Result<Vec<u8>, String> {
-        unimplemented!()
-    }
+    fn extract_secret(&self, _secret_hash: &[u8], _spend_tx: &[u8]) -> Result<Vec<u8>, String> { unimplemented!() }
 
     fn negotiate_swap_contract_addr(
         &self,
@@ -420,23 +402,15 @@ impl SwapOps for LightningCoin {
         unimplemented!()
     }
 
-    fn derive_htlc_key_pair(&self, _swap_unique_data: &[u8]) -> KeyPair {
-        unimplemented!()
-    }
+    fn derive_htlc_key_pair(&self, _swap_unique_data: &[u8]) -> KeyPair { unimplemented!() }
 }
 
 impl MarketCoinOps for LightningCoin {
-    fn ticker(&self) -> &str {
-        &self.conf.ticker
-    }
+    fn ticker(&self) -> &str { &self.conf.ticker }
 
-    fn my_address(&self) -> MmResult<String, MyAddressError> {
-        Ok(self.my_node_id())
-    }
+    fn my_address(&self) -> MmResult<String, MyAddressError> { Ok(self.my_node_id()) }
 
-    fn get_public_key(&self) -> Result<String, MmError<UnexpectedDerivationMethod>> {
-        unimplemented!()
-    }
+    fn get_public_key(&self) -> Result<String, MmError<UnexpectedDerivationMethod>> { unimplemented!() }
 
     fn sign_message_hash(&self, message: &str) -> Option<[u8; 32]> {
         let mut _message_prefix = self.conf.sign_message_prefix.clone()?;
@@ -489,9 +463,7 @@ impl MarketCoinOps for LightningCoin {
         Box::new(self.platform_coin().my_balance().map(|res| res.spendable))
     }
 
-    fn platform_ticker(&self) -> &str {
-        self.platform_coin().ticker()
-    }
+    fn platform_ticker(&self) -> &str { self.platform_coin().ticker() }
 
     fn send_raw_tx(&self, _tx: &str) -> Box<dyn Future<Item = String, Error = String> + Send> {
         Box::new(futures01::future::err(
@@ -541,9 +513,7 @@ impl MarketCoinOps for LightningCoin {
         ))
     }
 
-    fn current_block(&self) -> Box<dyn Future<Item = u64, Error = String> + Send> {
-        Box::new(futures01::future::ok(0))
-    }
+    fn current_block(&self) -> Box<dyn Future<Item = u64, Error = String> + Send> { Box::new(futures01::future::ok(0)) }
 
     fn display_priv_key(&self) -> Result<String, String> {
         Ok(self
@@ -555,21 +525,15 @@ impl MarketCoinOps for LightningCoin {
     }
 
     // Todo: Implement this when implementing swaps for lightning as it's is used only for swaps
-    fn min_tx_amount(&self) -> BigDecimal {
-        unimplemented!()
-    }
+    fn min_tx_amount(&self) -> BigDecimal { unimplemented!() }
 
     // Todo: Implement this when implementing swaps for lightning as it's is used only for order matching/swaps
-    fn min_trading_vol(&self) -> MmNumber {
-        unimplemented!()
-    }
+    fn min_trading_vol(&self) -> MmNumber { unimplemented!() }
 }
 
 #[async_trait]
 impl MmCoin for LightningCoin {
-    fn is_asset_chain(&self) -> bool {
-        false
-    }
+    fn is_asset_chain(&self) -> bool { false }
 
     fn get_raw_transaction(&self, req: RawTransactionRequest) -> RawTransactionFut {
         Box::new(self.platform_coin().get_raw_transaction(req))
@@ -584,9 +548,7 @@ impl MmCoin for LightningCoin {
         Box::new(fut.boxed().compat())
     }
 
-    fn decimals(&self) -> u8 {
-        self.conf.decimals
-    }
+    fn decimals(&self) -> u8 { self.conf.decimals }
 
     fn convert_to_address(&self, _from: &str, _to_address_format: Json) -> Result<String, String> {
         Err(MmError::new("Address conversion is not available for LightningCoin".to_string()).to_string())
@@ -606,19 +568,13 @@ impl MmCoin for LightningCoin {
     }
 
     // Todo: Implement this when implementing payments history for lightning
-    fn process_history_loop(&self, _ctx: MmArc) -> Box<dyn Future<Item = (), Error = ()> + Send> {
-        unimplemented!()
-    }
+    fn process_history_loop(&self, _ctx: MmArc) -> Box<dyn Future<Item = (), Error = ()> + Send> { unimplemented!() }
 
     // Todo: Implement this when implementing payments history for lightning
-    fn history_sync_status(&self) -> HistorySyncState {
-        unimplemented!()
-    }
+    fn history_sync_status(&self) -> HistorySyncState { unimplemented!() }
 
     // Todo: Implement this when implementing swaps for lightning as it's is used only for swaps
-    fn get_trade_fee(&self) -> Box<dyn Future<Item = TradeFee, Error = String> + Send> {
-        unimplemented!()
-    }
+    fn get_trade_fee(&self) -> Box<dyn Future<Item = TradeFee, Error = String> + Send> { unimplemented!() }
 
     // Todo: Implement this when implementing swaps for lightning as it's is used only for swaps
     async fn get_sender_trade_fee(
@@ -630,9 +586,7 @@ impl MmCoin for LightningCoin {
     }
 
     // Todo: Implement this when implementing swaps for lightning as it's is used only for swaps
-    fn get_receiver_trade_fee(&self, _stage: FeeApproxStage) -> TradePreimageFut<TradeFee> {
-        unimplemented!()
-    }
+    fn get_receiver_trade_fee(&self, _stage: FeeApproxStage) -> TradePreimageFut<TradeFee> { unimplemented!() }
 
     // Todo: Implement this when implementing swaps for lightning as it's is used only for swaps
     async fn get_fee_to_send_taker_fee(
@@ -645,35 +599,23 @@ impl MmCoin for LightningCoin {
 
     // Lightning payments are either pending, successful or failed. Once a payment succeeds there is no need to for confirmations
     // unlike onchain transactions.
-    fn required_confirmations(&self) -> u64 {
-        0
-    }
+    fn required_confirmations(&self) -> u64 { 0 }
 
-    fn requires_notarization(&self) -> bool {
-        false
-    }
+    fn requires_notarization(&self) -> bool { false }
 
     fn set_required_confirmations(&self, _confirmations: u64) {}
 
     fn set_requires_notarization(&self, _requires_nota: bool) {}
 
-    fn swap_contract_address(&self) -> Option<BytesJson> {
-        None
-    }
+    fn swap_contract_address(&self) -> Option<BytesJson> { None }
 
-    fn mature_confirmations(&self) -> Option<u32> {
-        None
-    }
+    fn mature_confirmations(&self) -> Option<u32> { None }
 
     // Todo: Implement this when implementing order matching for lightning as it's is used only for order matching
-    fn coin_protocol_info(&self) -> Vec<u8> {
-        unimplemented!()
-    }
+    fn coin_protocol_info(&self) -> Vec<u8> { unimplemented!() }
 
     // Todo: Implement this when implementing order matching for lightning as it's is used only for order matching
-    fn is_coin_protocol_supported(&self, _info: &Option<Vec<u8>>) -> bool {
-        unimplemented!()
-    }
+    fn is_coin_protocol_supported(&self, _info: &Option<Vec<u8>>) -> bool { unimplemented!() }
 }
 
 #[derive(Clone, Debug, Deserialize, Serialize)]

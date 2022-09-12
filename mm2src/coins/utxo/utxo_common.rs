@@ -2,24 +2,20 @@ use super::*;
 use crate::coin_balance::{AddressBalanceStatus, HDAddressBalance, HDWalletBalanceOps};
 use crate::coin_errors::{MyAddressError, ValidatePaymentError};
 use crate::hd_pubkey::{ExtractExtendedPubkey, HDExtractPubkeyError, HDXPubExtractor};
-use crate::hd_wallet::{
-    AccountUpdatingError, AddressDerivingError, HDAccountMut, HDAccountsMap, NewAccountCreatingError,
-};
+use crate::hd_wallet::{AccountUpdatingError, AddressDerivingError, HDAccountMut, HDAccountsMap,
+                       NewAccountCreatingError};
 use crate::hd_wallet_storage::{HDWalletCoinWithStorageOps, HDWalletStorageResult};
 use crate::rpc_command::init_withdraw::WithdrawTaskHandle;
-use crate::utxo::rpc_clients::{
-    electrum_script_hash, BlockHashOrHeight, UnspentInfo, UnspentMap, UtxoRpcClientEnum, UtxoRpcClientOps,
-    UtxoRpcResult,
-};
+use crate::utxo::rpc_clients::{electrum_script_hash, BlockHashOrHeight, UnspentInfo, UnspentMap, UtxoRpcClientEnum,
+                               UtxoRpcClientOps, UtxoRpcResult};
 use crate::utxo::spv::SimplePaymentVerification;
 use crate::utxo::tx_cache::TxCacheResult;
 use crate::utxo::utxo_withdraw::{InitUtxoWithdraw, StandardUtxoWithdraw, UtxoWithdraw};
-use crate::{
-    CanRefundHtlc, CoinBalance, CoinWithDerivationMethod, GetWithdrawSenderAddress, HDAddressId, RawTransactionError,
-    RawTransactionRequest, RawTransactionRes, SearchForSwapTxSpendInput, SignatureError, SignatureResult, SwapOps,
-    TradePreimageValue, TransactionFut, TxFeeDetails, TxMarshalingErr, ValidateAddressResult, ValidatePaymentFut,
-    ValidatePaymentInput, VerificationError, VerificationResult, WithdrawFrom, WithdrawResult, WithdrawSenderAddress,
-};
+use crate::{CanRefundHtlc, CoinBalance, CoinWithDerivationMethod, GetWithdrawSenderAddress, HDAddressId,
+            RawTransactionError, RawTransactionRequest, RawTransactionRes, SearchForSwapTxSpendInput, SignatureError,
+            SignatureResult, SwapOps, TradePreimageValue, TransactionFut, TxFeeDetails, TxMarshalingErr,
+            ValidateAddressResult, ValidatePaymentFut, ValidatePaymentInput, VerificationError, VerificationResult,
+            WithdrawFrom, WithdrawResult, WithdrawSenderAddress};
 use bitcrypto::dhash256;
 pub use bitcrypto::{dhash160, sha256, ChecksumType};
 use chain::constants::SEQUENCE_FINAL;
@@ -34,10 +30,8 @@ use futures::future::{FutureExt, TryFutureExt};
 use futures01::future::Either;
 use itertools::Itertools;
 use keys::bytes::Bytes;
-use keys::{
-    Address, AddressFormat as UtxoAddressFormat, AddressHashEnum, CompactSignature, Public, SegwitAddress,
-    Type as ScriptType,
-};
+use keys::{Address, AddressFormat as UtxoAddressFormat, AddressHashEnum, CompactSignature, Public, SegwitAddress,
+           Type as ScriptType};
 use mm2_core::mm_ctx::MmArc;
 use mm2_err_handle::prelude::*;
 use mm2_number::{BigDecimal, MmNumber};
@@ -46,10 +40,8 @@ use rpc::v1::types::{Bytes as BytesJson, ToTxHash, TransactionInputEnum, H256 as
 use script::{Builder, Opcode, Script, ScriptAddress, TransactionInputSigner, UnsignedTransactionInput};
 use secp256k1::{PublicKey, Signature};
 use serde_json::{self as json};
-use serialization::{
-    deserialize, serialize, serialize_with_flags, CoinVariant, CompactInteger, Serializable, Stream,
-    SERIALIZE_TRANSACTION_WITNESS,
-};
+use serialization::{deserialize, serialize, serialize_with_flags, CoinVariant, CompactInteger, Serializable, Stream,
+                    SERIALIZE_TRANSACTION_WITNESS};
 use std::cmp::Ordering;
 use std::collections::hash_map::{Entry, HashMap};
 use std::str::FromStr;
@@ -450,9 +442,7 @@ where
     }
 }
 
-pub fn derivation_method(coin: &UtxoCoinFields) -> &DerivationMethod<Address, UtxoHDWallet> {
-    &coin.derivation_method
-}
+pub fn derivation_method(coin: &UtxoCoinFields) -> &DerivationMethod<Address, UtxoHDWallet> { &coin.derivation_method }
 
 pub async fn extract_extended_pubkey<XPubExtractor>(
     conf: &UtxoCoinConf,
@@ -805,13 +795,10 @@ impl<'a, T: AsRef<UtxoCoinFields> + UtxoTxGenerationOps> UtxoTxBuilder<'a, T> {
         for output in self.tx.outputs.iter() {
             let script: Script = output.script_pubkey.clone().into();
             if script.opcodes().next() != Some(Ok(Opcode::OP_RETURN)) {
-                true_or!(
-                    output.value >= dust,
-                    GenerateTxError::OutputValueLessThanDust {
-                        value: output.value,
-                        dust
-                    }
-                );
+                true_or!(output.value >= dust, GenerateTxError::OutputValueLessThanDust {
+                    value: output.value,
+                    dust
+                });
             }
             self.sum_outputs_value += output.value;
             if output.script_pubkey == change_script_pubkey {
@@ -857,14 +844,11 @@ impl<'a, T: AsRef<UtxoCoinFields> + UtxoTxGenerationOps> UtxoTxBuilder<'a, T> {
             FeePolicy::DeductFromOutput(i) => {
                 let min_output = self.tx_fee + dust;
                 let val = self.tx.outputs[i].value;
-                true_or!(
-                    val >= min_output,
-                    GenerateTxError::DeductFeeFromOutputFailed {
-                        output_idx: i,
-                        output_value: val,
-                        required: min_output,
-                    }
-                );
+                true_or!(val >= min_output, GenerateTxError::DeductFeeFromOutputFailed {
+                    output_idx: i,
+                    output_value: val,
+                    required: min_output,
+                });
                 self.tx.outputs[i].value -= self.tx_fee;
                 if self.tx.outputs[i].script_pubkey == change_script_pubkey {
                     received_by_me -= self.tx_fee;
@@ -1886,9 +1870,7 @@ pub fn min_trading_vol(coin: &UtxoCoinFields) -> MmNumber {
     dust_multiplier * min_tx_amount(coin).into()
 }
 
-pub fn is_asset_chain(coin: &UtxoCoinFields) -> bool {
-    coin.conf.asset_chain
-}
+pub fn is_asset_chain(coin: &UtxoCoinFields) -> bool { coin.conf.asset_chain }
 
 pub async fn get_raw_transaction(coin: &UtxoCoinFields, req: RawTransactionRequest) -> RawTransactionResult {
     let hash = H256Json::from_str(&req.tx_hash).map_to_mm(|e| RawTransactionError::InvalidHashError(e.to_string()))?;
@@ -2007,9 +1989,7 @@ where
     Ok(WithdrawSenderAddress::from(hd_address))
 }
 
-pub fn decimals(coin: &UtxoCoinFields) -> u8 {
-    coin.decimals
-}
+pub fn decimals(coin: &UtxoCoinFields) -> u8 { coin.decimals }
 
 pub fn convert_to_address<T: UtxoCommonOps>(coin: &T, from: &str, to_address_format: Json) -> Result<String, String> {
     let to_address_format: UtxoAddressFormat =
@@ -2408,13 +2388,10 @@ pub async fn tx_details_by_hash<T: UtxoCommonOps>(
     tx.tx_hash_algo = coin.as_ref().tx_hash_algo;
     let my_address = try_s!(coin.as_ref().derivation_method.iguana_or_err());
 
-    input_transactions.insert(
-        hash,
-        HistoryUtxoTx {
-            tx: tx.clone(),
-            height: verbose_tx.height,
-        },
-    );
+    input_transactions.insert(hash, HistoryUtxoTx {
+        tx: tx.clone(),
+        height: verbose_tx.height,
+    });
 
     let mut input_amount = 0;
     let mut output_amount = 0;
@@ -2917,9 +2894,7 @@ where
     T: UtxoCommonOps,
 {
     /// Returns `true` if the given transaction has a known non-zero height.
-    fn can_tx_be_cached(tx: &RpcTransaction) -> bool {
-        tx.height > Some(0)
-    }
+    fn can_tx_be_cached(tx: &RpcTransaction) -> bool { tx.height > Some(0) }
 
     /// Calculates actual confirmations number of the given `tx` transaction loaded from cache.
     fn calc_actual_cached_tx_confirmations(tx: &RpcTransaction, block_count: u64) -> UtxoRpcResult<u32> {
@@ -3069,9 +3044,7 @@ pub async fn get_verbose_transactions_from_cache_or_rpc(
 
 /// Swap contract address is not used by standard UTXO coins.
 #[inline]
-pub fn swap_contract_address() -> Option<BytesJson> {
-    None
-}
+pub fn swap_contract_address() -> Option<BytesJson> { None }
 
 /// Convert satoshis to BigDecimal amount of coin units
 #[inline]
