@@ -27,7 +27,7 @@
 
 /// Implements a `From` for `enum` with a variant name matching the name of the type stored.
 ///
-/// This is helpful as a workaround for the lack of datasort refinements.  
+/// This is helpful as a workaround for the lack of datasort refinements.
 /// And also as a simpler alternative to `enum_dispatch` and `enum_derive`.
 ///
 ///     enum Color {Red (Red)}
@@ -95,12 +95,13 @@ macro_rules! drop_mutability {
 #[macro_use]
 pub mod jsonrpc_client;
 #[macro_use]
+pub mod fmt;
+#[macro_use]
 pub mod log;
 
 pub mod crash_reports;
 pub mod custom_futures;
 pub mod custom_iter;
-pub mod duplex_mutex;
 pub mod seri;
 #[path = "patterns/state_machine.rs"] pub mod state_machine;
 pub mod time_cache;
@@ -118,6 +119,7 @@ pub mod wio;
 pub mod executor;
 
 #[cfg(target_arch = "wasm32")] pub mod wasm;
+
 #[cfg(target_arch = "wasm32")] pub use wasm::*;
 
 use backtrace::SymbolName;
@@ -131,7 +133,7 @@ use parking_lot::{Mutex as PaMutex, MutexGuard as PaMutexGuard};
 use rand::{rngs::SmallRng, SeedableRng};
 use serde::{de, ser};
 use serde_json::{self as json, Value as Json};
-use std::fmt::{self, Write as FmtWrite};
+use std::fmt::Write as FmtWrite;
 use std::future::Future as Future03;
 use std::io::Write;
 use std::iter::Peekable;
@@ -197,8 +199,8 @@ impl Default for bits256 {
     }
 }
 
-impl fmt::Display for bits256 {
-    fn fmt(&self, fm: &mut fmt::Formatter) -> fmt::Result {
+impl std::fmt::Display for bits256 {
+    fn fmt(&self, fm: &mut std::fmt::Formatter) -> std::fmt::Result {
         for &ch in self.bytes.iter() {
             fn hex_from_digit(num: u8) -> char {
                 if num < 10 {
@@ -231,7 +233,7 @@ impl<'de> de::Deserialize<'de> for bits256 {
         struct Bits256Visitor;
         impl<'de> de::Visitor<'de> for Bits256Visitor {
             type Value = bits256;
-            fn expecting(&self, fm: &mut fmt::Formatter) -> fmt::Result { fm.write_str("a byte array") }
+            fn expecting(&self, fm: &mut std::fmt::Formatter) -> std::fmt::Result { fm.write_str("a byte array") }
             fn visit_seq<S>(self, mut seq: S) -> Result<bits256, S::Error>
             where
                 S: de::SeqAccess<'de>,
@@ -263,8 +265,8 @@ impl<'de> de::Deserialize<'de> for bits256 {
     }
 }
 
-impl fmt::Debug for bits256 {
-    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result { (self as &dyn fmt::Display).fmt(f) }
+impl std::fmt::Debug for bits256 {
+    fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result { (self as &dyn std::fmt::Display).fmt(f) }
 }
 
 impl From<[u8; 32]> for bits256 {
@@ -537,8 +539,8 @@ pub enum SerializationError {
     InternalError(String),
 }
 
-impl fmt::Display for SerializationError {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+impl std::fmt::Display for SerializationError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
             SerializationError::InternalError(internal) => {
                 write!(f, "Internal error: Couldn't serialize an RPC response: {}", internal)
@@ -548,9 +550,7 @@ impl fmt::Display for SerializationError {
 }
 
 impl SerializationError {
-    pub fn from_error<E: serde::ser::Error>(e: E) -> SerializationError {
-        SerializationError::InternalError(e.to_string())
-    }
+    pub fn from_error<E: ser::Error>(e: E) -> SerializationError { SerializationError::InternalError(e.to_string()) }
 }
 
 #[derive(Clone, Serialize)]
@@ -590,7 +590,7 @@ pub fn rpc_err_response(status: u16, msg: &str) -> HyRes {
 
 #[cfg(not(target_arch = "wasm32"))]
 pub fn var(name: &str) -> Result<String, String> {
-    match std::env::var(name) {
+    match env::var(name) {
         Ok(v) => Ok(v),
         Err(_err) => ERR!("No {}", name),
     }

@@ -1061,6 +1061,7 @@ dependencies = [
  "ethkey",
  "futures 0.1.29",
  "futures 0.3.15",
+ "group 0.8.0",
  "gstuff",
  "hex 0.4.2",
  "http 0.2.7",
@@ -1721,6 +1722,7 @@ checksum = "72aa14c04dfae8dd7d8a2b1cb7ca2152618cd01336dbfe704b8dcbf8d41dbd69"
 name = "db_common"
 version = "0.1.0"
 dependencies = [
+ "common",
  "hex 0.4.2",
  "log 0.4.14",
  "rusqlite",
@@ -4341,6 +4343,28 @@ dependencies = [
 ]
 
 [[package]]
+name = "mm2_gui_storage"
+version = "0.1.0"
+dependencies = [
+ "async-trait",
+ "common",
+ "db_common",
+ "derive_more",
+ "mm2_core",
+ "mm2_db",
+ "mm2_err_handle",
+ "mm2_number",
+ "mm2_test_helpers",
+ "rpc",
+ "ser_error",
+ "ser_error_derive",
+ "serde",
+ "serde_json",
+ "serde_repr",
+ "wasm-bindgen-test",
+]
+
+[[package]]
 name = "mm2_io"
 version = "0.1.0"
 dependencies = [
@@ -4402,6 +4426,7 @@ dependencies = [
  "mm2_core",
  "mm2_db",
  "mm2_err_handle",
+ "mm2_gui_storage",
  "mm2_io",
  "mm2_metrics",
  "mm2_net",
@@ -6034,6 +6059,7 @@ version = "0.1.0"
 dependencies = [
  "chain",
  "keys",
+ "lazy_static",
  "log 0.4.14",
  "primitives",
  "rustc-hex 2.1.0",

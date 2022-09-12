@@ -17,3 +17,6 @@ chain = { path = "../chain" }
 primitives = { path = "../primitives" }
 keys = { path = "../keys" }
 script = { path = "../script" }
+
+[dev-dependencies]
+lazy_static = "1.4"

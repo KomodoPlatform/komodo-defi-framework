@@ -31,13 +31,13 @@ use futures::compat::Future01CompatExt;
 use futures::lock::Mutex as AsyncMutex;
 use futures::{FutureExt, TryFutureExt};
 use futures01::Future;
-use http::Uri;
 use keys::hash::H256;
 use keys::{KeyPair, Message, Public};
 use mm2_core::mm_ctx::MmArc;
 use mm2_err_handle::prelude::*;
 use mm2_number::{BigDecimal, MmNumber};
 #[cfg(test)] use mocktopus::macros::*;
+use parking_lot::Mutex;
 use primitives::bytes::Bytes;
 use rpc::v1::types::{Bytes as BytesJson, Transaction as RpcTransaction, H256 as H256Json};
 use script::{Builder as ScriptBuilder, Opcode, Script, TransactionInputSigner};
@@ -45,7 +45,6 @@ use serde_json::Value as Json;
 use serialization::CoinVariant;
 use std::collections::{HashMap, HashSet};
 use std::path::PathBuf;
-use std::str::FromStr;
 use std::sync::Arc;
 use zcash_client_backend::data_api::WalletRead;
 use zcash_client_backend::encoding::{decode_payment_address, encode_extended_spending_key, encode_payment_address};
@@ -70,9 +69,10 @@ use z_htlc::{z_p2sh_spend, z_send_dex_fee, z_send_htlc};
 
 mod z_rpc;
 pub use z_rpc::SyncStatus;
-use z_rpc::{init_light_client, SaplingSyncConnector, SaplingSyncGuard, WalletDbShared};
+use z_rpc::{init_light_client, init_native_client, SaplingSyncConnector, SaplingSyncGuard, WalletDbShared};
 
 mod z_coin_errors;
+use crate::z_coin::z_rpc::{create_wallet_db, BlockDb};
 pub use z_coin_errors::*;
 
 #[cfg(all(test, feature = "zhtlc-native-tests"))]
@@ -766,29 +766,39 @@ impl<'a> UtxoCoinWithIguanaPrivKeyBuilder for ZCoinBuilder<'a> {
         );
 
         let evk = ExtendedFullViewingKey::from(&self.z_spending_key);
+        let cache_db_path = self.db_dir_path.join(format!("{}_cache.db", self.ticker));
+        let wallet_db_path = self.db_dir_path.join(format!("{}_wallet.db", self.ticker));
+        let blocks_db =
+            async_blocking(|| BlockDb::for_path(cache_db_path).map_to_mm(ZcoinClientInitError::BlocksDbInitFailure))
+                .await?;
+        let wallet_db = create_wallet_db(
+            wallet_db_path,
+            self.protocol_info.consensus_params.clone(),
+            self.protocol_info.check_point_block.clone(),
+            evk,
+        )
+        .await?;
+        let wallet_db = Arc::new(Mutex::new(wallet_db));
         let (sync_state_connector, light_wallet_db) = match &self.z_coin_params.mode {
             ZcoinRpcMode::Native => {
-                return MmError::err(ZCoinBuildError::NativeModeIsNotSupportedYet);
+                let native_client = self.native_client()?;
+                init_native_client(
+                    native_client,
+                    blocks_db,
+                    wallet_db,
+                    self.protocol_info.consensus_params.clone(),
+                )
+                .await?
             },
             ZcoinRpcMode::Light {
                 light_wallet_d_servers, ..
             } => {
-                let cache_db_path = self.db_dir_path.join(format!("{}_light_cache.db", self.ticker));
-                let wallet_db_path = self.db_dir_path.join(format!("{}_light_wallet.db", self.ticker));
                 // TODO multi lightwalletd servers support will be added on the next iteration
-                let uri = Uri::from_str(
-                    light_wallet_d_servers
-                        .first()
-                        .or_mm_err(|| ZCoinBuildError::EmptyLightwalletdUris)?,
-                )?;
-
                 init_light_client(
-                    uri,
-                    cache_db_path,
-                    wallet_db_path,
+                    light_wallet_d_servers.clone(),
+                    blocks_db,
+                    wallet_db,
                     self.protocol_info.consensus_params.clone(),
-                    self.protocol_info.check_point_block,
-                    evk,
                 )
                 .await?
             },

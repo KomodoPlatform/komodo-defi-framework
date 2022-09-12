@@ -91,6 +91,7 @@ use itertools::Itertools;
 use ser_error::SerializeErrorType;
 use serde::{Serialize, Serializer};
 use std::cell::UnsafeCell;
+use std::error::Error as StdError;
 use std::fmt;
 use std::panic::Location;
 
@@ -136,6 +137,8 @@ where
         write!(f, "{} {:?}", self.trace.formatted(), self.etype)
     }
 }
+
+impl<E: fmt::Display + StdError + NotMmError> StdError for MmError<E> {}
 
 /// Track the location whenever `MmError<E2>::from(MmError<E1>)` is called.
 impl<E1, E2> From<MmError<E1>> for MmError<E2>
