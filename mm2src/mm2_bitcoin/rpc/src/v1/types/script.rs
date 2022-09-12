@@ -19,6 +19,7 @@ pub enum ScriptType {
     Call,
     Create,
     LelantusMint,
+    ColdStaking,
 }
 
 impl From<GlobalScriptType> for ScriptType {
@@ -36,6 +37,7 @@ impl From<GlobalScriptType> for ScriptType {
             GlobalScriptType::CreateSender => ScriptType::CreateSender,
             GlobalScriptType::Call => ScriptType::Call,
             GlobalScriptType::Create => ScriptType::Create,
+            GlobalScriptType::ColdStaking => ScriptType::ColdStaking,
         }
     }
 }
@@ -59,6 +61,7 @@ impl Serialize for ScriptType {
             ScriptType::Call => "call".serialize(serializer),
             ScriptType::Create => "create".serialize(serializer),
             ScriptType::LelantusMint => "lelantusmint".serialize(serializer),
+            ScriptType::ColdStaking => "cold_staking".serialize(serializer),
         }
     }
 }
@@ -95,6 +98,7 @@ impl<'a> Deserialize<'a> for ScriptType {
                     "call" => Ok(ScriptType::Call),
                     "create" => Ok(ScriptType::Create),
                     "lelantusmint" => Ok(ScriptType::LelantusMint),
+                    "cold_staking" => Ok(ScriptType::ColdStaking),
                     _ => Err(E::invalid_value(Unexpected::Str(value), &self)),
                 }
             }
@@ -144,6 +148,10 @@ mod tests {
         );
         assert_eq!(serde_json::to_string(&ScriptType::Call).unwrap(), r#""call""#);
         assert_eq!(serde_json::to_string(&ScriptType::Create).unwrap(), r#""create""#);
+        assert_eq!(
+            serde_json::to_string(&ScriptType::ColdStaking).unwrap(),
+            r#""cold_staking""#
+        );
     }
 
     #[test]
@@ -195,6 +203,10 @@ mod tests {
         assert_eq!(
             serde_json::from_str::<ScriptType>(r#""create""#).unwrap(),
             ScriptType::Create
+        );
+        assert_eq!(
+            serde_json::from_str::<ScriptType>(r#""cold_staking""#).unwrap(),
+            ScriptType::ColdStaking
         );
     }
 }

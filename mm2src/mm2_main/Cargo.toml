@@ -15,10 +15,9 @@ default-run = "mm2"
 wasm-opt = false
 
 [features]
-# Deprecated
-native = []
-track-ctx-pointer = ["common/track-ctx-pointer"]
 custom-swap-locktime = [] # only for testing purposes, should never be activated on release builds.
+native = [] # Deprecated
+track-ctx-pointer = ["common/track-ctx-pointer"]
 zhtlc-native-tests = ["coins/zhtlc-native-tests"]
 
 [[bin]]
@@ -63,6 +62,7 @@ futures01 = { version = "0.1", package = "futures" }
 futures-cpupool = "0.1"
 futures = { version = "0.3.1", package = "futures", features = ["compat", "async-await"] }
 gstuff = { version = "0.7", features = ["nightly"] }
+mm2_gui_storage = { path = "../mm2_gui_storage" }
 hash256-std-hasher = "0.15.2"
 hash-db = "0.15.2"
 hex = "0.4.2"

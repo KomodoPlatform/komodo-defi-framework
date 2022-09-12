@@ -352,6 +352,7 @@ pub enum TransactionEnum {
     #[cfg(not(target_arch = "wasm32"))]
     ZTransaction(ZTransaction),
 }
+
 ifrom!(TransactionEnum, UtxoTx);
 ifrom!(TransactionEnum, SignedEthTx);
 #[cfg(not(target_arch = "wasm32"))]

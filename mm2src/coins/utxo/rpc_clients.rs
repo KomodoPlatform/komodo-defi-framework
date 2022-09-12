@@ -511,14 +511,14 @@ pub enum EstimateFeeMethod {
     SmartFee,
 }
 
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Deserialize, Serialize)]
 #[serde(untagged)]
 pub enum BlockNonce {
     String(String),
     U64(u64),
 }
 
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Deserialize, Serialize)]
 pub struct VerboseBlock {
     /// Block hash
     pub hash: H256Json,
@@ -1124,7 +1124,7 @@ impl NativeClientImpl {
 
     /// https://developer.bitcoin.org/reference/rpc/getblockheader.html
     pub fn get_block_header_bytes(&self, block_hash: H256Json) -> RpcRes<BytesJson> {
-        let verbose = 0;
+        let verbose = false;
         rpc_func!(self, "getblockheader", block_hash, verbose)
     }
 }
