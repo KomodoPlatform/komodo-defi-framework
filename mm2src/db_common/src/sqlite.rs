@@ -1,11 +1,12 @@
 pub use rusqlite;
 pub use sql_builder;
-use std::fmt;
 
 use log::debug;
 use rusqlite::types::{FromSql, Type as SqlType, Value};
 use rusqlite::{Connection, Error as SqlError, Result as SqlResult, Row, ToSql, NO_PARAMS};
 use sql_builder::SqlBuilder;
+use std::error::Error as StdError;
+use std::fmt;
 use std::sync::{Arc, Mutex, Weak};
 use uuid::Uuid;
 
@@ -126,7 +127,7 @@ pub fn offset_by_id<P>(
     where_id: &str,
 ) -> SqlResult<Option<usize>>
 where
-    P: IntoIterator + std::fmt::Debug,
+    P: IntoIterator + fmt::Debug,
     P::Item: ToSql,
 {
     let row_number = format!("ROW_NUMBER() OVER (ORDER BY {}) AS row", order_by);
@@ -199,11 +200,19 @@ pub fn run_optimization_pragmas(conn: &Connection) -> Result<(), SqlError> {
     conn.query_row("pragma journal_mode = WAL;", NO_PARAMS, |row| row.get::<_, String>(0))?;
     conn.execute("pragma synchronous = normal;", NO_PARAMS)?;
     conn.execute("pragma temp_store = memory;", NO_PARAMS)?;
+    conn.execute("pragma foreign_keys = ON;", NO_PARAMS)?;
     Ok(())
 }
 
 pub fn execute_batch(statement: &'static [&str]) -> Vec<(&'static str, Vec<String>)> {
     statement.iter().map(|sql| (*sql, vec![])).collect()
+}
+
+pub fn is_constraint_error(error: &SqlError) -> bool {
+    match error {
+        SqlError::SqliteFailure(failure, _error) => failure.code == rusqlite::ErrorCode::ConstraintViolation,
+        _ => false,
+    }
 }
 
 pub trait ToValidSqlTable {
@@ -232,53 +241,9 @@ impl<S: ToString> ToValidSqlIdent for S {
     }
 }
 
-/// A valid SQL value that can be passed as an argument to the `SqlBuilder` or `SqlQuery` safely.
-pub enum SqlValue {
-    String(&'static str),
-    Decimal(i64),
-}
-
-impl SqlValue {
-    /// Converts the given `value` to string if it implements `Into<SqlValue>`.
-    /// The resulting string is considered a safe SQL value.
-    pub(crate) fn value_to_string<S>(value: S) -> String
-    where
-        SqlValue: From<S>,
-    {
-        SqlValue::from(value).to_string()
-    }
-
-    /// Converts the given `values` to `Vec<String>` if they implement `Into<SqlValue>`.
-    /// /// The resulting strings are considered safe SQL values.
-    pub(crate) fn values_to_strings<I, S>(values: I) -> Vec<String>
-    where
-        I: IntoIterator<Item = S>,
-        SqlValue: From<S>,
-    {
-        values.into_iter().map(SqlValue::value_to_string).collect()
-    }
-}
-
-impl fmt::Display for SqlValue {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        match self {
-            SqlValue::String(string) => write!(f, "{}", string),
-            SqlValue::Decimal(decimal) => write!(f, "{}", decimal),
-        }
-    }
-}
-
-impl From<&'static str> for SqlValue {
-    fn from(string: &'static str) -> Self { SqlValue::String(string) }
-}
-
-impl From<i64> for SqlValue {
-    fn from(decimal: i64) -> Self { SqlValue::Decimal(decimal) }
-}
-
 /// This structure manages the SQL parameters.
 #[derive(Clone, Default)]
-pub(crate) struct SqlParamsBuilder {
+pub struct SqlParamsBuilder {
     next_param_id: usize,
     params: OwnedSqlParams,
 }
@@ -289,7 +254,12 @@ impl SqlParamsBuilder {
     where
         OwnedSqlParam: From<P>,
     {
-        self.params.push(OwnedSqlParam::from(param));
+        self.push_owned_param(OwnedSqlParam::from(param))
+    }
+
+    /// Pushes the given `param` and returns its `:<IDX>` identifier.
+    pub(crate) fn push_owned_param(&mut self, param: OwnedSqlParam) -> ParamId {
+        self.params.push(param);
         self.next_param_id += 1;
         format!(":{}", self.next_param_id)
     }
@@ -304,6 +274,28 @@ impl SqlParamsBuilder {
     }
 
     pub(crate) fn params(&self) -> &OwnedSqlParams { &self.params }
+}
+
+/// TODO move it to `mm2_err_handle::common_errors` when it's merged.
+#[derive(Debug)]
+pub struct StringError(String);
+
+impl fmt::Display for StringError {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result { write!(f, "{}", self.0) }
+}
+
+impl StdError for StringError {}
+
+impl From<&'static str> for StringError {
+    fn from(s: &str) -> Self { StringError(s.to_owned()) }
+}
+
+impl From<String> for StringError {
+    fn from(s: String) -> Self { StringError(s) }
+}
+
+impl StringError {
+    pub fn into_boxed(self) -> Box<StringError> { Box::new(self) }
 }
 
 fn validate_ident_impl<F>(ident: &str, is_valid: F) -> SqlResult<()>
