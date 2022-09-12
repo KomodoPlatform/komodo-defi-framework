@@ -9,7 +9,7 @@ use http::StatusCode;
 use mm2_core::mm_ctx::MmArc;
 use mm2_err_handle::prelude::*;
 
-#[derive(Clone, Debug, Display, Serialize, SerializeErrorType)]
+#[derive(Clone, Debug, Display, PartialEq, Serialize, SerializeErrorType)]
 #[serde(tag = "error_type", content = "error_data")]
 pub enum GetNewAddressRpcError {
     #[display(fmt = "No such coin {}", coin)]
@@ -128,7 +128,7 @@ pub struct GetNewAddressParams {
     pub(crate) gap_limit: Option<u32>,
 }
 
-#[derive(Serialize)]
+#[derive(Debug, Serialize)]
 pub struct GetNewAddressResponse {
     new_address: HDAddressBalance,
 }
