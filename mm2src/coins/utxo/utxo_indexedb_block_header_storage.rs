@@ -9,9 +9,13 @@ pub struct IndexedDBBlockHeadersStorage {}
 
 #[async_trait]
 impl BlockHeaderStorageOps for IndexedDBBlockHeadersStorage {
-    async fn init(&self) -> Result<(), BlockHeaderStorageError> { Ok(()) }
+    async fn init(&self) -> Result<(), BlockHeaderStorageError> {
+        Ok(())
+    }
 
-    async fn is_initialized_for(&self) -> Result<bool, BlockHeaderStorageError> { Ok(true) }
+    async fn is_initialized_for(&self) -> Result<bool, BlockHeaderStorageError> {
+        Ok(true)
+    }
 
     async fn add_block_headers_to_storage(
         &self,
@@ -20,9 +24,13 @@ impl BlockHeaderStorageOps for IndexedDBBlockHeadersStorage {
         Ok(())
     }
 
-    async fn get_block_header(&self, _height: u64) -> Result<Option<BlockHeader>, BlockHeaderStorageError> { Ok(None) }
+    async fn get_block_header(&self, _height: u64) -> Result<Option<BlockHeader>, BlockHeaderStorageError> {
+        Ok(None)
+    }
 
-    async fn get_block_header_raw(&self, _height: u64) -> Result<Option<String>, BlockHeaderStorageError> { Ok(None) }
+    async fn get_block_header_raw(&self, _height: u64) -> Result<Option<String>, BlockHeaderStorageError> {
+        Ok(None)
+    }
 
     async fn get_last_block_height(&self) -> Result<u64, BlockHeaderStorageError> {
         Err(BlockHeaderStorageError::Internal("Not implemented".into()))
@@ -32,5 +40,7 @@ impl BlockHeaderStorageOps for IndexedDBBlockHeadersStorage {
         Ok(None)
     }
 
-    async fn get_block_height_by_hash(&self, _hash: H256) -> Result<Option<i64>, BlockHeaderStorageError> { Ok(None) }
+    async fn get_block_height_by_hash(&self, _hash: H256) -> Result<Option<i64>, BlockHeaderStorageError> {
+        Ok(None)
+    }
 }
