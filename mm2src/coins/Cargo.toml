@@ -41,6 +41,7 @@ ethkey = { git = "https://github.com/artemii235/parity-ethereum.git" }
 futures01 = { version = "0.1", package = "futures" }
 # using select macro requires the crate to be named futures, compilation failed with futures03 name
 futures = { version = "0.3", package = "futures", features = ["compat", "async-await"] }
+group = "0.8.0"
 gstuff = { version = "0.7", features = ["nightly"] }
 hex = "0.4.2"
 http = "0.2"

@@ -3,6 +3,7 @@ use crate::utxo::rpc_clients::UtxoRpcError;
 use crate::utxo::utxo_builder::UtxoCoinBuildError;
 use crate::WithdrawError;
 use crate::{NumConversError, PrivKeyNotAllowed};
+use common::jsonrpc_client::JsonRpcError;
 use db_common::sqlite::rusqlite::Error as SqliteError;
 use db_common::sqlite::rusqlite::Error as SqlError;
 use derive_more::Display;
@@ -19,6 +20,9 @@ pub enum UpdateBlocksCacheErr {
     GrpcError(tonic::Status),
     BlocksDbError(SqliteError),
     ZcashSqliteError(ZcashClientError),
+    UtxoRpcError(UtxoRpcError),
+    InternalError(String),
+    JsonRpcError(JsonRpcError),
 }
 
 impl From<tonic::Status> for UpdateBlocksCacheErr {
@@ -33,18 +37,32 @@ impl From<ZcashClientError> for UpdateBlocksCacheErr {
     fn from(err: ZcashClientError) -> Self { UpdateBlocksCacheErr::ZcashSqliteError(err) }
 }
 
+impl From<UtxoRpcError> for UpdateBlocksCacheErr {
+    fn from(err: UtxoRpcError) -> Self { UpdateBlocksCacheErr::UtxoRpcError(err) }
+}
+
+impl From<JsonRpcError> for UpdateBlocksCacheErr {
+    fn from(err: JsonRpcError) -> Self { UpdateBlocksCacheErr::JsonRpcError(err) }
+}
+
 #[derive(Debug, Display)]
 #[non_exhaustive]
-pub enum ZcoinLightClientInitError {
+pub enum ZcoinClientInitError {
     TlsConfigFailure(tonic::transport::Error),
     ConnectionFailure(tonic::transport::Error),
     BlocksDbInitFailure(SqliteError),
     WalletDbInitFailure(SqliteError),
     ZcashSqliteError(ZcashClientError),
+    EmptyLightwalletdUris,
+    InvalidUri(InvalidUri),
 }
 
-impl From<ZcashClientError> for ZcoinLightClientInitError {
-    fn from(err: ZcashClientError) -> Self { ZcoinLightClientInitError::ZcashSqliteError(err) }
+impl From<ZcashClientError> for ZcoinClientInitError {
+    fn from(err: ZcashClientError) -> Self { ZcoinClientInitError::ZcashSqliteError(err) }
+}
+
+impl From<InvalidUri> for ZcoinClientInitError {
+    fn from(err: InvalidUri) -> Self { ZcoinClientInitError::InvalidUri(err) }
 }
 
 #[derive(Debug, Display)]
@@ -182,10 +200,7 @@ pub enum ZCoinBuildError {
         path: String,
     },
     Io(std::io::Error),
-    EmptyLightwalletdUris,
-    NativeModeIsNotSupportedYet,
-    InvalidLightwalletdUri(InvalidUri),
-    LightClientInitErr(ZcoinLightClientInitError),
+    RpcClientInitErr(ZcoinClientInitError),
     ZCashParamsNotFound,
 }
 
@@ -205,12 +220,8 @@ impl From<std::io::Error> for ZCoinBuildError {
     fn from(err: std::io::Error) -> ZCoinBuildError { ZCoinBuildError::Io(err) }
 }
 
-impl From<InvalidUri> for ZCoinBuildError {
-    fn from(err: InvalidUri) -> Self { ZCoinBuildError::InvalidLightwalletdUri(err) }
-}
-
-impl From<ZcoinLightClientInitError> for ZCoinBuildError {
-    fn from(err: ZcoinLightClientInitError) -> Self { ZCoinBuildError::LightClientInitErr(err) }
+impl From<ZcoinClientInitError> for ZCoinBuildError {
+    fn from(err: ZcoinClientInitError) -> Self { ZCoinBuildError::RpcClientInitErr(err) }
 }
 
 pub(super) enum SqlTxHistoryError {

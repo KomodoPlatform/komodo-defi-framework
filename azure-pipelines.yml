@@ -22,6 +22,16 @@ trigger:
 pr: # https://docs.microsoft.com/en-us/azure/devops/pipelines/yaml-schema?view=azure-devops&tabs=schema%2Cparameter-schema#pr-trigger
   drafts: false
 
+# https://docs.microsoft.com/ru-ru/azure/devops/pipelines/process/scheduled-triggers?view=azure-devops&tabs=yaml#scheduled-triggers
+# Triggers clean checkout to compile from scratch, remove old builds artifacts, and free disk space on CI agents.
+# https://github.com/KomodoPlatform/atomicDEX-API/blob/957fd856fb74d462058a5ad47ec46d79e3bf1d83/azure-pipelines-build-stage-job.yml#L20
+schedules:
+  - cron: "0 0 * * *"
+    displayName: Scheduled clean midnight UTC build
+    branches:
+      include:
+        - dev
+
 stages:
   - stage: Lint
     displayName: Formatting, Clippy, and other checks

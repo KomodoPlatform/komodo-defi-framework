@@ -1,6 +1,5 @@
 //! Human-readable logging and statuses.
 
-use super::duplex_mutex::DuplexMutex;
 use super::executor::{spawn, Timer};
 use super::{now_ms, writeln};
 use crate::filename;
@@ -12,7 +11,7 @@ use itertools::Itertools;
 #[cfg(not(target_arch = "wasm32"))]
 use lightning::util::logger::{Level as LightningLevel, Logger as LightningLogger, Record as LightningRecord};
 use log::{Level, Record};
-use parking_lot::Mutex;
+use parking_lot::Mutex as PaMutex;
 use serde_json::Value as Json;
 use std::cell::RefCell;
 use std::collections::hash_map::DefaultHasher;
@@ -49,7 +48,7 @@ lazy_static! {
     /// If this C callback is present then all the logging output should happen through it
     /// (and leaving stdout untouched).
     /// The *gravity* logging still gets a copy in order for the log-based tests to work.
-    pub static ref LOG_CALLBACK: Mutex<Option<LogCallbackBoxed>> = Mutex::new(None);
+    pub static ref LOG_CALLBACK: PaMutex<Option<LogCallbackBoxed>> = PaMutex::new(None);
 }
 
 pub type LogCallbackBoxed = Box<dyn LogCallback>;
@@ -77,8 +76,8 @@ struct Gravity {
     target_thread_id: thread::ThreadId,
     /// Log chunks received from satellite threads.
     landing: SegQueue<String>,
-    /// Keeps a portiong of a recently flushed gravity log in RAM for inspection by the unit tests.
-    tail: DuplexMutex<VecDeque<String>>,
+    /// Keeps a portion of a recently flushed gravity log in RAM for inspection by the unit tests.
+    tail: PaMutex<VecDeque<String>>,
 }
 
 impl Gravity {
@@ -97,9 +96,9 @@ impl Gravity {
     /// `println!` is used for compatibility with unit test stdout capturing.
     #[cfg(not(target_arch = "wasm32"))]
     fn flush(&self) {
-        let mut tail = self.tail.spinlock(77).unwrap();
+        let logged_with_log_output = LOG_CALLBACK.lock().is_some();
+        let mut tail = self.tail.lock();
         while let Ok(chunk) = self.landing.pop() {
-            let logged_with_log_output = LOG_CALLBACK.lock().is_some();
             if !logged_with_log_output {
                 writeln(&chunk)
             }
@@ -371,8 +370,8 @@ impl fmt::Debug for Tag {
 
 /// The status entry kept in the dashboard.
 pub struct Status {
-    pub tags: DuplexMutex<Vec<Tag>>,
-    pub line: DuplexMutex<String>,
+    pub tags: PaMutex<Vec<Tag>>,
+    pub line: PaMutex<String>,
     /// The time, in milliseconds since UNIX epoch, when the tracked operation started.
     pub start: AtomicU64,
     /// Expected time limit of the tracked operation, in milliseconds since UNIX epoch.  
@@ -382,29 +381,29 @@ pub struct Status {
 
 impl Clone for Status {
     fn clone(&self) -> Status {
-        let tags = self.tags.spinlock(77).unwrap().clone();
-        let line = self.line.spinlock(77).unwrap().clone();
+        let tags = self.tags.lock().clone();
+        let line = self.line.lock().clone();
         Status {
-            tags: DuplexMutex::new(tags),
-            line: DuplexMutex::new(line),
-            start: AtomicU64::new(self.start.load(Ordering::Relaxed)),
-            deadline: AtomicU64::new(self.deadline.load(Ordering::Relaxed)),
+            tags: PaMutex::new(tags),
+            line: PaMutex::new(line),
+            start: AtomicU64::new(self.start.load(Ordering::SeqCst)),
+            deadline: AtomicU64::new(self.deadline.load(Ordering::SeqCst)),
         }
     }
 }
 
 impl Hash for Status {
     fn hash<H: Hasher>(&self, state: &mut H) {
-        if let Ok(tags) = self.tags.spinlock(77) {
+        {
+            let tags = self.tags.lock();
             for tag in tags.iter() {
                 tag.hash(state)
             }
         }
-        if let Ok(line) = self.line.spinlock(77) {
-            line.hash(state)
-        }
-        self.start.load(Ordering::Relaxed).hash(state);
-        self.deadline.load(Ordering::Relaxed).hash(state);
+
+        self.line.lock().hash(state);
+        self.start.load(Ordering::SeqCst).hash(state);
+        self.deadline.load(Ordering::SeqCst).hash(state);
     }
 }
 
@@ -412,32 +411,35 @@ impl Status {
     /// Invoked when the `StatusHandle` is dropped, marking the status as finished.
     fn finished(
         status: &Arc<Status>,
-        dashboard: &Arc<DuplexMutex<Vec<Arc<Status>>>>,
-        tail: &Arc<DuplexMutex<VecDeque<LogEntry>>>,
+        dashboard: &Arc<PaMutex<Vec<Arc<Status>>>>,
+        tail: &Arc<PaMutex<VecDeque<LogEntry>>>,
     ) {
-        let mut dashboard = dashboard.spinlock(77).unwrap();
-        if let Some(idx) = dashboard.iter().position(|e| Arc::ptr_eq(e, status)) {
-            dashboard.swap_remove(idx);
-        } else {
-            log!("log] Warning, a finished StatusHandle was missing from the dashboard.");
+        {
+            let mut dashboard = dashboard.lock();
+            if let Some(idx) = dashboard.iter().position(|e| Arc::ptr_eq(e, status)) {
+                dashboard.swap_remove(idx);
+            } else {
+                log!("log] Warning, a finished StatusHandle was missing from the dashboard.");
+            }
         }
-        drop(dashboard);
 
-        let mut tail = tail.spinlock(77).unwrap();
-        if tail.len() == tail.capacity() {
-            let _ = tail.pop_front();
-        }
         let mut log = LogEntry::default();
-        swap(&mut log.tags, &mut *status.tags.spinlock(77).unwrap());
-        swap(&mut log.line, &mut *status.line.spinlock(77).unwrap());
+        swap(&mut log.tags, &mut *status.tags.lock());
+        swap(&mut log.line, &mut *status.line.lock());
         let mut chunk = String::with_capacity(256);
         if let Err(err) = log.format(&mut chunk) {
             log!("log] Error formatting log entry: {}", err);
         }
-        tail.push_back(log);
-        drop(tail);
 
-        self::chunk2log(chunk, LogLevel::Info)
+        {
+            let mut tail = tail.lock();
+            if tail.len() == tail.capacity() {
+                tail.pop_front();
+            }
+            tail.push_back(log);
+        }
+
+        chunk2log(chunk, LogLevel::Info)
     }
 }
 
@@ -475,8 +477,8 @@ impl LogEntry {
 /// Dropping the handle tells us that the operation was "finished" and that we can dump the final status into the log.
 pub struct StatusHandle {
     status: Option<Arc<Status>>,
-    dashboard: Arc<DuplexMutex<Vec<Arc<Status>>>>,
-    tail: Arc<DuplexMutex<VecDeque<LogEntry>>>,
+    dashboard: Arc<PaMutex<Vec<Arc<Status>>>>,
+    tail: Arc<PaMutex<VecDeque<LogEntry>>>,
 }
 
 impl StatusHandle {
@@ -494,21 +496,21 @@ impl StatusHandle {
             .collect();
         if let Some(ref status) = self.status {
             // Skip a status update if it is equal to the previous update.
-            if status.line.spinlock(77).unwrap().as_str() == line && *status.tags.spinlock(77).unwrap() == tagsʹ {
+            if status.line.lock().as_str() == line && *status.tags.lock() == tagsʹ {
                 return;
             }
 
-            *status.tags.spinlock(77).unwrap() = tagsʹ;
-            *status.line.spinlock(77).unwrap() = String::from(line);
+            *status.tags.lock() = tagsʹ;
+            *status.line.lock() = String::from(line);
         } else {
             let status = Arc::new(Status {
-                tags: DuplexMutex::new(tagsʹ),
-                line: DuplexMutex::new(line.into()),
+                tags: PaMutex::new(tagsʹ),
+                line: PaMutex::new(line.into()),
                 start: AtomicU64::new(now_ms()),
                 deadline: AtomicU64::new(0),
             });
             self.status = Some(status.clone());
-            self.dashboard.spinlock(77).unwrap().push(status);
+            self.dashboard.lock().push(status);
         }
     }
 
@@ -516,7 +518,7 @@ impl StatusHandle {
     /// Does nothing if the status handle is empty (if the status wasn't created yet).
     pub fn append(&self, suffix: &str) {
         if let Some(ref status) = self.status {
-            status.line.spinlock(77).unwrap().push_str(suffix)
+            status.line.lock().push_str(suffix)
         }
     }
 
@@ -537,7 +539,7 @@ impl StatusHandle {
     ///          when the operation is bound to end regardless of its status (aka a timeout).
     pub fn deadline(&self, ms: u64) {
         if let Some(ref status) = self.status {
-            status.deadline.store(ms, Ordering::Relaxed)
+            status.deadline.store(ms, Ordering::SeqCst)
         }
     }
 
@@ -550,8 +552,8 @@ impl StatusHandle {
     ///          when the operation is bound to end (aka a timeout).
     pub fn timeframe(&self, ms: u64) {
         if let Some(ref status) = self.status {
-            let start = status.start.load(Ordering::Relaxed);
-            status.deadline.store(start + ms, Ordering::Relaxed)
+            let start = status.start.load(Ordering::SeqCst);
+            status.deadline.store(start + ms, Ordering::SeqCst)
         }
     }
 
@@ -559,7 +561,7 @@ impl StatusHandle {
     /// Negative if the deadline is in the past.
     pub fn ms2deadline(&self) -> Option<i64> {
         if let Some(ref status) = self.status {
-            let deadline = status.deadline.load(Ordering::Relaxed);
+            let deadline = status.deadline.load(Ordering::SeqCst);
             if deadline == 0 {
                 None
             } else {
@@ -589,14 +591,14 @@ pub fn dashboard_path(log_path: &Path) -> Result<PathBuf, String> {
 /// Carried around by the MarketMaker state, `MmCtx`.  
 /// Keeps track of the log file and the status dashboard.
 pub struct LogState {
-    dashboard: Arc<DuplexMutex<Vec<Arc<Status>>>>,
+    dashboard: Arc<PaMutex<Vec<Arc<Status>>>>,
     /// Keeps recent log entries in memory in case we need them for debugging.  
     /// Should allow us to examine the log from withing the unit tests, core dumps and live debugging sessions.
-    tail: Arc<DuplexMutex<VecDeque<LogEntry>>>,
+    tail: Arc<PaMutex<VecDeque<LogEntry>>>,
     /// Initialized when we need the logging to happen through a certain thread
     /// (this thread becomes a center of gravity for the other registered threads).
     /// In the future we might also use `gravity` to log into a file.
-    gravity: DuplexMutex<Option<Arc<Gravity>>>,
+    gravity: PaMutex<Option<Arc<Gravity>>>,
     /// Keeps track of the log level that the log state is initiated with
     level: LogLevel,
 }
@@ -648,7 +650,7 @@ impl Default for DashboardLogging {
     }
 }
 
-fn log_dashboard_sometimesʹ(dashboard: &[Arc<Status>], dl: &mut DashboardLogging) {
+fn log_dashboard_sometimesʹ(dashboard: Vec<Arc<Status>>, dl: &mut DashboardLogging) {
     // See if it's time to log the dashboard.
     if dashboard.is_empty() {
         return;
@@ -660,8 +662,8 @@ fn log_dashboard_sometimesʹ(dashboard: &[Arc<Status>], dl: &mut DashboardLoggin
     let hash = hasher.finish();
 
     let now = now_ms();
-    let delta = now as i64 - dl.last_log_ms.load(Ordering::Relaxed) as i64;
-    let last_hash = dl.last_hash.load(Ordering::Relaxed);
+    let delta = now as i64 - dl.last_log_ms.load(Ordering::SeqCst) as i64;
+    let last_hash = dl.last_hash.load(Ordering::SeqCst);
     let itʹs_time = if hash != last_hash {
         delta > 7777
     } else {
@@ -671,15 +673,15 @@ fn log_dashboard_sometimesʹ(dashboard: &[Arc<Status>], dl: &mut DashboardLoggin
         return;
     }
 
-    dl.last_hash.store(hash, Ordering::Relaxed);
-    dl.last_log_ms.store(now, Ordering::Relaxed);
+    dl.last_hash.store(hash, Ordering::SeqCst);
+    dl.last_log_ms.store(now, Ordering::SeqCst);
     let mut buf = format!("+--- {} -------", short_log_time(now));
     for status in dashboard.iter() {
-        let start = status.start.load(Ordering::Relaxed);
+        let start = status.start.load(Ordering::SeqCst);
 
-        let tags_str = match status.tags.spinlock(77) {
-            Ok(t) => format_tags(&t),
-            Err(_) => String::new(),
+        let tags_str = {
+            let tags = status.tags.lock();
+            format_tags(&tags)
         };
 
         let passed = (now as i64 - start as i64) / 1000;
@@ -689,7 +691,7 @@ fn log_dashboard_sometimesʹ(dashboard: &[Arc<Status>], dl: &mut DashboardLoggin
             "-".to_owned()
         };
 
-        let deadline = status.deadline.load(Ordering::Relaxed);
+        let deadline = status.deadline.load(Ordering::SeqCst);
         let timeframe = (deadline as i64 - start as i64) / 1000;
         let timeframe_str = if deadline > 0 {
             format!("/{}:{:0>2}", timeframe / 60, timeframe % 60)
@@ -697,10 +699,7 @@ fn log_dashboard_sometimesʹ(dashboard: &[Arc<Status>], dl: &mut DashboardLoggin
             String::new()
         };
 
-        let line = match status.line.spinlock(77) {
-            Ok(l) => l.clone(),
-            Err(_) => "-locked-".into(),
-        };
+        let line = status.line.lock().clone();
         buf.push_str(&format!(
             "\n| ({}{}) [{}] {}",
             passed_str, timeframe_str, tags_str, line
@@ -709,7 +708,7 @@ fn log_dashboard_sometimesʹ(dashboard: &[Arc<Status>], dl: &mut DashboardLoggin
     chunk2log(buf, LogLevel::Info)
 }
 
-async fn log_dashboard_sometimes(dashboardʷ: Weak<DuplexMutex<Vec<Arc<Status>>>>) {
+async fn log_dashboard_sometimes(dashboardʷ: Weak<PaMutex<Vec<Arc<Status>>>>) {
     let mut dashboard_logging = DashboardLogging::default();
     loop {
         Timer::sleep(0.777).await;
@@ -718,8 +717,8 @@ async fn log_dashboard_sometimes(dashboardʷ: Weak<DuplexMutex<Vec<Arc<Status>>>
             Some(arc) => arc,
             None => break,
         };
-        let dashboard = dashboard.sleeplock(77).await.unwrap();
-        log_dashboard_sometimesʹ(&*dashboard, &mut dashboard_logging);
+        let dashboard = dashboard.lock().clone();
+        log_dashboard_sometimesʹ(dashboard, &mut dashboard_logging);
     }
 }
 
@@ -727,23 +726,23 @@ impl LogState {
     /// Log into memory, for unit testing.
     pub fn in_memory() -> LogState {
         LogState {
-            dashboard: Arc::new(DuplexMutex::new(Vec::new())),
-            tail: Arc::new(DuplexMutex::new(VecDeque::with_capacity(64))),
-            gravity: DuplexMutex::new(None),
+            dashboard: Arc::new(PaMutex::new(Vec::new())),
+            tail: Arc::new(PaMutex::new(VecDeque::with_capacity(64))),
+            gravity: PaMutex::new(None),
             level: LogLevel::default(),
         }
     }
 
     /// Initialize according to the MM command-line configuration.
     pub fn mm(_conf: &Json) -> LogState {
-        let dashboard = Arc::new(DuplexMutex::new(Vec::new()));
+        let dashboard = Arc::new(PaMutex::new(Vec::new()));
 
         spawn(log_dashboard_sometimes(Arc::downgrade(&dashboard)));
 
         LogState {
             dashboard,
-            tail: Arc::new(DuplexMutex::new(VecDeque::with_capacity(64))),
-            gravity: DuplexMutex::new(None),
+            tail: Arc::new(PaMutex::new(VecDeque::with_capacity(64))),
+            gravity: PaMutex::new(None),
             level: LogLevel::default(),
         }
     }
@@ -764,31 +763,21 @@ impl LogState {
 
     /// Read-only access to the status dashboard.
     pub fn with_dashboard(&self, cb: &mut dyn FnMut(&[Arc<Status>])) {
-        let dashboard = self.dashboard.spinlock(77).unwrap();
+        let dashboard = self.dashboard.lock();
         cb(&dashboard[..])
     }
 
     pub fn with_tail(&self, cb: &mut dyn FnMut(&VecDeque<LogEntry>)) {
-        match self.tail.spinlock(77) {
-            Ok(tail) => cb(&*tail),
-            Err(_err) => writeln("with_tail] !spinlock"),
-        }
+        let tail = self.tail.lock();
+        cb(&*tail)
     }
 
     pub fn with_gravity_tail(&self, cb: &mut dyn FnMut(&VecDeque<String>)) {
-        let gravity = match self.gravity.spinlock(77) {
-            Ok(guard) => guard,
-            Err(_err) => {
-                writeln("with_gravity_tail] !spinlock");
-                return;
-            },
-        };
-        if let Some(ref gravity) = *gravity {
+        let gravity = self.gravity.lock().clone();
+        if let Some(ref gravity) = gravity {
             gravity.flush();
-            match gravity.tail.spinlock(77) {
-                Ok(tail) => cb(&*tail),
-                Err(_err) => writeln("with_gravity_tail] !spinlock"),
-            }
+            let tail = gravity.tail.lock();
+            cb(&*tail);
         }
     }
 
@@ -811,9 +800,9 @@ impl LogState {
                 val: t.val(),
             })
             .collect();
-        let dashboard = self.dashboard.spinlock(77).unwrap();
-        for status_arc in &*dashboard {
-            if *status_arc.tags.spinlock(77).unwrap() == tags {
+        let dashboard_statuses = self.dashboard.lock().clone();
+        for status_arc in dashboard_statuses {
+            if *status_arc.tags.lock() == tags {
                 found.push(StatusHandle {
                     status: Some(status_arc.clone()),
                     dashboard: self.dashboard.clone(),
@@ -821,7 +810,6 @@ impl LogState {
                 })
             }
         }
-        drop(dashboard); // Unlock the dashboard before lock-waiting on statuses, avoiding a chance of deadlock.
         if found.len() > 1 {
             log!("log] Dashboard tags not unique!")
         }
@@ -837,7 +825,8 @@ impl LogState {
                 val: t.val(),
             })
             .collect();
-        for en in self.tail.spinlock(77).unwrap().iter() {
+        let tail = self.tail.lock();
+        for en in tail.iter() {
             if en.tags == tags {
                 return true;
             }
@@ -903,12 +892,13 @@ impl LogState {
             return;
         }
 
-        let mut tail = self.tail.spinlock(77).unwrap();
-        if tail.len() == tail.capacity() {
-            let _ = tail.pop_front();
+        {
+            let mut tail = self.tail.lock();
+            if tail.len() == tail.capacity() {
+                let _ = tail.pop_front();
+            }
+            tail.push_back(entry);
         }
-        tail.push_back(entry);
-        drop(tail);
 
         self.chunk2log(chunk, self.level)
     }
@@ -949,7 +939,7 @@ impl LogState {
     ///  https://github.com/rust-lang/rust/issues/50297#issuecomment-388988381).
     #[cfg(not(target_arch = "wasm32"))]
     pub fn thread_gravity_on(&self) -> Result<(), String> {
-        let mut gravity = try_s!(self.gravity.spinlock(77));
+        let mut gravity = self.gravity.lock();
         if let Some(ref gravity) = *gravity {
             if gravity.target_thread_id == thread::current().id() {
                 Ok(())
@@ -960,7 +950,7 @@ impl LogState {
             *gravity = Some(Arc::new(Gravity {
                 target_thread_id: thread::current().id(),
                 landing: SegQueue::new(),
-                tail: DuplexMutex::new(VecDeque::with_capacity(64)),
+                tail: PaMutex::new(VecDeque::with_capacity(64)),
             }));
             Ok(())
         }
@@ -971,7 +961,7 @@ impl LogState {
     /// Start intercepting the `log!` invocations happening on the current thread.
     #[cfg(not(target_arch = "wasm32"))]
     pub fn register_my_thread(&self) -> Result<(), String> {
-        let gravity = try_s!(self.gravity.spinlock(77));
+        let gravity = self.gravity.lock();
         if let Some(ref gravity) = *gravity {
             try_s!(GRAVITY
                 .try_with(|thread_local_gravity| { thread_local_gravity.replace(Some(Arc::downgrade(gravity))) }));
@@ -1013,23 +1003,18 @@ impl LightningLogger for LogState {
 
 #[cfg(not(target_arch = "wasm32"))]
 impl Drop for LogState {
+    /// Make sure to log the chunks received from the satellite threads.
+    /// NB: The `drop` might happen in a thread that is not the center of gravity,
+    ///     resulting in log chunks escaping the unit test capture.
+    ///     One way to fight this might be adding a flushing RAII struct into a unit test.
+    /// NB: The `drop` will not be happening if some of the satellite threads still hold to the context.
     fn drop(&mut self) {
-        // Make sure to log the chunks received from the satellite threads.
-        // NB: The `drop` might happen in a thread that is not the center of gravity,
-        //     resulting in log chunks escaping the unit test capture.
-        //     One way to fight this might be adding a flushing RAII struct into a unit test.
-        // NB: The `drop` will not be happening if some of the satellite threads still hold to the context.
-        let mut gravity_arc = None; // Variable is used in order not to hold two locks.
-        if let Ok(gravity) = self.gravity.spinlock(77) {
-            if let Some(ref gravity) = *gravity {
-                gravity_arc = Some(gravity.clone())
-            }
-        }
-        if let Some(gravity) = gravity_arc {
+        let gravity = self.gravity.lock().clone();
+        if let Some(gravity) = gravity {
             gravity.flush()
         }
 
-        let dashboard_copy = self.dashboard.spinlock(77).unwrap().clone();
+        let dashboard_copy = self.dashboard.lock().clone();
         if !dashboard_copy.is_empty() {
             log!("--- LogState] Bye! Remaining status entries. ---");
             for status in &*dashboard_copy {
@@ -1163,10 +1148,10 @@ pub mod tests {
             log.with_dashboard(&mut |dashboard| {
                 assert_eq!(dashboard.len(), 1);
                 let status = &dashboard[0];
-                assert!(status.tags.spinlock(77).unwrap().iter().any(|tag| tag.key == "tag1"));
-                assert!(status.tags.spinlock(77).unwrap().iter().any(|tag| tag.key == "tag2"));
-                assert_eq!(status.tags.spinlock(77).unwrap().len(), 2);
-                assert_eq!(*status.line.spinlock(77).unwrap(), format!("line {}", n));
+                assert!(status.tags.lock().iter().any(|tag| tag.key == "tag1"));
+                assert!(status.tags.lock().iter().any(|tag| tag.key == "tag2"));
+                assert_eq!(status.tags.lock().len(), 2);
+                assert_eq!(*status.line.lock(), format!("line {}", n));
             });
         }
         drop(handle);
@@ -1192,9 +1177,9 @@ pub mod tests {
         status.timeframe((3 * 60 + 33) * 1000);
 
         {
-            let dashboard = log.dashboard.spinlock(77).unwrap();
+            let dashboard = log.dashboard.lock().clone();
             let mut dashboard_logging = super::DashboardLogging::default();
-            super::log_dashboard_sometimesʹ(&*dashboard, &mut dashboard_logging);
+            super::log_dashboard_sometimesʹ(dashboard, &mut dashboard_logging);
         }
 
         log.with_gravity_tail(&mut |tail| {

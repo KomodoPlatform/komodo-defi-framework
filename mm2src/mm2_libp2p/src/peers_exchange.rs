@@ -298,6 +298,10 @@ impl NetworkBehaviourEventProcess<RequestResponseEvent<PeersExchangeRequest, Pee
             RequestResponseEvent::Message { message, peer } => match message {
                 RequestResponseMessage::Request { request, channel, .. } => match request {
                     PeersExchangeRequest::GetKnownPeers { num } => {
+                        // Should not send a response in such case
+                        if num > DEFAULT_PEERS_NUM {
+                            return;
+                        }
                         let response = PeersExchangeResponse::KnownPeers {
                             peers: self.get_random_known_peers(num),
                         };
