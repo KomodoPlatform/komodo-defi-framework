@@ -70,6 +70,7 @@ pub enum ValidateSlpUtxosErrKind {
     UnexpectedUtxoInResponse {
         outpoint: OutPoint,
     },
+    InvalidSlpTxData(String),
 }
 
 #[derive(Debug, Display)]
@@ -83,6 +84,7 @@ impl From<ValidateSlpUtxosErr> for ValidatePaymentError {
     fn from(err: ValidateSlpUtxosErr) -> Self {
         match err.kind {
             ValidateSlpUtxosErrKind::MultiReqErr(_) => Self::Transport(err.to_string()),
+            ValidateSlpUtxosErrKind::InvalidSlpTxData(_) => Self::WrongPaymentTx(err.to_string()),
             _ => Self::InvalidRpcResponse(err.to_string()),
         }
     }
@@ -90,9 +92,15 @@ impl From<ValidateSlpUtxosErr> for ValidatePaymentError {
 
 impl From<GrpcWebMultiUrlReqErr> for ValidateSlpUtxosErr {
     fn from(err: GrpcWebMultiUrlReqErr) -> Self {
-        ValidateSlpUtxosErr {
-            to_url: err.to_url.clone(),
-            kind: ValidateSlpUtxosErrKind::MultiReqErr(err),
+        match err.err {
+            PostGrpcWebErr::DecodeBody(e) => ValidateSlpUtxosErr {
+                to_url: err.to_url.clone(),
+                kind: ValidateSlpUtxosErrKind::InvalidSlpTxData(e),
+            },
+            _ => ValidateSlpUtxosErr {
+                to_url: err.to_url.clone(),
+                kind: ValidateSlpUtxosErrKind::MultiReqErr(err),
+            },
         }
     }
 }
@@ -313,7 +321,7 @@ mod bchd_grpc_tests {
         let token_id = H256::from("bb309e48930671582bea508f9a1d9b491e49b69be3d6f372dc08da2ac6e90eb7");
         let err = block_on(validate_slp_utxos(&[url], &slp_utxos, &token_id)).unwrap_err();
         match err.into_inner().kind {
-            ValidateSlpUtxosErrKind::MultiReqErr { .. } => (),
+            ValidateSlpUtxosErrKind::InvalidSlpTxData(_) => (),
             err @ _ => panic!("Unexpected error {:?}", err),
         }
     }
