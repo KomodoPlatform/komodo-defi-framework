@@ -218,18 +218,11 @@ impl<'a> UtxoCoinBuilder for QtumCoinBuilder<'a> {
 
     async fn build(self) -> MmResult<Self::ResultCoin, Self::Error> {
         let utxo = self.build_utxo_fields().await?;
-        let rpc_client = utxo.rpc_client.clone();
         let utxo_arc = UtxoArc::new(utxo);
         let utxo_weak = utxo_arc.downgrade();
         let result_coin = QtumCoin::from(utxo_arc);
 
-        if let Some(abort_handler) = self.spawn_merge_utxo_loop_if_required(utxo_weak.clone(), QtumCoin::from) {
-            self.ctx.abort_handlers.lock().unwrap().push(abort_handler);
-        }
-
-        if let Some(abort_handler) =
-            self.spawn_block_header_utxo_loop_if_required(utxo_weak, &rpc_client, QtumCoin::from)
-        {
+        if let Some(abort_handler) = self.spawn_merge_utxo_loop_if_required(utxo_weak, QtumCoin::from) {
             self.ctx.abort_handlers.lock().unwrap().push(abort_handler);
         }
 

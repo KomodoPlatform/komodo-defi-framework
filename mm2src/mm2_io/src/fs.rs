@@ -25,6 +25,14 @@ pub enum FsJsonError {
     Deserializing(JsonError),
 }
 
+#[inline]
+pub fn invalid_data_err<Error>(msg: &str, err: Error) -> io::Error
+where
+    Error: std::fmt::Display,
+{
+    io::Error::new(std::io::ErrorKind::InvalidData, format!("{}: {}", msg, err))
+}
+
 pub fn check_dir_operations(dir_path: &Path) -> Result<(), io::Error> {
     let r: [u8; 32] = random();
     let mut check: Vec<u8> = Vec::with_capacity(r.len());

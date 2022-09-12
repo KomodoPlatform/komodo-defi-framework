@@ -39,6 +39,7 @@ pub mod utxo_standard;
 pub mod utxo_withdraw;
 
 use async_trait::async_trait;
+#[cfg(not(target_arch = "wasm32"))]
 use bitcoin::network::constants::Network as BitcoinNetwork;
 pub use bitcrypto::{dhash160, sha256, ChecksumType};
 pub use chain::Transaction as UtxoTx;
@@ -46,19 +47,21 @@ use chain::{OutPoint, TransactionOutput, TxHashAlgo};
 #[cfg(not(target_arch = "wasm32"))]
 use common::first_char_to_upper;
 use common::jsonrpc_client::JsonRpcError;
+use common::log::LogOnError;
 use common::now_ms;
 use crypto::trezor::utxo::TrezorUtxoCoin;
 use crypto::{Bip32DerPathOps, Bip32Error, Bip44Chain, Bip44DerPathError, Bip44PathToAccount, Bip44PathToCoin,
              ChildNumber, DerivationPath, Secp256k1ExtendedPublicKey};
 use derive_more::Display;
 #[cfg(not(target_arch = "wasm32"))] use dirs::home_dir;
-use futures::channel::mpsc;
+use futures::channel::mpsc::{Receiver as AsyncReceiver, Sender as AsyncSender, UnboundedSender};
 use futures::compat::Future01CompatExt;
 use futures::lock::{Mutex as AsyncMutex, MutexGuard as AsyncMutexGuard};
 use futures01::Future;
 use keys::bytes::Bytes;
 pub use keys::{Address, AddressFormat as UtxoAddressFormat, AddressHashEnum, KeyPair, Private, Public, Secret,
                Type as ScriptType};
+#[cfg(not(target_arch = "wasm32"))]
 use lightning_invoice::Currency as LightningCurrency;
 use mm2_core::mm_ctx::MmArc;
 use mm2_err_handle::prelude::*;
@@ -71,13 +74,13 @@ use rpc::v1::types::{Bytes as BytesJson, Transaction as RpcTransaction, H256 as 
 use script::{Builder, Script, SignatureVersion, TransactionInputSigner};
 use serde_json::{self as json, Value as Json};
 use serialization::{serialize, serialize_with_flags, Error as SerError, SERIALIZE_TRANSACTION_WITNESS};
-use spv_validation::helpers_validation::SPVError;
+use spv_validation::helpers_validation::{BlockHeaderVerificationParams, SPVError};
 use spv_validation::storage::BlockHeaderStorageError;
 use std::array::TryFromSliceError;
 use std::collections::{HashMap, HashSet};
 use std::convert::TryInto;
 use std::hash::Hash;
-use std::num::NonZeroU64;
+use std::num::{NonZeroU64, TryFromIntError};
 use std::ops::Deref;
 #[cfg(not(target_arch = "wasm32"))]
 use std::path::{Path, PathBuf};
@@ -92,7 +95,6 @@ use utxo_signer::{TxProvider, TxProviderError, UtxoSignTxError, UtxoSignTxResult
 use self::rpc_clients::{electrum_script_hash, ElectrumClient, ElectrumRpcRequest, EstimateFeeMethod, EstimateFeeMode,
                         NativeClient, UnspentInfo, UnspentMap, UtxoRpcClientEnum, UtxoRpcError, UtxoRpcFut,
                         UtxoRpcResult};
-use self::utxo_block_header_storage::BlockHeaderVerificationParams;
 use super::{big_decimal_from_sat_unsigned, BalanceError, BalanceFut, BalanceResult, CoinBalance, CoinsContext,
             DerivationMethod, FeeApproxStage, FoundSwapTxSpend, HistorySyncState, KmdRewardsDetails, MarketCoinOps,
             MmCoin, NumConversError, NumConversResult, PrivKeyActivationPolicy, PrivKeyNotAllowed, PrivKeyPolicy,
@@ -417,6 +419,7 @@ pub enum BlockchainNetwork {
     Regtest,
 }
 
+#[cfg(not(target_arch = "wasm32"))]
 impl From<BlockchainNetwork> for BitcoinNetwork {
     fn from(network: BlockchainNetwork) -> Self {
         match network {
@@ -427,6 +430,7 @@ impl From<BlockchainNetwork> for BitcoinNetwork {
     }
 }
 
+#[cfg(not(target_arch = "wasm32"))]
 impl From<BlockchainNetwork> for LightningCurrency {
     fn from(network: BlockchainNetwork) -> Self {
         match network {
@@ -434,6 +438,54 @@ impl From<BlockchainNetwork> for LightningCurrency {
             BlockchainNetwork::Testnet => LightningCurrency::BitcoinTestnet,
             BlockchainNetwork::Regtest => LightningCurrency::Regtest,
         }
+    }
+}
+
+pub enum UtxoSyncStatus {
+    SyncingBlockHeaders {
+        current_scanned_block: u64,
+        last_block: u64,
+    },
+    TemporaryError(String),
+    PermanentError(String),
+    Finished {
+        block_number: u64,
+    },
+}
+
+#[derive(Clone)]
+pub struct UtxoSyncStatusLoopHandle(AsyncSender<UtxoSyncStatus>);
+
+impl UtxoSyncStatusLoopHandle {
+    pub fn new(sync_status_notifier: AsyncSender<UtxoSyncStatus>) -> Self {
+        UtxoSyncStatusLoopHandle(sync_status_notifier)
+    }
+
+    pub fn notify_blocks_headers_sync_status(&mut self, current_scanned_block: u64, last_block: u64) {
+        self.0
+            .try_send(UtxoSyncStatus::SyncingBlockHeaders {
+                current_scanned_block,
+                last_block,
+            })
+            .debug_log_with_msg("No one seems interested in UtxoSyncStatus");
+    }
+
+    pub fn notify_on_temp_error(&mut self, error: String) {
+        self.0
+            .try_send(UtxoSyncStatus::TemporaryError(error))
+            .debug_log_with_msg("No one seems interested in UtxoSyncStatus");
+    }
+
+    pub fn notify_on_permanent_error(&mut self, error: String) {
+        self.0
+            .try_send(UtxoSyncStatus::PermanentError(error))
+            .debug_log_with_msg("No one seems interested in UtxoSyncStatus");
+    }
+
+    pub fn notify_sync_finished(&mut self, block_number: u64) {
+        self.0
+            .try_send(UtxoSyncStatus::Finished { block_number })
+            .debug_log_with_msg("No one seems interested in UtxoSyncStatus");
     }
 }
 
@@ -505,8 +557,12 @@ pub struct UtxoCoinConf {
     pub estimate_fee_blocks: u32,
     /// The name of the coin with which Trezor wallet associates this asset.
     pub trezor_coin: Option<TrezorUtxoCoin>,
-    /// Used in condition where the coin will validate spv proof or not
+    /// Whether to verify swaps and lightning transactions using spv or not. When enabled, block headers will be retrieved, verified according
+    /// to block_headers_verification_params and stored in the DB. Can be false if the coin's RPC server is trusted.
     pub enable_spv_proof: bool,
+    /// The parameters that specify how the coin block headers should be verified. If None and enable_spv_proof is true,
+    /// headers will be saved in DB without verification, can be none if the coin's RPC server is trusted.
+    pub block_headers_verification_params: Option<BlockHeaderVerificationParams>,
 }
 
 pub struct UtxoCoinFields {
@@ -538,6 +594,12 @@ pub struct UtxoCoinFields {
     /// The flag determines whether to use mature unspent outputs *only* to generate transactions.
     /// https://github.com/KomodoPlatform/atomicDEX-API/issues/1181
     pub check_utxo_maturity: bool,
+    /// The notifier/sender of the block headers synchronization status,
+    /// initialized only for non-native mode if spv is enabled for the coin.
+    pub block_headers_status_notifier: Option<UtxoSyncStatusLoopHandle>,
+    /// The watcher/receiver of the block headers synchronization status,
+    /// initialized only for non-native mode if spv is enabled for the coin.
+    pub block_headers_status_watcher: Option<AsyncMutex<AsyncReceiver<UtxoSyncStatus>>>,
 }
 
 #[derive(Debug, Display)]
@@ -580,21 +642,33 @@ impl From<SerError> for GetTxError {
     fn from(err: SerError) -> GetTxError { GetTxError::TxDeserialization(err) }
 }
 
-#[derive(Debug)]
+#[derive(Debug, Display)]
 pub enum GetTxHeightError {
     HeightNotFound(String),
+    StorageError(BlockHeaderStorageError),
+    ConversionError(TryFromIntError),
 }
 
 impl From<GetTxHeightError> for SPVError {
     fn from(e: GetTxHeightError) -> Self {
         match e {
             GetTxHeightError::HeightNotFound(e) => SPVError::InvalidHeight(e),
+            GetTxHeightError::StorageError(e) => SPVError::HeaderStorageError(e),
+            GetTxHeightError::ConversionError(e) => SPVError::Internal(e.to_string()),
         }
     }
 }
 
 impl From<UtxoRpcError> for GetTxHeightError {
     fn from(e: UtxoRpcError) -> Self { GetTxHeightError::HeightNotFound(e.to_string()) }
+}
+
+impl From<BlockHeaderStorageError> for GetTxHeightError {
+    fn from(e: BlockHeaderStorageError) -> Self { GetTxHeightError::StorageError(e) }
+}
+
+impl From<TryFromIntError> for GetTxHeightError {
+    fn from(err: TryFromIntError) -> GetTxHeightError { GetTxHeightError::ConversionError(err) }
 }
 
 #[derive(Debug, Display)]
@@ -637,6 +711,31 @@ impl From<BlockHeaderStorageError> for GetBlockHeaderError {
 
 impl From<GetBlockHeaderError> for SPVError {
     fn from(e: GetBlockHeaderError) -> Self { SPVError::UnableToGetHeader(e.to_string()) }
+}
+
+#[derive(Debug, Display)]
+pub enum GetConfirmedTxError {
+    HeightNotFound(GetTxHeightError),
+    UnableToGetHeader(GetBlockHeaderError),
+    RpcError(JsonRpcError),
+    SerializationError(serialization::Error),
+    SPVError(SPVError),
+}
+
+impl From<GetTxHeightError> for GetConfirmedTxError {
+    fn from(err: GetTxHeightError) -> Self { GetConfirmedTxError::HeightNotFound(err) }
+}
+
+impl From<GetBlockHeaderError> for GetConfirmedTxError {
+    fn from(err: GetBlockHeaderError) -> Self { GetConfirmedTxError::UnableToGetHeader(err) }
+}
+
+impl From<JsonRpcError> for GetConfirmedTxError {
+    fn from(err: JsonRpcError) -> Self { GetConfirmedTxError::RpcError(err) }
+}
+
+impl From<serialization::Error> for GetConfirmedTxError {
+    fn from(err: serialization::Error) -> Self { GetConfirmedTxError::SerializationError(err) }
 }
 
 impl UtxoCoinFields {
@@ -1185,7 +1284,7 @@ pub fn coin_daemon_data_dir(name: &str, is_asset_chain: bool) -> PathBuf {
 /// Electrum protocol version verifier.
 /// The structure is used to handle the `on_connected` event and notify `electrum_version_loop`.
 struct ElectrumProtoVerifier {
-    on_connect_tx: mpsc::UnboundedSender<String>,
+    on_connect_tx: UnboundedSender<String>,
 }
 
 impl ElectrumProtoVerifier {
@@ -1254,12 +1353,7 @@ impl UtxoActivationParams {
             Some("electrum") => {
                 let servers =
                     json::from_value(req["servers"].clone()).map_to_mm(UtxoFromLegacyReqErr::InvalidElectrumServers)?;
-                let block_header_params = json::from_value(req["block_header_params"].clone())
-                    .map_to_mm(UtxoFromLegacyReqErr::InvalidBlockHeaderVerificationParams)?;
-                UtxoRpcMode::Electrum {
-                    servers,
-                    block_header_params,
-                }
+                UtxoRpcMode::Electrum { servers }
             },
             _ => return MmError::err(UtxoFromLegacyReqErr::UnexpectedMethod),
         };
@@ -1301,10 +1395,12 @@ impl UtxoActivationParams {
 #[serde(tag = "rpc", content = "rpc_data")]
 pub enum UtxoRpcMode {
     Native,
-    Electrum {
-        servers: Vec<ElectrumRpcRequest>,
-        block_header_params: Option<BlockHeaderVerificationParams>,
-    },
+    Electrum { servers: Vec<ElectrumRpcRequest> },
+}
+
+impl UtxoRpcMode {
+    #[inline]
+    pub fn is_native(&self) -> bool { matches!(*self, UtxoRpcMode::Native) }
 }
 
 #[derive(Debug)]

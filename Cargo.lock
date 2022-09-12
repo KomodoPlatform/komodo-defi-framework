@@ -497,7 +497,7 @@ dependencies = [
  "hkd32",
  "hmac 0.11.0",
  "ripemd160",
- "secp256k1",
+ "secp256k1 0.20.3",
  "sha2 0.9.9",
  "subtle 2.4.0",
  "zeroize",
@@ -523,13 +523,13 @@ dependencies = [
 
 [[package]]
 name = "bitcoin"
-version = "0.27.1"
+version = "0.28.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "9a41df6ad9642c5c15ae312dd3d074de38fd3eb7cc87ad4ce10f90292a83fe4d"
+checksum = "05bba324e6baf655b882df672453dbbc527bc938cadd27750ae510aaccc3a66a"
 dependencies = [
  "bech32",
  "bitcoin_hashes",
- "secp256k1",
+ "secp256k1 0.22.1",
 ]
 
 [[package]]
@@ -1074,7 +1074,7 @@ dependencies = [
  "lightning-background-processor",
  "lightning-invoice",
  "lightning-net-tokio",
- "lightning-persister",
+ "lightning-rapid-gossip-sync",
  "mm2_core",
  "mm2_db",
  "mm2_err_handle",
@@ -1098,7 +1098,8 @@ dependencies = [
  "rust-ini",
  "rustls 0.20.4",
  "script",
- "secp256k1",
+ "secp256k1 0.20.3",
+ "secp256k1 0.22.1",
  "ser_error",
  "ser_error_derive",
  "serde",
@@ -1537,7 +1538,7 @@ dependencies = [
  "primitives",
  "rpc_task",
  "rustc-hex 2.1.0",
- "secp256k1",
+ "secp256k1 0.20.3",
  "ser_error",
  "ser_error_derive",
  "serde",
@@ -2222,7 +2223,7 @@ dependencies = [
  "mem",
  "rand 0.6.5",
  "rustc-hex 1.0.0",
- "secp256k1",
+ "secp256k1 0.20.3",
  "serde",
  "serde_derive",
  "tiny-keccak 1.4.4",
@@ -3026,7 +3027,7 @@ dependencies = [
  "js-sys",
  "mm2_err_handle",
  "rusb",
- "secp256k1",
+ "secp256k1 0.20.3",
  "serde",
  "serde_derive",
  "wasm-bindgen",
@@ -3206,9 +3207,9 @@ checksum = "5a9d968042a4902e08810946fc7cd5851eb75e80301342305af755ca06cb82ce"
 
 [[package]]
 name = "indexmap"
-version = "1.8.2"
+version = "1.7.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "e6012d540c5baa3589337a98ce73408de9b5a25ec9fc2c6fd6be8f0d39e0ca5a"
+checksum = "bc633605454125dec4b66843673f01c7df2b89479b32e0ed634e43a91cff62a5"
 dependencies = [
  "autocfg 1.0.0",
  "hashbrown 0.11.2",
@@ -3408,7 +3409,7 @@ dependencies = [
  "primitives",
  "rand 0.6.5",
  "rustc-hex 2.1.0",
- "secp256k1",
+ "secp256k1 0.20.3",
  "serde",
  "serde_derive",
 ]
@@ -3883,39 +3884,43 @@ dependencies = [
 
 [[package]]
 name = "lightning"
-version = "0.0.106"
-source = "git+https://github.com/shamardy/rust-lightning?branch=0.0.106#af4a89c08c22d0110d386df0e288b2f825aaebbc"
+version = "0.0.110"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "2dce6da860338d5a9ddc3fd42432465310cfab93b342bbd23b41b7c1f7c509d3"
 dependencies = [
  "bitcoin",
- "secp256k1",
 ]
 
 [[package]]
 name = "lightning-background-processor"
-version = "0.0.106"
-source = "git+https://github.com/shamardy/rust-lightning?branch=0.0.106#af4a89c08c22d0110d386df0e288b2f825aaebbc"
+version = "0.0.110"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "e8de9d0de42bb933ffb8d33c6b0a75302f08b35126bfc74398ba01ad0c201f8d"
 dependencies = [
  "bitcoin",
  "lightning",
- "lightning-persister",
+ "lightning-rapid-gossip-sync",
 ]
 
 [[package]]
 name = "lightning-invoice"
-version = "0.14.0"
-source = "git+https://github.com/shamardy/rust-lightning?branch=0.0.106#af4a89c08c22d0110d386df0e288b2f825aaebbc"
+version = "0.18.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "32aa02b7fd0bd95e40b6ca8d9d9232b162d5e23b41bd2bc42abe9e9c78d34d72"
 dependencies = [
  "bech32",
  "bitcoin_hashes",
  "lightning",
  "num-traits",
- "secp256k1",
+ "secp256k1 0.22.1",
+ "serde",
 ]
 
 [[package]]
 name = "lightning-net-tokio"
-version = "0.0.106"
-source = "git+https://github.com/shamardy/rust-lightning?branch=0.0.106#af4a89c08c22d0110d386df0e288b2f825aaebbc"
+version = "0.0.110"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "ce57d093fbc643835bc64c0501b52a3531d2511dcb1237d0495d68fea3adc47d"
 dependencies = [
  "bitcoin",
  "lightning",
@@ -3923,14 +3928,13 @@ dependencies = [
 ]
 
 [[package]]
-name = "lightning-persister"
-version = "0.0.106"
-source = "git+https://github.com/shamardy/rust-lightning?branch=0.0.106#af4a89c08c22d0110d386df0e288b2f825aaebbc"
+name = "lightning-rapid-gossip-sync"
+version = "0.0.110"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "391732631b14f7a1d9dc84dc3f644484d9b73190a31087b3856505cf0525bea0"
 dependencies = [
  "bitcoin",
- "libc",
  "lightning",
- "winapi",
 ]
 
 [[package]]
@@ -4251,7 +4255,7 @@ dependencies = [
  "rand 0.7.3",
  "regex",
  "rmp-serde",
- "secp256k1",
+ "secp256k1 0.20.3",
  "serde",
  "serde_bytes",
  "serde_json",
@@ -4277,6 +4281,7 @@ dependencies = [
  "hex 0.4.2",
  "keys",
  "lazy_static",
+ "lightning-background-processor",
  "mm2_metrics",
  "mm2_rpc",
  "primitives",
@@ -4431,7 +4436,7 @@ dependencies = [
  "rpc",
  "rpc_task",
  "script",
- "secp256k1",
+ "secp256k1 0.20.3",
  "ser_error",
  "ser_error_derive",
  "serde",
@@ -5012,7 +5017,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "87f5ec2493a61ac0506c0f4199f99070cbe83857b0337006a30f3e6719b8ef58"
 dependencies = [
  "lock_api 0.4.6",
- "parking_lot_core 0.9.3",
+ "parking_lot_core 0.9.1",
 ]
 
 [[package]]
@@ -5060,15 +5065,15 @@ dependencies = [
 
 [[package]]
 name = "parking_lot_core"
-version = "0.9.3"
+version = "0.9.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "09a279cbf25cb0757810394fbc1e359949b59e348145c643a939a525692e6929"
+checksum = "28141e0cc4143da2443301914478dc976a61ffdb3f043058310c70df2fed8954"
 dependencies = [
  "cfg-if 1.0.0",
  "libc",
  "redox_syscall 0.2.10",
  "smallvec 1.6.1",
- "windows-sys",
+ "windows-sys 0.32.0",
 ]
 
 [[package]]
@@ -5136,9 +5141,9 @@ checksum = "d4fd5641d01c8f18a23da7b6fe29298ff4b55afcccdf78973b24cf3175fee32e"
 
 [[package]]
 name = "petgraph"
-version = "0.6.2"
+version = "0.6.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "e6d5014253a1331579ce62aa67443b4a658c5e7dd03d4bc6d302b94474888143"
+checksum = "51b305cc4569dd4e8765bab46261f67ef5d4d11a4b6e745100ee5dad8948b46c"
 dependencies = [
  "fixedbitset",
  "indexmap",
@@ -5780,9 +5785,9 @@ dependencies = [
 
 [[package]]
 name = "raw-cpuid"
-version = "10.3.0"
+version = "10.4.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "738bc47119e3eeccc7e94c4a506901aea5e7b4944ecd0829cbebf4af04ceda12"
+checksum = "2c49596760fce12ca21550ac21dc5a9617b2ea4b6e0aa7d8dab8ff2824fc2bba"
 dependencies = [
  "bitflags",
 ]
@@ -6275,7 +6280,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "88d6731146462ea25d9244b2ed5fd1d716d25c52e4d54aa4fb0f3c4e9854dbe2"
 dependencies = [
  "lazy_static",
- "windows-sys",
+ "windows-sys 0.36.1",
 ]
 
 [[package]]
@@ -6350,14 +6355,32 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "97d03ceae636d0fed5bae6a7f4f664354c5f4fcedf6eef053fef17e49f837d0a"
 dependencies = [
  "rand 0.6.5",
- "secp256k1-sys",
+ "secp256k1-sys 0.4.2",
+]
+
+[[package]]
+name = "secp256k1"
+version = "0.22.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "26947345339603ae8395f68e2f3d85a6b0a8ddfe6315818e80b8504415099db0"
+dependencies = [
+ "secp256k1-sys 0.5.2",
 ]
 
 [[package]]
 name = "secp256k1-sys"
-version = "0.4.0"
+version = "0.4.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "67e4b6455ee49f5901c8985b88f98fb0a0e1d90a6661f5a03f4888bd987dad29"
+checksum = "957da2573cde917463ece3570eab4a0b3f19de6f1646cde62e6fd3868f566036"
+dependencies = [
+ "cc",
+]
+
+[[package]]
+name = "secp256k1-sys"
+version = "0.5.2"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "152e20a0fd0519390fc43ab404663af8a0b794273d2a91d60ad4a39f13ffe110"
 dependencies = [
  "cc",
 ]
@@ -9109,16 +9132,35 @@ checksum = "712e227841d057c1ee1cd2fb22fa7e5a5461ae8e48fa2ca79ec42cfc1931183f"
 
 [[package]]
 name = "windows-sys"
+version = "0.32.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "3df6e476185f92a12c072be4a189a0210dcdcf512a1891d6dff9edb874deadc6"
+dependencies = [
+ "windows_aarch64_msvc 0.32.0",
+ "windows_i686_gnu 0.32.0",
+ "windows_i686_msvc 0.32.0",
+ "windows_x86_64_gnu 0.32.0",
+ "windows_x86_64_msvc 0.32.0",
+]
+
+[[package]]
+name = "windows-sys"
 version = "0.36.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "ea04155a16a59f9eab786fe12a4a450e75cdb175f9e0d80da1e17db09f55b8d2"
 dependencies = [
- "windows_aarch64_msvc",
- "windows_i686_gnu",
- "windows_i686_msvc",
- "windows_x86_64_gnu",
- "windows_x86_64_msvc",
+ "windows_aarch64_msvc 0.36.1",
+ "windows_i686_gnu 0.36.1",
+ "windows_i686_msvc 0.36.1",
+ "windows_x86_64_gnu 0.36.1",
+ "windows_x86_64_msvc 0.36.1",
 ]
+
+[[package]]
+name = "windows_aarch64_msvc"
+version = "0.32.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "d8e92753b1c443191654ec532f14c199742964a061be25d77d7a96f09db20bf5"
 
 [[package]]
 name = "windows_aarch64_msvc"
@@ -9128,9 +9170,21 @@ checksum = "9bb8c3fd39ade2d67e9874ac4f3db21f0d710bee00fe7cab16949ec184eeaa47"
 
 [[package]]
 name = "windows_i686_gnu"
+version = "0.32.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "6a711c68811799e017b6038e0922cb27a5e2f43a2ddb609fe0b6f3eeda9de615"
+
+[[package]]
+name = "windows_i686_gnu"
 version = "0.36.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "180e6ccf01daf4c426b846dfc66db1fc518f074baa793aa7d9b9aaeffad6a3b6"
+
+[[package]]
+name = "windows_i686_msvc"
+version = "0.32.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "146c11bb1a02615db74680b32a68e2d61f553cc24c4eb5b4ca10311740e44172"
 
 [[package]]
 name = "windows_i686_msvc"
@@ -9140,9 +9194,21 @@ checksum = "e2e7917148b2812d1eeafaeb22a97e4813dfa60a3f8f78ebe204bcc88f12f024"
 
 [[package]]
 name = "windows_x86_64_gnu"
+version = "0.32.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "c912b12f7454c6620635bbff3450962753834be2a594819bd5e945af18ec64bc"
+
+[[package]]
+name = "windows_x86_64_gnu"
 version = "0.36.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "4dcd171b8776c41b97521e5da127a2d86ad280114807d0b2ab1e462bc764d9e1"
+
+[[package]]
+name = "windows_x86_64_msvc"
+version = "0.32.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "504a2476202769977a040c6364301a3f65d0cc9e3fb08600b2bda150a0488316"
 
 [[package]]
 name = "windows_x86_64_msvc"
@@ -9303,7 +9369,7 @@ dependencies = [
  "rand 0.7.3",
  "rand_core 0.5.1",
  "ripemd160",
- "secp256k1",
+ "secp256k1 0.20.3",
  "sha2 0.9.9",
  "subtle 2.4.0",
  "zcash_note_encryption",

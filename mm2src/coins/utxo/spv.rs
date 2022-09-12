@@ -1,21 +1,13 @@
-use crate::utxo::rpc_clients::ElectrumClient;
+use crate::utxo::rpc_clients::{ConfirmedTransactionInfo, ElectrumClient};
 use async_trait::async_trait;
-use chain::{BlockHeader, RawBlockHeader, Transaction as UtxoTx};
+use chain::Transaction as UtxoTx;
 use common::executor::Timer;
 use common::log::error;
 use common::now_ms;
 use keys::hash::H256;
-use mm2_err_handle::prelude::*;
 use serialization::serialize_list;
 use spv_validation::helpers_validation::SPVError;
 use spv_validation::spv_proof::{SPVProof, TRY_SPV_PROOF_INTERVAL};
-
-pub struct ConfirmedTransactionInfo {
-    pub tx: UtxoTx,
-    pub header: BlockHeader,
-    pub index: u64,
-    pub height: u64,
-}
 
 #[async_trait]
 pub trait SimplePaymentVerification {
@@ -23,7 +15,7 @@ pub trait SimplePaymentVerification {
         &self,
         tx: &UtxoTx,
         try_spv_proof_until: u64,
-    ) -> Result<ConfirmedTransactionInfo, MmError<SPVError>>;
+    ) -> Result<ConfirmedTransactionInfo, SPVError>;
 }
 
 #[async_trait]
@@ -32,22 +24,23 @@ impl SimplePaymentVerification for ElectrumClient {
         &self,
         tx: &UtxoTx,
         try_spv_proof_until: u64,
-    ) -> Result<ConfirmedTransactionInfo, MmError<SPVError>> {
+    ) -> Result<ConfirmedTransactionInfo, SPVError> {
         if tx.outputs.is_empty() {
-            return MmError::err(SPVError::InvalidVout);
+            return Err(SPVError::InvalidVout);
         }
 
-        let (merkle_branch, header, height) = loop {
+        let (merkle_branch, validated_header, height) = loop {
             if now_ms() / 1000 > try_spv_proof_until {
+                // Todo: Should not show this error when height is 0
                 error!(
                     "Waited too long until {} for transaction {:?} to validate spv proof",
                     try_spv_proof_until,
                     tx.hash().reversed(),
                 );
-                return MmError::err(SPVError::Timeout);
+                return Err(SPVError::Timeout);
             }
 
-            match self.get_merkle_and_header(tx).await {
+            match self.get_merkle_and_validated_header(tx).await {
                 Ok(res) => break res,
                 Err(e) => {
                     error!(
@@ -62,7 +55,6 @@ impl SimplePaymentVerification for ElectrumClient {
             }
         };
 
-        let raw_header = RawBlockHeader::new(header.raw().take())?;
         let intermediate_nodes: Vec<H256> = merkle_branch
             .merkle
             .into_iter()
@@ -74,16 +66,14 @@ impl SimplePaymentVerification for ElectrumClient {
             vin: serialize_list(&tx.inputs).take(),
             vout: serialize_list(&tx.outputs).take(),
             index: merkle_branch.pos as u64,
-            confirming_header: header.clone(),
-            raw_header,
             intermediate_nodes,
         };
 
-        proof.validate().map_err(MmError::new)?;
+        proof.validate(&validated_header)?;
 
         Ok(ConfirmedTransactionInfo {
             tx: tx.clone(),
-            header,
+            header: validated_header,
             index: proof.index,
             height,
         })

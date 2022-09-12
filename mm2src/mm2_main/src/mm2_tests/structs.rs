@@ -624,6 +624,13 @@ pub struct ZcoinActivationResult {
 
 #[derive(Debug, Deserialize)]
 #[serde(deny_unknown_fields)]
+pub struct UtxoStandardActivationResult {
+    pub current_block: u64,
+    pub wallet_balance: EnableCoinBalance,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(deny_unknown_fields)]
 pub struct InitTaskResult {
     pub task_id: u64,
 }
@@ -639,6 +646,14 @@ pub enum MmRpcResult<T> {
 #[serde(deny_unknown_fields, tag = "status", content = "details")]
 pub enum InitZcoinStatus {
     Ready(MmRpcResult<ZcoinActivationResult>),
+    InProgress(Json),
+    UserActionRequired(Json),
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(deny_unknown_fields, tag = "status", content = "details")]
+pub enum InitUtxoStatus {
+    Ready(MmRpcResult<UtxoStandardActivationResult>),
     InProgress(Json),
     UserActionRequired(Json),
 }

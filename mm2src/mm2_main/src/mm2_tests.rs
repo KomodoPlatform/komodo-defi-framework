@@ -8,10 +8,11 @@ use crypto::privkey::key_pair_from_seed;
 use http::{HeaderMap, StatusCode};
 use mm2_metrics::{MetricType, MetricsJson};
 use mm2_number::{BigDecimal, BigRational, Fraction, MmNumber};
-use mm2_test_helpers::for_tests::{check_my_swap_status, check_recent_swaps, check_stats_swap_status,
-                                  enable_native as enable_native_impl, enable_qrc20, find_metrics_in_json,
-                                  from_env_file, init_z_coin_light, init_z_coin_status, mm_spat, morty_conf,
-                                  rick_conf, sign_message, verify_message, wait_till_history_has_records, LocalStart,
+use mm2_test_helpers::for_tests::{btc_with_spv_conf, check_my_swap_status, check_recent_swaps,
+                                  check_stats_swap_status, enable_native as enable_native_impl, enable_qrc20,
+                                  find_metrics_in_json, from_env_file, init_utxo_electrum, init_utxo_status,
+                                  init_z_coin_light, init_z_coin_status, mm_spat, morty_conf, rick_conf, sign_message,
+                                  tbtc_with_spv_conf, verify_message, wait_till_history_has_records, LocalStart,
                                   MarketMakerIt, Mm2TestConf, RaiiDump, MAKER_ERROR_EVENTS, MAKER_SUCCESS_EVENTS,
                                   MORTY, RICK, TAKER_ERROR_EVENTS, TAKER_SUCCESS_EVENTS};
 use serde_json::{self as json, Value as Json};
@@ -198,6 +199,34 @@ async fn enable_z_coin_light(
                 MmRpcResult::Ok { result } => {
                     break result;
                 },
+                MmRpcResult::Err(e) => panic!("{} initialization error {:?}", coin, e),
+            }
+        }
+        Timer::sleep(1.).await;
+    }
+}
+
+async fn enable_utxo_v2_electrum(
+    mm: &MarketMakerIt,
+    coin: &str,
+    servers: Vec<Json>,
+    timeout: u64,
+) -> UtxoStandardActivationResult {
+    let init = init_utxo_electrum(mm, coin, servers).await;
+    let init: RpcV2Response<InitTaskResult> = json::from_value(init).unwrap();
+    let timeout = now_ms() + (timeout * 1000);
+
+    loop {
+        if now_ms() > timeout {
+            panic!("{} initialization timed out", coin);
+        }
+
+        let status = init_utxo_status(mm, init.result.task_id).await;
+        let status: RpcV2Response<InitUtxoStatus> = json::from_value(status).unwrap();
+        log!("init_utxo_status: {:?}", status);
+        if let InitUtxoStatus::Ready(rpc_result) = status.result {
+            match rpc_result {
+                MmRpcResult::Ok { result } => break result,
                 MmRpcResult::Err(e) => panic!("{} initialization error {:?}", coin, e),
             }
         }
@@ -7798,4 +7827,65 @@ fn test_gui_storage_coins_functionality() {
         coins: vec!["KMD".to_string(), "BCH".to_string()].into_iter().collect(),
     };
     assert_eq!(actual.result, expected);
+}
+
+// This test is ignored because block headers sync and validation can take some time
+#[test]
+#[ignore]
+#[cfg(not(target_arch = "wasm32"))]
+fn test_btc_block_header_sync() {
+    let coins = json!([btc_with_spv_conf()]);
+
+    let mm_bob = MarketMakerIt::start(
+        json! ({
+            "gui": "nogui",
+            "netid": 9998,
+            "myipaddr": env::var ("BOB_TRADE_IP") .ok(),
+            "rpcip": env::var ("BOB_TRADE_IP") .ok(),
+            "passphrase": "bob passphrase",
+            "coins": coins,
+            "rpc_password": "pass",
+        }),
+        "pass".into(),
+        local_start!("bob"),
+    )
+    .unwrap();
+    let (_dump_log, _dump_dashboard) = mm_bob.mm_dump();
+    log!("log path: {}", mm_bob.log_path.display());
+
+    let utxo_bob = block_on(enable_utxo_v2_electrum(&mm_bob, "BTC", btc_electrums(), 600));
+    log!("enable UTXO bob {:?}", utxo_bob);
+
+    block_on(mm_bob.stop()).unwrap();
+}
+
+// This test is ignored because block headers sync and validation can take some time
+// Todo: this test is failing, need a small fix in calculating btc_testnet_next_block_bits, and to add each block header individually while validating it.
+#[test]
+#[ignore]
+#[cfg(not(target_arch = "wasm32"))]
+fn test_tbtc_block_header_sync() {
+    let coins = json!([tbtc_with_spv_conf()]);
+
+    let mm_bob = MarketMakerIt::start(
+        json!({
+            "gui": "nogui",
+            "netid": 9998,
+            "myipaddr": env::var ("BOB_TRADE_IP") .ok(),
+            "rpcip": env::var ("BOB_TRADE_IP") .ok(),
+            "passphrase": "bob passphrase",
+            "coins": coins,
+            "rpc_password": "pass",
+        }),
+        "pass".into(),
+        local_start!("bob"),
+    )
+    .unwrap();
+    let (_dump_log, _dump_dashboard) = mm_bob.mm_dump();
+    log!("log path: {}", mm_bob.log_path.display());
+
+    let utxo_bob = block_on(enable_utxo_v2_electrum(&mm_bob, "tBTC-TEST", tbtc_electrums(), 100000));
+    log!("enable UTXO bob {:?}", utxo_bob);
+
+    block_on(mm_bob.stop()).unwrap();
 }

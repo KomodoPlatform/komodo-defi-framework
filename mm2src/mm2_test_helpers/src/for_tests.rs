@@ -277,6 +277,56 @@ pub fn atom_testnet_conf() -> Json {
     })
 }
 
+pub fn btc_with_spv_conf() -> Json {
+    json!({
+        "coin": "BTC",
+        "asset":"BTC",
+        "pubtype": 0,
+        "p2shtype": 5,
+        "wiftype": 128,
+        "segwit": true,
+        "bech32_hrp": "bc",
+        "txfee": 0,
+        "estimate_fee_mode": "ECONOMICAL",
+        "required_confirmations": 0,
+        "enable_spv_proof": true,
+        "protocol": {
+            "type": "UTXO"
+        },
+        "block_headers_verification_params": {
+            "difficulty_check": true,
+            "constant_difficulty": false,
+            "difficulty_algorithm": "Bitcoin Mainnet",
+            "genesis_block_header": "010000006fe28c0ab6f1b372c1a6a246ae63f74f931e8365e15a089c68d6190000000000982051fd1e4ba744bbbe680e1fee14677ba1a3c3540bf7b1cdb606e857233e0e61bc6649ffff001d01e36299"
+        }
+    })
+}
+
+pub fn tbtc_with_spv_conf() -> Json {
+    json!({
+        "coin": "tBTC-TEST",
+        "asset":"tBTC-TEST",
+        "pubtype": 0,
+        "p2shtype": 5,
+        "wiftype": 128,
+        "segwit": true,
+        "bech32_hrp": "tb",
+        "txfee": 0,
+        "estimate_fee_mode": "ECONOMICAL",
+        "required_confirmations": 0,
+        "enable_spv_proof": true,
+        "protocol": {
+            "type": "UTXO"
+        },
+        "block_headers_verification_params": {
+            "difficulty_check": true,
+            "constant_difficulty": false,
+            "difficulty_algorithm": "Bitcoin Testnet",
+            "genesis_block_header": "0100000043497fd7f826957108f4a30fd9cec3aeba79972084e90ead01ea330900000000bac8b0fa927c0ac8234287e33c5f74d38d354820e24756ad709d7038fc5f31f020e7494dffff001d03e4b672"
+        }
+    })
+}
+
 #[cfg(target_arch = "wasm32")]
 pub fn mm_ctx_with_custom_db() -> MmArc { MmCtxBuilder::new().with_test_db_namespace().into_mm_arc() }
 
@@ -1674,5 +1724,45 @@ pub async fn enable_tendermint(mm: &MarketMakerIt, coin: &str, rpc_urls: &[&str]
         "'enable_tendermint_with_assets' failed: {}",
         request.1
     );
+    json::from_str(&request.1).unwrap()
+}
+
+pub async fn init_utxo_electrum(mm: &MarketMakerIt, coin: &str, servers: Vec<Json>) -> Json {
+    let request = mm
+        .rpc(&json! ({
+            "userpass": mm.userpass,
+            "method": "init_utxo",
+            "mmrpc": "2.0",
+            "params": {
+                "ticker": coin,
+                "activation_params": {
+                    "mode": {
+                        "rpc": "Electrum",
+                        "rpc_data": {
+                            "servers": servers
+                        }
+                    }
+                },
+            }
+        }))
+        .await
+        .unwrap();
+    assert_eq!(request.0, StatusCode::OK, "'init_z_coin' failed: {}", request.1);
+    json::from_str(&request.1).unwrap()
+}
+
+pub async fn init_utxo_status(mm: &MarketMakerIt, task_id: u64) -> Json {
+    let request = mm
+        .rpc(&json! ({
+            "userpass": mm.userpass,
+            "method": "init_utxo_status",
+            "mmrpc": "2.0",
+            "params": {
+                "task_id": task_id,
+            }
+        }))
+        .await
+        .unwrap();
+    assert_eq!(request.0, StatusCode::OK, "'init_utxo_status' failed: {}", request.1);
     json::from_str(&request.1).unwrap()
 }

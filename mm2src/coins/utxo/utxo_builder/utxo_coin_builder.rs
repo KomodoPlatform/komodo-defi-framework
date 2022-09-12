@@ -3,12 +3,11 @@ use crate::hd_wallet_storage::{HDWalletCoinStorage, HDWalletStorageError};
 use crate::utxo::rpc_clients::{ElectrumClient, ElectrumClientImpl, ElectrumRpcRequest, EstimateFeeMethod,
                                UtxoRpcClientEnum};
 use crate::utxo::tx_cache::{UtxoVerboseCacheOps, UtxoVerboseCacheShared};
-use crate::utxo::utxo_block_header_storage::{BlockHeaderStorage, BlockHeaderVerificationParams,
-                                             InitBlockHeaderStorageOps};
+use crate::utxo::utxo_block_header_storage::BlockHeaderStorage;
 use crate::utxo::utxo_builder::utxo_conf_builder::{UtxoConfBuilder, UtxoConfError, UtxoConfResult};
 use crate::utxo::{output_script, utxo_common, ElectrumBuilderArgs, ElectrumProtoVerifier, RecentlySpentOutPoints,
-                  TxFee, UtxoCoinConf, UtxoCoinFields, UtxoHDAccount, UtxoHDWallet, UtxoRpcMode, DEFAULT_GAP_LIMIT,
-                  UTXO_DUST_AMOUNT};
+                  TxFee, UtxoCoinConf, UtxoCoinFields, UtxoHDAccount, UtxoHDWallet, UtxoRpcMode, UtxoSyncStatus,
+                  UtxoSyncStatusLoopHandle, DEFAULT_GAP_LIMIT, UTXO_DUST_AMOUNT};
 use crate::{BlockchainNetwork, CoinTransportMetrics, DerivationMethod, HistorySyncState, PrivKeyBuildPolicy,
             PrivKeyPolicy, RpcClientType, UtxoActivationParams};
 use async_trait::async_trait;
@@ -18,7 +17,7 @@ use common::log::{error, info};
 use common::small_rng;
 use crypto::{Bip32DerPathError, Bip44DerPathError, Bip44PathToCoin, CryptoCtx, CryptoInitError, HwWalletType};
 use derive_more::Display;
-use futures::channel::mpsc;
+use futures::channel::mpsc::{channel, unbounded, Receiver as AsyncReceiver, UnboundedReceiver};
 use futures::compat::Future01CompatExt;
 use futures::lock::Mutex as AsyncMutex;
 use futures::StreamExt;
@@ -30,6 +29,7 @@ use mm2_err_handle::prelude::*;
 use primitives::hash::H256;
 use rand::seq::SliceRandom;
 use serde_json::{self as json, Value as Json};
+use spv_validation::storage::{BlockHeaderStorageError, BlockHeaderStorageOps};
 use std::sync::{Arc, Mutex, Weak};
 
 cfg_native! {
@@ -77,6 +77,7 @@ pub enum UtxoCoinBuildError {
         fmt = "Coin doesn't support Trezor hardware wallet. Please consider adding the 'trezor_coin' field to the coins config"
     )]
     CoinDoesntSupportTrezor,
+    BlockHeaderStorageError(BlockHeaderStorageError),
     #[display(fmt = "Internal error: {}", _0)]
     Internal(String),
 }
@@ -96,6 +97,10 @@ impl From<Bip32DerPathError> for UtxoCoinBuildError {
 
 impl From<HDWalletStorageError> for UtxoCoinBuildError {
     fn from(e: HDWalletStorageError) -> Self { UtxoCoinBuildError::HDWalletStorageError(e) }
+}
+
+impl From<BlockHeaderStorageError> for UtxoCoinBuildError {
+    fn from(e: BlockHeaderStorageError) -> Self { UtxoCoinBuildError::BlockHeaderStorageError(e) }
 }
 
 #[async_trait]
@@ -164,6 +169,7 @@ pub trait UtxoFieldsWithIguanaPrivKeyBuilder: UtxoCoinBuilderCommonOps {
         let tx_hash_algo = self.tx_hash_algo();
         let check_utxo_maturity = self.check_utxo_maturity();
         let tx_cache = self.tx_cache();
+        let (block_headers_status_notifier, block_headers_status_watcher) = self.block_header_status_channel();
 
         let coin = UtxoCoinFields {
             conf,
@@ -178,6 +184,8 @@ pub trait UtxoFieldsWithIguanaPrivKeyBuilder: UtxoCoinBuilderCommonOps {
             tx_fee,
             tx_hash_algo,
             check_utxo_maturity,
+            block_headers_status_notifier,
+            block_headers_status_watcher,
         };
         Ok(coin)
     }
@@ -225,6 +233,7 @@ pub trait UtxoFieldsWithHardwareWalletBuilder: UtxoCoinBuilderCommonOps {
         let tx_hash_algo = self.tx_hash_algo();
         let check_utxo_maturity = self.check_utxo_maturity();
         let tx_cache = self.tx_cache();
+        let (block_headers_status_notifier, block_headers_status_watcher) = self.block_header_status_channel();
 
         let coin = UtxoCoinFields {
             conf,
@@ -239,6 +248,8 @@ pub trait UtxoFieldsWithHardwareWalletBuilder: UtxoCoinBuilderCommonOps {
             tx_fee,
             tx_hash_algo,
             check_utxo_maturity,
+            block_headers_status_notifier,
+            block_headers_status_watcher,
         };
         Ok(coin)
     }
@@ -394,13 +405,8 @@ pub trait UtxoCoinBuilderCommonOps {
                     Ok(UtxoRpcClientEnum::Native(native))
                 }
             },
-            UtxoRpcMode::Electrum {
-                servers,
-                block_header_params,
-            } => {
-                let electrum = self
-                    .electrum_client(ElectrumBuilderArgs::default(), servers, block_header_params)
-                    .await?;
+            UtxoRpcMode::Electrum { servers } => {
+                let electrum = self.electrum_client(ElectrumBuilderArgs::default(), servers).await?;
                 Ok(UtxoRpcClientEnum::Electrum(electrum))
             },
         }
@@ -410,9 +416,8 @@ pub trait UtxoCoinBuilderCommonOps {
         &self,
         args: ElectrumBuilderArgs,
         mut servers: Vec<ElectrumRpcRequest>,
-        block_header_params: Option<BlockHeaderVerificationParams>,
     ) -> UtxoCoinBuildResult<ElectrumClient> {
-        let (on_connect_tx, on_connect_rx) = mpsc::unbounded();
+        let (on_connect_tx, on_connect_rx) = unbounded();
         let ticker = self.ticker().to_owned();
         let ctx = self.ctx();
         let mut event_handlers = vec![];
@@ -426,13 +431,12 @@ pub trait UtxoCoinBuilderCommonOps {
             event_handlers.push(ElectrumProtoVerifier { on_connect_tx }.into_shared());
         }
 
-        let block_headers_storage = match block_header_params {
-            Some(params) => Some(
-                BlockHeaderStorage::new_from_ctx(self.ctx().clone(), params)
-                    .map_to_mm(|e| UtxoCoinBuildError::Internal(e.to_string()))?,
-            ),
-            None => None,
-        };
+        let storage_ticker = self.ticker().replace('-', "_");
+        let block_headers_storage = BlockHeaderStorage::new_from_ctx(self.ctx().clone(), storage_ticker)
+            .map_to_mm(|e| UtxoCoinBuildError::Internal(e.to_string()))?;
+        if !block_headers_storage.is_initialized_for().await? {
+            block_headers_storage.init().await?;
+        }
 
         let mut rng = small_rng();
         servers.as_mut_slice().shuffle(&mut rng);
@@ -584,6 +588,23 @@ pub trait UtxoCoinBuilderCommonOps {
 
     #[cfg(not(target_arch = "wasm32"))]
     fn tx_cache_path(&self) -> PathBuf { self.ctx().dbdir().join("TX_CACHE") }
+
+    fn block_header_status_channel(
+        &self,
+    ) -> (
+        Option<UtxoSyncStatusLoopHandle>,
+        Option<AsyncMutex<AsyncReceiver<UtxoSyncStatus>>>,
+    ) {
+        if self.conf()["enable_spv_proof"].as_bool().unwrap_or(false) && !self.activation_params().mode.is_native() {
+            let (sync_status_notifier, sync_watcher) = channel(1);
+            (
+                Some(UtxoSyncStatusLoopHandle::new(sync_status_notifier)),
+                Some(AsyncMutex::new(sync_watcher)),
+            )
+        } else {
+            (None, None)
+        }
+    }
 }
 
 /// Attempts to parse native daemon conf file and return rpcport, rpcuser and rpcpassword
@@ -655,7 +676,7 @@ fn spawn_electrum_ping_loop(weak_client: Weak<ElectrumClientImpl>, servers: Vec<
 /// Weak reference will allow to stop the thread if client is dropped.
 fn spawn_electrum_version_loop(
     weak_client: Weak<ElectrumClientImpl>,
-    mut on_connect_rx: mpsc::UnboundedReceiver<String>,
+    mut on_connect_rx: UnboundedReceiver<String>,
     client_name: String,
 ) {
     spawn(async move {
