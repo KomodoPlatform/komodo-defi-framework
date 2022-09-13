@@ -112,22 +112,25 @@ impl ZRpcOps for Vec<CompactTxStreamerClient<Channel>> {
                                 match block {
                                     Some(block) => {
                                         debug!("Got block {:?}", block);
-                                        // todo unwrap there
-                                        on_block(block)?
+                                        if let Err(err) = on_block(block) {
+                                            // todo mismatched error type with tonic vec
+                                            break;
+                                        }
                                     },
-                                    _ => continue,
+                                    _ => return Ok(()),
                                 }
                             },
                             Err(err) => {
                                 errors.push(err);
+                                // todo could it break cycle for
                                 break;
                             },
                         }
                     }
-                    return Ok(());
                 },
                 Err(err) => {
                     errors.push(err);
+                    // todo do we need to continue
                     continue;
                 },
             }
