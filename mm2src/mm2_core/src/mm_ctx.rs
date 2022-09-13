@@ -7,8 +7,6 @@ use futures::future::AbortHandle;
 use gstuff::{try_s, Constructible, ERR, ERRL};
 use keys::KeyPair;
 use lazy_static::lazy_static;
-#[cfg(not(target_arch = "wasm32"))]
-use lightning_background_processor::BackgroundProcessor;
 use mm2_metrics::{MetricsArc, MetricsOps};
 use primitives::hash::H160;
 use rand::Rng;
@@ -30,9 +28,11 @@ cfg_wasm32! {
 }
 
 cfg_native! {
-    use mm2_metrics::{prometheus, MmMetricsError};
     use db_common::sqlite::rusqlite::Connection;
-    use std::net::{AddrParseError, IpAddr, SocketAddr};
+    use lightning_background_processor::BackgroundProcessor;
+    use mm2_metrics::prometheus;
+    use mm2_metrics::MmMetricsError;
+    use std::net::{IpAddr, SocketAddr, AddrParseError};
     use std::sync::MutexGuard;
 }
 
