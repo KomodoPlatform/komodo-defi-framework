@@ -18,6 +18,8 @@ use cosmrs::bank::MsgSend;
 use cosmrs::crypto::secp256k1::SigningKey;
 use cosmrs::proto::cosmos::auth::v1beta1::{BaseAccount, QueryAccountRequest, QueryAccountResponse};
 use cosmrs::proto::cosmos::bank::v1beta1::{QueryBalanceRequest, QueryBalanceResponse};
+use cosmrs::proto::cosmos::tx::v1beta1::TxRaw;
+use cosmrs::proto::ibc::applications::transfer::v1::MsgTransfer;
 use cosmrs::tendermint::abci::Path as AbciPath;
 use cosmrs::tendermint::chain::Id as ChainId;
 use cosmrs::tx::{self, Fee, Msg, Raw, SignDoc, SignerInfo};
@@ -31,6 +33,7 @@ use keys::KeyPair;
 use mm2_core::mm_ctx::MmArc;
 use mm2_err_handle::prelude::*;
 use mm2_number::MmNumber;
+use num_traits::ToPrimitive;
 use prost::{DecodeError, Message};
 use rpc::v1::types::Bytes as BytesJson;
 use serde_json::Value as Json;
@@ -135,6 +138,22 @@ impl From<cosmrs::rpc::Error> for TendermintCoinRpcError {
 #[cfg(target_arch = "wasm32")]
 impl From<PerformError> for TendermintCoinRpcError {
     fn from(err: PerformError) -> Self { TendermintCoinRpcError::PerformError(err.to_string()) }
+}
+
+#[derive(Clone, Debug, PartialEq)]
+pub struct CosmosTransaction {
+    pub txid: String,
+    pub data: cosmrs::proto::cosmos::tx::v1beta1::TxRaw,
+}
+
+impl crate::Transaction for CosmosTransaction {
+    fn tx_hex(&self) -> Vec<u8> { self.data.encode_to_vec() }
+
+    fn tx_hash(&self) -> BytesJson {
+        let bytes = self.data.encode_to_vec();
+        let hash = sha256(&bytes);
+        hash.reversed().to_vec().into()
+    }
 }
 
 fn account_id_from_privkey(priv_key: &[u8], prefix: &str) -> MmResult<AccountId, TendermintInitErrorKind> {
@@ -504,7 +523,7 @@ impl MmCoin for TendermintCoin {
     ) -> TradePreimageResult<TradeFee> {
         Ok(TradeFee {
             coin: self.ticker().to_string(),
-            amount: MmNumber::from(1_u64).into(),
+            amount: MmNumber::from(1_u64),
             paid_from_trading_vol: false,
         })
     }
@@ -515,7 +534,7 @@ impl MmCoin for TendermintCoin {
         let fut = async move {
             Ok(TradeFee {
                 coin: coin.ticker().to_string(),
-                amount: MmNumber::from(1_u64).into(),
+                amount: MmNumber::from(1_u64),
                 paid_from_trading_vol: false,
             })
         };
@@ -531,7 +550,7 @@ impl MmCoin for TendermintCoin {
     ) -> TradePreimageResult<TradeFee> {
         Ok(TradeFee {
             coin: self.ticker().to_string(),
-            amount: MmNumber::from(1_u64).into(),
+            amount: MmNumber::from(1_u64),
             paid_from_trading_vol: false,
         })
     }
@@ -661,7 +680,64 @@ impl MarketCoinOps for TendermintCoin {
 #[async_trait]
 #[allow(unused_variables)]
 impl SwapOps for TendermintCoin {
-    fn send_taker_fee(&self, fee_addr: &[u8], amount: BigDecimal, uuid: &[u8]) -> TransactionFut { todo!() }
+    fn send_taker_fee(&self, fee_addr: &[u8], amount: BigDecimal, _uuid: &[u8]) -> TransactionFut {
+        let from_address = self.account_id.clone();
+        let to_address = AccountId::new("iaa", fee_addr).unwrap();
+
+        let amount = vec![Coin {
+            denom: self.denom.clone(),
+            amount: 1u64.into()
+            // TODO
+            // amount: amount.to_u64().unwrap().into(),
+        }];
+
+        println!("THIS IS THE AMOUNT TO SENT {:?}", amount.clone());
+
+        let tx_payload = MsgSend {
+            from_address,
+            to_address,
+            amount,
+        }
+        .to_any()
+        .unwrap();
+
+        let coin = self.clone();
+        let fut = async move {
+            let account_info = coin.my_account_info().await.unwrap();
+            let fee_amount = Coin {
+                denom: "unyan".parse().unwrap(),
+                amount: 1000u64.into(),
+            };
+            let fee = Fee::from_amount_and_gas(fee_amount, GAS_LIMIT_DEFAULT);
+
+            let current_block = coin
+                .current_block()
+                .compat()
+                .await
+                .map_to_mm(WithdrawError::Transport)
+                .unwrap();
+            let timeout_height = current_block + TIMEOUT_HEIGHT_DELTA;
+
+            let tx_raw = coin
+                .any_to_signed_raw_tx(account_info, tx_payload, fee, timeout_height)
+                .map_to_mm(|e| WithdrawError::InternalError(e.to_string()))
+                .unwrap();
+
+            let tx_bytes = tx_raw
+                .to_bytes()
+                .map_to_mm(|e| WithdrawError::InternalError(e.to_string()))
+                .unwrap();
+
+            let tx_id = coin.send_raw_tx_bytes(&tx_bytes).compat().await.unwrap();
+
+            Ok(TransactionEnum::CosmosTransaction(CosmosTransaction {
+                txid: tx_id,
+                data: tx_raw.into(),
+            }))
+        };
+
+        Box::new(fut.boxed().compat())
+    }
 
     fn send_maker_payment(
         &self,
@@ -787,7 +863,7 @@ impl SwapOps for TendermintCoin {
         &self,
         other_side_address: Option<&[u8]>,
     ) -> Result<Option<BytesJson>, MmError<NegotiateSwapContractAddrErr>> {
-        todo!()
+        Ok(None)
     }
 
     fn derive_htlc_key_pair(&self, swap_unique_data: &[u8]) -> KeyPair {

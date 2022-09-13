@@ -180,9 +180,8 @@ pub async fn trade_base_rel_iris(
             .unwrap()
     }
 
-    // Timer::sleep(10.);
     Timer::sleep(20.).await;
-    println!("{}", mm_bob.log_as_utf8().unwrap());
+    println!("{}", mm_alice.log_as_utf8().unwrap());
 
     // TODO
     // implement fn swap_contract_address(&self) in tendermint_coin

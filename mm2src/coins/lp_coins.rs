@@ -208,7 +208,7 @@ use rpc_command::{init_account_balance::{AccountBalanceTaskManager, AccountBalan
                   init_withdraw::{WithdrawTaskManager, WithdrawTaskManagerShared}};
 
 pub mod tendermint;
-use tendermint::{TendermintCoin, TendermintFeeDetails, TendermintIbcAsset, TendermintProtocolInfo};
+use tendermint::{TendermintCoin, TendermintFeeDetails, TendermintIbcAsset, TendermintProtocolInfo, CosmosTransaction};
 
 #[doc(hidden)]
 #[allow(unused_variables)]
@@ -353,6 +353,7 @@ pub enum TransactionEnum {
     SignedEthTx(SignedEthTx),
     #[cfg(not(target_arch = "wasm32"))]
     ZTransaction(ZTransaction),
+    CosmosTransaction(CosmosTransaction),
 }
 
 ifrom!(TransactionEnum, UtxoTx);
@@ -369,6 +370,7 @@ impl Deref for TransactionEnum {
             TransactionEnum::SignedEthTx(ref t) => t,
             #[cfg(not(target_arch = "wasm32"))]
             TransactionEnum::ZTransaction(ref t) => t,
+            TransactionEnum::CosmosTransaction(ref t) => t,
         }
     }
 }
