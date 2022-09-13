@@ -9,12 +9,14 @@ pub type ValidatePaymentFut<T> = Box<dyn Future<Item = T, Error = MmError<Valida
 #[derive(Debug, Display)]
 pub enum ValidatePaymentError {
     InternalError(String),
+    // Problem with deserializing the transaction, or one of the transaction parts is invalid.
     InvalidPaymentTxData(String),
     InvalidInput(String),
     InvalidRpcResponse(String),
     SPVError(SPVError),
     UnexpectedPaymentState(String),
     Transport(String),
+    // Transaction has wrong properties, for example, it has been sent to a wrong address
     WrongPaymentTx(String),
     ValidateHtlcError(String),
 }
