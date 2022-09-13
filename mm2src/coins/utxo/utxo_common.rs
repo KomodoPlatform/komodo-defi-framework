@@ -2327,8 +2327,9 @@ where
                 Ok(value) => value,
                 Err(e) => match &e.error {
                     JsonRpcErrorType::InvalidRequest(e)
+                    | JsonRpcErrorType::Parse(_, e)
                     | JsonRpcErrorType::Transport(e)
-                    | JsonRpcErrorType::Parse(_, e) => {
+                    | JsonRpcErrorType::Internal(e) => {
                         return RequestTxHistoryResult::Retry {
                             error: ERRL!("Error {} on scripthash_get_history", e),
                         };

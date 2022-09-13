@@ -38,15 +38,16 @@ iguana/exchanges/manychains
 /MM_DATETIME
 /MM_DATETIME.tmp
 /MM_VERSION
+/MM_VERSION.tmp
 /target
 /iguana/exchanges/etomicswap/target
 
 # Subcrate artefacts
-/mm2src/common/c_headers
 /mm2src/*/target
 
 # Private IDE configuration
-/mm2src/peers/.vscode/tasks.json
+/mm2src/*/.vscode/tasks.json
+/mm2src/*/.vscode/c_cpp_properties.json
 /.vscode/settings.json
 /.vscode/tasks.json
 /.vscode/c_cpp_properties.json

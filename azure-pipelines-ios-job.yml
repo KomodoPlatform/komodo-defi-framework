@@ -1,0 +1,45 @@
+parameters:
+  os: ''
+
+jobs:
+  - job: MM2_iOS
+    timeoutInMinutes: 0 # 0 means infinite for self-hosted agent
+    pool:
+      name: Default
+      demands: agent.os -equals ${{ parameters.os }}
+    steps:
+      - checkout: self  # self represents the repo where the initial Pipelines YAML file was found
+        clean: ${{ eq( variables['Build.Reason'], 'Schedule' ) }} # clean up only on Scheduled build
+      - bash: |
+          if [ $CLEANUP = "true" ]
+          then
+            git clean -ffdx
+          fi
+        displayName: Clean Up
+        failOnStderr: false
+        continueOnError: true
+      - bash: |
+          export TAG="$(git rev-parse --short=9 HEAD)"
+          echo "##vso[task.setvariable variable=COMMIT_HASH]${TAG}"
+        displayName: Setup ENV
+      - bash: |
+          VERSION=2.1.$(Build.BuildId)_$(Build.SourceBranchName)_$(COMMIT_HASH)_ios_aarch64_Release
+          if ! grep -q $VERSION MM_VERSION; then
+            echo $VERSION > MM_VERSION
+          fi
+          cat MM_VERSION
+          cargo build --target aarch64-apple-ios --lib --release
+        displayName: 'Build iOS lib'
+      - bash: |
+          rm -rf upload
+          mkdir upload
+          zip upload/mm2-$(COMMIT_HASH)-ios-aarch64-Release target/aarch64-apple-ios/release/libmm2.a -j
+        displayName: 'Prepare upload'
+      - task: CopyFilesOverSSH@0
+        inputs:
+          sshEndpoint: nightly_build_server
+          sourceFolder: 'upload' # Optional
+          contents: "**"
+          targetFolder: "uploads/$(Build.SourceBranchName)" # Optional
+          overwrite: true
+        displayName: 'Upload nightly'

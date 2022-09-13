@@ -1,5 +1,6 @@
 use crate::hw_error::{HwError, HwResult};
 use async_trait::async_trait;
+#[cfg(not(target_os = "ios"))]
 use common::custom_futures::FutureTimerExt;
 use derive_more::Display;
 use futures::FutureExt;
@@ -107,7 +108,7 @@ impl HwClient {
         }
     }
 
-    #[cfg(not(target_arch = "wasm32"))]
+    #[cfg(all(not(target_arch = "wasm32"), not(target_os = "ios")))]
     pub(crate) async fn trezor<Processor: TrezorConnectProcessor>(
         processor: &Processor,
     ) -> MmResult<TrezorClient, HwProcessingError<Processor::Error>> {
@@ -153,5 +154,14 @@ impl HwClient {
                 MmError::err(HwProcessingError::HwError(HwError::ConnectionTimedOut { timeout }))
             },
         }
+    }
+
+    #[cfg(target_os = "ios")]
+    pub(crate) async fn trezor<Processor: TrezorConnectProcessor>(
+        _processor: &Processor,
+    ) -> MmResult<TrezorClient, HwProcessingError<Processor::Error>> {
+        MmError::err(HwProcessingError::HwError(HwError::Internal(
+            "Not supported on iOS!".into(),
+        )))
     }
 }

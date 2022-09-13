@@ -27,6 +27,8 @@ use coins::utxo::slp::SlpToken;
 use coins::utxo::utxo_standard::UtxoStandardCoin;
 use coins::{add_delegation, get_raw_transaction, get_staking_infos, remove_delegation, sign_message, verify_message,
             withdraw};
+#[cfg(all(not(target_os = "ios"), not(target_os = "android"), not(target_arch = "wasm32")))]
+use coins::{SolanaCoin, SplToken};
 use coins_activation::{cancel_init_standalone_coin, enable_l2, enable_platform_coin_with_tokens, enable_token,
                        init_standalone_coin, init_standalone_coin_status, init_standalone_coin_user_action};
 use common::log::{error, warn};
@@ -45,7 +47,6 @@ cfg_native! {
         get_claimable_balances, get_payment_details, list_closed_channels_by_filter, list_open_channels_by_filter,
         list_payments_by_filter, list_trusted_nodes, open_channel, remove_trusted_node, send_payment, update_channel,
         LightningCoin};
-    use coins::{SolanaCoin, SplToken};
     use coins::z_coin::ZCoin;
 }
 
@@ -174,9 +175,11 @@ async fn dispatcher_v2(request: MmRpcRequest, ctx: MmArc) -> DispatcherResult<Re
             "close_channel" => handle_mmrpc(ctx, request, close_channel).await,
             "connect_to_lightning_node" => handle_mmrpc(ctx, request, connect_to_lightning_node).await,
             "enable_lightning" => handle_mmrpc(ctx, request, enable_l2::<LightningCoin>).await,
+            #[cfg(all(not(target_os = "ios"), not(target_os = "android")))]
             "enable_solana_with_tokens" => {
                 handle_mmrpc(ctx, request, enable_platform_coin_with_tokens::<SolanaCoin>).await
             },
+            #[cfg(all(not(target_os = "ios"), not(target_os = "android")))]
             "enable_spl" => handle_mmrpc(ctx, request, enable_token::<SplToken>).await,
             "generate_invoice" => handle_mmrpc(ctx, request, generate_invoice).await,
             "get_channel_details" => handle_mmrpc(ctx, request, get_channel_details).await,
