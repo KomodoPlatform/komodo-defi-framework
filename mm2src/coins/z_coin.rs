@@ -851,7 +851,7 @@ impl<'a> ZCoinBuilder<'a> {
             requires_notarization: z_coin_params.requires_notarization,
             address_format: None,
             gap_limit: None,
-            scan_policy: Default::default(),
+            enable_params: Default::default(),
             priv_key_policy: PrivKeyActivationPolicy::IguanaPrivKey,
             check_utxo_maturity: None,
         };

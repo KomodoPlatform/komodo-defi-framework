@@ -1553,7 +1553,7 @@ mod lp_swap_tests {
             requires_notarization: None,
             address_format: None,
             gap_limit: None,
-            scan_policy: Default::default(),
+            enable_params: Default::default(),
             priv_key_policy: PrivKeyActivationPolicy::IguanaPrivKey,
             check_utxo_maturity: None,
         }

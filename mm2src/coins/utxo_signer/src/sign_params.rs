@@ -25,9 +25,23 @@ pub enum SpendingInputInfo {
     // P2SH {}
 }
 
+/// Either plain destination address or derivation path of a change address.
+pub enum OutputDestination {
+    Plain { address: String },
+    Change { derivation_path: DerivationPath },
+}
+
+impl OutputDestination {
+    pub fn plain(address: String) -> OutputDestination { OutputDestination::Plain { address } }
+
+    pub fn change(derivation_path: DerivationPath) -> OutputDestination {
+        OutputDestination::Change { derivation_path }
+    }
+}
+
 /// An additional info of a sending output.
 pub struct SendingOutputInfo {
-    pub destination_address: String,
+    pub destination_address: OutputDestination,
 }
 
 impl SendingOutputInfo {
@@ -161,8 +175,8 @@ impl UtxoSignTxParams {
     /// Please see [`UtxoSignTxParamsBuilder::build`].
     pub fn outputs(&self) -> impl Iterator<Item = (&TransactionOutput, &SendingOutputInfo)> {
         assert_eq!(
-            self.unsigned_tx.inputs.len(),
-            self.inputs_infos.len(),
+            self.unsigned_tx.outputs.len(),
+            self.outputs_infos.len(),
             "'unsigned_tx.outputs' and 'outputs_infos' must be checked"
         );
         self.unsigned_tx.outputs.iter().zip(self.outputs_infos.iter())

@@ -111,17 +111,32 @@ pub trait SerMmErrorType: SerializeErrorType + fmt::Display + NotMmError {}
 
 impl<E> SerMmErrorType for E where E: SerializeErrorType + fmt::Display + NotMmError {}
 
+pub auto trait NotEqual {}
+impl<X> !NotEqual for (X, X) {}
+impl<T: ?Sized> NotEqual for Box<T> {}
+
 /// The unified error representation tracing an error path.
-#[derive(Clone, Debug, Display, Eq, PartialEq)]
-#[display(fmt = "{} {}", "trace.formatted()", etype)]
+#[derive(Clone, Eq, PartialEq)]
 pub struct MmError<E: NotMmError> {
     pub(crate) etype: E,
     pub(crate) trace: Vec<TraceLocation>,
 }
 
-pub auto trait NotEqual {}
-impl<X> !NotEqual for (X, X) {}
-impl<T: ?Sized> NotEqual for Box<T> {}
+impl<E> fmt::Display for MmError<E>
+where
+    E: NotMmError + fmt::Display,
+{
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result { write!(f, "{} {}", self.trace.formatted(), self.etype) }
+}
+
+impl<E> fmt::Debug for MmError<E>
+where
+    E: NotMmError + fmt::Debug,
+{
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "{} {:?}", self.trace.formatted(), self.etype)
+    }
+}
 
 impl<E: fmt::Display + StdError + NotMmError> StdError for MmError<E> {}
 
