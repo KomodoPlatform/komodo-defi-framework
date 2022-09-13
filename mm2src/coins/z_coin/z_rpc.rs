@@ -92,22 +92,50 @@ impl ZRpcOps for Vec<CompactTxStreamerClient<Channel>> {
         last_block: u64,
         on_block: &mut OnCompactBlockFn,
     ) -> Result<(), MmError<UpdateBlocksCacheErr>> {
-        let request = tonic::Request::new(BlockRange {
-            start: Some(BlockId {
-                height: start_block,
-                hash: Vec::new(),
-            }),
-            end: Some(BlockId {
-                height: last_block,
-                hash: Vec::new(),
-            }),
-        });
-        let mut response = self.get_block_range(request).await?;
-        while let Some(block) = response.get_mut().message().await? {
-            debug!("Got block {:?}", block);
-            on_block(block)?;
+        let mut errors = Vec::new();
+        for client in self {
+            let request = tonic::Request::new(BlockRange {
+                start: Some(BlockId {
+                    height: start_block,
+                    hash: Vec::new(),
+                }),
+                end: Some(BlockId {
+                    height: last_block,
+                    hash: Vec::new(),
+                }),
+            });
+            match client.get_block_range(request).await {
+                Ok(response) => {
+                    while let Some(block) = response.get_mut().message().await? {
+                        debug!("Got block {:?}", block);
+                        on_block(block)?;
+                    }
+                    return Ok(());
+                },
+                Err(err) => {
+                    errors.push(err);
+                    continue;
+                },
+            }
         }
-        Ok(())
+        drop_mutability!(errors);
+        Err(format_tonic_error(&errors))
+        // let request = tonic::Request::new(BlockRange {
+        //     start: Some(BlockId {
+        //         height: start_block,
+        //         hash: Vec::new(),
+        //     }),
+        //     end: Some(BlockId {
+        //         height: last_block,
+        //         hash: Vec::new(),
+        //     }),
+        // });
+        // let mut response = self.get_block_range(request).await?;
+        // while let Some(block) = response.get_mut().message().await? {
+        //     debug!("Got block {:?}", block);
+        //     on_block(block)?;
+        // }
+        // Ok(())
     }
 
     async fn check_tx_existence(&mut self, tx_id: TxId) -> bool {
