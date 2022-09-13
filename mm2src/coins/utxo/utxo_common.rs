@@ -10,6 +10,7 @@ use crate::utxo::rpc_clients::{electrum_script_hash, BlockHashOrHeight, UnspentI
 use crate::utxo::spv::SimplePaymentVerification;
 use crate::utxo::tx_cache::TxCacheResult;
 use crate::utxo::utxo_withdraw::{InitUtxoWithdraw, StandardUtxoWithdraw, UtxoWithdraw};
+use crate::TxFeeDetails::Utxo;
 use crate::{CanRefundHtlc, CoinBalance, CoinWithDerivationMethod, GetWithdrawSenderAddress, HDAddressId,
             RawTransactionError, RawTransactionRequest, RawTransactionRes, SearchForSwapTxSpendInput, SignatureError,
             SignatureResult, SwapOps, TradePreimageValue, TransactionFut, TxFeeDetails, TxMarshalingErr,
@@ -2057,13 +2058,40 @@ where
         },
     };
 
+    let mut updated = false;
     let mut history_map: HashMap<H256Json, TransactionDetails> = history
         .into_iter()
-        .filter_map(|tx| {
+        .filter_map(|mut tx| {
             let tx_hash = H256Json::from_str(&tx.tx_hash).ok()?;
-            Some((tx_hash, tx))
+
+            // Quick fix for null valued coin fields in fee details of old tx history entries
+            match tx.fee_details {
+                Some(Utxo(ref mut fee_details)) => {
+                    if fee_details.coin.is_none() {
+                        fee_details.coin = Some(String::from(&tx.coin));
+                        updated = true;
+                    }
+                    Some((tx_hash, tx))
+                },
+                Some(_) => None,
+                None => Some((tx_hash, tx)),
+            }
         })
         .collect();
+
+    if updated {
+        let to_write: Vec<TransactionDetails> = history_map.iter().map(|(_, value)| value.clone()).collect();
+        if let Err(e) = coin.save_history_to_file(&ctx, to_write).compat().await {
+            log_tag!(
+                ctx,
+                "",
+                "tx_history",
+                "coin" => coin.as_ref().conf.ticker;
+                fmt = "Error {} on 'save_history_to_file'", e
+            );
+            return;
+        };
+    }
 
     let mut success_iteration = 0i32;
     loop {
