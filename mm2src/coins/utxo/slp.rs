@@ -403,8 +403,7 @@ impl SlpToken {
     }
 
     async fn validate_htlc(&self, input: ValidatePaymentInput) -> Result<(), MmError<ValidatePaymentError>> {
-        let mut tx: UtxoTx = deserialize(input.payment_tx.as_slice())
-            .map_to_mm(|err| ValidatePaymentError::InvalidPaymentTxData(err.to_string()))?;
+        let mut tx: UtxoTx = deserialize(input.payment_tx.as_slice())?;
         tx.tx_hash_algo = self.platform_coin.as_ref().tx_hash_algo;
         if tx.outputs.len() < 2 {
             return MmError::err(ValidatePaymentError::InvalidPaymentTxData(

@@ -18,7 +18,6 @@ pub enum ValidatePaymentError {
     Transport(String),
     // Transaction has wrong properties, for example, it has been sent to a wrong address
     WrongPaymentTx(String),
-    ValidateHtlcError(String),
 }
 
 impl From<rlp::DecoderError> for ValidatePaymentError {
