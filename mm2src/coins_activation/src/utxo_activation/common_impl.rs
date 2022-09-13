@@ -28,14 +28,12 @@ where
         > + EnableCoinBalanceOps
         + MarketCoinOps,
 {
-    let current_block =
-        coin.current_block()
-            .compat()
-            .await
-            .map_to_mm(|error| InitUtxoStandardError::CoinCreationError {
-                ticker: coin.ticker().to_owned(),
-                error,
-            })?;
+    let ticker = coin.ticker().to_owned();
+    let current_block = coin
+        .current_block()
+        .compat()
+        .await
+        .map_to_mm(InitUtxoStandardError::Transport)?;
 
     // Construct an Xpub extractor without checking if the MarketMaker supports HD wallet ops.
     // [`EnableCoinBalanceOps::enable_coin_balance`] won't just use `xpub_extractor`
@@ -43,15 +41,13 @@ where
     let xpub_extractor = RpcTaskXPubExtractor::new_unchecked(ctx, task_handle, xpub_extractor_rpc_statuses());
     task_handle.update_in_progress_status(UtxoStandardInProgressStatus::RequestingWalletBalance)?;
     let wallet_balance = coin
-        .enable_coin_balance(&xpub_extractor, activation_params.scan_policy)
+        .enable_coin_balance(&xpub_extractor, activation_params.enable_params.clone())
         .await
-        .mm_err(|error| InitUtxoStandardError::CoinCreationError {
-            ticker: coin.ticker().to_owned(),
-            error: error.to_string(),
-        })?;
+        .mm_err(|enable_err| InitUtxoStandardError::from_enable_coin_balance_err(enable_err, ticker.clone()))?;
     task_handle.update_in_progress_status(UtxoStandardInProgressStatus::ActivatingCoin)?;
 
     let result = UtxoStandardActivationResult {
+        ticker,
         current_block,
         wallet_balance,
     };
@@ -63,8 +59,9 @@ pub fn xpub_extractor_rpc_statuses() -> HwConnectStatuses<UtxoStandardInProgress
         on_connect: UtxoStandardInProgressStatus::WaitingForTrezorToConnect,
         on_connected: UtxoStandardInProgressStatus::ActivatingCoin,
         on_connection_failed: UtxoStandardInProgressStatus::Finishing,
-        on_button_request: UtxoStandardInProgressStatus::WaitingForUserToConfirmPubkey,
-        on_pin_request: UtxoStandardAwaitingStatus::WaitForTrezorPin,
+        on_button_request: UtxoStandardInProgressStatus::FollowHwDeviceInstructions,
+        on_pin_request: UtxoStandardAwaitingStatus::EnterTrezorPin,
+        on_passphrase_request: UtxoStandardAwaitingStatus::EnterTrezorPassphrase,
         on_ready: UtxoStandardInProgressStatus::ActivatingCoin,
     }
 }
