@@ -49,7 +49,6 @@ use common::first_char_to_upper;
 use common::jsonrpc_client::JsonRpcError;
 use common::log::LogOnError;
 use common::now_ms;
-use crypto::trezor::utxo::TrezorUtxoCoin;
 use crypto::{Bip32DerPathOps, Bip32Error, Bip44Chain, Bip44DerPathError, Bip44PathToAccount, Bip44PathToCoin,
              ChildNumber, DerivationPath, Secp256k1ExtendedPublicKey};
 use derive_more::Display;
@@ -102,7 +101,7 @@ use super::{big_decimal_from_sat_unsigned, BalanceError, BalanceFut, BalanceResu
             RpcTransportEventHandlerShared, TradeFee, TradePreimageError, TradePreimageFut, TradePreimageResult,
             Transaction, TransactionDetails, TransactionEnum, UnexpectedDerivationMethod, WithdrawError,
             WithdrawRequest};
-use crate::coin_balance::{EnableCoinScanPolicy, HDAddressBalanceScanner};
+use crate::coin_balance::{EnableCoinScanPolicy, EnabledCoinBalanceParams, HDAddressBalanceScanner};
 use crate::hd_wallet::{HDAccountOps, HDAccountsMutex, HDAddress, HDWalletCoinOps, HDWalletOps, InvalidBip44ChainError};
 use crate::hd_wallet_storage::{HDAccountStorageItem, HDWalletCoinStorage, HDWalletStorageError, HDWalletStorageResult};
 use crate::utxo::tx_cache::UtxoVerboseCacheShared;
@@ -556,7 +555,7 @@ pub struct UtxoCoinConf {
     /// The number of blocks used for estimate_fee/estimate_smart_fee RPC calls
     pub estimate_fee_blocks: u32,
     /// The name of the coin with which Trezor wallet associates this asset.
-    pub trezor_coin: Option<TrezorUtxoCoin>,
+    pub trezor_coin: Option<String>,
     /// Whether to verify swaps and lightning transactions using spv or not. When enabled, block headers will be retrieved, verified according
     /// to block_headers_verification_params and stored in the DB. Can be false if the coin's RPC server is trusted.
     pub enable_spv_proof: bool,
@@ -824,6 +823,7 @@ pub enum UtxoAddressScanner {
 }
 
 #[async_trait]
+#[cfg_attr(test, mockable)]
 impl HDAddressBalanceScanner for UtxoAddressScanner {
     type Address = Address;
 
@@ -1322,9 +1322,11 @@ pub struct UtxoActivationParams {
     pub required_confirmations: Option<u64>,
     pub requires_notarization: Option<bool>,
     pub address_format: Option<UtxoAddressFormat>,
+    // The max number of empty addresses in a row.
+    // If transactions were sent to an address outside the `gap_limit`, they will not be identified.
     pub gap_limit: Option<u32>,
-    #[serde(default)]
-    pub scan_policy: EnableCoinScanPolicy,
+    #[serde(flatten)]
+    pub enable_params: EnabledCoinBalanceParams,
     #[serde(default = "PrivKeyActivationPolicy::iguana_priv_key")]
     pub priv_key_policy: PrivKeyActivationPolicy,
     /// The flag determines whether to use mature unspent outputs *only* to generate transactions.
@@ -1343,6 +1345,7 @@ pub enum UtxoFromLegacyReqErr {
     InvalidAddressFormat(json::Error),
     InvalidCheckUtxoMaturity(json::Error),
     InvalidScanPolicy(json::Error),
+    InvalidMinAddressesNumber(json::Error),
     InvalidPrivKeyPolicy(json::Error),
 }
 
@@ -1372,6 +1375,12 @@ impl UtxoActivationParams {
         let scan_policy = json::from_value::<Option<EnableCoinScanPolicy>>(req["scan_policy"].clone())
             .map_to_mm(UtxoFromLegacyReqErr::InvalidScanPolicy)?
             .unwrap_or_default();
+        let min_addresses_number = json::from_value(req["min_addresses_number"].clone())
+            .map_to_mm(UtxoFromLegacyReqErr::InvalidMinAddressesNumber)?;
+        let enable_params = EnabledCoinBalanceParams {
+            scan_policy,
+            min_addresses_number,
+        };
         let priv_key_policy = json::from_value::<Option<PrivKeyActivationPolicy>>(req["priv_key_policy"].clone())
             .map_to_mm(UtxoFromLegacyReqErr::InvalidPrivKeyPolicy)?
             .unwrap_or(PrivKeyActivationPolicy::IguanaPrivKey);
@@ -1384,7 +1393,7 @@ impl UtxoActivationParams {
             requires_notarization,
             address_format,
             gap_limit: None,
-            scan_policy,
+            enable_params,
             priv_key_policy,
             check_utxo_maturity,
         })
@@ -1431,6 +1440,8 @@ pub struct UtxoHDWallet {
     pub derivation_path: Bip44PathToCoin,
     /// User accounts.
     pub accounts: HDAccountsMutex<UtxoHDAccount>,
+    // The max number of empty addresses in a row.
+    // If transactions were sent to an address outside the `gap_limit`, they will not be identified.
     pub gap_limit: u32,
 }
 
@@ -1778,7 +1789,7 @@ pub fn address_by_conf_and_pubkey_str(
         requires_notarization: None,
         address_format: None,
         gap_limit: None,
-        scan_policy: EnableCoinScanPolicy::default(),
+        enable_params: EnabledCoinBalanceParams::default(),
         priv_key_policy: PrivKeyActivationPolicy::IguanaPrivKey,
         check_utxo_maturity: None,
     };

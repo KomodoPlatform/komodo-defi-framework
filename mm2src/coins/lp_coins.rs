@@ -36,8 +36,9 @@
 use async_trait::async_trait;
 use base58::FromBase58Error;
 use common::{calc_total_pages, now_ms, ten, HttpStatusCode};
-use crypto::{Bip32Error, CryptoCtx, DerivationPath};
+use crypto::{Bip32Error, CryptoCtx, DerivationPath, HwRpcError, WithHwRpcError};
 use derive_more::Display;
+use enum_from::EnumFromTrait;
 use futures::compat::Future01CompatExt;
 use futures::lock::Mutex as AsyncMutex;
 use futures::{FutureExt, TryFutureExt};
@@ -201,7 +202,8 @@ pub mod qrc20;
 use qrc20::{qrc20_coin_from_conf_and_params, Qrc20ActivationParams, Qrc20Coin, Qrc20FeeDetails};
 
 pub mod rpc_command;
-use rpc_command::{init_create_account::{CreateAccountTaskManager, CreateAccountTaskManagerShared},
+use rpc_command::{init_account_balance::{AccountBalanceTaskManager, AccountBalanceTaskManagerShared},
+                  init_create_account::{CreateAccountTaskManager, CreateAccountTaskManagerShared},
                   init_scan_for_new_addresses::{ScanAddressesTaskManager, ScanAddressesTaskManagerShared},
                   init_withdraw::{WithdrawTaskManager, WithdrawTaskManagerShared}};
 
@@ -217,11 +219,11 @@ pub mod tx_history_storage;
 
 #[doc(hidden)]
 #[allow(unused_variables)]
-#[cfg(not(target_arch = "wasm32"))]
+#[cfg(all(not(target_os = "ios"), not(target_os = "android"), not(target_arch = "wasm32")))]
 pub mod solana;
-#[cfg(not(target_arch = "wasm32"))]
+#[cfg(all(not(target_os = "ios"), not(target_os = "android"), not(target_arch = "wasm32")))]
 pub use solana::spl::SplToken;
-#[cfg(not(target_arch = "wasm32"))]
+#[cfg(all(not(target_os = "ios"), not(target_os = "android"), not(target_arch = "wasm32")))]
 pub use solana::{solana_coin_from_conf_and_params, SolanaActivationParams, SolanaCoin, SolanaFeeDetails};
 
 pub mod utxo;
@@ -638,6 +640,7 @@ pub trait MarketCoinOps {
 
     /// Base coin balance for tokens, e.g. ETH balance in ERC20 case
     fn base_coin_balance(&self) -> BalanceFut<BigDecimal>;
+
     fn platform_ticker(&self) -> &str;
 
     /// Receives raw transaction bytes in hexadecimal format as input and returns tx hash in hexadecimal format
@@ -678,7 +681,7 @@ pub trait MarketCoinOps {
     fn is_privacy(&self) -> bool { false }
 }
 
-#[derive(Debug, Deserialize, PartialEq)]
+#[derive(Clone, Debug, Deserialize, PartialEq)]
 #[serde(tag = "type")]
 pub enum WithdrawFee {
     UtxoFixed {
@@ -740,7 +743,7 @@ pub enum WithdrawFrom {
     },
 }
 
-#[derive(Deserialize)]
+#[derive(Clone, Deserialize)]
 pub struct WithdrawRequest {
     coin: String,
     from: Option<WithdrawFrom>,
@@ -856,7 +859,7 @@ pub enum TxFeeDetails {
     Qrc20(Qrc20FeeDetails),
     Slp(SlpFeeDetails),
     Tendermint(TendermintFeeDetails),
-    #[cfg(not(target_arch = "wasm32"))]
+    #[cfg(all(not(target_os = "ios"), not(target_os = "android"), not(target_arch = "wasm32")))]
     Solana(SolanaFeeDetails),
 }
 
@@ -872,7 +875,7 @@ impl<'de> Deserialize<'de> for TxFeeDetails {
             Utxo(UtxoFeeDetails),
             Eth(EthTxFeeDetails),
             Qrc20(Qrc20FeeDetails),
-            #[cfg(not(target_arch = "wasm32"))]
+            #[cfg(all(not(target_os = "ios"), not(target_os = "android"), not(target_arch = "wasm32")))]
             Solana(SolanaFeeDetails),
         }
 
@@ -880,7 +883,7 @@ impl<'de> Deserialize<'de> for TxFeeDetails {
             TxFeeDetailsUnTagged::Utxo(f) => Ok(TxFeeDetails::Utxo(f)),
             TxFeeDetailsUnTagged::Eth(f) => Ok(TxFeeDetails::Eth(f)),
             TxFeeDetailsUnTagged::Qrc20(f) => Ok(TxFeeDetails::Qrc20(f)),
-            #[cfg(not(target_arch = "wasm32"))]
+            #[cfg(all(not(target_os = "ios"), not(target_os = "android"), not(target_arch = "wasm32")))]
             TxFeeDetailsUnTagged::Solana(f) => Ok(TxFeeDetails::Solana(f)),
         }
     }
@@ -898,7 +901,7 @@ impl From<Qrc20FeeDetails> for TxFeeDetails {
     fn from(qrc20_details: Qrc20FeeDetails) -> Self { TxFeeDetails::Qrc20(qrc20_details) }
 }
 
-#[cfg(not(target_arch = "wasm32"))]
+#[cfg(all(not(target_os = "ios"), not(target_os = "android"), not(target_arch = "wasm32")))]
 impl From<SolanaFeeDetails> for TxFeeDetails {
     fn from(solana_details: SolanaFeeDetails) -> Self { TxFeeDetails::Solana(solana_details) }
 }
@@ -1427,23 +1430,9 @@ impl DelegationError {
     }
 }
 
-#[derive(Clone, Debug, Deserialize, Display, Serialize, SerializeErrorType, PartialEq)]
+#[derive(Clone, Debug, Display, EnumFromTrait, Serialize, SerializeErrorType, PartialEq)]
 #[serde(tag = "error_type", content = "error_data")]
 pub enum WithdrawError {
-    /*                                              */
-    /*------------ Trezor device errors ------------*/
-    /*                                             */
-    #[display(fmt = "Trezor device disconnected")]
-    TrezorDisconnected,
-    #[display(fmt = "Trezor internal error: {}", _0)]
-    HardwareWalletInternal(String),
-    #[display(fmt = "No Trezor device available")]
-    NoTrezorDeviceAvailable,
-    #[display(fmt = "Unexpected Hardware Wallet device: {}", _0)]
-    FoundUnexpectedDevice(String),
-    /*                                         */
-    /*------------- WithdrawError -------------*/
-    /*                                         */
     #[display(
         fmt = "'{}' coin doesn't support 'init_withdraw' yet. Consider using 'withdraw' request instead",
         coin
@@ -1470,18 +1459,23 @@ pub enum WithdrawError {
     InvalidFeePolicy(String),
     #[display(fmt = "No such coin {}", coin)]
     NoSuchCoin { coin: String },
+    #[from_trait(WithTimeout::timeout)]
     #[display(fmt = "Withdraw timed out {:?}", _0)]
     Timeout(Duration),
-    #[display(fmt = "Unexpected user action. Expected '{}'", expected)]
-    UnexpectedUserAction { expected: String },
     #[display(fmt = "Request should contain a 'from' address/account")]
     FromAddressNotFound,
     #[display(fmt = "Unexpected 'from' address: {}", _0)]
     UnexpectedFromAddress(String),
     #[display(fmt = "Unknown '{}' account", account_id)]
     UnknownAccount { account_id: u32 },
+    #[display(fmt = "RPC 'task' is awaiting '{}' user action", expected)]
+    UnexpectedUserAction { expected: String },
+    #[from_trait(WithHwRpcError::hw_rpc_error)]
+    #[display(fmt = "{}", _0)]
+    HwError(HwRpcError),
     #[display(fmt = "Transport error: {}", _0)]
     Transport(String),
+    #[from_trait(WithInternal::internal)]
     #[display(fmt = "Internal error: {}", _0)]
     InternalError(String),
 }
@@ -1492,7 +1486,6 @@ impl HttpStatusCode for WithdrawError {
             WithdrawError::NoSuchCoin { .. } => StatusCode::NOT_FOUND,
             WithdrawError::Timeout(_) => StatusCode::REQUEST_TIMEOUT,
             WithdrawError::CoinDoesntSupportInitWithdraw { .. }
-            | WithdrawError::UnexpectedUserAction { .. }
             | WithdrawError::NotSufficientBalance { .. }
             | WithdrawError::ZeroBalanceToWithdrawMax
             | WithdrawError::AmountTooLow { .. }
@@ -1500,13 +1493,10 @@ impl HttpStatusCode for WithdrawError {
             | WithdrawError::InvalidFeePolicy(_)
             | WithdrawError::FromAddressNotFound
             | WithdrawError::UnexpectedFromAddress(_)
-            | WithdrawError::UnknownAccount { .. } => StatusCode::BAD_REQUEST,
-            WithdrawError::NoTrezorDeviceAvailable
-            | WithdrawError::TrezorDisconnected
-            | WithdrawError::FoundUnexpectedDevice(_) => StatusCode::GONE,
-            WithdrawError::HardwareWalletInternal(_)
-            | WithdrawError::Transport(_)
-            | WithdrawError::InternalError(_) => StatusCode::INTERNAL_SERVER_ERROR,
+            | WithdrawError::UnknownAccount { .. }
+            | WithdrawError::UnexpectedUserAction { .. } => StatusCode::BAD_REQUEST,
+            WithdrawError::HwError(_) => StatusCode::GONE,
+            WithdrawError::Transport(_) | WithdrawError::InternalError(_) => StatusCode::INTERNAL_SERVER_ERROR,
         }
     }
 }
@@ -1809,9 +1799,9 @@ pub enum MmCoinEnum {
     Bch(BchCoin),
     SlpToken(SlpToken),
     Tendermint(TendermintCoin),
-    #[cfg(not(target_arch = "wasm32"))]
+    #[cfg(all(not(target_os = "ios"), not(target_os = "android"), not(target_arch = "wasm32")))]
     SolanaCoin(SolanaCoin),
-    #[cfg(not(target_arch = "wasm32"))]
+    #[cfg(all(not(target_os = "ios"), not(target_os = "android"), not(target_arch = "wasm32")))]
     SplToken(SplToken),
     #[cfg(not(target_arch = "wasm32"))]
     LightningCoin(LightningCoin),
@@ -1830,12 +1820,12 @@ impl From<TestCoin> for MmCoinEnum {
     fn from(c: TestCoin) -> MmCoinEnum { MmCoinEnum::Test(c) }
 }
 
-#[cfg(not(target_arch = "wasm32"))]
+#[cfg(all(not(target_os = "ios"), not(target_os = "android"), not(target_arch = "wasm32")))]
 impl From<SolanaCoin> for MmCoinEnum {
     fn from(c: SolanaCoin) -> MmCoinEnum { MmCoinEnum::SolanaCoin(c) }
 }
 
-#[cfg(not(target_arch = "wasm32"))]
+#[cfg(all(not(target_os = "ios"), not(target_os = "android"), not(target_arch = "wasm32")))]
 impl From<SplToken> for MmCoinEnum {
     fn from(c: SplToken) -> MmCoinEnum { MmCoinEnum::SplToken(c) }
 }
@@ -1887,9 +1877,9 @@ impl Deref for MmCoinEnum {
             #[cfg(not(target_arch = "wasm32"))]
             MmCoinEnum::ZCoin(ref c) => c,
             MmCoinEnum::Test(ref c) => c,
-            #[cfg(not(target_arch = "wasm32"))]
+            #[cfg(all(not(target_os = "ios"), not(target_os = "android"), not(target_arch = "wasm32")))]
             MmCoinEnum::SolanaCoin(ref c) => c,
-            #[cfg(not(target_arch = "wasm32"))]
+            #[cfg(all(not(target_os = "ios"), not(target_os = "android"), not(target_arch = "wasm32")))]
             MmCoinEnum::SplToken(ref c) => c,
         }
     }
@@ -1920,9 +1910,10 @@ pub struct CoinsContext {
     /// Similar to `LP_coins`.
     coins: AsyncMutex<HashMap<String, MmCoinEnum>>,
     balance_update_handlers: AsyncMutex<Vec<Box<dyn BalanceTradeFeeUpdatedHandler + Send + Sync>>>,
-    withdraw_task_manager: WithdrawTaskManagerShared,
+    account_balance_task_manager: AccountBalanceTaskManagerShared,
     create_account_manager: CreateAccountTaskManagerShared,
     scan_addresses_manager: ScanAddressesTaskManagerShared,
+    withdraw_task_manager: WithdrawTaskManagerShared,
     #[cfg(target_arch = "wasm32")]
     tx_history_db: SharedDb<TxHistoryDb>,
     #[cfg(target_arch = "wasm32")]
@@ -1946,6 +1937,7 @@ impl CoinsContext {
             Ok(CoinsContext {
                 coins: AsyncMutex::new(HashMap::new()),
                 balance_update_handlers: AsyncMutex::new(vec![]),
+                account_balance_task_manager: AccountBalanceTaskManager::new_shared(),
                 withdraw_task_manager: WithdrawTaskManager::new_shared(),
                 create_account_manager: CreateAccountTaskManager::new_shared(),
                 scan_addresses_manager: ScanAddressesTaskManager::new_shared(),

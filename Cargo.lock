@@ -1054,6 +1054,7 @@ dependencies = [
  "dirs",
  "ed25519-dalek",
  "ed25519-dalek-bip32 0.2.0",
+ "enum_from",
  "ethabi",
  "ethcore-transaction",
  "ethereum-types 0.4.2",
@@ -1523,6 +1524,7 @@ dependencies = [
  "async-trait",
  "bip32 0.2.2",
  "bitcrypto",
+ "bs58",
  "common",
  "derive_more",
  "enum-primitive-derive",
@@ -1536,6 +1538,7 @@ dependencies = [
  "num-traits",
  "parking_lot 0.12.0",
  "primitives",
+ "rpc",
  "rpc_task",
  "rustc-hex 2.1.0",
  "secp256k1 0.20.3",
@@ -2051,6 +2054,16 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "c375b9c5eadb68d0a6efee2999fef292f45854c3444c86f09d8ab086ba942b0e"
 dependencies = [
  "num-traits",
+ "quote 1.0.18",
+ "syn 1.0.95",
+]
+
+[[package]]
+name = "enum_from"
+version = "0.1.0"
+dependencies = [
+ "itertools",
+ "proc-macro2 1.0.39",
  "quote 1.0.18",
  "syn 1.0.95",
 ]
@@ -4394,6 +4407,7 @@ dependencies = [
  "dirs",
  "either",
  "enum-primitive-derive",
+ "enum_from",
  "ethereum-types 0.4.2",
  "futures 0.1.29",
  "futures 0.3.15",
@@ -6070,7 +6084,6 @@ dependencies = [
  "derive_more",
  "futures 0.3.15",
  "mm2_err_handle",
- "mm2_rpc",
  "ser_error",
  "ser_error_derive",
  "serde",
