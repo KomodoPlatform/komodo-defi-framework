@@ -191,7 +191,7 @@ use eth::{eth_coin_from_conf_and_request, EthCoin, EthTxFeeDetails, SignedEthTx}
 pub mod hd_pubkey;
 
 pub mod hd_wallet;
-use hd_wallet::{HDAddress, HDAccountAddressId};
+use hd_wallet::{HDAccountAddressId, HDAddress};
 
 pub mod hd_wallet_storage;
 #[cfg(not(target_arch = "wasm32"))] pub mod lightning;
