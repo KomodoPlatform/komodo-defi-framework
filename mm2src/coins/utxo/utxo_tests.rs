@@ -3,27 +3,30 @@ use crate::coin_balance::HDAddressBalance;
 use crate::hd_wallet::HDAccountsMap;
 use crate::hd_wallet_storage::{HDWalletMockStorage, HDWalletStorageInternalOps};
 use crate::rpc_command::account_balance::{AccountBalanceParams, AccountBalanceRpcOps, HDAccountBalanceResponse};
+use crate::rpc_command::get_new_address::{GetNewAddressParams, GetNewAddressRpcError, GetNewAddressRpcOps};
 use crate::rpc_command::init_scan_for_new_addresses::{InitScanAddressesRpcOps, ScanAddressesParams,
                                                       ScanAddressesResponse};
 use crate::utxo::qtum::{qtum_coin_with_priv_key, QtumCoin, QtumDelegationOps, QtumDelegationRequest};
 use crate::utxo::rpc_clients::{BlockHashOrHeight, ElectrumBalance, ElectrumClient, ElectrumClientImpl,
-                               GetAddressInfoRes, ListSinceBlockRes, ListTransactionsItem, NativeClient,
-                               NativeClientImpl, NativeUnspent, NetworkInfo, UtxoRpcClientOps, ValidateAddressRes,
-                               VerboseBlock};
+                               GetAddressInfoRes, ListSinceBlockRes, NativeClient, NativeClientImpl, NativeUnspent,
+                               NetworkInfo, UtxoRpcClientOps, ValidateAddressRes, VerboseBlock};
 use crate::utxo::spv::SimplePaymentVerification;
 use crate::utxo::tx_cache::dummy_tx_cache::DummyVerboseCache;
 use crate::utxo::tx_cache::UtxoVerboseCacheOps;
+use crate::utxo::utxo_block_header_storage::BlockHeaderStorage;
 use crate::utxo::utxo_builder::{UtxoArcBuilder, UtxoCoinBuilderCommonOps};
 use crate::utxo::utxo_common::UtxoTxBuilder;
 use crate::utxo::utxo_common_tests;
+use crate::utxo::utxo_sql_block_header_storage::SqliteBlockHeadersStorage;
 use crate::utxo::utxo_standard::{utxo_standard_coin_with_priv_key, UtxoStandardCoin};
 #[cfg(not(target_arch = "wasm32"))] use crate::WithdrawFee;
 use crate::{CoinBalance, PrivKeyBuildPolicy, SearchForSwapTxSpendInput, StakingInfosDetails, SwapOps,
             TradePreimageValue, TxFeeDetails, TxMarshalingErr};
-use chain::OutPoint;
+use chain::{BlockHeader, OutPoint};
 use common::executor::Timer;
 use common::{block_on, now_ms, OrdRange, PagingOptionsEnum, DEX_FEE_ADDR_RAW_PUBKEY};
 use crypto::{privkey::key_pair_from_seed, Bip44Chain, RpcDerivationPath};
+use db_common::sqlite::rusqlite::Connection;
 use futures::future::join_all;
 use futures::TryFutureExt;
 use mm2_core::mm_ctx::MmCtxBuilder;
@@ -32,6 +35,7 @@ use mm2_test_helpers::for_tests::RICK_ELECTRUM_ADDRS;
 use mocktopus::mocking::*;
 use rpc::v1::types::H256 as H256Json;
 use serialization::{deserialize, CoinVariant};
+use spv_validation::storage::BlockHeaderStorageOps;
 use std::convert::TryFrom;
 use std::iter;
 use std::mem::discriminant;
@@ -66,7 +70,7 @@ pub fn electrum_client_for_test(servers: &[&str]) -> ElectrumClient {
     };
 
     let servers = servers.into_iter().map(|s| json::from_value(s).unwrap()).collect();
-    block_on(builder.electrum_client(args, servers, None)).unwrap()
+    block_on(builder.electrum_client(args, servers)).unwrap()
 }
 
 /// Returned client won't work by default, requires some mocks to be usable
@@ -153,6 +157,7 @@ fn utxo_coin_fields_for_test(
             estimate_fee_blocks: 1,
             trezor_coin: None,
             enable_spv_proof: false,
+            block_headers_verification_params: None,
         },
         decimals: TEST_COIN_DECIMALS,
         dust_amount: UTXO_DUST_AMOUNT,
@@ -165,6 +170,8 @@ fn utxo_coin_fields_for_test(
         recently_spent_outpoints: AsyncMutex::new(RecentlySpentOutPoints::new(my_script_pubkey)),
         tx_hash_algo: TxHashAlgo::DSHA256,
         check_utxo_maturity: false,
+        block_headers_status_notifier: None,
+        block_headers_status_watcher: None,
     }
 }
 
@@ -465,7 +472,13 @@ fn test_wait_for_payment_spend_timeout_electrum() {
         MockResult::Return(Box::new(futures01::future::ok(None)))
     });
 
-    let client = ElectrumClientImpl::new(TEST_COIN_NAME.into(), Default::default(), None);
+    let block_headers_storage = BlockHeaderStorage {
+        inner: Box::new(SqliteBlockHeadersStorage {
+            ticker: TEST_COIN_NAME.into(),
+            conn: Arc::new(Mutex::new(Connection::open_in_memory().unwrap())),
+        }),
+    };
+    let client = ElectrumClientImpl::new(TEST_COIN_NAME.into(), Default::default(), block_headers_storage);
     let client = UtxoRpcClientEnum::Electrum(ElectrumClient(Arc::new(client)));
     let coin = utxo_coin_for_test(client, None, false);
     let transaction = hex::decode("01000000000102fff7f7881a8099afa6940d42d1e7f6362bec38171ea3edf433541db4e4ad969f00000000494830450221008b9d1dc26ba6a9cb62127b02742fa9d754cd3bebf337f7a55d114c8e5cdd30be022040529b194ba3f9281a99f2b1c0a19c0489bc22ede944ccf4ecbab4cc618ef3ed01eeffffffef51e1b804cc89d182d279655c3aa89e815b1b309fe287d9b2b55d57b90ec68a0100000000ffffffff02202cb206000000001976a9148280b37df378db99f66f85c95a783a76ac7a6d5988ac9093510d000000001976a9143bde42dbee7e4dbe6a21b2d50ce2f0167faa815988ac000247304402203609e17b84f6a7d30c80bfa610b5b4542f32a8a0d5447a12fb1366d7f01cc44a0220573a954c4518331561406f90300e8f3358f51928d43c212a8caed02de67eebee0121025476c2e83188368da1ff3e292e7acafcdb3566bb0ad253f62fc70f07aeee635711000000")
@@ -956,6 +969,18 @@ fn test_spv_proof() {
     // https://rick.explorer.dexstats.info/tx/78ea7839f6d1b0dafda2ba7e34c1d8218676a58bd1b33f03a5f76391f61b72b0
     let tx_str = "0400008085202f8902bf17bf7d1daace52e08f732a6b8771743ca4b1cb765a187e72fd091a0aabfd52000000006a47304402203eaaa3c4da101240f80f9c5e9de716a22b1ec6d66080de6a0cca32011cd77223022040d9082b6242d6acf9a1a8e658779e1c655d708379862f235e8ba7b8ca4e69c6012102031d4256c4bc9f99ac88bf3dba21773132281f65f9bf23a59928bce08961e2f3ffffffffff023ca13c0e9e085dd13f481f193e8a3e8fd609020936e98b5587342d994f4d020000006b483045022100c0ba56adb8de923975052312467347d83238bd8d480ce66e8b709a7997373994022048507bcac921fdb2302fa5224ce86e41b7efc1a2e20ae63aa738dfa99b7be826012102031d4256c4bc9f99ac88bf3dba21773132281f65f9bf23a59928bce08961e2f3ffffffff0300e1f5050000000017a9141ee6d4c38a3c078eab87ad1a5e4b00f21259b10d870000000000000000166a1400000000000000000000000000000000000000001b94d736000000001976a91405aab5342166f8594baf17a7d9bef5d56744332788ac2d08e35e000000000000000000000000000000";
     let tx: UtxoTx = tx_str.into();
+
+    let header: BlockHeader = deserialize(
+        block_on(client.blockchain_block_header(452248).compat())
+            .unwrap()
+            .as_slice(),
+    )
+    .unwrap();
+
+    let mut headers = HashMap::new();
+    headers.insert(452248, header);
+    let storage = client.block_headers_storage();
+    block_on(storage.add_block_headers_to_storage(headers)).unwrap();
 
     let res = block_on(client.validate_spv_proof(&tx, now_ms() / 1000 + 30));
     res.unwrap();
@@ -1464,12 +1489,12 @@ fn test_network_info_negative_time_offset() {
 
 #[test]
 fn test_unavailable_electrum_proto_version() {
-    ElectrumClientImpl::new.mock_safe(|coin_ticker, event_handlers, _| {
+    ElectrumClientImpl::new.mock_safe(|coin_ticker, event_handlers, block_headers_storage| {
         MockResult::Return(ElectrumClientImpl::with_protocol_version(
             coin_ticker,
             event_handlers,
             OrdRange::new(1.8, 1.9).unwrap(),
-            None,
+            block_headers_storage,
         ))
     });
 
@@ -3678,30 +3703,39 @@ fn test_scan_for_new_addresses() {
         },
     );
 
-    let mut checking_addresses: HashMap<String, Option<u64>> = HashMap::new();
-    let mut non_empty_addresses: Vec<String> = Vec::new();
+    // The list of addresses that were checked using [`UtxoAddressScanner::is_address_used`].
+    static mut CHECKED_ADDRESSES: Vec<String> = Vec::new();
+
+    // The map of addresses for those [`NativeClient::display_balance`] called.
+    let mut display_balances: HashMap<String, u64> = HashMap::new();
+    // The expected list of the addresses that were checked using [`UtxoAddressScanner::is_address_used`].
+    let mut expected_checked_addresses: Vec<String> = Vec::new();
+    // The list of addresses with a non-empty transaction history.
+    let mut non_empty_addresses: HashSet<String> = HashSet::new();
+    // The map of results by the addresses.
     let mut balances_by_der_path: HashMap<String, HDAddressBalance> = HashMap::new();
 
     macro_rules! new_address {
         ($der_path:literal, $address:literal, $chain:expr, balance = $balance:expr) => {{
-            let balance = $balance;
-            checking_addresses.insert($address.to_string(), balance);
+            if let Some(balance) = $balance {
+                display_balances.insert($address.to_string(), balance);
+                non_empty_addresses.insert($address.to_string());
+            }
+            expected_checked_addresses.push($address.to_string());
             balances_by_der_path.insert($der_path.to_string(), HDAddressBalance {
                 address: $address.to_string(),
                 derivation_path: RpcDerivationPath(DerivationPath::from_str($der_path).unwrap()),
                 chain: $chain,
-                balance: CoinBalance::new(BigDecimal::from(balance.unwrap_or(0))),
+                balance: CoinBalance::new(BigDecimal::from($balance.unwrap_or(0i32))),
             });
-            if balance.is_some() {
-                non_empty_addresses.push($address.to_string());
-            }
         }};
     }
 
     macro_rules! unused_address {
-        ($_der_path:literal, $address:literal) => {
-            checking_addresses.insert($address.to_string(), None)
-        };
+        ($_der_path:literal, $address:literal) => {{
+            let address = $address.to_string();
+            expected_checked_addresses.push(address);
+        }};
     }
 
     macro_rules! get_balances {
@@ -3717,7 +3751,8 @@ fn test_scan_for_new_addresses() {
         new_address!("m/44'/141'/0'/0/3", "RU1gRFXWXNx7uPRAEJ7wdZAW1RZ4TE6Vv1", Bip44Chain::External, balance = Some(98));
         unused_address!("m/44'/141'/0'/0/4", "RUkEvRzb7mtwfVeKiSFEbYupLkcvU5KJBw");
         unused_address!("m/44'/141'/0'/0/5", "RP8deqVfjBbkvxbGbsQ2EGdamMaP1wxizR");
-        unused_address!("m/44'/141'/0'/0/6", "RSvKMMegKGP5e2EanH7fnD4yNsxdJvLAmL"); // Stop searching for a non-empty address (gap_limit = 3).
+        unused_address!("m/44'/141'/0'/0/6", "RSvKMMegKGP5e2EanH7fnD4yNsxdJvLAmL");
+        unused_address!("m/44'/141'/0'/0/7", "RX76e9G7H4Xy6cYrtr1qGghxytAmWpv375"); // Stop searching for a non-empty address (gap_limit = 3).
 
         // Account#0, internal addresses.
         new_address!("m/44'/141'/0'/1/1", "RPj9JXUVnewWwVpxZDeqGB25qVqz5qJzwP", Bip44Chain::Internal, balance = Some(98));
@@ -3725,7 +3760,8 @@ fn test_scan_for_new_addresses() {
         new_address!("m/44'/141'/0'/1/3", "RQstQeTUEZLh6c3YWJDkeVTTQoZUsfvNCr", Bip44Chain::Internal, balance = Some(14));
         unused_address!("m/44'/141'/0'/1/4", "RT54m6pfj9scqwSLmYdfbmPcrpxnWGAe9J");
         unused_address!("m/44'/141'/0'/1/5", "RYWfEFxqA6zya9c891Dj7vxiDojCmuWR9T");
-        unused_address!("m/44'/141'/0'/1/6", "RSkY6twW8knTcn6wGACUAG9crJHcuQ2kEH"); // Stop searching for a non-empty address (gap_limit = 3).
+        unused_address!("m/44'/141'/0'/1/6", "RSkY6twW8knTcn6wGACUAG9crJHcuQ2kEH");
+        unused_address!("m/44'/141'/0'/1/7", "RGRybU5awT9Chn9FeKZd8CEBREq5vNFDKJ"); // Stop searching for a non-empty address (gap_limit = 3).
 
         // Account#1, external addresses.
         new_address!("m/44'/141'/1'/0/0", "RBQFLwJ88gVcnfkYvJETeTAB6AAYLow12K", Bip44Chain::External, balance = Some(9));
@@ -3735,37 +3771,36 @@ fn test_scan_for_new_addresses() {
         new_address!("m/44'/141'/1'/0/4", "RM6cqSFCFZ4J1LngLzqKkwo2ouipbDZUbm", Bip44Chain::External, balance = Some(11));
         unused_address!("m/44'/141'/1'/0/5", "RX2fGBZjNZMNdNcnc5QBRXvmsXTvadvTPN");
         unused_address!("m/44'/141'/1'/0/6", "RJJ7muUETyp59vxVXna9KAZ9uQ1QSqmcjE");
-        unused_address!("m/44'/141'/1'/0/7", "RYJ6vbhxFre5yChCMiJJFNTTBhAQbKM9AY"); // Stop searching for a non-empty address (gap_limit = 3).
+        unused_address!("m/44'/141'/1'/0/7", "RYJ6vbhxFre5yChCMiJJFNTTBhAQbKM9AY");
+        unused_address!("m/44'/141'/1'/0/8", "RWaND65Cucwc2Cs1djBUQ2z1rrxTopEjoG"); // Stop searching for a non-empty address (gap_limit = 3).
 
         // Account#1, internal addresses.
         unused_address!("m/44'/141'/1'/0/2", "RCjRDibDAXKYpVYSUeJXrbTzZ1UEKYAwJa");
         unused_address!("m/44'/141'/1'/0/3", "REs1NRzg8XjwN3v8Jp1wQUAyQb3TzeT8EB");
-        unused_address!("m/44'/141'/1'/0/4", "RS4UZtkwZ8eYaTL1xodXgFNryJoTbPJYE5"); // Stop searching for a non-empty address (gap_limit = 3).
+        unused_address!("m/44'/141'/1'/0/4", "RS4UZtkwZ8eYaTL1xodXgFNryJoTbPJYE5");
+        unused_address!("m/44'/141'/1'/0/5", "RDzcAqivNqUCJA4auetoVE4hcmH2p4L1fB"); // Stop searching for a non-empty address (gap_limit = 3).
     }
 
     NativeClient::display_balance.mock_safe(move |_, address: Address, _| {
         let address = address.to_string();
-        let balance = checking_addresses
+        let balance = display_balances
             .remove(&address)
-            .expect(&format!("Unexpected address: {}", address))
-            .expect(&format!(
-                "'{}' address is empty. 'NativeClient::display_balance' must not be called for this address",
-                address
-            ));
+            .expect(&format!("Unexpected address: {}", address));
         MockResult::Return(Box::new(futures01::future::ok(BigDecimal::from(balance))))
     });
 
-    NativeClient::list_all_transactions.mock_safe(move |_, _| {
-        let tx_history = non_empty_addresses
-            .clone()
-            .into_iter()
-            .map(|address| ListTransactionsItem {
-                address,
-                ..ListTransactionsItem::default()
-            })
-            .collect();
-        MockResult::Return(Box::new(futures01::future::ok(tx_history)))
+    UtxoAddressScanner::is_address_used.mock_safe(move |_, address| {
+        let address = address.to_string();
+        unsafe {
+            CHECKED_ADDRESSES.push(address.clone());
+        }
+        let is_used = non_empty_addresses.remove(&address);
+        MockResult::Return(Box::pin(futures::future::ok(is_used)))
     });
+
+    // This mock is required just not to fail on [`UtxoAddressScanner::init`].
+    NativeClient::list_all_transactions
+        .mock_safe(move |_, _| MockResult::Return(Box::new(futures01::future::ok(Vec::new()))));
 
     let client = NativeClient(Arc::new(NativeClientImpl::default()));
     let mut fields = utxo_coin_fields_for_test(UtxoRpcClientEnum::Native(client), None, false);
@@ -3852,6 +3887,177 @@ fn test_scan_for_new_addresses() {
     assert_eq!(accounts[&0].internal_addresses_number, 4);
     assert_eq!(accounts[&1].external_addresses_number, 5);
     assert_eq!(accounts[&1].internal_addresses_number, 2);
+    assert_eq!(unsafe { &CHECKED_ADDRESSES }, &expected_checked_addresses);
+}
+
+#[test]
+fn test_get_new_address() {
+    static mut EXPECTED_CHECKED_ADDRESSES: Vec<String> = Vec::new();
+    static mut CHECKED_ADDRESSES: Vec<String> = Vec::new();
+    static mut NON_EMPTY_ADDRESSES: Option<HashSet<String>> = None;
+
+    macro_rules! expected_checked_addresses {
+        ($($_der_path:literal, $addr:literal);*) => {
+            unsafe {
+                CHECKED_ADDRESSES.clear();
+                EXPECTED_CHECKED_ADDRESSES = vec![$($addr.to_string()),*];
+            }
+        };
+    }
+
+    macro_rules! non_empty_addresses {
+        ($($_der_path:literal, $addr:literal);*) => {
+            unsafe {
+                NON_EMPTY_ADDRESSES = Some(vec![$($addr.to_string()),*].into_iter().collect());
+            }
+        };
+    }
+
+    HDWalletMockStorage::update_external_addresses_number
+        .mock_safe(|_, _, _account_id, _new_val| MockResult::Return(Box::pin(futures::future::ok(()))));
+    HDWalletMockStorage::update_internal_addresses_number
+        .mock_safe(|_, _, _account_id, _new_val| MockResult::Return(Box::pin(futures::future::ok(()))));
+
+    // This mock is required just not to fail on [`UtxoStandardCoin::known_address_balance`].
+    NativeClient::display_balance
+        .mock_safe(move |_, _, _| MockResult::Return(Box::new(futures01::future::ok(BigDecimal::from(0)))));
+
+    UtxoAddressScanner::is_address_used.mock_safe(move |_, address| {
+        let address = address.to_string();
+        unsafe {
+            CHECKED_ADDRESSES.push(address.clone());
+            let is_used = NON_EMPTY_ADDRESSES.as_mut().unwrap().remove(&address);
+            MockResult::Return(Box::pin(futures::future::ok(is_used)))
+        }
+    });
+
+    // This mock is required just not to fail on [`UtxoAddressScanner::init`].
+    NativeClient::list_all_transactions
+        .mock_safe(move |_, _| MockResult::Return(Box::new(futures01::future::ok(Vec::new()))));
+
+    let client = NativeClient(Arc::new(NativeClientImpl::default()));
+    let mut fields = utxo_coin_fields_for_test(UtxoRpcClientEnum::Native(client), None, false);
+    let mut hd_accounts = HDAccountsMap::new();
+    let hd_account_for_test = UtxoHDAccount {
+        account_id: 0,
+        extended_pubkey: Secp256k1ExtendedPublicKey::from_str("xpub6DEHSksajpRPM59RPw7Eg6PKdU7E2ehxJWtYdrfQ6JFmMGBsrR6jA78ANCLgzKYm4s5UqQ4ydLEYPbh3TRVvn5oAZVtWfi4qJLMntpZ8uGJ").unwrap(),
+        account_derivation_path: Bip44PathToAccount::from_str("m/44'/141'/0'").unwrap(),
+        external_addresses_number: 4,
+        internal_addresses_number: 0,
+    };
+    // Put multiple the same accounts for tests,
+    // since every successful `get_new_address_rpc` changes the state of the account.
+    hd_accounts.insert(0, hd_account_for_test.clone());
+    hd_accounts.insert(1, hd_account_for_test.clone());
+    hd_accounts.insert(2, hd_account_for_test);
+
+    fields.derivation_method = DerivationMethod::HDWallet(UtxoHDWallet {
+        hd_wallet_storage: HDWalletCoinStorage::default(),
+        address_format: UtxoAddressFormat::Standard,
+        derivation_path: Bip44PathToCoin::from_str("m/44'/141'").unwrap(),
+        accounts: HDAccountsMutex::new(hd_accounts),
+        gap_limit: 2,
+    });
+    let coin = utxo_coin_from_fields(fields);
+
+    // =======
+
+    expected_checked_addresses!["m/44'/141'/0'/0/3", "RU1gRFXWXNx7uPRAEJ7wdZAW1RZ4TE6Vv1"];
+    non_empty_addresses!["m/44'/141'/0'/0/3", "RU1gRFXWXNx7uPRAEJ7wdZAW1RZ4TE6Vv1"];
+    let params = GetNewAddressParams {
+        account_id: 0,
+        chain: Some(Bip44Chain::External),
+        gap_limit: None, // Will be used 2 from `UtxoHDWallet` by default.
+    };
+    block_on(coin.get_new_address_rpc(params)).unwrap();
+    unsafe { assert_eq!(CHECKED_ADDRESSES, EXPECTED_CHECKED_ADDRESSES) };
+
+    // `m/44'/141'/1'/0/3` is empty, so `m/44'/141'/1'/0/2` will be checked.
+
+    expected_checked_addresses!["m/44'/141'/1'/0/3", "RU1gRFXWXNx7uPRAEJ7wdZAW1RZ4TE6Vv1"];
+    non_empty_addresses!["m/44'/141'/1'/0/2", "RSSZjtgfnLzvqF4cZQJJEpN5gvK3pWmd3h"];
+    let params = GetNewAddressParams {
+        account_id: 1,
+        chain: Some(Bip44Chain::External),
+        gap_limit: Some(1),
+    };
+    let err = block_on(coin.get_new_address_rpc(params))
+        .expect_err("check_if_can_get_new_address should have failed with 'EmptyAddressesLimitReached' error");
+    let expected = GetNewAddressRpcError::EmptyAddressesLimitReached { gap_limit: 1 };
+    assert_eq!(err.into_inner(), expected);
+    unsafe { assert_eq!(CHECKED_ADDRESSES, EXPECTED_CHECKED_ADDRESSES) };
+
+    // `m/44'/141'/1'/0/3` is empty, but `m/44'/141'/1'/0/2` is not.
+
+    expected_checked_addresses![
+        "m/44'/141'/1'/0/3", "RU1gRFXWXNx7uPRAEJ7wdZAW1RZ4TE6Vv1";
+        "m/44'/141'/1'/0/2", "RSSZjtgfnLzvqF4cZQJJEpN5gvK3pWmd3h"
+    ];
+    non_empty_addresses!["m/44'/141'/1'/0/2", "RSSZjtgfnLzvqF4cZQJJEpN5gvK3pWmd3h"];
+    let params = GetNewAddressParams {
+        account_id: 1,
+        chain: Some(Bip44Chain::External),
+        gap_limit: Some(2),
+    };
+    block_on(coin.get_new_address_rpc(params)).unwrap();
+    unsafe { assert_eq!(CHECKED_ADDRESSES, EXPECTED_CHECKED_ADDRESSES) };
+
+    // `m/44'/141'/2'/0/3` and `m/44'/141'/2'/0/2` are empty.
+
+    expected_checked_addresses![
+        "m/44'/141'/2'/0/3", "RU1gRFXWXNx7uPRAEJ7wdZAW1RZ4TE6Vv1";
+        "m/44'/141'/2'/0/2", "RSSZjtgfnLzvqF4cZQJJEpN5gvK3pWmd3h"
+    ];
+    non_empty_addresses![];
+    let params = GetNewAddressParams {
+        account_id: 2,
+        chain: Some(Bip44Chain::External),
+        gap_limit: Some(2),
+    };
+    let err = block_on(coin.get_new_address_rpc(params))
+        .expect_err("check_if_can_get_new_address should have failed with 'EmptyAddressesLimitReached' error");
+    let expected = GetNewAddressRpcError::EmptyAddressesLimitReached { gap_limit: 2 };
+    assert_eq!(err.into_inner(), expected);
+    unsafe { assert_eq!(CHECKED_ADDRESSES, EXPECTED_CHECKED_ADDRESSES) };
+
+    // `gap_limit=0` means don't allow to generate new address if the last one is empty yet.
+
+    expected_checked_addresses!["m/44'/141'/2'/0/3", "RU1gRFXWXNx7uPRAEJ7wdZAW1RZ4TE6Vv1"];
+    non_empty_addresses![];
+    let params = GetNewAddressParams {
+        account_id: 2,
+        chain: Some(Bip44Chain::External),
+        gap_limit: Some(0),
+    };
+    let err = block_on(coin.get_new_address_rpc(params))
+        .expect_err("!check_if_can_get_new_address should have failed with 'EmptyAddressesLimitReached' error");
+    let expected = GetNewAddressRpcError::EmptyAddressesLimitReached { gap_limit: 0 };
+    assert_eq!(err.into_inner(), expected);
+    unsafe { assert_eq!(CHECKED_ADDRESSES, EXPECTED_CHECKED_ADDRESSES) };
+
+    // `(gap_limit=5) > (known_addresses_number=4)`, there should not be any network request.
+
+    expected_checked_addresses![];
+    non_empty_addresses![];
+    let params = GetNewAddressParams {
+        account_id: 2,
+        chain: Some(Bip44Chain::External),
+        gap_limit: Some(5),
+    };
+    block_on(coin.get_new_address_rpc(params)).unwrap();
+    unsafe { assert_eq!(CHECKED_ADDRESSES, EXPECTED_CHECKED_ADDRESSES) };
+
+    // `known_addresses_number=0`, always allow.
+
+    expected_checked_addresses![];
+    non_empty_addresses![];
+    let params = GetNewAddressParams {
+        account_id: 0,
+        chain: Some(Bip44Chain::Internal),
+        gap_limit: Some(0),
+    };
+    block_on(coin.get_new_address_rpc(params)).unwrap();
+    unsafe { assert_eq!(CHECKED_ADDRESSES, EXPECTED_CHECKED_ADDRESSES) };
 }
 
 /// https://github.com/KomodoPlatform/atomicDEX-API/issues/1196
@@ -3872,6 +4078,30 @@ fn test_electrum_balance_deserializing() {
 fn test_electrum_display_balances() {
     let rpc_client = electrum_client_for_test(RICK_ELECTRUM_ADDRS);
     block_on(utxo_common_tests::test_electrum_display_balances(&rpc_client));
+}
+
+#[test]
+fn test_for_non_existent_tx_hex_utxo_electrum() {
+    // This test shouldn't wait till timeout!
+    let timeout = (now_ms() / 1000) + 120;
+    let client = electrum_client_for_test(RICK_ELECTRUM_ADDRS);
+    let coin = utxo_coin_for_test(
+        client.into(),
+        Some("spice describe gravity federal blast come thank unfair canal monkey style afraid"),
+        false,
+    );
+    // bad transaction hex
+    let tx = hex::decode("0400008085202f8902bf17bf7d1daace52e08f732a6b8771743ca4b1cb765a187e72fd091a0aabfd52000000006a47304402203eaaa3c4da101240f80f9c5e9de716a22b1ec6d66080de6a0cca32011cd77223022040d9082b6242d6acf9a1a8e658779e1c655d708379862f235e8ba7b8ca4e69c6012102031d4256c4bc9f99ac88bf3dba21773132281f65f9bf23a59928bce08961e2f3ffffffffff023ca13c0e9e085dd13f481f193e8a3e8fd609020936e98b5587342d994f4d020000006b483045022100c0ba56adb8de923975052312467347d83238bd8d480ce66e8b709a7997373994022048507bcac921fdb2302fa5224ce86e41b7efc1a2e20ae63aa738dfa99b7be826012102031d4256c4bc9f99ac88bf3dba21773132281f65f9bf23a59928bce08961e2f3ffffffff0300e1f5050000000017a9141ee6d4c38a3c078eab87ad1a5e4b00f21259b10d87000000000000000016611400000000000000000000000000000000000000001b94d736000000001976a91405aab5342166f8594baf17a7d9bef5d56744332788ac2d08e35e000000000000000000000000000000").unwrap();
+    let expected_timeout = (now_ms() / 1000) + 10;
+    let actual = coin
+        .wait_for_confirmations(&tx, 1, false, timeout, 1)
+        .wait()
+        .err()
+        .unwrap();
+    assert!(
+        actual.contains("Tx d342ff9da528a2e262bddf2b6f9a27d1beb7aeb03f0fc8d9eac2987266447e44 is not on chain anymore")
+    );
+    assert!((now_ms() / 1000) < expected_timeout);
 }
 
 #[test]

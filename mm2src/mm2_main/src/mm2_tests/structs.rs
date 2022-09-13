@@ -624,6 +624,13 @@ pub struct ZcoinActivationResult {
 
 #[derive(Debug, Deserialize)]
 #[serde(deny_unknown_fields)]
+pub struct UtxoStandardActivationResult {
+    pub current_block: u64,
+    pub wallet_balance: EnableCoinBalance,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(deny_unknown_fields)]
 pub struct InitTaskResult {
     pub task_id: u64,
 }
@@ -639,6 +646,14 @@ pub enum MmRpcResult<T> {
 #[serde(deny_unknown_fields, tag = "status", content = "details")]
 pub enum InitZcoinStatus {
     Ready(MmRpcResult<ZcoinActivationResult>),
+    InProgress(Json),
+    UserActionRequired(Json),
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(deny_unknown_fields, tag = "status", content = "details")]
+pub enum InitUtxoStatus {
+    Ready(MmRpcResult<UtxoStandardActivationResult>),
     InProgress(Json),
     UserActionRequired(Json),
 }
@@ -939,4 +954,45 @@ pub struct TendermintActivationResult {
     pub current_block: u64,
     pub balance: CoinBalance,
     pub ticker: String,
+}
+
+pub mod gui_storage {
+    use mm2_number::BigDecimal;
+    use std::collections::BTreeSet;
+
+    #[derive(Debug, Deserialize, PartialEq)]
+    #[serde(tag = "type")]
+    #[serde(rename_all = "lowercase")]
+    pub enum AccountId {
+        Iguana,
+        HD { account_idx: u32 },
+        HW { device_pubkey: String },
+    }
+
+    #[derive(Debug, Deserialize, PartialEq)]
+    #[serde(deny_unknown_fields)]
+    pub struct AccountWithEnabledFlag {
+        pub account_id: AccountId,
+        pub name: String,
+        pub description: String,
+        pub balance_usd: BigDecimal,
+        pub enabled: bool,
+    }
+
+    #[derive(Debug, Deserialize, PartialEq)]
+    #[serde(deny_unknown_fields)]
+    pub struct AccountWithCoins {
+        pub account_id: AccountId,
+        pub name: String,
+        pub description: String,
+        pub balance_usd: BigDecimal,
+        pub coins: BTreeSet<String>,
+    }
+
+    #[derive(Debug, Deserialize, PartialEq)]
+    #[serde(deny_unknown_fields)]
+    pub struct AccountCoins {
+        pub account_id: AccountId,
+        pub coins: BTreeSet<String>,
+    }
 }

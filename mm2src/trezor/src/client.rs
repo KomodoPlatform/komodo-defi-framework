@@ -1,5 +1,6 @@
 //! This file is inspired by https://github.com/tezedge/tezedge-client/blob/master/trezor_api/src/client.rs
 
+use crate::device_info::TrezorDeviceInfo;
 use crate::error::OperationFailure;
 use crate::proto::messages::MessageType;
 use crate::proto::messages_common as proto_common;
@@ -9,6 +10,7 @@ use crate::response::TrezorResponse;
 use crate::result_handler::ResultHandler;
 use crate::transport::Transport;
 use crate::{TrezorError, TrezorResult};
+use common::now_ms;
 use futures::lock::{Mutex as AsyncMutex, MutexGuard as AsyncMutexGuard};
 use mm2_err_handle::prelude::*;
 use std::sync::Arc;
@@ -24,23 +26,48 @@ impl TrezorClient {
         T: Transport + Send + Sync + 'static,
     {
         let transport = Box::new(transport);
-        let inner = Arc::new(AsyncMutex::new(TrezorClientImpl { transport }));
+        let inner = Arc::new(AsyncMutex::new(TrezorClientImpl {
+            transport,
+            initialized: false,
+        }));
         TrezorClient { inner }
     }
 
     /// Initialize a Trezor session by sending
     /// [Initialize](https://docs.trezor.io/trezor-firmware/common/communication/sessions.html#examples).
     pub async fn session(&self) -> TrezorResult<TrezorSession<'_>> {
+        {
+            let inner = self.inner.lock().await;
+            if inner.initialized {
+                let mut session = TrezorSession { inner };
+
+                // Check if the device is still alive.
+                session.ping().await?;
+                return Ok(session);
+            }
+        }
+
+        // The device is still not initialized (see [`TrezorClientImpl::initialized`]).
+        // Create new session that calls [`TrezorSession::initialize_device`].
+        self.new_session().await.map(|(_device_info, session)| session)
+    }
+
+    /// Initialize a Trezor session by sending
+    /// [Initialize](https://docs.trezor.io/trezor-firmware/common/communication/sessions.html#examples).
+    /// Returns `TrezorDeviceInfo` and `TrezorSession`.
+    pub async fn new_session(&self) -> TrezorResult<(TrezorDeviceInfo, TrezorSession<'_>)> {
         let mut session = TrezorSession {
             inner: self.inner.lock().await,
         };
-        session.initialize_device().await?;
-        Ok(session)
+        let features = session.initialize_device().await?;
+        Ok((TrezorDeviceInfo::from(features), session))
     }
 }
 
 pub struct TrezorClientImpl {
     transport: Box<dyn Transport + Send + Sync + 'static>,
+    /// Whether the device is initialized with [`TrezorSession::initialize_device`] or not.
+    initialized: bool,
 }
 
 pub struct TrezorSession<'a> {
@@ -70,19 +97,42 @@ impl<'a> TrezorSession<'a> {
                 let req_msg = resp.into_message()?;
                 Ok(TrezorResponse::new_pin_matrix_request(self, req_msg, result_handler))
             },
+            MessageType::PassphraseRequest => {
+                let req_msg = resp.into_message()?;
+                Ok(TrezorResponse::new_passphrase_request(self, req_msg, result_handler))
+            },
             mtype => MmError::err(TrezorError::UnexpectedMessageType(mtype)),
         }
     }
 
     /// Sends a message and returns the raw ProtoMessage struct that was
     /// responded by the device.
-    async fn call_raw<'b, S: TrezorMessage>(&'b mut self, message: S) -> TrezorResult<ProtoMessage> {
+    async fn call_raw<S: TrezorMessage>(&mut self, message: S) -> TrezorResult<ProtoMessage> {
         let mut buf = Vec::with_capacity(message.encoded_len());
         message.encode(&mut buf)?;
 
         let proto_msg = ProtoMessage::new(S::message_type(), buf);
         self.inner.transport.write_message(proto_msg).await?;
         self.inner.transport.read_message().await
+    }
+
+    async fn ping(&mut self) -> TrezorResult<()> {
+        let ping_message = format!("With love, {}", now_ms());
+        let req = proto_management::Ping {
+            message: Some(ping_message.clone()),
+            button_protection: None,
+        };
+
+        let result_handler = ResultHandler::<proto_common::Success>::new(Ok);
+        let success = self.call(req, result_handler).await?.ok()?;
+
+        match success.message {
+            Some(pong_message) if pong_message == ping_message => Ok(()),
+            _ => {
+                let error = format!("Expected '{}' PONG message, found: {:?}", ping_message, success.message);
+                MmError::err(TrezorError::Failure(OperationFailure::Other(error)))
+            },
+        }
     }
 
     /// Initialize the device.
@@ -94,16 +144,19 @@ impl<'a> TrezorSession<'a> {
     /// # Usage
     ///
     /// Must be called before sending requests to Trezor.
-    async fn initialize_device<'b>(&'b mut self) -> TrezorResult<proto_management::Features> {
+    async fn initialize_device(&mut self) -> TrezorResult<proto_management::Features> {
         // Don't set the session_id since currently there is no need to restore the previous session.
         // https://docs.trezor.io/trezor-firmware/common/communication/sessions.html#session-lifecycle
         let req = proto_management::Initialize { session_id: None };
 
         let result_handler = ResultHandler::<proto_management::Features>::new(Ok);
-        self.call(req, result_handler).await?.ok()
+        let features = self.call(req, result_handler).await?.ok()?;
+
+        self.inner.initialized = true;
+        Ok(features)
     }
 
-    pub(crate) async fn cancel_last_op<'b>(&'b mut self) {
+    pub(crate) async fn cancel_last_op(&mut self) {
         let req = proto_management::Cancel {};
         let result_handler = ResultHandler::new(|_m: proto_common::Failure| Ok(()));
         // Ignore result.

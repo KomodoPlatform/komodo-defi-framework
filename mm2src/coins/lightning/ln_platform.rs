@@ -1,9 +1,11 @@
 use super::*;
 use crate::lightning::ln_errors::{SaveChannelClosingError, SaveChannelClosingResult};
-use crate::utxo::rpc_clients::{BestBlock as RpcBestBlock, BlockHashOrHeight, ElectrumBlockHeader, ElectrumClient,
-                               ElectrumNonce, EstimateFeeMethod, UtxoRpcClientEnum};
-use crate::utxo::spv::{ConfirmedTransactionInfo, SimplePaymentVerification};
+use crate::utxo::rpc_clients::{BestBlock as RpcBestBlock, BlockHashOrHeight, ConfirmedTransactionInfo,
+                               ElectrumBlockHeader, ElectrumClient, ElectrumNonce, EstimateFeeMethod,
+                               UtxoRpcClientEnum, UtxoRpcResult};
+use crate::utxo::spv::SimplePaymentVerification;
 use crate::utxo::utxo_standard::UtxoStandardCoin;
+use crate::utxo::GetConfirmedTxError;
 use crate::{MarketCoinOps, MmCoin};
 use bitcoin::blockdata::block::BlockHeader;
 use bitcoin::blockdata::script::Script;
@@ -20,12 +22,10 @@ use lightning::chain::{chaininterface::{BroadcasterInterface, ConfirmationTarget
                        Confirm, Filter, WatchedOutput};
 use rpc::v1::types::{Bytes as BytesJson, H256 as H256Json};
 use spv_validation::spv_proof::TRY_SPV_PROOF_INTERVAL;
-use std::cmp;
 use std::convert::{TryFrom, TryInto};
-use std::sync::atomic::{AtomicU64, Ordering as AtomicOrdering};
+use std::sync::atomic::{AtomicU64, Ordering as AtomicOrdering, Ordering};
 
 const CHECK_FOR_NEW_BEST_BLOCK_INTERVAL: f64 = 60.;
-const MIN_ALLOWED_FEE_PER_1000_WEIGHT: u32 = 253;
 const TRY_LOOP_INTERVAL: f64 = 60.;
 
 #[inline]
@@ -43,8 +43,8 @@ pub async fn get_best_header(best_header_listener: &ElectrumClient) -> EnableLig
 }
 
 pub async fn update_best_block(
-    chain_monitor: &ChainMonitor,
-    channel_manager: &ChannelManager,
+    chain_monitor: Arc<ChainMonitor>,
+    channel_manager: Arc<ChannelManager>,
     best_header: ElectrumBlockHeader,
 ) {
     {
@@ -81,8 +81,8 @@ pub async fn update_best_block(
                 (block_header, h.height as u32)
             },
         };
-        channel_manager.best_block_updated(&new_best_header, new_best_height);
-        chain_monitor.best_block_updated(&new_best_header, new_best_height);
+        async_blocking(move || channel_manager.best_block_updated(&new_best_header, new_best_height)).await;
+        async_blocking(move || chain_monitor.best_block_updated(&new_best_header, new_best_height)).await;
     }
 }
 
@@ -100,16 +100,21 @@ pub async fn ln_best_block_update_loop(
         // in case a transaction confirmation fails due to electrums being down. This way there will be no need to wait for a new
         // block to confirm such transaction and causing delays.
         platform
-            .process_txs_confirmations(&best_header_listener, &db, &chain_monitor, &channel_manager)
+            .process_txs_confirmations(
+                &best_header_listener,
+                &db,
+                Arc::clone(&chain_monitor),
+                Arc::clone(&channel_manager),
+            )
             .await;
         let best_header = ok_or_continue_after_sleep!(get_best_header(&best_header_listener).await, TRY_LOOP_INTERVAL);
         if current_best_block != best_header.clone().into() {
             platform.update_best_block_height(best_header.block_height());
             platform
-                .process_txs_unconfirmations(&chain_monitor, &channel_manager)
+                .process_txs_unconfirmations(Arc::clone(&chain_monitor), Arc::clone(&channel_manager))
                 .await;
             current_best_block = best_header.clone().into();
-            update_best_block(&chain_monitor, &channel_manager, best_header).await;
+            update_best_block(Arc::clone(&chain_monitor), Arc::clone(&channel_manager), best_header).await;
         }
         Timer::sleep(CHECK_FOR_NEW_BEST_BLOCK_INTERVAL).await;
     }
@@ -128,15 +133,33 @@ async fn get_funding_tx_bytes_loop(rpc_client: &UtxoRpcClientEnum, tx_hash: H256
     }
 }
 
+pub struct LatestFees {
+    background: AtomicU64,
+    normal: AtomicU64,
+    high_priority: AtomicU64,
+}
+
+impl LatestFees {
+    #[inline]
+    fn set_background_fees(&self, fee: u64) { self.background.store(fee, Ordering::Release); }
+
+    #[inline]
+    fn set_normal_fees(&self, fee: u64) { self.normal.store(fee, Ordering::Release); }
+
+    #[inline]
+    fn set_high_priority_fees(&self, fee: u64) { self.high_priority.store(fee, Ordering::Release); }
+}
+
 pub struct Platform {
     pub coin: UtxoStandardCoin,
     /// Main/testnet/signet/regtest Needed for lightning node to know which network to connect to
     pub network: BlockchainNetwork,
     /// The best block height.
     pub best_block_height: AtomicU64,
-    /// Default fees to and confirmation targets to be used for FeeEstimator. Default fees are used when the call for
-    /// estimate_fee_sat fails.
-    pub default_fees_and_confirmations: PlatformCoinConfirmations,
+    /// Number of blocks for every Confirmation target. This is used in the FeeEstimator.
+    pub confirmations_targets: PlatformCoinConfirmationTargets,
+    /// Latest fees are used when the call for estimate_fee_sat fails.
+    pub latest_fees: LatestFees,
     /// This cache stores the transactions that the LN node has interest in.
     pub registered_txs: PaMutex<HashSet<Txid>>,
     /// This cache stores the outputs that the LN node has interest in.
@@ -150,13 +173,18 @@ impl Platform {
     pub fn new(
         coin: UtxoStandardCoin,
         network: BlockchainNetwork,
-        default_fees_and_confirmations: PlatformCoinConfirmations,
+        confirmations_targets: PlatformCoinConfirmationTargets,
     ) -> Self {
         Platform {
             coin,
             network,
             best_block_height: AtomicU64::new(0),
-            default_fees_and_confirmations,
+            confirmations_targets,
+            latest_fees: LatestFees {
+                background: AtomicU64::new(0),
+                normal: AtomicU64::new(0),
+                high_priority: AtomicU64::new(0),
+            },
             registered_txs: PaMutex::new(HashSet::new()),
             registered_outputs: PaMutex::new(Vec::new()),
             unsigned_funding_txs: PaMutex::new(HashMap::new()),
@@ -166,13 +194,59 @@ impl Platform {
     #[inline]
     fn rpc_client(&self) -> &UtxoRpcClientEnum { &self.coin.as_ref().rpc_client }
 
-    #[inline]
-    pub fn update_best_block_height(&self, new_height: u64) {
-        self.best_block_height.store(new_height, AtomicOrdering::Relaxed);
+    pub async fn set_latest_fees(&self) -> UtxoRpcResult<()> {
+        let platform_coin = &self.coin;
+        let conf = &platform_coin.as_ref().conf;
+
+        let latest_background_fees = self
+            .rpc_client()
+            .estimate_fee_sat(
+                platform_coin.decimals(),
+                // Todo: when implementing Native client detect_fee_method should be used for Native and EstimateFeeMethod::Standard for Electrum
+                &EstimateFeeMethod::Standard,
+                &conf.estimate_fee_mode,
+                self.confirmations_targets.background,
+            )
+            .compat()
+            .await?;
+        self.latest_fees.set_background_fees(latest_background_fees);
+
+        let latest_normal_fees = self
+            .rpc_client()
+            .estimate_fee_sat(
+                platform_coin.decimals(),
+                // Todo: when implementing Native client detect_fee_method should be used for Native and EstimateFeeMethod::Standard for Electrum
+                &EstimateFeeMethod::Standard,
+                &conf.estimate_fee_mode,
+                self.confirmations_targets.normal,
+            )
+            .compat()
+            .await?;
+        self.latest_fees.set_normal_fees(latest_normal_fees);
+
+        let latest_high_priority_fees = self
+            .rpc_client()
+            .estimate_fee_sat(
+                platform_coin.decimals(),
+                // Todo: when implementing Native client detect_fee_method should be used for Native and EstimateFeeMethod::Standard for Electrum
+                &EstimateFeeMethod::Standard,
+                &conf.estimate_fee_mode,
+                self.confirmations_targets.high_priority,
+            )
+            .compat()
+            .await?;
+        self.latest_fees.set_high_priority_fees(latest_high_priority_fees);
+
+        Ok(())
     }
 
     #[inline]
-    pub fn best_block_height(&self) -> u64 { self.best_block_height.load(AtomicOrdering::Relaxed) }
+    pub fn update_best_block_height(&self, new_height: u64) {
+        self.best_block_height.store(new_height, AtomicOrdering::Release);
+    }
+
+    #[inline]
+    pub fn best_block_height(&self) -> u64 { self.best_block_height.load(AtomicOrdering::Acquire) }
 
     pub fn add_tx(&self, txid: Txid) {
         let mut registered_txs = self.registered_txs.lock();
@@ -184,9 +258,9 @@ impl Platform {
         registered_outputs.push(output);
     }
 
-    async fn process_tx_for_unconfirmation<T>(&self, txid: Txid, monitor: &T)
+    async fn process_tx_for_unconfirmation<T>(&self, txid: Txid, monitor: Arc<T>)
     where
-        T: Confirm,
+        T: Confirm + Send + Sync + 'static,
     {
         let rpc_txid = h256_json_from_txid(txid);
         match self.rpc_client().get_tx_if_onchain(&rpc_txid).await {
@@ -196,7 +270,8 @@ impl Platform {
                     "Transaction {} is not found on chain. The transaction will be re-broadcasted.",
                     txid,
                 );
-                monitor.transaction_unconfirmed(&txid);
+                let monitor = monitor.clone();
+                async_blocking(move || monitor.transaction_unconfirmed(&txid)).await;
                 // If a transaction is unconfirmed due to a block reorganization; LDK will rebroadcast it.
                 // In this case, this transaction needs to be added again to the registered transactions
                 // to start watching for it on the chain again.
@@ -209,17 +284,23 @@ impl Platform {
         }
     }
 
-    pub async fn process_txs_unconfirmations(&self, chain_monitor: &ChainMonitor, channel_manager: &ChannelManager) {
+    pub async fn process_txs_unconfirmations(
+        &self,
+        chain_monitor: Arc<ChainMonitor>,
+        channel_manager: Arc<ChannelManager>,
+    ) {
         // Retrieve channel manager transaction IDs to check the chain for un-confirmations
         let channel_manager_relevant_txids = channel_manager.get_relevant_txids();
         for txid in channel_manager_relevant_txids {
-            self.process_tx_for_unconfirmation(txid, channel_manager).await;
+            self.process_tx_for_unconfirmation(txid, Arc::clone(&channel_manager))
+                .await;
         }
 
         // Retrieve chain monitor transaction IDs to check the chain for un-confirmations
         let chain_monitor_relevant_txids = chain_monitor.get_relevant_txids();
         for txid in chain_monitor_relevant_txids {
-            self.process_tx_for_unconfirmation(txid, chain_monitor).await;
+            self.process_tx_for_unconfirmation(txid, Arc::clone(&chain_monitor))
+                .await;
         }
     }
 
@@ -247,11 +328,17 @@ impl Platform {
                 },
             });
 
+        let is_spv_enabled = self.coin.as_ref().conf.enable_spv_proof;
         let confirmed_transactions_futs = on_chain_txs
             .map(|transaction| async move {
-                client
-                    .validate_spv_proof(&transaction, (now_ms() / 1000) + TRY_SPV_PROOF_INTERVAL)
-                    .await
+                if is_spv_enabled {
+                    client
+                        .validate_spv_proof(&transaction, (now_ms() / 1000) + TRY_SPV_PROOF_INTERVAL)
+                        .await
+                        .map_err(GetConfirmedTxError::SPVError)
+                } else {
+                    client.get_confirmed_tx_info_from_rpc(&transaction).await
+                }
             })
             .collect::<Vec<_>>();
         join_all(confirmed_transactions_futs)
@@ -309,12 +396,18 @@ impl Platform {
                 .any(|info| info.tx.hash() == output.spending_tx.hash())
         });
 
+        let is_spv_enabled = self.coin.as_ref().conf.enable_spv_proof;
         let confirmed_transactions_futs = spent_outputs_info
             .into_iter()
             .map(|output| async move {
-                client
-                    .validate_spv_proof(&output.spending_tx, (now_ms() / 1000) + TRY_SPV_PROOF_INTERVAL)
-                    .await
+                if is_spv_enabled {
+                    client
+                        .validate_spv_proof(&output.spending_tx, (now_ms() / 1000) + TRY_SPV_PROOF_INTERVAL)
+                        .await
+                        .map_err(GetConfirmedTxError::SPVError)
+                } else {
+                    client.get_confirmed_tx_info_from_rpc(&output.spending_tx).await
+                }
             })
             .collect::<Vec<_>>();
         let mut confirmed_transaction_info = join_all(confirmed_transactions_futs)
@@ -346,8 +439,8 @@ impl Platform {
         &self,
         client: &ElectrumClient,
         db: &SqliteLightningDB,
-        chain_monitor: &ChainMonitor,
-        channel_manager: &ChannelManager,
+        chain_monitor: Arc<ChainMonitor>,
+        channel_manager: Arc<ChannelManager>,
     ) {
         let mut transactions_to_confirm = self.get_confirmed_registered_txs(client).await;
         self.append_spent_registered_output_txs(&mut transactions_to_confirm, client)
@@ -366,22 +459,31 @@ impl Platform {
             {
                 error!("Unable to update the funding tx block height in DB: {}", e);
             }
-            channel_manager.transactions_confirmed(
-                &confirmed_transaction_info.header.clone().into(),
-                &[(
-                    confirmed_transaction_info.index as usize,
-                    &confirmed_transaction_info.tx.clone().into(),
-                )],
-                confirmed_transaction_info.height as u32,
-            );
-            chain_monitor.transactions_confirmed(
-                &confirmed_transaction_info.header.into(),
-                &[(
-                    confirmed_transaction_info.index as usize,
-                    &confirmed_transaction_info.tx.into(),
-                )],
-                confirmed_transaction_info.height as u32,
-            );
+            let channel_manager = channel_manager.clone();
+            let confirmed_transaction_info_cloned = confirmed_transaction_info.clone();
+            async_blocking(move || {
+                channel_manager.transactions_confirmed(
+                    &confirmed_transaction_info_cloned.header.clone().into(),
+                    &[(
+                        confirmed_transaction_info_cloned.index as usize,
+                        &confirmed_transaction_info_cloned.tx.clone().into(),
+                    )],
+                    confirmed_transaction_info_cloned.height as u32,
+                )
+            })
+            .await;
+            let chain_monitor = chain_monitor.clone();
+            async_blocking(move || {
+                chain_monitor.transactions_confirmed(
+                    &confirmed_transaction_info.header.into(),
+                    &[(
+                        confirmed_transaction_info.index as usize,
+                        &confirmed_transaction_info.tx.into(),
+                    )],
+                    confirmed_transaction_info.height as u32,
+                )
+            })
+            .await;
         }
     }
 
@@ -422,17 +524,17 @@ impl FeeEstimator for Platform {
     fn get_est_sat_per_1000_weight(&self, confirmation_target: ConfirmationTarget) -> u32 {
         let platform_coin = &self.coin;
 
-        let default_fee = match confirmation_target {
-            ConfirmationTarget::Background => self.default_fees_and_confirmations.background.default_fee_per_kb,
-            ConfirmationTarget::Normal => self.default_fees_and_confirmations.normal.default_fee_per_kb,
-            ConfirmationTarget::HighPriority => self.default_fees_and_confirmations.high_priority.default_fee_per_kb,
+        let latest_fees = match confirmation_target {
+            ConfirmationTarget::Background => self.latest_fees.background.load(Ordering::Acquire),
+            ConfirmationTarget::Normal => self.latest_fees.normal.load(Ordering::Acquire),
+            ConfirmationTarget::HighPriority => self.latest_fees.high_priority.load(Ordering::Acquire),
         };
 
         let conf = &platform_coin.as_ref().conf;
         let n_blocks = match confirmation_target {
-            ConfirmationTarget::Background => self.default_fees_and_confirmations.background.n_blocks,
-            ConfirmationTarget::Normal => self.default_fees_and_confirmations.normal.n_blocks,
-            ConfirmationTarget::HighPriority => self.default_fees_and_confirmations.high_priority.n_blocks,
+            ConfirmationTarget::Background => self.confirmations_targets.background,
+            ConfirmationTarget::Normal => self.confirmations_targets.normal,
+            ConfirmationTarget::HighPriority => self.confirmations_targets.high_priority,
         };
         let fee_per_kb = tokio::task::block_in_place(move || {
             self.rpc_client()
@@ -445,11 +547,21 @@ impl FeeEstimator for Platform {
                     n_blocks,
                 )
                 .wait()
-                .unwrap_or(default_fee)
+                .unwrap_or(latest_fees)
         });
+
+        // Set default fee to last known fee for the corresponding confirmation target
+        match confirmation_target {
+            ConfirmationTarget::Background => self.latest_fees.set_background_fees(fee_per_kb),
+            ConfirmationTarget::Normal => self.latest_fees.set_normal_fees(fee_per_kb),
+            ConfirmationTarget::HighPriority => self.latest_fees.set_high_priority_fees(fee_per_kb),
+        };
+
         // Must be no smaller than 253 (ie 1 satoshi-per-byte rounded up to ensure later round-downs don’t put us below 1 satoshi-per-byte).
         // https://docs.rs/lightning/0.0.101/lightning/chain/chaininterface/trait.FeeEstimator.html#tymethod.get_est_sat_per_1000_weight
-        cmp::max((fee_per_kb as f64 / 4.0).ceil() as u32, MIN_ALLOWED_FEE_PER_1000_WEIGHT)
+        // This has changed in rust-lightning v0.0.110 as LDK currently wraps get_est_sat_per_1000_weight to ensure that the value returned is
+        // no smaller than 253. https://github.com/lightningdevkit/rust-lightning/pull/1552
+        (fee_per_kb as f64 / 4.0).ceil() as u32
     }
 }
 
