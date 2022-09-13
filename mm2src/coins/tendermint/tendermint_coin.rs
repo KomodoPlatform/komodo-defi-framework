@@ -12,7 +12,7 @@ use crate::{big_decimal_from_sat_unsigned, BalanceError, BalanceFut, BigDecimal,
             ValidateAddressResult, ValidatePaymentInput, VerificationResult, WithdrawError, WithdrawFut,
             WithdrawRequest};
 use async_trait::async_trait;
-use bitcrypto::sha256;
+use bitcrypto::{dhash256, sha256};
 use common::{get_utc_timestamp, Future01CompatExt};
 use cosmrs::bank::MsgSend;
 use cosmrs::crypto::secp256k1::SigningKey;
@@ -22,6 +22,7 @@ use cosmrs::tendermint::abci::Path as AbciPath;
 use cosmrs::tendermint::chain::Id as ChainId;
 use cosmrs::tx::{self, Fee, Msg, Raw, SignDoc, SignerInfo};
 use cosmrs::{AccountId, Any, Coin, Denom};
+use crypto::privkey::{key_pair_from_secret, secp_privkey_from_hash};
 use derive_more::Display;
 use futures::lock::Mutex as AsyncMutex;
 use futures::{FutureExt, TryFutureExt};
@@ -545,7 +546,8 @@ impl MmCoin for TendermintCoin {
 
     fn set_requires_notarization(&self, requires_nota: bool) { todo!() }
 
-    fn swap_contract_address(&self) -> Option<BytesJson> { todo!() }
+    /// !! This function includes dummy implementation for P.O.C work
+    fn swap_contract_address(&self) -> Option<BytesJson> { None }
 
     fn mature_confirmations(&self) -> Option<u32> { None }
 
@@ -788,7 +790,15 @@ impl SwapOps for TendermintCoin {
         todo!()
     }
 
-    fn derive_htlc_key_pair(&self, swap_unique_data: &[u8]) -> KeyPair { todo!() }
+    fn derive_htlc_key_pair(&self, swap_unique_data: &[u8]) -> KeyPair {
+        let signkey = SigningKey::from_bytes(&self.priv_key).expect("valid missing");
+
+        let message = keys::Message::from(dhash256(swap_unique_data).take());
+        let signature = signkey.sign(&message.to_vec()).expect("message signing failed");
+
+        let key = secp_privkey_from_hash(dhash256(&signature.to_vec()));
+        key_pair_from_secret(key.as_slice()).expect("valid privkey")
+    }
 }
 
 #[cfg(test)]
