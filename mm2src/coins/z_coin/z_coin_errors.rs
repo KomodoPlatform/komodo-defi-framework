@@ -17,16 +17,12 @@ use zcash_primitives::transaction::builder::Error as ZTxBuilderError;
 #[derive(Debug, Display)]
 #[non_exhaustive]
 pub enum UpdateBlocksCacheErr {
-    GrpcError(tonic::Status),
+    GrpcError(String),
     BlocksDbError(SqliteError),
     ZcashSqliteError(ZcashClientError),
     UtxoRpcError(UtxoRpcError),
     InternalError(String),
     JsonRpcError(JsonRpcError),
-}
-
-impl From<tonic::Status> for UpdateBlocksCacheErr {
-    fn from(err: tonic::Status) -> Self { UpdateBlocksCacheErr::GrpcError(err) }
 }
 
 impl From<SqliteError> for UpdateBlocksCacheErr {

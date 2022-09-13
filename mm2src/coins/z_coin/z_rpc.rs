@@ -69,12 +69,21 @@ pub trait ZRpcOps {
 }
 
 #[async_trait]
-impl ZRpcOps for CompactTxStreamerClient<Channel> {
+impl ZRpcOps for Vec<CompactTxStreamerClient<Channel>> {
     async fn get_block_height(&mut self) -> Result<u64, MmError<UpdateBlocksCacheErr>> {
-        let request = tonic::Request::new(ChainSpec {});
-        let block = self.get_latest_block(request).await?;
-        let res = block.into_inner().height;
-        Ok(res)
+        let mut errors = Vec::new();
+        for client in self {
+            let request = tonic::Request::new(ChainSpec {});
+            match client.get_latest_block(request).await {
+                Ok(block) => return Ok(block.into_inner().height),
+                Err(err) => {
+                    errors.push(err);
+                    continue;
+                },
+            };
+        }
+        drop_mutability!(errors);
+        Err(format_tonic_error(&errors))
     }
 
     async fn scan_blocks(
@@ -370,12 +379,22 @@ pub(super) async fn init_light_client(
 ) -> Result<(AsyncMutex<SaplingSyncConnector>, WalletDbShared), MmError<ZcoinClientInitError>> {
     let (sync_status_notifier, sync_watcher) = channel(1);
     let (on_tx_gen_notifier, on_tx_gen_watcher) = channel(1);
-
-    let lightwalletd_url = Uri::from_str(
-        lightwalletd_urls
-            .first()
-            .or_mm_err(|| ZcoinClientInitError::EmptyLightwalletdUris)?,
-    )?;
+    let mut rpc_clients = Vec::new();
+    if !lightwalletd_urls.is_empty() {
+        for url in lightwalletd_urls {
+            let uri = Uri::from_str(&*url)?;
+            let tonic_channel = Channel::builder(uri)
+                .tls_config(ClientTlsConfig::new())
+                .map_to_mm(ZcoinClientInitError::TlsConfigFailure)?
+                .connect()
+                .await
+                .map_to_mm(ZcoinClientInitError::ConnectionFailure)?;
+            let rpc_copy = CompactTxStreamerClient::new(tonic_channel);
+            rpc_clients.push(rpc_copy);
+        }
+    } else {
+        return Err(MmError::from(ZcoinClientInitError::EmptyLightwalletdUris));
+    }
 
     let sync_handle = SaplingSyncLoopHandle {
         current_block: BlockHeight::from_u32(0),
@@ -387,14 +406,8 @@ pub(super) async fn init_light_client(
         watch_for_tx: None,
     };
 
-    let tonic_channel = Channel::builder(lightwalletd_url)
-        .tls_config(ClientTlsConfig::new())
-        .map_to_mm(ZcoinClientInitError::TlsConfigFailure)?
-        .connect()
-        .await
-        .map_to_mm(ZcoinClientInitError::ConnectionFailure)?;
-    let rpc_copy = CompactTxStreamerClient::new(tonic_channel);
-    let abort_handle = spawn_abortable(light_wallet_db_sync_loop(sync_handle, Box::new(rpc_copy)));
+    drop_mutability!(rpc_clients);
+    let abort_handle = spawn_abortable(light_wallet_db_sync_loop(sync_handle, Box::new(rpc_clients)));
 
     Ok((
         SaplingSyncConnector::new_mutex_wrapped(sync_watcher, on_tx_gen_notifier, abort_handle),
@@ -725,4 +738,10 @@ impl SaplingSyncConnector {
 pub(super) struct SaplingSyncGuard<'a> {
     pub(super) _connector_guard: AsyncMutexGuard<'a, SaplingSyncConnector>,
     pub(super) respawn_guard: SaplingSyncRespawnGuard,
+}
+
+fn format_tonic_error(errors: &[tonic::Status]) -> MmError<UpdateBlocksCacheErr> {
+    let errors: String = errors.iter().map(|e| format!("{:?}", e)).collect();
+    let error = format!("tonic request failed: {}", errors);
+    MmError::from(UpdateBlocksCacheErr::GrpcError(error))
 }
