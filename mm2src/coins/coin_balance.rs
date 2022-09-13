@@ -1,9 +1,8 @@
 use crate::hd_pubkey::HDXPubExtractor;
-use crate::hd_wallet::{HDWalletCoinOps, NewAccountCreatingError, NewAddressDerivingError};
+use crate::hd_wallet::{HDAddressId, HDWalletCoinOps, NewAccountCreatingError, NewAddressDerivingError};
 use crate::{BalanceError, BalanceResult, CoinBalance, CoinWithDerivationMethod, DerivationMethod, HDAddress,
             MarketCoinOps};
 use async_trait::async_trait;
-use common::custom_iter::TryUnzip;
 use common::log::{debug, info};
 use crypto::{Bip44Chain, RpcDerivationPath};
 use futures::compat::Future01CompatExt;
@@ -179,18 +178,21 @@ pub trait HDWalletBalanceOps: HDWalletCoinOps {
         Self::Address: fmt::Display + Clone,
         Ids: Iterator<Item = u32> + Send,
     {
-        let (addresses, der_paths) = address_ids
+        let address_ids = address_ids.map(|address_id| HDAddressId { chain, address_id });
+
+        // Derive HD addresses and split addresses and their derivation paths into two collections.
+        let (addresses, der_paths): (Vec<_>, Vec<_>) = self
+            .derive_addresses(hd_account, address_ids)
+            .await?
             .into_iter()
-            .map(|address_id| -> BalanceResult<_> {
-                let HDAddress {
-                    address,
-                    derivation_path,
-                    ..
-                } = self.derive_address(hd_account, chain, address_id)?;
-                Ok((address, derivation_path))
-            })
-            // Try to unzip `Result<(Address, DerivationPath)>` elements into `Result<(Vec<Address>, Vec<DerivationPath>)>`.
-            .try_unzip::<Vec<_>, Vec<_>>()?;
+            .map(
+                |HDAddress {
+                     address,
+                     derivation_path,
+                     ..
+                 }| (address, derivation_path),
+            )
+            .unzip();
 
         let balances = self
             .known_addresses_balances(addresses)

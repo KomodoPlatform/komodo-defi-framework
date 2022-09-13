@@ -81,6 +81,7 @@ impl From<NewAddressDerivingError> for GetNewAddressRpcError {
             NewAddressDerivingError::WalletStorageError(storage) => {
                 GetNewAddressRpcError::WalletStorageError(storage.to_string())
             },
+            NewAddressDerivingError::Internal(internal) => GetNewAddressRpcError::Internal(internal),
         }
     }
 }
@@ -89,6 +90,7 @@ impl From<AddressDerivingError> for GetNewAddressRpcError {
     fn from(e: AddressDerivingError) -> Self {
         match e {
             AddressDerivingError::Bip32Error(bip32) => GetNewAddressRpcError::ErrorDerivingAddress(bip32.to_string()),
+            AddressDerivingError::Internal(internal) => GetNewAddressRpcError::Internal(internal),
         }
     }
 }
@@ -233,7 +235,7 @@ pub mod common_impl {
         let last_address_id = known_addresses_number - 1;
 
         for address_id in (0..=last_address_id).rev() {
-            let HDAddress { address, .. } = coin.derive_address(hd_account, chain, address_id)?;
+            let HDAddress { address, .. } = coin.derive_address(hd_account, chain, address_id).await?;
             if address_scanner.is_address_used(&address).await? {
                 return Ok(());
             }
