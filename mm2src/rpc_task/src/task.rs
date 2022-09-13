@@ -15,5 +15,8 @@ pub trait RpcTaskTypes {
 pub trait RpcTask: RpcTaskTypes + Sized + Send + 'static {
     fn initial_status(&self) -> Self::InProgressStatus;
 
-    async fn run(self, task_handle: &RpcTaskHandle<Self>) -> Result<Self::Item, MmError<Self::Error>>;
+    /// The method is invoked when the task has been cancelled.
+    async fn cancel(self);
+
+    async fn run(&mut self, task_handle: &RpcTaskHandle<Self>) -> Result<Self::Item, MmError<Self::Error>>;
 }

@@ -1,4 +1,5 @@
 use crate::response_processor::{TrezorProcessingError, TrezorRequestProcessor};
+use crate::user_interaction::TrezorPassphraseResponse;
 use crate::TrezorPinMatrix3x3Response;
 use async_trait::async_trait;
 use mm2_err_handle::prelude::*;
@@ -7,25 +8,40 @@ use std::time::Duration;
 
 pub use rpc_task::{RpcTask, RpcTaskError, RpcTaskHandle};
 
-const DEFAULT_PIN_REQUEST_TIMEOUT: Duration = Duration::from_secs(300);
+const DEFAULT_USER_ACTION_TIMEOUT: Duration = Duration::from_secs(300);
+
+pub trait TryIntoUserAction:
+    TryInto<TrezorPinMatrix3x3Response, Error = RpcTaskError>
+    + TryInto<TrezorPassphraseResponse, Error = RpcTaskError>
+    + Send
+{
+}
+
+impl<T> TryIntoUserAction for T where
+    T: TryInto<TrezorPinMatrix3x3Response, Error = RpcTaskError>
+        + TryInto<TrezorPassphraseResponse, Error = RpcTaskError>
+        + Send
+{
+}
 
 pub struct TrezorRequestStatuses<InProgressStatus, AwaitingStatus> {
     pub on_button_request: InProgressStatus,
     pub on_pin_request: AwaitingStatus,
+    pub on_passphrase_request: AwaitingStatus,
     pub on_ready: InProgressStatus,
 }
 
 pub struct TrezorRpcTaskProcessor<'a, Task: RpcTask> {
     task_handle: &'a RpcTaskHandle<Task>,
     statuses: TrezorRequestStatuses<Task::InProgressStatus, Task::AwaitingStatus>,
-    pin_timeout: Duration,
+    user_action_timeout: Duration,
 }
 
 #[async_trait]
 impl<'a, Task> TrezorRequestProcessor for TrezorRpcTaskProcessor<'a, Task>
 where
     Task: RpcTask,
-    Task::UserAction: TryInto<TrezorPinMatrix3x3Response, Error = RpcTaskError> + Send,
+    Task::UserAction: TryIntoUserAction + Send,
 {
     type Error = RpcTaskError;
 
@@ -36,13 +52,25 @@ where
     async fn on_pin_request(&self) -> MmResult<TrezorPinMatrix3x3Response, TrezorProcessingError<RpcTaskError>> {
         let user_action = self
             .task_handle
-            .wait_for_user_action(self.pin_timeout, self.statuses.on_pin_request.clone())
+            .wait_for_user_action(self.user_action_timeout, self.statuses.on_pin_request.clone())
             .await
             .mm_err(TrezorProcessingError::ProcessorError)?;
         let pin_response: TrezorPinMatrix3x3Response = user_action
             .try_into()
             .map_to_mm(TrezorProcessingError::ProcessorError)?;
         Ok(pin_response)
+    }
+
+    async fn on_passphrase_request(&self) -> MmResult<TrezorPassphraseResponse, TrezorProcessingError<Self::Error>> {
+        let user_action = self
+            .task_handle
+            .wait_for_user_action(self.user_action_timeout, self.statuses.on_passphrase_request.clone())
+            .await
+            .mm_err(TrezorProcessingError::ProcessorError)?;
+        let passphrase_response: TrezorPassphraseResponse = user_action
+            .try_into()
+            .map_to_mm(TrezorProcessingError::ProcessorError)?;
+        Ok(passphrase_response)
     }
 
     async fn on_ready(&self) -> MmResult<(), TrezorProcessingError<RpcTaskError>> {
@@ -58,12 +86,12 @@ impl<'a, Task: RpcTask> TrezorRpcTaskProcessor<'a, Task> {
         TrezorRpcTaskProcessor {
             task_handle,
             statuses,
-            pin_timeout: DEFAULT_PIN_REQUEST_TIMEOUT,
+            user_action_timeout: DEFAULT_USER_ACTION_TIMEOUT,
         }
     }
 
-    pub fn with_pin_timeout(mut self, pin_timeout: Duration) -> Self {
-        self.pin_timeout = pin_timeout;
+    pub fn with_user_action_timeout(mut self, pin_timeout: Duration) -> Self {
+        self.user_action_timeout = pin_timeout;
         self
     }
 

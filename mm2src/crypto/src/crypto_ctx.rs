@@ -1,9 +1,9 @@
-use crate::hw_client::{HwError, HwProcessingError, TrezorConnectProcessor};
+use crate::hw_client::{HwDeviceInfo, HwProcessingError, HwPubkey, TrezorConnectProcessor};
 use crate::hw_ctx::{HardwareWalletArc, HardwareWalletCtx};
+use crate::hw_error::HwError;
 use crate::key_pair_ctx::IguanaArc;
 use crate::privkey::{key_pair_from_seed, PrivKeyError};
 use derive_more::Display;
-use hw_common::primitives::EcdsaCurve;
 use keys::Public as PublicKey;
 use mm2_core::mm_ctx::MmArc;
 use mm2_err_handle::prelude::*;
@@ -13,16 +13,6 @@ use std::ops::Deref;
 use std::sync::Arc;
 
 pub type CryptoInitResult<T> = Result<T, MmError<CryptoInitError>>;
-
-/// The derivation path generally consists of:
-/// `m/purpose'/coin_type'/account'/change/address_index`.
-/// For MarketMaker internal purposes, we decided to use a pubkey derived from the following path, where:
-/// * `coin_type = 141` - KMD coin;
-/// * `account = (2 ^ 31 - 1) = 2147483647` - latest available account index.
-///   This number is chosen so that it does not cross with real accounts;
-/// * `change = 0`, `address_index = 0` - nothing special.
-pub(crate) const MM2_INTERNAL_DERIVATION_PATH: &str = "m/44'/141'/2147483647/0/0";
-pub(crate) const MM2_INTERNAL_ECDSA_CURVE: EcdsaCurve = EcdsaCurve::Secp256k1;
 
 #[derive(Debug, Display)]
 pub enum CryptoInitError {
@@ -42,7 +32,10 @@ impl From<PrivKeyError> for CryptoInitError {
 #[derive(Debug)]
 pub enum HwCtxInitError<ProcessorError> {
     InitializingAlready,
-    InitializedAlready,
+    UnexpectedPubkey {
+        actual_pubkey: HwPubkey,
+        expected_pubkey: HwPubkey,
+    },
     HwError(HwError),
     ProcessorError(ProcessorError),
 }
@@ -127,29 +120,58 @@ impl CryptoCtx {
     pub async fn init_hw_ctx_with_trezor<Processor>(
         &self,
         processor: &Processor,
-    ) -> MmResult<HardwareWalletArc, HwCtxInitError<Processor::Error>>
+        expected_pubkey: Option<HwPubkey>,
+    ) -> MmResult<(HwDeviceInfo, HardwareWalletArc), HwCtxInitError<Processor::Error>>
     where
         Processor: TrezorConnectProcessor + Sync,
     {
         {
             let mut state = self.hw_ctx.write();
-            match state.deref() {
-                HardwareWalletCtxState::NotInitialized => (),
-                HardwareWalletCtxState::Initializing => return MmError::err(HwCtxInitError::InitializingAlready),
-                HardwareWalletCtxState::Ready(_) => return MmError::err(HwCtxInitError::InitializedAlready),
+            if let HardwareWalletCtxState::Initializing = state.deref() {
+                return MmError::err(HwCtxInitError::InitializingAlready);
             }
 
             *state = HardwareWalletCtxState::Initializing;
         }
 
-        let (res, new_state) = match HardwareWalletCtx::init_with_trezor(processor).await {
-            Ok(hw_ctx) => (Ok(hw_ctx.clone()), HardwareWalletCtxState::Ready(hw_ctx)),
-            Err(e) => (Err(e), HardwareWalletCtxState::NotInitialized),
+        let result = init_check_hw_ctx_with_trezor(processor, expected_pubkey).await;
+        let new_state = match result {
+            Ok((_, ref hw_ctx)) => HardwareWalletCtxState::Ready(hw_ctx.clone()),
+            Err(_) => HardwareWalletCtxState::NotInitialized,
         };
 
         *self.hw_ctx.write() = new_state;
-        res.mm_err(HwCtxInitError::from)
+        result.mm_err(HwCtxInitError::from)
     }
+
+    pub fn reset_hw_ctx(&self) {
+        let mut state = self.hw_ctx.write();
+        *state = HardwareWalletCtxState::NotInitialized;
+    }
+}
+
+async fn init_check_hw_ctx_with_trezor<Processor>(
+    processor: &Processor,
+    expected_pubkey: Option<HwPubkey>,
+) -> MmResult<(HwDeviceInfo, HardwareWalletArc), HwCtxInitError<Processor::Error>>
+where
+    Processor: TrezorConnectProcessor + Sync,
+{
+    let (hw_device_info, hw_ctx) = HardwareWalletCtx::init_with_trezor(processor).await?;
+    let expected_pubkey = match expected_pubkey {
+        Some(expected) => expected,
+        None => return Ok((hw_device_info, hw_ctx)),
+    };
+    let actual_pubkey = hw_ctx.hw_pubkey();
+
+    // Check whether the connected Trezor device has an expected pubkey.
+    if actual_pubkey != expected_pubkey {
+        return MmError::err(HwCtxInitError::UnexpectedPubkey {
+            actual_pubkey,
+            expected_pubkey,
+        });
+    }
+    Ok((hw_device_info, hw_ctx))
 }
 
 enum HardwareWalletCtxState {
