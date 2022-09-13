@@ -18,7 +18,7 @@ fn test_tendermint_activation_and_balance() {
     let conf = Mm2TestConf::seednode(ATOM_TEST_BALANCE_SEED, &coins);
     let mm = MarketMakerIt::start(conf.conf, conf.rpc_password, conf.local).unwrap();
 
-    let activation_result = block_on(enable_tendermint(&mm, ATOM_TICKER, ATOM_TENDERMINT_RPC_URLS));
+    let activation_result = block_on(enable_tendermint(&mm, ATOM_TICKER, &[], ATOM_TENDERMINT_RPC_URLS));
 
     let result: RpcV2Response<TendermintActivationResult> = json::from_value(activation_result).unwrap();
     assert_eq!(result.result.address, expected_address);
@@ -41,7 +41,7 @@ fn test_tendermint_withdraw() {
     let conf = Mm2TestConf::seednode(ATOM_TEST_WITHDRAW_SEED, &coins);
     let mm = MarketMakerIt::start(conf.conf, conf.rpc_password, conf.local).unwrap();
 
-    let activation_res = block_on(enable_tendermint(&mm, ATOM_TICKER, ATOM_TENDERMINT_RPC_URLS));
+    let activation_res = block_on(enable_tendermint(&mm, ATOM_TICKER, &[], ATOM_TENDERMINT_RPC_URLS));
     println!("Activation {}", json::to_string(&activation_res).unwrap());
 
     // just call withdraw without sending to check response correctness

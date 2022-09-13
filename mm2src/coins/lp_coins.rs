@@ -206,7 +206,7 @@ use rpc_command::{init_create_account::{CreateAccountTaskManager, CreateAccountT
                   init_withdraw::{WithdrawTaskManager, WithdrawTaskManagerShared}};
 
 pub mod tendermint;
-use tendermint::{TendermintCoin, TendermintFeeDetails, TendermintProtocolInfo};
+use tendermint::{TendermintCoin, TendermintFeeDetails, TendermintIbcAsset, TendermintProtocolInfo};
 
 #[doc(hidden)]
 #[allow(unused_variables)]
@@ -1780,6 +1780,7 @@ pub enum MmCoinEnum {
     Bch(BchCoin),
     SlpToken(SlpToken),
     Tendermint(TendermintCoin),
+    TendermintIbc(TendermintIbcAsset),
     #[cfg(not(target_arch = "wasm32"))]
     SolanaCoin(SolanaCoin),
     #[cfg(not(target_arch = "wasm32"))]
@@ -1831,6 +1832,10 @@ impl From<TendermintCoin> for MmCoinEnum {
     fn from(c: TendermintCoin) -> Self { MmCoinEnum::Tendermint(c) }
 }
 
+impl From<TendermintIbcAsset> for MmCoinEnum {
+    fn from(c: TendermintIbcAsset) -> Self { MmCoinEnum::TendermintIbc(c) }
+}
+
 #[cfg(not(target_arch = "wasm32"))]
 impl From<LightningCoin> for MmCoinEnum {
     fn from(c: LightningCoin) -> MmCoinEnum { MmCoinEnum::LightningCoin(c) }
@@ -1853,6 +1858,7 @@ impl Deref for MmCoinEnum {
             MmCoinEnum::Bch(ref c) => c,
             MmCoinEnum::SlpToken(ref c) => c,
             MmCoinEnum::Tendermint(ref c) => c,
+            MmCoinEnum::TendermintIbc(ref c) => c,
             #[cfg(not(target_arch = "wasm32"))]
             MmCoinEnum::LightningCoin(ref c) => c,
             #[cfg(not(target_arch = "wasm32"))]

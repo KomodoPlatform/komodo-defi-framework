@@ -7530,3 +7530,4 @@ fn test_no_login() {
 }
 
 pub mod iris_swap_poc;
+pub mod tendermint_ibc_asset_tests;

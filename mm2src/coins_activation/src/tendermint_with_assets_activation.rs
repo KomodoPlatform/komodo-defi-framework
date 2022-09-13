@@ -1,10 +1,11 @@
 use crate::platform_coin_with_tokens::{EnablePlatformCoinWithTokensError, GetPlatformBalance,
-                                       PlatformWithTokensActivationOps, TokenAsMmCoinInitializer};
+                                       PlatformWithTokensActivationOps, RegisterTokenInfo, TokenAsMmCoinInitializer,
+                                       TokenOf};
 use crate::prelude::*;
 use async_trait::async_trait;
 use coins::my_tx_history_v2::TxHistoryStorage;
-use coins::tendermint::{TendermintActivationParams, TendermintCoin, TendermintInitError, TendermintInitErrorKind,
-                        TendermintProtocolInfo};
+use coins::tendermint::{TendermintActivationParams, TendermintCoin, TendermintIbcAsset, TendermintInitError,
+                        TendermintInitErrorKind, TendermintProtocolInfo};
 use coins::{CoinBalance, CoinProtocol, MarketCoinOps};
 use common::Future01CompatExt;
 use futures::future::AbortHandle;
@@ -14,6 +15,14 @@ use mm2_metrics::MetricsArc;
 use mm2_number::BigDecimal;
 use serde::Serialize;
 use serde_json::Value as Json;
+
+impl TokenOf for TendermintIbcAsset {
+    type PlatformCoin = TendermintCoin;
+}
+
+impl RegisterTokenInfo<TendermintIbcAsset> for TendermintCoin {
+    fn register_token_info(&self, token: &TendermintIbcAsset) { todo!() }
+}
 
 impl TxHistory for TendermintActivationParams {
     fn tx_history(&self) -> bool { false }

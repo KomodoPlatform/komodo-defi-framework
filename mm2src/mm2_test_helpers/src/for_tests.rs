@@ -277,6 +277,35 @@ pub fn atom_testnet_conf() -> Json {
     })
 }
 
+pub fn iris_testnet_conf() -> Json {
+    json!({
+        "coin":"IRIS-TEST",
+        "protocol":{
+            "type":"TENDERMINT",
+            "protocol_data": {
+                "decimals": 6,
+                "denom": "unyan",
+                "account_prefix": "iaa",
+                "chain_id": "nyancat-9",
+            },
+        }
+    })
+}
+
+pub fn usdc_ibc_iris_testnet_conf() -> Json {
+    json!({
+        "coin":"USDC-IBC-IRIS",
+        "protocol":{
+            "type":"TENDERMINT-IBC",
+            "protocol_data": {
+                "platform": "IRIS-TEST",
+                "decimals": 6,
+                "denom": "ibc/5C465997B4F582F602CD64E12031C6A6E18CAF1E6EDC9B5D808822DC0B5F850C",
+            },
+        }
+    })
+}
+
 #[cfg(target_arch = "wasm32")]
 pub fn mm_ctx_with_custom_db() -> MmArc { MmCtxBuilder::new().with_test_db_namespace().into_mm_arc() }
 
@@ -1655,7 +1684,7 @@ pub async fn my_balance(mm: &MarketMakerIt, coin: &str) -> Json {
     json::from_str(&request.1).unwrap()
 }
 
-pub async fn enable_tendermint(mm: &MarketMakerIt, coin: &str, rpc_urls: &[&str]) -> Json {
+pub async fn enable_tendermint(mm: &MarketMakerIt, coin: &str, ibc_assets: &[&str], rpc_urls: &[&str]) -> Json {
     let request = mm
         .rpc(&json! ({
             "userpass": mm.userpass,
@@ -1663,6 +1692,7 @@ pub async fn enable_tendermint(mm: &MarketMakerIt, coin: &str, rpc_urls: &[&str]
             "mmrpc": "2.0",
             "params": {
                 "ticker": coin,
+                "ibc_assets_params": ibc_assets,
                 "rpc_urls": rpc_urls,
             }
         }))

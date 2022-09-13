@@ -95,11 +95,11 @@ pub async fn trade_base_rel_iris(
     .await
     .unwrap();
 
-    dbg!(enable_tendermint(&mm_bob, "IRIS-TEST", &["http://34.80.202.172:26657"]).await);
-    dbg!(enable_tendermint(&mm_bob, "IRIS-NIMDA", &["http://34.80.202.172:26657"]).await);
+    dbg!(enable_tendermint(&mm_bob, "IRIS-TEST", &[], &["http://34.80.202.172:26657"]).await);
+    dbg!(enable_tendermint(&mm_bob, "IRIS-NIMDA", &[], &["http://34.80.202.172:26657"]).await);
 
-    dbg!(enable_tendermint(&mm_alice, "IRIS-TEST", &["http://34.80.202.172:26657"]).await);
-    dbg!(enable_tendermint(&mm_alice, "IRIS-NIMDA", &["http://34.80.202.172:26657"]).await);
+    dbg!(enable_tendermint(&mm_alice, "IRIS-TEST", &[], &["http://34.80.202.172:26657"]).await);
+    dbg!(enable_tendermint(&mm_alice, "IRIS-NIMDA", &[], &["http://34.80.202.172:26657"]).await);
 
     for (base, rel) in pairs.iter() {
         log!("Issue bob {}/{} sell request", base, rel);
