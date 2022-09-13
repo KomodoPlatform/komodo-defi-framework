@@ -106,9 +106,23 @@ impl ZRpcOps for Vec<CompactTxStreamerClient<Channel>> {
             });
             match client.get_block_range(request).await {
                 Ok(response) => {
-                    while let Some(block) = response.get_mut().message().await? {
-                        debug!("Got block {:?}", block);
-                        on_block(block)?;
+                    loop {
+                        match response.get_mut().message().await {
+                            Ok(block) => {
+                                match block {
+                                    Some(block) => {
+                                        debug!("Got block {:?}", block);
+                                        // todo unwrap there
+                                        on_block(block)?
+                                    },
+                                    _ => continue,
+                                }
+                            },
+                            Err(err) => {
+                                errors.push(err);
+                                break;
+                            },
+                        }
                     }
                     return Ok(());
                 },
