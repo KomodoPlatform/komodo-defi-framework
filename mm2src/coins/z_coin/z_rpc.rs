@@ -104,29 +104,30 @@ impl ZRpcOps for Vec<CompactTxStreamerClient<Channel>> {
                     hash: Vec::new(),
                 }),
             });
-            match client.get_block_range(request).await {
-                Ok(mut response) => loop {
-                    match response.get_mut().message().await {
-                        Ok(block) => match block {
-                            Some(block) => {
-                                debug!("Got block {:?}", block);
-                                if let Err(err) = on_block(block) {
-                                    errors.push(format!("{:?}", err));
-                                    break;
-                                }
-                            },
-                            _ => return Ok(()),
-                        },
-                        Err(err) => {
-                            errors.push(format!("{:?}", err));
-                            break;
-                        },
-                    }
-                },
+            let mut response = match client.get_block_range(request).await {
+                Ok(response) => response,
                 Err(err) => {
                     errors.push(format!("{:?}", err));
                     continue;
                 },
+            };
+            loop {
+                match response.get_mut().message().await {
+                    Ok(block) => match block {
+                        Some(block) => {
+                            debug!("Got block {:?}", block);
+                            if let Err(err) = on_block(block) {
+                                errors.push(format!("{:?}", err));
+                                break;
+                            }
+                        },
+                        _ => return Ok(()),
+                    },
+                    Err(err) => {
+                        errors.push(format!("{:?}", err));
+                        break;
+                    },
+                }
             }
         }
         drop_mutability!(errors);
@@ -794,7 +795,7 @@ pub(super) struct SaplingSyncGuard<'a> {
 
 fn format_update_blocks_e(errors: Vec<String>) -> MmError<UpdateBlocksCacheErr> {
     let errors: String = errors.iter().map(|e| format!("{:?}", e)).collect();
-    let error = format!("Update blocks errors during client iteration: {}", errors);
+    let error = format!("Update blocks cache error during client iteration: {}", errors);
     MmError::from(UpdateBlocksCacheErr::ClientIterError(error))
 }
 
