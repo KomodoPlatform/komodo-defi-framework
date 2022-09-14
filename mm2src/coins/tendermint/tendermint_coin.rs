@@ -1053,9 +1053,9 @@ impl SwapOps for TendermintCoin {
         swap_contract_address: &Option<BytesJson>,
         swap_unique_data: &[u8],
     ) -> Box<dyn Future<Item = Option<TransactionEnum>, Error = String> + Send> {
-        let query: Query = format!("tm.event = 'Tx' AND tx.height = {}", search_from_block).parse().unwrap();
-
-        self.rpc_client.tx_search();
+        // TODO
+        // generate hashlock value and check if it's equal to fetched tx's hashlock
+        // let q: Query = "tx.height > $search_from_block AND tx.height < $current_block".parse().unwrap();
         let fut = async move { Ok(None) };
         Box::new(fut.boxed().compat())
     }
