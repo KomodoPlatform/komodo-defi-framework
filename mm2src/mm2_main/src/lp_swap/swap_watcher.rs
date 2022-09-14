@@ -1,5 +1,5 @@
-use super::{broadcast_p2p_tx_msg, lp_coinfind, tx_helper_topic, AtomicSwap, H256Json, LockedAmount, SwapsContext,
-            TransactionIdentifier, WAIT_CONFIRM_INTERVAL};
+use super::{broadcast_p2p_tx_msg, lp_coinfind, tx_helper_topic, H256Json, SwapsContext, TransactionIdentifier,
+            WAIT_CONFIRM_INTERVAL};
 use coins::{MmCoinEnum, WatcherValidatePaymentInput};
 use common::executor::spawn;
 use common::log;
@@ -331,22 +331,6 @@ impl Watcher {
             tx_ident,
         )]))
     }
-}
-
-impl AtomicSwap for Watcher {
-    fn locked_amount(&self) -> Vec<LockedAmount> { unimplemented!() }
-
-    #[inline]
-    fn uuid(&self) -> &Uuid { &self.uuid }
-
-    #[inline]
-    fn maker_coin(&self) -> &str { self.maker_coin.ticker() }
-
-    #[inline]
-    fn taker_coin(&self) -> &str { self.taker_coin.ticker() }
-
-    #[inline]
-    fn unique_swap_data(&self) -> Vec<u8> { unimplemented!() }
 }
 
 pub async fn run_watcher(swap: RunWatcherInput, ctx: MmArc) {
