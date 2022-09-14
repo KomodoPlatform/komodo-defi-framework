@@ -65,7 +65,6 @@ pub trait TokenAsMmCoinInitializer: Send + Sync {
 
 pub enum InitTokensAsMmCoinsError {
     TokenConfigIsNotFound(String),
-    InvalidPubkey(String),
     CouldNotFetchBalance(String),
     Internal(String),
     TokenProtocolParseError { ticker: String, error: String },
@@ -249,9 +248,7 @@ impl From<InitTokensAsMmCoinsError> for EnablePlatformCoinWithTokensError {
             InitTokensAsMmCoinsError::UnexpectedTokenProtocol { ticker, protocol } => {
                 EnablePlatformCoinWithTokensError::UnexpectedTokenProtocol { ticker, protocol }
             },
-            InitTokensAsMmCoinsError::InvalidPubkey(e) | InitTokensAsMmCoinsError::Internal(e) => {
-                EnablePlatformCoinWithTokensError::Internal(e)
-            },
+            InitTokensAsMmCoinsError::Internal(e) => EnablePlatformCoinWithTokensError::Internal(e),
             InitTokensAsMmCoinsError::CouldNotFetchBalance(e) => EnablePlatformCoinWithTokensError::Transport(e),
         }
     }

@@ -346,7 +346,7 @@ pub fn usdc_ibc_iris_testnet_conf() -> Json {
     json!({
         "coin":"USDC-IBC-IRIS",
         "protocol":{
-            "type":"TENDERMINT-IBC",
+            "type":"TENDERMINTIBC",
             "protocol_data": {
                 "platform": "IRIS-TEST",
                 "decimals": 6,
@@ -1735,6 +1735,8 @@ pub async fn my_balance(mm: &MarketMakerIt, coin: &str) -> Json {
 }
 
 pub async fn enable_tendermint(mm: &MarketMakerIt, coin: &str, ibc_assets: &[&str], rpc_urls: &[&str]) -> Json {
+    let ibc_requests: Vec<_> = ibc_assets.iter().map(|ticker| json!({ "ticker": ticker })).collect();
+
     let request = mm
         .rpc(&json! ({
             "userpass": mm.userpass,
@@ -1742,7 +1744,7 @@ pub async fn enable_tendermint(mm: &MarketMakerIt, coin: &str, ibc_assets: &[&st
             "mmrpc": "2.0",
             "params": {
                 "ticker": coin,
-                "ibc_assets_params": ibc_assets,
+                "ibc_assets_params": ibc_requests,
                 "rpc_urls": rpc_urls,
             }
         }))

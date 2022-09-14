@@ -9,17 +9,50 @@ use cosmrs::Denom;
 use futures01::Future;
 use keys::KeyPair;
 use mm2_core::mm_ctx::MmArc;
-use mm2_err_handle::mm_error::MmError;
+use mm2_err_handle::prelude::*;
 use mm2_number::MmNumber;
 use rpc::v1::types::Bytes as BytesJson;
 use serde_json::Value as Json;
+use std::str::FromStr;
 
 #[allow(dead_code)]
 #[derive(Clone)]
 pub struct TendermintIbcAsset {
+    pub ticker: String,
     platform_coin: TendermintCoin,
-    decimals: u8,
-    denom: Denom,
+    pub decimals: u8,
+    pub denom: Denom,
+}
+
+#[derive(Clone, Debug, Deserialize, Serialize)]
+pub struct IbcAssetProtocolInfo {
+    pub platform: String,
+    pub decimals: u8,
+    pub denom: String,
+}
+
+#[derive(Clone, Deserialize)]
+pub struct IbcAssetActivationParams {}
+
+pub enum IbcAssetInitError {
+    InvalidDenom(String),
+}
+
+impl TendermintIbcAsset {
+    pub fn new(
+        ticker: String,
+        platform_coin: TendermintCoin,
+        decimals: u8,
+        denom: String,
+    ) -> MmResult<Self, IbcAssetInitError> {
+        let denom = Denom::from_str(&denom).map_to_mm(|e| IbcAssetInitError::InvalidDenom(e.to_string()))?;
+        Ok(TendermintIbcAsset {
+            ticker,
+            platform_coin,
+            decimals,
+            denom,
+        })
+    }
 }
 
 #[async_trait]
@@ -159,7 +192,7 @@ impl SwapOps for TendermintIbcAsset {
 
 #[allow(unused_variables)]
 impl MarketCoinOps for TendermintIbcAsset {
-    fn ticker(&self) -> &str { todo!() }
+    fn ticker(&self) -> &str { &self.ticker }
 
     fn my_address(&self) -> Result<String, String> { todo!() }
 

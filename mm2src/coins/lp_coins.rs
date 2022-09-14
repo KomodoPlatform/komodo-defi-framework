@@ -208,7 +208,7 @@ use rpc_command::{init_account_balance::{AccountBalanceTaskManager, AccountBalan
                   init_withdraw::{WithdrawTaskManager, WithdrawTaskManagerShared}};
 
 pub mod tendermint;
-use tendermint::{TendermintCoin, TendermintFeeDetails, TendermintIbcAsset, TendermintProtocolInfo, CosmosTransaction};
+use tendermint::{CosmosTransaction, TendermintCoin, TendermintFeeDetails, TendermintIbcAsset, TendermintProtocolInfo};
 
 #[doc(hidden)]
 #[allow(unused_variables)]
@@ -239,6 +239,7 @@ use utxo::UtxoActivationParams;
 use utxo::{BlockchainNetwork, GenerateTxError, UtxoFeeDetails, UtxoTx};
 
 #[cfg(not(target_arch = "wasm32"))] pub mod z_coin;
+use crate::tendermint::IbcAssetProtocolInfo;
 #[cfg(not(target_arch = "wasm32"))] use z_coin::ZCoin;
 
 pub type BalanceResult<T> = Result<T, MmError<BalanceError>>;
@@ -2091,6 +2092,7 @@ pub enum CoinProtocol {
         slp_prefix: String,
     },
     TENDERMINT(TendermintProtocolInfo),
+    TENDERMINTIBC(IbcAssetProtocolInfo),
     #[cfg(not(target_arch = "wasm32"))]
     LIGHTNING {
         platform: String,
@@ -2350,6 +2352,7 @@ pub async fn lp_coininit(ctx: &MmArc, ticker: &str, req: &Json) -> Result<MmCoin
             token.into()
         },
         CoinProtocol::TENDERMINT { .. } => return ERR!("TENDERMINT protocol is not supported by lp_coininit"),
+        CoinProtocol::TENDERMINTIBC(_) => return ERR!("TENDERMINTIBC protocol is not supported by lp_coininit"),
         #[cfg(not(target_arch = "wasm32"))]
         CoinProtocol::ZHTLC { .. } => return ERR!("ZHTLC protocol is not supported by lp_coininit"),
         #[cfg(not(target_arch = "wasm32"))]
@@ -2914,6 +2917,9 @@ pub fn address_by_coin_conf_and_pubkey_str(
         CoinProtocol::TENDERMINT(protocol) => tendermint::account_id_from_ctx(ctx, &protocol.account_prefix)
             .map(|t| t.to_string())
             .map_err(|e| e.to_string()),
+        CoinProtocol::TENDERMINTIBC(_) => {
+            ERR!("address_by_coin_conf_and_pubkey_str is not implemented for TENDERMINTIBC yet!")
+        },
         #[cfg(not(target_arch = "wasm32"))]
         CoinProtocol::LIGHTNING { .. } => {
             ERR!("address_by_coin_conf_and_pubkey_str is not implemented for lightning protocol yet!")

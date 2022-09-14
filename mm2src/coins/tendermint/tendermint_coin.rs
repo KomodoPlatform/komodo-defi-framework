@@ -17,7 +17,8 @@ use common::{get_utc_timestamp, Future01CompatExt};
 use cosmrs::bank::MsgSend;
 use cosmrs::crypto::secp256k1::SigningKey;
 use cosmrs::proto::cosmos::auth::v1beta1::{BaseAccount, QueryAccountRequest, QueryAccountResponse};
-use cosmrs::proto::cosmos::bank::v1beta1::{QueryBalanceRequest, QueryBalanceResponse};
+use cosmrs::proto::cosmos::bank::v1beta1::{QueryAllBalancesRequest, QueryAllBalancesResponse, QueryBalanceRequest,
+                                           QueryBalanceResponse};
 use cosmrs::proto::cosmos::tx::v1beta1::TxRaw;
 use cosmrs::proto::ibc::applications::transfer::v1::MsgTransfer;
 use cosmrs::tendermint::abci::Path as AbciPath;
@@ -34,9 +35,11 @@ use mm2_core::mm_ctx::MmArc;
 use mm2_err_handle::prelude::*;
 use mm2_number::MmNumber;
 use num_traits::ToPrimitive;
+use parking_lot::Mutex;
 use prost::{DecodeError, Message};
 use rpc::v1::types::Bytes as BytesJson;
 use serde_json::Value as Json;
+use std::collections::HashMap;
 use std::convert::TryFrom;
 use std::ops::Deref;
 use std::str::FromStr;
@@ -61,9 +64,9 @@ pub struct TendermintProtocolInfo {
     chain_id: String,
 }
 
-#[derive(Clone, Deserialize)]
-pub struct TendermintActivationParams {
-    rpc_urls: Vec<String>,
+pub struct ActivatedIbcAssetInfo {
+    decimals: u8,
+    denom: Denom,
 }
 
 pub struct TendermintCoinImpl {
@@ -77,6 +80,7 @@ pub struct TendermintCoinImpl {
     denom: Denom,
     chain_id: ChainId,
     sequence_lock: AsyncMutex<()>,
+    ibc_assets_info: Mutex<HashMap<String, ActivatedIbcAssetInfo>>,
 }
 
 #[derive(Clone)]
@@ -188,10 +192,10 @@ impl TendermintCoin {
     pub async fn init(
         ticker: String,
         protocol_info: TendermintProtocolInfo,
-        activation_params: TendermintActivationParams,
+        rpc_urls: Vec<String>,
         priv_key: &[u8],
     ) -> MmResult<Self, TendermintInitError> {
-        if activation_params.rpc_urls.is_empty() {
+        if rpc_urls.is_empty() {
             return MmError::err(TendermintInitError {
                 ticker,
                 kind: TendermintInitErrorKind::EmptyRpcUrls,
@@ -205,11 +209,10 @@ impl TendermintCoin {
             })?;
 
         // TODO multiple rpc_urls support will be added on the next iteration
-        let rpc_client =
-            HttpClient::new(activation_params.rpc_urls[0].as_str()).map_to_mm(|e| TendermintInitError {
-                ticker: ticker.clone(),
-                kind: TendermintInitErrorKind::RpcClientInitError(e.to_string()),
-            })?;
+        let rpc_client = HttpClient::new(rpc_urls[0].as_str()).map_to_mm(|e| TendermintInitError {
+            ticker: ticker.clone(),
+            kind: TendermintInitErrorKind::RpcClientInitError(e.to_string()),
+        })?;
 
         let chain_id = ChainId::try_from(protocol_info.chain_id).map_to_mm(|e| TendermintInitError {
             ticker: ticker.clone(),
@@ -231,6 +234,7 @@ impl TendermintCoin {
             denom,
             chain_id,
             sequence_lock: AsyncMutex::new(()),
+            ibc_assets_info: Mutex::new(HashMap::new()),
         })))
     }
 
@@ -382,6 +386,12 @@ impl TendermintCoin {
         let auth_info = SignerInfo::single_direct(Some(signkey.public_key()), account_info.sequence).auth_info(fee);
         let sign_doc = SignDoc::new(&tx_body, &auth_info, &self.chain_id, account_info.account_number)?;
         sign_doc.sign(&signkey)
+    }
+
+    pub fn add_activated_ibc_asset_info(&self, ticker: String, decimals: u8, denom: Denom) {
+        self.ibc_assets_info
+            .lock()
+            .insert(ticker, ActivatedIbcAssetInfo { decimals, denom });
     }
 }
 

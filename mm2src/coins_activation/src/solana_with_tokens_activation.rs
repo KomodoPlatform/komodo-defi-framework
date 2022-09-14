@@ -146,7 +146,10 @@ impl TryFromCoinProtocol for SolanaProtocolInfo {
 impl From<SplTokenCreationError> for InitTokensAsMmCoinsError {
     fn from(error: SplTokenCreationError) -> Self {
         match error {
-            SplTokenCreationError::InvalidPubkey(e) => InitTokensAsMmCoinsError::InvalidPubkey(e),
+            SplTokenCreationError::InvalidPubkey(error) => InitTokensAsMmCoinsError::TokenProtocolParseError {
+                ticker: "".to_owned(),
+                error,
+            },
         }
     }
 }
