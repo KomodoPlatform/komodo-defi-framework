@@ -105,15 +105,15 @@ impl ZRpcOps for Vec<CompactTxStreamerClient<Channel>> {
                 }),
             });
             match client.get_block_range(request).await {
-                Ok(response) => {
+                Ok(mut response) => {
                     loop {
                         match response.get_mut().message().await {
                             Ok(block) => {
                                 match block {
                                     Some(block) => {
                                         debug!("Got block {:?}", block);
-                                        if let Err(err) = on_block(block) {
-                                            // todo mismatched error type with tonic vec
+                                        if let Err(_err) = on_block(block) {
+                                            // todo smth with mismatched error type
                                             break;
                                         }
                                     },
@@ -122,7 +122,6 @@ impl ZRpcOps for Vec<CompactTxStreamerClient<Channel>> {
                             },
                             Err(err) => {
                                 errors.push(err);
-                                // todo could it break cycle for
                                 break;
                             },
                         }
@@ -130,55 +129,40 @@ impl ZRpcOps for Vec<CompactTxStreamerClient<Channel>> {
                 },
                 Err(err) => {
                     errors.push(err);
-                    // todo do we need to continue
                     continue;
                 },
             }
         }
         drop_mutability!(errors);
         Err(format_tonic_error(&errors))
-        // let request = tonic::Request::new(BlockRange {
-        //     start: Some(BlockId {
-        //         height: start_block,
-        //         hash: Vec::new(),
-        //     }),
-        //     end: Some(BlockId {
-        //         height: last_block,
-        //         hash: Vec::new(),
-        //     }),
-        // });
-        // let mut response = self.get_block_range(request).await?;
-        // while let Some(block) = response.get_mut().message().await? {
-        //     debug!("Got block {:?}", block);
-        //     on_block(block)?;
-        // }
-        // Ok(())
     }
 
     async fn check_tx_existence(&mut self, tx_id: TxId) -> bool {
-        let mut attempts = 0;
-        loop {
-            let filter = TxFilter {
-                block: None,
-                index: 0,
-                hash: tx_id.0.into(),
-            };
-            let request = tonic::Request::new(filter);
-            match self.get_transaction(request).await {
-                Ok(_) => break,
-                Err(e) => {
-                    error!("Error on getting tx {}", tx_id);
-                    if e.message().contains(NO_TX_ERROR_CODE) {
-                        if attempts >= 3 {
-                            return false;
+        for client in self {
+            let mut attempts = 0;
+            loop {
+                let filter = TxFilter {
+                    block: None,
+                    index: 0,
+                    hash: tx_id.0.into(),
+                };
+                let request = tonic::Request::new(filter);
+                match client.get_transaction(request).await {
+                    Ok(_) => return true,
+                    Err(e) => {
+                        error!("Error on getting tx {}", tx_id);
+                        if e.message().contains(NO_TX_ERROR_CODE) {
+                            if attempts >= 3 {
+                                break;
+                            }
+                            attempts += 1;
                         }
-                        attempts += 1;
-                    }
-                    Timer::sleep(30.).await;
-                },
+                        Timer::sleep(30.).await;
+                    },
+                }
             }
         }
-        true
+        false
     }
 }
 
@@ -425,6 +409,7 @@ pub(super) async fn init_light_client(
     let (sync_status_notifier, sync_watcher) = channel(1);
     let (on_tx_gen_notifier, on_tx_gen_watcher) = channel(1);
     let mut rpc_clients = Vec::new();
+    // todo push errors in vec instead of immediate propagation. It destroys cycle.
     if !lightwalletd_urls.is_empty() {
         for url in lightwalletd_urls {
             let uri = Uri::from_str(&*url)?;
