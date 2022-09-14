@@ -1,11 +1,9 @@
-use super::swap_lock::{SwapLock, SwapLockOps};
 use super::{broadcast_p2p_tx_msg, lp_coinfind, tx_helper_topic, AtomicSwap, H256Json, LockedAmount, SwapsContext,
             TransactionIdentifier, WAIT_CONFIRM_INTERVAL};
 use coins::{MmCoinEnum, WatcherValidatePaymentInput};
 use common::executor::spawn;
-use common::executor::Timer;
 use common::log;
-use common::log::{error, info, warn};
+use common::log::{error, info};
 use futures::compat::Future01CompatExt;
 use futures::{select, FutureExt};
 use mm2_core::mm_ctx::MmArc;
@@ -354,48 +352,10 @@ impl AtomicSwap for Watcher {
 pub async fn run_watcher(swap: RunWatcherInput, ctx: MmArc) {
     let swap_ctx = SwapsContext::from_ctx(&ctx).unwrap();
     let uuid = swap.uuid().to_owned();
-    let mut attempts = 0;
-
-    let swap_lock = loop {
-        match SwapLock::lock(&ctx, uuid, 40.).await {
-            Ok(Some(l)) => break l,
-            Ok(None) => {
-                if attempts >= 1 {
-                    warn!(
-                        "Swap {} file lock is acquired by another process/thread, aborting",
-                        uuid
-                    );
-                    swap_ctx.taker_swap_watchers.lock().await.remove(&uuid);
-                    return;
-                } else {
-                    attempts += 1;
-                    Timer::sleep(40.).await;
-                }
-            },
-            Err(e) => {
-                error!("Swap {} file lock error: {}", uuid, e);
-                swap_ctx.taker_swap_watchers.lock().await.remove(&uuid);
-                return;
-            },
-        }
-    };
 
     let (swap, mut command) = match swap {
         RunWatcherInput::StartNew(swap) => (swap, WatcherCommand::Start),
     };
-
-    let mut touch_loop = Box::pin(
-        async move {
-            loop {
-                match swap_lock.touch().await {
-                    Ok(_) => (),
-                    Err(e) => warn!("Swap {} file lock error: {}", uuid, e),
-                };
-                Timer::sleep(30.).await;
-            }
-        }
-        .fuse(),
-    );
 
     let ctx = swap.ctx.clone();
     let mut status = ctx.log.status_handle();
@@ -438,10 +398,6 @@ pub async fn run_watcher(swap: RunWatcherInput, ctx: MmArc) {
         _shutdown = shutdown_fut => {
             swap_ctx.taker_swap_watchers.lock().await.remove(&uuid);
             info!("swap {} stopped!", swap_for_log.uuid)
-        },
-        _touch = touch_loop => {
-            swap_ctx.taker_swap_watchers.lock().await.remove(&uuid);
-            unreachable!("Touch loop can not stop!")
         },
     };
 }
