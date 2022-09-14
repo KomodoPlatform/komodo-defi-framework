@@ -1281,11 +1281,8 @@ impl TakerSwap {
                 &self.unique_swap_data()[..],
             );
 
-            let preimage_result = preimage_fut.compat().await;
-
             // If the watcher message can not be sent, the swap still continues
-            if preimage_result.is_ok() {
-                let preimage = preimage_result.unwrap();
+            if let Ok(preimage) = preimage_fut.compat().await {
                 preimage_hex = Some(preimage.tx_hex());
 
                 let watcher_data = self.create_watcher_data(transaction.tx_hex(), preimage.tx_hex());
@@ -1314,20 +1311,21 @@ impl TakerSwap {
 
     async fn wait_for_taker_payment_spend(&self) -> Result<(Option<TakerSwapCommand>, Vec<TakerSwapEvent>), String> {
         let tx_hex = self.r().taker_payment.as_ref().unwrap().tx_hex.0.clone();
-        let preimage_hex = self.r().taker_spends_maker_payment_preimage.clone();
         let mut watcher_broadcast_abort_handle = None;
-        if self.ctx.use_watchers() && preimage_hex.is_some() {
-            let watcher_data = self.create_watcher_data(tx_hex.clone(), preimage_hex.unwrap());
-            let swpmsg_watcher = SwapWatcherMsg::TakerSwapWatcherMsg(Box::new(watcher_data));
-            watcher_broadcast_abort_handle = Some(broadcast_swap_message_every(
-                self.ctx.clone(),
-                watcher_topic(&self.r().data.taker_coin),
-                swpmsg_watcher,
-                600.,
-                self.p2p_privkey,
-            ));
+        if self.ctx.use_watchers() {
+            let preimage_hex = self.r().taker_spends_maker_payment_preimage.clone();
+            if let Some(preimage_hex) = preimage_hex {
+                let watcher_data = self.create_watcher_data(tx_hex.clone(), preimage_hex);
+                let swpmsg_watcher = SwapWatcherMsg::TakerSwapWatcherMsg(Box::new(watcher_data));
+                watcher_broadcast_abort_handle = Some(broadcast_swap_message_every(
+                    self.ctx.clone(),
+                    watcher_topic(&self.r().data.taker_coin),
+                    swpmsg_watcher,
+                    600.,
+                    self.p2p_privkey,
+                ));
+            }
         }
-
         let msg = SwapMsg::TakerPayment(tx_hex);
         let send_abort_handle =
             broadcast_swap_message_every(self.ctx.clone(), swap_topic(&self.uuid), msg, 600., self.p2p_privkey);
@@ -1373,9 +1371,7 @@ impl TakerSwap {
             },
         };
         drop(send_abort_handle);
-        if watcher_broadcast_abort_handle.is_some() {
-            drop(watcher_broadcast_abort_handle.unwrap());
-        }
+        drop(watcher_broadcast_abort_handle);
         let tx_hash = tx.tx_hash();
         info!("Taker payment spend tx {:02x}", tx_hash);
         let tx_ident = TransactionIdentifier {

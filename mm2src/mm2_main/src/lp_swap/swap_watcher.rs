@@ -423,7 +423,9 @@ fn spawn_taker_swap_watcher(ctx: MmArc, watcher_data: TakerSwapWatcherData) {
         None => return,
     };
     // Return if taker/maker swap or watcher with the same uuid already exists
-    if swap_ctx.swap_msgs.lock().unwrap().contains_key(&watcher_data.uuid) || taker_swap_watchers.contains(&watcher_data.uuid) {
+    if swap_ctx.swap_msgs.lock().unwrap().contains_key(&watcher_data.uuid)
+        || taker_swap_watchers.contains(&watcher_data.uuid)
+    {
         return;
     }
     taker_swap_watchers.insert(watcher_data.uuid);
