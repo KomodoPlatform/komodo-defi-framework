@@ -749,11 +749,13 @@ impl SwapOps for TendermintCoin {
         swap_contract_address: &Option<BytesJson>,
         swap_unique_data: &[u8],
     ) -> TransactionFut {
-        let to = AccountId::new("iaa", taker_pub).unwrap();
+        // TODO
+        let to = AccountId::from_str("iaa1erfnkjsmalkwtvj44qnfr2drfzdt4n9ldh0kjv").unwrap();
 
         let base_denom: Denom = "unyan".parse().unwrap();
         let amount: cosmrs::Decimal = 1_u64.into();
 
+        let time_lock = time_lock as i64 - get_utc_timestamp();
         let create_htlc_tx = self
             .gen_create_htlc_tx(base_denom.clone(), &to, amount, secret_hash, time_lock as u64)
             .unwrap();
@@ -771,6 +773,7 @@ impl SwapOps for TendermintCoin {
                     timeout_height,
                 )
                 .unwrap();
+            println!("TIME LOCK IS {}", time_lock);
             let tx_id = coin
                 .send_raw_tx_bytes(&tx_raw.to_bytes().unwrap())
                 .compat()
@@ -795,11 +798,13 @@ impl SwapOps for TendermintCoin {
         swap_contract_address: &Option<BytesJson>,
         swap_unique_data: &[u8],
     ) -> TransactionFut {
-        let to = AccountId::new("iaa", maker_pub).unwrap();
+        // TODO
+        let to = AccountId::from_str("iaa1e0rx87mdj79zejewuc4jg7ql9ud2286g2us8f2").unwrap();
 
         let base_denom: Denom = "unyan".parse().unwrap();
         let amount: cosmrs::Decimal = 1_u64.into();
 
+        let time_lock = time_lock as i64 - get_utc_timestamp();
         let create_htlc_tx = self
             .gen_create_htlc_tx(base_denom.clone(), &to, amount, secret_hash, time_lock as u64)
             .unwrap();
@@ -912,7 +917,8 @@ impl SwapOps for TendermintCoin {
         swap_contract_address: &Option<BytesJson>,
         swap_unique_data: &[u8],
     ) -> Box<dyn Future<Item = Option<TransactionEnum>, Error = String> + Send> {
-        todo!()
+        let fut = async move { Ok(None) };
+        Box::new(fut.boxed().compat())
     }
 
     async fn search_for_swap_tx_spend_my(

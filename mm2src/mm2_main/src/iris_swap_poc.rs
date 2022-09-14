@@ -181,7 +181,7 @@ pub async fn trade_base_rel_iris(
     }
 
     Timer::sleep(25.).await;
-    println!("{}", mm_bob.log_as_utf8().unwrap());
+    println!("{}", mm_alice.log_as_utf8().unwrap());
 
     // for uuid in uuids.iter() {
     //     mm_bob
