@@ -408,8 +408,13 @@ pub(super) async fn init_light_client(
     let mut errors = Vec::new();
     if !lightwalletd_urls.is_empty() {
         for url in lightwalletd_urls {
-            // todo unwrap match result for uri
-            let uri = Uri::from_str(&*url)?;
+            let uri = match Uri::from_str(&*url).map_to_mm(ZcoinClientInitError::InvalidUri) {
+                Ok(uri) => uri,
+                Err(err) => {
+                    errors.push(format!("{:?}", err));
+                    continue;
+                },
+            };
             match Channel::builder(uri)
                 .tls_config(ClientTlsConfig::new())
                 .map_to_mm(ZcoinClientInitError::TlsConfigFailure)
