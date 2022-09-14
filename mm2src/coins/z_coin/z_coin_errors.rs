@@ -46,6 +46,7 @@ impl From<JsonRpcError> for UpdateBlocksCacheErr {
 pub enum ZcoinClientInitError {
     TlsConfigFailure(tonic::transport::Error),
     ConnectionFailure(tonic::transport::Error),
+    BuildChannelFailure(String),
     BlocksDbInitFailure(SqliteError),
     WalletDbInitFailure(SqliteError),
     ZcashSqliteError(ZcashClientError),

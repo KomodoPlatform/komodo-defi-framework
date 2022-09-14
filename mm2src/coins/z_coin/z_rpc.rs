@@ -409,18 +409,32 @@ pub(super) async fn init_light_client(
     let (sync_status_notifier, sync_watcher) = channel(1);
     let (on_tx_gen_notifier, on_tx_gen_watcher) = channel(1);
     let mut rpc_clients = Vec::new();
-    // todo push errors in vec instead of immediate propagation. It destroys cycle.
+    let mut errors = Vec::new();
     if !lightwalletd_urls.is_empty() {
         for url in lightwalletd_urls {
+            // todo unwrap match result for uri
             let uri = Uri::from_str(&*url)?;
-            let tonic_channel = Channel::builder(uri)
-                .tls_config(ClientTlsConfig::new())
-                .map_to_mm(ZcoinClientInitError::TlsConfigFailure)?
-                .connect()
-                .await
-                .map_to_mm(ZcoinClientInitError::ConnectionFailure)?;
-            let rpc_copy = CompactTxStreamerClient::new(tonic_channel);
-            rpc_clients.push(rpc_copy);
+            match Channel::builder(uri).tls_config(ClientTlsConfig::new()) {
+                Ok(endpoint) => match endpoint.connect().await {
+                    Ok(tonic_channel) => {
+                        let rpc_copy = CompactTxStreamerClient::new(tonic_channel);
+                        rpc_clients.push(rpc_copy);
+                    },
+                    Err(err) => {
+                        errors.push(err);
+                        continue;
+                    },
+                },
+                Err(err) => {
+                    errors.push(err);
+                    continue;
+                },
+            };
+        }
+        drop_mutability!(errors);
+        // check if rpc_clients is empty, then for loop wasnt successful
+        if rpc_clients.is_empty() {
+            return Err(format_channel_error(&errors));
         }
     } else {
         return Err(MmError::from(ZcoinClientInitError::EmptyLightwalletdUris));
@@ -774,4 +788,10 @@ fn format_tonic_error(errors: &[tonic::Status]) -> MmError<UpdateBlocksCacheErr>
     let errors: String = errors.iter().map(|e| format!("{:?}", e)).collect();
     let error = format!("tonic request failed: {}", errors);
     MmError::from(UpdateBlocksCacheErr::GrpcError(error))
+}
+
+fn format_channel_error(errors: &[tonic::transport::Error]) -> MmError<ZcoinClientInitError> {
+    let errors: String = errors.iter().map(|e| format!("{:?}", e)).collect();
+    let error = format!("tonic request failed: {}", errors);
+    MmError::from(ZcoinClientInitError::BuildChannelFailure(error))
 }
