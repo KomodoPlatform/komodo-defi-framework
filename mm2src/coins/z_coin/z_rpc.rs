@@ -83,7 +83,7 @@ impl ZRpcOps for Vec<CompactTxStreamerClient<Channel>> {
             };
         }
         drop_mutability!(errors);
-        Err(format_update_blocks_e(&errors))
+        Err(format_update_blocks_e(errors))
     }
 
     async fn scan_blocks(
@@ -130,7 +130,7 @@ impl ZRpcOps for Vec<CompactTxStreamerClient<Channel>> {
             }
         }
         drop_mutability!(errors);
-        Err(format_update_blocks_e(&errors))
+        Err(format_update_blocks_e(errors))
     }
 
     async fn check_tx_existence(&mut self, tx_id: TxId) -> bool {
@@ -415,34 +415,34 @@ pub(super) async fn init_light_client(
                     continue;
                 },
             };
-            match Channel::builder(uri)
+            let endpoint = match Channel::builder(uri)
                 .tls_config(ClientTlsConfig::new())
                 .map_to_mm(ZcoinClientInitError::TlsConfigFailure)
             {
-                Ok(endpoint) => match endpoint
-                    .connect()
-                    .await
-                    .map_to_mm(ZcoinClientInitError::ConnectionFailure)
-                {
-                    Ok(tonic_channel) => {
-                        let rpc_copy = CompactTxStreamerClient::new(tonic_channel);
-                        rpc_clients.push(rpc_copy);
-                    },
-                    Err(err) => {
-                        errors.push(format!("{:?}", err));
-                        continue;
-                    },
-                },
+                Ok(endpoint) => endpoint,
                 Err(err) => {
                     errors.push(format!("{:?}", err));
                     continue;
                 },
             };
+            let tonic_channel = match endpoint
+                .connect()
+                .await
+                .map_to_mm(ZcoinClientInitError::ConnectionFailure)
+            {
+                Ok(tonic_channel) => tonic_channel,
+                Err(err) => {
+                    errors.push(format!("{:?}", err));
+                    continue;
+                },
+            };
+            let rpc_copy = CompactTxStreamerClient::new(tonic_channel);
+            rpc_clients.push(rpc_copy);
         }
         drop_mutability!(errors);
         // check if rpc_clients is empty, then for loop wasnt successful
         if rpc_clients.is_empty() {
-            return Err(format_init_client_e(&errors));
+            return Err(format_init_client_e(errors));
         }
     } else {
         return Err(MmError::from(ZcoinClientInitError::EmptyLightwalletdUris));
@@ -792,13 +792,13 @@ pub(super) struct SaplingSyncGuard<'a> {
     pub(super) respawn_guard: SaplingSyncRespawnGuard,
 }
 
-fn format_update_blocks_e(errors: &[String]) -> MmError<UpdateBlocksCacheErr> {
+fn format_update_blocks_e(errors: Vec<String>) -> MmError<UpdateBlocksCacheErr> {
     let errors: String = errors.iter().map(|e| format!("{:?}", e)).collect();
     let error = format!("Update blocks errors during client iteration: {}", errors);
     MmError::from(UpdateBlocksCacheErr::ClientIterError(error))
 }
 
-fn format_init_client_e(errors: &[String]) -> MmError<ZcoinClientInitError> {
+fn format_init_client_e(errors: Vec<String>) -> MmError<ZcoinClientInitError> {
     let errors: String = errors.iter().map(|e| format!("{:?}", e)).collect();
     let error = format!("Init client failed during urls iteration: {}", errors);
     MmError::from(ZcoinClientInitError::UrlIterFailure(error))
