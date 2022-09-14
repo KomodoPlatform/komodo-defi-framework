@@ -361,8 +361,6 @@ pub async fn run_watcher(swap: RunWatcherInput, ctx: MmArc) {
     let mut status = ctx.log.status_handle();
     let uuid_str = swap.uuid.to_string();
     let running_swap = Arc::new(swap);
-    let weak_ref = Arc::downgrade(&running_swap);
-    swap_ctx.running_swaps.lock().unwrap().push(weak_ref);
     let shutdown_rx = swap_ctx.shutdown_rx.clone();
     let swap_for_log = running_swap.clone();
 
