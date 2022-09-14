@@ -22,6 +22,7 @@ use cosmrs::proto::cosmos::bank::v1beta1::{QueryAllBalancesRequest, QueryAllBala
                                            QueryBalanceResponse};
 use cosmrs::proto::cosmos::tx::v1beta1::TxRaw;
 use cosmrs::proto::ibc::applications::transfer::v1::MsgTransfer;
+use cosmrs::rpc::query::Query;
 use cosmrs::tendermint::abci::Path as AbciPath;
 use cosmrs::tendermint::chain::Id as ChainId;
 use cosmrs::tx::{self, Fee, Msg, Raw, SignDoc, SignerInfo};
@@ -863,7 +864,66 @@ impl SwapOps for TendermintCoin {
         swap_contract_address: &Option<BytesJson>,
         swap_unique_data: &[u8],
     ) -> TransactionFut {
-        todo!()
+        let tx = cosmrs::Tx::from_bytes(taker_payment_tx).unwrap();
+        let msg = tx.body.messages.first().unwrap();
+        let htlc_proto: crate::tendermint::htlc_proto::CreateHtlcProtoRep =
+            prost::Message::decode(msg.value.as_slice()).unwrap();
+        let htlc = MsgCreateHtlc::try_from(htlc_proto).unwrap();
+
+        let mut hash_lock_hash = vec![];
+        hash_lock_hash.extend_from_slice(secret);
+        hash_lock_hash.extend_from_slice(&htlc.timestamp.to_be_bytes());
+        drop_mutability!(hash_lock_hash);
+
+        let mut amount = htlc.amount.clone();
+        amount.sort();
+        drop_mutability!(amount);
+
+        let coins_string = amount
+            .iter()
+            .map(|t| format!("{}{}", t.amount, t.denom))
+            .collect::<Vec<String>>()
+            .join(",");
+
+        let mut htlc_id = vec![];
+        htlc_id.extend_from_slice(sha256(&hash_lock_hash).as_slice());
+        htlc_id.extend_from_slice(&htlc.sender.to_bytes());
+        htlc_id.extend_from_slice(&htlc.to.to_bytes());
+        htlc_id.extend_from_slice(coins_string.as_bytes());
+        let htlc_id = sha256(&htlc_id).to_string().to_uppercase();
+
+        let base_denom: Denom = "unyan".parse().unwrap();
+        let claim_htlc_tx = self.gen_claim_htlc_tx(base_denom, htlc_id, secret).unwrap();
+        let coin = self.clone();
+
+        let fut = async move {
+            let current_block = coin.current_block().compat().await.unwrap();
+            let timeout_height = current_block + TIMEOUT_HEIGHT_DELTA;
+
+            let account_info = coin.my_account_info().await.unwrap();
+
+            let tx_raw = coin
+                .any_to_signed_raw_tx(
+                    account_info,
+                    claim_htlc_tx.msg_payload,
+                    claim_htlc_tx.fee,
+                    timeout_height,
+                )
+                .unwrap();
+
+            let tx_id = coin
+                .send_raw_tx_bytes(&tx_raw.to_bytes().unwrap())
+                .compat()
+                .await
+                .unwrap();
+
+            Ok(TransactionEnum::CosmosTransaction(CosmosTransaction {
+                txid: tx_id,
+                data: tx_raw.into(),
+            }))
+        };
+
+        Box::new(fut.boxed().compat())
     }
 
     fn send_taker_spends_maker_payment(
@@ -933,7 +993,6 @@ impl SwapOps for TendermintCoin {
                 data: tx_raw.into(),
             }))
         };
-        // println!("Created HTLC's ID -> {}", htlc_id);
 
         Box::new(fut.boxed().compat())
     }
@@ -994,6 +1053,9 @@ impl SwapOps for TendermintCoin {
         swap_contract_address: &Option<BytesJson>,
         swap_unique_data: &[u8],
     ) -> Box<dyn Future<Item = Option<TransactionEnum>, Error = String> + Send> {
+        let query: Query = format!("tm.event = 'Tx' AND tx.height = {}", search_from_block).parse().unwrap();
+
+        self.rpc_client.tx_search();
         let fut = async move { Ok(None) };
         Box::new(fut.boxed().compat())
     }

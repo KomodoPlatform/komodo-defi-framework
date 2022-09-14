@@ -180,23 +180,35 @@ pub async fn trade_base_rel_iris(
             .unwrap()
     }
 
-    Timer::sleep(45.).await;
-    println!("{}", mm_alice.log_as_utf8().unwrap());
+    Timer::sleep(55.).await;
     println!("{}", mm_bob.log_as_utf8().unwrap());
+    // println!("{}", mm_alice.log_as_utf8().unwrap());
 
     // for uuid in uuids.iter() {
-    //     mm_bob
+    //     match mm_bob
     //         .wait_for_log(900., |log| log.contains(&format!("[swap uuid={}] Finished", uuid)))
     //         .await
-    //         .unwrap();
+    //     {
+    //         Ok(_) => (),
+    //         Err(_) => {
+    //             println!("{}", mm_bob.log_as_utf8().unwrap());
+    //         },
+    //     }
 
-    //     mm_alice
+    //     match mm_alice
     //         .wait_for_log(900., |log| log.contains(&format!("[swap uuid={}] Finished", uuid)))
     //         .await
-    //         .unwrap();
+    //     {
+    //         Ok(_) => (),
+    //         Err(_) => {
+    //             println!("{}", mm_alice.log_as_utf8().unwrap());
+    //         },
+    //     }
 
     //     log!("Waiting a few second for the fresh swap status to be saved..");
+    //     Timer::sleep(5.).await;
 
+    //     println!("{}", mm_alice.log_as_utf8().unwrap());
     //     log!("Checking alice/taker status..");
     //     check_my_swap_status(
     //         &mm_alice,
@@ -208,6 +220,7 @@ pub async fn trade_base_rel_iris(
     //     )
     //     .await;
 
+    //     println!("{}", mm_bob.log_as_utf8().unwrap());
     //     log!("Checking bob/maker status..");
     //     check_my_swap_status(
     //         &mm_bob,
