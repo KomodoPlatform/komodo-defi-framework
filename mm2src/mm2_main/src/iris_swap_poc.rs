@@ -180,8 +180,9 @@ pub async fn trade_base_rel_iris(
             .unwrap()
     }
 
-    Timer::sleep(25.).await;
+    Timer::sleep(45.).await;
     println!("{}", mm_alice.log_as_utf8().unwrap());
+    println!("{}", mm_bob.log_as_utf8().unwrap());
 
     // for uuid in uuids.iter() {
     //     mm_bob

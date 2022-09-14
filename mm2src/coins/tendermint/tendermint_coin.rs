@@ -13,6 +13,7 @@ use crate::{big_decimal_from_sat_unsigned, BalanceError, BalanceFut, BigDecimal,
             WithdrawRequest};
 use async_trait::async_trait;
 use bitcrypto::{dhash256, sha256};
+use chain::hash::H256;
 use common::{get_utc_timestamp, Future01CompatExt};
 use cosmrs::bank::MsgSend;
 use cosmrs::crypto::secp256k1::SigningKey;
@@ -280,6 +281,10 @@ impl TendermintCoin {
         secret_hash: &[u8],
         time_lock: u64,
     ) -> MmResult<IrisHtlc, TxMarshalingErr> {
+        let mut secret = vec![];
+        secret.extend_from_slice(secret_hash);
+        secret.extend_from_slice(&[1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12]);
+        let secret_hash = secret.as_slice();
         let timestamp = get_utc_timestamp() as u64;
         let mut hash_lock_hash = vec![];
         hash_lock_hash.extend_from_slice(secret_hash);
@@ -867,15 +872,70 @@ impl SwapOps for TendermintCoin {
         time_lock: u32,
         maker_pub: &[u8],
         secret: &[u8],
-        swap_contract_address: &Option<BytesJson>,
-        swap_unique_data: &[u8],
+        _swap_contract_address: &Option<BytesJson>,
+        _swap_unique_data: &[u8],
     ) -> TransactionFut {
         let tx = cosmrs::Tx::from_bytes(maker_payment_tx).unwrap();
         let msg = tx.body.messages.first().unwrap();
-        let htlc: crate::tendermint::htlc_proto::CreateHtlcProtoRep =
+        let htlc_proto: crate::tendermint::htlc_proto::CreateHtlcProtoRep =
             prost::Message::decode(msg.value.as_slice()).unwrap();
-        println!("Created HTLC\n\n{:?}\n", htlc);
-        todo!()
+        let htlc = MsgCreateHtlc::try_from(htlc_proto).unwrap();
+
+        let mut hash_lock_hash = vec![];
+        hash_lock_hash.extend_from_slice(secret);
+        hash_lock_hash.extend_from_slice(&htlc.timestamp.to_be_bytes());
+        drop_mutability!(hash_lock_hash);
+
+        let mut amount = htlc.amount.clone();
+        amount.sort();
+        drop_mutability!(amount);
+
+        let coins_string = amount
+            .iter()
+            .map(|t| format!("{}{}", t.amount, t.denom))
+            .collect::<Vec<String>>()
+            .join(",");
+
+        let mut htlc_id = vec![];
+        htlc_id.extend_from_slice(sha256(&hash_lock_hash).as_slice());
+        htlc_id.extend_from_slice(&htlc.sender.to_bytes());
+        htlc_id.extend_from_slice(&htlc.to.to_bytes());
+        htlc_id.extend_from_slice(coins_string.as_bytes());
+        let htlc_id = sha256(&htlc_id).to_string().to_uppercase();
+
+        let base_denom: Denom = "unyan".parse().unwrap();
+        let claim_htlc_tx = self.gen_claim_htlc_tx(base_denom, htlc_id, secret).unwrap();
+        let coin = self.clone();
+
+        let fut = async move {
+            let current_block = coin.current_block().compat().await.unwrap();
+            let timeout_height = current_block + TIMEOUT_HEIGHT_DELTA;
+
+            let account_info = coin.my_account_info().await.unwrap();
+
+            let tx_raw = coin
+                .any_to_signed_raw_tx(
+                    account_info,
+                    claim_htlc_tx.msg_payload,
+                    claim_htlc_tx.fee,
+                    timeout_height,
+                )
+                .unwrap();
+
+            let tx_id = coin
+                .send_raw_tx_bytes(&tx_raw.to_bytes().unwrap())
+                .compat()
+                .await
+                .unwrap();
+
+            Ok(TransactionEnum::CosmosTransaction(CosmosTransaction {
+                txid: tx_id,
+                data: tx_raw.into(),
+            }))
+        };
+        // println!("Created HTLC's ID -> {}", htlc_id);
+
+        Box::new(fut.boxed().compat())
     }
 
     fn send_taker_refunds_payment(
@@ -952,8 +1012,22 @@ impl SwapOps for TendermintCoin {
         todo!()
     }
 
-    fn extract_secret(&self, secret_hash: &[u8], _spend_tx: &[u8]) -> Result<Vec<u8>, String> {
-        Ok(sha256(secret_hash).to_vec())
+    fn extract_secret(&self, secret_hash: &[u8], spend_tx: &[u8]) -> Result<Vec<u8>, String> {
+        let mut secret = vec![];
+        secret.extend_from_slice(secret_hash);
+        secret.extend_from_slice(&[1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12]);
+
+        // let tx = cosmrs::Tx::from_bytes(spend_tx).unwrap();
+        // let msg = tx.body.messages.first().unwrap();
+        // let htlc_proto: crate::tendermint::htlc_proto::CreateHtlcProtoRep =
+        //     prost::Message::decode(msg.value.as_slice()).unwrap();
+        // let htlc = MsgCreateHtlc::try_from(htlc_proto).unwrap();
+
+        // let mut hash_lock_hash = vec![];
+        // hash_lock_hash.extend_from_slice(secret_hash);
+        // hash_lock_hash.extend_from_slice(&htlc.timestamp.to_be_bytes());
+        // Ok(sha256(&hash_lock_hash).to_vec())
+        Ok(secret)
     }
 
     fn negotiate_swap_contract_addr(
@@ -1007,9 +1081,7 @@ mod tendermint_coin_tests {
 
     #[test]
     fn test_htlc_create_and_claim() {
-        let activation_request = TendermintActivationParams {
-            rpc_urls: vec![IRIS_TESTNET_RPC_URL.to_string()],
-        };
+        let rpc_urls = vec![IRIS_TESTNET_RPC_URL.to_string()];
 
         let protocol_conf = get_iris_usdc_ibc_protocol();
 
@@ -1022,7 +1094,7 @@ mod tendermint_coin_tests {
         let coin = common::block_on(TendermintCoin::init(
             "USDC-IBC".to_string(),
             protocol_conf,
-            activation_request,
+            rpc_urls,
             priv_key,
         ))
         .unwrap();
