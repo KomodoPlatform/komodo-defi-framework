@@ -406,7 +406,7 @@ impl SlpToken {
         let mut tx: UtxoTx = deserialize(input.payment_tx.as_slice())?;
         tx.tx_hash_algo = self.platform_coin.as_ref().tx_hash_algo;
         if tx.outputs.len() < 2 {
-            return MmError::err(ValidatePaymentError::InvalidPaymentTxData(
+            return MmError::err(ValidatePaymentError::TxDeserializationError(
                 "Not enough transaction output".to_string(),
             ));
         }
@@ -452,7 +452,7 @@ impl SlpToken {
                 }
             },
             _ => {
-                return MmError::err(ValidatePaymentError::InvalidPaymentTxData(
+                return MmError::err(ValidatePaymentError::WrongPaymentTx(
                     "Invalid Slp tx details".to_string(),
                 ))
             },
@@ -935,7 +935,7 @@ impl From<SerError> for ParseSlpScriptError {
 }
 
 impl From<ParseSlpScriptError> for ValidatePaymentError {
-    fn from(err: ParseSlpScriptError) -> Self { Self::InvalidPaymentTxData(err.to_string()) }
+    fn from(err: ParseSlpScriptError) -> Self { Self::TxDeserializationError(err.to_string()) }
 }
 
 pub fn parse_slp_script(script: &[u8]) -> Result<SlpTxDetails, MmError<ParseSlpScriptError>> {
@@ -2100,7 +2100,7 @@ mod slp_tests {
         };
         let validity_err = block_on(fusd.validate_htlc(input)).unwrap_err();
         match validity_err.into_inner() {
-            ValidatePaymentError::WrongPaymentTx(e) => println!("{:#?}", e),
+            ValidatePaymentError::TxDeserializationError(e) => println!("{:#?}", e),
             err @ _ => panic!("Unexpected err {:#?}", err),
         };
     }

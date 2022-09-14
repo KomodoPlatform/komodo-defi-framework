@@ -141,9 +141,9 @@ impl Qrc20Coin {
         let erc20_payment = self
             .erc20_payment_details_from_tx(&payment_tx)
             .await
-            .map_to_mm(ValidatePaymentError::InvalidPaymentTxData)?;
+            .map_to_mm(ValidatePaymentError::TxDeserializationError)?;
         if erc20_payment.contract_call_bytes != expected_call_bytes {
-            return MmError::err(ValidatePaymentError::InvalidPaymentTxData(format!(
+            return MmError::err(ValidatePaymentError::WrongPaymentTx(format!(
                 "Unexpected 'erc20Payment' contract call bytes: {:?}",
                 erc20_payment.contract_call_bytes
             )));

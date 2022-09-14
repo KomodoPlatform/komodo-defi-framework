@@ -10,7 +10,7 @@ pub type ValidatePaymentFut<T> = Box<dyn Future<Item = T, Error = MmError<Valida
 pub enum ValidatePaymentError {
     InternalError(String),
     // Problem with deserializing the transaction, or one of the transaction parts is invalid.
-    InvalidPaymentTxData(String),
+    TxDeserializationError(String),
     InvalidInput(String),
     InvalidRpcResponse(String),
     SPVError(SPVError),
@@ -21,7 +21,7 @@ pub enum ValidatePaymentError {
 }
 
 impl From<rlp::DecoderError> for ValidatePaymentError {
-    fn from(err: rlp::DecoderError) -> Self { Self::InvalidPaymentTxData(err.to_string()) }
+    fn from(err: rlp::DecoderError) -> Self { Self::TxDeserializationError(err.to_string()) }
 }
 
 impl From<web3::Error> for ValidatePaymentError {
@@ -37,7 +37,7 @@ impl From<SPVError> for ValidatePaymentError {
 }
 
 impl From<serialization::Error> for ValidatePaymentError {
-    fn from(err: serialization::Error) -> Self { Self::InvalidPaymentTxData(err.to_string()) }
+    fn from(err: serialization::Error) -> Self { Self::TxDeserializationError(err.to_string()) }
 }
 
 impl From<UnexpectedDerivationMethod> for ValidatePaymentError {

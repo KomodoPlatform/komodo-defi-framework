@@ -2681,9 +2681,9 @@ impl EthCoin {
         expected_swap_contract_address: Address,
     ) -> ValidatePaymentFut<()> {
         let unsigned: UnverifiedTransaction = try_f!(rlp::decode(payment_tx));
-        let tx = try_f!(
-            SignedEthTx::new(unsigned).map_to_mm(|err| ValidatePaymentError::InvalidPaymentTxData(err.to_string()))
-        );
+        let tx =
+            try_f!(SignedEthTx::new(unsigned)
+                .map_to_mm(|err| ValidatePaymentError::TxDeserializationError(err.to_string())));
         let sender = try_f!(addr_from_raw_pubkey(sender_pub).map_to_mm(ValidatePaymentError::InvalidInput));
         let expected_value = try_f!(wei_from_big_decimal(&amount, self.decimals));
         let selfi = self.clone();
@@ -2746,7 +2746,7 @@ impl EthCoin {
                         .map_to_mm(|err| ValidatePaymentError::InternalError(err.to_string()))?;
                     let decoded = function
                         .decode_input(&tx_from_rpc.input.0)
-                        .map_to_mm(|err| ValidatePaymentError::InvalidPaymentTxData(err.to_string()))?;
+                        .map_to_mm(|err| ValidatePaymentError::TxDeserializationError(err.to_string()))?;
                     if decoded[0] != Token::FixedBytes(swap_id.clone()) {
                         return MmError::err(ValidatePaymentError::WrongPaymentTx(format!(
                             "Invalid 'swap_id' {:?}, expected {:?}",
@@ -2794,7 +2794,7 @@ impl EthCoin {
                         .map_to_mm(|err| ValidatePaymentError::InternalError(err.to_string()))?;
                     let decoded = function
                         .decode_input(&tx_from_rpc.input.0)
-                        .map_to_mm(|err| ValidatePaymentError::InvalidPaymentTxData(err.to_string()))?;
+                        .map_to_mm(|err| ValidatePaymentError::TxDeserializationError(err.to_string()))?;
                     if decoded[0] != Token::FixedBytes(swap_id.clone()) {
                         return MmError::err(ValidatePaymentError::WrongPaymentTx(format!(
                             "Invalid 'swap_id' {:?}, expected {:?}",

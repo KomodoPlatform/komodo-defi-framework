@@ -420,7 +420,7 @@ impl From<ethabi::Error> for Qrc20AbiError {
 }
 
 impl From<Qrc20AbiError> for ValidatePaymentError {
-    fn from(e: Qrc20AbiError) -> ValidatePaymentError { ValidatePaymentError::InvalidPaymentTxData(e.to_string()) }
+    fn from(e: Qrc20AbiError) -> ValidatePaymentError { ValidatePaymentError::TxDeserializationError(e.to_string()) }
 }
 
 impl From<Qrc20AbiError> for GenerateTxError {

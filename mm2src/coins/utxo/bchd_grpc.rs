@@ -84,7 +84,7 @@ impl From<ValidateSlpUtxosErr> for ValidatePaymentError {
     fn from(err: ValidateSlpUtxosErr) -> Self {
         match err.kind {
             ValidateSlpUtxosErrKind::MultiReqErr(_) => Self::Transport(err.to_string()),
-            ValidateSlpUtxosErrKind::InvalidSlpTxData(_) => Self::WrongPaymentTx(err.to_string()),
+            ValidateSlpUtxosErrKind::InvalidSlpTxData(_) => Self::TxDeserializationError(err.to_string()),
             _ => Self::InvalidRpcResponse(err.to_string()),
         }
     }
@@ -93,7 +93,9 @@ impl From<ValidateSlpUtxosErr> for ValidatePaymentError {
 impl From<GrpcWebMultiUrlReqErr> for ValidateSlpUtxosErr {
     fn from(err: GrpcWebMultiUrlReqErr) -> Self {
         match err.err {
-            PostGrpcWebErr::DecodeBody(e) => ValidateSlpUtxosErr {
+            // For some reason, BCHD responds with empty payload (Which is mapped to PostGrpcWebErr::PayloadTooShort error) in cases where an invalid UTXO is used with grpc-web.
+            // while it does provide meaningful error response when use with gRPC HTTP2 TLS.
+            PostGrpcWebErr::PayloadTooShort(e) => ValidateSlpUtxosErr {
                 to_url: err.to_url.clone(),
                 kind: ValidateSlpUtxosErrKind::InvalidSlpTxData(e),
             },
