@@ -70,7 +70,7 @@ pub const MAKER_ERROR_EVENTS: [&str; 13] = [
     "MakerPaymentRefundFailed",
 ];
 
-pub const TAKER_SUCCESS_EVENTS: [&str; 11] = [
+pub const TAKER_SUCCESS_EVENTS: [&str; 10] = [
     "Started",
     "Negotiated",
     "TakerFeeSent",
@@ -78,7 +78,6 @@ pub const TAKER_SUCCESS_EVENTS: [&str; 11] = [
     "MakerPaymentWaitConfirmStarted",
     "MakerPaymentValidatedAndConfirmed",
     "TakerPaymentSent",
-    "WatcherMessageSent",
     "TakerPaymentSpent",
     "MakerPaymentSpent",
     "Finished",

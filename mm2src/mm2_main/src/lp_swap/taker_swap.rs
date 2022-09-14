@@ -36,7 +36,20 @@ use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::sync::{Arc, RwLock, RwLockReadGuard, RwLockWriteGuard};
 use uuid::Uuid;
 
-pub const TAKER_SUCCESS_EVENTS: [&str; 11] = [
+pub const TAKER_SUCCESS_EVENTS: [&str; 10] = [
+    "Started",
+    "Negotiated",
+    "TakerFeeSent",
+    "MakerPaymentReceived",
+    "MakerPaymentWaitConfirmStarted",
+    "MakerPaymentValidatedAndConfirmed",
+    "TakerPaymentSent",
+    "TakerPaymentSpent",
+    "MakerPaymentSpent",
+    "Finished",
+];
+
+pub const TAKER_USING_WATCHERS_SUCCESS_EVENTS: [&str; 11] = [
     "Started",
     "Negotiated",
     "TakerFeeSent",
@@ -87,7 +100,13 @@ async fn save_my_taker_swap_event(ctx: &MmArc, swap: &TakerSwap, event: TakerSav
             gui: ctx.gui().map(|g| g.to_owned()),
             mm_version: Some(MM_VERSION.to_owned()),
             events: vec![],
-            success_events: TAKER_SUCCESS_EVENTS.iter().map(|event| event.to_string()).collect(),
+            success_events: match ctx.use_watchers() {
+                true => TAKER_USING_WATCHERS_SUCCESS_EVENTS
+                    .iter()
+                    .map(|event| event.to_string())
+                    .collect(),
+                false => TAKER_SUCCESS_EVENTS.iter().map(|event| event.to_string()).collect(),
+            },
             error_events: TAKER_ERROR_EVENTS.iter().map(|event| event.to_string()).collect(),
         }),
         Err(e) => return ERR!("{}", e),
@@ -1271,7 +1290,14 @@ impl TakerSwap {
             },
         };
 
-        let mut preimage_hex = None;
+        let tx_hash = transaction.tx_hash();
+        info!("Taker payment tx hash {:02x}", tx_hash);
+        let tx_ident = TransactionIdentifier {
+            tx_hex: transaction.tx_hex().into(),
+            tx_hash,
+        };
+
+        let mut swap_events = vec![TakerSwapEvent::TakerPaymentSent(tx_ident)];
         if self.ctx.use_watchers() {
             let preimage_fut = self.taker_coin.create_taker_spends_maker_payment_preimage(
                 &self.r().maker_payment.as_ref().unwrap().tx_hex,
@@ -1283,7 +1309,7 @@ impl TakerSwap {
 
             // If the watcher message can not be sent, the swap still continues
             if let Ok(preimage) = preimage_fut.compat().await {
-                preimage_hex = Some(preimage.tx_hex());
+                let preimage_hex = Some(preimage.tx_hex());
 
                 let watcher_data = self.create_watcher_data(transaction.tx_hex(), preimage.tx_hex());
                 let swpmsg_watcher = SwapWatcherMsg::TakerSwapWatcherMsg(Box::new(watcher_data));
@@ -1293,20 +1319,11 @@ impl TakerSwap {
                     swpmsg_watcher,
                     &self.p2p_privkey,
                 );
+                swap_events.push(TakerSwapEvent::WatcherMessageSent(preimage_hex))
             }
         }
 
-        let tx_hash = transaction.tx_hash();
-        info!("Taker payment tx hash {:02x}", tx_hash);
-        let tx_ident = TransactionIdentifier {
-            tx_hex: transaction.tx_hex().into(),
-            tx_hash,
-        };
-
-        Ok((Some(TakerSwapCommand::WaitForTakerPaymentSpend), vec![
-            TakerSwapEvent::TakerPaymentSent(tx_ident),
-            TakerSwapEvent::WatcherMessageSent(preimage_hex),
-        ]))
+        Ok((Some(TakerSwapCommand::WaitForTakerPaymentSpend), swap_events))
     }
 
     async fn wait_for_taker_payment_spend(&self) -> Result<(Option<TakerSwapCommand>, Vec<TakerSwapEvent>), String> {
