@@ -649,9 +649,12 @@ impl MarketCoinOps for TendermintCoin {
         transaction: &[u8],
         wait_until: u64,
         from_block: u64,
-        swap_contract_address: &Option<BytesJson>,
+        _swap_contract_address: &Option<BytesJson>,
     ) -> TransactionFut {
-        todo!()
+        let coin = self.clone();
+        let tx = transaction.to_vec();
+        let fut = async move { Ok(coin.tx_enum_from_bytes(&tx).unwrap()) };
+        Box::new(fut.boxed().compat())
     }
 
     fn tx_enum_from_bytes(&self, bytes: &[u8]) -> Result<TransactionEnum, MmError<TxMarshalingErr>> {
@@ -773,7 +776,6 @@ impl SwapOps for TendermintCoin {
                     timeout_height,
                 )
                 .unwrap();
-            println!("TIME LOCK IS {}", time_lock);
             let tx_id = coin
                 .send_raw_tx_bytes(&tx_raw.to_bytes().unwrap())
                 .compat()
@@ -858,6 +860,11 @@ impl SwapOps for TendermintCoin {
         swap_contract_address: &Option<BytesJson>,
         swap_unique_data: &[u8],
     ) -> TransactionFut {
+        let tx = cosmrs::Tx::from_bytes(maker_payment_tx).unwrap();
+        let msg = tx.body.messages.first().unwrap();
+        let htlc: crate::tendermint::htlc_proto::CreateHtlcProtoRep =
+            prost::Message::decode(msg.value.as_slice()).unwrap();
+        println!("Created HTLC\n\n{:?}\n", htlc);
         todo!()
     }
 
@@ -935,7 +942,9 @@ impl SwapOps for TendermintCoin {
         todo!()
     }
 
-    fn extract_secret(&self, secret_hash: &[u8], spend_tx: &[u8]) -> Result<Vec<u8>, String> { todo!() }
+    fn extract_secret(&self, secret_hash: &[u8], _spend_tx: &[u8]) -> Result<Vec<u8>, String> {
+        Ok(sha256(secret_hash).to_vec())
+    }
 
     fn negotiate_swap_contract_addr(
         &self,
