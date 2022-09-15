@@ -264,9 +264,11 @@ impl MarketCoinOps for TendermintIbcAsset {
 
     fn display_priv_key(&self) -> Result<String, String> { self.platform_coin.display_priv_key() }
 
-    fn min_tx_amount(&self) -> BigDecimal { todo!() }
+    /// !! This function includes dummy implementation for P.O.C work
+    fn min_tx_amount(&self) -> BigDecimal { BigDecimal::from(0) }
 
-    fn min_trading_vol(&self) -> MmNumber { todo!() }
+    /// !! This function includes dummy implementation for P.O.C work
+    fn min_trading_vol(&self) -> MmNumber { MmNumber::from("0.00777") }
 }
 
 #[async_trait]
@@ -297,22 +299,36 @@ impl MmCoin for TendermintIbcAsset {
         value: TradePreimageValue,
         stage: FeeApproxStage,
     ) -> TradePreimageResult<TradeFee> {
-        todo!()
+        Ok(TradeFee {
+            coin: self.platform_coin.ticker().into(),
+            amount: "0.0002".into(),
+            paid_from_trading_vol: false,
+        })
     }
 
-    fn get_receiver_trade_fee(&self, stage: FeeApproxStage) -> TradePreimageFut<TradeFee> { todo!() }
+    fn get_receiver_trade_fee(&self, stage: FeeApproxStage) -> TradePreimageFut<TradeFee> {
+        Box::new(futures01::future::ok(TradeFee {
+            coin: self.platform_coin.ticker().into(),
+            amount: "0.0002".into(),
+            paid_from_trading_vol: false,
+        }))
+    }
 
     async fn get_fee_to_send_taker_fee(
         &self,
         dex_fee_amount: BigDecimal,
         stage: FeeApproxStage,
     ) -> TradePreimageResult<TradeFee> {
-        todo!()
+        Ok(TradeFee {
+            coin: self.platform_coin.ticker().into(),
+            amount: "0.0002".into(),
+            paid_from_trading_vol: false,
+        })
     }
 
-    fn required_confirmations(&self) -> u64 { todo!() }
+    fn required_confirmations(&self) -> u64 { self.platform_coin.required_confirmations() }
 
-    fn requires_notarization(&self) -> bool { todo!() }
+    fn requires_notarization(&self) -> bool { self.platform_coin.requires_notarization() }
 
     fn set_required_confirmations(&self, confirmations: u64) { todo!() }
 
@@ -322,7 +338,9 @@ impl MmCoin for TendermintIbcAsset {
 
     fn mature_confirmations(&self) -> Option<u32> { None }
 
-    fn coin_protocol_info(&self) -> Vec<u8> { todo!() }
+    fn coin_protocol_info(&self) -> Vec<u8> { self.platform_coin.coin_protocol_info() }
 
-    fn is_coin_protocol_supported(&self, info: &Option<Vec<u8>>) -> bool { todo!() }
+    fn is_coin_protocol_supported(&self, info: &Option<Vec<u8>>) -> bool {
+        self.platform_coin.is_coin_protocol_supported(info)
+    }
 }

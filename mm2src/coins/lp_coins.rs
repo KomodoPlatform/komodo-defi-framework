@@ -2914,11 +2914,24 @@ pub fn address_by_coin_conf_and_pubkey_str(
                 _ => ERR!("Platform protocol {:?} is not BCH", platform_protocol),
             }
         },
-        CoinProtocol::TENDERMINT(protocol) => tendermint::account_id_from_ctx(ctx, &protocol.account_prefix)
-            .map(|t| t.to_string())
+        CoinProtocol::TENDERMINT(protocol) => tendermint::account_id_from_pubkey_hex(&protocol.account_prefix, pubkey)
+            .map(|id| id.to_string())
             .map_err(|e| e.to_string()),
-        CoinProtocol::TENDERMINTIBC(_) => {
-            ERR!("address_by_coin_conf_and_pubkey_str is not implemented for TENDERMINTIBC yet!")
+        CoinProtocol::TENDERMINTIBC(proto) => {
+            let platform_conf = coin_conf(ctx, &proto.platform);
+            if platform_conf.is_null() {
+                return ERR!("platform {} conf is null", proto.platform);
+            }
+            // TODO is there any way to make it better without duplicating the prefix in the IBC conf?
+            let platform_protocol: CoinProtocol = try_s!(json::from_value(platform_conf["protocol"].clone()));
+            match platform_protocol {
+                CoinProtocol::TENDERMINT(platform) => {
+                    tendermint::account_id_from_pubkey_hex(&platform.account_prefix, pubkey)
+                        .map(|id| id.to_string())
+                        .map_err(|e| e.to_string())
+                },
+                _ => ERR!("Platform protocol {:?} is not TENDERMINT", platform_protocol),
+            }
         },
         #[cfg(not(target_arch = "wasm32"))]
         CoinProtocol::LIGHTNING { .. } => {

@@ -12,7 +12,7 @@ use crate::{big_decimal_from_sat_unsigned, BalanceError, BalanceFut, BigDecimal,
             ValidateAddressResult, ValidatePaymentInput, VerificationResult, WithdrawError, WithdrawFut,
             WithdrawRequest};
 use async_trait::async_trait;
-use bitcrypto::{dhash256, sha256};
+use bitcrypto::{dhash160, dhash256, sha256};
 use common::{get_utc_timestamp, Future01CompatExt};
 use cosmrs::bank::MsgSend;
 use cosmrs::crypto::secp256k1::SigningKey;
@@ -22,12 +22,13 @@ use cosmrs::proto::cosmos::tx::v1beta1::TxRaw;
 use cosmrs::tendermint::abci::Path as AbciPath;
 use cosmrs::tendermint::chain::Id as ChainId;
 use cosmrs::tx::{self, Fee, Msg, Raw, SignDoc, SignerInfo};
-use cosmrs::{AccountId, Any, Coin, Denom};
+use cosmrs::{AccountId, Any, Coin, Denom, ErrorReport};
 use crypto::privkey::{key_pair_from_secret, secp_privkey_from_hash};
 use derive_more::Display;
 use futures::lock::Mutex as AsyncMutex;
 use futures::{FutureExt, TryFutureExt};
 use futures01::Future;
+use hex::FromHexError;
 use keys::KeyPair;
 use mm2_core::mm_ctx::MmArc;
 use mm2_err_handle::prelude::*;
@@ -166,6 +167,26 @@ fn account_id_from_privkey(priv_key: &[u8], prefix: &str) -> MmResult<AccountId,
         .public_key()
         .account_id(prefix)
         .map_to_mm(|e| TendermintInitErrorKind::CouldNotGenerateAccountId(e.to_string()))
+}
+
+#[derive(Display)]
+pub(crate) enum AccountIdFromPubkeyHexErr {
+    InvalidHexString(FromHexError),
+    CouldNotCreateAccountId(ErrorReport),
+}
+
+impl From<FromHexError> for AccountIdFromPubkeyHexErr {
+    fn from(err: FromHexError) -> Self { AccountIdFromPubkeyHexErr::InvalidHexString(err) }
+}
+
+impl From<ErrorReport> for AccountIdFromPubkeyHexErr {
+    fn from(err: ErrorReport) -> Self { AccountIdFromPubkeyHexErr::CouldNotCreateAccountId(err) }
+}
+
+pub(crate) fn account_id_from_pubkey_hex(prefix: &str, pubkey: &str) -> MmResult<AccountId, AccountIdFromPubkeyHexErr> {
+    let pubkey_bytes = hex::decode(pubkey)?;
+    let pubkey_hash = dhash160(&pubkey_bytes);
+    Ok(AccountId::new(prefix, pubkey_hash.as_slice())?)
 }
 
 pub(crate) fn account_id_from_ctx(ctx: &MmArc, prefix: &str) -> MmResult<AccountId, TendermintInitErrorKind> {

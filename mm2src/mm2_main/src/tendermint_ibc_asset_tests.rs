@@ -1,5 +1,6 @@
 use super::*;
-use mm2_test_helpers::for_tests::{enable_tendermint, iris_testnet_conf, my_balance, usdc_ibc_iris_testnet_conf};
+use mm2_test_helpers::for_tests::{enable_tendermint, iris_testnet_conf, my_balance, orderbook, set_price,
+                                  usdc_ibc_iris_testnet_conf};
 
 const IRIS_TESTNET_RPCS: &[&str] = &["http://34.80.202.172:26657"];
 const IRIS_TICKER: &str = "IRIS-TEST";
@@ -7,7 +8,7 @@ const USDC_IBC_TICKER: &str = "USDC-IBC-IRIS";
 const IRIS_USDC_ACTIVATION_SEED: &str = "iris usdc activation";
 
 #[test]
-fn test_iris_with_usdc_activation_and_balance() {
+fn test_iris_with_usdc_activation_balance_orderbook() {
     let coins = json!([iris_testnet_conf(), usdc_ibc_iris_testnet_conf()]);
 
     let conf = Mm2TestConf::seednode(IRIS_USDC_ACTIVATION_SEED, &coins);
@@ -36,4 +37,21 @@ fn test_iris_with_usdc_activation_and_balance() {
     let usdc_balance_response = block_on(my_balance(&mm, USDC_IBC_TICKER));
     let actual_usdc_balance: MyBalanceResponse = json::from_value(usdc_balance_response).unwrap();
     assert_eq!(actual_usdc_balance.balance, expected_usdc_balance);
+
+    let set_price_res = block_on(set_price(&mm, USDC_IBC_TICKER, IRIS_TICKER, "1", "0.1"));
+    let set_price_res: SetPriceResponse = json::from_value(set_price_res).unwrap();
+    println!("{:?}", set_price_res);
+
+    let set_price_res = block_on(set_price(&mm, IRIS_TICKER, USDC_IBC_TICKER, "1", "0.1"));
+    let set_price_res: SetPriceResponse = json::from_value(set_price_res).unwrap();
+    println!("{:?}", set_price_res);
+
+    let orderbook = block_on(orderbook(&mm, USDC_IBC_TICKER, IRIS_TICKER));
+    let orderbook: OrderbookResponse = json::from_value(orderbook).unwrap();
+
+    let first_ask = orderbook.asks.first().unwrap();
+    assert_eq!(first_ask.address, expected_address);
+
+    let first_bid = orderbook.bids.first().unwrap();
+    assert_eq!(first_bid.address, expected_address);
 }

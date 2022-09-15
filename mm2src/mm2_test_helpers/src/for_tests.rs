@@ -1517,6 +1517,20 @@ pub async fn wait_till_history_has_records(mm: &MarketMakerIt, coin: &str, expec
     }
 }
 
+pub async fn orderbook(mm: &MarketMakerIt, base: &str, rel: &str) -> Json {
+    let request = mm
+        .rpc(&json!({
+            "userpass": mm.userpass,
+            "method": "orderbook",
+            "base": base,
+            "rel": rel,
+        }))
+        .await
+        .unwrap();
+    assert_eq!(request.0, StatusCode::OK, "'orderbook' failed: {}", request.1);
+    json::from_str(&request.1).unwrap()
+}
+
 pub async fn orderbook_v2(mm: &MarketMakerIt, base: &str, rel: &str) -> Json {
     let request = mm
         .rpc(&json! ({
@@ -1796,5 +1810,21 @@ pub async fn init_utxo_status(mm: &MarketMakerIt, task_id: u64) -> Json {
         .await
         .unwrap();
     assert_eq!(request.0, StatusCode::OK, "'init_utxo_status' failed: {}", request.1);
+    json::from_str(&request.1).unwrap()
+}
+
+pub async fn set_price(mm: &MarketMakerIt, base: &str, rel: &str, price: &str, vol: &str) -> Json {
+    let request = mm
+        .rpc(&json!({
+            "userpass": mm.userpass,
+            "method": "setprice",
+            "base": base,
+            "rel": rel,
+            "price": price,
+            "volume": vol,
+        }))
+        .await
+        .unwrap();
+    assert_eq!(request.0, StatusCode::OK, "'setprice' failed: {}", request.1);
     json::from_str(&request.1).unwrap()
 }
