@@ -2100,7 +2100,7 @@ mod slp_tests {
         };
         let validity_err = block_on(fusd.validate_htlc(input)).unwrap_err();
         match validity_err.into_inner() {
-            ValidatePaymentError::TxDeserializationError(e) => println!("{:#?}", e),
+            ValidatePaymentError::WrongPaymentTx(e) => println!("{:#?}", e),
             err @ _ => panic!("Unexpected err {:#?}", err),
         };
     }

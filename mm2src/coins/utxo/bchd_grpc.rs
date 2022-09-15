@@ -84,7 +84,7 @@ impl From<ValidateSlpUtxosErr> for ValidatePaymentError {
     fn from(err: ValidateSlpUtxosErr) -> Self {
         match err.kind {
             ValidateSlpUtxosErrKind::MultiReqErr(_) => Self::Transport(err.to_string()),
-            ValidateSlpUtxosErrKind::InvalidSlpTxData(_) => Self::TxDeserializationError(err.to_string()),
+            ValidateSlpUtxosErrKind::InvalidSlpTxData(_) => Self::WrongPaymentTx(err.to_string()),
             _ => Self::InvalidRpcResponse(err.to_string()),
         }
     }
