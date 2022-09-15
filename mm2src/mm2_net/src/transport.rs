@@ -1,3 +1,4 @@
+use common::jsonrpc_client::JsonRpcErrorType;
 use derive_more::Display;
 use ethkey::Secret;
 use http::{HeaderMap, StatusCode};
@@ -24,6 +25,17 @@ pub enum SlurpError {
     Transport { uri: String, error: String },
     #[display(fmt = "Internal error: {}", _0)]
     Internal(String),
+}
+
+impl From<SlurpError> for JsonRpcErrorType {
+    fn from(err: SlurpError) -> Self {
+        match err {
+            SlurpError::InvalidRequest(err) => Self::InvalidRequest(err),
+            SlurpError::Transport { .. } | SlurpError::Timeout { .. } => Self::Transport(err.to_string()),
+            SlurpError::ErrorDeserializing { uri, error } => Self::Parse(uri.into(), error),
+            SlurpError::Internal(_) => Self::Internal(err.to_string()),
+        }
+    }
 }
 
 /// Send POST JSON HTTPS request and parse response
