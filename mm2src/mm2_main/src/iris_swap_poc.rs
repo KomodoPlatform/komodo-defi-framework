@@ -4,11 +4,7 @@ use mm2_test_helpers::for_tests::enable_tendermint;
 #[test]
 #[ignore]
 // cargo test mm2::mm2_tests::iris_swap_poc::test -- --exact --ignored
-fn test() {
-    block_on(trade_base_rel_iris(&[("IRIS-TEST", "IRIS-NIMDA")], 1, 2, 0.1));
-
-    assert!(false);
-}
+fn test() { block_on(trade_base_rel_iris(&[("IRIS-TEST", "IRIS-NIMDA")], 1, 2, 0.1)); }
 
 pub async fn trade_base_rel_iris(
     pairs: &[(&'static str, &'static str)],
@@ -180,58 +176,89 @@ pub async fn trade_base_rel_iris(
             .unwrap()
     }
 
-    Timer::sleep(55.).await;
-    println!("{}", mm_bob.log_as_utf8().unwrap());
-    // println!("{}", mm_alice.log_as_utf8().unwrap());
+    for uuid in uuids.iter() {
+        match mm_bob
+            .wait_for_log(900., |log| log.contains(&format!("[swap uuid={}] Finished", uuid)))
+            .await
+        {
+            Ok(_) => (),
+            Err(_) => {
+                println!("{}", mm_bob.log_as_utf8().unwrap());
+            },
+        }
 
-    // for uuid in uuids.iter() {
-    //     match mm_bob
-    //         .wait_for_log(900., |log| log.contains(&format!("[swap uuid={}] Finished", uuid)))
-    //         .await
-    //     {
-    //         Ok(_) => (),
-    //         Err(_) => {
-    //             println!("{}", mm_bob.log_as_utf8().unwrap());
-    //         },
-    //     }
+        match mm_alice
+            .wait_for_log(900., |log| log.contains(&format!("[swap uuid={}] Finished", uuid)))
+            .await
+        {
+            Ok(_) => (),
+            Err(_) => {
+                println!("{}", mm_alice.log_as_utf8().unwrap());
+            },
+        }
 
-    //     match mm_alice
-    //         .wait_for_log(900., |log| log.contains(&format!("[swap uuid={}] Finished", uuid)))
-    //         .await
-    //     {
-    //         Ok(_) => (),
-    //         Err(_) => {
-    //             println!("{}", mm_alice.log_as_utf8().unwrap());
-    //         },
-    //     }
+        log!("Waiting a few second for the fresh swap status to be saved..");
+        Timer::sleep(5.).await;
 
-    //     log!("Waiting a few second for the fresh swap status to be saved..");
-    //     Timer::sleep(5.).await;
+        println!("{}", mm_alice.log_as_utf8().unwrap());
+        log!("Checking alice/taker status..");
+        check_my_swap_status(
+            &mm_alice,
+            uuid,
+            &TAKER_SUCCESS_EVENTS,
+            &TAKER_ERROR_EVENTS,
+            BigDecimal::try_from(volume).unwrap(),
+            BigDecimal::try_from(volume).unwrap(),
+        )
+        .await;
 
-    //     println!("{}", mm_alice.log_as_utf8().unwrap());
-    //     log!("Checking alice/taker status..");
-    //     check_my_swap_status(
-    //         &mm_alice,
-    //         uuid,
-    //         &TAKER_SUCCESS_EVENTS,
-    //         &TAKER_ERROR_EVENTS,
-    //         BigDecimal::try_from(volume).unwrap(),
-    //         BigDecimal::try_from(volume).unwrap(),
-    //     )
-    //     .await;
+        println!("{}", mm_bob.log_as_utf8().unwrap());
+        log!("Checking bob/maker status..");
+        check_my_swap_status(
+            &mm_bob,
+            uuid,
+            &MAKER_SUCCESS_EVENTS,
+            &MAKER_ERROR_EVENTS,
+            BigDecimal::try_from(volume).unwrap(),
+            BigDecimal::try_from(volume).unwrap(),
+        )
+        .await;
+    }
 
-    //     println!("{}", mm_bob.log_as_utf8().unwrap());
-    //     log!("Checking bob/maker status..");
-    //     check_my_swap_status(
-    //         &mm_bob,
-    //         uuid,
-    //         &MAKER_SUCCESS_EVENTS,
-    //         &MAKER_ERROR_EVENTS,
-    //         BigDecimal::try_from(volume).unwrap(),
-    //         BigDecimal::try_from(volume).unwrap(),
-    //     )
-    //     .await;
-    // }
+    log!("Waiting 3 seconds for nodes to broadcast their swaps data..");
+    Timer::sleep(3.).await;
 
-    println!("\n `fn trade_base_rel_iris` hit end! \n");
+    for uuid in uuids.iter() {
+        log!("Checking alice status..");
+        check_stats_swap_status(&mm_alice, uuid, &MAKER_SUCCESS_EVENTS, &TAKER_SUCCESS_EVENTS).await;
+
+        log!("Checking bob status..");
+        check_stats_swap_status(&mm_bob, uuid, &MAKER_SUCCESS_EVENTS, &TAKER_SUCCESS_EVENTS).await;
+    }
+
+    log!("Checking alice recent swaps..");
+    check_recent_swaps(&mm_alice, uuids.len()).await;
+    log!("Checking bob recent swaps..");
+    check_recent_swaps(&mm_bob, uuids.len()).await;
+    for (base, rel) in pairs.iter() {
+        log!("Get {}/{} orderbook", base, rel);
+        let rc = mm_bob
+            .rpc(&json! ({
+                "userpass": mm_bob.userpass,
+                "method": "orderbook",
+                "base": base,
+                "rel": rel,
+            }))
+            .await
+            .unwrap();
+        assert!(rc.0.is_success(), "!orderbook: {}", rc.1);
+
+        let bob_orderbook: OrderbookResponse = json::from_str(&rc.1).unwrap();
+        log!("{}/{} orderbook {:?}", base, rel, bob_orderbook);
+
+        assert_eq!(0, bob_orderbook.bids.len(), "{} {} bids must be empty", base, rel);
+        assert_eq!(0, bob_orderbook.asks.len(), "{} {} asks must be empty", base, rel);
+    }
+    mm_bob.stop().await.unwrap();
+    mm_alice.stop().await.unwrap();
 }
