@@ -311,6 +311,10 @@ impl TendermintCoin {
             amount,
         }];
 
+        let mut hash_lock = vec![];
+        hash_lock.extend_from_slice(secret_hash);
+        hash_lock.extend_from_slice(&[0; 12]);
+
         // Needs to be sorted if cointains multiple coins
         // amount.sort();
 
@@ -326,7 +330,7 @@ impl TendermintCoin {
             .join(",");
 
         let mut htlc_id = vec![];
-        htlc_id.extend_from_slice(secret_hash);
+        htlc_id.extend_from_slice(&hash_lock);
         htlc_id.extend_from_slice(&self.account_id.to_bytes());
         htlc_id.extend_from_slice(&to.to_bytes());
         htlc_id.extend_from_slice(coins_string.as_bytes());
@@ -339,7 +343,7 @@ impl TendermintCoin {
             receiver_on_other_chain: "".to_string(),
             sender_on_other_chain: "".to_string(),
             amount,
-            hash_lock: hex::encode(secret_hash),
+            hash_lock: hex::encode(&hash_lock),
             timestamp: 0,
             time_lock,
             transfer: false,
