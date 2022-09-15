@@ -1309,8 +1309,6 @@ impl TakerSwap {
 
             // If the watcher message can not be sent, the swap still continues
             if let Ok(preimage) = preimage_fut.compat().await {
-                let preimage_hex = Some(preimage.tx_hex());
-
                 let watcher_data = self.create_watcher_data(transaction.tx_hex(), preimage.tx_hex());
                 let swpmsg_watcher = SwapWatcherMsg::TakerSwapWatcherMsg(Box::new(watcher_data));
                 broadcast_swap_message(
@@ -1319,7 +1317,7 @@ impl TakerSwap {
                     swpmsg_watcher,
                     &self.p2p_privkey,
                 );
-                swap_events.push(TakerSwapEvent::WatcherMessageSent(preimage_hex))
+                swap_events.push(TakerSwapEvent::WatcherMessageSent(Some(preimage.tx_hex())))
             }
         }
 
