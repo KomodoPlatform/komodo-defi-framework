@@ -13,16 +13,12 @@ use crate::{big_decimal_from_sat_unsigned, BalanceError, BalanceFut, BigDecimal,
             WithdrawRequest};
 use async_trait::async_trait;
 use bitcrypto::{dhash256, sha256};
-use chain::hash::H256;
 use common::{get_utc_timestamp, Future01CompatExt};
 use cosmrs::bank::MsgSend;
 use cosmrs::crypto::secp256k1::SigningKey;
 use cosmrs::proto::cosmos::auth::v1beta1::{BaseAccount, QueryAccountRequest, QueryAccountResponse};
-use cosmrs::proto::cosmos::bank::v1beta1::{QueryAllBalancesRequest, QueryAllBalancesResponse, QueryBalanceRequest,
-                                           QueryBalanceResponse};
+use cosmrs::proto::cosmos::bank::v1beta1::{QueryBalanceRequest, QueryBalanceResponse};
 use cosmrs::proto::cosmos::tx::v1beta1::TxRaw;
-use cosmrs::proto::ibc::applications::transfer::v1::MsgTransfer;
-use cosmrs::rpc::query::Query;
 use cosmrs::tendermint::abci::Path as AbciPath;
 use cosmrs::tendermint::chain::Id as ChainId;
 use cosmrs::tx::{self, Fee, Msg, Raw, SignDoc, SignerInfo};
@@ -36,7 +32,6 @@ use keys::KeyPair;
 use mm2_core::mm_ctx::MmArc;
 use mm2_err_handle::prelude::*;
 use mm2_number::MmNumber;
-use num_traits::ToPrimitive;
 use parking_lot::Mutex;
 use prost::{DecodeError, Message};
 use rpc::v1::types::Bytes as BytesJson;
@@ -311,9 +306,11 @@ impl TendermintCoin {
             amount,
         }];
 
+        let timestamp = 0_u64;
         let mut hash_lock = vec![];
         hash_lock.extend_from_slice(secret_hash);
         hash_lock.extend_from_slice(&[0; 12]);
+        // hash_lock.extend_from_slice(&timestamp.to_be_bytes());
 
         // Needs to be sorted if cointains multiple coins
         // amount.sort();
@@ -330,7 +327,7 @@ impl TendermintCoin {
             .join(",");
 
         let mut htlc_id = vec![];
-        htlc_id.extend_from_slice(&hash_lock);
+        htlc_id.extend_from_slice(sha256(&hash_lock).as_slice());
         htlc_id.extend_from_slice(&self.account_id.to_bytes());
         htlc_id.extend_from_slice(&to.to_bytes());
         htlc_id.extend_from_slice(coins_string.as_bytes());
@@ -343,8 +340,8 @@ impl TendermintCoin {
             receiver_on_other_chain: "".to_string(),
             sender_on_other_chain: "".to_string(),
             amount,
-            hash_lock: hex::encode(&hash_lock),
-            timestamp: 0,
+            hash_lock: sha256(&hash_lock).to_string(),
+            timestamp,
             time_lock,
             transfer: false,
         };
@@ -890,7 +887,7 @@ impl SwapOps for TendermintCoin {
 
         let mut hash_lock_hash = vec![];
         hash_lock_hash.extend_from_slice(secret);
-        hash_lock_hash.extend_from_slice(&htlc.timestamp.to_be_bytes());
+        // hash_lock_hash.extend_from_slice(&htlc.timestamp.to_be_bytes());
         drop_mutability!(hash_lock_hash);
 
         let mut amount = htlc.amount.clone();
@@ -961,7 +958,7 @@ impl SwapOps for TendermintCoin {
 
         let mut hash_lock_hash = vec![];
         hash_lock_hash.extend_from_slice(secret);
-        hash_lock_hash.extend_from_slice(&htlc.timestamp.to_be_bytes());
+        // hash_lock_hash.extend_from_slice(&htlc.timestamp.to_be_bytes());
         drop_mutability!(hash_lock_hash);
 
         let mut amount = htlc.amount.clone();
@@ -1095,7 +1092,8 @@ impl SwapOps for TendermintCoin {
     fn extract_secret(&self, secret_hash: &[u8], spend_tx: &[u8]) -> Result<Vec<u8>, String> {
         let mut secret = vec![];
         secret.extend_from_slice(secret_hash);
-        secret.extend_from_slice(&[1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12]);
+        secret.extend_from_slice(&[0; 12]);
+        // secret.extend_from_slice(&0_u64.to_be_bytes());
 
         // let tx = cosmrs::Tx::from_bytes(spend_tx).unwrap();
         // let msg = tx.body.messages.first().unwrap();
