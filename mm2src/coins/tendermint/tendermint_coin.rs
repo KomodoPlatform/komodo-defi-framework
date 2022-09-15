@@ -66,6 +66,7 @@ pub struct TendermintProtocolInfo {
     chain_id: String,
 }
 
+#[derive(Clone)]
 pub struct ActivatedIbcAssetInfo {
     decimals: u8,
     denom: Denom,
@@ -112,7 +113,7 @@ pub enum TendermintInitErrorKind {
 }
 
 #[derive(Display, Debug)]
-enum TendermintCoinRpcError {
+pub enum TendermintCoinRpcError {
     Prost(prost::DecodeError),
     InvalidResponse(String),
     PerformError(String),
@@ -190,6 +191,11 @@ fn upper_hex(bytes: &[u8]) -> String {
     str
 }
 
+pub struct AllBalancesResult {
+    pub platform_balance: BigDecimal,
+    pub ibc_assets_balances: HashMap<String, BigDecimal>,
+}
+
 impl TendermintCoin {
     pub async fn init(
         ticker: String,
@@ -255,11 +261,11 @@ impl TendermintCoin {
         Ok(BaseAccount::decode(account.value.as_slice())?)
     }
 
-    async fn my_balance_denom(&self) -> MmResult<u64, TendermintCoinRpcError> {
+    pub(super) async fn balance_for_denom(&self, denom: String) -> MmResult<u64, TendermintCoinRpcError> {
         let path = AbciPath::from_str("/cosmos.bank.v1beta1.Query/Balance").expect("valid path");
         let request = QueryBalanceRequest {
             address: self.account_id.to_string(),
-            denom: self.denom.to_string(),
+            denom,
         };
         let request = AbciRequest::new(Some(path), request.encode_to_vec(), None, false);
 
@@ -273,6 +279,24 @@ impl TendermintCoin {
             .map_to_mm(|e| TendermintCoinRpcError::InvalidResponse(format!("balance is not u64, err {}", e)))
     }
 
+    pub async fn all_balances(&self) -> MmResult<AllBalancesResult, TendermintCoinRpcError> {
+        let platform_balance_denom = self.balance_for_denom(self.denom.to_string()).await?;
+        let platform_balance = big_decimal_from_sat_unsigned(platform_balance_denom, self.decimals);
+        let ibc_assets_info = self.ibc_assets_info.lock().clone();
+
+        let mut result = AllBalancesResult {
+            platform_balance,
+            ibc_assets_balances: HashMap::new(),
+        };
+        for (ticker, info) in ibc_assets_info {
+            let balance_denom = self.balance_for_denom(info.denom.to_string()).await?;
+            let balance_decimal = big_decimal_from_sat_unsigned(balance_denom, info.decimals);
+            result.ibc_assets_balances.insert(ticker, balance_decimal);
+        }
+
+        Ok(result)
+    }
+
     #[allow(dead_code)]
     fn gen_create_htlc_tx(
         &self,
@@ -282,16 +306,6 @@ impl TendermintCoin {
         secret_hash: &[u8],
         time_lock: u64,
     ) -> MmResult<IrisHtlc, TxMarshalingErr> {
-        let mut secret = vec![];
-        secret.extend_from_slice(secret_hash);
-        secret.extend_from_slice(&[1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12]);
-        let secret_hash = secret.as_slice();
-        let timestamp = get_utc_timestamp() as u64;
-        let mut hash_lock_hash = vec![];
-        hash_lock_hash.extend_from_slice(secret_hash);
-        hash_lock_hash.extend_from_slice(&timestamp.to_be_bytes());
-        drop_mutability!(hash_lock_hash);
-
         let amount = vec![Coin {
             denom: self.denom.clone(),
             amount,
@@ -312,7 +326,7 @@ impl TendermintCoin {
             .join(",");
 
         let mut htlc_id = vec![];
-        htlc_id.extend_from_slice(sha256(&hash_lock_hash).as_slice());
+        htlc_id.extend_from_slice(secret_hash);
         htlc_id.extend_from_slice(&self.account_id.to_bytes());
         htlc_id.extend_from_slice(&to.to_bytes());
         htlc_id.extend_from_slice(coins_string.as_bytes());
@@ -325,8 +339,8 @@ impl TendermintCoin {
             receiver_on_other_chain: "".to_string(),
             sender_on_other_chain: "".to_string(),
             amount,
-            hash_lock: sha256(&hash_lock_hash).to_string(),
-            timestamp,
+            hash_lock: hex::encode(secret_hash),
+            timestamp: 0,
             time_lock,
             transfer: false,
         };
@@ -354,12 +368,12 @@ impl TendermintCoin {
         &self,
         base_denom: Denom,
         htlc_id: String,
-        secret_hash: &[u8],
+        secret: &[u8],
     ) -> MmResult<IrisHtlc, TxMarshalingErr> {
         let msg_payload = MsgClaimHtlc {
             id: htlc_id.clone(),
             sender: self.account_id.clone(),
-            secret: hex::encode(secret_hash),
+            secret: hex::encode(secret),
         };
 
         let fee_amount = Coin {
@@ -417,7 +431,7 @@ impl MmCoin for TendermintCoin {
                     coin.account_prefix
                 )));
             }
-            let balance_denom = coin.my_balance_denom().await?;
+            let balance_denom = coin.balance_for_denom(coin.denom.to_string()).await?;
             let balance_dec = big_decimal_from_sat_unsigned(balance_denom, coin.decimals);
 
             // TODO calculate current fee instead of using hard-coded value
@@ -608,7 +622,7 @@ impl MarketCoinOps for TendermintCoin {
     fn my_balance(&self) -> BalanceFut<CoinBalance> {
         let coin = self.clone();
         let fut = async move {
-            let balance_denom = coin.my_balance_denom().await?;
+            let balance_denom = coin.balance_for_denom(coin.denom.to_string()).await?;
             Ok(CoinBalance {
                 spendable: big_decimal_from_sat_unsigned(balance_denom, coin.decimals),
                 unspendable: BigDecimal::default(),
@@ -1113,6 +1127,7 @@ impl SwapOps for TendermintCoin {
 #[cfg(test)]
 mod tendermint_coin_tests {
     use super::*;
+    use rand::{thread_rng, Rng};
 
     const IRIS_TESTNET_HTLC_PAIR1_SEED: &str = "iris test seed";
     // const IRIS_TESTNET_HTLC_PAIR1_ADDRESS: &str = "iaa1e0rx87mdj79zejewuc4jg7ql9ud2286g2us8f2";
@@ -1165,11 +1180,11 @@ mod tendermint_coin_tests {
         let base_denom: Denom = "unyan".parse().unwrap();
         let to: AccountId = IRIS_TESTNET_HTLC_PAIR2_ADDRESS.parse().unwrap();
         let amount: cosmrs::Decimal = 1_u64.into();
-        let sec = &[1; 32];
+        let sec: [u8; 32] = thread_rng().gen();
         let time_lock = 1000;
 
         let create_htlc_tx = coin
-            .gen_create_htlc_tx(base_denom.clone(), &to, amount, sec, time_lock)
+            .gen_create_htlc_tx(base_denom.clone(), &to, amount, sha256(&sec).as_slice(), time_lock)
             .unwrap();
 
         let current_block_fut = coin.current_block().compat();
@@ -1188,15 +1203,17 @@ mod tendermint_coin_tests {
             )
             .unwrap()
         });
-        let send_tx_fut = coin.send_raw_tx_bytes(&raw_tx.to_bytes().unwrap()).compat();
+        let tx_bytes = raw_tx.to_bytes().unwrap();
+        let send_tx_fut = coin.send_raw_tx_bytes(&tx_bytes).compat();
         common::block_on(async {
             send_tx_fut.await.unwrap();
         });
+        println!("Create HTLC tx hash {}", upper_hex(sha256(&tx_bytes).as_slice()));
         // >> END HTLC CREATION
 
         // << BEGIN HTLC CLAIMING
         let claim_htlc_tx = coin
-            .gen_claim_htlc_tx(base_denom.clone(), create_htlc_tx.id, sec)
+            .gen_claim_htlc_tx(base_denom.clone(), create_htlc_tx.id, &sec)
             .unwrap();
 
         let current_block_fut = coin.current_block().compat();
@@ -1216,10 +1233,12 @@ mod tendermint_coin_tests {
             .unwrap()
         });
 
-        let send_tx_fut = coin.send_raw_tx_bytes(&raw_tx.to_bytes().unwrap()).compat();
+        let tx_bytes = raw_tx.to_bytes().unwrap();
+        let send_tx_fut = coin.send_raw_tx_bytes(&tx_bytes).compat();
         common::block_on(async {
             send_tx_fut.await.unwrap();
         });
+        println!("Claim HTLC tx hash {}", upper_hex(sha256(&tx_bytes).as_slice()));
         // >> END HTLC CLAIMING
     }
 }

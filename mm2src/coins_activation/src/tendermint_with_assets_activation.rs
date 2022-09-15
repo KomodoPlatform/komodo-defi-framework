@@ -16,6 +16,7 @@ use mm2_metrics::MetricsArc;
 use mm2_number::BigDecimal;
 use serde::{Deserialize, Serialize};
 use serde_json::Value as Json;
+use std::collections::HashMap;
 
 impl TokenOf for TendermintIbcAsset {
     type PlatformCoin = TendermintCoin;
@@ -105,10 +106,11 @@ impl From<IbcAssetInitError> for InitTokensAsMmCoinsError {
 
 #[derive(Serialize)]
 pub struct TendermintActivationResult {
+    ticker: String,
     address: String,
     current_block: u64,
     balance: CoinBalance,
-    ticker: String,
+    ibc_assets_balances: HashMap<String, CoinBalance>,
 }
 
 impl CurrentBlock for TendermintActivationResult {
@@ -161,7 +163,7 @@ impl PlatformWithTokensActivationOps for TendermintCoin {
             kind: TendermintInitErrorKind::RpcError(e),
         })?;
 
-        let balance = self.my_balance().compat().await.mm_err(|e| TendermintInitError {
+        let balances = self.all_balances().await.mm_err(|e| TendermintInitError {
             ticker: self.ticker().to_owned(),
             kind: TendermintInitErrorKind::RpcError(e.to_string()),
         })?;
@@ -169,7 +171,20 @@ impl PlatformWithTokensActivationOps for TendermintCoin {
         Ok(TendermintActivationResult {
             address: self.account_id.to_string(),
             current_block,
-            balance,
+            balance: CoinBalance {
+                spendable: balances.platform_balance,
+                unspendable: BigDecimal::default(),
+            },
+            ibc_assets_balances: balances
+                .ibc_assets_balances
+                .into_iter()
+                .map(|(ticker, balance)| {
+                    (ticker, CoinBalance {
+                        spendable: balance,
+                        unspendable: BigDecimal::default(),
+                    })
+                })
+                .collect(),
             ticker: self.ticker().to_owned(),
         })
     }

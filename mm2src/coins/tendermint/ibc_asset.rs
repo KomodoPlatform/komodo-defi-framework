@@ -1,11 +1,13 @@
 use super::TendermintCoin;
-use crate::{BalanceFut, BigDecimal, CoinBalance, FeeApproxStage, FoundSwapTxSpend, HistorySyncState, MarketCoinOps,
-            MmCoin, NegotiateSwapContractAddrErr, RawTransactionFut, RawTransactionRequest, SearchForSwapTxSpendInput,
-            SignatureResult, SwapOps, TradeFee, TradePreimageFut, TradePreimageResult, TradePreimageValue,
-            TransactionEnum, TransactionFut, TxMarshalingErr, UnexpectedDerivationMethod, ValidateAddressResult,
-            ValidatePaymentInput, VerificationResult, WithdrawFut, WithdrawRequest};
+use crate::{big_decimal_from_sat_unsigned, BalanceFut, BigDecimal, CoinBalance, FeeApproxStage, FoundSwapTxSpend,
+            HistorySyncState, MarketCoinOps, MmCoin, NegotiateSwapContractAddrErr, RawTransactionFut,
+            RawTransactionRequest, SearchForSwapTxSpendInput, SignatureResult, SwapOps, TradeFee, TradePreimageFut,
+            TradePreimageResult, TradePreimageValue, TransactionEnum, TransactionFut, TxMarshalingErr,
+            UnexpectedDerivationMethod, ValidateAddressResult, ValidatePaymentInput, VerificationResult, WithdrawFut,
+            WithdrawRequest};
 use async_trait::async_trait;
 use cosmrs::Denom;
+use futures::{FutureExt, TryFutureExt};
 use futures01::Future;
 use keys::KeyPair;
 use mm2_core::mm_ctx::MmArc;
@@ -194,25 +196,43 @@ impl SwapOps for TendermintIbcAsset {
 impl MarketCoinOps for TendermintIbcAsset {
     fn ticker(&self) -> &str { &self.ticker }
 
-    fn my_address(&self) -> Result<String, String> { todo!() }
+    fn my_address(&self) -> Result<String, String> { self.platform_coin.my_address() }
 
-    fn get_public_key(&self) -> Result<String, MmError<UnexpectedDerivationMethod>> { todo!() }
+    fn get_public_key(&self) -> Result<String, MmError<UnexpectedDerivationMethod>> {
+        self.platform_coin.get_public_key()
+    }
 
-    fn sign_message_hash(&self, _message: &str) -> Option<[u8; 32]> { todo!() }
+    fn sign_message_hash(&self, message: &str) -> Option<[u8; 32]> { self.platform_coin.sign_message_hash(message) }
 
-    fn sign_message(&self, _message: &str) -> SignatureResult<String> { todo!() }
+    fn sign_message(&self, message: &str) -> SignatureResult<String> { self.platform_coin.sign_message(message) }
 
-    fn verify_message(&self, _signature: &str, _message: &str, _address: &str) -> VerificationResult<bool> { todo!() }
+    fn verify_message(&self, signature: &str, message: &str, address: &str) -> VerificationResult<bool> {
+        self.platform_coin.verify_message(signature, message, address)
+    }
 
-    fn my_balance(&self) -> BalanceFut<CoinBalance> { todo!() }
+    fn my_balance(&self) -> BalanceFut<CoinBalance> {
+        let coin = self.clone();
+        let fut = async move {
+            let balance_denom = coin.platform_coin.balance_for_denom(coin.denom.to_string()).await?;
+            Ok(CoinBalance {
+                spendable: big_decimal_from_sat_unsigned(balance_denom, coin.decimals),
+                unspendable: BigDecimal::default(),
+            })
+        };
+        Box::new(fut.boxed().compat())
+    }
 
-    fn base_coin_balance(&self) -> BalanceFut<BigDecimal> { todo!() }
+    fn base_coin_balance(&self) -> BalanceFut<BigDecimal> { self.platform_coin.my_spendable_balance() }
 
-    fn platform_ticker(&self) -> &str { todo!() }
+    fn platform_ticker(&self) -> &str { self.platform_coin.ticker() }
 
-    fn send_raw_tx(&self, tx: &str) -> Box<dyn Future<Item = String, Error = String> + Send> { todo!() }
+    fn send_raw_tx(&self, tx: &str) -> Box<dyn Future<Item = String, Error = String> + Send> {
+        self.platform_coin.send_raw_tx(tx)
+    }
 
-    fn send_raw_tx_bytes(&self, tx: &[u8]) -> Box<dyn Future<Item = String, Error = String> + Send> { todo!() }
+    fn send_raw_tx_bytes(&self, tx: &[u8]) -> Box<dyn Future<Item = String, Error = String> + Send> {
+        self.platform_coin.send_raw_tx_bytes(tx)
+    }
 
     fn wait_for_confirmations(
         &self,
@@ -222,7 +242,8 @@ impl MarketCoinOps for TendermintIbcAsset {
         wait_until: u64,
         check_every: u64,
     ) -> Box<dyn Future<Item = (), Error = String> + Send> {
-        todo!()
+        self.platform_coin
+            .wait_for_confirmations(tx, confirmations, requires_nota, wait_until, check_every)
     }
 
     fn wait_for_tx_spend(
@@ -235,11 +256,13 @@ impl MarketCoinOps for TendermintIbcAsset {
         todo!()
     }
 
-    fn tx_enum_from_bytes(&self, bytes: &[u8]) -> Result<TransactionEnum, MmError<TxMarshalingErr>> { todo!() }
+    fn tx_enum_from_bytes(&self, bytes: &[u8]) -> Result<TransactionEnum, MmError<TxMarshalingErr>> {
+        self.platform_coin.tx_enum_from_bytes(bytes)
+    }
 
-    fn current_block(&self) -> Box<dyn Future<Item = u64, Error = String> + Send> { todo!() }
+    fn current_block(&self) -> Box<dyn Future<Item = u64, Error = String> + Send> { self.platform_coin.current_block() }
 
-    fn display_priv_key(&self) -> Result<String, String> { todo!() }
+    fn display_priv_key(&self) -> Result<String, String> { self.platform_coin.display_priv_key() }
 
     fn min_tx_amount(&self) -> BigDecimal { todo!() }
 
@@ -253,9 +276,11 @@ impl MmCoin for TendermintIbcAsset {
 
     fn withdraw(&self, req: WithdrawRequest) -> WithdrawFut { todo!() }
 
-    fn get_raw_transaction(&self, req: RawTransactionRequest) -> RawTransactionFut { todo!() }
+    fn get_raw_transaction(&self, req: RawTransactionRequest) -> RawTransactionFut {
+        self.platform_coin.get_raw_transaction(req)
+    }
 
-    fn decimals(&self) -> u8 { todo!() }
+    fn decimals(&self) -> u8 { self.decimals }
 
     fn convert_to_address(&self, from: &str, to_address_format: Json) -> Result<String, String> { todo!() }
 
@@ -293,9 +318,9 @@ impl MmCoin for TendermintIbcAsset {
 
     fn set_requires_notarization(&self, requires_nota: bool) { todo!() }
 
-    fn swap_contract_address(&self) -> Option<BytesJson> { todo!() }
+    fn swap_contract_address(&self) -> Option<BytesJson> { None }
 
-    fn mature_confirmations(&self) -> Option<u32> { todo!() }
+    fn mature_confirmations(&self) -> Option<u32> { None }
 
     fn coin_protocol_info(&self) -> Vec<u8> { todo!() }
 
