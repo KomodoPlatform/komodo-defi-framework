@@ -1,5 +1,5 @@
 pub mod ln_conf;
-mod ln_db;
+pub(crate) mod ln_db;
 pub mod ln_errors;
 mod ln_events;
 mod ln_filesystem_persister;
@@ -11,15 +11,14 @@ pub(crate) mod ln_storage;
 mod ln_utils;
 
 use super::{lp_coinfind_or_err, DerivationMethod, MmCoinEnum};
-use crate::lightning::ln_conf::OurChannelsConfigs;
 use crate::lightning::ln_errors::{TrustedNodeError, TrustedNodeResult, UpdateChannelError, UpdateChannelResult};
 use crate::lightning::ln_events::init_events_abort_handlers;
 use crate::lightning::ln_serialization::PublicKeyForRPC;
 use crate::lightning::ln_sql::SqliteLightningDB;
 use crate::lightning::ln_storage::{NetworkGraph, TrustedNodesShared};
 use crate::utxo::rpc_clients::UtxoRpcClientEnum;
-use crate::utxo::utxo_common::{big_decimal_from_sat_unsigned, UtxoTxBuilder};
-use crate::utxo::{sat_from_big_decimal, BlockchainNetwork, FeePolicy, GetUtxoListOps, UtxoTxGenerationOps};
+use crate::utxo::utxo_common::big_decimal_from_sat_unsigned;
+use crate::utxo::BlockchainNetwork;
 use crate::{BalanceFut, CoinBalance, FeeApproxStage, FoundSwapTxSpend, HistorySyncState, MarketCoinOps, MmCoin,
             NegotiateSwapContractAddrErr, RawTransactionFut, RawTransactionRequest, SearchForSwapTxSpendInput,
             SignatureError, SignatureResult, SwapOps, TradeFee, TradePreimageFut, TradePreimageResult,
@@ -31,20 +30,18 @@ use bitcoin::hashes::Hash;
 use bitcoin_hashes::sha256::Hash as Sha256;
 use bitcrypto::dhash256;
 use bitcrypto::ChecksumType;
-use chain::TransactionOutput;
 use common::executor::spawn;
-use common::log::{error, LogOnError, LogState};
+use common::log::{LogOnError, LogState};
 use common::{async_blocking, calc_total_pages, log, now_ms, ten, PagingOptionsEnum};
 use futures::{FutureExt, TryFutureExt};
 use futures01::Future;
-use keys::{hash::H256, AddressHashEnum, CompactSignature, KeyPair, Private, Public};
+use keys::{hash::H256, CompactSignature, KeyPair, Private, Public};
 use lightning::chain::channelmonitor::Balance;
 use lightning::chain::keysinterface::{KeysInterface, KeysManager, Recipient};
 use lightning::chain::Access;
 use lightning::ln::channelmanager::{ChannelDetails, MIN_FINAL_CLTV_EXPIRY};
 use lightning::ln::{PaymentHash, PaymentPreimage};
 use lightning::routing::gossip;
-use lightning::util::config::UserConfig;
 use lightning_background_processor::{BackgroundProcessor, GossipSync};
 use lightning_invoice::payment;
 use lightning_invoice::utils::{create_invoice_from_channelmanager, DefaultRouter};
@@ -55,13 +52,12 @@ use ln_db::{ClosedChannelsFilter, DBChannelDetails, DBPaymentInfo, DBPaymentsFil
 use ln_errors::{ClaimableBalancesError, ClaimableBalancesResult, CloseChannelError, CloseChannelResult,
                 EnableLightningError, EnableLightningResult, GenerateInvoiceError, GenerateInvoiceResult,
                 GetChannelDetailsError, GetChannelDetailsResult, GetPaymentDetailsError, GetPaymentDetailsResult,
-                ListChannelsError, ListChannelsResult, ListPaymentsError, ListPaymentsResult, OpenChannelError,
-                OpenChannelResult, SendPaymentError, SendPaymentResult};
+                ListChannelsError, ListChannelsResult, ListPaymentsError, ListPaymentsResult, SendPaymentError,
+                SendPaymentResult};
 use ln_events::LightningEventHandler;
 use ln_filesystem_persister::LightningFilesystemPersister;
 use ln_p2p::{connect_to_node, PeerManager};
 use ln_platform::{h256_json_from_txid, Platform};
-use ln_serialization::NodeAddress;
 use ln_storage::{LightningStorage, NodesAddressesMapShared, Scorer};
 use ln_utils::{ChainMonitor, ChannelManager};
 use mm2_core::mm_ctx::MmArc;
@@ -70,7 +66,7 @@ use mm2_net::ip_addr::myipaddr;
 use mm2_number::{BigDecimal, MmNumber};
 use parking_lot::Mutex as PaMutex;
 use rpc::v1::types::{Bytes as BytesJson, H256 as H256Json};
-use script::{Builder, TransactionInputSigner};
+use script::TransactionInputSigner;
 use secp256k1v22::PublicKey;
 use serde::{Deserialize, Serialize};
 use serde_json::Value as Json;
@@ -117,7 +113,7 @@ impl fmt::Debug for LightningCoin {
 }
 
 impl LightningCoin {
-    fn platform_coin(&self) -> &UtxoStandardCoin { &self.platform.coin }
+    pub fn platform_coin(&self) -> &UtxoStandardCoin { &self.platform.coin }
 
     #[inline]
     fn my_node_id(&self) -> String { self.channel_manager.get_our_node_id().to_string() }
@@ -795,138 +791,6 @@ pub async fn start_lightning(
         db,
         open_channels_nodes,
         trusted_nodes,
-    })
-}
-
-#[derive(Clone, Debug, Deserialize, PartialEq)]
-#[serde(tag = "type", content = "value")]
-pub enum ChannelOpenAmount {
-    Exact(BigDecimal),
-    Max,
-}
-
-#[derive(Deserialize)]
-pub struct OpenChannelRequest {
-    pub coin: String,
-    pub node_address: NodeAddress,
-    pub amount: ChannelOpenAmount,
-    /// The amount to push to the counterparty as part of the open, in milli-satoshi. Creates inbound liquidity for the channel.
-    /// By setting push_msat to a value, opening channel request will be equivalent to opening a channel then sending a payment with
-    /// the push_msat amount.
-    #[serde(default)]
-    pub push_msat: u64,
-    pub channel_options: Option<ChannelOptions>,
-    pub channel_configs: Option<OurChannelsConfigs>,
-}
-
-#[derive(Serialize)]
-pub struct OpenChannelResponse {
-    rpc_channel_id: u64,
-    node_address: NodeAddress,
-}
-
-/// Opens a channel on the lightning network.
-pub async fn open_channel(ctx: MmArc, req: OpenChannelRequest) -> OpenChannelResult<OpenChannelResponse> {
-    let ln_coin = match lp_coinfind_or_err(&ctx, &req.coin).await? {
-        MmCoinEnum::LightningCoin(c) => c,
-        e => return MmError::err(OpenChannelError::UnsupportedCoin(e.ticker().to_string())),
-    };
-
-    // Making sure that the node data is correct and that we can connect to it before doing more operations
-    let node_pubkey = req.node_address.pubkey;
-    let node_addr = req.node_address.addr;
-    connect_to_node(node_pubkey, node_addr, ln_coin.peer_manager.clone()).await?;
-
-    let platform_coin = ln_coin.platform_coin().clone();
-    let decimals = platform_coin.as_ref().decimals;
-    let my_address = platform_coin.as_ref().derivation_method.iguana_or_err()?;
-    let (unspents, _) = platform_coin.get_unspent_ordered_list(my_address).await?;
-    let (value, fee_policy) = match req.amount.clone() {
-        ChannelOpenAmount::Max => (
-            unspents.iter().fold(0, |sum, unspent| sum + unspent.value),
-            FeePolicy::DeductFromOutput(0),
-        ),
-        ChannelOpenAmount::Exact(v) => {
-            let value = sat_from_big_decimal(&v, decimals)?;
-            (value, FeePolicy::SendExact)
-        },
-    };
-
-    // The actual script_pubkey will replace this before signing the transaction after receiving the required
-    // output script from the other node when the channel is accepted
-    let script_pubkey =
-        Builder::build_witness_script(&AddressHashEnum::WitnessScriptHash(Default::default())).to_bytes();
-    let outputs = vec![TransactionOutput { value, script_pubkey }];
-
-    let mut tx_builder = UtxoTxBuilder::new(&platform_coin)
-        .add_available_inputs(unspents)
-        .add_outputs(outputs)
-        .with_fee_policy(fee_policy);
-
-    let fee = platform_coin
-        .get_tx_fee()
-        .await
-        .map_err(|e| OpenChannelError::RpcError(e.to_string()))?;
-    tx_builder = tx_builder.with_fee(fee);
-
-    let (unsigned, _) = tx_builder.build().await?;
-
-    let amount_in_sat = unsigned.outputs[0].value;
-    let push_msat = req.push_msat;
-    let channel_manager = ln_coin.channel_manager.clone();
-
-    let mut conf = ln_coin.conf.clone();
-    if let Some(options) = req.channel_options {
-        match conf.channel_options.as_mut() {
-            Some(o) => o.update_according_to(options),
-            None => conf.channel_options = Some(options),
-        }
-    }
-    if let Some(configs) = req.channel_configs {
-        match conf.our_channels_configs.as_mut() {
-            Some(o) => o.update_according_to(configs),
-            None => conf.our_channels_configs = Some(configs),
-        }
-    }
-    drop_mutability!(conf);
-    let user_config: UserConfig = conf.into();
-
-    let rpc_channel_id = ln_coin.db.get_last_channel_rpc_id().await? as u64 + 1;
-
-    let temp_channel_id = async_blocking(move || {
-        channel_manager
-            .create_channel(node_pubkey, amount_in_sat, push_msat, rpc_channel_id, Some(user_config))
-            .map_to_mm(|e| OpenChannelError::FailureToOpenChannel(node_pubkey.to_string(), format!("{:?}", e)))
-    })
-    .await?;
-
-    {
-        let mut unsigned_funding_txs = ln_coin.platform.unsigned_funding_txs.lock();
-        unsigned_funding_txs.insert(rpc_channel_id, unsigned);
-    }
-
-    let pending_channel_details = DBChannelDetails::new(
-        rpc_channel_id,
-        temp_channel_id,
-        node_pubkey,
-        true,
-        user_config.channel_handshake_config.announced_channel,
-    );
-
-    // Saving node data to reconnect to it on restart
-    ln_coin.open_channels_nodes.lock().insert(node_pubkey, node_addr);
-    ln_coin
-        .persister
-        .save_nodes_addresses(ln_coin.open_channels_nodes)
-        .await?;
-
-    if let Err(e) = ln_coin.db.add_channel_to_db(pending_channel_details).await {
-        error!("Unable to add new outbound channel {} to db: {}", rpc_channel_id, e);
-    }
-
-    Ok(OpenChannelResponse {
-        rpc_channel_id,
-        node_address: req.node_address,
     })
 }
 

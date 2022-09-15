@@ -179,19 +179,27 @@ pub async fn init_events_abort_handlers(
     Ok(abort_handlers)
 }
 
+#[derive(Display)]
+pub enum SignFundingTransactionError {
+    #[display(fmt = "Internal error: {}", _0)]
+    Internal(String),
+    #[display(fmt = "Error converting transaction: {}", _0)]
+    ConvertTxErr(String),
+}
+
 // Generates the raw funding transaction with one output equal to the channel value.
 fn sign_funding_transaction(
     user_channel_id: u64,
     output_script: &Script,
     platform: Arc<Platform>,
-) -> OpenChannelResult<Transaction> {
+) -> Result<Transaction, SignFundingTransactionError> {
     let coin = &platform.coin;
     let mut unsigned = {
         let unsigned_funding_txs = platform.unsigned_funding_txs.lock();
         unsigned_funding_txs
             .get(&user_channel_id)
             .ok_or_else(|| {
-                OpenChannelError::InternalError(format!(
+                SignFundingTransactionError::Internal(format!(
                     "Unsigned funding tx not found for internal channel id: {}",
                     user_channel_id
                 ))
@@ -200,8 +208,16 @@ fn sign_funding_transaction(
     };
     unsigned.outputs[0].script_pubkey = output_script.to_bytes().into();
 
-    let my_address = coin.as_ref().derivation_method.iguana_or_err()?;
-    let key_pair = coin.as_ref().priv_key_policy.key_pair_or_err()?;
+    let my_address = coin
+        .as_ref()
+        .derivation_method
+        .iguana_or_err()
+        .map_err(|e| SignFundingTransactionError::Internal(e.to_string()))?;
+    let key_pair = coin
+        .as_ref()
+        .priv_key_policy
+        .key_pair_or_err()
+        .map_err(|e| SignFundingTransactionError::Internal(e.to_string()))?;
 
     let prev_script = Builder::build_p2pkh(&my_address.hash);
     let signed = sign_tx(
@@ -210,9 +226,10 @@ fn sign_funding_transaction(
         prev_script,
         SignatureVersion::WitnessV0,
         coin.as_ref().conf.fork_id,
-    )?;
+    )
+    .map_err(|e| SignFundingTransactionError::Internal(e.to_string()))?;
 
-    Transaction::try_from(signed).map_to_mm(|e| OpenChannelError::ConvertTxErr(e.to_string()))
+    Transaction::try_from(signed).map_err(|e| SignFundingTransactionError::ConvertTxErr(e.to_string()))
 }
 
 async fn save_channel_closing_details(
