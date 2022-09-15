@@ -159,7 +159,7 @@ impl crate::Transaction for CosmosTransaction {
     fn tx_hash(&self) -> BytesJson {
         let bytes = self.data.encode_to_vec();
         let hash = sha256(&bytes);
-        hash.reversed().to_vec().into()
+        hash.to_vec().into()
     }
 }
 
