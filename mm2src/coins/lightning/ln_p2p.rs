@@ -29,11 +29,17 @@ pub enum ConnectToNodeRes {
     ConnectedSuccessfully { pubkey: PublicKey, node_addr: SocketAddr },
 }
 
+#[derive(Display)]
+pub enum ConnectionError {
+    #[display(fmt = "Connection error: {}", _0)]
+    ConnectionError(String),
+}
+
 pub async fn connect_to_node(
     pubkey: PublicKey,
     node_addr: SocketAddr,
     peer_manager: Arc<PeerManager>,
-) -> ConnectToNodeResult<ConnectToNodeRes> {
+) -> Result<ConnectToNodeRes, ConnectionError> {
     let peer_manager_ref = peer_manager.clone();
     let peer_node_ids = async_blocking(move || peer_manager_ref.get_peer_node_ids()).await;
     if peer_node_ids.contains(&pubkey) {
@@ -44,7 +50,7 @@ pub async fn connect_to_node(
         match lightning_net_tokio::connect_outbound(Arc::clone(&peer_manager), pubkey, node_addr).await {
             Some(fut) => Box::pin(fut),
             None => {
-                return MmError::err(ConnectToNodeError::ConnectionError(format!(
+                return Err(ConnectionError::ConnectionError(format!(
                     "Failed to connect to node: {}",
                     pubkey
                 )))
@@ -55,7 +61,7 @@ pub async fn connect_to_node(
         // Make sure the connection is still established.
         match futures::poll!(&mut connection_closed_future) {
             std::task::Poll::Ready(_) => {
-                return MmError::err(ConnectToNodeError::ConnectionError(format!(
+                return Err(ConnectionError::ConnectionError(format!(
                     "Node {} disconnected before finishing the handshake",
                     pubkey
                 )));

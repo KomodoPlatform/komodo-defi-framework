@@ -1,3 +1,4 @@
+use crate::lightning::ln_p2p::ConnectionError;
 use crate::utxo::rpc_clients::UtxoRpcError;
 use crate::utxo::GenerateTxError;
 use crate::{BalanceError, CoinFindError, NumConversError, PrivKeyNotAllowed, UnexpectedDerivationMethod};
@@ -12,7 +13,6 @@ use std::num::TryFromIntError;
 use utxo_signer::with_key_pair::UtxoSignWithKeyPairError;
 
 pub type EnableLightningResult<T> = Result<T, MmError<EnableLightningError>>;
-pub type ConnectToNodeResult<T> = Result<T, MmError<ConnectToNodeError>>;
 pub type OpenChannelResult<T> = Result<T, MmError<OpenChannelError>>;
 pub type UpdateChannelResult<T> = Result<T, MmError<UpdateChannelError>>;
 pub type ListChannelsResult<T> = Result<T, MmError<ListChannelsError>>;
@@ -80,51 +80,6 @@ impl From<UtxoRpcError> for EnableLightningError {
 
 #[derive(Debug, Deserialize, Display, Serialize, SerializeErrorType)]
 #[serde(tag = "error_type", content = "error_data")]
-pub enum ConnectToNodeError {
-    #[display(fmt = "Parse error: {}", _0)]
-    ParseError(String),
-    #[display(fmt = "Error connecting to node: {}", _0)]
-    ConnectionError(String),
-    #[display(fmt = "I/O error {}", _0)]
-    IOError(String),
-    #[display(fmt = "Lightning network is not supported for {}", _0)]
-    UnsupportedCoin(String),
-    #[display(fmt = "No such coin {}", _0)]
-    NoSuchCoin(String),
-}
-
-impl HttpStatusCode for ConnectToNodeError {
-    fn status_code(&self) -> StatusCode {
-        match self {
-            ConnectToNodeError::UnsupportedCoin(_) => StatusCode::BAD_REQUEST,
-            ConnectToNodeError::ParseError(_)
-            | ConnectToNodeError::IOError(_)
-            | ConnectToNodeError::ConnectionError(_) => StatusCode::INTERNAL_SERVER_ERROR,
-            ConnectToNodeError::NoSuchCoin(_) => StatusCode::NOT_FOUND,
-        }
-    }
-}
-
-impl From<ConnectToNodeError> for EnableLightningError {
-    fn from(err: ConnectToNodeError) -> EnableLightningError {
-        EnableLightningError::ConnectToNodeError(err.to_string())
-    }
-}
-
-impl From<CoinFindError> for ConnectToNodeError {
-    fn from(e: CoinFindError) -> Self {
-        match e {
-            CoinFindError::NoSuchCoin { coin } => ConnectToNodeError::NoSuchCoin(coin),
-        }
-    }
-}
-
-impl From<std::io::Error> for ConnectToNodeError {
-    fn from(err: std::io::Error) -> ConnectToNodeError { ConnectToNodeError::IOError(err.to_string()) }
-}
-
-#[derive(Debug, Deserialize, Display, Serialize, SerializeErrorType)]
-#[serde(tag = "error_type", content = "error_data")]
 pub enum OpenChannelError {
     #[display(fmt = "Lightning network is not supported for {}", _0)]
     UnsupportedCoin(String),
@@ -172,8 +127,8 @@ impl HttpStatusCode for OpenChannelError {
     }
 }
 
-impl From<ConnectToNodeError> for OpenChannelError {
-    fn from(err: ConnectToNodeError) -> OpenChannelError { OpenChannelError::ConnectToNodeError(err.to_string()) }
+impl From<ConnectionError> for OpenChannelError {
+    fn from(err: ConnectionError) -> OpenChannelError { OpenChannelError::ConnectToNodeError(err.to_string()) }
 }
 
 impl From<CoinFindError> for OpenChannelError {

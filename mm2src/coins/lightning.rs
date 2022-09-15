@@ -3,11 +3,11 @@ mod ln_db;
 pub mod ln_errors;
 mod ln_events;
 mod ln_filesystem_persister;
-mod ln_p2p;
+pub(crate) mod ln_p2p;
 mod ln_platform;
-mod ln_serialization;
+pub(crate) mod ln_serialization;
 mod ln_sql;
-mod ln_storage;
+pub(crate) mod ln_storage;
 mod ln_utils;
 
 use super::{lp_coinfind_or_err, DerivationMethod, MmCoinEnum};
@@ -53,14 +53,13 @@ use ln_conf::{ChannelOptions, LightningCoinConf, LightningProtocolConf, Platform
 use ln_db::{ClosedChannelsFilter, DBChannelDetails, DBPaymentInfo, DBPaymentsFilter, HTLCStatus, LightningDB,
             PaymentType};
 use ln_errors::{ClaimableBalancesError, ClaimableBalancesResult, CloseChannelError, CloseChannelResult,
-                ConnectToNodeError, ConnectToNodeResult, EnableLightningError, EnableLightningResult,
-                GenerateInvoiceError, GenerateInvoiceResult, GetChannelDetailsError, GetChannelDetailsResult,
-                GetPaymentDetailsError, GetPaymentDetailsResult, ListChannelsError, ListChannelsResult,
-                ListPaymentsError, ListPaymentsResult, OpenChannelError, OpenChannelResult, SendPaymentError,
-                SendPaymentResult};
+                EnableLightningError, EnableLightningResult, GenerateInvoiceError, GenerateInvoiceResult,
+                GetChannelDetailsError, GetChannelDetailsResult, GetPaymentDetailsError, GetPaymentDetailsResult,
+                ListChannelsError, ListChannelsResult, ListPaymentsError, ListPaymentsResult, OpenChannelError,
+                OpenChannelResult, SendPaymentError, SendPaymentResult};
 use ln_events::LightningEventHandler;
 use ln_filesystem_persister::LightningFilesystemPersister;
-use ln_p2p::{connect_to_node, ConnectToNodeRes, PeerManager};
+use ln_p2p::{connect_to_node, PeerManager};
 use ln_platform::{h256_json_from_txid, Platform};
 use ln_serialization::NodeAddress;
 use ln_storage::{LightningStorage, NodesAddressesMapShared, Scorer};
@@ -75,7 +74,6 @@ use script::{Builder, TransactionInputSigner};
 use secp256k1v22::PublicKey;
 use serde::{Deserialize, Serialize};
 use serde_json::Value as Json;
-use std::collections::hash_map::Entry;
 use std::collections::{HashMap, HashSet};
 use std::fmt;
 use std::net::SocketAddr;
@@ -798,38 +796,6 @@ pub async fn start_lightning(
         open_channels_nodes,
         trusted_nodes,
     })
-}
-
-#[derive(Deserialize)]
-pub struct ConnectToNodeRequest {
-    pub coin: String,
-    pub node_address: NodeAddress,
-}
-
-/// Connect to a certain node on the lightning network.
-pub async fn connect_to_lightning_node(ctx: MmArc, req: ConnectToNodeRequest) -> ConnectToNodeResult<String> {
-    let ln_coin = match lp_coinfind_or_err(&ctx, &req.coin).await? {
-        MmCoinEnum::LightningCoin(c) => c,
-        e => return MmError::err(ConnectToNodeError::UnsupportedCoin(e.ticker().to_string())),
-    };
-
-    let node_pubkey = req.node_address.pubkey;
-    let node_addr = req.node_address.addr;
-    let res = connect_to_node(node_pubkey, node_addr, ln_coin.peer_manager.clone()).await?;
-
-    // If a node that we have an open channel with changed it's address, "connect_to_lightning_node"
-    // can be used to reconnect to the new address while saving this new address for reconnections.
-    if let ConnectToNodeRes::ConnectedSuccessfully { .. } = res {
-        if let Entry::Occupied(mut entry) = ln_coin.open_channels_nodes.lock().entry(node_pubkey) {
-            entry.insert(node_addr);
-        }
-        ln_coin
-            .persister
-            .save_nodes_addresses(ln_coin.open_channels_nodes)
-            .await?;
-    }
-
-    Ok(res.to_string())
 }
 
 #[derive(Clone, Debug, Deserialize, PartialEq)]

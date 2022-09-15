@@ -43,10 +43,11 @@ use serde_json::{self as json, Value as Json};
 use std::net::SocketAddr;
 
 cfg_native! {
-    use coins::lightning::{add_trusted_node, close_channel, connect_to_lightning_node, generate_invoice, get_channel_details,
+    use coins::lightning::{add_trusted_node, close_channel, generate_invoice, get_channel_details,
         get_claimable_balances, get_payment_details, list_closed_channels_by_filter, list_open_channels_by_filter,
         list_payments_by_filter, list_trusted_nodes, open_channel, remove_trusted_node, send_payment, update_channel,
         LightningCoin};
+    use coins::rpc_command::lightning::connect_to_lightning_node::connect_to_lightning_node;
     use coins::z_coin::ZCoin;
 }
 
