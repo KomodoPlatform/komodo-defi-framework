@@ -41,13 +41,11 @@ async fn enable_z_coin(mm: &MarketMakerIt, coin: &str) -> ZcoinActivationResult 
 
         let status = init_z_coin_status(mm, init.result.task_id).await;
         let status: RpcV2Response<InitZcoinStatus> = json::from_value(status).unwrap();
-        if let InitZcoinStatus::Ready(rpc_result) = status.result {
-            match rpc_result {
-                MmRpcResult::Ok { result } => break result,
-                MmRpcResult::Err(e) => panic!("{} initialization error {:?}", coin, e),
-            }
+        match status.result {
+            InitZcoinStatus::Ok(result) => break result,
+            InitZcoinStatus::Error(e) => panic!("{} initialization error {:?}", coin, e),
+            _ => Timer::sleep(1.).await,
         }
-        Timer::sleep(1.).await;
     }
 }
 
@@ -194,15 +192,11 @@ async fn enable_z_coin_light(
         let status = init_z_coin_status(mm, init.result.task_id).await;
         println!("Status {}", json::to_string(&status).unwrap());
         let status: RpcV2Response<InitZcoinStatus> = json::from_value(status).unwrap();
-        if let InitZcoinStatus::Ready(rpc_result) = status.result {
-            match rpc_result {
-                MmRpcResult::Ok { result } => {
-                    break result;
-                },
-                MmRpcResult::Err(e) => panic!("{} initialization error {:?}", coin, e),
-            }
+        match status.result {
+            InitZcoinStatus::Ok(result) => break result,
+            InitZcoinStatus::Error(e) => panic!("{} initialization error {:?}", coin, e),
+            _ => Timer::sleep(1.).await,
         }
-        Timer::sleep(1.).await;
     }
 }
 
@@ -224,13 +218,11 @@ async fn enable_utxo_v2_electrum(
         let status = init_utxo_status(mm, init.result.task_id).await;
         let status: RpcV2Response<InitUtxoStatus> = json::from_value(status).unwrap();
         log!("init_utxo_status: {:?}", status);
-        if let InitUtxoStatus::Ready(rpc_result) = status.result {
-            match rpc_result {
-                MmRpcResult::Ok { result } => break result,
-                MmRpcResult::Err(e) => panic!("{} initialization error {:?}", coin, e),
-            }
+        match status.result {
+            InitUtxoStatus::Ok(result) => break result,
+            InitUtxoStatus::Error(e) => panic!("{} initialization error {:?}", coin, e),
+            _ => Timer::sleep(1.).await,
         }
-        Timer::sleep(1.).await;
     }
 }
 
