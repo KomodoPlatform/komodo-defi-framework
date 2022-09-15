@@ -319,7 +319,7 @@ impl TendermintCoin {
         base_denom: Denom,
         to: &AccountId,
         amount: cosmrs::Decimal,
-        secret_hash: &[u8],
+        secret: &[u8],
         time_lock: u64,
     ) -> MmResult<IrisHtlc, TxMarshalingErr> {
         let amount = vec![Coin {
@@ -328,10 +328,6 @@ impl TendermintCoin {
         }];
 
         let timestamp = 0_u64;
-        let mut hash_lock = vec![];
-        hash_lock.extend_from_slice(secret_hash);
-        hash_lock.extend_from_slice(&[0; 12]);
-        // hash_lock.extend_from_slice(&timestamp.to_be_bytes());
 
         // Needs to be sorted if cointains multiple coins
         // amount.sort();
@@ -348,7 +344,7 @@ impl TendermintCoin {
             .join(",");
 
         let mut htlc_id = vec![];
-        htlc_id.extend_from_slice(sha256(&hash_lock).as_slice());
+        htlc_id.extend_from_slice(secret);
         htlc_id.extend_from_slice(&self.account_id.to_bytes());
         htlc_id.extend_from_slice(&to.to_bytes());
         htlc_id.extend_from_slice(coins_string.as_bytes());
@@ -361,7 +357,7 @@ impl TendermintCoin {
             receiver_on_other_chain: "".to_string(),
             sender_on_other_chain: "".to_string(),
             amount,
-            hash_lock: sha256(&hash_lock).to_string(),
+            hash_lock: hex::encode(secret),
             timestamp,
             time_lock,
             transfer: false,
@@ -811,8 +807,19 @@ impl SwapOps for TendermintCoin {
         let amount: cosmrs::Decimal = 1_u64.into();
 
         let time_lock = time_lock as i64 - get_utc_timestamp();
+        let mut sec = vec![];
+        sec.extend_from_slice(secret_hash);
+        if sec.len() == 20 {
+            sec.extend_from_slice(&[1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12]);
+        }
         let create_htlc_tx = self
-            .gen_create_htlc_tx(base_denom.clone(), &to, amount, secret_hash, time_lock as u64)
+            .gen_create_htlc_tx(
+                base_denom.clone(),
+                &to,
+                amount,
+                sha256(&sec).as_slice(),
+                time_lock as u64,
+            )
             .unwrap();
 
         let coin = self.clone();
@@ -859,8 +866,19 @@ impl SwapOps for TendermintCoin {
         let amount: cosmrs::Decimal = 1_u64.into();
 
         let time_lock = time_lock as i64 - get_utc_timestamp();
+        let mut sec = vec![];
+        sec.extend_from_slice(secret_hash);
+        if sec.len() == 20 {
+            sec.extend_from_slice(&[1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12]);
+        }
         let create_htlc_tx = self
-            .gen_create_htlc_tx(base_denom.clone(), &to, amount, secret_hash, time_lock as u64)
+            .gen_create_htlc_tx(
+                base_denom.clone(),
+                &to,
+                amount,
+                sha256(&sec).as_slice(),
+                time_lock as u64,
+            )
             .unwrap();
 
         let coin = self.clone();
@@ -891,6 +909,7 @@ impl SwapOps for TendermintCoin {
         Box::new(fut.boxed().compat())
     }
 
+    // Different
     fn send_maker_spends_taker_payment(
         &self,
         taker_payment_tx: &[u8],
@@ -1116,17 +1135,18 @@ impl SwapOps for TendermintCoin {
         secret.extend_from_slice(&[0; 12]);
         // secret.extend_from_slice(&0_u64.to_be_bytes());
 
-        // let tx = cosmrs::Tx::from_bytes(spend_tx).unwrap();
-        // let msg = tx.body.messages.first().unwrap();
-        // let htlc_proto: crate::tendermint::htlc_proto::CreateHtlcProtoRep =
-        //     prost::Message::decode(msg.value.as_slice()).unwrap();
-        // let htlc = MsgCreateHtlc::try_from(htlc_proto).unwrap();
+        let tx = cosmrs::Tx::from_bytes(spend_tx).unwrap();
+        let msg = tx.body.messages.first().unwrap();
+        let htlc_proto: crate::tendermint::htlc_proto::CreateHtlcProtoRep =
+            prost::Message::decode(msg.value.as_slice()).unwrap();
+        let htlc = MsgCreateHtlc::try_from(htlc_proto).unwrap();
+        let t = hex::decode(htlc.hash_lock).unwrap();
 
         // let mut hash_lock_hash = vec![];
         // hash_lock_hash.extend_from_slice(secret_hash);
         // hash_lock_hash.extend_from_slice(&htlc.timestamp.to_be_bytes());
         // Ok(sha256(&hash_lock_hash).to_vec())
-        Ok(secret)
+        Ok(t)
     }
 
     fn negotiate_swap_contract_addr(
@@ -1231,7 +1251,6 @@ mod tendermint_coin_tests {
         common::block_on(async {
             send_tx_fut.await.unwrap();
         });
-        println!("Create HTLC tx hash {}", upper_hex(sha256(&tx_bytes).as_slice()));
         // >> END HTLC CREATION
 
         // << BEGIN HTLC CLAIMING
