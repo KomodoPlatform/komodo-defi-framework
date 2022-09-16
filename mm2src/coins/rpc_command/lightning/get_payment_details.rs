@@ -8,7 +8,7 @@ use lightning::ln::PaymentHash;
 use mm2_core::mm_ctx::MmArc;
 use mm2_err_handle::prelude::*;
 
-pub type GetPaymentDetailsResult<T> = Result<T, MmError<GetPaymentDetailsError>>;
+type GetPaymentDetailsResult<T> = Result<T, MmError<GetPaymentDetailsError>>;
 
 #[derive(Debug, Deserialize, Display, Serialize, SerializeErrorType)]
 #[serde(tag = "error_type", content = "error_data")]

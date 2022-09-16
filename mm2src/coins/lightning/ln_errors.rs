@@ -10,7 +10,6 @@ use std::num::TryFromIntError;
 
 pub type EnableLightningResult<T> = Result<T, MmError<EnableLightningError>>;
 pub type GenerateInvoiceResult<T> = Result<T, MmError<GenerateInvoiceError>>;
-pub type SendPaymentResult<T> = Result<T, MmError<SendPaymentError>>;
 pub type SaveChannelClosingResult<T> = Result<T, MmError<SaveChannelClosingError>>;
 
 #[derive(Debug, Deserialize, Display, Serialize, SerializeErrorType)]
@@ -104,48 +103,6 @@ impl From<SignOrCreationError> for GenerateInvoiceError {
 
 impl From<SqlError> for GenerateInvoiceError {
     fn from(err: SqlError) -> GenerateInvoiceError { GenerateInvoiceError::DbError(err.to_string()) }
-}
-
-#[derive(Debug, Deserialize, Display, Serialize, SerializeErrorType)]
-#[serde(tag = "error_type", content = "error_data")]
-pub enum SendPaymentError {
-    #[display(fmt = "Lightning network is not supported for {}", _0)]
-    UnsupportedCoin(String),
-    #[display(fmt = "No such coin {}", _0)]
-    NoSuchCoin(String),
-    #[display(fmt = "Couldn't parse destination pubkey: {}", _0)]
-    NoRouteFound(String),
-    #[display(fmt = "Payment error: {}", _0)]
-    PaymentError(String),
-    #[display(fmt = "Final cltv expiry delta {} is below the required minimum of {}", _0, _1)]
-    CLTVExpiryError(u32, u32),
-    #[display(fmt = "DB error {}", _0)]
-    DbError(String),
-}
-
-impl HttpStatusCode for SendPaymentError {
-    fn status_code(&self) -> StatusCode {
-        match self {
-            SendPaymentError::UnsupportedCoin(_) => StatusCode::BAD_REQUEST,
-            SendPaymentError::NoSuchCoin(_) => StatusCode::NOT_FOUND,
-            SendPaymentError::PaymentError(_)
-            | SendPaymentError::NoRouteFound(_)
-            | SendPaymentError::CLTVExpiryError(_, _)
-            | SendPaymentError::DbError(_) => StatusCode::INTERNAL_SERVER_ERROR,
-        }
-    }
-}
-
-impl From<CoinFindError> for SendPaymentError {
-    fn from(e: CoinFindError) -> Self {
-        match e {
-            CoinFindError::NoSuchCoin { coin } => SendPaymentError::NoSuchCoin(coin),
-        }
-    }
-}
-
-impl From<SqlError> for SendPaymentError {
-    fn from(err: SqlError) -> SendPaymentError { SendPaymentError::DbError(err.to_string()) }
 }
 
 #[derive(Display, PartialEq)]

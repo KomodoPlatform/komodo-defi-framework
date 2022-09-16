@@ -4,7 +4,7 @@ use http::StatusCode;
 use mm2_core::mm_ctx::MmArc;
 use mm2_err_handle::prelude::*;
 
-pub type CloseChannelResult<T> = Result<T, MmError<CloseChannelError>>;
+type CloseChannelResult<T> = Result<T, MmError<CloseChannelError>>;
 
 #[derive(Debug, Deserialize, Display, Serialize, SerializeErrorType)]
 #[serde(tag = "error_type", content = "error_data")]

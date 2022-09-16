@@ -42,8 +42,7 @@ use lightning_invoice::utils::{create_invoice_from_channelmanager, DefaultRouter
 use lightning_invoice::{Invoice, InvoiceDescription};
 use ln_conf::{LightningCoinConf, LightningProtocolConf, PlatformCoinConfirmationTargets};
 use ln_db::{DBChannelDetails, DBPaymentInfo, HTLCStatus, LightningDB, PaymentType};
-use ln_errors::{EnableLightningError, EnableLightningResult, GenerateInvoiceError, GenerateInvoiceResult,
-                SendPaymentError, SendPaymentResult};
+use ln_errors::{EnableLightningError, EnableLightningResult, GenerateInvoiceError, GenerateInvoiceResult};
 use ln_events::{init_events_abort_handlers, LightningEventHandler};
 use ln_filesystem_persister::LightningFilesystemPersister;
 use ln_p2p::{connect_to_node, PeerManager};
@@ -129,6 +128,16 @@ pub(crate) struct GetOpenChannelsResult {
     pub total: usize,
 }
 
+#[derive(Display)]
+pub(crate) enum PaymentError {
+    #[display(fmt = "Final cltv expiry delta {} is below the required minimum of {}", _0, _1)]
+    CLTVExpiry(u32, u32),
+    #[display(fmt = "Error paying invoice: {}", _0)]
+    Invoice(String),
+    #[display(fmt = "Keysend error: {}", _0)]
+    Keysend(String),
+}
+
 impl LightningCoin {
     pub fn platform_coin(&self) -> &UtxoStandardCoin { &self.platform.coin }
 
@@ -163,7 +172,7 @@ impl LightningCoin {
             .find(|chan| chan.user_channel_id == rpc_id)
     }
 
-    async fn pay_invoice(&self, invoice: Invoice) -> SendPaymentResult<DBPaymentInfo> {
+    pub(crate) async fn pay_invoice(&self, invoice: Invoice) -> Result<DBPaymentInfo, PaymentError> {
         let payment_hash = PaymentHash((invoice.payment_hash()).into_inner());
         let payment_type = PaymentType::OutboundPayment {
             destination: *invoice.payee_pub_key().unwrap_or(&invoice.recover_payee_pub_key()),
@@ -180,7 +189,7 @@ impl LightningCoin {
             selfi
                 .invoice_payer
                 .pay_invoice(&invoice)
-                .map_to_mm(|e| SendPaymentError::PaymentError(format!("{:?}", e)))
+                .map_err(|e| PaymentError::Invoice(format!("{:?}", e)))
         })
         .await?;
 
@@ -198,17 +207,14 @@ impl LightningCoin {
         })
     }
 
-    async fn keysend(
+    pub(crate) async fn keysend(
         &self,
         destination: PublicKey,
         amount_msat: u64,
         final_cltv_expiry_delta: u32,
-    ) -> SendPaymentResult<DBPaymentInfo> {
+    ) -> Result<DBPaymentInfo, PaymentError> {
         if final_cltv_expiry_delta < MIN_FINAL_CLTV_EXPIRY {
-            return MmError::err(SendPaymentError::CLTVExpiryError(
-                final_cltv_expiry_delta,
-                MIN_FINAL_CLTV_EXPIRY,
-            ));
+            return Err(PaymentError::CLTVExpiry(final_cltv_expiry_delta, MIN_FINAL_CLTV_EXPIRY));
         }
         let payment_preimage = PaymentPreimage(self.keys_manager.get_secure_random_bytes());
 
@@ -217,7 +223,7 @@ impl LightningCoin {
             selfi
                 .invoice_payer
                 .pay_pubkey(destination, payment_preimage, amount_msat, final_cltv_expiry_delta)
-                .map_to_mm(|e| SendPaymentError::PaymentError(format!("{:?}", e)))
+                .map_err(|e| PaymentError::Keysend(format!("{:?}", e)))
         })
         .await?;
 
@@ -937,62 +943,5 @@ pub async fn generate_invoice(
     Ok(GenerateInvoiceResponse {
         payment_hash: payment_hash.into(),
         invoice,
-    })
-}
-
-#[derive(Clone, Debug, Deserialize, PartialEq)]
-#[serde(tag = "type")]
-pub enum Payment {
-    #[serde(rename = "invoice")]
-    Invoice { invoice: Invoice },
-    #[serde(rename = "keysend")]
-    Keysend {
-        // The recieving node pubkey (node ID)
-        destination: PublicKeyForRPC,
-        // Amount to send in millisatoshis
-        amount_in_msat: u64,
-        // The number of blocks the payment will be locked for if not claimed by the destination,
-        // It's can be assumed that 6 blocks = 1 hour. We can claim the payment amount back after this cltv expires.
-        // Minmum value allowed is MIN_FINAL_CLTV_EXPIRY which is currently 24 for rust-lightning.
-        expiry: u32,
-    },
-}
-
-#[derive(Deserialize)]
-pub struct SendPaymentReq {
-    pub coin: String,
-    pub payment: Payment,
-}
-
-#[derive(Serialize)]
-pub struct SendPaymentResponse {
-    payment_hash: H256Json,
-}
-
-pub async fn send_payment(ctx: MmArc, req: SendPaymentReq) -> SendPaymentResult<SendPaymentResponse> {
-    let ln_coin = match lp_coinfind_or_err(&ctx, &req.coin).await? {
-        MmCoinEnum::LightningCoin(c) => c,
-        e => return MmError::err(SendPaymentError::UnsupportedCoin(e.ticker().to_string())),
-    };
-    let open_channels_nodes = ln_coin.open_channels_nodes.lock().clone();
-    for (node_pubkey, node_addr) in open_channels_nodes {
-        connect_to_node(node_pubkey, node_addr, ln_coin.peer_manager.clone())
-            .await
-            .error_log_with_msg(&format!(
-                "Channel with node: {} can't be used to route this payment due to connection error.",
-                node_pubkey
-            ));
-    }
-    let payment_info = match req.payment {
-        Payment::Invoice { invoice } => ln_coin.pay_invoice(invoice).await?,
-        Payment::Keysend {
-            destination,
-            amount_in_msat,
-            expiry,
-        } => ln_coin.keysend(destination.into(), amount_in_msat, expiry).await?,
-    };
-    ln_coin.db.add_or_update_payment_in_db(payment_info.clone()).await?;
-    Ok(SendPaymentResponse {
-        payment_hash: payment_info.payment_hash.0.into(),
     })
 }

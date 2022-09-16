@@ -6,5 +6,6 @@ pub mod get_payment_details;
 pub mod list_channels;
 pub mod list_payments_by_filter;
 pub mod open_channel;
+pub mod send_payment;
 pub mod trusted_nodes;
 pub mod update_channel;
