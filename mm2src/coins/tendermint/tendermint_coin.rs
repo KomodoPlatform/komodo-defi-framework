@@ -858,7 +858,7 @@ impl SwapOps for TendermintCoin {
 
         let time_lock = time_lock as i64 - get_utc_timestamp();
         let create_htlc_tx = self
-            .gen_create_htlc_tx(base_denom.clone(), &to, amount, &secret_hash, time_lock as u64)
+            .gen_create_htlc_tx(base_denom, &to, amount, secret_hash, time_lock as u64)
             .unwrap();
 
         let coin = self.clone();
@@ -907,7 +907,7 @@ impl SwapOps for TendermintCoin {
 
         let time_lock = time_lock as i64 - get_utc_timestamp();
         let create_htlc_tx = self
-            .gen_create_htlc_tx(base_denom.clone(), &to, amount, &secret_hash, time_lock as u64)
+            .gen_create_htlc_tx(base_denom, &to, amount, secret_hash, time_lock as u64)
             .unwrap();
 
         let coin = self.clone();
@@ -938,7 +938,6 @@ impl SwapOps for TendermintCoin {
         Box::new(fut.boxed().compat())
     }
 
-    // Different
     fn send_maker_spends_taker_payment(
         &self,
         taker_payment_tx: &[u8],
@@ -965,7 +964,7 @@ impl SwapOps for TendermintCoin {
         let secret = sec.as_slice();
 
         let mut hash_lock_hash = vec![];
-        hash_lock_hash.extend_from_slice(&secret);
+        hash_lock_hash.extend_from_slice(secret);
         // hash_lock_hash.extend_from_slice(&htlc.timestamp.to_be_bytes());
         drop_mutability!(hash_lock_hash);
 
@@ -987,7 +986,7 @@ impl SwapOps for TendermintCoin {
         let htlc_id = sha256(&htlc_id).to_string().to_uppercase();
 
         let base_denom: Denom = "unyan".parse().unwrap();
-        let claim_htlc_tx = self.gen_claim_htlc_tx(base_denom, htlc_id, &secret).unwrap();
+        let claim_htlc_tx = self.gen_claim_htlc_tx(base_denom, htlc_id, secret).unwrap();
         let coin = self.clone();
 
         let fut = async move {
