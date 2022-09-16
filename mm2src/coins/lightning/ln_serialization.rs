@@ -1,3 +1,4 @@
+use crate::lightning::ln_db::{DBPaymentInfo, DBPaymentsFilter, HTLCStatus, PaymentType};
 use crate::lightning::ln_platform::h256_json_from_txid;
 use crate::H256Json;
 use lightning::chain::channelmonitor::Balance;
@@ -137,6 +138,104 @@ impl From<ChannelDetails> for ChannelDetailsForRPC {
             is_ready: details.is_channel_ready,
             is_usable: details.is_usable,
             is_public: details.is_public,
+        }
+    }
+}
+
+#[derive(Deserialize, Serialize)]
+#[serde(tag = "type")]
+pub enum PaymentTypeForRPC {
+    #[serde(rename = "Outbound Payment")]
+    OutboundPayment { destination: PublicKeyForRPC },
+    #[serde(rename = "Inbound Payment")]
+    InboundPayment,
+}
+
+impl From<PaymentType> for PaymentTypeForRPC {
+    fn from(payment_type: PaymentType) -> Self {
+        match payment_type {
+            PaymentType::OutboundPayment { destination } => PaymentTypeForRPC::OutboundPayment {
+                destination: PublicKeyForRPC(destination),
+            },
+            PaymentType::InboundPayment => PaymentTypeForRPC::InboundPayment,
+        }
+    }
+}
+
+impl From<PaymentTypeForRPC> for PaymentType {
+    fn from(payment_type: PaymentTypeForRPC) -> Self {
+        match payment_type {
+            PaymentTypeForRPC::OutboundPayment { destination } => PaymentType::OutboundPayment {
+                destination: destination.into(),
+            },
+            PaymentTypeForRPC::InboundPayment => PaymentType::InboundPayment,
+        }
+    }
+}
+
+#[derive(Serialize)]
+pub struct PaymentInfoForRPC {
+    payment_hash: H256Json,
+    payment_type: PaymentTypeForRPC,
+    description: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    amount_in_msat: Option<i64>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    fee_paid_msat: Option<i64>,
+    status: HTLCStatus,
+    created_at: i64,
+    last_updated: i64,
+}
+
+impl From<DBPaymentInfo> for PaymentInfoForRPC {
+    fn from(info: DBPaymentInfo) -> Self {
+        PaymentInfoForRPC {
+            payment_hash: info.payment_hash.0.into(),
+            payment_type: info.payment_type.into(),
+            description: info.description,
+            amount_in_msat: info.amt_msat,
+            fee_paid_msat: info.fee_paid_msat,
+            status: info.status,
+            created_at: info.created_at,
+            last_updated: info.last_updated,
+        }
+    }
+}
+
+#[derive(Deserialize)]
+pub struct PaymentsFilterForRPC {
+    pub payment_type: Option<PaymentTypeForRPC>,
+    pub description: Option<String>,
+    pub status: Option<HTLCStatus>,
+    pub from_amount_msat: Option<u64>,
+    pub to_amount_msat: Option<u64>,
+    pub from_fee_paid_msat: Option<u64>,
+    pub to_fee_paid_msat: Option<u64>,
+    pub from_timestamp: Option<u64>,
+    pub to_timestamp: Option<u64>,
+}
+
+impl From<PaymentsFilterForRPC> for DBPaymentsFilter {
+    fn from(filter: PaymentsFilterForRPC) -> Self {
+        let (is_outbound, destination) = if let Some(payment_type) = filter.payment_type {
+            match payment_type {
+                PaymentTypeForRPC::OutboundPayment { destination } => (Some(true), Some(destination.0.to_string())),
+                PaymentTypeForRPC::InboundPayment => (Some(false), None),
+            }
+        } else {
+            (None, None)
+        };
+        DBPaymentsFilter {
+            is_outbound,
+            destination,
+            description: filter.description,
+            status: filter.status.map(|s| s.to_string()),
+            from_amount_msat: filter.from_amount_msat.map(|a| a as i64),
+            to_amount_msat: filter.to_amount_msat.map(|a| a as i64),
+            from_fee_paid_msat: filter.from_fee_paid_msat.map(|f| f as i64),
+            to_fee_paid_msat: filter.to_fee_paid_msat.map(|f| f as i64),
+            from_timestamp: filter.from_timestamp.map(|f| f as i64),
+            to_timestamp: filter.to_timestamp.map(|f| f as i64),
         }
     }
 }

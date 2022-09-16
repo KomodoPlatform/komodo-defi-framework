@@ -27,7 +27,7 @@ use bitcrypto::dhash256;
 use bitcrypto::ChecksumType;
 use common::executor::spawn;
 use common::log::{LogOnError, LogState};
-use common::{async_blocking, calc_total_pages, log, now_ms, ten, PagingOptionsEnum};
+use common::{async_blocking, log, now_ms, PagingOptionsEnum};
 use futures::{FutureExt, TryFutureExt};
 use futures01::Future;
 use keys::{hash::H256, CompactSignature, KeyPair, Private, Public};
@@ -41,9 +41,8 @@ use lightning_invoice::payment;
 use lightning_invoice::utils::{create_invoice_from_channelmanager, DefaultRouter};
 use lightning_invoice::{Invoice, InvoiceDescription};
 use ln_conf::{LightningCoinConf, LightningProtocolConf, PlatformCoinConfirmationTargets};
-use ln_db::{DBChannelDetails, DBPaymentInfo, DBPaymentsFilter, HTLCStatus, LightningDB, PaymentType};
+use ln_db::{DBChannelDetails, DBPaymentInfo, HTLCStatus, LightningDB, PaymentType};
 use ln_errors::{EnableLightningError, EnableLightningResult, GenerateInvoiceError, GenerateInvoiceResult,
-                GetPaymentDetailsError, GetPaymentDetailsResult, ListPaymentsError, ListPaymentsResult,
                 SendPaymentError, SendPaymentResult};
 use ln_events::{init_events_abort_handlers, LightningEventHandler};
 use ln_filesystem_persister::LightningFilesystemPersister;
@@ -996,175 +995,4 @@ pub async fn send_payment(ctx: MmArc, req: SendPaymentReq) -> SendPaymentResult<
     Ok(SendPaymentResponse {
         payment_hash: payment_info.payment_hash.0.into(),
     })
-}
-
-#[derive(Deserialize)]
-pub struct PaymentsFilterForRPC {
-    pub payment_type: Option<PaymentTypeForRPC>,
-    pub description: Option<String>,
-    pub status: Option<HTLCStatus>,
-    pub from_amount_msat: Option<u64>,
-    pub to_amount_msat: Option<u64>,
-    pub from_fee_paid_msat: Option<u64>,
-    pub to_fee_paid_msat: Option<u64>,
-    pub from_timestamp: Option<u64>,
-    pub to_timestamp: Option<u64>,
-}
-
-impl From<PaymentsFilterForRPC> for DBPaymentsFilter {
-    fn from(filter: PaymentsFilterForRPC) -> Self {
-        let (is_outbound, destination) = if let Some(payment_type) = filter.payment_type {
-            match payment_type {
-                PaymentTypeForRPC::OutboundPayment { destination } => (Some(true), Some(destination.0.to_string())),
-                PaymentTypeForRPC::InboundPayment => (Some(false), None),
-            }
-        } else {
-            (None, None)
-        };
-        DBPaymentsFilter {
-            is_outbound,
-            destination,
-            description: filter.description,
-            status: filter.status.map(|s| s.to_string()),
-            from_amount_msat: filter.from_amount_msat.map(|a| a as i64),
-            to_amount_msat: filter.to_amount_msat.map(|a| a as i64),
-            from_fee_paid_msat: filter.from_fee_paid_msat.map(|f| f as i64),
-            to_fee_paid_msat: filter.to_fee_paid_msat.map(|f| f as i64),
-            from_timestamp: filter.from_timestamp.map(|f| f as i64),
-            to_timestamp: filter.to_timestamp.map(|f| f as i64),
-        }
-    }
-}
-
-#[derive(Deserialize)]
-pub struct ListPaymentsReq {
-    pub coin: String,
-    pub filter: Option<PaymentsFilterForRPC>,
-    #[serde(default = "ten")]
-    limit: usize,
-    #[serde(default)]
-    paging_options: PagingOptionsEnum<H256Json>,
-}
-
-#[derive(Deserialize, Serialize)]
-#[serde(tag = "type")]
-pub enum PaymentTypeForRPC {
-    #[serde(rename = "Outbound Payment")]
-    OutboundPayment { destination: PublicKeyForRPC },
-    #[serde(rename = "Inbound Payment")]
-    InboundPayment,
-}
-
-impl From<PaymentType> for PaymentTypeForRPC {
-    fn from(payment_type: PaymentType) -> Self {
-        match payment_type {
-            PaymentType::OutboundPayment { destination } => PaymentTypeForRPC::OutboundPayment {
-                destination: PublicKeyForRPC(destination),
-            },
-            PaymentType::InboundPayment => PaymentTypeForRPC::InboundPayment,
-        }
-    }
-}
-
-impl From<PaymentTypeForRPC> for PaymentType {
-    fn from(payment_type: PaymentTypeForRPC) -> Self {
-        match payment_type {
-            PaymentTypeForRPC::OutboundPayment { destination } => PaymentType::OutboundPayment {
-                destination: destination.into(),
-            },
-            PaymentTypeForRPC::InboundPayment => PaymentType::InboundPayment,
-        }
-    }
-}
-
-#[derive(Serialize)]
-pub struct PaymentInfoForRPC {
-    payment_hash: H256Json,
-    payment_type: PaymentTypeForRPC,
-    description: String,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    amount_in_msat: Option<i64>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    fee_paid_msat: Option<i64>,
-    status: HTLCStatus,
-    created_at: i64,
-    last_updated: i64,
-}
-
-impl From<DBPaymentInfo> for PaymentInfoForRPC {
-    fn from(info: DBPaymentInfo) -> Self {
-        PaymentInfoForRPC {
-            payment_hash: info.payment_hash.0.into(),
-            payment_type: info.payment_type.into(),
-            description: info.description,
-            amount_in_msat: info.amt_msat,
-            fee_paid_msat: info.fee_paid_msat,
-            status: info.status,
-            created_at: info.created_at,
-            last_updated: info.last_updated,
-        }
-    }
-}
-
-#[derive(Serialize)]
-pub struct ListPaymentsResponse {
-    payments: Vec<PaymentInfoForRPC>,
-    limit: usize,
-    skipped: usize,
-    total: usize,
-    total_pages: usize,
-    paging_options: PagingOptionsEnum<H256Json>,
-}
-
-pub async fn list_payments_by_filter(ctx: MmArc, req: ListPaymentsReq) -> ListPaymentsResult<ListPaymentsResponse> {
-    let ln_coin = match lp_coinfind_or_err(&ctx, &req.coin).await? {
-        MmCoinEnum::LightningCoin(c) => c,
-        e => return MmError::err(ListPaymentsError::UnsupportedCoin(e.ticker().to_string())),
-    };
-    let get_payments_res = ln_coin
-        .db
-        .get_payments_by_filter(
-            req.filter.map(From::from),
-            req.paging_options.clone().map(|h| PaymentHash(h.0)),
-            req.limit,
-        )
-        .await?;
-
-    Ok(ListPaymentsResponse {
-        payments: get_payments_res.payments.into_iter().map(From::from).collect(),
-        limit: req.limit,
-        skipped: get_payments_res.skipped,
-        total: get_payments_res.total,
-        total_pages: calc_total_pages(get_payments_res.total, req.limit),
-        paging_options: req.paging_options,
-    })
-}
-
-#[derive(Deserialize)]
-pub struct GetPaymentDetailsRequest {
-    pub coin: String,
-    pub payment_hash: H256Json,
-}
-
-#[derive(Serialize)]
-pub struct GetPaymentDetailsResponse {
-    payment_details: PaymentInfoForRPC,
-}
-
-pub async fn get_payment_details(
-    ctx: MmArc,
-    req: GetPaymentDetailsRequest,
-) -> GetPaymentDetailsResult<GetPaymentDetailsResponse> {
-    let ln_coin = match lp_coinfind_or_err(&ctx, &req.coin).await? {
-        MmCoinEnum::LightningCoin(c) => c,
-        e => return MmError::err(GetPaymentDetailsError::UnsupportedCoin(e.ticker().to_string())),
-    };
-
-    if let Some(payment_info) = ln_coin.db.get_payment_from_db(PaymentHash(req.payment_hash.0)).await? {
-        return Ok(GetPaymentDetailsResponse {
-            payment_details: payment_info.into(),
-        });
-    }
-
-    MmError::err(GetPaymentDetailsError::NoSuchPayment(req.payment_hash))
 }

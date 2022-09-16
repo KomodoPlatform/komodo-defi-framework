@@ -6,14 +6,11 @@ use derive_more::Display;
 use http::StatusCode;
 use lightning_invoice::SignOrCreationError;
 use mm2_err_handle::prelude::*;
-use rpc::v1::types::H256 as H256Json;
 use std::num::TryFromIntError;
 
 pub type EnableLightningResult<T> = Result<T, MmError<EnableLightningError>>;
 pub type GenerateInvoiceResult<T> = Result<T, MmError<GenerateInvoiceError>>;
 pub type SendPaymentResult<T> = Result<T, MmError<SendPaymentError>>;
-pub type ListPaymentsResult<T> = Result<T, MmError<ListPaymentsError>>;
-pub type GetPaymentDetailsResult<T> = Result<T, MmError<GetPaymentDetailsError>>;
 pub type SaveChannelClosingResult<T> = Result<T, MmError<SaveChannelClosingError>>;
 
 #[derive(Debug, Deserialize, Display, Serialize, SerializeErrorType)]
@@ -149,75 +146,6 @@ impl From<CoinFindError> for SendPaymentError {
 
 impl From<SqlError> for SendPaymentError {
     fn from(err: SqlError) -> SendPaymentError { SendPaymentError::DbError(err.to_string()) }
-}
-
-#[derive(Debug, Deserialize, Display, Serialize, SerializeErrorType)]
-#[serde(tag = "error_type", content = "error_data")]
-pub enum ListPaymentsError {
-    #[display(fmt = "Lightning network is not supported for {}", _0)]
-    UnsupportedCoin(String),
-    #[display(fmt = "No such coin {}", _0)]
-    NoSuchCoin(String),
-    #[display(fmt = "DB error {}", _0)]
-    DbError(String),
-}
-
-impl HttpStatusCode for ListPaymentsError {
-    fn status_code(&self) -> StatusCode {
-        match self {
-            ListPaymentsError::UnsupportedCoin(_) => StatusCode::BAD_REQUEST,
-            ListPaymentsError::NoSuchCoin(_) => StatusCode::NOT_FOUND,
-            ListPaymentsError::DbError(_) => StatusCode::INTERNAL_SERVER_ERROR,
-        }
-    }
-}
-
-impl From<CoinFindError> for ListPaymentsError {
-    fn from(e: CoinFindError) -> Self {
-        match e {
-            CoinFindError::NoSuchCoin { coin } => ListPaymentsError::NoSuchCoin(coin),
-        }
-    }
-}
-
-impl From<SqlError> for ListPaymentsError {
-    fn from(err: SqlError) -> ListPaymentsError { ListPaymentsError::DbError(err.to_string()) }
-}
-
-#[derive(Debug, Deserialize, Display, Serialize, SerializeErrorType)]
-#[serde(tag = "error_type", content = "error_data")]
-pub enum GetPaymentDetailsError {
-    #[display(fmt = "Lightning network is not supported for {}", _0)]
-    UnsupportedCoin(String),
-    #[display(fmt = "No such coin {}", _0)]
-    NoSuchCoin(String),
-    #[display(fmt = "Payment with hash: {:?} is not found", _0)]
-    NoSuchPayment(H256Json),
-    #[display(fmt = "DB error {}", _0)]
-    DbError(String),
-}
-
-impl HttpStatusCode for GetPaymentDetailsError {
-    fn status_code(&self) -> StatusCode {
-        match self {
-            GetPaymentDetailsError::UnsupportedCoin(_) => StatusCode::BAD_REQUEST,
-            GetPaymentDetailsError::NoSuchCoin(_) => StatusCode::NOT_FOUND,
-            GetPaymentDetailsError::NoSuchPayment(_) => StatusCode::NOT_FOUND,
-            GetPaymentDetailsError::DbError(_) => StatusCode::INTERNAL_SERVER_ERROR,
-        }
-    }
-}
-
-impl From<CoinFindError> for GetPaymentDetailsError {
-    fn from(e: CoinFindError) -> Self {
-        match e {
-            CoinFindError::NoSuchCoin { coin } => GetPaymentDetailsError::NoSuchCoin(coin),
-        }
-    }
-}
-
-impl From<SqlError> for GetPaymentDetailsError {
-    fn from(err: SqlError) -> GetPaymentDetailsError { GetPaymentDetailsError::DbError(err.to_string()) }
 }
 
 #[derive(Display, PartialEq)]
