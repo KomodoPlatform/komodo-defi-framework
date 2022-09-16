@@ -14,7 +14,6 @@ pub type GenerateInvoiceResult<T> = Result<T, MmError<GenerateInvoiceError>>;
 pub type SendPaymentResult<T> = Result<T, MmError<SendPaymentError>>;
 pub type ListPaymentsResult<T> = Result<T, MmError<ListPaymentsError>>;
 pub type GetPaymentDetailsResult<T> = Result<T, MmError<GetPaymentDetailsError>>;
-pub type CloseChannelResult<T> = Result<T, MmError<CloseChannelError>>;
 pub type SaveChannelClosingResult<T> = Result<T, MmError<SaveChannelClosingError>>;
 
 #[derive(Debug, Deserialize, Display, Serialize, SerializeErrorType)]
@@ -219,37 +218,6 @@ impl From<CoinFindError> for GetPaymentDetailsError {
 
 impl From<SqlError> for GetPaymentDetailsError {
     fn from(err: SqlError) -> GetPaymentDetailsError { GetPaymentDetailsError::DbError(err.to_string()) }
-}
-
-#[derive(Debug, Deserialize, Display, Serialize, SerializeErrorType)]
-#[serde(tag = "error_type", content = "error_data")]
-pub enum CloseChannelError {
-    #[display(fmt = "Lightning network is not supported for {}", _0)]
-    UnsupportedCoin(String),
-    #[display(fmt = "No such coin {}", _0)]
-    NoSuchCoin(String),
-    #[display(fmt = "No such channel with rpc_channel_id {}", _0)]
-    NoSuchChannel(u64),
-    #[display(fmt = "Closing channel error: {}", _0)]
-    CloseChannelError(String),
-}
-
-impl HttpStatusCode for CloseChannelError {
-    fn status_code(&self) -> StatusCode {
-        match self {
-            CloseChannelError::UnsupportedCoin(_) => StatusCode::BAD_REQUEST,
-            CloseChannelError::NoSuchChannel(_) | CloseChannelError::NoSuchCoin(_) => StatusCode::NOT_FOUND,
-            CloseChannelError::CloseChannelError(_) => StatusCode::INTERNAL_SERVER_ERROR,
-        }
-    }
-}
-
-impl From<CoinFindError> for CloseChannelError {
-    fn from(e: CoinFindError) -> Self {
-        match e {
-            CoinFindError::NoSuchCoin { coin } => CloseChannelError::NoSuchCoin(coin),
-        }
-    }
 }
 
 #[derive(Display, PartialEq)]

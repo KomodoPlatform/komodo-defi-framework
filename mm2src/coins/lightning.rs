@@ -42,9 +42,9 @@ use lightning_invoice::utils::{create_invoice_from_channelmanager, DefaultRouter
 use lightning_invoice::{Invoice, InvoiceDescription};
 use ln_conf::{LightningCoinConf, LightningProtocolConf, PlatformCoinConfirmationTargets};
 use ln_db::{DBChannelDetails, DBPaymentInfo, DBPaymentsFilter, HTLCStatus, LightningDB, PaymentType};
-use ln_errors::{CloseChannelError, CloseChannelResult, EnableLightningError, EnableLightningResult,
-                GenerateInvoiceError, GenerateInvoiceResult, GetPaymentDetailsError, GetPaymentDetailsResult,
-                ListPaymentsError, ListPaymentsResult, SendPaymentError, SendPaymentResult};
+use ln_errors::{EnableLightningError, EnableLightningResult, GenerateInvoiceError, GenerateInvoiceResult,
+                GetPaymentDetailsError, GetPaymentDetailsResult, ListPaymentsError, ListPaymentsResult,
+                SendPaymentError, SendPaymentResult};
 use ln_events::{init_events_abort_handlers, LightningEventHandler};
 use ln_filesystem_persister::LightningFilesystemPersister;
 use ln_p2p::{connect_to_node, PeerManager};
@@ -1167,49 +1167,4 @@ pub async fn get_payment_details(
     }
 
     MmError::err(GetPaymentDetailsError::NoSuchPayment(req.payment_hash))
-}
-
-#[derive(Deserialize)]
-pub struct CloseChannelReq {
-    pub coin: String,
-    pub rpc_channel_id: u64,
-    #[serde(default)]
-    pub force_close: bool,
-}
-
-pub async fn close_channel(ctx: MmArc, req: CloseChannelReq) -> CloseChannelResult<String> {
-    let ln_coin = match lp_coinfind_or_err(&ctx, &req.coin).await? {
-        MmCoinEnum::LightningCoin(c) => c,
-        e => return MmError::err(CloseChannelError::UnsupportedCoin(e.ticker().to_string())),
-    };
-
-    let channel_details = ln_coin
-        .get_channel_by_rpc_id(req.rpc_channel_id)
-        .await
-        .ok_or(CloseChannelError::NoSuchChannel(req.rpc_channel_id))?;
-    let channel_id = channel_details.channel_id;
-    let counterparty_node_id = channel_details.counterparty.node_id;
-
-    if req.force_close {
-        async_blocking(move || {
-            ln_coin
-                .channel_manager
-                .force_close_broadcasting_latest_txn(&channel_id, &counterparty_node_id)
-                .map_to_mm(|e| CloseChannelError::CloseChannelError(format!("{:?}", e)))
-        })
-        .await?;
-    } else {
-        async_blocking(move || {
-            ln_coin
-                .channel_manager
-                .close_channel(&channel_id, &counterparty_node_id)
-                .map_to_mm(|e| CloseChannelError::CloseChannelError(format!("{:?}", e)))
-        })
-        .await?;
-    }
-
-    Ok(format!(
-        "Initiated closing of channel with rpc_channel_id: {}",
-        req.rpc_channel_id
-    ))
 }
