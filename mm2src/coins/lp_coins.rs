@@ -457,6 +457,19 @@ pub struct SearchForSwapTxSpendInput<'a> {
     pub swap_unique_data: &'a [u8],
 }
 
+#[derive(Debug, Display)]
+pub enum ValidateHtlcPubKey {
+    #[display(fmt = "InvalidOtherAddrLen, addr supplied {:?}", _0)]
+    InvalidOtherAddrLen(BytesJson),
+    #[display(fmt = "UnexpectedOtherAddr, addr supplied {:?}", _0)]
+    UnexpectedOtherAddr(BytesJson),
+    #[display(fmt = "InvalidAddrLen, addr supplied {:?}", _0)]
+    InvalidAddrLen(BytesJson),
+    #[display(fmt = "UnexpectedAddr, addr supplied {:?}", _0)]
+    UnexpectedAddr(BytesJson),
+    NoOtherAddrAndNoFallback,
+}
+
 /// Swap operations (mostly based on the Hash/Time locked transactions implemented by coin wallets).
 #[async_trait]
 pub trait SwapOps {
@@ -577,6 +590,14 @@ pub trait SwapOps {
     ) -> Result<Option<BytesJson>, MmError<NegotiateSwapContractAddrErr>>;
 
     fn derive_htlc_key_pair(&self, swap_unique_data: &[u8]) -> KeyPair;
+
+    fn validate_pubkey(&self, raw_pubkey: Option<&[u8]>) -> Result<Option<BytesJson>, String>;
+
+    fn validate_secret_hash(&self, secret_hash: &[u8], secret: &[u8]) -> bool;
+
+    // fn validate_contract_address(&self, secret_hash: &[u8], secret: &[u8]) -> bool;
+
+    // fn validate_htlc_pubkey(&self, raw_pubkey: Option<&[u8]>) -> MmResult<Option<BytesJson>, ValidateHtlcPubKey>;
 }
 
 /// Operations that coins have independently from the MarketMaker.

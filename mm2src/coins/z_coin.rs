@@ -1370,6 +1370,12 @@ impl SwapOps for ZCoin {
         let key = secp_privkey_from_hash(dhash256(&signature));
         key_pair_from_secret(key.as_slice()).expect("valid privkey")
     }
+
+    fn validate_pubkey(&self, raw_pubkey: Option<&[u8]>) -> Result<Option<BytesJson>, String> {
+        utxo_common::validate_pubkey(raw_pubkey)
+    }
+
+    fn validate_secret_hash(&self, _secret_hash: &[u8], _secret: &[u8]) -> bool { unimplemented!() }
 }
 
 #[async_trait]

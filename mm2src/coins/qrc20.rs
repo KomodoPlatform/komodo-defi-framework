@@ -888,7 +888,7 @@ impl SwapOps for Qrc20Coin {
 
     fn validate_maker_payment(&self, input: ValidatePaymentInput) -> Box<dyn Future<Item = (), Error = String> + Send> {
         let payment_tx: UtxoTx = try_fus!(deserialize(input.payment_tx.as_slice()).map_err(|e| ERRL!("{:?}", e)));
-        let sender = try_fus!(self.contract_address_from_raw_pubkey(&input.other_pub));
+        let sender = try_fus!(self.contract_address_from_raw_pubkey(&input.other_pub)); //TODO!
         let swap_contract_address = try_fus!(input.swap_contract_address.try_to_address());
 
         let selfi = self.clone();
@@ -977,6 +977,7 @@ impl SwapOps for Qrc20Coin {
         &self,
         other_side_address: Option<&[u8]>,
     ) -> Result<Option<BytesJson>, MmError<NegotiateSwapContractAddrErr>> {
+        // let f = self.contract_address;
         match other_side_address {
             Some(bytes) => {
                 if bytes.len() != 20 {
@@ -1001,6 +1002,14 @@ impl SwapOps for Qrc20Coin {
 
     fn derive_htlc_key_pair(&self, swap_unique_data: &[u8]) -> KeyPair {
         utxo_common::derive_htlc_key_pair(self.as_ref(), swap_unique_data)
+    }
+
+    fn validate_pubkey(&self, raw_pubkey: Option<&[u8]>) -> Result<Option<BytesJson>, String> {
+        utxo_common::validate_pubkey(raw_pubkey)
+    }
+
+    fn validate_secret_hash(&self, secret_hash: &[u8], secret: &[u8]) -> bool {
+        utxo_common::validate_secret_hash(secret_hash, secret)
     }
 }
 

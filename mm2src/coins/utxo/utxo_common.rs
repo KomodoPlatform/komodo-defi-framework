@@ -3554,6 +3554,18 @@ pub fn derive_htlc_key_pair(coin: &UtxoCoinFields, _swap_unique_data: &[u8]) -> 
     }
 }
 
+pub fn validate_pubkey(raw_pubkey: Option<&[u8]>) -> Result<Option<BytesJson>, String> {
+    if let Some(key) = raw_pubkey {
+        return match Public::from_slice(key) {
+            Ok(key) => Ok(Some(key.to_vec().into())),
+            Err(e) => Err(ERRL!("!pubkey validation failed {}", e)),
+        };
+    }
+    Ok(None)
+}
+
+pub fn validate_secret_hash(secret_hash: &[u8], secret: &[u8]) -> bool { secret_hash == secret }
+
 /// Sorts and deduplicates the given `unspents` in ascending order.
 fn sort_dedup_unspents<I>(unspents: I) -> Vec<UnspentInfo>
 where

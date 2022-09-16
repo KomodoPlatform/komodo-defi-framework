@@ -576,16 +576,35 @@ impl MakerSwap {
             },
         };
 
+        let maker_coin_htlc_pubkey = match self.taker_coin.validate_pubkey(Some(taker_data.maker_coin_htlc_pub())) {
+            Ok(bytes) => bytes.map(|e| e.into_vec().as_slice().into()),
+            Err(err) => {
+                return Ok((Some(MakerSwapCommand::Finish), vec![MakerSwapEvent::NegotiateFailed(
+                    ERRL!("!taker_data.maker_coin_htlc_pub {}", err).into(),
+                )]))
+            },
+        };
+
+        let taker_coin_htlc_pubkey = match self.taker_coin.validate_pubkey(Some(taker_data.taker_coin_htlc_pub())) {
+            Ok(bytes) => bytes.map(|e| e.into_vec().as_slice().into()),
+            Err(err) => {
+                return Ok((Some(MakerSwapCommand::Finish), vec![MakerSwapEvent::NegotiateFailed(
+                    ERRL!("!taker_data.taker_coin_htlc_pub {}", err).into(),
+                )]))
+            },
+        };
+
+        // let maker_coin_htlc_pubkey = self.maker_coin.con
         Ok((Some(MakerSwapCommand::WaitForTakerFee), vec![
             MakerSwapEvent::Negotiated(TakerNegotiationData {
                 taker_payment_locktime: taker_data.payment_locktime(),
                 // using default to avoid misuse of this field
-                // maker_coin_htlc_pubkey and taker_coin_htlc_pubkey must be used instead
+                // maker_coin_htlc_pubkey and taker_coin_htlc_pubkey must be used instead b
                 taker_pubkey: H264Json::default(),
                 maker_coin_swap_contract_addr,
                 taker_coin_swap_contract_addr,
-                maker_coin_htlc_pubkey: Some(taker_data.maker_coin_htlc_pub().into()),
-                taker_coin_htlc_pubkey: Some(taker_data.taker_coin_htlc_pub().into()),
+                maker_coin_htlc_pubkey,
+                taker_coin_htlc_pubkey,
             }),
         ]))
     }

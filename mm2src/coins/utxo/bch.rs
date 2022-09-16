@@ -1044,6 +1044,14 @@ impl SwapOps for BchCoin {
     fn derive_htlc_key_pair(&self, swap_unique_data: &[u8]) -> KeyPair {
         utxo_common::derive_htlc_key_pair(self.as_ref(), swap_unique_data)
     }
+
+    fn validate_pubkey(&self, raw_pubkey: Option<&[u8]>) -> Result<Option<BytesJson>, String> {
+        utxo_common::validate_pubkey(raw_pubkey)
+    }
+
+    fn validate_secret_hash(&self, secret_hash: &[u8], secret: &[u8]) -> bool {
+        utxo_common::validate_secret_hash(secret_hash, secret)
+    }
 }
 
 fn total_unspent_value<'a>(unspents: impl IntoIterator<Item = &'a UnspentInfo>) -> u64 {

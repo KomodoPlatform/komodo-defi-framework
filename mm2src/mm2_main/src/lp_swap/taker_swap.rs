@@ -963,6 +963,15 @@ impl TakerSwap {
             )]));
         }
 
+        if !self
+            .maker_coin
+            .validate_secret_hash(maker_data.secret_hash(), self.r().secret.0.as_slice())
+        {
+            return Ok((Some(TakerSwapCommand::Finish), vec![TakerSwapEvent::NegotiateFailed(
+                ERRL!("!maker_coin.secret_hash: {} failed validation", time_dif).into(),
+            )]));
+        }
+
         let maker_coin_swap_contract_addr = match self
             .maker_coin
             .negotiate_swap_contract_addr(maker_data.maker_coin_swap_contract())
@@ -983,6 +992,24 @@ impl TakerSwap {
             Err(e) => {
                 return Ok((Some(TakerSwapCommand::Finish), vec![TakerSwapEvent::NegotiateFailed(
                     ERRL!("!taker_coin.negotiate_swap_contract_addr {}", e).into(),
+                )]))
+            },
+        };
+
+        let maker_coin_htlc_pubkey = match self.taker_coin.validate_pubkey(Some(maker_data.maker_coin_htlc_pub())) {
+            Ok(bytes) => bytes.map(|e| e.into_vec().as_slice().into()),
+            Err(err) => {
+                return Ok((Some(TakerSwapCommand::Finish), vec![TakerSwapEvent::NegotiateFailed(
+                    ERRL!("!maker_data.maker_coin_htlc_pub {}", err).into(),
+                )]))
+            },
+        };
+
+        let taker_coin_htlc_pubkey = match self.taker_coin.validate_pubkey(Some(maker_data.taker_coin_htlc_pub())) {
+            Ok(bytes) => bytes.map(|e| e.into_vec().as_slice().into()),
+            Err(err) => {
+                return Ok((Some(TakerSwapCommand::Finish), vec![TakerSwapEvent::NegotiateFailed(
+                    ERRL!("!maker_data.taker_coin_htlc_pub {}", err).into(),
                 )]))
             },
         };
@@ -1039,8 +1066,8 @@ impl TakerSwap {
                 secret_hash: maker_data.secret_hash().into(),
                 maker_coin_swap_contract_addr,
                 taker_coin_swap_contract_addr,
-                maker_coin_htlc_pubkey: Some(maker_data.maker_coin_htlc_pub().into()),
-                taker_coin_htlc_pubkey: Some(maker_data.taker_coin_htlc_pub().into()),
+                maker_coin_htlc_pubkey,
+                taker_coin_htlc_pubkey,
             },
         )]))
     }
@@ -2349,7 +2376,8 @@ mod taker_swap_tests {
         static mut SEARCH_TX_SPEND_CALLED: bool = false;
         TestCoin::search_for_swap_tx_spend_my.mock_safe(|_, _| {
             unsafe { SEARCH_TX_SPEND_CALLED = true };
-            let tx: UtxoTx = "0100000001de7aa8d29524906b2b54ee2e0281f3607f75662cbc9080df81d1047b78e21dbc00000000d7473044022079b6c50820040b1fbbe9251ced32ab334d33830f6f8d0bf0a40c7f1336b67d5b0220142ccf723ddabb34e542ed65c395abc1fbf5b6c3e730396f15d25c49b668a1a401209da937e5609680cb30bff4a7661364ca1d1851c2506fa80c443f00a3d3bf7365004c6b6304f62b0e5cb175210270e75970bb20029b3879ec76c4acd320a8d0589e003636264d01a7d566504bfbac6782012088a9142fb610d856c19fd57f2d0cffe8dff689074b3d8a882103f368228456c940ac113e53dad5c104cf209f2f102a409207269383b6ab9b03deac68ffffffff01d0dc9800000000001976a9146d9d2b554d768232320587df75c4338ecc8bf37d88ac40280e5c".into();
+            let tx: UtxoTx =
+                "0100000001de7aa8d29524906b2b54ee2e0281f3607f75662cbc9080df81d1047b78e21dbc00000000d7473044022079b6c50820040b1fbbe9251ced32ab334d33830f6f8d0bf0a40c7f1336b67d5b0220142ccf723ddabb34e542ed65c395abc1fbf5b6c3e730396f15d25c49b668a1a401209da937e5609680cb30bff4a7661364ca1d1851c2506fa80c443f00a3d3bf7365004c6b6304f62b0e5cb175210270e75970bb20029b3879ec76c4acd320a8d0589e003636264d01a7d566504bfbac6782012088a9142fb610d856c19fd57f2d0cffe8dff689074b3d8a882103f368228456c940ac113e53dad5c104cf209f2f102a409207269383b6ab9b03deac68ffffffff01d0dc9800000000001976a9146d9d2b554d768232320587df75c4338ecc8bf37d88ac40280e5c".into();
             MockResult::Return(Box::pin(futures::future::ready(Ok(Some(FoundSwapTxSpend::Spent(tx.into()))))))
         });
 

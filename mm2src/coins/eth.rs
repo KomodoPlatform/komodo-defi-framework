@@ -1111,6 +1111,18 @@ impl SwapOps for EthCoin {
     fn derive_htlc_key_pair(&self, _swap_unique_data: &[u8]) -> keys::KeyPair {
         key_pair_from_secret(self.key_pair.secret()).expect("valid key")
     }
+
+    fn validate_pubkey(&self, raw_pubkey: Option<&[u8]>) -> Result<Option<BytesJson>, String> {
+        if let Some(key) = raw_pubkey {
+            return match PublicKey::from_slice(key) {
+                Ok(key) => Ok(Some(key.serialize().as_slice().into())),
+                Err(e) => Err(ERRL!("!pubkey validation failed {}", e)),
+            };
+        }
+        Ok(None)
+    }
+
+    fn validate_secret_hash(&self, secret_hash: &[u8], secret: &[u8]) -> bool { secret_hash == secret }
 }
 
 #[cfg_attr(test, mockable)]

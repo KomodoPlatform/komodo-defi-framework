@@ -751,6 +751,10 @@ impl SwapOps for TendermintCoin {
     }
 
     fn derive_htlc_key_pair(&self, swap_unique_data: &[u8]) -> KeyPair { todo!() }
+
+    fn validate_pubkey(&self, _raw_pubkey: Option<&[u8]>) -> Result<Option<BytesJson>, String> { todo!() }
+
+    fn validate_secret_hash(&self, _secret_hash: &[u8], _secret: &[u8]) -> bool { todo!() }
 }
 
 #[cfg(test)]
