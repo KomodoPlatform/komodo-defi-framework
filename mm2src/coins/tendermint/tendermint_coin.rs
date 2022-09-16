@@ -18,7 +18,7 @@ use cosmrs::bank::MsgSend;
 use cosmrs::crypto::secp256k1::SigningKey;
 use cosmrs::proto::cosmos::auth::v1beta1::{BaseAccount, QueryAccountRequest, QueryAccountResponse};
 use cosmrs::proto::cosmos::bank::v1beta1::{QueryBalanceRequest, QueryBalanceResponse};
-use cosmrs::proto::cosmos::tx::v1beta1::{GetTxsEventRequest, TxRaw};
+use cosmrs::proto::cosmos::tx::v1beta1::TxRaw;
 use cosmrs::tendermint::abci::Path as AbciPath;
 use cosmrs::tendermint::chain::Id as ChainId;
 use cosmrs::tx::{self, Fee, Msg, Raw, SignDoc, SignerInfo};
@@ -33,6 +33,7 @@ use keys::KeyPair;
 use mm2_core::mm_ctx::MmArc;
 use mm2_err_handle::prelude::*;
 use mm2_number::MmNumber;
+use num_traits::ToPrimitive;
 use parking_lot::Mutex;
 use prost::{DecodeError, Message};
 use rpc::v1::types::Bytes as BytesJson;
@@ -1143,7 +1144,7 @@ mod tendermint_coin_tests {
     use super::*;
     use crate::tendermint::htlc_proto::ClaimHtlcProtoRep;
     use common::block_on;
-    use cosmrs::proto::cosmos::tx::v1beta1::GetTxsEventResponse;
+    use cosmrs::proto::cosmos::tx::v1beta1::{GetTxsEventRequest, GetTxsEventResponse};
     use rand::{thread_rng, Rng};
 
     const IRIS_TESTNET_HTLC_PAIR1_SEED: &str = "iris test seed";
