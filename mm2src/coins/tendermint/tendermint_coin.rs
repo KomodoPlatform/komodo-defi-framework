@@ -3,22 +3,24 @@ use super::htlc::{IrisHtlc, MsgCreateHtlc};
 use super::tendermint_native_rpc::*;
 #[cfg(target_arch = "wasm32")] use super::tendermint_wasm_rpc::*;
 use crate::tendermint::htlc::MsgClaimHtlc;
+use crate::tendermint::htlc_proto::CreateHtlcProtoRep;
 use crate::utxo::sat_from_big_decimal;
 use crate::{big_decimal_from_sat_unsigned, BalanceError, BalanceFut, BigDecimal, CoinBalance, FeeApproxStage,
             FoundSwapTxSpend, HistorySyncState, MarketCoinOps, MmCoin, NegotiateSwapContractAddrErr,
             RawTransactionFut, RawTransactionRequest, SearchForSwapTxSpendInput, SignatureResult, SwapOps, TradeFee,
             TradePreimageFut, TradePreimageResult, TradePreimageValue, TransactionDetails, TransactionEnum,
-            TransactionFut, TransactionType, TxFeeDetails, TxMarshalingErr, UnexpectedDerivationMethod,
-            ValidateAddressResult, ValidatePaymentInput, VerificationResult, WithdrawError, WithdrawFut,
-            WithdrawRequest};
+            TransactionErr, TransactionFut, TransactionType, TxFeeDetails, TxMarshalingErr,
+            UnexpectedDerivationMethod, ValidateAddressResult, ValidatePaymentInput, VerificationResult,
+            WithdrawError, WithdrawFut, WithdrawRequest};
 use async_trait::async_trait;
 use bitcrypto::{dhash160, dhash256, sha256};
+use common::executor::Timer;
 use common::{get_utc_timestamp, Future01CompatExt};
 use cosmrs::bank::MsgSend;
 use cosmrs::crypto::secp256k1::SigningKey;
 use cosmrs::proto::cosmos::auth::v1beta1::{BaseAccount, QueryAccountRequest, QueryAccountResponse};
 use cosmrs::proto::cosmos::bank::v1beta1::{QueryBalanceRequest, QueryBalanceResponse};
-use cosmrs::proto::cosmos::tx::v1beta1::{GetTxsEventRequest, TxRaw};
+use cosmrs::proto::cosmos::tx::v1beta1::{GetTxsEventRequest, GetTxsEventResponse, TxRaw};
 use cosmrs::tendermint::abci::Path as AbciPath;
 use cosmrs::tendermint::chain::Id as ChainId;
 use cosmrs::tx::{self, Fee, Msg, Raw, SignDoc, SignerInfo};
@@ -691,12 +693,63 @@ impl MarketCoinOps for TendermintCoin {
         &self,
         transaction: &[u8],
         wait_until: u64,
-        from_block: u64,
+        _from_block: u64,
         _swap_contract_address: &Option<BytesJson>,
     ) -> TransactionFut {
+        let tx = try_tx_fus!(cosmrs::Tx::from_bytes(transaction));
+        let first_message = try_tx_fus!(tx.body.messages.first().ok_or("Messages are empty"));
+        let htlc_proto = try_tx_fus!(CreateHtlcProtoRep::decode(first_message.value.as_slice()));
+        let coins_string = htlc_proto
+            .amount
+            .iter()
+            .map(|t| format!("{}{}", t.amount, t.denom))
+            .collect::<Vec<String>>()
+            .join(",");
+        let htlc = try_tx_fus!(MsgCreateHtlc::try_from(htlc_proto));
+
+        let hash_lock_bytes = try_tx_fus!(hex::decode(htlc.hash_lock));
+        let mut htlc_id = vec![];
+        htlc_id.extend_from_slice(hash_lock_bytes.as_slice());
+        htlc_id.extend_from_slice(&htlc.sender.to_bytes());
+        htlc_id.extend_from_slice(&htlc.to.to_bytes());
+        htlc_id.extend_from_slice(coins_string.as_bytes());
+        let htlc_id = sha256(&htlc_id).to_string().to_uppercase();
+
+        let events_string = format!("claim_htlc.id='{}'", htlc_id);
+        let request = GetTxsEventRequest {
+            events: vec![events_string],
+            pagination: None,
+            order_by: 0,
+        };
+        let encoded_request = request.encode_to_vec();
+
         let coin = self.clone();
-        let tx = transaction.to_vec();
-        let fut = async move { Ok(coin.tx_enum_from_bytes(&tx).unwrap()) };
+        let path = AbciPath::from_str("/cosmos.tx.v1beta1.Service/GetTxsEvent").unwrap();
+        let fut = async move {
+            loop {
+                let response = try_tx_s!(
+                    coin.rpc_client
+                        .abci_query(Some(path.clone()), encoded_request.as_slice(), None, false)
+                        .await
+                );
+                let response = try_tx_s!(GetTxsEventResponse::decode(response.value.as_slice()));
+                if let Some(tx) = response.txs.first() {
+                    return Ok(TransactionEnum::CosmosTransaction(CosmosTransaction {
+                        txid: "".to_string(),
+                        data: TxRaw {
+                            body_bytes: tx.body.as_ref().map(Message::encode_to_vec).unwrap_or_default(),
+                            auth_info_bytes: tx.auth_info.as_ref().map(Message::encode_to_vec).unwrap_or_default(),
+                            signatures: tx.signatures.clone(),
+                        },
+                    }));
+                }
+                Timer::sleep(30.).await;
+                if get_utc_timestamp() > wait_until as i64 {
+                    return Err(TransactionErr::Plain("Waited too long".into()));
+                }
+            }
+        };
+
         Box::new(fut.boxed().compat())
     }
 
@@ -1141,7 +1194,7 @@ mod tendermint_coin_tests {
     use super::*;
     use crate::tendermint::htlc_proto::ClaimHtlcProtoRep;
     use common::block_on;
-    use cosmrs::proto::cosmos::tx::v1beta1::GetTxsEventResponse;
+    use cosmrs::proto::cosmos::tx::v1beta1::{GetTxRequest, GetTxResponse, GetTxsEventResponse};
     use rand::{thread_rng, Rng};
 
     const IRIS_TESTNET_HTLC_PAIR1_SEED: &str = "iris test seed";
@@ -1303,5 +1356,59 @@ mod tendermint_coin_tests {
         let actual_secret = hex::decode(claim_htlc.secret).unwrap();
 
         assert_eq!(actual_secret, expected_secret);
+    }
+
+    #[test]
+    fn wait_for_tx_spend_test() {
+        let rpc_urls = vec![IRIS_TESTNET_RPC_URL.to_string()];
+
+        let protocol_conf = get_iris_usdc_ibc_protocol();
+
+        let ctx = mm2_core::mm_ctx::MmCtxBuilder::default()
+            .with_secp256k1_key_pair(crypto::privkey::key_pair_from_seed(IRIS_TESTNET_HTLC_PAIR1_SEED).unwrap())
+            .into_mm_arc();
+
+        let priv_key = &*ctx.secp256k1_key_pair().private().secret;
+
+        let coin = common::block_on(TendermintCoin::init(
+            "USDC-IBC".to_string(),
+            protocol_conf,
+            rpc_urls,
+            priv_key,
+        ))
+        .unwrap();
+
+        // https://nyancat.iobscan.io/#/tx?txHash=2DB382CE3D9953E4A94957B475B0E8A98F5B6DDB32D6BF0F6A765D949CF4A727
+        let create_tx_hash = "2DB382CE3D9953E4A94957B475B0E8A98F5B6DDB32D6BF0F6A765D949CF4A727";
+
+        let request = GetTxRequest {
+            hash: create_tx_hash.into(),
+        };
+
+        let path = AbciPath::from_str("/cosmos.tx.v1beta1.Service/GetTx").unwrap();
+        let response = block_on(
+            coin.rpc_client
+                .abci_query(Some(path), request.encode_to_vec(), None, false),
+        )
+        .unwrap();
+        println!("{:?}", response);
+
+        let response = GetTxResponse::decode(response.value.as_slice()).unwrap();
+        let tx = response.tx.unwrap();
+
+        println!("{:?}", tx);
+
+        let encoded_tx = tx.encode_to_vec();
+
+        let spend_tx = block_on(
+            coin.wait_for_tx_spend(&encoded_tx, get_utc_timestamp() as u64, 0, &None)
+                .compat(),
+        )
+        .unwrap();
+
+        // https://nyancat.iobscan.io/#/tx?txHash=565C820C1F95556ADC251F16244AAD4E4274772F41BC13F958C9C2F89A14D137
+        let expected_spend_hash = "565C820C1F95556ADC251F16244AAD4E4274772F41BC13F958C9C2F89A14D137";
+        let hash = spend_tx.tx_hash();
+        assert_eq!(upper_hex(&hash.0), expected_spend_hash);
     }
 }
