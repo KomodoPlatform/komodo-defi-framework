@@ -11,11 +11,6 @@ pub(crate) mod ln_storage;
 mod ln_utils;
 
 use super::{lp_coinfind_or_err, DerivationMethod, MmCoinEnum};
-use crate::lightning::ln_errors::{TrustedNodeError, TrustedNodeResult};
-use crate::lightning::ln_events::init_events_abort_handlers;
-use crate::lightning::ln_serialization::{ChannelDetailsForRPC, PublicKeyForRPC};
-use crate::lightning::ln_sql::SqliteLightningDB;
-use crate::lightning::ln_storage::{NetworkGraph, TrustedNodesShared};
 use crate::utxo::rpc_clients::UtxoRpcClientEnum;
 use crate::utxo::utxo_common::big_decimal_from_sat_unsigned;
 use crate::utxo::BlockchainNetwork;
@@ -36,7 +31,6 @@ use common::{async_blocking, calc_total_pages, log, now_ms, ten, PagingOptionsEn
 use futures::{FutureExt, TryFutureExt};
 use futures01::Future;
 use keys::{hash::H256, CompactSignature, KeyPair, Private, Public};
-use lightning::chain::channelmonitor::Balance;
 use lightning::chain::keysinterface::{KeysInterface, KeysManager, Recipient};
 use lightning::chain::Access;
 use lightning::ln::channelmanager::{ChannelDetails, MIN_FINAL_CLTV_EXPIRY};
@@ -48,15 +42,16 @@ use lightning_invoice::utils::{create_invoice_from_channelmanager, DefaultRouter
 use lightning_invoice::{Invoice, InvoiceDescription};
 use ln_conf::{LightningCoinConf, LightningProtocolConf, PlatformCoinConfirmationTargets};
 use ln_db::{DBChannelDetails, DBPaymentInfo, DBPaymentsFilter, HTLCStatus, LightningDB, PaymentType};
-use ln_errors::{ClaimableBalancesError, ClaimableBalancesResult, CloseChannelError, CloseChannelResult,
-                EnableLightningError, EnableLightningResult, GenerateInvoiceError, GenerateInvoiceResult,
-                GetChannelDetailsError, GetChannelDetailsResult, GetPaymentDetailsError, GetPaymentDetailsResult,
+use ln_errors::{CloseChannelError, CloseChannelResult, EnableLightningError, EnableLightningResult,
+                GenerateInvoiceError, GenerateInvoiceResult, GetPaymentDetailsError, GetPaymentDetailsResult,
                 ListPaymentsError, ListPaymentsResult, SendPaymentError, SendPaymentResult};
-use ln_events::LightningEventHandler;
+use ln_events::{init_events_abort_handlers, LightningEventHandler};
 use ln_filesystem_persister::LightningFilesystemPersister;
 use ln_p2p::{connect_to_node, PeerManager};
 use ln_platform::Platform;
-use ln_storage::{LightningStorage, NodesAddressesMapShared, Scorer};
+use ln_serialization::{ChannelDetailsForRPC, PublicKeyForRPC};
+use ln_sql::SqliteLightningDB;
+use ln_storage::{LightningStorage, NetworkGraph, NodesAddressesMapShared, Scorer, TrustedNodesShared};
 use ln_utils::{ChainMonitor, ChannelManager};
 use mm2_core::mm_ctx::MmArc;
 use mm2_err_handle::prelude::*;
@@ -141,7 +136,7 @@ impl LightningCoin {
     #[inline]
     fn my_node_id(&self) -> String { self.channel_manager.get_our_node_id().to_string() }
 
-    async fn list_channels(&self) -> Vec<ChannelDetails> {
+    pub(crate) async fn list_channels(&self) -> Vec<ChannelDetails> {
         let channel_manager = self.channel_manager.clone();
         async_blocking(move || channel_manager.list_channels()).await
     }
@@ -876,42 +871,6 @@ pub async fn start_lightning(
 }
 
 #[derive(Deserialize)]
-pub struct GetChannelDetailsRequest {
-    pub coin: String,
-    pub rpc_channel_id: u64,
-}
-
-#[derive(Serialize)]
-#[serde(tag = "status", content = "details")]
-pub enum GetChannelDetailsResponse {
-    Open(ChannelDetailsForRPC),
-    Closed(DBChannelDetails),
-}
-
-pub async fn get_channel_details(
-    ctx: MmArc,
-    req: GetChannelDetailsRequest,
-) -> GetChannelDetailsResult<GetChannelDetailsResponse> {
-    let ln_coin = match lp_coinfind_or_err(&ctx, &req.coin).await? {
-        MmCoinEnum::LightningCoin(c) => c,
-        e => return MmError::err(GetChannelDetailsError::UnsupportedCoin(e.ticker().to_string())),
-    };
-
-    let channel_details = match ln_coin.get_channel_by_rpc_id(req.rpc_channel_id).await {
-        Some(details) => GetChannelDetailsResponse::Open(details.into()),
-        None => GetChannelDetailsResponse::Closed(
-            ln_coin
-                .db
-                .get_channel_from_db(req.rpc_channel_id)
-                .await?
-                .ok_or(GetChannelDetailsError::NoSuchChannel(req.rpc_channel_id))?,
-        ),
-    };
-
-    Ok(channel_details)
-}
-
-#[derive(Deserialize)]
 pub struct GenerateInvoiceRequest {
     pub coin: String,
     pub amount_in_msat: Option<u64>,
@@ -1253,197 +1212,4 @@ pub async fn close_channel(ctx: MmArc, req: CloseChannelReq) -> CloseChannelResu
         "Initiated closing of channel with rpc_channel_id: {}",
         req.rpc_channel_id
     ))
-}
-
-/// Details about the balance(s) available for spending once the channel appears on chain.
-#[derive(Serialize)]
-pub enum ClaimableBalance {
-    /// The channel is not yet closed (or the commitment or closing transaction has not yet
-    /// appeared in a block). The given balance is claimable (less on-chain fees) if the channel is
-    /// force-closed now.
-    ClaimableOnChannelClose {
-        /// The amount available to claim, in satoshis, excluding the on-chain fees which will be
-        /// required to do so.
-        claimable_amount_satoshis: u64,
-    },
-    /// The channel has been closed, and the given balance is ours but awaiting confirmations until
-    /// we consider it spendable.
-    ClaimableAwaitingConfirmations {
-        /// The amount available to claim, in satoshis, possibly excluding the on-chain fees which
-        /// were spent in broadcasting the transaction.
-        claimable_amount_satoshis: u64,
-        /// The height at which an [`Event::SpendableOutputs`] event will be generated for this
-        /// amount.
-        confirmation_height: u32,
-    },
-    /// The channel has been closed, and the given balance should be ours but awaiting spending
-    /// transaction confirmation. If the spending transaction does not confirm in time, it is
-    /// possible our counterparty can take the funds by broadcasting an HTLC timeout on-chain.
-    ///
-    /// Once the spending transaction confirms, before it has reached enough confirmations to be
-    /// considered safe from chain reorganizations, the balance will instead be provided via
-    /// [`Balance::ClaimableAwaitingConfirmations`].
-    ContentiousClaimable {
-        /// The amount available to claim, in satoshis, excluding the on-chain fees which will be
-        /// required to do so.
-        claimable_amount_satoshis: u64,
-        /// The height at which the counterparty may be able to claim the balance if we have not
-        /// done so.
-        timeout_height: u32,
-    },
-    /// HTLCs which we sent to our counterparty which are claimable after a timeout (less on-chain
-    /// fees) if the counterparty does not know the preimage for the HTLCs. These are somewhat
-    /// likely to be claimed by our counterparty before we do.
-    MaybeClaimableHTLCAwaitingTimeout {
-        /// The amount available to claim, in satoshis, excluding the on-chain fees which will be
-        /// required to do so.
-        claimable_amount_satoshis: u64,
-        /// The height at which we will be able to claim the balance if our counterparty has not
-        /// done so.
-        claimable_height: u32,
-    },
-}
-
-impl From<Balance> for ClaimableBalance {
-    fn from(balance: Balance) -> Self {
-        match balance {
-            Balance::ClaimableOnChannelClose {
-                claimable_amount_satoshis,
-            } => ClaimableBalance::ClaimableOnChannelClose {
-                claimable_amount_satoshis,
-            },
-            Balance::ClaimableAwaitingConfirmations {
-                claimable_amount_satoshis,
-                confirmation_height,
-            } => ClaimableBalance::ClaimableAwaitingConfirmations {
-                claimable_amount_satoshis,
-                confirmation_height,
-            },
-            Balance::ContentiousClaimable {
-                claimable_amount_satoshis,
-                timeout_height,
-            } => ClaimableBalance::ContentiousClaimable {
-                claimable_amount_satoshis,
-                timeout_height,
-            },
-            Balance::MaybeClaimableHTLCAwaitingTimeout {
-                claimable_amount_satoshis,
-                claimable_height,
-            } => ClaimableBalance::MaybeClaimableHTLCAwaitingTimeout {
-                claimable_amount_satoshis,
-                claimable_height,
-            },
-        }
-    }
-}
-
-#[derive(Deserialize)]
-pub struct ClaimableBalancesReq {
-    pub coin: String,
-    #[serde(default)]
-    pub include_open_channels_balances: bool,
-}
-
-pub async fn get_claimable_balances(
-    ctx: MmArc,
-    req: ClaimableBalancesReq,
-) -> ClaimableBalancesResult<Vec<ClaimableBalance>> {
-    let ln_coin = match lp_coinfind_or_err(&ctx, &req.coin).await? {
-        MmCoinEnum::LightningCoin(c) => c,
-        e => return MmError::err(ClaimableBalancesError::UnsupportedCoin(e.ticker().to_string())),
-    };
-    let ignored_channels = if req.include_open_channels_balances {
-        Vec::new()
-    } else {
-        ln_coin.list_channels().await
-    };
-    let claimable_balances = async_blocking(move || {
-        ln_coin
-            .chain_monitor
-            .get_claimable_balances(&ignored_channels.iter().collect::<Vec<_>>()[..])
-            .into_iter()
-            .map(From::from)
-            .collect()
-    })
-    .await;
-
-    Ok(claimable_balances)
-}
-
-#[derive(Deserialize)]
-pub struct AddTrustedNodeReq {
-    pub coin: String,
-    pub node_id: PublicKeyForRPC,
-}
-
-#[derive(Serialize)]
-pub struct AddTrustedNodeResponse {
-    pub added_node: PublicKeyForRPC,
-}
-
-pub async fn add_trusted_node(ctx: MmArc, req: AddTrustedNodeReq) -> TrustedNodeResult<AddTrustedNodeResponse> {
-    let ln_coin = match lp_coinfind_or_err(&ctx, &req.coin).await? {
-        MmCoinEnum::LightningCoin(c) => c,
-        e => return MmError::err(TrustedNodeError::UnsupportedCoin(e.ticker().to_string())),
-    };
-
-    if ln_coin.trusted_nodes.lock().insert(req.node_id.clone().into()) {
-        ln_coin.persister.save_trusted_nodes(ln_coin.trusted_nodes).await?;
-    }
-
-    Ok(AddTrustedNodeResponse {
-        added_node: req.node_id,
-    })
-}
-
-#[derive(Deserialize)]
-pub struct RemoveTrustedNodeReq {
-    pub coin: String,
-    pub node_id: PublicKeyForRPC,
-}
-
-#[derive(Serialize)]
-pub struct RemoveTrustedNodeResponse {
-    pub removed_node: PublicKeyForRPC,
-}
-
-pub async fn remove_trusted_node(
-    ctx: MmArc,
-    req: RemoveTrustedNodeReq,
-) -> TrustedNodeResult<RemoveTrustedNodeResponse> {
-    let ln_coin = match lp_coinfind_or_err(&ctx, &req.coin).await? {
-        MmCoinEnum::LightningCoin(c) => c,
-        e => return MmError::err(TrustedNodeError::UnsupportedCoin(e.ticker().to_string())),
-    };
-
-    if ln_coin.trusted_nodes.lock().remove(&req.node_id.clone().into()) {
-        ln_coin.persister.save_trusted_nodes(ln_coin.trusted_nodes).await?;
-    }
-
-    Ok(RemoveTrustedNodeResponse {
-        removed_node: req.node_id,
-    })
-}
-
-#[derive(Deserialize)]
-pub struct ListTrustedNodesReq {
-    pub coin: String,
-}
-
-#[derive(Serialize)]
-pub struct ListTrustedNodesResponse {
-    trusted_nodes: Vec<PublicKeyForRPC>,
-}
-
-pub async fn list_trusted_nodes(ctx: MmArc, req: ListTrustedNodesReq) -> TrustedNodeResult<ListTrustedNodesResponse> {
-    let ln_coin = match lp_coinfind_or_err(&ctx, &req.coin).await? {
-        MmCoinEnum::LightningCoin(c) => c,
-        e => return MmError::err(TrustedNodeError::UnsupportedCoin(e.ticker().to_string())),
-    };
-
-    let trusted_nodes = ln_coin.trusted_nodes.lock().clone();
-
-    Ok(ListTrustedNodesResponse {
-        trusted_nodes: trusted_nodes.into_iter().map(PublicKeyForRPC).collect(),
-    })
 }

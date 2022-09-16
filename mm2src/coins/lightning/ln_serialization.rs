@@ -1,5 +1,6 @@
 use crate::lightning::ln_platform::h256_json_from_txid;
 use crate::H256Json;
+use lightning::chain::channelmonitor::Balance;
 use lightning::ln::channelmanager::ChannelDetails;
 use secp256k1v22::PublicKey;
 use serde::{de, Serialize, Serializer};
@@ -136,6 +137,88 @@ impl From<ChannelDetails> for ChannelDetailsForRPC {
             is_ready: details.is_channel_ready,
             is_usable: details.is_usable,
             is_public: details.is_public,
+        }
+    }
+}
+
+/// Details about the balance(s) available for spending once the channel appears on chain.
+#[derive(Serialize)]
+pub enum ClaimableBalance {
+    /// The channel is not yet closed (or the commitment or closing transaction has not yet
+    /// appeared in a block). The given balance is claimable (less on-chain fees) if the channel is
+    /// force-closed now.
+    ClaimableOnChannelClose {
+        /// The amount available to claim, in satoshis, excluding the on-chain fees which will be
+        /// required to do so.
+        claimable_amount_satoshis: u64,
+    },
+    /// The channel has been closed, and the given balance is ours but awaiting confirmations until
+    /// we consider it spendable.
+    ClaimableAwaitingConfirmations {
+        /// The amount available to claim, in satoshis, possibly excluding the on-chain fees which
+        /// were spent in broadcasting the transaction.
+        claimable_amount_satoshis: u64,
+        /// The height at which an [`Event::SpendableOutputs`] event will be generated for this
+        /// amount.
+        confirmation_height: u32,
+    },
+    /// The channel has been closed, and the given balance should be ours but awaiting spending
+    /// transaction confirmation. If the spending transaction does not confirm in time, it is
+    /// possible our counterparty can take the funds by broadcasting an HTLC timeout on-chain.
+    ///
+    /// Once the spending transaction confirms, before it has reached enough confirmations to be
+    /// considered safe from chain reorganizations, the balance will instead be provided via
+    /// [`Balance::ClaimableAwaitingConfirmations`].
+    ContentiousClaimable {
+        /// The amount available to claim, in satoshis, excluding the on-chain fees which will be
+        /// required to do so.
+        claimable_amount_satoshis: u64,
+        /// The height at which the counterparty may be able to claim the balance if we have not
+        /// done so.
+        timeout_height: u32,
+    },
+    /// HTLCs which we sent to our counterparty which are claimable after a timeout (less on-chain
+    /// fees) if the counterparty does not know the preimage for the HTLCs. These are somewhat
+    /// likely to be claimed by our counterparty before we do.
+    MaybeClaimableHTLCAwaitingTimeout {
+        /// The amount available to claim, in satoshis, excluding the on-chain fees which will be
+        /// required to do so.
+        claimable_amount_satoshis: u64,
+        /// The height at which we will be able to claim the balance if our counterparty has not
+        /// done so.
+        claimable_height: u32,
+    },
+}
+
+impl From<Balance> for ClaimableBalance {
+    fn from(balance: Balance) -> Self {
+        match balance {
+            Balance::ClaimableOnChannelClose {
+                claimable_amount_satoshis,
+            } => ClaimableBalance::ClaimableOnChannelClose {
+                claimable_amount_satoshis,
+            },
+            Balance::ClaimableAwaitingConfirmations {
+                claimable_amount_satoshis,
+                confirmation_height,
+            } => ClaimableBalance::ClaimableAwaitingConfirmations {
+                claimable_amount_satoshis,
+                confirmation_height,
+            },
+            Balance::ContentiousClaimable {
+                claimable_amount_satoshis,
+                timeout_height,
+            } => ClaimableBalance::ContentiousClaimable {
+                claimable_amount_satoshis,
+                timeout_height,
+            },
+            Balance::MaybeClaimableHTLCAwaitingTimeout {
+                claimable_amount_satoshis,
+                claimable_height,
+            } => ClaimableBalance::MaybeClaimableHTLCAwaitingTimeout {
+                claimable_amount_satoshis,
+                claimable_height,
+            },
         }
     }
 }
