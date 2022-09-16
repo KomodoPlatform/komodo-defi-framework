@@ -7890,5 +7890,6 @@ fn test_tbtc_block_header_sync() {
     block_on(mm_bob.stop()).unwrap();
 }
 
-pub mod iris_swap_poc;
+#[cfg(not(target_arch = "wasm32"))] pub mod iris_swap_poc;
+#[cfg(not(target_arch = "wasm32"))]
 pub mod tendermint_ibc_asset_tests;

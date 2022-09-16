@@ -1,5 +1,7 @@
 use common::APPLICATION_JSON;
+use cosmrs::tendermint::abci::Path as AbciPath;
 use cosmrs::tendermint::abci::Transaction;
+use cosmrs::tendermint::block::Height;
 use derive_more::Display;
 use http::header::{ACCEPT, CONTENT_TYPE};
 use http::uri::InvalidUri;
@@ -7,7 +9,7 @@ use http::{StatusCode, Uri};
 use mm2_net::transport::SlurpError;
 use mm2_net::wasm_http::FetchRequest;
 use std::str::FromStr;
-pub use tendermint_rpc::endpoint::abci_query::Request as AbciRequest;
+pub use tendermint_rpc::endpoint::abci_query::{AbciQuery, Request as AbciRequest};
 use tendermint_rpc::endpoint::{abci_info, broadcast};
 use tendermint_rpc::error::Error as TendermintRpcError;
 use tendermint_rpc::request::SimpleRequest;
@@ -77,6 +79,23 @@ impl HttpClient {
     /// `/abci_info`: get information about the ABCI application.
     pub async fn abci_info(&self) -> Result<abci_info::AbciInfo, PerformError> {
         Ok(self.perform(abci_info::Request).await?.response)
+    }
+
+    /// `/abci_query`: query the ABCI application
+    pub async fn abci_query<V>(
+        &self,
+        path: Option<AbciPath>,
+        data: V,
+        height: Option<Height>,
+        prove: bool,
+    ) -> Result<AbciQuery, PerformError>
+    where
+        V: Into<Vec<u8>> + Send,
+    {
+        Ok(self
+            .perform(AbciRequest::new(path, data, height, prove))
+            .await?
+            .response)
     }
 
     /// `/broadcast_tx_commit`: broadcast a transaction, returning the response
