@@ -22,8 +22,9 @@ use bitcrypto::sha256;
 use coins::register_balance_update_handler;
 use common::executor::{spawn, spawn_boxed, Timer};
 use common::log::{info, warn};
-use crypto::{CryptoCtx, CryptoInitError, HwError, HwProcessingError};
+use crypto::{from_hw_error, CryptoCtx, CryptoInitError, HwError, HwProcessingError, HwRpcError, WithHwRpcError};
 use derive_more::Display;
+use enum_from::EnumFromTrait;
 use mm2_core::mm_ctx::{MmArc, MmCtx};
 use mm2_err_handle::prelude::*;
 use mm2_libp2p::{spawn_gossipsub, AdexBehaviourError, NodeType, RelayAddress, RelayAddressError, WssCerts};
@@ -100,10 +101,11 @@ impl From<AdexBehaviourError> for P2PInitError {
     }
 }
 
-#[derive(Clone, Debug, Display, Serialize, SerializeErrorType)]
+#[derive(Clone, Debug, Display, EnumFromTrait, Serialize, SerializeErrorType)]
 #[serde(tag = "error_type", content = "error_data")]
 pub enum MmInitError {
     Canceled,
+    #[from_trait(WithTimeout::timeout)]
     #[display(fmt = "Initialization timeout {:?}", _0)]
     Timeout(Duration),
     #[display(fmt = "Error deserializing '{}' config field: {}", field, error)]
@@ -141,10 +143,10 @@ pub enum MmInitError {
     NullStringPassphrase,
     #[display(fmt = "Invalid passphrase: {}", _0)]
     InvalidPassphrase(String),
-    #[display(fmt = "No Trezor device available")]
-    NoTrezorDeviceAvailable,
-    #[display(fmt = "Hardware Wallet error: {}", _0)]
-    HardwareWalletError(String),
+    #[from_trait(WithHwRpcError::hw_rpc_error)]
+    #[display(fmt = "{}", _0)]
+    HwError(HwRpcError),
+    #[from_trait(WithInternal::internal)]
     #[display(fmt = "Internal error: {}", _0)]
     Internal(String),
 }
@@ -202,13 +204,7 @@ impl From<CryptoInitError> for MmInitError {
 }
 
 impl From<HwError> for MmInitError {
-    fn from(e: HwError) -> Self {
-        match e {
-            HwError::NoTrezorDeviceAvailable => MmInitError::NoTrezorDeviceAvailable,
-            HwError::Internal(internal) => MmInitError::Internal(internal),
-            hw => MmInitError::HardwareWalletError(hw.to_string()),
-        }
-    }
+    fn from(e: HwError) -> Self { from_hw_error(e) }
 }
 
 impl From<RpcTaskError> for MmInitError {
@@ -217,7 +213,9 @@ impl From<RpcTaskError> for MmInitError {
         match e {
             RpcTaskError::Canceled => MmInitError::Canceled,
             RpcTaskError::Timeout(timeout) => MmInitError::Timeout(timeout),
-            RpcTaskError::NoSuchTask(_) | RpcTaskError::UnexpectedTaskStatus { .. } => MmInitError::Internal(error),
+            RpcTaskError::NoSuchTask(_)
+            | RpcTaskError::UnexpectedTaskStatus { .. }
+            | RpcTaskError::UnexpectedUserAction { .. } => MmInitError::Internal(error),
             RpcTaskError::Internal(internal) => MmInitError::Internal(internal),
         }
     }

@@ -587,7 +587,7 @@ impl BchCoin {
         Ok(slp_tx_details_builder.build())
     }
 
-    pub async fn get_block_timestamp(&self, height: u64) -> Result<u64, MmError<UtxoRpcError>> {
+    pub async fn get_block_timestamp(&self, height: u64) -> Result<u64, MmError<GetBlockHeaderError>> {
         self.as_ref().rpc_client.get_block_timestamp(height).await
     }
 }
@@ -1248,7 +1248,7 @@ impl UtxoTxHistoryOps for BchCoin {
         utxo_common::request_tx_history(self, metrics).await
     }
 
-    async fn get_block_timestamp(&self, height: u64) -> MmResult<u64, UtxoRpcError> {
+    async fn get_block_timestamp(&self, height: u64) -> MmResult<u64, GetBlockHeaderError> {
         self.get_block_timestamp(height).await
     }
 

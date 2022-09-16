@@ -1,25 +1,29 @@
 use crate::hd_pubkey::HDXPubExtractor;
-use crate::hd_wallet::{HDAccountOps, HDWalletCoinOps, HDWalletOps, NewAccountCreatingError};
+use crate::hd_wallet::{HDAccountOps, HDWalletCoinOps, HDWalletOps, NewAccountCreatingError, NewAddressDerivingError};
 use crate::{BalanceError, BalanceResult, CoinBalance, CoinWithDerivationMethod, DerivationMethod, HDAddress,
             MarketCoinOps};
 use async_trait::async_trait;
 use common::custom_iter::TryUnzip;
 use common::log::{debug, info};
 use crypto::{Bip44Chain, RpcDerivationPath};
-use derive_more::Display;
 use futures::compat::Future01CompatExt;
 use mm2_err_handle::prelude::*;
 use mm2_number::BigDecimal;
+#[cfg(test)] use mocktopus::macros::*;
 use std::collections::HashMap;
 use std::ops::Range;
 use std::{fmt, iter};
 
 pub type AddressIdRange = Range<u32>;
 
-#[derive(Display)]
 pub enum EnableCoinBalanceError {
+    NewAddressDerivingError(NewAddressDerivingError),
     NewAccountCreatingError(NewAccountCreatingError),
     BalanceError(BalanceError),
+}
+
+impl From<NewAddressDerivingError> for EnableCoinBalanceError {
+    fn from(e: NewAddressDerivingError) -> Self { EnableCoinBalanceError::NewAddressDerivingError(e) }
 }
 
 impl From<NewAccountCreatingError> for EnableCoinBalanceError {
@@ -101,6 +105,13 @@ impl Default for EnableCoinScanPolicy {
     fn default() -> Self { EnableCoinScanPolicy::ScanIfNewWallet }
 }
 
+#[derive(Clone, Debug, Default, Deserialize, Serialize)]
+pub struct EnabledCoinBalanceParams {
+    #[serde(default)]
+    pub scan_policy: EnableCoinScanPolicy,
+    pub min_addresses_number: Option<u32>,
+}
+
 #[async_trait]
 pub trait CoinBalanceReportOps {
     async fn coin_balance_report(&self) -> BalanceResult<CoinBalanceReport>;
@@ -141,7 +152,7 @@ pub trait EnableCoinBalanceOps {
     async fn enable_coin_balance<XPubExtractor>(
         &self,
         xpub_extractor: &XPubExtractor,
-        scan_policy: EnableCoinScanPolicy,
+        params: EnabledCoinBalanceParams,
     ) -> MmResult<CoinBalanceReport, EnableCoinBalanceError>
     where
         XPubExtractor: HDXPubExtractor + Sync;
@@ -159,7 +170,7 @@ where
     async fn enable_coin_balance<XPubExtractor>(
         &self,
         xpub_extractor: &XPubExtractor,
-        scan_policy: EnableCoinScanPolicy,
+        params: EnabledCoinBalanceParams,
     ) -> MmResult<CoinBalanceReport, EnableCoinBalanceError>
     where
         XPubExtractor: HDXPubExtractor + Sync,
@@ -177,7 +188,7 @@ where
                 })
                 .mm_err(EnableCoinBalanceError::from),
             DerivationMethod::HDWallet(hd_wallet) => self
-                .enable_hd_wallet(hd_wallet, xpub_extractor, scan_policy)
+                .enable_hd_wallet(hd_wallet, xpub_extractor, params)
                 .await
                 .map(CoinBalanceReport::HD),
         }
@@ -197,7 +208,7 @@ pub trait HDWalletBalanceOps: HDWalletCoinOps {
         &self,
         hd_wallet: &Self::HDWallet,
         xpub_extractor: &XPubExtractor,
-        scan_policy: EnableCoinScanPolicy,
+        params: EnabledCoinBalanceParams,
     ) -> MmResult<HDWalletBalance, EnableCoinBalanceError>
     where
         XPubExtractor: HDXPubExtractor + Sync;
@@ -310,6 +321,7 @@ pub trait HDWalletBalanceOps: HDWalletCoinOps {
 }
 
 #[async_trait]
+#[cfg_attr(test, mockable)]
 pub trait HDAddressBalanceScanner: Sync {
     type Address;
 
@@ -331,9 +343,11 @@ pub mod common_impl {
         hd_account: &mut Coin::HDAccount,
         address_scanner: &Coin::HDAddressScanner,
         scan_new_addresses: bool,
+        min_addresses_number: Option<u32>,
     ) -> MmResult<HDAccountBalance, EnableCoinBalanceError>
     where
-        Coin: HDWalletBalanceOps + Sync,
+        Coin: HDWalletBalanceOps + MarketCoinOps + Sync,
+        Coin::Address: fmt::Display,
     {
         let gap_limit = hd_wallet.gap_limit();
         let mut addresses = coin.all_known_addresses_balances(hd_account).await?;
@@ -342,6 +356,10 @@ pub mod common_impl {
                 coin.scan_for_new_addresses(hd_wallet, hd_account, address_scanner, gap_limit)
                     .await?,
             );
+        }
+
+        if let Some(min_addresses_number) = min_addresses_number {
+            gen_new_addresses(coin, hd_wallet, hd_account, &mut addresses, min_addresses_number).await?
         }
 
         let total_balance = addresses.iter().fold(CoinBalance::default(), |total, addr_balance| {
@@ -361,10 +379,11 @@ pub mod common_impl {
         coin: &Coin,
         hd_wallet: &Coin::HDWallet,
         xpub_extractor: &XPubExtractor,
-        scan_policy: EnableCoinScanPolicy,
+        params: EnabledCoinBalanceParams,
     ) -> MmResult<HDWalletBalance, EnableCoinBalanceError>
     where
         Coin: HDWalletBalanceOps + MarketCoinOps + Sync,
+        Coin::Address: fmt::Display,
         XPubExtractor: HDXPubExtractor + Sync,
     {
         let mut accounts = hd_wallet.get_accounts_mut().await;
@@ -385,12 +404,19 @@ pub mod common_impl {
             // Create new HD account.
             let mut new_account = coin.create_new_account(hd_wallet, xpub_extractor).await?;
             let scan_new_addresses = matches!(
-                scan_policy,
+                params.scan_policy,
                 EnableCoinScanPolicy::ScanIfNewWallet | EnableCoinScanPolicy::Scan
             );
 
-            let account_balance =
-                enable_hd_account(coin, hd_wallet, &mut new_account, &address_scanner, scan_new_addresses).await?;
+            let account_balance = enable_hd_account(
+                coin,
+                hd_wallet,
+                &mut new_account,
+                &address_scanner,
+                scan_new_addresses,
+                params.min_addresses_number,
+            )
+            .await?;
             result.accounts.push(account_balance);
             return Ok(result);
         }
@@ -400,13 +426,85 @@ pub mod common_impl {
             accounts.len(),
             coin.ticker()
         );
-        let scan_new_addresses = matches!(scan_policy, EnableCoinScanPolicy::Scan);
+        let scan_new_addresses = matches!(params.scan_policy, EnableCoinScanPolicy::Scan);
         for (_account_id, hd_account) in accounts.iter_mut() {
-            let account_balance =
-                enable_hd_account(coin, hd_wallet, hd_account, &address_scanner, scan_new_addresses).await?;
+            let account_balance = enable_hd_account(
+                coin,
+                hd_wallet,
+                hd_account,
+                &address_scanner,
+                scan_new_addresses,
+                params.min_addresses_number,
+            )
+            .await?;
             result.accounts.push(account_balance);
         }
 
         Ok(result)
+    }
+
+    /// Generate new address so that the total number of `result_addresses` addresses is at least `min_addresses_number`.
+    async fn gen_new_addresses<Coin>(
+        coin: &Coin,
+        hd_wallet: &Coin::HDWallet,
+        hd_account: &mut Coin::HDAccount,
+        result_addresses: &mut Vec<HDAddressBalance>,
+        min_addresses_number: u32,
+    ) -> MmResult<(), EnableCoinBalanceError>
+    where
+        Coin: HDWalletBalanceOps + MarketCoinOps + Sync,
+        Coin::Address: fmt::Display,
+    {
+        let max_addresses_number = hd_wallet.address_limit();
+        if min_addresses_number >= max_addresses_number {
+            return MmError::err(EnableCoinBalanceError::NewAddressDerivingError(
+                NewAddressDerivingError::AddressLimitReached { max_addresses_number },
+            ));
+        }
+
+        let min_addresses_number = min_addresses_number as usize;
+        let actual_addresses_number = result_addresses.len();
+        if actual_addresses_number >= min_addresses_number {
+            // There are more or equal to the `min_addresses_number` known addresses already.
+            return Ok(());
+        }
+
+        let to_generate = min_addresses_number - actual_addresses_number;
+        let chain = hd_wallet.default_receiver_chain();
+        let ticker = coin.ticker();
+        let account_id = hd_account.account_id();
+        info!("Generate '{to_generate}' addresses: ticker={ticker} account_id={account_id}, chain={chain:?}");
+
+        let mut new_addresses = Vec::with_capacity(to_generate);
+        let mut addresses_to_request = Vec::with_capacity(to_generate);
+        for _ in 0..to_generate {
+            let HDAddress {
+                address,
+                derivation_path,
+                ..
+            } = coin.generate_new_address(hd_wallet, hd_account, chain).await?;
+
+            new_addresses.push(HDAddressBalance {
+                address: address.to_string(),
+                derivation_path: RpcDerivationPath(derivation_path),
+                chain,
+                balance: CoinBalance::default(),
+            });
+            addresses_to_request.push(address);
+        }
+
+        let to_extend = coin
+            .known_addresses_balances(addresses_to_request)
+            .await?
+            .into_iter()
+            // The balances are guaranteed to be in the same order as they were requests.
+            .zip(new_addresses)
+            .map(|((_address, balance), mut address_info)| {
+                address_info.balance = balance;
+                address_info
+            });
+
+        result_addresses.extend(to_extend);
+        Ok(())
     }
 }

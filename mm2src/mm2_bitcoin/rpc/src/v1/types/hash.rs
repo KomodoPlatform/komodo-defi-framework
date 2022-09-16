@@ -15,8 +15,12 @@ macro_rules! impl_hash {
         #[derive(Clone, Copy)]
         pub struct $name(pub [u8; $size]);
 
+        impl $name {
+            pub const fn const_default() -> $name { $name([0; $size]) }
+        }
+
         impl Default for $name {
-            fn default() -> Self { $name([0; $size]) }
+            fn default() -> Self { $name::const_default() }
         }
 
         impl fmt::Display for $name {

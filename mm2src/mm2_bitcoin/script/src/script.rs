@@ -24,6 +24,7 @@ pub enum ScriptType {
     CreateSender,
     Call,
     Create,
+    ColdStaking,
 }
 
 /// Address from Script
@@ -459,6 +460,9 @@ impl Script {
                 Ok(vec![]) // TODO
             },
             ScriptType::Create => {
+                Ok(vec![]) // TODO
+            },
+            ScriptType::ColdStaking => {
                 Ok(vec![]) // TODO
             },
         }

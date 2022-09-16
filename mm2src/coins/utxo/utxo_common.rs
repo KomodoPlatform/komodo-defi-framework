@@ -21,7 +21,7 @@ use chain::constants::SEQUENCE_FINAL;
 use chain::{OutPoint, TransactionOutput};
 use common::executor::Timer;
 use common::jsonrpc_client::JsonRpcErrorType;
-use common::log::{debug, error, info, warn};
+use common::log::{error, warn};
 use common::{now_ms, one_hundred, ten_f64};
 use crypto::{Bip32DerPathOps, Bip44Chain, Bip44DerPathError, Bip44DerivationPath, RpcDerivationPath};
 use futures::compat::Future01CompatExt;
@@ -41,8 +41,6 @@ use secp256k1::{PublicKey, Signature};
 use serde_json::{self as json};
 use serialization::{deserialize, serialize, serialize_with_flags, CoinVariant, CompactInteger, Serializable, Stream,
                     SERIALIZE_TRANSACTION_WITNESS};
-use spv_validation::helpers_validation::validate_headers;
-use spv_validation::storage::BlockHeaderStorageOps;
 use std::cmp::Ordering;
 use std::collections::hash_map::{Entry, HashMap};
 use std::str::FromStr;
@@ -147,10 +145,9 @@ where
         .last()
         .map(|(account_id, _account)| *account_id + 1)
         .unwrap_or(INIT_ACCOUNT_ID);
-    if new_account_id >= ChildNumber::HARDENED_FLAG {
-        return MmError::err(NewAccountCreatingError::AccountLimitReached {
-            max_accounts_number: ChildNumber::HARDENED_FLAG,
-        });
+    let max_accounts_number = hd_wallet.account_limit();
+    if new_account_id >= max_accounts_number {
+        return MmError::err(NewAccountCreatingError::AccountLimitReached { max_accounts_number });
     }
 
     let account_child_hardened = true;
@@ -201,10 +198,9 @@ pub async fn set_known_addresses_number<T>(
 where
     T: HDWalletCoinWithStorageOps<HDWallet = UtxoHDWallet, HDAccount = UtxoHDAccount> + Sync,
 {
-    if new_known_addresses_number >= ChildNumber::HARDENED_FLAG {
-        return MmError::err(AccountUpdatingError::AddressLimitReached {
-            max_addresses_number: ChildNumber::HARDENED_FLAG,
-        });
+    let max_addresses_number = hd_wallet.address_limit();
+    if new_known_addresses_number >= max_addresses_number {
+        return MmError::err(AccountUpdatingError::AddressLimitReached { max_addresses_number });
     }
     match chain {
         Bip44Chain::External => {
@@ -286,7 +282,8 @@ where
         .mm_err(|e| BalanceError::Internal(e.to_string()))?;
 
     let mut unused_addresses_counter = 0;
-    while checking_address_id < ChildNumber::HARDENED_FLAG && unused_addresses_counter < gap_limit {
+    let max_addresses_number = hd_wallet.address_limit();
+    while checking_address_id < max_addresses_number && unused_addresses_counter <= gap_limit {
         let HDAddress {
             address: checking_address,
             derivation_path: checking_address_der_path,
@@ -457,9 +454,10 @@ where
 {
     let trezor_coin = conf
         .trezor_coin
+        .clone()
         .or_mm_err(|| HDExtractPubkeyError::CoinDoesntSupportTrezor)?;
     let xpub = xpub_extractor.extract_utxo_xpub(trezor_coin, derivation_path).await?;
-    Secp256k1ExtendedPublicKey::from_str(&xpub).map_to_mm(HDExtractPubkeyError::InvalidXpub)
+    Secp256k1ExtendedPublicKey::from_str(&xpub).map_to_mm(|e| HDExtractPubkeyError::InvalidXpub(e.to_string()))
 }
 
 /// returns the fee required to be paid for HTLC spend transaction
@@ -2331,8 +2329,9 @@ where
                 Ok(value) => value,
                 Err(e) => match &e.error {
                     JsonRpcErrorType::InvalidRequest(e)
+                    | JsonRpcErrorType::Parse(_, e)
                     | JsonRpcErrorType::Transport(e)
-                    | JsonRpcErrorType::Parse(_, e) => {
+                    | JsonRpcErrorType::Internal(e) => {
                         return RequestTxHistoryResult::Retry {
                             error: ERRL!("Error {} on scripthash_get_history", e),
                         };
@@ -3157,7 +3156,7 @@ pub fn validate_payment<T: UtxoCommonOps>(
                     client
                         .validate_spv_proof(&tx, try_spv_proof_until)
                         .await
-                        .map_err(|e| format!("{:?}", e))?;
+                        .map_err(|e| format!("{}", e))?;
                 }
             }
 
@@ -3443,135 +3442,6 @@ where
 fn increase_by_percent(num: u64, percent: f64) -> u64 {
     let percent = num as f64 / 100. * percent;
     num + (percent.round() as u64)
-}
-
-pub async fn block_header_utxo_loop<T: UtxoCommonOps>(weak: UtxoWeak, constructor: impl Fn(UtxoArc) -> T) {
-    {
-        let coin = match weak.upgrade() {
-            Some(arc) => constructor(arc),
-            None => return,
-        };
-        let ticker = coin.as_ref().conf.ticker.as_str();
-        let storage = match &coin.as_ref().rpc_client {
-            UtxoRpcClientEnum::Native(_) => return,
-            UtxoRpcClientEnum::Electrum(e) => match e.block_headers_storage() {
-                None => return,
-                Some(storage) => storage,
-            },
-        };
-        match storage.is_initialized_for(ticker).await {
-            Ok(true) => info!("Block Header Storage already initialized for {}", ticker),
-            Ok(false) => {
-                if let Err(e) = storage.init(ticker).await {
-                    error!(
-                        "Couldn't initiate storage - aborting the block_header_utxo_loop: {:?}",
-                        e
-                    );
-                    return;
-                }
-                info!("Block Header Storage successfully initialized for {}", ticker);
-            },
-            Err(_e) => return,
-        };
-    }
-    while let Some(arc) = weak.upgrade() {
-        let coin = constructor(arc);
-        let client = match &coin.as_ref().rpc_client {
-            UtxoRpcClientEnum::Native(_) => break,
-            UtxoRpcClientEnum::Electrum(client) => client,
-        };
-        let storage = match client.block_headers_storage() {
-            None => return,
-            Some(storage) => storage,
-        };
-        let params = storage.params.clone();
-        let (check_every, blocks_limit_to_check, difficulty_check, constant_difficulty) = (
-            params.check_every,
-            params.blocks_limit_to_check,
-            params.difficulty_check,
-            params.constant_difficulty,
-        );
-        let height =
-            ok_or_continue_after_sleep!(coin.as_ref().rpc_client.get_block_count().compat().await, check_every);
-        let (block_registry, block_headers) = ok_or_continue_after_sleep!(
-            client
-                .retrieve_last_headers(blocks_limit_to_check, height)
-                .compat()
-                .await,
-            check_every
-        );
-        ok_or_continue_after_sleep!(
-            validate_headers(block_headers, difficulty_check, constant_difficulty),
-            check_every
-        );
-
-        let ticker = coin.as_ref().conf.ticker.as_str();
-        ok_or_continue_after_sleep!(
-            storage.add_block_headers_to_storage(ticker, block_registry).await,
-            check_every
-        );
-        debug!("tick block_header_utxo_loop for {}", coin.as_ref().conf.ticker);
-        Timer::sleep(check_every).await;
-    }
-}
-
-pub async fn merge_utxo_loop<T>(
-    weak: UtxoWeak,
-    merge_at: usize,
-    check_every: f64,
-    max_merge_at_once: usize,
-    constructor: impl Fn(UtxoArc) -> T,
-) where
-    T: UtxoCommonOps + GetUtxoListOps,
-{
-    loop {
-        Timer::sleep(check_every).await;
-
-        let coin = match weak.upgrade() {
-            Some(arc) => constructor(arc),
-            None => break,
-        };
-
-        let my_address = match coin.as_ref().derivation_method {
-            DerivationMethod::Iguana(ref my_address) => my_address,
-            DerivationMethod::HDWallet(_) => {
-                warn!("'merge_utxo_loop' is currently not used for HD wallets");
-                return;
-            },
-        };
-
-        let ticker = &coin.as_ref().conf.ticker;
-        let (unspents, recently_spent) = match coin.get_unspent_ordered_list(my_address).await {
-            Ok((unspents, recently_spent)) => (unspents, recently_spent),
-            Err(e) => {
-                error!("Error {} on get_unspent_ordered_list of coin {}", e, ticker);
-                continue;
-            },
-        };
-        if unspents.len() >= merge_at {
-            let unspents: Vec<_> = unspents.into_iter().take(max_merge_at_once).collect();
-            info!("Trying to merge {} UTXOs of coin {}", unspents.len(), ticker);
-            let value = unspents.iter().fold(0, |sum, unspent| sum + unspent.value);
-            let script_pubkey = Builder::build_p2pkh(&my_address.hash).to_bytes();
-            let output = TransactionOutput { value, script_pubkey };
-            let merge_tx_fut = generate_and_send_tx(
-                &coin,
-                unspents,
-                None,
-                FeePolicy::DeductFromOutput(0),
-                recently_spent,
-                vec![output],
-            );
-            match merge_tx_fut.await {
-                Ok(tx) => info!(
-                    "UTXO merge successful for coin {}, tx_hash {:?}",
-                    ticker,
-                    tx.hash().reversed()
-                ),
-                Err(e) => error!("Error {:?} on UTXO merge attempt for coin {}", e, ticker),
-            }
-        }
-    }
 }
 
 pub async fn can_refund_htlc<T>(coin: &T, locktime: u64) -> Result<CanRefundHtlc, MmError<UtxoRpcError>>

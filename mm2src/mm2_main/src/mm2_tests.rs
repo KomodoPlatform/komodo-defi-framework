@@ -8,10 +8,11 @@ use crypto::privkey::key_pair_from_seed;
 use http::{HeaderMap, StatusCode};
 use mm2_metrics::{MetricType, MetricsJson};
 use mm2_number::{BigDecimal, BigRational, Fraction, MmNumber};
-use mm2_test_helpers::for_tests::{check_my_swap_status, check_recent_swaps, check_stats_swap_status,
-                                  enable_native as enable_native_impl, enable_qrc20, find_metrics_in_json,
-                                  from_env_file, init_z_coin_light, init_z_coin_status, mm_spat, morty_conf,
-                                  rick_conf, sign_message, verify_message, wait_till_history_has_records, LocalStart,
+use mm2_test_helpers::for_tests::{btc_with_spv_conf, check_my_swap_status, check_recent_swaps,
+                                  check_stats_swap_status, enable_native as enable_native_impl, enable_qrc20,
+                                  find_metrics_in_json, from_env_file, init_utxo_electrum, init_utxo_status,
+                                  init_z_coin_light, init_z_coin_status, mm_spat, morty_conf, rick_conf, sign_message,
+                                  tbtc_with_spv_conf, verify_message, wait_till_history_has_records, LocalStart,
                                   MarketMakerIt, Mm2TestConf, RaiiDump, MAKER_ERROR_EVENTS, MAKER_SUCCESS_EVENTS,
                                   MORTY, RICK, TAKER_ERROR_EVENTS, TAKER_SUCCESS_EVENTS};
 use serde_json::{self as json, Value as Json};
@@ -198,6 +199,34 @@ async fn enable_z_coin_light(
                 MmRpcResult::Ok { result } => {
                     break result;
                 },
+                MmRpcResult::Err(e) => panic!("{} initialization error {:?}", coin, e),
+            }
+        }
+        Timer::sleep(1.).await;
+    }
+}
+
+async fn enable_utxo_v2_electrum(
+    mm: &MarketMakerIt,
+    coin: &str,
+    servers: Vec<Json>,
+    timeout: u64,
+) -> UtxoStandardActivationResult {
+    let init = init_utxo_electrum(mm, coin, servers).await;
+    let init: RpcV2Response<InitTaskResult> = json::from_value(init).unwrap();
+    let timeout = now_ms() + (timeout * 1000);
+
+    loop {
+        if now_ms() > timeout {
+            panic!("{} initialization timed out", coin);
+        }
+
+        let status = init_utxo_status(mm, init.result.task_id).await;
+        let status: RpcV2Response<InitUtxoStatus> = json::from_value(status).unwrap();
+        log!("init_utxo_status: {:?}", status);
+        if let InitUtxoStatus::Ready(rpc_result) = status.result {
+            match rpc_result {
+                MmRpcResult::Ok { result } => break result,
                 MmRpcResult::Err(e) => panic!("{} initialization error {:?}", coin, e),
             }
         }
@@ -7527,4 +7556,336 @@ fn test_no_login() {
     })))
     .unwrap();
     assert!(version.0.is_success(), "!version: {}", version.1);
+}
+
+#[test]
+#[cfg(not(target_arch = "wasm32"))]
+fn test_gui_storage_accounts_functionality() {
+    let passphrase = "test_gui_storage passphrase";
+
+    let conf = Mm2TestConf::seednode(passphrase, &json!([]));
+    let mm = block_on(MarketMakerIt::start_async(conf.conf, conf.rpc_password, conf.local)).unwrap();
+    let (_bob_dump_log, _bob_dump_dashboard) = mm.mm_dump();
+    log!("Log path: {}", mm.log_path.display());
+
+    let resp = block_on(mm.rpc(&json!({
+        "userpass": mm.userpass,
+        "mmrpc": "2.0",
+        "method": "gui_storage::enable_account",
+        "params": {
+            "policy": "new",
+            "account_id": {
+                "type": "iguana"
+            },
+            "name": "My Iguana wallet",
+        },
+    })))
+    .unwrap();
+    assert!(resp.0.is_success(), "!gui_storage::enable_account: {}", resp.1);
+
+    let resp = block_on(mm.rpc(&json!({
+        "userpass": mm.userpass,
+        "mmrpc": "2.0",
+        "method": "gui_storage::add_account",
+        "params": {
+            "account_id": {
+                "type": "hw",
+                "device_pubkey": "1549128bbfb33b997949b4105b6a6371c998e212"
+            },
+            "description": "Any description",
+            "name": "My HW",
+        },
+    })))
+    .unwrap();
+    assert!(resp.0.is_success(), "!gui_storage::add_account: {}", resp.1);
+
+    // Add `HD{1}` account that will be deleted later.
+    let resp = block_on(mm.rpc(&json!({
+        "userpass": mm.userpass,
+        "mmrpc": "2.0",
+        "method": "gui_storage::add_account",
+        "params": {
+            "account_id": {
+                "type": "hd",
+                "account_idx": 1,
+            },
+            "name": "An HD account"
+        },
+    })))
+    .unwrap();
+    assert!(resp.0.is_success(), "!gui_storage::add_account: {}", resp.1);
+
+    let resp = block_on(mm.rpc(&json!({
+        "userpass": mm.userpass,
+        "mmrpc": "2.0",
+        "method": "gui_storage::delete_account",
+        "params": {
+            "account_id": {
+                "type": "hd",
+                "account_idx": 1,
+            }
+        },
+    })))
+    .unwrap();
+    assert!(resp.0.is_success(), "!gui_storage::delete_account: {}", resp.1);
+
+    let resp = block_on(mm.rpc(&json!({
+        "userpass": mm.userpass,
+        "mmrpc": "2.0",
+        "method": "gui_storage::set_account_balance",
+        "params": {
+            "account_id": {
+                "type": "hw",
+                "device_pubkey": "1549128bbfb33b997949b4105b6a6371c998e212"
+            },
+            "balance_usd": "123.567",
+        },
+    })))
+    .unwrap();
+    assert!(resp.0.is_success(), "!gui_storage::set_account_balance: {}", resp.1);
+
+    let resp = block_on(mm.rpc(&json!({
+        "userpass": mm.userpass,
+        "mmrpc": "2.0",
+        "method": "gui_storage::set_account_name",
+        "params": {
+            "account_id": {
+                "type": "iguana"
+            },
+            "name": "New Iguana account name",
+        },
+    })))
+    .unwrap();
+    assert!(resp.0.is_success(), "!gui_storage::set_account_name: {}", resp.1);
+
+    let resp = block_on(mm.rpc(&json!({
+        "userpass": mm.userpass,
+        "mmrpc": "2.0",
+        "method": "gui_storage::set_account_description",
+        "params": {
+            "account_id": {
+                "type": "iguana"
+            },
+            "description": "Another description",
+        },
+    })))
+    .unwrap();
+    assert!(resp.0.is_success(), "!gui_storage::set_account_description: {}", resp.1);
+
+    let resp = block_on(mm.rpc(&json!({
+        "userpass": mm.userpass,
+        "mmrpc": "2.0",
+        "method": "gui_storage::get_accounts"
+    })))
+    .unwrap();
+    assert!(resp.0.is_success(), "!gui_storage::get_accounts: {}", resp.1);
+
+    let actual: RpcV2Response<Vec<gui_storage::AccountWithEnabledFlag>> = json::from_str(&resp.1).unwrap();
+    let expected = vec![
+        gui_storage::AccountWithEnabledFlag {
+            account_id: gui_storage::AccountId::Iguana,
+            name: "New Iguana account name".to_string(),
+            description: "Another description".to_string(),
+            balance_usd: BigDecimal::from(0i32),
+            enabled: true,
+        },
+        gui_storage::AccountWithEnabledFlag {
+            account_id: gui_storage::AccountId::HW {
+                device_pubkey: "1549128bbfb33b997949b4105b6a6371c998e212".to_string(),
+            },
+            name: "My HW".to_string(),
+            description: "Any description".to_string(),
+            balance_usd: BigDecimal::from(123567i32) / BigDecimal::from(1000i32),
+            enabled: false,
+        },
+    ];
+    assert_eq!(actual.result, expected);
+}
+
+#[test]
+#[cfg(not(target_arch = "wasm32"))]
+fn test_gui_storage_coins_functionality() {
+    let passphrase = "test_gui_storage passphrase";
+
+    let conf = Mm2TestConf::seednode(passphrase, &json!([]));
+    let mm = block_on(MarketMakerIt::start_async(conf.conf, conf.rpc_password, conf.local)).unwrap();
+    let (_bob_dump_log, _bob_dump_dashboard) = mm.mm_dump();
+    log!("Log path: {}", mm.log_path.display());
+
+    let resp = block_on(mm.rpc(&json!({
+        "userpass": mm.userpass,
+        "mmrpc": "2.0",
+        "method": "gui_storage::enable_account",
+        "params": {
+            "policy": "new",
+            "account_id": {
+                "type": "iguana"
+            },
+            "name": "My Iguana wallet",
+        },
+    })))
+    .unwrap();
+    assert!(resp.0.is_success(), "!gui_storage::enable_account: {}", resp.1);
+
+    let resp = block_on(mm.rpc(&json!({
+        "userpass": mm.userpass,
+        "mmrpc": "2.0",
+        "method": "gui_storage::add_account",
+        "params": {
+            "account_id": {
+                "type": "hw",
+                "device_pubkey": "1549128bbfb33b997949b4105b6a6371c998e212"
+            },
+            "description": "Any description",
+            "name": "My HW",
+        },
+    })))
+    .unwrap();
+    assert!(resp.0.is_success(), "!gui_storage::add_account: {}", resp.1);
+
+    let resp = block_on(mm.rpc(&json!({
+        "userpass": mm.userpass,
+        "mmrpc": "2.0",
+        "method": "gui_storage::activate_coins",
+        "params": {
+            "account_id": {
+                "type": "iguana"
+            },
+            "tickers": ["RICK", "MORTY", "KMD"],
+        },
+    })))
+    .unwrap();
+    assert!(resp.0.is_success(), "!gui_storage::activate_coins: {}", resp.1);
+
+    let resp = block_on(mm.rpc(&json!({
+        "userpass": mm.userpass,
+        "mmrpc": "2.0",
+        "method": "gui_storage::activate_coins",
+        "params": {
+            "account_id": {
+                "type": "hw",
+                "device_pubkey": "1549128bbfb33b997949b4105b6a6371c998e212"
+            },
+            "tickers": ["KMD", "MORTY", "BCH"],
+        },
+    })))
+    .unwrap();
+    assert!(resp.0.is_success(), "!gui_storage::activate_coins: {}", resp.1);
+
+    let resp = block_on(mm.rpc(&json!({
+        "userpass": mm.userpass,
+        "mmrpc": "2.0",
+        "method": "gui_storage::deactivate_coins",
+        "params": {
+            "account_id": {
+                "type": "hw",
+                "device_pubkey": "1549128bbfb33b997949b4105b6a6371c998e212"
+            },
+            "tickers": ["BTC", "MORTY"],
+        },
+    })))
+    .unwrap();
+    assert!(resp.0.is_success(), "!gui_storage::deactivate_coins: {}", resp.1);
+
+    let resp = block_on(mm.rpc(&json!({
+        "userpass": mm.userpass,
+        "mmrpc": "2.0",
+        "method": "gui_storage::get_enabled_account",
+    })))
+    .unwrap();
+    assert!(resp.0.is_success(), "!gui_storage::get_enabled_account: {}", resp.1);
+    let actual: RpcV2Response<gui_storage::AccountWithCoins> = json::from_str(&resp.1).unwrap();
+    let expected = gui_storage::AccountWithCoins {
+        account_id: gui_storage::AccountId::Iguana,
+        name: "My Iguana wallet".to_string(),
+        description: String::new(),
+        balance_usd: BigDecimal::from(0i32),
+        coins: vec!["RICK".to_string(), "MORTY".to_string(), "KMD".to_string()]
+            .into_iter()
+            .collect(),
+    };
+    assert_eq!(actual.result, expected);
+
+    let resp = block_on(mm.rpc(&json!({
+        "userpass": mm.userpass,
+        "mmrpc": "2.0",
+        "method": "gui_storage::get_account_coins",
+        "params": {
+            "account_id": {
+                "type": "hw",
+                "device_pubkey": "1549128bbfb33b997949b4105b6a6371c998e212"
+            }
+        }
+    })))
+    .unwrap();
+    assert!(resp.0.is_success(), "!gui_storage::get_enabled_account: {}", resp.1);
+    let actual: RpcV2Response<gui_storage::AccountCoins> = json::from_str(&resp.1).unwrap();
+    let expected = gui_storage::AccountCoins {
+        account_id: gui_storage::AccountId::HW {
+            device_pubkey: "1549128bbfb33b997949b4105b6a6371c998e212".to_string(),
+        },
+        coins: vec!["KMD".to_string(), "BCH".to_string()].into_iter().collect(),
+    };
+    assert_eq!(actual.result, expected);
+}
+
+// This test is ignored because block headers sync and validation can take some time
+#[test]
+#[ignore]
+#[cfg(not(target_arch = "wasm32"))]
+fn test_btc_block_header_sync() {
+    let coins = json!([btc_with_spv_conf()]);
+
+    let mm_bob = MarketMakerIt::start(
+        json! ({
+            "gui": "nogui",
+            "netid": 9998,
+            "myipaddr": env::var ("BOB_TRADE_IP") .ok(),
+            "rpcip": env::var ("BOB_TRADE_IP") .ok(),
+            "passphrase": "bob passphrase",
+            "coins": coins,
+            "rpc_password": "pass",
+        }),
+        "pass".into(),
+        local_start!("bob"),
+    )
+    .unwrap();
+    let (_dump_log, _dump_dashboard) = mm_bob.mm_dump();
+    log!("log path: {}", mm_bob.log_path.display());
+
+    let utxo_bob = block_on(enable_utxo_v2_electrum(&mm_bob, "BTC", btc_electrums(), 600));
+    log!("enable UTXO bob {:?}", utxo_bob);
+
+    block_on(mm_bob.stop()).unwrap();
+}
+
+// This test is ignored because block headers sync and validation can take some time
+// Todo: this test is failing, need a small fix in calculating btc_testnet_next_block_bits, and to add each block header individually while validating it.
+#[test]
+#[ignore]
+#[cfg(not(target_arch = "wasm32"))]
+fn test_tbtc_block_header_sync() {
+    let coins = json!([tbtc_with_spv_conf()]);
+
+    let mm_bob = MarketMakerIt::start(
+        json!({
+            "gui": "nogui",
+            "netid": 9998,
+            "myipaddr": env::var ("BOB_TRADE_IP") .ok(),
+            "rpcip": env::var ("BOB_TRADE_IP") .ok(),
+            "passphrase": "bob passphrase",
+            "coins": coins,
+            "rpc_password": "pass",
+        }),
+        "pass".into(),
+        local_start!("bob"),
+    )
+    .unwrap();
+    let (_dump_log, _dump_dashboard) = mm_bob.mm_dump();
+    log!("log path: {}", mm_bob.log_path.display());
+
+    let utxo_bob = block_on(enable_utxo_v2_electrum(&mm_bob, "tBTC-TEST", tbtc_electrums(), 100000));
+    log!("enable UTXO bob {:?}", utxo_bob);
+
+    block_on(mm_bob.stop()).unwrap();
 }

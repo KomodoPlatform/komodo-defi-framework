@@ -5,7 +5,7 @@ use crate::hd_wallet::AddressDerivingError;
 use crate::my_tx_history_v2::{CoinWithTxHistoryV2, TxHistoryStorage, TxHistoryStorageError};
 use crate::utxo::bch::BchCoin;
 use crate::utxo::slp::ParseSlpScriptError;
-use crate::utxo::utxo_common;
+use crate::utxo::{GetBlockHeaderError, utxo_common};
 use crate::{BalanceResult, BlockHeightAndTime, HistorySyncState, MarketCoinOps, NumConversError, ParseBigDecimalError,
             TransactionDetails, UnexpectedDerivationMethod, UtxoRpcError, UtxoTx};
 use async_trait::async_trait;
@@ -114,7 +114,8 @@ pub trait UtxoTxHistoryOps: CoinWithTxHistoryV2 + MarketCoinOps + Send + Sync + 
     async fn request_tx_history(&self, metrics: MetricsArc, my_addresses: &HashSet<Address>) -> RequestTxHistoryResult;
 
     /// Requests timestamp of the given block.
-    async fn get_block_timestamp(&self, height: u64) -> MmResult<u64, UtxoRpcError>;
+
+    async fn get_block_timestamp(&self, height: u64) -> MmResult<u64, GetBlockHeaderError>;
 
     /// Requests balances of all activated coin's addresses.
     async fn get_addresses_balances(&self) -> BalanceResult<HashMap<String, BigDecimal>>;

@@ -1,4 +1,5 @@
 extern crate core;
+#[cfg(test)] extern crate lazy_static;
 extern crate log;
 extern crate rustc_hex as hex;
 extern crate serde;

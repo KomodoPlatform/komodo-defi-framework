@@ -14,6 +14,7 @@ use utxo_signer::with_key_pair::UtxoSignWithKeyPairError;
 pub type EnableLightningResult<T> = Result<T, MmError<EnableLightningError>>;
 pub type ConnectToNodeResult<T> = Result<T, MmError<ConnectToNodeError>>;
 pub type OpenChannelResult<T> = Result<T, MmError<OpenChannelError>>;
+pub type UpdateChannelResult<T> = Result<T, MmError<UpdateChannelError>>;
 pub type ListChannelsResult<T> = Result<T, MmError<ListChannelsError>>;
 pub type GetChannelDetailsResult<T> = Result<T, MmError<GetChannelDetailsError>>;
 pub type GenerateInvoiceResult<T> = Result<T, MmError<GenerateInvoiceError>>;
@@ -23,6 +24,7 @@ pub type GetPaymentDetailsResult<T> = Result<T, MmError<GetPaymentDetailsError>>
 pub type CloseChannelResult<T> = Result<T, MmError<CloseChannelError>>;
 pub type ClaimableBalancesResult<T> = Result<T, MmError<ClaimableBalancesError>>;
 pub type SaveChannelClosingResult<T> = Result<T, MmError<SaveChannelClosingError>>;
+pub type TrustedNodeResult<T> = Result<T, MmError<TrustedNodeError>>;
 
 #[derive(Debug, Deserialize, Display, Serialize, SerializeErrorType)]
 #[serde(tag = "error_type", content = "error_data")]
@@ -72,6 +74,10 @@ impl From<SqlError> for EnableLightningError {
     fn from(err: SqlError) -> EnableLightningError { EnableLightningError::DbError(err.to_string()) }
 }
 
+impl From<UtxoRpcError> for EnableLightningError {
+    fn from(e: UtxoRpcError) -> Self { EnableLightningError::RpcError(e.to_string()) }
+}
+
 #[derive(Debug, Deserialize, Display, Serialize, SerializeErrorType)]
 #[serde(tag = "error_type", content = "error_data")]
 pub enum ConnectToNodeError {
@@ -94,7 +100,7 @@ impl HttpStatusCode for ConnectToNodeError {
             ConnectToNodeError::ParseError(_)
             | ConnectToNodeError::IOError(_)
             | ConnectToNodeError::ConnectionError(_) => StatusCode::INTERNAL_SERVER_ERROR,
-            ConnectToNodeError::NoSuchCoin(_) => StatusCode::PRECONDITION_REQUIRED,
+            ConnectToNodeError::NoSuchCoin(_) => StatusCode::NOT_FOUND,
         }
     }
 }
@@ -159,8 +165,9 @@ impl HttpStatusCode for OpenChannelError {
             | OpenChannelError::IOError(_)
             | OpenChannelError::DbError(_)
             | OpenChannelError::InvalidPath(_)
-            | OpenChannelError::ConvertTxErr(_) => StatusCode::INTERNAL_SERVER_ERROR,
-            OpenChannelError::NoSuchCoin(_) | OpenChannelError::BalanceError(_) => StatusCode::PRECONDITION_REQUIRED,
+            | OpenChannelError::ConvertTxErr(_)
+            | OpenChannelError::BalanceError(_) => StatusCode::INTERNAL_SERVER_ERROR,
+            OpenChannelError::NoSuchCoin(_) => StatusCode::NOT_FOUND,
         }
     }
 }
@@ -215,6 +222,38 @@ impl From<SqlError> for OpenChannelError {
 
 #[derive(Debug, Deserialize, Display, Serialize, SerializeErrorType)]
 #[serde(tag = "error_type", content = "error_data")]
+pub enum UpdateChannelError {
+    #[display(fmt = "Lightning network is not supported for {}", _0)]
+    UnsupportedCoin(String),
+    #[display(fmt = "No such coin {}", _0)]
+    NoSuchCoin(String),
+    #[display(fmt = "No such channel with rpc_channel_id {}", _0)]
+    NoSuchChannel(u64),
+    #[display(fmt = "Failure to channel {}: {}", _0, _1)]
+    FailureToUpdateChannel(u64, String),
+}
+
+impl HttpStatusCode for UpdateChannelError {
+    fn status_code(&self) -> StatusCode {
+        match self {
+            UpdateChannelError::UnsupportedCoin(_) => StatusCode::BAD_REQUEST,
+            UpdateChannelError::NoSuchChannel(_) => StatusCode::NOT_FOUND,
+            UpdateChannelError::NoSuchCoin(_) => StatusCode::NOT_FOUND,
+            UpdateChannelError::FailureToUpdateChannel(_, _) => StatusCode::INTERNAL_SERVER_ERROR,
+        }
+    }
+}
+
+impl From<CoinFindError> for UpdateChannelError {
+    fn from(e: CoinFindError) -> Self {
+        match e {
+            CoinFindError::NoSuchCoin { coin } => UpdateChannelError::NoSuchCoin(coin),
+        }
+    }
+}
+
+#[derive(Debug, Deserialize, Display, Serialize, SerializeErrorType)]
+#[serde(tag = "error_type", content = "error_data")]
 pub enum ListChannelsError {
     #[display(fmt = "Lightning network is not supported for {}", _0)]
     UnsupportedCoin(String),
@@ -228,7 +267,7 @@ impl HttpStatusCode for ListChannelsError {
     fn status_code(&self) -> StatusCode {
         match self {
             ListChannelsError::UnsupportedCoin(_) => StatusCode::BAD_REQUEST,
-            ListChannelsError::NoSuchCoin(_) => StatusCode::PRECONDITION_REQUIRED,
+            ListChannelsError::NoSuchCoin(_) => StatusCode::NOT_FOUND,
             ListChannelsError::DbError(_) => StatusCode::INTERNAL_SERVER_ERROR,
         }
     }
@@ -263,8 +302,7 @@ impl HttpStatusCode for GetChannelDetailsError {
     fn status_code(&self) -> StatusCode {
         match self {
             GetChannelDetailsError::UnsupportedCoin(_) => StatusCode::BAD_REQUEST,
-            GetChannelDetailsError::NoSuchCoin(_) => StatusCode::PRECONDITION_REQUIRED,
-            GetChannelDetailsError::NoSuchChannel(_) => StatusCode::NOT_FOUND,
+            GetChannelDetailsError::NoSuchCoin(_) | GetChannelDetailsError::NoSuchChannel(_) => StatusCode::NOT_FOUND,
             GetChannelDetailsError::DbError(_) => StatusCode::INTERNAL_SERVER_ERROR,
         }
     }
@@ -299,7 +337,7 @@ impl HttpStatusCode for GenerateInvoiceError {
     fn status_code(&self) -> StatusCode {
         match self {
             GenerateInvoiceError::UnsupportedCoin(_) => StatusCode::BAD_REQUEST,
-            GenerateInvoiceError::NoSuchCoin(_) => StatusCode::PRECONDITION_REQUIRED,
+            GenerateInvoiceError::NoSuchCoin(_) => StatusCode::NOT_FOUND,
             GenerateInvoiceError::SignOrCreationError(_) | GenerateInvoiceError::DbError(_) => {
                 StatusCode::INTERNAL_SERVER_ERROR
             },
@@ -344,7 +382,7 @@ impl HttpStatusCode for SendPaymentError {
     fn status_code(&self) -> StatusCode {
         match self {
             SendPaymentError::UnsupportedCoin(_) => StatusCode::BAD_REQUEST,
-            SendPaymentError::NoSuchCoin(_) => StatusCode::PRECONDITION_REQUIRED,
+            SendPaymentError::NoSuchCoin(_) => StatusCode::NOT_FOUND,
             SendPaymentError::PaymentError(_)
             | SendPaymentError::NoRouteFound(_)
             | SendPaymentError::CLTVExpiryError(_, _)
@@ -380,7 +418,7 @@ impl HttpStatusCode for ListPaymentsError {
     fn status_code(&self) -> StatusCode {
         match self {
             ListPaymentsError::UnsupportedCoin(_) => StatusCode::BAD_REQUEST,
-            ListPaymentsError::NoSuchCoin(_) => StatusCode::PRECONDITION_REQUIRED,
+            ListPaymentsError::NoSuchCoin(_) => StatusCode::NOT_FOUND,
             ListPaymentsError::DbError(_) => StatusCode::INTERNAL_SERVER_ERROR,
         }
     }
@@ -415,7 +453,7 @@ impl HttpStatusCode for GetPaymentDetailsError {
     fn status_code(&self) -> StatusCode {
         match self {
             GetPaymentDetailsError::UnsupportedCoin(_) => StatusCode::BAD_REQUEST,
-            GetPaymentDetailsError::NoSuchCoin(_) => StatusCode::PRECONDITION_REQUIRED,
+            GetPaymentDetailsError::NoSuchCoin(_) => StatusCode::NOT_FOUND,
             GetPaymentDetailsError::NoSuchPayment(_) => StatusCode::NOT_FOUND,
             GetPaymentDetailsError::DbError(_) => StatusCode::INTERNAL_SERVER_ERROR,
         }
@@ -441,6 +479,8 @@ pub enum CloseChannelError {
     UnsupportedCoin(String),
     #[display(fmt = "No such coin {}", _0)]
     NoSuchCoin(String),
+    #[display(fmt = "No such channel with rpc_channel_id {}", _0)]
+    NoSuchChannel(u64),
     #[display(fmt = "Closing channel error: {}", _0)]
     CloseChannelError(String),
 }
@@ -449,7 +489,7 @@ impl HttpStatusCode for CloseChannelError {
     fn status_code(&self) -> StatusCode {
         match self {
             CloseChannelError::UnsupportedCoin(_) => StatusCode::BAD_REQUEST,
-            CloseChannelError::NoSuchCoin(_) => StatusCode::PRECONDITION_REQUIRED,
+            CloseChannelError::NoSuchChannel(_) | CloseChannelError::NoSuchCoin(_) => StatusCode::NOT_FOUND,
             CloseChannelError::CloseChannelError(_) => StatusCode::INTERNAL_SERVER_ERROR,
         }
     }
@@ -476,7 +516,7 @@ impl HttpStatusCode for ClaimableBalancesError {
     fn status_code(&self) -> StatusCode {
         match self {
             ClaimableBalancesError::UnsupportedCoin(_) => StatusCode::BAD_REQUEST,
-            ClaimableBalancesError::NoSuchCoin(_) => StatusCode::PRECONDITION_REQUIRED,
+            ClaimableBalancesError::NoSuchCoin(_) => StatusCode::NOT_FOUND,
         }
     }
 }
@@ -513,4 +553,37 @@ impl From<SqlError> for SaveChannelClosingError {
 
 impl From<TryFromIntError> for SaveChannelClosingError {
     fn from(err: TryFromIntError) -> SaveChannelClosingError { SaveChannelClosingError::ConversionError(err) }
+}
+
+#[derive(Debug, Deserialize, Display, Serialize, SerializeErrorType)]
+#[serde(tag = "error_type", content = "error_data")]
+pub enum TrustedNodeError {
+    #[display(fmt = "Lightning network is not supported for {}", _0)]
+    UnsupportedCoin(String),
+    #[display(fmt = "No such coin {}", _0)]
+    NoSuchCoin(String),
+    #[display(fmt = "I/O error {}", _0)]
+    IOError(String),
+}
+
+impl HttpStatusCode for TrustedNodeError {
+    fn status_code(&self) -> StatusCode {
+        match self {
+            TrustedNodeError::UnsupportedCoin(_) => StatusCode::BAD_REQUEST,
+            TrustedNodeError::NoSuchCoin(_) => StatusCode::NOT_FOUND,
+            TrustedNodeError::IOError(_) => StatusCode::INTERNAL_SERVER_ERROR,
+        }
+    }
+}
+
+impl From<CoinFindError> for TrustedNodeError {
+    fn from(e: CoinFindError) -> Self {
+        match e {
+            CoinFindError::NoSuchCoin { coin } => TrustedNodeError::NoSuchCoin(coin),
+        }
+    }
+}
+
+impl From<std::io::Error> for TrustedNodeError {
+    fn from(err: std::io::Error) -> TrustedNodeError { TrustedNodeError::IOError(err.to_string()) }
 }

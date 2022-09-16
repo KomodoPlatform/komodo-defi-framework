@@ -6,6 +6,7 @@ use std::collections::HashMap;
 
 #[derive(Clone, Serialize)]
 pub struct UtxoStandardActivationResult {
+    pub ticker: String,
     pub current_block: u64,
     pub wallet_balance: CoinBalanceReport,
 }

@@ -4,7 +4,7 @@ use crate::tx_history_storage::{token_id_from_tx_type, ConfirmationStatus, Creat
 use crate::TransactionDetails;
 use async_trait::async_trait;
 use common::{async_blocking, PagingOptionsEnum};
-use db_common::sql_query::SqlQuery;
+use db_common::sql_build::*;
 use db_common::sqlite::rusqlite::types::Type;
 use db_common::sqlite::rusqlite::{Connection, Error as SqlError, Row, NO_PARAMS};
 use db_common::sqlite::{query_single_row, string_from_row, validate_table_name, CHECK_TABLE_EXISTS_SQL};

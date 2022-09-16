@@ -1,15 +1,17 @@
 use super::*;
-use crate::coin_balance::{self, EnableCoinBalanceError, HDAccountBalance, HDAddressBalance, HDWalletBalance,
-                          HDWalletBalanceOps};
+use crate::coin_balance::{self, EnableCoinBalanceError, EnabledCoinBalanceParams, HDAccountBalance, HDAddressBalance,
+                          HDWalletBalance, HDWalletBalanceOps};
 use crate::hd_pubkey::{ExtractExtendedPubkey, HDExtractPubkeyError, HDXPubExtractor};
-use crate::hd_wallet::{self, AccountUpdatingError, AddressDerivingError, GetNewHDAddressParams,
-                       GetNewHDAddressResponse, HDAccountMut, HDWalletRpcError, HDWalletRpcOps,
-                       NewAccountCreatingError};
+use crate::hd_wallet::{AccountUpdatingError, AddressDerivingError, HDAccountMut, NewAccountCreatingError};
 use crate::hd_wallet_storage::HDWalletCoinWithStorageOps;
 use crate::my_tx_history_v2::{CoinWithTxHistoryV2, MyTxHistoryErrorV2, MyTxHistoryTarget, TxHistoryStorage};
 use crate::rpc_command::account_balance::{self, AccountBalanceParams, AccountBalanceRpcOps, HDAccountBalanceResponse};
+use crate::rpc_command::get_new_address::{self, GetNewAddressParams, GetNewAddressResponse, GetNewAddressRpcError,
+                                          GetNewAddressRpcOps};
 use crate::rpc_command::hd_account_balance_rpc_error::HDAccountBalanceRpcError;
-use crate::rpc_command::init_create_account::{self, CreateNewAccountParams, InitCreateHDAccountRpcOps};
+use crate::rpc_command::init_account_balance::{self, InitAccountBalanceParams, InitAccountBalanceRpcOps};
+use crate::rpc_command::init_create_account::{self, CreateAccountRpcError, CreateAccountState, CreateNewAccountParams,
+                                              InitCreateAccountRpcOps};
 use crate::rpc_command::init_scan_for_new_addresses::{self, InitScanAddressesRpcOps, ScanAddressesParams,
                                                       ScanAddressesResponse};
 use crate::rpc_command::init_withdraw::{InitWithdrawCoin, WithdrawTaskHandle};
@@ -24,7 +26,6 @@ use crate::{eth, CanRefundHtlc, CoinBalance, CoinWithDerivationMethod, Delegatio
             SignatureResult, StakingInfosFut, SwapOps, TradePreimageValue, TransactionFut, TxMarshalingErr,
             UnexpectedDerivationMethod, ValidateAddressResult, ValidatePaymentInput, VerificationResult, WithdrawFut,
             WithdrawSenderAddress};
-use crypto::trezor::utxo::TrezorUtxoCoin;
 use crypto::Bip44Chain;
 use ethereum_types::H160;
 use futures::{FutureExt, TryFutureExt};
@@ -222,18 +223,11 @@ impl<'a> UtxoCoinBuilder for QtumCoinBuilder<'a> {
 
     async fn build(self) -> MmResult<Self::ResultCoin, Self::Error> {
         let utxo = self.build_utxo_fields().await?;
-        let rpc_client = utxo.rpc_client.clone();
         let utxo_arc = UtxoArc::new(utxo);
         let utxo_weak = utxo_arc.downgrade();
         let result_coin = QtumCoin::from(utxo_arc);
 
-        if let Some(abort_handler) = self.spawn_merge_utxo_loop_if_required(utxo_weak.clone(), QtumCoin::from) {
-            self.ctx.abort_handlers.lock().unwrap().push(abort_handler);
-        }
-
-        if let Some(abort_handler) =
-            self.spawn_block_header_utxo_loop_if_required(utxo_weak, &rpc_client, QtumCoin::from)
-        {
+        if let Some(abort_handler) = self.spawn_merge_utxo_loop_if_required(utxo_weak, QtumCoin::from) {
             self.ctx.abort_handlers.lock().unwrap().push(abort_handler);
         }
 
@@ -909,10 +903,11 @@ impl InitWithdrawCoin for QtumCoin {
 impl UtxoSignerOps for QtumCoin {
     type TxGetter = UtxoRpcClientEnum;
 
-    fn trezor_coin(&self) -> UtxoSignTxResult<TrezorUtxoCoin> {
+    fn trezor_coin(&self) -> UtxoSignTxResult<String> {
         self.utxo_arc
             .conf
             .trezor_coin
+            .clone()
             .or_mm_err(|| UtxoSignTxError::CoinNotSupportedWithTrezor {
                 coin: self.utxo_arc.conf.ticker.clone(),
             })
@@ -1000,12 +995,12 @@ impl HDWalletBalanceOps for QtumCoin {
         &self,
         hd_wallet: &Self::HDWallet,
         xpub_extractor: &XPubExtractor,
-        scan_policy: EnableCoinScanPolicy,
+        params: EnabledCoinBalanceParams,
     ) -> MmResult<HDWalletBalance, EnableCoinBalanceError>
     where
         XPubExtractor: HDXPubExtractor + Sync,
     {
-        coin_balance::common_impl::enable_hd_wallet(self, hd_wallet, xpub_extractor, scan_policy).await
+        coin_balance::common_impl::enable_hd_wallet(self, hd_wallet, xpub_extractor, params).await
     }
 
     async fn scan_for_new_addresses(
@@ -1041,12 +1036,12 @@ impl HDWalletCoinWithStorageOps for QtumCoin {
 }
 
 #[async_trait]
-impl HDWalletRpcOps for QtumCoin {
+impl GetNewAddressRpcOps for QtumCoin {
     async fn get_new_address_rpc(
         &self,
-        params: GetNewHDAddressParams,
-    ) -> MmResult<GetNewHDAddressResponse, HDWalletRpcError> {
-        hd_wallet::common_impl::get_new_address_rpc(self, params).await
+        params: GetNewAddressParams,
+    ) -> MmResult<GetNewAddressResponse, GetNewAddressRpcError> {
+        get_new_address::common_impl::get_new_address_rpc(self, params).await
     }
 }
 
@@ -1061,6 +1056,16 @@ impl AccountBalanceRpcOps for QtumCoin {
 }
 
 #[async_trait]
+impl InitAccountBalanceRpcOps for QtumCoin {
+    async fn init_account_balance_rpc(
+        &self,
+        params: InitAccountBalanceParams,
+    ) -> MmResult<HDAccountBalance, HDAccountBalanceRpcError> {
+        init_account_balance::common_impl::init_account_balance_rpc(self, params).await
+    }
+}
+
+#[async_trait]
 impl InitScanAddressesRpcOps for QtumCoin {
     async fn init_scan_for_new_addresses_rpc(
         &self,
@@ -1071,16 +1076,21 @@ impl InitScanAddressesRpcOps for QtumCoin {
 }
 
 #[async_trait]
-impl InitCreateHDAccountRpcOps for QtumCoin {
+impl InitCreateAccountRpcOps for QtumCoin {
     async fn init_create_account_rpc<XPubExtractor>(
         &self,
         params: CreateNewAccountParams,
+        state: CreateAccountState,
         xpub_extractor: &XPubExtractor,
-    ) -> MmResult<HDAccountBalance, HDWalletRpcError>
+    ) -> MmResult<HDAccountBalance, CreateAccountRpcError>
     where
         XPubExtractor: HDXPubExtractor + Sync,
     {
-        init_create_account::common_impl::init_create_new_account_rpc(self, params, xpub_extractor).await
+        init_create_account::common_impl::init_create_new_account_rpc(self, params, state, xpub_extractor).await
+    }
+
+    async fn revert_creating_account(&self, account_id: u32) {
+        init_create_account::common_impl::revert_creating_account(self, account_id).await
     }
 }
 
@@ -1124,7 +1134,7 @@ impl UtxoTxHistoryOps for QtumCoin {
         utxo_common::utxo_tx_history_v2_common::request_tx_history(self, metrics, my_addresses).await
     }
 
-    async fn get_block_timestamp(&self, height: u64) -> MmResult<u64, UtxoRpcError> {
+    async fn get_block_timestamp(&self, height: u64) -> MmResult<u64, GetBlockHeaderError> {
         self.as_ref().rpc_client.get_block_timestamp(height).await
     }
 

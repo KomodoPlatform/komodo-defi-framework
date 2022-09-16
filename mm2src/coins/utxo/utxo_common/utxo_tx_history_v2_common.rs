@@ -366,7 +366,10 @@ async fn request_tx_history_with_electrum(
     let hashes_history = match electrum.scripthash_get_history_batch(script_hashes).compat().await {
         Ok(hashes_history) => hashes_history,
         Err(e) => match &e.error {
-            JsonRpcErrorType::InvalidRequest(e) | JsonRpcErrorType::Transport(e) | JsonRpcErrorType::Parse(_, e) => {
+            JsonRpcErrorType::InvalidRequest(e)
+            | JsonRpcErrorType::Transport(e)
+            | JsonRpcErrorType::Parse(_, e)
+            | JsonRpcErrorType::Internal(e) => {
                 return RequestTxHistoryResult::Retry {
                     error: ERRL!("Error {} on scripthash_get_history", e),
                 };

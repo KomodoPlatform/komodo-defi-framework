@@ -3,6 +3,7 @@ use chain::{BlockHeader, BlockHeaderBits};
 use derive_more::Display;
 use primitives::compact::Compact;
 use primitives::U256;
+use serde::{Deserialize, Serialize};
 use std::cmp;
 
 const RETARGETING_FACTOR: u32 = 4;
@@ -21,28 +22,25 @@ pub const MAX_BITS_BTC: u32 = 486604799;
 
 fn is_retarget_height(height: u32) -> bool { height % RETARGETING_INTERVAL == 0 }
 
-#[derive(Debug, Display)]
+#[derive(Clone, Debug, Display, Eq, PartialEq)]
 pub enum NextBlockBitsError {
     #[display(fmt = "Block headers storage error: {}", _0)]
     StorageError(BlockHeaderStorageError),
-    #[display(fmt = "Can't find Block header for {} with height {}", height, coin)]
-    NoSuchBlockHeader {
-        coin: String,
-        height: u64,
-    },
+    #[display(fmt = "Can't find Block header for {} with height {}", coin, height)]
+    NoSuchBlockHeader { coin: String, height: u64 },
     #[display(fmt = "Can't find a Block header for {} with no max bits", coin)]
-    NoBlockHeaderWithNoMaxBits {
-        coin: String,
-    },
-    Internal(String),
+    NoBlockHeaderWithNoMaxBits { coin: String },
 }
 
 impl From<BlockHeaderStorageError> for NextBlockBitsError {
     fn from(e: BlockHeaderStorageError) -> Self { NextBlockBitsError::StorageError(e) }
 }
 
+#[derive(Clone, Debug, Deserialize, Serialize)]
 pub enum DifficultyAlgorithm {
+    #[serde(rename = "Bitcoin Mainnet")]
     BitcoinMainnet,
+    #[serde(rename = "Bitcoin Testnet")]
     BitcoinTestnet,
 }
 
@@ -52,7 +50,7 @@ pub async fn next_block_bits(
     last_block_header: BlockHeader,
     last_block_height: u32,
     storage: &dyn BlockHeaderStorageOps,
-    algorithm: DifficultyAlgorithm,
+    algorithm: &DifficultyAlgorithm,
 ) -> Result<BlockHeaderBits, NextBlockBitsError> {
     match algorithm {
         DifficultyAlgorithm::BitcoinMainnet => {
@@ -87,10 +85,16 @@ async fn btc_retarget_bits(
     last_block_header: BlockHeader,
     storage: &dyn BlockHeaderStorageOps,
 ) -> Result<BlockHeaderBits, NextBlockBitsError> {
+    let max_bits_compact: Compact = MAX_BITS_BTC.into();
+
     let retarget_ref = (height - RETARGETING_INTERVAL).into();
+    if retarget_ref == 0 {
+        return Ok(BlockHeaderBits::Compact(max_bits_compact));
+    }
+
     let retarget_header =
         storage
-            .get_block_header(coin, retarget_ref)
+            .get_block_header(retarget_ref)
             .await?
             .ok_or(NextBlockBitsError::NoSuchBlockHeader {
                 coin: coin.into(),
@@ -108,9 +112,7 @@ async fn btc_retarget_bits(
     let target_timespan_seconds: U256 = TARGET_TIMESPAN_SECONDS.into();
     let retarget = retarget / target_timespan_seconds;
 
-    let max_bits_compact: Compact = MAX_BITS_BTC.into();
     let max_bits: U256 = max_bits_compact.into();
-
     if retarget > max_bits {
         Ok(BlockHeaderBits::Compact(max_bits_compact))
     } else {
@@ -125,7 +127,7 @@ async fn btc_mainnet_next_block_bits(
     storage: &dyn BlockHeaderStorageOps,
 ) -> Result<BlockHeaderBits, NextBlockBitsError> {
     if last_block_height == 0 {
-        return Err(NextBlockBitsError::Internal("Last block height can't be zero".into()));
+        return Ok(BlockHeaderBits::Compact(MAX_BITS_BTC.into()));
     }
 
     let height = last_block_height + 1;
@@ -145,14 +147,14 @@ async fn btc_testnet_next_block_bits(
     last_block_height: u32,
     storage: &dyn BlockHeaderStorageOps,
 ) -> Result<BlockHeaderBits, NextBlockBitsError> {
+    let max_bits = BlockHeaderBits::Compact(MAX_BITS_BTC.into());
     if last_block_height == 0 {
-        return Err(NextBlockBitsError::Internal("Last block height can't be zero".into()));
+        return Ok(max_bits);
     }
 
     let height = last_block_height + 1;
     let last_block_bits = last_block_header.bits.clone();
     let max_time_gap = last_block_header.time + 2 * TARGET_SPACING_SECONDS;
-    let max_bits = BlockHeaderBits::Compact(MAX_BITS_BTC.into());
 
     if is_retarget_height(height) {
         btc_retarget_bits(coin, height, last_block_header, storage).await
@@ -161,16 +163,17 @@ async fn btc_testnet_next_block_bits(
     } else if last_block_bits != max_bits {
         Ok(last_block_bits.clone())
     } else {
-        let last_block_header_with_non_max_bits = storage
-            .get_last_block_header_with_non_max_bits(coin)
+        let last_non_max_bits = storage
+            .get_last_block_header_with_non_max_bits()
             .await?
-            .ok_or(NextBlockBitsError::NoBlockHeaderWithNoMaxBits { coin: coin.into() })?;
-        Ok(last_block_header_with_non_max_bits.bits)
+            .map(|header| header.bits)
+            .unwrap_or(max_bits);
+        Ok(last_non_max_bits)
     }
 }
 
 #[cfg(test)]
-mod tests {
+pub(crate) mod tests {
     use super::*;
     use crate::storage::{BlockHeaderStorageError, BlockHeaderStorageOps};
     use async_trait::async_trait;
@@ -203,60 +206,55 @@ mod tests {
             .collect()
     }
 
-    struct TestBlockHeadersStorage {}
+    pub struct TestBlockHeadersStorage {
+        pub(crate) ticker: String,
+    }
 
     #[async_trait]
     impl BlockHeaderStorageOps for TestBlockHeadersStorage {
-        async fn init(&self, _for_coin: &str) -> Result<(), BlockHeaderStorageError> { Ok(()) }
+        async fn init(&self) -> Result<(), BlockHeaderStorageError> { Ok(()) }
 
-        async fn is_initialized_for(&self, _for_coin: &str) -> Result<bool, BlockHeaderStorageError> { Ok(true) }
+        async fn is_initialized_for(&self) -> Result<bool, BlockHeaderStorageError> { Ok(true) }
 
         async fn add_block_headers_to_storage(
             &self,
-            _for_coin: &str,
             _headers: HashMap<u64, BlockHeader>,
         ) -> Result<(), BlockHeaderStorageError> {
             Ok(())
         }
 
-        async fn get_block_header(
-            &self,
-            for_coin: &str,
-            height: u64,
-        ) -> Result<Option<BlockHeader>, BlockHeaderStorageError> {
-            Ok(get_block_headers_for_coin(for_coin).get(&height).cloned())
+        async fn get_block_header(&self, height: u64) -> Result<Option<BlockHeader>, BlockHeaderStorageError> {
+            Ok(get_block_headers_for_coin(&self.ticker).get(&height).cloned())
         }
 
-        async fn get_block_header_raw(
-            &self,
-            _for_coin: &str,
-            _height: u64,
-        ) -> Result<Option<String>, BlockHeaderStorageError> {
+        async fn get_block_header_raw(&self, _height: u64) -> Result<Option<String>, BlockHeaderStorageError> {
             Ok(None)
+        }
+
+        async fn get_last_block_height(&self) -> Result<u64, BlockHeaderStorageError> {
+            Ok(get_block_headers_for_coin(&self.ticker)
+                .into_keys()
+                .max_by(|a, b| a.cmp(b))
+                .unwrap())
         }
 
         async fn get_last_block_header_with_non_max_bits(
             &self,
-            for_coin: &str,
         ) -> Result<Option<BlockHeader>, BlockHeaderStorageError> {
-            let mut headers = get_block_headers_for_coin(for_coin);
+            let mut headers = get_block_headers_for_coin(&self.ticker);
             headers.retain(|_, h| h.bits != BlockHeaderBits::Compact(MAX_BITS_BTC.into()));
             let header = headers.into_iter().max_by(|a, b| a.0.cmp(&b.0));
             Ok(header.map(|(_, h)| h))
         }
 
-        async fn get_block_height_by_hash(
-            &self,
-            _for_coin: &str,
-            _hash: H256,
-        ) -> Result<Option<i64>, BlockHeaderStorageError> {
+        async fn get_block_height_by_hash(&self, _hash: H256) -> Result<Option<i64>, BlockHeaderStorageError> {
             Ok(None)
         }
     }
 
     #[test]
     fn test_btc_mainnet_next_block_bits() {
-        let storage = TestBlockHeadersStorage {};
+        let storage = TestBlockHeadersStorage { ticker: "BTC".into() };
 
         let last_header: BlockHeader = "000000201d758432ecd495a2177b44d3fe6c22af183461a0b9ea0d0000000000000000008283a1dfa795d9b68bd8c18601e443368265072cbf8c76bfe58de46edd303798035de95d3eb2151756fdb0e8".into();
 
@@ -282,7 +280,7 @@ mod tests {
 
     #[test]
     fn test_btc_testnet_next_block_bits() {
-        let storage = TestBlockHeadersStorage {};
+        let storage = TestBlockHeadersStorage { ticker: "tBTC".into() };
 
         // https://live.blockcypher.com/btc-testnet/block/000000000057db3806384e2ec1b02b2c86bd928206ff8dff98f54d616b7fa5f2/
         let current_header: BlockHeader = "02000000303505969a1df329e5fccdf69b847a201772e116e557eb7f119d1a9600000000469267f52f43b8799e72f0726ba2e56432059a8ad02b84d4fff84b9476e95f7716e41353ab80011c168cb471".into();
