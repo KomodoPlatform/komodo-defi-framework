@@ -18,7 +18,7 @@ use cosmrs::bank::MsgSend;
 use cosmrs::crypto::secp256k1::SigningKey;
 use cosmrs::proto::cosmos::auth::v1beta1::{BaseAccount, QueryAccountRequest, QueryAccountResponse};
 use cosmrs::proto::cosmos::bank::v1beta1::{QueryBalanceRequest, QueryBalanceResponse};
-use cosmrs::proto::cosmos::tx::v1beta1::TxRaw;
+use cosmrs::proto::cosmos::tx::v1beta1::{GetTxsEventRequest, TxRaw};
 use cosmrs::tendermint::abci::Path as AbciPath;
 use cosmrs::tendermint::chain::Id as ChainId;
 use cosmrs::tx::{self, Fee, Msg, Raw, SignDoc, SignerInfo};
@@ -1139,6 +1139,9 @@ impl SwapOps for TendermintCoin {
 #[cfg(test)]
 mod tendermint_coin_tests {
     use super::*;
+    use crate::tendermint::htlc_proto::ClaimHtlcProtoRep;
+    use common::block_on;
+    use cosmrs::proto::cosmos::tx::v1beta1::GetTxsEventResponse;
     use rand::{thread_rng, Rng};
 
     const IRIS_TESTNET_HTLC_PAIR1_SEED: &str = "iris test seed";
@@ -1252,5 +1255,53 @@ mod tendermint_coin_tests {
         });
         println!("Claim HTLC tx hash {}", upper_hex(sha256(&tx_bytes).as_slice()));
         // >> END HTLC CLAIMING
+    }
+
+    #[test]
+    fn try_query_claim_htlc_txs_and_get_secret() {
+        let rpc_urls = vec![IRIS_TESTNET_RPC_URL.to_string()];
+
+        let protocol_conf = get_iris_usdc_ibc_protocol();
+
+        let ctx = mm2_core::mm_ctx::MmCtxBuilder::default()
+            .with_secp256k1_key_pair(crypto::privkey::key_pair_from_seed(IRIS_TESTNET_HTLC_PAIR1_SEED).unwrap())
+            .into_mm_arc();
+
+        let priv_key = &*ctx.secp256k1_key_pair().private().secret;
+
+        let coin = common::block_on(TendermintCoin::init(
+            "USDC-IBC".to_string(),
+            protocol_conf,
+            rpc_urls,
+            priv_key,
+        ))
+        .unwrap();
+
+        let events = "claim_htlc.id='2B925FC83A106CC81590B3DB108AC2AE496FFA912F368FE5E29BC1ED2B754F2C'";
+        let request = GetTxsEventRequest {
+            events: vec![events.into()],
+            pagination: None,
+            order_by: 0,
+        };
+        let path = AbciPath::from_str("/cosmos.tx.v1beta1.Service/GetTxsEvent").unwrap();
+        let response = block_on(
+            coin.rpc_client
+                .abci_query(Some(path), request.encode_to_vec(), None, false),
+        )
+        .unwrap();
+        println!("{:?}", response);
+
+        let response = GetTxsEventResponse::decode(response.value.as_slice()).unwrap();
+        let tx = response.txs.first().unwrap();
+        println!("{:?}", tx);
+
+        let first_msg = tx.body.as_ref().unwrap().messages.first().unwrap();
+        println!("{:?}", first_msg);
+
+        let claim_htlc = ClaimHtlcProtoRep::decode(first_msg.value.as_slice()).unwrap();
+        let expected_secret = [1; 32];
+        let actual_secret = hex::decode(claim_htlc.secret).unwrap();
+
+        assert_eq!(actual_secret, expected_secret);
     }
 }
