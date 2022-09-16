@@ -352,7 +352,7 @@ impl TendermintCoin {
         let msg_payload = MsgCreateHtlc {
             sender: self.account_id.clone(),
             to: to.clone(),
-            receiver_on_other_chain: hex::encode(&secret),
+            receiver_on_other_chain: "".to_string(),
             sender_on_other_chain: "".to_string(),
             amount,
             hash_lock: sha256(&secret).to_string(),
@@ -954,8 +954,15 @@ impl SwapOps for TendermintCoin {
             prost::Message::decode(msg.value.as_slice()).unwrap();
         let htlc = MsgCreateHtlc::try_from(htlc_proto).unwrap();
 
-        // Only for P.O.C DEMO!
-        let secret = self.extract_secret(&[], taker_payment_tx).unwrap();
+        // TODO
+        // Refactor will be needed.
+        let secret_hash = dhash160(secret).to_vec();
+        let mut sec = vec![];
+        sec.extend_from_slice(&secret_hash);
+        if sec.len() == 20 {
+            sec.extend_from_slice(&[0; 12]);
+        }
+        let secret = sec.as_slice();
 
         let mut hash_lock_hash = vec![];
         hash_lock_hash.extend_from_slice(&secret);
@@ -1164,14 +1171,14 @@ impl SwapOps for TendermintCoin {
     fn extract_secret(&self, secret_hash: &[u8], spend_tx: &[u8]) -> Result<Vec<u8>, String> {
         let tx = cosmrs::Tx::from_bytes(spend_tx).unwrap();
         let msg = tx.body.messages.first().unwrap();
-        let htlc_proto: crate::tendermint::htlc_proto::CreateHtlcProtoRep =
+        let htlc_proto: crate::tendermint::htlc_proto::ClaimHtlcProtoRep =
             prost::Message::decode(msg.value.as_slice()).unwrap();
-        let htlc = MsgCreateHtlc::try_from(htlc_proto).unwrap();
+        let htlc = MsgClaimHtlc::try_from(htlc_proto).unwrap();
 
         // TODO
         // This is highly risky implementation.
         // Only allowed for the p.o.c demo. Must be refactored after.
-        Ok(hex::decode(htlc.receiver_on_other_chain).unwrap())
+        Ok(hex::decode(htlc.secret).unwrap())
     }
 
     fn negotiate_swap_contract_addr(
@@ -1252,7 +1259,6 @@ mod tendermint_coin_tests {
         let to: AccountId = IRIS_TESTNET_HTLC_PAIR2_ADDRESS.parse().unwrap();
         let amount: cosmrs::Decimal = 1_u64.into();
         let sec: [u8; 32] = thread_rng().gen();
-        println!("INITIAL SECRET {:?}", sec.clone());
         let time_lock = 1000;
 
         let create_htlc_tx = coin
