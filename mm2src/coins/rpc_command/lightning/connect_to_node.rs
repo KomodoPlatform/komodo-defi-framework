@@ -1,5 +1,5 @@
 use crate::lightning::ln_errors::EnableLightningError;
-use crate::lightning::ln_p2p::{connect_to_node, ConnectToNodeRes, ConnectionError};
+use crate::lightning::ln_p2p::{connect_to_ln_node, ConnectToNodeRes, ConnectionError};
 use crate::lightning::ln_serialization::NodeAddress;
 use crate::lightning::ln_storage::LightningStorage;
 use crate::{lp_coinfind_or_err, CoinFindError, MmCoinEnum};
@@ -67,7 +67,7 @@ pub struct ConnectToNodeRequest {
 }
 
 /// Connect to a certain node on the lightning network.
-pub async fn connect_to_lightning_node(ctx: MmArc, req: ConnectToNodeRequest) -> ConnectToNodeResult<String> {
+pub async fn connect_to_node(ctx: MmArc, req: ConnectToNodeRequest) -> ConnectToNodeResult<String> {
     let ln_coin = match lp_coinfind_or_err(&ctx, &req.coin).await? {
         MmCoinEnum::LightningCoin(c) => c,
         e => return MmError::err(ConnectToNodeError::UnsupportedCoin(e.ticker().to_string())),
@@ -75,7 +75,7 @@ pub async fn connect_to_lightning_node(ctx: MmArc, req: ConnectToNodeRequest) ->
 
     let node_pubkey = req.node_address.pubkey;
     let node_addr = req.node_address.addr;
-    let res = connect_to_node(node_pubkey, node_addr, ln_coin.peer_manager.clone()).await?;
+    let res = connect_to_ln_node(node_pubkey, node_addr, ln_coin.peer_manager.clone()).await?;
 
     // If a node that we have an open channel with changed it's address, "connect_to_lightning_node"
     // can be used to reconnect to the new address while saving this new address for reconnections.

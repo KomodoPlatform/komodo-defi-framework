@@ -1,15 +1,12 @@
 use crate::utxo::rpc_clients::UtxoRpcError;
-use crate::CoinFindError;
 use common::HttpStatusCode;
 use db_common::sqlite::rusqlite::Error as SqlError;
 use derive_more::Display;
 use http::StatusCode;
-use lightning_invoice::SignOrCreationError;
 use mm2_err_handle::prelude::*;
 use std::num::TryFromIntError;
 
 pub type EnableLightningResult<T> = Result<T, MmError<EnableLightningError>>;
-pub type GenerateInvoiceResult<T> = Result<T, MmError<GenerateInvoiceError>>;
 pub type SaveChannelClosingResult<T> = Result<T, MmError<SaveChannelClosingError>>;
 
 #[derive(Debug, Deserialize, Display, Serialize, SerializeErrorType)]
@@ -62,47 +59,6 @@ impl From<SqlError> for EnableLightningError {
 
 impl From<UtxoRpcError> for EnableLightningError {
     fn from(e: UtxoRpcError) -> Self { EnableLightningError::RpcError(e.to_string()) }
-}
-
-#[derive(Debug, Deserialize, Display, Serialize, SerializeErrorType)]
-#[serde(tag = "error_type", content = "error_data")]
-pub enum GenerateInvoiceError {
-    #[display(fmt = "Lightning network is not supported for {}", _0)]
-    UnsupportedCoin(String),
-    #[display(fmt = "No such coin {}", _0)]
-    NoSuchCoin(String),
-    #[display(fmt = "Invoice signing or creation error: {}", _0)]
-    SignOrCreationError(String),
-    #[display(fmt = "DB error {}", _0)]
-    DbError(String),
-}
-
-impl HttpStatusCode for GenerateInvoiceError {
-    fn status_code(&self) -> StatusCode {
-        match self {
-            GenerateInvoiceError::UnsupportedCoin(_) => StatusCode::BAD_REQUEST,
-            GenerateInvoiceError::NoSuchCoin(_) => StatusCode::NOT_FOUND,
-            GenerateInvoiceError::SignOrCreationError(_) | GenerateInvoiceError::DbError(_) => {
-                StatusCode::INTERNAL_SERVER_ERROR
-            },
-        }
-    }
-}
-
-impl From<CoinFindError> for GenerateInvoiceError {
-    fn from(e: CoinFindError) -> Self {
-        match e {
-            CoinFindError::NoSuchCoin { coin } => GenerateInvoiceError::NoSuchCoin(coin),
-        }
-    }
-}
-
-impl From<SignOrCreationError> for GenerateInvoiceError {
-    fn from(e: SignOrCreationError) -> Self { GenerateInvoiceError::SignOrCreationError(e.to_string()) }
-}
-
-impl From<SqlError> for GenerateInvoiceError {
-    fn from(err: SqlError) -> GenerateInvoiceError { GenerateInvoiceError::DbError(err.to_string()) }
 }
 
 #[derive(Display, PartialEq)]

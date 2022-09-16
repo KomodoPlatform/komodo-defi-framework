@@ -1,5 +1,6 @@
 pub mod close_channel;
-pub mod connect_to_lightning_node;
+pub mod connect_to_node;
+pub mod generate_invoice;
 pub mod get_channel_details;
 pub mod get_claimable_balances;
 pub mod get_payment_details;

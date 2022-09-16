@@ -10,7 +10,7 @@ mod ln_sql;
 pub(crate) mod ln_storage;
 mod ln_utils;
 
-use super::{lp_coinfind_or_err, DerivationMethod, MmCoinEnum};
+use super::DerivationMethod;
 use crate::utxo::rpc_clients::UtxoRpcClientEnum;
 use crate::utxo::utxo_common::big_decimal_from_sat_unsigned;
 use crate::utxo::BlockchainNetwork;
@@ -38,14 +38,14 @@ use lightning::ln::{PaymentHash, PaymentPreimage};
 use lightning::routing::gossip;
 use lightning_background_processor::{BackgroundProcessor, GossipSync};
 use lightning_invoice::payment;
-use lightning_invoice::utils::{create_invoice_from_channelmanager, DefaultRouter};
+use lightning_invoice::utils::DefaultRouter;
 use lightning_invoice::{Invoice, InvoiceDescription};
 use ln_conf::{LightningCoinConf, LightningProtocolConf, PlatformCoinConfirmationTargets};
 use ln_db::{DBChannelDetails, DBPaymentInfo, HTLCStatus, LightningDB, PaymentType};
-use ln_errors::{EnableLightningError, EnableLightningResult, GenerateInvoiceError, GenerateInvoiceResult};
+use ln_errors::{EnableLightningError, EnableLightningResult};
 use ln_events::{init_events_abort_handlers, LightningEventHandler};
 use ln_filesystem_persister::LightningFilesystemPersister;
-use ln_p2p::{connect_to_node, PeerManager};
+use ln_p2p::PeerManager;
 use ln_platform::Platform;
 use ln_serialization::{ChannelDetailsForRPC, PublicKeyForRPC};
 use ln_sql::SqliteLightningDB;
@@ -847,7 +847,7 @@ pub async fn start_lightning(
     let open_channels_nodes = Arc::new(PaMutex::new(
         ln_utils::get_open_channels_nodes_addresses(persister.clone(), channel_manager.clone()).await?,
     ));
-    spawn(ln_p2p::connect_to_nodes_loop(
+    spawn(ln_p2p::connect_to_ln_nodes_loop(
         open_channels_nodes.clone(),
         peer_manager.clone(),
     ));
@@ -872,76 +872,5 @@ pub async fn start_lightning(
         db,
         open_channels_nodes,
         trusted_nodes,
-    })
-}
-
-#[derive(Deserialize)]
-pub struct GenerateInvoiceRequest {
-    pub coin: String,
-    pub amount_in_msat: Option<u64>,
-    pub description: String,
-    pub expiry: Option<u32>,
-}
-
-#[derive(Serialize)]
-pub struct GenerateInvoiceResponse {
-    payment_hash: H256Json,
-    invoice: Invoice,
-}
-
-/// Generates an invoice (request for payment) that can be paid on the lightning network by another node using send_payment.
-pub async fn generate_invoice(
-    ctx: MmArc,
-    req: GenerateInvoiceRequest,
-) -> GenerateInvoiceResult<GenerateInvoiceResponse> {
-    let ln_coin = match lp_coinfind_or_err(&ctx, &req.coin).await? {
-        MmCoinEnum::LightningCoin(c) => c,
-        e => return MmError::err(GenerateInvoiceError::UnsupportedCoin(e.ticker().to_string())),
-    };
-    let open_channels_nodes = ln_coin.open_channels_nodes.lock().clone();
-    for (node_pubkey, node_addr) in open_channels_nodes {
-        connect_to_node(node_pubkey, node_addr, ln_coin.peer_manager.clone())
-            .await
-            .error_log_with_msg(&format!(
-                "Channel with node: {} can't be used for invoice routing hints due to connection error.",
-                node_pubkey
-            ));
-    }
-
-    let network = ln_coin.platform.network.clone().into();
-    let channel_manager = ln_coin.channel_manager.clone();
-    let keys_manager = ln_coin.keys_manager.clone();
-    let amount_in_msat = req.amount_in_msat;
-    let description = req.description.clone();
-    let expiry = req.expiry.unwrap_or(DEFAULT_INVOICE_EXPIRY);
-    let invoice = async_blocking(move || {
-        create_invoice_from_channelmanager(
-            &channel_manager,
-            keys_manager,
-            network,
-            amount_in_msat,
-            description,
-            expiry,
-        )
-    })
-    .await?;
-
-    let payment_hash = invoice.payment_hash().into_inner();
-    let payment_info = DBPaymentInfo {
-        payment_hash: PaymentHash(payment_hash),
-        payment_type: PaymentType::InboundPayment,
-        description: req.description,
-        preimage: None,
-        secret: Some(*invoice.payment_secret()),
-        amt_msat: req.amount_in_msat.map(|a| a as i64),
-        fee_paid_msat: None,
-        status: HTLCStatus::Pending,
-        created_at: (now_ms() / 1000) as i64,
-        last_updated: (now_ms() / 1000) as i64,
-    };
-    ln_coin.db.add_or_update_payment_in_db(payment_info).await?;
-    Ok(GenerateInvoiceResponse {
-        payment_hash: payment_hash.into(),
-        invoice,
     })
 }

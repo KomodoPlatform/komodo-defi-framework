@@ -35,7 +35,7 @@ pub enum ConnectionError {
     ConnectionError(String),
 }
 
-pub async fn connect_to_node(
+pub async fn connect_to_ln_node(
     pubkey: PublicKey,
     node_addr: SocketAddr,
     peer_manager: Arc<PeerManager>,
@@ -82,12 +82,12 @@ pub async fn connect_to_node(
     Ok(ConnectToNodeRes::ConnectedSuccessfully { pubkey, node_addr })
 }
 
-pub async fn connect_to_nodes_loop(open_channels_nodes: NodesAddressesMapShared, peer_manager: Arc<PeerManager>) {
+pub async fn connect_to_ln_nodes_loop(open_channels_nodes: NodesAddressesMapShared, peer_manager: Arc<PeerManager>) {
     loop {
         let open_channels_nodes = open_channels_nodes.lock().clone();
         for (pubkey, node_addr) in open_channels_nodes {
             let peer_manager = peer_manager.clone();
-            match connect_to_node(pubkey, node_addr, peer_manager.clone()).await {
+            match connect_to_ln_node(pubkey, node_addr, peer_manager.clone()).await {
                 Ok(res) => {
                     if let ConnectToNodeRes::ConnectedSuccessfully { .. } = res {
                         log::info!("{}", res.to_string());

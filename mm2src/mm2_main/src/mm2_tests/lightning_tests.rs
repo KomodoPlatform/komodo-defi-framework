@@ -188,21 +188,21 @@ fn test_enable_lightning() {
 
 #[test]
 #[cfg(not(target_arch = "wasm32"))]
-fn test_connect_to_lightning_node() {
+fn test_connect_to_node() {
     let (mm_node_1, mm_node_2, node_1_id, _) = start_lightning_nodes(false);
     let node_1_address = format!("{}@{}:9735", node_1_id, mm_node_1.ip.to_string());
 
     let connect = block_on(mm_node_2.rpc(&json! ({
         "userpass": mm_node_2.userpass,
         "mmrpc": "2.0",
-        "method": "connect_to_lightning_node",
+        "method": "lightning::connect_to_node",
         "params": {
             "coin": "tBTC-TEST-lightning",
             "node_address": node_1_address,
         },
     })))
     .unwrap();
-    assert!(connect.0.is_success(), "!connect_to_lightning_node: {}", connect.1);
+    assert!(connect.0.is_success(), "!lightning::connect_to_node: {}", connect.1);
     let connect_res: Json = json::from_str(&connect.1).unwrap();
     let expected = format!("Connected successfully to node : {}", node_1_address);
     assert_eq!(connect_res["result"], expected);
@@ -222,7 +222,7 @@ fn test_open_channel() {
     let open_channel = block_on(mm_node_2.rpc(&json! ({
         "userpass": mm_node_2.userpass,
         "mmrpc": "2.0",
-        "method": "open_channel",
+        "method": "lightning::open_channel",
         "params": {
             "coin": "tBTC-TEST-lightning",
             "node_address": node_1_address,
@@ -233,14 +233,18 @@ fn test_open_channel() {
         },
     })))
     .unwrap();
-    assert!(open_channel.0.is_success(), "!open_channel: {}", open_channel.1);
+    assert!(
+        open_channel.0.is_success(),
+        "!lightning::open_channel: {}",
+        open_channel.1
+    );
 
     block_on(mm_node_2.wait_for_log(60., |log| log.contains("Transaction broadcasted successfully"))).unwrap();
 
     let list_channels_node_1 = block_on(mm_node_1.rpc(&json! ({
         "userpass": mm_node_1.userpass,
         "mmrpc": "2.0",
-        "method": "list_open_channels_by_filter",
+        "method": "lightning::list_open_channels_by_filter",
         "params": {
             "coin": "tBTC-TEST-lightning",
         },
@@ -248,7 +252,7 @@ fn test_open_channel() {
     .unwrap();
     assert!(
         list_channels_node_1.0.is_success(),
-        "!list_channels: {}",
+        "!lightning::list_open_channels_by_filter: {}",
         list_channels_node_1.1
     );
     let list_channels_node_1_res: Json = json::from_str(&list_channels_node_1.1).unwrap();
@@ -269,7 +273,7 @@ fn test_open_channel() {
     let list_channels_node_2 = block_on(mm_node_2.rpc(&json! ({
       "userpass": mm_node_2.userpass,
       "mmrpc": "2.0",
-      "method": "list_open_channels_by_filter",
+      "method": "lightning::list_open_channels_by_filter",
       "params": {
           "coin": "tBTC-TEST-lightning",
       },
@@ -277,7 +281,7 @@ fn test_open_channel() {
     .unwrap();
     assert!(
         list_channels_node_2.0.is_success(),
-        "!list_channels: {}",
+        "!lightning::list_open_channels_by_filter: {}",
         list_channels_node_2.1
     );
     let list_channels_node_2_res: Json = json::from_str(&list_channels_node_2.1).unwrap();
@@ -310,19 +314,23 @@ fn test_send_payment() {
     let add_trusted_node = block_on(mm_node_1.rpc(&json! ({
         "userpass": mm_node_1.userpass,
         "mmrpc": "2.0",
-        "method": "add_trusted_node",
+        "method": "lightning::add_trusted_node",
         "params": {
             "coin": "tBTC-TEST-lightning",
             "node_id": node_2_id
         },
     })))
     .unwrap();
-    assert!(add_trusted_node.0.is_success(), "!open_channel: {}", add_trusted_node.1);
+    assert!(
+        add_trusted_node.0.is_success(),
+        "!lightning::add_trusted_node: {}",
+        add_trusted_node.1
+    );
 
     let open_channel = block_on(mm_node_2.rpc(&json! ({
         "userpass": mm_node_2.userpass,
         "mmrpc": "2.0",
-        "method": "open_channel",
+        "method": "lightning::open_channel",
         "params": {
             "coin": "tBTC-TEST-lightning",
             "node_address": node_1_address,
@@ -333,14 +341,18 @@ fn test_send_payment() {
         },
     })))
     .unwrap();
-    assert!(open_channel.0.is_success(), "!open_channel: {}", open_channel.1);
+    assert!(
+        open_channel.0.is_success(),
+        "!lightning::open_channel: {}",
+        open_channel.1
+    );
 
     block_on(mm_node_2.wait_for_log(60., |log| log.contains("Received message ChannelReady"))).unwrap();
 
     let send_payment = block_on(mm_node_2.rpc(&json! ({
         "userpass": mm_node_2.userpass,
         "mmrpc": "2.0",
-        "method": "send_payment",
+        "method": "lightning::send_payment",
         "params": {
             "coin": "tBTC-TEST-lightning",
             "payment": {
@@ -352,7 +364,11 @@ fn test_send_payment() {
         },
     })))
     .unwrap();
-    assert!(send_payment.0.is_success(), "!send_payment: {}", send_payment.1);
+    assert!(
+        send_payment.0.is_success(),
+        "!lightning::send_payment: {}",
+        send_payment.1
+    );
 
     let send_payment_res: Json = json::from_str(&send_payment.1).unwrap();
     log!("send_payment_res {:?}", send_payment_res);
@@ -364,7 +380,7 @@ fn test_send_payment() {
     let get_payment_details = block_on(mm_node_2.rpc(&json! ({
       "userpass": mm_node_2.userpass,
       "mmrpc": "2.0",
-      "method": "get_payment_details",
+      "method": "lightning::get_payment_details",
       "params": {
           "coin": "tBTC-TEST-lightning",
           "payment_hash": payment_hash
@@ -373,7 +389,7 @@ fn test_send_payment() {
     .unwrap();
     assert!(
         get_payment_details.0.is_success(),
-        "!get_payment_details: {}",
+        "!lightning::get_payment_details: {}",
         get_payment_details.1
     );
 
@@ -387,7 +403,7 @@ fn test_send_payment() {
     let get_payment_details = block_on(mm_node_1.rpc(&json! ({
       "userpass": mm_node_1.userpass,
       "mmrpc": "2.0",
-      "method": "get_payment_details",
+      "method": "lightning::get_payment_details",
       "params": {
           "coin": "tBTC-TEST-lightning",
           "payment_hash": payment_hash
@@ -396,7 +412,7 @@ fn test_send_payment() {
     .unwrap();
     assert!(
         get_payment_details.0.is_success(),
-        "!get_payment_details: {}",
+        "!lightning::get_payment_details: {}",
         get_payment_details.1
     );
 

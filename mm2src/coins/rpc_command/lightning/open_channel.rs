@@ -1,6 +1,6 @@
 use crate::lightning::ln_conf::{ChannelOptions, OurChannelsConfigs};
 use crate::lightning::ln_db::{DBChannelDetails, LightningDB};
-use crate::lightning::ln_p2p::{connect_to_node, ConnectionError};
+use crate::lightning::ln_p2p::{connect_to_ln_node, ConnectionError};
 use crate::lightning::ln_serialization::NodeAddress;
 use crate::lightning::ln_storage::LightningStorage;
 use crate::utxo::utxo_common::UtxoTxBuilder;
@@ -141,7 +141,7 @@ pub async fn open_channel(ctx: MmArc, req: OpenChannelRequest) -> OpenChannelRes
     // Making sure that the node data is correct and that we can connect to it before doing more operations
     let node_pubkey = req.node_address.pubkey;
     let node_addr = req.node_address.addr;
-    connect_to_node(node_pubkey, node_addr, ln_coin.peer_manager.clone()).await?;
+    connect_to_ln_node(node_pubkey, node_addr, ln_coin.peer_manager.clone()).await?;
 
     let platform_coin = ln_coin.platform_coin().clone();
     let decimals = platform_coin.as_ref().decimals;

@@ -1,5 +1,5 @@
 use crate::lightning::ln_db::LightningDB;
-use crate::lightning::ln_p2p::connect_to_node;
+use crate::lightning::ln_p2p::connect_to_ln_node;
 use crate::lightning::ln_serialization::PublicKeyForRPC;
 use crate::lightning::PaymentError;
 use crate::{lp_coinfind_or_err, CoinFindError, H256Json, MmCoinEnum};
@@ -92,7 +92,7 @@ pub async fn send_payment(ctx: MmArc, req: SendPaymentReq) -> SendPaymentResult<
     };
     let open_channels_nodes = ln_coin.open_channels_nodes.lock().clone();
     for (node_pubkey, node_addr) in open_channels_nodes {
-        connect_to_node(node_pubkey, node_addr, ln_coin.peer_manager.clone())
+        connect_to_ln_node(node_pubkey, node_addr, ln_coin.peer_manager.clone())
             .await
             .error_log_with_msg(&format!(
                 "Channel with node: {} can't be used to route this payment due to connection error.",
