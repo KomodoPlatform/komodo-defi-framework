@@ -44,10 +44,11 @@ use std::net::SocketAddr;
 
 cfg_native! {
     use coins::lightning::{add_trusted_node, close_channel, generate_invoice, get_channel_details,
-        get_claimable_balances, get_payment_details, list_closed_channels_by_filter, list_open_channels_by_filter,
+        get_claimable_balances, get_payment_details,
         list_payments_by_filter, list_trusted_nodes, remove_trusted_node, send_payment,
         LightningCoin};
     use coins::rpc_command::lightning::connect_to_lightning_node::connect_to_lightning_node;
+    use coins::rpc_command::lightning::list_channels::{list_closed_channels_by_filter, list_open_channels_by_filter};
     use coins::rpc_command::lightning::open_channel::open_channel;
     use coins::rpc_command::lightning::update_channel::update_channel;
     use coins::z_coin::ZCoin;

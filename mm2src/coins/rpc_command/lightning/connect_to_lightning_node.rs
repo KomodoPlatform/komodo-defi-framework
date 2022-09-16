@@ -11,12 +11,6 @@ use std::collections::hash_map::Entry;
 
 type ConnectToNodeResult<T> = Result<T, MmError<ConnectToNodeError>>;
 
-#[derive(Deserialize)]
-pub struct ConnectToNodeRequest {
-    pub coin: String,
-    pub node_address: NodeAddress,
-}
-
 #[derive(Debug, Deserialize, Display, Serialize, SerializeErrorType)]
 #[serde(tag = "error_type", content = "error_data")]
 pub enum ConnectToNodeError {
@@ -64,6 +58,12 @@ impl From<std::io::Error> for ConnectToNodeError {
 
 impl From<ConnectionError> for ConnectToNodeError {
     fn from(err: ConnectionError) -> ConnectToNodeError { ConnectToNodeError::ConnectionError(err.to_string()) }
+}
+
+#[derive(Deserialize)]
+pub struct ConnectToNodeRequest {
+    pub coin: String,
+    pub node_address: NodeAddress,
 }
 
 /// Connect to a certain node on the lightning network.

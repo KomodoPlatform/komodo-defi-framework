@@ -19,34 +19,7 @@ use mm2_err_handle::prelude::*;
 use mm2_number::BigDecimal;
 use script::Builder;
 
-pub type OpenChannelResult<T> = Result<T, MmError<OpenChannelError>>;
-
-#[derive(Clone, Debug, Deserialize, PartialEq)]
-#[serde(tag = "type", content = "value")]
-pub enum ChannelOpenAmount {
-    Exact(BigDecimal),
-    Max,
-}
-
-#[derive(Deserialize)]
-pub struct OpenChannelRequest {
-    pub coin: String,
-    pub node_address: NodeAddress,
-    pub amount: ChannelOpenAmount,
-    /// The amount to push to the counterparty as part of the open, in milli-satoshi. Creates inbound liquidity for the channel.
-    /// By setting push_msat to a value, opening channel request will be equivalent to opening a channel then sending a payment with
-    /// the push_msat amount.
-    #[serde(default)]
-    pub push_msat: u64,
-    pub channel_options: Option<ChannelOptions>,
-    pub channel_configs: Option<OurChannelsConfigs>,
-}
-
-#[derive(Serialize)]
-pub struct OpenChannelResponse {
-    rpc_channel_id: u64,
-    node_address: NodeAddress,
-}
+type OpenChannelResult<T> = Result<T, MmError<OpenChannelError>>;
 
 #[derive(Debug, Deserialize, Display, Serialize, SerializeErrorType)]
 #[serde(tag = "error_type", content = "error_data")]
@@ -129,6 +102,33 @@ impl From<std::io::Error> for OpenChannelError {
 
 impl From<SqlError> for OpenChannelError {
     fn from(err: SqlError) -> OpenChannelError { OpenChannelError::DbError(err.to_string()) }
+}
+
+#[derive(Clone, Debug, Deserialize, PartialEq)]
+#[serde(tag = "type", content = "value")]
+pub enum ChannelOpenAmount {
+    Exact(BigDecimal),
+    Max,
+}
+
+#[derive(Deserialize)]
+pub struct OpenChannelRequest {
+    pub coin: String,
+    pub node_address: NodeAddress,
+    pub amount: ChannelOpenAmount,
+    /// The amount to push to the counterparty as part of the open, in milli-satoshi. Creates inbound liquidity for the channel.
+    /// By setting push_msat to a value, opening channel request will be equivalent to opening a channel then sending a payment with
+    /// the push_msat amount.
+    #[serde(default)]
+    pub push_msat: u64,
+    pub channel_options: Option<ChannelOptions>,
+    pub channel_configs: Option<OurChannelsConfigs>,
+}
+
+#[derive(Serialize)]
+pub struct OpenChannelResponse {
+    rpc_channel_id: u64,
+    node_address: NodeAddress,
 }
 
 /// Opens a channel on the lightning network.

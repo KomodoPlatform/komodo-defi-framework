@@ -10,7 +10,6 @@ use rpc::v1::types::H256 as H256Json;
 use std::num::TryFromIntError;
 
 pub type EnableLightningResult<T> = Result<T, MmError<EnableLightningError>>;
-pub type ListChannelsResult<T> = Result<T, MmError<ListChannelsError>>;
 pub type GetChannelDetailsResult<T> = Result<T, MmError<GetChannelDetailsError>>;
 pub type GenerateInvoiceResult<T> = Result<T, MmError<GenerateInvoiceError>>;
 pub type SendPaymentResult<T> = Result<T, MmError<SendPaymentError>>;
@@ -71,39 +70,6 @@ impl From<SqlError> for EnableLightningError {
 
 impl From<UtxoRpcError> for EnableLightningError {
     fn from(e: UtxoRpcError) -> Self { EnableLightningError::RpcError(e.to_string()) }
-}
-
-#[derive(Debug, Deserialize, Display, Serialize, SerializeErrorType)]
-#[serde(tag = "error_type", content = "error_data")]
-pub enum ListChannelsError {
-    #[display(fmt = "Lightning network is not supported for {}", _0)]
-    UnsupportedCoin(String),
-    #[display(fmt = "No such coin {}", _0)]
-    NoSuchCoin(String),
-    #[display(fmt = "DB error {}", _0)]
-    DbError(String),
-}
-
-impl HttpStatusCode for ListChannelsError {
-    fn status_code(&self) -> StatusCode {
-        match self {
-            ListChannelsError::UnsupportedCoin(_) => StatusCode::BAD_REQUEST,
-            ListChannelsError::NoSuchCoin(_) => StatusCode::NOT_FOUND,
-            ListChannelsError::DbError(_) => StatusCode::INTERNAL_SERVER_ERROR,
-        }
-    }
-}
-
-impl From<CoinFindError> for ListChannelsError {
-    fn from(e: CoinFindError) -> Self {
-        match e {
-            CoinFindError::NoSuchCoin { coin } => ListChannelsError::NoSuchCoin(coin),
-        }
-    }
-}
-
-impl From<SqlError> for ListChannelsError {
-    fn from(err: SqlError) -> ListChannelsError { ListChannelsError::DbError(err.to_string()) }
 }
 
 #[derive(Debug, Deserialize, Display, Serialize, SerializeErrorType)]

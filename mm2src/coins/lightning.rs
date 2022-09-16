@@ -13,7 +13,7 @@ mod ln_utils;
 use super::{lp_coinfind_or_err, DerivationMethod, MmCoinEnum};
 use crate::lightning::ln_errors::{TrustedNodeError, TrustedNodeResult};
 use crate::lightning::ln_events::init_events_abort_handlers;
-use crate::lightning::ln_serialization::PublicKeyForRPC;
+use crate::lightning::ln_serialization::{ChannelDetailsForRPC, PublicKeyForRPC};
 use crate::lightning::ln_sql::SqliteLightningDB;
 use crate::lightning::ln_storage::{NetworkGraph, TrustedNodesShared};
 use crate::utxo::rpc_clients::UtxoRpcClientEnum;
@@ -47,17 +47,15 @@ use lightning_invoice::payment;
 use lightning_invoice::utils::{create_invoice_from_channelmanager, DefaultRouter};
 use lightning_invoice::{Invoice, InvoiceDescription};
 use ln_conf::{LightningCoinConf, LightningProtocolConf, PlatformCoinConfirmationTargets};
-use ln_db::{ClosedChannelsFilter, DBChannelDetails, DBPaymentInfo, DBPaymentsFilter, HTLCStatus, LightningDB,
-            PaymentType};
+use ln_db::{DBChannelDetails, DBPaymentInfo, DBPaymentsFilter, HTLCStatus, LightningDB, PaymentType};
 use ln_errors::{ClaimableBalancesError, ClaimableBalancesResult, CloseChannelError, CloseChannelResult,
                 EnableLightningError, EnableLightningResult, GenerateInvoiceError, GenerateInvoiceResult,
                 GetChannelDetailsError, GetChannelDetailsResult, GetPaymentDetailsError, GetPaymentDetailsResult,
-                ListChannelsError, ListChannelsResult, ListPaymentsError, ListPaymentsResult, SendPaymentError,
-                SendPaymentResult};
+                ListPaymentsError, ListPaymentsResult, SendPaymentError, SendPaymentResult};
 use ln_events::LightningEventHandler;
 use ln_filesystem_persister::LightningFilesystemPersister;
 use ln_p2p::{connect_to_node, PeerManager};
-use ln_platform::{h256_json_from_txid, Platform};
+use ln_platform::Platform;
 use ln_storage::{LightningStorage, NodesAddressesMapShared, Scorer};
 use ln_utils::{ChainMonitor, ChannelManager};
 use mm2_core::mm_ctx::MmArc;
@@ -110,6 +108,31 @@ pub struct LightningCoin {
 
 impl fmt::Debug for LightningCoin {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result { write!(f, "LightningCoin {{ conf: {:?} }}", self.conf) }
+}
+
+#[derive(Deserialize)]
+pub struct OpenChannelsFilter {
+    pub channel_id: Option<H256Json>,
+    pub counterparty_node_id: Option<PublicKeyForRPC>,
+    pub funding_tx: Option<H256Json>,
+    pub from_funding_value_sats: Option<u64>,
+    pub to_funding_value_sats: Option<u64>,
+    pub is_outbound: Option<bool>,
+    pub from_balance_msat: Option<u64>,
+    pub to_balance_msat: Option<u64>,
+    pub from_outbound_capacity_msat: Option<u64>,
+    pub to_outbound_capacity_msat: Option<u64>,
+    pub from_inbound_capacity_msat: Option<u64>,
+    pub to_inbound_capacity_msat: Option<u64>,
+    pub is_ready: Option<bool>,
+    pub is_usable: Option<bool>,
+    pub is_public: Option<bool>,
+}
+
+pub(crate) struct GetOpenChannelsResult {
+    pub channels: Vec<ChannelDetailsForRPC>,
+    pub skipped: usize,
+    pub total: usize,
 }
 
 impl LightningCoin {
@@ -221,12 +244,70 @@ impl LightningCoin {
         })
     }
 
-    async fn get_open_channels_by_filter(
+    pub(crate) async fn get_open_channels_by_filter(
         &self,
         filter: Option<OpenChannelsFilter>,
         paging: PagingOptionsEnum<u64>,
         limit: usize,
-    ) -> ListChannelsResult<GetOpenChannelsResult> {
+    ) -> GetOpenChannelsResult {
+        fn apply_open_channel_filter(channel_details: &ChannelDetailsForRPC, filter: &OpenChannelsFilter) -> bool {
+            let is_channel_id =
+                filter.channel_id.is_none() || Some(&channel_details.channel_id) == filter.channel_id.as_ref();
+
+            let is_counterparty_node_id = filter.counterparty_node_id.is_none()
+                || Some(&channel_details.counterparty_node_id) == filter.counterparty_node_id.as_ref();
+
+            let is_funding_tx = filter.funding_tx.is_none() || channel_details.funding_tx == filter.funding_tx;
+
+            let is_from_funding_value_sats =
+                Some(&channel_details.funding_tx_value_sats) >= filter.from_funding_value_sats.as_ref();
+
+            let is_to_funding_value_sats = filter.to_funding_value_sats.is_none()
+                || Some(&channel_details.funding_tx_value_sats) <= filter.to_funding_value_sats.as_ref();
+
+            let is_outbound =
+                filter.is_outbound.is_none() || Some(&channel_details.is_outbound) == filter.is_outbound.as_ref();
+
+            let is_from_balance_msat = Some(&channel_details.balance_msat) >= filter.from_balance_msat.as_ref();
+
+            let is_to_balance_msat = filter.to_balance_msat.is_none()
+                || Some(&channel_details.balance_msat) <= filter.to_balance_msat.as_ref();
+
+            let is_from_outbound_capacity_msat =
+                Some(&channel_details.outbound_capacity_msat) >= filter.from_outbound_capacity_msat.as_ref();
+
+            let is_to_outbound_capacity_msat = filter.to_outbound_capacity_msat.is_none()
+                || Some(&channel_details.outbound_capacity_msat) <= filter.to_outbound_capacity_msat.as_ref();
+
+            let is_from_inbound_capacity_msat =
+                Some(&channel_details.inbound_capacity_msat) >= filter.from_inbound_capacity_msat.as_ref();
+
+            let is_to_inbound_capacity_msat = filter.to_inbound_capacity_msat.is_none()
+                || Some(&channel_details.inbound_capacity_msat) <= filter.to_inbound_capacity_msat.as_ref();
+
+            let is_confirmed = filter.is_ready.is_none() || Some(&channel_details.is_ready) == filter.is_ready.as_ref();
+
+            let is_usable = filter.is_usable.is_none() || Some(&channel_details.is_usable) == filter.is_usable.as_ref();
+
+            let is_public = filter.is_public.is_none() || Some(&channel_details.is_public) == filter.is_public.as_ref();
+
+            is_channel_id
+                && is_counterparty_node_id
+                && is_funding_tx
+                && is_from_funding_value_sats
+                && is_to_funding_value_sats
+                && is_outbound
+                && is_from_balance_msat
+                && is_to_balance_msat
+                && is_from_outbound_capacity_msat
+                && is_to_outbound_capacity_msat
+                && is_from_inbound_capacity_msat
+                && is_to_inbound_capacity_msat
+                && is_confirmed
+                && is_usable
+                && is_public
+        }
+
         let mut total_open_channels: Vec<ChannelDetailsForRPC> =
             self.list_channels().await.into_iter().map(From::from).collect();
 
@@ -259,11 +340,11 @@ impl LightningCoin {
             open_channels_filtered[offset..].to_vec()
         };
 
-        Ok(GetOpenChannelsResult {
+        GetOpenChannelsResult {
             channels,
             skipped: offset,
             total,
-        })
+        }
     }
 }
 
@@ -791,216 +872,6 @@ pub async fn start_lightning(
         db,
         open_channels_nodes,
         trusted_nodes,
-    })
-}
-
-#[derive(Deserialize)]
-pub struct OpenChannelsFilter {
-    pub channel_id: Option<H256Json>,
-    pub counterparty_node_id: Option<PublicKeyForRPC>,
-    pub funding_tx: Option<H256Json>,
-    pub from_funding_value_sats: Option<u64>,
-    pub to_funding_value_sats: Option<u64>,
-    pub is_outbound: Option<bool>,
-    pub from_balance_msat: Option<u64>,
-    pub to_balance_msat: Option<u64>,
-    pub from_outbound_capacity_msat: Option<u64>,
-    pub to_outbound_capacity_msat: Option<u64>,
-    pub from_inbound_capacity_msat: Option<u64>,
-    pub to_inbound_capacity_msat: Option<u64>,
-    pub is_ready: Option<bool>,
-    pub is_usable: Option<bool>,
-    pub is_public: Option<bool>,
-}
-
-fn apply_open_channel_filter(channel_details: &ChannelDetailsForRPC, filter: &OpenChannelsFilter) -> bool {
-    let is_channel_id = filter.channel_id.is_none() || Some(&channel_details.channel_id) == filter.channel_id.as_ref();
-
-    let is_counterparty_node_id = filter.counterparty_node_id.is_none()
-        || Some(&channel_details.counterparty_node_id) == filter.counterparty_node_id.as_ref();
-
-    let is_funding_tx = filter.funding_tx.is_none() || channel_details.funding_tx == filter.funding_tx;
-
-    let is_from_funding_value_sats =
-        Some(&channel_details.funding_tx_value_sats) >= filter.from_funding_value_sats.as_ref();
-
-    let is_to_funding_value_sats = filter.to_funding_value_sats.is_none()
-        || Some(&channel_details.funding_tx_value_sats) <= filter.to_funding_value_sats.as_ref();
-
-    let is_outbound = filter.is_outbound.is_none() || Some(&channel_details.is_outbound) == filter.is_outbound.as_ref();
-
-    let is_from_balance_msat = Some(&channel_details.balance_msat) >= filter.from_balance_msat.as_ref();
-
-    let is_to_balance_msat =
-        filter.to_balance_msat.is_none() || Some(&channel_details.balance_msat) <= filter.to_balance_msat.as_ref();
-
-    let is_from_outbound_capacity_msat =
-        Some(&channel_details.outbound_capacity_msat) >= filter.from_outbound_capacity_msat.as_ref();
-
-    let is_to_outbound_capacity_msat = filter.to_outbound_capacity_msat.is_none()
-        || Some(&channel_details.outbound_capacity_msat) <= filter.to_outbound_capacity_msat.as_ref();
-
-    let is_from_inbound_capacity_msat =
-        Some(&channel_details.inbound_capacity_msat) >= filter.from_inbound_capacity_msat.as_ref();
-
-    let is_to_inbound_capacity_msat = filter.to_inbound_capacity_msat.is_none()
-        || Some(&channel_details.inbound_capacity_msat) <= filter.to_inbound_capacity_msat.as_ref();
-
-    let is_confirmed = filter.is_ready.is_none() || Some(&channel_details.is_ready) == filter.is_ready.as_ref();
-
-    let is_usable = filter.is_usable.is_none() || Some(&channel_details.is_usable) == filter.is_usable.as_ref();
-
-    let is_public = filter.is_public.is_none() || Some(&channel_details.is_public) == filter.is_public.as_ref();
-
-    is_channel_id
-        && is_counterparty_node_id
-        && is_funding_tx
-        && is_from_funding_value_sats
-        && is_to_funding_value_sats
-        && is_outbound
-        && is_from_balance_msat
-        && is_to_balance_msat
-        && is_from_outbound_capacity_msat
-        && is_to_outbound_capacity_msat
-        && is_from_inbound_capacity_msat
-        && is_to_inbound_capacity_msat
-        && is_confirmed
-        && is_usable
-        && is_public
-}
-
-#[derive(Deserialize)]
-pub struct ListOpenChannelsRequest {
-    pub coin: String,
-    pub filter: Option<OpenChannelsFilter>,
-    #[serde(default = "ten")]
-    limit: usize,
-    #[serde(default)]
-    paging_options: PagingOptionsEnum<u64>,
-}
-
-#[derive(Clone, Serialize)]
-pub struct ChannelDetailsForRPC {
-    pub rpc_channel_id: u64,
-    pub channel_id: H256Json,
-    pub counterparty_node_id: PublicKeyForRPC,
-    pub funding_tx: Option<H256Json>,
-    pub funding_tx_output_index: Option<u16>,
-    pub funding_tx_value_sats: u64,
-    /// True if the channel was initiated (and thus funded) by us.
-    pub is_outbound: bool,
-    pub balance_msat: u64,
-    pub outbound_capacity_msat: u64,
-    pub inbound_capacity_msat: u64,
-    // Channel is confirmed onchain, this means that funding_locked messages have been exchanged,
-    // the channel is not currently being shut down, and the required confirmation count has been reached.
-    pub is_ready: bool,
-    // Channel is confirmed and channel_ready messages have been exchanged, the peer is connected,
-    // and the channel is not currently negotiating a shutdown.
-    pub is_usable: bool,
-    // A publicly-announced channel.
-    pub is_public: bool,
-}
-
-impl From<ChannelDetails> for ChannelDetailsForRPC {
-    fn from(details: ChannelDetails) -> ChannelDetailsForRPC {
-        ChannelDetailsForRPC {
-            rpc_channel_id: details.user_channel_id,
-            channel_id: details.channel_id.into(),
-            counterparty_node_id: PublicKeyForRPC(details.counterparty.node_id),
-            funding_tx: details.funding_txo.map(|tx| h256_json_from_txid(tx.txid)),
-            funding_tx_output_index: details.funding_txo.map(|tx| tx.index),
-            funding_tx_value_sats: details.channel_value_satoshis,
-            is_outbound: details.is_outbound,
-            balance_msat: details.balance_msat,
-            outbound_capacity_msat: details.outbound_capacity_msat,
-            inbound_capacity_msat: details.inbound_capacity_msat,
-            is_ready: details.is_channel_ready,
-            is_usable: details.is_usable,
-            is_public: details.is_public,
-        }
-    }
-}
-
-struct GetOpenChannelsResult {
-    pub channels: Vec<ChannelDetailsForRPC>,
-    pub skipped: usize,
-    pub total: usize,
-}
-
-#[derive(Serialize)]
-pub struct ListOpenChannelsResponse {
-    open_channels: Vec<ChannelDetailsForRPC>,
-    limit: usize,
-    skipped: usize,
-    total: usize,
-    total_pages: usize,
-    paging_options: PagingOptionsEnum<u64>,
-}
-
-pub async fn list_open_channels_by_filter(
-    ctx: MmArc,
-    req: ListOpenChannelsRequest,
-) -> ListChannelsResult<ListOpenChannelsResponse> {
-    let ln_coin = match lp_coinfind_or_err(&ctx, &req.coin).await? {
-        MmCoinEnum::LightningCoin(c) => c,
-        e => return MmError::err(ListChannelsError::UnsupportedCoin(e.ticker().to_string())),
-    };
-
-    let result = ln_coin
-        .get_open_channels_by_filter(req.filter, req.paging_options.clone(), req.limit)
-        .await?;
-
-    Ok(ListOpenChannelsResponse {
-        open_channels: result.channels,
-        limit: req.limit,
-        skipped: result.skipped,
-        total: result.total,
-        total_pages: calc_total_pages(result.total, req.limit),
-        paging_options: req.paging_options,
-    })
-}
-
-#[derive(Deserialize)]
-pub struct ListClosedChannelsRequest {
-    pub coin: String,
-    pub filter: Option<ClosedChannelsFilter>,
-    #[serde(default = "ten")]
-    limit: usize,
-    #[serde(default)]
-    paging_options: PagingOptionsEnum<u64>,
-}
-
-#[derive(Serialize)]
-pub struct ListClosedChannelsResponse {
-    closed_channels: Vec<DBChannelDetails>,
-    limit: usize,
-    skipped: usize,
-    total: usize,
-    total_pages: usize,
-    paging_options: PagingOptionsEnum<u64>,
-}
-
-pub async fn list_closed_channels_by_filter(
-    ctx: MmArc,
-    req: ListClosedChannelsRequest,
-) -> ListChannelsResult<ListClosedChannelsResponse> {
-    let ln_coin = match lp_coinfind_or_err(&ctx, &req.coin).await? {
-        MmCoinEnum::LightningCoin(c) => c,
-        e => return MmError::err(ListChannelsError::UnsupportedCoin(e.ticker().to_string())),
-    };
-    let closed_channels_res = ln_coin
-        .db
-        .get_closed_channels_by_filter(req.filter, req.paging_options.clone(), req.limit)
-        .await?;
-
-    Ok(ListClosedChannelsResponse {
-        closed_channels: closed_channels_res.channels,
-        limit: req.limit,
-        skipped: closed_channels_res.skipped,
-        total: closed_channels_res.total,
-        total_pages: calc_total_pages(closed_channels_res.total, req.limit),
-        paging_options: req.paging_options,
     })
 }
 

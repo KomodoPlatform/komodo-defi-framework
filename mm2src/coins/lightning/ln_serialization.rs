@@ -1,3 +1,6 @@
+use crate::lightning::ln_platform::h256_json_from_txid;
+use crate::H256Json;
+use lightning::ln::channelmanager::ChannelDetails;
 use secp256k1v22::PublicKey;
 use serde::{de, Serialize, Serializer};
 use std::fmt;
@@ -91,6 +94,49 @@ impl<'de> de::Deserialize<'de> for PublicKeyForRPC {
         }
 
         deserializer.deserialize_str(PublicKeyForRPCVisitor)
+    }
+}
+
+#[derive(Clone, Serialize)]
+pub struct ChannelDetailsForRPC {
+    pub rpc_channel_id: u64,
+    pub channel_id: H256Json,
+    pub counterparty_node_id: PublicKeyForRPC,
+    pub funding_tx: Option<H256Json>,
+    pub funding_tx_output_index: Option<u16>,
+    pub funding_tx_value_sats: u64,
+    /// True if the channel was initiated (and thus funded) by us.
+    pub is_outbound: bool,
+    pub balance_msat: u64,
+    pub outbound_capacity_msat: u64,
+    pub inbound_capacity_msat: u64,
+    // Channel is confirmed onchain, this means that funding_locked messages have been exchanged,
+    // the channel is not currently being shut down, and the required confirmation count has been reached.
+    pub is_ready: bool,
+    // Channel is confirmed and channel_ready messages have been exchanged, the peer is connected,
+    // and the channel is not currently negotiating a shutdown.
+    pub is_usable: bool,
+    // A publicly-announced channel.
+    pub is_public: bool,
+}
+
+impl From<ChannelDetails> for ChannelDetailsForRPC {
+    fn from(details: ChannelDetails) -> ChannelDetailsForRPC {
+        ChannelDetailsForRPC {
+            rpc_channel_id: details.user_channel_id,
+            channel_id: details.channel_id.into(),
+            counterparty_node_id: PublicKeyForRPC(details.counterparty.node_id),
+            funding_tx: details.funding_txo.map(|tx| h256_json_from_txid(tx.txid)),
+            funding_tx_output_index: details.funding_txo.map(|tx| tx.index),
+            funding_tx_value_sats: details.channel_value_satoshis,
+            is_outbound: details.is_outbound,
+            balance_msat: details.balance_msat,
+            outbound_capacity_msat: details.outbound_capacity_msat,
+            inbound_capacity_msat: details.inbound_capacity_msat,
+            is_ready: details.is_channel_ready,
+            is_usable: details.is_usable,
+            is_public: details.is_public,
+        }
     }
 }
 

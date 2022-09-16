@@ -5,19 +5,7 @@ use http::StatusCode;
 use mm2_core::mm_ctx::MmArc;
 use mm2_err_handle::prelude::*;
 
-pub type UpdateChannelResult<T> = Result<T, MmError<UpdateChannelError>>;
-
-#[derive(Deserialize)]
-pub struct UpdateChannelReq {
-    pub coin: String,
-    pub rpc_channel_id: u64,
-    pub channel_options: ChannelOptions,
-}
-
-#[derive(Serialize)]
-pub struct UpdateChannelResponse {
-    channel_options: ChannelOptions,
-}
+type UpdateChannelResult<T> = Result<T, MmError<UpdateChannelError>>;
 
 #[derive(Debug, Deserialize, Display, Serialize, SerializeErrorType)]
 #[serde(tag = "error_type", content = "error_data")]
@@ -49,6 +37,18 @@ impl From<CoinFindError> for UpdateChannelError {
             CoinFindError::NoSuchCoin { coin } => UpdateChannelError::NoSuchCoin(coin),
         }
     }
+}
+
+#[derive(Deserialize)]
+pub struct UpdateChannelReq {
+    pub coin: String,
+    pub rpc_channel_id: u64,
+    pub channel_options: ChannelOptions,
+}
+
+#[derive(Serialize)]
+pub struct UpdateChannelResponse {
+    channel_options: ChannelOptions,
 }
 
 /// Updates configuration for an open channel.
