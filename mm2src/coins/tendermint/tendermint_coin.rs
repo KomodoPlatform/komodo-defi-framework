@@ -732,12 +732,12 @@ impl SwapOps for TendermintCoin {
     fn send_taker_fee(&self, fee_addr: &[u8], amount: BigDecimal, _uuid: &[u8]) -> TransactionFut {
         let from_address = self.account_id.clone();
         let to_address = AccountId::new("iaa", fee_addr).unwrap();
+        let amount_as_u64: u64 = (amount.to_f64().unwrap() * 1000000_f64) as u64;
+        let amount = cosmrs::Decimal::from(amount_as_u64);
 
         let amount = vec![Coin {
             denom: self.denom.clone(),
-            amount: 1u64.into()
-            // TODO
-            // amount: amount.to_u64().unwrap().into(),
+            amount,
         }];
 
         let tx_payload = MsgSend {
@@ -799,7 +799,8 @@ impl SwapOps for TendermintCoin {
         let to = AccountId::new("iaa", pubkey_hash.as_slice()).unwrap();
 
         let base_denom: Denom = "unyan".parse().unwrap();
-        let amount: cosmrs::Decimal = 1_u64.into();
+        let amount_as_u64: u64 = (amount.to_f64().unwrap() * 1000000_f64) as u64;
+        let amount = cosmrs::Decimal::from(amount_as_u64);
 
         let time_lock = time_lock as i64 - get_utc_timestamp();
         let create_htlc_tx = self
@@ -847,7 +848,8 @@ impl SwapOps for TendermintCoin {
         let to = AccountId::new("iaa", pubkey_hash.as_slice()).unwrap();
 
         let base_denom: Denom = "unyan".parse().unwrap();
-        let amount: cosmrs::Decimal = 1_u64.into();
+        let amount_as_u64: u64 = (amount.to_f64().unwrap() * 1000000_f64) as u64;
+        let amount = cosmrs::Decimal::from(amount_as_u64);
 
         let time_lock = time_lock as i64 - get_utc_timestamp();
         let create_htlc_tx = self
