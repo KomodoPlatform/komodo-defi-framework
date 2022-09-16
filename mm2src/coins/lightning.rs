@@ -11,7 +11,7 @@ pub(crate) mod ln_storage;
 mod ln_utils;
 
 use super::{lp_coinfind_or_err, DerivationMethod, MmCoinEnum};
-use crate::lightning::ln_errors::{TrustedNodeError, TrustedNodeResult, UpdateChannelError, UpdateChannelResult};
+use crate::lightning::ln_errors::{TrustedNodeError, TrustedNodeResult};
 use crate::lightning::ln_events::init_events_abort_handlers;
 use crate::lightning::ln_serialization::PublicKeyForRPC;
 use crate::lightning::ln_sql::SqliteLightningDB;
@@ -46,7 +46,7 @@ use lightning_background_processor::{BackgroundProcessor, GossipSync};
 use lightning_invoice::payment;
 use lightning_invoice::utils::{create_invoice_from_channelmanager, DefaultRouter};
 use lightning_invoice::{Invoice, InvoiceDescription};
-use ln_conf::{ChannelOptions, LightningCoinConf, LightningProtocolConf, PlatformCoinConfirmationTargets};
+use ln_conf::{LightningCoinConf, LightningProtocolConf, PlatformCoinConfirmationTargets};
 use ln_db::{ClosedChannelsFilter, DBChannelDetails, DBPaymentInfo, DBPaymentsFilter, HTLCStatus, LightningDB,
             PaymentType};
 use ln_errors::{ClaimableBalancesError, ClaimableBalancesResult, CloseChannelError, CloseChannelResult,
@@ -139,7 +139,7 @@ impl LightningCoin {
             })
     }
 
-    async fn get_channel_by_rpc_id(&self, rpc_id: u64) -> Option<ChannelDetails> {
+    pub(crate) async fn get_channel_by_rpc_id(&self, rpc_id: u64) -> Option<ChannelDetails> {
         self.list_channels()
             .await
             .into_iter()
@@ -792,50 +792,6 @@ pub async fn start_lightning(
         open_channels_nodes,
         trusted_nodes,
     })
-}
-
-#[derive(Deserialize)]
-pub struct UpdateChannelReq {
-    pub coin: String,
-    pub rpc_channel_id: u64,
-    pub channel_options: ChannelOptions,
-}
-
-#[derive(Serialize)]
-pub struct UpdateChannelResponse {
-    channel_options: ChannelOptions,
-}
-
-/// Updates configuration for an open channel.
-pub async fn update_channel(ctx: MmArc, req: UpdateChannelReq) -> UpdateChannelResult<UpdateChannelResponse> {
-    let ln_coin = match lp_coinfind_or_err(&ctx, &req.coin).await? {
-        MmCoinEnum::LightningCoin(c) => c,
-        e => return MmError::err(UpdateChannelError::UnsupportedCoin(e.ticker().to_string())),
-    };
-
-    let channel_details = ln_coin
-        .get_channel_by_rpc_id(req.rpc_channel_id)
-        .await
-        .ok_or(UpdateChannelError::NoSuchChannel(req.rpc_channel_id))?;
-
-    async_blocking(move || {
-        let mut channel_options = ln_coin
-            .conf
-            .channel_options
-            .unwrap_or_else(|| req.channel_options.clone());
-        if channel_options != req.channel_options {
-            channel_options.update_according_to(req.channel_options.clone());
-        }
-        drop_mutability!(channel_options);
-        let channel_ids = &[channel_details.channel_id];
-        let counterparty_node_id = channel_details.counterparty.node_id;
-        ln_coin
-            .channel_manager
-            .update_channel_config(&counterparty_node_id, channel_ids, &channel_options.clone().into())
-            .map_to_mm(|e| UpdateChannelError::FailureToUpdateChannel(req.rpc_channel_id, format!("{:?}", e)))?;
-        Ok(UpdateChannelResponse { channel_options })
-    })
-    .await
 }
 
 #[derive(Deserialize)]
