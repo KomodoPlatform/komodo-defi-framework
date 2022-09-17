@@ -105,7 +105,7 @@ use crate::coin_balance::{EnableCoinScanPolicy, EnabledCoinBalanceParams, HDAddr
 use crate::hd_wallet::{HDAccountOps, HDAccountsMutex, HDAddress, HDWalletCoinOps, HDWalletOps, InvalidBip44ChainError};
 use crate::hd_wallet_storage::{HDAccountStorageItem, HDWalletCoinStorage, HDWalletStorageError, HDWalletStorageResult};
 use crate::utxo::tx_cache::UtxoVerboseCacheShared;
-use crate::TransactionErr;
+use crate::{TransactionErr, VerificationError};
 
 pub mod tx_cache;
 #[cfg(target_arch = "wasm32")]
@@ -737,6 +737,26 @@ impl From<serialization::Error> for GetConfirmedTxError {
     fn from(err: serialization::Error) -> Self { GetConfirmedTxError::SerializationError(err) }
 }
 
+#[derive(Debug, Display)]
+pub enum AddrFromStrError {
+    #[display(fmt = "{}", _0)]
+    Unsupported(UnsupportedAddr),
+    #[display(fmt = "Cannot determine format: {:?}", _0)]
+    CannotDetermineFormat(Vec<String>),
+}
+
+impl From<UnsupportedAddr> for AddrFromStrError {
+    fn from(e: UnsupportedAddr) -> Self { AddrFromStrError::Unsupported(e) }
+}
+
+impl From<AddrFromStrError> for VerificationError {
+    fn from(e: AddrFromStrError) -> Self { VerificationError::AddressDecodingError(e.to_string()) }
+}
+
+impl From<AddrFromStrError> for WithdrawError {
+    fn from(e: AddrFromStrError) -> Self { WithdrawError::InvalidAddress(e.to_string()) }
+}
+
 impl UtxoCoinFields {
     pub fn transaction_preimage(&self) -> TransactionInputSigner {
         let lock_time = if self.conf.ticker == "KMD" {
@@ -927,7 +947,7 @@ pub trait UtxoCommonOps:
 
     /// Try to parse address from string using specified on asset enable format,
     /// and if it failed inform user that he used a wrong format.
-    fn address_from_str(&self, address: &str) -> Result<Address, String>;
+    fn address_from_str(&self, address: &str) -> MmResult<Address, AddrFromStrError>;
 
     async fn get_current_mtp(&self) -> UtxoRpcResult<u32>;
 

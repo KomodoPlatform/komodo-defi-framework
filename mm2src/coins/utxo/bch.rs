@@ -725,7 +725,7 @@ impl UtxoCommonOps for BchCoin {
         utxo_common::my_public_key(self.as_ref())
     }
 
-    fn address_from_str(&self, address: &str) -> Result<Address, String> {
+    fn address_from_str(&self, address: &str) -> MmResult<Address, AddrFromStrError> {
         utxo_common::checked_address_from_str(self, address)
     }
 
@@ -1131,7 +1131,7 @@ impl MmCoin for BchCoin {
     fn validate_address(&self, address: &str) -> ValidateAddressResult { utxo_common::validate_address(self, address) }
 
     fn process_history_loop(&self, _ctx: MmArc) -> Box<dyn Future<Item = (), Error = ()> + Send> {
-        warn!("'process_history_loop' is not deprecated for BchCoin! Consider using 'my_tx_history_v2'");
+        warn!("'process_history_loop' is not implemented for BchCoin! Consider using 'my_tx_history_v2'");
         Box::new(futures01::future::err(()))
     }
 
@@ -1243,7 +1243,7 @@ impl UtxoTxHistoryOps for BchCoin {
     async fn request_tx_history(
         &self,
         metrics: MetricsArc,
-        _my_addresses: &HashSet<Address>,
+        _for_addresses: &HashSet<Address>,
     ) -> RequestTxHistoryResult {
         utxo_common::request_tx_history(self, metrics).await
     }
@@ -1252,10 +1252,14 @@ impl UtxoTxHistoryOps for BchCoin {
         self.get_block_timestamp(height).await
     }
 
-    async fn get_addresses_balances(&self) -> BalanceResult<HashMap<String, BigDecimal>> {
+    async fn my_addresses_balances(&self) -> BalanceResult<HashMap<String, BigDecimal>> {
         let my_address = self.my_address().map_to_mm(BalanceError::Internal)?;
         let my_balance = self.my_balance().compat().await?;
         Ok(std::iter::once((my_address, my_balance.into_total())).collect())
+    }
+
+    fn address_from_str(&self, address: &str) -> MmResult<Address, AddrFromStrError> {
+        utxo_common::checked_address_from_str(self, address)
     }
 
     fn set_history_sync_state(&self, new_state: HistorySyncState) {

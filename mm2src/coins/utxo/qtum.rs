@@ -397,7 +397,7 @@ impl UtxoCommonOps for QtumCoin {
         utxo_common::my_public_key(self.as_ref())
     }
 
-    fn address_from_str(&self, address: &str) -> Result<Address, String> {
+    fn address_from_str(&self, address: &str) -> MmResult<Address, AddrFromStrError> {
         utxo_common::checked_address_from_str(self, address)
     }
 
@@ -1130,16 +1130,24 @@ impl UtxoTxHistoryOps for QtumCoin {
         utxo_common::utxo_tx_history_v2_common::tx_from_storage_or_rpc(self, tx_hash, storage).await
     }
 
-    async fn request_tx_history(&self, metrics: MetricsArc, my_addresses: &HashSet<Address>) -> RequestTxHistoryResult {
-        utxo_common::utxo_tx_history_v2_common::request_tx_history(self, metrics, my_addresses).await
+    async fn request_tx_history(
+        &self,
+        metrics: MetricsArc,
+        for_addresses: &HashSet<Address>,
+    ) -> RequestTxHistoryResult {
+        utxo_common::utxo_tx_history_v2_common::request_tx_history(self, metrics, for_addresses).await
     }
 
     async fn get_block_timestamp(&self, height: u64) -> MmResult<u64, GetBlockHeaderError> {
         self.as_ref().rpc_client.get_block_timestamp(height).await
     }
 
-    async fn get_addresses_balances(&self) -> BalanceResult<HashMap<String, BigDecimal>> {
-        utxo_common::utxo_tx_history_v2_common::get_addresses_balances(self).await
+    async fn my_addresses_balances(&self) -> BalanceResult<HashMap<String, BigDecimal>> {
+        utxo_common::utxo_tx_history_v2_common::my_addresses_balances(self).await
+    }
+
+    fn address_from_str(&self, address: &str) -> MmResult<Address, AddrFromStrError> {
+        utxo_common::checked_address_from_str(self, address)
     }
 
     fn set_history_sync_state(&self, new_state: HistorySyncState) {

@@ -1472,11 +1472,16 @@ fn test_address_from_str_with_cashaddress_activated() {
     .unwrap();
 
     // other error on parse
-    let error = coin
-        .address_from_str("bitcoincash:000000000000000000000000000000000000000000")
+    let error = UtxoCommonOps::address_from_str(&coin, "bitcoincash:000000000000000000000000000000000000000000")
         .err()
         .unwrap();
-    assert!(error.contains("Invalid address: bitcoincash:000000000000000000000000000000000000000000"));
+    match error.into_inner() {
+        AddrFromStrError::CannotDetermineFormat(_) => (),
+        other => panic!(
+            "Expected 'AddrFromStrError::CannotDetermineFormat' error, found: {}",
+            other
+        ),
+    }
 }
 
 #[test]
@@ -1506,18 +1511,33 @@ fn test_address_from_str_with_legacy_address_activated() {
     ))
     .unwrap();
 
-    let error = coin
-        .address_from_str("bitcoincash:qzxqqt9lh4feptf0mplnk58gnajfepzwcq9f2rxk55")
+    let error = UtxoCommonOps::address_from_str(&coin, "bitcoincash:qzxqqt9lh4feptf0mplnk58gnajfepzwcq9f2rxk55")
         .err()
         .unwrap();
-    assert!(error.contains("Legacy address format activated for BCH, but CashAddress format used instead"));
+    match error.into_inner() {
+        AddrFromStrError::Unsupported(UnsupportedAddr::FormatMismatch {
+            ticker,
+            activated_format,
+            used_format,
+        }) => {
+            assert_eq!(ticker, "BCH");
+            assert_eq!(activated_format, "Legacy");
+            assert_eq!(used_format, "CashAddress");
+        },
+        other => panic!("Expected 'UnsupportedAddr::FormatMismatch' error, found: {}", other),
+    }
 
     // other error on parse
-    let error = coin
-        .address_from_str("0000000000000000000000000000000000")
+    let error = UtxoCommonOps::address_from_str(&coin, "0000000000000000000000000000000000")
         .err()
         .unwrap();
-    assert!(error.contains("Invalid address: 0000000000000000000000000000000000"));
+    match error.into_inner() {
+        AddrFromStrError::CannotDetermineFormat(_) => (),
+        other => panic!(
+            "Expected 'AddrFromStrError::CannotDetermineFormat' error, found: {}",
+            other
+        ),
+    }
 }
 
 #[test]
@@ -3997,6 +4017,7 @@ fn test_get_new_address() {
     hd_accounts.insert(2, hd_account_for_test);
 
     fields.derivation_method = DerivationMethod::HDWallet(UtxoHDWallet {
+        hd_wallet_rmd160: "21605444b36ec72780bdf52a5ffbc18288893664".into(),
         hd_wallet_storage: HDWalletCoinStorage::default(),
         address_format: UtxoAddressFormat::Standard,
         derivation_path: Bip44PathToCoin::from_str("m/44'/141'").unwrap(),

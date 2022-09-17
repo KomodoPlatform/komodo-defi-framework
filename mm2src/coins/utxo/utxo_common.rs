@@ -534,31 +534,36 @@ where
     coin.my_spendable_balance()
 }
 
-pub fn address_from_str_unchecked(coin: &UtxoCoinFields, address: &str) -> Result<Address, String> {
-    if let Ok(legacy) = Address::from_str(address) {
-        return Ok(legacy);
-    }
+pub fn address_from_str_unchecked(coin: &UtxoCoinFields, address: &str) -> MmResult<Address, AddrFromStrError> {
+    let mut errors = Vec::with_capacity(3);
 
-    if let Ok(segwit) = Address::from_segwitaddress(
+    match Address::from_str(address) {
+        Ok(legacy) => return Ok(legacy),
+        Err(e) => errors.push(e.to_string()),
+    };
+
+    match Address::from_segwitaddress(
         address,
         coin.conf.checksum_type,
         coin.conf.pub_addr_prefix,
         coin.conf.pub_t_addr_prefix,
     ) {
-        return Ok(segwit);
+        Ok(segwit) => return Ok(segwit),
+        Err(e) => errors.push(e),
     }
 
-    if let Ok(cashaddress) = Address::from_cashaddress(
+    match Address::from_cashaddress(
         address,
         coin.conf.checksum_type,
         coin.conf.pub_addr_prefix,
         coin.conf.p2sh_addr_prefix,
         coin.conf.pub_t_addr_prefix,
     ) {
-        return Ok(cashaddress);
+        Ok(cashaddress) => return Ok(cashaddress),
+        Err(e) => errors.push(e),
     }
 
-    return ERR!("Invalid address: {}", address);
+    MmError::err(AddrFromStrError::CannotDetermineFormat(errors))
 }
 
 pub fn my_public_key(coin: &UtxoCoinFields) -> Result<&Public, MmError<UnexpectedDerivationMethod>> {
@@ -569,9 +574,9 @@ pub fn my_public_key(coin: &UtxoCoinFields) -> Result<&Public, MmError<Unexpecte
     }
 }
 
-pub fn checked_address_from_str<T: UtxoCommonOps>(coin: &T, address: &str) -> Result<Address, String> {
-    let addr = try_s!(address_from_str_unchecked(coin.as_ref(), address));
-    try_s!(check_withdraw_address_supported(coin, &addr));
+pub fn checked_address_from_str<T: UtxoCommonOps>(coin: &T, address: &str) -> MmResult<Address, AddrFromStrError> {
+    let addr = address_from_str_unchecked(coin.as_ref(), address)?;
+    check_withdraw_address_supported(coin, &addr)?;
     Ok(addr)
 }
 
@@ -1714,7 +1719,7 @@ pub fn verify_message<T: UtxoCommonOps>(
     let message_hash = sign_message_hash(coin.as_ref(), message).ok_or(VerificationError::PrefixNotFound)?;
     let signature = CompactSignature::from(base64::decode(signature_base64)?);
     let recovered_pubkey = Public::recover_compact(&H256::from(message_hash), &signature)?;
-    let received_address = checked_address_from_str(coin, address).map_err(VerificationError::AddressDecodingError)?;
+    let received_address = checked_address_from_str(coin, address)?;
     Ok(AddressHashEnum::from(recovered_pubkey.address_hash()) == received_address.hash)
 }
 
@@ -2015,7 +2020,7 @@ pub fn validate_address<T: UtxoCommonOps>(coin: &T, address: &str) -> ValidateAd
         Err(e) => {
             return ValidateAddressResult {
                 is_valid: false,
-                reason: Some(e),
+                reason: Some(e.to_string()),
             }
         },
     };
@@ -3491,7 +3496,7 @@ pub fn addr_format_for_standard_scripts(coin: &dyn AsRef<UtxoCoinFields>) -> Utx
     }
 }
 
-fn check_withdraw_address_supported<T>(coin: &T, addr: &Address) -> Result<(), MmError<UnsupportedAddr>>
+fn check_withdraw_address_supported<T>(coin: &T, addr: &Address) -> MmResult<(), UnsupportedAddr>
 where
     T: UtxoCommonOps,
 {

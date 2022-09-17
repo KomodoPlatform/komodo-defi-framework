@@ -262,9 +262,9 @@ where
     Ok(tx)
 }
 
-/// [`UtxoTxHistoryOps::get_addresses_balances`] implementation.
+/// [`UtxoTxHistoryOps::my_addresses_balances`] implementation.
 /// Requests balances of all activated addresses.
-pub async fn get_addresses_balances<Coin>(coin: &Coin) -> BalanceResult<HashMap<String, BigDecimal>>
+pub async fn my_addresses_balances<Coin>(coin: &Coin) -> BalanceResult<HashMap<String, BigDecimal>>
 where
     Coin: CoinBalanceReportOps,
 {
@@ -277,7 +277,7 @@ where
 pub async fn request_tx_history<Coin>(
     coin: &Coin,
     metrics: MetricsArc,
-    my_addresses: &HashSet<Address>,
+    for_addresses: &HashSet<Address>,
 ) -> RequestTxHistoryResult
 where
     Coin: UtxoCommonOps + MarketCoinOps,
@@ -285,10 +285,10 @@ where
     let ticker = coin.ticker();
     match coin.as_ref().rpc_client {
         UtxoRpcClientEnum::Native(ref native) => {
-            request_tx_history_with_native(ticker, native, metrics, my_addresses).await
+            request_tx_history_with_native(ticker, native, metrics, for_addresses).await
         },
         UtxoRpcClientEnum::Electrum(ref electrum) => {
-            request_tx_history_with_electrum(ticker, electrum, metrics, my_addresses).await
+            request_tx_history_with_electrum(ticker, electrum, metrics, for_addresses).await
         },
     }
 }
@@ -298,9 +298,9 @@ async fn request_tx_history_with_native(
     ticker: &str,
     native: &NativeClient,
     metrics: MetricsArc,
-    my_addresses: &HashSet<Address>,
+    for_addresses: &HashSet<Address>,
 ) -> RequestTxHistoryResult {
-    let my_addresses: HashSet<String> = my_addresses.iter().map(DisplayAddress::display_address).collect();
+    let my_addresses: HashSet<String> = for_addresses.iter().map(DisplayAddress::display_address).collect();
 
     let mut from = 0;
     let mut all_transactions = vec![];
@@ -349,7 +349,7 @@ async fn request_tx_history_with_electrum(
     ticker: &str,
     electrum: &ElectrumClient,
     metrics: MetricsArc,
-    my_addresses: &HashSet<Address>,
+    for_addresses: &HashSet<Address>,
 ) -> RequestTxHistoryResult {
     fn addr_to_script_hash(addr: &Address) -> String {
         let script = output_script(addr, ScriptType::P2PKH);
@@ -357,8 +357,8 @@ async fn request_tx_history_with_electrum(
         hex::encode(script_hash)
     }
 
-    let script_hashes_count = my_addresses.len() as u64;
-    let script_hashes = my_addresses.iter().map(addr_to_script_hash);
+    let script_hashes_count = for_addresses.len() as u64;
+    let script_hashes = for_addresses.iter().map(addr_to_script_hash);
 
     mm_counter!(metrics, "tx.history.request.count", script_hashes_count,
         "coin" => ticker, "client" => "electrum", "method" => "blockchain.scripthash.get_history");

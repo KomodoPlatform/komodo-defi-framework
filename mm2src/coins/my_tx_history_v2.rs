@@ -72,6 +72,7 @@ pub trait TxHistoryStorage: Send + Sync + 'static {
     async fn history_contains_unconfirmed_txes(&self, wallet_id: &WalletId) -> Result<bool, MmError<Self::Error>>;
 
     /// Gets the unconfirmed transactions from the wallet's history.
+    /// TODO take FilteringAddresses
     async fn get_unconfirmed_txes_from_history(
         &self,
         wallet_id: &WalletId,
@@ -88,6 +89,7 @@ pub trait TxHistoryStorage: Send + Sync + 'static {
     async fn history_has_tx_hash(&self, wallet_id: &WalletId, tx_hash: &str) -> Result<bool, MmError<Self::Error>>;
 
     /// Returns the number of unique transaction hashes.
+    /// TODO take FilteringAddresses
     async fn unique_tx_hashes_num_in_history(&self, wallet_id: &WalletId) -> Result<usize, MmError<Self::Error>>;
 
     /// Adds the given `tx_hex` transaction to the selected wallet's cache.
