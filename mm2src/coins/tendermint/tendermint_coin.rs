@@ -1202,7 +1202,7 @@ mod tendermint_coin_tests {
         let time_lock = 1000;
 
         let create_htlc_tx = coin
-            .gen_create_htlc_tx(base_denom.clone(), &to, amount, &sec, time_lock)
+            .gen_create_htlc_tx(base_denom.clone(), coin.denom.clone(), &to, amount, &sec, time_lock)
             .unwrap();
 
         let current_block_fut = coin.current_block().compat();
