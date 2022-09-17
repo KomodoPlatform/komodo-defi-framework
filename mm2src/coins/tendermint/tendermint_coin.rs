@@ -689,7 +689,7 @@ impl MarketCoinOps for TendermintCoin {
         _swap_contract_address: &Option<BytesJson>,
     ) -> TransactionFut {
         let tx = try_tx_fus!(cosmrs::Tx::from_bytes(transaction));
-        let first_message = try_tx_fus!(tx.body.messages.first().ok_or("Messages are empty"));
+        let first_message = try_tx_fus!(tx.body.messages.first().ok_or("Tx body couldn't be readed."));
         let htlc_proto = try_tx_fus!(CreateHtlcProtoRep::decode(first_message.value.as_slice()));
         let coins_string = htlc_proto
             .amount
@@ -716,7 +716,7 @@ impl MarketCoinOps for TendermintCoin {
         let encoded_request = request.encode_to_vec();
 
         let coin = self.clone();
-        let path = AbciPath::from_str("/cosmos.tx.v1beta1.Service/GetTxsEvent").unwrap();
+        let path = try_tx_fus!(AbciPath::from_str("/cosmos.tx.v1beta1.Service/GetTxsEvent"));
         let fut = async move {
             loop {
                 let response = try_tx_s!(
@@ -746,7 +746,7 @@ impl MarketCoinOps for TendermintCoin {
     }
 
     fn tx_enum_from_bytes(&self, bytes: &[u8]) -> Result<TransactionEnum, MmError<TxMarshalingErr>> {
-        let tx_raw: TxRaw = Message::decode(bytes).unwrap();
+        let tx_raw: TxRaw = Message::decode(bytes).map_to_mm(|e| TxMarshalingErr::InvalidInput(e.to_string()))?;
         Ok(TransactionEnum::CosmosTransaction(CosmosTransaction {
             txid: String::new(),
             data: tx_raw,
@@ -776,8 +776,13 @@ impl MarketCoinOps for TendermintCoin {
 impl SwapOps for TendermintCoin {
     fn send_taker_fee(&self, fee_addr: &[u8], amount: BigDecimal, _uuid: &[u8]) -> TransactionFut {
         let from_address = self.account_id.clone();
-        let to_address = AccountId::new("iaa", fee_addr).unwrap();
-        let amount_as_u64: u64 = (amount.to_f64().unwrap() * 1000000_f64) as u64;
+        let to_address = try_tx_fus!(AccountId::new("iaa", fee_addr));
+
+        let amount_as_f64 = try_tx_fus!(amount
+            .to_f64()
+            .ok_or(format!("Invalid amount {} for {}", amount, self.ticker)));
+
+        let amount_as_u64 = (amount_as_f64 * 1000000_f64) as u64;
         let amount = cosmrs::Decimal::from(amount_as_u64);
 
         let amount = vec![Coin {
@@ -785,42 +790,34 @@ impl SwapOps for TendermintCoin {
             amount,
         }];
 
-        let tx_payload = MsgSend {
+        let tx_payload = try_tx_fus!(MsgSend {
             from_address,
             to_address,
             amount,
         }
-        .to_any()
-        .unwrap();
+        .to_any());
 
         let coin = self.clone();
         let fut = async move {
-            let account_info = coin.my_account_info().await.unwrap();
+            let account_info = try_tx_s!(coin.my_account_info().await);
             let fee_amount = Coin {
-                denom: "unyan".parse().unwrap(),
+                denom: try_tx_s!("unyan".parse()),
                 amount: 1000u64.into(),
             };
             let fee = Fee::from_amount_and_gas(fee_amount, GAS_LIMIT_DEFAULT);
 
-            let current_block = coin
-                .current_block()
-                .compat()
-                .await
-                .map_to_mm(WithdrawError::Transport)
-                .unwrap();
+            let current_block = try_tx_s!(coin.current_block().compat().await.map_to_mm(WithdrawError::Transport));
             let timeout_height = current_block + TIMEOUT_HEIGHT_DELTA;
 
-            let tx_raw = coin
+            let tx_raw = try_tx_s!(coin
                 .any_to_signed_raw_tx(account_info, tx_payload, fee, timeout_height)
-                .map_to_mm(|e| WithdrawError::InternalError(e.to_string()))
-                .unwrap();
+                .map_to_mm(|e| WithdrawError::InternalError(e.to_string())));
 
-            let tx_bytes = tx_raw
+            let tx_bytes = try_tx_s!(tx_raw
                 .to_bytes()
-                .map_to_mm(|e| WithdrawError::InternalError(e.to_string()))
-                .unwrap();
+                .map_to_mm(|e| WithdrawError::InternalError(e.to_string())));
 
-            let tx_id = coin.send_raw_tx_bytes(&tx_bytes).compat().await.unwrap();
+            let tx_id = try_tx_s!(coin.send_raw_tx_bytes(&tx_bytes).compat().await);
 
             Ok(TransactionEnum::CosmosTransaction(CosmosTransaction {
                 txid: tx_id,
@@ -841,35 +838,32 @@ impl SwapOps for TendermintCoin {
         swap_unique_data: &[u8],
     ) -> TransactionFut {
         let pubkey_hash = dhash160(taker_pub);
-        let to = AccountId::new("iaa", pubkey_hash.as_slice()).unwrap();
+        let to = try_tx_fus!(AccountId::new("iaa", pubkey_hash.as_slice()));
+
+        let base_denom: Denom = try_tx_fus!("unyan".parse());
 
         let base_denom: Denom = "unyan".parse().unwrap();
         let amount_as_u64 = try_tx_fus!(sat_from_big_decimal(&amount, self.decimals));
         let amount = cosmrs::Decimal::from(amount_as_u64);
 
         let time_lock = time_lock as i64 - get_utc_timestamp();
-        let create_htlc_tx = self
-            .gen_create_htlc_tx(base_denom, &to, amount, secret_hash, time_lock as u64)
-            .unwrap();
+        let create_htlc_tx =
+            try_tx_fus!(self.gen_create_htlc_tx(base_denom, &to, amount, secret_hash, time_lock as u64));
 
         let coin = self.clone();
         let fut = async move {
-            let current_block = coin.current_block().compat().await.unwrap();
+            let current_block = try_tx_s!(coin.current_block().compat().await);
             let timeout_height = current_block + TIMEOUT_HEIGHT_DELTA;
-            let account_info = coin.my_account_info().await.unwrap();
-            let tx_raw = coin
-                .any_to_signed_raw_tx(
-                    account_info.clone(),
-                    create_htlc_tx.msg_payload.clone(),
-                    create_htlc_tx.fee.clone(),
-                    timeout_height,
-                )
-                .unwrap();
-            let tx_id = coin
-                .send_raw_tx_bytes(&tx_raw.to_bytes().unwrap())
-                .compat()
-                .await
-                .unwrap();
+            let account_info = try_tx_s!(coin.my_account_info().await);
+
+            let tx_raw = try_tx_s!(coin.any_to_signed_raw_tx(
+                account_info.clone(),
+                create_htlc_tx.msg_payload.clone(),
+                create_htlc_tx.fee.clone(),
+                timeout_height,
+            ));
+
+            let tx_id = try_tx_s!(coin.send_raw_tx_bytes(&try_tx_s!(tx_raw.to_bytes())).compat().await);
 
             Ok(TransactionEnum::CosmosTransaction(CosmosTransaction {
                 txid: tx_id,
@@ -890,35 +884,32 @@ impl SwapOps for TendermintCoin {
         swap_unique_data: &[u8],
     ) -> TransactionFut {
         let pubkey_hash = dhash160(maker_pub);
-        let to = AccountId::new("iaa", pubkey_hash.as_slice()).unwrap();
+        let to = try_tx_fus!(AccountId::new("iaa", pubkey_hash.as_slice()));
+
+        let base_denom: Denom = try_tx_fus!("unyan".parse());
 
         let base_denom: Denom = "unyan".parse().unwrap();
         let amount_as_u64 = try_tx_fus!(sat_from_big_decimal(&amount, self.decimals));
         let amount = cosmrs::Decimal::from(amount_as_u64);
 
         let time_lock = time_lock as i64 - get_utc_timestamp();
-        let create_htlc_tx = self
-            .gen_create_htlc_tx(base_denom, &to, amount, secret_hash, time_lock as u64)
-            .unwrap();
+        let create_htlc_tx =
+            try_tx_fus!(self.gen_create_htlc_tx(base_denom, &to, amount, secret_hash, time_lock as u64));
 
         let coin = self.clone();
         let fut = async move {
-            let current_block = coin.current_block().compat().await.unwrap();
+            let current_block = try_tx_s!(coin.current_block().compat().await);
             let timeout_height = current_block + TIMEOUT_HEIGHT_DELTA;
-            let account_info = coin.my_account_info().await.unwrap();
-            let tx_raw = coin
-                .any_to_signed_raw_tx(
-                    account_info.clone(),
-                    create_htlc_tx.msg_payload.clone(),
-                    create_htlc_tx.fee.clone(),
-                    timeout_height,
-                )
-                .unwrap();
-            let tx_id = coin
-                .send_raw_tx_bytes(&tx_raw.to_bytes().unwrap())
-                .compat()
-                .await
-                .unwrap();
+            let account_info = try_tx_s!(coin.my_account_info().await);
+
+            let tx_raw = try_tx_s!(coin.any_to_signed_raw_tx(
+                account_info.clone(),
+                create_htlc_tx.msg_payload.clone(),
+                create_htlc_tx.fee.clone(),
+                timeout_height,
+            ));
+
+            let tx_id = try_tx_s!(coin.send_raw_tx_bytes(&try_tx_s!(tx_raw.to_bytes())).compat().await);
 
             Ok(TransactionEnum::CosmosTransaction(CosmosTransaction {
                 txid: tx_id,
@@ -938,11 +929,11 @@ impl SwapOps for TendermintCoin {
         swap_contract_address: &Option<BytesJson>,
         swap_unique_data: &[u8],
     ) -> TransactionFut {
-        let tx = cosmrs::Tx::from_bytes(taker_payment_tx).unwrap();
-        let msg = tx.body.messages.first().unwrap();
+        let tx = try_tx_fus!(cosmrs::Tx::from_bytes(taker_payment_tx));
+        let msg = try_tx_fus!(tx.body.messages.first().ok_or("Tx body couldn't be readed."));
         let htlc_proto: crate::tendermint::htlc_proto::CreateHtlcProtoRep =
-            prost::Message::decode(msg.value.as_slice()).unwrap();
-        let htlc = MsgCreateHtlc::try_from(htlc_proto).unwrap();
+            try_tx_fus!(prost::Message::decode(msg.value.as_slice()));
+        let htlc = try_tx_fus!(MsgCreateHtlc::try_from(htlc_proto));
 
         let hash_lock_hash = sha256(secret);
 
@@ -963,30 +954,24 @@ impl SwapOps for TendermintCoin {
         htlc_id.extend_from_slice(coins_string.as_bytes());
         let htlc_id = sha256(&htlc_id).to_string().to_uppercase();
 
-        let base_denom: Denom = "unyan".parse().unwrap();
-        let claim_htlc_tx = self.gen_claim_htlc_tx(base_denom, htlc_id, secret).unwrap();
+        let base_denom: Denom = try_tx_fus!("unyan".parse());
+        let claim_htlc_tx = try_tx_fus!(self.gen_claim_htlc_tx(base_denom, htlc_id, secret));
         let coin = self.clone();
 
         let fut = async move {
-            let current_block = coin.current_block().compat().await.unwrap();
+            let current_block = try_tx_s!(coin.current_block().compat().await);
             let timeout_height = current_block + TIMEOUT_HEIGHT_DELTA;
 
-            let account_info = coin.my_account_info().await.unwrap();
+            let account_info = try_tx_s!(coin.my_account_info().await);
 
-            let tx_raw = coin
-                .any_to_signed_raw_tx(
-                    account_info,
-                    claim_htlc_tx.msg_payload,
-                    claim_htlc_tx.fee,
-                    timeout_height,
-                )
-                .unwrap();
+            let tx_raw = try_tx_s!(coin.any_to_signed_raw_tx(
+                account_info,
+                claim_htlc_tx.msg_payload,
+                claim_htlc_tx.fee,
+                timeout_height,
+            ));
 
-            let tx_id = coin
-                .send_raw_tx_bytes(&tx_raw.to_bytes().unwrap())
-                .compat()
-                .await
-                .unwrap();
+            let tx_id = try_tx_s!(coin.send_raw_tx_bytes(&try_tx_s!(tx_raw.to_bytes())).compat().await);
 
             Ok(TransactionEnum::CosmosTransaction(CosmosTransaction {
                 txid: tx_id,
@@ -1006,11 +991,11 @@ impl SwapOps for TendermintCoin {
         _swap_contract_address: &Option<BytesJson>,
         _swap_unique_data: &[u8],
     ) -> TransactionFut {
-        let tx = cosmrs::Tx::from_bytes(maker_payment_tx).unwrap();
-        let msg = tx.body.messages.first().unwrap();
+        let tx = try_tx_fus!(cosmrs::Tx::from_bytes(maker_payment_tx));
+        let msg = try_tx_fus!(tx.body.messages.first().ok_or("Tx body couldn't be readed."));
         let htlc_proto: crate::tendermint::htlc_proto::CreateHtlcProtoRep =
-            prost::Message::decode(msg.value.as_slice()).unwrap();
-        let htlc = MsgCreateHtlc::try_from(htlc_proto).unwrap();
+            try_tx_fus!(prost::Message::decode(msg.value.as_slice()));
+        let htlc = try_tx_fus!(MsgCreateHtlc::try_from(htlc_proto));
 
         let hash_lock_hash = sha256(secret);
 
@@ -1031,30 +1016,24 @@ impl SwapOps for TendermintCoin {
         htlc_id.extend_from_slice(coins_string.as_bytes());
         let htlc_id = sha256(&htlc_id).to_string().to_uppercase();
 
-        let base_denom: Denom = "unyan".parse().unwrap();
-        let claim_htlc_tx = self.gen_claim_htlc_tx(base_denom, htlc_id, secret).unwrap();
+        let base_denom: Denom = try_tx_fus!("unyan".parse());
+        let claim_htlc_tx = try_tx_fus!(self.gen_claim_htlc_tx(base_denom, htlc_id, secret));
         let coin = self.clone();
 
         let fut = async move {
-            let current_block = coin.current_block().compat().await.unwrap();
+            let current_block = try_tx_s!(coin.current_block().compat().await);
             let timeout_height = current_block + TIMEOUT_HEIGHT_DELTA;
 
-            let account_info = coin.my_account_info().await.unwrap();
+            let account_info = try_tx_s!(coin.my_account_info().await);
 
-            let tx_raw = coin
-                .any_to_signed_raw_tx(
-                    account_info,
-                    claim_htlc_tx.msg_payload,
-                    claim_htlc_tx.fee,
-                    timeout_height,
-                )
-                .unwrap();
+            let tx_raw = try_tx_s!(coin.any_to_signed_raw_tx(
+                account_info,
+                claim_htlc_tx.msg_payload,
+                claim_htlc_tx.fee,
+                timeout_height,
+            ));
 
-            let tx_id = coin
-                .send_raw_tx_bytes(&tx_raw.to_bytes().unwrap())
-                .compat()
-                .await
-                .unwrap();
+            let tx_id = try_tx_s!(coin.send_raw_tx_bytes(&try_tx_s!(tx_raw.to_bytes())).compat().await);
 
             Ok(TransactionEnum::CosmosTransaction(CosmosTransaction {
                 txid: tx_id,
@@ -1143,11 +1122,13 @@ impl SwapOps for TendermintCoin {
     }
 
     fn extract_secret(&self, secret_hash: &[u8], spend_tx: &[u8]) -> Result<Vec<u8>, String> {
-        let tx = cosmrs::Tx::from_bytes(spend_tx).unwrap();
-        let msg = tx.body.messages.first().unwrap();
+        let tx = try_s!(cosmrs::Tx::from_bytes(spend_tx));
+        let msg = try_s!(tx.body.messages.first().ok_or("Tx body couldn't be readed."));
         let htlc_proto: crate::tendermint::htlc_proto::ClaimHtlcProtoRep =
-            prost::Message::decode(msg.value.as_slice()).unwrap();
-        Ok(hex::decode(htlc_proto.secret).unwrap())
+            try_s!(prost::Message::decode(msg.value.as_slice()));
+        let htlc = try_s!(MsgClaimHtlc::try_from(htlc_proto));
+
+        Ok(try_s!(hex::decode(htlc.secret)))
     }
 
     fn negotiate_swap_contract_addr(
