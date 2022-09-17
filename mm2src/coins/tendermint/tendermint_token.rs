@@ -326,9 +326,9 @@ impl MmCoin for TendermintToken {
     fn is_asset_chain(&self) -> bool { false }
 
     fn withdraw(&self, req: WithdrawRequest) -> WithdrawFut {
-        Box::new(futures01::future::err(WithdrawError::InternalError(
+        Box::new(futures01::future::result(MmError::err(WithdrawError::InternalError(
             "Not implemented".into(),
-        )))
+        ))))
     }
 
     fn get_raw_transaction(&self, req: RawTransactionRequest) -> RawTransactionFut {
