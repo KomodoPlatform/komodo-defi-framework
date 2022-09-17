@@ -852,6 +852,7 @@ impl SwapOps for TendermintCoin {
 
         let coin = self.clone();
         let fut = async move {
+            let _sequence_lock = coin.sequence_lock.lock().await;
             let current_block = try_tx_s!(coin.current_block().compat().await);
             let timeout_height = current_block + TIMEOUT_HEIGHT_DELTA;
             let account_info = try_tx_s!(coin.my_account_info().await);
@@ -898,6 +899,7 @@ impl SwapOps for TendermintCoin {
 
         let coin = self.clone();
         let fut = async move {
+            let _sequence_lock = coin.sequence_lock.lock().await;
             let current_block = try_tx_s!(coin.current_block().compat().await);
             let timeout_height = current_block + TIMEOUT_HEIGHT_DELTA;
             let account_info = try_tx_s!(coin.my_account_info().await);
@@ -959,6 +961,7 @@ impl SwapOps for TendermintCoin {
         let coin = self.clone();
 
         let fut = async move {
+            let _sequence_lock = coin.sequence_lock.lock().await;
             let current_block = try_tx_s!(coin.current_block().compat().await);
             let timeout_height = current_block + TIMEOUT_HEIGHT_DELTA;
 
@@ -1021,6 +1024,7 @@ impl SwapOps for TendermintCoin {
         let coin = self.clone();
 
         let fut = async move {
+            let _sequence_lock = coin.sequence_lock.lock().await;
             let current_block = try_tx_s!(coin.current_block().compat().await);
             let timeout_height = current_block + TIMEOUT_HEIGHT_DELTA;
 

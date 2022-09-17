@@ -1,10 +1,13 @@
 use super::*;
-use mm2_test_helpers::for_tests::enable_tendermint;
+use mm2_test_helpers::for_tests::{enable_tendermint, iris_nimda_testnet_conf, iris_testnet_conf, RICK_ELECTRUM_ADDRS};
 
 #[test]
 #[ignore]
 // cargo test mm2::mm2_tests::iris_swap_poc::test -- --exact --ignored
-fn test() { block_on(trade_base_rel_iris(&[("IRIS-USDC-IBC", "IRIS-NIMDA")], 1, 2, 0.01)); }
+fn test() {
+    let pairs = [("IRIS-USDC-IBC", "IRIS-NIMDA"), ("IRIS-NIMDA", "RICK")];
+    block_on(trade_base_rel_iris(&pairs, 1, 2, 0.01));
+}
 
 pub async fn trade_base_rel_iris(
     pairs: &[(&'static str, &'static str)],
@@ -27,28 +30,9 @@ pub async fn trade_base_rel_iris(
                 },
             }
         },
-        {"coin":"IRIS-NIMDA",
-            "protocol":{
-                "type":"TENDERMINT",
-                "protocol_data": {
-                    "decimals": 6,
-                    "denom": "nim",
-                    "account_prefix": "iaa",
-                    "chain_id": "nyancat-9",
-                },
-            }
-        },
-        {"coin":"IRIS-TEST",
-            "protocol":{
-                "type":"TENDERMINT",
-                "protocol_data": {
-                    "decimals": 6,
-                    "denom": "unyan",
-                    "account_prefix": "iaa",
-                    "chain_id": "nyancat-9",
-                },
-            }
-        }
+        iris_nimda_testnet_conf(),
+        iris_testnet_conf(),
+        rick_conf(),
     ]);
 
     let mut mm_bob = MarketMakerIt::start_async(
@@ -94,10 +78,12 @@ pub async fn trade_base_rel_iris(
     dbg!(enable_tendermint(&mm_bob, "IRIS-TEST", &[], &["http://34.80.202.172:26657"]).await);
     dbg!(enable_tendermint(&mm_bob, "IRIS-NIMDA", &[], &["http://34.80.202.172:26657"]).await);
     dbg!(enable_tendermint(&mm_bob, "IRIS-USDC-IBC", &[], &["http://34.80.202.172:26657"]).await);
+    dbg!(enable_electrum(&mm_bob, "RICK", false, RICK_ELECTRUM_ADDRS).await);
 
     dbg!(enable_tendermint(&mm_alice, "IRIS-TEST", &[], &["http://34.80.202.172:26657"]).await);
     dbg!(enable_tendermint(&mm_alice, "IRIS-NIMDA", &[], &["http://34.80.202.172:26657"]).await);
     dbg!(enable_tendermint(&mm_alice, "IRIS-USDC-IBC", &[], &["http://34.80.202.172:26657"]).await);
+    dbg!(enable_electrum(&mm_alice, "RICK", false, RICK_ELECTRUM_ADDRS).await);
 
     for (base, rel) in pairs.iter() {
         log!("Issue bob {}/{} sell request", base, rel);

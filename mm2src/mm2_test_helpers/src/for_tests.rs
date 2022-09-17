@@ -342,6 +342,20 @@ pub fn iris_testnet_conf() -> Json {
     })
 }
 
+pub fn iris_nimda_testnet_conf() -> Json {
+    json!({"coin":"IRIS-NIMDA",
+        "protocol":{
+            "type":"TENDERMINT",
+            "protocol_data": {
+                "decimals": 6,
+                "denom": "nim",
+                "account_prefix": "iaa",
+                "chain_id": "nyancat-9",
+            },
+        }
+    })
+}
+
 pub fn usdc_ibc_iris_testnet_conf() -> Json {
     json!({
         "coin":"USDC-IBC-IRIS",

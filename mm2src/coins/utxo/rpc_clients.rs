@@ -174,10 +174,6 @@ impl UtxoRpcClientEnum {
                         }
                     },
                     Err(e) => {
-                        if e.get_inner().is_tx_not_found_error() {
-                            return ERR!("Tx {} is not on chain anymore", tx_hash);
-                        };
-
                         if expiry_height > 0 {
                             let block = match selfi.get_block_count().compat().await {
                                 Ok(b) => b,
