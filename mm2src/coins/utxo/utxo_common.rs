@@ -1142,9 +1142,10 @@ pub fn send_maker_spends_taker_payment<T: UtxoCommonOps + SwapOps>(
         .push_data(secret)
         .push_opcode(Opcode::OP_0)
         .into_script();
+
     let redeem_script = payment_script(
         time_lock,
-        &*dhash160(secret),
+        &*sha256(secret),
         &try_tx_fus!(Public::from_slice(taker_pub)),
         key_pair.public(),
     )
@@ -1196,7 +1197,7 @@ pub fn send_taker_spends_maker_payment<T: UtxoCommonOps + SwapOps>(
         .into_script();
     let redeem_script = payment_script(
         time_lock,
-        &*dhash160(secret),
+        &*sha256(secret),
         &try_tx_fus!(Public::from_slice(maker_pub)),
         key_pair.public(),
     )
@@ -1662,10 +1663,14 @@ pub fn extract_secret(secret_hash: &[u8], spend_tx: &[u8]) -> Result<Vec<u8>, St
             },
         };
 
-        let actual_secret_hash = &*dhash160(&secret);
+        let actual_secret_hash = if secret_hash.len() == 32 {
+            sha256(&secret).to_vec()
+        } else {
+            dhash160(&secret).to_vec()
+        };
         if actual_secret_hash != secret_hash {
             warn!(
-                "Invalid 'dhash160(secret)' {:?}, expected {:?}",
+                "Invalid secret hash {:?}, expected {:?}",
                 actual_secret_hash, secret_hash
             );
             continue;
@@ -3287,8 +3292,7 @@ where
 }
 
 pub fn payment_script(time_lock: u32, secret_hash: &[u8], pub_0: &Public, pub_1: &Public) -> Script {
-    let builder = Builder::default();
-    builder
+    let mut builder = Builder::default()
         .push_opcode(Opcode::OP_IF)
         .push_bytes(&time_lock.to_le_bytes())
         .push_opcode(Opcode::OP_CHECKLOCKTIMEVERIFY)
@@ -3298,8 +3302,15 @@ pub fn payment_script(time_lock: u32, secret_hash: &[u8], pub_0: &Public, pub_1:
         .push_opcode(Opcode::OP_ELSE)
         .push_opcode(Opcode::OP_SIZE)
         .push_bytes(&[32])
-        .push_opcode(Opcode::OP_EQUALVERIFY)
-        .push_opcode(Opcode::OP_HASH160)
+        .push_opcode(Opcode::OP_EQUALVERIFY);
+
+    if secret_hash.len() == 32 {
+        builder = builder.push_opcode(Opcode::OP_SHA256);
+    } else {
+        builder = builder.push_opcode(Opcode::OP_HASH160);
+    }
+
+    builder
         .push_bytes(secret_hash)
         .push_opcode(Opcode::OP_EQUALVERIFY)
         .push_bytes(pub_1)
