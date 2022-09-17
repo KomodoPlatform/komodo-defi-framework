@@ -35,7 +35,6 @@ use keys::KeyPair;
 use mm2_core::mm_ctx::MmArc;
 use mm2_err_handle::prelude::*;
 use mm2_number::MmNumber;
-use num_traits::ToPrimitive;
 use parking_lot::Mutex;
 use prost::{DecodeError, Message};
 use rpc::v1::types::Bytes as BytesJson;
@@ -307,15 +306,13 @@ impl TendermintCoin {
     fn gen_create_htlc_tx(
         &self,
         base_denom: Denom,
+        denom: Denom,
         to: &AccountId,
         amount: cosmrs::Decimal,
         secret_hash: &[u8],
         time_lock: u64,
     ) -> MmResult<IrisHtlc, TxMarshalingErr> {
-        let amount = vec![Coin {
-            denom: self.denom.clone(),
-            amount,
-        }];
+        let amount = vec![Coin { denom, amount }];
 
         let timestamp = 0_u64;
 
@@ -419,6 +416,105 @@ impl TendermintCoin {
         self.tokens_info
             .lock()
             .insert(ticker, ActivatedTokenInfo { decimals, denom });
+    }
+
+    pub(super) fn send_htlc_for_denom(
+        &self,
+        time_lock: u32,
+        other_pub: &[u8],
+        secret_hash: &[u8],
+        amount: BigDecimal,
+        denom: Denom,
+        decimals: u8,
+    ) -> TransactionFut {
+        let pubkey_hash = dhash160(other_pub);
+        let to = try_tx_fus!(AccountId::new(&self.account_prefix, pubkey_hash.as_slice()));
+
+        let amount_as_u64 = try_tx_fus!(sat_from_big_decimal(&amount, decimals));
+        let amount = cosmrs::Decimal::from(amount_as_u64);
+
+        let time_lock = time_lock as i64 - get_utc_timestamp();
+        let create_htlc_tx =
+            try_tx_fus!(self.gen_create_htlc_tx(self.denom.clone(), denom, &to, amount, secret_hash, time_lock as u64));
+
+        let coin = self.clone();
+        let fut = async move {
+            let _sequence_lock = coin.sequence_lock.lock().await;
+            let current_block = try_tx_s!(coin.current_block().compat().await);
+            let timeout_height = current_block + TIMEOUT_HEIGHT_DELTA;
+            let account_info = try_tx_s!(coin.my_account_info().await);
+
+            let tx_raw = try_tx_s!(coin.any_to_signed_raw_tx(
+                account_info.clone(),
+                create_htlc_tx.msg_payload.clone(),
+                create_htlc_tx.fee.clone(),
+                timeout_height,
+            ));
+
+            let tx_id = try_tx_s!(coin.send_raw_tx_bytes(&try_tx_s!(tx_raw.to_bytes())).compat().await);
+
+            Ok(TransactionEnum::CosmosTransaction(CosmosTransaction {
+                txid: tx_id,
+                data: tx_raw.into(),
+            }))
+        };
+
+        Box::new(fut.boxed().compat())
+    }
+
+    pub(super) fn send_taker_fee_for_denom(
+        &self,
+        fee_addr: &[u8],
+        amount: BigDecimal,
+        denom: Denom,
+        decimals: u8,
+    ) -> TransactionFut {
+        let from_address = self.account_id.clone();
+        let pubkey_hash = dhash160(fee_addr);
+        let to_address = try_tx_fus!(AccountId::new(&self.account_prefix, pubkey_hash.as_slice()));
+
+        let amount_as_u64 = try_tx_fus!(sat_from_big_decimal(&amount, decimals));
+        let amount = cosmrs::Decimal::from(amount_as_u64);
+
+        let amount = vec![Coin { denom, amount }];
+
+        let tx_payload = try_tx_fus!(MsgSend {
+            from_address,
+            to_address,
+            amount,
+        }
+        .to_any());
+
+        let coin = self.clone();
+        let fut = async move {
+            let _sequence_lock = coin.sequence_lock.lock().await;
+            let account_info = try_tx_s!(coin.my_account_info().await);
+            let fee_amount = Coin {
+                denom: coin.denom.clone(),
+                amount: 1000u64.into(),
+            };
+            let fee = Fee::from_amount_and_gas(fee_amount, GAS_LIMIT_DEFAULT);
+
+            let current_block = try_tx_s!(coin.current_block().compat().await.map_to_mm(WithdrawError::Transport));
+            let timeout_height = current_block + TIMEOUT_HEIGHT_DELTA;
+
+            let tx_raw = try_tx_s!(coin
+                .any_to_signed_raw_tx(account_info, tx_payload, fee, timeout_height)
+                .map_to_mm(|e| WithdrawError::InternalError(e.to_string())));
+
+            let tx_bytes = try_tx_s!(tx_raw
+                .to_bytes()
+                .map_to_mm(|e| WithdrawError::InternalError(e.to_string())));
+
+            let tx_id = try_tx_s!(coin.send_raw_tx_bytes(&tx_bytes).compat().await);
+
+            Ok(TransactionEnum::CosmosTransaction(CosmosTransaction {
+                txid: tx_id,
+                data: tx_raw.into(),
+            }))
+        };
+
+        Box::new(fut.boxed().compat())
     }
 }
 
@@ -775,57 +871,7 @@ impl MarketCoinOps for TendermintCoin {
 #[allow(unused_variables)]
 impl SwapOps for TendermintCoin {
     fn send_taker_fee(&self, fee_addr: &[u8], amount: BigDecimal, _uuid: &[u8]) -> TransactionFut {
-        let from_address = self.account_id.clone();
-        let to_address = try_tx_fus!(AccountId::new("iaa", fee_addr));
-
-        let amount_as_f64 = try_tx_fus!(amount
-            .to_f64()
-            .ok_or(format!("Invalid amount {} for {}", amount, self.ticker)));
-
-        let amount_as_u64 = (amount_as_f64 * 1000000_f64) as u64;
-        let amount = cosmrs::Decimal::from(amount_as_u64);
-
-        let amount = vec![Coin {
-            denom: self.denom.clone(),
-            amount,
-        }];
-
-        let tx_payload = try_tx_fus!(MsgSend {
-            from_address,
-            to_address,
-            amount,
-        }
-        .to_any());
-
-        let coin = self.clone();
-        let fut = async move {
-            let account_info = try_tx_s!(coin.my_account_info().await);
-            let fee_amount = Coin {
-                denom: try_tx_s!("unyan".parse()),
-                amount: 1000u64.into(),
-            };
-            let fee = Fee::from_amount_and_gas(fee_amount, GAS_LIMIT_DEFAULT);
-
-            let current_block = try_tx_s!(coin.current_block().compat().await.map_to_mm(WithdrawError::Transport));
-            let timeout_height = current_block + TIMEOUT_HEIGHT_DELTA;
-
-            let tx_raw = try_tx_s!(coin
-                .any_to_signed_raw_tx(account_info, tx_payload, fee, timeout_height)
-                .map_to_mm(|e| WithdrawError::InternalError(e.to_string())));
-
-            let tx_bytes = try_tx_s!(tx_raw
-                .to_bytes()
-                .map_to_mm(|e| WithdrawError::InternalError(e.to_string())));
-
-            let tx_id = try_tx_s!(coin.send_raw_tx_bytes(&tx_bytes).compat().await);
-
-            Ok(TransactionEnum::CosmosTransaction(CosmosTransaction {
-                txid: tx_id,
-                data: tx_raw.into(),
-            }))
-        };
-
-        Box::new(fut.boxed().compat())
+        self.send_taker_fee_for_denom(fee_addr, amount, self.denom.clone(), self.decimals)
     }
 
     fn send_maker_payment(
@@ -834,45 +880,17 @@ impl SwapOps for TendermintCoin {
         taker_pub: &[u8],
         secret_hash: &[u8],
         amount: BigDecimal,
-        swap_contract_address: &Option<BytesJson>,
-        swap_unique_data: &[u8],
+        _swap_contract_address: &Option<BytesJson>,
+        _swap_unique_data: &[u8],
     ) -> TransactionFut {
-        let pubkey_hash = dhash160(taker_pub);
-        let to = try_tx_fus!(AccountId::new("iaa", pubkey_hash.as_slice()));
-
-        let base_denom: Denom = try_tx_fus!("unyan".parse());
-
-        let base_denom: Denom = "unyan".parse().unwrap();
-        let amount_as_u64 = try_tx_fus!(sat_from_big_decimal(&amount, self.decimals));
-        let amount = cosmrs::Decimal::from(amount_as_u64);
-
-        let time_lock = time_lock as i64 - get_utc_timestamp();
-        let create_htlc_tx =
-            try_tx_fus!(self.gen_create_htlc_tx(base_denom, &to, amount, secret_hash, time_lock as u64));
-
-        let coin = self.clone();
-        let fut = async move {
-            let _sequence_lock = coin.sequence_lock.lock().await;
-            let current_block = try_tx_s!(coin.current_block().compat().await);
-            let timeout_height = current_block + TIMEOUT_HEIGHT_DELTA;
-            let account_info = try_tx_s!(coin.my_account_info().await);
-
-            let tx_raw = try_tx_s!(coin.any_to_signed_raw_tx(
-                account_info.clone(),
-                create_htlc_tx.msg_payload.clone(),
-                create_htlc_tx.fee.clone(),
-                timeout_height,
-            ));
-
-            let tx_id = try_tx_s!(coin.send_raw_tx_bytes(&try_tx_s!(tx_raw.to_bytes())).compat().await);
-
-            Ok(TransactionEnum::CosmosTransaction(CosmosTransaction {
-                txid: tx_id,
-                data: tx_raw.into(),
-            }))
-        };
-
-        Box::new(fut.boxed().compat())
+        self.send_htlc_for_denom(
+            time_lock,
+            taker_pub,
+            secret_hash,
+            amount,
+            self.denom.clone(),
+            self.decimals,
+        )
     }
 
     fn send_taker_payment(
@@ -881,45 +899,17 @@ impl SwapOps for TendermintCoin {
         maker_pub: &[u8],
         secret_hash: &[u8],
         amount: BigDecimal,
-        swap_contract_address: &Option<BytesJson>,
-        swap_unique_data: &[u8],
+        _swap_contract_address: &Option<BytesJson>,
+        _swap_unique_data: &[u8],
     ) -> TransactionFut {
-        let pubkey_hash = dhash160(maker_pub);
-        let to = try_tx_fus!(AccountId::new("iaa", pubkey_hash.as_slice()));
-
-        let base_denom: Denom = try_tx_fus!("unyan".parse());
-
-        let base_denom: Denom = "unyan".parse().unwrap();
-        let amount_as_u64 = try_tx_fus!(sat_from_big_decimal(&amount, self.decimals));
-        let amount = cosmrs::Decimal::from(amount_as_u64);
-
-        let time_lock = time_lock as i64 - get_utc_timestamp();
-        let create_htlc_tx =
-            try_tx_fus!(self.gen_create_htlc_tx(base_denom, &to, amount, secret_hash, time_lock as u64));
-
-        let coin = self.clone();
-        let fut = async move {
-            let _sequence_lock = coin.sequence_lock.lock().await;
-            let current_block = try_tx_s!(coin.current_block().compat().await);
-            let timeout_height = current_block + TIMEOUT_HEIGHT_DELTA;
-            let account_info = try_tx_s!(coin.my_account_info().await);
-
-            let tx_raw = try_tx_s!(coin.any_to_signed_raw_tx(
-                account_info.clone(),
-                create_htlc_tx.msg_payload.clone(),
-                create_htlc_tx.fee.clone(),
-                timeout_height,
-            ));
-
-            let tx_id = try_tx_s!(coin.send_raw_tx_bytes(&try_tx_s!(tx_raw.to_bytes())).compat().await);
-
-            Ok(TransactionEnum::CosmosTransaction(CosmosTransaction {
-                txid: tx_id,
-                data: tx_raw.into(),
-            }))
-        };
-
-        Box::new(fut.boxed().compat())
+        self.send_htlc_for_denom(
+            time_lock,
+            maker_pub,
+            secret_hash,
+            amount,
+            self.denom.clone(),
+            self.decimals,
+        )
     }
 
     fn send_maker_spends_taker_payment(
@@ -956,8 +946,7 @@ impl SwapOps for TendermintCoin {
         htlc_id.extend_from_slice(coins_string.as_bytes());
         let htlc_id = sha256(&htlc_id).to_string().to_uppercase();
 
-        let base_denom: Denom = try_tx_fus!("unyan".parse());
-        let claim_htlc_tx = try_tx_fus!(self.gen_claim_htlc_tx(base_denom, htlc_id, secret));
+        let claim_htlc_tx = try_tx_fus!(self.gen_claim_htlc_tx(self.denom.clone(), htlc_id, secret));
         let coin = self.clone();
 
         let fut = async move {
@@ -1019,8 +1008,7 @@ impl SwapOps for TendermintCoin {
         htlc_id.extend_from_slice(coins_string.as_bytes());
         let htlc_id = sha256(&htlc_id).to_string().to_uppercase();
 
-        let base_denom: Denom = try_tx_fus!("unyan".parse());
-        let claim_htlc_tx = try_tx_fus!(self.gen_claim_htlc_tx(base_denom, htlc_id, secret));
+        let claim_htlc_tx = try_tx_fus!(self.gen_claim_htlc_tx(self.denom.clone(), htlc_id, secret));
         let coin = self.clone();
 
         let fut = async move {
@@ -1057,7 +1045,9 @@ impl SwapOps for TendermintCoin {
         swap_contract_address: &Option<BytesJson>,
         swap_unique_data: &[u8],
     ) -> TransactionFut {
-        todo!()
+        Box::new(futures01::future::err(TransactionErr::Plain(
+            "Doesn't need transaction broadcast to be refunded".into(),
+        )))
     }
 
     fn send_maker_refunds_payment(
@@ -1069,7 +1059,9 @@ impl SwapOps for TendermintCoin {
         swap_contract_address: &Option<BytesJson>,
         swap_unique_data: &[u8],
     ) -> TransactionFut {
-        todo!()
+        Box::new(futures01::future::err(TransactionErr::Plain(
+            "Doesn't need transaction broadcast to be refunded".into(),
+        )))
     }
 
     fn validate_fee(

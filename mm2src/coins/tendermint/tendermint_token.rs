@@ -3,7 +3,7 @@ use super::TendermintCoin;
 use crate::{big_decimal_from_sat_unsigned, BalanceFut, BigDecimal, CoinBalance, FeeApproxStage, FoundSwapTxSpend,
             HistorySyncState, MarketCoinOps, MmCoin, NegotiateSwapContractAddrErr, RawTransactionFut,
             RawTransactionRequest, SearchForSwapTxSpendInput, SignatureResult, SwapOps, TradeFee, TradePreimageFut,
-            TradePreimageResult, TradePreimageValue, TransactionEnum, TransactionFut, TxMarshalingErr,
+            TradePreimageResult, TradePreimageValue, TransactionEnum, TransactionErr, TransactionFut, TxMarshalingErr,
             UnexpectedDerivationMethod, ValidateAddressResult, ValidatePaymentInput, VerificationResult, WithdrawFut,
             WithdrawRequest};
 use async_trait::async_trait;
@@ -61,7 +61,10 @@ impl TendermintToken {
 #[async_trait]
 #[allow(unused_variables)]
 impl SwapOps for TendermintToken {
-    fn send_taker_fee(&self, fee_addr: &[u8], amount: BigDecimal, uuid: &[u8]) -> TransactionFut { todo!() }
+    fn send_taker_fee(&self, fee_addr: &[u8], amount: BigDecimal, uuid: &[u8]) -> TransactionFut {
+        self.platform_coin
+            .send_taker_fee_for_denom(fee_addr, amount, self.denom.clone(), self.decimals)
+    }
 
     fn send_maker_payment(
         &self,
@@ -69,10 +72,17 @@ impl SwapOps for TendermintToken {
         taker_pub: &[u8],
         secret_hash: &[u8],
         amount: BigDecimal,
-        swap_contract_address: &Option<BytesJson>,
-        swap_unique_data: &[u8],
+        _swap_contract_address: &Option<BytesJson>,
+        _swap_unique_data: &[u8],
     ) -> TransactionFut {
-        todo!()
+        self.platform_coin.send_htlc_for_denom(
+            time_lock,
+            taker_pub,
+            secret_hash,
+            amount,
+            self.denom.clone(),
+            self.decimals,
+        )
     }
 
     fn send_taker_payment(
@@ -84,7 +94,14 @@ impl SwapOps for TendermintToken {
         swap_contract_address: &Option<BytesJson>,
         swap_unique_data: &[u8],
     ) -> TransactionFut {
-        todo!()
+        self.platform_coin.send_htlc_for_denom(
+            time_lock,
+            maker_pub,
+            secret_hash,
+            amount,
+            self.denom.clone(),
+            self.decimals,
+        )
     }
 
     fn send_maker_spends_taker_payment(
@@ -96,7 +113,14 @@ impl SwapOps for TendermintToken {
         swap_contract_address: &Option<BytesJson>,
         swap_unique_data: &[u8],
     ) -> TransactionFut {
-        todo!()
+        self.platform_coin.send_maker_spends_taker_payment(
+            taker_payment_tx,
+            time_lock,
+            taker_pub,
+            secret,
+            swap_contract_address,
+            swap_unique_data,
+        )
     }
 
     fn send_taker_spends_maker_payment(
@@ -108,7 +132,14 @@ impl SwapOps for TendermintToken {
         swap_contract_address: &Option<BytesJson>,
         swap_unique_data: &[u8],
     ) -> TransactionFut {
-        todo!()
+        self.platform_coin.send_taker_spends_maker_payment(
+            maker_payment_tx,
+            time_lock,
+            maker_pub,
+            secret,
+            swap_contract_address,
+            swap_unique_data,
+        )
     }
 
     fn send_taker_refunds_payment(
@@ -120,7 +151,9 @@ impl SwapOps for TendermintToken {
         swap_contract_address: &Option<BytesJson>,
         swap_unique_data: &[u8],
     ) -> TransactionFut {
-        todo!()
+        Box::new(futures01::future::err(TransactionErr::Plain(
+            "Doesn't need transaction broadcast to be refunded".into(),
+        )))
     }
 
     fn send_maker_refunds_payment(
@@ -132,7 +165,9 @@ impl SwapOps for TendermintToken {
         swap_contract_address: &Option<BytesJson>,
         swap_unique_data: &[u8],
     ) -> TransactionFut {
-        todo!()
+        Box::new(futures01::future::err(TransactionErr::Plain(
+            "Doesn't need transaction broadcast to be refunded".into(),
+        )))
     }
 
     fn validate_fee(
@@ -144,15 +179,18 @@ impl SwapOps for TendermintToken {
         min_block_number: u64,
         uuid: &[u8],
     ) -> Box<dyn Future<Item = (), Error = String> + Send> {
-        todo!()
+        let fut = async move { Ok(()) };
+        Box::new(fut.boxed().compat())
     }
 
     fn validate_maker_payment(&self, input: ValidatePaymentInput) -> Box<dyn Future<Item = (), Error = String> + Send> {
-        todo!()
+        let fut = async move { Ok(()) };
+        Box::new(fut.boxed().compat())
     }
 
     fn validate_taker_payment(&self, input: ValidatePaymentInput) -> Box<dyn Future<Item = (), Error = String> + Send> {
-        todo!()
+        let fut = async move { Ok(()) };
+        Box::new(fut.boxed().compat())
     }
 
     fn check_if_my_payment_sent(
@@ -164,7 +202,8 @@ impl SwapOps for TendermintToken {
         swap_contract_address: &Option<BytesJson>,
         swap_unique_data: &[u8],
     ) -> Box<dyn Future<Item = Option<TransactionEnum>, Error = String> + Send> {
-        todo!()
+        let fut = async move { Ok(None) };
+        Box::new(fut.boxed().compat())
     }
 
     async fn search_for_swap_tx_spend_my(
@@ -258,7 +297,8 @@ impl MarketCoinOps for TendermintToken {
         from_block: u64,
         swap_contract_address: &Option<BytesJson>,
     ) -> TransactionFut {
-        todo!()
+        self.platform_coin
+            .wait_for_tx_spend(transaction, wait_until, from_block, swap_contract_address)
     }
 
     fn tx_enum_from_bytes(&self, bytes: &[u8]) -> Result<TransactionEnum, MmError<TxMarshalingErr>> {
