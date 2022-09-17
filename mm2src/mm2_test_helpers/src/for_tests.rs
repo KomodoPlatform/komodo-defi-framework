@@ -1764,25 +1764,29 @@ pub async fn my_balance(mm: &MarketMakerIt, coin: &str) -> Json {
 pub async fn enable_tendermint(mm: &MarketMakerIt, coin: &str, ibc_assets: &[&str], rpc_urls: &[&str]) -> Json {
     let ibc_requests: Vec<_> = ibc_assets.iter().map(|ticker| json!({ "ticker": ticker })).collect();
 
-    let request = mm
-        .rpc(&json! ({
-            "userpass": mm.userpass,
-            "method": "enable_tendermint_with_assets",
-            "mmrpc": "2.0",
-            "params": {
-                "ticker": coin,
-                "tokens_params": ibc_requests,
-                "rpc_urls": rpc_urls,
-            }
-        }))
-        .await
-        .unwrap();
+    let request = json! ({
+        "userpass": mm.userpass,
+        "method": "enable_tendermint_with_assets",
+        "mmrpc": "2.0",
+        "params": {
+            "ticker": coin,
+            "tokens_params": ibc_requests,
+            "rpc_urls": rpc_urls,
+        }
+    });
+    println!(
+        "enable_tendermint_with_assets request {}",
+        json::to_string(&request).unwrap()
+    );
+
+    let request = mm.rpc(&request).await.unwrap();
     assert_eq!(
         request.0,
         StatusCode::OK,
         "'enable_tendermint_with_assets' failed: {}",
         request.1
     );
+    println!("enable_tendermint_with_assets response {}", request.1);
     json::from_str(&request.1).unwrap()
 }
 

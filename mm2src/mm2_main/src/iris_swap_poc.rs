@@ -26,6 +26,8 @@ pub async fn trade_base_rel_iris(
         rick_conf(),
     ]);
 
+    println!("coins config {}", json::to_string(&coins).unwrap());
+
     let mut mm_bob = MarketMakerIt::start_async(
         json! ({
             "gui": "nogui",
