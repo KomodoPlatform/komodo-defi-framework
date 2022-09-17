@@ -918,6 +918,7 @@ impl SwapOps for TendermintCoin {
         time_lock: u32,
         taker_pub: &[u8],
         secret: &[u8],
+        secret_hash: &[u8],
         swap_contract_address: &Option<BytesJson>,
         swap_unique_data: &[u8],
     ) -> TransactionFut {
@@ -926,8 +927,6 @@ impl SwapOps for TendermintCoin {
         let htlc_proto: crate::tendermint::htlc_proto::CreateHtlcProtoRep =
             try_tx_fus!(prost::Message::decode(msg.value.as_slice()));
         let htlc = try_tx_fus!(MsgCreateHtlc::try_from(htlc_proto));
-
-        let hash_lock_hash = sha256(secret);
 
         let mut amount = htlc.amount.clone();
         amount.sort();
@@ -940,7 +939,7 @@ impl SwapOps for TendermintCoin {
             .join(",");
 
         let mut htlc_id = vec![];
-        htlc_id.extend_from_slice(hash_lock_hash.as_slice());
+        htlc_id.extend_from_slice(secret_hash);
         htlc_id.extend_from_slice(&htlc.sender.to_bytes());
         htlc_id.extend_from_slice(&htlc.to.to_bytes());
         htlc_id.extend_from_slice(coins_string.as_bytes());
@@ -980,6 +979,7 @@ impl SwapOps for TendermintCoin {
         time_lock: u32,
         maker_pub: &[u8],
         secret: &[u8],
+        secret_hash: &[u8],
         _swap_contract_address: &Option<BytesJson>,
         _swap_unique_data: &[u8],
     ) -> TransactionFut {
@@ -988,8 +988,6 @@ impl SwapOps for TendermintCoin {
         let htlc_proto: crate::tendermint::htlc_proto::CreateHtlcProtoRep =
             try_tx_fus!(prost::Message::decode(msg.value.as_slice()));
         let htlc = try_tx_fus!(MsgCreateHtlc::try_from(htlc_proto));
-
-        let hash_lock_hash = sha256(secret);
 
         let mut amount = htlc.amount.clone();
         amount.sort();
@@ -1002,7 +1000,7 @@ impl SwapOps for TendermintCoin {
             .join(",");
 
         let mut htlc_id = vec![];
-        htlc_id.extend_from_slice(hash_lock_hash.as_slice());
+        htlc_id.extend_from_slice(secret_hash);
         htlc_id.extend_from_slice(&htlc.sender.to_bytes());
         htlc_id.extend_from_slice(&htlc.to.to_bytes());
         htlc_id.extend_from_slice(coins_string.as_bytes());
@@ -1202,7 +1200,14 @@ mod tendermint_coin_tests {
         let time_lock = 1000;
 
         let create_htlc_tx = coin
-            .gen_create_htlc_tx(base_denom.clone(), coin.denom.clone(), &to, amount, &sec, time_lock)
+            .gen_create_htlc_tx(
+                base_denom.clone(),
+                coin.denom.clone(),
+                &to,
+                amount,
+                sha256(&sec).as_slice(),
+                time_lock,
+            )
             .unwrap();
 
         let current_block_fut = coin.current_block().compat();

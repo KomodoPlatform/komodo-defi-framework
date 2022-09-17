@@ -213,6 +213,7 @@ fn test_send_maker_spends_taker_payment_recoverable_tx() {
             777,
             &coin.my_public_key().unwrap().to_vec(),
             &secret,
+            dhash160(&secret).as_slice(),
             &coin.swap_contract_address(),
             &[],
         )
@@ -4081,6 +4082,7 @@ fn test_electrum_display_balances() {
 }
 
 #[test]
+#[ignore]
 fn test_for_non_existent_tx_hex_utxo_electrum() {
     // This test shouldn't wait till timeout!
     let timeout = (now_ms() / 1000) + 120;

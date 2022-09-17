@@ -204,7 +204,7 @@ fn test_taker_spends_maker_payment() {
         payment_tx: payment_tx_hex.clone(),
         time_lock: timelock,
         other_pub: maker_pub.clone(),
-        secret_hash,
+        secret_hash: secret_hash.clone(),
         amount: amount.clone(),
         swap_contract_address: taker_coin.swap_contract_address(),
         try_spv_proof_until: wait_until + 30,
@@ -219,6 +219,7 @@ fn test_taker_spends_maker_payment() {
             timelock,
             &maker_pub,
             secret,
+            &secret_hash,
             &taker_coin.swap_contract_address(),
             &[],
         )
@@ -311,6 +312,7 @@ fn test_maker_spends_taker_payment() {
             timelock,
             &taker_pub,
             secret,
+            &secret_hash,
             &maker_coin.swap_contract_address(),
             &[],
         )
@@ -516,14 +518,14 @@ fn test_search_for_swap_tx_spend_taker_spent() {
     let maker_pub = maker_coin.my_public_key().unwrap();
     let taker_pub = taker_coin.my_public_key().unwrap();
     let secret = &[1; 32];
-    let secret_hash = &*dhash160(secret);
+    let secret_hash = dhash160(secret);
     let amount = BigDecimal::try_from(0.2).unwrap();
 
     let payment = maker_coin
         .send_maker_payment(
             timelock,
             taker_pub,
-            secret_hash,
+            secret_hash.as_slice(),
             amount,
             &maker_coin.swap_contract_address(),
             &[],
@@ -549,6 +551,7 @@ fn test_search_for_swap_tx_spend_taker_spent() {
             timelock,
             maker_pub,
             secret,
+            secret_hash.as_slice(),
             &taker_coin.swap_contract_address(),
             &[],
         )
@@ -567,7 +570,7 @@ fn test_search_for_swap_tx_spend_taker_spent() {
     let search_input = SearchForSwapTxSpendInput {
         time_lock: timelock,
         other_pub: taker_pub,
-        secret_hash,
+        secret_hash: secret_hash.as_slice(),
         tx: &payment_tx_hex,
         search_from_block,
         swap_contract_address: &maker_coin.swap_contract_address(),
@@ -707,14 +710,14 @@ fn test_wait_for_tx_spend() {
     let maker_pub = maker_coin.my_public_key().unwrap();
     let taker_pub = taker_coin.my_public_key().unwrap();
     let secret = &[1; 32];
-    let secret_hash = &*dhash160(secret);
+    let secret_hash = dhash160(secret);
     let amount = BigDecimal::try_from(0.2).unwrap();
 
     let payment = maker_coin
         .send_maker_payment(
             timelock,
             taker_pub,
-            secret_hash,
+            secret_hash.as_slice(),
             amount,
             &maker_coin.swap_contract_address(),
             &[],
@@ -764,6 +767,7 @@ fn test_wait_for_tx_spend() {
                 timelock,
                 &maker_pub_c,
                 secret,
+                secret_hash.as_slice(),
                 &taker_coin.swap_contract_address(),
                 &[],
             )

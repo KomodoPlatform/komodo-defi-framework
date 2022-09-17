@@ -313,6 +313,7 @@ impl SwapOps for UtxoStandardCoin {
         time_lock: u32,
         taker_pub: &[u8],
         secret: &[u8],
+        secret_hash: &[u8],
         _swap_contract_address: &Option<BytesJson>,
         swap_unique_data: &[u8],
     ) -> TransactionFut {
@@ -322,6 +323,7 @@ impl SwapOps for UtxoStandardCoin {
             time_lock,
             taker_pub,
             secret,
+            secret_hash,
             swap_unique_data,
         )
     }
@@ -332,6 +334,7 @@ impl SwapOps for UtxoStandardCoin {
         time_lock: u32,
         maker_pub: &[u8],
         secret: &[u8],
+        secret_hash: &[u8],
         _swap_contract_address: &Option<BytesJson>,
         swap_unique_data: &[u8],
     ) -> TransactionFut {
@@ -341,6 +344,7 @@ impl SwapOps for UtxoStandardCoin {
             time_lock,
             maker_pub,
             secret,
+            secret_hash,
             swap_unique_data,
         )
     }

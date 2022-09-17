@@ -12,7 +12,7 @@ use crate::mm2::lp_dispatcher::{DispatcherContext, LpEvents};
 use crate::mm2::lp_network::subscribe_to_topic;
 use crate::mm2::lp_ordermatch::{MakerOrderBuilder, OrderConfirmationsSettings};
 use crate::mm2::lp_price::fetch_swap_coins_price;
-use crate::mm2::lp_swap::{broadcast_p2p_tx_msg, tx_helper_topic, SecretHashAlgo};
+use crate::mm2::lp_swap::{broadcast_p2p_tx_msg, detect_secret_hash_algo, tx_helper_topic, SecretHashAlgo};
 use crate::mm2::MM_VERSION;
 use coins::{CanRefundHtlc, FeeApproxStage, FoundSwapTxSpend, MmCoinEnum, SearchForSwapTxSpendInput, TradeFee,
             TradePreimageValue, TransactionEnum, ValidatePaymentInput};
@@ -334,6 +334,7 @@ impl MakerSwap {
         p2p_privkey: Option<KeyPair>,
         secret: H256,
     ) -> Self {
+        let secret_hash_algo = detect_secret_hash_algo(&maker_coin, &taker_coin);
         MakerSwap {
             maker_coin,
             taker_coin,
@@ -363,7 +364,7 @@ impl MakerSwap {
             }),
             ctx,
             secret,
-            secret_hash_algo: SecretHashAlgo::SHA256,
+            secret_hash_algo,
             #[cfg(test)]
             fail_at: None,
         }
@@ -894,6 +895,7 @@ impl MakerSwap {
             self.taker_payment_lock.load(Ordering::Relaxed) as u32,
             &*self.r().other_taker_coin_htlc_pub,
             &self.r().data.secret.0,
+            &self.secret_hash(),
             &self.r().data.taker_coin_swap_contract_address,
             &self.unique_swap_data(),
         );
@@ -1176,6 +1178,7 @@ impl MakerSwap {
                     timelock,
                     other_taker_coin_htlc_pub.as_slice(),
                     &secret,
+                    &selfi.secret_hash(),
                     &taker_coin_swap_contract_address,
                     &selfi.unique_swap_data(),
                 )
@@ -2354,7 +2357,7 @@ mod maker_swap_tests {
         });
 
         static mut SEND_MAKER_SPENDS_TAKER_PAYMENT_CALLED: bool = false;
-        TestCoin::send_maker_spends_taker_payment.mock_safe(|_, _, _, _, _, _, _| {
+        TestCoin::send_maker_spends_taker_payment.mock_safe(|_, _, _, _, _, _, _, _| {
             unsafe { SEND_MAKER_SPENDS_TAKER_PAYMENT_CALLED = true }
             MockResult::Return(Box::new(futures01::future::ok(eth_tx_for_test().into())))
         });

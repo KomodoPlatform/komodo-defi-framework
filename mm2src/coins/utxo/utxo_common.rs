@@ -1131,6 +1131,7 @@ pub fn send_maker_spends_taker_payment<T: UtxoCommonOps + SwapOps>(
     time_lock: u32,
     taker_pub: &[u8],
     secret: &[u8],
+    secret_hash: &[u8],
     swap_unique_data: &[u8],
 ) -> TransactionFut {
     let my_address = try_tx_fus!(coin.as_ref().derivation_method.iguana_or_err()).clone();
@@ -1145,7 +1146,7 @@ pub fn send_maker_spends_taker_payment<T: UtxoCommonOps + SwapOps>(
 
     let redeem_script = payment_script(
         time_lock,
-        &*sha256(secret),
+        secret_hash,
         &try_tx_fus!(Public::from_slice(taker_pub)),
         key_pair.public(),
     )
@@ -1183,6 +1184,7 @@ pub fn send_taker_spends_maker_payment<T: UtxoCommonOps + SwapOps>(
     time_lock: u32,
     maker_pub: &[u8],
     secret: &[u8],
+    secret_hash: &[u8],
     swap_unique_data: &[u8],
 ) -> TransactionFut {
     let my_address = try_tx_fus!(coin.as_ref().derivation_method.iguana_or_err()).clone();
@@ -1197,7 +1199,7 @@ pub fn send_taker_spends_maker_payment<T: UtxoCommonOps + SwapOps>(
         .into_script();
     let redeem_script = payment_script(
         time_lock,
-        &*sha256(secret),
+        secret_hash,
         &try_tx_fus!(Public::from_slice(maker_pub)),
         key_pair.public(),
     )

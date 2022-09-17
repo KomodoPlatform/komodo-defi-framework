@@ -308,6 +308,7 @@ impl SwapOps for LightningCoin {
         _time_lock: u32,
         _taker_pub: &[u8],
         _secret: &[u8],
+        _secret_hash: &[u8],
         _swap_contract_address: &Option<BytesJson>,
         _swap_unique_data: &[u8],
     ) -> TransactionFut {
@@ -320,6 +321,7 @@ impl SwapOps for LightningCoin {
         _time_lock: u32,
         _maker_pub: &[u8],
         _secret: &[u8],
+        _secret_hash: &[u8],
         _swap_contract_address: &Option<BytesJson>,
         _swap_unique_data: &[u8],
     ) -> TransactionFut {

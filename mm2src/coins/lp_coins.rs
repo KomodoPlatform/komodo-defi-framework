@@ -485,22 +485,26 @@ pub trait SwapOps {
         swap_unique_data: &[u8],
     ) -> TransactionFut;
 
+    #[allow(clippy::too_many_arguments)]
     fn send_maker_spends_taker_payment(
         &self,
         taker_payment_tx: &[u8],
         time_lock: u32,
         taker_pub: &[u8],
         secret: &[u8],
+        secret_hash: &[u8],
         swap_contract_address: &Option<BytesJson>,
         swap_unique_data: &[u8],
     ) -> TransactionFut;
 
+    #[allow(clippy::too_many_arguments)]
     fn send_taker_spends_maker_payment(
         &self,
         maker_payment_tx: &[u8],
         time_lock: u32,
         maker_pub: &[u8],
         secret: &[u8],
+        secret_hash: &[u8],
         swap_contract_address: &Option<BytesJson>,
         swap_unique_data: &[u8],
     ) -> TransactionFut;
