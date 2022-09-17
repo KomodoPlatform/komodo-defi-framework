@@ -14,12 +14,12 @@ use crate::utxo::{qtum, ActualTxFee, AdditionalTxData, BroadcastTxErr, FeePolicy
                   UtxoActivationParams, UtxoAddressFormat, UtxoCoinFields, UtxoCommonOps, UtxoFromLegacyReqErr,
                   UtxoTx, UtxoTxBroadcastOps, UtxoTxGenerationOps, VerboseTransactionFrom, UTXO_LOCK};
 use crate::{BalanceError, BalanceFut, CoinBalance, FeeApproxStage, FoundSwapTxSpend, HistorySyncState, MarketCoinOps,
-            MmCoin, NegotiateSwapContractAddrErr, PrivKeyNotAllowed, RawTransactionFut, RawTransactionRequest,
-            SearchForSwapTxSpendInput, SignatureResult, SwapOps, TradeFee, TradePreimageError, TradePreimageFut,
-            TradePreimageResult, TradePreimageValue, TransactionDetails, TransactionEnum, TransactionErr,
-            TransactionFut, TransactionType, TxMarshalingErr, UnexpectedDerivationMethod, ValidateAddressResult,
-            ValidatePaymentInput, VerificationResult, WithdrawError, WithdrawFee, WithdrawFut, WithdrawRequest,
-            WithdrawResult};
+            MmCoin, MmCoinEnum, NegotiatePubKeyValidationErr, NegotiateSwapContractAddrErr, PrivKeyNotAllowed,
+            RawTransactionFut, RawTransactionRequest, SearchForSwapTxSpendInput, SignatureResult, SwapOps, TradeFee,
+            TradePreimageError, TradePreimageFut, TradePreimageResult, TradePreimageValue, TransactionDetails,
+            TransactionEnum, TransactionErr, TransactionFut, TransactionType, TxMarshalingErr,
+            UnexpectedDerivationMethod, ValidateAddressResult, ValidatePaymentInput, VerificationResult,
+            WithdrawError, WithdrawFee, WithdrawFut, WithdrawRequest, WithdrawResult};
 use async_trait::async_trait;
 use bitcrypto::{dhash160, sha256};
 use chain::TransactionOutput;
@@ -888,7 +888,7 @@ impl SwapOps for Qrc20Coin {
 
     fn validate_maker_payment(&self, input: ValidatePaymentInput) -> Box<dyn Future<Item = (), Error = String> + Send> {
         let payment_tx: UtxoTx = try_fus!(deserialize(input.payment_tx.as_slice()).map_err(|e| ERRL!("{:?}", e)));
-        let sender = try_fus!(self.contract_address_from_raw_pubkey(&input.other_pub)); //TODO!
+        let sender = try_fus!(self.contract_address_from_raw_pubkey(&input.other_pub));
         let swap_contract_address = try_fus!(input.swap_contract_address.try_to_address());
 
         let selfi = self.clone();
@@ -1000,12 +1000,22 @@ impl SwapOps for Qrc20Coin {
         }
     }
 
+    fn negotiate_coin_contract_address(&self, other_coin: MmCoinEnum) -> bool {
+        if let MmCoinEnum::Qrc20Coin(coin) = other_coin {
+            return coin.0.contract_address == self.0.contract_address;
+        }
+        false
+    }
+
     fn derive_htlc_key_pair(&self, swap_unique_data: &[u8]) -> KeyPair {
         utxo_common::derive_htlc_key_pair(self.as_ref(), swap_unique_data)
     }
 
-    fn validate_pubkey(&self, raw_pubkey: Option<&[u8]>) -> Result<Option<BytesJson>, String> {
-        utxo_common::validate_pubkey(raw_pubkey)
+    fn negotiate_pubkey_validation(
+        &self,
+        raw_pubkey: Option<&[u8]>,
+    ) -> MmResult<Option<BytesJson>, NegotiatePubKeyValidationErr> {
+        utxo_common::negotiate_pubkey_validation(raw_pubkey)
     }
 
     fn validate_secret_hash(&self, secret_hash: &[u8], secret: &[u8]) -> bool {

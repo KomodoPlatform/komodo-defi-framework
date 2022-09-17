@@ -11,10 +11,10 @@ use crate::utxo::spv::SimplePaymentVerification;
 use crate::utxo::tx_cache::TxCacheResult;
 use crate::utxo::utxo_withdraw::{InitUtxoWithdraw, StandardUtxoWithdraw, UtxoWithdraw};
 use crate::{CanRefundHtlc, CoinBalance, CoinWithDerivationMethod, GetWithdrawSenderAddress, HDAddressId,
-            RawTransactionError, RawTransactionRequest, RawTransactionRes, SearchForSwapTxSpendInput, SignatureError,
-            SignatureResult, SwapOps, TradePreimageValue, TransactionFut, TxFeeDetails, TxMarshalingErr,
-            ValidateAddressResult, ValidatePaymentInput, VerificationError, VerificationResult, WithdrawFrom,
-            WithdrawResult, WithdrawSenderAddress};
+            NegotiatePubKeyValidationErr, RawTransactionError, RawTransactionRequest, RawTransactionRes,
+            SearchForSwapTxSpendInput, SignatureError, SignatureResult, SwapOps, TradePreimageValue, TransactionFut,
+            TxFeeDetails, TxMarshalingErr, ValidateAddressResult, ValidatePaymentInput, VerificationError,
+            VerificationResult, WithdrawFrom, WithdrawResult, WithdrawSenderAddress};
 use bitcrypto::dhash256;
 pub use bitcrypto::{dhash160, sha256, ChecksumType};
 use chain::constants::SEQUENCE_FINAL;
@@ -3554,11 +3554,13 @@ pub fn derive_htlc_key_pair(coin: &UtxoCoinFields, _swap_unique_data: &[u8]) -> 
     }
 }
 
-pub fn validate_pubkey(raw_pubkey: Option<&[u8]>) -> Result<Option<BytesJson>, String> {
+pub fn negotiate_pubkey_validation(
+    raw_pubkey: Option<&[u8]>,
+) -> MmResult<Option<BytesJson>, NegotiatePubKeyValidationErr> {
     if let Some(key) = raw_pubkey {
         return match Public::from_slice(key) {
             Ok(key) => Ok(Some(key.to_vec().into())),
-            Err(e) => Err(ERRL!("!pubkey validation failed {}", e)),
+            Err(e) => MmError::err(NegotiatePubKeyValidationErr::InvalidPubKeyInput(e.to_string())),
         };
     }
     Ok(None)

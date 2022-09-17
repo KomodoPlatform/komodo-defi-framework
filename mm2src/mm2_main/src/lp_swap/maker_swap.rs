@@ -576,7 +576,11 @@ impl MakerSwap {
             },
         };
 
-        let maker_coin_htlc_pubkey = match self.taker_coin.validate_pubkey(Some(taker_data.maker_coin_htlc_pub())) {
+        // Validate maker_coin_htlc_pubkey realness
+        let maker_coin_htlc_pubkey = match self
+            .taker_coin
+            .negotiate_pubkey_validation(Some(taker_data.maker_coin_htlc_pub()))
+        {
             Ok(bytes) => bytes.map(|e| e.into_vec().as_slice().into()),
             Err(err) => {
                 return Ok((Some(MakerSwapCommand::Finish), vec![MakerSwapEvent::NegotiateFailed(
@@ -585,7 +589,11 @@ impl MakerSwap {
             },
         };
 
-        let taker_coin_htlc_pubkey = match self.taker_coin.validate_pubkey(Some(taker_data.taker_coin_htlc_pub())) {
+        // Validate taker_coin_htlc_pubkey realness
+        let taker_coin_htlc_pubkey = match self
+            .taker_coin
+            .negotiate_pubkey_validation(Some(taker_data.taker_coin_htlc_pub()))
+        {
             Ok(bytes) => bytes.map(|e| e.into_vec().as_slice().into()),
             Err(err) => {
                 return Ok((Some(MakerSwapCommand::Finish), vec![MakerSwapEvent::NegotiateFailed(
@@ -594,7 +602,13 @@ impl MakerSwap {
             },
         };
 
-        // let maker_coin_htlc_pubkey = self.maker_coin.con
+        // Validate taker coin contract == maker coin contract.
+        if !self.taker_coin.negotiate_coin_contract_address(self.maker_coin.clone()) {
+            return Ok((Some(MakerSwapCommand::Finish), vec![MakerSwapEvent::NegotiateFailed(
+                ERRL!("taker coin contract != maker coin contract").into(),
+            )]));
+        }
+
         Ok((Some(MakerSwapCommand::WaitForTakerFee), vec![
             MakerSwapEvent::Negotiated(TakerNegotiationData {
                 taker_payment_locktime: taker_data.payment_locktime(),

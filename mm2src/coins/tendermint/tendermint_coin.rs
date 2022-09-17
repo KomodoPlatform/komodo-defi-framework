@@ -5,12 +5,12 @@ use super::tendermint_native_rpc::*;
 use crate::tendermint::htlc::MsgClaimHtlc;
 use crate::utxo::sat_from_big_decimal;
 use crate::{big_decimal_from_sat_unsigned, BalanceError, BalanceFut, BigDecimal, CoinBalance, FeeApproxStage,
-            FoundSwapTxSpend, HistorySyncState, MarketCoinOps, MmCoin, NegotiateSwapContractAddrErr,
-            RawTransactionFut, RawTransactionRequest, SearchForSwapTxSpendInput, SignatureResult, SwapOps, TradeFee,
-            TradePreimageFut, TradePreimageResult, TradePreimageValue, TransactionDetails, TransactionEnum,
-            TransactionFut, TransactionType, TxFeeDetails, TxMarshalingErr, UnexpectedDerivationMethod,
-            ValidateAddressResult, ValidatePaymentInput, VerificationResult, WithdrawError, WithdrawFut,
-            WithdrawRequest};
+            FoundSwapTxSpend, HistorySyncState, MarketCoinOps, MmCoin, MmCoinEnum, NegotiatePubKeyValidationErr,
+            NegotiateSwapContractAddrErr, RawTransactionFut, RawTransactionRequest, SearchForSwapTxSpendInput,
+            SignatureResult, SwapOps, TradeFee, TradePreimageFut, TradePreimageResult, TradePreimageValue,
+            TransactionDetails, TransactionEnum, TransactionFut, TransactionType, TxFeeDetails, TxMarshalingErr,
+            UnexpectedDerivationMethod, ValidateAddressResult, ValidatePaymentInput, VerificationResult,
+            WithdrawError, WithdrawFut, WithdrawRequest};
 use async_trait::async_trait;
 use bitcrypto::sha256;
 use common::{get_utc_timestamp, Future01CompatExt};
@@ -750,9 +750,16 @@ impl SwapOps for TendermintCoin {
         todo!()
     }
 
+    fn negotiate_coin_contract_address(&self, other_coin: MmCoinEnum) -> bool { true }
+
     fn derive_htlc_key_pair(&self, swap_unique_data: &[u8]) -> KeyPair { todo!() }
 
-    fn validate_pubkey(&self, _raw_pubkey: Option<&[u8]>) -> Result<Option<BytesJson>, String> { todo!() }
+    fn negotiate_pubkey_validation(
+        &self,
+        _raw_pubkey: Option<&[u8]>,
+    ) -> MmResult<Option<BytesJson>, NegotiatePubKeyValidationErr> {
+        todo!()
+    }
 
     fn validate_secret_hash(&self, _secret_hash: &[u8], _secret: &[u8]) -> bool { todo!() }
 }

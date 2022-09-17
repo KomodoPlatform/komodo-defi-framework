@@ -13,12 +13,12 @@ use crate::utxo::{generate_and_send_tx, sat_from_big_decimal, ActualTxFee, Addit
                   FeePolicy, GenerateTxError, RecentlySpentOutPointsGuard, UtxoCoinConf, UtxoCoinFields,
                   UtxoCommonOps, UtxoTx, UtxoTxBroadcastOps, UtxoTxGenerationOps};
 use crate::{BalanceFut, CoinBalance, FeeApproxStage, FoundSwapTxSpend, HistorySyncState, MarketCoinOps, MmCoin,
-            NegotiateSwapContractAddrErr, NumConversError, PrivKeyNotAllowed, RawTransactionFut,
-            RawTransactionRequest, SearchForSwapTxSpendInput, SignatureResult, SwapOps, TradeFee, TradePreimageError,
-            TradePreimageFut, TradePreimageResult, TradePreimageValue, TransactionDetails, TransactionEnum,
-            TransactionErr, TransactionFut, TxFeeDetails, TxMarshalingErr, UnexpectedDerivationMethod,
-            ValidateAddressResult, ValidatePaymentInput, VerificationError, VerificationResult, WithdrawError,
-            WithdrawFee, WithdrawFut, WithdrawRequest};
+            MmCoinEnum, NegotiatePubKeyValidationErr, NegotiateSwapContractAddrErr, NumConversError,
+            PrivKeyNotAllowed, RawTransactionFut, RawTransactionRequest, SearchForSwapTxSpendInput, SignatureResult,
+            SwapOps, TradeFee, TradePreimageError, TradePreimageFut, TradePreimageResult, TradePreimageValue,
+            TransactionDetails, TransactionEnum, TransactionErr, TransactionFut, TxFeeDetails, TxMarshalingErr,
+            UnexpectedDerivationMethod, ValidateAddressResult, ValidatePaymentInput, VerificationError,
+            VerificationResult, WithdrawError, WithdrawFee, WithdrawFut, WithdrawRequest};
 use async_trait::async_trait;
 use bitcrypto::dhash160;
 use chain::constants::SEQUENCE_FINAL;
@@ -1437,12 +1437,22 @@ impl SwapOps for SlpToken {
         Ok(None)
     }
 
+    fn negotiate_coin_contract_address(&self, other_coin: MmCoinEnum) -> bool {
+        if let MmCoinEnum::SlpToken(other) = other_coin {
+            return self.token_id() == other.token_id();
+        }
+        false
+    }
+
     fn derive_htlc_key_pair(&self, swap_unique_data: &[u8]) -> KeyPair {
         utxo_common::derive_htlc_key_pair(self.platform_coin.as_ref(), swap_unique_data)
     }
 
-    fn validate_pubkey(&self, raw_pubkey: Option<&[u8]>) -> Result<Option<BytesJson>, String> {
-        utxo_common::validate_pubkey(raw_pubkey)
+    fn negotiate_pubkey_validation(
+        &self,
+        raw_pubkey: Option<&[u8]>,
+    ) -> MmResult<Option<BytesJson>, NegotiatePubKeyValidationErr> {
+        utxo_common::negotiate_pubkey_validation(raw_pubkey)
     }
 
     fn validate_secret_hash(&self, secret_hash: &[u8], secret: &[u8]) -> bool {

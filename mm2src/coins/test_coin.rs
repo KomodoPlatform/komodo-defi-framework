@@ -1,9 +1,9 @@
 use super::{CoinBalance, HistorySyncState, MarketCoinOps, MmCoin, RawTransactionFut, RawTransactionRequest, SwapOps,
             TradeFee, TransactionEnum, TransactionFut};
-use crate::{BalanceFut, CanRefundHtlc, FeeApproxStage, FoundSwapTxSpend, NegotiateSwapContractAddrErr,
-            SearchForSwapTxSpendInput, SignatureResult, TradePreimageFut, TradePreimageResult, TradePreimageValue,
-            TxMarshalingErr, UnexpectedDerivationMethod, ValidateAddressResult, ValidatePaymentInput,
-            VerificationResult, WithdrawFut, WithdrawRequest};
+use crate::{BalanceFut, CanRefundHtlc, FeeApproxStage, FoundSwapTxSpend, MmCoinEnum, NegotiatePubKeyValidationErr,
+            NegotiateSwapContractAddrErr, SearchForSwapTxSpendInput, SignatureResult, TradePreimageFut,
+            TradePreimageResult, TradePreimageValue, TxMarshalingErr, UnexpectedDerivationMethod,
+            ValidateAddressResult, ValidatePaymentInput, VerificationResult, WithdrawFut, WithdrawRequest};
 use async_trait::async_trait;
 use futures01::Future;
 use keys::KeyPair;
@@ -232,13 +232,20 @@ impl SwapOps for TestCoin {
         unimplemented!()
     }
 
+    fn negotiate_coin_contract_address(&self, other_coin: MmCoinEnum) -> bool { unimplemented!() }
+
     fn derive_htlc_key_pair(&self, _swap_unique_data: &[u8]) -> KeyPair { unimplemented!() }
 
     fn can_refund_htlc(&self, locktime: u64) -> Box<dyn Future<Item = CanRefundHtlc, Error = String> + Send + '_> {
         unimplemented!()
     }
 
-    fn validate_pubkey(&self, raw_pubkey: Option<&[u8]>) -> Result<Option<BytesJson>, String> { unimplemented!() }
+    fn negotiate_pubkey_validation(
+        &self,
+        raw_pubkey: Option<&[u8]>,
+    ) -> MmResult<Option<BytesJson>, NegotiatePubKeyValidationErr> {
+        unimplemented!()
+    }
 
     fn validate_secret_hash(&self, secret_hash: &[u8], secret: &[u8]) -> bool { unimplemented!() }
 }

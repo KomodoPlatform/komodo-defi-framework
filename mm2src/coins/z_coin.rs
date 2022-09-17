@@ -12,11 +12,12 @@ use crate::utxo::{sat_from_big_decimal, utxo_common, ActualTxFee, AdditionalTxDa
                   UtxoCommonOps, UtxoFeeDetails, UtxoRpcMode, UtxoTxBroadcastOps, UtxoTxGenerationOps,
                   VerboseTransactionFrom};
 use crate::{BalanceError, BalanceFut, CoinBalance, FeeApproxStage, FoundSwapTxSpend, HistorySyncState, MarketCoinOps,
-            MmCoin, NegotiateSwapContractAddrErr, NumConversError, PrivKeyActivationPolicy, RawTransactionFut,
-            RawTransactionRequest, SearchForSwapTxSpendInput, SignatureError, SignatureResult, SwapOps, TradeFee,
-            TradePreimageFut, TradePreimageResult, TradePreimageValue, TransactionDetails, TransactionEnum,
-            TransactionFut, TxFeeDetails, TxMarshalingErr, UnexpectedDerivationMethod, ValidateAddressResult,
-            ValidatePaymentInput, VerificationError, VerificationResult, WithdrawFut, WithdrawRequest};
+            MmCoin, MmCoinEnum, NegotiatePubKeyValidationErr, NegotiateSwapContractAddrErr, NumConversError,
+            PrivKeyActivationPolicy, RawTransactionFut, RawTransactionRequest, SearchForSwapTxSpendInput,
+            SignatureError, SignatureResult, SwapOps, TradeFee, TradePreimageFut, TradePreimageResult,
+            TradePreimageValue, TransactionDetails, TransactionEnum, TransactionFut, TxFeeDetails, TxMarshalingErr,
+            UnexpectedDerivationMethod, ValidateAddressResult, ValidatePaymentInput, VerificationError,
+            VerificationResult, WithdrawFut, WithdrawRequest};
 use crate::{Transaction, WithdrawError};
 use async_trait::async_trait;
 use bitcrypto::{dhash160, dhash256};
@@ -1363,6 +1364,15 @@ impl SwapOps for ZCoin {
         Ok(None)
     }
 
+    fn negotiate_coin_contract_address(&self, other_coin: MmCoinEnum) -> bool {
+        if let MmCoinEnum::ZCoin(other) = other_coin {
+            return self.utxo_arc.conf.p2sh_addr_prefix == other.utxo_arc.conf.p2sh_addr_prefix
+                && self.utxo_arc.conf.pub_t_addr_prefix == other.utxo_arc.conf.pub_t_addr_prefix
+                && self.utxo_arc.conf.wif_prefix == other.utxo_arc.conf.wif_prefix;
+        }
+        false
+    }
+
     fn derive_htlc_key_pair(&self, swap_unique_data: &[u8]) -> KeyPair {
         let message = Message::from(dhash256(swap_unique_data).take());
         let signature = self.secp_keypair().private().sign(&message).expect("valid privkey");
@@ -1371,11 +1381,16 @@ impl SwapOps for ZCoin {
         key_pair_from_secret(key.as_slice()).expect("valid privkey")
     }
 
-    fn validate_pubkey(&self, raw_pubkey: Option<&[u8]>) -> Result<Option<BytesJson>, String> {
-        utxo_common::validate_pubkey(raw_pubkey)
+    fn negotiate_pubkey_validation(
+        &self,
+        raw_pubkey: Option<&[u8]>,
+    ) -> MmResult<Option<BytesJson>, NegotiatePubKeyValidationErr> {
+        utxo_common::negotiate_pubkey_validation(raw_pubkey)
     }
 
-    fn validate_secret_hash(&self, _secret_hash: &[u8], _secret: &[u8]) -> bool { unimplemented!() }
+    fn validate_secret_hash(&self, secret_hash: &[u8], secret: &[u8]) -> bool {
+        utxo_common::validate_secret_hash(secret_hash, secret)
+    }
 }
 
 #[async_trait]

@@ -60,14 +60,15 @@ use web3::{self, Web3};
 use web3_transport::{EthFeeHistoryNamespace, Web3Transport, Web3TransportNode};
 
 use super::{coin_conf, AsyncMutex, BalanceError, BalanceFut, CoinBalance, CoinProtocol, CoinTransportMetrics,
-            CoinsContext, FeeApproxStage, FoundSwapTxSpend, HistorySyncState, MarketCoinOps, MmCoin,
-            NegotiateSwapContractAddrErr, NumConversError, NumConversResult, RawTransactionError, RawTransactionFut,
-            RawTransactionRequest, RawTransactionRes, RawTransactionResult, RpcClientType, RpcTransportEventHandler,
-            RpcTransportEventHandlerShared, SearchForSwapTxSpendInput, SignatureError, SignatureResult, SwapOps,
-            TradeFee, TradePreimageError, TradePreimageFut, TradePreimageResult, TradePreimageValue, Transaction,
-            TransactionDetails, TransactionEnum, TransactionErr, TransactionFut, TxMarshalingErr,
-            UnexpectedDerivationMethod, ValidateAddressResult, ValidatePaymentInput, VerificationError,
-            VerificationResult, WithdrawError, WithdrawFee, WithdrawFut, WithdrawRequest, WithdrawResult};
+            CoinsContext, FeeApproxStage, FoundSwapTxSpend, HistorySyncState, MarketCoinOps, MmCoin, MmCoinEnum,
+            NegotiatePubKeyValidationErr, NegotiateSwapContractAddrErr, NumConversError, NumConversResult,
+            RawTransactionError, RawTransactionFut, RawTransactionRequest, RawTransactionRes, RawTransactionResult,
+            RpcClientType, RpcTransportEventHandler, RpcTransportEventHandlerShared, SearchForSwapTxSpendInput,
+            SignatureError, SignatureResult, SwapOps, TradeFee, TradePreimageError, TradePreimageFut,
+            TradePreimageResult, TradePreimageValue, Transaction, TransactionDetails, TransactionEnum, TransactionErr,
+            TransactionFut, TxMarshalingErr, UnexpectedDerivationMethod, ValidateAddressResult, ValidatePaymentInput,
+            VerificationError, VerificationResult, WithdrawError, WithdrawFee, WithdrawFut, WithdrawRequest,
+            WithdrawResult};
 
 pub use rlp;
 
@@ -1108,15 +1109,25 @@ impl SwapOps for EthCoin {
         }
     }
 
+    fn negotiate_coin_contract_address(&self, other_coin: MmCoinEnum) -> bool {
+        if let MmCoinEnum::EthCoin(other_coin) = other_coin {
+            return other_coin.erc20_token_address() == self.0.erc20_token_address();
+        }
+        false
+    }
+
     fn derive_htlc_key_pair(&self, _swap_unique_data: &[u8]) -> keys::KeyPair {
         key_pair_from_secret(self.key_pair.secret()).expect("valid key")
     }
 
-    fn validate_pubkey(&self, raw_pubkey: Option<&[u8]>) -> Result<Option<BytesJson>, String> {
+    fn negotiate_pubkey_validation(
+        &self,
+        raw_pubkey: Option<&[u8]>,
+    ) -> MmResult<Option<BytesJson>, NegotiatePubKeyValidationErr> {
         if let Some(key) = raw_pubkey {
             return match PublicKey::from_slice(key) {
                 Ok(key) => Ok(Some(key.serialize().as_slice().into())),
-                Err(e) => Err(ERRL!("!pubkey validation failed {}", e)),
+                Err(e) => MmError::err(NegotiatePubKeyValidationErr::InvalidPubKeyInput(e.to_string())),
             };
         }
         Ok(None)

@@ -15,10 +15,10 @@ use crate::rpc_command::init_scan_for_new_addresses::{self, InitScanAddressesRpc
                                                       ScanAddressesResponse};
 use crate::rpc_command::init_withdraw::{InitWithdrawCoin, WithdrawTaskHandle};
 use crate::utxo::utxo_builder::{UtxoArcBuilder, UtxoCoinBuilder};
-use crate::{CanRefundHtlc, CoinBalance, CoinWithDerivationMethod, GetWithdrawSenderAddress,
-            NegotiateSwapContractAddrErr, PrivKeyBuildPolicy, SearchForSwapTxSpendInput, SignatureResult, SwapOps,
-            TradePreimageValue, TransactionFut, TxMarshalingErr, ValidateAddressResult, ValidatePaymentInput,
-            VerificationResult, WithdrawFut, WithdrawSenderAddress};
+use crate::{CanRefundHtlc, CoinBalance, CoinWithDerivationMethod, GetWithdrawSenderAddress, MmCoinEnum,
+            NegotiatePubKeyValidationErr, NegotiateSwapContractAddrErr, PrivKeyBuildPolicy, SearchForSwapTxSpendInput,
+            SignatureResult, SwapOps, TradePreimageValue, TransactionFut, TxMarshalingErr, ValidateAddressResult,
+            ValidatePaymentInput, VerificationResult, WithdrawFut, WithdrawSenderAddress};
 use crypto::Bip44Chain;
 use futures::{FutureExt, TryFutureExt};
 use mm2_metrics::MetricsArc;
@@ -461,12 +461,24 @@ impl SwapOps for UtxoStandardCoin {
         Ok(None)
     }
 
+    fn negotiate_coin_contract_address(&self, other_coin: MmCoinEnum) -> bool {
+        if let MmCoinEnum::UtxoCoin(other) = other_coin {
+            return self.utxo_arc.conf.p2sh_addr_prefix == other.utxo_arc.conf.p2sh_addr_prefix
+                && self.utxo_arc.conf.pub_t_addr_prefix == other.utxo_arc.conf.pub_t_addr_prefix
+                && self.utxo_arc.conf.wif_prefix == other.utxo_arc.conf.wif_prefix;
+        }
+        false
+    }
+
     fn derive_htlc_key_pair(&self, swap_unique_data: &[u8]) -> KeyPair {
         utxo_common::derive_htlc_key_pair(self.as_ref(), swap_unique_data)
     }
 
-    fn validate_pubkey(&self, raw_pubkey: Option<&[u8]>) -> Result<Option<BytesJson>, String> {
-        utxo_common::validate_pubkey(raw_pubkey)
+    fn negotiate_pubkey_validation(
+        &self,
+        raw_pubkey: Option<&[u8]>,
+    ) -> MmResult<Option<BytesJson>, NegotiatePubKeyValidationErr> {
+        utxo_common::negotiate_pubkey_validation(raw_pubkey)
     }
 
     fn validate_secret_hash(&self, secret_hash: &[u8], secret: &[u8]) -> bool {

@@ -434,6 +434,12 @@ pub enum NegotiateSwapContractAddrErr {
     NoOtherAddrAndNoFallback,
 }
 
+#[derive(Debug, Display, Eq, PartialEq)]
+pub enum NegotiatePubKeyValidationErr {
+    #[display(fmt = "InvalidPubKeyInput: {:?}", _0)]
+    InvalidPubKeyInput(String),
+}
+
 #[derive(Clone, Debug)]
 pub struct ValidatePaymentInput {
     pub payment_tx: Vec<u8>,
@@ -589,15 +595,16 @@ pub trait SwapOps {
         other_side_address: Option<&[u8]>,
     ) -> Result<Option<BytesJson>, MmError<NegotiateSwapContractAddrErr>>;
 
+    fn negotiate_coin_contract_address(&self, other_coin: MmCoinEnum) -> bool;
+
     fn derive_htlc_key_pair(&self, swap_unique_data: &[u8]) -> KeyPair;
 
-    fn validate_pubkey(&self, raw_pubkey: Option<&[u8]>) -> Result<Option<BytesJson>, String>;
+    fn negotiate_pubkey_validation(
+        &self,
+        raw_pubkey: Option<&[u8]>,
+    ) -> MmResult<Option<BytesJson>, NegotiatePubKeyValidationErr>;
 
     fn validate_secret_hash(&self, secret_hash: &[u8], secret: &[u8]) -> bool;
-
-    // fn validate_contract_address(&self, secret_hash: &[u8], secret: &[u8]) -> bool;
-
-    // fn validate_htlc_pubkey(&self, raw_pubkey: Option<&[u8]>) -> MmResult<Option<BytesJson>, ValidateHtlcPubKey>;
 }
 
 /// Operations that coins have independently from the MarketMaker.
