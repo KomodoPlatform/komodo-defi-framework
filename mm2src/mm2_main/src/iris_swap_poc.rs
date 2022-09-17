@@ -4,7 +4,7 @@ use mm2_test_helpers::for_tests::enable_tendermint;
 #[test]
 #[ignore]
 // cargo test mm2::mm2_tests::iris_swap_poc::test -- --exact --ignored
-fn test() { block_on(trade_base_rel_iris(&[("IRIS-TEST", "IRIS-NIMDA")], 1, 2, 0.1)); }
+fn test() { block_on(trade_base_rel_iris(&[("IRIS-USDC-IBC", "IRIS-NIMDA")], 1, 2, 0.01)); }
 
 pub async fn trade_base_rel_iris(
     pairs: &[(&'static str, &'static str)],
@@ -93,9 +93,11 @@ pub async fn trade_base_rel_iris(
 
     dbg!(enable_tendermint(&mm_bob, "IRIS-TEST", &[], &["http://34.80.202.172:26657"]).await);
     dbg!(enable_tendermint(&mm_bob, "IRIS-NIMDA", &[], &["http://34.80.202.172:26657"]).await);
+    dbg!(enable_tendermint(&mm_bob, "IRIS-USDC-IBC", &[], &["http://34.80.202.172:26657"]).await);
 
     dbg!(enable_tendermint(&mm_alice, "IRIS-TEST", &[], &["http://34.80.202.172:26657"]).await);
     dbg!(enable_tendermint(&mm_alice, "IRIS-NIMDA", &[], &["http://34.80.202.172:26657"]).await);
+    dbg!(enable_tendermint(&mm_alice, "IRIS-USDC-IBC", &[], &["http://34.80.202.172:26657"]).await);
 
     for (base, rel) in pairs.iter() {
         log!("Issue bob {}/{} sell request", base, rel);
