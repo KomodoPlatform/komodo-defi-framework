@@ -5574,7 +5574,7 @@ fn orderbook_address(
             }
         },
         CoinProtocol::TENDERMINT(_) => MmError::err(OrderbookAddrErr::CoinIsNotSupported(coin.to_owned())),
-        CoinProtocol::TENDERMINTIBC(_) => MmError::err(OrderbookAddrErr::CoinIsNotSupported(coin.to_owned())),
+        CoinProtocol::TENDERMINTTOKEN(_) => MmError::err(OrderbookAddrErr::CoinIsNotSupported(coin.to_owned())),
         #[cfg(not(target_arch = "wasm32"))]
         CoinProtocol::LIGHTNING { .. } | CoinProtocol::SOLANA | CoinProtocol::SPLTOKEN { .. } => {
             MmError::err(OrderbookAddrErr::CoinIsNotSupported(coin.to_owned()))

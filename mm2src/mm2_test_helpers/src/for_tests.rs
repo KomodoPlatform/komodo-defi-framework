@@ -345,12 +345,11 @@ pub fn iris_testnet_conf() -> Json {
 pub fn iris_nimda_testnet_conf() -> Json {
     json!({"coin":"IRIS-NIMDA",
         "protocol":{
-            "type":"TENDERMINT",
+            "type":"TENDERMINTTOKEN",
             "protocol_data": {
+                "platform": "IRIS-TEST",
                 "decimals": 6,
                 "denom": "nim",
-                "account_prefix": "iaa",
-                "chain_id": "nyancat-9",
             },
         }
     })
@@ -360,7 +359,7 @@ pub fn usdc_ibc_iris_testnet_conf() -> Json {
     json!({
         "coin":"USDC-IBC-IRIS",
         "protocol":{
-            "type":"TENDERMINTIBC",
+            "type":"TENDERMINTTOKEN",
             "protocol_data": {
                 "platform": "IRIS-TEST",
                 "decimals": 6,
@@ -1772,7 +1771,7 @@ pub async fn enable_tendermint(mm: &MarketMakerIt, coin: &str, ibc_assets: &[&st
             "mmrpc": "2.0",
             "params": {
                 "ticker": coin,
-                "ibc_assets_params": ibc_requests,
+                "tokens_params": ibc_requests,
                 "rpc_urls": rpc_urls,
             }
         }))

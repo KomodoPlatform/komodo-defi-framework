@@ -1,11 +1,12 @@
 use super::*;
-use mm2_test_helpers::for_tests::{enable_tendermint, iris_nimda_testnet_conf, iris_testnet_conf, RICK_ELECTRUM_ADDRS};
+use mm2_test_helpers::for_tests::{enable_tendermint, iris_nimda_testnet_conf, iris_testnet_conf,
+                                  usdc_ibc_iris_testnet_conf, RICK_ELECTRUM_ADDRS};
 
 #[test]
 #[ignore]
 // cargo test mm2::mm2_tests::iris_swap_poc::test -- --exact --ignored
 fn test() {
-    let pairs = [("IRIS-USDC-IBC", "IRIS-NIMDA"), ("IRIS-NIMDA", "RICK")];
+    let pairs = [("USDC-IBC-IRIS", "IRIS-NIMDA"), ("IRIS-NIMDA", "RICK")];
     block_on(trade_base_rel_iris(&pairs, 1, 2, 0.01));
 }
 
@@ -18,18 +19,8 @@ pub async fn trade_base_rel_iris(
     let bob_passphrase = String::from("iris test seed");
     let alice_passphrase = String::from("iris test2 seed");
 
-    let coins = json! ([
-        {"coin":"IRIS-USDC-IBC",
-            "protocol":{
-                "type":"TENDERMINT",
-                "protocol_data": {
-                    "decimals": 6,
-                    "denom": "ibc/5C465997B4F582F602CD64E12031C6A6E18CAF1E6EDC9B5D808822DC0B5F850C",
-                    "account_prefix": "iaa",
-                    "chain_id": "nyancat-9",
-                },
-            }
-        },
+    let coins = json!([
+        usdc_ibc_iris_testnet_conf(),
         iris_nimda_testnet_conf(),
         iris_testnet_conf(),
         rick_conf(),
@@ -75,14 +66,20 @@ pub async fn trade_base_rel_iris(
     .await
     .unwrap();
 
-    dbg!(enable_tendermint(&mm_bob, "IRIS-TEST", &[], &["http://34.80.202.172:26657"]).await);
-    dbg!(enable_tendermint(&mm_bob, "IRIS-NIMDA", &[], &["http://34.80.202.172:26657"]).await);
-    dbg!(enable_tendermint(&mm_bob, "IRIS-USDC-IBC", &[], &["http://34.80.202.172:26657"]).await);
+    dbg!(
+        enable_tendermint(&mm_bob, "IRIS-TEST", &["IRIS-NIMDA", "USDC-IBC-IRIS"], &[
+            "http://34.80.202.172:26657"
+        ])
+        .await
+    );
     dbg!(enable_electrum(&mm_bob, "RICK", false, RICK_ELECTRUM_ADDRS).await);
 
-    dbg!(enable_tendermint(&mm_alice, "IRIS-TEST", &[], &["http://34.80.202.172:26657"]).await);
-    dbg!(enable_tendermint(&mm_alice, "IRIS-NIMDA", &[], &["http://34.80.202.172:26657"]).await);
-    dbg!(enable_tendermint(&mm_alice, "IRIS-USDC-IBC", &[], &["http://34.80.202.172:26657"]).await);
+    dbg!(
+        enable_tendermint(&mm_alice, "IRIS-TEST", &["IRIS-NIMDA", "USDC-IBC-IRIS"], &[
+            "http://34.80.202.172:26657"
+        ])
+        .await
+    );
     dbg!(enable_electrum(&mm_alice, "RICK", false, RICK_ELECTRUM_ADDRS).await);
 
     for (base, rel) in pairs.iter() {

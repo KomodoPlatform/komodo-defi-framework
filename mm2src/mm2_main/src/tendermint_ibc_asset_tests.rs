@@ -31,7 +31,7 @@ fn test_iris_with_usdc_activation_balance_orderbook() {
 
     let expected_usdc_balance: BigDecimal = "0.683142".parse().unwrap();
 
-    let actual_usdc_balance = response.result.ibc_assets_balances.get(USDC_IBC_TICKER).unwrap();
+    let actual_usdc_balance = response.result.tokens_balances.get(USDC_IBC_TICKER).unwrap();
     assert_eq!(actual_usdc_balance.spendable, expected_usdc_balance);
 
     let usdc_balance_response = block_on(my_balance(&mm, USDC_IBC_TICKER));

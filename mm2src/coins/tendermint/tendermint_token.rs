@@ -1,3 +1,4 @@
+/// Module containing implementation for Tendermint Tokens. They include native assets + IBC
 use super::TendermintCoin;
 use crate::{big_decimal_from_sat_unsigned, BalanceFut, BigDecimal, CoinBalance, FeeApproxStage, FoundSwapTxSpend,
             HistorySyncState, MarketCoinOps, MmCoin, NegotiateSwapContractAddrErr, RawTransactionFut,
@@ -19,7 +20,7 @@ use std::str::FromStr;
 
 #[allow(dead_code)]
 #[derive(Clone)]
-pub struct TendermintIbcAsset {
+pub struct TendermintToken {
     pub ticker: String,
     platform_coin: TendermintCoin,
     pub decimals: u8,
@@ -27,28 +28,28 @@ pub struct TendermintIbcAsset {
 }
 
 #[derive(Clone, Debug, Deserialize, Serialize)]
-pub struct IbcAssetProtocolInfo {
+pub struct TendermintTokenProtocolInfo {
     pub platform: String,
     pub decimals: u8,
     pub denom: String,
 }
 
 #[derive(Clone, Deserialize)]
-pub struct IbcAssetActivationParams {}
+pub struct TendermintTokenActivationParams {}
 
-pub enum IbcAssetInitError {
+pub enum TendermintTokenInitError {
     InvalidDenom(String),
 }
 
-impl TendermintIbcAsset {
+impl TendermintToken {
     pub fn new(
         ticker: String,
         platform_coin: TendermintCoin,
         decimals: u8,
         denom: String,
-    ) -> MmResult<Self, IbcAssetInitError> {
-        let denom = Denom::from_str(&denom).map_to_mm(|e| IbcAssetInitError::InvalidDenom(e.to_string()))?;
-        Ok(TendermintIbcAsset {
+    ) -> MmResult<Self, TendermintTokenInitError> {
+        let denom = Denom::from_str(&denom).map_to_mm(|e| TendermintTokenInitError::InvalidDenom(e.to_string()))?;
+        Ok(TendermintToken {
             ticker,
             platform_coin,
             decimals,
@@ -59,7 +60,7 @@ impl TendermintIbcAsset {
 
 #[async_trait]
 #[allow(unused_variables)]
-impl SwapOps for TendermintIbcAsset {
+impl SwapOps for TendermintToken {
     fn send_taker_fee(&self, fee_addr: &[u8], amount: BigDecimal, uuid: &[u8]) -> TransactionFut { todo!() }
 
     fn send_maker_payment(
@@ -170,30 +171,34 @@ impl SwapOps for TendermintIbcAsset {
         &self,
         input: SearchForSwapTxSpendInput<'_>,
     ) -> Result<Option<FoundSwapTxSpend>, String> {
-        todo!()
+        self.platform_coin.search_for_swap_tx_spend_my(input).await
     }
 
     async fn search_for_swap_tx_spend_other(
         &self,
         input: SearchForSwapTxSpendInput<'_>,
     ) -> Result<Option<FoundSwapTxSpend>, String> {
-        todo!()
+        self.platform_coin.search_for_swap_tx_spend_other(input).await
     }
 
-    fn extract_secret(&self, secret_hash: &[u8], spend_tx: &[u8]) -> Result<Vec<u8>, String> { todo!() }
+    fn extract_secret(&self, secret_hash: &[u8], spend_tx: &[u8]) -> Result<Vec<u8>, String> {
+        self.platform_coin.extract_secret(secret_hash, spend_tx)
+    }
 
     fn negotiate_swap_contract_addr(
         &self,
         other_side_address: Option<&[u8]>,
     ) -> Result<Option<BytesJson>, MmError<NegotiateSwapContractAddrErr>> {
-        todo!()
+        self.platform_coin.negotiate_swap_contract_addr(other_side_address)
     }
 
-    fn derive_htlc_key_pair(&self, swap_unique_data: &[u8]) -> KeyPair { todo!() }
+    fn derive_htlc_key_pair(&self, swap_unique_data: &[u8]) -> KeyPair {
+        self.platform_coin.derive_htlc_key_pair(swap_unique_data)
+    }
 }
 
 #[allow(unused_variables)]
-impl MarketCoinOps for TendermintIbcAsset {
+impl MarketCoinOps for TendermintToken {
     fn ticker(&self) -> &str { &self.ticker }
 
     fn my_address(&self) -> Result<String, String> { self.platform_coin.my_address() }
@@ -273,7 +278,7 @@ impl MarketCoinOps for TendermintIbcAsset {
 
 #[async_trait]
 #[allow(unused_variables)]
-impl MmCoin for TendermintIbcAsset {
+impl MmCoin for TendermintToken {
     fn is_asset_chain(&self) -> bool { false }
 
     fn withdraw(&self, req: WithdrawRequest) -> WithdrawFut { todo!() }

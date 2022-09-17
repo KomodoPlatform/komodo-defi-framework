@@ -5,8 +5,9 @@ use crate::platform_coin_with_tokens::{EnablePlatformCoinWithTokensError, GetPla
 use crate::prelude::*;
 use async_trait::async_trait;
 use coins::my_tx_history_v2::TxHistoryStorage;
-use coins::tendermint::{IbcAssetActivationParams, IbcAssetInitError, IbcAssetProtocolInfo, TendermintCoin,
-                        TendermintIbcAsset, TendermintInitError, TendermintInitErrorKind, TendermintProtocolInfo};
+use coins::tendermint::{TendermintCoin, TendermintInitError, TendermintInitErrorKind, TendermintProtocolInfo,
+                        TendermintToken, TendermintTokenActivationParams, TendermintTokenInitError,
+                        TendermintTokenProtocolInfo};
 use coins::{CoinBalance, CoinProtocol, MarketCoinOps};
 use common::Future01CompatExt;
 use futures::future::AbortHandle;
@@ -18,41 +19,41 @@ use serde::{Deserialize, Serialize};
 use serde_json::Value as Json;
 use std::collections::HashMap;
 
-impl TokenOf for TendermintIbcAsset {
+impl TokenOf for TendermintToken {
     type PlatformCoin = TendermintCoin;
 }
 
-impl RegisterTokenInfo<TendermintIbcAsset> for TendermintCoin {
-    fn register_token_info(&self, token: &TendermintIbcAsset) {
-        self.add_activated_ibc_asset_info(token.ticker.clone(), token.decimals, token.denom.clone())
+impl RegisterTokenInfo<TendermintToken> for TendermintCoin {
+    fn register_token_info(&self, token: &TendermintToken) {
+        self.add_activated_token_info(token.ticker.clone(), token.decimals, token.denom.clone())
     }
 }
 
 #[derive(Clone, Deserialize)]
 pub struct TendermintActivationParams {
     rpc_urls: Vec<String>,
-    pub ibc_assets_params: Vec<TokenActivationRequest<IbcAssetActivationParams>>,
+    pub tokens_params: Vec<TokenActivationRequest<TendermintTokenActivationParams>>,
 }
 
 impl TxHistory for TendermintActivationParams {
     fn tx_history(&self) -> bool { false }
 }
 
-struct IbcAssetInitializer {
+struct TendermintTokenInitializer {
     platform_coin: TendermintCoin,
 }
 
 #[async_trait]
-impl TokenInitializer for IbcAssetInitializer {
-    type Token = TendermintIbcAsset;
-    type TokenActivationRequest = IbcAssetActivationParams;
-    type TokenProtocol = IbcAssetProtocolInfo;
-    type InitTokensError = IbcAssetInitError;
+impl TokenInitializer for TendermintTokenInitializer {
+    type Token = TendermintToken;
+    type TokenActivationRequest = TendermintTokenActivationParams;
+    type TokenProtocol = TendermintTokenProtocolInfo;
+    type InitTokensError = TendermintTokenInitError;
 
     fn tokens_requests_from_platform_request(
         platform_request: &TendermintActivationParams,
     ) -> Vec<TokenActivationRequest<Self::TokenActivationRequest>> {
-        platform_request.ibc_assets_params.clone()
+        platform_request.tokens_params.clone()
     }
 
     async fn enable_tokens(
@@ -62,7 +63,7 @@ impl TokenInitializer for IbcAssetInitializer {
         params
             .into_iter()
             .map(|param| {
-                TendermintIbcAsset::new(
+                TendermintToken::new(
                     param.ticker,
                     self.platform_coin.clone(),
                     param.protocol.decimals,
@@ -84,19 +85,19 @@ impl TryFromCoinProtocol for TendermintProtocolInfo {
     }
 }
 
-impl TryFromCoinProtocol for IbcAssetProtocolInfo {
+impl TryFromCoinProtocol for TendermintTokenProtocolInfo {
     fn try_from_coin_protocol(proto: CoinProtocol) -> Result<Self, MmError<CoinProtocol>> {
         match proto {
-            CoinProtocol::TENDERMINTIBC(proto) => Ok(proto),
+            CoinProtocol::TENDERMINTTOKEN(proto) => Ok(proto),
             other => MmError::err(other),
         }
     }
 }
 
-impl From<IbcAssetInitError> for InitTokensAsMmCoinsError {
-    fn from(err: IbcAssetInitError) -> Self {
+impl From<TendermintTokenInitError> for InitTokensAsMmCoinsError {
+    fn from(err: TendermintTokenInitError) -> Self {
         match err {
-            IbcAssetInitError::InvalidDenom(error) => InitTokensAsMmCoinsError::TokenProtocolParseError {
+            TendermintTokenInitError::InvalidDenom(error) => InitTokensAsMmCoinsError::TokenProtocolParseError {
                 ticker: "".into(),
                 error,
             },
@@ -110,7 +111,7 @@ pub struct TendermintActivationResult {
     address: String,
     current_block: u64,
     balance: CoinBalance,
-    ibc_assets_balances: HashMap<String, CoinBalance>,
+    tokens_balances: HashMap<String, CoinBalance>,
 }
 
 impl CurrentBlock for TendermintActivationResult {
@@ -152,7 +153,7 @@ impl PlatformWithTokensActivationOps for TendermintCoin {
     fn token_initializers(
         &self,
     ) -> Vec<Box<dyn TokenAsMmCoinInitializer<PlatformCoin = Self, ActivationRequest = Self::ActivationRequest>>> {
-        vec![Box::new(IbcAssetInitializer {
+        vec![Box::new(TendermintTokenInitializer {
             platform_coin: self.clone(),
         })]
     }
@@ -175,8 +176,8 @@ impl PlatformWithTokensActivationOps for TendermintCoin {
                 spendable: balances.platform_balance,
                 unspendable: BigDecimal::default(),
             },
-            ibc_assets_balances: balances
-                .ibc_assets_balances
+            tokens_balances: balances
+                .tokens_balances
                 .into_iter()
                 .map(|(ticker, balance)| {
                     (ticker, CoinBalance {

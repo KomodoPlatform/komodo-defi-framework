@@ -66,7 +66,7 @@ pub struct TendermintProtocolInfo {
 }
 
 #[derive(Clone)]
-pub struct ActivatedIbcAssetInfo {
+pub struct ActivatedTokenInfo {
     decimals: u8,
     denom: Denom,
 }
@@ -82,7 +82,7 @@ pub struct TendermintCoinImpl {
     denom: Denom,
     chain_id: ChainId,
     sequence_lock: AsyncMutex<()>,
-    ibc_assets_info: Mutex<HashMap<String, ActivatedIbcAssetInfo>>,
+    tokens_info: Mutex<HashMap<String, ActivatedTokenInfo>>,
 }
 
 #[derive(Clone)]
@@ -200,7 +200,7 @@ fn upper_hex(bytes: &[u8]) -> String {
 
 pub struct AllBalancesResult {
     pub platform_balance: BigDecimal,
-    pub ibc_assets_balances: HashMap<String, BigDecimal>,
+    pub tokens_balances: HashMap<String, BigDecimal>,
 }
 
 impl TendermintCoin {
@@ -249,7 +249,7 @@ impl TendermintCoin {
             denom,
             chain_id,
             sequence_lock: AsyncMutex::new(()),
-            ibc_assets_info: Mutex::new(HashMap::new()),
+            tokens_info: Mutex::new(HashMap::new()),
         })))
     }
 
@@ -289,16 +289,16 @@ impl TendermintCoin {
     pub async fn all_balances(&self) -> MmResult<AllBalancesResult, TendermintCoinRpcError> {
         let platform_balance_denom = self.balance_for_denom(self.denom.to_string()).await?;
         let platform_balance = big_decimal_from_sat_unsigned(platform_balance_denom, self.decimals);
-        let ibc_assets_info = self.ibc_assets_info.lock().clone();
+        let ibc_assets_info = self.tokens_info.lock().clone();
 
         let mut result = AllBalancesResult {
             platform_balance,
-            ibc_assets_balances: HashMap::new(),
+            tokens_balances: HashMap::new(),
         };
         for (ticker, info) in ibc_assets_info {
             let balance_denom = self.balance_for_denom(info.denom.to_string()).await?;
             let balance_decimal = big_decimal_from_sat_unsigned(balance_denom, info.decimals);
-            result.ibc_assets_balances.insert(ticker, balance_decimal);
+            result.tokens_balances.insert(ticker, balance_decimal);
         }
 
         Ok(result)
@@ -415,10 +415,10 @@ impl TendermintCoin {
         sign_doc.sign(&signkey)
     }
 
-    pub fn add_activated_ibc_asset_info(&self, ticker: String, decimals: u8, denom: Denom) {
-        self.ibc_assets_info
+    pub fn add_activated_token_info(&self, ticker: String, decimals: u8, denom: Denom) {
+        self.tokens_info
             .lock()
-            .insert(ticker, ActivatedIbcAssetInfo { decimals, denom });
+            .insert(ticker, ActivatedTokenInfo { decimals, denom });
     }
 }
 

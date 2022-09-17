@@ -208,7 +208,7 @@ use rpc_command::{init_account_balance::{AccountBalanceTaskManager, AccountBalan
                   init_withdraw::{WithdrawTaskManager, WithdrawTaskManagerShared}};
 
 pub mod tendermint;
-use tendermint::{CosmosTransaction, TendermintCoin, TendermintFeeDetails, TendermintIbcAsset, TendermintProtocolInfo};
+use tendermint::{CosmosTransaction, TendermintCoin, TendermintFeeDetails, TendermintProtocolInfo, TendermintToken};
 
 #[doc(hidden)]
 #[allow(unused_variables)]
@@ -239,7 +239,7 @@ use utxo::UtxoActivationParams;
 use utxo::{BlockchainNetwork, GenerateTxError, UtxoFeeDetails, UtxoTx};
 
 #[cfg(not(target_arch = "wasm32"))] pub mod z_coin;
-use crate::tendermint::IbcAssetProtocolInfo;
+use crate::tendermint::TendermintTokenProtocolInfo;
 #[cfg(not(target_arch = "wasm32"))] use z_coin::ZCoin;
 
 pub type BalanceResult<T> = Result<T, MmError<BalanceError>>;
@@ -1774,7 +1774,7 @@ pub enum MmCoinEnum {
     Bch(BchCoin),
     SlpToken(SlpToken),
     Tendermint(TendermintCoin),
-    TendermintIbc(TendermintIbcAsset),
+    TendermintToken(TendermintToken),
     #[cfg(all(not(target_os = "ios"), not(target_os = "android"), not(target_arch = "wasm32")))]
     SolanaCoin(SolanaCoin),
     #[cfg(all(not(target_os = "ios"), not(target_os = "android"), not(target_arch = "wasm32")))]
@@ -1826,8 +1826,8 @@ impl From<TendermintCoin> for MmCoinEnum {
     fn from(c: TendermintCoin) -> Self { MmCoinEnum::Tendermint(c) }
 }
 
-impl From<TendermintIbcAsset> for MmCoinEnum {
-    fn from(c: TendermintIbcAsset) -> Self { MmCoinEnum::TendermintIbc(c) }
+impl From<TendermintToken> for MmCoinEnum {
+    fn from(c: TendermintToken) -> Self { MmCoinEnum::TendermintToken(c) }
 }
 
 #[cfg(not(target_arch = "wasm32"))]
@@ -1852,7 +1852,7 @@ impl Deref for MmCoinEnum {
             MmCoinEnum::Bch(ref c) => c,
             MmCoinEnum::SlpToken(ref c) => c,
             MmCoinEnum::Tendermint(ref c) => c,
-            MmCoinEnum::TendermintIbc(ref c) => c,
+            MmCoinEnum::TendermintToken(ref c) => c,
             #[cfg(not(target_arch = "wasm32"))]
             MmCoinEnum::LightningCoin(ref c) => c,
             #[cfg(not(target_arch = "wasm32"))]
@@ -2092,7 +2092,7 @@ pub enum CoinProtocol {
         slp_prefix: String,
     },
     TENDERMINT(TendermintProtocolInfo),
-    TENDERMINTIBC(IbcAssetProtocolInfo),
+    TENDERMINTTOKEN(TendermintTokenProtocolInfo),
     #[cfg(not(target_arch = "wasm32"))]
     LIGHTNING {
         platform: String,
@@ -2352,7 +2352,7 @@ pub async fn lp_coininit(ctx: &MmArc, ticker: &str, req: &Json) -> Result<MmCoin
             token.into()
         },
         CoinProtocol::TENDERMINT { .. } => return ERR!("TENDERMINT protocol is not supported by lp_coininit"),
-        CoinProtocol::TENDERMINTIBC(_) => return ERR!("TENDERMINTIBC protocol is not supported by lp_coininit"),
+        CoinProtocol::TENDERMINTTOKEN(_) => return ERR!("TENDERMINTTOKEN protocol is not supported by lp_coininit"),
         #[cfg(not(target_arch = "wasm32"))]
         CoinProtocol::ZHTLC { .. } => return ERR!("ZHTLC protocol is not supported by lp_coininit"),
         #[cfg(not(target_arch = "wasm32"))]
@@ -2917,7 +2917,7 @@ pub fn address_by_coin_conf_and_pubkey_str(
         CoinProtocol::TENDERMINT(protocol) => tendermint::account_id_from_pubkey_hex(&protocol.account_prefix, pubkey)
             .map(|id| id.to_string())
             .map_err(|e| e.to_string()),
-        CoinProtocol::TENDERMINTIBC(proto) => {
+        CoinProtocol::TENDERMINTTOKEN(proto) => {
             let platform_conf = coin_conf(ctx, &proto.platform);
             if platform_conf.is_null() {
                 return ERR!("platform {} conf is null", proto.platform);
