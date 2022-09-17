@@ -4,8 +4,8 @@ use crate::{big_decimal_from_sat_unsigned, BalanceFut, BigDecimal, CoinBalance, 
             HistorySyncState, MarketCoinOps, MmCoin, NegotiateSwapContractAddrErr, RawTransactionFut,
             RawTransactionRequest, SearchForSwapTxSpendInput, SignatureResult, SwapOps, TradeFee, TradePreimageFut,
             TradePreimageResult, TradePreimageValue, TransactionEnum, TransactionErr, TransactionFut, TxMarshalingErr,
-            UnexpectedDerivationMethod, ValidateAddressResult, ValidatePaymentInput, VerificationResult, WithdrawFut,
-            WithdrawRequest};
+            UnexpectedDerivationMethod, ValidateAddressResult, ValidatePaymentInput, VerificationResult,
+            WithdrawError, WithdrawFut, WithdrawRequest};
 use async_trait::async_trait;
 use cosmrs::Denom;
 use futures::{FutureExt, TryFutureExt};
@@ -325,7 +325,11 @@ impl MarketCoinOps for TendermintToken {
 impl MmCoin for TendermintToken {
     fn is_asset_chain(&self) -> bool { false }
 
-    fn withdraw(&self, req: WithdrawRequest) -> WithdrawFut { todo!() }
+    fn withdraw(&self, req: WithdrawRequest) -> WithdrawFut {
+        Box::new(futures01::future::err(WithdrawError::InternalError(
+            "Not implemented".into(),
+        )))
+    }
 
     fn get_raw_transaction(&self, req: RawTransactionRequest) -> RawTransactionFut {
         self.platform_coin.get_raw_transaction(req)
