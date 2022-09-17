@@ -13,7 +13,7 @@ use crate::{big_decimal_from_sat_unsigned, BalanceError, BalanceFut, BigDecimal,
             UnexpectedDerivationMethod, ValidateAddressResult, ValidatePaymentInput, VerificationResult,
             WithdrawError, WithdrawFut, WithdrawRequest};
 use async_trait::async_trait;
-use bitcrypto::{dhash160, dhash256, sha256};
+use bitcrypto::{dhash160, sha256};
 use common::executor::Timer;
 use common::{get_utc_timestamp, Future01CompatExt};
 use cosmrs::bank::MsgSend;
@@ -25,7 +25,7 @@ use cosmrs::tendermint::abci::Path as AbciPath;
 use cosmrs::tendermint::chain::Id as ChainId;
 use cosmrs::tx::{self, Fee, Msg, Raw, SignDoc, SignerInfo};
 use cosmrs::{AccountId, Any, Coin, Denom, ErrorReport};
-use crypto::privkey::{key_pair_from_secret, secp_privkey_from_hash};
+use crypto::privkey::key_pair_from_secret;
 use derive_more::Display;
 use futures::lock::Mutex as AsyncMutex;
 use futures::{FutureExt, TryFutureExt};
@@ -113,12 +113,12 @@ pub enum TendermintInitErrorKind {
 
 #[derive(Display, Debug)]
 pub enum TendermintCoinRpcError {
-    Prost(prost::DecodeError),
+    Prost(DecodeError),
     InvalidResponse(String),
     PerformError(String),
 }
 
-impl From<prost::DecodeError> for TendermintCoinRpcError {
+impl From<DecodeError> for TendermintCoinRpcError {
     fn from(err: DecodeError) -> Self { TendermintCoinRpcError::Prost(err) }
 }
 
@@ -304,13 +304,12 @@ impl TendermintCoin {
         Ok(result)
     }
 
-    #[allow(dead_code)]
     fn gen_create_htlc_tx(
         &self,
         base_denom: Denom,
         to: &AccountId,
         amount: cosmrs::Decimal,
-        secret: &[u8],
+        secret_hash: &[u8],
         time_lock: u64,
     ) -> MmResult<IrisHtlc, TxMarshalingErr> {
         let amount = vec![Coin {
@@ -319,13 +318,6 @@ impl TendermintCoin {
         }];
 
         let timestamp = 0_u64;
-
-        let mut sec = vec![];
-        sec.extend_from_slice(secret);
-        if sec.len() == 20 {
-            sec.extend_from_slice(&[0; 12]);
-        }
-        let secret = sec;
 
         // Needs to be sorted if cointains multiple coins
         // amount.sort();
@@ -342,7 +334,7 @@ impl TendermintCoin {
             .join(",");
 
         let mut htlc_id = vec![];
-        htlc_id.extend_from_slice(sha256(&secret).as_slice());
+        htlc_id.extend_from_slice(secret_hash);
         htlc_id.extend_from_slice(&self.account_id.to_bytes());
         htlc_id.extend_from_slice(&to.to_bytes());
         htlc_id.extend_from_slice(coins_string.as_bytes());
@@ -355,7 +347,7 @@ impl TendermintCoin {
             receiver_on_other_chain: "".to_string(),
             sender_on_other_chain: "".to_string(),
             amount,
-            hash_lock: sha256(&secret).to_string(),
+            hash_lock: hex::encode(secret_hash),
             timestamp,
             time_lock,
             transfer: false,
@@ -379,7 +371,6 @@ impl TendermintCoin {
         })
     }
 
-    #[allow(dead_code)]
     fn gen_claim_htlc_tx(
         &self,
         base_denom: Denom,
@@ -853,7 +844,7 @@ impl SwapOps for TendermintCoin {
         let to = AccountId::new("iaa", pubkey_hash.as_slice()).unwrap();
 
         let base_denom: Denom = "unyan".parse().unwrap();
-        let amount_as_u64: u64 = (amount.to_f64().unwrap() * 1000000_f64) as u64;
+        let amount_as_u64 = try_tx_fus!(sat_from_big_decimal(&amount, self.decimals));
         let amount = cosmrs::Decimal::from(amount_as_u64);
 
         let time_lock = time_lock as i64 - get_utc_timestamp();
@@ -902,7 +893,7 @@ impl SwapOps for TendermintCoin {
         let to = AccountId::new("iaa", pubkey_hash.as_slice()).unwrap();
 
         let base_denom: Denom = "unyan".parse().unwrap();
-        let amount_as_u64: u64 = (amount.to_f64().unwrap() * 1000000_f64) as u64;
+        let amount_as_u64 = try_tx_fus!(sat_from_big_decimal(&amount, self.decimals));
         let amount = cosmrs::Decimal::from(amount_as_u64);
 
         let time_lock = time_lock as i64 - get_utc_timestamp();
@@ -953,20 +944,7 @@ impl SwapOps for TendermintCoin {
             prost::Message::decode(msg.value.as_slice()).unwrap();
         let htlc = MsgCreateHtlc::try_from(htlc_proto).unwrap();
 
-        // TODO
-        // Refactor will be needed.
-        let secret_hash = dhash160(secret).to_vec();
-        let mut sec = vec![];
-        sec.extend_from_slice(&secret_hash);
-        if sec.len() == 20 {
-            sec.extend_from_slice(&[0; 12]);
-        }
-        let secret = sec.as_slice();
-
-        let mut hash_lock_hash = vec![];
-        hash_lock_hash.extend_from_slice(secret);
-        // hash_lock_hash.extend_from_slice(&htlc.timestamp.to_be_bytes());
-        drop_mutability!(hash_lock_hash);
+        let hash_lock_hash = sha256(secret);
 
         let mut amount = htlc.amount.clone();
         amount.sort();
@@ -979,7 +957,7 @@ impl SwapOps for TendermintCoin {
             .join(",");
 
         let mut htlc_id = vec![];
-        htlc_id.extend_from_slice(sha256(&hash_lock_hash).as_slice());
+        htlc_id.extend_from_slice(hash_lock_hash.as_slice());
         htlc_id.extend_from_slice(&htlc.sender.to_bytes());
         htlc_id.extend_from_slice(&htlc.to.to_bytes());
         htlc_id.extend_from_slice(coins_string.as_bytes());
@@ -1034,10 +1012,7 @@ impl SwapOps for TendermintCoin {
             prost::Message::decode(msg.value.as_slice()).unwrap();
         let htlc = MsgCreateHtlc::try_from(htlc_proto).unwrap();
 
-        let mut hash_lock_hash = vec![];
-        hash_lock_hash.extend_from_slice(secret);
-        // hash_lock_hash.extend_from_slice(&htlc.timestamp.to_be_bytes());
-        drop_mutability!(hash_lock_hash);
+        let hash_lock_hash = sha256(secret);
 
         let mut amount = htlc.amount.clone();
         amount.sort();
@@ -1050,7 +1025,7 @@ impl SwapOps for TendermintCoin {
             .join(",");
 
         let mut htlc_id = vec![];
-        htlc_id.extend_from_slice(sha256(&hash_lock_hash).as_slice());
+        htlc_id.extend_from_slice(hash_lock_hash.as_slice());
         htlc_id.extend_from_slice(&htlc.sender.to_bytes());
         htlc_id.extend_from_slice(&htlc.to.to_bytes());
         htlc_id.extend_from_slice(coins_string.as_bytes());
@@ -1172,12 +1147,7 @@ impl SwapOps for TendermintCoin {
         let msg = tx.body.messages.first().unwrap();
         let htlc_proto: crate::tendermint::htlc_proto::ClaimHtlcProtoRep =
             prost::Message::decode(msg.value.as_slice()).unwrap();
-        let htlc = MsgClaimHtlc::try_from(htlc_proto).unwrap();
-
-        // TODO
-        // This is highly risky implementation.
-        // Only allowed for the p.o.c demo. Must be refactored after.
-        Ok(hex::decode(htlc.secret).unwrap())
+        Ok(hex::decode(htlc_proto.secret).unwrap())
     }
 
     fn negotiate_swap_contract_addr(
@@ -1188,13 +1158,7 @@ impl SwapOps for TendermintCoin {
     }
 
     fn derive_htlc_key_pair(&self, swap_unique_data: &[u8]) -> KeyPair {
-        let signkey = SigningKey::from_bytes(&self.priv_key).expect("valid missing");
-
-        let message = keys::Message::from(dhash256(swap_unique_data).take());
-        let signature = signkey.sign(&message.to_vec()).expect("message signing failed");
-
-        let key = secp_privkey_from_hash(dhash256(&signature.to_vec()));
-        key_pair_from_secret(key.as_slice()).expect("valid privkey")
+        key_pair_from_secret(&self.priv_key).expect("valid priv key")
     }
 }
 
@@ -1265,13 +1229,13 @@ mod tendermint_coin_tests {
             .unwrap();
 
         let current_block_fut = coin.current_block().compat();
-        let current_block = common::block_on(async { current_block_fut.await.unwrap() });
+        let current_block = block_on(async { current_block_fut.await.unwrap() });
         let timeout_height = current_block + TIMEOUT_HEIGHT_DELTA;
 
         let account_info_fut = coin.my_account_info();
-        let account_info = common::block_on(async { account_info_fut.await.unwrap() });
+        let account_info = block_on(async { account_info_fut.await.unwrap() });
 
-        let raw_tx = common::block_on(async {
+        let raw_tx = block_on(async {
             coin.any_to_signed_raw_tx(
                 account_info.clone(),
                 create_htlc_tx.msg_payload.clone(),
@@ -1282,7 +1246,7 @@ mod tendermint_coin_tests {
         });
         let tx_bytes = raw_tx.to_bytes().unwrap();
         let send_tx_fut = coin.send_raw_tx_bytes(&tx_bytes).compat();
-        common::block_on(async {
+        block_on(async {
             send_tx_fut.await.unwrap();
         });
         // >> END HTLC CREATION
@@ -1297,9 +1261,9 @@ mod tendermint_coin_tests {
         let timeout_height = current_block + TIMEOUT_HEIGHT_DELTA;
 
         let account_info_fut = coin.my_account_info();
-        let account_info = common::block_on(async { account_info_fut.await.unwrap() });
+        let account_info = block_on(async { account_info_fut.await.unwrap() });
 
-        let raw_tx = common::block_on(async {
+        let raw_tx = block_on(async {
             coin.any_to_signed_raw_tx(
                 account_info,
                 claim_htlc_tx.msg_payload,
@@ -1311,7 +1275,7 @@ mod tendermint_coin_tests {
 
         let tx_bytes = raw_tx.to_bytes().unwrap();
         let send_tx_fut = coin.send_raw_tx_bytes(&tx_bytes).compat();
-        common::block_on(async {
+        block_on(async {
             send_tx_fut.await.unwrap();
         });
         println!("Claim HTLC tx hash {}", upper_hex(sha256(&tx_bytes).as_slice()));
@@ -1330,7 +1294,7 @@ mod tendermint_coin_tests {
 
         let priv_key = &*ctx.secp256k1_key_pair().private().secret;
 
-        let coin = common::block_on(TendermintCoin::init(
+        let coin = block_on(TendermintCoin::init(
             "USDC-IBC".to_string(),
             protocol_conf,
             rpc_urls,
@@ -1378,7 +1342,7 @@ mod tendermint_coin_tests {
 
         let priv_key = &*ctx.secp256k1_key_pair().private().secret;
 
-        let coin = common::block_on(TendermintCoin::init(
+        let coin = block_on(TendermintCoin::init(
             "USDC-IBC".to_string(),
             protocol_conf,
             rpc_urls,

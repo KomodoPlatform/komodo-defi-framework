@@ -81,6 +81,7 @@ use std::str::FromStr;
 use std::sync::{Arc, Mutex, Weak};
 use uuid::Uuid;
 
+use bitcrypto::{dhash160, sha256};
 #[cfg(feature = "custom-swap-locktime")]
 use std::sync::atomic::{AtomicU64, Ordering};
 
@@ -1227,6 +1228,26 @@ pub async fn active_swaps_rpc(ctx: MmArc, req: Json) -> Result<Response<Vec<u8>>
     let result = ActiveSwapsRes { uuids, statuses };
     let res = try_s!(json::to_vec(&result));
     Ok(try_s!(Response::builder().body(res)))
+}
+
+enum SecretHashAlgo {
+    /// ripemd160(sha256(secret))
+    DHASH160,
+    /// sha256(secret)
+    SHA256,
+}
+
+impl Default for SecretHashAlgo {
+    fn default() -> Self { SecretHashAlgo::DHASH160 }
+}
+
+impl SecretHashAlgo {
+    fn hash_secret(&self, secret: &[u8]) -> Vec<u8> {
+        match self {
+            SecretHashAlgo::DHASH160 => dhash160(secret).take().into(),
+            SecretHashAlgo::SHA256 => sha256(secret).take().into(),
+        }
+    }
 }
 
 #[cfg(all(test, not(target_arch = "wasm32")))]

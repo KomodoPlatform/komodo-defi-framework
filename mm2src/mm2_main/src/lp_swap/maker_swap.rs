@@ -12,9 +12,8 @@ use crate::mm2::lp_dispatcher::{DispatcherContext, LpEvents};
 use crate::mm2::lp_network::subscribe_to_topic;
 use crate::mm2::lp_ordermatch::{MakerOrderBuilder, OrderConfirmationsSettings};
 use crate::mm2::lp_price::fetch_swap_coins_price;
-use crate::mm2::lp_swap::{broadcast_p2p_tx_msg, tx_helper_topic};
+use crate::mm2::lp_swap::{broadcast_p2p_tx_msg, tx_helper_topic, SecretHashAlgo};
 use crate::mm2::MM_VERSION;
-use bitcrypto::dhash160;
 use coins::{CanRefundHtlc, FeeApproxStage, FoundSwapTxSpend, MmCoinEnum, SearchForSwapTxSpendInput, TradeFee,
             TradePreimageValue, TransactionEnum, ValidatePaymentInput};
 use common::log::{debug, error, info, warn};
@@ -26,9 +25,9 @@ use mm2_core::mm_ctx::MmArc;
 use mm2_err_handle::prelude::*;
 use mm2_number::{BigDecimal, MmNumber};
 use parking_lot::Mutex as PaMutex;
-use primitives::hash::{H160, H256, H264};
+use primitives::hash::{H256, H264};
 use rand::Rng;
-use rpc::v1::types::{Bytes as BytesJson, H160 as H160Json, H256 as H256Json, H264 as H264Json};
+use rpc::v1::types::{Bytes as BytesJson, H256 as H256Json, H264 as H264Json};
 use std::any::TypeId;
 use std::path::PathBuf;
 use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
@@ -129,7 +128,7 @@ pub struct MakerSwapData {
     pub maker_coin: String,
     pub taker: H256Json,
     pub secret: H256Json,
-    pub secret_hash: Option<H160Json>,
+    pub secret_hash: Option<BytesJson>,
     pub my_persistent_pub: H264Json,
     pub lock_duration: u64,
     pub maker_amount: BigDecimal,
@@ -213,6 +212,7 @@ pub struct MakerSwap {
     /// Temporary privkey used to sign P2P messages when applicable
     p2p_privkey: Option<KeyPair>,
     secret: H256,
+    secret_hash_algo: SecretHashAlgo,
     #[cfg(test)]
     pub(super) fail_at: Option<FailAt>,
 }
@@ -228,12 +228,13 @@ impl MakerSwap {
     pub fn generate_secret() -> [u8; 32] { rand::thread_rng().gen() }
 
     #[inline]
-    fn secret_hash(&self) -> H160 {
+    fn secret_hash(&self) -> Vec<u8> {
         self.r()
             .data
             .secret_hash
-            .map(H160Json::into)
-            .unwrap_or_else(|| dhash160(self.secret.as_slice()))
+            .as_ref()
+            .map(|bytes| bytes.0.clone())
+            .unwrap_or_else(|| self.secret_hash_algo.hash_secret(self.secret.as_slice()))
     }
 
     #[inline]
@@ -362,6 +363,7 @@ impl MakerSwap {
             }),
             ctx,
             secret,
+            secret_hash_algo: SecretHashAlgo::SHA256,
             #[cfg(test)]
             fail_at: None,
         }
