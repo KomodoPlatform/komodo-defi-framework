@@ -146,6 +146,7 @@ impl UtxoRpcClientEnum {
         check_every: u64,
     ) -> Box<dyn Future<Item = (), Error = String> + Send> {
         let selfi = self.clone();
+        let mut retry_req_count = 10;
         let fut = async move {
             loop {
                 if now_ms() / 1000 > wait_until {
@@ -175,7 +176,16 @@ impl UtxoRpcClientEnum {
                     },
                     Err(e) => {
                         if e.get_inner().is_tx_not_found_error() {
-                            return ERR!("Tx {} is not on chain anymore", tx_hash);
+                            error!(
+                                "Error {} getting tx from chain, retrying in 10 seconds. Retry left: {}",
+                                e, retry_req_count
+                            );
+                            Timer::sleep(check_every as f64).await;
+                            if retry_req_count == 0 {
+                                return ERR!("Tx {} is not on chain anymore", tx_hash);
+                            }
+                            retry_req_count -= 1;
+                            continue;
                         };
 
                         if expiry_height > 0 {
