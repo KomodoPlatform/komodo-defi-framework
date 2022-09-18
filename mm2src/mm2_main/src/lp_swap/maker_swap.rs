@@ -613,7 +613,7 @@ impl MakerSwap {
             MakerSwapEvent::Negotiated(TakerNegotiationData {
                 taker_payment_locktime: taker_data.payment_locktime(),
                 // using default to avoid misuse of this field
-                // maker_coin_htlc_pubkey and taker_coin_htlc_pubkey must be used instead b
+                // maker_coin_htlc_pubkey and taker_coin_htlc_pubkey must be used instead
                 taker_pubkey: H264Json::default(),
                 maker_coin_swap_contract_addr,
                 taker_coin_swap_contract_addr,

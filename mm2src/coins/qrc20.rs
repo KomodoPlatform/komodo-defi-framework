@@ -977,7 +977,6 @@ impl SwapOps for Qrc20Coin {
         &self,
         other_side_address: Option<&[u8]>,
     ) -> Result<Option<BytesJson>, MmError<NegotiateSwapContractAddrErr>> {
-        // let f = self.contract_address;
         match other_side_address {
             Some(bytes) => {
                 if bytes.len() != 20 {

@@ -3554,6 +3554,12 @@ pub fn derive_htlc_key_pair(coin: &UtxoCoinFields, _swap_unique_data: &[u8]) -> 
     }
 }
 
+pub fn negotiate_coin_contract_address(coin: &UtxoCoinFields, other_coin: &UtxoCoinFields) -> bool {
+    coin.conf.p2sh_addr_prefix == other_coin.conf.p2sh_addr_prefix
+        && coin.conf.pub_t_addr_prefix == other_coin.conf.pub_t_addr_prefix
+        && coin.conf.wif_prefix == other_coin.conf.wif_prefix
+}
+
 pub fn negotiate_pubkey_validation(
     raw_pubkey: Option<&[u8]>,
 ) -> MmResult<Option<BytesJson>, NegotiatePubKeyValidationErr> {

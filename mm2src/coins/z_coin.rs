@@ -1366,9 +1366,7 @@ impl SwapOps for ZCoin {
 
     fn negotiate_coin_contract_address(&self, other_coin: MmCoinEnum) -> bool {
         if let MmCoinEnum::ZCoin(other) = other_coin {
-            return self.utxo_arc.conf.p2sh_addr_prefix == other.utxo_arc.conf.p2sh_addr_prefix
-                && self.utxo_arc.conf.pub_t_addr_prefix == other.utxo_arc.conf.pub_t_addr_prefix
-                && self.utxo_arc.conf.wif_prefix == other.utxo_arc.conf.wif_prefix;
+            utxo_common::negotiate_coin_contract_address(&self.utxo_arc, &other.utxo_arc);
         }
         false
     }
