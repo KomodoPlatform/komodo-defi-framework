@@ -580,7 +580,7 @@ impl SwapOps for SolanaCoin {
         unimplemented!()
     }
 
-    fn negotiate_coin_contract_address(&self, _other_coin: MmCoinEnum) -> bool { true }
+    fn negotiate_coin_contract_address(&self, _other_coin: MmCoinEnum) -> bool { unimplemented!() }
 
     fn derive_htlc_key_pair(&self, _swap_unique_data: &[u8]) -> KeyPair { todo!() }
 

@@ -750,7 +750,7 @@ impl SwapOps for TendermintCoin {
         todo!()
     }
 
-    fn negotiate_coin_contract_address(&self, other_coin: MmCoinEnum) -> bool { true }
+    fn negotiate_coin_contract_address(&self, other_coin: MmCoinEnum) -> bool { todo!() }
 
     fn derive_htlc_key_pair(&self, swap_unique_data: &[u8]) -> KeyPair { todo!() }
 
