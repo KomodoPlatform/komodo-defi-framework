@@ -1,7 +1,7 @@
 use super::*;
 use crate::coin_balance::{AddressBalanceStatus, HDAddressBalance, HDWalletBalanceOps};
 use crate::hd_pubkey::{ExtractExtendedPubkey, HDExtractPubkeyError, HDXPubExtractor};
-use crate::hd_wallet::{AccountUpdatingError, AddressDerivingError, HDAccountMut, HDAccountsMap,
+use crate::hd_wallet::{AccountUpdatingError, AddressDerivingResult, HDAccountMut, HDAccountsMap,
                        NewAccountCreatingError};
 use crate::hd_wallet_storage::{HDWalletCoinWithStorageOps, HDWalletStorageResult};
 use crate::rpc_command::init_withdraw::WithdrawTaskHandle;
@@ -103,7 +103,7 @@ pub fn derive_address<T: UtxoCommonOps>(
     hd_account: &UtxoHDAccount,
     chain: Bip44Chain,
     address_id: u32,
-) -> MmResult<HDAddress<Address, Public>, AddressDerivingError> {
+) -> AddressDerivingResult<HDAddress<Address, Public>> {
     let change_child = chain.to_child_number();
     let address_id_child = ChildNumber::from(address_id);
 

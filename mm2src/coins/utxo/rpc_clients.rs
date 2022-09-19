@@ -74,8 +74,8 @@ pub type AddressesByLabelResult = HashMap<String, AddressPurpose>;
 pub type JsonRpcPendingRequestsShared = Arc<AsyncMutex<JsonRpcPendingRequests>>;
 pub type JsonRpcPendingRequests = HashMap<JsonRpcId, async_oneshot::Sender<JsonRpcResponseEnum>>;
 pub type UnspentMap = HashMap<Address, Vec<UnspentInfo>>;
-pub type ElectrumTxHistory = Vec<ElectrumTxHistoryItem>;
 
+type ElectrumTxHistory = Vec<ElectrumTxHistoryItem>;
 type ElectrumScriptHash = String;
 type ScriptHashUnspents = Vec<ElectrumUnspent>;
 

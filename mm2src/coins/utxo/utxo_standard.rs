@@ -2,7 +2,7 @@ use super::*;
 use crate::coin_balance::{self, EnableCoinBalanceError, EnabledCoinBalanceParams, HDAccountBalance, HDAddressBalance,
                           HDWalletBalance, HDWalletBalanceOps};
 use crate::hd_pubkey::{ExtractExtendedPubkey, HDExtractPubkeyError, HDXPubExtractor};
-use crate::hd_wallet::{AccountUpdatingError, AddressDerivingError, HDAccountMut, NewAccountCreatingError};
+use crate::hd_wallet::{AccountUpdatingError, AddressDerivingResult, HDAccountMut, NewAccountCreatingError};
 use crate::hd_wallet_storage::HDWalletCoinWithStorageOps;
 use crate::my_tx_history_v2::{CoinWithTxHistoryV2, MyTxHistoryErrorV2, MyTxHistoryTarget, TxHistoryStorage};
 use crate::rpc_command::account_balance::{self, AccountBalanceParams, AccountBalanceRpcOps, HDAccountBalanceResponse};
@@ -717,7 +717,7 @@ impl HDWalletCoinOps for UtxoStandardCoin {
         hd_account: &Self::HDAccount,
         chain: Bip44Chain,
         address_id: u32,
-    ) -> MmResult<HDAddress<Self::Address, Self::Pubkey>, AddressDerivingError> {
+    ) -> AddressDerivingResult<HDAddress<Self::Address, Self::Pubkey>> {
         utxo_common::derive_address(self, hd_account, chain, address_id)
     }
 

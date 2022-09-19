@@ -115,6 +115,7 @@ where
     let hd_address = coin.derive_address(&hd_account, hd_address_id.chain, hd_address_id.address_id)?;
     Ok(GetTxHistoryFilters::for_address(hd_address.address.display_address()))
 }
+
 /// [`UtxoTxHistoryOps::my_addresses`] implementation.
 pub async fn my_addresses<Coin>(coin: &Coin) -> MmResult<HashSet<Address>, UtxoMyAddressesHistoryError>
 where
