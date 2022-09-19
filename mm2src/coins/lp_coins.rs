@@ -463,19 +463,6 @@ pub struct SearchForSwapTxSpendInput<'a> {
     pub swap_unique_data: &'a [u8],
 }
 
-#[derive(Debug, Display)]
-pub enum ValidateHtlcPubKey {
-    #[display(fmt = "InvalidOtherAddrLen, addr supplied {:?}", _0)]
-    InvalidOtherAddrLen(BytesJson),
-    #[display(fmt = "UnexpectedOtherAddr, addr supplied {:?}", _0)]
-    UnexpectedOtherAddr(BytesJson),
-    #[display(fmt = "InvalidAddrLen, addr supplied {:?}", _0)]
-    InvalidAddrLen(BytesJson),
-    #[display(fmt = "UnexpectedAddr, addr supplied {:?}", _0)]
-    UnexpectedAddr(BytesJson),
-    NoOtherAddrAndNoFallback,
-}
-
 /// Swap operations (mostly based on the Hash/Time locked transactions implemented by coin wallets).
 #[async_trait]
 pub trait SwapOps {
