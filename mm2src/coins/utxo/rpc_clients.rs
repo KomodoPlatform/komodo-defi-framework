@@ -182,7 +182,7 @@ impl UtxoRpcClientEnum {
                                 return ERR!(
                                     "Tx {} was not found on chain after {} tries, error: {}",
                                     tx_hash,
-                                    tx_not_found_retries,
+                                    TX_NOT_FOUND_RETRIES,
                                     e,
                                 );
                             }

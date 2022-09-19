@@ -4097,9 +4097,9 @@ fn test_for_non_existent_tx_hex_utxo_electrum() {
         .wait()
         .err()
         .unwrap();
-    assert!(
-        actual.contains("Tx d342ff9da528a2e262bddf2b6f9a27d1beb7aeb03f0fc8d9eac2987266447e44 is not on chain anymore")
-    );
+    assert!(actual.contains(
+        "Tx d342ff9da528a2e262bddf2b6f9a27d1beb7aeb03f0fc8d9eac2987266447e44 was not found on chain after 10 tries"
+    ));
 }
 
 #[test]
