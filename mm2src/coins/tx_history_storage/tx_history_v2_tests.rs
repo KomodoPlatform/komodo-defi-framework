@@ -1,10 +1,11 @@
 use crate::my_tx_history_v2::{GetHistoryResult, TxHistoryStorage};
-use crate::tx_history_storage::{GetTxHistoryFilters, TxHistoryStorageBuilder, WalletId};
+use crate::tx_history_storage::{FilteringAddresses, GetTxHistoryFilters, TxHistoryStorageBuilder, WalletId};
 use crate::{BytesJson, TransactionDetails};
 use common::PagingOptionsEnum;
 use mm2_test_helpers::for_tests::mm_ctx_with_custom_db;
 use serde_json as json;
 use std::collections::HashMap;
+use std::iter::FromIterator;
 use std::num::NonZeroUsize;
 
 const BCH_TX_HISTORY_STR: &str = include_str!("../for_tests/tBCH_tx_history_fixtures.json");
@@ -262,8 +263,28 @@ async fn test_unique_tx_hashes_num_impl() {
         .await
         .unwrap();
 
-    let tx_hashes_num = storage.unique_tx_hashes_num_in_history(&wallet_id).await.unwrap();
+    let for_addresses =
+        FilteringAddresses::from_iter(["bchtest:qzx0llpyp8gxxsmad25twksqnwd62xm3lsnnczzt66".to_string()]);
+    let tx_hashes_num = storage
+        .unique_tx_hashes_num_in_history(&wallet_id, for_addresses)
+        .await
+        .unwrap();
     assert_eq!(2, tx_hashes_num);
+
+    let for_addresses =
+        FilteringAddresses::from_iter(["bchtest:qz2nkwgfla42y60ctk35cye2jfpygs8p3c87hd35es".to_string()]);
+    let tx_hashes_num = storage
+        .unique_tx_hashes_num_in_history(&wallet_id, for_addresses)
+        .await
+        .unwrap();
+    assert_eq!(1, tx_hashes_num);
+
+    let for_addresses = FilteringAddresses::from_iter(["bchtest:unknown_address".to_string()]);
+    let tx_hashes_num = storage
+        .unique_tx_hashes_num_in_history(&wallet_id, for_addresses)
+        .await
+        .unwrap();
+    assert_eq!(0, tx_hashes_num);
 }
 
 async fn test_add_and_get_tx_from_cache_impl() {

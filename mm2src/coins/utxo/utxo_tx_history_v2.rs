@@ -2,7 +2,8 @@
 /// supported UTXO coin.
 use super::RequestTxHistoryResult;
 use crate::hd_wallet::AddressDerivingError;
-use crate::my_tx_history_v2::{CoinWithTxHistoryV2, TxHistoryStorage, TxHistoryStorageError};
+use crate::my_tx_history_v2::{CoinWithTxHistoryV2, DisplayAddress, TxHistoryStorage, TxHistoryStorageError};
+use crate::tx_history_storage::FilteringAddresses;
 use crate::utxo::bch::BchCoin;
 use crate::utxo::slp::ParseSlpScriptError;
 use crate::utxo::{utxo_common, AddrFromStrError, GetBlockHeaderError};
@@ -19,6 +20,7 @@ use mm2_metrics::MetricsArc;
 use mm2_number::BigDecimal;
 use rpc::v1::types::H256 as H256Json;
 use std::collections::{hash_map::Entry, HashMap, HashSet};
+use std::iter::FromIterator;
 use std::str::FromStr;
 
 #[derive(Debug, Display)]
@@ -287,8 +289,14 @@ where
             .await;
         match maybe_tx_ids {
             RequestTxHistoryResult::Ok(all_tx_ids_with_height) => {
-                // TODO specify `fetch_for_addresses`.
-                let in_storage = match ctx.storage.unique_tx_hashes_num_in_history(&wallet_id).await {
+                let filtering_addresses =
+                    FilteringAddresses::from_iter(fetch_for_addresses.iter().map(DisplayAddress::display_address));
+
+                let in_storage = match ctx
+                    .storage
+                    .unique_tx_hashes_num_in_history(&wallet_id, filtering_addresses)
+                    .await
+                {
                     Ok(num) => num,
                     Err(e) => return Self::change_state(Stopped::storage_error(e)),
                 };

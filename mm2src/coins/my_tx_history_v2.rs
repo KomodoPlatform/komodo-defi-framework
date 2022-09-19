@@ -1,5 +1,6 @@
 use crate::hd_wallet::{AddressDerivingError, InvalidBip44ChainError};
-use crate::tx_history_storage::{CreateTxHistoryStorageError, GetTxHistoryFilters, TxHistoryStorageBuilder, WalletId};
+use crate::tx_history_storage::{CreateTxHistoryStorageError, FilteringAddresses, GetTxHistoryFilters,
+                                TxHistoryStorageBuilder, WalletId};
 use crate::{lp_coinfind_or_err, BlockHeightAndTime, CoinFindError, HDAddressId, HistorySyncState, MmCoin, MmCoinEnum,
             Transaction, TransactionDetails, TransactionType, TxFeeDetails, UtxoRpcError};
 use async_trait::async_trait;
@@ -89,8 +90,11 @@ pub trait TxHistoryStorage: Send + Sync + 'static {
     async fn history_has_tx_hash(&self, wallet_id: &WalletId, tx_hash: &str) -> Result<bool, MmError<Self::Error>>;
 
     /// Returns the number of unique transaction hashes.
-    /// TODO take FilteringAddresses
-    async fn unique_tx_hashes_num_in_history(&self, wallet_id: &WalletId) -> Result<usize, MmError<Self::Error>>;
+    async fn unique_tx_hashes_num_in_history(
+        &self,
+        wallet_id: &WalletId,
+        for_addresses: FilteringAddresses,
+    ) -> Result<usize, MmError<Self::Error>>;
 
     /// Adds the given `tx_hex` transaction to the selected wallet's cache.
     async fn add_tx_to_cache(

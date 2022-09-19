@@ -183,9 +183,12 @@ impl TxHistoryStorage for IndexedDbTxHistoryStorage {
         Ok(count_txs > 0)
     }
 
-    /// TODO consider refactoring this method to return unique internal_id's instead of tx_hash,
-    /// since the method requests the whole TX history of the specified wallet.
-    async fn unique_tx_hashes_num_in_history(&self, wallet_id: &WalletId) -> Result<usize, MmError<Self::Error>> {
+    /// TODO consider refactoring this method to avoid fetching all transactions.
+    async fn unique_tx_hashes_num_in_history(
+        &self,
+        wallet_id: &WalletId,
+        for_addresses: FilteringAddresses,
+    ) -> Result<usize, MmError<Self::Error>> {
         let locked_db = self.lock_db().await?;
         let db_transaction = locked_db.get_inner().transaction().await?;
         let table = db_transaction.table::<TxHistoryTableV2>().await?;
@@ -196,12 +199,13 @@ impl TxHistoryStorage for IndexedDbTxHistoryStorage {
 
         // `IndexedDb` doesn't provide an elegant way to count records applying custom filters to index properties like `tx_hash`,
         // so currently fetch all records with `coin,hd_wallet_rmd160=wallet_id` and apply the `unique_by(|tx| tx.tx_hash)` to them.
-        Ok(table
+        let transactions = table
             .get_items_by_multi_index(index_keys)
             .await?
             .into_iter()
-            .unique_by(|(_item_id, tx)| tx.tx_hash.clone())
-            .count())
+            .unique_by(|(_item_id, tx)| tx.tx_hash.clone());
+
+        Ok(Self::take_according_to_filtering_addresses(transactions, for_addresses).len())
     }
 
     async fn add_tx_to_cache(

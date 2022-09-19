@@ -207,15 +207,6 @@ fn has_transactions_with_hash_sql(wallet_id: &WalletId) -> Result<String, MmErro
     Ok(sql)
 }
 
-fn unique_tx_hashes_num_sql(wallet_id: &WalletId) -> Result<String, MmError<SqlError>> {
-    let table_name = tx_history_table(wallet_id);
-    validate_table_name(&table_name)?;
-
-    let sql = format!("SELECT COUNT(DISTINCT tx_hash) FROM {};", table_name);
-
-    Ok(sql)
-}
-
 fn get_tx_hex_from_cache_sql(wallet_id: &WalletId) -> Result<String, MmError<SqlError>> {
     let table_name = tx_cache_table(wallet_id);
     validate_table_name(&table_name)?;
@@ -223,6 +214,47 @@ fn get_tx_hex_from_cache_sql(wallet_id: &WalletId) -> Result<String, MmError<Sql
     let sql = format!("SELECT tx_hex FROM {} WHERE tx_hash = ?1 LIMIT 1;", table_name);
 
     Ok(sql)
+}
+
+fn count_unique_tx_hashes_preimage<'a>(
+    connection: &'a Connection,
+    wallet_id: &WalletId,
+    for_addresses: FilteringAddresses,
+) -> Result<SqlQuery<'a>, MmError<SqlError>> {
+    /// The alias is needed so that the external query can access the results of the subquery.
+    /// Example:
+    ///   SUBQUERY: `SELECT h.tx_hash AS __TX_HASH_ALIAS FROM tx_history h JOIN tx_address a ON h.internal_id = a.internal_id WHERE a.address IN ('address_2', 'address_4') GROUP BY h.internal_id`
+    ///   EXTERNAL_QUERY: `SELECT COUNT(DISTINCT __TX_HASH_ALIAS) FROM (<SUBQUERY>);`
+    /// Here we can't use `h.tx_hash` in the external query because it doesn't know about the `tx_history h` table.
+    /// So we need to give the `h.tx_hash` an alias like `__TX_HASH_ALIAS`.
+    const TX_HASH_ALIAS: &str = "__TX_HASH_ALIAS";
+
+    let subquery = {
+        let mut sql_builder = SqlQuery::select_from_alias(connection, &tx_history_table(wallet_id), "tx_history")?;
+
+        // Query transactions that were sent from/to `for_addresses` addresses.
+        let tx_address_table_name = tx_address_table(wallet_id);
+
+        sql_builder
+            .join_alias(&tx_address_table_name, "tx_address")?
+            .on_join_eq("tx_history.internal_id", "tx_address.internal_id")?;
+
+        sql_builder
+            .and_where_in_params("tx_address.address", for_addresses)?
+            .group_by("tx_history.internal_id")?;
+
+        sql_builder.count_distinct("tx_history.tx_hash")?;
+
+        // Query `tx_hash` field and give it the `__TX_HASH_ALIAS` alias.
+        sql_builder.field_alias("tx_history.tx_hash", TX_HASH_ALIAS)?;
+
+        drop_mutability!(sql_builder);
+        sql_builder.subquery()
+    };
+
+    let mut external_query = SqlQuery::select_from_subquery(subquery)?;
+    external_query.count_distinct(TX_HASH_ALIAS)?;
+    Ok(external_query)
 }
 
 /// Creates an `SqlQuery` instance with the required `WHERE`, `ORDER`, `GROUP_BY` constraints.
@@ -524,12 +556,21 @@ impl TxHistoryStorage for SqliteTxHistoryStorage {
         .await
     }
 
-    async fn unique_tx_hashes_num_in_history(&self, wallet_id: &WalletId) -> Result<usize, MmError<Self::Error>> {
-        let sql = unique_tx_hashes_num_sql(wallet_id)?;
+    async fn unique_tx_hashes_num_in_history(
+        &self,
+        wallet_id: &WalletId,
+        for_addresses: FilteringAddresses,
+    ) -> Result<usize, MmError<Self::Error>> {
         let selfi = self.clone();
+        let wallet_id = wallet_id.clone();
+
         async_blocking(move || {
             let conn = selfi.0.lock().unwrap();
-            let count: u32 = conn.query_row(&sql, NO_PARAMS, |row| row.get(0))?;
+
+            let sql_query = count_unique_tx_hashes_preimage(&conn, &wallet_id, for_addresses)?;
+            let count: u32 = sql_query
+                .query_single_row(|row| row.get(0))?
+                .or_mm_err(|| SqlError::QueryReturnedNoRows)?;
             Ok(count as usize)
         })
         .await
