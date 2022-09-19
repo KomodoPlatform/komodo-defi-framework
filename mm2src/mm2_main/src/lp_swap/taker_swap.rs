@@ -1307,17 +1307,22 @@ impl TakerSwap {
                 &self.unique_swap_data()[..],
             );
 
-            // If the watcher message can not be sent, the swap still continues
-            if let Ok(preimage) = preimage_fut.compat().await {
-                let watcher_data = self.create_watcher_data(transaction.tx_hex(), preimage.tx_hex());
-                let swpmsg_watcher = SwapWatcherMsg::TakerSwapWatcherMsg(Box::new(watcher_data));
-                broadcast_swap_message(
-                    &self.ctx,
-                    watcher_topic(&self.r().data.taker_coin),
-                    swpmsg_watcher,
-                    &self.p2p_privkey,
-                );
-                swap_events.push(TakerSwapEvent::WatcherMessageSent(Some(preimage.tx_hex())))
+            match preimage_fut.compat().await {
+                Ok(preimage) => {
+                    let watcher_data = self.create_watcher_data(transaction.tx_hex(), preimage.tx_hex());
+                    let swpmsg_watcher = SwapWatcherMsg::TakerSwapWatcherMsg(Box::new(watcher_data));
+                    broadcast_swap_message(
+                        &self.ctx,
+                        watcher_topic(&self.r().data.taker_coin),
+                        swpmsg_watcher,
+                        &self.p2p_privkey,
+                    );
+                    swap_events.push(TakerSwapEvent::WatcherMessageSent(Some(preimage.tx_hex())))
+                },
+                Err(e) => error!(
+                    "The watcher message could not be sent, error creating the taker spends maker payment preimage: {}",
+                    e.get_plain_text_format()
+                ),
             }
         }
 
