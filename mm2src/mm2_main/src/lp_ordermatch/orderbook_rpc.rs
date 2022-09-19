@@ -1,6 +1,6 @@
 use super::{orderbook_address, subscribe_to_orderbook_topic, OrdermatchContext, RpcOrderbookEntry};
 use crate::mm2::lp_ordermatch::{addr_format_from_protocol_info, RpcOrderbookEntryV2};
-use coins::{address_by_coin_conf_and_pubkey_str, coin_conf, is_wallet_only_conf};
+use coins::{address_by_coin_conf_and_pubkey_str, coin_conf, is_wallet_only_conf, CoinProtocol};
 use common::log::warn;
 use common::{now_ms, HttpStatusCode};
 use crypto::CryptoCtx;
@@ -111,6 +111,22 @@ pub fn is_my_order(my_pub: &Option<String>, order_pubkey: &str) -> bool {
     my_pub.as_ref().map(|my| my == order_pubkey).unwrap_or(false)
 }
 
+async fn get_my_orders_pubkeys(ctx: &MmArc) -> Vec<String> {
+    let ordermatch_ctx = OrdermatchContext::from_ctx(ctx).expect("from_ctx failed");
+    let my_orders = ordermatch_ctx.maker_orders_ctx.lock().orders.clone();
+    let mut res = Vec::new();
+    for (_, order_mutex) in my_orders {
+        let order = order_mutex.lock().await;
+        if let Some(p2p_privkey) = order.p2p_privkey {
+            drop(order);
+            let pubsecp = hex::encode(p2p_privkey.public_slice());
+            res.push(pubsecp)
+        }
+    }
+    drop_mutability!(res);
+    res
+}
+
 pub async fn orderbook_rpc(ctx: MmArc, req: Json) -> Result<Response<Vec<u8>>, String> {
     let req: OrderbookReq = try_s!(json::from_value(req));
     if req.base == req.rel {
@@ -137,6 +153,9 @@ pub async fn orderbook_rpc(ctx: MmArc, req: Json) -> Result<Response<Vec<u8>>, S
     if base_ticker == rel_ticker && base_coin_conf["protocol"] == rel_coin_conf["protocol"] {
         return ERR!("Base and rel coins have the same orderbook tickers and protocols.");
     }
+    let base_coin_protocol: CoinProtocol = try_s!(json::from_value(base_coin_conf["protocol"].clone()));
+    // have to create before protocol matching, because orderbook is not `Send`
+    let my_orders_pubkeys = get_my_orders_pubkeys(&ctx).await;
 
     try_s!(subscribe_to_orderbook_topic(&ctx, &base_ticker, &rel_ticker, request_orderbook).await);
     let orderbook = ordermatch_ctx.orderbook.lock();
@@ -162,7 +181,20 @@ pub async fn orderbook_rpc(ctx: MmArc, req: Json) -> Result<Response<Vec<u8>>, S
                     &ask.pubkey,
                     address_format,
                 ));
-                let is_mine = is_my_order(&my_pubsecp, &ask.pubkey);
+                // todo remove match from for loop
+                let is_mine = match base_coin_protocol {
+                    CoinProtocol::ZHTLC { .. } => {
+                        let mut is_mine = false;
+                        for pubkey in &my_orders_pubkeys {
+                            if pubkey == &ask.pubkey {
+                                is_mine = true;
+                            }
+                        }
+                        drop_mutability!(is_mine);
+                        is_mine
+                    },
+                    _ => is_my_order(&my_pubsecp, &ask.pubkey),
+                };
                 orderbook_entries.push(ask.as_rpc_entry_ask(address, is_mine));
             }
             orderbook_entries
@@ -189,7 +221,19 @@ pub async fn orderbook_rpc(ctx: MmArc, req: Json) -> Result<Response<Vec<u8>>, S
                     &bid.pubkey,
                     address_format,
                 ));
-                let is_mine = is_my_order(&my_pubsecp, &bid.pubkey);
+                let is_mine = match base_coin_protocol {
+                    CoinProtocol::ZHTLC { .. } => {
+                        let mut is_mine = false;
+                        for pubkey in &my_orders_pubkeys {
+                            if pubkey == &bid.pubkey {
+                                is_mine = true;
+                            }
+                        }
+                        drop_mutability!(is_mine);
+                        is_mine
+                    },
+                    _ => is_my_order(&my_pubsecp, &bid.pubkey),
+                };
                 orderbook_entries.push(bid.as_rpc_entry_bid(address, is_mine));
             }
             orderbook_entries
