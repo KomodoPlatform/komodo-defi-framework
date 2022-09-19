@@ -777,9 +777,10 @@ impl MarketCoinOps for TendermintCoin {
         Box::new(fut.boxed().compat())
     }
 
-    fn wait_for_tx_spend(
+    fn wait_for_htlc_tx_spend(
         &self,
         transaction: &[u8],
+        secret_hash: &[u8],
         wait_until: u64,
         _from_block: u64,
         _swap_contract_address: &Option<BytesJson>,
@@ -795,9 +796,8 @@ impl MarketCoinOps for TendermintCoin {
             .join(",");
         let htlc = try_tx_fus!(MsgCreateHtlc::try_from(htlc_proto));
 
-        let hash_lock_bytes = try_tx_fus!(hex::decode(htlc.hash_lock));
         let mut htlc_id = vec![];
-        htlc_id.extend_from_slice(hash_lock_bytes.as_slice());
+        htlc_id.extend_from_slice(secret_hash);
         htlc_id.extend_from_slice(&htlc.sender.to_bytes());
         htlc_id.extend_from_slice(&htlc.to.to_bytes());
         htlc_id.extend_from_slice(coins_string.as_bytes());
@@ -1354,8 +1354,9 @@ pub mod tendermint_coin_tests {
 
         let encoded_tx = tx.encode_to_vec();
 
+        let secret_hash = hex::decode("0C34C71EBA2A51738699F9F3D6DAFFB15BE576E8ED543203485791B5DA39D10D").unwrap();
         let spend_tx = block_on(
-            coin.wait_for_tx_spend(&encoded_tx, get_utc_timestamp() as u64, 0, &None)
+            coin.wait_for_htlc_tx_spend(&encoded_tx, &secret_hash, get_utc_timestamp() as u64, 0, &None)
                 .compat(),
         )
         .unwrap();

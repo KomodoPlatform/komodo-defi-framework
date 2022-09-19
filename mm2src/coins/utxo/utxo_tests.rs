@@ -459,7 +459,7 @@ fn test_wait_for_payment_spend_timeout_native() {
     let from_block = 1000;
 
     assert!(coin
-        .wait_for_tx_spend(&transaction, wait_until, from_block, &None)
+        .wait_for_htlc_tx_spend(&transaction, &[], wait_until, from_block, &None)
         .wait()
         .is_err());
     assert!(unsafe { OUTPUT_SPEND_CALLED });
@@ -488,7 +488,7 @@ fn test_wait_for_payment_spend_timeout_electrum() {
     let from_block = 1000;
 
     assert!(coin
-        .wait_for_tx_spend(&transaction, wait_until, from_block, &None)
+        .wait_for_htlc_tx_spend(&transaction, &[], wait_until, from_block, &None)
         .wait()
         .is_err());
     assert!(unsafe { OUTPUT_SPEND_CALLED });

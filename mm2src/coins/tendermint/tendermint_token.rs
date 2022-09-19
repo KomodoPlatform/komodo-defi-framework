@@ -301,15 +301,21 @@ impl MarketCoinOps for TendermintToken {
             .wait_for_confirmations(tx, confirmations, requires_nota, wait_until, check_every)
     }
 
-    fn wait_for_tx_spend(
+    fn wait_for_htlc_tx_spend(
         &self,
         transaction: &[u8],
+        secret_hash: &[u8],
         wait_until: u64,
         from_block: u64,
         swap_contract_address: &Option<BytesJson>,
     ) -> TransactionFut {
-        self.platform_coin
-            .wait_for_tx_spend(transaction, wait_until, from_block, swap_contract_address)
+        self.platform_coin.wait_for_htlc_tx_spend(
+            transaction,
+            secret_hash,
+            wait_until,
+            from_block,
+            swap_contract_address,
+        )
     }
 
     fn tx_enum_from_bytes(&self, bytes: &[u8]) -> Result<TransactionEnum, MmError<TxMarshalingErr>> {

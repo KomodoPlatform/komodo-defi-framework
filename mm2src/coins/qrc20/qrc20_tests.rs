@@ -361,7 +361,7 @@ fn test_wait_for_tx_spend_malicious() {
     let wait_until = (now_ms() / 1000) + 1;
     let from_block = 696245;
     let found = coin
-        .wait_for_tx_spend(&payment_tx, wait_until, from_block, &coin.swap_contract_address())
+        .wait_for_htlc_tx_spend(&payment_tx, &[], wait_until, from_block, &coin.swap_contract_address())
         .wait()
         .unwrap();
 
