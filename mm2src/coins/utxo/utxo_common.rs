@@ -10,7 +10,6 @@ use crate::utxo::rpc_clients::{electrum_script_hash, BlockHashOrHeight, UnspentI
 use crate::utxo::spv::SimplePaymentVerification;
 use crate::utxo::tx_cache::TxCacheResult;
 use crate::utxo::utxo_withdraw::{InitUtxoWithdraw, StandardUtxoWithdraw, UtxoWithdraw};
-use crate::TxFeeDetails::Utxo;
 use crate::{CanRefundHtlc, CoinBalance, CoinWithDerivationMethod, GetWithdrawSenderAddress, HDAddressId,
             RawTransactionError, RawTransactionRequest, RawTransactionRes, SearchForSwapTxSpendInput, SignatureError,
             SignatureResult, SwapOps, TradePreimageValue, TransactionFut, TxFeeDetails, TxMarshalingErr,
@@ -50,6 +49,9 @@ use utxo_signer::with_key_pair::p2sh_spend;
 use utxo_signer::UtxoSignerOps;
 
 pub use chain::Transaction as UtxoTx;
+
+#[cfg(not(target_arch = "wasm32"))]
+use crate::TxFeeDetails::Utxo;
 
 pub const DEFAULT_FEE_VOUT: usize = 0;
 pub const DEFAULT_SWAP_TX_SPEND_SIZE: u64 = 305;
@@ -2038,11 +2040,85 @@ pub fn validate_address<T: UtxoCommonOps>(coin: &T, address: &str) -> ValidateAd
     }
 }
 
+// Quick fix for null valued coin fields in fee details of old tx history entries
+#[cfg(not(target_arch = "wasm32"))]
+async fn tx_history_migration_1<T>(coin: &T, ctx: &MmArc)
+where
+    T: UtxoStandardOps + UtxoCommonOps + MmCoin + MarketCoinOps,
+{
+    const MIGRATION_NUMBER: u64 = 1;
+    let history = match coin.load_history_from_file(ctx).compat().await {
+        Ok(history) => history,
+        Err(e) => {
+            log_tag!(
+                ctx,
+                "",
+                "tx_history",
+                "coin" => coin.as_ref().conf.ticker;
+                fmt = "Error {} on 'load_history_from_file', stop the history loop", e
+            );
+            return;
+        },
+    };
+
+    let mut updated = false;
+    let to_write: Vec<TransactionDetails> = history
+        .into_iter()
+        .filter_map(|mut tx| match tx.fee_details {
+            Some(Utxo(ref mut fee_details)) => {
+                if fee_details.coin.is_none() {
+                    fee_details.coin = Some(String::from(&tx.coin));
+                    updated = true;
+                }
+                Some(tx)
+            },
+            Some(_) => None,
+            None => Some(tx),
+        })
+        .collect();
+
+    if updated {
+        if let Err(e) = coin.save_history_to_file(ctx, to_write).compat().await {
+            log_tag!(
+                ctx,
+                "",
+                "tx_history",
+                "coin" => coin.as_ref().conf.ticker;
+                fmt = "Error {} on 'save_history_to_file'", e
+            );
+            return;
+        };
+    }
+    if let Err(e) = coin.update_migration_file(ctx, MIGRATION_NUMBER).compat().await {
+        log_tag!(
+            ctx,
+            "",
+            "tx_history",
+            "coin" => coin.as_ref().conf.ticker;
+            fmt = "Error {} on 'update_migration_file'", e
+        );
+    };
+}
+
+#[cfg(not(target_arch = "wasm32"))]
+async fn migrate_tx_history<T>(coin: &T, ctx: &MmArc)
+where
+    T: UtxoStandardOps + UtxoCommonOps + MmCoin + MarketCoinOps,
+{
+    let current_migration = coin.get_tx_history_migration(ctx).compat().await.unwrap_or(0);
+    if current_migration < 1 {
+        tx_history_migration_1(coin, ctx).await;
+    }
+}
+
 #[allow(clippy::cognitive_complexity)]
 pub async fn process_history_loop<T>(coin: T, ctx: MmArc)
 where
     T: UtxoStandardOps + UtxoCommonOps + MmCoin + MarketCoinOps,
 {
+    #[cfg(not(target_arch = "wasm32"))]
+    migrate_tx_history(&coin, &ctx).await;
+    
     let mut my_balance: Option<CoinBalance> = None;
     let history = match coin.load_history_from_file(&ctx).compat().await {
         Ok(history) => history,
@@ -2058,40 +2134,13 @@ where
         },
     };
 
-    let mut updated = false;
     let mut history_map: HashMap<H256Json, TransactionDetails> = history
         .into_iter()
-        .filter_map(|mut tx| {
+        .filter_map(|tx| {
             let tx_hash = H256Json::from_str(&tx.tx_hash).ok()?;
-
-            // Quick fix for null valued coin fields in fee details of old tx history entries
-            match tx.fee_details {
-                Some(Utxo(ref mut fee_details)) => {
-                    if fee_details.coin.is_none() {
-                        fee_details.coin = Some(String::from(&tx.coin));
-                        updated = true;
-                    }
-                    Some((tx_hash, tx))
-                },
-                Some(_) => None,
-                None => Some((tx_hash, tx)),
-            }
+            Some((tx_hash, tx))
         })
         .collect();
-
-    if updated {
-        let to_write: Vec<TransactionDetails> = history_map.iter().map(|(_, value)| value.clone()).collect();
-        if let Err(e) = coin.save_history_to_file(&ctx, to_write).compat().await {
-            log_tag!(
-                ctx,
-                "",
-                "tx_history",
-                "coin" => coin.as_ref().conf.ticker;
-                fmt = "Error {} on 'save_history_to_file'", e
-            );
-            return;
-        };
-    }
 
     let mut success_iteration = 0i32;
     loop {
