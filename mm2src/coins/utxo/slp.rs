@@ -1437,12 +1437,7 @@ impl SwapOps for SlpToken {
         Ok(None)
     }
 
-    fn negotiate_coin_contract_address(&self, other_coin: MmCoinEnum) -> bool {
-        if let MmCoinEnum::SlpToken(other) = other_coin {
-            return self.token_id() == other.token_id();
-        }
-        false
-    }
+    fn negotiate_coin_contract_address(&self, _other_coin: MmCoinEnum) -> bool { unimplemented!() }
 
     fn derive_htlc_key_pair(&self, swap_unique_data: &[u8]) -> KeyPair {
         utxo_common::derive_htlc_key_pair(self.platform_coin.as_ref(), swap_unique_data)
