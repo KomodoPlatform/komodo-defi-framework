@@ -102,6 +102,8 @@ impl rustls::client::ServerCertVerifier for NoCertificateVerification {
     }
 }
 
+pub const TX_NOT_FOUND_RETRIES: u8 = 10;
+
 #[derive(Debug)]
 pub enum UtxoRpcClientEnum {
     Native(NativeClient),
@@ -146,7 +148,7 @@ impl UtxoRpcClientEnum {
         check_every: u64,
     ) -> Box<dyn Future<Item = (), Error = String> + Send> {
         let selfi = self.clone();
-        let mut retry_req_count = 10;
+        let mut tx_not_found_retries = TX_NOT_FOUND_RETRIES;
         let fut = async move {
             loop {
                 if now_ms() / 1000 > wait_until {
@@ -176,15 +178,20 @@ impl UtxoRpcClientEnum {
                     },
                     Err(e) => {
                         if e.get_inner().is_tx_not_found_error() {
+                            if tx_not_found_retries == 0 {
+                                return ERR!(
+                                    "Tx {} was not found on chain after {} tries, error: {}",
+                                    tx_hash,
+                                    tx_not_found_retries,
+                                    e,
+                                );
+                            }
                             error!(
-                                "Error {} getting tx from chain, retrying in 10 seconds. Retry left: {}",
-                                e, retry_req_count
+                                "Tx {} not found on chain, error: {}, retrying in 10 seconds. Retries left: {}",
+                                tx_hash, e, tx_not_found_retries
                             );
                             Timer::sleep(check_every as f64).await;
-                            if retry_req_count == 0 {
-                                return ERR!("Tx {} is not on chain anymore", tx_hash);
-                            }
-                            retry_req_count -= 1;
+                            tx_not_found_retries -= 1;
                             continue;
                         };
 
