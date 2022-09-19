@@ -16,8 +16,8 @@ use crate::rpc_command::init_scan_for_new_addresses::{self, InitScanAddressesRpc
 use crate::rpc_command::init_withdraw::{InitWithdrawCoin, WithdrawTaskHandle};
 use crate::utxo::utxo_builder::{UtxoArcBuilder, UtxoCoinBuilder};
 use crate::{CanRefundHtlc, CoinBalance, CoinWithDerivationMethod, GetWithdrawSenderAddress,
-            NegotiatePubKeyValidationErr, NegotiateSwapContractAddrErr, PrivKeyBuildPolicy, SearchForSwapTxSpendInput,
-            SignatureResult, SwapOps, TradePreimageValue, TransactionFut, TxMarshalingErr, ValidateAddressResult,
+            NegotiateSwapContractAddrErr, PrivKeyBuildPolicy, SearchForSwapTxSpendInput, SignatureResult, SwapOps,
+            TradePreimageValue, TransactionFut, TxMarshalingErr, ValidateAddressResult, ValidateOtherPubKeyErr,
             ValidatePaymentInput, VerificationResult, WithdrawFut, WithdrawSenderAddress};
 use crypto::Bip44Chain;
 use futures::{FutureExt, TryFutureExt};
@@ -465,7 +465,7 @@ impl SwapOps for UtxoStandardCoin {
         utxo_common::derive_htlc_key_pair(self.as_ref(), swap_unique_data)
     }
 
-    fn validate_other_pubkey(&self, raw_pubkey: &[u8]) -> MmResult<(), NegotiatePubKeyValidationErr> {
+    fn validate_other_pubkey(&self, raw_pubkey: &[u8]) -> MmResult<(), ValidateOtherPubKeyErr> {
         utxo_common::validate_other_pubkey(raw_pubkey)
     }
 

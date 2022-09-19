@@ -6,10 +6,10 @@ use crate::utxo::slp::{parse_slp_script, ParseSlpScriptError, SlpGenesisParams, 
                        SlpUnspent};
 use crate::utxo::utxo_builder::{UtxoArcBuilder, UtxoCoinBuilder};
 use crate::utxo::utxo_common::big_decimal_from_sat_unsigned;
-use crate::{BlockHeightAndTime, CanRefundHtlc, CoinBalance, CoinProtocol, NegotiatePubKeyValidationErr,
-            NegotiateSwapContractAddrErr, PrivKeyBuildPolicy, RawTransactionFut, RawTransactionRequest,
-            SearchForSwapTxSpendInput, SignatureResult, SwapOps, TradePreimageValue, TransactionFut, TransactionType,
-            TxFeeDetails, TxMarshalingErr, UnexpectedDerivationMethod, ValidateAddressResult, ValidatePaymentInput,
+use crate::{BlockHeightAndTime, CanRefundHtlc, CoinBalance, CoinProtocol, NegotiateSwapContractAddrErr,
+            PrivKeyBuildPolicy, RawTransactionFut, RawTransactionRequest, SearchForSwapTxSpendInput, SignatureResult,
+            SwapOps, TradePreimageValue, TransactionFut, TransactionType, TxFeeDetails, TxMarshalingErr,
+            UnexpectedDerivationMethod, ValidateAddressResult, ValidateOtherPubKeyErr, ValidatePaymentInput,
             VerificationResult, WithdrawFut};
 use common::log::warn;
 use derive_more::Display;
@@ -1046,7 +1046,7 @@ impl SwapOps for BchCoin {
         utxo_common::derive_htlc_key_pair(self.as_ref(), swap_unique_data)
     }
 
-    fn validate_other_pubkey(&self, raw_pubkey: &[u8]) -> MmResult<(), NegotiatePubKeyValidationErr> {
+    fn validate_other_pubkey(&self, raw_pubkey: &[u8]) -> MmResult<(), ValidateOtherPubKeyErr> {
         utxo_common::validate_other_pubkey(raw_pubkey)
     }
 

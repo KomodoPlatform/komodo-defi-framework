@@ -11,9 +11,9 @@ use crate::utxo::spv::SimplePaymentVerification;
 use crate::utxo::tx_cache::TxCacheResult;
 use crate::utxo::utxo_withdraw::{InitUtxoWithdraw, StandardUtxoWithdraw, UtxoWithdraw};
 use crate::{CanRefundHtlc, CoinBalance, CoinWithDerivationMethod, GetWithdrawSenderAddress, HDAddressId,
-            NegotiatePubKeyValidationErr, RawTransactionError, RawTransactionRequest, RawTransactionRes,
-            SearchForSwapTxSpendInput, SignatureError, SignatureResult, SwapOps, TradePreimageValue, TransactionFut,
-            TxFeeDetails, TxMarshalingErr, ValidateAddressResult, ValidatePaymentInput, VerificationError,
+            RawTransactionError, RawTransactionRequest, RawTransactionRes, SearchForSwapTxSpendInput, SignatureError,
+            SignatureResult, SwapOps, TradePreimageValue, TransactionFut, TxFeeDetails, TxMarshalingErr,
+            ValidateAddressResult, ValidateOtherPubKeyErr, ValidatePaymentInput, VerificationError,
             VerificationResult, WithdrawFrom, WithdrawResult, WithdrawSenderAddress};
 use bitcrypto::dhash256;
 pub use bitcrypto::{dhash160, sha256, ChecksumType};
@@ -3554,10 +3554,10 @@ pub fn derive_htlc_key_pair(coin: &UtxoCoinFields, _swap_unique_data: &[u8]) -> 
     }
 }
 
-pub fn validate_other_pubkey(raw_pubkey: &[u8]) -> MmResult<(), NegotiatePubKeyValidationErr> {
+pub fn validate_other_pubkey(raw_pubkey: &[u8]) -> MmResult<(), ValidateOtherPubKeyErr> {
     match Public::from_slice(raw_pubkey) {
         Ok(_) => Ok(()),
-        Err(e) => MmError::err(NegotiatePubKeyValidationErr::InvalidPubKeyInput(e.to_string())),
+        Err(e) => MmError::err(ValidateOtherPubKeyErr::InvalidPubKey(e.to_string())),
     }
 }
 

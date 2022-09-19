@@ -21,11 +21,11 @@ use crate::utxo::rpc_clients::UtxoRpcClientEnum;
 use crate::utxo::utxo_common::{big_decimal_from_sat_unsigned, UtxoTxBuilder};
 use crate::utxo::{sat_from_big_decimal, BlockchainNetwork, FeePolicy, GetUtxoListOps, UtxoTxGenerationOps};
 use crate::{BalanceFut, CoinBalance, FeeApproxStage, FoundSwapTxSpend, HistorySyncState, MarketCoinOps, MmCoin,
-            NegotiatePubKeyValidationErr, NegotiateSwapContractAddrErr, RawTransactionFut, RawTransactionRequest,
-            SearchForSwapTxSpendInput, SignatureError, SignatureResult, SwapOps, TradeFee, TradePreimageFut,
-            TradePreimageResult, TradePreimageValue, TransactionEnum, TransactionFut, TxMarshalingErr,
-            UnexpectedDerivationMethod, UtxoStandardCoin, ValidateAddressResult, ValidatePaymentInput,
-            VerificationError, VerificationResult, WithdrawError, WithdrawFut, WithdrawRequest};
+            NegotiateSwapContractAddrErr, RawTransactionFut, RawTransactionRequest, SearchForSwapTxSpendInput,
+            SignatureError, SignatureResult, SwapOps, TradeFee, TradePreimageFut, TradePreimageResult,
+            TradePreimageValue, TransactionEnum, TransactionFut, TxMarshalingErr, UnexpectedDerivationMethod,
+            UtxoStandardCoin, ValidateAddressResult, ValidateOtherPubKeyErr, ValidatePaymentInput, VerificationError,
+            VerificationResult, WithdrawError, WithdrawFut, WithdrawRequest};
 use async_trait::async_trait;
 use bitcoin::hashes::Hash;
 use bitcoin_hashes::sha256::Hash as Sha256;
@@ -413,9 +413,7 @@ impl SwapOps for LightningCoin {
 
     fn derive_htlc_key_pair(&self, _swap_unique_data: &[u8]) -> KeyPair { unimplemented!() }
 
-    fn validate_other_pubkey(&self, _raw_pubkey: &[u8]) -> MmResult<(), NegotiatePubKeyValidationErr> {
-        unimplemented!()
-    }
+    fn validate_other_pubkey(&self, _raw_pubkey: &[u8]) -> MmResult<(), ValidateOtherPubKeyErr> { unimplemented!() }
 
     fn validate_secret_hash(&self, _secret_hash: &[u8], _secret: &[u8]) -> bool { unimplemented!() }
 }

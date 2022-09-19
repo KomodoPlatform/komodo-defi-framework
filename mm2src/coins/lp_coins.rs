@@ -435,9 +435,9 @@ pub enum NegotiateSwapContractAddrErr {
 }
 
 #[derive(Debug, Display, Eq, PartialEq)]
-pub enum NegotiatePubKeyValidationErr {
-    #[display(fmt = "InvalidPubKeyInput: {:?}", _0)]
-    InvalidPubKeyInput(String),
+pub enum ValidateOtherPubKeyErr {
+    #[display(fmt = "InvalidPubKey: {:?}", _0)]
+    InvalidPubKey(String),
 }
 
 #[derive(Clone, Debug)]
@@ -597,7 +597,7 @@ pub trait SwapOps {
 
     fn derive_htlc_key_pair(&self, swap_unique_data: &[u8]) -> KeyPair;
 
-    fn validate_other_pubkey(&self, raw_pubkey: &[u8]) -> MmResult<(), NegotiatePubKeyValidationErr>;
+    fn validate_other_pubkey(&self, raw_pubkey: &[u8]) -> MmResult<(), ValidateOtherPubKeyErr>;
 
     fn validate_secret_hash(&self, secret_hash: &[u8], secret: &[u8]) -> bool;
 }

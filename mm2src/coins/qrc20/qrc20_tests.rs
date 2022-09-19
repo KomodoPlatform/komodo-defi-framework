@@ -1048,3 +1048,34 @@ fn test_send_contract_calls_recoverable_tx() {
         discriminant(&TransactionErr::TxRecoverable(TransactionEnum::from(tx), String::new()))
     );
 }
+
+#[test]
+fn test_qrc20_validate_valid_and_invalid_pubkey() {
+    let priv_key = [
+        3, 98, 177, 3, 108, 39, 234, 144, 131, 178, 103, 103, 127, 80, 230, 166, 53, 68, 147, 215, 42, 216, 144, 72,
+        172, 110, 180, 13, 123, 179, 10, 49,
+    ];
+    let (_ctx, coin) = qrc20_coin_for_test(&priv_key, None);
+    // Test expected to pass at this point as we're using a valid pubkey to validate against an valid pubkey
+    assert!(coin.validate_other_pubkey(&[1u8; 32]).is_err());
+    // Test expected to fail at this point as we're using a valid pubkey to validate against an invalid pubkey
+    assert!(coin.validate_other_pubkey(&[1u8; 8]).is_err());
+}
+
+#[test]
+fn test_qrc20_validate_valid_and_invalid_secret_hash() {
+    let priv_key = [
+        3, 98, 177, 3, 108, 39, 234, 144, 131, 178, 103, 103, 127, 80, 230, 166, 53, 68, 147, 215, 42, 216, 144, 72,
+        172, 110, 180, 13, 123, 179, 10, 49,
+    ];
+    let (_ctx, coin) = qrc20_coin_for_test(&priv_key, None);
+    let tx_hex = hex::decode("01000000033f56ecafafc8602fde083ba868d1192d6649b8433e42e1a2d79ba007ea4f7abb010000006b48304502210093404e90e40d22730013035d31c404c875646dcf2fad9aa298348558b6d65ba60220297d045eac5617c1a3eddb71d4bca9772841afa3c4c9d6c68d8d2d42ee6de3950121022b00078841f37b5d30a6a1defb82b3af4d4e2d24dd4204d41f0c9ce1e875de1affffffff9cac7fe90d597922a1d92e05306c2215628e7ea6d5b855bfb4289c2944f4c73a030000006b483045022100b987da58c2c0c40ce5b6ef2a59e8124ed4ef7a8b3e60c7fb631139280019bc93022069649bcde6fe4dd5df9462a1fcae40598488d6af8c324cd083f5c08afd9568be0121022b00078841f37b5d30a6a1defb82b3af4d4e2d24dd4204d41f0c9ce1e875de1affffffff70b9870f2b0c65d220a839acecebf80f5b44c3ca4c982fa2fdc5552c037f5610010000006a473044022071b34dd3ebb72d29ca24f3fa0fc96571c815668d3b185dd45cc46a7222b6843f02206c39c030e618d411d4124f7b3e7ca1dd5436775bd8083a85712d123d933a51300121022b00078841f37b5d30a6a1defb82b3af4d4e2d24dd4204d41f0c9ce1e875de1affffffff020000000000000000c35403a0860101284ca402ed292b806a1835a1b514ad643f2acdb5c8db6b6a9714accff3275ea0d79a3f23be8fd00000000000000000000000000000000000000000000000000000000001312d000101010101010101010101010101010101010101010101010101010101010101000000000000000000000000d362e096e873eb7907e205fadc6175c6fec7bc440000000000000000000000009e032d4b0090a11dc40fe6c47601499a35d55fbb14ba8b71f3544b93e2f681f996da519a98ace0107ac2c02288d4010000001976a914783cf0be521101942da509846ea476e683aad83288ac0f047f5f").unwrap();
+    let secret_hash = &*dhash160(&[1; 32]);
+    let secret = coin.extract_secret(secret_hash, &tx_hex).unwrap();
+    // Test expected to pass at this point as we're using a valid secret_hash against a valid secret
+    assert!(coin.validate_secret_hash(secret_hash, &*dhash160(&secret)));
+
+    // Test expected to fail at this point as we're using an invalid secret_hash against a valid secret
+    let secret_hash = &*dhash160(&[1; 16]);
+    assert!(!coin.validate_secret_hash(secret_hash, &*dhash160(&secret)));
+}

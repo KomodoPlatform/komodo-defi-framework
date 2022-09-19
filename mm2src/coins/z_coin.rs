@@ -12,12 +12,12 @@ use crate::utxo::{sat_from_big_decimal, utxo_common, ActualTxFee, AdditionalTxDa
                   UtxoCommonOps, UtxoFeeDetails, UtxoRpcMode, UtxoTxBroadcastOps, UtxoTxGenerationOps,
                   VerboseTransactionFrom};
 use crate::{BalanceError, BalanceFut, CoinBalance, FeeApproxStage, FoundSwapTxSpend, HistorySyncState, MarketCoinOps,
-            MmCoin, NegotiatePubKeyValidationErr, NegotiateSwapContractAddrErr, NumConversError,
-            PrivKeyActivationPolicy, RawTransactionFut, RawTransactionRequest, SearchForSwapTxSpendInput,
-            SignatureError, SignatureResult, SwapOps, TradeFee, TradePreimageFut, TradePreimageResult,
-            TradePreimageValue, TransactionDetails, TransactionEnum, TransactionFut, TxFeeDetails, TxMarshalingErr,
-            UnexpectedDerivationMethod, ValidateAddressResult, ValidatePaymentInput, VerificationError,
-            VerificationResult, WithdrawFut, WithdrawRequest};
+            MmCoin, NegotiateSwapContractAddrErr, NumConversError, PrivKeyActivationPolicy, RawTransactionFut,
+            RawTransactionRequest, SearchForSwapTxSpendInput, SignatureError, SignatureResult, SwapOps, TradeFee,
+            TradePreimageFut, TradePreimageResult, TradePreimageValue, TransactionDetails, TransactionEnum,
+            TransactionFut, TxFeeDetails, TxMarshalingErr, UnexpectedDerivationMethod, ValidateAddressResult,
+            ValidateOtherPubKeyErr, ValidatePaymentInput, VerificationError, VerificationResult, WithdrawFut,
+            WithdrawRequest};
 use crate::{Transaction, WithdrawError};
 use async_trait::async_trait;
 use bitcrypto::{dhash160, dhash256};
@@ -1372,7 +1372,7 @@ impl SwapOps for ZCoin {
         key_pair_from_secret(key.as_slice()).expect("valid privkey")
     }
 
-    fn validate_other_pubkey(&self, raw_pubkey: &[u8]) -> MmResult<(), NegotiatePubKeyValidationErr> {
+    fn validate_other_pubkey(&self, raw_pubkey: &[u8]) -> MmResult<(), ValidateOtherPubKeyErr> {
         utxo_common::validate_other_pubkey(raw_pubkey)
     }
 

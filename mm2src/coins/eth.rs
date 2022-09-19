@@ -61,12 +61,12 @@ use web3_transport::{EthFeeHistoryNamespace, Web3Transport, Web3TransportNode};
 
 use super::{coin_conf, AsyncMutex, BalanceError, BalanceFut, CoinBalance, CoinProtocol, CoinTransportMetrics,
             CoinsContext, FeeApproxStage, FoundSwapTxSpend, HistorySyncState, MarketCoinOps, MmCoin,
-            NegotiatePubKeyValidationErr, NegotiateSwapContractAddrErr, NumConversError, NumConversResult,
-            RawTransactionError, RawTransactionFut, RawTransactionRequest, RawTransactionRes, RawTransactionResult,
-            RpcClientType, RpcTransportEventHandler, RpcTransportEventHandlerShared, SearchForSwapTxSpendInput,
-            SignatureError, SignatureResult, SwapOps, TradeFee, TradePreimageError, TradePreimageFut,
-            TradePreimageResult, TradePreimageValue, Transaction, TransactionDetails, TransactionEnum, TransactionErr,
-            TransactionFut, TxMarshalingErr, UnexpectedDerivationMethod, ValidateAddressResult, ValidatePaymentInput,
+            NegotiateSwapContractAddrErr, NumConversError, NumConversResult, RawTransactionError, RawTransactionFut,
+            RawTransactionRequest, RawTransactionRes, RawTransactionResult, RpcClientType, RpcTransportEventHandler,
+            RpcTransportEventHandlerShared, SearchForSwapTxSpendInput, SignatureError, SignatureResult, SwapOps,
+            TradeFee, TradePreimageError, TradePreimageFut, TradePreimageResult, TradePreimageValue, Transaction,
+            TransactionDetails, TransactionEnum, TransactionErr, TransactionFut, TxMarshalingErr,
+            UnexpectedDerivationMethod, ValidateAddressResult, ValidateOtherPubKeyErr, ValidatePaymentInput,
             VerificationError, VerificationResult, WithdrawError, WithdrawFee, WithdrawFut, WithdrawRequest,
             WithdrawResult};
 
@@ -1113,10 +1113,10 @@ impl SwapOps for EthCoin {
         key_pair_from_secret(self.key_pair.secret()).expect("valid key")
     }
 
-    fn validate_other_pubkey(&self, raw_pubkey: &[u8]) -> MmResult<(), NegotiatePubKeyValidationErr> {
+    fn validate_other_pubkey(&self, raw_pubkey: &[u8]) -> MmResult<(), ValidateOtherPubKeyErr> {
         match PublicKey::from_slice(raw_pubkey) {
             Ok(_) => Ok(()),
-            Err(e) => MmError::err(NegotiatePubKeyValidationErr::InvalidPubKeyInput(e.to_string())),
+            Err(e) => MmError::err(ValidateOtherPubKeyErr::InvalidPubKey(e.to_string())),
         }
     }
 

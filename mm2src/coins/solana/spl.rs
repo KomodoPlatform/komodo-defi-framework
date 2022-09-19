@@ -1,11 +1,11 @@
 use super::{CoinBalance, HistorySyncState, MarketCoinOps, MmCoin, SwapOps, TradeFee, TransactionEnum};
 use crate::solana::solana_common::{ui_amount_to_amount, PrepareTransferData, SufficientBalanceError};
 use crate::solana::{solana_common, AccountError, SolanaCommonOps, SolanaFeeDetails};
-use crate::{BalanceFut, FeeApproxStage, FoundSwapTxSpend, NegotiatePubKeyValidationErr, NegotiateSwapContractAddrErr,
-            RawTransactionFut, RawTransactionRequest, SearchForSwapTxSpendInput, SignatureResult, SolanaCoin,
-            TradePreimageFut, TradePreimageResult, TradePreimageValue, TransactionDetails, TransactionFut,
-            TransactionType, TxMarshalingErr, UnexpectedDerivationMethod, ValidateAddressResult, ValidatePaymentInput,
-            VerificationResult, WithdrawError, WithdrawFut, WithdrawRequest, WithdrawResult};
+use crate::{BalanceFut, FeeApproxStage, FoundSwapTxSpend, NegotiateSwapContractAddrErr, RawTransactionFut,
+            RawTransactionRequest, SearchForSwapTxSpendInput, SignatureResult, SolanaCoin, TradePreimageFut,
+            TradePreimageResult, TradePreimageValue, TransactionDetails, TransactionFut, TransactionType,
+            TxMarshalingErr, UnexpectedDerivationMethod, ValidateAddressResult, ValidateOtherPubKeyErr,
+            ValidatePaymentInput, VerificationResult, WithdrawError, WithdrawFut, WithdrawRequest, WithdrawResult};
 use async_trait::async_trait;
 use bincode::serialize;
 use common::{async_blocking, now_ms};
@@ -416,9 +416,7 @@ impl SwapOps for SplToken {
 
     fn derive_htlc_key_pair(&self, _swap_unique_data: &[u8]) -> KeyPair { todo!() }
 
-    fn validate_other_pubkey(&self, _raw_pubkey: &[u8]) -> MmResult<(), NegotiatePubKeyValidationErr> {
-        unimplemented!()
-    }
+    fn validate_other_pubkey(&self, _raw_pubkey: &[u8]) -> MmResult<(), ValidateOtherPubKeyErr> { unimplemented!() }
 
     fn validate_secret_hash(&self, _secret_hash: &[u8], _secret: &[u8]) -> bool { unimplemented!() }
 }

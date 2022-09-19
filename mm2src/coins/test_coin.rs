@@ -1,9 +1,9 @@
 use super::{CoinBalance, HistorySyncState, MarketCoinOps, MmCoin, RawTransactionFut, RawTransactionRequest, SwapOps,
             TradeFee, TransactionEnum, TransactionFut};
-use crate::{BalanceFut, CanRefundHtlc, FeeApproxStage, FoundSwapTxSpend, NegotiatePubKeyValidationErr,
-            NegotiateSwapContractAddrErr, SearchForSwapTxSpendInput, SignatureResult, TradePreimageFut,
-            TradePreimageResult, TradePreimageValue, TxMarshalingErr, UnexpectedDerivationMethod,
-            ValidateAddressResult, ValidatePaymentInput, VerificationResult, WithdrawFut, WithdrawRequest};
+use crate::{BalanceFut, CanRefundHtlc, FeeApproxStage, FoundSwapTxSpend, NegotiateSwapContractAddrErr,
+            SearchForSwapTxSpendInput, SignatureResult, TradePreimageFut, TradePreimageResult, TradePreimageValue,
+            TxMarshalingErr, UnexpectedDerivationMethod, ValidateAddressResult, ValidateOtherPubKeyErr,
+            ValidatePaymentInput, VerificationResult, WithdrawFut, WithdrawRequest};
 use async_trait::async_trait;
 use futures01::Future;
 use keys::KeyPair;
@@ -238,9 +238,7 @@ impl SwapOps for TestCoin {
         unimplemented!()
     }
 
-    fn validate_other_pubkey(&self, raw_pubkey: &[u8]) -> MmResult<(), NegotiatePubKeyValidationErr> {
-        unimplemented!()
-    }
+    fn validate_other_pubkey(&self, raw_pubkey: &[u8]) -> MmResult<(), ValidateOtherPubKeyErr> { unimplemented!() }
 
     fn validate_secret_hash(&self, secret_hash: &[u8], secret: &[u8]) -> bool { unimplemented!() }
 }

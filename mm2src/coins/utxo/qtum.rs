@@ -18,9 +18,9 @@ use crate::utxo::utxo_builder::{BlockHeaderUtxoArcOps, MergeUtxoArcOps, UtxoCoin
                                 UtxoCoinBuilderCommonOps, UtxoFieldsWithHardwareWalletBuilder,
                                 UtxoFieldsWithIguanaPrivKeyBuilder};
 use crate::{eth, CanRefundHtlc, CoinBalance, CoinWithDerivationMethod, DelegationError, DelegationFut,
-            GetWithdrawSenderAddress, NegotiatePubKeyValidationErr, NegotiateSwapContractAddrErr, PrivKeyBuildPolicy,
-            SearchForSwapTxSpendInput, SignatureResult, StakingInfosFut, SwapOps, TradePreimageValue, TransactionFut,
-            TxMarshalingErr, UnexpectedDerivationMethod, ValidateAddressResult, ValidatePaymentInput,
+            GetWithdrawSenderAddress, NegotiateSwapContractAddrErr, PrivKeyBuildPolicy, SearchForSwapTxSpendInput,
+            SignatureResult, StakingInfosFut, SwapOps, TradePreimageValue, TransactionFut, TxMarshalingErr,
+            UnexpectedDerivationMethod, ValidateAddressResult, ValidateOtherPubKeyErr, ValidatePaymentInput,
             VerificationResult, WithdrawFut, WithdrawSenderAddress};
 use crypto::Bip44Chain;
 use ethereum_types::H160;
@@ -704,7 +704,7 @@ impl SwapOps for QtumCoin {
         utxo_common::derive_htlc_key_pair(self.as_ref(), swap_unique_data)
     }
 
-    fn validate_other_pubkey(&self, raw_pubkey: &[u8]) -> MmResult<(), NegotiatePubKeyValidationErr> {
+    fn validate_other_pubkey(&self, raw_pubkey: &[u8]) -> MmResult<(), ValidateOtherPubKeyErr> {
         utxo_common::validate_other_pubkey(raw_pubkey)
     }
 

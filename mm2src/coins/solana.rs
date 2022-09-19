@@ -1,10 +1,10 @@
 use super::{CoinBalance, HistorySyncState, MarketCoinOps, MmCoin, SwapOps, TradeFee, TransactionEnum};
 use crate::solana::solana_common::{lamports_to_sol, PrepareTransferData, SufficientBalanceError};
 use crate::solana::spl::SplTokenInfo;
-use crate::{BalanceError, BalanceFut, FeeApproxStage, FoundSwapTxSpend, NegotiatePubKeyValidationErr,
-            NegotiateSwapContractAddrErr, RawTransactionFut, RawTransactionRequest, SearchForSwapTxSpendInput,
-            SignatureResult, TradePreimageFut, TradePreimageResult, TradePreimageValue, TransactionDetails,
-            TransactionFut, TransactionType, TxMarshalingErr, UnexpectedDerivationMethod, ValidateAddressResult,
+use crate::{BalanceError, BalanceFut, FeeApproxStage, FoundSwapTxSpend, NegotiateSwapContractAddrErr,
+            RawTransactionFut, RawTransactionRequest, SearchForSwapTxSpendInput, SignatureResult, TradePreimageFut,
+            TradePreimageResult, TradePreimageValue, TransactionDetails, TransactionFut, TransactionType,
+            TxMarshalingErr, UnexpectedDerivationMethod, ValidateAddressResult, ValidateOtherPubKeyErr,
             ValidatePaymentInput, VerificationResult, WithdrawError, WithdrawFut, WithdrawRequest, WithdrawResult};
 use async_trait::async_trait;
 use base58::ToBase58;
@@ -582,9 +582,7 @@ impl SwapOps for SolanaCoin {
 
     fn derive_htlc_key_pair(&self, _swap_unique_data: &[u8]) -> KeyPair { todo!() }
 
-    fn validate_other_pubkey(&self, _raw_pubkey: &[u8]) -> MmResult<(), NegotiatePubKeyValidationErr> {
-        unimplemented!()
-    }
+    fn validate_other_pubkey(&self, _raw_pubkey: &[u8]) -> MmResult<(), ValidateOtherPubKeyErr> { unimplemented!() }
 
     fn validate_secret_hash(&self, secret_hash: &[u8], secret: &[u8]) -> bool { unimplemented!() }
 }

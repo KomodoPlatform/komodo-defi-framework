@@ -5,12 +5,12 @@ use super::tendermint_native_rpc::*;
 use crate::tendermint::htlc::MsgClaimHtlc;
 use crate::utxo::sat_from_big_decimal;
 use crate::{big_decimal_from_sat_unsigned, BalanceError, BalanceFut, BigDecimal, CoinBalance, FeeApproxStage,
-            FoundSwapTxSpend, HistorySyncState, MarketCoinOps, MmCoin, NegotiatePubKeyValidationErr,
-            NegotiateSwapContractAddrErr, RawTransactionFut, RawTransactionRequest, SearchForSwapTxSpendInput,
-            SignatureResult, SwapOps, TradeFee, TradePreimageFut, TradePreimageResult, TradePreimageValue,
-            TransactionDetails, TransactionEnum, TransactionFut, TransactionType, TxFeeDetails, TxMarshalingErr,
-            UnexpectedDerivationMethod, ValidateAddressResult, ValidatePaymentInput, VerificationResult,
-            WithdrawError, WithdrawFut, WithdrawRequest};
+            FoundSwapTxSpend, HistorySyncState, MarketCoinOps, MmCoin, NegotiateSwapContractAddrErr,
+            RawTransactionFut, RawTransactionRequest, SearchForSwapTxSpendInput, SignatureResult, SwapOps, TradeFee,
+            TradePreimageFut, TradePreimageResult, TradePreimageValue, TransactionDetails, TransactionEnum,
+            TransactionFut, TransactionType, TxFeeDetails, TxMarshalingErr, UnexpectedDerivationMethod,
+            ValidateAddressResult, ValidateOtherPubKeyErr, ValidatePaymentInput, VerificationResult, WithdrawError,
+            WithdrawFut, WithdrawRequest};
 use async_trait::async_trait;
 use bitcrypto::sha256;
 use common::{get_utc_timestamp, Future01CompatExt};
@@ -752,7 +752,7 @@ impl SwapOps for TendermintCoin {
 
     fn derive_htlc_key_pair(&self, swap_unique_data: &[u8]) -> KeyPair { todo!() }
 
-    fn validate_other_pubkey(&self, _raw_pubkey: &[u8]) -> MmResult<(), NegotiatePubKeyValidationErr> { todo!() }
+    fn validate_other_pubkey(&self, _raw_pubkey: &[u8]) -> MmResult<(), ValidateOtherPubKeyErr> { todo!() }
 
     fn validate_secret_hash(&self, _secret_hash: &[u8], _secret: &[u8]) -> bool { todo!() }
 }
