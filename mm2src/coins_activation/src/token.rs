@@ -60,6 +60,7 @@ pub enum EnableTokenError {
     UnexpectedDerivationMethod(UnexpectedDerivationMethod),
     CouldNotFetchBalance(String),
     Transport(String),
+    InvalidConfig(String),
     Internal(String),
 }
 
@@ -158,6 +159,7 @@ impl HttpStatusCode for EnableTokenError {
             | EnableTokenError::UnexpectedDerivationMethod(_)
             | EnableTokenError::Transport(_)
             | EnableTokenError::CouldNotFetchBalance(_)
+            | EnableTokenError::InvalidConfig(_)
             | EnableTokenError::Internal(_) => StatusCode::INTERNAL_SERVER_ERROR,
         }
     }

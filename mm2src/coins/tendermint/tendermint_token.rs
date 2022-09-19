@@ -39,6 +39,8 @@ pub struct TendermintTokenActivationParams {}
 
 pub enum TendermintTokenInitError {
     InvalidDenom(String),
+    MyAddressError(String),
+    CouldNotFetchBalance(String),
 }
 
 impl TendermintToken {

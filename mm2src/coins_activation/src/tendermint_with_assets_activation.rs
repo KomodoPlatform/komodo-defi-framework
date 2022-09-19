@@ -101,6 +101,10 @@ impl From<TendermintTokenInitError> for InitTokensAsMmCoinsError {
                 ticker: "".into(),
                 error,
             },
+            TendermintTokenInitError::MyAddressError(error) => InitTokensAsMmCoinsError::Internal(error),
+            TendermintTokenInitError::CouldNotFetchBalance(error) => {
+                InitTokensAsMmCoinsError::CouldNotFetchBalance(error)
+            },
         }
     }
 }
