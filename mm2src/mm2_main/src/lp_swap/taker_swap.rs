@@ -1277,8 +1277,9 @@ impl TakerSwap {
             ]));
         }
 
-        let f = self.taker_coin.wait_for_tx_spend(
+        let f = self.taker_coin.wait_for_htlc_tx_spend(
             &self.r().taker_payment.clone().unwrap().tx_hex,
+            &self.r().secret_hash.0,
             self.r().data.taker_payment_lock,
             self.r().data.taker_coin_start_block,
             &self.r().data.taker_coin_swap_contract_address,

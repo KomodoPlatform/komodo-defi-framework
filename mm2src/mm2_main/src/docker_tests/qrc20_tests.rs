@@ -737,11 +737,12 @@ fn test_wait_for_tx_spend() {
         .wait()
         .unwrap();
 
-    // first try to check if the wait_for_tx_spend() returns an error correctly
+    // first try to check if the wait_for_htlc_tx_spend() returns an error correctly
     let wait_until = (now_ms() / 1000) + 5;
     let tx_err = maker_coin
-        .wait_for_tx_spend(
+        .wait_for_htlc_tx_spend(
             &payment_tx_hex,
+            &[],
             wait_until,
             from_block,
             &maker_coin.swap_contract_address(),
@@ -753,7 +754,7 @@ fn test_wait_for_tx_spend() {
     log!("error: {:?}", err);
     assert!(err.contains("Waited too long"));
 
-    // also spends the maker payment and try to check if the wait_for_tx_spend() returns the correct tx
+    // also spends the maker payment and try to check if the wait_for_htlc_tx_spend() returns the correct tx
     static mut SPEND_TX: Option<TransactionEnum> = None;
 
     let maker_pub_c = maker_pub.to_vec();
@@ -778,8 +779,9 @@ fn test_wait_for_tx_spend() {
 
     let wait_until = (now_ms() / 1000) + 120;
     let found = maker_coin
-        .wait_for_tx_spend(
+        .wait_for_htlc_tx_spend(
             &payment_tx_hex,
+            &[],
             wait_until,
             from_block,
             &maker_coin.swap_contract_address(),

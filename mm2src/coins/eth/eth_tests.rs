@@ -466,7 +466,7 @@ fn test_wait_for_payment_spend_timeout() {
     ];
 
     assert!(coin
-        .wait_for_tx_spend(&tx_bytes, wait_until, from_block, &coin.swap_contract_address())
+        .wait_for_htlc_tx_spend(&tx_bytes, &[], wait_until, from_block, &coin.swap_contract_address())
         .wait()
         .is_err());
 }
@@ -536,7 +536,7 @@ fn test_search_for_swap_tx_spend_was_spent() {
     ];
     let spend_tx = FoundSwapTxSpend::Spent(signed_eth_tx_from_bytes(&spend_tx).unwrap().into());
 
-    let found_tx = block_on(coin.search_for_swap_tx_spend(&payment_tx, swap_contract_address, 6051857))
+    let found_tx = block_on(coin.search_for_swap_tx_spend(&payment_tx, swap_contract_address, &[], 6051857))
         .unwrap()
         .unwrap();
     assert_eq!(spend_tx, found_tx);
@@ -644,7 +644,7 @@ fn test_search_for_swap_tx_spend_was_refunded() {
     ];
     let refund_tx = FoundSwapTxSpend::Refunded(signed_eth_tx_from_bytes(&refund_tx).unwrap().into());
 
-    let found_tx = block_on(coin.search_for_swap_tx_spend(&payment_tx, swap_contract_address, 5886908))
+    let found_tx = block_on(coin.search_for_swap_tx_spend(&payment_tx, swap_contract_address, &[], 5886908))
         .unwrap()
         .unwrap();
     assert_eq!(refund_tx, found_tx);
