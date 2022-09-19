@@ -60,7 +60,7 @@ use web3::{self, Web3};
 use web3_transport::{EthFeeHistoryNamespace, Web3Transport, Web3TransportNode};
 
 use super::{coin_conf, AsyncMutex, BalanceError, BalanceFut, CoinBalance, CoinProtocol, CoinTransportMetrics,
-            CoinsContext, FeeApproxStage, FoundSwapTxSpend, HistorySyncState, MarketCoinOps, MmCoin, MmCoinEnum,
+            CoinsContext, FeeApproxStage, FoundSwapTxSpend, HistorySyncState, MarketCoinOps, MmCoin,
             NegotiatePubKeyValidationErr, NegotiateSwapContractAddrErr, NumConversError, NumConversResult,
             RawTransactionError, RawTransactionFut, RawTransactionRequest, RawTransactionRes, RawTransactionResult,
             RpcClientType, RpcTransportEventHandler, RpcTransportEventHandlerShared, SearchForSwapTxSpendInput,
@@ -1109,28 +1109,15 @@ impl SwapOps for EthCoin {
         }
     }
 
-    fn negotiate_coin_contract_address(&self, other_coin: MmCoinEnum) -> bool {
-        if let MmCoinEnum::EthCoin(other_coin) = other_coin {
-            return other_coin.erc20_token_address() == self.0.erc20_token_address();
-        }
-        false
-    }
-
     fn derive_htlc_key_pair(&self, _swap_unique_data: &[u8]) -> keys::KeyPair {
         key_pair_from_secret(self.key_pair.secret()).expect("valid key")
     }
 
-    fn negotiate_pubkey_validation(
-        &self,
-        raw_pubkey: Option<&[u8]>,
-    ) -> MmResult<Option<BytesJson>, NegotiatePubKeyValidationErr> {
-        if let Some(key) = raw_pubkey {
-            return match PublicKey::from_slice(key) {
-                Ok(key) => Ok(Some(key.serialize().as_slice().into())),
-                Err(e) => MmError::err(NegotiatePubKeyValidationErr::InvalidPubKeyInput(e.to_string())),
-            };
+    fn validate_other_pubkey(&self, raw_pubkey: &[u8]) -> MmResult<(), NegotiatePubKeyValidationErr> {
+        match PublicKey::from_slice(raw_pubkey) {
+            Ok(_) => Ok(()),
+            Err(e) => MmError::err(NegotiatePubKeyValidationErr::InvalidPubKeyInput(e.to_string())),
         }
-        Ok(None)
     }
 
     fn validate_secret_hash(&self, secret_hash: &[u8], secret: &[u8]) -> bool { secret_hash == secret }

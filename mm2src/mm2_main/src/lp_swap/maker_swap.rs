@@ -577,11 +577,8 @@ impl MakerSwap {
         };
 
         // Validate maker_coin_htlc_pubkey realness
-        let maker_coin_htlc_pubkey = match self
-            .taker_coin
-            .negotiate_pubkey_validation(Some(taker_data.maker_coin_htlc_pub()))
-        {
-            Ok(bytes) => bytes.map(|e| e.into_vec().as_slice().into()),
+        match self.taker_coin.validate_other_pubkey(taker_data.maker_coin_htlc_pub()) {
+            Ok(_) => (),
             Err(err) => {
                 return Ok((Some(MakerSwapCommand::Finish), vec![MakerSwapEvent::NegotiateFailed(
                     ERRL!("!taker_data.maker_coin_htlc_pub {}", err).into(),
@@ -590,24 +587,14 @@ impl MakerSwap {
         };
 
         // Validate taker_coin_htlc_pubkey realness
-        let taker_coin_htlc_pubkey = match self
-            .taker_coin
-            .negotiate_pubkey_validation(Some(taker_data.taker_coin_htlc_pub()))
-        {
-            Ok(bytes) => bytes.map(|e| e.into_vec().as_slice().into()),
+        match self.taker_coin.validate_other_pubkey(taker_data.taker_coin_htlc_pub()) {
+            Ok(_) => (),
             Err(err) => {
                 return Ok((Some(MakerSwapCommand::Finish), vec![MakerSwapEvent::NegotiateFailed(
                     ERRL!("!taker_data.taker_coin_htlc_pub {}", err).into(),
                 )]))
             },
         };
-
-        // Validate taker coin contract == maker coin contract.
-        if !self.taker_coin.negotiate_coin_contract_address(self.maker_coin.clone()) {
-            return Ok((Some(MakerSwapCommand::Finish), vec![MakerSwapEvent::NegotiateFailed(
-                ERRL!("taker coin contract != maker coin contract").into(),
-            )]));
-        }
 
         Ok((Some(MakerSwapCommand::WaitForTakerFee), vec![
             MakerSwapEvent::Negotiated(TakerNegotiationData {
@@ -617,8 +604,8 @@ impl MakerSwap {
                 taker_pubkey: H264Json::default(),
                 maker_coin_swap_contract_addr,
                 taker_coin_swap_contract_addr,
-                maker_coin_htlc_pubkey,
-                taker_coin_htlc_pubkey,
+                maker_coin_htlc_pubkey: Some(taker_data.maker_coin_htlc_pub().into()),
+                taker_coin_htlc_pubkey: Some(taker_data.taker_coin_htlc_pub().into()),
             }),
         ]))
     }

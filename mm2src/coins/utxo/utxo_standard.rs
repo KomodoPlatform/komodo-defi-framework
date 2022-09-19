@@ -15,7 +15,7 @@ use crate::rpc_command::init_scan_for_new_addresses::{self, InitScanAddressesRpc
                                                       ScanAddressesResponse};
 use crate::rpc_command::init_withdraw::{InitWithdrawCoin, WithdrawTaskHandle};
 use crate::utxo::utxo_builder::{UtxoArcBuilder, UtxoCoinBuilder};
-use crate::{CanRefundHtlc, CoinBalance, CoinWithDerivationMethod, GetWithdrawSenderAddress, MmCoinEnum,
+use crate::{CanRefundHtlc, CoinBalance, CoinWithDerivationMethod, GetWithdrawSenderAddress,
             NegotiatePubKeyValidationErr, NegotiateSwapContractAddrErr, PrivKeyBuildPolicy, SearchForSwapTxSpendInput,
             SignatureResult, SwapOps, TradePreimageValue, TransactionFut, TxMarshalingErr, ValidateAddressResult,
             ValidatePaymentInput, VerificationResult, WithdrawFut, WithdrawSenderAddress};
@@ -461,22 +461,12 @@ impl SwapOps for UtxoStandardCoin {
         Ok(None)
     }
 
-    fn negotiate_coin_contract_address(&self, other_coin: MmCoinEnum) -> bool {
-        if let MmCoinEnum::UtxoCoin(other) = other_coin {
-            utxo_common::negotiate_coin_contract_address(&self.utxo_arc, &other.utxo_arc);
-        }
-        false
-    }
-
     fn derive_htlc_key_pair(&self, swap_unique_data: &[u8]) -> KeyPair {
         utxo_common::derive_htlc_key_pair(self.as_ref(), swap_unique_data)
     }
 
-    fn negotiate_pubkey_validation(
-        &self,
-        raw_pubkey: Option<&[u8]>,
-    ) -> MmResult<Option<BytesJson>, NegotiatePubKeyValidationErr> {
-        utxo_common::negotiate_pubkey_validation(raw_pubkey)
+    fn validate_other_pubkey(&self, raw_pubkey: &[u8]) -> MmResult<(), NegotiatePubKeyValidationErr> {
+        utxo_common::validate_other_pubkey(raw_pubkey)
     }
 
     fn validate_secret_hash(&self, secret_hash: &[u8], secret: &[u8]) -> bool {

@@ -6,7 +6,7 @@ use crate::utxo::slp::{parse_slp_script, ParseSlpScriptError, SlpGenesisParams, 
                        SlpUnspent};
 use crate::utxo::utxo_builder::{UtxoArcBuilder, UtxoCoinBuilder};
 use crate::utxo::utxo_common::big_decimal_from_sat_unsigned;
-use crate::{BlockHeightAndTime, CanRefundHtlc, CoinBalance, CoinProtocol, MmCoinEnum, NegotiatePubKeyValidationErr,
+use crate::{BlockHeightAndTime, CanRefundHtlc, CoinBalance, CoinProtocol, NegotiatePubKeyValidationErr,
             NegotiateSwapContractAddrErr, PrivKeyBuildPolicy, RawTransactionFut, RawTransactionRequest,
             SearchForSwapTxSpendInput, SignatureResult, SwapOps, TradePreimageValue, TransactionFut, TransactionType,
             TxFeeDetails, TxMarshalingErr, UnexpectedDerivationMethod, ValidateAddressResult, ValidatePaymentInput,
@@ -1042,22 +1042,12 @@ impl SwapOps for BchCoin {
         Ok(None)
     }
 
-    fn negotiate_coin_contract_address(&self, other_coin: MmCoinEnum) -> bool {
-        if let MmCoinEnum::Bch(other) = other_coin {
-            utxo_common::negotiate_coin_contract_address(&self.utxo_arc, &other.utxo_arc);
-        }
-        false
-    }
-
     fn derive_htlc_key_pair(&self, swap_unique_data: &[u8]) -> KeyPair {
         utxo_common::derive_htlc_key_pair(self.as_ref(), swap_unique_data)
     }
 
-    fn negotiate_pubkey_validation(
-        &self,
-        raw_pubkey: Option<&[u8]>,
-    ) -> MmResult<Option<BytesJson>, NegotiatePubKeyValidationErr> {
-        utxo_common::negotiate_pubkey_validation(raw_pubkey)
+    fn validate_other_pubkey(&self, raw_pubkey: &[u8]) -> MmResult<(), NegotiatePubKeyValidationErr> {
+        utxo_common::validate_other_pubkey(raw_pubkey)
     }
 
     fn validate_secret_hash(&self, secret_hash: &[u8], secret: &[u8]) -> bool {

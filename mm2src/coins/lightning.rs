@@ -411,14 +411,9 @@ impl SwapOps for LightningCoin {
         unimplemented!()
     }
 
-    fn negotiate_coin_contract_address(&self, _other_coin: MmCoinEnum) -> bool { unimplemented!() }
-
     fn derive_htlc_key_pair(&self, _swap_unique_data: &[u8]) -> KeyPair { unimplemented!() }
 
-    fn negotiate_pubkey_validation(
-        &self,
-        _raw_pubkey: Option<&[u8]>,
-    ) -> MmResult<Option<BytesJson>, NegotiatePubKeyValidationErr> {
+    fn validate_other_pubkey(&self, _raw_pubkey: &[u8]) -> MmResult<(), NegotiatePubKeyValidationErr> {
         unimplemented!()
     }
 

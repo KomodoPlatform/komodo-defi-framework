@@ -12,7 +12,7 @@ use crate::utxo::{sat_from_big_decimal, utxo_common, ActualTxFee, AdditionalTxDa
                   UtxoCommonOps, UtxoFeeDetails, UtxoRpcMode, UtxoTxBroadcastOps, UtxoTxGenerationOps,
                   VerboseTransactionFrom};
 use crate::{BalanceError, BalanceFut, CoinBalance, FeeApproxStage, FoundSwapTxSpend, HistorySyncState, MarketCoinOps,
-            MmCoin, MmCoinEnum, NegotiatePubKeyValidationErr, NegotiateSwapContractAddrErr, NumConversError,
+            MmCoin, NegotiatePubKeyValidationErr, NegotiateSwapContractAddrErr, NumConversError,
             PrivKeyActivationPolicy, RawTransactionFut, RawTransactionRequest, SearchForSwapTxSpendInput,
             SignatureError, SignatureResult, SwapOps, TradeFee, TradePreimageFut, TradePreimageResult,
             TradePreimageValue, TransactionDetails, TransactionEnum, TransactionFut, TxFeeDetails, TxMarshalingErr,
@@ -1364,13 +1364,6 @@ impl SwapOps for ZCoin {
         Ok(None)
     }
 
-    fn negotiate_coin_contract_address(&self, other_coin: MmCoinEnum) -> bool {
-        if let MmCoinEnum::ZCoin(other) = other_coin {
-            utxo_common::negotiate_coin_contract_address(&self.utxo_arc, &other.utxo_arc);
-        }
-        false
-    }
-
     fn derive_htlc_key_pair(&self, swap_unique_data: &[u8]) -> KeyPair {
         let message = Message::from(dhash256(swap_unique_data).take());
         let signature = self.secp_keypair().private().sign(&message).expect("valid privkey");
@@ -1379,11 +1372,8 @@ impl SwapOps for ZCoin {
         key_pair_from_secret(key.as_slice()).expect("valid privkey")
     }
 
-    fn negotiate_pubkey_validation(
-        &self,
-        raw_pubkey: Option<&[u8]>,
-    ) -> MmResult<Option<BytesJson>, NegotiatePubKeyValidationErr> {
-        utxo_common::negotiate_pubkey_validation(raw_pubkey)
+    fn validate_other_pubkey(&self, raw_pubkey: &[u8]) -> MmResult<(), NegotiatePubKeyValidationErr> {
+        utxo_common::validate_other_pubkey(raw_pubkey)
     }
 
     fn validate_secret_hash(&self, secret_hash: &[u8], secret: &[u8]) -> bool {

@@ -3554,22 +3554,11 @@ pub fn derive_htlc_key_pair(coin: &UtxoCoinFields, _swap_unique_data: &[u8]) -> 
     }
 }
 
-pub fn negotiate_coin_contract_address(coin: &UtxoCoinFields, other_coin: &UtxoCoinFields) -> bool {
-    coin.conf.p2sh_addr_prefix == other_coin.conf.p2sh_addr_prefix
-        && coin.conf.pub_t_addr_prefix == other_coin.conf.pub_t_addr_prefix
-        && coin.conf.wif_prefix == other_coin.conf.wif_prefix
-}
-
-pub fn negotiate_pubkey_validation(
-    raw_pubkey: Option<&[u8]>,
-) -> MmResult<Option<BytesJson>, NegotiatePubKeyValidationErr> {
-    if let Some(key) = raw_pubkey {
-        return match Public::from_slice(key) {
-            Ok(key) => Ok(Some(key.to_vec().into())),
-            Err(e) => MmError::err(NegotiatePubKeyValidationErr::InvalidPubKeyInput(e.to_string())),
-        };
+pub fn validate_other_pubkey(raw_pubkey: &[u8]) -> MmResult<(), NegotiatePubKeyValidationErr> {
+    match Public::from_slice(raw_pubkey) {
+        Ok(_) => Ok(()),
+        Err(e) => MmError::err(NegotiatePubKeyValidationErr::InvalidPubKeyInput(e.to_string())),
     }
-    Ok(None)
 }
 
 pub fn validate_secret_hash(secret_hash: &[u8], secret: &[u8]) -> bool { secret_hash == secret }

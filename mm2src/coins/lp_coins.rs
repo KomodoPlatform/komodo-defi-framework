@@ -595,14 +595,9 @@ pub trait SwapOps {
         other_side_address: Option<&[u8]>,
     ) -> Result<Option<BytesJson>, MmError<NegotiateSwapContractAddrErr>>;
 
-    fn negotiate_coin_contract_address(&self, other_coin: MmCoinEnum) -> bool;
-
     fn derive_htlc_key_pair(&self, swap_unique_data: &[u8]) -> KeyPair;
 
-    fn negotiate_pubkey_validation(
-        &self,
-        raw_pubkey: Option<&[u8]>,
-    ) -> MmResult<Option<BytesJson>, NegotiatePubKeyValidationErr>;
+    fn validate_other_pubkey(&self, raw_pubkey: &[u8]) -> MmResult<(), NegotiatePubKeyValidationErr>;
 
     fn validate_secret_hash(&self, secret_hash: &[u8], secret: &[u8]) -> bool;
 }

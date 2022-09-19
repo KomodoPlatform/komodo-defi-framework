@@ -1,7 +1,7 @@
 use super::{CoinBalance, HistorySyncState, MarketCoinOps, MmCoin, SwapOps, TradeFee, TransactionEnum};
 use crate::solana::solana_common::{lamports_to_sol, PrepareTransferData, SufficientBalanceError};
 use crate::solana::spl::SplTokenInfo;
-use crate::{BalanceError, BalanceFut, FeeApproxStage, FoundSwapTxSpend, MmCoinEnum, NegotiatePubKeyValidationErr,
+use crate::{BalanceError, BalanceFut, FeeApproxStage, FoundSwapTxSpend, NegotiatePubKeyValidationErr,
             NegotiateSwapContractAddrErr, RawTransactionFut, RawTransactionRequest, SearchForSwapTxSpendInput,
             SignatureResult, TradePreimageFut, TradePreimageResult, TradePreimageValue, TransactionDetails,
             TransactionFut, TransactionType, TxMarshalingErr, UnexpectedDerivationMethod, ValidateAddressResult,
@@ -580,14 +580,9 @@ impl SwapOps for SolanaCoin {
         unimplemented!()
     }
 
-    fn negotiate_coin_contract_address(&self, _other_coin: MmCoinEnum) -> bool { unimplemented!() }
-
     fn derive_htlc_key_pair(&self, _swap_unique_data: &[u8]) -> KeyPair { todo!() }
 
-    fn negotiate_pubkey_validation(
-        &self,
-        _raw_pubkey: Option<&[u8]>,
-    ) -> MmResult<Option<BytesJson>, NegotiatePubKeyValidationErr> {
+    fn validate_other_pubkey(&self, _raw_pubkey: &[u8]) -> MmResult<(), NegotiatePubKeyValidationErr> {
         unimplemented!()
     }
 
