@@ -45,15 +45,15 @@ use std::ops::Deref;
 use std::str::FromStr;
 use std::sync::Arc;
 
-const TIMEOUT_HEIGHT_DELTA: u64 = 100;
+pub(super) const TIMEOUT_HEIGHT_DELTA: u64 = 100;
 pub const GAS_LIMIT_DEFAULT: u64 = 100_000;
 pub const TX_DEFAULT_MEMO: &str = "";
 
-#[derive(Clone, Debug, PartialEq, Serialize)]
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 pub struct TendermintFeeDetails {
-    coin: String,
-    amount: BigDecimal,
-    gas_limit: u64,
+    pub coin: String,
+    pub amount: BigDecimal,
+    pub gas_limit: u64,
 }
 
 #[derive(Clone, Debug, Deserialize, Serialize)]
@@ -75,12 +75,12 @@ pub struct TendermintCoinImpl {
     rpc_client: HttpClient,
     /// My address
     pub account_id: AccountId,
-    account_prefix: String,
+    pub(super) account_prefix: String,
     priv_key: Vec<u8>,
     decimals: u8,
-    denom: Denom,
+    pub(super) denom: Denom,
     chain_id: ChainId,
-    sequence_lock: AsyncMutex<()>,
+    pub(super) sequence_lock: AsyncMutex<()>,
     tokens_info: Mutex<HashMap<String, ActivatedTokenInfo>>,
 }
 
@@ -191,7 +191,7 @@ pub(crate) fn account_id_from_pubkey_hex(prefix: &str, pubkey: &str) -> MmResult
     Ok(AccountId::new(prefix, pubkey_hash.as_slice())?)
 }
 
-fn upper_hex(bytes: &[u8]) -> String {
+pub(crate) fn upper_hex(bytes: &[u8]) -> String {
     let mut str = hex::encode(bytes);
     str.make_ascii_uppercase();
     str
@@ -252,7 +252,7 @@ impl TendermintCoin {
         })))
     }
 
-    async fn my_account_info(&self) -> MmResult<BaseAccount, TendermintCoinRpcError> {
+    pub(super) async fn my_account_info(&self) -> MmResult<BaseAccount, TendermintCoinRpcError> {
         let path = AbciPath::from_str("/cosmos.auth.v1beta1.Query/Account").expect("valid path");
         let request = QueryAccountRequest {
             address: self.account_id.to_string(),
@@ -398,7 +398,7 @@ impl TendermintCoin {
         })
     }
 
-    fn any_to_signed_raw_tx(
+    pub(super) fn any_to_signed_raw_tx(
         &self,
         account_info: BaseAccount,
         tx_payload: Any,
@@ -1138,20 +1138,20 @@ impl SwapOps for TendermintCoin {
 }
 
 #[cfg(test)]
-mod tendermint_coin_tests {
+pub mod tendermint_coin_tests {
     use super::*;
     use crate::tendermint::htlc_proto::ClaimHtlcProtoRep;
     use common::block_on;
     use cosmrs::proto::cosmos::tx::v1beta1::{GetTxRequest, GetTxResponse, GetTxsEventResponse};
     use rand::{thread_rng, Rng};
 
-    const IRIS_TESTNET_HTLC_PAIR1_SEED: &str = "iris test seed";
+    pub const IRIS_TESTNET_HTLC_PAIR1_SEED: &str = "iris test seed";
     // const IRIS_TESTNET_HTLC_PAIR1_ADDRESS: &str = "iaa1e0rx87mdj79zejewuc4jg7ql9ud2286g2us8f2";
 
     // const IRIS_TESTNET_HTLC_PAIR2_SEED: &str = "iris test2 seed";
     const IRIS_TESTNET_HTLC_PAIR2_ADDRESS: &str = "iaa1erfnkjsmalkwtvj44qnfr2drfzdt4n9ldh0kjv";
 
-    const IRIS_TESTNET_RPC_URL: &str = "http://34.80.202.172:26657";
+    pub const IRIS_TESTNET_RPC_URL: &str = "http://34.80.202.172:26657";
 
     fn get_iris_usdc_ibc_protocol() -> TendermintProtocolInfo {
         TendermintProtocolInfo {

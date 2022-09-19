@@ -1790,6 +1790,29 @@ pub async fn enable_tendermint(mm: &MarketMakerIt, coin: &str, ibc_assets: &[&st
     json::from_str(&request.1).unwrap()
 }
 
+pub async fn enable_tendermint_token(mm: &MarketMakerIt, coin: &str) -> Json {
+    let request = json! ({
+        "userpass": mm.userpass,
+        "method": "enable_tendermint_token",
+        "mmrpc": "2.0",
+        "params": {
+            "ticker": coin,
+            "activation_params": {}
+        }
+    });
+    println!("enable_tendermint_token request {}", json::to_string(&request).unwrap());
+
+    let request = mm.rpc(&request).await.unwrap();
+    assert_eq!(
+        request.0,
+        StatusCode::OK,
+        "'enable_tendermint_token' failed: {}",
+        request.1
+    );
+    println!("enable_tendermint_token response {}", request.1);
+    json::from_str(&request.1).unwrap()
+}
+
 pub async fn init_utxo_electrum(mm: &MarketMakerIt, coin: &str, servers: Vec<Json>) -> Json {
     let request = mm
         .rpc(&json! ({

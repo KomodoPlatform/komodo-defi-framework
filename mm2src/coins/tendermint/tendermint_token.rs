@@ -1,13 +1,18 @@
 /// Module containing implementation for Tendermint Tokens. They include native assets + IBC
-use super::TendermintCoin;
-use crate::{big_decimal_from_sat_unsigned, BalanceFut, BigDecimal, CoinBalance, FeeApproxStage, FoundSwapTxSpend,
-            HistorySyncState, MarketCoinOps, MmCoin, NegotiateSwapContractAddrErr, RawTransactionFut,
-            RawTransactionRequest, SearchForSwapTxSpendInput, SignatureResult, SwapOps, TradeFee, TradePreimageFut,
-            TradePreimageResult, TradePreimageValue, TransactionEnum, TransactionErr, TransactionFut, TxMarshalingErr,
+use super::{upper_hex, TendermintCoin, TendermintFeeDetails, GAS_LIMIT_DEFAULT, TIMEOUT_HEIGHT_DELTA};
+use crate::{big_decimal_from_sat_unsigned, utxo::sat_from_big_decimal, BalanceFut, BigDecimal, CoinBalance,
+            FeeApproxStage, FoundSwapTxSpend, HistorySyncState, MarketCoinOps, MmCoin, NegotiateSwapContractAddrErr,
+            RawTransactionFut, RawTransactionRequest, SearchForSwapTxSpendInput, SignatureResult, SwapOps, TradeFee,
+            TradePreimageFut, TradePreimageResult, TradePreimageValue, TransactionDetails, TransactionEnum,
+            TransactionErr, TransactionFut, TransactionType, TxFeeDetails, TxMarshalingErr,
             UnexpectedDerivationMethod, ValidateAddressResult, ValidatePaymentInput, VerificationResult,
             WithdrawError, WithdrawFut, WithdrawRequest};
 use async_trait::async_trait;
-use cosmrs::Denom;
+use bitcrypto::sha256;
+use common::Future01CompatExt;
+use cosmrs::{bank::MsgSend,
+             tx::{Fee, Msg},
+             AccountId, Coin, Denom};
 use futures::{FutureExt, TryFutureExt};
 use futures01::Future;
 use keys::KeyPair;
@@ -328,9 +333,124 @@ impl MmCoin for TendermintToken {
     fn is_asset_chain(&self) -> bool { false }
 
     fn withdraw(&self, req: WithdrawRequest) -> WithdrawFut {
-        Box::new(futures01::future::result(MmError::err(WithdrawError::InternalError(
-            "Not implemented".into(),
-        ))))
+        let coin = self.platform_coin.clone();
+        let token = self.clone();
+        let fut = async move {
+            let to_address =
+                AccountId::from_str(&req.to).map_to_mm(|e| WithdrawError::InvalidAddress(e.to_string()))?;
+            if to_address.prefix() != coin.account_prefix {
+                return MmError::err(WithdrawError::InvalidAddress(format!(
+                    "expected {} address prefix",
+                    coin.account_prefix
+                )));
+            }
+
+            let base_denom_balance = coin.balance_for_denom(coin.denom.to_string()).await?;
+            let base_denom_balance_dec = big_decimal_from_sat_unsigned(base_denom_balance, token.decimals());
+
+            // TODO calculate current fee instead of using hard-coded value
+            let fee_denom = 1000;
+            let fee_amount_dec = big_decimal_from_sat_unsigned(fee_denom, coin.decimals());
+
+            if base_denom_balance < fee_denom {
+                return MmError::err(WithdrawError::NotSufficientBalanceForFee {
+                    coin: coin.ticker().to_string(),
+                    available: base_denom_balance_dec,
+                    required: fee_amount_dec,
+                });
+            }
+
+            let balance_denom = coin.balance_for_denom(token.denom.to_string()).await?;
+            let balance_dec = big_decimal_from_sat_unsigned(balance_denom, token.decimals());
+
+            let (amount_denom, amount_dec, total_amount) = if req.max {
+                (
+                    balance_denom,
+                    big_decimal_from_sat_unsigned(balance_denom, token.decimals),
+                    balance_dec,
+                )
+            } else {
+                if balance_dec < req.amount {
+                    return MmError::err(WithdrawError::NotSufficientBalance {
+                        coin: token.ticker.clone(),
+                        available: balance_dec,
+                        required: req.amount,
+                    });
+                }
+
+                (
+                    sat_from_big_decimal(&req.amount, token.decimals())?,
+                    req.amount.clone(),
+                    req.amount,
+                )
+            };
+
+            let received_by_me = if to_address == coin.account_id {
+                amount_dec
+            } else {
+                BigDecimal::default()
+            };
+
+            let msg_send = MsgSend {
+                from_address: coin.account_id.clone(),
+                to_address,
+                amount: vec![Coin {
+                    denom: token.denom.clone(),
+                    amount: amount_denom.into(),
+                }],
+            }
+            .to_any()
+            .map_to_mm(|e| WithdrawError::InternalError(e.to_string()))?;
+
+            let current_block = token
+                .current_block()
+                .compat()
+                .await
+                .map_to_mm(WithdrawError::Transport)?;
+
+            let _sequence_lock = coin.sequence_lock.lock().await;
+            let account_info = coin.my_account_info().await?;
+
+            let fee_amount = Coin {
+                denom: coin.denom.clone(),
+                amount: fee_denom.into(),
+            };
+
+            let fee = Fee::from_amount_and_gas(fee_amount, GAS_LIMIT_DEFAULT);
+            let timeout_height = current_block + TIMEOUT_HEIGHT_DELTA;
+
+            let tx_raw = coin
+                .any_to_signed_raw_tx(account_info, msg_send, fee, timeout_height)
+                .map_to_mm(|e| WithdrawError::InternalError(e.to_string()))?;
+
+            let tx_bytes = tx_raw
+                .to_bytes()
+                .map_to_mm(|e| WithdrawError::InternalError(e.to_string()))?;
+
+            let hash = sha256(&tx_bytes);
+            Ok(TransactionDetails {
+                tx_hash: upper_hex(hash.as_slice()),
+                tx_hex: tx_bytes.into(),
+                from: vec![coin.account_id.to_string()],
+                to: vec![req.to],
+                my_balance_change: &received_by_me - &total_amount,
+                spent_by_me: total_amount.clone(),
+                total_amount,
+                received_by_me,
+                block_height: 0,
+                timestamp: 0,
+                fee_details: Some(TxFeeDetails::Tendermint(TendermintFeeDetails {
+                    coin: coin.ticker().to_string(),
+                    amount: fee_amount_dec,
+                    gas_limit: GAS_LIMIT_DEFAULT,
+                })),
+                coin: token.ticker,
+                internal_id: hash.to_vec().into(),
+                kmd_rewards: None,
+                transaction_type: TransactionType::default(),
+            })
+        };
+        Box::new(fut.boxed().compat())
     }
 
     fn get_raw_transaction(&self, req: RawTransactionRequest) -> RawTransactionFut {

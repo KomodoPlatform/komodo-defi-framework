@@ -856,6 +856,7 @@ impl<'de> Deserialize<'de> for TxFeeDetails {
             Qrc20(Qrc20FeeDetails),
             #[cfg(all(not(target_os = "ios"), not(target_os = "android"), not(target_arch = "wasm32")))]
             Solana(SolanaFeeDetails),
+            Tendermint(TendermintFeeDetails),
         }
 
         match Deserialize::deserialize(deserializer)? {
@@ -864,6 +865,7 @@ impl<'de> Deserialize<'de> for TxFeeDetails {
             TxFeeDetailsUnTagged::Qrc20(f) => Ok(TxFeeDetails::Qrc20(f)),
             #[cfg(all(not(target_os = "ios"), not(target_os = "android"), not(target_arch = "wasm32")))]
             TxFeeDetailsUnTagged::Solana(f) => Ok(TxFeeDetails::Solana(f)),
+            TxFeeDetailsUnTagged::Tendermint(f) => Ok(TxFeeDetails::Tendermint(f)),
         }
     }
 }
@@ -883,6 +885,10 @@ impl From<Qrc20FeeDetails> for TxFeeDetails {
 #[cfg(all(not(target_os = "ios"), not(target_os = "android"), not(target_arch = "wasm32")))]
 impl From<SolanaFeeDetails> for TxFeeDetails {
     fn from(solana_details: SolanaFeeDetails) -> Self { TxFeeDetails::Solana(solana_details) }
+}
+
+impl From<TendermintFeeDetails> for TxFeeDetails {
+    fn from(tendermint_details: TendermintFeeDetails) -> Self { TxFeeDetails::Tendermint(tendermint_details) }
 }
 
 #[derive(Clone, Debug, Deserialize, PartialEq, Serialize)]
@@ -1428,6 +1434,17 @@ pub enum WithdrawError {
         available: BigDecimal,
         required: BigDecimal,
     },
+    #[display(
+        fmt = "Not enough {} to afford fee. Available {}, required at least {}",
+        coin,
+        available,
+        required
+    )]
+    NotSufficientBalanceForFee {
+        coin: String,
+        available: BigDecimal,
+        required: BigDecimal,
+    },
     #[display(fmt = "Balance is zero")]
     ZeroBalanceToWithdrawMax,
     #[display(fmt = "The amount {} is too small, required at least {}", amount, threshold)]
@@ -1466,6 +1483,7 @@ impl HttpStatusCode for WithdrawError {
             WithdrawError::Timeout(_) => StatusCode::REQUEST_TIMEOUT,
             WithdrawError::CoinDoesntSupportInitWithdraw { .. }
             | WithdrawError::NotSufficientBalance { .. }
+            | WithdrawError::NotSufficientBalanceForFee { .. }
             | WithdrawError::ZeroBalanceToWithdrawMax
             | WithdrawError::AmountTooLow { .. }
             | WithdrawError::InvalidAddress(_)
