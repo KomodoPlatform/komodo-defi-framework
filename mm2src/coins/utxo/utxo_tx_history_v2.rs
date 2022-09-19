@@ -23,6 +23,15 @@ use std::collections::{hash_map::Entry, HashMap, HashSet};
 use std::iter::FromIterator;
 use std::str::FromStr;
 
+macro_rules! try_or_stop_unknown {
+    ($exp:expr, $fmt:literal) => {
+        match $exp {
+            Ok(t) => t,
+            Err(e) => return Self::change_state(Stopped::unknown(format!("{}: {}", $fmt, e))),
+        }
+    };
+}
+
 #[derive(Debug, Display)]
 pub enum UtxoMyAddressesHistoryError {
     AddressDerivingError(AddressDerivingError),
@@ -272,15 +281,8 @@ where
 
         let fetch_for_addresses = match self.fetch_for_addresses {
             Some(for_addresses) => for_addresses,
-            None => {
-                // `fetch_for_addresses` hasn't been specified. Fetch TX hashses for all addresses.
-                match ctx.coin.my_addresses().await {
-                    Ok(my_addresses) => my_addresses,
-                    Err(e) => {
-                        return Self::change_state(Stopped::unknown(format!("Error on getting my addresses: {e}")))
-                    },
-                }
-            },
+            // `fetch_for_addresses` hasn't been specified. Fetch TX hashses for all addresses.
+            None => try_or_stop_unknown!(ctx.coin.my_addresses().await, "Error on getting my addresses"),
         };
 
         let maybe_tx_ids = ctx
@@ -413,9 +415,17 @@ where
         let wallet_id = ctx.coin.history_wallet_id();
         loop {
             Timer::sleep(30.).await;
-            match ctx.storage.history_contains_unconfirmed_txes(&wallet_id).await {
+
+            let my_addresses = try_or_stop_unknown!(ctx.coin.my_addresses().await, "Error on getting my addresses");
+            let for_addresses = to_filtering_addresses(&my_addresses);
+
+            match ctx
+                .storage
+                .history_contains_unconfirmed_txes(&wallet_id, for_addresses)
+                .await
+            {
                 // Fetch TX hashses for all addresses.
-                Ok(true) => return Self::change_state(FetchingTxHashes::for_all_addresses()),
+                Ok(true) => return Self::change_state(FetchingTxHashes::for_addresses(my_addresses)),
                 Ok(false) => (),
                 Err(e) => return Self::change_state(Stopped::storage_error(e)),
             }
@@ -468,8 +478,13 @@ where
 
     async fn on_changed(self: Box<Self>, ctx: &mut Self::Ctx) -> StateResult<Self::Ctx, Self::Result> {
         let wallet_id = ctx.coin.history_wallet_id();
-        // TODO pass `requested_for_addresses`.
-        let unconfirmed = match ctx.storage.get_unconfirmed_txes_from_history(&wallet_id).await {
+
+        let for_addresses = to_filtering_addresses(&self.requested_for_addresses);
+        let unconfirmed = match ctx
+            .storage
+            .get_unconfirmed_txes_from_history(&wallet_id, for_addresses)
+            .await
+        {
             Ok(unconfirmed) => unconfirmed,
             Err(e) => return Self::change_state(Stopped::storage_error(e)),
         };
@@ -545,10 +560,7 @@ where
         let ticker = ctx.coin.ticker();
         let wallet_id = ctx.coin.history_wallet_id();
 
-        let my_addresses = match ctx.coin.my_addresses().await {
-            Ok(addresses) => addresses,
-            Err(e) => return Self::change_state(Stopped::unknown(format!("Error on getting my addresses: {e}"))),
-        };
+        let my_addresses = try_or_stop_unknown!(ctx.coin.my_addresses().await, "Error on getting my addresses");
 
         for (tx_hash, height) in self.all_tx_ids_with_height {
             let tx_hash_string = format!("{:02x}", tx_hash);
@@ -709,4 +721,8 @@ pub async fn utxo_history_loop<Coin, Storage>(
     };
     let state_machine: StateMachine<_, ()> = StateMachine::from_ctx(ctx);
     state_machine.run(Init::new()).await;
+}
+
+fn to_filtering_addresses(addresses: &HashSet<Address>) -> FilteringAddresses {
+    FilteringAddresses::from_iter(addresses.iter().map(DisplayAddress::display_address))
 }

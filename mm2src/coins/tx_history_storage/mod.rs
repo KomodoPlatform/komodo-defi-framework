@@ -52,8 +52,7 @@ impl<'a> TxHistoryStorageBuilder<'a> {
 }
 
 /// Whether transaction is unconfirmed or confirmed.
-/// Serializes to either `0u8` or `1u8` correspondingly.
-#[repr(u8)]
+/// Serializes to either `0` or `1` correspondingly.
 #[derive(Clone, Copy, Debug)]
 pub enum ConfirmationStatus {
     Unconfirmed = 0,

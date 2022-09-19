@@ -118,24 +118,23 @@ impl TxHistoryStorage for IndexedDbTxHistoryStorage {
         json::from_value(details_json).map_to_mm(|e| WasmTxHistoryError::ErrorDeserializing(e.to_string()))
     }
 
-    async fn history_contains_unconfirmed_txes(&self, wallet_id: &WalletId) -> Result<bool, MmError<Self::Error>> {
-        let locked_db = self.lock_db().await?;
-        let db_transaction = locked_db.get_inner().transaction().await?;
-        let table = db_transaction.table::<TxHistoryTableV2>().await?;
-
-        let index_keys = MultiIndex::new(TxHistoryTableV2::WALLET_ID_CONFIRMATION_STATUS_INDEX)
-            .with_value(&wallet_id.ticker)?
-            .with_value(wallet_id.hd_wallet_rmd160_or_exclude())?
-            .with_value(ConfirmationStatus::Unconfirmed)?;
-
-        let count_unconfirmed = table.count_by_multi_index(index_keys).await?;
-        Ok(count_unconfirmed > 0)
+    /// Since we need to filter the transactions by the given `for_addresses`,
+    /// we can't use [`DbTable::count_by_multi_index`].
+    /// TODO consider one of the solutions described at [`IndexedDbTxHistoryStorage::get_history`].
+    async fn history_contains_unconfirmed_txes(
+        &self,
+        wallet_id: &WalletId,
+        for_addresses: FilteringAddresses,
+    ) -> Result<bool, MmError<Self::Error>> {
+        let txs = self.get_unconfirmed_txes_from_history(wallet_id, for_addresses).await?;
+        Ok(!txs.is_empty())
     }
 
     /// Gets the unconfirmed transactions from the history
     async fn get_unconfirmed_txes_from_history(
         &self,
         wallet_id: &WalletId,
+        for_addresses: FilteringAddresses,
     ) -> MmResult<Vec<TransactionDetails>, Self::Error> {
         let locked_db = self.lock_db().await?;
         let db_transaction = locked_db.get_inner().transaction().await?;
@@ -146,13 +145,13 @@ impl TxHistoryStorage for IndexedDbTxHistoryStorage {
             .with_value(wallet_id.hd_wallet_rmd160_or_exclude())?
             .with_value(ConfirmationStatus::Unconfirmed)?;
 
-        table
+        let transactions = table
             .get_items_by_multi_index(index_keys)
             .await?
             .into_iter()
-            .map(|(_item_id, item)| tx_details_from_item(item))
-            // Collect `WasmTxHistoryResult<Vec<TransactionDetails>>`.
-            .collect()
+            .map(|(_item_id, item)| item);
+
+        Self::take_according_to_filtering_addresses(transactions, &for_addresses)
     }
 
     /// Updates transaction in the selected coin's history
@@ -203,9 +202,11 @@ impl TxHistoryStorage for IndexedDbTxHistoryStorage {
             .get_items_by_multi_index(index_keys)
             .await?
             .into_iter()
-            .unique_by(|(_item_id, tx)| tx.tx_hash.clone());
+            .map(|(_item_id, tx)| tx)
+            .unique_by(|tx| tx.tx_hash.clone());
 
-        Ok(Self::take_according_to_filtering_addresses(transactions, for_addresses).len())
+        let filtered_transactions = Self::take_according_to_filtering_addresses(transactions, &for_addresses)?;
+        Ok(filtered_transactions.len())
     }
 
     async fn add_tx_to_cache(
@@ -289,24 +290,28 @@ impl TxHistoryStorage for IndexedDbTxHistoryStorage {
             .into_iter()
             .map(|(_item_id, tx)| tx);
 
-        let transactions = Self::take_according_to_filtering_addresses(transactions, &filters.for_addresses);
+        let transactions = Self::take_according_to_filtering_addresses(transactions, &filters.for_addresses)?;
         Self::take_according_to_paging_opts(transactions, paging, limit)
     }
 }
 
 impl IndexedDbTxHistoryStorage {
-    fn take_according_to_filtering_addresses<I>(txs: I, for_addresses: &FilteringAddresses) -> Vec<TxHistoryTableV2>
+    fn take_according_to_filtering_addresses<I>(
+        txs: I,
+        for_addresses: &FilteringAddresses,
+    ) -> WasmTxHistoryResult<Vec<TransactionDetails>>
     where
         I: Iterator<Item = TxHistoryTableV2>,
     {
         txs.filter(|tx| {
             tx.from_addresses.has_intersection(for_addresses) || tx.to_addresses.has_intersection(for_addresses)
         })
+        .map(tx_details_from_item)
         .collect()
     }
 
     pub(super) fn take_according_to_paging_opts(
-        txs: Vec<TxHistoryTableV2>,
+        txs: Vec<TransactionDetails>,
         paging: PagingOptionsEnum<BytesJson>,
         limit: usize,
     ) -> WasmTxHistoryResult<GetHistoryResult> {
@@ -333,13 +338,7 @@ impl IndexedDbTxHistoryStorage {
             PagingOptionsEnum::PageNumber(page_number) => (page_number.get() - 1) * limit,
         };
 
-        let transactions = txs
-            .into_iter()
-            .skip(skip)
-            .take(limit)
-            .map(tx_details_from_item)
-            // Collect `WasmTxHistoryResult<TransactionDetails>` items into `WasmTxHistoryResult<Vec<TransactionDetails>>`
-            .collect::<WasmTxHistoryResult<Vec<_>>>()?;
+        let transactions = txs.into_iter().skip(skip).take(limit).collect();
         Ok(GetHistoryResult {
             transactions,
             skipped: skip,

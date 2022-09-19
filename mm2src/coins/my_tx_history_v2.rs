@@ -70,13 +70,17 @@ pub trait TxHistoryStorage: Send + Sync + 'static {
     ) -> Result<Option<TransactionDetails>, MmError<Self::Error>>;
 
     /// Returns whether the history contains unconfirmed transactions.
-    async fn history_contains_unconfirmed_txes(&self, wallet_id: &WalletId) -> Result<bool, MmError<Self::Error>>;
+    async fn history_contains_unconfirmed_txes(
+        &self,
+        wallet_id: &WalletId,
+        for_addresses: FilteringAddresses,
+    ) -> Result<bool, MmError<Self::Error>>;
 
     /// Gets the unconfirmed transactions from the wallet's history.
-    /// TODO take FilteringAddresses
     async fn get_unconfirmed_txes_from_history(
         &self,
         wallet_id: &WalletId,
+        for_addresses: FilteringAddresses,
     ) -> Result<Vec<TransactionDetails>, MmError<Self::Error>>;
 
     /// Updates transaction in the selected wallet's history

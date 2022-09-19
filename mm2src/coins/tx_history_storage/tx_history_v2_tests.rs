@@ -186,26 +186,84 @@ async fn test_contains_and_get_unconfirmed_transaction_impl() {
 
     storage.init(&wallet_id).await.unwrap();
 
-    let mut tx_details = get_bch_tx_details("6686ee013620d31ba645b27d581fed85437ce00f46b595a576718afac4dd5b69");
-    tx_details.block_height = 0;
+    let mut tx1 = get_bch_tx_details("afa7785fdb0e49e649aa9b6467fa183c8185c398095baac2c11df50175a7f92b");
+    tx1.block_height = 0;
+    let mut tx2 = get_bch_tx_details("06f38595a2d5d23df8a81a0d744ac3a70c3e46a01efa64a4be862b9d582167b0");
+    tx2.block_height = 0;
+    let mut tx3 = get_bch_tx_details("0fcc9cf22ea2332c73cf6cb4cf89b764d1b936a1ef4d92a087e760378fe6b96e");
+    tx3.block_height = 0;
+
     storage
-        .add_transactions_to_history(&wallet_id, [tx_details.clone()])
+        .add_transactions_to_history(&wallet_id, [tx1.clone(), tx2.clone(), tx3.clone()])
         .await
         .unwrap();
 
-    let contains_unconfirmed = storage.history_contains_unconfirmed_txes(&wallet_id).await.unwrap();
+    let for_first_address =
+        FilteringAddresses::from_iter(["bchtest:pqtflkhvhpeqsxphk36yp7pq22stu7ed3sqfxsdt7x".to_string()]);
+
+    let contains_unconfirmed = storage
+        .history_contains_unconfirmed_txes(&wallet_id, for_first_address.clone())
+        .await
+        .unwrap();
     assert!(contains_unconfirmed);
 
-    let unconfirmed_transactions = storage.get_unconfirmed_txes_from_history(&wallet_id).await.unwrap();
+    let unconfirmed_transactions = storage
+        .get_unconfirmed_txes_from_history(&wallet_id, for_first_address.clone())
+        .await
+        .unwrap();
+    // There only 2 unconfirmed transactions for `bchtest:pqtflkhvhpeqsxphk36yp7pq22stu7ed3sqfxsdt7x` address.
+    assert_eq!(unconfirmed_transactions.len(), 2);
+
+    tx1.block_height = 12345;
+    storage.update_tx_in_history(&wallet_id, &tx1).await.unwrap();
+
+    let unconfirmed_transactions = storage
+        .get_unconfirmed_txes_from_history(&wallet_id, for_first_address)
+        .await
+        .unwrap();
+    // Now there is 1 unconfirmed transaction for `bchtest:pqtflkhvhpeqsxphk36yp7pq22stu7ed3sqfxsdt7x` address.
     assert_eq!(unconfirmed_transactions.len(), 1);
 
-    tx_details.block_height = 12345;
-    storage.update_tx_in_history(&wallet_id, &tx_details).await.unwrap();
+    let for_all_addresses = FilteringAddresses::from_iter([
+        "bchtest:pqtflkhvhpeqsxphk36yp7pq22stu7ed3sqfxsdt7x".to_string(),
+        "bchtest:qp5fphvvj3pvrrv2awhm7dyu8xjueydapg3ju9kwmm".to_string(),
+    ]);
+    let unconfirmed_transactions = storage
+        .get_unconfirmed_txes_from_history(&wallet_id, for_all_addresses)
+        .await
+        .unwrap();
+    // 1 unconfirmed transaction for `bchtest:pqtflkhvhpeqsxphk36yp7pq22stu7ed3sqfxsdt7x`
+    // and 1 unconfirmed transaction for `bchtest:qp5fphvvj3pvrrv2awhm7dyu8xjueydapg3ju9kwmm`.
+    assert_eq!(unconfirmed_transactions.len(), 2);
 
-    let contains_unconfirmed = storage.history_contains_unconfirmed_txes(&wallet_id).await.unwrap();
+    tx3.block_height = 54321;
+    storage.update_tx_in_history(&wallet_id, &tx3).await.unwrap();
+
+    let for_second_address =
+        FilteringAddresses::from_iter(["bchtest:qp5fphvvj3pvrrv2awhm7dyu8xjueydapg3ju9kwmm".to_string()]);
+    let contains_unconfirmed = storage
+        .history_contains_unconfirmed_txes(&wallet_id, for_second_address.clone())
+        .await
+        .unwrap();
     assert!(!contains_unconfirmed);
 
-    let unconfirmed_transactions = storage.get_unconfirmed_txes_from_history(&wallet_id).await.unwrap();
+    let unconfirmed_transactions = storage
+        .get_unconfirmed_txes_from_history(&wallet_id, for_second_address)
+        .await
+        .unwrap();
+    assert!(unconfirmed_transactions.is_empty());
+
+    let for_unknown_address = FilteringAddresses::from_iter(["bchtest:unknown_address".to_string()]);
+    let contains_unconfirmed = storage
+        .history_contains_unconfirmed_txes(&wallet_id, for_unknown_address.clone())
+        .await
+        .unwrap();
+    assert!(!contains_unconfirmed);
+
+    let unconfirmed_transactions = storage
+        .get_unconfirmed_txes_from_history(&wallet_id, for_unknown_address)
+        .await
+        .unwrap();
     assert!(unconfirmed_transactions.is_empty());
 }
 
