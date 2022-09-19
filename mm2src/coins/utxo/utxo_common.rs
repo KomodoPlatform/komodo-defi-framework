@@ -2118,7 +2118,7 @@ where
 {
     #[cfg(not(target_arch = "wasm32"))]
     migrate_tx_history(&coin, &ctx).await;
-    
+
     let mut my_balance: Option<CoinBalance> = None;
     let history = match coin.load_history_from_file(&ctx).compat().await {
         Ok(history) => history,
