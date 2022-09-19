@@ -69,6 +69,7 @@ cfg_native! {
 }
 
 pub const NO_TX_ERROR_CODE: &str = "'code': -5";
+const TX_NOT_FOUND_RETRIES: u8 = 10;
 
 pub type AddressesByLabelResult = HashMap<String, AddressPurpose>;
 pub type JsonRpcPendingRequestsShared = Arc<AsyncMutex<JsonRpcPendingRequests>>;
@@ -101,8 +102,6 @@ impl rustls::client::ServerCertVerifier for NoCertificateVerification {
         Ok(rustls::client::ServerCertVerified::assertion())
     }
 }
-
-pub const TX_NOT_FOUND_RETRIES: u8 = 10;
 
 #[derive(Debug)]
 pub enum UtxoRpcClientEnum {
@@ -190,8 +189,8 @@ impl UtxoRpcClientEnum {
                                 "Tx {} not found on chain, error: {}, retrying in 10 seconds. Retries left: {}",
                                 tx_hash, e, tx_not_found_retries
                             );
-                            Timer::sleep(check_every as f64).await;
                             tx_not_found_retries -= 1;
+                            Timer::sleep(check_every as f64).await;
                             continue;
                         };
 
