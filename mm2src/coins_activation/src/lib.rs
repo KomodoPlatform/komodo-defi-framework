@@ -12,6 +12,7 @@ mod solana_with_tokens_activation;
 #[cfg(all(not(target_os = "ios"), not(target_os = "android"), not(target_arch = "wasm32")))]
 mod spl_token_activation;
 mod standalone_coin;
+mod tendermint_token_activation;
 mod tendermint_with_assets_activation;
 mod token;
 mod utxo_activation;
