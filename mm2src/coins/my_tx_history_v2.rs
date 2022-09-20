@@ -254,9 +254,9 @@ impl Default for MyTxHistoryTarget {
     fn default() -> Self { MyTxHistoryTarget::Iguana }
 }
 
-#[derive(Deserialize)]
+#[derive(Clone, Deserialize)]
 pub struct MyTxHistoryRequestV2<T> {
-    coin: String,
+    pub(crate) coin: String,
     #[serde(default = "ten")]
     pub(crate) limit: usize,
     #[serde(default)]

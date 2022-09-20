@@ -287,7 +287,11 @@ fn get_unconfirmed_txes_builder_preimage<'a>(
 }
 
 /// Creates an `SqlQuery` instance with the required `WHERE`, `ORDER`, `GROUP_BY` constraints.
-/// Please note you can refer to the [`tx_history_table(wallet_id)`] table by the `tx_history` alias.
+///
+/// # Note
+///
+/// 1) You can refer to the [`tx_history_table(wallet_id)`] table by the `tx_history` alias.
+/// 2) The selected transactions will be ordered the same way as `compare_transaction_details` is implemented.
 fn get_history_builder_preimage<'a>(
     connection: &'a Connection,
     wallet_id: &WalletId,
@@ -299,9 +303,10 @@ fn get_history_builder_preimage<'a>(
     // Set other query conditions.
     sql_builder
         .and_where_eq_param("tx_history.token_id", token_id)?
+        // The following statements repeat the `compare_transaction_details` implementation:
         .order_asc("tx_history.confirmation_status")?
         .order_desc("tx_history.block_height")?
-        .order_asc("tx_history.id")?;
+        .order_asc("tx_history.internal_id")?;
     Ok(sql_builder)
 }
 

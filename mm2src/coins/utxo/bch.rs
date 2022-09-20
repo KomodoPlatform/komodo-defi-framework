@@ -1243,9 +1243,9 @@ impl UtxoTxHistoryOps for BchCoin {
     async fn request_tx_history(
         &self,
         metrics: MetricsArc,
-        _for_addresses: &HashSet<Address>,
+        for_addresses: &HashSet<Address>,
     ) -> RequestTxHistoryResult {
-        utxo_common::request_tx_history(self, metrics).await
+        utxo_common::utxo_tx_history_v2_common::request_tx_history(self, metrics, for_addresses).await
     }
 
     async fn get_block_timestamp(&self, height: u64) -> MmResult<u64, GetBlockHeaderError> {

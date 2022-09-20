@@ -444,9 +444,9 @@ fn test_bch_and_slp_testnet_history() {
     log!("slp history: {:?}", slp_history);
 
     let expected_slp_ids = vec![
-        "cd6ec10b0cd9747ddc66ac5c97c2d7b493e8cea191bc2d847b3498719d4bd989",
+        "babe9bd0dc1495dff0920da14a76311b744daadc9d01314f8bd4e2438c6b183b",
         "1c1e68357cf5a6dacb53881f13aa5d2048fe0d0fab24b76c9ec48f53884bed97",
-        "c4304b5ef4f1b88ed4939534a8ca9eca79f592939233174ae08002e8454e3f06",
+        "cd6ec10b0cd9747ddc66ac5c97c2d7b493e8cea191bc2d847b3498719d4bd989",
         "b0035434a1e7be5af2ed991ee2a21a90b271c5852a684a0b7d315c5a770d1b1c",
     ];
 

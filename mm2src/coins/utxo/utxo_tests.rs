@@ -13,12 +13,11 @@ use crate::utxo::rpc_clients::{BlockHashOrHeight, ElectrumBalance, ElectrumClien
                                GetAddressInfoRes, ListSinceBlockRes, NativeClient, NativeClientImpl, NativeUnspent,
                                NetworkInfo, UtxoRpcClientOps, ValidateAddressRes, VerboseBlock};
 use crate::utxo::spv::SimplePaymentVerification;
-use crate::utxo::tx_cache::dummy_tx_cache::DummyVerboseCache;
-use crate::utxo::tx_cache::UtxoVerboseCacheOps;
 use crate::utxo::utxo_block_header_storage::BlockHeaderStorage;
 use crate::utxo::utxo_builder::{UtxoArcBuilder, UtxoCoinBuilderCommonOps};
 use crate::utxo::utxo_common::UtxoTxBuilder;
-use crate::utxo::utxo_common_tests;
+use crate::utxo::utxo_common_tests::{self, utxo_coin_fields_for_test, utxo_coin_from_fields, TEST_COIN_DECIMALS,
+                                     TEST_COIN_NAME};
 use crate::utxo::utxo_sql_block_header_storage::SqliteBlockHeadersStorage;
 use crate::utxo::utxo_standard::{utxo_standard_coin_with_priv_key, UtxoStandardCoin};
 use crate::utxo::utxo_tx_history_v2::{UtxoTxDetailsParams, UtxoTxHistoryOps};
@@ -34,7 +33,7 @@ use futures::future::join_all;
 use futures::TryFutureExt;
 use mm2_core::mm_ctx::MmCtxBuilder;
 use mm2_number::bigdecimal::{BigDecimal, Signed};
-use mm2_test_helpers::for_tests::RICK_ELECTRUM_ADDRS;
+use mm2_test_helpers::for_tests::{MORTY_ELECTRUM_ADDRS, RICK_ELECTRUM_ADDRS};
 use mocktopus::mocking::*;
 use rpc::v1::types::H256 as H256Json;
 use serialization::{deserialize, CoinVariant};
@@ -43,11 +42,6 @@ use std::convert::TryFrom;
 use std::iter;
 use std::mem::discriminant;
 use std::num::NonZeroUsize;
-
-const TEST_COIN_NAME: &'static str = "RICK";
-// Made-up hrp for rick to test p2wpkh script
-const TEST_COIN_HRP: &'static str = "rck";
-const TEST_COIN_DECIMALS: u8 = 8;
 
 pub fn electrum_client_for_test(servers: &[&str]) -> ElectrumClient {
     let ctx = MmCtxBuilder::default().into_mm_arc();
@@ -79,109 +73,6 @@ pub fn electrum_client_for_test(servers: &[&str]) -> ElectrumClient {
 /// Returned client won't work by default, requires some mocks to be usable
 #[cfg(not(target_arch = "wasm32"))]
 fn native_client_for_test() -> NativeClient { NativeClient(Arc::new(NativeClientImpl::default())) }
-
-fn utxo_coin_fields_for_test(
-    rpc_client: UtxoRpcClientEnum,
-    force_seed: Option<&str>,
-    is_segwit_coin: bool,
-) -> UtxoCoinFields {
-    let checksum_type = ChecksumType::DSHA256;
-    let default_seed = "spice describe gravity federal blast come thank unfair canal monkey style afraid";
-    let seed = match force_seed {
-        Some(s) => s.into(),
-        None => match std::env::var("BOB_PASSPHRASE") {
-            Ok(p) => {
-                if p.is_empty() {
-                    default_seed.into()
-                } else {
-                    p
-                }
-            },
-            Err(_) => default_seed.into(),
-        },
-    };
-    let key_pair = key_pair_from_seed(&seed).unwrap();
-    let my_address = Address {
-        prefix: 60,
-        hash: key_pair.public().address_hash().into(),
-        t_addr_prefix: 0,
-        checksum_type,
-        hrp: if is_segwit_coin {
-            Some(TEST_COIN_HRP.to_string())
-        } else {
-            None
-        },
-        addr_format: if is_segwit_coin {
-            UtxoAddressFormat::Segwit
-        } else {
-            UtxoAddressFormat::Standard
-        },
-    };
-    let my_script_pubkey = Builder::build_p2pkh(&my_address.hash).to_bytes();
-
-    let priv_key_policy = PrivKeyPolicy::KeyPair(key_pair);
-    let derivation_method = DerivationMethod::Iguana(my_address);
-
-    let bech32_hrp = if is_segwit_coin {
-        Some(TEST_COIN_HRP.to_string())
-    } else {
-        None
-    };
-
-    UtxoCoinFields {
-        conf: UtxoCoinConf {
-            is_pos: false,
-            requires_notarization: false.into(),
-            overwintered: true,
-            segwit: true,
-            tx_version: 4,
-            default_address_format: UtxoAddressFormat::Standard,
-            asset_chain: true,
-            p2sh_addr_prefix: 85,
-            p2sh_t_addr_prefix: 0,
-            pub_addr_prefix: 60,
-            pub_t_addr_prefix: 0,
-            sign_message_prefix: Some(String::from("Komodo Signed Message:\n")),
-            bech32_hrp,
-            ticker: TEST_COIN_NAME.into(),
-            wif_prefix: 0,
-            tx_fee_volatility_percent: DEFAULT_DYNAMIC_FEE_VOLATILITY_PERCENT,
-            version_group_id: 0x892f2085,
-            consensus_branch_id: 0x76b809bb,
-            zcash: true,
-            checksum_type,
-            fork_id: 0,
-            signature_version: SignatureVersion::Base,
-            required_confirmations: 1.into(),
-            force_min_relay_fee: false,
-            mtp_block_count: NonZeroU64::new(11).unwrap(),
-            estimate_fee_mode: None,
-            mature_confirmations: MATURE_CONFIRMATIONS_DEFAULT,
-            estimate_fee_blocks: 1,
-            trezor_coin: None,
-            enable_spv_proof: false,
-            block_headers_verification_params: None,
-        },
-        decimals: TEST_COIN_DECIMALS,
-        dust_amount: UTXO_DUST_AMOUNT,
-        tx_fee: TxFee::FixedPerKb(1000),
-        rpc_client,
-        priv_key_policy,
-        derivation_method,
-        history_sync_state: Mutex::new(HistorySyncState::NotEnabled),
-        tx_cache: DummyVerboseCache::default().into_shared(),
-        recently_spent_outpoints: AsyncMutex::new(RecentlySpentOutPoints::new(my_script_pubkey)),
-        tx_hash_algo: TxHashAlgo::DSHA256,
-        check_utxo_maturity: false,
-        block_headers_status_notifier: None,
-        block_headers_status_watcher: None,
-    }
-}
-
-fn utxo_coin_from_fields(coin: UtxoCoinFields) -> UtxoStandardCoin {
-    let arc: UtxoArc = coin.into();
-    arc.into()
-}
 
 fn utxo_coin_for_test(
     rpc_client: UtxoRpcClientEnum,
@@ -4310,4 +4201,10 @@ fn test_tx_enum_from_bytes() {
         discriminant(&err),
         discriminant(&TxMarshalingErr::CrossCheckFailed(String::new()))
     );
+}
+
+#[test]
+fn test_hd_utxo_tx_history() {
+    let client = electrum_client_for_test(MORTY_ELECTRUM_ADDRS);
+    block_on(utxo_common_tests::test_hd_utxo_tx_history_impl(client));
 }

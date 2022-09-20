@@ -3,7 +3,7 @@ use crate::tx_history_storage::wasm::tx_history_db::{TxHistoryDb, TxHistoryDbLoc
 use crate::tx_history_storage::wasm::{WasmTxHistoryError, WasmTxHistoryResult};
 use crate::tx_history_storage::{token_id_from_tx_type, ConfirmationStatus, CreateTxHistoryStorageError,
                                 FilteringAddresses, GetTxHistoryFilters, WalletId};
-use crate::{CoinsContext, TransactionDetails};
+use crate::{compare_transaction_details, CoinsContext, TransactionDetails};
 use async_trait::async_trait;
 use common::PagingOptionsEnum;
 use itertools::Itertools;
@@ -311,11 +311,17 @@ impl IndexedDbTxHistoryStorage {
     }
 
     pub(super) fn take_according_to_paging_opts(
-        txs: Vec<TransactionDetails>,
+        mut txs: Vec<TransactionDetails>,
         paging: PagingOptionsEnum<BytesJson>,
         limit: usize,
     ) -> WasmTxHistoryResult<GetHistoryResult> {
         let total_count = txs.len();
+
+        // This is super inefficient to fetch the whole transaction history, sort it on the client side.
+        // It's required to implement `DESC` order for `IdbCursor` in order to sort the transactions
+        // the same way as `compare_transaction_details` does.
+        // But it's difficult to implement, and I think it can be postponed for a while.
+        txs.sort_by(compare_transaction_details);
 
         let skip = match paging {
             // `page_number` is ignored if from_uuid is set
@@ -338,9 +344,8 @@ impl IndexedDbTxHistoryStorage {
             PagingOptionsEnum::PageNumber(page_number) => (page_number.get() - 1) * limit,
         };
 
-        let transactions = txs.into_iter().skip(skip).take(limit).collect();
         Ok(GetHistoryResult {
-            transactions,
+            transactions: txs.into_iter().skip(skip).take(limit).collect(),
             skipped: skip,
             total: total_count,
         })

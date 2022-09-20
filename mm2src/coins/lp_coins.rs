@@ -2602,7 +2602,7 @@ pub async fn send_raw_transaction(ctx: MmArc, req: Json) -> Result<Response<Vec<
     Ok(try_s!(Response::builder().body(body)))
 }
 
-#[derive(Clone, Debug, Serialize)]
+#[derive(Clone, Debug, PartialEq, Serialize)]
 #[serde(tag = "state", content = "additional_info")]
 pub enum HistorySyncState {
     NotEnabled,
@@ -3044,7 +3044,7 @@ where
     Box::new(fut.boxed().compat())
 }
 
-fn compare_transaction_details(a: &TransactionDetails, b: &TransactionDetails) -> Ordering {
+pub(crate) fn compare_transaction_details(a: &TransactionDetails, b: &TransactionDetails) -> Ordering {
     let a = TxIdHeight::new(a.block_height, a.internal_id.deref());
     let b = TxIdHeight::new(b.block_height, b.internal_id.deref());
     compare_transactions(a, b)

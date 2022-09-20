@@ -1,3 +1,6 @@
+//! Consider using very dirty [Rust script](https://pastebin.ubuntu.com/p/9r2mDmGGHT/)
+//! to print all transactions from `../for_tests/tBCH_tx_history_fixtures.json` ordered.
+
 use crate::my_tx_history_v2::{GetHistoryResult, TxHistoryStorage};
 use crate::tx_history_storage::{FilteringAddresses, GetTxHistoryFilters, TxHistoryStorageBuilder, WalletId};
 use crate::{BytesJson, TransactionDetails};
@@ -450,9 +453,9 @@ async fn test_get_history_page_number_impl() {
     let result = storage.get_history(&wallet_id, filters, paging, limit).await.unwrap();
 
     let expected_internal_ids: Vec<BytesJson> = vec![
-        "433b641bc89e1b59c22717918583c60ec98421805c8e85b064691705d9aeb970".into(),
-        "cd6ec10b0cd9747ddc66ac5c97c2d7b493e8cea191bc2d847b3498719d4bd989".into(),
+        "babe9bd0dc1495dff0920da14a76311b744daadc9d01314f8bd4e2438c6b183b".into(),
         "1c1e68357cf5a6dacb53881f13aa5d2048fe0d0fab24b76c9ec48f53884bed97".into(),
+        "cd6ec10b0cd9747ddc66ac5c97c2d7b493e8cea191bc2d847b3498719d4bd989".into(),
     ];
     assert_get_history_result(result, expected_internal_ids, 3, 119);
 }
@@ -491,12 +494,12 @@ async fn test_get_history_from_id_impl() {
     let result = storage.get_history(&wallet_id, filters, paging, limit).await.unwrap();
 
     let expected_internal_ids: Vec<BytesJson> = vec![
-        "cd6ec10b0cd9747ddc66ac5c97c2d7b493e8cea191bc2d847b3498719d4bd989".into(),
+        "babe9bd0dc1495dff0920da14a76311b744daadc9d01314f8bd4e2438c6b183b".into(),
         "1c1e68357cf5a6dacb53881f13aa5d2048fe0d0fab24b76c9ec48f53884bed97".into(),
-        "c4304b5ef4f1b88ed4939534a8ca9eca79f592939233174ae08002e8454e3f06".into(),
+        "cd6ec10b0cd9747ddc66ac5c97c2d7b493e8cea191bc2d847b3498719d4bd989".into(),
         "b0035434a1e7be5af2ed991ee2a21a90b271c5852a684a0b7d315c5a770d1b1c".into(),
     ];
-    assert_get_history_result(result, expected_internal_ids, 4, 119);
+    assert_get_history_result(result, expected_internal_ids, 3, 119);
 }
 
 async fn test_get_history_for_addresses_impl() {
