@@ -2,12 +2,26 @@ use super::*;
 use mm2_test_helpers::for_tests::{enable_bch_with_tokens, enable_slp, my_tx_history_v2, sign_message, verify_message,
                                   UtxoRpcMode};
 
+cfg_wasm32! {
+    use wasm_bindgen_test::*;
+
+    wasm_bindgen_test_configure!(run_in_browser);
+}
+
+#[cfg(not(target_arch = "wasm32"))]
 const T_BCH_ELECTRUMS: &[&str] = &[
     "electroncash.de:50003",
     "tbch.loping.net:60001",
     "blackie.c3-soft.com:60001",
     "bch0.kister.net:51001",
     "testnet.imaginary.cash:50001",
+];
+
+#[cfg(target_arch = "wasm32")]
+const T_BCH_ELECTRUMS: &[&str] = &[
+    "electroncash.de:60003",
+    "electroncash.de:60004",
+    "blackie.c3-soft.com:60004",
 ];
 
 fn t_bch_electrums_legacy_json() -> Vec<Json> { T_BCH_ELECTRUMS.into_iter().map(|url| json!({ "url": url })).collect() }
@@ -385,38 +399,31 @@ async fn wait_till_history_has_records(
     }
 }
 
-#[test]
-#[cfg(not(target_arch = "wasm32"))]
-fn test_bch_and_slp_testnet_history() {
+async fn test_bch_and_slp_testnet_history_impl() {
+    const PASSPHRASE: &str = "BCH SLP test";
+
     let coins = json!([
         {"coin":"tBCH","pubtype":0,"p2shtype":5,"mm2":1,"protocol":{"type":"BCH","protocol_data":{"slp_prefix":"slptest"}},
          "address_format":{"format":"cashaddress","network":"bchtest"}},
         {"coin":"USDF","protocol":{"type":"SLPTOKEN","protocol_data":{"decimals":4,"token_id":"bb309e48930671582bea508f9a1d9b491e49b69be3d6f372dc08da2ac6e90eb7","platform":"tBCH","required_confirmations":1}}}
     ]);
 
-    let mm = MarketMakerIt::start(
-        json! ({
-            "gui": "nogui",
-            "netid": 9998,
-            "myipaddr": env::var ("BOB_TRADE_IP") .ok(),
-            "rpcip": env::var ("BOB_TRADE_IP") .ok(),
-            "passphrase": "BCH SLP test",
-            "coins": coins,
-            "i_am_seed": true,
-            "rpc_password": "pass",
-        }),
-        "pass".into(),
-        local_start!("bob"),
-    )
-    .unwrap();
-    let (_dump_log, _dump_dashboard) = mm.mm_dump();
-    log!("log path: {}", mm.log_path.display());
+    let conf = Mm2TestConf::seednode(PASSPHRASE, &coins);
+    let mm = MarketMakerIt::start_async(conf.conf, conf.rpc_password, local_start!("bob"))
+        .await
+        .unwrap();
+
+    #[cfg(not(target_arch = "wasm32"))]
+    {
+        let (_dump_log, _dump_dashboard) = mm.mm_dump();
+        log!("log path: {}", mm.log_path.display());
+    }
 
     let rpc_mode = UtxoRpcMode::electrum(T_BCH_ELECTRUMS);
     let tx_history = true;
-    let enable_bch = block_on(enable_bch_with_tokens(&mm, "tBCH", &[], rpc_mode, tx_history));
+    let enable_bch = enable_bch_with_tokens(&mm, "tBCH", &[], rpc_mode, tx_history).await;
     log!("enable_bch: {:?}", enable_bch);
-    let history = block_on(wait_till_history_has_records(&mm, 4, "tBCH", None));
+    let history = wait_till_history_has_records(&mm, 4, "tBCH", None).await;
     log!("bch history: {:?}", history);
 
     let expected_internal_ids = vec![
@@ -434,12 +441,12 @@ fn test_bch_and_slp_testnet_history() {
 
     assert_eq!(expected_internal_ids, actual_ids);
 
-    let enable_usdf = block_on(enable_slp(&mm, "USDF"));
+    let enable_usdf = enable_slp(&mm, "USDF").await;
     log!("enable_usdf: {:?}", enable_usdf);
 
     let paging =
         common::PagingOptionsEnum::FromId("433b641bc89e1b59c22717918583c60ec98421805c8e85b064691705d9aeb970".into());
-    let slp_history = block_on(wait_till_history_has_records(&mm, 4, "USDF", Some(paging)));
+    let slp_history = wait_till_history_has_records(&mm, 4, "USDF", Some(paging)).await;
 
     log!("slp history: {:?}", slp_history);
 
@@ -464,6 +471,17 @@ fn test_bch_and_slp_testnet_history() {
         let fee_details: UtxoFeeDetails = json::from_value(tx.tx.fee_details).unwrap();
         assert_eq!(fee_details.coin, Some("tBCH".to_owned()));
     }
+}
+
+#[test]
+#[cfg(not(target_arch = "wasm32"))]
+fn test_bch_and_slp_testnet_history() { block_on(test_bch_and_slp_testnet_history_impl()); }
+
+#[cfg(target_arch = "wasm32")]
+#[wasm_bindgen_test]
+async fn test_bch_and_slp_testnet_history() {
+    common::log::wasm_log::register_wasm_log();
+    test_bch_and_slp_testnet_history_impl().await;
 }
 
 #[test]
