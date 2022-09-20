@@ -369,6 +369,20 @@ pub fn usdc_ibc_iris_testnet_conf() -> Json {
     })
 }
 
+pub fn tbnb_conf() -> Json {
+    json!({
+        "coin": "tBNB",
+        "name": "binancesmartchaintest",
+        "avg_blocktime": 0.25,
+        "chain_id": 97,
+        "mm2": 1,
+        "required_confirmations": 0,
+        "protocol": {
+            "type": "ETH"
+        }
+    })
+}
+
 #[cfg(target_arch = "wasm32")]
 pub fn mm_ctx_with_custom_db() -> MmArc { MmCtxBuilder::new().with_test_db_namespace().into_mm_arc() }
 
@@ -1136,6 +1150,22 @@ pub async fn enable_native(mm: &MarketMakerIt, coin: &str, urls: &[&str]) -> Jso
         .unwrap();
     assert_eq!(native.0, StatusCode::OK, "'enable' failed: {}", native.1);
     json::from_str(&native.1).unwrap()
+}
+
+pub async fn enable_eth_coin(mm: &MarketMakerIt, coin: &str, urls: &[&str], swap_contract_address: &str) -> Json {
+    let enable = mm
+        .rpc(&json! ({
+            "userpass": mm.userpass,
+            "method": "enable",
+            "coin": coin,
+            "urls": urls,
+            "swap_contract_address": swap_contract_address,
+            "mm2": 1,
+        }))
+        .await
+        .unwrap();
+    assert_eq!(enable.0, StatusCode::OK, "'enable' failed: {}", enable.1);
+    json::from_str(&enable.1).unwrap()
 }
 
 pub async fn enable_spl(mm: &MarketMakerIt, coin: &str) -> Json {

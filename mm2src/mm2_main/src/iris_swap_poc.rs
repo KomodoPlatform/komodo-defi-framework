@@ -1,12 +1,21 @@
 use super::*;
-use mm2_test_helpers::for_tests::{enable_tendermint, iris_nimda_testnet_conf, iris_testnet_conf,
-                                  usdc_ibc_iris_testnet_conf, RICK_ELECTRUM_ADDRS};
+use mm2_test_helpers::for_tests::{enable_eth_coin, enable_tendermint, iris_nimda_testnet_conf, iris_testnet_conf,
+                                  tbnb_conf, usdc_ibc_iris_testnet_conf, RICK_ELECTRUM_ADDRS};
+
+// https://academy.binance.com/en/articles/connecting-metamask-to-binance-smart-chain
+const TBNB_URLS: &[&str] = &["https://data-seed-prebsc-1-s1.binance.org:8545/"];
+// https://testnet.bscscan.com/address/0xb1ad803ea4f57401639c123000c75f5b66e4d123
+const TBNB_SWAP_CONTRACT: &str = "0xB1Ad803ea4F57401639c123000C75F5B66E4D123";
 
 #[test]
 #[ignore]
 // cargo test mm2::mm2_tests::iris_swap_poc::test -- --exact --ignored
 fn test() {
-    let pairs = [("USDC-IBC-IRIS", "IRIS-NIMDA"), ("IRIS-NIMDA", "RICK")];
+    let pairs = [
+        ("USDC-IBC-IRIS", "IRIS-NIMDA"),
+        ("IRIS-NIMDA", "RICK"),
+        ("USDC-IBC-IRIS", "tBNB"),
+    ];
     block_on(trade_base_rel_iris(&pairs, 1, 2, 0.01));
 }
 
@@ -24,6 +33,7 @@ pub async fn trade_base_rel_iris(
         iris_nimda_testnet_conf(),
         iris_testnet_conf(),
         rick_conf(),
+        tbnb_conf(),
     ]);
 
     println!("coins config {}", json::to_string(&coins).unwrap());
@@ -83,6 +93,8 @@ pub async fn trade_base_rel_iris(
         .await
     );
     dbg!(enable_electrum(&mm_alice, "RICK", false, RICK_ELECTRUM_ADDRS).await);
+    dbg!(enable_eth_coin(&mm_bob, "tBNB", TBNB_URLS, TBNB_SWAP_CONTRACT).await);
+    dbg!(enable_eth_coin(&mm_alice, "tBNB", TBNB_URLS, TBNB_SWAP_CONTRACT).await);
 
     for (base, rel) in pairs.iter() {
         log!("Issue bob {}/{} sell request", base, rel);
