@@ -1144,6 +1144,7 @@ pub enum ElectrumProtocol {
 #[derive(Serialize)]
 pub struct ElectrumRpcRequest {
     pub url: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub protocol: Option<ElectrumProtocol>,
 }
 
