@@ -111,6 +111,17 @@ pub fn is_my_order(my_pub: &Option<String>, order_pubkey: &str) -> bool {
     my_pub.as_ref().map(|my| my == order_pubkey).unwrap_or(false)
 }
 
+pub fn is_mine_zhtls(my_orders_pubkeys: &Vec<String>, pubkey: &String) -> bool {
+    let mut is_mine = false;
+    for my_pubkey in my_orders_pubkeys {
+        if my_pubkey == pubkey {
+            is_mine = true;
+        }
+    }
+    drop_mutability!(is_mine);
+    is_mine
+}
+
 async fn get_my_orders_pubkeys(ctx: &MmArc) -> Vec<String> {
     let ordermatch_ctx = OrdermatchContext::from_ctx(ctx).expect("from_ctx failed");
     let my_orders = ordermatch_ctx.maker_orders_ctx.lock().orders.clone();
@@ -153,8 +164,10 @@ pub async fn orderbook_rpc(ctx: MmArc, req: Json) -> Result<Response<Vec<u8>>, S
     if base_ticker == rel_ticker && base_coin_conf["protocol"] == rel_coin_conf["protocol"] {
         return ERR!("Base and rel coins have the same orderbook tickers and protocols.");
     }
+    // todo add info why we use another method of checking is_mine for ZHTLC
     let base_coin_protocol: CoinProtocol = try_s!(json::from_value(base_coin_conf["protocol"].clone()));
-    // have to create before protocol matching, because orderbook is not `Send`
+    let is_zhtls = matches!(base_coin_protocol, CoinProtocol::ZHTLC { .. });
+    // have to create before orderbook, because orderbook is not `Send`
     let my_orders_pubkeys = get_my_orders_pubkeys(&ctx).await;
 
     try_s!(subscribe_to_orderbook_topic(&ctx, &base_ticker, &rel_ticker, request_orderbook).await);
@@ -181,19 +194,10 @@ pub async fn orderbook_rpc(ctx: MmArc, req: Json) -> Result<Response<Vec<u8>>, S
                     &ask.pubkey,
                     address_format,
                 ));
-                // todo remove match from for loop
-                let is_mine = match base_coin_protocol {
-                    CoinProtocol::ZHTLC { .. } => {
-                        let mut is_mine = false;
-                        for pubkey in &my_orders_pubkeys {
-                            if pubkey == &ask.pubkey {
-                                is_mine = true;
-                            }
-                        }
-                        drop_mutability!(is_mine);
-                        is_mine
-                    },
-                    _ => is_my_order(&my_pubsecp, &ask.pubkey),
+                let is_mine = if is_zhtls {
+                    is_mine_zhtls(&my_orders_pubkeys, &ask.pubkey)
+                } else {
+                    is_my_order(&my_pubsecp, &ask.pubkey)
                 };
                 orderbook_entries.push(ask.as_rpc_entry_ask(address, is_mine));
             }
@@ -221,18 +225,10 @@ pub async fn orderbook_rpc(ctx: MmArc, req: Json) -> Result<Response<Vec<u8>>, S
                     &bid.pubkey,
                     address_format,
                 ));
-                let is_mine = match base_coin_protocol {
-                    CoinProtocol::ZHTLC { .. } => {
-                        let mut is_mine = false;
-                        for pubkey in &my_orders_pubkeys {
-                            if pubkey == &bid.pubkey {
-                                is_mine = true;
-                            }
-                        }
-                        drop_mutability!(is_mine);
-                        is_mine
-                    },
-                    _ => is_my_order(&my_pubsecp, &bid.pubkey),
+                let is_mine = if is_zhtls {
+                    is_mine_zhtls(&my_orders_pubkeys, &bid.pubkey)
+                } else {
+                    is_my_order(&my_pubsecp, &bid.pubkey)
                 };
                 orderbook_entries.push(bid.as_rpc_entry_bid(address, is_mine));
             }
