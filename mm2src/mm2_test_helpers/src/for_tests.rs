@@ -1597,7 +1597,7 @@ pub async fn init_z_coin_light(mm: &MarketMakerIt, coin: &str, electrums: &[&str
     let request = mm
         .rpc(&json! ({
             "userpass": mm.userpass,
-            "method": "init_z_coin",
+            "method": "task::enable_z_coin::init",
             "mmrpc": "2.0",
             "params": {
                 "ticker": coin,
@@ -1622,7 +1622,7 @@ pub async fn init_z_coin_status(mm: &MarketMakerIt, task_id: u64) -> Json {
     let request = mm
         .rpc(&json! ({
             "userpass": mm.userpass,
-            "method": "init_z_coin_status",
+            "method": "task::enable_z_coin::status",
             "mmrpc": "2.0",
             "params": {
                 "task_id": task_id,
