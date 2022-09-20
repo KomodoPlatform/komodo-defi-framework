@@ -96,6 +96,45 @@ pub async fn get_tx_fee(coin: &UtxoCoinFields) -> UtxoRpcResult<ActualTxFee> {
     }
 }
 
+fn derive_address_with_cache<T>(
+    coin: &T,
+    hd_account: &UtxoHDAccount,
+    hd_addresses_cache: &mut HashMap<HDAddressId, UtxoHDAddress>,
+    hd_address_id: HDAddressId,
+) -> MmResult<UtxoHDAddress, AddressDerivingError>
+where
+    T: UtxoCommonOps,
+{
+    // Check if the given HD address has been derived already.
+    if let Some(hd_address) = hd_addresses_cache.get(&hd_address_id) {
+        return Ok(hd_address.clone());
+    }
+
+    let change_child = hd_address_id.chain.to_child_number();
+    let address_id_child = ChildNumber::from(hd_address_id.address_id);
+
+    let derived_pubkey = hd_account
+        .extended_pubkey
+        .derive_child(change_child)?
+        .derive_child(address_id_child)?;
+    let address = coin.address_from_extended_pubkey(&derived_pubkey);
+    let pubkey = Public::Compressed(H264::from(derived_pubkey.public_key().serialize()));
+
+    let mut derivation_path = hd_account.account_derivation_path.to_derivation_path();
+    derivation_path.push(change_child);
+    derivation_path.push(address_id_child);
+
+    let hd_address = HDAddress {
+        address,
+        pubkey,
+        derivation_path,
+    };
+
+    // Cache the derived `hd_address`.
+    hd_addresses_cache.insert(hd_address_id, hd_address.clone());
+    Ok(hd_address)
+}
+
 /// [`HDWalletCoinOps::derive_addresses`] native implementation.
 ///
 /// # Important
@@ -112,41 +151,9 @@ where
     Ids: Iterator<Item = HDAddressId>,
 {
     let mut hd_addresses_cache = hd_account.derived_addresses.lock().await;
-
-    let mut result = Vec::new();
-    for hd_address_id in address_ids {
-        // Check if the given HD address has been derived already.
-        if let Some(hd_address) = hd_addresses_cache.get(&hd_address_id) {
-            result.push(hd_address.clone());
-            continue;
-        }
-
-        let change_child = hd_address_id.chain.to_child_number();
-        let address_id_child = ChildNumber::from(hd_address_id.address_id);
-
-        let derived_pubkey = hd_account
-            .extended_pubkey
-            .derive_child(change_child)?
-            .derive_child(address_id_child)?;
-        let address = coin.address_from_extended_pubkey(&derived_pubkey);
-        let pubkey = Public::Compressed(H264::from(derived_pubkey.public_key().serialize()));
-
-        let mut derivation_path = hd_account.account_derivation_path.to_derivation_path();
-        derivation_path.push(change_child);
-        derivation_path.push(address_id_child);
-
-        let hd_address = HDAddress {
-            address,
-            pubkey,
-            derivation_path,
-        };
-
-        // Cache the derived `hd_address`.
-        hd_addresses_cache.insert(hd_address_id, hd_address.clone());
-        result.push(hd_address);
-    }
-
-    Ok(result)
+    address_ids
+        .map(|hd_address_id| derive_address_with_cache(coin, hd_account, &mut hd_addresses_cache, hd_address_id))
+        .collect()
 }
 
 /// [`HDWalletCoinOps::derive_addresses`] WASM implementation.
@@ -176,34 +183,7 @@ where
     for hd_address_id in address_ids {
         let mut hd_addresses_cache = hd_account.derived_addresses.lock().await;
 
-        // Check if the given HD address has been derived already.
-        if let Some(hd_address) = hd_addresses_cache.get(&hd_address_id) {
-            result.push(hd_address.clone());
-            continue;
-        }
-
-        let change_child = hd_address_id.chain.to_child_number();
-        let address_id_child = ChildNumber::from(hd_address_id.address_id);
-
-        let derived_pubkey = hd_account
-            .extended_pubkey
-            .derive_child(change_child)?
-            .derive_child(address_id_child)?;
-        let address = coin.address_from_extended_pubkey(&derived_pubkey);
-        let pubkey = Public::Compressed(H264::from(derived_pubkey.public_key().serialize()));
-
-        let mut derivation_path = hd_account.account_derivation_path.to_derivation_path();
-        derivation_path.push(change_child);
-        derivation_path.push(address_id_child);
-
-        let hd_address = HDAddress {
-            address,
-            pubkey,
-            derivation_path,
-        };
-
-        // Cache the derived `hd_address`.
-        hd_addresses_cache.insert(hd_address_id, hd_address.clone());
+        let hd_address = derive_address_with_cache(coin, hd_account, &mut hd_addresses_cache, hd_address_id)?;
         result.push(hd_address);
     }
 
