@@ -388,19 +388,32 @@ async fn wait_till_history_has_records(
     expected_len: usize,
     for_coin: &str,
     paging: Option<common::PagingOptionsEnum<String>>,
+    timeout_s: u64,
 ) -> StandardHistoryV2Res {
+    let started_at = now_ms() / 1000;
+    let wait_until = started_at + timeout_s;
     loop {
         let history_json = my_tx_history_v2(mm, for_coin, expected_len, paging.clone()).await;
         let history: RpcV2Response<StandardHistoryV2Res> = json::from_value(history_json).unwrap();
         if history.result.transactions.len() >= expected_len {
             break history.result;
         }
+
+        let now = now_ms() / 1000;
+        if wait_until < now {
+            panic!(
+                "Waited too long until {} for TX history loads {} transactions",
+                wait_until, expected_len
+            );
+        }
+
         Timer::sleep(1.).await;
     }
 }
 
 async fn test_bch_and_slp_testnet_history_impl() {
     const PASSPHRASE: &str = "BCH SLP test";
+    const TIMEOUT_S: u64 = 45;
 
     let coins = json!([
         {"coin":"tBCH","pubtype":0,"p2shtype":5,"mm2":1,"protocol":{"type":"BCH","protocol_data":{"slp_prefix":"slptest"}},
@@ -423,7 +436,7 @@ async fn test_bch_and_slp_testnet_history_impl() {
     let tx_history = true;
     let enable_bch = enable_bch_with_tokens(&mm, "tBCH", &[], rpc_mode, tx_history).await;
     log!("enable_bch: {:?}", enable_bch);
-    let history = wait_till_history_has_records(&mm, 4, "tBCH", None).await;
+    let history = wait_till_history_has_records(&mm, 4, "tBCH", None, TIMEOUT_S).await;
     log!("bch history: {:?}", history);
 
     let expected_internal_ids = vec![
@@ -446,7 +459,7 @@ async fn test_bch_and_slp_testnet_history_impl() {
 
     let paging =
         common::PagingOptionsEnum::FromId("433b641bc89e1b59c22717918583c60ec98421805c8e85b064691705d9aeb970".into());
-    let slp_history = wait_till_history_has_records(&mm, 4, "USDF", Some(paging)).await;
+    let slp_history = wait_till_history_has_records(&mm, 4, "USDF", Some(paging), TIMEOUT_S).await;
 
     log!("slp history: {:?}", slp_history);
 
