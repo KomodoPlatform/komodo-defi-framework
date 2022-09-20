@@ -267,12 +267,18 @@ pub enum OrderbookRpcError {
     CoinConfigNotFound(String),
     CoinIsWalletOnly(String),
     P2PSubscribeError(String),
+    InvalidJson(String),
+}
+
+impl From<serde_json::Error> for OrderbookRpcError {
+    fn from(e: serde_json::Error) -> Self { OrderbookRpcError::InvalidJson(e.to_string()) }
 }
 
 impl HttpStatusCode for OrderbookRpcError {
     fn status_code(&self) -> StatusCode {
         match self {
             OrderbookRpcError::BaseRelSame
+            | OrderbookRpcError::InvalidJson(_)
             | OrderbookRpcError::BaseRelSameOrderbookTickersAndProtocols
             | OrderbookRpcError::CoinConfigNotFound(_)
             | OrderbookRpcError::CoinIsWalletOnly(_) => StatusCode::BAD_REQUEST,
@@ -340,6 +346,11 @@ pub async fn orderbook_rpc_v2(
         return MmError::err(OrderbookRpcError::BaseRelSameOrderbookTickersAndProtocols);
     }
 
+    let base_coin_protocol: CoinProtocol = json::from_value(base_coin_conf["protocol"].clone())?;
+    let is_zhtls = matches!(base_coin_protocol, CoinProtocol::ZHTLC { .. });
+    // have to create before orderbook, because orderbook is not `Send`
+    let my_orders_pubkeys = get_my_orders_pubkeys(&ctx).await;
+
     let request_orderbook = true;
     subscribe_to_orderbook_topic(&ctx, &base_ticker, &rel_ticker, request_orderbook)
         .await
@@ -371,7 +382,11 @@ pub async fn orderbook_rpc_v2(
                         continue;
                     },
                 };
-                let is_mine = is_my_order(&my_pubsecp, &ask.pubkey);
+                let is_mine = if is_zhtls {
+                    is_mine_zhtls(&my_orders_pubkeys, &ask.pubkey)
+                } else {
+                    is_my_order(&my_pubsecp, &ask.pubkey)
+                };
                 orderbook_entries.push(ask.as_rpc_v2_entry_ask(address, is_mine));
             }
             orderbook_entries
@@ -401,7 +416,11 @@ pub async fn orderbook_rpc_v2(
                         continue;
                     },
                 };
-                let is_mine = is_my_order(&my_pubsecp, &bid.pubkey);
+                let is_mine = if is_zhtls {
+                    is_mine_zhtls(&my_orders_pubkeys, &bid.pubkey)
+                } else {
+                    is_my_order(&my_pubsecp, &bid.pubkey)
+                };
                 orderbook_entries.push(bid.as_rpc_v2_entry_bid(address, is_mine));
             }
             orderbook_entries
