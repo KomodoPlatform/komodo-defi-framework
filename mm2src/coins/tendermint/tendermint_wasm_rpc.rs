@@ -9,13 +9,14 @@ use http::{StatusCode, Uri};
 use mm2_net::transport::SlurpError;
 use mm2_net::wasm_http::FetchRequest;
 use std::str::FromStr;
-pub use tendermint_rpc::endpoint::abci_query::{AbciQuery, Request as AbciRequest};
 use tendermint_rpc::endpoint::{abci_info, broadcast};
+pub use tendermint_rpc::endpoint::{abci_query::{AbciQuery, Request as AbciRequest},
+                                   health::Request as HealthRequest};
 use tendermint_rpc::error::Error as TendermintRpcError;
 use tendermint_rpc::request::SimpleRequest;
 use tendermint_rpc::Response;
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub(super) struct HttpClient {
     uri: String,
 }

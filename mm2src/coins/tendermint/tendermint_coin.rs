@@ -12,9 +12,9 @@ use crate::{big_decimal_from_sat_unsigned, BalanceError, BalanceFut, BigDecimal,
             TransactionErr, TransactionFut, TransactionType, TxFeeDetails, TxMarshalingErr,
             UnexpectedDerivationMethod, ValidateAddressResult, ValidatePaymentInput, VerificationResult,
             WithdrawError, WithdrawFut, WithdrawRequest};
+use async_std::prelude::FutureExt as AsyncStdFutureExt;
 use async_trait::async_trait;
 use bitcrypto::{dhash160, sha256};
-use common::custom_futures::FutureTimerExt;
 use common::executor::Timer;
 use common::{get_utc_timestamp, log, Future01CompatExt};
 use cosmrs::bank::MsgSend;
@@ -45,6 +45,7 @@ use std::convert::TryFrom;
 use std::ops::Deref;
 use std::str::FromStr;
 use std::sync::Arc;
+use std::time::Duration;
 
 pub(super) const TIMEOUT_HEIGHT_DELTA: u64 = 100;
 pub const GAS_LIMIT_DEFAULT: u64 = 100_000;
@@ -268,7 +269,7 @@ impl TendermintCoin {
     // Also, try couple times more on health check errors.
     async fn rpc_client(&self) -> MmResult<HttpClient, TendermintCoinRpcError> {
         for rpc_client in self.rpc_clients.iter() {
-            match rpc_client.perform(endpoint::health::Request).timeout_secs(5.0).await {
+            match rpc_client.perform(HealthRequest).timeout(Duration::from_secs(3)).await {
                 Ok(res) => match res {
                     Ok(_) => return Ok(rpc_client.clone()),
                     Err(e) => {
