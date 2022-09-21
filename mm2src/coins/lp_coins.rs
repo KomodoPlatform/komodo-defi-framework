@@ -191,7 +191,7 @@ use eth::{eth_coin_from_conf_and_request, EthCoin, EthTxFeeDetails, SignedEthTx}
 pub mod hd_pubkey;
 
 pub mod hd_wallet;
-use hd_wallet::{HDAddress, HDAddressId};
+use hd_wallet::{HDAccountAddressId, HDAddress};
 
 pub mod hd_wallet_storage;
 #[cfg(not(target_arch = "wasm32"))] pub mod lightning;
@@ -706,7 +706,7 @@ pub trait GetWithdrawSenderAddress {
 #[serde(untagged)]
 pub enum WithdrawFrom {
     // AccountId { account_id: u32 },
-    AddressId(HDAddressId),
+    AddressId(HDAccountAddressId),
     /// Don't use `Bip44DerivationPath` or `RpcDerivationPath` because if there is an error in the path,
     /// `serde::Deserialize` returns "data did not match any variant of untagged enum WithdrawFrom".
     /// It's better to show the user an informative error.
