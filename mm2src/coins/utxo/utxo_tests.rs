@@ -3488,6 +3488,7 @@ fn test_account_balance_rpc() {
         account_derivation_path: Bip44PathToAccount::from_str("m/44'/141'/0'").unwrap(),
         external_addresses_number: 7,
         internal_addresses_number: 3,
+        derived_addresses: HDAddressesCache::default(),
     });
     hd_accounts.insert(1, UtxoHDAccount {
         account_id: 1,
@@ -3495,6 +3496,7 @@ fn test_account_balance_rpc() {
         account_derivation_path: Bip44PathToAccount::from_str("m/44'/141'/1'").unwrap(),
         external_addresses_number: 0,
         internal_addresses_number: 1,
+        derived_addresses: HDAddressesCache::default(),
     });
     fields.derivation_method = DerivationMethod::HDWallet(UtxoHDWallet {
         hd_wallet_storage: HDWalletCoinStorage::default(),
@@ -3812,6 +3814,7 @@ fn test_scan_for_new_addresses() {
         account_derivation_path: Bip44PathToAccount::from_str("m/44'/141'/0'").unwrap(),
         external_addresses_number: 3,
         internal_addresses_number: 1,
+        derived_addresses: HDAddressesCache::default(),
     });
     hd_accounts.insert(1, UtxoHDAccount {
         account_id: 1,
@@ -3819,6 +3822,7 @@ fn test_scan_for_new_addresses() {
         account_derivation_path: Bip44PathToAccount::from_str("m/44'/141'/1'").unwrap(),
         external_addresses_number: 0,
         internal_addresses_number: 2,
+        derived_addresses: HDAddressesCache::default(),
     });
     fields.derivation_method = DerivationMethod::HDWallet(UtxoHDWallet {
         hd_wallet_storage: HDWalletCoinStorage::default(),
@@ -3945,6 +3949,7 @@ fn test_get_new_address() {
         account_derivation_path: Bip44PathToAccount::from_str("m/44'/141'/0'").unwrap(),
         external_addresses_number: 4,
         internal_addresses_number: 0,
+        derived_addresses: HDAddressesCache::default(),
     };
     // Put multiple the same accounts for tests,
     // since every successful `get_new_address_rpc` changes the state of the account.

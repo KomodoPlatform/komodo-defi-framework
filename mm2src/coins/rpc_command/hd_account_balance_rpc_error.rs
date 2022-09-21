@@ -88,6 +88,7 @@ impl From<AddressDerivingError> for HDAccountBalanceRpcError {
             AddressDerivingError::Bip32Error(bip32) => {
                 HDAccountBalanceRpcError::ErrorDerivingAddress(bip32.to_string())
             },
+            AddressDerivingError::Internal(internal) => HDAccountBalanceRpcError::Internal(internal),
         }
     }
 }
