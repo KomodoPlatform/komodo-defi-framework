@@ -3,16 +3,16 @@ use super::check_balance::{check_base_coin_balance_for_swap, check_my_coin_balan
 use super::pubkey_banning::ban_pubkey_on_failed_swap;
 use super::swap_lock::{SwapLock, SwapLockOps};
 use super::trade_preimage::{TradePreimageRequest, TradePreimageRpcError, TradePreimageRpcResult};
-use super::{broadcast_my_swap_status, broadcast_swap_message_every, check_other_coin_balance_for_swap,
-            dex_fee_amount_from_taker_coin, get_locked_amount, recv_swap_msg, swap_topic, AtomicSwap, LockedAmount,
-            MySwapInfo, NegotiationDataMsg, NegotiationDataV2, NegotiationDataV3, RecoveredSwap, RecoveredSwapAction,
-            SavedSwap, SavedSwapIo, SavedTradeFee, SwapConfirmationsSettings, SwapError, SwapMsg, SwapsContext,
+use super::{broadcast_my_swap_status, broadcast_p2p_tx_msg, broadcast_swap_message_every,
+            check_other_coin_balance_for_swap, dex_fee_amount_from_taker_coin, get_locked_amount, recv_swap_msg,
+            swap_topic, tx_helper_topic, AtomicSwap, LockedAmount, MySwapInfo, NegotiationDataMsg, NegotiationDataV2,
+            NegotiationDataV3, PaymentDataMsg, PaymentDataV2, RecoveredSwap, RecoveredSwapAction, SavedSwap,
+            SavedSwapIo, SavedTradeFee, SwapConfirmationsSettings, SwapError, SwapMsg, SwapsContext,
             TransactionIdentifier, WAIT_CONFIRM_INTERVAL};
 use crate::mm2::lp_dispatcher::{DispatcherContext, LpEvents};
 use crate::mm2::lp_network::subscribe_to_topic;
 use crate::mm2::lp_ordermatch::{MakerOrderBuilder, OrderConfirmationsSettings};
 use crate::mm2::lp_price::fetch_swap_coins_price;
-use crate::mm2::lp_swap::{broadcast_p2p_tx_msg, tx_helper_topic};
 use crate::mm2::MM_VERSION;
 use bitcrypto::dhash160;
 use coins::{CanRefundHtlc, FeeApproxStage, FoundSwapTxSpend, MmCoinEnum, SearchForSwapTxSpendInput, TradeFee,
@@ -401,6 +401,18 @@ impl MakerSwap {
         }
     }
 
+    fn get_my_payment_data(&self) -> PaymentDataMsg {
+        let payment_data = self.r().maker_payment.as_ref().unwrap().tx_hex.0.clone();
+        if let Some(other_side_instructions) = self.taker_coin.other_side_instructions() {
+            PaymentDataMsg::V2(PaymentDataV2 {
+                payment_data,
+                other_side_instructions,
+            })
+        } else {
+            PaymentDataMsg::V1(payment_data)
+        }
+    }
+
     async fn start(&self) -> Result<(Option<MakerSwapCommand>, Vec<MakerSwapEvent>), String> {
         // do not use self.r().data here as it is not initialized at this step yet
         let preimage_value = TradePreimageValue::Exact(self.maker_amount.clone());
@@ -741,8 +753,8 @@ impl MakerSwap {
     }
 
     async fn wait_for_taker_payment(&self) -> Result<(Option<MakerSwapCommand>, Vec<MakerSwapEvent>), String> {
-        let maker_payment_hex = self.r().maker_payment.as_ref().unwrap().tx_hex.0.clone();
-        let msg = SwapMsg::MakerPayment(maker_payment_hex);
+        let payment_data_msg = self.get_my_payment_data();
+        let msg = SwapMsg::MakerPayment(payment_data_msg);
         let abort_send_handle =
             broadcast_swap_message_every(self.ctx.clone(), swap_topic(&self.uuid), msg, 600., self.p2p_privkey);
 
@@ -786,7 +798,7 @@ impl MakerSwap {
         };
         drop(abort_send_handle);
 
-        let taker_payment = match self.taker_coin.tx_enum_from_bytes(&payload) {
+        let taker_payment = match self.taker_coin.tx_enum_from_bytes(payload.payment_data()) {
             Ok(tx) => tx,
             Err(err) => {
                 return Ok((Some(MakerSwapCommand::RefundMakerPayment), vec![

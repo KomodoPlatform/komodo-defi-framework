@@ -26,9 +26,6 @@ extern crate serde_json;
 extern crate serde_derive;
 #[cfg(test)]
 #[macro_use]
-extern crate serialization_derive;
-#[cfg(test)]
-#[macro_use]
 extern crate ser_error_derive;
 #[cfg(test)] extern crate test;
 

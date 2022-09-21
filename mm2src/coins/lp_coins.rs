@@ -577,6 +577,9 @@ pub trait SwapOps {
     ) -> Result<Option<BytesJson>, MmError<NegotiateSwapContractAddrErr>>;
 
     fn derive_htlc_key_pair(&self, swap_unique_data: &[u8]) -> KeyPair;
+
+    // Todo: implement this for all coins
+    fn other_side_instructions(&self) -> Option<Vec<u8>> { None }
 }
 
 /// Operations that coins have independently from the MarketMaker.
