@@ -29,7 +29,7 @@ use uuid::Uuid;
 use mm2_test_helpers::for_tests::init_z_coin_native;
 
 #[cfg(all(feature = "zhtlc-native-tests", not(target_arch = "wasm32")))]
-async fn enable_z_coin(mm: &MarketMakerIt, coin: &str) -> ZcoinActivationResult {
+async fn enable_z_coin(mm: &MarketMakerIt, coin: &str) -> CoinActivationResult {
     let init = init_z_coin_native(mm, coin).await;
     let init: RpcV2Response<InitTaskResult> = json::from_value(init).unwrap();
     let timeout = now_ms() + 120000;
