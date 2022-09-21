@@ -14,8 +14,9 @@ use crate::{big_decimal_from_sat_unsigned, BalanceError, BalanceFut, BigDecimal,
             WithdrawError, WithdrawFut, WithdrawRequest};
 use async_trait::async_trait;
 use bitcrypto::{dhash160, sha256};
+use common::custom_futures::FutureTimerExt;
 use common::executor::Timer;
-use common::{get_utc_timestamp, Future01CompatExt};
+use common::{get_utc_timestamp, log, Future01CompatExt};
 use cosmrs::bank::MsgSend;
 use cosmrs::crypto::secp256k1::SigningKey;
 use cosmrs::proto::cosmos::auth::v1beta1::{BaseAccount, QueryAccountRequest, QueryAccountResponse};
@@ -44,6 +45,7 @@ use std::convert::TryFrom;
 use std::ops::Deref;
 use std::str::FromStr;
 use std::sync::Arc;
+use std::time;
 
 pub(super) const TIMEOUT_HEIGHT_DELTA: u64 = 100;
 pub const GAS_LIMIT_DEFAULT: u64 = 100_000;
@@ -72,7 +74,10 @@ pub struct ActivatedTokenInfo {
 
 pub struct TendermintCoinImpl {
     ticker: String,
-    rpc_client: HttpClient,
+    /// TODO
+    /// Test Vec<String(rpc_urls)> instead of HttpClient and pick
+    /// better one in terms of performance & resource consumption on runtime.
+    rpc_clients: Vec<HttpClient>,
     /// My address
     pub account_id: AccountId,
     pub(super) account_prefix: String,
@@ -222,11 +227,17 @@ impl TendermintCoin {
                 kind,
             })?;
 
-        // TODO multiple rpc_urls support will be added on the next iteration
-        let rpc_client = HttpClient::new(rpc_urls[0].as_str()).map_to_mm(|e| TendermintInitError {
-            ticker: ticker.clone(),
-            kind: TendermintInitErrorKind::RpcClientInitError(e.to_string()),
-        })?;
+        let rpc_clients: Result<Vec<HttpClient>, _> = rpc_urls
+            .iter()
+            .map(|url| {
+                HttpClient::new(url.as_str()).map_to_mm(|e| TendermintInitError {
+                    ticker: ticker.clone(),
+                    kind: TendermintInitErrorKind::RpcClientInitError(e.to_string()),
+                })
+            })
+            .collect();
+
+        let rpc_clients = rpc_clients?;
 
         let chain_id = ChainId::try_from(protocol_info.chain_id).map_to_mm(|e| TendermintInitError {
             ticker: ticker.clone(),
@@ -240,7 +251,7 @@ impl TendermintCoin {
 
         Ok(TendermintCoin(Arc::new(TendermintCoinImpl {
             ticker,
-            rpc_client,
+            rpc_clients,
             account_id,
             account_prefix: protocol_info.account_prefix,
             priv_key: priv_key.to_vec(),
@@ -252,6 +263,36 @@ impl TendermintCoin {
         })))
     }
 
+    // TODO
+    // Save one working client to the coin context, only try others once it doesn't
+    // work anymore.
+    async fn rpc_client(&self) -> MmResult<HttpClient, TendermintCoinRpcError> {
+        for rpc_client in self.rpc_clients.iter() {
+            match rpc_client
+                .wait_until_healthy(time::Duration::from_secs(5))
+                .timeout_secs(5.25)
+                .await
+            {
+                Ok(res) => match res {
+                    Ok(_) => return Ok(rpc_client.clone()),
+                    Err(e) => {
+                        log::warn!(
+                            "Recieved error from Tendermint rpc node during health check. Error: {:?}",
+                            e
+                        );
+                    },
+                },
+                Err(_) => {
+                    log::warn!("Tendermint rpc node: {:?} got timeout during health check", rpc_client);
+                },
+            };
+        }
+
+        MmError::err(TendermintCoinRpcError::PerformError(
+            "All the current rpc nodes are unavailable.".to_string(),
+        ))
+    }
+
     pub(super) async fn my_account_info(&self) -> MmResult<BaseAccount, TendermintCoinRpcError> {
         let path = AbciPath::from_str("/cosmos.auth.v1beta1.Query/Account").expect("valid path");
         let request = QueryAccountRequest {
@@ -259,7 +300,7 @@ impl TendermintCoin {
         };
         let request = AbciRequest::new(Some(path), request.encode_to_vec(), None, false);
 
-        let response = self.rpc_client.perform(request).await?;
+        let response = self.rpc_client().await?.perform(request).await?;
         let account_response = QueryAccountResponse::decode(response.response.value.as_slice())?;
         let account = account_response
             .account
@@ -275,7 +316,7 @@ impl TendermintCoin {
         };
         let request = AbciRequest::new(Some(path), request.encode_to_vec(), None, false);
 
-        let response = self.rpc_client.perform(request).await?;
+        let response = self.rpc_client().await?.perform(request).await?;
         let response = QueryBalanceResponse::decode(response.response.value.as_slice())?;
         response
             .balance
@@ -752,7 +793,11 @@ impl MarketCoinOps for TendermintCoin {
         let coin = self.clone();
         let tx_bytes = tx.to_owned();
         let fut = async move {
-            let broadcast_res = try_s!(coin.rpc_client.broadcast_tx_commit(tx_bytes.into()).await);
+            let broadcast_res = try_s!(
+                try_s!(coin.rpc_client().await)
+                    .broadcast_tx_commit(tx_bytes.into())
+                    .await
+            );
             if !broadcast_res.check_tx.code.is_ok() {
                 return ERR!("Tx check failed {:?}", broadcast_res.check_tx);
             }
@@ -816,7 +861,7 @@ impl MarketCoinOps for TendermintCoin {
         let fut = async move {
             loop {
                 let response = try_tx_s!(
-                    coin.rpc_client
+                    try_tx_s!(coin.rpc_client().await)
                         .abci_query(Some(path.clone()), encoded_request.as_slice(), None, false)
                         .await
                 );
@@ -852,7 +897,7 @@ impl MarketCoinOps for TendermintCoin {
     fn current_block(&self) -> Box<dyn Future<Item = u64, Error = String> + Send> {
         let coin = self.clone();
         let fut = async move {
-            let info = try_s!(coin.rpc_client.abci_info().await);
+            let info = try_s!(try_s!(coin.rpc_client().await).abci_info().await);
             Ok(info.last_block_height.into())
         };
         Box::new(fut.boxed().compat())
@@ -1291,10 +1336,12 @@ pub mod tendermint_coin_tests {
             order_by: 0,
         };
         let path = AbciPath::from_str("/cosmos.tx.v1beta1.Service/GetTxsEvent").unwrap();
-        let response = block_on(
-            coin.rpc_client
-                .abci_query(Some(path), request.encode_to_vec(), None, false),
-        )
+        let response = block_on(block_on(coin.rpc_client()).unwrap().abci_query(
+            Some(path),
+            request.encode_to_vec(),
+            None,
+            false,
+        ))
         .unwrap();
         println!("{:?}", response);
 
@@ -1340,10 +1387,12 @@ pub mod tendermint_coin_tests {
         };
 
         let path = AbciPath::from_str("/cosmos.tx.v1beta1.Service/GetTx").unwrap();
-        let response = block_on(
-            coin.rpc_client
-                .abci_query(Some(path), request.encode_to_vec(), None, false),
-        )
+        let response = block_on(block_on(coin.rpc_client()).unwrap().abci_query(
+            Some(path),
+            request.encode_to_vec(),
+            None,
+            false,
+        ))
         .unwrap();
         println!("{:?}", response);
 
