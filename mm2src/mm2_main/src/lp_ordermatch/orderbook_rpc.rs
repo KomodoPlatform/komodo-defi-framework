@@ -166,7 +166,11 @@ pub async fn orderbook_rpc(ctx: MmArc, req: Json) -> Result<Response<Vec<u8>>, S
     }
     // todo add info why we use another method of checking is_mine for ZHTLC
     let base_coin_protocol: CoinProtocol = try_s!(json::from_value(base_coin_conf["protocol"].clone()));
-    let is_zhtls = matches!(base_coin_protocol, CoinProtocol::ZHTLC { .. });
+    let is_zhtls = match base_coin_protocol {
+        #[cfg(not(target_arch = "wasm32"))]
+        CoinProtocol::ZHTLC { .. } => true,
+        _ => false,
+    };
     // have to create before orderbook, because orderbook is not `Send`
     let my_orders_pubkeys = get_my_orders_pubkeys(&ctx).await;
 
@@ -347,7 +351,11 @@ pub async fn orderbook_rpc_v2(
     }
 
     let base_coin_protocol: CoinProtocol = json::from_value(base_coin_conf["protocol"].clone())?;
-    let is_zhtls = matches!(base_coin_protocol, CoinProtocol::ZHTLC { .. });
+    let is_zhtls = match base_coin_protocol {
+        #[cfg(not(target_arch = "wasm32"))]
+        CoinProtocol::ZHTLC { .. } => true,
+        _ => false,
+    };
     // have to create before orderbook, because orderbook is not `Send`
     let my_orders_pubkeys = get_my_orders_pubkeys(&ctx).await;
 
