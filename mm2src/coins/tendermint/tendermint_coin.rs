@@ -266,7 +266,7 @@ impl TendermintCoin {
     // TODO
     // Save one working client to the coin context, only try others once it doesn't
     // work anymore.
-    // Also, try couple times more on health check errors. 
+    // Also, try couple times more on health check errors.
     async fn rpc_client(&self) -> MmResult<HttpClient, TendermintCoinRpcError> {
         for rpc_client in self.rpc_clients.iter() {
             match rpc_client.perform(endpoint::health::Request).timeout_secs(5.0).await {
