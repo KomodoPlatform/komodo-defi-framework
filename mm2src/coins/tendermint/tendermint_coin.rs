@@ -22,6 +22,7 @@ use cosmrs::crypto::secp256k1::SigningKey;
 use cosmrs::proto::cosmos::auth::v1beta1::{BaseAccount, QueryAccountRequest, QueryAccountResponse};
 use cosmrs::proto::cosmos::bank::v1beta1::{QueryBalanceRequest, QueryBalanceResponse};
 use cosmrs::proto::cosmos::tx::v1beta1::{GetTxsEventRequest, GetTxsEventResponse, TxRaw};
+use cosmrs::rpc::endpoint;
 use cosmrs::tendermint::abci::Path as AbciPath;
 use cosmrs::tendermint::chain::Id as ChainId;
 use cosmrs::tx::{self, Fee, Msg, Raw, SignDoc, SignerInfo};
@@ -45,7 +46,6 @@ use std::convert::TryFrom;
 use std::ops::Deref;
 use std::str::FromStr;
 use std::sync::Arc;
-use std::time;
 
 pub(super) const TIMEOUT_HEIGHT_DELTA: u64 = 100;
 pub const GAS_LIMIT_DEFAULT: u64 = 100_000;
@@ -266,13 +266,10 @@ impl TendermintCoin {
     // TODO
     // Save one working client to the coin context, only try others once it doesn't
     // work anymore.
+    // Also, try couple times more on health check errors. 
     async fn rpc_client(&self) -> MmResult<HttpClient, TendermintCoinRpcError> {
         for rpc_client in self.rpc_clients.iter() {
-            match rpc_client
-                .wait_until_healthy(time::Duration::from_secs(5))
-                .timeout_secs(5.25)
-                .await
-            {
+            match rpc_client.perform(endpoint::health::Request).timeout_secs(5.0).await {
                 Ok(res) => match res {
                     Ok(_) => return Ok(rpc_client.clone()),
                     Err(e) => {
