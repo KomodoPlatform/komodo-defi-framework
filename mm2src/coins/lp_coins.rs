@@ -1701,6 +1701,17 @@ pub trait MmCoin: SwapOps + MarketCoinOps + Send + Sync + 'static {
             .join(format!("{}_{}.json", self.ticker(), my_address))
     }
 
+    /// Path to tx history migration file
+    fn tx_migration_path(&self, ctx: &MmArc) -> PathBuf {
+        let my_address = self.my_address().unwrap_or_default();
+        // BCH cash address format has colon after prefix, e.g. bitcoincash:
+        // Colon can't be used in file names on Windows so it should be escaped
+        let my_address = my_address.replace(':', "_");
+        ctx.dbdir()
+            .join("TRANSACTIONS")
+            .join(format!("{}_{}_migration", self.ticker(), my_address))
+    }
+
     /// Loads existing tx history from file, returns empty vector if file is not found
     /// Cleans the existing file if deserialization fails
     fn load_history_from_file(&self, ctx: &MmArc) -> TxHistoryFut<Vec<TransactionDetails>> {
@@ -1709,6 +1720,14 @@ pub trait MmCoin: SwapOps + MarketCoinOps + Send + Sync + 'static {
 
     fn save_history_to_file(&self, ctx: &MmArc, history: Vec<TransactionDetails>) -> TxHistoryFut<()> {
         save_history_to_file_impl(self, ctx, history)
+    }
+
+    #[cfg(not(target_arch = "wasm32"))]
+    fn get_tx_history_migration(&self, ctx: &MmArc) -> TxHistoryFut<u64> { get_tx_history_migration_impl(self, ctx) }
+
+    #[cfg(not(target_arch = "wasm32"))]
+    fn update_migration_file(&self, ctx: &MmArc, migration_number: u64) -> TxHistoryFut<()> {
+        update_migration_file_impl(self, ctx, migration_number)
     }
 
     /// Transaction history background sync status
@@ -3010,6 +3029,61 @@ where
         save_tx_history(&db, &ticker, &my_address, history).await?;
         Ok(())
     };
+    Box::new(fut.boxed().compat())
+}
+
+#[cfg(not(target_arch = "wasm32"))]
+fn get_tx_history_migration_impl<T>(coin: &T, ctx: &MmArc) -> TxHistoryFut<u64>
+where
+    T: MmCoin + MarketCoinOps + ?Sized,
+{
+    let migration_path = coin.tx_migration_path(ctx);
+
+    let fut = async move {
+        let current_migration = match fs::read(&migration_path).await {
+            Ok(bytes) => {
+                let mut num_bytes = [0; 8];
+                if bytes.len() == 8 {
+                    num_bytes.clone_from_slice(&bytes);
+                    u64::from_le_bytes(num_bytes)
+                } else {
+                    0
+                }
+            },
+            Err(_) => 0,
+        };
+
+        Ok(current_migration)
+    };
+
+    Box::new(fut.boxed().compat())
+}
+
+#[cfg(not(target_arch = "wasm32"))]
+fn update_migration_file_impl<T>(coin: &T, ctx: &MmArc, migration_number: u64) -> TxHistoryFut<()>
+where
+    T: MmCoin + MarketCoinOps + ?Sized,
+{
+    let migration_path = coin.tx_migration_path(ctx);
+    let tmp_file = format!("{}.tmp", migration_path.display());
+
+    let fut = async move {
+        let fs_fut = async {
+            let mut file = fs::File::create(&tmp_file).await?;
+            file.write_all(&migration_number.to_le_bytes()).await?;
+            file.flush().await?;
+            fs::rename(&tmp_file, migration_path).await?;
+            Ok(())
+        };
+
+        let res: io::Result<_> = fs_fut.await;
+        if let Err(e) = res {
+            let error = format!("Error '{}' creating/writing/renaming the tmp file {}", e, tmp_file);
+            return MmError::err(TxHistoryError::ErrorSaving(error));
+        }
+        Ok(())
+    };
+
     Box::new(fut.boxed().compat())
 }
 
