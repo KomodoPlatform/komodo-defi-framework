@@ -1,6 +1,6 @@
 use super::*;
-use mm2_test_helpers::for_tests::{enable_tendermint, iris_testnet_conf, my_balance, orderbook, set_price,
-                                  usdc_ibc_iris_testnet_conf};
+use mm2_test_helpers::for_tests::{enable_tendermint, iris_testnet_conf, my_balance, orderbook, orderbook_v2,
+                                  set_price, usdc_ibc_iris_testnet_conf};
 
 const IRIS_TESTNET_RPCS: &[&str] = &["http://34.80.202.172:26657"];
 const IRIS_TICKER: &str = "IRIS-TEST";
@@ -54,4 +54,14 @@ fn test_iris_with_usdc_activation_balance_orderbook() {
 
     let first_bid = orderbook.bids.first().unwrap();
     assert_eq!(first_bid.address, expected_address);
+
+    let orderbook_v2 = block_on(orderbook_v2(&mm, USDC_IBC_TICKER, IRIS_TICKER));
+    let orderbook_v2: RpcV2Response<OrderbookV2Response> = json::from_value(orderbook_v2).unwrap();
+
+    let expected_address = OrderbookAddress::Transparent(expected_address.into());
+    let first_ask = orderbook_v2.result.asks.first().unwrap();
+    assert_eq!(first_ask.entry.address, expected_address);
+
+    let first_bid = orderbook_v2.result.bids.first().unwrap();
+    assert_eq!(first_bid.entry.address, expected_address);
 }

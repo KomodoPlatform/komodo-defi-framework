@@ -867,7 +867,7 @@ pub struct MmVersion {
     pub datetime: String,
 }
 
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Deserialize, Eq, PartialEq)]
 #[serde(deny_unknown_fields, tag = "address_type", content = "address_data")]
 pub enum OrderbookAddress {
     Transparent(String),

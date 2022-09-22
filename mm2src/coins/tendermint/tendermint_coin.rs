@@ -62,7 +62,7 @@ pub struct TendermintFeeDetails {
 pub struct TendermintProtocolInfo {
     decimals: u8,
     denom: String,
-    pub(crate) account_prefix: String,
+    pub account_prefix: String,
     chain_id: String,
 }
 
@@ -177,7 +177,7 @@ fn account_id_from_privkey(priv_key: &[u8], prefix: &str) -> MmResult<AccountId,
 }
 
 #[derive(Display, Debug)]
-pub(crate) enum AccountIdFromPubkeyHexErr {
+pub enum AccountIdFromPubkeyHexErr {
     InvalidHexString(FromHexError),
     CouldNotCreateAccountId(ErrorReport),
 }
@@ -190,7 +190,7 @@ impl From<ErrorReport> for AccountIdFromPubkeyHexErr {
     fn from(err: ErrorReport) -> Self { AccountIdFromPubkeyHexErr::CouldNotCreateAccountId(err) }
 }
 
-pub(crate) fn account_id_from_pubkey_hex(prefix: &str, pubkey: &str) -> MmResult<AccountId, AccountIdFromPubkeyHexErr> {
+pub fn account_id_from_pubkey_hex(prefix: &str, pubkey: &str) -> MmResult<AccountId, AccountIdFromPubkeyHexErr> {
     let pubkey_bytes = hex::decode(pubkey)?;
     let pubkey_hash = dhash160(&pubkey_bytes);
     Ok(AccountId::new(prefix, pubkey_hash.as_slice())?)
