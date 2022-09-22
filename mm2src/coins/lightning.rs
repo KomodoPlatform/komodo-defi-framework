@@ -11,9 +11,10 @@ pub(crate) mod ln_storage;
 mod ln_utils;
 
 use super::DerivationMethod;
+use crate::lightning::ln_utils::filter_channels;
 use crate::utxo::rpc_clients::UtxoRpcClientEnum;
 use crate::utxo::utxo_common::big_decimal_from_sat_unsigned;
-use crate::utxo::BlockchainNetwork;
+use crate::utxo::{sat_from_big_decimal, BlockchainNetwork};
 use crate::{BalanceFut, CoinBalance, FeeApproxStage, FoundSwapTxSpend, HistorySyncState, MarketCoinOps, MmCoin,
             NegotiateSwapContractAddrErr, RawTransactionFut, RawTransactionRequest, SearchForSwapTxSpendInput,
             SignatureError, SignatureResult, SwapOps, TradeFee, TradePreimageFut, TradePreimageResult,
@@ -21,6 +22,7 @@ use crate::{BalanceFut, CoinBalance, FeeApproxStage, FoundSwapTxSpend, HistorySy
             UtxoStandardCoin, ValidateAddressResult, ValidatePaymentInput, VerificationError, VerificationResult,
             WithdrawError, WithdrawFut, WithdrawRequest};
 use async_trait::async_trait;
+use bitcoin::bech32::ToBase32;
 use bitcoin::hashes::Hash;
 use bitcoin_hashes::sha256::Hash as Sha256;
 use bitcrypto::dhash256;
@@ -37,8 +39,8 @@ use lightning::ln::channelmanager::{ChannelDetails, MIN_FINAL_CLTV_EXPIRY};
 use lightning::ln::{PaymentHash, PaymentPreimage};
 use lightning::routing::gossip;
 use lightning_background_processor::{BackgroundProcessor, GossipSync};
-use lightning_invoice::payment;
 use lightning_invoice::utils::DefaultRouter;
+use lightning_invoice::{payment, CreationError, InvoiceBuilder, SignOrCreationError};
 use lightning_invoice::{Invoice, InvoiceDescription};
 use ln_conf::{LightningCoinConf, LightningProtocolConf, PlatformCoinConfirmationTargets};
 use ln_db::{DBChannelDetails, DBPaymentInfo, HTLCStatus, LightningDB, PaymentType};
@@ -66,6 +68,7 @@ use std::fmt;
 use std::net::SocketAddr;
 use std::str::FromStr;
 use std::sync::Arc;
+use std::time::SystemTime;
 
 pub const DEFAULT_INVOICE_EXPIRY: u32 = 3600;
 
@@ -346,6 +349,61 @@ impl LightningCoin {
             total,
         }
     }
+
+    fn create_invoice_for_hash(
+        &self,
+        payment_hash: PaymentHash,
+        amt_msat: Option<u64>,
+        description: String,
+        invoice_expiry_delta_secs: u32,
+    ) -> Result<Invoice, SignOrCreationError<()>> {
+        // Todo: maybe remove the expect?
+        let duration = SystemTime::now()
+            .duration_since(SystemTime::UNIX_EPOCH)
+            .expect("for the foreseeable future this shouldn't happen");
+
+        let route_hints = filter_channels(self.channel_manager.list_usable_channels(), amt_msat);
+
+        // `create_inbound_payment` only returns an error if the amount is greater than the total bitcoin
+        // supply.
+        let payment_secret = self
+            .channel_manager
+            .create_inbound_payment_for_hash(payment_hash, amt_msat, invoice_expiry_delta_secs)
+            .map_err(|()| SignOrCreationError::CreationError(CreationError::InvalidAmount))?;
+        let our_node_pubkey = self.channel_manager.get_our_node_id();
+
+        let mut invoice = InvoiceBuilder::new(self.platform.network.clone().into())
+            .description(description)
+            .duration_since_epoch(duration)
+            .payee_pub_key(our_node_pubkey)
+            .payment_hash(Hash::from_slice(&payment_hash.0).unwrap())
+            .payment_secret(payment_secret)
+            .basic_mpp()
+            .min_final_cltv_expiry(MIN_FINAL_CLTV_EXPIRY.into())
+            .expiry_time(core::time::Duration::from_secs(invoice_expiry_delta_secs.into()));
+        if let Some(amt) = amt_msat {
+            invoice = invoice.amount_milli_satoshis(amt);
+        }
+        for hint in route_hints {
+            invoice = invoice.private_route(hint);
+        }
+
+        let raw_invoice = match invoice.build_raw() {
+            Ok(inv) => inv,
+            Err(e) => return Err(SignOrCreationError::CreationError(e)),
+        };
+        let hrp_str = raw_invoice.hrp.to_string();
+        let hrp_bytes = hrp_str.as_bytes();
+        let data_without_signature = raw_invoice.data.to_base32();
+        let signed_raw_invoice = raw_invoice.sign(|_| {
+            self.keys_manager
+                .sign_invoice(hrp_bytes, &data_without_signature, Recipient::Node)
+        });
+        match signed_raw_invoice {
+            Ok(inv) => Ok(Invoice::from_signed(inv).unwrap()),
+            Err(e) => Err(SignOrCreationError::SignError(e)),
+        }
+    }
 }
 
 #[async_trait]
@@ -487,6 +545,30 @@ impl SwapOps for LightningCoin {
     }
 
     fn derive_htlc_key_pair(&self, _swap_unique_data: &[u8]) -> KeyPair { unimplemented!() }
+
+    fn other_side_instructions(&self, secret_hash: &[u8], other_side_amount: &BigDecimal) -> Option<Vec<u8>> {
+        // Todo: lightning decimals should be 11 in config because it's up to msats but the function name is not good
+        // Todo: remove unwrap
+        let amt_msat = sat_from_big_decimal(other_side_amount, self.decimals()).unwrap();
+
+        if secret_hash.len() != 32 {
+            // return error here
+        }
+        let mut payment_hash = [b' '; 32];
+        payment_hash.copy_from_slice(secret_hash);
+
+        // Todo: maybe get invoice_expiry_delta_secs from locktime (not sure if needed), and maybe description can be the swap uuid
+        // Todo: remove unwrap
+        let invoice = self
+            .create_invoice_for_hash(
+                PaymentHash(payment_hash),
+                Some(amt_msat),
+                "".into(),
+                DEFAULT_INVOICE_EXPIRY,
+            )
+            .unwrap();
+        Some(invoice.to_string().into_bytes())
+    }
 }
 
 impl MarketCoinOps for LightningCoin {

@@ -4,17 +4,16 @@ use super::pubkey_banning::ban_pubkey_on_failed_swap;
 use super::swap_lock::{SwapLock, SwapLockOps};
 use super::trade_preimage::{TradePreimageRequest, TradePreimageRpcError, TradePreimageRpcResult};
 use super::{broadcast_my_swap_status, broadcast_p2p_tx_msg, broadcast_swap_message_every,
-            check_other_coin_balance_for_swap, dex_fee_amount_from_taker_coin, get_locked_amount, recv_swap_msg,
-            swap_topic, tx_helper_topic, AtomicSwap, LockedAmount, MySwapInfo, NegotiationDataMsg, NegotiationDataV2,
-            NegotiationDataV3, PaymentDataMsg, PaymentDataV2, RecoveredSwap, RecoveredSwapAction, SavedSwap,
-            SavedSwapIo, SavedTradeFee, SwapConfirmationsSettings, SwapError, SwapMsg, SwapsContext,
-            TransactionIdentifier, WAIT_CONFIRM_INTERVAL};
+            check_other_coin_balance_for_swap, detect_secret_hash_algo, dex_fee_amount_from_taker_coin,
+            get_locked_amount, recv_swap_msg, swap_topic, tx_helper_topic, AtomicSwap, LockedAmount, MySwapInfo,
+            NegotiationDataMsg, NegotiationDataV2, NegotiationDataV3, PaymentDataMsg, PaymentDataV2, RecoveredSwap,
+            RecoveredSwapAction, SavedSwap, SavedSwapIo, SavedTradeFee, SecretHashAlgo, SwapConfirmationsSettings,
+            SwapError, SwapMsg, SwapsContext, TransactionIdentifier, WAIT_CONFIRM_INTERVAL};
 use crate::mm2::lp_dispatcher::{DispatcherContext, LpEvents};
 use crate::mm2::lp_network::subscribe_to_topic;
 use crate::mm2::lp_ordermatch::{MakerOrderBuilder, OrderConfirmationsSettings};
 use crate::mm2::lp_price::fetch_swap_coins_price;
 use crate::mm2::MM_VERSION;
-use bitcrypto::dhash160;
 use coins::{CanRefundHtlc, FeeApproxStage, FoundSwapTxSpend, MmCoinEnum, SearchForSwapTxSpendInput, TradeFee,
             TradePreimageValue, TransactionEnum, ValidatePaymentInput};
 use common::log::{debug, error, info, warn};
@@ -26,9 +25,9 @@ use mm2_core::mm_ctx::MmArc;
 use mm2_err_handle::prelude::*;
 use mm2_number::{BigDecimal, MmNumber};
 use parking_lot::Mutex as PaMutex;
-use primitives::hash::{H160, H256, H264};
+use primitives::hash::{H256, H264};
 use rand::Rng;
-use rpc::v1::types::{Bytes as BytesJson, H160 as H160Json, H256 as H256Json, H264 as H264Json};
+use rpc::v1::types::{Bytes as BytesJson, H256 as H256Json, H264 as H264Json};
 use std::any::TypeId;
 use std::path::PathBuf;
 use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
@@ -129,7 +128,7 @@ pub struct MakerSwapData {
     pub maker_coin: String,
     pub taker: H256Json,
     pub secret: H256Json,
-    pub secret_hash: Option<H160Json>,
+    pub secret_hash: Option<BytesJson>,
     pub my_persistent_pub: H264Json,
     pub lock_duration: u64,
     pub maker_amount: BigDecimal,
@@ -213,6 +212,7 @@ pub struct MakerSwap {
     /// Temporary privkey used to sign P2P messages when applicable
     p2p_privkey: Option<KeyPair>,
     secret: H256,
+    secret_hash_algo: SecretHashAlgo,
     #[cfg(test)]
     pub(super) fail_at: Option<FailAt>,
 }
@@ -228,12 +228,13 @@ impl MakerSwap {
     pub fn generate_secret() -> [u8; 32] { rand::thread_rng().gen() }
 
     #[inline]
-    fn secret_hash(&self) -> H160 {
+    fn secret_hash(&self) -> Vec<u8> {
         self.r()
             .data
             .secret_hash
-            .map(H160Json::into)
-            .unwrap_or_else(|| dhash160(self.secret.as_slice()))
+            .as_ref()
+            .map(|bytes| bytes.0.clone())
+            .unwrap_or_else(|| self.secret_hash_algo.hash_secret(self.secret.as_slice()))
     }
 
     #[inline]
@@ -333,6 +334,7 @@ impl MakerSwap {
         p2p_privkey: Option<KeyPair>,
         secret: H256,
     ) -> Self {
+        let secret_hash_algo = detect_secret_hash_algo(&maker_coin, &taker_coin);
         MakerSwap {
             maker_coin,
             taker_coin,
@@ -362,6 +364,7 @@ impl MakerSwap {
             }),
             ctx,
             secret,
+            secret_hash_algo,
             #[cfg(test)]
             fail_at: None,
         }
@@ -403,7 +406,10 @@ impl MakerSwap {
 
     fn get_my_payment_data(&self) -> PaymentDataMsg {
         let payment_data = self.r().maker_payment.as_ref().unwrap().tx_hex.0.clone();
-        if let Some(other_side_instructions) = self.taker_coin.other_side_instructions() {
+        if let Some(other_side_instructions) = self
+            .taker_coin
+            .other_side_instructions(&self.secret_hash(), &self.taker_amount)
+        {
             PaymentDataMsg::V2(PaymentDataV2 {
                 payment_data,
                 other_side_instructions,
