@@ -194,7 +194,13 @@ pub fn zombie_conf() -> Json {
                     "hrp_sapling_payment_address": "zs",
                     "b58_pubkey_address_prefix": [ 28, 184 ],
                     "b58_script_address_prefix": [ 28, 189 ]
-                }
+                },
+                "check_point_block": {
+                    "height": 269618,
+                    "time": 1662970615,
+                    "hash": "000422729ca359670768774f592b8bad8dd012bac3f3af838b298b705f99f469",
+                    "sapling_tree": "5fa9ec79be7538f9d69817aa21240017dae0ba67949e14aa7ee57fa70114035b0100000000797609faf3c1a654aa86e30d866ffbbd1ea21804fe590581db4fb380a0e20143bcefb4d995004fa5840ffb852509198d50f72d62c0625cb6233d04457bd9f9010ab8cad5411181de612b7b79af5b651679624631a63e070d1e0076d217db8b7701002650072f9d17d1f921251045c4bb2d1883ddad7ede524366ce53f7d3b91326240123365356257b5a2b3ae7baf52336b59102c96c24fafc9c5db1b853688ecbce5e014a98e5bfa397bfeb4716ae608615776c6872e76d4993d0dc6130de5be3e79ad00100000c00361f5b7f01b695b00b618761aeec2d8386c5eebfa0c6727a450a9467055eab3e01"
+                },
             }
         },
         "required_confirmations":0
