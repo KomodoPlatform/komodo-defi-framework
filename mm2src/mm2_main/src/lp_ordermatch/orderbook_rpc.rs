@@ -111,7 +111,7 @@ pub fn is_my_order(my_pub: &Option<String>, order_pubkey: &str) -> bool {
     my_pub.as_ref().map(|my| my == order_pubkey).unwrap_or(false)
 }
 
-pub fn is_mine_zhtls(my_orders_pubkeys: &Vec<String>, pubkey: &String) -> bool {
+pub fn is_mine_zhtlc(my_orders_pubkeys: &Vec<String>, pubkey: &String) -> bool {
     let mut is_mine = false;
     for my_pubkey in my_orders_pubkeys {
         if my_pubkey == pubkey {
@@ -166,7 +166,7 @@ pub async fn orderbook_rpc(ctx: MmArc, req: Json) -> Result<Response<Vec<u8>>, S
     }
     // todo add info why we use another method of checking is_mine for ZHTLC
     let base_coin_protocol: CoinProtocol = try_s!(json::from_value(base_coin_conf["protocol"].clone()));
-    let is_zhtls = match base_coin_protocol {
+    let is_zhtlc = match base_coin_protocol {
         #[cfg(not(target_arch = "wasm32"))]
         CoinProtocol::ZHTLC { .. } => true,
         _ => false,
@@ -198,8 +198,8 @@ pub async fn orderbook_rpc(ctx: MmArc, req: Json) -> Result<Response<Vec<u8>>, S
                     &ask.pubkey,
                     address_format,
                 ));
-                let is_mine = if is_zhtls {
-                    is_mine_zhtls(&my_orders_pubkeys, &ask.pubkey)
+                let is_mine = if is_zhtlc {
+                    is_mine_zhtlc(&my_orders_pubkeys, &ask.pubkey)
                 } else {
                     is_my_order(&my_pubsecp, &ask.pubkey)
                 };
@@ -229,8 +229,8 @@ pub async fn orderbook_rpc(ctx: MmArc, req: Json) -> Result<Response<Vec<u8>>, S
                     &bid.pubkey,
                     address_format,
                 ));
-                let is_mine = if is_zhtls {
-                    is_mine_zhtls(&my_orders_pubkeys, &bid.pubkey)
+                let is_mine = if is_zhtlc {
+                    is_mine_zhtlc(&my_orders_pubkeys, &bid.pubkey)
                 } else {
                     is_my_order(&my_pubsecp, &bid.pubkey)
                 };
@@ -351,7 +351,7 @@ pub async fn orderbook_rpc_v2(
     }
 
     let base_coin_protocol: CoinProtocol = json::from_value(base_coin_conf["protocol"].clone())?;
-    let is_zhtls = match base_coin_protocol {
+    let is_zhtlc = match base_coin_protocol {
         #[cfg(not(target_arch = "wasm32"))]
         CoinProtocol::ZHTLC { .. } => true,
         _ => false,
@@ -390,8 +390,8 @@ pub async fn orderbook_rpc_v2(
                         continue;
                     },
                 };
-                let is_mine = if is_zhtls {
-                    is_mine_zhtls(&my_orders_pubkeys, &ask.pubkey)
+                let is_mine = if is_zhtlc {
+                    is_mine_zhtlc(&my_orders_pubkeys, &ask.pubkey)
                 } else {
                     is_my_order(&my_pubsecp, &ask.pubkey)
                 };
@@ -424,8 +424,8 @@ pub async fn orderbook_rpc_v2(
                         continue;
                     },
                 };
-                let is_mine = if is_zhtls {
-                    is_mine_zhtls(&my_orders_pubkeys, &bid.pubkey)
+                let is_mine = if is_zhtlc {
+                    is_mine_zhtlc(&my_orders_pubkeys, &bid.pubkey)
                 } else {
                     is_my_order(&my_pubsecp, &bid.pubkey)
                 };
