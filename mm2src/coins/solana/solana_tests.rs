@@ -34,13 +34,13 @@ fn solana_prerequisites() {
     // same test as trustwallet
     {
         let fin = generate_key_pair_from_seed(
-            "shoot island position soft burden budget tooth cruel issue economy destroy above".to_string(),
+            "hood vacant left trim hard mushroom device flavor ask better arrest again".to_string(),
         );
         let public_address = fin.pubkey().to_string();
         let priv_key = &fin.secret().to_bytes()[..].to_base58();
         assert_eq!(public_address.len(), 44);
-        assert_eq!(public_address, "2bUBiBNZyD29gP1oV6de7nxowMLoDBtopMMTGgMvjG5m");
-        assert_eq!(priv_key, "F6czu7fdefbsCDH52JesQrBSJS5Sz25AkPLWFf8zUWhm");
+        assert_eq!(public_address, "4rmosKwMH7zeaXGbej1PFybZBUyuUNQLf8RfyzCcYvkx");
+        assert_eq!(priv_key, "CZtxt17aTfDrJrzwBWdVqcmFwVVptW8EX7RRnth9tT3M");
         let client = solana_client::rpc_client::RpcClient::new("https://api.testnet.solana.com/".to_string());
         let balance = client.get_balance(&fin.pubkey()).expect("Expect to retrieve balance");
         assert_eq!(balance, 0);

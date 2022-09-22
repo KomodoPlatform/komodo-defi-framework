@@ -5,6 +5,7 @@ use async_trait::async_trait;
 use crypto::{Bip32DerPathError, Bip32Error, Bip44Chain, Bip44DerPathError, Bip44DerivationPath, ChildNumber,
              DerivationPath, HwError};
 use derive_more::Display;
+use itertools::Itertools;
 use mm2_err_handle::prelude::*;
 use rpc_task::RpcTaskError;
 use serde::Serialize;
@@ -23,8 +24,8 @@ const DEFAULT_RECEIVER_CHAIN: Bip44Chain = Bip44Chain::External;
 
 #[derive(Debug, Display)]
 pub enum AddressDerivingError {
-    #[display(fmt = "BIP32 address deriving error: {}", _0)]
     Bip32Error(Bip32Error),
+    Internal(String),
 }
 
 impl From<Bip32Error> for AddressDerivingError {
@@ -32,15 +33,16 @@ impl From<Bip32Error> for AddressDerivingError {
 }
 
 impl From<AddressDerivingError> for BalanceError {
-    fn from(e: AddressDerivingError) -> Self {
-        match e {
-            AddressDerivingError::Bip32Error(bip32) => BalanceError::Internal(bip32.to_string()),
-        }
-    }
+    fn from(e: AddressDerivingError) -> Self { BalanceError::Internal(e.to_string()) }
 }
 
 impl From<AddressDerivingError> for WithdrawError {
-    fn from(e: AddressDerivingError) -> Self { WithdrawError::UnexpectedFromAddress(e.to_string()) }
+    fn from(e: AddressDerivingError) -> Self {
+        match e {
+            AddressDerivingError::Bip32Error(e) => WithdrawError::UnexpectedFromAddress(e.to_string()),
+            AddressDerivingError::Internal(internal) => WithdrawError::InternalError(internal),
+        }
+    }
 }
 
 #[derive(Display)]
@@ -53,6 +55,8 @@ pub enum NewAddressDerivingError {
     Bip32Error(Bip32Error),
     #[display(fmt = "Wallet storage error: {}", _0)]
     WalletStorageError(HDWalletStorageError),
+    #[display(fmt = "Internal error: {}", _0)]
+    Internal(String),
 }
 
 impl From<Bip32Error> for NewAddressDerivingError {
@@ -63,6 +67,7 @@ impl From<AddressDerivingError> for NewAddressDerivingError {
     fn from(e: AddressDerivingError) -> Self {
         match e {
             AddressDerivingError::Bip32Error(bip32) => NewAddressDerivingError::Bip32Error(bip32),
+            AddressDerivingError::Internal(internal) => NewAddressDerivingError::Internal(internal),
         }
     }
 }
@@ -157,6 +162,7 @@ impl From<AccountUpdatingError> for BalanceError {
     }
 }
 
+#[derive(Clone)]
 pub struct HDAddress<Address, Pubkey> {
     pub address: Address,
     pub pubkey: Pubkey,
@@ -164,20 +170,26 @@ pub struct HDAddress<Address, Pubkey> {
 }
 
 #[derive(Clone, Deserialize, Serialize)]
-pub struct HDAddressId {
+pub struct HDAccountAddressId {
     pub account_id: u32,
     pub chain: Bip44Chain,
     pub address_id: u32,
 }
 
-impl From<Bip44DerivationPath> for HDAddressId {
+impl From<Bip44DerivationPath> for HDAccountAddressId {
     fn from(der_path: Bip44DerivationPath) -> Self {
-        HDAddressId {
+        HDAccountAddressId {
             account_id: der_path.account_id(),
             chain: der_path.chain(),
             address_id: der_path.address_id(),
         }
     }
+}
+
+#[derive(Clone, Eq, Hash, PartialEq)]
+pub struct HDAddressId {
+    pub chain: Bip44Chain,
+    pub address_id: u32,
 }
 
 #[async_trait]
@@ -188,12 +200,29 @@ pub trait HDWalletCoinOps {
     type HDAccount: HDAccountOps;
 
     /// Derives an address from the given info.
-    fn derive_address(
+    async fn derive_address(
         &self,
         hd_account: &Self::HDAccount,
         chain: Bip44Chain,
         address_id: u32,
-    ) -> MmResult<HDAddress<Self::Address, Self::Pubkey>, AddressDerivingError>;
+    ) -> MmResult<HDAddress<Self::Address, Self::Pubkey>, AddressDerivingError> {
+        self.derive_addresses(hd_account, std::iter::once(HDAddressId { chain, address_id }))
+            .await?
+            .into_iter()
+            .exactly_one()
+            // Unfortunately, we can't use [`MapToMmResult::map_to_mm`] due to unsatisfied trait bounds,
+            // and it's easier to use [`Result::map_err`] instead of adding more trait bounds to this method.
+            .map_err(|e| MmError::new(AddressDerivingError::Internal(e.to_string())))
+    }
+
+    /// Derives HD addresses from the given info.
+    async fn derive_addresses<Ids>(
+        &self,
+        hd_account: &Self::HDAccount,
+        address_ids: Ids,
+    ) -> MmResult<Vec<HDAddress<Self::Address, Self::Pubkey>>, AddressDerivingError>
+    where
+        Ids: Iterator<Item = HDAddressId> + Send;
 
     /// Generates a new address and updates the corresponding number of used `hd_account` addresses.
     async fn generate_new_address(
@@ -209,9 +238,7 @@ pub trait HDWalletCoinOps {
         if new_address_id >= max_addresses_number {
             return MmError::err(NewAddressDerivingError::AddressLimitReached { max_addresses_number });
         }
-        let new_address = self
-            .derive_address(hd_account, chain, new_address_id)
-            .mm_err(NewAddressDerivingError::from)?;
+        let new_address = self.derive_address(hd_account, chain, new_address_id).await?;
         self.set_known_addresses_number(hd_wallet, hd_account, chain, known_addresses_number + 1)
             .await?;
         Ok(new_address)
