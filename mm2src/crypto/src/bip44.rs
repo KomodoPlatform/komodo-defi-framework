@@ -122,7 +122,7 @@ pub enum Bip44Index {
     AddressId = 4,
 }
 
-#[derive(Debug, Copy, Clone, Deserialize, PartialEq, Serialize)]
+#[derive(Debug, Copy, Clone, Deserialize, Eq, Hash, PartialEq, Serialize)]
 #[repr(u32)]
 pub enum Bip44Chain {
     External = 0,
