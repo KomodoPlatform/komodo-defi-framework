@@ -406,8 +406,7 @@ fn spawn_taker_swap_watcher(ctx: MmArc, watcher_data: TakerSwapWatcherData) {
         return;
     }
     let mut taker_swap_watchers = swap_ctx.taker_swap_watchers.lock();
-    if taker_swap_watchers.contains(&watcher_data.uuid)
-    {
+    if taker_swap_watchers.contains(&watcher_data.uuid) {
         return;
     }
     taker_swap_watchers.insert(watcher_data.uuid);
