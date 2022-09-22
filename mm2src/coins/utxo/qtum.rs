@@ -948,13 +948,15 @@ impl HDWalletCoinOps for QtumCoin {
     type HDWallet = UtxoHDWallet;
     type HDAccount = UtxoHDAccount;
 
-    fn derive_address(
+    async fn derive_addresses<Ids>(
         &self,
         hd_account: &Self::HDAccount,
-        chain: Bip44Chain,
-        address_id: u32,
-    ) -> MmResult<HDAddress<Self::Address, Self::Pubkey>, AddressDerivingError> {
-        utxo_common::derive_address(self, hd_account, chain, address_id)
+        address_ids: Ids,
+    ) -> MmResult<Vec<HDAddress<Self::Address, Self::Pubkey>>, AddressDerivingError>
+    where
+        Ids: Iterator<Item = HDAddressId> + Send,
+    {
+        utxo_common::derive_addresses(self, hd_account, address_ids).await
     }
 
     async fn create_new_account<'a, XPubExtractor>(

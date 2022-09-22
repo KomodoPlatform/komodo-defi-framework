@@ -10,7 +10,7 @@ use crate::utxo::rpc_clients::{electrum_script_hash, BlockHashOrHeight, UnspentI
 use crate::utxo::spv::SimplePaymentVerification;
 use crate::utxo::tx_cache::TxCacheResult;
 use crate::utxo::utxo_withdraw::{InitUtxoWithdraw, StandardUtxoWithdraw, UtxoWithdraw};
-use crate::{CanRefundHtlc, CoinBalance, CoinWithDerivationMethod, GetWithdrawSenderAddress, HDAddressId,
+use crate::{CanRefundHtlc, CoinBalance, CoinWithDerivationMethod, GetWithdrawSenderAddress, HDAccountAddressId,
             RawTransactionError, RawTransactionRequest, RawTransactionRes, SearchForSwapTxSpendInput, SignatureError,
             SignatureResult, SwapOps, TradePreimageValue, TransactionFut, TxFeeDetails, TxMarshalingErr,
             ValidateAddressResult, ValidatePaymentInput, VerificationError, VerificationResult, WithdrawFrom,
@@ -49,6 +49,9 @@ use utxo_signer::with_key_pair::p2sh_spend;
 use utxo_signer::UtxoSignerOps;
 
 pub use chain::Transaction as UtxoTx;
+
+#[cfg(not(target_arch = "wasm32"))]
+use crate::TxFeeDetails::Utxo;
 
 pub const DEFAULT_FEE_VOUT: usize = 0;
 pub const DEFAULT_SWAP_TX_SPEND_SIZE: u64 = 305;
@@ -96,14 +99,22 @@ pub async fn get_tx_fee(coin: &UtxoCoinFields) -> UtxoRpcResult<ActualTxFee> {
     }
 }
 
-pub fn derive_address<T: UtxoCommonOps>(
+fn derive_address_with_cache<T>(
     coin: &T,
     hd_account: &UtxoHDAccount,
-    chain: Bip44Chain,
-    address_id: u32,
-) -> MmResult<HDAddress<Address, Public>, AddressDerivingError> {
-    let change_child = chain.to_child_number();
-    let address_id_child = ChildNumber::from(address_id);
+    hd_addresses_cache: &mut HashMap<HDAddressId, UtxoHDAddress>,
+    hd_address_id: HDAddressId,
+) -> MmResult<UtxoHDAddress, AddressDerivingError>
+where
+    T: UtxoCommonOps,
+{
+    // Check if the given HD address has been derived already.
+    if let Some(hd_address) = hd_addresses_cache.get(&hd_address_id) {
+        return Ok(hd_address.clone());
+    }
+
+    let change_child = hd_address_id.chain.to_child_number();
+    let address_id_child = ChildNumber::from(hd_address_id.address_id);
 
     let derived_pubkey = hd_account
         .extended_pubkey
@@ -115,11 +126,71 @@ pub fn derive_address<T: UtxoCommonOps>(
     let mut derivation_path = hd_account.account_derivation_path.to_derivation_path();
     derivation_path.push(change_child);
     derivation_path.push(address_id_child);
-    Ok(HDAddress {
+
+    let hd_address = HDAddress {
         address,
         pubkey,
         derivation_path,
-    })
+    };
+
+    // Cache the derived `hd_address`.
+    hd_addresses_cache.insert(hd_address_id, hd_address.clone());
+    Ok(hd_address)
+}
+
+/// [`HDWalletCoinOps::derive_addresses`] native implementation.
+///
+/// # Important
+///
+/// The [`HDAddressesCache::cache`] mutex is locked once for the entire duration of this function.
+#[cfg(not(target_arch = "wasm32"))]
+pub async fn derive_addresses<T, Ids>(
+    coin: &T,
+    hd_account: &UtxoHDAccount,
+    address_ids: Ids,
+) -> MmResult<Vec<UtxoHDAddress>, AddressDerivingError>
+where
+    T: UtxoCommonOps,
+    Ids: Iterator<Item = HDAddressId>,
+{
+    let mut hd_addresses_cache = hd_account.derived_addresses.lock().await;
+    address_ids
+        .map(|hd_address_id| derive_address_with_cache(coin, hd_account, &mut hd_addresses_cache, hd_address_id))
+        .collect()
+}
+
+/// [`HDWalletCoinOps::derive_addresses`] WASM implementation.
+///
+/// # Important
+///
+/// This function locks [`HDAddressesCache::cache`] mutex at each iteration.
+///
+/// # Performance
+///
+/// Locking the [`HDAddressesCache::cache`] mutex at each iteration may significantly degrade performance.
+/// But this is required at least for now due the facts that:
+/// 1) mm2 runs in the same thread as `KomodoPlatform/air_dex` runs;
+/// 2) [`ExtendedPublicKey::derive_child`] is a synchronous operation, and it takes a long time.
+/// So we need to periodically invoke Javascript runtime to handle UI events and other asynchronous tasks.
+#[cfg(target_arch = "wasm32")]
+pub async fn derive_addresses<T, Ids>(
+    coin: &T,
+    hd_account: &UtxoHDAccount,
+    address_ids: Ids,
+) -> MmResult<Vec<UtxoHDAddress>, AddressDerivingError>
+where
+    T: UtxoCommonOps,
+    Ids: Iterator<Item = HDAddressId>,
+{
+    let mut result = Vec::new();
+    for hd_address_id in address_ids {
+        let mut hd_addresses_cache = hd_account.derived_addresses.lock().await;
+
+        let hd_address = derive_address_with_cache(coin, hd_account, &mut hd_addresses_cache, hd_address_id)?;
+        result.push(hd_address);
+    }
+
+    Ok(result)
 }
 
 pub async fn create_new_account<'a, Coin, XPubExtractor>(
@@ -164,6 +235,7 @@ where
         // We don't know how many addresses are used by the user at this moment.
         external_addresses_number: 0,
         internal_addresses_number: 0,
+        derived_addresses: HDAddressesCache::default(),
     };
 
     let accounts = hd_wallet.accounts.lock().await;
@@ -286,24 +358,31 @@ where
             address: checking_address,
             derivation_path: checking_address_der_path,
             ..
-        } = coin.derive_address(hd_account, chain, checking_address_id)?;
+        } = coin.derive_address(hd_account, chain, checking_address_id).await?;
 
         match coin.is_address_used(&checking_address, address_scanner).await? {
             // We found a non-empty address, so we have to fill up the balance list
             // with zeros starting from `last_non_empty_address_id = checking_address_id - unused_addresses_counter`.
             AddressBalanceStatus::Used(non_empty_balance) => {
                 let last_non_empty_address_id = checking_address_id - unused_addresses_counter;
-                for empty_address_id in last_non_empty_address_id..checking_address_id {
-                    let empty_address = coin.derive_address(hd_account, chain, empty_address_id)?;
 
-                    balances.push(HDAddressBalance {
-                        address: empty_address.address.to_string(),
-                        derivation_path: RpcDerivationPath(empty_address.derivation_path),
-                        chain,
-                        balance: CoinBalance::default(),
-                    });
-                }
+                // First, derive all empty addresses and put it into `balances` with default balance.
+                let address_ids = (last_non_empty_address_id..checking_address_id)
+                    .into_iter()
+                    .map(|address_id| HDAddressId { chain, address_id });
+                let empty_addresses =
+                    coin.derive_addresses(hd_account, address_ids)
+                        .await?
+                        .into_iter()
+                        .map(|empty_address| HDAddressBalance {
+                            address: empty_address.address.to_string(),
+                            derivation_path: RpcDerivationPath(empty_address.derivation_path),
+                            chain,
+                            balance: CoinBalance::default(),
+                        });
+                balances.extend(empty_addresses);
 
+                // Then push this non-empty address.
                 balances.push(HDAddressBalance {
                     address: checking_address.to_string(),
                     derivation_path: RpcDerivationPath(checking_address_der_path),
@@ -1935,9 +2014,9 @@ pub async fn get_withdraw_hd_sender<T>(
     hd_wallet: &T::HDWallet,
 ) -> MmResult<WithdrawSenderAddress<Address, Public>, WithdrawError>
 where
-    T: HDWalletCoinOps<Address = Address, Pubkey = Public>,
+    T: HDWalletCoinOps<Address = Address, Pubkey = Public> + Sync,
 {
-    let HDAddressId {
+    let HDAccountAddressId {
         account_id,
         chain,
         address_id,
@@ -1956,7 +2035,7 @@ where
                 );
                 return MmError::err(WithdrawError::UnexpectedFromAddress(error));
             }
-            HDAddressId::from(derivation_path)
+            HDAccountAddressId::from(derivation_path)
         },
     };
 
@@ -1964,7 +2043,7 @@ where
         .get_account(account_id)
         .await
         .or_mm_err(|| WithdrawError::UnknownAccount { account_id })?;
-    let hd_address = coin.derive_address(&hd_account, chain, address_id)?;
+    let hd_address = coin.derive_address(&hd_account, chain, address_id).await?;
 
     let is_address_activated = hd_account
         .is_address_activated(chain, address_id)
@@ -2037,11 +2116,85 @@ pub fn validate_address<T: UtxoCommonOps>(coin: &T, address: &str) -> ValidateAd
     }
 }
 
+// Quick fix for null valued coin fields in fee details of old tx history entries
+#[cfg(not(target_arch = "wasm32"))]
+async fn tx_history_migration_1<T>(coin: &T, ctx: &MmArc)
+where
+    T: UtxoStandardOps + UtxoCommonOps + MmCoin + MarketCoinOps,
+{
+    const MIGRATION_NUMBER: u64 = 1;
+    let history = match coin.load_history_from_file(ctx).compat().await {
+        Ok(history) => history,
+        Err(e) => {
+            log_tag!(
+                ctx,
+                "",
+                "tx_history",
+                "coin" => coin.as_ref().conf.ticker;
+                fmt = "Error {} on 'load_history_from_file', stop the history loop", e
+            );
+            return;
+        },
+    };
+
+    let mut updated = false;
+    let to_write: Vec<TransactionDetails> = history
+        .into_iter()
+        .filter_map(|mut tx| match tx.fee_details {
+            Some(Utxo(ref mut fee_details)) => {
+                if fee_details.coin.is_none() {
+                    fee_details.coin = Some(String::from(&tx.coin));
+                    updated = true;
+                }
+                Some(tx)
+            },
+            Some(_) => None,
+            None => Some(tx),
+        })
+        .collect();
+
+    if updated {
+        if let Err(e) = coin.save_history_to_file(ctx, to_write).compat().await {
+            log_tag!(
+                ctx,
+                "",
+                "tx_history",
+                "coin" => coin.as_ref().conf.ticker;
+                fmt = "Error {} on 'save_history_to_file'", e
+            );
+            return;
+        };
+    }
+    if let Err(e) = coin.update_migration_file(ctx, MIGRATION_NUMBER).compat().await {
+        log_tag!(
+            ctx,
+            "",
+            "tx_history",
+            "coin" => coin.as_ref().conf.ticker;
+            fmt = "Error {} on 'update_migration_file'", e
+        );
+    };
+}
+
+#[cfg(not(target_arch = "wasm32"))]
+async fn migrate_tx_history<T>(coin: &T, ctx: &MmArc)
+where
+    T: UtxoStandardOps + UtxoCommonOps + MmCoin + MarketCoinOps,
+{
+    let current_migration = coin.get_tx_history_migration(ctx).compat().await.unwrap_or(0);
+    if current_migration < 1 {
+        tx_history_migration_1(coin, ctx).await;
+    }
+}
+
 #[allow(clippy::cognitive_complexity)]
 pub async fn process_history_loop<T>(coin: T, ctx: MmArc)
 where
     T: UtxoStandardOps + UtxoCommonOps + MmCoin + MarketCoinOps,
 {
+    #[cfg(not(target_arch = "wasm32"))]
+    migrate_tx_history(&coin, &ctx).await;
+
     let mut my_balance: Option<CoinBalance> = None;
     let history = match coin.load_history_from_file(&ctx).compat().await {
         Ok(history) => history,
