@@ -374,11 +374,11 @@ pub async fn run_watcher(swap: RunWatcherInput, ctx: MmArc) {
     let do_nothing = (); // to fix https://rust-lang.github.io/rust-clippy/master/index.html#unused_unit
     select! {
         _swap = swap_fut => {
-            swap_ctx.taker_swap_watchers.lock().await.remove(&uuid);
+            swap_ctx.taker_swap_watchers.lock().remove(&uuid);
             do_nothing
         }, // swap finished normally
         _shutdown = shutdown_fut => {
-            swap_ctx.taker_swap_watchers.lock().await.remove(&uuid);
+            swap_ctx.taker_swap_watchers.lock().remove(&uuid);
             info!("swap {} stopped!", swap_for_log.uuid)
         },
     };
@@ -402,13 +402,11 @@ pub async fn process_watcher_msg(ctx: MmArc, msg: &[u8]) {
 
 fn spawn_taker_swap_watcher(ctx: MmArc, watcher_data: TakerSwapWatcherData) {
     let swap_ctx = SwapsContext::from_ctx(&ctx).unwrap();
-    let mut taker_swap_watchers = match swap_ctx.taker_swap_watchers.try_lock() {
-        Some(lock) => lock,
-        None => return,
-    };
-    // Return if taker/maker swap or watcher with the same uuid already exists
-    if swap_ctx.swap_msgs.lock().unwrap().contains_key(&watcher_data.uuid)
-        || taker_swap_watchers.contains(&watcher_data.uuid)
+    if swap_ctx.swap_msgs.lock().unwrap().contains_key(&watcher_data.uuid) {
+        return;
+    }
+    let mut taker_swap_watchers = swap_ctx.taker_swap_watchers.lock();
+    if taker_swap_watchers.contains(&watcher_data.uuid)
     {
         return;
     }
@@ -421,13 +419,13 @@ fn spawn_taker_swap_watcher(ctx: MmArc, watcher_data: TakerSwapWatcherData) {
             Ok(None) => {
                 log::error!("Coin {} is not found/enabled", watcher_data.taker_coin);
                 let swap_ctx = SwapsContext::from_ctx(&ctx).unwrap();
-                swap_ctx.taker_swap_watchers.lock().await.remove(&watcher_data.uuid);
+                swap_ctx.taker_swap_watchers.lock().remove(&watcher_data.uuid);
                 return;
             },
             Err(e) => {
                 log::error!("!lp_coinfind({}): {}", watcher_data.taker_coin, e);
                 let swap_ctx = SwapsContext::from_ctx(&ctx).unwrap();
-                swap_ctx.taker_swap_watchers.lock().await.remove(&watcher_data.uuid);
+                swap_ctx.taker_swap_watchers.lock().remove(&watcher_data.uuid);
                 return;
             },
         };
@@ -437,13 +435,13 @@ fn spawn_taker_swap_watcher(ctx: MmArc, watcher_data: TakerSwapWatcherData) {
             Ok(None) => {
                 log::error!("Coin {} is not found/enabled", watcher_data.maker_coin);
                 let swap_ctx = SwapsContext::from_ctx(&ctx).unwrap();
-                swap_ctx.taker_swap_watchers.lock().await.remove(&watcher_data.uuid);
+                swap_ctx.taker_swap_watchers.lock().remove(&watcher_data.uuid);
                 return;
             },
             Err(e) => {
                 log::error!("!lp_coinfind({}): {}", watcher_data.maker_coin, e);
                 let swap_ctx = SwapsContext::from_ctx(&ctx).unwrap();
-                swap_ctx.taker_swap_watchers.lock().await.remove(&watcher_data.uuid);
+                swap_ctx.taker_swap_watchers.lock().remove(&watcher_data.uuid);
                 return;
             },
         };
