@@ -458,7 +458,7 @@ impl TendermintCoin {
 
     pub(super) fn send_htlc_for_denom(
         &self,
-        time_lock: u32,
+        _time_lock: u32,
         other_pub: &[u8],
         secret_hash: &[u8],
         amount: BigDecimal,
