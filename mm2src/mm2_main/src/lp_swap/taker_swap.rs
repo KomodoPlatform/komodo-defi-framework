@@ -963,17 +963,14 @@ impl TakerSwap {
             )]));
         }
 
-        if !self
-            .maker_coin
-            .validate_secret_hash(maker_data.secret_hash(), self.r().secret.0.as_slice())
-        {
+        if maker_data.secret_hash() != self.r().secret.0.as_slice() {
             return Ok((Some(TakerSwapCommand::Finish), vec![TakerSwapEvent::NegotiateFailed(
                 ERRL!("!maker_coin.secret_hash: {} failed validation", time_dif).into(),
             )]));
         }
 
         let maker_coin_swap_contract_addr = match self
-            .maker_coin
+            .taker_coin
             .negotiate_swap_contract_addr(maker_data.maker_coin_swap_contract())
         {
             Ok(addr) => addr,
@@ -995,24 +992,19 @@ impl TakerSwap {
                 )]))
             },
         };
+
         // Validate maker_coin_htlc_pubkey realness
-        match self.taker_coin.validate_other_pubkey(maker_data.maker_coin_htlc_pub()) {
-            Ok(_) => (),
-            Err(err) => {
-                return Ok((Some(TakerSwapCommand::Finish), vec![TakerSwapEvent::NegotiateFailed(
-                    ERRL!("!maker_data.maker_coin_htlc_pub {}", err).into(),
-                )]))
-            },
+        if let Err(err) = self.maker_coin.validate_other_pubkey(maker_data.maker_coin_htlc_pub()) {
+            return Ok((Some(TakerSwapCommand::Finish), vec![TakerSwapEvent::NegotiateFailed(
+                ERRL!("!maker_data.maker_coin_htlc_pub {}", err).into(),
+            )]));
         };
 
         // Validate taker_coin_htlc_pubkey realness
-        match self.taker_coin.validate_other_pubkey(maker_data.taker_coin_htlc_pub()) {
-            Ok(_) => (),
-            Err(err) => {
-                return Ok((Some(TakerSwapCommand::Finish), vec![TakerSwapEvent::NegotiateFailed(
-                    ERRL!("!maker_data.taker_coin_htlc_pub {}", err).into(),
-                )]))
-            },
+        if let Err(err) = self.taker_coin.validate_other_pubkey(maker_data.taker_coin_htlc_pub()) {
+            return Ok((Some(TakerSwapCommand::Finish), vec![TakerSwapEvent::NegotiateFailed(
+                ERRL!("!maker_data.taker_coin_htlc_pub {}", err).into(),
+            )]));
         };
 
         let maker_coin_swap_contract_bytes = maker_coin_swap_contract_addr

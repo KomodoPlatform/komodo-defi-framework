@@ -585,8 +585,6 @@ pub trait SwapOps {
     fn derive_htlc_key_pair(&self, swap_unique_data: &[u8]) -> KeyPair;
 
     fn validate_other_pubkey(&self, raw_pubkey: &[u8]) -> MmResult<(), ValidateOtherPubKeyErr>;
-
-    fn validate_secret_hash(&self, secret_hash: &[u8], secret: &[u8]) -> bool;
 }
 
 /// Operations that coins have independently from the MarketMaker.

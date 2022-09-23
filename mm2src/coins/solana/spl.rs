@@ -417,8 +417,6 @@ impl SwapOps for SplToken {
     fn derive_htlc_key_pair(&self, _swap_unique_data: &[u8]) -> KeyPair { todo!() }
 
     fn validate_other_pubkey(&self, _raw_pubkey: &[u8]) -> MmResult<(), ValidateOtherPubKeyErr> { unimplemented!() }
-
-    fn validate_secret_hash(&self, _secret_hash: &[u8], _secret: &[u8]) -> bool { unimplemented!() }
 }
 
 #[allow(clippy::forget_ref, clippy::forget_copy, clippy::cast_ref_to_mut)]

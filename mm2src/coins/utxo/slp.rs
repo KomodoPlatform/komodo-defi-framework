@@ -1444,10 +1444,6 @@ impl SwapOps for SlpToken {
     fn validate_other_pubkey(&self, raw_pubkey: &[u8]) -> MmResult<(), ValidateOtherPubKeyErr> {
         utxo_common::validate_other_pubkey(raw_pubkey)
     }
-
-    fn validate_secret_hash(&self, secret_hash: &[u8], secret: &[u8]) -> bool {
-        utxo_common::validate_secret_hash(secret_hash, secret)
-    }
 }
 
 impl From<GenSlpSpendErr> for TradePreimageError {

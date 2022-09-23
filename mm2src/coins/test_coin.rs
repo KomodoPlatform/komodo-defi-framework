@@ -239,8 +239,6 @@ impl SwapOps for TestCoin {
     }
 
     fn validate_other_pubkey(&self, raw_pubkey: &[u8]) -> MmResult<(), ValidateOtherPubKeyErr> { unimplemented!() }
-
-    fn validate_secret_hash(&self, secret_hash: &[u8], secret: &[u8]) -> bool { unimplemented!() }
 }
 
 #[async_trait]

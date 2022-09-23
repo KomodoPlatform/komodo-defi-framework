@@ -1119,8 +1119,6 @@ impl SwapOps for EthCoin {
             Err(e) => MmError::err(ValidateOtherPubKeyErr::InvalidPubKey(e.to_string())),
         }
     }
-
-    fn validate_secret_hash(&self, secret_hash: &[u8], secret: &[u8]) -> bool { secret_hash == secret }
 }
 
 #[cfg_attr(test, mockable)]
