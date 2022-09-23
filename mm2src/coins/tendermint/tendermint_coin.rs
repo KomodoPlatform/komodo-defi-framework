@@ -392,7 +392,7 @@ impl TendermintCoin {
             denom: base_denom,
             // TODO
             // Calculate current fee
-            amount: 200_u64.into(),
+            amount: 50000_u64.into(),
         };
 
         let fee = Fee::from_amount_and_gas(fee_amount, GAS_LIMIT_DEFAULT);
@@ -422,7 +422,7 @@ impl TendermintCoin {
             denom: base_denom,
             // TODO
             // Calculate current fee
-            amount: 200_u64.into(),
+            amount: 50000_u64.into(),
         };
 
         let fee = Fee::from_amount_and_gas(fee_amount, GAS_LIMIT_DEFAULT);
@@ -576,7 +576,7 @@ impl MmCoin for TendermintCoin {
             let balance_dec = big_decimal_from_sat_unsigned(balance_denom, coin.decimals);
 
             // TODO calculate current fee instead of using hard-coded value
-            let fee_denom = 1000;
+            let fee_denom = 50000;
             let fee_amount_dec = big_decimal_from_sat_unsigned(fee_denom, coin.decimals);
 
             let (amount_denom, amount_dec, total_amount) = if req.max {
