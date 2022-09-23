@@ -529,7 +529,7 @@ impl TendermintCoin {
             let account_info = try_tx_s!(coin.my_account_info().await);
             let fee_amount = Coin {
                 denom: coin.denom.clone(),
-                amount: 1000u64.into(),
+                amount: 50000u64.into(),
             };
             let fee = Fee::from_amount_and_gas(fee_amount, GAS_LIMIT_DEFAULT);
 
