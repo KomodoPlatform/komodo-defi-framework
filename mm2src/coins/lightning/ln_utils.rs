@@ -246,7 +246,7 @@ pub async fn get_open_channels_nodes_addresses(
 }
 
 // Todo: Make this public by opening a PR in rust-lightning instead of importing it here
-// Todo: revise this
+// Todo: can a node that has all private channels send wrong data (we need to validate the invoice on the receiver side, if no public channels then trust the sender??)
 /// Filters the `channels` for an invoice, and returns the corresponding `RouteHint`s to include
 /// in the invoice.
 ///
@@ -267,7 +267,7 @@ pub(crate) fn filter_channels(channels: Vec<ChannelDetails>, min_inbound_capacit
             continue;
         }
 
-        // Todo: maybe check for inbound_capacity_msat first??
+        // Todo: maybe check for inbound_capacity_msat first?? can this be used for probing?? I don't think so but how can it be avoided??
         if channel.is_public {
             // If any public channel exists, return no hints and let the sender
             // look at the public channels instead.
@@ -292,9 +292,11 @@ pub(crate) fn filter_channels(channels: Vec<ChannelDetails>, min_inbound_capacit
     }
 
     let route_hint_from_channel = |channel: &ChannelDetails| {
+        // It's safe to unwrap here since all filtered_channels have forwarding_info
         let forwarding_info = channel.counterparty.forwarding_info.as_ref().unwrap();
         RouteHint(vec![RouteHintHop {
             src_node_id: channel.counterparty.node_id,
+            // It's safe to unwrap here since all filtered_channels have inbound_payment_scid
             short_channel_id: channel.get_inbound_payment_scid().unwrap(),
             fees: RoutingFees {
                 base_msat: forwarding_info.fee_base_msat,
@@ -311,7 +313,6 @@ pub(crate) fn filter_channels(channels: Vec<ChannelDetails>, min_inbound_capacit
     filtered_channels
         .into_iter()
         .filter(|(_counterparty_id, channel)| {
-            // Todo: can this be channel.inbound_capacity_msat >= min_inbound_capacity only check min_capacity_channel_exists
             !min_capacity_channel_exists || channel.inbound_capacity_msat >= min_inbound_capacity
         })
         .map(|(_counterparty_id, channel)| route_hint_from_channel(channel))

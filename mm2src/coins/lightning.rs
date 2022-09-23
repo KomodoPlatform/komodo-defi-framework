@@ -16,11 +16,11 @@ use crate::utxo::rpc_clients::UtxoRpcClientEnum;
 use crate::utxo::utxo_common::big_decimal_from_sat_unsigned;
 use crate::utxo::{sat_from_big_decimal, BlockchainNetwork};
 use crate::{BalanceFut, CoinBalance, FeeApproxStage, FoundSwapTxSpend, HistorySyncState, MarketCoinOps, MmCoin,
-            NegotiateSwapContractAddrErr, RawTransactionFut, RawTransactionRequest, SearchForSwapTxSpendInput,
-            SignatureError, SignatureResult, SwapOps, TradeFee, TradePreimageFut, TradePreimageResult,
-            TradePreimageValue, TransactionEnum, TransactionFut, TxMarshalingErr, UnexpectedDerivationMethod,
-            UtxoStandardCoin, ValidateAddressResult, ValidatePaymentInput, VerificationError, VerificationResult,
-            WithdrawError, WithdrawFut, WithdrawRequest};
+            NegotiateSwapContractAddrErr, OtherInstructionsErr, RawTransactionFut, RawTransactionRequest,
+            SearchForSwapTxSpendInput, SignatureError, SignatureResult, SwapOps, TradeFee, TradePreimageFut,
+            TradePreimageResult, TradePreimageValue, TransactionEnum, TransactionFut, TxMarshalingErr,
+            UnexpectedDerivationMethod, UtxoStandardCoin, ValidateAddressResult, ValidatePaymentInput,
+            VerificationError, VerificationResult, WithdrawError, WithdrawFut, WithdrawRequest};
 use async_trait::async_trait;
 use bitcoin::bech32::ToBase32;
 use bitcoin::hashes::Hash;
@@ -350,17 +350,26 @@ impl LightningCoin {
         }
     }
 
-    fn create_invoice_for_hash(
+    async fn create_invoice_for_hash(
         &self,
         payment_hash: PaymentHash,
         amt_msat: Option<u64>,
         description: String,
         invoice_expiry_delta_secs: u32,
     ) -> Result<Invoice, SignOrCreationError<()>> {
-        // Todo: maybe remove the expect?
         let duration = SystemTime::now()
             .duration_since(SystemTime::UNIX_EPOCH)
             .expect("for the foreseeable future this shouldn't happen");
+
+        let open_channels_nodes = self.open_channels_nodes.lock().clone();
+        for (node_pubkey, node_addr) in open_channels_nodes {
+            ln_p2p::connect_to_ln_node(node_pubkey, node_addr, self.peer_manager.clone())
+                .await
+                .error_log_with_msg(&format!(
+                    "Channel with node: {} can't be used for invoice routing hints due to connection error.",
+                    node_pubkey
+                ));
+        }
 
         let route_hints = filter_channels(self.channel_manager.list_usable_channels(), amt_msat);
 
@@ -376,7 +385,7 @@ impl LightningCoin {
             .description(description)
             .duration_since_epoch(duration)
             .payee_pub_key(our_node_pubkey)
-            .payment_hash(Hash::from_slice(&payment_hash.0).unwrap())
+            .payment_hash(Hash::from_inner(payment_hash.0))
             .payment_secret(payment_secret)
             .basic_mpp()
             .min_final_cltv_expiry(MIN_FINAL_CLTV_EXPIRY.into())
@@ -400,7 +409,7 @@ impl LightningCoin {
                 .sign_invoice(hrp_bytes, &data_without_signature, Recipient::Node)
         });
         match signed_raw_invoice {
-            Ok(inv) => Ok(Invoice::from_signed(inv).unwrap()),
+            Ok(inv) => Ok(Invoice::from_signed(inv).map_err(|_| SignOrCreationError::SignError(()))?),
             Err(e) => Err(SignOrCreationError::SignError(e)),
         }
     }
@@ -546,10 +555,13 @@ impl SwapOps for LightningCoin {
 
     fn derive_htlc_key_pair(&self, _swap_unique_data: &[u8]) -> KeyPair { unimplemented!() }
 
-    fn other_side_instructions(&self, secret_hash: &[u8], other_side_amount: &BigDecimal) -> Option<Vec<u8>> {
-        // Todo: lightning decimals should be 11 in config because it's up to msats but the function name is not good
-        // Todo: remove unwrap
-        let amt_msat = sat_from_big_decimal(other_side_amount, self.decimals()).unwrap();
+    async fn other_side_instructions(
+        &self,
+        secret_hash: &[u8],
+        other_side_amount: &BigDecimal,
+    ) -> Result<Option<Vec<u8>>, MmError<OtherInstructionsErr>> {
+        // lightning decimals should be 11 in config since the smallest divisible unit in lightning coin is msat
+        let amt_msat = sat_from_big_decimal(other_side_amount, self.decimals())?;
 
         if secret_hash.len() != 32 {
             // return error here
@@ -557,8 +569,7 @@ impl SwapOps for LightningCoin {
         let mut payment_hash = [b' '; 32];
         payment_hash.copy_from_slice(secret_hash);
 
-        // Todo: maybe get invoice_expiry_delta_secs from locktime (not sure if needed), and maybe description can be the swap uuid
-        // Todo: remove unwrap
+        // Todo: Maybe the description can be the swap uuid
         let invoice = self
             .create_invoice_for_hash(
                 PaymentHash(payment_hash),
@@ -566,8 +577,9 @@ impl SwapOps for LightningCoin {
                 "".into(),
                 DEFAULT_INVOICE_EXPIRY,
             )
-            .unwrap();
-        Some(invoice.to_string().into_bytes())
+            .await
+            .map_to_mm(|e| OtherInstructionsErr::LightningInvoiceErr(e.to_string()))?;
+        Ok(Some(invoice.to_string().into_bytes()))
     }
 }
 

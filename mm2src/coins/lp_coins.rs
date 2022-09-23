@@ -457,6 +457,16 @@ pub struct SearchForSwapTxSpendInput<'a> {
     pub swap_unique_data: &'a [u8],
 }
 
+#[derive(Display)]
+pub enum OtherInstructionsErr {
+    LightningInvoiceErr(String),
+    InternalError(String),
+}
+
+impl From<NumConversError> for OtherInstructionsErr {
+    fn from(e: NumConversError) -> Self { OtherInstructionsErr::InternalError(e.to_string()) }
+}
+
 /// Swap operations (mostly based on the Hash/Time locked transactions implemented by coin wallets).
 #[async_trait]
 pub trait SwapOps {
@@ -578,7 +588,11 @@ pub trait SwapOps {
 
     fn derive_htlc_key_pair(&self, swap_unique_data: &[u8]) -> KeyPair;
 
-    fn other_side_instructions(&self, _secret_hash: &[u8], _other_side_amount: &BigDecimal) -> Option<Vec<u8>> { None }
+    async fn other_side_instructions(
+        &self,
+        secret_hash: &[u8],
+        other_side_amount: &BigDecimal,
+    ) -> Result<Option<Vec<u8>>, MmError<OtherInstructionsErr>>;
 }
 
 /// Operations that coins have independently from the MarketMaker.

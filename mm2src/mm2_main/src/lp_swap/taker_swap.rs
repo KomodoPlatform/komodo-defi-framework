@@ -13,8 +13,8 @@ use crate::mm2::lp_network::subscribe_to_topic;
 use crate::mm2::lp_ordermatch::{MatchBy, OrderConfirmationsSettings, TakerAction, TakerOrderBuilder};
 use crate::mm2::lp_price::fetch_swap_coins_price;
 use crate::mm2::MM_VERSION;
-use coins::{lp_coinfind, CanRefundHtlc, FeeApproxStage, FoundSwapTxSpend, MmCoinEnum, SearchForSwapTxSpendInput,
-            TradeFee, TradePreimageValue, ValidatePaymentInput};
+use coins::{lp_coinfind, CanRefundHtlc, FeeApproxStage, FoundSwapTxSpend, MmCoinEnum, OtherInstructionsErr,
+            SearchForSwapTxSpendInput, TradeFee, TradePreimageValue, ValidatePaymentInput};
 use common::executor::Timer;
 use common::log::{debug, error, info, warn};
 use common::{bits256, now_ms, DEX_FEE_ADDR_RAW_PUBKEY};
@@ -810,18 +810,21 @@ impl TakerSwap {
         }
     }
 
-    fn get_my_payment_data(&self) -> PaymentDataMsg {
-        let r = self.r();
-        let payment_data = r.taker_payment.as_ref().unwrap().tx_hex.0.clone();
+    async fn get_my_payment_data(&self) -> Result<PaymentDataMsg, MmError<OtherInstructionsErr>> {
+        let payment_data = self.r().taker_payment.as_ref().unwrap().tx_hex.0.clone();
+        let secret_hash = self.r().secret_hash.0.clone();
         let maker_amount = self.maker_amount.clone().into();
-        if let Some(other_side_instructions) = self.maker_coin.other_side_instructions(&r.secret_hash.0, &maker_amount)
+        if let Some(other_side_instructions) = self
+            .maker_coin
+            .other_side_instructions(&secret_hash, &maker_amount)
+            .await?
         {
-            PaymentDataMsg::V2(PaymentDataV2 {
+            Ok(PaymentDataMsg::V2(PaymentDataV2 {
                 payment_data,
                 other_side_instructions,
-            })
+            }))
         } else {
-            PaymentDataMsg::V1(payment_data)
+            Ok(PaymentDataMsg::V1(payment_data))
         }
     }
 
@@ -1263,7 +1266,17 @@ impl TakerSwap {
     }
 
     async fn wait_for_taker_payment_spend(&self) -> Result<(Option<TakerSwapCommand>, Vec<TakerSwapEvent>), String> {
-        let payment_data_msg = self.get_my_payment_data();
+        let payment_data_msg = match self.get_my_payment_data().await {
+            Ok(data) => data,
+            Err(e) => {
+                return Ok((Some(TakerSwapCommand::RefundTakerPayment), vec![
+                    TakerSwapEvent::TakerPaymentDataSendFailed(e.to_string().into()),
+                    TakerSwapEvent::TakerPaymentWaitRefundStarted {
+                        wait_until: self.wait_refund_until(),
+                    },
+                ]))
+            },
+        };
         let msg = SwapMsg::TakerPayment(payment_data_msg);
         let send_abort_handle =
             broadcast_swap_message_every(self.ctx.clone(), swap_topic(&self.uuid), msg, 600., self.p2p_privkey);

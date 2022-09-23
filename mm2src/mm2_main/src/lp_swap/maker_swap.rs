@@ -14,8 +14,8 @@ use crate::mm2::lp_network::subscribe_to_topic;
 use crate::mm2::lp_ordermatch::{MakerOrderBuilder, OrderConfirmationsSettings};
 use crate::mm2::lp_price::fetch_swap_coins_price;
 use crate::mm2::MM_VERSION;
-use coins::{CanRefundHtlc, FeeApproxStage, FoundSwapTxSpend, MmCoinEnum, SearchForSwapTxSpendInput, TradeFee,
-            TradePreimageValue, TransactionEnum, ValidatePaymentInput};
+use coins::{CanRefundHtlc, FeeApproxStage, FoundSwapTxSpend, MmCoinEnum, OtherInstructionsErr,
+            SearchForSwapTxSpendInput, TradeFee, TradePreimageValue, TransactionEnum, ValidatePaymentInput};
 use common::log::{debug, error, info, warn};
 use common::{bits256, executor::Timer, now_ms, DEX_FEE_ADDR_RAW_PUBKEY};
 use crypto::privkey::SerializableSecp256k1Keypair;
@@ -404,18 +404,19 @@ impl MakerSwap {
         }
     }
 
-    fn get_my_payment_data(&self) -> PaymentDataMsg {
+    async fn get_my_payment_data(&self) -> Result<PaymentDataMsg, MmError<OtherInstructionsErr>> {
         let payment_data = self.r().maker_payment.as_ref().unwrap().tx_hex.0.clone();
         if let Some(other_side_instructions) = self
             .taker_coin
             .other_side_instructions(&self.secret_hash(), &self.taker_amount)
+            .await?
         {
-            PaymentDataMsg::V2(PaymentDataV2 {
+            Ok(PaymentDataMsg::V2(PaymentDataV2 {
                 payment_data,
                 other_side_instructions,
-            })
+            }))
         } else {
-            PaymentDataMsg::V1(payment_data)
+            Ok(PaymentDataMsg::V1(payment_data))
         }
     }
 
@@ -759,7 +760,17 @@ impl MakerSwap {
     }
 
     async fn wait_for_taker_payment(&self) -> Result<(Option<MakerSwapCommand>, Vec<MakerSwapEvent>), String> {
-        let payment_data_msg = self.get_my_payment_data();
+        let payment_data_msg = match self.get_my_payment_data().await {
+            Ok(data) => data,
+            Err(e) => {
+                return Ok((Some(MakerSwapCommand::RefundMakerPayment), vec![
+                    MakerSwapEvent::MakerPaymentDataSendFailed(e.to_string().into()),
+                    MakerSwapEvent::MakerPaymentWaitRefundStarted {
+                        wait_until: self.wait_refund_until(),
+                    },
+                ]))
+            },
+        };
         let msg = SwapMsg::MakerPayment(payment_data_msg);
         let abort_send_handle =
             broadcast_swap_message_every(self.ctx.clone(), swap_topic(&self.uuid), msg, 600., self.p2p_privkey);
