@@ -876,7 +876,7 @@ impl MarketCoinOps for TendermintCoin {
                         },
                     }));
                 }
-                Timer::sleep(30.).await;
+                Timer::sleep(5.).await;
                 if get_utc_timestamp() > wait_until as i64 {
                     return Err(TransactionErr::Plain("Waited too long".into()));
                 }
