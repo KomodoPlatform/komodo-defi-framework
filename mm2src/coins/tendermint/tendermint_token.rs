@@ -355,7 +355,7 @@ impl MmCoin for TendermintToken {
             let base_denom_balance_dec = big_decimal_from_sat_unsigned(base_denom_balance, token.decimals());
 
             // TODO calculate current fee instead of using hard-coded value
-            let fee_denom = 1000;
+            let fee_denom = 50000;
             let fee_amount_dec = big_decimal_from_sat_unsigned(fee_denom, coin.decimals());
 
             if base_denom_balance < fee_denom {

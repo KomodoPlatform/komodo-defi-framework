@@ -471,7 +471,10 @@ impl TendermintCoin {
         let amount_as_u64 = try_tx_fus!(sat_from_big_decimal(&amount, decimals));
         let amount = cosmrs::Decimal::from(amount_as_u64);
 
-        let time_lock = time_lock as i64 - get_utc_timestamp();
+        // let time_lock = time_lock as i64 - get_utc_timestamp();
+        // TODO
+        // use the proper time lock. This is only for demo
+        let time_lock = 4000;
         let create_htlc_tx =
             try_tx_fus!(self.gen_create_htlc_tx(self.denom.clone(), denom, &to, amount, secret_hash, time_lock as u64));
 
