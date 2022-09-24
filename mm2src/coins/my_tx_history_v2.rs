@@ -1,8 +1,8 @@
 use crate::hd_wallet::{AddressDerivingError, InvalidBip44ChainError};
 use crate::tx_history_storage::{CreateTxHistoryStorageError, FilteringAddresses, GetTxHistoryFilters,
                                 TxHistoryStorageBuilder, WalletId};
-use crate::{lp_coinfind_or_err, BlockHeightAndTime, CoinFindError, HDAddressId, HistorySyncState, MmCoin, MmCoinEnum,
-            Transaction, TransactionDetails, TransactionType, TxFeeDetails, UtxoRpcError};
+use crate::{lp_coinfind_or_err, BlockHeightAndTime, CoinFindError, HDAccountAddressId, HistorySyncState, MmCoin,
+            MmCoinEnum, Transaction, TransactionDetails, TransactionType, TxFeeDetails, UtxoRpcError};
 use async_trait::async_trait;
 use bitcrypto::sha256;
 use common::{calc_total_pages, ten, HttpStatusCode, PagingOptionsEnum, StatusCode};
@@ -246,7 +246,7 @@ impl<'a, Addr: Clone + DisplayAddress + Eq + std::hash::Hash, Tx: Transaction> T
 pub enum MyTxHistoryTarget {
     Iguana,
     AccountId { account_id: u32 },
-    AddressId(HDAddressId),
+    AddressId(HDAccountAddressId),
     AddressDerivationPath(Bip44DerivationPath),
 }
 
@@ -345,6 +345,7 @@ impl From<AddressDerivingError> for MyTxHistoryErrorV2 {
         match e {
             AddressDerivingError::InvalidBip44Chain { .. } => MyTxHistoryErrorV2::InvalidTarget(e.to_string()),
             AddressDerivingError::Bip32Error(_) => MyTxHistoryErrorV2::Internal(e.to_string()),
+            AddressDerivingError::Internal(internal) => MyTxHistoryErrorV2::Internal(internal),
         }
     }
 }

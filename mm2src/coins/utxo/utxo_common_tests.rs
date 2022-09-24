@@ -244,6 +244,7 @@ pub(super) async fn test_hd_utxo_tx_history_impl(rpc_client: ElectrumClient) {
         account_derivation_path: Bip44PathToAccount::from_str("m/44'/141'/0'").unwrap(),
         external_addresses_number: 11,
         internal_addresses_number: 3,
+        derived_addresses: HDAddressesCache::default(),
     };
     let mut hd_accounts = HDAccountsMap::new();
     hd_accounts.insert(0, hd_account_for_test);

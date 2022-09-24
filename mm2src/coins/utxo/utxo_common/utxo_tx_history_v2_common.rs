@@ -9,7 +9,7 @@ use crate::utxo::utxo_tx_history_v2::{UtxoMyAddressesHistoryError, UtxoTxDetails
                                       UtxoTxHistoryOps};
 use crate::utxo::{output_script, RequestTxHistoryResult, UtxoCoinFields, UtxoCommonOps, UtxoHDAccount};
 use crate::{big_decimal_from_sat_unsigned, compare_transactions, BalanceResult, CoinWithDerivationMethod,
-            DerivationMethod, HDAddressId, MarketCoinOps, TransactionDetails, TxFeeDetails, TxIdHeight,
+            DerivationMethod, HDAccountAddressId, MarketCoinOps, TransactionDetails, TxFeeDetails, TxIdHeight,
             UtxoFeeDetails, UtxoTx};
 use common::jsonrpc_client::JsonRpcErrorType;
 use crypto::Bip44Chain;
@@ -35,7 +35,10 @@ pub async fn get_tx_history_filters<Coin>(
     target: MyTxHistoryTarget,
 ) -> MmResult<GetTxHistoryFilters, MyTxHistoryErrorV2>
 where
-    Coin: CoinWithDerivationMethod<HDWallet = <Coin as HDWalletCoinOps>::HDWallet> + HDWalletCoinOps + MarketCoinOps,
+    Coin: CoinWithDerivationMethod<HDWallet = <Coin as HDWalletCoinOps>::HDWallet>
+        + HDWalletCoinOps
+        + MarketCoinOps
+        + Sync,
     <Coin as HDWalletCoinOps>::Address: DisplayAddress,
 {
     match (coin.derivation_method(), target) {
@@ -53,7 +56,7 @@ where
             get_tx_history_filters_for_hd_address(coin, hd_wallet, hd_address_id).await
         },
         (DerivationMethod::HDWallet(hd_wallet), MyTxHistoryTarget::AddressDerivationPath(derivation_path)) => {
-            let hd_address_id = HDAddressId::from(derivation_path);
+            let hd_address_id = HDAccountAddressId::from(derivation_path);
             get_tx_history_filters_for_hd_address(coin, hd_wallet, hd_address_id).await
         },
         (DerivationMethod::HDWallet(_), target) => MmError::err(MyTxHistoryErrorV2::with_expected_target(
@@ -70,7 +73,7 @@ async fn get_tx_history_filters_for_hd_account<Coin>(
     account_id: u32,
 ) -> MmResult<GetTxHistoryFilters, MyTxHistoryErrorV2>
 where
-    Coin: HDWalletCoinOps,
+    Coin: HDWalletCoinOps + Sync,
     Coin::Address: DisplayAddress,
 {
     let hd_account = hd_wallet
@@ -78,8 +81,8 @@ where
         .await
         .or_mm_err(|| MyTxHistoryErrorV2::InvalidTarget(format!("No such account_id={account_id}")))?;
 
-    let external_addresses = coin.derive_known_addresses(&hd_account, Bip44Chain::External)?;
-    let internal_addresses = coin.derive_known_addresses(&hd_account, Bip44Chain::Internal)?;
+    let external_addresses = coin.derive_known_addresses(&hd_account, Bip44Chain::External).await?;
+    let internal_addresses = coin.derive_known_addresses(&hd_account, Bip44Chain::Internal).await?;
 
     let addresses_iter = external_addresses
         .into_iter()
@@ -92,10 +95,10 @@ where
 async fn get_tx_history_filters_for_hd_address<Coin>(
     coin: &Coin,
     hd_wallet: &Coin::HDWallet,
-    hd_address_id: HDAddressId,
+    hd_address_id: HDAccountAddressId,
 ) -> MmResult<GetTxHistoryFilters, MyTxHistoryErrorV2>
 where
-    Coin: HDWalletCoinOps,
+    Coin: HDWalletCoinOps + Sync,
     Coin::Address: DisplayAddress,
 {
     let hd_account = hd_wallet
@@ -112,7 +115,9 @@ where
         return MmError::err(MyTxHistoryErrorV2::InvalidTarget(error));
     }
 
-    let hd_address = coin.derive_address(&hd_account, hd_address_id.chain, hd_address_id.address_id)?;
+    let hd_address = coin
+        .derive_address(&hd_account, hd_address_id.chain, hd_address_id.address_id)
+        .await?;
     Ok(GetTxHistoryFilters::for_address(hd_address.address.display_address()))
 }
 
@@ -130,8 +135,8 @@ where
 
             let mut all_addresses = HashSet::with_capacity(ADDRESSES_CAPACITY);
             for (_, hd_account) in hd_accounts {
-                let external_addresses = coin.derive_known_addresses(&hd_account, Bip44Chain::External)?;
-                let internal_addresses = coin.derive_known_addresses(&hd_account, Bip44Chain::Internal)?;
+                let external_addresses = coin.derive_known_addresses(&hd_account, Bip44Chain::External).await?;
+                let internal_addresses = coin.derive_known_addresses(&hd_account, Bip44Chain::Internal).await?;
 
                 let addresses_it = external_addresses
                     .into_iter()

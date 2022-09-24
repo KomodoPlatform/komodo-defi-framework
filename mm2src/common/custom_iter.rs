@@ -47,29 +47,6 @@ pub trait TryIntoGroupMap {
 
 impl<T> TryIntoGroupMap for T {}
 
-pub trait TryUnzip<A, B, E>
-where
-    Self: Iterator<Item = Result<(A, B), E>> + Sized,
-{
-    /// An iterator method that unwraps the given `Result<(A, B), Err>` items yielded by the input iterator
-    /// and collects `(A, B)` tuple pairs into the pair of `(FromA, FromB)` containers until a `E` error is encountered.
-    fn try_unzip<FromA, FromB>(self) -> Result<(FromA, FromB), E>
-    where
-        FromA: Default + Extend<A>,
-        FromB: Default + Extend<B>,
-    {
-        let (mut from_a, mut from_b) = (FromA::default(), FromB::default());
-        for res in self {
-            let (a, b) = res?;
-            from_a.extend(Some(a));
-            from_b.extend(Some(b));
-        }
-        Ok((from_a, from_b))
-    }
-}
-
-impl<T, A, B, E> TryUnzip<A, B, E> for T where T: Iterator<Item = Result<(A, B), E>> {}
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -92,20 +69,6 @@ mod tests {
         let err = vec![Ok(("foo", 1)), Ok(("bar", 2)), Err("Error"), Ok(("foo", 3))]
             .into_iter()
             .try_into_group_map()
-            .unwrap_err();
-        assert_eq!(err, "Error");
-    }
-
-    #[test]
-    fn test_try_unzip() {
-        let actual: Result<(Vec<_>, Vec<_>), &'static str> = vec![Ok(("foo", 1)), Ok(("bar", 2)), Ok(("foo", 3))]
-            .into_iter()
-            .try_unzip();
-        assert_eq!(actual, Ok((vec!["foo", "bar", "foo"], vec![1, 2, 3])));
-
-        let err = vec![Ok(("foo", 1)), Ok(("bar", 2)), Err("Error"), Ok(("foo", 3))]
-            .into_iter()
-            .try_unzip::<Vec<_>, Vec<_>>()
             .unwrap_err();
         assert_eq!(err, "Error");
     }

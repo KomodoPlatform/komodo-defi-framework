@@ -608,7 +608,7 @@ pub struct HDAddressBalance {
 }
 
 #[derive(Clone, Debug, Deserialize, Serialize)]
-pub struct HDAddressId {
+pub struct HDAccountAddressId {
     pub account_id: u32,
     pub chain: Bip44Chain,
     pub address_id: u32,
@@ -866,7 +866,7 @@ pub struct MyTxHistoryV2Response<Tx, Id> {
 pub enum MyTxHistoryTarget {
     Iguana,
     AccountId { account_id: u32 },
-    AddressId(HDAddressId),
+    AddressId(HDAccountAddressId),
     AddressDerivationPath(String),
 }
 
