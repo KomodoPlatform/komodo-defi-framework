@@ -1,6 +1,7 @@
 use crate::standalone_coin::InitStandaloneCoinError;
 use coins::coin_balance::EnableCoinBalanceError;
 use coins::hd_wallet::{NewAccountCreatingError, NewAddressDerivingError};
+use coins::tx_history_storage::CreateTxHistoryStorageError;
 use coins::utxo::utxo_builder::UtxoCoinBuildError;
 use coins::{BalanceError, RegisterCoinError};
 use crypto::{CryptoInitError, HwError, HwRpcError};
@@ -39,6 +40,14 @@ impl From<RpcTaskError> for InitUtxoStandardError {
 impl From<CryptoInitError> for InitUtxoStandardError {
     /// `CryptoCtx` is expected to be initialized already.
     fn from(crypto_err: CryptoInitError) -> Self { InitUtxoStandardError::Internal(crypto_err.to_string()) }
+}
+
+impl From<CreateTxHistoryStorageError> for InitUtxoStandardError {
+    fn from(e: CreateTxHistoryStorageError) -> Self {
+        match e {
+            CreateTxHistoryStorageError::Internal(internal) => InitUtxoStandardError::Internal(internal),
+        }
+    }
 }
 
 impl From<InitUtxoStandardError> for InitStandaloneCoinError {

@@ -2,12 +2,26 @@ use super::*;
 use mm2_test_helpers::for_tests::{enable_bch_with_tokens, enable_slp, my_tx_history_v2, sign_message, verify_message,
                                   UtxoRpcMode};
 
+cfg_wasm32! {
+    use wasm_bindgen_test::*;
+
+    wasm_bindgen_test_configure!(run_in_browser);
+}
+
+#[cfg(not(target_arch = "wasm32"))]
 const T_BCH_ELECTRUMS: &[&str] = &[
     "electroncash.de:50003",
     "tbch.loping.net:60001",
     "blackie.c3-soft.com:60001",
     "bch0.kister.net:51001",
     "testnet.imaginary.cash:50001",
+];
+
+#[cfg(target_arch = "wasm32")]
+const T_BCH_ELECTRUMS: &[&str] = &[
+    "electroncash.de:60003",
+    "electroncash.de:60004",
+    "blackie.c3-soft.com:60004",
 ];
 
 fn t_bch_electrums_legacy_json() -> Vec<Json> { T_BCH_ELECTRUMS.into_iter().map(|url| json!({ "url": url })).collect() }
@@ -374,49 +388,55 @@ async fn wait_till_history_has_records(
     expected_len: usize,
     for_coin: &str,
     paging: Option<common::PagingOptionsEnum<String>>,
+    timeout_s: u64,
 ) -> StandardHistoryV2Res {
+    let started_at = now_ms() / 1000;
+    let wait_until = started_at + timeout_s;
     loop {
         let history_json = my_tx_history_v2(mm, for_coin, expected_len, paging.clone()).await;
         let history: RpcV2Response<StandardHistoryV2Res> = json::from_value(history_json).unwrap();
         if history.result.transactions.len() >= expected_len {
             break history.result;
         }
+
+        let now = now_ms() / 1000;
+        if wait_until < now {
+            panic!(
+                "Waited too long until {} for TX history loads {} transactions",
+                wait_until, expected_len
+            );
+        }
+
         Timer::sleep(1.).await;
     }
 }
 
-#[test]
-#[cfg(not(target_arch = "wasm32"))]
-fn test_bch_and_slp_testnet_history() {
+async fn test_bch_and_slp_testnet_history_impl() {
+    const PASSPHRASE: &str = "BCH SLP test";
+    const TIMEOUT_S: u64 = 45;
+
     let coins = json!([
         {"coin":"tBCH","pubtype":0,"p2shtype":5,"mm2":1,"protocol":{"type":"BCH","protocol_data":{"slp_prefix":"slptest"}},
          "address_format":{"format":"cashaddress","network":"bchtest"}},
         {"coin":"USDF","protocol":{"type":"SLPTOKEN","protocol_data":{"decimals":4,"token_id":"bb309e48930671582bea508f9a1d9b491e49b69be3d6f372dc08da2ac6e90eb7","platform":"tBCH","required_confirmations":1}}}
     ]);
 
-    let mm = MarketMakerIt::start(
-        json! ({
-            "gui": "nogui",
-            "netid": 9998,
-            "myipaddr": env::var ("BOB_TRADE_IP") .ok(),
-            "rpcip": env::var ("BOB_TRADE_IP") .ok(),
-            "passphrase": "BCH SLP test",
-            "coins": coins,
-            "i_am_seed": true,
-            "rpc_password": "pass",
-        }),
-        "pass".into(),
-        local_start!("bob"),
-    )
-    .unwrap();
-    let (_dump_log, _dump_dashboard) = mm.mm_dump();
-    log!("log path: {}", mm.log_path.display());
+    let conf = Mm2TestConf::seednode(PASSPHRASE, &coins);
+    let mm = MarketMakerIt::start_async(conf.conf, conf.rpc_password, local_start!("bob"))
+        .await
+        .unwrap();
+
+    #[cfg(not(target_arch = "wasm32"))]
+    {
+        let (_dump_log, _dump_dashboard) = mm.mm_dump();
+        log!("log path: {}", mm.log_path.display());
+    }
 
     let rpc_mode = UtxoRpcMode::electrum(T_BCH_ELECTRUMS);
     let tx_history = true;
-    let enable_bch = block_on(enable_bch_with_tokens(&mm, "tBCH", &[], rpc_mode, tx_history));
+    let enable_bch = enable_bch_with_tokens(&mm, "tBCH", &[], rpc_mode, tx_history).await;
     log!("enable_bch: {:?}", enable_bch);
-    let history = block_on(wait_till_history_has_records(&mm, 4, "tBCH", None));
+    let history = wait_till_history_has_records(&mm, 4, "tBCH", None, TIMEOUT_S).await;
     log!("bch history: {:?}", history);
 
     let expected_internal_ids = vec![
@@ -434,19 +454,19 @@ fn test_bch_and_slp_testnet_history() {
 
     assert_eq!(expected_internal_ids, actual_ids);
 
-    let enable_usdf = block_on(enable_slp(&mm, "USDF"));
+    let enable_usdf = enable_slp(&mm, "USDF").await;
     log!("enable_usdf: {:?}", enable_usdf);
 
     let paging =
         common::PagingOptionsEnum::FromId("433b641bc89e1b59c22717918583c60ec98421805c8e85b064691705d9aeb970".into());
-    let slp_history = block_on(wait_till_history_has_records(&mm, 4, "USDF", Some(paging)));
+    let slp_history = wait_till_history_has_records(&mm, 4, "USDF", Some(paging), TIMEOUT_S).await;
 
     log!("slp history: {:?}", slp_history);
 
     let expected_slp_ids = vec![
-        "cd6ec10b0cd9747ddc66ac5c97c2d7b493e8cea191bc2d847b3498719d4bd989",
+        "babe9bd0dc1495dff0920da14a76311b744daadc9d01314f8bd4e2438c6b183b",
         "1c1e68357cf5a6dacb53881f13aa5d2048fe0d0fab24b76c9ec48f53884bed97",
-        "c4304b5ef4f1b88ed4939534a8ca9eca79f592939233174ae08002e8454e3f06",
+        "cd6ec10b0cd9747ddc66ac5c97c2d7b493e8cea191bc2d847b3498719d4bd989",
         "b0035434a1e7be5af2ed991ee2a21a90b271c5852a684a0b7d315c5a770d1b1c",
     ];
 
@@ -464,6 +484,17 @@ fn test_bch_and_slp_testnet_history() {
         let fee_details: UtxoFeeDetails = json::from_value(tx.tx.fee_details).unwrap();
         assert_eq!(fee_details.coin, Some("tBCH".to_owned()));
     }
+}
+
+#[test]
+#[cfg(not(target_arch = "wasm32"))]
+fn test_bch_and_slp_testnet_history() { block_on(test_bch_and_slp_testnet_history_impl()); }
+
+#[cfg(target_arch = "wasm32")]
+#[wasm_bindgen_test]
+async fn test_bch_and_slp_testnet_history() {
+    common::log::wasm_log::register_wasm_log();
+    test_bch_and_slp_testnet_history_impl().await;
 }
 
 #[test]

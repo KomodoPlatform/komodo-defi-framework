@@ -9,8 +9,8 @@ use crate::utxo::tx_cache::{UtxoVerboseCacheOps, UtxoVerboseCacheShared};
 use crate::utxo::utxo_builder::{UtxoCoinBuildError, UtxoCoinBuildResult, UtxoCoinBuilderCommonOps,
                                 UtxoCoinWithIguanaPrivKeyBuilder, UtxoFieldsWithIguanaPrivKeyBuilder};
 use crate::utxo::utxo_common::{self, big_decimal_from_sat, check_all_inputs_signed_by_pub, UtxoTxBuilder};
-use crate::utxo::{qtum, ActualTxFee, AdditionalTxData, BroadcastTxErr, FeePolicy, GenerateTxError, GetUtxoListOps,
-                  HistoryUtxoTx, HistoryUtxoTxMap, MatureUnspentList, RecentlySpentOutPointsGuard,
+use crate::utxo::{qtum, ActualTxFee, AdditionalTxData, AddrFromStrError, BroadcastTxErr, FeePolicy, GenerateTxError,
+                  GetUtxoListOps, HistoryUtxoTx, HistoryUtxoTxMap, MatureUnspentList, RecentlySpentOutPointsGuard,
                   UtxoActivationParams, UtxoAddressFormat, UtxoCoinFields, UtxoCommonOps, UtxoFromLegacyReqErr,
                   UtxoTx, UtxoTxBroadcastOps, UtxoTxGenerationOps, VerboseTransactionFrom, UTXO_LOCK};
 use crate::{BalanceError, BalanceFut, CoinBalance, FeeApproxStage, FoundSwapTxSpend, HistorySyncState, MarketCoinOps,
@@ -622,7 +622,7 @@ impl UtxoCommonOps for Qrc20Coin {
         utxo_common::my_public_key(self.as_ref())
     }
 
-    fn address_from_str(&self, address: &str) -> Result<UtxoAddress, String> {
+    fn address_from_str(&self, address: &str) -> MmResult<UtxoAddress, AddrFromStrError> {
         utxo_common::checked_address_from_str(self, address)
     }
 
