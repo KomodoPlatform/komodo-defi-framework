@@ -3633,9 +3633,7 @@ fn test_convert_segwit_address() {
         "!convertaddress success but should be error: {}",
         rc.1
     );
-    assert!(rc
-        .1
-        .contains("Invalid address: ltc1qdkwjk42dw6pryvs9sl0ht3pn3mxghuma64jst5"));
+    assert!(rc.1.contains("Cannot determine format"));
 }
 
 #[test]
@@ -4377,7 +4375,7 @@ fn test_validateaddress_segwit() {
     assert!(!result["is_valid"].as_bool().unwrap());
     let reason = result["reason"].as_str().unwrap();
     log!("{}", reason);
-    assert!(reason.contains("Invalid address: bc1qdkwjk42dw6pryvs9sl0ht3pn3mxghuma64jst5"));
+    assert!(reason.contains("Cannot determine format"));
 
     block_on(mm_alice.stop()).unwrap();
 }
