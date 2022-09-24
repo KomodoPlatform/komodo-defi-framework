@@ -684,7 +684,9 @@ fn test_check_balance_on_order_post() {
     // Enable coins. Print the replies in case we need the "address".
     log!(
         "enable_coins (bob): {:?}",
-        block_on(enable_coins_eth_electrum(&mm, &["http://eth1.cipig.net:8555"]))
+        block_on(enable_coins_eth_electrum(&mm, &[
+            "https://mainnet.infura.io/v3/c01c1b4cf66642528547624e1d6d9d6b"
+        ]))
     );
     // issue sell request by setting base/rel price
 
