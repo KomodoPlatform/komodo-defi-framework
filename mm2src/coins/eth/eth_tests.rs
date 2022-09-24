@@ -3,6 +3,7 @@ use common::block_on;
 use mm2_core::mm_ctx::{MmArc, MmCtxBuilder};
 use mocktopus::mocking::*;
 
+const ETH_MAINNET_NODE: &str = "https://mainnet.infura.io/v3/c01c1b4cf66642528547624e1d6d9d6b";
 /// The gas price for the tests
 const GAS_PRICE: u64 = 50_000_000_000;
 // `GAS_PRICE` increased by 3%
@@ -976,7 +977,7 @@ fn test_get_fee_to_send_taker_fee_insufficient_balance() {
             platform: "ETH".to_string(),
             token_addr: Address::from("0xaD22f63404f7305e4713CcBd4F296f34770513f4"),
         },
-        vec!["http://eth1.cipig.net:8555".into()],
+        vec![ETH_MAINNET_NODE.into()],
         None,
     );
     let dex_fee_amount = u256_to_big_decimal(DEX_FEE_AMOUNT.into(), 18).expect("!u256_to_big_decimal");
@@ -992,11 +993,7 @@ fn test_get_fee_to_send_taker_fee_insufficient_balance() {
 
 #[test]
 fn validate_dex_fee_invalid_sender_eth() {
-    let (_ctx, coin) = eth_coin_for_test(
-        EthCoinType::Eth,
-        vec!["https://mainnet.infura.io/v3/c01c1b4cf66642528547624e1d6d9d6b".into()],
-        None,
-    );
+    let (_ctx, coin) = eth_coin_for_test(EthCoinType::Eth, vec![ETH_MAINNET_NODE.into()], None);
     // the real dex fee sent on mainnet
     // https://etherscan.io/tx/0x7e9ca16c85efd04ee5e31f2c1914b48f5606d6f9ce96ecce8c96d47d6857278f
     let tx = coin
@@ -1031,7 +1028,7 @@ fn validate_dex_fee_invalid_sender_erc() {
             platform: "ETH".to_string(),
             token_addr: "0xa1d6df714f91debf4e0802a542e13067f31b8262".into(),
         },
-        vec!["http://eth1.cipig.net:8555".into()],
+        vec![ETH_MAINNET_NODE.into()],
         None,
     );
     // the real dex fee sent on mainnet
@@ -1072,11 +1069,7 @@ fn sender_compressed_pub(tx: &SignedEthTx) -> [u8; 33] {
 
 #[test]
 fn validate_dex_fee_eth_confirmed_before_min_block() {
-    let (_ctx, coin) = eth_coin_for_test(
-        EthCoinType::Eth,
-        vec!["https://mainnet.infura.io/v3/c01c1b4cf66642528547624e1d6d9d6b".into()],
-        None,
-    );
+    let (_ctx, coin) = eth_coin_for_test(EthCoinType::Eth, vec![ETH_MAINNET_NODE.into()], None);
     // the real dex fee sent on mainnet
     // https://etherscan.io/tx/0x7e9ca16c85efd04ee5e31f2c1914b48f5606d6f9ce96ecce8c96d47d6857278f
     let tx = coin
@@ -1113,7 +1106,7 @@ fn validate_dex_fee_erc_confirmed_before_min_block() {
             platform: "ETH".to_string(),
             token_addr: "0xa1d6df714f91debf4e0802a542e13067f31b8262".into(),
         },
-        vec!["http://eth1.cipig.net:8555".into()],
+        vec![ETH_MAINNET_NODE.into()],
         None,
     );
     // the real dex fee sent on mainnet
@@ -1148,7 +1141,7 @@ fn validate_dex_fee_erc_confirmed_before_min_block() {
 
 #[test]
 fn test_negotiate_swap_contract_addr_no_fallback() {
-    let (_, coin) = eth_coin_for_test(EthCoinType::Eth, vec!["http://eth1.cipig.net:8555".into()], None);
+    let (_, coin) = eth_coin_for_test(EthCoinType::Eth, vec![ETH_MAINNET_NODE.into()], None);
 
     let input = None;
     let error = coin.negotiate_swap_contract_addr(input).unwrap_err().into_inner();
@@ -1177,11 +1170,7 @@ fn test_negotiate_swap_contract_addr_no_fallback() {
 fn test_negotiate_swap_contract_addr_has_fallback() {
     let fallback = "0x8500AFc0bc5214728082163326C2FF0C73f4a871".into();
 
-    let (_, coin) = eth_coin_for_test(
-        EthCoinType::Eth,
-        vec!["http://eth1.cipig.net:8555".into()],
-        Some(fallback),
-    );
+    let (_, coin) = eth_coin_for_test(EthCoinType::Eth, vec![ETH_MAINNET_NODE.into()], Some(fallback));
 
     let input = None;
     let result = coin.negotiate_swap_contract_addr(input).unwrap();

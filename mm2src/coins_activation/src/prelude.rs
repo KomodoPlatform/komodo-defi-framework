@@ -4,6 +4,7 @@ use coins::z_coin::ZcoinActivationParams;
 use coins::{coin_conf, CoinBalance, CoinProtocol, MmCoinEnum};
 use mm2_core::mm_ctx::MmArc;
 use mm2_err_handle::prelude::*;
+use mm2_number::BigDecimal;
 use serde_derive::Serialize;
 use serde_json::{self as json, Value as Json};
 use std::collections::HashMap;
@@ -23,6 +24,10 @@ impl TxHistory for UtxoActivationParams {
 #[cfg(not(target_arch = "wasm32"))]
 impl TxHistory for ZcoinActivationParams {
     fn tx_history(&self) -> bool { false }
+}
+
+pub trait GetAddressesBalances {
+    fn get_addresses_balances(&self) -> HashMap<String, BigDecimal>;
 }
 
 #[derive(Clone, Debug, Serialize)]

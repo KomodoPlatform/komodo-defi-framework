@@ -1160,9 +1160,24 @@ pub async fn enable_slp(mm: &MarketMakerIt, coin: &str) -> Json {
     json::from_str(&enable.1).unwrap()
 }
 
+#[allow(clippy::upper_case_acronyms)]
+#[derive(Serialize)]
+pub enum ElectrumProtocol {
+    /// TCP
+    TCP,
+    /// SSL/TLS
+    SSL,
+    /// Insecure WebSocket.
+    WS,
+    /// Secure WebSocket.
+    WSS,
+}
+
 #[derive(Serialize)]
 pub struct ElectrumRpcRequest {
     pub url: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub protocol: Option<ElectrumProtocol>,
 }
 
 #[derive(Serialize)]
@@ -1172,10 +1187,25 @@ pub enum UtxoRpcMode {
     Electrum { servers: Vec<ElectrumRpcRequest> },
 }
 
+#[cfg(not(target_arch = "wasm32"))]
 fn electrum_servers_rpc(servers: &[&str]) -> Vec<ElectrumRpcRequest> {
     servers
         .iter()
-        .map(|url| ElectrumRpcRequest { url: url.to_string() })
+        .map(|url| ElectrumRpcRequest {
+            url: url.to_string(),
+            protocol: None,
+        })
+        .collect()
+}
+
+#[cfg(target_arch = "wasm32")]
+fn electrum_servers_rpc(servers: &[&str]) -> Vec<ElectrumRpcRequest> {
+    servers
+        .iter()
+        .map(|url| ElectrumRpcRequest {
+            url: url.to_string(),
+            protocol: Some(ElectrumProtocol::WSS),
+        })
         .collect()
 }
 
