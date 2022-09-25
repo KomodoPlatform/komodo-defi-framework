@@ -3708,13 +3708,11 @@ pub fn derive_htlc_key_pair(coin: &UtxoCoinFields, _swap_unique_data: &[u8]) -> 
 }
 
 pub fn validate_other_pubkey(raw_pubkey: &[u8]) -> MmResult<(), ValidateOtherPubKeyErr> {
-    match Public::from_slice(raw_pubkey) {
-        Ok(_) => Ok(()),
-        Err(e) => MmError::err(ValidateOtherPubKeyErr::InvalidPubKey(e.to_string())),
-    }
+    if let Err(err) = Public::from_slice(raw_pubkey) {
+        return MmError::err(ValidateOtherPubKeyErr::InvalidPubKey(err.to_string()));
+    };
+    Ok(())
 }
-
-pub fn validate_secret_hash(secret_hash: &[u8], secret: &[u8]) -> bool { secret_hash == secret }
 
 /// Sorts and deduplicates the given `unspents` in ascending order.
 fn sort_dedup_unspents<I>(unspents: I) -> Vec<UnspentInfo>

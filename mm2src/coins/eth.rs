@@ -1114,10 +1114,10 @@ impl SwapOps for EthCoin {
     }
 
     fn validate_other_pubkey(&self, raw_pubkey: &[u8]) -> MmResult<(), ValidateOtherPubKeyErr> {
-        match PublicKey::from_slice(raw_pubkey) {
-            Ok(_) => Ok(()),
-            Err(e) => MmError::err(ValidateOtherPubKeyErr::InvalidPubKey(e.to_string())),
-        }
+        if let Err(e) = PublicKey::from_slice(raw_pubkey) {
+            return MmError::err(ValidateOtherPubKeyErr::InvalidPubKey(e.to_string()));
+        };
+        Ok(())
     }
 }
 
