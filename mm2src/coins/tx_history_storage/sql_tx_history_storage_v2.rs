@@ -172,46 +172,11 @@ fn update_tx_in_table_by_internal_id_sql(wallet_id: &WalletId) -> Result<String,
     Ok(sql)
 }
 
-fn contains_unconfirmed_transactions_sql(wallet_id: &WalletId) -> Result<String, MmError<SqlError>> {
-    let table_name = tx_history_table(wallet_id);
-    validate_table_name(&table_name)?;
-
-    let sql = format!(
-        "SELECT COUNT(id) FROM {} WHERE confirmation_status = {};",
-        table_name,
-        ConfirmationStatus::Unconfirmed.to_sql_param()
-    );
-
-    Ok(sql)
-}
-
-fn get_unconfirmed_transactions_sql(wallet_id: &WalletId) -> Result<String, MmError<SqlError>> {
-    let table_name = tx_history_table(wallet_id);
-    validate_table_name(&table_name)?;
-
-    let sql = format!(
-        "SELECT details_json FROM {} WHERE confirmation_status = {};",
-        table_name,
-        ConfirmationStatus::Unconfirmed.to_sql_param()
-    );
-
-    Ok(sql)
-}
-
 fn has_transactions_with_hash_sql(wallet_id: &WalletId) -> Result<String, MmError<SqlError>> {
     let table_name = tx_history_table(wallet_id);
     validate_table_name(&table_name)?;
 
     let sql = format!("SELECT COUNT(id) FROM {} WHERE tx_hash = ?1;", table_name);
-
-    Ok(sql)
-}
-
-fn unique_tx_hashes_num_sql(wallet_id: &WalletId) -> Result<String, MmError<SqlError>> {
-    let table_name = tx_history_table(wallet_id);
-    validate_table_name(&table_name)?;
-
-    let sql = format!("SELECT COUNT(DISTINCT tx_hash) FROM {};", table_name);
 
     Ok(sql)
 }
@@ -225,35 +190,123 @@ fn get_tx_hex_from_cache_sql(wallet_id: &WalletId) -> Result<String, MmError<Sql
     Ok(sql)
 }
 
+/// Creates `SqlQuery` builder to query transactions from `tx_history` table
+/// joining `tx_addresses` table and specifying from/to `for_addresses` addresses.
+fn tx_history_with_addresses_builder_preimage<'a>(
+    connection: &'a Connection,
+    wallet_id: &WalletId,
+    for_addresses: FilteringAddresses,
+) -> Result<SqlQuery<'a>, MmError<SqlError>> {
+    let mut sql_builder = SqlQuery::select_from_alias(connection, &tx_history_table(wallet_id), "tx_history")?;
+
+    // Query transactions that were sent from/to `for_addresses` addresses.
+    let tx_address_table_name = tx_address_table(wallet_id);
+
+    sql_builder
+        .join_alias(&tx_address_table_name, "tx_address")?
+        .on_join_eq("tx_history.internal_id", "tx_address.internal_id")?;
+
+    sql_builder
+        .and_where_in_params("tx_address.address", for_addresses)?
+        .group_by("tx_history.internal_id")?;
+
+    Ok(sql_builder)
+}
+
+fn count_unique_tx_hashes_preimage<'a>(
+    connection: &'a Connection,
+    wallet_id: &WalletId,
+    for_addresses: FilteringAddresses,
+) -> Result<SqlQuery<'a>, MmError<SqlError>> {
+    /// The alias is needed so that the external query can access the results of the subquery.
+    /// Example:
+    ///   SUBQUERY: `SELECT h.tx_hash AS __TX_HASH_ALIAS FROM tx_history h JOIN tx_address a ON h.internal_id = a.internal_id WHERE a.address IN ('address_2', 'address_4') GROUP BY h.internal_id`
+    ///   EXTERNAL_QUERY: `SELECT COUNT(DISTINCT __TX_HASH_ALIAS) FROM (<SUBQUERY>);`
+    /// Here we can't use `h.tx_hash` in the external query because it doesn't know about the `tx_history h` table.
+    /// So we need to give the `h.tx_hash` an alias like `__TX_HASH_ALIAS`.
+    const TX_HASH_ALIAS: &str = "__TX_HASH_ALIAS";
+
+    let subquery = {
+        let mut sql_builder = tx_history_with_addresses_builder_preimage(connection, wallet_id, for_addresses)?;
+
+        // Query `tx_hash` field and give it the `__TX_HASH_ALIAS` alias.
+        sql_builder.field_alias("tx_history.tx_hash", TX_HASH_ALIAS)?;
+
+        drop_mutability!(sql_builder);
+        sql_builder.subquery()
+    };
+
+    let mut external_query = SqlQuery::select_from_subquery(subquery)?;
+    external_query.count_distinct(TX_HASH_ALIAS)?;
+    Ok(external_query)
+}
+
+fn history_contains_unconfirmed_txes_preimage<'a>(
+    connection: &'a Connection,
+    wallet_id: &WalletId,
+    for_addresses: FilteringAddresses,
+) -> Result<SqlQuery<'a>, MmError<SqlError>> {
+    /// The alias is needed so that the external query can access the results of the subquery.
+    /// Example:
+    ///   SUBQUERY: `SELECT h.id AS __ID_ALIAS FROM tx_history h JOIN tx_address a ON h.internal_id = a.internal_id WHERE a.address IN ('address_2', 'address_4') GROUP BY h.internal_id`
+    ///   EXTERNAL_QUERY: `SELECT COUNT(__ID_ALIAS) FROM (<SUBQUERY>);`
+    /// Here we can't use `h.id` in the external query because it doesn't know about the `tx_history h` table.
+    /// So we need to give the `h.id` an alias like `__ID_ALIAS`.
+    const ID_ALIAS: &str = "__ID_ALIAS";
+
+    let subquery = {
+        let mut sql_builder = tx_history_with_addresses_builder_preimage(connection, wallet_id, for_addresses)?;
+
+        // Query `tx_hash` field and give it the `__ID_ALIAS` alias.
+        sql_builder
+            .field_alias("tx_history.id", ID_ALIAS)?
+            .and_where_eq("confirmation_status", ConfirmationStatus::Unconfirmed.to_sql_param())?;
+
+        drop_mutability!(sql_builder);
+        sql_builder.subquery()
+    };
+
+    let mut external_query = SqlQuery::select_from_subquery(subquery)?;
+    external_query.count(ID_ALIAS)?;
+    Ok(external_query)
+}
+
+fn get_unconfirmed_txes_builder_preimage<'a>(
+    connection: &'a Connection,
+    wallet_id: &WalletId,
+    for_addresses: FilteringAddresses,
+) -> Result<SqlQuery<'a>, MmError<SqlError>> {
+    let mut sql_builder = tx_history_with_addresses_builder_preimage(connection, wallet_id, for_addresses)?;
+
+    sql_builder
+        .field("details_json")?
+        .and_where_eq("confirmation_status", ConfirmationStatus::Unconfirmed.to_sql_param())?;
+
+    drop_mutability!(sql_builder);
+    Ok(sql_builder)
+}
+
 /// Creates an `SqlQuery` instance with the required `WHERE`, `ORDER`, `GROUP_BY` constraints.
-/// Please note you can refer to the [`tx_history_table(wallet_id)`] table by the `tx_history` alias.
+///
+/// # Note
+///
+/// 1) You can refer to the [`tx_history_table(wallet_id)`] table by the `tx_history` alias.
+/// 2) The selected transactions will be ordered the same way as `compare_transaction_details` is implemented.
 fn get_history_builder_preimage<'a>(
     connection: &'a Connection,
     wallet_id: &WalletId,
     token_id: String,
-    for_addresses: Option<FilteringAddresses>,
+    for_addresses: FilteringAddresses,
 ) -> Result<SqlQuery<'a>, MmError<SqlError>> {
-    let mut sql_builder = SqlQuery::select_from_alias(connection, &tx_history_table(wallet_id), "tx_history")?;
+    let mut sql_builder = tx_history_with_addresses_builder_preimage(connection, wallet_id, for_addresses)?;
 
-    // Check if we need to join the [`tx_address_table(wallet_id)`] table
-    // to query transactions that were sent from/to `for_addresses` addresses.
-    if let Some(for_addresses) = for_addresses {
-        let tx_address_table_name = tx_address_table(wallet_id);
-
-        sql_builder
-            .join_alias(&tx_address_table_name, "tx_address")?
-            .on_join_eq("tx_history.internal_id", "tx_address.internal_id")?;
-
-        sql_builder
-            .and_where_in_params("tx_address.address", for_addresses)?
-            .group_by("tx_history.internal_id")?;
-    }
-
+    // Set other query conditions.
     sql_builder
         .and_where_eq_param("tx_history.token_id", token_id)?
+        // The following statements repeat the `compare_transaction_details` implementation:
         .order_asc("tx_history.confirmation_status")?
         .order_desc("tx_history.block_height")?
-        .order_asc("tx_history.id")?;
+        .order_asc("tx_history.internal_id")?;
     Ok(sql_builder)
 }
 
@@ -290,7 +343,9 @@ fn tx_details_from_row(row: &Row<'_>) -> Result<TransactionDetails, SqlError> {
 impl TxHistoryStorageError for SqlError {}
 
 impl ConfirmationStatus {
-    fn to_sql_param(self) -> String { (self as u8).to_string() }
+    fn to_sql_param_str(self) -> String { (self as u8).to_string() }
+
+    fn to_sql_param(self) -> i64 { self as i64 }
 }
 
 impl WalletId {
@@ -393,7 +448,7 @@ impl TxHistoryStorage for SqliteTxHistoryStorage {
                     tx_hash,
                     internal_id.clone(),
                     tx.block_height.to_string(),
-                    confirmation_status.to_sql_param(),
+                    confirmation_status.to_sql_param_str(),
                     token_id,
                     tx_json,
                 ];
@@ -457,13 +512,21 @@ impl TxHistoryStorage for SqliteTxHistoryStorage {
         .await
     }
 
-    async fn history_contains_unconfirmed_txes(&self, wallet_id: &WalletId) -> Result<bool, MmError<Self::Error>> {
-        let sql = contains_unconfirmed_transactions_sql(wallet_id)?;
+    async fn history_contains_unconfirmed_txes(
+        &self,
+        wallet_id: &WalletId,
+        for_addresses: FilteringAddresses,
+    ) -> Result<bool, MmError<Self::Error>> {
+        let wallet_id = wallet_id.clone();
         let selfi = self.clone();
 
         async_blocking(move || {
             let conn = selfi.0.lock().unwrap();
-            let count_unconfirmed = conn.query_row::<u32, _, _>(&sql, NO_PARAMS, |row| row.get(0))?;
+            let sql_query = history_contains_unconfirmed_txes_preimage(&conn, &wallet_id, for_addresses)?;
+
+            let count_unconfirmed: u32 = sql_query
+                .query_single_row(|row| row.get(0))?
+                .or_mm_err(|| SqlError::QueryReturnedNoRows)?;
             Ok(count_unconfirmed > 0)
         })
         .await
@@ -472,15 +535,16 @@ impl TxHistoryStorage for SqliteTxHistoryStorage {
     async fn get_unconfirmed_txes_from_history(
         &self,
         wallet_id: &WalletId,
+        for_addresses: FilteringAddresses,
     ) -> Result<Vec<TransactionDetails>, MmError<Self::Error>> {
-        let sql = get_unconfirmed_transactions_sql(wallet_id)?;
+        let wallet_id = wallet_id.clone();
         let selfi = self.clone();
 
         async_blocking(move || {
             let conn = selfi.0.lock().unwrap();
-            let mut stmt = conn.prepare(&sql)?;
-            let rows = stmt.query(NO_PARAMS)?;
-            let result = rows.mapped(tx_details_from_row).collect::<Result<_, _>>()?;
+
+            let sql_query = get_unconfirmed_txes_builder_preimage(&conn, &wallet_id, for_addresses)?;
+            let result = sql_query.query(tx_details_from_row)?;
             Ok(result)
         })
         .await
@@ -500,7 +564,7 @@ impl TxHistoryStorage for SqliteTxHistoryStorage {
 
         let params = [
             block_height,
-            confirmation_status.to_sql_param(),
+            confirmation_status.to_sql_param_str(),
             json_details,
             internal_id,
         ];
@@ -526,12 +590,21 @@ impl TxHistoryStorage for SqliteTxHistoryStorage {
         .await
     }
 
-    async fn unique_tx_hashes_num_in_history(&self, wallet_id: &WalletId) -> Result<usize, MmError<Self::Error>> {
-        let sql = unique_tx_hashes_num_sql(wallet_id)?;
+    async fn unique_tx_hashes_num_in_history(
+        &self,
+        wallet_id: &WalletId,
+        for_addresses: FilteringAddresses,
+    ) -> Result<usize, MmError<Self::Error>> {
         let selfi = self.clone();
+        let wallet_id = wallet_id.clone();
+
         async_blocking(move || {
             let conn = selfi.0.lock().unwrap();
-            let count: u32 = conn.query_row(&sql, NO_PARAMS, |row| row.get(0))?;
+
+            let sql_query = count_unique_tx_hashes_preimage(&conn, &wallet_id, for_addresses)?;
+            let count: u32 = sql_query
+                .query_single_row(|row| row.get(0))?
+                .or_mm_err(|| SqlError::QueryReturnedNoRows)?;
             Ok(count as usize)
         })
         .await
@@ -583,9 +656,9 @@ impl TxHistoryStorage for SqliteTxHistoryStorage {
         paging: PagingOptionsEnum<BytesJson>,
         limit: usize,
     ) -> Result<GetHistoryResult, MmError<Self::Error>> {
-        // Check if [`GetTxHistoryFilters::for_addresses`] is specified and empty.
+        // Check if [`GetTxHistoryFilters::for_addresses`] is empty.
         // If it is, it's much more efficient to return an empty result before we do any query.
-        if matches!(filters.for_addresses, Some(ref for_addresses) if for_addresses.is_empty()) {
+        if filters.for_addresses.is_empty() {
             return Ok(GetHistoryResult {
                 transactions: Vec::new(),
                 skipped: 0,

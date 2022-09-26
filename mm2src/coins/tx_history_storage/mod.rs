@@ -52,8 +52,7 @@ impl<'a> TxHistoryStorageBuilder<'a> {
 }
 
 /// Whether transaction is unconfirmed or confirmed.
-/// Serializes to either `0u8` or `1u8` correspondingly.
-#[repr(u8)]
+/// Serializes to either `0` or `1` correspondingly.
 #[derive(Clone, Copy, Debug)]
 pub enum ConfirmationStatus {
     Unconfirmed = 0,
@@ -122,32 +121,37 @@ impl WalletId {
     }
 }
 
-#[derive(Debug, Default)]
+#[derive(Clone, Debug)]
 pub struct GetTxHistoryFilters {
     token_id: Option<String>,
-    for_addresses: Option<FilteringAddresses>,
+    for_addresses: FilteringAddresses,
 }
 
 impl GetTxHistoryFilters {
     #[inline]
-    pub fn new() -> GetTxHistoryFilters { GetTxHistoryFilters::default() }
+    pub fn for_address(address: String) -> GetTxHistoryFilters {
+        GetTxHistoryFilters {
+            token_id: None,
+            for_addresses: std::iter::once(address).collect(),
+        }
+    }
+
+    #[inline]
+    pub fn for_addresses<I: IntoIterator<Item = String>>(addresses: I) -> GetTxHistoryFilters {
+        GetTxHistoryFilters {
+            token_id: None,
+            for_addresses: addresses.into_iter().collect(),
+        }
+    }
 
     #[inline]
     pub fn with_token_id(mut self, token_id: String) -> GetTxHistoryFilters {
-        self.token_id = Some(token_id);
+        self.set_token_id(token_id);
         self
     }
 
     #[inline]
-    pub fn set_for_addresses<I: IntoIterator<Item = String>>(&mut self, addresses: I) {
-        self.for_addresses = Some(addresses.into_iter().collect());
-    }
-
-    #[inline]
-    pub fn with_for_addresses<I: IntoIterator<Item = String>>(mut self, addresses: I) -> GetTxHistoryFilters {
-        self.set_for_addresses(addresses);
-        self
-    }
+    pub fn set_token_id(&mut self, token_id: String) { self.token_id = Some(token_id); }
 
     /// If [`GetTxHistoryFilters::token_id`] is not specified,
     /// we should exclude token's transactions by applying an empty `token_id` filter.

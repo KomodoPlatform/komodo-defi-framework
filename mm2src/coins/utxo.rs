@@ -22,7 +22,6 @@
 //
 
 pub mod bch;
-pub mod bch_and_slp_tx_history;
 mod bchd_grpc;
 #[allow(clippy::all)]
 #[rustfmt::skip]
@@ -36,6 +35,7 @@ pub mod utxo_block_header_storage;
 pub mod utxo_builder;
 pub mod utxo_common;
 pub mod utxo_standard;
+pub mod utxo_tx_history_v2;
 pub mod utxo_withdraw;
 
 use async_trait::async_trait;
@@ -68,7 +68,7 @@ use mm2_metrics::MetricsArc;
 use mm2_number::BigDecimal;
 #[cfg(test)] use mocktopus::macros::*;
 use num_traits::ToPrimitive;
-use primitives::hash::{H256, H264};
+use primitives::hash::{H160, H256, H264};
 use rpc::v1::types::{Bytes as BytesJson, Transaction as RpcTransaction, H256 as H256Json};
 use script::{Builder, Script, SignatureVersion, TransactionInputSigner};
 use serde_json::{self as json, Value as Json};
@@ -106,7 +106,7 @@ use crate::hd_wallet::{HDAccountOps, HDAccountsMutex, HDAddress, HDAddressId, HD
                        InvalidBip44ChainError};
 use crate::hd_wallet_storage::{HDAccountStorageItem, HDWalletCoinStorage, HDWalletStorageError, HDWalletStorageResult};
 use crate::utxo::tx_cache::UtxoVerboseCacheShared;
-use crate::TransactionErr;
+use crate::{TransactionErr, VerificationError};
 
 pub mod tx_cache;
 #[cfg(target_arch = "wasm32")]
@@ -739,6 +739,26 @@ impl From<serialization::Error> for GetConfirmedTxError {
     fn from(err: serialization::Error) -> Self { GetConfirmedTxError::SerializationError(err) }
 }
 
+#[derive(Debug, Display)]
+pub enum AddrFromStrError {
+    #[display(fmt = "{}", _0)]
+    Unsupported(UnsupportedAddr),
+    #[display(fmt = "Cannot determine format: {:?}", _0)]
+    CannotDetermineFormat(Vec<String>),
+}
+
+impl From<UnsupportedAddr> for AddrFromStrError {
+    fn from(e: UnsupportedAddr) -> Self { AddrFromStrError::Unsupported(e) }
+}
+
+impl From<AddrFromStrError> for VerificationError {
+    fn from(e: AddrFromStrError) -> Self { VerificationError::AddressDecodingError(e.to_string()) }
+}
+
+impl From<AddrFromStrError> for WithdrawError {
+    fn from(e: AddrFromStrError) -> Self { WithdrawError::InvalidAddress(e.to_string()) }
+}
+
 impl UtxoCoinFields {
     pub fn transaction_preimage(&self) -> TransactionInputSigner {
         let lock_time = if self.conf.ticker == "KMD" {
@@ -929,7 +949,7 @@ pub trait UtxoCommonOps:
 
     /// Try to parse address from string using specified on asset enable format,
     /// and if it failed inform user that he used a wrong format.
-    fn address_from_str(&self, address: &str) -> Result<Address, String>;
+    fn address_from_str(&self, address: &str) -> MmResult<Address, AddrFromStrError>;
 
     async fn get_current_mtp(&self) -> UtxoRpcResult<u32>;
 
@@ -1433,6 +1453,7 @@ impl Default for ElectrumBuilderArgs {
 
 #[derive(Debug)]
 pub struct UtxoHDWallet {
+    pub hd_wallet_rmd160: H160,
     pub hd_wallet_storage: HDWalletCoinStorage,
     pub address_format: UtxoAddressFormat,
     /// Derivation path of the coin.

@@ -3,7 +3,7 @@
 //! Tracking issue: https://github.com/KomodoPlatform/atomicDEX-API/issues/701
 //! More info about the protocol and implementation guides can be found at https://slp.dev/
 
-use crate::my_tx_history_v2::CoinWithTxHistoryV2;
+use crate::my_tx_history_v2::{CoinWithTxHistoryV2, MyTxHistoryErrorV2, MyTxHistoryTarget};
 use crate::tx_history_storage::{GetTxHistoryFilters, WalletId};
 use crate::utxo::bch::BchCoin;
 use crate::utxo::bchd_grpc::{check_slp_transaction, validate_slp_utxos, ValidateSlpUtxosErr};
@@ -18,7 +18,7 @@ use crate::{BalanceFut, CoinBalance, FeeApproxStage, FoundSwapTxSpend, HistorySy
             TradePreimageFut, TradePreimageResult, TradePreimageValue, TransactionDetails, TransactionEnum,
             TransactionErr, TransactionFut, TxFeeDetails, TxMarshalingErr, UnexpectedDerivationMethod,
             ValidateAddressResult, ValidateOtherPubKeyErr, ValidatePaymentInput, VerificationError,
-            VerificationResult, WithdrawError, WithdrawFee, WithdrawFut, WithdrawRequest};
+            VerificationResult, WatcherValidatePaymentInput, WithdrawError, WithdrawFee, WithdrawFut, WithdrawRequest};
 use async_trait::async_trait;
 use bitcrypto::dhash160;
 use chain::constants::SEQUENCE_FINAL;
@@ -1273,6 +1273,17 @@ impl SwapOps for SlpToken {
         Box::new(fut.boxed().compat())
     }
 
+    fn create_taker_spends_maker_payment_preimage(
+        &self,
+        _maker_payment_tx: &[u8],
+        _time_lock: u32,
+        _maker_pub: &[u8],
+        _secret_hash: &[u8],
+        _swap_unique_data: &[u8],
+    ) -> TransactionFut {
+        unimplemented!();
+    }
+
     fn send_taker_spends_maker_payment(
         &self,
         maker_payment_tx: &[u8],
@@ -1296,6 +1307,10 @@ impl SwapOps for SlpToken {
             Ok(tx.into())
         };
         Box::new(fut.boxed().compat())
+    }
+
+    fn send_taker_spends_maker_payment_preimage(&self, _preimage: &[u8], _secret: &[u8]) -> TransactionFut {
+        unimplemented!();
     }
 
     fn send_taker_refunds_payment(
@@ -1392,6 +1407,13 @@ impl SwapOps for SlpToken {
             Ok(())
         };
         Box::new(fut.boxed().compat())
+    }
+
+    fn watcher_validate_taker_payment(
+        &self,
+        _input: WatcherValidatePaymentInput,
+    ) -> Box<dyn Future<Item = (), Error = String> + Send> {
+        unimplemented!();
     }
 
     fn check_if_my_payment_sent(
@@ -1753,11 +1775,22 @@ impl MmCoin for SlpToken {
     fn is_coin_protocol_supported(&self, _info: &Option<Vec<u8>>) -> bool { true }
 }
 
+#[async_trait]
 impl CoinWithTxHistoryV2 for SlpToken {
     fn history_wallet_id(&self) -> WalletId { WalletId::new(self.platform_ticker().to_owned()) }
 
-    fn get_tx_history_filters(&self) -> GetTxHistoryFilters {
-        GetTxHistoryFilters::new().with_token_id(self.token_id().to_string())
+    /// TODO consider using `utxo_common::utxo_tx_history_common::get_tx_history_filters`
+    /// when `SlpToken` implements `CoinWithDerivationMethod`.
+    async fn get_tx_history_filters(
+        &self,
+        target: MyTxHistoryTarget,
+    ) -> MmResult<GetTxHistoryFilters, MyTxHistoryErrorV2> {
+        match target {
+            MyTxHistoryTarget::Iguana => (),
+            target => return MmError::err(MyTxHistoryErrorV2::with_expected_target(target, "Iguana")),
+        }
+        let my_address = self.my_address().map_to_mm(MyTxHistoryErrorV2::Internal)?;
+        Ok(GetTxHistoryFilters::for_address(my_address).with_token_id(self.token_id().to_string()))
     }
 }
 
