@@ -118,7 +118,7 @@ pub struct MmCtx {
     pub sqlite_connection: Constructible<Arc<Mutex<Connection>>>,
     pub mm_version: String,
     pub mm_init_ctx: Mutex<Option<Arc<dyn Any + 'static + Send + Sync>>>,
-    pub abort_handlers: Mutex<Vec<AbortHandle>>,
+    pub abort_handlers: Arc<Mutex<Vec<AbortHandle>>>,
     #[cfg(target_arch = "wasm32")]
     pub db_namespace: DbNamespaceId,
 }
@@ -158,7 +158,7 @@ impl MmCtx {
             sqlite_connection: Constructible::default(),
             mm_version: "".into(),
             mm_init_ctx: Mutex::new(None),
-            abort_handlers: Mutex::new(Vec::new()),
+            abort_handlers: Arc::new(Mutex::new(Vec::new())),
             #[cfg(target_arch = "wasm32")]
             db_namespace: DbNamespaceId::Main,
         }
@@ -243,6 +243,18 @@ impl MmCtx {
         } else {
             stop_listeners.push(cb)
         }
+    }
+
+    /// Returns `MmAbortHandlers` that can be used to push abort handlers independently from `MmArc`.
+    pub fn abort_handlers(&self) -> MmAbortHandlers {
+        MmAbortHandlers {
+            abort_handlers: Arc::clone(&self.abort_handlers),
+        }
+    }
+
+    /// Pushes `abort_handle` into [`MmCtx::abort_handlers`] that will be invoked on [`MmArc::stop`].
+    pub fn push_abort_handle(&self, abort_handle: AbortHandle) {
+        self.abort_handlers.lock().unwrap().push(abort_handle)
     }
 
     /// Get a reference to the secp256k1 key pair.
@@ -537,6 +549,18 @@ impl MmArc {
         };
 
         prometheus::spawn_prometheus_exporter(self.metrics.weak(), address, shutdown_detector, credentials)
+    }
+}
+
+/// `MmAbortHandlers` is used to push abort handlers independently from `MmArc`.
+#[derive(Clone)]
+pub struct MmAbortHandlers {
+    abort_handlers: Arc<Mutex<Vec<AbortHandle>>>,
+}
+
+impl MmAbortHandlers {
+    pub fn push_abort_handle(&self, abort_handle: AbortHandle) {
+        self.abort_handlers.lock().unwrap().push(abort_handle);
     }
 }
 

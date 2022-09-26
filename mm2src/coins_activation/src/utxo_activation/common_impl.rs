@@ -9,12 +9,11 @@ use coins::my_tx_history_v2::TxHistoryStorage;
 use coins::utxo::utxo_tx_history_v2::{utxo_history_loop, UtxoTxHistoryOps};
 use coins::utxo::UtxoActivationParams;
 use coins::{MarketCoinOps, PrivKeyActivationPolicy, PrivKeyBuildPolicy};
-use common::executor::spawn;
-use common::log::info;
+use common::spawn_abortable;
 use crypto::hw_rpc_task::HwConnectStatuses;
 use crypto::CryptoCtx;
 use futures::compat::Future01CompatExt;
-use futures::future::{abortable, AbortHandle};
+use futures::future::AbortHandle;
 use mm2_core::mm_ctx::MmArc;
 use mm2_err_handle::prelude::*;
 use mm2_metrics::MetricsArc;
@@ -94,13 +93,10 @@ pub(crate) fn start_history_background_fetching<Coin>(
 where
     Coin: UtxoTxHistoryOps,
 {
-    let ticker = coin.ticker().to_owned();
-
-    let (fut, abort_handle) = abortable(utxo_history_loop(coin, storage, metrics, current_balances));
-    spawn(async move {
-        if let Err(e) = fut.await {
-            info!("'utxo_history_loop' stopped for {}, reason {}", ticker, e);
-        }
-    });
-    abort_handle
+    let ticker = coin.ticker().to_string();
+    spawn_abortable!(
+        utxo_history_loop(coin, storage, metrics, current_balances),
+        on_abort => "'utxo_history_loop' has been aborted for {ticker}"
+    )
+    .into_handle()
 }

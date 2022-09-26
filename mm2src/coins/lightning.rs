@@ -13,7 +13,7 @@ mod ln_utils;
 use super::{lp_coinfind_or_err, DerivationMethod, MmCoinEnum};
 use crate::lightning::ln_conf::OurChannelsConfigs;
 use crate::lightning::ln_errors::{TrustedNodeError, TrustedNodeResult, UpdateChannelError, UpdateChannelResult};
-use crate::lightning::ln_events::init_events_abort_handlers;
+use crate::lightning::ln_events::init_abortable_events;
 use crate::lightning::ln_serialization::PublicKeyForRPC;
 use crate::lightning::ln_sql::SqliteLightningDB;
 use crate::lightning::ln_storage::{NetworkGraph, TrustedNodesShared};
@@ -32,9 +32,8 @@ use bitcoin_hashes::sha256::Hash as Sha256;
 use bitcrypto::dhash256;
 use bitcrypto::ChecksumType;
 use chain::TransactionOutput;
-use common::executor::spawn;
 use common::log::{error, LogOnError, LogState};
-use common::{async_blocking, calc_total_pages, log, now_ms, ten, PagingOptionsEnum};
+use common::{async_blocking, calc_total_pages, log, now_ms, spawn_abortable, ten, PagingOptionsEnum};
 use futures::{FutureExt, TryFutureExt};
 use futures01::Future;
 use keys::{hash::H256, AddressHashEnum, CompactSignature, KeyPair, Private, Public};
@@ -726,6 +725,7 @@ pub async fn start_lightning(
     // Initialize the PeerManager
     let peer_manager = ln_p2p::init_peer_manager(
         ctx.clone(),
+        &platform,
         params.listening_port,
         channel_manager.clone(),
         gossip_sync.clone(),
@@ -738,7 +738,7 @@ pub async fn start_lightning(
 
     let trusted_nodes = Arc::new(PaMutex::new(persister.get_trusted_nodes().await?));
 
-    let events_abort_handlers = init_events_abort_handlers(platform.clone(), db.clone()).await?;
+    init_abortable_events(platform.clone(), db.clone()).await?;
 
     // Initialize the event handler
     let event_handler = Arc::new(ln_events::LightningEventHandler::new(
@@ -747,7 +747,6 @@ pub async fn start_lightning(
         keys_manager.clone(),
         db.clone(),
         trusted_nodes.clone(),
-        events_abort_handlers,
     ));
 
     // Initialize routing Scorer
@@ -794,18 +793,21 @@ pub async fn start_lightning(
     let open_channels_nodes = Arc::new(PaMutex::new(
         ln_utils::get_open_channels_nodes_addresses(persister.clone(), channel_manager.clone()).await?,
     ));
-    spawn(ln_p2p::connect_to_nodes_loop(
+
+    let abort_handle = spawn_abortable(ln_p2p::connect_to_nodes_loop(
         open_channels_nodes.clone(),
         peer_manager.clone(),
     ));
+    ctx.push_abort_handle(abort_handle.into_handle());
 
     // Broadcast Node Announcement
-    spawn(ln_p2p::ln_node_announcement_loop(
+    let abort_handle = spawn_abortable(ln_p2p::ln_node_announcement_loop(
         channel_manager.clone(),
         params.node_name,
         params.node_color,
         params.listening_port,
     ));
+    ctx.push_abort_handle(abort_handle.into_handle());
 
     Ok(LightningCoin {
         platform,

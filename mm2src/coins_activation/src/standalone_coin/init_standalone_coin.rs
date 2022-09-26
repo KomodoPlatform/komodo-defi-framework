@@ -211,7 +211,7 @@ where
                 TxHistoryStorageBuilder::new(&self.ctx).build()?,
                 current_balances,
             ) {
-                self.ctx.abort_handlers.lock().unwrap().push(abort_handle);
+                self.ctx.push_abort_handle(abort_handle);
             }
         }
 

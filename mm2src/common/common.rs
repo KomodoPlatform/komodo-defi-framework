@@ -92,6 +92,14 @@ macro_rules! drop_mutability {
     };
 }
 
+/// Spawns the given `fut` future and returns `AbortOnDropHandle`.
+#[macro_export]
+macro_rules! spawn_abortable {
+    ($fut:expr, on_abort => $($arg:tt)+) => {
+        $crate::spawn_abortable_with_msg($fut, format!($($arg)+))
+    };
+}
+
 #[macro_use]
 pub mod jsonrpc_client;
 #[macro_use]
@@ -945,17 +953,41 @@ impl<Id> Default for PagingOptionsEnum<Id> {
 }
 
 /// The AbortHandle that aborts on drop
-pub struct AbortOnDropHandle(AbortHandle);
+pub struct AbortOnDropHandle(Option<AbortHandle>);
+
+impl From<AbortHandle> for AbortOnDropHandle {
+    fn from(handle: AbortHandle) -> Self { AbortOnDropHandle(Some(handle)) }
+}
+
+impl AbortOnDropHandle {
+    pub fn into_handle(mut self) -> AbortHandle { self.0.take().expect("`AbortHandle` Must be initialized") }
+}
 
 impl Drop for AbortOnDropHandle {
     #[inline(always)]
-    fn drop(&mut self) { self.0.abort(); }
+    fn drop(&mut self) {
+        if let Some(handle) = self.0.take() {
+            handle.abort();
+        }
+    }
 }
 
+#[must_use]
 pub fn spawn_abortable(fut: impl Future03<Output = ()> + Send + 'static) -> AbortOnDropHandle {
     let (abortable, handle) = abortable(fut);
     spawn(abortable.then(|_| async {}));
-    AbortOnDropHandle(handle)
+    AbortOnDropHandle::from(handle)
+}
+
+#[must_use]
+pub fn spawn_abortable_with_msg(fut: impl Future03<Output = ()> + Send + 'static, msg: String) -> AbortOnDropHandle {
+    let (abortable, handle) = abortable(fut);
+    spawn(async move {
+        if let Err(_aborted) = abortable.await {
+            log::info!("{}", msg);
+        }
+    });
+    AbortOnDropHandle::from(handle)
 }
 
 #[inline(always)]
