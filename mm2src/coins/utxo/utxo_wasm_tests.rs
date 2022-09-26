@@ -64,3 +64,9 @@ async fn test_electrum_display_balances() {
     let rpc_client = electrum_client_for_test(&["electrum1.cipig.net:30017", "electrum2.cipig.net:30017"]).await;
     utxo_common_tests::test_electrum_display_balances(&rpc_client).await;
 }
+
+#[wasm_bindgen_test]
+async fn test_hd_utxo_tx_history() {
+    let rpc_client = electrum_client_for_test(&["electrum1.cipig.net:30018", "electrum2.cipig.net:30018"]).await;
+    utxo_common_tests::test_hd_utxo_tx_history_impl(rpc_client).await;
+}

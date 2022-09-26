@@ -3,7 +3,7 @@
 //! Tracking issue: https://github.com/KomodoPlatform/atomicDEX-API/issues/701
 //! More info about the protocol and implementation guides can be found at https://slp.dev/
 
-use crate::my_tx_history_v2::CoinWithTxHistoryV2;
+use crate::my_tx_history_v2::{CoinWithTxHistoryV2, MyTxHistoryErrorV2, MyTxHistoryTarget};
 use crate::tx_history_storage::{GetTxHistoryFilters, WalletId};
 use crate::utxo::bch::BchCoin;
 use crate::utxo::bchd_grpc::{check_slp_transaction, validate_slp_utxos, ValidateSlpUtxosErr};
@@ -1749,11 +1749,22 @@ impl MmCoin for SlpToken {
     fn is_coin_protocol_supported(&self, _info: &Option<Vec<u8>>) -> bool { true }
 }
 
+#[async_trait]
 impl CoinWithTxHistoryV2 for SlpToken {
     fn history_wallet_id(&self) -> WalletId { WalletId::new(self.platform_ticker().to_owned()) }
 
-    fn get_tx_history_filters(&self) -> GetTxHistoryFilters {
-        GetTxHistoryFilters::new().with_token_id(self.token_id().to_string())
+    /// TODO consider using `utxo_common::utxo_tx_history_common::get_tx_history_filters`
+    /// when `SlpToken` implements `CoinWithDerivationMethod`.
+    async fn get_tx_history_filters(
+        &self,
+        target: MyTxHistoryTarget,
+    ) -> MmResult<GetTxHistoryFilters, MyTxHistoryErrorV2> {
+        match target {
+            MyTxHistoryTarget::Iguana => (),
+            target => return MmError::err(MyTxHistoryErrorV2::with_expected_target(target, "Iguana")),
+        }
+        let my_address = self.my_address().map_to_mm(MyTxHistoryErrorV2::Internal)?;
+        Ok(GetTxHistoryFilters::for_address(my_address).with_token_id(self.token_id().to_string()))
     }
 }
 

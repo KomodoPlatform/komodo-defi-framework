@@ -75,6 +75,7 @@ pub type JsonRpcPendingRequestsShared = Arc<AsyncMutex<JsonRpcPendingRequests>>;
 pub type JsonRpcPendingRequests = HashMap<JsonRpcId, async_oneshot::Sender<JsonRpcResponseEnum>>;
 pub type UnspentMap = HashMap<Address, Vec<UnspentInfo>>;
 
+type ElectrumTxHistory = Vec<ElectrumTxHistoryItem>;
 type ElectrumScriptHash = String;
 type ScriptHashUnspents = Vec<ElectrumUnspent>;
 
@@ -1835,8 +1836,20 @@ impl ElectrumClient {
     }
 
     /// https://electrumx.readthedocs.io/en/latest/protocol-methods.html#blockchain-scripthash-get-history
-    pub fn scripthash_get_history(&self, hash: &str) -> RpcRes<Vec<ElectrumTxHistoryItem>> {
+    pub fn scripthash_get_history(&self, hash: &str) -> RpcRes<ElectrumTxHistory> {
         rpc_func!(self, "blockchain.scripthash.get_history", hash)
+    }
+
+    /// https://electrumx.readthedocs.io/en/latest/protocol-methods.html#blockchain-scripthash-get-history
+    /// Requests history of the `hashes` in a batch and returns them in the same order they were requested.
+    pub fn scripthash_get_history_batch<I>(&self, hashes: I) -> RpcRes<Vec<ElectrumTxHistory>>
+    where
+        I: IntoIterator<Item = String>,
+    {
+        let requests = hashes
+            .into_iter()
+            .map(|hash| rpc_req!(self, "blockchain.scripthash.get_history", hash));
+        self.batch_rpc(requests)
     }
 
     /// https://electrumx.readthedocs.io/en/latest/protocol-methods.html#blockchain-scripthash-gethistory

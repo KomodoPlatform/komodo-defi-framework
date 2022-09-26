@@ -684,7 +684,9 @@ fn test_check_balance_on_order_post() {
     // Enable coins. Print the replies in case we need the "address".
     log!(
         "enable_coins (bob): {:?}",
-        block_on(enable_coins_eth_electrum(&mm, &["http://eth1.cipig.net:8555"]))
+        block_on(enable_coins_eth_electrum(&mm, &[
+            "https://mainnet.infura.io/v3/c01c1b4cf66642528547624e1d6d9d6b"
+        ]))
     );
     // issue sell request by setting base/rel price
 
@@ -3631,9 +3633,7 @@ fn test_convert_segwit_address() {
         "!convertaddress success but should be error: {}",
         rc.1
     );
-    assert!(rc
-        .1
-        .contains("Invalid address: ltc1qdkwjk42dw6pryvs9sl0ht3pn3mxghuma64jst5"));
+    assert!(rc.1.contains("Cannot determine format"));
 }
 
 #[test]
@@ -4375,7 +4375,7 @@ fn test_validateaddress_segwit() {
     assert!(!result["is_valid"].as_bool().unwrap());
     let reason = result["reason"].as_str().unwrap();
     log!("{}", reason);
-    assert!(reason.contains("Invalid address: bc1qdkwjk42dw6pryvs9sl0ht3pn3mxghuma64jst5"));
+    assert!(reason.contains("Cannot determine format"));
 
     block_on(mm_alice.stop()).unwrap();
 }

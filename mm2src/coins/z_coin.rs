@@ -6,8 +6,8 @@ use crate::utxo::utxo_builder::{UtxoCoinBuilderCommonOps, UtxoCoinWithIguanaPriv
                                 UtxoFieldsWithIguanaPrivKeyBuilder};
 use crate::utxo::utxo_common::{addresses_from_script, big_decimal_from_sat, big_decimal_from_sat_unsigned,
                                payment_script};
-use crate::utxo::{sat_from_big_decimal, utxo_common, ActualTxFee, AdditionalTxData, Address, BroadcastTxErr,
-                  FeePolicy, GetUtxoListOps, HistoryUtxoTx, HistoryUtxoTxMap, MatureUnspentList,
+use crate::utxo::{sat_from_big_decimal, utxo_common, ActualTxFee, AdditionalTxData, AddrFromStrError, Address,
+                  BroadcastTxErr, FeePolicy, GetUtxoListOps, HistoryUtxoTx, HistoryUtxoTxMap, MatureUnspentList,
                   RecentlySpentOutPointsGuard, UtxoActivationParams, UtxoAddressFormat, UtxoArc, UtxoCoinFields,
                   UtxoCommonOps, UtxoFeeDetails, UtxoRpcMode, UtxoTxBroadcastOps, UtxoTxGenerationOps,
                   VerboseTransactionFrom};
@@ -661,6 +661,7 @@ impl ZCoin {
 
         Ok(MyTxHistoryResponseV2 {
             coin: self.ticker().into(),
+            target: request.target,
             current_block,
             transactions,
             // Zcoin is activated only after the state is synced
@@ -688,7 +689,7 @@ pub enum ZcoinRpcMode {
     },
 }
 
-#[derive(Deserialize)]
+#[derive(Clone, Deserialize)]
 pub struct ZcoinActivationParams {
     pub mode: ZcoinRpcMode,
     pub required_confirmations: Option<u64>,
@@ -1536,7 +1537,7 @@ impl UtxoCommonOps for ZCoin {
         utxo_common::my_public_key(self.as_ref())
     }
 
-    fn address_from_str(&self, address: &str) -> Result<Address, String> {
+    fn address_from_str(&self, address: &str) -> MmResult<Address, AddrFromStrError> {
         utxo_common::checked_address_from_str(self, address)
     }
 

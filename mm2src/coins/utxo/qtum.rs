@@ -2,8 +2,9 @@ use super::*;
 use crate::coin_balance::{self, EnableCoinBalanceError, EnabledCoinBalanceParams, HDAccountBalance, HDAddressBalance,
                           HDWalletBalance, HDWalletBalanceOps};
 use crate::hd_pubkey::{ExtractExtendedPubkey, HDExtractPubkeyError, HDXPubExtractor};
-use crate::hd_wallet::{AccountUpdatingError, AddressDerivingError, HDAccountMut, NewAccountCreatingError};
+use crate::hd_wallet::{AccountUpdatingError, AddressDerivingResult, HDAccountMut, NewAccountCreatingError};
 use crate::hd_wallet_storage::HDWalletCoinWithStorageOps;
+use crate::my_tx_history_v2::{CoinWithTxHistoryV2, MyTxHistoryErrorV2, MyTxHistoryTarget, TxHistoryStorage};
 use crate::rpc_command::account_balance::{self, AccountBalanceParams, AccountBalanceRpcOps, HDAccountBalanceResponse};
 use crate::rpc_command::get_new_address::{self, GetNewAddressParams, GetNewAddressResponse, GetNewAddressRpcError,
                                           GetNewAddressRpcOps};
@@ -14,9 +15,12 @@ use crate::rpc_command::init_create_account::{self, CreateAccountRpcError, Creat
 use crate::rpc_command::init_scan_for_new_addresses::{self, InitScanAddressesRpcOps, ScanAddressesParams,
                                                       ScanAddressesResponse};
 use crate::rpc_command::init_withdraw::{InitWithdrawCoin, WithdrawTaskHandle};
+use crate::tx_history_storage::{GetTxHistoryFilters, WalletId};
 use crate::utxo::utxo_builder::{BlockHeaderUtxoArcOps, MergeUtxoArcOps, UtxoCoinBuildError, UtxoCoinBuilder,
                                 UtxoCoinBuilderCommonOps, UtxoFieldsWithHardwareWalletBuilder,
                                 UtxoFieldsWithIguanaPrivKeyBuilder};
+use crate::utxo::utxo_tx_history_v2::{UtxoMyAddressesHistoryError, UtxoTxDetailsError, UtxoTxDetailsParams,
+                                      UtxoTxHistoryOps};
 use crate::{eth, CanRefundHtlc, CoinBalance, CoinWithDerivationMethod, DelegationError, DelegationFut,
             GetWithdrawSenderAddress, NegotiateSwapContractAddrErr, PrivKeyBuildPolicy, SearchForSwapTxSpendInput,
             SignatureResult, StakingInfosFut, SwapOps, TradePreimageValue, TransactionFut, TxMarshalingErr,
@@ -393,7 +397,7 @@ impl UtxoCommonOps for QtumCoin {
         utxo_common::my_public_key(self.as_ref())
     }
 
-    fn address_from_str(&self, address: &str) -> Result<Address, String> {
+    fn address_from_str(&self, address: &str) -> MmResult<Address, AddrFromStrError> {
         utxo_common::checked_address_from_str(self, address)
     }
 
@@ -952,7 +956,7 @@ impl HDWalletCoinOps for QtumCoin {
         &self,
         hd_account: &Self::HDAccount,
         address_ids: Ids,
-    ) -> MmResult<Vec<HDAddress<Self::Address, Self::Pubkey>>, AddressDerivingError>
+    ) -> AddressDerivingResult<Vec<HDAddress<Self::Address, Self::Pubkey>>>
     where
         Ids: Iterator<Item = HDAddressId> + Send,
     {
@@ -1089,6 +1093,67 @@ impl InitCreateAccountRpcOps for QtumCoin {
 
     async fn revert_creating_account(&self, account_id: u32) {
         init_create_account::common_impl::revert_creating_account(self, account_id).await
+    }
+}
+
+#[async_trait]
+impl CoinWithTxHistoryV2 for QtumCoin {
+    fn history_wallet_id(&self) -> WalletId { utxo_common::utxo_tx_history_v2_common::history_wallet_id(self.as_ref()) }
+
+    async fn get_tx_history_filters(
+        &self,
+        target: MyTxHistoryTarget,
+    ) -> MmResult<GetTxHistoryFilters, MyTxHistoryErrorV2> {
+        utxo_common::utxo_tx_history_v2_common::get_tx_history_filters(self, target).await
+    }
+}
+
+#[async_trait]
+impl UtxoTxHistoryOps for QtumCoin {
+    async fn my_addresses(&self) -> MmResult<HashSet<Address>, UtxoMyAddressesHistoryError> {
+        utxo_common::utxo_tx_history_v2_common::my_addresses(self).await
+    }
+
+    async fn tx_details_by_hash<Storage>(
+        &self,
+        params: UtxoTxDetailsParams<'_, Storage>,
+    ) -> MmResult<Vec<TransactionDetails>, UtxoTxDetailsError>
+    where
+        Storage: TxHistoryStorage,
+    {
+        utxo_common::utxo_tx_history_v2_common::tx_details_by_hash(self, params).await
+    }
+
+    async fn tx_from_storage_or_rpc<Storage: TxHistoryStorage>(
+        &self,
+        tx_hash: &H256Json,
+        storage: &Storage,
+    ) -> MmResult<UtxoTx, UtxoTxDetailsError> {
+        utxo_common::utxo_tx_history_v2_common::tx_from_storage_or_rpc(self, tx_hash, storage).await
+    }
+
+    async fn request_tx_history(
+        &self,
+        metrics: MetricsArc,
+        for_addresses: &HashSet<Address>,
+    ) -> RequestTxHistoryResult {
+        utxo_common::utxo_tx_history_v2_common::request_tx_history(self, metrics, for_addresses).await
+    }
+
+    async fn get_block_timestamp(&self, height: u64) -> MmResult<u64, GetBlockHeaderError> {
+        self.as_ref().rpc_client.get_block_timestamp(height).await
+    }
+
+    async fn my_addresses_balances(&self) -> BalanceResult<HashMap<String, BigDecimal>> {
+        utxo_common::utxo_tx_history_v2_common::my_addresses_balances(self).await
+    }
+
+    fn address_from_str(&self, address: &str) -> MmResult<Address, AddrFromStrError> {
+        utxo_common::checked_address_from_str(self, address)
+    }
+
+    fn set_history_sync_state(&self, new_state: HistorySyncState) {
+        *self.as_ref().history_sync_state.lock().unwrap() = new_state;
     }
 }
 
