@@ -435,6 +435,18 @@ pub enum NegotiateSwapContractAddrErr {
 }
 
 #[derive(Clone, Debug)]
+pub struct WatcherValidatePaymentInput {
+    pub payment_tx: Vec<u8>,
+    pub time_lock: u32,
+    pub taker_pub: Vec<u8>,
+    pub maker_pub: Vec<u8>,
+    pub secret_hash: Vec<u8>,
+    pub amount: BigDecimal,
+    pub try_spv_proof_until: u64,
+    pub confirmations: u64,
+}
+
+#[derive(Clone, Debug)]
 pub struct ValidatePaymentInput {
     pub payment_tx: Vec<u8>,
     pub time_lock: u32,
@@ -492,6 +504,15 @@ pub trait SwapOps {
         swap_unique_data: &[u8],
     ) -> TransactionFut;
 
+    fn create_taker_spends_maker_payment_preimage(
+        &self,
+        _maker_payment_tx: &[u8],
+        _time_lock: u32,
+        _maker_pub: &[u8],
+        _secret_hash: &[u8],
+        _swap_unique_data: &[u8],
+    ) -> TransactionFut;
+
     fn send_taker_spends_maker_payment(
         &self,
         maker_payment_tx: &[u8],
@@ -501,6 +522,8 @@ pub trait SwapOps {
         swap_contract_address: &Option<BytesJson>,
         swap_unique_data: &[u8],
     ) -> TransactionFut;
+
+    fn send_taker_spends_maker_payment_preimage(&self, preimage: &[u8], secret: &[u8]) -> TransactionFut;
 
     fn send_taker_refunds_payment(
         &self,
@@ -535,6 +558,11 @@ pub trait SwapOps {
     fn validate_maker_payment(&self, input: ValidatePaymentInput) -> Box<dyn Future<Item = (), Error = String> + Send>;
 
     fn validate_taker_payment(&self, input: ValidatePaymentInput) -> Box<dyn Future<Item = (), Error = String> + Send>;
+
+    fn watcher_validate_taker_payment(
+        &self,
+        _input: WatcherValidatePaymentInput,
+    ) -> Box<dyn Future<Item = (), Error = String> + Send>;
 
     fn check_if_my_payment_sent(
         &self,

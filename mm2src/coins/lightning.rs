@@ -25,7 +25,7 @@ use crate::{BalanceFut, CoinBalance, FeeApproxStage, FoundSwapTxSpend, HistorySy
             SignatureError, SignatureResult, SwapOps, TradeFee, TradePreimageFut, TradePreimageResult,
             TradePreimageValue, TransactionEnum, TransactionFut, TxMarshalingErr, UnexpectedDerivationMethod,
             UtxoStandardCoin, ValidateAddressResult, ValidatePaymentInput, VerificationError, VerificationResult,
-            WithdrawError, WithdrawFut, WithdrawRequest};
+            WatcherValidatePaymentInput, WithdrawError, WithdrawFut, WithdrawRequest};
 use async_trait::async_trait;
 use bitcoin::hashes::Hash;
 use bitcoin_hashes::sha256::Hash as Sha256;
@@ -314,6 +314,17 @@ impl SwapOps for LightningCoin {
         unimplemented!()
     }
 
+    fn create_taker_spends_maker_payment_preimage(
+        &self,
+        _maker_payment_tx: &[u8],
+        _time_lock: u32,
+        _maker_pub: &[u8],
+        _secret_hash: &[u8],
+        _swap_unique_data: &[u8],
+    ) -> TransactionFut {
+        unimplemented!();
+    }
+
     fn send_taker_spends_maker_payment(
         &self,
         _maker_payment_tx: &[u8],
@@ -324,6 +335,10 @@ impl SwapOps for LightningCoin {
         _swap_unique_data: &[u8],
     ) -> TransactionFut {
         unimplemented!()
+    }
+
+    fn send_taker_spends_maker_payment_preimage(&self, _preimage: &[u8], _secret: &[u8]) -> TransactionFut {
+        unimplemented!();
     }
 
     fn send_taker_refunds_payment(
@@ -374,6 +389,13 @@ impl SwapOps for LightningCoin {
         _input: ValidatePaymentInput,
     ) -> Box<dyn Future<Item = (), Error = String> + Send> {
         unimplemented!()
+    }
+
+    fn watcher_validate_taker_payment(
+        &self,
+        _input: WatcherValidatePaymentInput,
+    ) -> Box<dyn Future<Item = (), Error = String> + Send> {
+        unimplemented!();
     }
 
     fn check_if_my_payment_sent(

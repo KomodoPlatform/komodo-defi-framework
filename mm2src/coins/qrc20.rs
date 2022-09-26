@@ -18,8 +18,8 @@ use crate::{BalanceError, BalanceFut, CoinBalance, FeeApproxStage, FoundSwapTxSp
             SearchForSwapTxSpendInput, SignatureResult, SwapOps, TradeFee, TradePreimageError, TradePreimageFut,
             TradePreimageResult, TradePreimageValue, TransactionDetails, TransactionEnum, TransactionErr,
             TransactionFut, TransactionType, TxMarshalingErr, UnexpectedDerivationMethod, ValidateAddressResult,
-            ValidatePaymentInput, VerificationResult, WithdrawError, WithdrawFee, WithdrawFut, WithdrawRequest,
-            WithdrawResult};
+            ValidatePaymentInput, VerificationResult, WatcherValidatePaymentInput, WithdrawError, WithdrawFee,
+            WithdrawFut, WithdrawRequest, WithdrawResult};
 use async_trait::async_trait;
 use bitcrypto::{dhash160, sha256};
 use chain::TransactionOutput;
@@ -793,6 +793,17 @@ impl SwapOps for Qrc20Coin {
         Box::new(fut.boxed().compat())
     }
 
+    fn create_taker_spends_maker_payment_preimage(
+        &self,
+        _maker_payment_tx: &[u8],
+        _time_lock: u32,
+        _maker_pub: &[u8],
+        _secret_hash: &[u8],
+        _swap_unique_data: &[u8],
+    ) -> TransactionFut {
+        unimplemented!();
+    }
+
     fn send_taker_spends_maker_payment(
         &self,
         maker_payment_tx: &[u8],
@@ -813,6 +824,10 @@ impl SwapOps for Qrc20Coin {
                 .await
         };
         Box::new(fut.boxed().compat())
+    }
+
+    fn send_taker_spends_maker_payment_preimage(&self, _preimage: &[u8], _secret: &[u8]) -> TransactionFut {
+        unimplemented!();
     }
 
     fn send_taker_refunds_payment(
@@ -926,6 +941,13 @@ impl SwapOps for Qrc20Coin {
                 .await
         };
         Box::new(fut.boxed().compat())
+    }
+
+    fn watcher_validate_taker_payment(
+        &self,
+        _input: WatcherValidatePaymentInput,
+    ) -> Box<dyn Future<Item = (), Error = String> + Send> {
+        unimplemented!();
     }
 
     fn check_if_my_payment_sent(
