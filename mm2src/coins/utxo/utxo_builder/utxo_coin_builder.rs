@@ -17,7 +17,7 @@ use common::log::{error, info};
 use common::small_rng;
 use crypto::{Bip32DerPathError, Bip44DerPathError, Bip44PathToCoin, CryptoCtx, CryptoInitError, HwWalletType};
 use derive_more::Display;
-use futures::channel::mpsc::{channel, unbounded, Receiver as AsyncReceiver, UnboundedReceiver};
+use futures::channel::mpsc::{unbounded, Receiver as AsyncReceiver, UnboundedReceiver};
 use futures::compat::Future01CompatExt;
 use futures::lock::Mutex as AsyncMutex;
 use futures::StreamExt;
@@ -26,7 +26,7 @@ pub use keys::{Address, AddressFormat as UtxoAddressFormat, AddressHashEnum, Key
                Type as ScriptType};
 use mm2_core::mm_ctx::MmArc;
 use mm2_err_handle::prelude::*;
-use primitives::hash::H256;
+use primitives::hash::{H160, H256};
 use rand::seq::SliceRandom;
 use serde_json::{self as json, Value as Json};
 use spv_validation::storage::{BlockHeaderStorageError, BlockHeaderStorageOps};
@@ -36,6 +36,7 @@ cfg_native! {
     use crate::utxo::coin_daemon_data_dir;
     use crate::utxo::rpc_clients::{ConcurrentRequestMap, NativeClient, NativeClientImpl};
     use dirs::home_dir;
+    use futures::channel::mpsc::channel;
     use std::path::{Path, PathBuf};
 }
 
@@ -189,7 +190,7 @@ pub trait UtxoFieldsWithHardwareWalletBuilder: UtxoCoinBuilderCommonOps {
         if !self.supports_trezor(&conf) {
             return MmError::err(UtxoCoinBuildError::CoinDoesntSupportTrezor);
         }
-        self.check_if_trezor_is_initialized()?;
+        let hd_wallet_rmd160 = self.trezor_wallet_rmd160()?;
 
         // For now, use a default script pubkey.
         // TODO change the type of `recently_spent_outpoints` to `AsyncMutex<HashMap<Bytes, RecentlySpentOutPoints>>`
@@ -206,6 +207,7 @@ pub trait UtxoFieldsWithHardwareWalletBuilder: UtxoCoinBuilderCommonOps {
             .await?;
         let gap_limit = self.gap_limit();
         let hd_wallet = UtxoHDWallet {
+            hd_wallet_rmd160,
             hd_wallet_storage,
             address_format,
             derivation_path,
@@ -264,6 +266,16 @@ pub trait UtxoFieldsWithHardwareWalletBuilder: UtxoCoinBuilderCommonOps {
     fn gap_limit(&self) -> u32 { self.activation_params().gap_limit.unwrap_or(DEFAULT_GAP_LIMIT) }
 
     fn supports_trezor(&self, conf: &UtxoCoinConf) -> bool { conf.trezor_coin.is_some() }
+
+    fn trezor_wallet_rmd160(&self) -> UtxoCoinBuildResult<H160> {
+        let crypto_ctx = CryptoCtx::from_ctx(self.ctx())?;
+        let hw_ctx = crypto_ctx
+            .hw_ctx()
+            .or_mm_err(|| UtxoCoinBuildError::HwContextNotInitialized)?;
+        match hw_ctx.hw_wallet_type() {
+            HwWalletType::Trezor => Ok(hw_ctx.rmd160()),
+        }
+    }
 
     fn check_if_trezor_is_initialized(&self) -> UtxoCoinBuildResult<()> {
         let crypto_ctx = CryptoCtx::from_ctx(self.ctx())?;
@@ -576,6 +588,18 @@ pub trait UtxoCoinBuilderCommonOps {
     #[cfg(not(target_arch = "wasm32"))]
     fn tx_cache_path(&self) -> PathBuf { self.ctx().dbdir().join("TX_CACHE") }
 
+    // Todo: implement spv for wasm to merge the block_header_status_channel functions
+    #[cfg(target_arch = "wasm32")]
+    fn block_header_status_channel(
+        &self,
+    ) -> (
+        Option<UtxoSyncStatusLoopHandle>,
+        Option<AsyncMutex<AsyncReceiver<UtxoSyncStatus>>>,
+    ) {
+        (None, None)
+    }
+
+    #[cfg(not(target_arch = "wasm32"))]
     fn block_header_status_channel(
         &self,
     ) -> (

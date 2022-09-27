@@ -41,7 +41,8 @@ use mm2_core::mm_ctx::{MmArc, MmWeak};
 use mm2_err_handle::prelude::*;
 use mm2_net::transport::{slurp_url, GuiAuthValidation, GuiAuthValidationGenerator, SlurpError};
 use mm2_number::{BigDecimal, MmNumber};
-#[cfg(test)] use mocktopus::macros::*;
+#[cfg(test)]
+use mocktopus::macros::*;
 use rand::seq::SliceRandom;
 use rpc::v1::types::Bytes as BytesJson;
 use secp256k1::PublicKey;
@@ -54,29 +55,36 @@ use std::path::PathBuf;
 use std::str::FromStr;
 use std::sync::atomic::{AtomicU64, Ordering as AtomicOrdering};
 use std::sync::{Arc, Mutex};
-use web3::types::{Action as TraceAction, BlockId, BlockNumber, Bytes, CallRequest, FilterBuilder, Log, Trace,
-                  TraceFilterBuilder, Transaction as Web3Transaction, TransactionId};
+use web3::types::{
+    Action as TraceAction, BlockId, BlockNumber, Bytes, CallRequest, FilterBuilder, Log, Trace, TraceFilterBuilder,
+    Transaction as Web3Transaction, TransactionId,
+};
 use web3::{self, Web3};
 use web3_transport::{EthFeeHistoryNamespace, Web3Transport, Web3TransportNode};
 
-use super::{coin_conf, AsyncMutex, BalanceError, BalanceFut, CoinBalance, CoinProtocol, CoinTransportMetrics,
-            CoinsContext, FeeApproxStage, FoundSwapTxSpend, HistorySyncState, MarketCoinOps, MmCoin, MyAddressError,
-            NegotiateSwapContractAddrErr, NumConversError, NumConversResult, RawTransactionError, RawTransactionFut,
-            RawTransactionRequest, RawTransactionRes, RawTransactionResult, RpcClientType, RpcTransportEventHandler,
-            RpcTransportEventHandlerShared, SearchForSwapTxSpendInput, SignatureError, SignatureResult, SwapOps,
-            TradeFee, TradePreimageError, TradePreimageFut, TradePreimageResult, TradePreimageValue, Transaction,
-            TransactionDetails, TransactionEnum, TransactionErr, TransactionFut, TxMarshalingErr,
-            UnexpectedDerivationMethod, ValidateAddressResult, ValidatePaymentError, ValidatePaymentFut,
-            ValidatePaymentInput, VerificationError, VerificationResult, WithdrawError, WithdrawFee, WithdrawFut,
-            WithdrawRequest, WithdrawResult};
+use super::{
+    coin_conf, AsyncMutex, BalanceError, BalanceFut, CoinBalance, CoinProtocol, CoinTransportMetrics, CoinsContext,
+    FeeApproxStage, FoundSwapTxSpend, HistorySyncState, MarketCoinOps, MmCoin, MyAddressError,
+    NegotiateSwapContractAddrErr, NumConversError, NumConversResult, RawTransactionError, RawTransactionFut,
+    RawTransactionRequest, RawTransactionRes, RawTransactionResult, RpcClientType, RpcTransportEventHandler,
+    RpcTransportEventHandlerShared, SearchForSwapTxSpendInput, SignatureError, SignatureResult, SwapOps, TradeFee,
+    TradePreimageError, TradePreimageFut, TradePreimageResult, TradePreimageValue, Transaction, TransactionDetails,
+    TransactionEnum, TransactionErr, TransactionFut, TxMarshalingErr, UnexpectedDerivationMethod,
+    ValidateAddressResult, ValidatePaymentError, ValidatePaymentFut, ValidatePaymentInput, VerificationError,
+    VerificationResult, WatcherValidatePaymentInput, WithdrawError, WithdrawFee, WithdrawFut, WithdrawRequest,
+    WithdrawResult,
+};
 
 pub use rlp;
 
-#[cfg(test)] mod eth_tests;
-#[cfg(target_arch = "wasm32")] mod eth_wasm_tests;
+#[cfg(test)]
+mod eth_tests;
+#[cfg(target_arch = "wasm32")]
+mod eth_wasm_tests;
 mod web3_transport;
 
-#[path = "eth/v2_activation.rs"] pub mod v2_activation;
+#[path = "eth/v2_activation.rs"]
+pub mod v2_activation;
 
 /// https://github.com/artemii235/etomic-swap/blob/master/contracts/EtomicSwap.sol
 /// Dev chain (195.201.0.6:8565) contract address: 0xa09ad3cd7e96586ebd05a2607ee56b56fb2db8fd
@@ -139,7 +147,9 @@ pub enum GasStationReqErr {
 }
 
 impl From<serde_json::Error> for GasStationReqErr {
-    fn from(e: serde_json::Error) -> Self { GasStationReqErr::InvalidResponse(e.to_string()) }
+    fn from(e: serde_json::Error) -> Self {
+        GasStationReqErr::InvalidResponse(e.to_string())
+    }
 }
 
 impl From<SlurpError> for GasStationReqErr {
@@ -176,7 +186,9 @@ impl From<GasStationReqErr> for Web3RpcError {
 }
 
 impl From<serde_json::Error> for Web3RpcError {
-    fn from(e: serde_json::Error) -> Self { Web3RpcError::InvalidResponse(e.to_string()) }
+    fn from(e: serde_json::Error) -> Self {
+        Web3RpcError::InvalidResponse(e.to_string())
+    }
 }
 
 impl From<web3::Error> for Web3RpcError {
@@ -194,7 +206,9 @@ impl From<web3::Error> for Web3RpcError {
 }
 
 impl From<web3::Error> for RawTransactionError {
-    fn from(e: web3::Error) -> Self { RawTransactionError::Transport(e.to_string()) }
+    fn from(e: web3::Error) -> Self {
+        RawTransactionError::Transport(e.to_string())
+    }
 }
 
 impl From<ethabi::Error> for Web3RpcError {
@@ -214,7 +228,9 @@ impl From<ethabi::Error> for WithdrawError {
 }
 
 impl From<web3::Error> for WithdrawError {
-    fn from(e: web3::Error) -> Self { WithdrawError::Transport(e.to_string()) }
+    fn from(e: web3::Error) -> Self {
+        WithdrawError::Transport(e.to_string())
+    }
 }
 
 impl From<Web3RpcError> for WithdrawError {
@@ -227,7 +243,9 @@ impl From<Web3RpcError> for WithdrawError {
 }
 
 impl From<web3::Error> for TradePreimageError {
-    fn from(e: web3::Error) -> Self { TradePreimageError::Transport(e.to_string()) }
+    fn from(e: web3::Error) -> Self {
+        TradePreimageError::Transport(e.to_string())
+    }
 }
 
 impl From<Web3RpcError> for TradePreimageError {
@@ -256,7 +274,9 @@ impl From<ethabi::Error> for BalanceError {
 }
 
 impl From<web3::Error> for BalanceError {
-    fn from(e: web3::Error) -> Self { BalanceError::Transport(e.to_string()) }
+    fn from(e: web3::Error) -> Self {
+        BalanceError::Transport(e.to_string())
+    }
 }
 
 #[derive(Debug, Deserialize, Serialize)]
@@ -709,7 +729,9 @@ async fn withdraw_impl(coin: EthCoin, req: WithdrawRequest) -> WithdrawResult {
 pub struct EthCoin(Arc<EthCoinImpl>);
 impl Deref for EthCoin {
     type Target = EthCoinImpl;
-    fn deref(&self) -> &EthCoinImpl { &*self.0 }
+    fn deref(&self) -> &EthCoinImpl {
+        &*self.0
+    }
 }
 
 #[async_trait]
@@ -790,6 +812,21 @@ impl SwapOps for EthCoin {
             self.spend_hash_time_locked_payment(signed, swap_contract_address, secret)
                 .map(TransactionEnum::from),
         )
+    }
+
+    fn send_taker_spends_maker_payment_preimage(&self, _preimage: &[u8], _secret: &[u8]) -> TransactionFut {
+        unimplemented!();
+    }
+
+    fn create_taker_spends_maker_payment_preimage(
+        &self,
+        _maker_payment_tx: &[u8],
+        _time_lock: u32,
+        _maker_pub: &[u8],
+        _secret_hash: &[u8],
+        _swap_unique_data: &[u8],
+    ) -> TransactionFut {
+        unimplemented!();
     }
 
     fn send_taker_spends_maker_payment(
@@ -985,6 +1022,13 @@ impl SwapOps for EthCoin {
         )
     }
 
+    fn watcher_validate_taker_payment(
+        &self,
+        _input: WatcherValidatePaymentInput,
+    ) -> Box<dyn Future<Item = (), Error = String> + Send> {
+        unimplemented!();
+    }
+
     fn check_if_my_payment_sent(
         &self,
         time_lock: u32,
@@ -1122,7 +1166,9 @@ impl SwapOps for EthCoin {
 
 #[cfg_attr(test, mockable)]
 impl MarketCoinOps for EthCoin {
-    fn ticker(&self) -> &str { &self.ticker[..] }
+    fn ticker(&self) -> &str {
+        &self.ticker[..]
+    }
 
     fn my_address(&self) -> MmResult<String, MyAddressError> {
         Ok(checksum_address(&format!("{:#02x}", self.my_address)))
@@ -1401,9 +1447,13 @@ impl MarketCoinOps for EthCoin {
         )
     }
 
-    fn display_priv_key(&self) -> Result<String, String> { Ok(format!("{:#02x}", self.key_pair.secret())) }
+    fn display_priv_key(&self) -> Result<String, String> {
+        Ok(format!("{:#02x}", self.key_pair.secret()))
+    }
 
-    fn min_tx_amount(&self) -> BigDecimal { BigDecimal::from(0) }
+    fn min_tx_amount(&self) -> BigDecimal {
+        BigDecimal::from(0)
+    }
 
     fn min_trading_vol(&self) -> MmNumber {
         let pow = self.decimals / 3;
@@ -3052,7 +3102,9 @@ impl EthTxFeeDetails {
 
 #[async_trait]
 impl MmCoin for EthCoin {
-    fn is_asset_chain(&self) -> bool { false }
+    fn is_asset_chain(&self) -> bool {
+        false
+    }
 
     fn get_raw_transaction(&self, req: RawTransactionRequest) -> RawTransactionFut {
         Box::new(get_raw_transaction_impl(self.clone(), req).boxed().compat())
@@ -3062,7 +3114,9 @@ impl MmCoin for EthCoin {
         Box::new(Box::pin(withdraw_impl(self.clone(), req)).compat())
     }
 
-    fn decimals(&self) -> u8 { self.decimals }
+    fn decimals(&self) -> u8 {
+        self.decimals
+    }
 
     fn convert_to_address(&self, from: &str, to_address_format: Json) -> Result<String, String> {
         let to_address_format: EthAddressFormat =
@@ -3106,7 +3160,9 @@ impl MmCoin for EthCoin {
         }
     }
 
-    fn history_sync_status(&self) -> HistorySyncState { self.history_sync_state.lock().unwrap().clone() }
+    fn history_sync_status(&self) -> HistorySyncState {
+        self.history_sync_state.lock().unwrap().clone()
+    }
 
     fn get_trade_fee(&self) -> Box<dyn Future<Item = TradeFee, Error = String> + Send> {
         let coin = self.clone();
@@ -3245,9 +3301,13 @@ impl MmCoin for EthCoin {
         })
     }
 
-    fn required_confirmations(&self) -> u64 { self.required_confirmations.load(AtomicOrdering::Relaxed) }
+    fn required_confirmations(&self) -> u64 {
+        self.required_confirmations.load(AtomicOrdering::Relaxed)
+    }
 
-    fn requires_notarization(&self) -> bool { false }
+    fn requires_notarization(&self) -> bool {
+        false
+    }
 
     fn set_required_confirmations(&self, confirmations: u64) {
         self.required_confirmations
@@ -3262,11 +3322,17 @@ impl MmCoin for EthCoin {
         Some(BytesJson::from(self.swap_contract_address.0.as_ref()))
     }
 
-    fn mature_confirmations(&self) -> Option<u32> { None }
+    fn mature_confirmations(&self) -> Option<u32> {
+        None
+    }
 
-    fn coin_protocol_info(&self) -> Vec<u8> { Vec::new() }
+    fn coin_protocol_info(&self) -> Vec<u8> {
+        Vec::new()
+    }
 
-    fn is_coin_protocol_supported(&self, _info: &Option<Vec<u8>>) -> bool { true }
+    fn is_coin_protocol_supported(&self, _info: &Option<Vec<u8>>) -> bool {
+        true
+    }
 }
 
 pub trait TryToAddress {
@@ -3274,7 +3340,9 @@ pub trait TryToAddress {
 }
 
 impl TryToAddress for BytesJson {
-    fn try_to_address(&self) -> Result<Address, String> { Ok(Address::from(self.0.as_slice())) }
+    fn try_to_address(&self) -> Result<Address, String> {
+        Ok(Address::from(self.0.as_slice()))
+    }
 }
 
 impl<T: TryToAddress> TryToAddress for Option<T> {
@@ -3374,9 +3442,13 @@ pub fn wei_from_big_decimal(amount: &BigDecimal, decimals: u8) -> NumConversResu
 }
 
 impl Transaction for SignedEthTx {
-    fn tx_hex(&self) -> Vec<u8> { rlp::encode(self).to_vec() }
+    fn tx_hex(&self) -> Vec<u8> {
+        rlp::encode(self).to_vec()
+    }
 
-    fn tx_hash(&self) -> BytesJson { self.hash.to_vec().into() }
+    fn tx_hash(&self) -> BytesJson {
+        self.hash.to_vec().into()
+    }
 }
 
 fn signed_tx_from_web3_tx(transaction: Web3Transaction) -> Result<SignedEthTx, String> {
@@ -3421,7 +3493,9 @@ pub enum GasStationPricePolicy {
 }
 
 impl Default for GasStationPricePolicy {
-    fn default() -> Self { GasStationPricePolicy::MeanAverageFast }
+    fn default() -> Self {
+        GasStationPricePolicy::MeanAverageFast
+    }
 }
 
 impl GasStationData {
@@ -3492,7 +3566,9 @@ fn rpc_event_handlers_for_eth_transport(ctx: &MmArc, ticker: String) -> Vec<RpcT
 }
 
 #[inline]
-fn new_nonce_lock() -> Arc<AsyncMutex<()>> { Arc::new(AsyncMutex::new(())) }
+fn new_nonce_lock() -> Arc<AsyncMutex<()>> {
+    Arc::new(AsyncMutex::new(()))
+}
 
 pub async fn eth_coin_from_conf_and_request(
     ctx: &MmArc,
@@ -3667,7 +3743,9 @@ fn checksum_address(addr: &str) -> String {
 
 /// Checks that input is valid mixed-case checksum form address
 /// The input must be 0x prefixed hex string
-fn is_valid_checksum_addr(addr: &str) -> bool { addr == checksum_address(addr) }
+fn is_valid_checksum_addr(addr: &str) -> bool {
+    addr == checksum_address(addr)
+}
 
 /// Requests the nonce from all available nodes and checks that returned results equal.
 /// Nodes might need some time to sync and there can be other coins that use same nodes in different order.

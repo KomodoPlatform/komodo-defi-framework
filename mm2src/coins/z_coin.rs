@@ -1,24 +1,29 @@
 use crate::coin_errors::MyAddressError;
 use crate::my_tx_history_v2::{MyTxHistoryErrorV2, MyTxHistoryRequestV2, MyTxHistoryResponseV2};
 use crate::rpc_command::init_withdraw::{InitWithdrawCoin, WithdrawInProgressStatus, WithdrawTaskHandle};
-use crate::utxo::rpc_clients::{ElectrumRpcRequest, UnspentInfo, UtxoRpcClientEnum, UtxoRpcError, UtxoRpcFut,
-                               UtxoRpcResult};
-use crate::utxo::utxo_builder::{UtxoCoinBuilderCommonOps, UtxoCoinWithIguanaPrivKeyBuilder,
-                                UtxoFieldsWithIguanaPrivKeyBuilder};
-use crate::utxo::utxo_common::{addresses_from_script, big_decimal_from_sat, big_decimal_from_sat_unsigned,
-                               payment_script};
-use crate::utxo::{sat_from_big_decimal, utxo_common, ActualTxFee, AdditionalTxData, Address, BroadcastTxErr,
-                  FeePolicy, GetUtxoListOps, HistoryUtxoTx, HistoryUtxoTxMap, MatureUnspentList,
-                  RecentlySpentOutPointsGuard, UtxoActivationParams, UtxoAddressFormat, UtxoArc, UtxoCoinFields,
-                  UtxoCommonOps, UtxoFeeDetails, UtxoRpcMode, UtxoTxBroadcastOps, UtxoTxGenerationOps,
-                  VerboseTransactionFrom};
-use crate::{BalanceError, BalanceFut, CoinBalance, FeeApproxStage, FoundSwapTxSpend, HistorySyncState, MarketCoinOps,
-            MmCoin, NegotiateSwapContractAddrErr, NumConversError, PrivKeyActivationPolicy, RawTransactionFut,
-            RawTransactionRequest, SearchForSwapTxSpendInput, SignatureError, SignatureResult, SwapOps, TradeFee,
-            TradePreimageFut, TradePreimageResult, TradePreimageValue, TransactionDetails, TransactionEnum,
-            TransactionFut, TxFeeDetails, TxMarshalingErr, UnexpectedDerivationMethod, ValidateAddressResult,
-            ValidatePaymentFut, ValidatePaymentInput, VerificationError, VerificationResult, WithdrawFut,
-            WithdrawRequest};
+use crate::utxo::rpc_clients::{
+    ElectrumRpcRequest, UnspentInfo, UtxoRpcClientEnum, UtxoRpcError, UtxoRpcFut, UtxoRpcResult,
+};
+use crate::utxo::utxo_builder::{
+    UtxoCoinBuilderCommonOps, UtxoCoinWithIguanaPrivKeyBuilder, UtxoFieldsWithIguanaPrivKeyBuilder,
+};
+use crate::utxo::utxo_common::{
+    addresses_from_script, big_decimal_from_sat, big_decimal_from_sat_unsigned, payment_script,
+};
+use crate::utxo::{
+    sat_from_big_decimal, utxo_common, ActualTxFee, AdditionalTxData, AddrFromStrError, Address, BroadcastTxErr,
+    FeePolicy, GetUtxoListOps, HistoryUtxoTx, HistoryUtxoTxMap, MatureUnspentList, RecentlySpentOutPointsGuard,
+    UtxoActivationParams, UtxoAddressFormat, UtxoArc, UtxoCoinFields, UtxoCommonOps, UtxoFeeDetails, UtxoRpcMode,
+    UtxoTxBroadcastOps, UtxoTxGenerationOps, VerboseTransactionFrom,
+};
+use crate::{
+    BalanceError, BalanceFut, CoinBalance, FeeApproxStage, FoundSwapTxSpend, HistorySyncState, MarketCoinOps, MmCoin,
+    NegotiateSwapContractAddrErr, NumConversError, PrivKeyActivationPolicy, RawTransactionFut, RawTransactionRequest,
+    SearchForSwapTxSpendInput, SignatureError, SignatureResult, SwapOps, TradeFee, TradePreimageFut,
+    TradePreimageResult, TradePreimageValue, TransactionDetails, TransactionEnum, TransactionFut, TxFeeDetails,
+    TxMarshalingErr, UnexpectedDerivationMethod, ValidateAddressResult, ValidatePaymentFut, ValidatePaymentInput,
+    VerificationError, VerificationResult, WatcherValidatePaymentInput, WithdrawFut, WithdrawRequest,
+};
 use crate::{Transaction, WithdrawError};
 use async_trait::async_trait;
 use bitcrypto::{dhash160, dhash256};
@@ -38,7 +43,8 @@ use keys::{KeyPair, Message, Public};
 use mm2_core::mm_ctx::MmArc;
 use mm2_err_handle::prelude::*;
 use mm2_number::{BigDecimal, MmNumber};
-#[cfg(test)] use mocktopus::macros::*;
+#[cfg(test)]
+use mocktopus::macros::*;
 use parking_lot::Mutex;
 use primitives::bytes::Bytes;
 use rpc::v1::types::{Bytes as BytesJson, Transaction as RpcTransaction, H256 as H256Json};
@@ -62,8 +68,10 @@ use zcash_primitives::sapling::note_encryption::try_sapling_output_recovery;
 use zcash_primitives::transaction::builder::Builder as ZTxBuilder;
 use zcash_primitives::transaction::components::{Amount, TxOut};
 use zcash_primitives::transaction::Transaction as ZTransaction;
-use zcash_primitives::{consensus, constants::mainnet as z_mainnet_constants, sapling::PaymentAddress,
-                       zip32::ExtendedFullViewingKey, zip32::ExtendedSpendingKey};
+use zcash_primitives::{
+    consensus, constants::mainnet as z_mainnet_constants, sapling::PaymentAddress, zip32::ExtendedFullViewingKey,
+    zip32::ExtendedSpendingKey,
+};
 use zcash_proofs::prover::LocalTxProver;
 
 mod z_htlc;
@@ -146,17 +154,29 @@ impl Parameters for ZcoinConsensusParams {
         }
     }
 
-    fn coin_type(&self) -> u32 { self.coin_type }
+    fn coin_type(&self) -> u32 {
+        self.coin_type
+    }
 
-    fn hrp_sapling_extended_spending_key(&self) -> &str { &self.hrp_sapling_extended_spending_key }
+    fn hrp_sapling_extended_spending_key(&self) -> &str {
+        &self.hrp_sapling_extended_spending_key
+    }
 
-    fn hrp_sapling_extended_full_viewing_key(&self) -> &str { &self.hrp_sapling_extended_full_viewing_key }
+    fn hrp_sapling_extended_full_viewing_key(&self) -> &str {
+        &self.hrp_sapling_extended_full_viewing_key
+    }
 
-    fn hrp_sapling_payment_address(&self) -> &str { &self.hrp_sapling_payment_address }
+    fn hrp_sapling_payment_address(&self) -> &str {
+        &self.hrp_sapling_payment_address
+    }
 
-    fn b58_pubkey_address_prefix(&self) -> [u8; 2] { self.b58_pubkey_address_prefix }
+    fn b58_pubkey_address_prefix(&self) -> [u8; 2] {
+        self.b58_pubkey_address_prefix
+    }
 
-    fn b58_script_address_prefix(&self) -> [u8; 2] { self.b58_script_address_prefix }
+    fn b58_script_address_prefix(&self) -> [u8; 2] {
+        self.b58_script_address_prefix
+    }
 }
 
 pub struct ZCoinFields {
@@ -256,16 +276,24 @@ pub struct ZcoinTxDetails {
 
 impl ZCoin {
     #[inline]
-    pub fn utxo_rpc_client(&self) -> &UtxoRpcClientEnum { &self.utxo_arc.rpc_client }
+    pub fn utxo_rpc_client(&self) -> &UtxoRpcClientEnum {
+        &self.utxo_arc.rpc_client
+    }
 
     #[inline]
-    pub fn my_z_address_encoded(&self) -> String { self.z_fields.my_z_addr_encoded.clone() }
+    pub fn my_z_address_encoded(&self) -> String {
+        self.z_fields.my_z_addr_encoded.clone()
+    }
 
     #[inline]
-    pub fn consensus_params(&self) -> ZcoinConsensusParams { self.z_fields.consensus_params.clone() }
+    pub fn consensus_params(&self) -> ZcoinConsensusParams {
+        self.z_fields.consensus_params.clone()
+    }
 
     #[inline]
-    pub fn consensus_params_ref(&self) -> &ZcoinConsensusParams { &self.z_fields.consensus_params }
+    pub fn consensus_params_ref(&self) -> &ZcoinConsensusParams {
+        &self.z_fields.consensus_params
+    }
 
     #[inline]
     pub async fn sync_status(&self) -> Result<SyncStatus, MmError<BlockchainScanStopped>> {
@@ -663,6 +691,7 @@ impl ZCoin {
 
         Ok(MyTxHistoryResponseV2 {
             coin: self.ticker().into(),
+            target: request.target,
             current_block,
             transactions,
             // Zcoin is activated only after the state is synced
@@ -677,7 +706,9 @@ impl ZCoin {
 }
 
 impl AsRef<UtxoCoinFields> for ZCoin {
-    fn as_ref(&self) -> &UtxoCoinFields { &self.utxo_arc }
+    fn as_ref(&self) -> &UtxoCoinFields {
+        &self.utxo_arc
+    }
 }
 
 #[derive(Clone, Debug, Deserialize, Serialize)]
@@ -690,7 +721,7 @@ pub enum ZcoinRpcMode {
     },
 }
 
-#[derive(Deserialize)]
+#[derive(Clone, Deserialize)]
 pub struct ZcoinActivationParams {
     pub mode: ZcoinRpcMode,
     pub required_confirmations: Option<u64>,
@@ -723,13 +754,21 @@ pub struct ZCoinBuilder<'a> {
 }
 
 impl<'a> UtxoCoinBuilderCommonOps for ZCoinBuilder<'a> {
-    fn ctx(&self) -> &MmArc { self.ctx }
+    fn ctx(&self) -> &MmArc {
+        self.ctx
+    }
 
-    fn conf(&self) -> &Json { self.conf }
+    fn conf(&self) -> &Json {
+        self.conf
+    }
 
-    fn activation_params(&self) -> &UtxoActivationParams { &self.utxo_params }
+    fn activation_params(&self) -> &UtxoActivationParams {
+        &self.utxo_params
+    }
 
-    fn ticker(&self) -> &str { self.ticker }
+    fn ticker(&self) -> &str {
+        self.ticker
+    }
 }
 
 #[async_trait]
@@ -740,7 +779,9 @@ impl<'a> UtxoCoinWithIguanaPrivKeyBuilder for ZCoinBuilder<'a> {
     type ResultCoin = ZCoin;
     type Error = ZCoinBuildError;
 
-    fn priv_key(&self) -> &[u8] { self.secp_priv_key }
+    fn priv_key(&self) -> &[u8] {
+        self.secp_priv_key
+    }
 
     async fn build(self) -> MmResult<Self::ResultCoin, Self::Error> {
         let utxo = self.build_utxo_fields_with_iguana_priv_key(self.priv_key()).await?;
@@ -896,16 +937,22 @@ async fn z_coin_from_conf_and_params_with_z_key(
 }
 
 impl MarketCoinOps for ZCoin {
-    fn ticker(&self) -> &str { &self.utxo_arc.conf.ticker }
+    fn ticker(&self) -> &str {
+        &self.utxo_arc.conf.ticker
+    }
 
-    fn my_address(&self) -> MmResult<String, MyAddressError> { Ok(self.z_fields.my_z_addr_encoded.clone()) }
+    fn my_address(&self) -> MmResult<String, MyAddressError> {
+        Ok(self.z_fields.my_z_addr_encoded.clone())
+    }
 
     fn get_public_key(&self) -> Result<String, MmError<UnexpectedDerivationMethod>> {
         let pubkey = utxo_common::my_public_key(self.as_ref())?;
         Ok(pubkey.to_string())
     }
 
-    fn sign_message_hash(&self, _message: &str) -> Option<[u8; 32]> { None }
+    fn sign_message_hash(&self, _message: &str) -> Option<[u8; 32]> {
+        None
+    }
 
     fn sign_message(&self, _message: &str) -> SignatureResult<String> {
         MmError::err(SignatureError::InvalidRequest(
@@ -931,9 +978,13 @@ impl MarketCoinOps for ZCoin {
         Box::new(fut.boxed().compat())
     }
 
-    fn base_coin_balance(&self) -> BalanceFut<BigDecimal> { utxo_common::base_coin_balance(self) }
+    fn base_coin_balance(&self) -> BalanceFut<BigDecimal> {
+        utxo_common::base_coin_balance(self)
+    }
 
-    fn platform_ticker(&self) -> &str { self.ticker() }
+    fn platform_ticker(&self) -> &str {
+        self.ticker()
+    }
 
     fn send_raw_tx(&self, tx: &str) -> Box<dyn Future<Item = String, Error = String> + Send> {
         let tx_bytes = try_fus!(hex::decode(tx));
@@ -1010,11 +1061,17 @@ impl MarketCoinOps for ZCoin {
         ))
     }
 
-    fn min_tx_amount(&self) -> BigDecimal { utxo_common::min_tx_amount(self.as_ref()) }
+    fn min_tx_amount(&self) -> BigDecimal {
+        utxo_common::min_tx_amount(self.as_ref())
+    }
 
-    fn min_trading_vol(&self) -> MmNumber { utxo_common::min_trading_vol(self.as_ref()) }
+    fn min_trading_vol(&self) -> MmNumber {
+        utxo_common::min_trading_vol(self.as_ref())
+    }
 
-    fn is_privacy(&self) -> bool { true }
+    fn is_privacy(&self) -> bool {
+        true
+    }
 }
 
 #[async_trait]
@@ -1127,6 +1184,17 @@ impl SwapOps for ZCoin {
         Box::new(fut.boxed().compat())
     }
 
+    fn create_taker_spends_maker_payment_preimage(
+        &self,
+        _maker_payment_tx: &[u8],
+        _time_lock: u32,
+        _maker_pub: &[u8],
+        _secret_hash: &[u8],
+        _swap_unique_data: &[u8],
+    ) -> TransactionFut {
+        unimplemented!();
+    }
+
     fn send_taker_spends_maker_payment(
         &self,
         maker_payment_tx: &[u8],
@@ -1163,6 +1231,10 @@ impl SwapOps for ZCoin {
             Ok(tx.into())
         };
         Box::new(fut.boxed().compat())
+    }
+
+    fn send_taker_spends_maker_payment_preimage(&self, _preimage: &[u8], _secret: &[u8]) -> TransactionFut {
+        unimplemented!();
     }
 
     fn send_taker_refunds_payment(
@@ -1328,6 +1400,13 @@ impl SwapOps for ZCoin {
         utxo_common::validate_taker_payment(self, input)
     }
 
+    fn watcher_validate_taker_payment(
+        &self,
+        _input: WatcherValidatePaymentInput,
+    ) -> Box<dyn Future<Item = (), Error = String> + Send> {
+        unimplemented!();
+    }
+
     fn check_if_my_payment_sent(
         &self,
         time_lock: u32,
@@ -1376,7 +1455,9 @@ impl SwapOps for ZCoin {
 
 #[async_trait]
 impl MmCoin for ZCoin {
-    fn is_asset_chain(&self) -> bool { self.utxo_arc.conf.asset_chain }
+    fn is_asset_chain(&self) -> bool {
+        self.utxo_arc.conf.asset_chain
+    }
 
     fn withdraw(&self, _req: WithdrawRequest) -> WithdrawFut {
         Box::new(futures01::future::err(MmError::new(WithdrawError::InternalError(
@@ -1388,7 +1469,9 @@ impl MmCoin for ZCoin {
         Box::new(utxo_common::get_raw_transaction(&self.utxo_arc, req).boxed().compat())
     }
 
-    fn decimals(&self) -> u8 { self.utxo_arc.decimals }
+    fn decimals(&self) -> u8 {
+        self.utxo_arc.decimals
+    }
 
     fn convert_to_address(&self, _from: &str, _to_address_format: Json) -> Result<String, String> {
         Err(MmError::new("Address conversion is not available for ZCoin".to_string()).to_string())
@@ -1416,7 +1499,9 @@ impl MmCoin for ZCoin {
         Box::new(futures01::future::err(()))
     }
 
-    fn history_sync_status(&self) -> HistorySyncState { HistorySyncState::NotEnabled }
+    fn history_sync_status(&self) -> HistorySyncState {
+        HistorySyncState::NotEnabled
+    }
 
     fn get_trade_fee(&self) -> Box<dyn Future<Item = TradeFee, Error = String> + Send> {
         utxo_common::get_trade_fee(self.clone())
@@ -1450,9 +1535,13 @@ impl MmCoin for ZCoin {
         })
     }
 
-    fn required_confirmations(&self) -> u64 { utxo_common::required_confirmations(&self.utxo_arc) }
+    fn required_confirmations(&self) -> u64 {
+        utxo_common::required_confirmations(&self.utxo_arc)
+    }
 
-    fn requires_notarization(&self) -> bool { utxo_common::requires_notarization(&self.utxo_arc) }
+    fn requires_notarization(&self) -> bool {
+        utxo_common::requires_notarization(&self.utxo_arc)
+    }
 
     fn set_required_confirmations(&self, confirmations: u64) {
         utxo_common::set_required_confirmations(&self.utxo_arc, confirmations)
@@ -1462,11 +1551,17 @@ impl MmCoin for ZCoin {
         utxo_common::set_requires_notarization(&self.utxo_arc, requires_nota)
     }
 
-    fn swap_contract_address(&self) -> Option<BytesJson> { utxo_common::swap_contract_address() }
+    fn swap_contract_address(&self) -> Option<BytesJson> {
+        utxo_common::swap_contract_address()
+    }
 
-    fn mature_confirmations(&self) -> Option<u32> { Some(self.utxo_arc.conf.mature_confirmations) }
+    fn mature_confirmations(&self) -> Option<u32> {
+        Some(self.utxo_arc.conf.mature_confirmations)
+    }
 
-    fn coin_protocol_info(&self) -> Vec<u8> { utxo_common::coin_protocol_info(self) }
+    fn coin_protocol_info(&self) -> Vec<u8> {
+        utxo_common::coin_protocol_info(self)
+    }
 
     fn is_coin_protocol_supported(&self, info: &Option<Vec<u8>>) -> bool {
         utxo_common::is_coin_protocol_supported(self, info)
@@ -1475,7 +1570,9 @@ impl MmCoin for ZCoin {
 
 #[async_trait]
 impl UtxoTxGenerationOps for ZCoin {
-    async fn get_tx_fee(&self) -> UtxoRpcResult<ActualTxFee> { utxo_common::get_tx_fee(&self.utxo_arc).await }
+    async fn get_tx_fee(&self) -> UtxoRpcResult<ActualTxFee> {
+        utxo_common::get_tx_fee(&self.utxo_arc).await
+    }
 
     async fn calc_interest_if_required(
         &self,
@@ -1532,13 +1629,15 @@ impl UtxoCommonOps for ZCoin {
         utxo_common::addresses_from_script(self, script)
     }
 
-    fn denominate_satoshis(&self, satoshi: i64) -> f64 { utxo_common::denominate_satoshis(&self.utxo_arc, satoshi) }
+    fn denominate_satoshis(&self, satoshi: i64) -> f64 {
+        utxo_common::denominate_satoshis(&self.utxo_arc, satoshi)
+    }
 
     fn my_public_key(&self) -> Result<&Public, MmError<UnexpectedDerivationMethod>> {
         utxo_common::my_public_key(self.as_ref())
     }
 
-    fn address_from_str(&self, address: &str) -> Result<Address, String> {
+    fn address_from_str(&self, address: &str) -> MmResult<Address, AddrFromStrError> {
         utxo_common::checked_address_from_str(self, address)
     }
 
@@ -1607,7 +1706,9 @@ impl UtxoCommonOps for ZCoin {
         utxo_common::p2sh_tx_locktime(self, self.ticker(), htlc_locktime).await
     }
 
-    fn addr_format(&self) -> &UtxoAddressFormat { utxo_common::addr_format(self) }
+    fn addr_format(&self) -> &UtxoAddressFormat {
+        utxo_common::addr_format(self)
+    }
 
     fn addr_format_for_standard_scripts(&self) -> UtxoAddressFormat {
         utxo_common::addr_format_for_standard_scripts(self)

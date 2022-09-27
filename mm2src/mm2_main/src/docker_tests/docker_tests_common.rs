@@ -259,6 +259,27 @@ pub fn utxo_coin_from_privkey(ticker: &str, priv_key: &[u8]) -> (MmArc, UtxoStan
     (ctx, coin)
 }
 
+/// Create a UTXO coin for the given privkey and fill it's address with the specified balance.
+pub fn generate_utxo_coin_with_privkey(ticker: &str, balance: BigDecimal, priv_key: &[u8]) {
+    let (_, coin) = utxo_coin_from_privkey(ticker, priv_key);
+    let timeout = 30; // timeout if test takes more than 30 seconds to run
+    let my_address = coin.my_address().expect("!my_address");
+    fill_address(&coin, &my_address, balance, timeout);
+}
+
+/// Generate random privkey, create a UTXO coin and fill it's address with the specified balance.
+pub fn generate_utxo_coin_with_random_privkey(
+    ticker: &str,
+    balance: BigDecimal,
+) -> (MmArc, UtxoStandardCoin, [u8; 32]) {
+    let priv_key = SecretKey::new(&mut rand6::thread_rng());
+    let (ctx, coin) = utxo_coin_from_privkey(ticker, priv_key.as_ref());
+    let timeout = 30; // timeout if test takes more than 30 seconds to run
+    let my_address = coin.my_address().expect("!my_address");
+    fill_address(&coin, &my_address, balance, timeout);
+    (ctx, coin, *priv_key.as_ref())
+}
+
 /// Get only one address assigned the specified label.
 pub fn get_address_by_label<T>(coin: T, label: &str) -> String
 where

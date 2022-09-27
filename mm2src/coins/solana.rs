@@ -2,11 +2,13 @@ use super::{CoinBalance, HistorySyncState, MarketCoinOps, MmCoin, SwapOps, Trade
 use crate::coin_errors::MyAddressError;
 use crate::solana::solana_common::{lamports_to_sol, PrepareTransferData, SufficientBalanceError};
 use crate::solana::spl::SplTokenInfo;
-use crate::{BalanceError, BalanceFut, FeeApproxStage, FoundSwapTxSpend, NegotiateSwapContractAddrErr,
-            RawTransactionFut, RawTransactionRequest, SearchForSwapTxSpendInput, SignatureResult, TradePreimageFut,
-            TradePreimageResult, TradePreimageValue, TransactionDetails, TransactionFut, TransactionType,
-            TxMarshalingErr, UnexpectedDerivationMethod, ValidateAddressResult, ValidatePaymentFut,
-            ValidatePaymentInput, VerificationResult, WithdrawError, WithdrawFut, WithdrawRequest, WithdrawResult};
+use crate::{
+    BalanceError, BalanceFut, FeeApproxStage, FoundSwapTxSpend, NegotiateSwapContractAddrErr, RawTransactionFut,
+    RawTransactionRequest, SearchForSwapTxSpendInput, SignatureResult, TradePreimageFut, TradePreimageResult,
+    TradePreimageValue, TransactionDetails, TransactionFut, TransactionType, TxMarshalingErr,
+    UnexpectedDerivationMethod, ValidateAddressResult, ValidatePaymentFut, ValidatePaymentInput, VerificationResult,
+    WatcherValidatePaymentInput, WithdrawError, WithdrawFut, WithdrawRequest, WithdrawResult,
+};
 use async_trait::async_trait;
 use base58::ToBase58;
 use bincode::{deserialize, serialize};
@@ -21,25 +23,32 @@ use mm2_number::{BigDecimal, MmNumber};
 use rpc::v1::types::Bytes as BytesJson;
 use serde_json::{self as json, Value as Json};
 use solana_client::rpc_request::TokenAccountsFilter;
-use solana_client::{client_error::{ClientError, ClientErrorKind},
-                    rpc_client::RpcClient};
+use solana_client::{
+    client_error::{ClientError, ClientErrorKind},
+    rpc_client::RpcClient,
+};
 use solana_sdk::commitment_config::{CommitmentConfig, CommitmentLevel};
 use solana_sdk::program_error::ProgramError;
 use solana_sdk::pubkey::ParsePubkeyError;
 use solana_sdk::transaction::Transaction;
-use solana_sdk::{pubkey::Pubkey,
-                 signature::{Keypair, Signer}};
+use solana_sdk::{
+    pubkey::Pubkey,
+    signature::{Keypair, Signer},
+};
 use std::collections::HashMap;
 use std::str::FromStr;
 use std::sync::Mutex;
 use std::{convert::TryFrom, fmt::Debug, ops::Deref, sync::Arc};
 
 pub mod solana_common;
-#[cfg(test)] mod solana_common_tests;
+#[cfg(test)]
+mod solana_common_tests;
 mod solana_decode_tx_helpers;
-#[cfg(test)] mod solana_tests;
+#[cfg(test)]
+mod solana_tests;
 pub mod spl;
-#[cfg(test)] mod spl_tests;
+#[cfg(test)]
+mod spl_tests;
 
 pub const SOLANA_DEFAULT_DECIMALS: u64 = 9;
 pub const LAMPORTS_DUMMY_AMOUNT: u64 = 10;
@@ -74,7 +83,9 @@ impl From<ClientError> for BalanceError {
 }
 
 impl From<ParsePubkeyError> for BalanceError {
-    fn from(e: ParsePubkeyError) -> Self { BalanceError::Internal(format!("{:?}", e)) }
+    fn from(e: ParsePubkeyError) -> Self {
+        BalanceError::Internal(format!("{:?}", e))
+    }
 }
 
 impl From<ClientError> for WithdrawError {
@@ -93,11 +104,15 @@ impl From<ClientError> for WithdrawError {
 }
 
 impl From<ParsePubkeyError> for WithdrawError {
-    fn from(e: ParsePubkeyError) -> Self { WithdrawError::InvalidAddress(format!("{:?}", e)) }
+    fn from(e: ParsePubkeyError) -> Self {
+        WithdrawError::InvalidAddress(format!("{:?}", e))
+    }
 }
 
 impl From<ProgramError> for WithdrawError {
-    fn from(e: ProgramError) -> Self { WithdrawError::InternalError(format!("{:?}", e)) }
+    fn from(e: ProgramError) -> Self {
+        WithdrawError::InternalError(format!("{:?}", e))
+    }
 }
 
 #[derive(Debug)]
@@ -108,11 +123,15 @@ pub enum AccountError {
 }
 
 impl From<ClientError> for AccountError {
-    fn from(e: ClientError) -> Self { AccountError::ClientError(e.kind) }
+    fn from(e: ClientError) -> Self {
+        AccountError::ClientError(e.kind)
+    }
 }
 
 impl From<ParsePubkeyError> for AccountError {
-    fn from(e: ParsePubkeyError) -> Self { AccountError::ParsePubKeyError(format!("{:?}", e)) }
+    fn from(e: ParsePubkeyError) -> Self {
+        AccountError::ParsePubKeyError(format!("{:?}", e))
+    }
 }
 
 impl From<AccountError> for WithdrawError {
@@ -147,7 +166,9 @@ pub enum KeyPairCreationError {
 }
 
 impl From<ed25519_dalek::SignatureError> for KeyPairCreationError {
-    fn from(e: ed25519_dalek::SignatureError) -> Self { KeyPairCreationError::SignatureError(e) }
+    fn from(e: ed25519_dalek::SignatureError) -> Self {
+        KeyPairCreationError::SignatureError(e)
+    }
 }
 
 fn generate_keypair_from_slice(priv_key: &[u8]) -> Result<Keypair, MmError<KeyPairCreationError>> {
@@ -167,9 +188,12 @@ pub async fn solana_coin_from_conf_and_params(
     params: SolanaActivationParams,
     priv_key: &[u8],
 ) -> Result<SolanaCoin, String> {
-    let client = RpcClient::new_with_commitment(params.client_url.clone(), CommitmentConfig {
-        commitment: params.confirmation_commitment,
-    });
+    let client = RpcClient::new_with_commitment(
+        params.client_url.clone(),
+        CommitmentConfig {
+            commitment: params.confirmation_commitment,
+        },
+    );
     let decimals = conf["decimals"].as_u64().unwrap_or(SOLANA_DEFAULT_DECIMALS) as u8;
     let key_pair = try_s!(generate_keypair_from_slice(priv_key));
     let my_address = key_pair.pubkey().to_string();
@@ -199,14 +223,20 @@ pub struct SolanaCoinImpl {
 pub struct SolanaCoin(Arc<SolanaCoinImpl>);
 impl Deref for SolanaCoin {
     type Target = SolanaCoinImpl;
-    fn deref(&self) -> &SolanaCoinImpl { &*self.0 }
+    fn deref(&self) -> &SolanaCoinImpl {
+        &*self.0
+    }
 }
 
 #[async_trait]
 impl SolanaCommonOps for SolanaCoin {
-    fn rpc(&self) -> &RpcClient { &self.client }
+    fn rpc(&self) -> &RpcClient {
+        &self.client
+    }
 
-    fn is_token(&self) -> bool { false }
+    fn is_token(&self) -> bool {
+        false
+    }
 
     async fn check_balance_and_prepare_transfer(
         &self,
@@ -347,15 +377,25 @@ impl SolanaCoin {
 }
 
 impl MarketCoinOps for SolanaCoin {
-    fn ticker(&self) -> &str { &self.ticker }
+    fn ticker(&self) -> &str {
+        &self.ticker
+    }
 
-    fn my_address(&self) -> MmResult<String, MyAddressError> { Ok(self.my_address.clone()) }
+    fn my_address(&self) -> MmResult<String, MyAddressError> {
+        Ok(self.my_address.clone())
+    }
 
-    fn get_public_key(&self) -> Result<String, MmError<UnexpectedDerivationMethod>> { unimplemented!() }
+    fn get_public_key(&self) -> Result<String, MmError<UnexpectedDerivationMethod>> {
+        unimplemented!()
+    }
 
-    fn sign_message_hash(&self, _message: &str) -> Option<[u8; 32]> { unimplemented!() }
+    fn sign_message_hash(&self, _message: &str) -> Option<[u8; 32]> {
+        unimplemented!()
+    }
 
-    fn sign_message(&self, message: &str) -> SignatureResult<String> { solana_common::sign_message(self, message) }
+    fn sign_message(&self, message: &str) -> SignatureResult<String> {
+        solana_common::sign_message(self, message)
+    }
 
     fn verify_message(&self, signature: &str, message: &str, pubkey_bs58: &str) -> VerificationResult<bool> {
         solana_common::verify_message(self, signature, message, pubkey_bs58)
@@ -380,7 +420,9 @@ impl MarketCoinOps for SolanaCoin {
         Box::new(fut)
     }
 
-    fn platform_ticker(&self) -> &str { self.ticker() }
+    fn platform_ticker(&self) -> &str {
+        self.ticker()
+    }
 
     fn send_raw_tx(&self, tx: &str) -> Box<dyn Future<Item = String, Error = String> + Send> {
         let coin = self.clone();
@@ -442,17 +484,25 @@ impl MarketCoinOps for SolanaCoin {
         Box::new(fut.boxed().compat())
     }
 
-    fn display_priv_key(&self) -> Result<String, String> { Ok(self.key_pair.secret().to_bytes()[..].to_base58()) }
+    fn display_priv_key(&self) -> Result<String, String> {
+        Ok(self.key_pair.secret().to_bytes()[..].to_base58())
+    }
 
-    fn min_tx_amount(&self) -> BigDecimal { BigDecimal::from(0) }
+    fn min_tx_amount(&self) -> BigDecimal {
+        BigDecimal::from(0)
+    }
 
-    fn min_trading_vol(&self) -> MmNumber { MmNumber::from("0.00777") }
+    fn min_trading_vol(&self) -> MmNumber {
+        MmNumber::from("0.00777")
+    }
 }
 
 #[allow(clippy::forget_ref, clippy::forget_copy, clippy::cast_ref_to_mut)]
 #[async_trait]
 impl SwapOps for SolanaCoin {
-    fn send_taker_fee(&self, _fee_addr: &[u8], amount: BigDecimal, _uuid: &[u8]) -> TransactionFut { unimplemented!() }
+    fn send_taker_fee(&self, _fee_addr: &[u8], amount: BigDecimal, _uuid: &[u8]) -> TransactionFut {
+        unimplemented!()
+    }
 
     fn send_maker_payment(
         &self,
@@ -490,6 +540,17 @@ impl SwapOps for SolanaCoin {
         unimplemented!()
     }
 
+    fn create_taker_spends_maker_payment_preimage(
+        &self,
+        _maker_payment_tx: &[u8],
+        _time_lock: u32,
+        _maker_pub: &[u8],
+        _secret_hash: &[u8],
+        _swap_unique_data: &[u8],
+    ) -> TransactionFut {
+        unimplemented!();
+    }
+
     fn send_taker_spends_maker_payment(
         &self,
         maker_payment_tx: &[u8],
@@ -500,6 +561,10 @@ impl SwapOps for SolanaCoin {
         _swap_unique_data: &[u8],
     ) -> TransactionFut {
         unimplemented!()
+    }
+
+    fn send_taker_spends_maker_payment_preimage(&self, preimage: &[u8], secret: &[u8]) -> TransactionFut {
+        unimplemented!();
     }
 
     fn send_taker_refunds_payment(
@@ -538,9 +603,20 @@ impl SwapOps for SolanaCoin {
         unimplemented!()
     }
 
-    fn validate_maker_payment(&self, input: ValidatePaymentInput) -> ValidatePaymentFut<()> { unimplemented!() }
+    fn validate_maker_payment(&self, input: ValidatePaymentInput) -> ValidatePaymentFut<()> {
+        unimplemented!()
+    }
 
-    fn validate_taker_payment(&self, input: ValidatePaymentInput) -> ValidatePaymentFut<()> { unimplemented!() }
+    fn validate_taker_payment(&self, input: ValidatePaymentInput) -> ValidatePaymentFut<()> {
+        unimplemented!()
+    }
+
+    fn watcher_validate_taker_payment(
+        &self,
+        _input: WatcherValidatePaymentInput,
+    ) -> Box<dyn Future<Item = (), Error = String> + Send> {
+        unimplemented!();
+    }
 
     fn check_if_my_payment_sent(
         &self,
@@ -568,7 +644,9 @@ impl SwapOps for SolanaCoin {
         unimplemented!()
     }
 
-    fn extract_secret(&self, secret_hash: &[u8], spend_tx: &[u8]) -> Result<Vec<u8>, String> { unimplemented!() }
+    fn extract_secret(&self, secret_hash: &[u8], spend_tx: &[u8]) -> Result<Vec<u8>, String> {
+        unimplemented!()
+    }
 
     fn negotiate_swap_contract_addr(
         &self,
@@ -577,23 +655,33 @@ impl SwapOps for SolanaCoin {
         unimplemented!()
     }
 
-    fn derive_htlc_key_pair(&self, _swap_unique_data: &[u8]) -> KeyPair { todo!() }
+    fn derive_htlc_key_pair(&self, _swap_unique_data: &[u8]) -> KeyPair {
+        todo!()
+    }
 }
 
 #[allow(clippy::forget_ref, clippy::forget_copy, clippy::cast_ref_to_mut)]
 #[async_trait]
 impl MmCoin for SolanaCoin {
-    fn is_asset_chain(&self) -> bool { false }
+    fn is_asset_chain(&self) -> bool {
+        false
+    }
 
     fn withdraw(&self, req: WithdrawRequest) -> WithdrawFut {
         Box::new(Box::pin(withdraw_impl(self.clone(), req)).compat())
     }
 
-    fn get_raw_transaction(&self, _req: RawTransactionRequest) -> RawTransactionFut { unimplemented!() }
+    fn get_raw_transaction(&self, _req: RawTransactionRequest) -> RawTransactionFut {
+        unimplemented!()
+    }
 
-    fn decimals(&self) -> u8 { self.decimals }
+    fn decimals(&self) -> u8 {
+        self.decimals
+    }
 
-    fn convert_to_address(&self, _from: &str, _to_address_format: Json) -> Result<String, String> { unimplemented!() }
+    fn convert_to_address(&self, _from: &str, _to_address_format: Json) -> Result<String, String> {
+        unimplemented!()
+    }
 
     fn validate_address(&self, address: &str) -> ValidateAddressResult {
         if address.len() != 44 {
@@ -624,12 +712,18 @@ impl MmCoin for SolanaCoin {
         }
     }
 
-    fn process_history_loop(&self, _ctx: MmArc) -> Box<dyn Future<Item = (), Error = ()> + Send> { unimplemented!() }
+    fn process_history_loop(&self, _ctx: MmArc) -> Box<dyn Future<Item = (), Error = ()> + Send> {
+        unimplemented!()
+    }
 
-    fn history_sync_status(&self) -> HistorySyncState { unimplemented!() }
+    fn history_sync_status(&self) -> HistorySyncState {
+        unimplemented!()
+    }
 
     /// Get fee to be paid per 1 swap transaction
-    fn get_trade_fee(&self) -> Box<dyn Future<Item = TradeFee, Error = String> + Send> { unimplemented!() }
+    fn get_trade_fee(&self) -> Box<dyn Future<Item = TradeFee, Error = String> + Send> {
+        unimplemented!()
+    }
 
     async fn get_sender_trade_fee(
         &self,
@@ -639,7 +733,9 @@ impl MmCoin for SolanaCoin {
         unimplemented!()
     }
 
-    fn get_receiver_trade_fee(&self, _stage: FeeApproxStage) -> TradePreimageFut<TradeFee> { unimplemented!() }
+    fn get_receiver_trade_fee(&self, _stage: FeeApproxStage) -> TradePreimageFut<TradeFee> {
+        unimplemented!()
+    }
 
     async fn get_fee_to_send_taker_fee(
         &self,
@@ -649,19 +745,35 @@ impl MmCoin for SolanaCoin {
         unimplemented!()
     }
 
-    fn required_confirmations(&self) -> u64 { 1 }
+    fn required_confirmations(&self) -> u64 {
+        1
+    }
 
-    fn requires_notarization(&self) -> bool { false }
+    fn requires_notarization(&self) -> bool {
+        false
+    }
 
-    fn set_required_confirmations(&self, _confirmations: u64) { unimplemented!() }
+    fn set_required_confirmations(&self, _confirmations: u64) {
+        unimplemented!()
+    }
 
-    fn set_requires_notarization(&self, _requires_nota: bool) { unimplemented!() }
+    fn set_requires_notarization(&self, _requires_nota: bool) {
+        unimplemented!()
+    }
 
-    fn swap_contract_address(&self) -> Option<BytesJson> { unimplemented!() }
+    fn swap_contract_address(&self) -> Option<BytesJson> {
+        unimplemented!()
+    }
 
-    fn mature_confirmations(&self) -> Option<u32> { None }
+    fn mature_confirmations(&self) -> Option<u32> {
+        None
+    }
 
-    fn coin_protocol_info(&self) -> Vec<u8> { Vec::new() }
+    fn coin_protocol_info(&self) -> Vec<u8> {
+        Vec::new()
+    }
 
-    fn is_coin_protocol_supported(&self, _info: &Option<Vec<u8>>) -> bool { true }
+    fn is_coin_protocol_supported(&self, _info: &Option<Vec<u8>>) -> bool {
+        true
+    }
 }

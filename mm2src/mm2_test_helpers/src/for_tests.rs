@@ -142,6 +142,22 @@ impl Mm2TestConf {
         }
     }
 
+    pub fn seednode_using_watchers(passphrase: &str, coins: &Json) -> Self {
+        Mm2TestConf {
+            conf: json!({
+                "gui": "nogui",
+                "netid": 9998,
+                "passphrase": passphrase,
+                "coins": coins,
+                "rpc_password": DEFAULT_RPC_PASSWORD,
+                "i_am_seed": true,
+                "use_watchers": true,
+            }),
+            rpc_password: DEFAULT_RPC_PASSWORD.into(),
+            local: None,
+        }
+    }
+
     pub fn light_node(passphrase: &str, coins: &Json, seednodes: &[&str]) -> Self {
         Mm2TestConf {
             conf: json!({
@@ -150,7 +166,23 @@ impl Mm2TestConf {
                 "passphrase": passphrase,
                 "coins": coins,
                 "rpc_password": DEFAULT_RPC_PASSWORD,
+                "seednodes": seednodes
+            }),
+            rpc_password: DEFAULT_RPC_PASSWORD.into(),
+            local: None,
+        }
+    }
+
+    pub fn watcher_light_node(passphrase: &str, coins: &Json, seednodes: &[&str]) -> Self {
+        Mm2TestConf {
+            conf: json!({
+                "gui": "nogui",
+                "netid": 9998,
+                "passphrase": passphrase,
+                "coins": coins,
+                "rpc_password": DEFAULT_RPC_PASSWORD,
                 "seednodes": seednodes,
+                "is_watcher": true
             }),
             rpc_password: DEFAULT_RPC_PASSWORD.into(),
             local: None,
@@ -1128,9 +1160,24 @@ pub async fn enable_slp(mm: &MarketMakerIt, coin: &str) -> Json {
     json::from_str(&enable.1).unwrap()
 }
 
+#[allow(clippy::upper_case_acronyms)]
+#[derive(Serialize)]
+pub enum ElectrumProtocol {
+    /// TCP
+    TCP,
+    /// SSL/TLS
+    SSL,
+    /// Insecure WebSocket.
+    WS,
+    /// Secure WebSocket.
+    WSS,
+}
+
 #[derive(Serialize)]
 pub struct ElectrumRpcRequest {
     pub url: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub protocol: Option<ElectrumProtocol>,
 }
 
 #[derive(Serialize)]
@@ -1140,10 +1187,25 @@ pub enum UtxoRpcMode {
     Electrum { servers: Vec<ElectrumRpcRequest> },
 }
 
+#[cfg(not(target_arch = "wasm32"))]
 fn electrum_servers_rpc(servers: &[&str]) -> Vec<ElectrumRpcRequest> {
     servers
         .iter()
-        .map(|url| ElectrumRpcRequest { url: url.to_string() })
+        .map(|url| ElectrumRpcRequest {
+            url: url.to_string(),
+            protocol: None,
+        })
+        .collect()
+}
+
+#[cfg(target_arch = "wasm32")]
+fn electrum_servers_rpc(servers: &[&str]) -> Vec<ElectrumRpcRequest> {
+    servers
+        .iter()
+        .map(|url| ElectrumRpcRequest {
+            url: url.to_string(),
+            protocol: Some(ElectrumProtocol::WSS),
+        })
         .collect()
 }
 
