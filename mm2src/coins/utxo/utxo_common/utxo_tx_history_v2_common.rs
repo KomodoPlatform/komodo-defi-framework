@@ -43,7 +43,7 @@ where
 {
     match (coin.derivation_method(), target) {
         (DerivationMethod::Iguana(_), MyTxHistoryTarget::Iguana) => {
-            let my_address = coin.my_address().map_to_mm(MyTxHistoryErrorV2::Internal)?;
+            let my_address = coin.my_address()?;
             Ok(GetTxHistoryFilters::for_address(my_address))
         },
         (DerivationMethod::Iguana(_), target) => {

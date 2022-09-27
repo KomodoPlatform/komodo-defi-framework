@@ -1,23 +1,19 @@
 use super::*;
-use crate::coin_errors::MyAddressError;
-use crate::my_tx_history_v2::{
-    CoinWithTxHistoryV2, MyTxHistoryErrorV2, MyTxHistoryTarget, TxDetailsBuilder, TxHistoryStorage,
-};
+use crate::coin_errors::{MyAddressError, ValidatePaymentError};
+use crate::my_tx_history_v2::{CoinWithTxHistoryV2, MyTxHistoryErrorV2, MyTxHistoryTarget, TxDetailsBuilder,
+                              TxHistoryStorage};
 use crate::tx_history_storage::{GetTxHistoryFilters, WalletId};
 use crate::utxo::rpc_clients::UtxoRpcFut;
 use crate::utxo::slp::{parse_slp_script, SlpGenesisParams, SlpTokenInfo, SlpTransaction, SlpUnspent};
 use crate::utxo::utxo_builder::{UtxoArcBuilder, UtxoCoinBuilder};
 use crate::utxo::utxo_common::big_decimal_from_sat_unsigned;
-use crate::utxo::utxo_tx_history_v2::{
-    UtxoMyAddressesHistoryError, UtxoTxDetailsError, UtxoTxDetailsParams, UtxoTxHistoryOps,
-};
-use crate::{
-    BlockHeightAndTime, CanRefundHtlc, CoinBalance, CoinProtocol, CoinWithDerivationMethod,
-    NegotiateSwapContractAddrErr, PrivKeyBuildPolicy, RawTransactionFut, RawTransactionRequest,
-    SearchForSwapTxSpendInput, SignatureResult, SwapOps, TradePreimageValue, TransactionFut, TransactionType,
-    TxFeeDetails, TxMarshalingErr, UnexpectedDerivationMethod, ValidateAddressResult, ValidatePaymentFut,
-    ValidatePaymentInput, VerificationResult, WatcherValidatePaymentInput, WithdrawFut,
-};
+use crate::utxo::utxo_tx_history_v2::{UtxoMyAddressesHistoryError, UtxoTxDetailsError, UtxoTxDetailsParams,
+                                      UtxoTxHistoryOps};
+use crate::{BlockHeightAndTime, CanRefundHtlc, CoinBalance, CoinProtocol, CoinWithDerivationMethod,
+            NegotiateSwapContractAddrErr, PrivKeyBuildPolicy, RawTransactionFut, RawTransactionRequest,
+            SearchForSwapTxSpendInput, SignatureResult, SwapOps, TradePreimageValue, TransactionFut, TransactionType,
+            TxFeeDetails, TxMarshalingErr, UnexpectedDerivationMethod, ValidateAddressResult, ValidatePaymentFut,
+            ValidatePaymentInput, VerificationResult, WatcherValidatePaymentInput, WithdrawFut};
 use common::log::warn;
 use derive_more::Display;
 use futures::{FutureExt, TryFutureExt};
@@ -49,9 +45,7 @@ pub enum BchFromLegacyReqErr {
 }
 
 impl From<UtxoFromLegacyReqErr> for BchFromLegacyReqErr {
-    fn from(err: UtxoFromLegacyReqErr) -> Self {
-        BchFromLegacyReqErr::InvalidUtxoParams(err)
-    }
+    fn from(err: UtxoFromLegacyReqErr) -> Self { BchFromLegacyReqErr::InvalidUtxoParams(err) }
 }
 
 impl BchActivationRequest {
@@ -96,9 +90,7 @@ pub struct BchUnspents {
 }
 
 impl BchUnspents {
-    fn add_standard(&mut self, utxo: UnspentInfo) {
-        self.standard.push(utxo)
-    }
+    fn add_standard(&mut self, utxo: UnspentInfo) { self.standard.push(utxo) }
 
     fn add_slp(&mut self, token_id: H256, bch_unspent: UnspentInfo, slp_amount: u64) {
         let slp_unspent = SlpUnspent {
@@ -108,13 +100,9 @@ impl BchUnspents {
         self.slp.entry(token_id).or_insert_with(Vec::new).push(slp_unspent);
     }
 
-    fn add_slp_baton(&mut self, utxo: UnspentInfo) {
-        self.slp_batons.push(utxo)
-    }
+    fn add_slp_baton(&mut self, utxo: UnspentInfo) { self.slp_batons.push(utxo) }
 
-    fn add_undetermined(&mut self, utxo: UnspentInfo) {
-        self.undetermined.push(utxo)
-    }
+    fn add_undetermined(&mut self, utxo: UnspentInfo) { self.undetermined.push(utxo) }
 
     pub fn platform_balance(&self, decimals: u8) -> CoinBalance {
         let spendable_sat = total_unspent_value(&self.standard);
@@ -149,21 +137,15 @@ impl BchUnspents {
 }
 
 impl From<UtxoRpcError> for IsSlpUtxoError {
-    fn from(err: UtxoRpcError) -> IsSlpUtxoError {
-        IsSlpUtxoError::Rpc(err)
-    }
+    fn from(err: UtxoRpcError) -> IsSlpUtxoError { IsSlpUtxoError::Rpc(err) }
 }
 
 impl From<serialization::Error> for IsSlpUtxoError {
-    fn from(err: serialization::Error) -> IsSlpUtxoError {
-        IsSlpUtxoError::TxDeserialization(err)
-    }
+    fn from(err: serialization::Error) -> IsSlpUtxoError { IsSlpUtxoError::TxDeserialization(err) }
 }
 
 impl BchCoin {
-    pub fn slp_prefix(&self) -> &CashAddrPrefix {
-        &self.slp_addr_prefix
-    }
+    pub fn slp_prefix(&self) -> &CashAddrPrefix { &self.slp_addr_prefix }
 
     pub fn slp_address(&self, address: &Address) -> Result<CashAddress, String> {
         let conf = &self.as_ref().conf;
@@ -174,9 +156,7 @@ impl BchCoin {
         )
     }
 
-    pub fn bchd_urls(&self) -> &[String] {
-        &self.bchd_urls
-    }
+    pub fn bchd_urls(&self) -> &[String] { &self.bchd_urls }
 
     async fn utxos_into_bch_unspents(&self, utxos: Vec<UnspentInfo>) -> UtxoRpcResult<BchUnspents> {
         let mut result = BchUnspents::default();
@@ -614,9 +594,7 @@ impl BchCoin {
 }
 
 impl AsRef<UtxoCoinFields> for BchCoin {
-    fn as_ref(&self) -> &UtxoCoinFields {
-        &self.utxo_arc
-    }
+    fn as_ref(&self) -> &UtxoCoinFields { &self.utxo_arc }
 }
 
 pub async fn bch_coin_from_conf_and_params(
@@ -675,9 +653,7 @@ pub enum BchActivationError {
 }
 
 impl From<UtxoRpcError> for BchActivationError {
-    fn from(e: UtxoRpcError) -> Self {
-        BchActivationError::RpcError(e)
-    }
+    fn from(e: UtxoRpcError) -> Self { BchActivationError::RpcError(e) }
 }
 
 // if mockable is placed before async_trait there is `munmap_chunk(): invalid pointer` error on async fn mocking attempt
@@ -693,9 +669,7 @@ impl UtxoTxBroadcastOps for BchCoin {
 #[async_trait]
 #[cfg_attr(test, mockable)]
 impl UtxoTxGenerationOps for BchCoin {
-    async fn get_tx_fee(&self) -> UtxoRpcResult<ActualTxFee> {
-        utxo_common::get_tx_fee(&self.utxo_arc).await
-    }
+    async fn get_tx_fee(&self) -> UtxoRpcResult<ActualTxFee> { utxo_common::get_tx_fee(&self.utxo_arc).await }
 
     async fn calc_interest_if_required(
         &self,
@@ -746,9 +720,7 @@ impl UtxoCommonOps for BchCoin {
         utxo_common::addresses_from_script(self, script)
     }
 
-    fn denominate_satoshis(&self, satoshi: i64) -> f64 {
-        utxo_common::denominate_satoshis(&self.utxo_arc, satoshi)
-    }
+    fn denominate_satoshis(&self, satoshi: i64) -> f64 { utxo_common::denominate_satoshis(&self.utxo_arc, satoshi) }
 
     fn my_public_key(&self) -> Result<&Public, MmError<UnexpectedDerivationMethod>> {
         utxo_common::my_public_key(self.as_ref())
@@ -817,9 +789,7 @@ impl UtxoCommonOps for BchCoin {
         utxo_common::p2sh_tx_locktime(self, &self.utxo_arc.conf.ticker, htlc_locktime).await
     }
 
-    fn addr_format(&self) -> &UtxoAddressFormat {
-        utxo_common::addr_format(self)
-    }
+    fn addr_format(&self) -> &UtxoAddressFormat { utxo_common::addr_format(self) }
 
     fn addr_format_for_standard_scripts(&self) -> UtxoAddressFormat {
         utxo_common::addr_format_for_standard_scripts(self)
@@ -1016,7 +986,7 @@ impl SwapOps for BchCoin {
     fn watcher_validate_taker_payment(
         &self,
         input: WatcherValidatePaymentInput,
-    ) -> Box<dyn Future<Item = (), Error = String> + Send> {
+    ) -> Box<dyn Future<Item = (), Error = MmError<ValidatePaymentError>> + Send> {
         utxo_common::watcher_validate_taker_payment(self, input)
     }
 
@@ -1076,13 +1046,9 @@ fn total_unspent_value<'a>(unspents: impl IntoIterator<Item = &'a UnspentInfo>) 
 }
 
 impl MarketCoinOps for BchCoin {
-    fn ticker(&self) -> &str {
-        &self.utxo_arc.conf.ticker
-    }
+    fn ticker(&self) -> &str { &self.utxo_arc.conf.ticker }
 
-    fn my_address(&self) -> MmResult<String, MyAddressError> {
-        utxo_common::my_address(self)
-    }
+    fn my_address(&self) -> MmResult<String, MyAddressError> { utxo_common::my_address(self) }
 
     fn get_public_key(&self) -> Result<String, MmError<UnexpectedDerivationMethod>> {
         let pubkey = utxo_common::my_public_key(&self.utxo_arc)?;
@@ -1111,13 +1077,9 @@ impl MarketCoinOps for BchCoin {
         Box::new(fut.boxed().compat())
     }
 
-    fn base_coin_balance(&self) -> BalanceFut<BigDecimal> {
-        utxo_common::base_coin_balance(self)
-    }
+    fn base_coin_balance(&self) -> BalanceFut<BigDecimal> { utxo_common::base_coin_balance(self) }
 
-    fn platform_ticker(&self) -> &str {
-        self.ticker()
-    }
+    fn platform_ticker(&self) -> &str { self.ticker() }
 
     #[inline(always)]
     fn send_raw_tx(&self, tx: &str) -> Box<dyn Future<Item = String, Error = String> + Send> {
@@ -1171,24 +1133,16 @@ impl MarketCoinOps for BchCoin {
         utxo_common::current_block(&self.utxo_arc)
     }
 
-    fn display_priv_key(&self) -> Result<String, String> {
-        utxo_common::display_priv_key(&self.utxo_arc)
-    }
+    fn display_priv_key(&self) -> Result<String, String> { utxo_common::display_priv_key(&self.utxo_arc) }
 
-    fn min_tx_amount(&self) -> BigDecimal {
-        utxo_common::min_tx_amount(self.as_ref())
-    }
+    fn min_tx_amount(&self) -> BigDecimal { utxo_common::min_tx_amount(self.as_ref()) }
 
-    fn min_trading_vol(&self) -> MmNumber {
-        utxo_common::min_trading_vol(self.as_ref())
-    }
+    fn min_trading_vol(&self) -> MmNumber { utxo_common::min_trading_vol(self.as_ref()) }
 }
 
 #[async_trait]
 impl MmCoin for BchCoin {
-    fn is_asset_chain(&self) -> bool {
-        utxo_common::is_asset_chain(&self.utxo_arc)
-    }
+    fn is_asset_chain(&self) -> bool { utxo_common::is_asset_chain(&self.utxo_arc) }
 
     fn get_raw_transaction(&self, req: RawTransactionRequest) -> RawTransactionFut {
         Box::new(utxo_common::get_raw_transaction(&self.utxo_arc, req).boxed().compat())
@@ -1198,26 +1152,20 @@ impl MmCoin for BchCoin {
         Box::new(utxo_common::withdraw(self.clone(), req).boxed().compat())
     }
 
-    fn decimals(&self) -> u8 {
-        utxo_common::decimals(&self.utxo_arc)
-    }
+    fn decimals(&self) -> u8 { utxo_common::decimals(&self.utxo_arc) }
 
     fn convert_to_address(&self, from: &str, to_address_format: Json) -> Result<String, String> {
         utxo_common::convert_to_address(self, from, to_address_format)
     }
 
-    fn validate_address(&self, address: &str) -> ValidateAddressResult {
-        utxo_common::validate_address(self, address)
-    }
+    fn validate_address(&self, address: &str) -> ValidateAddressResult { utxo_common::validate_address(self, address) }
 
     fn process_history_loop(&self, _ctx: MmArc) -> Box<dyn Future<Item = (), Error = ()> + Send> {
         warn!("'process_history_loop' is not implemented for BchCoin! Consider using 'my_tx_history_v2'");
         Box::new(futures01::future::err(()))
     }
 
-    fn history_sync_status(&self) -> HistorySyncState {
-        utxo_common::history_sync_status(&self.utxo_arc)
-    }
+    fn history_sync_status(&self) -> HistorySyncState { utxo_common::history_sync_status(&self.utxo_arc) }
 
     fn get_trade_fee(&self) -> Box<dyn Future<Item = TradeFee, Error = String> + Send> {
         utxo_common::get_trade_fee(self.clone())
@@ -1243,13 +1191,9 @@ impl MmCoin for BchCoin {
         utxo_common::get_fee_to_send_taker_fee(self, dex_fee_amount, stage).await
     }
 
-    fn required_confirmations(&self) -> u64 {
-        utxo_common::required_confirmations(&self.utxo_arc)
-    }
+    fn required_confirmations(&self) -> u64 { utxo_common::required_confirmations(&self.utxo_arc) }
 
-    fn requires_notarization(&self) -> bool {
-        utxo_common::requires_notarization(&self.utxo_arc)
-    }
+    fn requires_notarization(&self) -> bool { utxo_common::requires_notarization(&self.utxo_arc) }
 
     fn set_required_confirmations(&self, confirmations: u64) {
         utxo_common::set_required_confirmations(&self.utxo_arc, confirmations)
@@ -1259,17 +1203,11 @@ impl MmCoin for BchCoin {
         utxo_common::set_requires_notarization(&self.utxo_arc, requires_nota)
     }
 
-    fn swap_contract_address(&self) -> Option<BytesJson> {
-        utxo_common::swap_contract_address()
-    }
+    fn swap_contract_address(&self) -> Option<BytesJson> { utxo_common::swap_contract_address() }
 
-    fn mature_confirmations(&self) -> Option<u32> {
-        Some(self.utxo_arc.conf.mature_confirmations)
-    }
+    fn mature_confirmations(&self) -> Option<u32> { Some(self.utxo_arc.conf.mature_confirmations) }
 
-    fn coin_protocol_info(&self) -> Vec<u8> {
-        utxo_common::coin_protocol_info(self)
-    }
+    fn coin_protocol_info(&self) -> Vec<u8> { utxo_common::coin_protocol_info(self) }
 
     fn is_coin_protocol_supported(&self, info: &Option<Vec<u8>>) -> bool {
         utxo_common::is_coin_protocol_supported(self, info)
@@ -1287,9 +1225,7 @@ impl CoinWithDerivationMethod for BchCoin {
 
 #[async_trait]
 impl CoinWithTxHistoryV2 for BchCoin {
-    fn history_wallet_id(&self) -> WalletId {
-        WalletId::new(self.ticker().to_owned())
-    }
+    fn history_wallet_id(&self) -> WalletId { WalletId::new(self.ticker().to_owned()) }
 
     /// TODO consider using `utxo_common::utxo_tx_history_common::get_tx_history_filters`
     /// when `BchCoin` implements `CoinWithDerivationMethod`.
@@ -1304,7 +1240,7 @@ impl CoinWithTxHistoryV2 for BchCoin {
                 return MmError::err(MyTxHistoryErrorV2::InvalidTarget(error));
             },
         }
-        let my_address = self.my_address().map_to_mm(MyTxHistoryErrorV2::Internal)?;
+        let my_address = self.my_address()?;
         Ok(GetTxHistoryFilters::for_address(my_address))
     }
 }
@@ -1347,7 +1283,9 @@ impl UtxoTxHistoryOps for BchCoin {
     }
 
     async fn my_addresses_balances(&self) -> BalanceResult<HashMap<String, BigDecimal>> {
-        let my_address = self.my_address().map_to_mm(BalanceError::Internal)?;
+        let my_address = self
+            .my_address()
+            .map_err(|err| BalanceError::Internal(err.to_string()))?;
         let my_balance = self.my_balance().compat().await?;
         Ok(std::iter::once((my_address, my_balance.into_total())).collect())
     }

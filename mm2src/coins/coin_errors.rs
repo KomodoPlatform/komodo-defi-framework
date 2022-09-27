@@ -1,5 +1,5 @@
-use crate::{utxo::rpc_clients::UtxoRpcError, DelegationError, NumConversError, TxHistoryError,
-            UnexpectedDerivationMethod, WithdrawError};
+use crate::{my_tx_history_v2::MyTxHistoryErrorV2, utxo::rpc_clients::UtxoRpcError, DelegationError, NumConversError,
+            TxHistoryError, UnexpectedDerivationMethod, WithdrawError};
 use futures01::Future;
 use mm2_err_handle::prelude::MmError;
 use spv_validation::helpers_validation::SPVError;
@@ -78,4 +78,8 @@ impl From<MyAddressError> for DelegationError {
 
 impl From<MyAddressError> for TxHistoryError {
     fn from(err: MyAddressError) -> Self { Self::InternalError(err.to_string()) }
+}
+
+impl From<MyAddressError> for MyTxHistoryErrorV2 {
+    fn from(err: MyAddressError) -> Self { Self::Internal(err.to_string()) }
 }

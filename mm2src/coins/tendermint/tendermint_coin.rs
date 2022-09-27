@@ -1,19 +1,17 @@
 use super::htlc::{IrisHtlc, MsgCreateHtlc};
 #[cfg(not(target_arch = "wasm32"))]
 use super::tendermint_native_rpc::*;
-#[cfg(target_arch = "wasm32")]
-use super::tendermint_wasm_rpc::*;
-use crate::coin_errors::MyAddressError;
+#[cfg(target_arch = "wasm32")] use super::tendermint_wasm_rpc::*;
+use crate::coin_errors::{MyAddressError, ValidatePaymentError};
 use crate::tendermint::htlc::MsgClaimHtlc;
 use crate::utxo::sat_from_big_decimal;
-use crate::{
-    big_decimal_from_sat_unsigned, BalanceError, BalanceFut, BigDecimal, CoinBalance, FeeApproxStage, FoundSwapTxSpend,
-    HistorySyncState, MarketCoinOps, MmCoin, NegotiateSwapContractAddrErr, RawTransactionFut, RawTransactionRequest,
-    SearchForSwapTxSpendInput, SignatureResult, SwapOps, TradeFee, TradePreimageFut, TradePreimageResult,
-    TradePreimageValue, TransactionDetails, TransactionEnum, TransactionFut, TransactionType, TxFeeDetails,
-    TxMarshalingErr, UnexpectedDerivationMethod, ValidateAddressResult, ValidatePaymentFut, ValidatePaymentInput,
-    VerificationResult, WatcherValidatePaymentInput, WithdrawError, WithdrawFut, WithdrawRequest,
-};
+use crate::{big_decimal_from_sat_unsigned, BalanceError, BalanceFut, BigDecimal, CoinBalance, FeeApproxStage,
+            FoundSwapTxSpend, HistorySyncState, MarketCoinOps, MmCoin, NegotiateSwapContractAddrErr,
+            RawTransactionFut, RawTransactionRequest, SearchForSwapTxSpendInput, SignatureResult, SwapOps, TradeFee,
+            TradePreimageFut, TradePreimageResult, TradePreimageValue, TransactionDetails, TransactionEnum,
+            TransactionFut, TransactionType, TxFeeDetails, TxMarshalingErr, UnexpectedDerivationMethod,
+            ValidateAddressResult, ValidatePaymentFut, ValidatePaymentInput, VerificationResult,
+            WatcherValidatePaymentInput, WithdrawError, WithdrawFut, WithdrawRequest};
 use async_trait::async_trait;
 use bitcrypto::sha256;
 use common::{get_utc_timestamp, Future01CompatExt};
@@ -84,9 +82,7 @@ pub struct TendermintCoin(Arc<TendermintCoinImpl>);
 impl Deref for TendermintCoin {
     type Target = TendermintCoinImpl;
 
-    fn deref(&self) -> &Self::Target {
-        &self.0
-    }
+    fn deref(&self) -> &Self::Target { &self.0 }
 }
 
 #[derive(Debug)]
@@ -114,15 +110,11 @@ enum TendermintCoinRpcError {
 }
 
 impl From<prost::DecodeError> for TendermintCoinRpcError {
-    fn from(err: DecodeError) -> Self {
-        TendermintCoinRpcError::Prost(err)
-    }
+    fn from(err: DecodeError) -> Self { TendermintCoinRpcError::Prost(err) }
 }
 
 impl From<TendermintCoinRpcError> for WithdrawError {
-    fn from(err: TendermintCoinRpcError) -> Self {
-        WithdrawError::Transport(err.to_string())
-    }
+    fn from(err: TendermintCoinRpcError) -> Self { WithdrawError::Transport(err.to_string()) }
 }
 
 impl From<TendermintCoinRpcError> for BalanceError {
@@ -137,16 +129,12 @@ impl From<TendermintCoinRpcError> for BalanceError {
 
 #[cfg(not(target_arch = "wasm32"))]
 impl From<cosmrs::rpc::Error> for TendermintCoinRpcError {
-    fn from(err: cosmrs::rpc::Error) -> Self {
-        TendermintCoinRpcError::PerformError(err.to_string())
-    }
+    fn from(err: cosmrs::rpc::Error) -> Self { TendermintCoinRpcError::PerformError(err.to_string()) }
 }
 
 #[cfg(target_arch = "wasm32")]
 impl From<PerformError> for TendermintCoinRpcError {
-    fn from(err: PerformError) -> Self {
-        TendermintCoinRpcError::PerformError(err.to_string())
-    }
+    fn from(err: PerformError) -> Self { TendermintCoinRpcError::PerformError(err.to_string()) }
 }
 
 fn account_id_from_privkey(priv_key: &[u8], prefix: &str) -> MmResult<AccountId, TendermintInitErrorKind> {
@@ -369,9 +357,7 @@ impl TendermintCoin {
 #[async_trait]
 #[allow(unused_variables)]
 impl MmCoin for TendermintCoin {
-    fn is_asset_chain(&self) -> bool {
-        false
-    }
+    fn is_asset_chain(&self) -> bool { false }
 
     fn withdraw(&self, req: WithdrawRequest) -> WithdrawFut {
         let coin = self.clone();
@@ -484,33 +470,19 @@ impl MmCoin for TendermintCoin {
         Box::new(fut.boxed().compat())
     }
 
-    fn get_raw_transaction(&self, req: RawTransactionRequest) -> RawTransactionFut {
-        todo!()
-    }
+    fn get_raw_transaction(&self, req: RawTransactionRequest) -> RawTransactionFut { todo!() }
 
-    fn decimals(&self) -> u8 {
-        self.decimals
-    }
+    fn decimals(&self) -> u8 { self.decimals }
 
-    fn convert_to_address(&self, from: &str, to_address_format: Json) -> Result<String, String> {
-        todo!()
-    }
+    fn convert_to_address(&self, from: &str, to_address_format: Json) -> Result<String, String> { todo!() }
 
-    fn validate_address(&self, address: &str) -> ValidateAddressResult {
-        todo!()
-    }
+    fn validate_address(&self, address: &str) -> ValidateAddressResult { todo!() }
 
-    fn process_history_loop(&self, ctx: MmArc) -> Box<dyn Future<Item = (), Error = ()> + Send> {
-        todo!()
-    }
+    fn process_history_loop(&self, ctx: MmArc) -> Box<dyn Future<Item = (), Error = ()> + Send> { todo!() }
 
-    fn history_sync_status(&self) -> HistorySyncState {
-        todo!()
-    }
+    fn history_sync_status(&self) -> HistorySyncState { todo!() }
 
-    fn get_trade_fee(&self) -> Box<dyn Future<Item = TradeFee, Error = String> + Send> {
-        todo!()
-    }
+    fn get_trade_fee(&self) -> Box<dyn Future<Item = TradeFee, Error = String> + Send> { todo!() }
 
     async fn get_sender_trade_fee(
         &self,
@@ -520,9 +492,7 @@ impl MmCoin for TendermintCoin {
         todo!()
     }
 
-    fn get_receiver_trade_fee(&self, stage: FeeApproxStage) -> TradePreimageFut<TradeFee> {
-        todo!()
-    }
+    fn get_receiver_trade_fee(&self, stage: FeeApproxStage) -> TradePreimageFut<TradeFee> { todo!() }
 
     async fn get_fee_to_send_taker_fee(
         &self,
@@ -532,64 +502,36 @@ impl MmCoin for TendermintCoin {
         todo!()
     }
 
-    fn required_confirmations(&self) -> u64 {
-        todo!()
-    }
+    fn required_confirmations(&self) -> u64 { todo!() }
 
-    fn requires_notarization(&self) -> bool {
-        todo!()
-    }
+    fn requires_notarization(&self) -> bool { todo!() }
 
-    fn set_required_confirmations(&self, confirmations: u64) {
-        todo!()
-    }
+    fn set_required_confirmations(&self, confirmations: u64) { todo!() }
 
-    fn set_requires_notarization(&self, requires_nota: bool) {
-        todo!()
-    }
+    fn set_requires_notarization(&self, requires_nota: bool) { todo!() }
 
-    fn swap_contract_address(&self) -> Option<BytesJson> {
-        todo!()
-    }
+    fn swap_contract_address(&self) -> Option<BytesJson> { todo!() }
 
-    fn mature_confirmations(&self) -> Option<u32> {
-        None
-    }
+    fn mature_confirmations(&self) -> Option<u32> { None }
 
-    fn coin_protocol_info(&self) -> Vec<u8> {
-        Vec::new()
-    }
+    fn coin_protocol_info(&self) -> Vec<u8> { Vec::new() }
 
-    fn is_coin_protocol_supported(&self, info: &Option<Vec<u8>>) -> bool {
-        true
-    }
+    fn is_coin_protocol_supported(&self, info: &Option<Vec<u8>>) -> bool { true }
 }
 
 #[allow(unused_variables)]
 impl MarketCoinOps for TendermintCoin {
-    fn ticker(&self) -> &str {
-        &self.ticker
-    }
+    fn ticker(&self) -> &str { &self.ticker }
 
-    fn my_address(&self) -> MmResult<String, MyAddressError> {
-        Ok(self.account_id.to_string())
-    }
+    fn my_address(&self) -> MmResult<String, MyAddressError> { Ok(self.account_id.to_string()) }
 
-    fn get_public_key(&self) -> Result<String, MmError<UnexpectedDerivationMethod>> {
-        todo!()
-    }
+    fn get_public_key(&self) -> Result<String, MmError<UnexpectedDerivationMethod>> { todo!() }
 
-    fn sign_message_hash(&self, _message: &str) -> Option<[u8; 32]> {
-        todo!()
-    }
+    fn sign_message_hash(&self, _message: &str) -> Option<[u8; 32]> { todo!() }
 
-    fn sign_message(&self, _message: &str) -> SignatureResult<String> {
-        todo!()
-    }
+    fn sign_message(&self, _message: &str) -> SignatureResult<String> { todo!() }
 
-    fn verify_message(&self, _signature: &str, _message: &str, _address: &str) -> VerificationResult<bool> {
-        todo!()
-    }
+    fn verify_message(&self, _signature: &str, _message: &str, _address: &str) -> VerificationResult<bool> { todo!() }
 
     fn my_balance(&self) -> BalanceFut<CoinBalance> {
         let coin = self.clone();
@@ -607,9 +549,7 @@ impl MarketCoinOps for TendermintCoin {
         Box::new(self.my_balance().map(|coin_balance| coin_balance.spendable))
     }
 
-    fn platform_ticker(&self) -> &str {
-        &self.ticker
-    }
+    fn platform_ticker(&self) -> &str { &self.ticker }
 
     fn send_raw_tx(&self, tx: &str) -> Box<dyn Future<Item = String, Error = String> + Send> {
         let tx_bytes = try_fus!(hex::decode(tx));
@@ -672,25 +612,17 @@ impl MarketCoinOps for TendermintCoin {
         Box::new(fut.boxed().compat())
     }
 
-    fn display_priv_key(&self) -> Result<String, String> {
-        Ok(hex::encode(&self.priv_key))
-    }
+    fn display_priv_key(&self) -> Result<String, String> { Ok(hex::encode(&self.priv_key)) }
 
-    fn min_tx_amount(&self) -> BigDecimal {
-        todo!()
-    }
+    fn min_tx_amount(&self) -> BigDecimal { todo!() }
 
-    fn min_trading_vol(&self) -> MmNumber {
-        todo!()
-    }
+    fn min_trading_vol(&self) -> MmNumber { todo!() }
 }
 
 #[async_trait]
 #[allow(unused_variables)]
 impl SwapOps for TendermintCoin {
-    fn send_taker_fee(&self, fee_addr: &[u8], amount: BigDecimal, uuid: &[u8]) -> TransactionFut {
-        todo!()
-    }
+    fn send_taker_fee(&self, fee_addr: &[u8], amount: BigDecimal, uuid: &[u8]) -> TransactionFut { todo!() }
 
     fn send_maker_payment(
         &self,
@@ -791,18 +723,14 @@ impl SwapOps for TendermintCoin {
         todo!()
     }
 
-    fn validate_maker_payment(&self, input: ValidatePaymentInput) -> ValidatePaymentFut<()> {
-        todo!()
-    }
+    fn validate_maker_payment(&self, input: ValidatePaymentInput) -> ValidatePaymentFut<()> { todo!() }
 
-    fn validate_taker_payment(&self, input: ValidatePaymentInput) -> ValidatePaymentFut<()> {
-        todo!()
-    }
+    fn validate_taker_payment(&self, input: ValidatePaymentInput) -> ValidatePaymentFut<()> { todo!() }
 
     fn watcher_validate_taker_payment(
         &self,
         _input: WatcherValidatePaymentInput,
-    ) -> Box<dyn Future<Item = (), Error = String> + Send> {
+    ) -> Box<dyn Future<Item = (), Error = MmError<ValidatePaymentError>> + Send> {
         unimplemented!();
     }
 
@@ -832,9 +760,7 @@ impl SwapOps for TendermintCoin {
         todo!()
     }
 
-    fn extract_secret(&self, secret_hash: &[u8], spend_tx: &[u8]) -> Result<Vec<u8>, String> {
-        todo!()
-    }
+    fn extract_secret(&self, secret_hash: &[u8], spend_tx: &[u8]) -> Result<Vec<u8>, String> { todo!() }
 
     fn negotiate_swap_contract_addr(
         &self,
@@ -843,9 +769,7 @@ impl SwapOps for TendermintCoin {
         todo!()
     }
 
-    fn derive_htlc_key_pair(&self, swap_unique_data: &[u8]) -> KeyPair {
-        todo!()
-    }
+    fn derive_htlc_key_pair(&self, swap_unique_data: &[u8]) -> KeyPair { todo!() }
 }
 
 #[cfg(test)]

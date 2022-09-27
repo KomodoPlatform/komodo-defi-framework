@@ -566,7 +566,7 @@ pub trait SwapOps {
     fn watcher_validate_taker_payment(
         &self,
         _input: WatcherValidatePaymentInput,
-    ) -> Box<dyn Future<Item = (), Error = String> + Send>;
+    ) -> Box<dyn Future<Item = (), Error = MmError<ValidatePaymentError>> + Send>;
 
     fn check_if_my_payment_sent(
         &self,

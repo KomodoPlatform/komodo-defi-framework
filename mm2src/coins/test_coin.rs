@@ -1,13 +1,10 @@
-use super::{
-    CoinBalance, HistorySyncState, MarketCoinOps, MmCoin, RawTransactionFut, RawTransactionRequest, SwapOps, TradeFee,
-    TransactionEnum, TransactionFut,
-};
-use crate::{
-    coin_errors::MyAddressError, BalanceFut, CanRefundHtlc, FeeApproxStage, FoundSwapTxSpend,
-    NegotiateSwapContractAddrErr, SearchForSwapTxSpendInput, SignatureResult, TradePreimageFut, TradePreimageResult,
-    TradePreimageValue, TxMarshalingErr, UnexpectedDerivationMethod, ValidateAddressResult, ValidatePaymentFut,
-    ValidatePaymentInput, VerificationResult, WatcherValidatePaymentInput, WithdrawFut, WithdrawRequest,
-};
+use super::{CoinBalance, HistorySyncState, MarketCoinOps, MmCoin, RawTransactionFut, RawTransactionRequest, SwapOps,
+            TradeFee, TransactionEnum, TransactionFut};
+use crate::{coin_errors::{MyAddressError, ValidatePaymentError},
+            BalanceFut, CanRefundHtlc, FeeApproxStage, FoundSwapTxSpend, NegotiateSwapContractAddrErr,
+            SearchForSwapTxSpendInput, SignatureResult, TradePreimageFut, TradePreimageResult, TradePreimageValue,
+            TxMarshalingErr, UnexpectedDerivationMethod, ValidateAddressResult, ValidatePaymentFut,
+            ValidatePaymentInput, VerificationResult, WatcherValidatePaymentInput, WithdrawFut, WithdrawRequest};
 use async_trait::async_trait;
 use futures01::Future;
 use keys::KeyPair;
@@ -26,64 +23,40 @@ pub struct TestCoin {
 }
 
 impl Default for TestCoin {
-    fn default() -> Self {
-        TestCoin { ticker: "test".into() }
-    }
+    fn default() -> Self { TestCoin { ticker: "test".into() } }
 }
 
 impl TestCoin {
-    pub fn new(ticker: &str) -> TestCoin {
-        TestCoin { ticker: ticker.into() }
-    }
+    pub fn new(ticker: &str) -> TestCoin { TestCoin { ticker: ticker.into() } }
 }
 
 #[mockable]
 #[allow(clippy::forget_ref, clippy::forget_copy, clippy::cast_ref_to_mut)]
 impl MarketCoinOps for TestCoin {
-    fn ticker(&self) -> &str {
-        &self.ticker
-    }
+    fn ticker(&self) -> &str { &self.ticker }
 
-    fn my_address(&self) -> MmResult<String, MyAddressError> {
-        unimplemented!()
-    }
+    fn my_address(&self) -> MmResult<String, MyAddressError> { unimplemented!() }
 
-    fn get_public_key(&self) -> Result<String, MmError<UnexpectedDerivationMethod>> {
-        unimplemented!()
-    }
+    fn get_public_key(&self) -> Result<String, MmError<UnexpectedDerivationMethod>> { unimplemented!() }
 
-    fn sign_message_hash(&self, _message: &str) -> Option<[u8; 32]> {
-        unimplemented!()
-    }
+    fn sign_message_hash(&self, _message: &str) -> Option<[u8; 32]> { unimplemented!() }
 
-    fn sign_message(&self, _message: &str) -> SignatureResult<String> {
-        unimplemented!()
-    }
+    fn sign_message(&self, _message: &str) -> SignatureResult<String> { unimplemented!() }
 
     fn verify_message(&self, _signature: &str, _message: &str, _address: &str) -> VerificationResult<bool> {
         unimplemented!()
     }
 
-    fn my_balance(&self) -> BalanceFut<CoinBalance> {
-        unimplemented!()
-    }
+    fn my_balance(&self) -> BalanceFut<CoinBalance> { unimplemented!() }
 
-    fn base_coin_balance(&self) -> BalanceFut<BigDecimal> {
-        unimplemented!()
-    }
+    fn base_coin_balance(&self) -> BalanceFut<BigDecimal> { unimplemented!() }
 
-    fn platform_ticker(&self) -> &str {
-        unimplemented!()
-    }
+    fn platform_ticker(&self) -> &str { unimplemented!() }
 
     /// Receives raw transaction bytes in hexadecimal format as input and returns tx hash in hexadecimal format
-    fn send_raw_tx(&self, tx: &str) -> Box<dyn Future<Item = String, Error = String> + Send> {
-        unimplemented!()
-    }
+    fn send_raw_tx(&self, tx: &str) -> Box<dyn Future<Item = String, Error = String> + Send> { unimplemented!() }
 
-    fn send_raw_tx_bytes(&self, tx: &[u8]) -> Box<dyn Future<Item = String, Error = String> + Send> {
-        unimplemented!()
-    }
+    fn send_raw_tx_bytes(&self, tx: &[u8]) -> Box<dyn Future<Item = String, Error = String> + Send> { unimplemented!() }
 
     fn wait_for_confirmations(
         &self,
@@ -112,30 +85,20 @@ impl MarketCoinOps for TestCoin {
         ))
     }
 
-    fn current_block(&self) -> Box<dyn Future<Item = u64, Error = String> + Send> {
-        unimplemented!()
-    }
+    fn current_block(&self) -> Box<dyn Future<Item = u64, Error = String> + Send> { unimplemented!() }
 
-    fn display_priv_key(&self) -> Result<String, String> {
-        unimplemented!()
-    }
+    fn display_priv_key(&self) -> Result<String, String> { unimplemented!() }
 
-    fn min_tx_amount(&self) -> BigDecimal {
-        unimplemented!()
-    }
+    fn min_tx_amount(&self) -> BigDecimal { unimplemented!() }
 
-    fn min_trading_vol(&self) -> MmNumber {
-        MmNumber::from("0.00777")
-    }
+    fn min_trading_vol(&self) -> MmNumber { MmNumber::from("0.00777") }
 }
 
 #[async_trait]
 #[mockable]
 #[allow(clippy::forget_ref, clippy::forget_copy, clippy::cast_ref_to_mut)]
 impl SwapOps for TestCoin {
-    fn send_taker_fee(&self, fee_addr: &[u8], amount: BigDecimal, uuid: &[u8]) -> TransactionFut {
-        unimplemented!()
-    }
+    fn send_taker_fee(&self, fee_addr: &[u8], amount: BigDecimal, uuid: &[u8]) -> TransactionFut { unimplemented!() }
 
     fn send_maker_payment(
         &self,
@@ -236,18 +199,14 @@ impl SwapOps for TestCoin {
         unimplemented!()
     }
 
-    fn validate_maker_payment(&self, _input: ValidatePaymentInput) -> ValidatePaymentFut<()> {
-        unimplemented!()
-    }
+    fn validate_maker_payment(&self, _input: ValidatePaymentInput) -> ValidatePaymentFut<()> { unimplemented!() }
 
-    fn validate_taker_payment(&self, _input: ValidatePaymentInput) -> ValidatePaymentFut<()> {
-        unimplemented!()
-    }
+    fn validate_taker_payment(&self, _input: ValidatePaymentInput) -> ValidatePaymentFut<()> { unimplemented!() }
 
     fn watcher_validate_taker_payment(
         &self,
         _input: WatcherValidatePaymentInput,
-    ) -> Box<dyn Future<Item = (), Error = String> + Send> {
+    ) -> Box<dyn Future<Item = (), Error = MmError<ValidatePaymentError>> + Send> {
         unimplemented!();
     }
 
@@ -277,9 +236,7 @@ impl SwapOps for TestCoin {
         unimplemented!()
     }
 
-    fn extract_secret(&self, secret_hash: &[u8], spend_tx: &[u8]) -> Result<Vec<u8>, String> {
-        unimplemented!()
-    }
+    fn extract_secret(&self, secret_hash: &[u8], spend_tx: &[u8]) -> Result<Vec<u8>, String> { unimplemented!() }
 
     fn negotiate_swap_contract_addr(
         &self,
@@ -288,9 +245,7 @@ impl SwapOps for TestCoin {
         unimplemented!()
     }
 
-    fn derive_htlc_key_pair(&self, _swap_unique_data: &[u8]) -> KeyPair {
-        unimplemented!()
-    }
+    fn derive_htlc_key_pair(&self, _swap_unique_data: &[u8]) -> KeyPair { unimplemented!() }
 
     fn can_refund_htlc(&self, locktime: u64) -> Box<dyn Future<Item = CanRefundHtlc, Error = String> + Send + '_> {
         unimplemented!()
@@ -301,42 +256,24 @@ impl SwapOps for TestCoin {
 #[mockable]
 #[allow(clippy::forget_ref, clippy::forget_copy, clippy::cast_ref_to_mut)]
 impl MmCoin for TestCoin {
-    fn is_asset_chain(&self) -> bool {
-        unimplemented!()
-    }
+    fn is_asset_chain(&self) -> bool { unimplemented!() }
 
-    fn get_raw_transaction(&self, _req: RawTransactionRequest) -> RawTransactionFut {
-        unimplemented!()
-    }
+    fn get_raw_transaction(&self, _req: RawTransactionRequest) -> RawTransactionFut { unimplemented!() }
 
-    fn withdraw(&self, req: WithdrawRequest) -> WithdrawFut {
-        unimplemented!()
-    }
+    fn withdraw(&self, req: WithdrawRequest) -> WithdrawFut { unimplemented!() }
 
-    fn decimals(&self) -> u8 {
-        unimplemented!()
-    }
+    fn decimals(&self) -> u8 { unimplemented!() }
 
-    fn convert_to_address(&self, from: &str, to_address_format: Json) -> Result<String, String> {
-        unimplemented!()
-    }
+    fn convert_to_address(&self, from: &str, to_address_format: Json) -> Result<String, String> { unimplemented!() }
 
-    fn validate_address(&self, address: &str) -> ValidateAddressResult {
-        unimplemented!()
-    }
+    fn validate_address(&self, address: &str) -> ValidateAddressResult { unimplemented!() }
 
-    fn process_history_loop(&self, ctx: MmArc) -> Box<dyn Future<Item = (), Error = ()> + Send> {
-        unimplemented!()
-    }
+    fn process_history_loop(&self, ctx: MmArc) -> Box<dyn Future<Item = (), Error = ()> + Send> { unimplemented!() }
 
-    fn history_sync_status(&self) -> HistorySyncState {
-        unimplemented!()
-    }
+    fn history_sync_status(&self) -> HistorySyncState { unimplemented!() }
 
     /// Get fee to be paid per 1 swap transaction
-    fn get_trade_fee(&self) -> Box<dyn Future<Item = TradeFee, Error = String> + Send> {
-        unimplemented!()
-    }
+    fn get_trade_fee(&self) -> Box<dyn Future<Item = TradeFee, Error = String> + Send> { unimplemented!() }
 
     async fn get_sender_trade_fee(
         &self,
@@ -346,9 +283,7 @@ impl MmCoin for TestCoin {
         unimplemented!()
     }
 
-    fn get_receiver_trade_fee(&self, stage: FeeApproxStage) -> TradePreimageFut<TradeFee> {
-        unimplemented!()
-    }
+    fn get_receiver_trade_fee(&self, stage: FeeApproxStage) -> TradePreimageFut<TradeFee> { unimplemented!() }
 
     async fn get_fee_to_send_taker_fee(
         &self,
@@ -358,35 +293,19 @@ impl MmCoin for TestCoin {
         unimplemented!()
     }
 
-    fn required_confirmations(&self) -> u64 {
-        1
-    }
+    fn required_confirmations(&self) -> u64 { 1 }
 
-    fn requires_notarization(&self) -> bool {
-        false
-    }
+    fn requires_notarization(&self) -> bool { false }
 
-    fn set_required_confirmations(&self, _confirmations: u64) {
-        unimplemented!()
-    }
+    fn set_required_confirmations(&self, _confirmations: u64) { unimplemented!() }
 
-    fn set_requires_notarization(&self, _requires_nota: bool) {
-        unimplemented!()
-    }
+    fn set_requires_notarization(&self, _requires_nota: bool) { unimplemented!() }
 
-    fn swap_contract_address(&self) -> Option<BytesJson> {
-        unimplemented!()
-    }
+    fn swap_contract_address(&self) -> Option<BytesJson> { unimplemented!() }
 
-    fn mature_confirmations(&self) -> Option<u32> {
-        unimplemented!()
-    }
+    fn mature_confirmations(&self) -> Option<u32> { unimplemented!() }
 
-    fn coin_protocol_info(&self) -> Vec<u8> {
-        Vec::new()
-    }
+    fn coin_protocol_info(&self) -> Vec<u8> { Vec::new() }
 
-    fn is_coin_protocol_supported(&self, _info: &Option<Vec<u8>>) -> bool {
-        true
-    }
+    fn is_coin_protocol_supported(&self, _info: &Option<Vec<u8>>) -> bool { true }
 }
