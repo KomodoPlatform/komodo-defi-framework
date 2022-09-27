@@ -1102,8 +1102,15 @@ impl TakerSwap {
 
     async fn wait_for_maker_payment(&self) -> Result<(Option<TakerSwapCommand>, Vec<TakerSwapEvent>), String> {
         const MAKER_PAYMENT_WAIT_TIMEOUT: u64 = 600;
-        let tx_hex = self.r().taker_fee.as_ref().unwrap().tx_hex.0.clone();
-        let msg = SwapMsg::TakerFee(tx_hex);
+        let payment_data_msg = match self.get_my_payment_data().await {
+            Ok(data) => data,
+            Err(e) => {
+                return Ok((Some(TakerSwapCommand::Finish), vec![
+                    TakerSwapEvent::TakerFeeSendFailed(e.to_string().into()),
+                ]))
+            },
+        };
+        let msg = SwapMsg::TakerFee(payment_data_msg);
         let abort_send_handle = broadcast_swap_message_every(
             self.ctx.clone(),
             swap_topic(&self.uuid),
@@ -1154,6 +1161,7 @@ impl TakerSwap {
     }
 
     async fn validate_maker_payment(&self) -> Result<(Option<TakerSwapCommand>, Vec<TakerSwapEvent>), String> {
+        // Todo: validate invoice here, or before? should I revalidate on restart? it's ok to do so
         info!("Before wait confirm");
         let confirmations = self.r().data.maker_payment_confirmations;
         let f = self.maker_coin.wait_for_confirmations(
@@ -1213,6 +1221,7 @@ impl TakerSwap {
         }
 
         let unique_data = self.unique_swap_data();
+        // Todo: For lightning do this check if payment is sent/failed/pending??? what to do in each case?, should I test payments/events across restarts???
         let f = self.taker_coin.check_if_my_payment_sent(
             self.r().data.taker_payment_lock as u32,
             self.r().other_taker_coin_htlc_pub.as_slice(),
@@ -1225,6 +1234,7 @@ impl TakerSwap {
             Ok(res) => match res {
                 Some(tx) => tx,
                 None => {
+                    // Todo: For lightning this pays the invoice
                     let payment_fut = self.taker_coin.send_taker_payment(
                         self.r().data.taker_payment_lock as u32,
                         &*self.r().other_taker_coin_htlc_pub,
@@ -1266,18 +1276,8 @@ impl TakerSwap {
     }
 
     async fn wait_for_taker_payment_spend(&self) -> Result<(Option<TakerSwapCommand>, Vec<TakerSwapEvent>), String> {
-        let payment_data_msg = match self.get_my_payment_data().await {
-            Ok(data) => data,
-            Err(e) => {
-                return Ok((Some(TakerSwapCommand::RefundTakerPayment), vec![
-                    TakerSwapEvent::TakerPaymentDataSendFailed(e.to_string().into()),
-                    TakerSwapEvent::TakerPaymentWaitRefundStarted {
-                        wait_until: self.wait_refund_until(),
-                    },
-                ]))
-            },
-        };
-        let msg = SwapMsg::TakerPayment(payment_data_msg);
+        let tx_hex = self.r().taker_payment.as_ref().unwrap().tx_hex.0.clone();
+        let msg = SwapMsg::TakerPayment(tx_hex);
         let send_abort_handle =
             broadcast_swap_message_every(self.ctx.clone(), swap_topic(&self.uuid), msg, 600., self.p2p_privkey);
 

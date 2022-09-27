@@ -131,9 +131,9 @@ pub enum SwapMsg {
     Negotiation(NegotiationDataMsg),
     NegotiationReply(NegotiationDataMsg),
     Negotiated(bool),
-    TakerFee(Vec<u8>),
+    TakerFee(PaymentDataMsg),
     MakerPayment(PaymentDataMsg),
-    TakerPayment(PaymentDataMsg),
+    TakerPayment(Vec<u8>),
 }
 
 #[derive(Debug, Default)]
@@ -141,9 +141,9 @@ pub struct SwapMsgStore {
     negotiation: Option<NegotiationDataMsg>,
     negotiation_reply: Option<NegotiationDataMsg>,
     negotiated: Option<bool>,
-    taker_fee: Option<Vec<u8>>,
+    taker_fee: Option<PaymentDataMsg>,
     maker_payment: Option<PaymentDataMsg>,
-    taker_payment: Option<PaymentDataMsg>,
+    taker_payment: Option<Vec<u8>>,
     accept_only_from: bits256,
 }
 
@@ -231,9 +231,9 @@ pub async fn process_msg(ctx: MmArc, topic: &str, msg: &[u8]) {
                 SwapMsg::Negotiation(data) => msg_store.negotiation = Some(data),
                 SwapMsg::NegotiationReply(data) => msg_store.negotiation_reply = Some(data),
                 SwapMsg::Negotiated(negotiated) => msg_store.negotiated = Some(negotiated),
-                SwapMsg::TakerFee(taker_fee) => msg_store.taker_fee = Some(taker_fee),
+                SwapMsg::TakerFee(data) => msg_store.taker_fee = Some(data),
                 SwapMsg::MakerPayment(data) => msg_store.maker_payment = Some(data),
-                SwapMsg::TakerPayment(data) => msg_store.taker_payment = Some(data),
+                SwapMsg::TakerPayment(taker_payment) => msg_store.taker_payment = Some(taker_payment),
             }
         } else {
             warn!("Received message from unexpected sender for swap {}", uuid);

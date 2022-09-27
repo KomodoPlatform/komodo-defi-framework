@@ -635,7 +635,8 @@ impl MakerSwap {
             },
         };
         drop(send_abort_handle);
-        let taker_fee = match self.taker_coin.tx_enum_from_bytes(&payload) {
+        // Todo: validate invoice here, or after? should I revalidate on restart?
+        let taker_fee = match self.taker_coin.tx_enum_from_bytes(payload.payment_data()) {
             Ok(tx) => tx,
             Err(e) => {
                 return Ok((Some(MakerSwapCommand::Finish), vec![
@@ -702,6 +703,7 @@ impl MakerSwap {
 
         let secret_hash = self.secret_hash();
         let unique_data = self.unique_swap_data();
+        // Todo: For lightning do this check if payment is sent/failed/pending??? what to do in each case?, should I test payments/events across restarts???
         let transaction_f = self
             .maker_coin
             .check_if_my_payment_sent(
@@ -718,6 +720,7 @@ impl MakerSwap {
             Ok(res) => match res {
                 Some(tx) => tx,
                 None => {
+                    // Todo: For lightning this pays the invoice
                     let payment_fut = self.maker_coin.send_maker_payment(
                         self.r().data.maker_payment_lock as u32,
                         &*self.r().other_maker_coin_htlc_pub,
@@ -815,7 +818,7 @@ impl MakerSwap {
         };
         drop(abort_send_handle);
 
-        let taker_payment = match self.taker_coin.tx_enum_from_bytes(payload.payment_data()) {
+        let taker_payment = match self.taker_coin.tx_enum_from_bytes(&payload) {
             Ok(tx) => tx,
             Err(err) => {
                 return Ok((Some(MakerSwapCommand::RefundMakerPayment), vec![
