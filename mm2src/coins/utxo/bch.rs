@@ -11,8 +11,8 @@ use crate::utxo::utxo_tx_history_v2::{UtxoMyAddressesHistoryError, UtxoTxDetails
 use crate::{BlockHeightAndTime, CanRefundHtlc, CoinBalance, CoinProtocol, CoinWithDerivationMethod,
             NegotiateSwapContractAddrErr, PrivKeyBuildPolicy, RawTransactionFut, RawTransactionRequest,
             SearchForSwapTxSpendInput, SignatureResult, SwapOps, TradePreimageValue, TransactionFut, TransactionType,
-            TxFeeDetails, TxMarshalingErr, UnexpectedDerivationMethod, ValidateAddressResult, ValidatePaymentInput,
-            VerificationResult, WatcherValidatePaymentInput, WithdrawFut};
+            TxFeeDetails, TxMarshalingErr, UnexpectedDerivationMethod, ValidateAddressResult, ValidatePaymentFut,
+            ValidatePaymentInput, VerificationResult, WatcherValidatePaymentInput, WithdrawFut};
 use common::log::warn;
 use derive_more::Display;
 use futures::{FutureExt, TryFutureExt};
@@ -912,6 +912,29 @@ impl SwapOps for BchCoin {
         utxo_common::send_taker_spends_maker_payment_preimage(self.clone(), preimage, secret)
     }
 
+    fn create_taker_refunds_payment(
+        &self,
+        taker_payment_tx: &[u8],
+        time_lock: u32,
+        maker_pub: &[u8],
+        secret_hash: &[u8],
+        _swap_contract_address: &Option<BytesJson>,
+        swap_unique_data: &[u8],
+    ) -> TransactionFut {
+        utxo_common::create_taker_refunds_payment(
+            self.clone(),
+            taker_payment_tx,
+            time_lock,
+            maker_pub,
+            secret_hash,
+            swap_unique_data,
+        )
+    }
+
+    fn send_watcher_refunds_taker_payment(&self, taker_refunds_payment: &[u8]) -> TransactionFut {
+        utxo_common::send_watcher_refunds_taker_payment(self.clone(), taker_refunds_payment)
+    }
+
     fn send_taker_refunds_payment(
         &self,
         taker_tx: &[u8],
@@ -974,18 +997,15 @@ impl SwapOps for BchCoin {
         )
     }
 
-    fn validate_maker_payment(&self, input: ValidatePaymentInput) -> Box<dyn Future<Item = (), Error = String> + Send> {
+    fn validate_maker_payment(&self, input: ValidatePaymentInput) -> ValidatePaymentFut {
         utxo_common::validate_maker_payment(self, input)
     }
 
-    fn validate_taker_payment(&self, input: ValidatePaymentInput) -> Box<dyn Future<Item = (), Error = String> + Send> {
+    fn validate_taker_payment(&self, input: ValidatePaymentInput) -> ValidatePaymentFut {
         utxo_common::validate_taker_payment(self, input)
     }
 
-    fn watcher_validate_taker_payment(
-        &self,
-        input: WatcherValidatePaymentInput,
-    ) -> Box<dyn Future<Item = (), Error = String> + Send> {
+    fn watcher_validate_taker_payment(&self, input: WatcherValidatePaymentInput) -> ValidatePaymentFut {
         utxo_common::watcher_validate_taker_payment(self, input)
     }
 

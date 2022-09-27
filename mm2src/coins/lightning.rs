@@ -24,8 +24,8 @@ use crate::{BalanceFut, CoinBalance, FeeApproxStage, FoundSwapTxSpend, HistorySy
             NegotiateSwapContractAddrErr, RawTransactionFut, RawTransactionRequest, SearchForSwapTxSpendInput,
             SignatureError, SignatureResult, SwapOps, TradeFee, TradePreimageFut, TradePreimageResult,
             TradePreimageValue, TransactionEnum, TransactionFut, TxMarshalingErr, UnexpectedDerivationMethod,
-            UtxoStandardCoin, ValidateAddressResult, ValidatePaymentInput, VerificationError, VerificationResult,
-            WatcherValidatePaymentInput, WithdrawError, WithdrawFut, WithdrawRequest};
+            UtxoStandardCoin, ValidateAddressResult, ValidatePaymentFut, ValidatePaymentInput, VerificationError,
+            VerificationResult, WatcherValidatePaymentInput, WithdrawError, WithdrawFut, WithdrawRequest};
 use async_trait::async_trait;
 use bitcoin::hashes::Hash;
 use bitcoin_hashes::sha256::Hash as Sha256;
@@ -341,6 +341,22 @@ impl SwapOps for LightningCoin {
         unimplemented!();
     }
 
+    fn create_taker_refunds_payment(
+        &self,
+        _taker_payment_tx: &[u8],
+        _time_lock: u32,
+        _maker_pub: &[u8],
+        _secret_hash: &[u8],
+        _swap_contract_address: &Option<BytesJson>,
+        _swap_unique_data: &[u8],
+    ) -> TransactionFut {
+        unimplemented!();
+    }
+
+    fn send_watcher_refunds_taker_payment(&self, _taker_refunds_payment: &[u8]) -> TransactionFut {
+        unimplemented!();
+    }
+
     fn send_taker_refunds_payment(
         &self,
         _taker_payment_tx: &[u8],
@@ -377,24 +393,11 @@ impl SwapOps for LightningCoin {
         unimplemented!()
     }
 
-    fn validate_maker_payment(
-        &self,
-        _input: ValidatePaymentInput,
-    ) -> Box<dyn Future<Item = (), Error = String> + Send> {
-        unimplemented!()
-    }
+    fn validate_maker_payment(&self, _input: ValidatePaymentInput) -> ValidatePaymentFut { unimplemented!() }
 
-    fn validate_taker_payment(
-        &self,
-        _input: ValidatePaymentInput,
-    ) -> Box<dyn Future<Item = (), Error = String> + Send> {
-        unimplemented!()
-    }
+    fn validate_taker_payment(&self, _input: ValidatePaymentInput) -> ValidatePaymentFut { unimplemented!() }
 
-    fn watcher_validate_taker_payment(
-        &self,
-        _input: WatcherValidatePaymentInput,
-    ) -> Box<dyn Future<Item = (), Error = String> + Send> {
+    fn watcher_validate_taker_payment(&self, _input: WatcherValidatePaymentInput) -> ValidatePaymentFut {
         unimplemented!();
     }
 

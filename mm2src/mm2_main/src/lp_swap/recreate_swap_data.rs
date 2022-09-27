@@ -265,7 +265,7 @@ fn convert_taker_to_maker_events(
             | TakerSwapEvent::MakerPaymentSpent(_)
             | TakerSwapEvent::MakerPaymentSpendFailed(_)
             // We don't know the reason at the moment, so we rely on the errors handling above.
-            | TakerSwapEvent::WatcherMessageSent(_)
+            | TakerSwapEvent::WatcherMessageSent(_,_)
             | TakerSwapEvent::TakerPaymentWaitRefundStarted { .. }
             | TakerSwapEvent::TakerPaymentRefunded(_)
             | TakerSwapEvent::TakerPaymentRefundFailed(_)

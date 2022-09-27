@@ -33,6 +33,8 @@
 #[macro_use] extern crate serde_json;
 #[macro_use] extern crate ser_error_derive;
 
+use crate::utxo::bchd_grpc::ValidateSlpUtxosErr;
+use crate::utxo::slp::ParseSlpScriptError;
 use async_trait::async_trait;
 use base58::FromBase58Error;
 use common::{calc_total_pages, now_ms, ten, HttpStatusCode};
@@ -412,6 +414,7 @@ impl TransactionErr {
 }
 
 pub type TransactionFut = Box<dyn Future<Item = TransactionEnum, Error = TransactionErr> + Send>;
+pub type ValidatePaymentFut = Box<dyn Future<Item = (), Error = MmError<ValidatePaymentError>> + Send>;
 
 #[derive(Debug, PartialEq)]
 pub enum FoundSwapTxSpend {
@@ -444,6 +447,38 @@ pub struct WatcherValidatePaymentInput {
     pub amount: BigDecimal,
     pub try_spv_proof_until: u64,
     pub confirmations: u64,
+}
+
+#[derive(Debug, Display)]
+pub enum ValidatePaymentError {
+    TxParseError(String),
+    #[display(fmt = "OpReturnParseError: {:?}", _0)]
+    OpReturnParseError(ParseSlpScriptError),
+    NumConversionErr(NumConversError),
+    UnexpectedDerivationMethod(UnexpectedDerivationMethod),
+    TxFromRPCError(String),
+    InvalidTx(String),
+    InvalidTxOutput(String),
+    SPVValidationError(String),
+    InvalidPubkey(String),
+    PaymentStatusError(String),
+    CallBytesError(String),
+}
+
+impl From<NumConversError> for ValidatePaymentError {
+    fn from(err: NumConversError) -> ValidatePaymentError { ValidatePaymentError::NumConversionErr(err) }
+}
+
+impl From<ParseSlpScriptError> for ValidatePaymentError {
+    fn from(err: ParseSlpScriptError) -> Self { ValidatePaymentError::OpReturnParseError(err) }
+}
+
+impl From<ValidateSlpUtxosErr> for ValidatePaymentError {
+    fn from(err: ValidateSlpUtxosErr) -> Self { ValidatePaymentError::InvalidTx(err.to_string()) }
+}
+
+impl From<UnexpectedDerivationMethod> for ValidatePaymentError {
+    fn from(err: UnexpectedDerivationMethod) -> Self { ValidatePaymentError::UnexpectedDerivationMethod(err) }
 }
 
 #[derive(Clone, Debug)]
@@ -513,6 +548,16 @@ pub trait SwapOps {
         _swap_unique_data: &[u8],
     ) -> TransactionFut;
 
+    fn create_taker_refunds_payment(
+        &self,
+        _taker_payment_tx: &[u8],
+        _time_lock: u32,
+        _maker_pub: &[u8],
+        _secret_hash: &[u8],
+        _swap_contract_address: &Option<BytesJson>,
+        _swap_unique_data: &[u8],
+    ) -> TransactionFut;
+
     fn send_taker_spends_maker_payment(
         &self,
         maker_payment_tx: &[u8],
@@ -524,6 +569,8 @@ pub trait SwapOps {
     ) -> TransactionFut;
 
     fn send_taker_spends_maker_payment_preimage(&self, preimage: &[u8], secret: &[u8]) -> TransactionFut;
+
+    fn send_watcher_refunds_taker_payment(&self, _taker_refunds_payment: &[u8]) -> TransactionFut;
 
     fn send_taker_refunds_payment(
         &self,
@@ -555,14 +602,11 @@ pub trait SwapOps {
         uuid: &[u8],
     ) -> Box<dyn Future<Item = (), Error = String> + Send>;
 
-    fn validate_maker_payment(&self, input: ValidatePaymentInput) -> Box<dyn Future<Item = (), Error = String> + Send>;
+    fn validate_maker_payment(&self, input: ValidatePaymentInput) -> ValidatePaymentFut;
 
-    fn validate_taker_payment(&self, input: ValidatePaymentInput) -> Box<dyn Future<Item = (), Error = String> + Send>;
+    fn validate_taker_payment(&self, input: ValidatePaymentInput) -> ValidatePaymentFut;
 
-    fn watcher_validate_taker_payment(
-        &self,
-        _input: WatcherValidatePaymentInput,
-    ) -> Box<dyn Future<Item = (), Error = String> + Send>;
+    fn watcher_validate_taker_payment(&self, _input: WatcherValidatePaymentInput) -> ValidatePaymentFut;
 
     fn check_if_my_payment_sent(
         &self,

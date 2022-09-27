@@ -22,7 +22,7 @@
 //
 
 pub mod bch;
-mod bchd_grpc;
+pub mod bchd_grpc;
 #[allow(clippy::all)]
 #[rustfmt::skip]
 #[path = "utxo/pb.rs"]

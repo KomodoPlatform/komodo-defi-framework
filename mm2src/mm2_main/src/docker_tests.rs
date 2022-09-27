@@ -1261,6 +1261,51 @@ mod docker_tests {
         assert_eq!(bob_mycoin_balance, "97.99999");
     }
 
+    #[test]
+    fn test_watcher_refunds_taker_payment() {
+        let timeout = (now_ms() / 1000) + 120; // timeout if test takes more than 120 seconds to run
+        let (_ctx, coin, _) = generate_utxo_coin_with_random_privkey("MYCOIN", 1000u64.into());
+        let my_public_key = coin.my_public_key().unwrap();
+
+        let time_lock = (now_ms() / 1000) as u32 - 3600;
+        let tx = coin
+            .send_taker_payment(time_lock, my_public_key, &[0; 20], 1u64.into(), &None, &[])
+            .wait()
+            .unwrap();
+
+        coin.wait_for_confirmations(&tx.tx_hex(), 1, false, timeout, 1)
+            .wait()
+            .unwrap();
+
+        let refund_tx = coin
+            .create_taker_refunds_payment(&tx.tx_hex(), time_lock, my_public_key, &[0; 20], &None, &[])
+            .wait()
+            .unwrap();
+
+        let refund_tx = coin
+            .send_watcher_refunds_taker_payment(&refund_tx.tx_hex())
+            .wait()
+            .unwrap();
+
+        coin.wait_for_confirmations(&refund_tx.tx_hex(), 1, false, timeout, 1)
+            .wait()
+            .unwrap();
+
+        let search_input = SearchForSwapTxSpendInput {
+            time_lock,
+            other_pub: &*coin.my_public_key().unwrap(),
+            secret_hash: &[0; 20],
+            tx: &tx.tx_hex(),
+            search_from_block: 0,
+            swap_contract_address: &None,
+            swap_unique_data: &[],
+        };
+        let found = block_on(coin.search_for_swap_tx_spend_my(search_input))
+            .unwrap()
+            .unwrap();
+        assert_eq!(FoundSwapTxSpend::Refunded(refund_tx), found);
+    }
+
     // https://github.com/KomodoPlatform/atomicDEX-API/issues/471
     #[test]
     fn test_match_and_trade_setprice_max() {
