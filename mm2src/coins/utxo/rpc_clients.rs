@@ -69,6 +69,7 @@ cfg_native! {
 }
 
 pub const NO_TX_ERROR_CODE: &str = "'code': -5";
+const TX_NOT_FOUND_RETRIES: u8 = 10;
 
 pub type AddressesByLabelResult = HashMap<String, AddressPurpose>;
 pub type JsonRpcPendingRequestsShared = Arc<AsyncMutex<JsonRpcPendingRequests>>;
@@ -147,6 +148,7 @@ impl UtxoRpcClientEnum {
         check_every: u64,
     ) -> Box<dyn Future<Item = (), Error = String> + Send> {
         let selfi = self.clone();
+        let mut tx_not_found_retries = TX_NOT_FOUND_RETRIES;
         let fut = async move {
             loop {
                 if now_ms() / 1000 > wait_until {
@@ -176,7 +178,21 @@ impl UtxoRpcClientEnum {
                     },
                     Err(e) => {
                         if e.get_inner().is_tx_not_found_error() {
-                            return ERR!("Tx {} is not on chain anymore", tx_hash);
+                            if tx_not_found_retries == 0 {
+                                return ERR!(
+                                    "Tx {} was not found on chain after {} tries, error: {}",
+                                    tx_hash,
+                                    TX_NOT_FOUND_RETRIES,
+                                    e,
+                                );
+                            }
+                            error!(
+                                "Tx {} not found on chain, error: {}, retrying in 10 seconds. Retries left: {}",
+                                tx_hash, e, tx_not_found_retries
+                            );
+                            tx_not_found_retries -= 1;
+                            Timer::sleep(check_every as f64).await;
+                            continue;
                         };
 
                         if expiry_height > 0 {
