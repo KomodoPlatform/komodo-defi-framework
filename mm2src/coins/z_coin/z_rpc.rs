@@ -1,9 +1,9 @@
 use super::{z_coin_errors::*, CheckPointBlockInfo, ZcoinConsensusParams};
 use crate::utxo::rpc_clients::{NativeClient, UtxoRpcClientOps, NO_TX_ERROR_CODE};
 use async_trait::async_trait;
-use common::executor::Timer;
+use common::executor::{spawn_abortable, AbortOnDropHandle, Timer};
 use common::log::{debug, error, info, LogOnError};
-use common::{async_blocking, spawn_abortable, AbortOnDropHandle, Future01CompatExt};
+use common::{async_blocking, Future01CompatExt};
 use db_common::sqlite::rusqlite::{params, Connection, Error as SqliteError, NO_PARAMS};
 use db_common::sqlite::{query_single_row, run_optimization_pragmas};
 use futures::channel::mpsc::{channel, Receiver as AsyncReceiver, Sender as AsyncSender};

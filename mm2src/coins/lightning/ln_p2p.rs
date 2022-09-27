@@ -1,5 +1,5 @@
 use super::*;
-use common::executor::Timer;
+use common::executor::{spawn_abortable, Timer};
 use common::log::LogState;
 use derive_more::Display;
 use lightning::chain::Access;

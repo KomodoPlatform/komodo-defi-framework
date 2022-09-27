@@ -96,7 +96,7 @@ macro_rules! drop_mutability {
 #[macro_export]
 macro_rules! spawn_abortable {
     ($fut:expr, on_abort => $($arg:tt)+) => {
-        $crate::spawn_abortable_with_msg($fut, format!($($arg)+))
+        $crate::executor::spawn_abortable_with_msg($fut, format!($($arg)+))
     };
 }
 
@@ -110,21 +110,14 @@ pub mod log;
 pub mod crash_reports;
 pub mod custom_futures;
 pub mod custom_iter;
+#[path = "executor/mod.rs"] pub mod executor;
 pub mod seri;
 #[path = "patterns/state_machine.rs"] pub mod state_machine;
 pub mod time_cache;
 
 #[cfg(not(target_arch = "wasm32"))]
-#[path = "executor/native_executor.rs"]
-pub mod executor;
-
-#[cfg(not(target_arch = "wasm32"))]
 #[path = "wio.rs"]
 pub mod wio;
-
-#[cfg(target_arch = "wasm32")]
-#[path = "executor/wasm_executor.rs"]
-pub mod executor;
 
 #[cfg(target_arch = "wasm32")] pub mod wasm;
 
@@ -133,7 +126,6 @@ pub mod executor;
 use backtrace::SymbolName;
 use chrono::Utc;
 pub use futures::compat::Future01CompatExt;
-use futures::future::{abortable, AbortHandle, FutureExt};
 use futures01::{future, Future};
 use http::header::CONTENT_TYPE;
 use http::Response;
@@ -154,7 +146,6 @@ use std::ptr::read_volatile;
 use std::sync::atomic::Ordering;
 use uuid::Uuid;
 
-use crate::executor::spawn;
 pub use http::StatusCode;
 pub use serde;
 
@@ -950,44 +941,6 @@ impl<Id> PagingOptionsEnum<Id> {
 
 impl<Id> Default for PagingOptionsEnum<Id> {
     fn default() -> Self { PagingOptionsEnum::PageNumber(NonZeroUsize::new(1).expect("1 > 0")) }
-}
-
-/// The AbortHandle that aborts on drop
-pub struct AbortOnDropHandle(Option<AbortHandle>);
-
-impl From<AbortHandle> for AbortOnDropHandle {
-    fn from(handle: AbortHandle) -> Self { AbortOnDropHandle(Some(handle)) }
-}
-
-impl AbortOnDropHandle {
-    pub fn into_handle(mut self) -> AbortHandle { self.0.take().expect("`AbortHandle` Must be initialized") }
-}
-
-impl Drop for AbortOnDropHandle {
-    #[inline(always)]
-    fn drop(&mut self) {
-        if let Some(handle) = self.0.take() {
-            handle.abort();
-        }
-    }
-}
-
-#[must_use]
-pub fn spawn_abortable(fut: impl Future03<Output = ()> + Send + 'static) -> AbortOnDropHandle {
-    let (abortable, handle) = abortable(fut);
-    spawn(abortable.then(|_| async {}));
-    AbortOnDropHandle::from(handle)
-}
-
-#[must_use]
-pub fn spawn_abortable_with_msg(fut: impl Future03<Output = ()> + Send + 'static, msg: String) -> AbortOnDropHandle {
-    let (abortable, handle) = abortable(fut);
-    spawn(async move {
-        if let Err(_aborted) = abortable.await {
-            log::info!("{}", msg);
-        }
-    });
-    AbortOnDropHandle::from(handle)
 }
 
 #[inline(always)]
