@@ -22,7 +22,6 @@
 //
 
 pub mod bch;
-pub mod bch_and_slp_tx_history;
 mod bchd_grpc;
 #[allow(clippy::all)]
 #[rustfmt::skip]
@@ -36,6 +35,7 @@ pub mod utxo_block_header_storage;
 pub mod utxo_builder;
 pub mod utxo_common;
 pub mod utxo_standard;
+pub mod utxo_tx_history_v2;
 pub mod utxo_withdraw;
 
 use async_trait::async_trait;
@@ -68,7 +68,7 @@ use mm2_metrics::MetricsArc;
 use mm2_number::BigDecimal;
 #[cfg(test)] use mocktopus::macros::*;
 use num_traits::ToPrimitive;
-use primitives::hash::{H256, H264};
+use primitives::hash::{H160, H256, H264};
 use rpc::v1::types::{Bytes as BytesJson, Transaction as RpcTransaction, H256 as H256Json};
 use script::{Builder, Script, SignatureVersion, TransactionInputSigner};
 use serde_json::{self as json, Value as Json};
@@ -102,10 +102,11 @@ use super::{big_decimal_from_sat_unsigned, BalanceError, BalanceFut, BalanceResu
             Transaction, TransactionDetails, TransactionEnum, UnexpectedDerivationMethod, WithdrawError,
             WithdrawRequest};
 use crate::coin_balance::{EnableCoinScanPolicy, EnabledCoinBalanceParams, HDAddressBalanceScanner};
-use crate::hd_wallet::{HDAccountOps, HDAccountsMutex, HDAddress, HDWalletCoinOps, HDWalletOps, InvalidBip44ChainError};
+use crate::hd_wallet::{HDAccountOps, HDAccountsMutex, HDAddress, HDAddressId, HDWalletCoinOps, HDWalletOps,
+                       InvalidBip44ChainError};
 use crate::hd_wallet_storage::{HDAccountStorageItem, HDWalletCoinStorage, HDWalletStorageError, HDWalletStorageResult};
 use crate::utxo::tx_cache::UtxoVerboseCacheShared;
-use crate::TransactionErr;
+use crate::{TransactionErr, VerificationError};
 
 pub mod tx_cache;
 #[cfg(target_arch = "wasm32")]
@@ -137,6 +138,7 @@ pub type GenerateTxResult = Result<(TransactionInputSigner, AdditionalTxData), M
 pub type HistoryUtxoTxMap = HashMap<H256Json, HistoryUtxoTx>;
 pub type MatureUnspentMap = HashMap<Address, MatureUnspentList>;
 pub type RecentlySpentOutPointsGuard<'a> = AsyncMutexGuard<'a, RecentlySpentOutPoints>;
+pub type UtxoHDAddress = HDAddress<Address, Public>;
 
 #[cfg(windows)]
 #[cfg(not(target_arch = "wasm32"))]
@@ -737,6 +739,26 @@ impl From<serialization::Error> for GetConfirmedTxError {
     fn from(err: serialization::Error) -> Self { GetConfirmedTxError::SerializationError(err) }
 }
 
+#[derive(Debug, Display)]
+pub enum AddrFromStrError {
+    #[display(fmt = "{}", _0)]
+    Unsupported(UnsupportedAddr),
+    #[display(fmt = "Cannot determine format: {:?}", _0)]
+    CannotDetermineFormat(Vec<String>),
+}
+
+impl From<UnsupportedAddr> for AddrFromStrError {
+    fn from(e: UnsupportedAddr) -> Self { AddrFromStrError::Unsupported(e) }
+}
+
+impl From<AddrFromStrError> for VerificationError {
+    fn from(e: AddrFromStrError) -> Self { VerificationError::AddressDecodingError(e.to_string()) }
+}
+
+impl From<AddrFromStrError> for WithdrawError {
+    fn from(e: AddrFromStrError) -> Self { WithdrawError::InvalidAddress(e.to_string()) }
+}
+
 impl UtxoCoinFields {
     pub fn transaction_preimage(&self) -> TransactionInputSigner {
         let lock_time = if self.conf.ticker == "KMD" {
@@ -927,7 +949,7 @@ pub trait UtxoCommonOps:
 
     /// Try to parse address from string using specified on asset enable format,
     /// and if it failed inform user that he used a wrong format.
-    fn address_from_str(&self, address: &str) -> Result<Address, String>;
+    fn address_from_str(&self, address: &str) -> MmResult<Address, AddrFromStrError>;
 
     async fn get_current_mtp(&self) -> UtxoRpcResult<u32>;
 
@@ -1431,6 +1453,7 @@ impl Default for ElectrumBuilderArgs {
 
 #[derive(Debug)]
 pub struct UtxoHDWallet {
+    pub hd_wallet_rmd160: H160,
     pub hd_wallet_storage: HDWalletCoinStorage,
     pub address_format: UtxoAddressFormat,
     /// Derivation path of the coin.
@@ -1455,7 +1478,22 @@ impl HDWalletOps for UtxoHDWallet {
     fn get_accounts_mutex(&self) -> &HDAccountsMutex<Self::HDAccount> { &self.accounts }
 }
 
-#[derive(Clone, Debug, PartialEq)]
+#[derive(Clone, Debug, Default)]
+pub struct HDAddressesCache {
+    cache: Arc<AsyncMutex<HashMap<HDAddressId, UtxoHDAddress>>>,
+}
+
+impl HDAddressesCache {
+    pub fn with_capacity(capacity: usize) -> HDAddressesCache {
+        HDAddressesCache {
+            cache: Arc::new(AsyncMutex::new(HashMap::with_capacity(capacity))),
+        }
+    }
+
+    pub async fn lock(&self) -> AsyncMutexGuard<'_, HashMap<HDAddressId, UtxoHDAddress>> { self.cache.lock().await }
+}
+
+#[derive(Clone, Debug)]
 pub struct UtxoHDAccount {
     pub account_id: u32,
     /// [Extended public key](https://learnmeabitcoin.com/technical/extended-keys) that corresponds to the derivation path:
@@ -1468,6 +1506,9 @@ pub struct UtxoHDAccount {
     /// but to request the balance of addresses whose index is less than `address_number`.
     pub external_addresses_number: u32,
     pub internal_addresses_number: u32,
+    /// The cache of derived addresses.
+    /// This is used at [`HDWalletCoinOps::derive_address`].
+    pub derived_addresses: HDAddressesCache,
 }
 
 impl HDAccountOps for UtxoHDAccount {
@@ -1495,12 +1536,15 @@ impl UtxoHDAccount {
             .derive(account_child)
             .map_to_mm(Bip44DerPathError::from)?;
         let extended_pubkey = Secp256k1ExtendedPublicKey::from_str(&account_info.account_xpub)?;
+        let capacity =
+            account_info.external_addresses_number + account_info.internal_addresses_number + DEFAULT_GAP_LIMIT;
         Ok(UtxoHDAccount {
             account_id: account_info.account_id,
             extended_pubkey,
             account_derivation_path,
             external_addresses_number: account_info.external_addresses_number,
             internal_addresses_number: account_info.internal_addresses_number,
+            derived_addresses: HDAddressesCache::with_capacity(capacity as usize),
         })
     }
 

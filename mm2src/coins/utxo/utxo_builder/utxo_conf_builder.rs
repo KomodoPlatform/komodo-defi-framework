@@ -287,6 +287,11 @@ impl<'a> UtxoConfBuilder<'a> {
 
     fn trezor_coin(&self) -> Option<String> { self.conf["trezor_coin"].as_str().map(|coin| coin.to_string()) }
 
+    // Todo: implement spv for wasm
+    #[cfg(target_arch = "wasm32")]
+    fn enable_spv_proof(&self) -> bool { false }
+
+    #[cfg(not(target_arch = "wasm32"))]
     fn enable_spv_proof(&self) -> bool { self.conf["enable_spv_proof"].as_bool().unwrap_or(false) }
 
     fn block_headers_verification_params(&self) -> Option<BlockHeaderVerificationParams> {

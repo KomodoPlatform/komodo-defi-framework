@@ -1,10 +1,14 @@
+//! Consider using very dirty [Rust script](https://pastebin.ubuntu.com/p/9r2mDmGGHT/)
+//! to print all transactions from `../for_tests/tBCH_tx_history_fixtures.json` ordered.
+
 use crate::my_tx_history_v2::{GetHistoryResult, TxHistoryStorage};
-use crate::tx_history_storage::{GetTxHistoryFilters, TxHistoryStorageBuilder, WalletId};
+use crate::tx_history_storage::{FilteringAddresses, GetTxHistoryFilters, TxHistoryStorageBuilder, WalletId};
 use crate::{BytesJson, TransactionDetails};
 use common::PagingOptionsEnum;
 use mm2_test_helpers::for_tests::mm_ctx_with_custom_db;
 use serde_json as json;
 use std::collections::HashMap;
+use std::iter::FromIterator;
 use std::num::NonZeroUsize;
 
 const BCH_TX_HISTORY_STR: &str = include_str!("../for_tests/tBCH_tx_history_fixtures.json");
@@ -35,20 +39,6 @@ fn assert_get_history_result(actual: GetHistoryResult, expected_ids: Vec<BytesJs
     assert_eq!(actual.total, total, "!total");
 }
 
-async fn get_coin_history<Storage: TxHistoryStorage>(
-    storage: &Storage,
-    wallet_id: &WalletId,
-) -> Vec<TransactionDetails> {
-    let filters = GetTxHistoryFilters::new();
-    let paging_options = PagingOptionsEnum::PageNumber(NonZeroUsize::new(1).unwrap());
-    let limit = u32::MAX as usize;
-    storage
-        .get_history(wallet_id, filters, paging_options, limit)
-        .await
-        .unwrap()
-        .transactions
-}
-
 async fn test_add_transactions_impl() {
     let wallet_id = wallet_id_for_test("TEST_ADD_TRANSACTIONS");
 
@@ -60,12 +50,20 @@ async fn test_add_transactions_impl() {
     let tx1 = get_bch_tx_details("6686ee013620d31ba645b27d581fed85437ce00f46b595a576718afac4dd5b69");
     let transactions = [tx1.clone(), tx1.clone()];
 
+    let filters = GetTxHistoryFilters::for_address("bchtest:qzx0llpyp8gxxsmad25twksqnwd62xm3lsnnczzt66".to_string());
+    let paging_options = PagingOptionsEnum::PageNumber(NonZeroUsize::new(1).unwrap());
+    let limit = u32::MAX as usize;
+
     // must fail because we are adding transactions with the same internal_id
     storage
         .add_transactions_to_history(&wallet_id, transactions)
         .await
         .unwrap_err();
-    let actual_txs = get_coin_history(&storage, &wallet_id).await;
+    let actual_txs = storage
+        .get_history(&wallet_id, filters.clone(), paging_options.clone(), limit)
+        .await
+        .unwrap()
+        .transactions;
     assert!(actual_txs.is_empty());
 
     let tx2 = get_bch_tx_details("c07836722bbdfa2404d8fe0ea56700d02e2012cb9dc100ccaf1138f334a759ce");
@@ -74,7 +72,11 @@ async fn test_add_transactions_impl() {
         .add_transactions_to_history(&wallet_id, transactions.clone())
         .await
         .unwrap();
-    let actual_txs = get_coin_history(&storage, &wallet_id).await;
+    let actual_txs = storage
+        .get_history(&wallet_id, filters, paging_options, limit)
+        .await
+        .unwrap()
+        .transactions;
     assert_eq!(actual_txs, transactions);
 }
 
@@ -187,26 +189,84 @@ async fn test_contains_and_get_unconfirmed_transaction_impl() {
 
     storage.init(&wallet_id).await.unwrap();
 
-    let mut tx_details = get_bch_tx_details("6686ee013620d31ba645b27d581fed85437ce00f46b595a576718afac4dd5b69");
-    tx_details.block_height = 0;
+    let mut tx1 = get_bch_tx_details("afa7785fdb0e49e649aa9b6467fa183c8185c398095baac2c11df50175a7f92b");
+    tx1.block_height = 0;
+    let mut tx2 = get_bch_tx_details("06f38595a2d5d23df8a81a0d744ac3a70c3e46a01efa64a4be862b9d582167b0");
+    tx2.block_height = 0;
+    let mut tx3 = get_bch_tx_details("0fcc9cf22ea2332c73cf6cb4cf89b764d1b936a1ef4d92a087e760378fe6b96e");
+    tx3.block_height = 0;
+
     storage
-        .add_transactions_to_history(&wallet_id, [tx_details.clone()])
+        .add_transactions_to_history(&wallet_id, [tx1.clone(), tx2.clone(), tx3.clone()])
         .await
         .unwrap();
 
-    let contains_unconfirmed = storage.history_contains_unconfirmed_txes(&wallet_id).await.unwrap();
+    let for_first_address =
+        FilteringAddresses::from_iter(["bchtest:pqtflkhvhpeqsxphk36yp7pq22stu7ed3sqfxsdt7x".to_string()]);
+
+    let contains_unconfirmed = storage
+        .history_contains_unconfirmed_txes(&wallet_id, for_first_address.clone())
+        .await
+        .unwrap();
     assert!(contains_unconfirmed);
 
-    let unconfirmed_transactions = storage.get_unconfirmed_txes_from_history(&wallet_id).await.unwrap();
+    let unconfirmed_transactions = storage
+        .get_unconfirmed_txes_from_history(&wallet_id, for_first_address.clone())
+        .await
+        .unwrap();
+    // There only 2 unconfirmed transactions for `bchtest:pqtflkhvhpeqsxphk36yp7pq22stu7ed3sqfxsdt7x` address.
+    assert_eq!(unconfirmed_transactions.len(), 2);
+
+    tx1.block_height = 12345;
+    storage.update_tx_in_history(&wallet_id, &tx1).await.unwrap();
+
+    let unconfirmed_transactions = storage
+        .get_unconfirmed_txes_from_history(&wallet_id, for_first_address)
+        .await
+        .unwrap();
+    // Now there is 1 unconfirmed transaction for `bchtest:pqtflkhvhpeqsxphk36yp7pq22stu7ed3sqfxsdt7x` address.
     assert_eq!(unconfirmed_transactions.len(), 1);
 
-    tx_details.block_height = 12345;
-    storage.update_tx_in_history(&wallet_id, &tx_details).await.unwrap();
+    let for_all_addresses = FilteringAddresses::from_iter([
+        "bchtest:pqtflkhvhpeqsxphk36yp7pq22stu7ed3sqfxsdt7x".to_string(),
+        "bchtest:qp5fphvvj3pvrrv2awhm7dyu8xjueydapg3ju9kwmm".to_string(),
+    ]);
+    let unconfirmed_transactions = storage
+        .get_unconfirmed_txes_from_history(&wallet_id, for_all_addresses)
+        .await
+        .unwrap();
+    // 1 unconfirmed transaction for `bchtest:pqtflkhvhpeqsxphk36yp7pq22stu7ed3sqfxsdt7x`
+    // and 1 unconfirmed transaction for `bchtest:qp5fphvvj3pvrrv2awhm7dyu8xjueydapg3ju9kwmm`.
+    assert_eq!(unconfirmed_transactions.len(), 2);
 
-    let contains_unconfirmed = storage.history_contains_unconfirmed_txes(&wallet_id).await.unwrap();
+    tx3.block_height = 54321;
+    storage.update_tx_in_history(&wallet_id, &tx3).await.unwrap();
+
+    let for_second_address =
+        FilteringAddresses::from_iter(["bchtest:qp5fphvvj3pvrrv2awhm7dyu8xjueydapg3ju9kwmm".to_string()]);
+    let contains_unconfirmed = storage
+        .history_contains_unconfirmed_txes(&wallet_id, for_second_address.clone())
+        .await
+        .unwrap();
     assert!(!contains_unconfirmed);
 
-    let unconfirmed_transactions = storage.get_unconfirmed_txes_from_history(&wallet_id).await.unwrap();
+    let unconfirmed_transactions = storage
+        .get_unconfirmed_txes_from_history(&wallet_id, for_second_address)
+        .await
+        .unwrap();
+    assert!(unconfirmed_transactions.is_empty());
+
+    let for_unknown_address = FilteringAddresses::from_iter(["bchtest:unknown_address".to_string()]);
+    let contains_unconfirmed = storage
+        .history_contains_unconfirmed_txes(&wallet_id, for_unknown_address.clone())
+        .await
+        .unwrap();
+    assert!(!contains_unconfirmed);
+
+    let unconfirmed_transactions = storage
+        .get_unconfirmed_txes_from_history(&wallet_id, for_unknown_address)
+        .await
+        .unwrap();
     assert!(unconfirmed_transactions.is_empty());
 }
 
@@ -264,8 +324,28 @@ async fn test_unique_tx_hashes_num_impl() {
         .await
         .unwrap();
 
-    let tx_hashes_num = storage.unique_tx_hashes_num_in_history(&wallet_id).await.unwrap();
+    let for_addresses =
+        FilteringAddresses::from_iter(["bchtest:qzx0llpyp8gxxsmad25twksqnwd62xm3lsnnczzt66".to_string()]);
+    let tx_hashes_num = storage
+        .unique_tx_hashes_num_in_history(&wallet_id, for_addresses)
+        .await
+        .unwrap();
     assert_eq!(2, tx_hashes_num);
+
+    let for_addresses =
+        FilteringAddresses::from_iter(["bchtest:qz2nkwgfla42y60ctk35cye2jfpygs8p3c87hd35es".to_string()]);
+    let tx_hashes_num = storage
+        .unique_tx_hashes_num_in_history(&wallet_id, for_addresses)
+        .await
+        .unwrap();
+    assert_eq!(1, tx_hashes_num);
+
+    let for_addresses = FilteringAddresses::from_iter(["bchtest:unknown_address".to_string()]);
+    let tx_hashes_num = storage
+        .unique_tx_hashes_num_in_history(&wallet_id, for_addresses)
+        .await
+        .unwrap();
+    assert_eq!(0, tx_hashes_num);
 }
 
 async fn test_add_and_get_tx_from_cache_impl() {
@@ -351,7 +431,7 @@ async fn test_get_history_page_number_impl() {
         .await
         .unwrap();
 
-    let filters = GetTxHistoryFilters::new();
+    let filters = GetTxHistoryFilters::for_address("bchtest:qzx0llpyp8gxxsmad25twksqnwd62xm3lsnnczzt66".to_string());
     let paging = PagingOptionsEnum::PageNumber(NonZeroUsize::new(1).unwrap());
     let limit = 4;
 
@@ -365,21 +445,19 @@ async fn test_get_history_page_number_impl() {
     ];
     assert_get_history_result(result, expected_internal_ids, 0, 123);
 
-    let filters = GetTxHistoryFilters::new()
+    let filters = GetTxHistoryFilters::for_address("slptest:qzx0llpyp8gxxsmad25twksqnwd62xm3lsg8lecug8".to_string())
         .with_token_id("bb309e48930671582bea508f9a1d9b491e49b69be3d6f372dc08da2ac6e90eb7".to_owned());
     let paging = PagingOptionsEnum::PageNumber(NonZeroUsize::new(2).unwrap());
-    let limit = 5;
+    let limit = 3;
 
     let result = storage.get_history(&wallet_id, filters, paging, limit).await.unwrap();
 
     let expected_internal_ids: Vec<BytesJson> = vec![
-        "433b641bc89e1b59c22717918583c60ec98421805c8e85b064691705d9aeb970".into(),
-        "cd6ec10b0cd9747ddc66ac5c97c2d7b493e8cea191bc2d847b3498719d4bd989".into(),
+        "babe9bd0dc1495dff0920da14a76311b744daadc9d01314f8bd4e2438c6b183b".into(),
         "1c1e68357cf5a6dacb53881f13aa5d2048fe0d0fab24b76c9ec48f53884bed97".into(),
-        "c4304b5ef4f1b88ed4939534a8ca9eca79f592939233174ae08002e8454e3f06".into(),
-        "b0035434a1e7be5af2ed991ee2a21a90b271c5852a684a0b7d315c5a770d1b1c".into(),
+        "cd6ec10b0cd9747ddc66ac5c97c2d7b493e8cea191bc2d847b3498719d4bd989".into(),
     ];
-    assert_get_history_result(result, expected_internal_ids, 5, 121);
+    assert_get_history_result(result, expected_internal_ids, 3, 119);
 }
 
 async fn test_get_history_from_id_impl() {
@@ -395,7 +473,7 @@ async fn test_get_history_from_id_impl() {
         .await
         .unwrap();
 
-    let filters = GetTxHistoryFilters::new();
+    let filters = GetTxHistoryFilters::for_address("bchtest:qzx0llpyp8gxxsmad25twksqnwd62xm3lsnnczzt66".to_string());
     let paging = PagingOptionsEnum::FromId("6686ee013620d31ba645b27d581fed85437ce00f46b595a576718afac4dd5b69".into());
     let limit = 3;
 
@@ -408,7 +486,7 @@ async fn test_get_history_from_id_impl() {
     ];
     assert_get_history_result(result, expected_internal_ids, 1, 123);
 
-    let filters = GetTxHistoryFilters::new()
+    let filters = GetTxHistoryFilters::for_address("slptest:qzx0llpyp8gxxsmad25twksqnwd62xm3lsg8lecug8".to_string())
         .with_token_id("bb309e48930671582bea508f9a1d9b491e49b69be3d6f372dc08da2ac6e90eb7".to_owned());
     let paging = PagingOptionsEnum::FromId("433b641bc89e1b59c22717918583c60ec98421805c8e85b064691705d9aeb970".into());
     let limit = 4;
@@ -416,12 +494,12 @@ async fn test_get_history_from_id_impl() {
     let result = storage.get_history(&wallet_id, filters, paging, limit).await.unwrap();
 
     let expected_internal_ids: Vec<BytesJson> = vec![
-        "cd6ec10b0cd9747ddc66ac5c97c2d7b493e8cea191bc2d847b3498719d4bd989".into(),
+        "babe9bd0dc1495dff0920da14a76311b744daadc9d01314f8bd4e2438c6b183b".into(),
         "1c1e68357cf5a6dacb53881f13aa5d2048fe0d0fab24b76c9ec48f53884bed97".into(),
-        "c4304b5ef4f1b88ed4939534a8ca9eca79f592939233174ae08002e8454e3f06".into(),
+        "cd6ec10b0cd9747ddc66ac5c97c2d7b493e8cea191bc2d847b3498719d4bd989".into(),
         "b0035434a1e7be5af2ed991ee2a21a90b271c5852a684a0b7d315c5a770d1b1c".into(),
     ];
-    assert_get_history_result(result, expected_internal_ids, 6, 121);
+    assert_get_history_result(result, expected_internal_ids, 3, 119);
 }
 
 async fn test_get_history_for_addresses_impl() {
@@ -441,8 +519,7 @@ async fn test_get_history_for_addresses_impl() {
         "slptest:ppfdp6t2qs7rc79wxjppwv0hwvr776x5vu2enth4zh".to_owned(),
         "slptest:pqgk69yyj6dzag4mdyur9lykye89ucz9vskelzwhck".to_owned(),
     ];
-    let filters = GetTxHistoryFilters::new()
-        .with_for_addresses(for_addresses)
+    let filters = GetTxHistoryFilters::for_addresses(for_addresses)
         .with_token_id("bb309e48930671582bea508f9a1d9b491e49b69be3d6f372dc08da2ac6e90eb7".to_owned());
     let paging = PagingOptionsEnum::PageNumber(NonZeroUsize::new(1).unwrap());
     let limit = 5;
@@ -462,8 +539,7 @@ async fn test_get_history_for_addresses_impl() {
         "slptest:ppfdp6t2qs7rc79wxjppwv0hwvr776x5vu2enth4zh".to_owned(),
         "slptest:pqgk69yyj6dzag4mdyur9lykye89ucz9vskelzwhck".to_owned(),
     ];
-    let filters = GetTxHistoryFilters::new()
-        .with_for_addresses(for_addresses)
+    let filters = GetTxHistoryFilters::for_addresses(for_addresses)
         .with_token_id("bb309e48930671582bea508f9a1d9b491e49b69be3d6f372dc08da2ac6e90eb7".to_owned());
     let paging = PagingOptionsEnum::FromId("e46fa0836be0534f7799b2ef5b538551ea25b6f430b7e015a95731efb7a0cd4f".into());
     let limit = 4;
@@ -482,8 +558,7 @@ async fn test_get_history_for_addresses_impl() {
         "slptest:ppfdp6t2qs7rc79wxjppwv0hwvr776x5vu2enth4zh".to_owned(),
         "slptest:pqgk69yyj6dzag4mdyur9lykye89ucz9vskelzwhck".to_owned(),
     ];
-    let filters = GetTxHistoryFilters::new()
-        .with_for_addresses(for_addresses)
+    let filters = GetTxHistoryFilters::for_addresses(for_addresses)
         .with_token_id("bb309e48930671582bea508f9a1d9b491e49b69be3d6f372dc08da2ac6e90eb7".to_owned());
     let paging = PagingOptionsEnum::FromId("6686ee013620d31ba645b27d581fed85437ce00f46b595a576718afac4dd5b69".into());
     let limit = 2;
@@ -498,8 +573,7 @@ async fn test_get_history_for_addresses_impl() {
         "slptest:ppfdp6t2qs7rc79wxjppwv0hwvr776x5vu2enth4zh".to_owned(),
         "slptest:pqgk69yyj6dzag4mdyur9lykye89ucz9vskelzwhck".to_owned(),
     ];
-    let filters = GetTxHistoryFilters::new()
-        .with_for_addresses(for_addresses)
+    let filters = GetTxHistoryFilters::for_addresses(for_addresses)
         .with_token_id("bb309e48930671582bea508f9a1d9b491e49b69be3d6f372dc08da2ac6e90eb7".to_owned());
     let paging = PagingOptionsEnum::PageNumber(NonZeroUsize::new(2).unwrap());
     let limit = 4;

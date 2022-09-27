@@ -69,12 +69,14 @@ cfg_native! {
 }
 
 pub const NO_TX_ERROR_CODE: &str = "'code': -5";
+const TX_NOT_FOUND_RETRIES: u8 = 10;
 
 pub type AddressesByLabelResult = HashMap<String, AddressPurpose>;
 pub type JsonRpcPendingRequestsShared = Arc<AsyncMutex<JsonRpcPendingRequests>>;
 pub type JsonRpcPendingRequests = HashMap<JsonRpcId, async_oneshot::Sender<JsonRpcResponseEnum>>;
 pub type UnspentMap = HashMap<Address, Vec<UnspentInfo>>;
 
+type ElectrumTxHistory = Vec<ElectrumTxHistoryItem>;
 type ElectrumScriptHash = String;
 type ScriptHashUnspents = Vec<ElectrumUnspent>;
 
@@ -146,6 +148,7 @@ impl UtxoRpcClientEnum {
         check_every: u64,
     ) -> Box<dyn Future<Item = (), Error = String> + Send> {
         let selfi = self.clone();
+        let mut tx_not_found_retries = TX_NOT_FOUND_RETRIES;
         let fut = async move {
             loop {
                 if now_ms() / 1000 > wait_until {
@@ -175,7 +178,21 @@ impl UtxoRpcClientEnum {
                     },
                     Err(e) => {
                         if e.get_inner().is_tx_not_found_error() {
-                            return ERR!("Tx {} is not on chain anymore", tx_hash);
+                            if tx_not_found_retries == 0 {
+                                return ERR!(
+                                    "Tx {} was not found on chain after {} tries, error: {}",
+                                    tx_hash,
+                                    TX_NOT_FOUND_RETRIES,
+                                    e,
+                                );
+                            }
+                            error!(
+                                "Tx {} not found on chain, error: {}, retrying in 10 seconds. Retries left: {}",
+                                tx_hash, e, tx_not_found_retries
+                            );
+                            tx_not_found_retries -= 1;
+                            Timer::sleep(check_every as f64).await;
+                            continue;
                         };
 
                         if expiry_height > 0 {
@@ -1835,8 +1852,20 @@ impl ElectrumClient {
     }
 
     /// https://electrumx.readthedocs.io/en/latest/protocol-methods.html#blockchain-scripthash-get-history
-    pub fn scripthash_get_history(&self, hash: &str) -> RpcRes<Vec<ElectrumTxHistoryItem>> {
+    pub fn scripthash_get_history(&self, hash: &str) -> RpcRes<ElectrumTxHistory> {
         rpc_func!(self, "blockchain.scripthash.get_history", hash)
+    }
+
+    /// https://electrumx.readthedocs.io/en/latest/protocol-methods.html#blockchain-scripthash-get-history
+    /// Requests history of the `hashes` in a batch and returns them in the same order they were requested.
+    pub fn scripthash_get_history_batch<I>(&self, hashes: I) -> RpcRes<Vec<ElectrumTxHistory>>
+    where
+        I: IntoIterator<Item = String>,
+    {
+        let requests = hashes
+            .into_iter()
+            .map(|hash| rpc_req!(self, "blockchain.scripthash.get_history", hash));
+        self.batch_rpc(requests)
     }
 
     /// https://electrumx.readthedocs.io/en/latest/protocol-methods.html#blockchain-scripthash-gethistory

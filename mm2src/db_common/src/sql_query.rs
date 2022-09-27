@@ -69,6 +69,17 @@ impl<'a> SqlQuery<'a> {
         Ok(self)
     }
 
+    /// Add COUNT(DISTINCT field).
+    /// For more details see [`SqlBuilder::count`].
+    ///
+    /// Please note the function validates the given `field`.
+    #[inline]
+    pub fn count_distinct<S: ToValidSqlIdent>(&mut self, field: S) -> SqlResult<&mut Self> {
+        let field = field.to_valid_sql_ident()?;
+        self.sql_builder.count(format!("DISTINCT {}", field));
+        Ok(self)
+    }
+
     /// Add field.
     /// For more details see [`SqlBuilder::field`].
     ///
