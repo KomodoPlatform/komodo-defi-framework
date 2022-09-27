@@ -1748,10 +1748,12 @@ pub fn watcher_validate_taker_payment<T: UtxoCommonOps + SwapOps>(
     let mut tx: UtxoTx = try_f!(deserialize(input.payment_tx.as_slice())
         .map_err(|err| ValidatePaymentError::TxDeserializationError(err.to_string())));
     tx.tx_hash_algo = coin.as_ref().tx_hash_algo;
-    let first_pub = &try_f!(Public::from_slice(&input.taker_pub)
-        .map_err(|err| ValidatePaymentError::TxDeserializationError(err.to_string())));
-    let second_pub = &try_f!(Public::from_slice(&input.maker_pub)
-        .map_err(|err| ValidatePaymentError::TxDeserializationError(err.to_string())));
+    let first_pub = &try_f!(
+        Public::from_slice(&input.taker_pub).map_err(|err| ValidatePaymentError::InvalidInput(err.to_string()))
+    );
+    let second_pub = &try_f!(
+        Public::from_slice(&input.maker_pub).map_err(|err| ValidatePaymentError::InvalidInput(err.to_string()))
+    );
     validate_payment(
         coin.clone(),
         tx,
