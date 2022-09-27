@@ -71,8 +71,10 @@ use mm2_core::mm_ctx::{from_ctx, MmArc};
 use mm2_err_handle::prelude::*;
 use mm2_libp2p::{decode_signed, encode_and_sign, pub_sub_topic, TopicPrefix};
 use mm2_number::{BigDecimal, BigRational, MmNumber};
+use parking_lot::Mutex as PaMutex;
 use primitives::hash::{H160, H264};
 use rpc::v1::types::{Bytes as BytesJson, H256 as H256Json};
+use serde::Serialize;
 use serde_json::{self as json, Value as Json};
 use std::collections::{HashMap, HashSet};
 use std::num::NonZeroUsize;
@@ -91,6 +93,7 @@ use std::sync::atomic::{AtomicU64, Ordering};
 #[path = "lp_swap/recreate_swap_data.rs"] mod recreate_swap_data;
 #[path = "lp_swap/saved_swap.rs"] mod saved_swap;
 #[path = "lp_swap/swap_lock.rs"] mod swap_lock;
+#[path = "lp_swap/swap_watcher.rs"] mod swap_watcher;
 #[path = "lp_swap/taker_swap.rs"] mod taker_swap;
 #[path = "lp_swap/trade_preimage.rs"] mod trade_preimage;
 
@@ -109,10 +112,11 @@ use pubkey_banning::BanReason;
 pub use pubkey_banning::{ban_pubkey_rpc, is_pubkey_banned, list_banned_pubkeys_rpc, unban_pubkeys_rpc};
 pub use recreate_swap_data::recreate_swap_data;
 pub use saved_swap::{SavedSwap, SavedSwapError, SavedSwapIo, SavedSwapResult};
+pub use swap_watcher::{process_watcher_msg, watcher_topic, TakerSwapWatcherData, WATCHER_PREFIX};
 use taker_swap::TakerSwapEvent;
 pub use taker_swap::{calc_max_taker_vol, check_balance_for_taker_swap, max_taker_vol, max_taker_vol_from_available,
                      run_taker_swap, taker_swap_trade_preimage, RunTakerSwapInput, TakerSavedSwap, TakerSwap,
-                     TakerSwapPreparedParams, TakerTradePreimage};
+                     TakerSwapData, TakerSwapPreparedParams, TakerTradePreimage};
 pub use trade_preimage::trade_preimage_rpc;
 
 pub const SWAP_PREFIX: TopicPrefix = "swap";
@@ -158,10 +162,10 @@ impl SwapMsgStore {
 
 /// Spawns the loop that broadcasts message every `interval` seconds returning the AbortOnDropHandle
 /// to stop it
-pub fn broadcast_swap_message_every(
+pub fn broadcast_swap_message_every<T: 'static + Serialize + Clone + Send>(
     ctx: MmArc,
     topic: String,
-    msg: SwapMsg,
+    msg: T,
     interval: f64,
     p2p_privkey: Option<KeyPair>,
 ) -> AbortOnDropHandle {
@@ -175,7 +179,7 @@ pub fn broadcast_swap_message_every(
 }
 
 /// Broadcast the swap message once
-pub fn broadcast_swap_message(ctx: &MmArc, topic: String, msg: SwapMsg, p2p_privkey: &Option<KeyPair>) {
+pub fn broadcast_swap_message<T: Serialize>(ctx: &MmArc, topic: String, msg: T, p2p_privkey: &Option<KeyPair>) {
     let (p2p_private, from) = match p2p_privkey {
         Some(keypair) => (keypair.private_bytes(), Some(keypair.libp2p_peer_id())),
         None => (ctx.secp256k1_key_pair().private().secret.take(), None),
@@ -200,6 +204,7 @@ pub async fn process_msg(ctx: MmArc, topic: &str, msg: &[u8]) {
         Ok(u) => u,
         Err(_) => return,
     };
+
     let msg = match decode_signed::<SwapMsg>(msg) {
         Ok(m) => m,
         Err(swap_msg_err) => {
@@ -366,6 +371,7 @@ struct SwapsContext {
     /// Very unpleasant consequences
     shutdown_rx: async_std_sync::Receiver<()>,
     swap_msgs: Mutex<HashMap<Uuid, SwapMsgStore>>,
+    taker_swap_watchers: PaMutex<HashSet<Uuid>>,
     #[cfg(target_arch = "wasm32")]
     swap_db: ConstructibleDb<SwapDb>,
 }
@@ -393,6 +399,7 @@ impl SwapsContext {
                 banned_pubkeys: Mutex::new(HashMap::new()),
                 shutdown_rx,
                 swap_msgs: Mutex::new(HashMap::new()),
+                taker_swap_watchers: PaMutex::new(HashSet::new()),
                 #[cfg(target_arch = "wasm32")]
                 swap_db: ConstructibleDb::new(ctx),
             })

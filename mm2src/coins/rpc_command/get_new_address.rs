@@ -89,6 +89,7 @@ impl From<NewAddressDerivingError> for GetNewAddressRpcError {
 impl From<AddressDerivingError> for GetNewAddressRpcError {
     fn from(e: AddressDerivingError) -> Self {
         match e {
+            AddressDerivingError::InvalidBip44Chain { chain } => GetNewAddressRpcError::InvalidBip44Chain { chain },
             AddressDerivingError::Bip32Error(bip32) => GetNewAddressRpcError::ErrorDerivingAddress(bip32.to_string()),
             AddressDerivingError::Internal(internal) => GetNewAddressRpcError::Internal(internal),
         }
