@@ -5,7 +5,7 @@ use crate::lightning::ln_sql::SqliteLightningDB;
 use bitcoin::blockdata::script::Script;
 use bitcoin::blockdata::transaction::Transaction;
 use bitcoin::consensus::encode::serialize_hex;
-use common::executor::{spawn_abortable, Timer};
+use common::executor::Timer;
 use common::log::{error, info};
 use common::now_ms;
 use core::time::Duration;
@@ -153,7 +153,7 @@ pub async fn init_abortable_events(platform: Arc<Platform>, db: SqliteLightningD
         let platform_c = platform.clone();
         let db = db.clone();
         let user_channel_id = channel_details.rpc_id;
-        let abort_handler = spawn_abortable(async move {
+        platform.spawner.spawn(async move {
             if let Ok(closing_tx_hash) = platform_c
                 .get_channel_closing_tx(channel_details)
                 .await
@@ -168,7 +168,6 @@ pub async fn init_abortable_events(platform: Arc<Platform>, db: SqliteLightningD
                 }
             }
         });
-        platform.push_abort_handle(abort_handler);
     }
     Ok(())
 }
@@ -297,7 +296,7 @@ impl LightningEventHandler {
         let platform = self.platform.clone();
         let db = self.db.clone();
 
-        let abort_handle = spawn_abortable(async move {
+        self.platform.spawner.spawn_critical(async move {
             let best_block_height = platform.best_block_height();
             db.add_funding_tx_to_db(
                 user_channel_id as i64,
@@ -308,8 +307,6 @@ impl LightningEventHandler {
             .await
             .error_log();
         });
-
-        self.platform.push_abort_handle(abort_handle);
     }
 
     fn handle_payment_received(&self, payment_hash: &PaymentHash, received_amount: u64, purpose: &PaymentPurpose) {
@@ -340,18 +337,22 @@ impl LightningEventHandler {
             hex::encode(payment_hash.0)
         );
         let db = self.db.clone();
-        let abort_handler = match *purpose {
-            PaymentPurpose::InvoicePayment { payment_preimage, .. } => spawn_abortable(async move {
-                if let Ok(Some(mut payment_info)) = db.get_payment_from_db(payment_hash).await.error_log_passthrough() {
-                    payment_info.preimage = payment_preimage;
-                    payment_info.status = HTLCStatus::Succeeded;
-                    payment_info.amt_msat = Some(amount_msat as i64);
-                    payment_info.last_updated = (now_ms() / 1000) as i64;
-                    db.add_or_update_payment_in_db(payment_info)
-                        .await
-                        .error_log_with_msg("Unable to update payment information in DB!");
-                }
-            }),
+        match *purpose {
+            PaymentPurpose::InvoicePayment { payment_preimage, .. } => {
+                self.platform.spawner.spawn_critical(async move {
+                    if let Ok(Some(mut payment_info)) =
+                        db.get_payment_from_db(payment_hash).await.error_log_passthrough()
+                    {
+                        payment_info.preimage = payment_preimage;
+                        payment_info.status = HTLCStatus::Succeeded;
+                        payment_info.amt_msat = Some(amount_msat as i64);
+                        payment_info.last_updated = (now_ms() / 1000) as i64;
+                        db.add_or_update_payment_in_db(payment_info)
+                            .await
+                            .error_log_with_msg("Unable to update payment information in DB!");
+                    }
+                })
+            },
             PaymentPurpose::SpontaneousPayment(payment_preimage) => {
                 let payment_info = DBPaymentInfo {
                     payment_hash,
@@ -365,15 +366,13 @@ impl LightningEventHandler {
                     created_at: (now_ms() / 1000) as i64,
                     last_updated: (now_ms() / 1000) as i64,
                 };
-                spawn_abortable(async move {
+                self.platform.spawner.spawn_critical(async move {
                     db.add_or_update_payment_in_db(payment_info)
                         .await
                         .error_log_with_msg("Unable to update payment information in DB!");
                 })
             },
-        };
-
-        self.platform.push_abort_handle(abort_handler);
+        }
     }
 
     fn handle_payment_sent(
@@ -387,7 +386,7 @@ impl LightningEventHandler {
             hex::encode(payment_hash.0)
         );
         let db = self.db.clone();
-        let abort_handle = spawn_abortable(async move {
+        self.platform.spawner.spawn_critical(async move {
             if let Ok(Some(mut payment_info)) = db.get_payment_from_db(payment_hash).await.error_log_passthrough() {
                 payment_info.preimage = Some(payment_preimage);
                 payment_info.status = HTLCStatus::Succeeded;
@@ -403,9 +402,7 @@ impl LightningEventHandler {
                     hex::encode(payment_hash.0)
                 );
             }
-        });
-
-        self.platform.push_abort_handle(abort_handle);
+        })
     }
 
     fn handle_channel_closed(&self, channel_id: [u8; 32], user_channel_id: u64, reason: String) {
@@ -416,7 +413,7 @@ impl LightningEventHandler {
         );
         let db = self.db.clone();
         let platform = self.platform.clone();
-        let abort_handler = spawn_abortable(async move {
+        self.platform.spawner.spawn(async move {
             if let Err(e) = save_channel_closing_details(db, platform, user_channel_id, reason).await {
                 // This is the case when a channel is closed before funding is broadcasted due to the counterparty disconnecting or other incompatibility issue.
                 if e != SaveChannelClosingError::FundingTxNull.into() {
@@ -427,7 +424,6 @@ impl LightningEventHandler {
                 }
             }
         });
-        self.platform.push_abort_handle(abort_handler);
     }
 
     fn handle_payment_failed(&self, payment_hash: PaymentHash) {
@@ -436,7 +432,7 @@ impl LightningEventHandler {
             hex::encode(payment_hash.0)
         );
         let db = self.db.clone();
-        let abort_handle = spawn_abortable(async move {
+        self.platform.spawner.spawn_critical(async move {
             if let Ok(Some(mut payment_info)) = db.get_payment_from_db(payment_hash).await.error_log_passthrough() {
                 payment_info.status = HTLCStatus::Failed;
                 payment_info.last_updated = (now_ms() / 1000) as i64;
@@ -445,21 +441,17 @@ impl LightningEventHandler {
                     .error_log_with_msg("Unable to update payment information in DB!");
             }
         });
-
-        self.platform.push_abort_handle(abort_handle);
     }
 
     fn handle_pending_htlcs_forwards(&self, time_forwardable: Duration) {
         info!("Handling PendingHTLCsForwardable event!");
         let min_wait_time = time_forwardable.as_millis() as u32;
         let channel_manager = self.channel_manager.clone();
-        let abort_handle = spawn_abortable(async move {
+        self.platform.spawner.spawn(async move {
             let millis_to_sleep = rand::thread_rng().gen_range(min_wait_time, min_wait_time * 5);
             Timer::sleep_ms(millis_to_sleep).await;
             channel_manager.process_pending_htlc_forwards();
         });
-
-        self.platform.push_abort_handle(abort_handle);
     }
 
     fn handle_spendable_outputs(&self, outputs: Vec<SpendableOutputDescriptor>) {
@@ -482,7 +474,7 @@ impl LightningEventHandler {
         let db = self.db.clone();
         let keys_manager = self.keys_manager.clone();
 
-        let abort_handler = spawn_abortable(async move {
+        let fut = async move {
             let change_destination_script = Builder::build_witness_script(&my_address.hash).to_bytes().take().into();
             let feerate_sat_per_1000_weight = platform.get_est_sat_per_1000_weight(ConfirmationTarget::Normal);
             let output_descriptors = outputs.iter().collect::<Vec<_>>();
@@ -551,9 +543,9 @@ impl LightningEventHandler {
                 )
                 .await;
             }
-        });
+        };
 
-        self.platform.push_abort_handle(abort_handler);
+        self.platform.spawner.spawn_critical(fut);
     }
 
     fn handle_open_channel_request(
@@ -572,7 +564,7 @@ impl LightningEventHandler {
         let trusted_nodes = self.trusted_nodes.clone();
         let channel_manager = self.channel_manager.clone();
         let platform = self.platform.clone();
-        let abort_handle = spawn_abortable(async move {
+        let fut = async move {
             if let Ok(last_channel_rpc_id) = db.get_last_channel_rpc_id().await.error_log_passthrough() {
                 let user_channel_id = last_channel_rpc_id as u64 + 1;
 
@@ -639,8 +631,8 @@ impl LightningEventHandler {
                     }
                 }
             }
-        });
+        };
 
-        self.platform.push_abort_handle(abort_handle);
+        self.platform.spawner.spawn(fut);
     }
 }

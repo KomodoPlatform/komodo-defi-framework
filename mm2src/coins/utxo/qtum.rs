@@ -228,7 +228,7 @@ impl<'a> UtxoCoinBuilder for QtumCoinBuilder<'a> {
         let result_coin = QtumCoin::from(utxo_arc);
 
         if let Some(abort_handler) = self.spawn_merge_utxo_loop_if_required(utxo_weak, QtumCoin::from) {
-            self.ctx.abort_handlers.lock().unwrap().push(abort_handler);
+            self.ctx.spawner.register_spawned(abort_handler.into());
         }
 
         Ok(result_coin)

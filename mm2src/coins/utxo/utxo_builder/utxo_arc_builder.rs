@@ -94,17 +94,17 @@ where
         let sync_status_loop_handle = utxo.block_headers_status_notifier.clone();
         let utxo_arc = UtxoArc::new(utxo);
         let utxo_weak = utxo_arc.downgrade();
-        let result_coin = (self.constructor)(utxo_arc);
+        let result_coin = (self.constructor)(utxo_arc.clone());
 
         if let Some(abort_handler) = self.spawn_merge_utxo_loop_if_required(utxo_weak.clone(), self.constructor.clone())
         {
-            self.ctx.abort_handlers.lock().unwrap().push(abort_handler);
+            self.ctx.spawner.register_spawned(abort_handler.into());
         }
 
         if let Some(sync_status_loop_handle) = sync_status_loop_handle {
             let abort_handler =
                 self.spawn_block_header_utxo_loop(utxo_weak, self.constructor.clone(), sync_status_loop_handle);
-            self.ctx.abort_handlers.lock().unwrap().push(abort_handler);
+            utxo_arc.spawner.register_spawned(abort_handler.into());
         }
 
         Ok(result_coin)

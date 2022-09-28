@@ -92,14 +92,6 @@ macro_rules! drop_mutability {
     };
 }
 
-/// Spawns the given `fut` future and returns `AbortOnDropHandle`.
-#[macro_export]
-macro_rules! spawn_abortable {
-    ($fut:expr, on_abort => $($arg:tt)+) => {
-        $crate::executor::spawn_abortable_with_msg($fut, format!($($arg)+))
-    };
-}
-
 #[macro_use]
 pub mod jsonrpc_client;
 #[macro_use]

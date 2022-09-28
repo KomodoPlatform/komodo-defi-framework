@@ -203,8 +203,6 @@ pub async fn init_peer_manager(
     ));
 
     // Initialize p2p networking
-    let abort_handle = spawn_abortable(ln_p2p_loop(peer_manager.clone(), listener));
-    platform.push_abort_handle(abort_handle);
-
+    platform.spawner.spawn(ln_p2p_loop(peer_manager.clone(), listener));
     Ok(peer_manager)
 }

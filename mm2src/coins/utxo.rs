@@ -106,7 +106,7 @@ use crate::hd_wallet::{HDAccountOps, HDAccountsMutex, HDAddress, HDAddressId, HD
                        InvalidBip44ChainError};
 use crate::hd_wallet_storage::{HDAccountStorageItem, HDWalletCoinStorage, HDWalletStorageError, HDWalletStorageResult};
 use crate::utxo::tx_cache::UtxoVerboseCacheShared;
-use crate::{TransactionErr, VerificationError};
+use crate::{CoinSpawner, TransactionErr, VerificationError};
 
 pub mod tx_cache;
 #[cfg(target_arch = "wasm32")]
@@ -601,6 +601,9 @@ pub struct UtxoCoinFields {
     /// The watcher/receiver of the block headers synchronization status,
     /// initialized only for non-native mode if spv is enabled for the coin.
     pub block_headers_status_watcher: Option<AsyncMutex<AsyncReceiver<UtxoSyncStatus>>>,
+    /// The coin futures spawner. It's used to spawn futures that can be aborted immediately or after a timeout
+    /// on the the coin deactivation.
+    pub spawner: CoinSpawner,
 }
 
 #[derive(Debug, Display)]

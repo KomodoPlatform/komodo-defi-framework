@@ -119,7 +119,7 @@ fn test_timer() {
     let ti = Timer::sleep(0.2);
     let delta = now_float() - started;
     assert!(delta < 0.04, "{}", delta);
-    super::block_on(ti);
+    crate::block_on(ti);
     let delta = now_float() - started;
     println!("time delta is {}", delta);
     assert!(delta > 0.2);

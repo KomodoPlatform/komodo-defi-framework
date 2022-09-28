@@ -8,8 +8,8 @@ use crate::utxo::utxo_builder::utxo_conf_builder::{UtxoConfBuilder, UtxoConfErro
 use crate::utxo::{output_script, utxo_common, ElectrumBuilderArgs, ElectrumProtoVerifier, RecentlySpentOutPoints,
                   TxFee, UtxoCoinConf, UtxoCoinFields, UtxoHDAccount, UtxoHDWallet, UtxoRpcMode, UtxoSyncStatus,
                   UtxoSyncStatusLoopHandle, DEFAULT_GAP_LIMIT, UTXO_DUST_AMOUNT};
-use crate::{BlockchainNetwork, CoinTransportMetrics, DerivationMethod, HistorySyncState, PrivKeyBuildPolicy,
-            PrivKeyPolicy, RpcClientType, UtxoActivationParams};
+use crate::{BlockchainNetwork, CoinSpawner, CoinTransportMetrics, DerivationMethod, HistorySyncState,
+            PrivKeyBuildPolicy, PrivKeyPolicy, RpcClientType, UtxoActivationParams};
 use async_trait::async_trait;
 use chain::TxHashAlgo;
 use common::executor::{spawn, Timer};
@@ -176,6 +176,7 @@ pub trait UtxoFieldsWithIguanaPrivKeyBuilder: UtxoCoinBuilderCommonOps {
             check_utxo_maturity,
             block_headers_status_notifier,
             block_headers_status_watcher,
+            spawner: CoinSpawner::new(),
         };
         Ok(coin)
     }
@@ -241,6 +242,7 @@ pub trait UtxoFieldsWithHardwareWalletBuilder: UtxoCoinBuilderCommonOps {
             check_utxo_maturity,
             block_headers_status_notifier,
             block_headers_status_watcher,
+            spawner: CoinSpawner::new(),
         };
         Ok(coin)
     }

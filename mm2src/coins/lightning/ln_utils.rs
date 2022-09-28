@@ -6,7 +6,6 @@ use crate::lightning::ln_storage::{LightningStorage, NodesAddressesMap};
 use crate::utxo::rpc_clients::BestBlock as RpcBestBlock;
 use bitcoin::hash_types::BlockHash;
 use bitcoin_hashes::{sha256d, Hash};
-use common::executor::spawn_abortable;
 use common::log::LogState;
 use lightning::chain::keysinterface::{InMemorySigner, KeysManager};
 use lightning::chain::{chainmonitor, BestBlock, Watch};
@@ -215,7 +214,7 @@ pub async fn init_channel_manager(
     };
 
     // Update best block whenever there's a new chain tip or a block has been newly disconnected
-    let abort_handle = spawn_abortable(ln_best_block_update_loop(
+    platform.spawner.spawn(ln_best_block_update_loop(
         platform.clone(),
         db,
         chain_monitor.clone(),
@@ -223,8 +222,6 @@ pub async fn init_channel_manager(
         rpc_client.clone(),
         best_block,
     ));
-    platform.push_abort_handle(abort_handle);
-
     Ok((chain_monitor, channel_manager))
 }
 

@@ -9,7 +9,6 @@ use coins::tx_history_storage::{CreateTxHistoryStorageError, TxHistoryStorageBui
 use coins::{disable_coin, lp_coinfind, lp_register_coin, MmCoinEnum, RegisterCoinError, RegisterCoinParams};
 use common::{log, SuccessResponse};
 use crypto::trezor::trezor_rpc_task::RpcTaskHandle;
-use futures::future::AbortHandle;
 use mm2_core::mm_ctx::MmArc;
 use mm2_err_handle::prelude::*;
 use mm2_metrics::MetricsArc;
@@ -75,7 +74,7 @@ pub trait InitStandaloneCoinActivationOps: Into<MmCoinEnum> + Send + Sync + 'sta
         metrics: MetricsArc,
         storage: impl TxHistoryStorage,
         current_balances: HashMap<String, BigDecimal>,
-    ) -> Option<AbortHandle>;
+    );
 }
 
 pub async fn init_standalone_coin<Standalone>(
@@ -206,13 +205,11 @@ where
         let tx_history = self.request.activation_params.tx_history();
         if tx_history {
             let current_balances = result.get_addresses_balances();
-            if let Some(abort_handle) = coin.start_history_background_fetching(
+            coin.start_history_background_fetching(
                 self.ctx.metrics.clone(),
                 TxHistoryStorageBuilder::new(&self.ctx).build()?,
                 current_balances,
-            ) {
-                self.ctx.push_abort_handle(abort_handle);
-            }
+            );
         }
 
         lp_register_coin(&self.ctx, coin.into(), RegisterCoinParams { ticker }).await?;

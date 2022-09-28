@@ -1,9 +1,9 @@
 use arrayref::array_ref;
 #[cfg(any(not(target_arch = "wasm32"), feature = "track-ctx-pointer"))]
 use common::executor::Timer;
+use common::executor::{AbortableSpawner, AbortableSpawnerShared};
 use common::log::{self, LogLevel, LogState};
 use common::{bits256, cfg_native, cfg_wasm32, small_rng};
-use futures::future::AbortHandle;
 use gstuff::{try_s, Constructible, ERR, ERRL};
 use keys::KeyPair;
 use lazy_static::lazy_static;
@@ -118,7 +118,10 @@ pub struct MmCtx {
     pub sqlite_connection: Constructible<Arc<Mutex<Connection>>>,
     pub mm_version: String,
     pub mm_init_ctx: Mutex<Option<Arc<dyn Any + 'static + Send + Sync>>>,
-    pub abort_handlers: Arc<Mutex<Vec<AbortHandle>>>,
+    /// The futures spawner pinned to the `MmCtx` context.
+    /// It's used to spawn futures that can be aborted immediately or after a timeout
+    /// on the [`MmArc::stop`] function call.
+    pub spawner: MmSpawner,
     #[cfg(target_arch = "wasm32")]
     pub db_namespace: DbNamespaceId,
 }
@@ -158,7 +161,7 @@ impl MmCtx {
             sqlite_connection: Constructible::default(),
             mm_version: "".into(),
             mm_init_ctx: Mutex::new(None),
-            abort_handlers: Arc::new(Mutex::new(Vec::new())),
+            spawner: MmSpawner::new(),
             #[cfg(target_arch = "wasm32")]
             db_namespace: DbNamespaceId::Main,
         }
@@ -243,18 +246,6 @@ impl MmCtx {
         } else {
             stop_listeners.push(cb)
         }
-    }
-
-    /// Returns `MmAbortHandlers` that can be used to push abort handlers independently from `MmArc`.
-    pub fn abort_handlers(&self) -> MmAbortHandlers {
-        MmAbortHandlers {
-            abort_handlers: Arc::clone(&self.abort_handlers),
-        }
-    }
-
-    /// Pushes `abort_handle` into [`MmCtx::abort_handlers`] that will be invoked on [`MmArc::stop`].
-    pub fn push_abort_handle(&self, abort_handle: AbortHandle) {
-        self.abort_handlers.lock().unwrap().push(abort_handle)
     }
 
     /// Get a reference to the secp256k1 key pair.
@@ -405,9 +396,9 @@ impl MmArc {
 
     pub fn stop(&self) -> Result<(), String> {
         try_s!(self.stop.pin(true));
-        for handler in self.abort_handlers.lock().unwrap().drain(..) {
-            handler.abort();
-        }
+
+        // Abort spawned futures.
+        self.spawner.abort_all();
 
         #[cfg(not(target_arch = "wasm32"))]
         self.background_processors.lock().unwrap().drain();
@@ -552,16 +543,30 @@ impl MmArc {
     }
 }
 
-/// `MmAbortHandlers` is used to push abort handlers independently from `MmArc`.
+/// The futures spawner pinned to the `MmCtx` context.
+/// It's used to spawn futures that can be aborted immediately or after a timeout
+/// on the [`MmArc::stop`] function call.
 #[derive(Clone)]
-pub struct MmAbortHandlers {
-    abort_handlers: Arc<Mutex<Vec<AbortHandle>>>,
+pub struct MmSpawner {
+    inner: AbortableSpawnerShared,
 }
 
-impl MmAbortHandlers {
-    pub fn push_abort_handle(&self, abort_handle: AbortHandle) {
-        self.abort_handlers.lock().unwrap().push(abort_handle);
+impl Default for MmSpawner {
+    fn default() -> Self { MmSpawner::new() }
+}
+
+impl MmSpawner {
+    pub fn new() -> MmSpawner {
+        MmSpawner {
+            inner: AbortableSpawner::new().into_shared(),
+        }
     }
+}
+
+impl Deref for MmSpawner {
+    type Target = AbortableSpawner;
+
+    fn deref(&self) -> &Self::Target { &self.inner }
 }
 
 /// Helps getting a crate context from a corresponding `MmCtx` field.

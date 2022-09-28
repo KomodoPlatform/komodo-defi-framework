@@ -35,6 +35,7 @@
 
 use async_trait::async_trait;
 use base58::FromBase58Error;
+use common::executor::{AbortableSpawner, AbortableSpawnerShared};
 use common::{calc_total_pages, now_ms, ten, HttpStatusCode};
 use crypto::{Bip32Error, CryptoCtx, DerivationPath, HwRpcError, WithHwRpcError};
 use derive_more::Display;
@@ -1804,6 +1805,31 @@ pub trait MmCoin: SwapOps + MarketCoinOps + Send + Sync + 'static {
 
     /// Check if serialized coin protocol info is supported by current version.
     fn is_coin_protocol_supported(&self, info: &Option<Vec<u8>>) -> bool;
+}
+
+/// The coin futures spawner. It's used to spawn futures that can be aborted immediately or after a timeout
+/// on the the coin deactivation.
+#[derive(Clone)]
+pub struct CoinSpawner {
+    inner: AbortableSpawnerShared,
+}
+
+impl Default for CoinSpawner {
+    fn default() -> Self { CoinSpawner::new() }
+}
+
+impl CoinSpawner {
+    pub fn new() -> CoinSpawner {
+        CoinSpawner {
+            inner: AbortableSpawner::new().into_shared(),
+        }
+    }
+}
+
+impl Deref for CoinSpawner {
+    type Target = AbortableSpawner;
+
+    fn deref(&self) -> &Self::Target { &self.inner }
 }
 
 #[derive(Clone)]

@@ -7,13 +7,11 @@ use coins::coin_balance::EnableCoinBalanceOps;
 use coins::hd_pubkey::RpcTaskXPubExtractor;
 use coins::my_tx_history_v2::TxHistoryStorage;
 use coins::utxo::utxo_tx_history_v2::{utxo_history_loop, UtxoTxHistoryOps};
-use coins::utxo::UtxoActivationParams;
+use coins::utxo::{UtxoActivationParams, UtxoCoinFields};
 use coins::{MarketCoinOps, PrivKeyActivationPolicy, PrivKeyBuildPolicy};
-use common::spawn_abortable;
 use crypto::hw_rpc_task::HwConnectStatuses;
 use crypto::CryptoCtx;
 use futures::compat::Future01CompatExt;
-use futures::future::AbortHandle;
 use mm2_core::mm_ctx::MmArc;
 use mm2_err_handle::prelude::*;
 use mm2_metrics::MetricsArc;
@@ -89,14 +87,13 @@ pub(crate) fn start_history_background_fetching<Coin>(
     metrics: MetricsArc,
     storage: impl TxHistoryStorage,
     current_balances: HashMap<String, BigDecimal>,
-) -> AbortHandle
-where
-    Coin: UtxoTxHistoryOps,
+) where
+    Coin: AsRef<UtxoCoinFields> + UtxoTxHistoryOps,
 {
-    let ticker = coin.ticker().to_string();
-    spawn_abortable!(
-        utxo_history_loop(coin, storage, metrics, current_balances),
-        on_abort => "'utxo_history_loop' has been aborted for {ticker}"
-    )
-    .into_handle()
+    let spawner = coin.as_ref().spawner.clone();
+
+    let msg = format!("'utxo_history_loop' has been aborted for {}", coin.ticker());
+    let fut = utxo_history_loop(coin, storage, metrics, current_balances);
+
+    spawner.spawn_with_msg_on_abort(fut, common::log::Level::Info, msg);
 }

@@ -7,7 +7,6 @@ use coins::tendermint::{TendermintActivationParams, TendermintCoin, TendermintIn
                         TendermintProtocolInfo};
 use coins::{CoinBalance, CoinProtocol, MarketCoinOps};
 use common::Future01CompatExt;
-use futures::future::AbortHandle;
 use mm2_core::mm_ctx::MmArc;
 use mm2_err_handle::prelude::*;
 use mm2_metrics::MetricsArc;
@@ -102,7 +101,6 @@ impl PlatformWithTokensActivationOps for TendermintCoin {
         metrics: MetricsArc,
         storage: impl TxHistoryStorage,
         initial_balance: BigDecimal,
-    ) -> AbortHandle {
-        unimplemented!()
+    ) {
     }
 }

@@ -32,7 +32,6 @@ use bitcoin_hashes::sha256::Hash as Sha256;
 use bitcrypto::dhash256;
 use bitcrypto::ChecksumType;
 use chain::TransactionOutput;
-use common::executor::spawn_abortable;
 use common::log::{error, LogOnError, LogState};
 use common::{async_blocking, calc_total_pages, log, now_ms, ten, PagingOptionsEnum};
 use futures::{FutureExt, TryFutureExt};
@@ -795,20 +794,18 @@ pub async fn start_lightning(
         ln_utils::get_open_channels_nodes_addresses(persister.clone(), channel_manager.clone()).await?,
     ));
 
-    let abort_handle = spawn_abortable(ln_p2p::connect_to_nodes_loop(
+    platform.spawner.spawn(ln_p2p::connect_to_nodes_loop(
         open_channels_nodes.clone(),
         peer_manager.clone(),
     ));
-    ctx.push_abort_handle(abort_handle.into_handle());
 
     // Broadcast Node Announcement
-    let abort_handle = spawn_abortable(ln_p2p::ln_node_announcement_loop(
+    platform.spawner.spawn(ln_p2p::ln_node_announcement_loop(
         channel_manager.clone(),
         params.node_name,
         params.node_color,
         params.listening_port,
     ));
-    ctx.push_abort_handle(abort_handle.into_handle());
 
     Ok(LightningCoin {
         platform,

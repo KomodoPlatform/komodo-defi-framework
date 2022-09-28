@@ -6,14 +6,14 @@ use crate::utxo::rpc_clients::{BestBlock as RpcBestBlock, BlockHashOrHeight, Con
 use crate::utxo::spv::SimplePaymentVerification;
 use crate::utxo::utxo_standard::UtxoStandardCoin;
 use crate::utxo::GetConfirmedTxError;
-use crate::{MarketCoinOps, MmCoin};
+use crate::{CoinSpawner, MarketCoinOps, MmCoin};
 use bitcoin::blockdata::block::BlockHeader;
 use bitcoin::blockdata::script::Script;
 use bitcoin::blockdata::transaction::Transaction;
 use bitcoin::consensus::encode::{deserialize, serialize_hex};
 use bitcoin::hash_types::{BlockHash, TxMerkleNode, Txid};
 use bitcoin_hashes::{sha256d, Hash};
-use common::executor::{spawn_abortable, AbortOnDropHandle, Timer};
+use common::executor::Timer;
 use common::log::{debug, error, info};
 use futures::compat::Future01CompatExt;
 use futures::future::join_all;
@@ -166,8 +166,8 @@ pub struct Platform {
     pub registered_outputs: PaMutex<Vec<WatchedOutput>>,
     /// This cache stores transactions to be broadcasted once the other node accepts the channel
     pub unsigned_funding_txs: PaMutex<HashMap<u64, TransactionInputSigner>>,
-    /// These abort handlers will be dropped on coin deactivation.
-    pub abort_handlers: Arc<PaMutex<Vec<AbortOnDropHandle>>>,
+    /// This spawner is used to spawn coin's related futures that should be aborted on coin deactivation.
+    pub spawner: CoinSpawner,
 }
 
 impl Platform {
@@ -190,14 +190,12 @@ impl Platform {
             registered_txs: PaMutex::new(HashSet::new()),
             registered_outputs: PaMutex::new(Vec::new()),
             unsigned_funding_txs: PaMutex::new(HashMap::new()),
-            abort_handlers: Arc::new(PaMutex::new(Vec::new())),
+            spawner: CoinSpawner::new(),
         }
     }
 
     #[inline]
     fn rpc_client(&self) -> &UtxoRpcClientEnum { &self.coin.as_ref().rpc_client }
-
-    pub fn push_abort_handle(&self, abort_handle: AbortOnDropHandle) { self.abort_handlers.lock().push(abort_handle) }
 
     pub async fn set_latest_fees(&self) -> UtxoRpcResult<()> {
         let platform_coin = &self.coin;
@@ -577,15 +575,15 @@ impl BroadcasterInterface for Platform {
         debug!("Trying to broadcast transaction: {}", tx_hex);
 
         let fut = self.coin.send_raw_tx(&tx_hex);
-        let abort_handle = spawn_abortable(async move {
+        let fut = async move {
             match fut.compat().await {
                 Ok(id) => info!("Transaction broadcasted successfully: {:?} ", id),
                 // TODO: broadcast transaction through p2p network in case of error
                 Err(e) => error!("Broadcast transaction {} failed: {}", txid, e),
             }
-        });
+        };
 
-        self.push_abort_handle(abort_handle);
+        self.spawner.spawn(fut);
     }
 }
 
