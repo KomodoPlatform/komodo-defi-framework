@@ -698,10 +698,10 @@ impl NegotiationDataMsg {
 
 #[derive(Clone, Debug, Eq, Deserialize, PartialEq, Serialize)]
 pub struct PaymentDataV2 {
-    payment_data: Vec<u8>,
+    data: Vec<u8>,
     // Instructions for the other side whether taker or maker on how to make it's payment.
     // An example for this is a maker/taker sending the taker/maker a lightning invoice to be payed.
-    other_side_instructions: Vec<u8>,
+    instructions: Vec<u8>,
 }
 
 #[derive(Clone, Debug, Eq, Deserialize, PartialEq, Serialize)]
@@ -713,19 +713,18 @@ pub enum PaymentDataMsg {
 
 impl PaymentDataMsg {
     #[inline]
-    pub fn payment_data(&self) -> &[u8] {
+    pub fn data(&self) -> &[u8] {
         match self {
             PaymentDataMsg::V1(v1) => v1,
-            PaymentDataMsg::V2(v2) => &v2.payment_data,
+            PaymentDataMsg::V2(v2) => &v2.data,
         }
     }
 
-    #[allow(dead_code)]
     #[inline]
-    pub fn other_side_instructions(&self) -> Option<&[u8]> {
+    pub fn instructions(&self) -> Option<&[u8]> {
         match self {
             PaymentDataMsg::V1(_) => None,
-            PaymentDataMsg::V2(v2) => Some(&v2.other_side_instructions),
+            PaymentDataMsg::V2(v2) => Some(&v2.instructions),
         }
     }
 }
@@ -1645,8 +1644,8 @@ mod lp_swap_tests {
 
         // PaymentDataMsg::V2 should be deserialized to PaymentDataMsg::V2
         let v2 = SwapMsg::MakerPayment(PaymentDataMsg::V2(PaymentDataV2 {
-            payment_data: vec![1; 300],
-            other_side_instructions: vec![1; 300],
+            data: vec![1; 300],
+            instructions: vec![1; 300],
         }));
 
         let serialized = rmp_serde::to_vec(&v2).unwrap();
@@ -1657,8 +1656,8 @@ mod lp_swap_tests {
 
         // PaymentDataMsg::V2 shouldn't be deserialized to old message format, new nodes with payment instructions can't swap with old nodes without it.
         let v2 = SwapMsg::MakerPayment(PaymentDataMsg::V2(PaymentDataV2 {
-            payment_data: vec![1; 300],
-            other_side_instructions: vec![1; 300],
+            data: vec![1; 300],
+            instructions: vec![1; 300],
         }));
 
         let serialized = rmp_serde::to_vec(&v2).unwrap();

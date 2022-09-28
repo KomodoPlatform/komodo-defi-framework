@@ -16,12 +16,12 @@ use crate::utxo::rpc_clients::UtxoRpcClientEnum;
 use crate::utxo::utxo_common::big_decimal_from_sat_unsigned;
 use crate::utxo::{sat_from_big_decimal, BlockchainNetwork};
 use crate::{BalanceFut, CoinBalance, FeeApproxStage, FoundSwapTxSpend, HistorySyncState, MarketCoinOps, MmCoin,
-            NegotiateSwapContractAddrErr, OtherInstructionsErr, RawTransactionFut, RawTransactionRequest,
+            NegotiateSwapContractAddrErr, PaymentInstructionsErr, RawTransactionFut, RawTransactionRequest,
             SearchForSwapTxSpendInput, SignatureError, SignatureResult, SwapOps, TradeFee, TradePreimageFut,
             TradePreimageResult, TradePreimageValue, TransactionEnum, TransactionFut, TxMarshalingErr,
-            UnexpectedDerivationMethod, UtxoStandardCoin, ValidateAddressResult, ValidatePaymentInput,
-            VerificationError, VerificationResult, WatcherValidatePaymentInput, WithdrawError, WithdrawFut,
-            WithdrawRequest};
+            UnexpectedDerivationMethod, UtxoStandardCoin, ValidateAddressResult, ValidateInstructionsErr,
+            ValidatePaymentInput, VerificationError, VerificationResult, WatcherValidatePaymentInput, WithdrawError,
+            WithdrawFut, WithdrawRequest};
 use async_trait::async_trait;
 use bitcoin::bech32::ToBase32;
 use bitcoin::hashes::Hash;
@@ -378,6 +378,7 @@ impl LightningCoin {
         // supply.
         let payment_secret = self
             .channel_manager
+            // Todo: review secret creation process
             .create_inbound_payment_for_hash(payment_hash, amt_msat, invoice_expiry_delta_secs)
             .map_err(|()| SignOrCreationError::CreationError(CreationError::InvalidAmount))?;
         let our_node_pubkey = self.channel_manager.get_our_node_id();
@@ -390,6 +391,7 @@ impl LightningCoin {
             .payment_secret(payment_secret)
             .basic_mpp()
             .min_final_cltv_expiry(MIN_FINAL_CLTV_EXPIRY.into())
+            // Todo: this should be the locktime probably and it should be validated by the other side, what about min_final_cltv_expiry??
             .expiry_time(core::time::Duration::from_secs(invoice_expiry_delta_secs.into()));
         if let Some(amt) = amt_msat {
             invoice = invoice.amount_milli_satoshis(amt);
@@ -578,11 +580,11 @@ impl SwapOps for LightningCoin {
 
     fn derive_htlc_key_pair(&self, _swap_unique_data: &[u8]) -> KeyPair { unimplemented!() }
 
-    async fn other_side_instructions(
+    async fn payment_instructions(
         &self,
         secret_hash: &[u8],
         other_side_amount: &BigDecimal,
-    ) -> Result<Option<Vec<u8>>, MmError<OtherInstructionsErr>> {
+    ) -> Result<Option<Vec<u8>>, MmError<PaymentInstructionsErr>> {
         // lightning decimals should be 11 in config since the smallest divisible unit in lightning coin is msat
         let amt_msat = sat_from_big_decimal(other_side_amount, self.decimals())?;
 
@@ -601,8 +603,16 @@ impl SwapOps for LightningCoin {
                 DEFAULT_INVOICE_EXPIRY,
             )
             .await
-            .map_to_mm(|e| OtherInstructionsErr::LightningInvoiceErr(e.to_string()))?;
-        Ok(Some(invoice.to_string().into_bytes()))
+            .map_to_mm(|e| PaymentInstructionsErr::LightningInvoiceErr(e.to_string()))?;
+        Ok(Some(hex::decode(invoice.to_string()).map_to_mm(|e| {
+            PaymentInstructionsErr::LightningInvoiceErr(e.to_string())
+        })?))
+    }
+
+    fn validate_instructions(&self, instructions: &[u8]) -> Result<(), MmError<ValidateInstructionsErr>> {
+        let _invoice = Invoice::from_str(&hex::encode(instructions))?;
+        // Todo: continue validation here by comparing (payment_hash of invoice with secret_hash, invoice_amount with maker/taker amount, locktime, etc..)
+        Ok(())
     }
 }
 

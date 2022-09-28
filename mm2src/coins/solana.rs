@@ -2,11 +2,11 @@ use super::{CoinBalance, HistorySyncState, MarketCoinOps, MmCoin, SwapOps, Trade
 use crate::solana::solana_common::{lamports_to_sol, PrepareTransferData, SufficientBalanceError};
 use crate::solana::spl::SplTokenInfo;
 use crate::{BalanceError, BalanceFut, FeeApproxStage, FoundSwapTxSpend, NegotiateSwapContractAddrErr,
-            OtherInstructionsErr, RawTransactionFut, RawTransactionRequest, SearchForSwapTxSpendInput,
+            PaymentInstructionsErr, RawTransactionFut, RawTransactionRequest, SearchForSwapTxSpendInput,
             SignatureResult, TradePreimageFut, TradePreimageResult, TradePreimageValue, TransactionDetails,
             TransactionFut, TransactionType, TxMarshalingErr, UnexpectedDerivationMethod, ValidateAddressResult,
-            ValidatePaymentInput, VerificationResult, WatcherValidatePaymentInput, WithdrawError, WithdrawFut,
-            WithdrawRequest, WithdrawResult};
+            ValidateInstructionsErr, ValidatePaymentInput, VerificationResult, WatcherValidatePaymentInput,
+            WithdrawError, WithdrawFut, WithdrawRequest, WithdrawResult};
 use async_trait::async_trait;
 use base58::ToBase58;
 use bincode::{deserialize, serialize};
@@ -605,11 +605,15 @@ impl SwapOps for SolanaCoin {
 
     fn derive_htlc_key_pair(&self, _swap_unique_data: &[u8]) -> KeyPair { todo!() }
 
-    async fn other_side_instructions(
+    async fn payment_instructions(
         &self,
         _secret_hash: &[u8],
         _other_side_amount: &BigDecimal,
-    ) -> Result<Option<Vec<u8>>, MmError<OtherInstructionsErr>> {
+    ) -> Result<Option<Vec<u8>>, MmError<PaymentInstructionsErr>> {
+        unimplemented!()
+    }
+
+    fn validate_instructions(&self, _instructions: &[u8]) -> Result<(), MmError<ValidateInstructionsErr>> {
         unimplemented!()
     }
 }

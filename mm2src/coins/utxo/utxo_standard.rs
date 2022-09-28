@@ -20,9 +20,10 @@ use crate::utxo::utxo_builder::{UtxoArcBuilder, UtxoCoinBuilder};
 use crate::utxo::utxo_tx_history_v2::{UtxoMyAddressesHistoryError, UtxoTxDetailsError, UtxoTxDetailsParams,
                                       UtxoTxHistoryOps};
 use crate::{CanRefundHtlc, CoinBalance, CoinWithDerivationMethod, GetWithdrawSenderAddress,
-            NegotiateSwapContractAddrErr, OtherInstructionsErr, PrivKeyBuildPolicy, SearchForSwapTxSpendInput,
+            NegotiateSwapContractAddrErr, PaymentInstructionsErr, PrivKeyBuildPolicy, SearchForSwapTxSpendInput,
             SignatureResult, SwapOps, TradePreimageValue, TransactionFut, TxMarshalingErr, ValidateAddressResult,
-            ValidatePaymentInput, VerificationResult, WatcherValidatePaymentInput, WithdrawFut, WithdrawSenderAddress};
+            ValidateInstructionsErr, ValidatePaymentInput, VerificationResult, WatcherValidatePaymentInput,
+            WithdrawFut, WithdrawSenderAddress};
 use crypto::Bip44Chain;
 use futures::{FutureExt, TryFutureExt};
 use mm2_metrics::MetricsArc;
@@ -498,13 +499,15 @@ impl SwapOps for UtxoStandardCoin {
         utxo_common::derive_htlc_key_pair(self.as_ref(), swap_unique_data)
     }
 
-    async fn other_side_instructions(
+    async fn payment_instructions(
         &self,
         _secret_hash: &[u8],
         _other_side_amount: &BigDecimal,
-    ) -> Result<Option<Vec<u8>>, MmError<OtherInstructionsErr>> {
+    ) -> Result<Option<Vec<u8>>, MmError<PaymentInstructionsErr>> {
         Ok(None)
     }
+
+    fn validate_instructions(&self, _instructions: &[u8]) -> Result<(), MmError<ValidateInstructionsErr>> { Ok(()) }
 }
 
 impl MarketCoinOps for UtxoStandardCoin {

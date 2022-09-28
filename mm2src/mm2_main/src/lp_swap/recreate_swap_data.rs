@@ -212,6 +212,7 @@ fn convert_taker_to_maker_events(
                 // Finish processing Taker events.
                 return events;
             },
+            // Todo: does the taker need to retrieve the invoice from here?? also look in maker_swap.rs for mirror
             TakerSwapEvent::MakerPaymentReceived(tx_ident) => {
                 if let Some(taker_fee_ident) = taker_fee_ident.take() {
                     push_event!(MakerSwapEvent::TakerFeeValidated(taker_fee_ident));
@@ -260,6 +261,8 @@ fn convert_taker_to_maker_events(
             | TakerSwapEvent::StartFailed(_)
             | TakerSwapEvent::Negotiated(_)
             | TakerSwapEvent::NegotiateFailed(_)
+            // Todo: add a note here to describe why this is not needed for lightning and that it might be needed if instructions is used later depending on the situation
+            | TakerSwapEvent::TakerPaymentInstructionsReceived(_)
             | TakerSwapEvent::MakerPaymentWaitConfirmStarted
             | TakerSwapEvent::MakerPaymentValidatedAndConfirmed
             | TakerSwapEvent::MakerPaymentSpent(_)
@@ -422,6 +425,7 @@ fn convert_maker_to_taker_events(
                 return events;
             },
             MakerSwapEvent::MakerPaymentSent(tx_ident) => {
+                // Todo: check this if a new event is added for other side instructions, also look in the mirror maker_swap.rs
                 push_event!(TakerSwapEvent::MakerPaymentReceived(tx_ident));
                 // Please note we have not to push `MakerPaymentValidatedAndConfirmed` since we could actually decline it.
                 push_event!(TakerSwapEvent::MakerPaymentWaitConfirmStarted);

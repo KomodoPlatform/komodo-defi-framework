@@ -108,6 +108,7 @@ pub async fn generate_invoice(
     })
     .await?;
 
+    // Todo: Should remove adding payment to db step since the preimage can be recreated from the keymanager and the invoice secret (Do I need to check that received amount equals the requested amount?)
     let payment_hash = invoice.payment_hash().into_inner();
     let payment_info = DBPaymentInfo {
         payment_hash: PaymentHash(payment_hash),

@@ -22,10 +22,10 @@ use crate::utxo::utxo_builder::{BlockHeaderUtxoArcOps, MergeUtxoArcOps, UtxoCoin
 use crate::utxo::utxo_tx_history_v2::{UtxoMyAddressesHistoryError, UtxoTxDetailsError, UtxoTxDetailsParams,
                                       UtxoTxHistoryOps};
 use crate::{eth, CanRefundHtlc, CoinBalance, CoinWithDerivationMethod, DelegationError, DelegationFut,
-            GetWithdrawSenderAddress, NegotiateSwapContractAddrErr, OtherInstructionsErr, PrivKeyBuildPolicy,
+            GetWithdrawSenderAddress, NegotiateSwapContractAddrErr, PaymentInstructionsErr, PrivKeyBuildPolicy,
             SearchForSwapTxSpendInput, SignatureResult, StakingInfosFut, SwapOps, TradePreimageValue, TransactionFut,
-            TxMarshalingErr, UnexpectedDerivationMethod, ValidateAddressResult, ValidatePaymentInput,
-            VerificationResult, WatcherValidatePaymentInput, WithdrawFut, WithdrawSenderAddress};
+            TxMarshalingErr, UnexpectedDerivationMethod, ValidateAddressResult, ValidateInstructionsErr,
+            ValidatePaymentInput, VerificationResult, WatcherValidatePaymentInput, WithdrawFut, WithdrawSenderAddress};
 use crypto::Bip44Chain;
 use ethereum_types::H160;
 use futures::{FutureExt, TryFutureExt};
@@ -737,13 +737,15 @@ impl SwapOps for QtumCoin {
         utxo_common::derive_htlc_key_pair(self.as_ref(), swap_unique_data)
     }
 
-    async fn other_side_instructions(
+    async fn payment_instructions(
         &self,
         _secret_hash: &[u8],
         _other_side_amount: &BigDecimal,
-    ) -> Result<Option<Vec<u8>>, MmError<OtherInstructionsErr>> {
+    ) -> Result<Option<Vec<u8>>, MmError<PaymentInstructionsErr>> {
         Ok(None)
     }
+
+    fn validate_instructions(&self, _instructions: &[u8]) -> Result<(), MmError<ValidateInstructionsErr>> { Ok(()) }
 }
 
 impl MarketCoinOps for QtumCoin {

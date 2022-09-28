@@ -69,6 +69,7 @@ cfg_native! {
     use crate::lightning::ln_conf::PlatformCoinConfirmationTargets;
     use async_std::fs;
     use futures::AsyncWriteExt;
+    use lightning_invoice::ParseOrSemanticError;
     use std::io;
     use zcash_primitives::transaction::Transaction as ZTransaction;
     use z_coin::ZcoinProtocolInfo;
@@ -470,13 +471,23 @@ pub struct SearchForSwapTxSpendInput<'a> {
 }
 
 #[derive(Display)]
-pub enum OtherInstructionsErr {
+pub enum PaymentInstructionsErr {
     LightningInvoiceErr(String),
     InternalError(String),
 }
 
-impl From<NumConversError> for OtherInstructionsErr {
-    fn from(e: NumConversError) -> Self { OtherInstructionsErr::InternalError(e.to_string()) }
+impl From<NumConversError> for PaymentInstructionsErr {
+    fn from(e: NumConversError) -> Self { PaymentInstructionsErr::InternalError(e.to_string()) }
+}
+
+#[derive(Display)]
+pub enum ValidateInstructionsErr {
+    ValidateLightningInvoiceErr(String),
+}
+
+#[cfg(not(target_arch = "wasm32"))]
+impl From<ParseOrSemanticError> for ValidateInstructionsErr {
+    fn from(e: ParseOrSemanticError) -> Self { ValidateInstructionsErr::ValidateLightningInvoiceErr(e.to_string()) }
 }
 
 /// Swap operations (mostly based on the Hash/Time locked transactions implemented by coin wallets).
@@ -616,11 +627,13 @@ pub trait SwapOps {
 
     fn derive_htlc_key_pair(&self, swap_unique_data: &[u8]) -> KeyPair;
 
-    async fn other_side_instructions(
+    async fn payment_instructions(
         &self,
         secret_hash: &[u8],
         other_side_amount: &BigDecimal,
-    ) -> Result<Option<Vec<u8>>, MmError<OtherInstructionsErr>>;
+    ) -> Result<Option<Vec<u8>>, MmError<PaymentInstructionsErr>>;
+
+    fn validate_instructions(&self, _instructions: &[u8]) -> Result<(), MmError<ValidateInstructionsErr>>;
 }
 
 /// Operations that coins have independently from the MarketMaker.

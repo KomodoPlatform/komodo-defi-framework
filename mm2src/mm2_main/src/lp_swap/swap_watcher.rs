@@ -39,6 +39,7 @@ pub struct WatcherMut {
     secret: H256Json,
 }
 
+// Todo: how to use payment instructions with watchers?? is it even needed?? what about lightning payments?? (it's instant to pay for the taker)
 #[derive(Clone, Debug, Default, Deserialize, PartialEq, Serialize)]
 pub struct TakerSwapWatcherData {
     pub uuid: Uuid,

@@ -1,9 +1,10 @@
 use super::{CoinBalance, HistorySyncState, MarketCoinOps, MmCoin, RawTransactionFut, RawTransactionRequest, SwapOps,
             TradeFee, TransactionEnum, TransactionFut};
 use crate::{BalanceFut, CanRefundHtlc, FeeApproxStage, FoundSwapTxSpend, NegotiateSwapContractAddrErr,
-            OtherInstructionsErr, SearchForSwapTxSpendInput, SignatureResult, TradePreimageFut, TradePreimageResult,
+            PaymentInstructionsErr, SearchForSwapTxSpendInput, SignatureResult, TradePreimageFut, TradePreimageResult,
             TradePreimageValue, TxMarshalingErr, UnexpectedDerivationMethod, ValidateAddressResult,
-            ValidatePaymentInput, VerificationResult, WatcherValidatePaymentInput, WithdrawFut, WithdrawRequest};
+            ValidateInstructionsErr, ValidatePaymentInput, VerificationResult, WatcherValidatePaymentInput,
+            WithdrawFut, WithdrawRequest};
 use async_trait::async_trait;
 use futures01::Future;
 use keys::KeyPair;
@@ -260,11 +261,15 @@ impl SwapOps for TestCoin {
         unimplemented!()
     }
 
-    async fn other_side_instructions(
+    async fn payment_instructions(
         &self,
         _secret_hash: &[u8],
         _other_side_amount: &BigDecimal,
-    ) -> Result<Option<Vec<u8>>, MmError<OtherInstructionsErr>> {
+    ) -> Result<Option<Vec<u8>>, MmError<PaymentInstructionsErr>> {
+        unimplemented!()
+    }
+
+    fn validate_instructions(&self, _instructions: &[u8]) -> Result<(), MmError<ValidateInstructionsErr>> {
         unimplemented!()
     }
 }

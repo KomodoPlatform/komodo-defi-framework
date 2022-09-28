@@ -61,7 +61,7 @@ use web3_transport::{EthFeeHistoryNamespace, Web3Transport, Web3TransportNode};
 
 use super::{coin_conf, AsyncMutex, BalanceError, BalanceFut, CoinBalance, CoinProtocol, CoinTransportMetrics,
             CoinsContext, FeeApproxStage, FoundSwapTxSpend, HistorySyncState, MarketCoinOps, MmCoin,
-            NegotiateSwapContractAddrErr, NumConversError, NumConversResult, OtherInstructionsErr,
+            NegotiateSwapContractAddrErr, NumConversError, NumConversResult, PaymentInstructionsErr,
             RawTransactionError, RawTransactionFut, RawTransactionRequest, RawTransactionRes, RawTransactionResult,
             RpcClientType, RpcTransportEventHandler, RpcTransportEventHandlerShared, SearchForSwapTxSpendInput,
             SignatureError, SignatureResult, SwapOps, TradeFee, TradePreimageError, TradePreimageFut,
@@ -70,6 +70,7 @@ use super::{coin_conf, AsyncMutex, BalanceError, BalanceFut, CoinBalance, CoinPr
             VerificationError, VerificationResult, WatcherValidatePaymentInput, WithdrawError, WithdrawFee,
             WithdrawFut, WithdrawRequest, WithdrawResult};
 
+use crate::ValidateInstructionsErr;
 pub use rlp;
 
 #[cfg(test)] mod eth_tests;
@@ -1135,13 +1136,15 @@ impl SwapOps for EthCoin {
         key_pair_from_secret(self.key_pair.secret()).expect("valid key")
     }
 
-    async fn other_side_instructions(
+    async fn payment_instructions(
         &self,
         _secret_hash: &[u8],
         _other_side_amount: &BigDecimal,
-    ) -> Result<Option<Vec<u8>>, MmError<OtherInstructionsErr>> {
+    ) -> Result<Option<Vec<u8>>, MmError<PaymentInstructionsErr>> {
         Ok(None)
     }
+
+    fn validate_instructions(&self, _instructions: &[u8]) -> Result<(), MmError<ValidateInstructionsErr>> { Ok(()) }
 }
 
 #[cfg_attr(test, mockable)]

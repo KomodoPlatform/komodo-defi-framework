@@ -14,7 +14,7 @@ use crate::mm2::lp_network::subscribe_to_topic;
 use crate::mm2::lp_ordermatch::{MakerOrderBuilder, OrderConfirmationsSettings};
 use crate::mm2::lp_price::fetch_swap_coins_price;
 use crate::mm2::MM_VERSION;
-use coins::{CanRefundHtlc, FeeApproxStage, FoundSwapTxSpend, MmCoinEnum, OtherInstructionsErr,
+use coins::{CanRefundHtlc, FeeApproxStage, FoundSwapTxSpend, MmCoinEnum, PaymentInstructionsErr,
             SearchForSwapTxSpendInput, TradeFee, TradePreimageValue, TransactionEnum, ValidatePaymentInput};
 use common::log::{debug, error, info, warn};
 use common::{bits256, executor::Timer, now_ms, DEX_FEE_ADDR_RAW_PUBKEY};
@@ -404,16 +404,16 @@ impl MakerSwap {
         }
     }
 
-    async fn get_my_payment_data(&self) -> Result<PaymentDataMsg, MmError<OtherInstructionsErr>> {
+    async fn get_my_payment_data(&self) -> Result<PaymentDataMsg, MmError<PaymentInstructionsErr>> {
         let payment_data = self.r().maker_payment.as_ref().unwrap().tx_hex.0.clone();
-        if let Some(other_side_instructions) = self
+        if let Some(instructions) = self
             .taker_coin
-            .other_side_instructions(&self.secret_hash(), &self.taker_amount)
+            .payment_instructions(&self.secret_hash(), &self.taker_amount)
             .await?
         {
             Ok(PaymentDataMsg::V2(PaymentDataV2 {
-                payment_data,
-                other_side_instructions,
+                data: payment_data,
+                instructions,
             }))
         } else {
             Ok(PaymentDataMsg::V1(payment_data))
@@ -636,7 +636,7 @@ impl MakerSwap {
         };
         drop(send_abort_handle);
         // Todo: validate invoice here, or after? should I revalidate on restart?
-        let taker_fee = match self.taker_coin.tx_enum_from_bytes(payload.payment_data()) {
+        let taker_fee = match self.taker_coin.tx_enum_from_bytes(payload.data()) {
             Ok(tx) => tx,
             Err(e) => {
                 return Ok((Some(MakerSwapCommand::Finish), vec![
@@ -1386,6 +1386,7 @@ pub enum MakerSwapCommand {
     Finish,
 }
 
+// Todo: mirror what's implemented in taker swap
 #[derive(Clone, Debug, Deserialize, PartialEq, Serialize)]
 #[serde(tag = "type", content = "data")]
 #[allow(clippy::large_enum_variant)]
