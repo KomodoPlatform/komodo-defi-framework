@@ -2,12 +2,13 @@ use super::{CoinBalance, HistorySyncState, MarketCoinOps, MmCoin, SwapOps, Trade
 use crate::coin_errors::{MyAddressError, ValidatePaymentError};
 use crate::solana::solana_common::{ui_amount_to_amount, PrepareTransferData, SufficientBalanceError};
 use crate::solana::{solana_common, AccountError, SolanaCommonOps, SolanaFeeDetails};
-use crate::{BalanceFut, FeeApproxStage, FoundSwapTxSpend, NegotiateSwapContractAddrErr, PaymentInstructionsErr,
-            RawTransactionFut, RawTransactionRequest, SearchForSwapTxSpendInput, SignatureResult, SolanaCoin,
-            TradePreimageFut, TradePreimageResult, TradePreimageValue, TransactionDetails, TransactionFut,
-            TransactionType, TxMarshalingErr, UnexpectedDerivationMethod, ValidateAddressResult,
-            ValidateInstructionsErr, ValidatePaymentFut, ValidatePaymentInput, VerificationResult,
-            WatcherValidatePaymentInput, WithdrawError, WithdrawFut, WithdrawRequest, WithdrawResult};
+use crate::{BalanceFut, FeeApproxStage, FoundSwapTxSpend, NegotiateSwapContractAddrErr, PaymentInstructions,
+            PaymentInstructionsErr, RawTransactionFut, RawTransactionRequest, SearchForSwapTxSpendInput,
+            SignatureResult, SolanaCoin, TradePreimageFut, TradePreimageResult, TradePreimageValue,
+            TransactionDetails, TransactionFut, TransactionType, TxMarshalingErr, UnexpectedDerivationMethod,
+            ValidateAddressResult, ValidateInstructionsErr, ValidatePaymentFut, ValidatePaymentInput,
+            VerificationResult, WatcherValidatePaymentInput, WithdrawError, WithdrawFut, WithdrawRequest,
+            WithdrawResult};
 use async_trait::async_trait;
 use bincode::serialize;
 use common::{async_blocking, now_ms};
@@ -297,6 +298,7 @@ impl SwapOps for SplToken {
         amount: BigDecimal,
         swap_contract_address: &Option<BytesJson>,
         swap_unique_data: &[u8],
+        _payment_instructions: &Option<PaymentInstructions>,
     ) -> TransactionFut {
         unimplemented!()
     }
@@ -309,6 +311,7 @@ impl SwapOps for SplToken {
         amount: BigDecimal,
         swap_contract_address: &Option<BytesJson>,
         swap_unique_data: &[u8],
+        _payment_instructions: &Option<PaymentInstructions>,
     ) -> TransactionFut {
         unimplemented!()
     }
@@ -449,7 +452,7 @@ impl SwapOps for SplToken {
         _instructions: &[u8],
         _secret_hash: &[u8],
         _amount: BigDecimal,
-    ) -> Result<(), MmError<ValidateInstructionsErr>> {
+    ) -> Result<Option<PaymentInstructions>, MmError<ValidateInstructionsErr>> {
         unimplemented!()
     }
 }

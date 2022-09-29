@@ -10,11 +10,11 @@ use crate::utxo::utxo_common::big_decimal_from_sat_unsigned;
 use crate::utxo::utxo_tx_history_v2::{UtxoMyAddressesHistoryError, UtxoTxDetailsError, UtxoTxDetailsParams,
                                       UtxoTxHistoryOps};
 use crate::{BlockHeightAndTime, CanRefundHtlc, CoinBalance, CoinProtocol, CoinWithDerivationMethod,
-            NegotiateSwapContractAddrErr, PaymentInstructionsErr, PrivKeyBuildPolicy, RawTransactionFut,
-            RawTransactionRequest, SearchForSwapTxSpendInput, SignatureResult, SwapOps, TradePreimageValue,
-            TransactionFut, TransactionType, TxFeeDetails, TxMarshalingErr, UnexpectedDerivationMethod,
-            ValidateAddressResult, ValidateInstructionsErr, ValidatePaymentFut, ValidatePaymentInput,
-            VerificationResult, WatcherValidatePaymentInput, WithdrawFut};
+            NegotiateSwapContractAddrErr, PaymentInstructions, PaymentInstructionsErr, PrivKeyBuildPolicy,
+            RawTransactionFut, RawTransactionRequest, SearchForSwapTxSpendInput, SignatureResult, SwapOps,
+            TradePreimageValue, TransactionFut, TransactionType, TxFeeDetails, TxMarshalingErr,
+            UnexpectedDerivationMethod, ValidateAddressResult, ValidateInstructionsErr, ValidatePaymentFut,
+            ValidatePaymentInput, VerificationResult, WatcherValidatePaymentInput, WithdrawFut};
 use common::log::warn;
 use derive_more::Display;
 use futures::{FutureExt, TryFutureExt};
@@ -824,6 +824,7 @@ impl SwapOps for BchCoin {
         amount: BigDecimal,
         _swap_contract_address: &Option<BytesJson>,
         swap_unique_data: &[u8],
+        _payment_instructions: &Option<PaymentInstructions>,
     ) -> TransactionFut {
         utxo_common::send_maker_payment(
             self.clone(),
@@ -843,6 +844,7 @@ impl SwapOps for BchCoin {
         amount: BigDecimal,
         _swap_contract_address: &Option<BytesJson>,
         swap_unique_data: &[u8],
+        _payment_instructions: &Option<PaymentInstructions>,
     ) -> TransactionFut {
         utxo_common::send_taker_payment(
             self.clone(),
@@ -1054,8 +1056,8 @@ impl SwapOps for BchCoin {
         _instructions: &[u8],
         _secret_hash: &[u8],
         _amount: BigDecimal,
-    ) -> Result<(), MmError<ValidateInstructionsErr>> {
-        Ok(())
+    ) -> Result<Option<PaymentInstructions>, MmError<ValidateInstructionsErr>> {
+        Ok(None)
     }
 }
 

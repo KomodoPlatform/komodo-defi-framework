@@ -21,10 +21,10 @@ use crate::utxo::utxo_builder::{UtxoArcBuilder, UtxoCoinBuilder};
 use crate::utxo::utxo_tx_history_v2::{UtxoMyAddressesHistoryError, UtxoTxDetailsError, UtxoTxDetailsParams,
                                       UtxoTxHistoryOps};
 use crate::{CanRefundHtlc, CoinBalance, CoinWithDerivationMethod, GetWithdrawSenderAddress,
-            NegotiateSwapContractAddrErr, PaymentInstructionsErr, PrivKeyBuildPolicy, SearchForSwapTxSpendInput,
-            SignatureResult, SwapOps, TradePreimageValue, TransactionFut, TxMarshalingErr, ValidateAddressResult,
-            ValidateInstructionsErr, ValidatePaymentFut, ValidatePaymentInput, VerificationResult,
-            WatcherValidatePaymentInput, WithdrawFut, WithdrawSenderAddress};
+            NegotiateSwapContractAddrErr, PaymentInstructions, PaymentInstructionsErr, PrivKeyBuildPolicy,
+            SearchForSwapTxSpendInput, SignatureResult, SwapOps, TradePreimageValue, TransactionFut, TxMarshalingErr,
+            ValidateAddressResult, ValidateInstructionsErr, ValidatePaymentFut, ValidatePaymentInput,
+            VerificationResult, WatcherValidatePaymentInput, WithdrawFut, WithdrawSenderAddress};
 use crypto::Bip44Chain;
 use futures::{FutureExt, TryFutureExt};
 use mm2_metrics::MetricsArc;
@@ -283,6 +283,7 @@ impl SwapOps for UtxoStandardCoin {
         amount: BigDecimal,
         _swap_contract_address: &Option<BytesJson>,
         swap_unique_data: &[u8],
+        _payment_instructions: &Option<PaymentInstructions>,
     ) -> TransactionFut {
         utxo_common::send_maker_payment(
             self.clone(),
@@ -302,6 +303,7 @@ impl SwapOps for UtxoStandardCoin {
         amount: BigDecimal,
         _swap_contract_address: &Option<BytesJson>,
         swap_unique_data: &[u8],
+        _payment_instructions: &Option<PaymentInstructions>,
     ) -> TransactionFut {
         utxo_common::send_taker_payment(
             self.clone(),
@@ -513,8 +515,8 @@ impl SwapOps for UtxoStandardCoin {
         _instructions: &[u8],
         _secret_hash: &[u8],
         _amount: BigDecimal,
-    ) -> Result<(), MmError<ValidateInstructionsErr>> {
-        Ok(())
+    ) -> Result<Option<PaymentInstructions>, MmError<ValidateInstructionsErr>> {
+        Ok(None)
     }
 }
 

@@ -69,7 +69,7 @@ cfg_native! {
     use crate::lightning::ln_conf::PlatformCoinConfirmationTargets;
     use async_std::fs;
     use futures::AsyncWriteExt;
-    use lightning_invoice::ParseOrSemanticError;
+    use lightning_invoice::{Invoice, ParseOrSemanticError};
     use std::io;
     use zcash_primitives::transaction::Transaction as ZTransaction;
     use z_coin::ZcoinProtocolInfo;
@@ -474,6 +474,12 @@ pub struct SearchForSwapTxSpendInput<'a> {
     pub swap_unique_data: &'a [u8],
 }
 
+#[derive(Clone, Debug, Deserialize, PartialEq, Serialize)]
+pub enum PaymentInstructions {
+    #[cfg(not(target_arch = "wasm32"))]
+    Lightning(Invoice),
+}
+
 #[derive(Display)]
 pub enum PaymentInstructionsErr {
     LightningInvoiceErr(String),
@@ -499,6 +505,8 @@ impl From<ParseOrSemanticError> for ValidateInstructionsErr {
 pub trait SwapOps {
     fn send_taker_fee(&self, fee_addr: &[u8], amount: BigDecimal, uuid: &[u8]) -> TransactionFut;
 
+    // Todo: maybe make a struct for the arguments
+    #[allow(clippy::too_many_arguments)]
     fn send_maker_payment(
         &self,
         time_lock: u32,
@@ -507,8 +515,11 @@ pub trait SwapOps {
         amount: BigDecimal,
         swap_contract_address: &Option<BytesJson>,
         swap_unique_data: &[u8],
+        payment_instructions: &Option<PaymentInstructions>,
     ) -> TransactionFut;
 
+    // Todo: maybe make a struct for the arguments
+    #[allow(clippy::too_many_arguments)]
     fn send_taker_payment(
         &self,
         time_lock: u32,
@@ -517,6 +528,7 @@ pub trait SwapOps {
         amount: BigDecimal,
         swap_contract_address: &Option<BytesJson>,
         swap_unique_data: &[u8],
+        payment_instructions: &Option<PaymentInstructions>,
     ) -> TransactionFut;
 
     fn send_maker_spends_taker_payment(
@@ -642,7 +654,7 @@ pub trait SwapOps {
         instructions: &[u8],
         secret_hash: &[u8],
         amount: BigDecimal,
-    ) -> Result<(), MmError<ValidateInstructionsErr>>;
+    ) -> Result<Option<PaymentInstructions>, MmError<ValidateInstructionsErr>>;
 }
 
 /// Operations that coins have independently from the MarketMaker.

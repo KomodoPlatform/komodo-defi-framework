@@ -13,12 +13,13 @@ use crate::utxo::{sat_from_big_decimal, utxo_common, ActualTxFee, AdditionalTxDa
                   UtxoCommonOps, UtxoFeeDetails, UtxoRpcMode, UtxoTxBroadcastOps, UtxoTxGenerationOps,
                   VerboseTransactionFrom};
 use crate::{BalanceError, BalanceFut, CoinBalance, FeeApproxStage, FoundSwapTxSpend, HistorySyncState, MarketCoinOps,
-            MmCoin, NegotiateSwapContractAddrErr, NumConversError, PaymentInstructionsErr, PrivKeyActivationPolicy,
-            RawTransactionFut, RawTransactionRequest, SearchForSwapTxSpendInput, SignatureError, SignatureResult,
-            SwapOps, TradeFee, TradePreimageFut, TradePreimageResult, TradePreimageValue, TransactionDetails,
-            TransactionEnum, TransactionFut, TxFeeDetails, TxMarshalingErr, UnexpectedDerivationMethod,
-            ValidateAddressResult, ValidateInstructionsErr, ValidatePaymentFut, ValidatePaymentInput,
-            VerificationError, VerificationResult, WatcherValidatePaymentInput, WithdrawFut, WithdrawRequest};
+            MmCoin, NegotiateSwapContractAddrErr, NumConversError, PaymentInstructions, PaymentInstructionsErr,
+            PrivKeyActivationPolicy, RawTransactionFut, RawTransactionRequest, SearchForSwapTxSpendInput,
+            SignatureError, SignatureResult, SwapOps, TradeFee, TradePreimageFut, TradePreimageResult,
+            TradePreimageValue, TransactionDetails, TransactionEnum, TransactionFut, TxFeeDetails, TxMarshalingErr,
+            UnexpectedDerivationMethod, ValidateAddressResult, ValidateInstructionsErr, ValidatePaymentFut,
+            ValidatePaymentInput, VerificationError, VerificationResult, WatcherValidatePaymentInput, WithdrawFut,
+            WithdrawRequest};
 use crate::{Transaction, WithdrawError};
 use async_trait::async_trait;
 use bitcrypto::{dhash160, dhash256};
@@ -1038,6 +1039,7 @@ impl SwapOps for ZCoin {
         amount: BigDecimal,
         _swap_contract_address: &Option<BytesJson>,
         swap_unique_data: &[u8],
+        _payment_instructions: &Option<PaymentInstructions>,
     ) -> TransactionFut {
         let selfi = self.clone();
         let maker_key_pair = self.derive_htlc_key_pair(swap_unique_data);
@@ -1068,6 +1070,7 @@ impl SwapOps for ZCoin {
         amount: BigDecimal,
         _swap_contract_address: &Option<BytesJson>,
         swap_unique_data: &[u8],
+        _payment_instructions: &Option<PaymentInstructions>,
     ) -> TransactionFut {
         let selfi = self.clone();
         let taker_keypair = self.derive_htlc_key_pair(swap_unique_data);
@@ -1409,8 +1412,8 @@ impl SwapOps for ZCoin {
         _instructions: &[u8],
         _secret_hash: &[u8],
         _amount: BigDecimal,
-    ) -> Result<(), MmError<ValidateInstructionsErr>> {
-        Ok(())
+    ) -> Result<Option<PaymentInstructions>, MmError<ValidateInstructionsErr>> {
+        Ok(None)
     }
 }
 

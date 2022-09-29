@@ -66,11 +66,12 @@ use super::{coin_conf, AsyncMutex, BalanceError, BalanceFut, CoinBalance, CoinPr
             RpcClientType, RpcTransportEventHandler, RpcTransportEventHandlerShared, SearchForSwapTxSpendInput,
             SignatureError, SignatureResult, SwapOps, TradeFee, TradePreimageError, TradePreimageFut,
             TradePreimageResult, TradePreimageValue, Transaction, TransactionDetails, TransactionEnum, TransactionErr,
-            TransactionFut, TxMarshalingErr, UnexpectedDerivationMethod, ValidateAddressResult, ValidatePaymentError,
-            ValidatePaymentFut, ValidatePaymentInput, VerificationError, VerificationResult,
-            WatcherValidatePaymentInput, WithdrawError, WithdrawFee, WithdrawFut, WithdrawRequest, WithdrawResult};
+            TransactionFut, TxMarshalingErr, UnexpectedDerivationMethod, ValidateAddressResult,
+            ValidateInstructionsErr, ValidatePaymentError, ValidatePaymentFut, ValidatePaymentInput,
+            VerificationError, VerificationResult, WatcherValidatePaymentInput, WithdrawError, WithdrawFee,
+            WithdrawFut, WithdrawRequest, WithdrawResult};
 
-use crate::ValidateInstructionsErr;
+use crate::PaymentInstructions;
 pub use rlp;
 
 #[cfg(test)] mod eth_tests;
@@ -732,6 +733,7 @@ impl SwapOps for EthCoin {
         amount: BigDecimal,
         swap_contract_address: &Option<BytesJson>,
         _swap_unique_data: &[u8],
+        _payment_instructions: &Option<PaymentInstructions>,
     ) -> TransactionFut {
         let taker_addr = try_tx_fus!(addr_from_raw_pubkey(taker_pub));
         let swap_contract_address = try_tx_fus!(swap_contract_address.try_to_address());
@@ -757,6 +759,7 @@ impl SwapOps for EthCoin {
         amount: BigDecimal,
         swap_contract_address: &Option<BytesJson>,
         _swap_unique_data: &[u8],
+        _payment_instructions: &Option<PaymentInstructions>,
     ) -> TransactionFut {
         let maker_addr = try_tx_fus!(addr_from_raw_pubkey(maker_pub));
         let swap_contract_address = try_tx_fus!(swap_contract_address.try_to_address());
@@ -1155,8 +1158,8 @@ impl SwapOps for EthCoin {
         _instructions: &[u8],
         _secret_hash: &[u8],
         _amount: BigDecimal,
-    ) -> Result<(), MmError<ValidateInstructionsErr>> {
-        Ok(())
+    ) -> Result<Option<PaymentInstructions>, MmError<ValidateInstructionsErr>> {
+        Ok(None)
     }
 }
 

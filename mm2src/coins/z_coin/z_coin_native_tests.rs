@@ -43,6 +43,7 @@ fn zombie_coin_send_and_refund_maker_payment() {
             &secret_hash,
             "0.01".parse().unwrap(),
             &None,
+            &None,
         )
         .wait()
         .unwrap();
@@ -92,6 +93,7 @@ fn zombie_coin_send_and_spend_maker_payment() {
             taker_pub,
             &*secret_hash,
             "0.01".parse().unwrap(),
+            &None,
             &None,
         )
         .wait()

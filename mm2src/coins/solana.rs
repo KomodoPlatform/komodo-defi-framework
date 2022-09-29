@@ -3,11 +3,12 @@ use crate::coin_errors::{MyAddressError, ValidatePaymentError};
 use crate::solana::solana_common::{lamports_to_sol, PrepareTransferData, SufficientBalanceError};
 use crate::solana::spl::SplTokenInfo;
 use crate::{BalanceError, BalanceFut, FeeApproxStage, FoundSwapTxSpend, NegotiateSwapContractAddrErr,
-            PaymentInstructionsErr, RawTransactionFut, RawTransactionRequest, SearchForSwapTxSpendInput,
-            SignatureResult, TradePreimageFut, TradePreimageResult, TradePreimageValue, TransactionDetails,
-            TransactionFut, TransactionType, TxMarshalingErr, UnexpectedDerivationMethod, ValidateAddressResult,
-            ValidateInstructionsErr, ValidatePaymentFut, ValidatePaymentInput, VerificationResult,
-            WatcherValidatePaymentInput, WithdrawError, WithdrawFut, WithdrawRequest, WithdrawResult};
+            PaymentInstructions, PaymentInstructionsErr, RawTransactionFut, RawTransactionRequest,
+            SearchForSwapTxSpendInput, SignatureResult, TradePreimageFut, TradePreimageResult, TradePreimageValue,
+            TransactionDetails, TransactionFut, TransactionType, TxMarshalingErr, UnexpectedDerivationMethod,
+            ValidateAddressResult, ValidateInstructionsErr, ValidatePaymentFut, ValidatePaymentInput,
+            VerificationResult, WatcherValidatePaymentInput, WithdrawError, WithdrawFut, WithdrawRequest,
+            WithdrawResult};
 use async_trait::async_trait;
 use base58::ToBase58;
 use bincode::{deserialize, serialize};
@@ -463,6 +464,7 @@ impl SwapOps for SolanaCoin {
         amount: BigDecimal,
         swap_contract_address: &Option<BytesJson>,
         _swap_unique_data: &[u8],
+        _payment_instructions: &Option<PaymentInstructions>,
     ) -> TransactionFut {
         unimplemented!()
     }
@@ -475,6 +477,7 @@ impl SwapOps for SolanaCoin {
         amount: BigDecimal,
         swap_contract_address: &Option<BytesJson>,
         _swap_unique_data: &[u8],
+        _payment_instructions: &Option<PaymentInstructions>,
     ) -> TransactionFut {
         unimplemented!()
     }
@@ -615,7 +618,7 @@ impl SwapOps for SolanaCoin {
         _instructions: &[u8],
         _secret_hash: &[u8],
         _amount: BigDecimal,
-    ) -> Result<(), MmError<ValidateInstructionsErr>> {
+    ) -> Result<Option<PaymentInstructions>, MmError<ValidateInstructionsErr>> {
         unimplemented!()
     }
 }

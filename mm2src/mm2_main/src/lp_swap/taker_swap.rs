@@ -15,8 +15,8 @@ use crate::mm2::lp_ordermatch::{MatchBy, OrderConfirmationsSettings, TakerAction
 use crate::mm2::lp_price::fetch_swap_coins_price;
 use crate::mm2::lp_swap::{broadcast_p2p_tx_msg, tx_helper_topic, TakerSwapWatcherData};
 use crate::mm2::MM_VERSION;
-use coins::{lp_coinfind, CanRefundHtlc, FeeApproxStage, FoundSwapTxSpend, MmCoinEnum, PaymentInstructionsErr,
-            SearchForSwapTxSpendInput, TradeFee, TradePreimageValue, ValidatePaymentInput};
+use coins::{lp_coinfind, CanRefundHtlc, FeeApproxStage, FoundSwapTxSpend, MmCoinEnum, PaymentInstructions,
+            PaymentInstructionsErr, SearchForSwapTxSpendInput, TradeFee, TradePreimageValue, ValidatePaymentInput};
 use common::executor::Timer;
 use common::log::{debug, error, info, warn};
 use common::{bits256, now_ms, DEX_FEE_ADDR_RAW_PUBKEY};
@@ -492,7 +492,7 @@ pub struct TakerSwapMut {
     taker_payment_refund: Option<TransactionIdentifier>,
     secret_hash: BytesJson,
     secret: H256Json,
-    payment_instructions: Option<Vec<u8>>,
+    payment_instructions: Option<PaymentInstructions>,
 }
 
 #[cfg(test)]
@@ -570,7 +570,7 @@ pub enum TakerSwapEvent {
     NegotiateFailed(SwapError),
     TakerFeeSent(TransactionIdentifier),
     TakerFeeSendFailed(SwapError),
-    TakerPaymentInstructionsReceived(Vec<u8>),
+    TakerPaymentInstructionsReceived(PaymentInstructions),
     MakerPaymentReceived(TransactionIdentifier),
     MakerPaymentWaitConfirmStarted,
     MakerPaymentValidatedAndConfirmed,
@@ -1197,17 +1197,22 @@ impl TakerSwap {
 
         let mut swap_events = vec![];
         if let Some(instructions) = payload.instructions() {
-            if let Err(e) = self.taker_coin.validate_instructions(
+            match self.taker_coin.validate_instructions(
                 instructions,
                 &self.r().secret_hash.0,
                 self.taker_amount.clone().into(),
             ) {
-                return Ok((Some(TakerSwapCommand::Finish), vec![
-                    // Todo: maybe add a different event for this??
-                    TakerSwapEvent::MakerPaymentValidateFailed(e.to_string().into()),
-                ]));
+                Ok(Some(instructions)) => {
+                    swap_events.push(TakerSwapEvent::TakerPaymentInstructionsReceived(instructions))
+                },
+                Ok(None) => (),
+                Err(e) => {
+                    return Ok((Some(TakerSwapCommand::Finish), vec![
+                        // Todo: maybe add a different event for this??
+                        TakerSwapEvent::MakerPaymentValidateFailed(e.to_string().into()),
+                    ]));
+                },
             }
-            swap_events.push(TakerSwapEvent::TakerPaymentInstructionsReceived(instructions.to_vec()));
         }
         swap_events.push(TakerSwapEvent::MakerPaymentReceived(tx_ident));
         swap_events.push(TakerSwapEvent::MakerPaymentWaitConfirmStarted);
@@ -1312,7 +1317,6 @@ impl TakerSwap {
             Ok(res) => match res {
                 Some(tx) => tx,
                 None => {
-                    // Todo: For lightning this pays the invoice
                     let payment_fut = self.taker_coin.send_taker_payment(
                         self.r().data.taker_payment_lock as u32,
                         &*self.r().other_taker_coin_htlc_pub,
@@ -1320,6 +1324,7 @@ impl TakerSwap {
                         self.taker_amount.to_decimal(),
                         &self.r().data.taker_coin_swap_contract_address,
                         &unique_data,
+                        &self.r().payment_instructions,
                     );
 
                     match payment_fut.compat().await {

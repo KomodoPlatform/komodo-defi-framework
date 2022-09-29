@@ -7,12 +7,12 @@ use crate::tendermint::htlc::MsgClaimHtlc;
 use crate::utxo::sat_from_big_decimal;
 use crate::{big_decimal_from_sat_unsigned, BalanceError, BalanceFut, BigDecimal, CoinBalance, FeeApproxStage,
             FoundSwapTxSpend, HistorySyncState, MarketCoinOps, MmCoin, NegotiateSwapContractAddrErr,
-            PaymentInstructionsErr, RawTransactionFut, RawTransactionRequest, SearchForSwapTxSpendInput,
-            SignatureResult, SwapOps, TradeFee, TradePreimageFut, TradePreimageResult, TradePreimageValue,
-            TransactionDetails, TransactionEnum, TransactionFut, TransactionType, TxFeeDetails, TxMarshalingErr,
-            UnexpectedDerivationMethod, ValidateAddressResult, ValidateInstructionsErr, ValidatePaymentFut,
-            ValidatePaymentInput, VerificationResult, WatcherValidatePaymentInput, WithdrawError, WithdrawFut,
-            WithdrawRequest};
+            PaymentInstructions, PaymentInstructionsErr, RawTransactionFut, RawTransactionRequest,
+            SearchForSwapTxSpendInput, SignatureResult, SwapOps, TradeFee, TradePreimageFut, TradePreimageResult,
+            TradePreimageValue, TransactionDetails, TransactionEnum, TransactionFut, TransactionType, TxFeeDetails,
+            TxMarshalingErr, UnexpectedDerivationMethod, ValidateAddressResult, ValidateInstructionsErr,
+            ValidatePaymentFut, ValidatePaymentInput, VerificationResult, WatcherValidatePaymentInput, WithdrawError,
+            WithdrawFut, WithdrawRequest};
 use async_trait::async_trait;
 use bitcrypto::sha256;
 use common::{get_utc_timestamp, Future01CompatExt};
@@ -633,6 +633,7 @@ impl SwapOps for TendermintCoin {
         amount: BigDecimal,
         swap_contract_address: &Option<BytesJson>,
         swap_unique_data: &[u8],
+        _payment_instructions: &Option<PaymentInstructions>,
     ) -> TransactionFut {
         todo!()
     }
@@ -645,6 +646,7 @@ impl SwapOps for TendermintCoin {
         amount: BigDecimal,
         swap_contract_address: &Option<BytesJson>,
         swap_unique_data: &[u8],
+        _payment_instructions: &Option<PaymentInstructions>,
     ) -> TransactionFut {
         todo!()
     }
@@ -785,8 +787,8 @@ impl SwapOps for TendermintCoin {
         _instructions: &[u8],
         _secret_hash: &[u8],
         _amount: BigDecimal,
-    ) -> Result<(), MmError<ValidateInstructionsErr>> {
-        Ok(())
+    ) -> Result<Option<PaymentInstructions>, MmError<ValidateInstructionsErr>> {
+        Ok(None)
     }
 }
 

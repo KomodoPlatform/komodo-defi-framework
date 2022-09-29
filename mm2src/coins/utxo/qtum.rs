@@ -23,11 +23,11 @@ use crate::utxo::utxo_builder::{BlockHeaderUtxoArcOps, MergeUtxoArcOps, UtxoCoin
 use crate::utxo::utxo_tx_history_v2::{UtxoMyAddressesHistoryError, UtxoTxDetailsError, UtxoTxDetailsParams,
                                       UtxoTxHistoryOps};
 use crate::{eth, CanRefundHtlc, CoinBalance, CoinWithDerivationMethod, DelegationError, DelegationFut,
-            GetWithdrawSenderAddress, NegotiateSwapContractAddrErr, PaymentInstructionsErr, PrivKeyBuildPolicy,
-            SearchForSwapTxSpendInput, SignatureResult, StakingInfosFut, SwapOps, TradePreimageValue, TransactionFut,
-            TxMarshalingErr, UnexpectedDerivationMethod, ValidateAddressResult, ValidateInstructionsErr,
-            ValidatePaymentFut, ValidatePaymentInput, VerificationResult, WatcherValidatePaymentInput, WithdrawFut,
-            WithdrawSenderAddress};
+            GetWithdrawSenderAddress, NegotiateSwapContractAddrErr, PaymentInstructions, PaymentInstructionsErr,
+            PrivKeyBuildPolicy, SearchForSwapTxSpendInput, SignatureResult, StakingInfosFut, SwapOps,
+            TradePreimageValue, TransactionFut, TxMarshalingErr, UnexpectedDerivationMethod, ValidateAddressResult,
+            ValidateInstructionsErr, ValidatePaymentFut, ValidatePaymentInput, VerificationResult,
+            WatcherValidatePaymentInput, WithdrawFut, WithdrawSenderAddress};
 use crypto::Bip44Chain;
 use ethereum_types::H160;
 use futures::{FutureExt, TryFutureExt};
@@ -522,6 +522,7 @@ impl SwapOps for QtumCoin {
         amount: BigDecimal,
         _swap_contract_address: &Option<BytesJson>,
         swap_unique_data: &[u8],
+        _payment_instructions: &Option<PaymentInstructions>,
     ) -> TransactionFut {
         utxo_common::send_maker_payment(
             self.clone(),
@@ -541,6 +542,7 @@ impl SwapOps for QtumCoin {
         amount: BigDecimal,
         _swap_contract_address: &Option<BytesJson>,
         swap_unique_data: &[u8],
+        _payment_instructions: &Option<PaymentInstructions>,
     ) -> TransactionFut {
         utxo_common::send_taker_payment(
             self.clone(),
@@ -752,8 +754,8 @@ impl SwapOps for QtumCoin {
         _instructions: &[u8],
         _secret_hash: &[u8],
         _amount: BigDecimal,
-    ) -> Result<(), MmError<ValidateInstructionsErr>> {
-        Ok(())
+    ) -> Result<Option<PaymentInstructions>, MmError<ValidateInstructionsErr>> {
+        Ok(None)
     }
 }
 

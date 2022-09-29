@@ -2,10 +2,10 @@ use super::{CoinBalance, HistorySyncState, MarketCoinOps, MmCoin, RawTransaction
             TradeFee, TransactionEnum, TransactionFut};
 use crate::{coin_errors::{MyAddressError, ValidatePaymentError, ValidatePaymentFut},
             BalanceFut, CanRefundHtlc, FeeApproxStage, FoundSwapTxSpend, NegotiateSwapContractAddrErr,
-            PaymentInstructionsErr, SearchForSwapTxSpendInput, SignatureResult, TradePreimageFut, TradePreimageResult,
-            TradePreimageValue, TxMarshalingErr, UnexpectedDerivationMethod, ValidateAddressResult,
-            ValidateInstructionsErr, ValidatePaymentInput, VerificationResult, WatcherValidatePaymentInput,
-            WithdrawFut, WithdrawRequest};
+            PaymentInstructions, PaymentInstructionsErr, SearchForSwapTxSpendInput, SignatureResult, TradePreimageFut,
+            TradePreimageResult, TradePreimageValue, TxMarshalingErr, UnexpectedDerivationMethod,
+            ValidateAddressResult, ValidateInstructionsErr, ValidatePaymentInput, VerificationResult,
+            WatcherValidatePaymentInput, WithdrawFut, WithdrawRequest};
 use async_trait::async_trait;
 use futures01::Future;
 use keys::KeyPair;
@@ -109,6 +109,7 @@ impl SwapOps for TestCoin {
         amount: BigDecimal,
         swap_contract_address: &Option<BytesJson>,
         _swap_unique_data: &[u8],
+        _payment_instructions: &Option<PaymentInstructions>,
     ) -> TransactionFut {
         unimplemented!()
     }
@@ -121,6 +122,7 @@ impl SwapOps for TestCoin {
         amount: BigDecimal,
         swap_contract_address: &Option<BytesJson>,
         _swap_unique_data: &[u8],
+        _payment_instructions: &Option<PaymentInstructions>,
     ) -> TransactionFut {
         unimplemented!()
     }
@@ -265,7 +267,7 @@ impl SwapOps for TestCoin {
         _instructions: &[u8],
         _secret_hash: &[u8],
         _amount: BigDecimal,
-    ) -> Result<(), MmError<ValidateInstructionsErr>> {
+    ) -> Result<Option<PaymentInstructions>, MmError<ValidateInstructionsErr>> {
         unimplemented!()
     }
 }

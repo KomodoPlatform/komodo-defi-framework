@@ -14,10 +14,10 @@ use crate::utxo::{generate_and_send_tx, sat_from_big_decimal, ActualTxFee, Addit
                   FeePolicy, GenerateTxError, RecentlySpentOutPointsGuard, UtxoCoinConf, UtxoCoinFields,
                   UtxoCommonOps, UtxoTx, UtxoTxBroadcastOps, UtxoTxGenerationOps};
 use crate::{BalanceFut, CoinBalance, FeeApproxStage, FoundSwapTxSpend, HistorySyncState, MarketCoinOps, MmCoin,
-            NegotiateSwapContractAddrErr, NumConversError, PaymentInstructionsErr, PrivKeyNotAllowed,
-            RawTransactionFut, RawTransactionRequest, SearchForSwapTxSpendInput, SignatureResult, SwapOps, TradeFee,
-            TradePreimageError, TradePreimageFut, TradePreimageResult, TradePreimageValue, TransactionDetails,
-            TransactionEnum, TransactionErr, TransactionFut, TxFeeDetails, TxMarshalingErr,
+            NegotiateSwapContractAddrErr, NumConversError, PaymentInstructions, PaymentInstructionsErr,
+            PrivKeyNotAllowed, RawTransactionFut, RawTransactionRequest, SearchForSwapTxSpendInput, SignatureResult,
+            SwapOps, TradeFee, TradePreimageError, TradePreimageFut, TradePreimageResult, TradePreimageValue,
+            TransactionDetails, TransactionEnum, TransactionErr, TransactionFut, TxFeeDetails, TxMarshalingErr,
             UnexpectedDerivationMethod, ValidateAddressResult, ValidateInstructionsErr, ValidatePaymentInput,
             VerificationError, VerificationResult, WatcherValidatePaymentInput, WithdrawError, WithdrawFee,
             WithdrawFut, WithdrawRequest};
@@ -1194,6 +1194,7 @@ impl SwapOps for SlpToken {
         amount: BigDecimal,
         _swap_contract_address: &Option<BytesJson>,
         swap_unique_data: &[u8],
+        _payment_instructions: &Option<PaymentInstructions>,
     ) -> TransactionFut {
         let taker_pub = try_tx_fus!(Public::from_slice(taker_pub));
         let amount = try_tx_fus!(sat_from_big_decimal(&amount, self.decimals()));
@@ -1219,6 +1220,7 @@ impl SwapOps for SlpToken {
         amount: BigDecimal,
         _swap_contract_address: &Option<BytesJson>,
         swap_unique_data: &[u8],
+        _payment_instructions: &Option<PaymentInstructions>,
     ) -> TransactionFut {
         let maker_pub = try_tx_fus!(Public::from_slice(maker_pub));
         let amount = try_tx_fus!(sat_from_big_decimal(&amount, self.decimals()));
@@ -1465,8 +1467,8 @@ impl SwapOps for SlpToken {
         _instructions: &[u8],
         _secret_hash: &[u8],
         _amount: BigDecimal,
-    ) -> Result<(), MmError<ValidateInstructionsErr>> {
-        Ok(())
+    ) -> Result<Option<PaymentInstructions>, MmError<ValidateInstructionsErr>> {
+        Ok(None)
     }
 }
 

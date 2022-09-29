@@ -14,7 +14,7 @@ use crate::mm2::lp_network::subscribe_to_topic;
 use crate::mm2::lp_ordermatch::{MakerOrderBuilder, OrderConfirmationsSettings};
 use crate::mm2::lp_price::fetch_swap_coins_price;
 use crate::mm2::MM_VERSION;
-use coins::{CanRefundHtlc, FeeApproxStage, FoundSwapTxSpend, MmCoinEnum, PaymentInstructionsErr,
+use coins::{CanRefundHtlc, FeeApproxStage, FoundSwapTxSpend, MmCoinEnum, PaymentInstructions, PaymentInstructionsErr,
             SearchForSwapTxSpendInput, TradeFee, TradePreimageValue, TransactionEnum, ValidatePaymentInput};
 use common::log::{debug, error, info, warn};
 use common::{bits256, executor::Timer, now_ms, DEX_FEE_ADDR_RAW_PUBKEY};
@@ -172,7 +172,7 @@ pub struct MakerSwapMut {
     taker_payment_spend: Option<TransactionIdentifier>,
     taker_payment_spend_confirmed: bool,
     maker_payment_refund: Option<TransactionIdentifier>,
-    payment_instructions: Option<Vec<u8>>,
+    payment_instructions: Option<PaymentInstructions>,
 }
 
 #[cfg(test)]
@@ -642,16 +642,21 @@ impl MakerSwap {
         drop(send_abort_handle);
         let mut swap_events = vec![];
         if let Some(instructions) = payload.instructions() {
-            if let Err(e) =
-                self.maker_coin
-                    .validate_instructions(instructions, &self.secret_hash(), self.maker_amount.clone())
+            match self
+                .maker_coin
+                .validate_instructions(instructions, &self.secret_hash(), self.maker_amount.clone())
             {
-                return Ok((Some(MakerSwapCommand::Finish), vec![
-                    // Todo: maybe add a different event for this??
-                    MakerSwapEvent::TakerFeeValidateFailed(e.to_string().into()),
-                ]));
-            }
-            swap_events.push(MakerSwapEvent::MakerPaymentInstructionsReceived(instructions.to_vec()));
+                Ok(Some(instructions)) => {
+                    swap_events.push(MakerSwapEvent::MakerPaymentInstructionsReceived(instructions))
+                },
+                Ok(None) => (),
+                Err(e) => {
+                    return Ok((Some(MakerSwapCommand::Finish), vec![
+                        // Todo: maybe add a different event for this??
+                        MakerSwapEvent::TakerFeeValidateFailed(e.to_string().into()),
+                    ]));
+                },
+            };
         }
 
         let taker_fee = match self.taker_coin.tx_enum_from_bytes(payload.data()) {
@@ -737,7 +742,6 @@ impl MakerSwap {
             Ok(res) => match res {
                 Some(tx) => tx,
                 None => {
-                    // Todo: For lightning this pays the invoice
                     let payment_fut = self.maker_coin.send_maker_payment(
                         self.r().data.maker_payment_lock as u32,
                         &*self.r().other_maker_coin_htlc_pub,
@@ -745,6 +749,7 @@ impl MakerSwap {
                         self.maker_amount.clone(),
                         &self.r().data.maker_coin_swap_contract_address,
                         &unique_data,
+                        &self.r().payment_instructions,
                     );
 
                     match payment_fut.compat().await {
@@ -1412,7 +1417,7 @@ pub enum MakerSwapEvent {
     StartFailed(SwapError),
     Negotiated(TakerNegotiationData),
     NegotiateFailed(SwapError),
-    MakerPaymentInstructionsReceived(Vec<u8>),
+    MakerPaymentInstructionsReceived(PaymentInstructions),
     TakerFeeValidated(TransactionIdentifier),
     TakerFeeValidateFailed(SwapError),
     MakerPaymentSent(TransactionIdentifier),

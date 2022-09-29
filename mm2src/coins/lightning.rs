@@ -16,10 +16,10 @@ use crate::utxo::rpc_clients::UtxoRpcClientEnum;
 use crate::utxo::utxo_common::{big_decimal_from_sat, big_decimal_from_sat_unsigned};
 use crate::utxo::{sat_from_big_decimal, BlockchainNetwork};
 use crate::{BalanceFut, CoinBalance, FeeApproxStage, FoundSwapTxSpend, HistorySyncState, MarketCoinOps, MmCoin,
-            MyAddressError, NegotiateSwapContractAddrErr, PaymentInstructionsErr, RawTransactionFut,
-            RawTransactionRequest, SearchForSwapTxSpendInput, SignatureError, SignatureResult, SwapOps, TradeFee,
-            TradePreimageFut, TradePreimageResult, TradePreimageValue, TransactionEnum, TransactionFut,
-            TxMarshalingErr, UnexpectedDerivationMethod, UtxoStandardCoin, ValidateAddressResult,
+            MyAddressError, NegotiateSwapContractAddrErr, PaymentInstructions, PaymentInstructionsErr,
+            RawTransactionFut, RawTransactionRequest, SearchForSwapTxSpendInput, SignatureError, SignatureResult,
+            SwapOps, TradeFee, TradePreimageFut, TradePreimageResult, TradePreimageValue, TransactionEnum,
+            TransactionFut, TxMarshalingErr, UnexpectedDerivationMethod, UtxoStandardCoin, ValidateAddressResult,
             ValidateInstructionsErr, ValidatePaymentError, ValidatePaymentFut, ValidatePaymentInput,
             VerificationError, VerificationResult, WatcherValidatePaymentInput, WithdrawError, WithdrawFut,
             WithdrawRequest};
@@ -432,7 +432,9 @@ impl SwapOps for LightningCoin {
         _amount: BigDecimal,
         _swap_contract_address: &Option<BytesJson>,
         _swap_unique_data: &[u8],
+        _payment_instructions: &Option<PaymentInstructions>,
     ) -> TransactionFut {
+        // Todo: Pay invoice in PaymentInstructions here
         unimplemented!()
     }
 
@@ -444,7 +446,9 @@ impl SwapOps for LightningCoin {
         _amount: BigDecimal,
         _swap_contract_address: &Option<BytesJson>,
         _swap_unique_data: &[u8],
+        _payment_instructions: &Option<PaymentInstructions>,
     ) -> TransactionFut {
+        // Todo: Pay invoice in PaymentInstructions here
         unimplemented!()
     }
 
@@ -607,7 +611,7 @@ impl SwapOps for LightningCoin {
         instructions: &[u8],
         secret_hash: &[u8],
         amount: BigDecimal,
-    ) -> Result<(), MmError<ValidateInstructionsErr>> {
+    ) -> Result<Option<PaymentInstructions>, MmError<ValidateInstructionsErr>> {
         let invoice = Invoice::from_str(&hex::encode(instructions))?;
         if (secret_hash.len() == 20 && ripemd160(invoice.payment_hash().as_inner()).as_slice() != secret_hash)
             || (secret_hash.len() == 32 && invoice.payment_hash().as_inner() != secret_hash)
@@ -623,7 +627,7 @@ impl SwapOps for LightningCoin {
             return Err(ValidateInstructionsErr::ValidateLightningInvoiceErr("Invalid invoice amount!".into()).into());
         }
         // Todo: continue validation here by comparing (locktime, etc..)
-        Ok(())
+        Ok(Some(PaymentInstructions::Lightning(invoice)))
     }
 }
 

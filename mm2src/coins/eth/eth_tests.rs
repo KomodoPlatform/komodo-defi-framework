@@ -254,6 +254,7 @@ fn send_and_refund_erc20_payment() {
             "0.001".parse().unwrap(),
             &coin.swap_contract_address(),
             &[],
+            &None,
         )
         .wait()
         .unwrap();
@@ -322,6 +323,7 @@ fn send_and_refund_eth_payment() {
             "0.001".parse().unwrap(),
             &coin.swap_contract_address(),
             &[],
+            &None,
         )
         .wait()
         .unwrap();

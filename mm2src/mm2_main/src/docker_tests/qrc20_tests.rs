@@ -184,6 +184,7 @@ fn test_taker_spends_maker_payment() {
             amount.clone(),
             &maker_coin.swap_contract_address(),
             &[],
+            &None,
         )
         .wait()
         .unwrap();
@@ -276,6 +277,7 @@ fn test_maker_spends_taker_payment() {
             amount.clone(),
             &taker_coin.swap_contract_address(),
             &[],
+            &None,
         )
         .wait()
         .unwrap();
@@ -357,6 +359,7 @@ fn test_maker_refunds_payment() {
             amount.clone(),
             &coin.swap_contract_address(),
             &[],
+            &None,
         )
         .wait()
         .unwrap();
@@ -418,6 +421,7 @@ fn test_taker_refunds_payment() {
             amount.clone(),
             &coin.swap_contract_address(),
             &[],
+            &None,
         )
         .wait()
         .unwrap();
@@ -476,6 +480,7 @@ fn test_check_if_my_payment_sent() {
             amount,
             &coin.swap_contract_address(),
             &[],
+            &None,
         )
         .wait()
         .unwrap();
@@ -527,6 +532,7 @@ fn test_search_for_swap_tx_spend_taker_spent() {
             amount,
             &maker_coin.swap_contract_address(),
             &[],
+            &None,
         )
         .wait()
         .unwrap();
@@ -597,6 +603,7 @@ fn test_search_for_swap_tx_spend_maker_refunded() {
             amount,
             &maker_coin.swap_contract_address(),
             &[],
+            &None,
         )
         .wait()
         .unwrap();
@@ -667,6 +674,7 @@ fn test_search_for_swap_tx_spend_not_spent() {
             amount,
             &maker_coin.swap_contract_address(),
             &[],
+            &None,
         )
         .wait()
         .unwrap();
@@ -718,6 +726,7 @@ fn test_wait_for_tx_spend() {
             amount,
             &maker_coin.swap_contract_address(),
             &[],
+            &None,
         )
         .wait()
         .unwrap();
@@ -1029,6 +1038,7 @@ fn test_get_max_taker_vol_and_trade_with_dynamic_trade_fee(coin: QtumCoin, priv_
             expected_max_taker_vol.to_decimal(),
             &None,
             &[],
+            &None,
         )
         .wait()
         .expect("!send_taker_payment");
@@ -1416,7 +1426,7 @@ fn test_search_for_segwit_swap_tx_spend_native_was_refunded_maker() {
 
     let time_lock = (now_ms() / 1000) as u32 - 3600;
     let tx = coin
-        .send_maker_payment(time_lock, my_public_key, &[0; 20], 1u64.into(), &None, &[])
+        .send_maker_payment(time_lock, my_public_key, &[0; 20], 1u64.into(), &None, &[], &None)
         .wait()
         .unwrap();
 
@@ -1457,7 +1467,7 @@ fn test_search_for_segwit_swap_tx_spend_native_was_refunded_taker() {
 
     let time_lock = (now_ms() / 1000) as u32 - 3600;
     let tx = coin
-        .send_taker_payment(time_lock, my_public_key, &[0; 20], 1u64.into(), &None, &[])
+        .send_taker_payment(time_lock, my_public_key, &[0; 20], 1u64.into(), &None, &[], &None)
         .wait()
         .unwrap();
 

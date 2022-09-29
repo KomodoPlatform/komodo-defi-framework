@@ -59,6 +59,7 @@
 
 use crate::mm2::lp_network::{broadcast_p2p_msg, Libp2pPeerId};
 use async_std::sync as async_std_sync;
+use bitcrypto::{dhash160, sha256};
 use coins::{lp_coinfind, MmCoinEnum, TradeFee, TransactionEnum};
 use common::log::{debug, warn};
 use common::{bits256, calc_total_pages,
@@ -82,7 +83,6 @@ use std::str::FromStr;
 use std::sync::{Arc, Mutex, Weak};
 use uuid::Uuid;
 
-use bitcrypto::{dhash160, sha256};
 #[cfg(feature = "custom-swap-locktime")]
 use std::sync::atomic::{AtomicU64, Ordering};
 
