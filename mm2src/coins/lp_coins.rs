@@ -96,7 +96,7 @@ macro_rules! try_f {
     ($e: expr) => {
         match $e {
             Ok(ok) => ok,
-            Err(e) => return Box::new(futures01::future::err(e)),
+            Err(e) => return Box::new(futures01::future::err(e.into())),
         }
     };
 }
@@ -181,6 +181,10 @@ macro_rules! ok_or_continue_after_sleep {
 }
 
 pub mod coin_balance;
+
+pub mod coin_errors;
+use coin_errors::{MyAddressError, ValidatePaymentError, ValidatePaymentFut};
+
 #[doc(hidden)]
 #[cfg(test)]
 pub mod coins_tests;
@@ -555,14 +559,14 @@ pub trait SwapOps {
         uuid: &[u8],
     ) -> Box<dyn Future<Item = (), Error = String> + Send>;
 
-    fn validate_maker_payment(&self, input: ValidatePaymentInput) -> Box<dyn Future<Item = (), Error = String> + Send>;
+    fn validate_maker_payment(&self, input: ValidatePaymentInput) -> ValidatePaymentFut<()>;
 
-    fn validate_taker_payment(&self, input: ValidatePaymentInput) -> Box<dyn Future<Item = (), Error = String> + Send>;
+    fn validate_taker_payment(&self, input: ValidatePaymentInput) -> ValidatePaymentFut<()>;
 
     fn watcher_validate_taker_payment(
         &self,
         _input: WatcherValidatePaymentInput,
-    ) -> Box<dyn Future<Item = (), Error = String> + Send>;
+    ) -> Box<dyn Future<Item = (), Error = MmError<ValidatePaymentError>> + Send>;
 
     fn check_if_my_payment_sent(
         &self,
@@ -612,7 +616,7 @@ pub trait SwapOps {
 pub trait MarketCoinOps {
     fn ticker(&self) -> &str;
 
-    fn my_address(&self) -> Result<String, String>;
+    fn my_address(&self) -> MmResult<String, MyAddressError>;
 
     fn get_public_key(&self) -> Result<String, MmError<UnexpectedDerivationMethod>>;
 
@@ -2973,7 +2977,7 @@ where
 {
     let ctx = ctx.clone();
     let ticker = coin.ticker().to_owned();
-    let my_address = try_f!(coin.my_address().map_to_mm(TxHistoryError::InternalError));
+    let my_address = try_f!(coin.my_address());
 
     let fut = async move {
         let coins_ctx = CoinsContext::from_ctx(&ctx).unwrap();
@@ -3047,7 +3051,7 @@ where
 {
     let ctx = ctx.clone();
     let ticker = coin.ticker().to_owned();
-    let my_address = try_f!(coin.my_address().map_to_mm(TxHistoryError::InternalError));
+    let my_address = try_f!(coin.my_address());
 
     history.sort_unstable_by(compare_transaction_details);
 
