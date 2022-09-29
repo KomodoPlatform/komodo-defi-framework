@@ -129,7 +129,6 @@ impl State for ValidateTakerPayment {
     type Result = ();
 
     async fn on_changed(self: Box<Self>, watcher_ctx: &mut WatcherContext) -> StateResult<WatcherContext, ()> {
-        println!("**ValidateTakerPayment");
         let wait_duration = (watcher_ctx.data.lock_duration * 4) / 5;
         let wait_taker_payment = watcher_ctx.data.swap_started_at + wait_duration;
         let confirmations = min(watcher_ctx.data.taker_payment_confirmations, TAKER_SWAP_CONFIRMATIONS);
@@ -182,7 +181,6 @@ impl State for WaitForTakerPaymentSpend {
     type Result = ();
 
     async fn on_changed(self: Box<Self>, watcher_ctx: &mut WatcherContext) -> StateResult<WatcherContext, ()> {
-        println!("**WaitForTakerPaymentSpend");
         let f = watcher_ctx.taker_coin.wait_for_tx_spend(
             &watcher_ctx.data.taker_payment_hex[..],
             watcher_ctx.data.taker_payment_lock,
@@ -226,7 +224,6 @@ impl State for RefundTakerPayment {
     type Result = ();
 
     async fn on_changed(self: Box<Self>, watcher_ctx: &mut WatcherContext) -> StateResult<WatcherContext, ()> {
-        println!("**RefundTakerPayment");
         let locktime = watcher_ctx.data.taker_payment_lock;
         loop {
             match watcher_ctx.taker_coin.can_refund_htlc(locktime).compat().await {
@@ -279,7 +276,6 @@ impl State for SpendMakerPayment {
     type Result = ();
 
     async fn on_changed(self: Box<Self>, watcher_ctx: &mut WatcherContext) -> StateResult<WatcherContext, ()> {
-        println!("**SpendMakerPayment");
         let spend_fut = watcher_ctx.maker_coin.send_taker_spends_maker_payment_preimage(
             &watcher_ctx.data.taker_spends_maker_payment_preimage,
             &self.secret.0,
@@ -311,7 +307,6 @@ impl State for SpendMakerPayment {
 
         let tx_hash = transaction.tx_hash();
         info!("Maker payment spend tx {:02x}", tx_hash);
-        println!("**watcher_spent_maker_payment");
         Self::change_state(Stopped::from_reason(StopReason::MakerPaymentSpent))
     }
 }
@@ -343,12 +338,10 @@ pub async fn process_watcher_msg(ctx: MmArc, msg: &[u8]) {
 }
 
 async fn spawn_taker_swap_watcher(ctx: MmArc, watcher_data: TakerSwapWatcherData) {
-    println!("***spawn_taker_swap_watcher");
     let swap_ctx = SwapsContext::from_ctx(&ctx).unwrap();
     if swap_ctx.swap_msgs.lock().unwrap().contains_key(&watcher_data.uuid) {
         return;
     }
-
     let mut taker_swap_watchers = swap_ctx.taker_swap_watchers.lock();
     if taker_swap_watchers.contains(&watcher_data.uuid) {
         return;
@@ -357,7 +350,6 @@ async fn spawn_taker_swap_watcher(ctx: MmArc, watcher_data: TakerSwapWatcherData
     drop(taker_swap_watchers);
 
     spawn(async move {
-        println!("***spawn_taker_swap_watcher_start_thread");
         let taker_coin = match lp_coinfind(&ctx, &watcher_data.taker_coin).await {
             Ok(Some(c)) => c,
             Ok(None) => {
