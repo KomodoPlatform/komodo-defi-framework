@@ -61,6 +61,7 @@ use crate::mm2::lp_network::{broadcast_p2p_msg, Libp2pPeerId};
 use async_std::sync as async_std_sync;
 use coins::{lp_coinfind, MmCoinEnum, TradeFee, TransactionEnum};
 use common::log::{debug, warn};
+use common::time_cache::DuplicateCache;
 use common::{bits256, calc_total_pages,
              executor::{spawn, Timer},
              log::{error, info},
@@ -81,6 +82,7 @@ use std::num::NonZeroUsize;
 use std::path::PathBuf;
 use std::str::FromStr;
 use std::sync::{Arc, Mutex, Weak};
+use std::time::Duration;
 use uuid::Uuid;
 
 #[cfg(feature = "custom-swap-locktime")]
@@ -112,7 +114,8 @@ use pubkey_banning::BanReason;
 pub use pubkey_banning::{ban_pubkey_rpc, is_pubkey_banned, list_banned_pubkeys_rpc, unban_pubkeys_rpc};
 pub use recreate_swap_data::recreate_swap_data;
 pub use saved_swap::{SavedSwap, SavedSwapError, SavedSwapIo, SavedSwapResult};
-pub use swap_watcher::{process_watcher_msg, watcher_topic, TakerSwapWatcherData, WATCHER_PREFIX};
+pub use swap_watcher::{process_watcher_msg, watcher_topic, TakerSwapWatcherData, TAKER_SWAP_ENTRY_TIMEOUT,
+                       WATCHER_PREFIX};
 use taker_swap::TakerSwapEvent;
 pub use taker_swap::{calc_max_taker_vol, check_balance_for_taker_swap, max_taker_vol, max_taker_vol_from_available,
                      run_taker_swap, taker_swap_trade_preimage, RunTakerSwapInput, TakerSavedSwap, TakerSwap,
@@ -371,7 +374,7 @@ struct SwapsContext {
     /// Very unpleasant consequences
     shutdown_rx: async_std_sync::Receiver<()>,
     swap_msgs: Mutex<HashMap<Uuid, SwapMsgStore>>,
-    taker_swap_watchers: PaMutex<HashSet<Uuid>>,
+    taker_swap_watchers: PaMutex<DuplicateCache<Uuid>>,
     #[cfg(target_arch = "wasm32")]
     swap_db: ConstructibleDb<SwapDb>,
 }
@@ -399,7 +402,7 @@ impl SwapsContext {
                 banned_pubkeys: Mutex::new(HashMap::new()),
                 shutdown_rx,
                 swap_msgs: Mutex::new(HashMap::new()),
-                taker_swap_watchers: PaMutex::new(HashSet::new()),
+                taker_swap_watchers: PaMutex::new(DuplicateCache::new(Duration::from_secs(TAKER_SWAP_ENTRY_TIMEOUT))),
                 #[cfg(target_arch = "wasm32")]
                 swap_db: ConstructibleDb::new(ctx),
             })
