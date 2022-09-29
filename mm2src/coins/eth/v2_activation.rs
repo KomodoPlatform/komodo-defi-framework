@@ -107,6 +107,7 @@ impl EthCoin {
             logs_block_range: self.logs_block_range,
             nonce_lock: self.nonce_lock.clone(),
             erc20_tokens_infos: Default::default(),
+            spawner: CoinFutureSpawner::new(),
         };
 
         Ok(EthCoin(Arc::new(token)))
@@ -240,6 +241,7 @@ pub async fn eth_coin_from_conf_and_request_v2(
         logs_block_range: conf["logs_block_range"].as_u64().unwrap_or(DEFAULT_LOGS_BLOCK_RANGE),
         nonce_lock,
         erc20_tokens_infos: Default::default(),
+        spawner: CoinFutureSpawner::new(),
     };
 
     Ok(EthCoin(Arc::new(coin)))

@@ -1704,6 +1704,10 @@ pub trait MmCoin: SwapOps + MarketCoinOps + Send + Sync + 'static {
         coin_conf["wallet_only"].as_bool().unwrap_or(false)
     }
 
+    /// Returns a spawner that can be used to spawn coin's related futures
+    /// that should be aborted on coin deactivation.
+    fn spawner(&self) -> &CoinFutureSpawner;
+
     fn withdraw(&self, req: WithdrawRequest) -> WithdrawFut;
 
     fn get_raw_transaction(&self, req: RawTransactionRequest) -> RawTransactionFut;
@@ -1810,23 +1814,23 @@ pub trait MmCoin: SwapOps + MarketCoinOps + Send + Sync + 'static {
 /// The coin futures spawner. It's used to spawn futures that can be aborted immediately or after a timeout
 /// on the the coin deactivation.
 #[derive(Clone)]
-pub struct CoinSpawner {
+pub struct CoinFutureSpawner {
     inner: AbortableSpawnerShared,
 }
 
-impl Default for CoinSpawner {
-    fn default() -> Self { CoinSpawner::new() }
+impl Default for CoinFutureSpawner {
+    fn default() -> Self { CoinFutureSpawner::new() }
 }
 
-impl CoinSpawner {
-    pub fn new() -> CoinSpawner {
-        CoinSpawner {
+impl CoinFutureSpawner {
+    pub fn new() -> CoinFutureSpawner {
+        CoinFutureSpawner {
             inner: AbortableSpawner::new().into_shared(),
         }
     }
 }
 
-impl Deref for CoinSpawner {
+impl Deref for CoinFutureSpawner {
     type Target = AbortableSpawner;
 
     fn deref(&self) -> &Self::Target { &self.inner }
@@ -2476,20 +2480,12 @@ pub async fn lp_register_coin(
     Ok(())
 }
 
-#[cfg(not(target_arch = "wasm32"))]
 fn lp_spawn_tx_history(ctx: MmArc, coin: MmCoinEnum) -> Result<(), String> {
-    try_s!(std::thread::Builder::new()
-        .name(format!("tx_history_{}", coin.ticker()))
-        .spawn(move || coin.process_history_loop(ctx).wait()));
-    Ok(())
-}
-
-#[cfg(target_arch = "wasm32")]
-fn lp_spawn_tx_history(ctx: MmArc, coin: MmCoinEnum) -> Result<(), String> {
+    let spawner = coin.spawner().clone();
     let fut = async move {
         let _res = coin.process_history_loop(ctx).compat().await;
     };
-    common::executor::spawn_local(fut);
+    spawner.spawn(fut);
     Ok(())
 }
 

@@ -20,12 +20,13 @@ use crate::lightning::ln_storage::{NetworkGraph, TrustedNodesShared};
 use crate::utxo::rpc_clients::UtxoRpcClientEnum;
 use crate::utxo::utxo_common::{big_decimal_from_sat_unsigned, UtxoTxBuilder};
 use crate::utxo::{sat_from_big_decimal, BlockchainNetwork, FeePolicy, GetUtxoListOps, UtxoTxGenerationOps};
-use crate::{BalanceFut, CoinBalance, FeeApproxStage, FoundSwapTxSpend, HistorySyncState, MarketCoinOps, MmCoin,
-            NegotiateSwapContractAddrErr, RawTransactionFut, RawTransactionRequest, SearchForSwapTxSpendInput,
-            SignatureError, SignatureResult, SwapOps, TradeFee, TradePreimageFut, TradePreimageResult,
-            TradePreimageValue, TransactionEnum, TransactionFut, TxMarshalingErr, UnexpectedDerivationMethod,
-            UtxoStandardCoin, ValidateAddressResult, ValidatePaymentInput, VerificationError, VerificationResult,
-            WatcherValidatePaymentInput, WithdrawError, WithdrawFut, WithdrawRequest};
+use crate::{BalanceFut, CoinBalance, CoinFutureSpawner, FeeApproxStage, FoundSwapTxSpend, HistorySyncState,
+            MarketCoinOps, MmCoin, NegotiateSwapContractAddrErr, RawTransactionFut, RawTransactionRequest,
+            SearchForSwapTxSpendInput, SignatureError, SignatureResult, SwapOps, TradeFee, TradePreimageFut,
+            TradePreimageResult, TradePreimageValue, TransactionEnum, TransactionFut, TxMarshalingErr,
+            UnexpectedDerivationMethod, UtxoStandardCoin, ValidateAddressResult, ValidatePaymentInput,
+            VerificationError, VerificationResult, WatcherValidatePaymentInput, WithdrawError, WithdrawFut,
+            WithdrawRequest};
 use async_trait::async_trait;
 use bitcoin::hashes::Hash;
 use bitcoin_hashes::sha256::Hash as Sha256;
@@ -564,6 +565,8 @@ impl MarketCoinOps for LightningCoin {
 #[async_trait]
 impl MmCoin for LightningCoin {
     fn is_asset_chain(&self) -> bool { false }
+
+    fn spawner(&self) -> &CoinFutureSpawner { &self.platform.spawner }
 
     fn get_raw_transaction(&self, req: RawTransactionRequest) -> RawTransactionFut {
         Box::new(self.platform_coin().get_raw_transaction(req))

@@ -12,13 +12,13 @@ use crate::utxo::utxo_common::{self, big_decimal_from_sat_unsigned, payment_scri
 use crate::utxo::{generate_and_send_tx, sat_from_big_decimal, ActualTxFee, AdditionalTxData, BroadcastTxErr,
                   FeePolicy, GenerateTxError, RecentlySpentOutPointsGuard, UtxoCoinConf, UtxoCoinFields,
                   UtxoCommonOps, UtxoTx, UtxoTxBroadcastOps, UtxoTxGenerationOps};
-use crate::{BalanceFut, CoinBalance, FeeApproxStage, FoundSwapTxSpend, HistorySyncState, MarketCoinOps, MmCoin,
-            NegotiateSwapContractAddrErr, NumConversError, PrivKeyNotAllowed, RawTransactionFut,
-            RawTransactionRequest, SearchForSwapTxSpendInput, SignatureResult, SwapOps, TradeFee, TradePreimageError,
-            TradePreimageFut, TradePreimageResult, TradePreimageValue, TransactionDetails, TransactionEnum,
-            TransactionErr, TransactionFut, TxFeeDetails, TxMarshalingErr, UnexpectedDerivationMethod,
-            ValidateAddressResult, ValidatePaymentInput, VerificationError, VerificationResult,
-            WatcherValidatePaymentInput, WithdrawError, WithdrawFee, WithdrawFut, WithdrawRequest};
+use crate::{BalanceFut, CoinBalance, CoinFutureSpawner, FeeApproxStage, FoundSwapTxSpend, HistorySyncState,
+            MarketCoinOps, MmCoin, NegotiateSwapContractAddrErr, NumConversError, PrivKeyNotAllowed,
+            RawTransactionFut, RawTransactionRequest, SearchForSwapTxSpendInput, SignatureResult, SwapOps, TradeFee,
+            TradePreimageError, TradePreimageFut, TradePreimageResult, TradePreimageValue, TransactionDetails,
+            TransactionEnum, TransactionErr, TransactionFut, TxFeeDetails, TxMarshalingErr,
+            UnexpectedDerivationMethod, ValidateAddressResult, ValidatePaymentInput, VerificationError,
+            VerificationResult, WatcherValidatePaymentInput, WithdrawError, WithdrawFee, WithdrawFut, WithdrawRequest};
 use async_trait::async_trait;
 use bitcrypto::dhash160;
 use chain::constants::SEQUENCE_FINAL;
@@ -57,12 +57,13 @@ const SLP_SEND: &str = "SEND";
 const SLP_MINT: &str = "MINT";
 const SLP_GENESIS: &str = "GENESIS";
 
-#[derive(Debug)]
-pub struct SlpTokenConf {
+pub struct SlpTokenFields {
     decimals: u8,
     ticker: String,
     token_id: H256,
     required_confirmations: AtomicU64,
+    /// This spawner is used to spawn coin's related futures that should be aborted on coin deactivation.
+    spawner: CoinFutureSpawner,
 }
 
 /// Minimalistic info that is used to be stored outside of the token's context
@@ -75,7 +76,7 @@ pub struct SlpTokenInfo {
 
 #[derive(Clone)]
 pub struct SlpToken {
-    conf: Arc<SlpTokenConf>,
+    conf: Arc<SlpTokenFields>,
     platform_coin: BchCoin,
 }
 
@@ -304,11 +305,12 @@ impl SlpToken {
         platform_coin: BchCoin,
         required_confirmations: u64,
     ) -> SlpToken {
-        let conf = Arc::new(SlpTokenConf {
+        let conf = Arc::new(SlpTokenFields {
             decimals,
             ticker,
             token_id,
             required_confirmations: AtomicU64::new(required_confirmations),
+            spawner: CoinFutureSpawner::new(),
         });
         SlpToken { conf, platform_coin }
     }
@@ -1498,6 +1500,8 @@ impl From<SlpFeeDetails> for TxFeeDetails {
 #[async_trait]
 impl MmCoin for SlpToken {
     fn is_asset_chain(&self) -> bool { false }
+
+    fn spawner(&self) -> &CoinFutureSpawner { &self.conf.spawner }
 
     fn get_raw_transaction(&self, req: RawTransactionRequest) -> RawTransactionFut {
         Box::new(

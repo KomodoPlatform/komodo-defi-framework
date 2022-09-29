@@ -1,5 +1,5 @@
 use super::*;
-use crate::solana::spl::{SplToken, SplTokenConf};
+use crate::solana::spl::{SplToken, SplTokenFields};
 use bip39::Language;
 use crypto::privkey::key_pair_from_seed;
 use ed25519_dalek_bip32::{DerivationPath, ExtendedSecretKey};
@@ -60,10 +60,11 @@ pub fn spl_coin_for_test(
     token_contract_address: Pubkey,
 ) -> SplToken {
     let spl_coin = SplToken {
-        conf: Arc::new(SplTokenConf {
+        conf: Arc::new(SplTokenFields {
             decimals,
             ticker,
             token_contract_address,
+            spawner: CoinFutureSpawner::new(),
         }),
         platform_coin: solana_coin,
     };

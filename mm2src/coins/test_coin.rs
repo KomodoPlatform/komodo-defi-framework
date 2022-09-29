@@ -1,6 +1,6 @@
 use super::{CoinBalance, HistorySyncState, MarketCoinOps, MmCoin, RawTransactionFut, RawTransactionRequest, SwapOps,
             TradeFee, TransactionEnum, TransactionFut};
-use crate::{BalanceFut, CanRefundHtlc, FeeApproxStage, FoundSwapTxSpend, NegotiateSwapContractAddrErr,
+use crate::{BalanceFut, CanRefundHtlc, CoinFutureSpawner, FeeApproxStage, FoundSwapTxSpend, NegotiateSwapContractAddrErr,
             SearchForSwapTxSpendInput, SignatureResult, TradePreimageFut, TradePreimageResult, TradePreimageValue,
             TxMarshalingErr, UnexpectedDerivationMethod, ValidateAddressResult, ValidatePaymentInput,
             VerificationResult, WatcherValidatePaymentInput, WithdrawFut, WithdrawRequest};
@@ -266,6 +266,8 @@ impl SwapOps for TestCoin {
 #[allow(clippy::forget_ref, clippy::forget_copy, clippy::cast_ref_to_mut)]
 impl MmCoin for TestCoin {
     fn is_asset_chain(&self) -> bool { unimplemented!() }
+
+    fn spawner(&self) -> &CoinFutureSpawner { unimplemented!() }
 
     fn get_raw_transaction(&self, _req: RawTransactionRequest) -> RawTransactionFut { unimplemented!() }
 

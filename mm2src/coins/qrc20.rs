@@ -13,13 +13,13 @@ use crate::utxo::{qtum, ActualTxFee, AdditionalTxData, AddrFromStrError, Broadca
                   GetUtxoListOps, HistoryUtxoTx, HistoryUtxoTxMap, MatureUnspentList, RecentlySpentOutPointsGuard,
                   UtxoActivationParams, UtxoAddressFormat, UtxoCoinFields, UtxoCommonOps, UtxoFromLegacyReqErr,
                   UtxoTx, UtxoTxBroadcastOps, UtxoTxGenerationOps, VerboseTransactionFrom, UTXO_LOCK};
-use crate::{BalanceError, BalanceFut, CoinBalance, FeeApproxStage, FoundSwapTxSpend, HistorySyncState, MarketCoinOps,
-            MmCoin, NegotiateSwapContractAddrErr, PrivKeyNotAllowed, RawTransactionFut, RawTransactionRequest,
-            SearchForSwapTxSpendInput, SignatureResult, SwapOps, TradeFee, TradePreimageError, TradePreimageFut,
-            TradePreimageResult, TradePreimageValue, TransactionDetails, TransactionEnum, TransactionErr,
-            TransactionFut, TransactionType, TxMarshalingErr, UnexpectedDerivationMethod, ValidateAddressResult,
-            ValidatePaymentInput, VerificationResult, WatcherValidatePaymentInput, WithdrawError, WithdrawFee,
-            WithdrawFut, WithdrawRequest, WithdrawResult};
+use crate::{BalanceError, BalanceFut, CoinBalance, CoinFutureSpawner, FeeApproxStage, FoundSwapTxSpend,
+            HistorySyncState, MarketCoinOps, MmCoin, NegotiateSwapContractAddrErr, PrivKeyNotAllowed,
+            RawTransactionFut, RawTransactionRequest, SearchForSwapTxSpendInput, SignatureResult, SwapOps, TradeFee,
+            TradePreimageError, TradePreimageFut, TradePreimageResult, TradePreimageValue, TransactionDetails,
+            TransactionEnum, TransactionErr, TransactionFut, TransactionType, TxMarshalingErr,
+            UnexpectedDerivationMethod, ValidateAddressResult, ValidatePaymentInput, VerificationResult,
+            WatcherValidatePaymentInput, WithdrawError, WithdrawFee, WithdrawFut, WithdrawRequest, WithdrawResult};
 use async_trait::async_trait;
 use bitcrypto::{dhash160, sha256};
 use chain::TransactionOutput;
@@ -1154,6 +1154,8 @@ impl MarketCoinOps for Qrc20Coin {
 #[async_trait]
 impl MmCoin for Qrc20Coin {
     fn is_asset_chain(&self) -> bool { utxo_common::is_asset_chain(&self.utxo) }
+
+    fn spawner(&self) -> &CoinFutureSpawner { &self.as_ref().spawner }
 
     fn withdraw(&self, req: WithdrawRequest) -> WithdrawFut {
         Box::new(qrc20_withdraw(self.clone(), req).boxed().compat())

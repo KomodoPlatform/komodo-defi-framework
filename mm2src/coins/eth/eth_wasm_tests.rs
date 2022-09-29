@@ -47,6 +47,7 @@ async fn test_send() {
         logs_block_range: DEFAULT_LOGS_BLOCK_RANGE,
         nonce_lock: new_nonce_lock(),
         erc20_tokens_infos: Default::default(),
+        spawner: CoinFutureSpawner::new(),
     }));
     let tx = coin
         .send_maker_payment(

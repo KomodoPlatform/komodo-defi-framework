@@ -4,8 +4,8 @@ use super::tendermint_native_rpc::*;
 #[cfg(target_arch = "wasm32")] use super::tendermint_wasm_rpc::*;
 use crate::tendermint::htlc::MsgClaimHtlc;
 use crate::utxo::sat_from_big_decimal;
-use crate::{big_decimal_from_sat_unsigned, BalanceError, BalanceFut, BigDecimal, CoinBalance, FeeApproxStage,
-            FoundSwapTxSpend, HistorySyncState, MarketCoinOps, MmCoin, NegotiateSwapContractAddrErr,
+use crate::{big_decimal_from_sat_unsigned, BalanceError, BalanceFut, BigDecimal, CoinBalance, CoinFutureSpawner,
+            FeeApproxStage, FoundSwapTxSpend, HistorySyncState, MarketCoinOps, MmCoin, NegotiateSwapContractAddrErr,
             RawTransactionFut, RawTransactionRequest, SearchForSwapTxSpendInput, SignatureResult, SwapOps, TradeFee,
             TradePreimageFut, TradePreimageResult, TradePreimageValue, TransactionDetails, TransactionEnum,
             TransactionFut, TransactionType, TxFeeDetails, TxMarshalingErr, UnexpectedDerivationMethod,
@@ -73,6 +73,8 @@ pub struct TendermintCoinImpl {
     denom: Denom,
     chain_id: ChainId,
     sequence_lock: AsyncMutex<()>,
+    /// This spawner is used to spawn coin's related futures that should be aborted on coin deactivation.
+    spawner: CoinFutureSpawner,
 }
 
 #[derive(Clone)]
@@ -199,6 +201,7 @@ impl TendermintCoin {
             denom,
             chain_id,
             sequence_lock: AsyncMutex::new(()),
+            spawner: CoinFutureSpawner::new(),
         })))
     }
 
@@ -357,6 +360,8 @@ impl TendermintCoin {
 #[allow(unused_variables)]
 impl MmCoin for TendermintCoin {
     fn is_asset_chain(&self) -> bool { false }
+
+    fn spawner(&self) -> &CoinFutureSpawner { &self.spawner }
 
     fn withdraw(&self, req: WithdrawRequest) -> WithdrawFut {
         let coin = self.clone();

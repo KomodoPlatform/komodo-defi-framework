@@ -6,7 +6,7 @@ use crate::utxo::rpc_clients::{BestBlock as RpcBestBlock, BlockHashOrHeight, Con
 use crate::utxo::spv::SimplePaymentVerification;
 use crate::utxo::utxo_standard::UtxoStandardCoin;
 use crate::utxo::GetConfirmedTxError;
-use crate::{CoinSpawner, MarketCoinOps, MmCoin};
+use crate::{CoinFutureSpawner, MarketCoinOps, MmCoin};
 use bitcoin::blockdata::block::BlockHeader;
 use bitcoin::blockdata::script::Script;
 use bitcoin::blockdata::transaction::Transaction;
@@ -167,7 +167,7 @@ pub struct Platform {
     /// This cache stores transactions to be broadcasted once the other node accepts the channel
     pub unsigned_funding_txs: PaMutex<HashMap<u64, TransactionInputSigner>>,
     /// This spawner is used to spawn coin's related futures that should be aborted on coin deactivation.
-    pub spawner: CoinSpawner,
+    pub spawner: CoinFutureSpawner,
 }
 
 impl Platform {
@@ -190,7 +190,7 @@ impl Platform {
             registered_txs: PaMutex::new(HashSet::new()),
             registered_outputs: PaMutex::new(Vec::new()),
             unsigned_funding_txs: PaMutex::new(HashMap::new()),
-            spawner: CoinSpawner::new(),
+            spawner: CoinFutureSpawner::new(),
         }
     }
 

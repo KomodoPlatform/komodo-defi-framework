@@ -9,7 +9,7 @@ use async_trait::async_trait;
 use chain::{BlockHeader, BlockHeaderBits, BlockHeaderNonce, OutPoint, Transaction as UtxoTx};
 use common::custom_futures::{select_ok_sequential, FutureTimerExt};
 use common::custom_iter::{CollectInto, TryIntoGroupMap};
-use common::executor::{spawn, Timer};
+use common::executor::Timer;
 use common::jsonrpc_client::{JsonRpcBatchClient, JsonRpcBatchResponse, JsonRpcClient, JsonRpcError, JsonRpcErrorType,
                              JsonRpcId, JsonRpcMultiClient, JsonRpcRemoteAddr, JsonRpcRequest, JsonRpcRequestEnum,
                              JsonRpcResponse, JsonRpcResponseEnum, JsonRpcResponseFut, RpcRes};
@@ -2735,7 +2735,10 @@ fn electrum_connect(
     );
 
     let connect_loop = select_func(connect_loop.boxed(), shutdown_rx.compat());
-    spawn(connect_loop.map(|_| ()));
+
+    // We can use `spawn` safely since this future will be aborted once `ElectrumConnection` is dropped.
+    common::executor::spawn(connect_loop.map(|_| ()));
+
     ElectrumConnection {
         addr,
         config,

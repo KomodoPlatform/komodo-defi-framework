@@ -1,10 +1,10 @@
 use super::{CoinBalance, HistorySyncState, MarketCoinOps, MmCoin, SwapOps, TradeFee, TransactionEnum};
 use crate::solana::solana_common::{ui_amount_to_amount, PrepareTransferData, SufficientBalanceError};
 use crate::solana::{solana_common, AccountError, SolanaCommonOps, SolanaFeeDetails};
-use crate::{BalanceFut, FeeApproxStage, FoundSwapTxSpend, NegotiateSwapContractAddrErr, RawTransactionFut,
-            RawTransactionRequest, SearchForSwapTxSpendInput, SignatureResult, SolanaCoin, TradePreimageFut,
-            TradePreimageResult, TradePreimageValue, TransactionDetails, TransactionFut, TransactionType,
-            TxMarshalingErr, UnexpectedDerivationMethod, ValidateAddressResult, ValidatePaymentInput,
+use crate::{BalanceFut, CoinFutureSpawner, FeeApproxStage, FoundSwapTxSpend, NegotiateSwapContractAddrErr,
+            RawTransactionFut, RawTransactionRequest, SearchForSwapTxSpendInput, SignatureResult, SolanaCoin,
+            TradePreimageFut, TradePreimageResult, TradePreimageValue, TransactionDetails, TransactionFut,
+            TransactionType, TxMarshalingErr, UnexpectedDerivationMethod, ValidateAddressResult, ValidatePaymentInput,
             VerificationResult, WatcherValidatePaymentInput, WithdrawError, WithdrawFut, WithdrawRequest,
             WithdrawResult};
 use async_trait::async_trait;
@@ -33,11 +33,11 @@ pub enum SplTokenCreationError {
     InvalidPubkey(String),
 }
 
-#[derive(Debug)]
-pub struct SplTokenConf {
+pub struct SplTokenFields {
     pub decimals: u8,
     pub ticker: String,
     pub token_contract_address: Pubkey,
+    pub spawner: CoinFutureSpawner,
 }
 
 #[derive(Clone, Debug)]
@@ -55,7 +55,7 @@ pub struct SplProtocolConf {
 
 #[derive(Clone)]
 pub struct SplToken {
-    pub conf: Arc<SplTokenConf>,
+    pub conf: Arc<SplTokenFields>,
     pub platform_coin: SolanaCoin,
 }
 
@@ -72,10 +72,11 @@ impl SplToken {
     ) -> Result<SplToken, MmError<SplTokenCreationError>> {
         let token_contract_address = solana_sdk::pubkey::Pubkey::from_str(&token_address)
             .map_err(|e| MmError::new(SplTokenCreationError::InvalidPubkey(format!("{:?}", e))))?;
-        let conf = Arc::new(SplTokenConf {
+        let conf = Arc::new(SplTokenFields {
             decimals,
             ticker,
             token_contract_address,
+            spawner: CoinFutureSpawner::new(),
         });
         Ok(SplToken { conf, platform_coin })
     }
@@ -444,6 +445,8 @@ impl SwapOps for SplToken {
 #[async_trait]
 impl MmCoin for SplToken {
     fn is_asset_chain(&self) -> bool { false }
+
+    fn spawner(&self) -> &CoinFutureSpawner { &self.conf.spawner }
 
     fn withdraw(&self, req: WithdrawRequest) -> WithdrawFut {
         Box::new(Box::pin(withdraw_impl(self.clone(), req)).compat())

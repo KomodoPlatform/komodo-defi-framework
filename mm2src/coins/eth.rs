@@ -59,16 +59,16 @@ use web3::types::{Action as TraceAction, BlockId, BlockNumber, Bytes, CallReques
 use web3::{self, Web3};
 use web3_transport::{EthFeeHistoryNamespace, Web3Transport, Web3TransportNode};
 
-use super::{coin_conf, AsyncMutex, BalanceError, BalanceFut, CoinBalance, CoinProtocol, CoinTransportMetrics,
-            CoinsContext, FeeApproxStage, FoundSwapTxSpend, HistorySyncState, MarketCoinOps, MmCoin,
-            NegotiateSwapContractAddrErr, NumConversError, NumConversResult, RawTransactionError, RawTransactionFut,
-            RawTransactionRequest, RawTransactionRes, RawTransactionResult, RpcClientType, RpcTransportEventHandler,
-            RpcTransportEventHandlerShared, SearchForSwapTxSpendInput, SignatureError, SignatureResult, SwapOps,
-            TradeFee, TradePreimageError, TradePreimageFut, TradePreimageResult, TradePreimageValue, Transaction,
-            TransactionDetails, TransactionEnum, TransactionErr, TransactionFut, TxMarshalingErr,
-            UnexpectedDerivationMethod, ValidateAddressResult, ValidatePaymentInput, VerificationError,
-            VerificationResult, WatcherValidatePaymentInput, WithdrawError, WithdrawFee, WithdrawFut, WithdrawRequest,
-            WithdrawResult};
+use super::{coin_conf, AsyncMutex, BalanceError, BalanceFut, CoinBalance, CoinFutureSpawner, CoinProtocol,
+            CoinTransportMetrics, CoinsContext, FeeApproxStage, FoundSwapTxSpend, HistorySyncState, MarketCoinOps,
+            MmCoin, NegotiateSwapContractAddrErr, NumConversError, NumConversResult, RawTransactionError,
+            RawTransactionFut, RawTransactionRequest, RawTransactionRes, RawTransactionResult, RpcClientType,
+            RpcTransportEventHandler, RpcTransportEventHandlerShared, SearchForSwapTxSpendInput, SignatureError,
+            SignatureResult, SwapOps, TradeFee, TradePreimageError, TradePreimageFut, TradePreimageResult,
+            TradePreimageValue, Transaction, TransactionDetails, TransactionEnum, TransactionErr, TransactionFut,
+            TxMarshalingErr, UnexpectedDerivationMethod, ValidateAddressResult, ValidatePaymentInput,
+            VerificationError, VerificationResult, WatcherValidatePaymentInput, WithdrawError, WithdrawFee,
+            WithdrawFut, WithdrawRequest, WithdrawResult};
 
 pub use rlp;
 
@@ -314,6 +314,8 @@ pub struct EthCoinImpl {
     logs_block_range: u64,
     nonce_lock: Arc<AsyncMutex<()>>,
     erc20_tokens_infos: Arc<Mutex<HashMap<String, Erc20TokenInfo>>>,
+    /// This spawner is used to spawn coin's related futures that should be aborted on coin deactivation.
+    spawner: CoinFutureSpawner,
 }
 
 #[derive(Clone, Debug)]
@@ -3051,6 +3053,8 @@ impl EthTxFeeDetails {
 impl MmCoin for EthCoin {
     fn is_asset_chain(&self) -> bool { false }
 
+    fn spawner(&self) -> &CoinFutureSpawner { &self.spawner }
+
     fn get_raw_transaction(&self, req: RawTransactionRequest) -> RawTransactionFut {
         Box::new(get_raw_transaction_impl(self.clone(), req).boxed().compat())
     }
@@ -3627,6 +3631,7 @@ pub async fn eth_coin_from_conf_and_request(
         logs_block_range: conf["logs_block_range"].as_u64().unwrap_or(DEFAULT_LOGS_BLOCK_RANGE),
         nonce_lock,
         erc20_tokens_infos: Default::default(),
+        spawner: CoinFutureSpawner::new(),
     };
     Ok(EthCoin(Arc::new(coin)))
 }
