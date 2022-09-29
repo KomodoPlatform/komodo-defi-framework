@@ -116,6 +116,7 @@ pub fn is_mine_zhtlc(my_orders_pubkeys: &Vec<String>, pubkey: &String) -> bool {
     for my_pubkey in my_orders_pubkeys {
         if my_pubkey == pubkey {
             is_mine = true;
+            break;
         }
     }
     drop_mutability!(is_mine);
