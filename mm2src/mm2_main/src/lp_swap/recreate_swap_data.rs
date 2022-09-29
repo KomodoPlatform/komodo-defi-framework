@@ -470,6 +470,8 @@ fn convert_maker_to_taker_events(
             | MakerSwapEvent::StartFailed(_)
             | MakerSwapEvent::Negotiated(_)
             | MakerSwapEvent::NegotiateFailed(_)
+            // Todo: add a note here to describe why this is not needed for lightning and that it might be needed if instructions is used later depending on the situation
+            | MakerSwapEvent::MakerPaymentInstructionsReceived(_)
             | MakerSwapEvent::TakerPaymentWaitConfirmStarted
             | MakerSwapEvent::TakerPaymentValidatedAndConfirmed
             | MakerSwapEvent::TakerPaymentSpendConfirmStarted

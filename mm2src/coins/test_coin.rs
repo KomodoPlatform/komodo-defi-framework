@@ -264,12 +264,17 @@ impl SwapOps for TestCoin {
     async fn payment_instructions(
         &self,
         _secret_hash: &[u8],
-        _other_side_amount: &BigDecimal,
+        _amount: &BigDecimal,
     ) -> Result<Option<Vec<u8>>, MmError<PaymentInstructionsErr>> {
         unimplemented!()
     }
 
-    fn validate_instructions(&self, _instructions: &[u8]) -> Result<(), MmError<ValidateInstructionsErr>> {
+    fn validate_instructions(
+        &self,
+        _instructions: &[u8],
+        _secret_hash: &[u8],
+        _amount: BigDecimal,
+    ) -> Result<(), MmError<ValidateInstructionsErr>> {
         unimplemented!()
     }
 }

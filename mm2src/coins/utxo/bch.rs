@@ -1043,12 +1043,19 @@ impl SwapOps for BchCoin {
     async fn payment_instructions(
         &self,
         _secret_hash: &[u8],
-        _other_side_amount: &BigDecimal,
+        _amount: &BigDecimal,
     ) -> Result<Option<Vec<u8>>, MmError<PaymentInstructionsErr>> {
         Ok(None)
     }
 
-    fn validate_instructions(&self, _instructions: &[u8]) -> Result<(), MmError<ValidateInstructionsErr>> { Ok(()) }
+    fn validate_instructions(
+        &self,
+        _instructions: &[u8],
+        _secret_hash: &[u8],
+        _amount: BigDecimal,
+    ) -> Result<(), MmError<ValidateInstructionsErr>> {
+        Ok(())
+    }
 }
 
 fn total_unspent_value<'a>(unspents: impl IntoIterator<Item = &'a UnspentInfo>) -> u64 {

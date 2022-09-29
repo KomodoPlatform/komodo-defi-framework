@@ -172,6 +172,7 @@ pub struct MakerSwapMut {
     taker_payment_spend: Option<TransactionIdentifier>,
     taker_payment_spend_confirmed: bool,
     maker_payment_refund: Option<TransactionIdentifier>,
+    payment_instructions: Option<Vec<u8>>,
 }
 
 #[cfg(test)]
@@ -275,6 +276,9 @@ impl MakerSwap {
                 }
             },
             MakerSwapEvent::NegotiateFailed(err) => self.errors.lock().push(err),
+            MakerSwapEvent::MakerPaymentInstructionsReceived(instructions) => {
+                self.w().payment_instructions = Some(instructions)
+            },
             MakerSwapEvent::TakerFeeValidated(tx) => self.w().taker_fee = Some(tx),
             MakerSwapEvent::TakerFeeValidateFailed(err) => self.errors.lock().push(err),
             MakerSwapEvent::MakerPaymentSent(tx) => self.w().maker_payment = Some(tx),
@@ -361,6 +365,7 @@ impl MakerSwap {
                 taker_payment_spend: None,
                 maker_payment_refund: None,
                 taker_payment_spend_confirmed: false,
+                payment_instructions: None,
             }),
             ctx,
             secret,
@@ -635,7 +640,20 @@ impl MakerSwap {
             },
         };
         drop(send_abort_handle);
-        // Todo: validate invoice here, or after? should I revalidate on restart?
+        let mut swap_events = vec![];
+        if let Some(instructions) = payload.instructions() {
+            if let Err(e) =
+                self.maker_coin
+                    .validate_instructions(instructions, &self.secret_hash(), self.maker_amount.clone())
+            {
+                return Ok((Some(MakerSwapCommand::Finish), vec![
+                    // Todo: maybe add a different event for this??
+                    MakerSwapEvent::TakerFeeValidateFailed(e.to_string().into()),
+                ]));
+            }
+            swap_events.push(MakerSwapEvent::MakerPaymentInstructionsReceived(instructions.to_vec()));
+        }
+
         let taker_fee = match self.taker_coin.tx_enum_from_bytes(payload.data()) {
             Ok(tx) => tx,
             Err(e) => {
@@ -686,10 +704,9 @@ impl MakerSwap {
             tx_hex: taker_fee.tx_hex().into(),
             tx_hash: hash,
         };
+        swap_events.push(MakerSwapEvent::TakerFeeValidated(fee_ident));
 
-        Ok((Some(MakerSwapCommand::SendPayment), vec![
-            MakerSwapEvent::TakerFeeValidated(fee_ident),
-        ]))
+        Ok((Some(MakerSwapCommand::SendPayment), swap_events))
     }
 
     async fn maker_payment(&self) -> Result<(Option<MakerSwapCommand>, Vec<MakerSwapEvent>), String> {
@@ -1395,6 +1412,7 @@ pub enum MakerSwapEvent {
     StartFailed(SwapError),
     Negotiated(TakerNegotiationData),
     NegotiateFailed(SwapError),
+    MakerPaymentInstructionsReceived(Vec<u8>),
     TakerFeeValidated(TransactionIdentifier),
     TakerFeeValidateFailed(SwapError),
     MakerPaymentSent(TransactionIdentifier),
@@ -1424,6 +1442,7 @@ impl MakerSwapEvent {
             MakerSwapEvent::StartFailed(_) => "Start failed...".to_owned(),
             MakerSwapEvent::Negotiated(_) => "Negotiated...".to_owned(),
             MakerSwapEvent::NegotiateFailed(_) => "Negotiate failed...".to_owned(),
+            MakerSwapEvent::MakerPaymentInstructionsReceived(_) => "Maker payment instructions received...".to_owned(),
             MakerSwapEvent::TakerFeeValidated(_) => "Taker fee validated...".to_owned(),
             MakerSwapEvent::TakerFeeValidateFailed(_) => "Taker fee validate failed...".to_owned(),
             MakerSwapEvent::MakerPaymentSent(_) => "Maker payment sent...".to_owned(),
@@ -1493,6 +1512,7 @@ impl MakerSavedEvent {
             MakerSwapEvent::Started(_) => Some(MakerSwapCommand::Negotiate),
             MakerSwapEvent::StartFailed(_) => Some(MakerSwapCommand::Finish),
             MakerSwapEvent::Negotiated(_) => Some(MakerSwapCommand::WaitForTakerFee),
+            MakerSwapEvent::MakerPaymentInstructionsReceived(_) => Some(MakerSwapCommand::WaitForTakerFee),
             MakerSwapEvent::NegotiateFailed(_) => Some(MakerSwapCommand::Finish),
             MakerSwapEvent::TakerFeeValidated(_) => Some(MakerSwapCommand::SendPayment),
             MakerSwapEvent::TakerFeeValidateFailed(_) => Some(MakerSwapCommand::Finish),

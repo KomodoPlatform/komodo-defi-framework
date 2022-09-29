@@ -268,6 +268,7 @@ pub(crate) fn filter_channels(channels: Vec<ChannelDetails>, min_inbound_capacit
         }
 
         // Todo: maybe check for inbound_capacity_msat first?? can this be used for probing?? I don't think so but how can it be avoided??
+        // Todo: we need the side who is revealing the private channel to check that the other side has the balance on-chain and not someone trying to probe for private channels
         if channel.is_public {
             // If any public channel exists, return no hints and let the sender
             // look at the public channels instead.

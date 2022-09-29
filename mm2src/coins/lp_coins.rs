@@ -630,10 +630,15 @@ pub trait SwapOps {
     async fn payment_instructions(
         &self,
         secret_hash: &[u8],
-        other_side_amount: &BigDecimal,
+        amount: &BigDecimal,
     ) -> Result<Option<Vec<u8>>, MmError<PaymentInstructionsErr>>;
 
-    fn validate_instructions(&self, _instructions: &[u8]) -> Result<(), MmError<ValidateInstructionsErr>>;
+    fn validate_instructions(
+        &self,
+        instructions: &[u8],
+        secret_hash: &[u8],
+        amount: BigDecimal,
+    ) -> Result<(), MmError<ValidateInstructionsErr>>;
 }
 
 /// Operations that coins have independently from the MarketMaker.

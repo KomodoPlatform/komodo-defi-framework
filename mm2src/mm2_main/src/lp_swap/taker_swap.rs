@@ -1197,7 +1197,11 @@ impl TakerSwap {
 
         let mut swap_events = vec![];
         if let Some(instructions) = payload.instructions() {
-            if let Err(e) = self.taker_coin.validate_instructions(instructions) {
+            if let Err(e) = self.taker_coin.validate_instructions(
+                instructions,
+                &self.r().secret_hash.0,
+                self.taker_amount.clone().into(),
+            ) {
                 return Ok((Some(TakerSwapCommand::Finish), vec![
                     // Todo: maybe add a different event for this??
                     TakerSwapEvent::MakerPaymentValidateFailed(e.to_string().into()),

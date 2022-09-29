@@ -13,7 +13,7 @@ mod ln_utils;
 use super::DerivationMethod;
 use crate::lightning::ln_utils::filter_channels;
 use crate::utxo::rpc_clients::UtxoRpcClientEnum;
-use crate::utxo::utxo_common::big_decimal_from_sat_unsigned;
+use crate::utxo::utxo_common::{big_decimal_from_sat, big_decimal_from_sat_unsigned};
 use crate::utxo::{sat_from_big_decimal, BlockchainNetwork};
 use crate::{BalanceFut, CoinBalance, FeeApproxStage, FoundSwapTxSpend, HistorySyncState, MarketCoinOps, MmCoin,
             NegotiateSwapContractAddrErr, PaymentInstructionsErr, RawTransactionFut, RawTransactionRequest,
@@ -26,8 +26,8 @@ use async_trait::async_trait;
 use bitcoin::bech32::ToBase32;
 use bitcoin::hashes::Hash;
 use bitcoin_hashes::sha256::Hash as Sha256;
-use bitcrypto::dhash256;
 use bitcrypto::ChecksumType;
+use bitcrypto::{dhash256, ripemd160};
 use common::executor::spawn;
 use common::log::{LogOnError, LogState};
 use common::{async_blocking, log, now_ms, PagingOptionsEnum};
@@ -583,13 +583,15 @@ impl SwapOps for LightningCoin {
     async fn payment_instructions(
         &self,
         secret_hash: &[u8],
-        other_side_amount: &BigDecimal,
+        amount: &BigDecimal,
     ) -> Result<Option<Vec<u8>>, MmError<PaymentInstructionsErr>> {
         // lightning decimals should be 11 in config since the smallest divisible unit in lightning coin is msat
-        let amt_msat = sat_from_big_decimal(other_side_amount, self.decimals())?;
+        let amt_msat = sat_from_big_decimal(amount, self.decimals())?;
 
-        if secret_hash.len() != 32 {
-            // return error here
+        let secret_hash_length = secret_hash.len();
+        if secret_hash_length != 32 {
+            let error = format!("Invalid secret_hash length {}", secret_hash_length);
+            return Err(PaymentInstructionsErr::InternalError(error).into());
         }
         let mut payment_hash = [b' '; 32];
         payment_hash.copy_from_slice(secret_hash);
@@ -609,9 +611,27 @@ impl SwapOps for LightningCoin {
         })?))
     }
 
-    fn validate_instructions(&self, instructions: &[u8]) -> Result<(), MmError<ValidateInstructionsErr>> {
-        let _invoice = Invoice::from_str(&hex::encode(instructions))?;
-        // Todo: continue validation here by comparing (payment_hash of invoice with secret_hash, invoice_amount with maker/taker amount, locktime, etc..)
+    fn validate_instructions(
+        &self,
+        instructions: &[u8],
+        secret_hash: &[u8],
+        amount: BigDecimal,
+    ) -> Result<(), MmError<ValidateInstructionsErr>> {
+        let invoice = Invoice::from_str(&hex::encode(instructions))?;
+        if (secret_hash.len() == 20 && ripemd160(invoice.payment_hash().as_inner()).as_slice() != secret_hash)
+            || (secret_hash.len() == 32 && invoice.payment_hash().as_inner() != secret_hash)
+        {
+            return Err(
+                ValidateInstructionsErr::ValidateLightningInvoiceErr("Invalid invoice payment hash!".into()).into(),
+            );
+        }
+        let invoice_amount = invoice
+            .amount_milli_satoshis()
+            .ok_or_else(|| ValidateInstructionsErr::ValidateLightningInvoiceErr("No invoice amount!".into()))?;
+        if big_decimal_from_sat(invoice_amount as i64, self.decimals()) != amount {
+            return Err(ValidateInstructionsErr::ValidateLightningInvoiceErr("Invalid invoice amount!".into()).into());
+        }
+        // Todo: continue validation here by comparing (locktime, etc..)
         Ok(())
     }
 }
