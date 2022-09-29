@@ -16,12 +16,13 @@ use crate::utxo::rpc_clients::UtxoRpcClientEnum;
 use crate::utxo::utxo_common::{big_decimal_from_sat, big_decimal_from_sat_unsigned};
 use crate::utxo::{sat_from_big_decimal, BlockchainNetwork};
 use crate::{BalanceFut, CoinBalance, FeeApproxStage, FoundSwapTxSpend, HistorySyncState, MarketCoinOps, MmCoin,
-            NegotiateSwapContractAddrErr, PaymentInstructionsErr, RawTransactionFut, RawTransactionRequest,
-            SearchForSwapTxSpendInput, SignatureError, SignatureResult, SwapOps, TradeFee, TradePreimageFut,
-            TradePreimageResult, TradePreimageValue, TransactionEnum, TransactionFut, TxMarshalingErr,
-            UnexpectedDerivationMethod, UtxoStandardCoin, ValidateAddressResult, ValidateInstructionsErr,
-            ValidatePaymentInput, VerificationError, VerificationResult, WatcherValidatePaymentInput, WithdrawError,
-            WithdrawFut, WithdrawRequest};
+            MyAddressError, NegotiateSwapContractAddrErr, PaymentInstructionsErr, RawTransactionFut,
+            RawTransactionRequest, SearchForSwapTxSpendInput, SignatureError, SignatureResult, SwapOps, TradeFee,
+            TradePreimageFut, TradePreimageResult, TradePreimageValue, TransactionEnum, TransactionFut,
+            TxMarshalingErr, UnexpectedDerivationMethod, UtxoStandardCoin, ValidateAddressResult,
+            ValidateInstructionsErr, ValidatePaymentError, ValidatePaymentFut, ValidatePaymentInput,
+            VerificationError, VerificationResult, WatcherValidatePaymentInput, WithdrawError, WithdrawFut,
+            WithdrawRequest};
 use async_trait::async_trait;
 use bitcoin::bech32::ToBase32;
 use bitcoin::hashes::Hash;
@@ -522,24 +523,14 @@ impl SwapOps for LightningCoin {
         unimplemented!()
     }
 
-    fn validate_maker_payment(
-        &self,
-        _input: ValidatePaymentInput,
-    ) -> Box<dyn Future<Item = (), Error = String> + Send> {
-        unimplemented!()
-    }
+    fn validate_maker_payment(&self, _input: ValidatePaymentInput) -> ValidatePaymentFut<()> { unimplemented!() }
 
-    fn validate_taker_payment(
-        &self,
-        _input: ValidatePaymentInput,
-    ) -> Box<dyn Future<Item = (), Error = String> + Send> {
-        unimplemented!()
-    }
+    fn validate_taker_payment(&self, _input: ValidatePaymentInput) -> ValidatePaymentFut<()> { unimplemented!() }
 
     fn watcher_validate_taker_payment(
         &self,
         _input: WatcherValidatePaymentInput,
-    ) -> Box<dyn Future<Item = (), Error = String> + Send> {
+    ) -> Box<dyn Future<Item = (), Error = MmError<ValidatePaymentError>> + Send> {
         unimplemented!();
     }
 
@@ -639,7 +630,7 @@ impl SwapOps for LightningCoin {
 impl MarketCoinOps for LightningCoin {
     fn ticker(&self) -> &str { &self.conf.ticker }
 
-    fn my_address(&self) -> Result<String, String> { Ok(self.my_node_id()) }
+    fn my_address(&self) -> MmResult<String, MyAddressError> { Ok(self.my_node_id()) }
 
     fn get_public_key(&self) -> Result<String, MmError<UnexpectedDerivationMethod>> { unimplemented!() }
 

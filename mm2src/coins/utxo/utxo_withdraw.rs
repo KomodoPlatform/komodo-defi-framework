@@ -429,7 +429,7 @@ where
 {
     pub fn new(coin: Coin, req: WithdrawRequest) -> Result<Self, MmError<WithdrawError>> {
         let my_address = coin.as_ref().derivation_method.iguana_or_err()?.clone();
-        let my_address_string = coin.my_address().map_to_mm(WithdrawError::InternalError)?;
+        let my_address_string = coin.my_address()?;
         Ok(StandardUtxoWithdraw {
             coin,
             req,
