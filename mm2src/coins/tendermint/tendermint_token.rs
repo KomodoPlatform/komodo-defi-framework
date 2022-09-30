@@ -1,12 +1,13 @@
 /// Module containing implementation for Tendermint Tokens. They include native assets + IBC
 use super::{upper_hex, TendermintCoin, TendermintFeeDetails, GAS_LIMIT_DEFAULT, TIMEOUT_HEIGHT_DELTA};
 use crate::{big_decimal_from_sat_unsigned, utxo::sat_from_big_decimal, BalanceFut, BigDecimal, CoinBalance,
-            FeeApproxStage, FoundSwapTxSpend, HistorySyncState, MarketCoinOps, MmCoin, NegotiateSwapContractAddrErr,
-            RawTransactionFut, RawTransactionRequest, SearchForSwapTxSpendInput, SignatureResult, SwapOps, TradeFee,
-            TradePreimageFut, TradePreimageResult, TradePreimageValue, TransactionDetails, TransactionEnum,
-            TransactionErr, TransactionFut, TransactionType, TxFeeDetails, TxMarshalingErr,
-            UnexpectedDerivationMethod, ValidateAddressResult, ValidatePaymentInput, VerificationResult,
-            WithdrawError, WithdrawFut, WithdrawRequest};
+            FeeApproxStage, FoundSwapTxSpend, HistorySyncState, MarketCoinOps, MmCoin, MyAddressError,
+            NegotiateSwapContractAddrErr, RawTransactionFut, RawTransactionRequest, SearchForSwapTxSpendInput,
+            SignatureResult, SwapOps, TradeFee, TradePreimageFut, TradePreimageResult, TradePreimageValue,
+            TransactionDetails, TransactionEnum, TransactionErr, TransactionFut, TransactionType, TxFeeDetails,
+            TxMarshalingErr, UnexpectedDerivationMethod, ValidateAddressResult, ValidatePaymentError,
+            ValidatePaymentFut, ValidatePaymentInput, VerificationResult, WatcherValidatePaymentInput, WithdrawError,
+            WithdrawFut, WithdrawRequest};
 use async_trait::async_trait;
 use bitcrypto::sha256;
 use common::Future01CompatExt;
@@ -46,6 +47,10 @@ pub enum TendermintTokenInitError {
     InvalidDenom(String),
     MyAddressError(String),
     CouldNotFetchBalance(String),
+}
+
+impl From<MyAddressError> for TendermintTokenInitError {
+    fn from(err: MyAddressError) -> Self { TendermintTokenInitError::MyAddressError(err.to_string()) }
 }
 
 impl TendermintToken {
@@ -132,6 +137,17 @@ impl SwapOps for TendermintToken {
         )
     }
 
+    fn create_taker_spends_maker_payment_preimage(
+        &self,
+        _maker_payment_tx: &[u8],
+        _time_lock: u32,
+        _maker_pub: &[u8],
+        _secret_hash: &[u8],
+        _swap_unique_data: &[u8],
+    ) -> TransactionFut {
+        todo!()
+    }
+
     fn send_taker_spends_maker_payment(
         &self,
         maker_payment_tx: &[u8],
@@ -152,6 +168,8 @@ impl SwapOps for TendermintToken {
             swap_unique_data,
         )
     }
+
+    fn send_taker_spends_maker_payment_preimage(&self, preimage: &[u8], secret: &[u8]) -> TransactionFut { todo!() }
 
     fn send_taker_refunds_payment(
         &self,
@@ -194,14 +212,21 @@ impl SwapOps for TendermintToken {
         Box::new(fut.boxed().compat())
     }
 
-    fn validate_maker_payment(&self, input: ValidatePaymentInput) -> Box<dyn Future<Item = (), Error = String> + Send> {
+    fn validate_maker_payment(&self, input: ValidatePaymentInput) -> ValidatePaymentFut<()> {
         let fut = async move { Ok(()) };
         Box::new(fut.boxed().compat())
     }
 
-    fn validate_taker_payment(&self, input: ValidatePaymentInput) -> Box<dyn Future<Item = (), Error = String> + Send> {
+    fn validate_taker_payment(&self, input: ValidatePaymentInput) -> ValidatePaymentFut<()> {
         let fut = async move { Ok(()) };
         Box::new(fut.boxed().compat())
+    }
+
+    fn watcher_validate_taker_payment(
+        &self,
+        _input: WatcherValidatePaymentInput,
+    ) -> Box<dyn Future<Item = (), Error = MmError<ValidatePaymentError>> + Send> {
+        todo!()
     }
 
     fn check_if_my_payment_sent(
@@ -251,7 +276,7 @@ impl SwapOps for TendermintToken {
 impl MarketCoinOps for TendermintToken {
     fn ticker(&self) -> &str { &self.ticker }
 
-    fn my_address(&self) -> Result<String, String> { self.platform_coin.my_address() }
+    fn my_address(&self) -> MmResult<String, MyAddressError> { self.platform_coin.my_address() }
 
     fn get_public_key(&self) -> Result<String, MmError<UnexpectedDerivationMethod>> {
         self.platform_coin.get_public_key()

@@ -10,9 +10,10 @@ use crate::{big_decimal_from_sat_unsigned, BalanceError, BalanceFut, BigDecimal,
             FoundSwapTxSpend, HistorySyncState, MarketCoinOps, MmCoin, NegotiateSwapContractAddrErr,
             RawTransactionFut, RawTransactionRequest, SearchForSwapTxSpendInput, SignatureResult, SwapOps, TradeFee,
             TradePreimageFut, TradePreimageResult, TradePreimageValue, TransactionDetails, TransactionEnum,
-            TransactionFut, TransactionType, TxFeeDetails, TxMarshalingErr, UnexpectedDerivationMethod,
-            ValidateAddressResult, ValidatePaymentFut, ValidatePaymentInput, VerificationResult,
-            WatcherValidatePaymentInput, WithdrawError, WithdrawFut, WithdrawRequest};
+            TransactionErr, TransactionFut, TransactionType, TxFeeDetails, TxMarshalingErr,
+            UnexpectedDerivationMethod, ValidateAddressResult, ValidatePaymentFut, ValidatePaymentInput,
+            VerificationResult, WatcherValidatePaymentInput, WithdrawError, WithdrawFut, WithdrawRequest};
+use async_std::prelude::FutureExt as AsyncStdFutureExt;
 use async_trait::async_trait;
 use bitcrypto::{dhash160, sha256};
 use common::executor::Timer;

@@ -1216,7 +1216,7 @@ impl TakerSwap {
     ) -> TakerSwapWatcherData {
         TakerSwapWatcherData {
             uuid: self.uuid,
-            secret_hash: self.r().secret_hash.into(),
+            secret_hash: self.r().secret_hash.clone().into(),
             taker_spends_maker_payment_preimage,
             swap_started_at: self.r().data.started_at,
             lock_duration: self.r().data.lock_duration,
