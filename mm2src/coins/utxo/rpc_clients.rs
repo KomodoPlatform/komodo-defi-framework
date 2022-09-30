@@ -70,6 +70,7 @@ cfg_native! {
 
 pub const NO_TX_ERROR_CODE: &str = "'code': -5";
 const TX_NOT_FOUND_RETRIES: u8 = 10;
+const MAX_CHUNK_SIZE: u64 = 2016;
 
 pub type AddressesByLabelResult = HashMap<String, AddressPurpose>;
 pub type JsonRpcPendingRequestsShared = Arc<AsyncMutex<JsonRpcPendingRequests>>;
@@ -1935,7 +1936,8 @@ impl ElectrumClient {
                 UtxoRpcError::Internal("Invalid values for from/to parameters".to_string()).into(),
             ));
         }
-        let count: NonZeroU64 = match (to - from + 1).try_into() {
+        let count = (to - from + 1).min(MAX_CHUNK_SIZE);
+        let count: NonZeroU64 = match count.try_into() {
             Ok(c) => c,
             Err(e) => return Box::new(futures01::future::err(UtxoRpcError::Internal(e.to_string()).into())),
         };
