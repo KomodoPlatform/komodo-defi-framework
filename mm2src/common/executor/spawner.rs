@@ -1,4 +1,4 @@
-use crate::executor::{spawn, spawn_abortable, spawn_with_msg_on_abort, AbortOnDropHandle, Timer};
+use crate::executor::{spawn, spawn_abortable, spawn_abortable_with_settings, AbortOnDropHandle, SpawnSettings, Timer};
 use futures::channel::oneshot;
 use futures::Future as Future03;
 use parking_lot::Mutex as PaMutex;
@@ -44,13 +44,13 @@ impl AbortableSpawner {
         self.abort_handlers.lock().push(abort_handle);
     }
 
-    /// Spawns the `fut` future with the `msg` message that will be printed once the future is stopped.
+    /// Spawns the `fut` future with the specified `settings`.
     /// The future will be stopped immediately if `AbortableSpawner` is dropped.
-    pub fn spawn_with_msg_on_abort<F>(&self, fut: F, level: log::Level, msg: String)
+    pub fn spawn_with_settings<F>(&self, fut: F, settings: SpawnSettings)
     where
         F: Future03<Output = ()> + Send + 'static,
     {
-        let abort_handle = spawn_with_msg_on_abort(fut, level, msg);
+        let abort_handle = spawn_abortable_with_settings(fut, settings);
         self.abort_handlers.lock().push(abort_handle);
     }
 

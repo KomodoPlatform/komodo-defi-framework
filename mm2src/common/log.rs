@@ -10,7 +10,7 @@ use crossbeam::queue::SegQueue;
 use itertools::Itertools;
 #[cfg(not(target_arch = "wasm32"))]
 use lightning::util::logger::{Level as LightningLevel, Logger as LightningLogger, Record as LightningRecord};
-use log::Record;
+use log::{Record, Level};
 use parking_lot::Mutex as PaMutex;
 use serde_json::Value as Json;
 use std::cell::RefCell;
@@ -28,7 +28,7 @@ use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::{Arc, Weak};
 use std::thread;
 
-pub use log::{self as log_crate, debug, error, info, trace, warn, Level, LevelFilter};
+pub use log::{self as log_crate, debug, error, info, trace, warn, LevelFilter};
 
 #[cfg(target_arch = "wasm32")]
 #[path = "log/wasm_log.rs"]

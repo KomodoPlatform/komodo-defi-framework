@@ -12,7 +12,7 @@ use crate::{BlockchainNetwork, CoinFutureSpawner, CoinTransportMetrics, Derivati
             PrivKeyBuildPolicy, PrivKeyPolicy, RpcClientType, UtxoActivationParams};
 use async_trait::async_trait;
 use chain::TxHashAlgo;
-use common::executor::{spawn, Timer};
+use common::executor::{SpawnSettings, Timer};
 use common::log::{error, info};
 use common::small_rng;
 use crypto::{Bip32DerPathError, Bip44DerPathError, Bip44PathToCoin, CryptoCtx, CryptoInitError, HwWalletType};
@@ -150,7 +150,9 @@ pub trait UtxoFieldsWithIguanaPrivKeyBuilder: UtxoCoinBuilderCommonOps {
         let derivation_method = DerivationMethod::Iguana(my_address);
         let priv_key_policy = PrivKeyPolicy::KeyPair(key_pair);
 
-        let rpc_client = self.rpc_client().await?;
+        let spawner = CoinFutureSpawner::new();
+
+        let rpc_client = self.rpc_client(&spawner).await?;
         let tx_fee = self.tx_fee(&rpc_client).await?;
         let decimals = self.decimals(&rpc_client).await?;
         let dust_amount = self.dust_amount();
@@ -176,7 +178,7 @@ pub trait UtxoFieldsWithIguanaPrivKeyBuilder: UtxoCoinBuilderCommonOps {
             check_utxo_maturity,
             block_headers_status_notifier,
             block_headers_status_watcher,
-            spawner: CoinFutureSpawner::new(),
+            spawner,
         };
         Ok(coin)
     }
@@ -216,7 +218,9 @@ pub trait UtxoFieldsWithHardwareWalletBuilder: UtxoCoinBuilderCommonOps {
             gap_limit,
         };
 
-        let rpc_client = self.rpc_client().await?;
+        let spawner = CoinFutureSpawner::new();
+
+        let rpc_client = self.rpc_client(&spawner).await?;
         let tx_fee = self.tx_fee(&rpc_client).await?;
         let decimals = self.decimals(&rpc_client).await?;
         let dust_amount = self.dust_amount();
@@ -242,7 +246,7 @@ pub trait UtxoFieldsWithHardwareWalletBuilder: UtxoCoinBuilderCommonOps {
             check_utxo_maturity,
             block_headers_status_notifier,
             block_headers_status_watcher,
-            spawner: CoinFutureSpawner::new(),
+            spawner,
         };
         Ok(coin)
     }
@@ -395,7 +399,7 @@ pub trait UtxoCoinBuilderCommonOps {
         }
     }
 
-    async fn rpc_client(&self) -> UtxoCoinBuildResult<UtxoRpcClientEnum> {
+    async fn rpc_client(&self, spawner: &CoinFutureSpawner) -> UtxoCoinBuildResult<UtxoRpcClientEnum> {
         match self.activation_params().mode.clone() {
             UtxoRpcMode::Native => {
                 #[cfg(target_arch = "wasm32")]
@@ -409,7 +413,9 @@ pub trait UtxoCoinBuilderCommonOps {
                 }
             },
             UtxoRpcMode::Electrum { servers } => {
-                let electrum = self.electrum_client(ElectrumBuilderArgs::default(), servers).await?;
+                let electrum = self
+                    .electrum_client(spawner, ElectrumBuilderArgs::default(), servers)
+                    .await?;
                 Ok(UtxoRpcClientEnum::Electrum(electrum))
             },
         }
@@ -417,6 +423,7 @@ pub trait UtxoCoinBuilderCommonOps {
 
     async fn electrum_client(
         &self,
+        spawner: &CoinFutureSpawner,
         args: ElectrumBuilderArgs,
         mut servers: Vec<ElectrumRpcRequest>,
     ) -> UtxoCoinBuildResult<ElectrumClient> {
@@ -469,7 +476,7 @@ pub trait UtxoCoinBuilderCommonOps {
         if args.negotiate_version {
             let weak_client = Arc::downgrade(&client);
             let client_name = format!("{} GUI/MM2 {}", ctx.gui().unwrap_or("UNKNOWN"), ctx.mm_version());
-            spawn_electrum_version_loop(weak_client, on_connect_rx, client_name);
+            spawn_electrum_version_loop(spawner, weak_client, on_connect_rx, client_name);
 
             wait_for_protocol_version_checked(&client)
                 .await
@@ -478,7 +485,7 @@ pub trait UtxoCoinBuilderCommonOps {
 
         if args.spawn_ping {
             let weak_client = Arc::downgrade(&client);
-            spawn_electrum_ping_loop(weak_client, servers);
+            spawn_electrum_ping_loop(spawner, weak_client, servers);
         }
 
         Ok(ElectrumClient(client))
@@ -668,41 +675,45 @@ fn read_native_mode_conf(
 /// According to docs server can do it if there are no messages in ~10 minutes.
 /// https://electrumx.readthedocs.io/en/latest/protocol-methods.html?highlight=keep#server-ping
 /// Weak reference will allow to stop the thread if client is dropped.
-fn spawn_electrum_ping_loop(weak_client: Weak<ElectrumClientImpl>, servers: Vec<ElectrumRpcRequest>) {
-    spawn(async move {
+fn spawn_electrum_ping_loop(
+    spawner: &CoinFutureSpawner,
+    weak_client: Weak<ElectrumClientImpl>,
+    servers: Vec<ElectrumRpcRequest>,
+) {
+    let msg_on_stopped = format!("Electrum servers {servers:?} ping loop stopped");
+    let fut = async move {
         loop {
             if let Some(client) = weak_client.upgrade() {
                 if let Err(e) = ElectrumClient(client).server_ping().compat().await {
                     error!("Electrum servers {:?} ping error: {}", servers, e);
                 }
             } else {
-                info!("Electrum servers {:?} ping loop stopped", servers);
                 break;
             }
             Timer::sleep(30.).await
         }
-    });
+    };
+
+    let settigns = SpawnSettings::info_on_any_stop(msg_on_stopped);
+    spawner.spawn_with_settings(fut, settigns);
 }
 
 /// Follow the `on_connect_rx` stream and verify the protocol version of each connected electrum server.
 /// https://electrumx.readthedocs.io/en/latest/protocol-methods.html?highlight=keep#server-version
 /// Weak reference will allow to stop the thread if client is dropped.
 fn spawn_electrum_version_loop(
+    spawner: &CoinFutureSpawner,
     weak_client: Weak<ElectrumClientImpl>,
     mut on_connect_rx: UnboundedReceiver<String>,
     client_name: String,
 ) {
-    spawn(async move {
+    let fut = async move {
         while let Some(electrum_addr) = on_connect_rx.next().await {
-            spawn(check_electrum_server_version(
-                weak_client.clone(),
-                client_name.clone(),
-                electrum_addr,
-            ));
+            check_electrum_server_version(weak_client.clone(), client_name.clone(), electrum_addr).await;
         }
-
-        info!("Electrum server.version loop stopped");
-    });
+    };
+    let settings = SpawnSettings::info_on_any_stop("Electrum server.version loop stopped".to_string());
+    spawner.spawn_with_settings(fut, settings);
 }
 
 async fn check_electrum_server_version(
