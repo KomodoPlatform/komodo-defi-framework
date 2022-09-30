@@ -18,6 +18,10 @@ pub enum EthActivationV2Error {
     InternalError(String),
 }
 
+impl From<MyAddressError> for EthActivationV2Error {
+    fn from(err: MyAddressError) -> Self { Self::InternalError(err.to_string()) }
+}
+
 #[derive(Clone, Deserialize)]
 pub struct EthActivationV2Request {
     pub nodes: Vec<EthNode>,
@@ -42,6 +46,10 @@ pub struct EthNode {
 pub enum Erc20TokenActivationError {
     InternalError(String),
     CouldNotFetchBalance(String),
+}
+
+impl From<MyAddressError> for Erc20TokenActivationError {
+    fn from(err: MyAddressError) -> Self { Self::InternalError(err.to_string()) }
 }
 
 #[derive(Clone, Deserialize)]
