@@ -117,7 +117,7 @@ impl ZRpcOps for Vec<CompactTxStreamerClient<Channel>> {
                         Some(block) => {
                             debug!("Got block {:?}", block);
                             if let Err(err) = on_block(block) {
-                                errors.push(format!("{:?}", err));
+                                errors.push(format!("{:?}", err.into_inner()));
                                 break;
                             }
                         },
