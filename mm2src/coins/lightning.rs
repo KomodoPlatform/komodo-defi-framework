@@ -18,11 +18,11 @@ use crate::utxo::{sat_from_big_decimal, BlockchainNetwork};
 use crate::{BalanceFut, CoinBalance, FeeApproxStage, FoundSwapTxSpend, HistorySyncState, MarketCoinOps, MmCoin,
             MyAddressError, NegotiateSwapContractAddrErr, PaymentInstructions, PaymentInstructionsErr,
             RawTransactionFut, RawTransactionRequest, SearchForSwapTxSpendInput, SignatureError, SignatureResult,
-            SwapOps, TradeFee, TradePreimageFut, TradePreimageResult, TradePreimageValue, TransactionEnum,
-            TransactionFut, TxMarshalingErr, UnexpectedDerivationMethod, UtxoStandardCoin, ValidateAddressResult,
-            ValidateInstructionsErr, ValidatePaymentError, ValidatePaymentFut, ValidatePaymentInput,
-            VerificationError, VerificationResult, WatcherValidatePaymentInput, WithdrawError, WithdrawFut,
-            WithdrawRequest};
+            SwapOps, TradeFee, TradePreimageFut, TradePreimageResult, TradePreimageValue, Transaction,
+            TransactionEnum, TransactionFut, TxMarshalingErr, UnexpectedDerivationMethod, UtxoStandardCoin,
+            ValidateAddressResult, ValidateInstructionsErr, ValidatePaymentError, ValidatePaymentFut,
+            ValidatePaymentInput, VerificationError, VerificationResult, WatcherValidatePaymentInput, WithdrawError,
+            WithdrawFut, WithdrawRequest};
 use async_trait::async_trait;
 use bitcoin::bech32::ToBase32;
 use bitcoin::hashes::Hash;
@@ -45,7 +45,7 @@ use lightning_invoice::utils::DefaultRouter;
 use lightning_invoice::{payment, CreationError, InvoiceBuilder, SignOrCreationError};
 use lightning_invoice::{Invoice, InvoiceDescription};
 use ln_conf::{LightningCoinConf, LightningProtocolConf, PlatformCoinConfirmationTargets};
-use ln_db::{DBChannelDetails, DBPaymentInfo, HTLCStatus, LightningDB, PaymentType};
+use ln_db::{DBChannelDetails, HTLCStatus, LightningDB, PaymentInfo, PaymentType};
 use ln_errors::{EnableLightningError, EnableLightningResult};
 use ln_events::{init_events_abort_handlers, LightningEventHandler};
 use ln_filesystem_persister::LightningFilesystemPersister;
@@ -133,7 +133,7 @@ pub(crate) struct GetOpenChannelsResult {
     pub total: usize,
 }
 
-#[derive(Display)]
+#[derive(Debug, Display)]
 pub(crate) enum PaymentError {
     #[display(fmt = "Final cltv expiry delta {} is below the required minimum of {}", _0, _1)]
     CLTVExpiry(u32, u32),
@@ -141,6 +141,15 @@ pub(crate) enum PaymentError {
     Invoice(String),
     #[display(fmt = "Keysend error: {}", _0)]
     Keysend(String),
+}
+
+impl Transaction for PaymentInfo {
+    fn tx_hex(&self) -> Vec<u8> {
+        // Todo: should this be an empty vec or an option or the payment_hash
+        Vec::new()
+    }
+
+    fn tx_hash(&self) -> BytesJson { self.payment_hash.0.to_vec().into() }
 }
 
 impl LightningCoin {
@@ -177,7 +186,7 @@ impl LightningCoin {
             .find(|chan| chan.user_channel_id == rpc_id)
     }
 
-    pub(crate) async fn pay_invoice(&self, invoice: Invoice) -> Result<DBPaymentInfo, PaymentError> {
+    pub(crate) async fn pay_invoice(&self, invoice: Invoice) -> Result<PaymentInfo, PaymentError> {
         let payment_hash = PaymentHash((invoice.payment_hash()).into_inner());
         let payment_type = PaymentType::OutboundPayment {
             destination: *invoice.payee_pub_key().unwrap_or(&invoice.recover_payee_pub_key()),
@@ -198,7 +207,7 @@ impl LightningCoin {
         })
         .await?;
 
-        Ok(DBPaymentInfo {
+        Ok(PaymentInfo {
             payment_hash,
             payment_type,
             description,
@@ -217,7 +226,7 @@ impl LightningCoin {
         destination: PublicKey,
         amount_msat: u64,
         final_cltv_expiry_delta: u32,
-    ) -> Result<DBPaymentInfo, PaymentError> {
+    ) -> Result<PaymentInfo, PaymentError> {
         if final_cltv_expiry_delta < MIN_FINAL_CLTV_EXPIRY {
             return Err(PaymentError::CLTVExpiry(final_cltv_expiry_delta, MIN_FINAL_CLTV_EXPIRY));
         }
@@ -235,7 +244,7 @@ impl LightningCoin {
         let payment_hash = PaymentHash(Sha256::hash(&payment_preimage.0).into_inner());
         let payment_type = PaymentType::OutboundPayment { destination };
 
-        Ok(DBPaymentInfo {
+        Ok(PaymentInfo {
             payment_hash,
             payment_type,
             description: "".into(),
@@ -432,10 +441,18 @@ impl SwapOps for LightningCoin {
         _amount: BigDecimal,
         _swap_contract_address: &Option<BytesJson>,
         _swap_unique_data: &[u8],
-        _payment_instructions: &Option<PaymentInstructions>,
+        payment_instructions: &Option<PaymentInstructions>,
     ) -> TransactionFut {
-        // Todo: Pay invoice in PaymentInstructions here
-        unimplemented!()
+        let PaymentInstructions::Lightning(invoice) = payment_instructions
+            .clone()
+            .expect("payment_instructions can't be None");
+        let this = self.clone();
+        let fut = async move {
+            let payment = try_tx_s!(this.pay_invoice(invoice).await);
+            // Todo: are there more steps after pay_invoice??
+            Ok(payment.into())
+        };
+        Box::new(fut.boxed().compat())
     }
 
     fn send_taker_payment(
@@ -446,10 +463,18 @@ impl SwapOps for LightningCoin {
         _amount: BigDecimal,
         _swap_contract_address: &Option<BytesJson>,
         _swap_unique_data: &[u8],
-        _payment_instructions: &Option<PaymentInstructions>,
+        payment_instructions: &Option<PaymentInstructions>,
     ) -> TransactionFut {
-        // Todo: Pay invoice in PaymentInstructions here
-        unimplemented!()
+        let PaymentInstructions::Lightning(invoice) = payment_instructions
+            .clone()
+            .expect("payment_instructions can't be None");
+        let this = self.clone();
+        let fut = async move {
+            let payment = try_tx_s!(this.pay_invoice(invoice).await);
+            // Todo: are there more steps after pay_invoice??
+            Ok(payment.into())
+        };
+        Box::new(fut.boxed().compat())
     }
 
     fn send_maker_spends_taker_payment(

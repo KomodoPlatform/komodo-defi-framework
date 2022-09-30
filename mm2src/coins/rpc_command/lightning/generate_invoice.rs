@@ -1,4 +1,4 @@
-use crate::lightning::ln_db::{DBPaymentInfo, HTLCStatus, LightningDB, PaymentType};
+use crate::lightning::ln_db::{HTLCStatus, LightningDB, PaymentInfo, PaymentType};
 use crate::lightning::ln_p2p::connect_to_ln_node;
 use crate::lightning::DEFAULT_INVOICE_EXPIRY;
 use crate::{lp_coinfind_or_err, CoinFindError, H256Json, MmCoinEnum};
@@ -110,7 +110,7 @@ pub async fn generate_invoice(
 
     // Todo: Should remove adding payment to db step since the preimage can be recreated from the keymanager and the invoice secret (Do I need to check that received amount equals the requested amount?)
     let payment_hash = invoice.payment_hash().into_inner();
-    let payment_info = DBPaymentInfo {
+    let payment_info = PaymentInfo {
         payment_hash: PaymentHash(payment_hash),
         payment_type: PaymentType::InboundPayment,
         description: req.description,

@@ -1,4 +1,4 @@
-use crate::lightning::ln_db::{DBPaymentInfo, DBPaymentsFilter, HTLCStatus, PaymentType};
+use crate::lightning::ln_db::{DBPaymentsFilter, HTLCStatus, PaymentInfo, PaymentType};
 use crate::lightning::ln_platform::h256_json_from_txid;
 use crate::H256Json;
 use lightning::chain::channelmonitor::Balance;
@@ -187,8 +187,8 @@ pub struct PaymentInfoForRPC {
     last_updated: i64,
 }
 
-impl From<DBPaymentInfo> for PaymentInfoForRPC {
-    fn from(info: DBPaymentInfo) -> Self {
+impl From<PaymentInfo> for PaymentInfoForRPC {
+    fn from(info: PaymentInfo) -> Self {
         PaymentInfoForRPC {
             payment_hash: info.payment_hash.0.into(),
             payment_type: info.payment_type.into(),

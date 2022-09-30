@@ -375,7 +375,7 @@ impl LightningEventHandler {
                 }
             }),
             PaymentPurpose::SpontaneousPayment(payment_preimage) => {
-                let payment_info = DBPaymentInfo {
+                let payment_info = PaymentInfo {
                     payment_hash,
                     payment_type: PaymentType::InboundPayment,
                     description: "".into(),

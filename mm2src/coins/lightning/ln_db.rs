@@ -125,7 +125,7 @@ pub enum PaymentType {
 }
 
 #[derive(Clone, Debug, PartialEq)]
-pub struct DBPaymentInfo {
+pub struct PaymentInfo {
     pub payment_hash: PaymentHash,
     pub payment_type: PaymentType,
     pub description: String,
@@ -153,7 +153,7 @@ pub struct DBPaymentsFilter {
 }
 
 pub struct GetPaymentsResult {
-    pub payments: Vec<DBPaymentInfo>,
+    pub payments: Vec<PaymentInfo>,
     pub skipped: usize,
     pub total: usize,
 }
@@ -228,10 +228,10 @@ pub trait LightningDB {
     ) -> Result<GetClosedChannelsResult, Self::Error>;
 
     /// Inserts or updates a new payment record in the DB.
-    async fn add_or_update_payment_in_db(&self, info: DBPaymentInfo) -> Result<(), Self::Error>;
+    async fn add_or_update_payment_in_db(&self, info: PaymentInfo) -> Result<(), Self::Error>;
 
     /// Gets a payment's record from DB by the payment's hash.
-    async fn get_payment_from_db(&self, hash: PaymentHash) -> Result<Option<DBPaymentInfo>, Self::Error>;
+    async fn get_payment_from_db(&self, hash: PaymentHash) -> Result<Option<PaymentInfo>, Self::Error>;
 
     /// Gets the list of payments that match the provided filter criteria. The number of requested records is specified
     /// by the limit parameter, the starting record to list from is specified by the paging parameter. The total number

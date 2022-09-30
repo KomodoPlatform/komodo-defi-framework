@@ -410,6 +410,7 @@ impl MakerSwap {
     }
 
     async fn get_my_payment_data(&self) -> Result<PaymentDataMsg, MmError<PaymentInstructionsErr>> {
+        // Todo: this will send the payment hash of the maker_payment to the taker if maker is lightning, maybe it's not needed
         let payment_data = self.r().maker_payment.as_ref().unwrap().tx_hex.0.clone();
         if let Some(instructions) = self
             .taker_coin

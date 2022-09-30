@@ -66,6 +66,7 @@ use utxo_signer::with_key_pair::UtxoSignWithKeyPairError;
 
 cfg_native! {
     use crate::lightning::LightningCoin;
+    use crate::lightning::ln_db::PaymentInfo as LightningPayment;
     use crate::lightning::ln_conf::PlatformCoinConfirmationTargets;
     use async_std::fs;
     use futures::AsyncWriteExt;
@@ -79,7 +80,6 @@ cfg_wasm32! {
     use mm2_db::indexed_db::{ConstructibleDb, DbLocked, SharedDb};
     use hd_wallet_storage::HDWalletDb;
     use tx_history_storage::wasm::{clear_tx_history, load_tx_history, save_tx_history, TxHistoryDb};
-
     pub type TxHistoryDbLocked<'a> = DbLocked<'a, TxHistoryDb>;
 }
 
@@ -358,12 +358,16 @@ pub enum TransactionEnum {
     SignedEthTx(SignedEthTx),
     #[cfg(not(target_arch = "wasm32"))]
     ZTransaction(ZTransaction),
+    #[cfg(not(target_arch = "wasm32"))]
+    LightningPayment(LightningPayment),
 }
 
 ifrom!(TransactionEnum, UtxoTx);
 ifrom!(TransactionEnum, SignedEthTx);
 #[cfg(not(target_arch = "wasm32"))]
 ifrom!(TransactionEnum, ZTransaction);
+#[cfg(not(target_arch = "wasm32"))]
+ifrom!(TransactionEnum, LightningPayment);
 
 // NB: When stable and groked by IDEs, `enum_dispatch` can be used instead of `Deref` to speed things up.
 impl Deref for TransactionEnum {
@@ -374,6 +378,8 @@ impl Deref for TransactionEnum {
             TransactionEnum::SignedEthTx(ref t) => t,
             #[cfg(not(target_arch = "wasm32"))]
             TransactionEnum::ZTransaction(ref t) => t,
+            #[cfg(not(target_arch = "wasm32"))]
+            TransactionEnum::LightningPayment(ref p) => p,
         }
     }
 }

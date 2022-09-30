@@ -1,6 +1,6 @@
-use crate::lightning::ln_db::{ChannelType, ChannelVisibility, ClosedChannelsFilter, DBChannelDetails, DBPaymentInfo,
+use crate::lightning::ln_db::{ChannelType, ChannelVisibility, ClosedChannelsFilter, DBChannelDetails,
                               DBPaymentsFilter, GetClosedChannelsResult, GetPaymentsResult, HTLCStatus, LightningDB,
-                              PaymentType};
+                              PaymentInfo, PaymentType};
 use async_trait::async_trait;
 use common::{async_blocking, PagingOptionsEnum};
 use db_common::sqlite::rusqlite::{Error as SqlError, Row, ToSql, NO_PARAMS};
@@ -198,7 +198,7 @@ fn channel_details_from_row(row: &Row<'_>) -> Result<DBChannelDetails, SqlError>
     Ok(channel_details)
 }
 
-fn payment_info_from_row(row: &Row<'_>) -> Result<DBPaymentInfo, SqlError> {
+fn payment_info_from_row(row: &Row<'_>) -> Result<PaymentInfo, SqlError> {
     let is_outbound = row.get::<_, bool>(8)?;
     let payment_type = if is_outbound {
         PaymentType::OutboundPayment {
@@ -208,7 +208,7 @@ fn payment_info_from_row(row: &Row<'_>) -> Result<DBPaymentInfo, SqlError> {
         PaymentType::InboundPayment
     };
 
-    let payment_info = DBPaymentInfo {
+    let payment_info = PaymentInfo {
         payment_hash: PaymentHash(h256_slice_from_row::<String>(row, 0)?),
         payment_type,
         description: row.get(2)?,
@@ -768,7 +768,7 @@ impl LightningDB for SqliteLightningDB {
         .await
     }
 
-    async fn add_or_update_payment_in_db(&self, info: DBPaymentInfo) -> Result<(), Self::Error> {
+    async fn add_or_update_payment_in_db(&self, info: PaymentInfo) -> Result<(), Self::Error> {
         let for_coin = self.db_ticker.clone();
         let payment_hash = hex::encode(info.payment_hash.0);
         let (is_outbound, destination) = match info.payment_type {
@@ -803,7 +803,7 @@ impl LightningDB for SqliteLightningDB {
         .await
     }
 
-    async fn get_payment_from_db(&self, hash: PaymentHash) -> Result<Option<DBPaymentInfo>, Self::Error> {
+    async fn get_payment_from_db(&self, hash: PaymentHash) -> Result<Option<PaymentInfo>, Self::Error> {
         let params = [hex::encode(hash.0)];
         let sql = select_payment_by_hash_sql(self.db_ticker.as_str())?;
 
@@ -946,7 +946,7 @@ mod tests {
         channels
     }
 
-    fn generate_random_payments(num: u64) -> Vec<DBPaymentInfo> {
+    fn generate_random_payments(num: u64) -> Vec<PaymentInfo> {
         let mut rng = rand::thread_rng();
         let mut payments = vec![];
         let s = Secp256k1::new();
@@ -970,7 +970,7 @@ mod tests {
                 HTLCStatus::Failed
             };
             let description: String = rng.sample_iter(&Alphanumeric).take(30).map(char::from).collect();
-            let info = DBPaymentInfo {
+            let info = PaymentInfo {
                 payment_hash: {
                     rng.fill_bytes(&mut bytes);
                     PaymentHash(bytes)
@@ -1143,7 +1143,7 @@ mod tests {
         let payment = block_on(db.get_payment_from_db(PaymentHash([0; 32]))).unwrap();
         assert!(payment.is_none());
 
-        let mut expected_payment_info = DBPaymentInfo {
+        let mut expected_payment_info = PaymentInfo {
             payment_hash: PaymentHash([0; 32]),
             payment_type: PaymentType::InboundPayment,
             description: "test payment".into(),
@@ -1242,7 +1242,7 @@ mod tests {
         let limit = 10;
 
         let result = block_on(db.get_payments_by_filter(Some(filter.clone()), paging.clone(), limit)).unwrap();
-        let expected_payments_vec: Vec<DBPaymentInfo> = payments
+        let expected_payments_vec: Vec<PaymentInfo> = payments
             .iter()
             .map(|p| p.clone())
             .filter(|p| p.payment_type == PaymentType::InboundPayment)
@@ -1258,7 +1258,7 @@ mod tests {
 
         filter.status = Some(HTLCStatus::Succeeded.to_string());
         let result = block_on(db.get_payments_by_filter(Some(filter.clone()), paging.clone(), limit)).unwrap();
-        let expected_payments_vec: Vec<DBPaymentInfo> = expected_payments_vec
+        let expected_payments_vec: Vec<PaymentInfo> = expected_payments_vec
             .iter()
             .map(|p| p.clone())
             .filter(|p| p.status == HTLCStatus::Succeeded)
@@ -1279,7 +1279,7 @@ mod tests {
         filter.status = None;
         filter.description = Some(substr.to_string());
         let result = block_on(db.get_payments_by_filter(Some(filter), paging, limit)).unwrap();
-        let expected_payments_vec: Vec<DBPaymentInfo> = payments
+        let expected_payments_vec: Vec<PaymentInfo> = payments
             .iter()
             .map(|p| p.clone())
             .filter(|p| p.description.contains(&substr))
