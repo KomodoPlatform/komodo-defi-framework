@@ -2,6 +2,7 @@ use super::htlc::{IrisHtlc, MsgCreateHtlc};
 #[cfg(not(target_arch = "wasm32"))]
 use super::tendermint_native_rpc::*;
 #[cfg(target_arch = "wasm32")] use super::tendermint_wasm_rpc::*;
+use crate::coin_errors::{MyAddressError, ValidatePaymentError};
 use crate::tendermint::htlc::MsgClaimHtlc;
 use crate::tendermint::htlc_proto::CreateHtlcProtoRep;
 use crate::utxo::sat_from_big_decimal;
@@ -9,10 +10,9 @@ use crate::{big_decimal_from_sat_unsigned, BalanceError, BalanceFut, BigDecimal,
             FoundSwapTxSpend, HistorySyncState, MarketCoinOps, MmCoin, NegotiateSwapContractAddrErr,
             RawTransactionFut, RawTransactionRequest, SearchForSwapTxSpendInput, SignatureResult, SwapOps, TradeFee,
             TradePreimageFut, TradePreimageResult, TradePreimageValue, TransactionDetails, TransactionEnum,
-            TransactionErr, TransactionFut, TransactionType, TxFeeDetails, TxMarshalingErr,
-            UnexpectedDerivationMethod, ValidateAddressResult, ValidatePaymentInput, VerificationResult,
-            WithdrawError, WithdrawFut, WithdrawRequest};
-use async_std::prelude::FutureExt as AsyncStdFutureExt;
+            TransactionFut, TransactionType, TxFeeDetails, TxMarshalingErr, UnexpectedDerivationMethod,
+            ValidateAddressResult, ValidatePaymentFut, ValidatePaymentInput, VerificationResult,
+            WatcherValidatePaymentInput, WithdrawError, WithdrawFut, WithdrawRequest};
 use async_trait::async_trait;
 use bitcrypto::{dhash160, sha256};
 use common::executor::Timer;
@@ -753,7 +753,7 @@ impl MmCoin for TendermintCoin {
 impl MarketCoinOps for TendermintCoin {
     fn ticker(&self) -> &str { &self.ticker }
 
-    fn my_address(&self) -> Result<String, String> { Ok(self.account_id.to_string()) }
+    fn my_address(&self) -> MmResult<String, MyAddressError> { Ok(self.account_id.to_string()) }
 
     fn get_public_key(&self) -> Result<String, MmError<UnexpectedDerivationMethod>> { todo!() }
 
@@ -1018,6 +1018,17 @@ impl SwapOps for TendermintCoin {
         Box::new(fut.boxed().compat())
     }
 
+    fn create_taker_spends_maker_payment_preimage(
+        &self,
+        _maker_payment_tx: &[u8],
+        _time_lock: u32,
+        _maker_pub: &[u8],
+        _secret_hash: &[u8],
+        _swap_unique_data: &[u8],
+    ) -> TransactionFut {
+        unimplemented!();
+    }
+
     fn send_taker_spends_maker_payment(
         &self,
         maker_payment_tx: &[u8],
@@ -1079,6 +1090,10 @@ impl SwapOps for TendermintCoin {
         Box::new(fut.boxed().compat())
     }
 
+    fn send_taker_spends_maker_payment_preimage(&self, preimage: &[u8], secret: &[u8]) -> TransactionFut {
+        unimplemented!();
+    }
+
     fn send_taker_refunds_payment(
         &self,
         taker_payment_tx: &[u8],
@@ -1120,14 +1135,21 @@ impl SwapOps for TendermintCoin {
         Box::new(fut.boxed().compat())
     }
 
-    fn validate_maker_payment(&self, input: ValidatePaymentInput) -> Box<dyn Future<Item = (), Error = String> + Send> {
+    fn validate_maker_payment(&self, input: ValidatePaymentInput) -> ValidatePaymentFut<()> {
         let fut = async move { Ok(()) };
         Box::new(fut.boxed().compat())
     }
 
-    fn validate_taker_payment(&self, input: ValidatePaymentInput) -> Box<dyn Future<Item = (), Error = String> + Send> {
+    fn validate_taker_payment(&self, input: ValidatePaymentInput) -> ValidatePaymentFut<()> {
         let fut = async move { Ok(()) };
         Box::new(fut.boxed().compat())
+    }
+
+    fn watcher_validate_taker_payment(
+        &self,
+        _input: WatcherValidatePaymentInput,
+    ) -> Box<dyn Future<Item = (), Error = MmError<ValidatePaymentError>> + Send> {
+        unimplemented!();
     }
 
     fn check_if_my_payment_sent(

@@ -1,6 +1,7 @@
 use super::*;
 use crate::coin_balance::{self, EnableCoinBalanceError, EnabledCoinBalanceParams, HDAccountBalance, HDAddressBalance,
                           HDWalletBalance, HDWalletBalanceOps};
+use crate::coin_errors::{MyAddressError, ValidatePaymentError};
 use crate::hd_pubkey::{ExtractExtendedPubkey, HDExtractPubkeyError, HDXPubExtractor};
 use crate::hd_wallet::{AccountUpdatingError, AddressDerivingResult, HDAccountMut, NewAccountCreatingError};
 use crate::hd_wallet_storage::HDWalletCoinWithStorageOps;
@@ -24,8 +25,8 @@ use crate::utxo::utxo_tx_history_v2::{UtxoMyAddressesHistoryError, UtxoTxDetails
 use crate::{eth, CanRefundHtlc, CoinBalance, CoinWithDerivationMethod, DelegationError, DelegationFut,
             GetWithdrawSenderAddress, NegotiateSwapContractAddrErr, PrivKeyBuildPolicy, SearchForSwapTxSpendInput,
             SignatureResult, StakingInfosFut, SwapOps, TradePreimageValue, TransactionFut, TxMarshalingErr,
-            UnexpectedDerivationMethod, ValidateAddressResult, ValidatePaymentInput, VerificationResult, WithdrawFut,
-            WithdrawSenderAddress};
+            UnexpectedDerivationMethod, ValidateAddressResult, ValidatePaymentFut, ValidatePaymentInput,
+            VerificationResult, WatcherValidatePaymentInput, WithdrawFut, WithdrawSenderAddress};
 use crypto::Bip44Chain;
 use ethereum_types::H160;
 use futures::{FutureExt, TryFutureExt};
@@ -571,6 +572,24 @@ impl SwapOps for QtumCoin {
         )
     }
 
+    fn create_taker_spends_maker_payment_preimage(
+        &self,
+        maker_payment_tx: &[u8],
+        time_lock: u32,
+        maker_pub: &[u8],
+        secret_hash: &[u8],
+        swap_unique_data: &[u8],
+    ) -> TransactionFut {
+        utxo_common::create_taker_spends_maker_payment_preimage(
+            self.clone(),
+            maker_payment_tx,
+            time_lock,
+            maker_pub,
+            secret_hash,
+            swap_unique_data,
+        )
+    }
+
     fn send_taker_spends_maker_payment(
         &self,
         maker_tx: &[u8],
@@ -590,6 +609,10 @@ impl SwapOps for QtumCoin {
             secret_hash,
             swap_unique_data,
         )
+    }
+
+    fn send_taker_spends_maker_payment_preimage(&self, preimage: &[u8], secret: &[u8]) -> TransactionFut {
+        utxo_common::send_taker_spends_maker_payment_preimage(self.clone(), preimage, secret)
     }
 
     fn send_taker_refunds_payment(
@@ -654,12 +677,19 @@ impl SwapOps for QtumCoin {
         )
     }
 
-    fn validate_maker_payment(&self, input: ValidatePaymentInput) -> Box<dyn Future<Item = (), Error = String> + Send> {
+    fn validate_maker_payment(&self, input: ValidatePaymentInput) -> ValidatePaymentFut<()> {
         utxo_common::validate_maker_payment(self, input)
     }
 
-    fn validate_taker_payment(&self, input: ValidatePaymentInput) -> Box<dyn Future<Item = (), Error = String> + Send> {
+    fn validate_taker_payment(&self, input: ValidatePaymentInput) -> ValidatePaymentFut<()> {
         utxo_common::validate_taker_payment(self, input)
+    }
+
+    fn watcher_validate_taker_payment(
+        &self,
+        input: WatcherValidatePaymentInput,
+    ) -> Box<dyn Future<Item = (), Error = MmError<ValidatePaymentError>> + Send> {
+        utxo_common::watcher_validate_taker_payment(self, input)
     }
 
     fn check_if_my_payment_sent(
@@ -716,7 +746,7 @@ impl SwapOps for QtumCoin {
 impl MarketCoinOps for QtumCoin {
     fn ticker(&self) -> &str { &self.utxo_arc.conf.ticker }
 
-    fn my_address(&self) -> Result<String, String> { utxo_common::my_address(self) }
+    fn my_address(&self) -> MmResult<String, MyAddressError> { utxo_common::my_address(self) }
 
     fn get_public_key(&self) -> Result<String, MmError<UnexpectedDerivationMethod>> {
         let pubkey = utxo_common::my_public_key(&self.utxo_arc)?;

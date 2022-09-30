@@ -1,3 +1,4 @@
+use crate::coin_errors::{MyAddressError, ValidatePaymentError};
 use crate::eth::{self, u256_to_big_decimal, wei_from_big_decimal, TryToAddress};
 use crate::qrc20::rpc_clients::{LogEntry, Qrc20ElectrumOps, Qrc20NativeOps, Qrc20RpcOps, TopicFilter, TxReceipt,
                                 ViewContractCallType};
@@ -18,8 +19,8 @@ use crate::{BalanceError, BalanceFut, CoinBalance, FeeApproxStage, FoundSwapTxSp
             SearchForSwapTxSpendInput, SignatureResult, SwapOps, TradeFee, TradePreimageError, TradePreimageFut,
             TradePreimageResult, TradePreimageValue, TransactionDetails, TransactionEnum, TransactionErr,
             TransactionFut, TransactionType, TxMarshalingErr, UnexpectedDerivationMethod, ValidateAddressResult,
-            ValidatePaymentInput, VerificationResult, WithdrawError, WithdrawFee, WithdrawFut, WithdrawRequest,
-            WithdrawResult};
+            ValidatePaymentFut, ValidatePaymentInput, VerificationResult, WatcherValidatePaymentInput, WithdrawError,
+            WithdrawFee, WithdrawFut, WithdrawRequest, WithdrawResult};
 use async_trait::async_trait;
 use bitcrypto::{dhash160, sha256};
 use chain::TransactionOutput;
@@ -418,6 +419,10 @@ impl From<ethabi::Error> for Qrc20AbiError {
     fn from(e: ethabi::Error) -> Qrc20AbiError { Qrc20AbiError::AbiError(e.to_string()) }
 }
 
+impl From<Qrc20AbiError> for ValidatePaymentError {
+    fn from(e: Qrc20AbiError) -> ValidatePaymentError { ValidatePaymentError::TxDeserializationError(e.to_string()) }
+}
+
 impl From<Qrc20AbiError> for GenerateTxError {
     fn from(e: Qrc20AbiError) -> Self { GenerateTxError::Internal(e.to_string()) }
 }
@@ -794,6 +799,17 @@ impl SwapOps for Qrc20Coin {
         Box::new(fut.boxed().compat())
     }
 
+    fn create_taker_spends_maker_payment_preimage(
+        &self,
+        _maker_payment_tx: &[u8],
+        _time_lock: u32,
+        _maker_pub: &[u8],
+        _secret_hash: &[u8],
+        _swap_unique_data: &[u8],
+    ) -> TransactionFut {
+        unimplemented!();
+    }
+
     fn send_taker_spends_maker_payment(
         &self,
         maker_payment_tx: &[u8],
@@ -815,6 +831,10 @@ impl SwapOps for Qrc20Coin {
                 .await
         };
         Box::new(fut.boxed().compat())
+    }
+
+    fn send_taker_spends_maker_payment_preimage(&self, _preimage: &[u8], _secret: &[u8]) -> TransactionFut {
+        unimplemented!();
     }
 
     fn send_taker_refunds_payment(
@@ -888,10 +908,15 @@ impl SwapOps for Qrc20Coin {
         Box::new(fut.boxed().compat())
     }
 
-    fn validate_maker_payment(&self, input: ValidatePaymentInput) -> Box<dyn Future<Item = (), Error = String> + Send> {
-        let payment_tx: UtxoTx = try_fus!(deserialize(input.payment_tx.as_slice()).map_err(|e| ERRL!("{:?}", e)));
-        let sender = try_fus!(self.contract_address_from_raw_pubkey(&input.other_pub));
-        let swap_contract_address = try_fus!(input.swap_contract_address.try_to_address());
+    fn validate_maker_payment(&self, input: ValidatePaymentInput) -> ValidatePaymentFut<()> {
+        let payment_tx: UtxoTx = try_f!(deserialize(input.payment_tx.as_slice()));
+        let sender = try_f!(self
+            .contract_address_from_raw_pubkey(&input.other_pub)
+            .map_to_mm(ValidatePaymentError::InvalidInput));
+        let swap_contract_address = try_f!(input
+            .swap_contract_address
+            .try_to_address()
+            .map_to_mm(ValidatePaymentError::InvalidInput));
 
         let selfi = self.clone();
         let fut = async move {
@@ -909,10 +934,15 @@ impl SwapOps for Qrc20Coin {
         Box::new(fut.boxed().compat())
     }
 
-    fn validate_taker_payment(&self, input: ValidatePaymentInput) -> Box<dyn Future<Item = (), Error = String> + Send> {
-        let swap_contract_address = try_fus!(input.swap_contract_address.try_to_address());
-        let payment_tx: UtxoTx = try_fus!(deserialize(input.payment_tx.as_slice()).map_err(|e| ERRL!("{:?}", e)));
-        let sender = try_fus!(self.contract_address_from_raw_pubkey(&input.other_pub));
+    fn validate_taker_payment(&self, input: ValidatePaymentInput) -> ValidatePaymentFut<()> {
+        let swap_contract_address = try_f!(input
+            .swap_contract_address
+            .try_to_address()
+            .map_to_mm(ValidatePaymentError::InvalidInput));
+        let payment_tx: UtxoTx = try_f!(deserialize(input.payment_tx.as_slice()));
+        let sender = try_f!(self
+            .contract_address_from_raw_pubkey(&input.other_pub)
+            .map_to_mm(ValidatePaymentError::InvalidInput));
 
         let selfi = self.clone();
         let fut = async move {
@@ -928,6 +958,13 @@ impl SwapOps for Qrc20Coin {
                 .await
         };
         Box::new(fut.boxed().compat())
+    }
+
+    fn watcher_validate_taker_payment(
+        &self,
+        _input: WatcherValidatePaymentInput,
+    ) -> Box<dyn Future<Item = (), Error = MmError<ValidatePaymentError>> + Send> {
+        unimplemented!();
     }
 
     fn check_if_my_payment_sent(
@@ -1009,7 +1046,7 @@ impl SwapOps for Qrc20Coin {
 impl MarketCoinOps for Qrc20Coin {
     fn ticker(&self) -> &str { &self.utxo.conf.ticker }
 
-    fn my_address(&self) -> Result<String, String> { utxo_common::my_address(self) }
+    fn my_address(&self) -> MmResult<String, MyAddressError> { utxo_common::my_address(self) }
 
     fn get_public_key(&self) -> Result<String, MmError<UnexpectedDerivationMethod>> {
         let pubkey = utxo_common::my_public_key(self.as_ref())?;
@@ -1388,7 +1425,7 @@ async fn qrc20_withdraw(coin: Qrc20Coin, req: WithdrawRequest) -> WithdrawResult
     let my_balance_change = &received_by_me - &qrc20_amount;
 
     // [`MarketCoinOps::my_address`] and [`UtxoCommonOps::display_address`] shouldn't fail
-    let my_address_string = coin.my_address().map_to_mm(WithdrawError::InternalError)?;
+    let my_address_string = coin.my_address()?;
     let to_address = to_addr.display_address().map_to_mm(WithdrawError::InternalError)?;
 
     let fee_details = Qrc20FeeDetails {

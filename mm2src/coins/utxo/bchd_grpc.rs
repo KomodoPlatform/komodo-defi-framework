@@ -1,7 +1,7 @@
 /// https://bchd.cash/
 /// https://bchd.fountainhead.cash/
 use super::bchd_pb::*;
-use crate::utxo::slp::SlpUnspent;
+use crate::{coin_errors::ValidatePaymentError, utxo::slp::SlpUnspent};
 use chain::OutPoint;
 use derive_more::Display;
 use futures::future::join_all;
@@ -70,6 +70,7 @@ pub enum ValidateSlpUtxosErrKind {
     UnexpectedUtxoInResponse {
         outpoint: OutPoint,
     },
+    InvalidSlpTxData(String),
 }
 
 #[derive(Debug, Display)]
@@ -79,11 +80,29 @@ pub struct ValidateSlpUtxosErr {
     kind: ValidateSlpUtxosErrKind,
 }
 
+impl From<ValidateSlpUtxosErr> for ValidatePaymentError {
+    fn from(err: ValidateSlpUtxosErr) -> Self {
+        match err.kind {
+            ValidateSlpUtxosErrKind::MultiReqErr(_) => Self::Transport(err.to_string()),
+            ValidateSlpUtxosErrKind::InvalidSlpTxData(_) => Self::WrongPaymentTx(err.to_string()),
+            _ => Self::InvalidRpcResponse(err.to_string()),
+        }
+    }
+}
+
 impl From<GrpcWebMultiUrlReqErr> for ValidateSlpUtxosErr {
     fn from(err: GrpcWebMultiUrlReqErr) -> Self {
-        ValidateSlpUtxosErr {
-            to_url: err.to_url.clone(),
-            kind: ValidateSlpUtxosErrKind::MultiReqErr(err),
+        match err.err {
+            // For some reason, BCHD responds with empty payload (Which is mapped to PostGrpcWebErr::PayloadTooShort error) in cases where an invalid UTXO is used with grpc-web.
+            // while it does provide meaningful error response when use with gRPC HTTP2 TLS.
+            PostGrpcWebErr::PayloadTooShort(e) => ValidateSlpUtxosErr {
+                to_url: err.to_url.clone(),
+                kind: ValidateSlpUtxosErrKind::InvalidSlpTxData(e),
+            },
+            _ => ValidateSlpUtxosErr {
+                to_url: err.to_url.clone(),
+                kind: ValidateSlpUtxosErrKind::MultiReqErr(err),
+            },
         }
     }
 }
@@ -304,7 +323,7 @@ mod bchd_grpc_tests {
         let token_id = H256::from("bb309e48930671582bea508f9a1d9b491e49b69be3d6f372dc08da2ac6e90eb7");
         let err = block_on(validate_slp_utxos(&[url], &slp_utxos, &token_id)).unwrap_err();
         match err.into_inner().kind {
-            ValidateSlpUtxosErrKind::MultiReqErr { .. } => (),
+            ValidateSlpUtxosErrKind::InvalidSlpTxData(_) => (),
             err @ _ => panic!("Unexpected error {:?}", err),
         }
     }

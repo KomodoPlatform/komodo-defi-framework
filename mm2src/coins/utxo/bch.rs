@@ -1,4 +1,5 @@
 use super::*;
+use crate::coin_errors::{MyAddressError, ValidatePaymentError};
 use crate::my_tx_history_v2::{CoinWithTxHistoryV2, MyTxHistoryErrorV2, MyTxHistoryTarget, TxDetailsBuilder,
                               TxHistoryStorage};
 use crate::tx_history_storage::{GetTxHistoryFilters, WalletId};
@@ -11,8 +12,8 @@ use crate::utxo::utxo_tx_history_v2::{UtxoMyAddressesHistoryError, UtxoTxDetails
 use crate::{BlockHeightAndTime, CanRefundHtlc, CoinBalance, CoinProtocol, CoinWithDerivationMethod,
             NegotiateSwapContractAddrErr, PrivKeyBuildPolicy, RawTransactionFut, RawTransactionRequest,
             SearchForSwapTxSpendInput, SignatureResult, SwapOps, TradePreimageValue, TransactionFut, TransactionType,
-            TxFeeDetails, TxMarshalingErr, UnexpectedDerivationMethod, ValidateAddressResult, ValidatePaymentInput,
-            VerificationResult, WithdrawFut};
+            TxFeeDetails, TxMarshalingErr, UnexpectedDerivationMethod, ValidateAddressResult, ValidatePaymentFut,
+            ValidatePaymentInput, VerificationResult, WatcherValidatePaymentInput, WithdrawFut};
 use common::log::warn;
 use derive_more::Display;
 use futures::{FutureExt, TryFutureExt};
@@ -873,6 +874,24 @@ impl SwapOps for BchCoin {
         )
     }
 
+    fn create_taker_spends_maker_payment_preimage(
+        &self,
+        maker_payment_tx: &[u8],
+        time_lock: u32,
+        maker_pub: &[u8],
+        secret_hash: &[u8],
+        swap_unique_data: &[u8],
+    ) -> TransactionFut {
+        utxo_common::create_taker_spends_maker_payment_preimage(
+            self.clone(),
+            maker_payment_tx,
+            time_lock,
+            maker_pub,
+            secret_hash,
+            swap_unique_data,
+        )
+    }
+
     fn send_taker_spends_maker_payment(
         &self,
         maker_payment_tx: &[u8],
@@ -892,6 +911,10 @@ impl SwapOps for BchCoin {
             secret_hash,
             swap_unique_data,
         )
+    }
+
+    fn send_taker_spends_maker_payment_preimage(&self, preimage: &[u8], secret: &[u8]) -> TransactionFut {
+        utxo_common::send_taker_spends_maker_payment_preimage(self.clone(), preimage, secret)
     }
 
     fn send_taker_refunds_payment(
@@ -956,12 +979,19 @@ impl SwapOps for BchCoin {
         )
     }
 
-    fn validate_maker_payment(&self, input: ValidatePaymentInput) -> Box<dyn Future<Item = (), Error = String> + Send> {
+    fn validate_maker_payment(&self, input: ValidatePaymentInput) -> ValidatePaymentFut<()> {
         utxo_common::validate_maker_payment(self, input)
     }
 
-    fn validate_taker_payment(&self, input: ValidatePaymentInput) -> Box<dyn Future<Item = (), Error = String> + Send> {
+    fn validate_taker_payment(&self, input: ValidatePaymentInput) -> ValidatePaymentFut<()> {
         utxo_common::validate_taker_payment(self, input)
+    }
+
+    fn watcher_validate_taker_payment(
+        &self,
+        input: WatcherValidatePaymentInput,
+    ) -> Box<dyn Future<Item = (), Error = MmError<ValidatePaymentError>> + Send> {
+        utxo_common::watcher_validate_taker_payment(self, input)
     }
 
     fn check_if_my_payment_sent(
@@ -1022,7 +1052,7 @@ fn total_unspent_value<'a>(unspents: impl IntoIterator<Item = &'a UnspentInfo>) 
 impl MarketCoinOps for BchCoin {
     fn ticker(&self) -> &str { &self.utxo_arc.conf.ticker }
 
-    fn my_address(&self) -> Result<String, String> { utxo_common::my_address(self) }
+    fn my_address(&self) -> MmResult<String, MyAddressError> { utxo_common::my_address(self) }
 
     fn get_public_key(&self) -> Result<String, MmError<UnexpectedDerivationMethod>> {
         let pubkey = utxo_common::my_public_key(&self.utxo_arc)?;
@@ -1215,7 +1245,7 @@ impl CoinWithTxHistoryV2 for BchCoin {
                 return MmError::err(MyTxHistoryErrorV2::InvalidTarget(error));
             },
         }
-        let my_address = self.my_address().map_to_mm(MyTxHistoryErrorV2::Internal)?;
+        let my_address = self.my_address()?;
         Ok(GetTxHistoryFilters::for_address(my_address))
     }
 }
@@ -1258,7 +1288,9 @@ impl UtxoTxHistoryOps for BchCoin {
     }
 
     async fn my_addresses_balances(&self) -> BalanceResult<HashMap<String, BigDecimal>> {
-        let my_address = self.my_address().map_to_mm(BalanceError::Internal)?;
+        let my_address = self
+            .my_address()
+            .map_err(|err| BalanceError::Internal(err.to_string()))?;
         let my_balance = self.my_balance().compat().await?;
         Ok(std::iter::once((my_address, my_balance.into_total())).collect())
     }

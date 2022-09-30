@@ -142,6 +142,22 @@ impl Mm2TestConf {
         }
     }
 
+    pub fn seednode_using_watchers(passphrase: &str, coins: &Json) -> Self {
+        Mm2TestConf {
+            conf: json!({
+                "gui": "nogui",
+                "netid": 9998,
+                "passphrase": passphrase,
+                "coins": coins,
+                "rpc_password": DEFAULT_RPC_PASSWORD,
+                "i_am_seed": true,
+                "use_watchers": true,
+            }),
+            rpc_password: DEFAULT_RPC_PASSWORD.into(),
+            local: None,
+        }
+    }
+
     pub fn light_node(passphrase: &str, coins: &Json, seednodes: &[&str]) -> Self {
         Mm2TestConf {
             conf: json!({
@@ -150,7 +166,23 @@ impl Mm2TestConf {
                 "passphrase": passphrase,
                 "coins": coins,
                 "rpc_password": DEFAULT_RPC_PASSWORD,
+                "seednodes": seednodes
+            }),
+            rpc_password: DEFAULT_RPC_PASSWORD.into(),
+            local: None,
+        }
+    }
+
+    pub fn watcher_light_node(passphrase: &str, coins: &Json, seednodes: &[&str]) -> Self {
+        Mm2TestConf {
+            conf: json!({
+                "gui": "nogui",
+                "netid": 9998,
+                "passphrase": passphrase,
+                "coins": coins,
+                "rpc_password": DEFAULT_RPC_PASSWORD,
                 "seednodes": seednodes,
+                "is_watcher": true
             }),
             rpc_password: DEFAULT_RPC_PASSWORD.into(),
             local: None,

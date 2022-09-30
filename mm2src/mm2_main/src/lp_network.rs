@@ -155,6 +155,12 @@ async fn process_p2p_message(
                 lp_swap::process_msg(ctx.clone(), split.next().unwrap_or_default(), &message.data).await;
                 to_propagate = true;
             },
+            Some(lp_swap::WATCHER_PREFIX) => {
+                if ctx.is_watcher() {
+                    lp_swap::process_watcher_msg(ctx.clone(), &message.data).await;
+                }
+                to_propagate = true;
+            },
             Some(lp_swap::TX_HELPER_PREFIX) => {
                 if let Some(pair) = split.next() {
                     if let Ok(Some(coin)) = lp_coinfind(&ctx, pair).await {
