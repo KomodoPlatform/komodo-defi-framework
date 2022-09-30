@@ -113,46 +113,54 @@ impl Qrc20Coin {
         secret_hash: Vec<u8>,
         amount: BigDecimal,
         expected_swap_contract_address: H160,
-    ) -> Result<(), String> {
+    ) -> Result<(), MmError<ValidatePaymentError>> {
         let expected_swap_id = qrc20_swap_id(time_lock, &secret_hash);
-        let status = try_s!(
-            self.payment_status(&expected_swap_contract_address, expected_swap_id.clone())
-                .await
-        );
+        let status = self
+            .payment_status(&expected_swap_contract_address, expected_swap_id.clone())
+            .await?;
         if status != eth::PAYMENT_STATE_SENT.into() {
-            return ERR!("Payment state is not PAYMENT_STATE_SENT, got {}", status);
+            return MmError::err(ValidatePaymentError::UnexpectedPaymentState(format!(
+                "Payment state is not PAYMENT_STATE_SENT, got {}",
+                status
+            )));
         }
 
         let expected_call_bytes = {
-            let expected_value = try_s!(wei_from_big_decimal(&amount, self.utxo.decimals));
-            let my_address = try_s!(self.utxo.derivation_method.iguana_or_err()).clone();
-            let expected_receiver = try_s!(qtum::contract_addr_from_utxo_addr(my_address));
-            try_s!(self.erc20_payment_call_bytes(
+            let expected_value = wei_from_big_decimal(&amount, self.utxo.decimals)?;
+            let my_address = self.utxo.derivation_method.iguana_or_err()?.clone();
+            let expected_receiver = qtum::contract_addr_from_utxo_addr(my_address)
+                .mm_err(|err| ValidatePaymentError::InternalError(err.to_string()))?;
+            self.erc20_payment_call_bytes(
                 expected_swap_id,
                 expected_value,
                 time_lock,
                 &secret_hash,
-                expected_receiver
-            ))
+                expected_receiver,
+            )?
         };
-
-        let erc20_payment = try_s!(self.erc20_payment_details_from_tx(&payment_tx).await);
+        let erc20_payment = self
+            .erc20_payment_details_from_tx(&payment_tx)
+            .await
+            .map_to_mm(ValidatePaymentError::TxDeserializationError)?;
         if erc20_payment.contract_call_bytes != expected_call_bytes {
-            return ERR!(
+            return MmError::err(ValidatePaymentError::WrongPaymentTx(format!(
                 "Unexpected 'erc20Payment' contract call bytes: {:?}",
                 erc20_payment.contract_call_bytes
-            );
+            )));
         }
 
         if sender != erc20_payment.sender {
-            return ERR!("Payment tx was sent from wrong address, expected {:?}", sender);
+            return MmError::err(ValidatePaymentError::WrongPaymentTx(format!(
+                "Payment tx {:?} was sent from wrong address, expected {:?}",
+                erc20_payment.sender, sender
+            )));
         }
 
         if expected_swap_contract_address != erc20_payment.swap_contract_address {
-            return ERR!(
-                "Payment tx was sent to wrong address, expected {:?}",
-                expected_swap_contract_address
-            );
+            return MmError::err(ValidatePaymentError::WrongPaymentTx(format!(
+                "Payment tx receiver arg {:?} is invalid, expected {:?}",
+                erc20_payment.swap_contract_address, expected_swap_contract_address,
+            )));
         }
 
         Ok(())
@@ -466,26 +474,28 @@ impl Qrc20Coin {
 
     /// Get payment status by `swap_id`.
     /// Do not use self swap_contract_address, because it could be updated during restart.
-    async fn payment_status(&self, swap_contract_address: &H160, swap_id: Vec<u8>) -> Result<U256, String> {
-        let decoded = try_s!(
-            self.utxo
-                .rpc_client
-                .rpc_contract_call(ViewContractCallType::Payments, swap_contract_address, &[
-                    Token::FixedBytes(swap_id)
-                ])
-                .compat()
-                .await
-        );
+    async fn payment_status(&self, swap_contract_address: &H160, swap_id: Vec<u8>) -> MmResult<U256, UtxoRpcError> {
+        let decoded = self
+            .utxo
+            .rpc_client
+            .rpc_contract_call(ViewContractCallType::Payments, swap_contract_address, &[
+                Token::FixedBytes(swap_id),
+            ])
+            .compat()
+            .await?;
         if decoded.len() < 3 {
-            return ERR!(
+            return MmError::err(UtxoRpcError::InvalidResponse(format!(
                 "Expected at least 3 tokens in \"payments\" call, found {}",
                 decoded.len()
-            );
+            )));
         }
 
         match decoded[2] {
             Token::Uint(state) => Ok(state),
-            _ => ERR!("Payment status must be uint, got {:?}", decoded[2]),
+            _ => MmError::err(UtxoRpcError::InvalidResponse(format!(
+                "Payment status must be uint, got {:?}",
+                decoded[2]
+            ))),
         }
     }
 
