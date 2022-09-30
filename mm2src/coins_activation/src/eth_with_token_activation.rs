@@ -179,7 +179,7 @@ impl PlatformWithTokensActivationOps for EthCoin {
     }
 
     async fn get_activation_result(&self) -> Result<EthWithTokensActivationResult, MmError<EthActivationV2Error>> {
-        let my_address = self.my_address().map_err(EthActivationV2Error::InternalError)?;
+        let my_address = self.my_address()?;
         let pubkey = self
             .get_public_key()
             .map_err(|e| EthActivationV2Error::InternalError(e.to_string()))?;

@@ -94,11 +94,12 @@ where
 
 #[derive(Debug)]
 pub enum PostGrpcWebErr {
-    InvalidRequest(String),
-    EncodeBody(String),
     DecodeBody(String),
-    Transport { uri: String, error: String },
+    EncodeBody(String),
+    InvalidRequest(String),
     Internal(String),
+    PayloadTooShort(String),
+    Transport { uri: String, error: String },
 }
 
 impl From<EncodeBodyError> for PostGrpcWebErr {
@@ -106,7 +107,12 @@ impl From<EncodeBodyError> for PostGrpcWebErr {
 }
 
 impl From<DecodeBodyError> for PostGrpcWebErr {
-    fn from(err: DecodeBodyError) -> Self { PostGrpcWebErr::DecodeBody(format!("{:?}", err)) }
+    fn from(err: DecodeBodyError) -> Self {
+        match err {
+            DecodeBodyError::PayloadTooShort => PostGrpcWebErr::PayloadTooShort(format!("{:?}", err)),
+            DecodeBodyError::DecodeError(_) => PostGrpcWebErr::DecodeBody(format!("{:?}", err)),
+        }
+    }
 }
 
 /// `http::Error` can appear on an HTTP request [`http::Builder::build`] building.

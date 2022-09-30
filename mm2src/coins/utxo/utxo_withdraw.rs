@@ -125,9 +125,7 @@ where
         let conf = &self.coin().as_ref().conf;
         let req = self.request();
 
-        let to = coin
-            .address_from_str(&req.to)
-            .map_to_mm(WithdrawError::InvalidAddress)?;
+        let to = coin.address_from_str(&req.to)?;
 
         let is_p2pkh = to.prefix == conf.pub_addr_prefix && to.t_addr_prefix == conf.pub_t_addr_prefix;
         let is_p2sh = to.prefix == conf.p2sh_addr_prefix && to.t_addr_prefix == conf.p2sh_t_addr_prefix;
@@ -431,7 +429,7 @@ where
 {
     pub fn new(coin: Coin, req: WithdrawRequest) -> Result<Self, MmError<WithdrawError>> {
         let my_address = coin.as_ref().derivation_method.iguana_or_err()?.clone();
-        let my_address_string = coin.my_address().map_to_mm(WithdrawError::InternalError)?;
+        let my_address_string = coin.my_address()?;
         Ok(StandardUtxoWithdraw {
             coin,
             req,
