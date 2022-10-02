@@ -1,4 +1,4 @@
-use common::executor::{spawn, Timer};
+use common::executor::Timer;
 #[cfg(not(target_arch = "wasm32"))] use common::log::error;
 use common::log::{LogArc, LogWeak};
 use itertools::Itertools;
@@ -8,8 +8,7 @@ use serde_json::Value;
 use std::sync::{atomic::Ordering, Arc};
 use std::{collections::HashMap, slice::Iter};
 
-use crate::MmMetricsError;
-use crate::{common::log::Tag, MetricsOps, MmMetricsResult, MmRecorder};
+use crate::{common::log::Tag, FutureSpawner, MetricsOps, MmMetricsError, MmMetricsResult, MmRecorder};
 
 type MetricLabels = Vec<Label>;
 type MetricNameValueMap = HashMap<String, PreparedMetric>;
@@ -106,10 +105,13 @@ impl Metrics {
 impl MetricsOps for Metrics {
     fn init(&self) { Metrics::default(); }
 
-    fn init_with_dashboard(&self, log_state: LogWeak, interval: f64) -> MmMetricsResult<()> {
+    fn init_with_dashboard<S>(&self, spawner: &S, log_state: LogWeak, interval: f64) -> MmMetricsResult<()>
+    where
+        S: FutureSpawner,
+    {
         let recorder = self.recorder.clone();
         let runner = TagObserver::log_tag_metrics(log_state, recorder, interval);
-        spawn(runner);
+        spawner.spawn(runner);
         Ok(())
     }
 
@@ -268,12 +270,16 @@ pub mod prometheus {
         pub userpass: String,
     }
 
-    pub fn spawn_prometheus_exporter(
+    pub fn spawn_prometheus_exporter<S>(
+        spawner: &S,
         metrics: MetricsWeak,
         address: SocketAddr,
         shutdown_detector: impl Future<Output = ()> + 'static + Send,
         credentials: Option<PrometheusCredentials>,
-    ) -> Result<(), MmMetricsError> {
+    ) -> Result<(), MmMetricsError>
+    where
+        S: FutureSpawner,
+    {
         let make_svc = make_service_fn(move |_conn| {
             let metrics = metrics.clone();
             let credentials = credentials.clone();
@@ -295,7 +301,7 @@ pub mod prometheus {
             futures::future::ready(())
         });
 
-        spawn(server);
+        spawner.spawn(server);
         Ok(())
     }
 

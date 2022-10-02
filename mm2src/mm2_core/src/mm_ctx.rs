@@ -18,6 +18,7 @@ use std::any::Any;
 use std::collections::hash_map::{Entry, HashMap};
 use std::collections::HashSet;
 use std::fmt;
+use std::future::Future;
 use std::ops::Deref;
 use std::path::{Path, PathBuf};
 use std::sync::{Arc, Mutex};
@@ -503,7 +504,9 @@ impl MmArc {
         if interval == 0.0 {
             self.metrics.init();
         } else {
-            try_s!(self.metrics.init_with_dashboard(self.log.weak(), interval));
+            try_s!(self
+                .metrics
+                .init_with_dashboard(&self.spawner, self.log.weak(), interval));
         }
 
         #[cfg(not(target_arch = "wasm32"))]
@@ -539,7 +542,13 @@ impl MmArc {
             }
         };
 
-        prometheus::spawn_prometheus_exporter(self.metrics.weak(), address, shutdown_detector, credentials)
+        prometheus::spawn_prometheus_exporter(
+            &self.spawner,
+            self.metrics.weak(),
+            address,
+            shutdown_detector,
+            credentials,
+        )
     }
 }
 
@@ -551,16 +560,25 @@ pub struct MmSpawner {
     inner: AbortableSpawnerShared,
 }
 
-impl Default for MmSpawner {
-    fn default() -> Self { MmSpawner::new() }
-}
-
 impl MmSpawner {
     pub fn new() -> MmSpawner {
         MmSpawner {
             inner: AbortableSpawner::new().into_shared(),
         }
     }
+}
+
+impl mm2_metrics::FutureSpawner for MmSpawner {
+    fn spawn<F>(&self, f: F)
+    where
+        F: Future<Output = ()> + Send + 'static,
+    {
+        self.inner.spawn(f)
+    }
+}
+
+impl Default for MmSpawner {
+    fn default() -> Self { MmSpawner::new() }
 }
 
 impl Deref for MmSpawner {

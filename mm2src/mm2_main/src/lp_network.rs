@@ -19,7 +19,6 @@
 //  marketmaker
 //
 use coins::lp_coinfind;
-use common::executor::spawn;
 use common::{log, Future01CompatExt};
 use derive_more::Display;
 use futures::{channel::oneshot, StreamExt};
@@ -171,7 +170,7 @@ async fn process_p2p_message(
                         };
 
                         let fut = coin.send_raw_tx_bytes(&message.data);
-                        spawn(async {
+                        ctx.spawner.spawn(async {
                             match fut.compat().await {
                                 Ok(id) => log::debug!("Transaction broadcasted successfully: {:?} ", id),
                                 // TODO (After https://github.com/KomodoPlatform/atomicDEX-API/pull/1433)

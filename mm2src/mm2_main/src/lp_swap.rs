@@ -62,7 +62,7 @@ use async_std::sync as async_std_sync;
 use coins::{lp_coinfind, MmCoinEnum, TradeFee, TransactionEnum};
 use common::log::{debug, warn};
 use common::{bits256, calc_total_pages,
-             executor::{spawn, spawn_abortable, AbortOnDropHandle, Timer},
+             executor::{spawn_abortable, AbortOnDropHandle, Timer},
              log::{error, info},
              now_ms, var, PagingOptions};
 use derive_more::Display;
@@ -385,7 +385,9 @@ impl SwapsContext {
             ctx.on_stop(Box::new(move || {
                 if let Some(shutdown_tx) = shutdown_tx.take() {
                     info!("on_stop] firing shutdown_tx!");
-                    spawn(async move {
+                    // We can easily spawn this future as it doesn't affect the context,
+                    // i.e. doesn't hold the context pointer.
+                    common::executor::spawn(async move {
                         shutdown_tx.send(()).await;
                     });
                     Ok(())

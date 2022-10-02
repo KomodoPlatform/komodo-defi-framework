@@ -2,7 +2,6 @@ use super::*;
 use crate::mm2::lp_dispatcher::dispatch_lp_event;
 use crate::mm2::lp_dispatcher::StopCtxEvent;
 use common::crash_reports::init_crash_reports;
-use common::executor::spawn;
 use common::log::{register_callback, FfiCallback};
 use common::{block_on, now_float};
 use gstuff::any_to_str;
@@ -248,9 +247,9 @@ pub extern "C" fn mm2_stop() -> i8 {
         return StopErr::StoppingAlready as i8;
     }
 
-    spawn(async move {
-        dispatch_lp_event(ctx.clone(), StopCtxEvent.into()).await;
-        let _ = ctx.stop();
+    let spawner = ctx.spawner.clone();
+    spawner.spawn(async move {
+        dispatch_lp_event(ctx, StopCtxEvent.into()).await;
     });
 
     StopErr::Ok as i8

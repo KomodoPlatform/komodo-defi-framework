@@ -121,7 +121,7 @@ mod wasm_lock {
                 }
                 debug!("SwapLock::drop] Finish");
             };
-            spawn(fut);
+            self.ctx.spawner.spawn(fut);
         }
     }
 

@@ -20,7 +20,7 @@
 
 use bitcrypto::sha256;
 use coins::register_balance_update_handler;
-use common::executor::{spawn, spawn_boxed, Timer};
+use common::executor::{spawn_boxed, Timer};
 use common::log::{info, warn};
 use crypto::{from_hw_error, CryptoCtx, CryptoInitError, HwError, HwProcessingError, HwRpcError, WithHwRpcError};
 use derive_more::Display;
