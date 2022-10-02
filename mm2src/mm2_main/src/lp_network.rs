@@ -113,7 +113,8 @@ pub async fn p2p_event_process_loop(ctx: MmWeak, mut rx: AdexEventRx, i_am_relay
         };
         match adex_event {
             Some(AdexBehaviourEvent::Message(peer_id, message_id, message)) => {
-                spawn(process_p2p_message(ctx, peer_id, message_id, message, i_am_relay));
+                let spawner = ctx.spawner.clone();
+                spawner.spawn(process_p2p_message(ctx, peer_id, message_id, message, i_am_relay));
             },
             Some(AdexBehaviourEvent::PeerRequest {
                 peer_id,

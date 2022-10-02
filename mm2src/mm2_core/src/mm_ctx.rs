@@ -435,7 +435,7 @@ impl MmArc {
                 }
             }
         };
-        crate::executor::spawn(fut);
+        self.spawner.spawn(fut);
     }
 
     #[cfg(feature = "track-ctx-pointer")]

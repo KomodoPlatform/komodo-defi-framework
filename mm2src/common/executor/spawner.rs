@@ -1,19 +1,24 @@
-use crate::executor::{spawn, spawn_abortable, spawn_abortable_with_settings, AbortOnDropHandle, SpawnSettings, Timer};
+use crate::executor::{spawn, AbortOnDropHandle, SpawnSettings, Timer};
 use futures::channel::oneshot;
-use futures::Future as Future03;
+use futures::future::{abortable, select, Either};
+use futures::{Future as Future03, FutureExt};
 use parking_lot::Mutex as PaMutex;
+use std::collections::HashMap;
 use std::sync::Arc;
 
 const DEFAULT_CRITICAL_TIMEOUT_S: f64 = 1.;
 
 pub type AbortableSpawnerShared = Arc<AbortableSpawner>;
 
+type FutureId = usize;
+type SpawnedFuturesShared<Handle> = Arc<PaMutex<SpawnedFutures<Handle>>>;
+
 /// Future spawner that ensures that the spawned futures will be aborted immediately
 /// or after a [`AbortableSpawner::critical_timeout_s`] timeout
 /// once an `AbortableSpawner` instance is dropped.
 pub struct AbortableSpawner {
-    abort_handlers: PaMutex<Vec<AbortOnDropHandle>>,
-    critical_handlers: PaMutex<Vec<oneshot::Sender<()>>>,
+    abort_handlers: SpawnedFuturesShared<AbortOnDropHandle>,
+    critical_handlers: SpawnedFuturesShared<oneshot::Sender<()>>,
     critical_timeout_s: f64,
 }
 
@@ -26,8 +31,8 @@ impl AbortableSpawner {
 
     pub fn with_critical_timeout(critical_timeout_s: f64) -> AbortableSpawner {
         AbortableSpawner {
-            abort_handlers: PaMutex::new(Vec::new()),
-            critical_handlers: PaMutex::new(Vec::new()),
+            abort_handlers: Arc::new(PaMutex::new(SpawnedFutures::new())),
+            critical_handlers: Arc::new(PaMutex::new(SpawnedFutures::new())),
             critical_timeout_s,
         }
     }
@@ -40,8 +45,7 @@ impl AbortableSpawner {
     where
         F: Future03<Output = ()> + Send + 'static,
     {
-        let abort_handle = spawn_abortable(fut);
-        self.abort_handlers.lock().push(abort_handle);
+        self.spawn_with_settings(fut, SpawnSettings::default())
     }
 
     /// Spawns the `fut` future with the specified `settings`.
@@ -50,12 +54,34 @@ impl AbortableSpawner {
     where
         F: Future03<Output = ()> + Send + 'static,
     {
-        let abort_handle = spawn_abortable_with_settings(fut, settings);
-        self.abort_handlers.lock().push(abort_handle);
-    }
+        let (abortable, handle) = abortable(fut);
+        let future_id = self.abort_handlers.lock().insert_handle(handle.into());
 
-    /// Register `abort_handle` of a spawned future.
-    pub fn register_spawned(&self, abort_handle: AbortOnDropHandle) { self.abort_handlers.lock().push(abort_handle); }
+        let weak_handlers = Arc::downgrade(&self.abort_handlers);
+
+        spawn(async move {
+            match abortable.await {
+                // The future has finished normally.
+                Ok(_) => {
+                    if let Some(on_finish) = settings.on_finish {
+                        log::log!(on_finish.level, "{}", on_finish.msg);
+                    }
+
+                    if let Some(handlers) = weak_handlers.upgrade() {
+                        handlers.lock().remove_finished(future_id);
+                    }
+                },
+                // The future has been aborted.
+                // Corresponding future handle seems to be dropped at the `SpawnedFutures`,
+                // so we don't need to [`SpawnedFutures::remove_finished`].
+                Err(_) => {
+                    if let Some(on_abort) = settings.on_abort {
+                        log::log!(on_abort.level, "{}", on_abort.msg);
+                    }
+                },
+            }
+        });
+    }
 
     /// Spawns the `fut` future for which it's critical to complete the execution,
     /// or at least try to complete.
@@ -64,24 +90,58 @@ impl AbortableSpawner {
     where
         F: Future03<Output = ()> + Send + 'static,
     {
+        self.spawn_critical_with_settings(fut, SpawnSettings::default())
+    }
+
+    /// Spawns the `fut` future for which it's critical to complete the execution,
+    /// or at least try to complete.
+    /// The future will be stopped after the specified [`AbortableSpawner::critical_timeout_s`] timeout.
+    pub fn spawn_critical_with_settings<F>(&self, fut: F, settings: SpawnSettings)
+    where
+        F: Future03<Output = ()> + Send + 'static,
+    {
+        let (abortable_fut, abort_handle) = abortable(fut);
+
         let (tx, rx) = oneshot::channel();
+        let future_id = self.critical_handlers.lock().insert_handle(tx);
+
         let critical_timeout_s = self.critical_timeout_s;
+        let weak_handlers = Arc::downgrade(&self.critical_handlers);
 
-        let abort_handle = spawn_abortable(fut);
-        let timeout_fut = async move {
-            // First, wait for the corresponding [`AbortableSpawner::critical_handlers`] sender (aka `tx`) is dropped.
-            let _ = rx.await;
+        let final_future = async move {
+            let wait_till_abort = async move {
+                // First, wait for the `tx` sender (i.e. corresponding [`AbortableSpawner::critical_handlers`] item) is dropped.
+                rx.await.ok();
 
-            // Then give the `fut` future to try to complete in [`AbortableSpawner::critical_timeout_s`] seconds.
-            Timer::sleep(critical_timeout_s).await;
+                // Then give the `fut` future to try to complete in `critical_timeout_s` seconds.
+                Timer::sleep(critical_timeout_s).await;
+            };
 
-            // Abort the given `fut` future.
-            drop(abort_handle);
+            match select(abortable_fut.boxed(), wait_till_abort.boxed()).await {
+                // The future has finished normally.
+                Either::Left(_) => {
+                    if let Some(on_finish) = settings.on_finish {
+                        log::log!(on_finish.level, "{}", on_finish.msg);
+                    }
+
+                    // We need to remove the future ID if the handler still exists.
+                    if let Some(handlers) = weak_handlers.upgrade() {
+                        handlers.lock().remove_finished(future_id);
+                    }
+                },
+                // `tx` has been removed from [`AbortableSpawner::critical_handlers`], *and* the `critical_timeout_s` timeout has expired.
+                Either::Right(_) => {
+                    if let Some(on_abort) = settings.on_abort {
+                        log::log!(on_abort.level, "{}", on_abort.msg);
+                    }
+
+                    // Abort the input `fut`.
+                    abort_handle.abort();
+                },
+            }
         };
 
-        // Spawn the timeout future globally, since we're sure that it will be aborted if `tx` is dropped.
-        spawn(timeout_fut);
-        self.critical_handlers.lock().push(tx);
+        spawn(final_future);
     }
 
     /// Aborts all spawned [`AbortableSpawner::abort_handlers`] futures,
@@ -93,10 +153,134 @@ impl AbortableSpawner {
     }
 }
 
+/// `SpawnedFutures` is the container of the spawned future handles `FutureHandle`.
+/// It holds the future handles, gives every future its *unique and available* `FutureId` identifier.
+/// Such `FutureId` identifier is used to remove `FutureHandle` associated with a finished future.
+struct SpawnedFutures<FutureHandle> {
+    abort_handlers: HashMap<FutureId, FutureHandle>,
+    finished_futures: Vec<FutureId>,
+    next_future_id: FutureId,
+}
+
+impl<FutureHandle> Default for SpawnedFutures<FutureHandle> {
+    fn default() -> Self { SpawnedFutures::new() }
+}
+
+impl<FutureHandle> SpawnedFutures<FutureHandle> {
+    fn new() -> Self {
+        SpawnedFutures {
+            abort_handlers: HashMap::new(),
+            finished_futures: Vec::new(),
+            next_future_id: 0,
+        }
+    }
+
+    /// Returns either a freed `FutureId` from [`SpawnedFutures::finished_futures`],
+    /// or the [`SpawnedFutures::next_future_id`] ID.
+    fn next_future_id(&mut self) -> FutureId {
+        match self.finished_futures.pop() {
+            Some(finished_id) => finished_id,
+            None => {
+                let prev = self.next_future_id;
+                self.next_future_id += 1;
+                // `next_future_id` can equal to 0 if there are `usize::MAX` spawned futures at the same time
+                // that is highly unlikely.
+                assert!(self.next_future_id > 0);
+                prev
+            },
+        }
+    }
+
+    /// Inserts the given `handle`.
+    fn insert_handle(&mut self, handle: FutureHandle) -> FutureId {
+        let future_id = self.next_future_id();
+
+        // We must be sure that we don't replace still not finished future handle.
+        // It can be possible if there are `usize::MAX` spawned futures at the same time
+        // that is highly unlikely.
+        assert!(self.abort_handlers.insert(future_id, handle).is_none());
+
+        future_id
+    }
+
+    /// [`SpawnedFuturesContainer::remove_finished`] is used internally only.
+    /// We are sure that `future_id` has been inserted via [`SpawnedFuturesContainer::insert_spawned`].
+    fn remove_finished(&mut self, future_id: FutureId) {
+        let _prev = self.abort_handlers.remove(&future_id);
+        #[cfg(test)]
+        assert!(_prev.is_some());
+
+        self.finished_futures.push(future_id);
+    }
+
+    fn clear(&mut self) {
+        self.abort_handlers.clear();
+        self.finished_futures.clear();
+        self.next_future_id = 0;
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
     use crate::block_on;
+
+    macro_rules! test_spawn_removes_when_finished_impl {
+        ($handlers:ident, $fun:ident) => {
+            let spawner = AbortableSpawner::with_critical_timeout(0.3);
+
+            spawner.$fun(async {});
+            block_on(Timer::sleep(0.1));
+
+            {
+                let mng = spawner.$handlers.lock();
+                assert!(mng.abort_handlers.is_empty());
+                assert_eq!(mng.finished_futures.len(), 1);
+                assert_eq!(mng.next_future_id, 1);
+            }
+
+            let fut1 = async { Timer::sleep(0.3).await };
+            let fut2 = async { Timer::sleep(0.7).await };
+            spawner.$fun(fut1);
+            spawner.$fun(fut2);
+
+            {
+                let mng = spawner.$handlers.lock();
+                assert_eq!(mng.abort_handlers.len(), 2);
+                // `FutureId` should be used from `finished_futures` container.
+                assert!(mng.finished_futures.is_empty());
+                // `next_future_id` should increase once
+                // because `finished_futures` contains only one free `FutureId`.
+                assert_eq!(mng.next_future_id, 2);
+            }
+
+            block_on(Timer::sleep(0.5));
+
+            {
+                let mng = spawner.$handlers.lock();
+                assert_eq!(mng.abort_handlers.len(), 1);
+                assert_eq!(mng.finished_futures.len(), 1);
+            }
+
+            block_on(Timer::sleep(0.4));
+
+            {
+                let mng = spawner.$handlers.lock();
+                assert!(mng.abort_handlers.is_empty());
+                assert_eq!(mng.finished_futures.len(), 2);
+            }
+        };
+    }
+
+    #[test]
+    fn test_spawn_critical_removes_when_finished() {
+        test_spawn_removes_when_finished_impl!(critical_handlers, spawn_critical);
+    }
+
+    #[test]
+    fn test_spawn_removes_when_finished() {
+        test_spawn_removes_when_finished_impl!(abort_handlers, spawn);
+    }
 
     #[test]
     fn test_spawn_critical() {
