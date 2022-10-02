@@ -3,10 +3,10 @@ use futures::channel::oneshot;
 use futures::future::{abortable, select, Either};
 use futures::{Future as Future03, FutureExt};
 use parking_lot::Mutex as PaMutex;
-use std::collections::HashMap;
 use std::sync::Arc;
 
 const DEFAULT_CRITICAL_TIMEOUT_S: f64 = 1.;
+const CAPACITY: usize = 1024;
 
 pub type AbortableSpawnerShared = Arc<AbortableSpawner>;
 
@@ -154,12 +154,14 @@ impl AbortableSpawner {
 }
 
 /// `SpawnedFutures` is the container of the spawned future handles `FutureHandle`.
-/// It holds the future handles, gives every future its *unique and available* `FutureId` identifier.
+/// It holds the future handles, gives every future its *unique* `FutureId` identifier
+/// (unique between spawned and alive futures).
+/// One a future is finished, its `FutureId` can be reassign to another future.
+/// This is necessary so that this container does not grow indefinitely.
 /// Such `FutureId` identifier is used to remove `FutureHandle` associated with a finished future.
 struct SpawnedFutures<FutureHandle> {
-    abort_handlers: HashMap<FutureId, FutureHandle>,
+    abort_handlers: Vec<FutureHandle>,
     finished_futures: Vec<FutureId>,
-    next_future_id: FutureId,
 }
 
 impl<FutureHandle> Default for SpawnedFutures<FutureHandle> {
@@ -169,54 +171,38 @@ impl<FutureHandle> Default for SpawnedFutures<FutureHandle> {
 impl<FutureHandle> SpawnedFutures<FutureHandle> {
     fn new() -> Self {
         SpawnedFutures {
-            abort_handlers: HashMap::new(),
-            finished_futures: Vec::new(),
-            next_future_id: 0,
-        }
-    }
-
-    /// Returns either a freed `FutureId` from [`SpawnedFutures::finished_futures`],
-    /// or the [`SpawnedFutures::next_future_id`] ID.
-    fn next_future_id(&mut self) -> FutureId {
-        match self.finished_futures.pop() {
-            Some(finished_id) => finished_id,
-            None => {
-                let prev = self.next_future_id;
-                self.next_future_id += 1;
-                // `next_future_id` can equal to 0 if there are `usize::MAX` spawned futures at the same time
-                // that is highly unlikely.
-                assert!(self.next_future_id > 0);
-                prev
-            },
+            abort_handlers: Vec::with_capacity(CAPACITY),
+            finished_futures: Vec::with_capacity(CAPACITY),
         }
     }
 
     /// Inserts the given `handle`.
     fn insert_handle(&mut self, handle: FutureHandle) -> FutureId {
-        let future_id = self.next_future_id();
-
-        // We must be sure that we don't replace still not finished future handle.
-        // It can be possible if there are `usize::MAX` spawned futures at the same time
-        // that is highly unlikely.
-        assert!(self.abort_handlers.insert(future_id, handle).is_none());
-
-        future_id
+        match self.finished_futures.pop() {
+            Some(finished_id) => {
+                self.abort_handlers[finished_id] = handle;
+                // The freed future ID.
+                finished_id
+            },
+            None => {
+                self.abort_handlers.push(handle);
+                // The last item ID.
+                self.abort_handlers.len() - 1
+            },
+        }
     }
 
     /// [`SpawnedFuturesContainer::remove_finished`] is used internally only.
-    /// We are sure that `future_id` has been inserted via [`SpawnedFuturesContainer::insert_spawned`].
-    fn remove_finished(&mut self, future_id: FutureId) {
-        let _prev = self.abort_handlers.remove(&future_id);
-        #[cfg(test)]
-        assert!(_prev.is_some());
-
-        self.finished_futures.push(future_id);
-    }
+    ///
+    /// # Note
+    ///
+    /// We don't need to remove an associated `FutureHandle`,
+    /// but later we can easily reset the item at `abort_handlers[future_id]` with a new `FutureHandle`.
+    fn remove_finished(&mut self, future_id: FutureId) { self.finished_futures.push(future_id); }
 
     fn clear(&mut self) {
         self.abort_handlers.clear();
         self.finished_futures.clear();
-        self.next_future_id = 0;
     }
 }
 
@@ -234,9 +220,9 @@ mod tests {
 
             {
                 let mng = spawner.$handlers.lock();
-                assert!(mng.abort_handlers.is_empty());
+                assert_eq!(mng.abort_handlers.len(), 1);
+                // The future should have finished already.
                 assert_eq!(mng.finished_futures.len(), 1);
-                assert_eq!(mng.next_future_id, 1);
             }
 
             let fut1 = async { Timer::sleep(0.3).await };
@@ -246,19 +232,18 @@ mod tests {
 
             {
                 let mng = spawner.$handlers.lock();
+                // `abort_handlers` should be extended once
+                // because `finished_futures` contained only one freed `FutureId`.
                 assert_eq!(mng.abort_handlers.len(), 2);
                 // `FutureId` should be used from `finished_futures` container.
                 assert!(mng.finished_futures.is_empty());
-                // `next_future_id` should increase once
-                // because `finished_futures` contains only one free `FutureId`.
-                assert_eq!(mng.next_future_id, 2);
             }
 
             block_on(Timer::sleep(0.5));
 
             {
                 let mng = spawner.$handlers.lock();
-                assert_eq!(mng.abort_handlers.len(), 1);
+                assert_eq!(mng.abort_handlers.len(), 2);
                 assert_eq!(mng.finished_futures.len(), 1);
             }
 
@@ -266,7 +251,7 @@ mod tests {
 
             {
                 let mng = spawner.$handlers.lock();
-                assert!(mng.abort_handlers.is_empty());
+                assert_eq!(mng.abort_handlers.len(), 2);
                 assert_eq!(mng.finished_futures.len(), 2);
             }
         };
