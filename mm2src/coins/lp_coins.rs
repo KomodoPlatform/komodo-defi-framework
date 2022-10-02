@@ -35,7 +35,7 @@
 
 use async_trait::async_trait;
 use base58::FromBase58Error;
-use common::executor::{AbortableSpawner, AbortableSpawnerShared};
+use common::executor::{AbortableSpawner, AbortableSpawnerShared, FutureSpawner};
 use common::{calc_total_pages, now_ms, ten, HttpStatusCode};
 use crypto::{Bip32Error, CryptoCtx, DerivationPath, HwRpcError, WithHwRpcError};
 use derive_more::Display;
@@ -57,6 +57,7 @@ use serde_json::{self as json, Value as Json};
 use std::cmp::Ordering;
 use std::collections::hash_map::{HashMap, RawEntryMut};
 use std::fmt;
+use std::future::Future as Future03;
 use std::num::NonZeroUsize;
 use std::ops::{Add, Deref};
 use std::path::PathBuf;
@@ -1822,16 +1823,25 @@ pub struct CoinFutureSpawner {
     inner: AbortableSpawnerShared,
 }
 
-impl Default for CoinFutureSpawner {
-    fn default() -> Self { CoinFutureSpawner::new() }
-}
-
 impl CoinFutureSpawner {
     pub fn new() -> CoinFutureSpawner {
         CoinFutureSpawner {
             inner: AbortableSpawner::new().into_shared(),
         }
     }
+}
+
+impl FutureSpawner for CoinFutureSpawner {
+    fn spawn<F>(&self, f: F)
+    where
+        F: Future03<Output = ()> + Send + 'static,
+    {
+        self.inner.spawn(f)
+    }
+}
+
+impl Default for CoinFutureSpawner {
+    fn default() -> Self { CoinFutureSpawner::new() }
 }
 
 impl Deref for CoinFutureSpawner {

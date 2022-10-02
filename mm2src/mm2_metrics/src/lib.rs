@@ -8,14 +8,13 @@ pub use metrics;
 #[cfg(not(target_arch = "wasm32"))]
 pub use mm_metrics::prometheus;
 
-use common::log::LogWeak;
+use common::{executor::FutureSpawner, log::LogWeak};
 use derive_more::Display;
 use mm2_err_handle::prelude::MmError;
 use mm_metrics::Metrics;
 use recorder::{MmRecorder, TryRecorder};
 use serde_json::Value as Json;
 use std::collections::HashMap;
-use std::future::Future;
 use std::sync::{Arc, Weak};
 
 pub type MmMetricsResult<T> = Result<T, MmError<MmMetricsError>>;
@@ -34,12 +33,6 @@ pub enum MmMetricsError {
     PrometheusServerError(String),
     #[display(fmt = "Warning Prometheus: unexpected URI {}", _0)]
     UnexpectedUri(String),
-}
-
-pub trait FutureSpawner {
-    fn spawn<F>(&self, f: F)
-    where
-        F: Future<Output = ()> + Send + 'static;
 }
 
 pub trait MetricsOps {

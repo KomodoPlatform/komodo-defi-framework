@@ -94,6 +94,7 @@ where
     let (coin_conf, protocol_info) = coin_conf_with_protocol(&ctx, &request.ticker)?;
 
     let coins_act_ctx = CoinsActivationContext::from_ctx(&ctx).map_to_mm(InitStandaloneCoinError::Internal)?;
+    let spawner = ctx.spawner.clone();
     let task = InitStandaloneCoinTask::<Standalone> {
         ctx,
         request,
@@ -102,7 +103,7 @@ where
     };
     let task_manager = Standalone::rpc_task_manager(&coins_act_ctx);
 
-    let task_id = RpcTaskManager::spawn_rpc_task(task_manager, task)
+    let task_id = RpcTaskManager::spawn_rpc_task(task_manager, &spawner, task)
         .mm_err(|e| InitStandaloneCoinError::Internal(e.to_string()))?;
 
     Ok(InitStandaloneCoinResponse { task_id })

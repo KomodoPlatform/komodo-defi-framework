@@ -6,7 +6,7 @@ use futures::Future as Future03;
 pub use native_executor::{spawn, spawn_after, spawn_boxed, Timer};
 
 mod spawner;
-pub use spawner::{AbortableSpawner, AbortableSpawnerShared};
+pub use spawner::{AbortableSpawner, AbortableSpawnerShared, FutureSpawner};
 
 mod abort_on_drop;
 pub use abort_on_drop::AbortOnDropHandle;

@@ -13,6 +13,13 @@ pub type AbortableSpawnerShared = Arc<AbortableSpawner>;
 type FutureId = usize;
 type SpawnedFuturesShared<Handle> = Arc<PaMutex<SpawnedFutures<Handle>>>;
 
+pub trait FutureSpawner {
+    /// Spawns the given `f` future.
+    fn spawn<F>(&self, f: F)
+    where
+        F: Future03<Output = ()> + Send + 'static;
+}
+
 /// Future spawner that ensures that the spawned futures will be aborted immediately
 /// or after a [`AbortableSpawner::critical_timeout_s`] timeout
 /// once an `AbortableSpawner` instance is dropped.
@@ -20,10 +27,6 @@ pub struct AbortableSpawner {
     abort_handlers: SpawnedFuturesShared<AbortOnDropHandle>,
     critical_handlers: SpawnedFuturesShared<oneshot::Sender<()>>,
     critical_timeout_s: f64,
-}
-
-impl Default for AbortableSpawner {
-    fn default() -> Self { AbortableSpawner::new() }
 }
 
 impl AbortableSpawner {
@@ -150,6 +153,19 @@ impl AbortableSpawner {
     pub fn abort_all(&self) {
         self.abort_handlers.lock().clear();
         self.critical_handlers.lock().clear();
+    }
+}
+
+impl Default for AbortableSpawner {
+    fn default() -> Self { AbortableSpawner::new() }
+}
+
+impl FutureSpawner for AbortableSpawner {
+    fn spawn<F>(&self, f: F)
+    where
+        F: Future03<Output = ()> + Send + 'static,
+    {
+        self.spawn(f)
     }
 }
 

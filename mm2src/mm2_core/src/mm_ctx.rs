@@ -1,7 +1,7 @@
 use arrayref::array_ref;
 #[cfg(any(not(target_arch = "wasm32"), feature = "track-ctx-pointer"))]
 use common::executor::Timer;
-use common::executor::{AbortableSpawner, AbortableSpawnerShared};
+use common::executor::{AbortableSpawner, AbortableSpawnerShared, FutureSpawner};
 use common::log::{self, LogLevel, LogState};
 use common::{bits256, cfg_native, cfg_wasm32, small_rng};
 use gstuff::{try_s, Constructible, ERR, ERRL};
@@ -568,7 +568,7 @@ impl MmSpawner {
     }
 }
 
-impl mm2_metrics::FutureSpawner for MmSpawner {
+impl FutureSpawner for MmSpawner {
     fn spawn<F>(&self, f: F)
     where
         F: Future<Output = ()> + Send + 'static,
