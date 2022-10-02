@@ -29,7 +29,6 @@ type WsTransportSender = mpsc::Sender<WsTransportEvent>;
 
 type IncomingShutdownTx = oneshot::Sender<()>;
 type OutgoingShutdownTx = mpsc::Sender<()>;
-type ShutdownRx = oneshot::Receiver<()>;
 
 type TransportClosure = Closure<dyn FnMut(JsValue)>;
 
@@ -198,7 +197,7 @@ impl ClosureReason {
     }
 }
 
-pub fn spawn_ws_transport(idx: ConnIdx, url: &str) -> InitWsResult<(WsOutgoingSender, WsEventReceiver)> {
+fn spawn_ws_transport(idx: ConnIdx, url: &str) -> InitWsResult<(WsOutgoingSender, WsEventReceiver)> {
     let (ws, closures, ws_transport_rx) = init_ws(url)?;
     let (incoming_tx, incoming_rx, incoming_shutdown) = incoming_channel(1024);
     let (outgoing_tx, outgoing_rx, outgoing_shutdown) = outgoing_channel(1024);
@@ -219,6 +218,7 @@ pub fn spawn_ws_transport(idx: ConnIdx, url: &str) -> InitWsResult<(WsOutgoingSe
         // do any action to move the `closures` into this async block to keep it alive until the `state_machine` finishes
         drop(closures);
     };
+    // We're sure that the state machine will finish immediately once `outgoing_tx` is dropped.
     spawn(fut);
 
     Ok((outgoing_tx, incoming_rx))
@@ -274,20 +274,16 @@ fn outgoing_channel(capacity: usize) -> (WsOutgoingSender, WsOutgoingReceiver, i
     (outgoing_tx, outgoing_rx, shutdown_rx)
 }
 
-fn into_one_shutdown(left: impl ShutdownFut, right: impl ShutdownFut) -> ShutdownRx {
+fn into_one_shutdown(left: impl ShutdownFut, right: impl ShutdownFut) -> impl ShutdownFut {
     use futures::future::{select, Either};
 
-    let (shutdown_tx, shutdown_rx) = oneshot::channel();
-    let fut = async move {
+    async move {
         match select(left, right).await {
             Either::Left((_left_output, right_fut)) => right_fut.await,
             Either::Right((_right_output, left_fut)) => left_fut.await,
         }
-        drop(shutdown_tx);
-    };
-
-    spawn(fut);
-    shutdown_rx
+    }
+    .boxed()
 }
 
 /// The JS closures that have to be alive until the corresponding WebSocket exists.
@@ -403,7 +399,7 @@ impl StateEventListener {
     /// Combine the `outgoing_stream` and `ws_stream` into one stream of the internal events.
     /// `ws_stream` - is a stream of the `WebSocket` events.
     /// `outgoing_stream` - is a stream of the outgoing messages came from outside (userspace).
-    fn new(outgoing_stream: WsOutgoingReceiver, ws_stream: WsTransportReceiver, shutdown_rx: ShutdownRx) -> Self {
+    fn new(outgoing_stream: WsOutgoingReceiver, ws_stream: WsTransportReceiver, shutdown_rx: impl ShutdownFut) -> Self {
         use futures::stream::select;
 
         let mapperd_outgoing = outgoing_stream.map(StateEvent::OutgoingMessage);
