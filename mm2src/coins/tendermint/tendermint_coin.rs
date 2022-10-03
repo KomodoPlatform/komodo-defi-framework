@@ -1200,7 +1200,7 @@ impl SwapOps for TendermintCoin {
                 );
             }
 
-            if tx_body.memo != uuid.to_string() {
+            if tx_body.memo != uuid {
                 return ERR!("Invalid memo: {}, expected {}", msg.from_address, uuid);
             }
             Ok(())
