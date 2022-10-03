@@ -4232,7 +4232,7 @@ fn test_utxo_validate_valid_and_invalid_pubkey() {
         &ctx, "RICK", &conf, &params, &[1u8; 32],
     ))
     .unwrap();
-    // Test expected to pass at this point as we're using a valid pubkey to validate against an valid pubkey
+    // Test expected to pass at this point as we're using a valid pubkey to validate against a valid pubkey
     assert!(coin.validate_other_pubkey(&[1u8; 32]).is_err());
     // Test expected to fail at this point as we're using a valid pubkey to validate against an invalid pubkey
     assert!(coin.validate_other_pubkey(&[1u8; 8]).is_err());
