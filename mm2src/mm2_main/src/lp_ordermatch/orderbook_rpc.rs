@@ -111,6 +111,9 @@ pub fn is_my_order(my_pub: &Option<String>, order_pubkey: &str) -> bool {
     my_pub.as_ref().map(|my| my == order_pubkey).unwrap_or(false)
 }
 
+// ZHTLC protocol coin uses random keypair to sign P2P messages per every order.
+// So, each ZHTLC order has unique «pubkey» field that doesn’t match node persistent pubkey derived from passphrase.
+// We can compare pubkeys from maker_orders and from asks or bids, to find our order.
 pub fn is_mine_zhtlc(my_orders_pubkeys: &Vec<String>, pubkey: &String) -> bool {
     let mut is_mine = false;
     for my_pubkey in my_orders_pubkeys {
@@ -165,7 +168,6 @@ pub async fn orderbook_rpc(ctx: MmArc, req: Json) -> Result<Response<Vec<u8>>, S
     if base_ticker == rel_ticker && base_coin_conf["protocol"] == rel_coin_conf["protocol"] {
         return ERR!("Base and rel coins have the same orderbook tickers and protocols.");
     }
-    // todo add info why we use another method of checking is_mine for ZHTLC
     let base_coin_protocol: CoinProtocol = try_s!(json::from_value(base_coin_conf["protocol"].clone()));
     let is_zhtlc = match base_coin_protocol {
         #[cfg(not(target_arch = "wasm32"))]
