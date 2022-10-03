@@ -218,8 +218,9 @@ fn spawn_ws_transport(idx: ConnIdx, url: &str) -> InitWsResult<(WsOutgoingSender
         // do any action to move the `closures` into this async block to keep it alive until the `state_machine` finishes
         drop(closures);
     };
-    // We're sure that the state machine will finish immediately once `outgoing_tx` is dropped.
-    spawn(fut);
+
+    // The state machine will finish almost immediately once `outgoing_tx` is dropped.
+    unsafe { spawn(fut) };
 
     Ok((outgoing_tx, incoming_rx))
 }

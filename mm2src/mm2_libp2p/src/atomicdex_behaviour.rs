@@ -7,6 +7,7 @@ use crate::{adex_ping::AdexPing,
             NetworkInfo, NetworkPorts, RelayAddress, RelayAddressError};
 use atomicdex_gossipsub::{Gossipsub, GossipsubConfigBuilder, GossipsubEvent, GossipsubMessage, MessageId, Topic,
                           TopicHash};
+use common::executor::{BoxFutureSpawner, FutureSpawner};
 use derive_more::Display;
 use futures::{channel::{mpsc::{channel, Receiver, Sender},
                         oneshot},
@@ -232,6 +233,28 @@ impl From<GossipsubEvent> for AdexBehaviourEvent {
     }
 }
 
+// TODO refactor with a weak spawner.
+pub struct P2pSpawner {
+    inner: Box<dyn BoxFutureSpawner + Send>,
+}
+
+impl P2pSpawner {
+    pub fn new(spawner: impl BoxFutureSpawner + Send + 'static) -> P2pSpawner {
+        P2pSpawner {
+            inner: Box::new(spawner),
+        }
+    }
+}
+
+impl FutureSpawner for P2pSpawner {
+    fn spawn<F>(&self, f: F)
+    where
+        F: Future<Output = ()> + Send + 'static,
+    {
+        self.inner.spawn_boxed(Box::new(Box::pin(f)))
+    }
+}
+
 /// AtomicDEX libp2p Network behaviour implementation
 #[derive(NetworkBehaviour)]
 #[behaviour(event_process = true)]
@@ -240,7 +263,7 @@ pub struct AtomicDexBehaviour {
     #[behaviour(ignore)]
     event_tx: Sender<AdexBehaviourEvent>,
     #[behaviour(ignore)]
-    spawn_fn: fn(Box<dyn Future<Output = ()> + Send + Unpin + 'static>) -> (),
+    spawner: P2pSpawner,
     #[behaviour(ignore)]
     cmd_rx: Receiver<AdexBehaviourCmd>,
     #[behaviour(ignore)]
@@ -258,7 +281,8 @@ impl AtomicDexBehaviour {
         }
     }
 
-    fn spawn(&self, fut: impl Future<Output = ()> + Send + 'static) { (self.spawn_fn)(Box::new(Box::pin(fut))) }
+    /// TODO consider using `SWARM_RUNTIME` instead.
+    fn spawn(&self, fut: impl Future<Output = ()> + Send + 'static) { self.spawner.spawn(fut) }
 
     fn process_cmd(&mut self, cmd: AdexBehaviourCmd) {
         match cmd {
@@ -609,14 +633,14 @@ impl NodeType {
 pub async fn spawn_gossipsub(
     netid: u16,
     force_key: Option<[u8; 32]>,
-    spawn_fn: fn(Box<dyn Future<Output = ()> + Send + Unpin + 'static>) -> (),
+    spawner: P2pSpawner,
     to_dial: Vec<RelayAddress>,
     node_type: NodeType,
     on_poll: impl Fn(&AtomicDexSwarm) + Send + 'static,
 ) -> Result<(Sender<AdexBehaviourCmd>, AdexEventRx, PeerId, AbortHandle), AdexBehaviourError> {
-    let (result_tx, result_rx) = futures::channel::oneshot::channel();
+    let (result_tx, result_rx) = oneshot::channel();
     let fut = async move {
-        let result = start_gossipsub(netid, force_key, spawn_fn, to_dial, node_type, on_poll);
+        let result = start_gossipsub(netid, force_key, spawner, to_dial, node_type, on_poll);
         result_tx.send(result).unwrap();
     };
 
@@ -638,7 +662,7 @@ pub async fn spawn_gossipsub(
 fn start_gossipsub(
     netid: u16,
     force_key: Option<[u8; 32]>,
-    spawn_fn: fn(Box<dyn Future<Output = ()> + Send + Unpin + 'static>) -> (),
+    spawner: P2pSpawner,
     to_dial: Vec<RelayAddress>,
     node_type: NodeType,
     on_poll: impl Fn(&AtomicDexSwarm) + Send + 'static,
@@ -717,7 +741,7 @@ fn start_gossipsub(
         let adex_behavior = AtomicDexBehaviour {
             floodsub,
             event_tx,
-            spawn_fn,
+            spawner,
             cmd_rx,
             netid,
             gossipsub,

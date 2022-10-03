@@ -257,11 +257,13 @@ mod tests {
         users.insert(("user2".to_owned(), "password2".to_owned()), 2);
         users.insert(("user3".to_owned(), "password3".to_owned()), 3);
 
-        spawn(async move {
-            for ch in credentials.chars() {
-                tx.send(ch).await.expect("!tx.try_send()");
-            }
-        });
+        unsafe {
+            spawn(async move {
+                for ch in credentials.chars() {
+                    tx.send(ch).await.expect("!tx.try_send()");
+                }
+            })
+        }
 
         let fut = async move {
             let initial_state: ReadingState = ReadingState { rx };

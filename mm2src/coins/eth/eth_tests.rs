@@ -75,6 +75,7 @@ fn eth_coin_for_test(
         logs_block_range: DEFAULT_LOGS_BLOCK_RANGE,
         nonce_lock: new_nonce_lock(),
         erc20_tokens_infos: Default::default(),
+        spawner: CoinFutureSpawner::new(),
     }));
     (ctx, eth_coin)
 }
@@ -244,6 +245,7 @@ fn send_and_refund_erc20_payment() {
         logs_block_range: DEFAULT_LOGS_BLOCK_RANGE,
         nonce_lock: new_nonce_lock(),
         erc20_tokens_infos: Default::default(),
+        spawner: CoinFutureSpawner::new(),
     }));
 
     let payment = coin
@@ -312,6 +314,7 @@ fn send_and_refund_eth_payment() {
         logs_block_range: DEFAULT_LOGS_BLOCK_RANGE,
         nonce_lock: new_nonce_lock(),
         erc20_tokens_infos: Default::default(),
+        spawner: CoinFutureSpawner::new(),
     }));
 
     let payment = coin
@@ -397,6 +400,7 @@ fn test_nonce_several_urls() {
         logs_block_range: DEFAULT_LOGS_BLOCK_RANGE,
         nonce_lock: new_nonce_lock(),
         erc20_tokens_infos: Default::default(),
+        spawner: CoinFutureSpawner::new(),
     }));
 
     log!("My address {:?}", coin.my_address);
@@ -447,6 +451,7 @@ fn test_wait_for_payment_spend_timeout() {
         logs_block_range: DEFAULT_LOGS_BLOCK_RANGE,
         nonce_lock: new_nonce_lock(),
         erc20_tokens_infos: Default::default(),
+        spawner: CoinFutureSpawner::new(),
     };
 
     let coin = EthCoin(Arc::new(coin));
@@ -507,6 +512,7 @@ fn test_search_for_swap_tx_spend_was_spent() {
         logs_block_range: DEFAULT_LOGS_BLOCK_RANGE,
         nonce_lock: new_nonce_lock(),
         erc20_tokens_infos: Default::default(),
+        spawner: CoinFutureSpawner::new(),
     }));
 
     // raw transaction bytes of https://ropsten.etherscan.io/tx/0xb1c987e2ac79581bb8718267b5cb49a18274890494299239d1d0dfdb58d6d76a
@@ -614,6 +620,7 @@ fn test_search_for_swap_tx_spend_was_refunded() {
         logs_block_range: DEFAULT_LOGS_BLOCK_RANGE,
         nonce_lock: new_nonce_lock(),
         erc20_tokens_infos: Default::default(),
+        spawner: CoinFutureSpawner::new(),
     }));
 
     // raw transaction bytes of https://ropsten.etherscan.io/tx/0xe18bbca69dea9a4624e1f5b0b2021d5fe4c8daa03f36084a8ba011b08e5cd938
@@ -1288,6 +1295,7 @@ fn test_message_hash() {
         logs_block_range: DEFAULT_LOGS_BLOCK_RANGE,
         nonce_lock: new_nonce_lock(),
         erc20_tokens_infos: Default::default(),
+        spawner: CoinFutureSpawner::new(),
     }));
 
     let message_hash = coin.sign_message_hash("test").unwrap();
@@ -1331,6 +1339,7 @@ fn test_sign_verify_message() {
         logs_block_range: DEFAULT_LOGS_BLOCK_RANGE,
         nonce_lock: new_nonce_lock(),
         erc20_tokens_infos: Default::default(),
+        spawner: CoinFutureSpawner::new(),
     }));
 
     let message = "test";

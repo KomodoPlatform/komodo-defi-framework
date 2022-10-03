@@ -20,13 +20,14 @@
 
 use bitcrypto::sha256;
 use coins::register_balance_update_handler;
-use common::executor::{spawn_boxed, Timer};
+use common::executor::Timer;
 use common::log::{info, warn};
 use crypto::{from_hw_error, CryptoCtx, CryptoInitError, HwError, HwProcessingError, HwRpcError, WithHwRpcError};
 use derive_more::Display;
 use enum_from::EnumFromTrait;
 use mm2_core::mm_ctx::{MmArc, MmCtx};
 use mm2_err_handle::prelude::*;
+use mm2_libp2p::atomicdex_behaviour::P2pSpawner;
 use mm2_libp2p::{spawn_gossipsub, AdexBehaviourError, NodeType, RelayAddress, RelayAddressError, WssCerts};
 use mm2_metrics::mm_gauge;
 use rpc_task::RpcTaskError;
@@ -465,7 +466,8 @@ pub async fn init_p2p(ctx: MmArc) -> P2PResult<()> {
         light_node_type(&ctx)?
     };
 
-    let spawn_result = spawn_gossipsub(netid, force_p2p_key, spawn_boxed, seednodes, node_type, move |swarm| {
+    let spawner = P2pSpawner::new(ctx.spawner.clone());
+    let spawn_result = spawn_gossipsub(netid, force_p2p_key, spawner, seednodes, node_type, move |swarm| {
         let behaviour = swarm.behaviour();
         mm_gauge!(
             ctx_on_poll.metrics,

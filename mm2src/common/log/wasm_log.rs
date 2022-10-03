@@ -101,7 +101,10 @@ impl WasmCallback {
                 }
             }
         };
-        spawn_local(fut);
+
+        // The future can be spawned safely since it doesn't hold any shared pointer,
+        // and will be stopped immediately once `WasmCallback` is dropped.
+        unsafe { spawn_local(fut) };
         WasmCallback { tx }
     }
 
@@ -115,7 +118,10 @@ impl WasmCallback {
                 console::log_1(&msg_js);
             }
         };
-        spawn_local(fut);
+
+        // The future can be spawned safely since it doesn't hold any shared pointer,
+        // and will be stopped immediately once `WasmCallback` is dropped.
+        unsafe { spawn_local(fut) };
         WasmCallback { tx }
     }
 }

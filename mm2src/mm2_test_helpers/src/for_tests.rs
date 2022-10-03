@@ -8,6 +8,7 @@ use rand::Rng;
 use serde::{Deserialize, Serialize};
 use serde_json::{self as json, json, Value as Json};
 use std::collections::HashMap;
+use std::future::Future;
 use std::net::IpAddr;
 use std::num::NonZeroUsize;
 use std::process::Child;
@@ -118,6 +119,8 @@ pub const ZOMBIE_LIGHTWALLETD_URLS: &[&str] = &["http://zombie.sirseven.me:443"]
 pub const PIRATE_ELECTRUMS: &[&str] = &["pirate.sirseven.me:10032"];
 pub const PIRATE_LIGHTWALLETD_URLS: &[&str] = &["http://pirate.sirseven.me:443"];
 const DEFAULT_RPC_PASSWORD: &str = "pass";
+
+pub fn spawn(future: impl Future<Output = ()> + Send + 'static) { unsafe { common::executor::spawn(future) } }
 
 pub struct Mm2TestConf {
     pub conf: Json,

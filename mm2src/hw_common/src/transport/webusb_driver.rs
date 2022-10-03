@@ -135,7 +135,10 @@ impl WebUsbWrapper {
                 }
             }
         };
-        spawn_local(fut);
+
+        // The spawned `event_loop` will stop almost immediately once `WebUsbWrapper` is dropped.
+        unsafe { spawn_local(fut) };
+
         Ok(WebUsbWrapper { event_tx })
     }
 
@@ -188,7 +191,9 @@ impl WebUsbWrapper {
                 device_info,
             });
 
-            spawn_local(WebUsbDevice::event_loop(device, device_event_rx));
+            // `event_loop` will stop almost immediately once corresponding `result_devices` item is dropped,
+            // so we can use `spawn_local` here.
+            unsafe { spawn_local(WebUsbDevice::event_loop(device, device_event_rx)) };
         }
         Ok(result_devices)
     }

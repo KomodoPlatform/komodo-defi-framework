@@ -382,6 +382,7 @@ mod test {
 
     use crate::{MetricsArc, MetricsOps};
 
+    use common::executor::AbortableSpawner;
     use common::{block_on,
                  executor::Timer,
                  log::{LogArc, LogState}};
@@ -485,8 +486,9 @@ mod test {
     fn test_dashboard() {
         let log_state = LogArc::new(LogState::in_memory());
         let mm_metrics = MetricsArc::new();
+        let spawner = AbortableSpawner::new();
 
-        mm_metrics.init_with_dashboard(log_state.weak(), 6.).unwrap();
+        mm_metrics.init_with_dashboard(&spawner, log_state.weak(), 6.).unwrap();
 
         let clock = Instant::now();
         let last = clock.elapsed();

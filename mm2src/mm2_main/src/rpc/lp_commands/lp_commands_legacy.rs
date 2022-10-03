@@ -212,16 +212,18 @@ pub async fn stop(ctx: MmArc) -> Result<Response<Vec<u8>>, String> {
     dispatch_lp_event(ctx.clone(), StopCtxEvent.into()).await;
     // Should delay the shutdown a bit in order not to trip the "stop" RPC call in unit tests.
     // Stopping immediately leads to the "stop" RPC call failing with the "errno 10054" sometimes.
-    //
-    // Please note we shouldn't use `MmCtx::spawner` to spawn this future,
-    // as all spawned futures will be dropped on `MmArc::stop`, so this future will be dropped as well,
-    // and it may lead to an undefined behaviour.
-    common::executor::spawn(async move {
+    let fut = async move {
         Timer::sleep(0.05).await;
         if let Err(e) = ctx.stop() {
             error!("Error stopping MmCtx: {}", e);
         }
-    });
+    };
+
+    // Please note we shouldn't use `MmCtx::spawner` to spawn this future,
+    // as all spawned futures will be dropped on `MmArc::stop`, so this future will be dropped as well,
+    // and it may lead to an undefined behaviour.
+    unsafe { common::executor::spawn(fut) }
+
     let res = json!({
         "result": "success"
     });

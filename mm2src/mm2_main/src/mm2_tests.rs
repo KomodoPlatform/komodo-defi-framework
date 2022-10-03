@@ -354,7 +354,7 @@ fn local_start_impl(folder: PathBuf, log_path: PathBuf, mut conf: Json) {
 /// Starts the WASM version of MM.
 #[cfg(target_arch = "wasm32")]
 fn wasm_start_impl(ctx: mm2_core::mm_ctx::MmArc) {
-    common::executor::spawn(async move {
+    mm2_test_helpers::for_tests::spawn(async move {
         super::lp_init(ctx).await.unwrap();
     })
 }

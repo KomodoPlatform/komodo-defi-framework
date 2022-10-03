@@ -385,11 +385,14 @@ impl SwapsContext {
             ctx.on_stop(Box::new(move || {
                 if let Some(shutdown_tx) = shutdown_tx.take() {
                     info!("on_stop] firing shutdown_tx!");
-                    // We can easily spawn this future as it doesn't affect the context,
-                    // i.e. doesn't hold the context pointer.
-                    common::executor::spawn(async move {
+                    let fut = async move {
                         shutdown_tx.send(()).await;
-                    });
+                    };
+
+                    // The spawned future doesn't hold any shared pointer,
+                    // and will stop almost immediately once the `shutdown_tx` sender is triggered.
+                    unsafe { common::executor::spawn(fut) };
+
                     Ok(())
                 } else {
                     ERR!("on_stop callback called twice!")
@@ -1055,23 +1058,8 @@ pub async fn swap_kick_starts(ctx: MmArc) -> Result<HashSet<String>, String> {
         coins.insert(maker_coin_ticker.clone());
         coins.insert(taker_coin_ticker.clone());
 
-        let ctx = ctx.clone();
-
-        // kick-start the swap in a separate thread.
-        #[cfg(not(target_arch = "wasm32"))]
-        std::thread::spawn(move || {
-            common::block_on(kickstart_thread_handler(
-                ctx.clone(),
-                swap,
-                maker_coin_ticker,
-                taker_coin_ticker,
-            ))
-        });
-
-        #[cfg(target_arch = "wasm32")]
-        common::executor::spawn(async move {
-            kickstart_thread_handler(ctx, swap, maker_coin_ticker, taker_coin_ticker).await
-        });
+        let fut = kickstart_thread_handler(ctx.clone(), swap, maker_coin_ticker, taker_coin_ticker);
+        ctx.spawner.spawn(fut);
     }
     Ok(coins)
 }

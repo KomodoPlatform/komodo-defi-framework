@@ -8,12 +8,13 @@ use crate::utxo::tx_cache::dummy_tx_cache::DummyVerboseCache;
 use crate::utxo::tx_cache::UtxoVerboseCacheOps;
 use crate::utxo::utxo_tx_history_v2::{utxo_history_loop, UtxoTxHistoryOps};
 use crate::{compare_transaction_details, UtxoStandardCoin};
-use common::executor::{spawn, Timer};
+use common::executor::Timer;
 use common::jsonrpc_client::JsonRpcErrorType;
 use common::PagingOptionsEnum;
 use crypto::privkey::key_pair_from_seed;
 use itertools::Itertools;
 use mm2_test_helpers::for_tests::mm_ctx_with_custom_db;
+use mm2_test_helpers::for_tests::spawn;
 use std::convert::TryFrom;
 use std::num::NonZeroUsize;
 

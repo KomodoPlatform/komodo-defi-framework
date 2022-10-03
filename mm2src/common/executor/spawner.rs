@@ -13,6 +13,14 @@ pub type AbortableSpawnerShared = Arc<AbortableSpawner>;
 type FutureId = usize;
 type SpawnedFuturesShared<Handle> = Arc<PaMutex<SpawnedFutures<Handle>>>;
 
+pub trait BoxFutureSpawner {
+    fn spawn_boxed(&self, f: Box<dyn Future03<Output = ()> + Send + Unpin + 'static>);
+}
+
+impl<S: FutureSpawner> BoxFutureSpawner for S {
+    fn spawn_boxed(&self, f: Box<dyn Future03<Output = ()> + Send + Unpin + 'static>) { self.spawn(f) }
+}
+
 pub trait FutureSpawner {
     /// Spawns the given `f` future.
     fn spawn<F>(&self, f: F)
@@ -62,7 +70,7 @@ impl AbortableSpawner {
 
         let weak_handlers = Arc::downgrade(&self.abort_handlers);
 
-        spawn(async move {
+        let fut = async move {
             match abortable.await {
                 // The future has finished normally.
                 Ok(_) => {
@@ -83,7 +91,8 @@ impl AbortableSpawner {
                     }
                 },
             }
-        });
+        };
+        unsafe { spawn(fut) };
     }
 
     /// Spawns the `fut` future for which it's critical to complete the execution,
@@ -144,7 +153,7 @@ impl AbortableSpawner {
             }
         };
 
-        spawn(final_future);
+        unsafe { spawn(final_future) };
     }
 
     /// Aborts all spawned [`AbortableSpawner::abort_handlers`] futures,

@@ -3,17 +3,17 @@ use futures::Future as Future03;
 
 #[cfg(not(target_arch = "wasm32"))] mod native_executor;
 #[cfg(not(target_arch = "wasm32"))]
-pub use native_executor::{spawn, spawn_after, spawn_boxed, Timer};
+pub use native_executor::{spawn, Timer};
 
 mod spawner;
-pub use spawner::{AbortableSpawner, AbortableSpawnerShared, FutureSpawner};
+pub use spawner::{AbortableSpawner, AbortableSpawnerShared, BoxFutureSpawner, FutureSpawner};
 
 mod abort_on_drop;
 pub use abort_on_drop::AbortOnDropHandle;
 
 #[cfg(target_arch = "wasm32")] mod wasm_executor;
 #[cfg(target_arch = "wasm32")]
-pub use wasm_executor::{spawn, spawn_boxed, spawn_local, Timer};
+pub use wasm_executor::{spawn, spawn_local, Timer};
 
 #[derive(Default)]
 pub struct SpawnSettings {
@@ -74,13 +74,15 @@ pub fn spawn_abortable_with_settings(
 ) -> AbortOnDropHandle {
     let (abortable, handle) = abortable(fut);
 
-    spawn(async move {
-        match (abortable.await, settings.on_finish, settings.on_abort) {
-            (Ok(_), Some(on_finish), _) => log::log!(on_finish.level, "{}", on_finish.msg),
-            (Err(_), _, Some(on_abort)) => log::log!(on_abort.level, "{}", on_abort.msg),
-            _ => (),
-        }
-    });
+    unsafe {
+        spawn(async move {
+            match (abortable.await, settings.on_finish, settings.on_abort) {
+                (Ok(_), Some(on_finish), _) => log::log!(on_finish.level, "{}", on_finish.msg),
+                (Err(_), _, Some(on_abort)) => log::log!(on_abort.level, "{}", on_abort.msg),
+                _ => (),
+            }
+        })
+    }
 
     AbortOnDropHandle::from(handle)
 }

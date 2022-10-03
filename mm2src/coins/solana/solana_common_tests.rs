@@ -86,6 +86,7 @@ pub fn solana_coin_for_test(seed: String, net_type: SolanaNet) -> (MmArc, Solana
     let key_pair = generate_key_pair_from_iguana_seed(seed);
     let my_address = key_pair.pubkey().to_string();
     let spl_tokens_infos = Arc::new(Mutex::new(HashMap::new()));
+    let spawner = CoinFutureSpawner::new();
 
     let solana_coin = SolanaCoin(Arc::new(SolanaCoinImpl {
         decimals,
@@ -94,6 +95,7 @@ pub fn solana_coin_for_test(seed: String, net_type: SolanaNet) -> (MmArc, Solana
         ticker,
         client,
         spl_tokens_infos,
+        spawner,
     }));
     (ctx, solana_coin)
 }
