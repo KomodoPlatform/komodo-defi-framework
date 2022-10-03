@@ -12,6 +12,8 @@ use mm2_number::BigDecimal;
 use std::cmp::min;
 use uuid::Uuid;
 
+#[cfg(not(test))] use common::now_ms;
+
 pub const WATCHER_PREFIX: TopicPrefix = "swpwtchr";
 const TAKER_SWAP_CONFIRMATIONS: u64 = 1;
 pub const TAKER_SWAP_ENTRY_TIMEOUT: u64 = 3600; // How long?
@@ -181,6 +183,18 @@ impl State for WaitForTakerPaymentSpend {
     type Result = ();
 
     async fn on_changed(self: Box<Self>, watcher_ctx: &mut WatcherContext) -> StateResult<WatcherContext, ()> {
+        #[cfg(not(test))]
+        {
+            // Sleep for half the locktime to allow the taker to spend the maker payment first
+            let now = now_ms() / 1000;
+            let wait_for_taker_until = watcher_ctx.data.swap_started_at + (watcher_ctx.data.lock_duration / 2);
+            let sleep_duration = (wait_for_taker_until - now + 1) as f64;
+
+            if now < wait_for_taker_until {
+                Timer::sleep(sleep_duration).await;
+            }
+        }
+
         let f = watcher_ctx.taker_coin.wait_for_tx_spend(
             &watcher_ctx.data.taker_payment_hex[..],
             watcher_ctx.data.taker_payment_lock,
