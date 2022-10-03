@@ -571,7 +571,7 @@ pub enum TakerSwapEvent {
     TakerFeeSent(TransactionIdentifier),
     TakerFeeSendFailed(SwapError),
     TakerPaymentInstructionsReceived(PaymentInstructions),
-    MakerPaymentReceived(TransactionIdentifier),
+    MakerPaymentReceived(Option<TransactionIdentifier>),
     MakerPaymentWaitConfirmStarted,
     MakerPaymentValidatedAndConfirmed,
     MakerPaymentValidateFailed(SwapError),
@@ -722,7 +722,7 @@ impl TakerSwap {
             TakerSwapEvent::TakerPaymentInstructionsReceived(instructions) => {
                 self.w().payment_instructions = Some(instructions)
             },
-            TakerSwapEvent::MakerPaymentReceived(tx) => self.w().maker_payment = Some(tx),
+            TakerSwapEvent::MakerPaymentReceived(tx) => self.w().maker_payment = tx,
             TakerSwapEvent::MakerPaymentWaitConfirmStarted => (),
             TakerSwapEvent::MakerPaymentValidatedAndConfirmed => {
                 self.maker_payment_confirmed.store(true, Ordering::Relaxed)
@@ -850,7 +850,8 @@ impl TakerSwap {
     }
 
     async fn get_my_payment_data(&self) -> Result<PaymentDataMsg, MmError<PaymentInstructionsErr>> {
-        // Todo: this will send the payment hash of the taker_fee to the maker if taker is lightning, maybe it's not needed
+        // Todo: this can be used to send the payment hash of the taker_fee to the maker if taker is lightning, if it's needed
+        // Todo: What about if the 2 coins are lightning do we need any of these messages??
         let payment_data = self.r().taker_fee.as_ref().unwrap().tx_hex.0.clone();
         let secret_hash = self.r().secret_hash.0.clone();
         let maker_amount = self.maker_amount.clone().into();
@@ -1178,24 +1179,6 @@ impl TakerSwap {
             },
         };
         drop(abort_send_handle);
-        let maker_payment = match self.maker_coin.tx_enum_from_bytes(payload.data()) {
-            Ok(p) => p,
-            Err(e) => {
-                return Ok((Some(TakerSwapCommand::Finish), vec![
-                    TakerSwapEvent::MakerPaymentValidateFailed(
-                        ERRL!("Error parsing the 'maker-payment': {:?}", e).into(),
-                    ),
-                ]))
-            },
-        };
-
-        let tx_hash = maker_payment.tx_hash();
-        info!("Got maker payment {:02x}", tx_hash);
-        let tx_ident = TransactionIdentifier {
-            tx_hex: maker_payment.tx_hex().into(),
-            tx_hash,
-        };
-
         let mut swap_events = vec![];
         if let Some(instructions) = payload.instructions() {
             match self.taker_coin.validate_instructions(
@@ -1215,6 +1198,34 @@ impl TakerSwap {
                 },
             }
         }
+
+        let maker_payment = match self.maker_coin.tx_enum_from_bytes(payload.data()) {
+            Ok(p) => p,
+            Err(e) => {
+                return Ok((Some(TakerSwapCommand::Finish), vec![
+                    TakerSwapEvent::MakerPaymentValidateFailed(
+                        ERRL!("Error parsing the 'maker-payment': {:?}", e).into(),
+                    ),
+                ]))
+            },
+        };
+
+        let tx_ident = match maker_payment {
+            Some(tx) => {
+                let tx_hash = tx.tx_hash();
+                info!("Got maker payment {:02x}", tx_hash);
+                Some(TransactionIdentifier {
+                    tx_hex: tx.tx_hex().into(),
+                    tx_hash,
+                })
+            },
+            None => {
+                // secret_hash is the hash for the lightning payment
+                info!("Got maker payment {:02x}", &self.r().secret_hash);
+                None
+            },
+        };
+
         swap_events.push(TakerSwapEvent::MakerPaymentReceived(tx_ident));
         swap_events.push(TakerSwapEvent::MakerPaymentWaitConfirmStarted);
 
@@ -1225,6 +1236,7 @@ impl TakerSwap {
         info!("Before wait confirm");
         let confirmations = self.r().data.maker_payment_confirmations;
         let f = self.maker_coin.wait_for_confirmations(
+            // Todo: remove unwrap since maker_payment is none for lightning
             &self.r().maker_payment.clone().unwrap().tx_hex,
             confirmations,
             self.r().data.maker_payment_requires_nota.unwrap_or(false),
@@ -1241,6 +1253,7 @@ impl TakerSwap {
         info!("After wait confirm");
 
         let validate_input = ValidatePaymentInput {
+            // Todo: remove unwrap since maker_payment is None for lightning
             payment_tx: self.r().maker_payment.clone().unwrap().tx_hex.0,
             time_lock: self.maker_payment_lock.load(Ordering::Relaxed) as u32,
             other_pub: self.r().other_maker_coin_htlc_pub.to_vec(),
@@ -1357,6 +1370,7 @@ impl TakerSwap {
         let mut swap_events = vec![TakerSwapEvent::TakerPaymentSent(tx_ident)];
         if self.ctx.use_watchers() {
             let preimage_fut = self.taker_coin.create_taker_spends_maker_payment_preimage(
+                // Todo: remove unwrap since maker_payment is None for lightning
                 &self.r().maker_payment.as_ref().unwrap().tx_hex,
                 self.maker_payment_lock.load(Ordering::Relaxed) as u32,
                 self.r().other_maker_coin_htlc_pub.as_slice(),
@@ -1403,6 +1417,7 @@ impl TakerSwap {
                 ));
             }
         }
+        // Todo: should not be sent for lightning since tx_hex is empty anyways
         let msg = SwapMsg::TakerPayment(tx_hex);
         let send_abort_handle =
             broadcast_swap_message_every(self.ctx.clone(), swap_topic(&self.uuid), msg, 600., self.p2p_privkey);
@@ -1483,6 +1498,7 @@ impl TakerSwap {
             ]));
         }
         let spend_fut = self.maker_coin.send_taker_spends_maker_payment(
+            // Todo: remove unwrap since maker_payment is None for lightning
             &self.r().maker_payment.clone().unwrap().tx_hex,
             self.maker_payment_lock.load(Ordering::Relaxed) as u32,
             &*self.r().other_maker_coin_htlc_pub,
@@ -1684,6 +1700,7 @@ impl TakerSwap {
 
         let maker_payment = match &self.r().maker_payment {
             Some(tx) => tx.tx_hex.0.clone(),
+            // Todo: for lightning maker_payment can be None
             None => return ERR!("No info about maker payment, swap is not recoverable"),
         };
 

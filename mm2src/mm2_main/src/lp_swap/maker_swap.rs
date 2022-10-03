@@ -279,13 +279,14 @@ impl MakerSwap {
             MakerSwapEvent::MakerPaymentInstructionsReceived(instructions) => {
                 self.w().payment_instructions = Some(instructions)
             },
-            MakerSwapEvent::TakerFeeValidated(tx) => self.w().taker_fee = Some(tx),
+            // Todo: should we have the hash for the taker fee for lightning here not None?
+            MakerSwapEvent::TakerFeeValidated(tx) => self.w().taker_fee = tx,
             MakerSwapEvent::TakerFeeValidateFailed(err) => self.errors.lock().push(err),
             MakerSwapEvent::MakerPaymentSent(tx) => self.w().maker_payment = Some(tx),
             MakerSwapEvent::MakerPaymentTransactionFailed(err) => self.errors.lock().push(err),
             MakerSwapEvent::MakerPaymentDataSendFailed(err) => self.errors.lock().push(err),
             MakerSwapEvent::MakerPaymentWaitConfirmFailed(err) => self.errors.lock().push(err),
-            MakerSwapEvent::TakerPaymentReceived(tx) => self.w().taker_payment = Some(tx),
+            MakerSwapEvent::TakerPaymentReceived(tx) => self.w().taker_payment = tx,
             MakerSwapEvent::TakerPaymentWaitConfirmStarted => (),
             MakerSwapEvent::TakerPaymentValidatedAndConfirmed => {
                 self.taker_payment_confirmed.store(true, Ordering::Relaxed)
@@ -669,47 +670,58 @@ impl MakerSwap {
             },
         };
 
-        let hash = taker_fee.tx_hash();
-        info!("Taker fee tx {:02x}", hash);
+        let fee_ident = match &taker_fee {
+            Some(fee) => {
+                let hash = fee.tx_hash();
+                info!("Taker fee tx {:02x}", hash);
+                Some(TransactionIdentifier {
+                    tx_hex: fee.tx_hex().into(),
+                    tx_hash: hash,
+                })
+            },
+            None => {
+                // Todo: when implementing fee for lightning, should add a log for taker fee payment hash
+                None
+            },
+        };
 
         let taker_amount = MmNumber::from(self.taker_amount.clone());
         let fee_amount = dex_fee_amount_from_taker_coin(&self.taker_coin, &self.r().data.maker_coin, &taker_amount);
         let other_taker_coin_htlc_pub = self.r().other_taker_coin_htlc_pub;
         let taker_coin_start_block = self.r().data.taker_coin_start_block;
 
-        let mut attempts = 0;
-        loop {
-            match self
-                .taker_coin
-                .validate_fee(
-                    &taker_fee,
-                    &*other_taker_coin_htlc_pub,
-                    &DEX_FEE_ADDR_RAW_PUBKEY,
-                    &fee_amount.clone().into(),
-                    taker_coin_start_block,
-                    self.uuid.as_bytes(),
-                )
-                .compat()
-                .await
-            {
-                Ok(_) => break,
-                Err(err) => {
-                    if attempts >= 3 {
-                        return Ok((Some(MakerSwapCommand::Finish), vec![
-                            MakerSwapEvent::TakerFeeValidateFailed(ERRL!("{}", err).into()),
-                        ]));
-                    } else {
-                        attempts += 1;
-                        Timer::sleep(10.).await;
-                    }
-                },
-            };
+        // Todo: when implementing fee for lightning this will be changed
+        if let Some(fee) = &taker_fee {
+            let mut attempts = 0;
+            loop {
+                match self
+                    .taker_coin
+                    .validate_fee(
+                        fee,
+                        &*other_taker_coin_htlc_pub,
+                        &DEX_FEE_ADDR_RAW_PUBKEY,
+                        &fee_amount.clone().into(),
+                        taker_coin_start_block,
+                        self.uuid.as_bytes(),
+                    )
+                    .compat()
+                    .await
+                {
+                    Ok(_) => break,
+                    Err(err) => {
+                        if attempts >= 3 {
+                            return Ok((Some(MakerSwapCommand::Finish), vec![
+                                MakerSwapEvent::TakerFeeValidateFailed(ERRL!("{}", err).into()),
+                            ]));
+                        } else {
+                            attempts += 1;
+                            Timer::sleep(10.).await;
+                        }
+                    },
+                };
+            }
         }
 
-        let fee_ident = TransactionIdentifier {
-            tx_hex: taker_fee.tx_hex().into(),
-            tx_hash: hash,
-        };
         swap_events.push(MakerSwapEvent::TakerFeeValidated(fee_ident));
 
         Ok((Some(MakerSwapCommand::SendPayment), swap_events))
@@ -828,6 +840,7 @@ impl MakerSwap {
             &self.uuid,
             wait_duration,
         );
+        // Todo: taker_payment should be a message on lightning network not a swap message
         let payload = match recv_fut.await {
             Ok(p) => p,
             Err(e) => {
@@ -855,11 +868,19 @@ impl MakerSwap {
             },
         };
 
-        let tx_hash = taker_payment.tx_hash();
-        info!("Taker payment tx {:02x}", tx_hash);
-        let tx_ident = TransactionIdentifier {
-            tx_hex: taker_payment.tx_hex().into(),
-            tx_hash,
+        let tx_ident = match taker_payment {
+            Some(tx) => {
+                let tx_hash = tx.tx_hash();
+                info!("Taker payment tx {:02x}", tx_hash);
+                Some(TransactionIdentifier {
+                    tx_hex: tx.tx_hex().into(),
+                    tx_hash,
+                })
+            },
+            None => {
+                info!("Taker payment tx {:02x}", BytesJson::new(self.secret_hash()));
+                None
+            },
         };
 
         Ok((Some(MakerSwapCommand::ValidateTakerPayment), vec![
@@ -1419,13 +1440,13 @@ pub enum MakerSwapEvent {
     Negotiated(TakerNegotiationData),
     NegotiateFailed(SwapError),
     MakerPaymentInstructionsReceived(PaymentInstructions),
-    TakerFeeValidated(TransactionIdentifier),
+    TakerFeeValidated(Option<TransactionIdentifier>),
     TakerFeeValidateFailed(SwapError),
     MakerPaymentSent(TransactionIdentifier),
     MakerPaymentTransactionFailed(SwapError),
     MakerPaymentDataSendFailed(SwapError),
     MakerPaymentWaitConfirmFailed(SwapError),
-    TakerPaymentReceived(TransactionIdentifier),
+    TakerPaymentReceived(Option<TransactionIdentifier>),
     TakerPaymentWaitConfirmStarted,
     TakerPaymentValidatedAndConfirmed,
     TakerPaymentValidateFailed(SwapError),

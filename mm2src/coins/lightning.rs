@@ -17,12 +17,12 @@ use crate::utxo::utxo_common::{big_decimal_from_sat, big_decimal_from_sat_unsign
 use crate::utxo::{sat_from_big_decimal, BlockchainNetwork};
 use crate::{BalanceFut, CoinBalance, FeeApproxStage, FoundSwapTxSpend, HistorySyncState, MarketCoinOps, MmCoin,
             MyAddressError, NegotiateSwapContractAddrErr, PaymentInstructions, PaymentInstructionsErr,
-            RawTransactionFut, RawTransactionRequest, SearchForSwapTxSpendInput, SignatureError, SignatureResult,
-            SwapOps, TradeFee, TradePreimageFut, TradePreimageResult, TradePreimageValue, Transaction,
-            TransactionEnum, TransactionFut, TxMarshalingErr, UnexpectedDerivationMethod, UtxoStandardCoin,
-            ValidateAddressResult, ValidateInstructionsErr, ValidatePaymentError, ValidatePaymentFut,
-            ValidatePaymentInput, VerificationError, VerificationResult, WatcherValidatePaymentInput, WithdrawError,
-            WithdrawFut, WithdrawRequest};
+            RawTransactionError, RawTransactionFut, RawTransactionRequest, SearchForSwapTxSpendInput, SignatureError,
+            SignatureResult, SwapOps, TradeFee, TradePreimageFut, TradePreimageResult, TradePreimageValue,
+            Transaction, TransactionEnum, TransactionFut, TxMarshalingErr, UnexpectedDerivationMethod,
+            UtxoStandardCoin, ValidateAddressResult, ValidateInstructionsErr, ValidatePaymentError,
+            ValidatePaymentFut, ValidatePaymentInput, VerificationError, VerificationResult,
+            WatcherValidatePaymentInput, WithdrawError, WithdrawFut, WithdrawRequest};
 use async_trait::async_trait;
 use bitcoin::bech32::ToBase32;
 use bitcoin::hashes::Hash;
@@ -595,7 +595,7 @@ impl SwapOps for LightningCoin {
         &self,
         _other_side_address: Option<&[u8]>,
     ) -> Result<Option<BytesJson>, MmError<NegotiateSwapContractAddrErr>> {
-        unimplemented!()
+        Ok(None)
     }
 
     fn derive_htlc_key_pair(&self, _swap_unique_data: &[u8]) -> KeyPair { unimplemented!() }
@@ -757,11 +757,8 @@ impl MarketCoinOps for LightningCoin {
         unimplemented!()
     }
 
-    // Todo: Implement this when implementing swaps for lightning as it's is used mainly for swaps
-    fn tx_enum_from_bytes(&self, _bytes: &[u8]) -> Result<TransactionEnum, MmError<TxMarshalingErr>> {
-        MmError::err(TxMarshalingErr::NotSupported(
-            "tx_enum_from_bytes is not supported for Lightning yet.".to_string(),
-        ))
+    fn tx_enum_from_bytes(&self, _bytes: &[u8]) -> Result<Option<TransactionEnum>, MmError<TxMarshalingErr>> {
+        Ok(None)
     }
 
     fn current_block(&self) -> Box<dyn Future<Item = u64, Error = String> + Send> { Box::new(futures01::future::ok(0)) }
@@ -786,8 +783,13 @@ impl MarketCoinOps for LightningCoin {
 impl MmCoin for LightningCoin {
     fn is_asset_chain(&self) -> bool { false }
 
-    fn get_raw_transaction(&self, req: RawTransactionRequest) -> RawTransactionFut {
-        Box::new(self.platform_coin().get_raw_transaction(req))
+    fn get_raw_transaction(&self, _req: RawTransactionRequest) -> RawTransactionFut {
+        let fut = async move {
+            MmError::err(RawTransactionError::InternalError(
+                "get_raw_transaction method is not supported for lightning, please use get_payment_details method instead.".into(),
+            ))
+        };
+        Box::new(fut.boxed().compat())
     }
 
     fn withdraw(&self, _req: WithdrawRequest) -> WithdrawFut {

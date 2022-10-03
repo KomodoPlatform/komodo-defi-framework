@@ -722,7 +722,7 @@ pub trait MarketCoinOps {
         swap_contract_address: &Option<BytesJson>,
     ) -> TransactionFut;
 
-    fn tx_enum_from_bytes(&self, bytes: &[u8]) -> Result<TransactionEnum, MmError<TxMarshalingErr>>;
+    fn tx_enum_from_bytes(&self, bytes: &[u8]) -> Result<Option<TransactionEnum>, MmError<TxMarshalingErr>>;
 
     fn current_block(&self) -> Box<dyn Future<Item = u64, Error = String> + Send>;
 

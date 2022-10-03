@@ -346,6 +346,7 @@ impl LightningEventHandler {
                 None => {
                     // Free the htlc immediately if we don't have the preimage required to claim the payment
                     // to allow for this inbound liquidity to be used for other inbound payments.
+                    // Todo: this should be avoided for swaps except on refund
                     self.channel_manager.fail_htlc_backwards(payment_hash);
                     return;
                 },

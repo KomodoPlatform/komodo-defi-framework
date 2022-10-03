@@ -215,9 +215,10 @@ fn convert_taker_to_maker_events(
             // Todo: does the taker need to retrieve the invoice from here?? also look in maker_swap.rs for mirror
             TakerSwapEvent::MakerPaymentReceived(tx_ident) => {
                 if let Some(taker_fee_ident) = taker_fee_ident.take() {
-                    push_event!(MakerSwapEvent::TakerFeeValidated(taker_fee_ident));
+                    push_event!(MakerSwapEvent::TakerFeeValidated(Some(taker_fee_ident)));
                 }
-                push_event!(MakerSwapEvent::MakerPaymentSent(tx_ident))
+                // Todo: remove unwrap, we can
+                push_event!(MakerSwapEvent::MakerPaymentSent(tx_ident.unwrap()))
             },
             TakerSwapEvent::MakerPaymentValidateFailed(_)
             | TakerSwapEvent::MakerPaymentWaitConfirmFailed(_)
@@ -234,7 +235,7 @@ fn convert_taker_to_maker_events(
                 return events;
             },
             TakerSwapEvent::TakerPaymentSent(tx_ident) => {
-                push_event!(MakerSwapEvent::TakerPaymentReceived(tx_ident));
+                push_event!(MakerSwapEvent::TakerPaymentReceived(Some(tx_ident)));
                 // Please note we have not to push `TakerPaymentValidatedAndConfirmed` since we could actually decline it.
                 push_event!(MakerSwapEvent::TakerPaymentWaitConfirmStarted);
             },
@@ -417,7 +418,8 @@ fn convert_maker_to_taker_events(
             error: format!("Origin Maker error event: {:?}", event),
         };
         match event {
-            MakerSwapEvent::TakerFeeValidated(tx_ident) => push_event!(TakerSwapEvent::TakerFeeSent(tx_ident)),
+            // Todo: remove unwrap by making tx_ident and enum
+            MakerSwapEvent::TakerFeeValidated(tx_ident) => push_event!(TakerSwapEvent::TakerFeeSent(tx_ident.unwrap())),
             MakerSwapEvent::TakerFeeValidateFailed(_) => {
                 push_event!(TakerSwapEvent::MakerPaymentValidateFailed(swap_error));
                 push_event!(TakerSwapEvent::Finished);
@@ -426,7 +428,7 @@ fn convert_maker_to_taker_events(
             },
             MakerSwapEvent::MakerPaymentSent(tx_ident) => {
                 // Todo: check this if a new event is added for other side instructions, also look in the mirror maker_swap.rs
-                push_event!(TakerSwapEvent::MakerPaymentReceived(tx_ident));
+                push_event!(TakerSwapEvent::MakerPaymentReceived(Some(tx_ident)));
                 // Please note we have not to push `MakerPaymentValidatedAndConfirmed` since we could actually decline it.
                 push_event!(TakerSwapEvent::MakerPaymentWaitConfirmStarted);
             },
@@ -441,7 +443,8 @@ fn convert_maker_to_taker_events(
             },
             MakerSwapEvent::TakerPaymentReceived(tx_ident) => {
                 push_event!(TakerSwapEvent::MakerPaymentValidatedAndConfirmed);
-                push_event!(TakerSwapEvent::TakerPaymentSent(tx_ident.clone()));
+                // Todo: remove unwrap by making tx_ident an enum
+                push_event!(TakerSwapEvent::TakerPaymentSent(tx_ident.clone().unwrap()));
             },
             MakerSwapEvent::TakerPaymentValidateFailed(_)
             | MakerSwapEvent::TakerPaymentSpendFailed(_)

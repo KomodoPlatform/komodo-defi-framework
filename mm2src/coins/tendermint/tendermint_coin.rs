@@ -598,7 +598,7 @@ impl MarketCoinOps for TendermintCoin {
         todo!()
     }
 
-    fn tx_enum_from_bytes(&self, bytes: &[u8]) -> Result<TransactionEnum, MmError<TxMarshalingErr>> {
+    fn tx_enum_from_bytes(&self, bytes: &[u8]) -> Result<Option<TransactionEnum>, MmError<TxMarshalingErr>> {
         MmError::err(TxMarshalingErr::NotSupported(
             "tx_enum_from_bytes is not supported for Tendermint yet.".to_string(),
         ))

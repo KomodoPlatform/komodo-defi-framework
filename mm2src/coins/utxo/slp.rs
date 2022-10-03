@@ -1149,7 +1149,7 @@ impl MarketCoinOps for SlpToken {
         )
     }
 
-    fn tx_enum_from_bytes(&self, bytes: &[u8]) -> Result<TransactionEnum, MmError<TxMarshalingErr>> {
+    fn tx_enum_from_bytes(&self, bytes: &[u8]) -> Result<Option<TransactionEnum>, MmError<TxMarshalingErr>> {
         self.platform_coin.tx_enum_from_bytes(bytes)
     }
 

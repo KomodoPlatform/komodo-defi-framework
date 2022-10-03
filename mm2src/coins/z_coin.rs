@@ -995,9 +995,9 @@ impl MarketCoinOps for ZCoin {
         )
     }
 
-    fn tx_enum_from_bytes(&self, bytes: &[u8]) -> Result<TransactionEnum, MmError<TxMarshalingErr>> {
+    fn tx_enum_from_bytes(&self, bytes: &[u8]) -> Result<Option<TransactionEnum>, MmError<TxMarshalingErr>> {
         ZTransaction::read(bytes)
-            .map(TransactionEnum::from)
+            .map(|tx| Some(tx.into()))
             .map_to_mm(|e| TxMarshalingErr::InvalidInput(e.to_string()))
     }
 

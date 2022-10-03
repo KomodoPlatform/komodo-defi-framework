@@ -432,7 +432,7 @@ impl MarketCoinOps for SolanaCoin {
         unimplemented!()
     }
 
-    fn tx_enum_from_bytes(&self, bytes: &[u8]) -> Result<TransactionEnum, MmError<TxMarshalingErr>> {
+    fn tx_enum_from_bytes(&self, bytes: &[u8]) -> Result<Option<TransactionEnum>, MmError<TxMarshalingErr>> {
         MmError::err(TxMarshalingErr::NotSupported(
             "tx_enum_from_bytes is not supported for Solana yet.".to_string(),
         ))

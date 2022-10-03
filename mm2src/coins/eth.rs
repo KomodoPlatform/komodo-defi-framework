@@ -1428,9 +1428,9 @@ impl MarketCoinOps for EthCoin {
         Box::new(fut.boxed().compat())
     }
 
-    fn tx_enum_from_bytes(&self, bytes: &[u8]) -> Result<TransactionEnum, MmError<TxMarshalingErr>> {
+    fn tx_enum_from_bytes(&self, bytes: &[u8]) -> Result<Option<TransactionEnum>, MmError<TxMarshalingErr>> {
         signed_eth_tx_from_bytes(bytes)
-            .map(TransactionEnum::from)
+            .map(|tx| Some(tx.into()))
             .map_to_mm(TxMarshalingErr::InvalidInput)
     }
 
