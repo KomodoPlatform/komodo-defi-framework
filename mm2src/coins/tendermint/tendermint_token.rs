@@ -1,5 +1,6 @@
 /// Module containing implementation for Tendermint Tokens. They include native assets + IBC
 use super::{upper_hex, TendermintCoin, TendermintFeeDetails, GAS_LIMIT_DEFAULT, TIMEOUT_HEIGHT_DELTA};
+use crate::tendermint::TX_DEFAULT_MEMO;
 use crate::{big_decimal_from_sat_unsigned, utxo::sat_from_big_decimal, BalanceFut, BigDecimal, CoinBalance,
             FeeApproxStage, FoundSwapTxSpend, HistorySyncState, MarketCoinOps, MmCoin, MyAddressError,
             NegotiateSwapContractAddrErr, RawTransactionFut, RawTransactionRequest, SearchForSwapTxSpendInput,
@@ -75,7 +76,7 @@ impl TendermintToken {
 impl SwapOps for TendermintToken {
     fn send_taker_fee(&self, fee_addr: &[u8], amount: BigDecimal, uuid: &[u8]) -> TransactionFut {
         self.platform_coin
-            .send_taker_fee_for_denom(fee_addr, amount, self.denom.clone(), self.decimals)
+            .send_taker_fee_for_denom(fee_addr, amount, self.denom.clone(), self.decimals, uuid)
     }
 
     fn send_maker_payment(
@@ -451,7 +452,7 @@ impl MmCoin for TendermintToken {
             let timeout_height = current_block + TIMEOUT_HEIGHT_DELTA;
 
             let tx_raw = coin
-                .any_to_signed_raw_tx(account_info, msg_send, fee, timeout_height)
+                .any_to_signed_raw_tx(account_info, msg_send, fee, timeout_height, TX_DEFAULT_MEMO.into())
                 .map_to_mm(|e| WithdrawError::InternalError(e.to_string()))?;
 
             let tx_bytes = tx_raw
