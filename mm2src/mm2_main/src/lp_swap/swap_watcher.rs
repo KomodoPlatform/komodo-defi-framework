@@ -17,6 +17,7 @@ use uuid::Uuid;
 pub const WATCHER_PREFIX: TopicPrefix = "swpwtchr";
 const TAKER_SWAP_CONFIRMATIONS: u64 = 1;
 pub const TAKER_SWAP_ENTRY_TIMEOUT: u64 = 3600; // How long?
+const WAIT_FOR_TAKER_REFUND: u64 = 1200; // How long?
 
 struct WatcherContext {
     uuid: Uuid,
@@ -240,7 +241,12 @@ impl State for RefundTakerPayment {
     async fn on_changed(self: Box<Self>, watcher_ctx: &mut WatcherContext) -> StateResult<WatcherContext, ()> {
         let locktime = watcher_ctx.data.taker_payment_lock;
         loop {
-            match watcher_ctx.taker_coin.can_refund_htlc(locktime).compat().await {
+            match watcher_ctx
+                .taker_coin
+                .can_refund_htlc(locktime + WAIT_FOR_TAKER_REFUND)
+                .compat()
+                .await
+            {
                 Ok(CanRefundHtlc::CanRefundNow) => break,
                 Ok(CanRefundHtlc::HaveToWait(to_sleep)) => Timer::sleep(to_sleep as f64).await,
                 Err(e) => {
