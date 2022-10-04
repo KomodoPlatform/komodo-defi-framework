@@ -1432,7 +1432,10 @@ fn test_eth_validate_valid_and_invalid_pubkey() {
         "swap_contract_address": "0x9130b257d37a52e52f21054c4da3450c72f595ce",
     });
 
-    let priv_key = [1; 32];
+    let priv_key = [
+        3, 98, 177, 3, 108, 39, 234, 144, 131, 178, 103, 103, 127, 80, 230, 166, 53, 68, 147, 215, 42, 216, 144, 72,
+        172, 110, 180, 13, 123, 179, 10, 49,
+    ];
     let coin = block_on(eth_coin_from_conf_and_request(
         &ctx,
         "MATIC",
@@ -1443,7 +1446,13 @@ fn test_eth_validate_valid_and_invalid_pubkey() {
     ))
     .unwrap();
     // Test expected to pass at this point as we're using a valid pubkey to validate against a valid pubkey
-    assert!(coin.validate_other_pubkey(&[1u8; 32]).is_err());
-    // Test expected to fail at this point as we're using a valid pubkey to validate against an invalid pubkey
+    assert!(coin
+        .validate_other_pubkey(&[
+            3, 23, 183, 225, 206, 31, 159, 148, 195, 42, 67, 115, 146, 41, 248, 140, 11, 3, 51, 41, 111, 180, 110, 143,
+            114, 134, 88, 73, 198, 174, 52, 184, 78
+        ])
+        .is_ok());
+    // Test expected to fail at this point as we're using a valid pubkey to validate against an invalid pubkeys
+    assert!(coin.validate_other_pubkey(&[1u8; 20]).is_err());
     assert!(coin.validate_other_pubkey(&[1u8; 8]).is_err());
 }

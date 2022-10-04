@@ -4233,7 +4233,8 @@ fn test_utxo_validate_valid_and_invalid_pubkey() {
     ))
     .unwrap();
     // Test expected to pass at this point as we're using a valid pubkey to validate against a valid pubkey
-    assert!(coin.validate_other_pubkey(&[1u8; 32]).is_err());
-    // Test expected to fail at this point as we're using a valid pubkey to validate against an invalid pubkey
+    assert!(coin.validate_other_pubkey(&[1u8; 33]).is_ok());
+    // Test expected to fail at this point as we're using a valid pubkey to validate against an invalid pubkeys
+    assert!(coin.validate_other_pubkey(&[1u8; 20]).is_err());
     assert!(coin.validate_other_pubkey(&[1u8; 8]).is_err());
 }

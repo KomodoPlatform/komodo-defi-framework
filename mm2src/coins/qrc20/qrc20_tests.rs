@@ -1061,16 +1061,3 @@ fn test_send_contract_calls_recoverable_tx() {
         discriminant(&TransactionErr::TxRecoverable(TransactionEnum::from(tx), String::new()))
     );
 }
-
-#[test]
-fn test_qrc20_validate_valid_and_invalid_pubkey() {
-    let priv_key = [
-        3, 98, 177, 3, 108, 39, 234, 144, 131, 178, 103, 103, 127, 80, 230, 166, 53, 68, 147, 215, 42, 216, 144, 72,
-        172, 110, 180, 13, 123, 179, 10, 49,
-    ];
-    let (_ctx, coin) = qrc20_coin_for_test(&priv_key, None);
-    // Test expected to pass at this point as we're using a valid pubkey to validate against a valid pubkey
-    assert!(coin.validate_other_pubkey(&[1u8; 32]).is_err());
-    // Test expected to fail at this point as we're using a valid pubkey to validate against an invalid pubkey
-    assert!(coin.validate_other_pubkey(&[1u8; 8]).is_err());
-}
