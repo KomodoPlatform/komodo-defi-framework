@@ -1032,7 +1032,7 @@ impl TakerSwap {
             )]));
         };
 
-        if maker_data.secret_hash().len() != 20  {
+        if maker_data.secret_hash().len() != 20 {
             return Ok((Some(TakerSwapCommand::Finish), vec![TakerSwapEvent::NegotiateFailed(
                 ERRL!("!maker_data.secret_hash: secret_hash validation failed").into(),
             )]));
