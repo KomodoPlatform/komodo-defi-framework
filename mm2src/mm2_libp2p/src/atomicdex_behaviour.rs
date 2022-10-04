@@ -3,16 +3,16 @@ use crate::{adex_ping::AdexPing,
             peers_exchange::{PeerAddresses, PeersExchange},
             request_response::{build_request_response_behaviour, PeerRequest, PeerResponse, RequestResponseBehaviour,
                                RequestResponseBehaviourEvent, RequestResponseSender},
-            runtime::{SwarmRuntimeOps, SWARM_RUNTIME},
+            runtime::SwarmRuntime,
             NetworkInfo, NetworkPorts, RelayAddress, RelayAddressError};
 use atomicdex_gossipsub::{Gossipsub, GossipsubConfigBuilder, GossipsubEvent, GossipsubMessage, MessageId, Topic,
                           TopicHash};
-use common::executor::{BoxFutureSpawner, SpawnFuture};
+use common::executor::SpawnFuture;
 use derive_more::Display;
 use futures::{channel::{mpsc::{channel, Receiver, Sender},
                         oneshot},
               future::{abortable, join_all, poll_fn, AbortHandle},
-              Future, SinkExt, StreamExt};
+              Future, FutureExt, SinkExt, StreamExt};
 use futures_rustls::rustls;
 use libp2p::core::transport::Boxed as BoxedTransport;
 use libp2p::{core::{ConnectedPoint, Multiaddr, Transport},
@@ -233,28 +233,6 @@ impl From<GossipsubEvent> for AdexBehaviourEvent {
     }
 }
 
-// TODO refactor with a weak spawner.
-pub struct P2pSpawner {
-    inner: Box<dyn BoxFutureSpawner + Send>,
-}
-
-impl P2pSpawner {
-    pub fn new(spawner: impl BoxFutureSpawner + Send + 'static) -> P2pSpawner {
-        P2pSpawner {
-            inner: Box::new(spawner),
-        }
-    }
-}
-
-impl SpawnFuture for P2pSpawner {
-    fn spawn<F>(&self, f: F)
-    where
-        F: Future<Output = ()> + Send + 'static,
-    {
-        self.inner.spawn_boxed(Box::new(Box::pin(f)))
-    }
-}
-
 /// AtomicDEX libp2p Network behaviour implementation
 #[derive(NetworkBehaviour)]
 #[behaviour(event_process = true)]
@@ -263,7 +241,7 @@ pub struct AtomicDexBehaviour {
     #[behaviour(ignore)]
     event_tx: Sender<AdexBehaviourEvent>,
     #[behaviour(ignore)]
-    spawner: P2pSpawner,
+    runtime: SwarmRuntime,
     #[behaviour(ignore)]
     cmd_rx: Receiver<AdexBehaviourCmd>,
     #[behaviour(ignore)]
@@ -281,8 +259,7 @@ impl AtomicDexBehaviour {
         }
     }
 
-    /// TODO consider using `SWARM_RUNTIME` instead.
-    fn spawn(&self, fut: impl Future<Output = ()> + Send + 'static) { self.spawner.spawn(fut) }
+    fn spawn(&self, fut: impl Future<Output = ()> + Send + 'static) { self.runtime.spawn(fut) }
 
     fn process_cmd(&mut self, cmd: AdexBehaviourCmd) {
         match cmd {
@@ -633,19 +610,21 @@ impl NodeType {
 pub async fn spawn_gossipsub(
     netid: u16,
     force_key: Option<[u8; 32]>,
-    spawner: P2pSpawner,
+    runtime: SwarmRuntime,
     to_dial: Vec<RelayAddress>,
     node_type: NodeType,
     on_poll: impl Fn(&AtomicDexSwarm) + Send + 'static,
 ) -> Result<(Sender<AdexBehaviourCmd>, AdexEventRx, PeerId, AbortHandle), AdexBehaviourError> {
     let (result_tx, result_rx) = oneshot::channel();
+
+    let runtime_c = runtime.clone();
     let fut = async move {
-        let result = start_gossipsub(netid, force_key, spawner, to_dial, node_type, on_poll);
+        let result = start_gossipsub(netid, force_key, runtime, to_dial, node_type, on_poll);
         result_tx.send(result).unwrap();
     };
 
     // `Libp2p` must be spawned on the tokio runtime
-    SWARM_RUNTIME.spawn(fut);
+    runtime_c.spawn(fut);
     result_rx.await.expect("Fatal error on starting gossipsub")
 }
 
@@ -662,7 +641,7 @@ pub async fn spawn_gossipsub(
 fn start_gossipsub(
     netid: u16,
     force_key: Option<[u8; 32]>,
-    spawner: P2pSpawner,
+    runtime: SwarmRuntime,
     to_dial: Vec<RelayAddress>,
     node_type: NodeType,
     on_poll: impl Fn(&AtomicDexSwarm) + Send + 'static,
@@ -741,7 +720,7 @@ fn start_gossipsub(
         let adex_behavior = AtomicDexBehaviour {
             floodsub,
             event_tx,
-            spawner,
+            runtime: runtime.clone(),
             cmd_rx,
             netid,
             gossipsub,
@@ -750,7 +729,7 @@ fn start_gossipsub(
             ping,
         };
         libp2p::swarm::SwarmBuilder::new(transport, adex_behavior, local_peer_id)
-            .executor(Box::new(&*SWARM_RUNTIME))
+            .executor(Box::new(runtime.clone()))
             .build()
     };
     swarm
@@ -829,7 +808,7 @@ fn start_gossipsub(
     });
 
     let (polling_fut, abort_handle) = abortable(polling_fut);
-    SWARM_RUNTIME.spawn(polling_fut);
+    runtime.spawn(polling_fut.then(|_| async {}));
 
     Ok((cmd_tx, event_rx, local_peer_id, abort_handle))
 }

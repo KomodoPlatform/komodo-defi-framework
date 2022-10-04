@@ -1,55 +1,33 @@
+use common::executor::{BoxFutureSpawner, SpawnFuture};
 use futures::Future;
-use lazy_static::lazy_static;
 use std::pin::Pin;
+use std::sync::Arc;
 
-lazy_static! {
-    pub static ref SWARM_RUNTIME: SwarmRuntime = SwarmRuntime::new();
-}
-
+#[derive(Clone)]
 pub struct SwarmRuntime {
-    #[cfg(not(target_arch = "wasm32"))]
-    inner: tokio::runtime::Runtime,
+    inner: Arc<dyn BoxFutureSpawner + Send + Sync>,
 }
 
-pub trait SwarmRuntimeOps {
-    fn new() -> Self;
-
-    fn spawn<F>(&self, future: F)
+impl SwarmRuntime {
+    pub fn new<S>(spawner: S) -> SwarmRuntime
     where
-        F: Future + Send + 'static,
-        F::Output: Send + 'static;
-}
-
-#[cfg(target_arch = "wasm32")]
-impl SwarmRuntimeOps for SwarmRuntime {
-    fn new() -> Self { SwarmRuntime {} }
-
-    fn spawn<F>(&self, future: F)
-    where
-        F: Future + futures::FutureExt + Send + 'static,
-        F::Output: Send + 'static,
+        S: BoxFutureSpawner + Send + Sync + 'static,
     {
-        wasm_bindgen_futures::spawn_local(future.map(|_| ()))
-    }
-}
-
-#[cfg(not(target_arch = "wasm32"))]
-impl SwarmRuntimeOps for SwarmRuntime {
-    fn new() -> Self {
         SwarmRuntime {
-            inner: tokio::runtime::Runtime::new().unwrap(),
+            inner: Arc::new(spawner),
         }
     }
+}
 
-    fn spawn<F>(&self, future: F)
+impl SpawnFuture for SwarmRuntime {
+    fn spawn<F>(&self, f: F)
     where
-        F: Future + Send + 'static,
-        F::Output: Send + 'static,
+        F: Future<Output = ()> + Send + 'static,
     {
-        self.inner.spawn(future);
+        self.inner.spawn_boxed(Box::new(Box::pin(f)))
     }
 }
 
-impl libp2p::core::Executor for &SwarmRuntime {
-    fn exec(&self, future: Pin<Box<dyn Future<Output = ()> + Send>>) { self.spawn(future) }
+impl libp2p::core::Executor for SwarmRuntime {
+    fn exec(&self, future: Pin<Box<dyn Future<Output = ()> + Send>>) { self.inner.spawn_boxed(Box::new(future)) }
 }

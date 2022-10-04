@@ -27,8 +27,8 @@ use derive_more::Display;
 use enum_from::EnumFromTrait;
 use mm2_core::mm_ctx::{MmArc, MmCtx};
 use mm2_err_handle::prelude::*;
-use mm2_libp2p::atomicdex_behaviour::P2pSpawner;
-use mm2_libp2p::{spawn_gossipsub, AdexBehaviourError, NodeType, RelayAddress, RelayAddressError, WssCerts};
+use mm2_libp2p::{spawn_gossipsub, AdexBehaviourError, NodeType, RelayAddress, RelayAddressError, SwarmRuntime,
+                 WssCerts};
 use mm2_metrics::mm_gauge;
 use rpc_task::RpcTaskError;
 use serde_json::{self as json};
@@ -466,7 +466,7 @@ pub async fn init_p2p(ctx: MmArc) -> P2PResult<()> {
         light_node_type(&ctx)?
     };
 
-    let spawner = P2pSpawner::new(ctx.spawner());
+    let spawner = SwarmRuntime::new(ctx.spawner());
     let spawn_result = spawn_gossipsub(netid, force_p2p_key, spawner, seednodes, node_type, move |swarm| {
         let behaviour = swarm.behaviour();
         mm_gauge!(

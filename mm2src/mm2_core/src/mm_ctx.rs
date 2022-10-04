@@ -233,7 +233,7 @@ impl MmCtx {
 
     pub fn p2p_in_memory_port(&self) -> Option<u64> { self.conf["p2p_in_memory_port"].as_u64() }
 
-    /// Returns the clonable `MmFutSpawner`.
+    /// Returns the cloneable `MmFutSpawner`.
     pub fn spawner(&self) -> MmFutSpawner { MmFutSpawner::new(&self.spawner) }
 
     /// True if the MarketMaker instance needs to stop.

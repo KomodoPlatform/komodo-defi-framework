@@ -1,5 +1,4 @@
-use super::{spawn_gossipsub, AdexBehaviourCmd, AdexBehaviourEvent, AdexResponse, NodeType, RelayAddress};
-use crate::atomicdex_behaviour::P2pSpawner;
+use super::{spawn_gossipsub, AdexBehaviourCmd, AdexBehaviourEvent, AdexResponse, NodeType, RelayAddress, SwarmRuntime};
 use async_std::task::spawn;
 use common::executor::AbortableSpawner;
 use futures::channel::{mpsc, oneshot};
@@ -23,7 +22,7 @@ impl Node {
     where
         F: Fn(mpsc::Sender<AdexBehaviourCmd>, AdexBehaviourEvent) + Send + 'static,
     {
-        let spawner = P2pSpawner::new(AbortableSpawner::new());
+        let spawner = SwarmRuntime::new(AbortableSpawner::new());
         let node_type = NodeType::RelayInMemory { port };
         let seednodes = seednodes.into_iter().map(RelayAddress::Memory).collect();
         let (cmd_tx, mut event_rx, peer_id, _) = spawn_gossipsub(333, None, spawner, seednodes, node_type, |_| {})
