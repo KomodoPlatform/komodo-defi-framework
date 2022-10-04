@@ -994,12 +994,6 @@ impl TakerSwap {
             )]));
         }
 
-        if maker_data.secret_hash() != self.r().secret.0 {
-            return Ok((Some(TakerSwapCommand::Finish), vec![TakerSwapEvent::NegotiateFailed(
-                ERRL!("!maker_coin.secret_hash: {} failed validation", time_dif).into(),
-            )]));
-        }
-
         let maker_coin_swap_contract_addr = match self
             .maker_coin
             .negotiate_swap_contract_addr(maker_data.maker_coin_swap_contract())
@@ -1037,6 +1031,12 @@ impl TakerSwap {
                 ERRL!("!maker_data.taker_coin_htlc_pub {}", err).into(),
             )]));
         };
+
+        if maker_data.secret_hash().len() != 20  {
+            return Ok((Some(TakerSwapCommand::Finish), vec![TakerSwapEvent::NegotiateFailed(
+                ERRL!("!maker_data.secret_hash: secret_hash validation failed").into(),
+            )]));
+        }
 
         let maker_coin_swap_contract_bytes = maker_coin_swap_contract_addr
             .clone()
