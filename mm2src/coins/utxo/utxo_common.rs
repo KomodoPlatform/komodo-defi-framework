@@ -14,7 +14,8 @@ use crate::{CanRefundHtlc, CoinBalance, CoinWithDerivationMethod, GetWithdrawSen
             RawTransactionError, RawTransactionRequest, RawTransactionRes, SearchForSwapTxSpendInput, SignatureError,
             SignatureResult, SwapOps, TradePreimageValue, TransactionFut, TxFeeDetails, TxMarshalingErr,
             ValidateAddressResult, ValidatePaymentError, ValidatePaymentFut, ValidatePaymentInput, VerificationError,
-            VerificationResult, WatcherValidatePaymentInput, WithdrawFrom, WithdrawResult, WithdrawSenderAddress};
+            VerificationResult, WatcherSearchForSwapTxSpendInput, WatcherValidatePaymentInput, WithdrawFrom,
+            WithdrawResult, WithdrawSenderAddress};
 use bitcrypto::dhash256;
 pub use bitcrypto::{dhash160, sha256, ChecksumType};
 use chain::constants::SEQUENCE_FINAL;
@@ -1914,6 +1915,24 @@ pub fn check_if_my_payment_sent<T: UtxoCommonOps + SwapOps>(
         }
     };
     Box::new(fut.boxed().compat())
+}
+
+pub async fn watcher_search_for_swap_tx_spend<T: AsRef<UtxoCoinFields> + SwapOps>(
+    coin: &T,
+    input: WatcherSearchForSwapTxSpendInput<'_>,
+    output_index: usize,
+) -> Result<Option<FoundSwapTxSpend>, String> {
+    search_for_swap_output_spend(
+        coin.as_ref(),
+        input.time_lock,
+        &try_s!(Public::from_slice(input.taker_pub)),
+        &try_s!(Public::from_slice(input.maker_pub)),
+        input.secret_hash,
+        input.tx,
+        output_index,
+        input.search_from_block,
+    )
+    .await
 }
 
 pub async fn search_for_swap_tx_spend_my<T: AsRef<UtxoCoinFields> + SwapOps>(

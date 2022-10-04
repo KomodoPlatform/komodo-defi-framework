@@ -449,6 +449,17 @@ pub struct WatcherValidatePaymentInput {
     pub confirmations: u64,
 }
 
+pub struct WatcherSearchForSwapTxSpendInput<'a> {
+    pub time_lock: u32,
+    pub taker_pub: &'a [u8],
+    pub maker_pub: &'a [u8],
+    pub secret_hash: &'a [u8],
+    pub tx: &'a [u8],
+    pub search_from_block: u64,
+    pub swap_contract_address: &'a Option<BytesJson>,
+    pub swap_unique_data: &'a [u8],
+}
+
 #[derive(Debug, Display)]
 pub enum ValidatePaymentError {
     TxParseError(String),
@@ -617,6 +628,11 @@ pub trait SwapOps {
         swap_contract_address: &Option<BytesJson>,
         swap_unique_data: &[u8],
     ) -> Box<dyn Future<Item = Option<TransactionEnum>, Error = String> + Send>;
+
+    async fn watcher_search_for_swap_tx_spend(
+        &self,
+        input: WatcherSearchForSwapTxSpendInput<'_>,
+    ) -> Result<Option<FoundSwapTxSpend>, String>;
 
     async fn search_for_swap_tx_spend_my(
         &self,
