@@ -432,7 +432,7 @@ impl MarketCoinOps for SolanaCoin {
         unimplemented!()
     }
 
-    fn tx_enum_from_bytes(&self, bytes: &[u8]) -> Result<Option<TransactionEnum>, MmError<TxMarshalingErr>> {
+    fn tx_enum_from_bytes(&self, bytes: &[u8]) -> Result<TransactionEnum, MmError<TxMarshalingErr>> {
         MmError::err(TxMarshalingErr::NotSupported(
             "tx_enum_from_bytes is not supported for Solana yet.".to_string(),
         ))
@@ -484,11 +484,11 @@ impl SwapOps for SolanaCoin {
 
     fn send_maker_spends_taker_payment(
         &self,
-        taker_payment_tx: &[u8],
-        time_lock: u32,
-        taker_pub: &[u8],
-        secret: &[u8],
-        swap_contract_address: &Option<BytesJson>,
+        _taker_payment_tx: &[u8],
+        _time_lock: u32,
+        _taker_pub: &[u8],
+        _secret: &[u8],
+        _swap_contract_address: &Option<BytesJson>,
         _swap_unique_data: &[u8],
     ) -> TransactionFut {
         unimplemented!()
@@ -523,11 +523,11 @@ impl SwapOps for SolanaCoin {
 
     fn send_taker_refunds_payment(
         &self,
-        taker_payment_tx: &[u8],
-        time_lock: u32,
-        maker_pub: &[u8],
-        secret_hash: &[u8],
-        swap_contract_address: &Option<BytesJson>,
+        _taker_payment_tx: &[u8],
+        _time_lock: u32,
+        _maker_pub: &[u8],
+        _secret_hash: &[u8],
+        _swap_contract_address: &Option<BytesJson>,
         _swap_unique_data: &[u8],
     ) -> TransactionFut {
         unimplemented!()

@@ -598,7 +598,7 @@ impl MarketCoinOps for TendermintCoin {
         todo!()
     }
 
-    fn tx_enum_from_bytes(&self, bytes: &[u8]) -> Result<Option<TransactionEnum>, MmError<TxMarshalingErr>> {
+    fn tx_enum_from_bytes(&self, bytes: &[u8]) -> Result<TransactionEnum, MmError<TxMarshalingErr>> {
         MmError::err(TxMarshalingErr::NotSupported(
             "tx_enum_from_bytes is not supported for Tendermint yet.".to_string(),
         ))
@@ -692,12 +692,12 @@ impl SwapOps for TendermintCoin {
 
     fn send_taker_refunds_payment(
         &self,
-        taker_payment_tx: &[u8],
-        time_lock: u32,
-        maker_pub: &[u8],
-        secret_hash: &[u8],
-        swap_contract_address: &Option<BytesJson>,
-        swap_unique_data: &[u8],
+        _taker_payment_tx: &[u8],
+        _time_lock: u32,
+        _maker_pub: &[u8],
+        _secret_hash: &[u8],
+        _swap_contract_address: &Option<BytesJson>,
+        _swap_unique_data: &[u8],
     ) -> TransactionFut {
         todo!()
     }

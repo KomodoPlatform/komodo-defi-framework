@@ -2092,12 +2092,13 @@ pub fn wait_for_output_spend(
 pub fn tx_enum_from_bytes(coin: &UtxoCoinFields, bytes: &[u8]) -> Result<TransactionEnum, MmError<TxMarshalingErr>> {
     let mut transaction: UtxoTx = deserialize(bytes).map_to_mm(|e| TxMarshalingErr::InvalidInput(e.to_string()))?;
 
-    let serialized_length = transaction.tx_hex().len();
+    // Todo: remove unwrap, although it's safe to use here
+    let serialized_length = transaction.tx_hex().unwrap().len();
     if bytes.len() != serialized_length {
         return MmError::err(TxMarshalingErr::CrossCheckFailed(format!(
             "Expected '{}' lenght of the serialized transaction, found '{}'",
             bytes.len(),
-            transaction.tx_hex().len()
+            serialized_length
         )));
     }
 

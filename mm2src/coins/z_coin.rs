@@ -173,10 +173,10 @@ pub struct ZCoinFields {
 }
 
 impl Transaction for ZTransaction {
-    fn tx_hex(&self) -> Vec<u8> {
+    fn tx_hex(&self) -> Option<Vec<u8>> {
         let mut hex = Vec::with_capacity(1024);
         self.write(&mut hex).expect("Writing should not fail");
-        hex
+        Some(hex)
     }
 
     fn tx_hash(&self) -> BytesJson {
@@ -995,9 +995,9 @@ impl MarketCoinOps for ZCoin {
         )
     }
 
-    fn tx_enum_from_bytes(&self, bytes: &[u8]) -> Result<Option<TransactionEnum>, MmError<TxMarshalingErr>> {
+    fn tx_enum_from_bytes(&self, bytes: &[u8]) -> Result<TransactionEnum, MmError<TxMarshalingErr>> {
         ZTransaction::read(bytes)
-            .map(|tx| Some(tx.into()))
+            .map(TransactionEnum::from)
             .map_to_mm(|e| TxMarshalingErr::InvalidInput(e.to_string()))
     }
 

@@ -571,7 +571,7 @@ pub enum TakerSwapEvent {
     TakerFeeSent(TransactionIdentifier),
     TakerFeeSendFailed(SwapError),
     TakerPaymentInstructionsReceived(PaymentInstructions),
-    MakerPaymentReceived(Option<TransactionIdentifier>),
+    MakerPaymentReceived(TransactionIdentifier),
     MakerPaymentWaitConfirmStarted,
     MakerPaymentValidatedAndConfirmed,
     MakerPaymentValidateFailed(SwapError),
@@ -722,7 +722,7 @@ impl TakerSwap {
             TakerSwapEvent::TakerPaymentInstructionsReceived(instructions) => {
                 self.w().payment_instructions = Some(instructions)
             },
-            TakerSwapEvent::MakerPaymentReceived(tx) => self.w().maker_payment = tx,
+            TakerSwapEvent::MakerPaymentReceived(tx) => self.w().maker_payment = Some(tx),
             TakerSwapEvent::MakerPaymentWaitConfirmStarted => (),
             TakerSwapEvent::MakerPaymentValidatedAndConfirmed => {
                 self.maker_payment_confirmed.store(true, Ordering::Relaxed)
@@ -850,9 +850,8 @@ impl TakerSwap {
     }
 
     async fn get_my_payment_data(&self) -> Result<PaymentDataMsg, MmError<PaymentInstructionsErr>> {
-        // Todo: this can be used to send the payment hash of the taker_fee to the maker if taker is lightning, if it's needed
-        // Todo: What about if the 2 coins are lightning do we need any of these messages??
-        let payment_data = self.r().taker_fee.as_ref().unwrap().tx_hex.0.clone();
+        // If taker fee is a lightning payment the payment hash will be sent in the message
+        let payment_data = self.r().taker_fee.as_ref().unwrap().tx_hex().0;
         let secret_hash = self.r().secret_hash.0.clone();
         let maker_amount = self.maker_amount.clone().into();
         if let Some(instructions) = self
@@ -1132,7 +1131,7 @@ impl TakerSwap {
         let tx_hash = transaction.tx_hash();
         info!("Taker fee tx hash {:02x}", tx_hash);
         let tx_ident = TransactionIdentifier {
-            tx_hex: transaction.tx_hex().into(),
+            tx_hex: transaction.tx_hex().map(From::from),
             tx_hash,
         };
 
@@ -1210,20 +1209,11 @@ impl TakerSwap {
             },
         };
 
-        let tx_ident = match maker_payment {
-            Some(tx) => {
-                let tx_hash = tx.tx_hash();
-                info!("Got maker payment {:02x}", tx_hash);
-                Some(TransactionIdentifier {
-                    tx_hex: tx.tx_hex().into(),
-                    tx_hash,
-                })
-            },
-            None => {
-                // secret_hash is the hash for the lightning payment
-                info!("Got maker payment {:02x}", &self.r().secret_hash);
-                None
-            },
+        let tx_hash = maker_payment.tx_hash();
+        info!("Got maker payment {:02x}", tx_hash);
+        let tx_ident = TransactionIdentifier {
+            tx_hex: maker_payment.tx_hex().map(From::from),
+            tx_hash,
         };
 
         swap_events.push(TakerSwapEvent::MakerPaymentReceived(tx_ident));
@@ -1236,8 +1226,7 @@ impl TakerSwap {
         info!("Before wait confirm");
         let confirmations = self.r().data.maker_payment_confirmations;
         let f = self.maker_coin.wait_for_confirmations(
-            // Todo: remove unwrap since maker_payment is none for lightning
-            &self.r().maker_payment.clone().unwrap().tx_hex,
+            &self.r().maker_payment.clone().unwrap().tx_hex(),
             confirmations,
             self.r().data.maker_payment_requires_nota.unwrap_or(false),
             self.r().data.maker_payment_wait,
@@ -1253,8 +1242,7 @@ impl TakerSwap {
         info!("After wait confirm");
 
         let validate_input = ValidatePaymentInput {
-            // Todo: remove unwrap since maker_payment is None for lightning
-            payment_tx: self.r().maker_payment.clone().unwrap().tx_hex.0,
+            payment_tx: self.r().maker_payment.clone().unwrap().tx_hex().0,
             time_lock: self.maker_payment_lock.load(Ordering::Relaxed) as u32,
             other_pub: self.r().other_maker_coin_htlc_pub.to_vec(),
             secret_hash: self.r().secret_hash.0.to_vec(),
@@ -1361,73 +1349,89 @@ impl TakerSwap {
         };
 
         let tx_hash = transaction.tx_hash();
+        let tx_hex = transaction.tx_hex().map(From::from);
         info!("Taker payment tx hash {:02x}", tx_hash);
         let tx_ident = TransactionIdentifier {
-            tx_hex: transaction.tx_hex().into(),
+            tx_hex: tx_hex.clone(),
             tx_hash,
         };
 
         let mut swap_events = vec![TakerSwapEvent::TakerPaymentSent(tx_ident)];
-        if self.ctx.use_watchers() {
-            let preimage_fut = self.taker_coin.create_taker_spends_maker_payment_preimage(
-                // Todo: remove unwrap since maker_payment is None for lightning
-                &self.r().maker_payment.as_ref().unwrap().tx_hex,
-                self.maker_payment_lock.load(Ordering::Relaxed) as u32,
-                self.r().other_maker_coin_htlc_pub.as_slice(),
-                &self.r().secret_hash.0,
-                &self.unique_swap_data()[..],
-            );
-
-            match preimage_fut.compat().await {
-                Ok(preimage) => {
-                    let watcher_data = self.create_watcher_data(transaction.tx_hex(), preimage.tx_hex());
-                    let swpmsg_watcher = SwapWatcherMsg::TakerSwapWatcherMsg(Box::new(watcher_data));
-                    broadcast_swap_message(
-                        &self.ctx,
-                        watcher_topic(&self.r().data.taker_coin),
-                        swpmsg_watcher,
-                        &self.p2p_privkey,
+        // Watchers shouldn't be used with lightning payments for now
+        // Todo: refactor this and check if watcher can work in some cases with lightning
+        let maybe_maker_hex = self.r().maker_payment.as_ref().unwrap().tx_hex.clone();
+        if let Some(maker_hex) = maybe_maker_hex {
+            if let Some(taker_hex) = tx_hex {
+                if self.ctx.use_watchers() {
+                    let preimage_fut = self.taker_coin.create_taker_spends_maker_payment_preimage(
+                        &maker_hex,
+                        self.maker_payment_lock.load(Ordering::Relaxed) as u32,
+                        self.r().other_maker_coin_htlc_pub.as_slice(),
+                        &self.r().secret_hash.0,
+                        &self.unique_swap_data()[..],
                     );
-                    swap_events.push(TakerSwapEvent::WatcherMessageSent(Some(preimage.tx_hex())))
-                },
-                Err(e) => error!(
+
+                    match preimage_fut.compat().await {
+                        Ok(preimage) => {
+                            // Todo: revise if it's safe to unwrap here
+                            let watcher_data = self.create_watcher_data(taker_hex.0, preimage.tx_hex().unwrap());
+                            let swpmsg_watcher = SwapWatcherMsg::TakerSwapWatcherMsg(Box::new(watcher_data));
+                            broadcast_swap_message(
+                                &self.ctx,
+                                watcher_topic(&self.r().data.taker_coin),
+                                swpmsg_watcher,
+                                &self.p2p_privkey,
+                            );
+                            // Todo: revise if it's safe to unwrap here
+                            swap_events.push(TakerSwapEvent::WatcherMessageSent(Some(preimage.tx_hex().unwrap())))
+                        },
+                        Err(e) => error!(
                     "The watcher message could not be sent, error creating the taker spends maker payment preimage: {}",
                     e.get_plain_text_format()
                 ),
+                    }
+                }
             }
         }
-
         Ok((Some(TakerSwapCommand::WaitForTakerPaymentSpend), swap_events))
     }
 
     async fn wait_for_taker_payment_spend(&self) -> Result<(Option<TakerSwapCommand>, Vec<TakerSwapEvent>), String> {
-        let tx_hex = self.r().taker_payment.as_ref().unwrap().tx_hex.0.clone();
+        let tx_hex = self.r().taker_payment.as_ref().unwrap().tx_hex.clone();
         let mut watcher_broadcast_abort_handle = None;
-        if self.ctx.use_watchers() {
-            let preimage_hex = self.r().taker_spends_maker_payment_preimage.clone();
-            if let Some(preimage_hex) = preimage_hex {
-                let watcher_data = self.create_watcher_data(tx_hex.clone(), preimage_hex);
-                let swpmsg_watcher = SwapWatcherMsg::TakerSwapWatcherMsg(Box::new(watcher_data));
-                watcher_broadcast_abort_handle = Some(broadcast_swap_message_every(
-                    self.ctx.clone(),
-                    watcher_topic(&self.r().data.taker_coin),
-                    swpmsg_watcher,
-                    600.,
-                    self.p2p_privkey,
-                ));
+        let mut send_abort_handle = None;
+        if let Some(hex) = tx_hex {
+            if self.ctx.use_watchers() {
+                let preimage_hex = self.r().taker_spends_maker_payment_preimage.clone();
+                if let Some(preimage_hex) = preimage_hex {
+                    let watcher_data = self.create_watcher_data(hex.0.clone(), preimage_hex);
+                    let swpmsg_watcher = SwapWatcherMsg::TakerSwapWatcherMsg(Box::new(watcher_data));
+                    watcher_broadcast_abort_handle = Some(broadcast_swap_message_every(
+                        self.ctx.clone(),
+                        watcher_topic(&self.r().data.taker_coin),
+                        swpmsg_watcher,
+                        600.,
+                        self.p2p_privkey,
+                    ));
+                }
             }
+            // Todo: The same should be done for MakerPayment (shouldn't be sent on some cases)
+            let msg = SwapMsg::TakerPayment(hex.0);
+            send_abort_handle = Some(broadcast_swap_message_every(
+                self.ctx.clone(),
+                swap_topic(&self.uuid),
+                msg,
+                600.,
+                self.p2p_privkey,
+            ));
         }
-        // Todo: should not be sent for lightning since tx_hex is empty anyways
-        let msg = SwapMsg::TakerPayment(tx_hex);
-        let send_abort_handle =
-            broadcast_swap_message_every(self.ctx.clone(), swap_topic(&self.uuid), msg, 600., self.p2p_privkey);
 
         let wait_duration = (self.r().data.lock_duration * 4) / 5;
         let wait_taker_payment = self.r().data.started_at + wait_duration;
         let wait_f = self
             .taker_coin
             .wait_for_confirmations(
-                &self.r().taker_payment.clone().unwrap().tx_hex,
+                &self.r().taker_payment.clone().unwrap().tx_hex(),
                 self.r().data.taker_payment_confirmations,
                 self.r().data.taker_payment_requires_nota.unwrap_or(false),
                 wait_taker_payment,
@@ -1446,7 +1450,7 @@ impl TakerSwap {
         }
 
         let f = self.taker_coin.wait_for_tx_spend(
-            &self.r().taker_payment.clone().unwrap().tx_hex,
+            &self.r().taker_payment.clone().unwrap().tx_hex(),
             self.r().data.taker_payment_lock,
             self.r().data.taker_coin_start_block,
             &self.r().data.taker_coin_swap_contract_address,
@@ -1467,12 +1471,12 @@ impl TakerSwap {
         let tx_hash = tx.tx_hash();
         info!("Taker payment spend tx {:02x}", tx_hash);
         let tx_ident = TransactionIdentifier {
-            tx_hex: tx.tx_hex().into(),
+            tx_hex: tx.tx_hex().map(From::from),
             tx_hash,
         };
         let secret = match self
             .taker_coin
-            .extract_secret(&self.r().secret_hash.0, &tx_ident.tx_hex.0)
+            .extract_secret(&self.r().secret_hash.0, &tx_ident.tx_hex())
         {
             Ok(bytes) => H256Json::from(bytes.as_slice()),
             Err(e) => {
@@ -1498,8 +1502,7 @@ impl TakerSwap {
             ]));
         }
         let spend_fut = self.maker_coin.send_taker_spends_maker_payment(
-            // Todo: remove unwrap since maker_payment is None for lightning
-            &self.r().maker_payment.clone().unwrap().tx_hex,
+            &self.r().maker_payment.clone().unwrap().tx_hex(),
             self.maker_payment_lock.load(Ordering::Relaxed) as u32,
             &*self.r().other_maker_coin_htlc_pub,
             &self.r().secret.0,
@@ -1534,7 +1537,7 @@ impl TakerSwap {
         let tx_hash = transaction.tx_hash();
         info!("Maker payment spend tx {:02x}", tx_hash);
         let tx_ident = TransactionIdentifier {
-            tx_hex: transaction.tx_hex().into(),
+            tx_hex: transaction.tx_hex().map(From::from),
             tx_hash,
         };
 
@@ -1564,7 +1567,7 @@ impl TakerSwap {
         }
 
         let refund_fut = self.taker_coin.send_taker_refunds_payment(
-            &self.r().taker_payment.clone().unwrap().tx_hex.0,
+            &self.r().taker_payment.clone().unwrap().tx_hex(),
             self.r().data.taker_payment_lock as u32,
             &*self.r().other_taker_coin_htlc_pub,
             &self.r().secret_hash.0,
@@ -1590,6 +1593,7 @@ impl TakerSwap {
             },
         };
 
+        // Todo: check broadcast_p2p_tx_msg to not broadcast lightning payments
         broadcast_p2p_tx_msg(
             &self.ctx,
             tx_helper_topic(self.taker_coin.ticker()),
@@ -1600,7 +1604,7 @@ impl TakerSwap {
         let tx_hash = transaction.tx_hash();
         info!("Taker refund tx hash {:02x}", tx_hash);
         let tx_ident = TransactionIdentifier {
-            tx_hex: transaction.tx_hex().into(),
+            tx_hex: transaction.tx_hex().map(From::from),
             tx_hash,
         };
 
@@ -1699,8 +1703,7 @@ impl TakerSwap {
         }
 
         let maker_payment = match &self.r().maker_payment {
-            Some(tx) => tx.tx_hex.0.clone(),
-            // Todo: for lightning maker_payment can be None
+            Some(tx) => tx.tx_hex(),
             None => return ERR!("No info about maker payment, swap is not recoverable"),
         };
 
@@ -1753,7 +1756,7 @@ impl TakerSwap {
 
         let maybe_taker_payment = self.r().taker_payment.clone();
         let taker_payment = match maybe_taker_payment {
-            Some(tx) => tx.tx_hex.0.clone(),
+            Some(tx) => tx.tx_hex().0,
             None => {
                 let maybe_sent = try_s!(
                     self.taker_coin
@@ -1769,7 +1772,8 @@ impl TakerSwap {
                         .await
                 );
                 match maybe_sent {
-                    Some(tx) => tx.tx_hex(),
+                    // Todo: remove this unwrap
+                    Some(tx) => tx.tx_hex().unwrap(),
                     None => return ERR!("Taker payment is not found, swap is not recoverable"),
                 }
             },
@@ -1830,7 +1834,10 @@ impl TakerSwap {
             Some(spend) => match spend {
                 FoundSwapTxSpend::Spent(tx) => {
                     check_maker_payment_is_not_spent!();
-                    let secret = try_s!(self.taker_coin.extract_secret(&self.r().secret_hash.0, &tx.tx_hex()));
+                    let tx_hash = tx.tx_hash().0;
+                    let secret = try_s!(self
+                        .taker_coin
+                        .extract_secret(&self.r().secret_hash.0, &tx.tx_hex().unwrap_or(tx_hash)));
 
                     let fut = self.maker_coin.send_taker_spends_maker_payment(
                         &maker_payment,

@@ -1428,9 +1428,9 @@ impl MarketCoinOps for EthCoin {
         Box::new(fut.boxed().compat())
     }
 
-    fn tx_enum_from_bytes(&self, bytes: &[u8]) -> Result<Option<TransactionEnum>, MmError<TxMarshalingErr>> {
+    fn tx_enum_from_bytes(&self, bytes: &[u8]) -> Result<TransactionEnum, MmError<TxMarshalingErr>> {
         signed_eth_tx_from_bytes(bytes)
-            .map(|tx| Some(tx.into()))
+            .map(TransactionEnum::from)
             .map_to_mm(TxMarshalingErr::InvalidInput)
     }
 
@@ -3417,7 +3417,7 @@ pub fn wei_from_big_decimal(amount: &BigDecimal, decimals: u8) -> NumConversResu
 }
 
 impl Transaction for SignedEthTx {
-    fn tx_hex(&self) -> Vec<u8> { rlp::encode(self).to_vec() }
+    fn tx_hex(&self) -> Option<Vec<u8>> { Some(rlp::encode(self).to_vec()) }
 
     fn tx_hash(&self) -> BytesJson { self.hash.to_vec().into() }
 }

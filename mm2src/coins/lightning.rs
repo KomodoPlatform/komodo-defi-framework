@@ -143,13 +143,10 @@ pub(crate) enum PaymentError {
     Keysend(String),
 }
 
-impl Transaction for PaymentInfo {
-    fn tx_hex(&self) -> Vec<u8> {
-        // Todo: should this be an empty vec or an option or the payment_hash
-        Vec::new()
-    }
+impl Transaction for PaymentHash {
+    fn tx_hex(&self) -> Option<Vec<u8>> { None }
 
-    fn tx_hash(&self) -> BytesJson { self.payment_hash.0.to_vec().into() }
+    fn tx_hash(&self) -> BytesJson { self.0.to_vec().into() }
 }
 
 impl LightningCoin {
@@ -450,7 +447,7 @@ impl SwapOps for LightningCoin {
         let fut = async move {
             let payment = try_tx_s!(this.pay_invoice(invoice).await);
             // Todo: are there more steps after pay_invoice??
-            Ok(payment.into())
+            Ok(payment.payment_hash.into())
         };
         Box::new(fut.boxed().compat())
     }
@@ -472,7 +469,7 @@ impl SwapOps for LightningCoin {
         let fut = async move {
             let payment = try_tx_s!(this.pay_invoice(invoice).await);
             // Todo: are there more steps after pay_invoice??
-            Ok(payment.into())
+            Ok(payment.payment_hash.into())
         };
         Box::new(fut.boxed().compat())
     }
@@ -757,8 +754,16 @@ impl MarketCoinOps for LightningCoin {
         unimplemented!()
     }
 
-    fn tx_enum_from_bytes(&self, _bytes: &[u8]) -> Result<Option<TransactionEnum>, MmError<TxMarshalingErr>> {
-        Ok(None)
+    fn tx_enum_from_bytes(&self, bytes: &[u8]) -> Result<TransactionEnum, MmError<TxMarshalingErr>> {
+        // Todo: this block of code is repeated, maybe make it a function
+        let payment_hash_length = bytes.len();
+        if payment_hash_length != 32 {
+            let error = format!("Invalid payment hash length {}", payment_hash_length);
+            return Err(TxMarshalingErr::InvalidInput(error).into());
+        }
+        let mut payment_hash = [b' '; 32];
+        payment_hash.copy_from_slice(bytes);
+        Ok(TransactionEnum::LightningPayment(PaymentHash(payment_hash)))
     }
 
     fn current_block(&self) -> Box<dyn Future<Item = u64, Error = String> + Send> { Box::new(futures01::future::ok(0)) }

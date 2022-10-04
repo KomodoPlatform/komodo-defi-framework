@@ -165,11 +165,11 @@ fn get_special_folder_path() -> PathBuf {
 fn get_special_folder_path() -> PathBuf { panic!("!windows") }
 
 impl Transaction for UtxoTx {
-    fn tx_hex(&self) -> Vec<u8> {
+    fn tx_hex(&self) -> Option<Vec<u8>> {
         if self.has_witness() {
-            serialize_with_flags(self, SERIALIZE_TRANSACTION_WITNESS).into()
+            Some(serialize_with_flags(self, SERIALIZE_TRANSACTION_WITNESS).into())
         } else {
-            serialize(self).into()
+            Some(serialize(self).into())
         }
     }
 

@@ -2485,7 +2485,7 @@ fn test_validate_fee_wrong_sender() {
     let coin = utxo_coin_for_test(UtxoRpcClientEnum::Electrum(rpc_client), None, false);
     // https://morty.explorer.dexstats.info/tx/fe4b0e1c4537e22f2956b5b74513fc936ebd87ada21513e850899cb07a45d475
     let tx_bytes = hex::decode("0400008085202f890199cc492c24cc617731d13cff0ef22e7b0c277a64e7368a615b46214424a1c894020000006a473044022071edae37cf518e98db3f7637b9073a7a980b957b0c7b871415dbb4898ec3ebdc022031b402a6b98e64ffdf752266449ca979a9f70144dba77ed7a6a25bfab11648f6012103ad6f89abc2e5beaa8a3ac28e22170659b3209fe2ddf439681b4b8f31508c36faffffffff0202290200000000001976a914ca1e04745e8ca0c60d8c5881531d51bec470743f88ac8a96e70b000000001976a914d55f0df6cb82630ad21a4e6049522a6f2b6c9d4588ac8afb2c60000000000000000000000000000000").unwrap();
-    let taker_fee_tx = coin.tx_enum_from_bytes(&tx_bytes).unwrap().unwrap();
+    let taker_fee_tx = coin.tx_enum_from_bytes(&tx_bytes).unwrap();
     let amount: BigDecimal = "0.0014157".parse().unwrap();
     let validate_err = coin
         .validate_fee(
@@ -2511,7 +2511,7 @@ fn test_validate_fee_min_block() {
     let coin = utxo_coin_for_test(UtxoRpcClientEnum::Electrum(rpc_client), None, false);
     // https://morty.explorer.dexstats.info/tx/fe4b0e1c4537e22f2956b5b74513fc936ebd87ada21513e850899cb07a45d475
     let tx_bytes = hex::decode("0400008085202f890199cc492c24cc617731d13cff0ef22e7b0c277a64e7368a615b46214424a1c894020000006a473044022071edae37cf518e98db3f7637b9073a7a980b957b0c7b871415dbb4898ec3ebdc022031b402a6b98e64ffdf752266449ca979a9f70144dba77ed7a6a25bfab11648f6012103ad6f89abc2e5beaa8a3ac28e22170659b3209fe2ddf439681b4b8f31508c36faffffffff0202290200000000001976a914ca1e04745e8ca0c60d8c5881531d51bec470743f88ac8a96e70b000000001976a914d55f0df6cb82630ad21a4e6049522a6f2b6c9d4588ac8afb2c60000000000000000000000000000000").unwrap();
-    let taker_fee_tx = coin.tx_enum_from_bytes(&tx_bytes).unwrap().unwrap();
+    let taker_fee_tx = coin.tx_enum_from_bytes(&tx_bytes).unwrap();
     let amount: BigDecimal = "0.0014157".parse().unwrap();
     let sender_pub = hex::decode("03ad6f89abc2e5beaa8a3ac28e22170659b3209fe2ddf439681b4b8f31508c36fa").unwrap();
     let validate_err = coin
@@ -2539,7 +2539,7 @@ fn test_validate_fee_bch_70_bytes_signature() {
     let coin = utxo_coin_for_test(UtxoRpcClientEnum::Electrum(rpc_client), None, false);
     // https://blockchair.com/bitcoin-cash/transaction/ccee05a6b5bbc6f50d2a65a5a3a04690d3e2d81082ad57d3ab471189f53dd70d
     let tx_bytes = hex::decode("0100000002cae89775f264e50f14238be86a7184b7f77bfe26f54067b794c546ec5eb9c91a020000006b483045022100d6ed080f722a0637a37552382f462230cc438984bc564bdb4b7094f06cfa38fa022062304a52602df1fbb3bebac4f56e1632ad456f62d9031f4983f07e546c8ec4d8412102ae7dc4ef1b49aadeff79cfad56664105f4d114e1716bc4f930cb27dbd309e521ffffffff11f386a6fe8f0431cb84f549b59be00f05e78f4a8a926c5e023a0d5f9112e8200000000069463043021f17eb93ed20a6f2cd357eabb41a4ec6329000ddc6d5b42ecbe642c5d41b206a022026bc4920c4ce3af751283574baa8e4a3efd4dad0d8fe6ba3ddf5d75628d36fda412102ae7dc4ef1b49aadeff79cfad56664105f4d114e1716bc4f930cb27dbd309e521ffffffff0210270000000000001976a914ca1e04745e8ca0c60d8c5881531d51bec470743f88ac57481c00000000001976a914bac11ce4cd2b1df2769c470d09b54f86df737e3c88ac035b4a60").unwrap();
-    let taker_fee_tx = coin.tx_enum_from_bytes(&tx_bytes).unwrap().unwrap();
+    let taker_fee_tx = coin.tx_enum_from_bytes(&tx_bytes).unwrap();
     let amount: BigDecimal = "0.0001".parse().unwrap();
     let sender_pub = hex::decode("02ae7dc4ef1b49aadeff79cfad56664105f4d114e1716bc4f930cb27dbd309e521").unwrap();
     coin.validate_fee(&taker_fee_tx, &sender_pub, &*DEX_FEE_ADDR_RAW_PUBKEY, &amount, 0, &[])

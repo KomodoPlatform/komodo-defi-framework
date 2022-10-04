@@ -1168,8 +1168,8 @@ impl MarketCoinOps for Qrc20Coin {
         Box::new(fut.boxed().compat())
     }
 
-    fn tx_enum_from_bytes(&self, bytes: &[u8]) -> Result<Option<TransactionEnum>, MmError<TxMarshalingErr>> {
-        utxo_common::tx_enum_from_bytes(self.as_ref(), bytes).map(Some)
+    fn tx_enum_from_bytes(&self, bytes: &[u8]) -> Result<TransactionEnum, MmError<TxMarshalingErr>> {
+        utxo_common::tx_enum_from_bytes(self.as_ref(), bytes)
     }
 
     fn current_block(&self) -> Box<dyn Future<Item = u64, Error = String> + Send> {

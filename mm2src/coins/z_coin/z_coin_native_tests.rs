@@ -50,7 +50,14 @@ fn zombie_coin_send_and_refund_maker_payment() {
     println!("swap tx {}", hex::encode(&tx.tx_hash().0));
 
     let refund_tx = coin
-        .send_maker_refunds_payment(&tx.tx_hex(), lock_time, &*taker_pub, &secret_hash, &priv_key, &None)
+        .send_maker_refunds_payment(
+            &tx.tx_hex().unwrap(),
+            lock_time,
+            &*taker_pub,
+            &secret_hash,
+            &priv_key,
+            &None,
+        )
         .wait()
         .unwrap();
     println!("refund tx {}", hex::encode(&refund_tx.tx_hash().0));

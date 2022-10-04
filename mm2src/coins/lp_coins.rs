@@ -66,8 +66,8 @@ use utxo_signer::with_key_pair::UtxoSignWithKeyPairError;
 
 cfg_native! {
     use crate::lightning::LightningCoin;
-    use crate::lightning::ln_db::PaymentInfo as LightningPayment;
     use crate::lightning::ln_conf::PlatformCoinConfirmationTargets;
+    use ::lightning::ln::PaymentHash as LightningPayment;
     use async_std::fs;
     use futures::AsyncWriteExt;
     use lightning_invoice::{Invoice, ParseOrSemanticError};
@@ -347,7 +347,7 @@ pub enum UnexpectedDerivationMethod {
 
 pub trait Transaction: fmt::Debug + 'static {
     /// Raw transaction bytes of the transaction
-    fn tx_hex(&self) -> Vec<u8>;
+    fn tx_hex(&self) -> Option<Vec<u8>>;
     /// Serializable representation of tx hash for displaying purpose
     fn tx_hash(&self) -> BytesJson;
 }
@@ -705,6 +705,7 @@ pub trait MarketCoinOps {
     /// Receives raw transaction bytes as input and returns tx hash in hexadecimal format
     fn send_raw_tx_bytes(&self, tx: &[u8]) -> Box<dyn Future<Item = String, Error = String> + Send>;
 
+    // Todo: If channel is closed for lightning we might need to wait for confirmations, should be done in the next PRs, move this note to a better place
     fn wait_for_confirmations(
         &self,
         tx: &[u8],
@@ -722,7 +723,7 @@ pub trait MarketCoinOps {
         swap_contract_address: &Option<BytesJson>,
     ) -> TransactionFut;
 
-    fn tx_enum_from_bytes(&self, bytes: &[u8]) -> Result<Option<TransactionEnum>, MmError<TxMarshalingErr>>;
+    fn tx_enum_from_bytes(&self, bytes: &[u8]) -> Result<TransactionEnum, MmError<TxMarshalingErr>>;
 
     fn current_block(&self) -> Box<dyn Future<Item = u64, Error = String> + Send>;
 
