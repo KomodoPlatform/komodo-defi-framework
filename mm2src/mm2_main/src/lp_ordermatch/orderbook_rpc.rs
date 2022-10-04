@@ -114,16 +114,17 @@ pub fn is_my_order(my_pub: &Option<String>, order_pubkey: &str) -> bool {
 // ZHTLC protocol coin uses random keypair to sign P2P messages per every order.
 // So, each ZHTLC order has unique «pubkey» field that doesn’t match node persistent pubkey derived from passphrase.
 // We can compare pubkeys from maker_orders and from asks or bids, to find our order.
-pub fn is_mine_zhtlc(my_orders_pubkeys: &Vec<String>, pubkey: &String) -> bool {
-    let mut is_mine = false;
+pub fn is_mine_zhtlc(my_orders_pubkeys: &Vec<String>, my_pub: &Option<String>, order_pubkey: &str) -> bool {
+    let mut is_mine_zhtlc = false;
     for my_pubkey in my_orders_pubkeys {
-        if my_pubkey == pubkey {
-            is_mine = true;
+        if my_pubkey == order_pubkey {
+            is_mine_zhtlc = true;
             break;
         }
     }
-    drop_mutability!(is_mine);
-    is_mine
+    drop_mutability!(is_mine_zhtlc);
+    let is_my_order = is_my_order(my_pub, order_pubkey);
+    is_mine_zhtlc || is_my_order
 }
 
 async fn get_my_orders_pubkeys(ctx: &MmArc) -> Vec<String> {
@@ -169,12 +170,19 @@ pub async fn orderbook_rpc(ctx: MmArc, req: Json) -> Result<Response<Vec<u8>>, S
         return ERR!("Base and rel coins have the same orderbook tickers and protocols.");
     }
     let base_coin_protocol: CoinProtocol = try_s!(json::from_value(base_coin_conf["protocol"].clone()));
-    let is_zhtlc = match base_coin_protocol {
+    let rel_coin_protocol: CoinProtocol = try_s!(json::from_value(rel_coin_conf["protocol"].clone()));
+    let is_zhtlc_base = match base_coin_protocol {
         #[cfg(not(target_arch = "wasm32"))]
         CoinProtocol::ZHTLC { .. } => true,
         _ => false,
     };
-    // have to create before orderbook, because orderbook is not `Send`
+    let is_zhtlc_rel = match rel_coin_protocol {
+        #[cfg(not(target_arch = "wasm32"))]
+        CoinProtocol::ZHTLC { .. } => true,
+        _ => false,
+    };
+    let is_zhtlc = is_zhtlc_base || is_zhtlc_rel;
+    // have to create my_orders_pubkeys before orderbook, because orderbook is not `Send`
     let my_orders_pubkeys = get_my_orders_pubkeys(&ctx).await;
 
     try_s!(subscribe_to_orderbook_topic(&ctx, &base_ticker, &rel_ticker, request_orderbook).await);
@@ -202,7 +210,7 @@ pub async fn orderbook_rpc(ctx: MmArc, req: Json) -> Result<Response<Vec<u8>>, S
                     address_format,
                 ));
                 let is_mine = if is_zhtlc {
-                    is_mine_zhtlc(&my_orders_pubkeys, &ask.pubkey)
+                    is_mine_zhtlc(&my_orders_pubkeys, &my_pubsecp, &ask.pubkey)
                 } else {
                     is_my_order(&my_pubsecp, &ask.pubkey)
                 };
@@ -233,7 +241,7 @@ pub async fn orderbook_rpc(ctx: MmArc, req: Json) -> Result<Response<Vec<u8>>, S
                     address_format,
                 ));
                 let is_mine = if is_zhtlc {
-                    is_mine_zhtlc(&my_orders_pubkeys, &bid.pubkey)
+                    is_mine_zhtlc(&my_orders_pubkeys, &my_pubsecp, &bid.pubkey)
                 } else {
                     is_my_order(&my_pubsecp, &bid.pubkey)
                 };
@@ -354,12 +362,19 @@ pub async fn orderbook_rpc_v2(
     }
 
     let base_coin_protocol: CoinProtocol = json::from_value(base_coin_conf["protocol"].clone())?;
-    let is_zhtlc = match base_coin_protocol {
+    let rel_coin_protocol: CoinProtocol = json::from_value(rel_coin_conf["protocol"].clone())?;
+    let is_zhtlc_base = match base_coin_protocol {
         #[cfg(not(target_arch = "wasm32"))]
         CoinProtocol::ZHTLC { .. } => true,
         _ => false,
     };
-    // have to create before orderbook, because orderbook is not `Send`
+    let is_zhtlc_rel = match rel_coin_protocol {
+        #[cfg(not(target_arch = "wasm32"))]
+        CoinProtocol::ZHTLC { .. } => true,
+        _ => false,
+    };
+    let is_zhtlc = is_zhtlc_base || is_zhtlc_rel;
+    // have to create my_orders_pubkeys before orderbook, because orderbook is not `Send`
     let my_orders_pubkeys = get_my_orders_pubkeys(&ctx).await;
 
     let request_orderbook = true;
@@ -394,7 +409,7 @@ pub async fn orderbook_rpc_v2(
                     },
                 };
                 let is_mine = if is_zhtlc {
-                    is_mine_zhtlc(&my_orders_pubkeys, &ask.pubkey)
+                    is_mine_zhtlc(&my_orders_pubkeys, &my_pubsecp, &ask.pubkey)
                 } else {
                     is_my_order(&my_pubsecp, &ask.pubkey)
                 };
@@ -428,7 +443,7 @@ pub async fn orderbook_rpc_v2(
                     },
                 };
                 let is_mine = if is_zhtlc {
-                    is_mine_zhtlc(&my_orders_pubkeys, &bid.pubkey)
+                    is_mine_zhtlc(&my_orders_pubkeys, &my_pubsecp, &bid.pubkey)
                 } else {
                     is_my_order(&my_pubsecp, &bid.pubkey)
                 };
