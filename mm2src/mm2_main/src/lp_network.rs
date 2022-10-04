@@ -19,6 +19,7 @@
 //  marketmaker
 //
 use coins::lp_coinfind;
+use common::executor::SpawnFuture;
 use common::{log, Future01CompatExt};
 use derive_more::Display;
 use futures::{channel::oneshot, StreamExt};
@@ -112,7 +113,7 @@ pub async fn p2p_event_process_loop(ctx: MmWeak, mut rx: AdexEventRx, i_am_relay
         };
         match adex_event {
             Some(AdexBehaviourEvent::Message(peer_id, message_id, message)) => {
-                let spawner = ctx.spawner.clone();
+                let spawner = ctx.spawner();
                 spawner.spawn(process_p2p_message(ctx, peer_id, message_id, message, i_am_relay));
             },
             Some(AdexBehaviourEvent::PeerRequest {

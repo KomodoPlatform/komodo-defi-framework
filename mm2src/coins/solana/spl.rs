@@ -2,7 +2,7 @@ use super::{CoinBalance, HistorySyncState, MarketCoinOps, MmCoin, SwapOps, Trade
 use crate::coin_errors::{MyAddressError, ValidatePaymentError};
 use crate::solana::solana_common::{ui_amount_to_amount, PrepareTransferData, SufficientBalanceError};
 use crate::solana::{solana_common, AccountError, SolanaCommonOps, SolanaFeeDetails};
-use crate::{BalanceFut, CoinFutureSpawner, FeeApproxStage, FoundSwapTxSpend, NegotiateSwapContractAddrErr,
+use crate::{BalanceFut, CoinFutSpawner, FeeApproxStage, FoundSwapTxSpend, NegotiateSwapContractAddrErr,
             RawTransactionFut, RawTransactionRequest, SearchForSwapTxSpendInput, SignatureResult, SolanaCoin,
             TradePreimageFut, TradePreimageResult, TradePreimageValue, TransactionDetails, TransactionFut,
             TransactionType, TxMarshalingErr, UnexpectedDerivationMethod, ValidateAddressResult, ValidatePaymentFut,
@@ -10,6 +10,7 @@ use crate::{BalanceFut, CoinFutureSpawner, FeeApproxStage, FoundSwapTxSpend, Neg
             WithdrawRequest, WithdrawResult};
 use async_trait::async_trait;
 use bincode::serialize;
+use common::executor::AbortableSpawner;
 use common::{async_blocking, now_ms};
 use futures::{FutureExt, TryFutureExt};
 use futures01::Future;
@@ -38,7 +39,7 @@ pub struct SplTokenFields {
     pub decimals: u8,
     pub ticker: String,
     pub token_contract_address: Pubkey,
-    pub spawner: CoinFutureSpawner,
+    pub spawner: AbortableSpawner,
 }
 
 #[derive(Clone, Debug)]
@@ -77,7 +78,7 @@ impl SplToken {
             decimals,
             ticker,
             token_contract_address,
-            spawner: CoinFutureSpawner::new(),
+            spawner: AbortableSpawner::new(),
         });
         Ok(SplToken { conf, platform_coin })
     }
@@ -443,7 +444,7 @@ impl SwapOps for SplToken {
 impl MmCoin for SplToken {
     fn is_asset_chain(&self) -> bool { false }
 
-    fn spawner(&self) -> &CoinFutureSpawner { &self.conf.spawner }
+    fn spawner(&self) -> CoinFutSpawner { CoinFutSpawner::new(&self.conf.spawner) }
 
     fn withdraw(&self, req: WithdrawRequest) -> WithdrawFut {
         Box::new(Box::pin(withdraw_impl(self.clone(), req)).compat())

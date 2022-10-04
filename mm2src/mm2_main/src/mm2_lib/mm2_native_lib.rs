@@ -2,6 +2,7 @@ use super::*;
 use crate::mm2::lp_dispatcher::dispatch_lp_event;
 use crate::mm2::lp_dispatcher::StopCtxEvent;
 use common::crash_reports::init_crash_reports;
+use common::executor::SpawnFuture;
 use common::log::{register_callback, FfiCallback};
 use common::{block_on, now_float};
 use gstuff::any_to_str;
@@ -247,7 +248,7 @@ pub extern "C" fn mm2_stop() -> i8 {
         return StopErr::StoppingAlready as i8;
     }
 
-    let spawner = ctx.spawner.clone();
+    let spawner = ctx.spawner();
     spawner.spawn(async move {
         dispatch_lp_event(ctx, StopCtxEvent.into()).await;
     });

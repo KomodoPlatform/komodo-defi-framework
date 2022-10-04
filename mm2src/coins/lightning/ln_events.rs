@@ -5,7 +5,7 @@ use crate::lightning::ln_sql::SqliteLightningDB;
 use bitcoin::blockdata::script::Script;
 use bitcoin::blockdata::transaction::Transaction;
 use bitcoin::consensus::encode::serialize_hex;
-use common::executor::Timer;
+use common::executor::{SpawnAbortable, Timer};
 use common::log::{error, info};
 use common::now_ms;
 use core::time::Duration;

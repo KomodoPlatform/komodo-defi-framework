@@ -7,7 +7,7 @@ use crate::{adex_ping::AdexPing,
             NetworkInfo, NetworkPorts, RelayAddress, RelayAddressError};
 use atomicdex_gossipsub::{Gossipsub, GossipsubConfigBuilder, GossipsubEvent, GossipsubMessage, MessageId, Topic,
                           TopicHash};
-use common::executor::{BoxFutureSpawner, FutureSpawner};
+use common::executor::{BoxFutureSpawner, SpawnFuture};
 use derive_more::Display;
 use futures::{channel::{mpsc::{channel, Receiver, Sender},
                         oneshot},
@@ -246,7 +246,7 @@ impl P2pSpawner {
     }
 }
 
-impl FutureSpawner for P2pSpawner {
+impl SpawnFuture for P2pSpawner {
     fn spawn<F>(&self, f: F)
     where
         F: Future<Output = ()> + Send + 'static,

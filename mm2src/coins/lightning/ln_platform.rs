@@ -6,14 +6,14 @@ use crate::utxo::rpc_clients::{BestBlock as RpcBestBlock, BlockHashOrHeight, Con
 use crate::utxo::spv::SimplePaymentVerification;
 use crate::utxo::utxo_standard::UtxoStandardCoin;
 use crate::utxo::GetConfirmedTxError;
-use crate::{CoinFutureSpawner, MarketCoinOps, MmCoin};
+use crate::{MarketCoinOps, MmCoin};
 use bitcoin::blockdata::block::BlockHeader;
 use bitcoin::blockdata::script::Script;
 use bitcoin::blockdata::transaction::Transaction;
 use bitcoin::consensus::encode::{deserialize, serialize_hex};
 use bitcoin::hash_types::{BlockHash, TxMerkleNode, Txid};
 use bitcoin_hashes::{sha256d, Hash};
-use common::executor::Timer;
+use common::executor::{AbortableSpawner, SpawnFuture, Timer};
 use common::log::{debug, error, info};
 use futures::compat::Future01CompatExt;
 use futures::future::join_all;
@@ -167,7 +167,7 @@ pub struct Platform {
     /// This cache stores transactions to be broadcasted once the other node accepts the channel
     pub unsigned_funding_txs: PaMutex<HashMap<u64, TransactionInputSigner>>,
     /// This spawner is used to spawn coin's related futures that should be aborted on coin deactivation.
-    pub spawner: CoinFutureSpawner,
+    pub spawner: AbortableSpawner,
 }
 
 impl Platform {
@@ -190,7 +190,7 @@ impl Platform {
             registered_txs: PaMutex::new(HashSet::new()),
             registered_outputs: PaMutex::new(Vec::new()),
             unsigned_funding_txs: PaMutex::new(HashMap::new()),
-            spawner: CoinFutureSpawner::new(),
+            spawner: AbortableSpawner::new(),
         }
     }
 

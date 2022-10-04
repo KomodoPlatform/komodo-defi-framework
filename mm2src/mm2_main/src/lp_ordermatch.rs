@@ -27,7 +27,7 @@ use blake2::Blake2bVar;
 use coins::utxo::{compressed_pub_key_from_priv_raw, ChecksumType, UtxoAddressFormat};
 use coins::{coin_conf, find_pair, lp_coinfind, BalanceTradeFeeUpdatedHandler, CoinProtocol, CoinsContext,
             FeeApproxStage, MmCoinEnum};
-use common::executor::{spawn_abortable, AbortOnDropHandle, Timer};
+use common::executor::{spawn_abortable, AbortOnDropHandle, SpawnFuture, Timer};
 use common::log::{error, warn, LogOnError};
 use common::time_cache::TimeCache;
 use common::{bits256, log, new_uuid, now_ms};
@@ -463,7 +463,7 @@ pub async fn process_msg(ctx: MmArc, _topics: Vec<String>, from_peer: String, ms
                 new_protocol::OrdermatchMessage::MakerReserved(maker_reserved) => {
                     let msg = MakerReserved::from_new_proto_and_pubkey(maker_reserved, pubkey.unprefixed().into());
                     // spawn because process_maker_reserved may take significant time to run
-                    let spawner = ctx.spawner.clone();
+                    let spawner = ctx.spawner();
                     spawner.spawn(process_maker_reserved(ctx, pubkey.unprefixed().into(), msg));
                     true
                 },
@@ -2795,7 +2795,7 @@ impl MakerOrdersContext {
 
 #[cfg_attr(test, mockable)]
 fn lp_connect_start_bob(ctx: MmArc, maker_match: MakerMatch, maker_order: MakerOrder) {
-    let spawner = ctx.spawner.clone();
+    let spawner = ctx.spawner();
     spawner.spawn(async move {
         // aka "maker_loop"
         let taker_coin = match lp_coinfind(&ctx, &maker_order.rel).await {
@@ -2879,7 +2879,7 @@ fn lp_connect_start_bob(ctx: MmArc, maker_match: MakerMatch, maker_order: MakerO
 }
 
 fn lp_connected_alice(ctx: MmArc, taker_order: TakerOrder, taker_match: TakerMatch) {
-    let spawner = ctx.spawner.clone();
+    let spawner = ctx.spawner();
     spawner.spawn(async move {
         // aka "taker_loop"
         let maker = bits256::from(taker_match.reserved.sender_pubkey.0);

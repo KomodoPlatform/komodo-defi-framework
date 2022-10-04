@@ -45,12 +45,12 @@ use std::num::NonZeroUsize;
 
 pub fn electrum_client_for_test(servers: &[&str]) -> ElectrumClient {
     lazy_static! {
-        /// This global instance of `CoinFutureSpawner` can be used safely to generate `ElectrumClient`
+        /// This global instance of `AbortableSpawner` can be used safely to generate `ElectrumClient`
         /// because once the returned `ElectrumClient` is dropped, all spawned futures will be stopped
         /// almost immediately due to closed `mpsc` channel.
         ///
         /// In other words, using this global instance is similar to using `common::executor::spawn`.
-        static ref COIN_SPAWNER: CoinFutureSpawner = CoinFutureSpawner::new();
+        static ref COIN_SPAWNER: AbortableSpawner = AbortableSpawner::new();
     }
 
     let ctx = MmCtxBuilder::default().into_mm_arc();
@@ -76,7 +76,7 @@ pub fn electrum_client_for_test(servers: &[&str]) -> ElectrumClient {
     };
 
     let servers = servers.into_iter().map(|s| json::from_value(s).unwrap()).collect();
-    block_on(builder.electrum_client(COIN_SPAWNER.deref(), args, servers)).unwrap()
+    block_on(builder.electrum_client(&CoinFutSpawner::new(COIN_SPAWNER.deref()), args, servers)).unwrap()
 }
 
 /// Returned client won't work by default, requires some mocks to be usable

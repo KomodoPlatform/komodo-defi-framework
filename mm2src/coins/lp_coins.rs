@@ -35,7 +35,7 @@
 
 use async_trait::async_trait;
 use base58::FromBase58Error;
-use common::executor::{AbortableSpawner, AbortableSpawnerShared, FutureSpawner};
+use common::executor::{AbortableSpawner, AbortableSpawnerWeak, SpawnAbortable, SpawnFuture, SpawnSettings};
 use common::{calc_total_pages, now_ms, ten, HttpStatusCode};
 use crypto::{Bip32Error, CryptoCtx, DerivationPath, HwRpcError, WithHwRpcError};
 use derive_more::Display;
@@ -1711,7 +1711,7 @@ pub trait MmCoin: SwapOps + MarketCoinOps + Send + Sync + 'static {
 
     /// Returns a spawner that can be used to spawn coin's related futures
     /// that should be aborted on coin deactivation.
-    fn spawner(&self) -> &CoinFutureSpawner;
+    fn spawner(&self) -> CoinFutSpawner;
 
     fn withdraw(&self, req: WithdrawRequest) -> WithdrawFut;
 
@@ -1818,20 +1818,20 @@ pub trait MmCoin: SwapOps + MarketCoinOps + Send + Sync + 'static {
 
 /// The coin futures spawner. It's used to spawn futures that can be aborted immediately or after a timeout
 /// on the the coin deactivation.
+///
+/// # Note
+///
+/// `CoinFutSpawner` doesn't prevent the spawned futures from being aborted.
 #[derive(Clone)]
-pub struct CoinFutureSpawner {
-    inner: AbortableSpawnerShared,
+pub struct CoinFutSpawner {
+    inner: AbortableSpawnerWeak,
 }
 
-impl CoinFutureSpawner {
-    pub fn new() -> CoinFutureSpawner {
-        CoinFutureSpawner {
-            inner: AbortableSpawner::new().into_shared(),
-        }
-    }
+impl CoinFutSpawner {
+    pub fn new(spawner: &AbortableSpawner) -> CoinFutSpawner { CoinFutSpawner { inner: spawner.weak() } }
 }
 
-impl FutureSpawner for CoinFutureSpawner {
+impl SpawnFuture for CoinFutSpawner {
     fn spawn<F>(&self, f: F)
     where
         F: Future03<Output = ()> + Send + 'static,
@@ -1840,14 +1840,27 @@ impl FutureSpawner for CoinFutureSpawner {
     }
 }
 
-impl Default for CoinFutureSpawner {
-    fn default() -> Self { CoinFutureSpawner::new() }
-}
+impl SpawnAbortable for CoinFutSpawner {
+    fn spawn_with_settings<F>(&self, fut: F, settings: SpawnSettings)
+    where
+        F: Future03<Output = ()> + Send + 'static,
+    {
+        self.inner.spawn_with_settings(fut, settings)
+    }
 
-impl Deref for CoinFutureSpawner {
-    type Target = AbortableSpawner;
+    fn spawn_critical<F>(&self, fut: F)
+    where
+        F: Future03<Output = ()> + Send + 'static,
+    {
+        self.inner.spawn_critical(fut)
+    }
 
-    fn deref(&self) -> &Self::Target { &self.inner }
+    fn spawn_critical_with_settings<F>(&self, fut: F, settings: SpawnSettings)
+    where
+        F: Future03<Output = ()> + Send + 'static,
+    {
+        self.inner.spawn_critical_with_settings(fut, settings)
+    }
 }
 
 #[derive(Clone)]
@@ -2495,7 +2508,7 @@ pub async fn lp_register_coin(
 }
 
 fn lp_spawn_tx_history(ctx: MmArc, coin: MmCoinEnum) -> Result<(), String> {
-    let spawner = coin.spawner().clone();
+    let spawner = coin.spawner();
     let fut = async move {
         let _res = coin.process_history_loop(ctx).compat().await;
     };

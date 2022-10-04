@@ -8,7 +8,7 @@ use serde_json::Value;
 use std::sync::{atomic::Ordering, Arc};
 use std::{collections::HashMap, slice::Iter};
 
-use crate::{common::log::Tag, FutureSpawner, MetricsOps, MmMetricsError, MmMetricsResult, MmRecorder};
+use crate::{common::log::Tag, MetricsOps, MmMetricsError, MmMetricsResult, MmRecorder, SpawnFuture};
 
 type MetricLabels = Vec<Label>;
 type MetricNameValueMap = HashMap<String, PreparedMetric>;
@@ -107,7 +107,7 @@ impl MetricsOps for Metrics {
 
     fn init_with_dashboard<S>(&self, spawner: &S, log_state: LogWeak, interval: f64) -> MmMetricsResult<()>
     where
-        S: FutureSpawner,
+        S: SpawnFuture,
     {
         let recorder = self.recorder.clone();
         let runner = TagObserver::log_tag_metrics(log_state, recorder, interval);
@@ -278,7 +278,7 @@ pub mod prometheus {
         credentials: Option<PrometheusCredentials>,
     ) -> Result<(), MmMetricsError>
     where
-        S: FutureSpawner,
+        S: SpawnFuture,
     {
         let make_svc = make_service_fn(move |_conn| {
             let metrics = metrics.clone();

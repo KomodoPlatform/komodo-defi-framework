@@ -1,6 +1,7 @@
 use super::{broadcast_p2p_tx_msg, lp_coinfind, tx_helper_topic, H256Json, SwapsContext, TransactionIdentifier,
             WAIT_CONFIRM_INTERVAL};
 use coins::{MmCoinEnum, WatcherValidatePaymentInput};
+use common::executor::SpawnFuture;
 use common::log;
 use common::log::{error, info};
 use futures::compat::Future01CompatExt;
@@ -411,7 +412,7 @@ fn spawn_taker_swap_watcher(ctx: MmArc, watcher_data: TakerSwapWatcherData) {
     taker_swap_watchers.insert(watcher_data.uuid);
     drop(taker_swap_watchers);
 
-    let spawner = ctx.spawner.clone();
+    let spawner = ctx.spawner();
     spawner.spawn(async move {
         let taker_coin = match lp_coinfind(&ctx, &watcher_data.taker_coin).await {
             Ok(Some(c)) => c,

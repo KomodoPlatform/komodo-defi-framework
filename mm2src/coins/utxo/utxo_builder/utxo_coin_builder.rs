@@ -8,11 +8,11 @@ use crate::utxo::utxo_builder::utxo_conf_builder::{UtxoConfBuilder, UtxoConfErro
 use crate::utxo::{output_script, utxo_common, ElectrumBuilderArgs, ElectrumProtoVerifier, RecentlySpentOutPoints,
                   TxFee, UtxoCoinConf, UtxoCoinFields, UtxoHDAccount, UtxoHDWallet, UtxoRpcMode, UtxoSyncStatus,
                   UtxoSyncStatusLoopHandle, DEFAULT_GAP_LIMIT, UTXO_DUST_AMOUNT};
-use crate::{BlockchainNetwork, CoinFutureSpawner, CoinTransportMetrics, DerivationMethod, HistorySyncState,
+use crate::{BlockchainNetwork, CoinFutSpawner, CoinTransportMetrics, DerivationMethod, HistorySyncState,
             PrivKeyBuildPolicy, PrivKeyPolicy, RpcClientType, UtxoActivationParams};
 use async_trait::async_trait;
 use chain::TxHashAlgo;
-use common::executor::{SpawnSettings, Timer};
+use common::executor::{AbortableSpawner, SpawnAbortable, SpawnSettings, Timer};
 use common::log::{error, info};
 use common::small_rng;
 use crypto::{Bip32DerPathError, Bip44DerPathError, Bip44PathToCoin, CryptoCtx, CryptoInitError, HwWalletType};
@@ -150,9 +150,9 @@ pub trait UtxoFieldsWithIguanaPrivKeyBuilder: UtxoCoinBuilderCommonOps {
         let derivation_method = DerivationMethod::Iguana(my_address);
         let priv_key_policy = PrivKeyPolicy::KeyPair(key_pair);
 
-        let spawner = CoinFutureSpawner::new();
+        let spawner = AbortableSpawner::new();
 
-        let rpc_client = self.rpc_client(&spawner).await?;
+        let rpc_client = self.rpc_client(&CoinFutSpawner::new(&spawner)).await?;
         let tx_fee = self.tx_fee(&rpc_client).await?;
         let decimals = self.decimals(&rpc_client).await?;
         let dust_amount = self.dust_amount();
@@ -218,9 +218,9 @@ pub trait UtxoFieldsWithHardwareWalletBuilder: UtxoCoinBuilderCommonOps {
             gap_limit,
         };
 
-        let spawner = CoinFutureSpawner::new();
+        let spawner = AbortableSpawner::new();
 
-        let rpc_client = self.rpc_client(&spawner).await?;
+        let rpc_client = self.rpc_client(&CoinFutSpawner::new(&spawner)).await?;
         let tx_fee = self.tx_fee(&rpc_client).await?;
         let decimals = self.decimals(&rpc_client).await?;
         let dust_amount = self.dust_amount();
@@ -399,7 +399,7 @@ pub trait UtxoCoinBuilderCommonOps {
         }
     }
 
-    async fn rpc_client(&self, spawner: &CoinFutureSpawner) -> UtxoCoinBuildResult<UtxoRpcClientEnum> {
+    async fn rpc_client(&self, spawner: &CoinFutSpawner) -> UtxoCoinBuildResult<UtxoRpcClientEnum> {
         match self.activation_params().mode.clone() {
             UtxoRpcMode::Native => {
                 #[cfg(target_arch = "wasm32")]
@@ -423,7 +423,7 @@ pub trait UtxoCoinBuilderCommonOps {
 
     async fn electrum_client(
         &self,
-        spawner: &CoinFutureSpawner,
+        spawner: &CoinFutSpawner,
         args: ElectrumBuilderArgs,
         mut servers: Vec<ElectrumRpcRequest>,
     ) -> UtxoCoinBuildResult<ElectrumClient> {
@@ -676,7 +676,7 @@ fn read_native_mode_conf(
 /// https://electrumx.readthedocs.io/en/latest/protocol-methods.html?highlight=keep#server-ping
 /// Weak reference will allow to stop the thread if client is dropped.
 fn spawn_electrum_ping_loop(
-    spawner: &CoinFutureSpawner,
+    spawner: &CoinFutSpawner,
     weak_client: Weak<ElectrumClientImpl>,
     servers: Vec<ElectrumRpcRequest>,
 ) {
@@ -702,7 +702,7 @@ fn spawn_electrum_ping_loop(
 /// https://electrumx.readthedocs.io/en/latest/protocol-methods.html?highlight=keep#server-version
 /// Weak reference will allow to stop the thread if client is dropped.
 fn spawn_electrum_version_loop(
-    spawner: &CoinFutureSpawner,
+    spawner: &CoinFutSpawner,
     weak_client: Weak<ElectrumClientImpl>,
     mut on_connect_rx: UnboundedReceiver<String>,
     client_name: String,

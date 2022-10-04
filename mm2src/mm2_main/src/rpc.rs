@@ -375,6 +375,7 @@ pub extern "C" fn spawn_rpc(ctx_h: u32) {
 
 #[cfg(target_arch = "wasm32")]
 pub fn spawn_rpc(ctx_h: u32) {
+    use common::executor::SpawnFuture;
     use futures::StreamExt;
     use mm2_rpc::wasm_rpc;
     use std::sync::Mutex;

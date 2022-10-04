@@ -92,7 +92,7 @@ pub async fn init_scan_for_new_addresses(
     req: ScanAddressesRequest,
 ) -> MmResult<InitRpcTaskResponse, HDAccountBalanceRpcError> {
     let coin = lp_coinfind_or_err(&ctx, &req.coin).await?;
-    let spawner = coin.spawner().clone();
+    let spawner = coin.spawner();
     let coins_ctx = CoinsContext::from_ctx(&ctx).map_to_mm(HDAccountBalanceRpcError::Internal)?;
     let task = InitScanAddressesTask { req, coin };
     let task_id = ScanAddressesTaskManager::spawn_rpc_task(&coins_ctx.scan_addresses_manager, &spawner, task)?;

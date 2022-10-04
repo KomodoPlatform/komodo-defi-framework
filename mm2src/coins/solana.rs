@@ -2,15 +2,16 @@ use super::{CoinBalance, HistorySyncState, MarketCoinOps, MmCoin, SwapOps, Trade
 use crate::coin_errors::{MyAddressError, ValidatePaymentError};
 use crate::solana::solana_common::{lamports_to_sol, PrepareTransferData, SufficientBalanceError};
 use crate::solana::spl::SplTokenInfo;
-use crate::{BalanceError, BalanceFut, CoinFutureSpawner, FeeApproxStage, FoundSwapTxSpend,
-            NegotiateSwapContractAddrErr, RawTransactionFut, RawTransactionRequest, SearchForSwapTxSpendInput,
-            SignatureResult, TradePreimageFut, TradePreimageResult, TradePreimageValue, TransactionDetails,
-            TransactionFut, TransactionType, TxMarshalingErr, UnexpectedDerivationMethod, ValidateAddressResult,
-            ValidatePaymentFut, ValidatePaymentInput, VerificationResult, WatcherValidatePaymentInput, WithdrawError,
-            WithdrawFut, WithdrawRequest, WithdrawResult};
+use crate::{BalanceError, BalanceFut, CoinFutSpawner, FeeApproxStage, FoundSwapTxSpend, NegotiateSwapContractAddrErr,
+            RawTransactionFut, RawTransactionRequest, SearchForSwapTxSpendInput, SignatureResult, TradePreimageFut,
+            TradePreimageResult, TradePreimageValue, TransactionDetails, TransactionFut, TransactionType,
+            TxMarshalingErr, UnexpectedDerivationMethod, ValidateAddressResult, ValidatePaymentFut,
+            ValidatePaymentInput, VerificationResult, WatcherValidatePaymentInput, WithdrawError, WithdrawFut,
+            WithdrawRequest, WithdrawResult};
 use async_trait::async_trait;
 use base58::ToBase58;
 use bincode::{deserialize, serialize};
+use common::executor::AbortableSpawner;
 use common::{async_blocking, now_ms};
 use derive_more::Display;
 use futures::{FutureExt, TryFutureExt};
@@ -182,7 +183,7 @@ pub async fn solana_coin_from_conf_and_params(
         client,
         decimals,
         spl_tokens_infos,
-        spawner: CoinFutureSpawner::new(),
+        spawner: AbortableSpawner::new(),
     }));
     Ok(solana_coin)
 }
@@ -196,7 +197,7 @@ pub struct SolanaCoinImpl {
     my_address: String,
     spl_tokens_infos: Arc<Mutex<HashMap<String, SplTokenInfo>>>,
     /// This spawner is used to spawn coin's related futures that should be aborted on coin deactivation.
-    spawner: CoinFutureSpawner,
+    spawner: AbortableSpawner,
 }
 
 #[derive(Clone)]
@@ -611,7 +612,7 @@ impl SwapOps for SolanaCoin {
 impl MmCoin for SolanaCoin {
     fn is_asset_chain(&self) -> bool { false }
 
-    fn spawner(&self) -> &CoinFutureSpawner { &self.spawner }
+    fn spawner(&self) -> CoinFutSpawner { CoinFutSpawner::new(&self.spawner) }
 
     fn withdraw(&self, req: WithdrawRequest) -> WithdrawFut {
         Box::new(Box::pin(withdraw_impl(self.clone(), req)).compat())

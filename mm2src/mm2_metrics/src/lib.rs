@@ -8,7 +8,7 @@ pub use metrics;
 #[cfg(not(target_arch = "wasm32"))]
 pub use mm_metrics::prometheus;
 
-use common::{executor::FutureSpawner, log::LogWeak};
+use common::{executor::SpawnFuture, log::LogWeak};
 use derive_more::Display;
 use mm2_err_handle::prelude::MmError;
 use mm_metrics::Metrics;
@@ -44,7 +44,7 @@ pub trait MetricsOps {
     /// Initializes mm2 Metrics with dashboard.
     fn init_with_dashboard<S>(&self, spawner: &S, log_state: LogWeak, interval: f64) -> MmMetricsResult<()>
     where
-        S: FutureSpawner;
+        S: SpawnFuture;
 
     /// Collect the metrics in a Json data format.
     fn collect_json(&self) -> MmMetricsResult<Json>;
@@ -77,7 +77,7 @@ impl MetricsOps for MetricsArc {
 
     fn init_with_dashboard<S>(&self, spawner: &S, log_state: LogWeak, interval: f64) -> MmMetricsResult<()>
     where
-        S: FutureSpawner,
+        S: SpawnFuture,
     {
         self.0.init_with_dashboard(spawner, log_state, interval)
     }

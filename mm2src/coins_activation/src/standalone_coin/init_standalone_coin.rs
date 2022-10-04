@@ -94,7 +94,7 @@ where
     let (coin_conf, protocol_info) = coin_conf_with_protocol(&ctx, &request.ticker)?;
 
     let coins_act_ctx = CoinsActivationContext::from_ctx(&ctx).map_to_mm(InitStandaloneCoinError::Internal)?;
-    let spawner = ctx.spawner.clone();
+    let spawner = ctx.spawner();
     let task = InitStandaloneCoinTask::<Standalone> {
         ctx,
         request,

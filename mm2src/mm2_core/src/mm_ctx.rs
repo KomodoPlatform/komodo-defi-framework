@@ -1,7 +1,7 @@
 use arrayref::array_ref;
 #[cfg(any(not(target_arch = "wasm32"), feature = "track-ctx-pointer"))]
 use common::executor::Timer;
-use common::executor::{AbortableSpawner, AbortableSpawnerShared, FutureSpawner};
+use common::executor::{AbortableSpawner, AbortableSpawnerWeak, SpawnAbortable, SpawnFuture, SpawnSettings};
 use common::log::{self, LogLevel, LogState};
 use common::{bits256, cfg_native, cfg_wasm32, small_rng};
 use gstuff::{try_s, Constructible, ERR, ERRL};
@@ -122,7 +122,7 @@ pub struct MmCtx {
     /// The futures spawner pinned to the `MmCtx` context.
     /// It's used to spawn futures that can be aborted immediately or after a timeout
     /// on the [`MmArc::stop`] function call.
-    pub spawner: MmSpawner,
+    pub spawner: AbortableSpawner,
     #[cfg(target_arch = "wasm32")]
     pub db_namespace: DbNamespaceId,
 }
@@ -162,7 +162,7 @@ impl MmCtx {
             sqlite_connection: Constructible::default(),
             mm_version: "".into(),
             mm_init_ctx: Mutex::new(None),
-            spawner: MmSpawner::new(),
+            spawner: AbortableSpawner::new(),
             #[cfg(target_arch = "wasm32")]
             db_namespace: DbNamespaceId::Main,
         }
@@ -232,6 +232,9 @@ impl MmCtx {
     pub fn p2p_in_memory(&self) -> bool { self.conf["p2p_in_memory"].as_bool().unwrap_or(false) }
 
     pub fn p2p_in_memory_port(&self) -> Option<u64> { self.conf["p2p_in_memory_port"].as_u64() }
+
+    /// Returns the clonable `MmFutSpawner`.
+    pub fn spawner(&self) -> MmFutSpawner { MmFutSpawner::new(&self.spawner) }
 
     /// True if the MarketMaker instance needs to stop.
     pub fn is_stopping(&self) -> bool { self.stop.copy_or(false) }
@@ -555,20 +558,20 @@ impl MmArc {
 /// The futures spawner pinned to the `MmCtx` context.
 /// It's used to spawn futures that can be aborted immediately or after a timeout
 /// on the [`MmArc::stop`] function call.
+///
+/// # Note
+///
+/// `MmFutSpawner` doesn't prevent the spawned futures from being aborted.
 #[derive(Clone)]
-pub struct MmSpawner {
-    inner: AbortableSpawnerShared,
+pub struct MmFutSpawner {
+    inner: AbortableSpawnerWeak,
 }
 
-impl MmSpawner {
-    pub fn new() -> MmSpawner {
-        MmSpawner {
-            inner: AbortableSpawner::new().into_shared(),
-        }
-    }
+impl MmFutSpawner {
+    pub fn new(spawner: &AbortableSpawner) -> MmFutSpawner { MmFutSpawner { inner: spawner.weak() } }
 }
 
-impl FutureSpawner for MmSpawner {
+impl SpawnFuture for MmFutSpawner {
     fn spawn<F>(&self, f: F)
     where
         F: Future<Output = ()> + Send + 'static,
@@ -577,14 +580,27 @@ impl FutureSpawner for MmSpawner {
     }
 }
 
-impl Default for MmSpawner {
-    fn default() -> Self { MmSpawner::new() }
-}
+impl SpawnAbortable for MmFutSpawner {
+    fn spawn_with_settings<F>(&self, fut: F, settings: SpawnSettings)
+    where
+        F: Future<Output = ()> + Send + 'static,
+    {
+        self.inner.spawn_with_settings(fut, settings)
+    }
 
-impl Deref for MmSpawner {
-    type Target = AbortableSpawner;
+    fn spawn_critical<F>(&self, fut: F)
+    where
+        F: Future<Output = ()> + Send + 'static,
+    {
+        self.inner.spawn_critical(fut)
+    }
 
-    fn deref(&self) -> &Self::Target { &self.inner }
+    fn spawn_critical_with_settings<F>(&self, fut: F, settings: SpawnSettings)
+    where
+        F: Future<Output = ()> + Send + 'static,
+    {
+        self.inner.spawn_critical_with_settings(fut, settings)
+    }
 }
 
 /// Helps getting a crate context from a corresponding `MmCtx` field.

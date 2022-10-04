@@ -21,7 +21,7 @@ use crate::lightning::ln_storage::{NetworkGraph, TrustedNodesShared};
 use crate::utxo::rpc_clients::UtxoRpcClientEnum;
 use crate::utxo::utxo_common::{big_decimal_from_sat_unsigned, UtxoTxBuilder};
 use crate::utxo::{sat_from_big_decimal, BlockchainNetwork, FeePolicy, GetUtxoListOps, UtxoTxGenerationOps};
-use crate::{BalanceFut, CoinBalance, CoinFutureSpawner, FeeApproxStage, FoundSwapTxSpend, HistorySyncState,
+use crate::{BalanceFut, CoinBalance, CoinFutSpawner, FeeApproxStage, FoundSwapTxSpend, HistorySyncState,
             MarketCoinOps, MmCoin, NegotiateSwapContractAddrErr, RawTransactionFut, RawTransactionRequest,
             SearchForSwapTxSpendInput, SignatureError, SignatureResult, SwapOps, TradeFee, TradePreimageFut,
             TradePreimageResult, TradePreimageValue, TransactionEnum, TransactionFut, TxMarshalingErr,
@@ -34,6 +34,7 @@ use bitcoin_hashes::sha256::Hash as Sha256;
 use bitcrypto::dhash256;
 use bitcrypto::ChecksumType;
 use chain::TransactionOutput;
+use common::executor::SpawnFuture;
 use common::log::{error, LogOnError, LogState};
 use common::{async_blocking, calc_total_pages, log, now_ms, ten, PagingOptionsEnum};
 use futures::{FutureExt, TryFutureExt};
@@ -557,7 +558,7 @@ impl MarketCoinOps for LightningCoin {
 impl MmCoin for LightningCoin {
     fn is_asset_chain(&self) -> bool { false }
 
-    fn spawner(&self) -> &CoinFutureSpawner { &self.platform.spawner }
+    fn spawner(&self) -> CoinFutSpawner { CoinFutSpawner::new(&self.platform.spawner) }
 
     fn get_raw_transaction(&self, req: RawTransactionRequest) -> RawTransactionFut {
         Box::new(self.platform_coin().get_raw_transaction(req))

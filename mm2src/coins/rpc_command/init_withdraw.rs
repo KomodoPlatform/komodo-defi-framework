@@ -33,7 +33,7 @@ pub trait CoinWithdrawInit {
 
 pub async fn init_withdraw(ctx: MmArc, request: WithdrawRequest) -> WithdrawInitResult<InitWithdrawResponse> {
     let coin = lp_coinfind_or_err(&ctx, &request.coin).await?;
-    let spawner = coin.spawner().clone();
+    let spawner = coin.spawner();
     let task = WithdrawTask {
         ctx: ctx.clone(),
         coin,

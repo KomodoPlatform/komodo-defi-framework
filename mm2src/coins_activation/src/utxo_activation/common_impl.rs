@@ -8,8 +8,8 @@ use coins::hd_pubkey::RpcTaskXPubExtractor;
 use coins::my_tx_history_v2::TxHistoryStorage;
 use coins::utxo::utxo_tx_history_v2::{utxo_history_loop, UtxoTxHistoryOps};
 use coins::utxo::{UtxoActivationParams, UtxoCoinFields};
-use coins::{MarketCoinOps, PrivKeyActivationPolicy, PrivKeyBuildPolicy};
-use common::executor::SpawnSettings;
+use coins::{CoinFutSpawner, MarketCoinOps, PrivKeyActivationPolicy, PrivKeyBuildPolicy};
+use common::executor::{SpawnAbortable, SpawnSettings};
 use crypto::hw_rpc_task::HwConnectStatuses;
 use crypto::CryptoCtx;
 use futures::compat::Future01CompatExt;
@@ -91,7 +91,7 @@ pub(crate) fn start_history_background_fetching<Coin>(
 ) where
     Coin: AsRef<UtxoCoinFields> + UtxoTxHistoryOps,
 {
-    let spawner = coin.as_ref().spawner.clone();
+    let spawner = CoinFutSpawner::new(&coin.as_ref().spawner);
 
     let msg = format!("'utxo_history_loop' has been aborted for {}", coin.ticker());
     let fut = utxo_history_loop(coin, storage, metrics, current_balances);

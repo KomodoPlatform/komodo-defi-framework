@@ -20,7 +20,7 @@
 
 use bitcrypto::sha256;
 use coins::register_balance_update_handler;
-use common::executor::Timer;
+use common::executor::{SpawnFuture, Timer};
 use common::log::{info, warn};
 use crypto::{from_hw_error, CryptoCtx, CryptoInitError, HwError, HwProcessingError, HwRpcError, WithHwRpcError};
 use derive_more::Display;
@@ -466,7 +466,7 @@ pub async fn init_p2p(ctx: MmArc) -> P2PResult<()> {
         light_node_type(&ctx)?
     };
 
-    let spawner = P2pSpawner::new(ctx.spawner.clone());
+    let spawner = P2pSpawner::new(ctx.spawner());
     let spawn_result = spawn_gossipsub(netid, force_p2p_key, spawner, seednodes, node_type, move |swarm| {
         let behaviour = swarm.behaviour();
         mm_gauge!(

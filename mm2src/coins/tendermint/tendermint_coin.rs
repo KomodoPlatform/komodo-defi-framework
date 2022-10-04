@@ -5,7 +5,7 @@ use super::tendermint_native_rpc::*;
 use crate::coin_errors::{MyAddressError, ValidatePaymentError};
 use crate::tendermint::htlc::MsgClaimHtlc;
 use crate::utxo::sat_from_big_decimal;
-use crate::{big_decimal_from_sat_unsigned, BalanceError, BalanceFut, BigDecimal, CoinBalance, CoinFutureSpawner,
+use crate::{big_decimal_from_sat_unsigned, BalanceError, BalanceFut, BigDecimal, CoinBalance, CoinFutSpawner,
             FeeApproxStage, FoundSwapTxSpend, HistorySyncState, MarketCoinOps, MmCoin, NegotiateSwapContractAddrErr,
             RawTransactionFut, RawTransactionRequest, SearchForSwapTxSpendInput, SignatureResult, SwapOps, TradeFee,
             TradePreimageFut, TradePreimageResult, TradePreimageValue, TransactionDetails, TransactionEnum,
@@ -14,6 +14,7 @@ use crate::{big_decimal_from_sat_unsigned, BalanceError, BalanceFut, BigDecimal,
             WatcherValidatePaymentInput, WithdrawError, WithdrawFut, WithdrawRequest};
 use async_trait::async_trait;
 use bitcrypto::sha256;
+use common::executor::AbortableSpawner;
 use common::{get_utc_timestamp, Future01CompatExt};
 use cosmrs::bank::MsgSend;
 use cosmrs::crypto::secp256k1::SigningKey;
@@ -75,7 +76,7 @@ pub struct TendermintCoinImpl {
     chain_id: ChainId,
     sequence_lock: AsyncMutex<()>,
     /// This spawner is used to spawn coin's related futures that should be aborted on coin deactivation.
-    spawner: CoinFutureSpawner,
+    spawner: AbortableSpawner,
 }
 
 #[derive(Clone)]
@@ -202,7 +203,7 @@ impl TendermintCoin {
             denom,
             chain_id,
             sequence_lock: AsyncMutex::new(()),
-            spawner: CoinFutureSpawner::new(),
+            spawner: AbortableSpawner::new(),
         })))
     }
 
@@ -362,7 +363,7 @@ impl TendermintCoin {
 impl MmCoin for TendermintCoin {
     fn is_asset_chain(&self) -> bool { false }
 
-    fn spawner(&self) -> &CoinFutureSpawner { &self.spawner }
+    fn spawner(&self) -> CoinFutSpawner { CoinFutSpawner::new(&self.spawner) }
 
     fn withdraw(&self, req: WithdrawRequest) -> WithdrawFut {
         let coin = self.clone();

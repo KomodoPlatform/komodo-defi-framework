@@ -6,7 +6,7 @@ use crate::utxo::{generate_and_send_tx, FeePolicy, GetUtxoListOps, UtxoArc, Utxo
 use crate::{DerivationMethod, PrivKeyBuildPolicy, UtxoActivationParams};
 use async_trait::async_trait;
 use chain::TransactionOutput;
-use common::executor::{SpawnSettings, Timer};
+use common::executor::{SpawnAbortable, SpawnSettings, Timer};
 use common::log::{error, info, warn};
 use futures::compat::Future01CompatExt;
 use mm2_core::mm_ctx::MmArc;

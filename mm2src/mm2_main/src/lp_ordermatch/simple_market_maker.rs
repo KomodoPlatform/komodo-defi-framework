@@ -11,7 +11,7 @@ use crate::mm2::{lp_ordermatch::{cancel_order, create_maker_order,
                                  OrdermatchContext, SetPriceReq},
                  lp_swap::{latest_swaps_for_pair, LatestSwapsErr}};
 use coins::{lp_coinfind, GetNonZeroBalance};
-use common::{executor::Timer,
+use common::{executor::{SpawnFuture, Timer},
              log::{debug, error, info, warn},
              Future01CompatExt, HttpStatusCode, StatusCode};
 use derive_more::Display;
