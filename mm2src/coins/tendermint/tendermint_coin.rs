@@ -294,6 +294,34 @@ impl TendermintCoin {
         ))
     }
 
+    // WIP notes:
+    // We must simulate the tx on rpc nodes in order to get network fee.
+    //
+    // Therefore, we can call SimulateRequest or CheckTx to get used gas or fee itself.
+    //
+    // Right now cosmos doesn't expose any of gas price and fee informations directly.
+    // So, sending tx with fee:0 to CheckTx as ABCI Request and then parsing the required value from the
+    // error response is likely the easiest way to do.
+    #[allow(dead_code)]
+    pub(super) async fn calculate_fee(&self, tx_bytes: Vec<u8>) -> MmResult<(), TendermintCoinRpcError> {
+        // let path = AbciPath::from_str("/cosmos.tx.v1beta1.Service/Simulate").expect("valid path");
+        let path = AbciPath::from_str("/tendermint.abci.ABCIApplication/CheckTx").expect("valid path");
+        // let request = cosmrs::proto::cosmos::tx::v1beta1::SimulateRequest { tx: None, tx_bytes };
+        let request = cosmrs::proto::tendermint::abci::RequestCheckTx {
+            tx: tx_bytes,
+            r#type: 0,
+        };
+        let request = AbciRequest::new(Some(path), request.encode_to_vec(), None, false);
+
+        let response = self.rpc_client().await?.perform(request).await?;
+        println!("Check TX response {:?}", response);
+        // let response =
+        //     cosmrs::proto::cosmos::tx::v1beta1::SimulateResponse::decode(response.response.value.as_slice())?;
+        // let gas = response.gas_info.unwrap();
+        // println!("Used Gas {:?}", gas.gas_used);
+        todo!()
+    }
+
     pub(super) async fn my_account_info(&self) -> MmResult<BaseAccount, TendermintCoinRpcError> {
         let path = AbciPath::from_str("/cosmos.auth.v1beta1.Query/Account").expect("valid path");
         let request = QueryAccountRequest {
@@ -1421,6 +1449,14 @@ pub mod tendermint_coin_tests {
             .unwrap()
         });
         let tx_bytes = raw_tx.to_bytes().unwrap();
+
+        // WIP
+        //
+        // let simulate_tx_fut = coin.calculate_fee(tx_bytes.clone());
+        // block_on(async {
+        //     simulate_tx_fut.await.unwrap();
+        // });
+
         let send_tx_fut = coin.send_raw_tx_bytes(&tx_bytes).compat();
         block_on(async {
             send_tx_fut.await.unwrap();
