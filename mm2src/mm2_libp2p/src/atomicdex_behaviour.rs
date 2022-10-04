@@ -11,7 +11,7 @@ use common::executor::SpawnFuture;
 use derive_more::Display;
 use futures::{channel::{mpsc::{channel, Receiver, Sender},
                         oneshot},
-              future::{abortable, join_all, poll_fn, AbortHandle},
+              future::{join_all, poll_fn},
               Future, FutureExt, SinkExt, StreamExt};
 use futures_rustls::rustls;
 use libp2p::core::transport::Boxed as BoxedTransport;
@@ -614,7 +614,7 @@ pub async fn spawn_gossipsub(
     to_dial: Vec<RelayAddress>,
     node_type: NodeType,
     on_poll: impl Fn(&AtomicDexSwarm) + Send + 'static,
-) -> Result<(Sender<AdexBehaviourCmd>, AdexEventRx, PeerId, AbortHandle), AdexBehaviourError> {
+) -> Result<(Sender<AdexBehaviourCmd>, AdexEventRx, PeerId), AdexBehaviourError> {
     let (result_tx, result_rx) = oneshot::channel();
 
     let runtime_c = runtime.clone();
@@ -645,7 +645,7 @@ fn start_gossipsub(
     to_dial: Vec<RelayAddress>,
     node_type: NodeType,
     on_poll: impl Fn(&AtomicDexSwarm) + Send + 'static,
-) -> Result<(Sender<AdexBehaviourCmd>, AdexEventRx, PeerId, AbortHandle), AdexBehaviourError> {
+) -> Result<(Sender<AdexBehaviourCmd>, AdexEventRx, PeerId), AdexBehaviourError> {
     let i_am_relay = node_type.is_relay();
     let mut rng = rand::thread_rng();
     let local_key = generate_ed25519_keypair(&mut rng, force_key);
@@ -807,10 +807,8 @@ fn start_gossipsub(
         Poll::Pending
     });
 
-    let (polling_fut, abort_handle) = abortable(polling_fut);
     runtime.spawn(polling_fut.then(|_| async {}));
-
-    Ok((cmd_tx, event_rx, local_peer_id, abort_handle))
+    Ok((cmd_tx, event_rx, local_peer_id))
 }
 
 #[cfg(target_arch = "wasm32")]

@@ -1,5 +1,5 @@
 use futures::future::abortable;
-use futures::Future as Future03;
+use futures::{Future as Future03, FutureExt};
 
 #[cfg(not(target_arch = "wasm32"))] mod native_executor;
 #[cfg(not(target_arch = "wasm32"))]
@@ -67,25 +67,7 @@ struct SpawnMsg {
 
 #[must_use]
 pub fn spawn_abortable(fut: impl Future03<Output = ()> + Send + 'static) -> AbortOnDropHandle {
-    spawn_abortable_with_settings(fut, SpawnSettings::default())
-}
-
-#[must_use]
-pub fn spawn_abortable_with_settings(
-    fut: impl Future03<Output = ()> + Send + 'static,
-    settings: SpawnSettings,
-) -> AbortOnDropHandle {
     let (abortable, handle) = abortable(fut);
-
-    unsafe {
-        spawn(async move {
-            match (abortable.await, settings.on_finish, settings.on_abort) {
-                (Ok(_), Some(on_finish), _) => log::log!(on_finish.level, "{}", on_finish.msg),
-                (Err(_), _, Some(on_abort)) => log::log!(on_abort.level, "{}", on_abort.msg),
-                _ => (),
-            }
-        })
-    }
-
+    unsafe { spawn(abortable.then(|_| async {})) }
     AbortOnDropHandle::from(handle)
 }

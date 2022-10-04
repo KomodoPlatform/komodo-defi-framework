@@ -497,14 +497,7 @@ pub async fn init_p2p(ctx: MmArc) -> P2PResult<()> {
         );
     })
     .await;
-    let (cmd_tx, event_rx, peer_id, p2p_abort) = spawn_result?;
-    let mut p2p_abort = Some(p2p_abort);
-    ctx.on_stop(Box::new(move || {
-        if let Some(handle) = p2p_abort.take() {
-            handle.abort();
-        }
-        Ok(())
-    }));
+    let (cmd_tx, event_rx, peer_id) = spawn_result?;
     ctx.peer_id.pin(peer_id.to_string()).map_to_mm(P2PInitError::Internal)?;
     let p2p_context = P2PContext::new(cmd_tx);
     p2p_context.store_to_mm_arc(&ctx);
