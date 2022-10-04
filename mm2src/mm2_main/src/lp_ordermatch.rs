@@ -27,7 +27,7 @@ use blake2::Blake2bVar;
 use coins::utxo::{compressed_pub_key_from_priv_raw, ChecksumType, UtxoAddressFormat};
 use coins::{coin_conf, find_pair, lp_coinfind, BalanceTradeFeeUpdatedHandler, CoinProtocol, CoinsContext,
             FeeApproxStage, MmCoinEnum};
-use common::executor::{spawn_abortable, AbortOnDropHandle, SpawnFuture, Timer};
+use common::executor::{spawn_abortable, AbortOnDropHandle, SpawnAbortable, SpawnFuture, SpawnSettings, Timer};
 use common::log::{error, warn, LogOnError};
 use common::time_cache::TimeCache;
 use common::{bits256, log, new_uuid, now_ms};
@@ -485,7 +485,7 @@ pub async fn process_msg(ctx: MmArc, _topics: Vec<String>, from_peer: String, ms
             }
         },
         Err(e) => {
-            log::error!("Error {} while decoding signed message", e);
+            error!("Error {} while decoding signed message", e);
             false
         },
     }
@@ -2446,17 +2446,15 @@ impl Orderbook {
             let mut pair_trie = match get_trie_mut(&mut self.memory_db, pair_root) {
                 Ok(trie) => trie,
                 Err(e) => {
-                    log::error!("Error getting {} trie with root {:?}", e, prev_root);
+                    error!("Error getting {} trie with root {:?}", e, prev_root);
                     return;
                 },
             };
             let order_bytes = order.trie_state_bytes();
             if let Err(e) = pair_trie.insert(order.uuid.as_bytes(), &order_bytes) {
-                log::error!(
+                error!(
                     "Error {:?} on insertion to trie. Key {}, value {:?}",
-                    e,
-                    order.uuid,
-                    order_bytes
+                    e, order.uuid, order_bytes
                 );
                 return;
             };
@@ -2557,7 +2555,7 @@ impl Orderbook {
         )]) {
             Ok(root) => root,
             Err(_) => {
-                log::error!("Failed to get existing trie with root {:?}", pair_state);
+                error!("Failed to get existing trie with root {:?}", pair_state);
                 return Some(order);
             },
         };
@@ -2796,16 +2794,18 @@ impl MakerOrdersContext {
 #[cfg_attr(test, mockable)]
 fn lp_connect_start_bob(ctx: MmArc, maker_match: MakerMatch, maker_order: MakerOrder) {
     let spawner = ctx.spawner();
-    spawner.spawn(async move {
+    let uuid = maker_match.request.uuid;
+
+    let fut = async move {
         // aka "maker_loop"
         let taker_coin = match lp_coinfind(&ctx, &maker_order.rel).await {
             Ok(Some(c)) => c,
             Ok(None) => {
-                log::error!("Coin {} is not found/enabled", maker_order.rel);
+                error!("Coin {} is not found/enabled", maker_order.rel);
                 return;
             },
             Err(e) => {
-                log::error!("!lp_coinfind({}): {}", maker_order.rel, e);
+                error!("!lp_coinfind({}): {}", maker_order.rel, e);
                 return;
             },
         };
@@ -2813,11 +2813,11 @@ fn lp_connect_start_bob(ctx: MmArc, maker_match: MakerMatch, maker_order: MakerO
         let maker_coin = match lp_coinfind(&ctx, &maker_order.base).await {
             Ok(Some(c)) => c,
             Ok(None) => {
-                log::error!("Coin {} is not found/enabled", maker_order.base);
+                error!("Coin {} is not found/enabled", maker_order.base);
                 return;
             },
             Err(e) => {
-                log::error!("!lp_coinfind({}): {}", maker_order.base, e);
+                error!("!lp_coinfind({}): {}", maker_order.base, e);
                 return;
             },
         };
@@ -2826,7 +2826,6 @@ fn lp_connect_start_bob(ctx: MmArc, maker_match: MakerMatch, maker_order: MakerO
         let taker_amount = maker_match.reserved.get_rel_amount().to_decimal();
         let privkey = &ctx.secp256k1_key_pair().private().secret;
         let my_persistent_pub = compressed_pub_key_from_priv_raw(&privkey[..], ChecksumType::DSHA256).unwrap();
-        let uuid = maker_match.request.uuid;
         let my_conf_settings = choose_maker_confs_and_notas(
             maker_order.conf_settings,
             &maker_match.request,
@@ -2875,23 +2874,28 @@ fn lp_connect_start_bob(ctx: MmArc, maker_match: MakerMatch, maker_order: MakerO
             MakerSwap::generate_secret().into(),
         );
         run_maker_swap(RunMakerSwapInput::StartNew(maker_swap), ctx).await;
-    });
+    };
+
+    let settings = SpawnSettings::info_on_abort(format!("swap {uuid} stopped!"));
+    spawner.spawn_with_settings(fut, settings);
 }
 
 fn lp_connected_alice(ctx: MmArc, taker_order: TakerOrder, taker_match: TakerMatch) {
     let spawner = ctx.spawner();
-    spawner.spawn(async move {
+    let uuid = taker_match.reserved.taker_order_uuid;
+
+    let fut = async move {
         // aka "taker_loop"
         let maker = bits256::from(taker_match.reserved.sender_pubkey.0);
         let taker_coin_ticker = taker_order.taker_coin_ticker();
         let taker_coin = match lp_coinfind(&ctx, taker_coin_ticker).await {
             Ok(Some(c)) => c,
             Ok(None) => {
-                log::error!("Coin {} is not found/enabled", taker_coin_ticker);
+                error!("Coin {} is not found/enabled", taker_coin_ticker);
                 return;
             },
             Err(e) => {
-                log::error!("!lp_coinfind({}): {}", taker_coin_ticker, e);
+                error!("!lp_coinfind({}): {}", taker_coin_ticker, e);
                 return;
             },
         };
@@ -2900,11 +2904,11 @@ fn lp_connected_alice(ctx: MmArc, taker_order: TakerOrder, taker_match: TakerMat
         let maker_coin = match lp_coinfind(&ctx, maker_coin_ticker).await {
             Ok(Some(c)) => c,
             Ok(None) => {
-                log::error!("Coin {} is not found/enabled", maker_coin_ticker);
+                error!("Coin {} is not found/enabled", maker_coin_ticker);
                 return;
             },
             Err(e) => {
-                log::error!("!lp_coinfind({}): {}", maker_coin_ticker, e);
+                error!("!lp_coinfind({}): {}", maker_coin_ticker, e);
                 return;
             },
         };
@@ -2913,7 +2917,6 @@ fn lp_connected_alice(ctx: MmArc, taker_order: TakerOrder, taker_match: TakerMat
         let my_persistent_pub = compressed_pub_key_from_priv_raw(&privkey[..], ChecksumType::DSHA256).unwrap();
         let maker_amount = taker_match.reserved.get_base_amount().clone();
         let taker_amount = taker_match.reserved.get_rel_amount().clone();
-        let uuid = taker_match.reserved.taker_order_uuid;
 
         let my_conf_settings =
             choose_taker_confs_and_notas(&taker_order.request, &taker_match.reserved, &maker_coin, &taker_coin);
@@ -2962,7 +2965,10 @@ fn lp_connected_alice(ctx: MmArc, taker_order: TakerOrder, taker_match: TakerMat
             taker_order.p2p_privkey.map(SerializableSecp256k1Keypair::into_inner),
         );
         run_taker_swap(RunTakerSwapInput::StartNew(taker_swap), ctx).await
-    });
+    };
+
+    let settings = SpawnSettings::info_on_abort(format!("swap {uuid} stopped!"));
+    spawner.spawn_with_settings(fut, settings)
 }
 
 pub async fn lp_ordermatch_loop(ctx: MmArc) {
@@ -3332,7 +3338,7 @@ async fn process_maker_connected(ctx: MmArc, from_pubkey: H256Json, connected: M
     };
 
     if order_match.reserved.sender_pubkey != from_pubkey {
-        log::error!("Connected message sender pubkey != reserved message sender pubkey");
+        error!("Connected message sender pubkey != reserved message sender pubkey");
         return;
     }
     // alice

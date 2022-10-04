@@ -58,7 +58,6 @@
 //
 
 use crate::mm2::lp_network::{broadcast_p2p_msg, Libp2pPeerId};
-use async_std::sync as async_std_sync;
 use coins::{lp_coinfind, MmCoinEnum, TradeFee, TransactionEnum};
 use common::log::{debug, warn};
 use common::{bits256, calc_total_pages,
@@ -365,12 +364,6 @@ impl From<TakerSwapEvent> for SwapEvent {
 struct SwapsContext {
     running_swaps: Mutex<Vec<Weak<dyn AtomicSwap>>>,
     banned_pubkeys: Mutex<HashMap<H256Json, BanReason>>,
-    /// The cloneable receiver of multi-consumer async channel awaiting for shutdown_tx.send() to be
-    /// invoked to stop all running swaps.
-    /// MM2 is used as static lib on some platforms e.g. iOS so it doesn't run as separate process.
-    /// So when stop was invoked the swaps could stay running on shared executors causing
-    /// Very unpleasant consequences
-    shutdown_rx: async_std_sync::Receiver<()>,
     swap_msgs: Mutex<HashMap<Uuid, SwapMsgStore>>,
     taker_swap_watchers: PaMutex<HashSet<Uuid>>,
     #[cfg(target_arch = "wasm32")]
@@ -381,29 +374,9 @@ impl SwapsContext {
     /// Obtains a reference to this crate context, creating it if necessary.
     fn from_ctx(ctx: &MmArc) -> Result<Arc<SwapsContext>, String> {
         Ok(try_s!(from_ctx(&ctx.swaps_ctx, move || {
-            let (shutdown_tx, shutdown_rx) = async_std_sync::channel(1);
-            let mut shutdown_tx = Some(shutdown_tx);
-            ctx.on_stop(Box::new(move || {
-                if let Some(shutdown_tx) = shutdown_tx.take() {
-                    info!("on_stop] firing shutdown_tx!");
-                    let fut = async move {
-                        shutdown_tx.send(()).await;
-                    };
-
-                    // The spawned future doesn't hold any shared pointer,
-                    // and will stop almost immediately once the `shutdown_tx` sender is triggered.
-                    unsafe { common::executor::spawn(fut) };
-
-                    Ok(())
-                } else {
-                    ERR!("on_stop callback called twice!")
-                }
-            }));
-
             Ok(SwapsContext {
                 running_swaps: Mutex::new(vec![]),
                 banned_pubkeys: Mutex::new(HashMap::new()),
-                shutdown_rx,
                 swap_msgs: Mutex::new(HashMap::new()),
                 taker_swap_watchers: PaMutex::new(HashSet::new()),
                 #[cfg(target_arch = "wasm32")]
