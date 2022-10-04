@@ -78,6 +78,7 @@ enum StopReason {
     TakerPaymentValidateFailed(WatcherError),
     TakerPaymentWaitForSpendFailed(WatcherError),
     MakerPaymentSpendFailed(WatcherError),
+    TakerPaymentRefundFailed(WatcherError),
 }
 
 impl Stopped {
@@ -100,12 +101,6 @@ impl From<String> for WatcherError {
 impl From<&str> for WatcherError {
     fn from(e: &str) -> Self { WatcherError { error: e.to_owned() } }
 }
-
-impl Started {}
-impl ValidateTakerPayment {}
-impl WaitForTakerPaymentSpend {}
-impl SpendMakerPayment {}
-impl Stopped {}
 
 impl TransitionFrom<Started> for ValidateTakerPayment {}
 impl TransitionFrom<ValidateTakerPayment> for WaitForTakerPaymentSpend {}
@@ -184,6 +179,7 @@ impl State for WaitForTakerPaymentSpend {
     type Result = ();
 
     async fn on_changed(self: Box<Self>, watcher_ctx: &mut WatcherContext) -> StateResult<WatcherContext, ()> {
+        println!("**WaitForTakerPaymentSpend");
         #[cfg(not(test))]
         {
             // Sleep for half the locktime to allow the taker to spend the maker payment first
@@ -271,7 +267,7 @@ impl State for RefundTakerPayment {
                     );
                 }
 
-                return Self::change_state(Stopped::from_reason(StopReason::MakerPaymentSpendFailed(
+                return Self::change_state(Stopped::from_reason(StopReason::TakerPaymentRefundFailed(
                     ERRL!("{}", err.get_plain_text_format()).into(),
                 )));
             },
@@ -283,6 +279,19 @@ impl State for RefundTakerPayment {
             &transaction,
             &None,
         );
+
+        let wait_fut = watcher_ctx.taker_coin.wait_for_confirmations(
+            &transaction.tx_hex(),
+            1,
+            false,
+            watcher_ctx.data.taker_payment_lock + WAIT_FOR_TAKER_REFUND + 3600,
+            WAIT_CONFIRM_INTERVAL,
+        );
+        if let Err(err) = wait_fut.compat().await {
+            return Self::change_state(Stopped::from_reason(StopReason::TakerPaymentRefundFailed(
+                ERRL!("{}", err).into(),
+            )));
+        }
 
         let tx_hash = transaction.tx_hash();
         info!("Taker refund tx hash {:02x}", tx_hash);
