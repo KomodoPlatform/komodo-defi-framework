@@ -209,8 +209,15 @@ impl SwapOps for TendermintToken {
         min_block_number: u64,
         uuid: &[u8],
     ) -> Box<dyn Future<Item = (), Error = String> + Send> {
-        let fut = async move { Ok(()) };
-        Box::new(fut.boxed().compat())
+        self.platform_coin.validate_fee_for_denom(
+            fee_tx,
+            expected_sender,
+            fee_addr,
+            amount,
+            self.decimals,
+            uuid,
+            self.denom.to_string(),
+        )
     }
 
     fn validate_maker_payment(&self, input: ValidatePaymentInput) -> ValidatePaymentFut<()> {

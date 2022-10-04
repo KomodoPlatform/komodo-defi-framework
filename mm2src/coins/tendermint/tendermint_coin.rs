@@ -23,7 +23,8 @@ use cosmrs::crypto::secp256k1::SigningKey;
 use cosmrs::proto::cosmos::auth::v1beta1::{BaseAccount, QueryAccountRequest, QueryAccountResponse};
 use cosmrs::proto::cosmos::bank::v1beta1::{MsgSend as MsgSendProto, QueryBalanceRequest, QueryBalanceResponse};
 use cosmrs::proto::cosmos::base::v1beta1::Coin as CoinProto;
-use cosmrs::proto::cosmos::tx::v1beta1::{GetTxsEventRequest, GetTxsEventResponse, TxBody, TxRaw};
+use cosmrs::proto::cosmos::tx::v1beta1::{GetTxRequest, GetTxResponse, GetTxsEventRequest, GetTxsEventResponse, Tx,
+                                         TxBody, TxRaw};
 use cosmrs::tendermint::abci::Path as AbciPath;
 use cosmrs::tendermint::chain::Id as ChainId;
 use cosmrs::tx::{self, Fee, Msg, Raw, SignDoc, SignerInfo};
@@ -563,6 +564,107 @@ impl TendermintCoin {
         };
 
         Box::new(fut.boxed().compat())
+    }
+
+    #[allow(clippy::too_many_arguments)]
+    pub(super) fn validate_fee_for_denom(
+        &self,
+        fee_tx: &TransactionEnum,
+        expected_sender: &[u8],
+        fee_addr: &[u8],
+        amount: &BigDecimal,
+        decimals: u8,
+        uuid: &[u8],
+        denom: String,
+    ) -> Box<dyn Future<Item = (), Error = String> + Send> {
+        let tx = match fee_tx {
+            TransactionEnum::CosmosTransaction(tx) => tx.clone(),
+            invalid_variant => {
+                return Box::new(futures01::future::err(ERRL!(
+                    "Unexpected tx variant {:?}",
+                    invalid_variant
+                )))
+            },
+        };
+
+        let uuid = try_fus!(Uuid::from_slice(uuid)).to_string();
+        let sender_pubkey_hash = dhash160(expected_sender);
+        let expected_sender_address =
+            try_fus!(AccountId::new(&self.account_prefix, sender_pubkey_hash.as_slice())).to_string();
+
+        let dex_fee_addr_pubkey_hash = dhash160(fee_addr);
+        let expected_dex_fee_address = try_fus!(AccountId::new(
+            &self.account_prefix,
+            dex_fee_addr_pubkey_hash.as_slice()
+        ))
+        .to_string();
+
+        let expected_amount = try_fus!(sat_from_big_decimal(amount, decimals));
+        let expected_amount = CoinProto {
+            denom,
+            amount: expected_amount.to_string(),
+        };
+
+        let coin = self.clone();
+        let fut = async move {
+            let tx_body = try_s!(TxBody::decode(tx.data.body_bytes.as_slice()));
+            if tx_body.messages.len() != 1 {
+                return ERR!("Tx body must have exactly one message");
+            }
+
+            let msg = try_s!(MsgSendProto::decode(tx_body.messages[0].value.as_slice()));
+            if msg.to_address != expected_dex_fee_address {
+                return ERR!(
+                    "Dex fee is sent to wrong address: {}, expected {}",
+                    msg.to_address,
+                    expected_dex_fee_address
+                );
+            }
+
+            if msg.amount.len() != 1 {
+                return ERR!("Msg must have exactly one Coin");
+            }
+
+            if msg.amount[0] != expected_amount {
+                return ERR!("Invalid amount {:?}, expected {:?}", msg.amount[0], expected_amount);
+            }
+
+            if msg.from_address != expected_sender_address {
+                return ERR!(
+                    "Invalid sender: {}, expected {}",
+                    msg.from_address,
+                    expected_sender_address
+                );
+            }
+
+            if tx_body.memo != uuid {
+                return ERR!("Invalid memo: {}, expected {}", msg.from_address, uuid);
+            }
+
+            let encoded_tx = tx.data.encode_to_vec();
+            let hash = upper_hex(sha256(&encoded_tx).as_slice());
+            let encoded_from_rpc = try_s!(coin.request_tx(hash).await).encode_to_vec();
+            if encoded_tx != encoded_from_rpc {
+                return ERR!("Transaction from RPC doesn't match the input");
+            }
+            Ok(())
+        };
+        Box::new(fut.boxed().compat())
+    }
+
+    async fn request_tx(&self, hash: String) -> MmResult<Tx, TendermintCoinRpcError> {
+        let path = AbciPath::from_str("/cosmos.tx.v1beta1.Service/GetTx").expect("valid path");
+        let request = GetTxRequest { hash };
+        let response = self
+            .rpc_client()
+            .await?
+            .abci_query(Some(path), request.encode_to_vec(), None, false)
+            .await?;
+
+        let response = GetTxResponse::decode(response.value.as_slice())?;
+        response
+            .tx
+            .or_mm_err(|| TendermintCoinRpcError::InvalidResponse(format!("Tx {} does not exist", request.hash)))
     }
 }
 
@@ -1137,75 +1239,18 @@ impl SwapOps for TendermintCoin {
         expected_sender: &[u8],
         fee_addr: &[u8],
         amount: &BigDecimal,
-        min_block_number: u64,
+        _min_block_number: u64,
         uuid: &[u8],
     ) -> Box<dyn Future<Item = (), Error = String> + Send> {
-        let tx = match fee_tx {
-            TransactionEnum::CosmosTransaction(tx) => tx.clone(),
-            invalid_variant => {
-                return Box::new(futures01::future::err(ERRL!(
-                    "Unexpected tx variant {:?}",
-                    invalid_variant
-                )))
-            },
-        };
-
-        let uuid = try_fus!(Uuid::from_slice(uuid)).to_string();
-        let sender_pubkey_hash = dhash160(expected_sender);
-        let expected_sender_address =
-            try_fus!(AccountId::new(&self.account_prefix, sender_pubkey_hash.as_slice())).to_string();
-
-        let dex_fee_addr_pubkey_hash = dhash160(fee_addr);
-        let expected_dex_fee_address = try_fus!(AccountId::new(
-            &self.account_prefix,
-            dex_fee_addr_pubkey_hash.as_slice()
-        ))
-        .to_string();
-
-        let expected_amount = try_fus!(sat_from_big_decimal(amount, self.decimals));
-        let expected_amount = CoinProto {
-            denom: self.denom.to_string(),
-            amount: expected_amount.to_string(),
-        };
-
-        let coin = self.clone();
-        let fut = async move {
-            let tx_body = try_s!(TxBody::decode(tx.data.body_bytes.as_slice()));
-            if tx_body.messages.len() != 1 {
-                return ERR!("Tx body must have exactly one message");
-            }
-
-            let msg = try_s!(MsgSendProto::decode(tx_body.messages[0].value.as_slice()));
-            if msg.to_address != expected_dex_fee_address {
-                return ERR!(
-                    "Dex fee is sent to wrong address: {}, expected {}",
-                    msg.to_address,
-                    expected_dex_fee_address
-                );
-            }
-
-            if msg.amount.len() != 1 {
-                return ERR!("Msg must have exactly one Coin");
-            }
-
-            if msg.amount[0] != expected_amount {
-                return ERR!("Invalid amount {:?}, expected {:?}", msg.amount[0], expected_amount);
-            }
-
-            if msg.from_address != expected_sender_address {
-                return ERR!(
-                    "Invalid sender: {}, expected {}",
-                    msg.from_address,
-                    expected_sender_address
-                );
-            }
-
-            if tx_body.memo != uuid {
-                return ERR!("Invalid memo: {}, expected {}", msg.from_address, uuid);
-            }
-            Ok(())
-        };
-        Box::new(fut.boxed().compat())
+        self.validate_fee_for_denom(
+            fee_tx,
+            expected_sender,
+            fee_addr,
+            amount,
+            self.decimals,
+            uuid,
+            self.denom.to_string(),
+        )
     }
 
     fn validate_maker_payment(&self, input: ValidatePaymentInput) -> ValidatePaymentFut<()> {
@@ -1282,7 +1327,7 @@ pub mod tendermint_coin_tests {
     use super::*;
     use crate::tendermint::htlc_proto::ClaimHtlcProtoRep;
     use common::{block_on, DEX_FEE_ADDR_RAW_PUBKEY};
-    use cosmrs::proto::cosmos::tx::v1beta1::{GetTxRequest, GetTxResponse, GetTxsEventResponse, Tx};
+    use cosmrs::proto::cosmos::tx::v1beta1::{GetTxRequest, GetTxResponse, GetTxsEventResponse};
     use rand::{thread_rng, Rng};
     pub const IRIS_TESTNET_HTLC_PAIR1_SEED: &str = "iris test seed";
     // const IRIS_TESTNET_HTLC_PAIR1_ADDRESS: &str = "iaa1e0rx87mdj79zejewuc4jg7ql9ud2286g2us8f2";
@@ -1543,27 +1588,9 @@ pub mod tendermint_coin_tests {
         // CreateHtlc tx, validation should fail because first message of dex fee tx must be MsgSend
         // https://nyancat.iobscan.io/#/tx?txHash=2DB382CE3D9953E4A94957B475B0E8A98F5B6DDB32D6BF0F6A765D949CF4A727
         let create_htlc_tx_hash = "2DB382CE3D9953E4A94957B475B0E8A98F5B6DDB32D6BF0F6A765D949CF4A727";
-        let create_htlc_tx_bytes = [
-            10, 150, 2, 10, 142, 2, 10, 27, 47, 105, 114, 105, 115, 109, 111, 100, 46, 104, 116, 108, 99, 46, 77, 115,
-            103, 67, 114, 101, 97, 116, 101, 72, 84, 76, 67, 18, 238, 1, 10, 42, 105, 97, 97, 49, 101, 114, 102, 110,
-            107, 106, 115, 109, 97, 108, 107, 119, 116, 118, 106, 52, 52, 113, 110, 102, 114, 50, 100, 114, 102, 122,
-            100, 116, 52, 110, 57, 108, 100, 104, 48, 107, 106, 118, 18, 42, 105, 97, 97, 49, 101, 48, 114, 120, 56,
-            55, 109, 100, 106, 55, 57, 122, 101, 106, 101, 119, 117, 99, 52, 106, 103, 55, 113, 108, 57, 117, 100, 50,
-            50, 56, 54, 103, 50, 117, 115, 56, 102, 50, 26, 64, 98, 55, 54, 53, 56, 48, 49, 99, 52, 48, 57, 48, 54, 55,
-            98, 98, 56, 55, 57, 101, 101, 50, 101, 99, 102, 102, 101, 54, 49, 56, 98, 57, 49, 100, 55, 52, 52, 102, 99,
-            52, 48, 48, 48, 48, 48, 48, 48, 48, 48, 48, 48, 48, 48, 48, 48, 48, 48, 48, 48, 48, 48, 48, 48, 48, 42, 13,
-            10, 3, 110, 105, 109, 18, 6, 49, 48, 48, 48, 48, 48, 50, 64, 48, 99, 51, 52, 99, 55, 49, 101, 98, 97, 50,
-            97, 53, 49, 55, 51, 56, 54, 57, 57, 102, 57, 102, 51, 100, 54, 100, 97, 102, 102, 98, 49, 53, 98, 101, 53,
-            55, 54, 101, 56, 101, 100, 53, 52, 51, 50, 48, 51, 52, 56, 53, 55, 57, 49, 98, 53, 100, 97, 51, 57, 100,
-            49, 48, 100, 64, 234, 60, 24, 175, 171, 168, 2, 18, 103, 10, 81, 10, 70, 10, 31, 47, 99, 111, 115, 109,
-            111, 115, 46, 99, 114, 121, 112, 116, 111, 46, 115, 101, 99, 112, 50, 53, 54, 107, 49, 46, 80, 117, 98, 75,
-            101, 121, 18, 35, 10, 33, 2, 90, 55, 151, 92, 7, 154, 117, 67, 96, 63, 202, 178, 78, 37, 101, 164, 173,
-            238, 60, 249, 175, 137, 52, 105, 14, 16, 50, 130, 250, 64, 37, 17, 18, 4, 10, 2, 8, 1, 24, 165, 3, 18, 18,
-            10, 12, 10, 5, 117, 110, 121, 97, 110, 18, 3, 50, 48, 48, 16, 160, 141, 6, 26, 64, 41, 223, 190, 95, 198,
-            236, 158, 210, 87, 224, 243, 168, 101, 66, 203, 157, 160, 214, 4, 118, 32, 39, 79, 34, 38, 92, 79, 184, 34,
-            30, 212, 88, 48, 35, 106, 222, 246, 117, 247, 105, 98, 247, 78, 76, 252, 199, 161, 14, 19, 144, 244, 210,
-            7, 27, 199, 221, 7, 131, 142, 48, 3, 129, 149, 38,
-        ];
+        let create_htlc_tx_bytes = block_on(coin.request_tx(create_htlc_tx_hash.into()))
+            .unwrap()
+            .encode_to_vec();
         let create_htlc_tx = TransactionEnum::CosmosTransaction(CosmosTransaction {
             txid: create_htlc_tx_hash.into(),
             data: TxRaw::decode(create_htlc_tx_bytes.as_slice()).unwrap(),
@@ -1587,22 +1614,9 @@ pub mod tendermint_coin_tests {
         // just a random transfer tx not related to AtomicDEX, should fail on recipient address check
         // https://nyancat.iobscan.io/#/tx?txHash=65815814E7D74832D87956144C1E84801DC94FE9A509D207A0ABC3F17775E5DF
         let random_transfer_tx_hash = "65815814E7D74832D87956144C1E84801DC94FE9A509D207A0ABC3F17775E5DF";
-        let random_transfer_tx_bytes = [
-            10, 149, 1, 10, 140, 1, 10, 28, 47, 99, 111, 115, 109, 111, 115, 46, 98, 97, 110, 107, 46, 118, 49, 98,
-            101, 116, 97, 49, 46, 77, 115, 103, 83, 101, 110, 100, 18, 108, 10, 42, 105, 97, 97, 49, 112, 57, 112, 50,
-            48, 102, 116, 104, 48, 108, 118, 101, 100, 118, 52, 115, 109, 119, 51, 50, 115, 57, 55, 112, 121, 56, 110,
-            116, 101, 114, 48, 113, 110, 119, 116, 114, 117, 56, 18, 42, 105, 97, 97, 49, 107, 54, 99, 109, 99, 107,
-            120, 117, 117, 119, 50, 100, 122, 122, 107, 118, 116, 122, 114, 57, 119, 108, 116, 103, 53, 108, 54, 51,
-            116, 115, 97, 116, 107, 108, 113, 53, 122, 121, 26, 18, 10, 5, 117, 110, 121, 97, 110, 18, 9, 49, 48, 48,
-            48, 48, 48, 48, 48, 48, 18, 4, 116, 101, 115, 116, 18, 106, 10, 81, 10, 70, 10, 31, 47, 99, 111, 115, 109,
-            111, 115, 46, 99, 114, 121, 112, 116, 111, 46, 115, 101, 99, 112, 50, 53, 54, 107, 49, 46, 80, 117, 98, 75,
-            101, 121, 18, 35, 10, 33, 3, 50, 122, 72, 102, 48, 78, 173, 21, 217, 65, 219, 189, 242, 210, 86, 53, 20,
-            252, 201, 77, 37, 228, 175, 137, 122, 113, 104, 26, 2, 182, 55, 178, 18, 4, 10, 2, 8, 1, 24, 136, 2, 18,
-            21, 10, 15, 10, 5, 117, 110, 121, 97, 110, 18, 6, 50, 48, 48, 48, 48, 48, 16, 192, 154, 12, 26, 64, 45, 28,
-            140, 30, 26, 68, 189, 86, 254, 36, 148, 125, 110, 214, 202, 226, 124, 111, 138, 70, 227, 233, 190, 170,
-            173, 151, 152, 220, 132, 42, 228, 234, 12, 10, 32, 243, 49, 68, 200, 250, 211, 73, 6, 56, 69, 91, 101, 246,
-            61, 236, 219, 116, 195, 71, 167, 201, 125, 4, 105, 245, 222, 69, 63, 227,
-        ];
+        let random_transfer_tx_bytes = block_on(coin.request_tx(random_transfer_tx_hash.into()))
+            .unwrap()
+            .encode_to_vec();
 
         let random_transfer_tx = TransactionEnum::CosmosTransaction(CosmosTransaction {
             txid: random_transfer_tx_hash.into(),
@@ -1626,25 +1640,9 @@ pub mod tendermint_coin_tests {
         // dex fee tx sent during real swap
         // https://nyancat.iobscan.io/#/tx?txHash=8AA6B9591FE1EE93C8B89DE4F2C59B2F5D3473BD9FB5F3CFF6A5442BEDC881D7
         let dex_fee_hash = "8AA6B9591FE1EE93C8B89DE4F2C59B2F5D3473BD9FB5F3CFF6A5442BEDC881D7";
-        let dex_fee_bytes = [
-            10, 142, 1, 10, 134, 1, 10, 28, 47, 99, 111, 115, 109, 111, 115, 46, 98, 97, 110, 107, 46, 118, 49, 98,
-            101, 116, 97, 49, 46, 77, 115, 103, 83, 101, 110, 100, 18, 102, 10, 42, 105, 97, 97, 49, 100, 120, 99, 55,
-            108, 100, 103, 107, 51, 110, 102, 110, 53, 107, 55, 54, 113, 112, 108, 117, 112, 57, 103, 57, 120, 104,
-            120, 110, 121, 102, 52, 109, 101, 112, 57, 107, 112, 56, 18, 42, 105, 97, 97, 49, 101, 103, 48, 113, 103,
-            97, 122, 55, 51, 106, 115, 118, 118, 114, 118, 118, 116, 122, 113, 52, 120, 56, 50, 51, 104, 109, 122, 56,
-            113, 97, 112, 108, 100, 100, 48, 120, 52, 122, 26, 12, 10, 5, 117, 110, 121, 97, 110, 18, 3, 49, 48, 48,
-            24, 168, 155, 176, 2, 18, 103, 10, 80, 10, 70, 10, 31, 47, 99, 111, 115, 109, 111, 115, 46, 99, 114, 121,
-            112, 116, 111, 46, 115, 101, 99, 112, 50, 53, 54, 107, 49, 46, 80, 117, 98, 75, 101, 121, 18, 35, 10, 33,
-            3, 212, 247, 88, 116, 229, 242, 165, 29, 157, 34, 247, 71, 235, 217, 77, 166, 50, 7, 176, 140, 123, 2, 59,
-            9, 134, 80, 81, 240, 116, 235, 126, 164, 18, 4, 10, 2, 8, 1, 24, 6, 18, 19, 10, 13, 10, 5, 117, 110, 121,
-            97, 110, 18, 4, 49, 48, 48, 48, 16, 160, 141, 6, 26, 64, 120, 72, 49, 198, 42, 150, 101, 142, 155, 12, 72,
-            75, 191, 104, 68, 101, 120, 135, 1, 196, 251, 212, 108, 116, 79, 32, 244, 173, 227, 219, 186, 17, 82, 242,
-            121, 200, 175, 177, 24, 174, 80, 14, 217, 220, 18, 96, 168, 18, 90, 15, 23, 60, 145, 234, 64, 138, 58, 62,
-            11, 212, 43, 34, 106, 224,
-        ];
+        let dex_fee_tx = block_on(coin.request_tx(dex_fee_hash.into())).unwrap();
 
-        let dex_fee_tx = Tx::decode(dex_fee_bytes.as_slice()).unwrap();
-        let pubkey = dex_fee_tx.auth_info.unwrap().signer_infos[0]
+        let pubkey = dex_fee_tx.auth_info.as_ref().unwrap().signer_infos[0]
             .public_key
             .as_ref()
             .unwrap()
@@ -1652,7 +1650,7 @@ pub mod tendermint_coin_tests {
             .to_vec();
         let dex_fee_tx = TransactionEnum::CosmosTransaction(CosmosTransaction {
             txid: dex_fee_hash.into(),
-            data: TxRaw::decode(dex_fee_bytes.as_slice()).unwrap(),
+            data: TxRaw::decode(dex_fee_tx.encode_to_vec().as_slice()).unwrap(),
         });
 
         let validate_err = coin
@@ -1692,5 +1690,37 @@ pub mod tendermint_coin_tests {
             .unwrap_err();
         println!("{}", validate_err);
         assert!(validate_err.contains("Invalid memo"));
+
+        // https://nyancat.iobscan.io/#/tx?txHash=5939A9D1AF57BB828714E0C4C4D7F2AEE349BB719B0A1F25F8FBCC3BB227C5F9
+        let fee_with_memo_hash = "5939A9D1AF57BB828714E0C4C4D7F2AEE349BB719B0A1F25F8FBCC3BB227C5F9";
+        let fee_with_memo_tx = block_on(coin.request_tx(fee_with_memo_hash.into())).unwrap();
+
+        let pubkey = fee_with_memo_tx.auth_info.as_ref().unwrap().signer_infos[0]
+            .public_key
+            .as_ref()
+            .unwrap()
+            .value[2..]
+            .to_vec();
+
+        let fee_with_memo_tx = TransactionEnum::CosmosTransaction(CosmosTransaction {
+            txid: fee_with_memo_hash.into(),
+            data: TxRaw::decode(fee_with_memo_tx.encode_to_vec().as_slice()).unwrap(),
+        });
+
+        let uuid: Uuid = "cae6011b-9810-4710-b784-1e5dd0b3a0d0".parse().unwrap();
+        let amount: BigDecimal = "0.0001".parse().unwrap();
+        block_on(
+            coin.validate_fee_for_denom(
+                &fee_with_memo_tx,
+                &pubkey,
+                &DEX_FEE_ADDR_RAW_PUBKEY,
+                &amount,
+                6,
+                uuid.as_bytes(),
+                "nim".into(),
+            )
+            .compat(),
+        )
+        .unwrap();
     }
 }
