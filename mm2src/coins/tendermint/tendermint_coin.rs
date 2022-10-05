@@ -23,8 +23,8 @@ use cosmrs::crypto::secp256k1::SigningKey;
 use cosmrs::proto::cosmos::auth::v1beta1::{BaseAccount, QueryAccountRequest, QueryAccountResponse};
 use cosmrs::proto::cosmos::bank::v1beta1::{MsgSend as MsgSendProto, QueryBalanceRequest, QueryBalanceResponse};
 use cosmrs::proto::cosmos::base::v1beta1::Coin as CoinProto;
-use cosmrs::proto::cosmos::tx::v1beta1::{GetTxRequest, GetTxResponse, GetTxsEventRequest, GetTxsEventResponse, Tx,
-                                         TxBody, TxRaw};
+use cosmrs::proto::cosmos::tx::v1beta1::{GetTxRequest, GetTxResponse, GetTxsEventRequest, GetTxsEventResponse,
+                                         SimulateRequest, SimulateResponse, Tx, TxBody, TxRaw};
 use cosmrs::tendermint::abci::Path as AbciPath;
 use cosmrs::tendermint::chain::Id as ChainId;
 use cosmrs::tx::{self, Fee, Msg, Raw, SignDoc, SignerInfo};
@@ -51,6 +51,8 @@ use std::sync::Arc;
 use std::time::Duration;
 use uuid::Uuid;
 
+/// 0.25 is good average gas price on atom and iris
+pub const AVERAGE_GAS_PRICE: f64 = 0.25;
 pub(super) const TIMEOUT_HEIGHT_DELTA: u64 = 100;
 pub const GAS_LIMIT_DEFAULT: u64 = 100_000;
 pub const TX_DEFAULT_MEMO: &str = "";
@@ -294,30 +296,52 @@ impl TendermintCoin {
         ))
     }
 
-    // WIP notes:
-    //
-    // We must simulate the tx on rpc nodes in order to get network fee.
+    // We must simulate the tx on rpc nodes in order to calculate network fee.
     // Right now cosmos doesn't expose any of gas price and fee informations directly.
-    //
-    // Therefore, we can call SimulateRequest or CheckTx(not supported, getting "unknown abci path" error) to get used gas or fee itself.
-    #[allow(dead_code)]
-    pub(super) async fn calculate_fee(&self, tx_bytes: Vec<u8>) -> MmResult<(), TendermintCoinRpcError> {
-        // let path = AbciPath::from_str("/tendermint.abci.ABCIApplication/CheckTx").expect("valid path");
-        // let request = cosmrs::proto::tendermint::abci::RequestCheckTx {
-        //     tx: tx_bytes,
-        //     r#type: 1,
-        // };
+    // Therefore, we can call SimulateRequest or CheckTx(doesn't work with using Abci interface) to get used gas or fee itself.
+    pub(super) fn gen_simulated_tx(
+        &self,
+        account_info: BaseAccount,
+        tx_payload: Any,
+        timeout_height: u64,
+        memo: String,
+    ) -> cosmrs::Result<Vec<u8>> {
+        let fee_amount = Coin {
+            denom: self.denom.clone(),
+            amount: 0_u64.into(),
+        };
+
+        let fee = Fee::from_amount_and_gas(fee_amount, GAS_LIMIT_DEFAULT);
+
+        let signkey = SigningKey::from_bytes(&self.priv_key)?;
+        let tx_body = tx::Body::new(vec![tx_payload], memo, timeout_height as u32);
+        let auth_info = SignerInfo::single_direct(Some(signkey.public_key()), account_info.sequence).auth_info(fee);
+        let sign_doc = SignDoc::new(&tx_body, &auth_info, &self.chain_id, account_info.account_number)?;
+        sign_doc.sign(&signkey)?.to_bytes()
+    }
+
+    #[allow(deprecated)]
+    pub(super) async fn calculate_fee(
+        &self,
+        base_denom: Denom,
+        tx_bytes: Vec<u8>,
+    ) -> MmResult<Fee, TendermintCoinRpcError> {
         let path = AbciPath::from_str("/cosmos.tx.v1beta1.Service/Simulate").expect("valid path");
-        let request = cosmrs::proto::cosmos::tx::v1beta1::SimulateRequest { tx: None, tx_bytes };
+        let request = SimulateRequest { tx_bytes, tx: None };
         let request = AbciRequest::new(Some(path), request.encode_to_vec(), None, false);
 
         let response = self.rpc_client().await?.perform(request).await?;
-         let response =
-             cosmrs::proto::cosmos::tx::v1beta1::SimulateResponse::decode(response.response.value.as_slice())?;
-        let gas = response.gas_info.unwrap();
-        // 0.25 is good average gas price for atom/iris
-        let _fee = (gas.gas_used as f64 * 0.25_f64).ceil();
-        todo!()
+        let response = SimulateResponse::decode(response.response.value.as_slice())?;
+
+        let gas = response.gas_info.expect("Could not simulate tx gas cost");
+        let amount = (gas.gas_used as f64 * AVERAGE_GAS_PRICE).ceil();
+
+        let fee_amount = Coin {
+            denom: base_denom,
+            amount: (amount as u64).into(),
+        };
+
+        Ok(Fee::from_amount_and_gas(fee_amount, GAS_LIMIT_DEFAULT))
     }
 
     pub(super) async fn my_account_info(&self) -> MmResult<BaseAccount, TendermintCoinRpcError> {
@@ -373,7 +397,6 @@ impl TendermintCoin {
 
     fn gen_create_htlc_tx(
         &self,
-        base_denom: Denom,
         denom: Denom,
         to: &AccountId,
         amount: cosmrs::Decimal,
@@ -418,48 +441,23 @@ impl TendermintCoin {
             transfer: false,
         };
 
-        let fee_amount = Coin {
-            denom: base_denom,
-            // TODO
-            // Calculate current fee
-            amount: 50000_u64.into(),
-        };
-
-        let fee = Fee::from_amount_and_gas(fee_amount, GAS_LIMIT_DEFAULT);
-
         Ok(IrisHtlc {
             id: htlc_id,
-            fee,
             msg_payload: msg_payload
                 .to_any()
                 .map_err(|e| MmError::new(TxMarshalingErr::InvalidInput(e.to_string())))?,
         })
     }
 
-    fn gen_claim_htlc_tx(
-        &self,
-        base_denom: Denom,
-        htlc_id: String,
-        secret: &[u8],
-    ) -> MmResult<IrisHtlc, TxMarshalingErr> {
+    fn gen_claim_htlc_tx(&self, htlc_id: String, secret: &[u8]) -> MmResult<IrisHtlc, TxMarshalingErr> {
         let msg_payload = MsgClaimHtlc {
             id: htlc_id.clone(),
             sender: self.account_id.clone(),
             secret: hex::encode(secret),
         };
 
-        let fee_amount = Coin {
-            denom: base_denom,
-            // TODO
-            // Calculate current fee
-            amount: 50000_u64.into(),
-        };
-
-        let fee = Fee::from_amount_and_gas(fee_amount, GAS_LIMIT_DEFAULT);
-
         Ok(IrisHtlc {
             id: htlc_id,
-            fee,
             msg_payload: msg_payload
                 .to_any()
                 .map_err(|e| MmError::new(TxMarshalingErr::InvalidInput(e.to_string())))?,
@@ -506,8 +504,7 @@ impl TendermintCoin {
         // TODO
         // use the proper time lock. This is only for demo
         let time_lock = 4000;
-        let create_htlc_tx =
-            try_tx_fus!(self.gen_create_htlc_tx(self.denom.clone(), denom, &to, amount, secret_hash, time_lock as u64));
+        let create_htlc_tx = try_tx_fus!(self.gen_create_htlc_tx(denom, &to, amount, secret_hash, time_lock as u64));
 
         let coin = self.clone();
         let fut = async move {
@@ -516,10 +513,19 @@ impl TendermintCoin {
             let timeout_height = current_block + TIMEOUT_HEIGHT_DELTA;
             let account_info = try_tx_s!(coin.my_account_info().await);
 
+            let simulated_tx = try_tx_s!(coin.gen_simulated_tx(
+                account_info.clone(),
+                create_htlc_tx.msg_payload.clone(),
+                timeout_height,
+                TX_DEFAULT_MEMO.into(),
+            ));
+
+            let fee = try_tx_s!(coin.calculate_fee(coin.denom.clone(), simulated_tx).await);
+
             let tx_raw = try_tx_s!(coin.any_to_signed_raw_tx(
                 account_info.clone(),
                 create_htlc_tx.msg_payload.clone(),
-                create_htlc_tx.fee.clone(),
+                fee,
                 timeout_height,
                 TX_DEFAULT_MEMO.into(),
             ));
@@ -1125,7 +1131,7 @@ impl SwapOps for TendermintCoin {
         htlc_id.extend_from_slice(coins_string.as_bytes());
         let htlc_id = sha256(&htlc_id).to_string().to_uppercase();
 
-        let claim_htlc_tx = try_tx_fus!(self.gen_claim_htlc_tx(self.denom.clone(), htlc_id, secret));
+        let claim_htlc_tx = try_tx_fus!(self.gen_claim_htlc_tx(htlc_id, secret));
         let coin = self.clone();
 
         let fut = async move {
@@ -1135,10 +1141,19 @@ impl SwapOps for TendermintCoin {
 
             let account_info = try_tx_s!(coin.my_account_info().await);
 
+            let simulated_tx = try_tx_s!(coin.gen_simulated_tx(
+                account_info.clone(),
+                claim_htlc_tx.msg_payload.clone(),
+                timeout_height,
+                TX_DEFAULT_MEMO.into(),
+            ));
+
+            let fee = try_tx_s!(coin.calculate_fee(coin.denom.clone(), simulated_tx).await);
+
             let tx_raw = try_tx_s!(coin.any_to_signed_raw_tx(
                 account_info,
                 claim_htlc_tx.msg_payload,
-                claim_htlc_tx.fee,
+                fee,
                 timeout_height,
                 TX_DEFAULT_MEMO.into(),
             ));
@@ -1198,7 +1213,7 @@ impl SwapOps for TendermintCoin {
         htlc_id.extend_from_slice(coins_string.as_bytes());
         let htlc_id = sha256(&htlc_id).to_string().to_uppercase();
 
-        let claim_htlc_tx = try_tx_fus!(self.gen_claim_htlc_tx(self.denom.clone(), htlc_id, secret));
+        let claim_htlc_tx = try_tx_fus!(self.gen_claim_htlc_tx(htlc_id, secret));
         let coin = self.clone();
 
         let fut = async move {
@@ -1208,10 +1223,19 @@ impl SwapOps for TendermintCoin {
 
             let account_info = try_tx_s!(coin.my_account_info().await);
 
+            let simulated_tx = try_tx_s!(coin.gen_simulated_tx(
+                account_info.clone(),
+                claim_htlc_tx.msg_payload.clone(),
+                timeout_height,
+                TX_DEFAULT_MEMO.into(),
+            ));
+
+            let fee = try_tx_s!(coin.calculate_fee(coin.denom.clone(), simulated_tx).await);
+
             let tx_raw = try_tx_s!(coin.any_to_signed_raw_tx(
                 account_info,
                 claim_htlc_tx.msg_payload,
-                claim_htlc_tx.fee,
+                fee,
                 timeout_height,
                 TX_DEFAULT_MEMO.into(),
             ));
@@ -1419,14 +1443,7 @@ pub mod tendermint_coin_tests {
         let time_lock = 1000;
 
         let create_htlc_tx = coin
-            .gen_create_htlc_tx(
-                base_denom.clone(),
-                coin.denom.clone(),
-                &to,
-                amount,
-                sha256(&sec).as_slice(),
-                time_lock,
-            )
+            .gen_create_htlc_tx(coin.denom.clone(), &to, amount, sha256(&sec).as_slice(), time_lock)
             .unwrap();
 
         let current_block_fut = coin.current_block().compat();
@@ -1436,24 +1453,28 @@ pub mod tendermint_coin_tests {
         let account_info_fut = coin.my_account_info();
         let account_info = block_on(async { account_info_fut.await.unwrap() });
 
+        let simulated_tx = coin
+            .gen_simulated_tx(
+                account_info.clone(),
+                create_htlc_tx.msg_payload.clone(),
+                timeout_height,
+                TX_DEFAULT_MEMO.into(),
+            )
+            .unwrap();
+
+        let fee = block_on(async { coin.calculate_fee(base_denom.clone(), simulated_tx).await.unwrap() });
+
         let raw_tx = block_on(async {
             coin.any_to_signed_raw_tx(
                 account_info.clone(),
                 create_htlc_tx.msg_payload.clone(),
-                create_htlc_tx.fee.clone(),
+                fee,
                 timeout_height,
                 TX_DEFAULT_MEMO.into(),
             )
             .unwrap()
         });
         let tx_bytes = raw_tx.to_bytes().unwrap();
-
-        // WIP
-        //
-        // let simulate_tx_fut = coin.calculate_fee(tx_bytes.clone());
-        // block_on(async {
-        //     simulate_tx_fut.await.unwrap();
-        // });
 
         let send_tx_fut = coin.send_raw_tx_bytes(&tx_bytes).compat();
         block_on(async {
@@ -1462,9 +1483,7 @@ pub mod tendermint_coin_tests {
         // >> END HTLC CREATION
 
         // << BEGIN HTLC CLAIMING
-        let claim_htlc_tx = coin
-            .gen_claim_htlc_tx(base_denom.clone(), create_htlc_tx.id, &sec)
-            .unwrap();
+        let claim_htlc_tx = coin.gen_claim_htlc_tx(create_htlc_tx.id, &sec).unwrap();
 
         let current_block_fut = coin.current_block().compat();
         let current_block = common::block_on(async { current_block_fut.await.unwrap() });
@@ -1473,11 +1492,22 @@ pub mod tendermint_coin_tests {
         let account_info_fut = coin.my_account_info();
         let account_info = block_on(async { account_info_fut.await.unwrap() });
 
+        let simulated_tx = coin
+            .gen_simulated_tx(
+                account_info.clone(),
+                claim_htlc_tx.msg_payload.clone(),
+                timeout_height,
+                TX_DEFAULT_MEMO.into(),
+            )
+            .unwrap();
+
+        let fee = block_on(async { coin.calculate_fee(base_denom.clone(), simulated_tx).await.unwrap() });
+
         let raw_tx = coin
             .any_to_signed_raw_tx(
                 account_info,
                 claim_htlc_tx.msg_payload,
-                claim_htlc_tx.fee,
+                fee,
                 timeout_height,
                 TX_DEFAULT_MEMO.into(),
             )
