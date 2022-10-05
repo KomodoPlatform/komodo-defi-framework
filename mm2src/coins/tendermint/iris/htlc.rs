@@ -37,7 +37,7 @@ pub(crate) struct IrisHtlc {
     pub(crate) msg_payload: cosmrs::Any,
 }
 
-#[derive(Clone)]
+#[derive(Clone, Debug, Eq, PartialEq)]
 pub(crate) struct MsgCreateHtlc {
     /// Sender's address.
     pub(crate) to: AccountId,

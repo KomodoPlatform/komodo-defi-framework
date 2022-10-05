@@ -146,6 +146,16 @@ impl From<TendermintCoinRpcError> for BalanceError {
     }
 }
 
+impl From<TendermintCoinRpcError> for ValidatePaymentError {
+    fn from(err: TendermintCoinRpcError) -> Self {
+        match err {
+            TendermintCoinRpcError::InvalidResponse(e) => ValidatePaymentError::InvalidRpcResponse(e),
+            TendermintCoinRpcError::Prost(e) => ValidatePaymentError::InvalidRpcResponse(e.to_string()),
+            TendermintCoinRpcError::PerformError(e) => ValidatePaymentError::Transport(e),
+        }
+    }
+}
+
 #[cfg(not(target_arch = "wasm32"))]
 impl From<cosmrs::rpc::Error> for TendermintCoinRpcError {
     fn from(err: cosmrs::rpc::Error) -> Self { TendermintCoinRpcError::PerformError(err.to_string()) }
@@ -701,6 +711,68 @@ impl TendermintCoin {
         Box::new(fut.boxed().compat())
     }
 
+    pub(super) fn validate_payment_for_denom(
+        &self,
+        input: ValidatePaymentInput,
+        denom: Denom,
+        decimals: u8,
+    ) -> ValidatePaymentFut<()> {
+        let coin = self.clone();
+        let fut = async move {
+            let tx = cosmrs::Tx::from_bytes(&input.payment_tx)
+                .map_to_mm(|e| ValidatePaymentError::TxDeserializationError(e.to_string()))?;
+
+            if tx.body.messages.len() != 1 {
+                return MmError::err(ValidatePaymentError::WrongPaymentTx(
+                    "Payment tx must have exactly one message".into(),
+                ));
+            }
+
+            let create_htlc_msg_proto = CreateHtlcProtoRep::decode(tx.body.messages[0].value.as_slice())
+                .map_to_mm(|e| ValidatePaymentError::WrongPaymentTx(e.to_string()))?;
+            let create_htlc_msg = MsgCreateHtlc::try_from(create_htlc_msg_proto)
+                .map_to_mm(|e| ValidatePaymentError::WrongPaymentTx(e.to_string()))?;
+
+            let sender_pubkey_hash = dhash160(&input.other_pub);
+            let sender = AccountId::new(&coin.account_prefix, sender_pubkey_hash.as_slice())
+                .map_to_mm(|e| ValidatePaymentError::InvalidInput(e.to_string()))?;
+
+            let amount = sat_from_big_decimal(&input.amount, decimals)?;
+            let amount = Coin {
+                denom,
+                amount: amount.into(),
+            };
+            let expected_msg = MsgCreateHtlc {
+                sender,
+                to: coin.account_id.clone(),
+                receiver_on_other_chain: "".into(),
+                sender_on_other_chain: "".into(),
+                amount: vec![amount],
+                hash_lock: hex::encode(input.secret_hash),
+                timestamp: 0,
+                time_lock: 4000,
+                transfer: false,
+            };
+
+            if create_htlc_msg != expected_msg {
+                return MmError::err(ValidatePaymentError::WrongPaymentTx(format!(
+                    "Incorrect CreateHtlc message {:?}, expected {:?}",
+                    create_htlc_msg, expected_msg
+                )));
+            }
+
+            let hash = upper_hex(sha256(&input.payment_tx).as_slice());
+            let tx_from_rpc = coin.request_tx(hash).await?;
+            if input.payment_tx != tx_from_rpc.encode_to_vec() {
+                return MmError::err(ValidatePaymentError::InvalidRpcResponse(
+                    "Tx from RPC doesn't match the input".into(),
+                ));
+            }
+            Ok(())
+        };
+        Box::new(fut.boxed().compat())
+    }
+
     async fn request_tx(&self, hash: String) -> MmResult<Tx, TendermintCoinRpcError> {
         let path = AbciPath::from_str("/cosmos.tx.v1beta1.Service/GetTx").expect("valid path");
         let request = GetTxRequest { hash };
@@ -1033,7 +1105,7 @@ impl MarketCoinOps for TendermintCoin {
         _swap_contract_address: &Option<BytesJson>,
     ) -> TransactionFut {
         let tx = try_tx_fus!(cosmrs::Tx::from_bytes(transaction));
-        let first_message = try_tx_fus!(tx.body.messages.first().ok_or("Tx body couldn't be readed."));
+        let first_message = try_tx_fus!(tx.body.messages.first().ok_or("Tx body couldn't be read."));
         let htlc_proto = try_tx_fus!(CreateHtlcProtoRep::decode(first_message.value.as_slice()));
         let coins_string = htlc_proto
             .amount
@@ -1170,7 +1242,7 @@ impl SwapOps for TendermintCoin {
         swap_unique_data: &[u8],
     ) -> TransactionFut {
         let tx = try_tx_fus!(cosmrs::Tx::from_bytes(taker_payment_tx));
-        let msg = try_tx_fus!(tx.body.messages.first().ok_or("Tx body couldn't be readed."));
+        let msg = try_tx_fus!(tx.body.messages.first().ok_or("Tx body couldn't be read."));
         let htlc_proto: crate::tendermint::htlc_proto::CreateHtlcProtoRep =
             try_tx_fus!(prost::Message::decode(msg.value.as_slice()));
         let htlc = try_tx_fus!(MsgCreateHtlc::try_from(htlc_proto));
@@ -1252,7 +1324,7 @@ impl SwapOps for TendermintCoin {
         _swap_unique_data: &[u8],
     ) -> TransactionFut {
         let tx = try_tx_fus!(cosmrs::Tx::from_bytes(maker_payment_tx));
-        let msg = try_tx_fus!(tx.body.messages.first().ok_or("Tx body couldn't be readed."));
+        let msg = try_tx_fus!(tx.body.messages.first().ok_or("Tx body couldn't be read."));
         let htlc_proto: crate::tendermint::htlc_proto::CreateHtlcProtoRep =
             try_tx_fus!(prost::Message::decode(msg.value.as_slice()));
         let htlc = try_tx_fus!(MsgCreateHtlc::try_from(htlc_proto));
@@ -1365,13 +1437,11 @@ impl SwapOps for TendermintCoin {
     }
 
     fn validate_maker_payment(&self, input: ValidatePaymentInput) -> ValidatePaymentFut<()> {
-        let fut = async move { Ok(()) };
-        Box::new(fut.boxed().compat())
+        self.validate_payment_for_denom(input, self.denom.clone(), self.decimals)
     }
 
     fn validate_taker_payment(&self, input: ValidatePaymentInput) -> ValidatePaymentFut<()> {
-        let fut = async move { Ok(()) };
-        Box::new(fut.boxed().compat())
+        self.validate_payment_for_denom(input, self.denom.clone(), self.decimals)
     }
 
     fn watcher_validate_taker_payment(
@@ -1413,7 +1483,7 @@ impl SwapOps for TendermintCoin {
 
     fn extract_secret(&self, secret_hash: &[u8], spend_tx: &[u8]) -> Result<Vec<u8>, String> {
         let tx = try_s!(cosmrs::Tx::from_bytes(spend_tx));
-        let msg = try_s!(tx.body.messages.first().ok_or("Tx body couldn't be readed."));
+        let msg = try_s!(tx.body.messages.first().ok_or("Tx body couldn't be read."));
         let htlc_proto: crate::tendermint::htlc_proto::ClaimHtlcProtoRep =
             try_s!(prost::Message::decode(msg.value.as_slice()));
         let htlc = try_s!(MsgClaimHtlc::try_from(htlc_proto));
@@ -1848,4 +1918,83 @@ pub mod tendermint_coin_tests {
         )
         .unwrap();
     }
+
+    #[test]
+    fn validate_payment_test() {
+        let rpc_urls = vec![IRIS_TESTNET_RPC_URL.to_string()];
+
+        let protocol_conf = get_iris_protocol();
+
+        let ctx = mm2_core::mm_ctx::MmCtxBuilder::default()
+            .with_secp256k1_key_pair(crypto::privkey::key_pair_from_seed(IRIS_TESTNET_HTLC_PAIR1_SEED).unwrap())
+            .into_mm_arc();
+
+        let priv_key = &*ctx.secp256k1_key_pair().private().secret;
+
+        let coin = block_on(TendermintCoin::init(
+            "IRIS-TEST".to_string(),
+            protocol_conf,
+            rpc_urls,
+            priv_key,
+        ))
+        .unwrap();
+
+        // just a random transfer tx not related to AtomicDEX, should fail because the message is not CreateHtlc
+        // https://nyancat.iobscan.io/#/tx?txHash=65815814E7D74832D87956144C1E84801DC94FE9A509D207A0ABC3F17775E5DF
+        let random_transfer_tx_hash = "65815814E7D74832D87956144C1E84801DC94FE9A509D207A0ABC3F17775E5DF";
+        let random_transfer_tx_bytes = block_on(coin.request_tx(random_transfer_tx_hash.into()))
+            .unwrap()
+            .encode_to_vec();
+
+        let input = ValidatePaymentInput {
+            payment_tx: random_transfer_tx_bytes,
+            time_lock: 0,
+            other_pub: Vec::new(),
+            secret_hash: Vec::new(),
+            amount: Default::default(),
+            swap_contract_address: None,
+            try_spv_proof_until: 0,
+            confirmations: 0,
+            unique_swap_data: Vec::new(),
+        };
+        let validate_err = coin.validate_taker_payment(input).wait().unwrap_err();
+        match validate_err.into_inner() {
+            ValidatePaymentError::WrongPaymentTx(e) => assert!(e.contains("Incorrect CreateHtlc message")),
+            unexpected => panic!("Unexpected error variant {:?}", unexpected),
+        };
+
+        // The HTLC that was already claimed or refunded should not pass the validation
+        // https://nyancat.iobscan.io/#/tx?txHash=93CF377D470EB27BD6E2C5B95BFEFE99359F95B88C70D785B34D1D2C670201B9
+        /*
+        let claimed_htlc_tx_hash = "93CF377D470EB27BD6E2C5B95BFEFE99359F95B88C70D785B34D1D2C670201B9";
+        let claimed_htlc_tx_bytes = block_on(coin.request_tx(claimed_htlc_tx_hash.into()))
+            .unwrap()
+            .encode_to_vec();
+
+        let input = ValidatePaymentInput {
+            payment_tx: claimed_htlc_tx_bytes,
+            time_lock: 1664984893,
+            other_pub: hex::decode("025a37975c079a7543603fcab24e2565a4adee3cf9af8934690e103282fa402511").unwrap(),
+            secret_hash: hex::decode("441d0237e93677d3458e1e5a2e69f61e3622813521bf048dd56290306acdd134").unwrap(),
+            amount: "0.01".parse().unwrap(),
+            swap_contract_address: None,
+            try_spv_proof_until: 0,
+            confirmations: 0,
+            unique_swap_data: Vec::new(),
+        };
+        let validate_err = block_on(
+            coin.validate_payment_for_denom(input, "nim".parse().unwrap(), 6)
+                .compat(),
+        )
+        .unwrap_err();
+        match validate_err.into_inner() {
+            ValidatePaymentError::UnexpectedPaymentState(_) => (),
+            unexpected => panic!("Unexpected error variant {:?}", unexpected),
+        };
+
+         */
+    }
+
+    #[test]
+    fn try_query_htlc() {}
 }

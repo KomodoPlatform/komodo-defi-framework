@@ -221,13 +221,13 @@ impl SwapOps for TendermintToken {
     }
 
     fn validate_maker_payment(&self, input: ValidatePaymentInput) -> ValidatePaymentFut<()> {
-        let fut = async move { Ok(()) };
-        Box::new(fut.boxed().compat())
+        self.platform_coin
+            .validate_payment_for_denom(input, self.denom.clone(), self.decimals)
     }
 
     fn validate_taker_payment(&self, input: ValidatePaymentInput) -> ValidatePaymentFut<()> {
-        let fut = async move { Ok(()) };
-        Box::new(fut.boxed().compat())
+        self.platform_coin
+            .validate_payment_for_denom(input, self.denom.clone(), self.decimals)
     }
 
     fn watcher_validate_taker_payment(
