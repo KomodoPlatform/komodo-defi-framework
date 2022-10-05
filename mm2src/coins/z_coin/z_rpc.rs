@@ -16,6 +16,7 @@ use mm2_err_handle::prelude::*;
 use parking_lot::Mutex;
 use prost::Message;
 use protobuf::Message as ProtobufMessage;
+use std::future::Future;
 use std::ops::Deref;
 use std::path::{Path, PathBuf};
 use std::str::FromStr;
@@ -71,19 +72,13 @@ pub trait ZRpcOps {
 #[async_trait]
 impl ZRpcOps for Vec<CompactTxStreamerClient<Channel>> {
     async fn get_block_height(&mut self) -> Result<u64, MmError<UpdateBlocksCacheErr>> {
-        let mut errors = Vec::new();
-        for client in self {
+        let block = send_multi_light_wallet_request_for_tonic(self, |client| {
             let request = tonic::Request::new(ChainSpec {});
-            match client.get_latest_block(request).await {
-                Ok(block) => return Ok(block.into_inner().height),
-                Err(err) => {
-                    errors.push(format!("{:?}", err));
-                    continue;
-                },
-            };
-        }
-        drop_mutability!(errors);
-        Err(format_update_blocks_e(errors))
+            client.get_latest_block(request)
+        })
+        .await
+        .map_to_mm(UpdateBlocksCacheErr::GrpcError)?;
+        Ok(block.height)
     }
 
     async fn scan_blocks(
@@ -803,4 +798,22 @@ fn format_init_client_e(errors: Vec<String>) -> MmError<ZcoinClientInitError> {
     let errors: String = errors.iter().map(|e| format!("{:?}", e)).collect();
     let error = format!("Init client failed during urls iteration: {}", errors);
     MmError::from(ZcoinClientInitError::UrlIterFailure(error))
+}
+
+async fn send_multi_light_wallet_request_for_tonic<'a, Res, Fut, Fn>(
+    clients: &'a mut [CompactTxStreamerClient<Channel>],
+    mut req_fn: Fn,
+) -> Result<Res, Vec<tonic::Status>>
+where
+    Fut: Future<Output = Result<tonic::Response<Res>, tonic::Status>>,
+    Fn: FnMut(&'a mut CompactTxStreamerClient<Channel>) -> Fut,
+{
+    let mut errors = Vec::new();
+    for client in clients.iter_mut() {
+        match req_fn(client).await {
+            Ok(res) => return Ok(res.into_inner()),
+            Err(e) => errors.push(e),
+        }
+    }
+    Err(errors)
 }

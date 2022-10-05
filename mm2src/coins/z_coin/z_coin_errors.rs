@@ -10,19 +10,40 @@ use derive_more::Display;
 use http::uri::InvalidUri;
 use mm2_number::BigDecimal;
 use rpc::v1::types::{Bytes as BytesJson, H256 as H256Json};
+use std::fmt;
 use zcash_client_sqlite::error::SqliteClientError;
 use zcash_client_sqlite::error::SqliteClientError as ZcashClientError;
 use zcash_primitives::transaction::builder::Error as ZTxBuilderError;
 
-#[derive(Debug, Display)]
+#[derive(Debug)]
 #[non_exhaustive]
 pub enum UpdateBlocksCacheErr {
+    GrpcError(Vec<tonic::Status>),
     BlocksDbError(SqliteError),
     ZcashSqliteError(ZcashClientError),
     UtxoRpcError(UtxoRpcError),
     InternalError(String),
     JsonRpcError(JsonRpcError),
     ClientIterError(String),
+}
+
+impl fmt::Display for UpdateBlocksCacheErr {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match *self {
+            UpdateBlocksCacheErr::GrpcError(ref err) => {
+                for e in err {
+                    write!(f, "\t{}", e)?;
+                }
+                Ok(())
+            },
+            UpdateBlocksCacheErr::BlocksDbError(ref err) => write!(f, "{}", err),
+            UpdateBlocksCacheErr::ZcashSqliteError(ref err) => write!(f, "{}", err),
+            UpdateBlocksCacheErr::UtxoRpcError(ref err) => write!(f, "{}", err),
+            UpdateBlocksCacheErr::InternalError(ref err) => write!(f, "{}", err),
+            UpdateBlocksCacheErr::JsonRpcError(ref err) => write!(f, "{}", err),
+            UpdateBlocksCacheErr::ClientIterError(ref err) => write!(f, "{}", err),
+        }
+    }
 }
 
 impl From<SqliteError> for UpdateBlocksCacheErr {
