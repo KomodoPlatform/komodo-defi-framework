@@ -1506,10 +1506,11 @@ impl SwapOps for TendermintCoin {
 #[cfg(test)]
 pub mod tendermint_coin_tests {
     use super::*;
-    use crate::tendermint::htlc_proto::ClaimHtlcProtoRep;
+    use crate::tendermint::htlc_proto::{ClaimHtlcProtoRep, QueryHtlcRequestProto, QueryHtlcResponseProto};
     use common::{block_on, DEX_FEE_ADDR_RAW_PUBKEY};
     use cosmrs::proto::cosmos::tx::v1beta1::{GetTxRequest, GetTxResponse, GetTxsEventResponse};
     use rand::{thread_rng, Rng};
+
     pub const IRIS_TESTNET_HTLC_PAIR1_SEED: &str = "iris test seed";
     // const IRIS_TESTNET_HTLC_PAIR1_ADDRESS: &str = "iaa1e0rx87mdj79zejewuc4jg7ql9ud2286g2us8f2";
 
@@ -1996,5 +1997,16 @@ pub mod tendermint_coin_tests {
     }
 
     #[test]
-    fn try_query_htlc() {}
+    fn try_query_htlc() {
+        let client = HttpClient::new(IRIS_TESTNET_RPC_URL).unwrap();
+        let path = AbciPath::from_str("/irismod.htlc.Query/HTLC").expect("valid path");
+        let request = QueryHtlcRequestProto {
+            id: "F73DDB27D065CBA87B88C929D4BE337D854D8871ADB1A2A7D6805D31962AEB8B".into(),
+        };
+        let response = block_on(client.abci_query(Some(path), request.encode_to_vec(), None, false)).unwrap();
+        println!("Response {:?}", response);
+
+        let response_proto = QueryHtlcResponseProto::decode(response.value.as_slice()).unwrap();
+        println!("{:?}", response_proto);
+    }
 }
