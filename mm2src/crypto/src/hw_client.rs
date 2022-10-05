@@ -1,4 +1,6 @@
-use crate::hw_error::{HwError, HwResult};
+use crate::hw_error::HwError;
+#[cfg(not(target_arch = "wasm32"))]
+use crate::hw_error::HwResult;
 use async_trait::async_trait;
 #[cfg(not(target_os = "ios"))]
 use common::custom_futures::FutureTimerExt;

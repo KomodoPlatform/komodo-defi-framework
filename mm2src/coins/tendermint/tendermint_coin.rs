@@ -344,6 +344,19 @@ impl TendermintCoin {
         Ok(Fee::from_amount_and_gas(fee_amount, GAS_LIMIT_DEFAULT))
     }
 
+    #[allow(deprecated)]
+    pub(super) async fn calculate_fee_amount_as_u64(&self, tx_bytes: Vec<u8>) -> MmResult<u64, TendermintCoinRpcError> {
+        let path = AbciPath::from_str("/cosmos.tx.v1beta1.Service/Simulate").expect("valid path");
+        let request = SimulateRequest { tx_bytes, tx: None };
+        let request = AbciRequest::new(Some(path), request.encode_to_vec(), None, false);
+
+        let response = self.rpc_client().await?.perform(request).await?;
+        let response = SimulateResponse::decode(response.response.value.as_slice())?;
+
+        let gas = response.gas_info.expect("Could not simulate tx gas cost");
+        Ok((gas.gas_used as f64 * AVERAGE_GAS_PRICE).ceil() as u64)
+    }
+
     pub(super) async fn my_account_info(&self) -> MmResult<BaseAccount, TendermintCoinRpcError> {
         let path = AbciPath::from_str("/cosmos.auth.v1beta1.Query/Account").expect("valid path");
         let request = QueryAccountRequest {

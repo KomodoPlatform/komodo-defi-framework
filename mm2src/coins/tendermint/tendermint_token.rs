@@ -387,18 +387,6 @@ impl MmCoin for TendermintToken {
             let base_denom_balance = coin.balance_for_denom(coin.denom.to_string()).await?;
             let base_denom_balance_dec = big_decimal_from_sat_unsigned(base_denom_balance, token.decimals());
 
-            // TODO calculate current fee instead of using hard-coded value
-            let fee_denom = 50000;
-            let fee_amount_dec = big_decimal_from_sat_unsigned(fee_denom, coin.decimals());
-
-            if base_denom_balance < fee_denom {
-                return MmError::err(WithdrawError::NotSufficientBalanceForFee {
-                    coin: coin.ticker().to_string(),
-                    available: base_denom_balance_dec,
-                    required: fee_amount_dec,
-                });
-            }
-
             let balance_denom = coin.balance_for_denom(token.denom.to_string()).await?;
             let balance_dec = big_decimal_from_sat_unsigned(balance_denom, token.decimals());
 
@@ -450,13 +438,34 @@ impl MmCoin for TendermintToken {
             let _sequence_lock = coin.sequence_lock.lock().await;
             let account_info = coin.my_account_info().await?;
 
+            let timeout_height = current_block + TIMEOUT_HEIGHT_DELTA;
+
+            let simulated_tx = coin
+                .gen_simulated_tx(
+                    account_info.clone(),
+                    msg_send.clone(),
+                    timeout_height,
+                    TX_DEFAULT_MEMO.into(),
+                )
+                .map_to_mm(|e| WithdrawError::InternalError(e.to_string()))?;
+
+            let fee_amount_u64 = coin.calculate_fee_amount_as_u64(simulated_tx).await?;
+            let fee_amount_dec = big_decimal_from_sat_unsigned(fee_amount_u64, coin.decimals());
+
+            if base_denom_balance < fee_amount_u64 {
+                return MmError::err(WithdrawError::NotSufficientBalanceForFee {
+                    coin: coin.ticker().to_string(),
+                    available: base_denom_balance_dec,
+                    required: fee_amount_dec,
+                });
+            }
+
             let fee_amount = Coin {
                 denom: coin.denom.clone(),
-                amount: fee_denom.into(),
+                amount: fee_amount_u64.into(),
             };
 
             let fee = Fee::from_amount_and_gas(fee_amount, GAS_LIMIT_DEFAULT);
-            let timeout_height = current_block + TIMEOUT_HEIGHT_DELTA;
 
             let tx_raw = coin
                 .any_to_signed_raw_tx(account_info, msg_send, fee, timeout_height, TX_DEFAULT_MEMO.into())
