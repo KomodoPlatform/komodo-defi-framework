@@ -4,7 +4,7 @@ use super::tendermint_native_rpc::*;
 #[cfg(target_arch = "wasm32")] use super::tendermint_wasm_rpc::*;
 use crate::coin_errors::{MyAddressError, ValidatePaymentError};
 use crate::tendermint::htlc::MsgClaimHtlc;
-use crate::tendermint::htlc_proto::CreateHtlcProtoRep;
+use crate::tendermint::htlc_proto::{CreateHtlcProtoRep, QueryHtlcRequestProto, QueryHtlcResponseProto};
 use crate::utxo::sat_from_big_decimal;
 use crate::{big_decimal_from_sat_unsigned, BalanceError, BalanceFut, BigDecimal, CoinBalance, FeeApproxStage,
             FoundSwapTxSpend, HistorySyncState, MarketCoinOps, MmCoin, NegotiateSwapContractAddrErr,
@@ -738,17 +738,24 @@ impl TendermintCoin {
                 .map_to_mm(|e| ValidatePaymentError::InvalidInput(e.to_string()))?;
 
             let amount = sat_from_big_decimal(&input.amount, decimals)?;
-            let amount = Coin {
+            let amount = vec![Coin {
                 denom,
                 amount: amount.into(),
-            };
+            }];
+
+            let coins_string = amount
+                .iter()
+                .map(|t| format!("{}{}", t.amount, t.denom))
+                .collect::<Vec<String>>()
+                .join(",");
+
             let expected_msg = MsgCreateHtlc {
-                sender,
+                sender: sender.clone(),
                 to: coin.account_id.clone(),
                 receiver_on_other_chain: "".into(),
                 sender_on_other_chain: "".into(),
-                amount: vec![amount],
-                hash_lock: hex::encode(input.secret_hash),
+                amount,
+                hash_lock: hex::encode(&input.secret_hash),
                 timestamp: 0,
                 time_lock: 4000,
                 transfer: false,
@@ -768,7 +775,26 @@ impl TendermintCoin {
                     "Tx from RPC doesn't match the input".into(),
                 ));
             }
-            Ok(())
+
+            let mut htlc_id = vec![];
+            htlc_id.extend_from_slice(&input.secret_hash);
+            htlc_id.extend_from_slice(&sender.to_bytes());
+            htlc_id.extend_from_slice(&coin.account_id.to_bytes());
+            htlc_id.extend_from_slice(coins_string.as_bytes());
+            let htlc_id = sha256(&htlc_id).to_string().to_uppercase();
+
+            let htlc_response = coin.query_htlc(htlc_id.clone()).await?;
+            let htlc_data = htlc_response
+                .htlc
+                .or_mm_err(|| ValidatePaymentError::InvalidRpcResponse(format!("No HTLC data for {}", htlc_id)))?;
+
+            match htlc_data.state {
+                0 => Ok(()),
+                unexpected_state => MmError::err(ValidatePaymentError::UnexpectedPaymentState(format!(
+                    "{}",
+                    unexpected_state
+                ))),
+            }
         };
         Box::new(fut.boxed().compat())
     }
@@ -786,6 +812,18 @@ impl TendermintCoin {
         response
             .tx
             .or_mm_err(|| TendermintCoinRpcError::InvalidResponse(format!("Tx {} does not exist", request.hash)))
+    }
+
+    async fn query_htlc(&self, id: String) -> MmResult<QueryHtlcResponseProto, TendermintCoinRpcError> {
+        let path = AbciPath::from_str("/irismod.htlc.Query/HTLC").expect("valid path");
+        let request = QueryHtlcRequestProto { id };
+        let response = self
+            .rpc_client()
+            .await?
+            .abci_query(Some(path), request.encode_to_vec(), None, false)
+            .await?;
+
+        Ok(QueryHtlcResponseProto::decode(response.value.as_slice())?)
     }
 }
 
@@ -1506,7 +1544,7 @@ impl SwapOps for TendermintCoin {
 #[cfg(test)]
 pub mod tendermint_coin_tests {
     use super::*;
-    use crate::tendermint::htlc_proto::{ClaimHtlcProtoRep, QueryHtlcRequestProto, QueryHtlcResponseProto};
+    use crate::tendermint::htlc_proto::ClaimHtlcProtoRep;
     use common::{block_on, DEX_FEE_ADDR_RAW_PUBKEY};
     use cosmrs::proto::cosmos::tx::v1beta1::{GetTxRequest, GetTxResponse, GetTxsEventResponse};
     use rand::{thread_rng, Rng};
@@ -1966,7 +2004,6 @@ pub mod tendermint_coin_tests {
 
         // The HTLC that was already claimed or refunded should not pass the validation
         // https://nyancat.iobscan.io/#/tx?txHash=93CF377D470EB27BD6E2C5B95BFEFE99359F95B88C70D785B34D1D2C670201B9
-        /*
         let claimed_htlc_tx_hash = "93CF377D470EB27BD6E2C5B95BFEFE99359F95B88C70D785B34D1D2C670201B9";
         let claimed_htlc_tx_bytes = block_on(coin.request_tx(claimed_htlc_tx_hash.into()))
             .unwrap()
@@ -1992,21 +2029,5 @@ pub mod tendermint_coin_tests {
             ValidatePaymentError::UnexpectedPaymentState(_) => (),
             unexpected => panic!("Unexpected error variant {:?}", unexpected),
         };
-
-         */
-    }
-
-    #[test]
-    fn try_query_htlc() {
-        let client = HttpClient::new(IRIS_TESTNET_RPC_URL).unwrap();
-        let path = AbciPath::from_str("/irismod.htlc.Query/HTLC").expect("valid path");
-        let request = QueryHtlcRequestProto {
-            id: "F73DDB27D065CBA87B88C929D4BE337D854D8871ADB1A2A7D6805D31962AEB8B".into(),
-        };
-        let response = block_on(client.abci_query(Some(path), request.encode_to_vec(), None, false)).unwrap();
-        println!("Response {:?}", response);
-
-        let response_proto = QueryHtlcResponseProto::decode(response.value.as_slice()).unwrap();
-        println!("{:?}", response_proto);
     }
 }

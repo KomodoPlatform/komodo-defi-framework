@@ -36,6 +36,14 @@ pub(crate) struct QueryHtlcRequestProto {
     pub(crate) id: prost::alloc::string::String,
 }
 
+#[derive(prost::Enumeration, Debug)]
+#[repr(i32)]
+pub(crate) enum HtlcState {
+    Open = 0,
+    Completed = 1,
+    Refunded = 2,
+}
+
 #[derive(prost::Message)]
 pub(crate) struct HtlcProto {
     #[prost(string, tag = "1")]
@@ -58,8 +66,8 @@ pub(crate) struct HtlcProto {
     pub(crate) timestamp: u64,
     #[prost(uint64, tag = "10")]
     pub(crate) expiration_height: u64,
-    #[prost(uint64, tag = "11")]
-    pub(crate) state: u64,
+    #[prost(enumeration = "HtlcState", tag = "11")]
+    pub(crate) state: i32,
     #[prost(uint64, tag = "12")]
     pub(crate) closed_block: u64,
     #[prost(bool, tag = "13")]
