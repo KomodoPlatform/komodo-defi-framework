@@ -583,14 +583,18 @@ impl TendermintCoin {
         let fut = async move {
             let _sequence_lock = coin.sequence_lock.lock().await;
             let account_info = try_tx_s!(coin.my_account_info().await);
-            let fee_amount = Coin {
-                denom: coin.denom.clone(),
-                amount: 50000u64.into(),
-            };
-            let fee = Fee::from_amount_and_gas(fee_amount, GAS_LIMIT_DEFAULT);
 
             let current_block = try_tx_s!(coin.current_block().compat().await.map_to_mm(WithdrawError::Transport));
             let timeout_height = current_block + TIMEOUT_HEIGHT_DELTA;
+
+            let simulated_tx = try_tx_s!(coin.gen_simulated_tx(
+                account_info.clone(),
+                tx_payload.clone(),
+                timeout_height,
+                TX_DEFAULT_MEMO.into(),
+            ));
+
+            let fee = try_tx_s!(coin.calculate_fee(coin.denom.clone(), simulated_tx).await);
 
             let tx_raw = try_tx_s!(coin
                 .any_to_signed_raw_tx(account_info, tx_payload, fee, timeout_height, memo)
@@ -732,35 +736,22 @@ impl MmCoin for TendermintCoin {
             let balance_denom = coin.balance_for_denom(coin.denom.to_string()).await?;
             let balance_dec = big_decimal_from_sat_unsigned(balance_denom, coin.decimals);
 
-            // TODO calculate current fee instead of using hard-coded value
-            let fee_denom = 50000;
-            let fee_amount_dec = big_decimal_from_sat_unsigned(fee_denom, coin.decimals);
-
+            // << BEGIN TX SIMULATION FOR FEE CALCULATION
             let (amount_denom, amount_dec, total_amount) = if req.max {
-                if balance_denom < fee_denom {
-                    return MmError::err(WithdrawError::NotSufficientBalance {
-                        coin: coin.ticker.clone(),
-                        available: balance_dec,
-                        required: fee_amount_dec,
-                    });
-                }
-                let amount_denom = balance_denom - fee_denom;
+                let amount_denom = balance_denom;
                 (
                     amount_denom,
                     big_decimal_from_sat_unsigned(amount_denom, coin.decimals),
-                    balance_dec,
+                    balance_dec.clone(),
                 )
             } else {
-                let total = &req.amount + &fee_amount_dec;
-                if balance_dec < total {
-                    return MmError::err(WithdrawError::NotSufficientBalance {
-                        coin: coin.ticker.clone(),
-                        available: balance_dec,
-                        required: total,
-                    });
-                }
+                let total = req.amount.clone();
 
-                (sat_from_big_decimal(&req.amount, coin.decimals)?, req.amount, total)
+                (
+                    sat_from_big_decimal(&req.amount, coin.decimals)?,
+                    req.amount.clone(),
+                    total,
+                )
             };
             let received_by_me = if to_address == coin.account_id {
                 amount_dec
@@ -770,7 +761,7 @@ impl MmCoin for TendermintCoin {
 
             let msg_send = MsgSend {
                 from_address: coin.account_id.clone(),
-                to_address,
+                to_address: to_address.clone(),
                 amount: vec![Coin {
                     denom: coin.denom.clone(),
                     amount: amount_denom.into(),
@@ -788,12 +779,69 @@ impl MmCoin for TendermintCoin {
             let _sequence_lock = coin.sequence_lock.lock().await;
             let account_info = coin.my_account_info().await?;
 
+            let timeout_height = current_block + TIMEOUT_HEIGHT_DELTA;
+
+            let simulated_tx = coin
+                .gen_simulated_tx(
+                    account_info.clone(),
+                    msg_send.clone(),
+                    timeout_height,
+                    TX_DEFAULT_MEMO.into(),
+                )
+                .map_to_mm(|e| WithdrawError::InternalError(e.to_string()))?;
+            // >> END TX SIMULATION FOR FEE CALCULATION
+
+            let fee_amount_u64 = coin.calculate_fee_amount_as_u64(simulated_tx).await?;
+            let fee_amount_dec = big_decimal_from_sat_unsigned(fee_amount_u64, coin.decimals());
+
             let fee_amount = Coin {
                 denom: coin.denom.clone(),
-                amount: fee_denom.into(),
+                amount: fee_amount_u64.into(),
             };
+
             let fee = Fee::from_amount_and_gas(fee_amount, GAS_LIMIT_DEFAULT);
-            let timeout_height = current_block + TIMEOUT_HEIGHT_DELTA;
+
+            let (amount_denom, amount_dec, total_amount) = if req.max {
+                if balance_denom < fee_amount_u64 {
+                    return MmError::err(WithdrawError::NotSufficientBalance {
+                        coin: coin.ticker.clone(),
+                        available: balance_dec,
+                        required: fee_amount_dec,
+                    });
+                }
+                let amount_denom = balance_denom - fee_amount_u64;
+                (
+                    amount_denom,
+                    big_decimal_from_sat_unsigned(amount_denom, coin.decimals),
+                    balance_dec,
+                )
+            } else {
+                let total = &req.amount + &fee_amount_dec;
+                if balance_dec < total {
+                    return MmError::err(WithdrawError::NotSufficientBalance {
+                        coin: coin.ticker.clone(),
+                        available: balance_dec,
+                        required: total,
+                    });
+                }
+
+                (
+                    sat_from_big_decimal(&req.amount, coin.decimals)?,
+                    req.amount.clone(),
+                    total,
+                )
+            };
+
+            let msg_send = MsgSend {
+                from_address: coin.account_id.clone(),
+                to_address,
+                amount: vec![Coin {
+                    denom: coin.denom.clone(),
+                    amount: amount_denom.into(),
+                }],
+            }
+            .to_any()
+            .map_to_mm(|e| WithdrawError::InternalError(e.to_string()))?;
 
             let tx_raw = coin
                 .any_to_signed_raw_tx(account_info, msg_send, fee, timeout_height, TX_DEFAULT_MEMO.into())
