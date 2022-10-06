@@ -20,6 +20,7 @@ use spv_validation::helpers_validation::validate_headers;
 use spv_validation::storage::BlockHeaderStorageOps;
 
 const BLOCK_HEADERS_LOOP_INTERVAL: f64 = 60.;
+const BLOCK_HEADERS_MAX_CHUNK_SIZE: u64 = 500;
 
 pub struct UtxoArcBuilder<'a, F, T>
 where
@@ -221,15 +222,16 @@ async fn get_block_headers_in_chunks(
     // Create and initialize an empty block_registry, block_headers and last_retrieved_height to 1.
     let (mut block_registry, mut block_headers, mut last_retrieved_height) = (HashMap::new(), Vec::new(), from);
 
-    // Get the remainder of total block headers to fetch / 500.
-    let chunks_rem = to % 500;
+    // Get the remainder of total block headers to fetch / BLOCK_HEADERS_MAX_CHUNK_SIZE.
+    let chunks_rem = to % BLOCK_HEADERS_MAX_CHUNK_SIZE;
     // Temporary from value, to store collected block headers temporary starting value.
     let mut temporary_from = from;
     // Temporary to value, to store collected block headers temporary ending value.
-    let mut temporary_to = 500;
+    let mut temporary_to = BLOCK_HEADERS_MAX_CHUNK_SIZE;
+
     log!("Total headers to fetch: {}", to);
 
-    // While temporary to value is less or equal to origina to value, we will collect the headers in chunk of 500 at a single request/loop.
+    // While (temporary to value) is less or equal to incoming original (to value), we will collect the headers in chunk of BLOCK_HEADERS_MAX_CHUNK_SIZE at a single request/loop.
     while temporary_to <= to {
         log!("Fetching headers from {} to {}", temporary_from, temporary_to);
         let (block_reg, mut block_heads, last_height) =
@@ -246,12 +248,13 @@ async fn get_block_headers_in_chunks(
             temporary_from = temporary_to + 1;
             temporary_to += chunks_rem
         } else {
-            temporary_from += 500;
-            temporary_to += 500;
+            temporary_from += BLOCK_HEADERS_MAX_CHUNK_SIZE;
+            temporary_to += BLOCK_HEADERS_MAX_CHUNK_SIZE;
         }
         // Sleep for every 3 seconds on each request to prevent IP limitations on requests
         Timer::sleep(3.).await;
     }
+
     log!("Total fetched headers {}", block_headers.len());
 
     // Finally, after getting our registry, headers in chunks and merging and last_retrieved_height, we return them here
