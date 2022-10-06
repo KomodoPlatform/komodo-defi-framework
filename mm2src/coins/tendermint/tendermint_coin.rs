@@ -318,6 +318,13 @@ impl TendermintCoin {
     #[inline(always)]
     fn gas_price(&self) -> f64 { self.gas_price.unwrap_or(DEFAULT_GAS_PRICE) }
 
+    // TODO
+    // Get latest block
+    // Get x blocks before
+    // return (latest block's timestamp - x's block's timestamp) / x
+    #[allow(unused)]
+    async fn calculate_avg_block_time(&self) -> MmResult<f64, TendermintCoinRpcError> { todo!() }
+
     // We must simulate the tx on rpc nodes in order to calculate network fee.
     // Right now cosmos doesn't expose any of gas price and fee informations directly.
     // Therefore, we can call SimulateRequest or CheckTx(doesn't work with using Abci interface) to get used gas or fee itself.
