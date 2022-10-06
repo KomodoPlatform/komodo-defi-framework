@@ -18,32 +18,36 @@ use zcash_primitives::transaction::builder::Error as ZTxBuilderError;
 #[derive(Debug)]
 #[non_exhaustive]
 pub enum UpdateBlocksCacheErr {
-    GrpcError(Vec<tonic::Status>),
+    GrpcError(tonic::Status),
+    GrpcVecError(Vec<tonic::Status>),
     BlocksDbError(SqliteError),
     ZcashSqliteError(ZcashClientError),
     UtxoRpcError(UtxoRpcError),
     InternalError(String),
     JsonRpcError(JsonRpcError),
-    ClientIterError(String),
 }
 
 impl fmt::Display for UpdateBlocksCacheErr {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match *self {
-            UpdateBlocksCacheErr::GrpcError(ref err) => {
+            UpdateBlocksCacheErr::GrpcVecError(ref err) => {
                 for e in err {
                     write!(f, "\t{}", e)?;
                 }
                 Ok(())
             },
+            UpdateBlocksCacheErr::GrpcError(ref err) => write!(f, "{}", err),
             UpdateBlocksCacheErr::BlocksDbError(ref err) => write!(f, "{}", err),
             UpdateBlocksCacheErr::ZcashSqliteError(ref err) => write!(f, "{}", err),
             UpdateBlocksCacheErr::UtxoRpcError(ref err) => write!(f, "{}", err),
             UpdateBlocksCacheErr::InternalError(ref err) => write!(f, "{}", err),
             UpdateBlocksCacheErr::JsonRpcError(ref err) => write!(f, "{}", err),
-            UpdateBlocksCacheErr::ClientIterError(ref err) => write!(f, "{}", err),
         }
     }
+}
+
+impl From<tonic::Status> for UpdateBlocksCacheErr {
+    fn from(err: tonic::Status) -> Self { UpdateBlocksCacheErr::GrpcError(err) }
 }
 
 impl From<SqliteError> for UpdateBlocksCacheErr {

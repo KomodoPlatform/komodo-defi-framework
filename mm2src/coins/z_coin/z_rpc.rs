@@ -19,6 +19,7 @@ use protobuf::Message as ProtobufMessage;
 use std::future::Future;
 use std::ops::Deref;
 use std::path::{Path, PathBuf};
+use std::pin::Pin;
 use std::str::FromStr;
 use std::sync::Arc;
 use tokio::task::block_in_place;
@@ -77,7 +78,7 @@ impl ZRpcOps for Vec<CompactTxStreamerClient<Channel>> {
             client.get_latest_block(request)
         })
         .await
-        .map_to_mm(UpdateBlocksCacheErr::GrpcError)?;
+        .map_to_mm(UpdateBlocksCacheErr::GrpcVecError)?;
         Ok(block.height)
     }
 
@@ -87,8 +88,7 @@ impl ZRpcOps for Vec<CompactTxStreamerClient<Channel>> {
         last_block: u64,
         on_block: &mut OnCompactBlockFn,
     ) -> Result<(), MmError<UpdateBlocksCacheErr>> {
-        let mut errors = Vec::new();
-        for client in self {
+        let mut response = send_multi_light_wallet_request_for_tonic(self, |client| {
             let request = tonic::Request::new(BlockRange {
                 start: Some(BlockId {
                     height: start_block,
@@ -99,34 +99,15 @@ impl ZRpcOps for Vec<CompactTxStreamerClient<Channel>> {
                     hash: Vec::new(),
                 }),
             });
-            let mut response = match client.get_block_range(request).await {
-                Ok(response) => response,
-                Err(err) => {
-                    errors.push(format!("{:?}", err));
-                    continue;
-                },
-            };
-            loop {
-                match response.get_mut().message().await {
-                    Ok(block) => match block {
-                        Some(block) => {
-                            debug!("Got block {:?}", block);
-                            if let Err(err) = on_block(block) {
-                                errors.push(format!("{:?}", err.into_inner()));
-                                break;
-                            }
-                        },
-                        _ => return Ok(()),
-                    },
-                    Err(err) => {
-                        errors.push(format!("{:?}", err));
-                        break;
-                    },
-                }
-            }
+            client.get_block_range(request)
+        })
+        .await
+        .map_to_mm(UpdateBlocksCacheErr::GrpcVecError)?;
+        while let Some(block) = Pin::new(&mut response).get_mut().message().await? {
+            debug!("Got block {:?}", block);
+            on_block(block)?;
         }
-        drop_mutability!(errors);
-        Err(format_update_blocks_e(errors))
+        Ok(())
     }
 
     async fn check_tx_existence(&mut self, tx_id: TxId) -> bool {
@@ -786,12 +767,6 @@ impl SaplingSyncConnector {
 pub(super) struct SaplingSyncGuard<'a> {
     pub(super) _connector_guard: AsyncMutexGuard<'a, SaplingSyncConnector>,
     pub(super) respawn_guard: SaplingSyncRespawnGuard,
-}
-
-fn format_update_blocks_e(errors: Vec<String>) -> MmError<UpdateBlocksCacheErr> {
-    let errors: String = errors.iter().map(|e| format!("{:?}", e)).collect();
-    let error = format!("Update blocks cache error during client iteration: {}", errors);
-    MmError::from(UpdateBlocksCacheErr::ClientIterError(error))
 }
 
 fn format_init_client_e(errors: Vec<String>) -> MmError<ZcoinClientInitError> {
