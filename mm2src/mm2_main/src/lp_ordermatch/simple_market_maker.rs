@@ -732,7 +732,7 @@ pub async fn start_simple_market_maker_bot(ctx: MmArc, req: StartSimpleMakerBotR
             drop(state);
             let event: TradingBotEvent = TradingBotStarted { nb_pairs }.into();
             dispatcher.dispatch_async(ctx.clone(), event.into()).await;
-            ctx.spawner.spawn(lp_bot_loop(ctx.clone()));
+            ctx.spawner().spawn(lp_bot_loop(ctx.clone()));
             Ok(StartSimpleMakerBotRes {
                 result: "Success".to_string(),
             })

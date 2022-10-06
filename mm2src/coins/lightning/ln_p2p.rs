@@ -203,6 +203,6 @@ pub async fn init_peer_manager(
     ));
 
     // Initialize p2p networking
-    platform.spawner.spawn(ln_p2p_loop(peer_manager.clone(), listener));
+    platform.spawner().spawn(ln_p2p_loop(peer_manager.clone(), listener));
     Ok(peer_manager)
 }

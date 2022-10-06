@@ -558,7 +558,7 @@ impl MarketCoinOps for LightningCoin {
 impl MmCoin for LightningCoin {
     fn is_asset_chain(&self) -> bool { false }
 
-    fn spawner(&self) -> CoinFutSpawner { CoinFutSpawner::new(&self.platform.spawner) }
+    fn spawner(&self) -> CoinFutSpawner { CoinFutSpawner::new(&self.platform.abortable_system) }
 
     fn get_raw_transaction(&self, req: RawTransactionRequest) -> RawTransactionFut {
         Box::new(self.platform_coin().get_raw_transaction(req))
@@ -789,13 +789,13 @@ pub async fn start_lightning(
         ln_utils::get_open_channels_nodes_addresses(persister.clone(), channel_manager.clone()).await?,
     ));
 
-    platform.spawner.spawn(ln_p2p::connect_to_nodes_loop(
+    platform.spawner().spawn(ln_p2p::connect_to_nodes_loop(
         open_channels_nodes.clone(),
         peer_manager.clone(),
     ));
 
     // Broadcast Node Announcement
-    platform.spawner.spawn(ln_p2p::ln_node_announcement_loop(
+    platform.spawner().spawn(ln_p2p::ln_node_announcement_loop(
         channel_manager.clone(),
         params.node_name,
         params.node_color,

@@ -171,7 +171,7 @@ async fn process_p2p_message(
                         };
 
                         let fut = coin.send_raw_tx_bytes(&message.data);
-                        ctx.spawner.spawn(async {
+                        ctx.spawner().spawn(async {
                             match fut.compat().await {
                                 Ok(id) => log::debug!("Transaction broadcasted successfully: {:?} ", id),
                                 // TODO (After https://github.com/KomodoPlatform/atomicDEX-API/pull/1433)

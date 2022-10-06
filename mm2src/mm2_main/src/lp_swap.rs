@@ -1033,7 +1033,7 @@ pub async fn swap_kick_starts(ctx: MmArc) -> Result<HashSet<String>, String> {
         coins.insert(taker_coin_ticker.clone());
 
         let fut = kickstart_thread_handler(ctx.clone(), swap, maker_coin_ticker, taker_coin_ticker);
-        ctx.spawner.spawn(fut);
+        ctx.spawner().spawn(fut);
     }
     Ok(coins)
 }

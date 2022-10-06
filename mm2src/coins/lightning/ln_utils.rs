@@ -214,7 +214,7 @@ pub async fn init_channel_manager(
     };
 
     // Update best block whenever there's a new chain tip or a block has been newly disconnected
-    platform.spawner.spawn(ln_best_block_update_loop(
+    platform.spawner().spawn(ln_best_block_update_loop(
         platform.clone(),
         db,
         chain_monitor.clone(),

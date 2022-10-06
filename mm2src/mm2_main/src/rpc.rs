@@ -405,7 +405,7 @@ pub fn spawn_rpc(ctx_h: u32) {
             }
         }
     };
-    ctx.spawner.spawn(fut);
+    ctx.spawner().spawn(fut);
 
     // even if the [`MmCtx::wasm_rpc`] is initialized already, the spawned future above will be shutdown
     if let Err(e) = ctx.wasm_rpc.pin(request_tx) {

@@ -64,7 +64,7 @@ pub fn spl_coin_for_test(
             decimals,
             ticker,
             token_contract_address,
-            spawner: AbortableSpawner::new(),
+            abortable_system: AbortableQueue::default(),
         }),
         platform_coin: solana_coin,
     };
@@ -86,7 +86,7 @@ pub fn solana_coin_for_test(seed: String, net_type: SolanaNet) -> (MmArc, Solana
     let key_pair = generate_key_pair_from_iguana_seed(seed);
     let my_address = key_pair.pubkey().to_string();
     let spl_tokens_infos = Arc::new(Mutex::new(HashMap::new()));
-    let spawner = AbortableSpawner::new();
+    let spawner = AbortableQueue::default();
 
     let solana_coin = SolanaCoin(Arc::new(SolanaCoinImpl {
         decimals,
@@ -95,7 +95,7 @@ pub fn solana_coin_for_test(seed: String, net_type: SolanaNet) -> (MmArc, Solana
         ticker,
         client,
         spl_tokens_infos,
-        spawner,
+        abortable_system: spawner,
     }));
     (ctx, solana_coin)
 }

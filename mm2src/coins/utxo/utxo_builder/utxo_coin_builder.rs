@@ -12,7 +12,7 @@ use crate::{BlockchainNetwork, CoinFutSpawner, CoinTransportMetrics, DerivationM
             PrivKeyBuildPolicy, PrivKeyPolicy, RpcClientType, UtxoActivationParams};
 use async_trait::async_trait;
 use chain::TxHashAlgo;
-use common::executor::{AbortableSpawner, SpawnAbortable, SpawnSettings, Timer};
+use common::executor::{abortable_queue::AbortableQueue, AbortSettings, AbortableSystem, SpawnAbortable, Timer};
 use common::log::{error, info};
 use common::small_rng;
 use crypto::{Bip32DerPathError, Bip44DerPathError, Bip44PathToCoin, CryptoCtx, CryptoInitError, HwWalletType};
@@ -150,9 +150,11 @@ pub trait UtxoFieldsWithIguanaPrivKeyBuilder: UtxoCoinBuilderCommonOps {
         let derivation_method = DerivationMethod::Iguana(my_address);
         let priv_key_policy = PrivKeyPolicy::KeyPair(key_pair);
 
-        let spawner = AbortableSpawner::new();
+        // Create an abortable system linked to the `MmCtx` so if the context is stopped via `MmArc::stop`,
+        // all spawned futures related to this `UTXO` coin will be aborted as well.
+        let abortable_system: AbortableQueue = self.ctx().abortable_system.create_subsystem();
 
-        let rpc_client = self.rpc_client(&CoinFutSpawner::new(&spawner)).await?;
+        let rpc_client = self.rpc_client(&CoinFutSpawner::new(&abortable_system)).await?;
         let tx_fee = self.tx_fee(&rpc_client).await?;
         let decimals = self.decimals(&rpc_client).await?;
         let dust_amount = self.dust_amount();
@@ -178,7 +180,7 @@ pub trait UtxoFieldsWithIguanaPrivKeyBuilder: UtxoCoinBuilderCommonOps {
             check_utxo_maturity,
             block_headers_status_notifier,
             block_headers_status_watcher,
-            spawner,
+            abortable_system,
         };
         Ok(coin)
     }
@@ -218,9 +220,11 @@ pub trait UtxoFieldsWithHardwareWalletBuilder: UtxoCoinBuilderCommonOps {
             gap_limit,
         };
 
-        let spawner = AbortableSpawner::new();
+        // Create an abortable system linked to the `MmCtx` so if the context is stopped via `MmArc::stop`,
+        // all spawned futures related to this `UTXO` coin will be aborted as well.
+        let abortable_system: AbortableQueue = self.ctx().abortable_system.create_subsystem();
 
-        let rpc_client = self.rpc_client(&CoinFutSpawner::new(&spawner)).await?;
+        let rpc_client = self.rpc_client(&CoinFutSpawner::new(&abortable_system)).await?;
         let tx_fee = self.tx_fee(&rpc_client).await?;
         let decimals = self.decimals(&rpc_client).await?;
         let dust_amount = self.dust_amount();
@@ -246,7 +250,7 @@ pub trait UtxoFieldsWithHardwareWalletBuilder: UtxoCoinBuilderCommonOps {
             check_utxo_maturity,
             block_headers_status_notifier,
             block_headers_status_watcher,
-            spawner,
+            abortable_system,
         };
         Ok(coin)
     }
@@ -694,7 +698,7 @@ fn spawn_electrum_ping_loop(
         }
     };
 
-    let settigns = SpawnSettings::info_on_any_stop(msg_on_stopped);
+    let settigns = AbortSettings::info_on_any_stop(msg_on_stopped);
     spawner.spawn_with_settings(fut, settigns);
 }
 
@@ -712,7 +716,7 @@ fn spawn_electrum_version_loop(
             check_electrum_server_version(weak_client.clone(), client_name.clone(), electrum_addr).await;
         }
     };
-    let settings = SpawnSettings::info_on_any_stop("Electrum server.version loop stopped".to_string());
+    let settings = AbortSettings::info_on_any_stop("Electrum server.version loop stopped".to_string());
     spawner.spawn_with_settings(fut, settings);
 }
 

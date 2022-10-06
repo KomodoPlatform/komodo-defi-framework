@@ -9,7 +9,7 @@ use std::time::Duration;
 /// # Safety
 ///
 /// The `spawn` function must be used carefully to avoid hanging pointers.
-/// Please consider using `AbortableSpawner` or `spawn_abortable` instead.
+/// Please consider using `AbortableQueue`, `AbortableSimpleMap` or `spawn_abortable` instead.
 pub unsafe fn spawn(future: impl Future03<Output = ()> + Send + 'static) { crate::wio::CORE.0.spawn(future); }
 
 /// Schedule the given `future` to be executed shortly after the given `utc` time is reached.

@@ -378,11 +378,11 @@ pub async fn lp_init_continue(ctx: MmArc) -> MmInitResult<()> {
     // an order and start new swap that might get started 2 times because of kick-start
     kick_start(ctx.clone()).await?;
 
-    ctx.spawner.spawn(lp_ordermatch_loop(ctx.clone()));
+    ctx.spawner().spawn(lp_ordermatch_loop(ctx.clone()));
 
-    ctx.spawner.spawn(broadcast_maker_orders_keep_alive_loop(ctx.clone()));
+    ctx.spawner().spawn(broadcast_maker_orders_keep_alive_loop(ctx.clone()));
 
-    ctx.spawner.spawn(clean_memory_loop(ctx.weak()));
+    ctx.spawner().spawn(clean_memory_loop(ctx.weak()));
     Ok(())
 }
 
@@ -406,7 +406,7 @@ pub async fn lp_init(ctx: MmArc) -> MmInitResult<()> {
 
     spawn_rpc(ctx_id);
     let ctx_c = ctx.clone();
-    ctx.spawner.spawn(async move {
+    ctx.spawner().spawn(async move {
         if let Err(err) = ctx_c.init_metrics() {
             warn!("Couldn't initialize metrics system: {}", err);
         }
@@ -503,7 +503,7 @@ pub async fn init_p2p(ctx: MmArc) -> P2PResult<()> {
     p2p_context.store_to_mm_arc(&ctx);
 
     let fut = p2p_event_process_loop(ctx.weak(), event_rx, i_am_seed);
-    ctx.spawner.spawn(fut);
+    ctx.spawner().spawn(fut);
 
     Ok(())
 }

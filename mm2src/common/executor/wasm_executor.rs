@@ -19,13 +19,13 @@ extern "C" {
 /// # Safety
 ///
 /// The `spawn` function must be used carefully to avoid hanging pointers.
-/// Please consider using `AbortableSpawner` or `spawn_abortable` instead.
+/// Please consider using `AbortableQueue`, `AbortableSimpleMap` or `spawn_abortable` instead.
 pub unsafe fn spawn(future: impl Future<Output = ()> + Send + 'static) { spawn_local(future) }
 
 /// # Safety
 ///
 /// The `spawn` function must be used carefully to avoid hanging pointers.
-/// Please consider using `AbortableSpawner` or `spawn_abortable` instead.
+/// Please consider using `AbortableQueue`, `AbortableSimpleMap` or `spawn_abortable` instead.
 pub unsafe fn spawn_local(future: impl Future<Output = ()> + 'static) { wasm_bindgen_futures::spawn_local(future) }
 
 /// The timer uses [`setTimeout`] and [`clearTimeout`] for scheduling.

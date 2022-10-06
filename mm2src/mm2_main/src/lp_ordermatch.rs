@@ -27,7 +27,7 @@ use blake2::Blake2bVar;
 use coins::utxo::{compressed_pub_key_from_priv_raw, ChecksumType, UtxoAddressFormat};
 use coins::{coin_conf, find_pair, lp_coinfind, BalanceTradeFeeUpdatedHandler, CoinProtocol, CoinsContext,
             FeeApproxStage, MmCoinEnum};
-use common::executor::{spawn_abortable, AbortOnDropHandle, SpawnAbortable, SpawnFuture, SpawnSettings, Timer};
+use common::executor::{spawn_abortable, AbortOnDropHandle, AbortSettings, SpawnAbortable, SpawnFuture, Timer};
 use common::log::{error, warn, LogOnError};
 use common::time_cache::TimeCache;
 use common::{bits256, log, new_uuid, now_ms};
@@ -2876,7 +2876,7 @@ fn lp_connect_start_bob(ctx: MmArc, maker_match: MakerMatch, maker_order: MakerO
         run_maker_swap(RunMakerSwapInput::StartNew(maker_swap), ctx).await;
     };
 
-    let settings = SpawnSettings::info_on_abort(format!("swap {uuid} stopped!"));
+    let settings = AbortSettings::info_on_abort(format!("swap {uuid} stopped!"));
     spawner.spawn_with_settings(fut, settings);
 }
 
@@ -2967,7 +2967,7 @@ fn lp_connected_alice(ctx: MmArc, taker_order: TakerOrder, taker_match: TakerMat
         run_taker_swap(RunTakerSwapInput::StartNew(taker_swap), ctx).await
     };
 
-    let settings = SpawnSettings::info_on_abort(format!("swap {uuid} stopped!"));
+    let settings = AbortSettings::info_on_abort(format!("swap {uuid} stopped!"));
     spawner.spawn_with_settings(fut, settings)
 }
 

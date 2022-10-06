@@ -35,7 +35,8 @@
 
 use async_trait::async_trait;
 use base58::FromBase58Error;
-use common::executor::{AbortableSpawner, AbortableSpawnerWeak, SpawnAbortable, SpawnFuture, SpawnSettings};
+use common::executor::{abortable_queue::{AbortableQueue, WeakSpawner},
+                       AbortSettings, SpawnAbortable, SpawnFuture};
 use common::{calc_total_pages, now_ms, ten, HttpStatusCode};
 use crypto::{Bip32Error, CryptoCtx, DerivationPath, HwRpcError, WithHwRpcError};
 use derive_more::Display;
@@ -1824,11 +1825,15 @@ pub trait MmCoin: SwapOps + MarketCoinOps + Send + Sync + 'static {
 /// `CoinFutSpawner` doesn't prevent the spawned futures from being aborted.
 #[derive(Clone)]
 pub struct CoinFutSpawner {
-    inner: AbortableSpawnerWeak,
+    inner: WeakSpawner,
 }
 
 impl CoinFutSpawner {
-    pub fn new(spawner: &AbortableSpawner) -> CoinFutSpawner { CoinFutSpawner { inner: spawner.weak() } }
+    pub fn new(system: &AbortableQueue) -> CoinFutSpawner {
+        CoinFutSpawner {
+            inner: system.weak_spawner(),
+        }
+    }
 }
 
 impl SpawnFuture for CoinFutSpawner {
@@ -1841,25 +1846,11 @@ impl SpawnFuture for CoinFutSpawner {
 }
 
 impl SpawnAbortable for CoinFutSpawner {
-    fn spawn_with_settings<F>(&self, fut: F, settings: SpawnSettings)
+    fn spawn_with_settings<F>(&self, fut: F, settings: AbortSettings)
     where
         F: Future03<Output = ()> + Send + 'static,
     {
         self.inner.spawn_with_settings(fut, settings)
-    }
-
-    fn spawn_critical<F>(&self, fut: F)
-    where
-        F: Future03<Output = ()> + Send + 'static,
-    {
-        self.inner.spawn_critical(fut)
-    }
-
-    fn spawn_critical_with_settings<F>(&self, fut: F, settings: SpawnSettings)
-    where
-        F: Future03<Output = ()> + Send + 'static,
-    {
-        self.inner.spawn_critical_with_settings(fut, settings)
     }
 }
 

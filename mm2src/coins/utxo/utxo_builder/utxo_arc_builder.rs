@@ -6,7 +6,7 @@ use crate::utxo::{generate_and_send_tx, FeePolicy, GetUtxoListOps, UtxoArc, Utxo
 use crate::{DerivationMethod, PrivKeyBuildPolicy, UtxoActivationParams};
 use async_trait::async_trait;
 use chain::TransactionOutput;
-use common::executor::{SpawnAbortable, SpawnSettings, Timer};
+use common::executor::{AbortSettings, SpawnAbortable, Timer};
 use common::log::{error, info, warn};
 use futures::compat::Future01CompatExt;
 use mm2_core::mm_ctx::MmArc;
@@ -199,8 +199,11 @@ pub trait MergeUtxoArcOps<T: UtxoCommonOps + GetUtxoListOps>: UtxoCoinBuilderCom
             constructor,
         );
 
-        let settings = SpawnSettings::info_on_abort(format!("spawn_merge_utxo_loop_if_required stopped for {ticker}"));
-        utxo_arc.spawner.spawn_with_settings(fut, settings);
+        let settings = AbortSettings::info_on_abort(format!("spawn_merge_utxo_loop_if_required stopped for {ticker}"));
+        utxo_arc
+            .abortable_system
+            .weak_spawner()
+            .spawn_with_settings(fut, settings);
     }
 }
 
@@ -298,7 +301,10 @@ pub trait BlockHeaderUtxoArcOps<T>: UtxoCoinBuilderCommonOps {
         let utxo_weak = utxo_arc.downgrade();
         let fut = block_header_utxo_loop(utxo_weak, constructor, sync_status_loop_handle);
 
-        let settings = SpawnSettings::info_on_abort(format!("spawn_block_header_utxo_loop stopped for {ticker}"));
-        utxo_arc.spawner.spawn_with_settings(fut, settings);
+        let settings = AbortSettings::info_on_abort(format!("spawn_block_header_utxo_loop stopped for {ticker}"));
+        utxo_arc
+            .abortable_system
+            .weak_spawner()
+            .spawn_with_settings(fut, settings);
     }
 }

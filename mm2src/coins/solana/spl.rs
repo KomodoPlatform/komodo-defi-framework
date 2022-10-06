@@ -10,7 +10,7 @@ use crate::{BalanceFut, CoinFutSpawner, FeeApproxStage, FoundSwapTxSpend, Negoti
             WithdrawRequest, WithdrawResult};
 use async_trait::async_trait;
 use bincode::serialize;
-use common::executor::AbortableSpawner;
+use common::executor::{abortable_queue::AbortableQueue, AbortableSystem};
 use common::{async_blocking, now_ms};
 use futures::{FutureExt, TryFutureExt};
 use futures01::Future;
@@ -39,7 +39,7 @@ pub struct SplTokenFields {
     pub decimals: u8,
     pub ticker: String,
     pub token_contract_address: Pubkey,
-    pub spawner: AbortableSpawner,
+    pub abortable_system: AbortableQueue,
 }
 
 #[derive(Clone, Debug)]
@@ -74,11 +74,16 @@ impl SplToken {
     ) -> Result<SplToken, MmError<SplTokenCreationError>> {
         let token_contract_address = solana_sdk::pubkey::Pubkey::from_str(&token_address)
             .map_err(|e| MmError::new(SplTokenCreationError::InvalidPubkey(format!("{:?}", e))))?;
+
+        // Create an abortable system linked to the `platform_coin` so if the platform coin is disabled,
+        // all spawned futures related to `SplToken` will be aborted as well.
+        let abortable_system = platform_coin.abortable_system.create_subsystem();
+
         let conf = Arc::new(SplTokenFields {
             decimals,
             ticker,
             token_contract_address,
-            spawner: AbortableSpawner::new(),
+            abortable_system,
         });
         Ok(SplToken { conf, platform_coin })
     }
@@ -444,7 +449,7 @@ impl SwapOps for SplToken {
 impl MmCoin for SplToken {
     fn is_asset_chain(&self) -> bool { false }
 
-    fn spawner(&self) -> CoinFutSpawner { CoinFutSpawner::new(&self.conf.spawner) }
+    fn spawner(&self) -> CoinFutSpawner { CoinFutSpawner::new(&self.conf.abortable_system) }
 
     fn withdraw(&self, req: WithdrawRequest) -> WithdrawFut {
         Box::new(Box::pin(withdraw_impl(self.clone(), req)).compat())

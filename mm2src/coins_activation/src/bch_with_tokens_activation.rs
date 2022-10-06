@@ -9,7 +9,7 @@ use coins::utxo::slp::{SlpProtocolConf, SlpToken};
 use coins::utxo::utxo_tx_history_v2::bch_and_slp_history_loop;
 use coins::utxo::UtxoCommonOps;
 use coins::{CoinBalance, CoinProtocol, MarketCoinOps, MmCoin, PrivKeyNotAllowed, UnexpectedDerivationMethod};
-use common::executor::{SpawnAbortable, SpawnSettings};
+use common::executor::{AbortSettings, SpawnAbortable};
 use common::Future01CompatExt;
 use mm2_core::mm_ctx::MmArc;
 use mm2_err_handle::prelude::*;
@@ -274,7 +274,7 @@ impl PlatformWithTokensActivationOps for BchCoin {
     ) {
         let fut = bch_and_slp_history_loop(self.clone(), storage, metrics, initial_balance);
 
-        let settings = SpawnSettings::info_on_abort(format!("bch_and_slp_history_loop stopped for {}", self.ticker()));
-        self.as_ref().spawner.spawn_with_settings(fut, settings);
+        let settings = AbortSettings::info_on_abort(format!("bch_and_slp_history_loop stopped for {}", self.ticker()));
+        self.spawner().spawn_with_settings(fut, settings);
     }
 }

@@ -5,11 +5,11 @@ use futures::{Future as Future03, FutureExt};
 #[cfg(not(target_arch = "wasm32"))]
 pub use native_executor::{spawn, Timer};
 
-mod abortable_spawner;
-pub use abortable_spawner::{AbortableSpawner, AbortableSpawnerWeak, SpawnAbortable};
+mod abortable_system;
+pub use abortable_system::{abortable_queue, simple_map, AbortableSystem};
 
 mod spawner;
-pub use spawner::{BoxFutureSpawner, SpawnFuture};
+pub use spawner::{BoxFutureSpawner, SpawnAbortable, SpawnFuture};
 
 mod abort_on_drop;
 pub use abort_on_drop::AbortOnDropHandle;
@@ -18,44 +18,53 @@ pub use abort_on_drop::AbortOnDropHandle;
 #[cfg(target_arch = "wasm32")]
 pub use wasm_executor::{spawn, spawn_local, Timer};
 
-#[derive(Default)]
-pub struct SpawnSettings {
+#[derive(Clone, Default)]
+pub struct AbortSettings {
     on_finish: Option<SpawnMsg>,
     on_abort: Option<SpawnMsg>,
+    critical_timeout_s: Option<f64>,
 }
 
-impl SpawnSettings {
-    pub fn info_on_any_stop(msg: String) -> SpawnSettings {
+impl AbortSettings {
+    pub fn info_on_any_stop(msg: String) -> AbortSettings {
         let msg = SpawnMsg {
             level: log::Level::Info,
             msg,
         };
-        SpawnSettings {
+        AbortSettings {
             on_finish: Some(msg.clone()),
             on_abort: Some(msg),
+            critical_timeout_s: None,
         }
     }
 
-    pub fn info_on_finish(msg: String) -> SpawnSettings {
+    pub fn info_on_finish(msg: String) -> AbortSettings {
         let msg = SpawnMsg {
             level: log::Level::Info,
             msg,
         };
-        SpawnSettings {
+        AbortSettings {
             on_finish: Some(msg),
             on_abort: None,
+            critical_timeout_s: None,
         }
     }
 
-    pub fn info_on_abort(msg: String) -> SpawnSettings {
+    pub fn info_on_abort(msg: String) -> AbortSettings {
         let msg = SpawnMsg {
             level: log::Level::Info,
             msg,
         };
-        SpawnSettings {
+        AbortSettings {
             on_finish: None,
             on_abort: Some(msg),
+            critical_timeout_s: None,
         }
+    }
+
+    pub fn critical_timout_s(mut self, critical_timout_s: f64) -> AbortSettings {
+        self.critical_timeout_s = Some(critical_timout_s);
+        self
     }
 }
 

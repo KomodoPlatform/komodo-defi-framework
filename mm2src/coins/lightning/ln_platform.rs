@@ -13,7 +13,7 @@ use bitcoin::blockdata::transaction::Transaction;
 use bitcoin::consensus::encode::{deserialize, serialize_hex};
 use bitcoin::hash_types::{BlockHash, TxMerkleNode, Txid};
 use bitcoin_hashes::{sha256d, Hash};
-use common::executor::{AbortableSpawner, SpawnFuture, Timer};
+use common::executor::{abortable_queue::AbortableQueue, AbortableSystem, Timer};
 use common::log::{debug, error, info};
 use futures::compat::Future01CompatExt;
 use futures::future::join_all;
@@ -167,7 +167,7 @@ pub struct Platform {
     /// This cache stores transactions to be broadcasted once the other node accepts the channel
     pub unsigned_funding_txs: PaMutex<HashMap<u64, TransactionInputSigner>>,
     /// This spawner is used to spawn coin's related futures that should be aborted on coin deactivation.
-    pub spawner: AbortableSpawner,
+    pub abortable_system: AbortableQueue,
 }
 
 impl Platform {
@@ -177,6 +177,10 @@ impl Platform {
         network: BlockchainNetwork,
         confirmations_targets: PlatformCoinConfirmationTargets,
     ) -> Self {
+        // Create an abortable system linked to the base `coin` so if the base coin is disabled,
+        // all spawned futures related to `LightCoin` will be aborted as well.
+        let abortable_system = coin.as_ref().abortable_system.create_subsystem();
+
         Platform {
             coin,
             network,
@@ -190,12 +194,14 @@ impl Platform {
             registered_txs: PaMutex::new(HashSet::new()),
             registered_outputs: PaMutex::new(Vec::new()),
             unsigned_funding_txs: PaMutex::new(HashMap::new()),
-            spawner: AbortableSpawner::new(),
+            abortable_system,
         }
     }
 
     #[inline]
     fn rpc_client(&self) -> &UtxoRpcClientEnum { &self.coin.as_ref().rpc_client }
+
+    pub fn spawner(&self) -> CoinFutSpawner { CoinFutSpawner::new(&self.abortable_system) }
 
     pub async fn set_latest_fees(&self) -> UtxoRpcResult<()> {
         let platform_coin = &self.coin;
@@ -583,7 +589,7 @@ impl BroadcasterInterface for Platform {
             }
         };
 
-        self.spawner.spawn(fut);
+        self.spawner().spawn(fut);
     }
 }
 

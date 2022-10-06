@@ -1,7 +1,8 @@
 use arrayref::array_ref;
 #[cfg(any(not(target_arch = "wasm32"), feature = "track-ctx-pointer"))]
 use common::executor::Timer;
-use common::executor::{AbortableSpawner, AbortableSpawnerWeak, SpawnAbortable, SpawnFuture, SpawnSettings};
+use common::executor::{abortable_queue::{AbortableQueue, WeakSpawner},
+                       AbortSettings, AbortableSystem, SpawnAbortable, SpawnFuture};
 use common::log::{self, LogLevel, LogState};
 use common::{bits256, cfg_native, cfg_wasm32, small_rng};
 use gstuff::{try_s, Constructible, ERR, ERRL};
@@ -119,10 +120,10 @@ pub struct MmCtx {
     pub sqlite_connection: Constructible<Arc<Mutex<Connection>>>,
     pub mm_version: String,
     pub mm_init_ctx: Mutex<Option<Arc<dyn Any + 'static + Send + Sync>>>,
-    /// The futures spawner pinned to the `MmCtx` context.
+    /// The abortable system is pinned to the `MmCtx` context.
     /// It's used to spawn futures that can be aborted immediately or after a timeout
     /// on the [`MmArc::stop`] function call.
-    pub spawner: AbortableSpawner,
+    pub abortable_system: AbortableQueue,
     #[cfg(target_arch = "wasm32")]
     pub db_namespace: DbNamespaceId,
 }
@@ -162,7 +163,7 @@ impl MmCtx {
             sqlite_connection: Constructible::default(),
             mm_version: "".into(),
             mm_init_ctx: Mutex::new(None),
-            spawner: AbortableSpawner::new(),
+            abortable_system: AbortableQueue::default(),
             #[cfg(target_arch = "wasm32")]
             db_namespace: DbNamespaceId::Main,
         }
@@ -234,7 +235,7 @@ impl MmCtx {
     pub fn p2p_in_memory_port(&self) -> Option<u64> { self.conf["p2p_in_memory_port"].as_u64() }
 
     /// Returns the cloneable `MmFutSpawner`.
-    pub fn spawner(&self) -> MmFutSpawner { MmFutSpawner::new(&self.spawner) }
+    pub fn spawner(&self) -> MmFutSpawner { MmFutSpawner::new(&self.abortable_system) }
 
     /// True if the MarketMaker instance needs to stop.
     pub fn is_stopping(&self) -> bool { self.stop.copy_or(false) }
@@ -402,7 +403,7 @@ impl MmArc {
         try_s!(self.stop.pin(true));
 
         // Abort spawned futures.
-        self.spawner.abort_all();
+        self.abortable_system.abort_all();
 
         #[cfg(not(target_arch = "wasm32"))]
         self.background_processors.lock().unwrap().drain();
@@ -439,7 +440,7 @@ impl MmArc {
                 }
             }
         };
-        self.spawner.spawn(fut);
+        self.spawner().spawn(fut);
     }
 
     #[cfg(feature = "track-ctx-pointer")]
@@ -509,7 +510,7 @@ impl MmArc {
         } else {
             try_s!(self
                 .metrics
-                .init_with_dashboard(&self.spawner, self.log.weak(), interval));
+                .init_with_dashboard(&self.spawner(), self.log.weak(), interval));
         }
 
         #[cfg(not(target_arch = "wasm32"))]
@@ -546,7 +547,7 @@ impl MmArc {
         };
 
         prometheus::spawn_prometheus_exporter(
-            &self.spawner,
+            &self.spawner(),
             self.metrics.weak(),
             address,
             shutdown_detector,
@@ -564,11 +565,15 @@ impl MmArc {
 /// `MmFutSpawner` doesn't prevent the spawned futures from being aborted.
 #[derive(Clone)]
 pub struct MmFutSpawner {
-    inner: AbortableSpawnerWeak,
+    inner: WeakSpawner,
 }
 
 impl MmFutSpawner {
-    pub fn new(spawner: &AbortableSpawner) -> MmFutSpawner { MmFutSpawner { inner: spawner.weak() } }
+    pub fn new(system: &AbortableQueue) -> MmFutSpawner {
+        MmFutSpawner {
+            inner: system.weak_spawner(),
+        }
+    }
 }
 
 impl SpawnFuture for MmFutSpawner {
@@ -581,25 +586,11 @@ impl SpawnFuture for MmFutSpawner {
 }
 
 impl SpawnAbortable for MmFutSpawner {
-    fn spawn_with_settings<F>(&self, fut: F, settings: SpawnSettings)
+    fn spawn_with_settings<F>(&self, fut: F, settings: AbortSettings)
     where
         F: Future<Output = ()> + Send + 'static,
     {
         self.inner.spawn_with_settings(fut, settings)
-    }
-
-    fn spawn_critical<F>(&self, fut: F)
-    where
-        F: Future<Output = ()> + Send + 'static,
-    {
-        self.inner.spawn_critical(fut)
-    }
-
-    fn spawn_critical_with_settings<F>(&self, fut: F, settings: SpawnSettings)
-    where
-        F: Future<Output = ()> + Send + 'static,
-    {
-        self.inner.spawn_critical_with_settings(fut, settings)
     }
 }
 

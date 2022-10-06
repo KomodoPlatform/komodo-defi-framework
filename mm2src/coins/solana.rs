@@ -11,7 +11,7 @@ use crate::{BalanceError, BalanceFut, CoinFutSpawner, FeeApproxStage, FoundSwapT
 use async_trait::async_trait;
 use base58::ToBase58;
 use bincode::{deserialize, serialize};
-use common::executor::AbortableSpawner;
+use common::executor::{abortable_queue::AbortableQueue, AbortableSystem};
 use common::{async_blocking, now_ms};
 use derive_more::Display;
 use futures::{FutureExt, TryFutureExt};
@@ -164,6 +164,7 @@ fn generate_keypair_from_slice(priv_key: &[u8]) -> Result<Keypair, MmError<KeyPa
 }
 
 pub async fn solana_coin_from_conf_and_params(
+    ctx: &MmArc,
     ticker: &str,
     conf: &Json,
     params: SolanaActivationParams,
@@ -176,6 +177,11 @@ pub async fn solana_coin_from_conf_and_params(
     let key_pair = try_s!(generate_keypair_from_slice(priv_key));
     let my_address = key_pair.pubkey().to_string();
     let spl_tokens_infos = Arc::new(Mutex::new(HashMap::new()));
+
+    // Create an abortable system linked to the `MmCtx` so if the context is stopped via `MmArc::stop`,
+    // all spawned futures related to `SolanaCoin` will be aborted as well.
+    let abortable_system: AbortableQueue = ctx.abortable_system.create_subsystem();
+
     let solana_coin = SolanaCoin(Arc::new(SolanaCoinImpl {
         my_address,
         key_pair,
@@ -183,7 +189,7 @@ pub async fn solana_coin_from_conf_and_params(
         client,
         decimals,
         spl_tokens_infos,
-        spawner: AbortableSpawner::new(),
+        abortable_system,
     }));
     Ok(solana_coin)
 }
@@ -197,7 +203,7 @@ pub struct SolanaCoinImpl {
     my_address: String,
     spl_tokens_infos: Arc<Mutex<HashMap<String, SplTokenInfo>>>,
     /// This spawner is used to spawn coin's related futures that should be aborted on coin deactivation.
-    spawner: AbortableSpawner,
+    abortable_system: AbortableQueue,
 }
 
 #[derive(Clone)]
@@ -612,7 +618,7 @@ impl SwapOps for SolanaCoin {
 impl MmCoin for SolanaCoin {
     fn is_asset_chain(&self) -> bool { false }
 
-    fn spawner(&self) -> CoinFutSpawner { CoinFutSpawner::new(&self.spawner) }
+    fn spawner(&self) -> CoinFutSpawner { CoinFutSpawner::new(&self.abortable_system) }
 
     fn withdraw(&self, req: WithdrawRequest) -> WithdrawFut {
         Box::new(Box::pin(withdraw_impl(self.clone(), req)).compat())

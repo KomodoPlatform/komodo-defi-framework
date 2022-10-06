@@ -1,7 +1,7 @@
 use super::{broadcast_p2p_tx_msg, lp_coinfind, tx_helper_topic, H256Json, SwapsContext, TransactionIdentifier,
             WAIT_CONFIRM_INTERVAL};
 use coins::{MmCoinEnum, WatcherValidatePaymentInput};
-use common::executor::{SpawnAbortable, SpawnSettings};
+use common::executor::{AbortSettings, SpawnAbortable};
 use common::log::{error, info};
 use futures::compat::Future01CompatExt;
 use futures::{select, FutureExt};
@@ -479,7 +479,7 @@ fn spawn_taker_swap_watcher(ctx: MmArc, watcher_data: TakerSwapWatcherData) {
         drop(taker_watcher_lock);
     };
 
-    let settings = SpawnSettings::info_on_abort(format!("watcher swap {uuid} stopped!"));
+    let settings = AbortSettings::info_on_abort(format!("watcher swap {uuid} stopped!"));
     // Please note that `taker_watcher_lock` will be dropped once `MmCtx` is dropped
     // since `fut` will be aborted.
     spawner.spawn_with_settings(fut, settings);

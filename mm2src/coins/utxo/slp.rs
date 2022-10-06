@@ -24,7 +24,7 @@ use async_trait::async_trait;
 use bitcrypto::dhash160;
 use chain::constants::SEQUENCE_FINAL;
 use chain::{OutPoint, TransactionOutput};
-use common::executor::AbortableSpawner;
+use common::executor::{abortable_queue::AbortableQueue, AbortableSystem};
 use common::log::warn;
 use common::now_ms;
 use derive_more::Display;
@@ -64,8 +64,9 @@ pub struct SlpTokenFields {
     ticker: String,
     token_id: H256,
     required_confirmations: AtomicU64,
-    /// This spawner is used to spawn coin's related futures that should be aborted on coin deactivation.
-    spawner: AbortableSpawner,
+    /// This abortable system is used to spawn coin's related futures that should be aborted on coin deactivation
+    /// and on [`MmArc::stop`].
+    abortable_system: AbortableQueue,
 }
 
 /// Minimalistic info that is used to be stored outside of the token's context
@@ -276,12 +277,16 @@ impl SlpToken {
         platform_coin: BchCoin,
         required_confirmations: u64,
     ) -> SlpToken {
+        // Create an abortable system linked to `platform_coin` so if the platform coin is disabled,
+        // all spawned futures related to `SlpToken` will be aborted as well.
+        let abortable_system = platform_coin.as_ref().abortable_system.create_subsystem();
+
         let conf = Arc::new(SlpTokenFields {
             decimals,
             ticker,
             token_id,
             required_confirmations: AtomicU64::new(required_confirmations),
-            spawner: AbortableSpawner::new(),
+            abortable_system,
         });
         SlpToken { conf, platform_coin }
     }
@@ -1490,7 +1495,7 @@ impl From<SlpFeeDetails> for TxFeeDetails {
 impl MmCoin for SlpToken {
     fn is_asset_chain(&self) -> bool { false }
 
-    fn spawner(&self) -> CoinFutSpawner { CoinFutSpawner::new(&self.conf.spawner) }
+    fn spawner(&self) -> CoinFutSpawner { CoinFutSpawner::new(&self.conf.abortable_system) }
 
     fn get_raw_transaction(&self, req: RawTransactionRequest) -> RawTransactionFut {
         Box::new(
