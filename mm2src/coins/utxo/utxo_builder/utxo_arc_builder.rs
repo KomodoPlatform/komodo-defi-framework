@@ -1,11 +1,13 @@
-use crate::utxo::rpc_clients::UtxoRpcClientEnum;
+use std::collections::HashMap;
+
+use crate::utxo::rpc_clients::{ElectrumClient, UtxoRpcClientEnum, UtxoRpcError};
 use crate::utxo::utxo_builder::{UtxoCoinBuildError, UtxoCoinBuilder, UtxoCoinBuilderCommonOps,
                                 UtxoFieldsWithHardwareWalletBuilder, UtxoFieldsWithIguanaPrivKeyBuilder};
 use crate::utxo::{generate_and_send_tx, FeePolicy, GetUtxoListOps, UtxoArc, UtxoCommonOps, UtxoSyncStatusLoopHandle,
                   UtxoWeak};
 use crate::{DerivationMethod, PrivKeyBuildPolicy, UtxoActivationParams};
 use async_trait::async_trait;
-use chain::TransactionOutput;
+use chain::{BlockHeader, TransactionOutput};
 use common::executor::{spawn, Timer};
 use common::log::{error, info, warn};
 use futures::compat::Future01CompatExt;
@@ -210,6 +212,52 @@ pub trait MergeUtxoArcOps<T: UtxoCommonOps + GetUtxoListOps>: UtxoCoinBuilderCom
     }
 }
 
+/// Request block headers in chunks and merge
+async fn get_block_headers_in_chunks(
+    client: &ElectrumClient,
+    from: u64,
+    to: u64,
+) -> Result<(HashMap<u64, BlockHeader>, Vec<BlockHeader>, u64), MmError<UtxoRpcError>> {
+    // Create and initialize an empty block_registry, block_headers and last_retrieved_height to 1.
+    let (mut block_registry, mut block_headers, mut last_retrieved_height) = (HashMap::new(), Vec::new(), from);
+
+    // Get the remainder of total block headers to fetch / 500.
+    let chunks_rem = to % 500;
+    // Temporary from value, to store collected block headers temporary starting value.
+    let mut temporary_from = from;
+    // Temporary to value, to store collected block headers temporary ending value.
+    let mut temporary_to = 500;
+    log!("Total headers to fetch: {}", to);
+
+    // While temporary to value is less or equal to origina to value, we will collect the headers in chunk of 500 at a single request/loop.
+    while temporary_to <= to {
+        log!("Fetching headers from {} to {}", temporary_from, temporary_to);
+        let (block_reg, mut block_heads, last_height) =
+            match client.retrieve_headers(temporary_from, temporary_to).compat().await {
+                Ok(res) => res,
+                Err(e) => return Err(e),
+            };
+        block_registry.extend(block_reg);
+        block_headers.append(&mut block_heads);
+        last_retrieved_height = last_height;
+
+        // at a point, before running out of our loop we expect to fetch our (chunks_remainder) if there's any. So we check if (to - temporary_to = chunks_rem) and (chunks_rem && chunks_rem > 0) then we assign (temporary_to + 1) to (temporary_from) and also assign (chunks_rem) to (temporary_to). If all these these are false then we continue with our loop or ends it as (temporary to value) can't be greater than (original to value itself).
+        if to - temporary_to == chunks_rem && chunks_rem > 0 {
+            temporary_from = temporary_to + 1;
+            temporary_to += chunks_rem
+        } else {
+            temporary_from += 500;
+            temporary_to += 500;
+        }
+        // Sleep for every 3 seconds on each request to prevent IP limitations on requests
+        Timer::sleep(3.).await;
+    }
+    log!("Total fetched headers {}", block_headers.len());
+
+    // Finally, after getting our registry, headers in chunks and merging and last_retrieved_height, we return them here
+    Ok((block_registry, block_headers, last_retrieved_height))
+}
+
 async fn block_header_utxo_loop<T: UtxoCommonOps>(
     weak: UtxoWeak,
     constructor: impl Fn(UtxoArc) -> T,
@@ -251,19 +299,16 @@ async fn block_header_utxo_loop<T: UtxoCommonOps>(
 
         sync_status_loop_handle.notify_blocks_headers_sync_status(from_block_height + 1, to_block_height);
 
-        let (block_registry, block_headers, last_retrieved_height) = match client
-            .retrieve_headers(from_block_height + 1, to_block_height)
-            .compat()
-            .await
-        {
-            Ok(res) => res,
-            Err(e) => {
-                error!("Error {} on retrieving the latest headers from rpc!", e);
-                sync_status_loop_handle.notify_on_temp_error(e.to_string());
-                Timer::sleep(10.).await;
-                continue;
-            },
-        };
+        let (block_registry, block_headers, last_retrieved_height) =
+            match get_block_headers_in_chunks(client, from_block_height + 1, to_block_height).await {
+                Ok((b, h, l)) => (b, h, l),
+                Err(err) => {
+                    error!("Error {} on retrieving the latest headers from rpc!", err);
+                    sync_status_loop_handle.notify_on_temp_error(err.to_string());
+                    Timer::sleep(10.).await;
+                    continue;
+                },
+            };
 
         let ticker = coin.as_ref().conf.ticker.as_str();
         if let Some(params) = &coin.as_ref().conf.block_headers_verification_params {
