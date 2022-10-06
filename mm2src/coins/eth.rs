@@ -1115,6 +1115,10 @@ impl SwapOps for EthCoin {
             .await
     }
 
+    fn check_all_inputs_signed_by_pub(&self, _tx: &[u8], _expected_pub: &[u8]) -> Result<bool, String> {
+        unimplemented!();
+    }
+
     fn extract_secret(&self, _secret_hash: &[u8], spend_tx: &[u8]) -> Result<Vec<u8>, String> {
         let unverified: UnverifiedTransaction = try_s!(rlp::decode(spend_tx));
         let function = try_s!(SWAP_CONTRACT.function("receiverSpend"));

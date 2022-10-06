@@ -394,12 +394,16 @@ pub async fn process_watcher_msg(ctx: MmArc, msg: &[u8]) {
         },
     };
 
-    match msg.0 {
-        SwapWatcherMsg::TakerSwapWatcherMsg(watcher_data) => spawn_taker_swap_watcher(ctx, watcher_data).await,
+    let watcher_data = msg.0;
+    let verified_pubkey = msg.2;
+    match watcher_data {
+        SwapWatcherMsg::TakerSwapWatcherMsg(watcher_data) => {
+            spawn_taker_swap_watcher(ctx, watcher_data, verified_pubkey.to_bytes()).await
+        },
     }
 }
 
-async fn spawn_taker_swap_watcher(ctx: MmArc, watcher_data: TakerSwapWatcherData) {
+async fn spawn_taker_swap_watcher(ctx: MmArc, watcher_data: TakerSwapWatcherData, verified_pubkey: Vec<u8>) {
     let swap_ctx = SwapsContext::from_ctx(&ctx).unwrap();
     if swap_ctx.swap_msgs.lock().unwrap().contains_key(&watcher_data.uuid) {
         return;
@@ -427,6 +431,20 @@ async fn spawn_taker_swap_watcher(ctx: MmArc, watcher_data: TakerSwapWatcherData
                 return;
             },
         };
+
+        let redeem_pub_valid =
+            match taker_coin.check_all_inputs_signed_by_pub(&watcher_data.taker_payment_hex, &verified_pubkey) {
+                Ok(is_valid) => is_valid,
+                Err(e) => {
+                    log::error!("{}", e);
+                    return;
+                },
+            };
+
+        if !redeem_pub_valid || verified_pubkey != watcher_data.taker_pub {
+            log::error!("Invalid public key in watcher data");
+            return;
+        }
 
         let maker_coin = match lp_coinfind(&ctx, &watcher_data.maker_coin).await {
             Ok(Some(c)) => c,

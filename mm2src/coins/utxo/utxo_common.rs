@@ -1698,7 +1698,12 @@ where
     }
 }
 
-pub fn check_all_inputs_signed_by_pub(tx: &UtxoTx, expected_pub: &[u8]) -> Result<bool, String> {
+pub fn check_all_inputs_signed_by_pub(tx: &[u8], expected_pub: &[u8]) -> Result<bool, String> {
+    let tx: UtxoTx = try_s!(deserialize(tx).map_err(|e| ERRL!("{:?}", e)));
+    check_all_utxo_inputs_signed_by_pub(&tx, expected_pub)
+}
+
+pub fn check_all_utxo_inputs_signed_by_pub(tx: &UtxoTx, expected_pub: &[u8]) -> Result<bool, String> {
     for input in &tx.inputs {
         let pubkey = if input.has_witness() {
             try_s!(pubkey_from_witness_script(&input.script_witness))
@@ -1733,7 +1738,7 @@ pub fn validate_fee<T: UtxoCommonOps>(
         coin.addr_format().clone(),
     ));
 
-    if !try_fus!(check_all_inputs_signed_by_pub(&tx, sender_pubkey)) {
+    if !try_fus!(check_all_utxo_inputs_signed_by_pub(&tx, sender_pubkey)) {
         return Box::new(futures01::future::err(ERRL!("The dex fee was sent from wrong address")));
     }
     let fut = async move {

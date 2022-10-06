@@ -256,6 +256,10 @@ impl SwapOps for TestCoin {
         unimplemented!()
     }
 
+    fn check_all_inputs_signed_by_pub(&self, tx: &[u8], expected_pub: &[u8]) -> Result<bool, String> {
+        unimplemented!();
+    }
+
     fn extract_secret(&self, secret_hash: &[u8], spend_tx: &[u8]) -> Result<Vec<u8>, String> { unimplemented!() }
 
     fn negotiate_swap_contract_addr(

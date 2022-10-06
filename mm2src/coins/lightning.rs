@@ -435,6 +435,10 @@ impl SwapOps for LightningCoin {
         unimplemented!()
     }
 
+    fn check_all_inputs_signed_by_pub(&self, _tx: &[u8], _expected_pub: &[u8]) -> Result<bool, String> {
+        unimplemented!();
+    }
+
     fn extract_secret(&self, _secret_hash: &[u8], _spend_tx: &[u8]) -> Result<Vec<u8>, String> { unimplemented!() }
 
     fn negotiate_swap_contract_addr(

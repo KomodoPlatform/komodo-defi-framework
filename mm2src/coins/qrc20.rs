@@ -8,7 +8,7 @@ use crate::utxo::rpc_clients::{ElectrumClient, NativeClient, UnspentInfo, UtxoRp
 use crate::utxo::tx_cache::{UtxoVerboseCacheOps, UtxoVerboseCacheShared};
 use crate::utxo::utxo_builder::{UtxoCoinBuildError, UtxoCoinBuildResult, UtxoCoinBuilderCommonOps,
                                 UtxoCoinWithIguanaPrivKeyBuilder, UtxoFieldsWithIguanaPrivKeyBuilder};
-use crate::utxo::utxo_common::{self, big_decimal_from_sat, check_all_inputs_signed_by_pub, UtxoTxBuilder};
+use crate::utxo::utxo_common::{self, big_decimal_from_sat, check_all_utxo_inputs_signed_by_pub, UtxoTxBuilder};
 use crate::utxo::{qtum, ActualTxFee, AdditionalTxData, AddrFromStrError, BroadcastTxErr, FeePolicy, GenerateTxError,
                   GetUtxoListOps, HistoryUtxoTx, HistoryUtxoTxMap, MatureUnspentList, RecentlySpentOutPointsGuard,
                   UtxoActivationParams, UtxoAddressFormat, UtxoCoinFields, UtxoCommonOps, UtxoFromLegacyReqErr,
@@ -903,7 +903,7 @@ impl SwapOps for Qrc20Coin {
             _ => panic!("Unexpected TransactionEnum"),
         };
         let fee_tx_hash = fee_tx.hash().reversed().into();
-        if !try_fus!(check_all_inputs_signed_by_pub(fee_tx, expected_sender)) {
+        if !try_fus!(check_all_utxo_inputs_signed_by_pub(&fee_tx, expected_sender)) {
             return Box::new(futures01::future::err(ERRL!("The dex fee was sent from wrong address")));
         }
         let fee_addr = try_fus!(self.contract_address_from_raw_pubkey(fee_addr));
@@ -1024,6 +1024,10 @@ impl SwapOps for Qrc20Coin {
 
         self.search_for_swap_tx_spend(input.time_lock, input.secret_hash, tx, input.search_from_block)
             .await
+    }
+
+    fn check_all_inputs_signed_by_pub(&self, tx: &[u8], expected_pub: &[u8]) -> Result<bool, String> {
+        utxo_common::check_all_inputs_signed_by_pub(tx, expected_pub)
     }
 
     fn extract_secret(&self, secret_hash: &[u8], spend_tx: &[u8]) -> Result<Vec<u8>, String> {
