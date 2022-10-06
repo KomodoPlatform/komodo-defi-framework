@@ -478,7 +478,7 @@ impl SwapOps for UtxoStandardCoin {
         utxo_common::search_for_swap_tx_spend_other(self, input, utxo_common::DEFAULT_SWAP_VOUT).await
     }
 
-    fn extract_secret(&self, secret_hash: &[u8], spend_tx: &[u8]) -> Result<Vec<u8>, String> {
+    async fn extract_secret(&self, secret_hash: &[u8], spend_tx: &[u8]) -> Result<Vec<u8>, String> {
         utxo_common::extract_secret(secret_hash, spend_tx)
     }
 

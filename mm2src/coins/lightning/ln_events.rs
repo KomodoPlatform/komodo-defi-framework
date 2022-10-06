@@ -343,11 +343,32 @@ impl LightningEventHandler {
         let payment_preimage = match purpose {
             PaymentPurpose::InvoicePayment { payment_preimage, .. } => match payment_preimage {
                 Some(preimage) => *preimage,
+                // This is a swap related payment since we don't have the preimage yet
                 None => {
-                    // Free the htlc immediately if we don't have the preimage required to claim the payment
-                    // to allow for this inbound liquidity to be used for other inbound payments.
-                    // Todo: this should be avoided for swaps except on refund
-                    self.channel_manager.fail_htlc_backwards(payment_hash);
+                    // Todo: preimage should be saved to db after it's received (after claim_payment and make payment successful)
+                    let payment_info = PaymentInfo {
+                        payment_hash: *payment_hash,
+                        payment_type: PaymentType::InboundPayment,
+                        // Todo: maybe add this to db on create_invoice_for_hash
+                        description: "".into(),
+                        preimage: None,
+                        // Todo: maybe add this to db on create_invoice_for_hash
+                        secret: None,
+                        amt_msat: Some(received_amount as i64),
+                        fee_paid_msat: None,
+                        status: HTLCStatus::Received,
+                        // Todo: maybe add this to db on create_invoice_for_hash
+                        created_at: (now_ms() / 1000) as i64,
+                        // Todo: maybe add this to db on create_invoice_for_hash
+                        last_updated: (now_ms() / 1000) as i64,
+                    };
+                    let db = self.db.clone();
+                    // Todo: Update this after stop-spawned-futures https://github.com/KomodoPlatform/atomicDEX-API/pull/1490 gets merged to dev
+                    spawn(async move {
+                        db.add_or_update_payment_in_db(payment_info)
+                            .await
+                            .error_log_with_msg("Unable to add payment information to DB!");
+                    });
                     return;
                 },
             },

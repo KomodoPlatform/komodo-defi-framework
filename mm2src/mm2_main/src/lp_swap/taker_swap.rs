@@ -1230,6 +1230,7 @@ impl TakerSwap {
             confirmations,
             self.r().data.maker_payment_requires_nota.unwrap_or(false),
             self.r().data.maker_payment_wait,
+            // Todo: this can be less for lightning probably
             WAIT_CONFIRM_INTERVAL,
         );
         if let Err(err) = f.compat().await {
@@ -1399,12 +1400,12 @@ impl TakerSwap {
     async fn wait_for_taker_payment_spend(&self) -> Result<(Option<TakerSwapCommand>, Vec<TakerSwapEvent>), String> {
         let tx_hex = self.r().taker_payment.as_ref().unwrap().tx_hex.clone();
         let mut watcher_broadcast_abort_handle = None;
-        let mut send_abort_handle = None;
+        // Todo: refactor this
         if let Some(hex) = tx_hex {
             if self.ctx.use_watchers() {
                 let preimage_hex = self.r().taker_spends_maker_payment_preimage.clone();
                 if let Some(preimage_hex) = preimage_hex {
-                    let watcher_data = self.create_watcher_data(hex.0.clone(), preimage_hex);
+                    let watcher_data = self.create_watcher_data(hex.0, preimage_hex);
                     let swpmsg_watcher = SwapWatcherMsg::TakerSwapWatcherMsg(Box::new(watcher_data));
                     watcher_broadcast_abort_handle = Some(broadcast_swap_message_every(
                         self.ctx.clone(),
@@ -1415,19 +1416,22 @@ impl TakerSwap {
                     ));
                 }
             }
-            // Todo: The same should be done for MakerPayment (shouldn't be sent on some cases)
-            let msg = SwapMsg::TakerPayment(hex.0);
-            send_abort_handle = Some(broadcast_swap_message_every(
-                self.ctx.clone(),
-                swap_topic(&self.uuid),
-                msg,
-                600.,
-                self.p2p_privkey,
-            ));
         }
+
+        // Todo: taker_payment should be a message on lightning network not a swap message
+        let msg = SwapMsg::TakerPayment(self.r().taker_payment.as_ref().unwrap().tx_hex().0);
+        let send_abort_handle = Some(broadcast_swap_message_every(
+            self.ctx.clone(),
+            swap_topic(&self.uuid),
+            msg,
+            600.,
+            self.p2p_privkey,
+        ));
 
         let wait_duration = (self.r().data.lock_duration * 4) / 5;
         let wait_taker_payment = self.r().data.started_at + wait_duration;
+        // Todo: remove this after successful test
+        debug!("wait_for_confirmations");
         let wait_f = self
             .taker_coin
             .wait_for_confirmations(
@@ -1449,6 +1453,8 @@ impl TakerSwap {
             ]));
         }
 
+        // Todo: remove this after successful test
+        debug!("wait_for_tx_spend");
         let f = self.taker_coin.wait_for_tx_spend(
             &self.r().taker_payment.clone().unwrap().tx_hex(),
             self.r().data.taker_payment_lock,
@@ -1474,10 +1480,11 @@ impl TakerSwap {
             tx_hex: tx.tx_hex().map(From::from),
             tx_hash,
         };
-        let secret = match self
-            .taker_coin
-            .extract_secret(&self.r().secret_hash.0, &tx_ident.tx_hex())
-        {
+
+        // Todo: remove this after successful test
+        debug!("extract_secret");
+        let secret_hash = self.r().secret_hash.clone();
+        let secret = match self.taker_coin.extract_secret(&secret_hash.0, &tx_ident.tx_hex()).await {
             Ok(bytes) => H256Json::from(bytes.as_slice()),
             Err(e) => {
                 return Ok((Some(TakerSwapCommand::Finish), vec![
@@ -1835,9 +1842,9 @@ impl TakerSwap {
                 FoundSwapTxSpend::Spent(tx) => {
                     check_maker_payment_is_not_spent!();
                     let tx_hash = tx.tx_hash().0;
-                    let secret = try_s!(self
-                        .taker_coin
-                        .extract_secret(&self.r().secret_hash.0, &tx.tx_hex().unwrap_or(tx_hash)));
+                    let tx_hex = tx.tx_hex().unwrap_or(tx_hash);
+                    let secret_hash = self.r().secret_hash.clone();
+                    let secret = try_s!(self.taker_coin.extract_secret(&secret_hash.0, &tx_hex).await);
 
                     let fut = self.maker_coin.send_taker_spends_maker_payment(
                         &maker_payment,
@@ -2408,7 +2415,7 @@ mod taker_swap_tests {
 
         TestCoin::ticker.mock_safe(|_| MockResult::Return("ticker"));
         TestCoin::swap_contract_address.mock_safe(|_| MockResult::Return(None));
-        TestCoin::extract_secret.mock_safe(|_, _, _| MockResult::Return(Ok(vec![])));
+        TestCoin::extract_secret.mock_safe(|_, _, _| MockResult::Return(Box::pin(async move { Ok(vec![]) })));
 
         static mut MY_PAYMENT_SENT_CALLED: bool = false;
         TestCoin::check_if_my_payment_sent.mock_safe(|_, _, _, _, _, _, _| {
@@ -2523,7 +2530,7 @@ mod taker_swap_tests {
 
         TestCoin::ticker.mock_safe(|_| MockResult::Return("ticker"));
         TestCoin::swap_contract_address.mock_safe(|_| MockResult::Return(None));
-        TestCoin::extract_secret.mock_safe(|_, _, _| MockResult::Return(Ok(vec![])));
+        TestCoin::extract_secret.mock_safe(|_, _, _| MockResult::Return(Box::pin(async move { Ok(vec![]) })));
 
         static mut SEARCH_TX_SPEND_CALLED: bool = false;
         TestCoin::search_for_swap_tx_spend_my.mock_safe(|_, _| {

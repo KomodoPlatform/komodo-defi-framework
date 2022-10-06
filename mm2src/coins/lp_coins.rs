@@ -627,7 +627,8 @@ pub trait SwapOps {
         input: SearchForSwapTxSpendInput<'_>,
     ) -> Result<Option<FoundSwapTxSpend>, String>;
 
-    fn extract_secret(&self, secret_hash: &[u8], spend_tx: &[u8]) -> Result<Vec<u8>, String>;
+    // Todo: can be made sync again if the secret is made part of the enum, it will also reduce a call to the DB
+    async fn extract_secret(&self, secret_hash: &[u8], spend_tx: &[u8]) -> Result<Vec<u8>, String>;
 
     /// Whether the refund transaction can be sent now
     /// For example: there are no additional conditions for ETH, but for some UTXO coins we should wait for

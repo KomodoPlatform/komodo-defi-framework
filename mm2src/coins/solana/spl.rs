@@ -428,7 +428,7 @@ impl SwapOps for SplToken {
         unimplemented!()
     }
 
-    fn extract_secret(&self, secret_hash: &[u8], spend_tx: &[u8]) -> Result<Vec<u8>, String> { unimplemented!() }
+    async fn extract_secret(&self, secret_hash: &[u8], spend_tx: &[u8]) -> Result<Vec<u8>, String> { unimplemented!() }
 
     fn negotiate_swap_contract_addr(
         &self,

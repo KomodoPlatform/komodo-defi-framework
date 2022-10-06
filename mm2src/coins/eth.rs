@@ -1099,7 +1099,7 @@ impl SwapOps for EthCoin {
             .await
     }
 
-    fn extract_secret(&self, _secret_hash: &[u8], spend_tx: &[u8]) -> Result<Vec<u8>, String> {
+    async fn extract_secret(&self, _secret_hash: &[u8], spend_tx: &[u8]) -> Result<Vec<u8>, String> {
         let unverified: UnverifiedTransaction = try_s!(rlp::decode(spend_tx));
         let function = try_s!(SWAP_CONTRACT.function("receiverSpend"));
         let tokens = try_s!(function.decode_input(&unverified.data));

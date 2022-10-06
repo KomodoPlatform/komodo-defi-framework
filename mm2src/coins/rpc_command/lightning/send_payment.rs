@@ -1,4 +1,3 @@
-use crate::lightning::ln_db::LightningDB;
 use crate::lightning::ln_p2p::connect_to_ln_node;
 use crate::lightning::ln_serialization::PublicKeyForRPC;
 use crate::lightning::PaymentError;
@@ -107,7 +106,7 @@ pub async fn send_payment(ctx: MmArc, req: SendPaymentReq) -> SendPaymentResult<
             expiry,
         } => ln_coin.keysend(destination.into(), amount_in_msat, expiry).await?,
     };
-    ln_coin.db.add_or_update_payment_in_db(payment_info.clone()).await?;
+
     Ok(SendPaymentResponse {
         payment_hash: payment_info.payment_hash.0.into(),
     })

@@ -414,9 +414,11 @@ impl MakerSwap {
         // Todo: recheck the other get_my_payment_data too
         // If maker payment is a lightning payment the payment hash will be sent in the message
         let payment_data = self.r().maker_payment.as_ref().unwrap().tx_hex().0;
+        let hash_algo = SecretHashAlgo::SHA256;
         if let Some(instructions) = self
             .taker_coin
-            .payment_instructions(&self.secret_hash(), &self.taker_amount)
+            // Todo: revise this with let hash_algo = SecretHashAlgo::SHA256;
+            .payment_instructions(&hash_algo.hash_secret(self.secret.as_slice()), &self.taker_amount)
             .await?
         {
             Ok(PaymentDataMsg::V2(PaymentDataV2 {
@@ -791,12 +793,14 @@ impl MakerSwap {
         let payment_data_msg = match self.get_my_payment_data().await {
             Ok(data) => data,
             Err(e) => {
+                // Todo: remove this debug after passing this stage in test
+                debug!("payment_data_msg error: {}", e);
                 return Ok((Some(MakerSwapCommand::RefundMakerPayment), vec![
                     MakerSwapEvent::MakerPaymentDataSendFailed(e.to_string().into()),
                     MakerSwapEvent::MakerPaymentWaitRefundStarted {
                         wait_until: self.wait_refund_until(),
                     },
-                ]))
+                ]));
             },
         };
         let msg = SwapMsg::MakerPayment(payment_data_msg);

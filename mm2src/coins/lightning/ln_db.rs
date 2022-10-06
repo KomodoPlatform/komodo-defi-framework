@@ -101,6 +101,7 @@ pub struct GetClosedChannelsResult {
 #[serde(rename_all = "lowercase")]
 pub enum HTLCStatus {
     Pending,
+    Received,
     Succeeded,
     Failed,
 }
@@ -111,6 +112,7 @@ impl FromStr for HTLCStatus {
     fn from_str(s: &str) -> Result<Self, Self::Err> {
         match s {
             "Pending" => Ok(HTLCStatus::Pending),
+            "Received" => Ok(HTLCStatus::Received),
             "Succeeded" => Ok(HTLCStatus::Succeeded),
             "Failed" => Ok(HTLCStatus::Failed),
             _ => Err(FromSqlError::InvalidType),

@@ -763,7 +763,7 @@ impl SwapOps for TendermintCoin {
         todo!()
     }
 
-    fn extract_secret(&self, secret_hash: &[u8], spend_tx: &[u8]) -> Result<Vec<u8>, String> { todo!() }
+    async fn extract_secret(&self, secret_hash: &[u8], spend_tx: &[u8]) -> Result<Vec<u8>, String> { todo!() }
 
     fn negotiate_swap_contract_addr(
         &self,

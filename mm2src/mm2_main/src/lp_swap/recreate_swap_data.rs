@@ -380,12 +380,9 @@ async fn recreate_taker_swap(ctx: MmArc, maker_swap: MakerSavedSwap) -> Recreate
 
     // Then we can continue to process success Maker events.
     let wait_refund_until = negotiated_event.taker_payment_locktime + 3700;
-    taker_swap.events.extend(convert_maker_to_taker_events(
-        event_it,
-        maker_coin,
-        secret_hash,
-        wait_refund_until,
-    ));
+    taker_swap
+        .events
+        .extend(convert_maker_to_taker_events(event_it, maker_coin, secret_hash, wait_refund_until).await);
 
     Ok(taker_swap)
 }
@@ -395,7 +392,8 @@ async fn recreate_taker_swap(ctx: MmArc, maker_swap: MakerSavedSwap) -> Recreate
 /// since they are used outside of this function to generate `TakerSwap` and the initial [`TakerSwapEvent::Started`] and [`TakerSwapEvent::Negotiated`] events.
 ///
 /// The `maker_coin` and `secret_hash` function arguments are used to extract a secret from `TakerPaymentSpent`.
-fn convert_maker_to_taker_events(
+// Todo: async can be removed when extract secret is back as sync
+async fn convert_maker_to_taker_events(
     event_it: impl Iterator<Item = MakerSavedEvent>,
     maker_coin: MmCoinEnum,
     secret_hash: BytesJson,
@@ -453,7 +451,7 @@ fn convert_maker_to_taker_events(
                 return events;
             },
             MakerSwapEvent::TakerPaymentSpent(tx_ident) => {
-                let secret = match maker_coin.extract_secret(&secret_hash.0, &tx_ident.tx_hex()) {
+                let secret = match maker_coin.extract_secret(&secret_hash.0, &tx_ident.tx_hex()).await {
                     Ok(secret) => H256Json::from(secret.as_slice()),
                     Err(e) => {
                         push_event!(TakerSwapEvent::TakerPaymentWaitForSpendFailed(ERRL!("{}", e).into()));
@@ -534,7 +532,7 @@ mod tests {
     fn test_recreate_taker_swap() {
         TestCoin::extract_secret.mock_safe(|_coin, _secret_hash, _spend_tx| {
             let secret = hex::decode("23a6bb64bc0ab2cc14cb84277d8d25134b814e5f999c66e578c9bba3c5e2d3a4").unwrap();
-            MockResult::Return(Ok(secret))
+            MockResult::Return(Box::pin(async move { Ok(secret) }))
         });
 
         let maker_saved_swap: MakerSavedSwap =
