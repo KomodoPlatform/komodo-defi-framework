@@ -6,6 +6,7 @@ use crate::coin_errors::{MyAddressError, ValidatePaymentError};
 use crate::tendermint::htlc::MsgClaimHtlc;
 use crate::tendermint::htlc_proto::{CreateHtlcProtoRep, QueryHtlcRequestProto, QueryHtlcResponseProto};
 use crate::utxo::sat_from_big_decimal;
+use crate::utxo::utxo_common::big_decimal_from_sat;
 use crate::{big_decimal_from_sat_unsigned, BalanceError, BalanceFut, BigDecimal, CoinBalance, FeeApproxStage,
             FoundSwapTxSpend, HistorySyncState, MarketCoinOps, MmCoin, NegotiateSwapContractAddrErr,
             RawTransactionFut, RawTransactionRequest, SearchForSwapTxSpendInput, SignatureResult, SwapOps, TradeFee,
@@ -1061,13 +1062,15 @@ impl MmCoin for TendermintCoin {
     fn is_coin_protocol_supported(&self, info: &Option<Vec<u8>>) -> bool { true }
 }
 
-#[allow(unused_variables)]
 impl MarketCoinOps for TendermintCoin {
     fn ticker(&self) -> &str { &self.ticker }
 
     fn my_address(&self) -> MmResult<String, MyAddressError> { Ok(self.account_id.to_string()) }
 
-    fn get_public_key(&self) -> Result<String, MmError<UnexpectedDerivationMethod>> { todo!() }
+    fn get_public_key(&self) -> Result<String, MmError<UnexpectedDerivationMethod>> {
+        let key = SigningKey::from_bytes(&self.priv_key).expect("privkey validity is checked on coin creation");
+        Ok(key.public_key().to_string())
+    }
 
     fn sign_message_hash(&self, _message: &str) -> Option<[u8; 32]> { todo!() }
 
@@ -1124,11 +1127,11 @@ impl MarketCoinOps for TendermintCoin {
 
     fn wait_for_confirmations(
         &self,
-        tx: &[u8],
-        confirmations: u64,
-        requires_nota: bool,
-        wait_until: u64,
-        check_every: u64,
+        _tx: &[u8],
+        _confirmations: u64,
+        _requires_nota: bool,
+        _wait_until: u64,
+        _check_every: u64,
     ) -> Box<dyn Future<Item = (), Error = String> + Send> {
         let fut = async move { Ok(()) };
         Box::new(fut.boxed().compat())
@@ -1217,8 +1220,7 @@ impl MarketCoinOps for TendermintCoin {
 
     fn display_priv_key(&self) -> Result<String, String> { Ok(hex::encode(&self.priv_key)) }
 
-    /// !! This function includes dummy implementation for P.O.C work
-    fn min_tx_amount(&self) -> BigDecimal { BigDecimal::from(0) }
+    fn min_tx_amount(&self) -> BigDecimal { big_decimal_from_sat(1, self.decimals) }
 
     /// !! This function includes dummy implementation for P.O.C work
     fn min_trading_vol(&self) -> MmNumber { MmNumber::from("0.00777") }
