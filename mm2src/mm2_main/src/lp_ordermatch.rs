@@ -27,7 +27,8 @@ use blake2::Blake2bVar;
 use coins::utxo::{compressed_pub_key_from_priv_raw, ChecksumType, UtxoAddressFormat};
 use coins::{coin_conf, find_pair, lp_coinfind, BalanceTradeFeeUpdatedHandler, CoinProtocol, CoinsContext,
             FeeApproxStage, MmCoinEnum};
-use common::executor::{spawn_abortable, AbortOnDropHandle, AbortSettings, SpawnAbortable, SpawnFuture, Timer};
+use common::executor::{simple_map::AbortableSimpleMap, AbortSettings, AbortableSystem, SpawnAbortable, SpawnFuture,
+                       Timer};
 use common::log::{error, warn, LogOnError};
 use common::time_cache::TimeCache;
 use common::{bits256, log, new_uuid, now_ms};
@@ -2624,7 +2625,6 @@ impl Orderbook {
     }
 }
 
-#[cfg_attr(not(target_arch = "wasm32"), derive(Default))]
 struct OrdermatchContext {
     pub maker_orders_ctx: PaMutex<MakerOrdersContext>,
     pub my_taker_orders: AsyncMutex<HashMap<Uuid, TakerOrder>>,
@@ -2668,7 +2668,7 @@ pub fn init_ordermatch_context(ctx: &MmArc) -> OrdermatchInitResult<()> {
     }
 
     let ordermatch_context = OrdermatchContext {
-        maker_orders_ctx: Default::default(),
+        maker_orders_ctx: PaMutex::new(MakerOrdersContext::new(ctx)),
         my_taker_orders: Default::default(),
         orderbook: Default::default(),
         pending_maker_reserved: Default::default(),
@@ -2686,34 +2686,28 @@ pub fn init_ordermatch_context(ctx: &MmArc) -> OrdermatchInitResult<()> {
 #[cfg_attr(all(test, not(target_arch = "wasm32")), mockable)]
 impl OrdermatchContext {
     /// Obtains a reference to this crate context, creating it if necessary.
-    #[cfg(not(target_arch = "wasm32"))]
+    #[cfg(not(test))]
     fn from_ctx(ctx: &MmArc) -> Result<Arc<OrdermatchContext>, String> {
         Ok(try_s!(from_ctx(&ctx.ordermatch_ctx, move || {
-            Ok(OrdermatchContext::default())
+            ERR!("'OrdermatchContext' is not initialized")
         })))
     }
 
     /// Obtains a reference to this crate context, creating it if necessary.
-    #[cfg(target_arch = "wasm32")]
+    #[cfg(test)]
     fn from_ctx(ctx: &MmArc) -> Result<Arc<OrdermatchContext>, String> {
         Ok(try_s!(from_ctx(&ctx.ordermatch_ctx, move || {
             Ok(OrdermatchContext {
-                maker_orders_ctx: Default::default(),
+                maker_orders_ctx: PaMutex::new(MakerOrdersContext::new(ctx)),
                 my_taker_orders: Default::default(),
                 orderbook: Default::default(),
                 pending_maker_reserved: Default::default(),
                 orderbook_tickers: Default::default(),
                 original_tickers: Default::default(),
+                #[cfg(target_arch = "wasm32")]
                 ordermatch_db: ConstructibleDb::new(ctx),
             })
         })))
-    }
-
-    /// Obtains a reference to this crate context, creating it if necessary.
-    #[allow(dead_code)]
-    fn from_ctx_weak(ctx_weak: &MmWeak) -> Result<Arc<OrdermatchContext>, String> {
-        let ctx = try_s!(MmArc::from_weak(ctx_weak).ok_or("Context expired"));
-        Self::from_ctx(&ctx)
     }
 
     fn orderbook_ticker(&self, ticker: &str) -> Option<String> { self.orderbook_tickers.get(ticker).cloned() }
@@ -2735,19 +2729,30 @@ impl OrdermatchContext {
     }
 }
 
-#[derive(Default)]
-struct MakerOrdersContext {
+pub struct MakerOrdersContext {
     orders: HashMap<Uuid, Arc<AsyncMutex<MakerOrder>>>,
     order_tickers: HashMap<Uuid, String>,
     count_by_tickers: HashMap<String, usize>,
-    balance_loops: HashMap<String, AbortOnDropHandle>,
+    /// The `check_balance_update_loop` future abort handles associated with the ticker.
+    balance_loops: AbortableSimpleMap<String>,
 }
 
 impl MakerOrdersContext {
-    fn add_order(&mut self, ctx: MmWeak, order: MakerOrder, balance: Option<BigDecimal>) {
-        if !self.balance_loop_exists(&order.base) {
-            self.spawn_balance_loop(ctx, order.base.clone(), balance);
+    fn new(ctx: &MmArc) -> MakerOrdersContext {
+        // Create an abortable system linked to the `MmCtx` so if the context is stopped via `MmArc::stop`,
+        // all spawned `check_balance_update_loop` futures will be aborted as well.
+        let balance_loops = ctx.abortable_system.create_subsystem();
+
+        MakerOrdersContext {
+            orders: HashMap::new(),
+            order_tickers: HashMap::new(),
+            count_by_tickers: HashMap::new(),
+            balance_loops,
         }
+    }
+
+    fn add_order(&mut self, ctx: MmWeak, order: MakerOrder, balance: Option<BigDecimal>) {
+        self.spawn_balance_loop_if_not_spawned(ctx, order.base.clone(), balance);
 
         self.order_tickers.insert(order.uuid, order.base.clone());
         *self.count_by_tickers.entry(order.base.clone()).or_insert(0) += 1;
@@ -2776,19 +2781,20 @@ impl MakerOrdersContext {
         self.count_by_tickers.get(ticker).copied() > Some(0)
     }
 
-    fn add_balance_loop(&mut self, ticker: &str, handle: AbortOnDropHandle) {
-        self.balance_loops.insert(ticker.to_string(), handle);
-    }
-
-    fn spawn_balance_loop(&mut self, ctx: MmWeak, order_base: String, balance: Option<BigDecimal>) {
+    fn spawn_balance_loop_if_not_spawned(&mut self, ctx: MmWeak, order_base: String, balance: Option<BigDecimal>) {
         let ticker = order_base.clone();
-        let handle = spawn_abortable(async move { check_balance_update_loop(ctx, ticker, balance).await });
-        self.add_balance_loop(&order_base, handle);
+        let mut balance_loops = self.balance_loops.lock();
+
+        let fut = check_balance_update_loop(ctx, ticker, balance);
+        // `SimpleMapImpl::spawn_or_ignore` won't spawn the future
+        // if the `check_balance_update_loop` loop has been spawned already.
+        balance_loops.spawn_or_ignore(order_base, fut);
     }
 
-    fn stop_balance_loop(&mut self, ticker: &str) { self.balance_loops.remove(ticker); }
+    fn stop_balance_loop(&mut self, ticker: &str) { self.balance_loops.lock().abort_future(ticker); }
 
-    fn balance_loop_exists(&mut self, ticker: &str) -> bool { self.balance_loops.contains_key(ticker) }
+    #[cfg(test)]
+    fn balance_loop_exists(&mut self, ticker: &str) -> bool { self.balance_loops.lock().contains(ticker) }
 }
 
 #[cfg_attr(test, mockable)]

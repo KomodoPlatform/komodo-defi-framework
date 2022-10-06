@@ -76,7 +76,7 @@ impl<FutureId: FutureIdTrait> SimpleMapInner<FutureId> {
     /// or do nothing if there is a spawned future with the same `future_id` already.
     ///
     /// Returns whether the future has been spawned.
-    pub fn spawn<F>(&mut self, future_id: FutureId, fut: F) -> bool
+    pub fn spawn_or_ignore<F>(&mut self, future_id: FutureId, fut: F) -> bool
     where
         F: Future03<Output = ()> + Send + 'static,
     {
@@ -123,13 +123,13 @@ mod tests {
         let abortable_system = AbortableSimpleMap::default();
         let mut guard = abortable_system.lock();
 
-        guard.spawn("F1".to_string(), async move {
+        guard.spawn_or_ignore("F1".to_string(), async move {
             Timer::sleep(0.2).await;
             unsafe { F1_FINISHED = true };
         });
         assert!(guard.contains("F1"));
         assert!(!guard.contains("F2"));
-        guard.spawn("F2".to_string(), async move {
+        guard.spawn_or_ignore("F2".to_string(), async move {
             Timer::sleep(0.4).await;
             unsafe { F2_FINISHED = true };
         });
@@ -152,7 +152,7 @@ mod tests {
         let abortable_system = AbortableSimpleMap::default();
         let mut guard = abortable_system.lock();
 
-        guard.spawn("F1".to_string(), async move {
+        guard.spawn_or_ignore("F1".to_string(), async move {
             Timer::sleep(0.2).await;
             unsafe { F1_FINISHED = true };
         });
@@ -168,6 +168,30 @@ mod tests {
 
         unsafe {
             assert!(!F1_FINISHED);
+        }
+    }
+
+    #[test]
+    fn test_spawn_twice() {
+        static mut F1_FINISHED: bool = false;
+        static mut F1_COPY_FINISHED: bool = false;
+
+        let abortable_system = AbortableSimpleMap::default();
+        let mut guard = abortable_system.lock();
+
+        guard.spawn_or_ignore("F1".to_string(), async move {
+            unsafe { F1_FINISHED = true };
+        });
+        guard.spawn_or_ignore("F1".to_string(), async move {
+            unsafe { F1_COPY_FINISHED = true };
+        });
+
+        drop(guard);
+        block_on(Timer::sleep(0.1));
+
+        unsafe {
+            assert!(F1_FINISHED);
+            assert!(!F1_COPY_FINISHED);
         }
     }
 }
