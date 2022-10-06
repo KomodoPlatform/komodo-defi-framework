@@ -9,6 +9,7 @@ use crate::{DerivationMethod, PrivKeyBuildPolicy, UtxoActivationParams};
 use async_trait::async_trait;
 use chain::{BlockHeader, TransactionOutput};
 use common::executor::{spawn, Timer};
+use common::jsonrpc_client::{JsonRpcError, JsonRpcErrorType};
 use common::log::{error, info, warn};
 use futures::compat::Future01CompatExt;
 use futures::future::{abortable, AbortHandle};
@@ -218,38 +219,52 @@ async fn get_block_headers_in_chunks(
     client: &ElectrumClient,
     from: u64,
     to: u64,
+    max_chunk_size: u64,
 ) -> Result<(HashMap<u64, BlockHeader>, Vec<BlockHeader>, u64), MmError<UtxoRpcError>> {
     // Create and initialize an empty block_registry, block_headers and last_retrieved_height to 1.
     let (mut block_registry, mut block_headers, mut last_retrieved_height) = (HashMap::new(), Vec::new(), from);
 
-    let chunks_rem = to % BLOCK_HEADERS_MAX_CHUNK_SIZE;
+    let chunks_rem = to % max_chunk_size;
     let mut temporary_from = from + 1;
-    let mut temporary_to = from + BLOCK_HEADERS_MAX_CHUNK_SIZE;
+    let mut temporary_to = from + max_chunk_size;
 
     log!("Total headers to fetch: {}", to);
 
-    // While (temporary to value) is less or equal to incoming original (to value), we will collect the headers in chunk of BLOCK_HEADERS_MAX_CHUNK_SIZE at a single request/loop.
+    // While (temporary to value) is less or equal to incoming original (to value), we will collect the headers in chunk of max_chunk_size at a single request/loop.
     while temporary_to <= to {
         log!("Fetching headers from {} to {}", temporary_from, temporary_to);
-        let (block_reg, mut block_heads, last_height) =
-            match client.retrieve_headers(temporary_from, temporary_to).compat().await {
-                Ok(res) => res,
-                Err(e) => return Err(e),
-            };
-        block_registry.extend(block_reg);
-        block_headers.append(&mut block_heads);
-        last_retrieved_height = last_height;
+        match client.retrieve_headers(temporary_from, temporary_to).compat().await {
+            Ok((block_reg, mut block_heads, last_height)) => {
+                block_registry.extend(block_reg);
+                block_headers.append(&mut block_heads);
+                last_retrieved_height = last_height;
 
-        // at a point, before running out of our loop we expect to fetch our (chunks_remainder) if there's any. So we check if (to - temporary_to = chunks_rem) and (chunks_rem && chunks_rem > 0) then we assign (temporary_to + 1) to (temporary_from) and also assign (chunks_rem) to (temporary_to). If all these these are false then we continue with our loop or ends it as (temporary to value) can't be greater than (original to value itself).
-        if to - temporary_to == chunks_rem && chunks_rem > 0 {
-            temporary_from = temporary_to + 1;
-            temporary_to += chunks_rem
-        } else {
-            temporary_from += BLOCK_HEADERS_MAX_CHUNK_SIZE;
-            temporary_to += BLOCK_HEADERS_MAX_CHUNK_SIZE;
-        }
-        // Sleep for every 3 seconds on each request to prevent IP limitations on requests
-        Timer::sleep(3.).await;
+                // at a point, before running out of our loop we expect to fetch our (chunks_remainder) if there's any. So we check if (to - temporary_to = chunks_rem) and (chunks_rem && chunks_rem > 0) then we assign (temporary_to + 1) to (temporary_from) and also assign (chunks_rem) to (temporary_to). If all these these are false then we continue with our loop or ends it as (temporary to value) can't be greater than (original to value itself).
+                if to - temporary_to == chunks_rem && chunks_rem > 0 {
+                    temporary_from = temporary_to + 1;
+                    temporary_to += chunks_rem
+                } else {
+                    temporary_from += max_chunk_size;
+                    temporary_to += max_chunk_size;
+                }
+                // Sleep for every 3 seconds on each request to prevent IP limitations on requests
+                Timer::sleep(3.).await;
+            },
+            Err(err) => {
+                // keep retrying if network error
+                if let UtxoRpcError::Transport(JsonRpcError {
+                    error: JsonRpcErrorType::Transport(_err),
+                    ..
+                }) = err.get_inner()
+                {
+                    log!("Will try fetching block headers again after 1 minute");
+                    Timer::sleep(60.).await;
+                    continue;
+                };
+
+                return Err(err);
+            },
+        };
     }
 
     log!("Total fetched headers {}", block_headers.len());
@@ -300,7 +315,9 @@ async fn block_header_utxo_loop<T: UtxoCommonOps>(
         sync_status_loop_handle.notify_blocks_headers_sync_status(from_block_height + 1, to_block_height);
 
         let (block_registry, block_headers, last_retrieved_height) =
-            match get_block_headers_in_chunks(client, from_block_height, to_block_height).await {
+            match get_block_headers_in_chunks(client, from_block_height, to_block_height, BLOCK_HEADERS_MAX_CHUNK_SIZE)
+                .await
+            {
                 Ok(res) => res,
                 Err(err) => {
                     error!("Error {} on retrieving the latest headers from rpc!", err);
