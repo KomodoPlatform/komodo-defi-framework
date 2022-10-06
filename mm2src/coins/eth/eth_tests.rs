@@ -478,6 +478,8 @@ fn test_wait_for_payment_spend_timeout() {
 }
 
 #[test]
+// TODO unignore
+#[ignore]
 fn test_search_for_swap_tx_spend_was_spent() {
     let key_pair = KeyPair::from_secret_slice(
         &hex::decode("809465b17d0a4ddb3e4c69e8f23c2cabad868f51f8bed5c765ad1d6516c3306f").unwrap(),
@@ -583,6 +585,8 @@ fn test_gas_station() {
 }
 
 #[test]
+// TODO unignore
+#[ignore]
 fn test_search_for_swap_tx_spend_was_refunded() {
     let key_pair = KeyPair::from_secret_slice(
         &hex::decode("809465b17d0a4ddb3e4c69e8f23c2cabad868f51f8bed5c765ad1d6516c3306f").unwrap(),
