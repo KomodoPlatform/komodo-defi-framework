@@ -54,7 +54,7 @@ use std::time::Duration;
 use uuid::Uuid;
 
 /// 0.25 is good average gas price on atom and iris
-pub const AVERAGE_GAS_PRICE: f64 = 0.25;
+pub const DEFAULT_GAS_PRICE: f64 = 0.25;
 pub(super) const TIMEOUT_HEIGHT_DELTA: u64 = 100;
 pub const GAS_LIMIT_DEFAULT: u64 = 100_000;
 pub const TX_DEFAULT_MEMO: &str = "";
@@ -72,6 +72,7 @@ pub struct TendermintProtocolInfo {
     denom: String,
     pub account_prefix: String,
     chain_id: String,
+    gas_price: Option<f64>,
 }
 
 #[derive(Clone)]
@@ -93,6 +94,7 @@ pub struct TendermintCoinImpl {
     decimals: u8,
     pub(super) denom: Denom,
     chain_id: ChainId,
+    gas_price: Option<f64>,
     pub(super) sequence_lock: AsyncMutex<()>,
     tokens_info: Mutex<HashMap<String, ActivatedTokenInfo>>,
 }
@@ -280,6 +282,7 @@ impl TendermintCoin {
             decimals: protocol_info.decimals,
             denom,
             chain_id,
+            gas_price: protocol_info.gas_price,
             sequence_lock: AsyncMutex::new(()),
             tokens_info: Mutex::new(HashMap::new()),
         })))
@@ -311,6 +314,9 @@ impl TendermintCoin {
             "All the current rpc nodes are unavailable.".to_string(),
         ))
     }
+
+    #[inline(always)]
+    fn gas_price(&self) -> f64 { self.gas_price.unwrap_or(DEFAULT_GAS_PRICE) }
 
     // We must simulate the tx on rpc nodes in order to calculate network fee.
     // Right now cosmos doesn't expose any of gas price and fee informations directly.
@@ -350,7 +356,7 @@ impl TendermintCoin {
         let response = SimulateResponse::decode(response.response.value.as_slice())?;
 
         let gas = response.gas_info.expect("Could not simulate tx gas cost");
-        let amount = (gas.gas_used as f64 * AVERAGE_GAS_PRICE).ceil();
+        let amount = (gas.gas_used as f64 * self.gas_price()).ceil();
 
         let fee_amount = Coin {
             denom: base_denom,
@@ -370,7 +376,7 @@ impl TendermintCoin {
         let response = SimulateResponse::decode(response.response.value.as_slice())?;
 
         let gas = response.gas_info.expect("Could not simulate tx gas cost");
-        Ok((gas.gas_used as f64 * AVERAGE_GAS_PRICE).ceil() as u64)
+        Ok((gas.gas_used as f64 * self.gas_price()).ceil() as u64)
     }
 
     pub(super) async fn my_account_info(&self) -> MmResult<BaseAccount, TendermintCoinRpcError> {
@@ -1580,6 +1586,7 @@ pub mod tendermint_coin_tests {
             denom: String::from("ibc/5C465997B4F582F602CD64E12031C6A6E18CAF1E6EDC9B5D808822DC0B5F850C"),
             account_prefix: String::from("iaa"),
             chain_id: String::from("nyancat-9"),
+            gas_price: None,
         }
     }
 
@@ -1589,6 +1596,7 @@ pub mod tendermint_coin_tests {
             denom: String::from("unyan"),
             account_prefix: String::from("iaa"),
             chain_id: String::from("nyancat-9"),
+            gas_price: None,
         }
     }
 
