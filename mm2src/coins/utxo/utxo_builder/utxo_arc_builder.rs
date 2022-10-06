@@ -222,12 +222,9 @@ async fn get_block_headers_in_chunks(
     // Create and initialize an empty block_registry, block_headers and last_retrieved_height to 1.
     let (mut block_registry, mut block_headers, mut last_retrieved_height) = (HashMap::new(), Vec::new(), from);
 
-    // Get the remainder of total block headers to fetch / BLOCK_HEADERS_MAX_CHUNK_SIZE.
     let chunks_rem = to % BLOCK_HEADERS_MAX_CHUNK_SIZE;
-    // Temporary from value, to store collected block headers temporary starting value.
-    let mut temporary_from = from;
-    // Temporary to value, to store collected block headers temporary ending value.
-    let mut temporary_to = BLOCK_HEADERS_MAX_CHUNK_SIZE;
+    let mut temporary_from = from + 1;
+    let mut temporary_to = from + BLOCK_HEADERS_MAX_CHUNK_SIZE;
 
     log!("Total headers to fetch: {}", to);
 
@@ -257,7 +254,7 @@ async fn get_block_headers_in_chunks(
 
     log!("Total fetched headers {}", block_headers.len());
 
-    // Finally, after getting our registry, headers in chunks and merging and last_retrieved_height, we return them here
+    // Finally, we return registry, headers and last_retrieved_height
     Ok((block_registry, block_headers, last_retrieved_height))
 }
 
@@ -303,8 +300,8 @@ async fn block_header_utxo_loop<T: UtxoCommonOps>(
         sync_status_loop_handle.notify_blocks_headers_sync_status(from_block_height + 1, to_block_height);
 
         let (block_registry, block_headers, last_retrieved_height) =
-            match get_block_headers_in_chunks(client, from_block_height + 1, to_block_height).await {
-                Ok((b, h, l)) => (b, h, l),
+            match get_block_headers_in_chunks(client, from_block_height, to_block_height).await {
+                Ok(res) => res,
                 Err(err) => {
                     error!("Error {} on retrieving the latest headers from rpc!", err);
                     sync_status_loop_handle.notify_on_temp_error(err.to_string());
