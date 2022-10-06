@@ -103,6 +103,7 @@ impl ZRpcOps for Vec<CompactTxStreamerClient<Channel>> {
         })
         .await
         .map_to_mm(UpdateBlocksCacheErr::GrpcVecError)?;
+        // without Pin method get_mut is not found in current scope
         while let Some(block) = Pin::new(&mut response).get_mut().message().await? {
             debug!("Got block {:?}", block);
             on_block(block)?;

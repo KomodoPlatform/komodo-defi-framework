@@ -30,13 +30,13 @@ pub enum UpdateBlocksCacheErr {
 impl fmt::Display for UpdateBlocksCacheErr {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match *self {
+            UpdateBlocksCacheErr::GrpcError(ref err) => write!(f, "{}", err),
             UpdateBlocksCacheErr::GrpcVecError(ref err) => {
                 for e in err {
                     write!(f, "\t{}", e)?;
                 }
                 Ok(())
             },
-            UpdateBlocksCacheErr::GrpcError(ref err) => write!(f, "{}", err),
             UpdateBlocksCacheErr::BlocksDbError(ref err) => write!(f, "{}", err),
             UpdateBlocksCacheErr::ZcashSqliteError(ref err) => write!(f, "{}", err),
             UpdateBlocksCacheErr::UtxoRpcError(ref err) => write!(f, "{}", err),
