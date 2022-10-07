@@ -24,6 +24,8 @@ use cosmrs::bank::MsgSend;
 use cosmrs::crypto::secp256k1::SigningKey;
 use cosmrs::proto::cosmos::auth::v1beta1::{BaseAccount, QueryAccountRequest, QueryAccountResponse};
 use cosmrs::proto::cosmos::bank::v1beta1::{MsgSend as MsgSendProto, QueryBalanceRequest, QueryBalanceResponse};
+use cosmrs::proto::cosmos::base::tendermint::v1beta1::{GetBlockByHeightRequest, GetBlockByHeightResponse,
+                                                       GetLatestBlockRequest, GetLatestBlockResponse};
 use cosmrs::proto::cosmos::base::v1beta1::Coin as CoinProto;
 use cosmrs::proto::cosmos::tx::v1beta1::{GetTxRequest, GetTxResponse, GetTxsEventRequest, GetTxsEventResponse,
                                          SimulateRequest, SimulateResponse, Tx, TxBody, TxRaw};
@@ -53,11 +55,19 @@ use std::sync::Arc;
 use std::time::Duration;
 use uuid::Uuid;
 
+// TODO
+// provide Abci paths as const values
+
 /// 0.25 is good average gas price on atom and iris
-pub const DEFAULT_GAS_PRICE: f64 = 0.25;
+const DEFAULT_GAS_PRICE: f64 = 0.25;
 pub(super) const TIMEOUT_HEIGHT_DELTA: u64 = 100;
+const TIME_LOCK_DELTA: i64 = 100;
 pub const GAS_LIMIT_DEFAULT: u64 = 100_000;
 pub const TX_DEFAULT_MEMO: &str = "";
+
+// https://github.com/irisnet/irismod/blob/5016c1be6fdbcffc319943f33713f4a057622f0a/modules/htlc/types/validation.go#L19-L22
+const MAX_TIME_LOCK: i64 = 34560;
+const MIN_TIME_LOCK: i64 = 50;
 
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 pub struct TendermintFeeDetails {
@@ -318,12 +328,55 @@ impl TendermintCoin {
     #[inline(always)]
     fn gas_price(&self) -> f64 { self.gas_price.unwrap_or(DEFAULT_GAS_PRICE) }
 
-    // TODO
-    // Get latest block
-    // Get x blocks before
-    // return (latest block's timestamp - x's block's timestamp) / x
-    #[allow(unused)]
-    async fn calculate_avg_block_time(&self) -> MmResult<f64, TendermintCoinRpcError> { todo!() }
+    async fn get_latest_block(&self) -> MmResult<GetLatestBlockResponse, TendermintCoinRpcError> {
+        let path = AbciPath::from_str("/cosmos.base.tendermint.v1beta1.Service/GetLatestBlock").expect("valid path");
+
+        let request = GetLatestBlockRequest {};
+        let request = AbciRequest::new(Some(path), request.encode_to_vec(), None, false);
+
+        let response = self.rpc_client().await?.perform(request).await?;
+
+        Ok(GetLatestBlockResponse::decode(response.response.value.as_slice())?)
+    }
+
+    async fn get_block_by_height(&self, height: i64) -> MmResult<GetBlockByHeightResponse, TendermintCoinRpcError> {
+        let path = AbciPath::from_str("/cosmos.base.tendermint.v1beta1.Service/GetBlockByHeight").expect("valid path");
+
+        let request = GetBlockByHeightRequest { height };
+        let request = AbciRequest::new(Some(path), request.encode_to_vec(), None, false);
+
+        let response = self.rpc_client().await?.perform(request).await?;
+
+        Ok(GetBlockByHeightResponse::decode(response.response.value.as_slice())?)
+    }
+
+    async fn calculate_avg_block_time_as_seconds(&self, block_count: i64) -> MmResult<i64, TendermintCoinRpcError> {
+        let latest_block = self.get_latest_block().await?;
+        let latest_block_header = latest_block
+            .block
+            .expect("fetching block failed")
+            .header
+            .expect("fetching block header failed");
+
+        let latest_block_timestamp = latest_block_header
+            .time
+            .expect("fetching block timestamp failed")
+            .seconds;
+
+        let previous_block = self
+            .get_block_by_height(latest_block_header.height - block_count)
+            .await?;
+        let previous_block_timestamp = previous_block
+            .block
+            .expect("fetching block failed")
+            .header
+            .expect("fetching block header failed")
+            .time
+            .expect("fetching block timestamp failed")
+            .seconds;
+
+        Ok((latest_block_timestamp - previous_block_timestamp) / block_count)
+    }
 
     // We must simulate the tx on rpc nodes in order to calculate network fee.
     // Right now cosmos doesn't expose any of gas price and fee informations directly.
@@ -529,7 +582,7 @@ impl TendermintCoin {
 
     pub(super) fn send_htlc_for_denom(
         &self,
-        _time_lock: u32,
+        time_lock: u32,
         other_pub: &[u8],
         secret_hash: &[u8],
         amount: BigDecimal,
@@ -542,14 +595,23 @@ impl TendermintCoin {
         let amount_as_u64 = try_tx_fus!(sat_from_big_decimal(&amount, decimals));
         let amount = cosmrs::Decimal::from(amount_as_u64);
 
-        // let time_lock = time_lock as i64 - get_utc_timestamp();
-        // TODO
-        // use the proper time lock. This is only for demo
-        let time_lock = 4000;
-        let create_htlc_tx = try_tx_fus!(self.gen_create_htlc_tx(denom, &to, amount, secret_hash, time_lock as u64));
-
         let coin = self.clone();
+        let secret_hash = secret_hash.to_vec();
         let fut = async move {
+            let time_lock_seconds_to_wait = time_lock as i64 - get_utc_timestamp();
+            let estimated_time_lock =
+                time_lock_seconds_to_wait / try_tx_s!(coin.calculate_avg_block_time_as_seconds(TIME_LOCK_DELTA).await);
+
+            let time_lock = if estimated_time_lock > MAX_TIME_LOCK {
+                MAX_TIME_LOCK
+            } else if estimated_time_lock < MIN_TIME_LOCK {
+                MIN_TIME_LOCK
+            } else {
+                estimated_time_lock
+            };
+
+            let create_htlc_tx = try_tx_s!(coin.gen_create_htlc_tx(denom, &to, amount, &secret_hash, time_lock as u64));
+
             let _sequence_lock = coin.sequence_lock.lock().await;
             let current_block = try_tx_s!(coin.current_block().compat().await);
             let timeout_height = current_block + TIMEOUT_HEIGHT_DELTA;
@@ -2061,5 +2123,31 @@ pub mod tendermint_coin_tests {
             ValidatePaymentError::UnexpectedPaymentState(_) => (),
             unexpected => panic!("Unexpected error variant {:?}", unexpected),
         };
+    }
+
+    #[test]
+    #[ignore]
+    // cargo test tendermint::tendermint_coin::tendermint_coin_tests::test_avg_block_time -- --exact --ignored
+    fn test_avg_block_time() {
+        let rpc_urls = vec![IRIS_TESTNET_RPC_URL.to_string()];
+
+        let protocol_conf = get_iris_protocol();
+
+        let ctx = mm2_core::mm_ctx::MmCtxBuilder::default()
+            .with_secp256k1_key_pair(crypto::privkey::key_pair_from_seed(IRIS_TESTNET_HTLC_PAIR1_SEED).unwrap())
+            .into_mm_arc();
+
+        let priv_key = &*ctx.secp256k1_key_pair().private().secret;
+
+        let coin = common::block_on(TendermintCoin::init(
+            "IRIS-TEST".to_string(),
+            protocol_conf,
+            rpc_urls,
+            priv_key,
+        ))
+        .unwrap();
+        let avg_block_time = block_on(coin.calculate_avg_block_time_as_seconds(TIME_LOCK_DELTA)).unwrap();
+        println!("Average block time is {}", avg_block_time);
+        todo!();
     }
 }
