@@ -7913,8 +7913,6 @@ async fn test_mm2_stops_impl(
         {"coin":"MORTY","asset":"MORTY","required_confirmations":0,"txversion":4,"overwintered":1,"protocol":{"type":"UTXO"},"tx_history":true},
         {"coin":"ETH","name":"ethereum","protocol":{"type":"ETH"}},
         {"coin":"JST","name":"jst","protocol":{"type":"ERC20","protocol_data":{"platform":"ETH","contract_address":"0x2b294F029Fde858b2c62184e8390591755521d8E"}}},
-        {"coin":"QRC20","required_confirmations":0,"pubtype": 120,"p2shtype": 50,"wiftype": 128,"txfee": 0,"mm2": 1,"mature_confirmations":2000,"tx_history":true,
-         "protocol":{"type":"QRC20","protocol_data":{"platform":"QTUM","contract_address":"0xd362e096e873eb7907e205fadc6175c6fec7bc44"}}},
     ]);
 
     let bob_passphrase = get_passphrase!(".env.seed", "BOB_PASSPHRASE").unwrap();
@@ -7940,32 +7938,10 @@ async fn test_mm2_stops_impl(
 
     // Enable coins on Bob side. Print the replies in case we need the address.
     let rc = enable_coins_eth_electrum(&mm_bob, &["http://195.201.0.6:8565"]).await;
-    let _ = enable_qrc20(
-        &mm_bob,
-        "QRC20",
-        &[
-            "electrum1.cipig.net:10071",
-            "electrum2.cipig.net:10071",
-            "electrum3.cipig.net:10071",
-        ],
-        "0xba8b71f3544b93e2f681f996da519a98ace0107a",
-    )
-    .await;
     log!("enable_coins (bob): {:?}", rc);
 
     // Enable coins on Alice side. Print the replies in case we need the address.
     let rc = enable_coins_eth_electrum(&mm_alice, &["http://195.201.0.6:8565"]).await;
-    let _ = enable_qrc20(
-        &mm_alice,
-        "QRC20",
-        &[
-            "electrum1.cipig.net:10071",
-            "electrum2.cipig.net:10071",
-            "electrum3.cipig.net:10071",
-        ],
-        "0xba8b71f3544b93e2f681f996da519a98ace0107a",
-    )
-    .await;
     log!("enable_coins (alice): {:?}", rc);
 
     let mut uuids = vec![];
@@ -8047,5 +8023,8 @@ async fn test_mm2_stops_immediately() {
     common::log::wasm_log::register_wasm_log();
 
     let pairs: &[_] = &[("RICK", "MORTY")];
+    test_mm2_stops_impl(pairs, 1, 1, 0.0001, STOP_TIMEOUT_MS).await;
+
+    // Try to run mm2 one more time right after the previous `MmArc` is dropped.
     test_mm2_stops_impl(pairs, 1, 1, 0.0001, STOP_TIMEOUT_MS).await;
 }
