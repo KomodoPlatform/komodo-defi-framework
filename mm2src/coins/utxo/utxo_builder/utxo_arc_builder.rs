@@ -247,7 +247,7 @@ async fn get_block_headers_in_chunks(
                     temporary_from += max_chunk_size;
                     temporary_to += max_chunk_size;
                 }
-                // Sleep for every 3 seconds on each request to prevent IP limitations on requests
+                // Sleep for every 1 second on each request to prevent IP limitations on request
                 Timer::sleep_ms(1).await;
             },
             Err(err) => {
