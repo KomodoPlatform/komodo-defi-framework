@@ -248,7 +248,7 @@ async fn get_block_headers_in_chunks(
                     temporary_to += max_chunk_size;
                 }
                 // Sleep for every 3 seconds on each request to prevent IP limitations on requests
-                Timer::sleep(3.).await;
+                Timer::sleep_ms(1).await;
             },
             Err(err) => {
                 // keep retrying if network error
@@ -258,7 +258,7 @@ async fn get_block_headers_in_chunks(
                 }) = err.get_inner()
                 {
                     log!("Will try fetching block headers again after 1 minute");
-                    Timer::sleep(60.).await;
+                    Timer::sleep(10.).await;
                     continue;
                 };
 
@@ -314,18 +314,39 @@ async fn block_header_utxo_loop<T: UtxoCommonOps>(
 
         sync_status_loop_handle.notify_blocks_headers_sync_status(from_block_height + 1, to_block_height);
 
-        let (block_registry, block_headers, last_retrieved_height) =
-            match get_block_headers_in_chunks(client, from_block_height, to_block_height, BLOCK_HEADERS_MAX_CHUNK_SIZE)
-                .await
-            {
-                Ok(res) => res,
-                Err(err) => {
-                    error!("Error {} on retrieving the latest headers from rpc!", err);
-                    sync_status_loop_handle.notify_on_temp_error(err.to_string());
+        let (block_registry, block_headers, last_retrieved_height) = match client
+            .retrieve_headers(from_block_height + 1, to_block_height)
+            .compat()
+            .await
+        {
+            Ok(res) => res,
+            Err(e) => {
+                error!("Error {} on retrieving the latest headers from rpc!", e);
+                if !e.to_string().contains("response too large") {
+                    sync_status_loop_handle.notify_on_temp_error(e.to_string());
                     Timer::sleep(10.).await;
                     continue;
-                },
-            };
+                }
+
+                log!("Now retrieving the latest headers from rpc in chunks!");
+                match get_block_headers_in_chunks(
+                    client,
+                    from_block_height,
+                    to_block_height,
+                    BLOCK_HEADERS_MAX_CHUNK_SIZE,
+                )
+                .await
+                {
+                    Ok(res) => res,
+                    Err(err) => {
+                        error!("Error {} on retrieving the latest headers from rpc!", err);
+                        sync_status_loop_handle.notify_on_temp_error(err.to_string());
+                        Timer::sleep(10.).await;
+                        continue;
+                    },
+                }
+            },
+        };
 
         let ticker = coin.as_ref().conf.ticker.as_str();
         if let Some(params) = &coin.as_ref().conf.block_headers_verification_params {
