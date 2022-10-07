@@ -30,7 +30,7 @@ use bitcoin_hashes::sha256::Hash as Sha256;
 use bitcrypto::ChecksumType;
 use bitcrypto::{dhash256, ripemd160};
 use common::executor::{spawn, Timer};
-use common::log::{error, info, LogOnError, LogState};
+use common::log::{info, LogOnError, LogState};
 use common::{async_blocking, log, now_ms, PagingOptionsEnum};
 use db_common::sqlite::rusqlite::Error as SqlError;
 use futures::{FutureExt, TryFutureExt};
@@ -396,7 +396,6 @@ impl LightningCoin {
         // supply.
         let payment_secret = self
             .channel_manager
-            // Todo: review secret creation process
             .create_inbound_payment_for_hash(payment_hash, amt_msat, invoice_expiry_delta_secs)
             .map_err(|()| SignOrCreationError::CreationError(CreationError::InvalidAmount))?;
         let our_node_pubkey = self.channel_manager.get_our_node_id();
@@ -408,8 +407,8 @@ impl LightningCoin {
             .payment_hash(Hash::from_inner(payment_hash.0))
             .payment_secret(payment_secret)
             .basic_mpp()
+            // Todo: This will probably be important in locktime calculations in the next PRs and should be validated by the other side
             .min_final_cltv_expiry(MIN_FINAL_CLTV_EXPIRY.into())
-            // Todo: this should be the locktime probably and it should be validated by the other side, what about min_final_cltv_expiry??
             .expiry_time(core::time::Duration::from_secs(invoice_expiry_delta_secs.into()));
         if let Some(amt) = amt_msat {
             invoice = invoice.amount_milli_satoshis(amt);
@@ -559,7 +558,7 @@ impl SwapOps for LightningCoin {
         unimplemented!()
     }
 
-    // Todo: This validetes the dummy fee for now for the sake of swap P.O.C., this should be implemented probably after agreeing on how fees will work for lightning
+    // Todo: This validates the dummy fee for now for the sake of swap P.O.C., this should be implemented probably after agreeing on how fees will work for lightning
     fn validate_fee(
         &self,
         _fee_tx: &TransactionEnum,
@@ -584,16 +583,23 @@ impl SwapOps for LightningCoin {
         let coin = self.clone();
         let fut = async move {
             match coin.db.get_payment_from_db(payment_hash).await {
-                Ok(Some(payment)) => {
-                    if payment.amt_msat != Some(amt_msat as i64) {
+                Ok(Some(mut payment)) => {
+                    let amount_sent = payment.amt_msat;
+                    // Todo: Add more validations if needed, locktime is probably the most important
+                    if amount_sent != Some(amt_msat as i64) {
                         // Free the htlc to allow for this inbound liquidity to be used for other inbound payments
                         coin.channel_manager.fail_htlc_backwards(&payment_hash);
+                        payment.status = HTLCStatus::Failed;
+                        drop_mutability!(payment);
+                        coin.db
+                            .add_or_update_payment_in_db(payment)
+                            .await
+                            .error_log_with_msg("Unable to update payment information in DB!");
                         return MmError::err(ValidatePaymentError::WrongPaymentTx(format!(
                             "Provided payment {} amount {:?} doesn't match required amount {}",
-                            payment_hex, payment.amt_msat, amt_msat
+                            payment_hex, amount_sent, amt_msat
                         )));
                     }
-                    // Todo: is more validation needed? (locktime, pub key etc.., status = received)
                     Ok(())
                 },
                 Ok(None) => MmError::err(ValidatePaymentError::UnexpectedPaymentState(format!(
@@ -643,8 +649,6 @@ impl SwapOps for LightningCoin {
         unimplemented!()
     }
 
-    // Todo: if the secret or preimage is part of the TransactionEnum, there is no need for more calls to db (also if paymentinfo is in the enum)
-    // Todo: also repeated code
     async fn extract_secret(&self, _secret_hash: &[u8], spend_tx: &[u8]) -> Result<Vec<u8>, String> {
         let payment_hash = payment_hash_from_slice(spend_tx).map_err(|e| e.to_string())?;
         let payment_hex = hex::encode(payment_hash.0);
@@ -670,7 +674,7 @@ impl SwapOps for LightningCoin {
         Ok(None)
     }
 
-    // Todo: should node id and secret be used instead?? (maybe when implementing private swaps for lightning)
+    // Todo: This can be changed if private swaps were to be implemented for lightning
     fn derive_htlc_key_pair(&self, swap_unique_data: &[u8]) -> KeyPair {
         utxo_common::derive_htlc_key_pair(self.platform.coin.as_ref(), swap_unique_data)
     }
@@ -685,7 +689,8 @@ impl SwapOps for LightningCoin {
         let payment_hash =
             payment_hash_from_slice(secret_hash).map_to_mm(|e| PaymentInstructionsErr::InternalError(e.to_string()))?;
 
-        // Todo: Maybe the description can be the swap uuid
+        // note: No description is provided in the invoice to reduce the payload
+        // Todo: The invoice expiry should probably be the same as maker_payment_wait/wait_taker_payment
         let invoice = self
             .create_invoice_for_hash(payment_hash, Some(amt_msat), "".into(), DEFAULT_INVOICE_EXPIRY)
             .await
@@ -699,7 +704,6 @@ impl SwapOps for LightningCoin {
         secret_hash: &[u8],
         amount: BigDecimal,
     ) -> Result<Option<PaymentInstructions>, MmError<ValidateInstructionsErr>> {
-        // Todo: should I use from_utf8? do I need to check the instruction size (can any size be sent??)
         let invoice = Invoice::from_str(&String::from_utf8_lossy(instructions))?;
         if (secret_hash.len() == 20 && ripemd160(invoice.payment_hash().as_inner()).as_slice() != secret_hash)
             || (secret_hash.len() == 32 && invoice.payment_hash().as_inner() != secret_hash)
@@ -714,7 +718,7 @@ impl SwapOps for LightningCoin {
         if big_decimal_from_sat(invoice_amount as i64, self.decimals()) != amount {
             return Err(ValidateInstructionsErr::ValidateLightningInvoiceErr("Invalid invoice amount!".into()).into());
         }
-        // Todo: continue validation here by comparing (locktime, etc..)
+        // Todo: continue validation here by comparing locktime, etc..
         Ok(Some(PaymentInstructions::Lightning(invoice)))
     }
 }
@@ -813,8 +817,7 @@ impl MarketCoinOps for LightningCoin {
         ))
     }
 
-    // Todo: Add waiting for confirmation for sending logic, move this inside the code
-    // Todo: can this be avoided completely in lightning (just return () straight away)
+    // Todo: Add waiting for confirmations logic for the case of if the channel is closed and the htlc can be claimed on-chain
     fn wait_for_confirmations(
         &self,
         tx: &[u8],
@@ -837,28 +840,32 @@ impl MarketCoinOps for LightningCoin {
                     );
                 }
 
-                // Todo: add note about how this overuses the db
                 match coin.db.get_payment_from_db(payment_hash).await {
                     Ok(Some(_)) => {
-                        // Todo: should check for status received after adding payment to db on create_invoice_for_hash (check for claimed after send_maker_spends_taker_payment and for received on validate_taker_payment, and pending or successful??? for taker swap wait for confirmation)
+                        // Todo: This should check for different payment statuses depending on where wait_for_confirmations is called,
+                        // Todo: which might lead to breaking wait_for_confirmations to 3 functions (wait_for_payment_sent_confirmations, wait_for_payment_received_confirmations, wait_for_payment_spent_confirmations)
                         return Ok(());
                     },
-                    // Todo: This should be also an error after adding payment to db on create_invoice_for_hash
                     Ok(None) => info!("Payment {} not received yet!", payment_hex),
-                    // Todo: Maybe I should return a permanent error here and end the swap
-                    Err(e) => error!(
-                        "Error getting payment {} from db: {}, retrying in {} seconds",
-                        payment_hex, e, check_every
-                    ),
+                    Err(e) => {
+                        return ERR!(
+                            "Error getting payment {} from db: {}, retrying in {} seconds",
+                            payment_hex,
+                            e,
+                            check_every
+                        )
+                    },
                 }
 
+                // note: When sleeping for only 1 second the test_send_payment_and_swaps unit test took 20 seconds to complete instead of 37 seconds when WAIT_CONFIRM_INTERVAL (15 seconds) is used
+                // Todo: In next sprints, should add a mutex for lightning swap payments to avoid overloading the shared db connection with requests when the sleep time is reduced and multiple swaps are ran together
+                // Todo: The aim is to make lightning swap payments as fast as possible. Running swap payments statuses should be loaded from db on restarts in this case.
                 Timer::sleep(check_every as f64).await;
             }
         };
         Box::new(fut.boxed().compat())
     }
 
-    // Todo: has similar code to wait_for_confirmation (should create a common function)
     fn wait_for_tx_spend(
         &self,
         transaction: &[u8],
@@ -874,7 +881,7 @@ impl MarketCoinOps for LightningCoin {
             loop {
                 if now_ms() / 1000 > wait_until {
                     return Err(TransactionErr::Plain(format!(
-                        "Waited too long until {} for payment {} to be spend",
+                        "Waited too long until {} for payment {} to be spent",
                         wait_until, payment_hex
                     )));
                 }
@@ -890,7 +897,7 @@ impl MarketCoinOps for LightningCoin {
                                 )))
                             },
                             HTLCStatus::Succeeded => return Ok(TransactionEnum::LightningPayment(payment_hash)),
-                            // Todo: should I retry first before returning an error (return an error only if all paths failed, what about locktime?)
+                            // Todo: Retry payment multiple times returning an error only if all paths failed or other permenant error, should also keep locktime in mind when using different paths with different CLTVs
                             HTLCStatus::Failed => {
                                 return Err(TransactionErr::Plain(format!(
                                     "Lightning swap payment {} failed",
@@ -905,13 +912,18 @@ impl MarketCoinOps for LightningCoin {
                             payment_hex
                         )))
                     },
-                    Err(e) => error!(
-                        "Error getting payment {} from db: {}, retrying in 10 seconds",
-                        payment_hex, e
-                    ),
+                    Err(e) => {
+                        return Err(TransactionErr::Plain(format!(
+                            "Error getting payment {} from db: {}",
+                            payment_hex, e
+                        )))
+                    },
                 }
 
-                // Todo: should this be less for lightning?? what about maker payment (takes time to spend)
+                // note: When sleeping for only 1 second the test_send_payment_and_swaps unit test took 20 seconds to complete instead of 37 seconds when sleeping for 10 seconds
+                // Todo: In next sprints, should add a mutex for lightning swap payments to avoid overloading the shared db connection with requests when the sleep time is reduced and multiple swaps are ran together.
+                // Todo: The aim is to make lightning swap payments as fast as possible, more sleep time can be allowed for maker payment since it waits for the secret to be revealed on another chain first.
+                // Todo: Running swap payments statuses should be loaded from db on restarts in this case.
                 Timer::sleep(10.).await;
             }
         };
@@ -935,7 +947,7 @@ impl MarketCoinOps for LightningCoin {
             .to_string())
     }
 
-    // Todo: Should depend on inbound_htlc_minimum_msat of the channel/s the payment will be sent through, 1 satoshi for now (1000 of the base unit of lightning which is msat)
+    // Todo: min_tx_amount should depend on inbound_htlc_minimum_msat of the channel/s the payment will be sent through, 1 satoshi is used for for now (1000 of the base unit of lightning which is msat)
     fn min_tx_amount(&self) -> BigDecimal { big_decimal_from_sat(1000, self.decimals()) }
 
     // Todo: Equals to min_tx_amount for now (1 satoshi), should change this later

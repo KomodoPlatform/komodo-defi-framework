@@ -511,7 +511,6 @@ impl From<ParseOrSemanticError> for ValidateInstructionsErr {
 pub trait SwapOps {
     fn send_taker_fee(&self, fee_addr: &[u8], amount: BigDecimal, uuid: &[u8]) -> TransactionFut;
 
-    // Todo: maybe make a struct for the arguments
     #[allow(clippy::too_many_arguments)]
     fn send_maker_payment(
         &self,
@@ -524,7 +523,6 @@ pub trait SwapOps {
         payment_instructions: &Option<PaymentInstructions>,
     ) -> TransactionFut;
 
-    // Todo: maybe make a struct for the arguments
     #[allow(clippy::too_many_arguments)]
     fn send_taker_payment(
         &self,
@@ -627,7 +625,6 @@ pub trait SwapOps {
         input: SearchForSwapTxSpendInput<'_>,
     ) -> Result<Option<FoundSwapTxSpend>, String>;
 
-    // Todo: can be made sync again if the secret is made part of the enum, it will also reduce a call to the DB
     async fn extract_secret(&self, secret_hash: &[u8], spend_tx: &[u8]) -> Result<Vec<u8>, String>;
 
     /// Whether the refund transaction can be sent now
@@ -706,7 +703,6 @@ pub trait MarketCoinOps {
     /// Receives raw transaction bytes as input and returns tx hash in hexadecimal format
     fn send_raw_tx_bytes(&self, tx: &[u8]) -> Box<dyn Future<Item = String, Error = String> + Send>;
 
-    // Todo: If channel is closed for lightning we might need to wait for confirmations, should be done in the next PRs, move this note to a better place
     fn wait_for_confirmations(
         &self,
         tx: &[u8],

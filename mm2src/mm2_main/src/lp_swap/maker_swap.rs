@@ -1417,7 +1417,6 @@ pub enum MakerSwapCommand {
     Finish,
 }
 
-// Todo: mirror what's implemented in taker swap
 #[derive(Clone, Debug, Deserialize, PartialEq, Serialize)]
 #[serde(tag = "type", content = "data")]
 #[allow(clippy::large_enum_variant)]

@@ -1230,7 +1230,6 @@ impl TakerSwap {
             confirmations,
             self.r().data.maker_payment_requires_nota.unwrap_or(false),
             self.r().data.maker_payment_wait,
-            // Todo: this can be less for lightning probably
             WAIT_CONFIRM_INTERVAL,
         );
         if let Err(err) = f.compat().await {
@@ -1430,8 +1429,6 @@ impl TakerSwap {
 
         let wait_duration = (self.r().data.lock_duration * 4) / 5;
         let wait_taker_payment = self.r().data.started_at + wait_duration;
-        // Todo: remove this after successful test
-        debug!("wait_for_confirmations");
         let wait_f = self
             .taker_coin
             .wait_for_confirmations(
@@ -1453,8 +1450,6 @@ impl TakerSwap {
             ]));
         }
 
-        // Todo: remove this after successful test
-        debug!("wait_for_tx_spend");
         let f = self.taker_coin.wait_for_tx_spend(
             &self.r().taker_payment.clone().unwrap().tx_hex(),
             self.r().data.taker_payment_lock,
@@ -1481,8 +1476,6 @@ impl TakerSwap {
             tx_hash,
         };
 
-        // Todo: remove this after successful test
-        debug!("extract_secret");
         let secret_hash = self.r().secret_hash.clone();
         let secret = match self.taker_coin.extract_secret(&secret_hash.0, &tx_ident.tx_hex()).await {
             Ok(bytes) => H256Json::from(bytes.as_slice()),

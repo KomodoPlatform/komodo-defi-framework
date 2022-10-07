@@ -392,7 +392,6 @@ async fn recreate_taker_swap(ctx: MmArc, maker_swap: MakerSavedSwap) -> Recreate
 /// since they are used outside of this function to generate `TakerSwap` and the initial [`TakerSwapEvent::Started`] and [`TakerSwapEvent::Negotiated`] events.
 ///
 /// The `maker_coin` and `secret_hash` function arguments are used to extract a secret from `TakerPaymentSpent`.
-// Todo: async can be removed when extract secret is back as sync
 async fn convert_maker_to_taker_events(
     event_it: impl Iterator<Item = MakerSavedEvent>,
     maker_coin: MmCoinEnum,
@@ -415,7 +414,6 @@ async fn convert_maker_to_taker_events(
             error: format!("Origin Maker error event: {:?}", event),
         };
         match event {
-            // Todo: remove unwrap by making tx_ident and enum
             MakerSwapEvent::TakerFeeValidated(tx_ident) => push_event!(TakerSwapEvent::TakerFeeSent(tx_ident)),
             MakerSwapEvent::TakerFeeValidateFailed(_) => {
                 push_event!(TakerSwapEvent::MakerPaymentValidateFailed(swap_error));

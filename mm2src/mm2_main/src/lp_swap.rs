@@ -739,7 +739,6 @@ pub struct TransactionIdentifier {
 }
 
 impl TransactionIdentifier {
-    // Todo: rename this function
     fn tx_hex(&self) -> BytesJson {
         let tx_hash = self.tx_hash.clone();
         self.tx_hex.clone().unwrap_or(tx_hash)
