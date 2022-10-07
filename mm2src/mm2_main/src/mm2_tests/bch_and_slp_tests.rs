@@ -484,6 +484,14 @@ async fn test_bch_and_slp_testnet_history_impl() {
         let fee_details: UtxoFeeDetails = json::from_value(tx.tx.fee_details).unwrap();
         assert_eq!(fee_details.coin, Some("tBCH".to_owned()));
     }
+
+    #[cfg(target_arch = "wasm32")]
+    {
+        /// 1 second.
+        const STOP_TIMEOUT_MS: u64 = 1000;
+
+        mm.stop_and_wait_for_ctx_is_dropped(STOP_TIMEOUT_MS).await.unwrap();
+    }
 }
 
 #[test]

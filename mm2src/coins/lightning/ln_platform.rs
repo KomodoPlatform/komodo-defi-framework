@@ -167,6 +167,7 @@ pub struct Platform {
     /// This cache stores transactions to be broadcasted once the other node accepts the channel
     pub unsigned_funding_txs: PaMutex<HashMap<u64, TransactionInputSigner>>,
     /// This spawner is used to spawn coin's related futures that should be aborted on coin deactivation.
+    /// and on [`MmArc::stop`].
     pub abortable_system: AbortableQueue,
 }
 

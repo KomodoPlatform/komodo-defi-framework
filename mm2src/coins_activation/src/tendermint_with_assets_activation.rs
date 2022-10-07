@@ -68,7 +68,7 @@ impl PlatformWithTokensActivationOps for TendermintCoin {
         protocol_conf: Self::PlatformProtocolInfo,
         priv_key: &[u8],
     ) -> Result<Self, MmError<Self::ActivationError>> {
-        TendermintCoin::init(ctx, ticker, protocol_conf, activation_request, priv_key).await
+        TendermintCoin::init(&ctx, ticker, protocol_conf, activation_request, priv_key).await
     }
 
     fn token_initializers(

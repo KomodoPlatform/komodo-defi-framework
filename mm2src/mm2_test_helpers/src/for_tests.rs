@@ -779,7 +779,7 @@ impl MarketMakerIt {
     }
 
     #[cfg(target_arch = "wasm32")]
-    pub async fn stop_waiting_for_ctx_is_dropped(self, timeout_ms: u64) -> Result<(), String> {
+    pub async fn stop_and_wait_for_ctx_is_dropped(self, timeout_ms: u64) -> Result<(), String> {
         try_s!(self.stop().await);
         let ctx_weak = self.ctx.weak();
         drop(self);
@@ -792,7 +792,7 @@ impl MarketMakerIt {
                 log!("stop] MmCtx was dropped in {took_ms}ms");
                 return Ok(());
             }
-            Timer::sleep(0.1).await;
+            Timer::sleep(0.05).await;
         }
 
         ERR!(

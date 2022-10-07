@@ -72,7 +72,7 @@ impl SpawnFuture for WeakSpawner {
 
 impl SpawnAbortable for WeakSpawner {
     /// Spawns the `fut` future with the specified abort `settings`.
-    /// The future will be stopped immediately if `AbortableQueue` is dropped.
+    /// The future won't be executed if `AbortableQueue` is dropped.
     fn spawn_with_settings<F>(&self, fut: F, settings: AbortSettings)
     where
         F: Future03<Output = ()> + Send + 'static,
@@ -134,7 +134,6 @@ impl SpawnAbortable for WeakSpawner {
 /// (unique between spawned and alive futures).
 /// Once a future is finished, its `FutureId` can be reassign to another future.
 /// This is necessary so that this container does not grow indefinitely.
-/// Such `FutureId` identifier is used to remove [`oneshot::Sender<()>`] associated with a finished future.
 pub struct QueueInner {
     abort_handlers: Vec<oneshot::Sender<()>>,
     finished_futures: Vec<FutureId>,
@@ -150,7 +149,7 @@ impl Default for QueueInner {
 }
 
 impl QueueInner {
-    /// Inserts the given `handle`.
+    /// Inserts the given future `handle`.
     fn insert_handle(&mut self, handle: oneshot::Sender<()>) -> FutureId {
         match self.finished_futures.pop() {
             Some(finished_id) => {

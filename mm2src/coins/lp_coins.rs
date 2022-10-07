@@ -1710,8 +1710,11 @@ pub trait MmCoin: SwapOps + MarketCoinOps + Send + Sync + 'static {
         coin_conf["wallet_only"].as_bool().unwrap_or(false)
     }
 
-    /// Returns a spawner that can be used to spawn coin's related futures
-    /// that should be aborted on coin deactivation.
+    /// Returns a spawner pinned to the coin.
+    ///
+    /// # Note
+    ///
+    /// `CoinFutSpawner` doesn't prevent the spawned futures from being aborted.
     fn spawner(&self) -> CoinFutSpawner;
 
     fn withdraw(&self, req: WithdrawRequest) -> WithdrawFut;

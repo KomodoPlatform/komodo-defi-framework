@@ -145,7 +145,8 @@ pub async fn ln_node_announcement_loop(
 
 async fn ln_p2p_loop(peer_manager: Arc<PeerManager>, listener: TcpListener) {
     // This container consists of abort handlers of the spawned inbound connections.
-    // They will be dropped once `LightningCoin` is dropped.
+    // They will be dropped once `LightningCoin` is dropped because `ln_p2p_loop` is spawned
+    // via [`Platform::abortable_system`].
     let mut spawned = Vec::new();
     loop {
         let peer_mgr = peer_manager.clone();
@@ -160,10 +161,9 @@ async fn ln_p2p_loop(peer_manager: Arc<PeerManager>, listener: TcpListener) {
             },
         };
         if let Ok(stream) = tcp_stream.into_std() {
-            let abort_handle = spawn_abortable(async move {
+            spawned.push(spawn_abortable(async move {
                 lightning_net_tokio::setup_inbound(peer_mgr.clone(), stream).await;
-            });
-            spawned.push(abort_handle);
+            }));
         };
     }
 }

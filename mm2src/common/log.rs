@@ -1,8 +1,7 @@
 //! Human-readable logging and statuses.
 
-use super::executor::Timer;
 use super::{now_ms, writeln};
-use crate::executor::{spawn_abortable, AbortOnDropHandle};
+use crate::executor::{spawn_abortable, AbortOnDropHandle, Timer};
 use crate::filename;
 use chrono::format::strftime::StrftimeItems;
 use chrono::format::DelayedFormat;

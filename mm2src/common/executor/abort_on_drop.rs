@@ -1,21 +1,13 @@
 use futures::future::AbortHandle;
 
 /// The AbortHandle that aborts on drop
-pub struct AbortOnDropHandle(Option<AbortHandle>);
+pub struct AbortOnDropHandle(AbortHandle);
 
 impl From<AbortHandle> for AbortOnDropHandle {
-    fn from(handle: AbortHandle) -> Self { AbortOnDropHandle(Some(handle)) }
-}
-
-impl AbortOnDropHandle {
-    pub fn into_handle(mut self) -> AbortHandle { self.0.take().expect("`AbortHandle` Must be initialized") }
+    fn from(handle: AbortHandle) -> Self { AbortOnDropHandle(handle) }
 }
 
 impl Drop for AbortOnDropHandle {
     #[inline(always)]
-    fn drop(&mut self) {
-        if let Some(handle) = self.0.take() {
-            handle.abort();
-        }
-    }
+    fn drop(&mut self) { self.0.abort(); }
 }

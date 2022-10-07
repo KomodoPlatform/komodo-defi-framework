@@ -48,8 +48,6 @@ pub fn electrum_client_for_test(servers: &[&str]) -> ElectrumClient {
         /// This global instance of `AbortableQueue` can be used safely to generate `ElectrumClient`
         /// because once the returned `ElectrumClient` is dropped, all spawned futures will be stopped
         /// almost immediately due to closed `mpsc` channel.
-        ///
-        /// In other words, using this global instance is similar to using `common::executor::spawn`.
         static ref COIN_SPAWNER: AbortableQueue = AbortableQueue::default();
     }
 

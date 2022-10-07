@@ -159,7 +159,7 @@ fn upper_hex(bytes: &[u8]) -> String {
 
 impl TendermintCoin {
     pub async fn init(
-        ctx: MmArc,
+        ctx: &MmArc,
         ticker: String,
         protocol_info: TendermintProtocolInfo,
         activation_params: TendermintActivationParams,
@@ -830,7 +830,7 @@ mod tendermint_coin_tests {
         let priv_key = &*ctx.secp256k1_key_pair().private().secret;
 
         let coin = common::block_on(TendermintCoin::init(
-            ctx.clone(),
+            &ctx,
             "USDC-IBC".to_string(),
             protocol_conf,
             activation_request,

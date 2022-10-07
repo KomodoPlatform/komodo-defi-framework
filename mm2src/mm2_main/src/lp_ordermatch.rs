@@ -2733,7 +2733,7 @@ pub struct MakerOrdersContext {
     orders: HashMap<Uuid, Arc<AsyncMutex<MakerOrder>>>,
     order_tickers: HashMap<Uuid, String>,
     count_by_tickers: HashMap<String, usize>,
-    /// The `check_balance_update_loop` future abort handles associated with the ticker.
+    /// The `check_balance_update_loop` future abort handles associated stored by corresponding tickers.
     balance_loops: AbortableSimpleMap<String>,
 }
 

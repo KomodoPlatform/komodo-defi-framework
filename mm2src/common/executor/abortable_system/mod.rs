@@ -20,7 +20,7 @@ pub trait AbortableSystem: From<InnerShared<Self::Inner>> {
     /// For more info, look at the [`tests::test_abort_subsystem`].
     ///
     ///
-    /// But in the same time they can be dropped independently from `Self` system.
+    /// But in the same time the subsystem can be aborted independently from `Self` system.
     /// For more info, look at the [`tests::test_abort_supersystem`].
     fn create_subsystem<S>(&self) -> S
     where

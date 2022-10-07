@@ -378,7 +378,7 @@ pub async fn process_watcher_msg(ctx: MmArc, msg: &[u8]) {
     }
 }
 
-/// TODO add `Maker` variant.
+/// Currently, Taker Swap Watcher is supported only.
 enum WatcherType {
     Taker,
 }
@@ -480,8 +480,8 @@ fn spawn_taker_swap_watcher(ctx: MmArc, watcher_data: TakerSwapWatcherData) {
     };
 
     let settings = AbortSettings::info_on_abort(format!("watcher swap {uuid} stopped!"));
-    // Please note that `taker_watcher_lock` will be dropped once `MmCtx` is dropped
-    // since `fut` will be aborted.
+    // Please note that `taker_watcher_lock` will be dropped once `MmCtx` is stopped
+    // since this `fut` will be aborted.
     spawner.spawn_with_settings(fut, settings);
 }
 

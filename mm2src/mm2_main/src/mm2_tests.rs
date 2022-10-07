@@ -1250,11 +1250,13 @@ async fn trade_base_rel_electrum(
 
     #[cfg(target_arch = "wasm32")]
     {
-        /// 1.5 seconds.
-        const STOP_TIMEOUT_MS: u64 = 1500;
+        const STOP_TIMEOUT_MS: u64 = 1000;
 
-        mm_bob.stop_waiting_for_ctx_is_dropped(STOP_TIMEOUT_MS).await.unwrap();
-        mm_alice.stop_waiting_for_ctx_is_dropped(STOP_TIMEOUT_MS).await.unwrap();
+        mm_bob.stop_and_wait_for_ctx_is_dropped(STOP_TIMEOUT_MS).await.unwrap();
+        mm_alice
+            .stop_and_wait_for_ctx_is_dropped(STOP_TIMEOUT_MS)
+            .await
+            .unwrap();
     }
     #[cfg(not(target_arch = "wasm32"))]
     {
@@ -7900,6 +7902,8 @@ fn test_tbtc_block_header_sync() {
     block_on(mm_bob.stop()).unwrap();
 }
 
+/// This function runs Alice and Bob nodes, activates coins, starts swaps,
+/// and then immediately stops the nodes to check if `MmArc` is dropped in a short period.
 #[cfg(target_arch = "wasm32")]
 async fn test_mm2_stops_impl(
     pairs: &[(&'static str, &'static str)],
@@ -8011,20 +8015,20 @@ async fn test_mm2_stops_impl(
             .unwrap()
     }
 
-    mm_alice.stop_waiting_for_ctx_is_dropped(stop_timeout_ms).await.unwrap();
-    mm_bob.stop_waiting_for_ctx_is_dropped(stop_timeout_ms).await.unwrap();
+    mm_alice
+        .stop_and_wait_for_ctx_is_dropped(stop_timeout_ms)
+        .await
+        .unwrap();
+    mm_bob.stop_and_wait_for_ctx_is_dropped(stop_timeout_ms).await.unwrap();
 }
 
 #[wasm_bindgen_test]
 #[cfg(target_arch = "wasm32")]
 async fn test_mm2_stops_immediately() {
-    const STOP_TIMEOUT_MS: u64 = 1500;
+    const STOP_TIMEOUT_MS: u64 = 1000;
 
     common::log::wasm_log::register_wasm_log();
 
     let pairs: &[_] = &[("RICK", "MORTY")];
-    test_mm2_stops_impl(pairs, 1, 1, 0.0001, STOP_TIMEOUT_MS).await;
-
-    // Try to run mm2 one more time right after the previous `MmArc` is dropped.
     test_mm2_stops_impl(pairs, 1, 1, 0.0001, STOP_TIMEOUT_MS).await;
 }
