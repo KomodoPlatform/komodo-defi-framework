@@ -496,16 +496,7 @@ impl SwapOps for LightningCoin {
         _swap_contract_address: &Option<BytesJson>,
         _swap_unique_data: &[u8],
     ) -> TransactionFut {
-        let payment_hash_length = taker_payment_tx.len();
-        // Todo: do we need to do these checks every time (should be done at first only)
-        if payment_hash_length != 32 {
-            let error = format!("Invalid payment hash length {}", payment_hash_length);
-            return Box::new(futures01::future::err(TransactionErr::Plain(error)));
-        }
-        let mut payment_hash_array = [b' '; 32];
-        payment_hash_array.copy_from_slice(taker_payment_tx);
-        let payment_hash = PaymentHash(payment_hash_array);
-
+        let payment_hash = try_tx_fus!(payment_hash_from_slice(taker_payment_tx));
         let mut preimage = [b' '; 32];
         preimage.copy_from_slice(secret);
 
@@ -584,18 +575,9 @@ impl SwapOps for LightningCoin {
     fn validate_maker_payment(&self, _input: ValidatePaymentInput) -> ValidatePaymentFut<()> { unimplemented!() }
 
     fn validate_taker_payment(&self, input: ValidatePaymentInput) -> ValidatePaymentFut<()> {
-        let payment_hash_length = input.payment_tx.len();
-        // Todo: do we need to do these checks every time (should be done at first only)
-        if payment_hash_length != 32 {
-            let error = format!("Invalid payment hash length {}", payment_hash_length);
-            return Box::new(futures01::future::err(MmError::new(
-                ValidatePaymentError::TxDeserializationError(error),
-            )));
-        }
-        let mut payment_hash_array = [b' '; 32];
-        payment_hash_array.copy_from_slice(&input.payment_tx);
-        let payment_hash = PaymentHash(payment_hash_array);
-        let payment_hex = hex::encode(payment_hash_array);
+        let payment_hash = try_f!(payment_hash_from_slice(&input.payment_tx)
+            .map_to_mm(|e| ValidatePaymentError::TxDeserializationError(e.to_string())));
+        let payment_hex = hex::encode(payment_hash.0);
 
         let amt_msat = try_f!(sat_from_big_decimal(&input.amount, self.decimals()));
 
@@ -664,15 +646,8 @@ impl SwapOps for LightningCoin {
     // Todo: if the secret or preimage is part of the TransactionEnum, there is no need for more calls to db (also if paymentinfo is in the enum)
     // Todo: also repeated code
     async fn extract_secret(&self, _secret_hash: &[u8], spend_tx: &[u8]) -> Result<Vec<u8>, String> {
-        let payment_hash_length = spend_tx.len();
-        // Todo: do we need to do these checks every time (should be done at first only)
-        if payment_hash_length != 32 {
-            return ERR!("Invalid payment hash length {}", payment_hash_length);
-        }
-        let mut payment_hash_array = [b' '; 32];
-        payment_hash_array.copy_from_slice(spend_tx);
-        let payment_hash = PaymentHash(payment_hash_array);
-        let payment_hex = hex::encode(payment_hash_array);
+        let payment_hash = payment_hash_from_slice(spend_tx).map_err(|e| e.to_string())?;
+        let payment_hex = hex::encode(payment_hash.0);
 
         return match self.db.get_payment_from_db(payment_hash).await {
             Ok(Some(payment)) => match payment.preimage {
@@ -707,30 +682,15 @@ impl SwapOps for LightningCoin {
     ) -> Result<Option<Vec<u8>>, MmError<PaymentInstructionsErr>> {
         // lightning decimals should be 11 in config since the smallest divisible unit in lightning coin is msat
         let amt_msat = sat_from_big_decimal(amount, self.decimals())?;
-
-        let secret_hash_length = secret_hash.len();
-        if secret_hash_length != 32 {
-            let error = format!("Invalid secret_hash length {}", secret_hash_length);
-            return Err(PaymentInstructionsErr::InternalError(error).into());
-        }
-        let mut payment_hash = [b' '; 32];
-        payment_hash.copy_from_slice(secret_hash);
+        let payment_hash =
+            payment_hash_from_slice(secret_hash).map_to_mm(|e| PaymentInstructionsErr::InternalError(e.to_string()))?;
 
         // Todo: Maybe the description can be the swap uuid
         let invoice = self
-            .create_invoice_for_hash(
-                PaymentHash(payment_hash),
-                Some(amt_msat),
-                "".into(),
-                DEFAULT_INVOICE_EXPIRY,
-            )
+            .create_invoice_for_hash(payment_hash, Some(amt_msat), "".into(), DEFAULT_INVOICE_EXPIRY)
             .await
             .map_to_mm(|e| PaymentInstructionsErr::LightningInvoiceErr(e.to_string()))?;
-        // Todo: revise this
         Ok(Some(invoice.to_string().into_bytes()))
-        // Ok(Some(hex::decode(invoice.to_string()).map_to_mm(|e| {
-        //     PaymentInstructionsErr::LightningInvoiceErr(e.to_string())
-        // })?))
     }
 
     fn validate_instructions(
@@ -757,6 +717,22 @@ impl SwapOps for LightningCoin {
         // Todo: continue validation here by comparing (locktime, etc..)
         Ok(Some(PaymentInstructions::Lightning(invoice)))
     }
+}
+
+#[derive(Debug, Display)]
+pub enum PaymentHashFromSliceErr {
+    #[display(fmt = "Invalid data length of {}", _0)]
+    InvalidLength(usize),
+}
+
+fn payment_hash_from_slice(data: &[u8]) -> Result<PaymentHash, PaymentHashFromSliceErr> {
+    let len = data.len();
+    if len != 32 {
+        return Err(PaymentHashFromSliceErr::InvalidLength(len));
+    }
+    let mut hash = [b' '; 32];
+    hash.copy_from_slice(data);
+    Ok(PaymentHash(hash))
 }
 
 impl MarketCoinOps for LightningCoin {
@@ -847,18 +823,8 @@ impl MarketCoinOps for LightningCoin {
         wait_until: u64,
         check_every: u64,
     ) -> Box<dyn Future<Item = (), Error = String> + Send> {
-        let payment_hash_length = tx.len();
-        // Todo: do we need to do these checks every time (should be done at first only)
-        if payment_hash_length != 32 {
-            return Box::new(futures01::future::err(ERRL!(
-                "Invalid payment hash length {}",
-                payment_hash_length
-            )));
-        }
-        let mut payment_hash_array = [b' '; 32];
-        payment_hash_array.copy_from_slice(tx);
-        let payment_hash = PaymentHash(payment_hash_array);
-        let payment_hex = hex::encode(payment_hash_array);
+        let payment_hash = try_f!(payment_hash_from_slice(tx).map_err(|e| e.to_string()));
+        let payment_hex = hex::encode(payment_hash.0);
 
         let coin = self.clone();
         let fut = async move {
@@ -900,16 +866,8 @@ impl MarketCoinOps for LightningCoin {
         _from_block: u64,
         _swap_contract_address: &Option<BytesJson>,
     ) -> TransactionFut {
-        let payment_hash_length = transaction.len();
-        // Todo: do we need to do these checks every time (should be done at first only)
-        if payment_hash_length != 32 {
-            let error = format!("Invalid payment hash length {}", payment_hash_length);
-            return Box::new(futures01::future::err(TransactionErr::Plain(error)));
-        }
-        let mut payment_hash_array = [b' '; 32];
-        payment_hash_array.copy_from_slice(transaction);
-        let payment_hash = PaymentHash(payment_hash_array);
-        let payment_hex = hex::encode(payment_hash_array);
+        let payment_hash = try_tx_fus!(payment_hash_from_slice(transaction));
+        let payment_hex = hex::encode(payment_hash.0);
 
         let coin = self.clone();
         let fut = async move {
@@ -961,15 +919,9 @@ impl MarketCoinOps for LightningCoin {
     }
 
     fn tx_enum_from_bytes(&self, bytes: &[u8]) -> Result<TransactionEnum, MmError<TxMarshalingErr>> {
-        // Todo: this block of code is repeated, maybe make it a function
-        let payment_hash_length = bytes.len();
-        if payment_hash_length != 32 {
-            let error = format!("Invalid payment hash length {}", payment_hash_length);
-            return Err(TxMarshalingErr::InvalidInput(error).into());
-        }
-        let mut payment_hash = [b' '; 32];
-        payment_hash.copy_from_slice(bytes);
-        Ok(TransactionEnum::LightningPayment(PaymentHash(payment_hash)))
+        Ok(TransactionEnum::LightningPayment(
+            payment_hash_from_slice(bytes).map_to_mm(|e| TxMarshalingErr::InvalidInput(e.to_string()))?,
+        ))
     }
 
     fn current_block(&self) -> Box<dyn Future<Item = u64, Error = String> + Send> { Box::new(futures01::future::ok(0)) }
