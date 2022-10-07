@@ -389,40 +389,33 @@ pub(super) async fn init_light_client(
         return MmError::err(ZcoinClientInitError::EmptyLightwalletdUris);
     }
     for url in lightwalletd_urls {
-        let uri = match Uri::from_str(&*url).map_to_mm(ZcoinClientInitError::InvalidUri) {
+        let uri = match Uri::from_str(&*url) {
             Ok(uri) => uri,
             Err(err) => {
-                errors.push(format!("{:?}", err));
+                errors.push(UrlIterError::InvalidUri(err));
                 continue;
             },
         };
-        let endpoint = match Channel::builder(uri)
-            .tls_config(ClientTlsConfig::new())
-            .map_to_mm(ZcoinClientInitError::TlsConfigFailure)
-        {
+        let endpoint = match Channel::builder(uri).tls_config(ClientTlsConfig::new()) {
             Ok(endpoint) => endpoint,
             Err(err) => {
-                errors.push(format!("{:?}", err));
+                errors.push(UrlIterError::TlsConfigFailure(err));
                 continue;
             },
         };
-        let tonic_channel = match endpoint
-            .connect()
-            .await
-            .map_to_mm(ZcoinClientInitError::ConnectionFailure)
-        {
+        let tonic_channel = match endpoint.connect().await {
             Ok(tonic_channel) => tonic_channel,
             Err(err) => {
-                errors.push(format!("{:?}", err));
+                errors.push(UrlIterError::ConnectionFailure(err));
                 continue;
             },
         };
         rpc_clients.push(CompactTxStreamerClient::new(tonic_channel));
     }
     drop_mutability!(errors);
-    // check if rpc_clients is empty, then for loop wasnt successful
+    // check if rpc_clients is empty, then for loop wasn't successful
     if rpc_clients.is_empty() {
-        return Err(format_init_client_e(errors));
+        return MmError::err(ZcoinClientInitError::UrlIterFailure(errors));
     }
 
     let sync_handle = SaplingSyncLoopHandle {
@@ -758,12 +751,6 @@ impl SaplingSyncConnector {
 pub(super) struct SaplingSyncGuard<'a> {
     pub(super) _connector_guard: AsyncMutexGuard<'a, SaplingSyncConnector>,
     pub(super) respawn_guard: SaplingSyncRespawnGuard,
-}
-
-fn format_init_client_e(errors: Vec<String>) -> MmError<ZcoinClientInitError> {
-    let errors: String = errors.iter().map(|e| format!("{:?}", e)).collect();
-    let error = format!("Init client failed during urls iteration: {}", errors);
-    MmError::from(ZcoinClientInitError::UrlIterFailure(error))
 }
 
 async fn send_multi_light_wallet_request<'a, Res, Fut, Fn>(
