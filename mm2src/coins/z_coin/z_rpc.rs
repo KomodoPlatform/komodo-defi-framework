@@ -17,7 +17,6 @@ use parking_lot::Mutex;
 use prost::Message;
 use protobuf::Message as ProtobufMessage;
 use std::future::Future;
-use std::ops::Deref;
 use std::path::{Path, PathBuf};
 use std::pin::Pin;
 use std::str::FromStr;
@@ -53,8 +52,7 @@ struct CompactBlockRow {
     data: Vec<u8>,
 }
 
-pub type OnCompactBlockFn<'a> =
-    dyn FnMut(TonicCompactBlock) -> Result<(), MmError<UpdateBlocksCacheErr>> + Send + Sync + 'a;
+pub type OnCompactBlockFn<'a> = dyn FnMut(TonicCompactBlock) -> Result<(), MmError<UpdateBlocksCacheErr>> + Send + 'a;
 
 #[async_trait]
 pub trait ZRpcOps {
@@ -112,31 +110,34 @@ impl ZRpcOps for Vec<CompactTxStreamerClient<Channel>> {
     }
 
     async fn check_tx_existence(&mut self, tx_id: TxId) -> bool {
-        for client in self {
-            let mut attempts = 0;
-            loop {
+        let mut attempts = 0;
+        loop {
+            match send_multi_light_wallet_request(self, |client| {
                 let filter = TxFilter {
                     block: None,
                     index: 0,
                     hash: tx_id.0.into(),
                 };
                 let request = tonic::Request::new(filter);
-                match client.get_transaction(request).await {
-                    Ok(_) => return true,
-                    Err(e) => {
-                        error!("Error on getting tx {}", tx_id);
-                        if e.message().contains(NO_TX_ERROR_CODE) {
-                            if attempts >= 3 {
-                                break;
-                            }
-                            attempts += 1;
+                client.get_transaction(request)
+            })
+            .await
+            {
+                Ok(_) => break,
+                Err(e) => {
+                    error!("Error on getting tx {}", tx_id);
+                    let mut e = e;
+                    if e.remove(0).message().contains(NO_TX_ERROR_CODE) {
+                        if attempts >= 3 {
+                            return false;
                         }
-                        Timer::sleep(30.).await;
-                    },
-                }
+                        attempts += 1;
+                    }
+                    Timer::sleep(30.).await;
+                },
             }
         }
-        false
+        true
     }
 }
 
@@ -426,7 +427,7 @@ pub(super) async fn init_light_client(
 
     let sync_handle = SaplingSyncLoopHandle {
         current_block: BlockHeight::from_u32(0),
-        blocks_db: Mutex::new(blocks_db),
+        blocks_db,
         wallet_db: wallet_db.clone(),
         consensus_params,
         sync_status_notifier,
@@ -454,7 +455,7 @@ pub(super) async fn init_native_client(
 
     let sync_handle = SaplingSyncLoopHandle {
         current_block: BlockHeight::from_u32(0),
-        blocks_db: Mutex::new(blocks_db),
+        blocks_db,
         wallet_db: wallet_db.clone(),
         consensus_params,
         sync_status_notifier,
@@ -520,7 +521,7 @@ pub enum SyncStatus {
 
 pub struct SaplingSyncLoopHandle {
     current_block: BlockHeight,
-    blocks_db: Mutex<BlockDb>,
+    blocks_db: BlockDb,
     wallet_db: WalletDbShared,
     consensus_params: ZcoinConsensusParams,
     /// Notifies about sync status without stopping the loop, e.g. on coin activation
@@ -569,7 +570,7 @@ impl SaplingSyncLoopHandle {
         rpc: &mut (dyn ZRpcOps + Send),
     ) -> Result<(), MmError<UpdateBlocksCacheErr>> {
         let current_block = rpc.get_block_height().await?;
-        let current_block_in_db = block_in_place(|| self.blocks_db.lock().get_latest_block())?;
+        let current_block_in_db = block_in_place(|| self.blocks_db.get_latest_block())?;
         let extrema = block_in_place(|| self.wallet_db.lock().block_height_extrema())?;
         let mut from_block = self
             .consensus_params
@@ -581,11 +582,7 @@ impl SaplingSyncLoopHandle {
         }
         if current_block >= from_block {
             rpc.scan_blocks(from_block, current_block, &mut |block: TonicCompactBlock| {
-                block_in_place(|| {
-                    self.blocks_db
-                        .lock()
-                        .insert_block(block.height as u32, block.encode_to_vec())
-                })?;
+                block_in_place(|| self.blocks_db.insert_block(block.height as u32, block.encode_to_vec()))?;
                 self.notify_blocks_cache_status(block.height, current_block);
                 Ok(())
             })
@@ -605,7 +602,7 @@ impl SaplingSyncLoopHandle {
 
         if let Err(e) = validate_chain(
             &self.consensus_params,
-            self.blocks_db.lock().deref(),
+            &self.blocks_db,
             wallet_ops.get_max_height_hash()?,
         ) {
             match e {
@@ -616,13 +613,13 @@ impl SaplingSyncLoopHandle {
                         BlockHeight::from_u32(0)
                     };
                     wallet_ops.rewind_to_height(rewind_height)?;
-                    self.blocks_db.lock().rewind_to_height(rewind_height.into())?;
+                    self.blocks_db.rewind_to_height(rewind_height.into())?;
                 },
                 e => return MmError::err(e),
             }
         }
 
-        let current_block = BlockHeight::from_u32(self.blocks_db.lock().get_latest_block()?);
+        let current_block = BlockHeight::from_u32(self.blocks_db.get_latest_block()?);
         loop {
             match wallet_ops.block_height_extrema()? {
                 Some((_, max_in_wallet)) => {
@@ -634,12 +631,7 @@ impl SaplingSyncLoopHandle {
                 },
                 None => self.notify_building_wallet_db(0, current_block.into()),
             }
-            scan_cached_blocks(
-                &self.consensus_params,
-                self.blocks_db.lock().deref(),
-                &mut wallet_ops,
-                Some(1000),
-            )?;
+            scan_cached_blocks(&self.consensus_params, &self.blocks_db, &mut wallet_ops, Some(1000))?;
         }
         Ok(())
     }
