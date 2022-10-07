@@ -45,7 +45,7 @@ fn activate_z_coin_light() {
     let coins = json!([zombie_conf()]);
 
     let conf = Mm2TestConf::seednode(ZOMBIE_TEST_BALANCE_SEED, &coins);
-    let mm = MarketMakerIt::start(conf.conf, conf.rpc_password, conf.local).unwrap();
+    let mm = MarketMakerIt::start(conf.conf, conf.rpc_password, None).unwrap();
 
     let activation_result = block_on(enable_z_coin_light(
         &mm,
@@ -68,7 +68,7 @@ fn test_z_coin_tx_history() {
     let coins = json!([zombie_conf()]);
 
     let conf = Mm2TestConf::seednode(ZOMBIE_TEST_HISTORY_SEED, &coins);
-    let mm = MarketMakerIt::start(conf.conf, conf.rpc_password, conf.local).unwrap();
+    let mm = MarketMakerIt::start(conf.conf, conf.rpc_password, None).unwrap();
 
     block_on(enable_z_coin_light(
         &mm,
@@ -311,7 +311,7 @@ fn withdraw_z_coin_light() {
     let coins = json!([zombie_conf()]);
 
     let conf = Mm2TestConf::seednode(ZOMBIE_TEST_WITHDRAW_SEED, &coins);
-    let mm = MarketMakerIt::start(conf.conf, conf.rpc_password, conf.local).unwrap();
+    let mm = MarketMakerIt::start(conf.conf, conf.rpc_password, None).unwrap();
 
     let activation_result = block_on(enable_z_coin_light(
         &mm,
@@ -349,7 +349,7 @@ fn trade_rick_zombie_light() {
     let alice_passphrase = ZOMBIE_TRADE_ALICE_SEED;
 
     let bob_conf = Mm2TestConf::seednode(bob_passphrase, &coins);
-    let mut mm_bob = MarketMakerIt::start(bob_conf.conf, bob_conf.rpc_password, bob_conf.local).unwrap();
+    let mut mm_bob = MarketMakerIt::start(bob_conf.conf, bob_conf.rpc_password, None).unwrap();
 
     let (_bob_dump_log, _bob_dump_dashboard) = mm_bob.mm_dump();
     log!("Bob log path: {}", mm_bob.log_path.display());
@@ -379,7 +379,7 @@ fn trade_rick_zombie_light() {
     assert!(rc.0.is_success(), "!setprice: {}", rc.1);
 
     let alice_conf = Mm2TestConf::light_node(alice_passphrase, &coins, &[&mm_bob.ip.to_string()]);
-    let mut mm_alice = MarketMakerIt::start(alice_conf.conf, alice_conf.rpc_password, alice_conf.local).unwrap();
+    let mut mm_alice = MarketMakerIt::start(alice_conf.conf, alice_conf.rpc_password, None).unwrap();
 
     thread::sleep(Duration::from_secs(1));
 
@@ -440,7 +440,7 @@ fn activate_pirate_light() {
     let coins = json!([pirate_conf()]);
 
     let conf = Mm2TestConf::seednode(ARRR_TEST_ACTIVATION_SEED, &coins);
-    let mm = MarketMakerIt::start(conf.conf, conf.rpc_password, conf.local).unwrap();
+    let mm = MarketMakerIt::start(conf.conf, conf.rpc_password, None).unwrap();
 
     let activation_result = block_on(enable_z_coin_light(
         &mm,

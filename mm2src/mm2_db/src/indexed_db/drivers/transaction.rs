@@ -1,4 +1,5 @@
 use super::{construct_event_closure, IdbObjectStoreImpl, PASS_THROUGH};
+use common::executor::spawn_local;
 use common::wasm::stringify_js_error;
 use derive_more::Display;
 use futures::channel::mpsc;
@@ -103,7 +104,7 @@ impl IdbTransactionImpl {
             drop(onabort_closure);
         };
 
-        wasm_bindgen_futures::spawn_local(fut);
+        unsafe { spawn_local(fut) };
         IdbTransactionImpl {
             transaction,
             tables,

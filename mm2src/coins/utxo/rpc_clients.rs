@@ -2753,7 +2753,6 @@ fn electrum_connect(
     let connect_loop = select_func(connect_loop.boxed(), shutdown_rx.compat());
 
     // We can use `spawn` safely since this future will be aborted once `ElectrumConnection` is dropped.
-    // TODO refactor this with a spawner.
     unsafe {
         common::executor::spawn(connect_loop.map(|_| ()));
     }
