@@ -1719,6 +1719,56 @@ pub fn check_all_utxo_inputs_signed_by_pub(tx: &UtxoTx, expected_pub: &[u8]) -> 
     Ok(true)
 }
 
+pub fn watcher_validate_taker_fee<T: UtxoCommonOps>(
+    coin: T,
+    taker_fee_hash: Vec<u8>,
+    verified_pub: Vec<u8>,
+) -> ValidatePaymentFut {
+    let fut = async move {
+        let mut attempts = 0;
+        let taker_fee_hash = H256Json::from(taker_fee_hash.as_slice());
+        loop {
+            let taker_fee_tx = match coin
+                .as_ref()
+                .rpc_client
+                .get_transaction_bytes(&taker_fee_hash)
+                .compat()
+                .await
+            {
+                Ok(t) => t,
+                Err(e) => {
+                    if attempts > 2 {
+                        return MmError::err(ValidatePaymentError::TxFromRPCError(format!(
+                            "Got error {:?} after 3 attempts of getting tx {:?} from RPC",
+                            e, taker_fee_hash
+                        )));
+                    };
+                    attempts += 1;
+                    error!("Error getting tx {:?} from rpc: {:?}", taker_fee_hash, e);
+                    Timer::sleep(10.).await;
+                    continue;
+                },
+            };
+
+            match check_all_inputs_signed_by_pub(&*taker_fee_tx, &verified_pub) {
+                Ok(is_valid) => {
+                    if !is_valid {
+                        return MmError::err(ValidatePaymentError::InvalidPubkey(
+                            "Taker fee does not belong to the verified public key".to_string(),
+                        ));
+                    }
+                },
+                Err(e) => {
+                    return MmError::err(ValidatePaymentError::InvalidPubkey(e));
+                },
+            };
+
+            return Ok(());
+        }
+    };
+    Box::new(fut.boxed().compat())
+}
+
 pub fn validate_fee<T: UtxoCommonOps>(
     coin: T,
     tx: UtxoTx,

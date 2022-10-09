@@ -374,7 +374,7 @@ struct SwapsContext {
     /// Very unpleasant consequences
     shutdown_rx: async_std_sync::Receiver<()>,
     swap_msgs: Mutex<HashMap<Uuid, SwapMsgStore>>,
-    taker_swap_watchers: PaMutex<DuplicateCache<Uuid>>,
+    taker_swap_watchers: PaMutex<DuplicateCache<Vec<u8>>>,
     #[cfg(target_arch = "wasm32")]
     swap_db: ConstructibleDb<SwapDb>,
 }

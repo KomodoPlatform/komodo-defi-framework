@@ -613,6 +613,8 @@ pub trait SwapOps {
         uuid: &[u8],
     ) -> Box<dyn Future<Item = (), Error = String> + Send>;
 
+    fn watcher_validate_taker_fee(&self, _taker_fee_hash: Vec<u8>, _verified_pub: Vec<u8>) -> ValidatePaymentFut;
+
     fn validate_maker_payment(&self, input: ValidatePaymentInput) -> ValidatePaymentFut;
 
     fn validate_taker_payment(&self, input: ValidatePaymentInput) -> ValidatePaymentFut;

@@ -1226,6 +1226,7 @@ impl TakerSwap {
             swap_started_at: self.r().data.started_at,
             lock_duration: self.r().data.lock_duration,
             taker_coin: self.r().data.taker_coin.clone(),
+            taker_fee_hash: self.r().taker_fee.as_ref().unwrap().tx_hash.0.clone(),
             taker_payment_hex,
             taker_payment_lock: self.r().data.taker_payment_lock,
             taker_pub: self.r().data.taker_coin_htlc_pubkey.unwrap().into(),
@@ -1331,12 +1332,14 @@ impl TakerSwap {
                                 taker_refunds_payment.tx_hex(),
                             );
                             let swpmsg_watcher = SwapWatcherMsg::TakerSwapWatcherMsg(watcher_data);
+
                             broadcast_swap_message(
                                 &self.ctx,
                                 watcher_topic(&self.r().data.taker_coin),
                                 swpmsg_watcher,
                                 &self.p2p_privkey,
                             );
+
                             swap_events.push(TakerSwapEvent::WatcherMessageSent(
                                 Some(taker_spends_maker_payment.tx_hex()),
                                 Some(taker_refunds_payment.tx_hex()),

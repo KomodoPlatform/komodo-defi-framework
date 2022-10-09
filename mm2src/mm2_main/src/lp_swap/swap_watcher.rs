@@ -20,11 +20,11 @@ pub const TAKER_SWAP_ENTRY_TIMEOUT: u64 = 3600; // How long?
 const WAIT_FOR_TAKER_REFUND: u64 = 1200; // How long?
 
 struct WatcherContext {
-    uuid: Uuid,
     ctx: MmArc,
     taker_coin: MmCoinEnum,
     maker_coin: MmCoinEnum,
     data: TakerSwapWatcherData,
+    verified_pub: Vec<u8>,
 }
 
 #[derive(Clone, Debug, Deserialize, Serialize)]
@@ -41,6 +41,7 @@ pub struct TakerSwapWatcherData {
     pub swap_started_at: u64,
     pub lock_duration: u64,
     pub taker_coin: String,
+    pub taker_fee_hash: Vec<u8>,
     pub taker_payment_hex: Vec<u8>,
     pub taker_payment_lock: u64,
     pub taker_pub: Vec<u8>,
@@ -52,7 +53,8 @@ pub struct TakerSwapWatcherData {
     pub maker_pub: Vec<u8>,
 }
 
-struct Started {}
+struct ValidatePublicKeys {}
+struct ValidateTakerFee {}
 struct ValidateTakerPayment {}
 struct WaitForTakerPaymentSpend {}
 
@@ -76,6 +78,8 @@ enum StopReason {
     TakerPaymentAlreadyRefunded,
     MakerPaymentSpent,
     TakerPaymentRefunded,
+    ValidatePublicKeysFailed(WatcherError),
+    ValidateTakerFeeFailed(WatcherError),
     TakerPaymentWaitConfirmFailed(WatcherError),
     TakerPaymentSearchForSwapFailed(WatcherError),
     TakerPaymentValidateFailed(WatcherError),
@@ -105,21 +109,64 @@ impl From<&str> for WatcherError {
     fn from(e: &str) -> Self { WatcherError { error: e.to_owned() } }
 }
 
-impl TransitionFrom<Started> for ValidateTakerPayment {}
+impl TransitionFrom<ValidatePublicKeys> for ValidateTakerFee {}
+impl TransitionFrom<ValidateTakerFee> for ValidateTakerPayment {}
 impl TransitionFrom<ValidateTakerPayment> for WaitForTakerPaymentSpend {}
 impl TransitionFrom<WaitForTakerPaymentSpend> for SpendMakerPayment {}
 impl TransitionFrom<WaitForTakerPaymentSpend> for RefundTakerPayment {}
+impl TransitionFrom<ValidatePublicKeys> for Stopped {}
+impl TransitionFrom<ValidateTakerFee> for Stopped {}
 impl TransitionFrom<ValidateTakerPayment> for Stopped {}
 impl TransitionFrom<WaitForTakerPaymentSpend> for Stopped {}
 impl TransitionFrom<RefundTakerPayment> for Stopped {}
 impl TransitionFrom<SpendMakerPayment> for Stopped {}
 
 #[async_trait]
-impl State for Started {
+impl State for ValidatePublicKeys {
     type Ctx = WatcherContext;
     type Result = ();
 
-    async fn on_changed(self: Box<Self>, _: &mut WatcherContext) -> StateResult<WatcherContext, ()> {
+    async fn on_changed(self: Box<Self>, watcher_ctx: &mut WatcherContext) -> StateResult<WatcherContext, ()> {
+        let redeem_pub_valid = match watcher_ctx
+            .taker_coin
+            .check_all_inputs_signed_by_pub(&watcher_ctx.data.taker_payment_hex, &watcher_ctx.verified_pub)
+        {
+            Ok(is_valid) => is_valid,
+            Err(e) => {
+                return Self::change_state(Stopped::from_reason(StopReason::ValidatePublicKeysFailed(
+                    ERRL!("{}", e).into(),
+                )))
+            },
+        };
+
+        if !redeem_pub_valid || watcher_ctx.verified_pub != watcher_ctx.data.taker_pub {
+            return Self::change_state(Stopped::from_reason(StopReason::ValidatePublicKeysFailed(
+                ERRL!("Public key does not belong to taker payment").into(),
+            )));
+        }
+
+        Self::change_state(ValidateTakerFee {})
+    }
+}
+
+#[async_trait]
+impl State for ValidateTakerFee {
+    type Ctx = WatcherContext;
+    type Result = ();
+
+    async fn on_changed(self: Box<Self>, watcher_ctx: &mut WatcherContext) -> StateResult<WatcherContext, ()> {
+        let validated_f = watcher_ctx
+            .taker_coin
+            .watcher_validate_taker_fee(
+                watcher_ctx.data.taker_fee_hash.clone(),
+                watcher_ctx.verified_pub.clone(),
+            )
+            .compat();
+        if let Err(e) = validated_f.await {
+            Self::change_state(Stopped::from_reason(StopReason::ValidateTakerFeeFailed(
+                ERRL!("!watcher.watcher_validate_taker_fee: {}", e).into(),
+            )));
+        }
         Self::change_state(ValidateTakerPayment {})
     }
 }
@@ -262,6 +309,48 @@ impl State for WaitForTakerPaymentSpend {
 }
 
 #[async_trait]
+impl State for SpendMakerPayment {
+    type Ctx = WatcherContext;
+    type Result = ();
+
+    async fn on_changed(self: Box<Self>, watcher_ctx: &mut WatcherContext) -> StateResult<WatcherContext, ()> {
+        let spend_fut = watcher_ctx.maker_coin.send_taker_spends_maker_payment_preimage(
+            &watcher_ctx.data.taker_spends_maker_payment_preimage,
+            &self.secret.0,
+        );
+
+        let transaction = match spend_fut.compat().await {
+            Ok(t) => t,
+            Err(err) => {
+                if let Some(tx) = err.get_tx() {
+                    broadcast_p2p_tx_msg(
+                        &watcher_ctx.ctx,
+                        tx_helper_topic(watcher_ctx.maker_coin.ticker()),
+                        &tx,
+                        &None,
+                    );
+                };
+                return Self::change_state(Stopped::from_reason(StopReason::MakerPaymentSpendFailed(
+                    ERRL!("{}", err.get_plain_text_format()).into(),
+                )));
+            },
+        };
+
+        broadcast_p2p_tx_msg(
+            &watcher_ctx.ctx,
+            tx_helper_topic(watcher_ctx.maker_coin.ticker()),
+            &transaction,
+            &None,
+        );
+
+        let tx_hash = transaction.tx_hash();
+        info!("Maker payment spend tx {:02x}", tx_hash);
+
+        Self::change_state(Stopped::from_reason(StopReason::MakerPaymentSpent))
+    }
+}
+
+#[async_trait]
 impl State for RefundTakerPayment {
     type Ctx = WatcherContext;
     type Result = ();
@@ -332,54 +421,15 @@ impl State for RefundTakerPayment {
 }
 
 #[async_trait]
-impl State for SpendMakerPayment {
-    type Ctx = WatcherContext;
-    type Result = ();
-
-    async fn on_changed(self: Box<Self>, watcher_ctx: &mut WatcherContext) -> StateResult<WatcherContext, ()> {
-        let spend_fut = watcher_ctx.maker_coin.send_taker_spends_maker_payment_preimage(
-            &watcher_ctx.data.taker_spends_maker_payment_preimage,
-            &self.secret.0,
-        );
-
-        let transaction = match spend_fut.compat().await {
-            Ok(t) => t,
-            Err(err) => {
-                if let Some(tx) = err.get_tx() {
-                    broadcast_p2p_tx_msg(
-                        &watcher_ctx.ctx,
-                        tx_helper_topic(watcher_ctx.maker_coin.ticker()),
-                        &tx,
-                        &None,
-                    );
-                };
-                return Self::change_state(Stopped::from_reason(StopReason::MakerPaymentSpendFailed(
-                    ERRL!("{}", err.get_plain_text_format()).into(),
-                )));
-            },
-        };
-
-        broadcast_p2p_tx_msg(
-            &watcher_ctx.ctx,
-            tx_helper_topic(watcher_ctx.maker_coin.ticker()),
-            &transaction,
-            &None,
-        );
-
-        let tx_hash = transaction.tx_hash();
-        info!("Maker payment spend tx {:02x}", tx_hash);
-
-        Self::change_state(Stopped::from_reason(StopReason::MakerPaymentSpent))
-    }
-}
-
-#[async_trait]
 impl LastState for Stopped {
     type Ctx = WatcherContext;
     type Result = ();
     async fn on_changed(self: Box<Self>, watcher_ctx: &mut Self::Ctx) -> Self::Result {
         let swap_ctx = SwapsContext::from_ctx(&watcher_ctx.ctx).unwrap();
-        swap_ctx.taker_swap_watchers.lock().remove(watcher_ctx.uuid);
+        swap_ctx
+            .taker_swap_watchers
+            .lock()
+            .remove(watcher_ctx.data.taker_fee_hash.clone());
     }
 }
 
@@ -403,16 +453,16 @@ pub async fn process_watcher_msg(ctx: MmArc, msg: &[u8]) {
     }
 }
 
-async fn spawn_taker_swap_watcher(ctx: MmArc, watcher_data: TakerSwapWatcherData, verified_pubkey: Vec<u8>) {
+async fn spawn_taker_swap_watcher(ctx: MmArc, watcher_data: TakerSwapWatcherData, verified_pub: Vec<u8>) {
     let swap_ctx = SwapsContext::from_ctx(&ctx).unwrap();
     if swap_ctx.swap_msgs.lock().unwrap().contains_key(&watcher_data.uuid) {
         return;
     }
     let mut taker_swap_watchers = swap_ctx.taker_swap_watchers.lock();
-    if taker_swap_watchers.contains(&watcher_data.uuid) {
+    if taker_swap_watchers.contains(&watcher_data.taker_fee_hash) {
         return;
     }
-    taker_swap_watchers.insert(watcher_data.uuid);
+    taker_swap_watchers.insert(watcher_data.taker_fee_hash.clone());
     drop(taker_swap_watchers);
 
     spawn(async move {
@@ -421,43 +471,41 @@ async fn spawn_taker_swap_watcher(ctx: MmArc, watcher_data: TakerSwapWatcherData
             Ok(None) => {
                 log::error!("Coin {} is not found/enabled", watcher_data.taker_coin);
                 let swap_ctx = SwapsContext::from_ctx(&ctx).unwrap();
-                swap_ctx.taker_swap_watchers.lock().remove(watcher_data.uuid);
+                swap_ctx
+                    .taker_swap_watchers
+                    .lock()
+                    .remove(watcher_data.taker_fee_hash.clone());
                 return;
             },
             Err(e) => {
                 log::error!("!lp_coinfind({}): {}", watcher_data.taker_coin, e);
                 let swap_ctx = SwapsContext::from_ctx(&ctx).unwrap();
-                swap_ctx.taker_swap_watchers.lock().remove(watcher_data.uuid);
+                swap_ctx
+                    .taker_swap_watchers
+                    .lock()
+                    .remove(watcher_data.taker_fee_hash.clone());
                 return;
             },
         };
-
-        let redeem_pub_valid =
-            match taker_coin.check_all_inputs_signed_by_pub(&watcher_data.taker_payment_hex, &verified_pubkey) {
-                Ok(is_valid) => is_valid,
-                Err(e) => {
-                    log::error!("{}", e);
-                    return;
-                },
-            };
-
-        if !redeem_pub_valid || verified_pubkey != watcher_data.taker_pub {
-            log::error!("Invalid public key in watcher data");
-            return;
-        }
 
         let maker_coin = match lp_coinfind(&ctx, &watcher_data.maker_coin).await {
             Ok(Some(c)) => c,
             Ok(None) => {
                 log::error!("Coin {} is not found/enabled", watcher_data.maker_coin);
                 let swap_ctx = SwapsContext::from_ctx(&ctx).unwrap();
-                swap_ctx.taker_swap_watchers.lock().remove(watcher_data.uuid);
+                swap_ctx
+                    .taker_swap_watchers
+                    .lock()
+                    .remove(watcher_data.taker_fee_hash.clone());
                 return;
             },
             Err(e) => {
                 log::error!("!lp_coinfind({}): {}", watcher_data.maker_coin, e);
                 let swap_ctx = SwapsContext::from_ctx(&ctx).unwrap();
-                swap_ctx.taker_swap_watchers.lock().remove(watcher_data.uuid);
+                swap_ctx
+                    .taker_swap_watchers
+                    .lock()
+                    .remove(watcher_data.taker_fee_hash.clone());
                 return;
             },
         };
@@ -473,14 +521,14 @@ async fn spawn_taker_swap_watcher(ctx: MmArc, watcher_data: TakerSwapWatcherData
         );
 
         let watcher_ctx = WatcherContext {
-            uuid: watcher_data.uuid,
             ctx: ctx.clone(),
             maker_coin,
             taker_coin,
             data: watcher_data,
+            verified_pub,
         };
         let state_machine: StateMachine<_, ()> = StateMachine::from_ctx(watcher_ctx);
-        state_machine.run(Started {}).await;
+        state_machine.run(ValidatePublicKeys {}).await;
     });
 }
 

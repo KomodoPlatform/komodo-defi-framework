@@ -986,6 +986,10 @@ impl SwapOps for EthCoin {
         Box::new(fut.boxed().compat())
     }
 
+    fn watcher_validate_taker_fee(&self, _taker_fee_hash: Vec<u8>, _verified_pub: Vec<u8>) -> ValidatePaymentFut {
+        unimplemented!();
+    }
+
     fn validate_maker_payment(&self, input: ValidatePaymentInput) -> ValidatePaymentFut {
         let swap_contract_address = try_f!(input
             .swap_contract_address

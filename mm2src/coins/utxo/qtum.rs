@@ -696,6 +696,10 @@ impl SwapOps for QtumCoin {
         )
     }
 
+    fn watcher_validate_taker_fee(&self, taker_fee_hash: Vec<u8>, verified_pub: Vec<u8>) -> ValidatePaymentFut {
+        utxo_common::watcher_validate_taker_fee(self.clone(), taker_fee_hash, verified_pub)
+    }
+
     fn validate_maker_payment(&self, input: ValidatePaymentInput) -> ValidatePaymentFut {
         utxo_common::validate_maker_payment(self, input)
     }
