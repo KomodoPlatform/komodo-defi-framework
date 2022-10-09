@@ -50,6 +50,7 @@ async fn test_send() {
     }));
     let tx = coin
         .send_maker_payment(
+            0,
             1000,
             &DEX_FEE_ADDR_RAW_PUBKEY,
             &[1; 20],
