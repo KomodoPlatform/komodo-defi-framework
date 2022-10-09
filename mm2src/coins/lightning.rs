@@ -281,6 +281,7 @@ impl SwapOps for LightningCoin {
 
     fn send_maker_payment(
         &self,
+        _time_lock_duration: u64,
         _time_lock: u32,
         _taker_pub: &[u8],
         _secret_hash: &[u8],
@@ -293,6 +294,7 @@ impl SwapOps for LightningCoin {
 
     fn send_taker_payment(
         &self,
+        _time_lock_duration: u64,
         _time_lock: u32,
         _maker_pub: &[u8],
         _secret_hash: &[u8],

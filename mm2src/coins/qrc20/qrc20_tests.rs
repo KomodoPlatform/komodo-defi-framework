@@ -157,6 +157,7 @@ fn test_validate_maker_payment() {
 
     let mut input = ValidatePaymentInput {
         payment_tx,
+        time_lock_duration: 0,
         time_lock: 1601367157,
         other_pub: correct_maker_pub.clone(),
         secret_hash: vec![1; 20],
@@ -950,6 +951,7 @@ fn test_validate_maker_payment_malicious() {
 
     let input = ValidatePaymentInput {
         payment_tx,
+        time_lock_duration: 0,
         time_lock: 1604386811,
         secret_hash,
         amount,

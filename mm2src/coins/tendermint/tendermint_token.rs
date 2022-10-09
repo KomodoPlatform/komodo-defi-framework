@@ -82,7 +82,8 @@ impl SwapOps for TendermintToken {
 
     fn send_maker_payment(
         &self,
-        time_lock: u32,
+        time_lock_duration: u64,
+        _time_lock: u32,
         taker_pub: &[u8],
         secret_hash: &[u8],
         amount: BigDecimal,
@@ -90,7 +91,7 @@ impl SwapOps for TendermintToken {
         _swap_unique_data: &[u8],
     ) -> TransactionFut {
         self.platform_coin.send_htlc_for_denom(
-            time_lock,
+            time_lock_duration,
             taker_pub,
             secret_hash,
             amount,
@@ -101,7 +102,8 @@ impl SwapOps for TendermintToken {
 
     fn send_taker_payment(
         &self,
-        time_lock: u32,
+        time_lock_duration: u64,
+        _time_lock: u32,
         maker_pub: &[u8],
         secret_hash: &[u8],
         amount: BigDecimal,
@@ -109,7 +111,7 @@ impl SwapOps for TendermintToken {
         swap_unique_data: &[u8],
     ) -> TransactionFut {
         self.platform_coin.send_htlc_for_denom(
-            time_lock,
+            time_lock_duration,
             maker_pub,
             secret_hash,
             amount,

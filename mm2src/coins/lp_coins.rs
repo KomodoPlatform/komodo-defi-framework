@@ -456,6 +456,7 @@ pub struct WatcherValidatePaymentInput {
 #[derive(Clone, Debug)]
 pub struct ValidatePaymentInput {
     pub payment_tx: Vec<u8>,
+    pub time_lock_duration: u64,
     pub time_lock: u32,
     pub other_pub: Vec<u8>,
     pub secret_hash: Vec<u8>,
@@ -481,8 +482,10 @@ pub struct SearchForSwapTxSpendInput<'a> {
 pub trait SwapOps {
     fn send_taker_fee(&self, fee_addr: &[u8], amount: BigDecimal, uuid: &[u8]) -> TransactionFut;
 
+    #[allow(clippy::too_many_arguments)]
     fn send_maker_payment(
         &self,
+        time_lock_duration: u64,
         time_lock: u32,
         taker_pub: &[u8],
         secret_hash: &[u8],
@@ -491,8 +494,10 @@ pub trait SwapOps {
         swap_unique_data: &[u8],
     ) -> TransactionFut;
 
+    #[allow(clippy::too_many_arguments)]
     fn send_taker_payment(
         &self,
+        time_lock_duration: u64,
         time_lock: u32,
         maker_pub: &[u8],
         secret_hash: &[u8],

@@ -146,12 +146,29 @@ impl PlatformWithTokensActivationOps for TendermintCoin {
     async fn enable_platform_coin(
         _ctx: MmArc,
         ticker: String,
-        _coin_conf: Json,
+        coin_conf: Json,
         activation_request: Self::ActivationRequest,
         protocol_conf: Self::PlatformProtocolInfo,
         priv_key: &[u8],
     ) -> Result<Self, MmError<Self::ActivationError>> {
-        TendermintCoin::init(ticker, protocol_conf, activation_request.rpc_urls, priv_key).await
+        let avg_block_time = coin_conf["avg_block_time"].as_i64().unwrap_or(0);
+
+        // Should be at least bigger than 0 and smaller than 255(u8::MAX)
+        if 1 > avg_block_time || avg_block_time > std::u8::MAX as i64 {
+            return MmError::err(TendermintInitError {
+                ticker,
+                kind: TendermintInitErrorKind::AvgBlockTimeMissingOrInvalid,
+            });
+        }
+
+        TendermintCoin::init(
+            ticker,
+            avg_block_time as u8,
+            protocol_conf,
+            activation_request.rpc_urls,
+            priv_key,
+        )
+        .await
     }
 
     fn token_initializers(

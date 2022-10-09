@@ -397,7 +397,7 @@ mod docker_tests {
 
         let time_lock = (now_ms() / 1000) as u32 - 3600;
         let tx = coin
-            .send_taker_payment(time_lock, my_public_key, &[0; 20], 1u64.into(), &None, &[])
+            .send_taker_payment(0, time_lock, my_public_key, &[0; 20], 1u64.into(), &None, &[])
             .wait()
             .unwrap();
 
@@ -455,7 +455,7 @@ mod docker_tests {
 
         let time_lock = (now_ms() / 1000) as u32 - 3600;
         let tx = coin
-            .send_maker_payment(time_lock, my_public_key, &[0; 20], 1u64.into(), &None, &[])
+            .send_maker_payment(0, time_lock, my_public_key, &[0; 20], 1u64.into(), &None, &[])
             .wait()
             .unwrap();
 
@@ -497,7 +497,7 @@ mod docker_tests {
         let secret_hash = dhash160(&secret);
         let time_lock = (now_ms() / 1000) as u32 - 3600;
         let tx = coin
-            .send_taker_payment(time_lock, my_pubkey, secret_hash.as_slice(), 1u64.into(), &None, &[])
+            .send_taker_payment(0, time_lock, my_pubkey, secret_hash.as_slice(), 1u64.into(), &None, &[])
             .wait()
             .unwrap();
 
@@ -547,7 +547,7 @@ mod docker_tests {
         let time_lock = (now_ms() / 1000) as u32 - 3600;
         let secret_hash = dhash160(&secret);
         let tx = coin
-            .send_maker_payment(time_lock, my_pubkey, secret_hash.as_slice(), 1u64.into(), &None, &[])
+            .send_maker_payment(0, time_lock, my_pubkey, secret_hash.as_slice(), 1u64.into(), &None, &[])
             .wait()
             .unwrap();
 
@@ -601,6 +601,7 @@ mod docker_tests {
         for i in 0..100 {
             let tx = coin
                 .send_maker_payment(
+                    0,
                     time_lock + i,
                     my_pubkey,
                     &*dhash160(&secret),

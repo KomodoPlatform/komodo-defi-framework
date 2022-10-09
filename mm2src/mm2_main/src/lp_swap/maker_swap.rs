@@ -703,6 +703,7 @@ impl MakerSwap {
                 Some(tx) => tx,
                 None => {
                     let payment_fut = self.maker_coin.send_maker_payment(
+                        self.r().data.lock_duration,
                         self.r().data.maker_payment_lock as u32,
                         &*self.r().other_maker_coin_htlc_pub,
                         secret_hash.as_slice(),
@@ -845,6 +846,7 @@ impl MakerSwap {
         let validate_input = ValidatePaymentInput {
             payment_tx: self.r().taker_payment.clone().unwrap().tx_hex.0,
             time_lock: self.taker_payment_lock.load(Ordering::Relaxed) as u32,
+            time_lock_duration: self.r().data.lock_duration,
             other_pub: self.r().other_taker_coin_htlc_pub.to_vec(),
             unique_swap_data: self.unique_swap_data(),
             secret_hash: self.secret_hash().to_vec(),

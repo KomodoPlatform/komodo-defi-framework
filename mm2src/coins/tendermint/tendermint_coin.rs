@@ -61,7 +61,6 @@ use uuid::Uuid;
 /// 0.25 is good average gas price on atom and iris
 const DEFAULT_GAS_PRICE: f64 = 0.25;
 pub(super) const TIMEOUT_HEIGHT_DELTA: u64 = 100;
-const TIME_LOCK_DELTA: i64 = 100;
 pub const GAS_LIMIT_DEFAULT: u64 = 100_000;
 pub const TX_DEFAULT_MEMO: &str = "";
 
@@ -98,6 +97,7 @@ pub struct TendermintCoinImpl {
     /// better one in terms of performance & resource consumption on runtime.
     rpc_clients: Vec<HttpClient>,
     /// My address
+    avg_block_time: u8,
     pub account_id: AccountId,
     pub(super) account_prefix: String,
     priv_key: Vec<u8>,
@@ -133,6 +133,8 @@ pub enum TendermintInitErrorKind {
     InvalidChainId(String),
     InvalidDenom(String),
     RpcError(String),
+    #[display(fmt = "avg_block_time missing or invalid. Please provide it with min 1 or max 255 value.")]
+    AvgBlockTimeMissingOrInvalid,
 }
 
 #[derive(Display, Debug)]
@@ -244,6 +246,7 @@ pub struct AllBalancesResult {
 impl TendermintCoin {
     pub async fn init(
         ticker: String,
+        avg_block_time: u8,
         protocol_info: TendermintProtocolInfo,
         rpc_urls: Vec<String>,
         priv_key: &[u8],
@@ -293,6 +296,7 @@ impl TendermintCoin {
             denom,
             chain_id,
             gas_price: protocol_info.gas_price,
+            avg_block_time,
             sequence_lock: AsyncMutex::new(()),
             tokens_info: Mutex::new(HashMap::new()),
         })))
@@ -328,6 +332,7 @@ impl TendermintCoin {
     #[inline(always)]
     fn gas_price(&self) -> f64 { self.gas_price.unwrap_or(DEFAULT_GAS_PRICE) }
 
+    #[allow(unused)]
     async fn get_latest_block(&self) -> MmResult<GetLatestBlockResponse, TendermintCoinRpcError> {
         let path = AbciPath::from_str("/cosmos.base.tendermint.v1beta1.Service/GetLatestBlock").expect("valid path");
 
@@ -339,6 +344,7 @@ impl TendermintCoin {
         Ok(GetLatestBlockResponse::decode(response.response.value.as_slice())?)
     }
 
+    #[allow(unused)]
     async fn get_block_by_height(&self, height: i64) -> MmResult<GetBlockByHeightResponse, TendermintCoinRpcError> {
         let path = AbciPath::from_str("/cosmos.base.tendermint.v1beta1.Service/GetBlockByHeight").expect("valid path");
 
@@ -348,34 +354,6 @@ impl TendermintCoin {
         let response = self.rpc_client().await?.perform(request).await?;
 
         Ok(GetBlockByHeightResponse::decode(response.response.value.as_slice())?)
-    }
-
-    async fn calculate_avg_block_time_as_seconds(&self, block_count: i64) -> MmResult<i64, TendermintCoinRpcError> {
-        let latest_block = self.get_latest_block().await?;
-        let latest_block_header = latest_block
-            .block
-            .expect("fetching block failed")
-            .header
-            .expect("fetching block header failed");
-
-        let latest_block_timestamp = latest_block_header
-            .time
-            .expect("fetching block timestamp failed")
-            .seconds;
-
-        let previous_block = self
-            .get_block_by_height(latest_block_header.height - block_count)
-            .await?;
-        let previous_block_timestamp = previous_block
-            .block
-            .expect("fetching block failed")
-            .header
-            .expect("fetching block header failed")
-            .time
-            .expect("fetching block timestamp failed")
-            .seconds;
-
-        Ok((latest_block_timestamp - previous_block_timestamp) / block_count)
     }
 
     // We must simulate the tx on rpc nodes in order to calculate network fee.
@@ -580,9 +558,21 @@ impl TendermintCoin {
             .insert(ticker, ActivatedTokenInfo { decimals, denom });
     }
 
+    fn estimate_blocks_from_duration(&self, duration: u64) -> i64 {
+        let estimated_time_lock = (duration / self.avg_block_time as u64) as i64;
+
+        if estimated_time_lock > MAX_TIME_LOCK {
+            MAX_TIME_LOCK
+        } else if estimated_time_lock < MIN_TIME_LOCK {
+            MIN_TIME_LOCK
+        } else {
+            estimated_time_lock
+        }
+    }
+
     pub(super) fn send_htlc_for_denom(
         &self,
-        time_lock: u32,
+        time_lock_duration: u64,
         other_pub: &[u8],
         secret_hash: &[u8],
         amount: BigDecimal,
@@ -595,20 +585,10 @@ impl TendermintCoin {
         let amount_as_u64 = try_tx_fus!(sat_from_big_decimal(&amount, decimals));
         let amount = cosmrs::Decimal::from(amount_as_u64);
 
-        let coin = self.clone();
         let secret_hash = secret_hash.to_vec();
+        let coin = self.clone();
         let fut = async move {
-            let time_lock_seconds_to_wait = time_lock as i64 - get_utc_timestamp();
-            let estimated_time_lock =
-                time_lock_seconds_to_wait / try_tx_s!(coin.calculate_avg_block_time_as_seconds(TIME_LOCK_DELTA).await);
-
-            let time_lock = if estimated_time_lock > MAX_TIME_LOCK {
-                MAX_TIME_LOCK
-            } else if estimated_time_lock < MIN_TIME_LOCK {
-                MIN_TIME_LOCK
-            } else {
-                estimated_time_lock
-            };
+            let time_lock = coin.estimate_blocks_from_duration(time_lock_duration);
 
             let create_htlc_tx = try_tx_s!(coin.gen_create_htlc_tx(denom, &to, amount, &secret_hash, time_lock as u64));
 
@@ -830,6 +810,8 @@ impl TendermintCoin {
                 .collect::<Vec<String>>()
                 .join(",");
 
+            let time_lock = coin.estimate_blocks_from_duration(input.time_lock_duration);
+
             let expected_msg = MsgCreateHtlc {
                 sender: sender.clone(),
                 to: coin.account_id.clone(),
@@ -838,7 +820,7 @@ impl TendermintCoin {
                 amount,
                 hash_lock: hex::encode(&input.secret_hash),
                 timestamp: 0,
-                time_lock: 4000,
+                time_lock: time_lock as u64,
                 transfer: false,
             };
 
@@ -1325,7 +1307,8 @@ impl SwapOps for TendermintCoin {
 
     fn send_maker_payment(
         &self,
-        time_lock: u32,
+        time_lock_duration: u64,
+        _time_lock: u32,
         taker_pub: &[u8],
         secret_hash: &[u8],
         amount: BigDecimal,
@@ -1333,7 +1316,7 @@ impl SwapOps for TendermintCoin {
         _swap_unique_data: &[u8],
     ) -> TransactionFut {
         self.send_htlc_for_denom(
-            time_lock,
+            time_lock_duration,
             taker_pub,
             secret_hash,
             amount,
@@ -1344,7 +1327,8 @@ impl SwapOps for TendermintCoin {
 
     fn send_taker_payment(
         &self,
-        time_lock: u32,
+        time_lock_duration: u64,
+        _time_lock: u32,
         maker_pub: &[u8],
         secret_hash: &[u8],
         amount: BigDecimal,
@@ -1352,7 +1336,7 @@ impl SwapOps for TendermintCoin {
         _swap_unique_data: &[u8],
     ) -> TransactionFut {
         self.send_htlc_for_denom(
-            time_lock,
+            time_lock_duration,
             maker_pub,
             secret_hash,
             amount,
@@ -1693,6 +1677,7 @@ pub mod tendermint_coin_tests {
 
         let coin = common::block_on(TendermintCoin::init(
             "USDC-IBC".to_string(),
+            5,
             protocol_conf,
             rpc_urls,
             priv_key,
@@ -1800,6 +1785,7 @@ pub mod tendermint_coin_tests {
 
         let coin = block_on(TendermintCoin::init(
             "USDC-IBC".to_string(),
+            5,
             protocol_conf,
             rpc_urls,
             priv_key,
@@ -1850,6 +1836,7 @@ pub mod tendermint_coin_tests {
 
         let coin = block_on(TendermintCoin::init(
             "USDC-IBC".to_string(),
+            5,
             protocol_conf,
             rpc_urls,
             priv_key,
@@ -1907,6 +1894,7 @@ pub mod tendermint_coin_tests {
 
         let coin = block_on(TendermintCoin::init(
             "IRIS-TEST".to_string(),
+            5,
             protocol_conf,
             rpc_urls,
             priv_key,
@@ -2066,6 +2054,7 @@ pub mod tendermint_coin_tests {
 
         let coin = block_on(TendermintCoin::init(
             "IRIS-TEST".to_string(),
+            5,
             protocol_conf,
             rpc_urls,
             priv_key,
@@ -2081,6 +2070,7 @@ pub mod tendermint_coin_tests {
 
         let input = ValidatePaymentInput {
             payment_tx: random_transfer_tx_bytes,
+            time_lock_duration: 0,
             time_lock: 0,
             other_pub: Vec::new(),
             secret_hash: Vec::new(),
@@ -2105,6 +2095,7 @@ pub mod tendermint_coin_tests {
 
         let input = ValidatePaymentInput {
             payment_tx: claimed_htlc_tx_bytes,
+            time_lock_duration: 0,
             time_lock: 1664984893,
             other_pub: hex::decode("025a37975c079a7543603fcab24e2565a4adee3cf9af8934690e103282fa402511").unwrap(),
             secret_hash: hex::decode("441d0237e93677d3458e1e5a2e69f61e3622813521bf048dd56290306acdd134").unwrap(),
@@ -2123,31 +2114,5 @@ pub mod tendermint_coin_tests {
             ValidatePaymentError::UnexpectedPaymentState(_) => (),
             unexpected => panic!("Unexpected error variant {:?}", unexpected),
         };
-    }
-
-    #[test]
-    #[ignore]
-    // cargo test tendermint::tendermint_coin::tendermint_coin_tests::test_avg_block_time -- --exact --ignored
-    fn test_avg_block_time() {
-        let rpc_urls = vec![IRIS_TESTNET_RPC_URL.to_string()];
-
-        let protocol_conf = get_iris_protocol();
-
-        let ctx = mm2_core::mm_ctx::MmCtxBuilder::default()
-            .with_secp256k1_key_pair(crypto::privkey::key_pair_from_seed(IRIS_TESTNET_HTLC_PAIR1_SEED).unwrap())
-            .into_mm_arc();
-
-        let priv_key = &*ctx.secp256k1_key_pair().private().secret;
-
-        let coin = common::block_on(TendermintCoin::init(
-            "IRIS-TEST".to_string(),
-            protocol_conf,
-            rpc_urls,
-            priv_key,
-        ))
-        .unwrap();
-        let avg_block_time = block_on(coin.calculate_avg_block_time_as_seconds(TIME_LOCK_DELTA)).unwrap();
-        println!("Average block time is {}", avg_block_time);
-        todo!();
     }
 }

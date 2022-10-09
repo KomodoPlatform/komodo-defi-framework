@@ -1189,6 +1189,7 @@ impl SwapOps for SlpToken {
 
     fn send_maker_payment(
         &self,
+        _time_lock_duration: u64,
         time_lock: u32,
         taker_pub: &[u8],
         secret_hash: &[u8],
@@ -1214,6 +1215,7 @@ impl SwapOps for SlpToken {
 
     fn send_taker_payment(
         &self,
+        _time_lock_duration: u64,
         time_lock: u32,
         maker_pub: &[u8],
         secret_hash: &[u8],
@@ -1996,6 +1998,7 @@ mod slp_tests {
         let input = ValidatePaymentInput {
             payment_tx,
             other_pub,
+            time_lock_duration: 0,
             time_lock: lock_time,
             secret_hash,
             amount,
@@ -2129,6 +2132,7 @@ mod slp_tests {
         let input = ValidatePaymentInput {
             payment_tx,
             other_pub: other_pub_bytes,
+            time_lock_duration: 0,
             time_lock: lock_time,
             secret_hash,
             amount,

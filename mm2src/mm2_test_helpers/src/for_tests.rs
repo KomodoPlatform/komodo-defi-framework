@@ -297,6 +297,7 @@ pub fn morty_conf() -> Json {
 pub fn atom_testnet_conf() -> Json {
     json!({
         "coin":"ATOM",
+        "avg_block_time": 5,
         "protocol":{
             "type":"TENDERMINT",
             "protocol_data": {
@@ -362,6 +363,7 @@ pub fn tbtc_with_spv_conf() -> Json {
 pub fn iris_testnet_conf() -> Json {
     json!({
         "coin":"IRIS-TEST",
+        "avg_block_time": 5,
         "protocol":{
             "type":"TENDERMINT",
             "protocol_data": {
