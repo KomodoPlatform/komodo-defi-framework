@@ -1200,7 +1200,7 @@ mod docker_tests {
         .unwrap();
         assert!(rc.0.is_success(), "!buy: {}", rc.1);
 
-        block_on(mm_alice.wait_for_log(60., |log| log.contains("Taker payment tx hash"))).unwrap();
+        block_on(mm_alice.wait_for_log(60., |log| log.contains("Watcher message sent..."))).unwrap();
         block_on(mm_alice.stop()).unwrap();
         block_on(mm_watcher.wait_for_log(60., |log| log.contains("Maker payment spend tx"))).unwrap();
         thread::sleep(Duration::from_secs(5));
