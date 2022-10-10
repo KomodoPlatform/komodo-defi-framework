@@ -212,60 +212,6 @@ pub trait MergeUtxoArcOps<T: UtxoCommonOps + GetUtxoListOps>: UtxoCoinBuilderCom
     }
 }
 
-// /// Request block headers in chunks and merge
-// async fn get_block_headers_in_chunks(
-//     client: &ElectrumClient,
-//     from: u64,
-//     to: u64,
-//     max_chunk_size: u64,
-// ) -> Result<(HashMap<u64, BlockHeader>, Vec<BlockHeader>, u64), MmError<UtxoRpcError>> {
-//     // Create and initialize an empty block_registry, block_headers and last_retrieved_height to 1.
-//     let (mut block_registry, mut block_headers, mut last_retrieved_height) = (HashMap::new(), Vec::new(), from);
-
-//     let mut temporary_from = from + 1;
-//     let mut temporary_to = from + max_chunk_size;
-
-//     log!("Total headers to fetch: {}", to);
-
-//     // While (temporary to value) is less or equal to incoming original (to value), we will collect the headers in chunk of max_chunk_size at a single request/loop.
-//     while temporary_to <= to {
-//         log!("Fetching headers from {} to {}", temporary_from, temporary_to);
-//         match client.retrieve_headers(temporary_from, temporary_to).compat().await {
-//             Ok((block_reg, mut block_heads, last_height)) => {
-//                 // Add headers to list
-//                 block_registry.extend(block_reg);
-//                 block_headers.append(&mut block_heads);
-//                 last_retrieved_height = last_height;
-
-//                 temporary_from += max_chunk_size;
-//                 temporary_to += max_chunk_size;
-
-//                 // Sleep for every 1 second on each request to prevent IP limitations on request
-//                 Timer::sleep_ms(1).await;
-//             },
-//             Err(err) => {
-//                 // keep retrying if network error
-//                 if let UtxoRpcError::Transport(JsonRpcError {
-//                     error: JsonRpcErrorType::Transport(_err),
-//                     ..
-//                 }) = err.get_inner()
-//                 {
-//                     log!("Will try fetching block headers again after 10 secs");
-//                     Timer::sleep(10.).await;
-//                     continue;
-//                 };
-
-//                 return Err(err);
-//             },
-//         };
-//     }
-
-//     log!("Total fetched headers {}", block_headers.len());
-
-//     // Finally, we return registry, headers and last_retrieved_height
-//     Ok((block_registry, block_headers, last_retrieved_height))
-// }
-
 async fn block_header_utxo_loop<T: UtxoCommonOps>(
     weak: UtxoWeak,
     constructor: impl Fn(UtxoArc) -> T,
