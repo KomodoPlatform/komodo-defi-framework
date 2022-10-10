@@ -232,6 +232,13 @@ pub trait LightningDB {
     /// Inserts or updates a new payment record in the DB.
     async fn add_or_update_payment_in_db(&self, info: PaymentInfo) -> Result<(), Self::Error>;
 
+    /// Updates a payment's preimage in DB by the payment's hash.
+    async fn update_payment_preimage_in_db(
+        &self,
+        hash: PaymentHash,
+        preimage: PaymentPreimage,
+    ) -> Result<(), Self::Error>;
+
     /// Gets a payment's record from DB by the payment's hash.
     async fn get_payment_from_db(&self, hash: PaymentHash) -> Result<Option<PaymentInfo>, Self::Error>;
 

@@ -501,7 +501,16 @@ impl SwapOps for LightningCoin {
 
         let coin = self.clone();
         let fut = async move {
-            coin.channel_manager.claim_funds(PaymentPreimage(preimage));
+            let payment_preimage = PaymentPreimage(preimage);
+            coin.channel_manager.claim_funds(payment_preimage);
+            coin.db
+                .update_payment_preimage_in_db(payment_hash, payment_preimage)
+                .await
+                .error_log_with_msg(&format!(
+                    "Unable to update payment {} information in DB with preimage: {}!",
+                    hex::encode(payment_hash.0),
+                    hex::encode(preimage)
+                ));
             Ok(TransactionEnum::LightningPayment(payment_hash))
         };
         Box::new(fut.boxed().compat())

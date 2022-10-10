@@ -345,21 +345,16 @@ impl LightningEventHandler {
                 Some(preimage) => *preimage,
                 // This is a swap related payment since we don't have the preimage yet
                 None => {
-                    // Todo: preimage should be saved to db after it's received (after claim_funds and make payment successful)
                     let payment_info = PaymentInfo {
                         payment_hash: *payment_hash,
                         payment_type: PaymentType::InboundPayment,
-                        // Todo: maybe add this to db on create_invoice_for_hash, should complete wait for confirmation logic, etc..
-                        description: "".into(),
+                        description: "Swap Payment".into(),
                         preimage: None,
-                        // Todo: maybe add this to db on create_invoice_for_hash
                         secret: None,
                         amt_msat: Some(received_amount as i64),
                         fee_paid_msat: None,
                         status: HTLCStatus::Received,
-                        // Todo: maybe add this to db on create_invoice_for_hash
                         created_at: (now_ms() / 1000) as i64,
-                        // Todo: maybe add this to db on create_invoice_for_hash
                         last_updated: (now_ms() / 1000) as i64,
                     };
                     let db = self.db.clone();

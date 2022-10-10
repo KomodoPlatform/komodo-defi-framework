@@ -119,6 +119,21 @@ fn upsert_payment_sql(for_coin: &str) -> Result<String, SqlError> {
     Ok(sql)
 }
 
+fn update_payment_preimage_sql(for_coin: &str) -> Result<String, SqlError> {
+    let table_name = payments_history_table(for_coin);
+    validate_table_name(&table_name)?;
+
+    let sql = format!(
+        "UPDATE {} SET
+            preimage = ?1
+        WHERE
+            payment_hash = ?2;",
+        table_name
+    );
+
+    Ok(sql)
+}
+
 fn select_channel_by_rpc_id_sql(for_coin: &str) -> Result<String, SqlError> {
     let table_name = channels_history_table(for_coin);
     validate_table_name(&table_name)?;
@@ -803,6 +818,27 @@ impl LightningDB for SqliteLightningDB {
         .await
     }
 
+    async fn update_payment_preimage_in_db(
+        &self,
+        hash: PaymentHash,
+        preimage: PaymentPreimage,
+    ) -> Result<(), Self::Error> {
+        let for_coin = self.db_ticker.clone();
+        let payment_hash = hex::encode(hash.0);
+        let preimage = hex::encode(preimage.0);
+
+        let sqlite_connection = self.sqlite_connection.clone();
+        async_blocking(move || {
+            let params = [&preimage as &dyn ToSql, &payment_hash as &dyn ToSql];
+            let mut conn = sqlite_connection.lock().unwrap();
+            let sql_transaction = conn.transaction()?;
+            sql_transaction.execute(&update_payment_preimage_sql(&for_coin)?, &params)?;
+            sql_transaction.commit()?;
+            Ok(())
+        })
+        .await
+    }
+
     async fn get_payment_from_db(&self, hash: PaymentHash) -> Result<Option<PaymentInfo>, Self::Error> {
         let params = [hex::encode(hash.0)];
         let sql = select_payment_by_hash_sql(self.db_ticker.as_str())?;
@@ -1173,6 +1209,16 @@ mod tests {
 
         let actual_payment_info = block_on(db.get_payment_from_db(PaymentHash([1; 32]))).unwrap().unwrap();
         assert_eq!(expected_payment_info, actual_payment_info);
+
+        // Test update_payment_preimage_in_db
+        let new_preimage = PaymentPreimage([4; 32]);
+        block_on(db.update_payment_preimage_in_db(PaymentHash([1; 32]), new_preimage)).unwrap();
+        let preimage_after_update = block_on(db.get_payment_from_db(PaymentHash([1; 32])))
+            .unwrap()
+            .unwrap()
+            .preimage
+            .unwrap();
+        assert_eq!(new_preimage, preimage_after_update);
     }
 
     #[test]
