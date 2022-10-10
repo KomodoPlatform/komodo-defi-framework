@@ -1074,7 +1074,8 @@ impl MmCoin for TendermintCoin {
 
     fn get_trade_fee(&self) -> Box<dyn Future<Item = TradeFee, Error = String> + Send> { todo!() }
 
-    /// !! This function includes dummy implementation for P.O.C work
+    // TODO
+    // !! This function includes dummy implementation for P.O.C work
     async fn get_sender_trade_fee(
         &self,
         value: TradePreimageValue,
@@ -1087,7 +1088,8 @@ impl MmCoin for TendermintCoin {
         })
     }
 
-    /// !! This function includes dummy implementation for P.O.C work
+    // TODO
+    // !! This function includes dummy implementation for P.O.C work
     fn get_receiver_trade_fee(&self, stage: FeeApproxStage) -> TradePreimageFut<TradeFee> {
         let coin = self.clone();
         let fut = async move {
@@ -1101,7 +1103,8 @@ impl MmCoin for TendermintCoin {
         Box::new(fut.boxed().compat())
     }
 
-    /// !! This function includes dummy implementation for P.O.C work
+    // TODO
+    // !! This function includes dummy implementation for P.O.C work
     async fn get_fee_to_send_taker_fee(
         &self,
         dex_fee_amount: BigDecimal,
@@ -1114,17 +1117,20 @@ impl MmCoin for TendermintCoin {
         })
     }
 
-    /// !! This function includes dummy implementation for P.O.C work
+    // TODO
+    // !! This function includes dummy implementation for P.O.C work
     fn required_confirmations(&self) -> u64 { 0 }
 
-    /// !! This function includes dummy implementation for P.O.C work
+    // TODO
+    // !! This function includes dummy implementation for P.O.C work
     fn requires_notarization(&self) -> bool { false }
 
     fn set_required_confirmations(&self, confirmations: u64) { todo!() }
 
     fn set_requires_notarization(&self, requires_nota: bool) { todo!() }
 
-    /// !! This function includes dummy implementation for P.O.C work
+    // TODO
+    // !! This function includes dummy implementation for P.O.C work
     fn swap_contract_address(&self) -> Option<BytesJson> { None }
 
     fn mature_confirmations(&self) -> Option<u32> { None }
@@ -1294,7 +1300,8 @@ impl MarketCoinOps for TendermintCoin {
 
     fn min_tx_amount(&self) -> BigDecimal { big_decimal_from_sat(1, self.decimals) }
 
-    /// !! This function includes dummy implementation for P.O.C work
+    // TODO
+    // !! This function includes dummy implementation for P.O.C work
     fn min_trading_vol(&self) -> MmNumber { MmNumber::from("0.00777") }
 }
 
