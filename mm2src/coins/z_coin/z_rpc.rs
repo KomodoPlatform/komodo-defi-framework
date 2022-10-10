@@ -753,6 +753,7 @@ pub(super) struct SaplingSyncGuard<'a> {
     pub(super) respawn_guard: SaplingSyncRespawnGuard,
 }
 
+// TODO need to refactor https://github.com/KomodoPlatform/atomicDEX-API/issues/1480
 async fn send_multi_light_wallet_request<'a, Res, Fut, Fn>(
     clients: &'a mut [CompactTxStreamerClient<Channel>],
     mut req_fn: Fn,
