@@ -58,7 +58,6 @@ fn start_lightning_nodes(enable_0_confs: bool) -> (MarketMakerIt, MarketMakerIt,
               }
             }
           },
-        // Todo: add those in the test itself and pass it to the function
         {"coin":"RICK","asset":"RICK","rpcport":8923,"txversion":4,"overwintered":1,"required_confirmations":0,"protocol":{"type":"UTXO"}},
         {"coin":"MORTY","asset":"MORTY","rpcport":11608,"txversion":4,"overwintered":1,"required_confirmations":0,"protocol":{"type":"UTXO"}}
     ]);
@@ -312,10 +311,8 @@ fn test_open_channel() {
 #[ignore]
 #[cfg(not(target_arch = "wasm32"))]
 // This also tests 0_confs_channels
-// Todo: Return this test to it's old self and do a different test for swaps
-// Todo: improve swap time
-fn test_send_payment_and_swaps() {
-    let (mut mm_node_1, mut mm_node_2, node_1_id, node_2_id) = start_lightning_nodes(true);
+fn test_send_payment() {
+    let (mut mm_node_2, mm_node_1, node_2_id, node_1_id) = start_lightning_nodes(true);
     let node_1_address = format!("{}@{}:9735", node_1_id, mm_node_1.ip.to_string());
 
     let add_trusted_node = block_on(mm_node_1.rpc(&json! ({
@@ -429,7 +426,55 @@ fn test_send_payment_and_swaps() {
     assert_eq!(payment["amount_in_msat"], 1000);
     assert_eq!(payment["payment_type"]["type"], "Inbound Payment");
 
-    // ---------------------------- Enable coins for swaps -------------------------------- //
+    block_on(mm_node_1.stop()).unwrap();
+    block_on(mm_node_2.stop()).unwrap();
+}
+
+#[test]
+// This test is ignored because it requires refilling the tBTC and RICK addresses with test coins periodically.
+#[ignore]
+#[cfg(not(target_arch = "wasm32"))]
+fn test_lightning_taker_swap() {
+    let (mut mm_node_1, mut mm_node_2, node_1_id, node_2_id) = start_lightning_nodes(true);
+    let node_1_address = format!("{}@{}:9735", node_1_id, mm_node_1.ip.to_string());
+
+    let add_trusted_node = block_on(mm_node_1.rpc(&json! ({
+        "userpass": mm_node_1.userpass,
+        "mmrpc": "2.0",
+        "method": "lightning::add_trusted_node",
+        "params": {
+            "coin": "tBTC-TEST-lightning",
+            "node_id": node_2_id
+        },
+    })))
+    .unwrap();
+    assert!(
+        add_trusted_node.0.is_success(),
+        "!lightning::add_trusted_node: {}",
+        add_trusted_node.1
+    );
+
+    let open_channel = block_on(mm_node_2.rpc(&json! ({
+        "userpass": mm_node_2.userpass,
+        "mmrpc": "2.0",
+        "method": "lightning::open_channel",
+        "params": {
+            "coin": "tBTC-TEST-lightning",
+            "node_address": node_1_address,
+            "amount": {
+                "type": "Exact",
+                "value": 0.0002,
+            },
+        },
+    })))
+    .unwrap();
+    assert!(
+        open_channel.0.is_success(),
+        "!lightning::open_channel: {}",
+        open_channel.1
+    );
+
+    block_on(mm_node_2.wait_for_log(60., |log| log.contains("Received message ChannelReady"))).unwrap();
 
     // Enable coins on mm_node_1 side. Print the replies in case we need the "address".
     log!(
