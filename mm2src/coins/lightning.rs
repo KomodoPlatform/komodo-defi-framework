@@ -622,7 +622,7 @@ impl SwapOps for LightningCoin {
         unimplemented!();
     }
 
-    // Todo: This is None for now for the sake of swap P.O.C., this should be implemented probably in next PRs
+    // Todo: This is None for now for the sake of swap P.O.C., this should be implemented probably in next PRs and should be tested across restarts
     fn check_if_my_payment_sent(
         &self,
         _time_lock: u32,

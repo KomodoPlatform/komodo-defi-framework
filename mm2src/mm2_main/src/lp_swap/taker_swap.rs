@@ -1191,7 +1191,6 @@ impl TakerSwap {
                 Ok(None) => (),
                 Err(e) => {
                     return Ok((Some(TakerSwapCommand::Finish), vec![
-                        // Todo: maybe add a different event for this??
                         TakerSwapEvent::MakerPaymentValidateFailed(e.to_string().into()),
                     ]));
                 },
@@ -1306,7 +1305,6 @@ impl TakerSwap {
         }
 
         let unique_data = self.unique_swap_data();
-        // Todo: For lightning do this check if payment is sent/failed/pending??? what to do in each case?, should I test payments/events across restarts???
         let f = self.taker_coin.check_if_my_payment_sent(
             self.r().data.taker_payment_lock as u32,
             self.r().other_taker_coin_htlc_pub.as_slice(),
@@ -1357,8 +1355,9 @@ impl TakerSwap {
         };
 
         let mut swap_events = vec![TakerSwapEvent::TakerPaymentSent(tx_ident)];
-        // Watchers shouldn't be used with lightning payments for now
-        // Todo: refactor this and check if watcher can work in some cases with lightning
+        // Watchers cannot be used for lightning swaps for now
+        // Todo: Check if watchers can work in some cases with lightning and implement it if it's possible, the watcher will not be able to retrieve the preimage since it's retrieved through the lightning network
+        // Todo: The watcher can retrieve the preimage only if he is running a lightning node and is part of the nodes that routed the taker payment which is a very low probability event that shouldn't be considered
         let maybe_maker_hex = self.r().maker_payment.as_ref().unwrap().tx_hex.clone();
         if let Some(maker_hex) = maybe_maker_hex {
             if let Some(taker_hex) = tx_hex {
@@ -1371,10 +1370,9 @@ impl TakerSwap {
                         &self.unique_swap_data()[..],
                     );
 
-                    match preimage_fut.compat().await {
-                        Ok(preimage) => {
-                            // Todo: revise if it's safe to unwrap here
-                            let watcher_data = self.create_watcher_data(taker_hex.0, preimage.tx_hex().unwrap());
+                    match preimage_fut.compat().await.map(|p| p.tx_hex()) {
+                        Ok(Some(preimage)) => {
+                            let watcher_data = self.create_watcher_data(taker_hex.0, preimage.clone());
                             let swpmsg_watcher = SwapWatcherMsg::TakerSwapWatcherMsg(Box::new(watcher_data));
                             broadcast_swap_message(
                                 &self.ctx,
@@ -1382,9 +1380,9 @@ impl TakerSwap {
                                 swpmsg_watcher,
                                 &self.p2p_privkey,
                             );
-                            // Todo: revise if it's safe to unwrap here
-                            swap_events.push(TakerSwapEvent::WatcherMessageSent(Some(preimage.tx_hex().unwrap())))
+                            swap_events.push(TakerSwapEvent::WatcherMessageSent(Some(preimage)))
                         },
+                        Ok(None) => (),
                         Err(e) => error!(
                     "The watcher message could not be sent, error creating the taker spends maker payment preimage: {}",
                     e.get_plain_text_format()
@@ -1399,7 +1397,8 @@ impl TakerSwap {
     async fn wait_for_taker_payment_spend(&self) -> Result<(Option<TakerSwapCommand>, Vec<TakerSwapEvent>), String> {
         let tx_hex = self.r().taker_payment.as_ref().unwrap().tx_hex.clone();
         let mut watcher_broadcast_abort_handle = None;
-        // Todo: refactor this
+        // Watchers cannot be used for lightning swaps for now
+        // Todo: Check if watchers can work in some cases with lightning and implement it if it's possible, this part will probably work if only the taker is lightning since the preimage is available
         if let Some(hex) = tx_hex {
             if self.ctx.use_watchers() {
                 let preimage_hex = self.r().taker_spends_maker_payment_preimage.clone();
@@ -1593,7 +1592,6 @@ impl TakerSwap {
             },
         };
 
-        // Todo: check broadcast_p2p_tx_msg to not broadcast lightning payments
         broadcast_p2p_tx_msg(
             &self.ctx,
             tx_helper_topic(self.taker_coin.ticker()),
@@ -1772,8 +1770,10 @@ impl TakerSwap {
                         .await
                 );
                 match maybe_sent {
-                    // Todo: remove this unwrap
-                    Some(tx) => tx.tx_hex().unwrap(),
+                    // Todo: Refactor this when implementing recover_funds for lightning swaps
+                    Some(tx) => try_s!(tx
+                        .tx_hex()
+                        .ok_or("recover_funds is not implemented for lightning swaps yet!")),
                     None => return ERR!("Taker payment is not found, swap is not recoverable"),
                 }
             },

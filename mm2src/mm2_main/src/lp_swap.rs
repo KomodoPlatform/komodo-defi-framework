@@ -190,6 +190,11 @@ pub fn broadcast_swap_message<T: Serialize>(ctx: &MmArc, topic: String, msg: T, 
 
 /// Broadcast the tx message once
 pub fn broadcast_p2p_tx_msg(ctx: &MmArc, topic: String, msg: &TransactionEnum, p2p_privkey: &Option<KeyPair>) {
+    #[cfg(not(target_arch = "wasm32"))]
+    if msg.is_lightning() {
+        return;
+    }
+
     let (p2p_private, from) = match p2p_privkey {
         Some(keypair) => (keypair.private_bytes(), Some(keypair.libp2p_peer_id())),
         None => (ctx.secp256k1_key_pair().private().secret.take(), None),
@@ -739,6 +744,7 @@ pub struct TransactionIdentifier {
 }
 
 impl TransactionIdentifier {
+    // Todo: find a better name for this
     fn tx_hex(&self) -> BytesJson {
         let tx_hash = self.tx_hash.clone();
         self.tx_hex.clone().unwrap_or(tx_hash)
@@ -1189,8 +1195,7 @@ pub async fn recover_funds_of_swap(ctx: MmArc, req: Json) -> Result<Response<Vec
             "action": recover_data.action,
             "coin": recover_data.coin,
             "tx_hash": recover_data.transaction.tx_hash(),
-            // Todo: remove this unwrap
-            "tx_hex": BytesJson::from(recover_data.transaction.tx_hex().unwrap()),
+            "tx_hex": BytesJson::from(try_s!(recover_data.transaction.tx_hex().ok_or("recover_funds is not implemented for lightning swaps yet!"))),
         }
     })));
     Ok(try_s!(Response::builder().body(res)))

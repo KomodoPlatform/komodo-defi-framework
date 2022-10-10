@@ -369,6 +369,11 @@ ifrom!(TransactionEnum, ZTransaction);
 #[cfg(not(target_arch = "wasm32"))]
 ifrom!(TransactionEnum, LightningPayment);
 
+impl TransactionEnum {
+    #[cfg(not(target_arch = "wasm32"))]
+    pub fn is_lightning(&self) -> bool { matches!(self, TransactionEnum::LightningPayment(_)) }
+}
+
 // NB: When stable and groked by IDEs, `enum_dispatch` can be used instead of `Deref` to speed things up.
 impl Deref for TransactionEnum {
     type Target = dyn Transaction;

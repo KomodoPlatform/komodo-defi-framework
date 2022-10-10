@@ -657,7 +657,6 @@ impl MakerSwap {
                 Ok(None) => (),
                 Err(e) => {
                     return Ok((Some(MakerSwapCommand::Finish), vec![
-                        // Todo: maybe add a different event for this??
                         MakerSwapEvent::TakerFeeValidateFailed(e.to_string().into()),
                     ]));
                 },
@@ -730,7 +729,6 @@ impl MakerSwap {
 
         let secret_hash = self.secret_hash();
         let unique_data = self.unique_swap_data();
-        // Todo: For lightning do this check if payment is sent/failed/pending??? what to do in each case?, should I test payments/events across restarts???
         let transaction_f = self
             .maker_coin
             .check_if_my_payment_sent(
@@ -793,8 +791,6 @@ impl MakerSwap {
         let payment_data_msg = match self.get_my_payment_data().await {
             Ok(data) => data,
             Err(e) => {
-                // Todo: remove this debug after passing this stage in test
-                debug!("payment_data_msg error: {}", e);
                 return Ok((Some(MakerSwapCommand::RefundMakerPayment), vec![
                     MakerSwapEvent::MakerPaymentDataSendFailed(e.to_string().into()),
                     MakerSwapEvent::MakerPaymentWaitRefundStarted {
@@ -1284,8 +1280,9 @@ impl MakerSwap {
                         .await
                 );
                 match maybe_maker_payment {
-                    // Todo: remove this unwrap
-                    Some(tx) => tx.tx_hex().unwrap(),
+                    Some(tx) => try_s!(tx
+                        .tx_hex()
+                        .ok_or("recover_funds is not implemented for lightning swaps yet!")),
                     None => return ERR!("Maker payment transaction was not found"),
                 }
             },
