@@ -1,10 +1,10 @@
 use super::{CoinBalance, HistorySyncState, MarketCoinOps, MmCoin, RawTransactionFut, RawTransactionRequest, SwapOps,
             TradeFee, TransactionEnum, TransactionFut};
-use crate::{BalanceFut, CanRefundHtlc, FeeApproxStage, FoundSwapTxSpend, NegotiateSwapContractAddrErr,
-            SearchForSwapTxSpendInput, SignatureResult, TradePreimageFut, TradePreimageResult, TradePreimageValue,
-            TxMarshalingErr, UnexpectedDerivationMethod, ValidateAddressResult, ValidatePaymentFut,
-            ValidatePaymentInput, VerificationResult, WatcherSearchForSwapTxSpendInput, WatcherValidatePaymentInput,
-            WithdrawFut, WithdrawRequest};
+use crate::{coin_errors::MyAddressError, BalanceFut, CanRefundHtlc, FeeApproxStage, FoundSwapTxSpend,
+            NegotiateSwapContractAddrErr, SearchForSwapTxSpendInput, SignatureResult, TradePreimageFut,
+            TradePreimageResult, TradePreimageValue, TxMarshalingErr, UnexpectedDerivationMethod,
+            ValidateAddressResult, ValidatePaymentFut, ValidatePaymentInput, VerificationResult,
+            WatcherSearchForSwapTxSpendInput, WatcherValidatePaymentInput, WithdrawFut, WithdrawRequest};
 use async_trait::async_trait;
 use futures01::Future;
 use keys::KeyPair;
@@ -35,7 +35,7 @@ impl TestCoin {
 impl MarketCoinOps for TestCoin {
     fn ticker(&self) -> &str { &self.ticker }
 
-    fn my_address(&self) -> Result<String, String> { unimplemented!() }
+    fn my_address(&self) -> MmResult<String, MyAddressError> { unimplemented!() }
 
     fn get_public_key(&self) -> Result<String, MmError<UnexpectedDerivationMethod>> { unimplemented!() }
 
@@ -215,15 +215,15 @@ impl SwapOps for TestCoin {
         unimplemented!()
     }
 
-    fn watcher_validate_taker_fee(&self, _taker_fee_hash: Vec<u8>, _verified_pub: Vec<u8>) -> ValidatePaymentFut {
+    fn watcher_validate_taker_fee(&self, _taker_fee_hash: Vec<u8>, _verified_pub: Vec<u8>) -> ValidatePaymentFut<()> {
         unimplemented!();
     }
 
-    fn validate_maker_payment(&self, _input: ValidatePaymentInput) -> ValidatePaymentFut { unimplemented!() }
+    fn validate_maker_payment(&self, _input: ValidatePaymentInput) -> ValidatePaymentFut<()> { unimplemented!() }
 
-    fn validate_taker_payment(&self, _input: ValidatePaymentInput) -> ValidatePaymentFut { unimplemented!() }
+    fn validate_taker_payment(&self, _input: ValidatePaymentInput) -> ValidatePaymentFut<()> { unimplemented!() }
 
-    fn watcher_validate_taker_payment(&self, _input: WatcherValidatePaymentInput) -> ValidatePaymentFut {
+    fn watcher_validate_taker_payment(&self, _input: WatcherValidatePaymentInput) -> ValidatePaymentFut<()> {
         unimplemented!();
     }
 

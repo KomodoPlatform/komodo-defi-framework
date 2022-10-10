@@ -1,5 +1,6 @@
 use super::*;
 use crate::coin_balance::{AddressBalanceStatus, HDAddressBalance, HDWalletBalanceOps};
+use crate::coin_errors::{MyAddressError, ValidatePaymentError};
 use crate::hd_pubkey::{ExtractExtendedPubkey, HDExtractPubkeyError, HDXPubExtractor};
 use crate::hd_wallet::{AccountUpdatingError, AddressDerivingResult, HDAccountMut, HDAccountsMap,
                        NewAccountCreatingError};
@@ -13,9 +14,9 @@ use crate::utxo::utxo_withdraw::{InitUtxoWithdraw, StandardUtxoWithdraw, UtxoWit
 use crate::{CanRefundHtlc, CoinBalance, CoinWithDerivationMethod, GetWithdrawSenderAddress, HDAccountAddressId,
             RawTransactionError, RawTransactionRequest, RawTransactionRes, SearchForSwapTxSpendInput, SignatureError,
             SignatureResult, SwapOps, TradePreimageValue, TransactionFut, TxFeeDetails, TxMarshalingErr,
-            ValidateAddressResult, ValidatePaymentError, ValidatePaymentFut, ValidatePaymentInput, VerificationError,
-            VerificationResult, WatcherSearchForSwapTxSpendInput, WatcherValidatePaymentInput, WithdrawFrom,
-            WithdrawResult, WithdrawSenderAddress};
+            ValidateAddressResult, ValidatePaymentFut, ValidatePaymentInput, VerificationError, VerificationResult,
+            WatcherSearchForSwapTxSpendInput, WatcherValidatePaymentInput, WithdrawFrom, WithdrawResult,
+            WithdrawSenderAddress};
 use bitcrypto::dhash256;
 pub use bitcrypto::{dhash160, sha256, ChecksumType};
 use chain::constants::SEQUENCE_FINAL;
@@ -1723,7 +1724,7 @@ pub fn watcher_validate_taker_fee<T: UtxoCommonOps>(
     coin: T,
     taker_fee_hash: Vec<u8>,
     verified_pub: Vec<u8>,
-) -> ValidatePaymentFut {
+) -> ValidatePaymentFut<()> {
     let fut = async move {
         let mut attempts = 0;
         let taker_fee_hash = H256Json::from(taker_fee_hash.as_slice());
@@ -1845,18 +1846,22 @@ pub fn validate_fee<T: UtxoCommonOps>(
     Box::new(fut.boxed().compat())
 }
 
-pub fn validate_maker_payment<T: UtxoCommonOps + SwapOps>(coin: &T, input: ValidatePaymentInput) -> ValidatePaymentFut {
-    let mut tx: UtxoTx = try_f!(
-        deserialize(input.payment_tx.as_slice()).map_to_mm(|e| ValidatePaymentError::TxParseError(e.to_string()))
-    );
+pub fn validate_maker_payment<T: UtxoCommonOps + SwapOps>(
+    coin: &T,
+    input: ValidatePaymentInput,
+) -> ValidatePaymentFut<()> {
+    let mut tx: UtxoTx = try_f!(deserialize(input.payment_tx.as_slice()));
     tx.tx_hash_algo = coin.as_ref().tx_hash_algo;
 
     let htlc_keypair = coin.derive_htlc_key_pair(&input.unique_swap_data);
+    let other_pub = &try_f!(
+        Public::from_slice(&input.other_pub).map_to_mm(|err| ValidatePaymentError::InvalidInput(err.to_string()))
+    );
     validate_payment(
         coin.clone(),
         tx,
         DEFAULT_SWAP_VOUT,
-        &try_f!(Public::from_slice(&input.other_pub).map_to_mm(|e| ValidatePaymentError::InvalidPubkey(e.to_string()))),
+        other_pub,
         htlc_keypair.public(),
         &input.secret_hash,
         input.amount,
@@ -1869,18 +1874,21 @@ pub fn validate_maker_payment<T: UtxoCommonOps + SwapOps>(coin: &T, input: Valid
 pub fn watcher_validate_taker_payment<T: UtxoCommonOps + SwapOps>(
     coin: &T,
     input: WatcherValidatePaymentInput,
-) -> ValidatePaymentFut {
-    let mut tx: UtxoTx = try_f!(
-        deserialize(input.payment_tx.as_slice()).map_to_mm(|e| ValidatePaymentError::TxParseError(e.to_string()))
-    );
+) -> ValidatePaymentFut<()> {
+    let mut tx: UtxoTx = try_f!(deserialize(input.payment_tx.as_slice()));
     tx.tx_hash_algo = coin.as_ref().tx_hash_algo;
-
+    let first_pub = &try_f!(
+        Public::from_slice(&input.taker_pub).map_err(|err| ValidatePaymentError::InvalidInput(err.to_string()))
+    );
+    let second_pub = &try_f!(
+        Public::from_slice(&input.maker_pub).map_err(|err| ValidatePaymentError::InvalidInput(err.to_string()))
+    );
     validate_payment(
         coin.clone(),
         tx,
         DEFAULT_SWAP_VOUT,
-        &try_f!(Public::from_slice(&input.taker_pub).map_to_mm(|e| ValidatePaymentError::InvalidPubkey(e.to_string()))),
-        &try_f!(Public::from_slice(&input.maker_pub).map_to_mm(|e| ValidatePaymentError::InvalidPubkey(e.to_string()))),
+        first_pub,
+        second_pub,
         &input.secret_hash,
         input.amount,
         input.time_lock,
@@ -1889,19 +1897,23 @@ pub fn watcher_validate_taker_payment<T: UtxoCommonOps + SwapOps>(
     )
 }
 
-pub fn validate_taker_payment<T: UtxoCommonOps + SwapOps>(coin: &T, input: ValidatePaymentInput) -> ValidatePaymentFut {
-    let mut tx: UtxoTx = try_f!(
-        deserialize(input.payment_tx.as_slice()).map_to_mm(|e| ValidatePaymentError::TxParseError(e.to_string()))
-    );
+pub fn validate_taker_payment<T: UtxoCommonOps + SwapOps>(
+    coin: &T,
+    input: ValidatePaymentInput,
+) -> ValidatePaymentFut<()> {
+    let mut tx: UtxoTx = try_f!(deserialize(input.payment_tx.as_slice()));
     tx.tx_hash_algo = coin.as_ref().tx_hash_algo;
 
     let htlc_keypair = coin.derive_htlc_key_pair(&input.unique_swap_data);
+    let other_pub = &try_f!(
+        Public::from_slice(&input.other_pub).map_to_mm(|err| ValidatePaymentError::InvalidInput(err.to_string()))
+    );
 
     validate_payment(
         coin.clone(),
         tx,
         DEFAULT_SWAP_VOUT,
-        &try_f!(Public::from_slice(&input.other_pub).map_to_mm(|e| ValidatePaymentError::InvalidPubkey(e.to_string()))),
+        other_pub,
         htlc_keypair.public(),
         &input.secret_hash,
         input.amount,
@@ -2075,10 +2087,14 @@ pub fn extract_secret(secret_hash: &[u8], spend_tx: &[u8]) -> Result<Vec<u8>, St
     ERR!("Couldn't extract secret")
 }
 
-pub fn my_address<T: UtxoCommonOps>(coin: &T) -> Result<String, String> {
+pub fn my_address<T: UtxoCommonOps>(coin: &T) -> MmResult<String, MyAddressError> {
     match coin.as_ref().derivation_method {
-        DerivationMethod::Iguana(ref my_address) => my_address.display_address(),
-        DerivationMethod::HDWallet(_) => ERR!("'my_address' is deprecated for HD wallets"),
+        DerivationMethod::Iguana(ref my_address) => {
+            my_address.display_address().map_to_mm(MyAddressError::InternalError)
+        },
+        DerivationMethod::HDWallet(_) => MmError::err(MyAddressError::UnexpectedDerivationMethod(
+            "'my_address' is deprecated for HD wallets".to_string(),
+        )),
     }
 }
 
@@ -3045,7 +3061,7 @@ where
         }));
     }
 
-    let my_address = &coin.my_address().map_to_mm(UtxoRpcError::Internal)?;
+    let my_address = &coin.my_address()?;
     let claimed_by_me = tx_details.from.iter().all(|from| from == my_address) && tx_details.to.contains(my_address);
 
     tx_details.kmd_rewards = Some(KmdRewardsDetails {
@@ -3570,9 +3586,8 @@ pub fn validate_payment<T: UtxoCommonOps>(
     time_lock: u32,
     try_spv_proof_until: u64,
     confirmations: u64,
-) -> ValidatePaymentFut {
-    let amount = try_f!(sat_from_big_decimal(&amount, coin.as_ref().decimals)
-        .map_err(|e| MmError::from(ValidatePaymentError::NumConversionErr(e.into_inner()))));
+) -> ValidatePaymentFut<()> {
+    let amount = try_f!(sat_from_big_decimal(&amount, coin.as_ref().decimals));
 
     let expected_redeem = payment_script(time_lock, priv_bn_hash, first_pub0, second_pub0);
     let fut = async move {
@@ -3588,11 +3603,7 @@ pub fn validate_payment<T: UtxoCommonOps>(
                 Ok(t) => t,
                 Err(e) => {
                     if attempts > 2 {
-                        return MmError::err(ValidatePaymentError::TxFromRPCError(format!(
-                            "Got error {:?} after 3 attempts of getting tx {:?} from RPC",
-                            e,
-                            tx.tx_hash()
-                        )));
+                        return MmError::err(ValidatePaymentError::from(e.into_inner()));
                     };
                     attempts += 1;
                     error!("Error getting tx {:?} from rpc: {:?}", tx.tx_hash(), e);
@@ -3616,7 +3627,7 @@ pub fn validate_payment<T: UtxoCommonOps>(
 
             let actual_output = tx.outputs.get(output_index);
             if actual_output != Some(&expected_output) {
-                return MmError::err(ValidatePaymentError::InvalidTxOutput(format!(
+                return MmError::err(ValidatePaymentError::InvalidTx(format!(
                     "Provided payment tx output doesn't match expected {:?} {:?}",
                     actual_output, expected_output
                 )));
@@ -3624,10 +3635,7 @@ pub fn validate_payment<T: UtxoCommonOps>(
 
             if let UtxoRpcClientEnum::Electrum(client) = &coin.as_ref().rpc_client {
                 if coin.as_ref().conf.enable_spv_proof && confirmations != 0 {
-                    client
-                        .validate_spv_proof(&tx, try_spv_proof_until)
-                        .await
-                        .map_to_mm(|e| ValidatePaymentError::SPVValidationError(e.to_string()))?;
+                    client.validate_spv_proof(&tx, try_spv_proof_until).await?;
                 }
             }
 

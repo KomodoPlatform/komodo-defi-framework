@@ -179,7 +179,7 @@ fn test_validate_maker_payment() {
     assert!(matches!(error, ValidatePaymentError::InvalidTx(_)));
     if let ValidatePaymentError::InvalidTx(error) = error {
         assert!(error
-            .contains("Payment tx was sent from wrong address, expected 0x783cf0be521101942da509846ea476e683aad832"))
+            .contains("Payment tx 0x9e032d4b0090a11dc40fe6c47601499a35d55fbb was sent from wrong address, expected 0x783cf0be521101942da509846ea476e683aad832"))
     }
     input.other_pub = correct_maker_pub;
 
@@ -203,8 +203,8 @@ fn test_validate_maker_payment() {
         .unwrap_err()
         .into_inner();
     log!("error: {:?}", error);
-    assert!(matches!(error, ValidatePaymentError::PaymentStatusError(_)));
-    if let ValidatePaymentError::PaymentStatusError(error) = error {
+    assert!(matches!(error, ValidatePaymentError::UnexpectedPaymentState(_)));
+    if let ValidatePaymentError::UnexpectedPaymentState(error) = error {
         assert!(error.contains("Payment state is not PAYMENT_STATE_SENT, got 0"))
     }
     input.secret_hash = vec![1; 20];
@@ -212,8 +212,8 @@ fn test_validate_maker_payment() {
     input.time_lock = 123;
     let error = coin.validate_maker_payment(input).wait().unwrap_err().into_inner();
     log!("error: {:?}", error);
-    assert!(matches!(error, ValidatePaymentError::PaymentStatusError(_)));
-    if let ValidatePaymentError::PaymentStatusError(error) = error {
+    assert!(matches!(error, ValidatePaymentError::UnexpectedPaymentState(_)));
+    if let ValidatePaymentError::UnexpectedPaymentState(error) = error {
         assert!(error.contains("Payment state is not PAYMENT_STATE_SENT, got 0"))
     }
 }
@@ -979,7 +979,7 @@ fn test_validate_maker_payment_malicious() {
     log!("error: {}", error);
 
     assert!(matches!(error, ValidatePaymentError::TxFromRPCError(_)));
-    if let ValidatePaymentError::TxFromRPCError(error) = error {
+    if let ValidatePaymentError::InvalidTx(error) = error {
         assert!(error.contains("Unexpected amount 1000 in 'Transfer' event, expected 100000000"))
     }
 }

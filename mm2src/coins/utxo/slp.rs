@@ -3,6 +3,7 @@
 //! Tracking issue: https://github.com/KomodoPlatform/atomicDEX-API/issues/701
 //! More info about the protocol and implementation guides can be found at https://slp.dev/
 
+use crate::coin_errors::{MyAddressError, ValidatePaymentError, ValidatePaymentFut};
 use crate::my_tx_history_v2::{CoinWithTxHistoryV2, MyTxHistoryErrorV2, MyTxHistoryTarget};
 use crate::tx_history_storage::{GetTxHistoryFilters, WalletId};
 use crate::utxo::bch::BchCoin;
@@ -17,9 +18,9 @@ use crate::{BalanceFut, CoinBalance, FeeApproxStage, FoundSwapTxSpend, HistorySy
             RawTransactionRequest, SearchForSwapTxSpendInput, SignatureResult, SwapOps, TradeFee, TradePreimageError,
             TradePreimageFut, TradePreimageResult, TradePreimageValue, TransactionDetails, TransactionEnum,
             TransactionErr, TransactionFut, TxFeeDetails, TxMarshalingErr, UnexpectedDerivationMethod,
-            ValidateAddressResult, ValidatePaymentError, ValidatePaymentFut, ValidatePaymentInput, VerificationError,
-            VerificationResult, WatcherSearchForSwapTxSpendInput, WatcherValidatePaymentInput, WithdrawError,
-            WithdrawFee, WithdrawFut, WithdrawRequest};
+            ValidateAddressResult, ValidatePaymentInput, VerificationError, VerificationResult,
+            WatcherSearchForSwapTxSpendInput, WatcherValidatePaymentInput, WithdrawError, WithdrawFee, WithdrawFut,
+            WithdrawRequest};
 use async_trait::async_trait;
 use bitcrypto::dhash160;
 use chain::constants::SEQUENCE_FINAL;
@@ -403,12 +404,11 @@ impl SlpToken {
     }
 
     async fn validate_htlc(&self, input: ValidatePaymentInput) -> Result<(), MmError<ValidatePaymentError>> {
-        let mut tx: UtxoTx = deserialize(input.payment_tx.as_slice())
-            .map_to_mm(|e| ValidatePaymentError::TxParseError(e.to_string()))?;
+        let mut tx: UtxoTx = deserialize(input.payment_tx.as_slice())?;
         tx.tx_hash_algo = self.platform_coin.as_ref().tx_hash_algo;
         if tx.outputs.len() < 2 {
-            return MmError::err(ValidatePaymentError::InvalidTxOutput(
-                "Output length cannot be less than 2".to_string(),
+            return MmError::err(ValidatePaymentError::TxDeserializationError(
+                "Not enough transaction output".to_string(),
             ));
         }
 
@@ -432,34 +432,37 @@ impl SlpToken {
         match slp_tx.transaction {
             SlpTransaction::Send { token_id, amounts } => {
                 if token_id != self.token_id() {
-                    return MmError::err(ValidatePaymentError::InvalidTx(
-                        "Provided token ID does not match tx data from RPC".to_string(),
-                    ));
+                    return MmError::err(ValidatePaymentError::InvalidTx(format!(
+                        "Invalid tx token_id, Expected: {}, found: {}",
+                        token_id,
+                        self.token_id()
+                    )));
                 }
 
                 if amounts.is_empty() {
                     return MmError::err(ValidatePaymentError::InvalidTx(
-                        "Amounts field cannot be empty".to_string(),
+                        "Input amount can't be empty".to_string(),
                     ));
                 }
 
                 if amounts[0] != slp_satoshis {
-                    return MmError::err(ValidatePaymentError::InvalidTx("Invalid amount".to_string()));
+                    return MmError::err(ValidatePaymentError::InvalidTx(format!(
+                        "Invalid input amount. Expected: {}, found: {}",
+                        slp_satoshis, amounts[0]
+                    )));
                 }
             },
-            _ => {
-                return MmError::err(ValidatePaymentError::InvalidTx(
-                    "Provided payment tx does not match tx data from RPC".to_string(),
-                ))
-            },
+            _ => return MmError::err(ValidatePaymentError::InvalidTx("Invalid Slp tx details".to_string())),
         }
 
         let htlc_keypair = self.derive_htlc_key_pair(&input.unique_swap_data);
+        let first_pub = &Public::from_slice(&input.other_pub)
+            .map_to_mm(|err| ValidatePaymentError::InvalidInput(err.to_string()))?;
         let validate_fut = utxo_common::validate_payment(
             self.platform_coin.clone(),
             tx,
             SLP_SWAP_VOUT,
-            &Public::from_slice(&input.other_pub).map_to_mm(|e| ValidatePaymentError::InvalidPubkey(e.to_string()))?,
+            first_pub,
             htlc_keypair.public(),
             &input.secret_hash,
             self.platform_dust_dec(),
@@ -468,9 +471,7 @@ impl SlpToken {
             input.confirmations,
         );
 
-        validate_fut.compat().await?;
-
-        Ok(())
+        validate_fut.compat().await
     }
 
     pub async fn refund_htlc(
@@ -931,6 +932,10 @@ impl From<SerError> for ParseSlpScriptError {
     fn from(err: SerError) -> ParseSlpScriptError { ParseSlpScriptError::DeserializeFailed(err) }
 }
 
+impl From<ParseSlpScriptError> for ValidatePaymentError {
+    fn from(err: ParseSlpScriptError) -> Self { Self::TxDeserializationError(err.to_string()) }
+}
+
 pub fn parse_slp_script(script: &[u8]) -> Result<SlpTxDetails, MmError<ParseSlpScriptError>> {
     let details: SlpTxDetails = deserialize(script)?;
     if Opcode::from_u8(details.op_code) != Some(Opcode::OP_RETURN) {
@@ -1037,10 +1042,13 @@ impl UtxoTxGenerationOps for SlpToken {
 impl MarketCoinOps for SlpToken {
     fn ticker(&self) -> &str { &self.conf.ticker }
 
-    fn my_address(&self) -> Result<String, String> {
-        let my_address = try_s!(self.as_ref().derivation_method.iguana_or_err());
-        let slp_address = try_s!(self.platform_coin.slp_address(my_address));
-        slp_address.encode()
+    fn my_address(&self) -> MmResult<String, MyAddressError> {
+        let my_address = self.as_ref().derivation_method.iguana_or_err()?;
+        let slp_address = self
+            .platform_coin
+            .slp_address(my_address)
+            .map_to_mm(MyAddressError::InternalError)?;
+        slp_address.encode().map_to_mm(MyAddressError::InternalError)
     }
 
     fn get_public_key(&self) -> Result<String, MmError<UnexpectedDerivationMethod>> {
@@ -1385,11 +1393,11 @@ impl SwapOps for SlpToken {
         Box::new(fut.boxed().compat())
     }
 
-    fn watcher_validate_taker_fee(&self, _taker_fee_hash: Vec<u8>, _verified_pub: Vec<u8>) -> ValidatePaymentFut {
+    fn watcher_validate_taker_fee(&self, _taker_fee_hash: Vec<u8>, _verified_pub: Vec<u8>) -> ValidatePaymentFut<()> {
         unimplemented!();
     }
 
-    fn validate_maker_payment(&self, input: ValidatePaymentInput) -> ValidatePaymentFut {
+    fn validate_maker_payment(&self, input: ValidatePaymentInput) -> ValidatePaymentFut<()> {
         let coin = self.clone();
         let fut = async move {
             coin.validate_htlc(input).await?;
@@ -1398,7 +1406,7 @@ impl SwapOps for SlpToken {
         Box::new(fut.boxed().compat())
     }
 
-    fn validate_taker_payment(&self, input: ValidatePaymentInput) -> ValidatePaymentFut {
+    fn validate_taker_payment(&self, input: ValidatePaymentInput) -> ValidatePaymentFut<()> {
         let coin = self.clone();
         let fut = async move {
             coin.validate_htlc(input).await?;
@@ -1407,7 +1415,7 @@ impl SwapOps for SlpToken {
         Box::new(fut.boxed().compat())
     }
 
-    fn watcher_validate_taker_payment(&self, _input: WatcherValidatePaymentInput) -> ValidatePaymentFut {
+    fn watcher_validate_taker_payment(&self, _input: WatcherValidatePaymentInput) -> ValidatePaymentFut<()> {
         unimplemented!();
     }
 
@@ -1594,7 +1602,7 @@ impl MmCoin for SlpToken {
                 amount: big_decimal_from_sat_unsigned(tx_data.fee_amount, coin.platform_decimals()),
                 coin: coin.platform_coin.ticker().into(),
             };
-            let my_address_string = coin.my_address().map_to_mm(WithdrawError::InternalError)?;
+            let my_address_string = coin.my_address()?;
             let to_address = address.encode().map_to_mm(WithdrawError::InternalError)?;
 
             let total_amount = big_decimal_from_sat_unsigned(amount, coin.decimals());
@@ -1791,7 +1799,7 @@ impl CoinWithTxHistoryV2 for SlpToken {
             MyTxHistoryTarget::Iguana => (),
             target => return MmError::err(MyTxHistoryErrorV2::with_expected_target(target, "Iguana")),
         }
-        let my_address = self.my_address().map_to_mm(MyTxHistoryErrorV2::Internal)?;
+        let my_address = self.my_address()?;
         Ok(GetTxHistoryFilters::for_address(my_address).with_token_id(self.token_id().to_string()))
     }
 }

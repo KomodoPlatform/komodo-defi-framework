@@ -1,4 +1,5 @@
 use super::{CoinBalance, HistorySyncState, MarketCoinOps, MmCoin, SwapOps, TradeFee, TransactionEnum};
+use crate::coin_errors::MyAddressError;
 use crate::solana::solana_common::{ui_amount_to_amount, PrepareTransferData, SufficientBalanceError};
 use crate::solana::{solana_common, AccountError, SolanaCommonOps, SolanaFeeDetails};
 use crate::{BalanceFut, FeeApproxStage, FoundSwapTxSpend, NegotiateSwapContractAddrErr, RawTransactionFut,
@@ -214,7 +215,7 @@ impl SplToken {
 impl MarketCoinOps for SplToken {
     fn ticker(&self) -> &str { &self.conf.ticker }
 
-    fn my_address(&self) -> Result<String, String> { Ok(self.platform_coin.my_address.clone()) }
+    fn my_address(&self) -> MmResult<String, MyAddressError> { Ok(self.platform_coin.my_address.clone()) }
 
     fn get_public_key(&self) -> Result<String, MmError<UnexpectedDerivationMethod>> { unimplemented!() }
 
@@ -403,15 +404,15 @@ impl SwapOps for SplToken {
         unimplemented!()
     }
 
-    fn watcher_validate_taker_fee(&self, _taker_fee_hash: Vec<u8>, _verified_pub: Vec<u8>) -> ValidatePaymentFut {
+    fn watcher_validate_taker_fee(&self, _taker_fee_hash: Vec<u8>, _verified_pub: Vec<u8>) -> ValidatePaymentFut<()> {
         unimplemented!();
     }
 
-    fn validate_maker_payment(&self, input: ValidatePaymentInput) -> ValidatePaymentFut { unimplemented!() }
+    fn validate_maker_payment(&self, input: ValidatePaymentInput) -> ValidatePaymentFut<()> { unimplemented!() }
 
-    fn validate_taker_payment(&self, input: ValidatePaymentInput) -> ValidatePaymentFut { unimplemented!() }
+    fn validate_taker_payment(&self, input: ValidatePaymentInput) -> ValidatePaymentFut<()> { unimplemented!() }
 
-    fn watcher_validate_taker_payment(&self, _input: WatcherValidatePaymentInput) -> ValidatePaymentFut {
+    fn watcher_validate_taker_payment(&self, _input: WatcherValidatePaymentInput) -> ValidatePaymentFut<()> {
         unimplemented!();
     }
 

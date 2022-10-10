@@ -11,6 +11,7 @@ mod ln_storage;
 mod ln_utils;
 
 use super::{lp_coinfind_or_err, DerivationMethod, MmCoinEnum};
+use crate::coin_errors::MyAddressError;
 use crate::lightning::ln_conf::OurChannelsConfigs;
 use crate::lightning::ln_errors::{TrustedNodeError, TrustedNodeResult, UpdateChannelError, UpdateChannelResult};
 use crate::lightning::ln_events::init_events_abort_handlers;
@@ -394,15 +395,15 @@ impl SwapOps for LightningCoin {
         unimplemented!()
     }
 
-    fn watcher_validate_taker_fee(&self, _taker_fee_hash: Vec<u8>, _verified_pub: Vec<u8>) -> ValidatePaymentFut {
+    fn watcher_validate_taker_fee(&self, _taker_fee_hash: Vec<u8>, _verified_pub: Vec<u8>) -> ValidatePaymentFut<()> {
         unimplemented!();
     }
 
-    fn validate_maker_payment(&self, _input: ValidatePaymentInput) -> ValidatePaymentFut { unimplemented!() }
+    fn validate_maker_payment(&self, _input: ValidatePaymentInput) -> ValidatePaymentFut<()> { unimplemented!() }
 
-    fn validate_taker_payment(&self, _input: ValidatePaymentInput) -> ValidatePaymentFut { unimplemented!() }
+    fn validate_taker_payment(&self, _input: ValidatePaymentInput) -> ValidatePaymentFut<()> { unimplemented!() }
 
-    fn watcher_validate_taker_payment(&self, _input: WatcherValidatePaymentInput) -> ValidatePaymentFut {
+    fn watcher_validate_taker_payment(&self, _input: WatcherValidatePaymentInput) -> ValidatePaymentFut<()> {
         unimplemented!();
     }
 
@@ -458,7 +459,7 @@ impl SwapOps for LightningCoin {
 impl MarketCoinOps for LightningCoin {
     fn ticker(&self) -> &str { &self.conf.ticker }
 
-    fn my_address(&self) -> Result<String, String> { Ok(self.my_node_id()) }
+    fn my_address(&self) -> MmResult<String, MyAddressError> { Ok(self.my_node_id()) }
 
     fn get_public_key(&self) -> Result<String, MmError<UnexpectedDerivationMethod>> { unimplemented!() }
 

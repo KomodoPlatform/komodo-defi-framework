@@ -2,6 +2,7 @@ use super::htlc::{IrisHtlc, MsgCreateHtlc};
 #[cfg(not(target_arch = "wasm32"))]
 use super::tendermint_native_rpc::*;
 #[cfg(target_arch = "wasm32")] use super::tendermint_wasm_rpc::*;
+use crate::coin_errors::MyAddressError;
 use crate::tendermint::htlc::MsgClaimHtlc;
 use crate::utxo::sat_from_big_decimal;
 use crate::{big_decimal_from_sat_unsigned, BalanceError, BalanceFut, BigDecimal, CoinBalance, FeeApproxStage,
@@ -522,7 +523,7 @@ impl MmCoin for TendermintCoin {
 impl MarketCoinOps for TendermintCoin {
     fn ticker(&self) -> &str { &self.ticker }
 
-    fn my_address(&self) -> Result<String, String> { Ok(self.account_id.to_string()) }
+    fn my_address(&self) -> MmResult<String, MyAddressError> { Ok(self.account_id.to_string()) }
 
     fn get_public_key(&self) -> Result<String, MmError<UnexpectedDerivationMethod>> { todo!() }
 
@@ -738,15 +739,15 @@ impl SwapOps for TendermintCoin {
         todo!()
     }
 
-    fn watcher_validate_taker_fee(&self, _taker_fee_hash: Vec<u8>, _verified_pub: Vec<u8>) -> ValidatePaymentFut {
+    fn watcher_validate_taker_fee(&self, _taker_fee_hash: Vec<u8>, _verified_pub: Vec<u8>) -> ValidatePaymentFut<()> {
         unimplemented!();
     }
 
-    fn validate_maker_payment(&self, input: ValidatePaymentInput) -> ValidatePaymentFut { todo!() }
+    fn validate_maker_payment(&self, input: ValidatePaymentInput) -> ValidatePaymentFut<()> { todo!() }
 
-    fn validate_taker_payment(&self, input: ValidatePaymentInput) -> ValidatePaymentFut { todo!() }
+    fn validate_taker_payment(&self, input: ValidatePaymentInput) -> ValidatePaymentFut<()> { todo!() }
 
-    fn watcher_validate_taker_payment(&self, _input: WatcherValidatePaymentInput) -> ValidatePaymentFut {
+    fn watcher_validate_taker_payment(&self, _input: WatcherValidatePaymentInput) -> ValidatePaymentFut<()> {
         unimplemented!();
     }
 

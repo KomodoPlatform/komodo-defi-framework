@@ -33,8 +33,6 @@
 #[macro_use] extern crate serde_json;
 #[macro_use] extern crate ser_error_derive;
 
-use crate::utxo::bchd_grpc::ValidateSlpUtxosErr;
-use crate::utxo::slp::ParseSlpScriptError;
 use async_trait::async_trait;
 use base58::FromBase58Error;
 use common::{calc_total_pages, now_ms, ten, HttpStatusCode};
@@ -98,7 +96,7 @@ macro_rules! try_f {
     ($e: expr) => {
         match $e {
             Ok(ok) => ok,
-            Err(e) => return Box::new(futures01::future::err(e)),
+            Err(e) => return Box::new(futures01::future::err(e.into())),
         }
     };
 }
@@ -183,6 +181,10 @@ macro_rules! ok_or_continue_after_sleep {
 }
 
 pub mod coin_balance;
+
+pub mod coin_errors;
+use coin_errors::{MyAddressError, ValidatePaymentError, ValidatePaymentFut};
+
 #[doc(hidden)]
 #[cfg(test)]
 pub mod coins_tests;
@@ -414,7 +416,6 @@ impl TransactionErr {
 }
 
 pub type TransactionFut = Box<dyn Future<Item = TransactionEnum, Error = TransactionErr> + Send>;
-pub type ValidatePaymentFut = Box<dyn Future<Item = (), Error = MmError<ValidatePaymentError>> + Send>;
 
 #[derive(Debug, PartialEq)]
 pub enum FoundSwapTxSpend {
@@ -458,38 +459,6 @@ pub struct WatcherSearchForSwapTxSpendInput<'a> {
     pub search_from_block: u64,
     pub swap_contract_address: &'a Option<BytesJson>,
     pub swap_unique_data: &'a [u8],
-}
-
-#[derive(Debug, Display)]
-pub enum ValidatePaymentError {
-    TxParseError(String),
-    #[display(fmt = "OpReturnParseError: {:?}", _0)]
-    OpReturnParseError(ParseSlpScriptError),
-    NumConversionErr(NumConversError),
-    UnexpectedDerivationMethod(UnexpectedDerivationMethod),
-    TxFromRPCError(String),
-    InvalidTx(String),
-    InvalidTxOutput(String),
-    SPVValidationError(String),
-    InvalidPubkey(String),
-    PaymentStatusError(String),
-    CallBytesError(String),
-}
-
-impl From<NumConversError> for ValidatePaymentError {
-    fn from(err: NumConversError) -> ValidatePaymentError { ValidatePaymentError::NumConversionErr(err) }
-}
-
-impl From<ParseSlpScriptError> for ValidatePaymentError {
-    fn from(err: ParseSlpScriptError) -> Self { ValidatePaymentError::OpReturnParseError(err) }
-}
-
-impl From<ValidateSlpUtxosErr> for ValidatePaymentError {
-    fn from(err: ValidateSlpUtxosErr) -> Self { ValidatePaymentError::InvalidTx(err.to_string()) }
-}
-
-impl From<UnexpectedDerivationMethod> for ValidatePaymentError {
-    fn from(err: UnexpectedDerivationMethod) -> Self { ValidatePaymentError::UnexpectedDerivationMethod(err) }
 }
 
 #[derive(Clone, Debug)]
@@ -613,13 +582,13 @@ pub trait SwapOps {
         uuid: &[u8],
     ) -> Box<dyn Future<Item = (), Error = String> + Send>;
 
-    fn watcher_validate_taker_fee(&self, _taker_fee_hash: Vec<u8>, _verified_pub: Vec<u8>) -> ValidatePaymentFut;
+    fn watcher_validate_taker_fee(&self, _taker_fee_hash: Vec<u8>, _verified_pub: Vec<u8>) -> ValidatePaymentFut<()>;
 
-    fn validate_maker_payment(&self, input: ValidatePaymentInput) -> ValidatePaymentFut;
+    fn validate_maker_payment(&self, input: ValidatePaymentInput) -> ValidatePaymentFut<()>;
 
-    fn validate_taker_payment(&self, input: ValidatePaymentInput) -> ValidatePaymentFut;
+    fn validate_taker_payment(&self, input: ValidatePaymentInput) -> ValidatePaymentFut<()>;
 
-    fn watcher_validate_taker_payment(&self, _input: WatcherValidatePaymentInput) -> ValidatePaymentFut;
+    fn watcher_validate_taker_payment(&self, _input: WatcherValidatePaymentInput) -> ValidatePaymentFut<()>;
 
     fn check_if_my_payment_sent(
         &self,
@@ -676,7 +645,7 @@ pub trait SwapOps {
 pub trait MarketCoinOps {
     fn ticker(&self) -> &str;
 
-    fn my_address(&self) -> Result<String, String>;
+    fn my_address(&self) -> MmResult<String, MyAddressError>;
 
     fn get_public_key(&self) -> Result<String, MmError<UnexpectedDerivationMethod>>;
 
@@ -3037,7 +3006,7 @@ where
 {
     let ctx = ctx.clone();
     let ticker = coin.ticker().to_owned();
-    let my_address = try_f!(coin.my_address().map_to_mm(TxHistoryError::InternalError));
+    let my_address = try_f!(coin.my_address());
 
     let fut = async move {
         let coins_ctx = CoinsContext::from_ctx(&ctx).unwrap();
@@ -3111,7 +3080,7 @@ where
 {
     let ctx = ctx.clone();
     let ticker = coin.ticker().to_owned();
-    let my_address = try_f!(coin.my_address().map_to_mm(TxHistoryError::InternalError));
+    let my_address = try_f!(coin.my_address());
 
     history.sort_unstable_by(compare_transaction_details);
 

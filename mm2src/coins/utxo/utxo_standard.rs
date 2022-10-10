@@ -1,6 +1,7 @@
 use super::*;
 use crate::coin_balance::{self, EnableCoinBalanceError, EnabledCoinBalanceParams, HDAccountBalance, HDAddressBalance,
                           HDWalletBalance, HDWalletBalanceOps};
+use crate::coin_errors::MyAddressError;
 use crate::hd_pubkey::{ExtractExtendedPubkey, HDExtractPubkeyError, HDXPubExtractor};
 use crate::hd_wallet::{AccountUpdatingError, AddressDerivingResult, HDAccountMut, NewAccountCreatingError};
 use crate::hd_wallet_storage::HDWalletCoinWithStorageOps;
@@ -433,7 +434,7 @@ impl SwapOps for UtxoStandardCoin {
         )
     }
 
-    fn watcher_validate_taker_fee(&self, taker_fee_hash: Vec<u8>, verified_pub: Vec<u8>) -> ValidatePaymentFut {
+    fn watcher_validate_taker_fee(&self, taker_fee_hash: Vec<u8>, verified_pub: Vec<u8>) -> ValidatePaymentFut<()> {
         utxo_common::watcher_validate_taker_fee(self.clone(), taker_fee_hash, verified_pub)
     }
 
@@ -461,15 +462,15 @@ impl SwapOps for UtxoStandardCoin {
         )
     }
 
-    fn validate_maker_payment(&self, input: ValidatePaymentInput) -> ValidatePaymentFut {
+    fn validate_maker_payment(&self, input: ValidatePaymentInput) -> ValidatePaymentFut<()> {
         utxo_common::validate_maker_payment(self, input)
     }
 
-    fn validate_taker_payment(&self, input: ValidatePaymentInput) -> ValidatePaymentFut {
+    fn validate_taker_payment(&self, input: ValidatePaymentInput) -> ValidatePaymentFut<()> {
         utxo_common::validate_taker_payment(self, input)
     }
 
-    fn watcher_validate_taker_payment(&self, input: WatcherValidatePaymentInput) -> ValidatePaymentFut {
+    fn watcher_validate_taker_payment(&self, input: WatcherValidatePaymentInput) -> ValidatePaymentFut<()> {
         utxo_common::watcher_validate_taker_payment(self, input)
     }
 
@@ -543,7 +544,7 @@ impl MarketCoinOps for UtxoStandardCoin {
         Ok(pubkey.to_string())
     }
 
-    fn my_address(&self) -> Result<String, String> { utxo_common::my_address(self) }
+    fn my_address(&self) -> MmResult<String, MyAddressError> { utxo_common::my_address(self) }
 
     fn sign_message_hash(&self, message: &str) -> Option<[u8; 32]> {
         utxo_common::sign_message_hash(self.as_ref(), message)

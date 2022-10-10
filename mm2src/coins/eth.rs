@@ -60,7 +60,7 @@ use web3::{self, Web3};
 use web3_transport::{EthFeeHistoryNamespace, Web3Transport, Web3TransportNode};
 
 use super::{coin_conf, AsyncMutex, BalanceError, BalanceFut, CoinBalance, CoinProtocol, CoinTransportMetrics,
-            CoinsContext, FeeApproxStage, FoundSwapTxSpend, HistorySyncState, MarketCoinOps, MmCoin,
+            CoinsContext, FeeApproxStage, FoundSwapTxSpend, HistorySyncState, MarketCoinOps, MmCoin, MyAddressError,
             NegotiateSwapContractAddrErr, NumConversError, NumConversResult, RawTransactionError, RawTransactionFut,
             RawTransactionRequest, RawTransactionRes, RawTransactionResult, RpcClientType, RpcTransportEventHandler,
             RpcTransportEventHandlerShared, SearchForSwapTxSpendInput, SignatureError, SignatureResult, SwapOps,
@@ -685,7 +685,7 @@ async fn withdraw_impl(coin: EthCoin, req: WithdrawRequest) -> WithdrawResult {
     if coin.coin_type == EthCoinType::Eth {
         spent_by_me += &fee_details.total_fee;
     }
-    let my_address = coin.my_address().map_to_mm(WithdrawError::InternalError)?;
+    let my_address = coin.my_address()?;
     Ok(TransactionDetails {
         to: vec![checksum_address(&format!("{:#02x}", to_addr))],
         from: vec![my_address],
@@ -986,15 +986,15 @@ impl SwapOps for EthCoin {
         Box::new(fut.boxed().compat())
     }
 
-    fn watcher_validate_taker_fee(&self, _taker_fee_hash: Vec<u8>, _verified_pub: Vec<u8>) -> ValidatePaymentFut {
+    fn watcher_validate_taker_fee(&self, _taker_fee_hash: Vec<u8>, _verified_pub: Vec<u8>) -> ValidatePaymentFut<()> {
         unimplemented!();
     }
 
-    fn validate_maker_payment(&self, input: ValidatePaymentInput) -> ValidatePaymentFut {
+    fn validate_maker_payment(&self, input: ValidatePaymentInput) -> ValidatePaymentFut<()> {
         let swap_contract_address = try_f!(input
             .swap_contract_address
             .try_to_address()
-            .map_to_mm(ValidatePaymentError::InvalidTx));
+            .map_to_mm(ValidatePaymentError::InvalidInput));
         self.validate_payment(
             &input.payment_tx,
             input.time_lock,
@@ -1005,11 +1005,11 @@ impl SwapOps for EthCoin {
         )
     }
 
-    fn validate_taker_payment(&self, input: ValidatePaymentInput) -> ValidatePaymentFut {
+    fn validate_taker_payment(&self, input: ValidatePaymentInput) -> ValidatePaymentFut<()> {
         let swap_contract_address = try_f!(input
             .swap_contract_address
             .try_to_address()
-            .map_to_mm(ValidatePaymentError::InvalidTx));
+            .map_to_mm(ValidatePaymentError::InvalidInput));
         self.validate_payment(
             &input.payment_tx,
             input.time_lock,
@@ -1020,7 +1020,7 @@ impl SwapOps for EthCoin {
         )
     }
 
-    fn watcher_validate_taker_payment(&self, _input: WatcherValidatePaymentInput) -> ValidatePaymentFut {
+    fn watcher_validate_taker_payment(&self, _input: WatcherValidatePaymentInput) -> ValidatePaymentFut<()> {
         unimplemented!();
     }
 
@@ -1174,7 +1174,9 @@ impl SwapOps for EthCoin {
 impl MarketCoinOps for EthCoin {
     fn ticker(&self) -> &str { &self.ticker[..] }
 
-    fn my_address(&self) -> Result<String, String> { Ok(checksum_address(&format!("{:#02x}", self.my_address))) }
+    fn my_address(&self) -> MmResult<String, MyAddressError> {
+        Ok(checksum_address(&format!("{:#02x}", self.my_address)))
+    }
 
     fn get_public_key(&self) -> Result<String, MmError<UnexpectedDerivationMethod>> {
         let uncompressed_without_prefix = hex::encode(self.key_pair.public());
@@ -2727,13 +2729,13 @@ impl EthCoin {
         secret_hash: &[u8],
         amount: BigDecimal,
         expected_swap_contract_address: Address,
-    ) -> ValidatePaymentFut {
-        let unsigned: UnverifiedTransaction =
-            try_f!(rlp::decode(payment_tx).map_to_mm(|e| ValidatePaymentError::TxParseError(e.to_string())));
-        let tx = try_f!(SignedEthTx::new(unsigned).map_to_mm(|e| ValidatePaymentError::TxParseError(e.to_string())));
-        let sender = try_f!(addr_from_raw_pubkey(sender_pub).map_to_mm(ValidatePaymentError::InvalidPubkey));
-        let expected_value = try_f!(wei_from_big_decimal(&amount, self.decimals)
-            .map_err(|e| MmError::from(ValidatePaymentError::NumConversionErr(e.into_inner()))));
+    ) -> ValidatePaymentFut<()> {
+        let unsigned: UnverifiedTransaction = try_f!(rlp::decode(payment_tx));
+        let tx =
+            try_f!(SignedEthTx::new(unsigned)
+                .map_to_mm(|err| ValidatePaymentError::TxDeserializationError(err.to_string())));
+        let sender = try_f!(addr_from_raw_pubkey(sender_pub).map_to_mm(ValidatePaymentError::InvalidInput));
+        let expected_value = try_f!(wei_from_big_decimal(&amount, self.decimals));
         let selfi = self.clone();
         let secret_hash = secret_hash.to_vec();
         let fut = async move {
@@ -2742,9 +2744,9 @@ impl EthCoin {
                 .payment_status(expected_swap_contract_address, Token::FixedBytes(swap_id.clone()))
                 .compat()
                 .await
-                .map_to_mm(ValidatePaymentError::PaymentStatusError)?;
+                .map_to_mm(ValidatePaymentError::Transport)?;
             if status != PAYMENT_STATE_SENT.into() {
-                return MmError::err(ValidatePaymentError::PaymentStatusError(format!(
+                return MmError::err(ValidatePaymentError::UnexpectedPaymentState(format!(
                     "Payment state is not PAYMENT_STATE_SENT, got {}",
                     status
                 )));
@@ -2755,8 +2757,7 @@ impl EthCoin {
                 .eth()
                 .transaction(TransactionId::Hash(tx.hash))
                 .compat()
-                .await
-                .map_to_mm(|e| ValidatePaymentError::TxFromRPCError(e.to_string()))?;
+                .await?;
             let tx_from_rpc = match tx_from_rpc {
                 Some(t) => t,
                 None => {
@@ -2792,10 +2793,10 @@ impl EthCoin {
 
                     let function = SWAP_CONTRACT
                         .function("ethPayment")
-                        .map_to_mm(|e| ValidatePaymentError::TxParseError(e.to_string()))?;
+                        .map_to_mm(|err| ValidatePaymentError::InternalError(err.to_string()))?;
                     let decoded = function
                         .decode_input(&tx_from_rpc.input.0)
-                        .map_to_mm(|e| ValidatePaymentError::TxParseError(e.to_string()))?;
+                        .map_to_mm(|err| ValidatePaymentError::TxDeserializationError(err.to_string()))?;
                     if decoded[0] != Token::FixedBytes(swap_id.clone()) {
                         return MmError::err(ValidatePaymentError::InvalidTx(format!(
                             "Invalid 'swap_id' {:?}, expected {:?}",
@@ -2840,10 +2841,10 @@ impl EthCoin {
 
                     let function = SWAP_CONTRACT
                         .function("erc20Payment")
-                        .map_to_mm(|e| ValidatePaymentError::TxParseError(e.to_string()))?;
+                        .map_to_mm(|err| ValidatePaymentError::InternalError(err.to_string()))?;
                     let decoded = function
                         .decode_input(&tx_from_rpc.input.0)
-                        .map_to_mm(|e| ValidatePaymentError::TxParseError(e.to_string()))?;
+                        .map_to_mm(|err| ValidatePaymentError::TxDeserializationError(err.to_string()))?;
                     if decoded[0] != Token::FixedBytes(swap_id.clone()) {
                         return MmError::err(ValidatePaymentError::InvalidTx(format!(
                             "Invalid 'swap_id' {:?}, expected {:?}",
