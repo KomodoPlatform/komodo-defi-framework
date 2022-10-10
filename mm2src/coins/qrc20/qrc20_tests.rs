@@ -978,8 +978,9 @@ fn test_validate_maker_payment_malicious() {
         .into_inner();
     log!("error: {}", error);
 
-    assert!(matches!(error, ValidatePaymentError::TxFromRPCError(_)));
-    if let ValidatePaymentError::InvalidTx(error) = error {
+    println!("{:?}", error);
+    assert!(matches!(error, ValidatePaymentError::TxDeserializationError(_)));
+    if let ValidatePaymentError::TxDeserializationError(error) = error {
         assert!(error.contains("Unexpected amount 1000 in 'Transfer' event, expected 100000000"))
     }
 }
