@@ -2709,6 +2709,7 @@ impl OrdermatchContext {
                 orderbook_tickers: Default::default(),
                 original_tickers: Default::default(),
                 ordermatch_db: ConstructibleDb::new(ctx),
+                my_p2p_pubkeys: Default::default(),
             })
         })))
     }
