@@ -126,7 +126,7 @@ impl State for ValidatePublicKeys {
     type Ctx = WatcherContext;
     type Result = ();
 
-    async fn on_changed(self: Box<Self>, watcher_ctx: &mut WatcherContext) -> StateResult<WatcherContext, ()> {
+    async fn on_changed(self: Box<Self>, watcher_ctx: &mut WatcherContext) -> StateResult<Self::Ctx, Self::Result> {
         let redeem_pub_valid = match watcher_ctx
             .taker_coin
             .check_all_inputs_signed_by_pub(&watcher_ctx.data.taker_payment_hex, &watcher_ctx.verified_pub)
@@ -154,7 +154,7 @@ impl State for ValidateTakerFee {
     type Ctx = WatcherContext;
     type Result = ();
 
-    async fn on_changed(self: Box<Self>, watcher_ctx: &mut WatcherContext) -> StateResult<WatcherContext, ()> {
+    async fn on_changed(self: Box<Self>, watcher_ctx: &mut WatcherContext) -> StateResult<Self::Ctx, Self::Result> {
         let validated_f = watcher_ctx
             .taker_coin
             .watcher_validate_taker_fee(
@@ -176,7 +176,7 @@ impl State for ValidateTakerPayment {
     type Ctx = WatcherContext;
     type Result = ();
 
-    async fn on_changed(self: Box<Self>, watcher_ctx: &mut WatcherContext) -> StateResult<WatcherContext, ()> {
+    async fn on_changed(self: Box<Self>, watcher_ctx: &mut WatcherContext) -> StateResult<Self::Ctx, Self::Result> {
         let search_input = WatcherSearchForSwapTxSpendInput {
             time_lock: watcher_ctx.data.taker_payment_lock as u32,
             taker_pub: &watcher_ctx.data.taker_pub,
@@ -258,7 +258,7 @@ impl State for WaitForTakerPaymentSpend {
     type Ctx = WatcherContext;
     type Result = ();
 
-    async fn on_changed(self: Box<Self>, watcher_ctx: &mut WatcherContext) -> StateResult<WatcherContext, ()> {
+    async fn on_changed(self: Box<Self>, watcher_ctx: &mut WatcherContext) -> StateResult<Self::Ctx, Self::Result> {
         #[cfg(not(test))]
         {
             // Sleep for half the locktime to allow the taker to spend the maker payment first
@@ -313,7 +313,7 @@ impl State for SpendMakerPayment {
     type Ctx = WatcherContext;
     type Result = ();
 
-    async fn on_changed(self: Box<Self>, watcher_ctx: &mut WatcherContext) -> StateResult<WatcherContext, ()> {
+    async fn on_changed(self: Box<Self>, watcher_ctx: &mut WatcherContext) -> StateResult<Self::Ctx, Self::Result> {
         let spend_fut = watcher_ctx.maker_coin.send_taker_spends_maker_payment_preimage(
             &watcher_ctx.data.taker_spends_maker_payment_preimage,
             &self.secret.0,
@@ -355,7 +355,7 @@ impl State for RefundTakerPayment {
     type Ctx = WatcherContext;
     type Result = ();
 
-    async fn on_changed(self: Box<Self>, watcher_ctx: &mut WatcherContext) -> StateResult<WatcherContext, ()> {
+    async fn on_changed(self: Box<Self>, watcher_ctx: &mut WatcherContext) -> StateResult<Self::Ctx, Self::Result> {
         let locktime = watcher_ctx.data.taker_payment_lock;
         loop {
             match watcher_ctx
