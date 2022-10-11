@@ -2643,7 +2643,7 @@ struct OrdermatchContext {
     pending_maker_reserved: AsyncMutex<HashMap<Uuid, Vec<MakerReserved>>>,
     #[cfg(target_arch = "wasm32")]
     ordermatch_db: ConstructibleDb<OrdermatchDb>,
-    // my_p2p_pubkeys wrapped in PaMutex so as not to make self mutable in add and remove methods
+    // my_p2p_pubkeys wrapped in PaMutex so as not to make self mutable for add and remove methods
     my_p2p_pubkeys: PaMutex<HashSet<String>>,
 }
 

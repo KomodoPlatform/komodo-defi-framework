@@ -11,6 +11,7 @@ use mm2_err_handle::prelude::*;
 use mm2_number::{construct_detailed, BigRational, MmNumber, MmNumberMultiRepr};
 use num_traits::Zero;
 use serde_json::{self as json, Value as Json};
+use std::collections::HashSet;
 
 #[derive(Deserialize)]
 pub struct OrderbookReq {
@@ -114,33 +115,14 @@ pub fn is_my_order(my_pub: &Option<String>, order_pubkey: &str) -> bool {
 // ZHTLC protocol coin uses random keypair to sign P2P messages per every order.
 // So, each ZHTLC order has unique «pubkey» field that doesn’t match node persistent pubkey derived from passphrase.
 // We can compare pubkeys from maker_orders and from asks or bids, to find our order.
-pub fn is_mine_zhtlc(my_orders_pubkeys: &Vec<String>, my_pub: &Option<String>, order_pubkey: &str) -> bool {
+pub fn is_mine_zhtlc(my_orders_pubkeys: &HashSet<String>, my_pub: &Option<String>, order_pubkey: &str) -> bool {
     let mut is_mine_zhtlc = false;
-    for my_pubkey in my_orders_pubkeys {
-        if my_pubkey == order_pubkey {
-            is_mine_zhtlc = true;
-            break;
-        }
+    if my_orders_pubkeys.contains(order_pubkey) {
+        is_mine_zhtlc = true;
     }
     drop_mutability!(is_mine_zhtlc);
     let is_my_order = is_my_order(my_pub, order_pubkey);
     is_mine_zhtlc || is_my_order
-}
-
-async fn get_my_orders_pubkeys(ctx: &MmArc) -> Vec<String> {
-    let ordermatch_ctx = OrdermatchContext::from_ctx(ctx).expect("from_ctx failed");
-    let my_orders = ordermatch_ctx.maker_orders_ctx.lock().orders.clone();
-    let mut res = Vec::new();
-    for (_, order_mutex) in my_orders {
-        let order = order_mutex.lock().await;
-        if let Some(p2p_privkey) = order.p2p_privkey {
-            drop(order);
-            let pubsecp = hex::encode(p2p_privkey.public_slice());
-            res.push(pubsecp)
-        }
-    }
-    drop_mutability!(res);
-    res
 }
 
 pub async fn orderbook_rpc(ctx: MmArc, req: Json) -> Result<Response<Vec<u8>>, String> {
@@ -182,11 +164,10 @@ pub async fn orderbook_rpc(ctx: MmArc, req: Json) -> Result<Response<Vec<u8>>, S
         _ => false,
     };
     let is_zhtlc = is_zhtlc_base || is_zhtlc_rel;
-    // have to create my_orders_pubkeys before orderbook, because orderbook is not `Send`
-    let my_orders_pubkeys = get_my_orders_pubkeys(&ctx).await;
 
     try_s!(subscribe_to_orderbook_topic(&ctx, &base_ticker, &rel_ticker, request_orderbook).await);
     let orderbook = ordermatch_ctx.orderbook.lock();
+    let my_orders_pubkeys = ordermatch_ctx.my_p2p_pubkeys.lock();
     let my_pubsecp = ctx.secp256k1_key_pair_as_option().map(|_| {
         CryptoCtx::from_ctx(&ctx)
             .expect("ctx is available")
@@ -374,8 +355,6 @@ pub async fn orderbook_rpc_v2(
         _ => false,
     };
     let is_zhtlc = is_zhtlc_base || is_zhtlc_rel;
-    // have to create my_orders_pubkeys before orderbook, because orderbook is not `Send`
-    let my_orders_pubkeys = get_my_orders_pubkeys(&ctx).await;
 
     let request_orderbook = true;
     subscribe_to_orderbook_topic(&ctx, &base_ticker, &rel_ticker, request_orderbook)
@@ -383,6 +362,7 @@ pub async fn orderbook_rpc_v2(
         .map_to_mm(OrderbookRpcError::P2PSubscribeError)?;
 
     let orderbook = ordermatch_ctx.orderbook.lock();
+    let my_orders_pubkeys = ordermatch_ctx.my_p2p_pubkeys.lock();
     let my_pubsecp = ctx.secp256k1_key_pair_as_option().map(|_| {
         CryptoCtx::from_ctx(&ctx)
             .expect("ctx is available")
