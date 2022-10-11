@@ -19,7 +19,7 @@ use crate::{BalanceError, BalanceFut, CoinBalance, FeeApproxStage, FoundSwapTxSp
             SearchForSwapTxSpendInput, SignatureResult, SwapOps, TradeFee, TradePreimageError, TradePreimageFut,
             TradePreimageResult, TradePreimageValue, TransactionDetails, TransactionEnum, TransactionErr,
             TransactionFut, TransactionType, TxMarshalingErr, UnexpectedDerivationMethod, ValidateAddressResult,
-            ValidatePaymentFut, ValidatePaymentInput, VerificationResult, WatcherOps,
+            ValidateOtherPubKeyErr, ValidatePaymentFut, ValidatePaymentInput, VerificationResult, WatcherOps,
             WatcherSearchForSwapTxSpendInput, WatcherValidatePaymentInput, WithdrawError, WithdrawFee, WithdrawFut,
             WithdrawRequest, WithdrawResult};
 use async_trait::async_trait;
@@ -1021,6 +1021,10 @@ impl SwapOps for Qrc20Coin {
 
     fn derive_htlc_key_pair(&self, swap_unique_data: &[u8]) -> KeyPair {
         utxo_common::derive_htlc_key_pair(self.as_ref(), swap_unique_data)
+    }
+
+    fn validate_other_pubkey(&self, raw_pubkey: &[u8]) -> MmResult<(), ValidateOtherPubKeyErr> {
+        utxo_common::validate_other_pubkey(raw_pubkey)
     }
 }
 

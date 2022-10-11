@@ -119,6 +119,9 @@ pub const PIRATE_ELECTRUMS: &[&str] = &["pirate.sirseven.me:10032"];
 pub const PIRATE_LIGHTWALLETD_URLS: &[&str] = &["http://pirate.sirseven.me:443"];
 const DEFAULT_RPC_PASSWORD: &str = "pass";
 
+pub const ETH_MAINNET_NODE: &str = "https://mainnet.infura.io/v3/c01c1b4cf66642528547624e1d6d9d6b";
+pub const ETH_MAINNET_SWAP_CONTRACT: &str = "0x24abe4c71fc658c91313b6552cd40cd808b3ea80";
+
 pub struct Mm2TestConf {
     pub conf: Json,
     pub rpc_password: String,

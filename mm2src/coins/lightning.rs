@@ -25,9 +25,9 @@ use crate::{BalanceFut, CoinBalance, FeeApproxStage, FoundSwapTxSpend, HistorySy
             NegotiateSwapContractAddrErr, RawTransactionFut, RawTransactionRequest, SearchForSwapTxSpendInput,
             SignatureError, SignatureResult, SwapOps, TradeFee, TradePreimageFut, TradePreimageResult,
             TradePreimageValue, TransactionEnum, TransactionFut, TxMarshalingErr, UnexpectedDerivationMethod,
-            UtxoStandardCoin, ValidateAddressResult, ValidatePaymentFut, ValidatePaymentInput, VerificationError,
-            VerificationResult, WatcherOps, WatcherSearchForSwapTxSpendInput, WatcherValidatePaymentInput,
-            WithdrawError, WithdrawFut, WithdrawRequest};
+            UtxoStandardCoin, ValidateAddressResult, ValidateOtherPubKeyErr, ValidatePaymentFut, ValidatePaymentInput,
+            VerificationError, VerificationResult, WatcherOps, WatcherSearchForSwapTxSpendInput,
+            WatcherValidatePaymentInput, WithdrawError, WithdrawFut, WithdrawRequest};
 use async_trait::async_trait;
 use bitcoin::hashes::Hash;
 use bitcoin_hashes::sha256::Hash as Sha256;
@@ -408,6 +408,8 @@ impl SwapOps for LightningCoin {
     }
 
     fn derive_htlc_key_pair(&self, _swap_unique_data: &[u8]) -> KeyPair { unimplemented!() }
+
+    fn validate_other_pubkey(&self, _raw_pubkey: &[u8]) -> MmResult<(), ValidateOtherPubKeyErr> { unimplemented!() }
 }
 
 #[async_trait]
