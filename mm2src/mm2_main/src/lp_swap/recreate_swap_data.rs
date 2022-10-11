@@ -212,7 +212,6 @@ fn convert_taker_to_maker_events(
                 // Finish processing Taker events.
                 return events;
             },
-            // Todo: does the taker need to retrieve the invoice from here?? also look in maker_swap.rs for mirror
             TakerSwapEvent::MakerPaymentReceived(tx_ident) => {
                 if let Some(taker_fee_ident) = taker_fee_ident.take() {
                     push_event!(MakerSwapEvent::TakerFeeValidated(taker_fee_ident));
@@ -261,7 +260,7 @@ fn convert_taker_to_maker_events(
             | TakerSwapEvent::StartFailed(_)
             | TakerSwapEvent::Negotiated(_)
             | TakerSwapEvent::NegotiateFailed(_)
-            // Todo: add a note here to describe why this is not needed for lightning and that it might be needed if instructions is used later depending on the situation
+            // Todo: This may be used when implementing convert_taker_to_maker_events for lightning
             | TakerSwapEvent::TakerPaymentInstructionsReceived(_)
             | TakerSwapEvent::MakerPaymentWaitConfirmStarted
             | TakerSwapEvent::MakerPaymentValidatedAndConfirmed
@@ -449,7 +448,7 @@ async fn convert_maker_to_taker_events(
                 return events;
             },
             MakerSwapEvent::TakerPaymentSpent(tx_ident) => {
-                let secret = match maker_coin.extract_secret(&secret_hash.0, &tx_ident.tx_hex()).await {
+                let secret = match maker_coin.extract_secret(&secret_hash.0, &tx_ident.tx_hex_or_hash()).await {
                     Ok(secret) => H256Json::from(secret.as_slice()),
                     Err(e) => {
                         push_event!(TakerSwapEvent::TakerPaymentWaitForSpendFailed(ERRL!("{}", e).into()));
@@ -467,7 +466,7 @@ async fn convert_maker_to_taker_events(
             | MakerSwapEvent::StartFailed(_)
             | MakerSwapEvent::Negotiated(_)
             | MakerSwapEvent::NegotiateFailed(_)
-            // Todo: add a note here to describe why this is not needed for lightning and that it might be needed if instructions is used later depending on the situation
+            // Todo: This may be used when implementing convert_maker_to_taker_events for lightning
             | MakerSwapEvent::MakerPaymentInstructionsReceived(_)
             | MakerSwapEvent::TakerPaymentWaitConfirmStarted
             | MakerSwapEvent::TakerPaymentValidatedAndConfirmed

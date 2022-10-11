@@ -245,8 +245,7 @@ pub async fn get_open_channels_nodes_addresses(
     Ok(nodes_addresses)
 }
 
-// Todo: Make this public by opening a PR in rust-lightning instead of importing it here
-// Todo: can a node that has all private channels send wrong data (we need to validate the invoice on the receiver side, if no public channels then trust the sender??)
+// Todo: Make this public in rust-lightning by opening a PR there instead of importing it here
 /// Filters the `channels` for an invoice, and returns the corresponding `RouteHint`s to include
 /// in the invoice.
 ///
@@ -267,8 +266,9 @@ pub(crate) fn filter_channels(channels: Vec<ChannelDetails>, min_inbound_capacit
             continue;
         }
 
-        // Todo: maybe check for inbound_capacity_msat first?? can this be used for probing?? I don't think so but how can it be avoided??
-        // Todo: we need the side who is revealing the private channel to check that the other side has the balance on-chain and not someone trying to probe for private channels
+        // Todo: if all public channels have inbound_capacity_msat less than min_inbound_capacity we need to give the user the option to reveal his/her private channels to the swap counterparty in this case or not
+        // Todo: the problem with revealing the private channels in the swap message (invoice) is that it can be used by malicious nodes to probe for private channels so maybe there should be a
+        // Todo: requirement that the other party has the amount required to be sent in the swap first (do we have a way to check if the other side of the swap has the balance required for the swap on-chain or not)
         if channel.is_public {
             // If any public channel exists, return no hints and let the sender
             // look at the public channels instead.

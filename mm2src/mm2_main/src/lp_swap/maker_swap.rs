@@ -410,14 +410,12 @@ impl MakerSwap {
     }
 
     async fn get_my_payment_data(&self) -> Result<PaymentDataMsg, MmError<PaymentInstructionsErr>> {
-        // Todo: is it needed? the taker has the payment hash that was used in the invoice using the secret sent by the maker anyways, need to recheck this along with if secret_hash new implementation is needed??
-        // Todo: recheck the other get_my_payment_data too
         // If maker payment is a lightning payment the payment hash will be sent in the message
-        let payment_data = self.r().maker_payment.as_ref().unwrap().tx_hex().0;
+        // It's not really needed here unlike in TakerFee msg since the hash is included in the invoice/payment_instructions but it's kept for symmetry
+        let payment_data = self.r().maker_payment.as_ref().unwrap().tx_hex_or_hash().0;
         let hash_algo = SecretHashAlgo::SHA256;
         if let Some(instructions) = self
             .taker_coin
-            // Todo: revise this with let hash_algo = SecretHashAlgo::SHA256;
             .payment_instructions(&hash_algo.hash_secret(self.secret.as_slice()), &self.taker_amount)
             .await?
         {
@@ -805,7 +803,7 @@ impl MakerSwap {
 
         let maker_payment_wait_confirm = self.r().data.started_at + (self.r().data.lock_duration * 2) / 5;
         let f = self.maker_coin.wait_for_confirmations(
-            &self.r().maker_payment.clone().unwrap().tx_hex(),
+            &self.r().maker_payment.clone().unwrap().tx_hex_or_hash(),
             self.r().data.maker_payment_confirmations,
             self.r().data.maker_payment_requires_nota.unwrap_or(false),
             maker_payment_wait_confirm,
@@ -879,7 +877,7 @@ impl MakerSwap {
         let wait_f = self
             .taker_coin
             .wait_for_confirmations(
-                &self.r().taker_payment.clone().unwrap().tx_hex(),
+                &self.r().taker_payment.clone().unwrap().tx_hex_or_hash(),
                 confirmations,
                 self.r().data.taker_payment_requires_nota.unwrap_or(false),
                 wait_taker_payment,
@@ -898,7 +896,7 @@ impl MakerSwap {
         }
 
         let validate_input = ValidatePaymentInput {
-            payment_tx: self.r().taker_payment.clone().unwrap().tx_hex().0,
+            payment_tx: self.r().taker_payment.clone().unwrap().tx_hex_or_hash().0,
             time_lock: self.taker_payment_lock.load(Ordering::Relaxed) as u32,
             other_pub: self.r().other_taker_coin_htlc_pub.to_vec(),
             unique_swap_data: self.unique_swap_data(),
@@ -946,7 +944,7 @@ impl MakerSwap {
         }
 
         let spend_fut = self.taker_coin.send_maker_spends_taker_payment(
-            &self.r().taker_payment.clone().unwrap().tx_hex(),
+            &self.r().taker_payment.clone().unwrap().tx_hex_or_hash(),
             self.taker_payment_lock.load(Ordering::Relaxed) as u32,
             &*self.r().other_taker_coin_htlc_pub,
             &self.r().data.secret.0,
@@ -1006,7 +1004,7 @@ impl MakerSwap {
         let confirmations = std::cmp::min(1, self.r().data.taker_payment_confirmations);
         let requires_nota = false;
         let wait_fut = self.taker_coin.wait_for_confirmations(
-            &self.r().taker_payment_spend.clone().unwrap().tx_hex(),
+            &self.r().taker_payment_spend.clone().unwrap().tx_hex_or_hash(),
             confirmations,
             requires_nota,
             self.wait_refund_until(),
@@ -1049,7 +1047,7 @@ impl MakerSwap {
         }
 
         let spend_fut = self.maker_coin.send_maker_refunds_payment(
-            &self.r().maker_payment.clone().unwrap().tx_hex(),
+            &self.r().maker_payment.clone().unwrap().tx_hex_or_hash(),
             self.r().data.maker_payment_lock as u32,
             &*self.r().other_maker_coin_htlc_pub,
             self.secret_hash().as_slice(),
@@ -1183,7 +1181,7 @@ impl MakerSwap {
                 .taker_payment
                 .clone()
                 .ok_or(ERRL!("No info about taker payment, swap is not recoverable"))?
-                .tx_hex();
+                .tx_hex_or_hash();
 
             // have to do this because std::sync::RwLockReadGuard returned by r() is not Send,
             // so it can't be used across await
@@ -1264,7 +1262,7 @@ impl MakerSwap {
 
         let maybe_maker_payment = self.r().maker_payment.clone();
         let maker_payment = match maybe_maker_payment {
-            Some(tx) => tx.tx_hex().0,
+            Some(tx) => tx.tx_hex_or_hash().0,
             None => {
                 let maybe_maker_payment = try_s!(
                     self.maker_coin

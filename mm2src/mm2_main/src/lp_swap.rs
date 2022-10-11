@@ -744,8 +744,7 @@ pub struct TransactionIdentifier {
 }
 
 impl TransactionIdentifier {
-    // Todo: find a better name for this
-    fn tx_hex(&self) -> BytesJson {
+    fn tx_hex_or_hash(&self) -> BytesJson {
         let tx_hash = self.tx_hash.clone();
         self.tx_hex.clone().unwrap_or(tx_hash)
     }
@@ -1295,7 +1294,6 @@ impl SecretHashAlgo {
 }
 
 // Todo: Maybe add a secret_hash_algo method to the SwapOps trait instead
-// Todo: both sides don't need to use SHA256 in the payment script if only one side requires it (check send_taker_payment if SecretHashAlgo::SHA256)
 #[cfg(not(target_arch = "wasm32"))]
 fn detect_secret_hash_algo(maker_coin: &MmCoinEnum, taker_coin: &MmCoinEnum) -> SecretHashAlgo {
     match (maker_coin, taker_coin) {
@@ -1306,7 +1304,6 @@ fn detect_secret_hash_algo(maker_coin: &MmCoinEnum, taker_coin: &MmCoinEnum) -> 
     }
 }
 
-// Todo: Maybe add a secret_hash_algo method to the SwapOps trait instead
 #[cfg(target_arch = "wasm32")]
 fn detect_secret_hash_algo(maker_coin: &MmCoinEnum, taker_coin: &MmCoinEnum) -> SecretHashAlgo {
     match (maker_coin, taker_coin) {

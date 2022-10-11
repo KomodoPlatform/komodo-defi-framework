@@ -276,7 +276,7 @@ impl Watcher {
 
         let secret = match self
             .taker_coin
-            .extract_secret(&self.data.secret_hash[..], &tx_ident.tx_hex())
+            .extract_secret(&self.data.secret_hash[..], &tx_ident.tx_hex_or_hash())
             .await
         {
             Ok(bytes) => H256Json::from(bytes.as_slice()),
