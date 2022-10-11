@@ -69,6 +69,7 @@ cfg_native! {
 }
 
 pub const NO_TX_ERROR_CODE: &str = "'code': -5";
+const RESPONSE_TOO_LARGE_CODE: i16 = -32600;
 const TX_NOT_FOUND_RETRIES: u8 = 10;
 
 pub type AddressesByLabelResult = HashMap<String, AddressPurpose>;
@@ -313,6 +314,19 @@ impl UtxoRpcError {
             }
         };
 
+        false
+    }
+
+    pub fn is_response_too_large(&self) -> bool {
+        if let UtxoRpcError::ResponseParseError(ref json_err) = self {
+            if let JsonRpcErrorType::Response(_, json) = &json_err.error {
+                return json["code"] == RESPONSE_TOO_LARGE_CODE
+                    || json["message"]
+                        .as_str()
+                        .unwrap_or_default()
+                        .contains("response too large");
+            }
+        };
         false
     }
 }

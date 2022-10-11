@@ -275,7 +275,7 @@ async fn block_header_utxo_loop<T: UtxoCommonOps>(
 
         sync_status_loop_handle.notify_blocks_headers_sync_status(from_block_height + 1, to_block_height);
 
-        let notify_sync =
+        let notify_sync_finished =
             async move |last_height: u64, to_block_height: u64, mut sync_handle: UtxoSyncStatusLoopHandle| {
                 if last_height == to_block_height {
                     sync_handle.notify_sync_finished(to_block_height);
@@ -291,57 +291,61 @@ async fn block_header_utxo_loop<T: UtxoCommonOps>(
             Ok(res) => res,
             Err(e) => {
                 error!("Error {} on retrieving the latest headers from rpc!", e);
-                if !e.to_string().contains("response too large") {
-                    error!("error {:?}", e);
-                    sync_status_notice_on_error!(sync_status_loop_handle, 10., e);
-                }
+                if e.get_inner().is_response_too_large() {
+                    log!("Now retrieving the latest headers from rpc in chunks!");
+                    let mut temporary_from = from_block_height + 1;
+                    let mut temporary_to = from_block_height + BLOCK_HEADERS_MAX_CHUNK_SIZE;
 
-                log!("Now retrieving the latest headers from rpc in chunks!");
-                let mut temporary_from = from_block_height + 1;
-                let mut temporary_to = from_block_height + BLOCK_HEADERS_MAX_CHUNK_SIZE;
+                    // While (temporary to value) is less or equal to incoming original (to value), we will collect the headers in chunk of BLOCK_HEADERS_MAX_CHUNK_SIZE at a single request/loop.
+                    return while temporary_to <= to_block_height {
+                        match client.retrieve_headers(temporary_from, temporary_to).compat().await {
+                            Ok((block_registry, block_headers, last_retrieved_height)) => {
+                                // Validate retrieved block headers
+                                block_header_utxo_loop_validate_headers!(
+                                    coin,
+                                    ticker,
+                                    temporary_from,
+                                    block_headers.clone(),
+                                    storage,
+                                    sync_status_loop_handle
+                                );
 
-                // While (temporary to value) is less or equal to incoming original (to value), we will collect the headers in chunk of BLOCK_HEADERS_MAX_CHUNK_SIZE at a single request/loop.
-                return while temporary_to <= to_block_height {
-                    match client.retrieve_headers(temporary_from, temporary_to).compat().await {
-                        Ok((block_registry, block_headers, last_retrieved_height)) => {
-                            // Validate retrieved block headers
-                            block_header_utxo_loop_validate_headers!(
-                                coin,
-                                ticker,
-                                temporary_from,
-                                block_headers.clone(),
-                                storage,
-                                sync_status_loop_handle
-                            );
+                                // Add headers to storage
+                                ok_or_continue_after_sleep!(
+                                    storage.add_block_headers_to_storage(block_registry).await,
+                                    BLOCK_HEADERS_LOOP_INTERVAL
+                                );
 
-                            // Add headers to storage
-                            ok_or_continue_after_sleep!(
-                                storage.add_block_headers_to_storage(block_registry).await,
-                                BLOCK_HEADERS_LOOP_INTERVAL
-                            );
+                                // blockchain.block.headers will returns a maximum of 500 headers so the loop needs to continue until we have all headers up to the current one.
+                                notify_sync_finished(
+                                    last_retrieved_height,
+                                    to_block_height,
+                                    sync_status_loop_handle.clone(),
+                                )
+                                .await;
 
-                            // blockchain.block.headers will returns a maximum of 500 headers so the loop needs to continue until we have all headers up to the current one.
-                            notify_sync(last_retrieved_height, to_block_height, sync_status_loop_handle.clone()).await;
-
-                            temporary_from += BLOCK_HEADERS_MAX_CHUNK_SIZE;
-                            temporary_to += BLOCK_HEADERS_MAX_CHUNK_SIZE;
-                        },
-                        Err(err) => {
-                            // keep retrying if network error
-                            if let UtxoRpcError::Transport(JsonRpcError {
-                                error: JsonRpcErrorType::Transport(_err),
-                                ..
-                            }) = err.get_inner()
-                            {
-                                log!("Will try fetching block headers again after 10 secs");
-                                Timer::sleep(10.).await;
-                                continue;
-                            };
-                            error!("Error {} on retrieving the latest headers from rpc!", err);
-                            sync_status_notice_on_error!(sync_status_loop_handle, 10., e);
-                        },
+                                temporary_from += BLOCK_HEADERS_MAX_CHUNK_SIZE;
+                                temporary_to += BLOCK_HEADERS_MAX_CHUNK_SIZE;
+                            },
+                            Err(err) => {
+                                // keep retrying if network error
+                                if let UtxoRpcError::Transport(JsonRpcError {
+                                    error: JsonRpcErrorType::Transport(_err),
+                                    ..
+                                }) = err.get_inner()
+                                {
+                                    log!("Network Error: Will try fetching block headers again after 10 secs");
+                                    Timer::sleep(10.).await;
+                                    continue;
+                                };
+                                error!("Error {} on retrieving the latest headers from rpc!", err);
+                                sync_status_notice_on_error!(sync_status_loop_handle, 10., e);
+                            },
+                        };
                     };
-                };
+                }
+                error!("error {:?}", e);
+                sync_status_notice_on_error!(sync_status_loop_handle, 10., e);
             },
         };
 
@@ -361,7 +365,7 @@ async fn block_header_utxo_loop<T: UtxoCommonOps>(
         );
 
         // blockchain.block.headers returns a maximum of 2016 headers (tested for btc) so the loop needs to continue until we have all headers up to the current one.
-        notify_sync(last_retrieved_height, to_block_height, sync_status_loop_handle.clone()).await;
+        notify_sync_finished(last_retrieved_height, to_block_height, sync_status_loop_handle.clone()).await;
     }
 }
 
