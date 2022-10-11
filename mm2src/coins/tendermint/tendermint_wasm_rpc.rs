@@ -11,9 +11,12 @@ use mm2_net::wasm_http::FetchRequest;
 use std::str::FromStr;
 use tendermint_rpc::endpoint::{abci_info, broadcast};
 pub use tendermint_rpc::endpoint::{abci_query::{AbciQuery, Request as AbciRequest},
-                                   health::Request as HealthRequest};
+                                   health::Request as HealthRequest,
+                                   tx_search::Request as TxSearchRequest};
 use tendermint_rpc::error::Error as TendermintRpcError;
+pub use tendermint_rpc::query::Query as TendermintQuery;
 use tendermint_rpc::request::SimpleRequest;
+pub use tendermint_rpc::Order as TendermintResultOrder;
 use tendermint_rpc::Response;
 
 #[derive(Debug, Clone)]

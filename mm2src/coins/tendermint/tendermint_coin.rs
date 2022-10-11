@@ -1589,7 +1589,13 @@ impl SwapOps for TendermintCoin {
 
             let response = try_s!(
                 rpc_client
-                    .tx_search(q, false, 1, max_search_result, cosmrs::rpc::Order::Ascending)
+                    .perform(TxSearchRequest::new(
+                        q,
+                        false,
+                        1,
+                        max_search_result,
+                        TendermintResultOrder::Ascending
+                    ))
                     .await
             );
 
