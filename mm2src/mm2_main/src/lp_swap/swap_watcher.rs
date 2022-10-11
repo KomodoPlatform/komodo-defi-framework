@@ -375,7 +375,7 @@ impl State for RefundTakerPayment {
 
         let refund_fut = watcher_ctx
             .taker_coin
-            .send_watcher_refunds_taker_payment(&watcher_ctx.data.taker_refunds_payment);
+            .send_watcher_refunds_taker_payment_preimage(&watcher_ctx.data.taker_refunds_payment);
         let transaction = match refund_fut.compat().await {
             Ok(t) => t,
             Err(err) => {

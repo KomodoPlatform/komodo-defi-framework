@@ -1315,7 +1315,7 @@ impl TakerSwap {
 
             match taker_spends_maker_payment_fut.compat().await {
                 Ok(taker_spends_maker_payment) => {
-                    let taker_refunds_payment_fut = self.taker_coin.create_taker_refunds_payment(
+                    let taker_refunds_payment_fut = self.taker_coin.create_taker_refunds_payment_preimage(
                         &transaction.tx_hex(),
                         self.r().data.taker_payment_lock as u32,
                         &*self.r().other_taker_coin_htlc_pub,

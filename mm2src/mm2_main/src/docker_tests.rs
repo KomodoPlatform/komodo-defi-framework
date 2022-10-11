@@ -1277,12 +1277,12 @@ mod docker_tests {
             .unwrap();
 
         let refund_tx = coin
-            .create_taker_refunds_payment(&tx.tx_hex(), time_lock, my_public_key, &[0; 20], &None, &[])
+            .create_taker_refunds_payment_preimage(&tx.tx_hex(), time_lock, my_public_key, &[0; 20], &None, &[])
             .wait()
             .unwrap();
 
         let refund_tx = coin
-            .send_watcher_refunds_taker_payment(&refund_tx.tx_hex())
+            .send_watcher_refunds_taker_payment_preimage(&refund_tx.tx_hex())
             .wait()
             .unwrap();
 

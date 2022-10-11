@@ -914,7 +914,7 @@ impl SwapOps for BchCoin {
         utxo_common::send_taker_spends_maker_payment_preimage(self.clone(), preimage, secret)
     }
 
-    fn create_taker_refunds_payment(
+    fn create_taker_refunds_payment_preimage(
         &self,
         taker_payment_tx: &[u8],
         time_lock: u32,
@@ -923,7 +923,7 @@ impl SwapOps for BchCoin {
         _swap_contract_address: &Option<BytesJson>,
         swap_unique_data: &[u8],
     ) -> TransactionFut {
-        utxo_common::create_taker_refunds_payment(
+        utxo_common::create_taker_refunds_payment_preimage(
             self.clone(),
             taker_payment_tx,
             time_lock,
@@ -933,8 +933,8 @@ impl SwapOps for BchCoin {
         )
     }
 
-    fn send_watcher_refunds_taker_payment(&self, taker_refunds_payment: &[u8]) -> TransactionFut {
-        utxo_common::send_watcher_refunds_taker_payment(self.clone(), taker_refunds_payment)
+    fn send_watcher_refunds_taker_payment_preimage(&self, taker_refunds_payment: &[u8]) -> TransactionFut {
+        utxo_common::send_watcher_refunds_taker_payment_preimage(self.clone(), taker_refunds_payment)
     }
 
     fn send_taker_refunds_payment(

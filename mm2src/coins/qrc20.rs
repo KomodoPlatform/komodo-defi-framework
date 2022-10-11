@@ -835,7 +835,7 @@ impl SwapOps for Qrc20Coin {
         unimplemented!();
     }
 
-    fn create_taker_refunds_payment(
+    fn create_taker_refunds_payment_preimage(
         &self,
         _taker_payment_tx: &[u8],
         _time_lock: u32,
@@ -847,7 +847,7 @@ impl SwapOps for Qrc20Coin {
         unimplemented!();
     }
 
-    fn send_watcher_refunds_taker_payment(&self, _taker_refunds_payment: &[u8]) -> TransactionFut {
+    fn send_watcher_refunds_taker_payment_preimage(&self, _taker_refunds_payment: &[u8]) -> TransactionFut {
         unimplemented!();
     }
 

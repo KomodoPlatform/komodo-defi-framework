@@ -1375,7 +1375,7 @@ pub fn create_taker_spends_maker_payment_preimage<T: UtxoCommonOps + SwapOps>(
     Box::new(fut.boxed().compat())
 }
 
-pub fn create_taker_refunds_payment<T: UtxoCommonOps + SwapOps>(
+pub fn create_taker_refunds_payment_preimage<T: UtxoCommonOps + SwapOps>(
     coin: T,
     taker_payment_tx: &[u8],
     time_lock: u32,
@@ -1555,7 +1555,7 @@ pub fn send_taker_refunds_payment<T: UtxoCommonOps + SwapOps>(
     Box::new(fut.boxed().compat())
 }
 
-pub fn send_watcher_refunds_taker_payment<T: UtxoCommonOps + SwapOps>(
+pub fn send_watcher_refunds_taker_payment_preimage<T: UtxoCommonOps + SwapOps>(
     coin: T,
     taker_refunds_payment: &[u8],
 ) -> TransactionFut {
