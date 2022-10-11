@@ -17,7 +17,7 @@ use crate::{BalanceError, BalanceFut, CoinBalance, FeeApproxStage, FoundSwapTxSp
             RawTransactionRequest, SearchForSwapTxSpendInput, SignatureError, SignatureResult, SwapOps, TradeFee,
             TradePreimageFut, TradePreimageResult, TradePreimageValue, TransactionDetails, TransactionEnum,
             TransactionFut, TxFeeDetails, TxMarshalingErr, UnexpectedDerivationMethod, ValidateAddressResult,
-            ValidatePaymentFut, ValidatePaymentInput, VerificationError, VerificationResult,
+            ValidatePaymentFut, ValidatePaymentInput, VerificationError, VerificationResult, WatcherOps,
             WatcherSearchForSwapTxSpendInput, WatcherValidatePaymentInput, WithdrawFut, WithdrawRequest};
 use crate::{Transaction, WithdrawError};
 use async_trait::async_trait;
@@ -1128,17 +1128,6 @@ impl SwapOps for ZCoin {
         Box::new(fut.boxed().compat())
     }
 
-    fn create_taker_spends_maker_payment_preimage(
-        &self,
-        _maker_payment_tx: &[u8],
-        _time_lock: u32,
-        _maker_pub: &[u8],
-        _secret_hash: &[u8],
-        _swap_unique_data: &[u8],
-    ) -> TransactionFut {
-        unimplemented!();
-    }
-
     fn send_taker_spends_maker_payment(
         &self,
         maker_payment_tx: &[u8],
@@ -1175,26 +1164,6 @@ impl SwapOps for ZCoin {
             Ok(tx.into())
         };
         Box::new(fut.boxed().compat())
-    }
-
-    fn send_taker_spends_maker_payment_preimage(&self, _preimage: &[u8], _secret: &[u8]) -> TransactionFut {
-        unimplemented!();
-    }
-
-    fn create_taker_refunds_payment_preimage(
-        &self,
-        _taker_payment_tx: &[u8],
-        _time_lock: u32,
-        _maker_pub: &[u8],
-        _secret_hash: &[u8],
-        _swap_contract_address: &Option<BytesJson>,
-        _swap_unique_data: &[u8],
-    ) -> TransactionFut {
-        unimplemented!();
-    }
-
-    fn send_watcher_refunds_taker_payment_preimage(&self, _taker_refunds_payment: &[u8]) -> TransactionFut {
-        unimplemented!();
     }
 
     fn send_taker_refunds_payment(
@@ -1352,20 +1321,12 @@ impl SwapOps for ZCoin {
         Box::new(fut.boxed().compat())
     }
 
-    fn watcher_validate_taker_fee(&self, _taker_fee_hash: Vec<u8>, _verified_pub: Vec<u8>) -> ValidatePaymentFut<()> {
-        unimplemented!();
-    }
-
     fn validate_maker_payment(&self, input: ValidatePaymentInput) -> ValidatePaymentFut<()> {
         utxo_common::validate_maker_payment(self, input)
     }
 
     fn validate_taker_payment(&self, input: ValidatePaymentInput) -> ValidatePaymentFut<()> {
         utxo_common::validate_taker_payment(self, input)
-    }
-
-    fn watcher_validate_taker_payment(&self, _input: WatcherValidatePaymentInput) -> ValidatePaymentFut<()> {
-        unimplemented!();
     }
 
     fn check_if_my_payment_sent(
@@ -1378,13 +1339,6 @@ impl SwapOps for ZCoin {
         swap_unique_data: &[u8],
     ) -> Box<dyn Future<Item = Option<TransactionEnum>, Error = String> + Send> {
         utxo_common::check_if_my_payment_sent(self.clone(), time_lock, other_pub, secret_hash, swap_unique_data)
-    }
-
-    async fn watcher_search_for_swap_tx_spend(
-        &self,
-        _input: WatcherSearchForSwapTxSpendInput<'_>,
-    ) -> Result<Option<FoundSwapTxSpend>, String> {
-        unimplemented!();
     }
 
     async fn search_for_swap_tx_spend_my(
@@ -1422,6 +1376,55 @@ impl SwapOps for ZCoin {
 
         let key = secp_privkey_from_hash(dhash256(&signature));
         key_pair_from_secret(key.as_slice()).expect("valid privkey")
+    }
+}
+
+#[async_trait]
+impl WatcherOps for ZCoin {
+    fn create_taker_spends_maker_payment_preimage(
+        &self,
+        _maker_payment_tx: &[u8],
+        _time_lock: u32,
+        _maker_pub: &[u8],
+        _secret_hash: &[u8],
+        _swap_unique_data: &[u8],
+    ) -> TransactionFut {
+        unimplemented!();
+    }
+
+    fn send_taker_spends_maker_payment_preimage(&self, _preimage: &[u8], _secret: &[u8]) -> TransactionFut {
+        unimplemented!();
+    }
+
+    fn create_taker_refunds_payment_preimage(
+        &self,
+        _taker_payment_tx: &[u8],
+        _time_lock: u32,
+        _maker_pub: &[u8],
+        _secret_hash: &[u8],
+        _swap_contract_address: &Option<BytesJson>,
+        _swap_unique_data: &[u8],
+    ) -> TransactionFut {
+        unimplemented!();
+    }
+
+    fn send_watcher_refunds_taker_payment_preimage(&self, _taker_refunds_payment: &[u8]) -> TransactionFut {
+        unimplemented!();
+    }
+
+    fn watcher_validate_taker_fee(&self, _taker_fee_hash: Vec<u8>, _verified_pub: Vec<u8>) -> ValidatePaymentFut<()> {
+        unimplemented!();
+    }
+
+    fn watcher_validate_taker_payment(&self, _input: WatcherValidatePaymentInput) -> ValidatePaymentFut<()> {
+        unimplemented!();
+    }
+
+    async fn watcher_search_for_swap_tx_spend(
+        &self,
+        _input: WatcherSearchForSwapTxSpendInput<'_>,
+    ) -> Result<Option<FoundSwapTxSpend>, String> {
+        unimplemented!();
     }
 }
 

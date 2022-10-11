@@ -23,8 +23,8 @@ use crate::utxo::utxo_tx_history_v2::{UtxoMyAddressesHistoryError, UtxoTxDetails
 use crate::{CanRefundHtlc, CoinBalance, CoinWithDerivationMethod, GetWithdrawSenderAddress,
             NegotiateSwapContractAddrErr, PrivKeyBuildPolicy, SearchForSwapTxSpendInput, SignatureResult, SwapOps,
             TradePreimageValue, TransactionFut, TxMarshalingErr, ValidateAddressResult, ValidatePaymentFut,
-            ValidatePaymentInput, VerificationResult, WatcherSearchForSwapTxSpendInput, WatcherValidatePaymentInput,
-            WithdrawFut, WithdrawSenderAddress};
+            ValidatePaymentInput, VerificationResult, WatcherOps, WatcherSearchForSwapTxSpendInput,
+            WatcherValidatePaymentInput, WithdrawFut, WithdrawSenderAddress};
 use crypto::Bip44Chain;
 use futures::{FutureExt, TryFutureExt};
 use mm2_metrics::MetricsArc;
@@ -332,43 +332,6 @@ impl SwapOps for UtxoStandardCoin {
         )
     }
 
-    fn create_taker_spends_maker_payment_preimage(
-        &self,
-        maker_payment_tx: &[u8],
-        time_lock: u32,
-        maker_pub: &[u8],
-        secret_hash: &[u8],
-        swap_unique_data: &[u8],
-    ) -> TransactionFut {
-        utxo_common::create_taker_spends_maker_payment_preimage(
-            self.clone(),
-            maker_payment_tx,
-            time_lock,
-            maker_pub,
-            secret_hash,
-            swap_unique_data,
-        )
-    }
-
-    fn create_taker_refunds_payment_preimage(
-        &self,
-        taker_tx: &[u8],
-        time_lock: u32,
-        maker_pub: &[u8],
-        secret_hash: &[u8],
-        _swap_contract_address: &Option<BytesJson>,
-        swap_unique_data: &[u8],
-    ) -> TransactionFut {
-        utxo_common::create_taker_refunds_payment_preimage(
-            self.clone(),
-            taker_tx,
-            time_lock,
-            maker_pub,
-            secret_hash,
-            swap_unique_data,
-        )
-    }
-
     fn send_taker_spends_maker_payment(
         &self,
         maker_tx: &[u8],
@@ -386,14 +349,6 @@ impl SwapOps for UtxoStandardCoin {
             secret,
             swap_unique_data,
         )
-    }
-
-    fn send_taker_spends_maker_payment_preimage(&self, preimage: &[u8], secret: &[u8]) -> TransactionFut {
-        utxo_common::send_taker_spends_maker_payment_preimage(self.clone(), preimage, secret)
-    }
-
-    fn send_watcher_refunds_taker_payment_preimage(&self, preimage: &[u8]) -> TransactionFut {
-        utxo_common::send_watcher_refunds_taker_payment_preimage(self.clone(), preimage)
     }
 
     fn send_taker_refunds_payment(
@@ -434,10 +389,6 @@ impl SwapOps for UtxoStandardCoin {
         )
     }
 
-    fn watcher_validate_taker_fee(&self, taker_fee_hash: Vec<u8>, verified_pub: Vec<u8>) -> ValidatePaymentFut<()> {
-        utxo_common::watcher_validate_taker_fee(self.clone(), taker_fee_hash, verified_pub)
-    }
-
     fn validate_fee(
         &self,
         fee_tx: &TransactionEnum,
@@ -470,10 +421,6 @@ impl SwapOps for UtxoStandardCoin {
         utxo_common::validate_taker_payment(self, input)
     }
 
-    fn watcher_validate_taker_payment(&self, input: WatcherValidatePaymentInput) -> ValidatePaymentFut<()> {
-        utxo_common::watcher_validate_taker_payment(self, input)
-    }
-
     fn check_if_my_payment_sent(
         &self,
         time_lock: u32,
@@ -484,13 +431,6 @@ impl SwapOps for UtxoStandardCoin {
         swap_unique_data: &[u8],
     ) -> Box<dyn Future<Item = Option<TransactionEnum>, Error = String> + Send> {
         utxo_common::check_if_my_payment_sent(self.clone(), time_lock, other_pub, secret_hash, swap_unique_data)
-    }
-
-    async fn watcher_search_for_swap_tx_spend(
-        &self,
-        input: WatcherSearchForSwapTxSpendInput<'_>,
-    ) -> Result<Option<FoundSwapTxSpend>, String> {
-        utxo_common::watcher_search_for_swap_tx_spend(self, input, utxo_common::DEFAULT_SWAP_VOUT).await
     }
 
     async fn search_for_swap_tx_spend_my(
@@ -533,6 +473,69 @@ impl SwapOps for UtxoStandardCoin {
 
     fn derive_htlc_key_pair(&self, swap_unique_data: &[u8]) -> KeyPair {
         utxo_common::derive_htlc_key_pair(self.as_ref(), swap_unique_data)
+    }
+}
+
+#[async_trait]
+impl WatcherOps for UtxoStandardCoin {
+    fn create_taker_refunds_payment_preimage(
+        &self,
+        taker_tx: &[u8],
+        time_lock: u32,
+        maker_pub: &[u8],
+        secret_hash: &[u8],
+        _swap_contract_address: &Option<BytesJson>,
+        swap_unique_data: &[u8],
+    ) -> TransactionFut {
+        utxo_common::create_taker_refunds_payment_preimage(
+            self.clone(),
+            taker_tx,
+            time_lock,
+            maker_pub,
+            secret_hash,
+            swap_unique_data,
+        )
+    }
+
+    fn create_taker_spends_maker_payment_preimage(
+        &self,
+        maker_payment_tx: &[u8],
+        time_lock: u32,
+        maker_pub: &[u8],
+        secret_hash: &[u8],
+        swap_unique_data: &[u8],
+    ) -> TransactionFut {
+        utxo_common::create_taker_spends_maker_payment_preimage(
+            self.clone(),
+            maker_payment_tx,
+            time_lock,
+            maker_pub,
+            secret_hash,
+            swap_unique_data,
+        )
+    }
+
+    fn send_watcher_refunds_taker_payment_preimage(&self, preimage: &[u8]) -> TransactionFut {
+        utxo_common::send_watcher_refunds_taker_payment_preimage(self.clone(), preimage)
+    }
+
+    fn send_taker_spends_maker_payment_preimage(&self, preimage: &[u8], secret: &[u8]) -> TransactionFut {
+        utxo_common::send_taker_spends_maker_payment_preimage(self.clone(), preimage, secret)
+    }
+
+    fn watcher_validate_taker_fee(&self, taker_fee_hash: Vec<u8>, verified_pub: Vec<u8>) -> ValidatePaymentFut<()> {
+        utxo_common::watcher_validate_taker_fee(self.clone(), taker_fee_hash, verified_pub)
+    }
+
+    fn watcher_validate_taker_payment(&self, input: WatcherValidatePaymentInput) -> ValidatePaymentFut<()> {
+        utxo_common::watcher_validate_taker_payment(self, input)
+    }
+
+    async fn watcher_search_for_swap_tx_spend(
+        &self,
+        input: WatcherSearchForSwapTxSpendInput<'_>,
+    ) -> Result<Option<FoundSwapTxSpend>, String> {
+        utxo_common::watcher_search_for_swap_tx_spend(self, input, utxo_common::DEFAULT_SWAP_VOUT).await
     }
 }
 

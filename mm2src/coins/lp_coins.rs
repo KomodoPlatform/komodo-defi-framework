@@ -519,25 +519,6 @@ pub trait SwapOps {
         swap_unique_data: &[u8],
     ) -> TransactionFut;
 
-    fn create_taker_spends_maker_payment_preimage(
-        &self,
-        _maker_payment_tx: &[u8],
-        _time_lock: u32,
-        _maker_pub: &[u8],
-        _secret_hash: &[u8],
-        _swap_unique_data: &[u8],
-    ) -> TransactionFut;
-
-    fn create_taker_refunds_payment_preimage(
-        &self,
-        _taker_payment_tx: &[u8],
-        _time_lock: u32,
-        _maker_pub: &[u8],
-        _secret_hash: &[u8],
-        _swap_contract_address: &Option<BytesJson>,
-        _swap_unique_data: &[u8],
-    ) -> TransactionFut;
-
     fn send_taker_spends_maker_payment(
         &self,
         maker_payment_tx: &[u8],
@@ -547,10 +528,6 @@ pub trait SwapOps {
         swap_contract_address: &Option<BytesJson>,
         swap_unique_data: &[u8],
     ) -> TransactionFut;
-
-    fn send_taker_spends_maker_payment_preimage(&self, preimage: &[u8], secret: &[u8]) -> TransactionFut;
-
-    fn send_watcher_refunds_taker_payment_preimage(&self, _taker_refunds_payment: &[u8]) -> TransactionFut;
 
     fn send_taker_refunds_payment(
         &self,
@@ -582,13 +559,9 @@ pub trait SwapOps {
         uuid: &[u8],
     ) -> Box<dyn Future<Item = (), Error = String> + Send>;
 
-    fn watcher_validate_taker_fee(&self, _taker_fee_hash: Vec<u8>, _verified_pub: Vec<u8>) -> ValidatePaymentFut<()>;
-
     fn validate_maker_payment(&self, input: ValidatePaymentInput) -> ValidatePaymentFut<()>;
 
     fn validate_taker_payment(&self, input: ValidatePaymentInput) -> ValidatePaymentFut<()>;
-
-    fn watcher_validate_taker_payment(&self, _input: WatcherValidatePaymentInput) -> ValidatePaymentFut<()>;
 
     fn check_if_my_payment_sent(
         &self,
@@ -599,11 +572,6 @@ pub trait SwapOps {
         swap_contract_address: &Option<BytesJson>,
         swap_unique_data: &[u8],
     ) -> Box<dyn Future<Item = Option<TransactionEnum>, Error = String> + Send>;
-
-    async fn watcher_search_for_swap_tx_spend(
-        &self,
-        input: WatcherSearchForSwapTxSpendInput<'_>,
-    ) -> Result<Option<FoundSwapTxSpend>, String>;
 
     async fn search_for_swap_tx_spend_my(
         &self,
@@ -638,6 +606,41 @@ pub trait SwapOps {
     ) -> Result<Option<BytesJson>, MmError<NegotiateSwapContractAddrErr>>;
 
     fn derive_htlc_key_pair(&self, swap_unique_data: &[u8]) -> KeyPair;
+}
+
+#[async_trait]
+pub trait WatcherOps {
+    fn send_taker_spends_maker_payment_preimage(&self, preimage: &[u8], secret: &[u8]) -> TransactionFut;
+
+    fn send_watcher_refunds_taker_payment_preimage(&self, _taker_refunds_payment: &[u8]) -> TransactionFut;
+
+    fn create_taker_refunds_payment_preimage(
+        &self,
+        _taker_payment_tx: &[u8],
+        _time_lock: u32,
+        _maker_pub: &[u8],
+        _secret_hash: &[u8],
+        _swap_contract_address: &Option<BytesJson>,
+        _swap_unique_data: &[u8],
+    ) -> TransactionFut;
+
+    fn create_taker_spends_maker_payment_preimage(
+        &self,
+        _maker_payment_tx: &[u8],
+        _time_lock: u32,
+        _maker_pub: &[u8],
+        _secret_hash: &[u8],
+        _swap_unique_data: &[u8],
+    ) -> TransactionFut;
+
+    fn watcher_validate_taker_fee(&self, _taker_fee_hash: Vec<u8>, _verified_pub: Vec<u8>) -> ValidatePaymentFut<()>;
+
+    fn watcher_validate_taker_payment(&self, _input: WatcherValidatePaymentInput) -> ValidatePaymentFut<()>;
+
+    async fn watcher_search_for_swap_tx_spend(
+        &self,
+        input: WatcherSearchForSwapTxSpendInput<'_>,
+    ) -> Result<Option<FoundSwapTxSpend>, String>;
 }
 
 /// Operations that coins have independently from the MarketMaker.
@@ -1721,7 +1724,7 @@ impl From<CoinFindError> for VerificationError {
 
 /// NB: Implementations are expected to follow the pImpl idiom, providing cheap reference-counted cloning and garbage collection.
 #[async_trait]
-pub trait MmCoin: SwapOps + MarketCoinOps + Send + Sync + 'static {
+pub trait MmCoin: SwapOps + WatcherOps + MarketCoinOps + Send + Sync + 'static {
     // `MmCoin` is an extension fulcrum for something that doesn't fit the `MarketCoinOps`. Practical examples:
     // name (might be required for some APIs, CoinMarketCap for instance);
     // coin statistics that we might want to share with UI;

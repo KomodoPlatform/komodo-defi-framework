@@ -13,8 +13,8 @@ use crate::{BlockHeightAndTime, CanRefundHtlc, CoinBalance, CoinProtocol, CoinWi
             NegotiateSwapContractAddrErr, PrivKeyBuildPolicy, RawTransactionFut, RawTransactionRequest,
             SearchForSwapTxSpendInput, SignatureResult, SwapOps, TradePreimageValue, TransactionFut, TransactionType,
             TxFeeDetails, TxMarshalingErr, UnexpectedDerivationMethod, ValidateAddressResult, ValidatePaymentFut,
-            ValidatePaymentInput, VerificationResult, WatcherSearchForSwapTxSpendInput, WatcherValidatePaymentInput,
-            WithdrawFut};
+            ValidatePaymentInput, VerificationResult, WatcherOps, WatcherSearchForSwapTxSpendInput,
+            WatcherValidatePaymentInput, WithdrawFut};
 use common::log::warn;
 use derive_more::Display;
 use futures::{FutureExt, TryFutureExt};
@@ -873,24 +873,6 @@ impl SwapOps for BchCoin {
         )
     }
 
-    fn create_taker_spends_maker_payment_preimage(
-        &self,
-        maker_payment_tx: &[u8],
-        time_lock: u32,
-        maker_pub: &[u8],
-        secret_hash: &[u8],
-        swap_unique_data: &[u8],
-    ) -> TransactionFut {
-        utxo_common::create_taker_spends_maker_payment_preimage(
-            self.clone(),
-            maker_payment_tx,
-            time_lock,
-            maker_pub,
-            secret_hash,
-            swap_unique_data,
-        )
-    }
-
     fn send_taker_spends_maker_payment(
         &self,
         maker_payment_tx: &[u8],
@@ -908,33 +890,6 @@ impl SwapOps for BchCoin {
             secret,
             swap_unique_data,
         )
-    }
-
-    fn send_taker_spends_maker_payment_preimage(&self, preimage: &[u8], secret: &[u8]) -> TransactionFut {
-        utxo_common::send_taker_spends_maker_payment_preimage(self.clone(), preimage, secret)
-    }
-
-    fn create_taker_refunds_payment_preimage(
-        &self,
-        taker_payment_tx: &[u8],
-        time_lock: u32,
-        maker_pub: &[u8],
-        secret_hash: &[u8],
-        _swap_contract_address: &Option<BytesJson>,
-        swap_unique_data: &[u8],
-    ) -> TransactionFut {
-        utxo_common::create_taker_refunds_payment_preimage(
-            self.clone(),
-            taker_payment_tx,
-            time_lock,
-            maker_pub,
-            secret_hash,
-            swap_unique_data,
-        )
-    }
-
-    fn send_watcher_refunds_taker_payment_preimage(&self, taker_refunds_payment: &[u8]) -> TransactionFut {
-        utxo_common::send_watcher_refunds_taker_payment_preimage(self.clone(), taker_refunds_payment)
     }
 
     fn send_taker_refunds_payment(
@@ -999,20 +954,12 @@ impl SwapOps for BchCoin {
         )
     }
 
-    fn watcher_validate_taker_fee(&self, taker_fee_hash: Vec<u8>, verified_pub: Vec<u8>) -> ValidatePaymentFut<()> {
-        utxo_common::watcher_validate_taker_fee(self.clone(), taker_fee_hash, verified_pub)
-    }
-
     fn validate_maker_payment(&self, input: ValidatePaymentInput) -> ValidatePaymentFut<()> {
         utxo_common::validate_maker_payment(self, input)
     }
 
     fn validate_taker_payment(&self, input: ValidatePaymentInput) -> ValidatePaymentFut<()> {
         utxo_common::validate_taker_payment(self, input)
-    }
-
-    fn watcher_validate_taker_payment(&self, input: WatcherValidatePaymentInput) -> ValidatePaymentFut<()> {
-        utxo_common::watcher_validate_taker_payment(self, input)
     }
 
     fn check_if_my_payment_sent(
@@ -1025,13 +972,6 @@ impl SwapOps for BchCoin {
         swap_unique_data: &[u8],
     ) -> Box<dyn Future<Item = Option<TransactionEnum>, Error = String> + Send> {
         utxo_common::check_if_my_payment_sent(self.clone(), time_lock, other_pub, secret_hash, swap_unique_data)
-    }
-
-    async fn watcher_search_for_swap_tx_spend(
-        &self,
-        input: WatcherSearchForSwapTxSpendInput<'_>,
-    ) -> Result<Option<FoundSwapTxSpend>, String> {
-        utxo_common::watcher_search_for_swap_tx_spend(self, input, utxo_common::DEFAULT_SWAP_VOUT).await
     }
 
     async fn search_for_swap_tx_spend_my(
@@ -1079,6 +1019,68 @@ impl SwapOps for BchCoin {
 
 fn total_unspent_value<'a>(unspents: impl IntoIterator<Item = &'a UnspentInfo>) -> u64 {
     unspents.into_iter().fold(0, |cur, unspent| cur + unspent.value)
+}
+
+#[async_trait]
+impl WatcherOps for BchCoin {
+    fn create_taker_spends_maker_payment_preimage(
+        &self,
+        maker_payment_tx: &[u8],
+        time_lock: u32,
+        maker_pub: &[u8],
+        secret_hash: &[u8],
+        swap_unique_data: &[u8],
+    ) -> TransactionFut {
+        utxo_common::create_taker_spends_maker_payment_preimage(
+            self.clone(),
+            maker_payment_tx,
+            time_lock,
+            maker_pub,
+            secret_hash,
+            swap_unique_data,
+        )
+    }
+    fn send_taker_spends_maker_payment_preimage(&self, preimage: &[u8], secret: &[u8]) -> TransactionFut {
+        utxo_common::send_taker_spends_maker_payment_preimage(self.clone(), preimage, secret)
+    }
+
+    fn create_taker_refunds_payment_preimage(
+        &self,
+        taker_payment_tx: &[u8],
+        time_lock: u32,
+        maker_pub: &[u8],
+        secret_hash: &[u8],
+        _swap_contract_address: &Option<BytesJson>,
+        swap_unique_data: &[u8],
+    ) -> TransactionFut {
+        utxo_common::create_taker_refunds_payment_preimage(
+            self.clone(),
+            taker_payment_tx,
+            time_lock,
+            maker_pub,
+            secret_hash,
+            swap_unique_data,
+        )
+    }
+
+    fn send_watcher_refunds_taker_payment_preimage(&self, taker_refunds_payment: &[u8]) -> TransactionFut {
+        utxo_common::send_watcher_refunds_taker_payment_preimage(self.clone(), taker_refunds_payment)
+    }
+
+    fn watcher_validate_taker_fee(&self, taker_fee_hash: Vec<u8>, verified_pub: Vec<u8>) -> ValidatePaymentFut<()> {
+        utxo_common::watcher_validate_taker_fee(self.clone(), taker_fee_hash, verified_pub)
+    }
+
+    fn watcher_validate_taker_payment(&self, input: WatcherValidatePaymentInput) -> ValidatePaymentFut<()> {
+        utxo_common::watcher_validate_taker_payment(self, input)
+    }
+
+    async fn watcher_search_for_swap_tx_spend(
+        &self,
+        input: WatcherSearchForSwapTxSpendInput<'_>,
+    ) -> Result<Option<FoundSwapTxSpend>, String> {
+        utxo_common::watcher_search_for_swap_tx_spend(self, input, utxo_common::DEFAULT_SWAP_VOUT).await
+    }
 }
 
 impl MarketCoinOps for BchCoin {
