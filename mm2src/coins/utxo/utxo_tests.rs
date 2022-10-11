@@ -4211,3 +4211,35 @@ fn test_hd_utxo_tx_history() {
     let client = electrum_client_for_test(MORTY_ELECTRUM_ADDRS);
     block_on(utxo_common_tests::test_hd_utxo_tx_history_impl(client));
 }
+
+#[test]
+fn test_utxo_validate_valid_and_invalid_pubkey() {
+    let conf = json!({"coin":"RICK","asset":"RICK","rpcport":25435,"txversion":4,"overwintered":1,"mm2":1,"protocol":{"type":"UTXO"}});
+    let req = json!({
+         "method": "electrum",
+         "servers": [
+             {"url":"electrum1.cipig.net:10017"},
+             {"url":"electrum2.cipig.net:10017"},
+             {"url":"electrum3.cipig.net:10017"},
+         ],
+        "check_utxo_maturity": true,
+    });
+
+    let ctx = MmCtxBuilder::new().into_mm_arc();
+    let params = UtxoActivationParams::from_legacy_req(&req).unwrap();
+
+    let coin = block_on(utxo_standard_coin_with_priv_key(
+        &ctx, "RICK", &conf, &params, &[1u8; 32],
+    ))
+    .unwrap();
+    // Test expected to pass at this point as we're using a valid pubkey to validate against a valid pubkey
+    assert!(coin
+        .validate_other_pubkey(&[
+            3, 23, 183, 225, 206, 31, 159, 148, 195, 42, 67, 115, 146, 41, 248, 140, 11, 3, 51, 41, 111, 180, 110, 143,
+            114, 134, 88, 73, 198, 174, 52, 184, 78
+        ])
+        .is_ok());
+    // Test expected to fail at this point as we're using a valid pubkey to validate against an invalid pubkeys
+    assert!(coin.validate_other_pubkey(&[1u8; 20]).is_err());
+    assert!(coin.validate_other_pubkey(&[1u8; 8]).is_err());
+}

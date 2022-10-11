@@ -450,6 +450,12 @@ pub enum NegotiateSwapContractAddrErr {
     NoOtherAddrAndNoFallback,
 }
 
+#[derive(Debug, Display, Eq, PartialEq)]
+pub enum ValidateOtherPubKeyErr {
+    #[display(fmt = "InvalidPubKey: {:?}", _0)]
+    InvalidPubKey(String),
+}
+
 #[derive(Clone, Debug)]
 pub struct WatcherValidatePaymentInput {
     pub payment_tx: Vec<u8>,
@@ -651,6 +657,8 @@ pub trait SwapOps {
     ) -> Result<Option<BytesJson>, MmError<NegotiateSwapContractAddrErr>>;
 
     fn derive_htlc_key_pair(&self, swap_unique_data: &[u8]) -> KeyPair;
+
+    fn validate_other_pubkey(&self, raw_pubkey: &[u8]) -> MmResult<(), ValidateOtherPubKeyErr>;
 
     async fn payment_instructions(
         &self,
