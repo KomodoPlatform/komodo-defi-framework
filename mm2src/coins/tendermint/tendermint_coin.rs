@@ -188,7 +188,6 @@ impl From<TendermintCoinRpcError> for RawTransactionError {
 
 #[derive(Clone, Debug, PartialEq)]
 pub struct CosmosTransaction {
-    pub txid: String,
     pub data: cosmrs::proto::cosmos::tx::v1beta1::TxRaw,
 }
 
@@ -614,10 +613,9 @@ impl TendermintCoin {
                 TX_DEFAULT_MEMO.into(),
             ));
 
-            let tx_id = try_tx_s!(coin.send_raw_tx_bytes(&try_tx_s!(tx_raw.to_bytes())).compat().await);
+            let _tx_id = try_tx_s!(coin.send_raw_tx_bytes(&try_tx_s!(tx_raw.to_bytes())).compat().await);
 
             Ok(TransactionEnum::CosmosTransaction(CosmosTransaction {
-                txid: tx_id,
                 data: tx_raw.into(),
             }))
         };
@@ -675,10 +673,9 @@ impl TendermintCoin {
                 .to_bytes()
                 .map_to_mm(|e| WithdrawError::InternalError(e.to_string())));
 
-            let tx_id = try_tx_s!(coin.send_raw_tx_bytes(&tx_bytes).compat().await);
+            let _tx_id = try_tx_s!(coin.send_raw_tx_bytes(&tx_bytes).compat().await);
 
             Ok(TransactionEnum::CosmosTransaction(CosmosTransaction {
-                txid: tx_id,
                 data: tx_raw.into(),
             }))
         };
@@ -1261,7 +1258,6 @@ impl MarketCoinOps for TendermintCoin {
                 let response = try_tx_s!(GetTxsEventResponse::decode(response.value.as_slice()));
                 if let Some(tx) = response.txs.first() {
                     return Ok(TransactionEnum::CosmosTransaction(CosmosTransaction {
-                        txid: "".to_string(),
                         data: TxRaw {
                             body_bytes: tx.body.as_ref().map(Message::encode_to_vec).unwrap_or_default(),
                             auth_info_bytes: tx.auth_info.as_ref().map(Message::encode_to_vec).unwrap_or_default(),
@@ -1281,10 +1277,7 @@ impl MarketCoinOps for TendermintCoin {
 
     fn tx_enum_from_bytes(&self, bytes: &[u8]) -> Result<TransactionEnum, MmError<TxMarshalingErr>> {
         let tx_raw: TxRaw = Message::decode(bytes).map_to_mm(|e| TxMarshalingErr::InvalidInput(e.to_string()))?;
-        Ok(TransactionEnum::CosmosTransaction(CosmosTransaction {
-            txid: String::new(),
-            data: tx_raw,
-        }))
+        Ok(TransactionEnum::CosmosTransaction(CosmosTransaction { data: tx_raw }))
     }
 
     fn current_block(&self) -> Box<dyn Future<Item = u64, Error = String> + Send> {
@@ -1415,7 +1408,6 @@ impl SwapOps for TendermintCoin {
             let tx_id = try_tx_s!(coin.send_raw_tx_bytes(&try_tx_s!(tx_raw.to_bytes())).compat().await);
 
             Ok(TransactionEnum::CosmosTransaction(CosmosTransaction {
-                txid: tx_id,
                 data: tx_raw.into(),
             }))
         };
@@ -1497,7 +1489,6 @@ impl SwapOps for TendermintCoin {
             let tx_id = try_tx_s!(coin.send_raw_tx_bytes(&try_tx_s!(tx_raw.to_bytes())).compat().await);
 
             Ok(TransactionEnum::CosmosTransaction(CosmosTransaction {
-                txid: tx_id,
                 data: tx_raw.into(),
             }))
         };
@@ -1574,17 +1565,56 @@ impl SwapOps for TendermintCoin {
 
     fn check_if_my_payment_sent(
         &self,
-        time_lock: u32,
-        other_pub: &[u8],
+        _time_lock: u32,
+        _other_pub: &[u8],
         secret_hash: &[u8],
         search_from_block: u64,
-        swap_contract_address: &Option<BytesJson>,
-        swap_unique_data: &[u8],
+        _swap_contract_address: &Option<BytesJson>,
+        _swap_unique_data: &[u8],
     ) -> Box<dyn Future<Item = Option<TransactionEnum>, Error = String> + Send> {
-        // TODO
-        // generate hashlock value and check if it's equal to fetched tx's hashlock
-        // let q: Query = "tx.height > $search_from_block AND tx.height < $current_block".parse().unwrap();
-        let fut = async move { Ok(None) };
+        let coin = self.clone();
+        let secret_hash = secret_hash.to_vec();
+        let fut = async move {
+            let rpc_client = try_s!(coin.rpc_client().await);
+            let current_block = try_s!(coin.current_block().compat().await);
+
+            let max_search_result = if (current_block - search_from_block) > u8::MAX as u64 {
+                u8::MAX
+            } else {
+                (current_block - search_from_block) as u8
+            };
+
+            let q: TendermintQuery =
+                try_s!(format!("tx.height >= {} AND tx.height <= {}", search_from_block, current_block).parse());
+
+            let response = try_s!(
+                rpc_client
+                    .tx_search(q, false, 1, max_search_result, cosmrs::rpc::Order::Ascending)
+                    .await
+            );
+
+            for tx in response.txs {
+                if let cosmrs::tendermint::abci::Code::Err(_err_code) = tx.tx_result.code {
+                    continue;
+                }
+
+                let deserialized_tx = try_s!(cosmrs::Tx::from_bytes(tx.tx.as_bytes()));
+                let msg = try_s!(deserialized_tx.body.messages.first().ok_or("Tx body couldn't be read."));
+                let htlc = try_s!(CreateHtlcProtoRep::decode(msg.value.as_slice()));
+
+                let hash_lock = hex::encode(&secret_hash);
+
+                if htlc.hash_lock == hash_lock {
+                    let htlc = TransactionEnum::CosmosTransaction(CosmosTransaction {
+                        data: try_s!(TxRaw::decode(tx.tx.as_bytes())),
+                    });
+                    return Ok(Some(htlc));
+                }
+            }
+
+            Ok(None)
+        };
+
         Box::new(fut.boxed().compat())
     }
 
@@ -1737,6 +1767,13 @@ pub mod tendermint_coin_tests {
             send_tx_fut.await.unwrap();
         });
         // >> END HTLC CREATION
+
+        let htlc_spent = block_on(
+            coin.check_if_my_payment_sent(0, &[], sha256(&sec).as_slice(), current_block, &None, &[])
+                .compat(),
+        )
+        .unwrap();
+        assert!(htlc_spent.is_some());
 
         // << BEGIN HTLC CLAIMING
         let claim_htlc_tx = coin.gen_claim_htlc_tx(create_htlc_tx.id, &sec).unwrap();
@@ -1915,7 +1952,6 @@ pub mod tendermint_coin_tests {
             .unwrap()
             .encode_to_vec();
         let create_htlc_tx = TransactionEnum::CosmosTransaction(CosmosTransaction {
-            txid: create_htlc_tx_hash.into(),
             data: TxRaw::decode(create_htlc_tx_bytes.as_slice()).unwrap(),
         });
 
@@ -1942,7 +1978,6 @@ pub mod tendermint_coin_tests {
             .encode_to_vec();
 
         let random_transfer_tx = TransactionEnum::CosmosTransaction(CosmosTransaction {
-            txid: random_transfer_tx_hash.into(),
             data: TxRaw::decode(random_transfer_tx_bytes.as_slice()).unwrap(),
         });
 
@@ -1972,7 +2007,6 @@ pub mod tendermint_coin_tests {
             .value[2..]
             .to_vec();
         let dex_fee_tx = TransactionEnum::CosmosTransaction(CosmosTransaction {
-            txid: dex_fee_hash.into(),
             data: TxRaw::decode(dex_fee_tx.encode_to_vec().as_slice()).unwrap(),
         });
 
@@ -2026,7 +2060,6 @@ pub mod tendermint_coin_tests {
             .to_vec();
 
         let fee_with_memo_tx = TransactionEnum::CosmosTransaction(CosmosTransaction {
-            txid: fee_with_memo_hash.into(),
             data: TxRaw::decode(fee_with_memo_tx.encode_to_vec().as_slice()).unwrap(),
         });
 
