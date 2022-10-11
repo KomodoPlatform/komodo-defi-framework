@@ -14,8 +14,9 @@ use crate::utxo::utxo_withdraw::{InitUtxoWithdraw, StandardUtxoWithdraw, UtxoWit
 use crate::{CanRefundHtlc, CoinBalance, CoinWithDerivationMethod, GetWithdrawSenderAddress, HDAccountAddressId,
             RawTransactionError, RawTransactionRequest, RawTransactionRes, SearchForSwapTxSpendInput, SignatureError,
             SignatureResult, SwapOps, TradePreimageValue, TransactionFut, TxFeeDetails, TxMarshalingErr,
-            ValidateAddressResult, ValidatePaymentFut, ValidatePaymentInput, VerificationError, VerificationResult,
-            WatcherValidatePaymentInput, WithdrawFrom, WithdrawResult, WithdrawSenderAddress};
+            ValidateAddressResult, ValidateOtherPubKeyErr, ValidatePaymentFut, ValidatePaymentInput,
+            VerificationError, VerificationResult, WatcherValidatePaymentInput, WithdrawFrom, WithdrawResult,
+            WithdrawSenderAddress};
 use bitcrypto::dhash256;
 pub use bitcrypto::{dhash160, sha256, ChecksumType};
 use chain::constants::SEQUENCE_FINAL;
@@ -3890,6 +3891,13 @@ pub fn derive_htlc_key_pair(coin: &UtxoCoinFields, _swap_unique_data: &[u8]) -> 
         PrivKeyPolicy::KeyPair(k) => k,
         PrivKeyPolicy::Trezor => todo!(),
     }
+}
+
+pub fn validate_other_pubkey(raw_pubkey: &[u8]) -> MmResult<(), ValidateOtherPubKeyErr> {
+    if let Err(err) = Public::from_slice(raw_pubkey) {
+        return MmError::err(ValidateOtherPubKeyErr::InvalidPubKey(err.to_string()));
+    };
+    Ok(())
 }
 
 /// Sorts and deduplicates the given `unspents` in ascending order.

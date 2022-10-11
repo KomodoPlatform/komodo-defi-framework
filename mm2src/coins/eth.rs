@@ -66,9 +66,10 @@ use super::{coin_conf, AsyncMutex, BalanceError, BalanceFut, CoinBalance, CoinFu
             RpcClientType, RpcTransportEventHandler, RpcTransportEventHandlerShared, SearchForSwapTxSpendInput,
             SignatureError, SignatureResult, SwapOps, TradeFee, TradePreimageError, TradePreimageFut,
             TradePreimageResult, TradePreimageValue, Transaction, TransactionDetails, TransactionEnum, TransactionErr,
-            TransactionFut, TxMarshalingErr, UnexpectedDerivationMethod, ValidateAddressResult, ValidatePaymentError,
-            ValidatePaymentFut, ValidatePaymentInput, VerificationError, VerificationResult,
-            WatcherValidatePaymentInput, WithdrawError, WithdrawFee, WithdrawFut, WithdrawRequest, WithdrawResult};
+            TransactionFut, TxMarshalingErr, UnexpectedDerivationMethod, ValidateAddressResult,
+            ValidateOtherPubKeyErr, ValidatePaymentError, ValidatePaymentFut, ValidatePaymentInput, VerificationError,
+            VerificationResult, WatcherValidatePaymentInput, WithdrawError, WithdrawFee, WithdrawFut, WithdrawRequest,
+            WithdrawResult};
 
 pub use rlp;
 
@@ -1142,6 +1143,13 @@ impl SwapOps for EthCoin {
 
     fn derive_htlc_key_pair(&self, _swap_unique_data: &[u8]) -> keys::KeyPair {
         key_pair_from_secret(self.key_pair.secret()).expect("valid key")
+    }
+
+    fn validate_other_pubkey(&self, raw_pubkey: &[u8]) -> MmResult<(), ValidateOtherPubKeyErr> {
+        if let Err(e) = PublicKey::from_slice(raw_pubkey) {
+            return MmError::err(ValidateOtherPubKeyErr::InvalidPubKey(e.to_string()));
+        };
+        Ok(())
     }
 }
 

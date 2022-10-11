@@ -12,8 +12,8 @@ use crate::utxo::utxo_tx_history_v2::{UtxoMyAddressesHistoryError, UtxoTxDetails
 use crate::{BlockHeightAndTime, CanRefundHtlc, CoinBalance, CoinProtocol, CoinWithDerivationMethod,
             NegotiateSwapContractAddrErr, PrivKeyBuildPolicy, RawTransactionFut, RawTransactionRequest,
             SearchForSwapTxSpendInput, SignatureResult, SwapOps, TradePreimageValue, TransactionFut, TransactionType,
-            TxFeeDetails, TxMarshalingErr, UnexpectedDerivationMethod, ValidateAddressResult, ValidatePaymentFut,
-            ValidatePaymentInput, VerificationResult, WatcherValidatePaymentInput, WithdrawFut};
+            TxFeeDetails, TxMarshalingErr, UnexpectedDerivationMethod, ValidateAddressResult, ValidateOtherPubKeyErr,
+            ValidatePaymentFut, ValidatePaymentInput, VerificationResult, WatcherValidatePaymentInput, WithdrawFut};
 use common::log::warn;
 use derive_more::Display;
 use futures::{FutureExt, TryFutureExt};
@@ -1038,6 +1038,10 @@ impl SwapOps for BchCoin {
 
     fn derive_htlc_key_pair(&self, swap_unique_data: &[u8]) -> KeyPair {
         utxo_common::derive_htlc_key_pair(self.as_ref(), swap_unique_data)
+    }
+
+    fn validate_other_pubkey(&self, raw_pubkey: &[u8]) -> MmResult<(), ValidateOtherPubKeyErr> {
+        utxo_common::validate_other_pubkey(raw_pubkey)
     }
 }
 

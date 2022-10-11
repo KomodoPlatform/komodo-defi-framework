@@ -5,9 +5,9 @@ use crate::solana::{solana_common, AccountError, SolanaCommonOps, SolanaFeeDetai
 use crate::{BalanceFut, CoinFutSpawner, FeeApproxStage, FoundSwapTxSpend, NegotiateSwapContractAddrErr,
             RawTransactionFut, RawTransactionRequest, SearchForSwapTxSpendInput, SignatureResult, SolanaCoin,
             TradePreimageFut, TradePreimageResult, TradePreimageValue, TransactionDetails, TransactionFut,
-            TransactionType, TxMarshalingErr, UnexpectedDerivationMethod, ValidateAddressResult, ValidatePaymentFut,
-            ValidatePaymentInput, VerificationResult, WatcherValidatePaymentInput, WithdrawError, WithdrawFut,
-            WithdrawRequest, WithdrawResult};
+            TransactionType, TxMarshalingErr, UnexpectedDerivationMethod, ValidateAddressResult,
+            ValidateOtherPubKeyErr, ValidatePaymentFut, ValidatePaymentInput, VerificationResult,
+            WatcherValidatePaymentInput, WithdrawError, WithdrawFut, WithdrawRequest, WithdrawResult};
 use async_trait::async_trait;
 use bincode::serialize;
 use common::executor::{abortable_queue::AbortableQueue, AbortableSystem};
@@ -442,6 +442,8 @@ impl SwapOps for SplToken {
     }
 
     fn derive_htlc_key_pair(&self, _swap_unique_data: &[u8]) -> KeyPair { todo!() }
+
+    fn validate_other_pubkey(&self, _raw_pubkey: &[u8]) -> MmResult<(), ValidateOtherPubKeyErr> { unimplemented!() }
 }
 
 #[allow(clippy::forget_ref, clippy::forget_copy, clippy::cast_ref_to_mut)]
