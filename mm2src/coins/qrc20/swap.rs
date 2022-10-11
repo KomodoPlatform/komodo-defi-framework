@@ -129,21 +129,20 @@ impl Qrc20Coin {
             let expected_value = wei_from_big_decimal(&amount, self.utxo.decimals)?;
             let my_address = self.utxo.derivation_method.iguana_or_err()?.clone();
             let expected_receiver = qtum::contract_addr_from_utxo_addr(my_address)
-                .map_err(|e| ValidatePaymentError::InternalError(e.to_string()))?;
+                .mm_err(|e| ValidatePaymentError::InternalError(e.to_string()))?;
             self.erc20_payment_call_bytes(
                 expected_swap_id,
                 expected_value,
                 time_lock,
                 &secret_hash,
                 expected_receiver,
-            )
-            .map_err(|e| ValidatePaymentError::InternalError(e.to_string()))?
+            )?
         };
 
         let erc20_payment = self
             .erc20_payment_details_from_tx(&payment_tx)
             .await
-            .map_err(ValidatePaymentError::TxDeserializationError)?;
+            .map_to_mm(ValidatePaymentError::TxDeserializationError)?;
         if erc20_payment.contract_call_bytes != expected_call_bytes {
             return MmError::err(ValidatePaymentError::WrongPaymentTx(format!(
                 "Unexpected 'erc20Payment' contract call bytes: {:?}",
