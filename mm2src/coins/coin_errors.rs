@@ -11,15 +11,13 @@ pub enum ValidatePaymentError {
     InternalError(String),
     // Problem with deserializing the transaction, or one of the transaction parts is invalid.
     TxDeserializationError(String),
-    InvalidInput(String),
+    InvalidParameter(String),
     InvalidRpcResponse(String),
     SPVError(SPVError),
     UnexpectedPaymentState(String),
     Transport(String),
     // Transaction has wrong properties, for example, it has been sent to a wrong address
-    InvalidTx(String),
-    InvalidPubkey(String),
-    TxFromRPCError(String),
+    WrongPaymentTx(String),
 }
 
 impl From<rlp::DecoderError> for ValidatePaymentError {

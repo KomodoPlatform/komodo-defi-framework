@@ -1739,10 +1739,7 @@ pub fn watcher_validate_taker_fee<T: UtxoCommonOps>(
                 Ok(t) => t,
                 Err(e) => {
                     if attempts > 2 {
-                        return MmError::err(ValidatePaymentError::TxFromRPCError(format!(
-                            "Got error {:?} after 3 attempts of getting tx {:?} from RPC",
-                            e, taker_fee_hash
-                        )));
+                        return MmError::err(ValidatePaymentError::from(e.into_inner()));
                     };
                     attempts += 1;
                     error!("Error getting tx {:?} from rpc: {:?}", taker_fee_hash, e);
@@ -1754,13 +1751,13 @@ pub fn watcher_validate_taker_fee<T: UtxoCommonOps>(
             match check_all_inputs_signed_by_pub(&*taker_fee_tx, &verified_pub) {
                 Ok(is_valid) => {
                     if !is_valid {
-                        return MmError::err(ValidatePaymentError::InvalidPubkey(
+                        return MmError::err(ValidatePaymentError::WrongPaymentTx(
                             "Taker fee does not belong to the verified public key".to_string(),
                         ));
                     }
                 },
                 Err(e) => {
-                    return MmError::err(ValidatePaymentError::InvalidPubkey(e));
+                    return MmError::err(ValidatePaymentError::WrongPaymentTx(e));
                 },
             };
 
@@ -1854,9 +1851,9 @@ pub fn validate_maker_payment<T: UtxoCommonOps + SwapOps>(
     tx.tx_hash_algo = coin.as_ref().tx_hash_algo;
 
     let htlc_keypair = coin.derive_htlc_key_pair(&input.unique_swap_data);
-    let other_pub = &try_f!(
-        Public::from_slice(&input.other_pub).map_to_mm(|err| ValidatePaymentError::InvalidInput(err.to_string()))
-    );
+    let other_pub =
+        &try_f!(Public::from_slice(&input.other_pub)
+            .map_to_mm(|err| ValidatePaymentError::InvalidParameter(err.to_string())));
     validate_payment(
         coin.clone(),
         tx,
@@ -1878,10 +1875,10 @@ pub fn watcher_validate_taker_payment<T: UtxoCommonOps + SwapOps>(
     let mut tx: UtxoTx = try_f!(deserialize(input.payment_tx.as_slice()));
     tx.tx_hash_algo = coin.as_ref().tx_hash_algo;
     let first_pub = &try_f!(
-        Public::from_slice(&input.taker_pub).map_err(|err| ValidatePaymentError::InvalidInput(err.to_string()))
+        Public::from_slice(&input.taker_pub).map_err(|err| ValidatePaymentError::InvalidParameter(err.to_string()))
     );
     let second_pub = &try_f!(
-        Public::from_slice(&input.maker_pub).map_err(|err| ValidatePaymentError::InvalidInput(err.to_string()))
+        Public::from_slice(&input.maker_pub).map_err(|err| ValidatePaymentError::InvalidParameter(err.to_string()))
     );
     validate_payment(
         coin.clone(),
@@ -1905,9 +1902,9 @@ pub fn validate_taker_payment<T: UtxoCommonOps + SwapOps>(
     tx.tx_hash_algo = coin.as_ref().tx_hash_algo;
 
     let htlc_keypair = coin.derive_htlc_key_pair(&input.unique_swap_data);
-    let other_pub = &try_f!(
-        Public::from_slice(&input.other_pub).map_to_mm(|err| ValidatePaymentError::InvalidInput(err.to_string()))
-    );
+    let other_pub =
+        &try_f!(Public::from_slice(&input.other_pub)
+            .map_to_mm(|err| ValidatePaymentError::InvalidParameter(err.to_string())));
 
     validate_payment(
         coin.clone(),
@@ -3614,7 +3611,7 @@ pub fn validate_payment<T: UtxoCommonOps>(
             if serialize(&tx).take() != tx_from_rpc.0
                 && serialize_with_flags(&tx, SERIALIZE_TRANSACTION_WITNESS).take() != tx_from_rpc.0
             {
-                return MmError::err(ValidatePaymentError::InvalidTx(format!(
+                return MmError::err(ValidatePaymentError::WrongPaymentTx(format!(
                     "Provided payment tx {:?} doesn't match tx data from rpc {:?}",
                     tx, tx_from_rpc
                 )));
@@ -3627,7 +3624,7 @@ pub fn validate_payment<T: UtxoCommonOps>(
 
             let actual_output = tx.outputs.get(output_index);
             if actual_output != Some(&expected_output) {
-                return MmError::err(ValidatePaymentError::InvalidTx(format!(
+                return MmError::err(ValidatePaymentError::WrongPaymentTx(format!(
                     "Provided payment tx output doesn't match expected {:?} {:?}",
                     actual_output, expected_output
                 )));

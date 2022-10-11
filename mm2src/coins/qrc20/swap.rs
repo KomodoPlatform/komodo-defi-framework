@@ -145,21 +145,21 @@ impl Qrc20Coin {
             .await
             .map_err(ValidatePaymentError::TxDeserializationError)?;
         if erc20_payment.contract_call_bytes != expected_call_bytes {
-            return MmError::err(ValidatePaymentError::InvalidTx(format!(
+            return MmError::err(ValidatePaymentError::WrongPaymentTx(format!(
                 "Unexpected 'erc20Payment' contract call bytes: {:?}",
                 erc20_payment.contract_call_bytes
             )));
         }
 
         if sender != erc20_payment.sender {
-            return MmError::err(ValidatePaymentError::InvalidTx(format!(
+            return MmError::err(ValidatePaymentError::WrongPaymentTx(format!(
                 "Payment tx {:?} was sent from wrong address, expected {:?}",
                 erc20_payment.sender, sender
             )));
         }
 
         if expected_swap_contract_address != erc20_payment.swap_contract_address {
-            return MmError::err(ValidatePaymentError::InvalidTx(format!(
+            return MmError::err(ValidatePaymentError::WrongPaymentTx(format!(
                 "Payment tx receiver arg {:?} is invalid, expected {:?}",
                 erc20_payment.swap_contract_address, expected_swap_contract_address
             )));

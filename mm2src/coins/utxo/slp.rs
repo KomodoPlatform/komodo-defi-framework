@@ -432,7 +432,7 @@ impl SlpToken {
         match slp_tx.transaction {
             SlpTransaction::Send { token_id, amounts } => {
                 if token_id != self.token_id() {
-                    return MmError::err(ValidatePaymentError::InvalidTx(format!(
+                    return MmError::err(ValidatePaymentError::WrongPaymentTx(format!(
                         "Invalid tx token_id, Expected: {}, found: {}",
                         token_id,
                         self.token_id()
@@ -440,24 +440,28 @@ impl SlpToken {
                 }
 
                 if amounts.is_empty() {
-                    return MmError::err(ValidatePaymentError::InvalidTx(
+                    return MmError::err(ValidatePaymentError::WrongPaymentTx(
                         "Input amount can't be empty".to_string(),
                     ));
                 }
 
                 if amounts[0] != slp_satoshis {
-                    return MmError::err(ValidatePaymentError::InvalidTx(format!(
+                    return MmError::err(ValidatePaymentError::WrongPaymentTx(format!(
                         "Invalid input amount. Expected: {}, found: {}",
                         slp_satoshis, amounts[0]
                     )));
                 }
             },
-            _ => return MmError::err(ValidatePaymentError::InvalidTx("Invalid Slp tx details".to_string())),
+            _ => {
+                return MmError::err(ValidatePaymentError::WrongPaymentTx(
+                    "Invalid Slp tx details".to_string(),
+                ))
+            },
         }
 
         let htlc_keypair = self.derive_htlc_key_pair(&input.unique_swap_data);
         let first_pub = &Public::from_slice(&input.other_pub)
-            .map_to_mm(|err| ValidatePaymentError::InvalidInput(err.to_string()))?;
+            .map_to_mm(|err| ValidatePaymentError::InvalidParameter(err.to_string()))?;
         let validate_fut = utxo_common::validate_payment(
             self.platform_coin.clone(),
             tx,
@@ -2159,7 +2163,7 @@ mod slp_tests {
         };
         let validity_err = block_on(fusd.validate_htlc(input)).unwrap_err();
         match validity_err.into_inner() {
-            ValidatePaymentError::InvalidTx(e) => println!("{:?}", e),
+            ValidatePaymentError::WrongPaymentTx(e) => println!("{:?}", e),
             err @ _ => panic!("Unexpected err {:?}", err),
         };
     }

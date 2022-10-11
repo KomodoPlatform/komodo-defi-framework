@@ -176,8 +176,8 @@ fn test_validate_maker_payment() {
         .unwrap_err()
         .into_inner();
     log!("error: {:?}", error);
-    assert!(matches!(error, ValidatePaymentError::InvalidTx(_)));
-    if let ValidatePaymentError::InvalidTx(error) = error {
+    assert!(matches!(error, ValidatePaymentError::WrongPaymentTx(_)));
+    if let ValidatePaymentError::WrongPaymentTx(error) = error {
         assert!(error
             .contains("Payment tx 0x9e032d4b0090a11dc40fe6c47601499a35d55fbb was sent from wrong address, expected 0x783cf0be521101942da509846ea476e683aad832"))
     }
@@ -190,8 +190,8 @@ fn test_validate_maker_payment() {
         .unwrap_err()
         .into_inner();
     log!("error: {:?}", error);
-    assert!(matches!(error, ValidatePaymentError::InvalidTx(_)));
-    if let ValidatePaymentError::InvalidTx(error) = error {
+    assert!(matches!(error, ValidatePaymentError::WrongPaymentTx(_)));
+    if let ValidatePaymentError::WrongPaymentTx(error) = error {
         assert!(error.contains("Unexpected 'erc20Payment' contract call bytes"))
     }
     input.amount = correct_amount;
