@@ -26,7 +26,6 @@ pub enum SavedSwapError {
     InternalError(String),
 }
 
-// Todo: check backward compatibility for loading swaps from files, etc..
 #[derive(Debug, Serialize, Deserialize)]
 #[serde(tag = "type")]
 pub enum SavedSwap {
