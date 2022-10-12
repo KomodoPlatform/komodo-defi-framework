@@ -313,18 +313,22 @@ impl UtxoRpcError {
                 // electrum compatible;
             }
         };
-
         false
     }
 
     pub fn is_response_too_large(&self) -> bool {
         if let UtxoRpcError::ResponseParseError(ref json_err) = self {
             if let JsonRpcErrorType::Response(_, json) = &json_err.error {
-                return json["code"] == RESPONSE_TOO_LARGE_CODE
-                    || json["message"]
-                        .as_str()
-                        .unwrap_or_default()
-                        .contains("response too large");
+                return json["code"] == RESPONSE_TOO_LARGE_CODE;
+            }
+        };
+        false
+    }
+
+    pub fn is_network_error(&self) -> bool {
+        if let UtxoRpcError::Transport(ref json_err) = self {
+            if let JsonRpcErrorType::Transport(_err) = &json_err.error {
+                return true;
             }
         };
         false

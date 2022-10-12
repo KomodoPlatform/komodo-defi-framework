@@ -1,4 +1,4 @@
-use crate::utxo::rpc_clients::{UtxoRpcClientEnum, UtxoRpcError};
+use crate::utxo::rpc_clients::UtxoRpcClientEnum;
 use crate::utxo::utxo_builder::{UtxoCoinBuildError, UtxoCoinBuilder, UtxoCoinBuilderCommonOps,
                                 UtxoFieldsWithHardwareWalletBuilder, UtxoFieldsWithIguanaPrivKeyBuilder};
 use crate::utxo::{generate_and_send_tx, FeePolicy, GetUtxoListOps, UtxoArc, UtxoCommonOps, UtxoSyncStatusLoopHandle,
@@ -7,7 +7,6 @@ use crate::{DerivationMethod, PrivKeyBuildPolicy, UtxoActivationParams};
 use async_trait::async_trait;
 use chain::TransactionOutput;
 use common::executor::{spawn, Timer};
-use common::jsonrpc_client::{JsonRpcError, JsonRpcErrorType};
 use common::log::{error, info, warn};
 use futures::compat::Future01CompatExt;
 use futures::future::{abortable, AbortHandle};
@@ -212,27 +211,6 @@ pub trait MergeUtxoArcOps<T: UtxoCommonOps + GetUtxoListOps>: UtxoCoinBuilderCom
     }
 }
 
-macro_rules! sync_status_notice_on_error {
-    ($sync_status_loop_handle:ident, $delay: expr, $error: ident) => {
-        $sync_status_loop_handle.notify_on_temp_error($error.to_string());
-        Timer::sleep($delay).await;
-        continue;
-    };
-}
-
-macro_rules! block_header_utxo_loop_validate_headers {
-    ($coin: expr, $ticker: ident, $temporary_from: ident, $block_headers: expr, $storage: ident, $sync_status_loop_handle:ident) => {
-         if let Some(params) = &$coin.as_ref().conf.block_headers_verification_params {
-            if let Err(e) = validate_headers($ticker, $temporary_from, $block_headers, $storage, &params).await {
-                error!("Error {} on validating the latest headers!", e);
-                // Todo: remove this electrum server and use another in this case since the headers from this server are invalid
-                $sync_status_loop_handle.notify_on_permanent_error(e.to_string());
-                break;
-            }
-        }
-    };
-}
-
 async fn block_header_utxo_loop<T: UtxoCommonOps>(
     weak: UtxoWeak,
     constructor: impl Fn(UtxoArc) -> T,
@@ -289,26 +267,35 @@ async fn block_header_utxo_loop<T: UtxoCommonOps>(
             .await
         {
             Ok(res) => res,
-            Err(e) => {
-                error!("Error {} on retrieving the latest headers from rpc!", e);
-                if e.get_inner().is_response_too_large() {
-                    log!("Now retrieving the latest headers from rpc in chunks!");
-                    let mut temporary_from = from_block_height + 1;
-                    let mut temporary_to = from_block_height + BLOCK_HEADERS_MAX_CHUNK_SIZE;
+            Err(error) => {
+                if error.get_inner().is_network_error() {
+                    log!("Network Error: Will try fetching block headers again after 10 secs");
+                    sync_status_loop_handle.notify_on_temp_error(error.to_string());
+                    Timer::sleep(10.).await;
+                    continue;
+                };
 
-                    // While (temporary to value) is less or equal to incoming original (to value), we will collect the headers in chunk of BLOCK_HEADERS_MAX_CHUNK_SIZE at a single request/loop.
-                    return while temporary_to <= to_block_height {
-                        match client.retrieve_headers(temporary_from, temporary_to).compat().await {
+                ///////////// START BLOCK HEADER REQUEST IN CHUNKS
+                // If electrum returns response too large error", we will request the headers again in chunks of BLOCK_HEADERS_MAX_CHUNK_SIZE instead.
+                if error.get_inner().is_response_too_large() {
+                    log!("Now retrieving the latest headers from rpc in chunks!");
+                    let mut temp_from = from_block_height + 1;
+                    let mut temp_to = from_block_height + BLOCK_HEADERS_MAX_CHUNK_SIZE;
+
+                    return while temp_to <= to_block_height {
+                        match client.retrieve_headers(temp_from, temp_to).compat().await {
                             Ok((block_registry, block_headers, last_retrieved_height)) => {
                                 // Validate retrieved block headers
-                                block_header_utxo_loop_validate_headers!(
-                                    coin,
-                                    ticker,
-                                    temporary_from,
-                                    block_headers.clone(),
-                                    storage,
-                                    sync_status_loop_handle
-                                );
+                                if let Some(params) = &coin.as_ref().conf.block_headers_verification_params {
+                                    if let Err(e) =
+                                        validate_headers(ticker, temp_from, block_headers, storage, params).await
+                                    {
+                                        error!("Error {} on validating the latest headers!", e);
+                                        // Todo: remove this electrum server and use another in this case since the headers from this server are invalid
+                                        sync_status_loop_handle.notify_on_permanent_error(e.to_string());
+                                        break;
+                                    }
+                                };
 
                                 // Add headers to storage
                                 ok_or_continue_after_sleep!(
@@ -324,40 +311,41 @@ async fn block_header_utxo_loop<T: UtxoCommonOps>(
                                 )
                                 .await;
 
-                                temporary_from += BLOCK_HEADERS_MAX_CHUNK_SIZE;
-                                temporary_to += BLOCK_HEADERS_MAX_CHUNK_SIZE;
+                                temp_from += BLOCK_HEADERS_MAX_CHUNK_SIZE;
+                                temp_to += BLOCK_HEADERS_MAX_CHUNK_SIZE;
                             },
                             Err(err) => {
                                 // keep retrying if network error
-                                if let UtxoRpcError::Transport(JsonRpcError {
-                                    error: JsonRpcErrorType::Transport(_err),
-                                    ..
-                                }) = err.get_inner()
-                                {
+                                if err.get_inner().is_network_error() {
                                     log!("Network Error: Will try fetching block headers again after 10 secs");
+                                    sync_status_loop_handle.notify_on_temp_error(err.to_string());
                                     Timer::sleep(10.).await;
                                     continue;
                                 };
                                 error!("Error {} on retrieving the latest headers from rpc!", err);
-                                sync_status_notice_on_error!(sync_status_loop_handle, 10., e);
+                                sync_status_loop_handle.notify_on_permanent_error(err.to_string());
+                                break;
                             },
                         };
                     };
                 }
-                error!("error {:?}", e);
-                sync_status_notice_on_error!(sync_status_loop_handle, 10., e);
+                ///////////// END BLOCK HEADER REQUEST IN CHUNKS
+
+                error!("Error {} on retrieving the latest headers from rpc!", error);
+                sync_status_loop_handle.notify_on_permanent_error(error.to_string());
+                break;
             },
         };
 
         // Validate retrieved block headers
-        block_header_utxo_loop_validate_headers!(
-            coin,
-            ticker,
-            from_block_height,
-            block_headers.clone(),
-            storage,
-            sync_status_loop_handle
-        );
+        if let Some(params) = &coin.as_ref().conf.block_headers_verification_params {
+            if let Err(e) = validate_headers(ticker, from_block_height, block_headers, storage, params).await {
+                error!("Error {} on validating the latest headers!", e);
+                // Todo: remove this electrum server and use another in this case since the headers from this server are invalid
+                sync_status_loop_handle.notify_on_permanent_error(e.to_string());
+                break;
+            }
+        };
 
         ok_or_continue_after_sleep!(
             storage.add_block_headers_to_storage(block_registry).await,
