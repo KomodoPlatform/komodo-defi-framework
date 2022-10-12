@@ -176,10 +176,9 @@ fn test_validate_maker_payment() {
         .unwrap_err()
         .into_inner();
     log!("error: {:?}", error);
-    assert!(matches!(error, ValidatePaymentError::WrongPaymentTx(_)));
-    if let ValidatePaymentError::WrongPaymentTx(error) = error {
-        assert!(error
-            .contains("Payment tx 0x9e032d4b0090a11dc40fe6c47601499a35d55fbb was sent from wrong address, expected 0x783cf0be521101942da509846ea476e683aad832"))
+    match error {
+        ValidatePaymentError::WrongPaymentTx(err) => assert!(err.contains("Payment tx 0x9e032d4b0090a11dc40fe6c47601499a35d55fbb was sent from wrong address, expected 0x783cf0be521101942da509846ea476e683aad832")),
+        _ => panic!("Expected `WrongPaymentTx` wrong address, found {:?}", error),
     }
     input.other_pub = correct_maker_pub;
 
@@ -190,9 +189,14 @@ fn test_validate_maker_payment() {
         .unwrap_err()
         .into_inner();
     log!("error: {:?}", error);
-    assert!(matches!(error, ValidatePaymentError::WrongPaymentTx(_)));
-    if let ValidatePaymentError::WrongPaymentTx(error) = error {
-        assert!(error.contains("Unexpected 'erc20Payment' contract call bytes"))
+    match error {
+        ValidatePaymentError::WrongPaymentTx(err) => {
+            assert!(err.contains("Unexpected 'erc20Payment' contract call bytes"))
+        },
+        _ => panic!(
+            "Expected `WrongPaymentTx` unexpected contract call bytes, found {:?}",
+            error
+        ),
     }
     input.amount = correct_amount;
 
@@ -203,18 +207,28 @@ fn test_validate_maker_payment() {
         .unwrap_err()
         .into_inner();
     log!("error: {:?}", error);
-    assert!(matches!(error, ValidatePaymentError::UnexpectedPaymentState(_)));
-    if let ValidatePaymentError::UnexpectedPaymentState(error) = error {
-        assert!(error.contains("Payment state is not PAYMENT_STATE_SENT, got 0"))
+    match error {
+        ValidatePaymentError::UnexpectedPaymentState(err) => {
+            assert!(err.contains("Payment state is not PAYMENT_STATE_SENT, got 0"))
+        },
+        _ => panic!(
+            "Expected `UnexpectedPaymentState` state not PAYMENT_STATE_SENT, found {:?}",
+            error
+        ),
     }
     input.secret_hash = vec![1; 20];
 
     input.time_lock = 123;
     let error = coin.validate_maker_payment(input).wait().unwrap_err().into_inner();
     log!("error: {:?}", error);
-    assert!(matches!(error, ValidatePaymentError::UnexpectedPaymentState(_)));
-    if let ValidatePaymentError::UnexpectedPaymentState(error) = error {
-        assert!(error.contains("Payment state is not PAYMENT_STATE_SENT, got 0"))
+    match error {
+        ValidatePaymentError::UnexpectedPaymentState(err) => {
+            assert!(error.contains("Payment state is not PAYMENT_STATE_SENT, got 0"))
+        },
+        _ => panic!(
+            "Expected `UnexpectedPaymentState` state not PAYMENT_STATE_SENT, found {:?}",
+            error
+        ),
     }
 }
 
@@ -977,11 +991,11 @@ fn test_validate_maker_payment_malicious() {
         .expect("'erc20Payment' was called from another swap contract, expected an error")
         .into_inner();
     log!("error: {}", error);
-
-    println!("{:?}", error);
-    assert!(matches!(error, ValidatePaymentError::TxDeserializationError(_)));
-    if let ValidatePaymentError::TxDeserializationError(error) = error {
-        assert!(error.contains("Unexpected amount 1000 in 'Transfer' event, expected 100000000"))
+    match error {
+        ValidatePaymentError::TxDeserializationError(err) => {
+            assert!(err.contains("Unexpected amount 1000 in 'Transfer' event, expected 100000000"))
+        },
+        _ => panic!("Expected `TxDeserializationError` unexpected amount, found {:?}", error),
     }
 }
 
