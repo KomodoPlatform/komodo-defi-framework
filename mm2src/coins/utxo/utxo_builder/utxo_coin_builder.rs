@@ -154,7 +154,7 @@ pub trait UtxoFieldsWithIguanaPrivKeyBuilder: UtxoCoinBuilderCommonOps {
         // all spawned futures related to this `UTXO` coin will be aborted as well.
         let abortable_system: AbortableQueue = self.ctx().abortable_system.create_subsystem();
 
-        let rpc_client = self.rpc_client(&CoinFutSpawner::new(&abortable_system)).await?;
+        let rpc_client = self.rpc_client(abortable_system.create_subsystem()).await?;
         let tx_fee = self.tx_fee(&rpc_client).await?;
         let decimals = self.decimals(&rpc_client).await?;
         let dust_amount = self.dust_amount();
@@ -224,7 +224,7 @@ pub trait UtxoFieldsWithHardwareWalletBuilder: UtxoCoinBuilderCommonOps {
         // all spawned futures related to this `UTXO` coin will be aborted as well.
         let abortable_system: AbortableQueue = self.ctx().abortable_system.create_subsystem();
 
-        let rpc_client = self.rpc_client(&CoinFutSpawner::new(&abortable_system)).await?;
+        let rpc_client = self.rpc_client(abortable_system.create_subsystem()).await?;
         let tx_fee = self.tx_fee(&rpc_client).await?;
         let decimals = self.decimals(&rpc_client).await?;
         let dust_amount = self.dust_amount();
@@ -403,7 +403,7 @@ pub trait UtxoCoinBuilderCommonOps {
         }
     }
 
-    async fn rpc_client(&self, spawner: &CoinFutSpawner) -> UtxoCoinBuildResult<UtxoRpcClientEnum> {
+    async fn rpc_client(&self, abortable_system: AbortableQueue) -> UtxoCoinBuildResult<UtxoRpcClientEnum> {
         match self.activation_params().mode.clone() {
             UtxoRpcMode::Native => {
                 #[cfg(target_arch = "wasm32")]
@@ -418,16 +418,18 @@ pub trait UtxoCoinBuilderCommonOps {
             },
             UtxoRpcMode::Electrum { servers } => {
                 let electrum = self
-                    .electrum_client(spawner, ElectrumBuilderArgs::default(), servers)
+                    .electrum_client(abortable_system, ElectrumBuilderArgs::default(), servers)
                     .await?;
                 Ok(UtxoRpcClientEnum::Electrum(electrum))
             },
         }
     }
 
+    /// The method takes `abortable_system` that will be used to spawn Electrum's related futures.
+    /// It can be pinned to the coin's abortable system via [`AbortableSystem::create_subsystem`], but not required.
     async fn electrum_client(
         &self,
-        spawner: &CoinFutSpawner,
+        abortable_system: AbortableQueue,
         args: ElectrumBuilderArgs,
         mut servers: Vec<ElectrumRpcRequest>,
     ) -> UtxoCoinBuildResult<ElectrumClient> {
@@ -454,7 +456,10 @@ pub trait UtxoCoinBuilderCommonOps {
 
         let mut rng = small_rng();
         servers.as_mut_slice().shuffle(&mut rng);
-        let client = ElectrumClientImpl::new(ticker, event_handlers, block_headers_storage);
+
+        // This spawner will be used below to spawn version and ping loops.
+        let spawner = abortable_system.weak_spawner();
+        let client = ElectrumClientImpl::new(ticker, event_handlers, block_headers_storage, abortable_system);
         for server in servers.iter() {
             match client.add_server(server).await {
                 Ok(_) => (),
@@ -480,7 +485,7 @@ pub trait UtxoCoinBuilderCommonOps {
         if args.negotiate_version {
             let weak_client = Arc::downgrade(&client);
             let client_name = format!("{} GUI/MM2 {}", ctx.gui().unwrap_or("UNKNOWN"), ctx.mm_version());
-            spawn_electrum_version_loop(spawner, weak_client, on_connect_rx, client_name);
+            spawn_electrum_version_loop(&spawner, weak_client, on_connect_rx, client_name);
 
             wait_for_protocol_version_checked(&client)
                 .await
@@ -489,7 +494,7 @@ pub trait UtxoCoinBuilderCommonOps {
 
         if args.spawn_ping {
             let weak_client = Arc::downgrade(&client);
-            spawn_electrum_ping_loop(spawner, weak_client, servers);
+            spawn_electrum_ping_loop(&spawner, weak_client, servers);
         }
 
         Ok(ElectrumClient(client))
@@ -679,8 +684,8 @@ fn read_native_mode_conf(
 /// According to docs server can do it if there are no messages in ~10 minutes.
 /// https://electrumx.readthedocs.io/en/latest/protocol-methods.html?highlight=keep#server-ping
 /// Weak reference will allow to stop the thread if client is dropped.
-fn spawn_electrum_ping_loop(
-    spawner: &CoinFutSpawner,
+fn spawn_electrum_ping_loop<Spawner: SpawnAbortable>(
+    spawner: &Spawner,
     weak_client: Weak<ElectrumClientImpl>,
     servers: Vec<ElectrumRpcRequest>,
 ) {
@@ -705,8 +710,8 @@ fn spawn_electrum_ping_loop(
 /// Follow the `on_connect_rx` stream and verify the protocol version of each connected electrum server.
 /// https://electrumx.readthedocs.io/en/latest/protocol-methods.html?highlight=keep#server-version
 /// Weak reference will allow to stop the thread if client is dropped.
-fn spawn_electrum_version_loop(
-    spawner: &CoinFutSpawner,
+fn spawn_electrum_version_loop<Spawner: SpawnAbortable>(
+    spawner: &Spawner,
     weak_client: Weak<ElectrumClientImpl>,
     mut on_connect_rx: UnboundedReceiver<String>,
     client_name: String,

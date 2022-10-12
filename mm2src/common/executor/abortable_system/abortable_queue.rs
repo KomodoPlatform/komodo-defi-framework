@@ -16,7 +16,7 @@ type FutureId = usize;
 ///
 /// `AbortableQueue` is responsible for storing future handles in `QueueInner`
 /// and deleting them as soon as they complete.
-#[derive(Default)]
+#[derive(Debug, Default)]
 pub struct AbortableQueue {
     inner: InnerShared<QueueInner>,
 }
@@ -134,6 +134,7 @@ impl SpawnAbortable for WeakSpawner {
 /// (unique between spawned and alive futures).
 /// Once a future is finished, its `FutureId` can be reassign to another future.
 /// This is necessary so that this container does not grow indefinitely.
+#[derive(Debug)]
 pub struct QueueInner {
     abort_handlers: Vec<oneshot::Sender<()>>,
     finished_futures: Vec<FutureId>,

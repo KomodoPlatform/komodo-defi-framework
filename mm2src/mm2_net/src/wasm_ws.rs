@@ -1,8 +1,8 @@
 use async_trait::async_trait;
+use common::executor::SpawnFuture;
 use common::log::{debug, error};
+use common::state_machine::{LastState, State, StateExt, StateMachine, StateResult, TransitionFrom};
 use common::stringify_js_error;
-use common::{executor::spawn,
-             state_machine::{LastState, State, StateExt, StateMachine, StateResult, TransitionFrom}};
 use futures::channel::mpsc::{self, SendError, TrySendError};
 use futures::channel::oneshot;
 use futures::{FutureExt, SinkExt, Stream, StreamExt};
@@ -17,7 +17,6 @@ use wasm_bindgen::JsCast;
 use web_sys::{CloseEvent, DomException, MessageEvent, WebSocket};
 
 const NORMAL_CLOSURE_CODE: u16 = 1000;
-const ABNORMAL_CLOSURE_CODE: u16 = 1006;
 
 pub type ConnIdx = usize;
 
@@ -83,7 +82,7 @@ impl Stream for WsIncomingReceiver {
                 error!("WsIncomingReceiver is expected to be established already");
                 Poll::Pending
             },
-            WebSocketEvent::Closing { .. } | WebSocketEvent::Closed { .. } => {
+            WebSocketEvent::Closed { .. } => {
                 self.closed = true;
                 Poll::Ready(None)
             },
@@ -131,8 +130,6 @@ impl WsOutgoingSender {
 pub enum WebSocketEvent {
     /// A WebSocket connection is established.
     Establish,
-    /// A WebSocket connection is being closing and it should not be used anymore.
-    Closing { reason: ClosureReason },
     /// A WebSocket connection has been closed.
     Closed { reason: ClosureReason },
     /// An error has occurred.
@@ -197,8 +194,12 @@ impl ClosureReason {
     }
 }
 
-fn spawn_ws_transport(idx: ConnIdx, url: &str) -> InitWsResult<(WsOutgoingSender, WsEventReceiver)> {
-    let (ws, closures, ws_transport_rx) = init_ws(url)?;
+fn spawn_ws_transport<Spawner: SpawnFuture>(
+    idx: ConnIdx,
+    url: &str,
+    spawner: &Spawner,
+) -> InitWsResult<(WsOutgoingSender, WsEventReceiver)> {
+    let (ws, ws_transport_rx) = WebSocketImpl::init(url)?;
     let (incoming_tx, incoming_rx, incoming_shutdown) = incoming_channel(1024);
     let (outgoing_tx, outgoing_rx, outgoing_shutdown) = outgoing_channel(1024);
 
@@ -215,22 +216,22 @@ fn spawn_ws_transport(idx: ConnIdx, url: &str) -> InitWsResult<(WsOutgoingSender
     let fut = async move {
         let state_machine: StateMachine<_, ()> = StateMachine::from_ctx(ws_ctx);
         state_machine.run(ConnectingState).await;
-        // do any action to move the `closures` into this async block to keep it alive until the `state_machine` finishes
-        drop(closures);
     };
-
-    // The state machine will finish almost immediately once `outgoing_tx` is dropped.
-    unsafe { spawn(fut) };
+    spawner.spawn(fut);
 
     Ok((outgoing_tx, incoming_rx))
 }
 
-pub async fn ws_transport(idx: ConnIdx, url: &str) -> InitWsResult<(WsOutgoingSender, WsIncomingReceiver)> {
-    let (sender, mut receiver) = spawn_ws_transport(idx, url)?;
+pub async fn ws_transport<Spawner: SpawnFuture>(
+    idx: ConnIdx,
+    url: &str,
+    spawner: &Spawner,
+) -> InitWsResult<(WsOutgoingSender, WsIncomingReceiver)> {
+    let (sender, mut receiver) = spawn_ws_transport(idx, url, spawner)?;
     while let Some((_conn_idx, event)) = receiver.next().await {
         match event {
             WebSocketEvent::Establish => break,
-            WebSocketEvent::Closed { reason } | WebSocketEvent::Closing { reason } => {
+            WebSocketEvent::Closed { reason } => {
                 return MmError::err(InitWsError::ConnectionFailed { reason });
             },
             // if the error is an underlying error, the connection will close immediately
@@ -292,52 +293,56 @@ struct WsClosures {
     _closures: Vec<TransportClosure>,
 }
 
-/// Although wasm is currently single-threaded, we can implement the `Send` trait for `WsClosures`,
+/// Due to the fact that WASM is currently single-threaded, we can implement the `Send` trait for `WsClosures`,
 /// but it won't be safe when wasm becomes multi-threaded.
 unsafe impl Send for WsClosures {}
 
-fn init_ws(url: &str) -> InitWsResult<(WebSocket, WsClosures, WsTransportReceiver)> {
-    let ws = WebSocket::new(url).map_to_mm(|e| InitWsError::from_ws_new_err(e, url))?;
-
-    let (tx, rx) = mpsc::channel(1024);
-
-    let onopen_closure = construct_ws_event_closure(|_: JsValue| WsTransportEvent::Establish, tx.clone());
-    let onclose_closure = construct_ws_event_closure(|close: CloseEvent| WsTransportEvent::from(close), tx.clone());
-    let onerror_closure = construct_ws_event_closure(
-        |_: JsValue| WsTransportEvent::Error(WsTransportError::UnderlyingError),
-        tx.clone(),
-    );
-    let onmessage_closure = construct_ws_event_closure(
-        |message: MessageEvent| match decode_incoming(message) {
-            Ok(response) => WsTransportEvent::Incoming(response),
-            Err(e) => WsTransportEvent::Error(WsTransportError::ErrorDecodingIncoming(e)),
-        },
-        tx.clone(),
-    );
-
-    ws.set_onopen(Some(onopen_closure.as_ref().unchecked_ref()));
-    ws.set_onclose(Some(onclose_closure.as_ref().unchecked_ref()));
-    ws.set_onerror(Some(onerror_closure.as_ref().unchecked_ref()));
-    ws.set_onmessage(Some(onmessage_closure.as_ref().unchecked_ref()));
-
-    // keep the closures in the memory until the `ws` exists
-    let closures = WsClosures {
-        _closures: vec![onopen_closure, onclose_closure, onerror_closure, onmessage_closure],
-    };
-
-    Ok((ws, closures, rx))
-}
-
-struct WsContext {
-    idx: ConnIdx,
+/// This is a wrapper over `WebSocket` that holds the closures passed as [`WebSocket::onopen`], [`WebSocket::onclose`] etc.
+///
+/// # Drop
+///
+/// Once and instance of `WebSocketImpl` is dropped, `WebSocket` will be closed via [`WebSocket::close_with_code`].
+/// Please note that [`WebSocket::drop`] will be fired once the spawned state machine future is aborted.
+struct WebSocketImpl {
     ws: WebSocket,
-    /// The sender used to send the transport events outside (to the userspace).
-    event_tx: WsIncomingSender,
-    /// The stream of internal events that may come from either WebSocket transport or outside (userspace, such as outgoing messages).
-    state_event_rx: StateEventListener,
+    /// It's not used directly, but we need to hold the closures in memory till `ws` exists.
+    #[allow(dead_code)]
+    closures: WsClosures,
 }
 
-impl WsContext {
+impl WebSocketImpl {
+    fn init(url: &str) -> InitWsResult<(WebSocketImpl, WsTransportReceiver)> {
+        let ws = WebSocket::new(url).map_to_mm(|e| InitWsError::from_ws_new_err(e, url))?;
+
+        let (tx, rx) = mpsc::channel(1024);
+
+        let onopen_closure = construct_ws_event_closure(|_: JsValue| WsTransportEvent::Establish, tx.clone());
+        let onclose_closure = construct_ws_event_closure(|close: CloseEvent| WsTransportEvent::from(close), tx.clone());
+        let onerror_closure = construct_ws_event_closure(
+            |_: JsValue| WsTransportEvent::Error(WsTransportError::UnderlyingError),
+            tx.clone(),
+        );
+        let onmessage_closure = construct_ws_event_closure(
+            |message: MessageEvent| match decode_incoming(message) {
+                Ok(response) => WsTransportEvent::Incoming(response),
+                Err(e) => WsTransportEvent::Error(WsTransportError::ErrorDecodingIncoming(e)),
+            },
+            tx.clone(),
+        );
+
+        ws.set_onopen(Some(onopen_closure.as_ref().unchecked_ref()));
+        ws.set_onclose(Some(onclose_closure.as_ref().unchecked_ref()));
+        ws.set_onerror(Some(onerror_closure.as_ref().unchecked_ref()));
+        ws.set_onmessage(Some(onmessage_closure.as_ref().unchecked_ref()));
+
+        // keep the closures in the memory until the `ws` exists
+        let closures = WsClosures {
+            _closures: vec![onopen_closure, onclose_closure, onerror_closure, onmessage_closure],
+        };
+
+        Ok((WebSocketImpl { ws, closures }, rx))
+    }
+
     fn send_to_ws(&self, outgoing: Json) -> Result<(), WebSocketError> {
         match json::to_string(&outgoing) {
             Ok(req) => self.ws.send_with_str(&req).map_err(|error| {
@@ -350,7 +355,32 @@ impl WsContext {
             },
         }
     }
+}
 
+impl Drop for WebSocketImpl {
+    fn drop(&mut self) {
+        // Reset all closures as they will not exist after `WebSocketImpl` is dropped.
+        self.ws.set_onopen(None);
+        self.ws.set_onclose(None);
+        self.ws.set_onerror(None);
+        self.ws.set_onmessage(None);
+
+        if let Err(e) = self.ws.close_with_code(NORMAL_CLOSURE_CODE) {
+            error!("Unexpected error when closing WebSocket: {e:?}");
+        }
+    }
+}
+
+struct WsContext {
+    idx: ConnIdx,
+    ws: WebSocketImpl,
+    /// The sender is used to send the transport events outside (to the userspace).
+    event_tx: WsIncomingSender,
+    /// The stream of internal events that may come from either WebSocket transport or outside (userspace, such as outgoing messages).
+    state_event_rx: StateEventListener,
+}
+
+impl WsContext {
     /// Send the `event` to the corresponding `WebSocketReceiver` instance.
     fn notify_listener(&mut self, event: WebSocketEvent) {
         if !self.event_tx.is_closed() {
@@ -377,13 +407,6 @@ impl WsContext {
     fn notify_about_invalid_incoming(&mut self, description: String) {
         let error = WebSocketEvent::Error(WebSocketError::InvalidIncoming { description });
         self.notify_listener(error);
-    }
-
-    fn close_ws(&self, closure_code: u16) {
-        if let Err(e) = self.ws.close_with_code(closure_code) {
-            // TODO figure out how to extract an error description without stack trace
-            error!("Unexpected error when closing WebSocket: {:?}", e);
-        }
     }
 }
 
@@ -459,19 +482,13 @@ impl From<CloseEvent> for WsTransportEvent {
 
 struct ConnectingState;
 struct OpenState;
-struct ClosingState {
-    reason: ClosureReason,
-}
 struct ClosedState {
     reason: ClosureReason,
 }
 
 impl TransitionFrom<ConnectingState> for OpenState {}
-impl TransitionFrom<ConnectingState> for ClosingState {}
 impl TransitionFrom<ConnectingState> for ClosedState {}
-impl TransitionFrom<OpenState> for ClosingState {}
 impl TransitionFrom<OpenState> for ClosedState {}
-impl TransitionFrom<ClosingState> for ClosedState {}
 
 #[async_trait]
 impl LastState for ClosedState {
@@ -479,8 +496,14 @@ impl LastState for ClosedState {
     type Result = ();
 
     async fn on_changed(self: Box<Self>, ctx: &mut Self::Ctx) -> Self::Result {
-        debug!("WebSocket idx={} => ClosedState", ctx.idx);
-        ctx.notify_listener(WebSocketEvent::Closed { reason: self.reason })
+        debug!("WebScoket idx={} => ClosedState", ctx.idx);
+        // Notify the listener that the connection has been closed to prevent new outgoing messages.
+        ctx.notify_listener(WebSocketEvent::Closed {
+            reason: self.reason.clone(),
+        });
+
+        // Please note that we don't need to close websocket via `ctx.ws.close_with_code()`.
+        // It will be closed on [`WsContext::drop`] right after the state machine is finished.
     }
 }
 
@@ -493,8 +516,8 @@ impl State for ConnectingState {
         debug!("WebSocket idx={} => ConnectingState", ctx.idx);
         while let Some(event) = ctx.state_event_rx.receive_one().await {
             match event {
-                // there is no need to keep the connection, so close the socket and change the state into `ClosingState`
-                StateEvent::UserSideClosed => return Self::change_state(ClosingState::normal_closure()),
+                // there is no need to keep the connection, so close the socket and change the state into `ClosedState`
+                StateEvent::UserSideClosed => return Self::change_state(ClosedState::normal_closure()),
                 StateEvent::OutgoingMessage(outgoing) => ctx.send_unexpected_outgoing_back(outgoing, "ConnectingState"),
                 StateEvent::WsTransportEvent(WsTransportEvent::Establish) => return Self::change_state(OpenState),
                 StateEvent::WsTransportEvent(WsTransportEvent::Close { code }) => {
@@ -504,7 +527,7 @@ impl State for ConnectingState {
                     match error {
                         // if an underlying error has occurred, it's better to close the socket
                         WsTransportError::UnderlyingError => {
-                            return Self::change_state(ClosingState::on_underlying_error())
+                            return Self::change_state(ClosedState::on_underlying_error())
                         },
                         WsTransportError::ErrorDecodingIncoming(_error) => error!(
                             "Unexpected incoming message while the socket idx={} state is ConnectingState",
@@ -519,7 +542,6 @@ impl State for ConnectingState {
             }
         }
         error!("StateEventListener is closed unexpectedly");
-        ctx.close_ws(ABNORMAL_CLOSURE_CODE);
         Self::change_state(ClosedState::unexpected_closure())
     }
 }
@@ -537,10 +559,10 @@ impl State for OpenState {
         // wait for the `WsTransportEvent::Established` event or another one
         while let Some(event) = ctx.state_event_rx.receive_one().await {
             match event {
-                // there is no need to keep the connection, so close the socket and change the state into `ClosingState`
-                StateEvent::UserSideClosed => return Self::change_state(ClosingState::normal_closure()),
+                // there is no need to keep the connection, so close the socket and change the state into `ClosedState`
+                StateEvent::UserSideClosed => return Self::change_state(ClosedState::normal_closure()),
                 StateEvent::OutgoingMessage(outgoing) => {
-                    if let Err(e) = ctx.send_to_ws(outgoing) {
+                    if let Err(e) = ctx.ws.send_to_ws(outgoing) {
                         error!("{:?}", e);
                         ctx.notify_listener(WebSocketEvent::Error(e));
                     }
@@ -555,7 +577,7 @@ impl State for OpenState {
                     match error {
                         // if an underlying error has occurred, it's better to close the socket
                         WsTransportError::UnderlyingError => {
-                            return Self::change_state(ClosingState::on_underlying_error())
+                            return Self::change_state(ClosedState::on_underlying_error())
                         },
                         WsTransportError::ErrorDecodingIncoming(error) => ctx.notify_about_invalid_incoming(error),
                     }
@@ -567,59 +589,23 @@ impl State for OpenState {
         }
 
         error!("StateEventListener is closed unexpectedly");
-        ctx.close_ws(ABNORMAL_CLOSURE_CODE);
         Self::change_state(ClosedState::unexpected_closure())
-    }
-}
-
-#[async_trait]
-impl State for ClosingState {
-    type Ctx = WsContext;
-    type Result = ();
-
-    async fn on_changed(self: Box<Self>, ctx: &mut Self::Ctx) -> StateResult<Self::Ctx, Self::Result> {
-        debug!("WebScoket idx={} => ClosingState", ctx.idx);
-        // notify the listener about the changed state to prevent new outgoing messages
-        ctx.notify_listener(WebSocketEvent::Closing {
-            reason: self.reason.clone(),
-        });
-        ctx.close_ws(NORMAL_CLOSURE_CODE);
-
-        // wait for the `WsTransportEvent::Close` event or another one
-        while let Some(event) = ctx.state_event_rx.receive_one().await {
-            match event {
-                StateEvent::UserSideClosed => (), // ignore this event because we are waiting for the connection to close already
-                StateEvent::OutgoingMessage(outgoing) => ctx.send_unexpected_outgoing_back(outgoing, "ClosingState"),
-                // it doesn't matter with which status code the transport was closed because we already have an actual [`Self::reason`]
-                StateEvent::WsTransportEvent(WsTransportEvent::Close { .. }) => {
-                    return Self::change_state(ClosedState::from_reason(self.reason))
-                },
-                // ignore a transport error because we are waiting for the connection to close already
-                StateEvent::WsTransportEvent(WsTransportEvent::Error(_error)) => (),
-                StateEvent::WsTransportEvent(event) => error!("Unexpected WsTransportEvent: {:?}", event),
-            }
-        }
-
-        error!("StateEventListener is closed unexpectedly");
-        Self::change_state(ClosedState::unexpected_closure())
-    }
-}
-
-impl ClosingState {
-    fn normal_closure() -> ClosingState {
-        ClosingState {
-            reason: ClosureReason::NormalClosure,
-        }
-    }
-
-    fn on_underlying_error() -> ClosingState {
-        ClosingState {
-            reason: ClosureReason::ClientClosedOnUnderlyingError,
-        }
     }
 }
 
 impl ClosedState {
+    fn normal_closure() -> ClosedState {
+        ClosedState {
+            reason: ClosureReason::NormalClosure,
+        }
+    }
+
+    fn on_underlying_error() -> ClosedState {
+        ClosedState {
+            reason: ClosureReason::ClientClosedOnUnderlyingError,
+        }
+    }
+
     fn unexpected_closure() -> ClosedState {
         ClosedState {
             reason: ClosureReason::ClientReachedUnexpectedState,
@@ -631,8 +617,6 @@ impl ClosedState {
             reason: ClosureReason::from_status_code(code),
         }
     }
-
-    fn from_reason(reason: ClosureReason) -> ClosedState { ClosedState { reason } }
 }
 
 fn decode_incoming(incoming: MessageEvent) -> Result<Json, String> {
@@ -672,6 +656,7 @@ where
 
 mod tests {
     use super::*;
+    use common::executor::abortable_queue::AbortableQueue;
     use common::log::wasm_log::register_wasm_log;
     use common::{custom_futures::FutureTimerExt, log::debug};
     use common::{WasmUnwrapErrExt, WasmUnwrapExt};
@@ -691,8 +676,14 @@ mod tests {
         register_wasm_log();
         let conn_idx = CONN_IDX.fetch_add(1, Ordering::Relaxed);
 
-        let (mut outgoing_tx, mut incoming_rx) =
-            spawn_ws_transport(conn_idx, "wss://electrum1.cipig.net:30017").expect("!spawn_ws_transport");
+        let abortable_system = AbortableQueue::default();
+
+        let (mut outgoing_tx, mut incoming_rx) = spawn_ws_transport(
+            conn_idx,
+            "wss://electrum1.cipig.net:30017",
+            &abortable_system.weak_spawner(),
+        )
+        .expect("!spawn_ws_transport");
 
         match incoming_rx.next().timeout_secs(5.).await.unwrap_w() {
             Some((_conn_idx, WebSocketEvent::Establish)) => (),
@@ -732,13 +723,6 @@ mod tests {
         let mut incoming_rx = incoming_rx.inner;
 
         match incoming_rx.next().timeout_secs(0.5).await.unwrap_w() {
-            Some((_conn_idx, WebSocketEvent::Closing { reason })) if reason == ClosureReason::NormalClosure => (),
-            other => panic!(
-                "Expected 'Closing' event with 'ClientClosed' reason, found: {:?}",
-                other
-            ),
-        }
-        match incoming_rx.next().timeout_secs(0.5).await.unwrap_w() {
             Some((_conn_idx, WebSocketEvent::Closed { reason })) if reason == ClosureReason::NormalClosure => (),
             other => panic!("Expected 'Closed' event with 'ClientClosed' reason, found: {:?}", other),
         }
@@ -749,23 +733,17 @@ mod tests {
         register_wasm_log();
         let conn_idx = CONN_IDX.fetch_add(1, Ordering::Relaxed);
 
+        let abortable_system = AbortableQueue::default();
+
         // TODO check if outgoing messages are ignored non-open states
-        let (_outgoing_tx, mut incoming_rx) =
-            spawn_ws_transport(conn_idx, "ws://electrum1.cipig.net:10017").expect("!spawn_ws_transport");
+        let (_outgoing_tx, mut incoming_rx) = spawn_ws_transport(
+            conn_idx,
+            "ws://electrum1.cipig.net:10017",
+            &abortable_system.weak_spawner(),
+        )
+        .expect("!spawn_ws_transport");
 
         match incoming_rx.next().timeout_secs(5.).await.unwrap_w() {
-            Some((
-                _conn_idx,
-                WebSocketEvent::Closing {
-                    reason: _reason @ ClosureReason::ClientClosedOnUnderlyingError,
-                },
-            )) => (),
-            other => panic!(
-                "Expected 'Closing' event with 'ClosedOnUnderlyingError' reason, found: {:?}",
-                other
-            ),
-        }
-        match incoming_rx.next().timeout_secs(0.5).await.unwrap_w() {
             Some((
                 _conn_idx,
                 WebSocketEvent::Closed {
@@ -784,8 +762,10 @@ mod tests {
         register_wasm_log();
         let conn_idx = CONN_IDX.fetch_add(1, Ordering::Relaxed);
 
-        let error =
-            spawn_ws_transport(conn_idx, "invalid address").expect_err("!spawn_ws_transport but should be error");
+        let abortable_system = AbortableQueue::default();
+
+        let error = spawn_ws_transport(conn_idx, "invalid address", &abortable_system.weak_spawner())
+            .expect_err("!spawn_ws_transport but should be error");
         match error.into_inner() {
             InitWsError::InvalidUrl { url, reason } if url == "invalid address" => debug!("InvalidUrl: {}", reason),
             e => panic!("Expected ''InitWsError::InvalidUrl, found: {:?}", e),

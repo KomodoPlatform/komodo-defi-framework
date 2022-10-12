@@ -44,13 +44,6 @@ use std::mem::discriminant;
 use std::num::NonZeroUsize;
 
 pub fn electrum_client_for_test(servers: &[&str]) -> ElectrumClient {
-    lazy_static! {
-        /// This global instance of `AbortableQueue` can be used safely to generate `ElectrumClient`
-        /// because once the returned `ElectrumClient` is dropped, all spawned futures will be stopped
-        /// almost immediately due to closed `mpsc` channel.
-        static ref COIN_SPAWNER: AbortableQueue = AbortableQueue::default();
-    }
-
     let ctx = MmCtxBuilder::default().into_mm_arc();
     let servers: Vec<_> = servers.iter().map(|server| json!({ "url": server })).collect();
     let req = json!({
@@ -74,7 +67,8 @@ pub fn electrum_client_for_test(servers: &[&str]) -> ElectrumClient {
     };
 
     let servers = servers.into_iter().map(|s| json::from_value(s).unwrap()).collect();
-    block_on(builder.electrum_client(&CoinFutSpawner::new(COIN_SPAWNER.deref()), args, servers)).unwrap()
+    let abortable_system = AbortableQueue::default();
+    block_on(builder.electrum_client(abortable_system, args, servers)).unwrap()
 }
 
 /// Returned client won't work by default, requires some mocks to be usable
@@ -1453,6 +1447,7 @@ fn test_unavailable_electrum_proto_version() {
             event_handlers,
             OrdRange::new(1.8, 1.9).unwrap(),
             block_headers_storage,
+            AbortableQueue::default(),
         ))
     });
 
