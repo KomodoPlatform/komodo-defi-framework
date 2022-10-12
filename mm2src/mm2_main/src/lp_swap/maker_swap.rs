@@ -6,9 +6,9 @@ use super::trade_preimage::{TradePreimageRequest, TradePreimageRpcError, TradePr
 use super::{broadcast_my_swap_status, broadcast_p2p_tx_msg, broadcast_swap_message_every,
             check_other_coin_balance_for_swap, detect_secret_hash_algo, dex_fee_amount_from_taker_coin,
             get_locked_amount, recv_swap_msg, swap_topic, tx_helper_topic, AtomicSwap, LockedAmount, MySwapInfo,
-            NegotiationDataMsg, NegotiationDataV2, NegotiationDataV3, PaymentDataMsg, PaymentDataV2, RecoveredSwap,
+            NegotiationDataMsg, NegotiationDataV2, NegotiationDataV3, PaymentDataV2, RecoveredSwap,
             RecoveredSwapAction, SavedSwap, SavedSwapIo, SavedTradeFee, SecretHashAlgo, SwapConfirmationsSettings,
-            SwapError, SwapMsg, SwapsContext, TransactionIdentifier, WAIT_CONFIRM_INTERVAL};
+            SwapError, SwapMsg, SwapTxDataMsg, SwapsContext, TransactionIdentifier, WAIT_CONFIRM_INTERVAL};
 use crate::mm2::lp_dispatcher::{DispatcherContext, LpEvents};
 use crate::mm2::lp_network::subscribe_to_topic;
 use crate::mm2::lp_ordermatch::{MakerOrderBuilder, OrderConfirmationsSettings};
@@ -409,7 +409,7 @@ impl MakerSwap {
         }
     }
 
-    async fn get_my_payment_data(&self) -> Result<PaymentDataMsg, MmError<PaymentInstructionsErr>> {
+    async fn get_my_payment_data(&self) -> Result<SwapTxDataMsg, MmError<PaymentInstructionsErr>> {
         // If maker payment is a lightning payment the payment hash will be sent in the message
         // It's not really needed here unlike in TakerFee msg since the hash is included in the invoice/payment_instructions but it's kept for symmetry
         let payment_data = self.r().maker_payment.as_ref().unwrap().tx_hex_or_hash().0;
@@ -419,12 +419,12 @@ impl MakerSwap {
             .payment_instructions(&hash_algo.hash_secret(self.secret.as_slice()), &self.taker_amount)
             .await?
         {
-            Ok(PaymentDataMsg::V2(PaymentDataV2 {
+            Ok(SwapTxDataMsg::V2(PaymentDataV2 {
                 data: payment_data,
-                instructions,
+                next_step_instructions: instructions,
             }))
         } else {
-            Ok(PaymentDataMsg::V1(payment_data))
+            Ok(SwapTxDataMsg::V1(payment_data))
         }
     }
 

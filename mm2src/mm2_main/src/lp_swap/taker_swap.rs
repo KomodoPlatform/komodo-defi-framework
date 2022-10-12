@@ -7,8 +7,8 @@ use super::trade_preimage::{TradePreimageRequest, TradePreimageRpcError, TradePr
 use super::{broadcast_my_swap_status, broadcast_swap_message, broadcast_swap_message_every,
             check_other_coin_balance_for_swap, dex_fee_amount_from_taker_coin, dex_fee_rate, dex_fee_threshold,
             get_locked_amount, recv_swap_msg, swap_topic, AtomicSwap, LockedAmount, MySwapInfo, NegotiationDataMsg,
-            NegotiationDataV2, NegotiationDataV3, PaymentDataMsg, PaymentDataV2, RecoveredSwap, RecoveredSwapAction,
-            SavedSwap, SavedSwapIo, SavedTradeFee, SwapConfirmationsSettings, SwapError, SwapMsg, SwapsContext,
+            NegotiationDataV2, NegotiationDataV3, PaymentDataV2, RecoveredSwap, RecoveredSwapAction, SavedSwap,
+            SavedSwapIo, SavedTradeFee, SwapConfirmationsSettings, SwapError, SwapMsg, SwapTxDataMsg, SwapsContext,
             TransactionIdentifier, WAIT_CONFIRM_INTERVAL};
 use crate::mm2::lp_network::subscribe_to_topic;
 use crate::mm2::lp_ordermatch::{MatchBy, OrderConfirmationsSettings, TakerAction, TakerOrderBuilder};
@@ -849,9 +849,9 @@ impl TakerSwap {
         }
     }
 
-    async fn get_my_payment_data(&self) -> Result<PaymentDataMsg, MmError<PaymentInstructionsErr>> {
+    async fn get_taker_fee_data(&self) -> Result<SwapTxDataMsg, MmError<PaymentInstructionsErr>> {
         // If taker fee is a lightning payment the payment hash will be sent in the message
-        let payment_data = self.r().taker_fee.as_ref().unwrap().tx_hex_or_hash().0;
+        let taker_fee_data = self.r().taker_fee.as_ref().unwrap().tx_hex_or_hash().0;
         let secret_hash = self.r().secret_hash.0.clone();
         let maker_amount = self.maker_amount.clone().into();
         if let Some(instructions) = self
@@ -859,12 +859,12 @@ impl TakerSwap {
             .payment_instructions(&secret_hash, &maker_amount)
             .await?
         {
-            Ok(PaymentDataMsg::V2(PaymentDataV2 {
-                data: payment_data,
-                instructions,
+            Ok(SwapTxDataMsg::V2(PaymentDataV2 {
+                data: taker_fee_data,
+                next_step_instructions: instructions,
             }))
         } else {
-            Ok(PaymentDataMsg::V1(payment_data))
+            Ok(SwapTxDataMsg::V1(taker_fee_data))
         }
     }
 
@@ -1163,7 +1163,7 @@ impl TakerSwap {
     async fn wait_for_maker_payment(&self) -> Result<(Option<TakerSwapCommand>, Vec<TakerSwapEvent>), String> {
         const MAKER_PAYMENT_WAIT_TIMEOUT: u64 = 600;
 
-        let payment_data_msg = match self.get_my_payment_data().await {
+        let payment_data_msg = match self.get_taker_fee_data().await {
             Ok(data) => data,
             Err(e) => {
                 return Ok((Some(TakerSwapCommand::Finish), vec![

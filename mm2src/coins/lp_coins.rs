@@ -371,7 +371,10 @@ ifrom!(TransactionEnum, LightningPayment);
 
 impl TransactionEnum {
     #[cfg(not(target_arch = "wasm32"))]
-    pub fn is_lightning(&self) -> bool { matches!(self, TransactionEnum::LightningPayment(_)) }
+    pub fn supports_tx_helper(&self) -> bool { !matches!(self, TransactionEnum::LightningPayment(_)) }
+
+    #[cfg(target_arch = "wasm32")]
+    pub fn supports_tx_helper(&self) -> bool { true }
 }
 
 // NB: When stable and groked by IDEs, `enum_dispatch` can be used instead of `Deref` to speed things up.
