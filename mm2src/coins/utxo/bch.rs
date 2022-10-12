@@ -1027,6 +1027,7 @@ fn total_unspent_value<'a>(unspents: impl IntoIterator<Item = &'a UnspentInfo>) 
 
 #[async_trait]
 impl WatcherOps for BchCoin {
+    #[inline]
     fn create_taker_spends_maker_payment_preimage(
         &self,
         maker_payment_tx: &[u8],
@@ -1044,10 +1045,13 @@ impl WatcherOps for BchCoin {
             swap_unique_data,
         )
     }
+
+    #[inline]
     fn send_taker_spends_maker_payment_preimage(&self, preimage: &[u8], secret: &[u8]) -> TransactionFut {
         utxo_common::send_taker_spends_maker_payment_preimage(self.clone(), preimage, secret)
     }
 
+    #[inline]
     fn create_taker_refunds_payment_preimage(
         &self,
         taker_payment_tx: &[u8],
@@ -1067,18 +1071,22 @@ impl WatcherOps for BchCoin {
         )
     }
 
+    #[inline]
     fn send_watcher_refunds_taker_payment_preimage(&self, taker_refunds_payment: &[u8]) -> TransactionFut {
         utxo_common::send_watcher_refunds_taker_payment_preimage(self.clone(), taker_refunds_payment)
     }
 
+    #[inline]
     fn watcher_validate_taker_fee(&self, taker_fee_hash: Vec<u8>, verified_pub: Vec<u8>) -> ValidatePaymentFut<()> {
         utxo_common::watcher_validate_taker_fee(self.clone(), taker_fee_hash, verified_pub)
     }
 
+    #[inline]
     fn watcher_validate_taker_payment(&self, input: WatcherValidatePaymentInput) -> ValidatePaymentFut<()> {
         utxo_common::watcher_validate_taker_payment(self, input)
     }
 
+    #[inline]
     async fn watcher_search_for_swap_tx_spend(
         &self,
         input: WatcherSearchForSwapTxSpendInput<'_>,

@@ -1481,6 +1481,7 @@ impl WatcherOps for SlpToken {
         unimplemented!();
     }
 
+    #[inline]
     async fn watcher_search_for_swap_tx_spend(
         &self,
         input: WatcherSearchForSwapTxSpendInput<'_>,
