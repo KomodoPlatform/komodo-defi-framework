@@ -1,6 +1,6 @@
 use super::{orderbook_address, subscribe_to_orderbook_topic, OrdermatchContext, RpcOrderbookEntry};
 use crate::mm2::lp_ordermatch::{addr_format_from_protocol_info, RpcOrderbookEntryV2};
-use coins::{address_by_coin_conf_and_pubkey_str, coin_conf, is_wallet_only_conf, CoinProtocol};
+use coins::{address_by_coin_conf_and_pubkey_str, coin_conf, is_wallet_only_conf};
 use common::log::warn;
 use common::{now_ms, HttpStatusCode};
 use crypto::CryptoCtx;
@@ -108,21 +108,11 @@ fn build_aggregated_entries_v2(
     (aggregated, total_base.into(), total_rel.into())
 }
 
-pub fn is_my_order(my_pub: &Option<String>, order_pubkey: &str) -> bool {
-    my_pub.as_ref().map(|my| my == order_pubkey).unwrap_or(false)
-}
-
 // ZHTLC protocol coin uses random keypair to sign P2P messages per every order.
 // So, each ZHTLC order has unique «pubkey» field that doesn’t match node persistent pubkey derived from passphrase.
 // We can compare pubkeys from maker_orders and from asks or bids, to find our order.
-pub fn is_mine_zhtlc(my_orders_pubkeys: &HashSet<String>, my_pub: &Option<String>, order_pubkey: &str) -> bool {
-    let mut is_mine_zhtlc = false;
-    if my_orders_pubkeys.contains(order_pubkey) {
-        is_mine_zhtlc = true;
-    }
-    drop_mutability!(is_mine_zhtlc);
-    let is_my_order = is_my_order(my_pub, order_pubkey);
-    is_mine_zhtlc || is_my_order
+pub fn is_mine(my_orders_pubkeys: &HashSet<String>, my_pub: &Option<String>, order_pubkey: &str) -> bool {
+    my_pub.as_deref() == Some(order_pubkey) || my_orders_pubkeys.contains(order_pubkey)
 }
 
 pub async fn orderbook_rpc(ctx: MmArc, req: Json) -> Result<Response<Vec<u8>>, String> {
@@ -151,19 +141,6 @@ pub async fn orderbook_rpc(ctx: MmArc, req: Json) -> Result<Response<Vec<u8>>, S
     if base_ticker == rel_ticker && base_coin_conf["protocol"] == rel_coin_conf["protocol"] {
         return ERR!("Base and rel coins have the same orderbook tickers and protocols.");
     }
-    let base_coin_protocol: CoinProtocol = try_s!(json::from_value(base_coin_conf["protocol"].clone()));
-    let rel_coin_protocol: CoinProtocol = try_s!(json::from_value(rel_coin_conf["protocol"].clone()));
-    let is_zhtlc_base = match base_coin_protocol {
-        #[cfg(not(target_arch = "wasm32"))]
-        CoinProtocol::ZHTLC { .. } => true,
-        _ => false,
-    };
-    let is_zhtlc_rel = match rel_coin_protocol {
-        #[cfg(not(target_arch = "wasm32"))]
-        CoinProtocol::ZHTLC { .. } => true,
-        _ => false,
-    };
-    let is_zhtlc = is_zhtlc_base || is_zhtlc_rel;
 
     try_s!(subscribe_to_orderbook_topic(&ctx, &base_ticker, &rel_ticker, request_orderbook).await);
     let orderbook = ordermatch_ctx.orderbook.lock();
@@ -190,11 +167,7 @@ pub async fn orderbook_rpc(ctx: MmArc, req: Json) -> Result<Response<Vec<u8>>, S
                     &ask.pubkey,
                     address_format,
                 ));
-                let is_mine = if is_zhtlc {
-                    is_mine_zhtlc(&my_orders_pubkeys, &my_pubsecp, &ask.pubkey)
-                } else {
-                    is_my_order(&my_pubsecp, &ask.pubkey)
-                };
+                let is_mine = is_mine(&my_orders_pubkeys, &my_pubsecp, &ask.pubkey);
                 orderbook_entries.push(ask.as_rpc_entry_ask(address, is_mine));
             }
             orderbook_entries
@@ -221,11 +194,7 @@ pub async fn orderbook_rpc(ctx: MmArc, req: Json) -> Result<Response<Vec<u8>>, S
                     &bid.pubkey,
                     address_format,
                 ));
-                let is_mine = if is_zhtlc {
-                    is_mine_zhtlc(&my_orders_pubkeys, &my_pubsecp, &bid.pubkey)
-                } else {
-                    is_my_order(&my_pubsecp, &bid.pubkey)
-                };
+                let is_mine = is_mine(&my_orders_pubkeys, &my_pubsecp, &bid.pubkey);
                 orderbook_entries.push(bid.as_rpc_entry_bid(address, is_mine));
             }
             orderbook_entries
@@ -263,18 +232,12 @@ pub enum OrderbookRpcError {
     CoinConfigNotFound(String),
     CoinIsWalletOnly(String),
     P2PSubscribeError(String),
-    InvalidJson(String),
-}
-
-impl From<serde_json::Error> for OrderbookRpcError {
-    fn from(e: serde_json::Error) -> Self { OrderbookRpcError::InvalidJson(e.to_string()) }
 }
 
 impl HttpStatusCode for OrderbookRpcError {
     fn status_code(&self) -> StatusCode {
         match self {
             OrderbookRpcError::BaseRelSame
-            | OrderbookRpcError::InvalidJson(_)
             | OrderbookRpcError::BaseRelSameOrderbookTickersAndProtocols
             | OrderbookRpcError::CoinConfigNotFound(_)
             | OrderbookRpcError::CoinIsWalletOnly(_) => StatusCode::BAD_REQUEST,
@@ -342,20 +305,6 @@ pub async fn orderbook_rpc_v2(
         return MmError::err(OrderbookRpcError::BaseRelSameOrderbookTickersAndProtocols);
     }
 
-    let base_coin_protocol: CoinProtocol = json::from_value(base_coin_conf["protocol"].clone())?;
-    let rel_coin_protocol: CoinProtocol = json::from_value(rel_coin_conf["protocol"].clone())?;
-    let is_zhtlc_base = match base_coin_protocol {
-        #[cfg(not(target_arch = "wasm32"))]
-        CoinProtocol::ZHTLC { .. } => true,
-        _ => false,
-    };
-    let is_zhtlc_rel = match rel_coin_protocol {
-        #[cfg(not(target_arch = "wasm32"))]
-        CoinProtocol::ZHTLC { .. } => true,
-        _ => false,
-    };
-    let is_zhtlc = is_zhtlc_base || is_zhtlc_rel;
-
     let request_orderbook = true;
     subscribe_to_orderbook_topic(&ctx, &base_ticker, &rel_ticker, request_orderbook)
         .await
@@ -388,11 +337,7 @@ pub async fn orderbook_rpc_v2(
                         continue;
                     },
                 };
-                let is_mine = if is_zhtlc {
-                    is_mine_zhtlc(&my_orders_pubkeys, &my_pubsecp, &ask.pubkey)
-                } else {
-                    is_my_order(&my_pubsecp, &ask.pubkey)
-                };
+                let is_mine = is_mine(&my_orders_pubkeys, &my_pubsecp, &ask.pubkey);
                 orderbook_entries.push(ask.as_rpc_v2_entry_ask(address, is_mine));
             }
             orderbook_entries
@@ -422,11 +367,7 @@ pub async fn orderbook_rpc_v2(
                         continue;
                     },
                 };
-                let is_mine = if is_zhtlc {
-                    is_mine_zhtlc(&my_orders_pubkeys, &my_pubsecp, &bid.pubkey)
-                } else {
-                    is_my_order(&my_pubsecp, &bid.pubkey)
-                };
+                let is_mine = is_mine(&my_orders_pubkeys, &my_pubsecp, &bid.pubkey);
                 orderbook_entries.push(bid.as_rpc_v2_entry_bid(address, is_mine));
             }
             orderbook_entries
