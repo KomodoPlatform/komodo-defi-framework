@@ -223,7 +223,7 @@ fn test_validate_maker_payment() {
     log!("error: {:?}", error);
     match error {
         ValidatePaymentError::UnexpectedPaymentState(err) => {
-            assert!(error.contains("Payment state is not PAYMENT_STATE_SENT, got 0"))
+            assert!(err.contains("Payment state is not PAYMENT_STATE_SENT, got 0"))
         },
         _ => panic!(
             "Expected `UnexpectedPaymentState` state not PAYMENT_STATE_SENT, found {:?}",
