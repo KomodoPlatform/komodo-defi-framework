@@ -41,8 +41,7 @@ pub trait AbortableSystem: From<InnerShared<Self::Inner>> {
             }
         };
 
-        unsafe { spawn(abort_fut) };
-
+        spawn(abort_fut);
         S::from(inner_shared)
     }
 

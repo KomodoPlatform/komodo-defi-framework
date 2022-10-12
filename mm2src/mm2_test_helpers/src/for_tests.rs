@@ -8,7 +8,6 @@ use rand::Rng;
 use serde::{Deserialize, Serialize};
 use serde_json::{self as json, json, Value as Json};
 use std::collections::HashMap;
-use std::future::Future;
 use std::net::IpAddr;
 use std::num::NonZeroUsize;
 use std::process::Child;
@@ -122,8 +121,6 @@ const DEFAULT_RPC_PASSWORD: &str = "pass";
 
 pub const ETH_MAINNET_NODE: &str = "https://mainnet.infura.io/v3/c01c1b4cf66642528547624e1d6d9d6b";
 pub const ETH_MAINNET_SWAP_CONTRACT: &str = "0x24abe4c71fc658c91313b6552cd40cd808b3ea80";
-
-pub fn spawn(future: impl Future<Output = ()> + Send + 'static) { unsafe { common::executor::spawn(future) } }
 
 pub struct Mm2TestConf {
     pub conf: Json,

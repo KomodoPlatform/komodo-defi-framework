@@ -49,7 +49,7 @@ jobs:
           CC=clang-8 cargo test --package mm2_main --target wasm32-unknown-unknown --release --bin mm2
         displayName: 'Test MM2 WASM'
         env:
-          WASM_BINDGEN_TEST_TIMEOUT: 120
+          WASM_BINDGEN_TEST_TIMEOUT: 180
           GECKODRIVER: '/home/azureagent/wasm/geckodriver'
           BOB_PASSPHRASE: $(${{ parameters.bob_passphrase }})
           ALICE_PASSPHRASE: $(${{ parameters.alice_passphrase }})

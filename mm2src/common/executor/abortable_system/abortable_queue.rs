@@ -125,7 +125,7 @@ impl SpawnAbortable for WeakSpawner {
             }
         };
 
-        unsafe { spawn(final_fut) };
+        spawn(final_fut);
     }
 }
 

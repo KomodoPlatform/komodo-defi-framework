@@ -105,7 +105,7 @@ impl WasmCallback {
         // The future can be spawned safely since it doesn't hold any shared pointer,
         // and will be stopped immediately once `WasmCallback` is dropped.
         // Please note that `WasmCallBack` is set on MarketMaker start/restart.
-        unsafe { spawn_local(fut) };
+        spawn_local(fut);
         WasmCallback { tx }
     }
 
@@ -123,7 +123,7 @@ impl WasmCallback {
         // The future can be spawned safely since it doesn't hold any shared pointer,
         // and will be stopped immediately once `WasmCallback` is dropped.
         // Please note that `WasmCallBack` is set on MarketMaker start/restart.
-        unsafe { spawn_local(fut) };
+        spawn_local(fut);
         WasmCallback { tx }
     }
 }

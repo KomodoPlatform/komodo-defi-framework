@@ -112,7 +112,7 @@ impl FetchRequest {
 
         // The spawned future doesn't capture shared pointers,
         // so we can use `spawn_local` here.
-        unsafe { spawn_local(fut) };
+        spawn_local(fut);
     }
 
     fn spawn_fetch_array(request: Self, tx: oneshot::Sender<FetchResult<Vec<u8>>>) {
@@ -123,7 +123,7 @@ impl FetchRequest {
 
         // The spawned future doesn't capture shared pointers,
         // so we can use `spawn_local` here.
-        unsafe { spawn_local(fut) };
+        spawn_local(fut);
     }
 
     async fn fetch(request: Self) -> FetchResult<JsResponse> {

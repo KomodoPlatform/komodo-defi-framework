@@ -262,7 +262,7 @@ mod tests {
                 tx.send(ch).await.expect("!tx.try_send()");
             }
         };
-        unsafe { spawn(fut) };
+        spawn(fut);
 
         let fut = async move {
             let initial_state: ReadingState = ReadingState { rx };

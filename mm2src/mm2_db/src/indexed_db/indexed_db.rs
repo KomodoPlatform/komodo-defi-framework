@@ -166,7 +166,7 @@ impl IndexedDbBuilder {
         };
 
         // `IndexedDb::event_loop` will finish almost immediately once the opposite `event_tx` is dropped.
-        unsafe { spawn_local(fut) };
+        spawn_local(fut);
     }
 }
 
@@ -225,7 +225,7 @@ impl IndexedDb {
         // Spawn the event loop.
         let fut = async move { DbTransaction::event_loop(transaction_event_rx, transaction).await };
         // `DbTransaction::event_loop` will finish almost immediately once `transaction_event_rx` is dropped.
-        unsafe { spawn_local(fut) };
+        spawn_local(fut);
 
         // ignore if the receiver is closed
         result_tx.send(Ok(transaction_event_tx)).ok();
@@ -290,7 +290,7 @@ impl DbTransaction<'_> {
 
         let fut = async move { table_event_loop(table_event_rx, table).await };
         // `table_event_loop` will finish almost immediately once `table_event_tx` is dropped.
-        unsafe { spawn_local(fut) };
+        spawn_local(fut);
 
         // ignore if the receiver is closed
         result_tx.send(Ok(table_event_tx)).ok();
@@ -774,7 +774,7 @@ fn open_cursor(
 
     let fut = async move { cursor_event_loop(event_rx, cursor_builder).await };
     // `cursor_event_loop` will finish almost immediately once `event_tx` is dropped.
-    unsafe { spawn_local(fut) };
+    spawn_local(fut);
 
     // ignore if the receiver is closed
     result_tx.send(Ok(event_tx)).ok();

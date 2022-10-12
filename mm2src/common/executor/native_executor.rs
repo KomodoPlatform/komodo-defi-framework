@@ -6,11 +6,11 @@ use std::pin::Pin;
 use std::thread;
 use std::time::Duration;
 
-/// # Safety
+/// # Important
 ///
 /// The `spawn` function must be used carefully to avoid hanging pointers.
 /// Please consider using `AbortableQueue`, `AbortableSimpleMap` or `spawn_abortable` instead.
-pub unsafe fn spawn(future: impl Future03<Output = ()> + Send + 'static) { crate::wio::CORE.0.spawn(future); }
+pub fn spawn(future: impl Future03<Output = ()> + Send + 'static) { crate::wio::CORE.0.spawn(future); }
 
 /// Schedule the given `future` to be executed shortly after the given `utc` time is reached.
 fn spawn_after(utc: f64, future: impl Future03<Output = ()> + Send + 'static) {
@@ -49,7 +49,7 @@ fn spawn_after(utc: f64, future: impl Future03<Output = ()> + Send + 'static) {
                         };
                         //log! ("spawn_after] spawning " (v.len()) " tasks at " [utc]);
                         for f in v {
-                            unsafe { spawn(f) }
+                            spawn(f);
                         }
                     }
                     let (utc, f) = match rx.recv_timeout(next_stop) {

@@ -222,7 +222,7 @@ pub async fn stop(ctx: MmArc) -> Result<Response<Vec<u8>>, String> {
     // Please note we shouldn't use `MmCtx::spawner` to spawn this future,
     // as all spawned futures will be dropped on `MmArc::stop`, so this future will be dropped as well,
     // and it may lead to an unexpected behaviour.
-    unsafe { common::executor::spawn(fut) }
+    common::executor::spawn(fut);
 
     let res = json!({
         "result": "success"

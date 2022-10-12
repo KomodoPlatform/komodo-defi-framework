@@ -77,6 +77,6 @@ struct SpawnMsg {
 #[must_use]
 pub fn spawn_abortable(fut: impl Future03<Output = ()> + Send + 'static) -> AbortOnDropHandle {
     let (abortable, handle) = abortable(fut);
-    unsafe { spawn(abortable.then(|_| async {})) }
+    spawn(abortable.then(|_| async {}));
     AbortOnDropHandle::from(handle)
 }

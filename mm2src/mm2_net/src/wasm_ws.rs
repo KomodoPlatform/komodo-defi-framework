@@ -293,10 +293,6 @@ struct WsClosures {
     _closures: Vec<TransportClosure>,
 }
 
-/// Due to the fact that WASM is currently single-threaded, we can implement the `Send` trait for `WsClosures`,
-/// but it won't be safe when wasm becomes multi-threaded.
-unsafe impl Send for WsClosures {}
-
 /// This is a wrapper over `WebSocket` that holds the closures passed as [`WebSocket::onopen`], [`WebSocket::onclose`] etc.
 ///
 /// # Drop
