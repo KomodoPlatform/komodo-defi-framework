@@ -1,5 +1,5 @@
 use common::APPLICATION_JSON;
-use cosmrs::tendermint::abci::Path as AbciPath;
+pub use cosmrs::tendermint::abci::Path as AbciPath;
 use cosmrs::tendermint::abci::Transaction;
 use cosmrs::tendermint::block::Height;
 use derive_more::Display;
