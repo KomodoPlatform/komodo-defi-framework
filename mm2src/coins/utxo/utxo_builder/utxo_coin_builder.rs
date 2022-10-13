@@ -457,8 +457,6 @@ pub trait UtxoCoinBuilderCommonOps {
         let mut rng = small_rng();
         servers.as_mut_slice().shuffle(&mut rng);
 
-        // This spawner will be used below to spawn version and ping loops.
-        let spawner = abortable_system.weak_spawner();
         let client = ElectrumClientImpl::new(ticker, event_handlers, block_headers_storage, abortable_system);
         for server in servers.iter() {
             match client.add_server(server).await {
@@ -482,6 +480,7 @@ pub trait UtxoCoinBuilderCommonOps {
 
         let client = Arc::new(client);
 
+        let spawner = client.spawner();
         if args.negotiate_version {
             let weak_client = Arc::downgrade(&client);
             let client_name = format!("{} GUI/MM2 {}", ctx.gui().unwrap_or("UNKNOWN"), ctx.mm_version());

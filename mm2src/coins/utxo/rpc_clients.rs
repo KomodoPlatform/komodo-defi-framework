@@ -9,7 +9,7 @@ use async_trait::async_trait;
 use chain::{BlockHeader, BlockHeaderBits, BlockHeaderNonce, OutPoint, Transaction as UtxoTx};
 use common::custom_futures::{select_ok_sequential, FutureTimerExt};
 use common::custom_iter::{CollectInto, TryIntoGroupMap};
-use common::executor::{abortable_queue::AbortableQueue, AbortableSystem, SpawnFuture, Timer};
+use common::executor::{abortable_queue, abortable_queue::AbortableQueue, AbortableSystem, SpawnFuture, Timer};
 use common::jsonrpc_client::{JsonRpcBatchClient, JsonRpcBatchResponse, JsonRpcClient, JsonRpcError, JsonRpcErrorType,
                              JsonRpcId, JsonRpcMultiClient, JsonRpcRemoteAddr, JsonRpcRequest, JsonRpcRequestEnum,
                              JsonRpcResponse, JsonRpcResponseEnum, JsonRpcResponseFut, RpcRes};
@@ -1535,8 +1535,7 @@ pub struct ElectrumConnection {
     ///
     /// Please also note that this abortable system is a subsystem of [`ElectrumClientImpl::abortable_system`].
     /// For more info see [`ElectrumClientImpl::add_server`].
-    #[allow(dead_code)]
-    abortable_system: AbortableQueue,
+    _abortable_system: AbortableQueue,
 }
 
 impl ElectrumConnection {
@@ -1699,6 +1698,8 @@ async fn electrum_request_to(
 }
 
 impl ElectrumClientImpl {
+    pub fn spawner(&self) -> abortable_queue::WeakSpawner { self.abortable_system.weak_spawner() }
+
     /// Create an Electrum connection and spawn a green thread actor to handle it.
     pub async fn add_server(&self, req: &ElectrumRpcRequest) -> Result<(), String> {
         let subsystem = self.abortable_system.create_subsystem();
@@ -2777,7 +2778,7 @@ fn electrum_connect(
         tx,
         responses,
         protocol_version: AsyncMutex::new(None),
-        abortable_system,
+        _abortable_system: abortable_system,
     }
 }
 

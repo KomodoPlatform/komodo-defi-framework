@@ -602,8 +602,7 @@ pub struct LogState {
     /// Keeps track of the log level that the log state is initiated with
     level: LogLevel,
     /// `log_dashboard_sometimes` abort handle if it has been spawned.
-    #[allow(dead_code)]
-    dashboard_abort_handle: Option<AbortOnDropHandle>,
+    _dashboard_abort_handle: Option<AbortOnDropHandle>,
 }
 
 #[derive(Clone)]
@@ -733,7 +732,7 @@ impl LogState {
             tail: Arc::new(PaMutex::new(VecDeque::with_capacity(64))),
             gravity: PaMutex::new(None),
             level: LogLevel::default(),
-            dashboard_abort_handle: None,
+            _dashboard_abort_handle: None,
         }
     }
 
@@ -747,7 +746,7 @@ impl LogState {
             tail: Arc::new(PaMutex::new(VecDeque::with_capacity(64))),
             gravity: PaMutex::new(None),
             level: LogLevel::default(),
-            dashboard_abort_handle: Some(abort_handle),
+            _dashboard_abort_handle: Some(abort_handle),
         }
     }
 

@@ -16,7 +16,7 @@ pub use abort_on_drop::AbortOnDropHandle;
 
 #[cfg(target_arch = "wasm32")] mod wasm_executor;
 #[cfg(target_arch = "wasm32")]
-pub use wasm_executor::{spawn, spawn_local, Timer};
+pub use wasm_executor::{spawn, spawn_local, spawn_local_abortable, Timer};
 
 #[derive(Clone, Default)]
 pub struct AbortSettings {
