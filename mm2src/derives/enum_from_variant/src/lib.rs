@@ -44,12 +44,12 @@ use syn::{parse_macro_input, DeriveInput};
 ///     Foo(String),
 /// }
 
-/// fn foo_fn() -> Result<(), Foo> {
-///     Ok(bar_fn()?)
+/// fn foo_fn() -> Foo {
+///     bar_fn().into()
 /// }
 
-/// fn bar_fn() -> Result<(), Bar> {
-///     Err(Bar::Foo("Err".to_string()))
+/// fn bar_fn() -> Bar {
+///     Bar::Foo("bar".to_string())
 /// }
 /// ```
 ///
@@ -116,19 +116,18 @@ struct MapEnumData {
 enum InnerIdentTypes {
     String,
     Named,
-    Unnamed,
+    None,
 }
 
 fn get_inner_ident_type(ident: Option<Ident>) -> InnerIdentTypes {
     if let Some(ident) = ident {
-        let n = Ident::new("String", ident.span());
-        return if ident == n {
+        return if ident == Ident::new("String", ident.span()) {
             InnerIdentTypes::String
         } else {
             InnerIdentTypes::Named
         };
     }
-    InnerIdentTypes::Unnamed
+    InnerIdentTypes::None
 }
 
 pub(crate) fn get_attributes(variants: syn::Variant) -> Result<MapEnumDataPunctuated, syn::Error> {

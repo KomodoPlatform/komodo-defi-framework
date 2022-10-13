@@ -541,7 +541,7 @@ pub struct UtxoCoinFields {
     pub check_utxo_maturity: bool,
 }
 
-#[derive(Debug, Display, EnumFromVariants)]
+#[derive(Debug, Display, EnumFromVariant)]
 pub enum UnsupportedAddr {
     #[display(
         fmt = "{} address format activated for {}, but {} format used instead",
