@@ -753,6 +753,7 @@ impl SwapOps for Qrc20Coin {
         Box::new(fut.boxed().compat())
     }
 
+    #[inline]
     fn send_taker_payment(
         &self,
         time_lock: u32,
@@ -777,6 +778,7 @@ impl SwapOps for Qrc20Coin {
         Box::new(fut.boxed().compat())
     }
 
+    #[inline]
     fn send_maker_spends_taker_payment(
         &self,
         taker_payment_tx: &[u8],
@@ -799,6 +801,7 @@ impl SwapOps for Qrc20Coin {
         Box::new(fut.boxed().compat())
     }
 
+    #[inline]
     fn send_taker_spends_maker_payment(
         &self,
         maker_payment_tx: &[u8],
@@ -821,6 +824,7 @@ impl SwapOps for Qrc20Coin {
         Box::new(fut.boxed().compat())
     }
 
+    #[inline]
     fn send_taker_refunds_payment(
         &self,
         taker_payment_tx: &[u8],
@@ -842,6 +846,7 @@ impl SwapOps for Qrc20Coin {
         Box::new(fut.boxed().compat())
     }
 
+    #[inline]
     fn send_maker_refunds_payment(
         &self,
         maker_payment_tx: &[u8],
@@ -863,6 +868,7 @@ impl SwapOps for Qrc20Coin {
         Box::new(fut.boxed().compat())
     }
 
+    #[inline]
     fn validate_fee(
         &self,
         fee_tx: &TransactionEnum,
@@ -892,6 +898,7 @@ impl SwapOps for Qrc20Coin {
         Box::new(fut.boxed().compat())
     }
 
+    #[inline]
     fn validate_maker_payment(&self, input: ValidatePaymentInput) -> ValidatePaymentFut<()> {
         let payment_tx: UtxoTx = try_f!(deserialize(input.payment_tx.as_slice()));
         let sender = try_f!(self
@@ -918,6 +925,7 @@ impl SwapOps for Qrc20Coin {
         Box::new(fut.boxed().compat())
     }
 
+    #[inline]
     fn validate_taker_payment(&self, input: ValidatePaymentInput) -> ValidatePaymentFut<()> {
         let swap_contract_address = try_f!(input
             .swap_contract_address
@@ -944,6 +952,7 @@ impl SwapOps for Qrc20Coin {
         Box::new(fut.boxed().compat())
     }
 
+    #[inline]
     fn check_if_my_payment_sent(
         &self,
         time_lock: u32,
@@ -965,6 +974,7 @@ impl SwapOps for Qrc20Coin {
         Box::new(fut.boxed().compat())
     }
 
+    #[inline]
     async fn search_for_swap_tx_spend_my(
         &self,
         input: SearchForSwapTxSpendInput<'_>,
@@ -985,10 +995,12 @@ impl SwapOps for Qrc20Coin {
             .await
     }
 
+    #[inline]
     fn check_all_inputs_signed_by_pub(&self, tx: &[u8], expected_pub: &[u8]) -> Result<bool, String> {
         utxo_common::check_all_inputs_signed_by_pub(tx, expected_pub)
     }
 
+    #[inline]
     fn extract_secret(&self, secret_hash: &[u8], spend_tx: &[u8]) -> Result<Vec<u8>, String> {
         self.extract_secret_impl(secret_hash, spend_tx)
     }
@@ -1019,10 +1031,12 @@ impl SwapOps for Qrc20Coin {
         }
     }
 
+    #[inline]
     fn derive_htlc_key_pair(&self, swap_unique_data: &[u8]) -> KeyPair {
         utxo_common::derive_htlc_key_pair(self.as_ref(), swap_unique_data)
     }
 
+    #[inline]
     fn validate_other_pubkey(&self, raw_pubkey: &[u8]) -> MmResult<(), ValidateOtherPubKeyErr> {
         utxo_common::validate_other_pubkey(raw_pubkey)
     }

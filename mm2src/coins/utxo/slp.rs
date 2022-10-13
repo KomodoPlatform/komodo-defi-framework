@@ -1383,6 +1383,7 @@ impl SwapOps for SlpToken {
         Box::new(fut.boxed().compat())
     }
 
+    #[inline]
     fn check_if_my_payment_sent(
         &self,
         time_lock: u32,
@@ -1401,6 +1402,7 @@ impl SwapOps for SlpToken {
         )
     }
 
+    #[inline]
     async fn search_for_swap_tx_spend_my(
         &self,
         input: SearchForSwapTxSpendInput<'_>,
@@ -1408,6 +1410,7 @@ impl SwapOps for SlpToken {
         utxo_common::search_for_swap_tx_spend_my(&self.platform_coin, input, SLP_SWAP_VOUT).await
     }
 
+    #[inline]
     async fn search_for_swap_tx_spend_other(
         &self,
         input: SearchForSwapTxSpendInput<'_>,
@@ -1419,10 +1422,12 @@ impl SwapOps for SlpToken {
         unimplemented!();
     }
 
+    #[inline]
     fn extract_secret(&self, secret_hash: &[u8], spend_tx: &[u8]) -> Result<Vec<u8>, String> {
         utxo_common::extract_secret(secret_hash, spend_tx)
     }
 
+    #[inline]
     fn negotiate_swap_contract_addr(
         &self,
         _other_side_address: Option<&[u8]>,
@@ -1430,10 +1435,12 @@ impl SwapOps for SlpToken {
         Ok(None)
     }
 
+    #[inline]
     fn derive_htlc_key_pair(&self, swap_unique_data: &[u8]) -> KeyPair {
         utxo_common::derive_htlc_key_pair(self.platform_coin.as_ref(), swap_unique_data)
     }
 
+    #[inline]
     fn validate_other_pubkey(&self, raw_pubkey: &[u8]) -> MmResult<(), ValidateOtherPubKeyErr> {
         utxo_common::validate_other_pubkey(raw_pubkey)
     }

@@ -510,10 +510,12 @@ impl UtxoStandardOps for QtumCoin {
 
 #[async_trait]
 impl SwapOps for QtumCoin {
+    #[inline]
     fn send_taker_fee(&self, fee_addr: &[u8], amount: BigDecimal, _uuid: &[u8]) -> TransactionFut {
         utxo_common::send_taker_fee(self.clone(), fee_addr, amount)
     }
 
+    #[inline]
     fn send_maker_payment(
         &self,
         time_lock: u32,
@@ -533,6 +535,7 @@ impl SwapOps for QtumCoin {
         )
     }
 
+    #[inline]
     fn send_taker_payment(
         &self,
         time_lock: u32,
@@ -552,6 +555,7 @@ impl SwapOps for QtumCoin {
         )
     }
 
+    #[inline]
     fn send_maker_spends_taker_payment(
         &self,
         taker_tx: &[u8],
@@ -571,6 +575,7 @@ impl SwapOps for QtumCoin {
         )
     }
 
+    #[inline]
     fn send_taker_spends_maker_payment(
         &self,
         maker_tx: &[u8],
@@ -590,6 +595,7 @@ impl SwapOps for QtumCoin {
         )
     }
 
+    #[inline]
     fn send_taker_refunds_payment(
         &self,
         taker_tx: &[u8],
@@ -609,6 +615,7 @@ impl SwapOps for QtumCoin {
         )
     }
 
+    #[inline]
     fn send_maker_refunds_payment(
         &self,
         maker_tx: &[u8],
@@ -652,14 +659,17 @@ impl SwapOps for QtumCoin {
         )
     }
 
+    #[inline]
     fn validate_maker_payment(&self, input: ValidatePaymentInput) -> ValidatePaymentFut<()> {
         utxo_common::validate_maker_payment(self, input)
     }
 
+    #[inline]
     fn validate_taker_payment(&self, input: ValidatePaymentInput) -> ValidatePaymentFut<()> {
         utxo_common::validate_taker_payment(self, input)
     }
 
+    #[inline]
     fn check_if_my_payment_sent(
         &self,
         time_lock: u32,
@@ -672,6 +682,7 @@ impl SwapOps for QtumCoin {
         utxo_common::check_if_my_payment_sent(self.clone(), time_lock, other_pub, secret_hash, swap_unique_data)
     }
 
+    #[inline]
     async fn search_for_swap_tx_spend_my(
         &self,
         input: SearchForSwapTxSpendInput<'_>,
@@ -679,6 +690,7 @@ impl SwapOps for QtumCoin {
         utxo_common::search_for_swap_tx_spend_my(self, input, utxo_common::DEFAULT_SWAP_VOUT).await
     }
 
+    #[inline]
     async fn search_for_swap_tx_spend_other(
         &self,
         input: SearchForSwapTxSpendInput<'_>,
@@ -686,14 +698,17 @@ impl SwapOps for QtumCoin {
         utxo_common::search_for_swap_tx_spend_other(self, input, utxo_common::DEFAULT_SWAP_VOUT).await
     }
 
+    #[inline]
     fn check_all_inputs_signed_by_pub(&self, tx: &[u8], expected_pub: &[u8]) -> Result<bool, String> {
         utxo_common::check_all_inputs_signed_by_pub(tx, expected_pub)
     }
 
+    #[inline]
     fn extract_secret(&self, secret_hash: &[u8], spend_tx: &[u8]) -> Result<Vec<u8>, String> {
         utxo_common::extract_secret(secret_hash, spend_tx)
     }
 
+    #[inline]
     fn can_refund_htlc(&self, locktime: u64) -> Box<dyn Future<Item = CanRefundHtlc, Error = String> + Send + '_> {
         Box::new(
             utxo_common::can_refund_htlc(self, locktime)
@@ -703,6 +718,7 @@ impl SwapOps for QtumCoin {
         )
     }
 
+    #[inline]
     fn negotiate_swap_contract_addr(
         &self,
         _other_side_address: Option<&[u8]>,
@@ -710,10 +726,12 @@ impl SwapOps for QtumCoin {
         Ok(None)
     }
 
+    #[inline]
     fn derive_htlc_key_pair(&self, swap_unique_data: &[u8]) -> KeyPair {
         utxo_common::derive_htlc_key_pair(self.as_ref(), swap_unique_data)
     }
 
+    #[inline]
     fn validate_other_pubkey(&self, raw_pubkey: &[u8]) -> MmResult<(), ValidateOtherPubKeyErr> {
         utxo_common::validate_other_pubkey(raw_pubkey)
     }

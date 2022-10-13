@@ -1122,6 +1122,7 @@ impl SwapOps for EthCoin {
         }
     }
 
+    #[inline]
     fn derive_htlc_key_pair(&self, _swap_unique_data: &[u8]) -> keys::KeyPair {
         key_pair_from_secret(self.key_pair.secret()).expect("valid key")
     }
