@@ -68,7 +68,7 @@ const ABCI_GET_TXS_EVENT_PATH: &str = "/cosmos.tx.v1beta1.Service/GetTxsEvent";
 const DEFAULT_GAS_PRICE: f64 = 0.25;
 pub(super) const TIMEOUT_HEIGHT_DELTA: u64 = 100;
 pub const GAS_LIMIT_DEFAULT: u64 = 100_000;
-const TX_DEFAULT_MEMO: &str = "";
+pub(crate) const TX_DEFAULT_MEMO: &str = "";
 
 // https://github.com/irisnet/irismod/blob/5016c1be6fdbcffc319943f33713f4a057622f0a/modules/htlc/types/validation.go#L19-L22
 const MAX_TIME_LOCK: i64 = 34560;
@@ -946,7 +946,7 @@ impl MmCoin for TendermintCoin {
             .to_any()
             .map_to_mm(|e| WithdrawError::InternalError(e.to_string()))?;
 
-            let memo = req.memo.unwrap_or_else(|| "".into());
+            let memo = req.memo.unwrap_or_else(|| TX_DEFAULT_MEMO.into());
             let current_block = coin
                 .current_block()
                 .compat()
