@@ -325,12 +325,7 @@ impl UtxoRpcError {
         false
     }
 
-    pub fn is_network_error(&self) -> bool {
-        match self {
-            UtxoRpcError::Transport(_) => true,
-            _ => false,
-        }
-    }
+    pub fn is_network_error(&self) -> bool { matches!(self, UtxoRpcError::Transport(_)) }
 }
 
 /// Common operations that both types of UTXO clients have but implement them differently
