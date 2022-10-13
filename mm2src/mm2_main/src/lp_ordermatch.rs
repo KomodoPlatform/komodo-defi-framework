@@ -2740,7 +2740,7 @@ impl OrdermatchContext {
         Ok(self.ordermatch_db.get_or_initialize().await?)
     }
 
-    fn add_pubkey(&self, p2p_privkey: Option<SerializableSecp256k1Keypair>) {
+    fn add_pubkey(&self, p2p_privkey: &Option<SerializableSecp256k1Keypair>) {
         if let Some(p2p_privkey) = p2p_privkey {
             let pubsecp = hex::encode(p2p_privkey.public_slice());
             self.my_p2p_pubkeys.lock().insert(pubsecp);
@@ -3162,7 +3162,7 @@ async fn handle_timed_out_taker_orders(ctx: MmArc, ordermatch_ctx: &OrdermatchCo
             .maker_orders_ctx
             .lock()
             .add_order(ctx.weak(), maker_order.clone(), None);
-        ordermatch_ctx.add_pubkey(maker_order.p2p_privkey);
+        ordermatch_ctx.add_pubkey(&maker_order.p2p_privkey);
 
         storage
             .save_new_active_maker_order(&maker_order)
@@ -4487,7 +4487,7 @@ pub async fn create_maker_order(ctx: &MmArc, req: SetPriceReq) -> Result<MakerOr
         .maker_orders_ctx
         .lock()
         .add_order(ctx.weak(), new_order.clone(), Some(balance));
-    ordermatch_ctx.add_pubkey(new_order.p2p_privkey);
+    ordermatch_ctx.add_pubkey(&new_order.p2p_privkey);
     Ok(new_order)
 }
 
@@ -5165,7 +5165,7 @@ pub async fn orders_kick_start(ctx: &MmArc) -> Result<HashSet<String>, String> {
             coins.insert(order.base.clone());
             coins.insert(order.rel.clone());
             maker_orders_ctx.add_order(ctx.weak(), order.clone(), None);
-            ordermatch_ctx.add_pubkey(order.p2p_privkey);
+            ordermatch_ctx.add_pubkey(&order.p2p_privkey);
         }
     }
 
