@@ -129,7 +129,7 @@ impl Qrc20Coin {
             let expected_value = wei_from_big_decimal(&amount, self.utxo.decimals)?;
             let my_address = self.utxo.derivation_method.iguana_or_err()?.clone();
             let expected_receiver = qtum::contract_addr_from_utxo_addr(my_address)
-                .mm_err(|e| ValidatePaymentError::InternalError(e.to_string()))?;
+                .mm_err(|err| ValidatePaymentError::InternalError(err.to_string()))?;
             self.erc20_payment_call_bytes(
                 expected_swap_id,
                 expected_value,
@@ -138,7 +138,6 @@ impl Qrc20Coin {
                 expected_receiver,
             )?
         };
-
         let erc20_payment = self
             .erc20_payment_details_from_tx(&payment_tx)
             .await
@@ -160,7 +159,7 @@ impl Qrc20Coin {
         if expected_swap_contract_address != erc20_payment.swap_contract_address {
             return MmError::err(ValidatePaymentError::WrongPaymentTx(format!(
                 "Payment tx receiver arg {:?} is invalid, expected {:?}",
-                erc20_payment.swap_contract_address, expected_swap_contract_address
+                erc20_payment.swap_contract_address, expected_swap_contract_address,
             )));
         }
 

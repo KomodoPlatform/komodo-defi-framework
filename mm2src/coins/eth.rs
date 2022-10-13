@@ -2793,13 +2793,13 @@ impl EthCoin {
                     if tx_from_rpc.to != Some(expected_swap_contract_address) {
                         return MmError::err(ValidatePaymentError::WrongPaymentTx(format!(
                             "Payment tx {:?} was sent to wrong address, expected {:?}",
-                            tx_from_rpc, expected_swap_contract_address
+                            tx_from_rpc, expected_swap_contract_address,
                         )));
                     }
 
                     if tx_from_rpc.value != expected_value {
                         return MmError::err(ValidatePaymentError::WrongPaymentTx(format!(
-                            "Payment tx {:?} value is invalid, expected {:?}",
+                            "Payment tx value arg {:?} is invalid, expected {:?}",
                             tx_from_rpc, expected_value
                         )));
                     }
@@ -2829,7 +2829,7 @@ impl EthCoin {
                         return MmError::err(ValidatePaymentError::WrongPaymentTx(format!(
                             "Payment tx secret_hash arg {:?} is invalid, expected {:?}",
                             decoded[2],
-                            Token::FixedBytes(secret_hash.to_vec())
+                            Token::FixedBytes(secret_hash.to_vec()),
                         )));
                     }
 
@@ -2837,7 +2837,7 @@ impl EthCoin {
                         return MmError::err(ValidatePaymentError::WrongPaymentTx(format!(
                             "Payment tx time_lock arg {:?} is invalid, expected {:?}",
                             decoded[3],
-                            Token::Uint(U256::from(time_lock))
+                            Token::Uint(U256::from(time_lock)),
                         )));
                     }
                 },
@@ -2848,7 +2848,7 @@ impl EthCoin {
                     if tx_from_rpc.to != Some(expected_swap_contract_address) {
                         return MmError::err(ValidatePaymentError::WrongPaymentTx(format!(
                             "Payment tx {:?} was sent to wrong address, expected {:?}",
-                            tx_from_rpc, expected_swap_contract_address
+                            tx_from_rpc, expected_swap_contract_address,
                         )));
                     }
 
@@ -2869,7 +2869,7 @@ impl EthCoin {
                         return MmError::err(ValidatePaymentError::WrongPaymentTx(format!(
                             "Payment tx value arg {:?} is invalid, expected {:?}",
                             decoded[1],
-                            Token::Uint(expected_value)
+                            Token::Uint(expected_value),
                         )));
                     }
 
@@ -2885,7 +2885,7 @@ impl EthCoin {
                         return MmError::err(ValidatePaymentError::WrongPaymentTx(format!(
                             "Payment tx receiver arg {:?} is invalid, expected {:?}",
                             decoded[3],
-                            Token::Address(selfi.my_address)
+                            Token::Address(selfi.my_address),
                         )));
                     }
 
@@ -2893,7 +2893,7 @@ impl EthCoin {
                         return MmError::err(ValidatePaymentError::WrongPaymentTx(format!(
                             "Payment tx secret_hash arg {:?} is invalid, expected {:?}",
                             decoded[4],
-                            Token::FixedBytes(secret_hash.to_vec())
+                            Token::FixedBytes(secret_hash.to_vec()),
                         )));
                     }
 
@@ -2901,7 +2901,7 @@ impl EthCoin {
                         return MmError::err(ValidatePaymentError::WrongPaymentTx(format!(
                             "Payment tx time_lock arg {:?} is invalid, expected {:?}",
                             decoded[5],
-                            Token::Uint(U256::from(time_lock))
+                            Token::Uint(U256::from(time_lock)),
                         )));
                     }
                 },

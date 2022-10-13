@@ -474,7 +474,6 @@ impl SlpToken {
             now_ms() / 1000 + 60,
             input.confirmations,
         );
-
         validate_fut.compat().await
     }
 
@@ -2174,8 +2173,8 @@ mod slp_tests {
         };
         let validity_err = block_on(fusd.validate_htlc(input)).unwrap_err();
         match validity_err.into_inner() {
-            ValidatePaymentError::WrongPaymentTx(e) => println!("{:?}", e),
-            err @ _ => panic!("Unexpected err {:?}", err),
+            ValidatePaymentError::WrongPaymentTx(e) => println!("{:#?}", e),
+            err @ _ => panic!("Unexpected err {:#?}", err),
         };
     }
 
