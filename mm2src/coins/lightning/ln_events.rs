@@ -424,7 +424,8 @@ impl LightningEventHandler {
         );
         let db = self.db.clone();
         let platform = self.platform.clone();
-        self.platform.spawner().spawn(async move {
+
+        let fut = async move {
             if let Err(e) = save_channel_closing_details(db, platform, user_channel_id, reason).await {
                 // This is the case when a channel is closed before funding is broadcasted due to the counterparty disconnecting or other incompatibility issue.
                 if e != SaveChannelClosingError::FundingTxNull.into() {
@@ -434,7 +435,10 @@ impl LightningEventHandler {
                     );
                 }
             }
-        });
+        };
+
+        let settings = AbortSettings::default().critical_timout_s(CRITICAL_FUTURE_TIMEOUT);
+        self.platform.spawner().spawn_with_settings(fut, settings);
     }
 
     fn handle_payment_failed(&self, payment_hash: PaymentHash) {
