@@ -326,12 +326,10 @@ impl UtxoRpcError {
     }
 
     pub fn is_network_error(&self) -> bool {
-        if let UtxoRpcError::Transport(ref json_err) = self {
-            if let JsonRpcErrorType::Transport(_err) = &json_err.error {
-                return true;
-            }
-        };
-        false
+        match self {
+            UtxoRpcError::Transport(_) => true,
+            _ => false,
+        }
     }
 }
 
