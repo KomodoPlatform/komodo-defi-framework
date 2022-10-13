@@ -32,7 +32,7 @@ pub fn spawn_local(future: impl Future<Output = ()> + 'static) { wasm_bindgen_fu
 
 pub fn spawn_local_abortable(future: impl Future<Output = ()> + 'static) -> AbortOnDropHandle {
     let (abortable, handle) = abortable(future);
-    spawn_local(abortable.then(|_| async {}));
+    spawn_local(abortable.then(|_| futures::future::ready(())));
     AbortOnDropHandle::from(handle)
 }
 

@@ -807,7 +807,7 @@ fn start_gossipsub(
         Poll::Pending
     });
 
-    runtime.spawn(polling_fut.then(|_| async {}));
+    runtime.spawn(polling_fut.then(|_| futures::future::ready(())));
     Ok((cmd_tx, event_rx, local_peer_id))
 }
 

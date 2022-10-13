@@ -2769,7 +2769,7 @@ fn electrum_connect(
         event_handlers,
         spawner.clone(),
     )
-    .then(|_| async {});
+    .then(|_| futures::future::ready(()));
 
     spawner.spawn(fut);
     ElectrumConnection {

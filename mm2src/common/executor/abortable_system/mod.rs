@@ -4,6 +4,7 @@ use parking_lot::Mutex as PaMutex;
 use std::sync::{Arc, Weak};
 
 pub mod abortable_queue;
+pub mod graceful_shutdown;
 pub mod simple_map;
 
 pub type InnerShared<Inner> = Arc<PaMutex<Inner>>;

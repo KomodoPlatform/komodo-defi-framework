@@ -270,16 +270,12 @@ pub mod prometheus {
         pub userpass: String,
     }
 
-    pub fn spawn_prometheus_exporter<S>(
-        spawner: &S,
+    pub fn spawn_prometheus_exporter(
         metrics: MetricsWeak,
         address: SocketAddr,
         shutdown_detector: impl Future<Output = ()> + 'static + Send,
         credentials: Option<PrometheusCredentials>,
-    ) -> Result<(), MmMetricsError>
-    where
-        S: SpawnFuture,
-    {
+    ) -> Result<(), MmMetricsError> {
         let make_svc = make_service_fn(move |_conn| {
             let metrics = metrics.clone();
             let credentials = credentials.clone();
@@ -301,7 +297,12 @@ pub mod prometheus {
             futures::future::ready(())
         });
 
-        spawner.spawn(server);
+        // As it's said in the [issue](https://github.com/hyperium/tonic/issues/330):
+        //
+        // Aborting the server future will forcefully cancel all connections and not perform a proper drain/shutdown.
+        // While using the special shutdown methods on the server will allow hyper to gracefully drain all connections
+        // and gracefully close connections.
+        common::executor::spawn(server);
         Ok(())
     }
 

@@ -1,8 +1,8 @@
 use arrayref::array_ref;
-#[cfg(any(not(target_arch = "wasm32"), feature = "track-ctx-pointer"))]
+#[cfg(feature = "track-ctx-pointer")]
 use common::executor::Timer;
 use common::executor::{abortable_queue::{AbortableQueue, WeakSpawner},
-                       AbortSettings, AbortableSystem, SpawnAbortable, SpawnFuture};
+                       graceful_shutdown, AbortSettings, AbortableSystem, SpawnAbortable, SpawnFuture};
 use common::log::{self, LogLevel, LogState};
 use common::{bits256, cfg_native, cfg_wasm32, small_rng};
 use gstuff::{try_s, Constructible, ERR, ERRL};
@@ -124,6 +124,9 @@ pub struct MmCtx {
     /// It's used to spawn futures that can be aborted immediately or after a timeout
     /// on the [`MmArc::stop`] function call.
     pub abortable_system: AbortableQueue,
+    /// The abortable system is pinned to the `MmCtx` context.
+    /// It's used to register listeners that will wait for graceful shutdown.
+    pub graceful_shutdown_registry: graceful_shutdown::GracefulShutdownRegistry,
     #[cfg(target_arch = "wasm32")]
     pub db_namespace: DbNamespaceId,
 }
@@ -164,6 +167,7 @@ impl MmCtx {
             mm_version: "".into(),
             mm_init_ctx: Mutex::new(None),
             abortable_system: AbortableQueue::default(),
+            graceful_shutdown_registry: graceful_shutdown::GracefulShutdownRegistry::default(),
             #[cfg(target_arch = "wasm32")]
             db_namespace: DbNamespaceId::Main,
         }
@@ -402,6 +406,8 @@ impl MmArc {
     pub fn stop(&self) -> Result<(), String> {
         try_s!(self.stop.pin(true));
 
+        // Notify shutdown listeners.
+        self.graceful_shutdown_registry.abort_all();
         // Abort spawned futures.
         self.abortable_system.abort_all();
 
@@ -537,22 +543,8 @@ impl MmArc {
                     userpass: userpass.into(),
                 });
 
-        let ctx = self.weak();
-
-        // Make the callback. When the context will be dropped, the shutdown_detector will be executed.
-        let shutdown_detector = async move {
-            while !ctx.dropped() {
-                Timer::sleep(0.5).await
-            }
-        };
-
-        prometheus::spawn_prometheus_exporter(
-            &self.spawner(),
-            self.metrics.weak(),
-            address,
-            shutdown_detector,
-            credentials,
-        )
+        let shutdown_detector = self.graceful_shutdown_registry.register_listener();
+        prometheus::spawn_prometheus_exporter(self.metrics.weak(), address, shutdown_detector, credentials)
     }
 }
 

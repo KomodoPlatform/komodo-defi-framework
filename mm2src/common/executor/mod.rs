@@ -6,7 +6,7 @@ use futures::{Future as Future03, FutureExt};
 pub use native_executor::{spawn, Timer};
 
 mod abortable_system;
-pub use abortable_system::{abortable_queue, simple_map, AbortableSystem};
+pub use abortable_system::{abortable_queue, graceful_shutdown, simple_map, AbortableSystem};
 
 mod spawner;
 pub use spawner::{BoxFutureSpawner, SpawnAbortable, SpawnFuture};
@@ -77,6 +77,6 @@ struct SpawnMsg {
 #[must_use]
 pub fn spawn_abortable(fut: impl Future03<Output = ()> + Send + 'static) -> AbortOnDropHandle {
     let (abortable, handle) = abortable(fut);
-    spawn(abortable.then(|_| async {}));
+    spawn(abortable.then(|_| futures::future::ready(())));
     AbortOnDropHandle::from(handle)
 }
