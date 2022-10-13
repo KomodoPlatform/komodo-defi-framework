@@ -539,11 +539,18 @@ where
 }
 
 /// returns the fee required to be paid for HTLC spend transaction
-pub async fn get_htlc_spend_fee<T: UtxoCommonOps>(coin: &T, tx_size: u64) -> UtxoRpcResult<u64> {
+pub async fn get_htlc_spend_fee<T: UtxoCommonOps>(
+    coin: &T,
+    tx_size: u64,
+    stage: &FeeApproxStage,
+) -> UtxoRpcResult<u64> {
     let coin_fee = coin.get_tx_fee().await?;
     let mut fee = match coin_fee {
         // atomic swap payment spend transaction is slightly more than 300 bytes in average as of now
-        ActualTxFee::Dynamic(fee_per_kb) => (fee_per_kb * tx_size) / KILO_BYTE,
+        ActualTxFee::Dynamic(fee_per_kb) => {
+            let fee_per_kb = increase_dynamic_fee_by_stage(&coin, fee_per_kb, stage);
+            (fee_per_kb * tx_size) / KILO_BYTE
+        },
         // return satoshis here as swap spend transaction size is always less than 1 kb
         ActualTxFee::FixedPerKb(satoshis) => {
             let tx_size_kb = if tx_size % KILO_BYTE == 0 {
@@ -1242,7 +1249,10 @@ pub fn send_maker_spends_taker_payment<T: UtxoCommonOps + SwapOps>(
     )
     .into();
     let fut = async move {
-        let fee = try_tx_s!(coin.get_htlc_spend_fee(DEFAULT_SWAP_TX_SPEND_SIZE).await);
+        let fee = try_tx_s!(
+            coin.get_htlc_spend_fee(DEFAULT_SWAP_TX_SPEND_SIZE, &FeeApproxStage::WithoutApprox)
+                .await
+        );
         if fee >= prev_transaction.outputs[0].value {
             return TX_PLAIN_ERR!(
                 "HTLC spend fee {} is greater than transaction output {}",
@@ -1345,7 +1355,11 @@ pub fn create_taker_spends_maker_payment_preimage<T: UtxoCommonOps + SwapOps>(
     )
     .into();
     let fut = async move {
-        let fee = try_tx_s!(coin.get_htlc_spend_fee(DEFAULT_SWAP_TX_SPEND_SIZE).await);
+        let fee = try_tx_s!(
+            coin.get_htlc_spend_fee(DEFAULT_SWAP_TX_SPEND_SIZE, &FeeApproxStage::WatcherPreimage)
+                .await
+        );
+
         if fee >= prev_transaction.outputs[0].value {
             return TX_PLAIN_ERR!(
                 "HTLC spend fee {} is greater than transaction output {}",
@@ -1402,7 +1416,10 @@ pub fn create_taker_refunds_payment_preimage<T: UtxoCommonOps + SwapOps>(
     )
     .into();
     let fut = async move {
-        let fee = try_tx_s!(coin.get_htlc_spend_fee(DEFAULT_SWAP_TX_SPEND_SIZE).await);
+        let fee = try_tx_s!(
+            coin.get_htlc_spend_fee(DEFAULT_SWAP_TX_SPEND_SIZE, &FeeApproxStage::WatcherPreimage)
+                .await
+        );
         if fee >= prev_transaction.outputs[0].value {
             return TX_PLAIN_ERR!(
                 "HTLC spend fee {} is greater than transaction output {}",
@@ -1462,7 +1479,10 @@ pub fn send_taker_spends_maker_payment<T: UtxoCommonOps + SwapOps>(
     )
     .into();
     let fut = async move {
-        let fee = try_tx_s!(coin.get_htlc_spend_fee(DEFAULT_SWAP_TX_SPEND_SIZE).await);
+        let fee = try_tx_s!(
+            coin.get_htlc_spend_fee(DEFAULT_SWAP_TX_SPEND_SIZE, &FeeApproxStage::WithoutApprox)
+                .await
+        );
         if fee >= prev_transaction.outputs[0].value {
             return TX_PLAIN_ERR!(
                 "HTLC spend fee {} is greater than transaction output {}",
@@ -1522,7 +1542,10 @@ pub fn send_taker_refunds_payment<T: UtxoCommonOps + SwapOps>(
     )
     .into();
     let fut = async move {
-        let fee = try_tx_s!(coin.get_htlc_spend_fee(DEFAULT_SWAP_TX_SPEND_SIZE).await);
+        let fee = try_tx_s!(
+            coin.get_htlc_spend_fee(DEFAULT_SWAP_TX_SPEND_SIZE, &FeeApproxStage::WithoutApprox)
+                .await
+        );
         if fee >= prev_transaction.outputs[0].value {
             return TX_PLAIN_ERR!(
                 "HTLC spend fee {} is greater than transaction output {}",
@@ -1598,7 +1621,10 @@ pub fn send_maker_refunds_payment<T: UtxoCommonOps + SwapOps>(
     )
     .into();
     let fut = async move {
-        let fee = try_tx_s!(coin.get_htlc_spend_fee(DEFAULT_SWAP_TX_SPEND_SIZE).await);
+        let fee = try_tx_s!(
+            coin.get_htlc_spend_fee(DEFAULT_SWAP_TX_SPEND_SIZE, &FeeApproxStage::WithoutApprox)
+                .await
+        );
         if fee >= prev_transaction.outputs[0].value {
             return TX_PLAIN_ERR!(
                 "HTLC spend fee {} is greater than transaction output {}",
@@ -3260,7 +3286,7 @@ where
 /// The fee to spend (receive) other payment is deducted from the trading amount so we should display it
 pub fn get_receiver_trade_fee<T: UtxoCommonOps>(coin: T) -> TradePreimageFut<TradeFee> {
     let fut = async move {
-        let amount_sat = get_htlc_spend_fee(&coin, DEFAULT_SWAP_TX_SPEND_SIZE).await?;
+        let amount_sat = get_htlc_spend_fee(&coin, DEFAULT_SWAP_TX_SPEND_SIZE, &FeeApproxStage::WithoutApprox).await?;
         let amount = big_decimal_from_sat_unsigned(amount_sat, coin.as_ref().decimals).into();
         Ok(TradeFee {
             coin: coin.as_ref().conf.ticker.clone(),
@@ -3906,6 +3932,11 @@ where
         FeeApproxStage::WithoutApprox => return dynamic_fee,
         // Take into account that the dynamic fee may increase during the swap by [`UtxoCoinFields::tx_fee_volatility_percent`].
         FeeApproxStage::StartSwap => base_percent,
+        // Take into account that the dynamic fee may increase after roughly the locktime is expired [`UtxoCoinFields::tx_fee_volatility_percent`]:
+        // - watcher can refund the taker payment after the locktime + an extra time to wait for the takers
+        // - the watcher can spend the taker_spends_maker_payment right after locktime/2, but the worst case should be considered which is slightly before
+        //   the locktime is expired
+        FeeApproxStage::WatcherPreimage => base_percent, //This needs discussion
         // Take into account that the dynamic fee may increase at each of the following stages up to [`UtxoCoinFields::tx_fee_volatility_percent`]:
         // - until a swap is started;
         // - during the swap.

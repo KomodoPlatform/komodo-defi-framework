@@ -1732,7 +1732,10 @@ impl MmCoin for SlpToken {
         let coin = self.clone();
 
         let fut = async move {
-            let htlc_fee = coin.platform_coin.get_htlc_spend_fee(SLP_HTLC_SPEND_SIZE).await?;
+            let htlc_fee = coin
+                .platform_coin
+                .get_htlc_spend_fee(SLP_HTLC_SPEND_SIZE, &FeeApproxStage::WithoutApprox)
+                .await?;
             let amount =
                 (big_decimal_from_sat_unsigned(htlc_fee, coin.platform_decimals()) + coin.platform_dust_dec()).into();
             Ok(TradeFee {

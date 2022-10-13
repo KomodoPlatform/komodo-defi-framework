@@ -932,7 +932,7 @@ impl MatureUnspentList {
 pub trait UtxoCommonOps:
     AsRef<UtxoCoinFields> + UtxoTxGenerationOps + UtxoTxBroadcastOps + Clone + Send + Sync + 'static
 {
-    async fn get_htlc_spend_fee(&self, tx_size: u64) -> UtxoRpcResult<u64>;
+    async fn get_htlc_spend_fee(&self, tx_size: u64, stage: &FeeApproxStage) -> UtxoRpcResult<u64>;
 
     fn addresses_from_script(&self, script: &Script) -> Result<Vec<Address>, String>;
 

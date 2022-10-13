@@ -1102,6 +1102,8 @@ pub enum FeeApproxStage {
     OrderIssue,
     /// Increase the trade fee largely.
     TradePreimage,
+    /// Increase the trade fee very largely
+    WatcherPreimage,
 }
 
 #[derive(Debug)]
