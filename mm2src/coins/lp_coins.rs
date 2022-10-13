@@ -778,6 +778,7 @@ pub struct WithdrawRequest {
     #[serde(default)]
     max: bool,
     fee: Option<WithdrawFee>,
+    memo: Option<String>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -826,6 +827,7 @@ impl WithdrawRequest {
         amount: BigDecimal,
         max: bool,
         fee: Option<WithdrawFee>,
+        memo: Option<String>,
     ) -> WithdrawRequest {
         WithdrawRequest {
             coin,
@@ -834,10 +836,11 @@ impl WithdrawRequest {
             amount,
             max,
             fee,
+            memo,
         }
     }
 
-    pub fn new_max(coin: String, to: String) -> WithdrawRequest {
+    pub fn new_max(coin: String, to: String, memo: Option<String>) -> WithdrawRequest {
         WithdrawRequest {
             coin,
             from: None,
@@ -845,6 +848,7 @@ impl WithdrawRequest {
             amount: 0.into(),
             max: true,
             fee: None,
+            memo,
         }
     }
 }

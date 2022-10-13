@@ -946,6 +946,7 @@ impl MmCoin for TendermintCoin {
             .to_any()
             .map_to_mm(|e| WithdrawError::InternalError(e.to_string()))?;
 
+            let memo = req.memo.unwrap_or_else(|| "".into());
             let current_block = coin
                 .current_block()
                 .compat()
@@ -958,12 +959,7 @@ impl MmCoin for TendermintCoin {
             let timeout_height = current_block + TIMEOUT_HEIGHT_DELTA;
 
             let simulated_tx = coin
-                .gen_simulated_tx(
-                    account_info.clone(),
-                    msg_send.clone(),
-                    timeout_height,
-                    TX_DEFAULT_MEMO.into(),
-                )
+                .gen_simulated_tx(account_info.clone(), msg_send.clone(), timeout_height, memo.clone())
                 .map_to_mm(|e| WithdrawError::InternalError(e.to_string()))?;
             // >> END TX SIMULATION FOR FEE CALCULATION
 
@@ -1020,7 +1016,7 @@ impl MmCoin for TendermintCoin {
             .map_to_mm(|e| WithdrawError::InternalError(e.to_string()))?;
 
             let tx_raw = coin
-                .any_to_signed_raw_tx(account_info, msg_send, fee, timeout_height, TX_DEFAULT_MEMO.into())
+                .any_to_signed_raw_tx(account_info, msg_send, fee, timeout_height, memo)
                 .map_to_mm(|e| WithdrawError::InternalError(e.to_string()))?;
 
             let tx_bytes = tx_raw

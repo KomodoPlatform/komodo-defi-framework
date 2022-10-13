@@ -1,6 +1,5 @@
 /// Module containing implementation for Tendermint Tokens. They include native assets + IBC
 use super::{upper_hex, TendermintCoin, TendermintFeeDetails, GAS_LIMIT_DEFAULT, TIMEOUT_HEIGHT_DELTA};
-use crate::tendermint::TX_DEFAULT_MEMO;
 use crate::utxo::utxo_common::big_decimal_from_sat;
 use crate::{big_decimal_from_sat_unsigned, utxo::sat_from_big_decimal, BalanceFut, BigDecimal, CoinBalance,
             FeeApproxStage, FoundSwapTxSpend, HistorySyncState, MarketCoinOps, MmCoin, MyAddressError,
@@ -432,6 +431,7 @@ impl MmCoin for TendermintToken {
             .to_any()
             .map_to_mm(|e| WithdrawError::InternalError(e.to_string()))?;
 
+            let memo = req.memo.unwrap_or_else(|| "".into());
             let current_block = token
                 .current_block()
                 .compat()
@@ -444,12 +444,7 @@ impl MmCoin for TendermintToken {
             let timeout_height = current_block + TIMEOUT_HEIGHT_DELTA;
 
             let simulated_tx = coin
-                .gen_simulated_tx(
-                    account_info.clone(),
-                    msg_send.clone(),
-                    timeout_height,
-                    TX_DEFAULT_MEMO.into(),
-                )
+                .gen_simulated_tx(account_info.clone(), msg_send.clone(), timeout_height, memo.clone())
                 .map_to_mm(|e| WithdrawError::InternalError(e.to_string()))?;
 
             let fee_amount_u64 = coin.calculate_fee_amount_as_u64(simulated_tx).await?;
@@ -471,7 +466,7 @@ impl MmCoin for TendermintToken {
             let fee = Fee::from_amount_and_gas(fee_amount, GAS_LIMIT_DEFAULT);
 
             let tx_raw = coin
-                .any_to_signed_raw_tx(account_info, msg_send, fee, timeout_height, TX_DEFAULT_MEMO.into())
+                .any_to_signed_raw_tx(account_info, msg_send, fee, timeout_height, memo)
                 .map_to_mm(|e| WithdrawError::InternalError(e.to_string()))?;
 
             let tx_bytes = tx_raw
