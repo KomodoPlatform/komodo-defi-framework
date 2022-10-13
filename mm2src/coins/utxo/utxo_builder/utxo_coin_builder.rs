@@ -71,6 +71,7 @@ pub enum UtxoCoinBuildError {
     HwContextNotInitialized,
     HDWalletStorageError(HDWalletStorageError),
     CoinDoesntSupportTrezor,
+    GetCurrentBlockHeightError(String),
     BlockHeaderStorageError(BlockHeaderStorageError),
     #[display(fmt = "Internal error: {}", _0)]
     Internal(String),

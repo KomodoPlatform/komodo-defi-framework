@@ -1942,11 +1942,7 @@ impl ElectrumClient {
         rpc_func!(self, "blockchain.block.headers", start_height, count)
     }
 
-    pub fn retrieve_headers(
-        &self,
-        from: u64,
-        to: u64,
-    ) -> UtxoRpcFut<(HashMap<u64, BlockHeader>, Vec<BlockHeader>, u64)> {
+    pub fn retrieve_headers(&self, from: u64, to: u64) -> UtxoRpcFut<(HashMap<u64, BlockHeader>, Vec<BlockHeader>)> {
         let coin_name = self.coin_ticker.clone();
         if from == 0 || to < from {
             return Box::new(futures01::future::err(
@@ -1961,7 +1957,7 @@ impl ElectrumClient {
             self.blockchain_block_headers(from, count)
                 .map_to_mm_fut(UtxoRpcError::from)
                 .and_then(move |headers| {
-                    let (block_registry, block_headers, last_height) = {
+                    let (block_registry, block_headers) = {
                         if headers.count == 0 {
                             return MmError::err(UtxoRpcError::Internal("No headers available".to_string()));
                         }
@@ -1982,9 +1978,9 @@ impl ElectrumClient {
                             block_registry.insert(starting_height, block_header.clone());
                             starting_height += 1;
                         }
-                        (block_registry, block_headers, starting_height - 1)
+                        (block_registry, block_headers)
                     };
-                    Ok((block_registry, block_headers, last_height))
+                    Ok((block_registry, block_headers))
                 }),
         )
     }

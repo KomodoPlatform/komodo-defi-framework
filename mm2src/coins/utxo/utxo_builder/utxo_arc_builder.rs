@@ -3,7 +3,7 @@ use crate::utxo::utxo_builder::{UtxoCoinBuildError, UtxoCoinBuilder, UtxoCoinBui
                                 UtxoFieldsWithHardwareWalletBuilder, UtxoFieldsWithIguanaPrivKeyBuilder};
 use crate::utxo::{generate_and_send_tx, FeePolicy, GetUtxoListOps, UtxoArc, UtxoCommonOps, UtxoSyncStatusLoopHandle,
                   UtxoWeak};
-use crate::{DerivationMethod, PrivKeyBuildPolicy, UtxoActivationParams};
+use crate::{DerivationMethod, MarketCoinOps, PrivKeyBuildPolicy, UtxoActivationParams};
 use async_trait::async_trait;
 use chain::TransactionOutput;
 use common::executor::{spawn, Timer};
@@ -18,7 +18,8 @@ use spv_validation::helpers_validation::validate_headers;
 use spv_validation::storage::BlockHeaderStorageOps;
 
 const BLOCK_HEADERS_LOOP_INTERVAL: f64 = 60.;
-const BLOCK_HEADERS_MAX_CHUNK_SIZE: u64 = 500;
+const CHUNK_SIZE_REDUCER_VALUE: u64 = 100;
+const ELECTRUM_MAX_CHUNK_SIZE: u64 = 2016;
 
 pub struct UtxoArcBuilder<'a, F, T>
 where
@@ -83,7 +84,7 @@ impl<'a, F, T> UtxoFieldsWithHardwareWalletBuilder for UtxoArcBuilder<'a, F, T> 
 impl<'a, F, T> UtxoCoinBuilder for UtxoArcBuilder<'a, F, T>
 where
     F: Fn(UtxoArc) -> T + Clone + Send + Sync + 'static,
-    T: UtxoCommonOps + GetUtxoListOps,
+    T: UtxoCommonOps + GetUtxoListOps + MarketCoinOps,
 {
     type ResultCoin = T;
     type Error = UtxoCoinBuildError;
@@ -103,8 +104,16 @@ where
         }
 
         if let Some(sync_status_loop_handle) = sync_status_loop_handle {
-            let abort_handler =
-                self.spawn_block_header_utxo_loop(utxo_weak, self.constructor.clone(), sync_status_loop_handle);
+            let current_block_height = match result_coin.current_block().compat().await {
+                Ok(res) => res,
+                Err(err) => return MmError::err(UtxoCoinBuildError::GetCurrentBlockHeightError(err)),
+            };
+            let abort_handler = self.spawn_block_header_utxo_loop(
+                utxo_weak,
+                self.constructor.clone(),
+                sync_status_loop_handle,
+                current_block_height,
+            );
             self.ctx.abort_handlers.lock().unwrap().push(abort_handler);
         }
 
@@ -215,7 +224,9 @@ async fn block_header_utxo_loop<T: UtxoCommonOps>(
     weak: UtxoWeak,
     constructor: impl Fn(UtxoArc) -> T,
     mut sync_status_loop_handle: UtxoSyncStatusLoopHandle,
+    mut last_block_height: u64,
 ) {
+    let mut chunk_size = ELECTRUM_MAX_CHUNK_SIZE;
     while let Some(arc) = weak.upgrade() {
         let coin = constructor(arc);
         let ticker = coin.as_ref().conf.ticker.as_str();
@@ -235,33 +246,26 @@ async fn block_header_utxo_loop<T: UtxoCommonOps>(
             },
         };
 
-        let to_block_height = match coin.as_ref().rpc_client.get_block_count().compat().await {
-            Ok(h) => h,
-            Err(e) => {
-                error!("Error {} on getting the height of the latest block from rpc!", e);
-                sync_status_loop_handle.notify_on_temp_error(e.to_string());
-                Timer::sleep(10.).await;
-                continue;
-            },
-        };
-
         // Todo: Add code for the case if a chain reorganization happens
-        if from_block_height == to_block_height {
+        if from_block_height == last_block_height {
+            sync_status_loop_handle.notify_sync_finished(last_block_height);
+            last_block_height = match coin.as_ref().rpc_client.get_block_count().compat().await {
+                Ok(h) => h,
+                Err(e) => {
+                    error!("Error {} on getting the height of the latest block from rpc!", e);
+                    sync_status_loop_handle.notify_on_temp_error(e.to_string());
+                    Timer::sleep(10.0).await;
+                    continue;
+                },
+            };
             Timer::sleep(BLOCK_HEADERS_LOOP_INTERVAL).await;
             continue;
         }
 
+        let to_block_height = from_block_height + chunk_size;
         sync_status_loop_handle.notify_blocks_headers_sync_status(from_block_height + 1, to_block_height);
 
-        let notify_sync_finished =
-            async move |last_height: u64, to_block_height: u64, mut sync_handle: UtxoSyncStatusLoopHandle| {
-                if last_height == to_block_height {
-                    sync_handle.notify_sync_finished(to_block_height);
-                    Timer::sleep(BLOCK_HEADERS_LOOP_INTERVAL).await;
-                }
-            };
-
-        let (block_registry, block_headers, last_retrieved_height) = match client
+        let (block_registry, block_headers) = match client
             .retrieve_headers(from_block_height + 1, to_block_height)
             .compat()
             .await
@@ -275,61 +279,11 @@ async fn block_header_utxo_loop<T: UtxoCommonOps>(
                     continue;
                 };
 
-                ///////////// START BLOCK HEADER REQUEST IN CHUNKS
-                // If electrum returns response too large error", we will request the headers again in chunks of BLOCK_HEADERS_MAX_CHUNK_SIZE instead.
+                // If electrum returns response too large error, we will request the headers again in chunks of ELECTRUM_MAX_CHUNK_SIZE - CHUNK_SIZE_REDUCER_VALUE instead.
                 if error.get_inner().is_response_too_large() {
-                    log!("Now retrieving the latest headers from rpc in chunks!");
-                    let mut temp_from = from_block_height + 1;
-                    let mut temp_to = from_block_height + BLOCK_HEADERS_MAX_CHUNK_SIZE;
-
-                    return while temp_to <= to_block_height {
-                        match client.retrieve_headers(temp_from, temp_to).compat().await {
-                            Ok((block_registry, block_headers, last_retrieved_height)) => {
-                                // Validate retrieved block headers
-                                if let Some(params) = &coin.as_ref().conf.block_headers_verification_params {
-                                    if let Err(e) =
-                                        validate_headers(ticker, temp_from, block_headers, storage, params).await
-                                    {
-                                        error!("Error {} on validating the latest headers!", e);
-                                        // Todo: remove this electrum server and use another in this case since the headers from this server are invalid
-                                        sync_status_loop_handle.notify_on_permanent_error(e.to_string());
-                                        break;
-                                    }
-                                };
-
-                                // Add headers to storage
-                                ok_or_continue_after_sleep!(
-                                    storage.add_block_headers_to_storage(block_registry).await,
-                                    BLOCK_HEADERS_LOOP_INTERVAL
-                                );
-
-                                // blockchain.block.headers will returns a maximum of 500 headers so the loop needs to continue until we have all headers up to the current one.
-                                notify_sync_finished(
-                                    last_retrieved_height,
-                                    to_block_height,
-                                    sync_status_loop_handle.clone(),
-                                )
-                                .await;
-
-                                temp_from += BLOCK_HEADERS_MAX_CHUNK_SIZE;
-                                temp_to += BLOCK_HEADERS_MAX_CHUNK_SIZE;
-                            },
-                            Err(err) => {
-                                // keep retrying if network error
-                                if err.get_inner().is_network_error() {
-                                    log!("Network Error: Will try fetching block headers again after 10 secs");
-                                    sync_status_loop_handle.notify_on_temp_error(err.to_string());
-                                    Timer::sleep(10.).await;
-                                    continue;
-                                };
-                                error!("Error {} on retrieving the latest headers from rpc!", err);
-                                sync_status_loop_handle.notify_on_permanent_error(err.to_string());
-                                break;
-                            },
-                        };
-                    };
+                    chunk_size -= CHUNK_SIZE_REDUCER_VALUE;
+                    continue;
                 }
-                ///////////// END BLOCK HEADER REQUEST IN CHUNKS
 
                 error!("Error {} on retrieving the latest headers from rpc!", error);
                 sync_status_loop_handle.notify_on_permanent_error(error.to_string());
@@ -351,9 +305,6 @@ async fn block_header_utxo_loop<T: UtxoCommonOps>(
             storage.add_block_headers_to_storage(block_registry).await,
             BLOCK_HEADERS_LOOP_INTERVAL
         );
-
-        // blockchain.block.headers returns a maximum of 2016 headers (tested for btc) so the loop needs to continue until we have all headers up to the current one.
-        notify_sync_finished(last_retrieved_height, to_block_height, sync_status_loop_handle.clone()).await;
     }
 }
 
@@ -363,13 +314,19 @@ pub trait BlockHeaderUtxoArcOps<T>: UtxoCoinBuilderCommonOps {
         weak: UtxoWeak,
         constructor: F,
         sync_status_loop_handle: UtxoSyncStatusLoopHandle,
+        current_block_height: u64,
     ) -> AbortHandle
     where
         F: Fn(UtxoArc) -> T + Send + Sync + 'static,
         T: UtxoCommonOps,
     {
         let ticker = self.ticker().to_owned();
-        let (fut, abort_handle) = abortable(block_header_utxo_loop(weak, constructor, sync_status_loop_handle));
+        let (fut, abort_handle) = abortable(block_header_utxo_loop(
+            weak,
+            constructor,
+            sync_status_loop_handle,
+            current_block_height,
+        ));
         info!("Starting UTXO block header loop for coin {}", ticker);
         spawn(async move {
             if let Err(e) = fut.await {
