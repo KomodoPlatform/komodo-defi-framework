@@ -41,8 +41,6 @@ cfg_native! {
 /// Default interval to export and record metrics to log.
 const EXPORT_METRICS_INTERVAL: f64 = 5. * 60.;
 
-type StopListenerCallback = Box<dyn FnMut() -> Result<(), String>>;
-
 /// MarketMaker state, shared between the various MarketMaker threads.
 ///
 /// Every MarketMaker has one and only one instance of `MmCtx`.
@@ -82,8 +80,6 @@ pub struct MmCtx {
     /// Unique context identifier, allowing us to more easily pass the context through the FFI boundaries.  
     /// 0 if the handler ID is allocated yet.
     pub ffi_handle: Constructible<u32>,
-    /// Callbacks to invoke from `fn stop`.
-    pub stop_listeners: Mutex<Vec<StopListenerCallback>>,
     /// The context belonging to the `ordermatch` mod: `OrdermatchContext`.
     pub ordermatch_ctx: Mutex<Option<Arc<dyn Any + 'static + Send + Sync>>>,
     pub rate_limit_ctx: Mutex<Option<Arc<dyn Any + 'static + Send + Sync>>>,
@@ -141,7 +137,6 @@ impl MmCtx {
             rpc_started: Constructible::default(),
             stop: Constructible::default(),
             ffi_handle: Constructible::default(),
-            stop_listeners: Mutex::new(Vec::new()),
             ordermatch_ctx: Mutex::new(None),
             rate_limit_ctx: Mutex::new(None),
             simple_market_maker_bot_ctx: Mutex::new(None),
@@ -243,19 +238,6 @@ impl MmCtx {
 
     /// True if the MarketMaker instance needs to stop.
     pub fn is_stopping(&self) -> bool { self.stop.copy_or(false) }
-
-    /// Register a callback to be invoked when the MM receives the "stop" request.  
-    /// The callback is invoked immediately if the MM is stopped already.
-    pub fn on_stop(&self, mut cb: Box<dyn FnMut() -> Result<(), String>>) {
-        let mut stop_listeners = self.stop_listeners.lock().expect("Can't lock stop_listeners");
-        if self.stop.copy_or(false) {
-            if let Err(err) = cb() {
-                log::error!("MmCtx::on_stop] Listener error: {}", err)
-            }
-        } else {
-            stop_listeners.push(cb)
-        }
-    }
 
     /// Get a reference to the secp256k1 key pair.
     /// Panics if the key pair is not available.
@@ -413,16 +395,6 @@ impl MmArc {
 
         #[cfg(not(target_arch = "wasm32"))]
         self.background_processors.lock().unwrap().drain();
-
-        let mut stop_listeners = self.stop_listeners.lock().expect("Can't lock stop_listeners");
-        // NB: It is important that we `drain` the `stop_listeners` rather than simply iterating over them
-        // because otherwise there might be reference counting instances remaining in a listener
-        // that would prevent the contexts from properly `Drop`ping.
-        for mut listener in stop_listeners.drain(..) {
-            if let Err(err) = listener() {
-                log::error!("MmCtx::stop] Listener error: {}", err)
-            }
-        }
 
         #[cfg(feature = "track-ctx-pointer")]
         self.track_ctx_pointer();
