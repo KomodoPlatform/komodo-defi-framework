@@ -17,7 +17,7 @@ use parking_lot::Mutex as PaMutex;
 use rand::Rng;
 use script::{Builder, SignatureVersion};
 use secp256k1v22::Secp256k1;
-use std::convert::TryFrom;
+use std::convert::{TryFrom, TryInto};
 use std::sync::Arc;
 use utxo_signer::with_key_pair::sign_tx;
 
@@ -185,6 +185,8 @@ pub enum SignFundingTransactionError {
     Internal(String),
     #[display(fmt = "Error converting transaction: {}", _0)]
     ConvertTxErr(String),
+    #[display(fmt = "Error signing transaction: {}", _0)]
+    TxSignFailed(String),
 }
 
 // Generates the raw funding transaction with one output equal to the channel value.
@@ -227,7 +229,7 @@ fn sign_funding_transaction(
         SignatureVersion::WitnessV0,
         coin.as_ref().conf.fork_id,
     )
-    .map_err(|e| SignFundingTransactionError::Internal(e.to_string()))?;
+    .map_err(|e| SignFundingTransactionError::TxSignFailed(e.to_string()))?;
 
     Transaction::try_from(signed).map_err(|e| SignFundingTransactionError::ConvertTxErr(e.to_string()))
 }
@@ -351,11 +353,19 @@ impl LightningEventHandler {
                         description: "Swap Payment".into(),
                         preimage: None,
                         secret: None,
-                        amt_msat: Some(received_amount as i64),
+                        amt_msat: Some(
+                            received_amount
+                                .try_into()
+                                .expect("received_amount shouldn't exceed i64::MAX"),
+                        ),
                         fee_paid_msat: None,
                         status: HTLCStatus::Received,
-                        created_at: (now_ms() / 1000) as i64,
-                        last_updated: (now_ms() / 1000) as i64,
+                        created_at: (now_ms() / 1000)
+                            .try_into()
+                            .expect("created_at shouldn't exceed i64::MAX"),
+                        last_updated: (now_ms() / 1000)
+                            .try_into()
+                            .expect("last_updated shouldn't exceed i64::MAX"),
                     };
                     let db = self.db.clone();
                     // Todo: Update this after stop-spawned-futures https://github.com/KomodoPlatform/atomicDEX-API/pull/1490 gets merged to dev
