@@ -18,6 +18,8 @@ use zcash_primitives::transaction::builder::Error as ZTxBuilderError;
 #[non_exhaustive]
 pub enum UpdateBlocksCacheErr {
     GrpcError(tonic::Status),
+    #[display(fmt = "Fail to send requests during clients iteration {:?}", _0)]
+    GrpcMultiError(Vec<tonic::Status>),
     BlocksDbError(SqliteError),
     ZcashSqliteError(ZcashClientError),
     UtxoRpcError(UtxoRpcError),
@@ -48,21 +50,23 @@ impl From<JsonRpcError> for UpdateBlocksCacheErr {
 #[derive(Debug, Display)]
 #[non_exhaustive]
 pub enum ZcoinClientInitError {
-    TlsConfigFailure(tonic::transport::Error),
-    ConnectionFailure(tonic::transport::Error),
     BlocksDbInitFailure(SqliteError),
     WalletDbInitFailure(SqliteError),
     ZcashSqliteError(ZcashClientError),
     EmptyLightwalletdUris,
-    InvalidUri(InvalidUri),
+    #[display(fmt = "Fail to init clients while iterating lightwalletd urls {:?}", _0)]
+    UrlIterFailure(Vec<UrlIterError>),
 }
 
 impl From<ZcashClientError> for ZcoinClientInitError {
     fn from(err: ZcashClientError) -> Self { ZcoinClientInitError::ZcashSqliteError(err) }
 }
 
-impl From<InvalidUri> for ZcoinClientInitError {
-    fn from(err: InvalidUri) -> Self { ZcoinClientInitError::InvalidUri(err) }
+#[derive(Debug, Display)]
+pub enum UrlIterError {
+    InvalidUri(InvalidUri),
+    TlsConfigFailure(tonic::transport::Error),
+    ConnectionFailure(tonic::transport::Error),
 }
 
 #[derive(Debug, Display)]

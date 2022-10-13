@@ -1018,6 +1018,26 @@ impl TakerSwap {
             },
         };
 
+        // Validate maker_coin_htlc_pubkey realness
+        if let Err(err) = self.maker_coin.validate_other_pubkey(maker_data.maker_coin_htlc_pub()) {
+            return Ok((Some(TakerSwapCommand::Finish), vec![TakerSwapEvent::NegotiateFailed(
+                ERRL!("!maker_data.maker_coin_htlc_pub {}", err).into(),
+            )]));
+        };
+
+        // Validate taker_coin_htlc_pubkey realness
+        if let Err(err) = self.taker_coin.validate_other_pubkey(maker_data.taker_coin_htlc_pub()) {
+            return Ok((Some(TakerSwapCommand::Finish), vec![TakerSwapEvent::NegotiateFailed(
+                ERRL!("!maker_data.taker_coin_htlc_pub {}", err).into(),
+            )]));
+        };
+
+        if maker_data.secret_hash().len() != 20 {
+            return Ok((Some(TakerSwapCommand::Finish), vec![TakerSwapEvent::NegotiateFailed(
+                ERRL!("!maker_data.secret_hash: secret_hash validation failed").into(),
+            )]));
+        }
+
         let maker_coin_swap_contract_bytes = maker_coin_swap_contract_addr
             .clone()
             .map_or_else(Vec::new, |bytes| bytes.0);
