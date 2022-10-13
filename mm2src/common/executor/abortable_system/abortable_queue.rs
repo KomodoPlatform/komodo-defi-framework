@@ -109,7 +109,7 @@ impl SpawnAbortable for WeakSpawner {
 
                     // We need to remove the future ID if the handler still exists.
                     if let Some(inner) = inner_weak.upgrade() {
-                        inner.lock().remove_finished(future_id);
+                        inner.lock().on_finished(future_id);
                     }
                 },
                 // `abort_tx` has been removed from `QueueInner::futures`,
@@ -166,11 +166,13 @@ impl QueueInner {
         }
     }
 
+    /// Handles the fact that the future associated with the `future_id` has been finished.
+    ///
     /// # Note
     ///
     /// We don't need to remove an associated [`oneshot::Sender<()>`],
     /// but later we can easily reset the item at `abort_handlers[future_id]` with a new [`oneshot::Sender<()>`].
-    fn remove_finished(&mut self, future_id: FutureId) { self.finished_futures.push(future_id); }
+    fn on_finished(&mut self, future_id: FutureId) { self.finished_futures.push(future_id); }
 }
 
 impl SystemInner for QueueInner {
@@ -185,7 +187,7 @@ mod tests {
     use super::*;
     use crate::block_on;
 
-    fn test_spawn_removes_when_finished_impl(settings: AbortSettings) {
+    fn test_future_finished_impl(settings: AbortSettings) {
         let abortable_system = AbortableQueue::default();
         let spawner = abortable_system.weak_spawner();
 
@@ -231,15 +233,15 @@ mod tests {
     }
 
     #[test]
-    fn test_spawn_critical_removes_when_finished() {
+    fn test_critical_future_finished() {
         let settings = AbortSettings::default().critical_timout_s(1.);
-        test_spawn_removes_when_finished_impl(settings);
+        test_future_finished_impl(settings);
     }
 
     #[test]
-    fn test_spawn_removes_when_finished() {
+    fn test_future_finished() {
         let settings = AbortSettings::default();
-        test_spawn_removes_when_finished_impl(settings);
+        test_future_finished_impl(settings);
     }
 
     #[test]
