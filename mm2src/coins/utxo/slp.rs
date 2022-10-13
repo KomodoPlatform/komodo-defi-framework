@@ -1973,7 +1973,7 @@ mod slp_tests {
 
     #[test]
     fn test_slp_address() {
-        let bch = tbch_coin_for_test();
+        let (_ctx, bch) = tbch_coin_for_test();
         let token_id = H256::from("bb309e48930671582bea508f9a1d9b491e49b69be3d6f372dc08da2ac6e90eb7");
         let fusd = SlpToken::new(4, "FUSD".into(), token_id, bch, 0);
 
@@ -1983,7 +1983,7 @@ mod slp_tests {
 
     #[test]
     fn test_validate_htlc_valid() {
-        let bch = tbch_coin_for_test();
+        let (_ctx, bch) = tbch_coin_for_test();
         let token_id = H256::from("bb309e48930671582bea508f9a1d9b491e49b69be3d6f372dc08da2ac6e90eb7");
         let fusd = SlpToken::new(4, "FUSD".into(), token_id, bch, 0);
 
@@ -2018,7 +2018,7 @@ mod slp_tests {
 
     #[test]
     fn construct_and_send_invalid_slp_htlc_should_fail() {
-        let bch = tbch_coin_for_test();
+        let (_ctx, bch) = tbch_coin_for_test();
         let token_id = H256::from("bb309e48930671582bea508f9a1d9b491e49b69be3d6f372dc08da2ac6e90eb7");
         let fusd = SlpToken::new(4, "FUSD".into(), token_id, bch.clone(), 0);
 
@@ -2103,7 +2103,7 @@ mod slp_tests {
 
     #[test]
     fn test_validate_htlc_invalid_slp_utxo() {
-        let bch = tbch_coin_for_test();
+        let (_ctx, bch) = tbch_coin_for_test();
         let token_id = H256::from("bb309e48930671582bea508f9a1d9b491e49b69be3d6f372dc08da2ac6e90eb7");
         let fusd = SlpToken::new(4, "FUSD".into(), token_id, bch.clone(), 0);
 
@@ -2155,7 +2155,7 @@ mod slp_tests {
 
     #[test]
     fn test_sign_message() {
-        let bch = tbch_coin_for_test();
+        let (_ctx, bch) = tbch_coin_for_test();
         let token_id = H256::from("bb309e48930671582bea508f9a1d9b491e49b69be3d6f372dc08da2ac6e90eb7");
         let fusd = SlpToken::new(4, "FUSD".into(), token_id, bch, 0);
         let signature = fusd.sign_message("test").unwrap();
@@ -2168,7 +2168,7 @@ mod slp_tests {
     #[test]
     #[cfg(not(target_arch = "wasm32"))]
     fn test_verify_message() {
-        let bch = tbch_coin_for_test();
+        let (_ctx, bch) = tbch_coin_for_test();
         let token_id = H256::from("bb309e48930671582bea508f9a1d9b491e49b69be3d6f372dc08da2ac6e90eb7");
         let fusd = SlpToken::new(4, "FUSD".into(), token_id, bch, 0);
         let is_valid = fusd
