@@ -50,11 +50,11 @@ notice = "warn"
 
 # RUSTSEC-2020-0071 is related to time crate, which is used only by chrono in our deps tree, remove when https://github.com/chronotope/chrono/issues/700 is resolved
 # RUSTSEC-2022-0040 is related to owning-ref, which seems unmaintained. We need to find a way to get rid of it. https://github.com/KomodoPlatform/atomicDEX-API/issues/1429
-# RUSTSEC-2020-0159 is related to chrono, updated in dev
+# RUSTSEC-2022-0055 is axum/axum-core vulnerability, which seems to be related only to server-side, which we don't utilize.
 ignore = [
     "RUSTSEC-2020-0071",
     "RUSTSEC-2022-0040",
-    "RUSTSEC-2020-0159",
+    "RUSTSEC-2022-0055",
     #"RUSTSEC-0000-0000",
 ]
 # Threshold for security vulnerabilities, any vulnerability with a CVSS score
@@ -261,6 +261,8 @@ skip = [
     { name = "rustls-pemfile", version = "*" },
     { name = "scopeguard", version = "*" },
     { name = "sct", version = "*" },
+    { name = "secp256k1", version = "*" },
+    { name = "secp256k1-sys", version = "*" },
     { name = "semver", version = "*" },
     { name = "send_wrapper", version = "*" },
     { name = "sha2", version = "*" },

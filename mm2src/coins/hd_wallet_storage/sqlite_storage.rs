@@ -124,7 +124,7 @@ impl HDWalletStorageInternalOps for HDWalletSqliteStorage {
         let selfi = self.clone();
         async_blocking(move || {
             let conn_shared = selfi.get_shared_conn()?;
-            let conn = Self::lock_conn(&conn_shared)?;
+            let conn = Self::lock_conn_mutex(&conn_shared)?;
 
             let mut statement = conn.prepare(SELECT_ACCOUNTS_BY_WALLET_ID)?;
 
@@ -145,7 +145,7 @@ impl HDWalletStorageInternalOps for HDWalletSqliteStorage {
         let selfi = self.clone();
         async_blocking(move || {
             let conn_shared = selfi.get_shared_conn()?;
-            let conn = Self::lock_conn(&conn_shared)?;
+            let conn = Self::lock_conn_mutex(&conn_shared)?;
 
             let mut params = wallet_id.to_sql_params();
             params.push(account_id.to_string());
@@ -195,7 +195,7 @@ impl HDWalletStorageInternalOps for HDWalletSqliteStorage {
         let selfi = self.clone();
         async_blocking(move || {
             let conn_shared = selfi.get_shared_conn()?;
-            let conn = Self::lock_conn(&conn_shared)?;
+            let conn = Self::lock_conn_mutex(&conn_shared)?;
 
             let params = account.to_sql_params_with_wallet_id(wallet_id);
             conn.execute(INSERT_ACCOUNT, params)
@@ -209,7 +209,7 @@ impl HDWalletStorageInternalOps for HDWalletSqliteStorage {
         let selfi = self.clone();
         async_blocking(move || {
             let conn_shared = selfi.get_shared_conn()?;
-            let conn = Self::lock_conn(&conn_shared)?;
+            let conn = Self::lock_conn_mutex(&conn_shared)?;
 
             let params = wallet_id.to_sql_params();
             conn.execute(DELETE_ACCOUNTS_BY_WALLET_ID, params)
@@ -227,14 +227,14 @@ impl HDWalletSqliteStorage {
             .or_mm_err(|| HDWalletStorageError::Internal("'HDWalletSqliteStorage::conn' doesn't exist".to_owned()))
     }
 
-    fn lock_conn(conn: &SqliteConnShared) -> HDWalletStorageResult<MutexGuard<Connection>> {
+    fn lock_conn_mutex(conn: &SqliteConnShared) -> HDWalletStorageResult<MutexGuard<Connection>> {
         conn.lock()
             .map_to_mm(|e| HDWalletStorageError::Internal(format!("Error locking sqlite connection: {}", e)))
     }
 
     async fn init_tables(&self) -> HDWalletStorageResult<()> {
         let conn_shared = self.get_shared_conn()?;
-        let conn = Self::lock_conn(&conn_shared)?;
+        let conn = Self::lock_conn_mutex(&conn_shared)?;
         conn.execute(CREATE_HD_ACCOUNT_TABLE, NO_PARAMS)
             .map(|_| ())
             .map_to_mm(HDWalletStorageError::from)
@@ -255,7 +255,7 @@ impl HDWalletSqliteStorage {
         let selfi = self.clone();
         async_blocking(move || {
             let conn_shared = selfi.get_shared_conn()?;
-            let conn = Self::lock_conn(&conn_shared)?;
+            let conn = Self::lock_conn_mutex(&conn_shared)?;
 
             let mut params = vec![new_addresses_number.to_string()];
             wallet_id.fill_sql_params(&mut params);

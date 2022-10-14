@@ -577,7 +577,7 @@ pub struct IguanaWalletBalance {
     pub balance: CoinBalance,
 }
 
-#[derive(Debug, Deserialize)]
+#[derive(Clone, Debug, Deserialize, Serialize)]
 pub enum Bip44Chain {
     External = 0,
     Internal = 1,
@@ -607,6 +607,13 @@ pub struct HDAddressBalance {
     pub balance: CoinBalance,
 }
 
+#[derive(Clone, Debug, Deserialize, Serialize)]
+pub struct HDAccountAddressId {
+    pub account_id: u32,
+    pub chain: Bip44Chain,
+    pub address_id: u32,
+}
+
 #[derive(Debug, Deserialize)]
 #[serde(deny_unknown_fields, tag = "wallet_type")]
 pub enum EnableCoinBalance {
@@ -618,6 +625,13 @@ pub enum EnableCoinBalance {
 #[serde(deny_unknown_fields)]
 pub struct ZcoinActivationResult {
     pub ticker: String,
+    pub current_block: u64,
+    pub wallet_balance: EnableCoinBalance,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct UtxoStandardActivationResult {
     pub current_block: u64,
     pub wallet_balance: EnableCoinBalance,
 }
@@ -639,6 +653,14 @@ pub enum MmRpcResult<T> {
 #[serde(deny_unknown_fields, tag = "status", content = "details")]
 pub enum InitZcoinStatus {
     Ready(MmRpcResult<ZcoinActivationResult>),
+    InProgress(Json),
+    UserActionRequired(Json),
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(deny_unknown_fields, tag = "status", content = "details")]
+pub enum InitUtxoStatus {
+    Ready(MmRpcResult<UtxoStandardActivationResult>),
     InProgress(Json),
     UserActionRequired(Json),
 }
@@ -827,6 +849,7 @@ pub type ZcoinHistoryRes = MyTxHistoryV2Response<ZcoinTransactionDetails, i64>;
 #[serde(deny_unknown_fields)]
 pub struct MyTxHistoryV2Response<Tx, Id> {
     pub coin: String,
+    pub target: MyTxHistoryTarget,
     pub current_block: u64,
     pub transactions: Vec<Tx>,
     pub sync_status: Json,
@@ -835,6 +858,16 @@ pub struct MyTxHistoryV2Response<Tx, Id> {
     pub total: usize,
     pub total_pages: usize,
     pub paging_options: PagingOptionsEnum<Id>,
+}
+
+#[derive(Clone, Debug, Deserialize, Serialize)]
+#[serde(tag = "type")]
+#[serde(rename_all = "snake_case")]
+pub enum MyTxHistoryTarget {
+    Iguana,
+    AccountId { account_id: u32 },
+    AddressId(HDAccountAddressId),
+    AddressDerivationPath(String),
 }
 
 #[derive(Debug, Deserialize)]
@@ -939,4 +972,45 @@ pub struct TendermintActivationResult {
     pub current_block: u64,
     pub balance: CoinBalance,
     pub ticker: String,
+}
+
+pub mod gui_storage {
+    use mm2_number::BigDecimal;
+    use std::collections::BTreeSet;
+
+    #[derive(Debug, Deserialize, PartialEq)]
+    #[serde(tag = "type")]
+    #[serde(rename_all = "lowercase")]
+    pub enum AccountId {
+        Iguana,
+        HD { account_idx: u32 },
+        HW { device_pubkey: String },
+    }
+
+    #[derive(Debug, Deserialize, PartialEq)]
+    #[serde(deny_unknown_fields)]
+    pub struct AccountWithEnabledFlag {
+        pub account_id: AccountId,
+        pub name: String,
+        pub description: String,
+        pub balance_usd: BigDecimal,
+        pub enabled: bool,
+    }
+
+    #[derive(Debug, Deserialize, PartialEq)]
+    #[serde(deny_unknown_fields)]
+    pub struct AccountWithCoins {
+        pub account_id: AccountId,
+        pub name: String,
+        pub description: String,
+        pub balance_usd: BigDecimal,
+        pub coins: BTreeSet<String>,
+    }
+
+    #[derive(Debug, Deserialize, PartialEq)]
+    #[serde(deny_unknown_fields)]
+    pub struct AccountCoins {
+        pub account_id: AccountId,
+        pub coins: BTreeSet<String>,
+    }
 }

@@ -576,6 +576,20 @@ impl MakerSwap {
             },
         };
 
+        // Validate maker_coin_htlc_pubkey realness
+        if let Err(err) = self.maker_coin.validate_other_pubkey(taker_data.maker_coin_htlc_pub()) {
+            return Ok((Some(MakerSwapCommand::Finish), vec![MakerSwapEvent::NegotiateFailed(
+                ERRL!("!taker_data.maker_coin_htlc_pub {}", err).into(),
+            )]));
+        };
+
+        // Validate taker_coin_htlc_pubkey realness
+        if let Err(err) = self.taker_coin.validate_other_pubkey(taker_data.taker_coin_htlc_pub()) {
+            return Ok((Some(MakerSwapCommand::Finish), vec![MakerSwapEvent::NegotiateFailed(
+                ERRL!("!taker_data.taker_coin_htlc_pub {}", err).into(),
+            )]));
+        };
+
         Ok((Some(MakerSwapCommand::WaitForTakerFee), vec![
             MakerSwapEvent::Negotiated(TakerNegotiationData {
                 taker_payment_locktime: taker_data.payment_locktime(),

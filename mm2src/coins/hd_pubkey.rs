@@ -1,15 +1,16 @@
-use crate::hd_wallet::{HDWalletRpcError, NewAccountCreatingError};
+use crate::hd_wallet::NewAccountCreatingError;
 use async_trait::async_trait;
 use crypto::hw_rpc_task::{HwConnectStatuses, TrezorRpcTaskConnectProcessor};
-use crypto::trezor::trezor_rpc_task::TrezorRpcTaskProcessor;
-use crypto::trezor::utxo::TrezorUtxoCoin;
-use crypto::trezor::{ProcessTrezorResponse, TrezorError, TrezorPinMatrix3x3Response, TrezorProcessingError};
-use crypto::{Bip32Error, CryptoCtx, CryptoInitError, DerivationPath, EcdsaCurve, HardwareWalletArc, HwError,
-             HwProcessingError, XPub};
+use crypto::trezor::trezor_rpc_task::{TrezorRpcTaskProcessor, TryIntoUserAction};
+use crypto::trezor::utxo::IGNORE_XPUB_MAGIC;
+use crypto::trezor::{ProcessTrezorResponse, TrezorError, TrezorProcessingError};
+use crypto::{CryptoCtx, CryptoInitError, DerivationPath, EcdsaCurve, HardwareWalletArc, HwError, HwProcessingError,
+             XPub, XPubConverter, XpubError};
 use mm2_core::mm_ctx::MmArc;
 use mm2_err_handle::prelude::*;
 use rpc_task::{RpcTask, RpcTaskError, RpcTaskHandle};
-use std::convert::TryInto;
+
+const SHOW_PUBKEY_ON_DISPLAY: bool = false;
 
 #[derive(Clone)]
 pub enum HDExtractPubkeyError {
@@ -17,7 +18,7 @@ pub enum HDExtractPubkeyError {
     CoinDoesntSupportTrezor,
     RpcTaskError(RpcTaskError),
     HardwareWalletError(HwError),
-    InvalidXpub(Bip32Error),
+    InvalidXpub(String),
     Internal(String),
 }
 
@@ -51,6 +52,10 @@ impl From<HwProcessingError<RpcTaskError>> for HDExtractPubkeyError {
     }
 }
 
+impl From<XpubError> for HDExtractPubkeyError {
+    fn from(e: XpubError) -> Self { HDExtractPubkeyError::InvalidXpub(e.to_string()) }
+}
+
 impl From<HDExtractPubkeyError> for NewAccountCreatingError {
     fn from(e: HDExtractPubkeyError) -> Self {
         match e {
@@ -62,19 +67,6 @@ impl From<HDExtractPubkeyError> for NewAccountCreatingError {
                 NewAccountCreatingError::HardwareWalletError(HwError::InvalidXpub(xpub))
             },
             HDExtractPubkeyError::Internal(internal) => NewAccountCreatingError::Internal(internal),
-        }
-    }
-}
-
-impl From<HDExtractPubkeyError> for HDWalletRpcError {
-    fn from(e: HDExtractPubkeyError) -> Self {
-        match e {
-            HDExtractPubkeyError::HwContextNotInitialized => HDWalletRpcError::HwContextNotInitialized,
-            HDExtractPubkeyError::CoinDoesntSupportTrezor => HDWalletRpcError::CoinDoesntSupportTrezor,
-            HDExtractPubkeyError::RpcTaskError(rpc) => HDWalletRpcError::from(rpc),
-            HDExtractPubkeyError::HardwareWalletError(hw) => HDWalletRpcError::from(hw),
-            HDExtractPubkeyError::InvalidXpub(xpub) => HDWalletRpcError::from(HwError::InvalidXpub(xpub)),
-            HDExtractPubkeyError::Internal(internal) => HDWalletRpcError::Internal(internal),
         }
     }
 }
@@ -96,7 +88,7 @@ pub trait ExtractExtendedPubkey {
 pub trait HDXPubExtractor {
     async fn extract_utxo_xpub(
         &self,
-        trezor_utxo_coin: TrezorUtxoCoin,
+        trezor_utxo_coin: String,
         derivation_path: DerivationPath,
     ) -> MmResult<XPub, HDExtractPubkeyError>;
 }
@@ -113,11 +105,11 @@ pub enum RpcTaskXPubExtractor<'task, Task: RpcTask> {
 impl<'task, Task> HDXPubExtractor for RpcTaskXPubExtractor<'task, Task>
 where
     Task: RpcTask,
-    Task::UserAction: TryInto<TrezorPinMatrix3x3Response, Error = RpcTaskError> + Send,
+    Task::UserAction: TryIntoUserAction + Send,
 {
     async fn extract_utxo_xpub(
         &self,
-        trezor_utxo_coin: TrezorUtxoCoin,
+        trezor_utxo_coin: String,
         derivation_path: DerivationPath,
     ) -> MmResult<XPub, HDExtractPubkeyError> {
         match self {
@@ -136,7 +128,7 @@ where
 impl<'task, Task> RpcTaskXPubExtractor<'task, Task>
 where
     Task: RpcTask,
-    Task::UserAction: TryInto<TrezorPinMatrix3x3Response, Error = RpcTaskError> + Send,
+    Task::UserAction: TryIntoUserAction + Send,
 {
     pub fn new(
         ctx: &MmArc,
@@ -167,7 +159,7 @@ where
         hw_ctx: &HardwareWalletArc,
         task_handle: &RpcTaskHandle<Task>,
         statuses: &HwConnectStatuses<Task::InProgressStatus, Task::AwaitingStatus>,
-        trezor_coin: TrezorUtxoCoin,
+        trezor_coin: String,
         derivation_path: DerivationPath,
     ) -> MmResult<XPub, HDExtractPubkeyError> {
         let connect_processor = TrezorRpcTaskConnectProcessor::new(task_handle, statuses.clone());
@@ -175,12 +167,22 @@ where
         let mut trezor_session = trezor.session().await?;
 
         let pubkey_processor = TrezorRpcTaskProcessor::new(task_handle, statuses.to_trezor_request_statuses());
-        trezor_session
-            .get_public_key(derivation_path, trezor_coin, EcdsaCurve::Secp256k1)
+        let xpub = trezor_session
+            .get_public_key(
+                derivation_path,
+                trezor_coin,
+                EcdsaCurve::Secp256k1,
+                SHOW_PUBKEY_ON_DISPLAY,
+                IGNORE_XPUB_MAGIC,
+            )
             .await?
             .process(&pubkey_processor)
-            .await
-            .mm_err(HDExtractPubkeyError::from)
+            .await?;
+
+        // Despite we pass `IGNORE_XPUB_MAGIC` to the [`TrezorSession::get_public_key`] method,
+        // Trezor sometimes returns pubkeys with magic prefixes like `dgub` prefix for DOGE coin.
+        // So we need to replace the magic prefix manually.
+        XPubConverter::replace_magic_prefix(xpub).mm_err(HDExtractPubkeyError::from)
     }
 }
 
@@ -196,7 +198,7 @@ where
 {
     async fn extract_utxo_xpub(
         &self,
-        trezor_utxo_coin: TrezorUtxoCoin,
+        trezor_utxo_coin: String,
         derivation_path: DerivationPath,
     ) -> MmResult<XPub, HDExtractPubkeyError> {
         self.0

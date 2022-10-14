@@ -1,7 +1,9 @@
 use super::rpc_clients::{ElectrumClient, ElectrumClientImpl, ElectrumProtocol};
 use super::*;
 use crate::utxo::rpc_clients::UtxoRpcClientOps;
+use crate::utxo::utxo_block_header_storage::BlockHeaderStorage;
 use crate::utxo::utxo_common_tests;
+use crate::utxo::utxo_indexedb_block_header_storage::IndexedDBBlockHeadersStorage;
 use common::executor::Timer;
 use serialization::deserialize;
 use wasm_bindgen_test::*;
@@ -11,7 +13,10 @@ wasm_bindgen_test_configure!(run_in_browser);
 const TEST_COIN_NAME: &'static str = "RICK";
 
 pub async fn electrum_client_for_test(servers: &[&str]) -> ElectrumClient {
-    let client = ElectrumClientImpl::new(TEST_COIN_NAME.into(), Default::default(), None);
+    let block_headers_storage = BlockHeaderStorage {
+        inner: Box::new(IndexedDBBlockHeadersStorage {}),
+    };
+    let client = ElectrumClientImpl::new(TEST_COIN_NAME.into(), Default::default(), block_headers_storage);
     for server in servers {
         client
             .add_server(&ElectrumRpcRequest {
@@ -58,4 +63,10 @@ async fn test_electrum_rpc_client() {
 async fn test_electrum_display_balances() {
     let rpc_client = electrum_client_for_test(&["electrum1.cipig.net:30017", "electrum2.cipig.net:30017"]).await;
     utxo_common_tests::test_electrum_display_balances(&rpc_client).await;
+}
+
+#[wasm_bindgen_test]
+async fn test_hd_utxo_tx_history() {
+    let rpc_client = electrum_client_for_test(&["electrum1.cipig.net:30018", "electrum2.cipig.net:30018"]).await;
+    utxo_common_tests::test_hd_utxo_tx_history_impl(rpc_client).await;
 }

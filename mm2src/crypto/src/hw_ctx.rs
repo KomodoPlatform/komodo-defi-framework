@@ -1,11 +1,11 @@
-use crate::crypto_ctx::{MM2_INTERNAL_DERIVATION_PATH, MM2_INTERNAL_ECDSA_CURVE};
-use crate::hw_client::{HwClient, HwError, HwProcessingError, TrezorConnectProcessor};
+use crate::hw_client::{HwClient, HwDeviceInfo, HwProcessingError, HwPubkey, TrezorConnectProcessor};
+use crate::hw_error::HwError;
 use crate::trezor::TrezorSession;
 use crate::HwWalletType;
 use bitcrypto::dhash160;
 use common::log::warn;
 use futures::lock::Mutex as AsyncMutex;
-use hw_common::primitives::{DerivationPath, Secp256k1ExtendedPublicKey};
+use hw_common::primitives::{DerivationPath, EcdsaCurve, Secp256k1ExtendedPublicKey};
 use keys::Public as PublicKey;
 use mm2_err_handle::prelude::*;
 use primitives::hash::{H160, H264};
@@ -13,10 +13,20 @@ use std::ops::Deref;
 use std::str::FromStr;
 use std::sync::Arc;
 use trezor::client::TrezorClient;
-use trezor::utxo::TrezorUtxoCoin;
+use trezor::utxo::IGNORE_XPUB_MAGIC;
 use trezor::{ProcessTrezorResponse, TrezorRequestProcessor};
 
-pub(crate) const MM2_TREZOR_INTERNAL_COIN: TrezorUtxoCoin = TrezorUtxoCoin::Komodo;
+/// The derivation path generally consists of:
+/// `m/purpose'/coin_type'/account'/change/address_index`.
+/// For MarketMaker internal purposes, we decided to use a pubkey derived from the following path, where:
+/// * `coin_type = 141` - KMD coin;
+/// * `account = (2 ^ 31 - 1) = 2147483647` - latest available account index.
+///   This number is chosen so that it does not cross with real accounts;
+/// * `change = 0`, `address_index = 0` - nothing special.
+const MM2_INTERNAL_DERIVATION_PATH: &str = "m/44'/141'/2147483647/0/0";
+const MM2_INTERNAL_ECDSA_CURVE: EcdsaCurve = EcdsaCurve::Secp256k1;
+const MM2_TREZOR_INTERNAL_COIN: &str = "Komodo";
+const SHOW_PUBKEY_ON_DISPLAY: bool = false;
 
 #[derive(Clone)]
 pub struct HardwareWalletArc(Arc<HardwareWalletCtx>);
@@ -45,21 +55,25 @@ pub struct HardwareWalletCtx {
 impl HardwareWalletCtx {
     pub(crate) async fn init_with_trezor<Processor>(
         processor: &Processor,
-    ) -> MmResult<HardwareWalletArc, HwProcessingError<Processor::Error>>
+    ) -> MmResult<(HwDeviceInfo, HardwareWalletArc), HwProcessingError<Processor::Error>>
     where
         Processor: TrezorConnectProcessor + Sync,
     {
         let trezor = HwClient::trezor(processor).await?;
-        let hw_internal_pubkey = {
-            let mut session = trezor.session().await?;
-            HardwareWalletCtx::trezor_mm_internal_pubkey(&mut session, processor).await?
+
+        let (hw_device_info, hw_internal_pubkey) = {
+            let (device_info, mut session) = trezor.new_session().await?;
+            let hw_internal_pubkey = HardwareWalletCtx::trezor_mm_internal_pubkey(&mut session, processor).await?;
+            (HwDeviceInfo::Trezor(device_info), hw_internal_pubkey)
         };
+
         let hw_client = HwClient::Trezor(trezor);
-        Ok(HardwareWalletArc::new(HardwareWalletCtx {
+        let hw_ctx = HardwareWalletArc::new(HardwareWalletCtx {
             hw_internal_pubkey,
             hw_wallet_type: hw_client.hw_wallet_type(),
             hw_wallet: AsyncMutex::new(Some(hw_client)),
-        }))
+        });
+        Ok((hw_device_info, hw_ctx))
     }
 
     pub fn hw_wallet_type(&self) -> HwWalletType { self.hw_wallet_type }
@@ -94,7 +108,11 @@ impl HardwareWalletCtx {
 
     pub fn secp256k1_pubkey(&self) -> PublicKey { PublicKey::Compressed(self.hw_internal_pubkey) }
 
-    pub fn rmd160(&self) -> H160 { dhash160(self.hw_internal_pubkey.as_slice()) }
+    /// Returns `RIPEMD160(SHA256(x))` where x is a pubkey extracted from the Hardware wallet.
+    pub fn rmd160(&self) -> H160 { h160_from_h264(&self.hw_internal_pubkey) }
+
+    /// Returns serializable/deserializable Hardware wallet pubkey.
+    pub fn hw_pubkey(&self) -> HwPubkey { hw_pubkey_from_h264(&self.hw_internal_pubkey) }
 
     pub(crate) async fn trezor_mm_internal_pubkey<Processor>(
         trezor: &mut TrezorSession<'_>,
@@ -106,7 +124,13 @@ impl HardwareWalletCtx {
         let path = DerivationPath::from_str(MM2_INTERNAL_DERIVATION_PATH)
             .expect("'MM2_INTERNAL_DERIVATION_PATH' is expected to be valid derivation path");
         let mm2_internal_xpub = trezor
-            .get_public_key(path, MM2_TREZOR_INTERNAL_COIN, MM2_INTERNAL_ECDSA_CURVE)
+            .get_public_key(
+                path,
+                MM2_TREZOR_INTERNAL_COIN.to_string(),
+                MM2_INTERNAL_ECDSA_CURVE,
+                SHOW_PUBKEY_ON_DISPLAY,
+                IGNORE_XPUB_MAGIC,
+            )
             .await?
             .process(processor)
             .await?;
@@ -125,11 +149,19 @@ impl HardwareWalletCtx {
         let mut session = trezor.session().await.mm_err(HwError::from)?;
         let actual_pubkey = Self::trezor_mm_internal_pubkey(&mut session, processor).await?;
         if actual_pubkey != self.hw_internal_pubkey {
+            let actual_pubkey = hw_pubkey_from_h264(&actual_pubkey);
+            let expected_pubkey = self.hw_pubkey();
             return MmError::err(HwProcessingError::HwError(HwError::FoundUnexpectedDevice {
                 actual_pubkey,
-                expected_pubkey: self.hw_internal_pubkey,
+                expected_pubkey,
             }));
         }
         Ok(())
     }
 }
+
+/// Applies `RIPEMD160(SHA256(h264))` to the given `h264`.
+fn h160_from_h264(h264: &H264) -> H160 { dhash160(h264.as_slice()) }
+
+/// Converts `H264` into a serializable/deserializable Hardware wallet pubkey.
+fn hw_pubkey_from_h264(h264: &H264) -> HwPubkey { HwPubkey::from(h160_from_h264(h264).as_slice()) }

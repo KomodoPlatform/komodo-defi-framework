@@ -11,7 +11,7 @@ use common::now_ms;
 use crypto::hw_rpc_task::{HwConnectStatuses, TrezorRpcTaskConnectProcessor};
 use crypto::trezor::client::TrezorClient;
 use crypto::trezor::{TrezorError, TrezorProcessingError};
-use crypto::{Bip32Error, CryptoCtx, CryptoInitError, DerivationPath, HwError, HwProcessingError};
+use crypto::{from_hw_error, CryptoCtx, CryptoInitError, DerivationPath, HwError, HwProcessingError, HwRpcError};
 use keys::{Public as PublicKey, Type as ScriptType};
 use mm2_core::mm_ctx::MmArc;
 use mm2_err_handle::prelude::*;
@@ -21,7 +21,7 @@ use script::{Builder, Script, SignatureVersion, TransactionInputSigner};
 use serialization::{serialize, serialize_with_flags, SERIALIZE_TRANSACTION_WITNESS};
 use std::iter::once;
 use std::time::Duration;
-use utxo_signer::sign_params::{SendingOutputInfo, SpendingInputInfo, UtxoSignTxParamsBuilder};
+use utxo_signer::sign_params::{OutputDestination, SendingOutputInfo, SpendingInputInfo, UtxoSignTxParamsBuilder};
 use utxo_signer::{with_key_pair, UtxoSignTxError};
 use utxo_signer::{SignPolicy, UtxoSignerOps};
 
@@ -58,18 +58,16 @@ impl From<TrezorProcessingError<RpcTaskError>> for WithdrawError {
 }
 
 impl From<HwError> for WithdrawError {
-    fn from(e: HwError) -> Self {
-        let error = e.to_string();
-        match e {
-            HwError::NoTrezorDeviceAvailable => WithdrawError::NoTrezorDeviceAvailable,
-            HwError::FoundUnexpectedDevice { .. } => WithdrawError::FoundUnexpectedDevice(error),
-            _ => WithdrawError::HardwareWalletInternal(error),
-        }
-    }
+    fn from(e: HwError) -> Self { from_hw_error(e) }
 }
 
 impl From<TrezorError> for WithdrawError {
-    fn from(e: TrezorError) -> Self { WithdrawError::HardwareWalletInternal(e.to_string()) }
+    fn from(e: TrezorError) -> Self {
+        match e {
+            TrezorError::DeviceDisconnected => WithdrawError::HwError(HwRpcError::NoTrezorDeviceAvailable),
+            other => WithdrawError::InternalError(other.to_string()),
+        }
+    }
 }
 
 impl From<CryptoInitError> for WithdrawError {
@@ -85,14 +83,9 @@ impl From<RpcTaskError> for WithdrawError {
             RpcTaskError::NoSuchTask(_) | RpcTaskError::UnexpectedTaskStatus { .. } => {
                 WithdrawError::InternalError(error)
             },
+            RpcTaskError::UnexpectedUserAction { expected } => WithdrawError::UnexpectedUserAction { expected },
             RpcTaskError::Internal(internal) => WithdrawError::InternalError(internal),
         }
-    }
-}
-
-impl From<Bip32Error> for WithdrawError {
-    fn from(e: Bip32Error) -> Self {
-        WithdrawError::HardwareWalletInternal(format!("Error parsing pubkey received from Hardware Wallet: {}", e))
     }
 }
 
@@ -132,9 +125,7 @@ where
         let conf = &self.coin().as_ref().conf;
         let req = self.request();
 
-        let to = coin
-            .address_from_str(&req.to)
-            .map_to_mm(WithdrawError::InvalidAddress)?;
+        let to = coin.address_from_str(&req.to)?;
 
         let is_p2pkh = to.prefix == conf.pub_addr_prefix && to.t_addr_prefix == conf.pub_t_addr_prefix;
         let is_p2sh = to.prefix == conf.p2sh_addr_prefix && to.t_addr_prefix == conf.p2sh_t_addr_prefix;
@@ -291,8 +282,9 @@ where
             address_derivation_path: self.from_derivation_path.clone(),
             address_pubkey: self.from_pubkey,
         }));
+
         sign_params.add_outputs_infos(once(SendingOutputInfo {
-            destination_address: self.req.to.clone(),
+            destination_address: OutputDestination::plain(self.req.to.clone()),
         }));
         match unsigned_tx.outputs.len() {
             // There is no change output.
@@ -300,7 +292,7 @@ where
             // There is a change output.
             2 => {
                 sign_params.add_outputs_infos(once(SendingOutputInfo {
-                    destination_address: self.from_address_string.clone(),
+                    destination_address: OutputDestination::change(self.from_derivation_path.clone()),
                 }));
             },
             unexpected => {
@@ -374,14 +366,15 @@ impl<'a, Coin> InitUtxoWithdraw<'a, Coin> {
         let crypto_ctx = CryptoCtx::from_ctx(&self.ctx)?;
         let hw_ctx = crypto_ctx
             .hw_ctx()
-            .or_mm_err(|| WithdrawError::NoTrezorDeviceAvailable)?;
+            .or_mm_err(|| WithdrawError::HwError(HwRpcError::NoTrezorDeviceAvailable))?;
 
         let trezor_connect_processor = TrezorRpcTaskConnectProcessor::new(self.task_handle, HwConnectStatuses {
             on_connect: WithdrawInProgressStatus::WaitingForTrezorToConnect,
             on_connected: WithdrawInProgressStatus::Preparing,
             on_connection_failed: WithdrawInProgressStatus::Finishing,
-            on_button_request: WithdrawInProgressStatus::WaitingForUserToConfirmPubkey,
-            on_pin_request: WithdrawAwaitingStatus::WaitForTrezorPin,
+            on_button_request: WithdrawInProgressStatus::FollowHwDeviceInstructions,
+            on_pin_request: WithdrawAwaitingStatus::EnterTrezorPin,
+            on_passphrase_request: WithdrawAwaitingStatus::EnterTrezorPassphrase,
             on_ready: WithdrawInProgressStatus::Preparing,
         })
         .with_connect_timeout(TREZOR_CONNECT_TIMEOUT)
@@ -436,7 +429,7 @@ where
 {
     pub fn new(coin: Coin, req: WithdrawRequest) -> Result<Self, MmError<WithdrawError>> {
         let my_address = coin.as_ref().derivation_method.iguana_or_err()?.clone();
-        let my_address_string = coin.my_address().map_to_mm(WithdrawError::InternalError)?;
+        let my_address_string = coin.my_address()?;
         Ok(StandardUtxoWithdraw {
             coin,
             req,
