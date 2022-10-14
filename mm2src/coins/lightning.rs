@@ -232,9 +232,9 @@ impl LightningCoin {
         destination: PublicKey,
         amount_msat: u64,
         final_cltv_expiry_delta: u32,
-    ) -> Result<PaymentInfo, PaymentError> {
+    ) -> Result<PaymentInfo, MmError<PaymentError>> {
         if final_cltv_expiry_delta < MIN_FINAL_CLTV_EXPIRY {
-            return Err(PaymentError::CLTVExpiry(final_cltv_expiry_delta, MIN_FINAL_CLTV_EXPIRY));
+            return MmError::err(PaymentError::CLTVExpiry(final_cltv_expiry_delta, MIN_FINAL_CLTV_EXPIRY));
         }
         let payment_preimage = PaymentPreimage(self.keys_manager.get_secure_random_bytes());
 
@@ -243,7 +243,7 @@ impl LightningCoin {
             selfi
                 .invoice_payer
                 .pay_pubkey(destination, payment_preimage, amount_msat, final_cltv_expiry_delta)
-                .map_err(|e| PaymentError::Keysend(format!("{:?}", e)))
+                .map_to_mm(|e| PaymentError::Keysend(format!("{:?}", e)))
         })
         .await?;
 
@@ -375,7 +375,7 @@ impl LightningCoin {
         amt_msat: Option<u64>,
         description: String,
         invoice_expiry_delta_secs: u32,
-    ) -> Result<Invoice, SignOrCreationError<()>> {
+    ) -> Result<Invoice, MmError<SignOrCreationError<()>>> {
         let duration = SystemTime::now()
             .duration_since(SystemTime::UNIX_EPOCH)
             .expect("for the foreseeable future this shouldn't happen");
@@ -397,7 +397,7 @@ impl LightningCoin {
         let payment_secret = self
             .channel_manager
             .create_inbound_payment_for_hash(payment_hash, amt_msat, invoice_expiry_delta_secs)
-            .map_err(|()| SignOrCreationError::CreationError(CreationError::InvalidAmount))?;
+            .map_to_mm(|()| SignOrCreationError::CreationError(CreationError::InvalidAmount))?;
         let our_node_pubkey = self.channel_manager.get_our_node_id();
 
         let mut invoice = InvoiceBuilder::new(self.platform.network.clone().into())
@@ -419,7 +419,7 @@ impl LightningCoin {
 
         let raw_invoice = match invoice.build_raw() {
             Ok(inv) => inv,
-            Err(e) => return Err(SignOrCreationError::CreationError(e)),
+            Err(e) => return MmError::err(SignOrCreationError::CreationError(e)),
         };
         let hrp_str = raw_invoice.hrp.to_string();
         let hrp_bytes = hrp_str.as_bytes();
@@ -430,7 +430,7 @@ impl LightningCoin {
         });
         match signed_raw_invoice {
             Ok(inv) => Ok(Invoice::from_signed(inv).map_err(|_| SignOrCreationError::SignError(()))?),
-            Err(e) => Err(SignOrCreationError::SignError(e)),
+            Err(e) => MmError::err(SignOrCreationError::SignError(e)),
         }
     }
 }
@@ -454,9 +454,9 @@ impl SwapOps for LightningCoin {
         _swap_unique_data: &[u8],
         payment_instructions: &Option<PaymentInstructions>,
     ) -> TransactionFut {
-        let PaymentInstructions::Lightning(invoice) = payment_instructions
+        let PaymentInstructions::Lightning(invoice) = try_tx_fus!(payment_instructions
             .clone()
-            .expect("payment_instructions can't be None");
+            .ok_or_else(|| TransactionErr::Plain("payment_instructions can't be None".into())));
         let coin = self.clone();
         let fut = async move {
             let payment = try_tx_s!(coin.pay_invoice(invoice).await);
@@ -475,9 +475,9 @@ impl SwapOps for LightningCoin {
         _swap_unique_data: &[u8],
         payment_instructions: &Option<PaymentInstructions>,
     ) -> TransactionFut {
-        let PaymentInstructions::Lightning(invoice) = payment_instructions
+        let PaymentInstructions::Lightning(invoice) = try_tx_fus!(payment_instructions
             .clone()
-            .expect("payment_instructions can't be None");
+            .ok_or_else(|| TransactionErr::Plain("payment_instructions can't be None".into())));
         let coin = self.clone();
         let fut = async move {
             let payment = try_tx_s!(coin.pay_invoice(invoice).await);
@@ -707,7 +707,7 @@ impl SwapOps for LightningCoin {
         let invoice = self
             .create_invoice_for_hash(payment_hash, Some(amt_msat), "".into(), DEFAULT_INVOICE_EXPIRY)
             .await
-            .map_to_mm(|e| PaymentInstructionsErr::LightningInvoiceErr(e.to_string()))?;
+            .map_err(|e| PaymentInstructionsErr::LightningInvoiceErr(e.to_string()))?;
         Ok(Some(invoice.to_string().into_bytes()))
     }
 
@@ -718,8 +718,8 @@ impl SwapOps for LightningCoin {
         amount: BigDecimal,
     ) -> Result<Option<PaymentInstructions>, MmError<ValidateInstructionsErr>> {
         let invoice = Invoice::from_str(&String::from_utf8_lossy(instructions))?;
-        if (secret_hash.len() == 20 && ripemd160(invoice.payment_hash().as_inner()).as_slice() != secret_hash)
-            || (secret_hash.len() == 32 && invoice.payment_hash().as_inner() != secret_hash)
+        if invoice.payment_hash().as_inner() != secret_hash
+            || (secret_hash.len() == 20 && ripemd160(invoice.payment_hash().as_inner()).as_slice() != secret_hash)
         {
             return Err(
                 ValidateInstructionsErr::ValidateLightningInvoiceErr("Invalid invoice payment hash!".into()).into(),

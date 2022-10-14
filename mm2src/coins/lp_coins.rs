@@ -399,6 +399,7 @@ pub enum TxMarshalingErr {
     /// For cases where serialized and deserialized values doesn't verify each other.
     CrossCheckFailed(String),
     NotSupported(String),
+    Internal(String),
 }
 
 #[derive(Debug, Clone)]

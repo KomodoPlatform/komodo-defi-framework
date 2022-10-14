@@ -222,8 +222,7 @@ impl<'a, Addr: Clone + DisplayAddress + Eq + std::hash::Hash, Tx: Transaction> T
 
         TransactionDetails {
             coin: self.coin,
-            // It should be safe to unwrap here
-            tx_hex: self.tx.tx_hex().expect("tx_hex shouldn't be None!").into(),
+            tx_hex: self.tx.tx_hex().unwrap_or_default().into(),
             tx_hash: tx_hash.to_tx_hash(),
             from,
             to,
