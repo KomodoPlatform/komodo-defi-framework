@@ -237,12 +237,6 @@ pub fn account_id_from_pubkey_hex(prefix: &str, pubkey: &str) -> MmResult<Accoun
     Ok(AccountId::new(prefix, pubkey_hash.as_slice())?)
 }
 
-pub(crate) fn upper_hex(bytes: &[u8]) -> String {
-    let mut str = hex::encode(bytes);
-    str.make_ascii_uppercase();
-    str
-}
-
 pub struct AllBalancesResult {
     pub platform_balance: BigDecimal,
     pub tokens_balances: HashMap<String, BigDecimal>,
@@ -765,7 +759,7 @@ impl TendermintCoin {
             }
 
             let encoded_tx = tx.data.encode_to_vec();
-            let hash = upper_hex(sha256(&encoded_tx).as_slice());
+            let hash = hex::encode_upper(sha256(&encoded_tx).as_slice());
             let encoded_from_rpc = try_s!(coin.request_tx(hash).await).encode_to_vec();
             if encoded_tx != encoded_from_rpc {
                 return ERR!("Transaction from RPC doesn't match the input");
@@ -834,7 +828,7 @@ impl TendermintCoin {
                 )));
             }
 
-            let hash = upper_hex(sha256(&input.payment_tx).as_slice());
+            let hash = hex::encode_upper(sha256(&input.payment_tx).as_slice());
             let tx_from_rpc = coin.request_tx(hash).await?;
             if input.payment_tx != tx_from_rpc.encode_to_vec() {
                 return MmError::err(ValidatePaymentError::InvalidRpcResponse(
@@ -1025,7 +1019,7 @@ impl MmCoin for TendermintCoin {
 
             let hash = sha256(&tx_bytes);
             Ok(TransactionDetails {
-                tx_hash: upper_hex(hash.as_slice()),
+                tx_hash: hex::encode_upper(hash.as_slice()),
                 tx_hex: tx_bytes.into(),
                 from: vec![coin.account_id.to_string()],
                 to: vec![req.to],
@@ -1707,7 +1701,7 @@ pub mod tendermint_coin_tests {
 
         let tx_bytes = hex::decode(tx_hex).unwrap();
         let hash = sha256(&tx_bytes);
-        assert_eq!(upper_hex(hash.as_slice()), expected_hash);
+        assert_eq!(hex::encode_upper(hash.as_slice()), expected_hash);
     }
 
     #[test]
@@ -1821,7 +1815,7 @@ pub mod tendermint_coin_tests {
         block_on(async {
             send_tx_fut.await.unwrap();
         });
-        println!("Claim HTLC tx hash {}", upper_hex(sha256(&tx_bytes).as_slice()));
+        println!("Claim HTLC tx hash {}", hex::encode_upper(sha256(&tx_bytes).as_slice()));
         // >> END HTLC CLAIMING
     }
 
@@ -1931,7 +1925,7 @@ pub mod tendermint_coin_tests {
         // https://nyancat.iobscan.io/#/tx?txHash=565C820C1F95556ADC251F16244AAD4E4274772F41BC13F958C9C2F89A14D137
         let expected_spend_hash = "565C820C1F95556ADC251F16244AAD4E4274772F41BC13F958C9C2F89A14D137";
         let hash = spend_tx.tx_hash();
-        assert_eq!(upper_hex(&hash.0), expected_spend_hash);
+        assert_eq!(hex::encode_upper(&hash.0), expected_spend_hash);
     }
 
     #[test]

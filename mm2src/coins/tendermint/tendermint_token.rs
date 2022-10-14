@@ -1,5 +1,5 @@
 /// Module containing implementation for Tendermint Tokens. They include native assets + IBC
-use super::{upper_hex, TendermintCoin, TendermintFeeDetails, GAS_LIMIT_DEFAULT, TIMEOUT_HEIGHT_DELTA, TX_DEFAULT_MEMO};
+use super::{TendermintCoin, TendermintFeeDetails, GAS_LIMIT_DEFAULT, TIMEOUT_HEIGHT_DELTA, TX_DEFAULT_MEMO};
 use crate::utxo::utxo_common::big_decimal_from_sat;
 use crate::{big_decimal_from_sat_unsigned, utxo::sat_from_big_decimal, BalanceFut, BigDecimal, CoinBalance,
             FeeApproxStage, FoundSwapTxSpend, HistorySyncState, MarketCoinOps, MmCoin, MyAddressError,
@@ -475,7 +475,7 @@ impl MmCoin for TendermintToken {
 
             let hash = sha256(&tx_bytes);
             Ok(TransactionDetails {
-                tx_hash: upper_hex(hash.as_slice()),
+                tx_hash: hex::encode_upper(hash.as_slice()),
                 tx_hex: tx_bytes.into(),
                 from: vec![coin.account_id.to_string()],
                 to: vec![req.to],
