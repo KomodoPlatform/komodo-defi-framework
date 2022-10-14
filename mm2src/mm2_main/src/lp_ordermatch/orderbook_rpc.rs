@@ -111,7 +111,7 @@ fn build_aggregated_entries_v2(
 // ZHTLC protocol coin uses random keypair to sign P2P messages per every order.
 // So, each ZHTLC order has unique «pubkey» field that doesn’t match node persistent pubkey derived from passphrase.
 // We can compare pubkeys from maker_orders and from asks or bids, to find our order.
-pub fn is_my_order(my_orders_pubkeys: &HashSet<String>, my_pub: &Option<String>, order_pubkey: &str) -> bool {
+fn is_my_order(my_orders_pubkeys: &HashSet<String>, my_pub: &Option<String>, order_pubkey: &str) -> bool {
     my_pub.as_deref() == Some(order_pubkey) || my_orders_pubkeys.contains(order_pubkey)
 }
 
