@@ -24,34 +24,36 @@ use syn::{parse_macro_input, DeriveInput};
 /// use enum_from_enum::EnumFromVariant;
 /// use derive_more::Display;
 
-///  // E.G, this converts from whatever Bar is to Foo::Bar(String) and
-/// // whatever FooBar is to Foo::FooBar(FooBar)
-/// #[derive(Debug, EnumFromVariant)]
-/// pub enum Foo {
+// E.G, this converts from whatever Bar is to FooBar::Bar(String) and
+// whatever Foor to FooBar::Foo(Foo)
+/// #[derive(Debug, EnumFromVariant, PartialEq, Eq)]
+/// pub enum FooBar {
 ///     #[enum_from_variant("Bar")]
 ///     Bar(String),
-///     #[enum_from_variant("FooBar")]
-///     FooBar(FooBar),
+///     #[enum_from_variant("Foo")]
+///     Foo(Foo),
 /// }
 
-/// #[derive(Debug, Display)]
+/// #[derive(Debug, Display, PartialEq, Eq)]
 /// pub enum Bar {
+///     Bar(String),
+/// }
+
+/// #[derive(Debug, Clone, Display, PartialEq, Eq)]
+/// pub enum Foo {
 ///     Foo(String),
 /// }
 
-/// #[derive(Debug, Display)]
-/// pub enum FooBar {
-///     Foo(String),
+/// #[test]
+/// fn test_from_variant() {
+///     let bar = Bar::Bar("Bar".to_string());
+///     assert_eq!(FooBar::Bar("Bar".to_string()), bar.into());
+
+///     let foo = Foo::Foo("Foo".to_string());
+///     assert_eq!(FooBar::Foo(foo.clone()), foo.into());
 /// }
 
-/// fn foo_fn() -> Foo {
-///     bar_fn().into()
-/// }
-
-/// fn bar_fn() -> Bar {
-///     Bar::Foo("bar".to_string())
-/// }
-/// ```
+//  ```
 ///
 ///
 
