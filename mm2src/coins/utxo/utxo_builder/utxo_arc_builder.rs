@@ -104,10 +104,11 @@ where
         }
 
         if let Some(sync_status_loop_handle) = sync_status_loop_handle {
-            let current_block_height = match result_coin.current_block().compat().await {
-                Ok(res) => res,
-                Err(err) => return MmError::err(UtxoCoinBuildError::GetCurrentBlockHeightError(err)),
-            };
+            let current_block_height = result_coin
+                .current_block()
+                .compat()
+                .await
+                .map_to_mm(UtxoCoinBuildError::GetCurrentBlockHeightError)?;
             let abort_handler = self.spawn_block_header_utxo_loop(
                 utxo_weak,
                 self.constructor.clone(),
@@ -229,7 +230,6 @@ async fn block_header_utxo_loop<T: UtxoCommonOps>(
     let mut chunk_size = ELECTRUM_MAX_CHUNK_SIZE;
     while let Some(arc) = weak.upgrade() {
         let coin = constructor(arc);
-        let ticker = coin.as_ref().conf.ticker.as_str();
         let client = match &coin.as_ref().rpc_client {
             UtxoRpcClientEnum::Native(_) => break,
             UtxoRpcClientEnum::Electrum(client) => client,
@@ -279,19 +279,21 @@ async fn block_header_utxo_loop<T: UtxoCommonOps>(
                     continue;
                 };
 
-                // If electrum returns response too large error, we will request the headers again in chunks of ELECTRUM_MAX_CHUNK_SIZE - CHUNK_SIZE_REDUCER_VALUE instead.
+                // If electrum returns response too large error, we will reduce the requested headers by CHUNK_SIZE_REDUCER_VALUE every loop until we arrive to a reasonable value.
                 if error.get_inner().is_response_too_large() {
                     chunk_size -= CHUNK_SIZE_REDUCER_VALUE;
                     continue;
                 }
 
                 error!("Error {} on retrieving the latest headers from rpc!", error);
+                // Todo: remove this electrum server and use another in this case since the headers from this server can't be retrieved
                 sync_status_loop_handle.notify_on_permanent_error(error.to_string());
                 break;
             },
         };
 
         // Validate retrieved block headers
+        let ticker = coin.as_ref().conf.ticker.as_str();
         if let Some(params) = &coin.as_ref().conf.block_headers_verification_params {
             if let Err(e) = validate_headers(ticker, from_block_height, block_headers, storage, params).await {
                 error!("Error {} on validating the latest headers!", e);
