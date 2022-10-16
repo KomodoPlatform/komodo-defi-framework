@@ -111,6 +111,7 @@ fn build_aggregated_entries_v2(
 // ZHTLC protocol coin uses random keypair to sign P2P messages per every order.
 // So, each ZHTLC order has unique «pubkey» field that doesn’t match node persistent pubkey derived from passphrase.
 // We can compare pubkeys from maker_orders and from asks or bids, to find our order.
+#[inline(always)]
 fn is_my_order(my_orders_pubkeys: &HashSet<String>, my_pub: &Option<String>, order_pubkey: &str) -> bool {
     my_pub.as_deref() == Some(order_pubkey) || my_orders_pubkeys.contains(order_pubkey)
 }
@@ -144,7 +145,6 @@ pub async fn orderbook_rpc(ctx: MmArc, req: Json) -> Result<Response<Vec<u8>>, S
 
     try_s!(subscribe_to_orderbook_topic(&ctx, &base_ticker, &rel_ticker, request_orderbook).await);
     let orderbook = ordermatch_ctx.orderbook.lock();
-    let my_orders_pubkeys = ordermatch_ctx.my_p2p_pubkeys.lock();
     let my_pubsecp = ctx.secp256k1_key_pair_as_option().map(|_| {
         CryptoCtx::from_ctx(&ctx)
             .expect("ctx is available")
@@ -167,7 +167,7 @@ pub async fn orderbook_rpc(ctx: MmArc, req: Json) -> Result<Response<Vec<u8>>, S
                     &ask.pubkey,
                     address_format,
                 ));
-                let is_mine = is_my_order(&my_orders_pubkeys, &my_pubsecp, &ask.pubkey);
+                let is_mine = is_my_order(&orderbook.my_p2p_pubkeys, &my_pubsecp, &ask.pubkey);
                 orderbook_entries.push(ask.as_rpc_entry_ask(address, is_mine));
             }
             orderbook_entries
@@ -194,7 +194,7 @@ pub async fn orderbook_rpc(ctx: MmArc, req: Json) -> Result<Response<Vec<u8>>, S
                     &bid.pubkey,
                     address_format,
                 ));
-                let is_mine = is_my_order(&my_orders_pubkeys, &my_pubsecp, &bid.pubkey);
+                let is_mine = is_my_order(&orderbook.my_p2p_pubkeys, &my_pubsecp, &bid.pubkey);
                 orderbook_entries.push(bid.as_rpc_entry_bid(address, is_mine));
             }
             orderbook_entries
@@ -311,7 +311,6 @@ pub async fn orderbook_rpc_v2(
         .map_to_mm(OrderbookRpcError::P2PSubscribeError)?;
 
     let orderbook = ordermatch_ctx.orderbook.lock();
-    let my_orders_pubkeys = ordermatch_ctx.my_p2p_pubkeys.lock();
     let my_pubsecp = ctx.secp256k1_key_pair_as_option().map(|_| {
         CryptoCtx::from_ctx(&ctx)
             .expect("ctx is available")
@@ -337,7 +336,7 @@ pub async fn orderbook_rpc_v2(
                         continue;
                     },
                 };
-                let is_mine = is_my_order(&my_orders_pubkeys, &my_pubsecp, &ask.pubkey);
+                let is_mine = is_my_order(&orderbook.my_p2p_pubkeys, &my_pubsecp, &ask.pubkey);
                 orderbook_entries.push(ask.as_rpc_v2_entry_ask(address, is_mine));
             }
             orderbook_entries
@@ -367,7 +366,7 @@ pub async fn orderbook_rpc_v2(
                         continue;
                     },
                 };
-                let is_mine = is_my_order(&my_orders_pubkeys, &my_pubsecp, &bid.pubkey);
+                let is_mine = is_my_order(&orderbook.my_p2p_pubkeys, &my_pubsecp, &bid.pubkey);
                 orderbook_entries.push(bid.as_rpc_v2_entry_bid(address, is_mine));
             }
             orderbook_entries
