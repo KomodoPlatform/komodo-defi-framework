@@ -187,6 +187,7 @@ impl FromStr for SegwitAddress {
 mod tests {
     use super::*;
     use crypto::sha256;
+    use hex::ToHex;
     use Public;
 
     fn hex_to_bytes(s: &str) -> Option<Vec<u8>> {
@@ -225,6 +226,34 @@ mod tests {
             "bc1qrp33g0q5c5txsp9arysrx4k6zdkfs4nce4xj0gdcccefvpysxf3qccfmv3"
         );
         assert_eq!(addr.address_type(), Some(AddressType::P2wsh));
+    }
+
+    #[test]
+    // https://github.com/bitcoin/bips/blob/master/bip-0173.mediawiki#test-vectors
+    fn test_valid_segwit() {
+        let addr = "BC1QW508D6QEJXTDG4Y5R3ZARVARY0C5XW7KV8F3T4";
+        let segwit_addr = SegwitAddress::from_str(addr).unwrap();
+        assert_eq!(0, segwit_addr.version.to_u8());
+        assert_eq!(
+            "751e76e8199196d454941c45d1b3a323f1433bd6",
+            segwit_addr.program.to_hex::<String>()
+        );
+
+        let addr = "tb1qrp33g0q5c5txsp9arysrx4k6zdkfs4nce4xj0gdcccefvpysxf3q0sl5k7";
+        let segwit_addr = SegwitAddress::from_str(addr).unwrap();
+        assert_eq!(0, segwit_addr.version.to_u8());
+        assert_eq!(
+            "1863143c14c5166804bd19203356da136c985678cd4d27a1b8c6329604903262",
+            segwit_addr.program.to_hex::<String>()
+        );
+
+        let addr = "tb1qqqqqp399et2xygdj5xreqhjjvcmzhxw4aywxecjdzew6hylgvsesrxh6hy";
+        let segwit_addr = SegwitAddress::from_str(addr).unwrap();
+        assert_eq!(0, segwit_addr.version.to_u8());
+        assert_eq!(
+            "000000c4a5cad46221b2a187905e5266362b99d5e91c6ce24d165dab93e86433",
+            segwit_addr.program.to_hex::<String>()
+        );
     }
 
     #[test]
@@ -274,5 +303,24 @@ mod tests {
         let invalid_address = "bc1gmk9yu";
         let err = SegwitAddress::from_str(invalid_address).unwrap_err();
         assert_eq!(err, Error::EmptyBech32Payload);
+
+        // Version 1 shouldn't be used with bech32 variant although the below address is given as valid in BIP173
+        // https://github.com/bitcoin/bips/blob/master/bip-0350.mediawiki#abstract
+        // If the version byte is 1 to 16, no further interpretation of the witness program or witness stack happens,
+        // and there is no size restriction for the witness stack. These versions are reserved for future extensions
+        // https://github.com/bitcoin/bips/blob/master/bip-0141.mediawiki#witness-program
+        let invalid_address = "bc1pw508d6qejxtdg4y5r3zarvary0c5xw7kw508d6qejxtdg4y5r3zarvary0c5xw7k7grplx";
+        let err = SegwitAddress::from_str(invalid_address).unwrap_err();
+        assert_eq!(err, Error::UnsupportedWitnessVersion(1));
+
+        // Version 16 shouldn't be used with bech32 variant although the below address is given as valid in BIP173
+        let invalid_address = "BC1SW50QA3JX3S";
+        let err = SegwitAddress::from_str(invalid_address).unwrap_err();
+        assert_eq!(err, Error::UnsupportedWitnessVersion(16));
+
+        // Version 2 shouldn't be used with bech32 variant although the below address is given as valid in BIP173
+        let invalid_address = "bc1zw508d6qejxtdg4y5r3zarvaryvg6kdaj";
+        let err = SegwitAddress::from_str(invalid_address).unwrap_err();
+        assert_eq!(err, Error::UnsupportedWitnessVersion(2));
     }
 }
