@@ -64,7 +64,7 @@ pub enum AddressType {
     P2wsh,
 }
 
-#[derive(Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
 /// A Bitcoin segwit address
 pub struct SegwitAddress {
     /// The human-readable part
@@ -134,29 +134,14 @@ impl fmt::Display for SegwitAddress {
     }
 }
 
-/// Extract the bech32 prefix.
-/// Returns the same slice when no prefix is found.
-fn find_bech32_prefix(bech32: &str) -> Option<&str> {
-    // Split at the last occurrence of the separator character '1'.
-    match bech32.rfind('1') {
-        None => None,
-        Some(sep) => Some(bech32.split_at(sep).0),
-    }
-}
-
 impl FromStr for SegwitAddress {
     type Err = Error;
 
     fn from_str(s: &str) -> Result<SegwitAddress, Error> {
-        // try bech32
-        let hrp = match find_bech32_prefix(s) {
-            // Todo: upper or lowercase is allowed but NOT mixed case
-            Some(hrp) => hrp.to_string(),
-            None => return Err(Error::InvalidSegwitAddressFormat),
-        };
         // decode as bech32, should use Variant if Bech32m is used alongside Bech32
         // The improved Bech32m variant described in [BIP-0350](https://github.com/bitcoin/bips/blob/master/bip-0350.mediawiki)
-        let (_, payload, variant) = bech32::decode(s)?;
+        // hrp checks (mixed case not allowed, allowed length and characters) are part of the decode function
+        let (hrp, payload, variant) = bech32::decode(s)?;
         if payload.is_empty() {
             return Err(Error::EmptyBech32Payload);
         }
@@ -240,5 +225,54 @@ mod tests {
             "bc1qrp33g0q5c5txsp9arysrx4k6zdkfs4nce4xj0gdcccefvpysxf3qccfmv3"
         );
         assert_eq!(addr.address_type(), Some(AddressType::P2wsh));
+    }
+
+    #[test]
+    // https://github.com/bitcoin/bips/blob/master/bip-0173.mediawiki#test-vectors
+    fn test_invalid_segwit_addresses() {
+        // Invalid checksum
+        let invalid_address = "bc1qw508d6qejxtdg4y5r3zarvary0c5xw7kv8f3t5";
+        let err = SegwitAddress::from_str(invalid_address).unwrap_err();
+        assert_eq!(err, Error::Bech32(bech32::Error::InvalidChecksum));
+
+        // Invalid witness version
+        let invalid_address = "BC13W508D6QEJXTDG4Y5R3ZARVARY0C5XW7KN40WF2";
+        let err = SegwitAddress::from_str(invalid_address).unwrap_err();
+        assert_eq!(err, Error::InvalidWitnessVersion(17));
+
+        // Invalid program length
+        let invalid_address = "bc1rw5uspcuh";
+        let err = SegwitAddress::from_str(invalid_address).unwrap_err();
+        assert_eq!(err, Error::InvalidWitnessProgramLength(1));
+
+        // Invalid program length
+        let invalid_address = "bc10w508d6qejxtdg4y5r3zarvary0c5xw7kw508d6qejxtdg4y5r3zarvary0c5xw7kw5rljs90";
+        let err = SegwitAddress::from_str(invalid_address).unwrap_err();
+        assert_eq!(err, Error::InvalidWitnessProgramLength(41));
+
+        // Invalid program length for witness version 0 (per BIP141)
+        let invalid_address = "BC1QR508D6QEJXTDG4Y5R3ZARVARYV98GJ9P";
+        let err = SegwitAddress::from_str(invalid_address).unwrap_err();
+        assert_eq!(err, Error::InvalidSegwitV0ProgramLength(16));
+
+        // Mixed case invalid
+        let invalid_address = "tb1qrp33g0q5c5txsp9arysrx4k6zdkfs4nce4xj0gdcccefvpysxf3q0sL5k7";
+        let err = SegwitAddress::from_str(invalid_address).unwrap_err();
+        assert_eq!(err, Error::Bech32(bech32::Error::MixedCase));
+
+        // zero padding of more than 4 bits
+        let invalid_address = "bc1zw508d6qejxtdg4y5r3zarvaryvqyzf3du";
+        let err = SegwitAddress::from_str(invalid_address).unwrap_err();
+        assert_eq!(err, Error::Bech32(bech32::Error::InvalidPadding));
+
+        // Non-zero padding in 8-to-5 conversion
+        let invalid_address = "tb1qrp33g0q5c5txsp9arysrx4k6zdkfs4nce4xj0gdcccefvpysxf3pjxtptv";
+        let err = SegwitAddress::from_str(invalid_address).unwrap_err();
+        assert_eq!(err, Error::Bech32(bech32::Error::InvalidPadding));
+
+        // Empty data section
+        let invalid_address = "bc1gmk9yu";
+        let err = SegwitAddress::from_str(invalid_address).unwrap_err();
+        assert_eq!(err, Error::EmptyBech32Payload);
     }
 }

@@ -1685,6 +1685,7 @@ fn test_withdraw_segwit() {
     let _: TransactionDetails = json::from_str(&withdraw.1).expect("Expected 'TransactionDetails'");
 
     // must not allow to withdraw to addresses with different hrp
+    // Invalid human-readable part test vector https://github.com/bitcoin/bips/blob/master/bip-0173.mediawiki#test-vectors
     let withdraw = block_on(mm_alice.rpc(&json!({
         "userpass": mm_alice.userpass,
         "method": "withdraw",
