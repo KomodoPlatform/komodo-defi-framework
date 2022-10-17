@@ -21,7 +21,7 @@ pub enum Error {
     InvalidSegwitV0ProgramLength(usize),
     /// An uncompressed pubkey was used where it is not allowed.
     UncompressedPubkey,
-    /// An uncompressed pubkey was used where it is not allowed.
+    /// An address variant that is not supported yet was used.
     UnsupportedAddressVariant(String),
 }
 
