@@ -1212,6 +1212,8 @@ impl MarketCoinOps for BchCoin {
 impl MmCoin for BchCoin {
     fn is_asset_chain(&self) -> bool { utxo_common::is_asset_chain(&self.utxo_arc) }
 
+    fn spawner(&self) -> CoinFutSpawner { CoinFutSpawner::new(&self.as_ref().abortable_system) }
+
     fn get_raw_transaction(&self, req: RawTransactionRequest) -> RawTransactionFut {
         Box::new(utxo_common::get_raw_transaction(&self.utxo_arc, req).boxed().compat())
     }
@@ -1369,7 +1371,7 @@ impl UtxoTxHistoryOps for BchCoin {
 
 // testnet
 #[cfg(test)]
-pub fn tbch_coin_for_test() -> BchCoin {
+pub fn tbch_coin_for_test() -> (MmArc, BchCoin) {
     use common::block_on;
     use crypto::privkey::key_pair_from_seed;
     use mm2_core::mm_ctx::MmCtxBuilder;
@@ -1388,7 +1390,7 @@ pub fn tbch_coin_for_test() -> BchCoin {
     });
 
     let params = BchActivationRequest::from_legacy_req(&req).unwrap();
-    block_on(bch_coin_from_conf_and_params(
+    let coin = block_on(bch_coin_from_conf_and_params(
         &ctx,
         "BCH",
         &conf,
@@ -1396,7 +1398,8 @@ pub fn tbch_coin_for_test() -> BchCoin {
         CashAddrPrefix::SlpTest,
         &*keypair.private().secret,
     ))
-    .unwrap()
+    .unwrap();
+    (ctx, coin)
 }
 
 // mainnet
@@ -1440,7 +1443,7 @@ mod bch_tests {
 
     #[test]
     fn test_get_slp_genesis_params() {
-        let coin = tbch_coin_for_test();
+        let (_ctx, coin) = tbch_coin_for_test();
         let token_id = "bb309e48930671582bea508f9a1d9b491e49b69be3d6f372dc08da2ac6e90eb7".into();
         let (_ctx, storage) = init_storage_for(&coin);
 
@@ -1451,7 +1454,7 @@ mod bch_tests {
 
     #[test]
     fn test_plain_bch_tx_details() {
-        let coin = tbch_coin_for_test();
+        let (_ctx, coin) = tbch_coin_for_test();
         let (_ctx, storage) = init_storage_for(&coin);
 
         let hash = "a8dcc3c6776e93e7bd21fb81551e853447c55e2d8ac141b418583bc8095ce390".into();
@@ -1494,7 +1497,7 @@ mod bch_tests {
 
     #[test]
     fn test_slp_tx_details() {
-        let coin = tbch_coin_for_test();
+        let (_ctx, coin) = tbch_coin_for_test();
         let (_ctx, storage) = init_storage_for(&coin);
 
         let hash = "a8dcc3c6776e93e7bd21fb81551e853447c55e2d8ac141b418583bc8095ce390".into();
@@ -1536,7 +1539,7 @@ mod bch_tests {
 
     #[test]
     fn test_sign_message() {
-        let coin = tbch_coin_for_test();
+        let (_ctx, coin) = tbch_coin_for_test();
         let signature = coin.sign_message("test").unwrap();
         assert_eq!(
             signature,
@@ -1547,7 +1550,7 @@ mod bch_tests {
     #[test]
     #[cfg(not(target_arch = "wasm32"))]
     fn test_verify_message() {
-        let coin = tbch_coin_for_test();
+        let (_ctx, coin) = tbch_coin_for_test();
         let is_valid = coin
             .verify_message(
                 "ILuePKMsycXwJiNDOT7Zb7TfIlUW7Iq+5ylKd15AK72vGVYXbnf7Gj9Lk9MFV+6Ub955j7MiAkp0wQjvuIoRPPA=",

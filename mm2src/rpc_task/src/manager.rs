@@ -1,7 +1,7 @@
 use crate::task::RpcTaskTypes;
 use crate::{AtomicTaskId, RpcTask, RpcTaskError, RpcTaskHandle, RpcTaskResult, RpcTaskStatus, RpcTaskStatusAlias,
             TaskAbortHandle, TaskAbortHandler, TaskId, TaskStatus, TaskStatusError, UserActionSender};
-use common::executor::spawn;
+use common::executor::SpawnFuture;
 use common::log::{debug, info, warn};
 use futures::channel::oneshot;
 use futures::future::{select, Either};
@@ -29,7 +29,10 @@ impl<Task: RpcTask> Default for RpcTaskManager<Task> {
 impl<Task: RpcTask> RpcTaskManager<Task> {
     /// Create new instance of `RpcTaskHandle` attached to the only one `RpcTask`.
     /// This function registers corresponding RPC task in the `RpcTaskManager` and returns the task id.
-    pub fn spawn_rpc_task(this: &RpcTaskManagerShared<Task>, mut task: Task) -> RpcTaskResult<TaskId> {
+    pub fn spawn_rpc_task<F>(this: &RpcTaskManagerShared<Task>, spawner: &F, mut task: Task) -> RpcTaskResult<TaskId>
+    where
+        F: SpawnFuture,
+    {
         let initial_task_status = task.initial_status();
         let (task_id, task_abort_handler) = {
             let mut task_manager = this
@@ -64,7 +67,7 @@ impl<Task: RpcTask> RpcTaskManager<Task> {
                 },
             }
         };
-        spawn(fut);
+        spawner.spawn(fut);
         Ok(task_id)
     }
 

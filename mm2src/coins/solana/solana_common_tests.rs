@@ -1,5 +1,5 @@
 use super::*;
-use crate::solana::spl::{SplToken, SplTokenConf};
+use crate::solana::spl::{SplToken, SplTokenFields};
 use bip39::Language;
 use crypto::privkey::key_pair_from_seed;
 use ed25519_dalek_bip32::{DerivationPath, ExtendedSecretKey};
@@ -60,10 +60,11 @@ pub fn spl_coin_for_test(
     token_contract_address: Pubkey,
 ) -> SplToken {
     let spl_coin = SplToken {
-        conf: Arc::new(SplTokenConf {
+        conf: Arc::new(SplTokenFields {
             decimals,
             ticker,
             token_contract_address,
+            abortable_system: AbortableQueue::default(),
         }),
         platform_coin: solana_coin,
     };
@@ -85,6 +86,7 @@ pub fn solana_coin_for_test(seed: String, net_type: SolanaNet) -> (MmArc, Solana
     let key_pair = generate_key_pair_from_iguana_seed(seed);
     let my_address = key_pair.pubkey().to_string();
     let spl_tokens_infos = Arc::new(Mutex::new(HashMap::new()));
+    let spawner = AbortableQueue::default();
 
     let solana_coin = SolanaCoin(Arc::new(SolanaCoinImpl {
         decimals,
@@ -93,6 +95,7 @@ pub fn solana_coin_for_test(seed: String, net_type: SolanaNet) -> (MmArc, Solana
         ticker,
         client,
         spl_tokens_infos,
+        abortable_system: spawner,
     }));
     (ctx, solana_coin)
 }

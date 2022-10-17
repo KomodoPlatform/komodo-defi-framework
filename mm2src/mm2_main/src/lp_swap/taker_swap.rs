@@ -382,8 +382,6 @@ pub async fn run_taker_swap(swap: RunTakerSwapInput, ctx: MmArc) {
     let swap_ctx = SwapsContext::from_ctx(&ctx).unwrap();
     swap_ctx.init_msg_store(running_swap.uuid, running_swap.maker);
     swap_ctx.running_swaps.lock().unwrap().push(weak_ref);
-    let shutdown_rx = swap_ctx.shutdown_rx.clone();
-    let swap_for_log = running_swap.clone();
 
     let mut swap_fut = Box::pin(
         async move {
@@ -428,11 +426,9 @@ pub async fn run_taker_swap(swap: RunTakerSwapInput, ctx: MmArc) {
         }
         .fuse(),
     );
-    let mut shutdown_fut = Box::pin(shutdown_rx.recv().fuse());
     let do_nothing = (); // to fix https://rust-lang.github.io/rust-clippy/master/index.html#unused_unit
     select! {
         _swap = swap_fut => do_nothing, // swap finished normally
-        _shutdown = shutdown_fut => info!("swap {} stopped!", swap_for_log.uuid),
         _touch = touch_loop => unreachable!("Touch loop can not stop!"),
     };
 }

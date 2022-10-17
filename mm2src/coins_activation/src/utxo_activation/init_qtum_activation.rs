@@ -15,7 +15,6 @@ use coins::utxo::utxo_builder::UtxoCoinBuilder;
 use coins::utxo::UtxoActivationParams;
 use coins::CoinProtocol;
 use crypto::CryptoCtx;
-use futures::future::AbortHandle;
 use mm2_core::mm_ctx::MmArc;
 use mm2_err_handle::prelude::*;
 use mm2_metrics::MetricsArc;
@@ -87,12 +86,7 @@ impl InitStandaloneCoinActivationOps for QtumCoin {
         metrics: MetricsArc,
         storage: impl TxHistoryStorage,
         current_balances: HashMap<String, BigDecimal>,
-    ) -> Option<AbortHandle> {
-        Some(start_history_background_fetching(
-            self.clone(),
-            metrics,
-            storage,
-            current_balances,
-        ))
+    ) {
+        start_history_background_fetching(self.clone(), metrics, storage, current_balances)
     }
 }

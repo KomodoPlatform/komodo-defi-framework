@@ -35,8 +35,6 @@ lazy_static! {
     static ref OPEN_DATABASES: Mutex<HashSet<String>> = Mutex::new(HashSet::new());
 }
 
-pub(crate) const PASS_THROUGH: fn(JsValue) -> JsValue = |event| event;
-
 pub type ItemId = u32;
 
 #[derive(Debug, Deserialize, Serialize)]

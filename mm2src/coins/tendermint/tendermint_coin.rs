@@ -5,8 +5,8 @@ use super::tendermint_native_rpc::*;
 use crate::coin_errors::MyAddressError;
 use crate::tendermint::htlc::MsgClaimHtlc;
 use crate::utxo::sat_from_big_decimal;
-use crate::{big_decimal_from_sat_unsigned, BalanceError, BalanceFut, BigDecimal, CoinBalance, FeeApproxStage,
-            FoundSwapTxSpend, HistorySyncState, MarketCoinOps, MmCoin, NegotiateSwapContractAddrErr,
+use crate::{big_decimal_from_sat_unsigned, BalanceError, BalanceFut, BigDecimal, CoinBalance, CoinFutSpawner,
+            FeeApproxStage, FoundSwapTxSpend, HistorySyncState, MarketCoinOps, MmCoin, NegotiateSwapContractAddrErr,
             RawTransactionFut, RawTransactionRequest, SearchForSwapTxSpendInput, SignatureResult, SwapOps, TradeFee,
             TradePreimageFut, TradePreimageResult, TradePreimageValue, TransactionDetails, TransactionEnum,
             TransactionFut, TransactionType, TxFeeDetails, TxMarshalingErr, UnexpectedDerivationMethod,
@@ -15,6 +15,7 @@ use crate::{big_decimal_from_sat_unsigned, BalanceError, BalanceFut, BigDecimal,
             WithdrawError, WithdrawFut, WithdrawRequest};
 use async_trait::async_trait;
 use bitcrypto::sha256;
+use common::executor::{abortable_queue::AbortableQueue, AbortableSystem};
 use common::{get_utc_timestamp, Future01CompatExt};
 use cosmrs::bank::MsgSend;
 use cosmrs::crypto::secp256k1::SigningKey;
@@ -75,6 +76,9 @@ pub struct TendermintCoinImpl {
     denom: Denom,
     chain_id: ChainId,
     sequence_lock: AsyncMutex<()>,
+    /// This spawner is used to spawn coin's related futures that should be aborted on coin deactivation
+    /// or on [`MmArc::stop`].
+    abortable_system: AbortableQueue,
 }
 
 #[derive(Clone)]
@@ -156,6 +160,7 @@ fn upper_hex(bytes: &[u8]) -> String {
 
 impl TendermintCoin {
     pub async fn init(
+        ctx: &MmArc,
         ticker: String,
         protocol_info: TendermintProtocolInfo,
         activation_params: TendermintActivationParams,
@@ -191,6 +196,10 @@ impl TendermintCoin {
             kind: TendermintInitErrorKind::InvalidDenom(e.to_string()),
         })?;
 
+        // Create an abortable system linked to the `MmCtx` so if the context is stopped via `MmArc::stop`,
+        // all spawned futures related to `TendermintCoin` will be aborted as well.
+        let abortable_system = ctx.abortable_system.create_subsystem();
+
         Ok(TendermintCoin(Arc::new(TendermintCoinImpl {
             ticker,
             rpc_client,
@@ -201,6 +210,7 @@ impl TendermintCoin {
             denom,
             chain_id,
             sequence_lock: AsyncMutex::new(()),
+            abortable_system,
         })))
     }
 
@@ -359,6 +369,8 @@ impl TendermintCoin {
 #[allow(unused_variables)]
 impl MmCoin for TendermintCoin {
     fn is_asset_chain(&self) -> bool { false }
+
+    fn spawner(&self) -> CoinFutSpawner { CoinFutSpawner::new(&self.abortable_system) }
 
     fn withdraw(&self, req: WithdrawRequest) -> WithdrawFut {
         let coin = self.clone();
@@ -853,6 +865,7 @@ mod tendermint_coin_tests {
         let priv_key = &*ctx.secp256k1_key_pair().private().secret;
 
         let coin = common::block_on(TendermintCoin::init(
+            &ctx,
             "USDC-IBC".to_string(),
             protocol_conf,
             activation_request,

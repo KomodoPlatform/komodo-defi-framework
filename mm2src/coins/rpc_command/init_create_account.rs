@@ -297,13 +297,14 @@ pub async fn init_create_new_account(
 ) -> MmResult<InitRpcTaskResponse, CreateAccountRpcError> {
     let coin = lp_coinfind_or_err(&ctx, &req.coin).await?;
     let coins_ctx = CoinsContext::from_ctx(&ctx).map_to_mm(CreateAccountRpcError::Internal)?;
+    let spawner = coin.spawner();
     let task = InitCreateAccountTask {
         ctx,
         coin,
         req,
         task_state: CreateAccountState::default(),
     };
-    let task_id = CreateAccountTaskManager::spawn_rpc_task(&coins_ctx.create_account_manager, task)?;
+    let task_id = CreateAccountTaskManager::spawn_rpc_task(&coins_ctx.create_account_manager, &spawner, task)?;
     Ok(InitRpcTaskResponse { task_id })
 }
 

@@ -1,15 +1,16 @@
-use crate::mm2::lp_swap::{broadcast_p2p_tx_msg, lp_coinfind, tx_helper_topic, H256Json, MmCoinEnum, SwapsContext,
-                          TransactionIdentifier, WAIT_CONFIRM_INTERVAL};
+use super::{broadcast_p2p_tx_msg, lp_coinfind, tx_helper_topic, H256Json, MmCoinEnum, SwapsContext,
+            TransactionIdentifier, WAIT_CONFIRM_INTERVAL};
 use async_trait::async_trait;
 use coins::{CanRefundHtlc, FoundSwapTxSpend, WatcherSearchForSwapTxSpendInput, WatcherValidatePaymentInput};
-use common::executor::{spawn, Timer};
-use common::log::{self, error, info};
+use common::executor::{AbortSettings, SpawnAbortable, Timer};
+use common::log::{error, info};
 use common::state_machine::prelude::*;
 use futures::compat::Future01CompatExt;
 use mm2_core::mm_ctx::MmArc;
 use mm2_libp2p::{decode_signed, pub_sub_topic, TopicPrefix};
 use mm2_number::BigDecimal;
 use std::cmp::min;
+use std::sync::Arc;
 use uuid::Uuid;
 
 #[cfg(not(test))] use common::now_ms;
@@ -448,42 +449,79 @@ pub async fn process_watcher_msg(ctx: MmArc, msg: &[u8]) {
     let verified_pubkey = msg.2;
     match watcher_data {
         SwapWatcherMsg::TakerSwapWatcherMsg(watcher_data) => {
-            spawn_taker_swap_watcher(ctx, watcher_data, verified_pubkey.to_bytes()).await
+            spawn_taker_swap_watcher(ctx, watcher_data, verified_pubkey.to_bytes())
         },
     }
 }
 
-async fn spawn_taker_swap_watcher(ctx: MmArc, watcher_data: TakerSwapWatcherData, verified_pub: Vec<u8>) {
+/// Currently, Taker Swap Watcher is supported only.
+enum WatcherType {
+    Taker,
+}
+
+/// The `SwapWatcherLock` is used to lock the given `uuid` as the running Swap Watcher,
+/// (i.e. insert `uuid` into either [`SwapsContext::taker_swap_watchers`] or [`SwapsContext::maker_swap_watchers`]),
+/// and to unlock it (i.e remove `uuid` from corresponding watcher collection) once `SwapWatcherLock` is dropped.
+struct SwapWatcherLock {
+    swap_ctx: Arc<SwapsContext>,
+    fee_hash: Vec<u8>,
+    watcher_type: WatcherType,
+}
+
+impl SwapWatcherLock {
+    /// Locks the given taker fee hash as the running Swap Watcher,
+    /// so inserts the hash into the [`SwapsContext::taker_swap_watchers`] collection.
+    ///
+    /// Returns `None` if there is an ongoing Taker Swap Watcher already.
+    fn lock_taker(swap_ctx: Arc<SwapsContext>, fee_hash: Vec<u8>) -> Option<Self> {
+        {
+            let mut guard = swap_ctx.taker_swap_watchers.lock();
+            if !guard.insert(fee_hash.clone()) {
+                // There is the same hash already.
+                return None;
+            }
+        }
+
+        Some(SwapWatcherLock {
+            swap_ctx,
+            fee_hash,
+            watcher_type: WatcherType::Taker,
+        })
+    }
+}
+
+impl Drop for SwapWatcherLock {
+    fn drop(&mut self) {
+        match self.watcher_type {
+            WatcherType::Taker => self.swap_ctx.taker_swap_watchers.lock().remove(self.fee_hash.clone()),
+        };
+    }
+}
+
+fn spawn_taker_swap_watcher(ctx: MmArc, watcher_data: TakerSwapWatcherData, verified_pub: Vec<u8>) {
     let swap_ctx = SwapsContext::from_ctx(&ctx).unwrap();
     if swap_ctx.swap_msgs.lock().unwrap().contains_key(&watcher_data.uuid) {
         return;
     }
-    let mut taker_swap_watchers = swap_ctx.taker_swap_watchers.lock();
-    if taker_swap_watchers.contains(&watcher_data.taker_fee_hash) {
-        return;
-    }
-    taker_swap_watchers.insert(watcher_data.taker_fee_hash.clone());
-    drop(taker_swap_watchers);
 
-    spawn(async move {
+    let taker_watcher_lock = match SwapWatcherLock::lock_taker(swap_ctx, watcher_data.taker_fee_hash.clone()) {
+        Some(lock) => lock,
+        // There is an ongoing Taker Swap Watcher already.
+        None => return,
+    };
+
+    let spawner = ctx.spawner();
+
+    let uuid = watcher_data.uuid;
+    let fut = async move {
         let taker_coin = match lp_coinfind(&ctx, &watcher_data.taker_coin).await {
             Ok(Some(c)) => c,
             Ok(None) => {
-                log::error!("Coin {} is not found/enabled", watcher_data.taker_coin);
-                let swap_ctx = SwapsContext::from_ctx(&ctx).unwrap();
-                swap_ctx
-                    .taker_swap_watchers
-                    .lock()
-                    .remove(watcher_data.taker_fee_hash.clone());
+                error!("Coin {} is not found/enabled", watcher_data.taker_coin);
                 return;
             },
             Err(e) => {
-                log::error!("!lp_coinfind({}): {}", watcher_data.taker_coin, e);
-                let swap_ctx = SwapsContext::from_ctx(&ctx).unwrap();
-                swap_ctx
-                    .taker_swap_watchers
-                    .lock()
-                    .remove(watcher_data.taker_fee_hash.clone());
+                error!("!lp_coinfind({}): {}", watcher_data.taker_coin, e);
                 return;
             },
         };
@@ -491,26 +529,15 @@ async fn spawn_taker_swap_watcher(ctx: MmArc, watcher_data: TakerSwapWatcherData
         let maker_coin = match lp_coinfind(&ctx, &watcher_data.maker_coin).await {
             Ok(Some(c)) => c,
             Ok(None) => {
-                log::error!("Coin {} is not found/enabled", watcher_data.maker_coin);
-                let swap_ctx = SwapsContext::from_ctx(&ctx).unwrap();
-                swap_ctx
-                    .taker_swap_watchers
-                    .lock()
-                    .remove(watcher_data.taker_fee_hash.clone());
+                error!("Coin {} is not found/enabled", watcher_data.maker_coin);
                 return;
             },
             Err(e) => {
-                log::error!("!lp_coinfind({}): {}", watcher_data.maker_coin, e);
-                let swap_ctx = SwapsContext::from_ctx(&ctx).unwrap();
-                swap_ctx
-                    .taker_swap_watchers
-                    .lock()
-                    .remove(watcher_data.taker_fee_hash.clone());
+                error!("!lp_coinfind({}): {}", watcher_data.maker_coin, e);
                 return;
             },
         };
 
-        let uuid = watcher_data.uuid;
         log_tag!(
             ctx,
             "";
@@ -529,7 +556,16 @@ async fn spawn_taker_swap_watcher(ctx: MmArc, watcher_data: TakerSwapWatcherData
         };
         let state_machine: StateMachine<_, ()> = StateMachine::from_ctx(watcher_ctx);
         state_machine.run(ValidatePublicKeys {}).await;
-    });
+
+        // This allows to move the `taker_watcher_lock` value into this async block to keep it alive
+        // until the Swap Watcher finishes.
+        drop(taker_watcher_lock);
+    };
+
+    let settings = AbortSettings::info_on_abort(format!("watcher swap {uuid} stopped!"));
+    // Please note that `taker_watcher_lock` will be dropped once `MmCtx` is stopped
+    // since this `fut` will be aborted.
+    spawner.spawn_with_settings(fut, settings);
 }
 
 pub fn watcher_topic(ticker: &str) -> String { pub_sub_topic(WATCHER_PREFIX, ticker) }

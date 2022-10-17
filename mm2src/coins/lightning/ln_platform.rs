@@ -13,7 +13,7 @@ use bitcoin::blockdata::transaction::Transaction;
 use bitcoin::consensus::encode::{deserialize, serialize_hex};
 use bitcoin::hash_types::{BlockHash, TxMerkleNode, Txid};
 use bitcoin_hashes::{sha256d, Hash};
-use common::executor::{spawn, Timer};
+use common::executor::{abortable_queue::AbortableQueue, AbortableSystem, Timer};
 use common::log::{debug, error, info};
 use futures::compat::Future01CompatExt;
 use futures::future::join_all;
@@ -166,6 +166,9 @@ pub struct Platform {
     pub registered_outputs: PaMutex<Vec<WatchedOutput>>,
     /// This cache stores transactions to be broadcasted once the other node accepts the channel
     pub unsigned_funding_txs: PaMutex<HashMap<u64, TransactionInputSigner>>,
+    /// This spawner is used to spawn coin's related futures that should be aborted on coin deactivation.
+    /// and on [`MmArc::stop`].
+    pub abortable_system: AbortableQueue,
 }
 
 impl Platform {
@@ -175,6 +178,10 @@ impl Platform {
         network: BlockchainNetwork,
         confirmations_targets: PlatformCoinConfirmationTargets,
     ) -> Self {
+        // Create an abortable system linked to the base `coin` so if the base coin is disabled,
+        // all spawned futures related to `LightCoin` will be aborted as well.
+        let abortable_system = coin.as_ref().abortable_system.create_subsystem();
+
         Platform {
             coin,
             network,
@@ -188,11 +195,14 @@ impl Platform {
             registered_txs: PaMutex::new(HashSet::new()),
             registered_outputs: PaMutex::new(Vec::new()),
             unsigned_funding_txs: PaMutex::new(HashMap::new()),
+            abortable_system,
         }
     }
 
     #[inline]
     fn rpc_client(&self) -> &UtxoRpcClientEnum { &self.coin.as_ref().rpc_client }
+
+    pub fn spawner(&self) -> CoinFutSpawner { CoinFutSpawner::new(&self.abortable_system) }
 
     pub async fn set_latest_fees(&self) -> UtxoRpcResult<()> {
         let platform_coin = &self.coin;
@@ -570,14 +580,17 @@ impl BroadcasterInterface for Platform {
         let txid = tx.txid();
         let tx_hex = serialize_hex(tx);
         debug!("Trying to broadcast transaction: {}", tx_hex);
+
         let fut = self.coin.send_raw_tx(&tx_hex);
-        spawn(async move {
+        let fut = async move {
             match fut.compat().await {
                 Ok(id) => info!("Transaction broadcasted successfully: {:?} ", id),
                 // TODO: broadcast transaction through p2p network in case of error
                 Err(e) => error!("Broadcast transaction {} failed: {}", txid, e),
             }
-        });
+        };
+
+        self.spawner().spawn(fut);
     }
 }
 

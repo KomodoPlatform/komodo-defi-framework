@@ -1,7 +1,8 @@
-use super::{spawn_gossipsub, AdexBehaviourCmd, AdexBehaviourEvent, AdexResponse, NodeType, RelayAddress};
+use super::{spawn_gossipsub, AdexBehaviourCmd, AdexBehaviourEvent, AdexResponse, NodeType, RelayAddress, SwarmRuntime};
 use async_std::task::spawn;
+use common::executor::abortable_queue::AbortableQueue;
 use futures::channel::{mpsc, oneshot};
-use futures::{Future, SinkExt, StreamExt};
+use futures::{SinkExt, StreamExt};
 use libp2p::PeerId;
 use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::sync::{Arc, Mutex};
@@ -9,9 +10,11 @@ use std::time::Duration;
 
 static TEST_LISTEN_PORT: AtomicU64 = AtomicU64::new(1);
 
-fn next_port() -> u64 { TEST_LISTEN_PORT.fetch_add(1, Ordering::Relaxed) }
+lazy_static! {
+    static ref SYSTEM: AbortableQueue = AbortableQueue::default();
+}
 
-fn spawn_boxed(fut: Box<dyn Future<Output = ()> + Send + Unpin + 'static>) { spawn(fut); }
+fn next_port() -> u64 { TEST_LISTEN_PORT.fetch_add(1, Ordering::Relaxed) }
 
 struct Node {
     peer_id: PeerId,
@@ -23,9 +26,10 @@ impl Node {
     where
         F: Fn(mpsc::Sender<AdexBehaviourCmd>, AdexBehaviourEvent) + Send + 'static,
     {
+        let spawner = SwarmRuntime::new(SYSTEM.weak_spawner());
         let node_type = NodeType::RelayInMemory { port };
         let seednodes = seednodes.into_iter().map(RelayAddress::Memory).collect();
-        let (cmd_tx, mut event_rx, peer_id, _) = spawn_gossipsub(333, None, spawn_boxed, seednodes, node_type, |_| {})
+        let (cmd_tx, mut event_rx, peer_id) = spawn_gossipsub(333, None, spawner, seednodes, node_type, |_| {})
             .await
             .expect("Error spawning AdexBehaviour");
 

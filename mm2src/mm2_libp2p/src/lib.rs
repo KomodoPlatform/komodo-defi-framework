@@ -23,6 +23,7 @@ pub use libp2p::identity::PublicKey as Libp2pPublic;
 pub use libp2p::{Multiaddr, PeerId};
 pub use peers_exchange::PeerAddresses;
 pub use relay_address::{RelayAddress, RelayAddressError};
+pub use runtime::SwarmRuntime;
 use serde::{de, Deserialize, Serialize, Serializer};
 
 lazy_static! {

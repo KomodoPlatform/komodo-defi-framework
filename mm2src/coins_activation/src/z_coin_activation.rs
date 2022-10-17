@@ -14,7 +14,6 @@ use crypto::hw_rpc_task::{HwRpcTaskAwaitingStatus, HwRpcTaskUserAction};
 use crypto::CryptoInitError;
 use derive_more::Display;
 use futures::compat::Future01CompatExt;
-use futures::future::AbortHandle;
 use mm2_core::mm_ctx::MmArc;
 use mm2_err_handle::prelude::*;
 use mm2_metrics::MetricsArc;
@@ -266,7 +265,6 @@ impl InitStandaloneCoinActivationOps for ZCoin {
         _metrics: MetricsArc,
         _storage: impl TxHistoryStorage,
         _current_balances: HashMap<String, BigDecimal>,
-    ) -> Option<AbortHandle> {
-        None
+    ) {
     }
 }

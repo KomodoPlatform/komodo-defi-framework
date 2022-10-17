@@ -11,10 +11,9 @@ use crate::mm2::{lp_ordermatch::{cancel_order, create_maker_order,
                                  OrdermatchContext, SetPriceReq},
                  lp_swap::{latest_swaps_for_pair, LatestSwapsErr}};
 use coins::{lp_coinfind, GetNonZeroBalance};
-use common::Future01CompatExt;
-use common::{executor::{spawn, Timer},
+use common::{executor::{SpawnFuture, Timer},
              log::{debug, error, info, warn},
-             HttpStatusCode, StatusCode};
+             Future01CompatExt, HttpStatusCode, StatusCode};
 use derive_more::Display;
 use mm2_core::mm_ctx::MmArc;
 use mm2_err_handle::prelude::*;
@@ -733,7 +732,7 @@ pub async fn start_simple_market_maker_bot(ctx: MmArc, req: StartSimpleMakerBotR
             drop(state);
             let event: TradingBotEvent = TradingBotStarted { nb_pairs }.into();
             dispatcher.dispatch_async(ctx.clone(), event.into()).await;
-            spawn(lp_bot_loop(ctx.clone()));
+            ctx.spawner().spawn(lp_bot_loop(ctx.clone()));
             Ok(StartSimpleMakerBotRes {
                 result: "Success".to_string(),
             })

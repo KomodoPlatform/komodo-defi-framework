@@ -44,6 +44,7 @@ use bitcoin::network::constants::Network as BitcoinNetwork;
 pub use bitcrypto::{dhash160, sha256, ChecksumType};
 pub use chain::Transaction as UtxoTx;
 use chain::{OutPoint, TransactionOutput, TxHashAlgo};
+use common::executor::abortable_queue::AbortableQueue;
 #[cfg(not(target_arch = "wasm32"))]
 use common::first_char_to_upper;
 use common::jsonrpc_client::JsonRpcError;
@@ -94,19 +95,18 @@ use utxo_signer::{TxProvider, TxProviderError, UtxoSignTxError, UtxoSignTxResult
 use self::rpc_clients::{electrum_script_hash, ElectrumClient, ElectrumRpcRequest, EstimateFeeMethod, EstimateFeeMode,
                         NativeClient, UnspentInfo, UnspentMap, UtxoRpcClientEnum, UtxoRpcError, UtxoRpcFut,
                         UtxoRpcResult};
-use super::{big_decimal_from_sat_unsigned, BalanceError, BalanceFut, BalanceResult, CoinBalance, CoinsContext,
-            DerivationMethod, FeeApproxStage, FoundSwapTxSpend, HistorySyncState, KmdRewardsDetails, MarketCoinOps,
-            MmCoin, NumConversError, NumConversResult, PrivKeyActivationPolicy, PrivKeyNotAllowed, PrivKeyPolicy,
-            RawTransactionFut, RawTransactionRequest, RawTransactionResult, RpcTransportEventHandler,
+use super::{big_decimal_from_sat_unsigned, BalanceError, BalanceFut, BalanceResult, CoinBalance, CoinFutSpawner,
+            CoinsContext, DerivationMethod, FeeApproxStage, FoundSwapTxSpend, HistorySyncState, KmdRewardsDetails,
+            MarketCoinOps, MmCoin, NumConversError, NumConversResult, PrivKeyActivationPolicy, PrivKeyNotAllowed,
+            PrivKeyPolicy, RawTransactionFut, RawTransactionRequest, RawTransactionResult, RpcTransportEventHandler,
             RpcTransportEventHandlerShared, TradeFee, TradePreimageError, TradePreimageFut, TradePreimageResult,
-            Transaction, TransactionDetails, TransactionEnum, UnexpectedDerivationMethod, WithdrawError,
-            WithdrawRequest};
+            Transaction, TransactionDetails, TransactionEnum, TransactionErr, UnexpectedDerivationMethod,
+            VerificationError, WithdrawError, WithdrawRequest};
 use crate::coin_balance::{EnableCoinScanPolicy, EnabledCoinBalanceParams, HDAddressBalanceScanner};
 use crate::hd_wallet::{HDAccountOps, HDAccountsMutex, HDAddress, HDAddressId, HDWalletCoinOps, HDWalletOps,
                        InvalidBip44ChainError};
 use crate::hd_wallet_storage::{HDAccountStorageItem, HDWalletCoinStorage, HDWalletStorageError, HDWalletStorageResult};
 use crate::utxo::tx_cache::UtxoVerboseCacheShared;
-use crate::{TransactionErr, VerificationError};
 
 pub mod tx_cache;
 #[cfg(target_arch = "wasm32")]
@@ -601,6 +601,9 @@ pub struct UtxoCoinFields {
     /// The watcher/receiver of the block headers synchronization status,
     /// initialized only for non-native mode if spv is enabled for the coin.
     pub block_headers_status_watcher: Option<AsyncMutex<AsyncReceiver<UtxoSyncStatus>>>,
+    /// This abortable system is used to spawn coin's related futures that should be aborted on coin deactivation
+    /// and on [`MmArc::stop`].
+    pub abortable_system: AbortableQueue,
 }
 
 #[derive(Debug, Display)]

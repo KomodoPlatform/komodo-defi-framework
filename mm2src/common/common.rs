@@ -102,21 +102,14 @@ pub mod log;
 pub mod crash_reports;
 pub mod custom_futures;
 pub mod custom_iter;
+#[path = "executor/mod.rs"] pub mod executor;
 pub mod seri;
 #[path = "patterns/state_machine.rs"] pub mod state_machine;
 pub mod time_cache;
 
 #[cfg(not(target_arch = "wasm32"))]
-#[path = "executor/native_executor.rs"]
-pub mod executor;
-
-#[cfg(not(target_arch = "wasm32"))]
 #[path = "wio.rs"]
 pub mod wio;
-
-#[cfg(target_arch = "wasm32")]
-#[path = "executor/wasm_executor.rs"]
-pub mod executor;
 
 #[cfg(target_arch = "wasm32")] pub mod wasm;
 
@@ -125,7 +118,6 @@ pub mod executor;
 use backtrace::SymbolName;
 use chrono::Utc;
 pub use futures::compat::Future01CompatExt;
-use futures::future::{abortable, AbortHandle, FutureExt};
 use futures01::{future, Future};
 use http::header::CONTENT_TYPE;
 use http::Response;
@@ -146,7 +138,6 @@ use std::ptr::read_volatile;
 use std::sync::atomic::Ordering;
 use uuid::Uuid;
 
-use crate::executor::spawn;
 pub use http::StatusCode;
 pub use serde;
 
@@ -942,20 +933,6 @@ impl<Id> PagingOptionsEnum<Id> {
 
 impl<Id> Default for PagingOptionsEnum<Id> {
     fn default() -> Self { PagingOptionsEnum::PageNumber(NonZeroUsize::new(1).expect("1 > 0")) }
-}
-
-/// The AbortHandle that aborts on drop
-pub struct AbortOnDropHandle(AbortHandle);
-
-impl Drop for AbortOnDropHandle {
-    #[inline(always)]
-    fn drop(&mut self) { self.0.abort(); }
-}
-
-pub fn spawn_abortable(fut: impl Future03<Output = ()> + Send + 'static) -> AbortOnDropHandle {
-    let (abortable, handle) = abortable(fut);
-    spawn(abortable.then(|_| async {}));
-    AbortOnDropHandle(handle)
 }
 
 #[inline(always)]

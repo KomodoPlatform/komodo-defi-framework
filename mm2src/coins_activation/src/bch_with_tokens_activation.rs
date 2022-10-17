@@ -9,10 +9,8 @@ use coins::utxo::slp::{SlpProtocolConf, SlpToken};
 use coins::utxo::utxo_tx_history_v2::bch_and_slp_history_loop;
 use coins::utxo::UtxoCommonOps;
 use coins::{CoinBalance, CoinProtocol, MarketCoinOps, MmCoin, PrivKeyNotAllowed, UnexpectedDerivationMethod};
-use common::executor::spawn;
-use common::log::info;
+use common::executor::{AbortSettings, SpawnAbortable};
 use common::Future01CompatExt;
-use futures::future::{abortable, AbortHandle};
 use mm2_core::mm_ctx::MmArc;
 use mm2_err_handle::prelude::*;
 use mm2_metrics::MetricsArc;
@@ -273,19 +271,10 @@ impl PlatformWithTokensActivationOps for BchCoin {
         metrics: MetricsArc,
         storage: impl TxHistoryStorage + Send + 'static,
         initial_balance: BigDecimal,
-    ) -> AbortHandle {
-        let ticker = self.ticker().to_owned();
-        let (fut, abort_handle) = abortable(bch_and_slp_history_loop(
-            self.clone(),
-            storage,
-            metrics,
-            initial_balance,
-        ));
-        spawn(async move {
-            if let Err(e) = fut.await {
-                info!("bch_and_slp_history_loop stopped for {}, reason {}", ticker, e);
-            }
-        });
-        abort_handle
+    ) {
+        let fut = bch_and_slp_history_loop(self.clone(), storage, metrics, initial_balance);
+
+        let settings = AbortSettings::info_on_abort(format!("bch_and_slp_history_loop stopped for {}", self.ticker()));
+        self.spawner().spawn_with_settings(fut, settings);
     }
 }

@@ -16,6 +16,7 @@ use mm2_test_helpers::for_tests::{btc_with_spv_conf, check_my_swap_status, check
                                   MarketMakerIt, Mm2TestConf, RaiiDump, ETH_MAINNET_NODE, ETH_MAINNET_SWAP_CONTRACT,
                                   MAKER_ERROR_EVENTS, MAKER_SUCCESS_EVENTS, MORTY, RICK, TAKER_ERROR_EVENTS,
                                   TAKER_SUCCESS_EVENTS};
+use mm2_test_helpers::get_passphrase;
 use serde_json::{self as json, Value as Json};
 use std::collections::HashMap;
 use std::convert::{identity, TryFrom};
@@ -998,8 +999,6 @@ async fn trade_base_rel_electrum(
     taker_price: i32,
     volume: f64,
 ) {
-    use mm2_test_helpers::get_passphrase;
-
     let bob_passphrase = get_passphrase!(".env.seed", "BOB_PASSPHRASE").unwrap();
     let alice_passphrase = get_passphrase!(".env.client", "ALICE_PASSPHRASE").unwrap();
 
@@ -1249,8 +1248,22 @@ async fn trade_base_rel_electrum(
         assert_eq!(0, bob_orderbook.bids.len(), "{} {} bids must be empty", base, rel);
         assert_eq!(0, bob_orderbook.asks.len(), "{} {} asks must be empty", base, rel);
     }
-    mm_bob.stop().await.unwrap();
-    mm_alice.stop().await.unwrap();
+
+    #[cfg(target_arch = "wasm32")]
+    {
+        const STOP_TIMEOUT_MS: u64 = 1000;
+
+        mm_bob.stop_and_wait_for_ctx_is_dropped(STOP_TIMEOUT_MS).await.unwrap();
+        mm_alice
+            .stop_and_wait_for_ctx_is_dropped(STOP_TIMEOUT_MS)
+            .await
+            .unwrap();
+    }
+    #[cfg(not(target_arch = "wasm32"))]
+    {
+        mm_bob.stop().await.unwrap();
+        mm_alice.stop().await.unwrap();
+    }
 }
 
 #[test]
@@ -4711,6 +4724,8 @@ async fn test_qrc20_history_impl() {
 }
 
 #[test]
+// TODO unignore test.
+#[ignore]
 #[cfg(not(target_arch = "wasm32"))]
 fn test_get_raw_transaction() {
     let coins = json! ([
@@ -6816,8 +6831,6 @@ fn test_mm2_db_migration() {
 #[test]
 #[cfg(not(target_arch = "wasm32"))]
 fn test_get_current_mtp() {
-    use mm2_test_helpers::for_tests::Mm2TestConf;
-
     // KMD coin config used for this test
     let coins = json!([
         {"coin":"KMD","txversion":4,"overwintered":1,"txfee":10000,"protocol":{"type":"UTXO"}},
@@ -6825,7 +6838,7 @@ fn test_get_current_mtp() {
     let passphrase = "cMhHM3PMpMrChygR4bLF7QsTdenhWpFrrmf2UezBG3eeFsz41rtL";
 
     let conf = Mm2TestConf::seednode(&passphrase, &coins);
-    let mm = MarketMakerIt::start(conf.conf, conf.rpc_password, conf.local).unwrap();
+    let mm = MarketMakerIt::start(conf.conf, conf.rpc_password, None).unwrap();
     let (_dump_log, _dump_dashboard) = mm.mm_dump();
 
     let electrum = block_on(enable_electrum(&mm, "KMD", false, &[
@@ -7434,13 +7447,12 @@ fn test_no_login() {
     let coins = json!([rick_conf(), morty_conf()]);
     let seednode_passphrase = get_passphrase(&".env.seed", "BOB_PASSPHRASE").unwrap();
     let seednode_conf = Mm2TestConf::seednode(&seednode_passphrase, &coins);
-    let seednode = MarketMakerIt::start(seednode_conf.conf, seednode_conf.rpc_password, seednode_conf.local).unwrap();
+    let seednode = MarketMakerIt::start(seednode_conf.conf, seednode_conf.rpc_password, None).unwrap();
     let (_dump_log, _dump_dashboard) = seednode.mm_dump();
     log!("log path: {}", seednode.log_path.display());
 
     let no_login_conf = Mm2TestConf::no_login_node(&coins, &[&seednode.ip.to_string()]);
-    let no_login_node =
-        MarketMakerIt::start(no_login_conf.conf, no_login_conf.rpc_password, no_login_conf.local).unwrap();
+    let no_login_node = MarketMakerIt::start(no_login_conf.conf, no_login_conf.rpc_password, None).unwrap();
     let (_dump_log, _dump_dashboard) = no_login_node.mm_dump();
     log!("log path: {}", no_login_node.log_path.display());
 
@@ -7565,7 +7577,7 @@ fn test_gui_storage_accounts_functionality() {
     let passphrase = "test_gui_storage passphrase";
 
     let conf = Mm2TestConf::seednode(passphrase, &json!([]));
-    let mm = block_on(MarketMakerIt::start_async(conf.conf, conf.rpc_password, conf.local)).unwrap();
+    let mm = block_on(MarketMakerIt::start_async(conf.conf, conf.rpc_password, None)).unwrap();
     let (_bob_dump_log, _bob_dump_dashboard) = mm.mm_dump();
     log!("Log path: {}", mm.log_path.display());
 
@@ -7709,7 +7721,7 @@ fn test_gui_storage_coins_functionality() {
     let passphrase = "test_gui_storage passphrase";
 
     let conf = Mm2TestConf::seednode(passphrase, &json!([]));
-    let mm = block_on(MarketMakerIt::start_async(conf.conf, conf.rpc_password, conf.local)).unwrap();
+    let mm = block_on(MarketMakerIt::start_async(conf.conf, conf.rpc_password, None)).unwrap();
     let (_bob_dump_log, _bob_dump_dashboard) = mm.mm_dump();
     log!("Log path: {}", mm.log_path.display());
 
@@ -7889,4 +7901,135 @@ fn test_tbtc_block_header_sync() {
     log!("enable UTXO bob {:?}", utxo_bob);
 
     block_on(mm_bob.stop()).unwrap();
+}
+
+/// This function runs Alice and Bob nodes, activates coins, starts swaps,
+/// and then immediately stops the nodes to check if `MmArc` is dropped in a short period.
+#[cfg(target_arch = "wasm32")]
+async fn test_mm2_stops_impl(
+    pairs: &[(&'static str, &'static str)],
+    maker_price: i32,
+    taker_price: i32,
+    volume: f64,
+    stop_timeout_ms: u64,
+) {
+    let coins = json! ([
+        {"coin":"RICK","asset":"RICK","required_confirmations":0,"txversion":4,"overwintered":1,"protocol":{"type":"UTXO"},"tx_history":true},
+        {"coin":"MORTY","asset":"MORTY","required_confirmations":0,"txversion":4,"overwintered":1,"protocol":{"type":"UTXO"},"tx_history":true},
+        {"coin":"ETH","name":"ethereum","protocol":{"type":"ETH"}},
+        {"coin":"JST","name":"jst","protocol":{"type":"ERC20","protocol_data":{"platform":"ETH","contract_address":"0x2b294F029Fde858b2c62184e8390591755521d8E"}}},
+    ]);
+
+    let bob_passphrase = get_passphrase!(".env.seed", "BOB_PASSPHRASE").unwrap();
+    let alice_passphrase = get_passphrase!(".env.client", "ALICE_PASSPHRASE").unwrap();
+
+    let bob_conf = Mm2TestConf::seednode(&bob_passphrase, &coins);
+    let mut mm_bob = MarketMakerIt::start_async(bob_conf.conf, bob_conf.rpc_password, local_start!("bob"))
+        .await
+        .unwrap();
+    let (_bob_dump_log, _bob_dump_dashboard) = mm_bob.mm_dump();
+    #[cfg(not(target_arch = "wasm32"))]
+    {
+        log!("Bob log path: {}", mm_bob.log_path.display())
+    }
+
+    Timer::sleep(1.).await;
+
+    let alice_conf = Mm2TestConf::light_node(&alice_passphrase, &coins, &[&mm_bob.my_seed_addr()]);
+    let mut mm_alice = MarketMakerIt::start_async(alice_conf.conf, alice_conf.rpc_password, local_start!("alice"))
+        .await
+        .unwrap();
+    let (_alice_dump_log, _alice_dump_dashboard) = mm_alice.mm_dump();
+
+    // Enable coins on Bob side. Print the replies in case we need the address.
+    let rc = enable_coins_eth_electrum(&mm_bob, &["http://195.201.0.6:8565"]).await;
+    log!("enable_coins (bob): {:?}", rc);
+
+    // Enable coins on Alice side. Print the replies in case we need the address.
+    let rc = enable_coins_eth_electrum(&mm_alice, &["http://195.201.0.6:8565"]).await;
+    log!("enable_coins (alice): {:?}", rc);
+
+    let mut uuids = vec![];
+
+    // issue sell request on Bob side by setting base/rel price
+    for (base, rel) in pairs.iter() {
+        log!("Issue bob {}/{} sell request", base, rel);
+        let rc = mm_bob
+            .rpc(&json! ({
+                "userpass": mm_bob.userpass,
+                "method": "setprice",
+                "base": base,
+                "rel": rel,
+                "price": maker_price,
+                "volume": volume
+            }))
+            .await
+            .unwrap();
+        assert!(rc.0.is_success(), "!setprice: {}", rc.1);
+    }
+
+    for (base, rel) in pairs.iter() {
+        common::log::info!(
+            "Trigger alice subscription to {}/{} orderbook topic first and sleep for 1 second",
+            base,
+            rel
+        );
+        let rc = mm_alice
+            .rpc(&json! ({
+                "userpass": mm_alice.userpass,
+                "method": "orderbook",
+                "base": base,
+                "rel": rel,
+            }))
+            .await
+            .unwrap();
+        assert!(rc.0.is_success(), "!orderbook: {}", rc.1);
+        Timer::sleep(1.).await;
+        common::log::info!("Issue alice {}/{} buy request", base, rel);
+        let rc = mm_alice
+            .rpc(&json! ({
+                "userpass": mm_alice.userpass,
+                "method": "buy",
+                "base": base,
+                "rel": rel,
+                "volume": volume,
+                "price": taker_price
+            }))
+            .await
+            .unwrap();
+        assert!(rc.0.is_success(), "!buy: {}", rc.1);
+        let buy_json: Json = serde_json::from_str(&rc.1).unwrap();
+        uuids.push(buy_json["result"]["uuid"].as_str().unwrap().to_owned());
+    }
+
+    for (base, rel) in pairs.iter() {
+        // ensure the swaps are started
+        let expected_log = format!("Entering the taker_swap_loop {}/{}", base, rel);
+        mm_alice
+            .wait_for_log(5., |log| log.contains(&expected_log))
+            .await
+            .unwrap();
+        let expected_log = format!("Entering the maker_swap_loop {}/{}", base, rel);
+        mm_bob
+            .wait_for_log(5., |log| log.contains(&expected_log))
+            .await
+            .unwrap()
+    }
+
+    mm_alice
+        .stop_and_wait_for_ctx_is_dropped(stop_timeout_ms)
+        .await
+        .unwrap();
+    mm_bob.stop_and_wait_for_ctx_is_dropped(stop_timeout_ms).await.unwrap();
+}
+
+#[wasm_bindgen_test]
+#[cfg(target_arch = "wasm32")]
+async fn test_mm2_stops_immediately() {
+    const STOP_TIMEOUT_MS: u64 = 1000;
+
+    common::log::wasm_log::register_wasm_log();
+
+    let pairs: &[_] = &[("RICK", "MORTY")];
+    test_mm2_stops_impl(pairs, 1, 1, 0.0001, STOP_TIMEOUT_MS).await;
 }
