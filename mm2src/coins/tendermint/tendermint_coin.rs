@@ -29,6 +29,7 @@ use cosmrs::proto::cosmos::base::tendermint::v1beta1::{GetBlockByHeightRequest, 
 use cosmrs::proto::cosmos::base::v1beta1::Coin as CoinProto;
 use cosmrs::proto::cosmos::tx::v1beta1::{GetTxRequest, GetTxResponse, GetTxsEventRequest, GetTxsEventResponse,
                                          SimulateRequest, SimulateResponse, Tx, TxBody, TxRaw};
+use cosmrs::tendermint::block::Height;
 use cosmrs::tendermint::chain::Id as ChainId;
 use cosmrs::tx::{self, Fee, Msg, Raw, SignDoc, SignerInfo};
 use cosmrs::{AccountId, Any, Coin, Denom, ErrorReport};
@@ -63,6 +64,10 @@ const ABCI_QUERY_BALANCE_PATH: &str = "/cosmos.bank.v1beta1.Query/Balance";
 const ABCI_GET_TX_PATH: &str = "/cosmos.tx.v1beta1.Service/GetTx";
 const ABCI_QUERY_HTLC_PATH: &str = "/irismod.htlc.Query/HTLC";
 const ABCI_GET_TXS_EVENT_PATH: &str = "/cosmos.tx.v1beta1.Service/GetTxsEvent";
+
+// ABCI Request Defaults
+const ABCI_REQUEST_HEIGHT: Option<Height> = None;
+const ABCI_REQUEST_PROVE: bool = false;
 
 /// 0.25 is good average gas price on atom and iris
 const DEFAULT_GAS_PRICE: f64 = 0.25;
@@ -336,7 +341,12 @@ impl TendermintCoin {
         let path = AbciPath::from_str(ABCI_GET_LATEST_BLOCK_PATH).expect("valid path");
 
         let request = GetLatestBlockRequest {};
-        let request = AbciRequest::new(Some(path), request.encode_to_vec(), None, false);
+        let request = AbciRequest::new(
+            Some(path),
+            request.encode_to_vec(),
+            ABCI_REQUEST_HEIGHT,
+            ABCI_REQUEST_PROVE,
+        );
 
         let response = self.rpc_client().await?.perform(request).await?;
 
@@ -348,7 +358,12 @@ impl TendermintCoin {
         let path = AbciPath::from_str(ABCI_GET_BLOCK_BY_HEIGHT_PATH).expect("valid path");
 
         let request = GetBlockByHeightRequest { height };
-        let request = AbciRequest::new(Some(path), request.encode_to_vec(), None, false);
+        let request = AbciRequest::new(
+            Some(path),
+            request.encode_to_vec(),
+            ABCI_REQUEST_HEIGHT,
+            ABCI_REQUEST_PROVE,
+        );
 
         let response = self.rpc_client().await?.perform(request).await?;
 
@@ -387,7 +402,12 @@ impl TendermintCoin {
     ) -> MmResult<Fee, TendermintCoinRpcError> {
         let path = AbciPath::from_str(ABCI_SIMULATE_TX_PATH).expect("valid path");
         let request = SimulateRequest { tx_bytes, tx: None };
-        let request = AbciRequest::new(Some(path), request.encode_to_vec(), None, false);
+        let request = AbciRequest::new(
+            Some(path),
+            request.encode_to_vec(),
+            ABCI_REQUEST_HEIGHT,
+            ABCI_REQUEST_PROVE,
+        );
 
         let response = self.rpc_client().await?.perform(request).await?;
         let response = SimulateResponse::decode(response.response.value.as_slice())?;
@@ -407,7 +427,12 @@ impl TendermintCoin {
     pub(super) async fn calculate_fee_amount_as_u64(&self, tx_bytes: Vec<u8>) -> MmResult<u64, TendermintCoinRpcError> {
         let path = AbciPath::from_str(ABCI_SIMULATE_TX_PATH).expect("valid path");
         let request = SimulateRequest { tx_bytes, tx: None };
-        let request = AbciRequest::new(Some(path), request.encode_to_vec(), None, false);
+        let request = AbciRequest::new(
+            Some(path),
+            request.encode_to_vec(),
+            ABCI_REQUEST_HEIGHT,
+            ABCI_REQUEST_PROVE,
+        );
 
         let response = self.rpc_client().await?.perform(request).await?;
         let response = SimulateResponse::decode(response.response.value.as_slice())?;
@@ -421,7 +446,12 @@ impl TendermintCoin {
         let request = QueryAccountRequest {
             address: self.account_id.to_string(),
         };
-        let request = AbciRequest::new(Some(path), request.encode_to_vec(), None, false);
+        let request = AbciRequest::new(
+            Some(path),
+            request.encode_to_vec(),
+            ABCI_REQUEST_HEIGHT,
+            ABCI_REQUEST_PROVE,
+        );
 
         let response = self.rpc_client().await?.perform(request).await?;
         let account_response = QueryAccountResponse::decode(response.response.value.as_slice())?;
@@ -437,7 +467,12 @@ impl TendermintCoin {
             address: self.account_id.to_string(),
             denom,
         };
-        let request = AbciRequest::new(Some(path), request.encode_to_vec(), None, false);
+        let request = AbciRequest::new(
+            Some(path),
+            request.encode_to_vec(),
+            ABCI_REQUEST_HEIGHT,
+            ABCI_REQUEST_PROVE,
+        );
 
         let response = self.rpc_client().await?.perform(request).await?;
         let response = QueryBalanceResponse::decode(response.response.value.as_slice())?;
@@ -865,7 +900,12 @@ impl TendermintCoin {
         let response = self
             .rpc_client()
             .await?
-            .abci_query(Some(path), request.encode_to_vec(), None, false)
+            .abci_query(
+                Some(path),
+                request.encode_to_vec(),
+                ABCI_REQUEST_HEIGHT,
+                ABCI_REQUEST_PROVE,
+            )
             .await?;
 
         let response = GetTxResponse::decode(response.value.as_slice())?;
@@ -880,7 +920,12 @@ impl TendermintCoin {
         let response = self
             .rpc_client()
             .await?
-            .abci_query(Some(path), request.encode_to_vec(), None, false)
+            .abci_query(
+                Some(path),
+                request.encode_to_vec(),
+                ABCI_REQUEST_HEIGHT,
+                ABCI_REQUEST_PROVE,
+            )
             .await?;
 
         Ok(QueryHtlcResponseProto::decode(response.value.as_slice())?)
@@ -1248,7 +1293,12 @@ impl MarketCoinOps for TendermintCoin {
             loop {
                 let response = try_tx_s!(
                     try_tx_s!(coin.rpc_client().await)
-                        .abci_query(Some(path.clone()), encoded_request.as_slice(), None, false)
+                        .abci_query(
+                            Some(path.clone()),
+                            encoded_request.as_slice(),
+                            ABCI_REQUEST_HEIGHT,
+                            ABCI_REQUEST_PROVE
+                        )
                         .await
                 );
                 let response = try_tx_s!(GetTxsEventResponse::decode(response.value.as_slice()));
@@ -1850,8 +1900,8 @@ pub mod tendermint_coin_tests {
         let response = block_on(block_on(coin.rpc_client()).unwrap().abci_query(
             Some(path),
             request.encode_to_vec(),
-            None,
-            false,
+            ABCI_REQUEST_HEIGHT,
+            ABCI_REQUEST_PROVE,
         ))
         .unwrap();
         println!("{:?}", response);
@@ -1902,8 +1952,8 @@ pub mod tendermint_coin_tests {
         let response = block_on(block_on(coin.rpc_client()).unwrap().abci_query(
             Some(path),
             request.encode_to_vec(),
-            None,
-            false,
+            ABCI_REQUEST_HEIGHT,
+            ABCI_REQUEST_PROVE,
         ))
         .unwrap();
         println!("{:?}", response);
