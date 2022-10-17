@@ -1,7 +1,7 @@
-use super::{broadcast_p2p_tx_msg, lp_coinfind, tx_helper_topic, H256Json, MmCoinEnum, SwapsContext,
-            TransactionIdentifier, WAIT_CONFIRM_INTERVAL};
+use super::{broadcast_p2p_tx_msg, lp_coinfind, tx_helper_topic, H256Json, SwapsContext, TransactionIdentifier,
+            WAIT_CONFIRM_INTERVAL};
 use async_trait::async_trait;
-use coins::{CanRefundHtlc, FoundSwapTxSpend, WatcherSearchForSwapTxSpendInput, WatcherValidatePaymentInput};
+use coins::{CanRefundHtlc, FoundSwapTxSpend, MmCoinEnum, WatcherSearchForSwapTxSpendInput, WatcherValidatePaymentInput};
 use common::executor::{AbortSettings, SpawnAbortable, Timer};
 use common::log::{error, info};
 use common::state_machine::prelude::*;
@@ -459,9 +459,9 @@ enum WatcherType {
     Taker,
 }
 
-/// The `SwapWatcherLock` is used to lock the given `uuid` as the running Swap Watcher,
-/// (i.e. insert `uuid` into either [`SwapsContext::taker_swap_watchers`] or [`SwapsContext::maker_swap_watchers`]),
-/// and to unlock it (i.e remove `uuid` from corresponding watcher collection) once `SwapWatcherLock` is dropped.
+/// The `SwapWatcherLock` is used to lock the given taker fee hash as the running Swap Watcher,
+/// (i.e. insert the fee hash into either [`SwapsContext::taker_swap_watchers`] or [`SwapsContext::maker_swap_watchers`]),
+/// and to unlock it (i.e remove the hash from corresponding watcher collection) once `SwapWatcherLock` is dropped.
 struct SwapWatcherLock {
     swap_ctx: Arc<SwapsContext>,
     fee_hash: Vec<u8>,
@@ -503,7 +503,6 @@ fn spawn_taker_swap_watcher(ctx: MmArc, watcher_data: TakerSwapWatcherData, veri
     if swap_ctx.swap_msgs.lock().unwrap().contains_key(&watcher_data.uuid) {
         return;
     }
-
     let taker_watcher_lock = match SwapWatcherLock::lock_taker(swap_ctx, watcher_data.taker_fee_hash.clone()) {
         Some(lock) => lock,
         // There is an ongoing Taker Swap Watcher already.
@@ -511,8 +510,8 @@ fn spawn_taker_swap_watcher(ctx: MmArc, watcher_data: TakerSwapWatcherData, veri
     };
 
     let spawner = ctx.spawner();
+    let fee_hash = H256Json::from(&watcher_data.taker_fee_hash[..]);
 
-    let uuid = watcher_data.uuid;
     let fut = async move {
         let taker_coin = match lp_coinfind(&ctx, &watcher_data.taker_coin).await {
             Ok(Some(c)) => c,
@@ -541,14 +540,14 @@ fn spawn_taker_swap_watcher(ctx: MmArc, watcher_data: TakerSwapWatcherData, veri
         log_tag!(
             ctx,
             "";
-            fmt = "Entering the watcher_swap_loop {}/{} with uuid: {}",
+            fmt = "Entering the taker swap watcher loop {}/{} with taker fee hash: {}",
             maker_coin.ticker(),
             taker_coin.ticker(),
-            uuid
+            fee_hash
         );
 
         let watcher_ctx = WatcherContext {
-            ctx: ctx.clone(),
+            ctx,
             maker_coin,
             taker_coin,
             data: watcher_data,
@@ -562,7 +561,7 @@ fn spawn_taker_swap_watcher(ctx: MmArc, watcher_data: TakerSwapWatcherData, veri
         drop(taker_watcher_lock);
     };
 
-    let settings = AbortSettings::info_on_abort(format!("watcher swap {uuid} stopped!"));
+    let settings = AbortSettings::info_on_abort(format!("taker swap watcher {fee_hash} stopped!"));
     // Please note that `taker_watcher_lock` will be dropped once `MmCtx` is stopped
     // since this `fut` will be aborted.
     spawner.spawn_with_settings(fut, settings);
