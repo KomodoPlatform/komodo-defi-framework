@@ -43,7 +43,7 @@ use keys::KeyPair;
 use mm2_core::mm_ctx::MmArc;
 use mm2_err_handle::prelude::*;
 use mm2_number::MmNumber;
-use parking_lot::Mutex;
+use parking_lot::Mutex as PaMutex;
 use prost::{DecodeError, Message};
 use rpc::v1::types::Bytes as BytesJson;
 use serde_json::Value as Json;
@@ -117,7 +117,7 @@ pub struct TendermintCoinImpl {
     chain_id: ChainId,
     gas_price: Option<f64>,
     pub(super) sequence_lock: AsyncMutex<()>,
-    tokens_info: Mutex<HashMap<String, ActivatedTokenInfo>>,
+    tokens_info: PaMutex<HashMap<String, ActivatedTokenInfo>>,
 }
 
 #[derive(Clone)]
@@ -302,7 +302,7 @@ impl TendermintCoin {
             gas_price: protocol_info.gas_price,
             avg_block_time,
             sequence_lock: AsyncMutex::new(()),
-            tokens_info: Mutex::new(HashMap::new()),
+            tokens_info: PaMutex::new(HashMap::new()),
         })))
     }
 
@@ -313,18 +313,12 @@ impl TendermintCoin {
     async fn rpc_client(&self) -> MmResult<HttpClient, TendermintCoinRpcError> {
         for rpc_client in self.rpc_clients.iter() {
             match rpc_client.perform(HealthRequest).timeout(Duration::from_secs(3)).await {
-                Ok(res) => match res {
-                    Ok(_) => return Ok(rpc_client.clone()),
-                    Err(e) => {
-                        log::warn!(
-                            "Recieved error from Tendermint rpc node during health check. Error: {:?}",
-                            e
-                        );
-                    },
-                },
-                Err(_) => {
-                    log::warn!("Tendermint rpc node: {:?} got timeout during health check", rpc_client);
-                },
+                Ok(Ok(_)) => return Ok(rpc_client.clone()),
+                Ok(Err(e)) => log::warn!(
+                    "Recieved error from Tendermint rpc node during health check. Error: {:?}",
+                    e
+                ),
+                Err(_) => log::warn!("Tendermint rpc node: {:?} got timeout during health check", rpc_client),
             };
         }
 

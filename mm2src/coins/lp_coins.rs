@@ -212,7 +212,8 @@ use rpc_command::{init_account_balance::{AccountBalanceTaskManager, AccountBalan
                   init_withdraw::{WithdrawTaskManager, WithdrawTaskManagerShared}};
 
 pub mod tendermint;
-use tendermint::{CosmosTransaction, TendermintCoin, TendermintFeeDetails, TendermintProtocolInfo, TendermintToken};
+use tendermint::{CosmosTransaction, TendermintCoin, TendermintFeeDetails, TendermintProtocolInfo, TendermintToken,
+                 TendermintTokenProtocolInfo};
 
 #[doc(hidden)]
 #[allow(unused_variables)]
@@ -243,7 +244,6 @@ use utxo::UtxoActivationParams;
 use utxo::{BlockchainNetwork, GenerateTxError, UtxoFeeDetails, UtxoTx};
 
 #[cfg(not(target_arch = "wasm32"))] pub mod z_coin;
-use crate::tendermint::TendermintTokenProtocolInfo;
 #[cfg(not(target_arch = "wasm32"))] use z_coin::ZCoin;
 
 pub type BalanceResult<T> = Result<T, MmError<BalanceError>>;
