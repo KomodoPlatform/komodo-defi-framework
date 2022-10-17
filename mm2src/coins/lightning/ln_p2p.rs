@@ -1,5 +1,5 @@
 use super::*;
-use common::executor::{spawn, Timer};
+use common::executor::{spawn_abortable, Timer};
 use common::log::LogState;
 use derive_more::Display;
 use lightning::chain::Access;
@@ -144,6 +144,10 @@ pub async fn ln_node_announcement_loop(
 }
 
 async fn ln_p2p_loop(peer_manager: Arc<PeerManager>, listener: TcpListener) {
+    // This container consists of abort handlers of the spawned inbound connections.
+    // They will be dropped once `LightningCoin` is dropped because `ln_p2p_loop` is spawned
+    // via [`Platform::abortable_system`].
+    let mut spawned = Vec::new();
     loop {
         let peer_mgr = peer_manager.clone();
         let tcp_stream = match listener.accept().await {
@@ -157,15 +161,16 @@ async fn ln_p2p_loop(peer_manager: Arc<PeerManager>, listener: TcpListener) {
             },
         };
         if let Ok(stream) = tcp_stream.into_std() {
-            spawn(async move {
+            spawned.push(spawn_abortable(async move {
                 lightning_net_tokio::setup_inbound(peer_mgr.clone(), stream).await;
-            });
+            }));
         };
     }
 }
 
 pub async fn init_peer_manager(
     ctx: MmArc,
+    platform: &Arc<Platform>,
     listening_port: u16,
     channel_manager: Arc<ChannelManager>,
     gossip_sync: Arc<NetworkGossip>,
@@ -198,7 +203,6 @@ pub async fn init_peer_manager(
     ));
 
     // Initialize p2p networking
-    spawn(ln_p2p_loop(peer_manager.clone(), listener));
-
+    platform.spawner().spawn(ln_p2p_loop(peer_manager.clone(), listener));
     Ok(peer_manager)
 }

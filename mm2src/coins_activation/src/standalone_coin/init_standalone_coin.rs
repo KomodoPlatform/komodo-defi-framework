@@ -9,7 +9,6 @@ use coins::tx_history_storage::{CreateTxHistoryStorageError, TxHistoryStorageBui
 use coins::{disable_coin, lp_coinfind, lp_register_coin, MmCoinEnum, RegisterCoinError, RegisterCoinParams};
 use common::{log, SuccessResponse};
 use crypto::trezor::trezor_rpc_task::RpcTaskHandle;
-use futures::future::AbortHandle;
 use mm2_core::mm_ctx::MmArc;
 use mm2_err_handle::prelude::*;
 use mm2_metrics::MetricsArc;
@@ -75,7 +74,7 @@ pub trait InitStandaloneCoinActivationOps: Into<MmCoinEnum> + Send + Sync + 'sta
         metrics: MetricsArc,
         storage: impl TxHistoryStorage,
         current_balances: HashMap<String, BigDecimal>,
-    ) -> Option<AbortHandle>;
+    );
 }
 
 pub async fn init_standalone_coin<Standalone>(
@@ -95,6 +94,7 @@ where
     let (coin_conf, protocol_info) = coin_conf_with_protocol(&ctx, &request.ticker)?;
 
     let coins_act_ctx = CoinsActivationContext::from_ctx(&ctx).map_to_mm(InitStandaloneCoinError::Internal)?;
+    let spawner = ctx.spawner();
     let task = InitStandaloneCoinTask::<Standalone> {
         ctx,
         request,
@@ -103,7 +103,7 @@ where
     };
     let task_manager = Standalone::rpc_task_manager(&coins_act_ctx);
 
-    let task_id = RpcTaskManager::spawn_rpc_task(task_manager, task)
+    let task_id = RpcTaskManager::spawn_rpc_task(task_manager, &spawner, task)
         .mm_err(|e| InitStandaloneCoinError::Internal(e.to_string()))?;
 
     Ok(InitStandaloneCoinResponse { task_id })
@@ -206,13 +206,11 @@ where
         let tx_history = self.request.activation_params.tx_history();
         if tx_history {
             let current_balances = result.get_addresses_balances();
-            if let Some(abort_handle) = coin.start_history_background_fetching(
+            coin.start_history_background_fetching(
                 self.ctx.metrics.clone(),
                 TxHistoryStorageBuilder::new(&self.ctx).build()?,
                 current_balances,
-            ) {
-                self.ctx.abort_handlers.lock().unwrap().push(abort_handle);
-            }
+            );
         }
 
         lp_register_coin(&self.ctx, coin.into(), RegisterCoinParams { ticker }).await?;

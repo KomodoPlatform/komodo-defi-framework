@@ -16,7 +16,13 @@ pub async fn electrum_client_for_test(servers: &[&str]) -> ElectrumClient {
     let block_headers_storage = BlockHeaderStorage {
         inner: Box::new(IndexedDBBlockHeadersStorage {}),
     };
-    let client = ElectrumClientImpl::new(TEST_COIN_NAME.into(), Default::default(), block_headers_storage);
+    let abortable_system = AbortableQueue::default();
+    let client = ElectrumClientImpl::new(
+        TEST_COIN_NAME.into(),
+        Default::default(),
+        block_headers_storage,
+        abortable_system,
+    );
     for server in servers {
         client
             .add_server(&ElectrumRpcRequest {

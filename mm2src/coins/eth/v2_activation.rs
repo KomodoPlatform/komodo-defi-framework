@@ -91,6 +91,10 @@ impl EthCoin {
             .unwrap_or_else(|| conf["required_confirmations"].as_u64().unwrap_or(1))
             .into();
 
+        // Create an abortable system linked to the `MmCtx` so if the app is stopped on `MmArc::stop`,
+        // all spawned futures related to `ERC20` coin will be aborted as well.
+        let abortable_system = ctx.abortable_system.create_subsystem();
+
         let token = EthCoinImpl {
             key_pair: self.key_pair.clone(),
             my_address: self.my_address,
@@ -115,6 +119,7 @@ impl EthCoin {
             logs_block_range: self.logs_block_range,
             nonce_lock: self.nonce_lock.clone(),
             erc20_tokens_infos: Default::default(),
+            abortable_system,
         };
 
         Ok(EthCoin(Arc::new(token)))
@@ -227,6 +232,10 @@ pub async fn eth_coin_from_conf_and_request_v2(
     let mut map = NONCE_LOCK.lock().unwrap();
     let nonce_lock = map.entry(ticker.to_string()).or_insert_with(new_nonce_lock).clone();
 
+    // Create an abortable system linked to the `MmCtx` so if the app is stopped on `MmArc::stop`,
+    // all spawned futures related to `ETH` coin will be aborted as well.
+    let abortable_system = ctx.abortable_system.create_subsystem();
+
     let coin = EthCoinImpl {
         key_pair: key_pair.clone(),
         my_address: key_pair.address(),
@@ -248,6 +257,7 @@ pub async fn eth_coin_from_conf_and_request_v2(
         logs_block_range: conf["logs_block_range"].as_u64().unwrap_or(DEFAULT_LOGS_BLOCK_RANGE),
         nonce_lock,
         erc20_tokens_infos: Default::default(),
+        abortable_system,
     };
 
     Ok(EthCoin(Arc::new(coin)))

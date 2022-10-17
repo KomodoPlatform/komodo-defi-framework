@@ -1,9 +1,10 @@
 use arrayref::array_ref;
-#[cfg(any(not(target_arch = "wasm32"), feature = "track-ctx-pointer"))]
+#[cfg(feature = "track-ctx-pointer")]
 use common::executor::Timer;
+use common::executor::{abortable_queue::{AbortableQueue, WeakSpawner},
+                       graceful_shutdown, AbortSettings, AbortableSystem, SpawnAbortable, SpawnFuture};
 use common::log::{self, LogLevel, LogState};
 use common::{bits256, cfg_native, cfg_wasm32, small_rng};
-use futures::future::AbortHandle;
 use gstuff::{try_s, Constructible, ERR, ERRL};
 use keys::KeyPair;
 use lazy_static::lazy_static;
@@ -18,6 +19,7 @@ use std::any::Any;
 use std::collections::hash_map::{Entry, HashMap};
 use std::collections::HashSet;
 use std::fmt;
+use std::future::Future;
 use std::ops::Deref;
 use std::path::{Path, PathBuf};
 use std::sync::{Arc, Mutex};
@@ -38,8 +40,6 @@ cfg_native! {
 
 /// Default interval to export and record metrics to log.
 const EXPORT_METRICS_INTERVAL: f64 = 5. * 60.;
-
-type StopListenerCallback = Box<dyn FnMut() -> Result<(), String>>;
 
 /// MarketMaker state, shared between the various MarketMaker threads.
 ///
@@ -80,8 +80,6 @@ pub struct MmCtx {
     /// Unique context identifier, allowing us to more easily pass the context through the FFI boundaries.  
     /// 0 if the handler ID is allocated yet.
     pub ffi_handle: Constructible<u32>,
-    /// Callbacks to invoke from `fn stop`.
-    pub stop_listeners: Mutex<Vec<StopListenerCallback>>,
     /// The context belonging to the `ordermatch` mod: `OrdermatchContext`.
     pub ordermatch_ctx: Mutex<Option<Arc<dyn Any + 'static + Send + Sync>>>,
     pub rate_limit_ctx: Mutex<Option<Arc<dyn Any + 'static + Send + Sync>>>,
@@ -118,7 +116,13 @@ pub struct MmCtx {
     pub sqlite_connection: Constructible<Arc<Mutex<Connection>>>,
     pub mm_version: String,
     pub mm_init_ctx: Mutex<Option<Arc<dyn Any + 'static + Send + Sync>>>,
-    pub abort_handlers: Mutex<Vec<AbortHandle>>,
+    /// The abortable system is pinned to the `MmCtx` context.
+    /// It's used to spawn futures that can be aborted immediately or after a timeout
+    /// on the [`MmArc::stop`] function call.
+    pub abortable_system: AbortableQueue,
+    /// The abortable system is pinned to the `MmCtx` context.
+    /// It's used to register listeners that will wait for graceful shutdown.
+    pub graceful_shutdown_registry: graceful_shutdown::GracefulShutdownRegistry,
     #[cfg(target_arch = "wasm32")]
     pub db_namespace: DbNamespaceId,
 }
@@ -133,7 +137,6 @@ impl MmCtx {
             rpc_started: Constructible::default(),
             stop: Constructible::default(),
             ffi_handle: Constructible::default(),
-            stop_listeners: Mutex::new(Vec::new()),
             ordermatch_ctx: Mutex::new(None),
             rate_limit_ctx: Mutex::new(None),
             simple_market_maker_bot_ctx: Mutex::new(None),
@@ -158,7 +161,8 @@ impl MmCtx {
             sqlite_connection: Constructible::default(),
             mm_version: "".into(),
             mm_init_ctx: Mutex::new(None),
-            abort_handlers: Mutex::new(Vec::new()),
+            abortable_system: AbortableQueue::default(),
+            graceful_shutdown_registry: graceful_shutdown::GracefulShutdownRegistry::default(),
             #[cfg(target_arch = "wasm32")]
             db_namespace: DbNamespaceId::Main,
         }
@@ -229,21 +233,11 @@ impl MmCtx {
 
     pub fn p2p_in_memory_port(&self) -> Option<u64> { self.conf["p2p_in_memory_port"].as_u64() }
 
+    /// Returns the cloneable `MmFutSpawner`.
+    pub fn spawner(&self) -> MmFutSpawner { MmFutSpawner::new(&self.abortable_system) }
+
     /// True if the MarketMaker instance needs to stop.
     pub fn is_stopping(&self) -> bool { self.stop.copy_or(false) }
-
-    /// Register a callback to be invoked when the MM receives the "stop" request.  
-    /// The callback is invoked immediately if the MM is stopped already.
-    pub fn on_stop(&self, mut cb: Box<dyn FnMut() -> Result<(), String>>) {
-        let mut stop_listeners = self.stop_listeners.lock().expect("Can't lock stop_listeners");
-        if self.stop.copy_or(false) {
-            if let Err(err) = cb() {
-                log::error!("MmCtx::on_stop] Listener error: {}", err)
-            }
-        } else {
-            stop_listeners.push(cb)
-        }
-    }
 
     /// Get a reference to the secp256k1 key pair.
     /// Panics if the key pair is not available.
@@ -393,22 +387,14 @@ impl MmArc {
 
     pub fn stop(&self) -> Result<(), String> {
         try_s!(self.stop.pin(true));
-        for handler in self.abort_handlers.lock().unwrap().drain(..) {
-            handler.abort();
-        }
+
+        // Notify shutdown listeners.
+        self.graceful_shutdown_registry.abort_all();
+        // Abort spawned futures.
+        self.abortable_system.abort_all();
 
         #[cfg(not(target_arch = "wasm32"))]
         self.background_processors.lock().unwrap().drain();
-
-        let mut stop_listeners = self.stop_listeners.lock().expect("Can't lock stop_listeners");
-        // NB: It is important that we `drain` the `stop_listeners` rather than simply iterating over them
-        // because otherwise there might be reference counting instances remaining in a listener
-        // that would prevent the contexts from properly `Drop`ping.
-        for mut listener in stop_listeners.drain(..) {
-            if let Err(err) = listener() {
-                log::error!("MmCtx::stop] Listener error: {}", err)
-            }
-        }
 
         #[cfg(feature = "track-ctx-pointer")]
         self.track_ctx_pointer();
@@ -432,7 +418,7 @@ impl MmArc {
                 }
             }
         };
-        crate::executor::spawn(fut);
+        self.spawner().spawn(fut);
     }
 
     #[cfg(feature = "track-ctx-pointer")]
@@ -500,7 +486,9 @@ impl MmArc {
         if interval == 0.0 {
             self.metrics.init();
         } else {
-            try_s!(self.metrics.init_with_dashboard(self.log.weak(), interval));
+            try_s!(self
+                .metrics
+                .init_with_dashboard(&self.spawner(), self.log.weak(), interval));
         }
 
         #[cfg(not(target_arch = "wasm32"))]
@@ -527,16 +515,46 @@ impl MmArc {
                     userpass: userpass.into(),
                 });
 
-        let ctx = self.weak();
-
-        // Make the callback. When the context will be dropped, the shutdown_detector will be executed.
-        let shutdown_detector = async move {
-            while !ctx.dropped() {
-                Timer::sleep(0.5).await
-            }
-        };
-
+        let shutdown_detector = self.graceful_shutdown_registry.register_listener();
         prometheus::spawn_prometheus_exporter(self.metrics.weak(), address, shutdown_detector, credentials)
+    }
+}
+
+/// The futures spawner pinned to the `MmCtx` context.
+/// It's used to spawn futures that can be aborted immediately or after a timeout
+/// on the [`MmArc::stop`] function call.
+///
+/// # Note
+///
+/// `MmFutSpawner` doesn't prevent the spawned futures from being aborted.
+#[derive(Clone)]
+pub struct MmFutSpawner {
+    inner: WeakSpawner,
+}
+
+impl MmFutSpawner {
+    pub fn new(system: &AbortableQueue) -> MmFutSpawner {
+        MmFutSpawner {
+            inner: system.weak_spawner(),
+        }
+    }
+}
+
+impl SpawnFuture for MmFutSpawner {
+    fn spawn<F>(&self, f: F)
+    where
+        F: Future<Output = ()> + Send + 'static,
+    {
+        self.inner.spawn(f)
+    }
+}
+
+impl SpawnAbortable for MmFutSpawner {
+    fn spawn_with_settings<F>(&self, fut: F, settings: AbortSettings)
+    where
+        F: Future<Output = ()> + Send + 'static,
+    {
+        self.inner.spawn_with_settings(fut, settings)
     }
 }
 

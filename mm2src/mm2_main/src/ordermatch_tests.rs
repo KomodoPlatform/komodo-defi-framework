@@ -1710,10 +1710,7 @@ fn test_process_get_orderbook_request() {
     orders_by_pubkeys.insert(pubkey2, pubkey2_orders);
     orders_by_pubkeys.insert(pubkey3, pubkey3_orders);
 
-    let ordermatch_ctx = Arc::new(OrdermatchContext::default());
-    let ordermatch_ctx_clone = ordermatch_ctx.clone();
-    OrdermatchContext::from_ctx.mock_safe(move |_| MockResult::Return(Ok(ordermatch_ctx_clone.clone())));
-
+    let ordermatch_ctx = OrdermatchContext::from_ctx(&ctx).unwrap();
     let mut orderbook = ordermatch_ctx.orderbook.lock();
 
     for order in orders_by_pubkeys.iter().map(|(_pubkey, orders)| orders).flatten() {
@@ -1753,11 +1750,7 @@ fn test_process_get_orderbook_request() {
 #[test]
 fn test_process_get_orderbook_request_limit() {
     let (ctx, pubkey, secret) = make_ctx_for_tests();
-
-    let ordermatch_ctx = Arc::new(OrdermatchContext::default());
-    let ordermatch_ctx_clone = ordermatch_ctx.clone();
-    OrdermatchContext::from_ctx.mock_safe(move |_| MockResult::Return(Ok(ordermatch_ctx_clone.clone())));
-
+    let ordermatch_ctx = OrdermatchContext::from_ctx(&ctx).unwrap();
     let mut orderbook = ordermatch_ctx.orderbook.lock();
 
     let orders = make_random_orders(

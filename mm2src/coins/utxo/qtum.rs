@@ -225,14 +225,9 @@ impl<'a> UtxoCoinBuilder for QtumCoinBuilder<'a> {
     async fn build(self) -> MmResult<Self::ResultCoin, Self::Error> {
         let utxo = self.build_utxo_fields().await?;
         let utxo_arc = UtxoArc::new(utxo);
-        let utxo_weak = utxo_arc.downgrade();
-        let result_coin = QtumCoin::from(utxo_arc);
 
-        if let Some(abort_handler) = self.spawn_merge_utxo_loop_if_required(utxo_weak, QtumCoin::from) {
-            self.ctx.abort_handlers.lock().unwrap().push(abort_handler);
-        }
-
-        Ok(result_coin)
+        self.spawn_merge_utxo_loop_if_required(&utxo_arc, QtumCoin::from);
+        Ok(QtumCoin::from(utxo_arc))
     }
 }
 
@@ -833,6 +828,8 @@ impl MarketCoinOps for QtumCoin {
 #[async_trait]
 impl MmCoin for QtumCoin {
     fn is_asset_chain(&self) -> bool { utxo_common::is_asset_chain(&self.utxo_arc) }
+
+    fn spawner(&self) -> CoinFutSpawner { CoinFutSpawner::new(&self.as_ref().abortable_system) }
 
     fn get_raw_transaction(&self, req: RawTransactionRequest) -> RawTransactionFut {
         Box::new(utxo_common::get_raw_transaction(&self.utxo_arc, req).boxed().compat())

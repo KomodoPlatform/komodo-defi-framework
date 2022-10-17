@@ -13,17 +13,19 @@ use crate::utxo::utxo_common::{self, big_decimal_from_sat_unsigned, payment_scri
 use crate::utxo::{generate_and_send_tx, sat_from_big_decimal, ActualTxFee, AdditionalTxData, BroadcastTxErr,
                   FeePolicy, GenerateTxError, RecentlySpentOutPointsGuard, UtxoCoinConf, UtxoCoinFields,
                   UtxoCommonOps, UtxoTx, UtxoTxBroadcastOps, UtxoTxGenerationOps};
-use crate::{BalanceFut, CoinBalance, FeeApproxStage, FoundSwapTxSpend, HistorySyncState, MarketCoinOps, MmCoin,
-            NegotiateSwapContractAddrErr, NumConversError, PrivKeyNotAllowed, RawTransactionFut,
-            RawTransactionRequest, SearchForSwapTxSpendInput, SignatureResult, SwapOps, TradeFee, TradePreimageError,
-            TradePreimageFut, TradePreimageResult, TradePreimageValue, TransactionDetails, TransactionEnum,
-            TransactionErr, TransactionFut, TxFeeDetails, TxMarshalingErr, UnexpectedDerivationMethod,
-            ValidateAddressResult, ValidateOtherPubKeyErr, ValidatePaymentInput, VerificationError,
-            VerificationResult, WatcherValidatePaymentInput, WithdrawError, WithdrawFee, WithdrawFut, WithdrawRequest};
+use crate::{BalanceFut, CoinBalance, CoinFutSpawner, FeeApproxStage, FoundSwapTxSpend, HistorySyncState,
+            MarketCoinOps, MmCoin, NegotiateSwapContractAddrErr, NumConversError, PrivKeyNotAllowed,
+            RawTransactionFut, RawTransactionRequest, SearchForSwapTxSpendInput, SignatureResult, SwapOps, TradeFee,
+            TradePreimageError, TradePreimageFut, TradePreimageResult, TradePreimageValue, TransactionDetails,
+            TransactionEnum, TransactionErr, TransactionFut, TxFeeDetails, TxMarshalingErr,
+            UnexpectedDerivationMethod, ValidateAddressResult, ValidateOtherPubKeyErr, ValidatePaymentInput,
+            VerificationError, VerificationResult, WatcherValidatePaymentInput, WithdrawError, WithdrawFee,
+            WithdrawFut, WithdrawRequest};
 use async_trait::async_trait;
 use bitcrypto::dhash160;
 use chain::constants::SEQUENCE_FINAL;
 use chain::{OutPoint, TransactionOutput};
+use common::executor::{abortable_queue::AbortableQueue, AbortableSystem};
 use common::log::warn;
 use common::now_ms;
 use derive_more::Display;
@@ -58,12 +60,14 @@ const SLP_SEND: &str = "SEND";
 const SLP_MINT: &str = "MINT";
 const SLP_GENESIS: &str = "GENESIS";
 
-#[derive(Debug)]
-pub struct SlpTokenConf {
+pub struct SlpTokenFields {
     decimals: u8,
     ticker: String,
     token_id: H256,
     required_confirmations: AtomicU64,
+    /// This abortable system is used to spawn coin's related futures that should be aborted on coin deactivation
+    /// and on [`MmArc::stop`].
+    abortable_system: AbortableQueue,
 }
 
 /// Minimalistic info that is used to be stored outside of the token's context
@@ -76,7 +80,7 @@ pub struct SlpTokenInfo {
 
 #[derive(Clone)]
 pub struct SlpToken {
-    conf: Arc<SlpTokenConf>,
+    conf: Arc<SlpTokenFields>,
     platform_coin: BchCoin,
 }
 
@@ -274,11 +278,16 @@ impl SlpToken {
         platform_coin: BchCoin,
         required_confirmations: u64,
     ) -> SlpToken {
-        let conf = Arc::new(SlpTokenConf {
+        // Create an abortable system linked to `platform_coin` so if the platform coin is disabled,
+        // all spawned futures related to `SlpToken` will be aborted as well.
+        let abortable_system = platform_coin.as_ref().abortable_system.create_subsystem();
+
+        let conf = Arc::new(SlpTokenFields {
             decimals,
             ticker,
             token_id,
             required_confirmations: AtomicU64::new(required_confirmations),
+            abortable_system,
         });
         SlpToken { conf, platform_coin }
     }
@@ -1491,6 +1500,8 @@ impl From<SlpFeeDetails> for TxFeeDetails {
 impl MmCoin for SlpToken {
     fn is_asset_chain(&self) -> bool { false }
 
+    fn spawner(&self) -> CoinFutSpawner { CoinFutSpawner::new(&self.conf.abortable_system) }
+
     fn get_raw_transaction(&self, req: RawTransactionRequest) -> RawTransactionFut {
         Box::new(
             utxo_common::get_raw_transaction(self.platform_coin.as_ref(), req)
@@ -1962,7 +1973,7 @@ mod slp_tests {
 
     #[test]
     fn test_slp_address() {
-        let bch = tbch_coin_for_test();
+        let (_ctx, bch) = tbch_coin_for_test();
         let token_id = H256::from("bb309e48930671582bea508f9a1d9b491e49b69be3d6f372dc08da2ac6e90eb7");
         let fusd = SlpToken::new(4, "FUSD".into(), token_id, bch, 0);
 
@@ -1972,7 +1983,7 @@ mod slp_tests {
 
     #[test]
     fn test_validate_htlc_valid() {
-        let bch = tbch_coin_for_test();
+        let (_ctx, bch) = tbch_coin_for_test();
         let token_id = H256::from("bb309e48930671582bea508f9a1d9b491e49b69be3d6f372dc08da2ac6e90eb7");
         let fusd = SlpToken::new(4, "FUSD".into(), token_id, bch, 0);
 
@@ -2007,7 +2018,7 @@ mod slp_tests {
 
     #[test]
     fn construct_and_send_invalid_slp_htlc_should_fail() {
-        let bch = tbch_coin_for_test();
+        let (_ctx, bch) = tbch_coin_for_test();
         let token_id = H256::from("bb309e48930671582bea508f9a1d9b491e49b69be3d6f372dc08da2ac6e90eb7");
         let fusd = SlpToken::new(4, "FUSD".into(), token_id, bch.clone(), 0);
 
@@ -2092,7 +2103,7 @@ mod slp_tests {
 
     #[test]
     fn test_validate_htlc_invalid_slp_utxo() {
-        let bch = tbch_coin_for_test();
+        let (_ctx, bch) = tbch_coin_for_test();
         let token_id = H256::from("bb309e48930671582bea508f9a1d9b491e49b69be3d6f372dc08da2ac6e90eb7");
         let fusd = SlpToken::new(4, "FUSD".into(), token_id, bch.clone(), 0);
 
@@ -2144,7 +2155,7 @@ mod slp_tests {
 
     #[test]
     fn test_sign_message() {
-        let bch = tbch_coin_for_test();
+        let (_ctx, bch) = tbch_coin_for_test();
         let token_id = H256::from("bb309e48930671582bea508f9a1d9b491e49b69be3d6f372dc08da2ac6e90eb7");
         let fusd = SlpToken::new(4, "FUSD".into(), token_id, bch, 0);
         let signature = fusd.sign_message("test").unwrap();
@@ -2157,7 +2168,7 @@ mod slp_tests {
     #[test]
     #[cfg(not(target_arch = "wasm32"))]
     fn test_verify_message() {
-        let bch = tbch_coin_for_test();
+        let (_ctx, bch) = tbch_coin_for_test();
         let token_id = H256::from("bb309e48930671582bea508f9a1d9b491e49b69be3d6f372dc08da2ac6e90eb7");
         let fusd = SlpToken::new(4, "FUSD".into(), token_id, bch, 0);
         let is_valid = fusd

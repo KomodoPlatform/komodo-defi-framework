@@ -134,6 +134,7 @@ pub(super) fn utxo_coin_fields_for_test(
         check_utxo_maturity: false,
         block_headers_status_notifier: None,
         block_headers_status_watcher: None,
+        abortable_system: AbortableQueue::default(),
     }
 }
 
