@@ -4695,6 +4695,8 @@ async fn test_qrc20_history_impl() {
 }
 
 #[test]
+#[ignore]
+/// Ignored temporarily until dev is merged to mm2.1
 #[cfg(not(target_arch = "wasm32"))]
 fn test_get_raw_transaction() {
     let coins = json! ([
