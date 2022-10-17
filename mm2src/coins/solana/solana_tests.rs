@@ -29,6 +29,7 @@ fn solana_keypair_from_secp() {
 
 // Research tests
 #[test]
+#[ignore]
 #[cfg(not(target_arch = "wasm32"))]
 fn solana_prerequisites() {
     // same test as trustwallet
