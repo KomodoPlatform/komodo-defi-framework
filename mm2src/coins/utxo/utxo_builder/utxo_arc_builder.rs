@@ -285,7 +285,7 @@ async fn block_header_utxo_loop<T: UtxoCommonOps>(
                     continue;
                 }
 
-                if fetch_blocker_headers_attempts <= 1 {
+                if fetch_blocker_headers_attempts >= 1 {
                     fetch_blocker_headers_attempts -= 1;
                     error!("Error {error:?} on retrieving the latest headers from rpc! {fetch_blocker_headers_attempts} attempts left");
                     // Todo: remove this electrum server and use another in this case since the headers from this server can't be retrieved
@@ -294,7 +294,10 @@ async fn block_header_utxo_loop<T: UtxoCommonOps>(
                     continue;
                 };
 
-                error!("Error {} on retrieving the latest headers from rpc after {FETCH_BLOCK_HEADERS_ATTEMPTS} attempts", error);
+                error!(
+                    "Error {} on retrieving the latest headers from rpc after {FETCH_BLOCK_HEADERS_ATTEMPTS} attempts",
+                    error
+                );
                 // Todo: remove this electrum server and use another in this case since the headers from this server can't be retrieved
                 sync_status_loop_handle.notify_on_permanent_error(error.to_string());
                 break;
