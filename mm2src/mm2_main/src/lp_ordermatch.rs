@@ -5163,14 +5163,10 @@ pub async fn orders_kick_start(ctx: &MmArc) -> Result<HashSet<String>, String> {
 
     {
         let mut maker_orders_ctx = ordermatch_ctx.maker_orders_ctx.lock();
-        let mut orderbook = ordermatch_ctx.orderbook.lock();
         for order in saved_maker_orders {
             coins.insert(order.base.clone());
             coins.insert(order.rel.clone());
             maker_orders_ctx.add_order(ctx.weak(), order.clone(), None);
-            if let Some(key) = order.p2p_privkey {
-                orderbook.my_p2p_pubkeys.insert(hex::encode(key.public_slice()));
-            }
         }
     }
 
