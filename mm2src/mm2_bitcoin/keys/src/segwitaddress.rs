@@ -21,6 +21,8 @@ pub enum Error {
     InvalidSegwitV0ProgramLength(usize),
     /// An uncompressed pubkey was used where it is not allowed.
     UncompressedPubkey,
+    /// An uncompressed pubkey was used where it is not allowed.
+    UnsupportedAddressVariant(String),
 }
 
 impl fmt::Display for Error {
@@ -41,6 +43,7 @@ impl fmt::Display for Error {
                 l,
             ),
             Error::UncompressedPubkey => write!(f, "an uncompressed pubkey was used where it is not allowed",),
+            Error::UnsupportedAddressVariant(ref v) => write!(f, "Address variant/format {} is not supported yet!", v),
         }
     }
 }
@@ -150,9 +153,12 @@ impl FromStr for SegwitAddress {
         };
         // decode as bech32, should use Variant if Bech32m is used alongside Bech32
         // The improved Bech32m variant described in [BIP-0350](https://github.com/bitcoin/bips/blob/master/bip-0350.mediawiki)
-        let (_, payload, _) = bech32::decode(s)?;
+        let (_, payload, variant) = bech32::decode(s)?;
         if payload.is_empty() {
             return Err(Error::EmptyBech32Payload);
+        }
+        if variant == bech32::Variant::Bech32m {
+            return Err(Error::UnsupportedAddressVariant("Bech32m".into()));
         }
 
         // Get the script version and program (converted from 5-bit to 8-bit)
