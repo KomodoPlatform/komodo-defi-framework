@@ -157,8 +157,10 @@ impl FromStr for SegwitAddress {
         if payload.is_empty() {
             return Err(Error::EmptyBech32Payload);
         }
-        if variant == bech32::Variant::Bech32m {
-            return Err(Error::UnsupportedAddressVariant("Bech32m".into()));
+        match variant {
+            bech32::Variant::Bech32 => (),
+            bech32::Variant::Bech32m => return Err(Error::UnsupportedAddressVariant("Bech32m".into())),
+            // Important: If a new variant is added we should return an error until we support the new variant
         }
 
         // Get the script version and program (converted from 5-bit to 8-bit)
