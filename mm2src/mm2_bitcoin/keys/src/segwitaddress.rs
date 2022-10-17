@@ -23,6 +23,8 @@ pub enum Error {
     UncompressedPubkey,
     /// An address variant that is not supported yet was used.
     UnsupportedAddressVariant(String),
+    /// A script version that is not supported yet was used.
+    UnsupportedWitnessVersion(u8),
 }
 
 impl fmt::Display for Error {
@@ -43,7 +45,8 @@ impl fmt::Display for Error {
                 l,
             ),
             Error::UncompressedPubkey => write!(f, "an uncompressed pubkey was used where it is not allowed",),
-            Error::UnsupportedAddressVariant(ref v) => write!(f, "Address variant/format {} is not supported yet!", v),
+            Error::UnsupportedAddressVariant(ref v) => write!(f, "address variant/format {} is not supported yet!", v),
+            Error::UnsupportedWitnessVersion(v) => write!(f, "witness script version: {} is not supported yet!", v),
         }
     }
 }
@@ -178,7 +181,16 @@ impl FromStr for SegwitAddress {
         }
 
         // Specific segwit v0 check.
-        if version.to_u8() == 0 && (program.len() != 20 && program.len() != 32) {
+        if version.to_u8() != 0 {
+            return Err(Error::UnsupportedWitnessVersion(version.to_u8()));
+        }
+
+        // Bech32 length check.
+        // Important: we should be careful when using new program lengths since a valid Bech32 string can be modified according to
+        // the below 2 links while still having a valid checksum.
+        // https://github.com/bitcoin/bips/blob/master/bip-0350.mediawiki#motivation
+        // https://github.com/sipa/bech32/issues/51
+        if program.len() != 20 && program.len() != 32 {
             return Err(Error::InvalidSegwitV0ProgramLength(program.len()));
         }
 
