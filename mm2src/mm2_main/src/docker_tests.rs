@@ -2877,7 +2877,6 @@ mod docker_tests {
             .withdraw(WithdrawRequest::new_max(
                 "MYCOIN".to_string(),
                 "RRYmiZSDo3UdHHqj1rLKf8cbJroyv9NxXw".to_string(),
-                None,
             ))
             .wait()
             .unwrap();

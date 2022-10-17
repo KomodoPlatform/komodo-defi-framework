@@ -820,27 +820,7 @@ pub struct VerificationRequest {
 }
 
 impl WithdrawRequest {
-    pub fn new(
-        coin: String,
-        from: Option<WithdrawFrom>,
-        to: String,
-        amount: BigDecimal,
-        max: bool,
-        fee: Option<WithdrawFee>,
-        memo: Option<String>,
-    ) -> WithdrawRequest {
-        WithdrawRequest {
-            coin,
-            from,
-            to,
-            amount,
-            max,
-            fee,
-            memo,
-        }
-    }
-
-    pub fn new_max(coin: String, to: String, memo: Option<String>) -> WithdrawRequest {
+    pub fn new_max(coin: String, to: String) -> WithdrawRequest {
         WithdrawRequest {
             coin,
             from: None,
@@ -848,7 +828,7 @@ impl WithdrawRequest {
             amount: 0.into(),
             max: true,
             fee: None,
-            memo,
+            memo: None,
         }
     }
 }
@@ -1490,7 +1470,7 @@ pub enum WithdrawError {
         available,
         required
     )]
-    NotSufficientBalanceForFee {
+    NotSufficientPlatformBalanceForFee {
         coin: String,
         available: BigDecimal,
         required: BigDecimal,
@@ -1533,7 +1513,7 @@ impl HttpStatusCode for WithdrawError {
             WithdrawError::Timeout(_) => StatusCode::REQUEST_TIMEOUT,
             WithdrawError::CoinDoesntSupportInitWithdraw { .. }
             | WithdrawError::NotSufficientBalance { .. }
-            | WithdrawError::NotSufficientBalanceForFee { .. }
+            | WithdrawError::NotSufficientPlatformBalanceForFee { .. }
             | WithdrawError::ZeroBalanceToWithdrawMax
             | WithdrawError::AmountTooLow { .. }
             | WithdrawError::InvalidAddress(_)

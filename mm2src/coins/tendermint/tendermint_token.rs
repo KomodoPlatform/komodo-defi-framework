@@ -451,7 +451,7 @@ impl MmCoin for TendermintToken {
             let fee_amount_dec = big_decimal_from_sat_unsigned(fee_amount_u64, coin.decimals());
 
             if base_denom_balance < fee_amount_u64 {
-                return MmError::err(WithdrawError::NotSufficientBalanceForFee {
+                return MmError::err(WithdrawError::NotSufficientPlatformBalanceForFee {
                     coin: coin.ticker().to_string(),
                     available: base_denom_balance_dec,
                     required: fee_amount_dec,
