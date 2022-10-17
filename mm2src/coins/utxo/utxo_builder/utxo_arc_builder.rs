@@ -1,18 +1,14 @@
 use crate::utxo::rpc_clients::UtxoRpcClientEnum;
-use crate::utxo::utxo_builder::{
-    UtxoCoinBuildError, UtxoCoinBuilder, UtxoCoinBuilderCommonOps, UtxoFieldsWithHardwareWalletBuilder,
-    UtxoFieldsWithIguanaPrivKeyBuilder,
-};
-use crate::utxo::{
-    generate_and_send_tx, FeePolicy, GetUtxoListOps, UtxoArc, UtxoCommonOps, UtxoSyncStatusLoopHandle, UtxoWeak,
-};
+use crate::utxo::utxo_builder::{UtxoCoinBuildError, UtxoCoinBuilder, UtxoCoinBuilderCommonOps,
+                                UtxoFieldsWithHardwareWalletBuilder, UtxoFieldsWithIguanaPrivKeyBuilder};
+use crate::utxo::{generate_and_send_tx, FeePolicy, GetUtxoListOps, UtxoArc, UtxoCommonOps, UtxoSyncStatusLoopHandle,
+                  UtxoWeak};
 use crate::{DerivationMethod, MarketCoinOps, PrivKeyBuildPolicy, UtxoActivationParams};
 use async_trait::async_trait;
 use chain::TransactionOutput;
 use common::executor::{AbortSettings, SpawnAbortable, Timer};
 use common::log::{error, info, warn};
 use futures::compat::Future01CompatExt;
-use futures::future::{abortable, AbortHandle};
 use mm2_core::mm_ctx::MmArc;
 use mm2_err_handle::prelude::*;
 use script::Builder;
@@ -64,21 +60,13 @@ impl<'a, F, T> UtxoCoinBuilderCommonOps for UtxoArcBuilder<'a, F, T>
 where
     F: Fn(UtxoArc) -> T + Send + Sync + 'static,
 {
-    fn ctx(&self) -> &MmArc {
-        self.ctx
-    }
+    fn ctx(&self) -> &MmArc { self.ctx }
 
-    fn conf(&self) -> &Json {
-        self.conf
-    }
+    fn conf(&self) -> &Json { self.conf }
 
-    fn activation_params(&self) -> &UtxoActivationParams {
-        self.activation_params
-    }
+    fn activation_params(&self) -> &UtxoActivationParams { self.activation_params }
 
-    fn ticker(&self) -> &str {
-        self.ticker
-    }
+    fn ticker(&self) -> &str { self.ticker }
 }
 
 impl<'a, F, T> UtxoFieldsWithIguanaPrivKeyBuilder for UtxoArcBuilder<'a, F, T> where
@@ -100,9 +88,7 @@ where
     type ResultCoin = T;
     type Error = UtxoCoinBuildError;
 
-    fn priv_key_policy(&self) -> PrivKeyBuildPolicy<'_> {
-        self.priv_key_policy.clone()
-    }
+    fn priv_key_policy(&self) -> PrivKeyBuildPolicy<'_> { self.priv_key_policy.clone() }
 
     async fn build(self) -> MmResult<Self::ResultCoin, Self::Error> {
         let utxo = self.build_utxo_fields().await?;
@@ -111,6 +97,7 @@ where
 
         self.spawn_merge_utxo_loop_if_required(&utxo_arc, self.constructor.clone());
 
+        let result_coin = (self.constructor)(utxo_arc.clone());
         if let Some(sync_status_loop_handle) = sync_status_loop_handle {
             let current_block_height = result_coin
                 .current_block()
@@ -123,10 +110,8 @@ where
                 sync_status_loop_handle,
                 current_block_height,
             );
-            self.ctx.abort_handlers.lock().unwrap().push(abort_handler);
         }
 
-        let result_coin = (self.constructor)(utxo_arc);
         Ok(result_coin)
     }
 }
