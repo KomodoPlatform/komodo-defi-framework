@@ -3,16 +3,13 @@
 use futures::compat::Future01CompatExt;
 use futures::executor::ThreadPool;
 use futures01::sync::oneshot::{self, Receiver};
-use futures01::{Async, Future, Poll};
+use futures01::Future;
 use futures_cpupool::CpuPool;
-use gstuff::{duration_to_float, now_float};
 use hyper::client::HttpConnector;
 use hyper::Client;
 use hyper_rustls::{HttpsConnector, HttpsConnectorBuilder};
 use std::fmt;
 use std::sync::Mutex;
-use std::thread::JoinHandle;
-use std::time::Duration;
 use tokio::runtime::Runtime;
 
 fn start_core_thread() -> Mm2Runtime { Mm2Runtime(Runtime::new().unwrap()) }
@@ -91,72 +88,6 @@ where
         Ok(r)
     })
 }
-
-/// Finishes with the "timeout" error if the underlying future isn't ready withing the given timeframe.
-///
-/// NB: Tokio timers (in `tokio::timer`) only seem to work under the Tokio runtime,
-/// which is unfortunate as we want the different futures executed on the different reactors
-/// depending on how much they're I/O-bound, CPU-bound or blocking.
-/// Unlike the Tokio timers this `Timeout` implementation works with any reactor.
-/// Another option to consider is https://github.com/alexcrichton/futures-timer.
-/// P.S. The older `0.1` version of the `tokio::timer` might work NP, it works in other parts of our code.
-///      The new version, on the other hand, requires the Tokio runtime (https://tokio.rs/blog/2018-03-timers/).
-/// P.S. We could try using the `futures-timer` crate instead, but note that it is currently under-maintained,
-///      https://github.com/rustasync/futures-timer/issues/9#issuecomment-400802515.
-pub struct Timeout<R> {
-    fut: Box<dyn Future<Item = R, Error = String>>,
-    started: f64,
-    timeout: f64,
-    monitor: Option<JoinHandle<()>>,
-}
-impl<R> Future for Timeout<R> {
-    type Item = R;
-    type Error = String;
-    fn poll(&mut self) -> Poll<R, String> {
-        match self.fut.poll() {
-            Err(err) => Err(err),
-            Ok(Async::Ready(r)) => Ok(Async::Ready(r)),
-            Ok(Async::NotReady) => {
-                let now = now_float();
-                if now >= self.started + self.timeout {
-                    Err(format!("timeout ({:.1} > {:.1})", now - self.started, self.timeout))
-                } else {
-                    // Start waking up this future until it has a chance to timeout.
-                    // For now it's just a basic separate thread. Will probably optimize later.
-                    if self.monitor.is_none() {
-                        let task = futures01::task::current();
-                        let deadline = self.started + self.timeout;
-                        self.monitor = Some(
-                            std::thread::Builder::new()
-                                .name("timeout monitor".into())
-                                .spawn(move || loop {
-                                    std::thread::sleep(Duration::from_secs(1));
-                                    task.notify();
-                                    if now_float() > deadline + 2. {
-                                        break;
-                                    }
-                                })
-                                .unwrap(),
-                        );
-                    }
-                    Ok(Async::NotReady)
-                }
-            },
-        }
-    }
-}
-impl<R> Timeout<R> {
-    pub fn new(fut: Box<dyn Future<Item = R, Error = String>>, timeout: Duration) -> Timeout<R> {
-        Timeout {
-            fut,
-            started: now_float(),
-            timeout: duration_to_float(timeout),
-            monitor: None,
-        }
-    }
-}
-
-unsafe impl<R> Send for Timeout<R> where Box<dyn Future<Item = R, Error = String>>: Send {}
 
 /// Initialize the crate.
 pub fn init() {

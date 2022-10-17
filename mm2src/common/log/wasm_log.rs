@@ -101,6 +101,10 @@ impl WasmCallback {
                 }
             }
         };
+
+        // There is no async operations within the loop except reading from the `rx` receiver.
+        // So we're sure that once the `tx` sender is dropped, the loop will be stopped immediately.
+        // Please note that `WasmCallBack` is set on MarketMaker start/restart.
         spawn_local(fut);
         WasmCallback { tx }
     }
@@ -115,6 +119,10 @@ impl WasmCallback {
                 console::log_1(&msg_js);
             }
         };
+
+        // The future can be spawned safely since it doesn't hold any shared pointer,
+        // and will be stopped immediately once `WasmCallback` is dropped.
+        // Please note that `WasmCallBack` is set on MarketMaker start/restart.
         spawn_local(fut);
         WasmCallback { tx }
     }

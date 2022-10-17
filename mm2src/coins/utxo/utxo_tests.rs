@@ -67,7 +67,8 @@ pub fn electrum_client_for_test(servers: &[&str]) -> ElectrumClient {
     };
 
     let servers = servers.into_iter().map(|s| json::from_value(s).unwrap()).collect();
-    block_on(builder.electrum_client(args, servers)).unwrap()
+    let abortable_system = AbortableQueue::default();
+    block_on(builder.electrum_client(abortable_system, args, servers)).unwrap()
 }
 
 /// Returned client won't work by default, requires some mocks to be usable
@@ -406,6 +407,7 @@ fn test_wait_for_payment_spend_timeout_native() {
 #[test]
 fn test_wait_for_payment_spend_timeout_electrum() {
     static mut OUTPUT_SPEND_CALLED: bool = false;
+
     ElectrumClient::find_output_spend.mock_safe(|_, _, _, _, _| {
         unsafe { OUTPUT_SPEND_CALLED = true };
         MockResult::Return(Box::new(futures01::future::ok(None)))
@@ -417,7 +419,14 @@ fn test_wait_for_payment_spend_timeout_electrum() {
             conn: Arc::new(Mutex::new(Connection::open_in_memory().unwrap())),
         }),
     };
-    let client = ElectrumClientImpl::new(TEST_COIN_NAME.into(), Default::default(), block_headers_storage);
+    let abortable_system = AbortableQueue::default();
+
+    let client = ElectrumClientImpl::new(
+        TEST_COIN_NAME.into(),
+        Default::default(),
+        block_headers_storage,
+        abortable_system,
+    );
     let client = UtxoRpcClientEnum::Electrum(ElectrumClient(Arc::new(client)));
     let coin = utxo_coin_for_test(client, None, false);
     let transaction = hex::decode("01000000000102fff7f7881a8099afa6940d42d1e7f6362bec38171ea3edf433541db4e4ad969f00000000494830450221008b9d1dc26ba6a9cb62127b02742fa9d754cd3bebf337f7a55d114c8e5cdd30be022040529b194ba3f9281a99f2b1c0a19c0489bc22ede944ccf4ecbab4cc618ef3ed01eeffffffef51e1b804cc89d182d279655c3aa89e815b1b309fe287d9b2b55d57b90ec68a0100000000ffffffff02202cb206000000001976a9148280b37df378db99f66f85c95a783a76ac7a6d5988ac9093510d000000001976a9143bde42dbee7e4dbe6a21b2d50ce2f0167faa815988ac000247304402203609e17b84f6a7d30c80bfa610b5b4542f32a8a0d5447a12fb1366d7f01cc44a0220573a954c4518331561406f90300e8f3358f51928d43c212a8caed02de67eebee0121025476c2e83188368da1ff3e292e7acafcdb3566bb0ad253f62fc70f07aeee635711000000")
@@ -1440,12 +1449,13 @@ fn test_network_info_negative_time_offset() {
 
 #[test]
 fn test_unavailable_electrum_proto_version() {
-    ElectrumClientImpl::new.mock_safe(|coin_ticker, event_handlers, block_headers_storage| {
+    ElectrumClientImpl::new.mock_safe(|coin_ticker, event_handlers, block_headers_storage, abortable_system| {
         MockResult::Return(ElectrumClientImpl::with_protocol_version(
             coin_ticker,
             event_handlers,
             OrdRange::new(1.8, 1.9).unwrap(),
             block_headers_storage,
+            abortable_system,
         ))
     });
 

@@ -125,8 +125,6 @@ pub const ETH_MAINNET_SWAP_CONTRACT: &str = "0x24abe4c71fc658c91313b6552cd40cd80
 pub struct Mm2TestConf {
     pub conf: Json,
     pub rpc_password: String,
-    /// This doesn't seem to be really used, so we will possibly remove it soon
-    pub local: Option<LocalStart>,
 }
 
 impl Mm2TestConf {
@@ -141,7 +139,6 @@ impl Mm2TestConf {
                 "i_am_seed": true,
             }),
             rpc_password: DEFAULT_RPC_PASSWORD.into(),
-            local: None,
         }
     }
 
@@ -157,7 +154,6 @@ impl Mm2TestConf {
                 "use_watchers": true,
             }),
             rpc_password: DEFAULT_RPC_PASSWORD.into(),
-            local: None,
         }
     }
 
@@ -172,7 +168,6 @@ impl Mm2TestConf {
                 "seednodes": seednodes
             }),
             rpc_password: DEFAULT_RPC_PASSWORD.into(),
-            local: None,
         }
     }
 
@@ -188,7 +183,6 @@ impl Mm2TestConf {
                 "is_watcher": true
             }),
             rpc_password: DEFAULT_RPC_PASSWORD.into(),
-            local: None,
         }
     }
 
@@ -202,7 +196,6 @@ impl Mm2TestConf {
                 "seednodes": seednodes,
             }),
             rpc_password: DEFAULT_RPC_PASSWORD.into(),
-            local: None,
         }
     }
 }
@@ -783,6 +776,30 @@ impl MarketMakerIt {
             return ERR!("MM didn't accept a stop. body: {}", body);
         }
         Ok(())
+    }
+
+    #[cfg(target_arch = "wasm32")]
+    pub async fn stop_and_wait_for_ctx_is_dropped(self, timeout_ms: u64) -> Result<(), String> {
+        try_s!(self.stop().await);
+        let ctx_weak = self.ctx.weak();
+        drop(self);
+
+        let started_at = now_ms();
+        let wait_until = started_at + timeout_ms;
+        while now_ms() < wait_until {
+            if MmArc::from_weak(&ctx_weak).is_none() {
+                let took_ms = now_ms() - started_at;
+                log!("stop] MmCtx was dropped in {took_ms}ms");
+                return Ok(());
+            }
+            Timer::sleep(0.05).await;
+        }
+
+        ERR!(
+            "Waited too long (more than '{}ms') for `MmArc` {:?} to be dropped",
+            timeout_ms,
+            ctx_weak
+        )
     }
 
     /// Currently, we cannot wait for the `Completed IAmrelay handling for peer` log entry on WASM node,

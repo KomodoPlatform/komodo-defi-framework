@@ -2,14 +2,15 @@ use super::{CoinBalance, HistorySyncState, MarketCoinOps, MmCoin, SwapOps, Trade
 use crate::coin_errors::{MyAddressError, ValidatePaymentError};
 use crate::solana::solana_common::{ui_amount_to_amount, PrepareTransferData, SufficientBalanceError};
 use crate::solana::{solana_common, AccountError, SolanaCommonOps, SolanaFeeDetails};
-use crate::{BalanceFut, FeeApproxStage, FoundSwapTxSpend, NegotiateSwapContractAddrErr, RawTransactionFut,
-            RawTransactionRequest, SearchForSwapTxSpendInput, SignatureResult, SolanaCoin, TradePreimageFut,
-            TradePreimageResult, TradePreimageValue, TransactionDetails, TransactionFut, TransactionType,
-            TxMarshalingErr, UnexpectedDerivationMethod, ValidateAddressResult, ValidateOtherPubKeyErr,
-            ValidatePaymentFut, ValidatePaymentInput, VerificationResult, WatcherValidatePaymentInput, WithdrawError,
-            WithdrawFut, WithdrawRequest, WithdrawResult};
+use crate::{BalanceFut, CoinFutSpawner, FeeApproxStage, FoundSwapTxSpend, NegotiateSwapContractAddrErr,
+            RawTransactionFut, RawTransactionRequest, SearchForSwapTxSpendInput, SignatureResult, SolanaCoin,
+            TradePreimageFut, TradePreimageResult, TradePreimageValue, TransactionDetails, TransactionFut,
+            TransactionType, TxMarshalingErr, UnexpectedDerivationMethod, ValidateAddressResult,
+            ValidateOtherPubKeyErr, ValidatePaymentFut, ValidatePaymentInput, VerificationResult,
+            WatcherValidatePaymentInput, WithdrawError, WithdrawFut, WithdrawRequest, WithdrawResult};
 use async_trait::async_trait;
 use bincode::serialize;
+use common::executor::{abortable_queue::AbortableQueue, AbortableSystem};
 use common::{async_blocking, now_ms};
 use futures::{FutureExt, TryFutureExt};
 use futures01::Future;
@@ -34,11 +35,11 @@ pub enum SplTokenCreationError {
     InvalidPubkey(String),
 }
 
-#[derive(Debug)]
-pub struct SplTokenConf {
+pub struct SplTokenFields {
     pub decimals: u8,
     pub ticker: String,
     pub token_contract_address: Pubkey,
+    pub abortable_system: AbortableQueue,
 }
 
 #[derive(Clone, Debug)]
@@ -56,7 +57,7 @@ pub struct SplProtocolConf {
 
 #[derive(Clone)]
 pub struct SplToken {
-    pub conf: Arc<SplTokenConf>,
+    pub conf: Arc<SplTokenFields>,
     pub platform_coin: SolanaCoin,
 }
 
@@ -73,10 +74,16 @@ impl SplToken {
     ) -> Result<SplToken, MmError<SplTokenCreationError>> {
         let token_contract_address = solana_sdk::pubkey::Pubkey::from_str(&token_address)
             .map_err(|e| MmError::new(SplTokenCreationError::InvalidPubkey(format!("{:?}", e))))?;
-        let conf = Arc::new(SplTokenConf {
+
+        // Create an abortable system linked to the `platform_coin` so if the platform coin is disabled,
+        // all spawned futures related to `SplToken` will be aborted as well.
+        let abortable_system = platform_coin.abortable_system.create_subsystem();
+
+        let conf = Arc::new(SplTokenFields {
             decimals,
             ticker,
             token_contract_address,
+            abortable_system,
         });
         Ok(SplToken { conf, platform_coin })
     }
@@ -443,6 +450,8 @@ impl SwapOps for SplToken {
 #[async_trait]
 impl MmCoin for SplToken {
     fn is_asset_chain(&self) -> bool { false }
+
+    fn spawner(&self) -> CoinFutSpawner { CoinFutSpawner::new(&self.conf.abortable_system) }
 
     fn withdraw(&self, req: WithdrawRequest) -> WithdrawFut {
         Box::new(Box::pin(withdraw_impl(self.clone(), req)).compat())

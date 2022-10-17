@@ -35,6 +35,8 @@
 
 use async_trait::async_trait;
 use base58::FromBase58Error;
+use common::executor::{abortable_queue::{AbortableQueue, WeakSpawner},
+                       AbortSettings, SpawnAbortable, SpawnFuture};
 use common::{calc_total_pages, now_ms, ten, HttpStatusCode};
 use crypto::{Bip32Error, CryptoCtx, DerivationPath, HwRpcError, WithHwRpcError};
 use derive_more::Display;
@@ -56,6 +58,7 @@ use serde_json::{self as json, Value as Json};
 use std::cmp::Ordering;
 use std::collections::hash_map::{HashMap, RawEntryMut};
 use std::fmt;
+use std::future::Future as Future03;
 use std::num::NonZeroUsize;
 use std::ops::{Add, Deref};
 use std::path::PathBuf;
@@ -1715,6 +1718,13 @@ pub trait MmCoin: SwapOps + MarketCoinOps + Send + Sync + 'static {
         coin_conf["wallet_only"].as_bool().unwrap_or(false)
     }
 
+    /// Returns a spawner pinned to the coin.
+    ///
+    /// # Note
+    ///
+    /// `CoinFutSpawner` doesn't prevent the spawned futures from being aborted.
+    fn spawner(&self) -> CoinFutSpawner;
+
     fn withdraw(&self, req: WithdrawRequest) -> WithdrawFut;
 
     fn get_raw_transaction(&self, req: RawTransactionRequest) -> RawTransactionFut;
@@ -1816,6 +1826,43 @@ pub trait MmCoin: SwapOps + MarketCoinOps + Send + Sync + 'static {
 
     /// Check if serialized coin protocol info is supported by current version.
     fn is_coin_protocol_supported(&self, info: &Option<Vec<u8>>) -> bool;
+}
+
+/// The coin futures spawner. It's used to spawn futures that can be aborted immediately or after a timeout
+/// on the the coin deactivation.
+///
+/// # Note
+///
+/// `CoinFutSpawner` doesn't prevent the spawned futures from being aborted.
+#[derive(Clone)]
+pub struct CoinFutSpawner {
+    inner: WeakSpawner,
+}
+
+impl CoinFutSpawner {
+    pub fn new(system: &AbortableQueue) -> CoinFutSpawner {
+        CoinFutSpawner {
+            inner: system.weak_spawner(),
+        }
+    }
+}
+
+impl SpawnFuture for CoinFutSpawner {
+    fn spawn<F>(&self, f: F)
+    where
+        F: Future03<Output = ()> + Send + 'static,
+    {
+        self.inner.spawn(f)
+    }
+}
+
+impl SpawnAbortable for CoinFutSpawner {
+    fn spawn_with_settings<F>(&self, fut: F, settings: AbortSettings)
+    where
+        F: Future03<Output = ()> + Send + 'static,
+    {
+        self.inner.spawn_with_settings(fut, settings)
+    }
 }
 
 #[derive(Clone)]
@@ -2462,20 +2509,12 @@ pub async fn lp_register_coin(
     Ok(())
 }
 
-#[cfg(not(target_arch = "wasm32"))]
 fn lp_spawn_tx_history(ctx: MmArc, coin: MmCoinEnum) -> Result<(), String> {
-    try_s!(std::thread::Builder::new()
-        .name(format!("tx_history_{}", coin.ticker()))
-        .spawn(move || coin.process_history_loop(ctx).wait()));
-    Ok(())
-}
-
-#[cfg(target_arch = "wasm32")]
-fn lp_spawn_tx_history(ctx: MmArc, coin: MmCoinEnum) -> Result<(), String> {
+    let spawner = coin.spawner();
     let fut = async move {
         let _res = coin.process_history_loop(ctx).compat().await;
     };
-    common::executor::spawn_local(fut);
+    spawner.spawn(fut);
     Ok(())
 }
 

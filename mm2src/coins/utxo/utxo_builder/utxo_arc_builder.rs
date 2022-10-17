@@ -1,12 +1,15 @@
 use crate::utxo::rpc_clients::UtxoRpcClientEnum;
-use crate::utxo::utxo_builder::{UtxoCoinBuildError, UtxoCoinBuilder, UtxoCoinBuilderCommonOps,
-                                UtxoFieldsWithHardwareWalletBuilder, UtxoFieldsWithIguanaPrivKeyBuilder};
-use crate::utxo::{generate_and_send_tx, FeePolicy, GetUtxoListOps, UtxoArc, UtxoCommonOps, UtxoSyncStatusLoopHandle,
-                  UtxoWeak};
+use crate::utxo::utxo_builder::{
+    UtxoCoinBuildError, UtxoCoinBuilder, UtxoCoinBuilderCommonOps, UtxoFieldsWithHardwareWalletBuilder,
+    UtxoFieldsWithIguanaPrivKeyBuilder,
+};
+use crate::utxo::{
+    generate_and_send_tx, FeePolicy, GetUtxoListOps, UtxoArc, UtxoCommonOps, UtxoSyncStatusLoopHandle, UtxoWeak,
+};
 use crate::{DerivationMethod, MarketCoinOps, PrivKeyBuildPolicy, UtxoActivationParams};
 use async_trait::async_trait;
 use chain::TransactionOutput;
-use common::executor::{spawn, Timer};
+use common::executor::{AbortSettings, SpawnAbortable, Timer};
 use common::log::{error, info, warn};
 use futures::compat::Future01CompatExt;
 use futures::future::{abortable, AbortHandle};
@@ -61,13 +64,21 @@ impl<'a, F, T> UtxoCoinBuilderCommonOps for UtxoArcBuilder<'a, F, T>
 where
     F: Fn(UtxoArc) -> T + Send + Sync + 'static,
 {
-    fn ctx(&self) -> &MmArc { self.ctx }
+    fn ctx(&self) -> &MmArc {
+        self.ctx
+    }
 
-    fn conf(&self) -> &Json { self.conf }
+    fn conf(&self) -> &Json {
+        self.conf
+    }
 
-    fn activation_params(&self) -> &UtxoActivationParams { self.activation_params }
+    fn activation_params(&self) -> &UtxoActivationParams {
+        self.activation_params
+    }
 
-    fn ticker(&self) -> &str { self.ticker }
+    fn ticker(&self) -> &str {
+        self.ticker
+    }
 }
 
 impl<'a, F, T> UtxoFieldsWithIguanaPrivKeyBuilder for UtxoArcBuilder<'a, F, T> where
@@ -89,19 +100,16 @@ where
     type ResultCoin = T;
     type Error = UtxoCoinBuildError;
 
-    fn priv_key_policy(&self) -> PrivKeyBuildPolicy<'_> { self.priv_key_policy.clone() }
+    fn priv_key_policy(&self) -> PrivKeyBuildPolicy<'_> {
+        self.priv_key_policy.clone()
+    }
 
     async fn build(self) -> MmResult<Self::ResultCoin, Self::Error> {
         let utxo = self.build_utxo_fields().await?;
         let sync_status_loop_handle = utxo.block_headers_status_notifier.clone();
         let utxo_arc = UtxoArc::new(utxo);
-        let utxo_weak = utxo_arc.downgrade();
-        let result_coin = (self.constructor)(utxo_arc);
 
-        if let Some(abort_handler) = self.spawn_merge_utxo_loop_if_required(utxo_weak.clone(), self.constructor.clone())
-        {
-            self.ctx.abort_handlers.lock().unwrap().push(abort_handler);
-        }
+        self.spawn_merge_utxo_loop_if_required(&utxo_arc, self.constructor.clone());
 
         if let Some(sync_status_loop_handle) = sync_status_loop_handle {
             let current_block_height = result_coin
@@ -109,8 +117,8 @@ where
                 .compat()
                 .await
                 .map_to_mm(UtxoCoinBuildError::GetCurrentBlockHeightError)?;
-            let abort_handler = self.spawn_block_header_utxo_loop(
-                utxo_weak,
+            self.spawn_block_header_utxo_loop(
+                &utxo_arc,
                 self.constructor.clone(),
                 sync_status_loop_handle,
                 current_block_height,
@@ -118,6 +126,7 @@ where
             self.ctx.abort_handlers.lock().unwrap().push(abort_handler);
         }
 
+        let result_coin = (self.constructor)(utxo_arc);
         Ok(result_coin)
     }
 }
@@ -196,28 +205,32 @@ async fn merge_utxo_loop<T>(
 }
 
 pub trait MergeUtxoArcOps<T: UtxoCommonOps + GetUtxoListOps>: UtxoCoinBuilderCommonOps {
-    fn spawn_merge_utxo_loop_if_required<F>(&self, weak: UtxoWeak, constructor: F) -> Option<AbortHandle>
+    fn spawn_merge_utxo_loop_if_required<F>(&self, utxo_arc: &UtxoArc, constructor: F)
     where
         F: Fn(UtxoArc) -> T + Send + Sync + 'static,
     {
-        if let Some(ref merge_params) = self.activation_params().utxo_merge_params {
-            let (fut, abort_handle) = abortable(merge_utxo_loop(
-                weak,
-                merge_params.merge_at,
-                merge_params.check_every,
-                merge_params.max_merge_at_once,
-                constructor,
-            ));
-            let ticker = self.ticker().to_owned();
-            info!("Starting UTXO merge loop for coin {}", ticker);
-            spawn(async move {
-                if let Err(e) = fut.await {
-                    info!("spawn_merge_utxo_loop_if_required stopped for {}, reason {}", ticker, e);
-                }
-            });
-            return Some(abort_handle);
-        }
-        None
+        let merge_params = match self.activation_params().utxo_merge_params {
+            Some(ref merge_params) => merge_params,
+            None => return,
+        };
+
+        let ticker = self.ticker();
+        info!("Starting UTXO merge loop for coin {ticker}");
+
+        let utxo_weak = utxo_arc.downgrade();
+        let fut = merge_utxo_loop(
+            utxo_weak,
+            merge_params.merge_at,
+            merge_params.check_every,
+            merge_params.max_merge_at_once,
+            constructor,
+        );
+
+        let settings = AbortSettings::info_on_abort(format!("spawn_merge_utxo_loop_if_required stopped for {ticker}"));
+        utxo_arc
+            .abortable_system
+            .weak_spawner()
+            .spawn_with_settings(fut, settings);
     }
 }
 
@@ -313,28 +326,24 @@ async fn block_header_utxo_loop<T: UtxoCommonOps>(
 pub trait BlockHeaderUtxoArcOps<T>: UtxoCoinBuilderCommonOps {
     fn spawn_block_header_utxo_loop<F>(
         &self,
-        weak: UtxoWeak,
+        utxo_arc: &UtxoArc,
         constructor: F,
         sync_status_loop_handle: UtxoSyncStatusLoopHandle,
         current_block_height: u64,
-    ) -> AbortHandle
-    where
+    ) where
         F: Fn(UtxoArc) -> T + Send + Sync + 'static,
         T: UtxoCommonOps,
     {
-        let ticker = self.ticker().to_owned();
-        let (fut, abort_handle) = abortable(block_header_utxo_loop(
-            weak,
-            constructor,
-            sync_status_loop_handle,
-            current_block_height,
-        ));
-        info!("Starting UTXO block header loop for coin {}", ticker);
-        spawn(async move {
-            if let Err(e) = fut.await {
-                info!("spawn_block_header_utxo_loop stopped for {}, reason {}", ticker, e);
-            }
-        });
-        abort_handle
+        let ticker = self.ticker();
+        info!("Starting UTXO block header loop for coin {ticker}");
+
+        let utxo_weak = utxo_arc.downgrade();
+        let fut = block_header_utxo_loop(utxo_weak, constructor, sync_status_loop_handle, current_block_height);
+
+        let settings = AbortSettings::info_on_abort(format!("spawn_block_header_utxo_loop stopped for {ticker}"));
+        utxo_arc
+            .abortable_system
+            .weak_spawner()
+            .spawn_with_settings(fut, settings);
     }
 }

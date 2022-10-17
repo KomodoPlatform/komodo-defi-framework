@@ -16,7 +16,7 @@ fn test_tendermint_activation_and_balance() {
     let expected_address = "cosmos1svaw0aqc4584x825ju7ua03g5xtxwd0ahl86hz";
 
     let conf = Mm2TestConf::seednode(ATOM_TEST_BALANCE_SEED, &coins);
-    let mm = MarketMakerIt::start(conf.conf, conf.rpc_password, conf.local).unwrap();
+    let mm = MarketMakerIt::start(conf.conf, conf.rpc_password, None).unwrap();
 
     let activation_result = block_on(enable_tendermint(&mm, ATOM_TICKER, ATOM_TENDERMINT_RPC_URLS));
 
@@ -39,7 +39,7 @@ fn test_tendermint_withdraw() {
     let coins = json!([atom_testnet_conf()]);
 
     let conf = Mm2TestConf::seednode(ATOM_TEST_WITHDRAW_SEED, &coins);
-    let mm = MarketMakerIt::start(conf.conf, conf.rpc_password, conf.local).unwrap();
+    let mm = MarketMakerIt::start(conf.conf, conf.rpc_password, None).unwrap();
 
     let activation_res = block_on(enable_tendermint(&mm, ATOM_TICKER, ATOM_TENDERMINT_RPC_URLS));
     println!("Activation {}", json::to_string(&activation_res).unwrap());

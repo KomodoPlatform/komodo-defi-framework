@@ -1355,13 +1355,13 @@ fn zhtlc_orders_sync_alice_connected_before_creation() {
     let coins = json!([rick_conf(), zombie_conf()]);
 
     let bob_conf = Mm2TestConf::seednode(&bob_passphrase, &coins);
-    let mm_bob = MarketMakerIt::start(bob_conf.conf, bob_conf.rpc_password, bob_conf.local).unwrap();
+    let mm_bob = MarketMakerIt::start(bob_conf.conf, bob_conf.rpc_password, None).unwrap();
 
     let (_dump_log, _dump_dashboard) = mm_bob.mm_dump();
     log!("Bob log path: {}", mm_bob.log_path.display());
 
     let alice_conf = Mm2TestConf::light_node(&alice_passphrase, &coins, &[&mm_bob.ip.to_string()]);
-    let mm_alice = MarketMakerIt::start(alice_conf.conf, alice_conf.rpc_password, alice_conf.local).unwrap();
+    let mm_alice = MarketMakerIt::start(alice_conf.conf, alice_conf.rpc_password, None).unwrap();
 
     let (_alice_dump_log, _alice_dump_dashboard) = mm_alice.mm_dump();
     log!("Alice log path: {}", mm_alice.log_path.display());
@@ -1423,7 +1423,7 @@ fn zhtlc_orders_sync_alice_connected_after_creation() {
     let coins = json!([rick_conf(), zombie_conf()]);
 
     let bob_conf = Mm2TestConf::seednode(&bob_passphrase, &coins);
-    let mm_bob = MarketMakerIt::start(bob_conf.conf, bob_conf.rpc_password, bob_conf.local).unwrap();
+    let mm_bob = MarketMakerIt::start(bob_conf.conf, bob_conf.rpc_password, None).unwrap();
 
     let (_dump_log, _dump_dashboard) = mm_bob.mm_dump();
     log!("Bob log path: {}", mm_bob.log_path.display());
@@ -1451,7 +1451,7 @@ fn zhtlc_orders_sync_alice_connected_after_creation() {
     let bob_set_price_res: SetPriceResponse = json::from_str(&rc.1).unwrap();
 
     let alice_conf = Mm2TestConf::light_node(&alice_passphrase, &coins, &[&mm_bob.ip.to_string()]);
-    let mm_alice = MarketMakerIt::start(alice_conf.conf, alice_conf.rpc_password, alice_conf.local).unwrap();
+    let mm_alice = MarketMakerIt::start(alice_conf.conf, alice_conf.rpc_password, None).unwrap();
 
     let (_alice_dump_log, _alice_dump_dashboard) = mm_alice.mm_dump();
     log!("Alice log path: {}", mm_alice.log_path.display());

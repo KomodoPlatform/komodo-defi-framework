@@ -126,8 +126,9 @@ pub fn mm2_main(params: JsValue, log_cb: js_sys::Function) -> Result<(), JsValue
         };
         LP_MAIN_RUNNING.store(false, Ordering::Relaxed)
     };
-    executor::spawn_local(fut);
 
+    // At this moment we still don't have `MmCtx` context to use its `MmCtx::abortable_system` spawner.
+    unsafe { executor::spawn_local(fut) };
     Ok(())
 }
 

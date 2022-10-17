@@ -7,7 +7,6 @@ use coins::tendermint::{TendermintActivationParams, TendermintCoin, TendermintIn
                         TendermintProtocolInfo};
 use coins::{CoinBalance, CoinProtocol, MarketCoinOps};
 use common::Future01CompatExt;
-use futures::future::AbortHandle;
 use mm2_core::mm_ctx::MmArc;
 use mm2_err_handle::prelude::*;
 use mm2_metrics::MetricsArc;
@@ -62,14 +61,14 @@ impl PlatformWithTokensActivationOps for TendermintCoin {
     type ActivationError = TendermintInitError;
 
     async fn enable_platform_coin(
-        _ctx: MmArc,
+        ctx: MmArc,
         ticker: String,
         _coin_conf: Json,
         activation_request: Self::ActivationRequest,
         protocol_conf: Self::PlatformProtocolInfo,
         priv_key: &[u8],
     ) -> Result<Self, MmError<Self::ActivationError>> {
-        TendermintCoin::init(ticker, protocol_conf, activation_request, priv_key).await
+        TendermintCoin::init(&ctx, ticker, protocol_conf, activation_request, priv_key).await
     }
 
     fn token_initializers(
@@ -102,7 +101,6 @@ impl PlatformWithTokensActivationOps for TendermintCoin {
         metrics: MetricsArc,
         storage: impl TxHistoryStorage,
         initial_balance: BigDecimal,
-    ) -> AbortHandle {
-        unimplemented!()
+    ) {
     }
 }

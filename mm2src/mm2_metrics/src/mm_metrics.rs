@@ -1,4 +1,4 @@
-use common::executor::{spawn, Timer};
+use common::executor::Timer;
 #[cfg(not(target_arch = "wasm32"))] use common::log::error;
 use common::log::{LogArc, LogWeak};
 use itertools::Itertools;
@@ -8,8 +8,7 @@ use serde_json::Value;
 use std::sync::{atomic::Ordering, Arc};
 use std::{collections::HashMap, slice::Iter};
 
-use crate::MmMetricsError;
-use crate::{common::log::Tag, MetricsOps, MmMetricsResult, MmRecorder};
+use crate::{common::log::Tag, MetricsOps, MmMetricsError, MmMetricsResult, MmRecorder, SpawnFuture};
 
 type MetricLabels = Vec<Label>;
 type MetricNameValueMap = HashMap<String, PreparedMetric>;
@@ -106,10 +105,13 @@ impl Metrics {
 impl MetricsOps for Metrics {
     fn init(&self) { Metrics::default(); }
 
-    fn init_with_dashboard(&self, log_state: LogWeak, interval: f64) -> MmMetricsResult<()> {
+    fn init_with_dashboard<S>(&self, spawner: &S, log_state: LogWeak, interval: f64) -> MmMetricsResult<()>
+    where
+        S: SpawnFuture,
+    {
         let recorder = self.recorder.clone();
         let runner = TagObserver::log_tag_metrics(log_state, recorder, interval);
-        spawn(runner);
+        spawner.spawn(runner);
         Ok(())
     }
 
@@ -295,7 +297,12 @@ pub mod prometheus {
             futures::future::ready(())
         });
 
-        spawn(server);
+        // As it's said in the [issue](https://github.com/hyperium/tonic/issues/330):
+        //
+        // Aborting the server future will forcefully cancel all connections and not perform a proper drain/shutdown.
+        // While using the special shutdown methods on the server will allow hyper to gracefully drain all connections
+        // and gracefully close connections.
+        common::executor::spawn(server);
         Ok(())
     }
 
@@ -377,7 +384,7 @@ mod test {
     use crate::{MetricsArc, MetricsOps};
 
     use common::{block_on,
-                 executor::Timer,
+                 executor::{abortable_queue::AbortableQueue, Timer},
                  log::{LogArc, LogState}};
     use wasm_timer::Instant;
 
@@ -479,8 +486,11 @@ mod test {
     fn test_dashboard() {
         let log_state = LogArc::new(LogState::in_memory());
         let mm_metrics = MetricsArc::new();
+        let abortable_system = AbortableQueue::default();
 
-        mm_metrics.init_with_dashboard(log_state.weak(), 6.).unwrap();
+        mm_metrics
+            .init_with_dashboard(&abortable_system.weak_spawner(), log_state.weak(), 6.)
+            .unwrap();
 
         let clock = Instant::now();
         let last = clock.elapsed();
