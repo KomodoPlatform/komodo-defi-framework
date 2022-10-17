@@ -19,6 +19,7 @@ use spv_validation::storage::BlockHeaderStorageOps;
 const BLOCK_HEADERS_LOOP_INTERVAL: f64 = 60.;
 const CHUNK_SIZE_REDUCER_VALUE: u64 = 100;
 const ELECTRUM_MAX_CHUNK_SIZE: u64 = 2016;
+const FETCH_BLOCK_HEADERS_ATTEMPTS: u64 = 3;
 
 pub struct UtxoArcBuilder<'a, F, T>
 where
@@ -263,6 +264,7 @@ async fn block_header_utxo_loop<T: UtxoCommonOps>(
         let to_block_height = from_block_height + chunk_size;
         sync_status_loop_handle.notify_blocks_headers_sync_status(from_block_height + 1, to_block_height);
 
+        let mut fetch_blocker_headers_attempts = FETCH_BLOCK_HEADERS_ATTEMPTS;
         let (block_registry, block_headers) = match client
             .retrieve_headers(from_block_height + 1, to_block_height)
             .compat()
@@ -278,12 +280,21 @@ async fn block_header_utxo_loop<T: UtxoCommonOps>(
                 };
 
                 // If electrum returns response too large error, we will reduce the requested headers by CHUNK_SIZE_REDUCER_VALUE every loop until we arrive to a reasonable value.
-                if error.get_inner().is_response_too_large() {
+                if error.get_inner().is_response_too_large() && chunk_size > CHUNK_SIZE_REDUCER_VALUE {
                     chunk_size -= CHUNK_SIZE_REDUCER_VALUE;
                     continue;
                 }
 
-                error!("Error {} on retrieving the latest headers from rpc!", error);
+                if fetch_blocker_headers_attempts <= 1 {
+                    fetch_blocker_headers_attempts -= 1;
+                    error!("Error {error:?} on retrieving the latest headers from rpc! {fetch_blocker_headers_attempts} attempts left");
+                    // Todo: remove this electrum server and use another in this case since the headers from this server can't be retrieved
+                    sync_status_loop_handle.notify_on_temp_error(error.to_string());
+                    Timer::sleep(10.).await;
+                    continue;
+                };
+
+                error!("Error {} on retrieving the latest headers from rpc after {FETCH_BLOCK_HEADERS_ATTEMPTS} attempts", error);
                 // Todo: remove this electrum server and use another in this case since the headers from this server can't be retrieved
                 sync_status_loop_handle.notify_on_permanent_error(error.to_string());
                 break;
