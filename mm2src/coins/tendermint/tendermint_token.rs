@@ -1,5 +1,6 @@
 /// Module containing implementation for Tendermint Tokens. They include native assets + IBC
-use super::{TendermintCoin, TendermintFeeDetails, GAS_LIMIT_DEFAULT, TIMEOUT_HEIGHT_DELTA, TX_DEFAULT_MEMO};
+use super::{TendermintCoin, TendermintFeeDetails, GAS_LIMIT_DEFAULT, MIN_TX_SATOSHIS, TIMEOUT_HEIGHT_DELTA,
+            TX_DEFAULT_MEMO};
 use crate::utxo::utxo_common::big_decimal_from_sat;
 use crate::{big_decimal_from_sat_unsigned, utxo::sat_from_big_decimal, BalanceFut, BigDecimal, CoinBalance,
             FeeApproxStage, FoundSwapTxSpend, HistorySyncState, MarketCoinOps, MmCoin, MyAddressError,
@@ -368,7 +369,7 @@ impl MarketCoinOps for TendermintToken {
 
     fn display_priv_key(&self) -> Result<String, String> { self.platform_coin.display_priv_key() }
 
-    fn min_tx_amount(&self) -> BigDecimal { big_decimal_from_sat(1, self.decimals) }
+    fn min_tx_amount(&self) -> BigDecimal { big_decimal_from_sat(MIN_TX_SATOSHIS, self.decimals) }
 
     /// !! This function includes dummy implementation for P.O.C work
     fn min_trading_vol(&self) -> MmNumber { MmNumber::from("0.00777") }

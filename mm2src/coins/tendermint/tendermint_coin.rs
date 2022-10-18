@@ -65,6 +65,8 @@ const ABCI_GET_TX_PATH: &str = "/cosmos.tx.v1beta1.Service/GetTx";
 const ABCI_QUERY_HTLC_PATH: &str = "/irismod.htlc.Query/HTLC";
 const ABCI_GET_TXS_EVENT_PATH: &str = "/cosmos.tx.v1beta1.Service/GetTxsEvent";
 
+pub(crate) const MIN_TX_SATOSHIS: i64 = 1;
+
 // ABCI Request Defaults
 const ABCI_REQUEST_HEIGHT: Option<Height> = None;
 const ABCI_REQUEST_PROVE: bool = false;
@@ -939,7 +941,7 @@ impl TendermintCoin {
 
     #[inline]
     pub(crate) fn is_tx_amount_enough(&self, decimals: u8, amount: &BigDecimal) -> bool {
-        let min_tx_amount = big_decimal_from_sat(1, decimals);
+        let min_tx_amount = big_decimal_from_sat(MIN_TX_SATOSHIS, decimals);
         amount >= &min_tx_amount
     }
 }
@@ -1357,7 +1359,7 @@ impl MarketCoinOps for TendermintCoin {
 
     fn display_priv_key(&self) -> Result<String, String> { Ok(hex::encode(&self.priv_key)) }
 
-    fn min_tx_amount(&self) -> BigDecimal { big_decimal_from_sat(1, self.decimals) }
+    fn min_tx_amount(&self) -> BigDecimal { big_decimal_from_sat(MIN_TX_SATOSHIS, self.decimals) }
 
     // TODO
     // !! This function includes dummy implementation for P.O.C work
