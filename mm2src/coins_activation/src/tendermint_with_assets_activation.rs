@@ -43,12 +43,17 @@ struct TendermintTokenInitializer {
     platform_coin: TendermintCoin,
 }
 
+struct TendermintTokenInitializerErr {
+    ticker: String,
+    inner: TendermintTokenInitError,
+}
+
 #[async_trait]
 impl TokenInitializer for TendermintTokenInitializer {
     type Token = TendermintToken;
     type TokenActivationRequest = TendermintTokenActivationParams;
     type TokenProtocol = TendermintTokenProtocolInfo;
-    type InitTokensError = TendermintTokenInitError;
+    type InitTokensError = TendermintTokenInitializerErr;
 
     fn tokens_requests_from_platform_request(
         platform_request: &TendermintActivationParams,
@@ -63,12 +68,14 @@ impl TokenInitializer for TendermintTokenInitializer {
         params
             .into_iter()
             .map(|param| {
+                let ticker = param.ticker.clone();
                 TendermintToken::new(
                     param.ticker,
                     self.platform_coin.clone(),
                     param.protocol.decimals,
                     param.protocol.denom,
                 )
+                .mm_err(|inner| TendermintTokenInitializerErr { ticker, inner })
             })
             .collect()
     }
@@ -94,11 +101,11 @@ impl TryFromCoinProtocol for TendermintTokenProtocolInfo {
     }
 }
 
-impl From<TendermintTokenInitError> for InitTokensAsMmCoinsError {
-    fn from(err: TendermintTokenInitError) -> Self {
-        match err {
+impl From<TendermintTokenInitializerErr> for InitTokensAsMmCoinsError {
+    fn from(err: TendermintTokenInitializerErr) -> Self {
+        match err.inner {
             TendermintTokenInitError::InvalidDenom(error) => InitTokensAsMmCoinsError::TokenProtocolParseError {
-                ticker: "".into(),
+                ticker: err.ticker,
                 error,
             },
             TendermintTokenInitError::MyAddressError(error) => InitTokensAsMmCoinsError::Internal(error),
@@ -136,7 +143,6 @@ impl From<TendermintInitError> for EnablePlatformCoinWithTokensError {
 }
 
 #[async_trait]
-#[allow(unused_variables)]
 impl PlatformWithTokensActivationOps for TendermintCoin {
     type ActivationRequest = TendermintActivationParams;
     type PlatformProtocolInfo = TendermintProtocolInfo;
@@ -213,9 +219,9 @@ impl PlatformWithTokensActivationOps for TendermintCoin {
 
     fn start_history_background_fetching(
         &self,
-        metrics: MetricsArc,
-        storage: impl TxHistoryStorage,
-        initial_balance: BigDecimal,
+        _metrics: MetricsArc,
+        _storage: impl TxHistoryStorage,
+        _initial_balance: BigDecimal,
     ) -> AbortHandle {
         unimplemented!()
     }

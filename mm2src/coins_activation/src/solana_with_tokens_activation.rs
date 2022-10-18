@@ -29,12 +29,17 @@ impl TokenOf for SplToken {
     type PlatformCoin = SolanaCoin;
 }
 
+pub struct SplTokenInitializerErr {
+    ticker: String,
+    inner: SplTokenCreationError,
+}
+
 #[async_trait]
 impl TokenInitializer for SplTokenInitializer {
     type Token = SplToken;
     type TokenActivationRequest = SplActivationRequest;
     type TokenProtocol = SplProtocolConf;
-    type InitTokensError = SplTokenCreationError;
+    type InitTokensError = SplTokenInitializerErr;
 
     fn tokens_requests_from_platform_request(
         platform_params: &SolanaWithTokensActivationRequest,
@@ -49,12 +54,14 @@ impl TokenInitializer for SplTokenInitializer {
         let tokens = activation_params
             .into_iter()
             .map(|param| {
+                let ticker = param.ticker.clone();
                 SplToken::new(
                     param.protocol.decimals,
                     param.ticker,
                     param.protocol.token_contract_address,
                     self.platform_coin.clone(),
                 )
+                .mm_err(|inner| SplTokenInitializerErr { ticker, inner })
             })
             .collect::<Result<Vec<_>, _>>()?;
         Ok(tokens)
@@ -148,11 +155,11 @@ impl TryFromCoinProtocol for SolanaProtocolInfo {
     }
 }
 
-impl From<SplTokenCreationError> for InitTokensAsMmCoinsError {
-    fn from(error: SplTokenCreationError) -> Self {
-        match error {
+impl From<SplTokenInitializerErr> for InitTokensAsMmCoinsError {
+    fn from(err: SplTokenInitializerErr) -> Self {
+        match err.inner {
             SplTokenCreationError::InvalidPubkey(error) => InitTokensAsMmCoinsError::TokenProtocolParseError {
-                ticker: "".to_owned(),
+                ticker: err.ticker,
                 error,
             },
         }
