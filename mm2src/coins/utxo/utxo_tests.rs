@@ -4055,7 +4055,6 @@ fn test_electrum_display_balances() {
 }
 
 #[test]
-#[ignore]
 fn test_for_non_existent_tx_hex_utxo_electrum() {
     // This test shouldn't wait till timeout!
     let timeout = (now_ms() / 1000) + 120;
