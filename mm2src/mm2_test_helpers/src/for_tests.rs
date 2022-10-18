@@ -125,8 +125,6 @@ pub const ETH_MAINNET_SWAP_CONTRACT: &str = "0x24abe4c71fc658c91313b6552cd40cd80
 pub struct Mm2TestConf {
     pub conf: Json,
     pub rpc_password: String,
-    /// This doesn't seem to be really used, so we will possibly remove it soon
-    pub local: Option<LocalStart>,
 }
 
 impl Mm2TestConf {
@@ -141,7 +139,6 @@ impl Mm2TestConf {
                 "i_am_seed": true,
             }),
             rpc_password: DEFAULT_RPC_PASSWORD.into(),
-            local: None,
         }
     }
 
@@ -157,7 +154,6 @@ impl Mm2TestConf {
                 "use_watchers": true,
             }),
             rpc_password: DEFAULT_RPC_PASSWORD.into(),
-            local: None,
         }
     }
 
@@ -172,7 +168,6 @@ impl Mm2TestConf {
                 "seednodes": seednodes
             }),
             rpc_password: DEFAULT_RPC_PASSWORD.into(),
-            local: None,
         }
     }
 
@@ -188,7 +183,6 @@ impl Mm2TestConf {
                 "is_watcher": true
             }),
             rpc_password: DEFAULT_RPC_PASSWORD.into(),
-            local: None,
         }
     }
 
@@ -202,7 +196,6 @@ impl Mm2TestConf {
                 "seednodes": seednodes,
             }),
             rpc_password: DEFAULT_RPC_PASSWORD.into(),
-            local: None,
         }
     }
 }
@@ -229,7 +222,13 @@ pub fn zombie_conf() -> Json {
                     "hrp_sapling_payment_address": "zs",
                     "b58_pubkey_address_prefix": [ 28, 184 ],
                     "b58_script_address_prefix": [ 28, 189 ]
-                }
+                },
+                "check_point_block": {
+                    "height": 290000,
+                    "time": 1664200629,
+                    "hash": "106BAA72C53E7FA52E30E6D3D15B37001207E3CF3B9FCE9BAB6C6D4AF9ED9200",
+                    "sapling_tree": "017797D05B070D29A47EFEBE3FAD3F29345D31BE608C46A5131CD55D201A631C13000D000119CE6220D0CB0F82AD6466B677828A0B4C2983662DAB181A86F913F7E9FB9C28000139C4399E4CA741CBABBDDAEB6DCC3541BA902343E394160EEECCDF20C289BA65011823D28B592E9612A6C3CF4778F174E10B1B714B4FF85E6E58EE19DD4A0D5734016FA4682B0007E61B63A0442B85E0B8C0CE2409E665F219013B5E24E385F6066B00000001A325043E11CD6A431A0BD99141C4C6E9632A156185EB9B0DBEF665EEC803DD6F00000103C11FCCC90C2EC1A126635F708311EDEF9B93D3E752E053D3AA9EFA0AF9D526"
+                },
             }
         },
         "required_confirmations":0
@@ -783,6 +782,30 @@ impl MarketMakerIt {
             return ERR!("MM didn't accept a stop. body: {}", body);
         }
         Ok(())
+    }
+
+    #[cfg(target_arch = "wasm32")]
+    pub async fn stop_and_wait_for_ctx_is_dropped(self, timeout_ms: u64) -> Result<(), String> {
+        try_s!(self.stop().await);
+        let ctx_weak = self.ctx.weak();
+        drop(self);
+
+        let started_at = now_ms();
+        let wait_until = started_at + timeout_ms;
+        while now_ms() < wait_until {
+            if MmArc::from_weak(&ctx_weak).is_none() {
+                let took_ms = now_ms() - started_at;
+                log!("stop] MmCtx was dropped in {took_ms}ms");
+                return Ok(());
+            }
+            Timer::sleep(0.05).await;
+        }
+
+        ERR!(
+            "Waited too long (more than '{}ms') for `MmArc` {:?} to be dropped",
+            timeout_ms,
+            ctx_weak
+        )
     }
 
     /// Currently, we cannot wait for the `Completed IAmrelay handling for peer` log entry on WASM node,

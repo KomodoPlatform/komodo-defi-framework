@@ -1,7 +1,7 @@
 //! Human-readable logging and statuses.
 
-use super::executor::{spawn, Timer};
 use super::{now_ms, writeln};
+use crate::executor::{spawn_abortable, AbortOnDropHandle, Timer};
 use crate::filename;
 use chrono::format::strftime::StrftimeItems;
 use chrono::format::DelayedFormat;
@@ -601,6 +601,8 @@ pub struct LogState {
     gravity: PaMutex<Option<Arc<Gravity>>>,
     /// Keeps track of the log level that the log state is initiated with
     level: LogLevel,
+    /// `log_dashboard_sometimes` abort handle if it has been spawned.
+    _dashboard_abort_handle: Option<AbortOnDropHandle>,
 }
 
 #[derive(Clone)]
@@ -730,20 +732,21 @@ impl LogState {
             tail: Arc::new(PaMutex::new(VecDeque::with_capacity(64))),
             gravity: PaMutex::new(None),
             level: LogLevel::default(),
+            _dashboard_abort_handle: None,
         }
     }
 
     /// Initialize according to the MM command-line configuration.
     pub fn mm(_conf: &Json) -> LogState {
         let dashboard = Arc::new(PaMutex::new(Vec::new()));
-
-        spawn(log_dashboard_sometimes(Arc::downgrade(&dashboard)));
+        let abort_handle = spawn_abortable(log_dashboard_sometimes(Arc::downgrade(&dashboard)));
 
         LogState {
             dashboard,
             tail: Arc::new(PaMutex::new(VecDeque::with_capacity(64))),
             gravity: PaMutex::new(None),
             level: LogLevel::default(),
+            _dashboard_abort_handle: Some(abort_handle),
         }
     }
 

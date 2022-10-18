@@ -1,11 +1,11 @@
 use super::{CoinBalance, HistorySyncState, MarketCoinOps, MmCoin, RawTransactionFut, RawTransactionRequest, SwapOps,
             TradeFee, TransactionEnum, TransactionFut};
-use crate::{coin_errors::{MyAddressError, ValidatePaymentError, ValidatePaymentFut},
-            BalanceFut, CanRefundHtlc, FeeApproxStage, FoundSwapTxSpend, NegotiateSwapContractAddrErr,
+use crate::{coin_errors::{MyAddressError, ValidatePaymentError},
+            BalanceFut, CanRefundHtlc, CoinFutSpawner, FeeApproxStage, FoundSwapTxSpend, NegotiateSwapContractAddrErr,
             PaymentInstructions, PaymentInstructionsErr, SearchForSwapTxSpendInput, SignatureResult, TradePreimageFut,
             TradePreimageResult, TradePreimageValue, TxMarshalingErr, UnexpectedDerivationMethod,
-            ValidateAddressResult, ValidateInstructionsErr, ValidateOtherPubKeyErr, ValidatePaymentInput,
-            VerificationResult, WatcherValidatePaymentInput, WithdrawFut, WithdrawRequest};
+            ValidateAddressResult, ValidateInstructionsErr, ValidateOtherPubKeyErr, ValidatePaymentFut,
+            ValidatePaymentInput, VerificationResult, WatcherValidatePaymentInput, WithdrawFut, WithdrawRequest};
 use async_trait::async_trait;
 use futures01::Future;
 use keys::KeyPair;
@@ -279,6 +279,8 @@ impl SwapOps for TestCoin {
 #[allow(clippy::forget_ref, clippy::forget_copy, clippy::cast_ref_to_mut)]
 impl MmCoin for TestCoin {
     fn is_asset_chain(&self) -> bool { unimplemented!() }
+
+    fn spawner(&self) -> CoinFutSpawner { unimplemented!() }
 
     fn get_raw_transaction(&self, _req: RawTransactionRequest) -> RawTransactionFut { unimplemented!() }
 

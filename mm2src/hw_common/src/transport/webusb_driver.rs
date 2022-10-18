@@ -1,5 +1,5 @@
 use crate::transport::{send_event_recv_response, InternalError};
-use common::executor::spawn_local;
+use common::executor::{spawn_local_abortable, AbortOnDropHandle};
 use common::{deserialize_from_js, log::error, serialize_to_js, stringify_js_error};
 use derive_more::Display;
 use futures::channel::{mpsc, oneshot};
@@ -115,6 +115,8 @@ pub struct DeviceInterfaceInfo {
 
 pub struct WebUsbWrapper {
     event_tx: WebUsbEventSender,
+    /// This abort handle is needed to drop the spawned future at [`WebUsbWrapper::new`] immediately.
+    _abort_handle: AbortOnDropHandle,
 }
 
 impl WebUsbWrapper {
@@ -135,8 +137,12 @@ impl WebUsbWrapper {
                 }
             }
         };
-        spawn_local(fut);
-        Ok(WebUsbWrapper { event_tx })
+
+        let abort_handle = spawn_local_abortable(fut);
+        Ok(WebUsbWrapper {
+            event_tx,
+            _abort_handle: abort_handle,
+        })
     }
 
     pub async fn request_device(&self, filters: Vec<DeviceFilter>) -> WebUsbResult<()> {
@@ -183,12 +189,13 @@ impl WebUsbWrapper {
             let device_info = WebUsbDeviceInfo::from_usb_device(&device);
 
             let (device_event_tx, device_event_rx) = mpsc::unbounded();
+            let abort_handle = spawn_local_abortable(WebUsbDevice::event_loop(device, device_event_rx));
+
             result_devices.push(WebUsbDevice {
                 event_tx: device_event_tx,
                 device_info,
+                _abort_handle: abort_handle,
             });
-
-            spawn_local(WebUsbDevice::event_loop(device, device_event_rx));
         }
         Ok(result_devices)
     }
@@ -197,6 +204,8 @@ impl WebUsbWrapper {
 pub struct WebUsbDevice {
     pub event_tx: DeviceEventSender,
     pub device_info: WebUsbDeviceInfo,
+    /// This abort handle is needed to drop the spawned future at [`WebUsbWrapper::on_get_devices`] immediately.
+    _abort_handle: AbortOnDropHandle,
 }
 
 impl WebUsbDevice {

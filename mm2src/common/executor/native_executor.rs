@@ -6,12 +6,14 @@ use std::pin::Pin;
 use std::thread;
 use std::time::Duration;
 
+/// # Important
+///
+/// The `spawn` function must be used carefully to avoid hanging pointers.
+/// Please consider using `AbortableQueue`, `AbortableSimpleMap` or `spawn_abortable` instead.
 pub fn spawn(future: impl Future03<Output = ()> + Send + 'static) { crate::wio::CORE.0.spawn(future); }
 
-pub fn spawn_boxed(future: Box<dyn Future03<Output = ()> + Send + Unpin + 'static>) { spawn(future); }
-
 /// Schedule the given `future` to be executed shortly after the given `utc` time is reached.
-pub fn spawn_after(utc: f64, future: impl Future03<Output = ()> + Send + 'static) {
+fn spawn_after(utc: f64, future: impl Future03<Output = ()> + Send + 'static) {
     use crossbeam::channel;
     use gstuff::Constructible;
     use std::collections::BTreeMap;
@@ -47,7 +49,7 @@ pub fn spawn_after(utc: f64, future: impl Future03<Output = ()> + Send + 'static
                         };
                         //log! ("spawn_after] spawning " (v.len()) " tasks at " [utc]);
                         for f in v {
-                            spawn(f)
+                            spawn(f);
                         }
                     }
                     let (utc, f) = match rx.recv_timeout(next_stop) {
@@ -119,7 +121,7 @@ fn test_timer() {
     let ti = Timer::sleep(0.2);
     let delta = now_float() - started;
     assert!(delta < 0.04, "{}", delta);
-    super::block_on(ti);
+    crate::block_on(ti);
     let delta = now_float() - started;
     println!("time delta is {}", delta);
     assert!(delta > 0.2);

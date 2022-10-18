@@ -12,7 +12,6 @@ use coins::solana::spl::{SplProtocolConf, SplTokenCreationError};
 use coins::{solana_coin_from_conf_and_params, BalanceError, CoinBalance, CoinProtocol, MarketCoinOps,
             SolanaActivationParams, SolanaCoin, SplToken};
 use common::Future01CompatExt;
-use futures::future::AbortHandle;
 use mm2_core::mm_ctx::MmArc;
 use mm2_err_handle::prelude::*;
 use mm2_metrics::MetricsArc;
@@ -164,17 +163,22 @@ impl PlatformWithTokensActivationOps for SolanaCoin {
     type ActivationError = SolanaWithTokensActivationError;
 
     async fn enable_platform_coin(
-        _ctx: MmArc,
+        ctx: MmArc,
         ticker: String,
         platform_conf: Json,
         activation_request: Self::ActivationRequest,
         _protocol_conf: Self::PlatformProtocolInfo,
         priv_key: &[u8],
     ) -> Result<Self, MmError<Self::ActivationError>> {
-        let platform_coin =
-            solana_coin_from_conf_and_params(&ticker, &platform_conf, activation_request.platform_request, priv_key)
-                .await
-                .map_to_mm(|error| SolanaWithTokensActivationError::PlatformCoinCreationError { ticker, error })?;
+        let platform_coin = solana_coin_from_conf_and_params(
+            &ctx,
+            &ticker,
+            &platform_conf,
+            activation_request.platform_request,
+            priv_key,
+        )
+        .await
+        .map_to_mm(|error| SolanaWithTokensActivationError::PlatformCoinCreationError { ticker, error })?;
         Ok(platform_coin)
     }
 
@@ -230,7 +234,6 @@ impl PlatformWithTokensActivationOps for SolanaCoin {
         _metrics: MetricsArc,
         _storage: impl TxHistoryStorage + Send + 'static,
         _initial_balance: BigDecimal,
-    ) -> AbortHandle {
-        todo!()
+    ) {
     }
 }

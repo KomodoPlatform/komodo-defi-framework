@@ -15,21 +15,22 @@ use crate::lightning::ln_utils::filter_channels;
 use crate::utxo::rpc_clients::UtxoRpcClientEnum;
 use crate::utxo::utxo_common::{big_decimal_from_sat, big_decimal_from_sat_unsigned};
 use crate::utxo::{sat_from_big_decimal, utxo_common, BlockchainNetwork};
-use crate::{BalanceFut, CoinBalance, FeeApproxStage, FoundSwapTxSpend, HistorySyncState, MarketCoinOps, MmCoin,
-            MyAddressError, NegotiateSwapContractAddrErr, PaymentInstructions, PaymentInstructionsErr,
-            RawTransactionError, RawTransactionFut, RawTransactionRequest, SearchForSwapTxSpendInput, SignatureError,
-            SignatureResult, SwapOps, TradeFee, TradePreimageFut, TradePreimageResult, TradePreimageValue,
-            Transaction, TransactionEnum, TransactionErr, TransactionFut, TxMarshalingErr, UnexpectedDerivationMethod,
-            UtxoStandardCoin, ValidateAddressResult, ValidateInstructionsErr, ValidateOtherPubKeyErr,
-            ValidatePaymentError, ValidatePaymentFut, ValidatePaymentInput, VerificationError, VerificationResult,
-            WatcherValidatePaymentInput, WithdrawError, WithdrawFut, WithdrawRequest};
+use crate::{BalanceFut, CoinBalance, CoinFutSpawner, FeeApproxStage, FoundSwapTxSpend, HistorySyncState,
+            MarketCoinOps, MmCoin, MyAddressError, NegotiateSwapContractAddrErr, PaymentInstructions,
+            PaymentInstructionsErr, RawTransactionError, RawTransactionFut, RawTransactionRequest,
+            SearchForSwapTxSpendInput, SignatureError, SignatureResult, SwapOps, TradeFee, TradePreimageFut,
+            TradePreimageResult, TradePreimageValue, Transaction, TransactionEnum, TransactionErr, TransactionFut,
+            TxMarshalingErr, UnexpectedDerivationMethod, UtxoStandardCoin, ValidateAddressResult,
+            ValidateInstructionsErr, ValidateOtherPubKeyErr, ValidatePaymentError, ValidatePaymentFut,
+            ValidatePaymentInput, VerificationError, VerificationResult, WatcherValidatePaymentInput, WithdrawError,
+            WithdrawFut, WithdrawRequest};
 use async_trait::async_trait;
 use bitcoin::bech32::ToBase32;
 use bitcoin::hashes::Hash;
 use bitcoin_hashes::sha256::Hash as Sha256;
 use bitcrypto::ChecksumType;
 use bitcrypto::{dhash256, ripemd160};
-use common::executor::{spawn, Timer};
+use common::executor::{SpawnFuture, Timer};
 use common::log::{info, LogOnError, LogState};
 use common::{async_blocking, get_local_duration_since_epoch, log, now_ms, PagingOptionsEnum};
 use db_common::sqlite::rusqlite::Error as SqlError;
@@ -48,7 +49,7 @@ use lightning_invoice::{Invoice, InvoiceDescription};
 use ln_conf::{LightningCoinConf, LightningProtocolConf, PlatformCoinConfirmationTargets};
 use ln_db::{DBChannelDetails, HTLCStatus, LightningDB, PaymentInfo, PaymentType};
 use ln_errors::{EnableLightningError, EnableLightningResult};
-use ln_events::{init_events_abort_handlers, LightningEventHandler};
+use ln_events::{init_abortable_events, LightningEventHandler};
 use ln_filesystem_persister::LightningFilesystemPersister;
 use ln_p2p::PeerManager;
 use ln_platform::Platform;
@@ -1007,6 +1008,8 @@ impl MarketCoinOps for LightningCoin {
 impl MmCoin for LightningCoin {
     fn is_asset_chain(&self) -> bool { false }
 
+    fn spawner(&self) -> CoinFutSpawner { CoinFutSpawner::new(&self.platform.abortable_system) }
+
     fn get_raw_transaction(&self, _req: RawTransactionRequest) -> RawTransactionFut {
         let fut = async move {
             MmError::err(RawTransactionError::InternalError(
@@ -1186,6 +1189,7 @@ pub async fn start_lightning(
     // Initialize the PeerManager
     let peer_manager = ln_p2p::init_peer_manager(
         ctx.clone(),
+        &platform,
         params.listening_port,
         channel_manager.clone(),
         gossip_sync.clone(),
@@ -1198,7 +1202,7 @@ pub async fn start_lightning(
 
     let trusted_nodes = Arc::new(PaMutex::new(persister.get_trusted_nodes().await?));
 
-    let events_abort_handlers = init_events_abort_handlers(platform.clone(), db.clone()).await?;
+    init_abortable_events(platform.clone(), db.clone()).await?;
 
     // Initialize the event handler
     let event_handler = Arc::new(ln_events::LightningEventHandler::new(
@@ -1207,7 +1211,6 @@ pub async fn start_lightning(
         keys_manager.clone(),
         db.clone(),
         trusted_nodes.clone(),
-        events_abort_handlers,
     ));
 
     // Initialize routing Scorer
@@ -1254,13 +1257,14 @@ pub async fn start_lightning(
     let open_channels_nodes = Arc::new(PaMutex::new(
         ln_utils::get_open_channels_nodes_addresses(persister.clone(), channel_manager.clone()).await?,
     ));
-    spawn(ln_p2p::connect_to_ln_nodes_loop(
+
+    platform.spawner().spawn(ln_p2p::connect_to_ln_nodes_loop(
         open_channels_nodes.clone(),
         peer_manager.clone(),
     ));
 
     // Broadcast Node Announcement
-    spawn(ln_p2p::ln_node_announcement_loop(
+    platform.spawner().spawn(ln_p2p::ln_node_announcement_loop(
         channel_manager.clone(),
         params.node_name,
         params.node_color,

@@ -5,7 +5,6 @@ use coins::tx_history_storage::{CreateTxHistoryStorageError, TxHistoryStorageBui
 use coins::{lp_coinfind, CoinProtocol, CoinsContext, MmCoinEnum};
 use common::{log, HttpStatusCode, StatusCode};
 use derive_more::Display;
-use futures::future::AbortHandle;
 use mm2_core::mm_ctx::MmArc;
 use mm2_err_handle::prelude::*;
 use mm2_metrics::MetricsArc;
@@ -165,7 +164,7 @@ pub trait PlatformWithTokensActivationOps: Into<MmCoinEnum> {
         metrics: MetricsArc,
         storage: impl TxHistoryStorage,
         initial_balance: BigDecimal,
-    ) -> AbortHandle;
+    );
 }
 
 #[derive(Debug, Deserialize)]
@@ -324,12 +323,11 @@ where
     log::info!("{} current block {}", req.ticker, activation_result.current_block());
 
     if req.request.tx_history() {
-        let abort_handler = platform_coin.start_history_background_fetching(
+        platform_coin.start_history_background_fetching(
             ctx.metrics.clone(),
             TxHistoryStorageBuilder::new(&ctx).build()?,
             activation_result.get_platform_balance(),
         );
-        ctx.abort_handlers.lock().unwrap().push(abort_handler);
     }
 
     let coins_ctx = CoinsContext::from_ctx(&ctx).unwrap();

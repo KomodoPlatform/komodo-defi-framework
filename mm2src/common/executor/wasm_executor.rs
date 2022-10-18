@@ -1,4 +1,6 @@
+use crate::executor::AbortOnDropHandle;
 use crate::now_float;
+use futures::future::{abortable, FutureExt};
 use futures::task::{Context, Poll};
 use std::future::Future;
 use std::pin::Pin;
@@ -16,11 +18,23 @@ extern "C" {
     fn clearTimeout(id: i32);
 }
 
+/// # Important
+///
+/// The `spawn` function must be used carefully to avoid hanging pointers.
+/// Please consider using `AbortableQueue`, `AbortableSimpleMap` or `spawn_abortable` instead.
 pub fn spawn(future: impl Future<Output = ()> + Send + 'static) { spawn_local(future) }
 
-pub fn spawn_boxed(future: Box<dyn Future<Output = ()> + Send + Unpin + 'static>) { spawn_local(future) }
-
+/// # Important
+///
+/// The `spawn` function must be used carefully to avoid hanging pointers.
+/// Please consider using `AbortableQueue`, `AbortableSimpleMap` or `spawn_abortable` instead.
 pub fn spawn_local(future: impl Future<Output = ()> + 'static) { wasm_bindgen_futures::spawn_local(future) }
+
+pub fn spawn_local_abortable(future: impl Future<Output = ()> + 'static) -> AbortOnDropHandle {
+    let (abortable, handle) = abortable(future);
+    spawn_local(abortable.then(|_| futures::future::ready(())));
+    AbortOnDropHandle::from(handle)
+}
 
 /// The timer uses [`setTimeout`] and [`clearTimeout`] for scheduling.
 /// See the [example](https://rustwasm.github.io/docs/wasm-bindgen/reference/passing-rust-closures-to-js.html#heap-allocated-closures).

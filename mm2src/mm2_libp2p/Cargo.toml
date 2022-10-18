@@ -9,6 +9,7 @@ edition = "2018"
 [dependencies]
 async-trait = "0.1"
 atomicdex-gossipsub = { path = "../gossipsub" }
+common = { path = "../common" }
 derive_more = "0.99"
 libp2p-floodsub = { path = "../floodsub" }
 futures = { version = "0.3.1", package = "futures", features = ["compat", "async-await"] }

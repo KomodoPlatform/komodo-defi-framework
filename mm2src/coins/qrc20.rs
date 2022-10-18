@@ -14,11 +14,11 @@ use crate::utxo::{qtum, ActualTxFee, AdditionalTxData, AddrFromStrError, Broadca
                   GetUtxoListOps, HistoryUtxoTx, HistoryUtxoTxMap, MatureUnspentList, RecentlySpentOutPointsGuard,
                   UtxoActivationParams, UtxoAddressFormat, UtxoCoinFields, UtxoCommonOps, UtxoFromLegacyReqErr,
                   UtxoTx, UtxoTxBroadcastOps, UtxoTxGenerationOps, VerboseTransactionFrom, UTXO_LOCK};
-use crate::{BalanceError, BalanceFut, CoinBalance, FeeApproxStage, FoundSwapTxSpend, HistorySyncState, MarketCoinOps,
-            MmCoin, NegotiateSwapContractAddrErr, PaymentInstructions, PaymentInstructionsErr, PrivKeyNotAllowed,
-            RawTransactionFut, RawTransactionRequest, SearchForSwapTxSpendInput, SignatureResult, SwapOps, TradeFee,
-            TradePreimageError, TradePreimageFut, TradePreimageResult, TradePreimageValue, TransactionDetails,
-            TransactionEnum, TransactionErr, TransactionFut, TransactionType, TxMarshalingErr,
+use crate::{BalanceError, BalanceFut, CoinBalance, CoinFutSpawner, FeeApproxStage, FoundSwapTxSpend, HistorySyncState,
+            MarketCoinOps, MmCoin, NegotiateSwapContractAddrErr, PaymentInstructions, PaymentInstructionsErr,
+            PrivKeyNotAllowed, RawTransactionFut, RawTransactionRequest, SearchForSwapTxSpendInput, SignatureResult,
+            SwapOps, TradeFee, TradePreimageError, TradePreimageFut, TradePreimageResult, TradePreimageValue,
+            TransactionDetails, TransactionEnum, TransactionErr, TransactionFut, TransactionType, TxMarshalingErr,
             UnexpectedDerivationMethod, ValidateAddressResult, ValidateInstructionsErr, ValidateOtherPubKeyErr,
             ValidatePaymentFut, ValidatePaymentInput, VerificationResult, WatcherValidatePaymentInput, WithdrawError,
             WithdrawFee, WithdrawFut, WithdrawRequest, WithdrawResult};
@@ -1193,6 +1193,8 @@ impl MarketCoinOps for Qrc20Coin {
 #[async_trait]
 impl MmCoin for Qrc20Coin {
     fn is_asset_chain(&self) -> bool { utxo_common::is_asset_chain(&self.utxo) }
+
+    fn spawner(&self) -> CoinFutSpawner { CoinFutSpawner::new(&self.as_ref().abortable_system) }
 
     fn withdraw(&self, req: WithdrawRequest) -> WithdrawFut {
         Box::new(qrc20_withdraw(self.clone(), req).boxed().compat())
