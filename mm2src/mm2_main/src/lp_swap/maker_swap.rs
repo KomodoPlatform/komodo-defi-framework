@@ -6,9 +6,9 @@ use super::trade_preimage::{TradePreimageRequest, TradePreimageRpcError, TradePr
 use super::{broadcast_my_swap_status, broadcast_p2p_tx_msg, broadcast_swap_message_every,
             check_other_coin_balance_for_swap, detect_secret_hash_algo, dex_fee_amount_from_taker_coin,
             get_locked_amount, recv_swap_msg, swap_topic, tx_helper_topic, AtomicSwap, LockedAmount, MySwapInfo,
-            NegotiationDataMsg, NegotiationDataV2, NegotiationDataV3, PaymentDataV2, RecoveredSwap,
-            RecoveredSwapAction, SavedSwap, SavedSwapIo, SavedTradeFee, SecretHashAlgo, SwapConfirmationsSettings,
-            SwapError, SwapMsg, SwapTxDataMsg, SwapsContext, TransactionIdentifier, WAIT_CONFIRM_INTERVAL};
+            NegotiationDataMsg, NegotiationDataV2, NegotiationDataV3, RecoveredSwap, RecoveredSwapAction, SavedSwap,
+            SavedSwapIo, SavedTradeFee, SecretHashAlgo, SwapConfirmationsSettings, SwapError, SwapMsg, SwapTxDataMsg,
+            SwapsContext, TransactionIdentifier, WAIT_CONFIRM_INTERVAL};
 use crate::mm2::lp_dispatcher::{DispatcherContext, LpEvents};
 use crate::mm2::lp_network::subscribe_to_topic;
 use crate::mm2::lp_ordermatch::{MakerOrderBuilder, OrderConfirmationsSettings};
@@ -414,18 +414,11 @@ impl MakerSwap {
         // It's not really needed here unlike in TakerFee msg since the hash is included in the invoice/payment_instructions but it's kept for symmetry
         let payment_data = self.r().maker_payment.as_ref().unwrap().tx_hex_or_hash().0;
         let hash_algo = SecretHashAlgo::SHA256;
-        if let Some(instructions) = self
+        let instructions = self
             .taker_coin
             .payment_instructions(&hash_algo.hash_secret(self.secret.as_slice()), &self.taker_amount)
-            .await?
-        {
-            Ok(SwapTxDataMsg::V2(PaymentDataV2 {
-                data: payment_data,
-                next_step_instructions: instructions,
-            }))
-        } else {
-            Ok(SwapTxDataMsg::V1(payment_data))
-        }
+            .await?;
+        Ok(SwapTxDataMsg::new(payment_data, instructions))
     }
 
     async fn start(&self) -> Result<(Option<MakerSwapCommand>, Vec<MakerSwapEvent>), String> {

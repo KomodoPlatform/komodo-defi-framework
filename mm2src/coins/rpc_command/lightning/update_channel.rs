@@ -24,8 +24,7 @@ impl HttpStatusCode for UpdateChannelError {
     fn status_code(&self) -> StatusCode {
         match self {
             UpdateChannelError::UnsupportedCoin(_) => StatusCode::BAD_REQUEST,
-            UpdateChannelError::NoSuchChannel(_) => StatusCode::NOT_FOUND,
-            UpdateChannelError::NoSuchCoin(_) => StatusCode::NOT_FOUND,
+            UpdateChannelError::NoSuchChannel(_) | UpdateChannelError::NoSuchCoin(_) => StatusCode::NOT_FOUND,
             UpdateChannelError::FailureToUpdateChannel(_, _) => StatusCode::INTERNAL_SERVER_ERROR,
         }
     }

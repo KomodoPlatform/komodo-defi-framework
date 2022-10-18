@@ -731,6 +731,17 @@ impl SwapTxDataMsg {
             SwapTxDataMsg::V2(v2) => Some(&v2.next_step_instructions),
         }
     }
+
+    #[inline]
+    pub fn new(data: Vec<u8>, instructions: Option<Vec<u8>>) -> Self {
+        match instructions {
+            Some(next_step_instructions) => SwapTxDataMsg::V2(PaymentDataV2 {
+                data,
+                next_step_instructions,
+            }),
+            None => SwapTxDataMsg::V1(data),
+        }
+    }
 }
 
 #[derive(Clone, Debug, Deserialize, PartialEq, Serialize)]
@@ -1277,10 +1288,6 @@ enum SecretHashAlgo {
     DHASH160,
     /// sha256(secret)
     SHA256,
-}
-
-impl Default for SecretHashAlgo {
-    fn default() -> Self { SecretHashAlgo::DHASH160 }
 }
 
 impl SecretHashAlgo {

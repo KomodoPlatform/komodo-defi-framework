@@ -31,7 +31,7 @@ use bitcrypto::ChecksumType;
 use bitcrypto::{dhash256, ripemd160};
 use common::executor::{spawn, Timer};
 use common::log::{info, LogOnError, LogState};
-use common::{async_blocking, log, now_ms, PagingOptionsEnum};
+use common::{async_blocking, get_local_duration_since_epoch, log, now_ms, PagingOptionsEnum};
 use db_common::sqlite::rusqlite::Error as SqlError;
 use futures::{FutureExt, TryFutureExt};
 use futures01::Future;
@@ -71,7 +71,6 @@ use std::fmt;
 use std::net::SocketAddr;
 use std::str::FromStr;
 use std::sync::Arc;
-use std::time::SystemTime;
 
 pub const DEFAULT_INVOICE_EXPIRY: u32 = 3600;
 
@@ -273,61 +272,100 @@ impl LightningCoin {
         limit: usize,
     ) -> GetOpenChannelsResult {
         fn apply_open_channel_filter(channel_details: &ChannelDetailsForRPC, filter: &OpenChannelsFilter) -> bool {
-            let is_channel_id =
-                filter.channel_id.is_none() || Some(&channel_details.channel_id) == filter.channel_id.as_ref();
+            // Checking if channel_id is some and not equal
+            if filter.channel_id.is_some() && Some(&channel_details.channel_id) != filter.channel_id.as_ref() {
+                return false;
+            }
 
-            let is_counterparty_node_id = filter.counterparty_node_id.is_none()
-                || Some(&channel_details.counterparty_node_id) == filter.counterparty_node_id.as_ref();
+            // Checking if counterparty_node_id is some and not equal
+            if filter.counterparty_node_id.is_some()
+                && Some(&channel_details.counterparty_node_id) != filter.counterparty_node_id.as_ref()
+            {
+                return false;
+            }
 
-            let is_funding_tx = filter.funding_tx.is_none() || channel_details.funding_tx == filter.funding_tx;
+            // Checking if funding_tx is some and not equal
+            if filter.funding_tx.is_some() && channel_details.funding_tx != filter.funding_tx {
+                return false;
+            }
 
-            let is_from_funding_value_sats =
-                Some(&channel_details.funding_tx_value_sats) >= filter.from_funding_value_sats.as_ref();
+            // Checking if from_funding_value_sats is some and more than funding_tx_value_sats
+            if filter.from_funding_value_sats.is_some()
+                && Some(&channel_details.funding_tx_value_sats) < filter.from_funding_value_sats.as_ref()
+            {
+                return false;
+            }
 
-            let is_to_funding_value_sats = filter.to_funding_value_sats.is_none()
-                || Some(&channel_details.funding_tx_value_sats) <= filter.to_funding_value_sats.as_ref();
+            // Checking if to_funding_value_sats is some and less than funding_tx_value_sats
+            if filter.to_funding_value_sats.is_some()
+                && Some(&channel_details.funding_tx_value_sats) > filter.to_funding_value_sats.as_ref()
+            {
+                return false;
+            }
 
-            let is_outbound =
-                filter.is_outbound.is_none() || Some(&channel_details.is_outbound) == filter.is_outbound.as_ref();
+            // Checking if is_outbound is some and not equal
+            if filter.is_outbound.is_some() && Some(&channel_details.is_outbound) != filter.is_outbound.as_ref() {
+                return false;
+            }
 
-            let is_from_balance_msat = Some(&channel_details.balance_msat) >= filter.from_balance_msat.as_ref();
+            // Checking if from_balance_msat is some and more than balance_msat
+            if filter.from_balance_msat.is_some()
+                && Some(&channel_details.balance_msat) < filter.from_balance_msat.as_ref()
+            {
+                return false;
+            }
 
-            let is_to_balance_msat = filter.to_balance_msat.is_none()
-                || Some(&channel_details.balance_msat) <= filter.to_balance_msat.as_ref();
+            // Checking if to_balance_msat is some and less than balance_msat
+            if filter.to_balance_msat.is_some() && Some(&channel_details.balance_msat) > filter.to_balance_msat.as_ref()
+            {
+                return false;
+            }
 
-            let is_from_outbound_capacity_msat =
-                Some(&channel_details.outbound_capacity_msat) >= filter.from_outbound_capacity_msat.as_ref();
+            // Checking if from_outbound_capacity_msat is some and more than outbound_capacity_msat
+            if filter.from_outbound_capacity_msat.is_some()
+                && Some(&channel_details.outbound_capacity_msat) < filter.from_outbound_capacity_msat.as_ref()
+            {
+                return false;
+            }
 
-            let is_to_outbound_capacity_msat = filter.to_outbound_capacity_msat.is_none()
-                || Some(&channel_details.outbound_capacity_msat) <= filter.to_outbound_capacity_msat.as_ref();
+            // Checking if to_outbound_capacity_msat is some and less than outbound_capacity_msat
+            if filter.to_outbound_capacity_msat.is_some()
+                && Some(&channel_details.outbound_capacity_msat) > filter.to_outbound_capacity_msat.as_ref()
+            {
+                return false;
+            }
 
-            let is_from_inbound_capacity_msat =
-                Some(&channel_details.inbound_capacity_msat) >= filter.from_inbound_capacity_msat.as_ref();
+            // Checking if from_inbound_capacity_msat is some and more than outbound_capacity_msat
+            if filter.from_inbound_capacity_msat.is_some()
+                && Some(&channel_details.inbound_capacity_msat) < filter.from_inbound_capacity_msat.as_ref()
+            {
+                return false;
+            }
 
-            let is_to_inbound_capacity_msat = filter.to_inbound_capacity_msat.is_none()
-                || Some(&channel_details.inbound_capacity_msat) <= filter.to_inbound_capacity_msat.as_ref();
+            // Checking if to_inbound_capacity_msat is some and less than inbound_capacity_msat
+            if filter.to_inbound_capacity_msat.is_some()
+                && Some(&channel_details.inbound_capacity_msat) > filter.to_inbound_capacity_msat.as_ref()
+            {
+                return false;
+            }
 
-            let is_confirmed = filter.is_ready.is_none() || Some(&channel_details.is_ready) == filter.is_ready.as_ref();
+            // Checking if is_ready is some and not equal
+            if filter.is_ready.is_some() && Some(&channel_details.is_ready) != filter.is_ready.as_ref() {
+                return false;
+            }
 
-            let is_usable = filter.is_usable.is_none() || Some(&channel_details.is_usable) == filter.is_usable.as_ref();
+            // Checking if is_usable is some and not equal
+            if filter.is_usable.is_some() && Some(&channel_details.is_usable) != filter.is_usable.as_ref() {
+                return false;
+            }
 
-            let is_public = filter.is_public.is_none() || Some(&channel_details.is_public) == filter.is_public.as_ref();
+            // Checking if is_public is some and not equal
+            if filter.is_public.is_some() && Some(&channel_details.is_public) != filter.is_public.as_ref() {
+                return false;
+            }
 
-            is_channel_id
-                && is_counterparty_node_id
-                && is_funding_tx
-                && is_from_funding_value_sats
-                && is_to_funding_value_sats
-                && is_outbound
-                && is_from_balance_msat
-                && is_to_balance_msat
-                && is_from_outbound_capacity_msat
-                && is_to_outbound_capacity_msat
-                && is_from_inbound_capacity_msat
-                && is_to_inbound_capacity_msat
-                && is_confirmed
-                && is_usable
-                && is_public
+            // All checks pass
+            true
         }
 
         let mut total_open_channels: Vec<ChannelDetailsForRPC> =
@@ -376,10 +414,6 @@ impl LightningCoin {
         description: String,
         invoice_expiry_delta_secs: u32,
     ) -> Result<Invoice, MmError<SignOrCreationError<()>>> {
-        let duration = SystemTime::now()
-            .duration_since(SystemTime::UNIX_EPOCH)
-            .expect("for the foreseeable future this shouldn't happen");
-
         let open_channels_nodes = self.open_channels_nodes.lock().clone();
         for (node_pubkey, node_addr) in open_channels_nodes {
             ln_p2p::connect_to_ln_node(node_pubkey, node_addr, self.peer_manager.clone())
@@ -399,6 +433,8 @@ impl LightningCoin {
             .create_inbound_payment_for_hash(payment_hash, amt_msat, invoice_expiry_delta_secs)
             .map_to_mm(|()| SignOrCreationError::CreationError(CreationError::InvalidAmount))?;
         let our_node_pubkey = self.channel_manager.get_our_node_id();
+        // Todo: Check if it's better to use UTC instead of local time for invoice generations
+        let duration = get_local_duration_since_epoch().expect("for the foreseeable future this shouldn't happen");
 
         let mut invoice = InvoiceBuilder::new(self.platform.network.clone().into())
             .description(description)
@@ -719,7 +755,7 @@ impl SwapOps for LightningCoin {
     ) -> Result<Option<PaymentInstructions>, MmError<ValidateInstructionsErr>> {
         let invoice = Invoice::from_str(&String::from_utf8_lossy(instructions))?;
         if invoice.payment_hash().as_inner() != secret_hash
-            || (secret_hash.len() == 20 && ripemd160(invoice.payment_hash().as_inner()).as_slice() != secret_hash)
+            && ripemd160(invoice.payment_hash().as_inner()).as_slice() != secret_hash
         {
             return Err(
                 ValidateInstructionsErr::ValidateLightningInvoiceErr("Invalid invoice payment hash!".into()).into(),

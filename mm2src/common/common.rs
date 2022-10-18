@@ -144,6 +144,7 @@ use std::os::raw::c_void;
 use std::panic::{set_hook, PanicInfo};
 use std::ptr::read_volatile;
 use std::sync::atomic::Ordering;
+use std::time::{Duration, SystemTime, SystemTimeError};
 use uuid::Uuid;
 
 use crate::executor::spawn;
@@ -960,3 +961,7 @@ pub fn spawn_abortable(fut: impl Future03<Output = ()> + Send + 'static) -> Abor
 
 #[inline(always)]
 pub fn get_utc_timestamp() -> i64 { Utc::now().timestamp() }
+
+pub fn get_local_duration_since_epoch() -> Result<Duration, SystemTimeError> {
+    SystemTime::now().duration_since(SystemTime::UNIX_EPOCH)
+}
