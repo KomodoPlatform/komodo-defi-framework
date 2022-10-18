@@ -248,8 +248,14 @@ impl SwapOps for TendermintToken {
         swap_contract_address: &Option<BytesJson>,
         swap_unique_data: &[u8],
     ) -> Box<dyn Future<Item = Option<TransactionEnum>, Error = String> + Send> {
-        let fut = async move { Ok(None) };
-        Box::new(fut.boxed().compat())
+        self.platform_coin.check_if_my_payment_sent(
+            time_lock,
+            other_pub,
+            secret_hash,
+            search_from_block,
+            swap_contract_address,
+            swap_unique_data,
+        )
     }
 
     async fn search_for_swap_tx_spend_my(
