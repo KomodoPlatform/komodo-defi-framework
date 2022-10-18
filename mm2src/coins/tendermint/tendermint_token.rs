@@ -420,6 +420,13 @@ impl MmCoin for TendermintToken {
                 )
             };
 
+            if !coin.is_tx_amount_enough(token.decimals, &amount_dec) {
+                return MmError::err(WithdrawError::AmountTooLow {
+                    amount: amount_dec,
+                    threshold: token.min_tx_amount(),
+                });
+            }
+
             let received_by_me = if to_address == coin.account_id {
                 amount_dec
             } else {

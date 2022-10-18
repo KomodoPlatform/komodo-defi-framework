@@ -406,7 +406,13 @@ impl TendermintCoin {
         let response = self.rpc_client().await?.perform(request).await?;
         let response = SimulateResponse::decode(response.response.value.as_slice())?;
 
-        let gas = response.gas_info.expect("Could not simulate tx gas cost");
+        let gas = response.gas_info.as_ref().ok_or_else(|| {
+            TendermintCoinRpcError::InvalidResponse(format!(
+                "Could not read gas_info. Invalid Response: {:?}",
+                response
+            ))
+        })?;
+
         let amount = (gas.gas_used as f64 * self.gas_price()).ceil();
 
         let fee_amount = Coin {
@@ -431,7 +437,13 @@ impl TendermintCoin {
         let response = self.rpc_client().await?.perform(request).await?;
         let response = SimulateResponse::decode(response.response.value.as_slice())?;
 
-        let gas = response.gas_info.expect("Could not simulate tx gas cost");
+        let gas = response.gas_info.as_ref().ok_or_else(|| {
+            TendermintCoinRpcError::InvalidResponse(format!(
+                "Could not read gas_info. Invalid Response: {:?}",
+                response
+            ))
+        })?;
+
         Ok((gas.gas_used as f64 * self.gas_price()).ceil() as u64)
     }
 
@@ -924,6 +936,12 @@ impl TendermintCoin {
 
         Ok(QueryHtlcResponseProto::decode(response.value.as_slice())?)
     }
+
+    #[inline]
+    pub(crate) fn is_tx_amount_enough(&self, decimals: u8, amount: &BigDecimal) -> bool {
+        let min_tx_amount = big_decimal_from_sat(1, decimals);
+        amount >= &min_tx_amount
+    }
 }
 
 #[async_trait]
@@ -962,6 +980,14 @@ impl MmCoin for TendermintCoin {
                     total,
                 )
             };
+
+            if !coin.is_tx_amount_enough(coin.decimals, &amount_dec) {
+                return MmError::err(WithdrawError::AmountTooLow {
+                    amount: amount_dec,
+                    threshold: coin.min_tx_amount(),
+                });
+            }
+
             let received_by_me = if to_address == coin.account_id {
                 amount_dec
             } else {
