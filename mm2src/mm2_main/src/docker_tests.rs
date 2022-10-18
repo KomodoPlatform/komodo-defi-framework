@@ -430,7 +430,6 @@ mod docker_tests {
     }
 
     #[test]
-    #[ignore]
     fn test_for_non_existent_tx_hex_utxo() {
         // This test shouldn't wait till timeout!
         let timeout = (now_ms() / 1000) + 120;
