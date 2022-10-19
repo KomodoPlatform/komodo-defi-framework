@@ -425,13 +425,7 @@ impl State for RefundTakerPayment {
 impl LastState for Stopped {
     type Ctx = WatcherContext;
     type Result = ();
-    async fn on_changed(self: Box<Self>, watcher_ctx: &mut Self::Ctx) -> Self::Result {
-        let swap_ctx = SwapsContext::from_ctx(&watcher_ctx.ctx).unwrap();
-        swap_ctx
-            .taker_swap_watchers
-            .lock()
-            .remove(watcher_ctx.data.taker_fee_hash.clone());
-    }
+    async fn on_changed(self: Box<Self>, _watcher_ctx: &mut Self::Ctx) -> Self::Result {}
 }
 
 pub async fn process_watcher_msg(ctx: MmArc, msg: &[u8]) {
