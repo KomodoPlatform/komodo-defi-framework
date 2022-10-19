@@ -186,7 +186,6 @@ impl State for ValidateTakerPayment {
             tx: &watcher_ctx.data.taker_payment_hex,
             search_from_block: watcher_ctx.data.taker_coin_start_block,
             swap_contract_address: &None,
-            swap_unique_data: &[],
         };
 
         match watcher_ctx

@@ -467,7 +467,6 @@ pub struct WatcherSearchForSwapTxSpendInput<'a> {
     pub tx: &'a [u8],
     pub search_from_block: u64,
     pub swap_contract_address: &'a Option<BytesJson>,
-    pub swap_unique_data: &'a [u8],
 }
 
 #[derive(Clone, Debug)]
