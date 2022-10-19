@@ -1378,6 +1378,7 @@ impl TakerSwap {
     }
 
     async fn wait_for_taker_payment_spend(&self) -> Result<(Option<TakerSwapCommand>, Vec<TakerSwapEvent>), String> {
+        const WAIT_FOR_TAKER_PAYMENT_INTERVAL: f64 = 600.;
         let tx_hex = self.r().taker_payment.as_ref().unwrap().tx_hex.0.clone();
         let mut watcher_broadcast_abort_handle = None;
         if self.ctx.use_watchers() {
@@ -1390,15 +1391,20 @@ impl TakerSwap {
                         self.ctx.clone(),
                         watcher_topic(&self.r().data.taker_coin),
                         swpmsg_watcher,
-                        600.,
+                        WAIT_FOR_TAKER_PAYMENT_INTERVAL,
                         self.p2p_privkey,
                     ));
                 }
             }
         }
         let msg = SwapMsg::TakerPayment(tx_hex);
-        let send_abort_handle =
-            broadcast_swap_message_every(self.ctx.clone(), swap_topic(&self.uuid), msg, 600., self.p2p_privkey);
+        let send_abort_handle = broadcast_swap_message_every(
+            self.ctx.clone(),
+            swap_topic(&self.uuid),
+            msg,
+            WAIT_FOR_TAKER_PAYMENT_INTERVAL,
+            self.p2p_privkey,
+        );
 
         let wait_duration = (self.r().data.lock_duration * 4) / 5;
         let wait_taker_payment = self.r().data.started_at + wait_duration;
