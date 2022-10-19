@@ -388,9 +388,18 @@ fn insert_or_update_order(ctx: &MmArc, item: OrderbookItem) {
     orderbook.insert_or_update_order_update_trie(item)
 }
 
+// use this function when notify maker order created
+fn insert_or_update_my_order(ctx: &MmArc, item: OrderbookItem, my_order: &MakerOrder) {
+    let ordermatch_ctx = OrdermatchContext::from_ctx(ctx).expect("from_ctx failed");
+    let mut orderbook = ordermatch_ctx.orderbook.lock();
+    orderbook.insert_or_update_order_update_trie(item);
+    if let Some(key) = my_order.p2p_privkey {
+        orderbook.my_p2p_pubkeys.insert(hex::encode(key.public_slice()));
+    }
+}
+
 fn delete_order(ctx: &MmArc, pubkey: &str, uuid: Uuid) {
     let ordermatch_ctx = OrdermatchContext::from_ctx(ctx).expect("from_ctx failed");
-
     let mut orderbook = ordermatch_ctx.orderbook.lock();
     if let Some(order) = orderbook.order_set.get(&uuid) {
         if order.pubkey == pubkey {
@@ -399,10 +408,13 @@ fn delete_order(ctx: &MmArc, pubkey: &str, uuid: Uuid) {
     }
 }
 
-fn delete_my_order(ctx: &MmArc, uuid: Uuid) {
+fn delete_my_order(ctx: &MmArc, uuid: Uuid, p2p_privkey: Option<SerializableSecp256k1Keypair>) {
     let ordermatch_ctx: Arc<OrdermatchContext> = OrdermatchContext::from_ctx(ctx).expect("from_ctx failed");
     let mut orderbook = ordermatch_ctx.orderbook.lock();
     orderbook.remove_order_trie_update(uuid);
+    if let Some(key) = p2p_privkey {
+        orderbook.my_p2p_pubkeys.remove(&hex::encode(key.public_slice()));
+    }
 }
 
 fn remove_pubkey_pair_orders(orderbook: &mut Orderbook, pubkey: &str, alb_pair: &str) {
@@ -952,8 +964,8 @@ fn maker_order_created_p2p_notify(
     };
 
     let encoded_msg = encode_and_sign(&to_broadcast, key_pair.private_ref()).unwrap();
-    let order: OrderbookItem = (message, hex::encode(key_pair.public_slice())).into();
-    insert_or_update_order(&ctx, order);
+    let item: OrderbookItem = (message, hex::encode(key_pair.public_slice())).into();
+    insert_or_update_my_order(&ctx, item, order);
     broadcast_p2p_msg(&ctx, vec![topic], encoded_msg, peer_id);
 }
 
@@ -990,7 +1002,7 @@ fn maker_order_cancelled_p2p_notify(ctx: MmArc, order: &MakerOrder) {
         timestamp: now_ms() / 1000,
         pair_trie_root: H64::default(),
     });
-    delete_my_order(&ctx, order.uuid);
+    delete_my_order(&ctx, order.uuid, order.p2p_privkey);
     log::debug!("maker_order_cancelled_p2p_notify called, message {:?}", message);
     broadcast_ordermatch_message(&ctx, vec![order.orderbook_topic()], message, order.p2p_keypair());
 }
@@ -2409,6 +2421,7 @@ struct Orderbook {
     topics_subscribed_to: HashMap<String, OrderbookRequestingState>,
     /// MemoryDB instance to store Patricia Tries data
     memory_db: MemoryDB<Blake2Hasher64>,
+    my_p2p_pubkeys: HashSet<String>,
 }
 
 fn hashed_null_node<T: TrieConfiguration>() -> TrieHash<T> { <T::Codec as NodeCodecT>::hashed_null_node() }

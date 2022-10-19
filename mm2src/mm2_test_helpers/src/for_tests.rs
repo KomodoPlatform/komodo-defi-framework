@@ -222,7 +222,13 @@ pub fn zombie_conf() -> Json {
                     "hrp_sapling_payment_address": "zs",
                     "b58_pubkey_address_prefix": [ 28, 184 ],
                     "b58_script_address_prefix": [ 28, 189 ]
-                }
+                },
+                "check_point_block": {
+                    "height": 290000,
+                    "time": 1664200629,
+                    "hash": "106BAA72C53E7FA52E30E6D3D15B37001207E3CF3B9FCE9BAB6C6D4AF9ED9200",
+                    "sapling_tree": "017797D05B070D29A47EFEBE3FAD3F29345D31BE608C46A5131CD55D201A631C13000D000119CE6220D0CB0F82AD6466B677828A0B4C2983662DAB181A86F913F7E9FB9C28000139C4399E4CA741CBABBDDAEB6DCC3541BA902343E394160EEECCDF20C289BA65011823D28B592E9612A6C3CF4778F174E10B1B714B4FF85E6E58EE19DD4A0D5734016FA4682B0007E61B63A0442B85E0B8C0CE2409E665F219013B5E24E385F6066B00000001A325043E11CD6A431A0BD99141C4C6E9632A156185EB9B0DBEF665EEC803DD6F00000103C11FCCC90C2EC1A126635F708311EDEF9B93D3E752E053D3AA9EFA0AF9D526"
+                },
             }
         },
         "required_confirmations":0
@@ -1679,7 +1685,7 @@ pub async fn init_z_coin_light(mm: &MarketMakerIt, coin: &str, electrums: &[&str
     let request = mm
         .rpc(&json! ({
             "userpass": mm.userpass,
-            "method": "init_z_coin",
+            "method": "task::enable_z_coin::init",
             "mmrpc": "2.0",
             "params": {
                 "ticker": coin,
@@ -1704,7 +1710,7 @@ pub async fn init_z_coin_status(mm: &MarketMakerIt, task_id: u64) -> Json {
     let request = mm
         .rpc(&json! ({
             "userpass": mm.userpass,
-            "method": "init_z_coin_status",
+            "method": "task::enable_z_coin::status",
             "mmrpc": "2.0",
             "params": {
                 "task_id": task_id,
