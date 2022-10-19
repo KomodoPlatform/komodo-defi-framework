@@ -1763,10 +1763,8 @@ pub fn watcher_validate_taker_fee<T: UtxoCommonOps>(
                 .await
             {
                 Ok(t) => t,
+                Err(e) if attempts > 2 => return MmError::err(ValidatePaymentError::from(e.into_inner())),
                 Err(e) => {
-                    if attempts > 2 {
-                        return MmError::err(ValidatePaymentError::from(e.into_inner()));
-                    };
                     attempts += 1;
                     error!("Error getting tx {:?} from rpc: {:?}", taker_fee_hash, e);
                     Timer::sleep(10.).await;
@@ -1775,19 +1773,16 @@ pub fn watcher_validate_taker_fee<T: UtxoCommonOps>(
             };
 
             match check_all_inputs_signed_by_pub(&*taker_fee_tx, &verified_pub) {
-                Ok(is_valid) => {
-                    if !is_valid {
-                        return MmError::err(ValidatePaymentError::WrongPaymentTx(
-                            "Taker fee does not belong to the verified public key".to_string(),
-                        ));
-                    }
+                Ok(is_valid) if !is_valid => {
+                    return MmError::err(ValidatePaymentError::WrongPaymentTx(
+                        "Taker fee does not belong to the verified public key".to_string(),
+                    ))
                 },
+                Ok(_) => return Ok(()),
                 Err(e) => {
                     return MmError::err(ValidatePaymentError::WrongPaymentTx(e));
                 },
             };
-
-            return Ok(());
         }
     };
     Box::new(fut.boxed().compat())
