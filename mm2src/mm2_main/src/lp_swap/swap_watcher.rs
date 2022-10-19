@@ -1,5 +1,5 @@
-use super::{broadcast_p2p_tx_msg, lp_coinfind, tx_helper_topic, H256Json, SwapsContext, TransactionIdentifier,
-            WAIT_CONFIRM_INTERVAL};
+use super::{broadcast_p2p_tx_msg, lp_coinfind, tx_helper_topic, wait_for_taker_payment_conf_until, H256Json,
+            SwapsContext, TransactionIdentifier, WAIT_CONFIRM_INTERVAL};
 use async_trait::async_trait;
 use coins::{CanRefundHtlc, FoundSwapTxSpend, MmCoinEnum, WatcherSearchForSwapTxSpendInput, WatcherValidatePaymentInput};
 use common::executor::{AbortSettings, SpawnAbortable, Timer};
@@ -207,8 +207,8 @@ impl State for ValidateTakerPayment {
             Ok(None) => (),
         }
 
-        let wait_duration = (watcher_ctx.data.lock_duration * 4) / 5;
-        let wait_taker_payment = watcher_ctx.data.swap_started_at + wait_duration;
+        let wait_taker_payment =
+            wait_for_taker_payment_conf_until(watcher_ctx.data.swap_started_at, watcher_ctx.data.lock_duration);
         let confirmations = min(watcher_ctx.data.taker_payment_confirmations, TAKER_SWAP_CONFIRMATIONS);
 
         let wait_f = watcher_ctx

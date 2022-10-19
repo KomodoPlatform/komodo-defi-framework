@@ -6,7 +6,8 @@ use super::swap_watcher::{watcher_topic, SwapWatcherMsg};
 use super::trade_preimage::{TradePreimageRequest, TradePreimageRpcError, TradePreimageRpcResult};
 use super::{broadcast_my_swap_status, broadcast_swap_message, broadcast_swap_message_every,
             check_other_coin_balance_for_swap, dex_fee_amount_from_taker_coin, dex_fee_rate, dex_fee_threshold,
-            get_locked_amount, recv_swap_msg, swap_topic, AtomicSwap, LockedAmount, MySwapInfo, NegotiationDataMsg,
+            get_locked_amount, recv_swap_msg, swap_topic, wait_for_maker_payment_conf_until,
+            wait_for_taker_payment_conf_until, AtomicSwap, LockedAmount, MySwapInfo, NegotiationDataMsg,
             NegotiationDataV2, NegotiationDataV3, RecoveredSwap, RecoveredSwapAction, SavedSwap, SavedSwapIo,
             SavedTradeFee, SwapConfirmationsSettings, SwapError, SwapMsg, SwapsContext, TransactionIdentifier,
             WAIT_CONFIRM_INTERVAL};
@@ -939,7 +940,7 @@ impl TakerSwap {
             taker_payment_lock: started_at + self.payment_locktime,
             my_persistent_pub: self.my_persistent_pub.into(),
             uuid: self.uuid,
-            maker_payment_wait: maker_payment_wait(started_at, self.payment_locktime),
+            maker_payment_wait: wait_for_maker_payment_conf_until(started_at, self.payment_locktime),
             maker_coin_start_block,
             taker_coin_start_block,
             fee_to_send_taker_fee: Some(SavedTradeFee::from(fee_to_send_dex_fee)),
@@ -1406,8 +1407,8 @@ impl TakerSwap {
             self.p2p_privkey,
         );
 
-        let wait_duration = (self.r().data.lock_duration * 4) / 5;
-        let wait_taker_payment = self.r().data.started_at + wait_duration;
+        let wait_taker_payment =
+            wait_for_taker_payment_conf_until(self.r().data.started_at, self.r().data.lock_duration);
         let wait_f = self
             .taker_coin
             .wait_for_confirmations(
@@ -2259,10 +2260,6 @@ pub fn max_taker_vol_from_available(
         });
     }
     Ok(max_vol)
-}
-
-pub fn maker_payment_wait(swap_started_at: u64, payment_locktime: u64) -> u64 {
-    swap_started_at + (payment_locktime * 2) / 5
 }
 
 #[cfg(all(test, not(target_arch = "wasm32")))]

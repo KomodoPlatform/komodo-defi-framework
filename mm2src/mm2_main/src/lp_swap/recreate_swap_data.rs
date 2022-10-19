@@ -1,9 +1,9 @@
 use crate::mm2::lp_swap::maker_swap::{MakerSwapData, MakerSwapEvent, TakerNegotiationData, MAKER_ERROR_EVENTS,
                                       MAKER_SUCCESS_EVENTS};
-use crate::mm2::lp_swap::taker_swap::{maker_payment_wait, MakerNegotiationData, TakerPaymentSpentData,
-                                      TakerSavedEvent, TakerSwapData, TakerSwapEvent, TAKER_ERROR_EVENTS,
-                                      TAKER_SUCCESS_EVENTS};
-use crate::mm2::lp_swap::{MakerSavedEvent, MakerSavedSwap, SavedSwap, SwapError, TakerSavedSwap};
+use crate::mm2::lp_swap::taker_swap::{MakerNegotiationData, TakerPaymentSpentData, TakerSavedEvent, TakerSwapData,
+                                      TakerSwapEvent, TAKER_ERROR_EVENTS, TAKER_SUCCESS_EVENTS};
+use crate::mm2::lp_swap::{wait_for_maker_payment_conf_until, MakerSavedEvent, MakerSavedSwap, SavedSwap, SwapError,
+                          TakerSavedSwap};
 use coins::{lp_coinfind, MmCoinEnum};
 use common::{HttpStatusCode, StatusCode};
 use derive_more::Display;
@@ -328,7 +328,7 @@ async fn recreate_taker_swap(ctx: MmArc, maker_swap: MakerSavedSwap) -> Recreate
         taker_payment_lock: negotiated_event.taker_payment_locktime,
         uuid: started_event.uuid,
         started_at: started_event.started_at,
-        maker_payment_wait: maker_payment_wait(started_event.started_at, started_event.lock_duration),
+        maker_payment_wait: wait_for_maker_payment_conf_until(started_event.started_at, started_event.lock_duration),
         maker_coin_start_block: started_event.maker_coin_start_block,
         taker_coin_start_block: started_event.taker_coin_start_block,
         // Don't set the fee since the value is used when we calculate locked by other swaps amount only.
