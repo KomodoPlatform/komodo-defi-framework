@@ -17,7 +17,7 @@ use uuid::Uuid;
 
 pub const WATCHER_PREFIX: TopicPrefix = "swpwtchr";
 const TAKER_SWAP_CONFIRMATIONS: u64 = 1;
-pub const TAKER_SWAP_ENTRY_TIMEOUT: u64 = 3600; // How long?
+pub const TAKER_SWAP_ENTRY_TIMEOUT: u64 = 21600;
 const WAIT_FOR_TAKER_REFUND: u64 = 1200; // How long?
 
 struct WatcherContext {
