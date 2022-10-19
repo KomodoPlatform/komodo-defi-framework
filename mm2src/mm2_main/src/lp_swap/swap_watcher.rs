@@ -165,7 +165,7 @@ impl State for ValidateTakerFee {
             .compat();
         if let Err(e) = validated_f.await {
             Self::change_state(Stopped::from_reason(StopReason::ValidateTakerFeeFailed(
-                ERRL!("!watcher.watcher_validate_taker_fee: {}", e).into(),
+                ERRL!("{}", e).into(),
             )));
         }
         Self::change_state(ValidateTakerPayment {})
@@ -201,7 +201,7 @@ impl State for ValidateTakerPayment {
             },
             Err(err) => {
                 return Self::change_state(Stopped::from_reason(StopReason::TakerPaymentSearchForSwapFailed(
-                    ERRL!("!watcher.wait_for_confirmations: {}", err).into(),
+                    ERRL!("{}", err).into(),
                 )))
             },
             Ok(None) => (),
@@ -223,7 +223,7 @@ impl State for ValidateTakerPayment {
             .compat();
         if let Err(err) = wait_f.await {
             Self::change_state(Stopped::from_reason(StopReason::TakerPaymentWaitConfirmFailed(
-                ERRL!("!watcher.wait_for_confirmations: {}", err).into(),
+                ERRL!("{}", err).into(),
             )));
         }
 
@@ -245,7 +245,7 @@ impl State for ValidateTakerPayment {
 
         if let Err(e) = validated_f.await {
             Self::change_state(Stopped::from_reason(StopReason::TakerPaymentValidateFailed(
-                ERRL!("!watcher.watcher_validate_taker_payment: {}", e).into(),
+                ERRL!("{}", e).into(),
             )));
         }
 
@@ -280,7 +280,8 @@ impl State for WaitForTakerPaymentSpend {
 
         let tx = match f.compat().await {
             Ok(t) => t,
-            Err(_) => {
+            Err(err) => {
+                error!("{}", err.get_plain_text_format());
                 return Self::change_state(RefundTakerPayment {});
             },
         };
