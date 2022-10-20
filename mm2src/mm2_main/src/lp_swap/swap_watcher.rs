@@ -1,5 +1,6 @@
 use super::{broadcast_p2p_tx_msg, lp_coinfind, tx_helper_topic, wait_for_taker_payment_conf_until, H256Json,
             SwapsContext, TransactionIdentifier, WAIT_CONFIRM_INTERVAL};
+use crate::mm2::MmError;
 use async_trait::async_trait;
 use coins::{CanRefundHtlc, FoundSwapTxSpend, MmCoinEnum, WatcherSearchForSwapTxSpendInput, WatcherValidatePaymentInput};
 use common::executor::{AbortSettings, SpawnAbortable, Timer};
@@ -73,20 +74,32 @@ struct Stopped {
     _stop_reason: StopReason,
 }
 
+//#[derive(Clone, Debug, Deserialize, PartialEq, Eq, Serialize)]
+
 #[derive(Debug)]
 enum StopReason {
-    TakerPaymentAlreadySpent,
-    TakerPaymentAlreadyRefunded,
+    Finished(WatcherSuccess),
+    Error(MmError<WatcherError>),
+}
+
+#[derive(Debug)]
+enum WatcherSuccess {
     MakerPaymentSpent,
     TakerPaymentRefunded,
-    ValidatePublicKeysFailed(WatcherError),
-    ValidateTakerFeeFailed(WatcherError),
-    TakerPaymentWaitConfirmFailed(WatcherError),
-    TakerPaymentSearchForSwapFailed(WatcherError),
-    TakerPaymentValidateFailed(WatcherError),
-    TakerPaymentWaitForSpendFailed(WatcherError),
-    MakerPaymentSpendFailed(WatcherError),
-    TakerPaymentRefundFailed(WatcherError),
+    TakerPaymentAlreadySpent,
+    TakerPaymentAlreadyRefunded,
+}
+
+#[derive(Debug)]
+enum WatcherError {
+    ValidatePublicKeysFailed(String),
+    ValidateTakerFeeFailed(String),
+    TakerPaymentWaitConfirmFailed(String),
+    TakerPaymentSearchForSwapFailed(String),
+    TakerPaymentValidateFailed(String),
+    TakerPaymentWaitForSpendFailed(String),
+    MakerPaymentSpendFailed(String),
+    TakerPaymentRefundFailed(String),
 }
 
 impl Stopped {
@@ -95,19 +108,6 @@ impl Stopped {
             _stop_reason: stop_reason,
         }
     }
-}
-
-#[derive(Clone, Debug, Deserialize, PartialEq, Eq, Serialize)]
-pub struct WatcherError {
-    error: String,
-}
-
-impl From<String> for WatcherError {
-    fn from(error: String) -> Self { WatcherError { error } }
-}
-
-impl From<&str> for WatcherError {
-    fn from(e: &str) -> Self { WatcherError { error: e.to_owned() } }
 }
 
 impl TransitionFrom<ValidatePublicKeys> for ValidateTakerFee {}
@@ -133,16 +133,16 @@ impl State for ValidatePublicKeys {
             .check_all_inputs_signed_by_pub(&watcher_ctx.data.taker_payment_hex, &watcher_ctx.verified_pub)
         {
             Ok(is_valid) => is_valid,
-            Err(e) => {
-                return Self::change_state(Stopped::from_reason(StopReason::ValidatePublicKeysFailed(
-                    ERRL!("{}", e).into(),
+            Err(err) => {
+                return Self::change_state(Stopped::from_reason(StopReason::Error(
+                    WatcherError::ValidatePublicKeysFailed(err).into(),
                 )))
             },
         };
 
         if !redeem_pub_valid || watcher_ctx.verified_pub != watcher_ctx.data.taker_pub {
-            return Self::change_state(Stopped::from_reason(StopReason::ValidatePublicKeysFailed(
-                ERRL!("Public key does not belong to taker payment").into(),
+            return Self::change_state(Stopped::from_reason(StopReason::Error(
+                WatcherError::ValidatePublicKeysFailed(format!("Public key does not belong to taker payment")).into(),
             )));
         }
 
@@ -163,9 +163,9 @@ impl State for ValidateTakerFee {
                 watcher_ctx.verified_pub.clone(),
             )
             .compat();
-        if let Err(e) = validated_f.await {
-            Self::change_state(Stopped::from_reason(StopReason::ValidateTakerFeeFailed(
-                ERRL!("{}", e).into(),
+        if let Err(err) = validated_f.await {
+            Self::change_state(Stopped::from_reason(StopReason::Error(
+                WatcherError::ValidateTakerFeeFailed(err.to_string()).into(),
             )));
         }
         Self::change_state(ValidateTakerPayment {})
@@ -194,14 +194,18 @@ impl State for ValidateTakerPayment {
             .await
         {
             Ok(Some(FoundSwapTxSpend::Spent(_))) => {
-                return Self::change_state(Stopped::from_reason(StopReason::TakerPaymentAlreadySpent))
+                return Self::change_state(Stopped::from_reason(StopReason::Finished(
+                    WatcherSuccess::TakerPaymentAlreadySpent,
+                )))
             },
             Ok(Some(FoundSwapTxSpend::Refunded(_))) => {
-                return Self::change_state(Stopped::from_reason(StopReason::TakerPaymentAlreadyRefunded))
+                return Self::change_state(Stopped::from_reason(StopReason::Finished(
+                    WatcherSuccess::TakerPaymentAlreadyRefunded,
+                )))
             },
             Err(err) => {
-                return Self::change_state(Stopped::from_reason(StopReason::TakerPaymentSearchForSwapFailed(
-                    ERRL!("{}", err).into(),
+                return Self::change_state(Stopped::from_reason(StopReason::Error(
+                    WatcherError::TakerPaymentSearchForSwapFailed(err).into(),
                 )))
             },
             Ok(None) => (),
@@ -222,8 +226,8 @@ impl State for ValidateTakerPayment {
             )
             .compat();
         if let Err(err) = wait_f.await {
-            Self::change_state(Stopped::from_reason(StopReason::TakerPaymentWaitConfirmFailed(
-                ERRL!("{}", err).into(),
+            Self::change_state(Stopped::from_reason(StopReason::Error(
+                WatcherError::TakerPaymentWaitConfirmFailed(err).into(),
             )));
         }
 
@@ -243,9 +247,9 @@ impl State for ValidateTakerPayment {
             .watcher_validate_taker_payment(validate_input)
             .compat();
 
-        if let Err(e) = validated_f.await {
-            Self::change_state(Stopped::from_reason(StopReason::TakerPaymentValidateFailed(
-                ERRL!("{}", e).into(),
+        if let Err(err) = validated_f.await {
+            Self::change_state(Stopped::from_reason(StopReason::Error(
+                WatcherError::TakerPaymentValidateFailed(err.to_string()).into(),
             )));
         }
 
@@ -298,9 +302,9 @@ impl State for WaitForTakerPaymentSpend {
             .extract_secret(&watcher_ctx.data.secret_hash[..], &tx_ident.tx_hex.0)
         {
             Ok(bytes) => H256Json::from(bytes.as_slice()),
-            Err(e) => {
-                return Self::change_state(Stopped::from_reason(StopReason::TakerPaymentWaitForSpendFailed(
-                    ERRL!("{}", e).into(),
+            Err(err) => {
+                return Self::change_state(Stopped::from_reason(StopReason::Error(
+                    WatcherError::TakerPaymentWaitForSpendFailed(err).into(),
                 )))
             },
         };
@@ -331,8 +335,8 @@ impl State for SpendMakerPayment {
                         &None,
                     );
                 };
-                return Self::change_state(Stopped::from_reason(StopReason::MakerPaymentSpendFailed(
-                    ERRL!("{}", err.get_plain_text_format()).into(),
+                return Self::change_state(Stopped::from_reason(StopReason::Error(
+                    WatcherError::MakerPaymentSpendFailed(err.get_plain_text_format()).into(),
                 )));
             },
         };
@@ -347,7 +351,9 @@ impl State for SpendMakerPayment {
         let tx_hash = transaction.tx_hash();
         info!("Maker payment spend tx {:02x}", tx_hash);
 
-        Self::change_state(Stopped::from_reason(StopReason::MakerPaymentSpent))
+        Self::change_state(Stopped::from_reason(StopReason::Finished(
+            WatcherSuccess::MakerPaymentSpent,
+        )))
     }
 }
 
@@ -389,8 +395,8 @@ impl State for RefundTakerPayment {
                     );
                 }
 
-                return Self::change_state(Stopped::from_reason(StopReason::TakerPaymentRefundFailed(
-                    ERRL!("{}", err.get_plain_text_format()).into(),
+                return Self::change_state(Stopped::from_reason(StopReason::Error(
+                    WatcherError::TakerPaymentRefundFailed(err.get_plain_text_format()).into(),
                 )));
             },
         };
@@ -410,14 +416,16 @@ impl State for RefundTakerPayment {
             WAIT_CONFIRM_INTERVAL,
         );
         if let Err(err) = wait_fut.compat().await {
-            return Self::change_state(Stopped::from_reason(StopReason::TakerPaymentRefundFailed(
-                ERRL!("{}", err).into(),
+            return Self::change_state(Stopped::from_reason(StopReason::Error(
+                WatcherError::TakerPaymentRefundFailed(err).into(),
             )));
         }
 
         let tx_hash = transaction.tx_hash();
         info!("Taker refund tx hash {:02x}", tx_hash);
-        Self::change_state(Stopped::from_reason(StopReason::TakerPaymentRefunded))
+        Self::change_state(Stopped::from_reason(StopReason::Finished(
+            WatcherSuccess::TakerPaymentRefunded,
+        )))
     }
 }
 
