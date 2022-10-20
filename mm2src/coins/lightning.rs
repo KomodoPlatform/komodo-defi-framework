@@ -394,7 +394,7 @@ impl SwapOps for LightningCoin {
         unimplemented!()
     }
 
-    fn check_all_inputs_signed_by_pub(&self, _tx: &[u8], _expected_pub: &[u8]) -> Result<bool, String> {
+    fn check_tx_signed_by_pub(&self, _tx: &[u8], _expected_pub: &[u8]) -> Result<bool, String> {
         unimplemented!();
     }
 

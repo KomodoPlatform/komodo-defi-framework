@@ -74,8 +74,6 @@ struct Stopped {
     _stop_reason: StopReason,
 }
 
-//#[derive(Clone, Debug, Deserialize, PartialEq, Eq, Serialize)]
-
 #[derive(Debug)]
 enum StopReason {
     Finished(WatcherSuccess),
@@ -130,7 +128,7 @@ impl State for ValidatePublicKeys {
     async fn on_changed(self: Box<Self>, watcher_ctx: &mut WatcherContext) -> StateResult<Self::Ctx, Self::Result> {
         let redeem_pub_valid = match watcher_ctx
             .taker_coin
-            .check_all_inputs_signed_by_pub(&watcher_ctx.data.taker_payment_hex, &watcher_ctx.verified_pub)
+            .check_tx_signed_by_pub(&watcher_ctx.data.taker_payment_hex, &watcher_ctx.verified_pub)
         {
             Ok(is_valid) => is_valid,
             Err(err) => {

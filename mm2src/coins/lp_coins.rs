@@ -593,7 +593,7 @@ pub trait SwapOps {
 
     fn extract_secret(&self, secret_hash: &[u8], spend_tx: &[u8]) -> Result<Vec<u8>, String>;
 
-    fn check_all_inputs_signed_by_pub(&self, tx: &[u8], expected_pub: &[u8]) -> Result<bool, String>;
+    fn check_tx_signed_by_pub(&self, tx: &[u8], expected_pub: &[u8]) -> Result<bool, String>;
 
     /// Whether the refund transaction can be sent now
     /// For example: there are no additional conditions for ETH, but for some UTXO coins we should wait for

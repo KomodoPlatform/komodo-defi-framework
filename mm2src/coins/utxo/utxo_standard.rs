@@ -460,7 +460,7 @@ impl SwapOps for UtxoStandardCoin {
     }
 
     #[inline]
-    fn check_all_inputs_signed_by_pub(&self, tx: &[u8], expected_pub: &[u8]) -> Result<bool, String> {
+    fn check_tx_signed_by_pub(&self, tx: &[u8], expected_pub: &[u8]) -> Result<bool, String> {
         utxo_common::check_all_inputs_signed_by_pub(tx, expected_pub)
     }
 
