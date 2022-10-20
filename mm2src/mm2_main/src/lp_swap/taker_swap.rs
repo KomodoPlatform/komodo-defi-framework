@@ -1032,7 +1032,7 @@ impl TakerSwap {
             )]));
         };
 
-        if maker_data.secret_hash().len() != 20 {
+        if !(maker_data.secret_hash().len() == 20 || maker_data.secret_hash().len() == 32) {
             return Ok((Some(TakerSwapCommand::Finish), vec![TakerSwapEvent::NegotiateFailed(
                 ERRL!("!maker_data.secret_hash: secret_hash validation failed").into(),
             )]));
@@ -1372,7 +1372,6 @@ impl TakerSwap {
         let send_abort_handle =
             broadcast_swap_message_every(self.ctx.clone(), swap_topic(&self.uuid), msg, 600., self.p2p_privkey);
 
-        Timer::sleep(20.).await;
         let wait_duration = (self.r().data.lock_duration * 4) / 5;
         let wait_taker_payment = self.r().data.started_at + wait_duration;
         let wait_f = self

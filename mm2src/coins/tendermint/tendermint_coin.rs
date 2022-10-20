@@ -31,6 +31,7 @@ use cosmrs::proto::cosmos::tx::v1beta1::{GetTxRequest, GetTxResponse, GetTxsEven
                                          SimulateRequest, SimulateResponse, Tx, TxBody, TxRaw};
 use cosmrs::tendermint::block::Height;
 use cosmrs::tendermint::chain::Id as ChainId;
+use cosmrs::tendermint::PublicKey;
 use cosmrs::tx::{self, Fee, Msg, Raw, SignDoc, SignerInfo};
 use cosmrs::{AccountId, Any, Coin, Denom, ErrorReport};
 use crypto::privkey::key_pair_from_secret;
@@ -1727,7 +1728,11 @@ impl SwapOps for TendermintCoin {
         key_pair_from_secret(&self.priv_key).expect("valid priv key")
     }
 
-    fn validate_other_pubkey(&self, _raw_pubkey: &[u8]) -> MmResult<(), ValidateOtherPubKeyErr> { todo!() }
+    fn validate_other_pubkey(&self, raw_pubkey: &[u8]) -> MmResult<(), ValidateOtherPubKeyErr> {
+        PublicKey::from_raw_secp256k1(raw_pubkey)
+            .or_mm_err(|| ValidateOtherPubKeyErr::InvalidPubKey(hex::encode(raw_pubkey)))?;
+        Ok(())
+    }
 }
 
 #[cfg(test)]

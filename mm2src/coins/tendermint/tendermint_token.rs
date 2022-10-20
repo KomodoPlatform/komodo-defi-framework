@@ -288,7 +288,9 @@ impl SwapOps for TendermintToken {
         self.platform_coin.derive_htlc_key_pair(swap_unique_data)
     }
 
-    fn validate_other_pubkey(&self, _raw_pubkey: &[u8]) -> MmResult<(), ValidateOtherPubKeyErr> { todo!() }
+    fn validate_other_pubkey(&self, raw_pubkey: &[u8]) -> MmResult<(), ValidateOtherPubKeyErr> {
+        self.platform_coin.validate_other_pubkey(raw_pubkey)
+    }
 }
 
 impl MarketCoinOps for TendermintToken {
