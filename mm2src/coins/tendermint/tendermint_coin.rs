@@ -1661,9 +1661,10 @@ impl SwapOps for TendermintCoin {
         let coin = self.clone();
         let fut = async move {
             let htlc_response = try_s!(coin.query_htlc(htlc_id.clone()).await);
-            let htlc_data = try_s!(htlc_response
-                .htlc
-                .ok_or_else(|| format!("No HTLC data for {}", htlc_id)));
+            let htlc_data = match htlc_response.htlc {
+                Some(htlc) => htlc,
+                None => return Ok(None),
+            };
 
             match htlc_data.state {
                 0 => {},
