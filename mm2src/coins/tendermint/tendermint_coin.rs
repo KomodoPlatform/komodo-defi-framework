@@ -549,22 +549,20 @@ impl TendermintCoin {
         time_lock: u64,
     ) -> MmResult<IrisHtlc, TxMarshalingErr> {
         let amount = vec![Coin { denom, amount }];
-
         let timestamp = 0_u64;
-
-        let htlc_id = self.calculate_htlc_id(&self.account_id, to, amount.clone(), secret_hash);
-
         let msg_payload = MsgCreateHtlc {
             sender: self.account_id.clone(),
             to: to.clone(),
             receiver_on_other_chain: "".to_string(),
             sender_on_other_chain: "".to_string(),
-            amount,
+            amount: amount.clone(),
             hash_lock: hex::encode(secret_hash),
             timestamp,
             time_lock,
             transfer: false,
         };
+
+        let htlc_id = self.calculate_htlc_id(&self.account_id, to, amount, secret_hash);
 
         Ok(IrisHtlc {
             id: htlc_id,
@@ -650,7 +648,7 @@ impl TendermintCoin {
             };
 
             match htlc_data.state {
-                0 => {},
+                0 | 1 | 2 => {},
                 unexpected_state => return Err(format!("Unexpected state for HTLC {}", unexpected_state)),
             };
 
@@ -660,7 +658,7 @@ impl TendermintCoin {
             let response = try_s!(
                 // Search single tx
                 rpc_client
-                    .perform(TxSearchRequest::new(q, false, 1, 1, TendermintResultOrder::Ascending))
+                    .perform(TxSearchRequest::new(q, false, 1, 1, TendermintResultOrder::Descending))
                     .await
             );
 
@@ -919,12 +917,6 @@ impl TendermintCoin {
                 amount: amount.into(),
             }];
 
-            let coins_string = amount
-                .iter()
-                .map(|t| format!("{}{}", t.amount, t.denom))
-                .collect::<Vec<String>>()
-                .join(",");
-
             let time_lock = coin.estimate_blocks_from_duration(input.time_lock_duration);
 
             let expected_msg = MsgCreateHtlc {
@@ -932,7 +924,7 @@ impl TendermintCoin {
                 to: coin.account_id.clone(),
                 receiver_on_other_chain: "".into(),
                 sender_on_other_chain: "".into(),
-                amount,
+                amount: amount.clone(),
                 hash_lock: hex::encode(&input.secret_hash),
                 timestamp: 0,
                 time_lock: time_lock as u64,
@@ -954,12 +946,7 @@ impl TendermintCoin {
                 ));
             }
 
-            let mut htlc_id = vec![];
-            htlc_id.extend_from_slice(&input.secret_hash);
-            htlc_id.extend_from_slice(&sender.to_bytes());
-            htlc_id.extend_from_slice(&coin.account_id.to_bytes());
-            htlc_id.extend_from_slice(coins_string.as_bytes());
-            let htlc_id = sha256(&htlc_id).to_string().to_uppercase();
+            let htlc_id = coin.calculate_htlc_id(&sender, &coin.account_id, amount, &input.secret_hash);
 
             let htlc_response = coin.query_htlc(htlc_id.clone()).await?;
             let htlc_data = htlc_response
@@ -1361,20 +1348,8 @@ impl MarketCoinOps for TendermintCoin {
         let tx = try_tx_fus!(cosmrs::Tx::from_bytes(transaction));
         let first_message = try_tx_fus!(tx.body.messages.first().ok_or("Tx body couldn't be read."));
         let htlc_proto = try_tx_fus!(CreateHtlcProtoRep::decode(first_message.value.as_slice()));
-        let coins_string = htlc_proto
-            .amount
-            .iter()
-            .map(|t| format!("{}{}", t.amount, t.denom))
-            .collect::<Vec<String>>()
-            .join(",");
         let htlc = try_tx_fus!(MsgCreateHtlc::try_from(htlc_proto));
-
-        let mut htlc_id = vec![];
-        htlc_id.extend_from_slice(secret_hash);
-        htlc_id.extend_from_slice(&htlc.sender.to_bytes());
-        htlc_id.extend_from_slice(&htlc.to.to_bytes());
-        htlc_id.extend_from_slice(coins_string.as_bytes());
-        let htlc_id = sha256(&htlc_id).to_string().to_uppercase();
+        let htlc_id = self.calculate_htlc_id(&htlc.sender, &htlc.to, htlc.amount, secret_hash);
 
         let events_string = format!("claim_htlc.id='{}'", htlc_id);
         let request = GetTxsEventRequest {
@@ -1514,12 +1489,7 @@ impl SwapOps for TendermintCoin {
             .collect::<Vec<String>>()
             .join(",");
 
-        let mut htlc_id = vec![];
-        htlc_id.extend_from_slice(secret_hash);
-        htlc_id.extend_from_slice(&htlc.sender.to_bytes());
-        htlc_id.extend_from_slice(&htlc.to.to_bytes());
-        htlc_id.extend_from_slice(coins_string.as_bytes());
-        let htlc_id = sha256(&htlc_id).to_string().to_uppercase();
+        let htlc_id = self.calculate_htlc_id(&htlc.sender, &htlc.to, amount, secret_hash);
 
         let claim_htlc_tx = try_tx_fus!(self.gen_claim_htlc_tx(htlc_id, secret));
         let coin = self.clone();
@@ -1595,12 +1565,7 @@ impl SwapOps for TendermintCoin {
             .collect::<Vec<String>>()
             .join(",");
 
-        let mut htlc_id = vec![];
-        htlc_id.extend_from_slice(secret_hash);
-        htlc_id.extend_from_slice(&htlc.sender.to_bytes());
-        htlc_id.extend_from_slice(&htlc.to.to_bytes());
-        htlc_id.extend_from_slice(coins_string.as_bytes());
-        let htlc_id = sha256(&htlc_id).to_string().to_uppercase();
+        let htlc_id = self.calculate_htlc_id(&htlc.sender, &htlc.to, amount, secret_hash);
 
         let claim_htlc_tx = try_tx_fus!(self.gen_claim_htlc_tx(htlc_id, secret));
         let coin = self.clone();
