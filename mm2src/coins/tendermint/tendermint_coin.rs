@@ -395,7 +395,13 @@ impl TendermintCoin {
     /// Refs:
     ///  - Main algorithm: https://github.com/irisnet/irismod/blob/main/modules/htlc/types/htlc.go#L157
     ///  - Coins string building https://github.com/cosmos/cosmos-sdk/blob/main/types/coin.go#L210-L225
-    fn calculate_htlc_id(&self, amount: Vec<Coin>, secret_hash: &[u8], to_address: &AccountId) -> String {
+    fn calculate_htlc_id(
+        &self,
+        from_address: &AccountId,
+        to_address: &AccountId,
+        amount: Vec<Coin>,
+        secret_hash: &[u8],
+    ) -> String {
         // Needs to be sorted if cointains multiple coins
         // let mut amount = amount;
         // amount.sort();
@@ -408,7 +414,7 @@ impl TendermintCoin {
 
         let mut htlc_id = vec![];
         htlc_id.extend_from_slice(secret_hash);
-        htlc_id.extend_from_slice(&self.account_id.to_bytes());
+        htlc_id.extend_from_slice(&from_address.to_bytes());
         htlc_id.extend_from_slice(&to_address.to_bytes());
         htlc_id.extend_from_slice(coins_string.as_bytes());
         sha256(&htlc_id).to_string().to_uppercase()
@@ -546,7 +552,7 @@ impl TendermintCoin {
 
         let timestamp = 0_u64;
 
-        let htlc_id = self.calculate_htlc_id(amount.clone(), secret_hash, to);
+        let htlc_id = self.calculate_htlc_id(&self.account_id, to, amount.clone(), secret_hash);
 
         let msg_payload = MsgCreateHtlc {
             sender: self.account_id.clone(),
@@ -614,6 +620,71 @@ impl TendermintCoin {
         } else {
             estimated_time_lock
         }
+    }
+
+    pub(crate) fn check_if_my_payment_sent_for_denom(
+        &self,
+        decimals: u8,
+        denom: Denom,
+        other_pub: &[u8],
+        secret_hash: &[u8],
+        amount: &BigDecimal,
+    ) -> Box<dyn Future<Item = Option<TransactionEnum>, Error = String> + Send> {
+        let amount = try_fus!(sat_from_big_decimal(amount, decimals));
+        let amount = vec![Coin {
+            denom,
+            amount: amount.into(),
+        }];
+
+        let pubkey_hash = dhash160(other_pub);
+        let to_address = try_fus!(AccountId::new(&self.account_prefix, pubkey_hash.as_slice()));
+
+        let htlc_id = self.calculate_htlc_id(&self.account_id, &to_address, amount, secret_hash);
+
+        let coin = self.clone();
+        let fut = async move {
+            let htlc_response = try_s!(coin.query_htlc(htlc_id.clone()).await);
+            let htlc_data = match htlc_response.htlc {
+                Some(htlc) => htlc,
+                None => return Ok(None),
+            };
+
+            match htlc_data.state {
+                0 => {},
+                unexpected_state => return Err(format!("Unexpected state for HTLC {}", unexpected_state)),
+            };
+
+            let rpc_client = try_s!(coin.rpc_client().await);
+            let q = format!("create_htlc.id = '{}'", htlc_id);
+
+            let response = try_s!(
+                // Search single tx
+                rpc_client
+                    .perform(TxSearchRequest::new(q, false, 1, 1, TendermintResultOrder::Ascending))
+                    .await
+            );
+
+            if let Some(tx) = response.txs.first() {
+                if let cosmrs::tendermint::abci::Code::Err(_err_code) = tx.tx_result.code {
+                    return Ok(None);
+                }
+
+                let deserialized_tx = try_s!(cosmrs::Tx::from_bytes(tx.tx.as_bytes()));
+                let msg = try_s!(deserialized_tx.body.messages.first().ok_or("Tx body couldn't be read."));
+                let htlc = try_s!(CreateHtlcProtoRep::decode(msg.value.as_slice()));
+
+                if htlc.hash_lock.to_uppercase() == htlc_data.hash_lock.to_uppercase() {
+                    let htlc = TransactionEnum::CosmosTransaction(CosmosTransaction {
+                        data: try_s!(TxRaw::decode(tx.tx.as_bytes())),
+                    });
+                    return Ok(Some(htlc));
+                }
+            }
+
+            Ok(None)
+        };
+
+        Box::new(fut.boxed().compat())
     }
 
     pub(super) fn send_htlc_for_denom(
@@ -1637,7 +1708,6 @@ impl SwapOps for TendermintCoin {
 
     fn check_if_my_payment_sent(
         &self,
-        time_lock_duration: u64,
         _time_lock: u32,
         other_pub: &[u8],
         secret_hash: &[u8],
@@ -1646,63 +1716,7 @@ impl SwapOps for TendermintCoin {
         _swap_unique_data: &[u8],
         amount: &BigDecimal,
     ) -> Box<dyn Future<Item = Option<TransactionEnum>, Error = String> + Send> {
-        let amount = try_fus!(sat_from_big_decimal(amount, self.decimals));
-        let amount = vec![Coin {
-            denom: self.denom.clone(),
-            amount: amount.into(),
-        }];
-
-        let pubkey_hash = dhash160(other_pub);
-        let to_address = try_fus!(AccountId::new(&self.account_prefix, pubkey_hash.as_slice()));
-
-        let htlc_id = self.calculate_htlc_id(amount, secret_hash, &to_address);
-        let time_lock = self.estimate_blocks_from_duration(time_lock_duration);
-
-        let coin = self.clone();
-        let fut = async move {
-            let htlc_response = try_s!(coin.query_htlc(htlc_id.clone()).await);
-            let htlc_data = match htlc_response.htlc {
-                Some(htlc) => htlc,
-                None => return Ok(None),
-            };
-
-            match htlc_data.state {
-                0 => {},
-                unexpected_state => return Err(format!("Unexpected state for HTLC {}", unexpected_state)),
-            };
-
-            let tx_height = htlc_data.expiration_height - time_lock as u64;
-
-            let rpc_client = try_s!(coin.rpc_client().await);
-            let q: TendermintQuery = try_s!(format!("tx.height = {}", tx_height).parse());
-
-            let response = try_s!(
-                rpc_client
-                    .perform(TxSearchRequest::new(q, false, 1, 1, TendermintResultOrder::Ascending))
-                    .await
-            );
-
-            for tx in response.txs {
-                if let cosmrs::tendermint::abci::Code::Err(_err_code) = tx.tx_result.code {
-                    continue;
-                }
-
-                let deserialized_tx = try_s!(cosmrs::Tx::from_bytes(tx.tx.as_bytes()));
-                let msg = try_s!(deserialized_tx.body.messages.first().ok_or("Tx body couldn't be read."));
-                let htlc = try_s!(CreateHtlcProtoRep::decode(msg.value.as_slice()));
-
-                if htlc.hash_lock.to_uppercase() == htlc_data.hash_lock.to_uppercase() {
-                    let htlc = TransactionEnum::CosmosTransaction(CosmosTransaction {
-                        data: try_s!(TxRaw::decode(tx.tx.as_bytes())),
-                    });
-                    return Ok(Some(htlc));
-                }
-            }
-
-            Ok(None)
-        };
-
-        Box::new(fut.boxed().compat())
+        self.check_if_my_payment_sent_for_denom(self.decimals, self.denom.clone(), other_pub, secret_hash, amount)
     }
 
     async fn search_for_swap_tx_spend_my(
@@ -1873,7 +1887,6 @@ pub mod tendermint_coin_tests {
 
         let htlc_spent = block_on(
             coin.check_if_my_payment_sent(
-                time_lock * coin.avg_block_time as u64,
                 0,
                 IRIS_TESTNET_HTLC_PAIR2_PUB_KEY,
                 sha256(&sec).as_slice(),

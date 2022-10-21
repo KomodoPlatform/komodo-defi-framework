@@ -1272,7 +1272,6 @@ impl TakerSwap {
 
         let unique_data = self.unique_swap_data();
         let f = self.taker_coin.check_if_my_payment_sent(
-            self.r().data.lock_duration,
             self.r().data.taker_payment_lock as u32,
             self.r().other_taker_coin_htlc_pub.as_slice(),
             &self.r().secret_hash.0,
@@ -1704,7 +1703,6 @@ impl TakerSwap {
         }
 
         let maybe_taker_payment = self.r().taker_payment.clone();
-        let lock_duration = self.r().data.lock_duration;
 
         let taker_payment = match maybe_taker_payment {
             Some(tx) => tx.tx_hex.0.clone(),
@@ -1712,7 +1710,6 @@ impl TakerSwap {
                 let maybe_sent = try_s!(
                     self.taker_coin
                         .check_if_my_payment_sent(
-                            lock_duration,
                             taker_payment_lock as u32,
                             other_taker_coin_htlc_pub.as_slice(),
                             &secret_hash,
@@ -2317,7 +2314,7 @@ mod taker_swap_tests {
             .mock_safe(|_, _| MockResult::Return(Box::new(futures01::future::ok(CanRefundHtlc::CanRefundNow))));
 
         static mut MY_PAYMENT_SENT_CALLED: bool = false;
-        TestCoin::check_if_my_payment_sent.mock_safe(|_, _, _, _, _, _, _, _, _| {
+        TestCoin::check_if_my_payment_sent.mock_safe(|_, _, _, _, _, _, _, _| {
             unsafe { MY_PAYMENT_SENT_CALLED = true };
             MockResult::Return(Box::new(futures01::future::ok(Some(eth_tx_for_test().into()))))
         });
@@ -2362,7 +2359,7 @@ mod taker_swap_tests {
         TestCoin::extract_secret.mock_safe(|_, _, _| MockResult::Return(Ok(vec![])));
 
         static mut MY_PAYMENT_SENT_CALLED: bool = false;
-        TestCoin::check_if_my_payment_sent.mock_safe(|_, _, _, _, _, _, _, _, _| {
+        TestCoin::check_if_my_payment_sent.mock_safe(|_, _, _, _, _, _, _, _| {
             unsafe { MY_PAYMENT_SENT_CALLED = true };
             MockResult::Return(Box::new(futures01::future::ok(Some(eth_tx_for_test().into()))))
         });

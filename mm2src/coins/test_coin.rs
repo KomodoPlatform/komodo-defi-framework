@@ -218,7 +218,6 @@ impl SwapOps for TestCoin {
 
     fn check_if_my_payment_sent(
         &self,
-        time_lock_duration: u64,
         time_lock: u32,
         other_pub: &[u8],
         secret_hash: &[u8],

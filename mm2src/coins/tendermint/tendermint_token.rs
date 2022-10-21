@@ -242,7 +242,6 @@ impl SwapOps for TendermintToken {
 
     fn check_if_my_payment_sent(
         &self,
-        time_lock_duration: u64,
         time_lock: u32,
         other_pub: &[u8],
         secret_hash: &[u8],
@@ -251,14 +250,11 @@ impl SwapOps for TendermintToken {
         swap_unique_data: &[u8],
         amount: &BigDecimal,
     ) -> Box<dyn Future<Item = Option<TransactionEnum>, Error = String> + Send> {
-        self.platform_coin.check_if_my_payment_sent(
-            time_lock_duration,
-            time_lock,
+        self.platform_coin.check_if_my_payment_sent_for_denom(
+            self.decimals,
+            self.denom.clone(),
             other_pub,
             secret_hash,
-            search_from_block,
-            swap_contract_address,
-            swap_unique_data,
             amount,
         )
     }

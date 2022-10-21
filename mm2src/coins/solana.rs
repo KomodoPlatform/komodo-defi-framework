@@ -572,7 +572,6 @@ impl SwapOps for SolanaCoin {
 
     fn check_if_my_payment_sent(
         &self,
-        time_lock_duration: u64,
         time_lock: u32,
         my_pub: &[u8],
         other_pub: &[u8],
