@@ -1249,12 +1249,14 @@ fn polygon_check_if_my_payment_sent() {
     let swap_contract_address = "9130b257d37a52e52f21054c4da3450c72f595ce".into();
     let my_payment = coin
         .check_if_my_payment_sent(
+            0,
             1638764369,
             &[],
             &secret_hash,
             22185109,
             &Some(swap_contract_address),
             &[],
+            &BigDecimal::default(),
         )
         .wait()
         .unwrap()

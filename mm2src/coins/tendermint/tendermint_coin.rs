@@ -391,6 +391,29 @@ impl TendermintCoin {
         sign_doc.sign(&signkey)?.to_bytes()
     }
 
+    /// This is converted from irismod and cosmos-sdk source codes written in golang.
+    /// Refs:
+    ///  - Main algorithm: https://github.com/irisnet/irismod/blob/main/modules/htlc/types/htlc.go#L157
+    ///  - Coins string building https://github.com/cosmos/cosmos-sdk/blob/main/types/coin.go#L210-L225
+    fn calculate_htlc_id(&self, amount: Vec<Coin>, secret_hash: &[u8], to_address: &AccountId) -> String {
+        // Needs to be sorted if cointains multiple coins
+        // let mut amount = amount;
+        // amount.sort();
+
+        let coins_string = amount
+            .iter()
+            .map(|t| format!("{}{}", t.amount, t.denom))
+            .collect::<Vec<String>>()
+            .join(",");
+
+        let mut htlc_id = vec![];
+        htlc_id.extend_from_slice(secret_hash);
+        htlc_id.extend_from_slice(&self.account_id.to_bytes());
+        htlc_id.extend_from_slice(&to_address.to_bytes());
+        htlc_id.extend_from_slice(coins_string.as_bytes());
+        sha256(&htlc_id).to_string().to_uppercase()
+    }
+
     #[allow(deprecated)]
     pub(super) async fn calculate_fee(
         &self,
@@ -523,27 +546,7 @@ impl TendermintCoin {
 
         let timestamp = 0_u64;
 
-        // Needs to be sorted if cointains multiple coins
-        // amount.sort();
-
-        // << BEGIN HTLC id calculation
-        // This is converted from irismod and cosmos-sdk source codes written in golang.
-        // Refs:
-        //  - Main algorithm: https://github.com/irisnet/irismod/blob/main/modules/htlc/types/htlc.go#L157
-        //  - Coins string building https://github.com/cosmos/cosmos-sdk/blob/main/types/coin.go#L210-L225
-        let coins_string = amount
-            .iter()
-            .map(|t| format!("{}{}", t.amount, t.denom))
-            .collect::<Vec<String>>()
-            .join(",");
-
-        let mut htlc_id = vec![];
-        htlc_id.extend_from_slice(secret_hash);
-        htlc_id.extend_from_slice(&self.account_id.to_bytes());
-        htlc_id.extend_from_slice(&to.to_bytes());
-        htlc_id.extend_from_slice(coins_string.as_bytes());
-        let htlc_id = sha256(&htlc_id).to_string().to_uppercase();
-        // >> END HTLC id calculation
+        let htlc_id = self.calculate_htlc_id(amount.clone(), secret_hash, to);
 
         let msg_payload = MsgCreateHtlc {
             sender: self.account_id.clone(),
@@ -1634,37 +1637,47 @@ impl SwapOps for TendermintCoin {
 
     fn check_if_my_payment_sent(
         &self,
+        time_lock_duration: u64,
         _time_lock: u32,
-        _other_pub: &[u8],
+        other_pub: &[u8],
         secret_hash: &[u8],
         search_from_block: u64,
         _swap_contract_address: &Option<BytesJson>,
         _swap_unique_data: &[u8],
+        amount: &BigDecimal,
     ) -> Box<dyn Future<Item = Option<TransactionEnum>, Error = String> + Send> {
-        let coin = self.clone();
-        let secret_hash = secret_hash.to_vec();
-        let fut = async move {
-            let rpc_client = try_s!(coin.rpc_client().await);
-            let current_block = try_s!(coin.current_block().compat().await);
+        let amount = try_fus!(sat_from_big_decimal(amount, self.decimals));
+        let amount = vec![Coin {
+            denom: self.denom.clone(),
+            amount: amount.into(),
+        }];
 
-            let max_search_result = if (current_block - search_from_block) > u8::MAX as u64 {
-                u8::MAX
-            } else {
-                (current_block - search_from_block) as u8
+        let pubkey_hash = dhash160(other_pub);
+        let to_address = try_fus!(AccountId::new(&self.account_prefix, pubkey_hash.as_slice()));
+
+        let htlc_id = self.calculate_htlc_id(amount.clone(), secret_hash, &to_address);
+        let time_lock = self.estimate_blocks_from_duration(time_lock_duration);
+
+        let coin = self.clone();
+        let fut = async move {
+            let htlc_response = try_s!(coin.query_htlc(htlc_id.clone()).await);
+            let htlc_data = try_s!(htlc_response
+                .htlc
+                .ok_or_else(|| format!("No HTLC data for {}", htlc_id)));
+
+            match htlc_data.state {
+                0 => {},
+                unexpected_state => return Err(format!("Unexpected state for HTLC {}", unexpected_state)),
             };
 
-            let q: TendermintQuery =
-                try_s!(format!("tx.height >= {} AND tx.height <= {}", search_from_block, current_block).parse());
+            let tx_height = htlc_data.expiration_height - time_lock as u64;
+
+            let rpc_client = try_s!(coin.rpc_client().await);
+            let q: TendermintQuery = try_s!(format!("tx.height = {}", tx_height).parse());
 
             let response = try_s!(
                 rpc_client
-                    .perform(TxSearchRequest::new(
-                        q,
-                        false,
-                        1,
-                        max_search_result,
-                        TendermintResultOrder::Ascending
-                    ))
+                    .perform(TxSearchRequest::new(q, false, 1, 1, TendermintResultOrder::Ascending))
                     .await
             );
 
@@ -1677,9 +1690,7 @@ impl SwapOps for TendermintCoin {
                 let msg = try_s!(deserialized_tx.body.messages.first().ok_or("Tx body couldn't be read."));
                 let htlc = try_s!(CreateHtlcProtoRep::decode(msg.value.as_slice()));
 
-                let hash_lock = hex::encode(&secret_hash);
-
-                if htlc.hash_lock == hash_lock {
+                if htlc.hash_lock.to_uppercase() == htlc_data.hash_lock.to_uppercase() {
                     let htlc = TransactionEnum::CosmosTransaction(CosmosTransaction {
                         data: try_s!(TxRaw::decode(tx.tx.as_bytes())),
                     });
@@ -1744,9 +1755,17 @@ pub mod tendermint_coin_tests {
     use rand::{thread_rng, Rng};
 
     pub const IRIS_TESTNET_HTLC_PAIR1_SEED: &str = "iris test seed";
+    // pub const IRIS_TESTNET_HTLC_PAIR1_PUB_KEY: &str = &[
+    //     2, 35, 133, 39, 114, 92, 150, 175, 252, 203, 124, 85, 243, 144, 11, 52, 91, 128, 236, 82, 104, 212, 131, 40,
+    //     79, 22, 40, 7, 119, 93, 50, 179, 43,
+    // ];
     // const IRIS_TESTNET_HTLC_PAIR1_ADDRESS: &str = "iaa1e0rx87mdj79zejewuc4jg7ql9ud2286g2us8f2";
 
     // const IRIS_TESTNET_HTLC_PAIR2_SEED: &str = "iris test2 seed";
+    const IRIS_TESTNET_HTLC_PAIR2_PUB_KEY: &[u8] = &[
+        2, 90, 55, 151, 92, 7, 154, 117, 67, 96, 63, 202, 178, 78, 37, 101, 164, 173, 238, 60, 249, 175, 137, 52, 105,
+        14, 16, 50, 130, 250, 64, 37, 17,
+    ];
     const IRIS_TESTNET_HTLC_PAIR2_ADDRESS: &str = "iaa1erfnkjsmalkwtvj44qnfr2drfzdt4n9ldh0kjv";
 
     pub const IRIS_TESTNET_RPC_URL: &str = "http://34.80.202.172:26657";
@@ -1805,7 +1824,9 @@ pub mod tendermint_coin_tests {
         // << BEGIN HTLC CREATION
         let base_denom: Denom = "unyan".parse().unwrap();
         let to: AccountId = IRIS_TESTNET_HTLC_PAIR2_ADDRESS.parse().unwrap();
-        let amount: cosmrs::Decimal = 1_u64.into();
+        const UAMOUNT: u64 = 1;
+        let amount: cosmrs::Decimal = UAMOUNT.into();
+        let amount_dec = big_decimal_from_sat_unsigned(UAMOUNT, coin.decimals);
         let sec: [u8; 32] = thread_rng().gen();
         let time_lock = 1000;
 
@@ -1850,8 +1871,17 @@ pub mod tendermint_coin_tests {
         // >> END HTLC CREATION
 
         let htlc_spent = block_on(
-            coin.check_if_my_payment_sent(0, &[], sha256(&sec).as_slice(), current_block, &None, &[])
-                .compat(),
+            coin.check_if_my_payment_sent(
+                time_lock * coin.avg_block_time as u64,
+                0,
+                IRIS_TESTNET_HTLC_PAIR2_PUB_KEY,
+                sha256(&sec).as_slice(),
+                current_block,
+                &None,
+                &[],
+                &amount_dec,
+            )
+            .compat(),
         )
         .unwrap();
         assert!(htlc_spent.is_some());

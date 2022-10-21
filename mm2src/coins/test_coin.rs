@@ -218,12 +218,14 @@ impl SwapOps for TestCoin {
 
     fn check_if_my_payment_sent(
         &self,
+        time_lock_duration: u64,
         time_lock: u32,
         other_pub: &[u8],
         secret_hash: &[u8],
         search_from_block: u64,
         swap_contract_address: &Option<BytesJson>,
         swap_unique_data: &[u8],
+        amount: &BigDecimal,
     ) -> Box<dyn Future<Item = Option<TransactionEnum>, Error = String> + Send> {
         unimplemented!()
     }

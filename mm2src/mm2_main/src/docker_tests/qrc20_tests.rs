@@ -482,7 +482,7 @@ fn test_check_if_my_payment_sent() {
             timelock,
             &taker_pub,
             secret_hash,
-            amount,
+            amount.clone(),
             &coin.swap_contract_address(),
             &[],
         )
@@ -503,12 +503,14 @@ fn test_check_if_my_payment_sent() {
     let search_from_block = coin.current_block().wait().expect("!current_block") - 10;
     let found = coin
         .check_if_my_payment_sent(
+            0,
             timelock,
             &taker_pub,
             secret_hash,
             search_from_block,
             &coin.swap_contract_address(),
             &[],
+            &amount,
         )
         .wait()
         .unwrap();

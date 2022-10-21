@@ -396,12 +396,14 @@ impl SwapOps for LightningCoin {
 
     fn check_if_my_payment_sent(
         &self,
+        _time_lock_duration: u64,
         _time_lock: u32,
         _other_pub: &[u8],
         _secret_hash: &[u8],
         _search_from_block: u64,
         _swap_contract_address: &Option<BytesJson>,
         _swap_unique_data: &[u8],
+        _amount: &BigDecimal,
     ) -> Box<dyn Future<Item = Option<TransactionEnum>, Error = String> + Send> {
         unimplemented!()
     }

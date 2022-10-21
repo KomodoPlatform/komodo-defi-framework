@@ -998,12 +998,14 @@ impl SwapOps for BchCoin {
 
     fn check_if_my_payment_sent(
         &self,
+        _time_lock_duration: u64,
         time_lock: u32,
         other_pub: &[u8],
         secret_hash: &[u8],
         _search_from_block: u64,
         _swap_contract_address: &Option<BytesJson>,
         swap_unique_data: &[u8],
+        _amount: &BigDecimal,
     ) -> Box<dyn Future<Item = Option<TransactionEnum>, Error = String> + Send> {
         utxo_common::check_if_my_payment_sent(self.clone(), time_lock, other_pub, secret_hash, swap_unique_data)
     }

@@ -1012,12 +1012,14 @@ impl SwapOps for EthCoin {
 
     fn check_if_my_payment_sent(
         &self,
+        _time_lock_duration: u64,
         time_lock: u32,
         _other_pub: &[u8],
         secret_hash: &[u8],
         from_block: u64,
         swap_contract_address: &Option<BytesJson>,
         _swap_unique_data: &[u8],
+        _amount: &BigDecimal,
     ) -> Box<dyn Future<Item = Option<TransactionEnum>, Error = String> + Send> {
         let id = self.etomic_swap_id(time_lock, secret_hash);
         let swap_contract_address = try_fus!(swap_contract_address.try_to_address());
