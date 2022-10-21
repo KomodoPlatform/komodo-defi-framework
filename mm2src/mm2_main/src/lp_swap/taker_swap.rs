@@ -22,7 +22,7 @@ use common::executor::Timer;
 use common::log::{debug, error, info, warn};
 use common::{bits256, now_ms, DEX_FEE_ADDR_RAW_PUBKEY};
 use crypto::privkey::SerializableSecp256k1Keypair;
-use futures::{compat::Future01CompatExt, select, FutureExt};
+use futures::{compat::Future01CompatExt, future::try_join, select, FutureExt};
 use http::Response;
 use keys::KeyPair;
 use mm2_core::mm_ctx::MmArc;
@@ -1329,47 +1329,42 @@ impl TakerSwap {
                 &self.r().secret_hash.0,
                 &self.unique_swap_data()[..],
             );
+            let taker_refunds_payment_fut = self.taker_coin.create_taker_refunds_payment_preimage(
+                &transaction.tx_hex(),
+                self.r().data.taker_payment_lock as u32,
+                &*self.r().other_taker_coin_htlc_pub,
+                &self.r().secret_hash.0,
+                &self.r().data.taker_coin_swap_contract_address,
+                &self.unique_swap_data(),
+            );
+            let payment_fut_pair = try_join(
+                taker_spends_maker_payment_fut.compat(),
+                taker_refunds_payment_fut.compat(),
+            );
 
-            match taker_spends_maker_payment_fut.compat().await {
-                Ok(taker_spends_maker_payment) => {
-                    let taker_refunds_payment_fut = self.taker_coin.create_taker_refunds_payment_preimage(
-                        &transaction.tx_hex(),
-                        self.r().data.taker_payment_lock as u32,
-                        &*self.r().other_taker_coin_htlc_pub,
-                        &self.r().secret_hash.0,
-                        &self.r().data.taker_coin_swap_contract_address,
-                        &self.unique_swap_data(),
+            match payment_fut_pair.await {
+                Ok((taker_spends_maker_payment, taker_refunds_payment)) => {
+                    let watcher_data = self.create_watcher_data(
+                        transaction.tx_hex(),
+                        taker_spends_maker_payment.tx_hex(),
+                        taker_refunds_payment.tx_hex(),
+                    );
+                    let swpmsg_watcher = SwapWatcherMsg::TakerSwapWatcherMsg(watcher_data);
+
+                    broadcast_swap_message(
+                        &self.ctx,
+                        watcher_topic(&self.r().data.taker_coin),
+                        swpmsg_watcher,
+                        &self.p2p_privkey,
                     );
 
-                    match taker_refunds_payment_fut.compat().await {
-                        Ok(taker_refunds_payment) => {
-                            let watcher_data = self.create_watcher_data(
-                                transaction.tx_hex(),
-                                taker_spends_maker_payment.tx_hex(),
-                                taker_refunds_payment.tx_hex(),
-                            );
-                            let swpmsg_watcher = SwapWatcherMsg::TakerSwapWatcherMsg(watcher_data);
-
-                            broadcast_swap_message(
-                                &self.ctx,
-                                watcher_topic(&self.r().data.taker_coin),
-                                swpmsg_watcher,
-                                &self.p2p_privkey,
-                            );
-
-                            swap_events.push(TakerSwapEvent::WatcherMessageSent(
-                                Some(taker_spends_maker_payment.tx_hex()),
-                                Some(taker_refunds_payment.tx_hex()),
-                            ));
-                        },
-                        Err(e) => error!(
-                            "The watcher message could not be sent, error creating the taker refunds payment: {}",
-                            e.get_plain_text_format()
-                        ),
-                    }
+                    swap_events.push(TakerSwapEvent::WatcherMessageSent(
+                        Some(taker_spends_maker_payment.tx_hex()),
+                        Some(taker_refunds_payment.tx_hex()),
+                    ));
                 },
                 Err(e) => error!(
-                    "The watcher message could not be sent, error creating the taker spends maker payment: {}",
+                    "The watcher message could not be sent, error creating the taker refunds payment: {}",
                     e.get_plain_text_format()
                 ),
             }
@@ -1383,19 +1378,20 @@ impl TakerSwap {
         let tx_hex = self.r().taker_payment.as_ref().unwrap().tx_hex.0.clone();
         let mut watcher_broadcast_abort_handle = None;
         if self.ctx.use_watchers() {
-            if let Some(taker_spends_maker_payment) = self.r().taker_spends_maker_payment_preimage.clone() {
-                if let Some(taker_refunds_payment) = self.r().taker_refunds_payment.clone() {
-                    let watcher_data =
-                        self.create_watcher_data(tx_hex.clone(), taker_spends_maker_payment, taker_refunds_payment);
-                    let swpmsg_watcher = SwapWatcherMsg::TakerSwapWatcherMsg(watcher_data);
-                    watcher_broadcast_abort_handle = Some(broadcast_swap_message_every(
-                        self.ctx.clone(),
-                        watcher_topic(&self.r().data.taker_coin),
-                        swpmsg_watcher,
-                        WAIT_FOR_TAKER_PAYMENT_INTERVAL,
-                        self.p2p_privkey,
-                    ));
-                }
+            if let (Some(taker_spends_maker_payment), Some(taker_refunds_payment)) = (
+                self.r().taker_spends_maker_payment_preimage.clone(),
+                self.r().taker_refunds_payment.clone(),
+            ) {
+                let watcher_data =
+                    self.create_watcher_data(tx_hex.clone(), taker_spends_maker_payment, taker_refunds_payment);
+                let swpmsg_watcher = SwapWatcherMsg::TakerSwapWatcherMsg(watcher_data);
+                watcher_broadcast_abort_handle = Some(broadcast_swap_message_every(
+                    self.ctx.clone(),
+                    watcher_topic(&self.r().data.taker_coin),
+                    swpmsg_watcher,
+                    WAIT_FOR_TAKER_PAYMENT_INTERVAL,
+                    self.p2p_privkey,
+                ));
             }
         }
         let msg = SwapMsg::TakerPayment(tx_hex);

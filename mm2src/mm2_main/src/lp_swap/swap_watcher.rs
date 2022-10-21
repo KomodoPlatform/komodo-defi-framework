@@ -274,7 +274,7 @@ impl State for WaitForTakerPaymentSpend {
         }
 
         let f = watcher_ctx.taker_coin.wait_for_tx_spend(
-            &watcher_ctx.data.taker_payment_hex[..],
+            &watcher_ctx.data.taker_payment_hex,
             watcher_ctx.data.taker_payment_lock,
             watcher_ctx.data.taker_coin_start_block,
             &None,
@@ -297,7 +297,7 @@ impl State for WaitForTakerPaymentSpend {
 
         let secret = match watcher_ctx
             .taker_coin
-            .extract_secret(&watcher_ctx.data.secret_hash[..], &tx_ident.tx_hex.0)
+            .extract_secret(&watcher_ctx.data.secret_hash, &tx_ident.tx_hex.0)
         {
             Ok(bytes) => H256Json::from(bytes.as_slice()),
             Err(err) => {
@@ -347,7 +347,7 @@ impl State for SpendMakerPayment {
         );
 
         let tx_hash = transaction.tx_hash();
-        info!("Maker payment spend tx {:02x}", tx_hash);
+        info!("Sent maker payment spend tx {:02x} as watcher", tx_hash);
 
         Self::change_state(Stopped::from_reason(StopReason::Finished(
             WatcherSuccess::MakerPaymentSpent,
@@ -420,7 +420,7 @@ impl State for RefundTakerPayment {
         }
 
         let tx_hash = transaction.tx_hash();
-        info!("Taker refund tx hash {:02x}", tx_hash);
+        info!("Sent taker refund tx {:02x} as watcher", tx_hash);
         Self::change_state(Stopped::from_reason(StopReason::Finished(
             WatcherSuccess::TakerPaymentRefunded,
         )))
@@ -510,7 +510,7 @@ fn spawn_taker_swap_watcher(ctx: MmArc, watcher_data: TakerSwapWatcherData, veri
     };
 
     let spawner = ctx.spawner();
-    let fee_hash = H256Json::from(&watcher_data.taker_fee_hash[..]);
+    let fee_hash = H256Json::from(watcher_data.taker_fee_hash.as_slice());
 
     let fut = async move {
         let taker_coin = match lp_coinfind(&ctx, &watcher_data.taker_coin).await {
