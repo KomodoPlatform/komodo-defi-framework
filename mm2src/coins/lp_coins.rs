@@ -586,6 +586,7 @@ pub trait SwapOps {
         _input: WatcherValidatePaymentInput,
     ) -> Box<dyn Future<Item = (), Error = MmError<ValidatePaymentError>> + Send>;
 
+    #[allow(clippy::too_many_arguments)]
     fn check_if_my_payment_sent(
         &self,
         time_lock_duration: u64,

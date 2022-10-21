@@ -1655,7 +1655,7 @@ impl SwapOps for TendermintCoin {
         let pubkey_hash = dhash160(other_pub);
         let to_address = try_fus!(AccountId::new(&self.account_prefix, pubkey_hash.as_slice()));
 
-        let htlc_id = self.calculate_htlc_id(amount.clone(), secret_hash, &to_address);
+        let htlc_id = self.calculate_htlc_id(amount, secret_hash, &to_address);
         let time_lock = self.estimate_blocks_from_duration(time_lock_duration);
 
         let coin = self.clone();
