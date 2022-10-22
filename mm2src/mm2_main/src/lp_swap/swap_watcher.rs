@@ -90,12 +90,12 @@ enum WatcherSuccess {
 
 #[derive(Debug)]
 enum WatcherError {
-    ValidatePublicKeysFailed(String),
-    ValidateTakerFeeFailed(String),
-    TakerPaymentWaitConfirmFailed(String),
+    InvalidValidatePublicKey(String),
+    InvalidTakerFee(String),
+    TakerPaymentNotConfirmed(String),
     TakerPaymentSearchForSwapFailed(String),
-    TakerPaymentValidateFailed(String),
-    TakerPaymentWaitForSpendFailed(String),
+    InvalidTakerPayment(String),
+    UnableToExtractSecret(String),
     MakerPaymentSpendFailed(String),
     TakerPaymentRefundFailed(String),
 }
@@ -133,14 +133,15 @@ impl State for ValidatePublicKeys {
             Ok(is_valid) => is_valid,
             Err(err) => {
                 return Self::change_state(Stopped::from_reason(StopReason::Error(
-                    WatcherError::ValidatePublicKeysFailed(err).into(),
+                    WatcherError::InvalidValidatePublicKey(err).into(),
                 )))
             },
         };
 
         if !redeem_pub_valid || watcher_ctx.verified_pub != watcher_ctx.data.taker_pub {
             return Self::change_state(Stopped::from_reason(StopReason::Error(
-                WatcherError::ValidatePublicKeysFailed(format!("Public key does not belong to taker payment")).into(),
+                WatcherError::InvalidValidatePublicKey("Public key does not belong to taker payment".to_string())
+                    .into(),
             )));
         }
 
@@ -163,13 +164,14 @@ impl State for ValidateTakerFee {
             .compat();
         if let Err(err) = validated_f.await {
             Self::change_state(Stopped::from_reason(StopReason::Error(
-                WatcherError::ValidateTakerFeeFailed(err.to_string()).into(),
+                WatcherError::InvalidTakerFee(err.to_string()).into(),
             )));
         }
         Self::change_state(ValidateTakerPayment {})
     }
 }
 
+// TODO: Do this check periodically while waiting for taker payment spend
 #[async_trait]
 impl State for ValidateTakerPayment {
     type Ctx = WatcherContext;
@@ -225,7 +227,7 @@ impl State for ValidateTakerPayment {
             .compat();
         if let Err(err) = wait_f.await {
             Self::change_state(Stopped::from_reason(StopReason::Error(
-                WatcherError::TakerPaymentWaitConfirmFailed(err).into(),
+                WatcherError::TakerPaymentNotConfirmed(err).into(),
             )));
         }
 
@@ -247,7 +249,7 @@ impl State for ValidateTakerPayment {
 
         if let Err(err) = validated_f.await {
             Self::change_state(Stopped::from_reason(StopReason::Error(
-                WatcherError::TakerPaymentValidateFailed(err.to_string()).into(),
+                WatcherError::InvalidTakerPayment(err.to_string()).into(),
             )));
         }
 
@@ -265,7 +267,8 @@ impl State for WaitForTakerPaymentSpend {
         {
             // Sleep for half the locktime to allow the taker to spend the maker payment first
             let now = now_ms() / 1000;
-            let wait_for_taker_until = watcher_ctx.data.swap_started_at + (watcher_ctx.data.lock_duration / 2);
+            let wait_for_taker_until =
+                wait_for_taker_payment_conf_until(watcher_ctx.data.swap_started_at, watcher_ctx.data.lock_duration);
             let sleep_duration = (wait_for_taker_until - now + 1) as f64;
 
             if now < wait_for_taker_until {
@@ -302,7 +305,7 @@ impl State for WaitForTakerPaymentSpend {
             Ok(bytes) => H256Json::from(bytes.as_slice()),
             Err(err) => {
                 return Self::change_state(Stopped::from_reason(StopReason::Error(
-                    WatcherError::TakerPaymentWaitForSpendFailed(err).into(),
+                    WatcherError::UnableToExtractSecret(err).into(),
                 )))
             },
         };

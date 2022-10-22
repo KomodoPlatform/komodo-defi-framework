@@ -1202,7 +1202,7 @@ mod docker_tests {
 
         block_on(mm_alice.wait_for_log(60., |log| log.contains("Watcher message sent..."))).unwrap();
         block_on(mm_alice.stop()).unwrap();
-        block_on(mm_watcher.wait_for_log(60., |log| log.contains("Maker payment spend tx"))).unwrap();
+        block_on(mm_watcher.wait_for_log(60., |log| log.contains("Sent maker payment spend tx"))).unwrap();
         thread::sleep(Duration::from_secs(5));
 
         let mm_alice = MarketMakerIt::start(alice_conf, "pass".to_string(), None).unwrap();
