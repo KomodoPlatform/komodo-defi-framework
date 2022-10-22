@@ -664,7 +664,10 @@ impl TendermintCoin {
 
             if let Some(tx) = response.txs.first() {
                 if let cosmrs::tendermint::abci::Code::Err(err_code) = tx.tx_result.code {
-                    return Err(format!("Got {} error code. Broadcasted HTLC likely isn't valid.", err_code));
+                    return Err(format!(
+                        "Got {} error code. Broadcasted HTLC likely isn't valid.",
+                        err_code
+                    ));
                 }
 
                 let deserialized_tx = try_s!(cosmrs::Tx::from_bytes(tx.tx.as_bytes()));
