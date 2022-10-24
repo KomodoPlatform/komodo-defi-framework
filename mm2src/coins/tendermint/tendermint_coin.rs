@@ -1934,6 +1934,7 @@ pub mod tendermint_coin_tests {
         let priv_key = &*ctx.secp256k1_key_pair().private().secret;
 
         let coin = block_on(TendermintCoin::init(
+            &ctx,
             "USDC-IBC".to_string(),
             5,
             protocol_conf,
@@ -1985,6 +1986,7 @@ pub mod tendermint_coin_tests {
         let priv_key = &*ctx.secp256k1_key_pair().private().secret;
 
         let coin = block_on(TendermintCoin::init(
+            &ctx,
             "USDC-IBC".to_string(),
             5,
             protocol_conf,
@@ -2043,6 +2045,7 @@ pub mod tendermint_coin_tests {
         let priv_key = &*ctx.secp256k1_key_pair().private().secret;
 
         let coin = block_on(TendermintCoin::init(
+            &ctx,
             "IRIS-TEST".to_string(),
             5,
             protocol_conf,
@@ -2199,6 +2202,7 @@ pub mod tendermint_coin_tests {
         let priv_key = &*ctx.secp256k1_key_pair().private().secret;
 
         let coin = block_on(TendermintCoin::init(
+            &ctx,
             "IRIS-TEST".to_string(),
             5,
             protocol_conf,
