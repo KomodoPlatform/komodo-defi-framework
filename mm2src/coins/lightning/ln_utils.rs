@@ -275,17 +275,10 @@ pub(crate) fn filter_channels(channels: Vec<ChannelDetails>, min_inbound_capacit
             min_capacity_channel_exists = true;
         };
         match filtered_channels.entry(channel.counterparty.node_id) {
-            Entry::Occupied(mut entry) => {
-                let current_max_capacity = entry.get().inbound_capacity_msat;
-                if channel.inbound_capacity_msat < current_max_capacity {
-                    continue;
-                }
-                entry.insert(channel);
-            },
-            Entry::Vacant(entry) => {
-                entry.insert(channel);
-            },
-        }
+            Entry::Occupied(entry) if channel.inbound_capacity_msat < entry.get().inbound_capacity_msat => continue,
+            Entry::Occupied(mut entry) => entry.insert(channel),
+            Entry::Vacant(entry) => entry.insert(channel),
+        };
     }
 
     let route_hint_from_channel = |channel: &ChannelDetails| {

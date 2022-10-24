@@ -491,9 +491,8 @@ impl SwapOps for LightningCoin {
         _swap_unique_data: &[u8],
         payment_instructions: &Option<PaymentInstructions>,
     ) -> TransactionFut {
-        let PaymentInstructions::Lightning(invoice) = try_tx_fus!(payment_instructions
-            .clone()
-            .ok_or_else(|| TransactionErr::Plain("payment_instructions can't be None".into())));
+        let PaymentInstructions::Lightning(invoice) =
+            try_tx_fus!(payment_instructions.clone().ok_or("payment_instructions can't be None"));
         let coin = self.clone();
         let fut = async move {
             let payment = try_tx_s!(coin.pay_invoice(invoice).await);
@@ -512,9 +511,8 @@ impl SwapOps for LightningCoin {
         _swap_unique_data: &[u8],
         payment_instructions: &Option<PaymentInstructions>,
     ) -> TransactionFut {
-        let PaymentInstructions::Lightning(invoice) = try_tx_fus!(payment_instructions
-            .clone()
-            .ok_or_else(|| TransactionErr::Plain("payment_instructions can't be None".into())));
+        let PaymentInstructions::Lightning(invoice) =
+            try_tx_fus!(payment_instructions.clone().ok_or("payment_instructions can't be None"));
         let coin = self.clone();
         let fut = async move {
             let payment = try_tx_s!(coin.pay_invoice(invoice).await);
@@ -753,7 +751,7 @@ impl SwapOps for LightningCoin {
         instructions: &[u8],
         secret_hash: &[u8],
         amount: BigDecimal,
-    ) -> Result<Option<PaymentInstructions>, MmError<ValidateInstructionsErr>> {
+    ) -> Result<PaymentInstructions, MmError<ValidateInstructionsErr>> {
         let invoice = Invoice::from_str(&String::from_utf8_lossy(instructions))?;
         if invoice.payment_hash().as_inner() != secret_hash
             && ripemd160(invoice.payment_hash().as_inner()).as_slice() != secret_hash
@@ -769,7 +767,7 @@ impl SwapOps for LightningCoin {
             return Err(ValidateInstructionsErr::ValidateLightningInvoiceErr("Invalid invoice amount!".into()).into());
         }
         // Todo: continue validation here by comparing locktime, etc..
-        Ok(Some(PaymentInstructions::Lightning(invoice)))
+        Ok(PaymentInstructions::Lightning(invoice))
     }
 }
 

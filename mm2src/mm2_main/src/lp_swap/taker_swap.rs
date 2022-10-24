@@ -845,6 +845,9 @@ impl TakerSwap {
         }
     }
 
+    /// # Panic
+    ///
+    /// Panic if taker_fee of [`TakerSwapMut`] is [`Option::None`].
     async fn get_taker_fee_data(&self) -> Result<SwapTxDataMsg, MmError<PaymentInstructionsErr>> {
         // If taker fee is a lightning payment the payment hash will be sent in the message
         let taker_fee_data = self
@@ -1146,7 +1149,7 @@ impl TakerSwap {
         let tx_hash = transaction.tx_hash();
         info!("Taker fee tx hash {:02x}", tx_hash);
         let tx_ident = TransactionIdentifier {
-            tx_hex: transaction.tx_hex().map(From::from),
+            tx_hex: transaction.tx_hex().map(BytesJson::from),
             tx_hash,
         };
 
@@ -1200,10 +1203,7 @@ impl TakerSwap {
                 &self.r().secret_hash.0,
                 self.taker_amount.clone().into(),
             ) {
-                Ok(Some(instructions)) => {
-                    swap_events.push(TakerSwapEvent::TakerPaymentInstructionsReceived(instructions))
-                },
-                Ok(None) => (),
+                Ok(instructions) => swap_events.push(TakerSwapEvent::TakerPaymentInstructionsReceived(instructions)),
                 Err(e) => {
                     return Ok((Some(TakerSwapCommand::Finish), vec![
                         TakerSwapEvent::MakerPaymentValidateFailed(e.to_string().into()),
@@ -1226,7 +1226,7 @@ impl TakerSwap {
         let tx_hash = maker_payment.tx_hash();
         info!("Got maker payment {:02x}", tx_hash);
         let tx_ident = TransactionIdentifier {
-            tx_hex: maker_payment.tx_hex().map(From::from),
+            tx_hex: maker_payment.tx_hex().map(BytesJson::from),
             tx_hash,
         };
 
@@ -1362,7 +1362,7 @@ impl TakerSwap {
         };
 
         let tx_hash = transaction.tx_hash();
-        let tx_hex = transaction.tx_hex().map(From::from);
+        let tx_hex = transaction.tx_hex().map(BytesJson::from);
         info!("Taker payment tx hash {:02x}", tx_hash);
         let tx_ident = TransactionIdentifier {
             tx_hex: tx_hex.clone(),
@@ -1488,7 +1488,7 @@ impl TakerSwap {
         let tx_hash = tx.tx_hash();
         info!("Taker payment spend tx {:02x}", tx_hash);
         let tx_ident = TransactionIdentifier {
-            tx_hex: tx.tx_hex().map(From::from),
+            tx_hex: tx.tx_hex().map(BytesJson::from),
             tx_hash,
         };
 
@@ -1557,7 +1557,7 @@ impl TakerSwap {
         let tx_hash = transaction.tx_hash();
         info!("Maker payment spend tx {:02x}", tx_hash);
         let tx_ident = TransactionIdentifier {
-            tx_hex: transaction.tx_hex().map(From::from),
+            tx_hex: transaction.tx_hex().map(BytesJson::from),
             tx_hash,
         };
 
@@ -1623,7 +1623,7 @@ impl TakerSwap {
         let tx_hash = transaction.tx_hash();
         info!("Taker refund tx hash {:02x}", tx_hash);
         let tx_ident = TransactionIdentifier {
-            tx_hex: transaction.tx_hex().map(From::from),
+            tx_hex: transaction.tx_hex().map(BytesJson::from),
             tx_hash,
         };
 

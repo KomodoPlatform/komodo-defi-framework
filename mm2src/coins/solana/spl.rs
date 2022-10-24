@@ -461,7 +461,7 @@ impl SwapOps for SplToken {
         _instructions: &[u8],
         _secret_hash: &[u8],
         _amount: BigDecimal,
-    ) -> Result<Option<PaymentInstructions>, MmError<ValidateInstructionsErr>> {
+    ) -> Result<PaymentInstructions, MmError<ValidateInstructionsErr>> {
         unimplemented!()
     }
 }

@@ -517,6 +517,7 @@ impl From<NumConversError> for PaymentInstructionsErr {
 #[derive(Display)]
 pub enum ValidateInstructionsErr {
     ValidateLightningInvoiceErr(String),
+    UnsupportedCoin(String),
 }
 
 #[cfg(not(target_arch = "wasm32"))]
@@ -678,7 +679,7 @@ pub trait SwapOps {
         instructions: &[u8],
         secret_hash: &[u8],
         amount: BigDecimal,
-    ) -> Result<Option<PaymentInstructions>, MmError<ValidateInstructionsErr>>;
+    ) -> Result<PaymentInstructions, MmError<ValidateInstructionsErr>>;
 }
 
 /// Operations that coins have independently from the MarketMaker.

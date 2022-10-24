@@ -939,6 +939,7 @@ impl<Id> Default for PagingOptionsEnum<Id> {
 #[inline(always)]
 pub fn get_utc_timestamp() -> i64 { Utc::now().timestamp() }
 
+#[inline(always)]
 pub fn get_local_duration_since_epoch() -> Result<Duration, SystemTimeError> {
     SystemTime::now().duration_since(SystemTime::UNIX_EPOCH)
 }

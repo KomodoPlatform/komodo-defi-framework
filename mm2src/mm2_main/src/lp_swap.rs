@@ -1581,6 +1581,8 @@ mod lp_swap_tests {
 
     #[test]
     fn check_payment_data_serde() {
+        const MSG_DATA_INSTRUCTIONS: [u8; 300] = [1; 300];
+
         #[derive(Clone, Debug, Eq, Deserialize, PartialEq, Serialize)]
         enum SwapMsgOld {
             Negotiation(NegotiationDataMsg),
@@ -1591,10 +1593,10 @@ mod lp_swap_tests {
             TakerPayment(Vec<u8>),
         }
 
-        // old message format should be deserialized to PaymentDataMsg::V1
-        let old = SwapMsgOld::MakerPayment(vec![1; 300]);
+        // old message format should be deserialized to PaymentDataMsg::Regular
+        let old = SwapMsgOld::MakerPayment(MSG_DATA_INSTRUCTIONS.to_vec());
 
-        let expected = SwapMsg::MakerPayment(SwapTxDataMsg::Regular(vec![1; 300]));
+        let expected = SwapMsg::MakerPayment(SwapTxDataMsg::Regular(MSG_DATA_INSTRUCTIONS.to_vec()));
 
         let serialized = rmp_serde::to_vec(&old).unwrap();
 
@@ -1602,8 +1604,8 @@ mod lp_swap_tests {
 
         assert_eq!(deserialized, expected);
 
-        // PaymentDataMsg::V1 should be deserialized to old message format
-        let v1 = SwapMsg::MakerPayment(SwapTxDataMsg::Regular(vec![1; 300]));
+        // PaymentDataMsg::Regular should be deserialized to old message format
+        let v1 = SwapMsg::MakerPayment(SwapTxDataMsg::Regular(MSG_DATA_INSTRUCTIONS.to_vec()));
 
         let expected = old;
 
@@ -1613,8 +1615,8 @@ mod lp_swap_tests {
 
         assert_eq!(deserialized, expected);
 
-        // PaymentDataMsg::V1 should be deserialized to PaymentDataMsg::V1
-        let v1 = SwapMsg::MakerPayment(SwapTxDataMsg::Regular(vec![1; 300]));
+        // PaymentDataMsg::Regular should be deserialized to PaymentDataMsg::Regular
+        let v1 = SwapMsg::MakerPayment(SwapTxDataMsg::Regular(MSG_DATA_INSTRUCTIONS.to_vec()));
 
         let serialized = rmp_serde::to_vec(&v1).unwrap();
 
@@ -1622,10 +1624,10 @@ mod lp_swap_tests {
 
         assert_eq!(deserialized, v1);
 
-        // PaymentDataMsg::V2 should be deserialized to PaymentDataMsg::V2
+        // PaymentDataMsg::WithInstructions should be deserialized to PaymentDataMsg::WithInstructions
         let v2 = SwapMsg::MakerPayment(SwapTxDataMsg::WithInstructions(PaymentWithInstructions {
-            data: vec![1; 300],
-            next_step_instructions: vec![1; 300],
+            data: MSG_DATA_INSTRUCTIONS.to_vec(),
+            next_step_instructions: MSG_DATA_INSTRUCTIONS.to_vec(),
         }));
 
         let serialized = rmp_serde::to_vec(&v2).unwrap();
@@ -1634,10 +1636,10 @@ mod lp_swap_tests {
 
         assert_eq!(deserialized, v2);
 
-        // PaymentDataMsg::V2 shouldn't be deserialized to old message format, new nodes with payment instructions can't swap with old nodes without it.
+        // PaymentDataMsg::WithInstructions shouldn't be deserialized to old message format, new nodes with payment instructions can't swap with old nodes without it.
         let v2 = SwapMsg::MakerPayment(SwapTxDataMsg::WithInstructions(PaymentWithInstructions {
-            data: vec![1; 300],
-            next_step_instructions: vec![1; 300],
+            data: MSG_DATA_INSTRUCTIONS.to_vec(),
+            next_step_instructions: MSG_DATA_INSTRUCTIONS.to_vec(),
         }));
 
         let serialized = rmp_serde::to_vec(&v2).unwrap();

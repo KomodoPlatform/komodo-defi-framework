@@ -1415,8 +1415,8 @@ impl SwapOps for ZCoin {
         _instructions: &[u8],
         _secret_hash: &[u8],
         _amount: BigDecimal,
-    ) -> Result<Option<PaymentInstructions>, MmError<ValidateInstructionsErr>> {
-        Ok(None)
+    ) -> Result<PaymentInstructions, MmError<ValidateInstructionsErr>> {
+        MmError::err(ValidateInstructionsErr::UnsupportedCoin(self.ticker().to_string()))
     }
 }
 

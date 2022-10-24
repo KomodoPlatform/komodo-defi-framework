@@ -9,6 +9,7 @@ use mm2_core::mm_ctx::MmArc;
 use mm2_libp2p::{decode_signed, pub_sub_topic, TopicPrefix};
 use mm2_number::BigDecimal;
 use parking_lot::Mutex as PaMutex;
+use rpc::v1::types::Bytes as BytesJson;
 use std::cmp::min;
 use std::sync::Arc;
 use std::sync::{RwLock, RwLockReadGuard, RwLockWriteGuard};
@@ -261,7 +262,7 @@ impl Watcher {
         let tx_hash = tx.tx_hash();
         info!("Taker payment spend tx {:02x}", tx_hash);
         let tx_ident = TransactionIdentifier {
-            tx_hex: tx.tx_hex().map(From::from),
+            tx_hex: tx.tx_hex().map(BytesJson::from),
             tx_hash,
         };
 
@@ -315,7 +316,7 @@ impl Watcher {
         let tx_hash = transaction.tx_hash();
         info!("Maker payment spend tx {:02x}", tx_hash);
         let tx_ident = TransactionIdentifier {
-            tx_hex: transaction.tx_hex().map(From::from),
+            tx_hex: transaction.tx_hex().map(BytesJson::from),
             tx_hash,
         };
 

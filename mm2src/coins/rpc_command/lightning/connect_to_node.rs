@@ -77,7 +77,7 @@ pub async fn connect_to_node(ctx: MmArc, req: ConnectToNodeRequest) -> ConnectTo
     let node_addr = req.node_address.addr;
     let res = connect_to_ln_node(node_pubkey, node_addr, ln_coin.peer_manager.clone()).await?;
 
-    // If a node that we have an open channel with changed it's address, "connect_to_lightning_node"
+    // If a node that we have an open channel with changed it's address, "connect_to_node"
     // can be used to reconnect to the new address while saving this new address for reconnections.
     if let ConnectToNodeRes::ConnectedSuccessfully { .. } = res {
         if let Entry::Occupied(mut entry) = ln_coin.open_channels_nodes.lock().entry(node_pubkey) {

@@ -413,10 +413,12 @@ impl MakerSwap {
         // If maker payment is a lightning payment the payment hash will be sent in the message
         // It's not really needed here unlike in TakerFee msg since the hash is included in the invoice/payment_instructions but it's kept for symmetry
         let payment_data = self.r().maker_payment.as_ref().unwrap().tx_hex_or_hash().0;
-        let hash_algo = SecretHashAlgo::SHA256;
         let instructions = self
             .taker_coin
-            .payment_instructions(&hash_algo.hash_secret(self.secret.as_slice()), &self.taker_amount)
+            .payment_instructions(
+                &SecretHashAlgo::SHA256.hash_secret(self.secret.as_slice()),
+                &self.taker_amount,
+            )
             .await?;
         Ok(SwapTxDataMsg::new(payment_data, instructions))
     }
@@ -656,10 +658,7 @@ impl MakerSwap {
                 .maker_coin
                 .validate_instructions(instructions, &self.secret_hash(), self.maker_amount.clone())
             {
-                Ok(Some(instructions)) => {
-                    swap_events.push(MakerSwapEvent::MakerPaymentInstructionsReceived(instructions))
-                },
-                Ok(None) => (),
+                Ok(instructions) => swap_events.push(MakerSwapEvent::MakerPaymentInstructionsReceived(instructions)),
                 Err(e) => {
                     return Ok((Some(MakerSwapCommand::Finish), vec![
                         MakerSwapEvent::TakerFeeValidateFailed(e.to_string().into()),
@@ -715,7 +714,7 @@ impl MakerSwap {
         }
 
         let fee_ident = TransactionIdentifier {
-            tx_hex: taker_fee.tx_hex().map(From::from),
+            tx_hex: taker_fee.tx_hex().map(BytesJson::from),
             tx_hash: hash,
         };
         swap_events.push(MakerSwapEvent::TakerFeeValidated(fee_ident));
@@ -783,7 +782,7 @@ impl MakerSwap {
         info!("Maker payment tx {:02x}", tx_hash);
 
         let tx_ident = TransactionIdentifier {
-            tx_hex: transaction.tx_hex().map(From::from),
+            tx_hex: transaction.tx_hex().map(BytesJson::from),
             tx_hash,
         };
 
@@ -866,7 +865,7 @@ impl MakerSwap {
         let tx_hash = taker_payment.tx_hash();
         info!("Taker payment tx {:02x}", tx_hash);
         let tx_ident = TransactionIdentifier {
-            tx_hex: taker_payment.tx_hex().map(From::from),
+            tx_hex: taker_payment.tx_hex().map(BytesJson::from),
             tx_hash,
         };
 
@@ -996,7 +995,7 @@ impl MakerSwap {
         let tx_hash = transaction.tx_hash();
         info!("Taker payment spend tx {:02x}", tx_hash);
         let tx_ident = TransactionIdentifier {
-            tx_hex: transaction.tx_hex().map(From::from),
+            tx_hex: transaction.tx_hex().map(BytesJson::from),
             tx_hash,
         };
 
@@ -1096,7 +1095,7 @@ impl MakerSwap {
         let tx_hash = transaction.tx_hash();
         info!("Maker payment refund tx {:02x}", tx_hash);
         let tx_ident = TransactionIdentifier {
-            tx_hex: transaction.tx_hex().map(From::from),
+            tx_hex: transaction.tx_hex().map(BytesJson::from),
             tx_hash,
         };
 
