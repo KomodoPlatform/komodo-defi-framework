@@ -158,8 +158,8 @@ impl PlatformWithTokensActivationOps for TendermintCoin {
     ) -> Result<Self, MmError<Self::ActivationError>> {
         let avg_block_time = coin_conf["avg_block_time"].as_i64().unwrap_or(0);
 
-        // Should be at least bigger than 0 and smaller than 255(u8::MAX)
-        if avg_block_time < 1 || avg_block_time >= std::u8::MAX as i64 {
+        // `avg_block_time` can not be less than 1 OR bigger than 255(u8::MAX)
+        if avg_block_time < 1 || avg_block_time > std::u8::MAX as i64 {
             return MmError::err(TendermintInitError {
                 ticker,
                 kind: TendermintInitErrorKind::AvgBlockTimeMissingOrInvalid,
