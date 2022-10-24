@@ -219,9 +219,9 @@ impl PlatformWithTokensActivationOps for TendermintCoin {
 
     fn start_history_background_fetching(
         &self,
-        metrics: MetricsArc,
-        storage: impl TxHistoryStorage,
-        initial_balance: BigDecimal,
+        _metrics: MetricsArc,
+        _storage: impl TxHistoryStorage,
+        _initial_balance: BigDecimal,
     ) {
     }
 }

@@ -12,7 +12,7 @@ fn test_iris_with_usdc_activation_balance_orderbook() {
     let coins = json!([iris_testnet_conf(), usdc_ibc_iris_testnet_conf()]);
 
     let conf = Mm2TestConf::seednode(IRIS_USDC_ACTIVATION_SEED, &coins);
-    let mm = MarketMakerIt::start(conf.conf, conf.rpc_password, conf.local).unwrap();
+    let mm = MarketMakerIt::start(conf.conf, conf.rpc_password, None).unwrap();
 
     let activation_result = block_on(enable_tendermint(
         &mm,

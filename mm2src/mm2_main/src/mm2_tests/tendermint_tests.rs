@@ -102,7 +102,7 @@ fn test_tendermint_token_activation_and_withdraw() {
     let token = coins[1]["coin"].as_str().unwrap();
 
     let conf = Mm2TestConf::seednode(TEST_SEED, &coins);
-    let mm = MarketMakerIt::start(conf.conf, conf.rpc_password, conf.local).unwrap();
+    let mm = MarketMakerIt::start(conf.conf, conf.rpc_password, None).unwrap();
 
     let activation_res = block_on(enable_tendermint(&mm, platform_coin, &[], &[
         "http://34.80.202.172:26657",

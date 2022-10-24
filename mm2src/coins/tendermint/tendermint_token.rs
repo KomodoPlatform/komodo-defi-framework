@@ -3,7 +3,7 @@ use super::{TendermintCoin, TendermintFeeDetails, GAS_LIMIT_DEFAULT, MIN_TX_SATO
             TX_DEFAULT_MEMO};
 use crate::utxo::utxo_common::big_decimal_from_sat;
 use crate::{big_decimal_from_sat_unsigned, utxo::sat_from_big_decimal, BalanceFut, BigDecimal, CoinBalance,
-            FeeApproxStage, FoundSwapTxSpend, HistorySyncState, MarketCoinOps, MmCoin, MyAddressError,
+            CoinFutSpawner, FeeApproxStage, FoundSwapTxSpend, HistorySyncState, MarketCoinOps, MmCoin, MyAddressError,
             NegotiateSwapContractAddrErr, RawTransactionFut, RawTransactionRequest, SearchForSwapTxSpendInput,
             SignatureResult, SwapOps, TradeFee, TradePreimageFut, TradePreimageResult, TradePreimageValue,
             TransactionDetails, TransactionEnum, TransactionErr, TransactionFut, TransactionType, TxFeeDetails,
@@ -12,6 +12,8 @@ use crate::{big_decimal_from_sat_unsigned, utxo::sat_from_big_decimal, BalanceFu
             WatcherValidatePaymentInput, WithdrawError, WithdrawFut, WithdrawRequest};
 use async_trait::async_trait;
 use bitcrypto::sha256;
+use common::executor::abortable_queue::AbortableQueue;
+use common::executor::AbortableSystem;
 use common::Future01CompatExt;
 use cosmrs::{bank::MsgSend,
              tx::{Fee, Msg},
@@ -24,15 +26,27 @@ use mm2_err_handle::prelude::*;
 use mm2_number::MmNumber;
 use rpc::v1::types::Bytes as BytesJson;
 use serde_json::Value as Json;
+use std::ops::Deref;
 use std::str::FromStr;
+use std::sync::Arc;
 
-#[allow(dead_code)]
-#[derive(Clone)]
-pub struct TendermintToken {
+pub struct TendermintTokenImpl {
     pub ticker: String,
     platform_coin: TendermintCoin,
     pub decimals: u8,
     pub denom: Denom,
+    /// This spawner is used to spawn coin's related futures that should be aborted on coin deactivation
+    /// or on [`MmArc::stop`].
+    abortable_system: AbortableQueue,
+}
+
+#[derive(Clone)]
+pub struct TendermintToken(Arc<TendermintTokenImpl>);
+
+impl Deref for TendermintToken {
+    type Target = TendermintTokenImpl;
+
+    fn deref(&self) -> &Self::Target { &self.0 }
 }
 
 #[derive(Clone, Debug, Deserialize, Serialize)]
@@ -63,12 +77,14 @@ impl TendermintToken {
         denom: String,
     ) -> MmResult<Self, TendermintTokenInitError> {
         let denom = Denom::from_str(&denom).map_to_mm(|e| TendermintTokenInitError::InvalidDenom(e.to_string()))?;
-        Ok(TendermintToken {
+        let token_impl = TendermintTokenImpl {
+            abortable_system: platform_coin.abortable_system.create_subsystem(),
             ticker,
             platform_coin,
             decimals,
             denom,
-        })
+        };
+        Ok(TendermintToken(Arc::new(token_impl)))
     }
 }
 
@@ -382,6 +398,8 @@ impl MarketCoinOps for TendermintToken {
 impl MmCoin for TendermintToken {
     fn is_asset_chain(&self) -> bool { false }
 
+    fn spawner(&self) -> CoinFutSpawner { CoinFutSpawner::new(&self.abortable_system) }
+
     fn withdraw(&self, req: WithdrawRequest) -> WithdrawFut {
         let platform = self.platform_coin.clone();
         let token = self.clone();
@@ -506,7 +524,7 @@ impl MmCoin for TendermintToken {
                     amount: fee_amount_dec,
                     gas_limit: GAS_LIMIT_DEFAULT,
                 })),
-                coin: token.ticker,
+                coin: token.ticker.clone(),
                 internal_id: hash.to_vec().into(),
                 kmd_rewards: None,
                 transaction_type: TransactionType::default(),
