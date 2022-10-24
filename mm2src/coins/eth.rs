@@ -1170,6 +1170,8 @@ impl SwapOps for EthCoin {
     ) -> Result<PaymentInstructions, MmError<ValidateInstructionsErr>> {
         MmError::err(ValidateInstructionsErr::UnsupportedCoin(self.ticker().to_string()))
     }
+
+    fn is_supported_by_watchers(&self) -> bool { false }
 }
 
 #[cfg_attr(test, mockable)]
@@ -3428,7 +3430,7 @@ pub fn wei_from_big_decimal(amount: &BigDecimal, decimals: u8) -> NumConversResu
 }
 
 impl Transaction for SignedEthTx {
-    fn tx_hex(&self) -> Option<Vec<u8>> { Some(rlp::encode(self).to_vec()) }
+    fn tx_hex(&self) -> Vec<u8> { rlp::encode(self).to_vec() }
 
     fn tx_hash(&self) -> BytesJson { self.hash.to_vec().into() }
 }

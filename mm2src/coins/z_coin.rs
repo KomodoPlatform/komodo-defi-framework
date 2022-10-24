@@ -173,10 +173,10 @@ pub struct ZCoinFields {
 }
 
 impl Transaction for ZTransaction {
-    fn tx_hex(&self) -> Option<Vec<u8>> {
+    fn tx_hex(&self) -> Vec<u8> {
         let mut hex = Vec::with_capacity(1024);
         self.write(&mut hex).expect("Writing should not fail");
-        Some(hex)
+        hex
     }
 
     fn tx_hash(&self) -> BytesJson {
@@ -1418,6 +1418,8 @@ impl SwapOps for ZCoin {
     ) -> Result<PaymentInstructions, MmError<ValidateInstructionsErr>> {
         MmError::err(ValidateInstructionsErr::UnsupportedCoin(self.ticker().to_string()))
     }
+
+    fn is_supported_by_watchers(&self) -> bool { false }
 }
 
 #[async_trait]

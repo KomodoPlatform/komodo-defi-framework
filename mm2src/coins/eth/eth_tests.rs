@@ -267,7 +267,7 @@ fn send_and_refund_erc20_payment() {
 
     let refund = coin
         .send_maker_refunds_payment(
-            &payment.tx_hex().unwrap(),
+            &payment.tx_hex(),
             (now_ms() / 1000) as u32 - 200,
             &DEX_FEE_ADDR_RAW_PUBKEY,
             &[1; 20],
@@ -337,7 +337,7 @@ fn send_and_refund_eth_payment() {
 
     let refund = coin
         .send_maker_refunds_payment(
-            &payment.tx_hex().unwrap(),
+            &payment.tx_hex(),
             (now_ms() / 1000) as u32 - 200,
             &DEX_FEE_ADDR_RAW_PUBKEY,
             &[1; 20],

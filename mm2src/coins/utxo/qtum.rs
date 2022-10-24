@@ -756,6 +756,8 @@ impl SwapOps for QtumCoin {
     ) -> Result<PaymentInstructions, MmError<ValidateInstructionsErr>> {
         MmError::err(ValidateInstructionsErr::UnsupportedCoin(self.ticker().to_string()))
     }
+
+    fn is_supported_by_watchers(&self) -> bool { true }
 }
 
 impl MarketCoinOps for QtumCoin {

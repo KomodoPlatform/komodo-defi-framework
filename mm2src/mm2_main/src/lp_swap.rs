@@ -725,17 +725,10 @@ impl SwapTxDataMsg {
 #[derive(Clone, Debug, Deserialize, PartialEq, Serialize)]
 pub struct TransactionIdentifier {
     /// Raw bytes of signed transaction in hexadecimal string, this should be sent as is to send_raw_transaction RPC to broadcast the transaction.
-    /// Some payments like lightning payments don't have a tx_hex, this is why tx_hex is an option.
-    tx_hex: Option<BytesJson>,
+    /// Some payments like lightning payments don't have a tx_hex, for such payments tx_hex will be equal to tx_hash.
+    tx_hex: BytesJson,
     /// Transaction hash in hexadecimal format
     tx_hash: BytesJson,
-}
-
-impl TransactionIdentifier {
-    fn tx_hex_or_hash(&self) -> BytesJson {
-        let tx_hash = self.tx_hash.clone();
-        self.tx_hex.clone().unwrap_or(tx_hash)
-    }
 }
 
 pub fn my_swaps_dir(ctx: &MmArc) -> PathBuf { ctx.dbdir().join("SWAPS").join("MY") }
@@ -1167,7 +1160,7 @@ pub async fn recover_funds_of_swap(ctx: MmArc, req: Json) -> Result<Response<Vec
             "action": recover_data.action,
             "coin": recover_data.coin,
             "tx_hash": recover_data.transaction.tx_hash(),
-            "tx_hex": BytesJson::from(try_s!(recover_data.transaction.tx_hex().ok_or("recover_funds is not implemented for lightning swaps yet!"))),
+            "tx_hex": BytesJson::from(recover_data.transaction.tx_hex()),
         }
     })));
     Ok(try_s!(Response::builder().body(res)))

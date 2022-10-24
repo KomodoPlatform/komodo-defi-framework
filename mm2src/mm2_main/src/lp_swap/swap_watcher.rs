@@ -262,13 +262,13 @@ impl Watcher {
         let tx_hash = tx.tx_hash();
         info!("Taker payment spend tx {:02x}", tx_hash);
         let tx_ident = TransactionIdentifier {
-            tx_hex: tx.tx_hex().map(BytesJson::from),
+            tx_hex: BytesJson::from(tx.tx_hex()),
             tx_hash,
         };
 
         let secret = match self
             .taker_coin
-            .extract_secret(&self.data.secret_hash[..], &tx_ident.tx_hex_or_hash())
+            .extract_secret(&self.data.secret_hash[..], &tx_ident.tx_hex)
             .await
         {
             Ok(bytes) => H256Json::from(bytes.as_slice()),
@@ -316,7 +316,7 @@ impl Watcher {
         let tx_hash = transaction.tx_hash();
         info!("Maker payment spend tx {:02x}", tx_hash);
         let tx_ident = TransactionIdentifier {
-            tx_hex: transaction.tx_hex().map(BytesJson::from),
+            tx_hex: BytesJson::from(transaction.tx_hex()),
             tx_hash,
         };
 

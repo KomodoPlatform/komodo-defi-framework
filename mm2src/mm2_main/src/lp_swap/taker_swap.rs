@@ -855,8 +855,9 @@ impl TakerSwap {
             .taker_fee
             .as_ref()
             .expect("TakerSwapMut::taker_fee must be some value to use get_taker_fee_data")
-            .tx_hex_or_hash()
-            .0;
+            .tx_hex
+            .0
+            .clone();
         let secret_hash = self.r().secret_hash.0.clone();
         let maker_amount = self.maker_amount.clone().into();
         let instructions = self
@@ -1149,7 +1150,7 @@ impl TakerSwap {
         let tx_hash = transaction.tx_hash();
         info!("Taker fee tx hash {:02x}", tx_hash);
         let tx_ident = TransactionIdentifier {
-            tx_hex: transaction.tx_hex().map(BytesJson::from),
+            tx_hex: BytesJson::from(transaction.tx_hex()),
             tx_hash,
         };
 
@@ -1226,7 +1227,7 @@ impl TakerSwap {
         let tx_hash = maker_payment.tx_hash();
         info!("Got maker payment {:02x}", tx_hash);
         let tx_ident = TransactionIdentifier {
-            tx_hex: maker_payment.tx_hex().map(BytesJson::from),
+            tx_hex: BytesJson::from(maker_payment.tx_hex()),
             tx_hash,
         };
 
@@ -1240,7 +1241,7 @@ impl TakerSwap {
         info!("Before wait confirm");
         let confirmations = self.r().data.maker_payment_confirmations;
         let f = self.maker_coin.wait_for_confirmations(
-            &self.r().maker_payment.clone().unwrap().tx_hex_or_hash(),
+            &self.r().maker_payment.clone().unwrap().tx_hex,
             confirmations,
             self.r().data.maker_payment_requires_nota.unwrap_or(false),
             self.r().data.maker_payment_wait,
@@ -1256,7 +1257,7 @@ impl TakerSwap {
         info!("After wait confirm");
 
         let validate_input = ValidatePaymentInput {
-            payment_tx: self.r().maker_payment.clone().unwrap().tx_hex_or_hash().0,
+            payment_tx: self.r().maker_payment.clone().unwrap().tx_hex.0,
             time_lock: self.maker_payment_lock.load(Ordering::Relaxed) as u32,
             other_pub: self.r().other_maker_coin_htlc_pub.to_vec(),
             secret_hash: self.r().secret_hash.0.to_vec(),
@@ -1362,7 +1363,7 @@ impl TakerSwap {
         };
 
         let tx_hash = transaction.tx_hash();
-        let tx_hex = transaction.tx_hex().map(BytesJson::from);
+        let tx_hex = BytesJson::from(transaction.tx_hex());
         info!("Taker payment tx hash {:02x}", tx_hash);
         let tx_ident = TransactionIdentifier {
             tx_hex: tx_hex.clone(),
@@ -1370,71 +1371,67 @@ impl TakerSwap {
         };
 
         let mut swap_events = vec![TakerSwapEvent::TakerPaymentSent(tx_ident)];
-        // Watchers cannot be used for lightning swaps for now
-        // Todo: Check if watchers can work in some cases with lightning and implement it if it's possible, the watcher will not be able to retrieve the preimage since it's retrieved through the lightning network
-        // Todo: The watcher can retrieve the preimage only if he is running a lightning node and is part of the nodes that routed the taker payment which is a very low probability event that shouldn't be considered
-        let maybe_maker_hex = self.r().maker_payment.as_ref().unwrap().tx_hex.clone();
-        if let Some(maker_hex) = maybe_maker_hex {
-            if let Some(taker_hex) = tx_hex {
-                if self.ctx.use_watchers() {
-                    let preimage_fut = self.taker_coin.create_taker_spends_maker_payment_preimage(
-                        &maker_hex,
-                        self.maker_payment_lock.load(Ordering::Relaxed) as u32,
-                        self.r().other_maker_coin_htlc_pub.as_slice(),
-                        &self.r().secret_hash.0,
-                        &self.unique_swap_data()[..],
-                    );
+        if self.ctx.use_watchers()
+            && self.taker_coin.is_supported_by_watchers()
+            && self.maker_coin.is_supported_by_watchers()
+        {
+            let preimage_fut = self.taker_coin.create_taker_spends_maker_payment_preimage(
+                &self.r().maker_payment.as_ref().unwrap().tx_hex,
+                self.maker_payment_lock.load(Ordering::Relaxed) as u32,
+                self.r().other_maker_coin_htlc_pub.as_slice(),
+                &self.r().secret_hash.0,
+                &self.unique_swap_data()[..],
+            );
 
-                    match preimage_fut.compat().await.map(|p| p.tx_hex()) {
-                        Ok(Some(preimage)) => {
-                            let watcher_data = self.create_watcher_data(taker_hex.0, preimage.clone());
-                            let swpmsg_watcher = SwapWatcherMsg::TakerSwapWatcherMsg(Box::new(watcher_data));
-                            broadcast_swap_message(
-                                &self.ctx,
-                                watcher_topic(&self.r().data.taker_coin),
-                                swpmsg_watcher,
-                                &self.p2p_privkey,
-                            );
-                            swap_events.push(TakerSwapEvent::WatcherMessageSent(Some(preimage)))
-                        },
-                        Ok(None) => (),
-                        Err(e) => error!(
+            match preimage_fut.compat().await {
+                Ok(preimage) => {
+                    let watcher_data = self.create_watcher_data(transaction.tx_hex(), preimage.tx_hex());
+                    let swpmsg_watcher = SwapWatcherMsg::TakerSwapWatcherMsg(Box::new(watcher_data));
+                    broadcast_swap_message(
+                        &self.ctx,
+                        watcher_topic(&self.r().data.taker_coin),
+                        swpmsg_watcher,
+                        &self.p2p_privkey,
+                    );
+                    swap_events.push(TakerSwapEvent::WatcherMessageSent(Some(preimage.tx_hex())))
+                },
+                Err(e) => error!(
                     "The watcher message could not be sent, error creating the taker spends maker payment preimage: {}",
                     e.get_plain_text_format()
                 ),
-                    }
-                }
             }
         }
+
         Ok((Some(TakerSwapCommand::WaitForTakerPaymentSpend), swap_events))
     }
 
     async fn wait_for_taker_payment_spend(&self) -> Result<(Option<TakerSwapCommand>, Vec<TakerSwapEvent>), String> {
         const BROADCAST_SWAP_MESSAGE_INTERVAL: f64 = 600.;
 
-        let tx_hex = self.r().taker_payment.as_ref().unwrap().tx_hex.clone();
+        let tx_hex = self.r().taker_payment.as_ref().unwrap().tx_hex.0.clone();
         let mut watcher_broadcast_abort_handle = None;
         // Watchers cannot be used for lightning swaps for now
         // Todo: Check if watchers can work in some cases with lightning and implement it if it's possible, this part will probably work if only the taker is lightning since the preimage is available
-        if let Some(hex) = tx_hex {
-            if self.ctx.use_watchers() {
-                let preimage_hex = self.r().taker_spends_maker_payment_preimage.clone();
-                if let Some(preimage_hex) = preimage_hex {
-                    let watcher_data = self.create_watcher_data(hex.0, preimage_hex);
-                    let swpmsg_watcher = SwapWatcherMsg::TakerSwapWatcherMsg(Box::new(watcher_data));
-                    watcher_broadcast_abort_handle = Some(broadcast_swap_message_every(
-                        self.ctx.clone(),
-                        watcher_topic(&self.r().data.taker_coin),
-                        swpmsg_watcher,
-                        BROADCAST_SWAP_MESSAGE_INTERVAL,
-                        self.p2p_privkey,
-                    ));
-                }
+        if self.ctx.use_watchers()
+            && self.taker_coin.is_supported_by_watchers()
+            && self.maker_coin.is_supported_by_watchers()
+        {
+            let preimage_hex = self.r().taker_spends_maker_payment_preimage.clone();
+            if let Some(preimage_hex) = preimage_hex {
+                let watcher_data = self.create_watcher_data(tx_hex.clone(), preimage_hex);
+                let swpmsg_watcher = SwapWatcherMsg::TakerSwapWatcherMsg(Box::new(watcher_data));
+                watcher_broadcast_abort_handle = Some(broadcast_swap_message_every(
+                    self.ctx.clone(),
+                    watcher_topic(&self.r().data.taker_coin),
+                    swpmsg_watcher,
+                    600.,
+                    self.p2p_privkey,
+                ));
             }
         }
 
         // Todo: taker_payment should be a message on lightning network not a swap message
-        let msg = SwapMsg::TakerPayment(self.r().taker_payment.as_ref().unwrap().tx_hex_or_hash().0);
+        let msg = SwapMsg::TakerPayment(tx_hex);
         let send_abort_handle = Some(broadcast_swap_message_every(
             self.ctx.clone(),
             swap_topic(&self.uuid),
@@ -1448,7 +1445,7 @@ impl TakerSwap {
         let wait_f = self
             .taker_coin
             .wait_for_confirmations(
-                &self.r().taker_payment.clone().unwrap().tx_hex_or_hash(),
+                &self.r().taker_payment.clone().unwrap().tx_hex,
                 self.r().data.taker_payment_confirmations,
                 self.r().data.taker_payment_requires_nota.unwrap_or(false),
                 wait_taker_payment,
@@ -1467,7 +1464,7 @@ impl TakerSwap {
         }
 
         let f = self.taker_coin.wait_for_tx_spend(
-            &self.r().taker_payment.clone().unwrap().tx_hex_or_hash(),
+            &self.r().taker_payment.clone().unwrap().tx_hex,
             self.r().data.taker_payment_lock,
             self.r().data.taker_coin_start_block,
             &self.r().data.taker_coin_swap_contract_address,
@@ -1488,16 +1485,12 @@ impl TakerSwap {
         let tx_hash = tx.tx_hash();
         info!("Taker payment spend tx {:02x}", tx_hash);
         let tx_ident = TransactionIdentifier {
-            tx_hex: tx.tx_hex().map(BytesJson::from),
+            tx_hex: BytesJson::from(tx.tx_hex()),
             tx_hash,
         };
 
         let secret_hash = self.r().secret_hash.clone();
-        let secret = match self
-            .taker_coin
-            .extract_secret(&secret_hash.0, &tx_ident.tx_hex_or_hash())
-            .await
-        {
+        let secret = match self.taker_coin.extract_secret(&secret_hash.0, &tx_ident.tx_hex).await {
             Ok(bytes) => H256Json::from(bytes.as_slice()),
             Err(e) => {
                 return Ok((Some(TakerSwapCommand::Finish), vec![
@@ -1522,7 +1515,7 @@ impl TakerSwap {
             ]));
         }
         let spend_fut = self.maker_coin.send_taker_spends_maker_payment(
-            &self.r().maker_payment.clone().unwrap().tx_hex_or_hash(),
+            &self.r().maker_payment.clone().unwrap().tx_hex,
             self.maker_payment_lock.load(Ordering::Relaxed) as u32,
             &*self.r().other_maker_coin_htlc_pub,
             &self.r().secret.0,
@@ -1557,7 +1550,7 @@ impl TakerSwap {
         let tx_hash = transaction.tx_hash();
         info!("Maker payment spend tx {:02x}", tx_hash);
         let tx_ident = TransactionIdentifier {
-            tx_hex: transaction.tx_hex().map(BytesJson::from),
+            tx_hex: BytesJson::from(transaction.tx_hex()),
             tx_hash,
         };
 
@@ -1587,7 +1580,7 @@ impl TakerSwap {
         }
 
         let refund_fut = self.taker_coin.send_taker_refunds_payment(
-            &self.r().taker_payment.clone().unwrap().tx_hex_or_hash(),
+            &self.r().taker_payment.clone().unwrap().tx_hex,
             self.r().data.taker_payment_lock as u32,
             &*self.r().other_taker_coin_htlc_pub,
             &self.r().secret_hash.0,
@@ -1623,7 +1616,7 @@ impl TakerSwap {
         let tx_hash = transaction.tx_hash();
         info!("Taker refund tx hash {:02x}", tx_hash);
         let tx_ident = TransactionIdentifier {
-            tx_hex: transaction.tx_hex().map(BytesJson::from),
+            tx_hex: BytesJson::from(transaction.tx_hex()),
             tx_hash,
         };
 
@@ -1722,7 +1715,7 @@ impl TakerSwap {
         }
 
         let maker_payment = match &self.r().maker_payment {
-            Some(tx) => tx.tx_hex_or_hash(),
+            Some(tx) => tx.tx_hex.0.clone(),
             None => return ERR!("No info about maker payment, swap is not recoverable"),
         };
 
@@ -1775,7 +1768,7 @@ impl TakerSwap {
 
         let maybe_taker_payment = self.r().taker_payment.clone();
         let taker_payment = match maybe_taker_payment {
-            Some(tx) => tx.tx_hex_or_hash().0,
+            Some(tx) => tx.tx_hex.0,
             None => {
                 let maybe_sent = try_s!(
                     self.taker_coin
@@ -1792,9 +1785,7 @@ impl TakerSwap {
                 );
                 match maybe_sent {
                     // Todo: Refactor this when implementing recover_funds for lightning swaps
-                    Some(tx) => try_s!(tx
-                        .tx_hex()
-                        .ok_or("recover_funds is not implemented for lightning swaps yet!")),
+                    Some(tx) => tx.tx_hex(),
                     None => return ERR!("Taker payment is not found, swap is not recoverable"),
                 }
             },
@@ -1855,9 +1846,8 @@ impl TakerSwap {
             Some(spend) => match spend {
                 FoundSwapTxSpend::Spent(tx) => {
                     check_maker_payment_is_not_spent!();
-                    let tx_hash = tx.tx_hash().0;
-                    let tx_hex = tx.tx_hex().unwrap_or(tx_hash);
                     let secret_hash = self.r().secret_hash.clone();
+                    let tx_hex = tx.tx_hex();
                     let secret = try_s!(self.taker_coin.extract_secret(&secret_hash.0, &tx_hex).await);
 
                     let fut = self.maker_coin.send_taker_spends_maker_payment(

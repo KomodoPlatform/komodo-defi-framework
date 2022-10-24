@@ -634,6 +634,8 @@ impl SwapOps for SolanaCoin {
     ) -> Result<PaymentInstructions, MmError<ValidateInstructionsErr>> {
         unimplemented!()
     }
+
+    fn is_supported_by_watchers(&self) -> bool { unimplemented!() }
 }
 
 #[allow(clippy::forget_ref, clippy::forget_copy, clippy::cast_ref_to_mut)]

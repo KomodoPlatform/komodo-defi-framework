@@ -189,7 +189,7 @@ fn test_taker_spends_maker_payment() {
         .wait()
         .unwrap();
     let payment_tx_hash = payment.tx_hash();
-    let payment_tx_hex = payment.tx_hex().unwrap();
+    let payment_tx_hex = payment.tx_hex();
     log!("Maker payment: {:?}", payment_tx_hash);
 
     let confirmations = 1;
@@ -226,7 +226,7 @@ fn test_taker_spends_maker_payment() {
         .wait()
         .unwrap();
     let spend_tx_hash = spend.tx_hash();
-    let spend_tx_hex = spend.tx_hex().unwrap();
+    let spend_tx_hex = spend.tx_hex();
     log!("Taker spends tx: {:?}", spend_tx_hash);
 
     let wait_until = (now_ms() / 1000) + 40; // timeout if test takes more than 40 seconds to run
@@ -282,7 +282,7 @@ fn test_maker_spends_taker_payment() {
         .wait()
         .unwrap();
     let payment_tx_hash = payment.tx_hash();
-    let payment_tx_hex = payment.tx_hex().unwrap();
+    let payment_tx_hex = payment.tx_hex();
     log!("Taker payment: {:?}", payment_tx_hash);
 
     let confirmations = 1;
@@ -319,7 +319,7 @@ fn test_maker_spends_taker_payment() {
         .wait()
         .unwrap();
     let spend_tx_hash = spend.tx_hash();
-    let spend_tx_hex = spend.tx_hex().unwrap();
+    let spend_tx_hex = spend.tx_hex();
     log!("Maker spends tx: {:?}", spend_tx_hash);
 
     let wait_until = (now_ms() / 1000) + 40; // timeout if test takes more than 40 seconds to run
@@ -364,7 +364,7 @@ fn test_maker_refunds_payment() {
         .wait()
         .unwrap();
     let payment_tx_hash = payment.tx_hash();
-    let payment_tx_hex = payment.tx_hex().unwrap();
+    let payment_tx_hex = payment.tx_hex();
     log!("Maker payment: {:?}", payment_tx_hash);
 
     let confirmations = 1;
@@ -390,7 +390,7 @@ fn test_maker_refunds_payment() {
         .wait()
         .unwrap();
     let refund_tx_hash = refund.tx_hash();
-    let refund_tx_hex = refund.tx_hex().unwrap();
+    let refund_tx_hex = refund.tx_hex();
     log!("Maker refunds payment: {:?}", refund_tx_hash);
 
     let wait_until = (now_ms() / 1000) + 40; // timeout if test takes more than 40 seconds to run
@@ -426,7 +426,7 @@ fn test_taker_refunds_payment() {
         .wait()
         .unwrap();
     let payment_tx_hash = payment.tx_hash();
-    let payment_tx_hex = payment.tx_hex().unwrap();
+    let payment_tx_hex = payment.tx_hex();
     log!("Taker payment: {:?}", payment_tx_hash);
 
     let confirmations = 1;
@@ -452,7 +452,7 @@ fn test_taker_refunds_payment() {
         .wait()
         .unwrap();
     let refund_tx_hash = refund.tx_hash();
-    let refund_tx_hex = refund.tx_hex().unwrap();
+    let refund_tx_hex = refund.tx_hex();
     log!("Taker refunds payment: {:?}", refund_tx_hash);
 
     let wait_until = (now_ms() / 1000) + 40; // timeout if test takes more than 40 seconds to run
@@ -485,7 +485,7 @@ fn test_check_if_my_payment_sent() {
         .wait()
         .unwrap();
     let payment_tx_hash = payment.tx_hash();
-    let payment_tx_hex = payment.tx_hex().unwrap();
+    let payment_tx_hex = payment.tx_hex();
     log!("Maker payment: {:?}", payment_tx_hash);
 
     let confirmations = 2;
@@ -537,7 +537,7 @@ fn test_search_for_swap_tx_spend_taker_spent() {
         .wait()
         .unwrap();
     let payment_tx_hash = payment.tx_hash();
-    let payment_tx_hex = payment.tx_hex().unwrap();
+    let payment_tx_hex = payment.tx_hex();
     log!("Maker payment: {:?}", payment_tx_hash);
 
     let confirmations = 1;
@@ -561,7 +561,7 @@ fn test_search_for_swap_tx_spend_taker_spent() {
         .wait()
         .unwrap();
     let spend_tx_hash = spend.tx_hash();
-    let spend_tx_hex = spend.tx_hex().unwrap();
+    let spend_tx_hex = spend.tx_hex();
     log!("Taker spends tx: {:?}", spend_tx_hash);
 
     let wait_until = (now_ms() / 1000) + 40; // timeout if test takes more than 40 seconds to run
@@ -608,7 +608,7 @@ fn test_search_for_swap_tx_spend_maker_refunded() {
         .wait()
         .unwrap();
     let payment_tx_hash = payment.tx_hash();
-    let payment_tx_hex = payment.tx_hex().unwrap();
+    let payment_tx_hex = payment.tx_hex();
     log!("Maker payment: {:?}", payment_tx_hash);
 
     let confirmations = 1;
@@ -632,7 +632,7 @@ fn test_search_for_swap_tx_spend_maker_refunded() {
         .wait()
         .unwrap();
     let refund_tx_hash = refund.tx_hash();
-    let refund_tx_hex = refund.tx_hex().unwrap();
+    let refund_tx_hex = refund.tx_hex();
     log!("Maker refunds tx: {:?}", refund_tx_hash);
 
     let wait_until = (now_ms() / 1000) + 40; // timeout if test takes more than 40 seconds to run
@@ -679,7 +679,7 @@ fn test_search_for_swap_tx_spend_not_spent() {
         .wait()
         .unwrap();
     let payment_tx_hash = payment.tx_hash();
-    let payment_tx_hex = payment.tx_hex().unwrap();
+    let payment_tx_hex = payment.tx_hex();
     log!("Maker payment: {:?}", payment_tx_hash);
 
     let confirmations = 1;
@@ -731,7 +731,7 @@ fn test_wait_for_tx_spend() {
         .wait()
         .unwrap();
     let payment_tx_hash = payment.tx_hash();
-    let payment_tx_hex = payment.tx_hex().unwrap();
+    let payment_tx_hex = payment.tx_hex();
     log!("Maker payment: {:?}", payment_tx_hash);
 
     let confirmations = 1;
@@ -1430,16 +1430,16 @@ fn test_search_for_segwit_swap_tx_spend_native_was_refunded_maker() {
         .wait()
         .unwrap();
 
-    coin.wait_for_confirmations(&tx.tx_hex().unwrap(), 1, false, timeout, 1)
+    coin.wait_for_confirmations(&tx.tx_hex(), 1, false, timeout, 1)
         .wait()
         .unwrap();
 
     let refund_tx = coin
-        .send_maker_refunds_payment(&tx.tx_hex().unwrap(), time_lock, my_public_key, &[0; 20], &None, &[])
+        .send_maker_refunds_payment(&tx.tx_hex(), time_lock, my_public_key, &[0; 20], &None, &[])
         .wait()
         .unwrap();
 
-    coin.wait_for_confirmations(&refund_tx.tx_hex().unwrap(), 1, false, timeout, 1)
+    coin.wait_for_confirmations(&refund_tx.tx_hex(), 1, false, timeout, 1)
         .wait()
         .unwrap();
 
@@ -1447,7 +1447,7 @@ fn test_search_for_segwit_swap_tx_spend_native_was_refunded_maker() {
         time_lock,
         other_pub: &*coin.my_public_key().unwrap(),
         secret_hash: &[0; 20],
-        tx: &tx.tx_hex().unwrap(),
+        tx: &tx.tx_hex(),
         search_from_block: 0,
         swap_contract_address: &None,
         swap_unique_data: &[],
@@ -1471,16 +1471,16 @@ fn test_search_for_segwit_swap_tx_spend_native_was_refunded_taker() {
         .wait()
         .unwrap();
 
-    coin.wait_for_confirmations(&tx.tx_hex().unwrap(), 1, false, timeout, 1)
+    coin.wait_for_confirmations(&tx.tx_hex(), 1, false, timeout, 1)
         .wait()
         .unwrap();
 
     let refund_tx = coin
-        .send_maker_refunds_payment(&tx.tx_hex().unwrap(), time_lock, my_public_key, &[0; 20], &None, &[])
+        .send_maker_refunds_payment(&tx.tx_hex(), time_lock, my_public_key, &[0; 20], &None, &[])
         .wait()
         .unwrap();
 
-    coin.wait_for_confirmations(&refund_tx.tx_hex().unwrap(), 1, false, timeout, 1)
+    coin.wait_for_confirmations(&refund_tx.tx_hex(), 1, false, timeout, 1)
         .wait()
         .unwrap();
 
@@ -1488,7 +1488,7 @@ fn test_search_for_segwit_swap_tx_spend_native_was_refunded_taker() {
         time_lock,
         other_pub: &*coin.my_public_key().unwrap(),
         secret_hash: &[0; 20],
-        tx: &tx.tx_hex().unwrap(),
+        tx: &tx.tx_hex(),
         search_from_block: 0,
         swap_contract_address: &None,
         swap_unique_data: &[],

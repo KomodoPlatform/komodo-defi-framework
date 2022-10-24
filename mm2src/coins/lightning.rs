@@ -151,7 +151,7 @@ impl From<SqlError> for PaymentError {
 }
 
 impl Transaction for PaymentHash {
-    fn tx_hex(&self) -> Option<Vec<u8>> { None }
+    fn tx_hex(&self) -> Vec<u8> { self.0.to_vec() }
 
     fn tx_hash(&self) -> BytesJson { self.0.to_vec().into() }
 }
@@ -769,6 +769,11 @@ impl SwapOps for LightningCoin {
         // Todo: continue validation here by comparing locktime, etc..
         Ok(PaymentInstructions::Lightning(invoice))
     }
+
+    // Watchers cannot be used for lightning swaps for now
+    // Todo: Check if watchers can work in some cases with lightning and implement it if it's possible, the watcher will not be able to retrieve the preimage since it's retrieved through the lightning network
+    // Todo: The watcher can retrieve the preimage only if he is running a lightning node and is part of the nodes that routed the taker payment which is a very low probability event that shouldn't be considered
+    fn is_supported_by_watchers(&self) -> bool { false }
 }
 
 #[derive(Debug, Display)]

@@ -360,7 +360,7 @@ mod docker_tests {
                 .wait()
                 .unwrap();
             self.coin
-                .wait_for_confirmations(&slp_genesis_tx.tx_hex().unwrap(), 1, false, now_ms() / 1000 + 30, 1)
+                .wait_for_confirmations(&slp_genesis_tx.tx_hex(), 1, false, now_ms() / 1000 + 30, 1)
                 .wait()
                 .unwrap();
 
@@ -374,7 +374,7 @@ mod docker_tests {
 
             let tx = block_on(adex_slp.send_slp_outputs(slp_outputs)).unwrap();
             self.coin
-                .wait_for_confirmations(&tx.tx_hex().unwrap(), 1, false, now_ms() / 1000 + 30, 1)
+                .wait_for_confirmations(&tx.tx_hex(), 1, false, now_ms() / 1000 + 30, 1)
                 .wait()
                 .unwrap();
             *SLP_TOKEN_OWNERS.lock().unwrap() = slp_privkeys;
@@ -398,16 +398,16 @@ mod docker_tests {
             .wait()
             .unwrap();
 
-        coin.wait_for_confirmations(&tx.tx_hex().unwrap(), 1, false, timeout, 1)
+        coin.wait_for_confirmations(&tx.tx_hex(), 1, false, timeout, 1)
             .wait()
             .unwrap();
 
         let refund_tx = coin
-            .send_maker_refunds_payment(&tx.tx_hex().unwrap(), time_lock, my_public_key, &[0; 20], &None, &[])
+            .send_maker_refunds_payment(&tx.tx_hex(), time_lock, my_public_key, &[0; 20], &None, &[])
             .wait()
             .unwrap();
 
-        coin.wait_for_confirmations(&refund_tx.tx_hex().unwrap(), 1, false, timeout, 1)
+        coin.wait_for_confirmations(&refund_tx.tx_hex(), 1, false, timeout, 1)
             .wait()
             .unwrap();
 
@@ -415,7 +415,7 @@ mod docker_tests {
             time_lock,
             other_pub: &*coin.my_public_key().unwrap(),
             secret_hash: &[0; 20],
-            tx: &tx.tx_hex().unwrap(),
+            tx: &tx.tx_hex(),
             search_from_block: 0,
             swap_contract_address: &None,
             swap_unique_data: &[],
@@ -455,16 +455,16 @@ mod docker_tests {
             .wait()
             .unwrap();
 
-        coin.wait_for_confirmations(&tx.tx_hex().unwrap(), 1, false, timeout, 1)
+        coin.wait_for_confirmations(&tx.tx_hex(), 1, false, timeout, 1)
             .wait()
             .unwrap();
 
         let refund_tx = coin
-            .send_maker_refunds_payment(&tx.tx_hex().unwrap(), time_lock, my_public_key, &[0; 20], &None, &[])
+            .send_maker_refunds_payment(&tx.tx_hex(), time_lock, my_public_key, &[0; 20], &None, &[])
             .wait()
             .unwrap();
 
-        coin.wait_for_confirmations(&refund_tx.tx_hex().unwrap(), 1, false, timeout, 1)
+        coin.wait_for_confirmations(&refund_tx.tx_hex(), 1, false, timeout, 1)
             .wait()
             .unwrap();
 
@@ -472,7 +472,7 @@ mod docker_tests {
             time_lock,
             other_pub: &*coin.my_public_key().unwrap(),
             secret_hash: &[0; 20],
-            tx: &tx.tx_hex().unwrap(),
+            tx: &tx.tx_hex(),
             search_from_block: 0,
             swap_contract_address: &None,
             swap_unique_data: &[],
@@ -504,16 +504,16 @@ mod docker_tests {
             .wait()
             .unwrap();
 
-        coin.wait_for_confirmations(&tx.tx_hex().unwrap(), 1, false, timeout, 1)
+        coin.wait_for_confirmations(&tx.tx_hex(), 1, false, timeout, 1)
             .wait()
             .unwrap();
 
         let spend_tx = coin
-            .send_maker_spends_taker_payment(&tx.tx_hex().unwrap(), time_lock, my_pubkey, &secret, &None, &[])
+            .send_maker_spends_taker_payment(&tx.tx_hex(), time_lock, my_pubkey, &secret, &None, &[])
             .wait()
             .unwrap();
 
-        coin.wait_for_confirmations(&spend_tx.tx_hex().unwrap(), 1, false, timeout, 1)
+        coin.wait_for_confirmations(&spend_tx.tx_hex(), 1, false, timeout, 1)
             .wait()
             .unwrap();
 
@@ -521,7 +521,7 @@ mod docker_tests {
             time_lock,
             other_pub: &*coin.my_public_key().unwrap(),
             secret_hash: &*dhash160(&secret),
-            tx: &tx.tx_hex().unwrap(),
+            tx: &tx.tx_hex(),
             search_from_block: 0,
             swap_contract_address: &None,
             swap_unique_data: &[],
@@ -553,16 +553,16 @@ mod docker_tests {
             .wait()
             .unwrap();
 
-        coin.wait_for_confirmations(&tx.tx_hex().unwrap(), 1, false, timeout, 1)
+        coin.wait_for_confirmations(&tx.tx_hex(), 1, false, timeout, 1)
             .wait()
             .unwrap();
 
         let spend_tx = coin
-            .send_taker_spends_maker_payment(&tx.tx_hex().unwrap(), time_lock, my_pubkey, &secret, &None, &[])
+            .send_taker_spends_maker_payment(&tx.tx_hex(), time_lock, my_pubkey, &secret, &None, &[])
             .wait()
             .unwrap();
 
-        coin.wait_for_confirmations(&spend_tx.tx_hex().unwrap(), 1, false, timeout, 1)
+        coin.wait_for_confirmations(&spend_tx.tx_hex(), 1, false, timeout, 1)
             .wait()
             .unwrap();
 
@@ -570,7 +570,7 @@ mod docker_tests {
             time_lock,
             other_pub: &*coin.my_public_key().unwrap(),
             secret_hash: &*dhash160(&secret),
-            tx: &tx.tx_hex().unwrap(),
+            tx: &tx.tx_hex(),
             search_from_block: 0,
             swap_contract_address: &None,
             swap_unique_data: &[],
