@@ -1,14 +1,12 @@
-use super::{construct_event_closure, IdbObjectStoreImpl, PASS_THROUGH};
+use super::IdbObjectStoreImpl;
 use common::wasm::stringify_js_error;
 use derive_more::Display;
-use futures::channel::mpsc;
-use futures::StreamExt;
 use mm2_err_handle::prelude::*;
 use serde_json::Value as Json;
 use std::collections::HashSet;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
-use wasm_bindgen::JsCast;
+use wasm_bindgen::{closure::Closure, JsCast, JsValue};
 use web_sys::IdbTransaction;
 
 pub type DbTransactionResult<T> = Result<T, MmError<DbTransactionError>>;
@@ -55,6 +53,9 @@ pub struct IdbTransactionImpl {
     transaction: IdbTransaction,
     tables: HashSet<String>,
     aborted: Arc<AtomicBool>,
+    /// It's not used directly, but we need to hold the closures in memory till `transaciton` exists.
+    #[allow(dead_code)]
+    onabort_closure: Closure<dyn FnMut(JsValue)>,
 }
 
 impl !Send for IdbTransactionImpl {}
@@ -85,29 +86,19 @@ impl IdbTransactionImpl {
     }
 
     pub(crate) fn init(transaction: IdbTransaction, tables: HashSet<String>) -> IdbTransactionImpl {
-        let (event_tx, mut event_rx) = mpsc::channel(2);
-        let onabort_closure = construct_event_closure(PASS_THROUGH, event_tx);
+        let aborted = Arc::new(AtomicBool::new(false));
+        let aborted_c = aborted.clone();
+
+        let onabort_closure = Closure::new(move |_: JsValue| aborted_c.store(true, Ordering::Relaxed));
 
         // Don't set the `onerror` closure, because the `onabort` is called immediately after the error.
         transaction.set_onabort(Some(onabort_closure.as_ref().unchecked_ref()));
 
-        let aborted = Arc::new(AtomicBool::new(false));
-        let aborted_c = aborted.clone();
-
-        // move the closures into this async block to keep it alive until either `oncomplete` or `onabort` handler is called
-        let fut = async move {
-            let _abort_data = event_rx.next().await.expect("The event channel must not be closed");
-            aborted_c.store(true, Ordering::Relaxed);
-
-            // do any action to move the closures into this async block to keep it alive until the `state_machine` finishes
-            drop(onabort_closure);
-        };
-
-        wasm_bindgen_futures::spawn_local(fut);
         IdbTransactionImpl {
             transaction,
             tables,
             aborted,
+            onabort_closure,
         }
     }
 }

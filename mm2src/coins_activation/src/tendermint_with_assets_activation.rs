@@ -10,7 +10,6 @@ use coins::tendermint::{TendermintCoin, TendermintInitError, TendermintInitError
                         TendermintTokenProtocolInfo};
 use coins::{CoinBalance, CoinProtocol, MarketCoinOps};
 use common::Future01CompatExt;
-use futures::future::AbortHandle;
 use mm2_core::mm_ctx::MmArc;
 use mm2_err_handle::prelude::*;
 use mm2_metrics::MetricsArc;
@@ -150,7 +149,7 @@ impl PlatformWithTokensActivationOps for TendermintCoin {
     type ActivationError = TendermintInitError;
 
     async fn enable_platform_coin(
-        _ctx: MmArc,
+        ctx: MmArc,
         ticker: String,
         coin_conf: Json,
         activation_request: Self::ActivationRequest,
@@ -168,6 +167,7 @@ impl PlatformWithTokensActivationOps for TendermintCoin {
         }
 
         TendermintCoin::init(
+            &ctx,
             ticker,
             avg_block_time as u8,
             protocol_conf,
@@ -219,10 +219,9 @@ impl PlatformWithTokensActivationOps for TendermintCoin {
 
     fn start_history_background_fetching(
         &self,
-        _metrics: MetricsArc,
-        _storage: impl TxHistoryStorage,
-        _initial_balance: BigDecimal,
-    ) -> AbortHandle {
-        unimplemented!()
+        metrics: MetricsArc,
+        storage: impl TxHistoryStorage,
+        initial_balance: BigDecimal,
+    ) {
     }
 }

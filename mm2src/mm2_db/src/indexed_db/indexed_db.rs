@@ -164,6 +164,8 @@ impl IndexedDbBuilder {
             // run the event loop
             IndexedDb::event_loop(event_rx, db).await;
         };
+
+        // `IndexedDb::event_loop` will finish almost immediately once the opposite `event_tx` is dropped.
         spawn_local(fut);
     }
 }
@@ -219,9 +221,12 @@ impl IndexedDb {
             },
         };
         let (transaction_event_tx, transaction_event_rx) = mpsc::unbounded();
-        // spawn the event loop
+
+        // Spawn the event loop.
         let fut = async move { DbTransaction::event_loop(transaction_event_rx, transaction).await };
+        // `DbTransaction::event_loop` will finish almost immediately once `transaction_event_rx` is dropped.
         spawn_local(fut);
+
         // ignore if the receiver is closed
         result_tx.send(Ok(transaction_event_tx)).ok();
     }
@@ -282,8 +287,11 @@ impl DbTransaction<'_> {
             },
         };
         let (table_event_tx, table_event_rx) = mpsc::unbounded();
+
         let fut = async move { table_event_loop(table_event_rx, table).await };
+        // `table_event_loop` will finish almost immediately once `table_event_tx` is dropped.
         spawn_local(fut);
+
         // ignore if the receiver is closed
         result_tx.send(Ok(table_event_tx)).ok();
     }
@@ -763,8 +771,11 @@ fn open_cursor(
         },
     };
     let (event_tx, event_rx) = mpsc::unbounded();
+
     let fut = async move { cursor_event_loop(event_rx, cursor_builder).await };
+    // `cursor_event_loop` will finish almost immediately once `event_tx` is dropped.
     spawn_local(fut);
+
     // ignore if the receiver is closed
     result_tx.send(Ok(event_tx)).ok();
 }

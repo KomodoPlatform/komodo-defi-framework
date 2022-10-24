@@ -21,8 +21,7 @@
 //
 
 use crate::mm2::rpc::rate_limiter::RateLimitError;
-#[cfg(not(target_arch = "wasm32"))] use common::log::warn;
-use common::log::{error, info};
+use common::log::error;
 use common::{err_to_rpc_json_string, err_tp_rpc_json, HttpStatusCode, APPLICATION_JSON};
 use derive_more::Display;
 use futures::future::{join_all, FutureExt};
@@ -332,24 +331,12 @@ pub extern "C" fn spawn_rpc(ctx_h: u32) {
         }
     });
 
-    let (shutdown_tx, shutdown_rx) = futures::channel::oneshot::channel::<()>();
-    let mut shutdown_tx = Some(shutdown_tx);
-    ctx.on_stop(Box::new(move || {
-        if let Some(shutdown_tx) = shutdown_tx.take() {
-            info!("on_stop] firing shutdown_tx!");
-            if shutdown_tx.send(()).is_err() {
-                warn!("on_stop] shutdown_tx already closed");
-            }
-            Ok(())
-        } else {
-            ERR!("on_stop callback called twice!")
-        }
-    }));
+    let shutdown_fut = ctx.graceful_shutdown_registry.register_listener();
 
     let server = server
         .http1_half_close(false)
         .serve(make_svc)
-        .with_graceful_shutdown(shutdown_rx.then(|_| futures::future::ready(())));
+        .with_graceful_shutdown(shutdown_fut);
 
     let server = server.then(|r| {
         if let Err(err) = r {
@@ -359,7 +346,13 @@ pub extern "C" fn spawn_rpc(ctx_h: u32) {
     });
 
     let rpc_ip_port = ctx.rpc_ip_port().unwrap();
-    CORE.0.spawn({
+
+    // As it's said in the [issue](https://github.com/hyperium/tonic/issues/330):
+    //
+    // Aborting the server future will forcefully cancel all connections and not perform a proper drain/shutdown.
+    // While using the special shutdown methods on the server will allow hyper to gracefully drain all connections
+    // and gracefully close connections.
+    common::executor::spawn({
         log_tag!(
             ctx,
             "😉";
@@ -375,6 +368,7 @@ pub extern "C" fn spawn_rpc(ctx_h: u32) {
 
 #[cfg(target_arch = "wasm32")]
 pub fn spawn_rpc(ctx_h: u32) {
+    use common::executor::SpawnFuture;
     use futures::StreamExt;
     use mm2_rpc::wasm_rpc;
     use std::sync::Mutex;
@@ -404,7 +398,7 @@ pub fn spawn_rpc(ctx_h: u32) {
             }
         }
     };
-    common::executor::spawn(fut);
+    ctx.spawner().spawn(fut);
 
     // even if the [`MmCtx::wasm_rpc`] is initialized already, the spawned future above will be shutdown
     if let Err(e) = ctx.wasm_rpc.pin(request_tx) {

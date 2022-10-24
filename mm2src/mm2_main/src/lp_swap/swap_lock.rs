@@ -73,7 +73,7 @@ mod wasm_lock {
     use super::*;
     use crate::mm2::lp_swap::swap_wasm_db::{DbTransactionError, InitDbError, ItemId, SwapLockTable};
     use crate::mm2::lp_swap::SwapsContext;
-    use common::executor::spawn;
+    use common::executor::SpawnFuture;
     use common::log::{debug, error};
     use common::{now_float, now_ms};
 
@@ -121,7 +121,7 @@ mod wasm_lock {
                 }
                 debug!("SwapLock::drop] Finish");
             };
-            spawn(fut);
+            self.ctx.spawner().spawn(fut);
         }
     }
 

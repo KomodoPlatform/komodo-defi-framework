@@ -623,7 +623,7 @@ pub enum EnableCoinBalance {
 
 #[derive(Debug, Deserialize)]
 #[serde(deny_unknown_fields)]
-pub struct ZcoinActivationResult {
+pub struct CoinActivationResult {
     pub ticker: String,
     pub current_block: u64,
     pub wallet_balance: EnableCoinBalance,
@@ -652,7 +652,7 @@ pub enum MmRpcResult<T> {
 #[derive(Debug, Deserialize)]
 #[serde(deny_unknown_fields, tag = "status", content = "details")]
 pub enum InitZcoinStatus {
-    Ready(MmRpcResult<ZcoinActivationResult>),
+    Ok(MmRpcResult<CoinActivationResult>),
     InProgress(Json),
     UserActionRequired(Json),
 }
