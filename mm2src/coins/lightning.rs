@@ -190,7 +190,7 @@ impl LightningCoin {
             .find(|chan| chan.user_channel_id == rpc_id)
     }
 
-    pub(crate) async fn pay_invoice(&self, invoice: Invoice) -> Result<PaymentInfo, PaymentError> {
+    pub(crate) async fn pay_invoice(&self, invoice: Invoice) -> Result<PaymentInfo, MmError<PaymentError>> {
         let payment_hash = PaymentHash((invoice.payment_hash()).into_inner());
         let payment_type = PaymentType::OutboundPayment {
             destination: *invoice.payee_pub_key().unwrap_or(&invoice.recover_payee_pub_key()),
@@ -207,7 +207,7 @@ impl LightningCoin {
             selfi
                 .invoice_payer
                 .pay_invoice(&invoice)
-                .map_err(|e| PaymentError::Invoice(format!("{:?}", e)))
+                .map_to_mm(|e| PaymentError::Invoice(format!("{:?}", e)))
         })
         .await?;
 
@@ -425,8 +425,6 @@ impl LightningCoin {
                 ));
         }
 
-        let route_hints = filter_channels(self.channel_manager.list_usable_channels(), amt_msat);
-
         // `create_inbound_payment` only returns an error if the amount is greater than the total bitcoin
         // supply.
         let payment_secret = self
@@ -450,6 +448,8 @@ impl LightningCoin {
         if let Some(amt) = amt_msat {
             invoice = invoice.amount_milli_satoshis(amt);
         }
+
+        let route_hints = filter_channels(self.channel_manager.list_usable_channels(), amt_msat);
         for hint in route_hints {
             invoice = invoice.private_route(hint);
         }

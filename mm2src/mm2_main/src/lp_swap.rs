@@ -679,7 +679,7 @@ impl NegotiationDataMsg {
 }
 
 #[derive(Clone, Debug, Eq, Deserialize, PartialEq, Serialize)]
-pub struct PaymentDataV2 {
+pub struct PaymentWithInstructions {
     data: Vec<u8>,
     // Next step instructions for the other side whether taker or maker.
     // An example for this is a maker/taker sending the taker/maker a lightning invoice to be payed.
@@ -689,35 +689,35 @@ pub struct PaymentDataV2 {
 #[derive(Clone, Debug, Eq, Deserialize, PartialEq, Serialize)]
 #[serde(untagged)]
 pub enum SwapTxDataMsg {
-    V1(Vec<u8>),
-    V2(PaymentDataV2),
+    Regular(Vec<u8>),
+    WithInstructions(PaymentWithInstructions),
 }
 
 impl SwapTxDataMsg {
     #[inline]
     pub fn data(&self) -> &[u8] {
         match self {
-            SwapTxDataMsg::V1(v1) => v1,
-            SwapTxDataMsg::V2(v2) => &v2.data,
+            SwapTxDataMsg::Regular(data) => data,
+            SwapTxDataMsg::WithInstructions(p) => &p.data,
         }
     }
 
     #[inline]
     pub fn instructions(&self) -> Option<&[u8]> {
         match self {
-            SwapTxDataMsg::V1(_) => None,
-            SwapTxDataMsg::V2(v2) => Some(&v2.next_step_instructions),
+            SwapTxDataMsg::Regular(_) => None,
+            SwapTxDataMsg::WithInstructions(p) => Some(&p.next_step_instructions),
         }
     }
 
     #[inline]
     pub fn new(data: Vec<u8>, instructions: Option<Vec<u8>>) -> Self {
         match instructions {
-            Some(next_step_instructions) => SwapTxDataMsg::V2(PaymentDataV2 {
+            Some(next_step_instructions) => SwapTxDataMsg::WithInstructions(PaymentWithInstructions {
                 data,
                 next_step_instructions,
             }),
-            None => SwapTxDataMsg::V1(data),
+            None => SwapTxDataMsg::Regular(data),
         }
     }
 }
@@ -1594,7 +1594,7 @@ mod lp_swap_tests {
         // old message format should be deserialized to PaymentDataMsg::V1
         let old = SwapMsgOld::MakerPayment(vec![1; 300]);
 
-        let expected = SwapMsg::MakerPayment(SwapTxDataMsg::V1(vec![1; 300]));
+        let expected = SwapMsg::MakerPayment(SwapTxDataMsg::Regular(vec![1; 300]));
 
         let serialized = rmp_serde::to_vec(&old).unwrap();
 
@@ -1603,7 +1603,7 @@ mod lp_swap_tests {
         assert_eq!(deserialized, expected);
 
         // PaymentDataMsg::V1 should be deserialized to old message format
-        let v1 = SwapMsg::MakerPayment(SwapTxDataMsg::V1(vec![1; 300]));
+        let v1 = SwapMsg::MakerPayment(SwapTxDataMsg::Regular(vec![1; 300]));
 
         let expected = old;
 
@@ -1614,7 +1614,7 @@ mod lp_swap_tests {
         assert_eq!(deserialized, expected);
 
         // PaymentDataMsg::V1 should be deserialized to PaymentDataMsg::V1
-        let v1 = SwapMsg::MakerPayment(SwapTxDataMsg::V1(vec![1; 300]));
+        let v1 = SwapMsg::MakerPayment(SwapTxDataMsg::Regular(vec![1; 300]));
 
         let serialized = rmp_serde::to_vec(&v1).unwrap();
 
@@ -1623,7 +1623,7 @@ mod lp_swap_tests {
         assert_eq!(deserialized, v1);
 
         // PaymentDataMsg::V2 should be deserialized to PaymentDataMsg::V2
-        let v2 = SwapMsg::MakerPayment(SwapTxDataMsg::V2(PaymentDataV2 {
+        let v2 = SwapMsg::MakerPayment(SwapTxDataMsg::WithInstructions(PaymentWithInstructions {
             data: vec![1; 300],
             next_step_instructions: vec![1; 300],
         }));
@@ -1635,7 +1635,7 @@ mod lp_swap_tests {
         assert_eq!(deserialized, v2);
 
         // PaymentDataMsg::V2 shouldn't be deserialized to old message format, new nodes with payment instructions can't swap with old nodes without it.
-        let v2 = SwapMsg::MakerPayment(SwapTxDataMsg::V2(PaymentDataV2 {
+        let v2 = SwapMsg::MakerPayment(SwapTxDataMsg::WithInstructions(PaymentWithInstructions {
             data: vec![1; 300],
             next_step_instructions: vec![1; 300],
         }));
