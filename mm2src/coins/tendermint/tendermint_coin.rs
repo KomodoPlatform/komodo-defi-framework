@@ -2245,7 +2245,7 @@ pub mod tendermint_coin_tests {
 
         let input = ValidatePaymentInput {
             payment_tx: claimed_htlc_tx_bytes,
-            time_lock_duration: 0,
+            time_lock_duration: 20000,
             time_lock: 1664984893,
             other_pub: hex::decode("025a37975c079a7543603fcab24e2565a4adee3cf9af8934690e103282fa402511").unwrap(),
             secret_hash: hex::decode("441d0237e93677d3458e1e5a2e69f61e3622813521bf048dd56290306acdd134").unwrap(),
