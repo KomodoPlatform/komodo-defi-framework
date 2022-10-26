@@ -11,7 +11,7 @@ pub enum ValidatePaymentError {
     InternalError(String),
     // Problem with deserializing the transaction, or one of the transaction parts is invalid.
     TxDeserializationError(String),
-    InvalidInput(String),
+    InvalidParameter(String),
     InvalidRpcResponse(String),
     SPVError(SPVError),
     UnexpectedPaymentState(String),

@@ -69,7 +69,8 @@ use super::{coin_conf, AsyncMutex, BalanceError, BalanceFut, CoinBalance, CoinFu
             TransactionDetails, TransactionEnum, TransactionErr, TransactionFut, TxMarshalingErr,
             UnexpectedDerivationMethod, ValidateAddressResult, ValidateInstructionsErr, ValidateOtherPubKeyErr,
             ValidatePaymentError, ValidatePaymentFut, ValidatePaymentInput, VerificationError, VerificationResult,
-            WatcherValidatePaymentInput, WithdrawError, WithdrawFee, WithdrawFut, WithdrawRequest, WithdrawResult};
+            WatcherOps, WatcherSearchForSwapTxSpendInput, WatcherValidatePaymentInput, WithdrawError, WithdrawFee,
+            WithdrawFut, WithdrawRequest, WithdrawResult};
 
 pub use rlp;
 
@@ -104,6 +105,8 @@ const ETH_DECIMALS: u8 = 18;
 
 /// Take into account that the dynamic fee may increase by 3% during the swap.
 const GAS_PRICE_APPROXIMATION_PERCENT_ON_START_SWAP: u64 = 3;
+/// Take into account that the dynamic fee may increase until the locktime is expired
+const GAS_PRICE_APPROXIMATION_PERCENT_ON_WATCHER_PREIMAGE: u64 = 3;
 /// Take into account that the dynamic fee may increase at each of the following stages:
 /// - it may increase by 2% until a swap is started;
 /// - it may increase by 3% during the swap.
@@ -800,21 +803,6 @@ impl SwapOps for EthCoin {
         )
     }
 
-    fn send_taker_spends_maker_payment_preimage(&self, _preimage: &[u8], _secret: &[u8]) -> TransactionFut {
-        unimplemented!();
-    }
-
-    fn create_taker_spends_maker_payment_preimage(
-        &self,
-        _maker_payment_tx: &[u8],
-        _time_lock: u32,
-        _maker_pub: &[u8],
-        _secret_hash: &[u8],
-        _swap_unique_data: &[u8],
-    ) -> TransactionFut {
-        unimplemented!();
-    }
-
     fn send_taker_spends_maker_payment(
         &self,
         maker_payment_tx: &[u8],
@@ -983,7 +971,7 @@ impl SwapOps for EthCoin {
         let swap_contract_address = try_f!(input
             .swap_contract_address
             .try_to_address()
-            .map_to_mm(ValidatePaymentError::InvalidInput));
+            .map_to_mm(ValidatePaymentError::InvalidParameter));
         self.validate_payment(
             &input.payment_tx,
             input.time_lock,
@@ -998,7 +986,7 @@ impl SwapOps for EthCoin {
         let swap_contract_address = try_f!(input
             .swap_contract_address
             .try_to_address()
-            .map_to_mm(ValidatePaymentError::InvalidInput));
+            .map_to_mm(ValidatePaymentError::InvalidParameter));
         self.validate_payment(
             &input.payment_tx,
             input.time_lock,
@@ -1007,13 +995,6 @@ impl SwapOps for EthCoin {
             input.amount,
             swap_contract_address,
         )
-    }
-
-    fn watcher_validate_taker_payment(
-        &self,
-        _input: WatcherValidatePaymentInput,
-    ) -> Box<dyn Future<Item = (), Error = MmError<ValidatePaymentError>> + Send> {
-        unimplemented!();
     }
 
     fn check_if_my_payment_sent(
@@ -1115,6 +1096,10 @@ impl SwapOps for EthCoin {
         .await
     }
 
+    fn check_tx_signed_by_pub(&self, _tx: &[u8], _expected_pub: &[u8]) -> Result<bool, String> {
+        unimplemented!();
+    }
+
     async fn extract_secret(&self, _secret_hash: &[u8], spend_tx: &[u8]) -> Result<Vec<u8>, String> {
         let unverified: UnverifiedTransaction = try_s!(rlp::decode(spend_tx));
         let function = try_s!(SWAP_CONTRACT.function("receiverSpend"));
@@ -1157,6 +1142,7 @@ impl SwapOps for EthCoin {
         }
     }
 
+    #[inline]
     fn derive_htlc_key_pair(&self, _swap_unique_data: &[u8]) -> keys::KeyPair {
         key_pair_from_secret(self.key_pair.secret()).expect("valid key")
     }
@@ -1186,6 +1172,55 @@ impl SwapOps for EthCoin {
     }
 
     fn is_supported_by_watchers(&self) -> bool { false }
+}
+
+#[async_trait]
+impl WatcherOps for EthCoin {
+    fn send_taker_spends_maker_payment_preimage(&self, _preimage: &[u8], _secret: &[u8]) -> TransactionFut {
+        unimplemented!();
+    }
+
+    fn create_taker_spends_maker_payment_preimage(
+        &self,
+        _maker_payment_tx: &[u8],
+        _time_lock: u32,
+        _maker_pub: &[u8],
+        _secret_hash: &[u8],
+        _swap_unique_data: &[u8],
+    ) -> TransactionFut {
+        unimplemented!();
+    }
+
+    fn create_taker_refunds_payment_preimage(
+        &self,
+        _taker_payment_tx: &[u8],
+        _time_lock: u32,
+        _maker_pub: &[u8],
+        _secret_hash: &[u8],
+        _swap_contract_address: &Option<BytesJson>,
+        _swap_unique_data: &[u8],
+    ) -> TransactionFut {
+        unimplemented!();
+    }
+
+    fn send_watcher_refunds_taker_payment_preimage(&self, _taker_refunds_payment: &[u8]) -> TransactionFut {
+        unimplemented!();
+    }
+
+    fn watcher_validate_taker_fee(&self, _taker_fee_hash: Vec<u8>, _verified_pub: Vec<u8>) -> ValidatePaymentFut<()> {
+        unimplemented!();
+    }
+
+    fn watcher_validate_taker_payment(&self, _input: WatcherValidatePaymentInput) -> ValidatePaymentFut<()> {
+        unimplemented!();
+    }
+
+    async fn watcher_search_for_swap_tx_spend(
+        &self,
+        _input: WatcherSearchForSwapTxSpendInput<'_>,
+    ) -> Result<Option<FoundSwapTxSpend>, String> {
+        unimplemented!();
+    }
 }
 
 #[cfg_attr(test, mockable)]
@@ -2808,7 +2843,7 @@ impl EthCoin {
         let tx =
             try_f!(SignedEthTx::new(unsigned)
                 .map_to_mm(|err| ValidatePaymentError::TxDeserializationError(err.to_string())));
-        let sender = try_f!(addr_from_raw_pubkey(sender_pub).map_to_mm(ValidatePaymentError::InvalidInput));
+        let sender = try_f!(addr_from_raw_pubkey(sender_pub).map_to_mm(ValidatePaymentError::InvalidParameter));
         let expected_value = try_f!(wei_from_big_decimal(&amount, self.decimals));
         let selfi = self.clone();
         let secret_hash = secret_hash.to_vec();
@@ -2835,7 +2870,7 @@ impl EthCoin {
             let tx_from_rpc = match tx_from_rpc {
                 Some(t) => t,
                 None => {
-                    return MmError::err(ValidatePaymentError::UnexpectedPaymentState(format!(
+                    return MmError::err(ValidatePaymentError::InvalidRpcResponse(format!(
                         "Didn't find provided tx {:?} on ETH node",
                         tx
                     )))
@@ -3896,6 +3931,9 @@ fn increase_gas_price_by_stage(gas_price: U256, level: &FeeApproxStage) -> U256 
         },
         FeeApproxStage::TradePreimage => {
             increase_by_percent_one_gwei(gas_price, GAS_PRICE_APPROXIMATION_PERCENT_ON_TRADE_PREIMAGE)
+        },
+        FeeApproxStage::WatcherPreimage => {
+            increase_by_percent_one_gwei(gas_price, GAS_PRICE_APPROXIMATION_PERCENT_ON_WATCHER_PREIMAGE)
         },
     }
 }

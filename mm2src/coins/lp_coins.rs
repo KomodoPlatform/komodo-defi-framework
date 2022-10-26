@@ -478,6 +478,16 @@ pub struct WatcherValidatePaymentInput {
     pub confirmations: u64,
 }
 
+pub struct WatcherSearchForSwapTxSpendInput<'a> {
+    pub time_lock: u32,
+    pub taker_pub: &'a [u8],
+    pub maker_pub: &'a [u8],
+    pub secret_hash: &'a [u8],
+    pub tx: &'a [u8],
+    pub search_from_block: u64,
+    pub swap_contract_address: &'a Option<BytesJson>,
+}
+
 #[derive(Clone, Debug)]
 pub struct ValidatePaymentInput {
     pub payment_tx: Vec<u8>,
@@ -572,15 +582,6 @@ pub trait SwapOps {
         swap_unique_data: &[u8],
     ) -> TransactionFut;
 
-    fn create_taker_spends_maker_payment_preimage(
-        &self,
-        _maker_payment_tx: &[u8],
-        _time_lock: u32,
-        _maker_pub: &[u8],
-        _secret_hash: &[u8],
-        _swap_unique_data: &[u8],
-    ) -> TransactionFut;
-
     #[allow(clippy::too_many_arguments)]
     fn send_taker_spends_maker_payment(
         &self,
@@ -592,8 +593,6 @@ pub trait SwapOps {
         swap_contract_address: &Option<BytesJson>,
         swap_unique_data: &[u8],
     ) -> TransactionFut;
-
-    fn send_taker_spends_maker_payment_preimage(&self, preimage: &[u8], secret: &[u8]) -> TransactionFut;
 
     fn send_taker_refunds_payment(
         &self,
@@ -629,11 +628,6 @@ pub trait SwapOps {
 
     fn validate_taker_payment(&self, input: ValidatePaymentInput) -> ValidatePaymentFut<()>;
 
-    fn watcher_validate_taker_payment(
-        &self,
-        _input: WatcherValidatePaymentInput,
-    ) -> Box<dyn Future<Item = (), Error = MmError<ValidatePaymentError>> + Send>;
-
     #[allow(clippy::too_many_arguments)]
     fn check_if_my_payment_sent(
         &self,
@@ -657,6 +651,8 @@ pub trait SwapOps {
     ) -> Result<Option<FoundSwapTxSpend>, String>;
 
     async fn extract_secret(&self, secret_hash: &[u8], spend_tx: &[u8]) -> Result<Vec<u8>, String>;
+
+    fn check_tx_signed_by_pub(&self, tx: &[u8], expected_pub: &[u8]) -> Result<bool, String>;
 
     /// Whether the refund transaction can be sent now
     /// For example: there are no additional conditions for ETH, but for some UTXO coins we should wait for
@@ -694,6 +690,41 @@ pub trait SwapOps {
     ) -> Result<PaymentInstructions, MmError<ValidateInstructionsErr>>;
 
     fn is_supported_by_watchers(&self) -> bool;
+}
+
+#[async_trait]
+pub trait WatcherOps {
+    fn send_taker_spends_maker_payment_preimage(&self, preimage: &[u8], secret: &[u8]) -> TransactionFut;
+
+    fn send_watcher_refunds_taker_payment_preimage(&self, _taker_refunds_payment: &[u8]) -> TransactionFut;
+
+    fn create_taker_refunds_payment_preimage(
+        &self,
+        _taker_payment_tx: &[u8],
+        _time_lock: u32,
+        _maker_pub: &[u8],
+        _secret_hash: &[u8],
+        _swap_contract_address: &Option<BytesJson>,
+        _swap_unique_data: &[u8],
+    ) -> TransactionFut;
+
+    fn create_taker_spends_maker_payment_preimage(
+        &self,
+        _maker_payment_tx: &[u8],
+        _time_lock: u32,
+        _maker_pub: &[u8],
+        _secret_hash: &[u8],
+        _swap_unique_data: &[u8],
+    ) -> TransactionFut;
+
+    fn watcher_validate_taker_fee(&self, _taker_fee_hash: Vec<u8>, _verified_pub: Vec<u8>) -> ValidatePaymentFut<()>;
+
+    fn watcher_validate_taker_payment(&self, _input: WatcherValidatePaymentInput) -> ValidatePaymentFut<()>;
+
+    async fn watcher_search_for_swap_tx_spend(
+        &self,
+        input: WatcherSearchForSwapTxSpendInput<'_>,
+    ) -> Result<Option<FoundSwapTxSpend>, String>;
 }
 
 /// Operations that coins have independently from the MarketMaker.
@@ -1138,6 +1169,8 @@ pub enum FeeApproxStage {
     OrderIssue,
     /// Increase the trade fee largely.
     TradePreimage,
+    /// Increase the trade fee very largely
+    WatcherPreimage,
 }
 
 #[derive(Debug)]
@@ -1780,7 +1813,7 @@ impl From<CoinFindError> for VerificationError {
 
 /// NB: Implementations are expected to follow the pImpl idiom, providing cheap reference-counted cloning and garbage collection.
 #[async_trait]
-pub trait MmCoin: SwapOps + MarketCoinOps + Send + Sync + 'static {
+pub trait MmCoin: SwapOps + WatcherOps + MarketCoinOps + Send + Sync + 'static {
     // `MmCoin` is an extension fulcrum for something that doesn't fit the `MarketCoinOps`. Practical examples:
     // name (might be required for some APIs, CoinMarketCap for instance);
     // coin statistics that we might want to share with UI;

@@ -15,8 +15,8 @@ use crate::{CanRefundHtlc, CoinBalance, CoinWithDerivationMethod, GetWithdrawSen
             RawTransactionError, RawTransactionRequest, RawTransactionRes, SearchForSwapTxSpendInput, SignatureError,
             SignatureResult, SwapOps, TradePreimageValue, TransactionFut, TxFeeDetails, TxMarshalingErr,
             ValidateAddressResult, ValidateOtherPubKeyErr, ValidatePaymentFut, ValidatePaymentInput,
-            VerificationError, VerificationResult, WatcherValidatePaymentInput, WithdrawFrom, WithdrawResult,
-            WithdrawSenderAddress};
+            VerificationError, VerificationResult, WatcherSearchForSwapTxSpendInput, WatcherValidatePaymentInput,
+            WithdrawFrom, WithdrawResult, WithdrawSenderAddress};
 use bitcrypto::dhash256;
 pub use bitcrypto::{dhash160, sha256, ChecksumType};
 use chain::constants::SEQUENCE_FINAL;
@@ -539,11 +539,18 @@ where
 }
 
 /// returns the fee required to be paid for HTLC spend transaction
-pub async fn get_htlc_spend_fee<T: UtxoCommonOps>(coin: &T, tx_size: u64) -> UtxoRpcResult<u64> {
+pub async fn get_htlc_spend_fee<T: UtxoCommonOps>(
+    coin: &T,
+    tx_size: u64,
+    stage: &FeeApproxStage,
+) -> UtxoRpcResult<u64> {
     let coin_fee = coin.get_tx_fee().await?;
     let mut fee = match coin_fee {
         // atomic swap payment spend transaction is slightly more than 300 bytes in average as of now
-        ActualTxFee::Dynamic(fee_per_kb) => (fee_per_kb * tx_size) / KILO_BYTE,
+        ActualTxFee::Dynamic(fee_per_kb) => {
+            let fee_per_kb = increase_dynamic_fee_by_stage(&coin, fee_per_kb, stage);
+            (fee_per_kb * tx_size) / KILO_BYTE
+        },
         // return satoshis here as swap spend transaction size is always less than 1 kb
         ActualTxFee::FixedPerKb(satoshis) => {
             let tx_size_kb = if tx_size % KILO_BYTE == 0 {
@@ -1244,7 +1251,10 @@ pub fn send_maker_spends_taker_payment<T: UtxoCommonOps + SwapOps>(
     )
     .into();
     let fut = async move {
-        let fee = try_tx_s!(coin.get_htlc_spend_fee(DEFAULT_SWAP_TX_SPEND_SIZE).await);
+        let fee = try_tx_s!(
+            coin.get_htlc_spend_fee(DEFAULT_SWAP_TX_SPEND_SIZE, &FeeApproxStage::WithoutApprox)
+                .await
+        );
         if fee >= prev_transaction.outputs[0].value {
             return TX_PLAIN_ERR!(
                 "HTLC spend fee {} is greater than transaction output {}",
@@ -1347,7 +1357,11 @@ pub fn create_taker_spends_maker_payment_preimage<T: UtxoCommonOps + SwapOps>(
     )
     .into();
     let fut = async move {
-        let fee = try_tx_s!(coin.get_htlc_spend_fee(DEFAULT_SWAP_TX_SPEND_SIZE).await);
+        let fee = try_tx_s!(
+            coin.get_htlc_spend_fee(DEFAULT_SWAP_TX_SPEND_SIZE, &FeeApproxStage::WatcherPreimage)
+                .await
+        );
+
         if fee >= prev_transaction.outputs[0].value {
             return TX_PLAIN_ERR!(
                 "HTLC spend fee {} is greater than transaction output {}",
@@ -1367,6 +1381,66 @@ pub fn create_taker_spends_maker_payment_preimage<T: UtxoCommonOps + SwapOps>(
             outputs: vec![output],
             script_data,
             sequence: SEQUENCE_FINAL,
+            lock_time: time_lock,
+            keypair: &key_pair,
+        };
+        let transaction = try_tx_s!(coin.p2sh_spending_tx(input).await);
+
+        Ok(transaction.into())
+    };
+    Box::new(fut.boxed().compat())
+}
+
+pub fn create_taker_refunds_payment_preimage<T: UtxoCommonOps + SwapOps>(
+    coin: T,
+    taker_payment_tx: &[u8],
+    time_lock: u32,
+    maker_pub: &[u8],
+    secret_hash: &[u8],
+    swap_unique_data: &[u8],
+) -> TransactionFut {
+    let my_address = try_tx_fus!(coin.as_ref().derivation_method.iguana_or_err()).clone();
+    let mut prev_transaction: UtxoTx =
+        try_tx_fus!(deserialize(taker_payment_tx).map_err(|e| TransactionErr::Plain(format!("{:?}", e))));
+    prev_transaction.tx_hash_algo = coin.as_ref().tx_hash_algo;
+    drop_mutability!(prev_transaction);
+    if prev_transaction.outputs.is_empty() {
+        return try_tx_fus!(TX_PLAIN_ERR!("Transaction doesn't have any output"));
+    }
+
+    let key_pair = coin.derive_htlc_key_pair(swap_unique_data);
+    let script_data = Builder::default().push_opcode(Opcode::OP_1).into_script();
+    let redeem_script = payment_script(
+        time_lock,
+        secret_hash,
+        key_pair.public(),
+        &try_tx_fus!(Public::from_slice(maker_pub)),
+    )
+    .into();
+    let fut = async move {
+        let fee = try_tx_s!(
+            coin.get_htlc_spend_fee(DEFAULT_SWAP_TX_SPEND_SIZE, &FeeApproxStage::WatcherPreimage)
+                .await
+        );
+        if fee >= prev_transaction.outputs[0].value {
+            return TX_PLAIN_ERR!(
+                "HTLC spend fee {} is greater than transaction output {}",
+                fee,
+                prev_transaction.outputs[0].value
+            );
+        }
+        let script_pubkey = output_script(&my_address, ScriptType::P2PKH).to_bytes();
+        let output = TransactionOutput {
+            value: prev_transaction.outputs[0].value - fee,
+            script_pubkey,
+        };
+
+        let input = P2SHSpendingTxInput {
+            prev_transaction,
+            redeem_script,
+            outputs: vec![output],
+            script_data,
+            sequence: SEQUENCE_FINAL - 1,
             lock_time: time_lock,
             keypair: &key_pair,
         };
@@ -1408,7 +1482,10 @@ pub fn send_taker_spends_maker_payment<T: UtxoCommonOps + SwapOps>(
     )
     .into();
     let fut = async move {
-        let fee = try_tx_s!(coin.get_htlc_spend_fee(DEFAULT_SWAP_TX_SPEND_SIZE).await);
+        let fee = try_tx_s!(
+            coin.get_htlc_spend_fee(DEFAULT_SWAP_TX_SPEND_SIZE, &FeeApproxStage::WithoutApprox)
+                .await
+        );
         if fee >= prev_transaction.outputs[0].value {
             return TX_PLAIN_ERR!(
                 "HTLC spend fee {} is greater than transaction output {}",
@@ -1468,7 +1545,10 @@ pub fn send_taker_refunds_payment<T: UtxoCommonOps + SwapOps>(
     )
     .into();
     let fut = async move {
-        let fee = try_tx_s!(coin.get_htlc_spend_fee(DEFAULT_SWAP_TX_SPEND_SIZE).await);
+        let fee = try_tx_s!(
+            coin.get_htlc_spend_fee(DEFAULT_SWAP_TX_SPEND_SIZE, &FeeApproxStage::WithoutApprox)
+                .await
+        );
         if fee >= prev_transaction.outputs[0].value {
             return TX_PLAIN_ERR!(
                 "HTLC spend fee {} is greater than transaction output {}",
@@ -1501,6 +1581,23 @@ pub fn send_taker_refunds_payment<T: UtxoCommonOps + SwapOps>(
     Box::new(fut.boxed().compat())
 }
 
+pub fn send_watcher_refunds_taker_payment_preimage<T: UtxoCommonOps + SwapOps>(
+    coin: T,
+    taker_refunds_payment: &[u8],
+) -> TransactionFut {
+    let transaction: UtxoTx =
+        try_tx_fus!(deserialize(taker_refunds_payment).map_err(|e| TransactionErr::Plain(format!("{:?}", e))));
+
+    let fut = async move {
+        let tx_fut = coin.as_ref().rpc_client.send_transaction(&transaction).compat();
+        try_tx_s!(tx_fut.await, transaction);
+
+        Ok(transaction.into())
+    };
+
+    Box::new(fut.boxed().compat())
+}
+
 pub fn send_maker_refunds_payment<T: UtxoCommonOps + SwapOps>(
     coin: T,
     maker_payment_tx: &[u8],
@@ -1527,7 +1624,10 @@ pub fn send_maker_refunds_payment<T: UtxoCommonOps + SwapOps>(
     )
     .into();
     let fut = async move {
-        let fee = try_tx_s!(coin.get_htlc_spend_fee(DEFAULT_SWAP_TX_SPEND_SIZE).await);
+        let fee = try_tx_s!(
+            coin.get_htlc_spend_fee(DEFAULT_SWAP_TX_SPEND_SIZE, &FeeApproxStage::WithoutApprox)
+                .await
+        );
         if fee >= prev_transaction.outputs[0].value {
             return TX_PLAIN_ERR!(
                 "HTLC spend fee {} is greater than transaction output {}",
@@ -1628,7 +1728,12 @@ where
     }
 }
 
-pub fn check_all_inputs_signed_by_pub(tx: &UtxoTx, expected_pub: &[u8]) -> Result<bool, String> {
+pub fn check_all_inputs_signed_by_pub(tx: &[u8], expected_pub: &[u8]) -> Result<bool, String> {
+    let tx: UtxoTx = try_s!(deserialize(tx).map_err(|e| ERRL!("{:?}", e)));
+    check_all_utxo_inputs_signed_by_pub(&tx, expected_pub)
+}
+
+pub fn check_all_utxo_inputs_signed_by_pub(tx: &UtxoTx, expected_pub: &[u8]) -> Result<bool, String> {
     for input in &tx.inputs {
         let pubkey = if input.has_witness() {
             try_s!(pubkey_from_witness_script(&input.script_witness))
@@ -1642,6 +1747,48 @@ pub fn check_all_inputs_signed_by_pub(tx: &UtxoTx, expected_pub: &[u8]) -> Resul
     }
 
     Ok(true)
+}
+
+pub fn watcher_validate_taker_fee<T: UtxoCommonOps>(
+    coin: T,
+    taker_fee_hash: Vec<u8>,
+    verified_pub: Vec<u8>,
+) -> ValidatePaymentFut<()> {
+    let fut = async move {
+        let mut attempts = 0;
+        let taker_fee_hash = H256Json::from(taker_fee_hash.as_slice());
+        loop {
+            let taker_fee_tx = match coin
+                .as_ref()
+                .rpc_client
+                .get_transaction_bytes(&taker_fee_hash)
+                .compat()
+                .await
+            {
+                Ok(t) => t,
+                Err(e) if attempts > 2 => return MmError::err(ValidatePaymentError::from(e.into_inner())),
+                Err(e) => {
+                    attempts += 1;
+                    error!("Error getting tx {:?} from rpc: {:?}", taker_fee_hash, e);
+                    Timer::sleep(10.).await;
+                    continue;
+                },
+            };
+
+            match check_all_inputs_signed_by_pub(&*taker_fee_tx, &verified_pub) {
+                Ok(is_valid) if !is_valid => {
+                    return MmError::err(ValidatePaymentError::WrongPaymentTx(
+                        "Taker fee does not belong to the verified public key".to_string(),
+                    ))
+                },
+                Ok(_) => return Ok(()),
+                Err(e) => {
+                    return MmError::err(ValidatePaymentError::WrongPaymentTx(e));
+                },
+            };
+        }
+    };
+    Box::new(fut.boxed().compat())
 }
 
 pub fn validate_fee<T: UtxoCommonOps>(
@@ -1663,7 +1810,7 @@ pub fn validate_fee<T: UtxoCommonOps>(
         coin.addr_format().clone(),
     ));
 
-    if !try_fus!(check_all_inputs_signed_by_pub(&tx, sender_pubkey)) {
+    if !try_fus!(check_all_utxo_inputs_signed_by_pub(&tx, sender_pubkey)) {
         return Box::new(futures01::future::err(ERRL!("The dex fee was sent from wrong address")));
     }
     let fut = async move {
@@ -1728,9 +1875,9 @@ pub fn validate_maker_payment<T: UtxoCommonOps + SwapOps>(
     tx.tx_hash_algo = coin.as_ref().tx_hash_algo;
 
     let htlc_keypair = coin.derive_htlc_key_pair(&input.unique_swap_data);
-    let other_pub = &try_f!(
-        Public::from_slice(&input.other_pub).map_to_mm(|err| ValidatePaymentError::InvalidInput(err.to_string()))
-    );
+    let other_pub =
+        &try_f!(Public::from_slice(&input.other_pub)
+            .map_to_mm(|err| ValidatePaymentError::InvalidParameter(err.to_string())));
     validate_payment(
         coin.clone(),
         tx,
@@ -1748,15 +1895,14 @@ pub fn validate_maker_payment<T: UtxoCommonOps + SwapOps>(
 pub fn watcher_validate_taker_payment<T: UtxoCommonOps + SwapOps>(
     coin: &T,
     input: WatcherValidatePaymentInput,
-) -> Box<dyn Future<Item = (), Error = MmError<ValidatePaymentError>> + Send> {
-    let mut tx: UtxoTx = try_f!(deserialize(input.payment_tx.as_slice())
-        .map_err(|err| ValidatePaymentError::TxDeserializationError(err.to_string())));
+) -> ValidatePaymentFut<()> {
+    let mut tx: UtxoTx = try_f!(deserialize(input.payment_tx.as_slice()));
     tx.tx_hash_algo = coin.as_ref().tx_hash_algo;
     let first_pub = &try_f!(
-        Public::from_slice(&input.taker_pub).map_err(|err| ValidatePaymentError::InvalidInput(err.to_string()))
+        Public::from_slice(&input.taker_pub).map_err(|err| ValidatePaymentError::InvalidParameter(err.to_string()))
     );
     let second_pub = &try_f!(
-        Public::from_slice(&input.maker_pub).map_err(|err| ValidatePaymentError::InvalidInput(err.to_string()))
+        Public::from_slice(&input.maker_pub).map_err(|err| ValidatePaymentError::InvalidParameter(err.to_string()))
     );
     validate_payment(
         coin.clone(),
@@ -1780,9 +1926,9 @@ pub fn validate_taker_payment<T: UtxoCommonOps + SwapOps>(
     tx.tx_hash_algo = coin.as_ref().tx_hash_algo;
 
     let htlc_keypair = coin.derive_htlc_key_pair(&input.unique_swap_data);
-    let other_pub = &try_f!(
-        Public::from_slice(&input.other_pub).map_to_mm(|err| ValidatePaymentError::InvalidInput(err.to_string()))
-    );
+    let other_pub =
+        &try_f!(Public::from_slice(&input.other_pub)
+            .map_to_mm(|err| ValidatePaymentError::InvalidParameter(err.to_string())));
 
     validate_payment(
         coin.clone(),
@@ -1857,6 +2003,24 @@ pub fn check_if_my_payment_sent<T: UtxoCommonOps + SwapOps>(
         }
     };
     Box::new(fut.boxed().compat())
+}
+
+pub async fn watcher_search_for_swap_tx_spend<T: AsRef<UtxoCoinFields> + SwapOps>(
+    coin: &T,
+    input: WatcherSearchForSwapTxSpendInput<'_>,
+    output_index: usize,
+) -> Result<Option<FoundSwapTxSpend>, String> {
+    search_for_swap_output_spend(
+        coin.as_ref(),
+        input.time_lock,
+        &try_s!(Public::from_slice(input.taker_pub)),
+        &try_s!(Public::from_slice(input.maker_pub)),
+        input.secret_hash,
+        input.tx,
+        output_index,
+        input.search_from_block,
+    )
+    .await
 }
 
 pub async fn search_for_swap_tx_spend_my<T: AsRef<UtxoCoinFields> + SwapOps>(
@@ -3124,7 +3288,7 @@ where
 /// The fee to spend (receive) other payment is deducted from the trading amount so we should display it
 pub fn get_receiver_trade_fee<T: UtxoCommonOps>(coin: T) -> TradePreimageFut<TradeFee> {
     let fut = async move {
-        let amount_sat = get_htlc_spend_fee(&coin, DEFAULT_SWAP_TX_SPEND_SIZE).await?;
+        let amount_sat = get_htlc_spend_fee(&coin, DEFAULT_SWAP_TX_SPEND_SIZE, &FeeApproxStage::WithoutApprox).await?;
         let amount = big_decimal_from_sat_unsigned(amount_sat, coin.as_ref().decimals).into();
         Ok(TradeFee {
             coin: coin.as_ref().conf.ticker.clone(),
@@ -3776,6 +3940,11 @@ where
         FeeApproxStage::WithoutApprox => return dynamic_fee,
         // Take into account that the dynamic fee may increase during the swap by [`UtxoCoinFields::tx_fee_volatility_percent`].
         FeeApproxStage::StartSwap => base_percent,
+        // Take into account that the dynamic fee may increase after roughly the locktime is expired [`UtxoCoinFields::tx_fee_volatility_percent`]:
+        // - watcher can refund the taker payment after the locktime + an extra time to wait for the takers
+        // - the watcher can spend the taker_spends_maker_payment right after locktime/2, but the worst case should be considered which is slightly before
+        //   the locktime is expired
+        FeeApproxStage::WatcherPreimage => base_percent, //This needs discussion
         // Take into account that the dynamic fee may increase at each of the following stages up to [`UtxoCoinFields::tx_fee_volatility_percent`]:
         // - until a swap is started;
         // - during the swap.

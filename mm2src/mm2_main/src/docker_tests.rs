@@ -107,7 +107,7 @@ mod docker_tests {
     use coins::utxo::utxo_standard::{utxo_standard_coin_with_priv_key, UtxoStandardCoin};
     use coins::utxo::{dhash160, GetUtxoListOps, UtxoActivationParams, UtxoCommonOps};
     use coins::{CoinProtocol, FoundSwapTxSpend, MarketCoinOps, MmCoin, SearchForSwapTxSpendInput, SwapOps,
-                Transaction, TransactionEnum, WithdrawRequest};
+                Transaction, TransactionEnum, WatcherOps, WithdrawRequest};
     use common::{block_on, now_ms};
     use crypto::privkey::{key_pair_from_secret, key_pair_from_seed};
     use futures01::Future;
@@ -1174,7 +1174,7 @@ mod docker_tests {
     }
 
     #[test]
-    fn test_watcher_node() {
+    fn test_watcher_spends_taker_spends_maker_payment() {
         let (_ctx, _, bob_priv_key) = generate_utxo_coin_with_random_privkey("MYCOIN", 100.into());
         generate_utxo_coin_with_privkey("MYCOIN1", 100.into(), &bob_priv_key);
         let (_ctx, _, alice_priv_key) = generate_utxo_coin_with_random_privkey("MYCOIN1", 100.into());
@@ -1237,7 +1237,7 @@ mod docker_tests {
 
         block_on(mm_alice.wait_for_log(60., |log| log.contains("Watcher message sent..."))).unwrap();
         block_on(mm_alice.stop()).unwrap();
-        block_on(mm_watcher.wait_for_log(60., |log| log.contains("Maker payment spend tx"))).unwrap();
+        block_on(mm_watcher.wait_for_log(60., |log| log.contains("Sent maker payment spend tx"))).unwrap();
         thread::sleep(Duration::from_secs(5));
 
         let mm_alice = MarketMakerIt::start(alice_conf, "pass".to_string(), None).unwrap();
@@ -1293,6 +1293,51 @@ mod docker_tests {
         let json: Json = json::from_str(&rc.1).unwrap();
         let bob_mycoin_balance = json["balance"].as_str().unwrap();
         assert_eq!(bob_mycoin_balance, "97.99999");
+    }
+
+    #[test]
+    fn test_watcher_refunds_taker_payment() {
+        let timeout = (now_ms() / 1000) + 120; // timeout if test takes more than 120 seconds to run
+        let (_ctx, coin, _) = generate_utxo_coin_with_random_privkey("MYCOIN", 1000u64.into());
+        let my_public_key = coin.my_public_key().unwrap();
+
+        let time_lock = (now_ms() / 1000) as u32 - 3600;
+        let tx = coin
+            .send_taker_payment(0, time_lock, my_public_key, &[0; 20], 1u64.into(), &None, &[], &None)
+            .wait()
+            .unwrap();
+
+        coin.wait_for_confirmations(&tx.tx_hex(), 1, false, timeout, 1)
+            .wait()
+            .unwrap();
+
+        let refund_tx = coin
+            .create_taker_refunds_payment_preimage(&tx.tx_hex(), time_lock, my_public_key, &[0; 20], &None, &[])
+            .wait()
+            .unwrap();
+
+        let refund_tx = coin
+            .send_watcher_refunds_taker_payment_preimage(&refund_tx.tx_hex())
+            .wait()
+            .unwrap();
+
+        coin.wait_for_confirmations(&refund_tx.tx_hex(), 1, false, timeout, 1)
+            .wait()
+            .unwrap();
+
+        let search_input = SearchForSwapTxSpendInput {
+            time_lock,
+            other_pub: &*coin.my_public_key().unwrap(),
+            secret_hash: &[0; 20],
+            tx: &tx.tx_hex(),
+            search_from_block: 0,
+            swap_contract_address: &None,
+            swap_unique_data: &[],
+        };
+        let found = block_on(coin.search_for_swap_tx_spend_my(search_input))
+            .unwrap()
+            .unwrap();
+        assert_eq!(FoundSwapTxSpend::Refunded(refund_tx), found);
     }
 
     // https://github.com/KomodoPlatform/atomicDEX-API/issues/471

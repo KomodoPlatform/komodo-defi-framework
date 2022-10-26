@@ -1,42 +1,38 @@
-use super::{broadcast_p2p_tx_msg, lp_coinfind, tx_helper_topic, H256Json, SwapsContext, TransactionIdentifier,
-            WAIT_CONFIRM_INTERVAL};
-use coins::{MmCoinEnum, WatcherValidatePaymentInput};
-use common::executor::{AbortSettings, SpawnAbortable};
+use super::{broadcast_p2p_tx_msg, lp_coinfind, tx_helper_topic, wait_for_taker_payment_conf_until, H256Json,
+            SwapsContext, TransactionIdentifier, WAIT_CONFIRM_INTERVAL};
+use crate::mm2::MmError;
+use async_trait::async_trait;
+use coins::{CanRefundHtlc, FoundSwapTxSpend, MmCoinEnum, WatcherSearchForSwapTxSpendInput, WatcherValidatePaymentInput};
+use common::executor::{AbortSettings, SpawnAbortable, Timer};
 use common::log::{error, info};
+use common::state_machine::prelude::*;
 use futures::compat::Future01CompatExt;
-use futures::{select, FutureExt};
 use mm2_core::mm_ctx::MmArc;
 use mm2_libp2p::{decode_signed, pub_sub_topic, TopicPrefix};
 use mm2_number::BigDecimal;
-use parking_lot::Mutex as PaMutex;
 use rpc::v1::types::Bytes as BytesJson;
 use std::cmp::min;
 use std::sync::Arc;
-use std::sync::{RwLock, RwLockReadGuard, RwLockWriteGuard};
 use uuid::Uuid;
+
+#[cfg(not(test))] use common::now_ms;
 
 pub const WATCHER_PREFIX: TopicPrefix = "swpwtchr";
 const TAKER_SWAP_CONFIRMATIONS: u64 = 1;
+pub const TAKER_SWAP_ENTRY_TIMEOUT: u64 = 21600;
+const WAIT_FOR_TAKER_REFUND: u64 = 1200; // How long?
 
-#[derive(Clone, Debug, Deserialize, Serialize)]
-pub enum SwapWatcherMsg {
-    TakerSwapWatcherMsg(Box<TakerSwapWatcherData>),
-}
-
-pub struct Watcher {
-    uuid: Uuid,
+struct WatcherContext {
     ctx: MmArc,
     taker_coin: MmCoinEnum,
     maker_coin: MmCoinEnum,
-    mutable: RwLock<WatcherMut>,
-    errors: PaMutex<Vec<WatcherError>>,
     data: TakerSwapWatcherData,
+    verified_pub: Vec<u8>,
 }
 
-pub struct WatcherMut {
-    taker_payment_spend: Option<TransactionIdentifier>,
-    maker_payment_spend: Option<TransactionIdentifier>,
-    secret: H256Json,
+#[derive(Clone, Debug, Deserialize, Serialize)]
+pub enum SwapWatcherMsg {
+    TakerSwapWatcherMsg(TakerSwapWatcherData),
 }
 
 #[derive(Clone, Debug, Default, Deserialize, PartialEq, Serialize)]
@@ -44,9 +40,11 @@ pub struct TakerSwapWatcherData {
     pub uuid: Uuid,
     pub secret_hash: Vec<u8>,
     pub taker_spends_maker_payment_preimage: Vec<u8>,
+    pub taker_refunds_payment: Vec<u8>,
     pub swap_started_at: u64,
     pub lock_duration: u64,
     pub taker_coin: String,
+    pub taker_fee_hash: Vec<u8>,
     pub taker_payment_hex: Vec<u8>,
     pub taker_payment_lock: u64,
     pub taker_pub: Vec<u8>,
@@ -58,205 +56,240 @@ pub struct TakerSwapWatcherData {
     pub maker_pub: Vec<u8>,
 }
 
-#[derive(Clone, Debug, Deserialize, PartialEq, Serialize)]
-pub struct TakerPaymentSpentData {
-    pub transaction: TransactionIdentifier,
-    pub secret: H256Json,
+struct ValidatePublicKeys {}
+struct ValidateTakerFee {}
+struct ValidateTakerPayment {}
+struct WaitForTakerPaymentSpend {}
+
+struct RefundTakerPayment {}
+
+struct SpendMakerPayment {
+    secret: H256Json,
 }
 
-#[derive(Clone, Debug, Deserialize, PartialEq, Eq, Serialize)]
-pub struct WatcherError {
-    error: String,
+impl SpendMakerPayment {
+    fn new(secret: H256Json) -> Self { SpendMakerPayment { secret } }
 }
 
-impl From<String> for WatcherError {
-    fn from(error: String) -> Self { WatcherError { error } }
-}
-
-impl From<&str> for WatcherError {
-    fn from(e: &str) -> Self { WatcherError { error: e.to_owned() } }
-}
-
-#[allow(clippy::large_enum_variant)]
-pub enum RunWatcherInput {
-    StartNew(Watcher),
-}
-
-#[derive(Clone, Debug, Deserialize, PartialEq, Serialize)]
-#[serde(tag = "type", content = "data")]
-#[allow(clippy::large_enum_variant)]
-pub enum WatcherEvent {
-    Started,
-    StartFailed(WatcherError),
-    TakerPaymentWaitConfirmFailed(WatcherError),
-    TakerPaymentValidatedAndConfirmed,
-    TakerPaymentValidateFailed(WatcherError),
-    TakerPaymentSpent(TakerPaymentSpentData),
-    TakerPaymentWaitForSpendFailed(WatcherError),
-    MakerPaymentSpendFailed(WatcherError),
-    MakerPaymentSpent(TransactionIdentifier),
-    Finished,
-}
-
-impl WatcherEvent {
-    pub fn status_str(&self) -> String {
-        match self {
-            WatcherEvent::Started => "Started...".to_owned(),
-            WatcherEvent::StartFailed(_) => "Start failed...".to_owned(),
-            WatcherEvent::TakerPaymentWaitConfirmFailed(_) => {
-                "Taker payment wait for confirmation failed...".to_owned()
-            },
-            WatcherEvent::TakerPaymentValidatedAndConfirmed => "Taker payment validated and confirmed...".to_owned(),
-            WatcherEvent::TakerPaymentValidateFailed(_) => "Taker payment validate failed...".to_owned(),
-            WatcherEvent::TakerPaymentSpent(_) => "Taker payment spent...".to_owned(),
-            WatcherEvent::TakerPaymentWaitForSpendFailed(_) => "Taker payment wait for spend failed...".to_owned(),
-            WatcherEvent::MakerPaymentSpendFailed(_) => "Maker payment spend failed...".to_owned(),
-            WatcherEvent::MakerPaymentSpent(_) => "Maker payment spent...".to_owned(),
-            WatcherEvent::Finished => "Finished".to_owned(),
-        }
-    }
+struct Stopped {
+    _stop_reason: StopReason,
 }
 
 #[derive(Debug)]
-pub enum WatcherCommand {
-    Start,
-    ValidateTakerPayment,
-    WaitForTakerPaymentSpend,
-    SpendMakerPayment,
-    Finish,
+enum StopReason {
+    Finished(WatcherSuccess),
+    Error(MmError<WatcherError>),
 }
 
-impl Watcher {
-    #[inline]
-    fn w(&self) -> RwLockWriteGuard<WatcherMut> { self.mutable.write().unwrap() }
+#[derive(Debug)]
+enum WatcherSuccess {
+    MakerPaymentSpent,
+    TakerPaymentRefunded,
+    TakerPaymentAlreadySpent,
+    TakerPaymentAlreadyRefunded,
+}
 
-    #[inline]
-    fn r(&self) -> RwLockReadGuard<WatcherMut> { self.mutable.read().unwrap() }
+#[derive(Debug)]
+enum WatcherError {
+    InvalidValidatePublicKey(String),
+    InvalidTakerFee(String),
+    TakerPaymentNotConfirmed(String),
+    TakerPaymentSearchForSwapFailed(String),
+    InvalidTakerPayment(String),
+    UnableToExtractSecret(String),
+    MakerPaymentSpendFailed(String),
+    TakerPaymentRefundFailed(String),
+}
 
-    #[inline]
-    fn apply_event(&self, event: WatcherEvent) {
-        match event {
-            WatcherEvent::Started => (),
-            WatcherEvent::StartFailed(err) => self.errors.lock().push(err),
-            WatcherEvent::TakerPaymentWaitConfirmFailed(err) => self.errors.lock().push(err),
-            WatcherEvent::TakerPaymentValidatedAndConfirmed => (),
-            WatcherEvent::TakerPaymentValidateFailed(err) => self.errors.lock().push(err),
-            WatcherEvent::TakerPaymentSpent(data) => {
-                self.w().taker_payment_spend = Some(data.transaction);
-                self.w().secret = data.secret;
+impl Stopped {
+    fn from_reason(stop_reason: StopReason) -> Stopped {
+        Stopped {
+            _stop_reason: stop_reason,
+        }
+    }
+}
+
+impl TransitionFrom<ValidatePublicKeys> for ValidateTakerFee {}
+impl TransitionFrom<ValidateTakerFee> for ValidateTakerPayment {}
+impl TransitionFrom<ValidateTakerPayment> for WaitForTakerPaymentSpend {}
+impl TransitionFrom<WaitForTakerPaymentSpend> for SpendMakerPayment {}
+impl TransitionFrom<WaitForTakerPaymentSpend> for RefundTakerPayment {}
+impl TransitionFrom<ValidatePublicKeys> for Stopped {}
+impl TransitionFrom<ValidateTakerFee> for Stopped {}
+impl TransitionFrom<ValidateTakerPayment> for Stopped {}
+impl TransitionFrom<WaitForTakerPaymentSpend> for Stopped {}
+impl TransitionFrom<RefundTakerPayment> for Stopped {}
+impl TransitionFrom<SpendMakerPayment> for Stopped {}
+
+#[async_trait]
+impl State for ValidatePublicKeys {
+    type Ctx = WatcherContext;
+    type Result = ();
+
+    async fn on_changed(self: Box<Self>, watcher_ctx: &mut WatcherContext) -> StateResult<Self::Ctx, Self::Result> {
+        let redeem_pub_valid = match watcher_ctx
+            .taker_coin
+            .check_tx_signed_by_pub(&watcher_ctx.data.taker_payment_hex, &watcher_ctx.verified_pub)
+        {
+            Ok(is_valid) => is_valid,
+            Err(err) => {
+                return Self::change_state(Stopped::from_reason(StopReason::Error(
+                    WatcherError::InvalidValidatePublicKey(err).into(),
+                )))
             },
-            WatcherEvent::TakerPaymentWaitForSpendFailed(err) => self.errors.lock().push(err),
-            WatcherEvent::MakerPaymentSpendFailed(err) => self.errors.lock().push(err),
-            WatcherEvent::MakerPaymentSpent(tx) => self.w().maker_payment_spend = Some(tx),
-            WatcherEvent::Finished => (),
+        };
+
+        if !redeem_pub_valid || watcher_ctx.verified_pub != watcher_ctx.data.taker_pub {
+            return Self::change_state(Stopped::from_reason(StopReason::Error(
+                WatcherError::InvalidValidatePublicKey("Public key does not belong to taker payment".to_string())
+                    .into(),
+            )));
         }
-    }
 
-    async fn handle_command(
-        &self,
-        command: WatcherCommand,
-    ) -> Result<(Option<WatcherCommand>, Vec<WatcherEvent>), String> {
-        match command {
-            WatcherCommand::Start => self.start().await,
-            WatcherCommand::ValidateTakerPayment => self.validate_taker_payment().await,
-            WatcherCommand::WaitForTakerPaymentSpend => self.wait_for_taker_payment_spend().await,
-            WatcherCommand::SpendMakerPayment => self.spend_maker_payment().await,
-            WatcherCommand::Finish => Ok((None, vec![WatcherEvent::Finished])),
+        Self::change_state(ValidateTakerFee {})
+    }
+}
+
+#[async_trait]
+impl State for ValidateTakerFee {
+    type Ctx = WatcherContext;
+    type Result = ();
+
+    async fn on_changed(self: Box<Self>, watcher_ctx: &mut WatcherContext) -> StateResult<Self::Ctx, Self::Result> {
+        let validated_f = watcher_ctx
+            .taker_coin
+            .watcher_validate_taker_fee(
+                watcher_ctx.data.taker_fee_hash.clone(),
+                watcher_ctx.verified_pub.clone(),
+            )
+            .compat();
+        if let Err(err) = validated_f.await {
+            Self::change_state(Stopped::from_reason(StopReason::Error(
+                WatcherError::InvalidTakerFee(err.to_string()).into(),
+            )));
         }
+        Self::change_state(ValidateTakerPayment {})
     }
+}
 
-    pub fn new(
-        uuid: Uuid,
-        ctx: MmArc,
-        maker_coin: MmCoinEnum,
-        taker_coin: MmCoinEnum,
-        data: TakerSwapWatcherData,
-    ) -> Self {
-        Watcher {
-            uuid,
-            ctx,
-            maker_coin,
-            taker_coin,
-            errors: PaMutex::new(Vec::new()),
-            mutable: RwLock::new(WatcherMut {
-                taker_payment_spend: None,
-                maker_payment_spend: None,
-                secret: H256Json::default(),
-            }),
-            data,
+// TODO: Do this check periodically while waiting for taker payment spend
+#[async_trait]
+impl State for ValidateTakerPayment {
+    type Ctx = WatcherContext;
+    type Result = ();
+
+    async fn on_changed(self: Box<Self>, watcher_ctx: &mut WatcherContext) -> StateResult<Self::Ctx, Self::Result> {
+        let search_input = WatcherSearchForSwapTxSpendInput {
+            time_lock: watcher_ctx.data.taker_payment_lock as u32,
+            taker_pub: &watcher_ctx.data.taker_pub,
+            maker_pub: &watcher_ctx.data.maker_pub,
+            secret_hash: &watcher_ctx.data.secret_hash,
+            tx: &watcher_ctx.data.taker_payment_hex,
+            search_from_block: watcher_ctx.data.taker_coin_start_block,
+            swap_contract_address: &None,
+        };
+
+        match watcher_ctx
+            .taker_coin
+            .watcher_search_for_swap_tx_spend(search_input)
+            .await
+        {
+            Ok(Some(FoundSwapTxSpend::Spent(_))) => {
+                return Self::change_state(Stopped::from_reason(StopReason::Finished(
+                    WatcherSuccess::TakerPaymentAlreadySpent,
+                )))
+            },
+            Ok(Some(FoundSwapTxSpend::Refunded(_))) => {
+                return Self::change_state(Stopped::from_reason(StopReason::Finished(
+                    WatcherSuccess::TakerPaymentAlreadyRefunded,
+                )))
+            },
+            Err(err) => {
+                return Self::change_state(Stopped::from_reason(StopReason::Error(
+                    WatcherError::TakerPaymentSearchForSwapFailed(err).into(),
+                )))
+            },
+            Ok(None) => (),
         }
-    }
 
-    async fn start(&self) -> Result<(Option<WatcherCommand>, Vec<WatcherEvent>), String> {
-        Ok((Some(WatcherCommand::ValidateTakerPayment), vec![WatcherEvent::Started]))
-    }
+        let wait_taker_payment =
+            wait_for_taker_payment_conf_until(watcher_ctx.data.swap_started_at, watcher_ctx.data.lock_duration);
+        let confirmations = min(watcher_ctx.data.taker_payment_confirmations, TAKER_SWAP_CONFIRMATIONS);
 
-    // Do we need the exact same validation as the maker, or should we use a simpler validation process?
-    async fn validate_taker_payment(&self) -> Result<(Option<WatcherCommand>, Vec<WatcherEvent>), String> {
-        let wait_duration = (self.data.lock_duration * 4) / 5;
-        let wait_taker_payment = self.data.swap_started_at + wait_duration;
-        let confirmations = min(self.data.taker_payment_confirmations, TAKER_SWAP_CONFIRMATIONS);
-
-        // Does the watcher have to wait for the confirmations like the maker does?
-        let wait_f = self
+        let wait_f = watcher_ctx
             .taker_coin
             .wait_for_confirmations(
-                &self.data.taker_payment_hex,
+                &watcher_ctx.data.taker_payment_hex,
                 confirmations,
-                self.data.taker_payment_requires_nota.unwrap_or(false),
+                watcher_ctx.data.taker_payment_requires_nota.unwrap_or(false),
                 wait_taker_payment,
                 WAIT_CONFIRM_INTERVAL,
             )
             .compat();
         if let Err(err) = wait_f.await {
-            return Ok((Some(WatcherCommand::Finish), vec![
-                WatcherEvent::TakerPaymentWaitConfirmFailed(
-                    ERRL!("!taker_coin.wait_for_confirmations: {}", err).into(),
-                ),
-            ]));
+            Self::change_state(Stopped::from_reason(StopReason::Error(
+                WatcherError::TakerPaymentNotConfirmed(err).into(),
+            )));
         }
 
         let validate_input = WatcherValidatePaymentInput {
-            payment_tx: self.data.taker_payment_hex.clone(),
-            time_lock: self.data.taker_payment_lock as u32,
-            taker_pub: self.data.taker_pub.clone(),
-            maker_pub: self.data.maker_pub.clone(),
-            secret_hash: self.data.secret_hash.clone(),
-            amount: self.data.taker_amount.clone(),
+            payment_tx: watcher_ctx.data.taker_payment_hex.clone(),
+            time_lock: watcher_ctx.data.taker_payment_lock as u32,
+            taker_pub: watcher_ctx.data.taker_pub.clone(),
+            maker_pub: watcher_ctx.data.maker_pub.clone(),
+            secret_hash: watcher_ctx.data.secret_hash.clone(),
+            amount: watcher_ctx.data.taker_amount.clone(),
             try_spv_proof_until: wait_taker_payment,
             confirmations,
         };
 
-        let validated_f = self.taker_coin.watcher_validate_taker_payment(validate_input).compat();
+        let validated_f = watcher_ctx
+            .taker_coin
+            .watcher_validate_taker_payment(validate_input)
+            .compat();
 
-        if let Err(e) = validated_f.await {
-            return Ok((Some(WatcherCommand::Finish), vec![
-                WatcherEvent::TakerPaymentValidateFailed(
-                    ERRL!("!taker_coin.watcher_validate_taker_payment: {}", e).into(),
-                ),
-            ]));
+        if let Err(err) = validated_f.await {
+            Self::change_state(Stopped::from_reason(StopReason::Error(
+                WatcherError::InvalidTakerPayment(err.to_string()).into(),
+            )));
         }
 
-        Ok((Some(WatcherCommand::WaitForTakerPaymentSpend), vec![
-            WatcherEvent::TakerPaymentValidatedAndConfirmed,
-        ]))
+        Self::change_state(WaitForTakerPaymentSpend {})
     }
+}
 
-    async fn wait_for_taker_payment_spend(&self) -> Result<(Option<WatcherCommand>, Vec<WatcherEvent>), String> {
-        let f = self.taker_coin.wait_for_htlc_tx_spend(
-            &self.data.taker_payment_hex[..],
+#[async_trait]
+impl State for WaitForTakerPaymentSpend {
+    type Ctx = WatcherContext;
+    type Result = ();
+
+    async fn on_changed(self: Box<Self>, watcher_ctx: &mut WatcherContext) -> StateResult<Self::Ctx, Self::Result> {
+        #[cfg(not(test))]
+        {
+            // Sleep for half the locktime to allow the taker to spend the maker payment first
+            let now = now_ms() / 1000;
+            let wait_for_taker_until =
+                wait_for_taker_payment_conf_until(watcher_ctx.data.swap_started_at, watcher_ctx.data.lock_duration);
+            let sleep_duration = (wait_for_taker_until - now + 1) as f64;
+
+            if now < wait_for_taker_until {
+                Timer::sleep(sleep_duration).await;
+            }
+        }
+
+        let f = watcher_ctx.taker_coin.wait_for_htlc_tx_spend(
+            &watcher_ctx.data.taker_payment_hex,
             &[],
-            self.data.taker_payment_lock,
-            self.data.taker_coin_start_block,
+            watcher_ctx.data.taker_payment_lock,
+            watcher_ctx.data.taker_coin_start_block,
             &None,
         );
 
         let tx = match f.compat().await {
             Ok(t) => t,
             Err(err) => {
-                return Ok((Some(WatcherCommand::Finish), vec![
-                    WatcherEvent::TakerPaymentWaitForSpendFailed(err.get_plain_text_format().into()),
-                ]));
+                error!("{}", err.get_plain_text_format());
+                return Self::change_state(RefundTakerPayment {});
             },
         };
 
@@ -267,102 +300,144 @@ impl Watcher {
             tx_hash,
         };
 
-        let secret = match self
+        let secret = match watcher_ctx
             .taker_coin
-            .extract_secret(&self.data.secret_hash[..], &tx_ident.tx_hex)
+            .extract_secret(&watcher_ctx.data.secret_hash, &tx_ident.tx_hex.0)
             .await
         {
             Ok(bytes) => H256Json::from(bytes.as_slice()),
-            Err(e) => {
-                return Ok((Some(WatcherCommand::Finish), vec![
-                    WatcherEvent::TakerPaymentWaitForSpendFailed(ERRL!("{}", e).into()),
-                ]));
+            Err(err) => {
+                return Self::change_state(Stopped::from_reason(StopReason::Error(
+                    WatcherError::UnableToExtractSecret(err).into(),
+                )))
             },
         };
 
-        Ok((Some(WatcherCommand::SpendMakerPayment), vec![
-            WatcherEvent::TakerPaymentSpent(TakerPaymentSpentData {
-                transaction: tx_ident,
-                secret,
-            }),
-        ]))
+        Self::change_state(SpendMakerPayment::new(secret))
     }
+}
 
-    async fn spend_maker_payment(&self) -> Result<(Option<WatcherCommand>, Vec<WatcherEvent>), String> {
-        let spend_fut = self.maker_coin.send_taker_spends_maker_payment_preimage(
-            &self.data.taker_spends_maker_payment_preimage,
-            &self.r().secret.0.clone(),
+#[async_trait]
+impl State for SpendMakerPayment {
+    type Ctx = WatcherContext;
+    type Result = ();
+
+    async fn on_changed(self: Box<Self>, watcher_ctx: &mut WatcherContext) -> StateResult<Self::Ctx, Self::Result> {
+        let spend_fut = watcher_ctx.maker_coin.send_taker_spends_maker_payment_preimage(
+            &watcher_ctx.data.taker_spends_maker_payment_preimage,
+            &self.secret.0,
         );
 
         let transaction = match spend_fut.compat().await {
             Ok(t) => t,
             Err(err) => {
                 if let Some(tx) = err.get_tx() {
-                    broadcast_p2p_tx_msg(&self.ctx, tx_helper_topic(self.maker_coin.ticker()), &tx, &None);
+                    broadcast_p2p_tx_msg(
+                        &watcher_ctx.ctx,
+                        tx_helper_topic(watcher_ctx.maker_coin.ticker()),
+                        &tx,
+                        &None,
+                    );
                 };
-
-                return Ok((Some(WatcherCommand::Finish), vec![
-                    WatcherEvent::MakerPaymentSpendFailed(ERRL!("{}", err.get_plain_text_format()).into()),
-                ]));
+                return Self::change_state(Stopped::from_reason(StopReason::Error(
+                    WatcherError::MakerPaymentSpendFailed(err.get_plain_text_format()).into(),
+                )));
             },
         };
 
         broadcast_p2p_tx_msg(
-            &self.ctx,
-            tx_helper_topic(self.maker_coin.ticker()),
+            &watcher_ctx.ctx,
+            tx_helper_topic(watcher_ctx.maker_coin.ticker()),
             &transaction,
             &None,
         );
 
         let tx_hash = transaction.tx_hash();
-        info!("Maker payment spend tx {:02x}", tx_hash);
-        let tx_ident = TransactionIdentifier {
-            tx_hex: BytesJson::from(transaction.tx_hex()),
-            tx_hash,
-        };
+        info!("Sent maker payment spend tx {:02x} as watcher", tx_hash);
 
-        Ok((Some(WatcherCommand::Finish), vec![WatcherEvent::MakerPaymentSpent(
-            tx_ident,
-        )]))
+        Self::change_state(Stopped::from_reason(StopReason::Finished(
+            WatcherSuccess::MakerPaymentSpent,
+        )))
     }
 }
 
-pub async fn run_watcher(swap: RunWatcherInput) {
-    let (swap, mut command) = match swap {
-        RunWatcherInput::StartNew(swap) => (swap, WatcherCommand::Start),
-    };
+#[async_trait]
+impl State for RefundTakerPayment {
+    type Ctx = WatcherContext;
+    type Result = ();
 
-    let ctx = swap.ctx.clone();
-    let mut status = ctx.log.status_handle();
-    let uuid_str = swap.uuid.to_string();
-    let running_swap = Arc::new(swap);
-
-    let mut swap_fut = Box::pin(
-        async move {
-            let mut events;
-            loop {
-                let res = running_swap.handle_command(command).await.expect("!handle_command");
-                events = res.1;
-                for event in events {
-                    status.status(&[&"swap", &("uuid", uuid_str.as_str())], &event.status_str());
-                    running_swap.apply_event(event);
-                }
-                match res.0 {
-                    Some(c) => {
-                        command = c;
-                    },
-                    None => {
-                        break;
-                    },
-                }
+    async fn on_changed(self: Box<Self>, watcher_ctx: &mut WatcherContext) -> StateResult<Self::Ctx, Self::Result> {
+        let locktime = watcher_ctx.data.taker_payment_lock;
+        loop {
+            match watcher_ctx
+                .taker_coin
+                .can_refund_htlc(locktime + WAIT_FOR_TAKER_REFUND)
+                .compat()
+                .await
+            {
+                Ok(CanRefundHtlc::CanRefundNow) => break,
+                Ok(CanRefundHtlc::HaveToWait(to_sleep)) => Timer::sleep(to_sleep as f64).await,
+                Err(e) => {
+                    error!("Error {} on can_refund_htlc, retrying in 30 seconds", e);
+                    Timer::sleep(30.).await;
+                },
             }
         }
-        .fuse(),
-    );
-    let do_nothing = (); // to fix https://rust-lang.github.io/rust-clippy/master/index.html#unused_unit
-    select! {
-        _swap = swap_fut => do_nothing, // swap finished normally
-    };
+
+        let refund_fut = watcher_ctx
+            .taker_coin
+            .send_watcher_refunds_taker_payment_preimage(&watcher_ctx.data.taker_refunds_payment);
+        let transaction = match refund_fut.compat().await {
+            Ok(t) => t,
+            Err(err) => {
+                if let Some(tx) = err.get_tx() {
+                    broadcast_p2p_tx_msg(
+                        &watcher_ctx.ctx,
+                        tx_helper_topic(watcher_ctx.taker_coin.ticker()),
+                        &tx,
+                        &None,
+                    );
+                }
+
+                return Self::change_state(Stopped::from_reason(StopReason::Error(
+                    WatcherError::TakerPaymentRefundFailed(err.get_plain_text_format()).into(),
+                )));
+            },
+        };
+
+        broadcast_p2p_tx_msg(
+            &watcher_ctx.ctx,
+            tx_helper_topic(watcher_ctx.taker_coin.ticker()),
+            &transaction,
+            &None,
+        );
+
+        let wait_fut = watcher_ctx.taker_coin.wait_for_confirmations(
+            &transaction.tx_hex(),
+            1,
+            false,
+            watcher_ctx.data.taker_payment_lock + WAIT_FOR_TAKER_REFUND + 3600,
+            WAIT_CONFIRM_INTERVAL,
+        );
+        if let Err(err) = wait_fut.compat().await {
+            return Self::change_state(Stopped::from_reason(StopReason::Error(
+                WatcherError::TakerPaymentRefundFailed(err).into(),
+            )));
+        }
+
+        let tx_hash = transaction.tx_hash();
+        info!("Sent taker refund tx {:02x} as watcher", tx_hash);
+        Self::change_state(Stopped::from_reason(StopReason::Finished(
+            WatcherSuccess::TakerPaymentRefunded,
+        )))
+    }
+}
+
+#[async_trait]
+impl LastState for Stopped {
+    type Ctx = WatcherContext;
+    type Result = ();
+    async fn on_changed(self: Box<Self>, _watcher_ctx: &mut Self::Ctx) -> Self::Result {}
 }
 
 pub async fn process_watcher_msg(ctx: MmArc, msg: &[u8]) {
@@ -376,8 +451,12 @@ pub async fn process_watcher_msg(ctx: MmArc, msg: &[u8]) {
         },
     };
 
-    match msg.0 {
-        SwapWatcherMsg::TakerSwapWatcherMsg(watcher_data) => spawn_taker_swap_watcher(ctx, *watcher_data),
+    let watcher_data = msg.0;
+    let verified_pubkey = msg.2;
+    match watcher_data {
+        SwapWatcherMsg::TakerSwapWatcherMsg(watcher_data) => {
+            spawn_taker_swap_watcher(ctx, watcher_data, verified_pubkey.to_bytes())
+        },
     }
 }
 
@@ -386,32 +465,32 @@ enum WatcherType {
     Taker,
 }
 
-/// The `SwapWatcherLock` is used to lock the given `uuid` as the running Swap Watcher,
-/// (i.e. insert `uuid` into either [`SwapsContext::taker_swap_watchers`] or [`SwapsContext::maker_swap_watchers`]),
-/// and to unlock it (i.e remove `uuid` from corresponding watcher collection) once `SwapWatcherLock` is dropped.
+/// The `SwapWatcherLock` is used to lock the given taker fee hash as the running Swap Watcher,
+/// (i.e. insert the fee hash into either [`SwapsContext::taker_swap_watchers`] or [`SwapsContext::maker_swap_watchers`]),
+/// and to unlock it (i.e remove the hash from corresponding watcher collection) once `SwapWatcherLock` is dropped.
 struct SwapWatcherLock {
     swap_ctx: Arc<SwapsContext>,
-    uuid: Uuid,
+    fee_hash: Vec<u8>,
     watcher_type: WatcherType,
 }
 
 impl SwapWatcherLock {
-    /// Locks the given `uuid` as the running Swap Watcher,
-    /// so inserts `uuid` into the [`SwapsContext::taker_swap_watchers`] collection.
+    /// Locks the given taker fee hash as the running Swap Watcher,
+    /// so inserts the hash into the [`SwapsContext::taker_swap_watchers`] collection.
     ///
     /// Returns `None` if there is an ongoing Taker Swap Watcher already.
-    fn lock_taker(swap_ctx: Arc<SwapsContext>, uuid: Uuid) -> Option<Self> {
+    fn lock_taker(swap_ctx: Arc<SwapsContext>, fee_hash: Vec<u8>) -> Option<Self> {
         {
             let mut guard = swap_ctx.taker_swap_watchers.lock();
-            if !guard.insert(uuid) {
-                // There is the same `uuid` already.
+            if !guard.insert(fee_hash.clone()) {
+                // There is the same hash already.
                 return None;
             }
         }
 
         Some(SwapWatcherLock {
             swap_ctx,
-            uuid,
+            fee_hash,
             watcher_type: WatcherType::Taker,
         })
     }
@@ -420,25 +499,24 @@ impl SwapWatcherLock {
 impl Drop for SwapWatcherLock {
     fn drop(&mut self) {
         match self.watcher_type {
-            WatcherType::Taker => self.swap_ctx.taker_swap_watchers.lock().remove(&self.uuid),
+            WatcherType::Taker => self.swap_ctx.taker_swap_watchers.lock().remove(self.fee_hash.clone()),
         };
     }
 }
 
-fn spawn_taker_swap_watcher(ctx: MmArc, watcher_data: TakerSwapWatcherData) {
+fn spawn_taker_swap_watcher(ctx: MmArc, watcher_data: TakerSwapWatcherData, verified_pub: Vec<u8>) {
     let swap_ctx = SwapsContext::from_ctx(&ctx).unwrap();
     if swap_ctx.swap_msgs.lock().unwrap().contains_key(&watcher_data.uuid) {
         return;
     }
-
-    let uuid = watcher_data.uuid;
-    let taker_watcher_lock = match SwapWatcherLock::lock_taker(swap_ctx, uuid) {
+    let taker_watcher_lock = match SwapWatcherLock::lock_taker(swap_ctx, watcher_data.taker_fee_hash.clone()) {
         Some(lock) => lock,
         // There is an ongoing Taker Swap Watcher already.
         None => return,
     };
 
     let spawner = ctx.spawner();
+    let fee_hash = H256Json::from(watcher_data.taker_fee_hash.as_slice());
 
     let fut = async move {
         let taker_coin = match lp_coinfind(&ctx, &watcher_data.taker_coin).await {
@@ -468,21 +546,28 @@ fn spawn_taker_swap_watcher(ctx: MmArc, watcher_data: TakerSwapWatcherData) {
         log_tag!(
             ctx,
             "";
-            fmt = "Entering the watcher_swap_loop {}/{} with uuid: {}",
+            fmt = "Entering the taker swap watcher loop {}/{} with taker fee hash: {}",
             maker_coin.ticker(),
             taker_coin.ticker(),
-            uuid
+            fee_hash
         );
 
-        let watcher = Watcher::new(watcher_data.uuid, ctx, maker_coin, taker_coin, watcher_data);
-        run_watcher(RunWatcherInput::StartNew(watcher)).await;
+        let watcher_ctx = WatcherContext {
+            ctx,
+            maker_coin,
+            taker_coin,
+            data: watcher_data,
+            verified_pub,
+        };
+        let state_machine: StateMachine<_, ()> = StateMachine::from_ctx(watcher_ctx);
+        state_machine.run(ValidatePublicKeys {}).await;
 
         // This allows to move the `taker_watcher_lock` value into this async block to keep it alive
         // until the Swap Watcher finishes.
         drop(taker_watcher_lock);
     };
 
-    let settings = AbortSettings::info_on_abort(format!("watcher swap {uuid} stopped!"));
+    let settings = AbortSettings::info_on_abort(format!("taker swap watcher {fee_hash} stopped!"));
     // Please note that `taker_watcher_lock` will be dropped once `MmCtx` is stopped
     // since this `fut` will be aborted.
     spawner.spawn_with_settings(fut, settings);

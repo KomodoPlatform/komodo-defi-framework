@@ -5,10 +5,11 @@ use super::swap_lock::{SwapLock, SwapLockOps};
 use super::trade_preimage::{TradePreimageRequest, TradePreimageRpcError, TradePreimageRpcResult};
 use super::{broadcast_my_swap_status, broadcast_p2p_tx_msg, broadcast_swap_message_every,
             check_other_coin_balance_for_swap, detect_secret_hash_algo, dex_fee_amount_from_taker_coin,
-            get_locked_amount, recv_swap_msg, swap_topic, tx_helper_topic, AtomicSwap, LockedAmount, MySwapInfo,
-            NegotiationDataMsg, NegotiationDataV2, NegotiationDataV3, RecoveredSwap, RecoveredSwapAction, SavedSwap,
-            SavedSwapIo, SavedTradeFee, SecretHashAlgo, SwapConfirmationsSettings, SwapError, SwapMsg, SwapTxDataMsg,
-            SwapsContext, TransactionIdentifier, WAIT_CONFIRM_INTERVAL};
+            get_locked_amount, recv_swap_msg, swap_topic, tx_helper_topic, wait_for_maker_payment_conf_until,
+            wait_for_taker_payment_conf_until, AtomicSwap, LockedAmount, MySwapInfo, NegotiationDataMsg,
+            NegotiationDataV2, NegotiationDataV3, RecoveredSwap, RecoveredSwapAction, SavedSwap, SavedSwapIo,
+            SavedTradeFee, SecretHashAlgo, SwapConfirmationsSettings, SwapError, SwapMsg, SwapTxDataMsg, SwapsContext,
+            TransactionIdentifier, WAIT_CONFIRM_INTERVAL};
 use crate::mm2::lp_dispatcher::{DispatcherContext, LpEvents};
 use crate::mm2::lp_network::subscribe_to_topic;
 use crate::mm2::lp_ordermatch::{MakerOrderBuilder, OrderConfirmationsSettings};
@@ -809,7 +810,8 @@ impl MakerSwap {
         let abort_send_handle =
             broadcast_swap_message_every(self.ctx.clone(), swap_topic(&self.uuid), msg, 600., self.p2p_privkey);
 
-        let maker_payment_wait_confirm = self.r().data.started_at + (self.r().data.lock_duration * 2) / 5;
+        let maker_payment_wait_confirm =
+            wait_for_maker_payment_conf_until(self.r().data.started_at, self.r().data.lock_duration);
         let f = self.maker_coin.wait_for_confirmations(
             &self.r().maker_payment.clone().unwrap().tx_hex,
             self.r().data.maker_payment_confirmations,
@@ -878,8 +880,8 @@ impl MakerSwap {
     }
 
     async fn validate_taker_payment(&self) -> Result<(Option<MakerSwapCommand>, Vec<MakerSwapEvent>), String> {
-        let wait_duration = (self.r().data.lock_duration * 4) / 5;
-        let wait_taker_payment = self.r().data.started_at + wait_duration;
+        let wait_taker_payment =
+            wait_for_taker_payment_conf_until(self.r().data.started_at, self.r().data.lock_duration);
         let confirmations = self.r().data.taker_payment_confirmations;
 
         let wait_f = self
@@ -939,9 +941,7 @@ impl MakerSwap {
             ]));
         }
 
-        let duration = (self.r().data.lock_duration * 4) / 5;
-        let timeout = self.r().data.started_at + duration;
-
+        let timeout = wait_for_taker_payment_conf_until(self.r().data.started_at, self.r().data.lock_duration);
         let now = now_ms() / 1000;
         if now > timeout {
             return Ok((Some(MakerSwapCommand::RefundMakerPayment), vec![
