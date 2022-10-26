@@ -78,9 +78,9 @@ mod tests {
             unsafe { SUB_FINISHED = true };
         });
 
-        block_on(Timer::sleep(0.1));
+        block_on(Timer::sleep(0.05));
         drop(sub_system);
-        block_on(Timer::sleep(0.2));
+        block_on(Timer::sleep(0.4));
 
         // Only the super system should finish as the sub system has been aborted.
         unsafe {
@@ -106,9 +106,9 @@ mod tests {
             unsafe { SUB_FINISHED = true };
         });
 
-        block_on(Timer::sleep(0.1));
+        block_on(Timer::sleep(0.05));
         drop(super_system);
-        block_on(Timer::sleep(0.2));
+        block_on(Timer::sleep(0.4));
 
         // Nothing should finish as the super system has been aborted.
         unsafe {

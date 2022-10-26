@@ -124,20 +124,20 @@ mod tests {
         let mut guard = abortable_system.lock();
 
         guard.spawn_or_ignore("F1".to_string(), async move {
-            Timer::sleep(0.2).await;
+            Timer::sleep(0.1).await;
             unsafe { F1_FINISHED = true };
         });
         assert!(guard.contains("F1"));
         assert!(!guard.contains("F2"));
         guard.spawn_or_ignore("F2".to_string(), async move {
-            Timer::sleep(0.4).await;
+            Timer::sleep(0.5).await;
             unsafe { F2_FINISHED = true };
         });
 
         drop(guard);
         block_on(Timer::sleep(0.3));
         abortable_system.abort_all();
-        block_on(Timer::sleep(0.2));
+        block_on(Timer::sleep(0.4));
 
         unsafe {
             assert!(F1_FINISHED);
@@ -158,13 +158,13 @@ mod tests {
         });
 
         drop(guard);
-        block_on(Timer::sleep(0.1));
+        block_on(Timer::sleep(0.05));
 
         let mut guard = abortable_system.lock();
         guard.abort_future("F1");
         assert!(!guard.contains("F1"));
 
-        block_on(Timer::sleep(0.2));
+        block_on(Timer::sleep(0.3));
 
         unsafe {
             assert!(!F1_FINISHED);
