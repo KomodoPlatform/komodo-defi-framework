@@ -9,7 +9,7 @@ use common::{HttpStatusCode, StatusCode};
 use derive_more::Display;
 use mm2_core::mm_ctx::MmArc;
 use mm2_err_handle::prelude::*;
-use rpc::v1::types::{H160 as H160Json, H256 as H256Json};
+use rpc::v1::types::{Bytes as BytesJson, H256 as H256Json};
 
 pub type RecreateSwapResult<T> = Result<T, MmError<RecreateSwapError>>;
 
@@ -355,7 +355,7 @@ async fn recreate_taker_swap(ctx: MmArc, maker_swap: MakerSavedSwap) -> Recreate
     let taker_negotiated_event = TakerSwapEvent::Negotiated(MakerNegotiationData {
         maker_payment_locktime: started_event.maker_payment_lock,
         maker_pubkey: started_event.my_persistent_pub,
-        secret_hash,
+        secret_hash: secret_hash.clone(),
         maker_coin_swap_contract_addr: negotiated_event.maker_coin_swap_contract_addr,
         taker_coin_swap_contract_addr: negotiated_event.taker_coin_swap_contract_addr,
         maker_coin_htlc_pubkey: started_event.maker_coin_htlc_pubkey,
@@ -395,7 +395,7 @@ async fn recreate_taker_swap(ctx: MmArc, maker_swap: MakerSavedSwap) -> Recreate
 fn convert_maker_to_taker_events(
     event_it: impl Iterator<Item = MakerSavedEvent>,
     maker_coin: MmCoinEnum,
-    secret_hash: H160Json,
+    secret_hash: BytesJson,
     wait_refund_until: u64,
 ) -> Vec<TakerSavedEvent> {
     let mut events = Vec::new();

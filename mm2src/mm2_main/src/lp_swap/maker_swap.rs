@@ -13,9 +13,8 @@ use crate::mm2::lp_dispatcher::{DispatcherContext, LpEvents};
 use crate::mm2::lp_network::subscribe_to_topic;
 use crate::mm2::lp_ordermatch::{MakerOrderBuilder, OrderConfirmationsSettings};
 use crate::mm2::lp_price::fetch_swap_coins_price;
-use crate::mm2::lp_swap::{broadcast_p2p_tx_msg, tx_helper_topic};
+use crate::mm2::lp_swap::{broadcast_p2p_tx_msg, detect_secret_hash_algo, tx_helper_topic, SecretHashAlgo};
 use crate::mm2::MM_VERSION;
-use bitcrypto::dhash160;
 use coins::{CanRefundHtlc, FeeApproxStage, FoundSwapTxSpend, MmCoinEnum, SearchForSwapTxSpendInput, TradeFee,
             TradePreimageValue, TransactionEnum, ValidatePaymentInput};
 use common::log::{debug, error, info, warn};
@@ -27,9 +26,9 @@ use mm2_core::mm_ctx::MmArc;
 use mm2_err_handle::prelude::*;
 use mm2_number::{BigDecimal, MmNumber};
 use parking_lot::Mutex as PaMutex;
-use primitives::hash::{H160, H256, H264};
+use primitives::hash::{H256, H264};
 use rand::Rng;
-use rpc::v1::types::{Bytes as BytesJson, H160 as H160Json, H256 as H256Json, H264 as H264Json};
+use rpc::v1::types::{Bytes as BytesJson, H256 as H256Json, H264 as H264Json};
 use std::any::TypeId;
 use std::path::PathBuf;
 use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
@@ -130,7 +129,7 @@ pub struct MakerSwapData {
     pub maker_coin: String,
     pub taker: H256Json,
     pub secret: H256Json,
-    pub secret_hash: Option<H160Json>,
+    pub secret_hash: Option<BytesJson>,
     pub my_persistent_pub: H264Json,
     pub lock_duration: u64,
     pub maker_amount: BigDecimal,
@@ -214,6 +213,7 @@ pub struct MakerSwap {
     /// Temporary privkey used to sign P2P messages when applicable
     p2p_privkey: Option<KeyPair>,
     secret: H256,
+    secret_hash_algo: SecretHashAlgo,
     #[cfg(test)]
     pub(super) fail_at: Option<FailAt>,
 }
@@ -229,12 +229,13 @@ impl MakerSwap {
     pub fn generate_secret() -> [u8; 32] { rand::thread_rng().gen() }
 
     #[inline]
-    fn secret_hash(&self) -> H160 {
+    fn secret_hash(&self) -> Vec<u8> {
         self.r()
             .data
             .secret_hash
-            .map(H160Json::into)
-            .unwrap_or_else(|| dhash160(self.secret.as_slice()))
+            .as_ref()
+            .map(|bytes| bytes.0.clone())
+            .unwrap_or_else(|| self.secret_hash_algo.hash_secret(self.secret.as_slice()))
     }
 
     #[inline]
@@ -334,6 +335,7 @@ impl MakerSwap {
         p2p_privkey: Option<KeyPair>,
         secret: H256,
     ) -> Self {
+        let secret_hash_algo = detect_secret_hash_algo(&maker_coin, &taker_coin);
         MakerSwap {
             maker_coin,
             taker_coin,
@@ -363,6 +365,7 @@ impl MakerSwap {
             }),
             ctx,
             secret,
+            secret_hash_algo,
             #[cfg(test)]
             fail_at: None,
         }
@@ -707,6 +710,7 @@ impl MakerSwap {
                 self.r().data.maker_coin_start_block,
                 &self.r().data.maker_coin_swap_contract_address,
                 &unique_data,
+                &self.maker_amount,
             )
             .compat();
 
@@ -715,6 +719,7 @@ impl MakerSwap {
                 Some(tx) => tx,
                 None => {
                     let payment_fut = self.maker_coin.send_maker_payment(
+                        self.r().data.lock_duration,
                         self.r().data.maker_payment_lock as u32,
                         &*self.r().other_maker_coin_htlc_pub,
                         secret_hash.as_slice(),
@@ -858,6 +863,7 @@ impl MakerSwap {
         let validate_input = ValidatePaymentInput {
             payment_tx: self.r().taker_payment.clone().unwrap().tx_hex.0,
             time_lock: self.taker_payment_lock.load(Ordering::Relaxed) as u32,
+            time_lock_duration: self.r().data.lock_duration,
             other_pub: self.r().other_taker_coin_htlc_pub.to_vec(),
             unique_swap_data: self.unique_swap_data(),
             secret_hash: self.secret_hash().to_vec(),
@@ -906,6 +912,7 @@ impl MakerSwap {
             self.taker_payment_lock.load(Ordering::Relaxed) as u32,
             &*self.r().other_taker_coin_htlc_pub,
             &self.r().data.secret.0,
+            &self.secret_hash(),
             &self.r().data.taker_coin_swap_contract_address,
             &self.unique_swap_data(),
         );
@@ -1188,6 +1195,7 @@ impl MakerSwap {
                     timelock,
                     other_taker_coin_htlc_pub.as_slice(),
                     &secret,
+                    &selfi.secret_hash(),
                     &taker_coin_swap_contract_address,
                     &selfi.unique_swap_data(),
                 )
@@ -1231,6 +1239,7 @@ impl MakerSwap {
                             maker_coin_start_block,
                             &maker_coin_swap_contract_address,
                             &unique_data,
+                            &self.maker_amount
                         )
                         .compat()
                         .await
@@ -2076,7 +2085,7 @@ mod maker_swap_tests {
             .mock_safe(|_, _| MockResult::Return(Box::new(futures01::future::ok(CanRefundHtlc::CanRefundNow))));
 
         static mut MY_PAYMENT_SENT_CALLED: bool = false;
-        TestCoin::check_if_my_payment_sent.mock_safe(|_, _, _, _, _, _, _| {
+        TestCoin::check_if_my_payment_sent.mock_safe(|_, _, _, _, _, _, _, _| {
             unsafe { MY_PAYMENT_SENT_CALLED = true };
             MockResult::Return(Box::new(futures01::future::ok(Some(eth_tx_for_test().into()))))
         });
@@ -2215,7 +2224,7 @@ mod maker_swap_tests {
         TestCoin::swap_contract_address.mock_safe(|_| MockResult::Return(None));
 
         static mut MY_PAYMENT_SENT_CALLED: bool = false;
-        TestCoin::check_if_my_payment_sent.mock_safe(|_, _, _, _, _, _, _| {
+        TestCoin::check_if_my_payment_sent.mock_safe(|_, _, _, _, _, _, _, _| {
             unsafe { MY_PAYMENT_SENT_CALLED = true };
             MockResult::Return(Box::new(futures01::future::ok(Some(eth_tx_for_test().into()))))
         });
@@ -2246,7 +2255,7 @@ mod maker_swap_tests {
         TestCoin::swap_contract_address.mock_safe(|_| MockResult::Return(None));
 
         static mut MY_PAYMENT_SENT_CALLED: bool = false;
-        TestCoin::check_if_my_payment_sent.mock_safe(|_, _, _, _, _, _, _| {
+        TestCoin::check_if_my_payment_sent.mock_safe(|_, _, _, _, _, _, _, _| {
             unsafe { MY_PAYMENT_SENT_CALLED = true };
             MockResult::Return(Box::new(futures01::future::ok(None)))
         });
@@ -2362,7 +2371,7 @@ mod maker_swap_tests {
         });
 
         static mut SEND_MAKER_SPENDS_TAKER_PAYMENT_CALLED: bool = false;
-        TestCoin::send_maker_spends_taker_payment.mock_safe(|_, _, _, _, _, _, _| {
+        TestCoin::send_maker_spends_taker_payment.mock_safe(|_, _, _, _, _, _, _, _| {
             unsafe { SEND_MAKER_SPENDS_TAKER_PAYMENT_CALLED = true }
             MockResult::Return(Box::new(futures01::future::ok(eth_tx_for_test().into())))
         });

@@ -8033,3 +8033,7 @@ async fn test_mm2_stops_immediately() {
     let pairs: &[_] = &[("RICK", "MORTY")];
     test_mm2_stops_impl(pairs, 1, 1, 0.0001, STOP_TIMEOUT_MS).await;
 }
+
+#[cfg(not(target_arch = "wasm32"))] pub mod iris_swap_poc;
+#[cfg(not(target_arch = "wasm32"))]
+pub mod tendermint_ibc_asset_tests;

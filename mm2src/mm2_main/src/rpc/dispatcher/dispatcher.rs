@@ -20,7 +20,7 @@ use coins::rpc_command::{account_balance::account_balance,
                          init_scan_for_new_addresses::{cancel_scan_for_new_addresses, init_scan_for_new_addresses,
                                                        init_scan_for_new_addresses_status},
                          init_withdraw::{cancel_withdraw, init_withdraw, withdraw_status, withdraw_user_action}};
-use coins::tendermint::TendermintCoin;
+use coins::tendermint::{TendermintCoin, TendermintToken};
 use coins::utxo::bch::BchCoin;
 use coins::utxo::qtum::QtumCoin;
 use coins::utxo::slp::SlpToken;
@@ -148,6 +148,7 @@ async fn dispatcher_v2(request: MmRpcRequest, ctx: MmArc) -> DispatcherResult<Re
         "enable_tendermint_with_assets" => {
             handle_mmrpc(ctx, request, enable_platform_coin_with_tokens::<TendermintCoin>).await
         },
+        "enable_tendermint_token" => handle_mmrpc(ctx, request, enable_token::<TendermintToken>).await,
         "get_current_mtp" => handle_mmrpc(ctx, request, get_current_mtp_rpc).await,
         "get_enabled_coins" => handle_mmrpc(ctx, request, get_enabled_coins).await,
         "get_new_address" => handle_mmrpc(ctx, request, get_new_address).await,

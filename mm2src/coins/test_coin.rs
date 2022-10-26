@@ -70,9 +70,10 @@ impl MarketCoinOps for TestCoin {
         unimplemented!()
     }
 
-    fn wait_for_tx_spend(
+    fn wait_for_htlc_tx_spend(
         &self,
         transaction: &[u8],
+        secret_hash: &[u8],
         wait_until: u64,
         from_block: u64,
         swap_contract_address: &Option<BytesJson>,
@@ -103,6 +104,7 @@ impl SwapOps for TestCoin {
 
     fn send_maker_payment(
         &self,
+        _time_lock_duration: u64,
         time_lock: u32,
         taker_pub: &[u8],
         secret_hash: &[u8],
@@ -115,6 +117,7 @@ impl SwapOps for TestCoin {
 
     fn send_taker_payment(
         &self,
+        _time_lock_duration: u64,
         time_lock: u32,
         maker_pub: &[u8],
         secret_hash: &[u8],
@@ -131,6 +134,7 @@ impl SwapOps for TestCoin {
         time_lock: u32,
         taker_pub: &[u8],
         secret: &[u8],
+        secret_hash: &[u8],
         swap_contract_address: &Option<BytesJson>,
         _swap_unique_data: &[u8],
     ) -> TransactionFut {
@@ -143,6 +147,7 @@ impl SwapOps for TestCoin {
         time_lock: u32,
         maker_pub: &[u8],
         secret: &[u8],
+        secret_hash: &[u8],
         swap_contract_address: &Option<BytesJson>,
         _swap_unique_data: &[u8],
     ) -> TransactionFut {
@@ -197,6 +202,7 @@ impl SwapOps for TestCoin {
         search_from_block: u64,
         swap_contract_address: &Option<BytesJson>,
         swap_unique_data: &[u8],
+        amount: &BigDecimal,
     ) -> Box<dyn Future<Item = Option<TransactionEnum>, Error = String> + Send> {
         unimplemented!()
     }

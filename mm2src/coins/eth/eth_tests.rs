@@ -250,6 +250,7 @@ fn send_and_refund_erc20_payment() {
 
     let payment = coin
         .send_maker_payment(
+            0,
             (now_ms() / 1000) as u32 - 200,
             &DEX_FEE_ADDR_RAW_PUBKEY,
             &[1; 20],
@@ -319,6 +320,7 @@ fn send_and_refund_eth_payment() {
 
     let payment = coin
         .send_maker_payment(
+            0,
             (now_ms() / 1000) as u32 - 200,
             &DEX_FEE_ADDR_RAW_PUBKEY,
             &[1; 20],
@@ -472,7 +474,7 @@ fn test_wait_for_payment_spend_timeout() {
     ];
 
     assert!(coin
-        .wait_for_tx_spend(&tx_bytes, wait_until, from_block, &coin.swap_contract_address())
+        .wait_for_htlc_tx_spend(&tx_bytes, &[], wait_until, from_block, &coin.swap_contract_address())
         .wait()
         .is_err());
 }
@@ -544,7 +546,7 @@ fn test_search_for_swap_tx_spend_was_spent() {
     ];
     let spend_tx = FoundSwapTxSpend::Spent(signed_eth_tx_from_bytes(&spend_tx).unwrap().into());
 
-    let found_tx = block_on(coin.search_for_swap_tx_spend(&payment_tx, swap_contract_address, 15643275))
+    let found_tx = block_on(coin.search_for_swap_tx_spend(&payment_tx, swap_contract_address, &[0; 20], 15643279))
         .unwrap()
         .unwrap();
     assert_eq!(spend_tx, found_tx);
@@ -656,7 +658,7 @@ fn test_search_for_swap_tx_spend_was_refunded() {
     ];
     let refund_tx = FoundSwapTxSpend::Refunded(signed_eth_tx_from_bytes(&refund_tx).unwrap().into());
 
-    let found_tx = block_on(coin.search_for_swap_tx_spend(&payment_tx, swap_contract_address, 13638713))
+    let found_tx = block_on(coin.search_for_swap_tx_spend(&payment_tx, swap_contract_address, &[0; 20], 13638713))
         .unwrap()
         .unwrap();
     assert_eq!(refund_tx, found_tx);
@@ -682,6 +684,7 @@ fn test_withdraw_impl_manual_fee() {
             gas: 150000,
             gas_price: 1.into(),
         }),
+        memo: None,
     };
     coin.my_balance().wait().unwrap();
 
@@ -725,6 +728,7 @@ fn test_withdraw_impl_fee_details() {
             gas: 150000,
             gas_price: 1.into(),
         }),
+        memo: None,
     };
     coin.my_balance().wait().unwrap();
 
@@ -1258,6 +1262,7 @@ fn polygon_check_if_my_payment_sent() {
             22185109,
             &Some(swap_contract_address),
             &[],
+            &BigDecimal::default(),
         )
         .wait()
         .unwrap()
