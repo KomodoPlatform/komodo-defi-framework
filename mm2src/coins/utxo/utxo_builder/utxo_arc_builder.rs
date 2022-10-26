@@ -16,11 +16,11 @@ use serde_json::Value as Json;
 use spv_validation::helpers_validation::validate_headers;
 use spv_validation::storage::BlockHeaderStorageOps;
 
-const BLOCK_HEADERS_LOOP_INTERVAL: f64 = 60.;
-const BLOCK_HEADERS_LOOP_SLEEP_TIMER: f64 = 10.;
+const BLOCK_HEADERS_LOOP_SUCCESS_SLEEP_TIMER: f64 = 60.;
+const BLOCK_HEADERS_LOOP_ERORR_SLEEP_TIMER: f64 = 10.;
+const FETCH_BLOCK_HEADERS_ATTEMPTS: u64 = 3;
 const CHUNK_SIZE_REDUCER_VALUE: u64 = 100;
 const ELECTRUM_MAX_CHUNK_SIZE: u64 = 2016;
-const FETCH_BLOCK_HEADERS_ATTEMPTS: u64 = 3;
 
 pub struct UtxoArcBuilder<'a, F, T>
 where
@@ -242,51 +242,51 @@ async fn block_header_utxo_loop<T: UtxoCommonOps>(
             Err(e) => {
                 error!("Error {} on getting the height of the last stored header in DB!", e);
                 sync_status_loop_handle.notify_on_temp_error(e.to_string());
-                Timer::sleep(BLOCK_HEADERS_LOOP_SLEEP_TIMER).await;
+                Timer::sleep(BLOCK_HEADERS_LOOP_ERORR_SLEEP_TIMER).await;
                 continue;
             },
         };
 
-        let to_block_height = from_block_height + chunk_size;
-        let to_block_height = if to_block_height > block_count {
-            block_count
-        } else {
-            to_block_height
-        };
+        let mut to_block_height = from_block_height + chunk_size;
+        if to_block_height > block_count {
+            block_count = match coin.as_ref().rpc_client.get_block_count().compat().await {
+                Ok(h) => h,
+                Err(e) => {
+                    error!("Error {} on getting the height of the latest block from rpc!", e);
+                    sync_status_loop_handle.notify_on_temp_error(e.to_string());
+                    Timer::sleep(BLOCK_HEADERS_LOOP_ERORR_SLEEP_TIMER).await;
+                    continue;
+                },
+            };
+
+            // More than `chunk_size` blocks could have appeared since the last `get_block_count` RPC.
+            // So reset `to_block_height` if only `from_block_height + chunk_size > actual_block_count`.
+            if to_block_height > block_count {
+                to_block_height = block_count;
+            }
+        }
 
         // Todo: Add code for the case if a chain reorganization happens
         if from_block_height == block_count {
             sync_status_loop_handle.notify_sync_finished(to_block_height);
-            Timer::sleep(BLOCK_HEADERS_LOOP_INTERVAL).await;
+            Timer::sleep(BLOCK_HEADERS_LOOP_SUCCESS_SLEEP_TIMER).await;
             continue;
         }
 
         sync_status_loop_handle.notify_blocks_headers_sync_status(from_block_height + 1, to_block_height);
+
         let mut fetch_blocker_headers_attempts = FETCH_BLOCK_HEADERS_ATTEMPTS;
         let (block_registry, block_headers) = match client
             .retrieve_headers(from_block_height + 1, to_block_height)
             .compat()
             .await
         {
-            Ok(res) => {
-                if to_block_height < block_count {
-                    block_count = match coin.as_ref().rpc_client.get_block_count().compat().await {
-                        Ok(h) => h,
-                        Err(e) => {
-                            error!("Error {} on getting the height of the latest block from rpc!", e);
-                            sync_status_loop_handle.notify_on_temp_error(e.to_string());
-                            Timer::sleep(BLOCK_HEADERS_LOOP_SLEEP_TIMER).await;
-                            continue;
-                        },
-                    };
-                }
-                res
-            },
+            Ok(res) => res,
             Err(error) => {
                 if error.get_inner().is_network_error() {
                     log!("Network Error: Will try fetching block headers again after 10 secs");
                     sync_status_loop_handle.notify_on_temp_error(error.to_string());
-                    Timer::sleep(BLOCK_HEADERS_LOOP_SLEEP_TIMER).await;
+                    Timer::sleep(BLOCK_HEADERS_LOOP_ERORR_SLEEP_TIMER).await;
                     continue;
                 };
 
@@ -301,7 +301,7 @@ async fn block_header_utxo_loop<T: UtxoCommonOps>(
                     error!("Error {error:?} on retrieving the latest headers from rpc! {fetch_blocker_headers_attempts} attempts left");
                     // Todo: remove this electrum server and use another in this case since the headers from this server can't be retrieved
                     sync_status_loop_handle.notify_on_temp_error(error.to_string());
-                    Timer::sleep(BLOCK_HEADERS_LOOP_SLEEP_TIMER).await;
+                    Timer::sleep(BLOCK_HEADERS_LOOP_ERORR_SLEEP_TIMER).await;
                     continue;
                 };
 
@@ -328,7 +328,7 @@ async fn block_header_utxo_loop<T: UtxoCommonOps>(
 
         ok_or_continue_after_sleep!(
             storage.add_block_headers_to_storage(block_registry).await,
-            BLOCK_HEADERS_LOOP_INTERVAL
+            BLOCK_HEADERS_LOOP_SUCCESS_SLEEP_TIMER
         );
     }
 }
