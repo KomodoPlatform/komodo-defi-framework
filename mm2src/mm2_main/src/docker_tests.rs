@@ -1158,7 +1158,7 @@ mod docker_tests {
     }
 
     #[test]
-    fn test_watcher_spends_taker_spends_maker_payment() {
+    fn test_watcher_spends_maker_payment_spend() {
         let (_ctx, _, bob_priv_key) = generate_utxo_coin_with_random_privkey("MYCOIN", 100.into());
         generate_utxo_coin_with_privkey("MYCOIN1", 100.into(), &bob_priv_key);
         let (_ctx, _, alice_priv_key) = generate_utxo_coin_with_random_privkey("MYCOIN1", 100.into());
