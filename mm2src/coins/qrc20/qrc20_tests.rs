@@ -1,6 +1,6 @@
 use super::*;
 use crate::utxo::rpc_clients::UnspentInfo;
-use crate::TxFeeDetails;
+use crate::{TxFeeDetails, TAKER_PAYMENT_SPEND_SEARCH_INTERVAL};
 use chain::OutPoint;
 use common::{block_on, DEX_FEE_ADDR_RAW_PUBKEY};
 use itertools::Itertools;
@@ -401,7 +401,14 @@ fn test_wait_for_tx_spend_malicious() {
     let wait_until = (now_ms() / 1000) + 1;
     let from_block = 696245;
     let found = coin
-        .wait_for_htlc_tx_spend(&payment_tx, &[], wait_until, from_block, &coin.swap_contract_address())
+        .wait_for_htlc_tx_spend(
+            &payment_tx,
+            &[],
+            wait_until,
+            from_block,
+            &coin.swap_contract_address(),
+            TAKER_PAYMENT_SPEND_SEARCH_INTERVAL,
+        )
         .wait()
         .unwrap();
 

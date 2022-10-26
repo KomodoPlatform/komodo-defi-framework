@@ -742,7 +742,7 @@ impl SwapOps for QtumCoin {
 #[async_trait]
 impl WatcherOps for QtumCoin {
     #[inline]
-    fn create_taker_spends_maker_payment_preimage(
+    fn create_maker_payment_spend_preimage(
         &self,
         maker_payment_tx: &[u8],
         time_lock: u32,
@@ -750,7 +750,7 @@ impl WatcherOps for QtumCoin {
         secret_hash: &[u8],
         swap_unique_data: &[u8],
     ) -> TransactionFut {
-        utxo_common::create_taker_spends_maker_payment_preimage(
+        utxo_common::create_maker_payment_spend_preimage(
             self.clone(),
             maker_payment_tx,
             time_lock,
@@ -761,12 +761,12 @@ impl WatcherOps for QtumCoin {
     }
 
     #[inline]
-    fn send_taker_spends_maker_payment_preimage(&self, preimage: &[u8], secret: &[u8]) -> TransactionFut {
-        utxo_common::send_taker_spends_maker_payment_preimage(self.clone(), preimage, secret)
+    fn send_maker_payment_spend_preimage(&self, preimage: &[u8], secret: &[u8]) -> TransactionFut {
+        utxo_common::send_maker_payment_spend_preimage(self.clone(), preimage, secret)
     }
 
     #[inline]
-    fn create_taker_refunds_payment_preimage(
+    fn create_taker_payment_refund_preimage(
         &self,
         taker_payment_tx: &[u8],
         time_lock: u32,
@@ -775,7 +775,7 @@ impl WatcherOps for QtumCoin {
         _swap_contract_address: &Option<BytesJson>,
         swap_unique_data: &[u8],
     ) -> TransactionFut {
-        utxo_common::create_taker_refunds_payment_preimage(
+        utxo_common::create_taker_payment_refund_preimage(
             self.clone(),
             taker_payment_tx,
             time_lock,
@@ -786,8 +786,8 @@ impl WatcherOps for QtumCoin {
     }
 
     #[inline]
-    fn send_watcher_refunds_taker_payment_preimage(&self, taker_refunds_payment: &[u8]) -> TransactionFut {
-        utxo_common::send_watcher_refunds_taker_payment_preimage(self.clone(), taker_refunds_payment)
+    fn send_taker_payment_refund_preimage(&self, taker_refunds_payment: &[u8]) -> TransactionFut {
+        utxo_common::send_taker_payment_refund_preimage(self.clone(), taker_refunds_payment)
     }
 
     #[inline]
@@ -872,6 +872,7 @@ impl MarketCoinOps for QtumCoin {
         wait_until: u64,
         from_block: u64,
         _swap_contract_address: &Option<BytesJson>,
+        check_every: f64,
     ) -> TransactionFut {
         utxo_common::wait_for_output_spend(
             &self.utxo_arc,
@@ -879,6 +880,7 @@ impl MarketCoinOps for QtumCoin {
             utxo_common::DEFAULT_SWAP_VOUT,
             from_block,
             wait_until,
+            check_every,
         )
     }
 

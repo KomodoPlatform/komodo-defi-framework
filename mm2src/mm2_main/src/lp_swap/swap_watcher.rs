@@ -1,8 +1,8 @@
-use super::{broadcast_p2p_tx_msg, lp_coinfind, tx_helper_topic, wait_for_taker_payment_conf_until, H256Json,
-            SwapsContext, TransactionIdentifier, WAIT_CONFIRM_INTERVAL};
+use super::{broadcast_p2p_tx_msg, lp_coinfind, taker_payment_spend_deadline, tx_helper_topic, H256Json, SwapsContext,
+            WAIT_CONFIRM_INTERVAL};
 use crate::mm2::MmError;
 use async_trait::async_trait;
-use coins::{CanRefundHtlc, FoundSwapTxSpend, MmCoinEnum, WatcherSearchForSwapTxSpendInput, WatcherValidatePaymentInput};
+use coins::{CanRefundHtlc, MmCoinEnum, WatcherValidatePaymentInput, TAKER_PAYMENT_SPEND_SEARCH_INTERVAL};
 use common::executor::{AbortSettings, SpawnAbortable, Timer};
 use common::log::{error, info};
 use common::state_machine::prelude::*;
@@ -13,8 +13,6 @@ use mm2_number::BigDecimal;
 use std::cmp::min;
 use std::sync::Arc;
 use uuid::Uuid;
-
-#[cfg(not(test))] use common::now_ms;
 
 pub const WATCHER_PREFIX: TopicPrefix = "swpwtchr";
 const TAKER_SWAP_CONFIRMATIONS: u64 = 1;
@@ -38,8 +36,8 @@ pub enum SwapWatcherMsg {
 pub struct TakerSwapWatcherData {
     pub uuid: Uuid,
     pub secret_hash: Vec<u8>,
-    pub taker_spends_maker_payment_preimage: Vec<u8>,
-    pub taker_refunds_payment: Vec<u8>,
+    pub maker_payment_spend_preimage: Vec<u8>,
+    pub taker_payment_refund_preimage: Vec<u8>,
     pub swap_started_at: u64,
     pub lock_duration: u64,
     pub taker_coin: String,
@@ -53,6 +51,8 @@ pub struct TakerSwapWatcherData {
     pub taker_amount: BigDecimal,
     pub maker_coin: String,
     pub maker_pub: Vec<u8>,
+    pub maker_payment_hex: Vec<u8>,
+    pub maker_coin_start_block: u64,
 }
 
 struct ValidatePublicKeys {}
@@ -84,16 +84,15 @@ enum StopReason {
 enum WatcherSuccess {
     MakerPaymentSpent,
     TakerPaymentRefunded,
-    TakerPaymentAlreadySpent,
-    TakerPaymentAlreadyRefunded,
+    #[cfg(not(test))]
+    MakerPaymentSpentByTaker,
 }
 
 #[derive(Debug)]
 enum WatcherError {
-    InvalidValidatePublicKey(String),
+    InvalidPublicKey(String),
     InvalidTakerFee(String),
     TakerPaymentNotConfirmed(String),
-    TakerPaymentSearchForSwapFailed(String),
     InvalidTakerPayment(String),
     UnableToExtractSecret(String),
     MakerPaymentSpendFailed(String),
@@ -133,15 +132,14 @@ impl State for ValidatePublicKeys {
             Ok(is_valid) => is_valid,
             Err(err) => {
                 return Self::change_state(Stopped::from_reason(StopReason::Error(
-                    WatcherError::InvalidValidatePublicKey(err).into(),
+                    WatcherError::InvalidPublicKey(err).into(),
                 )))
             },
         };
 
         if !redeem_pub_valid || watcher_ctx.verified_pub != watcher_ctx.data.taker_pub {
             return Self::change_state(Stopped::from_reason(StopReason::Error(
-                WatcherError::InvalidValidatePublicKey("Public key does not belong to taker payment".to_string())
-                    .into(),
+                WatcherError::InvalidPublicKey("Public key does not belong to taker payment".to_string()).into(),
             )));
         }
 
@@ -171,48 +169,14 @@ impl State for ValidateTakerFee {
     }
 }
 
-// TODO: Do this check periodically while waiting for taker payment spend
 #[async_trait]
 impl State for ValidateTakerPayment {
     type Ctx = WatcherContext;
     type Result = ();
 
     async fn on_changed(self: Box<Self>, watcher_ctx: &mut WatcherContext) -> StateResult<Self::Ctx, Self::Result> {
-        let search_input = WatcherSearchForSwapTxSpendInput {
-            time_lock: watcher_ctx.data.taker_payment_lock as u32,
-            taker_pub: &watcher_ctx.data.taker_pub,
-            maker_pub: &watcher_ctx.data.maker_pub,
-            secret_hash: &watcher_ctx.data.secret_hash,
-            tx: &watcher_ctx.data.taker_payment_hex,
-            search_from_block: watcher_ctx.data.taker_coin_start_block,
-            swap_contract_address: &None,
-        };
-
-        match watcher_ctx
-            .taker_coin
-            .watcher_search_for_swap_tx_spend(search_input)
-            .await
-        {
-            Ok(Some(FoundSwapTxSpend::Spent(_))) => {
-                return Self::change_state(Stopped::from_reason(StopReason::Finished(
-                    WatcherSuccess::TakerPaymentAlreadySpent,
-                )))
-            },
-            Ok(Some(FoundSwapTxSpend::Refunded(_))) => {
-                return Self::change_state(Stopped::from_reason(StopReason::Finished(
-                    WatcherSuccess::TakerPaymentAlreadyRefunded,
-                )))
-            },
-            Err(err) => {
-                return Self::change_state(Stopped::from_reason(StopReason::Error(
-                    WatcherError::TakerPaymentSearchForSwapFailed(err).into(),
-                )))
-            },
-            Ok(None) => (),
-        }
-
         let wait_taker_payment =
-            wait_for_taker_payment_conf_until(watcher_ctx.data.swap_started_at, watcher_ctx.data.lock_duration);
+            taker_payment_spend_deadline(watcher_ctx.data.swap_started_at, watcher_ctx.data.lock_duration);
         let confirmations = min(watcher_ctx.data.taker_payment_confirmations, TAKER_SWAP_CONFIRMATIONS);
 
         let wait_f = watcher_ctx
@@ -263,16 +227,52 @@ impl State for WaitForTakerPaymentSpend {
     type Result = ();
 
     async fn on_changed(self: Box<Self>, watcher_ctx: &mut WatcherContext) -> StateResult<Self::Ctx, Self::Result> {
+        // Until taker payment spend deadline, periodically check for taker payment spend and maker payment spend
         #[cfg(not(test))]
         {
-            // Sleep for half the locktime to allow the taker to spend the maker payment first
-            let now = now_ms() / 1000;
-            let wait_for_taker_until =
-                wait_for_taker_payment_conf_until(watcher_ctx.data.swap_started_at, watcher_ctx.data.lock_duration);
-            let sleep_duration = (wait_for_taker_until - now + 1) as f64;
+            const PAYMENT_SEARCH_INTERVAL: f64 = 10.;
+            let wait_until =
+                taker_payment_spend_deadline(watcher_ctx.data.swap_started_at, watcher_ctx.data.lock_duration);
 
-            if now < wait_for_taker_until {
-                Timer::sleep(sleep_duration).await;
+            let f = watcher_ctx.taker_coin.wait_for_htlc_tx_spend(
+                &watcher_ctx.data.taker_payment_hex,
+                &[],
+                wait_until,
+                watcher_ctx.data.taker_coin_start_block,
+                &None,
+                PAYMENT_SEARCH_INTERVAL,
+            );
+
+            if let Ok(tx) = f.compat().await {
+                let f = watcher_ctx.maker_coin.wait_for_htlc_tx_spend(
+                    &watcher_ctx.data.maker_payment_hex,
+                    &[],
+                    wait_until,
+                    watcher_ctx.data.maker_coin_start_block,
+                    &None,
+                    PAYMENT_SEARCH_INTERVAL,
+                );
+                match f.compat().await {
+                    Ok(_) => {
+                        return Self::change_state(Stopped::from_reason(StopReason::Finished(
+                            WatcherSuccess::MakerPaymentSpentByTaker,
+                        )))
+                    },
+                    Err(_) => {
+                        let secret = match watcher_ctx
+                            .taker_coin
+                            .extract_secret(&watcher_ctx.data.secret_hash, &tx.tx_hex())
+                        {
+                            Ok(bytes) => H256Json::from(bytes.as_slice()),
+                            Err(err) => {
+                                return Self::change_state(Stopped::from_reason(StopReason::Error(
+                                    WatcherError::UnableToExtractSecret(err).into(),
+                                )))
+                            },
+                        };
+                        return Self::change_state(SpendMakerPayment::new(secret));
+                    },
+                };
             }
         }
 
@@ -282,8 +282,8 @@ impl State for WaitForTakerPaymentSpend {
             watcher_ctx.data.taker_payment_lock,
             watcher_ctx.data.taker_coin_start_block,
             &None,
+            TAKER_PAYMENT_SPEND_SEARCH_INTERVAL,
         );
-
         let tx = match f.compat().await {
             Ok(t) => t,
             Err(err) => {
@@ -292,16 +292,11 @@ impl State for WaitForTakerPaymentSpend {
             },
         };
 
-        let tx_hash = tx.tx_hash();
-        info!("Taker payment spend tx {:02x}", tx_hash);
-        let tx_ident = TransactionIdentifier {
-            tx_hex: tx.tx_hex().into(),
-            tx_hash,
-        };
+        info!("Found taker payment spend tx {:02x} as watcher", tx.tx_hash());
 
         let secret = match watcher_ctx
             .taker_coin
-            .extract_secret(&watcher_ctx.data.secret_hash, &tx_ident.tx_hex.0)
+            .extract_secret(&watcher_ctx.data.secret_hash, &tx.tx_hex())
         {
             Ok(bytes) => H256Json::from(bytes.as_slice()),
             Err(err) => {
@@ -321,10 +316,9 @@ impl State for SpendMakerPayment {
     type Result = ();
 
     async fn on_changed(self: Box<Self>, watcher_ctx: &mut WatcherContext) -> StateResult<Self::Ctx, Self::Result> {
-        let spend_fut = watcher_ctx.maker_coin.send_taker_spends_maker_payment_preimage(
-            &watcher_ctx.data.taker_spends_maker_payment_preimage,
-            &self.secret.0,
-        );
+        let spend_fut = watcher_ctx
+            .maker_coin
+            .send_maker_payment_spend_preimage(&watcher_ctx.data.maker_payment_spend_preimage, &self.secret.0);
 
         let transaction = match spend_fut.compat().await {
             Ok(t) => t,
@@ -384,7 +378,7 @@ impl State for RefundTakerPayment {
 
         let refund_fut = watcher_ctx
             .taker_coin
-            .send_watcher_refunds_taker_payment_preimage(&watcher_ctx.data.taker_refunds_payment);
+            .send_taker_payment_refund_preimage(&watcher_ctx.data.taker_payment_refund_preimage);
         let transaction = match refund_fut.compat().await {
             Ok(t) => t,
             Err(err) => {

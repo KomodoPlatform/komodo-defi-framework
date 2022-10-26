@@ -7,7 +7,7 @@ use coins::utxo::rpc_clients::UtxoRpcClientEnum;
 use coins::utxo::utxo_common::big_decimal_from_sat;
 use coins::utxo::{UtxoActivationParams, UtxoCommonOps};
 use coins::{FeeApproxStage, FoundSwapTxSpend, MarketCoinOps, MmCoin, SearchForSwapTxSpendInput, SwapOps,
-            TradePreimageValue, TransactionEnum, ValidatePaymentInput};
+            TradePreimageValue, TransactionEnum, ValidatePaymentInput, TAKER_PAYMENT_SPEND_SEARCH_INTERVAL};
 use common::log::debug;
 use common::{temp_dir, DEX_FEE_ADDR_RAW_PUBKEY};
 use ethereum_types::H160;
@@ -758,6 +758,7 @@ fn test_wait_for_tx_spend() {
             wait_until,
             from_block,
             &maker_coin.swap_contract_address(),
+            TAKER_PAYMENT_SPEND_SEARCH_INTERVAL,
         )
         .wait()
         .expect_err("Expected 'Waited too long' error");
@@ -797,6 +798,7 @@ fn test_wait_for_tx_spend() {
             wait_until,
             from_block,
             &maker_coin.swap_contract_address(),
+            TAKER_PAYMENT_SPEND_SEARCH_INTERVAL,
         )
         .wait()
         .unwrap();

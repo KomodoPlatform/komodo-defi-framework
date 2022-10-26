@@ -22,6 +22,7 @@ use crate::utxo::utxo_sql_block_header_storage::SqliteBlockHeadersStorage;
 use crate::utxo::utxo_standard::{utxo_standard_coin_with_priv_key, UtxoStandardCoin};
 use crate::utxo::utxo_tx_history_v2::{UtxoTxDetailsParams, UtxoTxHistoryOps};
 #[cfg(not(target_arch = "wasm32"))] use crate::WithdrawFee;
+use crate::TAKER_PAYMENT_SPEND_SEARCH_INTERVAL;
 use crate::{BlockHeightAndTime, CoinBalance, PrivKeyBuildPolicy, SearchForSwapTxSpendInput, StakingInfosDetails,
             SwapOps, TradePreimageValue, TxFeeDetails, TxMarshalingErr};
 use chain::{BlockHeader, OutPoint};
@@ -399,7 +400,14 @@ fn test_wait_for_payment_spend_timeout_native() {
     let from_block = 1000;
 
     assert!(coin
-        .wait_for_htlc_tx_spend(&transaction, &[], wait_until, from_block, &None)
+        .wait_for_htlc_tx_spend(
+            &transaction,
+            &[],
+            wait_until,
+            from_block,
+            &None,
+            TAKER_PAYMENT_SPEND_SEARCH_INTERVAL
+        )
         .wait()
         .is_err());
     assert!(unsafe { OUTPUT_SPEND_CALLED });
@@ -436,7 +444,14 @@ fn test_wait_for_payment_spend_timeout_electrum() {
     let from_block = 1000;
 
     assert!(coin
-        .wait_for_htlc_tx_spend(&transaction, &[], wait_until, from_block, &None)
+        .wait_for_htlc_tx_spend(
+            &transaction,
+            &[],
+            wait_until,
+            from_block,
+            &None,
+            TAKER_PAYMENT_SPEND_SEARCH_INTERVAL
+        )
         .wait()
         .is_err());
     assert!(unsafe { OUTPUT_SPEND_CALLED });

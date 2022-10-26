@@ -1360,6 +1360,7 @@ impl MarketCoinOps for TendermintCoin {
         wait_until: u64,
         _from_block: u64,
         _swap_contract_address: &Option<BytesJson>,
+        _check_every: f64,
     ) -> TransactionFut {
         let tx = try_tx_fus!(cosmrs::Tx::from_bytes(transaction));
         let first_message = try_tx_fus!(tx.body.messages.first().ok_or("Tx body couldn't be read."));
@@ -1725,9 +1726,8 @@ impl SwapOps for TendermintCoin {
 }
 
 #[async_trait]
-#[allow(unused_variables)]
 impl WatcherOps for TendermintCoin {
-    fn create_taker_spends_maker_payment_preimage(
+    fn create_maker_payment_spend_preimage(
         &self,
         _maker_payment_tx: &[u8],
         _time_lock: u32,
@@ -1738,11 +1738,11 @@ impl WatcherOps for TendermintCoin {
         unimplemented!();
     }
 
-    fn send_taker_spends_maker_payment_preimage(&self, preimage: &[u8], secret: &[u8]) -> TransactionFut {
+    fn send_maker_payment_spend_preimage(&self, _preimage: &[u8], _secret: &[u8]) -> TransactionFut {
         unimplemented!();
     }
 
-    fn create_taker_refunds_payment_preimage(
+    fn create_taker_payment_refund_preimage(
         &self,
         _taker_payment_tx: &[u8],
         _time_lock: u32,
@@ -1754,7 +1754,7 @@ impl WatcherOps for TendermintCoin {
         unimplemented!();
     }
 
-    fn send_watcher_refunds_taker_payment_preimage(&self, _taker_refunds_payment: &[u8]) -> TransactionFut {
+    fn send_taker_payment_refund_preimage(&self, _taker_refunds_payment: &[u8]) -> TransactionFut {
         unimplemented!();
     }
 
@@ -1764,7 +1764,7 @@ impl WatcherOps for TendermintCoin {
 
     async fn watcher_search_for_swap_tx_spend(
         &self,
-        input: WatcherSearchForSwapTxSpendInput<'_>,
+        _input: WatcherSearchForSwapTxSpendInput<'_>,
     ) -> Result<Option<FoundSwapTxSpend>, String> {
         unimplemented!();
     }
@@ -1778,6 +1778,7 @@ impl WatcherOps for TendermintCoin {
 pub mod tendermint_coin_tests {
     use super::*;
     use crate::tendermint::htlc_proto::ClaimHtlcProtoRep;
+    use crate::TAKER_PAYMENT_SPEND_SEARCH_INTERVAL;
     use common::{block_on, DEX_FEE_ADDR_RAW_PUBKEY};
     use cosmrs::proto::cosmos::tx::v1beta1::{GetTxRequest, GetTxResponse, GetTxsEventResponse};
     use rand::{thread_rng, Rng};
@@ -2054,8 +2055,15 @@ pub mod tendermint_coin_tests {
 
         let secret_hash = hex::decode("0C34C71EBA2A51738699F9F3D6DAFFB15BE576E8ED543203485791B5DA39D10D").unwrap();
         let spend_tx = block_on(
-            coin.wait_for_htlc_tx_spend(&encoded_tx, &secret_hash, get_utc_timestamp() as u64, 0, &None)
-                .compat(),
+            coin.wait_for_htlc_tx_spend(
+                &encoded_tx,
+                &secret_hash,
+                get_utc_timestamp() as u64,
+                0,
+                &None,
+                TAKER_PAYMENT_SPEND_SEARCH_INTERVAL,
+            )
+            .compat(),
         )
         .unwrap();
 

@@ -6,7 +6,7 @@ use crate::utxo::rpc_clients::{BestBlock as RpcBestBlock, BlockHashOrHeight, Con
 use crate::utxo::spv::SimplePaymentVerification;
 use crate::utxo::utxo_standard::UtxoStandardCoin;
 use crate::utxo::GetConfirmedTxError;
-use crate::{MarketCoinOps, MmCoin};
+use crate::{MarketCoinOps, MmCoin, TAKER_PAYMENT_SPEND_SEARCH_INTERVAL};
 use bitcoin::blockdata::block::BlockHeader;
 use bitcoin::blockdata::script::Script;
 use bitcoin::blockdata::transaction::Transaction;
@@ -520,6 +520,7 @@ impl Platform {
                 (now_ms() / 1000) + 3600,
                 from_block.try_into()?,
                 &None,
+                TAKER_PAYMENT_SPEND_SEARCH_INTERVAL,
             )
             .compat()
             .await

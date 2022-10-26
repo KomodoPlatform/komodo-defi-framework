@@ -1049,7 +1049,7 @@ impl SwapOps for Qrc20Coin {
 
 #[async_trait]
 impl WatcherOps for Qrc20Coin {
-    fn create_taker_spends_maker_payment_preimage(
+    fn create_maker_payment_spend_preimage(
         &self,
         _maker_payment_tx: &[u8],
         _time_lock: u32,
@@ -1060,11 +1060,11 @@ impl WatcherOps for Qrc20Coin {
         unimplemented!();
     }
 
-    fn send_taker_spends_maker_payment_preimage(&self, _preimage: &[u8], _secret: &[u8]) -> TransactionFut {
+    fn send_maker_payment_spend_preimage(&self, _preimage: &[u8], _secret: &[u8]) -> TransactionFut {
         unimplemented!();
     }
 
-    fn create_taker_refunds_payment_preimage(
+    fn create_taker_payment_refund_preimage(
         &self,
         _taker_payment_tx: &[u8],
         _time_lock: u32,
@@ -1076,7 +1076,7 @@ impl WatcherOps for Qrc20Coin {
         unimplemented!();
     }
 
-    fn send_watcher_refunds_taker_payment_preimage(&self, _taker_refunds_payment: &[u8]) -> TransactionFut {
+    fn send_taker_payment_refund_preimage(&self, _taker_refunds_payment: &[u8]) -> TransactionFut {
         unimplemented!();
     }
 
@@ -1191,13 +1191,14 @@ impl MarketCoinOps for Qrc20Coin {
         wait_until: u64,
         from_block: u64,
         _swap_contract_address: &Option<BytesJson>,
+        check_every: f64,
     ) -> TransactionFut {
         let tx: UtxoTx = try_tx_fus!(deserialize(transaction).map_err(|e| ERRL!("{:?}", e)));
 
         let selfi = self.clone();
         let fut = async move {
             selfi
-                .wait_for_tx_spend_impl(tx, wait_until, from_block)
+                .wait_for_tx_spend_impl(tx, wait_until, from_block, check_every)
                 .map_err(TransactionErr::Plain)
                 .await
         };

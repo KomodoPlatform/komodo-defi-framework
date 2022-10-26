@@ -1,4 +1,5 @@
 use super::*;
+use crate::TAKER_PAYMENT_SPEND_SEARCH_INTERVAL;
 use common::block_on;
 use mm2_core::mm_ctx::{MmArc, MmCtxBuilder};
 use mm2_test_helpers::for_tests::{ETH_MAINNET_NODE, ETH_MAINNET_SWAP_CONTRACT};
@@ -474,7 +475,14 @@ fn test_wait_for_payment_spend_timeout() {
     ];
 
     assert!(coin
-        .wait_for_htlc_tx_spend(&tx_bytes, &[], wait_until, from_block, &coin.swap_contract_address())
+        .wait_for_htlc_tx_spend(
+            &tx_bytes,
+            &[],
+            wait_until,
+            from_block,
+            &coin.swap_contract_address(),
+            TAKER_PAYMENT_SPEND_SEARCH_INTERVAL
+        )
         .wait()
         .is_err());
 }

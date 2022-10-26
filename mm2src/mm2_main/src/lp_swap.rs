@@ -312,9 +312,7 @@ pub fn get_payment_locktime() -> u64 {
 }
 
 #[inline]
-pub fn wait_for_taker_payment_conf_until(swap_started_at: u64, locktime: u64) -> u64 {
-    swap_started_at + (locktime * 4) / 5
-}
+pub fn taker_payment_spend_deadline(swap_started_at: u64, locktime: u64) -> u64 { swap_started_at + (locktime * 4) / 5 }
 
 #[inline]
 pub fn wait_for_maker_payment_conf_until(swap_started_at: u64, locktime: u64) -> u64 {

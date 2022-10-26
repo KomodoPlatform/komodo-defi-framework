@@ -268,6 +268,8 @@ pub type RawTransactionResult = Result<RawTransactionRes, MmError<RawTransaction
 pub type RawTransactionFut<'a> =
     Box<dyn Future<Item = RawTransactionRes, Error = MmError<RawTransactionError>> + Send + 'a>;
 
+pub const TAKER_PAYMENT_SPEND_SEARCH_INTERVAL: f64 = 10.;
+
 #[derive(Debug, Deserialize, Display, Serialize, SerializeErrorType)]
 #[serde(tag = "error_type", content = "error_data")]
 pub enum RawTransactionError {
@@ -634,11 +636,11 @@ pub trait SwapOps {
 
 #[async_trait]
 pub trait WatcherOps {
-    fn send_taker_spends_maker_payment_preimage(&self, preimage: &[u8], secret: &[u8]) -> TransactionFut;
+    fn send_maker_payment_spend_preimage(&self, preimage: &[u8], secret: &[u8]) -> TransactionFut;
 
-    fn send_watcher_refunds_taker_payment_preimage(&self, _taker_refunds_payment: &[u8]) -> TransactionFut;
+    fn send_taker_payment_refund_preimage(&self, preimage: &[u8]) -> TransactionFut;
 
-    fn create_taker_refunds_payment_preimage(
+    fn create_taker_payment_refund_preimage(
         &self,
         _taker_payment_tx: &[u8],
         _time_lock: u32,
@@ -648,7 +650,7 @@ pub trait WatcherOps {
         _swap_unique_data: &[u8],
     ) -> TransactionFut;
 
-    fn create_taker_spends_maker_payment_preimage(
+    fn create_maker_payment_spend_preimage(
         &self,
         _maker_payment_tx: &[u8],
         _time_lock: u32,
@@ -725,6 +727,7 @@ pub trait MarketCoinOps {
         wait_until: u64,
         from_block: u64,
         swap_contract_address: &Option<BytesJson>,
+        check_every: f64,
     ) -> TransactionFut;
 
     fn tx_enum_from_bytes(&self, bytes: &[u8]) -> Result<TransactionEnum, MmError<TxMarshalingErr>>;
@@ -733,7 +736,7 @@ pub trait MarketCoinOps {
 
     fn display_priv_key(&self) -> Result<String, String>;
 
-    /// Get the minimum amount to send.
+    /// Get the minimum amount to send.s
     fn min_tx_amount(&self) -> BigDecimal;
 
     /// Get the minimum amount to trade.

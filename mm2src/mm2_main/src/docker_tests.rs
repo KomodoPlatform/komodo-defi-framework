@@ -1296,12 +1296,12 @@ mod docker_tests {
             .unwrap();
 
         let refund_tx = coin
-            .create_taker_refunds_payment_preimage(&tx.tx_hex(), time_lock, my_public_key, &[0; 20], &None, &[])
+            .create_taker_payment_refund_preimage(&tx.tx_hex(), time_lock, my_public_key, &[0; 20], &None, &[])
             .wait()
             .unwrap();
 
         let refund_tx = coin
-            .send_watcher_refunds_taker_payment_preimage(&refund_tx.tx_hex())
+            .send_taker_payment_refund_preimage(&refund_tx.tx_hex())
             .wait()
             .unwrap();
 

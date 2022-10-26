@@ -1287,7 +1287,7 @@ pub fn send_maker_spends_taker_payment<T: UtxoCommonOps + SwapOps>(
     Box::new(fut.boxed().compat())
 }
 
-pub fn send_taker_spends_maker_payment_preimage<T: UtxoCommonOps + SwapOps>(
+pub fn send_maker_payment_spend_preimage<T: UtxoCommonOps + SwapOps>(
     coin: T,
     preimage: &[u8],
     secret: &[u8],
@@ -1330,7 +1330,7 @@ pub fn send_taker_spends_maker_payment_preimage<T: UtxoCommonOps + SwapOps>(
     Box::new(fut.boxed().compat())
 }
 
-pub fn create_taker_spends_maker_payment_preimage<T: UtxoCommonOps + SwapOps>(
+pub fn create_maker_payment_spend_preimage<T: UtxoCommonOps + SwapOps>(
     coin: T,
     maker_payment_tx: &[u8],
     time_lock: u32,
@@ -1391,7 +1391,7 @@ pub fn create_taker_spends_maker_payment_preimage<T: UtxoCommonOps + SwapOps>(
     Box::new(fut.boxed().compat())
 }
 
-pub fn create_taker_refunds_payment_preimage<T: UtxoCommonOps + SwapOps>(
+pub fn create_taker_payment_refund_preimage<T: UtxoCommonOps + SwapOps>(
     coin: T,
     taker_payment_tx: &[u8],
     time_lock: u32,
@@ -1581,12 +1581,12 @@ pub fn send_taker_refunds_payment<T: UtxoCommonOps + SwapOps>(
     Box::new(fut.boxed().compat())
 }
 
-pub fn send_watcher_refunds_taker_payment_preimage<T: UtxoCommonOps + SwapOps>(
+pub fn send_taker_payment_refund_preimage<T: UtxoCommonOps + SwapOps>(
     coin: T,
-    taker_refunds_payment: &[u8],
+    taker_payment_refund_preimage: &[u8],
 ) -> TransactionFut {
     let transaction: UtxoTx =
-        try_tx_fus!(deserialize(taker_refunds_payment).map_err(|e| TransactionErr::Plain(format!("{:?}", e))));
+        try_tx_fus!(deserialize(taker_payment_refund_preimage).map_err(|e| TransactionErr::Plain(format!("{:?}", e))));
 
     let fut = async move {
         let tx_fut = coin.as_ref().rpc_client.send_transaction(&transaction).compat();
@@ -2221,6 +2221,7 @@ pub fn wait_for_output_spend(
     output_index: usize,
     from_block: u64,
     wait_until: u64,
+    check_every: f64,
 ) -> TransactionFut {
     let mut tx: UtxoTx = try_tx_fus!(deserialize(tx_bytes).map_err(|e| ERRL!("{:?}", e)));
     tx.tx_hash_algo = coin.tx_hash_algo;
@@ -2255,7 +2256,7 @@ pub fn wait_for_output_spend(
                     output_index,
                 );
             }
-            Timer::sleep(10.).await;
+            Timer::sleep(check_every).await;
         }
     };
     Box::new(fut.boxed().compat())
@@ -3942,7 +3943,7 @@ where
         FeeApproxStage::StartSwap => base_percent,
         // Take into account that the dynamic fee may increase after roughly the locktime is expired [`UtxoCoinFields::tx_fee_volatility_percent`]:
         // - watcher can refund the taker payment after the locktime + an extra time to wait for the takers
-        // - the watcher can spend the taker_spends_maker_payment right after locktime/2, but the worst case should be considered which is slightly before
+        // - the watcher can spend the maker payment right after locktime/2, but the worst case should be considered which is slightly before
         //   the locktime is expired
         FeeApproxStage::WatcherPreimage => base_percent, //This needs discussion
         // Take into account that the dynamic fee may increase at each of the following stages up to [`UtxoCoinFields::tx_fee_volatility_percent`]:

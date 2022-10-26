@@ -5,9 +5,9 @@ use super::swap_lock::{SwapLock, SwapLockOps};
 use super::trade_preimage::{TradePreimageRequest, TradePreimageRpcError, TradePreimageRpcResult};
 use super::{broadcast_my_swap_status, broadcast_swap_message_every, check_other_coin_balance_for_swap,
             dex_fee_amount_from_taker_coin, get_locked_amount, recv_swap_msg, swap_topic,
-            wait_for_maker_payment_conf_until, wait_for_taker_payment_conf_until, AtomicSwap, LockedAmount,
-            MySwapInfo, NegotiationDataMsg, NegotiationDataV2, NegotiationDataV3, RecoveredSwap, RecoveredSwapAction,
-            SavedSwap, SavedSwapIo, SavedTradeFee, SwapConfirmationsSettings, SwapError, SwapMsg, SwapsContext,
+            taker_payment_spend_deadline, wait_for_maker_payment_conf_until, AtomicSwap, LockedAmount, MySwapInfo,
+            NegotiationDataMsg, NegotiationDataV2, NegotiationDataV3, RecoveredSwap, RecoveredSwapAction, SavedSwap,
+            SavedSwapIo, SavedTradeFee, SwapConfirmationsSettings, SwapError, SwapMsg, SwapsContext,
             TransactionIdentifier, WAIT_CONFIRM_INTERVAL};
 use crate::mm2::lp_dispatcher::{DispatcherContext, LpEvents};
 use crate::mm2::lp_network::subscribe_to_topic;
@@ -835,8 +835,7 @@ impl MakerSwap {
     }
 
     async fn validate_taker_payment(&self) -> Result<(Option<MakerSwapCommand>, Vec<MakerSwapEvent>), String> {
-        let wait_taker_payment =
-            wait_for_taker_payment_conf_until(self.r().data.started_at, self.r().data.lock_duration);
+        let wait_taker_payment = taker_payment_spend_deadline(self.r().data.started_at, self.r().data.lock_duration);
         let confirmations = self.r().data.taker_payment_confirmations;
 
         let wait_f = self
@@ -896,7 +895,7 @@ impl MakerSwap {
             ]));
         }
 
-        let timeout = wait_for_taker_payment_conf_until(self.r().data.started_at, self.r().data.lock_duration);
+        let timeout = taker_payment_spend_deadline(self.r().data.started_at, self.r().data.lock_duration);
         let now = now_ms() / 1000;
         if now > timeout {
             return Ok((Some(MakerSwapCommand::RefundMakerPayment), vec![
