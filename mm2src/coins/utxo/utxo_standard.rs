@@ -277,6 +277,7 @@ impl SwapOps for UtxoStandardCoin {
 
     fn send_maker_payment(
         &self,
+        _time_lock_duration: u64,
         time_lock: u32,
         taker_pub: &[u8],
         secret_hash: &[u8],
@@ -297,6 +298,7 @@ impl SwapOps for UtxoStandardCoin {
 
     fn send_taker_payment(
         &self,
+        _time_lock_duration: u64,
         time_lock: u32,
         maker_pub: &[u8],
         secret_hash: &[u8],
@@ -321,6 +323,7 @@ impl SwapOps for UtxoStandardCoin {
         time_lock: u32,
         taker_pub: &[u8],
         secret: &[u8],
+        secret_hash: &[u8],
         _swap_contract_address: &Option<BytesJson>,
         swap_unique_data: &[u8],
     ) -> TransactionFut {
@@ -330,6 +333,7 @@ impl SwapOps for UtxoStandardCoin {
             time_lock,
             taker_pub,
             secret,
+            secret_hash,
             swap_unique_data,
         )
     }
@@ -358,6 +362,7 @@ impl SwapOps for UtxoStandardCoin {
         time_lock: u32,
         maker_pub: &[u8],
         secret: &[u8],
+        secret_hash: &[u8],
         _swap_contract_address: &Option<BytesJson>,
         swap_unique_data: &[u8],
     ) -> TransactionFut {
@@ -367,6 +372,7 @@ impl SwapOps for UtxoStandardCoin {
             time_lock,
             maker_pub,
             secret,
+            secret_hash,
             swap_unique_data,
         )
     }
@@ -460,6 +466,7 @@ impl SwapOps for UtxoStandardCoin {
         _search_from_block: u64,
         _swap_contract_address: &Option<BytesJson>,
         swap_unique_data: &[u8],
+        _amount: &BigDecimal,
     ) -> Box<dyn Future<Item = Option<TransactionEnum>, Error = String> + Send> {
         utxo_common::check_if_my_payment_sent(self.clone(), time_lock, other_pub, secret_hash, swap_unique_data)
     }
@@ -582,9 +589,10 @@ impl MarketCoinOps for UtxoStandardCoin {
         )
     }
 
-    fn wait_for_tx_spend(
+    fn wait_for_htlc_tx_spend(
         &self,
         transaction: &[u8],
+        _secret_hash: &[u8],
         wait_until: u64,
         from_block: u64,
         _swap_contract_address: &Option<BytesJson>,

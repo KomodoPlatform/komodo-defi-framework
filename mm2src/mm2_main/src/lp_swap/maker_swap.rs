@@ -742,6 +742,7 @@ impl MakerSwap {
                 self.r().data.maker_coin_start_block,
                 &self.r().data.maker_coin_swap_contract_address,
                 &unique_data,
+                &self.maker_amount,
             )
             .compat();
 
@@ -750,6 +751,7 @@ impl MakerSwap {
                 Some(tx) => tx,
                 None => {
                     let payment_fut = self.maker_coin.send_maker_payment(
+                        self.r().data.lock_duration,
                         self.r().data.maker_payment_lock as u32,
                         &*self.r().other_maker_coin_htlc_pub,
                         secret_hash.as_slice(),
@@ -904,6 +906,7 @@ impl MakerSwap {
         let validate_input = ValidatePaymentInput {
             payment_tx: self.r().taker_payment.clone().unwrap().tx_hex.0,
             time_lock: self.taker_payment_lock.load(Ordering::Relaxed) as u32,
+            time_lock_duration: self.r().data.lock_duration,
             other_pub: self.r().other_taker_coin_htlc_pub.to_vec(),
             unique_swap_data: self.unique_swap_data(),
             secret_hash: self.secret_hash().to_vec(),
@@ -954,6 +957,7 @@ impl MakerSwap {
             self.taker_payment_lock.load(Ordering::Relaxed) as u32,
             &*self.r().other_taker_coin_htlc_pub,
             &self.r().data.secret.0,
+            &self.secret_hash(),
             &self.r().data.taker_coin_swap_contract_address,
             &self.unique_swap_data(),
         );
@@ -1236,6 +1240,7 @@ impl MakerSwap {
                     timelock,
                     other_taker_coin_htlc_pub.as_slice(),
                     &secret,
+                    &selfi.secret_hash(),
                     &taker_coin_swap_contract_address,
                     &selfi.unique_swap_data(),
                 )
@@ -1279,6 +1284,7 @@ impl MakerSwap {
                             maker_coin_start_block,
                             &maker_coin_swap_contract_address,
                             &unique_data,
+                            &self.maker_amount
                         )
                         .compat()
                         .await
@@ -2127,7 +2133,7 @@ mod maker_swap_tests {
             .mock_safe(|_, _| MockResult::Return(Box::new(futures01::future::ok(CanRefundHtlc::CanRefundNow))));
 
         static mut MY_PAYMENT_SENT_CALLED: bool = false;
-        TestCoin::check_if_my_payment_sent.mock_safe(|_, _, _, _, _, _, _| {
+        TestCoin::check_if_my_payment_sent.mock_safe(|_, _, _, _, _, _, _, _| {
             unsafe { MY_PAYMENT_SENT_CALLED = true };
             MockResult::Return(Box::new(futures01::future::ok(Some(eth_tx_for_test().into()))))
         });
@@ -2266,7 +2272,7 @@ mod maker_swap_tests {
         TestCoin::swap_contract_address.mock_safe(|_| MockResult::Return(None));
 
         static mut MY_PAYMENT_SENT_CALLED: bool = false;
-        TestCoin::check_if_my_payment_sent.mock_safe(|_, _, _, _, _, _, _| {
+        TestCoin::check_if_my_payment_sent.mock_safe(|_, _, _, _, _, _, _, _| {
             unsafe { MY_PAYMENT_SENT_CALLED = true };
             MockResult::Return(Box::new(futures01::future::ok(Some(eth_tx_for_test().into()))))
         });
@@ -2297,7 +2303,7 @@ mod maker_swap_tests {
         TestCoin::swap_contract_address.mock_safe(|_| MockResult::Return(None));
 
         static mut MY_PAYMENT_SENT_CALLED: bool = false;
-        TestCoin::check_if_my_payment_sent.mock_safe(|_, _, _, _, _, _, _| {
+        TestCoin::check_if_my_payment_sent.mock_safe(|_, _, _, _, _, _, _, _| {
             unsafe { MY_PAYMENT_SENT_CALLED = true };
             MockResult::Return(Box::new(futures01::future::ok(None)))
         });
@@ -2413,7 +2419,7 @@ mod maker_swap_tests {
         });
 
         static mut SEND_MAKER_SPENDS_TAKER_PAYMENT_CALLED: bool = false;
-        TestCoin::send_maker_spends_taker_payment.mock_safe(|_, _, _, _, _, _, _| {
+        TestCoin::send_maker_spends_taker_payment.mock_safe(|_, _, _, _, _, _, _, _| {
             unsafe { SEND_MAKER_SPENDS_TAKER_PAYMENT_CALLED = true }
             MockResult::Return(Box::new(futures01::future::ok(eth_tx_for_test().into())))
         });

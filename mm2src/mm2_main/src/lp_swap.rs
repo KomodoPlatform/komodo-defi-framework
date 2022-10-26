@@ -1246,6 +1246,10 @@ enum SecretHashAlgo {
     SHA256,
 }
 
+impl Default for SecretHashAlgo {
+    fn default() -> Self { SecretHashAlgo::DHASH160 }
+}
+
 impl SecretHashAlgo {
     fn hash_secret(&self, secret: &[u8]) -> Vec<u8> {
         match self {
@@ -1259,9 +1263,11 @@ impl SecretHashAlgo {
 #[cfg(not(target_arch = "wasm32"))]
 fn detect_secret_hash_algo(maker_coin: &MmCoinEnum, taker_coin: &MmCoinEnum) -> SecretHashAlgo {
     match (maker_coin, taker_coin) {
-        (MmCoinEnum::Tendermint(_) | MmCoinEnum::LightningCoin(_), _) => SecretHashAlgo::SHA256,
+        (MmCoinEnum::Tendermint(_) | MmCoinEnum::TendermintToken(_) | MmCoinEnum::LightningCoin(_), _) => {
+            SecretHashAlgo::SHA256
+        },
         // If taker is lightning coin the SHA256 of the secret will be sent as part of the maker signed invoice
-        (_, MmCoinEnum::Tendermint(_)) => SecretHashAlgo::SHA256,
+        (_, MmCoinEnum::Tendermint(_) | MmCoinEnum::TendermintToken(_)) => SecretHashAlgo::SHA256,
         (_, _) => SecretHashAlgo::DHASH160,
     }
 }
@@ -1269,8 +1275,8 @@ fn detect_secret_hash_algo(maker_coin: &MmCoinEnum, taker_coin: &MmCoinEnum) -> 
 #[cfg(target_arch = "wasm32")]
 fn detect_secret_hash_algo(maker_coin: &MmCoinEnum, taker_coin: &MmCoinEnum) -> SecretHashAlgo {
     match (maker_coin, taker_coin) {
-        (MmCoinEnum::Tendermint(_), _) => SecretHashAlgo::SHA256,
-        (_, MmCoinEnum::Tendermint(_)) => SecretHashAlgo::SHA256,
+        (MmCoinEnum::Tendermint(_) | MmCoinEnum::TendermintToken(_), _) => SecretHashAlgo::SHA256,
+        (_, MmCoinEnum::Tendermint(_) | MmCoinEnum::TendermintToken(_)) => SecretHashAlgo::SHA256,
         (_, _) => SecretHashAlgo::DHASH160,
     }
 }

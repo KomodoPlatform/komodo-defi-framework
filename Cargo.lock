@@ -1123,6 +1123,7 @@ dependencies = [
  "tonic",
  "tonic-build",
  "utxo_signer",
+ "uuid 0.7.4",
  "wasm-bindgen",
  "wasm-bindgen-futures",
  "wasm-bindgen-test",

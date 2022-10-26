@@ -546,13 +546,14 @@ impl SlpToken {
         other_pub: &Public,
         time_lock: u32,
         secret: &[u8],
+        secret_hash: &[u8],
         keypair: &KeyPair,
     ) -> Result<UtxoTx, MmError<SpendHtlcError>> {
         let tx: UtxoTx = deserialize(htlc_tx)?;
         let slp_tx: SlpTxDetails = deserialize(tx.outputs[0].script_pubkey.as_slice())?;
 
         let other_pub = Public::from_slice(other_pub)?;
-        let redeem = payment_script(time_lock, &*dhash160(secret), &other_pub, keypair.public());
+        let redeem = payment_script(time_lock, secret_hash, &other_pub, keypair.public());
 
         let slp_amount = match slp_tx.transaction {
             SlpTransaction::Send { token_id, amounts } => {
@@ -1141,9 +1142,10 @@ impl MarketCoinOps for SlpToken {
             .wait_for_confirmations(tx, confirmations, requires_nota, wait_until, check_every)
     }
 
-    fn wait_for_tx_spend(
+    fn wait_for_htlc_tx_spend(
         &self,
         transaction: &[u8],
+        _secret_hash: &[u8],
         wait_until: u64,
         from_block: u64,
         _swap_contract_address: &Option<BytesJson>,
@@ -1196,6 +1198,7 @@ impl SwapOps for SlpToken {
 
     fn send_maker_payment(
         &self,
+        _time_lock_duration: u64,
         time_lock: u32,
         taker_pub: &[u8],
         secret_hash: &[u8],
@@ -1222,6 +1225,7 @@ impl SwapOps for SlpToken {
 
     fn send_taker_payment(
         &self,
+        _time_lock_duration: u64,
         time_lock: u32,
         maker_pub: &[u8],
         secret_hash: &[u8],
@@ -1253,18 +1257,20 @@ impl SwapOps for SlpToken {
         time_lock: u32,
         taker_pub: &[u8],
         secret: &[u8],
+        secret_hash: &[u8],
         _swap_contract_address: &Option<BytesJson>,
         swap_unique_data: &[u8],
     ) -> TransactionFut {
         let tx = taker_payment_tx.to_owned();
         let taker_pub = try_tx_fus!(Public::from_slice(taker_pub));
         let secret = secret.to_owned();
+        let secret_hash = secret_hash.to_owned();
         let htlc_keypair = self.derive_htlc_key_pair(swap_unique_data);
         let coin = self.clone();
 
         let fut = async move {
             let tx = try_tx_s!(
-                coin.spend_htlc(&tx, &taker_pub, time_lock, &secret, &htlc_keypair)
+                coin.spend_htlc(&tx, &taker_pub, time_lock, &secret, &secret_hash, &htlc_keypair)
                     .await
             );
             Ok(tx.into())
@@ -1289,18 +1295,20 @@ impl SwapOps for SlpToken {
         time_lock: u32,
         maker_pub: &[u8],
         secret: &[u8],
+        secret_hash: &[u8],
         _swap_contract_address: &Option<BytesJson>,
         swap_unique_data: &[u8],
     ) -> TransactionFut {
         let tx = maker_payment_tx.to_owned();
         let maker_pub = try_tx_fus!(Public::from_slice(maker_pub));
         let secret = secret.to_owned();
+        let secret_hash = secret_hash.to_owned();
         let htlc_keypair = self.derive_htlc_key_pair(swap_unique_data);
         let coin = self.clone();
 
         let fut = async move {
             let tx = try_tx_s!(
-                coin.spend_htlc(&tx, &maker_pub, time_lock, &secret, &htlc_keypair)
+                coin.spend_htlc(&tx, &maker_pub, time_lock, &secret, &secret_hash, &htlc_keypair)
                     .await
             );
             Ok(tx.into())
@@ -1423,6 +1431,7 @@ impl SwapOps for SlpToken {
         _search_from_block: u64,
         _swap_contract_address: &Option<BytesJson>,
         swap_unique_data: &[u8],
+        _amount: &BigDecimal,
     ) -> Box<dyn Future<Item = Option<TransactionEnum>, Error = String> + Send> {
         utxo_common::check_if_my_payment_sent(
             self.platform_coin.clone(),
@@ -2026,6 +2035,7 @@ mod slp_tests {
         let input = ValidatePaymentInput {
             payment_tx,
             other_pub,
+            time_lock_duration: 0,
             time_lock: lock_time,
             secret_hash,
             amount,
@@ -2159,6 +2169,7 @@ mod slp_tests {
         let input = ValidatePaymentInput {
             payment_tx,
             other_pub: other_pub_bytes,
+            time_lock_duration: 0,
             time_lock: lock_time,
             secret_hash,
             amount,

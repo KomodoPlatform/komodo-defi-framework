@@ -216,7 +216,8 @@ use rpc_command::{init_account_balance::{AccountBalanceTaskManager, AccountBalan
                   init_withdraw::{WithdrawTaskManager, WithdrawTaskManagerShared}};
 
 pub mod tendermint;
-use tendermint::{TendermintCoin, TendermintFeeDetails, TendermintProtocolInfo};
+use tendermint::{CosmosTransaction, TendermintCoin, TendermintFeeDetails, TendermintProtocolInfo, TendermintToken,
+                 TendermintTokenProtocolInfo};
 
 #[doc(hidden)]
 #[allow(unused_variables)]
@@ -361,6 +362,7 @@ pub enum TransactionEnum {
     SignedEthTx(SignedEthTx),
     #[cfg(not(target_arch = "wasm32"))]
     ZTransaction(ZTransaction),
+    CosmosTransaction(CosmosTransaction),
     #[cfg(not(target_arch = "wasm32"))]
     LightningPayment(LightningPayment),
 }
@@ -389,6 +391,7 @@ impl Deref for TransactionEnum {
             TransactionEnum::SignedEthTx(ref t) => t,
             #[cfg(not(target_arch = "wasm32"))]
             TransactionEnum::ZTransaction(ref t) => t,
+            TransactionEnum::CosmosTransaction(ref t) => t,
             #[cfg(not(target_arch = "wasm32"))]
             TransactionEnum::LightningPayment(ref p) => p,
         }
@@ -478,6 +481,7 @@ pub struct WatcherValidatePaymentInput {
 #[derive(Clone, Debug)]
 pub struct ValidatePaymentInput {
     pub payment_tx: Vec<u8>,
+    pub time_lock_duration: u64,
     pub time_lock: u32,
     pub other_pub: Vec<u8>,
     pub secret_hash: Vec<u8>,
@@ -533,6 +537,7 @@ pub trait SwapOps {
     #[allow(clippy::too_many_arguments)]
     fn send_maker_payment(
         &self,
+        time_lock_duration: u64,
         time_lock: u32,
         taker_pub: &[u8],
         secret_hash: &[u8],
@@ -545,6 +550,7 @@ pub trait SwapOps {
     #[allow(clippy::too_many_arguments)]
     fn send_taker_payment(
         &self,
+        time_lock_duration: u64,
         time_lock: u32,
         maker_pub: &[u8],
         secret_hash: &[u8],
@@ -554,12 +560,14 @@ pub trait SwapOps {
         payment_instructions: &Option<PaymentInstructions>,
     ) -> TransactionFut;
 
+    #[allow(clippy::too_many_arguments)]
     fn send_maker_spends_taker_payment(
         &self,
         taker_payment_tx: &[u8],
         time_lock: u32,
         taker_pub: &[u8],
         secret: &[u8],
+        secret_hash: &[u8],
         swap_contract_address: &Option<BytesJson>,
         swap_unique_data: &[u8],
     ) -> TransactionFut;
@@ -573,12 +581,14 @@ pub trait SwapOps {
         _swap_unique_data: &[u8],
     ) -> TransactionFut;
 
+    #[allow(clippy::too_many_arguments)]
     fn send_taker_spends_maker_payment(
         &self,
         maker_payment_tx: &[u8],
         time_lock: u32,
         maker_pub: &[u8],
         secret: &[u8],
+        secret_hash: &[u8],
         swap_contract_address: &Option<BytesJson>,
         swap_unique_data: &[u8],
     ) -> TransactionFut;
@@ -624,6 +634,7 @@ pub trait SwapOps {
         _input: WatcherValidatePaymentInput,
     ) -> Box<dyn Future<Item = (), Error = MmError<ValidatePaymentError>> + Send>;
 
+    #[allow(clippy::too_many_arguments)]
     fn check_if_my_payment_sent(
         &self,
         time_lock: u32,
@@ -632,6 +643,7 @@ pub trait SwapOps {
         search_from_block: u64,
         swap_contract_address: &Option<BytesJson>,
         swap_unique_data: &[u8],
+        amount: &BigDecimal,
     ) -> Box<dyn Future<Item = Option<TransactionEnum>, Error = String> + Send>;
 
     async fn search_for_swap_tx_spend_my(
@@ -735,9 +747,10 @@ pub trait MarketCoinOps {
         check_every: u64,
     ) -> Box<dyn Future<Item = (), Error = String> + Send>;
 
-    fn wait_for_tx_spend(
+    fn wait_for_htlc_tx_spend(
         &self,
         transaction: &[u8],
+        secret_hash: &[u8],
         wait_until: u64,
         from_block: u64,
         swap_contract_address: &Option<BytesJson>,
@@ -830,6 +843,7 @@ pub struct WithdrawRequest {
     #[serde(default)]
     max: bool,
     fee: Option<WithdrawFee>,
+    memo: Option<String>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -871,24 +885,6 @@ pub struct VerificationRequest {
 }
 
 impl WithdrawRequest {
-    pub fn new(
-        coin: String,
-        from: Option<WithdrawFrom>,
-        to: String,
-        amount: BigDecimal,
-        max: bool,
-        fee: Option<WithdrawFee>,
-    ) -> WithdrawRequest {
-        WithdrawRequest {
-            coin,
-            from,
-            to,
-            amount,
-            max,
-            fee,
-        }
-    }
-
     pub fn new_max(coin: String, to: String) -> WithdrawRequest {
         WithdrawRequest {
             coin,
@@ -897,6 +893,7 @@ impl WithdrawRequest {
             amount: 0.into(),
             max: true,
             fee: None,
+            memo: None,
         }
     }
 }
@@ -954,6 +951,7 @@ impl<'de> Deserialize<'de> for TxFeeDetails {
             Qrc20(Qrc20FeeDetails),
             #[cfg(all(not(target_os = "ios"), not(target_os = "android"), not(target_arch = "wasm32")))]
             Solana(SolanaFeeDetails),
+            Tendermint(TendermintFeeDetails),
         }
 
         match Deserialize::deserialize(deserializer)? {
@@ -962,6 +960,7 @@ impl<'de> Deserialize<'de> for TxFeeDetails {
             TxFeeDetailsUnTagged::Qrc20(f) => Ok(TxFeeDetails::Qrc20(f)),
             #[cfg(all(not(target_os = "ios"), not(target_os = "android"), not(target_arch = "wasm32")))]
             TxFeeDetailsUnTagged::Solana(f) => Ok(TxFeeDetails::Solana(f)),
+            TxFeeDetailsUnTagged::Tendermint(f) => Ok(TxFeeDetails::Tendermint(f)),
         }
     }
 }
@@ -981,6 +980,10 @@ impl From<Qrc20FeeDetails> for TxFeeDetails {
 #[cfg(all(not(target_os = "ios"), not(target_os = "android"), not(target_arch = "wasm32")))]
 impl From<SolanaFeeDetails> for TxFeeDetails {
     fn from(solana_details: SolanaFeeDetails) -> Self { TxFeeDetails::Solana(solana_details) }
+}
+
+impl From<TendermintFeeDetails> for TxFeeDetails {
+    fn from(tendermint_details: TendermintFeeDetails) -> Self { TxFeeDetails::Tendermint(tendermint_details) }
 }
 
 #[derive(Clone, Debug, Deserialize, PartialEq, Serialize)]
@@ -1526,6 +1529,17 @@ pub enum WithdrawError {
         available: BigDecimal,
         required: BigDecimal,
     },
+    #[display(
+        fmt = "Not enough {} to afford fee. Available {}, required at least {}",
+        coin,
+        available,
+        required
+    )]
+    NotSufficientPlatformBalanceForFee {
+        coin: String,
+        available: BigDecimal,
+        required: BigDecimal,
+    },
     #[display(fmt = "Balance is zero")]
     ZeroBalanceToWithdrawMax,
     #[display(fmt = "The amount {} is too small, required at least {}", amount, threshold)]
@@ -1564,6 +1578,7 @@ impl HttpStatusCode for WithdrawError {
             WithdrawError::Timeout(_) => StatusCode::REQUEST_TIMEOUT,
             WithdrawError::CoinDoesntSupportInitWithdraw { .. }
             | WithdrawError::NotSufficientBalance { .. }
+            | WithdrawError::NotSufficientPlatformBalanceForFee { .. }
             | WithdrawError::ZeroBalanceToWithdrawMax
             | WithdrawError::AmountTooLow { .. }
             | WithdrawError::InvalidAddress(_)
@@ -1939,6 +1954,7 @@ pub enum MmCoinEnum {
     Bch(BchCoin),
     SlpToken(SlpToken),
     Tendermint(TendermintCoin),
+    TendermintToken(TendermintToken),
     #[cfg(all(not(target_os = "ios"), not(target_os = "android"), not(target_arch = "wasm32")))]
     SolanaCoin(SolanaCoin),
     #[cfg(all(not(target_os = "ios"), not(target_os = "android"), not(target_arch = "wasm32")))]
@@ -1990,6 +2006,10 @@ impl From<TendermintCoin> for MmCoinEnum {
     fn from(c: TendermintCoin) -> Self { MmCoinEnum::Tendermint(c) }
 }
 
+impl From<TendermintToken> for MmCoinEnum {
+    fn from(c: TendermintToken) -> Self { MmCoinEnum::TendermintToken(c) }
+}
+
 #[cfg(not(target_arch = "wasm32"))]
 impl From<LightningCoin> for MmCoinEnum {
     fn from(c: LightningCoin) -> MmCoinEnum { MmCoinEnum::LightningCoin(c) }
@@ -2012,6 +2032,7 @@ impl Deref for MmCoinEnum {
             MmCoinEnum::Bch(ref c) => c,
             MmCoinEnum::SlpToken(ref c) => c,
             MmCoinEnum::Tendermint(ref c) => c,
+            MmCoinEnum::TendermintToken(ref c) => c,
             #[cfg(not(target_arch = "wasm32"))]
             MmCoinEnum::LightningCoin(ref c) => c,
             #[cfg(not(target_arch = "wasm32"))]
@@ -2251,6 +2272,7 @@ pub enum CoinProtocol {
         slp_prefix: String,
     },
     TENDERMINT(TendermintProtocolInfo),
+    TENDERMINTTOKEN(TendermintTokenProtocolInfo),
     #[cfg(not(target_arch = "wasm32"))]
     LIGHTNING {
         platform: String,
@@ -2510,6 +2532,7 @@ pub async fn lp_coininit(ctx: &MmArc, ticker: &str, req: &Json) -> Result<MmCoin
             token.into()
         },
         CoinProtocol::TENDERMINT { .. } => return ERR!("TENDERMINT protocol is not supported by lp_coininit"),
+        CoinProtocol::TENDERMINTTOKEN(_) => return ERR!("TENDERMINTTOKEN protocol is not supported by lp_coininit"),
         #[cfg(not(target_arch = "wasm32"))]
         CoinProtocol::ZHTLC { .. } => return ERR!("ZHTLC protocol is not supported by lp_coininit"),
         #[cfg(not(target_arch = "wasm32"))]
@@ -3063,8 +3086,24 @@ pub fn address_by_coin_conf_and_pubkey_str(
                 _ => ERR!("Platform protocol {:?} is not BCH", platform_protocol),
             }
         },
-        CoinProtocol::TENDERMINT { .. } => {
-            ERR!("address_by_coin_conf_and_pubkey_str is not implemented for TENDERMINT protocol yet!")
+        CoinProtocol::TENDERMINT(protocol) => tendermint::account_id_from_pubkey_hex(&protocol.account_prefix, pubkey)
+            .map(|id| id.to_string())
+            .map_err(|e| e.to_string()),
+        CoinProtocol::TENDERMINTTOKEN(proto) => {
+            let platform_conf = coin_conf(ctx, &proto.platform);
+            if platform_conf.is_null() {
+                return ERR!("platform {} conf is null", proto.platform);
+            }
+            // TODO is there any way to make it better without duplicating the prefix in the IBC conf?
+            let platform_protocol: CoinProtocol = try_s!(json::from_value(platform_conf["protocol"].clone()));
+            match platform_protocol {
+                CoinProtocol::TENDERMINT(platform) => {
+                    tendermint::account_id_from_pubkey_hex(&platform.account_prefix, pubkey)
+                        .map(|id| id.to_string())
+                        .map_err(|e| e.to_string())
+                },
+                _ => ERR!("Platform protocol {:?} is not TENDERMINT", platform_protocol),
+            }
         },
         #[cfg(not(target_arch = "wasm32"))]
         CoinProtocol::LIGHTNING { .. } => {

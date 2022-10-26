@@ -21,7 +21,7 @@
 // check this page https://www.irisnet.org/docs/get-started/testnet.html#faucet
 
 use super::htlc_proto::{ClaimHtlcProtoRep, CreateHtlcProtoRep};
-use cosmrs::{tx::{Fee, Msg, MsgProto},
+use cosmrs::{tx::{Msg, MsgProto},
              AccountId, Coin, ErrorReport};
 use std::convert::TryFrom;
 
@@ -33,14 +33,11 @@ pub(crate) struct IrisHtlc {
     /// Generated HTLC's ID.
     pub(crate) id: String,
 
-    /// Transaction fee
-    pub(crate) fee: Fee,
-
     /// Message payload to be sent
     pub(crate) msg_payload: cosmrs::Any,
 }
 
-#[derive(Clone)]
+#[derive(Clone, Debug, Eq, PartialEq)]
 pub(crate) struct MsgCreateHtlc {
     /// Sender's address.
     pub(crate) to: AccountId,

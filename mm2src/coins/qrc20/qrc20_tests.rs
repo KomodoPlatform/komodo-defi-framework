@@ -79,6 +79,7 @@ fn test_withdraw_to_p2sh_address_should_fail() {
         coin: "QRC20".into(),
         max: false,
         fee: None,
+        memo: None,
     };
     let err = coin.withdraw(req).wait().unwrap_err().into_inner();
     let expect = WithdrawError::InvalidAddress("QRC20 can be sent to P2PKH addresses only".to_owned());
@@ -117,6 +118,7 @@ fn test_withdraw_impl_fee_details() {
             gas_limit: 2_500_000,
             gas_price: 40,
         }),
+        memo: None,
     };
     let tx_details = coin.withdraw(withdraw_req).wait().unwrap();
 
@@ -157,6 +159,7 @@ fn test_validate_maker_payment() {
 
     let mut input = ValidatePaymentInput {
         payment_tx,
+        time_lock_duration: 0,
         time_lock: 1601367157,
         other_pub: correct_maker_pub.clone(),
         secret_hash: vec![1; 20],
@@ -373,7 +376,7 @@ fn test_wait_for_tx_spend_malicious() {
     let wait_until = (now_ms() / 1000) + 1;
     let from_block = 696245;
     let found = coin
-        .wait_for_tx_spend(&payment_tx, wait_until, from_block, &coin.swap_contract_address())
+        .wait_for_htlc_tx_spend(&payment_tx, &[], wait_until, from_block, &coin.swap_contract_address())
         .wait()
         .unwrap();
 
@@ -950,6 +953,7 @@ fn test_validate_maker_payment_malicious() {
 
     let input = ValidatePaymentInput {
         payment_tx,
+        time_lock_duration: 0,
         time_lock: 1604386811,
         secret_hash,
         amount,

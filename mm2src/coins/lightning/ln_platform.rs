@@ -513,8 +513,10 @@ impl Platform {
 
         let closing_tx = self
             .coin
-            .wait_for_tx_spend(
+            // TODO add fn with old wait_for_tx_spend name
+            .wait_for_htlc_tx_spend(
                 &funding_tx_bytes.into_vec(),
+                &[],
                 (now_ms() / 1000) + 3600,
                 from_block.try_into()?,
                 &None,

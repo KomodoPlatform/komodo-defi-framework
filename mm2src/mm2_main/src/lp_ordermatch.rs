@@ -5570,6 +5570,12 @@ impl From<json::Error> for OrderbookAddrErr {
     fn from(err: json::Error) -> Self { OrderbookAddrErr::DeserializationError(err) }
 }
 
+impl From<coins::tendermint::AccountIdFromPubkeyHexErr> for OrderbookAddrErr {
+    fn from(err: coins::tendermint::AccountIdFromPubkeyHexErr) -> Self {
+        OrderbookAddrErr::AddrFromPubkeyError(err.to_string())
+    }
+}
+
 fn orderbook_address(
     ctx: &MmArc,
     coin: &str,
@@ -5601,7 +5607,30 @@ fn orderbook_address(
                 _ => MmError::err(OrderbookAddrErr::InvalidPlatformCoinProtocol(platform)),
             }
         },
-        CoinProtocol::TENDERMINT(_) => MmError::err(OrderbookAddrErr::CoinIsNotSupported(coin.to_owned())),
+        CoinProtocol::TENDERMINT(protocol) => Ok(coins::tendermint::account_id_from_pubkey_hex(
+            &protocol.account_prefix,
+            pubkey,
+        )
+        .map(|id| OrderbookAddress::Transparent(id.to_string()))?),
+        CoinProtocol::TENDERMINTTOKEN(proto) => {
+            let platform_conf = coin_conf(ctx, &proto.platform);
+            if platform_conf.is_null() {
+                return MmError::err(OrderbookAddrErr::PlatformCoinConfIsNull(proto.platform));
+            }
+            // TODO is there any way to make it better without duplicating the prefix in the IBC conf?
+            let platform_protocol: CoinProtocol = json::from_value(platform_conf["protocol"].clone())?;
+            match platform_protocol {
+                CoinProtocol::TENDERMINT(platform) => Ok(coins::tendermint::account_id_from_pubkey_hex(
+                    &platform.account_prefix,
+                    pubkey,
+                )
+                .map(|id| OrderbookAddress::Transparent(id.to_string()))?),
+                _ => MmError::err(OrderbookAddrErr::InvalidPlatformCoinProtocol(format!(
+                    "Platform protocol {:?} is not TENDERMINT",
+                    platform_protocol
+                ))),
+            }
+        },
         #[cfg(not(target_arch = "wasm32"))]
         CoinProtocol::LIGHTNING { .. } | CoinProtocol::SOLANA | CoinProtocol::SPLTOKEN { .. } => {
             MmError::err(OrderbookAddrErr::CoinIsNotSupported(coin.to_owned()))

@@ -631,7 +631,6 @@ pub fn now_ms() -> u64 { js_sys::Date::now() as u64 }
 #[cfg(target_arch = "wasm32")]
 pub fn now_float() -> f64 {
     use gstuff::duration_to_float;
-    use std::time::Duration;
     duration_to_float(Duration::from_millis(now_ms()))
 }
 

@@ -243,8 +243,9 @@ impl Watcher {
     }
 
     async fn wait_for_taker_payment_spend(&self) -> Result<(Option<WatcherCommand>, Vec<WatcherEvent>), String> {
-        let f = self.taker_coin.wait_for_tx_spend(
+        let f = self.taker_coin.wait_for_htlc_tx_spend(
             &self.data.taker_payment_hex[..],
+            &[],
             self.data.taker_payment_lock,
             self.data.taker_coin_start_block,
             &None,
