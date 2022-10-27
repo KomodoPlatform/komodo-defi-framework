@@ -8,7 +8,7 @@ pub struct PlatformCoinConfirmationTargets {
     pub high_priority: u32,
 }
 
-#[derive(Debug)]
+#[derive(Clone, Debug)]
 pub struct LightningProtocolConf {
     pub platform_coin_ticker: String,
     pub network: BlockchainNetwork,

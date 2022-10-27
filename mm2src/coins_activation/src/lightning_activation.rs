@@ -1,4 +1,6 @@
-use crate::l2::{EnableL2Error, L2ActivationOps, L2ProtocolParams};
+use crate::context::CoinsActivationContext;
+use crate::l2::{InitL2ActivationOps, InitL2Error, InitL2InitialStatus, InitL2TaskHandle, InitL2TaskManagerShared,
+                L2ProtocolParams};
 use crate::prelude::*;
 use async_trait::async_trait;
 use coins::coin_errors::MyAddressError;
@@ -7,7 +9,8 @@ use coins::lightning::ln_errors::EnableLightningError;
 use coins::lightning::{start_lightning, LightningCoin, LightningParams};
 use coins::utxo::utxo_standard::UtxoStandardCoin;
 use coins::utxo::UtxoCommonOps;
-use coins::{BalanceError, CoinBalance, CoinProtocol, MarketCoinOps, MmCoinEnum};
+use coins::{BalanceError, CoinBalance, CoinProtocol, MarketCoinOps, MmCoinEnum, RegisterCoinError};
+use crypto::hw_rpc_task::{HwRpcTaskAwaitingStatus, HwRpcTaskUserAction};
 use derive_more::Display;
 use futures::compat::Future01CompatExt;
 use mm2_core::mm_ctx::MmArc;
@@ -17,6 +20,37 @@ use serde_derive::{Deserialize, Serialize};
 use serde_json::{self as json, Value as Json};
 
 const DEFAULT_LISTENING_PORT: u16 = 9735;
+
+pub type LightningTaskManagerShared = InitL2TaskManagerShared<LightningCoin>;
+pub type LightningRpcTaskHandle = InitL2TaskHandle<LightningCoin>;
+pub type LightningAwaitingStatus = HwRpcTaskAwaitingStatus;
+pub type LightningUserAction = HwRpcTaskUserAction;
+
+#[derive(Clone, Serialize)]
+// Todo: do I need those
+// #[non_exhaustive]
+pub enum LightningInProgressStatus {
+    ActivatingCoin,
+    // UpdatingBlocksCache {
+    //     current_scanned_block: u64,
+    //     latest_block: u64,
+    // },
+    // BuildingWalletDb {
+    //     current_scanned_block: u64,
+    //     latest_block: u64,
+    // },
+    // TemporaryError(String),
+    // RequestingWalletBalance,
+    // Finishing,
+    // /// This status doesn't require the user to send `UserAction`,
+    // /// but it tells the user that he should confirm/decline an address on his device.
+    // WaitingForTrezorToConnect,
+    // WaitingForUserToConfirmPubkey,
+}
+
+impl InitL2InitialStatus for LightningInProgressStatus {
+    fn initial_status() -> Self { LightningInProgressStatus::ActivatingCoin }
+}
 
 impl TryPlatformCoinFromMmCoinEnum for UtxoStandardCoin {
     fn try_from_mm_coin(coin: MmCoinEnum) -> Option<Self>
@@ -68,7 +102,7 @@ pub struct LightningActivationParams {
     pub backup_path: Option<String>,
 }
 
-#[derive(Debug, Deserialize, Display, Serialize, SerializeErrorType)]
+#[derive(Clone, Debug, Deserialize, Display, Serialize, SerializeErrorType)]
 #[serde(tag = "error_type", content = "error_data")]
 pub enum LightningValidationErr {
     #[display(fmt = "Platform coin {} activated in {} mode", _0, _1)]
@@ -81,40 +115,45 @@ pub enum LightningValidationErr {
     InvalidAddress(String),
 }
 
-#[derive(Debug, Serialize)]
-pub struct LightningInitResult {
+#[derive(Clone, Debug, Serialize)]
+pub struct LightningActivationResult {
     platform_coin: String,
     address: String,
     balance: CoinBalance,
 }
 
-#[derive(Debug)]
+#[derive(Clone, Debug, Display, Serialize, SerializeErrorType)]
+#[serde(tag = "error_type", content = "error_data")]
 pub enum LightningInitError {
+    CoinIsAlreadyActivated { ticker: String },
     InvalidConfiguration(String),
     EnableLightningError(EnableLightningError),
     LightningValidationErr(LightningValidationErr),
     MyBalanceError(BalanceError),
     MyAddressError(String),
+    Internal(String),
 }
 
 impl From<MyAddressError> for LightningInitError {
     fn from(err: MyAddressError) -> Self { Self::MyAddressError(err.to_string()) }
 }
 
-impl From<LightningInitError> for EnableL2Error {
+impl From<LightningInitError> for InitL2Error {
     fn from(err: LightningInitError) -> Self {
         match err {
-            LightningInitError::InvalidConfiguration(err) => EnableL2Error::L2ConfigParseError(err),
+            LightningInitError::CoinIsAlreadyActivated { ticker } => InitL2Error::L2IsAlreadyActivated(ticker),
+            LightningInitError::InvalidConfiguration(err) => InitL2Error::L2ConfigParseError(err),
             LightningInitError::EnableLightningError(enable_err) => match enable_err {
-                EnableLightningError::RpcError(rpc_err) => EnableL2Error::Transport(rpc_err),
-                enable_error => EnableL2Error::Internal(enable_error.to_string()),
+                EnableLightningError::RpcError(rpc_err) => InitL2Error::Transport(rpc_err),
+                enable_error => InitL2Error::Internal(enable_error.to_string()),
             },
-            LightningInitError::LightningValidationErr(req_err) => EnableL2Error::Internal(req_err.to_string()),
+            LightningInitError::LightningValidationErr(req_err) => InitL2Error::Internal(req_err.to_string()),
             LightningInitError::MyBalanceError(balance_err) => match balance_err {
-                BalanceError::Transport(e) => EnableL2Error::Transport(e),
-                balance_error => EnableL2Error::Internal(balance_error.to_string()),
+                BalanceError::Transport(e) => InitL2Error::Transport(e),
+                balance_error => InitL2Error::Internal(balance_error.to_string()),
             },
-            LightningInitError::MyAddressError(e) => EnableL2Error::Internal(e),
+            LightningInitError::MyAddressError(e) => InitL2Error::Internal(e),
+            LightningInitError::Internal(e) => InitL2Error::Internal(e),
         }
     }
 }
@@ -127,15 +166,33 @@ impl From<LightningValidationErr> for LightningInitError {
     fn from(err: LightningValidationErr) -> Self { LightningInitError::LightningValidationErr(err) }
 }
 
+impl From<RegisterCoinError> for LightningInitError {
+    fn from(reg_err: RegisterCoinError) -> LightningInitError {
+        match reg_err {
+            RegisterCoinError::CoinIsInitializedAlready { coin } => {
+                LightningInitError::CoinIsAlreadyActivated { ticker: coin }
+            },
+            RegisterCoinError::Internal(internal) => LightningInitError::Internal(internal),
+        }
+    }
+}
+
 #[async_trait]
-impl L2ActivationOps for LightningCoin {
+impl InitL2ActivationOps for LightningCoin {
     type PlatformCoin = UtxoStandardCoin;
     type ActivationParams = LightningActivationParams;
     type ProtocolInfo = LightningProtocolConf;
     type ValidatedParams = LightningParams;
     type CoinConf = LightningCoinConf;
-    type ActivationResult = LightningInitResult;
+    type ActivationResult = LightningActivationResult;
     type ActivationError = LightningInitError;
+    type InProgressStatus = LightningInProgressStatus;
+    type AwaitingStatus = LightningAwaitingStatus;
+    type UserAction = LightningUserAction;
+
+    fn rpc_task_manager(activation_ctx: &CoinsActivationContext) -> &LightningTaskManagerShared {
+        &activation_ctx.init_lightning_task_manager
+    }
 
     fn coin_conf_from_json(json: Json) -> Result<Self::CoinConf, MmError<Self::ActivationError>> {
         json::from_value::<LightningCoinConf>(json)
@@ -186,22 +243,25 @@ impl L2ActivationOps for LightningCoin {
         })
     }
 
-    async fn enable_l2(
+    // Todo: add statuses to this function
+    async fn init_l2(
         ctx: &MmArc,
         platform_coin: Self::PlatformCoin,
         validated_params: Self::ValidatedParams,
         protocol_conf: Self::ProtocolInfo,
         coin_conf: Self::CoinConf,
+        _task_handle: &LightningRpcTaskHandle,
     ) -> Result<(Self, Self::ActivationResult), MmError<Self::ActivationError>> {
         let lightning_coin =
             start_lightning(ctx, platform_coin.clone(), protocol_conf, coin_conf, validated_params).await?;
+        // task_handle.update_in_progress_status(in_progress_status)?;
         let address = lightning_coin.my_address()?;
         let balance = lightning_coin
             .my_balance()
             .compat()
             .await
             .mm_err(LightningInitError::MyBalanceError)?;
-        let init_result = LightningInitResult {
+        let init_result = LightningActivationResult {
             platform_coin: platform_coin.ticker().into(),
             address,
             balance,

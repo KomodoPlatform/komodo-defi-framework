@@ -341,7 +341,7 @@ pub enum PrivKeyNotAllowed {
     HardwareWalletNotSupported,
 }
 
-#[derive(Debug, Display, PartialEq, Serialize)]
+#[derive(Clone, Debug, Display, PartialEq, Serialize)]
 pub enum UnexpectedDerivationMethod {
     #[display(fmt = "Iguana private key is unavailable")]
     IguanaPrivKeyUnavailable,
@@ -1289,7 +1289,7 @@ impl NumConversError {
     pub fn description(&self) -> &str { &self.0 }
 }
 
-#[derive(Debug, Display, PartialEq)]
+#[derive(Clone, Debug, Display, PartialEq, Serialize)]
 pub enum BalanceError {
     #[display(fmt = "Transport: {}", _0)]
     Transport(String),

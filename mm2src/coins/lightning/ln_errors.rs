@@ -9,7 +9,7 @@ use std::num::TryFromIntError;
 pub type EnableLightningResult<T> = Result<T, MmError<EnableLightningError>>;
 pub type SaveChannelClosingResult<T> = Result<T, MmError<SaveChannelClosingError>>;
 
-#[derive(Debug, Deserialize, Display, Serialize, SerializeErrorType)]
+#[derive(Clone, Debug, Deserialize, Display, Serialize, SerializeErrorType)]
 #[serde(tag = "error_type", content = "error_data")]
 pub enum EnableLightningError {
     #[display(fmt = "Invalid request: {}", _0)]
