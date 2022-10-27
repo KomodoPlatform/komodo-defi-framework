@@ -60,7 +60,7 @@ impl Timer {
 
     pub fn sleep(secs: f64) -> Timer {
         let dur = Duration::from_secs_f64(secs);
-        let delay_ms = gstuff::duration_to_ms(dur) as u32;
+        let delay_ms = gstuff::duration_to_ms(dur);
         Timer::sleep_ms(delay_ms)
     }
 

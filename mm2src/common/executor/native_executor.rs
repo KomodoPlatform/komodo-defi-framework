@@ -24,9 +24,9 @@ impl Timer {
         }
     }
 
-    pub fn sleep_ms(ms: u32) -> Timer {
+    pub fn sleep_ms(ms: u64) -> Timer {
         Timer {
-            delay: Delay::new(Duration::from_millis(ms as u64)),
+            delay: Delay::new(Duration::from_millis(ms)),
         }
     }
 }
