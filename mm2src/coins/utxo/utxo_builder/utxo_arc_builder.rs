@@ -3,7 +3,7 @@ use crate::utxo::utxo_builder::{UtxoCoinBuildError, UtxoCoinBuilder, UtxoCoinBui
                                 UtxoFieldsWithHardwareWalletBuilder, UtxoFieldsWithIguanaPrivKeyBuilder};
 use crate::utxo::{generate_and_send_tx, FeePolicy, GetUtxoListOps, UtxoArc, UtxoCommonOps, UtxoSyncStatusLoopHandle,
                   UtxoWeak};
-use crate::{DerivationMethod, MarketCoinOps, PrivKeyBuildPolicy, UtxoActivationParams};
+use crate::{DerivationMethod, PrivKeyBuildPolicy, UtxoActivationParams};
 use async_trait::async_trait;
 use chain::TransactionOutput;
 use common::executor::{AbortSettings, SpawnAbortable, Timer};
@@ -85,7 +85,7 @@ impl<'a, F, T> UtxoFieldsWithHardwareWalletBuilder for UtxoArcBuilder<'a, F, T> 
 impl<'a, F, T> UtxoCoinBuilder for UtxoArcBuilder<'a, F, T>
 where
     F: Fn(UtxoArc) -> T + Clone + Send + Sync + 'static,
-    T: UtxoCommonOps + GetUtxoListOps + MarketCoinOps,
+    T: UtxoCommonOps + GetUtxoListOps,
 {
     type ResultCoin = T;
     type Error = UtxoCoinBuildError;
@@ -101,12 +101,13 @@ where
 
         let result_coin = (self.constructor)(utxo_arc.clone());
         if let Some(sync_status_loop_handle) = sync_status_loop_handle {
-            let block_count = match result_coin.as_ref().rpc_client.get_block_count().compat().await {
-                Ok(h) => h,
-                Err(e) => {
-                    return MmError::err(UtxoCoinBuildError::CantGetBlockCount(e.to_string()));
-                },
-            };
+            let block_count = result_coin
+                .as_ref()
+                .rpc_client
+                .get_block_count()
+                .compat()
+                .await
+                .map_err(|err| UtxoCoinBuildError::CantGetBlockCount(err.to_string()))?;
             self.spawn_block_header_utxo_loop(
                 &utxo_arc,
                 self.constructor.clone(),
