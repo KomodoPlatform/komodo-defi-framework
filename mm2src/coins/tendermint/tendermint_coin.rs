@@ -9,14 +9,14 @@ use crate::utxo::sat_from_big_decimal;
 use crate::utxo::utxo_common::big_decimal_from_sat;
 use crate::{big_decimal_from_sat_unsigned, BalanceError, BalanceFut, BigDecimal, CoinBalance, CoinFutSpawner,
             FeeApproxStage, FoundSwapTxSpend, HistorySyncState, MarketCoinOps, MmCoin, NegotiateSwapContractAddrErr,
-            RawTransactionError, RawTransactionFut, RawTransactionRequest, RawTransactionRes,
-            SearchForSwapTxSpendInput, SignatureResult, SwapOps, TradeFee, TradePreimageFut, TradePreimageResult,
-            TradePreimageValue, TransactionDetails, TransactionEnum, TransactionErr, TransactionFut, TransactionType,
-            TxFeeDetails, TxMarshalingErr, UnexpectedDerivationMethod, ValidateAddressResult, ValidateOtherPubKeyErr,
+            PaymentInstructions, PaymentInstructionsErr, RawTransactionError, RawTransactionFut,
+            RawTransactionRequest, RawTransactionRes, SearchForSwapTxSpendInput, SignatureResult, SwapOps, TradeFee,
+            TradePreimageFut, TradePreimageResult, TradePreimageValue, TransactionDetails, TransactionEnum,
+            TransactionErr, TransactionFut, TransactionType, TxFeeDetails, TxMarshalingErr,
+            UnexpectedDerivationMethod, ValidateAddressResult, ValidateInstructionsErr, ValidateOtherPubKeyErr,
             ValidatePaymentFut, ValidatePaymentInput, VerificationResult, WatcherOps, WatcherValidatePaymentInput,
             WithdrawError, WithdrawFut, WithdrawRequest};
 use async_std::prelude::FutureExt as AsyncStdFutureExt;
-
 use async_trait::async_trait;
 use bitcrypto::{dhash160, sha256};
 use common::executor::Timer;
@@ -1449,6 +1449,7 @@ impl SwapOps for TendermintCoin {
         amount: BigDecimal,
         _swap_contract_address: &Option<BytesJson>,
         _swap_unique_data: &[u8],
+        _payment_instructions: &Option<PaymentInstructions>,
     ) -> TransactionFut {
         self.send_htlc_for_denom(
             time_lock_duration,
@@ -1469,6 +1470,7 @@ impl SwapOps for TendermintCoin {
         amount: BigDecimal,
         _swap_contract_address: &Option<BytesJson>,
         _swap_unique_data: &[u8],
+        _payment_instructions: &Option<PaymentInstructions>,
     ) -> TransactionFut {
         self.send_htlc_for_denom(
             time_lock_duration,
@@ -1612,12 +1614,12 @@ impl SwapOps for TendermintCoin {
 
     fn send_taker_refunds_payment(
         &self,
-        taker_payment_tx: &[u8],
-        time_lock: u32,
-        maker_pub: &[u8],
-        secret_hash: &[u8],
-        swap_contract_address: &Option<BytesJson>,
-        swap_unique_data: &[u8],
+        _taker_payment_tx: &[u8],
+        _time_lock: u32,
+        _maker_pub: &[u8],
+        _secret_hash: &[u8],
+        _swap_contract_address: &Option<BytesJson>,
+        _swap_unique_data: &[u8],
     ) -> TransactionFut {
         Box::new(futures01::future::err(TransactionErr::Plain(
             "Doesn't need transaction broadcast to refund IRIS HTLC".into(),
@@ -1693,7 +1695,7 @@ impl SwapOps for TendermintCoin {
         todo!()
     }
 
-    fn extract_secret(&self, secret_hash: &[u8], spend_tx: &[u8]) -> Result<Vec<u8>, String> {
+    async fn extract_secret(&self, secret_hash: &[u8], spend_tx: &[u8]) -> Result<Vec<u8>, String> {
         let tx = try_s!(cosmrs::Tx::from_bytes(spend_tx));
         let msg = try_s!(tx.body.messages.first().ok_or("Tx body couldn't be read."));
         let htlc_proto: crate::tendermint::htlc_proto::ClaimHtlcProtoRep =
@@ -1723,6 +1725,25 @@ impl SwapOps for TendermintCoin {
             .or_mm_err(|| ValidateOtherPubKeyErr::InvalidPubKey(hex::encode(raw_pubkey)))?;
         Ok(())
     }
+
+    async fn payment_instructions(
+        &self,
+        _secret_hash: &[u8],
+        _amount: &BigDecimal,
+    ) -> Result<Option<Vec<u8>>, MmError<PaymentInstructionsErr>> {
+        Ok(None)
+    }
+
+    fn validate_instructions(
+        &self,
+        _instructions: &[u8],
+        _secret_hash: &[u8],
+        _amount: BigDecimal,
+    ) -> Result<PaymentInstructions, MmError<ValidateInstructionsErr>> {
+        MmError::err(ValidateInstructionsErr::UnsupportedCoin(self.ticker().to_string()))
+    }
+
+    fn is_supported_by_watchers(&self) -> bool { false }
 }
 
 #[async_trait]

@@ -16,7 +16,7 @@ use lightning::util::events::{Event, EventHandler, PaymentPurpose};
 use rand::Rng;
 use script::{Builder, SignatureVersion};
 use secp256k1v22::Secp256k1;
-use std::convert::TryFrom;
+use std::convert::{TryFrom, TryInto};
 use std::sync::Arc;
 use utxo_signer::with_key_pair::sign_tx;
 
@@ -174,19 +174,29 @@ pub async fn init_abortable_events(platform: Arc<Platform>, db: SqliteLightningD
     Ok(())
 }
 
+#[derive(Display)]
+pub enum SignFundingTransactionError {
+    #[display(fmt = "Internal error: {}", _0)]
+    Internal(String),
+    #[display(fmt = "Error converting transaction: {}", _0)]
+    ConvertTxErr(String),
+    #[display(fmt = "Error signing transaction: {}", _0)]
+    TxSignFailed(String),
+}
+
 // Generates the raw funding transaction with one output equal to the channel value.
 fn sign_funding_transaction(
     user_channel_id: u64,
     output_script: &Script,
     platform: Arc<Platform>,
-) -> OpenChannelResult<Transaction> {
+) -> Result<Transaction, SignFundingTransactionError> {
     let coin = &platform.coin;
     let mut unsigned = {
         let unsigned_funding_txs = platform.unsigned_funding_txs.lock();
         unsigned_funding_txs
             .get(&user_channel_id)
             .ok_or_else(|| {
-                OpenChannelError::InternalError(format!(
+                SignFundingTransactionError::Internal(format!(
                     "Unsigned funding tx not found for internal channel id: {}",
                     user_channel_id
                 ))
@@ -195,8 +205,16 @@ fn sign_funding_transaction(
     };
     unsigned.outputs[0].script_pubkey = output_script.to_bytes().into();
 
-    let my_address = coin.as_ref().derivation_method.iguana_or_err()?;
-    let key_pair = coin.as_ref().priv_key_policy.key_pair_or_err()?;
+    let my_address = coin
+        .as_ref()
+        .derivation_method
+        .iguana_or_err()
+        .map_err(|e| SignFundingTransactionError::Internal(e.to_string()))?;
+    let key_pair = coin
+        .as_ref()
+        .priv_key_policy
+        .key_pair_or_err()
+        .map_err(|e| SignFundingTransactionError::Internal(e.to_string()))?;
 
     let prev_script = Builder::build_p2pkh(&my_address.hash);
     let signed = sign_tx(
@@ -205,9 +223,10 @@ fn sign_funding_transaction(
         prev_script,
         SignatureVersion::WitnessV0,
         coin.as_ref().conf.fork_id,
-    )?;
+    )
+    .map_err(|e| SignFundingTransactionError::TxSignFailed(e.to_string()))?;
 
-    Transaction::try_from(signed).map_to_mm(|e| OpenChannelError::ConvertTxErr(e.to_string()))
+    Transaction::try_from(signed).map_err(|e| SignFundingTransactionError::ConvertTxErr(e.to_string()))
 }
 
 async fn save_channel_closing_details(
@@ -323,10 +342,38 @@ impl LightningEventHandler {
         let payment_preimage = match purpose {
             PaymentPurpose::InvoicePayment { payment_preimage, .. } => match payment_preimage {
                 Some(preimage) => *preimage,
+                // This is a swap related payment since we don't have the preimage yet
                 None => {
-                    // Free the htlc immediately if we don't have the preimage required to claim the payment
-                    // to allow for this inbound liquidity to be used for other inbound payments.
-                    self.channel_manager.fail_htlc_backwards(payment_hash);
+                    let payment_info = PaymentInfo {
+                        payment_hash: *payment_hash,
+                        payment_type: PaymentType::InboundPayment,
+                        description: "Swap Payment".into(),
+                        preimage: None,
+                        secret: None,
+                        amt_msat: Some(
+                            received_amount
+                                .try_into()
+                                .expect("received_amount shouldn't exceed i64::MAX"),
+                        ),
+                        fee_paid_msat: None,
+                        status: HTLCStatus::Received,
+                        created_at: (now_ms() / 1000)
+                            .try_into()
+                            .expect("created_at shouldn't exceed i64::MAX"),
+                        last_updated: (now_ms() / 1000)
+                            .try_into()
+                            .expect("last_updated shouldn't exceed i64::MAX"),
+                    };
+                    let db = self.db.clone();
+                    let fut = async move {
+                        db.add_or_update_payment_in_db(payment_info)
+                            .await
+                            .error_log_with_msg("Unable to add payment information to DB!");
+                    };
+
+                    let settings = AbortSettings::default().critical_timout_s(CRITICAL_FUTURE_TIMEOUT);
+                    self.platform.spawner().spawn_with_settings(fut, settings);
+
                     return;
                 },
             },
@@ -361,7 +408,7 @@ impl LightningEventHandler {
                 self.platform.spawner().spawn_with_settings(fut, settings);
             },
             PaymentPurpose::SpontaneousPayment(payment_preimage) => {
-                let payment_info = DBPaymentInfo {
+                let payment_info = PaymentInfo {
                     payment_hash,
                     payment_type: PaymentType::InboundPayment,
                     description: "".into(),

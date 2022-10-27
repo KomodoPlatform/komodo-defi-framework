@@ -1,71 +1,61 @@
 pub mod ln_conf;
-mod ln_db;
+pub(crate) mod ln_db;
 pub mod ln_errors;
 mod ln_events;
 mod ln_filesystem_persister;
-mod ln_p2p;
+pub(crate) mod ln_p2p;
 mod ln_platform;
-mod ln_serialization;
+pub(crate) mod ln_serialization;
 mod ln_sql;
-mod ln_storage;
+pub(crate) mod ln_storage;
 mod ln_utils;
 
-use super::{lp_coinfind_or_err, DerivationMethod, MmCoinEnum};
 use crate::coin_errors::MyAddressError;
-use crate::lightning::ln_conf::OurChannelsConfigs;
-use crate::lightning::ln_errors::{TrustedNodeError, TrustedNodeResult, UpdateChannelError, UpdateChannelResult};
-use crate::lightning::ln_events::init_abortable_events;
-use crate::lightning::ln_serialization::PublicKeyForRPC;
-use crate::lightning::ln_sql::SqliteLightningDB;
-use crate::lightning::ln_storage::{NetworkGraph, TrustedNodesShared};
+use crate::lightning::ln_utils::filter_channels;
 use crate::utxo::rpc_clients::UtxoRpcClientEnum;
-use crate::utxo::utxo_common::{big_decimal_from_sat_unsigned, UtxoTxBuilder};
-use crate::utxo::{sat_from_big_decimal, BlockchainNetwork, FeePolicy, GetUtxoListOps, UtxoTxGenerationOps};
-use crate::{BalanceFut, CoinBalance, CoinFutSpawner, FeeApproxStage, FoundSwapTxSpend, HistorySyncState,
-            MarketCoinOps, MmCoin, NegotiateSwapContractAddrErr, RawTransactionFut, RawTransactionRequest,
+use crate::utxo::utxo_common::{big_decimal_from_sat, big_decimal_from_sat_unsigned};
+use crate::utxo::{sat_from_big_decimal, utxo_common, BlockchainNetwork};
+use crate::{BalanceFut, CoinBalance, CoinFutSpawner, DerivationMethod, FeeApproxStage, FoundSwapTxSpend,
+            HistorySyncState, MarketCoinOps, MmCoin, NegotiateSwapContractAddrErr, PaymentInstructions,
+            PaymentInstructionsErr, RawTransactionError, RawTransactionFut, RawTransactionRequest,
             SearchForSwapTxSpendInput, SignatureError, SignatureResult, SwapOps, TradeFee, TradePreimageFut,
-            TradePreimageResult, TradePreimageValue, TransactionEnum, TransactionFut, TxMarshalingErr,
-            UnexpectedDerivationMethod, UtxoStandardCoin, ValidateAddressResult, ValidateOtherPubKeyErr,
-            ValidatePaymentFut, ValidatePaymentInput, VerificationError, VerificationResult, WatcherOps,
-            WatcherValidatePaymentInput, WithdrawError, WithdrawFut, WithdrawRequest};
+            TradePreimageResult, TradePreimageValue, Transaction, TransactionEnum, TransactionErr, TransactionFut,
+            TxMarshalingErr, UnexpectedDerivationMethod, UtxoStandardCoin, ValidateAddressResult,
+            ValidateInstructionsErr, ValidateOtherPubKeyErr, ValidatePaymentError, ValidatePaymentFut,
+            ValidatePaymentInput, VerificationError, VerificationResult, WatcherOps, WatcherValidatePaymentInput,
+            WithdrawError, WithdrawFut, WithdrawRequest};
 use async_trait::async_trait;
+use bitcoin::bech32::ToBase32;
 use bitcoin::hashes::Hash;
 use bitcoin_hashes::sha256::Hash as Sha256;
-use bitcrypto::dhash256;
 use bitcrypto::ChecksumType;
-use chain::TransactionOutput;
-use common::executor::SpawnFuture;
-use common::log::{error, LogOnError, LogState};
-use common::{async_blocking, calc_total_pages, log, now_ms, ten, PagingOptionsEnum};
+use bitcrypto::{dhash256, ripemd160};
+use common::executor::{SpawnFuture, Timer};
+use common::log::{info, LogOnError, LogState};
+use common::{async_blocking, get_local_duration_since_epoch, log, now_ms, PagingOptionsEnum};
+use db_common::sqlite::rusqlite::Error as SqlError;
 use futures::{FutureExt, TryFutureExt};
 use futures01::Future;
-use keys::{hash::H256, AddressHashEnum, CompactSignature, KeyPair, Private, Public};
-use lightning::chain::channelmonitor::Balance;
+use keys::{hash::H256, CompactSignature, KeyPair, Private, Public};
 use lightning::chain::keysinterface::{KeysInterface, KeysManager, Recipient};
 use lightning::chain::Access;
 use lightning::ln::channelmanager::{ChannelDetails, MIN_FINAL_CLTV_EXPIRY};
 use lightning::ln::{PaymentHash, PaymentPreimage};
 use lightning::routing::gossip;
-use lightning::util::config::UserConfig;
 use lightning_background_processor::{BackgroundProcessor, GossipSync};
-use lightning_invoice::payment;
-use lightning_invoice::utils::{create_invoice_from_channelmanager, DefaultRouter};
+use lightning_invoice::utils::DefaultRouter;
+use lightning_invoice::{payment, CreationError, InvoiceBuilder, SignOrCreationError};
 use lightning_invoice::{Invoice, InvoiceDescription};
-use ln_conf::{ChannelOptions, LightningCoinConf, LightningProtocolConf, PlatformCoinConfirmationTargets};
-use ln_db::{ClosedChannelsFilter, DBChannelDetails, DBPaymentInfo, DBPaymentsFilter, HTLCStatus, LightningDB,
-            PaymentType};
-use ln_errors::{ClaimableBalancesError, ClaimableBalancesResult, CloseChannelError, CloseChannelResult,
-                ConnectToNodeError, ConnectToNodeResult, EnableLightningError, EnableLightningResult,
-                GenerateInvoiceError, GenerateInvoiceResult, GetChannelDetailsError, GetChannelDetailsResult,
-                GetPaymentDetailsError, GetPaymentDetailsResult, ListChannelsError, ListChannelsResult,
-                ListPaymentsError, ListPaymentsResult, OpenChannelError, OpenChannelResult, SendPaymentError,
-                SendPaymentResult};
-use ln_events::LightningEventHandler;
+use ln_conf::{LightningCoinConf, LightningProtocolConf, PlatformCoinConfirmationTargets};
+use ln_db::{DBChannelDetails, HTLCStatus, LightningDB, PaymentInfo, PaymentType};
+use ln_errors::{EnableLightningError, EnableLightningResult};
+use ln_events::{init_abortable_events, LightningEventHandler};
 use ln_filesystem_persister::LightningFilesystemPersister;
-use ln_p2p::{connect_to_node, ConnectToNodeRes, PeerManager};
-use ln_platform::{h256_json_from_txid, Platform};
-use ln_serialization::NodeAddress;
-use ln_storage::{LightningStorage, NodesAddressesMapShared, Scorer};
+use ln_p2p::PeerManager;
+use ln_platform::Platform;
+use ln_serialization::{ChannelDetailsForRPC, PublicKeyForRPC};
+use ln_sql::SqliteLightningDB;
+use ln_storage::{LightningStorage, NetworkGraph, NodesAddressesMapShared, Scorer, TrustedNodesShared};
 use ln_utils::{ChainMonitor, ChannelManager};
 use mm2_core::mm_ctx::MmArc;
 use mm2_err_handle::prelude::*;
@@ -73,11 +63,10 @@ use mm2_net::ip_addr::myipaddr;
 use mm2_number::{BigDecimal, MmNumber};
 use parking_lot::Mutex as PaMutex;
 use rpc::v1::types::{Bytes as BytesJson, H256 as H256Json};
-use script::{Builder, TransactionInputSigner};
+use script::TransactionInputSigner;
 use secp256k1v22::PublicKey;
 use serde::{Deserialize, Serialize};
 use serde_json::Value as Json;
-use std::collections::hash_map::Entry;
 use std::collections::{HashMap, HashSet};
 use std::fmt;
 use std::net::SocketAddr;
@@ -120,13 +109,60 @@ impl fmt::Debug for LightningCoin {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result { write!(f, "LightningCoin {{ conf: {:?} }}", self.conf) }
 }
 
+#[derive(Deserialize)]
+pub struct OpenChannelsFilter {
+    pub channel_id: Option<H256Json>,
+    pub counterparty_node_id: Option<PublicKeyForRPC>,
+    pub funding_tx: Option<H256Json>,
+    pub from_funding_value_sats: Option<u64>,
+    pub to_funding_value_sats: Option<u64>,
+    pub is_outbound: Option<bool>,
+    pub from_balance_msat: Option<u64>,
+    pub to_balance_msat: Option<u64>,
+    pub from_outbound_capacity_msat: Option<u64>,
+    pub to_outbound_capacity_msat: Option<u64>,
+    pub from_inbound_capacity_msat: Option<u64>,
+    pub to_inbound_capacity_msat: Option<u64>,
+    pub is_ready: Option<bool>,
+    pub is_usable: Option<bool>,
+    pub is_public: Option<bool>,
+}
+
+pub(crate) struct GetOpenChannelsResult {
+    pub channels: Vec<ChannelDetailsForRPC>,
+    pub skipped: usize,
+    pub total: usize,
+}
+
+#[derive(Debug, Display)]
+pub(crate) enum PaymentError {
+    #[display(fmt = "Final cltv expiry delta {} is below the required minimum of {}", _0, _1)]
+    CLTVExpiry(u32, u32),
+    #[display(fmt = "Error paying invoice: {}", _0)]
+    Invoice(String),
+    #[display(fmt = "Keysend error: {}", _0)]
+    Keysend(String),
+    #[display(fmt = "DB error {}", _0)]
+    DbError(String),
+}
+
+impl From<SqlError> for PaymentError {
+    fn from(err: SqlError) -> PaymentError { PaymentError::DbError(err.to_string()) }
+}
+
+impl Transaction for PaymentHash {
+    fn tx_hex(&self) -> Vec<u8> { self.0.to_vec() }
+
+    fn tx_hash(&self) -> BytesJson { self.0.to_vec().into() }
+}
+
 impl LightningCoin {
-    fn platform_coin(&self) -> &UtxoStandardCoin { &self.platform.coin }
+    pub fn platform_coin(&self) -> &UtxoStandardCoin { &self.platform.coin }
 
     #[inline]
     fn my_node_id(&self) -> String { self.channel_manager.get_our_node_id().to_string() }
 
-    async fn list_channels(&self) -> Vec<ChannelDetails> {
+    pub(crate) async fn list_channels(&self) -> Vec<ChannelDetails> {
         let channel_manager = self.channel_manager.clone();
         async_blocking(move || channel_manager.list_channels()).await
     }
@@ -147,14 +183,14 @@ impl LightningCoin {
             })
     }
 
-    async fn get_channel_by_rpc_id(&self, rpc_id: u64) -> Option<ChannelDetails> {
+    pub(crate) async fn get_channel_by_rpc_id(&self, rpc_id: u64) -> Option<ChannelDetails> {
         self.list_channels()
             .await
             .into_iter()
             .find(|chan| chan.user_channel_id == rpc_id)
     }
 
-    async fn pay_invoice(&self, invoice: Invoice) -> SendPaymentResult<DBPaymentInfo> {
+    pub(crate) async fn pay_invoice(&self, invoice: Invoice) -> Result<PaymentInfo, MmError<PaymentError>> {
         let payment_hash = PaymentHash((invoice.payment_hash()).into_inner());
         let payment_type = PaymentType::OutboundPayment {
             destination: *invoice.payee_pub_key().unwrap_or(&invoice.recover_payee_pub_key()),
@@ -171,11 +207,11 @@ impl LightningCoin {
             selfi
                 .invoice_payer
                 .pay_invoice(&invoice)
-                .map_to_mm(|e| SendPaymentError::PaymentError(format!("{:?}", e)))
+                .map_to_mm(|e| PaymentError::Invoice(format!("{:?}", e)))
         })
         .await?;
 
-        Ok(DBPaymentInfo {
+        let payment_info = PaymentInfo {
             payment_hash,
             payment_type,
             description,
@@ -186,20 +222,19 @@ impl LightningCoin {
             status: HTLCStatus::Pending,
             created_at: (now_ms() / 1000) as i64,
             last_updated: (now_ms() / 1000) as i64,
-        })
+        };
+        self.db.add_or_update_payment_in_db(payment_info.clone()).await?;
+        Ok(payment_info)
     }
 
-    async fn keysend(
+    pub(crate) async fn keysend(
         &self,
         destination: PublicKey,
         amount_msat: u64,
         final_cltv_expiry_delta: u32,
-    ) -> SendPaymentResult<DBPaymentInfo> {
+    ) -> Result<PaymentInfo, MmError<PaymentError>> {
         if final_cltv_expiry_delta < MIN_FINAL_CLTV_EXPIRY {
-            return MmError::err(SendPaymentError::CLTVExpiryError(
-                final_cltv_expiry_delta,
-                MIN_FINAL_CLTV_EXPIRY,
-            ));
+            return MmError::err(PaymentError::CLTVExpiry(final_cltv_expiry_delta, MIN_FINAL_CLTV_EXPIRY));
         }
         let payment_preimage = PaymentPreimage(self.keys_manager.get_secure_random_bytes());
 
@@ -208,14 +243,13 @@ impl LightningCoin {
             selfi
                 .invoice_payer
                 .pay_pubkey(destination, payment_preimage, amount_msat, final_cltv_expiry_delta)
-                .map_to_mm(|e| SendPaymentError::PaymentError(format!("{:?}", e)))
+                .map_to_mm(|e| PaymentError::Keysend(format!("{:?}", e)))
         })
         .await?;
 
         let payment_hash = PaymentHash(Sha256::hash(&payment_preimage.0).into_inner());
         let payment_type = PaymentType::OutboundPayment { destination };
-
-        Ok(DBPaymentInfo {
+        let payment_info = PaymentInfo {
             payment_hash,
             payment_type,
             description: "".into(),
@@ -226,15 +260,115 @@ impl LightningCoin {
             status: HTLCStatus::Pending,
             created_at: (now_ms() / 1000) as i64,
             last_updated: (now_ms() / 1000) as i64,
-        })
+        };
+        self.db.add_or_update_payment_in_db(payment_info.clone()).await?;
+
+        Ok(payment_info)
     }
 
-    async fn get_open_channels_by_filter(
+    pub(crate) async fn get_open_channels_by_filter(
         &self,
         filter: Option<OpenChannelsFilter>,
         paging: PagingOptionsEnum<u64>,
         limit: usize,
-    ) -> ListChannelsResult<GetOpenChannelsResult> {
+    ) -> GetOpenChannelsResult {
+        fn apply_open_channel_filter(channel_details: &ChannelDetailsForRPC, filter: &OpenChannelsFilter) -> bool {
+            // Checking if channel_id is some and not equal
+            if filter.channel_id.is_some() && Some(&channel_details.channel_id) != filter.channel_id.as_ref() {
+                return false;
+            }
+
+            // Checking if counterparty_node_id is some and not equal
+            if filter.counterparty_node_id.is_some()
+                && Some(&channel_details.counterparty_node_id) != filter.counterparty_node_id.as_ref()
+            {
+                return false;
+            }
+
+            // Checking if funding_tx is some and not equal
+            if filter.funding_tx.is_some() && channel_details.funding_tx != filter.funding_tx {
+                return false;
+            }
+
+            // Checking if from_funding_value_sats is some and more than funding_tx_value_sats
+            if filter.from_funding_value_sats.is_some()
+                && Some(&channel_details.funding_tx_value_sats) < filter.from_funding_value_sats.as_ref()
+            {
+                return false;
+            }
+
+            // Checking if to_funding_value_sats is some and less than funding_tx_value_sats
+            if filter.to_funding_value_sats.is_some()
+                && Some(&channel_details.funding_tx_value_sats) > filter.to_funding_value_sats.as_ref()
+            {
+                return false;
+            }
+
+            // Checking if is_outbound is some and not equal
+            if filter.is_outbound.is_some() && Some(&channel_details.is_outbound) != filter.is_outbound.as_ref() {
+                return false;
+            }
+
+            // Checking if from_balance_msat is some and more than balance_msat
+            if filter.from_balance_msat.is_some()
+                && Some(&channel_details.balance_msat) < filter.from_balance_msat.as_ref()
+            {
+                return false;
+            }
+
+            // Checking if to_balance_msat is some and less than balance_msat
+            if filter.to_balance_msat.is_some() && Some(&channel_details.balance_msat) > filter.to_balance_msat.as_ref()
+            {
+                return false;
+            }
+
+            // Checking if from_outbound_capacity_msat is some and more than outbound_capacity_msat
+            if filter.from_outbound_capacity_msat.is_some()
+                && Some(&channel_details.outbound_capacity_msat) < filter.from_outbound_capacity_msat.as_ref()
+            {
+                return false;
+            }
+
+            // Checking if to_outbound_capacity_msat is some and less than outbound_capacity_msat
+            if filter.to_outbound_capacity_msat.is_some()
+                && Some(&channel_details.outbound_capacity_msat) > filter.to_outbound_capacity_msat.as_ref()
+            {
+                return false;
+            }
+
+            // Checking if from_inbound_capacity_msat is some and more than outbound_capacity_msat
+            if filter.from_inbound_capacity_msat.is_some()
+                && Some(&channel_details.inbound_capacity_msat) < filter.from_inbound_capacity_msat.as_ref()
+            {
+                return false;
+            }
+
+            // Checking if to_inbound_capacity_msat is some and less than inbound_capacity_msat
+            if filter.to_inbound_capacity_msat.is_some()
+                && Some(&channel_details.inbound_capacity_msat) > filter.to_inbound_capacity_msat.as_ref()
+            {
+                return false;
+            }
+
+            // Checking if is_ready is some and not equal
+            if filter.is_ready.is_some() && Some(&channel_details.is_ready) != filter.is_ready.as_ref() {
+                return false;
+            }
+
+            // Checking if is_usable is some and not equal
+            if filter.is_usable.is_some() && Some(&channel_details.is_usable) != filter.is_usable.as_ref() {
+                return false;
+            }
+
+            // Checking if is_public is some and not equal
+            if filter.is_public.is_some() && Some(&channel_details.is_public) != filter.is_public.as_ref() {
+                return false;
+            }
+
+            // All checks pass
+            true
+        }
+
         let mut total_open_channels: Vec<ChannelDetailsForRPC> =
             self.list_channels().await.into_iter().map(From::from).collect();
 
@@ -267,18 +401,85 @@ impl LightningCoin {
             open_channels_filtered[offset..].to_vec()
         };
 
-        Ok(GetOpenChannelsResult {
+        GetOpenChannelsResult {
             channels,
             skipped: offset,
             total,
-        })
+        }
+    }
+
+    async fn create_invoice_for_hash(
+        &self,
+        payment_hash: PaymentHash,
+        amt_msat: Option<u64>,
+        description: String,
+        invoice_expiry_delta_secs: u32,
+    ) -> Result<Invoice, MmError<SignOrCreationError<()>>> {
+        let open_channels_nodes = self.open_channels_nodes.lock().clone();
+        for (node_pubkey, node_addr) in open_channels_nodes {
+            ln_p2p::connect_to_ln_node(node_pubkey, node_addr, self.peer_manager.clone())
+                .await
+                .error_log_with_msg(&format!(
+                    "Channel with node: {} can't be used for invoice routing hints due to connection error.",
+                    node_pubkey
+                ));
+        }
+
+        // `create_inbound_payment` only returns an error if the amount is greater than the total bitcoin
+        // supply.
+        let payment_secret = self
+            .channel_manager
+            .create_inbound_payment_for_hash(payment_hash, amt_msat, invoice_expiry_delta_secs)
+            .map_to_mm(|()| SignOrCreationError::CreationError(CreationError::InvalidAmount))?;
+        let our_node_pubkey = self.channel_manager.get_our_node_id();
+        // Todo: Check if it's better to use UTC instead of local time for invoice generations
+        let duration = get_local_duration_since_epoch().expect("for the foreseeable future this shouldn't happen");
+
+        let mut invoice = InvoiceBuilder::new(self.platform.network.clone().into())
+            .description(description)
+            .duration_since_epoch(duration)
+            .payee_pub_key(our_node_pubkey)
+            .payment_hash(Hash::from_inner(payment_hash.0))
+            .payment_secret(payment_secret)
+            .basic_mpp()
+            // Todo: This will probably be important in locktime calculations in the next PRs and should be validated by the other side
+            .min_final_cltv_expiry(MIN_FINAL_CLTV_EXPIRY.into())
+            .expiry_time(core::time::Duration::from_secs(invoice_expiry_delta_secs.into()));
+        if let Some(amt) = amt_msat {
+            invoice = invoice.amount_milli_satoshis(amt);
+        }
+
+        let route_hints = filter_channels(self.channel_manager.list_usable_channels(), amt_msat);
+        for hint in route_hints {
+            invoice = invoice.private_route(hint);
+        }
+
+        let raw_invoice = match invoice.build_raw() {
+            Ok(inv) => inv,
+            Err(e) => return MmError::err(SignOrCreationError::CreationError(e)),
+        };
+        let hrp_str = raw_invoice.hrp.to_string();
+        let hrp_bytes = hrp_str.as_bytes();
+        let data_without_signature = raw_invoice.data.to_base32();
+        let signed_raw_invoice = raw_invoice.sign(|_| {
+            self.keys_manager
+                .sign_invoice(hrp_bytes, &data_without_signature, Recipient::Node)
+        });
+        match signed_raw_invoice {
+            Ok(inv) => Ok(Invoice::from_signed(inv).map_err(|_| SignOrCreationError::SignError(()))?),
+            Err(e) => MmError::err(SignOrCreationError::SignError(e)),
+        }
     }
 }
 
 #[async_trait]
 // Todo: Implement this when implementing swaps for lightning as it's is used only for swaps
 impl SwapOps for LightningCoin {
-    fn send_taker_fee(&self, _fee_addr: &[u8], _amount: BigDecimal, _uuid: &[u8]) -> TransactionFut { unimplemented!() }
+    // Todo: This uses dummy data for now for the sake of swap P.O.C., this should be implemented probably after agreeing on how fees will work for lightning
+    fn send_taker_fee(&self, _fee_addr: &[u8], _amount: BigDecimal, _uuid: &[u8]) -> TransactionFut {
+        let fut = async move { Ok(TransactionEnum::LightningPayment(PaymentHash([1; 32]))) };
+        Box::new(fut.boxed().compat())
+    }
 
     fn send_maker_payment(
         &self,
@@ -289,8 +490,16 @@ impl SwapOps for LightningCoin {
         _amount: BigDecimal,
         _swap_contract_address: &Option<BytesJson>,
         _swap_unique_data: &[u8],
+        payment_instructions: &Option<PaymentInstructions>,
     ) -> TransactionFut {
-        unimplemented!()
+        let PaymentInstructions::Lightning(invoice) =
+            try_tx_fus!(payment_instructions.clone().ok_or("payment_instructions can't be None"));
+        let coin = self.clone();
+        let fut = async move {
+            let payment = try_tx_s!(coin.pay_invoice(invoice).await);
+            Ok(payment.payment_hash.into())
+        };
+        Box::new(fut.boxed().compat())
     }
 
     fn send_taker_payment(
@@ -302,21 +511,47 @@ impl SwapOps for LightningCoin {
         _amount: BigDecimal,
         _swap_contract_address: &Option<BytesJson>,
         _swap_unique_data: &[u8],
+        payment_instructions: &Option<PaymentInstructions>,
     ) -> TransactionFut {
-        unimplemented!()
+        let PaymentInstructions::Lightning(invoice) =
+            try_tx_fus!(payment_instructions.clone().ok_or("payment_instructions can't be None"));
+        let coin = self.clone();
+        let fut = async move {
+            let payment = try_tx_s!(coin.pay_invoice(invoice).await);
+            Ok(payment.payment_hash.into())
+        };
+        Box::new(fut.boxed().compat())
     }
 
     fn send_maker_spends_taker_payment(
         &self,
-        _taker_payment_tx: &[u8],
+        taker_payment_tx: &[u8],
         _time_lock: u32,
         _taker_pub: &[u8],
-        _secret: &[u8],
+        secret: &[u8],
         _secret_hash: &[u8],
         _swap_contract_address: &Option<BytesJson>,
         _swap_unique_data: &[u8],
     ) -> TransactionFut {
-        unimplemented!()
+        let payment_hash = try_tx_fus!(payment_hash_from_slice(taker_payment_tx));
+        let mut preimage = [b' '; 32];
+        preimage.copy_from_slice(secret);
+
+        let coin = self.clone();
+        let fut = async move {
+            let payment_preimage = PaymentPreimage(preimage);
+            coin.channel_manager.claim_funds(payment_preimage);
+            coin.db
+                .update_payment_preimage_in_db(payment_hash, payment_preimage)
+                .await
+                .error_log_with_msg(&format!(
+                    "Unable to update payment {} information in DB with preimage: {}!",
+                    hex::encode(payment_hash.0),
+                    hex::encode(preimage)
+                ));
+            Ok(TransactionEnum::LightningPayment(payment_hash))
+        };
+        Box::new(fut.boxed().compat())
     }
 
     fn send_taker_spends_maker_payment(
@@ -356,6 +591,7 @@ impl SwapOps for LightningCoin {
         unimplemented!()
     }
 
+    // Todo: This validates the dummy fee for now for the sake of swap P.O.C., this should be implemented probably after agreeing on how fees will work for lightning
     fn validate_fee(
         &self,
         _fee_tx: &TransactionEnum,
@@ -365,13 +601,54 @@ impl SwapOps for LightningCoin {
         _min_block_number: u64,
         _uuid: &[u8],
     ) -> Box<dyn Future<Item = (), Error = String> + Send> {
-        unimplemented!()
+        Box::new(futures01::future::ok(()))
     }
 
     fn validate_maker_payment(&self, _input: ValidatePaymentInput) -> ValidatePaymentFut<()> { unimplemented!() }
 
-    fn validate_taker_payment(&self, _input: ValidatePaymentInput) -> ValidatePaymentFut<()> { unimplemented!() }
+    fn validate_taker_payment(&self, input: ValidatePaymentInput) -> ValidatePaymentFut<()> {
+        let payment_hash = try_f!(payment_hash_from_slice(&input.payment_tx)
+            .map_to_mm(|e| ValidatePaymentError::TxDeserializationError(e.to_string())));
+        let payment_hex = hex::encode(payment_hash.0);
 
+        let amt_msat = try_f!(sat_from_big_decimal(&input.amount, self.decimals()));
+
+        let coin = self.clone();
+        let fut = async move {
+            match coin.db.get_payment_from_db(payment_hash).await {
+                Ok(Some(mut payment)) => {
+                    let amount_sent = payment.amt_msat;
+                    // Todo: Add more validations if needed, locktime is probably the most important
+                    if amount_sent != Some(amt_msat as i64) {
+                        // Free the htlc to allow for this inbound liquidity to be used for other inbound payments
+                        coin.channel_manager.fail_htlc_backwards(&payment_hash);
+                        payment.status = HTLCStatus::Failed;
+                        drop_mutability!(payment);
+                        coin.db
+                            .add_or_update_payment_in_db(payment)
+                            .await
+                            .error_log_with_msg("Unable to update payment information in DB!");
+                        return MmError::err(ValidatePaymentError::WrongPaymentTx(format!(
+                            "Provided payment {} amount {:?} doesn't match required amount {}",
+                            payment_hex, amount_sent, amt_msat
+                        )));
+                    }
+                    Ok(())
+                },
+                Ok(None) => MmError::err(ValidatePaymentError::UnexpectedPaymentState(format!(
+                    "Payment {} should be found on the database",
+                    payment_hex
+                ))),
+                Err(e) => MmError::err(ValidatePaymentError::InternalError(format!(
+                    "Unable to retrieve payment {} from the database error: {}",
+                    payment_hex, e
+                ))),
+            }
+        };
+        Box::new(fut.boxed().compat())
+    }
+
+    // Todo: This is None for now for the sake of swap P.O.C., this should be implemented probably in next PRs and should be tested across restarts
     fn check_if_my_payment_sent(
         &self,
         _time_lock: u32,
@@ -382,7 +659,7 @@ impl SwapOps for LightningCoin {
         _swap_unique_data: &[u8],
         _amount: &BigDecimal,
     ) -> Box<dyn Future<Item = Option<TransactionEnum>, Error = String> + Send> {
-        unimplemented!()
+        Box::new(futures01::future::ok(None))
     }
 
     async fn search_for_swap_tx_spend_my(
@@ -403,18 +680,103 @@ impl SwapOps for LightningCoin {
         unimplemented!();
     }
 
-    fn extract_secret(&self, _secret_hash: &[u8], _spend_tx: &[u8]) -> Result<Vec<u8>, String> { unimplemented!() }
+    async fn extract_secret(&self, _secret_hash: &[u8], spend_tx: &[u8]) -> Result<Vec<u8>, String> {
+        let payment_hash = payment_hash_from_slice(spend_tx).map_err(|e| e.to_string())?;
+        let payment_hex = hex::encode(payment_hash.0);
+
+        return match self.db.get_payment_from_db(payment_hash).await {
+            Ok(Some(payment)) => match payment.preimage {
+                Some(preimage) => Ok(preimage.0.to_vec()),
+                None => ERR!("Preimage for payment {} should be found on the database", payment_hex),
+            },
+            Ok(None) => ERR!("Payment {} should be found on the database", payment_hex),
+            Err(e) => ERR!(
+                "Unable to retrieve payment {} from the database error: {}",
+                payment_hex,
+                e
+            ),
+        };
+    }
 
     fn negotiate_swap_contract_addr(
         &self,
         _other_side_address: Option<&[u8]>,
     ) -> Result<Option<BytesJson>, MmError<NegotiateSwapContractAddrErr>> {
-        unimplemented!()
+        Ok(None)
     }
 
-    fn derive_htlc_key_pair(&self, _swap_unique_data: &[u8]) -> KeyPair { unimplemented!() }
+    // Todo: This can be changed if private swaps were to be implemented for lightning
+    fn derive_htlc_key_pair(&self, swap_unique_data: &[u8]) -> KeyPair {
+        utxo_common::derive_htlc_key_pair(self.platform.coin.as_ref(), swap_unique_data)
+    }
 
-    fn validate_other_pubkey(&self, _raw_pubkey: &[u8]) -> MmResult<(), ValidateOtherPubKeyErr> { unimplemented!() }
+    fn validate_other_pubkey(&self, raw_pubkey: &[u8]) -> MmResult<(), ValidateOtherPubKeyErr> {
+        utxo_common::validate_other_pubkey(raw_pubkey)
+    }
+
+    async fn payment_instructions(
+        &self,
+        secret_hash: &[u8],
+        amount: &BigDecimal,
+    ) -> Result<Option<Vec<u8>>, MmError<PaymentInstructionsErr>> {
+        // lightning decimals should be 11 in config since the smallest divisible unit in lightning coin is msat
+        let amt_msat = sat_from_big_decimal(amount, self.decimals())?;
+        let payment_hash =
+            payment_hash_from_slice(secret_hash).map_to_mm(|e| PaymentInstructionsErr::InternalError(e.to_string()))?;
+
+        // note: No description is provided in the invoice to reduce the payload
+        // Todo: The invoice expiry should probably be the same as maker_payment_wait/wait_taker_payment
+        let invoice = self
+            .create_invoice_for_hash(payment_hash, Some(amt_msat), "".into(), DEFAULT_INVOICE_EXPIRY)
+            .await
+            .map_err(|e| PaymentInstructionsErr::LightningInvoiceErr(e.to_string()))?;
+        Ok(Some(invoice.to_string().into_bytes()))
+    }
+
+    fn validate_instructions(
+        &self,
+        instructions: &[u8],
+        secret_hash: &[u8],
+        amount: BigDecimal,
+    ) -> Result<PaymentInstructions, MmError<ValidateInstructionsErr>> {
+        let invoice = Invoice::from_str(&String::from_utf8_lossy(instructions))?;
+        if invoice.payment_hash().as_inner() != secret_hash
+            && ripemd160(invoice.payment_hash().as_inner()).as_slice() != secret_hash
+        {
+            return Err(
+                ValidateInstructionsErr::ValidateLightningInvoiceErr("Invalid invoice payment hash!".into()).into(),
+            );
+        }
+        let invoice_amount = invoice
+            .amount_milli_satoshis()
+            .ok_or_else(|| ValidateInstructionsErr::ValidateLightningInvoiceErr("No invoice amount!".into()))?;
+        if big_decimal_from_sat(invoice_amount as i64, self.decimals()) != amount {
+            return Err(ValidateInstructionsErr::ValidateLightningInvoiceErr("Invalid invoice amount!".into()).into());
+        }
+        // Todo: continue validation here by comparing locktime, etc..
+        Ok(PaymentInstructions::Lightning(invoice))
+    }
+
+    // Watchers cannot be used for lightning swaps for now
+    // Todo: Check if watchers can work in some cases with lightning and implement it if it's possible, the watcher will not be able to retrieve the preimage since it's retrieved through the lightning network
+    // Todo: The watcher can retrieve the preimage only if he is running a lightning node and is part of the nodes that routed the taker payment which is a very low probability event that shouldn't be considered
+    fn is_supported_by_watchers(&self) -> bool { false }
+}
+
+#[derive(Debug, Display)]
+pub enum PaymentHashFromSliceErr {
+    #[display(fmt = "Invalid data length of {}", _0)]
+    InvalidLength(usize),
+}
+
+fn payment_hash_from_slice(data: &[u8]) -> Result<PaymentHash, PaymentHashFromSliceErr> {
+    let len = data.len();
+    if len != 32 {
+        return Err(PaymentHashFromSliceErr::InvalidLength(len));
+    }
+    let mut hash = [b' '; 32];
+    hash.copy_from_slice(data);
+    Ok(PaymentHash(hash))
 }
 
 #[async_trait]
@@ -537,35 +899,124 @@ impl MarketCoinOps for LightningCoin {
         ))
     }
 
-    // Todo: Implement this when implementing swaps for lightning as it's is used mainly for swaps
+    // Todo: Add waiting for confirmations logic for the case of if the channel is closed and the htlc can be claimed on-chain
     fn wait_for_confirmations(
         &self,
-        _tx: &[u8],
+        tx: &[u8],
         _confirmations: u64,
         _requires_nota: bool,
-        _wait_until: u64,
-        _check_every: u64,
+        wait_until: u64,
+        check_every: u64,
     ) -> Box<dyn Future<Item = (), Error = String> + Send> {
-        unimplemented!()
+        let payment_hash = try_f!(payment_hash_from_slice(tx).map_err(|e| e.to_string()));
+        let payment_hex = hex::encode(payment_hash.0);
+
+        let coin = self.clone();
+        let fut = async move {
+            loop {
+                if now_ms() / 1000 > wait_until {
+                    return ERR!(
+                        "Waited too long until {} for payment {} to be received",
+                        wait_until,
+                        payment_hex
+                    );
+                }
+
+                match coin.db.get_payment_from_db(payment_hash).await {
+                    Ok(Some(_)) => {
+                        // Todo: This should check for different payment statuses depending on where wait_for_confirmations is called,
+                        // Todo: which might lead to breaking wait_for_confirmations to 3 functions (wait_for_payment_sent_confirmations, wait_for_payment_received_confirmations, wait_for_payment_spent_confirmations)
+                        return Ok(());
+                    },
+                    Ok(None) => info!("Payment {} not received yet!", payment_hex),
+                    Err(e) => {
+                        return ERR!(
+                            "Error getting payment {} from db: {}, retrying in {} seconds",
+                            payment_hex,
+                            e,
+                            check_every
+                        )
+                    },
+                }
+
+                // note: When sleeping for only 1 second the test_send_payment_and_swaps unit test took 20 seconds to complete instead of 37 seconds when WAIT_CONFIRM_INTERVAL (15 seconds) is used
+                // Todo: In next sprints, should add a mutex for lightning swap payments to avoid overloading the shared db connection with requests when the sleep time is reduced and multiple swaps are ran together
+                // Todo: The aim is to make lightning swap payments as fast as possible. Running swap payments statuses should be loaded from db on restarts in this case.
+                Timer::sleep(check_every as f64).await;
+            }
+        };
+        Box::new(fut.boxed().compat())
     }
 
-    // Todo: Implement this when implementing swaps for lightning as it's is used mainly for swaps
     fn wait_for_htlc_tx_spend(
         &self,
-        _transaction: &[u8],
+        transaction: &[u8],
         _secret_hash: &[u8],
-        _wait_until: u64,
+        wait_until: u64,
         _from_block: u64,
         _swap_contract_address: &Option<BytesJson>,
         _check_every: f64,
     ) -> TransactionFut {
-        unimplemented!()
+        let payment_hash = try_tx_fus!(payment_hash_from_slice(transaction));
+        let payment_hex = hex::encode(payment_hash.0);
+
+        let coin = self.clone();
+        let fut = async move {
+            loop {
+                if now_ms() / 1000 > wait_until {
+                    return Err(TransactionErr::Plain(format!(
+                        "Waited too long until {} for payment {} to be spent",
+                        wait_until, payment_hex
+                    )));
+                }
+
+                match coin.db.get_payment_from_db(payment_hash).await {
+                    Ok(Some(payment)) => {
+                        match payment.status {
+                            HTLCStatus::Pending => (),
+                            HTLCStatus::Received => {
+                                return Err(TransactionErr::Plain(format!(
+                                    "Payment {} has an invalid status of {} in the db",
+                                    payment_hex, payment.status
+                                )))
+                            },
+                            HTLCStatus::Succeeded => return Ok(TransactionEnum::LightningPayment(payment_hash)),
+                            // Todo: Retry payment multiple times returning an error only if all paths failed or other permenant error, should also keep locktime in mind when using different paths with different CLTVs
+                            HTLCStatus::Failed => {
+                                return Err(TransactionErr::Plain(format!(
+                                    "Lightning swap payment {} failed",
+                                    payment_hex
+                                )))
+                            },
+                        }
+                    },
+                    Ok(None) => {
+                        return Err(TransactionErr::Plain(format!(
+                            "Payment {} not found in DB",
+                            payment_hex
+                        )))
+                    },
+                    Err(e) => {
+                        return Err(TransactionErr::Plain(format!(
+                            "Error getting payment {} from db: {}",
+                            payment_hex, e
+                        )))
+                    },
+                }
+
+                // note: When sleeping for only 1 second the test_send_payment_and_swaps unit test took 20 seconds to complete instead of 37 seconds when sleeping for 10 seconds
+                // Todo: In next sprints, should add a mutex for lightning swap payments to avoid overloading the shared db connection with requests when the sleep time is reduced and multiple swaps are ran together.
+                // Todo: The aim is to make lightning swap payments as fast as possible, more sleep time can be allowed for maker payment since it waits for the secret to be revealed on another chain first.
+                // Todo: Running swap payments statuses should be loaded from db on restarts in this case.
+                Timer::sleep(10.).await;
+            }
+        };
+        Box::new(fut.boxed().compat())
     }
 
-    // Todo: Implement this when implementing swaps for lightning as it's is used mainly for swaps
-    fn tx_enum_from_bytes(&self, _bytes: &[u8]) -> Result<TransactionEnum, MmError<TxMarshalingErr>> {
-        MmError::err(TxMarshalingErr::NotSupported(
-            "tx_enum_from_bytes is not supported for Lightning yet.".to_string(),
+    fn tx_enum_from_bytes(&self, bytes: &[u8]) -> Result<TransactionEnum, MmError<TxMarshalingErr>> {
+        Ok(TransactionEnum::LightningPayment(
+            payment_hash_from_slice(bytes).map_to_mm(|e| TxMarshalingErr::InvalidInput(e.to_string()))?,
         ))
     }
 
@@ -580,11 +1031,11 @@ impl MarketCoinOps for LightningCoin {
             .to_string())
     }
 
-    // Todo: Implement this when implementing swaps for lightning as it's is used only for swaps
-    fn min_tx_amount(&self) -> BigDecimal { unimplemented!() }
+    // Todo: min_tx_amount should depend on inbound_htlc_minimum_msat of the channel/s the payment will be sent through, 1 satoshi is used for for now (1000 of the base unit of lightning which is msat)
+    fn min_tx_amount(&self) -> BigDecimal { big_decimal_from_sat(1000, self.decimals()) }
 
-    // Todo: Implement this when implementing swaps for lightning as it's is used only for order matching/swaps
-    fn min_trading_vol(&self) -> MmNumber { unimplemented!() }
+    // Todo: Equals to min_tx_amount for now (1 satoshi), should change this later
+    fn min_trading_vol(&self) -> MmNumber { self.min_tx_amount().into() }
 }
 
 #[async_trait]
@@ -593,8 +1044,13 @@ impl MmCoin for LightningCoin {
 
     fn spawner(&self) -> CoinFutSpawner { CoinFutSpawner::new(&self.platform.abortable_system) }
 
-    fn get_raw_transaction(&self, req: RawTransactionRequest) -> RawTransactionFut {
-        Box::new(self.platform_coin().get_raw_transaction(req))
+    fn get_raw_transaction(&self, _req: RawTransactionRequest) -> RawTransactionFut {
+        let fut = async move {
+            MmError::err(RawTransactionError::InternalError(
+                "get_raw_transaction method is not supported for lightning, please use get_payment_details method instead.".into(),
+            ))
+        };
+        Box::new(fut.boxed().compat())
     }
 
     fn withdraw(&self, _req: WithdrawRequest) -> WithdrawFut {
@@ -634,25 +1090,39 @@ impl MmCoin for LightningCoin {
     // Todo: Implement this when implementing swaps for lightning as it's is used only for swaps
     fn get_trade_fee(&self) -> Box<dyn Future<Item = TradeFee, Error = String> + Send> { unimplemented!() }
 
-    // Todo: Implement this when implementing swaps for lightning as it's is used only for swaps
+    // Todo: This uses dummy data for now for the sake of swap P.O.C., this should be implemented probably after agreeing on how fees will work for lightning
     async fn get_sender_trade_fee(
         &self,
         _value: TradePreimageValue,
         _stage: FeeApproxStage,
     ) -> TradePreimageResult<TradeFee> {
-        unimplemented!()
+        Ok(TradeFee {
+            coin: self.ticker().to_owned(),
+            amount: Default::default(),
+            paid_from_trading_vol: false,
+        })
     }
 
-    // Todo: Implement this when implementing swaps for lightning as it's is used only for swaps
-    fn get_receiver_trade_fee(&self, _stage: FeeApproxStage) -> TradePreimageFut<TradeFee> { unimplemented!() }
+    // Todo: This uses dummy data for now for the sake of swap P.O.C., this should be implemented probably after agreeing on how fees will work for lightning
+    fn get_receiver_trade_fee(&self, _stage: FeeApproxStage) -> TradePreimageFut<TradeFee> {
+        Box::new(futures01::future::ok(TradeFee {
+            coin: self.ticker().to_owned(),
+            amount: Default::default(),
+            paid_from_trading_vol: false,
+        }))
+    }
 
-    // Todo: Implement this when implementing swaps for lightning as it's is used only for swaps
+    // Todo: This uses dummy data for now for the sake of swap P.O.C., this should be implemented probably after agreeing on how fees will work for lightning
     async fn get_fee_to_send_taker_fee(
         &self,
         _dex_fee_amount: BigDecimal,
         _stage: FeeApproxStage,
     ) -> TradePreimageResult<TradeFee> {
-        unimplemented!()
+        Ok(TradeFee {
+            coin: self.ticker().to_owned(),
+            amount: Default::default(),
+            paid_from_trading_vol: false,
+        })
     }
 
     // Lightning payments are either pending, successful or failed. Once a payment succeeds there is no need to for confirmations
@@ -669,11 +1139,11 @@ impl MmCoin for LightningCoin {
 
     fn mature_confirmations(&self) -> Option<u32> { None }
 
-    // Todo: Implement this when implementing order matching for lightning as it's is used only for order matching
-    fn coin_protocol_info(&self) -> Vec<u8> { unimplemented!() }
+    // Todo: This uses default data for now for the sake of swap P.O.C., this should be implemented probably when implementing order matching if it's needed
+    fn coin_protocol_info(&self) -> Vec<u8> { Vec::new() }
 
-    // Todo: Implement this when implementing order matching for lightning as it's is used only for order matching
-    fn is_coin_protocol_supported(&self, _info: &Option<Vec<u8>>) -> bool { unimplemented!() }
+    // Todo: This uses default data for now for the sake of swap P.O.C., this should be implemented probably when implementing order matching if it's needed
+    fn is_coin_protocol_supported(&self, _info: &Option<Vec<u8>>) -> bool { true }
 }
 
 #[derive(Clone, Debug, Deserialize, Serialize)]
@@ -822,7 +1292,7 @@ pub async fn start_lightning(
         ln_utils::get_open_channels_nodes_addresses(persister.clone(), channel_manager.clone()).await?,
     ));
 
-    platform.spawner().spawn(ln_p2p::connect_to_nodes_loop(
+    platform.spawner().spawn(ln_p2p::connect_to_ln_nodes_loop(
         open_channels_nodes.clone(),
         peer_manager.clone(),
     ));
@@ -847,996 +1317,5 @@ pub async fn start_lightning(
         db,
         open_channels_nodes,
         trusted_nodes,
-    })
-}
-
-#[derive(Deserialize)]
-pub struct ConnectToNodeRequest {
-    pub coin: String,
-    pub node_address: NodeAddress,
-}
-
-/// Connect to a certain node on the lightning network.
-pub async fn connect_to_lightning_node(ctx: MmArc, req: ConnectToNodeRequest) -> ConnectToNodeResult<String> {
-    let ln_coin = match lp_coinfind_or_err(&ctx, &req.coin).await? {
-        MmCoinEnum::LightningCoin(c) => c,
-        e => return MmError::err(ConnectToNodeError::UnsupportedCoin(e.ticker().to_string())),
-    };
-
-    let node_pubkey = req.node_address.pubkey;
-    let node_addr = req.node_address.addr;
-    let res = connect_to_node(node_pubkey, node_addr, ln_coin.peer_manager.clone()).await?;
-
-    // If a node that we have an open channel with changed it's address, "connect_to_lightning_node"
-    // can be used to reconnect to the new address while saving this new address for reconnections.
-    if let ConnectToNodeRes::ConnectedSuccessfully { .. } = res {
-        if let Entry::Occupied(mut entry) = ln_coin.open_channels_nodes.lock().entry(node_pubkey) {
-            entry.insert(node_addr);
-        }
-        ln_coin
-            .persister
-            .save_nodes_addresses(ln_coin.open_channels_nodes)
-            .await?;
-    }
-
-    Ok(res.to_string())
-}
-
-#[derive(Clone, Debug, Deserialize, PartialEq)]
-#[serde(tag = "type", content = "value")]
-pub enum ChannelOpenAmount {
-    Exact(BigDecimal),
-    Max,
-}
-
-#[derive(Deserialize)]
-pub struct OpenChannelRequest {
-    pub coin: String,
-    pub node_address: NodeAddress,
-    pub amount: ChannelOpenAmount,
-    /// The amount to push to the counterparty as part of the open, in milli-satoshi. Creates inbound liquidity for the channel.
-    /// By setting push_msat to a value, opening channel request will be equivalent to opening a channel then sending a payment with
-    /// the push_msat amount.
-    #[serde(default)]
-    pub push_msat: u64,
-    pub channel_options: Option<ChannelOptions>,
-    pub channel_configs: Option<OurChannelsConfigs>,
-}
-
-#[derive(Serialize)]
-pub struct OpenChannelResponse {
-    rpc_channel_id: u64,
-    node_address: NodeAddress,
-}
-
-/// Opens a channel on the lightning network.
-pub async fn open_channel(ctx: MmArc, req: OpenChannelRequest) -> OpenChannelResult<OpenChannelResponse> {
-    let ln_coin = match lp_coinfind_or_err(&ctx, &req.coin).await? {
-        MmCoinEnum::LightningCoin(c) => c,
-        e => return MmError::err(OpenChannelError::UnsupportedCoin(e.ticker().to_string())),
-    };
-
-    // Making sure that the node data is correct and that we can connect to it before doing more operations
-    let node_pubkey = req.node_address.pubkey;
-    let node_addr = req.node_address.addr;
-    connect_to_node(node_pubkey, node_addr, ln_coin.peer_manager.clone()).await?;
-
-    let platform_coin = ln_coin.platform_coin().clone();
-    let decimals = platform_coin.as_ref().decimals;
-    let my_address = platform_coin.as_ref().derivation_method.iguana_or_err()?;
-    let (unspents, _) = platform_coin.get_unspent_ordered_list(my_address).await?;
-    let (value, fee_policy) = match req.amount.clone() {
-        ChannelOpenAmount::Max => (
-            unspents.iter().fold(0, |sum, unspent| sum + unspent.value),
-            FeePolicy::DeductFromOutput(0),
-        ),
-        ChannelOpenAmount::Exact(v) => {
-            let value = sat_from_big_decimal(&v, decimals)?;
-            (value, FeePolicy::SendExact)
-        },
-    };
-
-    // The actual script_pubkey will replace this before signing the transaction after receiving the required
-    // output script from the other node when the channel is accepted
-    let script_pubkey =
-        Builder::build_witness_script(&AddressHashEnum::WitnessScriptHash(Default::default())).to_bytes();
-    let outputs = vec![TransactionOutput { value, script_pubkey }];
-
-    let mut tx_builder = UtxoTxBuilder::new(&platform_coin)
-        .add_available_inputs(unspents)
-        .add_outputs(outputs)
-        .with_fee_policy(fee_policy);
-
-    let fee = platform_coin
-        .get_tx_fee()
-        .await
-        .map_err(|e| OpenChannelError::RpcError(e.to_string()))?;
-    tx_builder = tx_builder.with_fee(fee);
-
-    let (unsigned, _) = tx_builder.build().await?;
-
-    let amount_in_sat = unsigned.outputs[0].value;
-    let push_msat = req.push_msat;
-    let channel_manager = ln_coin.channel_manager.clone();
-
-    let mut conf = ln_coin.conf.clone();
-    if let Some(options) = req.channel_options {
-        match conf.channel_options.as_mut() {
-            Some(o) => o.update_according_to(options),
-            None => conf.channel_options = Some(options),
-        }
-    }
-    if let Some(configs) = req.channel_configs {
-        match conf.our_channels_configs.as_mut() {
-            Some(o) => o.update_according_to(configs),
-            None => conf.our_channels_configs = Some(configs),
-        }
-    }
-    drop_mutability!(conf);
-    let user_config: UserConfig = conf.into();
-
-    let rpc_channel_id = ln_coin.db.get_last_channel_rpc_id().await? as u64 + 1;
-
-    let temp_channel_id = async_blocking(move || {
-        channel_manager
-            .create_channel(node_pubkey, amount_in_sat, push_msat, rpc_channel_id, Some(user_config))
-            .map_to_mm(|e| OpenChannelError::FailureToOpenChannel(node_pubkey.to_string(), format!("{:?}", e)))
-    })
-    .await?;
-
-    {
-        let mut unsigned_funding_txs = ln_coin.platform.unsigned_funding_txs.lock();
-        unsigned_funding_txs.insert(rpc_channel_id, unsigned);
-    }
-
-    let pending_channel_details = DBChannelDetails::new(
-        rpc_channel_id,
-        temp_channel_id,
-        node_pubkey,
-        true,
-        user_config.channel_handshake_config.announced_channel,
-    );
-
-    // Saving node data to reconnect to it on restart
-    ln_coin.open_channels_nodes.lock().insert(node_pubkey, node_addr);
-    ln_coin
-        .persister
-        .save_nodes_addresses(ln_coin.open_channels_nodes)
-        .await?;
-
-    if let Err(e) = ln_coin.db.add_channel_to_db(pending_channel_details).await {
-        error!("Unable to add new outbound channel {} to db: {}", rpc_channel_id, e);
-    }
-
-    Ok(OpenChannelResponse {
-        rpc_channel_id,
-        node_address: req.node_address,
-    })
-}
-
-#[derive(Deserialize)]
-pub struct UpdateChannelReq {
-    pub coin: String,
-    pub rpc_channel_id: u64,
-    pub channel_options: ChannelOptions,
-}
-
-#[derive(Serialize)]
-pub struct UpdateChannelResponse {
-    channel_options: ChannelOptions,
-}
-
-/// Updates configuration for an open channel.
-pub async fn update_channel(ctx: MmArc, req: UpdateChannelReq) -> UpdateChannelResult<UpdateChannelResponse> {
-    let ln_coin = match lp_coinfind_or_err(&ctx, &req.coin).await? {
-        MmCoinEnum::LightningCoin(c) => c,
-        e => return MmError::err(UpdateChannelError::UnsupportedCoin(e.ticker().to_string())),
-    };
-
-    let channel_details = ln_coin
-        .get_channel_by_rpc_id(req.rpc_channel_id)
-        .await
-        .ok_or(UpdateChannelError::NoSuchChannel(req.rpc_channel_id))?;
-
-    async_blocking(move || {
-        let mut channel_options = ln_coin
-            .conf
-            .channel_options
-            .unwrap_or_else(|| req.channel_options.clone());
-        if channel_options != req.channel_options {
-            channel_options.update_according_to(req.channel_options.clone());
-        }
-        drop_mutability!(channel_options);
-        let channel_ids = &[channel_details.channel_id];
-        let counterparty_node_id = channel_details.counterparty.node_id;
-        ln_coin
-            .channel_manager
-            .update_channel_config(&counterparty_node_id, channel_ids, &channel_options.clone().into())
-            .map_to_mm(|e| UpdateChannelError::FailureToUpdateChannel(req.rpc_channel_id, format!("{:?}", e)))?;
-        Ok(UpdateChannelResponse { channel_options })
-    })
-    .await
-}
-
-#[derive(Deserialize)]
-pub struct OpenChannelsFilter {
-    pub channel_id: Option<H256Json>,
-    pub counterparty_node_id: Option<PublicKeyForRPC>,
-    pub funding_tx: Option<H256Json>,
-    pub from_funding_value_sats: Option<u64>,
-    pub to_funding_value_sats: Option<u64>,
-    pub is_outbound: Option<bool>,
-    pub from_balance_msat: Option<u64>,
-    pub to_balance_msat: Option<u64>,
-    pub from_outbound_capacity_msat: Option<u64>,
-    pub to_outbound_capacity_msat: Option<u64>,
-    pub from_inbound_capacity_msat: Option<u64>,
-    pub to_inbound_capacity_msat: Option<u64>,
-    pub is_ready: Option<bool>,
-    pub is_usable: Option<bool>,
-    pub is_public: Option<bool>,
-}
-
-fn apply_open_channel_filter(channel_details: &ChannelDetailsForRPC, filter: &OpenChannelsFilter) -> bool {
-    let is_channel_id = filter.channel_id.is_none() || Some(&channel_details.channel_id) == filter.channel_id.as_ref();
-
-    let is_counterparty_node_id = filter.counterparty_node_id.is_none()
-        || Some(&channel_details.counterparty_node_id) == filter.counterparty_node_id.as_ref();
-
-    let is_funding_tx = filter.funding_tx.is_none() || channel_details.funding_tx == filter.funding_tx;
-
-    let is_from_funding_value_sats =
-        Some(&channel_details.funding_tx_value_sats) >= filter.from_funding_value_sats.as_ref();
-
-    let is_to_funding_value_sats = filter.to_funding_value_sats.is_none()
-        || Some(&channel_details.funding_tx_value_sats) <= filter.to_funding_value_sats.as_ref();
-
-    let is_outbound = filter.is_outbound.is_none() || Some(&channel_details.is_outbound) == filter.is_outbound.as_ref();
-
-    let is_from_balance_msat = Some(&channel_details.balance_msat) >= filter.from_balance_msat.as_ref();
-
-    let is_to_balance_msat =
-        filter.to_balance_msat.is_none() || Some(&channel_details.balance_msat) <= filter.to_balance_msat.as_ref();
-
-    let is_from_outbound_capacity_msat =
-        Some(&channel_details.outbound_capacity_msat) >= filter.from_outbound_capacity_msat.as_ref();
-
-    let is_to_outbound_capacity_msat = filter.to_outbound_capacity_msat.is_none()
-        || Some(&channel_details.outbound_capacity_msat) <= filter.to_outbound_capacity_msat.as_ref();
-
-    let is_from_inbound_capacity_msat =
-        Some(&channel_details.inbound_capacity_msat) >= filter.from_inbound_capacity_msat.as_ref();
-
-    let is_to_inbound_capacity_msat = filter.to_inbound_capacity_msat.is_none()
-        || Some(&channel_details.inbound_capacity_msat) <= filter.to_inbound_capacity_msat.as_ref();
-
-    let is_confirmed = filter.is_ready.is_none() || Some(&channel_details.is_ready) == filter.is_ready.as_ref();
-
-    let is_usable = filter.is_usable.is_none() || Some(&channel_details.is_usable) == filter.is_usable.as_ref();
-
-    let is_public = filter.is_public.is_none() || Some(&channel_details.is_public) == filter.is_public.as_ref();
-
-    is_channel_id
-        && is_counterparty_node_id
-        && is_funding_tx
-        && is_from_funding_value_sats
-        && is_to_funding_value_sats
-        && is_outbound
-        && is_from_balance_msat
-        && is_to_balance_msat
-        && is_from_outbound_capacity_msat
-        && is_to_outbound_capacity_msat
-        && is_from_inbound_capacity_msat
-        && is_to_inbound_capacity_msat
-        && is_confirmed
-        && is_usable
-        && is_public
-}
-
-#[derive(Deserialize)]
-pub struct ListOpenChannelsRequest {
-    pub coin: String,
-    pub filter: Option<OpenChannelsFilter>,
-    #[serde(default = "ten")]
-    limit: usize,
-    #[serde(default)]
-    paging_options: PagingOptionsEnum<u64>,
-}
-
-#[derive(Clone, Serialize)]
-pub struct ChannelDetailsForRPC {
-    pub rpc_channel_id: u64,
-    pub channel_id: H256Json,
-    pub counterparty_node_id: PublicKeyForRPC,
-    pub funding_tx: Option<H256Json>,
-    pub funding_tx_output_index: Option<u16>,
-    pub funding_tx_value_sats: u64,
-    /// True if the channel was initiated (and thus funded) by us.
-    pub is_outbound: bool,
-    pub balance_msat: u64,
-    pub outbound_capacity_msat: u64,
-    pub inbound_capacity_msat: u64,
-    // Channel is confirmed onchain, this means that funding_locked messages have been exchanged,
-    // the channel is not currently being shut down, and the required confirmation count has been reached.
-    pub is_ready: bool,
-    // Channel is confirmed and channel_ready messages have been exchanged, the peer is connected,
-    // and the channel is not currently negotiating a shutdown.
-    pub is_usable: bool,
-    // A publicly-announced channel.
-    pub is_public: bool,
-}
-
-impl From<ChannelDetails> for ChannelDetailsForRPC {
-    fn from(details: ChannelDetails) -> ChannelDetailsForRPC {
-        ChannelDetailsForRPC {
-            rpc_channel_id: details.user_channel_id,
-            channel_id: details.channel_id.into(),
-            counterparty_node_id: PublicKeyForRPC(details.counterparty.node_id),
-            funding_tx: details.funding_txo.map(|tx| h256_json_from_txid(tx.txid)),
-            funding_tx_output_index: details.funding_txo.map(|tx| tx.index),
-            funding_tx_value_sats: details.channel_value_satoshis,
-            is_outbound: details.is_outbound,
-            balance_msat: details.balance_msat,
-            outbound_capacity_msat: details.outbound_capacity_msat,
-            inbound_capacity_msat: details.inbound_capacity_msat,
-            is_ready: details.is_channel_ready,
-            is_usable: details.is_usable,
-            is_public: details.is_public,
-        }
-    }
-}
-
-struct GetOpenChannelsResult {
-    pub channels: Vec<ChannelDetailsForRPC>,
-    pub skipped: usize,
-    pub total: usize,
-}
-
-#[derive(Serialize)]
-pub struct ListOpenChannelsResponse {
-    open_channels: Vec<ChannelDetailsForRPC>,
-    limit: usize,
-    skipped: usize,
-    total: usize,
-    total_pages: usize,
-    paging_options: PagingOptionsEnum<u64>,
-}
-
-pub async fn list_open_channels_by_filter(
-    ctx: MmArc,
-    req: ListOpenChannelsRequest,
-) -> ListChannelsResult<ListOpenChannelsResponse> {
-    let ln_coin = match lp_coinfind_or_err(&ctx, &req.coin).await? {
-        MmCoinEnum::LightningCoin(c) => c,
-        e => return MmError::err(ListChannelsError::UnsupportedCoin(e.ticker().to_string())),
-    };
-
-    let result = ln_coin
-        .get_open_channels_by_filter(req.filter, req.paging_options.clone(), req.limit)
-        .await?;
-
-    Ok(ListOpenChannelsResponse {
-        open_channels: result.channels,
-        limit: req.limit,
-        skipped: result.skipped,
-        total: result.total,
-        total_pages: calc_total_pages(result.total, req.limit),
-        paging_options: req.paging_options,
-    })
-}
-
-#[derive(Deserialize)]
-pub struct ListClosedChannelsRequest {
-    pub coin: String,
-    pub filter: Option<ClosedChannelsFilter>,
-    #[serde(default = "ten")]
-    limit: usize,
-    #[serde(default)]
-    paging_options: PagingOptionsEnum<u64>,
-}
-
-#[derive(Serialize)]
-pub struct ListClosedChannelsResponse {
-    closed_channels: Vec<DBChannelDetails>,
-    limit: usize,
-    skipped: usize,
-    total: usize,
-    total_pages: usize,
-    paging_options: PagingOptionsEnum<u64>,
-}
-
-pub async fn list_closed_channels_by_filter(
-    ctx: MmArc,
-    req: ListClosedChannelsRequest,
-) -> ListChannelsResult<ListClosedChannelsResponse> {
-    let ln_coin = match lp_coinfind_or_err(&ctx, &req.coin).await? {
-        MmCoinEnum::LightningCoin(c) => c,
-        e => return MmError::err(ListChannelsError::UnsupportedCoin(e.ticker().to_string())),
-    };
-    let closed_channels_res = ln_coin
-        .db
-        .get_closed_channels_by_filter(req.filter, req.paging_options.clone(), req.limit)
-        .await?;
-
-    Ok(ListClosedChannelsResponse {
-        closed_channels: closed_channels_res.channels,
-        limit: req.limit,
-        skipped: closed_channels_res.skipped,
-        total: closed_channels_res.total,
-        total_pages: calc_total_pages(closed_channels_res.total, req.limit),
-        paging_options: req.paging_options,
-    })
-}
-
-#[derive(Deserialize)]
-pub struct GetChannelDetailsRequest {
-    pub coin: String,
-    pub rpc_channel_id: u64,
-}
-
-#[derive(Serialize)]
-#[serde(tag = "status", content = "details")]
-pub enum GetChannelDetailsResponse {
-    Open(ChannelDetailsForRPC),
-    Closed(DBChannelDetails),
-}
-
-pub async fn get_channel_details(
-    ctx: MmArc,
-    req: GetChannelDetailsRequest,
-) -> GetChannelDetailsResult<GetChannelDetailsResponse> {
-    let ln_coin = match lp_coinfind_or_err(&ctx, &req.coin).await? {
-        MmCoinEnum::LightningCoin(c) => c,
-        e => return MmError::err(GetChannelDetailsError::UnsupportedCoin(e.ticker().to_string())),
-    };
-
-    let channel_details = match ln_coin.get_channel_by_rpc_id(req.rpc_channel_id).await {
-        Some(details) => GetChannelDetailsResponse::Open(details.into()),
-        None => GetChannelDetailsResponse::Closed(
-            ln_coin
-                .db
-                .get_channel_from_db(req.rpc_channel_id)
-                .await?
-                .ok_or(GetChannelDetailsError::NoSuchChannel(req.rpc_channel_id))?,
-        ),
-    };
-
-    Ok(channel_details)
-}
-
-#[derive(Deserialize)]
-pub struct GenerateInvoiceRequest {
-    pub coin: String,
-    pub amount_in_msat: Option<u64>,
-    pub description: String,
-    pub expiry: Option<u32>,
-}
-
-#[derive(Serialize)]
-pub struct GenerateInvoiceResponse {
-    payment_hash: H256Json,
-    invoice: Invoice,
-}
-
-/// Generates an invoice (request for payment) that can be paid on the lightning network by another node using send_payment.
-pub async fn generate_invoice(
-    ctx: MmArc,
-    req: GenerateInvoiceRequest,
-) -> GenerateInvoiceResult<GenerateInvoiceResponse> {
-    let ln_coin = match lp_coinfind_or_err(&ctx, &req.coin).await? {
-        MmCoinEnum::LightningCoin(c) => c,
-        e => return MmError::err(GenerateInvoiceError::UnsupportedCoin(e.ticker().to_string())),
-    };
-    let open_channels_nodes = ln_coin.open_channels_nodes.lock().clone();
-    for (node_pubkey, node_addr) in open_channels_nodes {
-        connect_to_node(node_pubkey, node_addr, ln_coin.peer_manager.clone())
-            .await
-            .error_log_with_msg(&format!(
-                "Channel with node: {} can't be used for invoice routing hints due to connection error.",
-                node_pubkey
-            ));
-    }
-
-    let network = ln_coin.platform.network.clone().into();
-    let channel_manager = ln_coin.channel_manager.clone();
-    let keys_manager = ln_coin.keys_manager.clone();
-    let amount_in_msat = req.amount_in_msat;
-    let description = req.description.clone();
-    let expiry = req.expiry.unwrap_or(DEFAULT_INVOICE_EXPIRY);
-    let invoice = async_blocking(move || {
-        create_invoice_from_channelmanager(
-            &channel_manager,
-            keys_manager,
-            network,
-            amount_in_msat,
-            description,
-            expiry,
-        )
-    })
-    .await?;
-
-    let payment_hash = invoice.payment_hash().into_inner();
-    let payment_info = DBPaymentInfo {
-        payment_hash: PaymentHash(payment_hash),
-        payment_type: PaymentType::InboundPayment,
-        description: req.description,
-        preimage: None,
-        secret: Some(*invoice.payment_secret()),
-        amt_msat: req.amount_in_msat.map(|a| a as i64),
-        fee_paid_msat: None,
-        status: HTLCStatus::Pending,
-        created_at: (now_ms() / 1000) as i64,
-        last_updated: (now_ms() / 1000) as i64,
-    };
-    ln_coin.db.add_or_update_payment_in_db(payment_info).await?;
-    Ok(GenerateInvoiceResponse {
-        payment_hash: payment_hash.into(),
-        invoice,
-    })
-}
-
-#[derive(Clone, Debug, Deserialize, PartialEq)]
-#[serde(tag = "type")]
-pub enum Payment {
-    #[serde(rename = "invoice")]
-    Invoice { invoice: Invoice },
-    #[serde(rename = "keysend")]
-    Keysend {
-        // The recieving node pubkey (node ID)
-        destination: PublicKeyForRPC,
-        // Amount to send in millisatoshis
-        amount_in_msat: u64,
-        // The number of blocks the payment will be locked for if not claimed by the destination,
-        // It's can be assumed that 6 blocks = 1 hour. We can claim the payment amount back after this cltv expires.
-        // Minmum value allowed is MIN_FINAL_CLTV_EXPIRY which is currently 24 for rust-lightning.
-        expiry: u32,
-    },
-}
-
-#[derive(Deserialize)]
-pub struct SendPaymentReq {
-    pub coin: String,
-    pub payment: Payment,
-}
-
-#[derive(Serialize)]
-pub struct SendPaymentResponse {
-    payment_hash: H256Json,
-}
-
-pub async fn send_payment(ctx: MmArc, req: SendPaymentReq) -> SendPaymentResult<SendPaymentResponse> {
-    let ln_coin = match lp_coinfind_or_err(&ctx, &req.coin).await? {
-        MmCoinEnum::LightningCoin(c) => c,
-        e => return MmError::err(SendPaymentError::UnsupportedCoin(e.ticker().to_string())),
-    };
-    let open_channels_nodes = ln_coin.open_channels_nodes.lock().clone();
-    for (node_pubkey, node_addr) in open_channels_nodes {
-        connect_to_node(node_pubkey, node_addr, ln_coin.peer_manager.clone())
-            .await
-            .error_log_with_msg(&format!(
-                "Channel with node: {} can't be used to route this payment due to connection error.",
-                node_pubkey
-            ));
-    }
-    let payment_info = match req.payment {
-        Payment::Invoice { invoice } => ln_coin.pay_invoice(invoice).await?,
-        Payment::Keysend {
-            destination,
-            amount_in_msat,
-            expiry,
-        } => ln_coin.keysend(destination.into(), amount_in_msat, expiry).await?,
-    };
-    ln_coin.db.add_or_update_payment_in_db(payment_info.clone()).await?;
-    Ok(SendPaymentResponse {
-        payment_hash: payment_info.payment_hash.0.into(),
-    })
-}
-
-#[derive(Deserialize)]
-pub struct PaymentsFilterForRPC {
-    pub payment_type: Option<PaymentTypeForRPC>,
-    pub description: Option<String>,
-    pub status: Option<HTLCStatus>,
-    pub from_amount_msat: Option<u64>,
-    pub to_amount_msat: Option<u64>,
-    pub from_fee_paid_msat: Option<u64>,
-    pub to_fee_paid_msat: Option<u64>,
-    pub from_timestamp: Option<u64>,
-    pub to_timestamp: Option<u64>,
-}
-
-impl From<PaymentsFilterForRPC> for DBPaymentsFilter {
-    fn from(filter: PaymentsFilterForRPC) -> Self {
-        let (is_outbound, destination) = if let Some(payment_type) = filter.payment_type {
-            match payment_type {
-                PaymentTypeForRPC::OutboundPayment { destination } => (Some(true), Some(destination.0.to_string())),
-                PaymentTypeForRPC::InboundPayment => (Some(false), None),
-            }
-        } else {
-            (None, None)
-        };
-        DBPaymentsFilter {
-            is_outbound,
-            destination,
-            description: filter.description,
-            status: filter.status.map(|s| s.to_string()),
-            from_amount_msat: filter.from_amount_msat.map(|a| a as i64),
-            to_amount_msat: filter.to_amount_msat.map(|a| a as i64),
-            from_fee_paid_msat: filter.from_fee_paid_msat.map(|f| f as i64),
-            to_fee_paid_msat: filter.to_fee_paid_msat.map(|f| f as i64),
-            from_timestamp: filter.from_timestamp.map(|f| f as i64),
-            to_timestamp: filter.to_timestamp.map(|f| f as i64),
-        }
-    }
-}
-
-#[derive(Deserialize)]
-pub struct ListPaymentsReq {
-    pub coin: String,
-    pub filter: Option<PaymentsFilterForRPC>,
-    #[serde(default = "ten")]
-    limit: usize,
-    #[serde(default)]
-    paging_options: PagingOptionsEnum<H256Json>,
-}
-
-#[derive(Deserialize, Serialize)]
-#[serde(tag = "type")]
-pub enum PaymentTypeForRPC {
-    #[serde(rename = "Outbound Payment")]
-    OutboundPayment { destination: PublicKeyForRPC },
-    #[serde(rename = "Inbound Payment")]
-    InboundPayment,
-}
-
-impl From<PaymentType> for PaymentTypeForRPC {
-    fn from(payment_type: PaymentType) -> Self {
-        match payment_type {
-            PaymentType::OutboundPayment { destination } => PaymentTypeForRPC::OutboundPayment {
-                destination: PublicKeyForRPC(destination),
-            },
-            PaymentType::InboundPayment => PaymentTypeForRPC::InboundPayment,
-        }
-    }
-}
-
-impl From<PaymentTypeForRPC> for PaymentType {
-    fn from(payment_type: PaymentTypeForRPC) -> Self {
-        match payment_type {
-            PaymentTypeForRPC::OutboundPayment { destination } => PaymentType::OutboundPayment {
-                destination: destination.into(),
-            },
-            PaymentTypeForRPC::InboundPayment => PaymentType::InboundPayment,
-        }
-    }
-}
-
-#[derive(Serialize)]
-pub struct PaymentInfoForRPC {
-    payment_hash: H256Json,
-    payment_type: PaymentTypeForRPC,
-    description: String,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    amount_in_msat: Option<i64>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    fee_paid_msat: Option<i64>,
-    status: HTLCStatus,
-    created_at: i64,
-    last_updated: i64,
-}
-
-impl From<DBPaymentInfo> for PaymentInfoForRPC {
-    fn from(info: DBPaymentInfo) -> Self {
-        PaymentInfoForRPC {
-            payment_hash: info.payment_hash.0.into(),
-            payment_type: info.payment_type.into(),
-            description: info.description,
-            amount_in_msat: info.amt_msat,
-            fee_paid_msat: info.fee_paid_msat,
-            status: info.status,
-            created_at: info.created_at,
-            last_updated: info.last_updated,
-        }
-    }
-}
-
-#[derive(Serialize)]
-pub struct ListPaymentsResponse {
-    payments: Vec<PaymentInfoForRPC>,
-    limit: usize,
-    skipped: usize,
-    total: usize,
-    total_pages: usize,
-    paging_options: PagingOptionsEnum<H256Json>,
-}
-
-pub async fn list_payments_by_filter(ctx: MmArc, req: ListPaymentsReq) -> ListPaymentsResult<ListPaymentsResponse> {
-    let ln_coin = match lp_coinfind_or_err(&ctx, &req.coin).await? {
-        MmCoinEnum::LightningCoin(c) => c,
-        e => return MmError::err(ListPaymentsError::UnsupportedCoin(e.ticker().to_string())),
-    };
-    let get_payments_res = ln_coin
-        .db
-        .get_payments_by_filter(
-            req.filter.map(From::from),
-            req.paging_options.clone().map(|h| PaymentHash(h.0)),
-            req.limit,
-        )
-        .await?;
-
-    Ok(ListPaymentsResponse {
-        payments: get_payments_res.payments.into_iter().map(From::from).collect(),
-        limit: req.limit,
-        skipped: get_payments_res.skipped,
-        total: get_payments_res.total,
-        total_pages: calc_total_pages(get_payments_res.total, req.limit),
-        paging_options: req.paging_options,
-    })
-}
-
-#[derive(Deserialize)]
-pub struct GetPaymentDetailsRequest {
-    pub coin: String,
-    pub payment_hash: H256Json,
-}
-
-#[derive(Serialize)]
-pub struct GetPaymentDetailsResponse {
-    payment_details: PaymentInfoForRPC,
-}
-
-pub async fn get_payment_details(
-    ctx: MmArc,
-    req: GetPaymentDetailsRequest,
-) -> GetPaymentDetailsResult<GetPaymentDetailsResponse> {
-    let ln_coin = match lp_coinfind_or_err(&ctx, &req.coin).await? {
-        MmCoinEnum::LightningCoin(c) => c,
-        e => return MmError::err(GetPaymentDetailsError::UnsupportedCoin(e.ticker().to_string())),
-    };
-
-    if let Some(payment_info) = ln_coin.db.get_payment_from_db(PaymentHash(req.payment_hash.0)).await? {
-        return Ok(GetPaymentDetailsResponse {
-            payment_details: payment_info.into(),
-        });
-    }
-
-    MmError::err(GetPaymentDetailsError::NoSuchPayment(req.payment_hash))
-}
-
-#[derive(Deserialize)]
-pub struct CloseChannelReq {
-    pub coin: String,
-    pub rpc_channel_id: u64,
-    #[serde(default)]
-    pub force_close: bool,
-}
-
-pub async fn close_channel(ctx: MmArc, req: CloseChannelReq) -> CloseChannelResult<String> {
-    let ln_coin = match lp_coinfind_or_err(&ctx, &req.coin).await? {
-        MmCoinEnum::LightningCoin(c) => c,
-        e => return MmError::err(CloseChannelError::UnsupportedCoin(e.ticker().to_string())),
-    };
-
-    let channel_details = ln_coin
-        .get_channel_by_rpc_id(req.rpc_channel_id)
-        .await
-        .ok_or(CloseChannelError::NoSuchChannel(req.rpc_channel_id))?;
-    let channel_id = channel_details.channel_id;
-    let counterparty_node_id = channel_details.counterparty.node_id;
-
-    if req.force_close {
-        async_blocking(move || {
-            ln_coin
-                .channel_manager
-                .force_close_broadcasting_latest_txn(&channel_id, &counterparty_node_id)
-                .map_to_mm(|e| CloseChannelError::CloseChannelError(format!("{:?}", e)))
-        })
-        .await?;
-    } else {
-        async_blocking(move || {
-            ln_coin
-                .channel_manager
-                .close_channel(&channel_id, &counterparty_node_id)
-                .map_to_mm(|e| CloseChannelError::CloseChannelError(format!("{:?}", e)))
-        })
-        .await?;
-    }
-
-    Ok(format!(
-        "Initiated closing of channel with rpc_channel_id: {}",
-        req.rpc_channel_id
-    ))
-}
-
-/// Details about the balance(s) available for spending once the channel appears on chain.
-#[derive(Serialize)]
-pub enum ClaimableBalance {
-    /// The channel is not yet closed (or the commitment or closing transaction has not yet
-    /// appeared in a block). The given balance is claimable (less on-chain fees) if the channel is
-    /// force-closed now.
-    ClaimableOnChannelClose {
-        /// The amount available to claim, in satoshis, excluding the on-chain fees which will be
-        /// required to do so.
-        claimable_amount_satoshis: u64,
-    },
-    /// The channel has been closed, and the given balance is ours but awaiting confirmations until
-    /// we consider it spendable.
-    ClaimableAwaitingConfirmations {
-        /// The amount available to claim, in satoshis, possibly excluding the on-chain fees which
-        /// were spent in broadcasting the transaction.
-        claimable_amount_satoshis: u64,
-        /// The height at which an [`Event::SpendableOutputs`] event will be generated for this
-        /// amount.
-        confirmation_height: u32,
-    },
-    /// The channel has been closed, and the given balance should be ours but awaiting spending
-    /// transaction confirmation. If the spending transaction does not confirm in time, it is
-    /// possible our counterparty can take the funds by broadcasting an HTLC timeout on-chain.
-    ///
-    /// Once the spending transaction confirms, before it has reached enough confirmations to be
-    /// considered safe from chain reorganizations, the balance will instead be provided via
-    /// [`Balance::ClaimableAwaitingConfirmations`].
-    ContentiousClaimable {
-        /// The amount available to claim, in satoshis, excluding the on-chain fees which will be
-        /// required to do so.
-        claimable_amount_satoshis: u64,
-        /// The height at which the counterparty may be able to claim the balance if we have not
-        /// done so.
-        timeout_height: u32,
-    },
-    /// HTLCs which we sent to our counterparty which are claimable after a timeout (less on-chain
-    /// fees) if the counterparty does not know the preimage for the HTLCs. These are somewhat
-    /// likely to be claimed by our counterparty before we do.
-    MaybeClaimableHTLCAwaitingTimeout {
-        /// The amount available to claim, in satoshis, excluding the on-chain fees which will be
-        /// required to do so.
-        claimable_amount_satoshis: u64,
-        /// The height at which we will be able to claim the balance if our counterparty has not
-        /// done so.
-        claimable_height: u32,
-    },
-}
-
-impl From<Balance> for ClaimableBalance {
-    fn from(balance: Balance) -> Self {
-        match balance {
-            Balance::ClaimableOnChannelClose {
-                claimable_amount_satoshis,
-            } => ClaimableBalance::ClaimableOnChannelClose {
-                claimable_amount_satoshis,
-            },
-            Balance::ClaimableAwaitingConfirmations {
-                claimable_amount_satoshis,
-                confirmation_height,
-            } => ClaimableBalance::ClaimableAwaitingConfirmations {
-                claimable_amount_satoshis,
-                confirmation_height,
-            },
-            Balance::ContentiousClaimable {
-                claimable_amount_satoshis,
-                timeout_height,
-            } => ClaimableBalance::ContentiousClaimable {
-                claimable_amount_satoshis,
-                timeout_height,
-            },
-            Balance::MaybeClaimableHTLCAwaitingTimeout {
-                claimable_amount_satoshis,
-                claimable_height,
-            } => ClaimableBalance::MaybeClaimableHTLCAwaitingTimeout {
-                claimable_amount_satoshis,
-                claimable_height,
-            },
-        }
-    }
-}
-
-#[derive(Deserialize)]
-pub struct ClaimableBalancesReq {
-    pub coin: String,
-    #[serde(default)]
-    pub include_open_channels_balances: bool,
-}
-
-pub async fn get_claimable_balances(
-    ctx: MmArc,
-    req: ClaimableBalancesReq,
-) -> ClaimableBalancesResult<Vec<ClaimableBalance>> {
-    let ln_coin = match lp_coinfind_or_err(&ctx, &req.coin).await? {
-        MmCoinEnum::LightningCoin(c) => c,
-        e => return MmError::err(ClaimableBalancesError::UnsupportedCoin(e.ticker().to_string())),
-    };
-    let ignored_channels = if req.include_open_channels_balances {
-        Vec::new()
-    } else {
-        ln_coin.list_channels().await
-    };
-    let claimable_balances = async_blocking(move || {
-        ln_coin
-            .chain_monitor
-            .get_claimable_balances(&ignored_channels.iter().collect::<Vec<_>>()[..])
-            .into_iter()
-            .map(From::from)
-            .collect()
-    })
-    .await;
-
-    Ok(claimable_balances)
-}
-
-#[derive(Deserialize)]
-pub struct AddTrustedNodeReq {
-    pub coin: String,
-    pub node_id: PublicKeyForRPC,
-}
-
-#[derive(Serialize)]
-pub struct AddTrustedNodeResponse {
-    pub added_node: PublicKeyForRPC,
-}
-
-pub async fn add_trusted_node(ctx: MmArc, req: AddTrustedNodeReq) -> TrustedNodeResult<AddTrustedNodeResponse> {
-    let ln_coin = match lp_coinfind_or_err(&ctx, &req.coin).await? {
-        MmCoinEnum::LightningCoin(c) => c,
-        e => return MmError::err(TrustedNodeError::UnsupportedCoin(e.ticker().to_string())),
-    };
-
-    if ln_coin.trusted_nodes.lock().insert(req.node_id.clone().into()) {
-        ln_coin.persister.save_trusted_nodes(ln_coin.trusted_nodes).await?;
-    }
-
-    Ok(AddTrustedNodeResponse {
-        added_node: req.node_id,
-    })
-}
-
-#[derive(Deserialize)]
-pub struct RemoveTrustedNodeReq {
-    pub coin: String,
-    pub node_id: PublicKeyForRPC,
-}
-
-#[derive(Serialize)]
-pub struct RemoveTrustedNodeResponse {
-    pub removed_node: PublicKeyForRPC,
-}
-
-pub async fn remove_trusted_node(
-    ctx: MmArc,
-    req: RemoveTrustedNodeReq,
-) -> TrustedNodeResult<RemoveTrustedNodeResponse> {
-    let ln_coin = match lp_coinfind_or_err(&ctx, &req.coin).await? {
-        MmCoinEnum::LightningCoin(c) => c,
-        e => return MmError::err(TrustedNodeError::UnsupportedCoin(e.ticker().to_string())),
-    };
-
-    if ln_coin.trusted_nodes.lock().remove(&req.node_id.clone().into()) {
-        ln_coin.persister.save_trusted_nodes(ln_coin.trusted_nodes).await?;
-    }
-
-    Ok(RemoveTrustedNodeResponse {
-        removed_node: req.node_id,
-    })
-}
-
-#[derive(Deserialize)]
-pub struct ListTrustedNodesReq {
-    pub coin: String,
-}
-
-#[derive(Serialize)]
-pub struct ListTrustedNodesResponse {
-    trusted_nodes: Vec<PublicKeyForRPC>,
-}
-
-pub async fn list_trusted_nodes(ctx: MmArc, req: ListTrustedNodesReq) -> TrustedNodeResult<ListTrustedNodesResponse> {
-    let ln_coin = match lp_coinfind_or_err(&ctx, &req.coin).await? {
-        MmCoinEnum::LightningCoin(c) => c,
-        e => return MmError::err(TrustedNodeError::UnsupportedCoin(e.ticker().to_string())),
-    };
-
-    let trusted_nodes = ln_coin.trusted_nodes.lock().clone();
-
-    Ok(ListTrustedNodesResponse {
-        trusted_nodes: trusted_nodes.into_iter().map(PublicKeyForRPC).collect(),
     })
 }

@@ -28,13 +28,11 @@ async fn withdraw(mm: &MarketMakerIt, coin: &str, to: &str, amount: &str) -> Tra
         let status = withdraw_status(mm, init.result.task_id).await;
         println!("Withdraw status {}", json::to_string(&status).unwrap());
         let status: RpcV2Response<WithdrawStatus> = json::from_value(status).unwrap();
-        if let WithdrawStatus::Ready(rpc_result) = status.result {
-            match rpc_result {
-                MmRpcResult::Ok { result } => break result,
-                MmRpcResult::Err(e) => panic!("{} withdraw error {:?}", coin, e),
-            }
+        match status.result {
+            WithdrawStatus::Ok(result) => break result,
+            WithdrawStatus::Error(e) => panic!("{} withdraw error {:?}", coin, e),
+            _ => Timer::sleep(1.).await,
         }
-        Timer::sleep(1.).await;
     }
 }
 

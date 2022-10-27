@@ -259,9 +259,11 @@ impl State for WaitForTakerPaymentSpend {
                         )))
                     },
                     Err(_) => {
+                        let tx_hex = tx.tx_hex();
                         let secret = match watcher_ctx
                             .taker_coin
-                            .extract_secret(&watcher_ctx.data.secret_hash, &tx.tx_hex())
+                            .extract_secret(&watcher_ctx.data.secret_hash, &tx_hex)
+                            .await
                         {
                             Ok(bytes) => H256Json::from(bytes.as_slice()),
                             Err(err) => {
@@ -294,9 +296,11 @@ impl State for WaitForTakerPaymentSpend {
 
         info!("Found taker payment spend tx {:02x} as watcher", tx.tx_hash());
 
+        let tx_hex = tx.tx_hex();
         let secret = match watcher_ctx
             .taker_coin
-            .extract_secret(&watcher_ctx.data.secret_hash, &tx.tx_hex())
+            .extract_secret(&watcher_ctx.data.secret_hash, &tx_hex)
+            .await
         {
             Ok(bytes) => H256Json::from(bytes.as_slice()),
             Err(err) => {

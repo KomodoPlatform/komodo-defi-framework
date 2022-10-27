@@ -136,6 +136,7 @@ use std::os::raw::c_void;
 use std::panic::{set_hook, PanicInfo};
 use std::ptr::read_volatile;
 use std::sync::atomic::Ordering;
+use std::time::{Duration, SystemTime, SystemTimeError};
 use uuid::Uuid;
 
 pub use http::StatusCode;
@@ -630,7 +631,6 @@ pub fn now_ms() -> u64 { js_sys::Date::now() as u64 }
 #[cfg(target_arch = "wasm32")]
 pub fn now_float() -> f64 {
     use gstuff::duration_to_float;
-    use std::time::Duration;
     duration_to_float(Duration::from_millis(now_ms()))
 }
 
@@ -937,3 +937,8 @@ impl<Id> Default for PagingOptionsEnum<Id> {
 
 #[inline(always)]
 pub fn get_utc_timestamp() -> i64 { Utc::now().timestamp() }
+
+#[inline(always)]
+pub fn get_local_duration_since_epoch() -> Result<Duration, SystemTimeError> {
+    SystemTime::now().duration_since(SystemTime::UNIX_EPOCH)
+}

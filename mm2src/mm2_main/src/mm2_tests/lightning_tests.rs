@@ -57,7 +57,9 @@ fn start_lightning_nodes(enable_0_confs: bool) -> (MarketMakerIt, MarketMakerIt,
                 }
               }
             }
-          }
+          },
+        {"coin":"RICK","asset":"RICK","rpcport":8923,"txversion":4,"overwintered":1,"required_confirmations":0,"protocol":{"type":"UTXO"}},
+        {"coin":"MORTY","asset":"MORTY","rpcport":11608,"txversion":4,"overwintered":1,"required_confirmations":0,"protocol":{"type":"UTXO"}}
     ]);
 
     let mm_node_1 = MarketMakerIt::start(
@@ -69,13 +71,14 @@ fn start_lightning_nodes(enable_0_confs: bool) -> (MarketMakerIt, MarketMakerIt,
             "passphrase": node_1_seed.to_string(),
             "coins": coins,
             "rpc_password": "pass",
+            "i_am_seed": true,
         }),
         "pass".into(),
         local_start!("bob"),
     )
     .unwrap();
     let (_dump_log, _dump_dashboard) = mm_node_1.mm_dump();
-    log!("bob log path: {}", mm_node_1.log_path.display());
+    log!("Node 1 log path: {}", mm_node_1.log_path.display());
 
     let electrum = block_on(enable_electrum(&mm_node_1, "tBTC-TEST-segwit", false, T_BTC_ELECTRUMS));
     log!("Node 1 tBTC address: {}", electrum.address);
@@ -92,13 +95,14 @@ fn start_lightning_nodes(enable_0_confs: bool) -> (MarketMakerIt, MarketMakerIt,
             "passphrase": node_2_seed.to_string(),
             "coins": coins,
             "rpc_password": "pass",
+            "seednodes": [mm_node_1.my_seed_addr()],
         }),
         "pass".into(),
         local_start!("alice"),
     )
     .unwrap();
     let (_dump_log, _dump_dashboard) = mm_node_2.mm_dump();
-    log!("alice log path: {}", mm_node_2.log_path.display());
+    log!("Node 2 log path: {}", mm_node_2.log_path.display());
 
     let electrum = block_on(enable_electrum(&mm_node_2, "tBTC-TEST-segwit", false, T_BTC_ELECTRUMS));
     log!("Node 2 tBTC address: {}", electrum.address);
@@ -188,21 +192,25 @@ fn test_enable_lightning() {
 
 #[test]
 #[cfg(not(target_arch = "wasm32"))]
-fn test_connect_to_lightning_node() {
+fn test_connect_to_node() {
     let (mm_node_1, mm_node_2, node_1_id, _) = start_lightning_nodes(false);
     let node_1_address = format!("{}@{}:9735", node_1_id, mm_node_1.ip.to_string());
 
     let connect = block_on(mm_node_2.rpc(&json! ({
         "userpass": mm_node_2.userpass,
         "mmrpc": "2.0",
-        "method": "connect_to_lightning_node",
+        "method": "lightning::nodes::connect_to_node",
         "params": {
             "coin": "tBTC-TEST-lightning",
             "node_address": node_1_address,
         },
     })))
     .unwrap();
-    assert!(connect.0.is_success(), "!connect_to_lightning_node: {}", connect.1);
+    assert!(
+        connect.0.is_success(),
+        "!lightning::nodes::connect_to_node: {}",
+        connect.1
+    );
     let connect_res: Json = json::from_str(&connect.1).unwrap();
     let expected = format!("Connected successfully to node : {}", node_1_address);
     assert_eq!(connect_res["result"], expected);
@@ -222,7 +230,7 @@ fn test_open_channel() {
     let open_channel = block_on(mm_node_2.rpc(&json! ({
         "userpass": mm_node_2.userpass,
         "mmrpc": "2.0",
-        "method": "open_channel",
+        "method": "lightning::channels::open_channel",
         "params": {
             "coin": "tBTC-TEST-lightning",
             "node_address": node_1_address,
@@ -233,14 +241,18 @@ fn test_open_channel() {
         },
     })))
     .unwrap();
-    assert!(open_channel.0.is_success(), "!open_channel: {}", open_channel.1);
+    assert!(
+        open_channel.0.is_success(),
+        "!lightning::channels::open_channel: {}",
+        open_channel.1
+    );
 
     block_on(mm_node_2.wait_for_log(60., |log| log.contains("Transaction broadcasted successfully"))).unwrap();
 
     let list_channels_node_1 = block_on(mm_node_1.rpc(&json! ({
         "userpass": mm_node_1.userpass,
         "mmrpc": "2.0",
-        "method": "list_open_channels_by_filter",
+        "method": "lightning::channels::list_open_channels_by_filter",
         "params": {
             "coin": "tBTC-TEST-lightning",
         },
@@ -248,7 +260,7 @@ fn test_open_channel() {
     .unwrap();
     assert!(
         list_channels_node_1.0.is_success(),
-        "!list_channels: {}",
+        "!lightning::channels::list_open_channels_by_filter: {}",
         list_channels_node_1.1
     );
     let list_channels_node_1_res: Json = json::from_str(&list_channels_node_1.1).unwrap();
@@ -269,7 +281,7 @@ fn test_open_channel() {
     let list_channels_node_2 = block_on(mm_node_2.rpc(&json! ({
       "userpass": mm_node_2.userpass,
       "mmrpc": "2.0",
-      "method": "list_open_channels_by_filter",
+      "method": "lightning::channels::list_open_channels_by_filter",
       "params": {
           "coin": "tBTC-TEST-lightning",
       },
@@ -277,7 +289,7 @@ fn test_open_channel() {
     .unwrap();
     assert!(
         list_channels_node_2.0.is_success(),
-        "!list_channels: {}",
+        "!lightning::channels::list_open_channels_by_filter: {}",
         list_channels_node_2.1
     );
     let list_channels_node_2_res: Json = json::from_str(&list_channels_node_2.1).unwrap();
@@ -310,19 +322,23 @@ fn test_send_payment() {
     let add_trusted_node = block_on(mm_node_1.rpc(&json! ({
         "userpass": mm_node_1.userpass,
         "mmrpc": "2.0",
-        "method": "add_trusted_node",
+        "method": "lightning::nodes::add_trusted_node",
         "params": {
             "coin": "tBTC-TEST-lightning",
             "node_id": node_2_id
         },
     })))
     .unwrap();
-    assert!(add_trusted_node.0.is_success(), "!open_channel: {}", add_trusted_node.1);
+    assert!(
+        add_trusted_node.0.is_success(),
+        "!lightning::nodes::add_trusted_node: {}",
+        add_trusted_node.1
+    );
 
     let open_channel = block_on(mm_node_2.rpc(&json! ({
         "userpass": mm_node_2.userpass,
         "mmrpc": "2.0",
-        "method": "open_channel",
+        "method": "lightning::channels::open_channel",
         "params": {
             "coin": "tBTC-TEST-lightning",
             "node_address": node_1_address,
@@ -333,14 +349,18 @@ fn test_send_payment() {
         },
     })))
     .unwrap();
-    assert!(open_channel.0.is_success(), "!open_channel: {}", open_channel.1);
+    assert!(
+        open_channel.0.is_success(),
+        "!lightning::channels::open_channel: {}",
+        open_channel.1
+    );
 
     block_on(mm_node_2.wait_for_log(60., |log| log.contains("Received message ChannelReady"))).unwrap();
 
     let send_payment = block_on(mm_node_2.rpc(&json! ({
         "userpass": mm_node_2.userpass,
         "mmrpc": "2.0",
-        "method": "send_payment",
+        "method": "lightning::payments::send_payment",
         "params": {
             "coin": "tBTC-TEST-lightning",
             "payment": {
@@ -352,7 +372,11 @@ fn test_send_payment() {
         },
     })))
     .unwrap();
-    assert!(send_payment.0.is_success(), "!send_payment: {}", send_payment.1);
+    assert!(
+        send_payment.0.is_success(),
+        "!lightning::payments::send_payment: {}",
+        send_payment.1
+    );
 
     let send_payment_res: Json = json::from_str(&send_payment.1).unwrap();
     log!("send_payment_res {:?}", send_payment_res);
@@ -364,7 +388,7 @@ fn test_send_payment() {
     let get_payment_details = block_on(mm_node_2.rpc(&json! ({
       "userpass": mm_node_2.userpass,
       "mmrpc": "2.0",
-      "method": "get_payment_details",
+      "method": "lightning::payments::get_payment_details",
       "params": {
           "coin": "tBTC-TEST-lightning",
           "payment_hash": payment_hash
@@ -373,7 +397,7 @@ fn test_send_payment() {
     .unwrap();
     assert!(
         get_payment_details.0.is_success(),
-        "!get_payment_details: {}",
+        "!lightning::payments::get_payment_details: {}",
         get_payment_details.1
     );
 
@@ -387,7 +411,7 @@ fn test_send_payment() {
     let get_payment_details = block_on(mm_node_1.rpc(&json! ({
       "userpass": mm_node_1.userpass,
       "mmrpc": "2.0",
-      "method": "get_payment_details",
+      "method": "lightning::payments::get_payment_details",
       "params": {
           "coin": "tBTC-TEST-lightning",
           "payment_hash": payment_hash
@@ -396,7 +420,7 @@ fn test_send_payment() {
     .unwrap();
     assert!(
         get_payment_details.0.is_success(),
-        "!get_payment_details: {}",
+        "!lightning::payments::get_payment_details: {}",
         get_payment_details.1
     );
 
@@ -405,6 +429,119 @@ fn test_send_payment() {
     assert_eq!(payment["status"], "succeeded");
     assert_eq!(payment["amount_in_msat"], 1000);
     assert_eq!(payment["payment_type"]["type"], "Inbound Payment");
+
+    block_on(mm_node_1.stop()).unwrap();
+    block_on(mm_node_2.stop()).unwrap();
+}
+
+#[test]
+// This test is ignored because it requires refilling the tBTC and RICK addresses with test coins periodically.
+#[ignore]
+#[cfg(not(target_arch = "wasm32"))]
+fn test_lightning_taker_swap() {
+    let (mut mm_node_1, mut mm_node_2, node_1_id, node_2_id) = start_lightning_nodes(true);
+    let node_1_address = format!("{}@{}:9735", node_1_id, mm_node_1.ip.to_string());
+
+    let add_trusted_node = block_on(mm_node_1.rpc(&json! ({
+        "userpass": mm_node_1.userpass,
+        "mmrpc": "2.0",
+        "method": "lightning::nodes::add_trusted_node",
+        "params": {
+            "coin": "tBTC-TEST-lightning",
+            "node_id": node_2_id
+        },
+    })))
+    .unwrap();
+    assert!(
+        add_trusted_node.0.is_success(),
+        "!lightning::nodes::add_trusted_node: {}",
+        add_trusted_node.1
+    );
+
+    let open_channel = block_on(mm_node_2.rpc(&json! ({
+        "userpass": mm_node_2.userpass,
+        "mmrpc": "2.0",
+        "method": "lightning::channels::open_channel",
+        "params": {
+            "coin": "tBTC-TEST-lightning",
+            "node_address": node_1_address,
+            "amount": {
+                "type": "Exact",
+                "value": 0.0002,
+            },
+        },
+    })))
+    .unwrap();
+    assert!(
+        open_channel.0.is_success(),
+        "!lightning::channels::open_channel: {}",
+        open_channel.1
+    );
+
+    block_on(mm_node_2.wait_for_log(60., |log| log.contains("Received message ChannelReady"))).unwrap();
+
+    // Enable coins on mm_node_1 side. Print the replies in case we need the "address".
+    log!(
+        "enable_coins (mm_node_1): {:?}",
+        block_on(enable_coins_rick_morty_electrum(&mm_node_1))
+    );
+
+    // Enable coins on mm_node_2 side. Print the replies in case we need the "address".
+    log!(
+        "enable_coins (mm_node_2): {:?}",
+        block_on(enable_coins_rick_morty_electrum(&mm_node_2))
+    );
+
+    // mm_node_1 is maker
+    let set_price = block_on(mm_node_1.rpc(&json! ({
+        "userpass": mm_node_1.userpass,
+        "method": "setprice",
+        "base": "RICK",
+        "rel": "tBTC-TEST-lightning",
+        "price": 0.000001,
+        "volume": 0.1
+    })))
+    .unwrap();
+    assert!(set_price.0.is_success(), "!setprice: {}", set_price.1);
+
+    let orderbook = block_on(mm_node_2.rpc(&json! ({
+        "userpass": mm_node_2.userpass,
+        "method": "orderbook",
+        "base": "RICK",
+        "rel": "tBTC-TEST-lightning",
+    })))
+    .unwrap();
+    assert!(orderbook.0.is_success(), "!orderbook: {}", orderbook.1);
+
+    block_on(Timer::sleep(1.));
+
+    // mm_node_2 is taker
+    let buy = block_on(mm_node_2.rpc(&json! ({
+        "userpass": mm_node_2.userpass,
+        "method": "buy",
+        "base": "RICK",
+        "rel": "tBTC-TEST-lightning",
+        "price": 0.000001,
+        "volume": 0.1
+    })))
+    .unwrap();
+    assert!(buy.0.is_success(), "!buy: {}", buy.1);
+    let buy_json: Json = serde_json::from_str(&buy.1).unwrap();
+    let uuid = buy_json["result"]["uuid"].as_str().unwrap().to_owned();
+
+    // ensure the swaps are started
+    block_on(mm_node_2.wait_for_log(5., |log| {
+        log.contains("Entering the taker_swap_loop RICK/tBTC-TEST-lightning")
+    }))
+    .unwrap();
+    block_on(mm_node_1.wait_for_log(5., |log| {
+        log.contains("Entering the maker_swap_loop RICK/tBTC-TEST-lightning")
+    }))
+    .unwrap();
+
+    block_on(mm_node_1.wait_for_log(900., |log| log.contains(&format!("[swap uuid={}] Finished", uuid)))).unwrap();
+
+    block_on(mm_node_2.wait_for_log(900., |log| log.contains(&format!("[swap uuid={}] Finished", uuid)))).unwrap();
 
     block_on(mm_node_1.stop()).unwrap();
     block_on(mm_node_2.stop()).unwrap();

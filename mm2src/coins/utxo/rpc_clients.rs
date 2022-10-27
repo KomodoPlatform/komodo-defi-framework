@@ -188,8 +188,8 @@ impl UtxoRpcClientEnum {
                                 );
                             }
                             error!(
-                                "Tx {} not found on chain, error: {}, retrying in 10 seconds. Retries left: {}",
-                                tx_hash, e, tx_not_found_retries
+                                "Tx {} not found on chain, error: {}, retrying in {} seconds. Retries left: {}",
+                                tx_hash, e, check_every, tx_not_found_retries
                             );
                             tx_not_found_retries -= 1;
                             Timer::sleep(check_every as f64).await;
@@ -200,7 +200,7 @@ impl UtxoRpcClientEnum {
                             let block = match selfi.get_block_count().compat().await {
                                 Ok(b) => b,
                                 Err(e) => {
-                                    error!("Error {} getting block number, retrying in 10 seconds", e);
+                                    error!("Error {} getting block number, retrying in {} seconds", e, check_every);
                                     Timer::sleep(check_every as f64).await;
                                     continue;
                                 },
@@ -211,8 +211,8 @@ impl UtxoRpcClientEnum {
                             }
                         }
                         error!(
-                            "Error {:?} getting the transaction {:?}, retrying in 10 seconds",
-                            e, tx_hash
+                            "Error {:?} getting the transaction {:?}, retrying in {} seconds",
+                            e, tx_hash, check_every
                         )
                     },
                 }

@@ -6,14 +6,14 @@ use crate::utxo::rpc_clients::{BestBlock as RpcBestBlock, BlockHashOrHeight, Con
 use crate::utxo::spv::SimplePaymentVerification;
 use crate::utxo::utxo_standard::UtxoStandardCoin;
 use crate::utxo::GetConfirmedTxError;
-use crate::{MarketCoinOps, MmCoin, TAKER_PAYMENT_SPEND_SEARCH_INTERVAL};
+use crate::{CoinFutSpawner, MarketCoinOps, MmCoin, TAKER_PAYMENT_SPEND_SEARCH_INTERVAL};
 use bitcoin::blockdata::block::BlockHeader;
 use bitcoin::blockdata::script::Script;
 use bitcoin::blockdata::transaction::Transaction;
 use bitcoin::consensus::encode::{deserialize, serialize_hex};
 use bitcoin::hash_types::{BlockHash, TxMerkleNode, Txid};
 use bitcoin_hashes::{sha256d, Hash};
-use common::executor::{abortable_queue::AbortableQueue, AbortableSystem, Timer};
+use common::executor::{abortable_queue::AbortableQueue, AbortableSystem, SpawnFuture, Timer};
 use common::log::{debug, error, info};
 use futures::compat::Future01CompatExt;
 use futures::future::join_all;

@@ -258,6 +258,7 @@ fn send_and_refund_erc20_payment() {
             "0.001".parse().unwrap(),
             &coin.swap_contract_address(),
             &[],
+            &None,
         )
         .wait()
         .unwrap();
@@ -328,6 +329,7 @@ fn send_and_refund_eth_payment() {
             "0.001".parse().unwrap(),
             &coin.swap_contract_address(),
             &[],
+            &None,
         )
         .wait()
         .unwrap();
@@ -1424,7 +1426,7 @@ fn test_eth_extract_secret() {
         100, 189, 72, 74, 221, 144, 66, 170, 68, 121, 29, 105, 19, 194, 35, 245, 196, 131, 236, 29, 105, 101, 30,
     ];
 
-    let secret = coin.extract_secret(&[0u8; 20], tx_hex.as_slice());
+    let secret = block_on(coin.extract_secret(&[0u8; 20], tx_hex.as_slice()));
     assert!(secret.is_ok());
     let expect_secret = &[
         168, 151, 11, 232, 224, 253, 63, 180, 26, 114, 23, 184, 27, 10, 161, 80, 178, 251, 73, 204, 80, 174, 97, 118,

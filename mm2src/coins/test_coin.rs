@@ -1,10 +1,11 @@
 use super::{CoinBalance, HistorySyncState, MarketCoinOps, MmCoin, RawTransactionFut, RawTransactionRequest, SwapOps,
             TradeFee, TransactionEnum, TransactionFut};
 use crate::{coin_errors::MyAddressError, BalanceFut, CanRefundHtlc, CoinFutSpawner, FeeApproxStage, FoundSwapTxSpend,
-            NegotiateSwapContractAddrErr, SearchForSwapTxSpendInput, SignatureResult, TradePreimageFut,
-            TradePreimageResult, TradePreimageValue, TxMarshalingErr, UnexpectedDerivationMethod,
-            ValidateAddressResult, ValidateOtherPubKeyErr, ValidatePaymentFut, ValidatePaymentInput,
-            VerificationResult, WatcherOps, WatcherValidatePaymentInput, WithdrawFut, WithdrawRequest};
+            NegotiateSwapContractAddrErr, PaymentInstructions, PaymentInstructionsErr, SearchForSwapTxSpendInput,
+            SignatureResult, TradePreimageFut, TradePreimageResult, TradePreimageValue, TxMarshalingErr,
+            UnexpectedDerivationMethod, ValidateAddressResult, ValidateInstructionsErr, ValidateOtherPubKeyErr,
+            ValidatePaymentFut, ValidatePaymentInput, VerificationResult, WatcherOps, WatcherValidatePaymentInput,
+            WithdrawFut, WithdrawRequest};
 use async_trait::async_trait;
 use futures01::Future;
 use keys::KeyPair;
@@ -111,6 +112,7 @@ impl SwapOps for TestCoin {
         amount: BigDecimal,
         swap_contract_address: &Option<BytesJson>,
         _swap_unique_data: &[u8],
+        _payment_instructions: &Option<PaymentInstructions>,
     ) -> TransactionFut {
         unimplemented!()
     }
@@ -124,18 +126,19 @@ impl SwapOps for TestCoin {
         amount: BigDecimal,
         swap_contract_address: &Option<BytesJson>,
         _swap_unique_data: &[u8],
+        _payment_instructions: &Option<PaymentInstructions>,
     ) -> TransactionFut {
         unimplemented!()
     }
 
     fn send_maker_spends_taker_payment(
         &self,
-        taker_payment_tx: &[u8],
-        time_lock: u32,
-        taker_pub: &[u8],
-        secret: &[u8],
-        secret_hash: &[u8],
-        swap_contract_address: &Option<BytesJson>,
+        _taker_payment_tx: &[u8],
+        _time_lock: u32,
+        _taker_pub: &[u8],
+        _secret: &[u8],
+        _secret_hash: &[u8],
+        _swap_contract_address: &Option<BytesJson>,
         _swap_unique_data: &[u8],
     ) -> TransactionFut {
         unimplemented!()
@@ -156,11 +159,11 @@ impl SwapOps for TestCoin {
 
     fn send_taker_refunds_payment(
         &self,
-        taker_payment_tx: &[u8],
-        time_lock: u32,
-        maker_pub: &[u8],
-        secret_hash: &[u8],
-        swap_contract_address: &Option<BytesJson>,
+        _taker_payment_tx: &[u8],
+        _time_lock: u32,
+        _maker_pub: &[u8],
+        _secret_hash: &[u8],
+        _swap_contract_address: &Option<BytesJson>,
         _swap_unique_data: &[u8],
     ) -> TransactionFut {
         unimplemented!()
@@ -225,7 +228,7 @@ impl SwapOps for TestCoin {
         unimplemented!();
     }
 
-    fn extract_secret(&self, secret_hash: &[u8], spend_tx: &[u8]) -> Result<Vec<u8>, String> { unimplemented!() }
+    async fn extract_secret(&self, secret_hash: &[u8], spend_tx: &[u8]) -> Result<Vec<u8>, String> { unimplemented!() }
 
     fn negotiate_swap_contract_addr(
         &self,
@@ -241,6 +244,25 @@ impl SwapOps for TestCoin {
     }
 
     fn validate_other_pubkey(&self, raw_pubkey: &[u8]) -> MmResult<(), ValidateOtherPubKeyErr> { unimplemented!() }
+
+    async fn payment_instructions(
+        &self,
+        _secret_hash: &[u8],
+        _amount: &BigDecimal,
+    ) -> Result<Option<Vec<u8>>, MmError<PaymentInstructionsErr>> {
+        unimplemented!()
+    }
+
+    fn validate_instructions(
+        &self,
+        _instructions: &[u8],
+        _secret_hash: &[u8],
+        _amount: BigDecimal,
+    ) -> Result<PaymentInstructions, MmError<ValidateInstructionsErr>> {
+        unimplemented!()
+    }
+
+    fn is_supported_by_watchers(&self) -> bool { unimplemented!() }
 }
 
 #[async_trait]

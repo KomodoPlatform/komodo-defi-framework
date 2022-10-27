@@ -58,6 +58,7 @@ async fn test_send() {
             "0.001".parse().unwrap(),
             &None,
             &[],
+            &None,
         )
         .compat()
         .await;

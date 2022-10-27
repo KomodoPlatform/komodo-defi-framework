@@ -70,8 +70,10 @@ use utxo_signer::with_key_pair::UtxoSignWithKeyPairError;
 cfg_native! {
     use crate::lightning::LightningCoin;
     use crate::lightning::ln_conf::PlatformCoinConfirmationTargets;
+    use ::lightning::ln::PaymentHash as LightningPayment;
     use async_std::fs;
     use futures::AsyncWriteExt;
+    use lightning_invoice::{Invoice, ParseOrSemanticError};
     use std::io;
     use zcash_primitives::transaction::Transaction as ZTransaction;
     use z_coin::ZcoinProtocolInfo;
@@ -81,7 +83,6 @@ cfg_wasm32! {
     use mm2_db::indexed_db::{ConstructibleDb, DbLocked, SharedDb};
     use hd_wallet_storage::HDWalletDb;
     use tx_history_storage::wasm::{clear_tx_history, load_tx_history, save_tx_history, TxHistoryDb};
-
     pub type TxHistoryDbLocked<'a> = DbLocked<'a, TxHistoryDb>;
 }
 
@@ -364,12 +365,24 @@ pub enum TransactionEnum {
     #[cfg(not(target_arch = "wasm32"))]
     ZTransaction(ZTransaction),
     CosmosTransaction(CosmosTransaction),
+    #[cfg(not(target_arch = "wasm32"))]
+    LightningPayment(LightningPayment),
 }
 
 ifrom!(TransactionEnum, UtxoTx);
 ifrom!(TransactionEnum, SignedEthTx);
 #[cfg(not(target_arch = "wasm32"))]
 ifrom!(TransactionEnum, ZTransaction);
+#[cfg(not(target_arch = "wasm32"))]
+ifrom!(TransactionEnum, LightningPayment);
+
+impl TransactionEnum {
+    #[cfg(not(target_arch = "wasm32"))]
+    pub fn supports_tx_helper(&self) -> bool { !matches!(self, TransactionEnum::LightningPayment(_)) }
+
+    #[cfg(target_arch = "wasm32")]
+    pub fn supports_tx_helper(&self) -> bool { true }
+}
 
 // NB: When stable and groked by IDEs, `enum_dispatch` can be used instead of `Deref` to speed things up.
 impl Deref for TransactionEnum {
@@ -381,6 +394,8 @@ impl Deref for TransactionEnum {
             #[cfg(not(target_arch = "wasm32"))]
             TransactionEnum::ZTransaction(ref t) => t,
             TransactionEnum::CosmosTransaction(ref t) => t,
+            #[cfg(not(target_arch = "wasm32"))]
+            TransactionEnum::LightningPayment(ref p) => p,
         }
     }
 }
@@ -392,6 +407,7 @@ pub enum TxMarshalingErr {
     /// For cases where serialized and deserialized values doesn't verify each other.
     CrossCheckFailed(String),
     NotSupported(String),
+    Internal(String),
 }
 
 #[derive(Debug, Clone)]
@@ -498,6 +514,33 @@ pub struct SearchForSwapTxSpendInput<'a> {
     pub swap_unique_data: &'a [u8],
 }
 
+#[derive(Clone, Debug, Deserialize, PartialEq, Serialize)]
+pub enum PaymentInstructions {
+    #[cfg(not(target_arch = "wasm32"))]
+    Lightning(Invoice),
+}
+
+#[derive(Display)]
+pub enum PaymentInstructionsErr {
+    LightningInvoiceErr(String),
+    InternalError(String),
+}
+
+impl From<NumConversError> for PaymentInstructionsErr {
+    fn from(e: NumConversError) -> Self { PaymentInstructionsErr::InternalError(e.to_string()) }
+}
+
+#[derive(Display)]
+pub enum ValidateInstructionsErr {
+    ValidateLightningInvoiceErr(String),
+    UnsupportedCoin(String),
+}
+
+#[cfg(not(target_arch = "wasm32"))]
+impl From<ParseOrSemanticError> for ValidateInstructionsErr {
+    fn from(e: ParseOrSemanticError) -> Self { ValidateInstructionsErr::ValidateLightningInvoiceErr(e.to_string()) }
+}
+
 /// Swap operations (mostly based on the Hash/Time locked transactions implemented by coin wallets).
 #[async_trait]
 pub trait SwapOps {
@@ -513,6 +556,7 @@ pub trait SwapOps {
         amount: BigDecimal,
         swap_contract_address: &Option<BytesJson>,
         swap_unique_data: &[u8],
+        payment_instructions: &Option<PaymentInstructions>,
     ) -> TransactionFut;
 
     #[allow(clippy::too_many_arguments)]
@@ -525,6 +569,7 @@ pub trait SwapOps {
         amount: BigDecimal,
         swap_contract_address: &Option<BytesJson>,
         swap_unique_data: &[u8],
+        payment_instructions: &Option<PaymentInstructions>,
     ) -> TransactionFut;
 
     #[allow(clippy::too_many_arguments)]
@@ -607,7 +652,7 @@ pub trait SwapOps {
         input: SearchForSwapTxSpendInput<'_>,
     ) -> Result<Option<FoundSwapTxSpend>, String>;
 
-    fn extract_secret(&self, secret_hash: &[u8], spend_tx: &[u8]) -> Result<Vec<u8>, String>;
+    async fn extract_secret(&self, secret_hash: &[u8], spend_tx: &[u8]) -> Result<Vec<u8>, String>;
 
     fn check_tx_signed_by_pub(&self, tx: &[u8], expected_pub: &[u8]) -> Result<bool, String>;
 
@@ -632,6 +677,21 @@ pub trait SwapOps {
     fn derive_htlc_key_pair(&self, swap_unique_data: &[u8]) -> KeyPair;
 
     fn validate_other_pubkey(&self, raw_pubkey: &[u8]) -> MmResult<(), ValidateOtherPubKeyErr>;
+
+    async fn payment_instructions(
+        &self,
+        secret_hash: &[u8],
+        amount: &BigDecimal,
+    ) -> Result<Option<Vec<u8>>, MmError<PaymentInstructionsErr>>;
+
+    fn validate_instructions(
+        &self,
+        instructions: &[u8],
+        secret_hash: &[u8],
+        amount: BigDecimal,
+    ) -> Result<PaymentInstructions, MmError<ValidateInstructionsErr>>;
+
+    fn is_supported_by_watchers(&self) -> bool;
 }
 
 #[async_trait]

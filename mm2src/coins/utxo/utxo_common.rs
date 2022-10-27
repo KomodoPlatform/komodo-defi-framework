@@ -2252,7 +2252,7 @@ pub fn tx_enum_from_bytes(coin: &UtxoCoinFields, bytes: &[u8]) -> Result<Transac
         return MmError::err(TxMarshalingErr::CrossCheckFailed(format!(
             "Expected '{}' lenght of the serialized transaction, found '{}'",
             bytes.len(),
-            transaction.tx_hex().len()
+            serialized_length
         )));
     }
 
