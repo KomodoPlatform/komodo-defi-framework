@@ -170,6 +170,7 @@ async fn ln_p2p_loop(peer_manager: Arc<PeerManager>, listener: TcpListener) {
         };
         if let Ok(stream) = tcp_stream.into_std() {
             spawned.push(spawn_abortable(async move {
+                // Todo: check tokio::spawn inside setup_inbound
                 lightning_net_tokio::setup_inbound(peer_mgr.clone(), stream).await;
             }));
         };
@@ -189,6 +190,8 @@ pub async fn init_peer_manager(
     // If the user wishes to preserve privacy, addresses should likely contain only Tor Onion addresses.
     let listening_addr = myipaddr(ctx).await.map_to_mm(EnableLightningError::InvalidAddress)?;
     // If the listening port is used start_lightning should return an error early
+    // Todo: when cancelling task or deactivating coin the address should be unbinded, listener seems to not be dropped for some reason
+    // Todo: should also add a unit test for this after fixing it
     let listener = TcpListener::bind(format!("{}:{}", listening_addr, listening_port))
         .await
         .map_to_mm(|e| EnableLightningError::IOError(e.to_string()))?;

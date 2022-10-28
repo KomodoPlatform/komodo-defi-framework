@@ -82,6 +82,8 @@ type InvoicePayer<E> = payment::InvoicePayer<Arc<ChannelManager>, Router, Arc<Sc
 pub struct LightningCoin {
     pub platform: Arc<Platform>,
     pub conf: LightningCoinConf,
+    /// The lightning node background processor that takes care of tasks that need to happen periodically.
+    pub background_processor: Arc<BackgroundProcessor>,
     /// The lightning node peer manager that takes care of connecting to peers, etc..
     pub peer_manager: Arc<PeerManager>,
     /// The lightning node channel manager which keeps track of the number of open channels and sends messages to the appropriate
@@ -1278,7 +1280,7 @@ pub async fn start_lightning(
     // InvoicePayer will act as our event handler as it handles some of the payments related events before
     // delegating it to LightningEventHandler.
     // note: background_processor stops automatically when dropped since BackgroundProcessor implements the Drop trait.
-    let background_processor = BackgroundProcessor::start(
+    let background_processor = Arc::new(BackgroundProcessor::start(
         persister.clone(),
         invoice_payer.clone(),
         chain_monitor.clone(),
@@ -1287,11 +1289,7 @@ pub async fn start_lightning(
         peer_manager.clone(),
         logger,
         Some(scorer),
-    );
-    ctx.background_processors
-        .lock()
-        .unwrap()
-        .insert(conf.ticker.clone(), background_processor);
+    ));
 
     // If channel_nodes_data file exists, read channels nodes data from disk and reconnect to channel nodes/peers if possible.
     let open_channels_nodes = Arc::new(PaMutex::new(
@@ -1314,6 +1312,7 @@ pub async fn start_lightning(
     Ok(LightningCoin {
         platform,
         conf,
+        background_processor,
         peer_manager,
         channel_manager,
         chain_monitor,

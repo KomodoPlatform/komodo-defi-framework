@@ -31,7 +31,6 @@ cfg_wasm32! {
 
 cfg_native! {
     use db_common::sqlite::rusqlite::Connection;
-    use lightning_background_processor::BackgroundProcessor;
     use mm2_metrics::prometheus;
     use mm2_metrics::MmMetricsError;
     use std::net::{IpAddr, SocketAddr, AddrParseError};
@@ -104,11 +103,6 @@ pub struct MmCtx {
     pub swaps_ctx: Mutex<Option<Arc<dyn Any + 'static + Send + Sync>>>,
     /// The context belonging to the `lp_stats` mod: `StatsContext`
     pub stats_ctx: Mutex<Option<Arc<dyn Any + 'static + Send + Sync>>>,
-    /// Lightning background processors, these need to be dropped when stopping mm2 to
-    /// persist the latest states to the filesystem. This can be moved to LightningCoin
-    /// Struct in the future if the LightningCoin and other coins are dropped when mm2 stops.
-    #[cfg(not(target_arch = "wasm32"))]
-    pub background_processors: Mutex<HashMap<String, BackgroundProcessor>>,
     /// The RPC sender forwarding requests to writing part of underlying stream.
     #[cfg(target_arch = "wasm32")]
     pub wasm_rpc: Constructible<WasmRpcSender>,
@@ -153,8 +147,6 @@ impl MmCtx {
             coins_needed_for_kick_start: Mutex::new(HashSet::new()),
             swaps_ctx: Mutex::new(None),
             stats_ctx: Mutex::new(None),
-            #[cfg(not(target_arch = "wasm32"))]
-            background_processors: Mutex::new(HashMap::new()),
             #[cfg(target_arch = "wasm32")]
             wasm_rpc: Constructible::default(),
             #[cfg(not(target_arch = "wasm32"))]
@@ -392,9 +384,6 @@ impl MmArc {
         self.graceful_shutdown_registry.abort_all();
         // Abort spawned futures.
         self.abortable_system.abort_all();
-
-        #[cfg(not(target_arch = "wasm32"))]
-        self.background_processors.lock().unwrap().drain();
 
         #[cfg(feature = "track-ctx-pointer")]
         self.track_ctx_pointer();
