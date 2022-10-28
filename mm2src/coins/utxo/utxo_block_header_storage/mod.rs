@@ -1,10 +1,21 @@
 #[cfg(target_arch = "wasm32")]
-use crate::utxo::utxo_indexedb_block_header_storage::IndexedDBBlockHeadersStorage;
+pub mod indexedb_block_header_storage;
+#[cfg(target_arch = "wasm32")]
+pub use indexedb_block_header_storage::IndexedDBBlockHeadersStorage;
+
 #[cfg(not(target_arch = "wasm32"))]
-use crate::utxo::utxo_sql_block_header_storage::SqliteBlockHeadersStorage;
+pub mod sql_block_header_storage;
+#[cfg(not(target_arch = "wasm32"))]
+pub use sql_block_header_storage::SqliteBlockHeadersStorage;
+
+#[cfg(all(test, not(target_arch = "wasm32")))]
+pub mod block_header_storage_for_tests;
+
 use async_trait::async_trait;
 use chain::BlockHeader;
 use mm2_core::mm_ctx::MmArc;
+#[cfg(all(test, not(target_arch = "wasm32")))]
+use mocktopus::macros::*;
 use primitives::hash::H256;
 use spv_validation::storage::{BlockHeaderStorageError, BlockHeaderStorageOps};
 use std::collections::HashMap;
@@ -18,9 +29,10 @@ impl Debug for BlockHeaderStorage {
     fn fmt(&self, _f: &mut Formatter<'_>) -> std::fmt::Result { Ok(()) }
 }
 
+#[cfg_attr(all(test, not(target_arch = "wasm32")), mockable)]
 impl BlockHeaderStorage {
     #[cfg(all(not(test), not(target_arch = "wasm32")))]
-    pub(crate) fn new_from_ctx(ctx: MmArc, ticker: String) -> Result<Self, BlockHeaderStorageError> {
+    pub fn new_from_ctx(ctx: MmArc, ticker: String) -> Result<Self, BlockHeaderStorageError> {
         let sqlite_connection = ctx.sqlite_connection.ok_or(BlockHeaderStorageError::Internal(
             "sqlite_connection is not initialized".to_owned(),
         ))?;
@@ -33,14 +45,14 @@ impl BlockHeaderStorage {
     }
 
     #[cfg(target_arch = "wasm32")]
-    pub(crate) fn new_from_ctx(_ctx: MmArc, _ticker: String) -> Result<Self, BlockHeaderStorageError> {
+    pub fn new_from_ctx(_ctx: MmArc, _ticker: String) -> Result<Self, BlockHeaderStorageError> {
         Ok(BlockHeaderStorage {
             inner: Box::new(IndexedDBBlockHeadersStorage {}),
         })
     }
 
     #[cfg(all(test, not(target_arch = "wasm32")))]
-    pub(crate) fn new_from_ctx(ctx: MmArc, ticker: String) -> Result<Self, BlockHeaderStorageError> {
+    pub fn new_from_ctx(ctx: MmArc, ticker: String) -> Result<Self, BlockHeaderStorageError> {
         use db_common::sqlite::rusqlite::Connection;
         use std::sync::{Arc, Mutex};
 

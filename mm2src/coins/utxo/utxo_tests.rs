@@ -13,12 +13,12 @@ use crate::utxo::rpc_clients::{BlockHashOrHeight, ElectrumBalance, ElectrumClien
                                GetAddressInfoRes, ListSinceBlockRes, NativeClient, NativeClientImpl, NativeUnspent,
                                NetworkInfo, UtxoRpcClientOps, ValidateAddressRes, VerboseBlock};
 use crate::utxo::spv::SimplePaymentVerification;
-use crate::utxo::utxo_block_header_storage::BlockHeaderStorage;
+use crate::utxo::utxo_block_header_storage::{block_header_storage_for_tests::BlockHeaderStorageForTests,
+                                             BlockHeaderStorage, SqliteBlockHeadersStorage};
 use crate::utxo::utxo_builder::{UtxoArcBuilder, UtxoCoinBuilderCommonOps};
 use crate::utxo::utxo_common::UtxoTxBuilder;
 use crate::utxo::utxo_common_tests::{self, utxo_coin_fields_for_test, utxo_coin_from_fields, TEST_COIN_DECIMALS,
                                      TEST_COIN_NAME};
-use crate::utxo::utxo_sql_block_header_storage::SqliteBlockHeadersStorage;
 use crate::utxo::utxo_standard::{utxo_standard_coin_with_priv_key, UtxoStandardCoin};
 use crate::utxo::utxo_tx_history_v2::{UtxoTxDetailsParams, UtxoTxHistoryOps};
 #[cfg(not(target_arch = "wasm32"))] use crate::WithdrawFee;
@@ -4264,4 +4264,48 @@ fn test_utxo_validate_valid_and_invalid_pubkey() {
     // Test expected to fail at this point as we're using a valid pubkey to validate against an invalid pubkeys
     assert!(coin.validate_other_pubkey(&[1u8; 20]).is_err());
     assert!(coin.validate_other_pubkey(&[1u8; 8]).is_err());
+}
+
+#[test]
+fn test_block_header_utxo_loop() {
+    static mut CURRENT_BLOCK_COUNT: u64 = 2048;
+
+    // TODO return `unsafe {CURRENT_BLOCK_COUNT}`
+    // ElectrumClient::get_block_count.mock_safe(|| )
+
+    let block_header_storage = BlockHeaderStorageForTests::new(TEST_COIN_NAME.to_string());
+    // `storage_inner` will be used later in this test to be able to access the `BlockHeaderStorageForTestsInner` values.
+    let block_header_storage_for_mock = block_header_storage.inner_shared();
+
+    BlockHeaderStorage::new_from_ctx.mock_safe(move |_, _| {
+        MockResult::Return(Ok(BlockHeaderStorage {
+            inner: Box::new(block_header_storage_for_mock.clone()),
+        }))
+    });
+
+    let conf = json!({"coin":"RICK","asset":"RICK","rpcport":8923,"enable_spv_proof": true});
+    let req = json!({
+         "method": "electrum",
+         "servers": [{"url":"electrum1.cipig.net:10017"}],
+    });
+
+    let ctx = MmCtxBuilder::new().into_mm_arc();
+    let params = UtxoActivationParams::from_legacy_req(&req).unwrap();
+    block_on(utxo_standard_coin_with_priv_key(
+        &ctx,
+        TEST_COIN_NAME,
+        &conf,
+        &params,
+        &[1u8; 32],
+    ))
+    .unwrap();
+
+    // Put a header with `2045` height so `BlockHeaderStorageOps::get_last_block_height` returns 2045.
+    // block_header_storage.add_block_headers_to_storage()
+
+    block_on(Timer::sleep(5.));
+    // Check if there are blocks with 2046, 2047, 2048, 2049, 2050 heights.
+
+    // Then reset `CURRENT_BLOCK_COUNT` to 2051, for example.
+    // Repeat.
 }
