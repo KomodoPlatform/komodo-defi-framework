@@ -2,7 +2,6 @@ use crate::executor::AbortOnDropHandle;
 use crate::now_float;
 use futures::future::{abortable, FutureExt};
 use futures::task::{Context, Poll};
-use std::convert::TryInto;
 use std::future::Future;
 use std::pin::Pin;
 use std::sync::{Arc, Mutex};
@@ -85,8 +84,7 @@ impl Timer {
         // we should hold the closure until the callback function is called
         let closure = Closure::new(move || on_timeout(&state_c));
 
-        let delay_ms = delay_ms.try_into().unwrap_or(u32::MAX);
-        let timeout_id = setTimeout(&closure, delay_ms);
+        let timeout_id = setTimeout(&closure, delay_ms as u32);
         Timer {
             timeout_id,
             _closure: closure,
