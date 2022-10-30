@@ -1163,12 +1163,12 @@ pub enum FeeApproxStage {
     WithoutApprox,
     /// Increase the trade fee slightly.
     StartSwap,
+    /// Increase the trade fee slightly
+    WatcherPreimage,
     /// Increase the trade fee significantly.
     OrderIssue,
     /// Increase the trade fee largely.
     TradePreimage,
-    /// Increase the trade fee very largely
-    WatcherPreimage,
 }
 
 #[derive(Debug)]

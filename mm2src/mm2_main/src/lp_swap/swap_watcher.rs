@@ -230,7 +230,7 @@ impl State for WaitForTakerPaymentSpend {
         // Until taker payment spend deadline, periodically check for taker payment spend and maker payment spend
         #[cfg(not(test))]
         {
-            const PAYMENT_SEARCH_INTERVAL: f64 = 10.;
+            const PAYMENT_SEARCH_INTERVAL: f64 = 600.;
             let wait_until =
                 taker_payment_spend_deadline(watcher_ctx.data.swap_started_at, watcher_ctx.data.lock_duration);
 
