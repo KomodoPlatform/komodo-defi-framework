@@ -98,6 +98,7 @@ pub mod jsonrpc_client;
 pub mod fmt;
 #[macro_use]
 pub mod log;
+pub mod number_type_casting;
 
 pub mod crash_reports;
 pub mod custom_futures;

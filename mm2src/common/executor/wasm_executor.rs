@@ -1,5 +1,6 @@
 use crate::executor::AbortOnDropHandle;
 use crate::now_float;
+use crate::number_type_casting::SafeTypeCastingNumbers;
 use futures::future::{abortable, FutureExt};
 use futures::task::{Context, Poll};
 use std::future::Future;
@@ -84,7 +85,7 @@ impl Timer {
         // we should hold the closure until the callback function is called
         let closure = Closure::new(move || on_timeout(&state_c));
 
-        let timeout_id = setTimeout(&closure, delay_ms as u32);
+        let timeout_id = setTimeout(&closure, delay_ms.into_or_max());
         Timer {
             timeout_id,
             _closure: closure,
