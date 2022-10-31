@@ -4273,16 +4273,17 @@ fn test_block_header_utxo_loop() {
         .mock_safe(|_| MockResult::Return(Box::new(futures01::future::ok(unsafe { CURRENT_BLOCK_COUNT }))));
 
     let block_header_storage = BlockHeaderStorageForTests::new(TEST_COIN_NAME.to_string());
-    let res = block_header_storage.clone();
+
+    let block_header_storage_copy = block_header_storage.clone();
     BlockHeaderStorage::new_from_ctx.mock_safe(move |_, _| {
         MockResult::Return(Ok(BlockHeaderStorage {
-            inner: Box::new(res.clone()),
+            inner: Box::new(block_header_storage_copy.clone()),
         }))
     });
 
-    let res = block_header_storage.clone();
+    let block_header_storage_copy = block_header_storage.clone();
     BlockHeaderStorage::add_block_headers_to_storage.mock_safe(move |_, headers| {
-        let mut inner = block_on(res.inner.lock());
+        let mut inner = block_on(block_header_storage_copy.inner.lock());
         inner
             .block_headers_by_hash
             .extend(headers.iter().map(|(height, header)| (header.hash(), *height)));
@@ -4305,12 +4306,12 @@ fn test_block_header_utxo_loop() {
         &[1u8; 32],
     ))
     .unwrap();
+    let block_headers_storage_mock = block_on(block_header_storage.inner.lock()).clone();
 
     block_on(Timer::sleep(5.));
+    block_on(block_header_storage.add_block_headers_to_storage(generate_headers_map(2046..=2050))).unwrap();
     // Check if there are blocks with 2046, 2047, 2048, 2049, 2050 heights.
-    let _ = block_on(block_header_storage.add_block_headers_to_storage(headers_map(2046..=2050)));
-    let block = block_on(block_header_storage.inner.lock()).clone();
-    for ((h1, _), h2) in block.block_headers.iter().zip(2046_u64..=2050) {
+    for ((h1, _), h2) in block_headers_storage_mock.block_headers.iter().zip(2046_u64..=2050) {
         assert_eq!(h1, &h2)
     }
 
@@ -4320,13 +4321,14 @@ fn test_block_header_utxo_loop() {
     }
 
     block_on(Timer::sleep(5.));
-    let _ = block_on(block_header_storage.add_block_headers_to_storage(headers_map(2051..=2056)));
-    for ((h1, _), h2) in block.block_headers.iter().zip(2046_u64..=2056) {
+    block_on(block_header_storage.add_block_headers_to_storage(generate_headers_map(2051..=2056))).unwrap();
+    // Check if there are blocks with 2046, 2047, 2048, 2049, 2050..2056 heights.
+    for ((h1, _), h2) in block_headers_storage_mock.block_headers.iter().zip(2046_u64..=2056) {
         assert_eq!(h1, &h2)
     }
 }
 
-fn headers_map(range: std::ops::RangeInclusive<u64>) -> HashMap<u64, BlockHeader> {
+fn generate_headers_map(range: std::ops::RangeInclusive<u64>) -> HashMap<u64, BlockHeader> {
     let mut headers = HashMap::new();
     for count in range {
         headers.insert(count, BlockHeader {
