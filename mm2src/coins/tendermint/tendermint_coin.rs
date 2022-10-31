@@ -456,7 +456,7 @@ impl TendermintCoin {
             ))
         })?;
 
-        let amount = (gas.gas_used as f64 * self.gas_price()).ceil();
+        let amount = ((gas.gas_used as f64 * 1.5) * self.gas_price()).ceil();
 
         let fee_amount = Coin {
             denom: base_denom,
@@ -487,7 +487,7 @@ impl TendermintCoin {
             ))
         })?;
 
-        Ok((gas.gas_used as f64 * self.gas_price()).ceil() as u64)
+        Ok(((gas.gas_used as f64 * 1.5) * self.gas_price()).ceil() as u64)
     }
 
     pub(super) async fn my_account_info(&self) -> MmResult<BaseAccount, TendermintCoinRpcError> {

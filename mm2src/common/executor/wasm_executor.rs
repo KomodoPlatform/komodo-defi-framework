@@ -64,7 +64,7 @@ impl Timer {
         Timer::sleep_ms(delay_ms)
     }
 
-    pub fn sleep_ms(delay_ms: u32) -> Timer {
+    pub fn sleep_ms(delay_ms: u64) -> Timer {
         fn on_timeout(state: &Arc<Mutex<TimerState>>) {
             let mut state = match state.lock() {
                 Ok(s) => s,
@@ -84,7 +84,7 @@ impl Timer {
         // we should hold the closure until the callback function is called
         let closure = Closure::new(move || on_timeout(&state_c));
 
-        let timeout_id = setTimeout(&closure, delay_ms);
+        let timeout_id = setTimeout(&closure, delay_ms as u32);
         Timer {
             timeout_id,
             _closure: closure,

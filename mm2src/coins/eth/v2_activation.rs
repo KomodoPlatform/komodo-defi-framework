@@ -38,6 +38,7 @@ pub struct EthActivationV2Request {
 #[derive(Clone, Deserialize)]
 pub struct EthNode {
     pub url: String,
+    #[serde(default)]
     pub gui_auth: bool,
 }
 
