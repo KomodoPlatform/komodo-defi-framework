@@ -4310,8 +4310,8 @@ fn test_block_header_utxo_loop() {
     // Check if there are blocks with 2046, 2047, 2048, 2049, 2050 heights.
     let _ = block_on(block_header_storage.add_block_headers_to_storage(headers_map(2046..=2050)));
     let block = block_on(block_header_storage.inner.lock()).clone();
-    for ((h1, _), h2) in block.block_headers.into_iter().zip(2046_u64..=2050) {
-        assert_eq!(h1, h2)
+    for ((h1, _), h2) in block.block_headers.iter().zip(2046_u64..=2050) {
+        assert_eq!(h1, &h2)
     }
 
     // Then reset `CURRENT_BLOCK_COUNT` to 2051.
@@ -4321,8 +4321,8 @@ fn test_block_header_utxo_loop() {
 
     block_on(Timer::sleep(5.));
     let _ = block_on(block_header_storage.add_block_headers_to_storage(headers_map(2051..=2056)));
-    for ((h1, _), h2) in block.block_headers.into_iter().zip(2046_u64..=2056) {
-        assert_eq!(h1, h2)
+    for ((h1, _), h2) in block.block_headers.iter().zip(2046_u64..=2056) {
+        assert_eq!(h1, &h2)
     }
 }
 
