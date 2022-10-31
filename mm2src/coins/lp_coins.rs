@@ -791,7 +791,7 @@ pub trait MarketCoinOps {
 
     fn display_priv_key(&self) -> Result<String, String>;
 
-    /// Get the minimum amount to send.s
+    /// Get the minimum amount to send.
     fn min_tx_amount(&self) -> BigDecimal;
 
     /// Get the minimum amount to trade.

@@ -3923,10 +3923,7 @@ where
         FeeApproxStage::WithoutApprox => return dynamic_fee,
         // Take into account that the dynamic fee may increase during the swap by [`UtxoCoinFields::tx_fee_volatility_percent`].
         FeeApproxStage::StartSwap => base_percent,
-        // Take into account that the dynamic fee may increase after roughly the locktime is expired [`UtxoCoinFields::tx_fee_volatility_percent`]:
-        // - watcher can refund the taker payment after the locktime + an extra time to wait for the takers
-        // - the watcher can spend the maker payment right after locktime/2, but the worst case should be considered which is slightly before
-        //   the locktime is expired
+        // Take into account that the dynamic fee may increase until the watcher can spend it [`UtxoCoinFields::tx_fee_volatility_percent`].
         FeeApproxStage::WatcherPreimage => base_percent, //This needs discussion
         // Take into account that the dynamic fee may increase at each of the following stages up to [`UtxoCoinFields::tx_fee_volatility_percent`]:
         // - until a swap is started;
