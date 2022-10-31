@@ -942,7 +942,6 @@ fn test_spv_proof() {
             .as_slice(),
     )
     .unwrap();
-    println!("{:?}", header);
     let mut headers = HashMap::new();
     headers.insert(452248, header);
     let storage = client.block_headers_storage();
