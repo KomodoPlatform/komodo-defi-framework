@@ -8,7 +8,7 @@ use std::sync::Arc;
 
 #[derive(Clone)]
 pub struct BlockHeaderStorageForTests {
-    inner: Arc<AsyncMutex<BlockHeaderStorageForTestsImpl>>,
+    pub inner: Arc<AsyncMutex<BlockHeaderStorageForTestsImpl>>,
 }
 
 impl BlockHeaderStorageForTests {
@@ -23,6 +23,7 @@ impl BlockHeaderStorageForTests {
     }
 }
 
+#[derive(Clone)]
 pub struct BlockHeaderStorageForTestsImpl {
     pub ticker: String,
     // The block headers should be ordered to be able to return the last block header.
