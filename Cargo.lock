@@ -1182,6 +1182,7 @@ dependencies = [
  "futures 0.1.29",
  "futures 0.3.15",
  "futures-cpupool",
+ "futures-timer",
  "getrandom 0.2.6",
  "gstuff",
  "hex 0.4.2",

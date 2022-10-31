@@ -1,9 +1,6 @@
 /// Custom future combinators/implementations - some of standard do not match our requirements.
 use crate::executor::Timer;
-use crate::now_float;
 
-use futures::future::{select, Either};
-use futures::lock::Mutex as AsyncMutex;
 use futures::task::Poll as Poll03;
 use futures::Future as Future03;
 use futures01::future::{self, loop_fn, Either as Either01, IntoFuture, Loop};
@@ -194,42 +191,6 @@ where
                 },
             }
         }
-    }
-}
-
-pub struct TimedMutexGuard<'a, T>(futures::lock::MutexGuard<'a, T>);
-//impl<'a, T> Drop for TimedMutexGuard<'a, T> {fn drop (&mut self) {}}
-
-/// Like `AsyncMutex` but periodically invokes a callback,
-/// allowing the application to implement timeouts, status updates and shutdowns.
-pub struct TimedAsyncMutex<T>(AsyncMutex<T>);
-impl<T> TimedAsyncMutex<T> {
-    pub fn new(v: T) -> TimedAsyncMutex<T> { TimedAsyncMutex(AsyncMutex::new(v)) }
-
-    /// Like `AsyncMutex::lock` but invokes the `tick` callback periodically.  
-    /// `tick` returns a time till the next tick, or an error to abort the locking attempt.  
-    /// `tick` parameters are the time when the locking attempt has started and the current time
-    /// (they are equal on the first invocation of `tick`).
-    pub async fn lock<F, E>(&self, mut tick: F) -> Result<TimedMutexGuard<'_, T>, E>
-    where
-        F: FnMut(f64, f64) -> Result<f64, E>,
-    {
-        let start = now_float();
-        let mut now = start;
-        let mut l = self.0.lock();
-        let l = loop {
-            let tick_after = tick(start, now)?;
-            let t = Timer::till(now + tick_after);
-            let rc = select(l, t).await;
-            match rc {
-                Either::Left((l, _t)) => break l,
-                Either::Right((_t, lʹ)) => {
-                    now = now_float();
-                    l = lʹ
-                },
-            }
-        };
-        Ok(TimedMutexGuard(l))
     }
 }
 

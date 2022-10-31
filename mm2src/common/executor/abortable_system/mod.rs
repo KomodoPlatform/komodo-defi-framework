@@ -68,19 +68,19 @@ mod tests {
 
         let super_system = AbortableQueue::default();
         super_system.weak_spawner().spawn(async move {
-            Timer::sleep(0.2).await;
+            Timer::sleep(0.5).await;
             unsafe { SUPER_FINISHED = true };
         });
 
         let sub_system: AbortableQueue = super_system.create_subsystem();
         sub_system.weak_spawner().spawn(async move {
-            Timer::sleep(0.2).await;
+            Timer::sleep(0.5).await;
             unsafe { SUB_FINISHED = true };
         });
 
         block_on(Timer::sleep(0.1));
         drop(sub_system);
-        block_on(Timer::sleep(0.2));
+        block_on(Timer::sleep(0.8));
 
         // Only the super system should finish as the sub system has been aborted.
         unsafe {
@@ -96,19 +96,19 @@ mod tests {
 
         let super_system = AbortableQueue::default();
         super_system.weak_spawner().spawn(async move {
-            Timer::sleep(0.2).await;
+            Timer::sleep(0.5).await;
             unsafe { SUPER_FINISHED = true };
         });
 
         let sub_system: AbortableQueue = super_system.create_subsystem();
         sub_system.weak_spawner().spawn(async move {
-            Timer::sleep(0.2).await;
+            Timer::sleep(0.5).await;
             unsafe { SUB_FINISHED = true };
         });
 
         block_on(Timer::sleep(0.1));
         drop(super_system);
-        block_on(Timer::sleep(0.2));
+        block_on(Timer::sleep(0.8));
 
         // Nothing should finish as the super system has been aborted.
         unsafe {
