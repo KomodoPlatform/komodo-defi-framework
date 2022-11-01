@@ -20,8 +20,8 @@ use crate::{BalanceFut, CoinBalance, CoinFutSpawner, FeeApproxStage, FoundSwapTx
             TradePreimageResult, TradePreimageValue, TransactionDetails, TransactionEnum, TransactionErr,
             TransactionFut, TxFeeDetails, TxMarshalingErr, UnexpectedDerivationMethod, ValidateAddressResult,
             ValidateInstructionsErr, ValidateOtherPubKeyErr, ValidatePaymentInput, VerificationError,
-            VerificationResult, WatcherOps, WatcherSearchForSwapTxSpendInput, WatcherValidatePaymentInput,
-            WithdrawError, WithdrawFee, WithdrawFut, WithdrawRequest};
+            VerificationResult, WatcherOps, WatcherValidatePaymentInput, WithdrawError, WithdrawFee, WithdrawFut,
+            WithdrawRequest};
 use async_trait::async_trait;
 use bitcrypto::dhash160;
 use chain::constants::SEQUENCE_FINAL;
@@ -1524,14 +1524,6 @@ impl WatcherOps for SlpToken {
 
     fn watcher_validate_taker_payment(&self, _input: WatcherValidatePaymentInput) -> ValidatePaymentFut<()> {
         unimplemented!();
-    }
-
-    #[inline]
-    async fn watcher_search_for_swap_tx_spend(
-        &self,
-        input: WatcherSearchForSwapTxSpendInput<'_>,
-    ) -> Result<Option<FoundSwapTxSpend>, String> {
-        utxo_common::watcher_search_for_swap_tx_spend(&self.platform_coin, input, SLP_SWAP_VOUT).await
     }
 }
 

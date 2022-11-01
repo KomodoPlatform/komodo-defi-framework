@@ -9,8 +9,8 @@ use crate::{big_decimal_from_sat_unsigned, utxo::sat_from_big_decimal, BalanceFu
             TradePreimageResult, TradePreimageValue, TransactionDetails, TransactionEnum, TransactionErr,
             TransactionFut, TransactionType, TxFeeDetails, TxMarshalingErr, UnexpectedDerivationMethod,
             ValidateAddressResult, ValidateInstructionsErr, ValidateOtherPubKeyErr, ValidatePaymentFut,
-            ValidatePaymentInput, VerificationResult, WatcherOps, WatcherSearchForSwapTxSpendInput,
-            WatcherValidatePaymentInput, WithdrawError, WithdrawFut, WithdrawRequest};
+            ValidatePaymentInput, VerificationResult, WatcherOps, WatcherValidatePaymentInput, WithdrawError,
+            WithdrawFut, WithdrawRequest};
 use async_trait::async_trait;
 use bitcrypto::sha256;
 use common::executor::abortable_queue::AbortableQueue;
@@ -350,13 +350,6 @@ impl WatcherOps for TendermintToken {
     }
 
     fn watcher_validate_taker_fee(&self, _taker_fee_hash: Vec<u8>, _verified_pub: Vec<u8>) -> ValidatePaymentFut<()> {
-        unimplemented!();
-    }
-
-    async fn watcher_search_for_swap_tx_spend(
-        &self,
-        input: WatcherSearchForSwapTxSpendInput<'_>,
-    ) -> Result<Option<FoundSwapTxSpend>, String> {
         unimplemented!();
     }
 
