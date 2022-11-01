@@ -1281,15 +1281,15 @@ impl MakerSwap {
             None => {
                 let maybe_maker_payment = try_s!(
                     self.maker_coin
-                        .check_if_my_payment_sent(
-                            maker_payment_lock,
-                            other_maker_coin_htlc_pub.as_slice(),
-                            secret_hash.as_slice(),
-                            maker_coin_start_block,
-                            &maker_coin_swap_contract_address,
-                            &unique_data,
-                            &self.maker_amount
-                        )
+                        .check_if_my_payment_sent(CheckIfMyPaymentSentArgs {
+                            time_lock: maker_payment_lock,
+                            other_pub: other_maker_coin_htlc_pub.as_slice(),
+                            secret_hash: secret_hash.as_slice(),
+                            search_from_block: maker_coin_start_block,
+                            swap_contract_address: &maker_coin_swap_contract_address,
+                            swap_unique_data: &unique_data,
+                            amount: &self.maker_amount
+                        })
                         .compat()
                         .await
                 );

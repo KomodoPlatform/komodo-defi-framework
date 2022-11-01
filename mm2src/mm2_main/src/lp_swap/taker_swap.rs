@@ -1811,15 +1811,15 @@ impl TakerSwap {
             None => {
                 let maybe_sent = try_s!(
                     self.taker_coin
-                        .check_if_my_payment_sent(
-                            taker_payment_lock as u32,
-                            other_taker_coin_htlc_pub.as_slice(),
-                            &secret_hash,
-                            taker_coin_start_block,
-                            &taker_coin_swap_contract_address,
-                            &unique_data,
-                            &self.taker_amount.to_decimal()
-                        )
+                        .check_if_my_payment_sent(CheckIfMyPaymentSentArgs {
+                            time_lock: taker_payment_lock as u32,
+                            other_pub: other_taker_coin_htlc_pub.as_slice(),
+                            secret_hash: &secret_hash,
+                            search_from_block: taker_coin_start_block,
+                            swap_contract_address: &taker_coin_swap_contract_address,
+                            swap_unique_data: &unique_data,
+                            amount: &self.taker_amount.to_decimal()
+                        })
                         .compat()
                         .await
                 );
