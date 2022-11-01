@@ -147,7 +147,6 @@ pub async fn init_l2_user_action<L2: InitL2ActivationOps>(
     Ok(SuccessResponse::new())
 }
 
-// Todo: do other stuff in cancelling like releasing the ports
 pub async fn cancel_init_l2<L2: InitL2ActivationOps>(
     ctx: MmArc,
     req: CancelRpcTaskRequest,
@@ -187,7 +186,6 @@ where
     }
 
     /// Try to disable the coin in case if we managed to register it already.
-    // Todo: check that disable_coin is working for lightning
     async fn cancel(self) { disable_coin(&self.ctx, &self.ticker).await.ok(); }
 
     async fn run(&mut self, task_handle: &RpcTaskHandle<Self>) -> Result<Self::Item, MmError<Self::Error>> {

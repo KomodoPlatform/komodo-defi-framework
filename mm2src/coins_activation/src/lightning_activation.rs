@@ -288,7 +288,6 @@ impl InitL2ActivationOps for LightningCoin {
         .await?;
 
         let address = lightning_coin.my_address()?;
-        // Todo: fix my_balance to see the right balance
         let balance = lightning_coin
             .my_balance()
             .compat()
