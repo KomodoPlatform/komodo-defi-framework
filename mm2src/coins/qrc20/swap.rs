@@ -1,5 +1,6 @@
 use super::history::TransferHistoryBuilder;
 use super::*;
+use bitcrypto::ripemd160;
 use script_pubkey::{extract_contract_addr_from_script, extract_contract_call_from_script, is_contract_call};
 
 /// `erc20Payment` call details consist of values obtained from [`TransactionOutput::script_pubkey`] and [`TxReceipt::logs`].
@@ -38,6 +39,12 @@ impl Qrc20Coin {
         receiver_addr: H160,
         swap_contract_address: H160,
     ) -> Result<TransactionEnum, TransactionErr> {
+        let secret_hash = if secret_hash.len() == 32 {
+            ripemd160(&secret_hash).to_vec()
+        } else {
+            secret_hash
+        };
+
         let balance = try_tx_s!(self.my_spendable_balance().compat().await);
         let balance = try_tx_s!(wei_from_big_decimal(&balance, self.utxo.decimals));
 
@@ -290,6 +297,12 @@ impl Qrc20Coin {
     }
 
     pub fn extract_secret_impl(&self, secret_hash: &[u8], spend_tx: &[u8]) -> Result<Vec<u8>, String> {
+        let secret_hash = if secret_hash.len() == 32 {
+            ripemd160(secret_hash)
+        } else {
+            chain::hash::H160::from(secret_hash)
+        };
+
         let spend_tx: UtxoTx = try_s!(deserialize(spend_tx).map_err(|e| ERRL!("{:?}", e)));
         let spend_tx_hash: H256Json = spend_tx.hash().reversed().into();
         for output in spend_tx.outputs {
@@ -304,7 +317,7 @@ impl Qrc20Coin {
                     },
                 };
 
-            let actual_secret_hash = &*dhash160(&secret);
+            let actual_secret_hash = dhash160(&secret);
             if actual_secret_hash != secret_hash {
                 warn!(
                     "invalid 'dhash160(secret)' {:?}, expected {:?}",
@@ -933,6 +946,12 @@ fn find_receiver_spend_with_swap_id_and_secret_hash(
     expected_swap_id: &[u8],
     expected_secret_hash: &[u8],
 ) -> Option<usize> {
+    let expected_secret_hash = if expected_secret_hash.len() == 32 {
+        ripemd160(expected_secret_hash)
+    } else {
+        chain::hash::H160::from(expected_secret_hash)
+    };
+
     for (output_idx, output) in tx.outputs.iter().enumerate() {
         let script_pubkey: Script = output.script_pubkey.clone().into();
         let ReceiverSpendDetails { swap_id, secret, .. } =
@@ -948,7 +967,7 @@ fn find_receiver_spend_with_swap_id_and_secret_hash(
             continue;
         }
 
-        let secret_hash = &*dhash160(&secret);
+        let secret_hash = dhash160(&secret);
         if secret_hash != expected_secret_hash {
             warn!(
                 "invalid 'dhash160(secret)' {:?}, expected {:?}",

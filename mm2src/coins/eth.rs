@@ -21,7 +21,7 @@
 //  Copyright © 2022 AtomicDEX. All rights reserved.
 //
 use async_trait::async_trait;
-use bitcrypto::{keccak256, sha256};
+use bitcrypto::{keccak256, ripemd160, sha256};
 use common::executor::{abortable_queue::AbortableQueue, AbortableSystem, Timer};
 use common::log::{error, info, warn};
 use common::{get_utc_timestamp, now_ms, small_rng, DEX_FEE_ADDR_RAW_PUBKEY};
@@ -1401,7 +1401,7 @@ impl MarketCoinOps for EthCoin {
     fn wait_for_htlc_tx_spend(
         &self,
         tx_bytes: &[u8],
-        secret_hash: &[u8],
+        _secret_hash: &[u8],
         wait_until: u64,
         from_block: u64,
         swap_contract_address: &Option<BytesJson>,
@@ -1411,20 +1411,8 @@ impl MarketCoinOps for EthCoin {
         let swap_contract_address = try_tx_fus!(swap_contract_address.try_to_address());
 
         let func_name = match self.coin_type {
-            EthCoinType::Eth => {
-                if secret_hash.len() == 32 {
-                    "ethPaymentSha256"
-                } else {
-                    "ethPayment"
-                }
-            },
-            EthCoinType::Erc20 { .. } => {
-                if secret_hash.len() == 32 {
-                    "erc20PaymentSha256"
-                } else {
-                    "erc20Payment"
-                }
-            },
+            EthCoinType::Eth => "ethPayment",
+            EthCoinType::Erc20 { .. } => "erc20Payment",
         };
 
         let payment_func = try_tx_fus!(SWAP_CONTRACT.function(func_name));
@@ -2385,17 +2373,19 @@ impl EthCoin {
         receiver_addr: Address,
         swap_contract_address: Address,
     ) -> EthTxFut {
+        let secret_hash = if secret_hash.len() == 32 {
+            ripemd160(secret_hash).to_vec()
+        } else {
+            secret_hash.to_vec()
+        };
+
         match &self.coin_type {
             EthCoinType::Eth => {
-                let function = if secret_hash.len() == 32 {
-                    try_tx_fus!(SWAP_CONTRACT.function("ethPaymentSha256"))
-                } else {
-                    try_tx_fus!(SWAP_CONTRACT.function("ethPayment"))
-                };
+                let function = try_tx_fus!(SWAP_CONTRACT.function("ethPayment"));
                 let data = try_tx_fus!(function.encode_input(&[
                     Token::FixedBytes(id),
                     Token::Address(receiver_addr),
-                    Token::FixedBytes(secret_hash.to_vec()),
+                    Token::FixedBytes(secret_hash),
                     Token::Uint(U256::from(time_lock))
                 ]));
                 self.sign_and_send_transaction(value, Action::Call(swap_contract_address), data, U256::from(150_000))
@@ -2408,18 +2398,14 @@ impl EthCoin {
                     .allowance(swap_contract_address)
                     .map_err(|e| TransactionErr::Plain(ERRL!("{}", e)));
 
-                let function = if secret_hash.len() == 32 {
-                    try_tx_fus!(SWAP_CONTRACT.function("erc20PaymentSha256"))
-                } else {
-                    try_tx_fus!(SWAP_CONTRACT.function("erc20Payment"))
-                };
+                let function = try_tx_fus!(SWAP_CONTRACT.function("erc20Payment"));
 
                 let data = try_tx_fus!(function.encode_input(&[
                     Token::FixedBytes(id),
                     Token::Uint(value),
                     Token::Address(*token_addr),
                     Token::Address(receiver_addr),
-                    Token::FixedBytes(secret_hash.to_vec()),
+                    Token::FixedBytes(secret_hash),
                     Token::Uint(U256::from(time_lock))
                 ]));
 
@@ -2453,7 +2439,7 @@ impl EthCoin {
     fn spend_hash_time_locked_payment(
         &self,
         payment: SignedEthTx,
-        secret_hash: &[u8],
+        _secret_hash: &[u8],
         swap_contract_address: Address,
         secret: &[u8],
     ) -> EthTxFut {
@@ -2463,13 +2449,7 @@ impl EthCoin {
 
         match self.coin_type {
             EthCoinType::Eth => {
-                let fn_name = if secret_hash.len() == 32 {
-                    "ethPaymentSha256"
-                } else {
-                    "ethPayment"
-                };
-
-                let payment_func = try_tx_fus!(SWAP_CONTRACT.function(fn_name));
+                let payment_func = try_tx_fus!(SWAP_CONTRACT.function("ethPayment"));
                 let decoded = try_tx_fus!(payment_func.decode_input(&payment.data));
 
                 let state_f = self.payment_status(swap_contract_address, decoded[0].clone());
@@ -2507,11 +2487,7 @@ impl EthCoin {
                 platform: _,
                 token_addr,
             } => {
-                let payment_func = if secret_hash.len() == 32 {
-                    try_tx_fus!(SWAP_CONTRACT.function("erc20PaymentSha256"))
-                } else {
-                    try_tx_fus!(SWAP_CONTRACT.function("erc20Payment"))
-                };
+                let payment_func = try_tx_fus!(SWAP_CONTRACT.function("erc20Payment"));
 
                 let decoded = try_tx_fus!(payment_func.decode_input(&payment.data));
                 let state_f = self.payment_status(swap_contract_address, decoded[0].clone());
@@ -2551,22 +2527,14 @@ impl EthCoin {
         &self,
         swap_contract_address: Address,
         payment: SignedEthTx,
-        secret_hash: &[u8],
+        _secret_hash: &[u8],
     ) -> EthTxFut {
-        let refund_func = if secret_hash.len() == 32 {
-            try_tx_fus!(SWAP_CONTRACT.function("senderRefundSha256"))
-        } else {
-            try_tx_fus!(SWAP_CONTRACT.function("senderRefund"))
-        };
+        let refund_func = try_tx_fus!(SWAP_CONTRACT.function("senderRefund"));
         let clone = self.clone();
 
         match self.coin_type {
             EthCoinType::Eth => {
-                let payment_func = if secret_hash.len() == 32 {
-                    try_tx_fus!(SWAP_CONTRACT.function("ethPaymentSha256"))
-                } else {
-                    try_tx_fus!(SWAP_CONTRACT.function("ethPayment"))
-                };
+                let payment_func = try_tx_fus!(SWAP_CONTRACT.function("ethPayment"));
                 let decoded = try_tx_fus!(payment_func.decode_input(&payment.data));
 
                 let state_f = self.payment_status(swap_contract_address, decoded[0].clone());
@@ -2604,11 +2572,7 @@ impl EthCoin {
                 platform: _,
                 token_addr,
             } => {
-                let payment_func = if secret_hash.len() == 32 {
-                    try_tx_fus!(SWAP_CONTRACT.function("erc20PaymentSha256"))
-                } else {
-                    try_tx_fus!(SWAP_CONTRACT.function("erc20Payment"))
-                };
+                let payment_func = try_tx_fus!(SWAP_CONTRACT.function("erc20Payment"));
                 let decoded = try_tx_fus!(payment_func.decode_input(&payment.data));
                 let state_f = self.payment_status(swap_contract_address, decoded[0].clone());
                 Box::new(
@@ -2846,9 +2810,13 @@ impl EthCoin {
         let sender = try_f!(addr_from_raw_pubkey(sender_pub).map_to_mm(ValidatePaymentError::InvalidParameter));
         let expected_value = try_f!(wei_from_big_decimal(&amount, self.decimals));
         let selfi = self.clone();
-        let secret_hash = secret_hash.to_vec();
+        let swap_id = selfi.etomic_swap_id(time_lock, secret_hash);
+        let secret_hash = if secret_hash.len() == 32 {
+            ripemd160(secret_hash).to_vec()
+        } else {
+            secret_hash.to_vec()
+        };
         let fut = async move {
-            let swap_id = selfi.etomic_swap_id(time_lock, &secret_hash);
             let status = selfi
                 .payment_status(expected_swap_contract_address, Token::FixedBytes(swap_id.clone()))
                 .compat()
@@ -2899,13 +2867,8 @@ impl EthCoin {
                             tx_from_rpc, expected_value
                         )));
                     }
-                    let fn_name = if secret_hash.len() == 32 {
-                        "ethPaymentSha256"
-                    } else {
-                        "ethPayment"
-                    };
                     let function = SWAP_CONTRACT
-                        .function(fn_name)
+                        .function("ethPayment")
                         .map_to_mm(|err| ValidatePaymentError::InternalError(err.to_string()))?;
                     let decoded = function
                         .decode_input(&tx_from_rpc.input.0)
@@ -2951,13 +2914,8 @@ impl EthCoin {
                             tx_from_rpc, expected_swap_contract_address,
                         )));
                     }
-                    let fn_name = if secret_hash.len() == 32 {
-                        "erc20PaymentSha256"
-                    } else {
-                        "erc20Payment"
-                    };
                     let function = SWAP_CONTRACT
-                        .function(fn_name)
+                        .function("erc20Payment")
                         .map_to_mm(|err| ValidatePaymentError::InternalError(err.to_string()))?;
                     let decoded = function
                         .decode_input(&tx_from_rpc.input.0)
@@ -3042,27 +3000,15 @@ impl EthCoin {
         &self,
         tx: &[u8],
         swap_contract_address: Address,
-        secret_hash: &[u8],
+        _secret_hash: &[u8],
         search_from_block: u64,
     ) -> Result<Option<FoundSwapTxSpend>, String> {
         let unverified: UnverifiedTransaction = try_s!(rlp::decode(tx));
         let tx = try_s!(SignedEthTx::new(unverified));
 
         let func_name = match self.coin_type {
-            EthCoinType::Eth => {
-                if secret_hash.len() == 32 {
-                    "ethPaymentSha256"
-                } else {
-                    "ethPayment"
-                }
-            },
-            EthCoinType::Erc20 { .. } => {
-                if secret_hash.len() == 32 {
-                    "erc20PaymentSha256"
-                } else {
-                    "erc20Payment"
-                }
-            },
+            EthCoinType::Eth => "ethPayment",
+            EthCoinType::Erc20 { .. } => "erc20Payment",
         };
 
         let payment_func = try_s!(SWAP_CONTRACT.function(func_name));
