@@ -22,8 +22,9 @@ use crate::utxo::utxo_sql_block_header_storage::SqliteBlockHeadersStorage;
 use crate::utxo::utxo_standard::{utxo_standard_coin_with_priv_key, UtxoStandardCoin};
 use crate::utxo::utxo_tx_history_v2::{UtxoTxDetailsParams, UtxoTxHistoryOps};
 #[cfg(not(target_arch = "wasm32"))] use crate::WithdrawFee;
-use crate::{BlockHeightAndTime, CoinBalance, PrivKeyBuildPolicy, SearchForSwapTxSpendInput, StakingInfosDetails,
-            SwapOps, TradePreimageValue, TxFeeDetails, TxMarshalingErr};
+use crate::{BlockHeightAndTime, CoinBalance, PrivKeyBuildPolicy, SearchForSwapTxSpendInput,
+            SendMakerSpendsTakerPaymentArgs, StakingInfosDetails, SwapOps, TradePreimageValue, TxFeeDetails,
+            TxMarshalingErr, ValidateFeeArgs};
 use chain::{BlockHeader, OutPoint};
 use common::executor::Timer;
 use common::{block_on, now_ms, OrdRange, PagingOptionsEnum, DEX_FEE_ADDR_RAW_PUBKEY};
@@ -148,15 +149,15 @@ fn test_send_maker_spends_taker_payment_recoverable_tx() {
     let secret = hex::decode("9da937e5609680cb30bff4a7661364ca1d1851c2506fa80c443f00a3d3bf7365").unwrap();
 
     let tx_err = coin
-        .send_maker_spends_taker_payment(
-            &tx_hex,
-            777,
-            &coin.my_public_key().unwrap().to_vec(),
-            &secret,
-            dhash160(&secret).as_slice(),
-            &coin.swap_contract_address(),
-            &[],
-        )
+        .send_maker_spends_taker_payment(SendMakerSpendsTakerPaymentArgs {
+            payment_tx: &tx_hex,
+            time_lock: 777,
+            pubkey: &coin.my_public_key().unwrap().to_vec(),
+            secret: &secret,
+            secret_hash: dhash160(&secret).as_slice(),
+            swap_contract_address: &coin.swap_contract_address(),
+            swap_unique_data: &[],
+        })
         .wait()
         .unwrap_err();
 
@@ -2507,14 +2508,14 @@ fn test_validate_fee_wrong_sender() {
     let taker_fee_tx = coin.tx_enum_from_bytes(&tx_bytes).unwrap();
     let amount: BigDecimal = "0.0014157".parse().unwrap();
     let validate_err = coin
-        .validate_fee(
-            &taker_fee_tx,
-            &*DEX_FEE_ADDR_RAW_PUBKEY,
-            &*DEX_FEE_ADDR_RAW_PUBKEY,
-            &amount,
-            0,
-            &[],
-        )
+        .validate_fee(ValidateFeeArgs {
+            fee_tx: &taker_fee_tx,
+            expected_sender: &*DEX_FEE_ADDR_RAW_PUBKEY,
+            fee_addr: &*DEX_FEE_ADDR_RAW_PUBKEY,
+            amount: &amount,
+            min_block_number: 0,
+            uuid: &[],
+        })
         .wait()
         .unwrap_err();
     assert!(validate_err.contains("was sent from wrong address"));
@@ -2534,14 +2535,14 @@ fn test_validate_fee_min_block() {
     let amount: BigDecimal = "0.0014157".parse().unwrap();
     let sender_pub = hex::decode("03ad6f89abc2e5beaa8a3ac28e22170659b3209fe2ddf439681b4b8f31508c36fa").unwrap();
     let validate_err = coin
-        .validate_fee(
-            &taker_fee_tx,
-            &sender_pub,
-            &*DEX_FEE_ADDR_RAW_PUBKEY,
-            &amount,
-            810329,
-            &[],
-        )
+        .validate_fee(ValidateFeeArgs {
+            fee_tx: &taker_fee_tx,
+            expected_sender: &sender_pub,
+            fee_addr: &*DEX_FEE_ADDR_RAW_PUBKEY,
+            amount: &amount,
+            min_block_number: 810329,
+            uuid: &[],
+        })
         .wait()
         .unwrap_err();
     assert!(validate_err.contains("confirmed before min_block"));
@@ -2561,9 +2562,16 @@ fn test_validate_fee_bch_70_bytes_signature() {
     let taker_fee_tx = coin.tx_enum_from_bytes(&tx_bytes).unwrap();
     let amount: BigDecimal = "0.0001".parse().unwrap();
     let sender_pub = hex::decode("02ae7dc4ef1b49aadeff79cfad56664105f4d114e1716bc4f930cb27dbd309e521").unwrap();
-    coin.validate_fee(&taker_fee_tx, &sender_pub, &*DEX_FEE_ADDR_RAW_PUBKEY, &amount, 0, &[])
-        .wait()
-        .unwrap();
+    coin.validate_fee(ValidateFeeArgs {
+        fee_tx: &taker_fee_tx,
+        expected_sender: &sender_pub,
+        fee_addr: &*DEX_FEE_ADDR_RAW_PUBKEY,
+        amount: &amount,
+        min_block_number: 0,
+        uuid: &[],
+    })
+    .wait()
+    .unwrap();
 }
 
 #[test]

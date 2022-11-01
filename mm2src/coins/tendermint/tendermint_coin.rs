@@ -1867,15 +1867,15 @@ pub mod tendermint_coin_tests {
         // >> END HTLC CREATION
 
         let htlc_spent = block_on(
-            coin.check_if_my_payment_sent(
-                0,
-                IRIS_TESTNET_HTLC_PAIR2_PUB_KEY,
-                sha256(&sec).as_slice(),
-                current_block,
-                &None,
-                &[],
-                &amount_dec,
-            )
+            coin.check_if_my_payment_sent(CheckIfMyPaymentSentArgs {
+                time_lock: 0,
+                other_pub: IRIS_TESTNET_HTLC_PAIR2_PUB_KEY,
+                secret_hash: sha256(&sec).as_slice(),
+                search_from_block: current_block,
+                swap_contract_address: &None,
+                swap_unique_data: &[],
+                amount: &amount_dec,
+            })
             .compat(),
         )
         .unwrap();
@@ -2066,14 +2066,14 @@ pub mod tendermint_coin_tests {
 
         let invalid_amount = 1.into();
         let validate_err = coin
-            .validate_fee(
-                &create_htlc_tx,
-                &[],
-                &DEX_FEE_ADDR_RAW_PUBKEY,
-                &invalid_amount,
-                0,
-                &[1; 16],
-            )
+            .validate_fee(ValidateFeeArgs {
+                fee_tx: &create_htlc_tx,
+                expected_sender: &[],
+                fee_addr: &DEX_FEE_ADDR_RAW_PUBKEY,
+                amount: &invalid_amount,
+                min_block_number: 0,
+                uuid: &[1; 16],
+            })
             .wait()
             .unwrap_err();
         println!("{}", validate_err);
@@ -2091,14 +2091,14 @@ pub mod tendermint_coin_tests {
         });
 
         let validate_err = coin
-            .validate_fee(
-                &random_transfer_tx,
-                &[],
-                &DEX_FEE_ADDR_RAW_PUBKEY,
-                &invalid_amount,
-                0,
-                &[1; 16],
-            )
+            .validate_fee(ValidateFeeArgs {
+                fee_tx: &random_transfer_tx,
+                expected_sender: &[],
+                fee_addr: &DEX_FEE_ADDR_RAW_PUBKEY,
+                amount: &invalid_amount,
+                min_block_number: 0,
+                uuid: &[1; 16],
+            })
             .wait()
             .unwrap_err();
         println!("{}", validate_err);
@@ -2120,7 +2120,14 @@ pub mod tendermint_coin_tests {
         });
 
         let validate_err = coin
-            .validate_fee(&dex_fee_tx, &[], &DEX_FEE_ADDR_RAW_PUBKEY, &invalid_amount, 0, &[1; 16])
+            .validate_fee(ValidateFeeArgs {
+                fee_tx: &dex_fee_tx,
+                expected_sender: &[],
+                fee_addr: &DEX_FEE_ADDR_RAW_PUBKEY,
+                amount: &invalid_amount,
+                min_block_number: 0,
+                uuid: &[1; 16],
+            })
             .wait()
             .unwrap_err();
         println!("{}", validate_err);
@@ -2129,14 +2136,14 @@ pub mod tendermint_coin_tests {
         let valid_amount: BigDecimal = "0.0001".parse().unwrap();
         // valid amount but invalid sender
         let validate_err = coin
-            .validate_fee(
-                &dex_fee_tx,
-                &DEX_FEE_ADDR_RAW_PUBKEY,
-                &DEX_FEE_ADDR_RAW_PUBKEY,
-                &valid_amount,
-                0,
-                &[1; 16],
-            )
+            .validate_fee(ValidateFeeArgs {
+                fee_tx: &dex_fee_tx,
+                expected_sender: &DEX_FEE_ADDR_RAW_PUBKEY,
+                fee_addr: &DEX_FEE_ADDR_RAW_PUBKEY,
+                amount: &valid_amount,
+                min_block_number: 0,
+                uuid: &[1; 16],
+            })
             .wait()
             .unwrap_err();
         println!("{}", validate_err);
@@ -2144,14 +2151,14 @@ pub mod tendermint_coin_tests {
 
         // invalid memo
         let validate_err = coin
-            .validate_fee(
-                &dex_fee_tx,
-                &pubkey,
-                &DEX_FEE_ADDR_RAW_PUBKEY,
-                &valid_amount,
-                0,
-                &[1; 16],
-            )
+            .validate_fee(ValidateFeeArgs {
+                fee_tx: &dex_fee_tx,
+                expected_sender: &pubkey,
+                fee_addr: &DEX_FEE_ADDR_RAW_PUBKEY,
+                amount: &valid_amount,
+                min_block_number: 0,
+                uuid: &[1; 16],
+            })
             .wait()
             .unwrap_err();
         println!("{}", validate_err);
