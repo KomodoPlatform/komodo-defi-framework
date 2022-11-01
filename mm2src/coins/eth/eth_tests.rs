@@ -249,16 +249,16 @@ fn send_and_refund_erc20_payment() {
     }));
 
     let payment = coin
-        .send_maker_payment(
-            0,
-            (now_ms() / 1000) as u32 - 200,
-            &DEX_FEE_ADDR_RAW_PUBKEY,
-            &[1; 20],
-            "0.001".parse().unwrap(),
-            &coin.swap_contract_address(),
-            &[],
-            &None,
-        )
+        .send_maker_payment(SendMakerPaymentArgs {
+            time_lock_duration: 0,
+            time_lock: (now_ms() / 1000) as u32 - 200,
+            pubkey: &DEX_FEE_ADDR_RAW_PUBKEY,
+            secret_hash: &[1; 20],
+            amount: "0.001".parse().unwrap(),
+            swap_contract_address: &coin.swap_contract_address(),
+            swap_unique_data: &[],
+            payment_instructions: &None,
+        })
         .wait()
         .unwrap();
 
@@ -267,14 +267,14 @@ fn send_and_refund_erc20_payment() {
     block_on(Timer::sleep(60.));
 
     let refund = coin
-        .send_maker_refunds_payment(
-            &payment.tx_hex(),
-            (now_ms() / 1000) as u32 - 200,
-            &DEX_FEE_ADDR_RAW_PUBKEY,
-            &[1; 20],
-            &coin.swap_contract_address(),
-            &[],
-        )
+        .send_maker_refunds_payment(SendMakerRefundsPaymentArgs {
+            payment_tx: &payment.tx_hex(),
+            time_lock: (now_ms() / 1000) as u32 - 200,
+            pubkey: &DEX_FEE_ADDR_RAW_PUBKEY,
+            secret_hash: &[1; 20],
+            swap_contract_address: &coin.swap_contract_address(),
+            swap_unique_data: &[],
+        })
         .wait()
         .unwrap();
 
@@ -320,16 +320,16 @@ fn send_and_refund_eth_payment() {
     }));
 
     let payment = coin
-        .send_maker_payment(
-            0,
-            (now_ms() / 1000) as u32 - 200,
-            &DEX_FEE_ADDR_RAW_PUBKEY,
-            &[1; 20],
-            "0.001".parse().unwrap(),
-            &coin.swap_contract_address(),
-            &[],
-            &None,
-        )
+        .send_maker_payment(SendMakerPaymentArgs {
+            time_lock_duration: 0,
+            time_lock: (now_ms() / 1000) as u32 - 200,
+            pubkey: &DEX_FEE_ADDR_RAW_PUBKEY,
+            secret_hash: &[1; 20],
+            amount: "0.001".parse().unwrap(),
+            swap_contract_address: &coin.swap_contract_address(),
+            swap_unique_data: &[],
+            payment_instructions: &None,
+        })
         .wait()
         .unwrap();
 
@@ -338,14 +338,14 @@ fn send_and_refund_eth_payment() {
     block_on(Timer::sleep(60.));
 
     let refund = coin
-        .send_maker_refunds_payment(
-            &payment.tx_hex(),
-            (now_ms() / 1000) as u32 - 200,
-            &DEX_FEE_ADDR_RAW_PUBKEY,
-            &[1; 20],
-            &coin.swap_contract_address(),
-            &[],
-        )
+        .send_maker_refunds_payment(SendMakerRefundsPaymentArgs {
+            payment_tx: &payment.tx_hex(),
+            time_lock: (now_ms() / 1000) as u32 - 200,
+            pubkey: &DEX_FEE_ADDR_RAW_PUBKEY,
+            secret_hash: &[1; 20],
+            swap_contract_address: &coin.swap_contract_address(),
+            swap_unique_data: &[],
+        })
         .wait()
         .unwrap();
 
@@ -1025,14 +1025,14 @@ fn validate_dex_fee_invalid_sender_eth() {
     let tx = signed_tx_from_web3_tx(tx).unwrap().into();
     let amount: BigDecimal = "0.000526435076465".parse().unwrap();
     let validate_err = coin
-        .validate_fee(
-            &tx,
-            &*DEX_FEE_ADDR_RAW_PUBKEY,
-            &*DEX_FEE_ADDR_RAW_PUBKEY,
-            &amount,
-            0,
-            &[],
-        )
+        .validate_fee(ValidateFeeArgs {
+            fee_tx: &tx,
+            expected_sender: &*DEX_FEE_ADDR_RAW_PUBKEY,
+            fee_addr: &*DEX_FEE_ADDR_RAW_PUBKEY,
+            amount: &amount,
+            min_block_number: 0,
+            uuid: &[],
+        })
         .wait()
         .unwrap_err();
     assert!(validate_err.contains("was sent from wrong address"));
@@ -1062,14 +1062,14 @@ fn validate_dex_fee_invalid_sender_erc() {
     let tx = signed_tx_from_web3_tx(tx).unwrap().into();
     let amount: BigDecimal = "5.548262548262548262".parse().unwrap();
     let validate_err = coin
-        .validate_fee(
-            &tx,
-            &*DEX_FEE_ADDR_RAW_PUBKEY,
-            &*DEX_FEE_ADDR_RAW_PUBKEY,
-            &amount,
-            0,
-            &[],
-        )
+        .validate_fee(ValidateFeeArgs {
+            fee_tx: &tx,
+            expected_sender: &*DEX_FEE_ADDR_RAW_PUBKEY,
+            fee_addr: &*DEX_FEE_ADDR_RAW_PUBKEY,
+            amount: &amount,
+            min_block_number: 0,
+            uuid: &[],
+        })
         .wait()
         .unwrap_err();
     assert!(validate_err.contains("was sent from wrong address"));
@@ -1103,14 +1103,14 @@ fn validate_dex_fee_eth_confirmed_before_min_block() {
     let tx = tx.into();
     let amount: BigDecimal = "0.000526435076465".parse().unwrap();
     let validate_err = coin
-        .validate_fee(
-            &tx,
-            &compressed_public,
-            &*DEX_FEE_ADDR_RAW_PUBKEY,
-            &amount,
-            11784793,
-            &[],
-        )
+        .validate_fee(ValidateFeeArgs {
+            fee_tx: &tx,
+            expected_sender: &compressed_public,
+            fee_addr: &*DEX_FEE_ADDR_RAW_PUBKEY,
+            amount: &amount,
+            min_block_number: 11784793,
+            uuid: &[],
+        })
         .wait()
         .unwrap_err();
     assert!(validate_err.contains("confirmed before min_block"));
@@ -1143,14 +1143,14 @@ fn validate_dex_fee_erc_confirmed_before_min_block() {
     let tx = tx.into();
     let amount: BigDecimal = "5.548262548262548262".parse().unwrap();
     let validate_err = coin
-        .validate_fee(
-            &tx,
-            &compressed_public,
-            &*DEX_FEE_ADDR_RAW_PUBKEY,
-            &amount,
-            11823975,
-            &[],
-        )
+        .validate_fee(ValidateFeeArgs {
+            fee_tx: &tx,
+            expected_sender: &compressed_public,
+            fee_addr: &*DEX_FEE_ADDR_RAW_PUBKEY,
+            amount: &amount,
+            min_block_number: 11823975,
+            uuid: &[],
+        })
         .wait()
         .unwrap_err();
     assert!(validate_err.contains("confirmed before min_block"));
@@ -1257,15 +1257,15 @@ fn polygon_check_if_my_payment_sent() {
     let secret_hash = hex::decode("fc33114b389f0ee1212abf2867e99e89126f4860").unwrap();
     let swap_contract_address = "9130b257d37a52e52f21054c4da3450c72f595ce".into();
     let my_payment = coin
-        .check_if_my_payment_sent(
-            1638764369,
-            &[],
-            &secret_hash,
-            22185109,
-            &Some(swap_contract_address),
-            &[],
-            &BigDecimal::default(),
-        )
+        .check_if_my_payment_sent(CheckIfMyPaymentSentArgs {
+            time_lock: 1638764369,
+            other_pub: &[],
+            secret_hash: &secret_hash,
+            search_from_block: 22185109,
+            swap_contract_address: &Some(swap_contract_address),
+            swap_unique_data: &[],
+            amount: &BigDecimal::default(),
+        })
         .wait()
         .unwrap()
         .unwrap();
