@@ -15,6 +15,7 @@ use async_trait::async_trait;
 use bitcrypto::sha256;
 use common::executor::abortable_queue::AbortableQueue;
 use common::executor::AbortableSystem;
+use common::log::warn;
 use common::Future01CompatExt;
 use cosmrs::{bank::MsgSend,
              tx::{Fee, Msg},
@@ -588,15 +589,24 @@ impl MmCoin for TendermintToken {
 
     fn decimals(&self) -> u8 { self.decimals }
 
-    fn convert_to_address(&self, from: &str, to_address_format: Json) -> Result<String, String> { todo!() }
+    fn convert_to_address(&self, from: &str, to_address_format: Json) -> Result<String, String> {
+        self.platform_coin.convert_to_address(from, to_address_format)
+    }
 
-    fn validate_address(&self, address: &str) -> ValidateAddressResult { todo!() }
+    fn validate_address(&self, address: &str) -> ValidateAddressResult { self.platform_coin.validate_address(address) }
 
-    fn process_history_loop(&self, ctx: MmArc) -> Box<dyn Future<Item = (), Error = ()> + Send> { todo!() }
+    fn process_history_loop(&self, ctx: MmArc) -> Box<dyn Future<Item = (), Error = ()> + Send> {
+        // TODO
+        warn!("process_history_loop is not implemented");
+        Box::new(futures01::future::err(()))
+    }
 
-    fn history_sync_status(&self) -> HistorySyncState { todo!() }
+    fn history_sync_status(&self) -> HistorySyncState { HistorySyncState::NotEnabled }
 
-    fn get_trade_fee(&self) -> Box<dyn Future<Item = TradeFee, Error = String> + Send> { todo!() }
+    fn get_trade_fee(&self) -> Box<dyn Future<Item = TradeFee, Error = String> + Send> {
+        // TODO
+        Box::new(futures01::future::err("Not implemented".into()))
+    }
 
     async fn get_sender_trade_fee(
         &self,
@@ -634,9 +644,14 @@ impl MmCoin for TendermintToken {
 
     fn requires_notarization(&self) -> bool { self.platform_coin.requires_notarization() }
 
-    fn set_required_confirmations(&self, confirmations: u64) { todo!() }
+    fn set_required_confirmations(&self, confirmations: u64) {
+        // TODO
+        warn!("set_required_confirmations has no effect for now")
+    }
 
-    fn set_requires_notarization(&self, requires_nota: bool) { todo!() }
+    fn set_requires_notarization(&self, requires_nota: bool) {
+        self.platform_coin.set_requires_notarization(requires_nota)
+    }
 
     fn swap_contract_address(&self) -> Option<BytesJson> { None }
 
