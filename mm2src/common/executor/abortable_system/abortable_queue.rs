@@ -1,6 +1,7 @@
 use crate::executor::abortable_system::{AbortableSystem, InnerShared, InnerWeak, SystemInner};
 use crate::executor::spawner::{SpawnAbortable, SpawnFuture};
 use crate::executor::{spawn, AbortSettings, Timer};
+use crossbeam::queue::SegQueue;
 use futures::channel::oneshot;
 use futures::future::{abortable, select, Either};
 use futures::FutureExt;
@@ -78,12 +79,16 @@ impl SpawnAbortable for WeakSpawner {
         F: Future03<Output = ()> + Send + 'static,
     {
         let (abort_tx, abort_rx) = oneshot::channel();
-        let future_id = match self.inner.upgrade() {
-            Some(inner_arc) => inner_arc.lock().insert_handle(abort_tx),
+        let (future_id, finished_futures_weak) = match self.inner.upgrade() {
+            Some(inner_arc) => {
+                let mut inner_guard = inner_arc.lock();
+                let future_id = inner_guard.insert_handle(abort_tx);
+                let finished_futures_weak = Arc::downgrade(&inner_guard.finished_futures);
+                (future_id, finished_futures_weak)
+            },
             None => return,
         };
 
-        let inner_weak = self.inner.clone();
         let (abortable_fut, abort_handle) = abortable(fut);
 
         let final_fut = async move {
@@ -107,9 +112,10 @@ impl SpawnAbortable for WeakSpawner {
                         log::log!(on_finish.level, "{}", on_finish.msg);
                     }
 
-                    // We need to remove the future ID if the handler still exists.
-                    if let Some(inner) = inner_weak.upgrade() {
-                        inner.lock().on_finished(future_id);
+                    if let Some(finished_futures) = finished_futures_weak.upgrade() {
+                        // We don't need to remove an associated abort handle from [`AbortableQueue::abort_handlers`],
+                        // but we need to release the `future_id` so it can be reused later.
+                        finished_futures.push(future_id);
                     }
                 },
                 // `abort_tx` has been removed from `QueueInner::futures`,
@@ -137,14 +143,15 @@ impl SpawnAbortable for WeakSpawner {
 #[derive(Debug)]
 pub struct QueueInner {
     abort_handlers: Vec<oneshot::Sender<()>>,
-    finished_futures: Vec<FutureId>,
+    /// `finished_futures` is shared between spawned futures as the `Weak` pointer.
+    finished_futures: Arc<SegQueue<FutureId>>,
 }
 
 impl Default for QueueInner {
     fn default() -> Self {
         QueueInner {
             abort_handlers: Vec::with_capacity(CAPACITY),
-            finished_futures: Vec::with_capacity(CAPACITY),
+            finished_futures: Arc::new(SegQueue::new()),
         }
     }
 }
@@ -153,32 +160,28 @@ impl QueueInner {
     /// Inserts the given future `handle`.
     fn insert_handle(&mut self, handle: oneshot::Sender<()>) -> FutureId {
         match self.finished_futures.pop() {
-            Some(finished_id) => {
+            // We can reuse the given `finished_id`.
+            Ok(finished_id) => {
                 self.abort_handlers[finished_id] = handle;
                 // The freed future ID.
                 finished_id
             },
-            None => {
+            // There are no finished future IDs.
+            Err(_) => {
                 self.abort_handlers.push(handle);
                 // The last item ID.
                 self.abort_handlers.len() - 1
             },
         }
     }
-
-    /// Handles the fact that the future associated with the `future_id` has been finished.
-    ///
-    /// # Note
-    ///
-    /// We don't need to remove an associated [`oneshot::Sender<()>`],
-    /// but later we can easily reset the item at `abort_handlers[future_id]` with a new [`oneshot::Sender<()>`].
-    fn on_finished(&mut self, future_id: FutureId) { self.finished_futures.push(future_id); }
 }
 
 impl SystemInner for QueueInner {
     fn abort_all(&mut self) {
         self.abort_handlers.clear();
-        self.finished_futures.clear();
+        // Drop the `self.finished_futures` shared pointer
+        // so the finished futures won't be able to push their IDs into this queue.
+        self.finished_futures = Arc::new(SegQueue::new());
     }
 }
 
@@ -273,5 +276,21 @@ mod tests {
         assert!(unsafe { !F1_FINISHED });
         // `fut` must complete.
         assert!(unsafe { F2_FINISHED });
+    }
+
+    #[test]
+    fn test_spawn_after_abort() {
+        let abortable_system = AbortableQueue::default();
+        let spawner = abortable_system.weak_spawner();
+
+        for _ in 0..100 {
+            spawner.spawn(futures::future::ready(()));
+            abortable_system.abort_all();
+
+            // This sleep allows to poll the `select(abortable_fut.boxed(), wait_till_abort.boxed()).await` future.
+            block_on(Timer::sleep(0.01));
+
+            spawner.spawn(futures::future::ready(()));
+        }
     }
 }
