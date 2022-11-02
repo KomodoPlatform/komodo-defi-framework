@@ -17,8 +17,8 @@ use crate::{CanRefundHtlc, CoinBalance, CoinWithDerivationMethod, GetWithdrawSen
             ValidateAddressResult, ValidateOtherPubKeyErr, ValidatePaymentFut, ValidatePaymentInput,
             VerificationError, VerificationResult, WatcherSearchForSwapTxSpendInput, WatcherValidatePaymentInput,
             WithdrawFrom, WithdrawResult, WithdrawSenderAddress};
-use bitcrypto::dhash256;
 pub use bitcrypto::{dhash160, sha256, ChecksumType};
+use bitcrypto::{dhash256, ripemd160};
 use chain::constants::SEQUENCE_FINAL;
 use chain::{OutPoint, TransactionOutput};
 use common::executor::Timer;
@@ -2095,15 +2095,16 @@ pub fn extract_secret(secret_hash: &[u8], spend_tx: &[u8]) -> Result<Vec<u8>, St
             },
         };
 
-        let actual_secret_hash = if secret_hash.len() == 32 {
-            sha256(&secret).to_vec()
+        let expected_secret_hash = if secret_hash.len() == 32 {
+            ripemd160(secret_hash)
         } else {
-            dhash160(&secret).to_vec()
+            H160::from(secret_hash)
         };
-        if actual_secret_hash != secret_hash {
+        let actual_secret_hash = dhash160(&secret);
+        if actual_secret_hash != expected_secret_hash {
             warn!(
                 "Invalid secret hash {:?}, expected {:?}",
-                actual_secret_hash, secret_hash
+                actual_secret_hash, expected_secret_hash
             );
             continue;
         }
@@ -3807,16 +3808,16 @@ pub fn payment_script(time_lock: u32, secret_hash: &[u8], pub_0: &Public, pub_1:
         .push_opcode(Opcode::OP_ELSE)
         .push_opcode(Opcode::OP_SIZE)
         .push_bytes(&[32])
-        .push_opcode(Opcode::OP_EQUALVERIFY);
+        .push_opcode(Opcode::OP_EQUALVERIFY)
+        .push_opcode(Opcode::OP_HASH160);
 
     if secret_hash.len() == 32 {
-        builder = builder.push_opcode(Opcode::OP_SHA256);
+        builder = builder.push_bytes(ripemd160(secret_hash).as_slice());
     } else {
-        builder = builder.push_opcode(Opcode::OP_HASH160);
+        builder = builder.push_bytes(secret_hash);
     }
 
     builder
-        .push_bytes(secret_hash)
         .push_opcode(Opcode::OP_EQUALVERIFY)
         .push_bytes(pub_1)
         .push_opcode(Opcode::OP_CHECKSIG)
