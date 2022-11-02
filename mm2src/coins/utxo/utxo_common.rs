@@ -1751,42 +1751,83 @@ pub fn check_all_utxo_inputs_signed_by_pub(tx: &UtxoTx, expected_pub: &[u8]) -> 
 
 pub fn watcher_validate_taker_fee<T: UtxoCommonOps>(
     coin: T,
-    taker_fee_hash: Vec<u8>,
-    verified_pub: Vec<u8>,
+    taker_fee_hash: &[u8],
+    output_index: usize,
+    sender_pubkey: &[u8],
+    amount: &BigDecimal,
+    min_block_number: u64,
+    fee_addr: &[u8],
 ) -> ValidatePaymentFut<()> {
-    let fut = async move {
-        let mut attempts = 0;
-        let taker_fee_hash = H256Json::from(taker_fee_hash.as_slice());
-        loop {
-            let taker_fee_tx = match coin
-                .as_ref()
-                .rpc_client
-                .get_transaction_bytes(&taker_fee_hash)
-                .compat()
-                .await
-            {
-                Ok(t) => t,
-                Err(e) if attempts > 2 => return MmError::err(ValidatePaymentError::from(e.into_inner())),
-                Err(e) => {
-                    attempts += 1;
-                    error!("Error getting tx {:?} from rpc: {:?}", taker_fee_hash, e);
-                    Timer::sleep(10.).await;
-                    continue;
-                },
-            };
+    let expected_amount = amount.clone();
+    let sender_pubkey = sender_pubkey.to_vec();
+    let taker_fee_hash = taker_fee_hash.to_vec();
+    let address = try_f!(address_from_raw_pubkey(
+        fee_addr,
+        coin.as_ref().conf.pub_addr_prefix,
+        coin.as_ref().conf.pub_t_addr_prefix,
+        coin.as_ref().conf.checksum_type,
+        coin.as_ref().conf.bech32_hrp.clone(),
+        coin.addr_format().clone(),
+    )
+    .map_to_mm(ValidatePaymentError::InternalError));
 
-            match check_all_inputs_signed_by_pub(&*taker_fee_tx, &verified_pub) {
-                Ok(is_valid) if !is_valid => {
-                    return MmError::err(ValidatePaymentError::WrongPaymentTx(
-                        "Taker fee does not belong to the verified public key".to_string(),
-                    ))
-                },
-                Ok(_) => return Ok(()),
-                Err(e) => {
-                    return MmError::err(ValidatePaymentError::WrongPaymentTx(e));
-                },
-            };
+    let fut = async move {
+        let expected_amount = sat_from_big_decimal(&expected_amount, coin.as_ref().decimals)?;
+        let tx_from_rpc = match coin
+            .as_ref()
+            .rpc_client
+            .get_verbose_transaction(&H256Json::from(taker_fee_hash.as_slice()))
+            .compat()
+            .await
+        {
+            Ok(t) => t,
+            Err(e) => return MmError::err(ValidatePaymentError::from(e.into_inner())),
+        };
+
+        let tx: UtxoTx = deserialize(tx_from_rpc.hex.0.as_slice())
+            .map_to_mm(|e| ValidatePaymentError::TxDeserializationError(e.to_string()))?;
+        let inputs_signed_by_pub =
+            check_all_utxo_inputs_signed_by_pub(&tx, &sender_pubkey).map_to_mm(ValidatePaymentError::InternalError)?;
+        if !inputs_signed_by_pub {
+            return MmError::err(ValidatePaymentError::WrongPaymentTx(
+                "Taker fee does not belong to the verified public key".to_string(),
+            ));
         }
+
+        let tx_confirmed_before_block = is_tx_confirmed_before_block(&coin, &tx_from_rpc, min_block_number)
+            .await
+            .map_to_mm(ValidatePaymentError::InternalError)?;
+        if tx_confirmed_before_block {
+            return MmError::err(ValidatePaymentError::WrongPaymentTx(
+                "Fee tx {:?} confirmed before min_block {}".to_string(),
+            ));
+        }
+
+        match tx.outputs.get(output_index) {
+            Some(out) => {
+                let expected_script_pubkey = Builder::build_p2pkh(&address.hash).to_bytes();
+                if out.script_pubkey != expected_script_pubkey {
+                    return MmError::err(ValidatePaymentError::WrongPaymentTx(format!(
+                        "Provided dex fee tx output script_pubkey doesn't match expected {:?} {:?}",
+                        out.script_pubkey, expected_script_pubkey
+                    )));
+                }
+
+                if out.value < expected_amount {
+                    return MmError::err(ValidatePaymentError::WrongPaymentTx(format!(
+                        "Provided dex fee tx output value is less than expected {:?} {:?}",
+                        out.value, expected_amount
+                    )));
+                }
+            },
+            None => {
+                return MmError::err(ValidatePaymentError::WrongPaymentTx(format!(
+                    "Provided dex fee tx {:?} does not have output {}",
+                    tx, output_index
+                )))
+            },
+        }
+        Ok(())
     };
     Box::new(fut.boxed().compat())
 }

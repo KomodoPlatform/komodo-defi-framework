@@ -659,7 +659,14 @@ impl WatcherOps for SolanaCoin {
         unimplemented!();
     }
 
-    fn watcher_validate_taker_fee(&self, _taker_fee_hash: Vec<u8>, _verified_pub: Vec<u8>) -> ValidatePaymentFut<()> {
+    fn watcher_validate_taker_fee(
+        &self,
+        taker_fee_hash: &[u8],
+        sender_pubkey: &[u8],
+        amount: &BigDecimal,
+        min_block_number: u64,
+        fee_addr: &[u8],
+    ) -> ValidatePaymentFut<()> {
         unimplemented!();
     }
 

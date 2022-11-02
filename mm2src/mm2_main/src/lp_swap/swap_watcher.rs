@@ -1,15 +1,16 @@
-use super::{broadcast_p2p_tx_msg, lp_coinfind, taker_payment_spend_deadline, tx_helper_topic, H256Json, SwapsContext,
-            WAIT_CONFIRM_INTERVAL};
+use super::{broadcast_p2p_tx_msg, dex_fee_amount_from_taker_coin, lp_coinfind, taker_payment_spend_deadline,
+            tx_helper_topic, H256Json, SwapsContext, WAIT_CONFIRM_INTERVAL};
 use crate::mm2::MmError;
 use async_trait::async_trait;
 use coins::{CanRefundHtlc, MmCoinEnum, WatcherValidatePaymentInput, TAKER_PAYMENT_SPEND_SEARCH_INTERVAL};
 use common::executor::{AbortSettings, SpawnAbortable, Timer};
 use common::log::{error, info};
 use common::state_machine::prelude::*;
+use common::DEX_FEE_ADDR_RAW_PUBKEY;
 use futures::compat::Future01CompatExt;
 use mm2_core::mm_ctx::MmArc;
 use mm2_libp2p::{decode_signed, pub_sub_topic, TopicPrefix};
-use mm2_number::BigDecimal;
+use mm2_number::{BigDecimal, MmNumber};
 use std::cmp::min;
 use std::sync::Arc;
 use uuid::Uuid;
@@ -153,17 +154,36 @@ impl State for ValidateTakerFee {
     type Result = ();
 
     async fn on_changed(self: Box<Self>, watcher_ctx: &mut WatcherContext) -> StateResult<Self::Ctx, Self::Result> {
-        let validated_f = watcher_ctx
-            .taker_coin
-            .watcher_validate_taker_fee(
-                watcher_ctx.data.taker_fee_hash.clone(),
-                watcher_ctx.verified_pub.clone(),
-            )
-            .compat();
-        if let Err(err) = validated_f.await {
-            Self::change_state(Stopped::from_reason(StopReason::Error(
-                WatcherError::InvalidTakerFee(err.to_string()).into(),
-            )));
+        let taker_amount = MmNumber::from(watcher_ctx.data.taker_amount.clone());
+        let fee_amount =
+            dex_fee_amount_from_taker_coin(&watcher_ctx.taker_coin, &watcher_ctx.data.maker_coin, &taker_amount);
+
+        let mut attempts = 0;
+        loop {
+            match watcher_ctx
+                .taker_coin
+                .watcher_validate_taker_fee(
+                    &watcher_ctx.data.taker_fee_hash,
+                    &watcher_ctx.verified_pub,
+                    &fee_amount.clone().into(),
+                    watcher_ctx.data.taker_coin_start_block,
+                    &DEX_FEE_ADDR_RAW_PUBKEY,
+                )
+                .compat()
+                .await
+            {
+                Ok(_) => break,
+                Err(err) => {
+                    if attempts >= 3 {
+                        return Self::change_state(Stopped::from_reason(StopReason::Error(
+                            WatcherError::InvalidTakerFee(format!("{:?}", err)).into(),
+                        )));
+                    } else {
+                        attempts += 1;
+                        Timer::sleep(10.).await;
+                    }
+                },
+            };
         }
         Self::change_state(ValidateTakerPayment {})
     }
