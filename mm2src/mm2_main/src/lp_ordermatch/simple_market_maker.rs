@@ -110,23 +110,11 @@ impl From<std::string::String> for OrderProcessingError {
     fn from(error: std::string::String) -> Self { OrderProcessingError::LegacyError(error) }
 }
 
-#[allow(dead_code)]
 #[derive(Deserialize)]
 pub struct StartSimpleMakerBotRequest {
     cfg: SimpleMakerBotRegistry,
     price_url: Option<String>,
     bot_refresh_rate: Option<f64>,
-}
-
-impl StartSimpleMakerBotRequest {
-    #[allow(dead_code, clippy::new_without_default)]
-    pub fn new() -> StartSimpleMakerBotRequest {
-        StartSimpleMakerBotRequest {
-            cfg: Default::default(),
-            price_url: None,
-            bot_refresh_rate: None,
-        }
-    }
 }
 
 #[derive(Clone, Debug, Deserialize, PartialEq, Serialize)]
@@ -761,5 +749,44 @@ pub async fn stop_simple_market_maker_bot(ctx: MmArc, _req: Json) -> StopSimpleM
                 result: "Success".to_string(),
             })
         },
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{start_simple_market_maker_bot, stop_simple_market_maker_bot, StartSimpleMakerBotRequest};
+    use common::block_on;
+    use crypto::privkey::key_pair_from_seed;
+    use mm2_core::mm_ctx::MmCtxBuilder;
+    use serde_json::Value as Json;
+
+    #[test]
+    fn test_start_and_stop_simple_market_maker_bot_from_ctx() {
+        let ctx = MmCtxBuilder::default()
+            .with_secp256k1_key_pair(
+                key_pair_from_seed("also shoot benefit prefer juice shell elder veteran woman mimic image kidney")
+                    .unwrap(),
+            )
+            .into_mm_arc();
+
+        let cloned_ctx = ctx.clone();
+        let another_cloned_ctx = ctx.clone();
+        let req = StartSimpleMakerBotRequest {
+            cfg: Default::default(),
+            price_url: None,
+            bot_refresh_rate: None,
+        };
+        let answer = block_on(start_simple_market_maker_bot(ctx, req)).unwrap();
+        assert_eq!(answer.get_result(), "Success");
+
+        let req = StartSimpleMakerBotRequest {
+            cfg: Default::default(),
+            price_url: None,
+            bot_refresh_rate: None,
+        };
+        let answer = block_on(start_simple_market_maker_bot(cloned_ctx, req));
+        assert!(answer.is_err());
+        let answer = block_on(stop_simple_market_maker_bot(another_cloned_ctx, Json::default())).unwrap();
+        assert_eq!(answer.get_result(), "Success");
     }
 }
