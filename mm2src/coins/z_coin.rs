@@ -21,8 +21,8 @@ use crate::{BalanceError, BalanceFut, CheckIfMyPaymentSentArgs, CoinBalance, Coi
             TradePreimageResult, TradePreimageValue, TransactionDetails, TransactionEnum, TransactionFut,
             TxFeeDetails, TxMarshalingErr, UnexpectedDerivationMethod, ValidateAddressResult, ValidateFeeArgs,
             ValidateInstructionsErr, ValidateOtherPubKeyErr, ValidatePaymentFut, ValidatePaymentInput,
-            VerificationError, VerificationResult, WatcherOps,
-            WatcherValidatePaymentInput, WithdrawFut, WithdrawRequest};
+            VerificationError, VerificationResult, WatcherOps, WatcherValidatePaymentInput, WithdrawFut,
+            WithdrawRequest};
 use crate::{Transaction, WithdrawError};
 use async_trait::async_trait;
 use bitcrypto::dhash256;
