@@ -4,8 +4,8 @@ use crate::{coin_errors::MyAddressError, BalanceFut, CanRefundHtlc, CoinFutSpawn
             NegotiateSwapContractAddrErr, PaymentInstructions, PaymentInstructionsErr, SearchForSwapTxSpendInput,
             SignatureResult, TradePreimageFut, TradePreimageResult, TradePreimageValue, TxMarshalingErr,
             UnexpectedDerivationMethod, ValidateAddressResult, ValidateInstructionsErr, ValidateOtherPubKeyErr,
-            ValidatePaymentFut, ValidatePaymentInput, VerificationResult, WatcherOps,
-            WatcherSearchForSwapTxSpendInput, WatcherValidatePaymentInput, WithdrawFut, WithdrawRequest};
+            ValidatePaymentFut, ValidatePaymentInput, VerificationResult, WatcherOps, WatcherValidatePaymentInput,
+            WithdrawFut, WithdrawRequest};
 use async_trait::async_trait;
 use futures01::Future;
 use keys::KeyPair;
@@ -300,13 +300,6 @@ impl WatcherOps for TestCoin {
     }
 
     fn watcher_validate_taker_fee(&self, _taker_fee_hash: Vec<u8>, _verified_pub: Vec<u8>) -> ValidatePaymentFut<()> {
-        unimplemented!();
-    }
-
-    async fn watcher_search_for_swap_tx_spend(
-        &self,
-        input: WatcherSearchForSwapTxSpendInput<'_>,
-    ) -> Result<Option<FoundSwapTxSpend>, String> {
         unimplemented!();
     }
 

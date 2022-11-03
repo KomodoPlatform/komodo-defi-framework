@@ -252,10 +252,10 @@ mod tests {
         let abortable_system = AbortableQueue::default();
         let spawner = abortable_system.weak_spawner();
 
-        let settings = AbortSettings::default().critical_timout_s(0.3);
+        let settings = AbortSettings::default().critical_timout_s(0.4);
 
         let fut1 = async move {
-            Timer::sleep(0.5).await;
+            Timer::sleep(0.6).await;
             unsafe { F1_FINISHED = true };
         };
         spawner.spawn_with_settings(fut1, settings.clone());
@@ -268,7 +268,7 @@ mod tests {
 
         abortable_system.abort_all();
 
-        block_on(Timer::sleep(1.));
+        block_on(Timer::sleep(1.2));
         // `fut1` must not complete.
         assert!(unsafe { !F1_FINISHED });
         // `fut` must complete.

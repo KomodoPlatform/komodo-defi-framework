@@ -972,7 +972,7 @@ where
     F: Fn(&str) -> bool,
 {
     let start = now_float();
-    let ms = 50.min((timeout_sec * 1000.) as u32 / 20 + 10);
+    let ms = 50.min((timeout_sec * 1000.) as u64 / 20 + 10);
     let mut buf = String::with_capacity(128);
     let mut found = false;
     loop {
