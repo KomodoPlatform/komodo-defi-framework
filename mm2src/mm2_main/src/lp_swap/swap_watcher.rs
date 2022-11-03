@@ -2,7 +2,7 @@ use super::{broadcast_p2p_tx_msg, lp_coinfind, tx_helper_topic, wait_for_taker_p
             SwapsContext, TransactionIdentifier, WAIT_CONFIRM_INTERVAL};
 use crate::mm2::MmError;
 use async_trait::async_trait;
-use coins::{CanRefundHtlc, FoundSwapTxSpend, MmCoinEnum, WatcherSearchForSwapTxSpendInput, WatcherValidatePaymentInput};
+use coins::{CanRefundHtlc, MmCoinEnum, WatcherValidatePaymentInput};
 use common::executor::{AbortSettings, SpawnAbortable, Timer};
 use common::log::{error, info};
 use common::state_machine::prelude::*;
@@ -85,8 +85,6 @@ enum StopReason {
 enum WatcherSuccess {
     MakerPaymentSpent,
     TakerPaymentRefunded,
-    TakerPaymentAlreadySpent,
-    TakerPaymentAlreadyRefunded,
 }
 
 #[derive(Debug)]
@@ -94,7 +92,6 @@ enum WatcherError {
     InvalidValidatePublicKey(String),
     InvalidTakerFee(String),
     TakerPaymentNotConfirmed(String),
-    TakerPaymentSearchForSwapFailed(String),
     InvalidTakerPayment(String),
     UnableToExtractSecret(String),
     MakerPaymentSpendFailed(String),
@@ -172,46 +169,12 @@ impl State for ValidateTakerFee {
     }
 }
 
-// TODO: Do this check periodically while waiting for taker payment spend
 #[async_trait]
 impl State for ValidateTakerPayment {
     type Ctx = WatcherContext;
     type Result = ();
 
     async fn on_changed(self: Box<Self>, watcher_ctx: &mut WatcherContext) -> StateResult<Self::Ctx, Self::Result> {
-        let search_input = WatcherSearchForSwapTxSpendInput {
-            time_lock: watcher_ctx.data.taker_payment_lock as u32,
-            taker_pub: &watcher_ctx.data.taker_pub,
-            maker_pub: &watcher_ctx.data.maker_pub,
-            secret_hash: &watcher_ctx.data.secret_hash,
-            tx: &watcher_ctx.data.taker_payment_hex,
-            search_from_block: watcher_ctx.data.taker_coin_start_block,
-            swap_contract_address: &None,
-        };
-
-        match watcher_ctx
-            .taker_coin
-            .watcher_search_for_swap_tx_spend(search_input)
-            .await
-        {
-            Ok(Some(FoundSwapTxSpend::Spent(_))) => {
-                return Self::change_state(Stopped::from_reason(StopReason::Finished(
-                    WatcherSuccess::TakerPaymentAlreadySpent,
-                )))
-            },
-            Ok(Some(FoundSwapTxSpend::Refunded(_))) => {
-                return Self::change_state(Stopped::from_reason(StopReason::Finished(
-                    WatcherSuccess::TakerPaymentAlreadyRefunded,
-                )))
-            },
-            Err(err) => {
-                return Self::change_state(Stopped::from_reason(StopReason::Error(
-                    WatcherError::TakerPaymentSearchForSwapFailed(err).into(),
-                )))
-            },
-            Ok(None) => (),
-        }
-
         let wait_taker_payment =
             wait_for_taker_payment_conf_until(watcher_ctx.data.swap_started_at, watcher_ctx.data.lock_duration);
         let confirmations = min(watcher_ctx.data.taker_payment_confirmations, TAKER_SWAP_CONFIRMATIONS);
