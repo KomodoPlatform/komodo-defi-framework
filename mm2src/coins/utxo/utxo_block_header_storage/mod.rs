@@ -66,6 +66,7 @@ impl BlockHeaderStorage {
 }
 
 #[async_trait]
+#[cfg_attr(all(test), mockable)]
 impl BlockHeaderStorageOps for BlockHeaderStorage {
     async fn init(&self) -> Result<(), BlockHeaderStorageError> { self.inner.init().await }
 

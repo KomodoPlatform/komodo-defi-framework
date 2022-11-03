@@ -24,7 +24,7 @@ use crate::utxo::utxo_tx_history_v2::{UtxoTxDetailsParams, UtxoTxHistoryOps};
 #[cfg(not(target_arch = "wasm32"))] use crate::WithdrawFee;
 use crate::{BlockHeightAndTime, CoinBalance, PrivKeyBuildPolicy, SearchForSwapTxSpendInput, StakingInfosDetails,
             SwapOps, TradePreimageValue, TxFeeDetails, TxMarshalingErr};
-use chain::{BlockHeader, BlockHeaderBits, BlockHeaderNonce, OutPoint};
+use chain::{BlockHeader, OutPoint};
 use common::executor::Timer;
 use common::{block_on, now_ms, OrdRange, PagingOptionsEnum, DEX_FEE_ADDR_RAW_PUBKEY};
 use crypto::{privkey::key_pair_from_seed, Bip44Chain, RpcDerivationPath};
@@ -4267,28 +4267,16 @@ fn test_utxo_validate_valid_and_invalid_pubkey() {
 
 #[test]
 fn test_block_header_utxo_loop() {
-    static mut CURRENT_BLOCK_COUNT: u64 = 2048;
-
+    static mut CURRENT_BLOCK_COUNT: u64 = 1000;
     ElectrumClient::get_block_count
         .mock_safe(|_| MockResult::Return(Box::new(futures01::future::ok(unsafe { CURRENT_BLOCK_COUNT }))));
 
     let block_header_storage = BlockHeaderStorageForTests::new(TEST_COIN_NAME.to_string());
-
     let block_header_storage_copy = block_header_storage.clone();
     BlockHeaderStorage::new_from_ctx.mock_safe(move |_, _| {
         MockResult::Return(Ok(BlockHeaderStorage {
             inner: Box::new(block_header_storage_copy.clone()),
         }))
-    });
-
-    let block_header_storage_copy = block_header_storage.clone();
-    BlockHeaderStorage::add_block_headers_to_storage.mock_safe(move |_, headers| {
-        let mut inner = block_on(block_header_storage_copy.inner.lock());
-        inner
-            .block_headers_by_hash
-            .extend(headers.iter().map(|(height, header)| (header.hash(), *height)));
-        inner.block_headers.extend(headers.into_iter());
-        MockResult::Return(Box::pin(futures::future::ok(())))
     });
 
     let conf = json!({"coin":"RICK","asset":"RICK","rpcport":8923,"enable_spv_proof": true});
@@ -4298,7 +4286,8 @@ fn test_block_header_utxo_loop() {
     });
     let ctx = MmCtxBuilder::new().into_mm_arc();
     let params = UtxoActivationParams::from_legacy_req(&req).unwrap();
-    block_on(utxo_standard_coin_with_priv_key(
+
+    let arc = block_on(utxo_standard_coin_with_priv_key(
         &ctx,
         TEST_COIN_NAME,
         &conf,
@@ -4306,118 +4295,25 @@ fn test_block_header_utxo_loop() {
         &[1u8; 32],
     ))
     .unwrap();
-    let block_headers_storage_mock = block_on(block_header_storage.inner.lock()).clone();
+    let count = arc.as_ref().rpc_client.get_block_count().wait().unwrap();
+    println!("{:?}", count);
 
     block_on(Timer::sleep(5.));
-    block_on(block_header_storage.add_block_headers_to_storage(generate_headers_map(2046..=2050))).unwrap();
-    // Check if there are blocks with 2046, 2047, 2048, 2049, 2050 heights.
-    for ((h1, _), h2) in block_headers_storage_mock.block_headers.iter().zip(2046_u64..=2050) {
-        assert_eq!(h1, &h2)
-    }
-
-    // Then reset `CURRENT_BLOCK_COUNT` to 2051.
+    let block_headers_storage_mock = block_on(block_header_storage.inner.lock()).clone();
+    //    //    block_on(block_header_storage.add_block_headers_to_storage().unwrap();
+    //    //    // Check if there are blocks with 2046, 2047, 2048, 2049, 2050 heights.
+    //    //    for ((h1, _), h2) in block_headers_storage_mock.block_headers.iter().zip(2046_u64..=2050) {
+    //    //        assert_eq!(h1, &h2)
+    //    //    }
+    //
+    //    // Then reset `CURRENT_BLOCK_COUNT` to 2051.
     unsafe {
         CURRENT_BLOCK_COUNT = 2051;
     }
-
-    block_on(Timer::sleep(5.));
-    block_on(block_header_storage.add_block_headers_to_storage(generate_headers_map(2051..=2056))).unwrap();
-    // Check if there are blocks with 2046, 2047, 2048, 2049, 2050..2056 heights.
-    for ((h1, _), h2) in block_headers_storage_mock.block_headers.iter().zip(2046_u64..=2056) {
-        assert_eq!(h1, &h2)
-    }
-}
-
-fn generate_headers_map(range: std::ops::RangeInclusive<u64>) -> HashMap<u64, BlockHeader> {
-    let mut headers = HashMap::new();
-    for count in range {
-        headers.insert(count, BlockHeader {
-            version: 4,
-            previous_header_hash: H256::from("9e4ec13e4650cb4a508f6af0efacf06002bff37321b6097987e8b5cb81e62b00"),
-            merkle_root_hash: H256::from("d501f4631ef5119bece193fdd9ec312e1e394e597a704ed3f5845d18d6de6209"),
-            claim_trie_root: None,
-            hash_final_sapling_root: Some(H256::from(
-                "97f22702b0cfc49fab444807a639436325ec57fb54112c53cb203ee0e9c5944a",
-            )),
-            time: 1591937069,
-            bits: BlockHeaderBits::U32(507954943),
-            nonce: BlockHeaderNonce::H256(H256::from(
-                "5001f9d30f2d0633721e9d223c7b53fd2a101f3366085865fbba69839aa50000",
-            )),
-            solution: Some(vec![
-                1, 35, 145, 67, 45, 203, 175, 225, 78, 242, 33, 126, 194, 117, 254, 5, 186, 148, 16, 177, 141, 78, 232,
-                220, 7, 190, 108, 113, 219, 144, 223, 245, 142, 56, 110, 110, 97, 252, 162, 27, 96, 34, 18, 55, 192,
-                202, 132, 22, 65, 107, 91, 209, 114, 72, 187, 38, 173, 165, 4, 70, 28, 191, 5, 52, 189, 52, 229, 165,
-                217, 73, 141, 0, 112, 131, 144, 165, 193, 186, 134, 152, 1, 58, 6, 218, 3, 212, 238, 186, 144, 219,
-                114, 42, 230, 52, 96, 173, 67, 36, 245, 176, 170, 214, 175, 210, 79, 15, 102, 224, 130, 185, 75, 181,
-                103, 190, 145, 49, 237, 202, 196, 97, 246, 82, 149, 50, 224, 160, 8, 97, 109, 61, 35, 4, 147, 175, 153,
-                157, 102, 235, 93, 121, 47, 205, 225, 187, 80, 201, 197, 10, 151, 52, 223, 225, 139, 70, 11, 52, 78,
-                121, 164, 109, 238, 50, 50, 254, 79, 187, 88, 124, 5, 99, 50, 207, 121, 158, 136, 141, 129, 143, 16,
-                233, 212, 70, 198, 117, 160, 194, 249, 202, 160, 28, 81, 81, 137, 243, 86, 200, 57, 174, 10, 163, 89,
-                107, 200, 53, 205, 70, 13, 220, 246, 29, 6, 231, 5, 255, 177, 4, 141, 74, 56, 55, 179, 181, 62, 42, 17,
-                98, 157, 217, 156, 72, 235, 8, 175, 202, 107, 23, 70, 147, 124, 173, 37, 38, 204, 2, 202, 152, 190, 70,
-                210, 254, 233, 211, 6, 74, 221, 37, 72, 138, 132, 157, 24, 68, 40, 40, 94, 68, 248, 14, 99, 84, 253,
-                125, 124, 11, 31, 57, 127, 11, 95, 250, 59, 179, 44, 20, 60, 210, 245, 14, 113, 201, 193, 186, 80, 127,
-                10, 150, 166, 14, 59, 47, 12, 191, 170, 167, 4, 234, 129, 56, 128, 249, 99, 12, 50, 159, 79, 22, 58, 9,
-                33, 176, 209, 254, 29, 116, 64, 52, 53, 246, 50, 73, 69, 58, 104, 179, 103, 104, 1, 202, 53, 101, 106,
-                202, 143, 76, 220, 235, 149, 225, 242, 249, 212, 246, 172, 58, 215, 252, 73, 26, 243, 189, 21, 180,
-                219, 193, 105, 132, 44, 165, 6, 145, 121, 136, 110, 66, 63, 59, 179, 137, 5, 20, 17, 235, 32, 116, 104,
-                175, 236, 94, 128, 169, 57, 43, 71, 44, 251, 227, 114, 211, 45, 12, 16, 229, 15, 31, 150, 102, 157,
-                145, 197, 4, 54, 84, 37, 60, 50, 19, 198, 255, 133, 155, 8, 247, 254, 205, 58, 52, 224, 233, 179, 117,
-                48, 167, 62, 199, 185, 201, 246, 175, 181, 19, 14, 64, 237, 190, 127, 252, 85, 43, 69, 43, 162, 5, 127,
-                62, 221, 132, 22, 53, 13, 184, 214, 129, 23, 81, 125, 130, 216, 205, 71, 207, 6, 130, 170, 3, 42, 102,
-                86, 43, 105, 2, 221, 232, 2, 33, 162, 33, 106, 142, 83, 24, 225, 205, 181, 66, 220, 139, 102, 127, 137,
-                202, 176, 30, 128, 7, 3, 65, 183, 77, 82, 85, 181, 125, 120, 25, 113, 203, 222, 90, 0, 176, 116, 157,
-                154, 32, 132, 11, 53, 125, 31, 231, 10, 117, 198, 151, 88, 228, 196, 209, 244, 37, 38, 8, 223, 81, 73,
-                113, 7, 171, 207, 152, 207, 85, 92, 249, 168, 44, 114, 136, 221, 25, 42, 14, 240, 83, 126, 215, 0, 31,
-                62, 164, 11, 162, 22, 49, 149, 244, 30, 34, 169, 11, 34, 250, 65, 122, 3, 191, 119, 136, 6, 187, 92,
-                196, 243, 82, 183, 139, 26, 31, 104, 220, 149, 99, 172, 190, 232, 75, 120, 158, 78, 6, 240, 131, 183,
-                249, 212, 97, 49, 83, 21, 83, 175, 135, 230, 77, 244, 251, 202, 222, 74, 137, 14, 72, 180, 52, 118, 95,
-                120, 79, 64, 10, 34, 12, 43, 61, 222, 71, 186, 217, 254, 34, 226, 72, 201, 235, 45, 165, 215, 149, 159,
-                15, 99, 38, 207, 22, 238, 109, 14, 21, 12, 151, 168, 86, 1, 162, 250, 154, 126, 176, 195, 197, 250, 61,
-                37, 248, 120, 54, 160, 206, 251, 193, 58, 188, 21, 2, 214, 255, 188, 159, 173, 241, 159, 217, 133, 65,
-                22, 116, 218, 42, 157, 22, 74, 254, 113, 86, 3, 175, 201, 136, 175, 139, 95, 107, 209, 170, 87, 101,
-                82, 90, 11, 153, 226, 113, 211, 32, 193, 10, 154, 43, 72, 214, 195, 7, 170, 86, 241, 17, 85, 134, 188,
-                34, 38, 53, 144, 29, 221, 199, 1, 171, 85, 139, 189, 54, 174, 149, 236, 213, 199, 53, 153, 88, 160,
-                122, 71, 251, 248, 194, 149, 47, 13, 31, 111, 179, 146, 39, 213, 95, 231, 74, 123, 160, 122, 99, 235,
-                140, 35, 156, 226, 80, 57, 53, 135, 31, 71, 217, 206, 150, 216, 46, 71, 192, 135, 209, 168, 254, 31,
-                29, 244, 51, 101, 111, 215, 157, 26, 144, 35, 72, 105, 87, 162, 233, 227, 46, 94, 30, 194, 173, 132,
-                124, 253, 49, 15, 122, 52, 119, 102, 11, 254, 12, 144, 118, 177, 216, 152, 19, 203, 212, 131, 25, 44,
-                250, 146, 108, 201, 59, 120, 215, 99, 106, 85, 187, 11, 183, 6, 40, 125, 228, 46, 93, 155, 119, 99,
-                176, 28, 170, 62, 194, 227, 136, 220, 77, 155, 238, 83, 131, 79, 215, 130, 25, 149, 225, 110, 186, 247,
-                85, 8, 3, 10, 3, 47, 64, 41, 126, 62, 22, 148, 89, 61, 253, 103, 12, 163, 188, 191, 62, 16, 95, 95,
-                146, 73, 104, 188, 149, 242, 191, 178, 41, 186, 157, 113, 213, 51, 78, 148, 119, 92, 29, 246, 119, 196,
-                97, 89, 76, 116, 245, 12, 146, 106, 132, 111, 232, 32, 159, 98, 254, 128, 149, 24, 69, 13, 9, 31, 16,
-                137, 154, 233, 31, 194, 72, 195, 175, 22, 221, 87, 104, 210, 74, 88, 71, 111, 213, 4, 209, 111, 214,
-                145, 208, 55, 150, 79, 72, 61, 194, 190, 146, 173, 85, 49, 127, 2, 103, 166, 163, 50, 70, 174, 55, 58,
-                147, 181, 189, 230, 123, 48, 218, 132, 80, 149, 7, 87, 22, 188, 249, 182, 173, 234, 84, 169, 192, 57,
-                51, 217, 29, 104, 125, 30, 50, 205, 94, 23, 107, 7, 229, 196, 184, 81, 72, 67, 237, 70, 129, 242, 211,
-                117, 40, 51, 102, 40, 232, 185, 33, 138, 11, 27, 150, 203, 173, 25, 117, 233, 120, 55, 231, 34, 17,
-                104, 178, 29, 255, 188, 253, 246, 23, 11, 208, 34, 120, 13, 91, 110, 1, 30, 228, 52, 218, 120, 75, 48,
-                41, 152, 139, 127, 189, 245, 32, 97, 205, 226, 203, 164, 54, 171, 151, 61, 220, 115, 167, 232, 151,
-                203, 73, 41, 27, 165, 204, 22, 24, 177, 143, 232, 144, 58, 129, 209, 55, 40, 47, 243, 243, 231, 87, 17,
-                103, 62, 90, 40, 22, 253, 78, 24, 74, 198, 149, 142, 134, 22, 162, 129, 193, 233, 148, 145, 38, 27, 82,
-                127, 64, 3, 9, 133, 139, 144, 208, 209, 115, 53, 159, 146, 252, 108, 43, 199, 93, 231, 171, 241, 39,
-                61, 20, 98, 202, 34, 63, 221, 105, 47, 36, 234, 211, 193, 244, 235, 176, 50, 136, 14, 253, 219, 24, 3,
-                197, 126, 181, 211, 163, 57, 55, 193, 47, 164, 133, 235, 101, 121, 126, 146, 97, 30, 72, 174, 86, 12,
-                22, 65, 34, 91, 15, 19, 102, 251, 5, 192, 184, 49, 177, 13, 114, 152, 223, 184, 119, 8, 178, 213, 252,
-                198, 159, 224, 103, 224, 71, 2, 90, 164, 58, 138, 192, 225, 10, 121, 224, 179, 10, 115, 138, 207, 171,
-                220, 6, 77, 107, 83, 193, 50, 138, 170, 183, 153, 62, 162, 235, 38, 220, 40, 230, 62, 172, 230, 83,
-                202, 81, 168, 71, 55, 48, 97, 74, 191, 206, 161, 99, 153, 9, 128, 41, 230, 179, 249, 240, 23, 205, 59,
-                83, 189, 3, 97, 50, 161, 139, 17, 208, 240, 54, 127, 114,
-            ]),
-            aux_pow: None,
-            prog_pow: None,
-            mtp_pow: None,
-            is_verus: false,
-            hash_state_root: None,
-            hash_utxo_root: None,
-            prevout_stake: None,
-            vch_block_sig_dlgt: None,
-            n_height: None,
-            n_nonce_u64: None,
-            mix_hash: None,
-        });
-    }
-    headers
+    //
+    //    block_on(Timer::sleep(5.));
+    //    // Check if there are blocks with 2046, 2047, 2048, 2049, 2050..2056 heights.
+    println!("{}", block_headers_storage_mock.block_headers.len());
+    let count = arc.as_ref().rpc_client.get_block_count().wait().unwrap();
+    println!("{:?}", count);
 }

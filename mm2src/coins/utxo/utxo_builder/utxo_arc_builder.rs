@@ -278,6 +278,10 @@ async fn block_header_utxo_loop<T: UtxoCommonOps>(
 
         sync_status_loop_handle.notify_blocks_headers_sync_status(from_block_height + 1, to_block_height);
 
+        println!(
+            "from_block_height{}, to_block_height{to_block_height} block_count{block_count}",
+            from_block_height + 1
+        );
         let mut fetch_blocker_headers_attempts = FETCH_BLOCK_HEADERS_ATTEMPTS;
         let (block_registry, block_headers) = match client
             .retrieve_headers(from_block_height + 1, to_block_height)
