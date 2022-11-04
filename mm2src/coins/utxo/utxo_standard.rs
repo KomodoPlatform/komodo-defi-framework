@@ -284,7 +284,7 @@ impl SwapOps for UtxoStandardCoin {
         utxo_common::send_maker_payment(
             self.clone(),
             maker_payment_args.time_lock,
-            maker_payment_args.pubkey,
+            maker_payment_args.other_pubkey,
             maker_payment_args.secret_hash,
             maker_payment_args.amount,
             maker_payment_args.swap_unique_data,
@@ -296,7 +296,7 @@ impl SwapOps for UtxoStandardCoin {
         utxo_common::send_taker_payment(
             self.clone(),
             taker_payment_args.time_lock,
-            taker_payment_args.pubkey,
+            taker_payment_args.other_pubkey,
             taker_payment_args.secret_hash,
             taker_payment_args.amount,
             taker_payment_args.swap_unique_data,
@@ -310,9 +310,9 @@ impl SwapOps for UtxoStandardCoin {
     ) -> TransactionFut {
         utxo_common::send_maker_spends_taker_payment(
             self.clone(),
-            maker_spends_payment_args.payment_tx,
+            maker_spends_payment_args.other_payment_tx,
             maker_spends_payment_args.time_lock,
-            maker_spends_payment_args.pubkey,
+            maker_spends_payment_args.other_pubkey,
             maker_spends_payment_args.secret,
             maker_spends_payment_args.secret_hash,
             maker_spends_payment_args.swap_unique_data,
@@ -326,9 +326,9 @@ impl SwapOps for UtxoStandardCoin {
     ) -> TransactionFut {
         utxo_common::send_taker_spends_maker_payment(
             self.clone(),
-            taker_spends_payment_args.payment_tx,
+            taker_spends_payment_args.other_payment_tx,
             taker_spends_payment_args.time_lock,
-            taker_spends_payment_args.pubkey,
+            taker_spends_payment_args.other_pubkey,
             taker_spends_payment_args.secret,
             taker_spends_payment_args.secret_hash,
             taker_spends_payment_args.swap_unique_data,
@@ -341,7 +341,7 @@ impl SwapOps for UtxoStandardCoin {
             self.clone(),
             taker_refunds_payment_args.payment_tx,
             taker_refunds_payment_args.time_lock,
-            taker_refunds_payment_args.pubkey,
+            taker_refunds_payment_args.other_pubkey,
             taker_refunds_payment_args.secret_hash,
             taker_refunds_payment_args.swap_unique_data,
         )
@@ -353,7 +353,7 @@ impl SwapOps for UtxoStandardCoin {
             self.clone(),
             maker_refunds_payment_args.payment_tx,
             maker_refunds_payment_args.time_lock,
-            maker_refunds_payment_args.pubkey,
+            maker_refunds_payment_args.other_pubkey,
             maker_refunds_payment_args.secret_hash,
             maker_refunds_payment_args.swap_unique_data,
         )

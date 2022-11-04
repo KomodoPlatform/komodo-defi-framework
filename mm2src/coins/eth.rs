@@ -59,22 +59,20 @@ use web3::types::{Action as TraceAction, BlockId, BlockNumber, Bytes, CallReques
 use web3::{self, Web3};
 use web3_transport::{EthFeeHistoryNamespace, Web3Transport, Web3TransportNode};
 
-use super::{coin_conf, AsyncMutex, BalanceError, BalanceFut, CoinBalance, CoinFutSpawner, CoinProtocol,
-            CoinTransportMetrics, CoinsContext, FeeApproxStage, FoundSwapTxSpend, HistorySyncState, MarketCoinOps,
-            MmCoin, MyAddressError, NegotiateSwapContractAddrErr, NumConversError, NumConversResult,
+use super::{coin_conf, AsyncMutex, BalanceError, BalanceFut, CheckIfMyPaymentSentArgs, CoinBalance, CoinFutSpawner,
+            CoinProtocol, CoinTransportMetrics, CoinsContext, FeeApproxStage, FoundSwapTxSpend, HistorySyncState,
+            MarketCoinOps, MmCoin, MyAddressError, NegotiateSwapContractAddrErr, NumConversError, NumConversResult,
             PaymentInstructions, PaymentInstructionsErr, RawTransactionError, RawTransactionFut,
             RawTransactionRequest, RawTransactionRes, RawTransactionResult, RpcClientType, RpcTransportEventHandler,
-            RpcTransportEventHandlerShared, SearchForSwapTxSpendInput, SignatureError, SignatureResult, SwapOps,
+            RpcTransportEventHandlerShared, SearchForSwapTxSpendInput, SendMakerPaymentArgs,
+            SendMakerRefundsPaymentArgs, SendMakerSpendsTakerPaymentArgs, SendTakerPaymentArgs,
+            SendTakerRefundsPaymentArgs, SendTakerSpendsMakerPaymentArgs, SignatureError, SignatureResult, SwapOps,
             TradeFee, TradePreimageError, TradePreimageFut, TradePreimageResult, TradePreimageValue, Transaction,
             TransactionDetails, TransactionEnum, TransactionErr, TransactionFut, TxMarshalingErr,
-            UnexpectedDerivationMethod, ValidateAddressResult, ValidateInstructionsErr, ValidateOtherPubKeyErr,
-            ValidatePaymentError, ValidatePaymentFut, ValidatePaymentInput, VerificationError, VerificationResult,
-            WatcherOps, WatcherValidatePaymentInput, WithdrawError, WithdrawFee, WithdrawFut, WithdrawRequest,
-            WithdrawResult};
-
-use crate::{CheckIfMyPaymentSentArgs, SendMakerPaymentArgs, SendMakerRefundsPaymentArgs,
-            SendMakerSpendsTakerPaymentArgs, SendTakerPaymentArgs, SendTakerRefundsPaymentArgs,
-            SendTakerSpendsMakerPaymentArgs, ValidateFeeArgs};
+            UnexpectedDerivationMethod, ValidateAddressResult, ValidateFeeArgs, ValidateInstructionsErr,
+            ValidateOtherPubKeyErr, ValidatePaymentError, ValidatePaymentFut, ValidatePaymentInput, VerificationError,
+            VerificationResult, WatcherOps, WatcherValidatePaymentInput, WithdrawError, WithdrawFee, WithdrawFut,
+            WithdrawRequest, WithdrawResult};
 pub use rlp;
 
 #[cfg(test)] mod eth_tests;
@@ -733,7 +731,7 @@ impl SwapOps for EthCoin {
     }
 
     fn send_maker_payment(&self, maker_payment: SendMakerPaymentArgs) -> TransactionFut {
-        let taker_addr = try_tx_fus!(addr_from_raw_pubkey(maker_payment.pubkey));
+        let taker_addr = try_tx_fus!(addr_from_raw_pubkey(maker_payment.other_pubkey));
         let swap_contract_address = try_tx_fus!(maker_payment.swap_contract_address.try_to_address());
 
         Box::new(
@@ -750,7 +748,7 @@ impl SwapOps for EthCoin {
     }
 
     fn send_taker_payment(&self, taker_payment: SendTakerPaymentArgs) -> TransactionFut {
-        let maker_addr = try_tx_fus!(addr_from_raw_pubkey(taker_payment.pubkey));
+        let maker_addr = try_tx_fus!(addr_from_raw_pubkey(taker_payment.other_pubkey));
         let swap_contract_address = try_tx_fus!(taker_payment.swap_contract_address.try_to_address());
 
         Box::new(
@@ -770,7 +768,7 @@ impl SwapOps for EthCoin {
         &self,
         maker_spends_payment_args: SendMakerSpendsTakerPaymentArgs,
     ) -> TransactionFut {
-        let tx: UnverifiedTransaction = try_tx_fus!(rlp::decode(maker_spends_payment_args.payment_tx));
+        let tx: UnverifiedTransaction = try_tx_fus!(rlp::decode(maker_spends_payment_args.other_payment_tx));
         let signed = try_tx_fus!(SignedEthTx::new(tx));
         let swap_contract_address =
             try_tx_fus!(maker_spends_payment_args.swap_contract_address.try_to_address(), signed);
@@ -790,7 +788,7 @@ impl SwapOps for EthCoin {
         &self,
         taker_spends_payment_args: SendTakerSpendsMakerPaymentArgs,
     ) -> TransactionFut {
-        let tx: UnverifiedTransaction = try_tx_fus!(rlp::decode(taker_spends_payment_args.payment_tx));
+        let tx: UnverifiedTransaction = try_tx_fus!(rlp::decode(taker_spends_payment_args.other_payment_tx));
         let signed = try_tx_fus!(SignedEthTx::new(tx));
         let swap_contract_address = try_tx_fus!(taker_spends_payment_args.swap_contract_address.try_to_address());
         Box::new(
@@ -826,7 +824,10 @@ impl SwapOps for EthCoin {
         )
     }
 
-    fn validate_fee(&self, validate_fee_args: ValidateFeeArgs) -> Box<dyn Future<Item = (), Error = String> + Send> {
+    fn validate_fee(
+        &self,
+        validate_fee_args: ValidateFeeArgs<'_>,
+    ) -> Box<dyn Future<Item = (), Error = String> + Send> {
         let selfi = self.clone();
         let tx = match validate_fee_args.fee_tx {
             TransactionEnum::SignedEthTx(t) => t.clone(),

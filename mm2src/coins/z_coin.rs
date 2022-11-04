@@ -1037,7 +1037,7 @@ impl SwapOps for ZCoin {
     fn send_maker_payment(&self, maker_payment_args: SendMakerPaymentArgs<'_>) -> TransactionFut {
         let selfi = self.clone();
         let maker_key_pair = self.derive_htlc_key_pair(maker_payment_args.swap_unique_data);
-        let taker_pub = try_tx_fus!(Public::from_slice(maker_payment_args.pubkey));
+        let taker_pub = try_tx_fus!(Public::from_slice(maker_payment_args.other_pubkey));
         let secret_hash = maker_payment_args.secret_hash.to_vec();
         let time_lock = maker_payment_args.time_lock;
         let amount = maker_payment_args.amount;
@@ -1061,7 +1061,7 @@ impl SwapOps for ZCoin {
     fn send_taker_payment(&self, taker_payment_args: SendTakerPaymentArgs<'_>) -> TransactionFut {
         let selfi = self.clone();
         let taker_keypair = self.derive_htlc_key_pair(taker_payment_args.swap_unique_data);
-        let maker_pub = try_tx_fus!(Public::from_slice(taker_payment_args.pubkey));
+        let maker_pub = try_tx_fus!(Public::from_slice(taker_payment_args.other_pubkey));
         let secret_hash = taker_payment_args.secret_hash.to_vec();
         let time_lock = taker_payment_args.time_lock;
         let amount = taker_payment_args.amount;
@@ -1086,13 +1086,13 @@ impl SwapOps for ZCoin {
         &self,
         maker_spends_payment_args: SendMakerSpendsTakerPaymentArgs<'_>,
     ) -> TransactionFut {
-        let tx = try_tx_fus!(ZTransaction::read(maker_spends_payment_args.payment_tx));
+        let tx = try_tx_fus!(ZTransaction::read(maker_spends_payment_args.other_payment_tx));
         let key_pair = self.derive_htlc_key_pair(maker_spends_payment_args.swap_unique_data);
         let time_lock = maker_spends_payment_args.time_lock;
         let redeem_script = payment_script(
             time_lock,
             maker_spends_payment_args.secret_hash,
-            &try_tx_fus!(Public::from_slice(maker_spends_payment_args.pubkey)),
+            &try_tx_fus!(Public::from_slice(maker_spends_payment_args.other_pubkey)),
             key_pair.public(),
         );
         let script_data = ScriptBuilder::default()
@@ -1120,13 +1120,13 @@ impl SwapOps for ZCoin {
         &self,
         taker_spends_payment_args: SendTakerSpendsMakerPaymentArgs<'_>,
     ) -> TransactionFut {
-        let tx = try_tx_fus!(ZTransaction::read(taker_spends_payment_args.payment_tx));
+        let tx = try_tx_fus!(ZTransaction::read(taker_spends_payment_args.other_payment_tx));
         let key_pair = self.derive_htlc_key_pair(taker_spends_payment_args.swap_unique_data);
         let time_lock = taker_spends_payment_args.time_lock;
         let redeem_script = payment_script(
             time_lock,
             taker_spends_payment_args.secret_hash,
-            &try_tx_fus!(Public::from_slice(taker_spends_payment_args.pubkey)),
+            &try_tx_fus!(Public::from_slice(taker_spends_payment_args.other_pubkey)),
             key_pair.public(),
         );
         let script_data = ScriptBuilder::default()
@@ -1161,7 +1161,7 @@ impl SwapOps for ZCoin {
             time_lock,
             taker_refunds_payment_args.secret_hash,
             key_pair.public(),
-            &try_tx_fus!(Public::from_slice(taker_refunds_payment_args.pubkey)),
+            &try_tx_fus!(Public::from_slice(taker_refunds_payment_args.other_pubkey)),
         );
         let script_data = ScriptBuilder::default().push_opcode(Opcode::OP_1).into_script();
         let selfi = self.clone();
@@ -1192,7 +1192,7 @@ impl SwapOps for ZCoin {
             time_lock,
             maker_refunds_payment_args.secret_hash,
             key_pair.public(),
-            &try_tx_fus!(Public::from_slice(maker_refunds_payment_args.pubkey)),
+            &try_tx_fus!(Public::from_slice(maker_refunds_payment_args.other_pubkey)),
         );
         let script_data = ScriptBuilder::default().push_opcode(Opcode::OP_1).into_script();
         let selfi = self.clone();

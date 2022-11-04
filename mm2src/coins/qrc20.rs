@@ -734,7 +734,7 @@ impl SwapOps for Qrc20Coin {
 
     fn send_maker_payment(&self, maker_payment_args: SendMakerPaymentArgs) -> TransactionFut {
         let time_lock = maker_payment_args.time_lock;
-        let taker_addr = try_tx_fus!(self.contract_address_from_raw_pubkey(maker_payment_args.pubkey));
+        let taker_addr = try_tx_fus!(self.contract_address_from_raw_pubkey(maker_payment_args.other_pubkey));
         let id = qrc20_swap_id(time_lock, maker_payment_args.secret_hash);
         let value = try_tx_fus!(wei_from_big_decimal(&maker_payment_args.amount, self.utxo.decimals));
         let secret_hash = Vec::from(maker_payment_args.secret_hash);
@@ -752,7 +752,7 @@ impl SwapOps for Qrc20Coin {
     #[inline]
     fn send_taker_payment(&self, taker_payment_args: SendTakerPaymentArgs) -> TransactionFut {
         let time_lock = taker_payment_args.time_lock;
-        let maker_addr = try_tx_fus!(self.contract_address_from_raw_pubkey(taker_payment_args.pubkey));
+        let maker_addr = try_tx_fus!(self.contract_address_from_raw_pubkey(taker_payment_args.other_pubkey));
         let id = qrc20_swap_id(time_lock, taker_payment_args.secret_hash);
         let value = try_tx_fus!(wei_from_big_decimal(&taker_payment_args.amount, self.utxo.decimals));
         let secret_hash = Vec::from(taker_payment_args.secret_hash);
@@ -773,7 +773,7 @@ impl SwapOps for Qrc20Coin {
         maker_spends_payment_args: SendMakerSpendsTakerPaymentArgs,
     ) -> TransactionFut {
         let payment_tx: UtxoTx =
-            try_tx_fus!(deserialize(maker_spends_payment_args.payment_tx).map_err(|e| ERRL!("{:?}", e)));
+            try_tx_fus!(deserialize(maker_spends_payment_args.other_payment_tx).map_err(|e| ERRL!("{:?}", e)));
         let swap_contract_address = try_tx_fus!(maker_spends_payment_args.swap_contract_address.try_to_address());
         let secret = maker_spends_payment_args.secret.to_vec();
 
@@ -792,7 +792,7 @@ impl SwapOps for Qrc20Coin {
         taker_spends_payment_args: SendTakerSpendsMakerPaymentArgs,
     ) -> TransactionFut {
         let payment_tx: UtxoTx =
-            try_tx_fus!(deserialize(taker_spends_payment_args.payment_tx).map_err(|e| ERRL!("{:?}", e)));
+            try_tx_fus!(deserialize(taker_spends_payment_args.other_payment_tx).map_err(|e| ERRL!("{:?}", e)));
         let secret = taker_spends_payment_args.secret.to_vec();
         let swap_contract_address = try_tx_fus!(taker_spends_payment_args.swap_contract_address.try_to_address());
 

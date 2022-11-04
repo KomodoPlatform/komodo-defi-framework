@@ -1572,7 +1572,7 @@ impl SwapOps for TendermintCoin {
     fn send_maker_payment(&self, maker_payment_args: SendMakerPaymentArgs) -> TransactionFut {
         self.send_htlc_for_denom(
             maker_payment_args.time_lock_duration,
-            maker_payment_args.pubkey,
+            maker_payment_args.other_pubkey,
             maker_payment_args.secret_hash,
             maker_payment_args.amount,
             self.denom.clone(),
@@ -1583,7 +1583,7 @@ impl SwapOps for TendermintCoin {
     fn send_taker_payment(&self, taker_payment_args: SendTakerPaymentArgs) -> TransactionFut {
         self.send_htlc_for_denom(
             taker_payment_args.time_lock_duration,
-            taker_payment_args.pubkey,
+            taker_payment_args.other_pubkey,
             taker_payment_args.secret_hash,
             taker_payment_args.amount,
             self.denom.clone(),
@@ -1595,7 +1595,7 @@ impl SwapOps for TendermintCoin {
         &self,
         maker_spends_payment_args: SendMakerSpendsTakerPaymentArgs,
     ) -> TransactionFut {
-        let tx = try_tx_fus!(cosmrs::Tx::from_bytes(maker_spends_payment_args.payment_tx));
+        let tx = try_tx_fus!(cosmrs::Tx::from_bytes(maker_spends_payment_args.other_payment_tx));
         let msg = try_tx_fus!(tx.body.messages.first().ok_or("Tx body couldn't be read."));
         let htlc_proto: crate::tendermint::htlc_proto::CreateHtlcProtoRep =
             try_tx_fus!(prost::Message::decode(msg.value.as_slice()));
@@ -1654,7 +1654,7 @@ impl SwapOps for TendermintCoin {
         &self,
         taker_spends_payment_args: SendTakerSpendsMakerPaymentArgs,
     ) -> TransactionFut {
-        let tx = try_tx_fus!(cosmrs::Tx::from_bytes(taker_spends_payment_args.payment_tx));
+        let tx = try_tx_fus!(cosmrs::Tx::from_bytes(taker_spends_payment_args.other_payment_tx));
         let msg = try_tx_fus!(tx.body.messages.first().ok_or("Tx body couldn't be read."));
         let htlc_proto: crate::tendermint::htlc_proto::CreateHtlcProtoRep =
             try_tx_fus!(prost::Message::decode(msg.value.as_slice()));

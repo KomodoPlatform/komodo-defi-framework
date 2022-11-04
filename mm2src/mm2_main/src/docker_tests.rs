@@ -395,33 +395,31 @@ mod docker_tests {
         let my_public_key = coin.my_public_key().unwrap();
 
         let time_lock = (now_ms() / 1000) as u32 - 3600;
-        let tx = coin
-            .send_taker_payment(SendTakerPaymentArgs {
-                time_lock_duration: 0,
-                time_lock,
-                pubkey: my_public_key,
-                secret_hash: &[0; 20],
-                amount: 1u64.into(),
-                swap_contract_address: &None,
-                swap_unique_data: &[],
-                payment_instructions: &None,
-            })
-            .wait()
-            .unwrap();
+        let taker_payment_args = SendTakerPaymentArgs {
+            time_lock_duration: 0,
+            time_lock,
+            other_pubkey: my_public_key,
+            secret_hash: &[0; 20],
+            amount: 1u64.into(),
+            swap_contract_address: &None,
+            swap_unique_data: &[],
+            payment_instructions: &None,
+        };
+        let tx = coin.send_taker_payment(taker_payment_args).wait().unwrap();
 
         coin.wait_for_confirmations(&tx.tx_hex(), 1, false, timeout, 1)
             .wait()
             .unwrap();
-
+        let maker_refunds_payment_args = SendMakerRefundsPaymentArgs {
+            payment_tx: &tx.tx_hex(),
+            time_lock,
+            other_pubkey: my_public_key,
+            secret_hash: &[0; 20],
+            swap_contract_address: &None,
+            swap_unique_data: &[],
+        };
         let refund_tx = coin
-            .send_maker_refunds_payment(SendMakerRefundsPaymentArgs {
-                payment_tx: &tx.tx_hex(),
-                time_lock,
-                pubkey: my_public_key,
-                secret_hash: &[0; 20],
-                swap_contract_address: &None,
-                swap_unique_data: &[],
-            })
+            .send_maker_refunds_payment(maker_refunds_payment_args)
             .wait()
             .unwrap();
 
@@ -468,33 +466,31 @@ mod docker_tests {
         let my_public_key = coin.my_public_key().unwrap();
 
         let time_lock = (now_ms() / 1000) as u32 - 3600;
-        let tx = coin
-            .send_maker_payment(SendMakerPaymentArgs {
-                time_lock_duration: 0,
-                time_lock,
-                pubkey: my_public_key,
-                secret_hash: &[0; 20],
-                amount: 1u64.into(),
-                swap_contract_address: &None,
-                swap_unique_data: &[],
-                payment_instructions: &None,
-            })
-            .wait()
-            .unwrap();
+        let maker_payment_args = SendMakerPaymentArgs {
+            time_lock_duration: 0,
+            time_lock,
+            other_pubkey: my_public_key,
+            secret_hash: &[0; 20],
+            amount: 1u64.into(),
+            swap_contract_address: &None,
+            swap_unique_data: &[],
+            payment_instructions: &None,
+        };
+        let tx = coin.send_maker_payment(maker_payment_args).wait().unwrap();
 
         coin.wait_for_confirmations(&tx.tx_hex(), 1, false, timeout, 1)
             .wait()
             .unwrap();
-
+        let maker_refunds_payment_args = SendMakerRefundsPaymentArgs {
+            payment_tx: &tx.tx_hex(),
+            time_lock,
+            other_pubkey: my_public_key,
+            secret_hash: &[0; 20],
+            swap_contract_address: &None,
+            swap_unique_data: &[],
+        };
         let refund_tx = coin
-            .send_maker_refunds_payment(SendMakerRefundsPaymentArgs {
-                payment_tx: &tx.tx_hex(),
-                time_lock,
-                pubkey: my_public_key,
-                secret_hash: &[0; 20],
-                swap_contract_address: &None,
-                swap_unique_data: &[],
-            })
+            .send_maker_refunds_payment(maker_refunds_payment_args)
             .wait()
             .unwrap();
 
@@ -526,34 +522,32 @@ mod docker_tests {
 
         let secret_hash = dhash160(&secret);
         let time_lock = (now_ms() / 1000) as u32 - 3600;
-        let tx = coin
-            .send_taker_payment(SendTakerPaymentArgs {
-                time_lock_duration: 0,
-                time_lock,
-                pubkey: my_pubkey,
-                secret_hash: secret_hash.as_slice(),
-                amount: 1u64.into(),
-                swap_contract_address: &None,
-                swap_unique_data: &[],
-                payment_instructions: &None,
-            })
-            .wait()
-            .unwrap();
+        let taker_payment_args = SendTakerPaymentArgs {
+            time_lock_duration: 0,
+            time_lock,
+            other_pubkey: my_pubkey,
+            secret_hash: secret_hash.as_slice(),
+            amount: 1u64.into(),
+            swap_contract_address: &None,
+            swap_unique_data: &[],
+            payment_instructions: &None,
+        };
+        let tx = coin.send_taker_payment(taker_payment_args).wait().unwrap();
 
         coin.wait_for_confirmations(&tx.tx_hex(), 1, false, timeout, 1)
             .wait()
             .unwrap();
-
+        let maker_spends_payment_args = SendMakerSpendsTakerPaymentArgs {
+            other_payment_tx: &tx.tx_hex(),
+            time_lock,
+            other_pubkey: my_pubkey,
+            secret: &secret,
+            secret_hash: secret_hash.as_slice(),
+            swap_contract_address: &None,
+            swap_unique_data: &[],
+        };
         let spend_tx = coin
-            .send_maker_spends_taker_payment(SendMakerSpendsTakerPaymentArgs {
-                payment_tx: &tx.tx_hex(),
-                time_lock,
-                pubkey: my_pubkey,
-                secret: &secret,
-                secret_hash: secret_hash.as_slice(),
-                swap_contract_address: &None,
-                swap_unique_data: &[],
-            })
+            .send_maker_spends_taker_payment(maker_spends_payment_args)
             .wait()
             .unwrap();
 
@@ -585,34 +579,32 @@ mod docker_tests {
 
         let time_lock = (now_ms() / 1000) as u32 - 3600;
         let secret_hash = dhash160(&secret);
-        let tx = coin
-            .send_maker_payment(SendMakerPaymentArgs {
-                time_lock_duration: 0,
-                time_lock,
-                pubkey: my_pubkey,
-                secret_hash: secret_hash.as_slice(),
-                amount: 1u64.into(),
-                swap_contract_address: &None,
-                swap_unique_data: &[],
-                payment_instructions: &None,
-            })
-            .wait()
-            .unwrap();
+        let maker_payment_args = SendMakerPaymentArgs {
+            time_lock_duration: 0,
+            time_lock,
+            other_pubkey: my_pubkey,
+            secret_hash: secret_hash.as_slice(),
+            amount: 1u64.into(),
+            swap_contract_address: &None,
+            swap_unique_data: &[],
+            payment_instructions: &None,
+        };
+        let tx = coin.send_maker_payment(maker_payment_args).wait().unwrap();
 
         coin.wait_for_confirmations(&tx.tx_hex(), 1, false, timeout, 1)
             .wait()
             .unwrap();
-
+        let taker_spends_payment_args = SendTakerSpendsMakerPaymentArgs {
+            other_payment_tx: &tx.tx_hex(),
+            time_lock,
+            other_pubkey: my_pubkey,
+            secret: &secret,
+            secret_hash: secret_hash.as_slice(),
+            swap_contract_address: &None,
+            swap_unique_data: &[],
+        };
         let spend_tx = coin
-            .send_taker_spends_maker_payment(SendTakerSpendsMakerPaymentArgs {
-                payment_tx: &tx.tx_hex(),
-                time_lock,
-                pubkey: my_pubkey,
-                secret: &secret,
-                secret_hash: secret_hash.as_slice(),
-                swap_contract_address: &None,
-                swap_unique_data: &[],
-            })
+            .send_taker_spends_maker_payment(taker_spends_payment_args)
             .wait()
             .unwrap();
 
@@ -647,19 +639,17 @@ mod docker_tests {
         let mut unspents = vec![];
         let mut sent_tx = vec![];
         for i in 0..100 {
-            let tx = coin
-                .send_maker_payment(SendMakerPaymentArgs {
-                    time_lock_duration: 0,
-                    time_lock: time_lock + i,
-                    pubkey: my_pubkey,
-                    secret_hash: &*dhash160(&secret),
-                    amount: 1.into(),
-                    swap_contract_address: &coin.swap_contract_address(),
-                    swap_unique_data: &[],
-                    payment_instructions: &None,
-                })
-                .wait()
-                .unwrap();
+            let maker_payment_args = SendMakerPaymentArgs {
+                time_lock_duration: 0,
+                time_lock: time_lock + i,
+                other_pubkey: my_pubkey,
+                secret_hash: &*dhash160(&secret),
+                amount: 1.into(),
+                swap_contract_address: &coin.swap_contract_address(),
+                swap_unique_data: &[],
+                payment_instructions: &None,
+            };
+            let tx = coin.send_maker_payment(maker_payment_args).wait().unwrap();
             if let TransactionEnum::UtxoTx(tx) = tx {
                 unspents.push(UnspentInfo {
                     outpoint: OutPoint {
@@ -1336,19 +1326,17 @@ mod docker_tests {
         let my_public_key = coin.my_public_key().unwrap();
 
         let time_lock = (now_ms() / 1000) as u32 - 3600;
-        let tx = coin
-            .send_taker_payment(SendTakerPaymentArgs {
-                time_lock_duration: 0,
-                time_lock,
-                pubkey: my_public_key,
-                secret_hash: &[0; 20],
-                amount: 1u64.into(),
-                swap_contract_address: &None,
-                swap_unique_data: &[],
-                payment_instructions: &None,
-            })
-            .wait()
-            .unwrap();
+        let taker_payment_args = SendTakerPaymentArgs {
+            time_lock_duration: 0,
+            time_lock,
+            other_pubkey: my_public_key,
+            secret_hash: &[0; 20],
+            amount: 1u64.into(),
+            swap_contract_address: &None,
+            swap_unique_data: &[],
+            payment_instructions: &None,
+        };
+        let tx = coin.send_taker_payment(taker_payment_args).wait().unwrap();
 
         coin.wait_for_confirmations(&tx.tx_hex(), 1, false, timeout, 1)
             .wait()

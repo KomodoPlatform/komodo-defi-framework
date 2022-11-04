@@ -103,7 +103,7 @@ impl SwapOps for TendermintToken {
     fn send_maker_payment(&self, maker_payment_args: SendMakerPaymentArgs) -> TransactionFut {
         self.platform_coin.send_htlc_for_denom(
             maker_payment_args.time_lock_duration,
-            maker_payment_args.pubkey,
+            maker_payment_args.other_pubkey,
             maker_payment_args.secret_hash,
             maker_payment_args.amount,
             self.denom.clone(),
@@ -114,7 +114,7 @@ impl SwapOps for TendermintToken {
     fn send_taker_payment(&self, taker_payment_args: SendTakerPaymentArgs) -> TransactionFut {
         self.platform_coin.send_htlc_for_denom(
             taker_payment_args.time_lock_duration,
-            taker_payment_args.pubkey,
+            taker_payment_args.other_pubkey,
             taker_payment_args.secret_hash,
             taker_payment_args.amount,
             self.denom.clone(),
@@ -127,7 +127,7 @@ impl SwapOps for TendermintToken {
         maker_spends_payment_args: SendMakerSpendsTakerPaymentArgs,
     ) -> TransactionFut {
         self.platform_coin
-            .send_maker_spends_taker_payment(maker_spends_payment_args.clone())
+            .send_maker_spends_taker_payment(maker_spends_payment_args)
     }
 
     fn send_taker_spends_maker_payment(
@@ -135,7 +135,7 @@ impl SwapOps for TendermintToken {
         taker_spends_payment_args: SendTakerSpendsMakerPaymentArgs,
     ) -> TransactionFut {
         self.platform_coin
-            .send_taker_spends_maker_payment(taker_spends_payment_args.clone())
+            .send_taker_spends_maker_payment(taker_spends_payment_args)
     }
 
     fn send_taker_refunds_payment(&self, taker_refunds_payment_args: SendTakerRefundsPaymentArgs) -> TransactionFut {

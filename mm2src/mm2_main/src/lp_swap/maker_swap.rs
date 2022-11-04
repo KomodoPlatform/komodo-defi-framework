@@ -756,7 +756,7 @@ impl MakerSwap {
                     let payment_fut = self.maker_coin.send_maker_payment(SendMakerPaymentArgs {
                         time_lock_duration: self.r().data.lock_duration,
                         time_lock: self.r().data.maker_payment_lock as u32,
-                        pubkey: &*self.r().other_maker_coin_htlc_pub,
+                        other_pubkey: &*self.r().other_maker_coin_htlc_pub,
                         secret_hash: secret_hash.as_slice(),
                         amount: self.maker_amount.clone(),
                         swap_contract_address: &self.r().data.maker_coin_swap_contract_address,
@@ -957,9 +957,9 @@ impl MakerSwap {
         let spend_fut = self
             .taker_coin
             .send_maker_spends_taker_payment(SendMakerSpendsTakerPaymentArgs {
-                payment_tx: &self.r().taker_payment.clone().unwrap().tx_hex,
+                other_payment_tx: &self.r().taker_payment.clone().unwrap().tx_hex,
                 time_lock: self.taker_payment_lock.load(Ordering::Relaxed) as u32,
-                pubkey: &*self.r().other_taker_coin_htlc_pub,
+                other_pubkey: &*self.r().other_taker_coin_htlc_pub,
                 secret: &self.r().data.secret.0,
                 secret_hash: &self.secret_hash(),
                 swap_contract_address: &self.r().data.taker_coin_swap_contract_address,
@@ -1063,7 +1063,7 @@ impl MakerSwap {
         let spend_fut = self.maker_coin.send_maker_refunds_payment(SendMakerRefundsPaymentArgs {
             payment_tx: &self.r().maker_payment.clone().unwrap().tx_hex,
             time_lock: self.r().data.maker_payment_lock as u32,
-            pubkey: &*self.r().other_maker_coin_htlc_pub,
+            other_pubkey: &*self.r().other_maker_coin_htlc_pub,
             secret_hash: self.secret_hash().as_slice(),
             swap_contract_address: &self.r().data.maker_coin_swap_contract_address,
             swap_unique_data: &self.unique_swap_data(),
@@ -1240,9 +1240,9 @@ impl MakerSwap {
             selfi
                 .taker_coin
                 .send_maker_spends_taker_payment(SendMakerSpendsTakerPaymentArgs {
-                    payment_tx: taker_payment_hex,
+                    other_payment_tx: taker_payment_hex,
                     time_lock: timelock,
-                    pubkey: other_taker_coin_htlc_pub.as_slice(),
+                    other_pubkey: other_taker_coin_htlc_pub.as_slice(),
                     secret: &secret,
                     secret_hash: &selfi.secret_hash(),
                     swap_contract_address: &taker_coin_swap_contract_address,
@@ -1340,7 +1340,7 @@ impl MakerSwap {
                 let fut = self.maker_coin.send_maker_refunds_payment(SendMakerRefundsPaymentArgs {
                     payment_tx: &maker_payment,
                     time_lock: maker_payment_lock,
-                    pubkey: other_maker_coin_htlc_pub.as_slice(),
+                    other_pubkey: other_maker_coin_htlc_pub.as_slice(),
                     secret_hash: secret_hash.as_slice(),
                     swap_contract_address: &maker_coin_swap_contract_address,
                     swap_unique_data: &unique_data,

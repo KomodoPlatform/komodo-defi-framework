@@ -1200,7 +1200,7 @@ impl SwapOps for SlpToken {
     }
 
     fn send_maker_payment(&self, maker_payment_args: SendMakerPaymentArgs) -> TransactionFut {
-        let taker_pub = try_tx_fus!(Public::from_slice(maker_payment_args.pubkey));
+        let taker_pub = try_tx_fus!(Public::from_slice(maker_payment_args.other_pubkey));
         let amount = try_tx_fus!(sat_from_big_decimal(&maker_payment_args.amount, self.decimals()));
         let secret_hash = maker_payment_args.secret_hash.to_owned();
         let maker_htlc_keypair = self.derive_htlc_key_pair(maker_payment_args.swap_unique_data);
@@ -1218,7 +1218,7 @@ impl SwapOps for SlpToken {
     }
 
     fn send_taker_payment(&self, taker_payment_args: SendTakerPaymentArgs) -> TransactionFut {
-        let maker_pub = try_tx_fus!(Public::from_slice(taker_payment_args.pubkey));
+        let maker_pub = try_tx_fus!(Public::from_slice(taker_payment_args.other_pubkey));
         let amount = try_tx_fus!(sat_from_big_decimal(&taker_payment_args.amount, self.decimals()));
         let secret_hash = taker_payment_args.secret_hash.to_owned();
 
@@ -1240,8 +1240,8 @@ impl SwapOps for SlpToken {
         &self,
         maker_spends_payment_args: SendMakerSpendsTakerPaymentArgs,
     ) -> TransactionFut {
-        let tx = maker_spends_payment_args.payment_tx.to_owned();
-        let taker_pub = try_tx_fus!(Public::from_slice(maker_spends_payment_args.pubkey));
+        let tx = maker_spends_payment_args.other_payment_tx.to_owned();
+        let taker_pub = try_tx_fus!(Public::from_slice(maker_spends_payment_args.other_pubkey));
         let secret = maker_spends_payment_args.secret.to_owned();
         let secret_hash = maker_spends_payment_args.secret_hash.to_owned();
         let htlc_keypair = self.derive_htlc_key_pair(maker_spends_payment_args.swap_unique_data);
@@ -1262,8 +1262,8 @@ impl SwapOps for SlpToken {
         &self,
         taker_spends_payment_args: SendTakerSpendsMakerPaymentArgs,
     ) -> TransactionFut {
-        let tx = taker_spends_payment_args.payment_tx.to_owned();
-        let maker_pub = try_tx_fus!(Public::from_slice(taker_spends_payment_args.pubkey));
+        let tx = taker_spends_payment_args.other_payment_tx.to_owned();
+        let maker_pub = try_tx_fus!(Public::from_slice(taker_spends_payment_args.other_pubkey));
         let secret = taker_spends_payment_args.secret.to_owned();
         let secret_hash = taker_spends_payment_args.secret_hash.to_owned();
         let htlc_keypair = self.derive_htlc_key_pair(taker_spends_payment_args.swap_unique_data);
@@ -1282,7 +1282,7 @@ impl SwapOps for SlpToken {
 
     fn send_taker_refunds_payment(&self, taker_refunds_payment_args: SendTakerRefundsPaymentArgs) -> TransactionFut {
         let tx = taker_refunds_payment_args.payment_tx.to_owned();
-        let maker_pub = try_tx_fus!(Public::from_slice(taker_refunds_payment_args.pubkey));
+        let maker_pub = try_tx_fus!(Public::from_slice(taker_refunds_payment_args.other_pubkey));
         let secret_hash = taker_refunds_payment_args.secret_hash.to_owned();
         let htlc_keypair = self.derive_htlc_key_pair(taker_refunds_payment_args.swap_unique_data);
         let coin = self.clone();
@@ -1300,7 +1300,7 @@ impl SwapOps for SlpToken {
 
     fn send_maker_refunds_payment(&self, maker_refunds_payment_args: SendMakerRefundsPaymentArgs) -> TransactionFut {
         let tx = maker_refunds_payment_args.payment_tx.to_owned();
-        let taker_pub = try_tx_fus!(Public::from_slice(maker_refunds_payment_args.pubkey));
+        let taker_pub = try_tx_fus!(Public::from_slice(maker_refunds_payment_args.other_pubkey));
         let secret_hash = maker_refunds_payment_args.secret_hash.to_owned();
         let htlc_keypair = self.derive_htlc_key_pair(maker_refunds_payment_args.swap_unique_data);
         let coin = self.clone();

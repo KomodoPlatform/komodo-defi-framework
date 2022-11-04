@@ -513,7 +513,7 @@ impl SwapOps for LightningCoin {
         &self,
         maker_spends_payment_args: SendMakerSpendsTakerPaymentArgs<'_>,
     ) -> TransactionFut {
-        let payment_hash = try_tx_fus!(payment_hash_from_slice(maker_spends_payment_args.payment_tx));
+        let payment_hash = try_tx_fus!(payment_hash_from_slice(maker_spends_payment_args.other_payment_tx));
         let mut preimage = [b' '; 32];
         preimage.copy_from_slice(maker_spends_payment_args.secret);
 

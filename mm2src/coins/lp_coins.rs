@@ -268,17 +268,11 @@ pub type TxHistoryResult<T> = Result<T, MmError<TxHistoryError>>;
 pub type RawTransactionResult = Result<RawTransactionRes, MmError<RawTransactionError>>;
 pub type RawTransactionFut<'a> =
     Box<dyn Future<Item = RawTransactionRes, Error = MmError<RawTransactionError>> + Send + 'a>;
-// has takers pubkey
 pub type SendMakerPaymentArgs<'a> = SendSwapPaymentArgs<'a>;
-// has makers pubkey
 pub type SendTakerPaymentArgs<'a> = SendSwapPaymentArgs<'a>;
-// has takers payment_tx and and pubkey
 pub type SendMakerSpendsTakerPaymentArgs<'a> = SendSpendPaymentArgs<'a>;
-// has makers payment_tx and pubkey
 pub type SendTakerSpendsMakerPaymentArgs<'a> = SendSpendPaymentArgs<'a>;
-// has takers payment_tx and makers pubkey
 pub type SendTakerRefundsPaymentArgs<'a> = SendRefundPaymentArgs<'a>;
-// has makers payment_tx and takers pubkey
 pub type SendMakerRefundsPaymentArgs<'a> = SendRefundPaymentArgs<'a>;
 
 #[derive(Debug, Deserialize, Display, Serialize, SerializeErrorType)]
@@ -528,7 +522,10 @@ pub struct SearchForSwapTxSpendInput<'a> {
 pub struct SendSwapPaymentArgs<'a> {
     pub time_lock_duration: u64,
     pub time_lock: u32,
-    pub pubkey: &'a [u8],
+    /// This is either:
+    /// * Taker's pubkey if this structure is used in [`SwapOps::send_maker_payment`].
+    /// * Maker's pubkey if this structure is used in [`SwapOps::send_taker_payment`].
+    pub other_pubkey: &'a [u8],
     pub secret_hash: &'a [u8],
     pub amount: BigDecimal,
     pub swap_contract_address: &'a Option<BytesJson>,
@@ -538,9 +535,15 @@ pub struct SendSwapPaymentArgs<'a> {
 
 #[derive(Clone, Debug)]
 pub struct SendSpendPaymentArgs<'a> {
-    pub payment_tx: &'a [u8],
+    /// This is either:
+    /// * Taker's payment tx if this structure is used in [`SwapOps::send_maker_spends_taker_payment`].
+    /// * Maker's payment tx if this structure is used in [`SwapOps::send_taker_spends_maker_payment`].
+    pub other_payment_tx: &'a [u8],
     pub time_lock: u32,
-    pub pubkey: &'a [u8],
+    /// This is either:
+    /// * Taker's pubkey if this structure is used in [`SwapOps::send_maker_spends_taker_payment`].
+    /// * Maker's pubkey if this structure is used in [`SwapOps::send_taker_spends_maker_payment`].
+    pub other_pubkey: &'a [u8],
     pub secret: &'a [u8],
     pub secret_hash: &'a [u8],
     pub swap_contract_address: &'a Option<BytesJson>,
@@ -551,7 +554,10 @@ pub struct SendSpendPaymentArgs<'a> {
 pub struct SendRefundPaymentArgs<'a> {
     pub payment_tx: &'a [u8],
     pub time_lock: u32,
-    pub pubkey: &'a [u8],
+    /// This is either:
+    /// * Taker's pubkey if this structure is used in [`SwapOps::send_maker_refunds_payment`].
+    /// * Maker's pubkey if this structure is used in [`SwapOps::send_taker_refunds_payment`].
+    pub other_pubkey: &'a [u8],
     pub secret_hash: &'a [u8],
     pub swap_contract_address: &'a Option<BytesJson>,
     pub swap_unique_data: &'a [u8],
