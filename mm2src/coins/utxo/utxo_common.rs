@@ -1749,18 +1749,22 @@ pub fn check_all_utxo_inputs_signed_by_pub(tx: &UtxoTx, expected_pub: &[u8]) -> 
     Ok(true)
 }
 
+#[allow(clippy::too_many_arguments)]
 pub fn watcher_validate_taker_fee<T: UtxoCommonOps>(
     coin: T,
     taker_fee_hash: &[u8],
+    taker_payment_hex: &[u8],
     output_index: usize,
     sender_pubkey: &[u8],
     amount: &BigDecimal,
     min_block_number: u64,
     fee_addr: &[u8],
+    lock_duration: u64,
 ) -> ValidatePaymentFut<()> {
     let expected_amount = amount.clone();
     let sender_pubkey = sender_pubkey.to_vec();
     let taker_fee_hash = taker_fee_hash.to_vec();
+    let taker_payment_hex = taker_payment_hex.to_vec();
     let address = try_f!(address_from_raw_pubkey(
         fee_addr,
         coin.as_ref().conf.pub_addr_prefix,
@@ -1784,10 +1788,10 @@ pub fn watcher_validate_taker_fee<T: UtxoCommonOps>(
             Err(e) => return MmError::err(ValidatePaymentError::from(e.into_inner())),
         };
 
-        let tx: UtxoTx = deserialize(tx_from_rpc.hex.0.as_slice())
+        let taker_fee_tx: UtxoTx = deserialize(tx_from_rpc.hex.0.as_slice())
             .map_to_mm(|e| ValidatePaymentError::TxDeserializationError(e.to_string()))?;
-        let inputs_signed_by_pub =
-            check_all_utxo_inputs_signed_by_pub(&tx, &sender_pubkey).map_to_mm(ValidatePaymentError::InternalError)?;
+        let inputs_signed_by_pub = check_all_utxo_inputs_signed_by_pub(&taker_fee_tx, &sender_pubkey)
+            .map_to_mm(ValidatePaymentError::InternalError)?;
         if !inputs_signed_by_pub {
             return MmError::err(ValidatePaymentError::WrongPaymentTx(
                 "Taker fee does not belong to the verified public key".to_string(),
@@ -1803,7 +1807,17 @@ pub fn watcher_validate_taker_fee<T: UtxoCommonOps>(
             ));
         }
 
-        match tx.outputs.get(output_index) {
+        let taker_payment_tx: UtxoTx = deserialize(taker_payment_hex.as_slice())
+            .map_to_mm(|e| ValidatePaymentError::TxDeserializationError(e.to_string()))?;
+
+        if taker_payment_tx.lock_time - taker_fee_tx.lock_time > lock_duration as u32 {
+            return MmError::err(ValidatePaymentError::WrongPaymentTx(format!(
+                "lock_time of the provided taker fee {:?} is not consistent with the lock_time of the taker payment {:?}",
+                taker_fee_tx, taker_payment_tx
+            )));
+        }
+
+        match taker_fee_tx.outputs.get(output_index) {
             Some(out) => {
                 let expected_script_pubkey = Builder::build_p2pkh(&address.hash).to_bytes();
                 if out.script_pubkey != expected_script_pubkey {
@@ -1823,10 +1837,11 @@ pub fn watcher_validate_taker_fee<T: UtxoCommonOps>(
             None => {
                 return MmError::err(ValidatePaymentError::WrongPaymentTx(format!(
                     "Provided dex fee tx {:?} does not have output {}",
-                    tx, output_index
+                    taker_fee_tx, output_index
                 )))
             },
         }
+
         Ok(())
     };
     Box::new(fut.boxed().compat())

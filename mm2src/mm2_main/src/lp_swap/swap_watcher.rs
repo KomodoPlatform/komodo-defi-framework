@@ -154,6 +154,11 @@ impl State for ValidateTakerFee {
     type Result = ();
 
     async fn on_changed(self: Box<Self>, watcher_ctx: &mut WatcherContext) -> StateResult<Self::Ctx, Self::Result> {
+        println!("**ValidateTakerFee");
+        let taker_locktime = watcher_ctx.data.swap_started_at + watcher_ctx.data.lock_duration;
+        println!("**taker_locktime:{:?}", taker_locktime);
+        println!("**swap_started_at:{:?}", watcher_ctx.data.swap_started_at);
+        println!("**lock_duration:{:?}", watcher_ctx.data.lock_duration);
         let taker_amount = MmNumber::from(watcher_ctx.data.taker_amount.clone());
         let fee_amount =
             dex_fee_amount_from_taker_coin(&watcher_ctx.taker_coin, &watcher_ctx.data.maker_coin, &taker_amount);
@@ -164,10 +169,12 @@ impl State for ValidateTakerFee {
                 .taker_coin
                 .watcher_validate_taker_fee(
                     &watcher_ctx.data.taker_fee_hash,
+                    &watcher_ctx.data.taker_payment_hex,
                     &watcher_ctx.verified_pub,
                     &fee_amount.clone().into(),
                     watcher_ctx.data.taker_coin_start_block,
                     &DEX_FEE_ADDR_RAW_PUBKEY,
+                    watcher_ctx.data.lock_duration,
                 )
                 .compat()
                 .await

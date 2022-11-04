@@ -1523,10 +1523,12 @@ impl WatcherOps for SlpToken {
     fn watcher_validate_taker_fee(
         &self,
         _taker_fee_hash: &[u8],
+        _taker_payment_hex: &[u8],
         _sender_pubkey: &[u8],
         _amount: &BigDecimal,
         _min_block_number: u64,
         _fee_addr: &[u8],
+        _lock_duration: u64,
     ) -> ValidatePaymentFut<()> {
         unimplemented!();
     }

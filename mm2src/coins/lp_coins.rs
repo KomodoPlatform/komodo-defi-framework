@@ -719,13 +719,16 @@ pub trait WatcherOps {
         _swap_unique_data: &[u8],
     ) -> TransactionFut;
 
+    #[allow(clippy::too_many_arguments)]
     fn watcher_validate_taker_fee(
         &self,
         taker_fee_hash: &[u8],
+        taker_payment_hex: &[u8],
         sender_pubkey: &[u8],
         amount: &BigDecimal,
         min_block_number: u64,
         fee_addr: &[u8],
+        lock_duration: u64,
     ) -> ValidatePaymentFut<()>;
 
     fn watcher_validate_taker_payment(&self, _input: WatcherValidatePaymentInput) -> ValidatePaymentFut<()>;
