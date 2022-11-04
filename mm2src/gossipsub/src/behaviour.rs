@@ -163,7 +163,7 @@ impl Gossipsub {
             return false;
         }
 
-        let peers: Vec<_> = self.peer_topics.iter().map(|(peer_id, _)| *peer_id).collect();
+        let peers: Vec<_> = self.peer_topics.keys().copied().collect();
         for peer_id in peers {
             let mut fixed_event = None; // initialise the event once if needed
             if fixed_event.is_none() {
@@ -954,7 +954,7 @@ impl Gossipsub {
                 control_msgs: Vec::new(),
             });
 
-            let relays: Vec<_> = self.relays_mesh.iter().map(|(relay, _)| *relay).collect();
+            let relays: Vec<_> = self.relays_mesh.keys().copied().collect();
             for relay in relays {
                 if let Some(received_from_peers) = self.received.get(&msg_id) {
                     if received_from_peers.contains(&relay) {
@@ -1065,7 +1065,7 @@ impl Gossipsub {
 
     pub fn get_mesh(&self) -> &HashMap<TopicHash, Vec<PeerId>> { &self.mesh }
 
-    pub fn get_relay_mesh(&self) -> Vec<PeerId> { self.relays_mesh.iter().map(|(peer, _)| peer).cloned().collect() }
+    pub fn get_relay_mesh(&self) -> Vec<PeerId> { self.relays_mesh.keys().cloned().collect() }
 
     pub fn relay_mesh_len(&self) -> usize { self.relays_mesh.len() }
 

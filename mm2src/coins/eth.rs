@@ -715,7 +715,7 @@ async fn withdraw_impl(coin: EthCoin, req: WithdrawRequest) -> WithdrawResult {
 pub struct EthCoin(Arc<EthCoinImpl>);
 impl Deref for EthCoin {
     type Target = EthCoinImpl;
-    fn deref(&self) -> &EthCoinImpl { &*self.0 }
+    fn deref(&self) -> &EthCoinImpl { &self.0 }
 }
 
 #[async_trait]
@@ -2142,7 +2142,7 @@ impl EthCoin {
                 .filter(|e| e.block_number.is_some() && e.transaction_hash.is_some() && !e.is_removed())
                 .map(|e| (e.transaction_hash.unwrap(), e))
                 .collect();
-            let mut all_events: Vec<_> = all_events.into_iter().map(|(_, log)| log).collect();
+            let mut all_events: Vec<_> = all_events.into_values().collect();
             all_events.sort_by(|a, b| b.block_number.unwrap().cmp(&a.block_number.unwrap()));
 
             for event in all_events {
@@ -3383,6 +3383,10 @@ impl MmCoin for EthCoin {
         Some(BytesJson::from(self.swap_contract_address.0.as_ref()))
     }
 
+    fn fallback_swap_contract(&self) -> Option<BytesJson> {
+        self.fallback_swap_contract.map(|a| BytesJson::from(a.0.as_ref()))
+    }
+
     fn mature_confirmations(&self) -> Option<u32> { None }
 
     fn coin_protocol_info(&self) -> Vec<u8> { Vec::new() }
@@ -3773,7 +3777,7 @@ fn checksum_address(addr: &str) -> String {
     let hash = hasher.finalize();
     let mut result: String = "0x".into();
     for (i, c) in addr.chars().enumerate() {
-        if c.is_digit(10) {
+        if c.is_ascii_digit() {
             result.push(c);
         } else {
             // https://github.com/ethereum/EIPs/blob/master/EIPS/eip-55.md#specification

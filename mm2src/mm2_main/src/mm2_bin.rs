@@ -1,10 +1,7 @@
-#![allow(uncommon_codepoints)]
 #![feature(async_closure)]
 #![feature(drain_filter)]
-#![recursion_limit = "512"]
 #![feature(test)]
 #![feature(hash_raw_entry)]
-#![feature(map_first_last)]
 
 #[macro_use] extern crate common;
 #[macro_use] extern crate gstuff;

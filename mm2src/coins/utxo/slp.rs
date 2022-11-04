@@ -510,7 +510,7 @@ impl SlpToken {
                 if token_id != self.token_id() {
                     return MmError::err(SpendHtlcError::InvalidSlpDetails);
                 }
-                *amounts.get(0).ok_or(SpendHtlcError::InvalidSlpDetails)?
+                *amounts.first().ok_or(SpendHtlcError::InvalidSlpDetails)?
             },
             _ => return MmError::err(SpendHtlcError::InvalidSlpDetails),
         };
@@ -561,7 +561,7 @@ impl SlpToken {
                 if token_id != self.token_id() {
                     return MmError::err(SpendHtlcError::InvalidSlpDetails);
                 }
-                *amounts.get(0).ok_or(SpendHtlcError::InvalidSlpDetails)?
+                *amounts.first().ok_or(SpendHtlcError::InvalidSlpDetails)?
             },
             _ => return MmError::err(SpendHtlcError::InvalidSlpDetails),
         };
@@ -1830,7 +1830,9 @@ impl MmCoin for SlpToken {
         warn!("set_requires_notarization has no effect on SLPTOKEN!")
     }
 
-    fn swap_contract_address(&self) -> Option<BytesJson> { None }
+    fn swap_contract_address(&self) -> Option<BytesJson> { utxo_common::fallback_swap_contract() }
+
+    fn fallback_swap_contract(&self) -> Option<BytesJson> { utxo_common::fallback_swap_contract() }
 
     fn mature_confirmations(&self) -> Option<u32> { self.platform_coin.mature_confirmations() }
 

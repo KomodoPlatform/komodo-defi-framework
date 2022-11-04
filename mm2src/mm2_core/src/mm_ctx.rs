@@ -206,7 +206,7 @@ impl MmCtx {
         } else {
             Path::new("DB")
         };
-        path.join(hex::encode(&**self.rmd160()))
+        path.join(hex::encode(self.rmd160().as_slice()))
     }
 
     pub fn is_watcher(&self) -> bool { self.conf["is_watcher"].as_bool().unwrap_or_default() }

@@ -110,7 +110,6 @@ impl From<std::string::String> for OrderProcessingError {
     fn from(error: std::string::String) -> Self { OrderProcessingError::LegacyError(error) }
 }
 
-#[allow(dead_code)]
 #[derive(Deserialize)]
 pub struct StartSimpleMakerBotRequest {
     cfg: SimpleMakerBotRegistry,
@@ -118,24 +117,13 @@ pub struct StartSimpleMakerBotRequest {
     bot_refresh_rate: Option<f64>,
 }
 
-#[cfg(test)]
-impl StartSimpleMakerBotRequest {
-    pub fn new() -> StartSimpleMakerBotRequest {
-        return StartSimpleMakerBotRequest {
-            cfg: Default::default(),
-            price_url: None,
-            bot_refresh_rate: None,
-        };
-    }
-}
-
 #[derive(Clone, Debug, Deserialize, PartialEq, Serialize)]
 pub struct StopSimpleMakerBotRes {
     result: String,
 }
 
-#[cfg(test)]
 impl StopSimpleMakerBotRes {
+    #[allow(dead_code)]
     pub fn get_result(&self) -> String { self.result.clone() }
 }
 
@@ -144,8 +132,8 @@ pub struct StartSimpleMakerBotRes {
     result: String,
 }
 
-#[cfg(test)]
 impl StartSimpleMakerBotRes {
+    #[allow(dead_code)]
     pub fn get_result(&self) -> String { self.result.clone() }
 }
 
@@ -761,5 +749,44 @@ pub async fn stop_simple_market_maker_bot(ctx: MmArc, _req: Json) -> StopSimpleM
                 result: "Success".to_string(),
             })
         },
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{start_simple_market_maker_bot, stop_simple_market_maker_bot, StartSimpleMakerBotRequest};
+    use common::block_on;
+    use crypto::privkey::key_pair_from_seed;
+    use mm2_core::mm_ctx::MmCtxBuilder;
+    use serde_json::Value as Json;
+
+    #[test]
+    fn test_start_and_stop_simple_market_maker_bot_from_ctx() {
+        let ctx = MmCtxBuilder::default()
+            .with_secp256k1_key_pair(
+                key_pair_from_seed("also shoot benefit prefer juice shell elder veteran woman mimic image kidney")
+                    .unwrap(),
+            )
+            .into_mm_arc();
+
+        let cloned_ctx = ctx.clone();
+        let another_cloned_ctx = ctx.clone();
+        let req = StartSimpleMakerBotRequest {
+            cfg: Default::default(),
+            price_url: None,
+            bot_refresh_rate: None,
+        };
+        let answer = block_on(start_simple_market_maker_bot(ctx, req)).unwrap();
+        assert_eq!(answer.get_result(), "Success");
+
+        let req = StartSimpleMakerBotRequest {
+            cfg: Default::default(),
+            price_url: None,
+            bot_refresh_rate: None,
+        };
+        let answer = block_on(start_simple_market_maker_bot(cloned_ctx, req));
+        assert!(answer.is_err());
+        let answer = block_on(stop_simple_market_maker_bot(another_cloned_ctx, Json::default())).unwrap();
+        assert_eq!(answer.get_result(), "Success");
     }
 }

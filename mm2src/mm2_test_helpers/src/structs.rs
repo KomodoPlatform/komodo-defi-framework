@@ -484,6 +484,7 @@ pub struct MakerPreimage {
 #[derive(Debug, Deserialize, Eq, PartialEq)]
 #[serde(deny_unknown_fields)]
 #[serde(untagged)]
+#[allow(clippy::large_enum_variant)]
 pub enum TradePreimageResult {
     TakerPreimage(TakerPreimage),
     MakerPreimage(MakerPreimage),

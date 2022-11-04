@@ -285,7 +285,7 @@ async fn rpc_service(req: Request<Body>, ctx_h: u32, client: SocketAddr) -> Resp
     let res = try_sf!(process_rpc_request(ctx, req, req_json, client).await, ACCESS_CONTROL_ALLOW_ORIGIN => rpc_cors);
     let (mut parts, body) = res.into_parts();
     parts.headers.insert(ACCESS_CONTROL_ALLOW_ORIGIN, rpc_cors);
-    let body_escaped = match std::str::from_utf8(&*body) {
+    let body_escaped = match std::str::from_utf8(&body) {
         Ok(body_utf8) => {
             let escaped = escape_answer(body_utf8);
             escaped.as_bytes().to_vec()

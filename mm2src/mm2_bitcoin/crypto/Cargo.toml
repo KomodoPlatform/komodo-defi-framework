@@ -3,6 +3,9 @@ name = "bitcrypto"
 version = "0.1.0"
 authors = ["debris <marek.kotewicz@gmail.com>"]
 
+[lib]
+doctest = false
+
 [dependencies]
 groestl = "0.9"
 primitives = { path = "../primitives" }

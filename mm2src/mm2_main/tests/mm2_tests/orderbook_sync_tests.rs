@@ -1,7 +1,20 @@
-use super::*;
-use mm2_test_helpers::for_tests::{orderbook_v2, rick_conf, zombie_conf, Mm2TestConf, RICK, ZOMBIE_ELECTRUMS,
-                                  ZOMBIE_LIGHTWALLETD_URLS, ZOMBIE_TICKER};
+use crate::integration_tests_common::{enable_coins_eth_electrum, enable_coins_rick_morty_electrum, enable_electrum,
+                                      enable_electrum_json, enable_z_coin_light};
+use common::{block_on, log};
+use http::StatusCode;
+use mm2::mm2::lp_ordermatch::MIN_ORDER_KEEP_ALIVE_INTERVAL;
+use mm2_number::{BigDecimal, BigRational, MmNumber};
+use mm2_test_helpers::electrums::rick_electrums;
+use mm2_test_helpers::for_tests::{get_passphrase, orderbook_v2, rick_conf, zombie_conf, MarketMakerIt, Mm2TestConf,
+                                  RICK, ZOMBIE_ELECTRUMS, ZOMBIE_LIGHTWALLETD_URLS, ZOMBIE_TICKER};
 use mm2_test_helpers::get_passphrase;
+use mm2_test_helpers::structs::{EnableElectrumResponse, GetPublicKeyResult, OrderbookEntryAggregate,
+                                OrderbookResponse, OrderbookV2Response, RpcV2Response, SetPriceResponse};
+use serde_json::{self as json, json, Value as Json};
+use std::env;
+use std::str::FromStr;
+use std::thread;
+use std::time::Duration;
 
 /// https://github.com/artemii235/SuperNET/issues/241
 #[test]
@@ -13,19 +26,19 @@ fn alice_can_see_the_active_order_after_connection() {
 
     // start bob and immediately place the order
     let mm_bob = MarketMakerIt::start(
-        json! ({
+        json!({
             "gui": "nogui",
             "netid": 9998,
-            "myipaddr": env::var ("BOB_TRADE_IP") .ok(),
-            "rpcip": env::var ("BOB_TRADE_IP") .ok(),
-            "canbind": env::var ("BOB_TRADE_PORT") .ok().map (|s| s.parse::<i64>().unwrap()),
+            "myipaddr": env::var("BOB_TRADE_IP") .ok(),
+            "rpcip": env::var("BOB_TRADE_IP") .ok(),
+            "canbind": env::var("BOB_TRADE_PORT") .ok().map (|s| s.parse::<i64>().unwrap()),
             "passphrase": "bob passphrase",
             "coins": coins,
             "rpc_password": "pass",
             "i_am_seed": true,
         }),
         "pass".into(),
-        local_start!("bob"),
+        None,
     )
     .unwrap();
     let (_bob_dump_log, _bob_dump_dashboard) = mm_bob.mm_dump();
@@ -37,7 +50,7 @@ fn alice_can_see_the_active_order_after_connection() {
     );
     // issue sell request on Bob side by setting base/rel price
     log!("Issue bob sell request");
-    let rc = block_on(mm_bob.rpc(&json! ({
+    let rc = block_on(mm_bob.rpc(&json!({
         "userpass": mm_bob.userpass,
         "method": "setprice",
         "base": "RICK",
@@ -49,7 +62,7 @@ fn alice_can_see_the_active_order_after_connection() {
     assert!(rc.0.is_success(), "!setprice: {}", rc.1);
     // Bob orderbook must show the new order
     log!("Get RICK/MORTY orderbook on Bob side");
-    let rc = block_on(mm_bob.rpc(&json! ({
+    let rc = block_on(mm_bob.rpc(&json!({
         "userpass": mm_bob.userpass,
         "method": "orderbook",
         "base": "RICK",
@@ -65,19 +78,19 @@ fn alice_can_see_the_active_order_after_connection() {
 
     // start eve and immediately place the order
     let mm_eve = MarketMakerIt::start(
-        json! ({
+        json!({
             "gui": "nogui",
             "netid": 9998,
-            "myipaddr": env::var ("BOB_TRADE_IP") .ok(),
-            "rpcip": env::var ("BOB_TRADE_IP") .ok(),
-            "canbind": env::var ("BOB_TRADE_PORT") .ok().map (|s| s.parse::<i64>().unwrap()),
+            "myipaddr": env::var("BOB_TRADE_IP") .ok(),
+            "rpcip": env::var("BOB_TRADE_IP") .ok(),
+            "canbind": env::var("BOB_TRADE_PORT") .ok().map (|s| s.parse::<i64>().unwrap()),
             "passphrase": "eve passphrase",
             "coins": coins,
             "rpc_password": "pass",
             "seednodes": [mm_bob.ip.to_string()],
         }),
         "pass".into(),
-        local_start!("bob"),
+        None,
     )
     .unwrap();
     let (_eve_dump_log, _eve_dump_dashboard) = mm_eve.mm_dump();
@@ -89,7 +102,7 @@ fn alice_can_see_the_active_order_after_connection() {
     );
     // issue sell request on Eve side by setting base/rel price
     log!("Issue eve sell request");
-    let rc = block_on(mm_eve.rpc(&json! ({
+    let rc = block_on(mm_eve.rpc(&json!({
         "userpass": mm_eve.userpass,
         "method": "setprice",
         "base": "RICK",
@@ -101,7 +114,7 @@ fn alice_can_see_the_active_order_after_connection() {
     assert!(rc.0.is_success(), "!setprice: {}", rc.1);
     // issue sell request on Eve side by setting base/rel price
     log!("Issue eve sell request");
-    let rc = block_on(mm_eve.rpc(&json! ({
+    let rc = block_on(mm_eve.rpc(&json!({
         "userpass": mm_eve.userpass,
         "method": "setprice",
         "base": "MORTY",
@@ -113,7 +126,7 @@ fn alice_can_see_the_active_order_after_connection() {
     assert!(rc.0.is_success(), "!setprice: {}", rc.1);
 
     log!("Get RICK/MORTY orderbook on Eve side");
-    let rc = block_on(mm_eve.rpc(&json! ({
+    let rc = block_on(mm_eve.rpc(&json!({
         "userpass": mm_eve.userpass,
         "method": "orderbook",
         "base": "RICK",
@@ -138,7 +151,7 @@ fn alice_can_see_the_active_order_after_connection() {
     log!("Give Bob 2 seconds to import Eve order");
     thread::sleep(Duration::from_secs(2));
     log!("Get RICK/MORTY orderbook on Bob side");
-    let rc = block_on(mm_bob.rpc(&json! ({
+    let rc = block_on(mm_bob.rpc(&json!({
         "userpass": mm_bob.userpass,
         "method": "orderbook",
         "base": "RICK",
@@ -161,18 +174,18 @@ fn alice_can_see_the_active_order_after_connection() {
     );
 
     let mm_alice = MarketMakerIt::start(
-        json! ({
+        json!({
             "gui": "nogui",
             "netid": 9998,
-            "myipaddr": env::var ("ALICE_TRADE_IP") .ok(),
-            "rpcip": env::var ("ALICE_TRADE_IP") .ok(),
+            "myipaddr": env::var("ALICE_TRADE_IP") .ok(),
+            "rpcip": env::var("ALICE_TRADE_IP") .ok(),
             "passphrase": "alice passphrase",
             "coins": coins,
             "seednodes": [mm_bob.ip.to_string()],
             "rpc_password": "pass",
         }),
         "pass".into(),
-        local_start!("alice"),
+        None,
     )
     .unwrap();
 
@@ -186,7 +199,7 @@ fn alice_can_see_the_active_order_after_connection() {
     );
 
     log!("Get RICK/MORTY orderbook on Alice side");
-    let rc = block_on(mm_alice.rpc(&json! ({
+    let rc = block_on(mm_alice.rpc(&json!({
         "userpass": mm_alice.userpass,
         "method": "orderbook",
         "base": "RICK",
@@ -228,19 +241,19 @@ fn alice_can_see_the_active_order_after_orderbook_sync_segwit() {
     ]);
 
     let mut mm_bob = MarketMakerIt::start(
-        json! ({
+        json!({
             "gui": "nogui",
             "netid": 9998,
-            "myipaddr": env::var ("BOB_TRADE_IP") .ok(),
-            "rpcip": env::var ("BOB_TRADE_IP") .ok(),
-            "canbind": env::var ("BOB_TRADE_PORT") .ok().map (|s| s.parse::<i64>().unwrap()),
+            "myipaddr": env::var("BOB_TRADE_IP") .ok(),
+            "rpcip": env::var("BOB_TRADE_IP") .ok(),
+            "canbind": env::var("BOB_TRADE_PORT") .ok().map (|s| s.parse::<i64>().unwrap()),
             "passphrase": bob_passphrase,
             "coins": bob_coins_config,
             "rpc_password": "pass",
             "i_am_seed": true,
         }),
         "pass".into(),
-        local_start!("bob"),
+        None,
     )
     .unwrap();
     let (_bob_dump_log, _bob_dump_dashboard) = mm_bob.mm_dump();
@@ -293,7 +306,7 @@ fn alice_can_see_the_active_order_after_orderbook_sync_segwit() {
         ("RICK", "tBTC", "0.7", "0.0002", Some("0.00015")),
     ];
     for (base, rel, price, volume, min_volume) in bob_orders.iter() {
-        let rc = block_on(mm_bob.rpc(&json! ({
+        let rc = block_on(mm_bob.rpc(&json!({
             "userpass": mm_bob.userpass,
             "method": "setprice",
             "base": base,
@@ -307,7 +320,7 @@ fn alice_can_see_the_active_order_after_orderbook_sync_segwit() {
         assert!(rc.0.is_success(), "!setprice: {}", rc.1);
     }
 
-    let rc = block_on(mm_bob.rpc(&json! ({
+    let rc = block_on(mm_bob.rpc(&json!({
         "userpass": mm_bob.userpass,
         "mmrpc": "2.0",
         "method": "get_public_key",
@@ -319,18 +332,18 @@ fn alice_can_see_the_active_order_after_orderbook_sync_segwit() {
     let bob_pubkey = get_public_key_res.result.public_key;
 
     let mut mm_alice = MarketMakerIt::start(
-        json! ({
+        json!({
             "gui": "nogui",
             "netid": 9998,
-            "myipaddr": env::var ("ALICE_TRADE_IP") .ok(),
-            "rpcip": env::var ("ALICE_TRADE_IP") .ok(),
+            "myipaddr": env::var("ALICE_TRADE_IP") .ok(),
+            "rpcip": env::var("ALICE_TRADE_IP") .ok(),
             "passphrase": "alice passphrase",
             "coins": alice_coins_config,
             "seednodes": [mm_bob.ip.to_string()],
             "rpc_password": "pass",
         }),
         "pass".into(),
-        local_start!("alice"),
+        None,
     )
     .unwrap();
 
@@ -377,7 +390,7 @@ fn alice_can_see_the_active_order_after_orderbook_sync_segwit() {
 
     // setting the price will trigger Alice's subscription to the orderbook topic
     // but won't request the actual orderbook
-    let rc = block_on(mm_alice.rpc(&json! ({
+    let rc = block_on(mm_alice.rpc(&json!({
         "userpass": mm_alice.userpass,
         "method": "setprice",
         "base": "RICK",
@@ -397,7 +410,7 @@ fn alice_can_see_the_active_order_after_orderbook_sync_segwit() {
     .unwrap();
 
     // checking orderbook on alice side
-    let rc = block_on(mm_alice.rpc(&json! ({
+    let rc = block_on(mm_alice.rpc(&json!({
         "userpass": mm_alice.userpass,
         "method": "orderbook",
         "base": "tBTC",
@@ -428,19 +441,19 @@ fn test_orderbook_segwit() {
     ]);
 
     let mut mm_bob = MarketMakerIt::start(
-        json! ({
+        json!({
             "gui": "nogui",
             "netid": 9998,
-            "myipaddr": env::var ("BOB_TRADE_IP") .ok(),
-            "rpcip": env::var ("BOB_TRADE_IP") .ok(),
-            "canbind": env::var ("BOB_TRADE_PORT") .ok().map (|s| s.parse::<i64>().unwrap()),
+            "myipaddr": env::var("BOB_TRADE_IP") .ok(),
+            "rpcip": env::var("BOB_TRADE_IP") .ok(),
+            "canbind": env::var("BOB_TRADE_PORT") .ok().map (|s| s.parse::<i64>().unwrap()),
             "passphrase": bob_passphrase,
             "coins": bob_coins_config,
             "rpc_password": "pass",
             "i_am_seed": true,
         }),
         "pass".into(),
-        local_start!("bob"),
+        None,
     )
     .unwrap();
     let (_bob_dump_log, _bob_dump_dashboard) = mm_bob.mm_dump();
@@ -493,7 +506,7 @@ fn test_orderbook_segwit() {
         ("RICK", "tBTC", "0.7", "0.0002", Some("0.00015")),
     ];
     for (base, rel, price, volume, min_volume) in bob_orders.iter() {
-        let rc = block_on(mm_bob.rpc(&json! ({
+        let rc = block_on(mm_bob.rpc(&json!({
             "userpass": mm_bob.userpass,
             "method": "setprice",
             "base": base,
@@ -508,18 +521,18 @@ fn test_orderbook_segwit() {
     }
 
     let mm_alice = MarketMakerIt::start(
-        json! ({
+        json!({
             "gui": "nogui",
             "netid": 9998,
-            "myipaddr": env::var ("ALICE_TRADE_IP") .ok(),
-            "rpcip": env::var ("ALICE_TRADE_IP") .ok(),
+            "myipaddr": env::var("ALICE_TRADE_IP") .ok(),
+            "rpcip": env::var("ALICE_TRADE_IP") .ok(),
             "passphrase": "alice passphrase",
             "coins": alice_coins_config,
             "seednodes": [mm_bob.ip.to_string()],
             "rpc_password": "pass",
         }),
         "pass".into(),
-        local_start!("alice"),
+        None,
     )
     .unwrap();
 
@@ -532,7 +545,7 @@ fn test_orderbook_segwit() {
     .unwrap();
 
     // checking orderbook on alice side
-    let rc = block_on(mm_alice.rpc(&json! ({
+    let rc = block_on(mm_alice.rpc(&json!({
         "userpass": mm_alice.userpass,
         "method": "orderbook",
         "base": "tBTC",
@@ -573,7 +586,7 @@ fn test_get_orderbook_with_same_orderbook_ticker() {
     let (_dump_log, _dump_dashboard) = mm.mm_dump();
     log!("Log path: {}", mm.log_path.display());
 
-    let rc = block_on(mm.rpc(&json! ({
+    let rc = block_on(mm.rpc(&json!({
         "userpass": mm.userpass,
         "method": "orderbook",
         "base": "RICK",
@@ -586,7 +599,7 @@ fn test_get_orderbook_with_same_orderbook_ticker() {
         rc.1
     );
 
-    let rc = block_on(mm.rpc(&json! ({
+    let rc = block_on(mm.rpc(&json!({
         "userpass": mm.userpass,
         "method": "orderbook",
         "base": "RICK",
@@ -625,7 +638,7 @@ fn test_conf_settings_in_orderbook() {
     );
 
     log!("Issue set_price request for RICK/MORTY on Bob side");
-    let rc = block_on(mm_bob.rpc(&json! ({
+    let rc = block_on(mm_bob.rpc(&json!({
         "userpass": mm_bob.userpass,
         "method": "setprice",
         "base": "RICK",
@@ -637,7 +650,7 @@ fn test_conf_settings_in_orderbook() {
     assert!(rc.0.is_success(), "!setprice: {}", rc.1);
 
     log!("Issue set_price request for MORTY/RICK on Bob side");
-    let rc = block_on(mm_bob.rpc(&json! ({
+    let rc = block_on(mm_bob.rpc(&json!({
         "userpass": mm_bob.userpass,
         "method": "setprice",
         "base": "MORTY",
@@ -670,7 +683,7 @@ fn test_conf_settings_in_orderbook() {
     );
 
     log!("Get RICK/MORTY orderbook on Alice side");
-    let rc = block_on(mm_alice.rpc(&json! ({
+    let rc = block_on(mm_alice.rpc(&json!({
         "userpass": mm_alice.userpass,
         "method": "orderbook",
         "base": "RICK",
@@ -735,7 +748,7 @@ fn alice_can_see_confs_in_orderbook_after_sync() {
     );
 
     log!("Issue sell request on Bob side");
-    let rc = block_on(mm_bob.rpc(&json! ({
+    let rc = block_on(mm_bob.rpc(&json!({
         "userpass": mm_bob.userpass,
         "method": "setprice",
         "base": "RICK",
@@ -746,7 +759,7 @@ fn alice_can_see_confs_in_orderbook_after_sync() {
     .unwrap();
     assert!(rc.0.is_success(), "!setprice: {}", rc.1);
 
-    let rc = block_on(mm_bob.rpc(&json! ({
+    let rc = block_on(mm_bob.rpc(&json!({
         "userpass": mm_bob.userpass,
         "mmrpc": "2.0",
         "method": "get_public_key",
@@ -786,7 +799,7 @@ fn alice_can_see_confs_in_orderbook_after_sync() {
 
     // setting the price will trigger Alice's subscription to the orderbook topic
     // but won't request the actual orderbook
-    let rc = block_on(mm_alice.rpc(&json! ({
+    let rc = block_on(mm_alice.rpc(&json!({
         "userpass": mm_alice.userpass,
         "method": "setprice",
         "base": "RICK",
@@ -806,7 +819,7 @@ fn alice_can_see_confs_in_orderbook_after_sync() {
     .unwrap();
 
     log!("Get RICK/MORTY orderbook on Alice side");
-    let rc = block_on(mm_alice.rpc(&json! ({
+    let rc = block_on(mm_alice.rpc(&json!({
         "userpass": mm_alice.userpass,
         "method": "orderbook",
         "base": "RICK",
@@ -845,22 +858,19 @@ fn orderbook_extended_data() {
     ]);
 
     let mm = MarketMakerIt::start(
-        json! ({
+        json!({
             "gui": "nogui",
             "netid": 9998,
-            "myipaddr": env::var ("BOB_TRADE_IP") .ok(),
-            "rpcip": env::var ("BOB_TRADE_IP") .ok(),
-            "canbind": env::var ("BOB_TRADE_PORT") .ok().map (|s| s.parse::<i64>().unwrap()),
+            "myipaddr": env::var("BOB_TRADE_IP") .ok(),
+            "rpcip": env::var("BOB_TRADE_IP") .ok(),
+            "canbind": env::var("BOB_TRADE_PORT") .ok().map (|s| s.parse::<i64>().unwrap()),
             "passphrase": "bob passphrase",
             "coins": coins,
             "rpc_password": "pass",
             "i_am_seed": true,
         }),
         "pass".into(),
-        match var("LOCAL_THREAD_MM") {
-            Ok(ref e) if e == "bob" => Some(local_start()),
-            _ => None,
-        },
+        None,
     )
     .unwrap();
     let (_dump_log, _dump_dashboard) = &mm.mm_dump();
@@ -901,7 +911,7 @@ fn orderbook_extended_data() {
 
     thread::sleep(Duration::from_secs(1));
     log!("Get RICK/MORTY orderbook");
-    let rc = block_on(mm.rpc(&json! ({
+    let rc = block_on(mm.rpc(&json!({
         "userpass": mm.userpass,
         "method": "orderbook",
         "base": "RICK",
@@ -956,22 +966,19 @@ fn orderbook_should_display_base_rel_volumes() {
     ]);
 
     let mm = MarketMakerIt::start(
-        json! ({
+        json!({
             "gui": "nogui",
             "netid": 9998,
-            "myipaddr": env::var ("BOB_TRADE_IP") .ok(),
-            "rpcip": env::var ("BOB_TRADE_IP") .ok(),
-            "canbind": env::var ("BOB_TRADE_PORT") .ok().map (|s| s.parse::<i64>().unwrap()),
+            "myipaddr": env::var("BOB_TRADE_IP") .ok(),
+            "rpcip": env::var("BOB_TRADE_IP") .ok(),
+            "canbind": env::var("BOB_TRADE_PORT") .ok().map (|s| s.parse::<i64>().unwrap()),
             "passphrase": "bob passphrase",
             "coins": coins,
             "rpc_password": "pass",
             "i_am_seed": true,
         }),
         "pass".into(),
-        match var("LOCAL_THREAD_MM") {
-            Ok(ref e) if e == "bob" => Some(local_start()),
-            _ => None,
-        },
+        None,
     )
     .unwrap();
     let (_dump_log, _dump_dashboard) = &mm.mm_dump();
@@ -991,7 +998,7 @@ fn orderbook_should_display_base_rel_volumes() {
     let volume = BigRational::new(1.into(), 1.into());
 
     // create order with rational amount and price
-    let rc = block_on(mm.rpc(&json! ({
+    let rc = block_on(mm.rpc(&json!({
         "userpass": mm.userpass,
         "method": "setprice",
         "base": "RICK",
@@ -1005,7 +1012,7 @@ fn orderbook_should_display_base_rel_volumes() {
 
     thread::sleep(Duration::from_secs(1));
     log!("Get RICK/MORTY orderbook");
-    let rc = block_on(mm.rpc(&json! ({
+    let rc = block_on(mm.rpc(&json!({
         "userpass": mm.userpass,
         "method": "orderbook",
         "base": "RICK",
@@ -1025,7 +1032,7 @@ fn orderbook_should_display_base_rel_volumes() {
     assert_eq!(&min_volume * &price, orderbook.asks[0].rel_min_volume_rat);
 
     log!("Get MORTY/RICK orderbook");
-    let rc = block_on(mm.rpc(&json! ({
+    let rc = block_on(mm.rpc(&json!({
         "userpass": mm.userpass,
         "method": "orderbook",
         "base": "MORTY",
@@ -1058,22 +1065,19 @@ fn orderbook_should_work_without_coins_activation() {
     ]);
 
     let mm_bob = MarketMakerIt::start(
-        json! ({
+        json!({
             "gui": "nogui",
             "netid": 9998,
-            "myipaddr": env::var ("BOB_TRADE_IP") .ok(),
-            "rpcip": env::var ("BOB_TRADE_IP") .ok(),
-            "canbind": env::var ("BOB_TRADE_PORT") .ok().map (|s| s.parse::<i64>().unwrap()),
+            "myipaddr": env::var("BOB_TRADE_IP") .ok(),
+            "rpcip": env::var("BOB_TRADE_IP") .ok(),
+            "canbind": env::var("BOB_TRADE_PORT") .ok().map (|s| s.parse::<i64>().unwrap()),
             "passphrase": bob_passphrase,
             "coins": coins,
             "rpc_password": "pass",
             "i_am_seed": true,
         }),
         "pass".into(),
-        match var("LOCAL_THREAD_MM") {
-            Ok(ref e) if e == "bob" => Some(local_start()),
-            _ => None,
-        },
+        None,
     )
     .unwrap();
 
@@ -1081,22 +1085,19 @@ fn orderbook_should_work_without_coins_activation() {
     log!("Bob log path: {}", mm_bob.log_path.display());
 
     let mm_alice = MarketMakerIt::start(
-        json! ({
+        json!({
             "gui": "nogui",
             "netid": 9998,
             "dht": "on",  // Enable DHT without delay.
-            "myipaddr": env::var ("ALICE_TRADE_IP") .ok(),
-            "rpcip": env::var ("ALICE_TRADE_IP") .ok(),
+            "myipaddr": env::var("ALICE_TRADE_IP") .ok(),
+            "rpcip": env::var("ALICE_TRADE_IP") .ok(),
             "passphrase": "alice passphrase",
             "coins": coins,
             "seednodes": [mm_bob.ip.to_string()],
             "rpc_password": "pass",
         }),
         "pass".into(),
-        match var("LOCAL_THREAD_MM") {
-            Ok(ref e) if e == "alice" => Some(local_start()),
-            _ => None,
-        },
+        None,
     )
     .unwrap();
 
@@ -1108,7 +1109,7 @@ fn orderbook_should_work_without_coins_activation() {
         block_on(enable_coins_eth_electrum(&mm_bob, &["http://195.201.0.6:8565"]))
     );
 
-    let rc = block_on(mm_bob.rpc(&json! ({
+    let rc = block_on(mm_bob.rpc(&json!({
         "userpass": mm_bob.userpass,
         "method": "setprice",
         "base": "ETH",
@@ -1121,7 +1122,7 @@ fn orderbook_should_work_without_coins_activation() {
     assert!(rc.0.is_success(), "!setprice: {}", rc.1);
 
     log!("Get ETH/JST orderbook on Alice side");
-    let rc = block_on(mm_alice.rpc(&json! ({
+    let rc = block_on(mm_alice.rpc(&json!({
         "userpass": mm_alice.userpass,
         "method": "orderbook",
         "base": "ETH",
@@ -1145,22 +1146,19 @@ fn test_all_orders_per_pair_per_node_must_be_displayed_in_orderbook() {
     ]);
 
     let mm = MarketMakerIt::start(
-        json! ({
+        json!({
             "gui": "nogui",
             "netid": 9998,
-            "myipaddr": env::var ("BOB_TRADE_IP") .ok(),
-            "rpcip": env::var ("BOB_TRADE_IP") .ok(),
-            "canbind": env::var ("BOB_TRADE_PORT") .ok().map (|s| s.parse::<i64>().unwrap()),
+            "myipaddr": env::var("BOB_TRADE_IP") .ok(),
+            "rpcip": env::var("BOB_TRADE_IP") .ok(),
+            "canbind": env::var("BOB_TRADE_PORT") .ok().map (|s| s.parse::<i64>().unwrap()),
             "passphrase": "bob passphrase",
             "coins": coins,
             "rpc_password": "pass",
             "i_am_seed": true,
         }),
         "pass".into(),
-        match var("LOCAL_THREAD_MM") {
-            Ok(ref e) if e == "bob" => Some(local_start()),
-            _ => None,
-        },
+        None,
     )
     .unwrap();
     let (_dump_log, _dump_dashboard) = mm.mm_dump();
@@ -1177,7 +1175,7 @@ fn test_all_orders_per_pair_per_node_must_be_displayed_in_orderbook() {
     ]));
 
     // set 2 orders with different prices
-    let rc = block_on(mm.rpc(&json! ({
+    let rc = block_on(mm.rpc(&json!({
         "userpass": mm.userpass,
         "method": "setprice",
         "base": "RICK",
@@ -1189,7 +1187,7 @@ fn test_all_orders_per_pair_per_node_must_be_displayed_in_orderbook() {
     .unwrap();
     assert!(rc.0.is_success(), "!setprice: {}", rc.1);
 
-    let rc = block_on(mm.rpc(&json! ({
+    let rc = block_on(mm.rpc(&json!({
         "userpass": mm.userpass,
         "method": "setprice",
         "base": "RICK",
@@ -1204,7 +1202,7 @@ fn test_all_orders_per_pair_per_node_must_be_displayed_in_orderbook() {
     thread::sleep(Duration::from_secs(2));
 
     log!("Get RICK/MORTY orderbook");
-    let rc = block_on(mm.rpc(&json! ({
+    let rc = block_on(mm.rpc(&json!({
         "userpass": mm.userpass,
         "method": "orderbook",
         "base": "RICK",
@@ -1232,22 +1230,19 @@ fn setprice_min_volume_should_be_displayed_in_orderbook() {
     ]);
 
     let mm_bob = MarketMakerIt::start(
-        json! ({
+        json!({
             "gui": "nogui",
             "netid": 9998,
-            "myipaddr": env::var ("BOB_TRADE_IP") .ok(),
-            "rpcip": env::var ("BOB_TRADE_IP") .ok(),
-            "canbind": env::var ("BOB_TRADE_PORT") .ok().map (|s| s.parse::<i64>().unwrap()),
+            "myipaddr": env::var("BOB_TRADE_IP") .ok(),
+            "rpcip": env::var("BOB_TRADE_IP") .ok(),
+            "canbind": env::var("BOB_TRADE_PORT") .ok().map (|s| s.parse::<i64>().unwrap()),
             "passphrase": bob_passphrase,
             "coins": coins,
             "rpc_password": "pass",
             "i_am_seed": true,
         }),
         "pass".into(),
-        match var("LOCAL_THREAD_MM") {
-            Ok(ref e) if e == "bob" => Some(local_start()),
-            _ => None,
-        },
+        None,
     )
     .unwrap();
 
@@ -1255,22 +1250,19 @@ fn setprice_min_volume_should_be_displayed_in_orderbook() {
     log!("Bob log path: {}", mm_bob.log_path.display());
 
     let mm_alice = MarketMakerIt::start(
-        json! ({
+        json!({
             "gui": "nogui",
             "netid": 9998,
             "dht": "on",  // Enable DHT without delay.
-            "myipaddr": env::var ("ALICE_TRADE_IP") .ok(),
-            "rpcip": env::var ("ALICE_TRADE_IP") .ok(),
+            "myipaddr": env::var("ALICE_TRADE_IP") .ok(),
+            "rpcip": env::var("ALICE_TRADE_IP") .ok(),
             "passphrase": "alice passphrase",
             "coins": coins,
             "seednodes": [mm_bob.ip.to_string()],
             "rpc_password": "pass",
         }),
         "pass".into(),
-        match var("LOCAL_THREAD_MM") {
-            Ok(ref e) if e == "alice" => Some(local_start()),
-            _ => None,
-        },
+        None,
     )
     .unwrap();
 
@@ -1287,7 +1279,7 @@ fn setprice_min_volume_should_be_displayed_in_orderbook() {
     );
 
     // issue orderbook call on Alice side to trigger subscription to a topic
-    block_on(mm_alice.rpc(&json! ({
+    block_on(mm_alice.rpc(&json!({
         "userpass": mm_alice.userpass,
         "method": "orderbook",
         "base": "ETH",
@@ -1295,7 +1287,7 @@ fn setprice_min_volume_should_be_displayed_in_orderbook() {
     })))
     .unwrap();
 
-    let rc = block_on(mm_bob.rpc(&json! ({
+    let rc = block_on(mm_bob.rpc(&json!({
         "userpass": mm_bob.userpass,
         "method": "setprice",
         "base": "ETH",
@@ -1309,7 +1301,7 @@ fn setprice_min_volume_should_be_displayed_in_orderbook() {
 
     thread::sleep(Duration::from_secs(2));
     log!("Get ETH/JST orderbook on Bob side");
-    let rc = block_on(mm_bob.rpc(&json! ({
+    let rc = block_on(mm_bob.rpc(&json!({
         "userpass": mm_bob.userpass,
         "method": "orderbook",
         "base": "ETH",
@@ -1327,7 +1319,7 @@ fn setprice_min_volume_should_be_displayed_in_orderbook() {
     assert_eq!(min_volume, "1", "Bob ETH/JST ask must display correct min_volume");
 
     log!("Get ETH/JST orderbook on Alice side");
-    let rc = block_on(mm_alice.rpc(&json! ({
+    let rc = block_on(mm_alice.rpc(&json!({
         "userpass": mm_alice.userpass,
         "method": "orderbook",
         "base": "ETH",

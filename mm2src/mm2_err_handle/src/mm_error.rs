@@ -90,6 +90,7 @@ use http::StatusCode;
 use itertools::Itertools;
 use ser_error::SerializeErrorType;
 use serde::{Serialize, Serializer};
+use std::alloc::Allocator;
 use std::cell::UnsafeCell;
 use std::error::Error as StdError;
 use std::fmt;
@@ -103,7 +104,7 @@ impl<E> !NotMmError for MmError<E> {}
 
 /// This is required because an auto trait is not automatically implemented for a non-sized types,
 /// e.g for Box<dyn Trait>.
-impl<T: ?Sized> NotMmError for Box<T> {}
+impl<T: ?Sized, A: Allocator> NotMmError for Box<T, A> {}
 
 impl<T: ?Sized> NotMmError for UnsafeCell<T> {}
 
@@ -113,7 +114,7 @@ impl<E> SerMmErrorType for E where E: SerializeErrorType + fmt::Display + NotMmE
 
 pub auto trait NotEqual {}
 impl<X> !NotEqual for (X, X) {}
-impl<T: ?Sized> NotEqual for Box<T> {}
+impl<T: ?Sized, A: Allocator> NotEqual for Box<T, A> {}
 
 /// The unified error representation tracing an error path.
 #[derive(Clone, Eq, PartialEq)]

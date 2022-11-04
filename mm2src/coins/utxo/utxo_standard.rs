@@ -748,6 +748,8 @@ impl MmCoin for UtxoStandardCoin {
 
     fn swap_contract_address(&self) -> Option<BytesJson> { utxo_common::swap_contract_address() }
 
+    fn fallback_swap_contract(&self) -> Option<BytesJson> { utxo_common::fallback_swap_contract() }
+
     fn mature_confirmations(&self) -> Option<u32> { Some(self.utxo_arc.conf.mature_confirmations) }
 
     fn coin_protocol_info(&self) -> Vec<u8> { utxo_common::coin_protocol_info(self) }

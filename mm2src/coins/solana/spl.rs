@@ -63,7 +63,7 @@ pub struct SplToken {
 }
 
 impl Debug for SplToken {
-    fn fmt(&self, f: &mut Formatter<'_>) -> FmtResult { f.write_str(&*self.conf.ticker) }
+    fn fmt(&self, f: &mut Formatter<'_>) -> FmtResult { f.write_str(&self.conf.ticker) }
 }
 
 impl SplToken {
@@ -163,7 +163,7 @@ async fn withdraw_spl_token_impl(coin: SplToken, req: WithdrawRequest) -> Withdr
 }
 
 async fn withdraw_impl(coin: SplToken, req: WithdrawRequest) -> WithdrawResult {
-    let validate_address_result = coin.validate_address(&*req.to);
+    let validate_address_result = coin.validate_address(&req.to);
     if !validate_address_result.is_valid {
         return MmError::err(WithdrawError::InvalidAddress(
             validate_address_result.reason.unwrap_or_else(|| "Unknown".to_string()),
@@ -203,7 +203,7 @@ impl SplToken {
         if token_accounts.is_empty() {
             return MmError::err(AccountError::NotFundedError("account_not_funded".to_string()));
         }
-        Ok(Pubkey::from_str(&*token_accounts[0].pubkey)?)
+        Ok(Pubkey::from_str(&token_accounts[0].pubkey)?)
     }
 
     fn my_balance_impl(&self) -> BalanceFut<CoinBalance> {
@@ -552,6 +552,8 @@ impl MmCoin for SplToken {
     fn set_requires_notarization(&self, _requires_nota: bool) { unimplemented!() }
 
     fn swap_contract_address(&self) -> Option<BytesJson> { unimplemented!() }
+
+    fn fallback_swap_contract(&self) -> Option<BytesJson> { unimplemented!() }
 
     fn mature_confirmations(&self) -> Option<u32> { Some(1) }
 

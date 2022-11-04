@@ -1,5 +1,13 @@
-use super::*;
-use mm2_test_helpers::for_tests::{init_lightning, init_lightning_status, sign_message, verify_message};
+use crate::integration_tests_common::{enable_coins_rick_morty_electrum, enable_electrum};
+use common::executor::Timer;
+use common::{block_on, log};
+use gstuff::now_ms;
+use mm2_number::BigDecimal;
+use mm2_test_helpers::for_tests::{init_lightning, init_lightning_status, sign_message, verify_message, MarketMakerIt};
+use mm2_test_helpers::structs::{InitLightningStatus, InitTaskResult, LightningActivationResult, RpcV2Response,
+                                SignatureResponse, VerificationResponse};
+use serde_json::{self as json, json, Value as Json};
+use std::env;
 
 const T_BTC_ELECTRUMS: &[&str] = &[
     "electrum1.cipig.net:10068",
@@ -32,7 +40,7 @@ fn start_lightning_nodes(enable_0_confs: bool) -> (MarketMakerIt, MarketMakerIt,
     let node_1_seed = "become nominee mountain person volume business diet zone govern voice debris hidden";
     let node_2_seed = "february coast tortoise grab shadow vast volcano affair ordinary gesture brass oxygen";
 
-    let coins = json! ([
+    let coins = json!([
         {
             "coin": "tBTC-TEST-segwit",
             "name": "tbitcoin",
@@ -84,7 +92,7 @@ fn start_lightning_nodes(enable_0_confs: bool) -> (MarketMakerIt, MarketMakerIt,
     ]);
 
     let mm_node_1 = MarketMakerIt::start(
-        json! ({
+        json!({
             "gui": "nogui",
             "netid": 9998,
             "myipaddr": env::var ("BOB_TRADE_IP") .ok(),
@@ -95,7 +103,7 @@ fn start_lightning_nodes(enable_0_confs: bool) -> (MarketMakerIt, MarketMakerIt,
             "i_am_seed": true,
         }),
         "pass".into(),
-        local_start!("bob"),
+        None,
     )
     .unwrap();
     let (_dump_log, _dump_dashboard) = mm_node_1.mm_dump();
@@ -108,7 +116,7 @@ fn start_lightning_nodes(enable_0_confs: bool) -> (MarketMakerIt, MarketMakerIt,
     let node_1_address = enable_lightning_1.address;
 
     let mm_node_2 = MarketMakerIt::start(
-        json! ({
+        json!({
             "gui": "nogui",
             "netid": 9998,
             "myipaddr": env::var ("ALICE_TRADE_IP") .ok(),
@@ -119,7 +127,7 @@ fn start_lightning_nodes(enable_0_confs: bool) -> (MarketMakerIt, MarketMakerIt,
             "seednodes": [mm_node_1.my_seed_addr()],
         }),
         "pass".into(),
-        local_start!("alice"),
+        None,
     )
     .unwrap();
     let (_dump_log, _dump_dashboard) = mm_node_2.mm_dump();
@@ -139,7 +147,7 @@ fn start_lightning_nodes(enable_0_confs: bool) -> (MarketMakerIt, MarketMakerIt,
 fn test_enable_lightning() {
     let seed = "valley embody about obey never adapt gesture trust screen tube glide bread";
 
-    let coins = json! ([
+    let coins = json!([
         {
             "coin": "tBTC-TEST-segwit",
             "name": "tbitcoin",
@@ -180,7 +188,7 @@ fn test_enable_lightning() {
     ]);
 
     let mm = MarketMakerIt::start(
-        json! ({
+        json!({
             "gui": "nogui",
             "netid": 9998,
             "myipaddr": env::var ("BOB_TRADE_IP") .ok(),
@@ -191,7 +199,7 @@ fn test_enable_lightning() {
             "rpc_password": "pass",
         }),
         "pass".into(),
-        local_start!("bob"),
+        None,
     )
     .unwrap();
     let (_dump_log, _dump_dashboard) = mm.mm_dump();
@@ -217,7 +225,7 @@ fn test_connect_to_node() {
     let (mm_node_1, mm_node_2, node_1_id, _) = start_lightning_nodes(false);
     let node_1_address = format!("{}@{}:9735", node_1_id, mm_node_1.ip.to_string());
 
-    let connect = block_on(mm_node_2.rpc(&json! ({
+    let connect = block_on(mm_node_2.rpc(&json!({
         "userpass": mm_node_2.userpass,
         "mmrpc": "2.0",
         "method": "lightning::nodes::connect_to_node",
@@ -248,7 +256,7 @@ fn test_open_channel() {
     let (mm_node_1, mut mm_node_2, node_1_id, node_2_id) = start_lightning_nodes(false);
     let node_1_address = format!("{}@{}:9735", node_1_id, mm_node_1.ip.to_string());
 
-    let open_channel = block_on(mm_node_2.rpc(&json! ({
+    let open_channel = block_on(mm_node_2.rpc(&json!({
         "userpass": mm_node_2.userpass,
         "mmrpc": "2.0",
         "method": "lightning::channels::open_channel",
@@ -270,7 +278,7 @@ fn test_open_channel() {
 
     block_on(mm_node_2.wait_for_log(60., |log| log.contains("Transaction broadcasted successfully"))).unwrap();
 
-    let list_channels_node_1 = block_on(mm_node_1.rpc(&json! ({
+    let list_channels_node_1 = block_on(mm_node_1.rpc(&json!({
         "userpass": mm_node_1.userpass,
         "mmrpc": "2.0",
         "method": "lightning::channels::list_open_channels_by_filter",
@@ -299,7 +307,7 @@ fn test_open_channel() {
         0
     );
 
-    let list_channels_node_2 = block_on(mm_node_2.rpc(&json! ({
+    let list_channels_node_2 = block_on(mm_node_2.rpc(&json!({
       "userpass": mm_node_2.userpass,
       "mmrpc": "2.0",
       "method": "lightning::channels::list_open_channels_by_filter",
@@ -340,7 +348,7 @@ fn test_send_payment() {
     let (mut mm_node_2, mm_node_1, node_2_id, node_1_id) = start_lightning_nodes(true);
     let node_1_address = format!("{}@{}:9735", node_1_id, mm_node_1.ip.to_string());
 
-    let add_trusted_node = block_on(mm_node_1.rpc(&json! ({
+    let add_trusted_node = block_on(mm_node_1.rpc(&json!({
         "userpass": mm_node_1.userpass,
         "mmrpc": "2.0",
         "method": "lightning::nodes::add_trusted_node",
@@ -356,7 +364,7 @@ fn test_send_payment() {
         add_trusted_node.1
     );
 
-    let open_channel = block_on(mm_node_2.rpc(&json! ({
+    let open_channel = block_on(mm_node_2.rpc(&json!({
         "userpass": mm_node_2.userpass,
         "mmrpc": "2.0",
         "method": "lightning::channels::open_channel",
@@ -378,7 +386,7 @@ fn test_send_payment() {
 
     block_on(mm_node_2.wait_for_log(60., |log| log.contains("Received message ChannelReady"))).unwrap();
 
-    let send_payment = block_on(mm_node_2.rpc(&json! ({
+    let send_payment = block_on(mm_node_2.rpc(&json!({
         "userpass": mm_node_2.userpass,
         "mmrpc": "2.0",
         "method": "lightning::payments::send_payment",
@@ -406,7 +414,7 @@ fn test_send_payment() {
     block_on(mm_node_2.wait_for_log(60., |log| log.contains("Successfully sent payment"))).unwrap();
 
     // Check payment on the sending node side
-    let get_payment_details = block_on(mm_node_2.rpc(&json! ({
+    let get_payment_details = block_on(mm_node_2.rpc(&json!({
       "userpass": mm_node_2.userpass,
       "mmrpc": "2.0",
       "method": "lightning::payments::get_payment_details",
@@ -429,7 +437,7 @@ fn test_send_payment() {
     assert_eq!(payment["payment_type"]["type"], "Outbound Payment");
 
     // Check payment on the receiving node side
-    let get_payment_details = block_on(mm_node_1.rpc(&json! ({
+    let get_payment_details = block_on(mm_node_1.rpc(&json!({
       "userpass": mm_node_1.userpass,
       "mmrpc": "2.0",
       "method": "lightning::payments::get_payment_details",
@@ -463,7 +471,7 @@ fn test_lightning_taker_swap() {
     let (mut mm_node_1, mut mm_node_2, node_1_id, node_2_id) = start_lightning_nodes(true);
     let node_1_address = format!("{}@{}:9735", node_1_id, mm_node_1.ip.to_string());
 
-    let add_trusted_node = block_on(mm_node_1.rpc(&json! ({
+    let add_trusted_node = block_on(mm_node_1.rpc(&json!({
         "userpass": mm_node_1.userpass,
         "mmrpc": "2.0",
         "method": "lightning::nodes::add_trusted_node",
@@ -479,7 +487,7 @@ fn test_lightning_taker_swap() {
         add_trusted_node.1
     );
 
-    let open_channel = block_on(mm_node_2.rpc(&json! ({
+    let open_channel = block_on(mm_node_2.rpc(&json!({
         "userpass": mm_node_2.userpass,
         "mmrpc": "2.0",
         "method": "lightning::channels::open_channel",
@@ -514,7 +522,7 @@ fn test_lightning_taker_swap() {
     );
 
     // mm_node_1 is maker
-    let set_price = block_on(mm_node_1.rpc(&json! ({
+    let set_price = block_on(mm_node_1.rpc(&json!({
         "userpass": mm_node_1.userpass,
         "method": "setprice",
         "base": "RICK",
@@ -525,7 +533,7 @@ fn test_lightning_taker_swap() {
     .unwrap();
     assert!(set_price.0.is_success(), "!setprice: {}", set_price.1);
 
-    let orderbook = block_on(mm_node_2.rpc(&json! ({
+    let orderbook = block_on(mm_node_2.rpc(&json!({
         "userpass": mm_node_2.userpass,
         "method": "orderbook",
         "base": "RICK",
@@ -537,7 +545,7 @@ fn test_lightning_taker_swap() {
     block_on(Timer::sleep(1.));
 
     // mm_node_2 is taker
-    let buy = block_on(mm_node_2.rpc(&json! ({
+    let buy = block_on(mm_node_2.rpc(&json!({
         "userpass": mm_node_2.userpass,
         "method": "buy",
         "base": "RICK",
@@ -573,7 +581,7 @@ fn test_lightning_taker_swap() {
 fn test_sign_verify_message_lightning() {
     let seed = "spice describe gravity federal blast come thank unfair canal monkey style afraid";
 
-    let coins = json! ([
+    let coins = json!([
       {
         "coin": "tBTC-TEST-segwit",
         "name": "tbitcoin",
@@ -615,7 +623,7 @@ fn test_sign_verify_message_lightning() {
     ]);
 
     let mm = MarketMakerIt::start(
-        json! ({
+        json!({
             "gui": "nogui",
             "netid": 9998,
             "myipaddr": env::var ("BOB_TRADE_IP") .ok(),
@@ -626,7 +634,7 @@ fn test_sign_verify_message_lightning() {
             "rpc_password": "pass",
         }),
         "pass".into(),
-        local_start!("bob"),
+        None,
     )
     .unwrap();
     let (_dump_log, _dump_dashboard) = mm.mm_dump();
