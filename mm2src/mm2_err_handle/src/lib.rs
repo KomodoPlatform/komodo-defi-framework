@@ -1,5 +1,6 @@
 #![feature(negative_impls)]
 #![feature(auto_traits)]
+#![feature(allocator_api)]
 
 pub mod common_errors;
 pub mod map_mm_error;

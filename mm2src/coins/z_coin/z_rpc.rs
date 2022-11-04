@@ -389,7 +389,7 @@ pub(super) async fn init_light_client(
         return MmError::err(ZcoinClientInitError::EmptyLightwalletdUris);
     }
     for url in lightwalletd_urls {
-        let uri = match Uri::from_str(&*url) {
+        let uri = match Uri::from_str(&url) {
             Ok(uri) => uri,
             Err(err) => {
                 errors.push(UrlIterError::InvalidUri(err));

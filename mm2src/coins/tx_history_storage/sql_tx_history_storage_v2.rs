@@ -643,7 +643,7 @@ impl TxHistoryStorage for SqliteTxHistoryStorage {
             }
             let tx_hex = maybe_tx_hex?;
             let tx_bytes =
-                hex::decode(&tx_hex).map_err(|e| SqlError::FromSqlConversionFailure(0, Type::Text, Box::new(e)))?;
+                hex::decode(tx_hex).map_err(|e| SqlError::FromSqlConversionFailure(0, Type::Text, Box::new(e)))?;
             Ok(Some(tx_bytes.into()))
         })
         .await

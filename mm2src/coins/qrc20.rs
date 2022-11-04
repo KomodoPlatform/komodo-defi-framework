@@ -316,7 +316,7 @@ pub struct Qrc20Coin(Arc<Qrc20CoinFields>);
 
 impl Deref for Qrc20Coin {
     type Target = Qrc20CoinFields;
-    fn deref(&self) -> &Qrc20CoinFields { &*self.0 }
+    fn deref(&self) -> &Qrc20CoinFields { &self.0 }
 }
 
 impl AsRef<UtxoCoinFields> for Qrc20Coin {
@@ -1350,6 +1350,10 @@ impl MmCoin for Qrc20Coin {
 
     fn swap_contract_address(&self) -> Option<BytesJson> {
         Some(BytesJson::from(self.swap_contract_address.0.as_ref()))
+    }
+
+    fn fallback_swap_contract(&self) -> Option<BytesJson> {
+        self.fallback_swap_contract.map(|a| BytesJson::from(a.0.as_ref()))
     }
 
     fn mature_confirmations(&self) -> Option<u32> { Some(self.utxo.conf.mature_confirmations) }

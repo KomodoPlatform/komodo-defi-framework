@@ -838,10 +838,10 @@ fn process_sync_pubkey_orderbook_state(
 
             let delta_result = match pubkey_state.order_pairs_trie_state_history.get(&pair) {
                 Some(history) => {
-                    DeltaOrFullTrie::from_history(history, root, *actual_pair_root, &orderbook.memory_db, &order_getter)
+                    DeltaOrFullTrie::from_history(history, root, *actual_pair_root, &orderbook.memory_db, order_getter)
                 },
                 None => {
-                    get_full_trie(actual_pair_root, &orderbook.memory_db, &order_getter).map(DeltaOrFullTrie::FullTrie)
+                    get_full_trie(actual_pair_root, &orderbook.memory_db, order_getter).map(DeltaOrFullTrie::FullTrie)
                 },
             };
 
@@ -1355,6 +1355,7 @@ impl<'a> TakerOrderBuilder<'a> {
     }
 
     /// Validate fields and build
+    #[allow(clippy::result_large_err)]
     pub fn build(self) -> Result<TakerOrder, TakerOrderBuildError> {
         let min_base_amount = self.base_coin.min_trading_vol();
         let min_rel_amount = self.rel_coin.min_trading_vol();
@@ -1711,6 +1712,7 @@ impl fmt::Display for MakerOrderBuildError {
     }
 }
 
+#[allow(clippy::result_large_err)]
 fn validate_price(price: MmNumber) -> Result<(), MakerOrderBuildError> {
     let min_price = MmNumber::from(BigRational::new(1.into(), 100_000_000.into()));
 
@@ -1724,6 +1726,7 @@ fn validate_price(price: MmNumber) -> Result<(), MakerOrderBuildError> {
     Ok(())
 }
 
+#[allow(clippy::result_large_err)]
 fn validate_and_get_min_vol(
     min_base_amount: MmNumber,
     min_rel_amount: MmNumber,
@@ -1744,6 +1747,7 @@ fn validate_and_get_min_vol(
     Ok(actual_min_base_vol)
 }
 
+#[allow(clippy::result_large_err)]
 fn validate_max_vol(
     min_base_amount: MmNumber,
     min_rel_amount: MmNumber,
@@ -1826,6 +1830,7 @@ impl<'a> MakerOrderBuilder<'a> {
     }
 
     /// Build MakerOrder
+    #[allow(clippy::result_large_err)]
     pub fn build(self) -> Result<MakerOrder, MakerOrderBuildError> {
         if self.base_coin.ticker() == self.rel_coin.ticker() {
             return Err(MakerOrderBuildError::BaseEqualRel);

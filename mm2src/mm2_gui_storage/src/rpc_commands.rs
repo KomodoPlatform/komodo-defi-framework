@@ -235,8 +235,7 @@ pub async fn get_accounts(
         .load_accounts_with_enabled_flag()
         .await?
         // The given `BTreeMap<AccountId, AccountWithEnabledFlag>` accounts are sorted by `AccountId`.
-        .into_iter()
-        .map(|(_account_id, account)| account)
+        .into_values()
         .collect();
     Ok(accounts)
 }

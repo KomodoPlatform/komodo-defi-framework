@@ -139,7 +139,7 @@ impl LightningFilesystemPersister {
                 .parse::<u16>()
                 .map_err(|e| invalid_data_err("Invalid tx index in filename error", e))?;
 
-            let contents = fs::read(&file.path())?;
+            let contents = fs::read(file.path())?;
             let mut buffer = Cursor::new(&contents);
             let (blockhash, channel_monitor) = <(BlockHash, ChannelMonitor<Signer>)>::read(&mut buffer, &*keys_manager)
                 .map_err(|e| invalid_data_err("Failed to deserialize ChannelMonito", e))?;

@@ -1,3 +1,5 @@
+#![allow(clippy::all)]
+
 use super::{CoinBalance, HistorySyncState, MarketCoinOps, MmCoin, RawTransactionFut, RawTransactionRequest, SwapOps,
             TradeFee, TransactionEnum, TransactionFut};
 use crate::{coin_errors::MyAddressError, BalanceFut, CanRefundHtlc, CheckIfMyPaymentSentArgs, CoinFutSpawner,
@@ -34,7 +36,6 @@ impl TestCoin {
 }
 
 #[mockable]
-#[allow(clippy::forget_ref, clippy::forget_copy, clippy::cast_ref_to_mut)]
 impl MarketCoinOps for TestCoin {
     fn ticker(&self) -> &str { &self.ticker }
 
@@ -100,7 +101,6 @@ impl MarketCoinOps for TestCoin {
 
 #[async_trait]
 #[mockable]
-#[allow(clippy::forget_ref, clippy::forget_copy, clippy::cast_ref_to_mut)]
 impl SwapOps for TestCoin {
     fn send_taker_fee(&self, fee_addr: &[u8], amount: BigDecimal, uuid: &[u8]) -> TransactionFut { unimplemented!() }
 
@@ -202,7 +202,6 @@ impl SwapOps for TestCoin {
 
 #[async_trait]
 #[mockable]
-#[allow(clippy::forget_ref, clippy::forget_copy, clippy::cast_ref_to_mut)]
 impl WatcherOps for TestCoin {
     fn create_taker_spends_maker_payment_preimage(
         &self,
@@ -246,7 +245,6 @@ impl WatcherOps for TestCoin {
 
 #[async_trait]
 #[mockable]
-#[allow(clippy::forget_ref, clippy::forget_copy, clippy::cast_ref_to_mut)]
 impl MmCoin for TestCoin {
     fn is_asset_chain(&self) -> bool { unimplemented!() }
 
@@ -296,6 +294,8 @@ impl MmCoin for TestCoin {
     fn set_requires_notarization(&self, _requires_nota: bool) { unimplemented!() }
 
     fn swap_contract_address(&self) -> Option<BytesJson> { unimplemented!() }
+
+    fn fallback_swap_contract(&self) -> Option<BytesJson> { unimplemented!() }
 
     fn mature_confirmations(&self) -> Option<u32> { unimplemented!() }
 

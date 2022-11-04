@@ -610,7 +610,7 @@ pub struct LogArc(pub Arc<LogState>);
 
 impl Deref for LogArc {
     type Target = LogState;
-    fn deref(&self) -> &LogState { &*self.0 }
+    fn deref(&self) -> &LogState { &self.0 }
 }
 
 impl LogArc {
@@ -772,7 +772,7 @@ impl LogState {
 
     pub fn with_tail(&self, cb: &mut dyn FnMut(&VecDeque<LogEntry>)) {
         let tail = self.tail.lock();
-        cb(&*tail)
+        cb(&tail)
     }
 
     pub fn with_gravity_tail(&self, cb: &mut dyn FnMut(&VecDeque<String>)) {
@@ -780,7 +780,7 @@ impl LogState {
         if let Some(ref gravity) = gravity {
             gravity.flush();
             let tail = gravity.tail.lock();
-            cb(&*tail);
+            cb(&tail);
         }
     }
 

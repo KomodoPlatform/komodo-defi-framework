@@ -84,8 +84,8 @@ If you want to build from source, the following prerequisites are required:
 - [Download](https://github.com/protocolbuffers/protobuf/releases) or [compile](https://github.com/protocolbuffers/protobuf) `protoc 3.21.x+` and add it to your PATH env. It is also available via package managers depending on the OS.
 - Additional Rust Components
     ```
-    rustup install nightly-2022-02-01
-    rustup default nightly-2022-02-01
+    rustup install nightly-2022-10-29
+    rustup default nightly-2022-10-29
     rustup component add rustfmt-preview
     ```
 

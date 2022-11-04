@@ -1,6 +1,12 @@
-use super::*;
-use crate::mm2::lp_ordermatch::OrderConfirmationsSettings;
-use crate::mm2::lp_swap::get_payment_locktime;
+use crate::generate_utxo_coin_with_random_privkey;
+use crate::integration_tests_common::enable_native;
+use common::block_on;
+use mm2::mm2::lp_ordermatch::OrderConfirmationsSettings;
+use mm2::mm2::lp_swap::get_payment_locktime;
+use mm2_test_helpers::for_tests::{mm_dump, MarketMakerIt};
+use serde_json::Value as Json;
+use std::thread;
+use std::time::Duration;
 
 struct SwapConfirmationsSettings {
     maker_coin_confs: u64,
@@ -88,7 +94,7 @@ fn test_confirmation_settings_sync_correctly_on_buy(
     })))
     .unwrap();
     assert!(rc.0.is_success(), "!buy: {}", rc.1);
-    let rc_json: Json = json::from_str(&rc.1).unwrap();
+    let rc_json: Json = serde_json::from_str(&rc.1).unwrap();
     let uuid = &rc_json["result"]["uuid"];
 
     block_on(mm_bob.wait_for_log(22., |log| log.contains("Entering the maker_swap_loop MYCOIN/MYCOIN1"))).unwrap();
@@ -110,7 +116,7 @@ fn test_confirmation_settings_sync_correctly_on_buy(
         uuid,
         maker_status.1
     );
-    let maker_status_json: Json = json::from_str(&maker_status.1).unwrap();
+    let maker_status_json: Json = serde_json::from_str(&maker_status.1).unwrap();
     let maker_started_event = maker_status_json["result"]["events"].as_array().unwrap()[0].clone();
     assert_eq!(
         maker_started_event["event"]["data"]["maker_payment_confirmations"].as_u64(),
@@ -147,7 +153,7 @@ fn test_confirmation_settings_sync_correctly_on_buy(
         uuid,
         taker_status.1
     );
-    let taker_status_json: Json = json::from_str(&taker_status.1).unwrap();
+    let taker_status_json: Json = serde_json::from_str(&taker_status.1).unwrap();
     let taker_started_event = taker_status_json["result"]["events"].as_array().unwrap()[0].clone();
     assert_eq!(
         taker_started_event["event"]["data"]["maker_payment_confirmations"].as_u64(),
@@ -253,7 +259,7 @@ fn test_confirmation_settings_sync_correctly_on_sell(
     })))
     .unwrap();
     assert!(rc.0.is_success(), "!buy: {}", rc.1);
-    let rc_json: Json = json::from_str(&rc.1).unwrap();
+    let rc_json: Json = serde_json::from_str(&rc.1).unwrap();
     let uuid = &rc_json["result"]["uuid"];
 
     block_on(mm_bob.wait_for_log(22., |log| log.contains("Entering the maker_swap_loop MYCOIN/MYCOIN1"))).unwrap();
@@ -275,7 +281,7 @@ fn test_confirmation_settings_sync_correctly_on_sell(
         uuid,
         maker_status.1
     );
-    let maker_status_json: Json = json::from_str(&maker_status.1).unwrap();
+    let maker_status_json: Json = serde_json::from_str(&maker_status.1).unwrap();
     let maker_started_event = maker_status_json["result"]["events"].as_array().unwrap()[0].clone();
     assert_eq!(
         maker_started_event["event"]["data"]["maker_payment_confirmations"].as_u64(),
@@ -312,7 +318,7 @@ fn test_confirmation_settings_sync_correctly_on_sell(
         uuid,
         taker_status.1
     );
-    let taker_status_json: Json = json::from_str(&taker_status.1).unwrap();
+    let taker_status_json: Json = serde_json::from_str(&taker_status.1).unwrap();
     let taker_started_event = taker_status_json["result"]["events"].as_array().unwrap()[0].clone();
     assert_eq!(
         taker_started_event["event"]["data"]["maker_payment_confirmations"].as_u64(),

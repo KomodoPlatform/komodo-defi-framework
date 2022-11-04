@@ -1,6 +1,15 @@
-use super::*;
-use mm2_test_helpers::for_tests::{enable_eth_coin, enable_tendermint, iris_nimda_testnet_conf, iris_testnet_conf,
-                                  tbnb_conf, usdc_ibc_iris_testnet_conf, RICK_ELECTRUM_ADDRS};
+use crate::integration_tests_common::enable_electrum;
+use common::executor::Timer;
+use common::{block_on, log};
+use mm2_number::BigDecimal;
+use mm2_test_helpers::for_tests::{check_my_swap_status, check_recent_swaps, check_stats_swap_status, enable_eth_coin,
+                                  enable_tendermint, iris_nimda_testnet_conf, iris_testnet_conf, rick_conf, tbnb_conf,
+                                  usdc_ibc_iris_testnet_conf, MarketMakerIt, MAKER_ERROR_EVENTS, MAKER_SUCCESS_EVENTS,
+                                  RICK_ELECTRUM_ADDRS, TAKER_ERROR_EVENTS, TAKER_SUCCESS_EVENTS};
+use mm2_test_helpers::structs::OrderbookResponse;
+use serde_json::{json, Value as Json};
+use std::convert::TryFrom;
+use std::env;
 
 // https://academy.binance.com/en/articles/connecting-metamask-to-binance-smart-chain
 const TBNB_URLS: &[&str] = &["https://data-seed-prebsc-1-s3.binance.org:8545/"];
@@ -36,23 +45,23 @@ pub async fn trade_base_rel_iris(
         tbnb_conf(),
     ]);
 
-    println!("coins config {}", json::to_string(&coins).unwrap());
+    println!("coins config {}", serde_json::to_string(&coins).unwrap());
 
     let mut mm_bob = MarketMakerIt::start_async(
-        json! ({
+        json!({
             "gui": "nogui",
             "netid": 8999,
             "dht": "on",
-            "myipaddr": env::var ("BOB_TRADE_IP") .ok(),
-            "rpcip": env::var ("BOB_TRADE_IP") .ok(),
-            "canbind": env::var ("BOB_TRADE_PORT") .ok().map (|s| s.parse::<i64>().unwrap()),
+            "myipaddr": env::var("BOB_TRADE_IP") .ok(),
+            "rpcip": env::var("BOB_TRADE_IP") .ok(),
+            "canbind": env::var("BOB_TRADE_PORT") .ok().map (|s| s.parse::<i64>().unwrap()),
             "passphrase": bob_passphrase,
             "coins": coins,
             "rpc_password": "password",
             "i_am_seed": true,
         }),
         "password".into(),
-        local_start!("bob"),
+        None,
     )
     .await
     .unwrap();
@@ -60,12 +69,12 @@ pub async fn trade_base_rel_iris(
     Timer::sleep(1.).await;
 
     let mut mm_alice = MarketMakerIt::start_async(
-        json! ({
+        json!({
             "gui": "nogui",
             "netid": 8999,
             "dht": "on",
-            "myipaddr": env::var ("ALICE_TRADE_IP") .ok(),
-            "rpcip": env::var ("ALICE_TRADE_IP") .ok(),
+            "myipaddr": env::var("ALICE_TRADE_IP") .ok(),
+            "rpcip": env::var("ALICE_TRADE_IP") .ok(),
             "passphrase": alice_passphrase,
             "coins": coins,
             "seednodes": [mm_bob.my_seed_addr()],
@@ -73,7 +82,7 @@ pub async fn trade_base_rel_iris(
             "skip_startup_checks": true,
         }),
         "password".into(),
-        local_start!("alice"),
+        None,
     )
     .await
     .unwrap();
@@ -93,13 +102,13 @@ pub async fn trade_base_rel_iris(
         .await
     );
     dbg!(enable_electrum(&mm_alice, "RICK", false, RICK_ELECTRUM_ADDRS).await);
-    dbg!(enable_eth_coin(&mm_bob, "tBNB", TBNB_URLS, TBNB_SWAP_CONTRACT).await);
-    dbg!(enable_eth_coin(&mm_alice, "tBNB", TBNB_URLS, TBNB_SWAP_CONTRACT).await);
+    dbg!(enable_eth_coin(&mm_bob, "tBNB", TBNB_URLS, TBNB_SWAP_CONTRACT, None).await);
+    dbg!(enable_eth_coin(&mm_alice, "tBNB", TBNB_URLS, TBNB_SWAP_CONTRACT, None).await);
 
     for (base, rel) in pairs.iter() {
         log!("Issue bob {}/{} sell request", base, rel);
         let rc = mm_bob
-            .rpc(&json! ({
+            .rpc(&json!({
                 "userpass": mm_bob.userpass,
                 "method": "setprice",
                 "base": base,
@@ -121,7 +130,7 @@ pub async fn trade_base_rel_iris(
             rel
         );
         let rc = mm_alice
-            .rpc(&json! ({
+            .rpc(&json!({
                 "userpass": mm_alice.userpass,
                 "method": "orderbook",
                 "base": base,
@@ -133,7 +142,7 @@ pub async fn trade_base_rel_iris(
         Timer::sleep(1.).await;
         common::log::info!("Issue alice {}/{} buy request", base, rel);
         let rc = mm_alice
-            .rpc(&json! ({
+            .rpc(&json!({
                 "userpass": mm_alice.userpass,
                 "method": "buy",
                 "base": base,
@@ -242,7 +251,7 @@ pub async fn trade_base_rel_iris(
     for (base, rel) in pairs.iter() {
         log!("Get {}/{} orderbook", base, rel);
         let rc = mm_bob
-            .rpc(&json! ({
+            .rpc(&json!({
                 "userpass": mm_bob.userpass,
                 "method": "orderbook",
                 "base": base,
@@ -252,7 +261,7 @@ pub async fn trade_base_rel_iris(
             .unwrap();
         assert!(rc.0.is_success(), "!orderbook: {}", rc.1);
 
-        let bob_orderbook: OrderbookResponse = json::from_str(&rc.1).unwrap();
+        let bob_orderbook: OrderbookResponse = serde_json::from_str(&rc.1).unwrap();
         log!("{}/{} orderbook {:?}", base, rel, bob_orderbook);
 
         assert_eq!(0, bob_orderbook.bids.len(), "{} {} bids must be empty", base, rel);

@@ -68,7 +68,7 @@ impl<T: Transport> EthFeeHistoryNamespace<T> {
 /// Implementation copied from Web3 HTTP transport
 #[cfg(not(target_arch = "wasm32"))]
 fn single_response<T: Deref<Target = [u8]>>(response: T, rpc_url: &str) -> Result<Json, Error> {
-    let response = serde_json::from_slice(&*response)
+    let response = serde_json::from_slice(&response)
         .map_err(|e| Error::from(ErrorKind::InvalidResponse(format!("{}: {}", rpc_url, e))))?;
 
     match response {

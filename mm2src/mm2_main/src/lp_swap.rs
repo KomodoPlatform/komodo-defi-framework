@@ -567,7 +567,7 @@ fn dex_fee_threshold(min_tx_amount: MmNumber) -> MmNumber {
 }
 
 fn dex_fee_rate(base: &str, rel: &str) -> MmNumber {
-    let fee_discount_tickers: &[&str] = if cfg!(test) && var("MYCOIN_FEE_DISCOUNT").is_ok() {
+    let fee_discount_tickers: &[&str] = if var("MYCOIN_FEE_DISCOUNT").is_ok() {
         &["KMD", "MYCOIN"]
     } else {
         &["KMD"]

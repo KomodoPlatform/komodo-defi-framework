@@ -13,7 +13,7 @@
 #[macro_use] extern crate serde_derive;
 #[macro_use] extern crate ser_error_derive;
 
-#[path = "mm2.rs"] mod mm2;
+#[path = "mm2.rs"] pub mod mm2;
 
 #[cfg(not(target_arch = "wasm32"))]
 #[path = "mm2_lib/mm2_native_lib.rs"]

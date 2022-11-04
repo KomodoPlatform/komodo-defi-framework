@@ -112,8 +112,10 @@ where
 
     fn prev_script(&self) -> Script { Builder::build_p2pkh(&self.sender_address().hash) }
 
+    #[allow(clippy::result_large_err)]
     fn on_generating_transaction(&self) -> Result<(), MmError<WithdrawError>>;
 
+    #[allow(clippy::result_large_err)]
     fn on_finishing(&self) -> Result<(), MmError<WithdrawError>>;
 
     async fn sign_tx(&self, unsigned_tx: TransactionInputSigner) -> Result<UtxoTx, MmError<WithdrawError>>;
@@ -427,6 +429,7 @@ impl<Coin> StandardUtxoWithdraw<Coin>
 where
     Coin: AsRef<UtxoCoinFields> + MarketCoinOps,
 {
+    #[allow(clippy::result_large_err)]
     pub fn new(coin: Coin, req: WithdrawRequest) -> Result<Self, MmError<WithdrawError>> {
         let my_address = coin.as_ref().derivation_method.iguana_or_err()?.clone();
         let my_address_string = coin.my_address()?;

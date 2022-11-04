@@ -1,12 +1,21 @@
-use super::*;
-use common::now_ms;
+use crate::integration_tests_common::*;
+use common::executor::Timer;
+use common::{block_on, log, now_ms};
+use mm2_number::BigDecimal;
+use mm2_test_helpers::electrums::rick_electrums;
 use mm2_test_helpers::for_tests::{init_withdraw, pirate_conf, rick_conf, send_raw_transaction, withdraw_status,
-                                  z_coin_tx_history, zombie_conf, Mm2TestConf, ARRR, PIRATE_ELECTRUMS,
+                                  z_coin_tx_history, zombie_conf, MarketMakerIt, Mm2TestConf, ARRR, PIRATE_ELECTRUMS,
                                   PIRATE_LIGHTWALLETD_URLS, RICK, ZOMBIE_ELECTRUMS, ZOMBIE_LIGHTWALLETD_URLS,
                                   ZOMBIE_TICKER};
+use mm2_test_helpers::structs::{EnableCoinBalance, InitTaskResult, RpcV2Response, TransactionDetails, WithdrawStatus,
+                                ZcoinHistoryRes};
+use serde_json::{self as json, json, Value as Json};
 use std::collections::HashSet;
 use std::iter::FromIterator;
 use std::num::NonZeroUsize;
+use std::str::FromStr;
+use std::thread;
+use std::time::Duration;
 
 const ZOMBIE_TEST_BALANCE_SEED: &str = "zombie test seed";
 const ARRR_TEST_ACTIVATION_SEED: &str = "arrr test activation seed";

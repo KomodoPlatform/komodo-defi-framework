@@ -1,6 +1,8 @@
 use crate::docker_tests::docker_tests_common::*;
+use mm2_number::bigdecimal::Zero;
 use mm2_test_helpers::for_tests::{enable_solana_with_tokens, enable_spl, sign_message, verify_message};
-use num_traits::Zero;
+use mm2_test_helpers::structs::{EnableSolanaWithTokensResponse, EnableSplResponse, RpcV2Response, SignatureResponse,
+                                VerificationResponse};
 use serde_json as json;
 
 #[test]

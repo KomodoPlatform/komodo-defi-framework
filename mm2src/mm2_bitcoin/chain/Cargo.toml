@@ -3,6 +3,9 @@ name = "chain"
 version = "0.1.0"
 authors = ["debris <marek.kotewicz@gmail.com>"]
 
+[lib]
+doctest = false
+
 [dependencies]
 rustc-hex = "2"
 bitcrypto = { path = "../crypto" }

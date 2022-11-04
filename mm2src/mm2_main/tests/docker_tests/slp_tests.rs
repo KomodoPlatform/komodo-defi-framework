@@ -1,6 +1,8 @@
 use crate::docker_tests::docker_tests_common::*;
+use crate::integration_tests_common::enable_native;
 use mm2_number::BigDecimal;
 use mm2_test_helpers::for_tests::{enable_bch_with_tokens, enable_slp, UtxoRpcMode};
+use mm2_test_helpers::structs::{EnableBchWithTokensResponse, EnableElectrumResponse, EnableSlpResponse, RpcV2Response};
 use serde_json::{self as json};
 use std::time::Duration;
 
@@ -30,7 +32,6 @@ fn test_bch_and_slp_balance() {
     assert_eq!(expected_unspendable, bch_balance.unspendable_balance);
 
     let enable_slp = block_on(enable_native(&mm, "ADEXSLP", &[]));
-    let enable_slp: EnableElectrumResponse = json::from_value(enable_slp).unwrap();
 
     let expected_spendable = BigDecimal::from(1000);
     assert_eq!(expected_spendable, enable_slp.balance);

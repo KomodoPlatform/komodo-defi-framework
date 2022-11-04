@@ -430,9 +430,8 @@ pub async fn run_taker_swap(swap: RunTakerSwapInput, ctx: MmArc) {
         }
         .fuse(),
     );
-    let do_nothing = (); // to fix https://rust-lang.github.io/rust-clippy/master/index.html#unused_unit
     select! {
-        _swap = swap_fut => do_nothing, // swap finished normally
+        _swap = swap_fut => (), // swap finished normally
         _touch = touch_loop => unreachable!("Touch loop can not stop!"),
     };
 }
@@ -1031,10 +1030,14 @@ impl TakerSwap {
             .negotiate_swap_contract_addr(maker_data.maker_coin_swap_contract())
         {
             Ok(addr) => addr,
-            Err(e) => {
-                return Ok((Some(TakerSwapCommand::Finish), vec![TakerSwapEvent::NegotiateFailed(
-                    ERRL!("!maker_coin.negotiate_swap_contract_addr {}", e).into(),
-                )]))
+            Err(e) => match self.maker_coin.fallback_swap_contract() {
+                // try to negotiate using fallback
+                Some(addr) => Some(addr),
+                None => {
+                    return Ok((Some(TakerSwapCommand::Finish), vec![TakerSwapEvent::NegotiateFailed(
+                        ERRL!("!maker_coin.negotiate_swap_contract_addr {}", e).into(),
+                    )]))
+                },
             },
         };
 
@@ -1043,10 +1046,14 @@ impl TakerSwap {
             .negotiate_swap_contract_addr(maker_data.taker_coin_swap_contract())
         {
             Ok(addr) => addr,
-            Err(e) => {
-                return Ok((Some(TakerSwapCommand::Finish), vec![TakerSwapEvent::NegotiateFailed(
-                    ERRL!("!taker_coin.negotiate_swap_contract_addr {}", e).into(),
-                )]))
+            Err(e) => match self.taker_coin.fallback_swap_contract() {
+                // try to negotiate using fallback
+                Some(addr) => Some(addr),
+                None => {
+                    return Ok((Some(TakerSwapCommand::Finish), vec![TakerSwapEvent::NegotiateFailed(
+                        ERRL!("!taker_coin.negotiate_swap_contract_addr {}", e).into(),
+                    )]))
+                },
             },
         };
 
@@ -2319,6 +2326,7 @@ pub struct MaxTakerVolumeLessThanDust {
     pub min_tx_amount: MmNumber,
 }
 
+#[allow(clippy::result_large_err)]
 pub fn max_taker_vol_from_available(
     available: MmNumber,
     base: &str,
