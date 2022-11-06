@@ -33,7 +33,7 @@ name = "docker_tests"
 path = "src/docker_tests.rs"
 
 [lib]
-name = "mm2"
+name = "mm2_lib"
 path = "src/mm2_lib.rs"
 crate-type = ["cdylib", "staticlib"]
 test = false
