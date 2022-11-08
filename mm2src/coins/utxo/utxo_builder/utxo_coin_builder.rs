@@ -12,7 +12,8 @@ use crate::{BlockchainNetwork, CoinTransportMetrics, DerivationMethod, HistorySy
             PrivKeyPolicy, RpcClientType, UtxoActivationParams};
 use async_trait::async_trait;
 use chain::TxHashAlgo;
-use common::executor::{abortable_queue::AbortableQueue, AbortSettings, AbortableSystem, SpawnAbortable, Timer};
+use common::executor::{abortable_queue::AbortableQueue, AbortSettings, AbortableSystem, AbortedError, SpawnAbortable,
+                       Timer};
 use common::log::{error, info};
 use common::small_rng;
 use crypto::{Bip32DerPathError, Bip44DerPathError, Bip44PathToCoin, CryptoCtx, CryptoInitError, HwWalletType};
@@ -99,6 +100,10 @@ impl From<BlockHeaderStorageError> for UtxoCoinBuildError {
     fn from(e: BlockHeaderStorageError) -> Self { UtxoCoinBuildError::BlockHeaderStorageError(e) }
 }
 
+impl From<AbortedError> for UtxoCoinBuildError {
+    fn from(e: AbortedError) -> Self { UtxoCoinBuildError::Internal(e.to_string()) }
+}
+
 #[async_trait]
 pub trait UtxoCoinBuilder: UtxoFieldsWithIguanaPrivKeyBuilder + UtxoFieldsWithHardwareWalletBuilder {
     type ResultCoin;
@@ -154,9 +159,9 @@ pub trait UtxoFieldsWithIguanaPrivKeyBuilder: UtxoCoinBuilderCommonOps {
 
         // Create an abortable system linked to the `MmCtx` so if the context is stopped via `MmArc::stop`,
         // all spawned futures related to this `UTXO` coin will be aborted as well.
-        let abortable_system: AbortableQueue = self.ctx().abortable_system.create_subsystem();
+        let abortable_system: AbortableQueue = self.ctx().abortable_system.create_subsystem()?;
 
-        let rpc_client = self.rpc_client(abortable_system.create_subsystem()).await?;
+        let rpc_client = self.rpc_client(abortable_system.create_subsystem()?).await?;
         let tx_fee = self.tx_fee(&rpc_client).await?;
         let decimals = self.decimals(&rpc_client).await?;
         let dust_amount = self.dust_amount();
@@ -224,9 +229,9 @@ pub trait UtxoFieldsWithHardwareWalletBuilder: UtxoCoinBuilderCommonOps {
 
         // Create an abortable system linked to the `MmCtx` so if the context is stopped via `MmArc::stop`,
         // all spawned futures related to this `UTXO` coin will be aborted as well.
-        let abortable_system: AbortableQueue = self.ctx().abortable_system.create_subsystem();
+        let abortable_system: AbortableQueue = self.ctx().abortable_system.create_subsystem()?;
 
-        let rpc_client = self.rpc_client(abortable_system.create_subsystem()).await?;
+        let rpc_client = self.rpc_client(abortable_system.create_subsystem()?).await?;
         let tx_fee = self.tx_fee(&rpc_client).await?;
         let decimals = self.decimals(&rpc_client).await?;
         let dust_amount = self.dust_amount();

@@ -1,4 +1,5 @@
 use crate::utxo::rpc_clients::UtxoRpcError;
+use common::executor::AbortedError;
 use common::HttpStatusCode;
 use db_common::sqlite::rusqlite::Error as SqlError;
 use derive_more::Display;
@@ -31,6 +32,8 @@ pub enum EnableLightningError {
     #[display(fmt = "DB error {}", _0)]
     DbError(String),
     ConnectToNodeError(String),
+    #[display(fmt = "Internal error: {}", _0)]
+    Internal(String),
 }
 
 impl HttpStatusCode for EnableLightningError {
@@ -44,7 +47,8 @@ impl HttpStatusCode for EnableLightningError {
             | EnableLightningError::IOError(_)
             | EnableLightningError::ConnectToNodeError(_)
             | EnableLightningError::InvalidConfiguration(_)
-            | EnableLightningError::DbError(_) => StatusCode::INTERNAL_SERVER_ERROR,
+            | EnableLightningError::DbError(_)
+            | EnableLightningError::Internal(_) => StatusCode::INTERNAL_SERVER_ERROR,
         }
     }
 }
@@ -59,6 +63,10 @@ impl From<SqlError> for EnableLightningError {
 
 impl From<UtxoRpcError> for EnableLightningError {
     fn from(e: UtxoRpcError) -> Self { EnableLightningError::RpcError(e.to_string()) }
+}
+
+impl From<AbortedError> for EnableLightningError {
+    fn from(e: AbortedError) -> Self { EnableLightningError::Internal(e.to_string()) }
 }
 
 #[derive(Display, PartialEq)]

@@ -145,6 +145,7 @@ pub struct TendermintInitError {
 
 #[derive(Display, Debug)]
 pub enum TendermintInitErrorKind {
+    Internal(String),
     InvalidPrivKey(String),
     CouldNotGenerateAccountId(String),
     EmptyRpcUrls,
@@ -301,7 +302,13 @@ impl TendermintCoin {
 
         // Create an abortable system linked to the `MmCtx` so if the context is stopped via `MmArc::stop`,
         // all spawned futures related to `TendermintCoin` will be aborted as well.
-        let abortable_system = ctx.abortable_system.create_subsystem();
+        let abortable_system = ctx
+            .abortable_system
+            .create_subsystem()
+            .map_to_mm(|e| TendermintInitError {
+                ticker: ticker.clone(),
+                kind: TendermintInitErrorKind::Internal(e.to_string()),
+            })?;
 
         Ok(TendermintCoin(Arc::new(TendermintCoinImpl {
             ticker,

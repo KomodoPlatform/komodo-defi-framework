@@ -3732,7 +3732,7 @@ pub async fn eth_coin_from_conf_and_request(
 
     // Create an abortable system linked to the `MmCtx` so if the context is stopped via `MmArc::stop`,
     // all spawned futures related to `ETH` coin will be aborted as well.
-    let abortable_system = ctx.abortable_system.create_subsystem();
+    let abortable_system = try_s!(ctx.abortable_system.create_subsystem());
 
     let coin = EthCoinImpl {
         key_pair,

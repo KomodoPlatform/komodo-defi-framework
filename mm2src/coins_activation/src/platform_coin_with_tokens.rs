@@ -2,6 +2,7 @@ use crate::prelude::*;
 use async_trait::async_trait;
 use coins::my_tx_history_v2::TxHistoryStorage;
 use coins::tx_history_storage::{CreateTxHistoryStorageError, TxHistoryStorageBuilder};
+use coins::utxo::slp::EnableSlpError;
 use coins::{lp_coinfind, CoinProtocol, CoinsContext, MmCoinEnum};
 use common::{log, HttpStatusCode, StatusCode};
 use derive_more::Display;
@@ -12,7 +13,6 @@ use mm2_number::BigDecimal;
 use ser_error_derive::SerializeErrorType;
 use serde_derive::{Deserialize, Serialize};
 use serde_json::Value as Json;
-use std::convert::Infallible;
 
 #[derive(Clone, Debug, Deserialize)]
 pub struct TokenActivationRequest<Req> {
@@ -91,8 +91,17 @@ pub trait RegisterTokenInfo<T: TokenOf<PlatformCoin = Self>> {
     fn register_token_info(&self, token: &T);
 }
 
-impl From<std::convert::Infallible> for InitTokensAsMmCoinsError {
-    fn from(e: Infallible) -> Self { match e {} }
+impl From<EnableSlpError> for InitTokensAsMmCoinsError {
+    fn from(e: EnableSlpError) -> Self {
+        match e {
+            EnableSlpError::GetBalanceError(balance_err) => {
+                InitTokensAsMmCoinsError::CouldNotFetchBalance(balance_err.to_string())
+            },
+            EnableSlpError::UnexpectedDerivationMethod(internal) | EnableSlpError::Internal(internal) => {
+                InitTokensAsMmCoinsError::Internal(internal)
+            },
+        }
+    }
 }
 
 #[async_trait]

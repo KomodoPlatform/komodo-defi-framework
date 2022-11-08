@@ -107,7 +107,9 @@ impl From<TendermintTokenInitializerErr> for InitTokensAsMmCoinsError {
                 ticker: err.ticker,
                 error,
             },
-            TendermintTokenInitError::MyAddressError(error) => InitTokensAsMmCoinsError::Internal(error),
+            TendermintTokenInitError::MyAddressError(error) | TendermintTokenInitError::Internal(error) => {
+                InitTokensAsMmCoinsError::Internal(error)
+            },
             TendermintTokenInitError::CouldNotFetchBalance(error) => {
                 InitTokensAsMmCoinsError::CouldNotFetchBalance(error)
             },

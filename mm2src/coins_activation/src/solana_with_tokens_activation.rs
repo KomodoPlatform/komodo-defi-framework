@@ -161,6 +161,7 @@ impl From<SplTokenInitializerErr> for InitTokensAsMmCoinsError {
                 ticker: err.ticker,
                 error,
             },
+            SplTokenCreationError::Internal(internal) => InitTokensAsMmCoinsError::Internal(internal),
         }
     }
 }

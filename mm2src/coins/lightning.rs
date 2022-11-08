@@ -1180,7 +1180,7 @@ pub async fn start_lightning(
         platform_coin.clone(),
         protocol_conf.network.clone(),
         protocol_conf.confirmation_targets,
-    ));
+    )?);
     platform.set_latest_fees().await?;
 
     // Initialize the Logger

@@ -5,7 +5,7 @@ use async_trait::async_trait;
 use coins::my_tx_history_v2::TxHistoryStorage;
 use coins::utxo::bch::{bch_coin_from_conf_and_params, BchActivationRequest, BchCoin, CashAddrPrefix};
 use coins::utxo::rpc_clients::UtxoRpcError;
-use coins::utxo::slp::{SlpProtocolConf, SlpToken};
+use coins::utxo::slp::{EnableSlpError, SlpProtocolConf, SlpToken};
 use coins::utxo::utxo_tx_history_v2::bch_and_slp_history_loop;
 use coins::utxo::UtxoCommonOps;
 use coins::{CoinBalance, CoinProtocol, MarketCoinOps, MmCoin, PrivKeyNotAllowed, UnexpectedDerivationMethod};
@@ -33,7 +33,7 @@ impl TokenInitializer for SlpTokenInitializer {
     type Token = SlpToken;
     type TokenActivationRequest = SlpActivationRequest;
     type TokenProtocol = SlpProtocolConf;
-    type InitTokensError = std::convert::Infallible;
+    type InitTokensError = EnableSlpError;
 
     fn tokens_requests_from_platform_request(
         platform_params: &BchWithTokensActivationRequest,
@@ -44,7 +44,7 @@ impl TokenInitializer for SlpTokenInitializer {
     async fn enable_tokens(
         &self,
         activation_params: Vec<TokenActivationParams<SlpActivationRequest, SlpProtocolConf>>,
-    ) -> Result<Vec<SlpToken>, MmError<std::convert::Infallible>> {
+    ) -> Result<Vec<SlpToken>, MmError<EnableSlpError>> {
         let tokens = activation_params
             .into_iter()
             .map(|params| {
@@ -64,7 +64,7 @@ impl TokenInitializer for SlpTokenInitializer {
                     required_confirmations,
                 )
             })
-            .collect();
+            .collect::<MmResult<_, EnableSlpError>>()?;
 
         Ok(tokens)
     }

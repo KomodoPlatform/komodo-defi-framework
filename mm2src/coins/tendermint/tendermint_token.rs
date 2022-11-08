@@ -14,7 +14,7 @@ use crate::{big_decimal_from_sat_unsigned, utxo::sat_from_big_decimal, BalanceFu
 use async_trait::async_trait;
 use bitcrypto::sha256;
 use common::executor::abortable_queue::AbortableQueue;
-use common::executor::AbortableSystem;
+use common::executor::{AbortableSystem, AbortedError};
 use common::Future01CompatExt;
 use cosmrs::{bank::MsgSend,
              tx::{Fee, Msg},
@@ -61,6 +61,7 @@ pub struct TendermintTokenProtocolInfo {
 pub struct TendermintTokenActivationParams {}
 
 pub enum TendermintTokenInitError {
+    Internal(String),
     InvalidDenom(String),
     MyAddressError(String),
     CouldNotFetchBalance(String),
@@ -68,6 +69,10 @@ pub enum TendermintTokenInitError {
 
 impl From<MyAddressError> for TendermintTokenInitError {
     fn from(err: MyAddressError) -> Self { TendermintTokenInitError::MyAddressError(err.to_string()) }
+}
+
+impl From<AbortedError> for TendermintTokenInitError {
+    fn from(e: AbortedError) -> Self { TendermintTokenInitError::Internal(e.to_string()) }
 }
 
 impl TendermintToken {
@@ -79,7 +84,7 @@ impl TendermintToken {
     ) -> MmResult<Self, TendermintTokenInitError> {
         let denom = Denom::from_str(&denom).map_to_mm(|e| TendermintTokenInitError::InvalidDenom(e.to_string()))?;
         let token_impl = TendermintTokenImpl {
-            abortable_system: platform_coin.abortable_system.create_subsystem(),
+            abortable_system: platform_coin.abortable_system.create_subsystem()?,
             ticker,
             platform_coin,
             decimals,

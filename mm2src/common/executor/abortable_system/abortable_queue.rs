@@ -1,7 +1,7 @@
-use crate::executor::abortable_system::{AbortableSystem, InnerShared, InnerWeak, SystemInner};
+use crate::executor::abortable_system::{AbortableSystem, AbortedError, InnerShared, InnerWeak, SystemInner};
 use crate::executor::spawner::{SpawnAbortable, SpawnFuture};
 use crate::executor::{spawn, AbortSettings, Timer};
-use crossbeam::queue::SegQueue;
+use crate::log::{error, LogOnError};
 use futures::channel::oneshot;
 use futures::future::{abortable, select, Either};
 use futures::FutureExt;
@@ -15,16 +15,16 @@ type FutureId = usize;
 /// This is an `AbortableSystem` that ensures that the spawned futures will be aborted
 /// once the `AbortableQueue` instance is dropped.
 ///
-/// `AbortableQueue` is responsible for storing future handles in `QueueInner`
+/// `AbortableQueue` is responsible for storing future handles in `QueueInnerState`
 /// and deleting them as soon as they complete.
 #[derive(Debug, Default)]
 pub struct AbortableQueue {
-    inner: InnerShared<QueueInner>,
+    inner: InnerShared<QueueInnerState>,
 }
 
 impl AbortableQueue {
     /// Returns `WeakSpawner` that will not prevent the spawned futures from being aborted.
-    /// This is the only way to create a `'static` instance pointing to the same `QueueInner`
+    /// This is the only way to create a `'static` instance pointing to the same `QueueInnerState`
     /// that can be passed into spawned futures, since `AbortableQueue` doesn't implement `Clone`.
     pub fn weak_spawner(&self) -> WeakSpawner {
         WeakSpawner {
@@ -33,19 +33,19 @@ impl AbortableQueue {
     }
 }
 
-impl From<InnerShared<QueueInner>> for AbortableQueue {
-    fn from(inner: InnerShared<QueueInner>) -> Self { AbortableQueue { inner } }
+impl From<InnerShared<QueueInnerState>> for AbortableQueue {
+    fn from(inner: InnerShared<QueueInnerState>) -> Self { AbortableQueue { inner } }
 }
 
 impl AbortableSystem for AbortableQueue {
-    type Inner = QueueInner;
+    type Inner = QueueInnerState;
 
     /// Aborts all spawned futures and initiates aborting of critical futures
     /// after the specified [`AbortSettings::critical_timeout_s`].
-    fn abort_all(&self) { self.inner.lock().abort_all(); }
+    fn abort_all(&self) -> Result<(), AbortedError> { self.inner.lock().abort_all() }
 
-    fn __push_subsystem_abort_tx(&self, subsystem_abort_tx: oneshot::Sender<()>) {
-        self.inner.lock().insert_handle(subsystem_abort_tx);
+    fn __push_subsystem_abort_tx(&self, subsystem_abort_tx: oneshot::Sender<()>) -> Result<(), AbortedError> {
+        self.inner.lock().insert_handle(subsystem_abort_tx).map(|_| ())
     }
 }
 
@@ -59,35 +59,26 @@ impl AbortableSystem for AbortableQueue {
 /// ends its work, and there is no need to execute tasks that are no longer relevant.
 #[derive(Clone)]
 pub struct WeakSpawner {
-    inner: InnerWeak<QueueInner>,
+    inner: InnerWeak<QueueInnerState>,
 }
 
-impl SpawnFuture for WeakSpawner {
-    fn spawn<F>(&self, f: F)
-    where
-        F: Future03<Output = ()> + Send + 'static,
-    {
-        self.spawn_with_settings(f, AbortSettings::default())
-    }
-}
-
-impl SpawnAbortable for WeakSpawner {
+impl WeakSpawner {
     /// Spawns the `fut` future with the specified abort `settings`.
     /// The future won't be executed if `AbortableQueue` is dropped.
-    fn spawn_with_settings<F>(&self, fut: F, settings: AbortSettings)
+    fn spawn_with_settings_impl<F>(&self, fut: F, settings: AbortSettings) -> Result<(), AbortedError>
     where
         F: Future03<Output = ()> + Send + 'static,
     {
         let (abort_tx, abort_rx) = oneshot::channel();
-        let (future_id, finished_futures_weak) = match self.inner.upgrade() {
+        let future_id = match self.inner.upgrade() {
             Some(inner_arc) => {
                 let mut inner_guard = inner_arc.lock();
-                let future_id = inner_guard.insert_handle(abort_tx);
-                let finished_futures_weak = Arc::downgrade(&inner_guard.finished_futures);
-                (future_id, finished_futures_weak)
+                inner_guard.insert_handle(abort_tx)?
             },
-            None => return,
+            None => return Err(AbortedError),
         };
+
+        let inner_weak = self.inner.clone();
 
         let (abortable_fut, abort_handle) = abortable(fut);
 
@@ -95,7 +86,7 @@ impl SpawnAbortable for WeakSpawner {
             let critical_timeout_s = settings.critical_timeout_s;
 
             let wait_till_abort = async move {
-                // First, wait for the `abort_tx` sender (i.e. corresponding [`QueueInner::futures`] item) is dropped.
+                // First, wait for the `abort_tx` sender (i.e. corresponding [`QueueInnerState::abort_handlers`] item) is dropped.
                 abort_rx.await.ok();
 
                 // If the `critical_timeout_s` is set, give the `fut` future to try
@@ -112,13 +103,11 @@ impl SpawnAbortable for WeakSpawner {
                         log::log!(on_finish.level, "{}", on_finish.msg);
                     }
 
-                    if let Some(finished_futures) = finished_futures_weak.upgrade() {
-                        // We don't need to remove an associated abort handle from [`AbortableQueue::abort_handlers`],
-                        // but we need to release the `future_id` so it can be reused later.
-                        finished_futures.push(future_id);
+                    if let Some(queue_inner) = inner_weak.upgrade() {
+                        queue_inner.lock().on_future_finished(future_id);
                     }
                 },
-                // `abort_tx` has been removed from `QueueInner::futures`,
+                // `abort_tx` has been removed from `QueueInnerState::abort_handlers`,
                 // *and* the `critical_timeout_s` timeout has expired (if was specified).
                 Either::Right(_) => {
                     if let Some(on_abort) = settings.on_abort {
@@ -132,56 +121,118 @@ impl SpawnAbortable for WeakSpawner {
         };
 
         spawn(final_fut);
+        Ok(())
     }
 }
 
-/// `QueueInner` is the container of the spawned future handles [`oneshot::Sender<()>`].
+impl SpawnFuture for WeakSpawner {
+    /// Records a warning to the log if the corresponding `AbortableQueue` system is aborted already.
+    #[track_caller]
+    fn spawn<F>(&self, f: F)
+    where
+        F: Future03<Output = ()> + Send + 'static,
+    {
+        self.spawn_with_settings_impl(f, AbortSettings::default()).warn_log()
+    }
+}
+
+impl SpawnAbortable for WeakSpawner {
+    /// Records a warning to the log if the corresponding `AbortableQueue` system is aborted already.
+    #[track_caller]
+    fn spawn_with_settings<F>(&self, fut: F, settings: AbortSettings)
+    where
+        F: Future03<Output = ()> + Send + 'static,
+    {
+        self.spawn_with_settings_impl(fut, settings).warn_log()
+    }
+}
+
+/// `QueueInnerState` is the container of the spawned future handles [`oneshot::Sender<()>`].
 /// It holds the future handles, gives every future its *unique* `FutureId` identifier
 /// (unique between spawned and alive futures).
 /// Once a future is finished, its `FutureId` can be reassign to another future.
 /// This is necessary so that this container does not grow indefinitely.
 #[derive(Debug)]
-pub struct QueueInner {
-    abort_handlers: Vec<oneshot::Sender<()>>,
-    /// `finished_futures` is shared between spawned futures as the `Weak` pointer.
-    finished_futures: Arc<SegQueue<FutureId>>,
+pub enum QueueInnerState {
+    Ready {
+        abort_handlers: Vec<oneshot::Sender<()>>,
+        finished_futures: Vec<FutureId>,
+    },
+    Aborted,
 }
 
-impl Default for QueueInner {
+impl Default for QueueInnerState {
     fn default() -> Self {
-        QueueInner {
+        QueueInnerState::Ready {
             abort_handlers: Vec::with_capacity(CAPACITY),
-            finished_futures: Arc::new(SegQueue::new()),
+            finished_futures: Vec::with_capacity(CAPACITY),
         }
     }
 }
 
-impl QueueInner {
+impl QueueInnerState {
     /// Inserts the given future `handle`.
-    fn insert_handle(&mut self, handle: oneshot::Sender<()>) -> FutureId {
-        match self.finished_futures.pop() {
+    fn insert_handle(&mut self, handle: oneshot::Sender<()>) -> Result<FutureId, AbortedError> {
+        let (abort_handlers, finished_futures) = match self {
+            QueueInnerState::Ready {
+                abort_handlers,
+                finished_futures,
+            } => (abort_handlers, finished_futures),
+            QueueInnerState::Aborted => return Err(AbortedError),
+        };
+
+        match finished_futures.pop() {
             // We can reuse the given `finished_id`.
-            Ok(finished_id) => {
-                self.abort_handlers[finished_id] = handle;
+            Some(finished_id) if finished_id < abort_handlers.len() => {
+                abort_handlers[finished_id] = handle;
                 // The freed future ID.
-                finished_id
+                return Ok(finished_id);
+            },
+            // An invalid `FutureId` has been popped from the `finished_futures` container.
+            Some(invalid_finished_id) => {
+                error!("'The finished future ID ({invalid_finished_id}) doesn't belong to any future. Number of futures = {}", abort_handlers.len());
             },
             // There are no finished future IDs.
-            Err(_) => {
-                self.abort_handlers.push(handle);
-                // The last item ID.
-                self.abort_handlers.len() - 1
-            },
+            None => (),
+        }
+
+        abort_handlers.push(handle);
+        // Return the last item ID.
+        Ok(abort_handlers.len() - 1)
+    }
+
+    /// Releases the `finished_future_id` so it can be reused later on [`QueueInnerState::insert_handle`].
+    fn on_future_finished(&mut self, finished_future_id: FutureId) {
+        if let QueueInnerState::Ready { finished_futures, .. } = self {
+            finished_futures.push(finished_future_id);
+        }
+    }
+
+    #[cfg(test)]
+    fn count_abort_handlers(&self) -> Result<usize, AbortedError> {
+        match self {
+            QueueInnerState::Ready { abort_handlers, .. } => Ok(abort_handlers.len()),
+            QueueInnerState::Aborted => Err(AbortedError),
+        }
+    }
+
+    #[cfg(test)]
+    fn count_finished_futures(&self) -> Result<usize, AbortedError> {
+        match self {
+            QueueInnerState::Ready { finished_futures, .. } => Ok(finished_futures.len()),
+            QueueInnerState::Aborted => Err(AbortedError),
         }
     }
 }
 
-impl SystemInner for QueueInner {
-    fn abort_all(&mut self) {
-        self.abort_handlers.clear();
-        // Drop the `self.finished_futures` shared pointer
-        // so the finished futures won't be able to push their IDs into this queue.
-        self.finished_futures = Arc::new(SegQueue::new());
+impl SystemInner for QueueInnerState {
+    fn abort_all(&mut self) -> Result<(), AbortedError> {
+        if matches!(self, QueueInnerState::Aborted) {
+            return Err(AbortedError);
+        }
+
+        *self = QueueInnerState::Aborted;
+        Ok(())
     }
 }
 
@@ -199,9 +250,9 @@ mod tests {
 
         {
             let inner = abortable_system.inner.lock();
-            assert_eq!(inner.abort_handlers.len(), 1);
+            assert_eq!(inner.count_abort_handlers().unwrap(), 1);
             // The future should have finished already.
-            assert_eq!(inner.finished_futures.len(), 1);
+            assert_eq!(inner.count_finished_futures().unwrap(), 1);
         }
 
         let fut1 = async { Timer::sleep(0.3).await };
@@ -213,25 +264,25 @@ mod tests {
             let inner = abortable_system.inner.lock();
             // `abort_handlers` should be extended once
             // because `finished_futures` contained only one freed `FutureId`.
-            assert_eq!(inner.abort_handlers.len(), 2);
+            assert_eq!(inner.count_abort_handlers().unwrap(), 2);
             // `FutureId` should be used from `finished_futures` container.
-            assert!(inner.finished_futures.is_empty());
+            assert_eq!(inner.count_finished_futures().unwrap(), 0);
         }
 
         block_on(Timer::sleep(0.5));
 
         {
             let inner = abortable_system.inner.lock();
-            assert_eq!(inner.abort_handlers.len(), 2);
-            assert_eq!(inner.finished_futures.len(), 1);
+            assert_eq!(inner.count_abort_handlers().unwrap(), 2);
+            assert_eq!(inner.count_finished_futures().unwrap(), 1);
         }
 
         block_on(Timer::sleep(0.4));
 
         {
             let inner = abortable_system.inner.lock();
-            assert_eq!(inner.abort_handlers.len(), 2);
-            assert_eq!(inner.finished_futures.len(), 2);
+            assert_eq!(inner.count_abort_handlers().unwrap(), 2);
+            assert_eq!(inner.count_finished_futures().unwrap(), 2);
         }
     }
 
@@ -269,7 +320,7 @@ mod tests {
         };
         spawner.spawn_with_settings(fut2, settings.clone());
 
-        abortable_system.abort_all();
+        abortable_system.abort_all().unwrap();
 
         block_on(Timer::sleep(1.2));
         // `fut1` must not complete.
@@ -280,17 +331,24 @@ mod tests {
 
     #[test]
     fn test_spawn_after_abort() {
-        let abortable_system = AbortableQueue::default();
-        let spawner = abortable_system.weak_spawner();
+        static mut F1_FINISHED: bool = false;
 
-        for _ in 0..100 {
+        for _ in 0..50 {
+            let abortable_system = AbortableQueue::default();
+            let spawner = abortable_system.weak_spawner();
+
             spawner.spawn(futures::future::ready(()));
-            abortable_system.abort_all();
+            abortable_system.abort_all().unwrap();
 
             // This sleep allows to poll the `select(abortable_fut.boxed(), wait_till_abort.boxed()).await` future.
             block_on(Timer::sleep(0.01));
 
-            spawner.spawn(futures::future::ready(()));
+            spawner.spawn(async move {
+                unsafe { F1_FINISHED = true };
+            });
         }
+
+        // Futures spawned after `AbortableQueue::abort_all` must not complete.
+        assert!(unsafe { !F1_FINISHED });
     }
 }

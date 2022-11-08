@@ -2556,7 +2556,13 @@ pub async fn lp_coininit(ctx: &MmArc, ticker: &str, req: &Json) -> Result<MmCoin
             };
 
             let confs = required_confirmations.unwrap_or(platform_coin.required_confirmations());
-            let token = SlpToken::new(*decimals, ticker.into(), (*token_id).into(), platform_coin, confs);
+            let token = try_s!(SlpToken::new(
+                *decimals,
+                ticker.into(),
+                (*token_id).into(),
+                platform_coin,
+                confs
+            ));
             token.into()
         },
         CoinProtocol::TENDERMINT { .. } => return ERR!("TENDERMINT protocol is not supported by lp_coininit"),

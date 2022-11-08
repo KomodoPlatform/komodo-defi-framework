@@ -181,7 +181,7 @@ pub async fn solana_coin_from_conf_and_params(
 
     // Create an abortable system linked to the `MmCtx` so if the context is stopped via `MmArc::stop`,
     // all spawned futures related to `SolanaCoin` will be aborted as well.
-    let abortable_system: AbortableQueue = ctx.abortable_system.create_subsystem();
+    let abortable_system: AbortableQueue = try_s!(ctx.abortable_system.create_subsystem());
 
     let solana_coin = SolanaCoin(Arc::new(SolanaCoinImpl {
         my_address,
