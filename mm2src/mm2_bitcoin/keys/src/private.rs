@@ -51,7 +51,7 @@ impl DisplayLayout for Private {
 
     fn layout(&self) -> Self::Target {
         let mut result = vec![self.prefix];
-        result.extend(&*self.secret);
+        result.extend(*self.secret);
         if self.compressed {
             result.push(1);
         }

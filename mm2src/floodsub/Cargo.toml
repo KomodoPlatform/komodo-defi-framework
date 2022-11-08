@@ -9,6 +9,9 @@ repository = "https://github.com/libp2p/rust-libp2p"
 keywords = ["peer-to-peer", "libp2p", "networking"]
 categories = ["network-programming", "asynchronous"]
 
+[lib]
+doctest = false
+
 [dependencies]
 cuckoofilter = "0.3.2"
 futures = "0.3.1"

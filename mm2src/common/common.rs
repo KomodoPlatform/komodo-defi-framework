@@ -11,6 +11,7 @@
 //!                   binary
 
 #![allow(uncommon_codepoints)]
+#![feature(allocator_api)]
 #![feature(integer_atomics, panic_info_message)]
 #![feature(async_closure)]
 #![feature(hash_raw_entry)]
@@ -125,6 +126,7 @@ use parking_lot::{Mutex as PaMutex, MutexGuard as PaMutexGuard};
 use rand::{rngs::SmallRng, SeedableRng};
 use serde::{de, ser};
 use serde_json::{self as json, Value as Json};
+use std::alloc::Allocator;
 use std::fmt::Write as FmtWrite;
 use std::future::Future as Future03;
 use std::io::Write;
@@ -171,7 +173,7 @@ lazy_static! {
 pub auto trait NotSame {}
 impl<X> !NotSame for (X, X) {}
 // Makes the error conversion work for structs/enums containing Box<dyn ...>
-impl<T: ?Sized> NotSame for Box<T> {}
+impl<T: ?Sized, A: Allocator> NotSame for Box<T, A> {}
 
 /// Converts u64 satoshis to f64
 pub fn sat_to_f(sat: u64) -> f64 { sat as f64 / SATOSHIS as f64 }
@@ -469,8 +471,8 @@ pub fn set_panic_hook() {
 
         let mut trace = String::new();
         stack_trace(&mut stack_trace_frame, &mut |l| trace.push_str(l));
-        log::info!("{}", info);
-        log::info!("backtrace\n{}", trace);
+        log!("{}", info);
+        log!("backtrace\n{}", trace);
 
         let _ = ENTERED.try_with(|e| e.compare_exchange(true, false, Ordering::Relaxed, Ordering::Relaxed));
     }))

@@ -89,7 +89,9 @@ fn spl_my_balance() {
     assert_eq!(res.spendable, BigDecimal::from(0));
 }
 
+// Stop ignoring when Solana is released
 #[test]
+#[ignore]
 #[cfg(not(target_arch = "wasm32"))]
 fn test_spl_transactions() {
     let passphrase = "federal stay trigger hour exist success game vapor become comfort action phone bright ill target wild nasty crumble dune close rare fabric hen iron".to_string();

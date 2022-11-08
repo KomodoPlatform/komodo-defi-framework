@@ -1,5 +1,5 @@
 use crate::docker_tests::docker_tests_common::*;
-use crate::mm2::lp_swap::{dex_fee_amount, max_taker_vol_from_available};
+use crate::integration_tests_common::enable_native;
 use bitcrypto::dhash160;
 use coins::qrc20::rpc_clients::for_tests::Qrc20NativeWalletOps;
 use coins::utxo::qtum::{qtum_coin_with_priv_key, QtumCoin};
@@ -13,8 +13,11 @@ use common::{temp_dir, DEX_FEE_ADDR_RAW_PUBKEY};
 use ethereum_types::H160;
 use futures01::Future;
 use http::StatusCode;
+use mm2::mm2::lp_swap::{dex_fee_amount, max_taker_vol_from_available};
 use mm2_core::mm_ctx::{MmArc, MmCtxBuilder};
 use mm2_number::BigDecimal;
+use mm2_test_helpers::structs::{trade_preimage_error, EnableElectrumResponse, OrderbookResponse, RpcErrorResponse,
+                                RpcSuccessResponse, TransactionDetails};
 use rand6::Rng;
 use serde_json::{self as json, Value as Json};
 use std::convert::TryFrom;
@@ -1327,8 +1330,8 @@ fn test_segwit_native_balance() {
     block_on(mm.wait_for_log(22., |log| log.contains(">>>>>>>>> DEX stats "))).unwrap();
 
     let enable_res = block_on(enable_native(&mm, "QTUM", &[]));
-    let balance = enable_res["balance"].as_str().unwrap();
-    assert_eq!(balance, "0.5");
+    let expected_balance: BigDecimal = "0.5".parse().unwrap();
+    assert_eq!(enable_res.balance, expected_balance);
 
     let my_balance = block_on(mm.rpc(&json!({
         "userpass": mm.userpass,

@@ -357,6 +357,7 @@ impl QtumCoin {
         })
     }
 
+    #[allow(clippy::result_large_err)]
     fn add_delegation_output(
         &self,
         to_addr: H160,

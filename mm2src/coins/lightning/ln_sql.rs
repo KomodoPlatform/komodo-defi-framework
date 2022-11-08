@@ -563,8 +563,8 @@ impl LightningDB for SqliteLightningDB {
 
     async fn add_channel_to_db(&self, details: DBChannelDetails) -> Result<(), Self::Error> {
         let for_coin = self.db_ticker.clone();
-        let rpc_id = details.rpc_id as i64;
-        let created_at = details.created_at as i64;
+        let rpc_id = details.rpc_id;
+        let created_at = details.created_at;
 
         let sqlite_connection = self.sqlite_connection.clone();
         async_blocking(move || {

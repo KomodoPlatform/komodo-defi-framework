@@ -18,10 +18,7 @@ pub struct Num {
 }
 
 impl From<bool> for Num {
-    fn from(i: bool) -> Self {
-        let v = if i { 1 } else { 0 };
-        Num { value: v }
-    }
+    fn from(i: bool) -> Self { Num { value: i.into() } }
 }
 
 impl From<u8> for Num {

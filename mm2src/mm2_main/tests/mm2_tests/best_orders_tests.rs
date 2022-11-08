@@ -1,4 +1,14 @@
-use super::*;
+use crate::integration_tests_common::*;
+use common::{block_on, log};
+use http::StatusCode;
+use mm2_number::BigDecimal;
+use mm2_test_helpers::for_tests::{get_passphrase, MarketMakerIt};
+use mm2_test_helpers::structs::{BestOrdersResponse, BestOrdersV2Response, EnableElectrumResponse, RpcV2Response,
+                                SetPriceResponse};
+use serde_json::{self as json, json};
+use std::env::{self};
+use std::thread;
+use std::time::Duration;
 
 #[cfg(feature = "zhtlc-native-tests")]
 use mm2_test_helpers::for_tests::best_orders_v2;
@@ -29,7 +39,7 @@ fn test_best_orders() {
             "i_am_seed": true,
         }),
         "pass".into(),
-        local_start!("bob"),
+        None,
     )
     .unwrap();
     let (_bob_dump_log, _bob_dump_dashboard) = mm_bob.mm_dump();
@@ -80,7 +90,7 @@ fn test_best_orders() {
             "rpc_password": "pass",
         }),
         "pass".into(),
-        local_start!("alice"),
+        None,
     )
     .unwrap();
 
@@ -199,7 +209,7 @@ fn test_best_orders_v2_by_number() {
             "i_am_seed": true,
         }),
         "pass".into(),
-        local_start!("bob"),
+        None,
     )
     .unwrap();
     let (_bob_dump_log, _bob_dump_dashboard) = mm_bob.mm_dump();
@@ -249,7 +259,7 @@ fn test_best_orders_v2_by_number() {
             "rpc_password": "pass",
         }),
         "pass".into(),
-        local_start!("alice"),
+        None,
     )
     .unwrap();
     let (_alice_dump_log, _alice_dump_dashboard) = mm_alice.mm_dump();
@@ -387,7 +397,7 @@ fn test_best_orders_v2_by_volume() {
             "i_am_seed": true,
         }),
         "pass".into(),
-        local_start!("bob"),
+        None,
     )
     .unwrap();
     let (_bob_dump_log, _bob_dump_dashboard) = mm_bob.mm_dump();
@@ -437,7 +447,7 @@ fn test_best_orders_v2_by_volume() {
             "rpc_password": "pass",
         }),
         "pass".into(),
-        local_start!("alice"),
+        None,
     )
     .unwrap();
     let (_alice_dump_log, _alice_dump_dashboard) = mm_alice.mm_dump();
@@ -555,7 +565,7 @@ fn test_best_orders_duplicates_after_update() {
             "i_am_seed": true,
         }),
         "pass".into(),
-        local_start!("bob"),
+        None,
     )
     .unwrap();
 
@@ -573,7 +583,7 @@ fn test_best_orders_duplicates_after_update() {
             "seednodes": [mm_bob.ip.to_string()],
         }),
         "pass".into(),
-        local_start!("bob"),
+        None,
     )
     .unwrap();
     let (_bob_dump_log, _bob_dump_dashboard) = mm_bob.mm_dump();
@@ -609,7 +619,7 @@ fn test_best_orders_duplicates_after_update() {
             "rpc_password": "pass",
         }),
         "pass".into(),
-        local_start!("alice"),
+        None,
     )
     .unwrap();
 
@@ -715,7 +725,7 @@ fn test_best_orders_filter_response() {
             "i_am_seed": true,
         }),
         "pass".into(),
-        local_start!("bob"),
+        None,
     )
     .unwrap();
     let (_bob_dump_log, _bob_dump_dashboard) = mm_bob.mm_dump();
@@ -766,7 +776,7 @@ fn test_best_orders_filter_response() {
             "rpc_password": "pass",
         }),
         "pass".into(),
-        local_start!("alice"),
+        None,
     )
     .unwrap();
 
@@ -826,7 +836,7 @@ fn test_best_orders_address_and_confirmations() {
             "i_am_seed": true,
         }),
         "pass".into(),
-        local_start!("bob"),
+        None,
     )
     .unwrap();
     let (_bob_dump_log, _bob_dump_dashboard) = mm_bob.mm_dump();
@@ -905,7 +915,7 @@ fn test_best_orders_address_and_confirmations() {
             "rpc_password": "pass",
         }),
         "pass".into(),
-        local_start!("alice"),
+        None,
     )
     .unwrap();
 

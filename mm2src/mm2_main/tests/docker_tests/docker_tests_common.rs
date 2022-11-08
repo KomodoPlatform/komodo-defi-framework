@@ -1,30 +1,37 @@
-// re-export the most common imports
-pub use crate::mm2::mm2_tests::structs::*;
 pub use common::{block_on, now_ms};
 pub use mm2_number::MmNumber;
 pub use mm2_test_helpers::for_tests::{check_my_swap_status, check_recent_swaps, check_stats_swap_status,
-                                      enable_native, enable_native_bch, mm_dump, MarketMakerIt, MAKER_ERROR_EVENTS,
+                                      enable_native_bch, mm_dump, MarketMakerIt, MAKER_ERROR_EVENTS,
                                       MAKER_SUCCESS_EVENTS, TAKER_ERROR_EVENTS, TAKER_SUCCESS_EVENTS};
 pub use secp256k1::{PublicKey, SecretKey};
 pub use std::env;
 pub use std::thread;
 
 use bitcrypto::{dhash160, ChecksumType};
+use chain::TransactionOutput;
+use coins::eth::{eth_coin_from_conf_and_request, EthCoin};
 use coins::qrc20::rpc_clients::for_tests::Qrc20NativeWalletOps;
 use coins::qrc20::{qrc20_coin_from_conf_and_params, Qrc20ActivationParams, Qrc20Coin};
+use coins::utxo::bch::{bch_coin_from_conf_and_params, BchActivationRequest, BchCoin};
 use coins::utxo::qtum::{qtum_coin_with_priv_key, QtumBasedCoin, QtumCoin};
 use coins::utxo::rpc_clients::{NativeClient, UtxoRpcClientEnum, UtxoRpcClientOps};
+use coins::utxo::slp::{slp_genesis_output, SlpOutput, SlpToken};
+use coins::utxo::utxo_common::send_outputs_from_my_address;
 use coins::utxo::utxo_standard::{utxo_standard_coin_with_priv_key, UtxoStandardCoin};
 use coins::utxo::{coin_daemon_data_dir, sat_from_big_decimal, zcash_params_path, UtxoActivationParams,
-                  UtxoAddressFormat, UtxoCoinFields};
-use coins::MarketCoinOps;
+                  UtxoAddressFormat, UtxoCoinFields, UtxoCommonOps};
+use coins::{CoinProtocol, MarketCoinOps, Transaction};
+use crypto::privkey::{key_pair_from_secret, key_pair_from_seed};
 use ethereum_types::H160 as H160Eth;
 use futures01::Future;
 use http::StatusCode;
-use keys::{Address, AddressHashEnum};
+use keys::{Address, AddressHashEnum, NetworkPrefix as CashAddrPrefix};
 use mm2_core::mm_ctx::{MmArc, MmCtxBuilder};
 use mm2_number::BigDecimal;
+use mm2_test_helpers::for_tests::enable_native;
+use mm2_test_helpers::structs::{MyBalanceResponse, TransactionDetails};
 use primitives::hash::{H160, H256};
+use script::Builder;
 use secp256k1::Secp256k1;
 use serde_json::{self as json, Value as Json};
 use std::path::PathBuf;
@@ -36,12 +43,17 @@ use testcontainers::images::generic::{GenericImage, WaitFor};
 use testcontainers::{Container, Docker, Image};
 
 lazy_static! {
-    static ref COINS_LOCK: Mutex<()> = Mutex::new(());
+    static ref MY_COIN_LOCK: Mutex<()> = Mutex::new(());
+    static ref MY_COIN1_LOCK: Mutex<()> = Mutex::new(());
+    static ref QTUM_LOCK: Mutex<()> = Mutex::new(());
+    static ref FOR_SLP_LOCK: Mutex<()> = Mutex::new(());
     pub static ref SLP_TOKEN_ID: Mutex<H256> = Mutex::new(H256::default());
     // Private keys supplied with 1000 SLP tokens on tests initialization.
     // Due to the SLP protocol limitations only 19 outputs (18 + change) can be sent in one transaction, which is sufficient for now though.
     // Supply more privkeys when 18 will be not enough.
     pub static ref SLP_TOKEN_OWNERS: Mutex<Vec<[u8; 32]>> = Mutex::new(Vec::with_capacity(18));
+    static ref ETH_DISTRIBUTOR: EthCoin = eth_distributor();
+    static ref MM_CTX: MmArc = MmCtxBuilder::new().into_mm_arc();
 }
 
 pub static mut QICK_TOKEN_ADDRESS: Option<H160Eth> = None;
@@ -86,6 +98,166 @@ pub trait CoinDockerOps {
             thread::sleep(Duration::from_secs(1));
         }
     }
+}
+
+pub struct UtxoAssetDockerOps {
+    #[allow(dead_code)]
+    ctx: MmArc,
+    coin: UtxoStandardCoin,
+}
+
+impl CoinDockerOps for UtxoAssetDockerOps {
+    fn rpc_client(&self) -> &UtxoRpcClientEnum { &self.coin.as_ref().rpc_client }
+}
+
+impl UtxoAssetDockerOps {
+    pub fn from_ticker(ticker: &str) -> UtxoAssetDockerOps {
+        let conf = json!({"asset": ticker, "txfee": 1000, "network": "regtest"});
+        let req = json!({"method":"enable"});
+        let priv_key = hex::decode("809465b17d0a4ddb3e4c69e8f23c2cabad868f51f8bed5c765ad1d6516c3306f").unwrap();
+        let ctx = MmCtxBuilder::new().into_mm_arc();
+        let params = UtxoActivationParams::from_legacy_req(&req).unwrap();
+
+        let coin = block_on(utxo_standard_coin_with_priv_key(
+            &ctx, ticker, &conf, &params, &priv_key,
+        ))
+        .unwrap();
+        UtxoAssetDockerOps { ctx, coin }
+    }
+}
+
+pub struct BchDockerOps {
+    #[allow(dead_code)]
+    ctx: MmArc,
+    coin: BchCoin,
+}
+
+// builds the EthCoin using the external dev Parity/OpenEthereum node
+// the address belonging to the default passphrase has million of ETH that it can distribute to
+// random privkeys generated in tests
+fn eth_distributor() -> EthCoin {
+    let conf = json!({"coin":"ETH","name":"ethereum","protocol":{"type":"ETH"}});
+    let req = json!({
+        "method": "enable",
+        "coin": "ETH",
+        "urls": ["http://195.201.0.6:8565"],
+        "swap_contract_address": "0xa09ad3cd7e96586ebd05a2607ee56b56fb2db8fd",
+    });
+    let keypair =
+        key_pair_from_seed("spice describe gravity federal blast come thank unfair canal monkey style afraid").unwrap();
+    block_on(eth_coin_from_conf_and_request(
+        &MM_CTX,
+        "ETH",
+        &conf,
+        &req,
+        &*keypair.private().secret,
+        CoinProtocol::ETH,
+    ))
+    .unwrap()
+}
+
+// pass address without 0x prefix to this fn
+pub fn fill_eth(to_addr: &str) {
+    ETH_DISTRIBUTOR
+        .send_to_address(to_addr.parse().unwrap(), 1_000_000_000_000_000_000u64.into())
+        .wait()
+        .unwrap();
+}
+
+impl BchDockerOps {
+    pub fn from_ticker(ticker: &str) -> BchDockerOps {
+        let conf = json!({"asset": ticker,"txfee":1000,"network": "regtest","txversion":4,"overwintered":1});
+        let req = json!({"method":"enable", "bchd_urls": [], "allow_slp_unsafe_conf": true});
+        let priv_key = hex::decode("809465b17d0a4ddb3e4c69e8f23c2cabad868f51f8bed5c765ad1d6516c3306f").unwrap();
+        let ctx = MmCtxBuilder::new().into_mm_arc();
+        let params = BchActivationRequest::from_legacy_req(&req).unwrap();
+
+        let coin = block_on(bch_coin_from_conf_and_params(
+            &ctx,
+            ticker,
+            &conf,
+            params,
+            CashAddrPrefix::SlpTest,
+            &priv_key,
+        ))
+        .unwrap();
+        BchDockerOps { ctx, coin }
+    }
+
+    pub fn initialize_slp(&self) {
+        fill_address(&self.coin, &self.coin.my_address().unwrap(), 100000.into(), 30);
+        let mut slp_privkeys = vec![];
+
+        let slp_genesis_op_ret = slp_genesis_output("ADEXSLP", "ADEXSLP", None, None, 8, None, 1000000_00000000);
+        let slp_genesis = TransactionOutput {
+            value: self.coin.as_ref().dust_amount,
+            script_pubkey: Builder::build_p2pkh(&self.coin.my_public_key().unwrap().address_hash().into()).to_bytes(),
+        };
+
+        let mut bch_outputs = vec![slp_genesis_op_ret, slp_genesis];
+        let mut slp_outputs = vec![];
+
+        for _ in 0..18 {
+            let priv_key = SecretKey::new(&mut rand6::thread_rng());
+            let key_pair = key_pair_from_secret(priv_key.as_ref()).unwrap();
+            let address_hash = key_pair.public().address_hash();
+            let address = Address {
+                prefix: self.coin.as_ref().conf.pub_addr_prefix,
+                t_addr_prefix: self.coin.as_ref().conf.pub_t_addr_prefix,
+                hrp: None,
+                hash: address_hash.into(),
+                checksum_type: Default::default(),
+                addr_format: Default::default(),
+            };
+
+            self.native_client()
+                .import_address(&address.to_string(), &address.to_string(), false)
+                .wait()
+                .unwrap();
+
+            let script_pubkey = Builder::build_p2pkh(&address_hash.into());
+
+            bch_outputs.push(TransactionOutput {
+                value: 1000_00000000,
+                script_pubkey: script_pubkey.to_bytes(),
+            });
+
+            slp_outputs.push(SlpOutput {
+                amount: 1000_00000000,
+                script_pubkey: script_pubkey.to_bytes(),
+            });
+            slp_privkeys.push(*priv_key.as_ref());
+        }
+
+        let slp_genesis_tx = send_outputs_from_my_address(self.coin.clone(), bch_outputs)
+            .wait()
+            .unwrap();
+        self.coin
+            .wait_for_confirmations(&slp_genesis_tx.tx_hex(), 1, false, now_ms() / 1000 + 30, 1)
+            .wait()
+            .unwrap();
+
+        let adex_slp = SlpToken::new(
+            8,
+            "ADEXSLP".into(),
+            slp_genesis_tx.tx_hash().as_slice().into(),
+            self.coin.clone(),
+            1,
+        )
+        .unwrap();
+
+        let tx = block_on(adex_slp.send_slp_outputs(slp_outputs)).unwrap();
+        self.coin
+            .wait_for_confirmations(&tx.tx_hex(), 1, false, now_ms() / 1000 + 30, 1)
+            .wait()
+            .unwrap();
+        *SLP_TOKEN_OWNERS.lock().unwrap() = slp_privkeys;
+        *SLP_TOKEN_ID.lock().unwrap() = slp_genesis_tx.tx_hash().as_slice().into();
+    }
+}
+
+impl CoinDockerOps for BchDockerOps {
+    fn rpc_client(&self) -> &UtxoRpcClientEnum { &self.coin.as_ref().rpc_client }
 }
 
 pub struct UtxoDockerNode<'a> {
@@ -305,7 +477,7 @@ pub fn fill_qrc20_address(coin: &Qrc20Coin, amount: BigDecimal, timeout: u64) {
     // prevent concurrent fill since daemon RPC returns errors if send_to_address
     // is called concurrently (insufficient funds) and it also may return other errors
     // if previous transaction is not confirmed yet
-    let _lock = COINS_LOCK.lock().unwrap();
+    let _lock = QTUM_LOCK.lock().unwrap();
     let timeout = now_ms() / 1000 + timeout;
     let client = match coin.as_ref().rpc_client {
         UtxoRpcClientEnum::Native(ref client) => client,
@@ -429,7 +601,14 @@ where
     // prevent concurrent fill since daemon RPC returns errors if send_to_address
     // is called concurrently (insufficient funds) and it also may return other errors
     // if previous transaction is not confirmed yet
-    let _lock = COINS_LOCK.lock().unwrap();
+    let mutex = match coin.ticker() {
+        "MYCOIN" => &*MY_COIN_LOCK,
+        "MYCOIN1" => &*MY_COIN1_LOCK,
+        "QTUM" | "QICK" | "QORTY" => &*QTUM_LOCK,
+        "FORSLP" => &*FOR_SLP_LOCK,
+        ticker => panic!("Unknown ticker {}", ticker),
+    };
+    let _lock = mutex.lock().unwrap();
     let timeout = now_ms() / 1000 + timeout;
 
     if let UtxoRpcClientEnum::Native(client) = &coin.as_ref().rpc_client {

@@ -1,4 +1,4 @@
-use serde_json::Value as Json;
+use serde_json::{json, Value as Json};
 
 #[cfg(target_arch = "wasm32")]
 pub fn rick_electrums() -> Vec<Json> {

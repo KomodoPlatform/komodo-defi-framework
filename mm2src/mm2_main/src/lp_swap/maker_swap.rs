@@ -14,6 +14,7 @@ use crate::mm2::lp_dispatcher::{DispatcherContext, LpEvents};
 use crate::mm2::lp_network::subscribe_to_topic;
 use crate::mm2::lp_ordermatch::{MakerOrderBuilder, OrderConfirmationsSettings};
 use crate::mm2::lp_price::fetch_swap_coins_price;
+use crate::mm2::lp_swap::broadcast_swap_message;
 use crate::mm2::MM_VERSION;
 use coins::{CanRefundHtlc, FeeApproxStage, FoundSwapTxSpend, MmCoinEnum, PaymentInstructions, PaymentInstructionsErr,
             SearchForSwapTxSpendInput, TradeFee, TradePreimageValue, TransactionEnum, ValidatePaymentInput};
@@ -424,6 +425,16 @@ impl MakerSwap {
         Ok(SwapTxDataMsg::new(payment_data, instructions))
     }
 
+    #[inline]
+    fn broadcast_negotiated_false(&self) {
+        broadcast_swap_message(
+            &self.ctx,
+            swap_topic(&self.uuid),
+            SwapMsg::Negotiated(false),
+            &self.p2p_privkey,
+        )
+    }
+
     async fn start(&self) -> Result<(Option<MakerSwapCommand>, Vec<MakerSwapEvent>), String> {
         // do not use self.r().data here as it is not initialized at this step yet
         let preimage_value = TradePreimageValue::Exact(self.maker_amount.clone());
@@ -550,14 +561,16 @@ impl MakerSwap {
         let taker_data = match recv_fut.await {
             Ok(d) => d,
             Err(e) => {
+                self.broadcast_negotiated_false();
                 return Ok((Some(MakerSwapCommand::Finish), vec![MakerSwapEvent::NegotiateFailed(
                     ERRL!("{:?}", e).into(),
-                )]))
+                )]));
             },
         };
         drop(send_abort_handle);
         let time_dif = (self.r().data.started_at as i64 - taker_data.started_at() as i64).abs();
         if time_dif > 60 {
+            self.broadcast_negotiated_false();
             return Ok((Some(MakerSwapCommand::Finish), vec![MakerSwapEvent::NegotiateFailed(
                 ERRL!("Started_at time_dif over 60 {}", time_dif).into(),
             )]));
@@ -565,6 +578,7 @@ impl MakerSwap {
 
         let expected_lock_time = taker_data.started_at() + self.r().data.lock_duration;
         if taker_data.payment_locktime() != expected_lock_time {
+            self.broadcast_negotiated_false();
             return Ok((Some(MakerSwapCommand::Finish), vec![MakerSwapEvent::NegotiateFailed(
                 ERRL!(
                     "taker_data.payment_locktime {} not equal to expected {}",
@@ -581,9 +595,10 @@ impl MakerSwap {
         {
             Ok(addr) => addr,
             Err(e) => {
+                self.broadcast_negotiated_false();
                 return Ok((Some(MakerSwapCommand::Finish), vec![MakerSwapEvent::NegotiateFailed(
                     ERRL!("!maker_coin.negotiate_swap_contract_addr {}", e).into(),
-                )]))
+                )]));
             },
         };
 
@@ -593,14 +608,16 @@ impl MakerSwap {
         {
             Ok(addr) => addr,
             Err(e) => {
+                self.broadcast_negotiated_false();
                 return Ok((Some(MakerSwapCommand::Finish), vec![MakerSwapEvent::NegotiateFailed(
                     ERRL!("!taker_coin.negotiate_swap_contract_addr {}", e).into(),
-                )]))
+                )]));
             },
         };
 
         // Validate maker_coin_htlc_pubkey realness
         if let Err(err) = self.maker_coin.validate_other_pubkey(taker_data.maker_coin_htlc_pub()) {
+            self.broadcast_negotiated_false();
             return Ok((Some(MakerSwapCommand::Finish), vec![MakerSwapEvent::NegotiateFailed(
                 ERRL!("!taker_data.maker_coin_htlc_pub {}", err).into(),
             )]));
@@ -608,6 +625,7 @@ impl MakerSwap {
 
         // Validate taker_coin_htlc_pubkey realness
         if let Err(err) = self.taker_coin.validate_other_pubkey(taker_data.taker_coin_htlc_pub()) {
+            self.broadcast_negotiated_false();
             return Ok((Some(MakerSwapCommand::Finish), vec![MakerSwapEvent::NegotiateFailed(
                 ERRL!("!taker_data.taker_coin_htlc_pub {}", err).into(),
             )]));
@@ -1911,9 +1929,8 @@ pub async fn run_maker_swap(swap: RunMakerSwapInput, ctx: MmArc) {
         }
         .fuse(),
     );
-    let do_nothing = (); // to fix https://rust-lang.github.io/rust-clippy/master/index.html#unused_unit
     select! {
-        _swap = swap_fut => do_nothing, // swap finished normally
+        _swap = swap_fut => (), // swap finished normally
         _touch = touch_loop => unreachable!("Touch loop can not stop!"),
     };
 }

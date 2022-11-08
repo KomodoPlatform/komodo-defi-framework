@@ -651,7 +651,7 @@ impl Default for NativeClientImpl {
 pub struct NativeClient(pub Arc<NativeClientImpl>);
 impl Deref for NativeClient {
     type Target = NativeClientImpl;
-    fn deref(&self) -> &NativeClientImpl { &*self.0 }
+    fn deref(&self) -> &NativeClientImpl { &self.0 }
 }
 
 /// The trait provides methods to generate the JsonRpcClient instance info such as name of coin.
@@ -1782,7 +1782,7 @@ impl ElectrumClientImpl {
 pub struct ElectrumClient(pub Arc<ElectrumClientImpl>);
 impl Deref for ElectrumClient {
     type Target = ElectrumClientImpl;
-    fn deref(&self) -> &ElectrumClientImpl { &*self.0 }
+    fn deref(&self) -> &ElectrumClientImpl { &self.0 }
 }
 
 const BLOCKCHAIN_HEADERS_SUB_ID: &str = "blockchain.headers.subscribe";

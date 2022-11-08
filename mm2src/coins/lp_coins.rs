@@ -1923,6 +1923,9 @@ pub trait MmCoin: SwapOps + WatcherOps + MarketCoinOps + Send + Sync + 'static {
     /// Get swap contract address if the coin uses it in Atomic Swaps.
     fn swap_contract_address(&self) -> Option<BytesJson>;
 
+    /// Get fallback swap contract address if the coin uses it in Atomic Swaps.
+    fn fallback_swap_contract(&self) -> Option<BytesJson>;
+
     /// The minimum number of confirmations at which a transaction is considered mature.
     fn mature_confirmations(&self) -> Option<u32>;
 

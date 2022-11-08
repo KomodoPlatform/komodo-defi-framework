@@ -1775,7 +1775,7 @@ pub fn watcher_validate_taker_fee<T: UtxoCommonOps>(
                 },
             };
 
-            match check_all_inputs_signed_by_pub(&*taker_fee_tx, &verified_pub) {
+            match check_all_inputs_signed_by_pub(&taker_fee_tx, &verified_pub) {
                 Ok(is_valid) if !is_valid => {
                     return MmError::err(ValidatePaymentError::WrongPaymentTx(
                         "Taker fee does not belong to the verified public key".to_string(),
@@ -2334,6 +2334,7 @@ where
     }
 }
 
+#[allow(clippy::result_large_err)]
 pub fn get_withdraw_iguana_sender<T: UtxoCommonOps>(
     coin: &T,
     req: &WithdrawRequest,
@@ -2647,7 +2648,7 @@ where
         history_map.retain(|hash, _| requested_ids.contains(hash));
 
         if history_map.len() < history_length {
-            let to_write: Vec<TransactionDetails> = history_map.iter().map(|(_, value)| value.clone()).collect();
+            let to_write: Vec<TransactionDetails> = history_map.values().cloned().collect();
             if let Err(e) = coin.save_history_to_file(&ctx, to_write).compat().await {
                 log_tag!(
                     ctx,
@@ -2724,7 +2725,7 @@ where
                 },
             }
             if updated {
-                let to_write: Vec<TransactionDetails> = history_map.iter().map(|(_, value)| value.clone()).collect();
+                let to_write: Vec<TransactionDetails> = history_map.values().cloned().collect();
                 if let Err(e) = coin.save_history_to_file(&ctx, to_write).compat().await {
                     log_tag!(
                         ctx,
@@ -3255,7 +3256,7 @@ where
 
     // `generate_swap_payment_outputs` may fail due to either invalid `other_pub` or a number conversation error
     let SwapPaymentOutputsResult { outputs, .. } =
-        generate_swap_payment_outputs(&coin, time_lock, my_pub, other_pub, secret_hash, amount)
+        generate_swap_payment_outputs(coin, time_lock, my_pub, other_pub, secret_hash, amount)
             .map_to_mm(TradePreimageError::InternalError)?;
     let gas_fee = None;
     let fee_amount = coin
@@ -3533,6 +3534,10 @@ pub async fn get_verbose_transactions_from_cache_or_rpc(
 /// Swap contract address is not used by standard UTXO coins.
 #[inline]
 pub fn swap_contract_address() -> Option<BytesJson> { None }
+
+/// Fallback swap contract address is not used by standard UTXO coins.
+#[inline]
+pub fn fallback_swap_contract() -> Option<BytesJson> { None }
 
 /// Convert satoshis to BigDecimal amount of coin units
 #[inline]

@@ -847,7 +847,7 @@ impl MarketCoinOps for LightningCoin {
             checksum_type: ChecksumType::DSHA256,
         };
         let signature = private.sign_compact(&H256::from(message_hash))?;
-        Ok(zbase32::encode_full_bytes(&*signature))
+        Ok(zbase32::encode_full_bytes(&signature))
     }
 
     fn verify_message(&self, signature: &str, message: &str, pubkey: &str) -> VerificationResult<bool> {
@@ -1135,6 +1135,8 @@ impl MmCoin for LightningCoin {
     fn set_requires_notarization(&self, _requires_nota: bool) {}
 
     fn swap_contract_address(&self) -> Option<BytesJson> { None }
+
+    fn fallback_swap_contract(&self) -> Option<BytesJson> { None }
 
     fn mature_confirmations(&self) -> Option<u32> { None }
 
