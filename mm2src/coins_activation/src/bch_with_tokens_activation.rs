@@ -20,6 +20,19 @@ use serde_json::Value as Json;
 use std::collections::HashMap;
 use std::str::FromStr;
 
+impl From<EnableSlpError> for InitTokensAsMmCoinsError {
+    fn from(e: EnableSlpError) -> Self {
+        match e {
+            EnableSlpError::GetBalanceError(balance_err) => {
+                InitTokensAsMmCoinsError::CouldNotFetchBalance(balance_err.to_string())
+            },
+            EnableSlpError::UnexpectedDerivationMethod(internal) | EnableSlpError::Internal(internal) => {
+                InitTokensAsMmCoinsError::Internal(internal)
+            },
+        }
+    }
+}
+
 pub struct SlpTokenInitializer {
     platform_coin: BchCoin,
 }

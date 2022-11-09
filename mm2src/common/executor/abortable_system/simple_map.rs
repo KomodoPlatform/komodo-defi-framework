@@ -54,6 +54,15 @@ pub enum SimpleMapInnerState<FutureId: FutureIdTrait> {
     Aborted,
 }
 
+impl<FutureId: FutureIdTrait> SimpleMapInnerState<FutureId> {
+    fn futures_mut(&mut self) -> Result<&mut HashMap<FutureId, AbortOnDropHandle>, AbortedError> {
+        match self {
+            SimpleMapInnerState::Ready { futures, .. } => Ok(futures),
+            SimpleMapInnerState::Aborted => Err(AbortedError),
+        }
+    }
+}
+
 impl<FutureId: FutureIdTrait> Default for SimpleMapInnerState<FutureId> {
     fn default() -> Self {
         SimpleMapInnerState::Ready {
@@ -79,47 +88,40 @@ impl<FutureId: FutureIdTrait> SimpleMapInnerState<FutureId> {
     /// or do nothing if there is a spawned future with the same `future_id` already.
     ///
     /// Returns whether the future has been spawned.
-    pub fn spawn_or_ignore<F>(&mut self, future_id: FutureId, fut: F) -> bool
+    pub fn spawn_or_ignore<F>(&mut self, future_id: FutureId, fut: F) -> Result<bool, AbortedError>
     where
         F: Future03<Output = ()> + Send + 'static,
     {
-        let futures = match self {
-            SimpleMapInnerState::Ready { futures, .. } => futures,
-            SimpleMapInnerState::Aborted => return false,
-        };
-
+        let futures = self.futures_mut()?;
         match futures.entry(future_id) {
-            Entry::Occupied(_) => false,
+            Entry::Occupied(_) => Ok(false),
             Entry::Vacant(entry) => {
                 let abort_handle = spawn_abortable(fut);
                 entry.insert(abort_handle);
-                true
+                Ok(true)
             },
         }
     }
 
     /// Whether a future with the given `future_id` has been spawned already.
-    pub fn contains<Q>(&self, future_id: &Q) -> bool
+    pub fn contains<Q>(&self, future_id: &Q) -> Result<bool, AbortedError>
     where
         FutureId: Borrow<Q>,
         Q: Hash + Eq + ?Sized,
     {
         match self {
-            SimpleMapInnerState::Ready { futures, .. } => futures.contains_key(future_id),
-            SimpleMapInnerState::Aborted => false,
+            SimpleMapInnerState::Ready { futures, .. } => Ok(futures.contains_key(future_id)),
+            SimpleMapInnerState::Aborted => Err(AbortedError),
         }
     }
 
     /// Aborts a spawned future by the given `future_id` if it's still alive.
-    pub fn abort_future<Q>(&mut self, future_id: &Q) -> bool
+    pub fn abort_future<Q>(&mut self, future_id: &Q) -> Result<bool, AbortedError>
     where
         FutureId: Borrow<Q>,
         Q: Hash + Eq + ?Sized,
     {
-        match self {
-            SimpleMapInnerState::Ready { futures, .. } => futures.remove(future_id).is_some(),
-            SimpleMapInnerState::Aborted => false,
-        }
+        Ok(self.futures_mut()?.remove(future_id).is_some())
     }
 
     fn insert_subsystem(&mut self, subsystem_abort_tx: oneshot::Sender<()>) -> Result<(), AbortedError> {
@@ -147,16 +149,20 @@ mod tests {
         let abortable_system = AbortableSimpleMap::default();
         let mut guard = abortable_system.lock();
 
-        guard.spawn_or_ignore("F1".to_string(), async move {
-            Timer::sleep(0.1).await;
-            unsafe { F1_FINISHED = true };
-        });
-        assert!(guard.contains("F1"));
-        assert!(!guard.contains("F2"));
-        guard.spawn_or_ignore("F2".to_string(), async move {
-            Timer::sleep(0.5).await;
-            unsafe { F2_FINISHED = true };
-        });
+        guard
+            .spawn_or_ignore("F1".to_string(), async move {
+                Timer::sleep(0.1).await;
+                unsafe { F1_FINISHED = true };
+            })
+            .unwrap();
+        assert_eq!(guard.contains("F1"), Ok(true));
+        assert_eq!(guard.contains("F2"), Ok(false));
+        guard
+            .spawn_or_ignore("F2".to_string(), async move {
+                Timer::sleep(0.5).await;
+                unsafe { F2_FINISHED = true };
+            })
+            .unwrap();
 
         drop(guard);
         block_on(Timer::sleep(0.3));
@@ -176,17 +182,19 @@ mod tests {
         let abortable_system = AbortableSimpleMap::default();
         let mut guard = abortable_system.lock();
 
-        guard.spawn_or_ignore("F1".to_string(), async move {
-            Timer::sleep(0.2).await;
-            unsafe { F1_FINISHED = true };
-        });
+        guard
+            .spawn_or_ignore("F1".to_string(), async move {
+                Timer::sleep(0.2).await;
+                unsafe { F1_FINISHED = true };
+            })
+            .unwrap();
 
         drop(guard);
         block_on(Timer::sleep(0.05));
 
         let mut guard = abortable_system.lock();
-        guard.abort_future("F1");
-        assert!(!guard.contains("F1"));
+        guard.abort_future("F1").unwrap();
+        assert_eq!(guard.contains("F1"), Ok(false));
 
         block_on(Timer::sleep(0.3));
 
@@ -203,12 +211,15 @@ mod tests {
         let abortable_system = AbortableSimpleMap::default();
         let mut guard = abortable_system.lock();
 
-        guard.spawn_or_ignore("F1".to_string(), async move {
+        let fut_1 = async move {
             unsafe { F1_FINISHED = true };
-        });
-        guard.spawn_or_ignore("F1".to_string(), async move {
+        };
+        guard.spawn_or_ignore("F1".to_string(), fut_1).unwrap();
+
+        let fut_2 = async move {
             unsafe { F1_COPY_FINISHED = true };
-        });
+        };
+        guard.spawn_or_ignore("F1".to_string(), fut_2).unwrap();
 
         drop(guard);
         block_on(Timer::sleep(0.1));

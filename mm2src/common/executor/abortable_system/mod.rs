@@ -12,7 +12,7 @@ pub mod simple_map;
 pub type InnerShared<Inner> = Arc<PaMutex<Inner>>;
 pub type InnerWeak<Inner> = Weak<PaMutex<Inner>>;
 
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, PartialEq)]
 pub struct AbortedError;
 
 impl fmt::Display for AbortedError {

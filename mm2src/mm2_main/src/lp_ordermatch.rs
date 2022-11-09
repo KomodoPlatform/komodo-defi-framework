@@ -2810,13 +2810,13 @@ impl MakerOrdersContext {
         let fut = check_balance_update_loop(ctx, ticker, balance);
         // `SimpleMapImpl::spawn_or_ignore` won't spawn the future
         // if the `check_balance_update_loop` loop has been spawned already.
-        balance_loops.spawn_or_ignore(order_base, fut);
+        balance_loops.spawn_or_ignore(order_base, fut).warn_log();
     }
 
-    fn stop_balance_loop(&mut self, ticker: &str) { self.balance_loops.lock().abort_future(ticker); }
+    fn stop_balance_loop(&mut self, ticker: &str) { self.balance_loops.lock().abort_future(ticker).warn_log(); }
 
     #[cfg(test)]
-    fn balance_loop_exists(&mut self, ticker: &str) -> bool { self.balance_loops.lock().contains(ticker) }
+    fn balance_loop_exists(&mut self, ticker: &str) -> bool { self.balance_loops.lock().contains(ticker).unwrap() }
 }
 
 #[cfg_attr(test, mockable)]
