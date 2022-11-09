@@ -104,6 +104,8 @@ const DEX_FEE_OVK: OutgoingViewingKey = OutgoingViewingKey([7; 32]);
 const DEX_FEE_Z_ADDR: &str = "zs1rp6426e9r6jkq2nsanl66tkd34enewrmr0uvj0zelhkcwmsy0uvxz2fhm9eu9rl3ukxvgzy2v9f";
 const TRANSACTIONS_TABLE: &str = "transactions";
 const BLOCKS_TABLE: &str = "blocks";
+const SAPLING_SPEND_NAME: &str = "sapling-spend.params";
+const SAPLING_OUTPUT_NAME: &str = "sapling-output.params";
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct ZcoinConsensusParams {
@@ -692,11 +694,12 @@ pub enum ZcoinRpcMode {
     },
 }
 
-#[derive(Clone, Deserialize)]
+#[derive(Clone, Deserialize, Debug)]
 pub struct ZcoinActivationParams {
     pub mode: ZcoinRpcMode,
     pub required_confirmations: Option<u64>,
     pub requires_notarization: Option<bool>,
+    pub zcash_params_path: Option<String>,
 }
 
 pub async fn z_coin_from_conf_and_params(
@@ -760,9 +763,23 @@ impl<'a> UtxoCoinWithIguanaPrivKeyBuilder for ZCoinBuilder<'a> {
         .expect("DEX_FEE_Z_ADDR is a valid z-address")
         .expect("DEX_FEE_Z_ADDR is a valid z-address");
 
-        let z_tx_prover = async_blocking(LocalTxProver::with_default_location)
-            .await
-            .or_mm_err(|| ZCoinBuildError::ZCashParamsNotFound)?;
+        let z_tx_prover = match &self.z_coin_params.zcash_params_path {
+            None => async_blocking(LocalTxProver::with_default_location)
+                .await
+                .or_mm_err(|| ZCoinBuildError::ZCashParamsNotFound)?,
+            Some(file_path) => {
+                let path = PathBuf::from(file_path);
+                let (spend_path, output_path) = if path.exists() {
+                    (path.join(SAPLING_SPEND_NAME), path.join(SAPLING_OUTPUT_NAME))
+                } else {
+                    return MmError::err(ZCoinBuildError::ZCashParamsNotFound);
+                };
+                if !(spend_path.exists() && output_path.exists()) {
+                    return MmError::err(ZCoinBuildError::ZCashParamsNotFound);
+                }
+                LocalTxProver::new(&spend_path, &output_path)
+            },
+        };
 
         let my_z_addr_encoded = encode_payment_address(
             self.protocol_info.consensus_params.hrp_sapling_payment_address(),
