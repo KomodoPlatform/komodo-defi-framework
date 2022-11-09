@@ -1,8 +1,11 @@
 use crate::integration_tests_common::{enable_coins_rick_morty_electrum, enable_electrum};
 use common::executor::Timer;
 use common::{block_on, log};
-use mm2_test_helpers::for_tests::{enable_lightning, sign_message, verify_message, MarketMakerIt};
-use mm2_test_helpers::structs::{RpcV2Response, SignatureResponse, VerificationResponse};
+use gstuff::now_ms;
+use mm2_number::BigDecimal;
+use mm2_test_helpers::for_tests::{init_lightning, init_lightning_status, sign_message, verify_message, MarketMakerIt};
+use mm2_test_helpers::structs::{InitLightningStatus, InitTaskResult, LightningActivationResult, RpcV2Response,
+                                SignatureResponse, VerificationResponse};
 use serde_json::{self as json, json, Value as Json};
 use std::env;
 
@@ -11,6 +14,27 @@ const T_BTC_ELECTRUMS: &[&str] = &[
     "electrum2.cipig.net:10068",
     "electrum3.cipig.net:10068",
 ];
+
+async fn enable_lightning(mm: &MarketMakerIt, coin: &str, timeout: u64) -> LightningActivationResult {
+    let init = init_lightning(mm, coin).await;
+    let init: RpcV2Response<InitTaskResult> = json::from_value(init).unwrap();
+    let timeout = now_ms() + (timeout * 1000);
+
+    loop {
+        if now_ms() > timeout {
+            panic!("{} initialization timed out", coin);
+        }
+
+        let status = init_lightning_status(mm, init.result.task_id).await;
+        let status: RpcV2Response<InitLightningStatus> = json::from_value(status).unwrap();
+        log!("init_lightning_status: {:?}", status);
+        match status.result {
+            InitLightningStatus::Ok(result) => break result,
+            InitLightningStatus::Error(e) => panic!("{} initialization error {:?}", coin, e),
+            _ => Timer::sleep(1.).await,
+        }
+    }
+}
 
 fn start_lightning_nodes(enable_0_confs: bool) -> (MarketMakerIt, MarketMakerIt, String, String) {
     let node_1_seed = "become nominee mountain person volume business diet zone govern voice debris hidden";
@@ -88,8 +112,8 @@ fn start_lightning_nodes(enable_0_confs: bool) -> (MarketMakerIt, MarketMakerIt,
     let electrum = block_on(enable_electrum(&mm_node_1, "tBTC-TEST-segwit", false, T_BTC_ELECTRUMS));
     log!("Node 1 tBTC address: {}", electrum.address);
 
-    let enable_lightning_1 = block_on(enable_lightning(&mm_node_1, "tBTC-TEST-lightning"));
-    let node_1_address = enable_lightning_1["result"]["address"].as_str().unwrap().to_string();
+    let enable_lightning_1 = block_on(enable_lightning(&mm_node_1, "tBTC-TEST-lightning", 600));
+    let node_1_address = enable_lightning_1.address;
 
     let mm_node_2 = MarketMakerIt::start(
         json!({
@@ -112,8 +136,8 @@ fn start_lightning_nodes(enable_0_confs: bool) -> (MarketMakerIt, MarketMakerIt,
     let electrum = block_on(enable_electrum(&mm_node_2, "tBTC-TEST-segwit", false, T_BTC_ELECTRUMS));
     log!("Node 2 tBTC address: {}", electrum.address);
 
-    let enable_lightning_2 = block_on(enable_lightning(&mm_node_2, "tBTC-TEST-lightning"));
-    let node_2_address = enable_lightning_2["result"]["address"].as_str().unwrap().to_string();
+    let enable_lightning_2 = block_on(enable_lightning(&mm_node_2, "tBTC-TEST-lightning", 600));
+    let node_2_address = enable_lightning_2.address;
 
     (mm_node_1, mm_node_2, node_1_address, node_2_address)
 }
@@ -183,14 +207,14 @@ fn test_enable_lightning() {
 
     let _electrum = block_on(enable_electrum(&mm, "tBTC-TEST-segwit", false, T_BTC_ELECTRUMS));
 
-    let enable_lightning = block_on(enable_lightning(&mm, "tBTC-TEST-lightning"));
-    assert_eq!(enable_lightning["result"]["platform_coin"], "tBTC-TEST-segwit");
+    let enable_lightning = block_on(enable_lightning(&mm, "tBTC-TEST-lightning", 600));
+    assert_eq!(&enable_lightning.platform_coin, "tBTC-TEST-segwit");
     assert_eq!(
-        enable_lightning["result"]["address"],
+        &enable_lightning.address,
         "02ce55b18d617bf4ac27b0f045301a0bb4e71669ae45cb5f2529f2f217520ffca1"
     );
-    assert_eq!(enable_lightning["result"]["balance"]["spendable"], "0");
-    assert_eq!(enable_lightning["result"]["balance"]["unspendable"], "0");
+    assert_eq!(enable_lightning.balance.spendable, BigDecimal::from(0));
+    assert_eq!(enable_lightning.balance.unspendable, BigDecimal::from(0));
 
     block_on(mm.stop()).unwrap();
 }
@@ -617,7 +641,7 @@ fn test_sign_verify_message_lightning() {
     log!("log path: {}", mm.log_path.display());
 
     block_on(enable_electrum(&mm, "tBTC-TEST-segwit", false, T_BTC_ELECTRUMS));
-    block_on(enable_lightning(&mm, "tBTC-TEST-lightning"));
+    block_on(enable_lightning(&mm, "tBTC-TEST-lightning", 600));
 
     let response = block_on(sign_message(&mm, "tBTC-TEST-lightning"));
     let response: RpcV2Response<SignatureResponse> = json::from_value(response).unwrap();

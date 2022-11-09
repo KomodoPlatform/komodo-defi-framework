@@ -1445,11 +1445,11 @@ pub async fn enable_native_bch(mm: &MarketMakerIt, coin: &str, bchd_urls: &[&str
     json::from_str(&native.1).unwrap()
 }
 
-pub async fn enable_lightning(mm: &MarketMakerIt, coin: &str) -> Json {
-    let enable = mm
+pub async fn init_lightning(mm: &MarketMakerIt, coin: &str) -> Json {
+    let request = mm
         .rpc(&json!({
             "userpass": mm.userpass,
-            "method": "enable_lightning",
+            "method": "task::enable_lightning::init",
             "mmrpc": "2.0",
             "params": {
                 "ticker": coin,
@@ -1460,8 +1460,34 @@ pub async fn enable_lightning(mm: &MarketMakerIt, coin: &str) -> Json {
         }))
         .await
         .unwrap();
-    assert_eq!(enable.0, StatusCode::OK, "'enable_lightning' failed: {}", enable.1);
-    json::from_str(&enable.1).unwrap()
+    assert_eq!(
+        request.0,
+        StatusCode::OK,
+        "'task::enable_lightning::init' failed: {}",
+        request.1
+    );
+    json::from_str(&request.1).unwrap()
+}
+
+pub async fn init_lightning_status(mm: &MarketMakerIt, task_id: u64) -> Json {
+    let request = mm
+        .rpc(&json! ({
+            "userpass": mm.userpass,
+            "method": "task::enable_lightning::status",
+            "mmrpc": "2.0",
+            "params": {
+                "task_id": task_id,
+            }
+        }))
+        .await
+        .unwrap();
+    assert_eq!(
+        request.0,
+        StatusCode::OK,
+        "'task::enable_lightning::status' failed: {}",
+        request.1
+    );
+    json::from_str(&request.1).unwrap()
 }
 
 /// Use a separate (unique) temporary folder for each MM.
