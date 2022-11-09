@@ -25,6 +25,7 @@ macro_rules! impl_safe_number_type_cast {
 }
 
 // USIZE
+#[cfg(target_pointer_width = "64")]
 impl_safe_number_type_cast!(usize, i64);
 impl_safe_number_type_cast!(usize, i32);
 impl_safe_number_type_cast!(usize, i16);
@@ -69,11 +70,13 @@ impl_safe_number_type_cast!(u32, isize);
 
 impl_safe_number_type_cast!(u32, u16);
 impl_safe_number_type_cast!(u32, u8);
+#[cfg(target_pointer_width = "16")]
 impl_safe_number_type_cast!(u32, usize);
 
 // U16
 impl_safe_number_type_cast!(u16, i16);
 impl_safe_number_type_cast!(u16, i8);
+#[cfg(target_pointer_width = "16")]
 impl_safe_number_type_cast!(u16, isize);
 
 impl_safe_number_type_cast!(u16, u8);
