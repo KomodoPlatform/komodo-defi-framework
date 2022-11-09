@@ -10,7 +10,6 @@ use coins::tx_history_storage::CreateTxHistoryStorageError;
 use coins::z_coin::{z_coin_from_conf_and_params, BlockchainScanStopped, SyncStatus, ZCoin, ZCoinBuildError,
                     ZcoinActivationParams, ZcoinProtocolInfo};
 use coins::{BalanceError, CoinProtocol, MarketCoinOps, RegisterCoinError};
-use common::log;
 use crypto::hw_rpc_task::{HwRpcTaskAwaitingStatus, HwRpcTaskUserAction};
 use crypto::CryptoInitError;
 use derive_more::Display;
@@ -199,7 +198,6 @@ impl InitStandaloneCoinActivationOps for ZCoin {
         protocol_info: ZcoinProtocolInfo,
         task_handle: &ZcoinRpcTaskHandle,
     ) -> MmResult<Self, ZcoinInitError> {
-        log!("ZcoinActivationParams = {:?} \n", activation_request);
         let secp_privkey = ctx.secp256k1_key_pair().private().secret;
         let coin = z_coin_from_conf_and_params(
             &ctx,

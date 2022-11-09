@@ -697,7 +697,7 @@ pub enum ZcoinRpcMode {
     },
 }
 
-#[derive(Clone, Deserialize, Debug)]
+#[derive(Clone, Deserialize)]
 pub struct ZcoinActivationParams {
     pub mode: ZcoinRpcMode,
     pub required_confirmations: Option<u64>,
