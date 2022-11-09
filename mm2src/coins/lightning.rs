@@ -1,24 +1,24 @@
 pub mod ln_conf;
 pub(crate) mod ln_db;
 pub mod ln_errors;
-mod ln_events;
+pub mod ln_events;
 mod ln_filesystem_persister;
-pub(crate) mod ln_p2p;
-mod ln_platform;
+pub mod ln_p2p;
+pub mod ln_platform;
 pub(crate) mod ln_serialization;
 mod ln_sql;
-pub(crate) mod ln_storage;
-mod ln_utils;
+pub mod ln_storage;
+pub mod ln_utils;
 
 use crate::coin_errors::MyAddressError;
 use crate::lightning::ln_utils::filter_channels;
 use crate::utxo::rpc_clients::UtxoRpcClientEnum;
 use crate::utxo::utxo_common::{big_decimal_from_sat, big_decimal_from_sat_unsigned};
 use crate::utxo::{sat_from_big_decimal, utxo_common, BlockchainNetwork};
-use crate::{BalanceFut, CheckIfMyPaymentSentArgs, CoinBalance, CoinFutSpawner, DerivationMethod, FeeApproxStage,
-            FoundSwapTxSpend, HistorySyncState, MarketCoinOps, MmCoin, NegotiateSwapContractAddrErr,
-            PaymentInstructions, PaymentInstructionsErr, RawTransactionError, RawTransactionFut,
-            RawTransactionRequest, SearchForSwapTxSpendInput, SendMakerPaymentArgs, SendMakerRefundsPaymentArgs,
+use crate::{BalanceFut, CheckIfMyPaymentSentArgs, CoinBalance, CoinFutSpawner, FeeApproxStage, FoundSwapTxSpend,
+            HistorySyncState, MarketCoinOps, MmCoin, NegotiateSwapContractAddrErr, PaymentInstructions,
+            PaymentInstructionsErr, RawTransactionError, RawTransactionFut, RawTransactionRequest,
+            SearchForSwapTxSpendInput, SendMakerPaymentArgs, SendMakerRefundsPaymentArgs,
             SendMakerSpendsTakerPaymentArgs, SendTakerPaymentArgs, SendTakerRefundsPaymentArgs,
             SendTakerSpendsMakerPaymentArgs, SignatureError, SignatureResult, SwapOps, TradeFee, TradePreimageFut,
             TradePreimageResult, TradePreimageValue, Transaction, TransactionEnum, TransactionErr, TransactionFut,
@@ -32,7 +32,7 @@ use bitcoin::hashes::Hash;
 use bitcoin_hashes::sha256::Hash as Sha256;
 use bitcrypto::ChecksumType;
 use bitcrypto::{dhash256, ripemd160};
-use common::executor::{SpawnFuture, Timer};
+use common::executor::Timer;
 use common::log::{info, LogOnError, LogState};
 use common::{async_blocking, get_local_duration_since_epoch, log, now_ms, PagingOptionsEnum};
 use db_common::sqlite::rusqlite::Error as SqlError;
@@ -40,24 +40,22 @@ use futures::{FutureExt, TryFutureExt};
 use futures01::Future;
 use keys::{hash::H256, CompactSignature, KeyPair, Private, Public};
 use lightning::chain::keysinterface::{KeysInterface, KeysManager, Recipient};
-use lightning::chain::Access;
 use lightning::ln::channelmanager::{ChannelDetails, MIN_FINAL_CLTV_EXPIRY};
 use lightning::ln::{PaymentHash, PaymentPreimage};
-use lightning::routing::gossip;
-use lightning_background_processor::{BackgroundProcessor, GossipSync};
+use lightning_background_processor::BackgroundProcessor;
 use lightning_invoice::utils::DefaultRouter;
 use lightning_invoice::{payment, CreationError, InvoiceBuilder, SignOrCreationError};
 use lightning_invoice::{Invoice, InvoiceDescription};
-use ln_conf::{LightningCoinConf, LightningProtocolConf, PlatformCoinConfirmationTargets};
+use ln_conf::{LightningCoinConf, PlatformCoinConfirmationTargets};
 use ln_db::{DBChannelDetails, HTLCStatus, LightningDB, PaymentInfo, PaymentType};
 use ln_errors::{EnableLightningError, EnableLightningResult};
-use ln_events::{init_abortable_events, LightningEventHandler};
+use ln_events::LightningEventHandler;
 use ln_filesystem_persister::LightningFilesystemPersister;
 use ln_p2p::PeerManager;
 use ln_platform::Platform;
 use ln_serialization::{ChannelDetailsForRPC, PublicKeyForRPC};
 use ln_sql::SqliteLightningDB;
-use ln_storage::{LightningStorage, NetworkGraph, NodesAddressesMapShared, Scorer, TrustedNodesShared};
+use ln_storage::{NetworkGraph, NodesAddressesMapShared, Scorer, TrustedNodesShared};
 use ln_utils::{ChainMonitor, ChannelManager};
 use mm2_core::mm_ctx::MmArc;
 use mm2_err_handle::prelude::*;
@@ -67,7 +65,7 @@ use parking_lot::Mutex as PaMutex;
 use rpc::v1::types::{Bytes as BytesJson, H256 as H256Json};
 use script::TransactionInputSigner;
 use secp256k1v22::PublicKey;
-use serde::{Deserialize, Serialize};
+use serde::Deserialize;
 use serde_json::Value as Json;
 use std::collections::{HashMap, HashSet};
 use std::fmt;
@@ -78,12 +76,14 @@ use std::sync::Arc;
 pub const DEFAULT_INVOICE_EXPIRY: u32 = 3600;
 
 type Router = DefaultRouter<Arc<NetworkGraph>, Arc<LogState>>;
-type InvoicePayer<E> = payment::InvoicePayer<Arc<ChannelManager>, Router, Arc<Scorer>, Arc<LogState>, E>;
+pub type InvoicePayer<E> = payment::InvoicePayer<Arc<ChannelManager>, Router, Arc<Scorer>, Arc<LogState>, E>;
 
 #[derive(Clone)]
 pub struct LightningCoin {
     pub platform: Arc<Platform>,
     pub conf: LightningCoinConf,
+    /// The lightning node background processor that takes care of tasks that need to happen periodically.
+    pub background_processor: Arc<BackgroundProcessor>,
     /// The lightning node peer manager that takes care of connecting to peers, etc..
     pub peer_manager: Arc<PeerManager>,
     /// The lightning node channel manager which keeps track of the number of open channels and sends messages to the appropriate
@@ -1098,178 +1098,4 @@ impl MmCoin for LightningCoin {
 
     // Todo: This uses default data for now for the sake of swap P.O.C., this should be implemented probably when implementing order matching if it's needed
     fn is_coin_protocol_supported(&self, _info: &Option<Vec<u8>>) -> bool { true }
-}
-
-#[derive(Clone, Debug, Deserialize, Serialize)]
-pub struct LightningParams {
-    // The listening port for the p2p LN node
-    pub listening_port: u16,
-    // Printable human-readable string to describe this node to other users.
-    pub node_name: [u8; 32],
-    // Node's RGB color. This is used for showing the node in a network graph with the desired color.
-    pub node_color: [u8; 3],
-    // Invoice Payer is initialized while starting the lightning node, and it requires the number of payment retries that
-    // it should do before considering a payment failed or partially failed. If not provided the number of retries will be 5
-    // as this is a good default value.
-    pub payment_retries: Option<usize>,
-    // Node's backup path for channels and other data that requires backup.
-    pub backup_path: Option<String>,
-}
-
-pub async fn start_lightning(
-    ctx: &MmArc,
-    platform_coin: UtxoStandardCoin,
-    protocol_conf: LightningProtocolConf,
-    conf: LightningCoinConf,
-    params: LightningParams,
-) -> EnableLightningResult<LightningCoin> {
-    // Todo: add support for Hardware wallets for funding transactions and spending spendable outputs (channel closing transactions)
-    if let DerivationMethod::HDWallet(_) = platform_coin.as_ref().derivation_method {
-        return MmError::err(EnableLightningError::UnsupportedMode(
-            "'start_lightning'".into(),
-            "iguana".into(),
-        ));
-    }
-
-    let platform = Arc::new(Platform::new(
-        platform_coin.clone(),
-        protocol_conf.network.clone(),
-        protocol_conf.confirmation_targets,
-    ));
-    platform.set_latest_fees().await?;
-
-    // Initialize the Logger
-    let logger = ctx.log.0.clone();
-
-    // Initialize Persister
-    let persister = ln_utils::init_persister(ctx, conf.ticker.clone(), params.backup_path).await?;
-
-    // Initialize the KeysManager
-    let keys_manager = ln_utils::init_keys_manager(ctx)?;
-
-    // Initialize the P2PGossipSync. This is used for providing routes to send payments over
-    let network_graph = Arc::new(
-        persister
-            .get_network_graph(protocol_conf.network.into(), logger.clone())
-            .await?,
-    );
-
-    let gossip_sync = Arc::new(gossip::P2PGossipSync::new(
-        network_graph.clone(),
-        None::<Arc<dyn Access + Send + Sync>>,
-        logger.clone(),
-    ));
-
-    // Initialize DB
-    let db = ln_utils::init_db(ctx, conf.ticker.clone()).await?;
-
-    // Initialize the ChannelManager
-    let (chain_monitor, channel_manager) = ln_utils::init_channel_manager(
-        platform.clone(),
-        logger.clone(),
-        persister.clone(),
-        db.clone(),
-        keys_manager.clone(),
-        conf.clone().into(),
-    )
-    .await?;
-
-    // Initialize the PeerManager
-    let peer_manager = ln_p2p::init_peer_manager(
-        ctx.clone(),
-        &platform,
-        params.listening_port,
-        channel_manager.clone(),
-        gossip_sync.clone(),
-        keys_manager
-            .get_node_secret(Recipient::Node)
-            .map_to_mm(|_| EnableLightningError::UnsupportedMode("'start_lightning'".into(), "local node".into()))?,
-        logger.clone(),
-    )
-    .await?;
-
-    let trusted_nodes = Arc::new(PaMutex::new(persister.get_trusted_nodes().await?));
-
-    init_abortable_events(platform.clone(), db.clone()).await?;
-
-    // Initialize the event handler
-    let event_handler = Arc::new(ln_events::LightningEventHandler::new(
-        platform.clone(),
-        channel_manager.clone(),
-        keys_manager.clone(),
-        db.clone(),
-        trusted_nodes.clone(),
-    ));
-
-    // Initialize routing Scorer
-    let scorer = Arc::new(persister.get_scorer(network_graph.clone(), logger.clone()).await?);
-
-    // Create InvoicePayer
-    // random_seed_bytes are additional random seed to improve privacy by adding a random CLTV expiry offset to each path's final hop.
-    // This helps obscure the intended recipient from adversarial intermediate hops. The seed is also used to randomize candidate paths during route selection.
-    // TODO: random_seed_bytes should be taken in consideration when implementing swaps because they change the payment lock-time.
-    // https://github.com/lightningdevkit/rust-lightning/issues/158
-    // https://github.com/lightningdevkit/rust-lightning/pull/1286
-    // https://github.com/lightningdevkit/rust-lightning/pull/1359
-    let router = DefaultRouter::new(network_graph, logger.clone(), keys_manager.get_secure_random_bytes());
-    let invoice_payer = Arc::new(InvoicePayer::new(
-        channel_manager.clone(),
-        router,
-        scorer.clone(),
-        logger.clone(),
-        event_handler,
-        // Todo: Add option for choosing payment::Retry::Timeout instead of Attempts in LightningParams
-        payment::Retry::Attempts(params.payment_retries.unwrap_or(5)),
-    ));
-
-    // Start Background Processing. Runs tasks periodically in the background to keep LN node operational.
-    // InvoicePayer will act as our event handler as it handles some of the payments related events before
-    // delegating it to LightningEventHandler.
-    // note: background_processor stops automatically when dropped since BackgroundProcessor implements the Drop trait.
-    let background_processor = BackgroundProcessor::start(
-        persister.clone(),
-        invoice_payer.clone(),
-        chain_monitor.clone(),
-        channel_manager.clone(),
-        GossipSync::p2p(gossip_sync),
-        peer_manager.clone(),
-        logger,
-        Some(scorer),
-    );
-    ctx.background_processors
-        .lock()
-        .unwrap()
-        .insert(conf.ticker.clone(), background_processor);
-
-    // If channel_nodes_data file exists, read channels nodes data from disk and reconnect to channel nodes/peers if possible.
-    let open_channels_nodes = Arc::new(PaMutex::new(
-        ln_utils::get_open_channels_nodes_addresses(persister.clone(), channel_manager.clone()).await?,
-    ));
-
-    platform.spawner().spawn(ln_p2p::connect_to_ln_nodes_loop(
-        open_channels_nodes.clone(),
-        peer_manager.clone(),
-    ));
-
-    // Broadcast Node Announcement
-    platform.spawner().spawn(ln_p2p::ln_node_announcement_loop(
-        channel_manager.clone(),
-        params.node_name,
-        params.node_color,
-        params.listening_port,
-    ));
-
-    Ok(LightningCoin {
-        platform,
-        conf,
-        peer_manager,
-        channel_manager,
-        chain_monitor,
-        keys_manager,
-        invoice_payer,
-        persister,
-        db,
-        open_channels_nodes,
-        trusted_nodes,
-    })
 }

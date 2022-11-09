@@ -640,6 +640,14 @@ pub struct UtxoStandardActivationResult {
 
 #[derive(Debug, Deserialize)]
 #[serde(deny_unknown_fields)]
+pub struct LightningActivationResult {
+    pub platform_coin: String,
+    pub address: String,
+    pub balance: CoinBalance,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(deny_unknown_fields)]
 pub struct InitTaskResult {
     pub task_id: u64,
 }
@@ -664,6 +672,15 @@ pub enum InitZcoinStatus {
 #[serde(deny_unknown_fields, tag = "status", content = "details")]
 pub enum InitUtxoStatus {
     Ok(UtxoStandardActivationResult),
+    Error(Json),
+    InProgress(Json),
+    UserActionRequired(Json),
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(deny_unknown_fields, tag = "status", content = "details")]
+pub enum InitLightningStatus {
+    Ok(LightningActivationResult),
     Error(Json),
     InProgress(Json),
     UserActionRequired(Json),
