@@ -838,7 +838,7 @@ fn test_watcher_spends_maker_payment_spend() {
         watcher_conf,
         "pass".to_string(),
         None,
-        &[("SWAP_WATCHER_SKIP_WAITING", "")],
+        &[("USE_TEST_DEADLINE", ""), ("USE_TEST_SEARCH_INTERVAL", "")],
     ))
     .unwrap();
     let (_watcher_dump_log, _watcher_dump_dashboard) = mm_dump(&mm_watcher.log_path);
@@ -882,6 +882,124 @@ fn test_watcher_spends_maker_payment_spend() {
 
     log!("{:?}", block_on(enable_native(&mm_alice, "MYCOIN", &[])));
     log!("{:?}", block_on(enable_native(&mm_alice, "MYCOIN1", &[])));
+
+    let rc = block_on(mm_alice.rpc(&json!({
+        "userpass": mm_alice.userpass,
+        "method": "my_balance",
+        "coin": "MYCOIN1"
+    })))
+    .unwrap();
+    assert!(rc.0.is_success(), "!my_balance: {}", rc.1);
+
+    let json: Json = serde_json::from_str(&rc.1).unwrap();
+    let alice_mycoin1_balance = json["balance"].as_str().unwrap();
+    assert_eq!(alice_mycoin1_balance, "49.93562994");
+
+    let rc = block_on(mm_alice.rpc(&json!({
+        "userpass": mm_alice.userpass,
+        "method": "my_balance",
+        "coin": "MYCOIN"
+    })))
+    .unwrap();
+    assert!(rc.0.is_success(), "!my_balance: {}", rc.1);
+
+    let json: Json = serde_json::from_str(&rc.1).unwrap();
+    let alice_mycoin_balance = json["balance"].as_str().unwrap();
+    assert_eq!(alice_mycoin_balance, "101.99999");
+
+    let rc = block_on(mm_bob.rpc(&json!({
+        "userpass": mm_bob.userpass,
+        "method": "my_balance",
+        "coin": "MYCOIN1"
+    })))
+    .unwrap();
+    assert!(rc.0.is_success(), "!my_balance: {}", rc.1);
+
+    let json: Json = serde_json::from_str(&rc.1).unwrap();
+    let bob_mycoin1_balance = json["balance"].as_str().unwrap();
+    assert_eq!(bob_mycoin1_balance, "149.99999");
+
+    let rc = block_on(mm_bob.rpc(&json!({
+        "userpass": mm_bob.userpass,
+        "method": "my_balance",
+        "coin": "MYCOIN"
+    })))
+    .unwrap();
+    assert!(rc.0.is_success(), "!my_balance: {}", rc.1);
+
+    let json: Json = serde_json::from_str(&rc.1).unwrap();
+    let bob_mycoin_balance = json["balance"].as_str().unwrap();
+    assert_eq!(bob_mycoin_balance, "97.99999");
+}
+
+#[test]
+fn test_watcher_waits_for_taker() {
+    let (_ctx, _, bob_priv_key) = generate_utxo_coin_with_random_privkey("MYCOIN", 100.into());
+    generate_utxo_coin_with_privkey("MYCOIN1", 100.into(), &bob_priv_key);
+    let (_ctx, _, alice_priv_key) = generate_utxo_coin_with_random_privkey("MYCOIN1", 100.into());
+    generate_utxo_coin_with_privkey("MYCOIN", 100.into(), &alice_priv_key);
+    let watcher_priv_key = *SecretKey::new(&mut rand6::thread_rng()).as_ref();
+
+    let coins = json!([
+        {"coin":"MYCOIN","asset":"MYCOIN","txversion":4,"overwintered":1,"txfee":1000,"protocol":{"type":"UTXO"}},
+        {"coin":"MYCOIN1","asset":"MYCOIN1","txversion":4,"overwintered":1,"txfee":1000,"protocol":{"type":"UTXO"}},
+    ]);
+
+    let alice_conf = Mm2TestConf::seednode_using_watchers(&format!("0x{}", hex::encode(alice_priv_key)), &coins).conf;
+    let mm_alice = MarketMakerIt::start(alice_conf.clone(), "pass".to_string(), None).unwrap();
+    let (_alice_dump_log, _alice_dump_dashboard) = mm_dump(&mm_alice.log_path);
+
+    let bob_conf = Mm2TestConf::light_node(&format!("0x{}", hex::encode(bob_priv_key)), &coins, &[&mm_alice
+        .ip
+        .to_string()])
+    .conf;
+    let mm_bob = MarketMakerIt::start(bob_conf, "pass".to_string(), None).unwrap();
+    let (_bob_dump_log, _bob_dump_dashboard) = mm_dump(&mm_bob.log_path);
+
+    let watcher_conf =
+        Mm2TestConf::watcher_light_node(&format!("0x{}", hex::encode(watcher_priv_key)), &coins, &[&mm_alice
+            .ip
+            .to_string()])
+        .conf;
+    let mut mm_watcher = block_on(MarketMakerIt::start_with_envs(
+        watcher_conf,
+        "pass".to_string(),
+        None,
+        &[("USE_TEST_SEARCH_INTERVAL", "")],
+    ))
+    .unwrap();
+    let (_watcher_dump_log, _watcher_dump_dashboard) = mm_dump(&mm_watcher.log_path);
+
+    log!("{:?}", block_on(enable_native(&mm_bob, "MYCOIN", &[])));
+    log!("{:?}", block_on(enable_native(&mm_bob, "MYCOIN1", &[])));
+    log!("{:?}", block_on(enable_native(&mm_alice, "MYCOIN", &[])));
+    log!("{:?}", block_on(enable_native(&mm_alice, "MYCOIN1", &[])));
+    log!("{:?}", block_on(enable_native(&mm_watcher, "MYCOIN", &[])));
+    log!("{:?}", block_on(enable_native(&mm_watcher, "MYCOIN1", &[])));
+
+    let rc = block_on(mm_bob.rpc(&json!({
+        "userpass": mm_bob.userpass,
+        "method": "setprice",
+        "base": "MYCOIN",
+        "rel": "MYCOIN1",
+        "price": 25,
+        "max": true,
+    })))
+    .unwrap();
+    assert!(rc.0.is_success(), "!setprice: {}", rc.1);
+
+    let rc = block_on(mm_alice.rpc(&json!({
+        "userpass": mm_alice.userpass,
+        "method": "buy",
+        "base": "MYCOIN",
+        "rel": "MYCOIN1",
+        "price": 25,
+        "volume": "2",
+    })))
+    .unwrap();
+    assert!(rc.0.is_success(), "!buy: {}", rc.1);
+
+    block_on(mm_watcher.wait_for_log(160., |log| log.contains("Found maker payment spend as watcher"))).unwrap();
 
     let rc = block_on(mm_alice.rpc(&json!({
         "userpass": mm_alice.userpass,

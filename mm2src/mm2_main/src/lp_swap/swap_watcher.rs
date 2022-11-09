@@ -85,7 +85,6 @@ enum StopReason {
 enum WatcherSuccess {
     MakerPaymentSpent,
     TakerPaymentRefunded,
-    #[cfg(not(test))]
     MakerPaymentSpentByTaker,
 }
 
@@ -250,54 +249,60 @@ impl State for WaitForTakerPaymentSpend {
 
     async fn on_changed(self: Box<Self>, watcher_ctx: &mut WatcherContext) -> StateResult<Self::Ctx, Self::Result> {
         // Until taker payment spend deadline, periodically check for taker payment spend and maker payment spend
-        #[cfg(not(test))]
-        {
-            const PAYMENT_SEARCH_INTERVAL: f64 = 600.;
-            let wait_until =
-                taker_payment_spend_deadline(watcher_ctx.data.swap_started_at, watcher_ctx.data.lock_duration);
+        let mut payment_search_interval = 600.;
+        let mut wait_until =
+            taker_payment_spend_deadline(watcher_ctx.data.swap_started_at, watcher_ctx.data.lock_duration);
 
-            let f = watcher_ctx.taker_coin.wait_for_htlc_tx_spend(
-                &watcher_ctx.data.taker_payment_hex,
+        if std::env::var("USE_TEST_SEARCH_INTERVAL").is_ok() {
+            payment_search_interval = TAKER_PAYMENT_SPEND_SEARCH_INTERVAL;
+        }
+
+        let f = watcher_ctx.taker_coin.wait_for_htlc_tx_spend(
+            &watcher_ctx.data.taker_payment_hex,
+            &[],
+            wait_until,
+            watcher_ctx.data.taker_coin_start_block,
+            &None,
+            payment_search_interval,
+        );
+
+        if let Ok(tx) = f.compat().await {
+            if std::env::var("USE_TEST_DEADLINE").is_ok() {
+                wait_until = 0;
+            }
+
+            let f = watcher_ctx.maker_coin.wait_for_htlc_tx_spend(
+                &watcher_ctx.data.maker_payment_hex,
                 &[],
                 wait_until,
-                watcher_ctx.data.taker_coin_start_block,
+                watcher_ctx.data.maker_coin_start_block,
                 &None,
-                PAYMENT_SEARCH_INTERVAL,
+                payment_search_interval,
             );
-
-            if let Ok(tx) = f.compat().await {
-                let f = watcher_ctx.maker_coin.wait_for_htlc_tx_spend(
-                    &watcher_ctx.data.maker_payment_hex,
-                    &[],
-                    wait_until,
-                    watcher_ctx.data.maker_coin_start_block,
-                    &None,
-                    PAYMENT_SEARCH_INTERVAL,
-                );
-                match f.compat().await {
-                    Ok(_) => {
-                        return Self::change_state(Stopped::from_reason(StopReason::Finished(
-                            WatcherSuccess::MakerPaymentSpentByTaker,
-                        )))
-                    },
-                    Err(_) => {
-                        let tx_hex = tx.tx_hex();
-                        let secret = match watcher_ctx
-                            .taker_coin
-                            .extract_secret(&watcher_ctx.data.secret_hash, &tx_hex)
-                            .await
-                        {
-                            Ok(bytes) => H256Json::from(bytes.as_slice()),
-                            Err(err) => {
-                                return Self::change_state(Stopped::from_reason(StopReason::Error(
-                                    WatcherError::UnableToExtractSecret(err).into(),
-                                )))
-                            },
-                        };
-                        return Self::change_state(SpendMakerPayment::new(secret));
-                    },
-                };
-            }
+            match f.compat().await {
+                Ok(_) => {
+                    info!("Found maker payment spend as watcher");
+                    return Self::change_state(Stopped::from_reason(StopReason::Finished(
+                        WatcherSuccess::MakerPaymentSpentByTaker,
+                    )));
+                },
+                Err(_) => {
+                    let tx_hex = tx.tx_hex();
+                    let secret = match watcher_ctx
+                        .taker_coin
+                        .extract_secret(&watcher_ctx.data.secret_hash, &tx_hex)
+                        .await
+                    {
+                        Ok(bytes) => H256Json::from(bytes.as_slice()),
+                        Err(err) => {
+                            return Self::change_state(Stopped::from_reason(StopReason::Error(
+                                WatcherError::UnableToExtractSecret(err).into(),
+                            )))
+                        },
+                    };
+                    return Self::change_state(SpendMakerPayment::new(secret));
+                },
+            };
         }
 
         let f = watcher_ctx.taker_coin.wait_for_htlc_tx_spend(
