@@ -3,6 +3,9 @@ name = "serialization"
 version = "0.1.0"
 authors = ["debris <marek.kotewicz@gmail.com>"]
 
+[lib]
+doctest = false
+
 [dependencies]
 byteorder = "1.0"
 primitives = { path = "../primitives" }

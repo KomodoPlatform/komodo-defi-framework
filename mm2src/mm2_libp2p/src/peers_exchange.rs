@@ -204,9 +204,9 @@ impl PeersExchange {
     ) -> HashMap<PeerId, PeerAddresses> {
         let mut result = HashMap::with_capacity(num);
         let mut rng = rand::thread_rng();
-        let peer_ids = self.known_peers.iter().filter(|peer| filter(*peer)).collect::<Vec<_>>();
+        let peer_ids = self.known_peers.iter().filter(|peer| filter(peer)).collect::<Vec<_>>();
         for peer_id in peer_ids.choose_multiple(&mut rng, num) {
-            let addresses = self.request_response.addresses_of_peer(*peer_id).into_iter().collect();
+            let addresses = self.request_response.addresses_of_peer(peer_id).into_iter().collect();
             result.insert(**peer_id, addresses);
         }
         result

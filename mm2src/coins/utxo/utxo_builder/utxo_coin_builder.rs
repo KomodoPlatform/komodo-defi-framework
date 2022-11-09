@@ -656,7 +656,7 @@ fn read_native_mode_conf(
             .or_else(|| conf.general_section().get(property))
     }
 
-    let conf: Ini = match Ini::load_from_file(&filename) {
+    let conf: Ini = match Ini::load_from_file(filename) {
         Ok(ini) => ini,
         Err(err) => {
             return ERR!(

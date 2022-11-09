@@ -56,6 +56,7 @@ pub trait TryPlatformCoinFromMmCoinEnum {
 }
 
 pub trait TryFromCoinProtocol {
+    #[allow(clippy::result_large_err)]
     fn try_from_coin_protocol(proto: CoinProtocol) -> Result<Self, MmError<CoinProtocol>>
     where
         Self: Sized;
@@ -68,6 +69,7 @@ pub enum CoinConfWithProtocolError {
     UnexpectedProtocol { ticker: String, protocol: CoinProtocol },
 }
 
+#[allow(clippy::result_large_err)]
 pub fn coin_conf_with_protocol<T: TryFromCoinProtocol>(
     ctx: &MmArc,
     coin: &str,

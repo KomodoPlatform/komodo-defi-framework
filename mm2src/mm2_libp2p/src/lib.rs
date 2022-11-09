@@ -87,7 +87,7 @@ pub fn decode_signed<'de, T: de::Deserialize<'de>>(
     let helper: SignedMessageSerdeHelper = decode_message(encoded)?;
     let signature = Signature::from_compact(helper.signature)
         .map_err(|e| rmp_serde::decode::Error::Syntax(format!("Failed to parse signature {}", e)))?;
-    let sig_hash = SecpMessage::from_slice(&sha256(&helper.payload)).expect("Message::from_slice should never fail");
+    let sig_hash = SecpMessage::from_slice(&sha256(helper.payload)).expect("Message::from_slice should never fail");
     match &helper.pubkey {
         PublicKey::Secp256k1(serialized_pub) => {
             if SECP_VERIFY.verify(&sig_hash, &signature, &serialized_pub.0).is_err() {

@@ -39,7 +39,7 @@ fn ln_data_dir(ctx: &MmArc, ticker: &str) -> PathBuf { ctx.dbdir().join("LIGHTNI
 fn ln_data_backup_dir(ctx: &MmArc, path: Option<String>, ticker: &str) -> Option<PathBuf> {
     path.map(|p| {
         PathBuf::from(&p)
-            .join(&hex::encode(&**ctx.rmd160()))
+            .join(hex::encode(ctx.rmd160().as_slice()))
             .join("LIGHTNING")
             .join(ticker)
     })

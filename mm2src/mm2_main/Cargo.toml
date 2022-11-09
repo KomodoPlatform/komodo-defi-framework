@@ -27,14 +27,9 @@ test = false
 doctest = false
 bench = false
 
-[[bin]]
-name = "docker_tests"
-path = "src/docker_tests.rs"
-
 [lib]
 name = "mm2"
-path = "src/mm2_lib.rs"
-crate-type = ["cdylib", "staticlib"]
+crate-type = ["cdylib", "lib"]
 test = false
 doctest = false
 bench = false

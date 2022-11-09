@@ -169,8 +169,8 @@ pub(crate) fn validate_vin(vin: &[u8]) -> bool {
         if offset >= vin_length {
             return false;
         }
-        match determine_input_length(&vin[offset as usize..]) {
-            Ok(v) => offset += v as usize,
+        match determine_input_length(&vin[offset..]) {
+            Ok(v) => offset += v,
             Err(_) => return false,
         };
     }
@@ -201,8 +201,8 @@ pub(crate) fn validate_vout(vout: &[u8]) -> bool {
         if offset >= vout_length {
             return false;
         }
-        match determine_output_length(&vout[offset as usize..]) {
-            Ok(v) => offset += v as usize,
+        match determine_output_length(&vout[offset..]) {
+            Ok(v) => offset += v,
             Err(_) => return false,
         };
     }

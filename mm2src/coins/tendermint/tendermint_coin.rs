@@ -645,13 +645,7 @@ impl TendermintCoin {
     fn estimate_blocks_from_duration(&self, duration: u64) -> i64 {
         let estimated_time_lock = (duration / self.avg_block_time as u64) as i64;
 
-        if estimated_time_lock > MAX_TIME_LOCK {
-            MAX_TIME_LOCK
-        } else if estimated_time_lock < MIN_TIME_LOCK {
-            MIN_TIME_LOCK
-        } else {
-            estimated_time_lock
-        }
+        estimated_time_lock.clamp(MIN_TIME_LOCK, MAX_TIME_LOCK)
     }
 
     pub(crate) fn check_if_my_payment_sent_for_denom(
@@ -1389,6 +1383,8 @@ impl MmCoin for TendermintCoin {
     fn set_requires_notarization(&self, requires_nota: bool) { warn!("TendermintCoin doesn't support notarization") }
 
     fn swap_contract_address(&self) -> Option<BytesJson> { None }
+
+    fn fallback_swap_contract(&self) -> Option<BytesJson> { None }
 
     fn mature_confirmations(&self) -> Option<u32> { None }
 

@@ -1,6 +1,13 @@
-use super::*;
+use crate::generate_utxo_coin_with_random_privkey;
+use crate::integration_tests_common::enable_native;
 use common::block_on;
+use mm2_number::BigDecimal;
 use mm2_test_helpers::for_tests::{mm_dump, MarketMakerIt};
+use mm2_test_helpers::structs::{BestOrdersResponse, BestOrdersV2Response, BuyOrSellRpcResult, MyOrdersRpcResult,
+                                OrderbookDepthResponse, OrderbookResponse, RpcV2Response, SetPriceResponse};
+use serde_json::Value as Json;
+use std::thread;
+use std::time::Duration;
 
 fn check_asks_num(mm: &MarketMakerIt, base: &str, rel: &str, expected: usize) {
     log!("Get {}/{} orderbook", base, rel);
@@ -12,7 +19,7 @@ fn check_asks_num(mm: &MarketMakerIt, base: &str, rel: &str, expected: usize) {
     })))
     .unwrap();
     assert!(rc.0.is_success(), "!orderbook: {}", rc.1);
-    let orderbook: OrderbookResponse = json::from_str(&rc.1).unwrap();
+    let orderbook: OrderbookResponse = serde_json::from_str(&rc.1).unwrap();
     log!("orderbook {:?}", orderbook);
     assert_eq!(
         orderbook.asks.len(),
@@ -34,7 +41,7 @@ fn check_bids_num(mm: &MarketMakerIt, base: &str, rel: &str, expected: usize) {
     })))
     .unwrap();
     assert!(rc.0.is_success(), "!orderbook: {}", rc.1);
-    let orderbook: OrderbookResponse = json::from_str(&rc.1).unwrap();
+    let orderbook: OrderbookResponse = serde_json::from_str(&rc.1).unwrap();
     log!("orderbook {:?}", orderbook);
     assert_eq!(
         orderbook.bids.len(),
@@ -55,7 +62,7 @@ fn check_orderbook_depth(mm: &MarketMakerIt, pairs: &[(&str, &str)], expected: &
     })))
     .unwrap();
     assert!(rc.0.is_success(), "!orderbook_depth: {}", rc.1);
-    let orderbook_depth: OrderbookDepthResponse = json::from_str(&rc.1).unwrap();
+    let orderbook_depth: OrderbookDepthResponse = serde_json::from_str(&rc.1).unwrap();
     log!("orderbook depth {:?}", orderbook_depth);
     for (pair, expected_depth) in pairs.iter().zip(expected) {
         let actual_depth = orderbook_depth
@@ -94,7 +101,7 @@ fn check_best_orders(
     })))
     .unwrap();
     assert!(rc.0.is_success(), "!best_orders: {}", rc.1);
-    let best_orders: BestOrdersResponse = json::from_str(&rc.1).unwrap();
+    let best_orders: BestOrdersResponse = serde_json::from_str(&rc.1).unwrap();
     let orders = best_orders
         .result
         .get(ticker_in_response)
@@ -126,7 +133,7 @@ fn check_best_orders_v2_by_number(
     })))
     .unwrap();
     assert!(rc.0.is_success(), "!best_orders: {}", rc.1);
-    let best_orders: RpcV2Response<BestOrdersV2Response> = json::from_str(&rc.1).unwrap();
+    let best_orders: RpcV2Response<BestOrdersV2Response> = serde_json::from_str(&rc.1).unwrap();
     let orders = best_orders
         .result
         .orders
@@ -158,7 +165,7 @@ fn check_best_orders_v2_by_volume(
     })))
     .unwrap();
     assert!(rc.0.is_success(), "!best_orders: {}", rc.1);
-    let best_orders: RpcV2Response<BestOrdersV2Response> = json::from_str(&rc.1).unwrap();
+    let best_orders: RpcV2Response<BestOrdersV2Response> = serde_json::from_str(&rc.1).unwrap();
     let orders = best_orders
         .result
         .orders
@@ -224,7 +231,7 @@ fn test_ordermatch_custom_orderbook_ticker_both_on_maker() {
     .unwrap();
     assert!(rc.0.is_success(), "!setprice: {}", rc.1);
 
-    let sell_result: SetPriceResponse = json::from_str(&rc.1).unwrap();
+    let sell_result: SetPriceResponse = serde_json::from_str(&rc.1).unwrap();
     assert_eq!(sell_result.result.base, "MYCOIN-Custom");
     assert_eq!(sell_result.result.rel, "MYCOIN1-Custom");
     assert_eq!(sell_result.result.base_orderbook_ticker, Some("MYCOIN".to_owned()));
@@ -418,7 +425,7 @@ fn test_ordermatch_custom_orderbook_ticker_both_on_taker() {
     })))
     .unwrap();
     assert!(rc.0.is_success(), "!buy: {}", rc.1);
-    let buy_result: BuyOrSellRpcResult = json::from_str(&rc.1).unwrap();
+    let buy_result: BuyOrSellRpcResult = serde_json::from_str(&rc.1).unwrap();
     assert_eq!(buy_result.result.base, "MYCOIN-Custom");
     assert_eq!(buy_result.result.rel, "MYCOIN1-Custom");
     assert_eq!(buy_result.result.base_orderbook_ticker, Some("MYCOIN".to_owned()));
@@ -491,7 +498,7 @@ fn test_ordermatch_custom_orderbook_ticker_mixed_case_one() {
     })))
     .unwrap();
     assert!(rc.0.is_success(), "!setprice: {}", rc.1);
-    let set_price: SetPriceResponse = json::from_str(&rc.1).unwrap();
+    let set_price: SetPriceResponse = serde_json::from_str(&rc.1).unwrap();
     assert_eq!(set_price.result.base, "MYCOIN-Custom");
     assert_eq!(set_price.result.rel, "MYCOIN1");
     assert_eq!(set_price.result.base_orderbook_ticker, Some("MYCOIN".to_owned()));
@@ -556,7 +563,7 @@ fn test_ordermatch_custom_orderbook_ticker_mixed_case_one() {
     })))
     .unwrap();
     assert!(rc.0.is_success(), "!buy: {}", rc.1);
-    let buy_result: BuyOrSellRpcResult = json::from_str(&rc.1).unwrap();
+    let buy_result: BuyOrSellRpcResult = serde_json::from_str(&rc.1).unwrap();
     assert_eq!(buy_result.result.base, "MYCOIN");
     assert_eq!(buy_result.result.rel, "MYCOIN1-Custom");
     assert!(buy_result.result.base_orderbook_ticker.is_none());
@@ -632,7 +639,7 @@ fn test_ordermatch_custom_orderbook_ticker_mixed_case_two() {
     })))
     .unwrap();
     assert!(rc.0.is_success(), "!setprice: {}", rc.1);
-    let set_price: SetPriceResponse = json::from_str(&rc.1).unwrap();
+    let set_price: SetPriceResponse = serde_json::from_str(&rc.1).unwrap();
     assert_eq!(set_price.result.base, "MYCOIN");
     assert_eq!(set_price.result.rel, "MYCOIN1-Custom");
     assert!(set_price.result.base_orderbook_ticker.is_none());
@@ -697,7 +704,7 @@ fn test_ordermatch_custom_orderbook_ticker_mixed_case_two() {
     })))
     .unwrap();
     assert!(rc.0.is_success(), "!buy: {}", rc.1);
-    let buy_result: BuyOrSellRpcResult = json::from_str(&rc.1).unwrap();
+    let buy_result: BuyOrSellRpcResult = serde_json::from_str(&rc.1).unwrap();
     assert_eq!(buy_result.result.base, "MYCOIN-Custom");
     assert_eq!(buy_result.result.rel, "MYCOIN1");
     assert_eq!(buy_result.result.base_orderbook_ticker, Some("MYCOIN".to_owned()));
@@ -763,7 +770,7 @@ fn test_zombie_order_after_balance_reduce_and_mm_restart() {
     })))
     .unwrap();
     assert!(rc.0.is_success(), "!setprice: {}", rc.1);
-    let set_price_res: SetPriceResponse = json::from_str(&rc.1).unwrap();
+    let set_price_res: SetPriceResponse = serde_json::from_str(&rc.1).unwrap();
 
     println!("set_price_res {:?}", set_price_res);
 
@@ -777,7 +784,7 @@ fn test_zombie_order_after_balance_reduce_and_mm_restart() {
     .unwrap();
     assert!(withdraw.0.is_success(), "!withdraw: {}", withdraw.1);
 
-    let withdraw: Json = json::from_str(&withdraw.1).unwrap();
+    let withdraw: Json = serde_json::from_str(&withdraw.1).unwrap();
 
     let send_raw = block_on(mm_maker.rpc(&json! ({
         "userpass": mm_maker.userpass,
@@ -802,7 +809,7 @@ fn test_zombie_order_after_balance_reduce_and_mm_restart() {
     .unwrap();
     assert!(rc.0.is_success(), "!orderbook: {}", rc.1);
 
-    let orderbook: OrderbookResponse = json::from_str(&rc.1).unwrap();
+    let orderbook: OrderbookResponse = serde_json::from_str(&rc.1).unwrap();
     log!("orderbook {:?}", orderbook);
     assert_eq!(
         orderbook.asks.len(),
@@ -818,7 +825,7 @@ fn test_zombie_order_after_balance_reduce_and_mm_restart() {
     })))
     .unwrap();
     assert!(rc.0.is_success(), "!my_orders: {}", rc.1);
-    let my_orders: MyOrdersRpcResult = json::from_str(&rc.1).unwrap();
+    let my_orders: MyOrdersRpcResult = serde_json::from_str(&rc.1).unwrap();
     assert_eq!(my_orders.result.maker_orders.len(), 1);
 
     let my_order = my_orders.result.maker_orders.get(&set_price_res.result.uuid).unwrap();
@@ -842,7 +849,7 @@ fn test_zombie_order_after_balance_reduce_and_mm_restart() {
     .unwrap();
     assert!(rc.0.is_success(), "!orderbook: {}", rc.1);
 
-    let orderbook: OrderbookResponse = json::from_str(&rc.1).unwrap();
+    let orderbook: OrderbookResponse = serde_json::from_str(&rc.1).unwrap();
     log!("orderbook {:?}", orderbook);
     assert!(
         orderbook.asks.is_empty(),
@@ -865,7 +872,7 @@ fn test_zombie_order_after_balance_reduce_and_mm_restart() {
     .unwrap();
     assert!(rc.0.is_success(), "!orderbook: {}", rc.1);
 
-    let orderbook: OrderbookResponse = json::from_str(&rc.1).unwrap();
+    let orderbook: OrderbookResponse = serde_json::from_str(&rc.1).unwrap();
     log!("orderbook {:?}", orderbook);
     assert_eq!(
         orderbook.asks.len(),
@@ -881,7 +888,7 @@ fn test_zombie_order_after_balance_reduce_and_mm_restart() {
     })))
     .unwrap();
     assert!(rc.0.is_success(), "!my_orders: {}", rc.1);
-    let my_orders: MyOrdersRpcResult = json::from_str(&rc.1).unwrap();
+    let my_orders: MyOrdersRpcResult = serde_json::from_str(&rc.1).unwrap();
     assert_eq!(my_orders.result.maker_orders.len(), 1);
 
     let my_order = my_orders.result.maker_orders.get(&set_price_res.result.uuid).unwrap();

@@ -68,9 +68,7 @@ pub mod database;
 #[path = "lp_swap.rs"] pub mod lp_swap;
 #[path = "rpc.rs"] pub mod rpc;
 
-#[cfg(any(test, target_arch = "wasm32"))]
-#[path = "mm2_tests.rs"]
-pub mod mm2_tests;
+#[cfg(all(target_arch = "wasm32", test))] mod wasm_tests;
 
 pub const MM_DATETIME: &str = env!("MM_DATETIME");
 pub const MM_VERSION: &str = env!("MM_VERSION");
@@ -483,7 +481,7 @@ fn on_update_config(args: &[OsString]) -> Result<(), String> {
     let formatter = json::ser::PrettyFormatter::with_indent(b"\t");
     let mut ser = json::Serializer::with_formatter(buf, formatter);
     try_s!(result.serialize(&mut ser));
-    try_s!(std::fs::write(&dst_path, ser.into_inner()));
+    try_s!(std::fs::write(dst_path, ser.into_inner()));
     Ok(())
 }
 

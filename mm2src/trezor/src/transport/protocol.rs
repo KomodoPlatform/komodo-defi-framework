@@ -66,7 +66,7 @@ impl<L: Link + Send> Protocol for ProtocolV1<L> {
 
     async fn read(&mut self) -> TrezorResult<ProtoMessage> {
         let chunk = self.link.read_chunk(CHUNK_LEN).await?;
-        if chunk.len() < CHUNK_HEADER_LEN as usize {
+        if chunk.len() < CHUNK_HEADER_LEN {
             return MmError::err(TrezorError::ProtocolError(format!(
                 "Invalid chunk length '{}', expected at least '{}'",
                 chunk.len(),

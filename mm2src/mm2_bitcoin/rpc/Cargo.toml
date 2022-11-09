@@ -4,6 +4,7 @@ version = "0.1.0"
 authors = ["Ethcore <admin@ethcore.io>"]
 
 [lib]
+doctest = false
 
 [dependencies]
 log = "0.4"

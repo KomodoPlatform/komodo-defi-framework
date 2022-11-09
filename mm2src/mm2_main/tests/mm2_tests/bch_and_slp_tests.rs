@@ -1,12 +1,14 @@
-use super::*;
+use common::executor::Timer;
+use common::{block_on, log, now_ms};
+use http::StatusCode;
 use mm2_test_helpers::for_tests::{enable_bch_with_tokens, enable_slp, my_tx_history_v2, sign_message, verify_message,
-                                  UtxoRpcMode};
-
-cfg_wasm32! {
-    use wasm_bindgen_test::*;
-
-    wasm_bindgen_test_configure!(run_in_browser);
-}
+                                  MarketMakerIt, Mm2TestConf, UtxoRpcMode};
+use mm2_test_helpers::structs::{RpcV2Response, SignatureResponse, StandardHistoryV2Res, UtxoFeeDetails,
+                                VerificationResponse};
+use serde_json::{self as json, json, Value as Json};
+use std::env;
+use std::thread;
+use std::time::Duration;
 
 #[cfg(not(target_arch = "wasm32"))]
 const T_BCH_ELECTRUMS: &[&str] = &[
@@ -46,7 +48,7 @@ fn test_withdraw_cashaddresses() {
             "rpc_password": "pass",
         }),
         "pass".into(),
-        local_start!("bob"),
+        None,
     )
     .unwrap();
     let (_dump_log, _dump_dashboard) = mm.mm_dump();
@@ -256,7 +258,7 @@ fn test_withdraw_to_different_cashaddress_network_should_fail() {
             "rpc_password": "pass",
         }),
         "pass".into(),
-        local_start!("bob"),
+        None,
     )
     .unwrap();
     let (_dump_log, _dump_dashboard) = mm.mm_dump();
@@ -317,7 +319,7 @@ fn test_common_cashaddresses() {
             "rpc_password": "pass",
         }),
         "pass".into(),
-        local_start!("bob"),
+        None,
     )
     .unwrap();
     let (_dump_log, _dump_dashboard) = mm.mm_dump();
@@ -422,7 +424,7 @@ async fn test_bch_and_slp_testnet_history_impl() {
     ]);
 
     let conf = Mm2TestConf::seednode(PASSPHRASE, &coins);
-    let mm = MarketMakerIt::start_async(conf.conf, conf.rpc_password, local_start!("bob"))
+    let mm = MarketMakerIt::start_async(conf.conf, conf.rpc_password, None)
         .await
         .unwrap();
 
@@ -527,7 +529,7 @@ fn test_sign_verify_message_bch() {
             "rpc_password": "pass",
         }),
         "pass".into(),
-        local_start!("bob"),
+        None,
     )
     .unwrap();
     let (_dump_log, _dump_dashboard) = mm.mm_dump();
@@ -596,7 +598,7 @@ fn test_sign_verify_message_slp() {
             "rpc_password": "pass",
         }),
         "pass".into(),
-        local_start!("bob"),
+        None,
     )
     .unwrap();
     let (_dump_log, _dump_dashboard) = mm.mm_dump();
