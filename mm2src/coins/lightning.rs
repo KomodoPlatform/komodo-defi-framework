@@ -15,12 +15,14 @@ use crate::lightning::ln_utils::filter_channels;
 use crate::utxo::rpc_clients::UtxoRpcClientEnum;
 use crate::utxo::utxo_common::{big_decimal_from_sat, big_decimal_from_sat_unsigned};
 use crate::utxo::{sat_from_big_decimal, utxo_common, BlockchainNetwork};
-use crate::{BalanceFut, CoinBalance, CoinFutSpawner, DerivationMethod, FeeApproxStage, FoundSwapTxSpend,
-            HistorySyncState, MarketCoinOps, MmCoin, NegotiateSwapContractAddrErr, PaymentInstructions,
-            PaymentInstructionsErr, RawTransactionError, RawTransactionFut, RawTransactionRequest,
-            SearchForSwapTxSpendInput, SignatureError, SignatureResult, SwapOps, TradeFee, TradePreimageFut,
+use crate::{BalanceFut, CheckIfMyPaymentSentArgs, CoinBalance, CoinFutSpawner, DerivationMethod, FeeApproxStage,
+            FoundSwapTxSpend, HistorySyncState, MarketCoinOps, MmCoin, NegotiateSwapContractAddrErr,
+            PaymentInstructions, PaymentInstructionsErr, RawTransactionError, RawTransactionFut,
+            RawTransactionRequest, SearchForSwapTxSpendInput, SendMakerPaymentArgs, SendMakerRefundsPaymentArgs,
+            SendMakerSpendsTakerPaymentArgs, SendTakerPaymentArgs, SendTakerRefundsPaymentArgs,
+            SendTakerSpendsMakerPaymentArgs, SignatureError, SignatureResult, SwapOps, TradeFee, TradePreimageFut,
             TradePreimageResult, TradePreimageValue, Transaction, TransactionEnum, TransactionErr, TransactionFut,
-            TxMarshalingErr, UnexpectedDerivationMethod, UtxoStandardCoin, ValidateAddressResult,
+            TxMarshalingErr, UnexpectedDerivationMethod, UtxoStandardCoin, ValidateAddressResult, ValidateFeeArgs,
             ValidateInstructionsErr, ValidateOtherPubKeyErr, ValidatePaymentError, ValidatePaymentFut,
             ValidatePaymentInput, VerificationError, VerificationResult, WatcherOps, WatcherValidatePaymentInput,
             WithdrawError, WithdrawFut, WithdrawRequest};
@@ -481,19 +483,11 @@ impl SwapOps for LightningCoin {
         Box::new(fut.boxed().compat())
     }
 
-    fn send_maker_payment(
-        &self,
-        _time_lock_duration: u64,
-        _time_lock: u32,
-        _taker_pub: &[u8],
-        _secret_hash: &[u8],
-        _amount: BigDecimal,
-        _swap_contract_address: &Option<BytesJson>,
-        _swap_unique_data: &[u8],
-        payment_instructions: &Option<PaymentInstructions>,
-    ) -> TransactionFut {
-        let PaymentInstructions::Lightning(invoice) =
-            try_tx_fus!(payment_instructions.clone().ok_or("payment_instructions can't be None"));
+    fn send_maker_payment(&self, maker_payment_args: SendMakerPaymentArgs<'_>) -> TransactionFut {
+        let PaymentInstructions::Lightning(invoice) = try_tx_fus!(maker_payment_args
+            .payment_instructions
+            .clone()
+            .ok_or("payment_instructions can't be None"));
         let coin = self.clone();
         let fut = async move {
             let payment = try_tx_s!(coin.pay_invoice(invoice).await);
@@ -502,19 +496,11 @@ impl SwapOps for LightningCoin {
         Box::new(fut.boxed().compat())
     }
 
-    fn send_taker_payment(
-        &self,
-        _time_lock_duration: u64,
-        _time_lock: u32,
-        _maker_pub: &[u8],
-        _secret_hash: &[u8],
-        _amount: BigDecimal,
-        _swap_contract_address: &Option<BytesJson>,
-        _swap_unique_data: &[u8],
-        payment_instructions: &Option<PaymentInstructions>,
-    ) -> TransactionFut {
-        let PaymentInstructions::Lightning(invoice) =
-            try_tx_fus!(payment_instructions.clone().ok_or("payment_instructions can't be None"));
+    fn send_taker_payment(&self, taker_payment_args: SendTakerPaymentArgs<'_>) -> TransactionFut {
+        let PaymentInstructions::Lightning(invoice) = try_tx_fus!(taker_payment_args
+            .payment_instructions
+            .clone()
+            .ok_or("payment_instructions can't be None"));
         let coin = self.clone();
         let fut = async move {
             let payment = try_tx_s!(coin.pay_invoice(invoice).await);
@@ -525,17 +511,11 @@ impl SwapOps for LightningCoin {
 
     fn send_maker_spends_taker_payment(
         &self,
-        taker_payment_tx: &[u8],
-        _time_lock: u32,
-        _taker_pub: &[u8],
-        secret: &[u8],
-        _secret_hash: &[u8],
-        _swap_contract_address: &Option<BytesJson>,
-        _swap_unique_data: &[u8],
+        maker_spends_payment_args: SendMakerSpendsTakerPaymentArgs<'_>,
     ) -> TransactionFut {
-        let payment_hash = try_tx_fus!(payment_hash_from_slice(taker_payment_tx));
+        let payment_hash = try_tx_fus!(payment_hash_from_slice(maker_spends_payment_args.other_payment_tx));
         let mut preimage = [b' '; 32];
-        preimage.copy_from_slice(secret);
+        preimage.copy_from_slice(maker_spends_payment_args.secret);
 
         let coin = self.clone();
         let fut = async move {
@@ -556,37 +536,21 @@ impl SwapOps for LightningCoin {
 
     fn send_taker_spends_maker_payment(
         &self,
-        _maker_payment_tx: &[u8],
-        _time_lock: u32,
-        _maker_pub: &[u8],
-        _secret: &[u8],
-        _secret_hash: &[u8],
-        _swap_contract_address: &Option<BytesJson>,
-        _swap_unique_data: &[u8],
+        _taker_spends_payment_args: SendTakerSpendsMakerPaymentArgs<'_>,
     ) -> TransactionFut {
         unimplemented!()
     }
 
     fn send_taker_refunds_payment(
         &self,
-        _taker_payment_tx: &[u8],
-        _time_lock: u32,
-        _maker_pub: &[u8],
-        _secret_hash: &[u8],
-        _swap_contract_address: &Option<BytesJson>,
-        _swap_unique_data: &[u8],
+        _taker_refunds_payment_args: SendTakerRefundsPaymentArgs<'_>,
     ) -> TransactionFut {
         unimplemented!()
     }
 
     fn send_maker_refunds_payment(
         &self,
-        _maker_payment_tx: &[u8],
-        _time_lock: u32,
-        _taker_pub: &[u8],
-        _secret_hash: &[u8],
-        _swap_contract_address: &Option<BytesJson>,
-        _swap_unique_data: &[u8],
+        _maker_refunds_payment_args: SendMakerRefundsPaymentArgs<'_>,
     ) -> TransactionFut {
         unimplemented!()
     }
@@ -594,12 +558,7 @@ impl SwapOps for LightningCoin {
     // Todo: This validates the dummy fee for now for the sake of swap P.O.C., this should be implemented probably after agreeing on how fees will work for lightning
     fn validate_fee(
         &self,
-        _fee_tx: &TransactionEnum,
-        _expected_sender: &[u8],
-        _fee_addr: &[u8],
-        _amount: &BigDecimal,
-        _min_block_number: u64,
-        _uuid: &[u8],
+        _validate_fee_args: ValidateFeeArgs<'_>,
     ) -> Box<dyn Future<Item = (), Error = String> + Send> {
         Box::new(futures01::future::ok(()))
     }
@@ -651,13 +610,7 @@ impl SwapOps for LightningCoin {
     // Todo: This is None for now for the sake of swap P.O.C., this should be implemented probably in next PRs and should be tested across restarts
     fn check_if_my_payment_sent(
         &self,
-        _time_lock: u32,
-        _other_pub: &[u8],
-        _secret_hash: &[u8],
-        _search_from_block: u64,
-        _swap_contract_address: &Option<BytesJson>,
-        _swap_unique_data: &[u8],
-        _amount: &BigDecimal,
+        _if_my_payment_spent_args: CheckIfMyPaymentSentArgs<'_>,
     ) -> Box<dyn Future<Item = Option<TransactionEnum>, Error = String> + Send> {
         Box::new(futures01::future::ok(None))
     }

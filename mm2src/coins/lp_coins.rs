@@ -268,6 +268,12 @@ pub type TxHistoryResult<T> = Result<T, MmError<TxHistoryError>>;
 pub type RawTransactionResult = Result<RawTransactionRes, MmError<RawTransactionError>>;
 pub type RawTransactionFut<'a> =
     Box<dyn Future<Item = RawTransactionRes, Error = MmError<RawTransactionError>> + Send + 'a>;
+pub type SendMakerPaymentArgs<'a> = SendSwapPaymentArgs<'a>;
+pub type SendTakerPaymentArgs<'a> = SendSwapPaymentArgs<'a>;
+pub type SendMakerSpendsTakerPaymentArgs<'a> = SendSpendPaymentArgs<'a>;
+pub type SendTakerSpendsMakerPaymentArgs<'a> = SendSpendPaymentArgs<'a>;
+pub type SendTakerRefundsPaymentArgs<'a> = SendRefundPaymentArgs<'a>;
+pub type SendMakerRefundsPaymentArgs<'a> = SendRefundPaymentArgs<'a>;
 
 #[derive(Debug, Deserialize, Display, Serialize, SerializeErrorType)]
 #[serde(tag = "error_type", content = "error_data")]
@@ -512,6 +518,72 @@ pub struct SearchForSwapTxSpendInput<'a> {
     pub swap_unique_data: &'a [u8],
 }
 
+#[derive(Clone, Debug)]
+pub struct SendSwapPaymentArgs<'a> {
+    pub time_lock_duration: u64,
+    pub time_lock: u32,
+    /// This is either:
+    /// * Taker's pubkey if this structure is used in [`SwapOps::send_maker_payment`].
+    /// * Maker's pubkey if this structure is used in [`SwapOps::send_taker_payment`].
+    pub other_pubkey: &'a [u8],
+    pub secret_hash: &'a [u8],
+    pub amount: BigDecimal,
+    pub swap_contract_address: &'a Option<BytesJson>,
+    pub swap_unique_data: &'a [u8],
+    pub payment_instructions: &'a Option<PaymentInstructions>,
+}
+
+#[derive(Clone, Debug)]
+pub struct SendSpendPaymentArgs<'a> {
+    /// This is either:
+    /// * Taker's payment tx if this structure is used in [`SwapOps::send_maker_spends_taker_payment`].
+    /// * Maker's payment tx if this structure is used in [`SwapOps::send_taker_spends_maker_payment`].
+    pub other_payment_tx: &'a [u8],
+    pub time_lock: u32,
+    /// This is either:
+    /// * Taker's pubkey if this structure is used in [`SwapOps::send_maker_spends_taker_payment`].
+    /// * Maker's pubkey if this structure is used in [`SwapOps::send_taker_spends_maker_payment`].
+    pub other_pubkey: &'a [u8],
+    pub secret: &'a [u8],
+    pub secret_hash: &'a [u8],
+    pub swap_contract_address: &'a Option<BytesJson>,
+    pub swap_unique_data: &'a [u8],
+}
+
+#[derive(Clone, Debug)]
+pub struct SendRefundPaymentArgs<'a> {
+    pub payment_tx: &'a [u8],
+    pub time_lock: u32,
+    /// This is either:
+    /// * Taker's pubkey if this structure is used in [`SwapOps::send_maker_refunds_payment`].
+    /// * Maker's pubkey if this structure is used in [`SwapOps::send_taker_refunds_payment`].
+    pub other_pubkey: &'a [u8],
+    pub secret_hash: &'a [u8],
+    pub swap_contract_address: &'a Option<BytesJson>,
+    pub swap_unique_data: &'a [u8],
+}
+
+#[derive(Clone, Debug)]
+pub struct CheckIfMyPaymentSentArgs<'a> {
+    pub time_lock: u32,
+    pub other_pub: &'a [u8],
+    pub secret_hash: &'a [u8],
+    pub search_from_block: u64,
+    pub swap_contract_address: &'a Option<BytesJson>,
+    pub swap_unique_data: &'a [u8],
+    pub amount: &'a BigDecimal,
+}
+
+#[derive(Clone, Debug)]
+pub struct ValidateFeeArgs<'a> {
+    pub fee_tx: &'a TransactionEnum,
+    pub expected_sender: &'a [u8],
+    pub fee_addr: &'a [u8],
+    pub amount: &'a BigDecimal,
+    pub min_block_number: u64,
+    pub uuid: &'a [u8],
+}
+
 #[derive(Clone, Debug, Deserialize, PartialEq, Serialize)]
 pub enum PaymentInstructions {
     #[cfg(not(target_arch = "wasm32"))]
@@ -544,100 +616,36 @@ impl From<ParseOrSemanticError> for ValidateInstructionsErr {
 pub trait SwapOps {
     fn send_taker_fee(&self, fee_addr: &[u8], amount: BigDecimal, uuid: &[u8]) -> TransactionFut;
 
-    #[allow(clippy::too_many_arguments)]
-    fn send_maker_payment(
-        &self,
-        time_lock_duration: u64,
-        time_lock: u32,
-        taker_pub: &[u8],
-        secret_hash: &[u8],
-        amount: BigDecimal,
-        swap_contract_address: &Option<BytesJson>,
-        swap_unique_data: &[u8],
-        payment_instructions: &Option<PaymentInstructions>,
-    ) -> TransactionFut;
+    fn send_maker_payment(&self, maker_payment_args: SendMakerPaymentArgs<'_>) -> TransactionFut;
 
-    #[allow(clippy::too_many_arguments)]
-    fn send_taker_payment(
-        &self,
-        time_lock_duration: u64,
-        time_lock: u32,
-        maker_pub: &[u8],
-        secret_hash: &[u8],
-        amount: BigDecimal,
-        swap_contract_address: &Option<BytesJson>,
-        swap_unique_data: &[u8],
-        payment_instructions: &Option<PaymentInstructions>,
-    ) -> TransactionFut;
+    fn send_taker_payment(&self, taker_payment_args: SendTakerPaymentArgs<'_>) -> TransactionFut;
 
-    #[allow(clippy::too_many_arguments)]
     fn send_maker_spends_taker_payment(
         &self,
-        taker_payment_tx: &[u8],
-        time_lock: u32,
-        taker_pub: &[u8],
-        secret: &[u8],
-        secret_hash: &[u8],
-        swap_contract_address: &Option<BytesJson>,
-        swap_unique_data: &[u8],
+        maker_spends_payment_args: SendMakerSpendsTakerPaymentArgs<'_>,
     ) -> TransactionFut;
 
-    #[allow(clippy::too_many_arguments)]
     fn send_taker_spends_maker_payment(
         &self,
-        maker_payment_tx: &[u8],
-        time_lock: u32,
-        maker_pub: &[u8],
-        secret: &[u8],
-        secret_hash: &[u8],
-        swap_contract_address: &Option<BytesJson>,
-        swap_unique_data: &[u8],
+        taker_spends_payment_args: SendTakerSpendsMakerPaymentArgs<'_>,
     ) -> TransactionFut;
 
-    fn send_taker_refunds_payment(
-        &self,
-        taker_payment_tx: &[u8],
-        time_lock: u32,
-        maker_pub: &[u8],
-        secret_hash: &[u8],
-        swap_contract_address: &Option<BytesJson>,
-        swap_unique_data: &[u8],
-    ) -> TransactionFut;
+    fn send_taker_refunds_payment(&self, taker_refunds_payment_args: SendTakerRefundsPaymentArgs<'_>)
+        -> TransactionFut;
 
-    fn send_maker_refunds_payment(
-        &self,
-        maker_payment_tx: &[u8],
-        time_lock: u32,
-        taker_pub: &[u8],
-        secret_hash: &[u8],
-        swap_contract_address: &Option<BytesJson>,
-        swap_unique_data: &[u8],
-    ) -> TransactionFut;
+    fn send_maker_refunds_payment(&self, maker_refunds_payment_args: SendMakerRefundsPaymentArgs<'_>)
+        -> TransactionFut;
 
-    fn validate_fee(
-        &self,
-        fee_tx: &TransactionEnum,
-        expected_sender: &[u8],
-        fee_addr: &[u8],
-        amount: &BigDecimal,
-        min_block_number: u64,
-        uuid: &[u8],
-    ) -> Box<dyn Future<Item = (), Error = String> + Send>;
+    fn validate_fee(&self, validate_fee_args: ValidateFeeArgs<'_>)
+        -> Box<dyn Future<Item = (), Error = String> + Send>;
 
     fn validate_maker_payment(&self, input: ValidatePaymentInput) -> ValidatePaymentFut<()>;
 
     fn validate_taker_payment(&self, input: ValidatePaymentInput) -> ValidatePaymentFut<()>;
 
-    #[allow(clippy::too_many_arguments)]
     fn check_if_my_payment_sent(
         &self,
-        time_lock: u32,
-        other_pub: &[u8],
-        secret_hash: &[u8],
-        search_from_block: u64,
-        swap_contract_address: &Option<BytesJson>,
-        swap_unique_data: &[u8],
-        amount: &BigDecimal,
+        if_my_payment_spent_args: CheckIfMyPaymentSentArgs<'_>,
     ) -> Box<dyn Future<Item = Option<TransactionEnum>, Error = String> + Send>;
 
     async fn search_for_swap_tx_spend_my(
