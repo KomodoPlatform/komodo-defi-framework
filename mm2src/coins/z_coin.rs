@@ -771,16 +771,19 @@ impl<'a> UtxoCoinWithIguanaPrivKeyBuilder for ZCoinBuilder<'a> {
                 .await
                 .or_mm_err(|| ZCoinBuildError::ZCashParamsNotFound)?,
             Some(file_path) => {
-                let path = PathBuf::from(file_path);
-                let (spend_path, output_path) = if path.exists() {
-                    (path.join(SAPLING_SPEND_NAME), path.join(SAPLING_OUTPUT_NAME))
-                } else {
-                    return MmError::err(ZCoinBuildError::ZCashParamsNotFound);
-                };
-                if !(spend_path.exists() && output_path.exists()) {
-                    return MmError::err(ZCoinBuildError::ZCashParamsNotFound);
-                }
-                LocalTxProver::new(&spend_path, &output_path)
+                async_blocking({
+                    let path = PathBuf::from(file_path);
+                    let (spend_path, output_path) = if path.exists() {
+                        (path.join(SAPLING_SPEND_NAME), path.join(SAPLING_OUTPUT_NAME))
+                    } else {
+                        return MmError::err(ZCoinBuildError::ZCashParamsNotFound);
+                    };
+                    if !(spend_path.exists() && output_path.exists()) {
+                        return MmError::err(ZCoinBuildError::ZCashParamsNotFound);
+                    }
+                    move || LocalTxProver::new(&spend_path, &output_path)
+                })
+                .await
             },
         };
 
