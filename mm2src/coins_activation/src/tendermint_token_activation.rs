@@ -13,7 +13,9 @@ impl From<TendermintTokenInitError> for EnableTokenError {
     fn from(err: TendermintTokenInitError) -> Self {
         match err {
             TendermintTokenInitError::InvalidDenom(e) => EnableTokenError::InvalidConfig(e),
-            TendermintTokenInitError::MyAddressError(e) => EnableTokenError::Internal(e),
+            TendermintTokenInitError::MyAddressError(e) | TendermintTokenInitError::Internal(e) => {
+                EnableTokenError::Internal(e)
+            },
             TendermintTokenInitError::CouldNotFetchBalance(e) => EnableTokenError::CouldNotFetchBalance(e),
         }
     }

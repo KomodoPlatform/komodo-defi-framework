@@ -1,16 +1,18 @@
 use crate::utxo::rpc_clients::UtxoRpcError;
 use crate::PrivKeyPolicyNotAllowed;
+use common::executor::AbortedError;
 use common::HttpStatusCode;
 use db_common::sqlite::rusqlite::Error as SqlError;
 use derive_more::Display;
 use http::StatusCode;
 use mm2_err_handle::prelude::*;
+use rpc_task::RpcTaskError;
 use std::num::TryFromIntError;
 
 pub type EnableLightningResult<T> = Result<T, MmError<EnableLightningError>>;
 pub type SaveChannelClosingResult<T> = Result<T, MmError<SaveChannelClosingError>>;
 
-#[derive(Debug, Display, Serialize, SerializeErrorType)]
+#[derive(Clone, Debug, Display, Serialize, SerializeErrorType)]
 #[serde(tag = "error_type", content = "error_data")]
 pub enum EnableLightningError {
     #[display(fmt = "Invalid request: {}", _0)]
@@ -33,7 +35,11 @@ pub enum EnableLightningError {
     RpcError(String),
     #[display(fmt = "DB error {}", _0)]
     DbError(String),
+    #[display(fmt = "Rpc task error: {}", _0)]
+    RpcTaskError(String),
     ConnectToNodeError(String),
+    #[display(fmt = "Internal error: {}", _0)]
+    Internal(String),
 }
 
 impl HttpStatusCode for EnableLightningError {
@@ -49,7 +55,9 @@ impl HttpStatusCode for EnableLightningError {
             | EnableLightningError::IOError(_)
             | EnableLightningError::ConnectToNodeError(_)
             | EnableLightningError::InvalidConfiguration(_)
-            | EnableLightningError::DbError(_) => StatusCode::INTERNAL_SERVER_ERROR,
+            | EnableLightningError::DbError(_)
+            | EnableLightningError::RpcTaskError(_)
+            | EnableLightningError::Internal(_) => StatusCode::INTERNAL_SERVER_ERROR,
         }
     }
 }
@@ -68,6 +76,14 @@ impl From<UtxoRpcError> for EnableLightningError {
 
 impl From<PrivKeyPolicyNotAllowed> for EnableLightningError {
     fn from(e: PrivKeyPolicyNotAllowed) -> Self { EnableLightningError::PrivKeyPolicyNotAllowed(e) }
+}
+
+impl From<RpcTaskError> for EnableLightningError {
+    fn from(e: RpcTaskError) -> Self { EnableLightningError::RpcTaskError(e.to_string()) }
+}
+
+impl From<AbortedError> for EnableLightningError {
+    fn from(e: AbortedError) -> Self { EnableLightningError::Internal(e.to_string()) }
 }
 
 #[derive(Display, PartialEq)]

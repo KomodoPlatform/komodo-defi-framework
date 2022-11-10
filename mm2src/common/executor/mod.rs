@@ -6,7 +6,7 @@ use futures::{Future as Future03, FutureExt};
 pub use native_executor::{spawn, Timer};
 
 mod abortable_system;
-pub use abortable_system::{abortable_queue, graceful_shutdown, simple_map, AbortableSystem};
+pub use abortable_system::{abortable_queue, graceful_shutdown, simple_map, AbortableSystem, AbortedError};
 
 mod spawner;
 pub use spawner::{BoxFutureSpawner, SpawnAbortable, SpawnFuture};

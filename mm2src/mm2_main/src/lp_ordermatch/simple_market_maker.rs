@@ -756,8 +756,6 @@ pub async fn stop_simple_market_maker_bot(ctx: MmArc, _req: Json) -> StopSimpleM
 mod tests {
     use super::{start_simple_market_maker_bot, stop_simple_market_maker_bot, StartSimpleMakerBotRequest};
     use common::block_on;
-    use crypto::privkey::key_pair_from_seed;
-    use mm2_core::mm_ctx::MmCtxBuilder;
     use mm2_test_helpers::for_tests::mm_ctx_with_iguana;
     use serde_json::Value as Json;
 
