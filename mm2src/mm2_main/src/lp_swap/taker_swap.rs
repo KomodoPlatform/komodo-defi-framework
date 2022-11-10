@@ -6,11 +6,10 @@ use super::swap_watcher::{watcher_topic, SwapWatcherMsg};
 use super::trade_preimage::{TradePreimageRequest, TradePreimageRpcError, TradePreimageRpcResult};
 use super::{broadcast_my_swap_status, broadcast_swap_message, broadcast_swap_message_every,
             check_other_coin_balance_for_swap, dex_fee_amount_from_taker_coin, dex_fee_rate, dex_fee_threshold,
-            get_locked_amount, recv_swap_msg, swap_topic, taker_payment_spend_deadline,
-            wait_for_maker_payment_conf_until, AtomicSwap, LockedAmount, MySwapInfo, NegotiationDataMsg,
-            NegotiationDataV2, NegotiationDataV3, RecoveredSwap, RecoveredSwapAction, SavedSwap, SavedSwapIo,
-            SavedTradeFee, SwapConfirmationsSettings, SwapError, SwapMsg, SwapTxDataMsg, SwapsContext,
-            TransactionIdentifier, WAIT_CONFIRM_INTERVAL};
+            get_locked_amount, recv_swap_msg, swap_topic, wait_for_maker_payment_conf_until, AtomicSwap, LockedAmount,
+            MySwapInfo, NegotiationDataMsg, NegotiationDataV2, NegotiationDataV3, RecoveredSwap, RecoveredSwapAction,
+            SavedSwap, SavedSwapIo, SavedTradeFee, SwapConfirmationsSettings, SwapError, SwapMsg, SwapTxDataMsg,
+            SwapsContext, TransactionIdentifier, WAIT_CONFIRM_INTERVAL};
 use crate::mm2::lp_network::subscribe_to_topic;
 use crate::mm2::lp_ordermatch::{MatchBy, OrderConfirmationsSettings, TakerAction, TakerOrderBuilder};
 use crate::mm2::lp_price::fetch_swap_coins_price;
@@ -1330,7 +1329,7 @@ impl TakerSwap {
             ]));
         }
 
-        let timeout = self.r().data.started_at + self.r().data.lock_duration / 3;
+        let timeout = self.r().data.maker_payment_wait;
         let now = now_ms() / 1000;
         if now > timeout {
             return Ok((Some(TakerSwapCommand::Finish), vec![
@@ -1484,14 +1483,13 @@ impl TakerSwap {
             self.p2p_privkey,
         );
 
-        let wait_taker_payment = taker_payment_spend_deadline(self.r().data.started_at, self.r().data.lock_duration);
         let wait_f = self
             .taker_coin
             .wait_for_confirmations(
                 &self.r().taker_payment.clone().unwrap().tx_hex,
                 self.r().data.taker_payment_confirmations,
                 self.r().data.taker_payment_requires_nota.unwrap_or(false),
-                wait_taker_payment,
+                self.r().data.taker_payment_lock,
                 WAIT_CONFIRM_INTERVAL,
             )
             .compat();
