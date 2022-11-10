@@ -190,7 +190,7 @@ pub fn p2p_private_and_peer_id_to_broadcast(ctx: &MmArc, p2p_privkey: Option<&Ke
         Some(keypair) => (keypair.private_bytes(), Some(keypair.libp2p_peer_id())),
         None => {
             let crypto_ctx = CryptoCtx::from_ctx(ctx).expect("CryptoCtx must be initialized already");
-            (crypto_ctx.mm2_internal_privkey_bytes().take(), None)
+            (crypto_ctx.mm2_internal_privkey_secret().take(), None)
         },
     }
 }

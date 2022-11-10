@@ -38,8 +38,8 @@ use base58::FromBase58Error;
 use common::executor::{abortable_queue::{AbortableQueue, WeakSpawner},
                        AbortSettings, SpawnAbortable, SpawnFuture};
 use common::{calc_total_pages, now_ms, ten, HttpStatusCode};
-use crypto::{Bip32Error, Bip44PathToCoin, CryptoCtx, DerivationPath, HwRpcError, KeyPairPolicy, Secp256k1Secret,
-             WithHwRpcError};
+use crypto::{Bip32Error, Bip44PathToCoin, CryptoCtx, DerivationPath, DeriveSecp256k1SecretError, HwRpcError,
+             Secp256k1Secret, WithHwRpcError};
 use derive_more::Display;
 use enum_from::EnumFromTrait;
 use futures::compat::Future01CompatExt;
@@ -55,7 +55,7 @@ use mm2_number::{bigdecimal::{BigDecimal, ParseBigDecimalError, Zero},
                  MmNumber};
 use rpc::v1::types::{Bytes as BytesJson, H256 as H256Json};
 use serde::{Deserialize, Deserializer, Serialize, Serializer};
-use serde_json::{self as json, Value as Json};
+use serde_json::{self as json, Error as JsonError, Value as Json};
 use std::cmp::Ordering;
 use std::collections::hash_map::{HashMap, RawEntryMut};
 use std::fmt;
@@ -2240,6 +2240,21 @@ pub enum DetectPrivKeyPolicyError {
     ErrorDerivingKeyPair(String),
 }
 
+impl From<DeriveSecp256k1SecretError> for DetectPrivKeyPolicyError {
+    fn from(value: DeriveSecp256k1SecretError) -> Self {
+        match value {
+            DeriveSecp256k1SecretError::ExpectedDerivationPath => DetectPrivKeyPolicyError::DerivationPathIsNotSet,
+            DeriveSecp256k1SecretError::Bip32Error(bip32) => {
+                DetectPrivKeyPolicyError::ErrorDerivingKeyPair(bip32.to_string())
+            },
+        }
+    }
+}
+
+impl From<JsonError> for DetectPrivKeyPolicyError {
+    fn from(value: JsonError) -> Self { DetectPrivKeyPolicyError::ErrorDeserializingDerivationPath(value.to_string()) }
+}
+
 impl From<Bip32Error> for DetectPrivKeyPolicyError {
     fn from(value: Bip32Error) -> Self { DetectPrivKeyPolicyError::ErrorDerivingKeyPair(value.to_string()) }
 }
@@ -2251,16 +2266,8 @@ impl PrivKeyBuildPolicy {
         crypto_ctx: &CryptoCtx,
         coin_conf: &Json,
     ) -> MmResult<Self, DetectPrivKeyPolicyError> {
-        let secret = match crypto_ctx.key_pair_policy() {
-            KeyPairPolicy::Iguana(iguana) => iguana.secp256k1_privkey_bytes(),
-            KeyPairPolicy::GlobalHDAccount(hd_ctx) => {
-                let derivation_path: Option<Bip44PathToCoin> =
-                    json::from_value(coin_conf["derivation_path"].clone())
-                        .map_to_mm(|e| DetectPrivKeyPolicyError::ErrorDeserializingDerivationPath(e.to_string()))?;
-                let derivation_path = derivation_path.or_mm_err(|| DetectPrivKeyPolicyError::DerivationPathIsNotSet)?;
-                hd_ctx.derive_secp256k1_secret(&derivation_path)?
-            },
-        };
+        let derivation_path: Option<Bip44PathToCoin> = json::from_value(coin_conf["derivation_path"].clone())?;
+        let secret = crypto_ctx.get_secp256k1_secret_for_coin(&derivation_path)?;
         Ok(PrivKeyBuildPolicy::Secp256k1Secret(secret))
     }
 }

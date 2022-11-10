@@ -1616,7 +1616,7 @@ fn make_ctx_for_tests() -> (MmArc, String, [u8; 32]) {
     ctx.init_metrics().unwrap();
     let crypto_ctx = CryptoCtx::init_with_iguana_passphrase(ctx.clone(), "passphrase").unwrap();
 
-    let secret = crypto_ctx.mm2_internal_privkey_bytes().take();
+    let secret = crypto_ctx.mm2_internal_privkey_secret().take();
     let pubkey = crypto_ctx.mm2_internal_pubkey_hex();
     (ctx, pubkey, secret)
 }

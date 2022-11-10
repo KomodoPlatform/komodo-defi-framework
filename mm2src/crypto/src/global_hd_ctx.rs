@@ -1,7 +1,7 @@
 use crate::privkey::{bip39_priv_key_from_seed, key_pair_from_secret, PrivKeyError};
 use crate::{mm2_internal_der_path, Bip32DerPathOps, Bip32Error, Bip44PathToCoin, CryptoInitError, CryptoInitResult};
 use bip32::{ChildNumber, ExtendedPrivateKey};
-use keys::{KeyPair, Private, Public as PublicKey, Secret as Secp256k1Secret};
+use keys::{KeyPair, Secret as Secp256k1Secret};
 use mm2_err_handle::prelude::*;
 use std::convert::TryInto;
 use std::num::TryFromIntError;
@@ -65,17 +65,11 @@ impl GlobalHDAccountCtx {
         })
     }
 
+    #[inline]
     pub fn into_arc(self) -> GlobalHDAccountArc { GlobalHDAccountArc(Arc::new(self)) }
 
+    #[inline]
     pub fn mm2_internal_key_pair(&self) -> &KeyPair { &self.mm2_internal_key_pair }
-
-    pub fn mm2_internal_pubkey(&self) -> PublicKey { *self.mm2_internal_key_pair.public() }
-
-    pub fn mm2_internal_privkey(&self) -> &Private { self.mm2_internal_key_pair.private() }
-
-    pub fn mm2_internal_privkey_bytes(&self) -> Secp256k1Secret { self.mm2_internal_privkey().secret }
-
-    pub fn mm2_internal_privkey_slice(&self) -> &[u8] { self.mm2_internal_privkey().secret.as_slice() }
 
     /// Derives a `secp256k1::SecretKey` from [`HDAccountCtx::bip39_priv_key`]
     /// at the given `m/purpose'/coin_type'/account_id'/chain/address_id` derivation path,

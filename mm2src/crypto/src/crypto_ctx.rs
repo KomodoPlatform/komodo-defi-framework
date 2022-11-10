@@ -2,8 +2,8 @@ use crate::global_hd_ctx::{GlobalHDAccountArc, GlobalHDAccountCtx};
 use crate::hw_client::{HwDeviceInfo, HwProcessingError, HwPubkey, TrezorConnectProcessor};
 use crate::hw_ctx::{HardwareWalletArc, HardwareWalletCtx};
 use crate::hw_error::HwError;
-use crate::iguana_ctx::IguanaArc;
 use crate::privkey::{key_pair_from_seed, PrivKeyError};
+use crate::{Bip32Error, Bip44PathToCoin};
 use arrayref::array_ref;
 use common::bits256;
 use derive_more::Display;
@@ -66,10 +66,25 @@ impl<ProcessorError> From<HwProcessingError<ProcessorError>> for HwCtxInitError<
     }
 }
 
+pub enum DeriveSecp256k1SecretError {
+    ExpectedDerivationPath,
+    Bip32Error(Bip32Error),
+}
+
+impl From<Bip32Error> for DeriveSecp256k1SecretError {
+    fn from(value: Bip32Error) -> Self { DeriveSecp256k1SecretError::Bip32Error(value) }
+}
+
 /// This is required for converting `MmError<HwProcessingError<E>>` into `MmError<InitHwCtxError<E>>`.
 impl<E> NotEqual for HwCtxInitError<E> {}
 
 pub struct CryptoCtx {
+    /// secp256k1 key pair derived from either:
+    /// * Iguana passphrase,
+    ///   cf. `key_pair_from_seed`;
+    /// * BIP39 passphrase at `mm2_internal_der_path`,
+    ///   cf. [`GlobalHDAccountCtx::new`].
+    secp256k1_key_pair: KeyPair,
     key_pair_policy: KeyPairPolicy,
     /// Can be initialized on [`CryptoCtx::init_hw_ctx_with_trezor`].
     hw_ctx: RwLock<HardwareWalletCtxState>,
@@ -98,10 +113,30 @@ impl CryptoCtx {
             .map_err(|_| MmError::new(CryptoCtxError::Internal("Error casting the context field".to_owned())))
     }
 
+    #[inline]
     pub fn key_pair_policy(&self) -> &KeyPairPolicy { &self.key_pair_policy }
+
+    /// Derives a `secp256k1` secret that should be used to activate a coin
+    /// corresponding to the `derivation_path`.
+    /// If [`CryptoCtx::key_pair_policy`] is `Iguana`, `derivation_path` is ignored.
+    pub fn get_secp256k1_secret_for_coin(
+        &self,
+        derivation_path: &Option<Bip44PathToCoin>,
+    ) -> MmResult<Secp256k1Secret, DeriveSecp256k1SecretError> {
+        match self.key_pair_policy {
+            KeyPairPolicy::Iguana => Ok(self.secp256k1_key_pair.private().secret),
+            KeyPairPolicy::GlobalHDAccount(ref global_hd) => {
+                let derivation_path = derivation_path
+                    .as_ref()
+                    .or_mm_err(|| DeriveSecp256k1SecretError::ExpectedDerivationPath)?;
+                Ok(global_hd.derive_secp256k1_secret(derivation_path)?)
+            },
+        }
+    }
 
     /// This is our public ID, allowing us to be different from other peers.
     /// This should also be our public key which we'd use for P2P message verification.
+    #[inline]
     pub fn mm2_internal_public_id(&self) -> bits256 {
         // Compressed public key is going to be 33 bytes.
         let public = self.mm2_internal_pubkey();
@@ -120,12 +155,8 @@ impl CryptoCtx {
     ///
     /// If [`CryptoCtx::key_pair_ctx`] is `Iguana`, then the returning key-pair is used to activate coins.
     /// Please use this method carefully.
-    pub fn mm2_internal_key_pair(&self) -> &KeyPair {
-        match self.key_pair_policy {
-            KeyPairPolicy::Iguana(ref iguana) => iguana.secp256k1_key_pair(),
-            KeyPairPolicy::GlobalHDAccount(ref hd) => hd.mm2_internal_key_pair(),
-        }
-    }
+    #[inline]
+    pub fn mm2_internal_key_pair(&self) -> &KeyPair { &self.secp256k1_key_pair }
 
     /// Returns `secp256k1` public key.
     /// It can be used for mm2 internal purposes such as P2P peer ID.
@@ -137,12 +168,8 @@ impl CryptoCtx {
     /// If [`CryptoCtx::key_pair_ctx`] is `Iguana`, then the returning key-pair can be also used
     /// at the activated coins.
     /// Please use this method carefully.
-    pub fn mm2_internal_pubkey(&self) -> PublicKey {
-        match self.key_pair_policy {
-            KeyPairPolicy::Iguana(ref iguana) => iguana.secp256k1_pubkey(),
-            KeyPairPolicy::GlobalHDAccount(ref hd) => hd.mm2_internal_pubkey(),
-        }
-    }
+    #[inline]
+    pub fn mm2_internal_pubkey(&self) -> PublicKey { *self.secp256k1_key_pair.public() }
 
     /// Returns `secp256k1` public key hex.
     /// It can be used for mm2 internal purposes such as P2P peer ID.
@@ -154,6 +181,7 @@ impl CryptoCtx {
     /// If [`CryptoCtx::key_pair_ctx`] is `Iguana`, then the returning public key can be also used
     /// at the activated coins.
     /// Please use this method carefully.
+    #[inline]
     pub fn mm2_internal_pubkey_hex(&self) -> String { hex::encode(&*self.mm2_internal_pubkey()) }
 
     /// Returns `secp256k1` private key as `H256` bytes.
@@ -165,12 +193,8 @@ impl CryptoCtx {
     ///
     /// If [`CryptoCtx::key_pair_ctx`] is `Iguana`, then the returning private is used to activate coins.
     /// Please use this method carefully.
-    pub fn mm2_internal_privkey_bytes(&self) -> Secp256k1Secret {
-        match self.key_pair_policy {
-            KeyPairPolicy::Iguana(ref iguana) => iguana.secp256k1_privkey_bytes(),
-            KeyPairPolicy::GlobalHDAccount(ref hd) => hd.mm2_internal_privkey_bytes(),
-        }
-    }
+    #[inline]
+    pub fn mm2_internal_privkey_secret(&self) -> Secp256k1Secret { self.secp256k1_key_pair.private().secret }
 
     /// Returns `secp256k1` private key as `[u8]` slice.
     /// It can be used for mm2 internal purposes such as signing P2P messages.
@@ -183,16 +207,14 @@ impl CryptoCtx {
     ///
     /// If [`CryptoCtx::key_pair_ctx`] is `Iguana`, then the returning private is used to activate coins.
     /// Please use this method carefully.
-    pub fn mm2_internal_privkey_slice(&self) -> &[u8] {
-        match self.key_pair_policy {
-            KeyPairPolicy::Iguana(ref iguana) => iguana.secp256k1_privkey_slice(),
-            KeyPairPolicy::GlobalHDAccount(ref hd) => hd.mm2_internal_privkey_slice(),
-        }
-    }
+    #[inline]
+    pub fn mm2_internal_privkey_slice(&self) -> &[u8] { self.secp256k1_key_pair.private().secret.as_slice() }
 
+    #[inline]
     pub fn hw_ctx(&self) -> Option<HardwareWalletArc> { self.hw_ctx.read().to_option().cloned() }
 
     /// Returns an `RIPEMD160(SHA256(x))` where x is secp256k1 pubkey that identifies a Hardware Wallet device or an HD master private key.
+    #[inline]
     pub fn hw_wallet_rmd160(&self) -> Option<H160> { self.hw_ctx.read().to_option().map(|hw_ctx| hw_ctx.rmd160()) }
 
     pub fn init_with_iguana_passphrase(ctx: MmArc, passphrase: &str) -> CryptoInitResult<Arc<CryptoCtx>> {
@@ -211,7 +233,8 @@ impl CryptoCtx {
         let secp256k1_key_pair = key_pair_from_seed(passphrase)?;
         let rmd160 = secp256k1_key_pair.public().address_hash();
         let crypto_ctx = CryptoCtx {
-            key_pair_policy: KeyPairPolicy::Iguana(IguanaArc::from(secp256k1_key_pair)),
+            secp256k1_key_pair,
+            key_pair_policy: KeyPairPolicy::Iguana,
             hw_ctx: RwLock::new(HardwareWalletCtxState::NotInitialized),
         };
         let result = Arc::new(crypto_ctx);
@@ -241,8 +264,10 @@ impl CryptoCtx {
         }
 
         let global_hd_ctx = GlobalHDAccountCtx::new(passphrase, hd_account_id)?;
-        let rmd160 = global_hd_ctx.mm2_internal_pubkey().address_hash();
+        let secp256k1_key_pair = *global_hd_ctx.mm2_internal_key_pair();
+        let rmd160 = secp256k1_key_pair.public().address_hash();
         let crypto_ctx = CryptoCtx {
+            secp256k1_key_pair,
             key_pair_policy: KeyPairPolicy::GlobalHDAccount(global_hd_ctx.into_arc()),
             hw_ctx: RwLock::new(HardwareWalletCtxState::NotInitialized),
         };
@@ -291,7 +316,7 @@ impl CryptoCtx {
 
 #[derive(Clone)]
 pub enum KeyPairPolicy {
-    Iguana(IguanaArc),
+    Iguana,
     GlobalHDAccount(GlobalHDAccountArc),
 }
 
