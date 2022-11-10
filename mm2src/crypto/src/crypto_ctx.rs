@@ -111,8 +111,8 @@ impl CryptoCtx {
         }
     }
 
-    /// Returns `secp256k1` public key hex.
-    /// It can be used for mm2 internal purposes such as P2P peer ID.
+    /// Returns `secp256k1` key-pair.
+    /// It can be used for mm2 internal purposes such as signing P2P messages.
     ///
     /// To activate coins, consider matching [`CryptoCtx::key_pair_ctx`] manually.
     ///
@@ -127,7 +127,7 @@ impl CryptoCtx {
         }
     }
 
-    /// Returns `secp256k1` key-pair.
+    /// Returns `secp256k1` public key.
     /// It can be used for mm2 internal purposes such as P2P peer ID.
     ///
     /// To activate coins, consider matching [`CryptoCtx::key_pair_ctx`] manually.

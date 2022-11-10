@@ -392,18 +392,10 @@ impl MakerSwap {
             .swap_contract_address()
             .map_or_else(Vec::new, |addr| addr.0);
 
-        let maker_coin_has_persistent_pub = r
-            .data
-            .maker_coin_htlc_pubkey
-            .map(|maker_pub| maker_pub == r.data.my_persistent_pub)
-            .unwrap_or(true);
-        let taker_coin_has_persistent_pub = r
-            .data
-            .taker_coin_htlc_pubkey
-            .map(|taker_pub| taker_pub == r.data.my_persistent_pub)
-            .unwrap_or(true);
+        let equal = r.data.maker_coin_htlc_pubkey == r.data.taker_coin_htlc_pubkey;
+        let same_as_persistent = r.data.maker_coin_htlc_pubkey == Some(r.data.my_persistent_pub);
 
-        if maker_coin_has_persistent_pub && taker_coin_has_persistent_pub {
+        if equal && same_as_persistent {
             NegotiationDataMsg::V2(NegotiationDataV2 {
                 started_at: r.data.started_at,
                 payment_locktime: r.data.maker_payment_lock,
