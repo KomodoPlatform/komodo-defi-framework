@@ -319,6 +319,14 @@ fn process_maker_order_updated(ctx: MmArc, from_pubkey: String, updated_msg: new
 //     Ok(())
 // }
 
+// ZHTLC protocol coin uses random keypair to sign P2P messages per every order.
+// So, each ZHTLC order has unique «pubkey» field that doesn’t match node persistent pubkey derived from passphrase.
+// We can compare pubkeys from maker_orders and from asks or bids, to find our order.
+#[inline(always)]
+fn is_my_order(my_orders_pubkeys: &HashSet<String>, my_pub: &Option<String>, order_pubkey: &str) -> bool {
+    my_pub.as_deref() == Some(order_pubkey) || my_orders_pubkeys.contains(order_pubkey)
+}
+
 /// Request best asks and bids for the given `base` and `rel` coins from relays.
 /// Set `asks_num` and/or `bids_num` to get corresponding number of best asks and bids or None to get all of the available orders.
 ///
@@ -347,8 +355,8 @@ async fn request_and_fill_orderbook(ctx: &MmArc, base: &str, rel: &str) -> Resul
     let ordermatch_ctx = OrdermatchContext::from_ctx(ctx).unwrap();
     let mut orderbook = ordermatch_ctx.orderbook.lock();
 
-    let my_pubkey = match CryptoCtx::from_ctx(ctx).discard_mm() {
-        Ok(crypto_ctx) => Some(crypto_ctx.mm2_internal_pubkey()),
+    let my_pubsecp = match CryptoCtx::from_ctx(ctx).discard_mm() {
+        Ok(crypto_ctx) => Some(crypto_ctx.mm2_internal_pubkey_hex()),
         Err(CryptoCtxError::NotInitialized) => None,
         Err(other) => return ERR!("{}", other),
     };
@@ -358,20 +366,17 @@ async fn request_and_fill_orderbook(ctx: &MmArc, base: &str, rel: &str) -> Resul
         let pubkey_bytes = match hex::decode(&pubkey) {
             Ok(b) => b,
             Err(e) => {
-                log::warn!("Error {} decoding pubkey {}", e, pubkey);
+                warn!("Error {} decoding pubkey {}", e, pubkey);
                 continue;
             },
         };
 
-        // TODO consider using `is_my_order` instead to cover ZCoin orders.
-        if let Some(ref pubkey) = my_pubkey {
-            if pubkey_bytes.as_slice() == pubkey.as_ref() {
-                continue;
-            }
+        if is_my_order(&orderbook.my_p2p_pubkeys, &my_pubsecp, &pubkey) {
+            continue;
         }
 
         if is_pubkey_banned(ctx, &pubkey_bytes[1..].into()) {
-            log::warn!("Pubkey {} is banned", pubkey);
+            warn!("Pubkey {} is banned", pubkey);
             continue;
         }
         let params = ProcessTrieParams {

@@ -1,5 +1,5 @@
-use super::{orderbook_address, subscribe_to_orderbook_topic, OrdermatchContext, RpcOrderbookEntry};
-use crate::mm2::lp_ordermatch::{addr_format_from_protocol_info, RpcOrderbookEntryV2};
+use super::{addr_format_from_protocol_info, is_my_order, orderbook_address, subscribe_to_orderbook_topic,
+            OrdermatchContext, RpcOrderbookEntry, RpcOrderbookEntryV2};
 use coins::{address_by_coin_conf_and_pubkey_str, coin_conf, is_wallet_only_conf};
 use common::log::warn;
 use common::{now_ms, HttpStatusCode};
@@ -11,7 +11,6 @@ use mm2_err_handle::prelude::*;
 use mm2_number::{construct_detailed, BigRational, MmNumber, MmNumberMultiRepr};
 use num_traits::Zero;
 use serde_json::{self as json, Value as Json};
-use std::collections::HashSet;
 
 #[derive(Deserialize)]
 pub struct OrderbookReq {
@@ -106,14 +105,6 @@ fn build_aggregated_entries_v2(
         })
         .collect();
     (aggregated, total_base.into(), total_rel.into())
-}
-
-// ZHTLC protocol coin uses random keypair to sign P2P messages per every order.
-// So, each ZHTLC order has unique «pubkey» field that doesn’t match node persistent pubkey derived from passphrase.
-// We can compare pubkeys from maker_orders and from asks or bids, to find our order.
-#[inline(always)]
-fn is_my_order(my_orders_pubkeys: &HashSet<String>, my_pub: &Option<String>, order_pubkey: &str) -> bool {
-    my_pub.as_deref() == Some(order_pubkey) || my_orders_pubkeys.contains(order_pubkey)
 }
 
 pub async fn orderbook_rpc(ctx: MmArc, req: Json) -> Result<Response<Vec<u8>>, String> {
