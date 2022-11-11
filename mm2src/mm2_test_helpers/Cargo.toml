@@ -3,7 +3,8 @@ name = "mm2_test_helpers"
 version = "0.1.0"
 edition = "2018"
 
-# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
+[lib]
+doctest = false
 
 [dependencies]
 bytes = "1.1"
@@ -20,7 +21,9 @@ mm2_net = { path = "../mm2_net" }
 mm2_number = { path = "../mm2_number" }
 rand = { version = "0.7", features = ["std", "small_rng", "wasm-bindgen"] }
 regex = "1"
+rpc = { path = "../mm2_bitcoin/rpc" }
 serde = "1"
+serde_derive = "1"
 serde_json = { version = "1.0", features = ["preserve_order", "raw_value"] }
 uuid = { version = "0.7", features = ["serde", "v4"] }
 

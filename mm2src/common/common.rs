@@ -11,6 +11,7 @@
 //!                   binary
 
 #![allow(uncommon_codepoints)]
+#![feature(allocator_api)]
 #![feature(integer_atomics, panic_info_message)]
 #![feature(async_closure)]
 #![feature(hash_raw_entry)]
@@ -125,6 +126,7 @@ use parking_lot::{Mutex as PaMutex, MutexGuard as PaMutexGuard};
 use rand::{rngs::SmallRng, SeedableRng};
 use serde::{de, ser};
 use serde_json::{self as json, Value as Json};
+use std::alloc::Allocator;
 use std::fmt::Write as FmtWrite;
 use std::future::Future as Future03;
 use std::io::Write;
@@ -136,6 +138,7 @@ use std::os::raw::c_void;
 use std::panic::{set_hook, PanicInfo};
 use std::ptr::read_volatile;
 use std::sync::atomic::Ordering;
+use std::time::{Duration, SystemTime, SystemTimeError};
 use uuid::Uuid;
 
 pub use http::StatusCode;
@@ -170,7 +173,7 @@ lazy_static! {
 pub auto trait NotSame {}
 impl<X> !NotSame for (X, X) {}
 // Makes the error conversion work for structs/enums containing Box<dyn ...>
-impl<T: ?Sized> NotSame for Box<T> {}
+impl<T: ?Sized, A: Allocator> NotSame for Box<T, A> {}
 
 /// Converts u64 satoshis to f64
 pub fn sat_to_f(sat: u64) -> f64 { sat as f64 / SATOSHIS as f64 }
@@ -468,8 +471,8 @@ pub fn set_panic_hook() {
 
         let mut trace = String::new();
         stack_trace(&mut stack_trace_frame, &mut |l| trace.push_str(l));
-        log::info!("{}", info);
-        log::info!("backtrace\n{}", trace);
+        log!("{}", info);
+        log!("backtrace\n{}", trace);
 
         let _ = ENTERED.try_with(|e| e.compare_exchange(true, false, Ordering::Relaxed, Ordering::Relaxed));
     }))
@@ -630,7 +633,6 @@ pub fn now_ms() -> u64 { js_sys::Date::now() as u64 }
 #[cfg(target_arch = "wasm32")]
 pub fn now_float() -> f64 {
     use gstuff::duration_to_float;
-    use std::time::Duration;
     duration_to_float(Duration::from_millis(now_ms()))
 }
 
@@ -937,3 +939,8 @@ impl<Id> Default for PagingOptionsEnum<Id> {
 
 #[inline(always)]
 pub fn get_utc_timestamp() -> i64 { Utc::now().timestamp() }
+
+#[inline(always)]
+pub fn get_local_duration_since_epoch() -> Result<Duration, SystemTimeError> {
+    SystemTime::now().duration_since(SystemTime::UNIX_EPOCH)
+}

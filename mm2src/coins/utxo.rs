@@ -22,7 +22,7 @@
 //
 
 pub mod bch;
-mod bchd_grpc;
+pub(crate) mod bchd_grpc;
 #[allow(clippy::all)]
 #[rustfmt::skip]
 #[path = "utxo/pb.rs"]
@@ -385,23 +385,20 @@ impl RecentlySpentOutPoints {
 
     pub fn replace_spent_outputs_with_cache(&self, mut outputs: HashSet<UnspentInfo>) -> HashSet<UnspentInfo> {
         let mut replacement_unspents = HashSet::new();
-        outputs = outputs
-            .into_iter()
-            .filter(|unspent| {
-                let outs = self.input_to_output_map.get(&unspent.clone().into());
-                match outs {
-                    Some(outs) => {
-                        for out in outs.iter() {
-                            if !replacement_unspents.contains(out) {
-                                replacement_unspents.insert(out.clone());
-                            }
+        outputs.retain(|unspent| {
+            let outs = self.input_to_output_map.get(&unspent.clone().into());
+            match outs {
+                Some(outs) => {
+                    for out in outs.iter() {
+                        if !replacement_unspents.contains(out) {
+                            replacement_unspents.insert(out.clone());
                         }
-                        false
-                    },
-                    None => true,
-                }
-            })
-            .collect();
+                    }
+                    false
+                },
+                None => true,
+            }
+        });
         if replacement_unspents.is_empty() {
             return outputs;
         }
@@ -935,7 +932,7 @@ impl MatureUnspentList {
 pub trait UtxoCommonOps:
     AsRef<UtxoCoinFields> + UtxoTxGenerationOps + UtxoTxBroadcastOps + Clone + Send + Sync + 'static
 {
-    async fn get_htlc_spend_fee(&self, tx_size: u64) -> UtxoRpcResult<u64>;
+    async fn get_htlc_spend_fee(&self, tx_size: u64, stage: &FeeApproxStage) -> UtxoRpcResult<u64>;
 
     fn addresses_from_script(&self, script: &Script) -> Result<Vec<Address>, String>;
 
@@ -1104,7 +1101,7 @@ pub trait UtxoStandardOps {
 pub struct UtxoArc(Arc<UtxoCoinFields>);
 impl Deref for UtxoArc {
     type Target = UtxoCoinFields;
-    fn deref(&self) -> &UtxoCoinFields { &*self.0 }
+    fn deref(&self) -> &UtxoCoinFields { &self.0 }
 }
 
 impl From<UtxoCoinFields> for UtxoArc {

@@ -1,5 +1,5 @@
 use super::*;
-use crate::coin_errors::{MyAddressError, ValidatePaymentError};
+use crate::coin_errors::MyAddressError;
 use crate::my_tx_history_v2::{CoinWithTxHistoryV2, MyTxHistoryErrorV2, MyTxHistoryTarget, TxDetailsBuilder,
                               TxHistoryStorage};
 use crate::tx_history_storage::{GetTxHistoryFilters, WalletId};
@@ -9,12 +9,15 @@ use crate::utxo::utxo_builder::{UtxoArcBuilder, UtxoCoinBuilder};
 use crate::utxo::utxo_common::big_decimal_from_sat_unsigned;
 use crate::utxo::utxo_tx_history_v2::{UtxoMyAddressesHistoryError, UtxoTxDetailsError, UtxoTxDetailsParams,
                                       UtxoTxHistoryOps};
-use crate::{BlockHeightAndTime, CanRefundHtlc, CoinBalance, CoinProtocol, CoinWithDerivationMethod, MmPlatformCoin,
-            NegotiateSwapContractAddrErr, PrivKeyBuildPolicy, RawTransactionFut, RawTransactionRequest,
-            SearchForSwapTxSpendInput, SignatureResult, SwapOps, TradePreimageValue, TransactionFut, TransactionType,
-            TxFeeDetails, TxMarshalingErr, UnexpectedDerivationMethod, ValidateAddressResult, ValidateOtherPubKeyErr,
-            ValidatePaymentFut, ValidatePaymentInput, VerificationResult, WatcherValidatePaymentInput, WithdrawFut};
-use common::executor::AbortableSystem;
+use crate::{BlockHeightAndTime, CanRefundHtlc, CheckIfMyPaymentSentArgs, CoinBalance, CoinProtocol,
+            CoinWithDerivationMethod, NegotiateSwapContractAddrErr, PaymentInstructions, PaymentInstructionsErr,
+            PrivKeyBuildPolicy, RawTransactionFut, RawTransactionRequest, SearchForSwapTxSpendInput,
+            SendMakerPaymentArgs, SendMakerRefundsPaymentArgs, SendMakerSpendsTakerPaymentArgs, SendTakerPaymentArgs,
+            SendTakerRefundsPaymentArgs, SendTakerSpendsMakerPaymentArgs, SignatureResult, SwapOps,
+            TradePreimageValue, TransactionFut, TransactionType, TxFeeDetails, TxMarshalingErr,
+            UnexpectedDerivationMethod, ValidateAddressResult, ValidateFeeArgs, ValidateInstructionsErr,
+            ValidateOtherPubKeyErr, ValidatePaymentFut, ValidatePaymentInput, VerificationResult, WatcherOps,
+            WatcherValidatePaymentInput, WithdrawFut, MmPlatformCoin};
 use common::log::warn;
 use derive_more::Display;
 use futures::{FutureExt, TryFutureExt};
@@ -713,8 +716,8 @@ impl GetUtxoListOps for BchCoin {
 #[async_trait]
 #[cfg_attr(test, mockable)]
 impl UtxoCommonOps for BchCoin {
-    async fn get_htlc_spend_fee(&self, tx_size: u64) -> UtxoRpcResult<u64> {
-        utxo_common::get_htlc_spend_fee(self, tx_size).await
+    async fn get_htlc_spend_fee(&self, tx_size: u64, stage: &FeeApproxStage) -> UtxoRpcResult<u64> {
+        utxo_common::get_htlc_spend_fee(self, tx_size, stage).await
     }
 
     fn addresses_from_script(&self, script: &Script) -> Result<Vec<Address>, String> {
@@ -812,67 +815,212 @@ impl UtxoCommonOps for BchCoin {
 
 #[async_trait]
 impl SwapOps for BchCoin {
+    #[inline]
     fn send_taker_fee(&self, fee_addr: &[u8], amount: BigDecimal, _uuid: &[u8]) -> TransactionFut {
         utxo_common::send_taker_fee(self.clone(), fee_addr, amount)
     }
 
-    fn send_maker_payment(
-        &self,
-        time_lock: u32,
-        taker_pub: &[u8],
-        secret_hash: &[u8],
-        amount: BigDecimal,
-        _swap_contract_address: &Option<BytesJson>,
-        swap_unique_data: &[u8],
-    ) -> TransactionFut {
+    #[inline]
+    fn send_maker_payment(&self, maker_payment_args: SendMakerPaymentArgs) -> TransactionFut {
         utxo_common::send_maker_payment(
             self.clone(),
-            time_lock,
-            taker_pub,
-            secret_hash,
-            amount,
-            swap_unique_data,
+            maker_payment_args.time_lock,
+            maker_payment_args.other_pubkey,
+            maker_payment_args.secret_hash,
+            maker_payment_args.amount,
+            maker_payment_args.secret_hash,
         )
     }
 
-    fn send_taker_payment(
-        &self,
-        time_lock: u32,
-        maker_pub: &[u8],
-        secret_hash: &[u8],
-        amount: BigDecimal,
-        _swap_contract_address: &Option<BytesJson>,
-        swap_unique_data: &[u8],
-    ) -> TransactionFut {
+    #[inline]
+    fn send_taker_payment(&self, taker_payment_args: SendTakerPaymentArgs) -> TransactionFut {
         utxo_common::send_taker_payment(
             self.clone(),
-            time_lock,
-            maker_pub,
-            secret_hash,
-            amount,
-            swap_unique_data,
+            taker_payment_args.time_lock,
+            taker_payment_args.other_pubkey,
+            taker_payment_args.secret_hash,
+            taker_payment_args.amount,
+            taker_payment_args.swap_unique_data,
         )
     }
 
+    #[inline]
     fn send_maker_spends_taker_payment(
         &self,
-        taker_payment_tx: &[u8],
-        time_lock: u32,
-        taker_pub: &[u8],
-        secret: &[u8],
-        _swap_contract_address: &Option<BytesJson>,
-        swap_unique_data: &[u8],
+        maker_spends_payment_args: SendMakerSpendsTakerPaymentArgs,
     ) -> TransactionFut {
         utxo_common::send_maker_spends_taker_payment(
             self.clone(),
-            taker_payment_tx,
-            time_lock,
-            taker_pub,
-            secret,
-            swap_unique_data,
+            maker_spends_payment_args.other_payment_tx,
+            maker_spends_payment_args.time_lock,
+            maker_spends_payment_args.other_pubkey,
+            maker_spends_payment_args.secret,
+            maker_spends_payment_args.secret_hash,
+            maker_spends_payment_args.swap_unique_data,
         )
     }
 
+    #[inline]
+    fn send_taker_spends_maker_payment(
+        &self,
+        taker_spends_payment_args: SendTakerSpendsMakerPaymentArgs,
+    ) -> TransactionFut {
+        utxo_common::send_taker_spends_maker_payment(
+            self.clone(),
+            taker_spends_payment_args.other_payment_tx,
+            taker_spends_payment_args.time_lock,
+            taker_spends_payment_args.other_pubkey,
+            taker_spends_payment_args.secret,
+            taker_spends_payment_args.secret_hash,
+            taker_spends_payment_args.swap_unique_data,
+        )
+    }
+
+    #[inline]
+    fn send_taker_refunds_payment(&self, taker_refunds_payment_args: SendTakerRefundsPaymentArgs) -> TransactionFut {
+        utxo_common::send_taker_refunds_payment(
+            self.clone(),
+            taker_refunds_payment_args.payment_tx,
+            taker_refunds_payment_args.time_lock,
+            taker_refunds_payment_args.other_pubkey,
+            taker_refunds_payment_args.secret_hash,
+            taker_refunds_payment_args.swap_unique_data,
+        )
+    }
+
+    #[inline]
+    fn send_maker_refunds_payment(&self, maker_refunds_payment_args: SendMakerRefundsPaymentArgs) -> TransactionFut {
+        utxo_common::send_maker_refunds_payment(
+            self.clone(),
+            maker_refunds_payment_args.payment_tx,
+            maker_refunds_payment_args.time_lock,
+            maker_refunds_payment_args.other_pubkey,
+            maker_refunds_payment_args.secret_hash,
+            maker_refunds_payment_args.swap_unique_data,
+        )
+    }
+
+    fn validate_fee(&self, validate_fee_args: ValidateFeeArgs) -> Box<dyn Future<Item = (), Error = String> + Send> {
+        let tx = match validate_fee_args.fee_tx {
+            TransactionEnum::UtxoTx(tx) => tx.clone(),
+            _ => panic!(),
+        };
+        utxo_common::validate_fee(
+            self.clone(),
+            tx,
+            utxo_common::DEFAULT_FEE_VOUT,
+            validate_fee_args.expected_sender,
+            validate_fee_args.amount,
+            validate_fee_args.min_block_number,
+            validate_fee_args.fee_addr,
+        )
+    }
+
+    #[inline]
+    fn validate_maker_payment(&self, input: ValidatePaymentInput) -> ValidatePaymentFut<()> {
+        utxo_common::validate_maker_payment(self, input)
+    }
+
+    #[inline]
+    fn validate_taker_payment(&self, input: ValidatePaymentInput) -> ValidatePaymentFut<()> {
+        utxo_common::validate_taker_payment(self, input)
+    }
+
+    #[inline]
+    fn check_if_my_payment_sent(
+        &self,
+        if_my_payment_spent_args: CheckIfMyPaymentSentArgs,
+    ) -> Box<dyn Future<Item = Option<TransactionEnum>, Error = String> + Send> {
+        utxo_common::check_if_my_payment_sent(
+            self.clone(),
+            if_my_payment_spent_args.time_lock,
+            if_my_payment_spent_args.other_pub,
+            if_my_payment_spent_args.secret_hash,
+            if_my_payment_spent_args.swap_unique_data,
+        )
+    }
+
+    #[inline]
+    async fn search_for_swap_tx_spend_my(
+        &self,
+        input: SearchForSwapTxSpendInput<'_>,
+    ) -> Result<Option<FoundSwapTxSpend>, String> {
+        utxo_common::search_for_swap_tx_spend_my(self, input, utxo_common::DEFAULT_SWAP_VOUT).await
+    }
+
+    #[inline]
+    async fn search_for_swap_tx_spend_other(
+        &self,
+        input: SearchForSwapTxSpendInput<'_>,
+    ) -> Result<Option<FoundSwapTxSpend>, String> {
+        utxo_common::search_for_swap_tx_spend_other(self, input, utxo_common::DEFAULT_SWAP_VOUT).await
+    }
+
+    #[inline]
+    fn check_tx_signed_by_pub(&self, tx: &[u8], expected_pub: &[u8]) -> Result<bool, String> {
+        utxo_common::check_all_inputs_signed_by_pub(tx, expected_pub)
+    }
+
+    #[inline]
+    async fn extract_secret(&self, secret_hash: &[u8], spend_tx: &[u8]) -> Result<Vec<u8>, String> {
+        utxo_common::extract_secret(secret_hash, spend_tx)
+    }
+
+    #[inline]
+    fn can_refund_htlc(&self, locktime: u64) -> Box<dyn Future<Item = CanRefundHtlc, Error = String> + Send + '_> {
+        Box::new(
+            utxo_common::can_refund_htlc(self, locktime)
+                .boxed()
+                .map_err(|e| ERRL!("{}", e))
+                .compat(),
+        )
+    }
+
+    #[inline]
+    fn negotiate_swap_contract_addr(
+        &self,
+        _other_side_address: Option<&[u8]>,
+    ) -> Result<Option<BytesJson>, MmError<NegotiateSwapContractAddrErr>> {
+        Ok(None)
+    }
+
+    #[inline]
+    fn derive_htlc_key_pair(&self, swap_unique_data: &[u8]) -> KeyPair {
+        utxo_common::derive_htlc_key_pair(self.as_ref(), swap_unique_data)
+    }
+
+    #[inline]
+    fn validate_other_pubkey(&self, raw_pubkey: &[u8]) -> MmResult<(), ValidateOtherPubKeyErr> {
+        utxo_common::validate_other_pubkey(raw_pubkey)
+    }
+
+    async fn payment_instructions(
+        &self,
+        _secret_hash: &[u8],
+        _amount: &BigDecimal,
+    ) -> Result<Option<Vec<u8>>, MmError<PaymentInstructionsErr>> {
+        Ok(None)
+    }
+
+    fn validate_instructions(
+        &self,
+        _instructions: &[u8],
+        _secret_hash: &[u8],
+        _amount: BigDecimal,
+    ) -> Result<PaymentInstructions, MmError<ValidateInstructionsErr>> {
+        MmError::err(ValidateInstructionsErr::UnsupportedCoin(self.ticker().to_string()))
+    }
+
+    fn is_supported_by_watchers(&self) -> bool { true }
+}
+
+fn total_unspent_value<'a>(unspents: impl IntoIterator<Item = &'a UnspentInfo>) -> u64 {
+    unspents.into_iter().fold(0, |cur, unspent| cur + unspent.value)
+}
+
+#[async_trait]
+impl WatcherOps for BchCoin {
+    #[inline]
     fn create_taker_spends_maker_payment_preimage(
         &self,
         maker_payment_tx: &[u8],
@@ -891,41 +1039,24 @@ impl SwapOps for BchCoin {
         )
     }
 
-    fn send_taker_spends_maker_payment(
-        &self,
-        maker_payment_tx: &[u8],
-        time_lock: u32,
-        maker_pub: &[u8],
-        secret: &[u8],
-        _swap_contract_address: &Option<BytesJson>,
-        swap_unique_data: &[u8],
-    ) -> TransactionFut {
-        utxo_common::send_taker_spends_maker_payment(
-            self.clone(),
-            maker_payment_tx,
-            time_lock,
-            maker_pub,
-            secret,
-            swap_unique_data,
-        )
-    }
-
+    #[inline]
     fn send_taker_spends_maker_payment_preimage(&self, preimage: &[u8], secret: &[u8]) -> TransactionFut {
         utxo_common::send_taker_spends_maker_payment_preimage(self.clone(), preimage, secret)
     }
 
-    fn send_taker_refunds_payment(
+    #[inline]
+    fn create_taker_refunds_payment_preimage(
         &self,
-        taker_tx: &[u8],
+        taker_payment_tx: &[u8],
         time_lock: u32,
         maker_pub: &[u8],
         secret_hash: &[u8],
         _swap_contract_address: &Option<BytesJson>,
         swap_unique_data: &[u8],
     ) -> TransactionFut {
-        utxo_common::send_taker_refunds_payment(
+        utxo_common::create_taker_refunds_payment_preimage(
             self.clone(),
-            taker_tx,
+            taker_payment_tx,
             time_lock,
             maker_pub,
             secret_hash,
@@ -933,121 +1064,20 @@ impl SwapOps for BchCoin {
         )
     }
 
-    fn send_maker_refunds_payment(
-        &self,
-        maker_tx: &[u8],
-        time_lock: u32,
-        taker_pub: &[u8],
-        secret_hash: &[u8],
-        _swap_contract_address: &Option<BytesJson>,
-        swap_unique_data: &[u8],
-    ) -> TransactionFut {
-        utxo_common::send_maker_refunds_payment(
-            self.clone(),
-            maker_tx,
-            time_lock,
-            taker_pub,
-            secret_hash,
-            swap_unique_data,
-        )
+    #[inline]
+    fn send_watcher_refunds_taker_payment_preimage(&self, taker_refunds_payment: &[u8]) -> TransactionFut {
+        utxo_common::send_watcher_refunds_taker_payment_preimage(self.clone(), taker_refunds_payment)
     }
 
-    fn validate_fee(
-        &self,
-        fee_tx: &TransactionEnum,
-        expected_sender: &[u8],
-        fee_addr: &[u8],
-        amount: &BigDecimal,
-        min_block_number: u64,
-        _uuid: &[u8],
-    ) -> Box<dyn Future<Item = (), Error = String> + Send> {
-        let tx = match fee_tx {
-            TransactionEnum::UtxoTx(tx) => tx.clone(),
-            _ => panic!(),
-        };
-        utxo_common::validate_fee(
-            self.clone(),
-            tx,
-            utxo_common::DEFAULT_FEE_VOUT,
-            expected_sender,
-            amount,
-            min_block_number,
-            fee_addr,
-        )
+    #[inline]
+    fn watcher_validate_taker_fee(&self, taker_fee_hash: Vec<u8>, verified_pub: Vec<u8>) -> ValidatePaymentFut<()> {
+        utxo_common::watcher_validate_taker_fee(self.clone(), taker_fee_hash, verified_pub)
     }
 
-    fn validate_maker_payment(&self, input: ValidatePaymentInput) -> ValidatePaymentFut<()> {
-        utxo_common::validate_maker_payment(self, input)
-    }
-
-    fn validate_taker_payment(&self, input: ValidatePaymentInput) -> ValidatePaymentFut<()> {
-        utxo_common::validate_taker_payment(self, input)
-    }
-
-    fn watcher_validate_taker_payment(
-        &self,
-        input: WatcherValidatePaymentInput,
-    ) -> Box<dyn Future<Item = (), Error = MmError<ValidatePaymentError>> + Send> {
+    #[inline]
+    fn watcher_validate_taker_payment(&self, input: WatcherValidatePaymentInput) -> ValidatePaymentFut<()> {
         utxo_common::watcher_validate_taker_payment(self, input)
     }
-
-    fn check_if_my_payment_sent(
-        &self,
-        time_lock: u32,
-        other_pub: &[u8],
-        secret_hash: &[u8],
-        _search_from_block: u64,
-        _swap_contract_address: &Option<BytesJson>,
-        swap_unique_data: &[u8],
-    ) -> Box<dyn Future<Item = Option<TransactionEnum>, Error = String> + Send> {
-        utxo_common::check_if_my_payment_sent(self.clone(), time_lock, other_pub, secret_hash, swap_unique_data)
-    }
-
-    async fn search_for_swap_tx_spend_my(
-        &self,
-        input: SearchForSwapTxSpendInput<'_>,
-    ) -> Result<Option<FoundSwapTxSpend>, String> {
-        utxo_common::search_for_swap_tx_spend_my(self, input, utxo_common::DEFAULT_SWAP_VOUT).await
-    }
-
-    async fn search_for_swap_tx_spend_other(
-        &self,
-        input: SearchForSwapTxSpendInput<'_>,
-    ) -> Result<Option<FoundSwapTxSpend>, String> {
-        utxo_common::search_for_swap_tx_spend_other(self, input, utxo_common::DEFAULT_SWAP_VOUT).await
-    }
-
-    fn extract_secret(&self, secret_hash: &[u8], spend_tx: &[u8]) -> Result<Vec<u8>, String> {
-        utxo_common::extract_secret(secret_hash, spend_tx)
-    }
-
-    fn can_refund_htlc(&self, locktime: u64) -> Box<dyn Future<Item = CanRefundHtlc, Error = String> + Send + '_> {
-        Box::new(
-            utxo_common::can_refund_htlc(self, locktime)
-                .boxed()
-                .map_err(|e| ERRL!("{}", e))
-                .compat(),
-        )
-    }
-
-    fn negotiate_swap_contract_addr(
-        &self,
-        _other_side_address: Option<&[u8]>,
-    ) -> Result<Option<BytesJson>, MmError<NegotiateSwapContractAddrErr>> {
-        Ok(None)
-    }
-
-    fn derive_htlc_key_pair(&self, swap_unique_data: &[u8]) -> KeyPair {
-        utxo_common::derive_htlc_key_pair(self.as_ref(), swap_unique_data)
-    }
-
-    fn validate_other_pubkey(&self, raw_pubkey: &[u8]) -> MmResult<(), ValidateOtherPubKeyErr> {
-        utxo_common::validate_other_pubkey(raw_pubkey)
-    }
-}
-
-fn total_unspent_value<'a>(unspents: impl IntoIterator<Item = &'a UnspentInfo>) -> u64 {
-    unspents.into_iter().fold(0, |cur, unspent| cur + unspent.value)
 }
 
 impl MarketCoinOps for BchCoin {
@@ -1114,9 +1144,10 @@ impl MarketCoinOps for BchCoin {
         )
     }
 
-    fn wait_for_tx_spend(
+    fn wait_for_htlc_tx_spend(
         &self,
         transaction: &[u8],
+        _secret_hash: &[u8],
         wait_until: u64,
         from_block: u64,
         _swap_contract_address: &Option<BytesJson>,
@@ -1220,6 +1251,8 @@ impl MmCoin for BchCoin {
     }
 
     fn swap_contract_address(&self) -> Option<BytesJson> { utxo_common::swap_contract_address() }
+
+    fn fallback_swap_contract(&self) -> Option<BytesJson> { utxo_common::fallback_swap_contract() }
 
     fn mature_confirmations(&self) -> Option<u32> { Some(self.utxo_arc.conf.mature_confirmations) }
 

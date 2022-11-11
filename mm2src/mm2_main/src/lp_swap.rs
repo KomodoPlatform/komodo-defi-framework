@@ -58,8 +58,10 @@
 //
 
 use crate::mm2::lp_network::{broadcast_p2p_msg, Libp2pPeerId};
+use bitcrypto::{dhash160, sha256};
 use coins::{lp_coinfind, MmCoinEnum, TradeFee, TransactionEnum};
 use common::log::{debug, warn};
+use common::time_cache::DuplicateCache;
 use common::{bits256, calc_total_pages,
              executor::{spawn_abortable, AbortOnDropHandle, SpawnFuture, Timer},
              log::{error, info},
@@ -71,7 +73,6 @@ use mm2_err_handle::prelude::*;
 use mm2_libp2p::{decode_signed, encode_and_sign, pub_sub_topic, TopicPrefix};
 use mm2_number::{BigDecimal, BigRational, MmNumber};
 use parking_lot::Mutex as PaMutex;
-use primitives::hash::{H160, H264};
 use rpc::v1::types::{Bytes as BytesJson, H256 as H256Json};
 use serde::Serialize;
 use serde_json::{self as json, Value as Json};
@@ -80,6 +81,7 @@ use std::num::NonZeroUsize;
 use std::path::PathBuf;
 use std::str::FromStr;
 use std::sync::{Arc, Mutex, Weak};
+use std::time::Duration;
 use uuid::Uuid;
 
 #[cfg(feature = "custom-swap-locktime")]
@@ -111,7 +113,8 @@ use pubkey_banning::BanReason;
 pub use pubkey_banning::{ban_pubkey_rpc, is_pubkey_banned, list_banned_pubkeys_rpc, unban_pubkeys_rpc};
 pub use recreate_swap_data::recreate_swap_data;
 pub use saved_swap::{SavedSwap, SavedSwapError, SavedSwapIo, SavedSwapResult};
-pub use swap_watcher::{process_watcher_msg, watcher_topic, TakerSwapWatcherData, WATCHER_PREFIX};
+pub use swap_watcher::{process_watcher_msg, watcher_topic, TakerSwapWatcherData, TAKER_SWAP_ENTRY_TIMEOUT,
+                       WATCHER_PREFIX};
 use taker_swap::TakerSwapEvent;
 pub use taker_swap::{calc_max_taker_vol, check_balance_for_taker_swap, max_taker_vol, max_taker_vol_from_available,
                      run_taker_swap, taker_swap_trade_preimage, RunTakerSwapInput, TakerSavedSwap, TakerSwap,
@@ -129,13 +132,13 @@ cfg_wasm32! {
     pub type SwapDbLocked<'a> = DbLocked<'a, SwapDb>;
 }
 
-#[derive(Clone, Debug, Deserialize, Serialize)]
+#[derive(Clone, Debug, Eq, Deserialize, PartialEq, Serialize)]
 pub enum SwapMsg {
     Negotiation(NegotiationDataMsg),
     NegotiationReply(NegotiationDataMsg),
     Negotiated(bool),
-    TakerFee(Vec<u8>),
-    MakerPayment(Vec<u8>),
+    TakerFee(SwapTxDataMsg),
+    MakerPayment(SwapTxDataMsg),
     TakerPayment(Vec<u8>),
 }
 
@@ -144,8 +147,8 @@ pub struct SwapMsgStore {
     negotiation: Option<NegotiationDataMsg>,
     negotiation_reply: Option<NegotiationDataMsg>,
     negotiated: Option<bool>,
-    taker_fee: Option<Vec<u8>>,
-    maker_payment: Option<Vec<u8>>,
+    taker_fee: Option<SwapTxDataMsg>,
+    maker_payment: Option<SwapTxDataMsg>,
     taker_payment: Option<Vec<u8>>,
     accept_only_from: bits256,
 }
@@ -189,6 +192,10 @@ pub fn broadcast_swap_message<T: Serialize>(ctx: &MmArc, topic: String, msg: T, 
 
 /// Broadcast the tx message once
 pub fn broadcast_p2p_tx_msg(ctx: &MmArc, topic: String, msg: &TransactionEnum, p2p_privkey: &Option<KeyPair>) {
+    if !msg.supports_tx_helper() {
+        return;
+    }
+
     let (p2p_private, from) = match p2p_privkey {
         Some(keypair) => (keypair.private_bytes(), Some(keypair.libp2p_peer_id())),
         None => (ctx.secp256k1_key_pair().private().secret.take(), None),
@@ -235,8 +242,8 @@ pub async fn process_msg(ctx: MmArc, topic: &str, msg: &[u8]) {
                 SwapMsg::Negotiation(data) => msg_store.negotiation = Some(data),
                 SwapMsg::NegotiationReply(data) => msg_store.negotiation_reply = Some(data),
                 SwapMsg::Negotiated(negotiated) => msg_store.negotiated = Some(negotiated),
-                SwapMsg::TakerFee(taker_fee) => msg_store.taker_fee = Some(taker_fee),
-                SwapMsg::MakerPayment(maker_payment) => msg_store.maker_payment = Some(maker_payment),
+                SwapMsg::TakerFee(data) => msg_store.taker_fee = Some(data),
+                SwapMsg::MakerPayment(data) => msg_store.maker_payment = Some(data),
                 SwapMsg::TakerPayment(taker_payment) => msg_store.taker_payment = Some(taker_payment),
             }
         } else {
@@ -307,6 +314,16 @@ pub fn get_payment_locktime() -> u64 {
     PAYMENT_LOCKTIME.load(Ordering::Relaxed)
 }
 
+#[inline]
+pub fn wait_for_taker_payment_conf_until(swap_started_at: u64, locktime: u64) -> u64 {
+    swap_started_at + (locktime * 4) / 5
+}
+
+#[inline]
+pub fn wait_for_maker_payment_conf_until(swap_started_at: u64, locktime: u64) -> u64 {
+    swap_started_at + (locktime * 2) / 5
+}
+
 const _SWAP_DEFAULT_NUM_CONFIRMS: u32 = 1;
 const _SWAP_DEFAULT_MAX_CONFIRMS: u32 = 6;
 /// MM2 checks that swap payment is confirmed every WAIT_CONFIRM_INTERVAL seconds
@@ -364,7 +381,7 @@ struct SwapsContext {
     running_swaps: Mutex<Vec<Weak<dyn AtomicSwap>>>,
     banned_pubkeys: Mutex<HashMap<H256Json, BanReason>>,
     swap_msgs: Mutex<HashMap<Uuid, SwapMsgStore>>,
-    taker_swap_watchers: PaMutex<HashSet<Uuid>>,
+    taker_swap_watchers: PaMutex<DuplicateCache<Vec<u8>>>,
     #[cfg(target_arch = "wasm32")]
     swap_db: ConstructibleDb<SwapDb>,
 }
@@ -377,7 +394,7 @@ impl SwapsContext {
                 running_swaps: Mutex::new(vec![]),
                 banned_pubkeys: Mutex::new(HashMap::new()),
                 swap_msgs: Mutex::new(HashMap::new()),
-                taker_swap_watchers: PaMutex::new(HashSet::new()),
+                taker_swap_watchers: PaMutex::new(DuplicateCache::new(Duration::from_secs(TAKER_SWAP_ENTRY_TIMEOUT))),
                 #[cfg(target_arch = "wasm32")]
                 swap_db: ConstructibleDb::new(ctx),
             })
@@ -550,7 +567,7 @@ fn dex_fee_threshold(min_tx_amount: MmNumber) -> MmNumber {
 }
 
 fn dex_fee_rate(base: &str, rel: &str) -> MmNumber {
-    let fee_discount_tickers: &[&str] = if cfg!(test) && var("MYCOIN_FEE_DISCOUNT").is_ok() {
+    let fee_discount_tickers: &[&str] = if var("MYCOIN_FEE_DISCOUNT").is_ok() {
         &["KMD", "MYCOIN"]
     } else {
         &["KMD"]
@@ -674,18 +691,54 @@ impl NegotiationDataMsg {
     }
 }
 
-/// Data to be exchanged and validated on swap start, the replacement of LP_pubkeys_data, LP_choosei_data, etc.
-#[derive(Debug, Default, Deserializable, Eq, PartialEq, Serializable)]
-struct SwapNegotiationData {
-    started_at: u64,
-    payment_locktime: u64,
-    secret_hash: H160,
-    persistent_pubkey: H264,
+#[derive(Clone, Debug, Eq, Deserialize, PartialEq, Serialize)]
+pub struct PaymentWithInstructions {
+    data: Vec<u8>,
+    // Next step instructions for the other side whether taker or maker.
+    // An example for this is a maker/taker sending the taker/maker a lightning invoice to be payed.
+    next_step_instructions: Vec<u8>,
+}
+
+#[derive(Clone, Debug, Eq, Deserialize, PartialEq, Serialize)]
+#[serde(untagged)]
+pub enum SwapTxDataMsg {
+    Regular(Vec<u8>),
+    WithInstructions(PaymentWithInstructions),
+}
+
+impl SwapTxDataMsg {
+    #[inline]
+    pub fn data(&self) -> &[u8] {
+        match self {
+            SwapTxDataMsg::Regular(data) => data,
+            SwapTxDataMsg::WithInstructions(p) => &p.data,
+        }
+    }
+
+    #[inline]
+    pub fn instructions(&self) -> Option<&[u8]> {
+        match self {
+            SwapTxDataMsg::Regular(_) => None,
+            SwapTxDataMsg::WithInstructions(p) => Some(&p.next_step_instructions),
+        }
+    }
+
+    #[inline]
+    pub fn new(data: Vec<u8>, instructions: Option<Vec<u8>>) -> Self {
+        match instructions {
+            Some(next_step_instructions) => SwapTxDataMsg::WithInstructions(PaymentWithInstructions {
+                data,
+                next_step_instructions,
+            }),
+            None => SwapTxDataMsg::Regular(data),
+        }
+    }
 }
 
 #[derive(Clone, Debug, Deserialize, PartialEq, Serialize)]
 pub struct TransactionIdentifier {
-    /// Raw bytes of signed transaction in hexadecimal string, this should be sent as is to send_raw_transaction RPC to broadcast the transaction
+    /// Raw bytes of signed transaction in hexadecimal string, this should be sent as is to send_raw_transaction RPC to broadcast the transaction.
+    /// Some payments like lightning payments don't have a tx_hex, for such payments tx_hex will be equal to tx_hash.
     tx_hex: BytesJson,
     /// Transaction hash in hexadecimal format
     tx_hash: BytesJson,
@@ -1199,6 +1252,48 @@ pub async fn active_swaps_rpc(ctx: MmArc, req: Json) -> Result<Response<Vec<u8>>
     Ok(try_s!(Response::builder().body(res)))
 }
 
+enum SecretHashAlgo {
+    /// ripemd160(sha256(secret))
+    DHASH160,
+    /// sha256(secret)
+    SHA256,
+}
+
+impl Default for SecretHashAlgo {
+    fn default() -> Self { SecretHashAlgo::DHASH160 }
+}
+
+impl SecretHashAlgo {
+    fn hash_secret(&self, secret: &[u8]) -> Vec<u8> {
+        match self {
+            SecretHashAlgo::DHASH160 => dhash160(secret).take().into(),
+            SecretHashAlgo::SHA256 => sha256(secret).take().into(),
+        }
+    }
+}
+
+// Todo: Maybe add a secret_hash_algo method to the SwapOps trait instead
+#[cfg(not(target_arch = "wasm32"))]
+fn detect_secret_hash_algo(maker_coin: &MmCoinEnum, taker_coin: &MmCoinEnum) -> SecretHashAlgo {
+    match (maker_coin, taker_coin) {
+        (MmCoinEnum::Tendermint(_) | MmCoinEnum::TendermintToken(_) | MmCoinEnum::LightningCoin(_), _) => {
+            SecretHashAlgo::SHA256
+        },
+        // If taker is lightning coin the SHA256 of the secret will be sent as part of the maker signed invoice
+        (_, MmCoinEnum::Tendermint(_) | MmCoinEnum::TendermintToken(_)) => SecretHashAlgo::SHA256,
+        (_, _) => SecretHashAlgo::DHASH160,
+    }
+}
+
+#[cfg(target_arch = "wasm32")]
+fn detect_secret_hash_algo(maker_coin: &MmCoinEnum, taker_coin: &MmCoinEnum) -> SecretHashAlgo {
+    match (maker_coin, taker_coin) {
+        (MmCoinEnum::Tendermint(_) | MmCoinEnum::TendermintToken(_), _) => SecretHashAlgo::SHA256,
+        (_, MmCoinEnum::Tendermint(_) | MmCoinEnum::TendermintToken(_)) => SecretHashAlgo::SHA256,
+        (_, _) => SecretHashAlgo::DHASH160,
+    }
+}
+
 #[cfg(all(test, not(target_arch = "wasm32")))]
 mod lp_swap_tests {
     use super::*;
@@ -1212,7 +1307,6 @@ mod lp_swap_tests {
     use crypto::privkey::key_pair_from_seed;
     use mm2_core::mm_ctx::MmCtxBuilder;
     use mm2_test_helpers::for_tests::{morty_conf, rick_conf, MORTY_ELECTRUM_ADDRS, RICK_ELECTRUM_ADDRS};
-    use serialization::{deserialize, serialize};
 
     #[test]
     fn test_dex_fee_amount() {
@@ -1244,14 +1338,6 @@ mod lp_swap_tests {
         let amount: MmNumber = "0.001".parse::<BigDecimal>().unwrap().into();
         let actual_fee = dex_fee_amount(base, rel, &amount, &dex_fee_threshold);
         assert_eq!(dex_fee_threshold, actual_fee);
-    }
-
-    #[test]
-    fn test_serde_swap_negotiation_data() {
-        let data = SwapNegotiationData::default();
-        let bytes = serialize(&data);
-        let deserialized = deserialize(bytes.as_slice()).unwrap();
-        assert_eq!(data, deserialized);
     }
 
     #[test]
@@ -1503,6 +1589,77 @@ mod lp_swap_tests {
         let deserialized: NegotiationDataMsg = rmp_serde::from_read_ref(serialized.as_slice()).unwrap();
 
         assert_eq!(deserialized, v3);
+    }
+
+    #[test]
+    fn check_payment_data_serde() {
+        const MSG_DATA_INSTRUCTIONS: [u8; 300] = [1; 300];
+
+        #[derive(Clone, Debug, Eq, Deserialize, PartialEq, Serialize)]
+        enum SwapMsgOld {
+            Negotiation(NegotiationDataMsg),
+            NegotiationReply(NegotiationDataMsg),
+            Negotiated(bool),
+            TakerFee(Vec<u8>),
+            MakerPayment(Vec<u8>),
+            TakerPayment(Vec<u8>),
+        }
+
+        // old message format should be deserialized to PaymentDataMsg::Regular
+        let old = SwapMsgOld::MakerPayment(MSG_DATA_INSTRUCTIONS.to_vec());
+
+        let expected = SwapMsg::MakerPayment(SwapTxDataMsg::Regular(MSG_DATA_INSTRUCTIONS.to_vec()));
+
+        let serialized = rmp_serde::to_vec(&old).unwrap();
+
+        let deserialized: SwapMsg = rmp_serde::from_read_ref(serialized.as_slice()).unwrap();
+
+        assert_eq!(deserialized, expected);
+
+        // PaymentDataMsg::Regular should be deserialized to old message format
+        let v1 = SwapMsg::MakerPayment(SwapTxDataMsg::Regular(MSG_DATA_INSTRUCTIONS.to_vec()));
+
+        let expected = old;
+
+        let serialized = rmp_serde::to_vec(&v1).unwrap();
+
+        let deserialized: SwapMsgOld = rmp_serde::from_read_ref(serialized.as_slice()).unwrap();
+
+        assert_eq!(deserialized, expected);
+
+        // PaymentDataMsg::Regular should be deserialized to PaymentDataMsg::Regular
+        let v1 = SwapMsg::MakerPayment(SwapTxDataMsg::Regular(MSG_DATA_INSTRUCTIONS.to_vec()));
+
+        let serialized = rmp_serde::to_vec(&v1).unwrap();
+
+        let deserialized: SwapMsg = rmp_serde::from_read_ref(serialized.as_slice()).unwrap();
+
+        assert_eq!(deserialized, v1);
+
+        // PaymentDataMsg::WithInstructions should be deserialized to PaymentDataMsg::WithInstructions
+        let v2 = SwapMsg::MakerPayment(SwapTxDataMsg::WithInstructions(PaymentWithInstructions {
+            data: MSG_DATA_INSTRUCTIONS.to_vec(),
+            next_step_instructions: MSG_DATA_INSTRUCTIONS.to_vec(),
+        }));
+
+        let serialized = rmp_serde::to_vec(&v2).unwrap();
+
+        let deserialized: SwapMsg = rmp_serde::from_read_ref(serialized.as_slice()).unwrap();
+
+        assert_eq!(deserialized, v2);
+
+        // PaymentDataMsg::WithInstructions shouldn't be deserialized to old message format, new nodes with payment instructions can't swap with old nodes without it.
+        let v2 = SwapMsg::MakerPayment(SwapTxDataMsg::WithInstructions(PaymentWithInstructions {
+            data: MSG_DATA_INSTRUCTIONS.to_vec(),
+            next_step_instructions: MSG_DATA_INSTRUCTIONS.to_vec(),
+        }));
+
+        let serialized = rmp_serde::to_vec(&v2).unwrap();
+
+        let deserialized: Result<SwapMsgOld, rmp_serde::decode::Error> =
+            rmp_serde::from_read_ref(serialized.as_slice());
+
+        assert!(deserialized.is_err());
     }
 
     fn utxo_activation_params(electrums: &[&str]) -> UtxoActivationParams {

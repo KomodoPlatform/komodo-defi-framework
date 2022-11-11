@@ -41,8 +41,7 @@ members = [
 resolver = "2"
 
 [profile.release]
-# Due to the "overrides" only affects our workspace crates, as intended.
-debug = true
+debug = 1
 debug-assertions = false
 # For some reason, opt-level 3 started causing infinite Windows builds after Cosmos integration
 # TODO troubleshoot it
@@ -55,12 +54,3 @@ debug-assertions = false
 [profile.release.overrides."*"]
 # Turns debugging symbols off for the out-of-workspace dependencies.
 debug = false
-
-# The backtrace disables build.define("HAVE_DL_ITERATE_PHDR", "1"); for android which results in "unknown" function
-# names being printed, but dl_iterate_phdr is present since API version 21 https://github.com/rust-lang/rust/issues/17520#issuecomment-344885468
-# We're using 21 version for Android build so we're fine to use the patch.
-# Consider removing once this issue is solved and fix applied to upstream repository
-# https://github.com/rust-lang/backtrace-rs/issues/227
-[patch.crates-io]
-backtrace = { git = "https://github.com/artemii235/backtrace-rs.git" }
-backtrace-sys = { git = "https://github.com/artemii235/backtrace-rs.git" }

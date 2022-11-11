@@ -1,3 +1,8 @@
+use crate::lightning::ln_db::{DBPaymentsFilter, HTLCStatus, PaymentInfo, PaymentType};
+use crate::lightning::ln_platform::h256_json_from_txid;
+use crate::H256Json;
+use lightning::chain::channelmonitor::Balance;
+use lightning::ln::channelmanager::ChannelDetails;
 use secp256k1v22::PublicKey;
 use serde::{de, Serialize, Serializer};
 use std::fmt;
@@ -91,6 +96,229 @@ impl<'de> de::Deserialize<'de> for PublicKeyForRPC {
         }
 
         deserializer.deserialize_str(PublicKeyForRPCVisitor)
+    }
+}
+
+#[derive(Clone, Serialize)]
+pub struct ChannelDetailsForRPC {
+    pub rpc_channel_id: u64,
+    pub channel_id: H256Json,
+    pub counterparty_node_id: PublicKeyForRPC,
+    pub funding_tx: Option<H256Json>,
+    pub funding_tx_output_index: Option<u16>,
+    pub funding_tx_value_sats: u64,
+    /// True if the channel was initiated (and thus funded) by us.
+    pub is_outbound: bool,
+    pub balance_msat: u64,
+    pub outbound_capacity_msat: u64,
+    pub inbound_capacity_msat: u64,
+    // Channel is confirmed onchain, this means that funding_locked messages have been exchanged,
+    // the channel is not currently being shut down, and the required confirmation count has been reached.
+    pub is_ready: bool,
+    // Channel is confirmed and channel_ready messages have been exchanged, the peer is connected,
+    // and the channel is not currently negotiating a shutdown.
+    pub is_usable: bool,
+    // A publicly-announced channel.
+    pub is_public: bool,
+}
+
+impl From<ChannelDetails> for ChannelDetailsForRPC {
+    fn from(details: ChannelDetails) -> ChannelDetailsForRPC {
+        ChannelDetailsForRPC {
+            rpc_channel_id: details.user_channel_id,
+            channel_id: details.channel_id.into(),
+            counterparty_node_id: PublicKeyForRPC(details.counterparty.node_id),
+            funding_tx: details.funding_txo.map(|tx| h256_json_from_txid(tx.txid)),
+            funding_tx_output_index: details.funding_txo.map(|tx| tx.index),
+            funding_tx_value_sats: details.channel_value_satoshis,
+            is_outbound: details.is_outbound,
+            balance_msat: details.balance_msat,
+            outbound_capacity_msat: details.outbound_capacity_msat,
+            inbound_capacity_msat: details.inbound_capacity_msat,
+            is_ready: details.is_channel_ready,
+            is_usable: details.is_usable,
+            is_public: details.is_public,
+        }
+    }
+}
+
+#[derive(Deserialize, Serialize)]
+#[serde(tag = "type")]
+pub enum PaymentTypeForRPC {
+    #[serde(rename = "Outbound Payment")]
+    OutboundPayment { destination: PublicKeyForRPC },
+    #[serde(rename = "Inbound Payment")]
+    InboundPayment,
+}
+
+impl From<PaymentType> for PaymentTypeForRPC {
+    fn from(payment_type: PaymentType) -> Self {
+        match payment_type {
+            PaymentType::OutboundPayment { destination } => PaymentTypeForRPC::OutboundPayment {
+                destination: PublicKeyForRPC(destination),
+            },
+            PaymentType::InboundPayment => PaymentTypeForRPC::InboundPayment,
+        }
+    }
+}
+
+impl From<PaymentTypeForRPC> for PaymentType {
+    fn from(payment_type: PaymentTypeForRPC) -> Self {
+        match payment_type {
+            PaymentTypeForRPC::OutboundPayment { destination } => PaymentType::OutboundPayment {
+                destination: destination.into(),
+            },
+            PaymentTypeForRPC::InboundPayment => PaymentType::InboundPayment,
+        }
+    }
+}
+
+#[derive(Serialize)]
+pub struct PaymentInfoForRPC {
+    payment_hash: H256Json,
+    payment_type: PaymentTypeForRPC,
+    description: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    amount_in_msat: Option<i64>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    fee_paid_msat: Option<i64>,
+    status: HTLCStatus,
+    created_at: i64,
+    last_updated: i64,
+}
+
+impl From<PaymentInfo> for PaymentInfoForRPC {
+    fn from(info: PaymentInfo) -> Self {
+        PaymentInfoForRPC {
+            payment_hash: info.payment_hash.0.into(),
+            payment_type: info.payment_type.into(),
+            description: info.description,
+            amount_in_msat: info.amt_msat,
+            fee_paid_msat: info.fee_paid_msat,
+            status: info.status,
+            created_at: info.created_at,
+            last_updated: info.last_updated,
+        }
+    }
+}
+
+#[derive(Deserialize)]
+pub struct PaymentsFilterForRPC {
+    pub payment_type: Option<PaymentTypeForRPC>,
+    pub description: Option<String>,
+    pub status: Option<HTLCStatus>,
+    pub from_amount_msat: Option<u64>,
+    pub to_amount_msat: Option<u64>,
+    pub from_fee_paid_msat: Option<u64>,
+    pub to_fee_paid_msat: Option<u64>,
+    pub from_timestamp: Option<u64>,
+    pub to_timestamp: Option<u64>,
+}
+
+impl From<PaymentsFilterForRPC> for DBPaymentsFilter {
+    fn from(filter: PaymentsFilterForRPC) -> Self {
+        let (is_outbound, destination) = if let Some(payment_type) = filter.payment_type {
+            match payment_type {
+                PaymentTypeForRPC::OutboundPayment { destination } => (Some(true), Some(destination.0.to_string())),
+                PaymentTypeForRPC::InboundPayment => (Some(false), None),
+            }
+        } else {
+            (None, None)
+        };
+        DBPaymentsFilter {
+            is_outbound,
+            destination,
+            description: filter.description,
+            status: filter.status.map(|s| s.to_string()),
+            from_amount_msat: filter.from_amount_msat.map(|a| a as i64),
+            to_amount_msat: filter.to_amount_msat.map(|a| a as i64),
+            from_fee_paid_msat: filter.from_fee_paid_msat.map(|f| f as i64),
+            to_fee_paid_msat: filter.to_fee_paid_msat.map(|f| f as i64),
+            from_timestamp: filter.from_timestamp.map(|f| f as i64),
+            to_timestamp: filter.to_timestamp.map(|f| f as i64),
+        }
+    }
+}
+
+/// Details about the balance(s) available for spending once the channel appears on chain.
+#[derive(Serialize)]
+pub enum ClaimableBalance {
+    /// The channel is not yet closed (or the commitment or closing transaction has not yet
+    /// appeared in a block). The given balance is claimable (less on-chain fees) if the channel is
+    /// force-closed now.
+    ClaimableOnChannelClose {
+        /// The amount available to claim, in satoshis, excluding the on-chain fees which will be
+        /// required to do so.
+        claimable_amount_satoshis: u64,
+    },
+    /// The channel has been closed, and the given balance is ours but awaiting confirmations until
+    /// we consider it spendable.
+    ClaimableAwaitingConfirmations {
+        /// The amount available to claim, in satoshis, possibly excluding the on-chain fees which
+        /// were spent in broadcasting the transaction.
+        claimable_amount_satoshis: u64,
+        /// The height at which an [`Event::SpendableOutputs`] event will be generated for this
+        /// amount.
+        confirmation_height: u32,
+    },
+    /// The channel has been closed, and the given balance should be ours but awaiting spending
+    /// transaction confirmation. If the spending transaction does not confirm in time, it is
+    /// possible our counterparty can take the funds by broadcasting an HTLC timeout on-chain.
+    ///
+    /// Once the spending transaction confirms, before it has reached enough confirmations to be
+    /// considered safe from chain reorganizations, the balance will instead be provided via
+    /// [`Balance::ClaimableAwaitingConfirmations`].
+    ContentiousClaimable {
+        /// The amount available to claim, in satoshis, excluding the on-chain fees which will be
+        /// required to do so.
+        claimable_amount_satoshis: u64,
+        /// The height at which the counterparty may be able to claim the balance if we have not
+        /// done so.
+        timeout_height: u32,
+    },
+    /// HTLCs which we sent to our counterparty which are claimable after a timeout (less on-chain
+    /// fees) if the counterparty does not know the preimage for the HTLCs. These are somewhat
+    /// likely to be claimed by our counterparty before we do.
+    MaybeClaimableHTLCAwaitingTimeout {
+        /// The amount available to claim, in satoshis, excluding the on-chain fees which will be
+        /// required to do so.
+        claimable_amount_satoshis: u64,
+        /// The height at which we will be able to claim the balance if our counterparty has not
+        /// done so.
+        claimable_height: u32,
+    },
+}
+
+impl From<Balance> for ClaimableBalance {
+    fn from(balance: Balance) -> Self {
+        match balance {
+            Balance::ClaimableOnChannelClose {
+                claimable_amount_satoshis,
+            } => ClaimableBalance::ClaimableOnChannelClose {
+                claimable_amount_satoshis,
+            },
+            Balance::ClaimableAwaitingConfirmations {
+                claimable_amount_satoshis,
+                confirmation_height,
+            } => ClaimableBalance::ClaimableAwaitingConfirmations {
+                claimable_amount_satoshis,
+                confirmation_height,
+            },
+            Balance::ContentiousClaimable {
+                claimable_amount_satoshis,
+                timeout_height,
+            } => ClaimableBalance::ContentiousClaimable {
+                claimable_amount_satoshis,
+                timeout_height,
+            },
+            Balance::MaybeClaimableHTLCAwaitingTimeout {
+                claimable_amount_satoshis,
+                claimable_height,
+            } => ClaimableBalance::MaybeClaimableHTLCAwaitingTimeout {
+                claimable_amount_satoshis,
+                claimable_height,
+            },
+        }
     }
 }
 

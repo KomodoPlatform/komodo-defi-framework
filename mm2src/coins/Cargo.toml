@@ -81,6 +81,7 @@ sha2 = "0.9"
 sha3 = "0.9"
 utxo_signer = { path = "utxo_signer" }
 tiny-bip39 = "0.8.0"
+uuid = { version = "0.7", features = ["serde", "v4"] }
 # One of web3 dependencies is the old `tokio-uds 0.1.7` which fails cross-compiling to ARM.
 # We don't need the default web3 features at all since we added our own web3 transport using shared HYPER instance.
 web3 = { git = "https://github.com/artemii235/rust-web3", default-features = false }

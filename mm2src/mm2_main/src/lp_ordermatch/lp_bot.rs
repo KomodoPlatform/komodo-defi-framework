@@ -177,7 +177,7 @@ pub struct ArcTradingBotContext(Arc<TradingBotContext>);
 
 impl Deref for ArcTradingBotContext {
     type Target = TradingBotContext;
-    fn deref(&self) -> &TradingBotContext { &*self.0 }
+    fn deref(&self) -> &TradingBotContext { &self.0 }
 }
 
 #[allow(clippy::single_match)]

@@ -1,15 +1,15 @@
 use crate::mm2::lp_swap::maker_swap::{MakerSwapData, MakerSwapEvent, TakerNegotiationData, MAKER_ERROR_EVENTS,
                                       MAKER_SUCCESS_EVENTS};
-use crate::mm2::lp_swap::taker_swap::{maker_payment_wait, MakerNegotiationData, TakerPaymentSpentData,
-                                      TakerSavedEvent, TakerSwapData, TakerSwapEvent, TAKER_ERROR_EVENTS,
-                                      TAKER_SUCCESS_EVENTS};
-use crate::mm2::lp_swap::{MakerSavedEvent, MakerSavedSwap, SavedSwap, SwapError, TakerSavedSwap};
+use crate::mm2::lp_swap::taker_swap::{MakerNegotiationData, TakerPaymentSpentData, TakerSavedEvent, TakerSwapData,
+                                      TakerSwapEvent, TAKER_ERROR_EVENTS, TAKER_SUCCESS_EVENTS};
+use crate::mm2::lp_swap::{wait_for_maker_payment_conf_until, MakerSavedEvent, MakerSavedSwap, SavedSwap, SwapError,
+                          TakerSavedSwap};
 use coins::{lp_coinfind, MmCoinEnum};
 use common::{HttpStatusCode, StatusCode};
 use derive_more::Display;
 use mm2_core::mm_ctx::MmArc;
 use mm2_err_handle::prelude::*;
-use rpc::v1::types::{H160 as H160Json, H256 as H256Json};
+use rpc::v1::types::{Bytes as BytesJson, H256 as H256Json};
 
 pub type RecreateSwapResult<T> = Result<T, MmError<RecreateSwapError>>;
 
@@ -260,12 +260,14 @@ fn convert_taker_to_maker_events(
             | TakerSwapEvent::StartFailed(_)
             | TakerSwapEvent::Negotiated(_)
             | TakerSwapEvent::NegotiateFailed(_)
+            // Todo: This may be used when implementing convert_taker_to_maker_events for lightning
+            | TakerSwapEvent::TakerPaymentInstructionsReceived(_)
             | TakerSwapEvent::MakerPaymentWaitConfirmStarted
             | TakerSwapEvent::MakerPaymentValidatedAndConfirmed
             | TakerSwapEvent::MakerPaymentSpent(_)
             | TakerSwapEvent::MakerPaymentSpendFailed(_)
             // We don't know the reason at the moment, so we rely on the errors handling above.
-            | TakerSwapEvent::WatcherMessageSent(_)
+            | TakerSwapEvent::WatcherMessageSent(_,_)
             | TakerSwapEvent::TakerPaymentWaitRefundStarted { .. }
             | TakerSwapEvent::TakerPaymentRefunded(_)
             | TakerSwapEvent::TakerPaymentRefundFailed(_)
@@ -328,7 +330,7 @@ async fn recreate_taker_swap(ctx: MmArc, maker_swap: MakerSavedSwap) -> Recreate
         taker_payment_lock: negotiated_event.taker_payment_locktime,
         uuid: started_event.uuid,
         started_at: started_event.started_at,
-        maker_payment_wait: maker_payment_wait(started_event.started_at, started_event.lock_duration),
+        maker_payment_wait: wait_for_maker_payment_conf_until(started_event.started_at, started_event.lock_duration),
         maker_coin_start_block: started_event.maker_coin_start_block,
         taker_coin_start_block: started_event.taker_coin_start_block,
         // Don't set the fee since the value is used when we calculate locked by other swaps amount only.
@@ -355,7 +357,7 @@ async fn recreate_taker_swap(ctx: MmArc, maker_swap: MakerSavedSwap) -> Recreate
     let taker_negotiated_event = TakerSwapEvent::Negotiated(MakerNegotiationData {
         maker_payment_locktime: started_event.maker_payment_lock,
         maker_pubkey: started_event.my_persistent_pub,
-        secret_hash,
+        secret_hash: secret_hash.clone(),
         maker_coin_swap_contract_addr: negotiated_event.maker_coin_swap_contract_addr,
         taker_coin_swap_contract_addr: negotiated_event.taker_coin_swap_contract_addr,
         maker_coin_htlc_pubkey: started_event.maker_coin_htlc_pubkey,
@@ -377,12 +379,9 @@ async fn recreate_taker_swap(ctx: MmArc, maker_swap: MakerSavedSwap) -> Recreate
 
     // Then we can continue to process success Maker events.
     let wait_refund_until = negotiated_event.taker_payment_locktime + 3700;
-    taker_swap.events.extend(convert_maker_to_taker_events(
-        event_it,
-        maker_coin,
-        secret_hash,
-        wait_refund_until,
-    ));
+    taker_swap
+        .events
+        .extend(convert_maker_to_taker_events(event_it, maker_coin, secret_hash, wait_refund_until).await);
 
     Ok(taker_swap)
 }
@@ -392,10 +391,10 @@ async fn recreate_taker_swap(ctx: MmArc, maker_swap: MakerSavedSwap) -> Recreate
 /// since they are used outside of this function to generate `TakerSwap` and the initial [`TakerSwapEvent::Started`] and [`TakerSwapEvent::Negotiated`] events.
 ///
 /// The `maker_coin` and `secret_hash` function arguments are used to extract a secret from `TakerPaymentSpent`.
-fn convert_maker_to_taker_events(
+async fn convert_maker_to_taker_events(
     event_it: impl Iterator<Item = MakerSavedEvent>,
     maker_coin: MmCoinEnum,
-    secret_hash: H160Json,
+    secret_hash: BytesJson,
     wait_refund_until: u64,
 ) -> Vec<TakerSavedEvent> {
     let mut events = Vec::new();
@@ -422,6 +421,7 @@ fn convert_maker_to_taker_events(
                 return events;
             },
             MakerSwapEvent::MakerPaymentSent(tx_ident) => {
+                // Todo: check this if a new event is added for other side instructions, also look in the mirror maker_swap.rs
                 push_event!(TakerSwapEvent::MakerPaymentReceived(tx_ident));
                 // Please note we have not to push `MakerPaymentValidatedAndConfirmed` since we could actually decline it.
                 push_event!(TakerSwapEvent::MakerPaymentWaitConfirmStarted);
@@ -448,7 +448,7 @@ fn convert_maker_to_taker_events(
                 return events;
             },
             MakerSwapEvent::TakerPaymentSpent(tx_ident) => {
-                let secret = match maker_coin.extract_secret(&secret_hash.0, &tx_ident.tx_hex) {
+                let secret = match maker_coin.extract_secret(&secret_hash.0, &tx_ident.tx_hex).await {
                     Ok(secret) => H256Json::from(secret.as_slice()),
                     Err(e) => {
                         push_event!(TakerSwapEvent::TakerPaymentWaitForSpendFailed(ERRL!("{}", e).into()));
@@ -466,6 +466,8 @@ fn convert_maker_to_taker_events(
             | MakerSwapEvent::StartFailed(_)
             | MakerSwapEvent::Negotiated(_)
             | MakerSwapEvent::NegotiateFailed(_)
+            // Todo: This may be used when implementing convert_maker_to_taker_events for lightning
+            | MakerSwapEvent::MakerPaymentInstructionsReceived(_)
             | MakerSwapEvent::TakerPaymentWaitConfirmStarted
             | MakerSwapEvent::TakerPaymentValidatedAndConfirmed
             | MakerSwapEvent::TakerPaymentSpendConfirmStarted
@@ -527,7 +529,7 @@ mod tests {
     fn test_recreate_taker_swap() {
         TestCoin::extract_secret.mock_safe(|_coin, _secret_hash, _spend_tx| {
             let secret = hex::decode("23a6bb64bc0ab2cc14cb84277d8d25134b814e5f999c66e578c9bba3c5e2d3a4").unwrap();
-            MockResult::Return(Ok(secret))
+            MockResult::Return(Box::pin(async move { Ok(secret) }))
         });
 
         let maker_saved_swap: MakerSavedSwap =

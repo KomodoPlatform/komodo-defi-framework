@@ -271,6 +271,10 @@ where
     }
 
     pub fn contains(&mut self, key: &Key) -> bool { self.0.contains_key(key) }
+
+    // Removes a certain key even if it didn't expire plus removing other expired keys
+    #[inline]
+    pub fn remove(&mut self, key: Key) { self.0.remove(key); }
 }
 
 #[cfg(test)]

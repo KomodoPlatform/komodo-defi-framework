@@ -6,14 +6,14 @@ use crate::utxo::rpc_clients::{BestBlock as RpcBestBlock, BlockHashOrHeight, Con
 use crate::utxo::spv::SimplePaymentVerification;
 use crate::utxo::utxo_standard::UtxoStandardCoin;
 use crate::utxo::GetConfirmedTxError;
-use crate::{MarketCoinOps, MmCoin};
+use crate::{CoinFutSpawner, MarketCoinOps, MmCoin};
 use bitcoin::blockdata::block::BlockHeader;
 use bitcoin::blockdata::script::Script;
 use bitcoin::blockdata::transaction::Transaction;
 use bitcoin::consensus::encode::{deserialize, serialize_hex};
 use bitcoin::hash_types::{BlockHash, TxMerkleNode, Txid};
 use bitcoin_hashes::{sha256d, Hash};
-use common::executor::{abortable_queue::AbortableQueue, AbortableSystem, Timer};
+use common::executor::{abortable_queue::AbortableQueue, AbortableSystem, SpawnFuture, Timer};
 use common::log::{debug, error, info};
 use futures::compat::Future01CompatExt;
 use futures::future::join_all;
@@ -177,12 +177,12 @@ impl Platform {
         coin: UtxoStandardCoin,
         network: BlockchainNetwork,
         confirmations_targets: PlatformCoinConfirmationTargets,
-    ) -> Self {
+    ) -> EnableLightningResult<Self> {
         // Create an abortable system linked to the base `coin` so if the base coin is disabled,
         // all spawned futures related to `LightCoin` will be aborted as well.
-        let abortable_system = coin.as_ref().abortable_system.create_subsystem();
+        let abortable_system = coin.as_ref().abortable_system.create_subsystem()?;
 
-        Platform {
+        Ok(Platform {
             coin,
             network,
             best_block_height: AtomicU64::new(0),
@@ -196,7 +196,7 @@ impl Platform {
             registered_outputs: PaMutex::new(Vec::new()),
             unsigned_funding_txs: PaMutex::new(HashMap::new()),
             abortable_system,
-        }
+        })
     }
 
     #[inline]
@@ -513,8 +513,10 @@ impl Platform {
 
         let closing_tx = self
             .coin
-            .wait_for_tx_spend(
+            // TODO add fn with old wait_for_tx_spend name
+            .wait_for_htlc_tx_spend(
                 &funding_tx_bytes.into_vec(),
+                &[],
                 (now_ms() / 1000) + 3600,
                 from_block.try_into()?,
                 &None,

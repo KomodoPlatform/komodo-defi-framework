@@ -247,35 +247,33 @@ fn send_and_refund_erc20_payment() {
         erc20_tokens_infos: Default::default(),
         abortable_system: AbortableQueue::default(),
     }));
-
-    let payment = coin
-        .send_maker_payment(
-            (now_ms() / 1000) as u32 - 200,
-            &DEX_FEE_ADDR_RAW_PUBKEY,
-            &[1; 20],
-            "0.001".parse().unwrap(),
-            &coin.swap_contract_address(),
-            &[],
-        )
-        .wait()
-        .unwrap();
-
+    let maker_payment_args = SendMakerPaymentArgs {
+        time_lock_duration: 0,
+        time_lock: (now_ms() / 1000) as u32 - 200,
+        other_pubkey: &DEX_FEE_ADDR_RAW_PUBKEY,
+        secret_hash: &[1; 20],
+        amount: "0.001".parse().unwrap(),
+        swap_contract_address: &coin.swap_contract_address(),
+        swap_unique_data: &[],
+        payment_instructions: &None,
+    };
+    let payment = coin.send_maker_payment(maker_payment_args).wait().unwrap();
     log!("{:?}", payment);
 
     block_on(Timer::sleep(60.));
 
+    let maker_refunds_payment_args = SendMakerRefundsPaymentArgs {
+        payment_tx: &payment.tx_hex(),
+        time_lock: (now_ms() / 1000) as u32 - 200,
+        other_pubkey: &DEX_FEE_ADDR_RAW_PUBKEY,
+        secret_hash: &[1; 20],
+        swap_contract_address: &coin.swap_contract_address(),
+        swap_unique_data: &[],
+    };
     let refund = coin
-        .send_maker_refunds_payment(
-            &payment.tx_hex(),
-            (now_ms() / 1000) as u32 - 200,
-            &DEX_FEE_ADDR_RAW_PUBKEY,
-            &[1; 20],
-            &coin.swap_contract_address(),
-            &[],
-        )
+        .send_maker_refunds_payment(maker_refunds_payment_args)
         .wait()
         .unwrap();
-
     log!("{:?}", refund);
 }
 
@@ -316,32 +314,31 @@ fn send_and_refund_eth_payment() {
         erc20_tokens_infos: Default::default(),
         abortable_system: AbortableQueue::default(),
     }));
-
-    let payment = coin
-        .send_maker_payment(
-            (now_ms() / 1000) as u32 - 200,
-            &DEX_FEE_ADDR_RAW_PUBKEY,
-            &[1; 20],
-            "0.001".parse().unwrap(),
-            &coin.swap_contract_address(),
-            &[],
-        )
-        .wait()
-        .unwrap();
+    let send_maker_payment_args = SendMakerPaymentArgs {
+        time_lock_duration: 0,
+        time_lock: (now_ms() / 1000) as u32 - 200,
+        other_pubkey: &DEX_FEE_ADDR_RAW_PUBKEY,
+        secret_hash: &[1; 20],
+        amount: "0.001".parse().unwrap(),
+        swap_contract_address: &coin.swap_contract_address(),
+        swap_unique_data: &[],
+        payment_instructions: &None,
+    };
+    let payment = coin.send_maker_payment(send_maker_payment_args).wait().unwrap();
 
     log!("{:?}", payment);
 
     block_on(Timer::sleep(60.));
-
+    let maker_refunds_payment_args = SendMakerRefundsPaymentArgs {
+        payment_tx: &payment.tx_hex(),
+        time_lock: (now_ms() / 1000) as u32 - 200,
+        other_pubkey: &DEX_FEE_ADDR_RAW_PUBKEY,
+        secret_hash: &[1; 20],
+        swap_contract_address: &coin.swap_contract_address(),
+        swap_unique_data: &[],
+    };
     let refund = coin
-        .send_maker_refunds_payment(
-            &payment.tx_hex(),
-            (now_ms() / 1000) as u32 - 200,
-            &DEX_FEE_ADDR_RAW_PUBKEY,
-            &[1; 20],
-            &coin.swap_contract_address(),
-            &[],
-        )
+        .send_maker_refunds_payment(maker_refunds_payment_args)
         .wait()
         .unwrap();
 
@@ -472,12 +469,14 @@ fn test_wait_for_payment_spend_timeout() {
     ];
 
     assert!(coin
-        .wait_for_tx_spend(&tx_bytes, wait_until, from_block, &coin.swap_contract_address())
+        .wait_for_htlc_tx_spend(&tx_bytes, &[], wait_until, from_block, &coin.swap_contract_address())
         .wait()
         .is_err());
 }
 
 #[test]
+#[ignore]
+/// Ignored temporarily until dev is merged to mm2.1
 fn test_search_for_swap_tx_spend_was_spent() {
     let key_pair = KeyPair::from_secret_slice(
         &hex::decode("809465b17d0a4ddb3e4c69e8f23c2cabad868f51f8bed5c765ad1d6516c3306f").unwrap(),
@@ -544,7 +543,7 @@ fn test_search_for_swap_tx_spend_was_spent() {
     ];
     let spend_tx = FoundSwapTxSpend::Spent(signed_eth_tx_from_bytes(&spend_tx).unwrap().into());
 
-    let found_tx = block_on(coin.search_for_swap_tx_spend(&payment_tx, swap_contract_address, 15643275))
+    let found_tx = block_on(coin.search_for_swap_tx_spend(&payment_tx, swap_contract_address, &[0; 20], 15643279))
         .unwrap()
         .unwrap();
     assert_eq!(spend_tx, found_tx);
@@ -584,6 +583,8 @@ fn test_gas_station() {
 }
 
 #[test]
+#[ignore]
+/// Ignored temporarily until dev is merged to mm2.1
 fn test_search_for_swap_tx_spend_was_refunded() {
     let key_pair = KeyPair::from_secret_slice(
         &hex::decode("809465b17d0a4ddb3e4c69e8f23c2cabad868f51f8bed5c765ad1d6516c3306f").unwrap(),
@@ -656,7 +657,7 @@ fn test_search_for_swap_tx_spend_was_refunded() {
     ];
     let refund_tx = FoundSwapTxSpend::Refunded(signed_eth_tx_from_bytes(&refund_tx).unwrap().into());
 
-    let found_tx = block_on(coin.search_for_swap_tx_spend(&payment_tx, swap_contract_address, 13638713))
+    let found_tx = block_on(coin.search_for_swap_tx_spend(&payment_tx, swap_contract_address, &[0; 20], 13638713))
         .unwrap()
         .unwrap();
     assert_eq!(refund_tx, found_tx);
@@ -682,6 +683,7 @@ fn test_withdraw_impl_manual_fee() {
             gas: 150000,
             gas_price: 1.into(),
         }),
+        memo: None,
     };
     coin.my_balance().wait().unwrap();
 
@@ -725,6 +727,7 @@ fn test_withdraw_impl_fee_details() {
             gas: 150000,
             gas_price: 1.into(),
         }),
+        memo: None,
     };
     coin.my_balance().wait().unwrap();
 
@@ -1018,17 +1021,15 @@ fn validate_dex_fee_invalid_sender_eth() {
         .unwrap();
     let tx = signed_tx_from_web3_tx(tx).unwrap().into();
     let amount: BigDecimal = "0.000526435076465".parse().unwrap();
-    let validate_err = coin
-        .validate_fee(
-            &tx,
-            &*DEX_FEE_ADDR_RAW_PUBKEY,
-            &*DEX_FEE_ADDR_RAW_PUBKEY,
-            &amount,
-            0,
-            &[],
-        )
-        .wait()
-        .unwrap_err();
+    let validate_fee_args = ValidateFeeArgs {
+        fee_tx: &tx,
+        expected_sender: &*DEX_FEE_ADDR_RAW_PUBKEY,
+        fee_addr: &*DEX_FEE_ADDR_RAW_PUBKEY,
+        amount: &amount,
+        min_block_number: 0,
+        uuid: &[],
+    };
+    let validate_err = coin.validate_fee(validate_fee_args).wait().unwrap_err();
     assert!(validate_err.contains("was sent from wrong address"));
 }
 
@@ -1055,17 +1056,15 @@ fn validate_dex_fee_invalid_sender_erc() {
         .unwrap();
     let tx = signed_tx_from_web3_tx(tx).unwrap().into();
     let amount: BigDecimal = "5.548262548262548262".parse().unwrap();
-    let validate_err = coin
-        .validate_fee(
-            &tx,
-            &*DEX_FEE_ADDR_RAW_PUBKEY,
-            &*DEX_FEE_ADDR_RAW_PUBKEY,
-            &amount,
-            0,
-            &[],
-        )
-        .wait()
-        .unwrap_err();
+    let validate_fee_args = ValidateFeeArgs {
+        fee_tx: &tx,
+        expected_sender: &*DEX_FEE_ADDR_RAW_PUBKEY,
+        fee_addr: &*DEX_FEE_ADDR_RAW_PUBKEY,
+        amount: &amount,
+        min_block_number: 0,
+        uuid: &[],
+    };
+    let validate_err = coin.validate_fee(validate_fee_args).wait().unwrap_err();
     assert!(validate_err.contains("was sent from wrong address"));
 }
 
@@ -1096,17 +1095,15 @@ fn validate_dex_fee_eth_confirmed_before_min_block() {
     let compressed_public = sender_compressed_pub(&tx);
     let tx = tx.into();
     let amount: BigDecimal = "0.000526435076465".parse().unwrap();
-    let validate_err = coin
-        .validate_fee(
-            &tx,
-            &compressed_public,
-            &*DEX_FEE_ADDR_RAW_PUBKEY,
-            &amount,
-            11784793,
-            &[],
-        )
-        .wait()
-        .unwrap_err();
+    let validate_fee_args = ValidateFeeArgs {
+        fee_tx: &tx,
+        expected_sender: &compressed_public,
+        fee_addr: &*DEX_FEE_ADDR_RAW_PUBKEY,
+        amount: &amount,
+        min_block_number: 11784793,
+        uuid: &[],
+    };
+    let validate_err = coin.validate_fee(validate_fee_args).wait().unwrap_err();
     assert!(validate_err.contains("confirmed before min_block"));
 }
 
@@ -1136,17 +1133,15 @@ fn validate_dex_fee_erc_confirmed_before_min_block() {
     let compressed_public = sender_compressed_pub(&tx);
     let tx = tx.into();
     let amount: BigDecimal = "5.548262548262548262".parse().unwrap();
-    let validate_err = coin
-        .validate_fee(
-            &tx,
-            &compressed_public,
-            &*DEX_FEE_ADDR_RAW_PUBKEY,
-            &amount,
-            11823975,
-            &[],
-        )
-        .wait()
-        .unwrap_err();
+    let validate_fee_args = ValidateFeeArgs {
+        fee_tx: &tx,
+        expected_sender: &compressed_public,
+        fee_addr: &*DEX_FEE_ADDR_RAW_PUBKEY,
+        amount: &amount,
+        min_block_number: 11823975,
+        uuid: &[],
+    };
+    let validate_err = coin.validate_fee(validate_fee_args).wait().unwrap_err();
     assert!(validate_err.contains("confirmed before min_block"));
 }
 
@@ -1250,15 +1245,17 @@ fn polygon_check_if_my_payment_sent() {
 
     let secret_hash = hex::decode("fc33114b389f0ee1212abf2867e99e89126f4860").unwrap();
     let swap_contract_address = "9130b257d37a52e52f21054c4da3450c72f595ce".into();
+    let if_my_payment_sent_args = CheckIfMyPaymentSentArgs {
+        time_lock: 1638764369,
+        other_pub: &[],
+        secret_hash: &secret_hash,
+        search_from_block: 22185109,
+        swap_contract_address: &Some(swap_contract_address),
+        swap_unique_data: &[],
+        amount: &BigDecimal::default(),
+    };
     let my_payment = coin
-        .check_if_my_payment_sent(
-            1638764369,
-            &[],
-            &secret_hash,
-            22185109,
-            &Some(swap_contract_address),
-            &[],
-        )
+        .check_if_my_payment_sent(if_my_payment_sent_args)
         .wait()
         .unwrap()
         .unwrap();
@@ -1411,7 +1408,7 @@ fn test_eth_extract_secret() {
         100, 189, 72, 74, 221, 144, 66, 170, 68, 121, 29, 105, 19, 194, 35, 245, 196, 131, 236, 29, 105, 101, 30,
     ];
 
-    let secret = coin.extract_secret(&[0u8; 20], tx_hex.as_slice());
+    let secret = block_on(coin.extract_secret(&[0u8; 20], tx_hex.as_slice()));
     assert!(secret.is_ok());
     let expect_secret = &[
         168, 151, 11, 232, 224, 253, 63, 180, 26, 114, 23, 184, 27, 10, 161, 80, 178, 251, 73, 204, 80, 174, 97, 118,

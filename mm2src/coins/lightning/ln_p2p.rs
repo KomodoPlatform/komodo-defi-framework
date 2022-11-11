@@ -1,5 +1,5 @@
 use super::*;
-use common::executor::{spawn_abortable, Timer};
+use common::executor::{spawn_abortable, SpawnFuture, Timer};
 use common::log::LogState;
 use derive_more::Display;
 use lightning::chain::Access;
@@ -29,11 +29,19 @@ pub enum ConnectToNodeRes {
     ConnectedSuccessfully { pubkey: PublicKey, node_addr: SocketAddr },
 }
 
-pub async fn connect_to_node(
+#[derive(Display)]
+pub enum ConnectionError {
+    #[display(fmt = "Handshake error: {}", _0)]
+    HandshakeErr(String),
+    #[display(fmt = "Timeout error: {}", _0)]
+    TimeOut(String),
+}
+
+pub async fn connect_to_ln_node(
     pubkey: PublicKey,
     node_addr: SocketAddr,
     peer_manager: Arc<PeerManager>,
-) -> ConnectToNodeResult<ConnectToNodeRes> {
+) -> Result<ConnectToNodeRes, ConnectionError> {
     let peer_manager_ref = peer_manager.clone();
     let peer_node_ids = async_blocking(move || peer_manager_ref.get_peer_node_ids()).await;
     if peer_node_ids.contains(&pubkey) {
@@ -44,7 +52,7 @@ pub async fn connect_to_node(
         match lightning_net_tokio::connect_outbound(Arc::clone(&peer_manager), pubkey, node_addr).await {
             Some(fut) => Box::pin(fut),
             None => {
-                return MmError::err(ConnectToNodeError::ConnectionError(format!(
+                return Err(ConnectionError::TimeOut(format!(
                     "Failed to connect to node: {}",
                     pubkey
                 )))
@@ -55,7 +63,7 @@ pub async fn connect_to_node(
         // Make sure the connection is still established.
         match futures::poll!(&mut connection_closed_future) {
             std::task::Poll::Ready(_) => {
-                return MmError::err(ConnectToNodeError::ConnectionError(format!(
+                return Err(ConnectionError::HandshakeErr(format!(
                     "Node {} disconnected before finishing the handshake",
                     pubkey
                 )));
@@ -76,12 +84,12 @@ pub async fn connect_to_node(
     Ok(ConnectToNodeRes::ConnectedSuccessfully { pubkey, node_addr })
 }
 
-pub async fn connect_to_nodes_loop(open_channels_nodes: NodesAddressesMapShared, peer_manager: Arc<PeerManager>) {
+pub async fn connect_to_ln_nodes_loop(open_channels_nodes: NodesAddressesMapShared, peer_manager: Arc<PeerManager>) {
     loop {
         let open_channels_nodes = open_channels_nodes.lock().clone();
         for (pubkey, node_addr) in open_channels_nodes {
             let peer_manager = peer_manager.clone();
-            match connect_to_node(pubkey, node_addr, peer_manager.clone()).await {
+            match connect_to_ln_node(pubkey, node_addr, peer_manager.clone()).await {
                 Ok(res) => {
                     if let ConnectToNodeRes::ConnectedSuccessfully { .. } = res {
                         log::info!("{}", res.to_string());
@@ -162,6 +170,7 @@ async fn ln_p2p_loop(peer_manager: Arc<PeerManager>, listener: TcpListener) {
         };
         if let Ok(stream) = tcp_stream.into_std() {
             spawned.push(spawn_abortable(async move {
+                // Todo: There is 2 spawns inside setup_inbound that might be the cause of not releasing the port when deactivating the coin
                 lightning_net_tokio::setup_inbound(peer_mgr.clone(), stream).await;
             }));
         };
@@ -181,6 +190,7 @@ pub async fn init_peer_manager(
     // If the user wishes to preserve privacy, addresses should likely contain only Tor Onion addresses.
     let listening_addr = myipaddr(ctx).await.map_to_mm(EnableLightningError::InvalidAddress)?;
     // If the listening port is used start_lightning should return an error early
+    // Todo: when deactivating coin the address should be unbinded, listener seems to not be dropped for some reason, should also add a unit test for this after fixing it
     let listener = TcpListener::bind(format!("{}:{}", listening_addr, listening_port))
         .await
         .map_to_mm(|e| EnableLightningError::IOError(e.to_string()))?;

@@ -3,7 +3,7 @@ use arrayref::array_ref;
 use common::executor::Timer;
 use common::executor::{abortable_queue::{AbortableQueue, WeakSpawner},
                        graceful_shutdown, AbortSettings, AbortableSystem, SpawnAbortable, SpawnFuture};
-use common::log::{self, LogLevel, LogState};
+use common::log::{self, LogLevel, LogOnError, LogState};
 use common::{bits256, cfg_native, cfg_wasm32, small_rng};
 use gstuff::{try_s, Constructible, ERR, ERRL};
 use keys::KeyPair;
@@ -31,7 +31,6 @@ cfg_wasm32! {
 
 cfg_native! {
     use db_common::sqlite::rusqlite::Connection;
-    use lightning_background_processor::BackgroundProcessor;
     use mm2_metrics::prometheus;
     use mm2_metrics::MmMetricsError;
     use std::net::{IpAddr, SocketAddr, AddrParseError};
@@ -104,11 +103,6 @@ pub struct MmCtx {
     pub swaps_ctx: Mutex<Option<Arc<dyn Any + 'static + Send + Sync>>>,
     /// The context belonging to the `lp_stats` mod: `StatsContext`
     pub stats_ctx: Mutex<Option<Arc<dyn Any + 'static + Send + Sync>>>,
-    /// Lightning background processors, these need to be dropped when stopping mm2 to
-    /// persist the latest states to the filesystem. This can be moved to LightningCoin
-    /// Struct in the future if the LightningCoin and other coins are dropped when mm2 stops.
-    #[cfg(not(target_arch = "wasm32"))]
-    pub background_processors: Mutex<HashMap<String, BackgroundProcessor>>,
     /// The RPC sender forwarding requests to writing part of underlying stream.
     #[cfg(target_arch = "wasm32")]
     pub wasm_rpc: Constructible<WasmRpcSender>,
@@ -153,8 +147,6 @@ impl MmCtx {
             coins_needed_for_kick_start: Mutex::new(HashSet::new()),
             swaps_ctx: Mutex::new(None),
             stats_ctx: Mutex::new(None),
-            #[cfg(not(target_arch = "wasm32"))]
-            background_processors: Mutex::new(HashMap::new()),
             #[cfg(target_arch = "wasm32")]
             wasm_rpc: Constructible::default(),
             #[cfg(not(target_arch = "wasm32"))]
@@ -214,7 +206,7 @@ impl MmCtx {
         } else {
             Path::new("DB")
         };
-        path.join(hex::encode(&**self.rmd160()))
+        path.join(hex::encode(self.rmd160().as_slice()))
     }
 
     pub fn is_watcher(&self) -> bool { self.conf["is_watcher"].as_bool().unwrap_or_default() }
@@ -389,12 +381,9 @@ impl MmArc {
         try_s!(self.stop.pin(true));
 
         // Notify shutdown listeners.
-        self.graceful_shutdown_registry.abort_all();
+        self.graceful_shutdown_registry.abort_all().warn_log();
         // Abort spawned futures.
-        self.abortable_system.abort_all();
-
-        #[cfg(not(target_arch = "wasm32"))]
-        self.background_processors.lock().unwrap().drain();
+        self.abortable_system.abort_all().warn_log();
 
         #[cfg(feature = "track-ctx-pointer")]
         self.track_ctx_pointer();
@@ -515,7 +504,10 @@ impl MmArc {
                     userpass: userpass.into(),
                 });
 
-        let shutdown_detector = self.graceful_shutdown_registry.register_listener();
+        let shutdown_detector = self
+            .graceful_shutdown_registry
+            .register_listener()
+            .map_err(|e| MmMetricsError::Internal(e.to_string()))?;
         prometheus::spawn_prometheus_exporter(self.metrics.weak(), address, shutdown_detector, credentials)
     }
 }

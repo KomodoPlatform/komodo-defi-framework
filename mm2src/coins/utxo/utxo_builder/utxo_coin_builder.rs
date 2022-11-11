@@ -12,7 +12,8 @@ use crate::{BlockchainNetwork, CoinTransportMetrics, DerivationMethod, HistorySy
             PrivKeyPolicy, RpcClientType, UtxoActivationParams};
 use async_trait::async_trait;
 use chain::TxHashAlgo;
-use common::executor::{abortable_queue::AbortableQueue, AbortSettings, AbortableSystem, SpawnAbortable, Timer};
+use common::executor::{abortable_queue::AbortableQueue, AbortSettings, AbortableSystem, AbortedError, SpawnAbortable,
+                       Timer};
 use common::log::{error, info};
 use common::small_rng;
 use crypto::{Bip32DerPathError, Bip44DerPathError, Bip44PathToCoin, CryptoCtx, CryptoInitError, HwWalletType};
@@ -71,8 +72,9 @@ pub enum UtxoCoinBuildError {
     HwContextNotInitialized,
     HDWalletStorageError(HDWalletStorageError),
     CoinDoesntSupportTrezor,
-    GetCurrentBlockHeightError(String),
     BlockHeaderStorageError(BlockHeaderStorageError),
+    #[display(fmt = "Error {} on getting the height of the latest block from rpc!", _0)]
+    CantGetBlockCount(String),
     #[display(fmt = "Internal error: {}", _0)]
     Internal(String),
 }
@@ -96,6 +98,10 @@ impl From<HDWalletStorageError> for UtxoCoinBuildError {
 
 impl From<BlockHeaderStorageError> for UtxoCoinBuildError {
     fn from(e: BlockHeaderStorageError) -> Self { UtxoCoinBuildError::BlockHeaderStorageError(e) }
+}
+
+impl From<AbortedError> for UtxoCoinBuildError {
+    fn from(e: AbortedError) -> Self { UtxoCoinBuildError::Internal(e.to_string()) }
 }
 
 #[async_trait]
@@ -153,9 +159,9 @@ pub trait UtxoFieldsWithIguanaPrivKeyBuilder: UtxoCoinBuilderCommonOps {
 
         // Create an abortable system linked to the `MmCtx` so if the context is stopped via `MmArc::stop`,
         // all spawned futures related to this `UTXO` coin will be aborted as well.
-        let abortable_system: AbortableQueue = self.ctx().abortable_system.create_subsystem();
+        let abortable_system: AbortableQueue = self.ctx().abortable_system.create_subsystem()?;
 
-        let rpc_client = self.rpc_client(abortable_system.create_subsystem()).await?;
+        let rpc_client = self.rpc_client(abortable_system.create_subsystem()?).await?;
         let tx_fee = self.tx_fee(&rpc_client).await?;
         let decimals = self.decimals(&rpc_client).await?;
         let dust_amount = self.dust_amount();
@@ -223,9 +229,9 @@ pub trait UtxoFieldsWithHardwareWalletBuilder: UtxoCoinBuilderCommonOps {
 
         // Create an abortable system linked to the `MmCtx` so if the context is stopped via `MmArc::stop`,
         // all spawned futures related to this `UTXO` coin will be aborted as well.
-        let abortable_system: AbortableQueue = self.ctx().abortable_system.create_subsystem();
+        let abortable_system: AbortableQueue = self.ctx().abortable_system.create_subsystem()?;
 
-        let rpc_client = self.rpc_client(abortable_system.create_subsystem()).await?;
+        let rpc_client = self.rpc_client(abortable_system.create_subsystem()?).await?;
         let tx_fee = self.tx_fee(&rpc_client).await?;
         let decimals = self.decimals(&rpc_client).await?;
         let dust_amount = self.dust_amount();
@@ -655,7 +661,7 @@ fn read_native_mode_conf(
             .or_else(|| conf.general_section().get(property))
     }
 
-    let conf: Ini = match Ini::load_from_file(&filename) {
+    let conf: Ini = match Ini::load_from_file(filename) {
         Ok(ini) => ini,
         Err(err) => {
             return ERR!(
