@@ -3,7 +3,7 @@
 use super::{CoinBalance, HistorySyncState, MarketCoinOps, MmCoin, RawTransactionFut, RawTransactionRequest, SwapOps,
             TradeFee, TransactionEnum, TransactionFut};
 use crate::{coin_errors::MyAddressError, BalanceFut, CanRefundHtlc, CheckIfMyPaymentSentArgs, CoinFutSpawner,
-            FeeApproxStage, FoundSwapTxSpend, NegotiateSwapContractAddrErr, PaymentInstructions,MmPlatformCoin,
+            FeeApproxStage, FoundSwapTxSpend, MmPlatformCoin, NegotiateSwapContractAddrErr, PaymentInstructions,
             PaymentInstructionsErr, SearchForSwapTxSpendInput, SendMakerPaymentArgs, SendMakerRefundsPaymentArgs,
             SendMakerSpendsTakerPaymentArgs, SendTakerPaymentArgs, SendTakerRefundsPaymentArgs,
             SendTakerSpendsMakerPaymentArgs, SignatureResult, TradePreimageFut, TradePreimageResult,
@@ -11,6 +11,7 @@ use crate::{coin_errors::MyAddressError, BalanceFut, CanRefundHtlc, CheckIfMyPay
             ValidateInstructionsErr, ValidateOtherPubKeyErr, ValidatePaymentFut, ValidatePaymentInput,
             VerificationResult, WatcherOps, WatcherValidatePaymentInput, WithdrawFut, WithdrawRequest};
 use async_trait::async_trait;
+use common::executor::AbortedError;
 use futures01::Future;
 use keys::KeyPair;
 use mm2_core::mm_ctx::MmArc;
@@ -307,5 +308,5 @@ impl MmCoin for TestCoin {
 
     fn is_coin_protocol_supported(&self, _info: &Option<Vec<u8>>) -> bool { true }
 
-    fn on_disabled(&self) { unimplemented!() }
+    fn on_disabled(&self) -> Result<(), AbortedError> { Ok(()) }
 }

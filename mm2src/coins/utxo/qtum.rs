@@ -23,14 +23,15 @@ use crate::utxo::utxo_builder::{BlockHeaderUtxoArcOps, MergeUtxoArcOps, UtxoCoin
 use crate::utxo::utxo_tx_history_v2::{UtxoMyAddressesHistoryError, UtxoTxDetailsError, UtxoTxDetailsParams,
                                       UtxoTxHistoryOps};
 use crate::{eth, CanRefundHtlc, CheckIfMyPaymentSentArgs, CoinBalance, CoinWithDerivationMethod, DelegationError,
-            DelegationFut, GetWithdrawSenderAddress, NegotiateSwapContractAddrErr, PaymentInstructions,MmPlatformCoin,
-            PaymentInstructionsErr, PrivKeyBuildPolicy, SearchForSwapTxSpendInput, SendMakerPaymentArgs,
-            SendMakerRefundsPaymentArgs, SendMakerSpendsTakerPaymentArgs, SendTakerPaymentArgs,
+            DelegationFut, GetWithdrawSenderAddress, MmPlatformCoin, NegotiateSwapContractAddrErr,
+            PaymentInstructions, PaymentInstructionsErr, PrivKeyBuildPolicy, SearchForSwapTxSpendInput,
+            SendMakerPaymentArgs, SendMakerRefundsPaymentArgs, SendMakerSpendsTakerPaymentArgs, SendTakerPaymentArgs,
             SendTakerRefundsPaymentArgs, SendTakerSpendsMakerPaymentArgs, SignatureResult, StakingInfosFut, SwapOps,
             TradePreimageValue, TransactionFut, TxMarshalingErr, UnexpectedDerivationMethod, ValidateAddressResult,
             ValidateFeeArgs, ValidateInstructionsErr, ValidateOtherPubKeyErr, ValidatePaymentFut,
             ValidatePaymentInput, VerificationResult, WatcherOps, WatcherValidatePaymentInput, WithdrawFut,
             WithdrawSenderAddress};
+use common::executor::{AbortableSystem, AbortedError};
 use crypto::Bip44Chain;
 use ethereum_types::H160;
 use futures::{FutureExt, TryFutureExt};
@@ -944,7 +945,7 @@ impl MmCoin for QtumCoin {
         utxo_common::is_coin_protocol_supported(self, info)
     }
 
-    fn on_disabled(&self) { AbortableSystem::abort_all(&self.as_ref().abortable_system); }
+    fn on_disabled(&self) -> Result<(), AbortedError> { AbortableSystem::abort_all(&self.as_ref().abortable_system) }
 }
 
 #[async_trait]

@@ -1,6 +1,6 @@
 use crate::docker_tests::docker_tests_common::*;
-use http::StatusCode;
 use crate::integration_tests_common::enable_native;
+use http::StatusCode;
 use mm2_number::BigDecimal;
 use mm2_test_helpers::for_tests::{enable_bch_with_tokens, enable_slp, UtxoRpcMode};
 use mm2_test_helpers::structs::{EnableBchWithTokensResponse, EnableElectrumResponse, EnableSlpResponse, RpcV2Response};

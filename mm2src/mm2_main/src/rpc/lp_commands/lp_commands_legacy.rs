@@ -89,15 +89,9 @@ pub async fn disable_coin(ctx: MmArc, req: Json) -> Result<Response<Vec<u8>>, St
                 .map_err(|e| ERRL!("{}", e));
         }
 
-        // If the coin is a Lightning Coin, we need to drop it's background processor first to
-        // persist the latest state to the filesystem.
-        #[cfg(not(target_arch = "wasm32"))]
-        ctx.background_processors.lock().unwrap().remove(ticker);
-
         try_s!(disable_coin_impl(&ctx, ticker, platform_ticker).await);
-
         // Abort all coin related futures on coin deactivation
-        coin.on_disabled();
+        let _ = coin.on_disabled();
 
         // Combine all orders to a single vector
         cancelled_orders.extend(cancelled);

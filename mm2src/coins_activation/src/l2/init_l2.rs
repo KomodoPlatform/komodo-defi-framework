@@ -186,7 +186,11 @@ where
     }
 
     /// Try to disable the coin in case if we managed to register it already.
-    async fn cancel(self) { disable_coin(&self.ctx, &self.ticker).await.ok(); }
+    async fn cancel(self) {
+        disable_coin(&self.ctx, &self.ticker, self.protocol_conf.platform_coin_ticker())
+            .await
+            .ok();
+    }
 
     async fn run(&mut self, task_handle: &RpcTaskHandle<Self>) -> Result<Self::Item, MmError<Self::Error>> {
         let (coin, result) = L2::init_l2(

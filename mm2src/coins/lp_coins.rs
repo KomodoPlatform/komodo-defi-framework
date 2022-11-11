@@ -36,7 +36,7 @@
 use async_trait::async_trait;
 use base58::FromBase58Error;
 use common::executor::{abortable_queue::{AbortableQueue, WeakSpawner},
-                       AbortSettings, SpawnAbortable, SpawnFuture};
+                       AbortSettings, AbortedError, SpawnAbortable, SpawnFuture};
 use common::{calc_total_pages, now_ms, ten, HttpStatusCode};
 use crypto::{Bip32Error, CryptoCtx, DerivationPath, HwRpcError, WithHwRpcError};
 use derive_more::Display;
@@ -1945,7 +1945,7 @@ pub trait MmCoin: SwapOps + WatcherOps + MarketCoinOps + Send + Sync + 'static {
     fn is_coin_protocol_supported(&self, info: &Option<Vec<u8>>) -> bool;
 
     /// Abort all coin related futures on coin deactivation
-    fn on_disabled(&self);
+    fn on_disabled(&self) -> Result<(), AbortedError>;
 }
 
 /// The coin futures spawner. It's used to spawn futures that can be aborted immediately or after a timeout
@@ -2114,6 +2114,7 @@ impl MmPlatformCoin for MmCoinEnum {
             MmCoinEnum::Bch(ref c) => c.on_token_deactivated(ticker),
             MmCoinEnum::SlpToken(ref c) => c.on_token_deactivated(ticker),
             MmCoinEnum::Tendermint(ref c) => c.on_token_deactivated(ticker),
+            MmCoinEnum::TendermintToken(ref c) => c.on_token_deactivated(ticker),
             #[cfg(not(target_arch = "wasm32"))]
             MmCoinEnum::LightningCoin(ref c) => c.on_token_deactivated(ticker),
             #[cfg(not(target_arch = "wasm32"))]

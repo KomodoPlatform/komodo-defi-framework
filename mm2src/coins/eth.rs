@@ -22,7 +22,7 @@
 //
 use async_trait::async_trait;
 use bitcrypto::{keccak256, ripemd160, sha256};
-use common::executor::{abortable_queue::AbortableQueue, AbortableSystem, Timer};
+use common::executor::{abortable_queue::AbortableQueue, AbortableSystem, AbortedError, Timer};
 use common::log::{error, info, warn};
 use common::{get_utc_timestamp, now_ms, small_rng, DEX_FEE_ADDR_RAW_PUBKEY};
 use crypto::privkey::key_pair_from_secret;
@@ -61,9 +61,8 @@ use web3_transport::{EthFeeHistoryNamespace, Web3Transport, Web3TransportNode};
 
 use super::{coin_conf, AsyncMutex, BalanceError, BalanceFut, CheckIfMyPaymentSentArgs, CoinBalance, CoinFutSpawner,
             CoinProtocol, CoinTransportMetrics, CoinsContext, FeeApproxStage, FoundSwapTxSpend, HistorySyncState,
-            MarketCoinOps, MmCoin, MyAddressError, NegotiateSwapContractAddrErr, NumConversError, NumConversResult,
-            MmPlatformCoin,
-            PaymentInstructions, PaymentInstructionsErr, RawTransactionError, RawTransactionFut,
+            MarketCoinOps, MmCoin, MmPlatformCoin, MyAddressError, NegotiateSwapContractAddrErr, NumConversError,
+            NumConversResult, PaymentInstructions, PaymentInstructionsErr, RawTransactionError, RawTransactionFut,
             RawTransactionRequest, RawTransactionRes, RawTransactionResult, RpcClientType, RpcTransportEventHandler,
             RpcTransportEventHandlerShared, SearchForSwapTxSpendInput, SendMakerPaymentArgs,
             SendMakerRefundsPaymentArgs, SendMakerSpendsTakerPaymentArgs, SendTakerPaymentArgs,
@@ -3349,7 +3348,7 @@ impl MmCoin for EthCoin {
 
     fn is_coin_protocol_supported(&self, _info: &Option<Vec<u8>>) -> bool { true }
 
-    fn on_disabled(&self) { AbortableSystem::abort_all(&self.abortable_system); }
+    fn on_disabled(&self) -> Result<(), AbortedError> { AbortableSystem::abort_all(&self.abortable_system) }
 }
 
 pub trait TryToAddress {
