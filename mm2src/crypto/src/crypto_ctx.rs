@@ -218,32 +218,7 @@ impl CryptoCtx {
     pub fn hw_wallet_rmd160(&self) -> Option<H160> { self.hw_ctx.read().to_option().map(|hw_ctx| hw_ctx.rmd160()) }
 
     pub fn init_with_iguana_passphrase(ctx: MmArc, passphrase: &str) -> CryptoInitResult<Arc<CryptoCtx>> {
-        let mut ctx_field = ctx
-            .crypto_ctx
-            .lock()
-            .map_to_mm(|poison| CryptoInitError::Internal(poison.to_string()))?;
-        if ctx_field.is_some() {
-            return MmError::err(CryptoInitError::InitializedAlready);
-        }
-
-        if passphrase.is_empty() {
-            return MmError::err(CryptoInitError::NullStringPassphrase);
-        }
-
-        let secp256k1_key_pair = key_pair_from_seed(passphrase)?;
-        let rmd160 = secp256k1_key_pair.public().address_hash();
-        let crypto_ctx = CryptoCtx {
-            secp256k1_key_pair,
-            key_pair_policy: KeyPairPolicy::Iguana,
-            hw_ctx: RwLock::new(HardwareWalletCtxState::NotInitialized),
-        };
-        let result = Arc::new(crypto_ctx);
-        *ctx_field = Some(result.clone());
-        drop(ctx_field);
-
-        ctx.rmd160.pin(rmd160).map_to_mm(CryptoInitError::Internal)?;
-
-        Ok(result)
+        Self::init_crypto_ctx_with_policy_builder(ctx, passphrase, KeyPairPolicyBuilder::Iguana)
     }
 
     pub fn init_with_global_hd_account(
@@ -251,34 +226,8 @@ impl CryptoCtx {
         passphrase: &str,
         hd_account_id: u64,
     ) -> CryptoInitResult<Arc<CryptoCtx>> {
-        let mut ctx_field = ctx
-            .crypto_ctx
-            .lock()
-            .map_to_mm(|poison| CryptoInitError::Internal(poison.to_string()))?;
-        if ctx_field.is_some() {
-            return MmError::err(CryptoInitError::InitializedAlready);
-        }
-
-        if passphrase.is_empty() {
-            return MmError::err(CryptoInitError::NullStringPassphrase);
-        }
-
-        let global_hd_ctx = GlobalHDAccountCtx::new(passphrase, hd_account_id)?;
-        let secp256k1_key_pair = *global_hd_ctx.mm2_internal_key_pair();
-        let rmd160 = secp256k1_key_pair.public().address_hash();
-        let crypto_ctx = CryptoCtx {
-            secp256k1_key_pair,
-            key_pair_policy: KeyPairPolicy::GlobalHDAccount(global_hd_ctx.into_arc()),
-            hw_ctx: RwLock::new(HardwareWalletCtxState::NotInitialized),
-        };
-
-        let result = Arc::new(crypto_ctx);
-        *ctx_field = Some(result.clone());
-        drop(ctx_field);
-
-        ctx.rmd160.pin(rmd160).map_to_mm(CryptoInitError::Internal)?;
-
-        Ok(result)
+        let builder = KeyPairPolicyBuilder::GlobalHDAccount { hd_account_id };
+        Self::init_crypto_ctx_with_policy_builder(ctx, passphrase, builder)
     }
 
     pub async fn init_hw_ctx_with_trezor<Processor>(
@@ -311,6 +260,63 @@ impl CryptoCtx {
     pub fn reset_hw_ctx(&self) {
         let mut state = self.hw_ctx.write();
         *state = HardwareWalletCtxState::NotInitialized;
+    }
+
+    fn init_crypto_ctx_with_policy_builder(
+        ctx: MmArc,
+        passphrase: &str,
+        policy_builder: KeyPairPolicyBuilder,
+    ) -> CryptoInitResult<Arc<CryptoCtx>> {
+        let mut ctx_field = ctx
+            .crypto_ctx
+            .lock()
+            .map_to_mm(|poison| CryptoInitError::Internal(poison.to_string()))?;
+        if ctx_field.is_some() {
+            return MmError::err(CryptoInitError::InitializedAlready);
+        }
+
+        if passphrase.is_empty() {
+            return MmError::err(CryptoInitError::NullStringPassphrase);
+        }
+
+        let (secp256k1_key_pair, key_pair_policy) = policy_builder.build(passphrase)?;
+        let rmd160 = secp256k1_key_pair.public().address_hash();
+
+        let crypto_ctx = CryptoCtx {
+            secp256k1_key_pair,
+            key_pair_policy,
+            hw_ctx: RwLock::new(HardwareWalletCtxState::NotInitialized),
+        };
+
+        let result = Arc::new(crypto_ctx);
+        *ctx_field = Some(result.clone());
+        drop(ctx_field);
+
+        ctx.rmd160.pin(rmd160).map_to_mm(CryptoInitError::Internal)?;
+
+        Ok(result)
+    }
+}
+
+enum KeyPairPolicyBuilder {
+    Iguana,
+    GlobalHDAccount { hd_account_id: u64 },
+}
+
+impl KeyPairPolicyBuilder {
+    /// [`KeyPairPolicyBuilder::build`] is fired if all checks pass **only**.
+    fn build(self, passphrase: &str) -> CryptoInitResult<(KeyPair, KeyPairPolicy)> {
+        match self {
+            KeyPairPolicyBuilder::Iguana => {
+                let secp256k1_key_pair = key_pair_from_seed(passphrase)?;
+                Ok((secp256k1_key_pair, KeyPairPolicy::Iguana))
+            },
+            KeyPairPolicyBuilder::GlobalHDAccount { hd_account_id } => {
+                let (mm2_internal_key_pair, global_hd_ctx) = GlobalHDAccountCtx::new(passphrase, hd_account_id)?;
+                let key_pair_policy = KeyPairPolicy::GlobalHDAccount(global_hd_ctx.into_arc());
+                Ok((mm2_internal_key_pair, key_pair_policy))
+            },
+        }
     }
 }
 

@@ -11,6 +11,8 @@ use std::sync::Arc;
 const HARDENED: bool = true;
 const NON_HARDENED: bool = false;
 
+pub(super) type Mm2InternalKeyPair = KeyPair;
+
 #[derive(Clone)]
 pub struct GlobalHDAccountArc(Arc<GlobalHDAccountCtx>);
 
@@ -22,16 +24,13 @@ impl Deref for GlobalHDAccountArc {
 
 pub struct GlobalHDAccountCtx {
     bip39_priv_key: ExtendedPrivateKey<secp256k1::SecretKey>,
-    /// secp256k1 key pair derived at `mm2_internal_der_path`.
-    /// It's used for mm2 internal purposes such as signing P2P messages.
-    mm2_internal_key_pair: KeyPair,
     /// `hd_account` actually means an `address` index at the `m/purpose'/coin'/account'/chain/address` path.
     /// This account is set globally for every activated coin.
     hd_account: ChildNumber,
 }
 
 impl GlobalHDAccountCtx {
-    pub fn new(passphrase: &str, hd_account_id: u64) -> CryptoInitResult<GlobalHDAccountCtx> {
+    pub fn new(passphrase: &str, hd_account_id: u64) -> CryptoInitResult<(Mm2InternalKeyPair, GlobalHDAccountCtx)> {
         let bip39_priv_key = bip39_priv_key_from_seed(passphrase)?;
 
         let hd_account_id =
@@ -58,18 +57,15 @@ impl GlobalHDAccountCtx {
 
         let mm2_internal_key_pair = key_pair_from_secret(internal_priv_key.private_key().as_ref())?;
 
-        Ok(GlobalHDAccountCtx {
+        let global_hd_ctx = GlobalHDAccountCtx {
             bip39_priv_key,
-            mm2_internal_key_pair,
             hd_account,
-        })
+        };
+        Ok((mm2_internal_key_pair, global_hd_ctx))
     }
 
     #[inline]
     pub fn into_arc(self) -> GlobalHDAccountArc { GlobalHDAccountArc(Arc::new(self)) }
-
-    #[inline]
-    pub fn mm2_internal_key_pair(&self) -> &KeyPair { &self.mm2_internal_key_pair }
 
     /// Derives a `secp256k1::SecretKey` from [`HDAccountCtx::bip39_priv_key`]
     /// at the given `m/purpose'/coin_type'/account_id'/chain/address_id` derivation path,
