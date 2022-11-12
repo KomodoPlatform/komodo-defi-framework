@@ -15,7 +15,7 @@ use crate::utxo::rpc_clients::{BlockHashOrHeight, ElectrumBalance, ElectrumClien
 use crate::utxo::spv::SimplePaymentVerification;
 use crate::utxo::utxo_block_header_storage::{block_header_storage_for_tests::BlockHeaderStorageForTests,
                                              BlockHeaderStorage, SqliteBlockHeadersStorage};
-use crate::utxo::utxo_builder::{UtxoArcBuilder, UtxoCoinBuilderCommonOps};
+use crate::utxo::utxo_builder::{UtxoArcBuilder, UtxoCoinBuilder, UtxoCoinBuilderCommonOps};
 use crate::utxo::utxo_common::UtxoTxBuilder;
 use crate::utxo::utxo_common_tests::{self, utxo_coin_fields_for_test, utxo_coin_from_fields, TEST_COIN_DECIMALS,
                                      TEST_COIN_NAME};
@@ -29,6 +29,7 @@ use common::executor::Timer;
 use common::{block_on, now_ms, OrdRange, PagingOptionsEnum, DEX_FEE_ADDR_RAW_PUBKEY};
 use crypto::{privkey::key_pair_from_seed, Bip44Chain, RpcDerivationPath};
 use db_common::sqlite::rusqlite::Connection;
+use futures::channel::mpsc::channel;
 use futures::future::join_all;
 use futures::TryFutureExt;
 use mm2_core::mm_ctx::MmCtxBuilder;
@@ -4267,9 +4268,13 @@ fn test_utxo_validate_valid_and_invalid_pubkey() {
 
 #[test]
 fn test_block_header_utxo_loop() {
-    static mut CURRENT_BLOCK_COUNT: u64 = 1000;
+    use crate::utxo::utxo_builder::block_header_utxo_loop;
+    use futures::future::{Either, FutureExt};
+
+    static mut CURRENT_BLOCK_COUNT: u64 = 716;
+
     ElectrumClient::get_block_count
-        .mock_safe(|_| MockResult::Return(Box::new(futures01::future::ok(unsafe { CURRENT_BLOCK_COUNT }))));
+        .mock_safe(move |_| MockResult::Return(Box::new(futures01::future::ok(unsafe { CURRENT_BLOCK_COUNT }))));
 
     let block_header_storage = BlockHeaderStorageForTests::new(TEST_COIN_NAME.to_string());
     let block_header_storage_copy = block_header_storage.clone();
@@ -4279,41 +4284,63 @@ fn test_block_header_utxo_loop() {
         }))
     });
 
-    let conf = json!({"coin":"RICK","asset":"RICK","rpcport":8923,"enable_spv_proof": true});
+    let priv_key_policy = PrivKeyBuildPolicy::IguanaPrivKey(&[1u8; 32]);
+    let args = ElectrumBuilderArgs {
+        spawn_ping: false,
+        negotiate_version: true,
+        collect_metrics: false,
+    };
+    let servers: Vec<_> = RICK_ELECTRUM_ADDRS
+        .iter()
+        .map(|server| json!({ "url": server,"disable_cert_verification":true }))
+        .collect();
+    let servers = servers.into_iter().map(|s| json::from_value(s).unwrap()).collect();
+    let abortable_system = AbortableQueue::default();
+    let conf = json!({"coin":"RICK","asset":"RICK","rpcport":8923,"enable_spv_proof": false});
     let req = json!({
          "method": "electrum",
-         "servers": [{"url":"electrum1.cipig.net:10017"}],
+         "servers": servers,
     });
     let ctx = MmCtxBuilder::new().into_mm_arc();
     let params = UtxoActivationParams::from_legacy_req(&req).unwrap();
+    let builder = UtxoArcBuilder::new(&ctx, "KMD", &conf, &params, priv_key_policy, UtxoStandardCoin::from);
+    let client = block_on(builder.electrum_client(abortable_system, args, servers)).unwrap();
+    let arc: UtxoArc = block_on(builder.build_utxo_fields()).unwrap().into();
+    let (sync_status_notifier, _) = channel::<UtxoSyncStatus>(1);
+    let loop_handle = UtxoSyncStatusLoopHandle::new(sync_status_notifier);
 
-    let arc = block_on(utxo_standard_coin_with_priv_key(
-        &ctx,
-        TEST_COIN_NAME,
-        &conf,
-        &params,
-        &[1u8; 32],
-    ))
-    .unwrap();
-    let count = arc.as_ref().rpc_client.get_block_count().wait().unwrap();
-    println!("{:?}", count);
+    let loop_fut = async move {
+        unsafe {
+            block_header_utxo_loop(
+                arc.downgrade(),
+                UtxoStandardCoin::from,
+                loop_handle,
+                CURRENT_BLOCK_COUNT,
+            )
+            .await;
+        };
+    };
 
-    block_on(Timer::sleep(5.));
-    let block_headers_storage_mock = block_on(block_header_storage.inner.lock()).clone();
-    //    //    block_on(block_header_storage.add_block_headers_to_storage().unwrap();
-    //    //    // Check if there are blocks with 2046, 2047, 2048, 2049, 2050 heights.
-    //    //    for ((h1, _), h2) in block_headers_storage_mock.block_headers.iter().zip(2046_u64..=2050) {
-    //    //        assert_eq!(h1, &h2)
-    //    //    }
-    //
-    //    // Then reset `CURRENT_BLOCK_COUNT` to 2051.
-    unsafe {
-        CURRENT_BLOCK_COUNT = 2051;
-    }
-    //
-    //    block_on(Timer::sleep(5.));
-    //    // Check if there are blocks with 2046, 2047, 2048, 2049, 2050..2056 heights.
-    println!("{}", block_headers_storage_mock.block_headers.len());
-    let count = arc.as_ref().rpc_client.get_block_count().wait().unwrap();
-    println!("{:?}", count);
+    let test_fut = async move {
+        Timer::sleep(25.).await;
+        let block_count = client.get_block_count().compat().await.unwrap();
+        let get_headers_count = client.block_headers_storage().get_last_block_height().await.unwrap();
+        assert_eq!(block_count, get_headers_count);
+
+        unsafe { CURRENT_BLOCK_COUNT = 1400 };
+
+        Timer::sleep(60.).await;
+        let block_count = client.get_block_count().compat().await.unwrap();
+        let get_headers_count = client.block_headers_storage().get_last_block_height().await.unwrap();
+        assert_eq!(block_count, get_headers_count);
+    };
+
+    // We need to combine these futures in order to run `loop_fut` and `test_fut`.
+    // Once `test_fut` is finished, the test is finished.
+    let res_fut = futures::future::select(loop_fut.boxed(), test_fut.boxed());
+    match block_on(res_fut) {
+        Either::Left((_loop_finished, _)) => panic!("Loop shouldn't stop"),
+        // `test_fut` finished - this is what we expected.
+        Either::Right((_, _)) => (),
+    };
 }
