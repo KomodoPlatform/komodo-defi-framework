@@ -184,13 +184,7 @@ where
     }
 
     /// Try to disable the coin in case if we managed to register it already.
-    async fn cancel(self) {
-        if let Ok(Some(coin)) = lp_coinfind(&self.ctx, &self.request.ticker).await {
-            disable_coin(&self.ctx, &self.request.ticker, coin.platform_ticker())
-                .await
-                .ok();
-        };
-    }
+    async fn cancel(self) { disable_coin(&self.ctx, &self.request.ticker).await.ok(); }
 
     async fn run(&mut self, task_handle: &RpcTaskHandle<Self>) -> Result<Self::Item, MmError<Self::Error>> {
         let ticker = self.request.ticker.clone();

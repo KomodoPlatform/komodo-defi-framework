@@ -3017,29 +3017,36 @@ pub async fn get_enabled_coins(ctx: MmArc) -> Result<Response<Vec<u8>>, String> 
     Ok(try_s!(Response::builder().body(res)))
 }
 
-pub async fn disable_coin(ctx: &MmArc, ticker: &str, platform: &str) -> Result<(), String> {
+pub async fn disable_coin(ctx: &MmArc, ticker: &str) -> Result<(), String> {
     let coin = match lp_coinfind(ctx, ticker).await {
-        Ok(Some(t)) => t,
+        Ok(Some(coin)) => coin,
         Ok(None) => return ERR!("No such coin: {}", ticker),
         Err(err) => return ERR!("!lp_coinfind({}): ", err),
     };
     let coins_ctx = try_s!(CoinsContext::from_ctx(ctx));
-    let mut coins = try_s!(coins_ctx.coins.try_lock().ok_or("coins mutex lock err"));
-    let mut platform_tokens = try_s!(coins_ctx.platform_coin_tokens.try_lock().ok_or("coins mutex lock err"));
+    let platform_ticker = coin.platform_ticker();
 
-    // Check if ticker is a platform coin and remove from it platform_tokens
-    if ticker == platform && platform_tokens.get_mut(ticker).is_some() {
-        let _ = coin.on_token_deactivated(ticker);
-        platform_tokens.remove(ticker);
+    let mut coins_storage = try_s!(coins_ctx.coins.try_lock().ok_or("coins mutex lock err"));
+    let mut platform_tokens_storage = try_s!(coins_ctx
+        .platform_coin_tokens
+        .try_lock()
+        .ok_or("platform_coin_tokens mutex lock err"));
+
+    // Check if ticker is a platform coin and remove from it platform's token list
+    if ticker == platform_ticker && platform_tokens_storage.get_mut(ticker).is_some() {
+        if let Err(err) = coin.on_token_deactivated(ticker) {
+            log!("Platform Tokens Error: {err}")
+        };
+        platform_tokens_storage.remove(ticker);
     };
 
     // Check if coin platform_ticker is in platform_tokens and remove it from token list
-    if let Some(tokens) = platform_tokens.get_mut(coin.platform_ticker()) {
+    if let Some(tokens) = platform_tokens_storage.get_mut(platform_ticker) {
         tokens.retain(|t| t.as_str() != ticker);
     };
 
     //  Finally, remove coin from coin list
-    match coins.remove(ticker) {
+    match coins_storage.remove(ticker) {
         Some(_) => Ok(()),
         None => ERR!("{} is disabled already", ticker),
     }

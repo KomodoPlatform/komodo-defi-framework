@@ -38,6 +38,7 @@ use crate::mm2::lp_swap::{active_swaps_using_coin, tx_helper_topic, watcher_topi
 use crate::mm2::MmVersionResult;
 
 const INTERNAL_SERVER_ERROR_CODE: u16 = 500;
+const RESPONSE_OK_STATUS_CODE: u16 = 200;
 
 /// Attempts to disable the coin
 pub async fn disable_coin(ctx: MmArc, req: Json) -> Result<Response<Vec<u8>>, String> {
@@ -89,9 +90,11 @@ pub async fn disable_coin(ctx: MmArc, req: Json) -> Result<Response<Vec<u8>>, St
                 .map_err(|e| ERRL!("{}", e));
         }
 
-        try_s!(disable_coin_impl(&ctx, ticker, platform_ticker).await);
+        try_s!(disable_coin_impl(&ctx, ticker).await);
         // Abort all coin related futures on coin deactivation
-        let _ = coin.on_disabled();
+        if let Err(err) = coin.on_disabled() {
+            log!("Error aborting coin futures: {err}")
+        };
 
         // Combine all orders to a single vector
         cancelled_orders.extend(cancelled);
@@ -183,7 +186,7 @@ pub fn help() -> HyRes {
 #[cfg(not(target_arch = "wasm32"))]
 pub fn help() -> HyRes {
     rpc_response(
-        200,
+        RESPONSE_OK_STATUS_CODE,
         "
         buy(base, rel, price, relvolume, timeout=10, duration=3600)
         electrum(coin, urls)
@@ -205,7 +208,7 @@ pub fn help() -> HyRes {
 /// Get MarketMaker session metrics
 pub fn metrics(ctx: MmArc) -> HyRes {
     match ctx.metrics.collect_json().map(|value| value.to_string()) {
-        Ok(response) => rpc_response(200, response),
+        Ok(response) => rpc_response(RESPONSE_OK_STATUS_CODE, response),
         Err(err) => rpc_err_response(INTERNAL_SERVER_ERROR_CODE, &err.to_string()),
     }
 }
@@ -282,7 +285,7 @@ pub async fn sim_panic(req: Json) -> Result<Response<Vec<u8>>, String> {
     Ok(try_s!(Response::builder().body(js)))
 }
 
-pub fn version() -> HyRes { rpc_response(200, MmVersionResult::new().to_json().to_string()) }
+pub fn version() -> HyRes { rpc_response(RESPONSE_OK_STATUS_CODE, MmVersionResult::new().to_json().to_string()) }
 
 pub async fn get_peers_info(ctx: MmArc) -> Result<Response<Vec<u8>>, String> {
     use crate::mm2::lp_network::P2PContext;
