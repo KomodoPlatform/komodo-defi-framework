@@ -3,7 +3,6 @@ use crate::coin_errors::MyAddressError;
 use crate::solana::solana_common::{lamports_to_sol, PrepareTransferData, SufficientBalanceError};
 use crate::solana::spl::SplTokenInfo;
 use crate::{BalanceError, BalanceFut, CheckIfMyPaymentSentArgs, CoinFutSpawner, FeeApproxStage, FoundSwapTxSpend,
-            MmPlatformCoin, NegotiateSwapContractAddrErr, PaymentInstructions, PaymentInstructionsErr,
             RawTransactionFut, RawTransactionRequest, SearchForSwapTxSpendInput, SendMakerPaymentArgs,
             SendMakerRefundsPaymentArgs, SendMakerSpendsTakerPaymentArgs, SendTakerPaymentArgs,
             SendTakerRefundsPaymentArgs, SendTakerSpendsMakerPaymentArgs, SignatureResult, TradePreimageFut,
@@ -15,7 +14,8 @@ use crate::{BalanceError, BalanceFut, CheckIfMyPaymentSentArgs, CoinFutSpawner, 
 use async_trait::async_trait;
 use base58::ToBase58;
 use bincode::{deserialize, serialize};
-use common::executor::{abortable_queue::AbortableQueue, AbortableSystem, AbortedError};
+use common::executor::{abortable_queue::AbortableQueue, AbortableSystem};
+use common::log::error;
 use common::{async_blocking, now_ms};
 use derive_more::Display;
 use futures::{FutureExt, TryFutureExt};
@@ -466,10 +466,6 @@ impl MarketCoinOps for SolanaCoin {
     fn min_trading_vol(&self) -> MmNumber { MmNumber::from("0.00777") }
 }
 
-impl MmPlatformCoin for SolanaCoin {
-    fn on_token_deactivated(&self, _ticker: &str) -> Result<(), String> { Ok(()) }
-}
-
 #[allow(clippy::forget_ref, clippy::forget_copy, clippy::cast_ref_to_mut)]
 #[async_trait]
 impl SwapOps for SolanaCoin {
@@ -699,5 +695,5 @@ impl MmCoin for SolanaCoin {
 
     fn is_coin_protocol_supported(&self, _info: &Option<Vec<u8>>) -> bool { true }
 
-    fn on_disabled(&self) -> Result<(), AbortedError> { AbortableSystem::abort_all(&self.abortable_system) }
+    fn on_token_deactivated(&self, _ticker: &str) -> Result<(), String> { Ok(()) }
 }

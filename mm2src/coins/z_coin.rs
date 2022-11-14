@@ -13,8 +13,8 @@ use crate::utxo::{sat_from_big_decimal, utxo_common, ActualTxFee, AdditionalTxDa
                   UtxoCommonOps, UtxoFeeDetails, UtxoRpcMode, UtxoTxBroadcastOps, UtxoTxGenerationOps,
                   VerboseTransactionFrom};
 use crate::{BalanceError, BalanceFut, CheckIfMyPaymentSentArgs, CoinBalance, CoinFutSpawner, FeeApproxStage,
-            FoundSwapTxSpend, HistorySyncState, MarketCoinOps, MmCoin, MmPlatformCoin, NegotiateSwapContractAddrErr,
-            NumConversError, PaymentInstructions, PaymentInstructionsErr, PrivKeyActivationPolicy, RawTransactionFut,
+            FoundSwapTxSpend, HistorySyncState, MarketCoinOps, MmCoin, NegotiateSwapContractAddrErr, NumConversError,
+            PaymentInstructions, PaymentInstructionsErr, PrivKeyActivationPolicy, RawTransactionFut,
             RawTransactionRequest, SearchForSwapTxSpendInput, SendMakerPaymentArgs, SendMakerRefundsPaymentArgs,
             SendMakerSpendsTakerPaymentArgs, SendTakerPaymentArgs, SendTakerRefundsPaymentArgs,
             SendTakerSpendsMakerPaymentArgs, SignatureError, SignatureResult, SwapOps, TradeFee, TradePreimageFut,
@@ -1043,10 +1043,6 @@ impl MarketCoinOps for ZCoin {
     fn is_privacy(&self) -> bool { true }
 }
 
-impl MmPlatformCoin for ZCoin {
-    fn on_token_deactivated(&self, _ticker: &str) -> Result<(), String> { Ok(()) }
-}
-
 #[async_trait]
 impl SwapOps for ZCoin {
     fn send_taker_fee(&self, _fee_addr: &[u8], amount: BigDecimal, uuid: &[u8]) -> TransactionFut {
@@ -1553,6 +1549,8 @@ impl MmCoin for ZCoin {
     }
 
     fn on_disabled(&self) -> Result<(), AbortedError> { AbortableSystem::abort_all(&self.as_ref().abortable_system) }
+
+    fn on_token_deactivated(&self, _ticker: &str) -> Result<(), String> { Ok(()) }
 }
 
 #[async_trait]

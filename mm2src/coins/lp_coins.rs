@@ -1946,6 +1946,8 @@ pub trait MmCoin: SwapOps + WatcherOps + MarketCoinOps + Send + Sync + 'static {
 
     /// Abort all coin related futures on coin deactivation
     fn on_disabled(&self) -> Result<(), AbortedError>;
+
+    fn on_token_deactivated(&self, _ticker: &str) -> Result<(), String>;
 }
 
 /// The coin futures spawner. It's used to spawn futures that can be aborted immediately or after a timeout
@@ -3458,8 +3460,4 @@ where
     } else {
         b.block_height.cmp(&a.block_height)
     }
-}
-
-pub trait MmPlatformCoin {
-    fn on_token_deactivated(&self, _ticker: &str) -> Result<(), String>;
 }

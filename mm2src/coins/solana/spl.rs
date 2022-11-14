@@ -300,10 +300,6 @@ impl MarketCoinOps for SplToken {
     fn min_trading_vol(&self) -> MmNumber { MmNumber::from("0.00777") }
 }
 
-impl MmPlatformCoin for SplToken {
-    fn on_token_deactivated(&self, _ticker: &str) -> Result<(), String> { Ok(()) }
-}
-
 #[allow(clippy::forget_ref, clippy::forget_copy, clippy::cast_ref_to_mut)]
 #[async_trait]
 impl SwapOps for SplToken {
@@ -507,4 +503,6 @@ impl MmCoin for SplToken {
     fn is_coin_protocol_supported(&self, _info: &Option<Vec<u8>>) -> bool { true }
 
     fn on_disabled(&self) -> Result<(), AbortedError> { AbortableSystem::abort_all(&self.conf.abortable_system) }
+
+    fn on_token_deactivated(&self, _ticker: &str) -> Result<(), String> { Ok(()) }
 }
