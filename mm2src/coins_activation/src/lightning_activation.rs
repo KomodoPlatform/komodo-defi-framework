@@ -83,10 +83,12 @@ impl TryFromCoinProtocol for LightningProtocolConf {
             CoinProtocol::LIGHTNING {
                 platform,
                 network,
+                avg_block_time,
                 confirmation_targets,
             } => Ok(LightningProtocolConf {
                 platform_coin_ticker: platform,
                 network,
+                avg_block_time,
                 confirmation_targets,
             }),
             proto => MmError::err(proto),
@@ -321,6 +323,7 @@ async fn start_lightning(
     let platform = Arc::new(Platform::new(
         platform_coin.clone(),
         protocol_conf.network.clone(),
+        protocol_conf.avg_block_time,
         protocol_conf.confirmation_targets,
     )?);
     task_handle.update_in_progress_status(LightningInProgressStatus::GettingFeesFromRPC)?;

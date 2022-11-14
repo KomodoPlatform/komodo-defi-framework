@@ -415,6 +415,7 @@ impl LightningCoin {
         payment_hash: PaymentHash,
         amt_msat: Option<u64>,
         description: String,
+        min_final_cltv_expiry: u64,
         invoice_expiry_delta_secs: u32,
     ) -> Result<Invoice, MmError<SignOrCreationError<()>>> {
         let open_channels_nodes = self.open_channels_nodes.lock().clone();
@@ -444,8 +445,9 @@ impl LightningCoin {
             .payment_hash(Hash::from_inner(payment_hash.0))
             .payment_secret(payment_secret)
             .basic_mpp()
-            // Todo: This will probably be important in locktime calculations in the next PRs and should be validated by the other side
-            .min_final_cltv_expiry(MIN_FINAL_CLTV_EXPIRY.into())
+            // Todo: This should be validated by the other side, right now this is not validated by rust-lightning and the PaymentReceived event doesn't include the final cltv of the payment for us to validate it
+            // Todo: This needs a PR opened to rust-lightning, I already contacted them about it and there is an issue opened for it https://github.com/lightningdevkit/rust-lightning/issues/1850
+            .min_final_cltv_expiry(min_final_cltv_expiry)
             .expiry_time(core::time::Duration::from_secs(invoice_expiry_delta_secs.into()));
         if let Some(amt) = amt_msat {
             invoice = invoice.amount_milli_satoshis(amt);
@@ -472,6 +474,8 @@ impl LightningCoin {
             Err(e) => MmError::err(SignOrCreationError::SignError(e)),
         }
     }
+
+    fn estimate_blocks_from_duration(&self, duration: u64) -> u64 { duration / self.platform.avg_block_time }
 }
 
 #[async_trait]
@@ -671,16 +675,24 @@ impl SwapOps for LightningCoin {
         &self,
         secret_hash: &[u8],
         amount: &BigDecimal,
+        lock_duration: u64,
     ) -> Result<Option<Vec<u8>>, MmError<PaymentInstructionsErr>> {
         // lightning decimals should be 11 in config since the smallest divisible unit in lightning coin is msat
         let amt_msat = sat_from_big_decimal(amount, self.decimals())?;
         let payment_hash =
             payment_hash_from_slice(secret_hash).map_to_mm(|e| PaymentInstructionsErr::InternalError(e.to_string()))?;
 
+        let min_final_cltv_expiry = self.estimate_blocks_from_duration(lock_duration);
         // note: No description is provided in the invoice to reduce the payload
         // Todo: The invoice expiry should probably be the same as maker_payment_wait/wait_taker_payment
         let invoice = self
-            .create_invoice_for_hash(payment_hash, Some(amt_msat), "".into(), DEFAULT_INVOICE_EXPIRY)
+            .create_invoice_for_hash(
+                payment_hash,
+                Some(amt_msat),
+                "".into(),
+                min_final_cltv_expiry,
+                DEFAULT_INVOICE_EXPIRY,
+            )
             .await
             .map_err(|e| PaymentInstructionsErr::LightningInvoiceErr(e.to_string()))?;
         Ok(Some(invoice.to_string().into_bytes()))

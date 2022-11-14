@@ -184,6 +184,7 @@ impl SwapOps for TestCoin {
         &self,
         _secret_hash: &[u8],
         _amount: &BigDecimal,
+        _lock_duration: u64,
     ) -> Result<Option<Vec<u8>>, MmError<PaymentInstructionsErr>> {
         unimplemented!()
     }

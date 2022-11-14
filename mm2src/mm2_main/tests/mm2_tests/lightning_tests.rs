@@ -79,6 +79,7 @@ fn start_lightning_nodes(enable_0_confs: bool) -> (MarketMakerIt, MarketMakerIt,
               "protocol_data":{
                 "platform": "tBTC-TEST-segwit",
                 "network": "testnet",
+                "avg_block_time": 3600,
                 "confirmation_targets": {
                   "background": 12,
                   "normal": 6,

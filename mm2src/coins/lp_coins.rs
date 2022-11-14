@@ -688,6 +688,7 @@ pub trait SwapOps {
         &self,
         secret_hash: &[u8],
         amount: &BigDecimal,
+        lock_duration: u64,
     ) -> Result<Option<Vec<u8>>, MmError<PaymentInstructionsErr>>;
 
     fn validate_instructions(
@@ -2316,6 +2317,7 @@ pub enum CoinProtocol {
     LIGHTNING {
         platform: String,
         network: BlockchainNetwork,
+        avg_block_time: u64,
         confirmation_targets: PlatformCoinConfirmationTargets,
     },
     #[cfg(not(target_arch = "wasm32"))]

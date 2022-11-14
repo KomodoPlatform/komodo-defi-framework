@@ -417,11 +417,14 @@ impl MakerSwap {
         // If maker payment is a lightning payment the payment hash will be sent in the message
         // It's not really needed here unlike in TakerFee msg since the hash is included in the invoice/payment_instructions but it's kept for symmetry
         let payment_data = self.r().maker_payment.as_ref().unwrap().tx_hex.0.clone();
+        // Todo: Reimplement this, lock duration for maker payment should be more than the whole payment path duration (total_cltv), final cltv doesn't matter alot (Recheck this)
+        let taker_lock_duration = self.r().data.lock_duration;
         let instructions = self
             .taker_coin
             .payment_instructions(
                 &SecretHashAlgo::SHA256.hash_secret(self.secret.as_slice()),
                 &self.taker_amount,
+                taker_lock_duration,
             )
             .await?;
         Ok(SwapTxDataMsg::new(payment_data, instructions))

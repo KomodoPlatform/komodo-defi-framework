@@ -865,9 +865,11 @@ impl TakerSwap {
             .clone();
         let secret_hash = self.r().secret_hash.0.clone();
         let maker_amount = self.maker_amount.clone().into();
+        let maker_lock_duration = self.r().data.lock_duration * 2;
         let instructions = self
             .maker_coin
-            .payment_instructions(&secret_hash, &maker_amount)
+            // Todo: find a better way instead of self.r().data.lock_duration * 2, also lock_duration * 2 should be more than or equal to MIN_FINAL_CLTV_EXPIRY
+            .payment_instructions(&secret_hash, &maker_amount, maker_lock_duration)
             .await?;
         Ok(SwapTxDataMsg::new(taker_fee_data, instructions))
     }
