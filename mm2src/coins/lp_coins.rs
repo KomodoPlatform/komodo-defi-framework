@@ -2104,9 +2104,7 @@ impl MmCoinEnum {
             _ => false,
         }
     }
-}
 
-impl MmPlatformCoin for MmCoinEnum {
     fn on_token_deactivated(&self, ticker: &str) -> Result<(), String> {
         match self {
             MmCoinEnum::UtxoCoin(ref c) => c.on_token_deactivated(ticker),
@@ -2181,7 +2179,7 @@ impl CoinsContext {
         })))
     }
 
-    pub async fn add_coin(&self, coin: MmCoinEnum) -> Result<(), MmError<CoinIsAlreadyActivatedErr>> {
+    pub async fn add_token(&self, coin: MmCoinEnum) -> Result<(), MmError<CoinIsAlreadyActivatedErr>> {
         let mut coins = self.coins.lock().await;
         if coins.contains_key(coin.ticker()) {
             return MmError::err(CoinIsAlreadyActivatedErr {
@@ -2230,18 +2228,50 @@ impl CoinsContext {
     }
 
     /// Get enabled coins to disable.
-    pub async fn get_coins_to_disable(&self, platform_ticker: &str, ticker: &str) -> Vec<String> {
+    pub async fn get_tokens_to_disable(&self, ticker: &str) -> Vec<String> {
         let coins = self.platform_coin_tokens.lock();
-        let mut coins_storage = vec![];
+        coins.get(ticker).cloned().unwrap_or_default()
+    }
 
-        if ticker == platform_ticker {
-            coins_storage.extend(coins.get(platform_ticker).unwrap_or(&vec![]).clone());
+    pub async fn remove_coin(&self, ctx: &MmArc, ticker: &str) -> Result<(), String> {
+        let coin = match lp_coinfind(ctx, ticker).await {
+            Ok(Some(coin)) => coin,
+            Ok(None) => return ERR!("No such coin: {}", ticker),
+            Err(err) => return ERR!("!lp_coinfind({}): ", err),
+        };
+        let coins_ctx = try_s!(CoinsContext::from_ctx(ctx));
+        let platform_ticker = coin.platform_ticker();
+
+        let mut coins_storage = try_s!(coins_ctx.coins.try_lock().ok_or("coins mutex lock err"));
+        let mut platform_tokens_storage = try_s!(coins_ctx
+            .platform_coin_tokens
+            .try_lock()
+            .ok_or("platform_coin_tokens mutex lock err"));
+
+        // Check if ticker is a platform coin and remove from it platform's token list
+        if ticker == platform_ticker && platform_tokens_storage.get_mut(ticker).is_some() {
+            if let Err(err) = coin.on_token_deactivated(ticker) {
+                log!("Platform Tokens Error: {err}")
+            };
+            platform_tokens_storage.remove(ticker);
         };
 
-        if !coins_storage.contains(&ticker.to_owned()) {
-            coins_storage.push(ticker.to_string());
-        }
-        coins_storage
+        // Check if coin platform_ticker is in platform_tokens and remove it from token list
+        if let Some(tokens) = platform_tokens_storage.get_mut(platform_ticker) {
+            tokens.retain(|t| t.as_str() != ticker);
+        };
+
+        //  Remove coin from coin list
+        if coins_storage.remove(ticker).is_none() {
+            return ERR!("{} is disabled already", ticker);
+        };
+
+        // Abort all coin related futures on coin deactivation
+        if let Err(err) = coin.on_disabled() {
+            log!("Error aborting coin futures: {err:?}")
+        };
+
+        Ok(())
     }
 
     #[cfg(target_arch = "wasm32")]
@@ -3017,41 +3047,6 @@ pub async fn get_enabled_coins(ctx: MmArc) -> Result<Response<Vec<u8>>, String> 
 
     let res = try_s!(json::to_vec(&json!({ "result": enabled_coins })));
     Ok(try_s!(Response::builder().body(res)))
-}
-
-pub async fn disable_coin(ctx: &MmArc, ticker: &str) -> Result<(), String> {
-    let coin = match lp_coinfind(ctx, ticker).await {
-        Ok(Some(coin)) => coin,
-        Ok(None) => return ERR!("No such coin: {}", ticker),
-        Err(err) => return ERR!("!lp_coinfind({}): ", err),
-    };
-    let coins_ctx = try_s!(CoinsContext::from_ctx(ctx));
-    let platform_ticker = coin.platform_ticker();
-
-    let mut coins_storage = try_s!(coins_ctx.coins.try_lock().ok_or("coins mutex lock err"));
-    let mut platform_tokens_storage = try_s!(coins_ctx
-        .platform_coin_tokens
-        .try_lock()
-        .ok_or("platform_coin_tokens mutex lock err"));
-
-    // Check if ticker is a platform coin and remove from it platform's token list
-    if ticker == platform_ticker && platform_tokens_storage.get_mut(ticker).is_some() {
-        if let Err(err) = coin.on_token_deactivated(ticker) {
-            log!("Platform Tokens Error: {err}")
-        };
-        platform_tokens_storage.remove(ticker);
-    };
-
-    // Check if coin platform_ticker is in platform_tokens and remove it from token list
-    if let Some(tokens) = platform_tokens_storage.get_mut(platform_ticker) {
-        tokens.retain(|t| t.as_str() != ticker);
-    };
-
-    //  Finally, remove coin from coin list
-    match coins_storage.remove(ticker) {
-        Some(_) => Ok(()),
-        None => ERR!("{} is disabled already", ticker),
-    }
 }
 
 #[derive(Deserialize)]

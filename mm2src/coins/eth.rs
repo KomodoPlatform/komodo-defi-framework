@@ -61,8 +61,8 @@ use web3_transport::{EthFeeHistoryNamespace, Web3Transport, Web3TransportNode};
 
 use super::{coin_conf, AsyncMutex, BalanceError, BalanceFut, CheckIfMyPaymentSentArgs, CoinBalance, CoinFutSpawner,
             CoinProtocol, CoinTransportMetrics, CoinsContext, FeeApproxStage, FoundSwapTxSpend, HistorySyncState,
-            MarketCoinOps, MmCoin, MmPlatformCoin, MyAddressError, NegotiateSwapContractAddrErr, NumConversError,
-            NumConversResult, PaymentInstructions, PaymentInstructionsErr, RawTransactionError, RawTransactionFut,
+            MarketCoinOps, MmCoin, MyAddressError, NegotiateSwapContractAddrErr, NumConversError, NumConversResult,
+            PaymentInstructions, PaymentInstructionsErr, RawTransactionError, RawTransactionFut,
             RawTransactionRequest, RawTransactionRes, RawTransactionResult, RpcClientType, RpcTransportEventHandler,
             RpcTransportEventHandlerShared, SearchForSwapTxSpendInput, SendMakerPaymentArgs,
             SendMakerRefundsPaymentArgs, SendMakerSpendsTakerPaymentArgs, SendTakerPaymentArgs,
@@ -3349,6 +3349,13 @@ impl MmCoin for EthCoin {
     fn is_coin_protocol_supported(&self, _info: &Option<Vec<u8>>) -> bool { true }
 
     fn on_disabled(&self) -> Result<(), AbortedError> { AbortableSystem::abort_all(&self.abortable_system) }
+
+    fn on_token_deactivated(&self, ticker: &str) -> Result<(), String> {
+        if let Ok(tokens) = self.erc20_tokens_infos.try_lock().as_deref_mut() {
+            tokens.remove(ticker);
+        };
+        Ok(())
+    }
 }
 
 pub trait TryToAddress {
@@ -3835,14 +3842,5 @@ fn increase_gas_price_by_stage(gas_price: U256, level: &FeeApproxStage) -> U256 
         FeeApproxStage::WatcherPreimage => {
             increase_by_percent_one_gwei(gas_price, GAS_PRICE_APPROXIMATION_PERCENT_ON_WATCHER_PREIMAGE)
         },
-    }
-}
-
-impl MmPlatformCoin for EthCoin {
-    fn on_token_deactivated(&self, ticker: &str) -> Result<(), String> {
-        if let Ok(tokens) = self.erc20_tokens_infos.try_lock().as_deref_mut() {
-            tokens.remove(ticker);
-        };
-        Ok(())
     }
 }

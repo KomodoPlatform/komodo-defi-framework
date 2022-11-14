@@ -3,7 +3,7 @@
 use super::{CoinBalance, HistorySyncState, MarketCoinOps, MmCoin, RawTransactionFut, RawTransactionRequest, SwapOps,
             TradeFee, TransactionEnum, TransactionFut};
 use crate::{coin_errors::MyAddressError, BalanceFut, CanRefundHtlc, CheckIfMyPaymentSentArgs, CoinFutSpawner,
-            FeeApproxStage, FoundSwapTxSpend, MmPlatformCoin, NegotiateSwapContractAddrErr, PaymentInstructions,
+            FeeApproxStage, FoundSwapTxSpend, NegotiateSwapContractAddrErr, PaymentInstructions,
             PaymentInstructionsErr, SearchForSwapTxSpendInput, SendMakerPaymentArgs, SendMakerRefundsPaymentArgs,
             SendMakerSpendsTakerPaymentArgs, SendTakerPaymentArgs, SendTakerRefundsPaymentArgs,
             SendTakerSpendsMakerPaymentArgs, SignatureResult, TradePreimageFut, TradePreimageResult,
@@ -98,10 +98,6 @@ impl MarketCoinOps for TestCoin {
     fn min_tx_amount(&self) -> BigDecimal { unimplemented!() }
 
     fn min_trading_vol(&self) -> MmNumber { MmNumber::from("0.00777") }
-}
-
-impl MmPlatformCoin for TestCoin {
-    fn on_token_deactivated(&self, _ticker: &str) -> Result<(), String> { Ok(()) }
 }
 
 #[async_trait]
@@ -309,4 +305,6 @@ impl MmCoin for TestCoin {
     fn is_coin_protocol_supported(&self, _info: &Option<Vec<u8>>) -> bool { true }
 
     fn on_disabled(&self) -> Result<(), AbortedError> { Ok(()) }
+
+    fn on_token_deactivated(&self, _ticker: &str) -> Result<(), String> { Ok(()) }
 }

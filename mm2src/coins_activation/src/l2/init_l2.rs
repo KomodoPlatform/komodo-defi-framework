@@ -5,7 +5,7 @@ use crate::l2::init_l2_error::{CancelInitL2Error, InitL2StatusError, InitL2UserA
 use crate::l2::InitL2Error;
 use crate::prelude::*;
 use async_trait::async_trait;
-use coins::{disable_coin, lp_coinfind, lp_coinfind_or_err, lp_register_coin, MmCoinEnum, RegisterCoinError,
+use coins::{lp_coinfind, lp_coinfind_or_err, lp_register_coin, CoinsContext, MmCoinEnum, RegisterCoinError,
             RegisterCoinParams};
 use common::SuccessResponse;
 use mm2_core::mm_ctx::MmArc;
@@ -186,7 +186,11 @@ where
     }
 
     /// Try to disable the coin in case if we managed to register it already.
-    async fn cancel(self) { disable_coin(&self.ctx, &self.ticker).await.ok(); }
+    async fn cancel(self) {
+        if let Ok(c_ctx) = CoinsContext::from_ctx(&self.ctx) {
+            c_ctx.remove_coin(&self.ctx, &self.ticker).await.ok();
+        };
+    }
 
     async fn run(&mut self, task_handle: &RpcTaskHandle<Self>) -> Result<Self::Item, MmError<Self::Error>> {
         let (coin, result) = L2::init_l2(

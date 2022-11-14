@@ -128,7 +128,7 @@ where
 
     let coins_ctx = CoinsContext::from_ctx(&ctx).unwrap();
     coins_ctx
-        .add_coin(token.into())
+        .add_token(token.into())
         .await
         .mm_err(|e| EnableTokenError::TokenIsAlreadyActivated(e.ticker))?;
 

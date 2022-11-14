@@ -19,7 +19,7 @@
 //  marketmaker
 //
 
-use coins::{disable_coin as disable_coin_impl, lp_coinfind, lp_coininit, CoinsContext, MmCoinEnum};
+use coins::{lp_coinfind, lp_coininit, CoinsContext, MmCoinEnum};
 use common::executor::Timer;
 use common::log::error;
 use common::{rpc_err_response, rpc_response, HyRes};
@@ -48,20 +48,23 @@ pub async fn disable_coin(ctx: MmArc, req: Json) -> Result<Response<Vec<u8>>, St
         Ok(None) => return ERR!("No such coin: {}", ticker),
         Err(err) => return ERR!("!lp_coinfind({}): ", err),
     };
-    let platform_ticker = coin.platform_ticker();
     let coins_ctx = CoinsContext::from_ctx(&ctx).map_err(|err| ERRL!("{}", err))?;
 
     // Get all enabled tokens with platform coin including the coin.
-    let coins_to_disable = coins_ctx.get_coins_to_disable(platform_ticker, &ticker).await;
+    let coins_to_disable = coins_ctx
+        .get_tokens_to_disable(&ticker)
+        .await
+        .into_iter()
+        .chain(std::iter::once(coin.platform_ticker().to_string()));
 
     let mut disabled_tokens_tickers = vec![];
     let mut cancelled_orders = vec![];
-    for ticker in &coins_to_disable {
+    for ticker in coins_to_disable {
         log!("disabling {ticker} coin");
-        let swaps = try_s!(active_swaps_using_coin(&ctx, ticker));
+        let swaps = try_s!(active_swaps_using_coin(&ctx, &ticker));
         if !swaps.is_empty() {
             let err = json!({
-                "error": format!("There're active swaps using {}", ticker),
+                "error": format!("There're active swaps using {}", &ticker),
                 "swaps": swaps,
             });
             return Response::builder()
@@ -90,7 +93,7 @@ pub async fn disable_coin(ctx: MmArc, req: Json) -> Result<Response<Vec<u8>>, St
                 .map_err(|e| ERRL!("{}", e));
         }
 
-        try_s!(disable_coin_impl(&ctx, ticker).await);
+        try_s!(coins_ctx.remove_coin(&ctx, &ticker).await);
 
         // Combine all orders to a single vector
         cancelled_orders.extend(cancelled);
@@ -104,10 +107,6 @@ pub async fn disable_coin(ctx: MmArc, req: Json) -> Result<Response<Vec<u8>>, St
             "disabled_tokens_tickers": disabled_tokens_tickers
         }
     });
-    // Abort all coin related futures on coin deactivation
-    if let Err(err) = coin.on_disabled() {
-        log!("Error aborting coin futures: {err}")
-    };
     Response::builder()
         .body(json::to_vec(&res).unwrap())
         .map_err(|e| ERRL!("{}", e))
