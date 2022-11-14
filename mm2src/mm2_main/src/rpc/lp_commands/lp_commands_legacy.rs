@@ -91,10 +91,6 @@ pub async fn disable_coin(ctx: MmArc, req: Json) -> Result<Response<Vec<u8>>, St
         }
 
         try_s!(disable_coin_impl(&ctx, ticker).await);
-        // Abort all coin related futures on coin deactivation
-        if let Err(err) = coin.on_disabled() {
-            log!("Error aborting coin futures: {err}")
-        };
 
         // Combine all orders to a single vector
         cancelled_orders.extend(cancelled);
@@ -103,10 +99,15 @@ pub async fn disable_coin(ctx: MmArc, req: Json) -> Result<Response<Vec<u8>>, St
 
     let res = json!({
         "result": {
-            "coins": disabled_tokens_tickers,
+            "coin": ticker,
             "cancelled_orders": cancelled_orders,
+            "disabled_tokens_tickers": disabled_tokens_tickers
         }
     });
+    // Abort all coin related futures on coin deactivation
+    if let Err(err) = coin.on_disabled() {
+        log!("Error aborting coin futures: {err}")
+    };
     Response::builder()
         .body(json::to_vec(&res).unwrap())
         .map_err(|e| ERRL!("{}", e))
