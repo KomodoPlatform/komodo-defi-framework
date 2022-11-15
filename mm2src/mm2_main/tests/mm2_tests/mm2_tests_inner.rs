@@ -9,16 +9,16 @@ use mm2_number::{BigDecimal, BigRational, Fraction, MmNumber};
 use mm2_test_helpers::electrums::*;
 #[cfg(all(feature = "zhtlc-native-tests", not(target_arch = "wasm32")))]
 use mm2_test_helpers::for_tests::init_z_coin_native;
-use mm2_test_helpers::for_tests::{btc_with_spv_conf, check_recent_swaps, check_stats_swap_status, enable_eth_coin,
-                                  enable_qrc20, eth_jst_testnet_conf, eth_testnet_conf, find_metrics_in_json,
-                                  from_env_file, mm_spat, morty_conf, rick_conf, sign_message, start_swaps,
-                                  tbtc_with_spv_conf, test_qrc20_history_impl, tqrc20_conf, verify_message,
-                                  wait_for_swap_contract_negotiation, wait_for_swap_negotiation_failure,
-                                  wait_for_swaps_finish_and_check_status, wait_till_history_has_records,
-                                  MarketMakerIt, Mm2InitPrivKeyPolicy, Mm2TestConf, Mm2TestConfForSwap, RaiiDump,
-                                  ETH_DEV_NODES, ETH_DEV_SWAP_CONTRACT, ETH_MAINNET_NODE, ETH_MAINNET_SWAP_CONTRACT,
-                                  MAKER_SUCCESS_EVENTS, MORTY, QRC20_ELECTRUMS, RICK, RICK_ELECTRUM_ADDRS,
-                                  TAKER_SUCCESS_EVENTS};
+use mm2_test_helpers::for_tests::{btc_segwit_conf, btc_with_spv_conf, check_recent_swaps, check_stats_swap_status,
+                                  enable_eth_coin, enable_qrc20, eth_jst_testnet_conf, eth_testnet_conf,
+                                  find_metrics_in_json, from_env_file, mm_spat, morty_conf, rick_conf, sign_message,
+                                  start_swaps, tbtc_with_spv_conf, test_qrc20_history_impl, tqrc20_conf,
+                                  verify_message, wait_for_swap_contract_negotiation,
+                                  wait_for_swap_negotiation_failure, wait_for_swaps_finish_and_check_status,
+                                  wait_till_history_has_records, MarketMakerIt, Mm2InitPrivKeyPolicy, Mm2TestConf,
+                                  Mm2TestConfForSwap, RaiiDump, ETH_DEV_NODES, ETH_DEV_SWAP_CONTRACT,
+                                  ETH_MAINNET_NODE, ETH_MAINNET_SWAP_CONTRACT, MAKER_SUCCESS_EVENTS, MORTY,
+                                  QRC20_ELECTRUMS, RICK, RICK_ELECTRUM_ADDRS, TAKER_SUCCESS_EVENTS};
 use mm2_test_helpers::get_passphrase;
 use mm2_test_helpers::structs::*;
 use serde_json::{self as json, json, Value as Json};
@@ -7303,7 +7303,13 @@ fn test_enable_coins_with_hd_account_id() {
     const TX_HISTORY: bool = false;
     const PASSPHRASE: &str = "tank abandon bind salon remove wisdom net size aspect direct source fossil";
 
-    let coins = json!([eth_testnet_conf(), eth_jst_testnet_conf(), rick_conf(), tqrc20_conf()]);
+    let coins = json!([
+        eth_testnet_conf(),
+        eth_jst_testnet_conf(),
+        rick_conf(),
+        tqrc20_conf(),
+        btc_segwit_conf(),
+    ]);
 
     let hd_account_id = 0;
     let conf_0 = Mm2TestConf::seednode_with_hd_account(PASSPHRASE, hd_account_id, &coins);
@@ -7324,6 +7330,8 @@ fn test_enable_coins_with_hd_account_id() {
         "0xd362e096e873eb7907e205fadc6175c6fec7bc44",
     ));
     assert_eq!(qrc20["address"].as_str(), Some("qRtCTiPHW9e6zH9NcRhjMVfq7sG37SvgrL"));
+    let btc_segwit = block_on(enable_electrum(&mm_hd_0, "BTC-segwit", TX_HISTORY, RICK_ELECTRUM_ADDRS));
+    assert_eq!(btc_segwit.address, "bc1q6vyur5hjul2m0979aadd6u7ptuj9ac4gt0ha0c");
 
     let hd_account_id = 1;
     let conf_1 = Mm2TestConf::seednode_with_hd_account(PASSPHRASE, hd_account_id, &coins);
@@ -7344,6 +7352,8 @@ fn test_enable_coins_with_hd_account_id() {
         "0xd362e096e873eb7907e205fadc6175c6fec7bc44",
     ));
     assert_eq!(qrc20["address"].as_str(), Some("qY8FNq2ZDUh52BjNvaroFoeHdr3AAhqsxW"));
+    let btc_segwit = block_on(enable_electrum(&mm_hd_1, "BTC-segwit", TX_HISTORY, RICK_ELECTRUM_ADDRS));
+    assert_eq!(btc_segwit.address, "bc1q6kxcwcrsm5z8pe940xxu294q7588mqvarttxcx");
 }
 
 #[test]

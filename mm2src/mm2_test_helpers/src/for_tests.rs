@@ -397,6 +397,40 @@ pub fn atom_testnet_conf() -> Json {
     })
 }
 
+pub fn btc_segwit_conf() -> Json {
+    json!({
+        "coin": "BTC-segwit",
+        "name": "bitcoin",
+        "fname": "Bitcoin",
+        "rpcport": 8332,
+        "pubtype": 0,
+        "p2shtype": 5,
+        "wiftype": 128,
+        "segwit": true,
+        "bech32_hrp": "bc",
+        "address_format": {
+            "format": "segwit"
+        },
+        "orderbook_ticker": "BTC",
+        "txfee": 0,
+        "estimate_fee_mode": "ECONOMICAL",
+        "mm2": 1,
+        "enable_spv_proof": true,
+        "block_headers_verification_params": {
+            "difficulty_check": true,
+            "constant_difficulty": false,
+            "difficulty_algorithm": "Bitcoin Mainnet",
+            "genesis_block_header": "010000006fe28c0ab6f1b372c1a6a246ae63f74f931e8365e15a089c68d6190000000000982051fd1e4ba744bbbe680e1fee14677ba1a3c3540bf7b1cdb606e857233e0e61bc6649ffff001d01e36299"
+        },
+        "required_confirmations": 1,
+        "avg_blocktime": 10,
+        "derivation_path": "m/84'/0'",
+        "protocol": {
+            "type": "UTXO"
+        }
+    })
+}
+
 pub fn btc_with_spv_conf() -> Json {
     json!({
         "coin": "BTC",
