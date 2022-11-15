@@ -1,6 +1,6 @@
 use super::*;
 use common::executor::AbortedError;
-use crypto::Bip44PathToCoin;
+use crypto::StandardHDPathToCoin;
 
 #[derive(Display, Serialize, SerializeErrorType)]
 #[serde(tag = "error_type", content = "error_data")]
@@ -289,7 +289,7 @@ pub(crate) fn key_pair_from_priv_key_policy(
         PrivKeyBuildPolicy::IguanaPrivKey(iguana) => iguana,
         PrivKeyBuildPolicy::GlobalHDAccount(global_hd_ctx) => {
             // Consider storing `derivation_path` at `EthCoinImpl`.
-            let derivation_path: Option<Bip44PathToCoin> = json::from_value(conf["derivation_path"].clone())
+            let derivation_path: Option<StandardHDPathToCoin> = json::from_value(conf["derivation_path"].clone())
                 .map_to_mm(|e| EthActivationV2Error::ErrorDeserializingDerivationPath(e.to_string()))?;
             let derivation_path = derivation_path.or_mm_err(|| EthActivationV2Error::DerivationPathIsNotSet)?;
             global_hd_ctx

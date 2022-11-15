@@ -17,7 +17,7 @@ use base58::ToBase58;
 use bincode::{deserialize, serialize};
 use common::executor::{abortable_queue::AbortableQueue, AbortableSystem};
 use common::{async_blocking, now_ms};
-use crypto::Bip44PathToCoin;
+use crypto::StandardHDPathToCoin;
 use derive_more::Display;
 use futures::{FutureExt, TryFutureExt};
 use futures01::Future;
@@ -183,7 +183,7 @@ pub async fn solana_coin_with_policy(
     let priv_key = match priv_key_policy {
         PrivKeyBuildPolicy::IguanaPrivKey(priv_key) => priv_key,
         PrivKeyBuildPolicy::GlobalHDAccount(global_hd) => {
-            let derivation_path: Bip44PathToCoin = try_s!(json::from_value(conf["derivation_path"].clone()));
+            let derivation_path: StandardHDPathToCoin = try_s!(json::from_value(conf["derivation_path"].clone()));
             try_s!(global_hd.derive_secp256k1_secret(&derivation_path))
         },
         PrivKeyBuildPolicy::Trezor => return ERR!("{}", PrivKeyPolicyNotAllowed::HardwareWalletNotSupported),

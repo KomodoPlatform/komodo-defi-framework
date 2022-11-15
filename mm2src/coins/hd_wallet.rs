@@ -2,8 +2,8 @@ use crate::hd_pubkey::HDXPubExtractor;
 use crate::hd_wallet_storage::HDWalletStorageError;
 use crate::{BalanceError, WithdrawError};
 use async_trait::async_trait;
-use crypto::{Bip32DerPathError, Bip32Error, Bip44Chain, Bip44DerPathError, Bip44DerivationPath, ChildNumber,
-             DerivationPath, HwError};
+use crypto::{Bip32DerPathError, Bip32Error, Bip44Chain, ChildNumber, DerivationPath, HwError, StandardHDPath,
+             StandardHDPathError};
 use derive_more::Display;
 use itertools::Itertools;
 use mm2_err_handle::prelude::*;
@@ -125,7 +125,9 @@ pub enum NewAccountCreatingError {
 }
 
 impl From<Bip32DerPathError> for NewAccountCreatingError {
-    fn from(e: Bip32DerPathError) -> Self { NewAccountCreatingError::Internal(Bip44DerPathError::from(e).to_string()) }
+    fn from(e: Bip32DerPathError) -> Self {
+        NewAccountCreatingError::Internal(StandardHDPathError::from(e).to_string())
+    }
 }
 
 impl From<HDWalletStorageError> for NewAccountCreatingError {
@@ -190,8 +192,8 @@ pub struct HDAccountAddressId {
     pub address_id: u32,
 }
 
-impl From<Bip44DerivationPath> for HDAccountAddressId {
-    fn from(der_path: Bip44DerivationPath) -> Self {
+impl From<StandardHDPath> for HDAccountAddressId {
+    fn from(der_path: StandardHDPath) -> Self {
         HDAccountAddressId {
             account_id: der_path.account_id(),
             chain: der_path.chain(),

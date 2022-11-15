@@ -3,19 +3,19 @@ use crate::my_tx_history_v2::{MyTxHistoryErrorV2, MyTxHistoryRequestV2, MyTxHist
 use crate::rpc_command::init_withdraw::{InitWithdrawCoin, WithdrawInProgressStatus, WithdrawTaskHandle};
 use crate::utxo::rpc_clients::{ElectrumRpcRequest, UnspentInfo, UtxoRpcClientEnum, UtxoRpcError, UtxoRpcFut,
                                UtxoRpcResult};
-use crate::utxo::utxo_builder::{UtxoCoinBuildError, UtxoCoinBuilder, UtxoCoinBuilderCommonOps,
+use crate::utxo::utxo_builder::{UtxoCoinBuildError, UtxoCoinBuilder, UtxoCoinBuilderCommonOps, UtxoConfError,
                                 UtxoFieldsWithGlobalHDBuilder, UtxoFieldsWithHardwareWalletBuilder,
                                 UtxoFieldsWithIguanaSecretBuilder};
 use crate::utxo::utxo_common::{addresses_from_script, big_decimal_from_sat, big_decimal_from_sat_unsigned,
                                payment_script};
 use crate::utxo::{sat_from_big_decimal, utxo_common, ActualTxFee, AdditionalTxData, AddrFromStrError, Address,
                   BroadcastTxErr, FeePolicy, GetUtxoListOps, HistoryUtxoTx, HistoryUtxoTxMap, MatureUnspentList,
-                  RecentlySpentOutPointsGuard, UtxoActivationParams, UtxoAddressFormat, UtxoArc, UtxoCoinFields,
-                  UtxoCommonOps, UtxoFeeDetails, UtxoRpcMode, UtxoTxBroadcastOps, UtxoTxGenerationOps,
+                  RecentlySpentOutPointsGuard, UtxoActivationParams, UtxoAddressFormat, UtxoArc, UtxoCoinConf,
+                  UtxoCoinFields, UtxoCommonOps, UtxoFeeDetails, UtxoRpcMode, UtxoTxBroadcastOps, UtxoTxGenerationOps,
                   VerboseTransactionFrom};
 use crate::{BalanceError, BalanceFut, CheckIfMyPaymentSentArgs, CoinBalance, CoinFutSpawner, FeeApproxStage,
             FoundSwapTxSpend, HistorySyncState, MarketCoinOps, MmCoin, NegotiateSwapContractAddrErr, NumConversError,
-            PaymentInstructions, PaymentInstructionsErr, PrivKeyActivationPolicy, PrivKeyBuildPolicy, PrivKeyPolicy,
+            PaymentInstructions, PaymentInstructionsErr, PrivKeyActivationPolicy, PrivKeyBuildPolicy,
             PrivKeyPolicyNotAllowed, RawTransactionFut, RawTransactionRequest, SearchForSwapTxSpendInput,
             SendMakerPaymentArgs, SendMakerRefundsPaymentArgs, SendMakerSpendsTakerPaymentArgs, SendTakerPaymentArgs,
             SendTakerRefundsPaymentArgs, SendTakerSpendsMakerPaymentArgs, SignatureError, SignatureResult, SwapOps,
@@ -31,6 +31,7 @@ use chain::constants::SEQUENCE_FINAL;
 use chain::{Transaction as UtxoTx, TransactionOutput};
 use common::{async_blocking, calc_total_pages, log, PagingOptionsEnum};
 use crypto::privkey::{key_pair_from_secret, secp_privkey_from_hash};
+use crypto::{Bip32DerPathOps, GlobalHDAccountArc};
 use db_common::sqlite::offset_by_id;
 use db_common::sqlite::rusqlite::{Error as SqlError, Row, NO_PARAMS};
 use db_common::sqlite::sql_builder::{name, SqlBuilder, SqlName};
@@ -51,6 +52,7 @@ use script::{Builder as ScriptBuilder, Opcode, Script, TransactionInputSigner};
 use serde_json::Value as Json;
 use serialization::CoinVariant;
 use std::collections::{HashMap, HashSet};
+use std::iter;
 use std::path::PathBuf;
 use std::sync::Arc;
 use zcash_client_backend::data_api::WalletRead;
@@ -67,6 +69,7 @@ use zcash_primitives::sapling::note_encryption::try_sapling_output_recovery;
 use zcash_primitives::transaction::builder::Builder as ZTxBuilder;
 use zcash_primitives::transaction::components::{Amount, TxOut};
 use zcash_primitives::transaction::Transaction as ZTransaction;
+use zcash_primitives::zip32::ChildIndex as Zip32Child;
 use zcash_primitives::{consensus, constants::mainnet as z_mainnet_constants, sapling::PaymentAddress,
                        zip32::ExtendedFullViewingKey, zip32::ExtendedSpendingKey};
 use zcash_proofs::prover::LocalTxProver;
@@ -768,20 +771,13 @@ impl<'a> UtxoCoinBuilder for ZCoinBuilder<'a> {
     fn priv_key_policy(&self) -> PrivKeyBuildPolicy { self.priv_key_policy.clone() }
 
     async fn build(self) -> MmResult<Self::ResultCoin, Self::Error> {
+        // Please note that the coin will be initialized with a different derivation path.
         let utxo = self.build_utxo_fields().await?;
         let utxo_arc = UtxoArc::new(utxo);
 
         let z_spending_key = match self.z_spending_key {
             Some(ref z_spending_key) => z_spending_key.clone(),
-            None => match utxo_arc.priv_key_policy {
-                PrivKeyPolicy::KeyPair(key_pair) => ExtendedSpendingKey::master(key_pair.private_ref()),
-                PrivKeyPolicy::Trezor => {
-                    let priv_key_err = PrivKeyPolicyNotAllowed::HardwareWalletNotSupported;
-                    return MmError::err(ZCoinBuildError::UtxoBuilderError(
-                        UtxoCoinBuildError::PrivKeyPolicyNotAllowed(priv_key_err),
-                    ));
-                },
-            },
+            None => extended_spending_key_from_conf_and_policy(&utxo_arc.conf, &self.priv_key_policy)?,
         };
 
         let (_, my_z_addr) = z_spending_key
@@ -1799,6 +1795,48 @@ impl InitWithdrawCoin for ZCoin {
             transaction_type: Default::default(),
         })
     }
+}
+
+fn extended_spending_key_from_conf_and_policy(
+    conf: &UtxoCoinConf,
+    priv_key_policy: &PrivKeyBuildPolicy,
+) -> MmResult<ExtendedSpendingKey, ZCoinBuildError> {
+    match priv_key_policy {
+        PrivKeyBuildPolicy::IguanaPrivKey(iguana) => Ok(ExtendedSpendingKey::master(iguana.as_slice())),
+        PrivKeyBuildPolicy::GlobalHDAccount(global_hd) => extended_spending_key_from_global_hd_account(conf, global_hd),
+        PrivKeyBuildPolicy::Trezor => {
+            let priv_key_err = PrivKeyPolicyNotAllowed::HardwareWalletNotSupported;
+            MmError::err(ZCoinBuildError::UtxoBuilderError(
+                UtxoCoinBuildError::PrivKeyPolicyNotAllowed(priv_key_err),
+            ))
+        },
+    }
+}
+
+fn extended_spending_key_from_global_hd_account(
+    conf: &UtxoCoinConf,
+    global_hd: &GlobalHDAccountArc,
+) -> MmResult<ExtendedSpendingKey, ZCoinBuildError> {
+    let path_to_coin = conf
+        .derivation_path
+        .clone()
+        .or_mm_err(|| UtxoCoinBuildError::ConfError(UtxoConfError::DerivationPathIsNotSet))?;
+
+    let path_to_account = path_to_coin
+        .to_derivation_path()
+        .into_iter()
+        // Map `bip32::ChildNumber` to `zip32::Zip32Child`.
+        .map(|child| Zip32Child::from_index(child.0))
+        // Push the hardened `account` index, so the derivation path looks like:
+        // `m/purpose'/coin'/account'`.
+        .chain(iter::once(Zip32Child::Hardened(global_hd.account_id())));
+
+    let mut spending_key = ExtendedSpendingKey::master(global_hd.root_seed_bytes());
+    for zip32_child in path_to_account {
+        spending_key = spending_key.derive_child(zip32_child);
+    }
+
+    Ok(spending_key)
 }
 
 #[test]

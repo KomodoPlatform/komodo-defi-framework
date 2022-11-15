@@ -16,8 +16,8 @@ use common::executor::{abortable_queue::AbortableQueue, AbortSettings, Abortable
                        Timer};
 use common::log::{error, info};
 use common::small_rng;
-use crypto::{Bip32DerPathError, Bip44DerPathError, Bip44PathToCoin, CryptoCtx, CryptoCtxError, GlobalHDAccountArc,
-             HwWalletType, Secp256k1Secret};
+use crypto::{Bip32DerPathError, CryptoCtx, CryptoCtxError, GlobalHDAccountArc, HwWalletType, Secp256k1Secret,
+             StandardHDPathError, StandardHDPathToCoin};
 use derive_more::Display;
 use futures::channel::mpsc::{unbounded, Receiver as AsyncReceiver, UnboundedReceiver};
 use futures::compat::Future01CompatExt;
@@ -93,7 +93,7 @@ impl From<CryptoCtxError> for UtxoCoinBuildError {
 }
 
 impl From<Bip32DerPathError> for UtxoCoinBuildError {
-    fn from(e: Bip32DerPathError) -> Self { UtxoCoinBuildError::Internal(Bip44DerPathError::from(e).to_string()) }
+    fn from(e: Bip32DerPathError) -> Self { UtxoCoinBuildError::Internal(StandardHDPathError::from(e).to_string()) }
 }
 
 impl From<HDWalletStorageError> for UtxoCoinBuildError {
@@ -299,7 +299,7 @@ pub trait UtxoFieldsWithHardwareWalletBuilder: UtxoCoinBuilderCommonOps {
     async fn load_hd_wallet_accounts(
         &self,
         hd_wallet_storage: &HDWalletCoinStorage,
-        derivation_path: &Bip44PathToCoin,
+        derivation_path: &StandardHDPathToCoin,
     ) -> UtxoCoinBuildResult<HDAccountsMap<UtxoHDAccount>> {
         utxo_common::load_hd_accounts_from_storage(hd_wallet_storage, derivation_path)
             .await

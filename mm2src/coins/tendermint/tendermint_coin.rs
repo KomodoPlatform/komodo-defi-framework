@@ -40,7 +40,7 @@ use cosmrs::tendermint::chain::Id as ChainId;
 use cosmrs::tendermint::PublicKey;
 use cosmrs::tx::{self, Fee, Msg, Raw, SignDoc, SignerInfo};
 use cosmrs::{AccountId, Any, Coin, Denom, ErrorReport};
-use crypto::{privkey::key_pair_from_secret, Bip44PathToCoin, Secp256k1Secret};
+use crypto::{privkey::key_pair_from_secret, Secp256k1Secret, StandardHDPathToCoin};
 use derive_more::Display;
 use futures::lock::Mutex as AsyncMutex;
 use futures::{FutureExt, TryFutureExt};
@@ -116,7 +116,7 @@ pub struct TendermintConf {
     /// This derivation path consists of `purpose` and `coin_type` only
     /// where the full `BIP44` address has the following structure:
     /// `m/purpose'/coin_type'/account'/change/address_index`.
-    derivation_path: Option<Bip44PathToCoin>,
+    derivation_path: Option<StandardHDPathToCoin>,
 }
 
 impl TendermintConf {

@@ -312,7 +312,8 @@ pub fn zombie_conf() -> Json {
                 },
             }
         },
-        "required_confirmations":0
+        "required_confirmations":0,
+        "derivation_path": "m/32'/133'",
     })
 }
 

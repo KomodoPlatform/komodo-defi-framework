@@ -17,6 +17,7 @@ use std::str::FromStr;
 use std::thread;
 use std::time::Duration;
 
+const ZOMBIE_TEST_BIP39_ACTIVATION_SEED: &str = "course flock lucky cereal hamster novel team never metal bean behind cute cruel matrix symptom fault harsh fashion impact prison glove then tree chef";
 const ZOMBIE_TEST_BALANCE_SEED: &str = "zombie test seed";
 const ARRR_TEST_ACTIVATION_SEED: &str = "arrr test activation seed";
 const ZOMBIE_TEST_HISTORY_SEED: &str = "zombie test history seed";
@@ -66,6 +67,32 @@ fn activate_z_coin_light() {
         _ => panic!("Expected EnableCoinBalance::Iguana"),
     };
     assert_eq!(balance.balance.spendable, BigDecimal::from_str("3.1").unwrap());
+}
+
+#[test]
+#[ignore]
+fn activate_z_coin_with_hd_account() {
+    let coins = json!([zombie_conf()]);
+
+    let hd_account_id = 0;
+    let conf = Mm2TestConf::seednode_with_hd_account(ZOMBIE_TEST_BIP39_ACTIVATION_SEED, hd_account_id, &coins);
+    let mm = MarketMakerIt::start(conf.conf, conf.rpc_password, None).unwrap();
+
+    let activation_result = block_on(enable_z_coin_light(
+        &mm,
+        ZOMBIE_TICKER,
+        ZOMBIE_ELECTRUMS,
+        ZOMBIE_LIGHTWALLETD_URLS,
+    ));
+
+    let actual = match activation_result.wallet_balance {
+        EnableCoinBalance::Iguana(iguana) => iguana.address,
+        EnableCoinBalance::HD(_) => panic!("Expected 'Iguana' wallet balance, found HD"),
+    };
+    assert_eq!(
+        actual,
+        "zs1p4xfnqmqa4aq5rrnfldafxcggsqhg0wph3elzrzwls9ks95lrg0gtlktjr0t5gg9lj657jyr8m6"
+    );
 }
 
 // ignored because it requires a long-running Zcoin initialization process

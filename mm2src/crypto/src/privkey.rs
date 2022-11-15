@@ -19,7 +19,6 @@
 //  marketmaker
 //
 
-use bip32::ExtendedPrivateKey;
 use bitcrypto::{sha256, ChecksumType};
 use derive_more::Display;
 use keys::{Error as KeysError, KeyPair, Private, Secret as Secp256k1Secret};
@@ -115,13 +114,10 @@ pub fn key_pair_from_secret(secret: &[u8]) -> PrivKeyResult<KeyPair> {
     Ok(KeyPair::from_private(private)?)
 }
 
-pub fn bip39_priv_key_from_seed(seed: &str) -> PrivKeyResult<ExtendedPrivateKey<secp256k1::SecretKey>> {
-    let mnemonic = bip39::Mnemonic::from_phrase(seed, bip39::Language::English)
+pub fn bip39_seed_from_passphrase(passphrase: &str) -> PrivKeyResult<bip39::Seed> {
+    let mnemonic = bip39::Mnemonic::from_phrase(passphrase, bip39::Language::English)
         .map_to_mm(|e| PrivKeyError::ErrorParsingPassphrase(e.to_string()))?;
-    let seed = bip39::Seed::new(&mnemonic, "");
-    let seed_bytes: &[u8] = seed.as_bytes();
-
-    ExtendedPrivateKey::new(seed_bytes).map_to_mm(|e| PrivKeyError::ErrorParsingPassphrase(e.to_string()))
+    Ok(bip39::Seed::new(&mnemonic, ""))
 }
 
 #[derive(Clone, Copy, Debug)]

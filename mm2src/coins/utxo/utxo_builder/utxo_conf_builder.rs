@@ -3,7 +3,7 @@ use crate::utxo::{parse_hex_encoded_u32, UtxoCoinConf, DEFAULT_DYNAMIC_FEE_VOLAT
                   MATURE_CONFIRMATIONS_DEFAULT};
 use crate::UtxoActivationParams;
 use bitcrypto::ChecksumType;
-use crypto::{Bip32Error, Bip44PathToCoin};
+use crypto::{Bip32Error, StandardHDPathToCoin};
 use derive_more::Display;
 pub use keys::{Address, AddressFormat as UtxoAddressFormat, AddressHashEnum, KeyPair, Private, Public, Secret,
                Type as ScriptType};
@@ -289,7 +289,7 @@ impl<'a> UtxoConfBuilder<'a> {
         json::from_value(self.conf["block_headers_verification_params"].clone()).unwrap_or(None)
     }
 
-    fn derivation_path(&self) -> UtxoConfResult<Option<Bip44PathToCoin>> {
+    fn derivation_path(&self) -> UtxoConfResult<Option<StandardHDPathToCoin>> {
         json::from_value(self.conf["derivation_path"].clone())
             .map_to_mm(|e| UtxoConfError::ErrorDeserializingDerivationPath(e.to_string()))
     }
