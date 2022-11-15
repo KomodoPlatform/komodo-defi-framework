@@ -57,9 +57,9 @@ pub async fn disable_coin(ctx: MmArc, req: Json) -> Result<Response<Vec<u8>>, St
         .into_iter()
         .chain(std::iter::once(coin.platform_ticker().to_string()));
 
-    let mut disabled_tokens_tickers = vec![];
+    // Check for matching order / active swaps
     let mut cancelled_orders = vec![];
-    for ticker in coins_to_disable {
+    for ticker in coins_to_disable.clone() {
         log!("disabling {ticker} coin");
         let swaps = try_s!(active_swaps_using_coin(&ctx, &ticker));
         if !swaps.is_empty() {
@@ -93,18 +93,33 @@ pub async fn disable_coin(ctx: MmArc, req: Json) -> Result<Response<Vec<u8>>, St
                 .map_err(|e| ERRL!("{}", e));
         }
 
-        try_s!(coins_ctx.remove_coin(&ctx, &ticker).await);
-
         // Combine all orders to a single vector
         cancelled_orders.extend(cancelled);
-        disabled_tokens_tickers.push(ticker);
+    }
+
+    // If check for matching order / active swaps doesn't return an error then proceed with disabling the requested
+    // coin/tokens
+    let mut disabled_tokens = vec![];
+    for ticker in coins_to_disable {
+        if let Err(err) = coins_ctx.remove_coin(&ctx, &ticker).await {
+            let err = json!({
+                "error": err,
+                "already_disabled": disabled_tokens,
+                "cancelled": &cancelled_orders,
+            });
+            return Response::builder()
+                .status(INTERNAL_SERVER_ERROR_CODE)
+                .body(json::to_vec(&err).unwrap())
+                .map_err(|e| ERRL!("{}", e));
+        };
+        disabled_tokens.push(ticker);
     }
 
     let res = json!({
         "result": {
             "coin": ticker,
             "cancelled_orders": cancelled_orders,
-            "disabled_tokens_tickers": disabled_tokens_tickers
+            "disabled_tokens": disabled_tokens
         }
     });
     Response::builder()

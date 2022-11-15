@@ -2104,28 +2104,6 @@ impl MmCoinEnum {
             _ => false,
         }
     }
-
-    fn on_token_deactivated(&self, ticker: &str) -> Result<(), String> {
-        match self {
-            MmCoinEnum::UtxoCoin(ref c) => c.on_token_deactivated(ticker),
-            MmCoinEnum::QtumCoin(ref c) => c.on_token_deactivated(ticker),
-            MmCoinEnum::Qrc20Coin(ref c) => c.on_token_deactivated(ticker),
-            MmCoinEnum::EthCoin(ref c) => c.on_token_deactivated(ticker),
-            MmCoinEnum::Bch(ref c) => c.on_token_deactivated(ticker),
-            MmCoinEnum::SlpToken(ref c) => c.on_token_deactivated(ticker),
-            MmCoinEnum::Tendermint(ref c) => c.on_token_deactivated(ticker),
-            MmCoinEnum::TendermintToken(ref c) => c.on_token_deactivated(ticker),
-            #[cfg(not(target_arch = "wasm32"))]
-            MmCoinEnum::LightningCoin(ref c) => c.on_token_deactivated(ticker),
-            #[cfg(not(target_arch = "wasm32"))]
-            MmCoinEnum::ZCoin(ref c) => c.on_token_deactivated(ticker),
-            MmCoinEnum::Test(_) => Ok(()),
-            #[cfg(all(not(target_os = "ios"), not(target_os = "android"), not(target_arch = "wasm32")))]
-            MmCoinEnum::SolanaCoin(ref c) => c.on_token_deactivated(ticker),
-            #[cfg(all(not(target_os = "ios"), not(target_os = "android"), not(target_arch = "wasm32")))]
-            MmCoinEnum::SplToken(ref c) => c.on_token_deactivated(ticker),
-        }
-    }
 }
 
 #[async_trait]
@@ -2250,7 +2228,7 @@ impl CoinsContext {
 
         // Check if ticker is a platform coin and remove from it platform's token list
         if ticker == platform_ticker && platform_tokens_storage.get_mut(ticker).is_some() {
-            if let Err(err) = coin.on_token_deactivated(ticker) {
+            if let Err(err) = coin.deref().on_token_deactivated(ticker) {
                 log!("Platform Tokens Error: {err}")
             };
             platform_tokens_storage.remove(ticker);
@@ -2268,7 +2246,7 @@ impl CoinsContext {
 
         // Abort all coin related futures on coin deactivation
         if let Err(err) = coin.on_disabled() {
-            log!("Error aborting coin futures: {err:?}")
+            log!("Error aborting coin({ticker}) futures: {err:?}")
         };
 
         Ok(())
