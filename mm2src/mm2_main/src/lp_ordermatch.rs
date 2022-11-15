@@ -355,7 +355,7 @@ async fn request_and_fill_orderbook(ctx: &MmArc, base: &str, rel: &str) -> Resul
     let ordermatch_ctx = OrdermatchContext::from_ctx(ctx).unwrap();
     let mut orderbook = ordermatch_ctx.orderbook.lock();
 
-    let my_pubsecp = match CryptoCtx::from_ctx(ctx).discard_mm() {
+    let my_pubsecp = match CryptoCtx::from_ctx(ctx).discard_mm_trace() {
         Ok(crypto_ctx) => Some(crypto_ctx.mm2_internal_pubkey_hex()),
         Err(CryptoCtxError::NotInitialized) => None,
         Err(other) => return ERR!("{}", other),

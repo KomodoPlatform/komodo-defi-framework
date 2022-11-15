@@ -136,7 +136,7 @@ pub async fn orderbook_rpc(ctx: MmArc, req: Json) -> Result<Response<Vec<u8>>, S
 
     try_s!(subscribe_to_orderbook_topic(&ctx, &base_ticker, &rel_ticker, request_orderbook).await);
 
-    let my_pubsecp = match CryptoCtx::from_ctx(&ctx).discard_mm() {
+    let my_pubsecp = match CryptoCtx::from_ctx(&ctx).discard_mm_trace() {
         Ok(crypto_ctx) => Some(crypto_ctx.mm2_internal_pubkey_hex()),
         Err(CryptoCtxError::NotInitialized) => None,
         Err(other) => return ERR!("{}", other),

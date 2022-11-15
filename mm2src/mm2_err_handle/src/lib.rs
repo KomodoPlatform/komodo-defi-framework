@@ -3,7 +3,7 @@
 #![feature(allocator_api)]
 
 pub mod common_errors;
-pub mod discard_mm;
+pub mod discard_mm_trace;
 pub mod map_mm_error;
 pub mod map_to_mm;
 pub mod map_to_mm_fut;
@@ -14,7 +14,7 @@ pub mod split_mm;
 
 pub mod prelude {
     pub use crate::common_errors::{WithInternal, WithTimeout};
-    pub use crate::discard_mm::DiscardMmResult;
+    pub use crate::discard_mm_trace::DiscardMmTrace;
     pub use crate::map_mm_error::MapMmError;
     pub use crate::map_to_mm::MapToMmResult;
     pub use crate::map_to_mm_fut::MapToMmFutureExt;

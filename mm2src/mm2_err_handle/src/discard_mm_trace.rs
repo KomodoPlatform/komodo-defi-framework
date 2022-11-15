@@ -1,13 +1,13 @@
 use crate::mm_error::{MmError, NotMmError};
 
-pub trait DiscardMmResult<T, E>
+pub trait DiscardMmTrace<T, E>
 where
     E: NotMmError,
 {
-    fn discard_mm(self) -> Result<T, E>;
+    fn discard_mm_trace(self) -> Result<T, E>;
 }
 
-impl<T, E> DiscardMmResult<T, E> for Result<T, MmError<E>>
+impl<T, E> DiscardMmTrace<T, E> for Result<T, MmError<E>>
 where
     E: NotMmError,
 {
@@ -19,11 +19,11 @@ where
     ///
     /// ```rust
     /// let res: Result<(), _> = MmError::err("Not found");
-    /// match res.discard_mm() {
+    /// match res.discard_mm_trace() {
     ///   Ok(_) => (),
     ///   Err("Internal error") => return Err(NewErrorType {}),
     ///   Err("Not found") => return Ok(None),
     /// }
     /// ```
-    fn discard_mm(self) -> Result<T, E> { self.map_err(MmError::into_inner) }
+    fn discard_mm_trace(self) -> Result<T, E> { self.map_err(MmError::into_inner) }
 }
