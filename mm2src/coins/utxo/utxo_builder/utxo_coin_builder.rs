@@ -72,6 +72,9 @@ pub enum UtxoCoinBuildError {
     #[display(fmt = "Hardware Wallet context is not initialized")]
     HwContextNotInitialized,
     HDWalletStorageError(HDWalletStorageError),
+    #[display(
+        fmt = "Coin doesn't support Trezor hardware wallet. Please consider adding the 'trezor_coin' field to the coins config"
+    )]
     CoinDoesntSupportTrezor,
     BlockHeaderStorageError(BlockHeaderStorageError),
     #[display(fmt = "Error {} on getting the height of the latest block from rpc!", _0)]
