@@ -1,6 +1,6 @@
 use super::*;
+use crate::IguanaPrivKey;
 use common::block_on;
-use crypto::Secp256k1Secret;
 use mm2_core::mm_ctx::{MmArc, MmCtxBuilder};
 use mm2_test_helpers::for_tests::{ETH_MAINNET_NODE, ETH_MAINNET_SWAP_CONTRACT};
 use mocktopus::mocking::*;
@@ -1231,7 +1231,7 @@ fn polygon_check_if_my_payment_sent() {
         "swap_contract_address": "0x9130b257d37a52e52f21054c4da3450c72f595ce",
     });
 
-    let priv_key_policy = PrivKeyBuildPolicy::Secp256k1Secret(Secp256k1Secret::from([1; 32]));
+    let priv_key_policy = PrivKeyBuildPolicy::IguanaPrivKey(IguanaPrivKey::from([1; 32]));
     let coin = block_on(eth_coin_from_conf_and_request(
         &ctx,
         "MATIC",
@@ -1446,7 +1446,7 @@ fn test_eth_validate_valid_and_invalid_pubkey() {
         3, 98, 177, 3, 108, 39, 234, 144, 131, 178, 103, 103, 127, 80, 230, 166, 53, 68, 147, 215, 42, 216, 144, 72,
         172, 110, 180, 13, 123, 179, 10, 49,
     ];
-    let priv_key_policy = PrivKeyBuildPolicy::Secp256k1Secret(Secp256k1Secret::from(priv_key));
+    let priv_key_policy = PrivKeyBuildPolicy::IguanaPrivKey(IguanaPrivKey::from(priv_key));
     let coin = block_on(eth_coin_from_conf_and_request(
         &ctx,
         "MATIC",

@@ -205,12 +205,7 @@ impl InitStandaloneCoinActivationOps for ZCoin {
         let crypto_ctx = CryptoCtx::from_ctx(&ctx)?;
         // When `ZCoin` supports Trezor, we'll need to check [`ZcoinActivationParams::priv_key_policy`]
         // instead of using [`PrivKeyBuildPolicy::detect_priv_key_policy`].
-        let priv_key_policy = PrivKeyBuildPolicy::detect_priv_key_policy(&crypto_ctx, &coin_conf).mm_err(|e| {
-            ZcoinInitError::CoinCreationError {
-                ticker: ticker.clone(),
-                error: e.to_string(),
-            }
-        })?;
+        let priv_key_policy = PrivKeyBuildPolicy::detect_priv_key_policy(&crypto_ctx);
 
         let coin = z_coin_from_conf_and_params(
             &ctx,

@@ -8,14 +8,15 @@ use crate::utxo::rpc_clients::{ElectrumClient, NativeClient, UnspentInfo, UtxoRp
 #[cfg(not(target_arch = "wasm32"))]
 use crate::utxo::tx_cache::{UtxoVerboseCacheOps, UtxoVerboseCacheShared};
 use crate::utxo::utxo_builder::{UtxoCoinBuildError, UtxoCoinBuildResult, UtxoCoinBuilder, UtxoCoinBuilderCommonOps,
-                                UtxoFieldsWithHardwareWalletBuilder, UtxoFieldsWithSecp256k1SecretBuilder};
+                                UtxoFieldsWithGlobalHDBuilder, UtxoFieldsWithHardwareWalletBuilder,
+                                UtxoFieldsWithIguanaSecretBuilder};
 use crate::utxo::utxo_common::{self, big_decimal_from_sat, check_all_utxo_inputs_signed_by_pub, UtxoTxBuilder};
 use crate::utxo::{qtum, ActualTxFee, AdditionalTxData, AddrFromStrError, BroadcastTxErr, FeePolicy, GenerateTxError,
                   GetUtxoListOps, HistoryUtxoTx, HistoryUtxoTxMap, MatureUnspentList, RecentlySpentOutPointsGuard,
                   UtxoActivationParams, UtxoAddressFormat, UtxoCoinFields, UtxoCommonOps, UtxoFromLegacyReqErr,
                   UtxoTx, UtxoTxBroadcastOps, UtxoTxGenerationOps, VerboseTransactionFrom, UTXO_LOCK};
 use crate::{BalanceError, BalanceFut, CheckIfMyPaymentSentArgs, CoinBalance, CoinFutSpawner, FeeApproxStage,
-            FoundSwapTxSpend, HistorySyncState, MarketCoinOps, MmCoin, NegotiateSwapContractAddrErr,
+            FoundSwapTxSpend, HistorySyncState, IguanaPrivKey, MarketCoinOps, MmCoin, NegotiateSwapContractAddrErr,
             PaymentInstructions, PaymentInstructionsErr, PrivKeyBuildPolicy, PrivKeyPolicyNotAllowed,
             RawTransactionFut, RawTransactionRequest, SearchForSwapTxSpendInput, SendMakerPaymentArgs,
             SendMakerRefundsPaymentArgs, SendMakerSpendsTakerPaymentArgs, SendTakerPaymentArgs,
@@ -32,7 +33,6 @@ use common::executor::Timer;
 use common::jsonrpc_client::{JsonRpcClient, JsonRpcRequest, RpcRes};
 use common::log::{error, warn};
 use common::now_ms;
-use crypto::Secp256k1Secret;
 use derive_more::Display;
 use ethabi::{Function, Token};
 use ethereum_types::{H160, U256};
@@ -260,7 +260,9 @@ impl<'a> UtxoCoinBuilderCommonOps for Qrc20CoinBuilder<'a> {
     }
 }
 
-impl<'a> UtxoFieldsWithSecp256k1SecretBuilder for Qrc20CoinBuilder<'a> {}
+impl<'a> UtxoFieldsWithIguanaSecretBuilder for Qrc20CoinBuilder<'a> {}
+
+impl<'a> UtxoFieldsWithGlobalHDBuilder for Qrc20CoinBuilder<'a> {}
 
 /// Although, `Qrc20Coin` doesn't support [`PrivKeyBuildPolicy::Trezor`] yet,
 /// `UtxoCoinBuilder` trait requires `UtxoFieldsWithHardwareWalletBuilder` to be implemented.
@@ -275,8 +277,9 @@ impl<'a> UtxoCoinBuilder for Qrc20CoinBuilder<'a> {
 
     async fn build(self) -> MmResult<Self::ResultCoin, Self::Error> {
         let utxo = match self.priv_key_policy() {
-            PrivKeyBuildPolicy::Secp256k1Secret(priv_key) => {
-                self.build_utxo_fields_with_secp256k1_secret(priv_key).await?
+            PrivKeyBuildPolicy::IguanaPrivKey(priv_key) => self.build_utxo_fields_with_iguana_secret(priv_key).await?,
+            PrivKeyBuildPolicy::GlobalHDAccount(global_hd_ctx) => {
+                self.build_utxo_fields_with_global_hd(global_hd_ctx).await?
             },
             PrivKeyBuildPolicy::Trezor => {
                 let priv_key_err = PrivKeyPolicyNotAllowed::HardwareWalletNotSupported;
@@ -322,10 +325,10 @@ pub async fn qrc20_coin_with_priv_key(
     platform: &str,
     conf: &Json,
     params: &Qrc20ActivationParams,
-    priv_key: Secp256k1Secret,
+    priv_key: IguanaPrivKey,
     contract_address: H160,
 ) -> Result<Qrc20Coin, String> {
-    let priv_key_policy = PrivKeyBuildPolicy::Secp256k1Secret(priv_key);
+    let priv_key_policy = PrivKeyBuildPolicy::IguanaPrivKey(priv_key);
     qrc20_coin_with_policy(ctx, ticker, platform, conf, params, priv_key_policy, contract_address).await
 }
 

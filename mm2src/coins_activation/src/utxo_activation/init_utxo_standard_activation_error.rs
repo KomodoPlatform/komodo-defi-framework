@@ -3,7 +3,7 @@ use coins::coin_balance::EnableCoinBalanceError;
 use coins::hd_wallet::{NewAccountCreatingError, NewAddressDerivingError};
 use coins::tx_history_storage::CreateTxHistoryStorageError;
 use coins::utxo::utxo_builder::UtxoCoinBuildError;
-use coins::{BalanceError, DetectPrivKeyPolicyError, RegisterCoinError};
+use coins::{BalanceError, RegisterCoinError};
 use crypto::{CryptoCtxError, HwError, HwRpcError};
 use derive_more::Display;
 use rpc_task::RpcTaskError;
@@ -75,13 +75,6 @@ impl InitUtxoStandardError {
                 ticker,
                 error: build_err.to_string(),
             },
-        }
-    }
-
-    pub fn from_detect_priv_key_err(priv_key_err: DetectPrivKeyPolicyError, ticker: String) -> Self {
-        InitUtxoStandardError::CoinCreationError {
-            ticker,
-            error: priv_key_err.to_string(),
         }
     }
 

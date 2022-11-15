@@ -38,8 +38,8 @@ use base58::FromBase58Error;
 use common::executor::{abortable_queue::{AbortableQueue, WeakSpawner},
                        AbortSettings, SpawnAbortable, SpawnFuture};
 use common::{calc_total_pages, now_ms, ten, HttpStatusCode};
-use crypto::{Bip32Error, Bip44PathToCoin, CryptoCtx, DerivationPath, DeriveSecp256k1SecretError, HwRpcError,
-             Secp256k1Secret, WithHwRpcError};
+use crypto::{Bip32Error, CryptoCtx, DerivationPath, GlobalHDAccountArc, HwRpcError, KeyPairPolicy, Secp256k1Secret,
+             WithHwRpcError};
 use derive_more::Display;
 use enum_from::EnumFromTrait;
 use futures::compat::Future01CompatExt;
@@ -55,7 +55,7 @@ use mm2_number::{bigdecimal::{BigDecimal, ParseBigDecimalError, Zero},
                  MmNumber};
 use rpc::v1::types::{Bytes as BytesJson, H256 as H256Json};
 use serde::{Deserialize, Deserializer, Serialize, Serializer};
-use serde_json::{self as json, Error as JsonError, Value as Json};
+use serde_json::{self as json, Value as Json};
 use std::cmp::Ordering;
 use std::collections::hash_map::{HashMap, RawEntryMut};
 use std::fmt;
@@ -276,6 +276,8 @@ pub type SendMakerSpendsTakerPaymentArgs<'a> = SendSpendPaymentArgs<'a>;
 pub type SendTakerSpendsMakerPaymentArgs<'a> = SendSpendPaymentArgs<'a>;
 pub type SendTakerRefundsPaymentArgs<'a> = SendRefundPaymentArgs<'a>;
 pub type SendMakerRefundsPaymentArgs<'a> = SendRefundPaymentArgs<'a>;
+
+pub type IguanaPrivKey = Secp256k1Secret;
 
 #[derive(Debug, Deserialize, Display, Serialize, SerializeErrorType)]
 #[serde(tag = "error_type", content = "error_data")]
@@ -2226,49 +2228,20 @@ impl<T> PrivKeyPolicy<T> {
 
 #[derive(Clone)]
 pub enum PrivKeyBuildPolicy {
-    Secp256k1Secret(Secp256k1Secret),
+    IguanaPrivKey(IguanaPrivKey),
+    GlobalHDAccount(GlobalHDAccountArc),
     Trezor,
-}
-
-#[derive(Display)]
-pub enum DetectPrivKeyPolicyError {
-    #[display(fmt = "'derivation_path' field is not found in config")]
-    DerivationPathIsNotSet,
-    #[display(fmt = "Error deserializing 'derivation_path': {}", _0)]
-    ErrorDeserializingDerivationPath(String),
-    #[display(fmt = "Error deriving key-pair: {}", _0)]
-    ErrorDerivingKeyPair(String),
-}
-
-impl From<DeriveSecp256k1SecretError> for DetectPrivKeyPolicyError {
-    fn from(value: DeriveSecp256k1SecretError) -> Self {
-        match value {
-            DeriveSecp256k1SecretError::ExpectedDerivationPath => DetectPrivKeyPolicyError::DerivationPathIsNotSet,
-            DeriveSecp256k1SecretError::Bip32Error(bip32) => {
-                DetectPrivKeyPolicyError::ErrorDerivingKeyPair(bip32.to_string())
-            },
-        }
-    }
-}
-
-impl From<JsonError> for DetectPrivKeyPolicyError {
-    fn from(value: JsonError) -> Self { DetectPrivKeyPolicyError::ErrorDeserializingDerivationPath(value.to_string()) }
-}
-
-impl From<Bip32Error> for DetectPrivKeyPolicyError {
-    fn from(value: Bip32Error) -> Self { DetectPrivKeyPolicyError::ErrorDerivingKeyPair(value.to_string()) }
 }
 
 impl PrivKeyBuildPolicy {
     /// Detects the `PrivKeyBuildPolicy` with which the given `CryptoCtx` is initialized.
     /// Later it will be used to detect `MetaMask` or `Trezor` policy.
-    pub fn detect_priv_key_policy(
-        crypto_ctx: &CryptoCtx,
-        coin_conf: &Json,
-    ) -> MmResult<Self, DetectPrivKeyPolicyError> {
-        let derivation_path: Option<Bip44PathToCoin> = json::from_value(coin_conf["derivation_path"].clone())?;
-        let secret = crypto_ctx.get_secp256k1_secret_for_coin(&derivation_path)?;
-        Ok(PrivKeyBuildPolicy::Secp256k1Secret(secret))
+    pub fn detect_priv_key_policy(crypto_ctx: &CryptoCtx) -> PrivKeyBuildPolicy {
+        match crypto_ctx.key_pair_policy() {
+            // Use the internal private key as the coin secret.
+            KeyPairPolicy::Iguana => PrivKeyBuildPolicy::IguanaPrivKey(crypto_ctx.mm2_internal_privkey_secret()),
+            KeyPairPolicy::GlobalHDAccount(global_hd) => PrivKeyBuildPolicy::GlobalHDAccount(global_hd.clone()),
+        }
     }
 }
 
@@ -2547,7 +2520,7 @@ pub async fn lp_coininit(ctx: &MmArc, ticker: &str, req: &Json) -> Result<MmCoin
 
     let crypto_ctx = try_s!(CryptoCtx::from_ctx(ctx));
     // The legacy electrum/enable RPCs don't support Hardware Wallet policy.
-    let priv_key_policy = try_s!(PrivKeyBuildPolicy::detect_priv_key_policy(&crypto_ctx, &coins_en));
+    let priv_key_policy = PrivKeyBuildPolicy::detect_priv_key_policy(&crypto_ctx);
 
     if coins_en["protocol"].is_null() {
         return ERR!(

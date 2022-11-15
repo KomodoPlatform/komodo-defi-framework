@@ -8,7 +8,7 @@ use coins::hd_pubkey::RpcTaskXPubExtractor;
 use coins::my_tx_history_v2::TxHistoryStorage;
 use coins::utxo::utxo_tx_history_v2::{utxo_history_loop, UtxoTxHistoryOps};
 use coins::utxo::{UtxoActivationParams, UtxoCoinFields};
-use coins::{CoinFutSpawner, DetectPrivKeyPolicyError, MarketCoinOps, PrivKeyActivationPolicy, PrivKeyBuildPolicy};
+use coins::{CoinFutSpawner, MarketCoinOps, PrivKeyActivationPolicy, PrivKeyBuildPolicy};
 use common::executor::{AbortSettings, SpawnAbortable};
 use crypto::hw_rpc_task::HwConnectStatuses;
 use crypto::CryptoCtx;
@@ -17,7 +17,6 @@ use mm2_core::mm_ctx::MmArc;
 use mm2_err_handle::prelude::*;
 use mm2_metrics::MetricsArc;
 use mm2_number::BigDecimal;
-use serde_json::Value as Json;
 use std::collections::HashMap;
 
 pub(crate) async fn get_activation_result<Coin>(
@@ -76,12 +75,11 @@ pub(crate) fn xpub_extractor_rpc_statuses(
 
 pub(crate) fn priv_key_build_policy(
     crypto_ctx: &CryptoCtx,
-    coin_conf: &Json,
     activation_policy: PrivKeyActivationPolicy,
-) -> MmResult<PrivKeyBuildPolicy, DetectPrivKeyPolicyError> {
+) -> PrivKeyBuildPolicy {
     match activation_policy {
-        PrivKeyActivationPolicy::ContextPrivKey => PrivKeyBuildPolicy::detect_priv_key_policy(crypto_ctx, coin_conf),
-        PrivKeyActivationPolicy::Trezor => Ok(PrivKeyBuildPolicy::Trezor),
+        PrivKeyActivationPolicy::ContextPrivKey => PrivKeyBuildPolicy::detect_priv_key_policy(crypto_ctx),
+        PrivKeyActivationPolicy::Trezor => PrivKeyBuildPolicy::Trezor,
     }
 }
 

@@ -14,8 +14,7 @@ mod xpub;
 pub use bip32_child::{Bip32Child, Bip32DerPathError, Bip32DerPathOps, Bip44Tail};
 pub use bip44::{Bip44Chain, Bip44DerPathError, Bip44DerivationPath, Bip44PathToAccount, Bip44PathToCoin,
                 UnkownBip44ChainError, BIP44_PURPOSE};
-pub use crypto_ctx::{CryptoCtx, CryptoCtxError, CryptoInitError, CryptoInitResult, DeriveSecp256k1SecretError,
-                     HwCtxInitError, KeyPairPolicy};
+pub use crypto_ctx::{CryptoCtx, CryptoCtxError, CryptoInitError, CryptoInitResult, HwCtxInitError, KeyPairPolicy};
 pub use global_hd_ctx::GlobalHDAccountArc;
 pub use hw_client::{HwClient, HwDeviceInfo, HwProcessingError, HwPubkey, HwWalletType, TrezorConnectProcessor};
 pub use hw_common::primitives::{Bip32Error, ChildNumber, DerivationPath, EcdsaCurve, ExtendedPublicKey,

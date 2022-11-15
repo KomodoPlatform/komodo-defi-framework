@@ -300,12 +300,7 @@ where
     let (platform_conf, platform_protocol) = coin_conf_with_protocol(&ctx, &req.ticker)?;
 
     let crypto_ctx = CryptoCtx::from_ctx(&ctx)?;
-    let priv_key_policy = PrivKeyBuildPolicy::detect_priv_key_policy(&crypto_ctx, &platform_conf).mm_err(|e| {
-        EnablePlatformCoinWithTokensError::PlatformCoinCreationError {
-            ticker: req.ticker.clone(),
-            error: e.to_string(),
-        }
-    })?;
+    let priv_key_policy = PrivKeyBuildPolicy::detect_priv_key_policy(&crypto_ctx);
 
     let platform_coin = Platform::enable_platform_coin(
         ctx.clone(),

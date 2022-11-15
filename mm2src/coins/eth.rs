@@ -80,6 +80,7 @@ pub use rlp;
 mod web3_transport;
 
 #[path = "eth/v2_activation.rs"] pub mod v2_activation;
+use v2_activation::key_pair_from_priv_key_policy;
 
 /// https://github.com/artemii235/etomic-swap/blob/master/contracts/EtomicSwap.sol
 /// Dev chain (195.201.0.6:8565) contract address: 0xa09ad3cd7e96586ebd05a2607ee56b56fb2db8fd
@@ -3610,11 +3611,7 @@ pub async fn eth_coin_from_conf_and_request(
         }
     }
 
-    let key_pair = match priv_key_policy {
-        PrivKeyBuildPolicy::Secp256k1Secret(secret) => try_s!(KeyPair::from_secret_slice(secret.as_slice())),
-        PrivKeyBuildPolicy::Trezor => return ERR!("{}", PrivKeyPolicyNotAllowed::HardwareWalletNotSupported),
-    };
-
+    let key_pair = try_s!(key_pair_from_priv_key_policy(conf, priv_key_policy));
     let my_address = key_pair.address();
 
     let mut web3_instances = vec![];

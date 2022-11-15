@@ -3,7 +3,6 @@ use crate::hw_client::{HwDeviceInfo, HwProcessingError, HwPubkey, TrezorConnectP
 use crate::hw_ctx::{HardwareWalletArc, HardwareWalletCtx};
 use crate::hw_error::HwError;
 use crate::privkey::{key_pair_from_seed, PrivKeyError};
-use crate::{Bip32Error, Bip44PathToCoin};
 use arrayref::array_ref;
 use common::bits256;
 use derive_more::Display;
@@ -66,15 +65,6 @@ impl<ProcessorError> From<HwProcessingError<ProcessorError>> for HwCtxInitError<
     }
 }
 
-pub enum DeriveSecp256k1SecretError {
-    ExpectedDerivationPath,
-    Bip32Error(Bip32Error),
-}
-
-impl From<Bip32Error> for DeriveSecp256k1SecretError {
-    fn from(value: Bip32Error) -> Self { DeriveSecp256k1SecretError::Bip32Error(value) }
-}
-
 /// This is required for converting `MmError<HwProcessingError<E>>` into `MmError<InitHwCtxError<E>>`.
 impl<E> NotEqual for HwCtxInitError<E> {}
 
@@ -115,24 +105,6 @@ impl CryptoCtx {
 
     #[inline]
     pub fn key_pair_policy(&self) -> &KeyPairPolicy { &self.key_pair_policy }
-
-    /// Derives a `secp256k1` secret that should be used to activate a coin
-    /// corresponding to the `derivation_path`.
-    /// If [`CryptoCtx::key_pair_policy`] is `Iguana`, `derivation_path` is ignored.
-    pub fn get_secp256k1_secret_for_coin(
-        &self,
-        derivation_path: &Option<Bip44PathToCoin>,
-    ) -> MmResult<Secp256k1Secret, DeriveSecp256k1SecretError> {
-        match self.key_pair_policy {
-            KeyPairPolicy::Iguana => Ok(self.secp256k1_key_pair.private().secret),
-            KeyPairPolicy::GlobalHDAccount(ref global_hd) => {
-                let derivation_path = derivation_path
-                    .as_ref()
-                    .or_mm_err(|| DeriveSecp256k1SecretError::ExpectedDerivationPath)?;
-                Ok(global_hd.derive_secp256k1_secret(derivation_path)?)
-            },
-        }
-    }
 
     /// This is our public ID, allowing us to be different from other peers.
     /// This should also be our public key which we'd use for P2P message verification.

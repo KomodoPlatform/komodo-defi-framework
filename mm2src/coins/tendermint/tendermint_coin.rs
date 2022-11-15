@@ -116,10 +116,7 @@ pub struct TendermintConf {
     /// This derivation path consists of `purpose` and `coin_type` only
     /// where the full `BIP44` address has the following structure:
     /// `m/purpose'/coin_type'/account'/change/address_index`.
-    ///
-    /// Currently, it's not used explicitly, but it should present in the config
-    /// if `CryptoCtx` is initialized with `KeyPairPolicy::GlobalHDAccount`.
-    _derivation_path: Option<Bip44PathToCoin>,
+    derivation_path: Option<Bip44PathToCoin>,
 }
 
 impl TendermintConf {
@@ -141,7 +138,7 @@ impl TendermintConf {
 
         Ok(TendermintConf {
             avg_block_time: avg_block_time as u8,
-            _derivation_path: derivation_path,
+            derivation_path,
         })
     }
 }
@@ -339,7 +336,7 @@ impl TendermintCoin {
             });
         }
 
-        let priv_key = secret_from_priv_key_policy(&ticker, priv_key_policy)?;
+        let priv_key = secret_from_priv_key_policy(&conf, &ticker, priv_key_policy)?;
 
         let account_id =
             account_id_from_privkey(priv_key.as_slice(), &protocol_info.account_prefix).mm_err(|kind| {
@@ -1912,14 +1909,27 @@ impl WatcherOps for TendermintCoin {
 }
 
 /// Processes the given `priv_key_policy` and returns corresponding `Secp256k1Secret`.
-/// This function expects [`PrivKeyBuildPolicy::Secret256k1Secret`],
-/// otherwise returns `PrivKeyPolicyNotAllowed` error.
+/// This function expects either [`PrivKeyBuildPolicy::IguanaPrivKey`]
+/// or [`PrivKeyBuildPolicy::GlobalHDAccount`], otherwise returns `PrivKeyPolicyNotAllowed` error.
 pub(crate) fn secret_from_priv_key_policy(
+    conf: &TendermintConf,
     ticker: &str,
     priv_key_policy: PrivKeyBuildPolicy,
 ) -> MmResult<Secp256k1Secret, TendermintInitError> {
     match priv_key_policy {
-        PrivKeyBuildPolicy::Secp256k1Secret(secret) => Ok(secret),
+        PrivKeyBuildPolicy::IguanaPrivKey(iguana) => Ok(iguana),
+        PrivKeyBuildPolicy::GlobalHDAccount(global_hd) => {
+            let derivation_path = conf.derivation_path.as_ref().or_mm_err(|| TendermintInitError {
+                ticker: ticker.to_string(),
+                kind: TendermintInitErrorKind::DerivationPathIsNotSet,
+            })?;
+            global_hd
+                .derive_secp256k1_secret(derivation_path)
+                .mm_err(|e| TendermintInitError {
+                    ticker: ticker.to_string(),
+                    kind: TendermintInitErrorKind::InvalidPrivKey(e.to_string()),
+                })
+        },
         PrivKeyBuildPolicy::Trezor => {
             let kind =
                 TendermintInitErrorKind::PrivKeyPolicyNotAllowed(PrivKeyPolicyNotAllowed::HardwareWalletNotSupported);
@@ -1996,11 +2006,11 @@ pub mod tendermint_coin_tests {
 
         let conf = TendermintConf {
             avg_block_time: 5,
-            _derivation_path: None,
+            derivation_path: None,
         };
 
         let key_pair = key_pair_from_seed(IRIS_TESTNET_HTLC_PAIR1_SEED).unwrap();
-        let priv_key_policy = PrivKeyBuildPolicy::Secp256k1Secret(key_pair.private().secret);
+        let priv_key_policy = PrivKeyBuildPolicy::IguanaPrivKey(key_pair.private().secret);
 
         let coin = block_on(TendermintCoin::init(
             &ctx,
@@ -2126,11 +2136,11 @@ pub mod tendermint_coin_tests {
 
         let conf = TendermintConf {
             avg_block_time: 5,
-            _derivation_path: None,
+            derivation_path: None,
         };
 
         let key_pair = key_pair_from_seed(IRIS_TESTNET_HTLC_PAIR1_SEED).unwrap();
-        let priv_key_policy = PrivKeyBuildPolicy::Secp256k1Secret(key_pair.private().secret);
+        let priv_key_policy = PrivKeyBuildPolicy::IguanaPrivKey(key_pair.private().secret);
 
         let coin = block_on(TendermintCoin::init(
             &ctx,
@@ -2182,11 +2192,11 @@ pub mod tendermint_coin_tests {
 
         let conf = TendermintConf {
             avg_block_time: 5,
-            _derivation_path: None,
+            derivation_path: None,
         };
 
         let key_pair = key_pair_from_seed(IRIS_TESTNET_HTLC_PAIR1_SEED).unwrap();
-        let priv_key_policy = PrivKeyBuildPolicy::Secp256k1Secret(key_pair.private().secret);
+        let priv_key_policy = PrivKeyBuildPolicy::IguanaPrivKey(key_pair.private().secret);
 
         let coin = block_on(TendermintCoin::init(
             &ctx,
@@ -2245,11 +2255,11 @@ pub mod tendermint_coin_tests {
 
         let conf = TendermintConf {
             avg_block_time: 5,
-            _derivation_path: None,
+            derivation_path: None,
         };
 
         let key_pair = key_pair_from_seed(IRIS_TESTNET_HTLC_PAIR1_SEED).unwrap();
-        let priv_key_policy = PrivKeyBuildPolicy::Secp256k1Secret(key_pair.private().secret);
+        let priv_key_policy = PrivKeyBuildPolicy::IguanaPrivKey(key_pair.private().secret);
 
         let coin = block_on(TendermintCoin::init(
             &ctx,
@@ -2413,11 +2423,11 @@ pub mod tendermint_coin_tests {
 
         let conf = TendermintConf {
             avg_block_time: 5,
-            _derivation_path: None,
+            derivation_path: None,
         };
 
         let key_pair = key_pair_from_seed(IRIS_TESTNET_HTLC_PAIR1_SEED).unwrap();
-        let priv_key_policy = PrivKeyBuildPolicy::Secp256k1Secret(key_pair.private().secret);
+        let priv_key_policy = PrivKeyBuildPolicy::IguanaPrivKey(key_pair.private().secret);
 
         let coin = block_on(TendermintCoin::init(
             &ctx,
@@ -2494,11 +2504,11 @@ pub mod tendermint_coin_tests {
 
         let conf = TendermintConf {
             avg_block_time: 5,
-            _derivation_path: None,
+            derivation_path: None,
         };
 
         let key_pair = key_pair_from_seed(IRIS_TESTNET_HTLC_PAIR1_SEED).unwrap();
-        let priv_key_policy = PrivKeyBuildPolicy::Secp256k1Secret(key_pair.private().secret);
+        let priv_key_policy = PrivKeyBuildPolicy::IguanaPrivKey(key_pair.private().secret);
 
         let coin = block_on(TendermintCoin::init(
             &ctx,
@@ -2566,11 +2576,11 @@ pub mod tendermint_coin_tests {
 
         let conf = TendermintConf {
             avg_block_time: 5,
-            _derivation_path: None,
+            derivation_path: None,
         };
 
         let key_pair = key_pair_from_seed(IRIS_TESTNET_HTLC_PAIR1_SEED).unwrap();
-        let priv_key_policy = PrivKeyBuildPolicy::Secp256k1Secret(key_pair.private().secret);
+        let priv_key_policy = PrivKeyBuildPolicy::IguanaPrivKey(key_pair.private().secret);
 
         let coin = block_on(TendermintCoin::init(
             &ctx,

@@ -4,7 +4,8 @@ use crate::rpc_command::init_withdraw::{InitWithdrawCoin, WithdrawInProgressStat
 use crate::utxo::rpc_clients::{ElectrumRpcRequest, UnspentInfo, UtxoRpcClientEnum, UtxoRpcError, UtxoRpcFut,
                                UtxoRpcResult};
 use crate::utxo::utxo_builder::{UtxoCoinBuildError, UtxoCoinBuilder, UtxoCoinBuilderCommonOps,
-                                UtxoFieldsWithHardwareWalletBuilder, UtxoFieldsWithSecp256k1SecretBuilder};
+                                UtxoFieldsWithGlobalHDBuilder, UtxoFieldsWithHardwareWalletBuilder,
+                                UtxoFieldsWithIguanaSecretBuilder};
 use crate::utxo::utxo_common::{addresses_from_script, big_decimal_from_sat, big_decimal_from_sat_unsigned,
                                payment_script};
 use crate::utxo::{sat_from_big_decimal, utxo_common, ActualTxFee, AdditionalTxData, AddrFromStrError, Address,
@@ -751,7 +752,9 @@ impl<'a> UtxoCoinBuilderCommonOps for ZCoinBuilder<'a> {
     fn ticker(&self) -> &str { self.ticker }
 }
 
-impl<'a> UtxoFieldsWithSecp256k1SecretBuilder for ZCoinBuilder<'a> {}
+impl<'a> UtxoFieldsWithIguanaSecretBuilder for ZCoinBuilder<'a> {}
+
+impl<'a> UtxoFieldsWithGlobalHDBuilder for ZCoinBuilder<'a> {}
 
 /// Although, `ZCoin` doesn't support [`PrivKeyBuildPolicy::Trezor`] yet,
 /// `UtxoCoinBuilder` trait requires `UtxoFieldsWithHardwareWalletBuilder` to be implemented.
