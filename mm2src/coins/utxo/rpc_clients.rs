@@ -1713,7 +1713,7 @@ impl ElectrumClientImpl {
 
     /// Create an Electrum connection and spawn a green thread actor to handle it.
     pub async fn add_server(&self, req: &ElectrumRpcRequest) -> Result<(), String> {
-        let subsystem = self.abortable_system.create_subsystem();
+        let subsystem = try_s!(self.abortable_system.create_subsystem());
         let connection = try_s!(spawn_electrum(req, self.event_handlers.clone(), subsystem));
         self.connections.lock().await.push(connection);
         Ok(())

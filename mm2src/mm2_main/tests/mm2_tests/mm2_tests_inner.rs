@@ -1362,6 +1362,7 @@ fn test_withdraw_segwit() {
     let _: TransactionDetails = json::from_str(&withdraw.1).expect("Expected 'TransactionDetails'");
 
     // must not allow to withdraw to addresses with different hrp
+    // Invalid human-readable part test vector https://github.com/bitcoin/bips/blob/master/bip-0173.mediawiki#test-vectors
     let withdraw = block_on(mm_alice.rpc(&json!({
         "userpass": mm_alice.userpass,
         "method": "withdraw",
@@ -1382,6 +1383,24 @@ fn test_withdraw_segwit() {
     assert!(withdraw_error.get("error_trace").is_none());
     assert!(withdraw_error.get("error_type").is_none());
     assert!(withdraw_error.get("error_data").is_none());
+
+    // Withdraw to taproot addresses should fail
+    let withdraw = block_on(mm_alice.rpc(&json!({
+        "userpass": mm_alice.userpass,
+        "method": "withdraw",
+        "coin": "tBTC",
+        "to": "tb1p6h5fuzmnvpdthf5shf0qqjzwy7wsqc5rhmgq2ks9xrak4ry6mtrscsqvzp",
+        "amount": 0.00001,
+    })))
+    .unwrap();
+
+    assert!(withdraw.0.is_server_error(), "tBTC withdraw: {}", withdraw.1);
+    log!("{:?}", withdraw.1);
+    let withdraw_error: Json = json::from_str(&withdraw.1).unwrap();
+    assert!(withdraw_error["error"]
+        .as_str()
+        .expect("Expected 'error' field")
+        .contains("Invalid address: tb1p6h5fuzmnvpdthf5shf0qqjzwy7wsqc5rhmgq2ks9xrak4ry6mtrscsqvzp"));
 
     block_on(mm_alice.stop()).unwrap();
 }
@@ -4153,8 +4172,6 @@ fn test_qrc20_withdraw_error() {
 }
 
 #[test]
-// TODO unignore test.
-#[ignore]
 #[cfg(not(target_arch = "wasm32"))]
 fn test_get_raw_transaction() {
     let coins = json! ([

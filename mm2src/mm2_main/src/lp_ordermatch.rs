@@ -27,8 +27,8 @@ use blake2::Blake2bVar;
 use coins::utxo::{compressed_pub_key_from_priv_raw, ChecksumType, UtxoAddressFormat};
 use coins::{coin_conf, find_pair, lp_coinfind, BalanceTradeFeeUpdatedHandler, CoinProtocol, CoinsContext,
             FeeApproxStage, MmCoinEnum};
-use common::executor::{simple_map::AbortableSimpleMap, AbortSettings, AbortableSystem, SpawnAbortable, SpawnFuture,
-                       Timer};
+use common::executor::{simple_map::AbortableSimpleMap, AbortSettings, AbortableSystem, AbortedError, SpawnAbortable,
+                       SpawnFuture, Timer};
 use common::log::{error, warn, LogOnError};
 use common::time_cache::TimeCache;
 use common::{bits256, log, new_uuid, now_ms};
@@ -136,6 +136,10 @@ pub enum OrdermatchInitError {
         error: String,
     },
     Internal(String),
+}
+
+impl From<AbortedError> for OrdermatchInitError {
+    fn from(e: AbortedError) -> Self { OrdermatchInitError::Internal(e.to_string()) }
 }
 
 #[derive(Debug, Serialize, Deserialize)]
@@ -2686,7 +2690,7 @@ pub fn init_ordermatch_context(ctx: &MmArc) -> OrdermatchInitResult<()> {
     }
 
     let ordermatch_context = OrdermatchContext {
-        maker_orders_ctx: PaMutex::new(MakerOrdersContext::new(ctx)),
+        maker_orders_ctx: PaMutex::new(MakerOrdersContext::new(ctx)?),
         my_taker_orders: Default::default(),
         orderbook: Default::default(),
         pending_maker_reserved: Default::default(),
@@ -2716,7 +2720,7 @@ impl OrdermatchContext {
     fn from_ctx(ctx: &MmArc) -> Result<Arc<OrdermatchContext>, String> {
         Ok(try_s!(from_ctx(&ctx.ordermatch_ctx, move || {
             Ok(OrdermatchContext {
-                maker_orders_ctx: PaMutex::new(MakerOrdersContext::new(ctx)),
+                maker_orders_ctx: PaMutex::new(try_s!(MakerOrdersContext::new(ctx))),
                 my_taker_orders: Default::default(),
                 orderbook: Default::default(),
                 pending_maker_reserved: Default::default(),
@@ -2756,17 +2760,17 @@ pub struct MakerOrdersContext {
 }
 
 impl MakerOrdersContext {
-    fn new(ctx: &MmArc) -> MakerOrdersContext {
+    fn new(ctx: &MmArc) -> OrdermatchInitResult<MakerOrdersContext> {
         // Create an abortable system linked to the `MmCtx` so if the context is stopped via `MmArc::stop`,
         // all spawned `check_balance_update_loop` futures will be aborted as well.
-        let balance_loops = ctx.abortable_system.create_subsystem();
+        let balance_loops = ctx.abortable_system.create_subsystem()?;
 
-        MakerOrdersContext {
+        Ok(MakerOrdersContext {
             orders: HashMap::new(),
             order_tickers: HashMap::new(),
             count_by_tickers: HashMap::new(),
             balance_loops,
-        }
+        })
     }
 
     fn add_order(&mut self, ctx: MmWeak, order: MakerOrder, balance: Option<BigDecimal>) {
@@ -2806,13 +2810,13 @@ impl MakerOrdersContext {
         let fut = check_balance_update_loop(ctx, ticker, balance);
         // `SimpleMapImpl::spawn_or_ignore` won't spawn the future
         // if the `check_balance_update_loop` loop has been spawned already.
-        balance_loops.spawn_or_ignore(order_base, fut);
+        balance_loops.spawn_or_ignore(order_base, fut).warn_log();
     }
 
-    fn stop_balance_loop(&mut self, ticker: &str) { self.balance_loops.lock().abort_future(ticker); }
+    fn stop_balance_loop(&mut self, ticker: &str) { self.balance_loops.lock().abort_future(ticker).warn_log(); }
 
     #[cfg(test)]
-    fn balance_loop_exists(&mut self, ticker: &str) -> bool { self.balance_loops.lock().contains(ticker) }
+    fn balance_loop_exists(&mut self, ticker: &str) -> bool { self.balance_loops.lock().contains(ticker).unwrap() }
 }
 
 #[cfg_attr(test, mockable)]

@@ -49,19 +49,17 @@ async fn test_send() {
         erc20_tokens_infos: Default::default(),
         abortable_system: AbortableQueue::default(),
     }));
-    let tx = coin
-        .send_maker_payment(
-            0,
-            1000,
-            &DEX_FEE_ADDR_RAW_PUBKEY,
-            &[1; 20],
-            "0.001".parse().unwrap(),
-            &None,
-            &[],
-            &None,
-        )
-        .compat()
-        .await;
+    let maker_payment_args = SendMakerPaymentArgs {
+        time_lock_duration: 0,
+        time_lock: 1000,
+        other_pubkey: &DEX_FEE_ADDR_RAW_PUBKEY,
+        secret_hash: &[1; 20],
+        amount: "0.001".parse().unwrap(),
+        swap_contract_address: &None,
+        swap_unique_data: &[],
+        payment_instructions: &None,
+    };
+    let tx = coin.send_maker_payment(maker_payment_args).compat().await;
     console::log_1(&format!("{:?}", tx).into());
 
     let block = coin.current_block().compat().await;

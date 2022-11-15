@@ -12,7 +12,6 @@ use mm2_number::BigDecimal;
 use ser_error_derive::SerializeErrorType;
 use serde_derive::{Deserialize, Serialize};
 use serde_json::Value as Json;
-use std::convert::Infallible;
 
 #[derive(Clone, Debug, Deserialize)]
 pub struct TokenActivationRequest<Req> {
@@ -89,10 +88,6 @@ impl From<CoinConfWithProtocolError> for InitTokensAsMmCoinsError {
 
 pub trait RegisterTokenInfo<T: TokenOf<PlatformCoin = Self>> {
     fn register_token_info(&self, token: &T);
-}
-
-impl From<std::convert::Infallible> for InitTokensAsMmCoinsError {
-    fn from(e: Infallible) -> Self { match e {} }
 }
 
 #[async_trait]

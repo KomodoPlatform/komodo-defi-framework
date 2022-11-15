@@ -1,22 +1,66 @@
-use crate::l2::{EnableL2Error, L2ActivationOps, L2ProtocolParams};
+use crate::context::CoinsActivationContext;
+use crate::l2::{InitL2ActivationOps, InitL2Error, InitL2InitialStatus, InitL2TaskHandle, InitL2TaskManagerShared,
+                L2ProtocolParams};
 use crate::prelude::*;
 use async_trait::async_trait;
 use coins::coin_errors::MyAddressError;
 use coins::lightning::ln_conf::{LightningCoinConf, LightningProtocolConf};
-use coins::lightning::ln_errors::EnableLightningError;
-use coins::lightning::{start_lightning, LightningCoin, LightningParams};
+use coins::lightning::ln_errors::{EnableLightningError, EnableLightningResult};
+use coins::lightning::ln_events::{init_abortable_events, LightningEventHandler};
+use coins::lightning::ln_p2p::{connect_to_ln_nodes_loop, init_peer_manager, ln_node_announcement_loop};
+use coins::lightning::ln_platform::Platform;
+use coins::lightning::ln_storage::LightningStorage;
+use coins::lightning::ln_utils::{get_open_channels_nodes_addresses, init_channel_manager, init_db, init_keys_manager,
+                                 init_persister};
+use coins::lightning::{InvoicePayer, LightningCoin};
 use coins::utxo::utxo_standard::UtxoStandardCoin;
 use coins::utxo::UtxoCommonOps;
-use coins::{BalanceError, CoinBalance, CoinProtocol, MarketCoinOps, MmCoinEnum};
+use coins::{BalanceError, CoinBalance, CoinProtocol, MarketCoinOps, MmCoinEnum, RegisterCoinError};
+use common::executor::SpawnFuture;
+use crypto::hw_rpc_task::{HwRpcTaskAwaitingStatus, HwRpcTaskUserAction};
 use derive_more::Display;
 use futures::compat::Future01CompatExt;
+use lightning::chain::keysinterface::{KeysInterface, Recipient};
+use lightning::chain::Access;
+use lightning::routing::gossip;
+use lightning_background_processor::{BackgroundProcessor, GossipSync};
+use lightning_invoice::payment;
+use lightning_invoice::utils::DefaultRouter;
 use mm2_core::mm_ctx::MmArc;
 use mm2_err_handle::prelude::*;
+use parking_lot::Mutex as PaMutex;
 use ser_error_derive::SerializeErrorType;
 use serde_derive::{Deserialize, Serialize};
 use serde_json::{self as json, Value as Json};
+use std::sync::Arc;
 
 const DEFAULT_LISTENING_PORT: u16 = 9735;
+
+pub type LightningTaskManagerShared = InitL2TaskManagerShared<LightningCoin>;
+pub type LightningRpcTaskHandle = InitL2TaskHandle<LightningCoin>;
+pub type LightningAwaitingStatus = HwRpcTaskAwaitingStatus;
+pub type LightningUserAction = HwRpcTaskUserAction;
+
+#[derive(Clone, PartialEq, Serialize)]
+pub enum LightningInProgressStatus {
+    ActivatingCoin,
+    GettingFeesFromRPC,
+    ReadingNetworkGraphFromFile,
+    InitializingChannelManager,
+    InitializingPeerManager,
+    ReadingScorerFromFile,
+    InitializingBackgroundProcessor,
+    ReadingChannelsAddressesFromFile,
+    Finished,
+    /// This status doesn't require the user to send `UserAction`,
+    /// but it tells the user that he should confirm/decline an address on his device.
+    WaitingForTrezorToConnect,
+    WaitingForUserToConfirmPubkey,
+}
+
+impl InitL2InitialStatus for LightningInProgressStatus {
+    fn initial_status() -> Self { LightningInProgressStatus::ActivatingCoin }
+}
 
 impl TryPlatformCoinFromMmCoinEnum for UtxoStandardCoin {
     fn try_from_mm_coin(coin: MmCoinEnum) -> Option<Self>
@@ -68,7 +112,23 @@ pub struct LightningActivationParams {
     pub backup_path: Option<String>,
 }
 
-#[derive(Debug, Deserialize, Display, Serialize, SerializeErrorType)]
+#[derive(Clone, Debug, Deserialize, Serialize)]
+pub struct LightningValidatedParams {
+    // The listening port for the p2p LN node
+    pub listening_port: u16,
+    // Printable human-readable string to describe this node to other users.
+    pub node_name: [u8; 32],
+    // Node's RGB color. This is used for showing the node in a network graph with the desired color.
+    pub node_color: [u8; 3],
+    // Invoice Payer is initialized while starting the lightning node, and it requires the number of payment retries that
+    // it should do before considering a payment failed or partially failed. If not provided the number of retries will be 5
+    // as this is a good default value.
+    pub payment_retries: Option<usize>,
+    // Node's backup path for channels and other data that requires backup.
+    pub backup_path: Option<String>,
+}
+
+#[derive(Clone, Debug, Deserialize, Display, Serialize, SerializeErrorType)]
 #[serde(tag = "error_type", content = "error_data")]
 pub enum LightningValidationErr {
     #[display(fmt = "Platform coin {} activated in {} mode", _0, _1)]
@@ -81,40 +141,45 @@ pub enum LightningValidationErr {
     InvalidAddress(String),
 }
 
-#[derive(Debug, Serialize)]
-pub struct LightningInitResult {
+#[derive(Clone, Debug, Serialize)]
+pub struct LightningActivationResult {
     platform_coin: String,
     address: String,
     balance: CoinBalance,
 }
 
-#[derive(Debug)]
+#[derive(Clone, Debug, Display, Serialize, SerializeErrorType)]
+#[serde(tag = "error_type", content = "error_data")]
 pub enum LightningInitError {
+    CoinIsAlreadyActivated { ticker: String },
     InvalidConfiguration(String),
     EnableLightningError(EnableLightningError),
     LightningValidationErr(LightningValidationErr),
     MyBalanceError(BalanceError),
     MyAddressError(String),
+    Internal(String),
 }
 
 impl From<MyAddressError> for LightningInitError {
     fn from(err: MyAddressError) -> Self { Self::MyAddressError(err.to_string()) }
 }
 
-impl From<LightningInitError> for EnableL2Error {
+impl From<LightningInitError> for InitL2Error {
     fn from(err: LightningInitError) -> Self {
         match err {
-            LightningInitError::InvalidConfiguration(err) => EnableL2Error::L2ConfigParseError(err),
+            LightningInitError::CoinIsAlreadyActivated { ticker } => InitL2Error::L2IsAlreadyActivated(ticker),
+            LightningInitError::InvalidConfiguration(err) => InitL2Error::L2ConfigParseError(err),
             LightningInitError::EnableLightningError(enable_err) => match enable_err {
-                EnableLightningError::RpcError(rpc_err) => EnableL2Error::Transport(rpc_err),
-                enable_error => EnableL2Error::Internal(enable_error.to_string()),
+                EnableLightningError::RpcError(rpc_err) => InitL2Error::Transport(rpc_err),
+                enable_error => InitL2Error::Internal(enable_error.to_string()),
             },
-            LightningInitError::LightningValidationErr(req_err) => EnableL2Error::Internal(req_err.to_string()),
+            LightningInitError::LightningValidationErr(req_err) => InitL2Error::Internal(req_err.to_string()),
             LightningInitError::MyBalanceError(balance_err) => match balance_err {
-                BalanceError::Transport(e) => EnableL2Error::Transport(e),
-                balance_error => EnableL2Error::Internal(balance_error.to_string()),
+                BalanceError::Transport(e) => InitL2Error::Transport(e),
+                balance_error => InitL2Error::Internal(balance_error.to_string()),
             },
-            LightningInitError::MyAddressError(e) => EnableL2Error::Internal(e),
+            LightningInitError::MyAddressError(e) => InitL2Error::Internal(e),
+            LightningInitError::Internal(e) => InitL2Error::Internal(e),
         }
     }
 }
@@ -127,15 +192,33 @@ impl From<LightningValidationErr> for LightningInitError {
     fn from(err: LightningValidationErr) -> Self { LightningInitError::LightningValidationErr(err) }
 }
 
+impl From<RegisterCoinError> for LightningInitError {
+    fn from(reg_err: RegisterCoinError) -> LightningInitError {
+        match reg_err {
+            RegisterCoinError::CoinIsInitializedAlready { coin } => {
+                LightningInitError::CoinIsAlreadyActivated { ticker: coin }
+            },
+            RegisterCoinError::Internal(internal) => LightningInitError::Internal(internal),
+        }
+    }
+}
+
 #[async_trait]
-impl L2ActivationOps for LightningCoin {
+impl InitL2ActivationOps for LightningCoin {
     type PlatformCoin = UtxoStandardCoin;
     type ActivationParams = LightningActivationParams;
     type ProtocolInfo = LightningProtocolConf;
-    type ValidatedParams = LightningParams;
+    type ValidatedParams = LightningValidatedParams;
     type CoinConf = LightningCoinConf;
-    type ActivationResult = LightningInitResult;
+    type ActivationResult = LightningActivationResult;
     type ActivationError = LightningInitError;
+    type InProgressStatus = LightningInProgressStatus;
+    type AwaitingStatus = LightningAwaitingStatus;
+    type UserAction = LightningUserAction;
+
+    fn rpc_task_manager(activation_ctx: &CoinsActivationContext) -> &LightningTaskManagerShared {
+        &activation_ctx.init_lightning_task_manager
+    }
 
     fn coin_conf_from_json(json: Json) -> Result<Self::CoinConf, MmError<Self::ActivationError>> {
         json::from_value::<LightningCoinConf>(json)
@@ -177,7 +260,7 @@ impl L2ActivationOps for LightningCoin {
 
         let listening_port = activation_params.listening_port.unwrap_or(DEFAULT_LISTENING_PORT);
 
-        Ok(LightningParams {
+        Ok(LightningValidatedParams {
             listening_port,
             node_name,
             node_color,
@@ -186,26 +269,201 @@ impl L2ActivationOps for LightningCoin {
         })
     }
 
-    async fn enable_l2(
+    async fn init_l2(
         ctx: &MmArc,
         platform_coin: Self::PlatformCoin,
         validated_params: Self::ValidatedParams,
         protocol_conf: Self::ProtocolInfo,
         coin_conf: Self::CoinConf,
+        task_handle: &LightningRpcTaskHandle,
     ) -> Result<(Self, Self::ActivationResult), MmError<Self::ActivationError>> {
-        let lightning_coin =
-            start_lightning(ctx, platform_coin.clone(), protocol_conf, coin_conf, validated_params).await?;
+        let lightning_coin = start_lightning(
+            ctx,
+            platform_coin.clone(),
+            protocol_conf,
+            coin_conf,
+            validated_params,
+            task_handle,
+        )
+        .await?;
+
         let address = lightning_coin.my_address()?;
         let balance = lightning_coin
             .my_balance()
             .compat()
             .await
             .mm_err(LightningInitError::MyBalanceError)?;
-        let init_result = LightningInitResult {
+        let init_result = LightningActivationResult {
             platform_coin: platform_coin.ticker().into(),
             address,
             balance,
         };
         Ok((lightning_coin, init_result))
     }
+}
+
+async fn start_lightning(
+    ctx: &MmArc,
+    platform_coin: UtxoStandardCoin,
+    protocol_conf: LightningProtocolConf,
+    conf: LightningCoinConf,
+    params: LightningValidatedParams,
+    task_handle: &LightningRpcTaskHandle,
+) -> EnableLightningResult<LightningCoin> {
+    // Todo: add support for Hardware wallets for funding transactions and spending spendable outputs (channel closing transactions)
+    if let coins::DerivationMethod::HDWallet(_) = platform_coin.as_ref().derivation_method {
+        return MmError::err(EnableLightningError::UnsupportedMode(
+            "'start_lightning'".into(),
+            "iguana".into(),
+        ));
+    }
+
+    let platform = Arc::new(Platform::new(
+        platform_coin.clone(),
+        protocol_conf.network.clone(),
+        protocol_conf.confirmation_targets,
+    )?);
+    task_handle.update_in_progress_status(LightningInProgressStatus::GettingFeesFromRPC)?;
+    platform.set_latest_fees().await?;
+
+    // Initialize the Logger
+    let logger = ctx.log.0.clone();
+
+    // Initialize Persister
+    let persister = init_persister(ctx, conf.ticker.clone(), params.backup_path).await?;
+
+    // Initialize the KeysManager
+    let keys_manager = init_keys_manager(ctx)?;
+
+    // Initialize the P2PGossipSync. This is used for providing routes to send payments over
+    task_handle.update_in_progress_status(LightningInProgressStatus::ReadingNetworkGraphFromFile)?;
+    let network_graph = Arc::new(
+        persister
+            .get_network_graph(protocol_conf.network.into(), logger.clone())
+            .await?,
+    );
+
+    let gossip_sync = Arc::new(gossip::P2PGossipSync::new(
+        network_graph.clone(),
+        None::<Arc<dyn Access + Send + Sync>>,
+        logger.clone(),
+    ));
+
+    // Initialize DB
+    let db = init_db(ctx, conf.ticker.clone()).await?;
+
+    // Initialize the ChannelManager
+    task_handle.update_in_progress_status(LightningInProgressStatus::InitializingChannelManager)?;
+    let (chain_monitor, channel_manager) = init_channel_manager(
+        platform.clone(),
+        logger.clone(),
+        persister.clone(),
+        db.clone(),
+        keys_manager.clone(),
+        conf.clone().into(),
+    )
+    .await?;
+
+    // Initialize the PeerManager
+    task_handle.update_in_progress_status(LightningInProgressStatus::InitializingPeerManager)?;
+    let peer_manager = init_peer_manager(
+        ctx.clone(),
+        &platform,
+        params.listening_port,
+        channel_manager.clone(),
+        gossip_sync.clone(),
+        keys_manager
+            .get_node_secret(Recipient::Node)
+            .map_to_mm(|_| EnableLightningError::UnsupportedMode("'start_lightning'".into(), "local node".into()))?,
+        logger.clone(),
+    )
+    .await?;
+
+    let trusted_nodes = Arc::new(PaMutex::new(persister.get_trusted_nodes().await?));
+
+    init_abortable_events(platform.clone(), db.clone()).await?;
+
+    // Initialize the event handler
+    let event_handler = Arc::new(LightningEventHandler::new(
+        platform.clone(),
+        channel_manager.clone(),
+        keys_manager.clone(),
+        db.clone(),
+        trusted_nodes.clone(),
+    ));
+
+    // Initialize routing Scorer
+    task_handle.update_in_progress_status(LightningInProgressStatus::ReadingScorerFromFile)?;
+    // status_notifier
+    //     .try_send(LightningInProgressStatus::ReadingScorerFromFile)
+    //     .debug_log_with_msg("No one seems interested in LightningInProgressStatus");
+    let scorer = Arc::new(persister.get_scorer(network_graph.clone(), logger.clone()).await?);
+
+    // Create InvoicePayer
+    // random_seed_bytes are additional random seed to improve privacy by adding a random CLTV expiry offset to each path's final hop.
+    // This helps obscure the intended recipient from adversarial intermediate hops. The seed is also used to randomize candidate paths during route selection.
+    // TODO: random_seed_bytes should be taken in consideration when implementing swaps because they change the payment lock-time.
+    // https://github.com/lightningdevkit/rust-lightning/issues/158
+    // https://github.com/lightningdevkit/rust-lightning/pull/1286
+    // https://github.com/lightningdevkit/rust-lightning/pull/1359
+    let router = DefaultRouter::new(network_graph, logger.clone(), keys_manager.get_secure_random_bytes());
+    let invoice_payer = Arc::new(InvoicePayer::new(
+        channel_manager.clone(),
+        router,
+        scorer.clone(),
+        logger.clone(),
+        event_handler,
+        // Todo: Add option for choosing payment::Retry::Timeout instead of Attempts in LightningParams
+        payment::Retry::Attempts(params.payment_retries.unwrap_or(5)),
+    ));
+
+    // Start Background Processing. Runs tasks periodically in the background to keep LN node operational.
+    // InvoicePayer will act as our event handler as it handles some of the payments related events before
+    // delegating it to LightningEventHandler.
+    // note: background_processor stops automatically when dropped since BackgroundProcessor implements the Drop trait.
+    task_handle.update_in_progress_status(LightningInProgressStatus::InitializingBackgroundProcessor)?;
+    let background_processor = Arc::new(BackgroundProcessor::start(
+        persister.clone(),
+        invoice_payer.clone(),
+        chain_monitor.clone(),
+        channel_manager.clone(),
+        GossipSync::p2p(gossip_sync),
+        peer_manager.clone(),
+        logger,
+        Some(scorer),
+    ));
+
+    // If channel_nodes_data file exists, read channels nodes data from disk and reconnect to channel nodes/peers if possible.
+    task_handle.update_in_progress_status(LightningInProgressStatus::ReadingChannelsAddressesFromFile)?;
+    let open_channels_nodes = Arc::new(PaMutex::new(
+        get_open_channels_nodes_addresses(persister.clone(), channel_manager.clone()).await?,
+    ));
+
+    platform.spawner().spawn(connect_to_ln_nodes_loop(
+        open_channels_nodes.clone(),
+        peer_manager.clone(),
+    ));
+
+    // Broadcast Node Announcement
+    platform.spawner().spawn(ln_node_announcement_loop(
+        channel_manager.clone(),
+        params.node_name,
+        params.node_color,
+        params.listening_port,
+    ));
+
+    Ok(LightningCoin {
+        platform,
+        conf,
+        background_processor,
+        peer_manager,
+        channel_manager,
+        chain_monitor,
+        keys_manager,
+        invoice_payer,
+        persister,
+        db,
+        open_channels_nodes,
+        trusted_nodes,
+    })
 }

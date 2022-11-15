@@ -331,7 +331,13 @@ pub extern "C" fn spawn_rpc(ctx_h: u32) {
         }
     });
 
-    let shutdown_fut = ctx.graceful_shutdown_registry.register_listener();
+    let shutdown_fut = match ctx.graceful_shutdown_registry.register_listener() {
+        Ok(shutdown_fut) => shutdown_fut,
+        Err(e) => {
+            error!("MmCtx seems to be stopped already: {e}");
+            return;
+        },
+    };
 
     let server = server
         .http1_half_close(false)

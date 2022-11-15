@@ -243,7 +243,8 @@ impl BchDockerOps {
             slp_genesis_tx.tx_hash().as_slice().into(),
             self.coin.clone(),
             1,
-        );
+        )
+        .unwrap();
 
         let tx = block_on(adex_slp.send_slp_outputs(slp_outputs)).unwrap();
         self.coin

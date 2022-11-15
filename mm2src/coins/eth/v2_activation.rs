@@ -1,4 +1,5 @@
 use super::*;
+use common::executor::AbortedError;
 
 #[derive(Display, Serialize, SerializeErrorType)]
 #[serde(tag = "error_type", content = "error_data")]
@@ -20,6 +21,10 @@ pub enum EthActivationV2Error {
 
 impl From<MyAddressError> for EthActivationV2Error {
     fn from(err: MyAddressError) -> Self { Self::InternalError(err.to_string()) }
+}
+
+impl From<AbortedError> for EthActivationV2Error {
+    fn from(e: AbortedError) -> Self { EthActivationV2Error::InternalError(e.to_string()) }
 }
 
 #[derive(Clone, Deserialize)]
@@ -49,6 +54,10 @@ pub enum Erc20TokenActivationError {
     CouldNotFetchBalance(String),
 }
 
+impl From<AbortedError> for Erc20TokenActivationError {
+    fn from(e: AbortedError) -> Self { Erc20TokenActivationError::InternalError(e.to_string()) }
+}
+
 impl From<MyAddressError> for Erc20TokenActivationError {
     fn from(err: MyAddressError) -> Self { Self::InternalError(err.to_string()) }
 }
@@ -70,7 +79,7 @@ impl EthCoin {
         activation_params: Erc20TokenActivationRequest,
         protocol: Erc20Protocol,
         ticker: String,
-    ) -> Result<EthCoin, MmError<Erc20TokenActivationError>> {
+    ) -> MmResult<EthCoin, Erc20TokenActivationError> {
         // TODO
         // Check if ctx is required.
         // Remove it to avoid circular references if possible
@@ -94,7 +103,7 @@ impl EthCoin {
 
         // Create an abortable system linked to the `MmCtx` so if the app is stopped on `MmArc::stop`,
         // all spawned futures related to `ERC20` coin will be aborted as well.
-        let abortable_system = ctx.abortable_system.create_subsystem();
+        let abortable_system = ctx.abortable_system.create_subsystem()?;
 
         let token = EthCoinImpl {
             key_pair: self.key_pair.clone(),
@@ -235,7 +244,7 @@ pub async fn eth_coin_from_conf_and_request_v2(
 
     // Create an abortable system linked to the `MmCtx` so if the app is stopped on `MmArc::stop`,
     // all spawned futures related to `ETH` coin will be aborted as well.
-    let abortable_system = ctx.abortable_system.create_subsystem();
+    let abortable_system = ctx.abortable_system.create_subsystem()?;
 
     let coin = EthCoinImpl {
         key_pair: key_pair.clone(),

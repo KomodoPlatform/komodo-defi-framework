@@ -303,14 +303,14 @@ fn test_send_taker_fee() {
     log!("Fee tx {:?}", tx_hash);
 
     let result = coin
-        .validate_fee(
-            &tx,
-            coin.my_public_key().unwrap(),
-            &DEX_FEE_ADDR_RAW_PUBKEY,
-            &amount,
-            0,
-            &[],
-        )
+        .validate_fee(ValidateFeeArgs {
+            fee_tx: &tx,
+            expected_sender: coin.my_public_key().unwrap(),
+            fee_addr: &DEX_FEE_ADDR_RAW_PUBKEY,
+            amount: &amount,
+            min_block_number: 0,
+            uuid: &[],
+        })
         .wait();
     assert_eq!(result, Ok(()));
 }
@@ -331,13 +331,27 @@ fn test_validate_fee() {
     let amount = BigDecimal::from_str("0.01").unwrap();
 
     let result = coin
-        .validate_fee(&tx, &sender_pub, &DEX_FEE_ADDR_RAW_PUBKEY, &amount, 0, &[])
+        .validate_fee(ValidateFeeArgs {
+            fee_tx: &tx,
+            expected_sender: &sender_pub,
+            fee_addr: &DEX_FEE_ADDR_RAW_PUBKEY,
+            amount: &amount,
+            min_block_number: 0,
+            uuid: &[],
+        })
         .wait();
     assert_eq!(result, Ok(()));
 
     let fee_addr_dif = hex::decode("03bc2c7ba671bae4a6fc835244c9762b41647b9827d4780a89a949b984a8ddcc05").unwrap();
     let err = coin
-        .validate_fee(&tx, &sender_pub, &fee_addr_dif, &amount, 0, &[])
+        .validate_fee(ValidateFeeArgs {
+            fee_tx: &tx,
+            expected_sender: &sender_pub,
+            fee_addr: &fee_addr_dif,
+            amount: &amount,
+            min_block_number: 0,
+            uuid: &[],
+        })
         .wait()
         .err()
         .expect("Expected an error");
@@ -345,7 +359,14 @@ fn test_validate_fee() {
     assert!(err.contains("QRC20 Fee tx was sent to wrong address"));
 
     let err = coin
-        .validate_fee(&tx, &DEX_FEE_ADDR_RAW_PUBKEY, &DEX_FEE_ADDR_RAW_PUBKEY, &amount, 0, &[])
+        .validate_fee(ValidateFeeArgs {
+            fee_tx: &tx,
+            expected_sender: &DEX_FEE_ADDR_RAW_PUBKEY,
+            fee_addr: &DEX_FEE_ADDR_RAW_PUBKEY,
+            amount: &amount,
+            min_block_number: 0,
+            uuid: &[],
+        })
         .wait()
         .err()
         .expect("Expected an error");
@@ -353,7 +374,14 @@ fn test_validate_fee() {
     assert!(err.contains("was sent from wrong address"));
 
     let err = coin
-        .validate_fee(&tx, &sender_pub, &DEX_FEE_ADDR_RAW_PUBKEY, &amount, 2000000, &[])
+        .validate_fee(ValidateFeeArgs {
+            fee_tx: &tx,
+            expected_sender: &sender_pub,
+            fee_addr: &DEX_FEE_ADDR_RAW_PUBKEY,
+            amount: &amount,
+            min_block_number: 2000000,
+            uuid: &[],
+        })
         .wait()
         .err()
         .expect("Expected an error");
@@ -362,7 +390,14 @@ fn test_validate_fee() {
 
     let amount_dif = BigDecimal::from_str("0.02").unwrap();
     let err = coin
-        .validate_fee(&tx, &sender_pub, &DEX_FEE_ADDR_RAW_PUBKEY, &amount_dif, 0, &[])
+        .validate_fee(ValidateFeeArgs {
+            fee_tx: &tx,
+            expected_sender: &sender_pub,
+            fee_addr: &DEX_FEE_ADDR_RAW_PUBKEY,
+            amount: &amount_dif,
+            min_block_number: 0,
+            uuid: &[],
+        })
         .wait()
         .err()
         .expect("Expected an error");
@@ -373,7 +408,14 @@ fn test_validate_fee() {
     let tx = TransactionEnum::UtxoTx("020000000113640281c9332caeddd02a8dd0d784809e1ad87bda3c972d89d5ae41f5494b85010000006a47304402207c5c904a93310b8672f4ecdbab356b65dd869a426e92f1064a567be7ccfc61ff02203e4173b9467127f7de4682513a21efb5980e66dbed4da91dff46534b8e77c7ef012102baefe72b3591de2070c0da3853226b00f082d72daa417688b61cb18c1d543d1afeffffff020001b2c4000000001976a9149e032d4b0090a11dc40fe6c47601499a35d55fbb88acbc4dd20c2f0000001976a9144208fa7be80dcf972f767194ad365950495064a488ac76e70800".into());
     let sender_pub = hex::decode("02baefe72b3591de2070c0da3853226b00f082d72daa417688b61cb18c1d543d1a").unwrap();
     let err = coin
-        .validate_fee(&tx, &sender_pub, &DEX_FEE_ADDR_RAW_PUBKEY, &amount, 0, &[])
+        .validate_fee(ValidateFeeArgs {
+            fee_tx: &tx,
+            expected_sender: &sender_pub,
+            fee_addr: &DEX_FEE_ADDR_RAW_PUBKEY,
+            amount: &amount,
+            min_block_number: 0,
+            uuid: &[],
+        })
         .wait()
         .err()
         .expect("Expected an error");

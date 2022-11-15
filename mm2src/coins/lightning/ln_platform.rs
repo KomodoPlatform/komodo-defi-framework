@@ -177,12 +177,12 @@ impl Platform {
         coin: UtxoStandardCoin,
         network: BlockchainNetwork,
         confirmations_targets: PlatformCoinConfirmationTargets,
-    ) -> Self {
+    ) -> EnableLightningResult<Self> {
         // Create an abortable system linked to the base `coin` so if the base coin is disabled,
         // all spawned futures related to `LightCoin` will be aborted as well.
-        let abortable_system = coin.as_ref().abortable_system.create_subsystem();
+        let abortable_system = coin.as_ref().abortable_system.create_subsystem()?;
 
-        Platform {
+        Ok(Platform {
             coin,
             network,
             best_block_height: AtomicU64::new(0),
@@ -196,7 +196,7 @@ impl Platform {
             registered_outputs: PaMutex::new(Vec::new()),
             unsigned_funding_txs: PaMutex::new(HashMap::new()),
             abortable_system,
-        }
+        })
     }
 
     #[inline]

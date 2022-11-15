@@ -1,4 +1,4 @@
-use crate::executor::abortable_system::{InnerShared, SystemInner};
+use crate::executor::abortable_system::{AbortedError, InnerShared, SystemInner};
 use crate::executor::AbortableSystem;
 use futures::channel::oneshot;
 use futures::FutureExt;
@@ -12,42 +12,65 @@ use std::future::Future;
 /// For example, [`hyper::Server::with_graceful_shutdown`].
 #[derive(Default)]
 pub struct GracefulShutdownRegistry {
-    inner: InnerShared<ShutdownInner>,
+    inner: InnerShared<ShutdownInnerState>,
 }
 
 impl GracefulShutdownRegistry {
     /// Registers a graceful shutdown listener and returns a future
     /// that acts as a signal for graceful shutdown.
-    pub fn register_listener(&self) -> impl Future<Output = ()> + Send + Sync + 'static {
+    pub fn register_listener(&self) -> Result<impl Future<Output = ()> + Send + Sync + 'static, AbortedError> {
         let (tx, rx) = oneshot::channel();
-        self.inner.lock().insert_handle(tx);
-        rx.then(|_| futures::future::ready(()))
+        self.inner.lock().insert_handle(tx)?;
+        Ok(rx.then(|_| futures::future::ready(())))
     }
 }
 
-impl From<InnerShared<ShutdownInner>> for GracefulShutdownRegistry {
-    fn from(inner: InnerShared<ShutdownInner>) -> Self { GracefulShutdownRegistry { inner } }
+impl From<InnerShared<ShutdownInnerState>> for GracefulShutdownRegistry {
+    fn from(inner: InnerShared<ShutdownInnerState>) -> Self { GracefulShutdownRegistry { inner } }
 }
 
 impl AbortableSystem for GracefulShutdownRegistry {
-    type Inner = ShutdownInner;
+    type Inner = ShutdownInnerState;
 
-    fn abort_all(&self) { self.inner.lock().abort_all() }
+    fn abort_all(&self) -> Result<(), AbortedError> { self.inner.lock().abort_all() }
 
-    fn __push_subsystem_abort_tx(&self, subsystem_abort_tx: oneshot::Sender<()>) {
+    fn __push_subsystem_abort_tx(&self, subsystem_abort_tx: oneshot::Sender<()>) -> Result<(), AbortedError> {
         self.inner.lock().insert_handle(subsystem_abort_tx)
     }
 }
 
-#[derive(Default)]
-pub struct ShutdownInner {
-    abort_handlers: Vec<oneshot::Sender<()>>,
+pub enum ShutdownInnerState {
+    Ready { abort_handlers: Vec<oneshot::Sender<()>> },
+    Aborted,
 }
 
-impl ShutdownInner {
-    fn insert_handle(&mut self, handle: oneshot::Sender<()>) { self.abort_handlers.push(handle); }
+impl Default for ShutdownInnerState {
+    fn default() -> Self {
+        ShutdownInnerState::Ready {
+            abort_handlers: Vec::new(),
+        }
+    }
 }
 
-impl SystemInner for ShutdownInner {
-    fn abort_all(&mut self) { self.abort_handlers.clear(); }
+impl ShutdownInnerState {
+    fn insert_handle(&mut self, handle: oneshot::Sender<()>) -> Result<(), AbortedError> {
+        match self {
+            ShutdownInnerState::Ready { abort_handlers } => {
+                abort_handlers.push(handle);
+                Ok(())
+            },
+            ShutdownInnerState::Aborted => Err(AbortedError),
+        }
+    }
+}
+
+impl SystemInner for ShutdownInnerState {
+    fn abort_all(&mut self) -> Result<(), AbortedError> {
+        if matches!(self, ShutdownInnerState::Aborted) {
+            return Err(AbortedError);
+        }
+
+        *self = ShutdownInnerState::Aborted;
+        Ok(())
+    }
 }
