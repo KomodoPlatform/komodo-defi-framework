@@ -480,16 +480,6 @@ pub struct WatcherValidatePaymentInput {
     pub confirmations: u64,
 }
 
-pub struct WatcherSearchForSwapTxSpendInput<'a> {
-    pub time_lock: u32,
-    pub taker_pub: &'a [u8],
-    pub maker_pub: &'a [u8],
-    pub secret_hash: &'a [u8],
-    pub tx: &'a [u8],
-    pub search_from_block: u64,
-    pub swap_contract_address: &'a Option<BytesJson>,
-}
-
 #[derive(Clone, Debug)]
 pub struct ValidatePaymentInput {
     pub payment_tx: Vec<u8>,
@@ -502,6 +492,17 @@ pub struct ValidatePaymentInput {
     pub try_spv_proof_until: u64,
     pub confirmations: u64,
     pub unique_swap_data: Vec<u8>,
+}
+
+pub struct WatcherSearchForSwapTxSpendInput<'a> {
+    pub time_lock: u32,
+    pub taker_pub: &'a [u8],
+    pub maker_pub: &'a [u8],
+    pub secret_hash: &'a [u8],
+    pub tx: &'a [u8],
+    pub search_from_block: u64,
+    pub wait_until: u64,
+    pub check_every: f64,
 }
 
 pub struct SearchForSwapTxSpendInput<'a> {
@@ -732,6 +733,11 @@ pub trait WatcherOps {
     ) -> ValidatePaymentFut<()>;
 
     fn watcher_validate_taker_payment(&self, _input: WatcherValidatePaymentInput) -> ValidatePaymentFut<()>;
+
+    async fn watcher_search_for_swap_tx_spend(
+        &self,
+        input: WatcherSearchForSwapTxSpendInput<'_>,
+    ) -> Result<FoundSwapTxSpend, String>;
 }
 
 /// Operations that coins have independently from the MarketMaker.

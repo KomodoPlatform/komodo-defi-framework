@@ -2,11 +2,12 @@ use super::{broadcast_p2p_tx_msg, dex_fee_amount_from_taker_coin, lp_coinfind, t
             tx_helper_topic, H256Json, SwapsContext, WAIT_CONFIRM_INTERVAL};
 use crate::mm2::MmError;
 use async_trait::async_trait;
-use coins::{CanRefundHtlc, MmCoinEnum, WatcherValidatePaymentInput, TAKER_PAYMENT_SPEND_SEARCH_INTERVAL};
+use coins::{CanRefundHtlc, FoundSwapTxSpend, MmCoinEnum, WatcherSearchForSwapTxSpendInput,
+            WatcherValidatePaymentInput, TAKER_PAYMENT_SPEND_SEARCH_INTERVAL};
 use common::executor::{AbortSettings, SpawnAbortable, Timer};
 use common::log::{error, info};
 use common::state_machine::prelude::*;
-use common::DEX_FEE_ADDR_RAW_PUBKEY;
+use common::{now_ms, DEX_FEE_ADDR_RAW_PUBKEY};
 use futures::compat::Future01CompatExt;
 use mm2_core::mm_ctx::MmArc;
 use mm2_libp2p::{decode_signed, pub_sub_topic, TopicPrefix};
@@ -86,6 +87,7 @@ enum WatcherSuccess {
     MakerPaymentSpent,
     TakerPaymentRefunded,
     MakerPaymentSpentByTaker,
+    MakerPaymentRefundByTaker,
 }
 
 #[derive(Debug)]
@@ -248,96 +250,82 @@ impl State for WaitForTakerPaymentSpend {
     type Result = ();
 
     async fn on_changed(self: Box<Self>, watcher_ctx: &mut WatcherContext) -> StateResult<Self::Ctx, Self::Result> {
-        // Until taker payment spend deadline, periodically check for taker payment spend and maker payment spend
-        let mut payment_search_interval = 600.;
-        let mut wait_until =
-            taker_payment_spend_deadline(watcher_ctx.data.swap_started_at, watcher_ctx.data.lock_duration);
-
-        if std::env::var("USE_TEST_SEARCH_INTERVAL").is_ok() {
-            payment_search_interval = TAKER_PAYMENT_SPEND_SEARCH_INTERVAL;
-        }
-
-        let f = watcher_ctx.taker_coin.wait_for_htlc_tx_spend(
-            &watcher_ctx.data.taker_payment_hex,
-            &[],
+        let payment_search_interval = match std::env::var("USE_TEST_SEARCH_INTERVAL") {
+            Ok(_) => TAKER_PAYMENT_SPEND_SEARCH_INTERVAL,
+            Err(_) => 300.,
+        };
+        let wait_until = match std::env::var("SKIP_WAIT_FOR_TAKER_PAYMENT") {
+            Ok(_) => 0,
+            Err(_) => watcher_ctx.data.swap_started_at + (4 * watcher_ctx.data.lock_duration / 3),
+        };
+        let search_input = WatcherSearchForSwapTxSpendInput {
+            time_lock: watcher_ctx.data.taker_payment_lock as u32,
+            taker_pub: &watcher_ctx.data.taker_pub,
+            maker_pub: &watcher_ctx.data.maker_pub,
+            secret_hash: &watcher_ctx.data.secret_hash,
+            tx: &watcher_ctx.data.taker_payment_hex,
+            search_from_block: watcher_ctx.data.taker_coin_start_block,
             wait_until,
-            watcher_ctx.data.taker_coin_start_block,
-            &None,
-            payment_search_interval,
-        );
+            check_every: payment_search_interval,
+        };
 
-        if let Ok(tx) = f.compat().await {
-            if std::env::var("USE_TEST_DEADLINE").is_ok() {
-                wait_until = 0;
-            }
+        let f = watcher_ctx
+            .taker_coin
+            .watcher_search_for_swap_tx_spend(search_input)
+            .await;
 
-            let f = watcher_ctx.maker_coin.wait_for_htlc_tx_spend(
-                &watcher_ctx.data.maker_payment_hex,
-                &[],
-                wait_until,
-                watcher_ctx.data.maker_coin_start_block,
-                &None,
-                payment_search_interval,
-            );
-            match f.compat().await {
-                Ok(_) => {
-                    info!("Found maker payment spend as watcher");
-                    return Self::change_state(Stopped::from_reason(StopReason::Finished(
-                        WatcherSuccess::MakerPaymentSpentByTaker,
-                    )));
-                },
-                Err(_) => {
-                    let tx_hex = tx.tx_hex();
-                    let secret = match watcher_ctx
-                        .taker_coin
-                        .extract_secret(&watcher_ctx.data.secret_hash, &tx_hex)
-                        .await
-                    {
-                        Ok(bytes) => H256Json::from(bytes.as_slice()),
-                        Err(err) => {
-                            return Self::change_state(Stopped::from_reason(StopReason::Error(
-                                WatcherError::UnableToExtractSecret(err).into(),
-                            )))
-                        },
+        match f {
+            Ok(FoundSwapTxSpend::Spent(tx)) => {
+                let now = now_ms() / 1000;
+                if now < watcher_ctx.data.swap_started_at + watcher_ctx.data.lock_duration {
+                    let wait_until = match std::env::var("SKIP_WAIT_FOR_MAKER_PAYMENT") {
+                        Ok(_) => 0,
+                        Err(_) => watcher_ctx.data.swap_started_at + watcher_ctx.data.lock_duration,
                     };
-                    return Self::change_state(SpendMakerPayment::new(secret));
-                },
-            };
-        }
 
-        let f = watcher_ctx.taker_coin.wait_for_htlc_tx_spend(
-            &watcher_ctx.data.taker_payment_hex,
-            &[],
-            watcher_ctx.data.taker_payment_lock,
-            watcher_ctx.data.taker_coin_start_block,
-            &None,
-            TAKER_PAYMENT_SPEND_SEARCH_INTERVAL,
-        );
-        let tx = match f.compat().await {
-            Ok(t) => t,
+                    let f = watcher_ctx.maker_coin.wait_for_htlc_tx_spend(
+                        &watcher_ctx.data.maker_payment_hex,
+                        &[],
+                        wait_until,
+                        watcher_ctx.data.maker_coin_start_block,
+                        &None,
+                        payment_search_interval,
+                    );
+
+                    if f.compat().await.is_ok() {
+                        info!("Found maker payment spend as watcher");
+                        return Self::change_state(Stopped::from_reason(StopReason::Finished(
+                            WatcherSuccess::MakerPaymentSpentByTaker,
+                        )));
+                    }
+                }
+
+                let tx_hex = tx.tx_hex();
+                let secret = match watcher_ctx
+                    .taker_coin
+                    .extract_secret(&watcher_ctx.data.secret_hash, &tx_hex)
+                    .await
+                {
+                    Ok(bytes) => H256Json::from(bytes.as_slice()),
+                    Err(err) => {
+                        return Self::change_state(Stopped::from_reason(StopReason::Error(
+                            WatcherError::UnableToExtractSecret(err).into(),
+                        )))
+                    },
+                };
+                return Self::change_state(SpendMakerPayment::new(secret));
+            },
+            Ok(FoundSwapTxSpend::Refunded(_)) => {
+                info!("Found maker payment refund as watcher");
+                return Self::change_state(Stopped::from_reason(StopReason::Finished(
+                    WatcherSuccess::MakerPaymentRefundByTaker,
+                )));
+            },
             Err(err) => {
-                error!("{}", err.get_plain_text_format());
+                error!("{}", err);
                 return Self::change_state(RefundTakerPayment {});
             },
-        };
-
-        info!("Found taker payment spend tx {:02x} as watcher", tx.tx_hash());
-
-        let tx_hex = tx.tx_hex();
-        let secret = match watcher_ctx
-            .taker_coin
-            .extract_secret(&watcher_ctx.data.secret_hash, &tx_hex)
-            .await
-        {
-            Ok(bytes) => H256Json::from(bytes.as_slice()),
-            Err(err) => {
-                return Self::change_state(Stopped::from_reason(StopReason::Error(
-                    WatcherError::UnableToExtractSecret(err).into(),
-                )))
-            },
-        };
-
-        Self::change_state(SpendMakerPayment::new(secret))
+        }
     }
 }
 
@@ -390,20 +378,21 @@ impl State for RefundTakerPayment {
     type Result = ();
 
     async fn on_changed(self: Box<Self>, watcher_ctx: &mut WatcherContext) -> StateResult<Self::Ctx, Self::Result> {
-        let locktime = watcher_ctx.data.taker_payment_lock;
-        loop {
-            match watcher_ctx
-                .taker_coin
-                .can_refund_htlc(locktime + WAIT_FOR_TAKER_REFUND)
-                .compat()
-                .await
-            {
-                Ok(CanRefundHtlc::CanRefundNow) => break,
-                Ok(CanRefundHtlc::HaveToWait(to_sleep)) => Timer::sleep(to_sleep as f64).await,
-                Err(e) => {
-                    error!("Error {} on can_refund_htlc, retrying in 30 seconds", e);
-                    Timer::sleep(30.).await;
-                },
+        if std::env::var("SKIP_WAIT_FOR_REFUND").is_err() {
+            loop {
+                match watcher_ctx
+                    .taker_coin
+                    .can_refund_htlc(watcher_ctx.data.taker_payment_lock + WAIT_FOR_TAKER_REFUND)
+                    .compat()
+                    .await
+                {
+                    Ok(CanRefundHtlc::CanRefundNow) => break,
+                    Ok(CanRefundHtlc::HaveToWait(to_sleep)) => Timer::sleep(to_sleep as f64).await,
+                    Err(e) => {
+                        error!("Error {} on can_refund_htlc, retrying in 30 seconds", e);
+                        Timer::sleep(30.).await;
+                    },
+                }
             }
         }
 

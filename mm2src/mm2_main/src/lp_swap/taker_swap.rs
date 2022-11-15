@@ -1351,9 +1351,13 @@ impl TakerSwap {
             Ok(res) => match res {
                 Some(tx) => tx,
                 None => {
+                    let time_lock = match std::env::var("USE_TEST_LOCKTIME") {
+                        Ok(_) => self.r().data.started_at as u32,
+                        Err(_) => self.r().data.taker_payment_lock as u32,
+                    };
                     let payment_fut = self.taker_coin.send_taker_payment(
                         self.r().data.lock_duration,
-                        self.r().data.taker_payment_lock as u32,
+                        time_lock,
                         &*self.r().other_taker_coin_htlc_pub,
                         &self.r().secret_hash.0,
                         self.taker_amount.to_decimal(),
@@ -1401,9 +1405,14 @@ impl TakerSwap {
                 &self.r().secret_hash.0,
                 &self.unique_swap_data()[..],
             );
+
+            let time_lock = match std::env::var("USE_TEST_LOCKTIME") {
+                Ok(_) => self.r().data.started_at as u32,
+                Err(_) => self.r().data.taker_payment_lock as u32,
+            };
             let taker_payment_refund_preimage_fut = self.taker_coin.create_taker_payment_refund_preimage(
                 &transaction.tx_hex(),
-                self.r().data.taker_payment_lock as u32,
+                time_lock,
                 &*self.r().other_taker_coin_htlc_pub,
                 &self.r().secret_hash.0,
                 &self.r().data.taker_coin_swap_contract_address,
