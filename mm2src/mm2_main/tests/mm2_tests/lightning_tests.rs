@@ -346,7 +346,7 @@ fn test_open_channel() {
 #[cfg(not(target_arch = "wasm32"))]
 // This also tests 0_confs_channels
 fn test_send_payment() {
-    let (mut mm_node_2, mm_node_1, node_2_id, node_1_id) = start_lightning_nodes(true);
+    let (mut mm_node_2, mut mm_node_1, node_2_id, node_1_id) = start_lightning_nodes(true);
     let node_1_address = format!("{}@{}:9735", node_1_id, mm_node_1.ip.to_string());
 
     let add_trusted_node = block_on(mm_node_1.rpc(&json!({
@@ -459,6 +459,109 @@ fn test_send_payment() {
     assert_eq!(payment["status"], "succeeded");
     assert_eq!(payment["amount_in_msat"], 1000);
     assert_eq!(payment["payment_type"]["type"], "Inbound Payment");
+
+    // Test generate and pay invoice
+    let generate_invoice = block_on(mm_node_1.rpc(&json!({
+        "userpass": mm_node_1.userpass,
+        "mmrpc": "2.0",
+        "method": "lightning::payments::generate_invoice",
+        "params": {
+            "coin": "tBTC-TEST-lightning",
+            "description": "test invoice",
+            "amount_in_msat": 10000
+        },
+    })))
+    .unwrap();
+    assert!(
+        generate_invoice.0.is_success(),
+        "!lightning::payments::generate_invoice: {}",
+        generate_invoice.1
+    );
+
+    let generate_invoice_res: Json = json::from_str(&generate_invoice.1).unwrap();
+    log!("generate_invoice_res {:?}", generate_invoice_res);
+    let invoice = generate_invoice_res["result"]["invoice"].as_str().unwrap();
+    let invoice_payment_hash = generate_invoice_res["result"]["payment_hash"].as_str().unwrap();
+
+    let pay_invoice = block_on(mm_node_2.rpc(&json!({
+        "userpass": mm_node_2.userpass,
+        "mmrpc": "2.0",
+        "method": "lightning::payments::send_payment",
+        "params": {
+            "coin": "tBTC-TEST-lightning",
+            "payment": {
+                "type": "invoice",
+                "invoice": invoice
+            }
+        },
+    })))
+    .unwrap();
+    assert!(
+        pay_invoice.0.is_success(),
+        "!lightning::payments::send_payment: {}",
+        pay_invoice.1
+    );
+
+    let pay_invoice_res: Json = json::from_str(&pay_invoice.1).unwrap();
+    log!("pay_invoice_res {:?}", pay_invoice_res);
+    let payment_hash = pay_invoice_res["result"]["payment_hash"].as_str().unwrap();
+
+    block_on(mm_node_1.wait_for_log(60., |log| log.contains("Successfully claimed payment"))).unwrap();
+    block_on(mm_node_2.wait_for_log(60., |log| {
+        log.contains(&format!(
+            "Successfully sent payment of 10000 millisatoshis with payment hash {}",
+            payment_hash
+        ))
+    }))
+    .unwrap();
+
+    // Check payment on the sending node side
+    let get_payment_details = block_on(mm_node_2.rpc(&json!({
+      "userpass": mm_node_2.userpass,
+      "mmrpc": "2.0",
+      "method": "lightning::payments::get_payment_details",
+      "params": {
+          "coin": "tBTC-TEST-lightning",
+          "payment_hash": payment_hash
+      },
+    })))
+    .unwrap();
+    assert!(
+        get_payment_details.0.is_success(),
+        "!lightning::payments::get_payment_details: {}",
+        get_payment_details.1
+    );
+
+    let get_payment_details_res: Json = json::from_str(&get_payment_details.1).unwrap();
+    let payment = &get_payment_details_res["result"]["payment_details"];
+    assert_eq!(payment["status"], "succeeded");
+    assert_eq!(payment["amount_in_msat"], 10000);
+    assert_eq!(payment["payment_type"]["type"], "Outbound Payment");
+    assert_eq!(payment["description"], "test invoice");
+
+    // Check payment on the receiving node side
+    let get_payment_details = block_on(mm_node_1.rpc(&json!({
+      "userpass": mm_node_1.userpass,
+      "mmrpc": "2.0",
+      "method": "lightning::payments::get_payment_details",
+      "params": {
+          "coin": "tBTC-TEST-lightning",
+          "payment_hash": invoice_payment_hash
+      },
+    })))
+    .unwrap();
+    assert!(
+        get_payment_details.0.is_success(),
+        "!lightning::payments::get_payment_details: {}",
+        get_payment_details.1
+    );
+
+    let get_payment_details_res: Json = json::from_str(&get_payment_details.1).unwrap();
+    let payment = &get_payment_details_res["result"]["payment_details"];
+    assert_eq!(payment["status"], "succeeded");
+    assert_eq!(payment["amount_in_msat"], 10000);
+    assert_eq!(payment["payment_type"]["type"], "Inbound Payment");
+    assert_eq!(payment["description"], "test invoice");
 
     block_on(mm_node_1.stop()).unwrap();
     block_on(mm_node_2.stop()).unwrap();
