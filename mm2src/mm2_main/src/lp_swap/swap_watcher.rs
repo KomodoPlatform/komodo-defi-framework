@@ -45,7 +45,6 @@ pub struct TakerSwapWatcherData {
     pub taker_coin: String,
     pub taker_fee_hash: Vec<u8>,
     pub taker_payment_hex: Vec<u8>,
-    pub taker_payment_lock: u64,
     pub taker_pub: Vec<u8>,
     pub taker_coin_start_block: u64,
     pub taker_payment_confirmations: u64,
@@ -220,7 +219,7 @@ impl State for ValidateTakerPayment {
 
         let validate_input = WatcherValidatePaymentInput {
             payment_tx: watcher_ctx.data.taker_payment_hex.clone(),
-            time_lock: watcher_ctx.data.taker_payment_lock as u32,
+            time_lock: (watcher_ctx.data.swap_started_at + watcher_ctx.data.lock_duration) as u32,
             taker_pub: watcher_ctx.data.taker_pub.clone(),
             maker_pub: watcher_ctx.data.maker_pub.clone(),
             secret_hash: watcher_ctx.data.secret_hash.clone(),
@@ -259,7 +258,7 @@ impl State for WaitForTakerPaymentSpend {
             Err(_) => watcher_ctx.data.swap_started_at + (4 * watcher_ctx.data.lock_duration / 3),
         };
         let search_input = WatcherSearchForSwapTxSpendInput {
-            time_lock: watcher_ctx.data.taker_payment_lock as u32,
+            time_lock: (watcher_ctx.data.swap_started_at + watcher_ctx.data.lock_duration) as u32,
             taker_pub: &watcher_ctx.data.taker_pub,
             maker_pub: &watcher_ctx.data.maker_pub,
             secret_hash: &watcher_ctx.data.secret_hash,
@@ -382,7 +381,9 @@ impl State for RefundTakerPayment {
             loop {
                 match watcher_ctx
                     .taker_coin
-                    .can_refund_htlc(watcher_ctx.data.taker_payment_lock + WAIT_FOR_TAKER_REFUND)
+                    .can_refund_htlc(
+                        watcher_ctx.data.swap_started_at + watcher_ctx.data.lock_duration + WAIT_FOR_TAKER_REFUND,
+                    )
                     .compat()
                     .await
                 {
@@ -428,7 +429,7 @@ impl State for RefundTakerPayment {
             &transaction.tx_hex(),
             1,
             false,
-            watcher_ctx.data.taker_payment_lock + WAIT_FOR_TAKER_REFUND + 3600,
+            watcher_ctx.data.swap_started_at + watcher_ctx.data.lock_duration + WAIT_FOR_TAKER_REFUND + 3600,
             WAIT_CONFIRM_INTERVAL,
         );
         if let Err(err) = wait_fut.compat().await {
