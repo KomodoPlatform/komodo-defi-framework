@@ -206,6 +206,7 @@ pub enum ZCoinBuildError {
     Io(std::io::Error),
     RpcClientInitErr(ZcoinClientInitError),
     ZCashParamsNotFound,
+    ZDerivationPathNotSet,
 }
 
 impl From<SqliteError> for ZCoinBuildError {
