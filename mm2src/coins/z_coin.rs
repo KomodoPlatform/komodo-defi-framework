@@ -111,7 +111,7 @@ const BLOCKS_TABLE: &str = "blocks";
 const SAPLING_SPEND_NAME: &str = "sapling-spend.params";
 const SAPLING_OUTPUT_NAME: &str = "sapling-output.params";
 const SAPLING_SPEND_EXPECTED_HASH: &str = "8e48ffd23abb3a5fd9c5589204f32d9c31285a04b78096ba40a79b75677efc13";
-const SAPLING_OUTPUT_HASH: &str = "2f0ebbcbb9bb0bcffe95a397e7eba89c29eb4dde6191c339db88570e3f3fb0e4";
+const SAPLING_OUTPUT_EXPECTED_HASH: &str = "2f0ebbcbb9bb0bcffe95a397e7eba89c29eb4dde6191c339db88570e3f3fb0e4";
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct ZcoinConsensusParams {
@@ -790,9 +790,15 @@ impl<'a> UtxoCoinWithIguanaPrivKeyBuilder for ZCoinBuilder<'a> {
                     if !(spend_path.exists() && output_path.exists()) {
                         return MmError::err(ZCoinBuildError::ZCashParamsNotFound);
                     }
-                    let expected = H256::from(SAPLING_SPEND_EXPECTED_HASH);
-                    let res = verify_checksum_zcash_params(spend_path.clone(), expected);
-                    Ok(LocalTxProver::new(&spend_path, &output_path))
+                    let spend_expected = H256::from(SAPLING_SPEND_EXPECTED_HASH);
+                    let out_expected = H256::from(SAPLING_OUTPUT_EXPECTED_HASH);
+                    let spend_hash_eq = verify_checksum_zcash_params(spend_path.clone(), spend_expected)?;
+                    let out_hash_eq = verify_checksum_zcash_params(output_path.clone(), out_expected)?;
+                    if spend_hash_eq && out_hash_eq {
+                        Ok(LocalTxProver::new(&spend_path, &output_path))
+                    } else {
+                        MmError::err(ZCoinBuildError::ChecksumVerificationFailed)
+                    }
                 })
                 .await?
             },
