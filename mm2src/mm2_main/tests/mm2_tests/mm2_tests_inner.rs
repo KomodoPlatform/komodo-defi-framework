@@ -1400,7 +1400,7 @@ fn test_withdraw_segwit() {
     assert!(withdraw_error["error"]
         .as_str()
         .expect("Expected 'error' field")
-        .contains("Invalid address: tb1p6h5fuzmnvpdthf5shf0qqjzwy7wsqc5rhmgq2ks9xrak4ry6mtrscsqvzp"));
+        .contains("address variant/format Bech32m is not supported yet"));
 
     block_on(mm_alice.stop()).unwrap();
 }
