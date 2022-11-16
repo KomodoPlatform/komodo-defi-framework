@@ -409,7 +409,8 @@ async fn start_lightning(
     // https://github.com/lightningdevkit/rust-lightning/issues/158
     // https://github.com/lightningdevkit/rust-lightning/pull/1286
     // https://github.com/lightningdevkit/rust-lightning/pull/1359
-    let router = DefaultRouter::new(network_graph, logger.clone(), keys_manager.get_secure_random_bytes());
+    let router_random_seed_bytes = keys_manager.get_secure_random_bytes();
+    let router = DefaultRouter::new(network_graph.clone(), logger.clone(), router_random_seed_bytes);
     let invoice_payer = Arc::new(InvoicePayer::new(
         channel_manager.clone(),
         router,
@@ -432,8 +433,8 @@ async fn start_lightning(
         channel_manager.clone(),
         GossipSync::p2p(gossip_sync),
         peer_manager.clone(),
-        logger,
-        Some(scorer),
+        logger.clone(),
+        Some(scorer.clone()),
     ));
 
     // If channel_nodes_data file exists, read channels nodes data from disk and reconnect to channel nodes/peers if possible.
@@ -468,5 +469,7 @@ async fn start_lightning(
         db,
         open_channels_nodes,
         trusted_nodes,
+        router: Arc::new(DefaultRouter::new(network_graph, logger, router_random_seed_bytes)),
+        scorer,
     })
 }

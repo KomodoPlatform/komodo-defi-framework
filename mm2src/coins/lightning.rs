@@ -11,7 +11,7 @@ pub mod ln_storage;
 pub mod ln_utils;
 
 use crate::coin_errors::MyAddressError;
-use crate::lightning::ln_utils::filter_channels;
+use crate::lightning::ln_utils::{filter_channels, pay_invoice_with_max_total_cltv_expiry_delta, PaymentError};
 use crate::utxo::rpc_clients::UtxoRpcClientEnum;
 use crate::utxo::utxo_common::{big_decimal_from_sat, big_decimal_from_sat_unsigned};
 use crate::utxo::{sat_from_big_decimal, utxo_common, BlockchainNetwork};
@@ -56,7 +56,7 @@ use ln_platform::Platform;
 use ln_serialization::{ChannelDetailsForRPC, PublicKeyForRPC};
 use ln_sql::SqliteLightningDB;
 use ln_storage::{NetworkGraph, NodesAddressesMapShared, Scorer, TrustedNodesShared};
-use ln_utils::{ChainMonitor, ChannelManager};
+use ln_utils::{ChainMonitor, ChannelManager, Router};
 use mm2_core::mm_ctx::MmArc;
 use mm2_err_handle::prelude::*;
 use mm2_net::ip_addr::myipaddr;
@@ -68,6 +68,7 @@ use secp256k1v22::PublicKey;
 use serde::Deserialize;
 use serde_json::Value as Json;
 use std::collections::{HashMap, HashSet};
+use std::convert::TryInto;
 use std::fmt;
 use std::net::SocketAddr;
 use std::str::FromStr;
@@ -75,7 +76,6 @@ use std::sync::Arc;
 
 pub const DEFAULT_INVOICE_EXPIRY: u32 = 3600;
 
-type Router = DefaultRouter<Arc<NetworkGraph>, Arc<LogState>>;
 pub type InvoicePayer<E> = payment::InvoicePayer<Arc<ChannelManager>, Router, Arc<Scorer>, Arc<LogState>, E>;
 
 #[derive(Clone)]
@@ -105,6 +105,13 @@ pub struct LightningCoin {
     /// The mutex storing the public keys of the nodes that our lightning node trusts to allow 0 confirmation
     /// inbound channels from.
     pub trusted_nodes: TrustedNodesShared,
+    /// The lightning node router that takes care of finding routes for payments.
+    // Todo: this should be removed once pay_invoice_with_max_total_cltv_expiry_delta similar functionality is implemented in rust-lightning
+    pub router: Arc<Router>,
+    /// The lightning node scorer that takes care of scoring routes. Given the uncertainty of channel liquidity balances,
+    /// the scorer stores the probabilities that a route is successful based on knowledge learned from successful and unsuccessful attempts.
+    // Todo: this should be removed once pay_invoice_with_max_total_cltv_expiry_delta similar functionality is implemented in rust-lightning
+    pub scorer: Arc<Scorer>,
 }
 
 impl fmt::Debug for LightningCoin {
@@ -134,22 +141,6 @@ pub(crate) struct GetOpenChannelsResult {
     pub channels: Vec<ChannelDetailsForRPC>,
     pub skipped: usize,
     pub total: usize,
-}
-
-#[derive(Debug, Display)]
-pub(crate) enum PaymentError {
-    #[display(fmt = "Final cltv expiry delta {} is below the required minimum of {}", _0, _1)]
-    CLTVExpiry(u32, u32),
-    #[display(fmt = "Error paying invoice: {}", _0)]
-    Invoice(String),
-    #[display(fmt = "Keysend error: {}", _0)]
-    Keysend(String),
-    #[display(fmt = "DB error {}", _0)]
-    DbError(String),
-}
-
-impl From<SqlError> for PaymentError {
-    fn from(err: SqlError) -> PaymentError { PaymentError::DbError(err.to_string()) }
 }
 
 impl Transaction for PaymentHash {
@@ -192,7 +183,11 @@ impl LightningCoin {
             .find(|chan| chan.user_channel_id == rpc_id)
     }
 
-    pub(crate) async fn pay_invoice(&self, invoice: Invoice) -> Result<PaymentInfo, MmError<PaymentError>> {
+    pub(crate) async fn pay_invoice(
+        &self,
+        invoice: Invoice,
+        max_total_cltv_expiry_delta: Option<u32>,
+    ) -> Result<PaymentInfo, MmError<PaymentError>> {
         let payment_hash = PaymentHash((invoice.payment_hash()).into_inner());
         let payment_type = PaymentType::OutboundPayment {
             destination: *invoice.payee_pub_key().unwrap_or(&invoice.recover_payee_pub_key()),
@@ -205,13 +200,21 @@ impl LightningCoin {
         let amt_msat = invoice.amount_milli_satoshis().map(|a| a as i64);
 
         let selfi = self.clone();
-        async_blocking(move || {
-            selfi
-                .invoice_payer
-                .pay_invoice(&invoice)
-                .map_to_mm(|e| PaymentError::Invoice(format!("{:?}", e)))
-        })
-        .await?;
+        match max_total_cltv_expiry_delta {
+            Some(total_cltv) => {
+                async_blocking(move || {
+                    pay_invoice_with_max_total_cltv_expiry_delta(
+                        selfi.channel_manager,
+                        selfi.router,
+                        selfi.scorer,
+                        &invoice,
+                        total_cltv,
+                    )
+                })
+                .await?
+            },
+            None => async_blocking(move || selfi.invoice_payer.pay_invoice(&invoice)).await?,
+        };
 
         let payment_info = PaymentInfo {
             payment_hash,
@@ -494,7 +497,8 @@ impl SwapOps for LightningCoin {
             .ok_or("payment_instructions can't be None"));
         let coin = self.clone();
         let fut = async move {
-            let payment = try_tx_s!(coin.pay_invoice(invoice).await);
+            // Todo: revise this None
+            let payment = try_tx_s!(coin.pay_invoice(invoice, None).await);
             Ok(payment.payment_hash.into())
         };
         Box::new(fut.boxed().compat())
@@ -505,9 +509,15 @@ impl SwapOps for LightningCoin {
             .payment_instructions
             .clone()
             .ok_or("payment_instructions can't be None"));
+        // Todo: add correct time_lock_duration for this in swaps code
+        let max_total_cltv_expiry_delta = taker_payment_args
+            .time_lock_duration
+            .try_into()
+            .expect("time_lock_duration shouldn't exceed u32::MAX");
         let coin = self.clone();
         let fut = async move {
-            let payment = try_tx_s!(coin.pay_invoice(invoice).await);
+            // Todo: revise this time_lock_duration, should log path too?? or return path probably
+            let payment = try_tx_s!(coin.pay_invoice(invoice, Some(max_total_cltv_expiry_delta)).await);
             Ok(payment.payment_hash.into())
         };
         Box::new(fut.boxed().compat())
@@ -682,7 +692,11 @@ impl SwapOps for LightningCoin {
         let payment_hash =
             payment_hash_from_slice(secret_hash).map_to_mm(|e| PaymentInstructionsErr::InternalError(e.to_string()))?;
 
-        let min_final_cltv_expiry = self.estimate_blocks_from_duration(lock_duration);
+        // Todo: this max calculation should probably be moved at the begining of locktime calculation
+        let min_final_cltv_expiry = std::cmp::max(
+            self.estimate_blocks_from_duration(lock_duration),
+            MIN_FINAL_CLTV_EXPIRY as u64,
+        );
         // note: No description is provided in the invoice to reduce the payload
         // Todo: The invoice expiry should probably be the same as maker_payment_wait/wait_taker_payment
         let invoice = self
@@ -996,6 +1010,7 @@ impl MarketCoinOps for LightningCoin {
     }
 
     // Todo: min_tx_amount should depend on inbound_htlc_minimum_msat of the channel/s the payment will be sent through, 1 satoshi is used for for now (1000 of the base unit of lightning which is msat)
+    // Todo: should take max_inbound_in_flight_htlc_percent in considration too for max allowed amount
     fn min_tx_amount(&self) -> BigDecimal { big_decimal_from_sat(1000, self.decimals()) }
 
     // Todo: Equals to min_tx_amount for now (1 satoshi), should change this later
