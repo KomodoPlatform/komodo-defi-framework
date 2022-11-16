@@ -727,6 +727,21 @@ fn verify_checksum_zcash_params(file_path: PathBuf, expected_hash: H256) -> Resu
     Ok(res_hash == expected_hash)
 }
 
+fn get_spend_output_paths(params_dir: PathBuf) -> Result<(PathBuf, PathBuf), ZCoinBuildError> {
+    let (spend_path, output_path) = if params_dir.exists() {
+        (
+            params_dir.join(SAPLING_SPEND_NAME),
+            params_dir.join(SAPLING_OUTPUT_NAME),
+        )
+    } else {
+        return Err(ZCoinBuildError::ZCashParamsNotFound);
+    };
+    if !(spend_path.exists() && output_path.exists()) {
+        return Err(ZCoinBuildError::ZCashParamsNotFound);
+    }
+    Ok((spend_path, output_path))
+}
+
 pub struct ZCoinBuilder<'a> {
     ctx: &'a MmArc,
     ticker: &'a str,
@@ -779,17 +794,7 @@ impl<'a> UtxoCoinWithIguanaPrivKeyBuilder for ZCoinBuilder<'a> {
             None => {
                 async_blocking(move || {
                     let params_dir = default_params_folder().or_mm_err(|| ZCoinBuildError::ZCashParamsNotFound)?;
-                    let (spend_path, output_path) = if params_dir.exists() {
-                        (
-                            params_dir.join(SAPLING_SPEND_NAME),
-                            params_dir.join(SAPLING_OUTPUT_NAME),
-                        )
-                    } else {
-                        return MmError::err(ZCoinBuildError::ZCashParamsNotFound);
-                    };
-                    if !(spend_path.exists() && output_path.exists()) {
-                        return MmError::err(ZCoinBuildError::ZCashParamsNotFound);
-                    }
+                    let (spend_path, output_path) = get_spend_output_paths(params_dir)?;
                     let spend_expected = H256::from(SAPLING_SPEND_EXPECTED_HASH);
                     let out_expected = H256::from(SAPLING_OUTPUT_EXPECTED_HASH);
                     let spend_hash_eq = verify_checksum_zcash_params(spend_path.clone(), spend_expected)?;
@@ -805,15 +810,16 @@ impl<'a> UtxoCoinWithIguanaPrivKeyBuilder for ZCoinBuilder<'a> {
             Some(file_path) => {
                 let path = PathBuf::from(file_path);
                 async_blocking(move || {
-                    let (spend_path, output_path) = if path.exists() {
-                        (path.join(SAPLING_SPEND_NAME), path.join(SAPLING_OUTPUT_NAME))
+                    let (spend_path, output_path) = get_spend_output_paths(path)?;
+                    let spend_expected = H256::from(SAPLING_SPEND_EXPECTED_HASH);
+                    let out_expected = H256::from(SAPLING_OUTPUT_EXPECTED_HASH);
+                    let spend_hash_eq = verify_checksum_zcash_params(spend_path.clone(), spend_expected)?;
+                    let out_hash_eq = verify_checksum_zcash_params(output_path.clone(), out_expected)?;
+                    if spend_hash_eq && out_hash_eq {
+                        Ok(LocalTxProver::new(&spend_path, &output_path))
                     } else {
-                        return MmError::err(ZCoinBuildError::ZCashParamsNotFound);
-                    };
-                    if !(spend_path.exists() && output_path.exists()) {
-                        return MmError::err(ZCoinBuildError::ZCashParamsNotFound);
+                        MmError::err(ZCoinBuildError::ChecksumVerificationFailed)
                     }
-                    Ok(LocalTxProver::new(&spend_path, &output_path))
                 })
                 .await?
             },
