@@ -52,7 +52,7 @@ pub struct TakerSwapWatcherData {
     pub taker_amount: BigDecimal,
     pub maker_coin: String,
     pub maker_pub: Vec<u8>,
-    pub maker_payment_hex: Vec<u8>,
+    pub maker_payment_hash: Vec<u8>,
     pub maker_coin_start_block: u64,
 }
 
@@ -97,6 +97,7 @@ enum WatcherError {
     InvalidTakerPayment(String),
     UnableToExtractSecret(String),
     MakerPaymentSpendFailed(String),
+    MakerPaymentCouldNotBeFound(String),
     TakerPaymentRefundFailed(String),
 }
 
@@ -282,8 +283,20 @@ impl State for WaitForTakerPaymentSpend {
                         Err(_) => watcher_ctx.data.swap_started_at + watcher_ctx.data.lock_duration,
                     };
 
+                    let maker_payment_hex_fut = watcher_ctx
+                        .maker_coin
+                        .get_tx_hex_by_hash(watcher_ctx.data.maker_payment_hash.clone());
+                    let maker_payment_hex = match maker_payment_hex_fut.compat().await {
+                        Ok(tx_res) => tx_res.tx_hex.into_vec(),
+                        Err(err) => {
+                            return Self::change_state(Stopped::from_reason(StopReason::Error(
+                                WatcherError::MakerPaymentCouldNotBeFound(err.to_string()).into(),
+                            )))
+                        },
+                    };
+
                     let f = watcher_ctx.maker_coin.wait_for_htlc_tx_spend(
-                        &watcher_ctx.data.maker_payment_hex,
+                        &maker_payment_hex,
                         &[],
                         wait_until,
                         watcher_ctx.data.maker_coin_start_block,

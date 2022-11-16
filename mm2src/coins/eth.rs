@@ -3151,6 +3151,8 @@ impl MmCoin for EthCoin {
         Box::new(get_raw_transaction_impl(self.clone(), req).boxed().compat())
     }
 
+    fn get_tx_hex_by_hash(&self, _tx_hash: Vec<u8>) -> RawTransactionFut { unimplemented!() }
+
     fn withdraw(&self, req: WithdrawRequest) -> WithdrawFut {
         Box::new(Box::pin(withdraw_impl(self.clone(), req)).compat())
     }

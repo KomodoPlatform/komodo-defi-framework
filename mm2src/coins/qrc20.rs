@@ -1223,6 +1223,10 @@ impl MmCoin for Qrc20Coin {
         Box::new(utxo_common::get_raw_transaction(&self.utxo, req).boxed().compat())
     }
 
+    fn get_tx_hex_by_hash(&self, tx_hash: Vec<u8>) -> RawTransactionFut {
+        Box::new(utxo_common::get_tx_hex_by_hash(&self.utxo, tx_hash).boxed().compat())
+    }
+
     fn decimals(&self) -> u8 { utxo_common::decimals(&self.utxo) }
 
     fn convert_to_address(&self, from: &str, to_address_format: Json) -> Result<String, String> {

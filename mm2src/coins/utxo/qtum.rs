@@ -896,6 +896,14 @@ impl MmCoin for QtumCoin {
         Box::new(utxo_common::get_raw_transaction(&self.utxo_arc, req).boxed().compat())
     }
 
+    fn get_tx_hex_by_hash(&self, tx_hash: Vec<u8>) -> RawTransactionFut {
+        Box::new(
+            utxo_common::get_tx_hex_by_hash(&self.utxo_arc, tx_hash)
+                .boxed()
+                .compat(),
+        )
+    }
+
     fn withdraw(&self, req: WithdrawRequest) -> WithdrawFut {
         Box::new(utxo_common::withdraw(self.clone(), req).boxed().compat())
     }

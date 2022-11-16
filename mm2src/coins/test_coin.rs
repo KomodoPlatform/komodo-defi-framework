@@ -270,6 +270,8 @@ impl MmCoin for TestCoin {
 
     fn get_raw_transaction(&self, _req: RawTransactionRequest) -> RawTransactionFut { unimplemented!() }
 
+    fn get_tx_hex_by_hash(&self, tx_hash: Vec<u8>) -> RawTransactionFut { unimplemented!() }
+
     fn withdraw(&self, req: WithdrawRequest) -> WithdrawFut { unimplemented!() }
 
     fn decimals(&self) -> u8 { unimplemented!() }

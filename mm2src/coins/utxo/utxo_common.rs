@@ -2390,6 +2390,16 @@ pub async fn get_raw_transaction(coin: &UtxoCoinFields, req: RawTransactionReque
     Ok(RawTransactionRes { tx_hex: hex })
 }
 
+pub async fn get_tx_hex_by_hash(coin: &UtxoCoinFields, tx_hash: Vec<u8>) -> RawTransactionResult {
+    let hex = coin
+        .rpc_client
+        .get_transaction_bytes(&H256Json::from(tx_hash.as_slice()))
+        .compat()
+        .await
+        .map_err(|e| RawTransactionError::Transport(e.to_string()))?;
+    Ok(RawTransactionRes { tx_hex: hex })
+}
+
 pub async fn withdraw<T>(coin: T, req: WithdrawRequest) -> WithdrawResult
 where
     T: UtxoCommonOps + GetUtxoListOps + MarketCoinOps,

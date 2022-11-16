@@ -1558,6 +1558,14 @@ impl MmCoin for SlpToken {
         )
     }
 
+    fn get_tx_hex_by_hash(&self, tx_hash: Vec<u8>) -> RawTransactionFut {
+        Box::new(
+            utxo_common::get_tx_hex_by_hash(self.platform_coin.as_ref(), tx_hash)
+                .boxed()
+                .compat(),
+        )
+    }
+
     fn withdraw(&self, req: WithdrawRequest) -> WithdrawFut {
         let coin = self.clone();
         let fut = async move {

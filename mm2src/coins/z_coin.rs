@@ -1479,6 +1479,8 @@ impl MmCoin for ZCoin {
         Box::new(utxo_common::get_raw_transaction(&self.utxo_arc, req).boxed().compat())
     }
 
+    fn get_tx_hex_by_hash(&self, _tx_hash: Vec<u8>) -> RawTransactionFut { unimplemented!() }
+
     fn decimals(&self) -> u8 { self.utxo_arc.decimals }
 
     fn convert_to_address(&self, _from: &str, _to_address_format: Json) -> Result<String, String> {

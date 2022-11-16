@@ -1316,7 +1316,7 @@ impl TakerSwap {
             taker_amount: self.r().data.taker_amount.clone(),
             maker_coin: self.r().data.maker_coin.clone(),
             maker_pub: self.r().other_maker_coin_htlc_pub.to_vec(),
-            maker_payment_hex: self.r().maker_payment.as_ref().unwrap().tx_hex.0.clone(),
+            maker_payment_hash: self.r().maker_payment.as_ref().unwrap().tx_hash.0.clone(),
             maker_coin_start_block: self.r().data.maker_coin_start_block,
         }
     }
