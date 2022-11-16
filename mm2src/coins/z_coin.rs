@@ -25,7 +25,7 @@ use crate::{BalanceError, BalanceFut, CheckIfMyPaymentSentArgs, CoinBalance, Coi
             WithdrawRequest};
 use crate::{Transaction, WithdrawError};
 use async_trait::async_trait;
-use bitcrypto::dhash256;
+use bitcrypto::{dhash256, sha256};
 use chain::constants::SEQUENCE_FINAL;
 use chain::{Transaction as UtxoTx, TransactionOutput};
 use common::{async_blocking, calc_total_pages, log, PagingOptionsEnum};
@@ -68,6 +68,7 @@ use zcash_primitives::transaction::components::{Amount, TxOut};
 use zcash_primitives::transaction::Transaction as ZTransaction;
 use zcash_primitives::{consensus, constants::mainnet as z_mainnet_constants, sapling::PaymentAddress,
                        zip32::ExtendedFullViewingKey, zip32::ExtendedSpendingKey};
+use zcash_proofs::default_params_folder;
 use zcash_proofs::prover::LocalTxProver;
 
 mod z_htlc;
@@ -109,6 +110,8 @@ const TRANSACTIONS_TABLE: &str = "transactions";
 const BLOCKS_TABLE: &str = "blocks";
 const SAPLING_SPEND_NAME: &str = "sapling-spend.params";
 const SAPLING_OUTPUT_NAME: &str = "sapling-output.params";
+const SAPLING_SPEND_EXPECTED_HASH: &str = "8e48ffd23abb3a5fd9c5589204f32d9c31285a04b78096ba40a79b75677efc13";
+const SAPLING_OUTPUT_HASH: &str = "2f0ebbcbb9bb0bcffe95a397e7eba89c29eb4dde6191c339db88570e3f3fb0e4";
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct ZcoinConsensusParams {
@@ -718,6 +721,12 @@ pub async fn z_coin_from_conf_and_params(
     z_coin_from_conf_and_params_with_z_key(ctx, ticker, conf, params, secp_priv_key, db_dir, z_key, protocol_info).await
 }
 
+fn verify_checksum_zcash_params(file_path: PathBuf, expected_hash: H256) -> Result<bool, ZCoinBuildError> {
+    let bytes = std::fs::read(file_path)?;
+    let res_hash = sha256(&bytes);
+    Ok(res_hash == expected_hash)
+}
+
 pub struct ZCoinBuilder<'a> {
     ctx: &'a MmArc,
     ticker: &'a str,
@@ -767,9 +776,26 @@ impl<'a> UtxoCoinWithIguanaPrivKeyBuilder for ZCoinBuilder<'a> {
         .expect("DEX_FEE_Z_ADDR is a valid z-address");
 
         let z_tx_prover = match &self.z_coin_params.zcash_params_path {
-            None => async_blocking(LocalTxProver::with_default_location)
-                .await
-                .or_mm_err(|| ZCoinBuildError::ZCashParamsNotFound)?,
+            None => {
+                async_blocking(move || {
+                    let params_dir = default_params_folder().or_mm_err(|| ZCoinBuildError::ZCashParamsNotFound)?;
+                    let (spend_path, output_path) = if params_dir.exists() {
+                        (
+                            params_dir.join(SAPLING_SPEND_NAME),
+                            params_dir.join(SAPLING_OUTPUT_NAME),
+                        )
+                    } else {
+                        return MmError::err(ZCoinBuildError::ZCashParamsNotFound);
+                    };
+                    if !(spend_path.exists() && output_path.exists()) {
+                        return MmError::err(ZCoinBuildError::ZCashParamsNotFound);
+                    }
+                    let expected = H256::from(SAPLING_SPEND_EXPECTED_HASH);
+                    let res = verify_checksum_zcash_params(spend_path.clone(), expected);
+                    Ok(LocalTxProver::new(&spend_path, &output_path))
+                })
+                .await?
+            },
             Some(file_path) => {
                 let path = PathBuf::from(file_path);
                 async_blocking(move || {
