@@ -74,8 +74,8 @@ pub async fn disable_coin(ctx: MmArc, req: Json) -> Result<Response<Vec<u8>>, St
                 .map_err(|e| ERRL!("{}", e));
         }
         let still_matching = get_matching_orders(&ctx, &ticker).await;
-        // If coins_to_disable list is > 1 then it's a platform and it tokens we want to disable hence we check if
-        // there's an active or matching swaps before we tried disabling any of the tokens.
+        // If coins_to_disable list is > 1 then it's a platform and it tokens we want to disable hence, we check if
+        // there's an active or matching swaps before we try disabling the token.
         if coins_to_disable.clone().count() > 1usize && !still_matching.is_empty() || !swaps.is_empty() {
             let not_disabled = coins_to_disable
                 .filter(|c| !disabled_tokens.contains(c))
