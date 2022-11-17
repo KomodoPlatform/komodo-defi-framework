@@ -55,29 +55,22 @@ pub async fn disable_coin(ctx: MmArc, req: Json) -> Result<Response<Vec<u8>>, St
         .get_tokens_to_disable(&ticker)
         .await
         .into_iter()
-        .chain(std::iter::once(coin.platform_ticker().to_string()));
+        .chain(std::iter::once(coin.platform_ticker().to_string()))
+        .collect::<Vec<_>>();
 
     let mut cancelled_orders = vec![];
     let mut disabled_tokens = vec![];
 
-    for ticker in coins_to_disable.clone() {
+    for ticker in &coins_to_disable {
         log!("disabling {ticker} coin");
-        let swaps = try_s!(active_swaps_using_coin(&ctx, &ticker));
-        if !swaps.is_empty() {
-            let err = json!({
-                "error": format!("There're active swaps using {}", &ticker),
-                "swaps": swaps,
-            });
-            return Response::builder()
-                .status(INTERNAL_SERVER_ERROR_CODE)
-                .body(json::to_vec(&err).unwrap())
-                .map_err(|e| ERRL!("{}", e));
-        }
-        let still_matching = get_matching_orders(&ctx, &ticker).await;
+        let swaps = try_s!(active_swaps_using_coin(&ctx, ticker));
+        let still_matching = get_matching_orders(&ctx, ticker).await;
+        // NOTE. We'll skip this step if we are not disabling a platform coin!.
         // If coins_to_disable list is > 1 then it's a platform and it tokens we want to disable hence, we check if
         // there's an active or matching swaps before we try disabling the token.
-        if coins_to_disable.clone().count() > 1usize && !still_matching.is_empty() || !swaps.is_empty() {
+        if coins_to_disable.len() > 1usize && !still_matching.is_empty() || !swaps.is_empty() {
             let not_disabled = coins_to_disable
+                .iter()
                 .filter(|c| !disabled_tokens.contains(c))
                 .collect::<Vec<_>>();
             let err = json!({
@@ -88,6 +81,17 @@ pub async fn disable_coin(ctx: MmArc, req: Json) -> Result<Response<Vec<u8>>, St
                     "disabled_tokens": disabled_tokens,
                     "still_enabled_tokens": not_disabled
                 }
+            });
+            return Response::builder()
+                .status(INTERNAL_SERVER_ERROR_CODE)
+                .body(json::to_vec(&err).unwrap())
+                .map_err(|e| ERRL!("{}", e));
+        }
+
+        if !swaps.is_empty() {
+            let err = json!({
+                "error": format!("There're active swaps using {}", ticker),
+                "swaps": swaps,
             });
             return Response::builder()
                 .status(INTERNAL_SERVER_ERROR_CODE)
@@ -120,7 +124,7 @@ pub async fn disable_coin(ctx: MmArc, req: Json) -> Result<Response<Vec<u8>>, St
 
         // If check for matching order / active swaps doesn't return an error then proceed with disabling the requested
         // coin/tokens
-        if let Err(err) = coins_ctx.remove_coin(&ctx, &ticker).await {
+        if let Err(err) = coins_ctx.remove_coin(&ctx, ticker).await {
             let err = json!({
                 "error": err,
                 "already_disabled": disabled_tokens,
