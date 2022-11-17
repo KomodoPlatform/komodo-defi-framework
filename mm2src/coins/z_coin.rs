@@ -826,13 +826,11 @@ impl<'a> UtxoCoinBuilder for ZCoinBuilder<'a> {
                 async_blocking(move || {
                     let params_dir = default_params_folder().or_mm_err(|| ZCoinBuildError::ZCashParamsNotFound)?;
                     let (spend_path, output_path) = get_spend_output_paths(params_dir)?;
-                    let spend_expected = H256::from(SAPLING_SPEND_EXPECTED_HASH);
-                    let out_expected = H256::from(SAPLING_OUTPUT_EXPECTED_HASH);
                     let verification_successful = verify_checksum_zcash_params(
                         spend_path.clone(),
-                        spend_expected,
+                        H256::from(SAPLING_SPEND_EXPECTED_HASH),
                         output_path.clone(),
-                        out_expected,
+                        H256::from(SAPLING_OUTPUT_EXPECTED_HASH),
                     )?;
                     if verification_successful {
                         Ok(LocalTxProver::new(&spend_path, &output_path))
@@ -846,13 +844,11 @@ impl<'a> UtxoCoinBuilder for ZCoinBuilder<'a> {
                 let path = PathBuf::from(file_path);
                 async_blocking(move || {
                     let (spend_path, output_path) = get_spend_output_paths(path)?;
-                    let spend_expected = H256::from(SAPLING_SPEND_EXPECTED_HASH);
-                    let out_expected = H256::from(SAPLING_OUTPUT_EXPECTED_HASH);
                     let verification_successful = verify_checksum_zcash_params(
                         spend_path.clone(),
-                        spend_expected,
+                        H256::from(SAPLING_SPEND_EXPECTED_HASH),
                         output_path.clone(),
-                        out_expected,
+                        H256::from(SAPLING_OUTPUT_EXPECTED_HASH),
                     )?;
                     if verification_successful {
                         Ok(LocalTxProver::new(&spend_path, &output_path))
