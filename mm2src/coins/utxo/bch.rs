@@ -1100,9 +1100,9 @@ impl WatcherOps for BchCoin {
 
     async fn watcher_search_for_swap_tx_spend(
         &self,
-        _input: WatcherSearchForSwapTxSpendInput<'_>,
+        input: WatcherSearchForSwapTxSpendInput<'_>,
     ) -> Result<FoundSwapTxSpend, String> {
-        unimplemented!();
+        utxo_common::watcher_search_for_swap_tx_spend(self, input, utxo_common::DEFAULT_SWAP_VOUT).await
     }
 }
 
