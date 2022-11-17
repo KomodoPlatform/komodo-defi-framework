@@ -132,6 +132,10 @@ cfg_wasm32! {
     pub type SwapDbLocked<'a> = DbLocked<'a, SwapDb>;
 }
 
+cfg_native! {
+    use coins::lightning::MIN_FINAL_CLTV_EXPIRY;
+}
+
 #[derive(Clone, Debug, Eq, Deserialize, PartialEq, Serialize)]
 pub enum SwapMsg {
     Negotiation(NegotiationDataMsg),
@@ -538,6 +542,17 @@ pub fn lp_atomic_locktime_v2(
         || other_conf_settings.requires_notarization()
     {
         get_payment_locktime() * 4
+    } else if taker_coin.contains("-lightning") {
+        // Todo: the 11 should depend on the average block time and MIN_FINAL_CLTV_EXPIRY etc.., maybe refactor this
+        // A good value for taker locktime is about 24 hours to find a good 3 hop or less path for the payment
+        get_payment_locktime() * 11
+    } else if maker_coin.contains("-lightning") {
+        // Todo: the 5 should depend on the average block time and MIN_FINAL_CLTV_EXPIRY etc.., maybe refactor this
+        #[cfg(not(target_arch = "wasm32"))]
+        return std::cmp::max(get_payment_locktime(), MIN_FINAL_CLTV_EXPIRY as u64 * 5);
+        // Todo: Refator this
+        #[cfg(target_arch = "wasm32")]
+        return get_payment_locktime();
     } else {
         get_payment_locktime()
     }

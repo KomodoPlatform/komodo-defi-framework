@@ -699,6 +699,8 @@ pub trait SwapOps {
     ) -> Result<PaymentInstructions, MmError<ValidateInstructionsErr>>;
 
     fn is_supported_by_watchers(&self) -> bool;
+
+    fn maker_locktime_multiplier(&self) -> f64 { 2.0 }
 }
 
 #[async_trait]

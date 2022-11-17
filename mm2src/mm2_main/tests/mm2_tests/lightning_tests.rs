@@ -178,6 +178,7 @@ fn test_enable_lightning() {
               "protocol_data":{
                 "platform": "tBTC-TEST-segwit",
                 "network": "testnet",
+                "avg_block_time": 3600,
                 "confirmation_targets": {
                   "background": 12,
                   "normal": 6,
@@ -676,6 +677,8 @@ fn test_lightning_taker_swap() {
 
     block_on(mm_node_2.wait_for_log(900., |log| log.contains(&format!("[swap uuid={}] Finished", uuid)))).unwrap();
 
+    // Todo: add a test for locktimes
+
     block_on(mm_node_1.stop()).unwrap();
     block_on(mm_node_2.stop()).unwrap();
 }
@@ -716,6 +719,7 @@ fn test_sign_verify_message_lightning() {
           "protocol_data":{
             "platform": "tBTC-TEST-segwit",
             "network": "testnet",
+            "avg_block_time": 3600,
             "confirmation_targets": {
               "background": 12,
               "normal": 6,

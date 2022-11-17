@@ -526,7 +526,8 @@ impl MakerSwap {
             maker_payment_requires_nota: Some(self.conf_settings.maker_coin_nota),
             taker_payment_confirmations: self.conf_settings.taker_coin_confs,
             taker_payment_requires_nota: Some(self.conf_settings.taker_coin_nota),
-            maker_payment_lock: started_at + self.payment_locktime * 2,
+            maker_payment_lock: started_at
+                + (self.payment_locktime as f64 * self.taker_coin.maker_locktime_multiplier()).ceil() as u64,
             my_persistent_pub: self.my_persistent_pub.into(),
             uuid: self.uuid,
             maker_coin_start_block,

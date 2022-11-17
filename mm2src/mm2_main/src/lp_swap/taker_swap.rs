@@ -865,7 +865,9 @@ impl TakerSwap {
             .clone();
         let secret_hash = self.r().secret_hash.0.clone();
         let maker_amount = self.maker_amount.clone().into();
-        let maker_lock_duration = self.r().data.lock_duration * 2;
+        // Todo: find a better way than maker_locktime_multiplier
+        let maker_lock_duration =
+            (self.r().data.lock_duration as f64 * self.taker_coin.maker_locktime_multiplier()).ceil() as u64;
         let instructions = self
             .maker_coin
             // Todo: find a better way instead of self.r().data.lock_duration * 2, also lock_duration * 2 should be more than or equal to MIN_FINAL_CLTV_EXPIRY
@@ -1015,7 +1017,8 @@ impl TakerSwap {
             )]));
         }
 
-        let expected_lock_time = maker_data.started_at() + self.r().data.lock_duration * 2;
+        let expected_lock_time = maker_data.started_at()
+            + (self.r().data.lock_duration as f64 * self.taker_coin.maker_locktime_multiplier()).ceil() as u64;
         if maker_data.payment_locktime() != expected_lock_time {
             return Ok((Some(TakerSwapCommand::Finish), vec![TakerSwapEvent::NegotiateFailed(
                 ERRL!(

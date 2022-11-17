@@ -40,7 +40,7 @@ use futures::{FutureExt, TryFutureExt};
 use futures01::Future;
 use keys::{hash::H256, CompactSignature, KeyPair, Private, Public};
 use lightning::chain::keysinterface::{KeysInterface, KeysManager, Recipient};
-use lightning::ln::channelmanager::{ChannelDetails, MIN_FINAL_CLTV_EXPIRY};
+use lightning::ln::channelmanager::ChannelDetails;
 use lightning::ln::{PaymentHash, PaymentPreimage};
 use lightning_background_processor::BackgroundProcessor;
 use lightning_invoice::utils::DefaultRouter;
@@ -73,6 +73,8 @@ use std::fmt;
 use std::net::SocketAddr;
 use std::str::FromStr;
 use std::sync::Arc;
+
+pub use lightning::ln::channelmanager::MIN_FINAL_CLTV_EXPIRY;
 
 pub const DEFAULT_INVOICE_EXPIRY: u32 = 3600;
 
@@ -692,11 +694,7 @@ impl SwapOps for LightningCoin {
         let payment_hash =
             payment_hash_from_slice(secret_hash).map_to_mm(|e| PaymentInstructionsErr::InternalError(e.to_string()))?;
 
-        // Todo: this max calculation should probably be moved at the begining of locktime calculation
-        let min_final_cltv_expiry = std::cmp::max(
-            self.estimate_blocks_from_duration(lock_duration),
-            MIN_FINAL_CLTV_EXPIRY as u64,
-        );
+        let min_final_cltv_expiry = self.estimate_blocks_from_duration(lock_duration);
         // note: No description is provided in the invoice to reduce the payload
         // Todo: The invoice expiry should probably be the same as maker_payment_wait/wait_taker_payment
         let invoice = self
@@ -740,6 +738,8 @@ impl SwapOps for LightningCoin {
     // Todo: Check if watchers can work in some cases with lightning and implement it if it's possible, the watcher will not be able to retrieve the preimage since it's retrieved through the lightning network
     // Todo: The watcher can retrieve the preimage only if he is running a lightning node and is part of the nodes that routed the taker payment which is a very low probability event that shouldn't be considered
     fn is_supported_by_watchers(&self) -> bool { false }
+
+    fn maker_locktime_multiplier(&self) -> f64 { 1.5 }
 }
 
 #[derive(Debug, Display)]
