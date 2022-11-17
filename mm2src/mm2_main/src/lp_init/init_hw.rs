@@ -3,7 +3,7 @@ use async_trait::async_trait;
 use common::{HttpStatusCode, SuccessResponse};
 use crypto::hw_rpc_task::{HwConnectStatuses, HwRpcTaskAwaitingStatus, HwRpcTaskUserAction, HwRpcTaskUserActionRequest,
                           TrezorRpcTaskConnectProcessor};
-use crypto::{from_hw_error, CryptoCtx, CryptoInitError, HwCtxInitError, HwDeviceInfo, HwError, HwPubkey, HwRpcError,
+use crypto::{from_hw_error, CryptoCtx, CryptoCtxError, HwCtxInitError, HwDeviceInfo, HwError, HwPubkey, HwRpcError,
              HwWalletType, WithHwRpcError};
 use derive_more::Display;
 use enum_from::EnumFromTrait;
@@ -47,8 +47,8 @@ impl From<HwError> for InitHwError {
     fn from(hw_error: HwError) -> Self { from_hw_error(hw_error) }
 }
 
-impl From<CryptoInitError> for InitHwError {
-    fn from(e: CryptoInitError) -> Self { InitHwError::Internal(e.to_string()) }
+impl From<CryptoCtxError> for InitHwError {
+    fn from(e: CryptoCtxError) -> Self { InitHwError::Internal(e.to_string()) }
 }
 
 impl From<HwCtxInitError<RpcTaskError>> for InitHwError {

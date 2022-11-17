@@ -208,7 +208,7 @@ fn sign_funding_transaction(
     let my_address = coin
         .as_ref()
         .derivation_method
-        .iguana_or_err()
+        .single_addr_or_err()
         .map_err(|e| SignFundingTransactionError::Internal(e.to_string()))?;
     let key_pair = coin
         .as_ref()
@@ -526,7 +526,7 @@ impl LightningEventHandler {
         }
 
         // Todo: add support for Hardware wallets for funding transactions and spending spendable outputs (channel closing transactions)
-        let my_address = match self.platform.coin.as_ref().derivation_method.iguana_or_err() {
+        let my_address = match self.platform.coin.as_ref().derivation_method.single_addr_or_err() {
             Ok(addr) => addr.clone(),
             Err(e) => {
                 error!("{}", e);

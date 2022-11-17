@@ -1,5 +1,6 @@
 use crate::executor::AbortOnDropHandle;
 use crate::now_float;
+use crate::number_type_casting::SafeTypeCastingNumbers;
 use futures::future::{abortable, FutureExt};
 use futures::task::{Context, Poll};
 use std::future::Future;
@@ -11,10 +12,10 @@ use wasm_bindgen::prelude::*;
 
 #[wasm_bindgen]
 extern "C" {
-    /// https://developer.mozilla.org/en-US/docs/Web/API/WindowOrWorkerGlobalScope/setTimeout
+    // https://developer.mozilla.org/en-US/docs/Web/API/WindowOrWorkerGlobalScope/setTimeout
     fn setTimeout(closure: &Closure<dyn FnMut()>, delay_ms: u32) -> i32;
 
-    /// https://developer.mozilla.org/en-US/docs/Web/API/WindowOrWorkerGlobalScope/clearTimeout
+    // https://developer.mozilla.org/en-US/docs/Web/API/WindowOrWorkerGlobalScope/clearTimeout
     fn clearTimeout(id: i32);
 }
 
@@ -84,7 +85,7 @@ impl Timer {
         // we should hold the closure until the callback function is called
         let closure = Closure::new(move || on_timeout(&state_c));
 
-        let timeout_id = setTimeout(&closure, delay_ms as u32);
+        let timeout_id = setTimeout(&closure, delay_ms.into_or_max());
         Timer {
             timeout_id,
             _closure: closure,

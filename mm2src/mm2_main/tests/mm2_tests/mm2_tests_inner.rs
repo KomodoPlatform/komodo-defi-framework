@@ -9,14 +9,16 @@ use mm2_number::{BigDecimal, BigRational, Fraction, MmNumber};
 use mm2_test_helpers::electrums::*;
 #[cfg(all(feature = "zhtlc-native-tests", not(target_arch = "wasm32")))]
 use mm2_test_helpers::for_tests::init_z_coin_native;
-use mm2_test_helpers::for_tests::{btc_with_spv_conf, check_recent_swaps, check_stats_swap_status, enable_eth_coin,
-                                  enable_qrc20, find_metrics_in_json, from_env_file, mm_spat, morty_conf, rick_conf,
-                                  sign_message, start_swaps, tbtc_with_spv_conf, test_qrc20_history_impl,
+use mm2_test_helpers::for_tests::{btc_segwit_conf, btc_with_spv_conf, check_recent_swaps, check_stats_swap_status,
+                                  enable_eth_coin, enable_qrc20, eth_jst_testnet_conf, eth_testnet_conf,
+                                  find_metrics_in_json, from_env_file, mm_spat, morty_conf, rick_conf, sign_message,
+                                  start_swaps, tbtc_with_spv_conf, test_qrc20_history_impl, tqrc20_conf,
                                   verify_message, wait_for_swap_contract_negotiation,
                                   wait_for_swap_negotiation_failure, wait_for_swaps_finish_and_check_status,
-                                  wait_till_history_has_records, MarketMakerIt, Mm2TestConf, RaiiDump, ETH_DEV_NODES,
-                                  ETH_DEV_SWAP_CONTRACT, ETH_MAINNET_NODE, ETH_MAINNET_SWAP_CONTRACT,
-                                  MAKER_SUCCESS_EVENTS, MORTY, RICK, TAKER_SUCCESS_EVENTS};
+                                  wait_till_history_has_records, MarketMakerIt, Mm2InitPrivKeyPolicy, Mm2TestConf,
+                                  Mm2TestConfForSwap, RaiiDump, ETH_DEV_NODES, ETH_DEV_SWAP_CONTRACT,
+                                  ETH_MAINNET_NODE, ETH_MAINNET_SWAP_CONTRACT, MAKER_SUCCESS_EVENTS, MORTY,
+                                  QRC20_ELECTRUMS, RICK, RICK_ELECTRUM_ADDRS, TAKER_SUCCESS_EVENTS};
 use mm2_test_helpers::get_passphrase;
 use mm2_test_helpers::structs::*;
 use serde_json::{self as json, json, Value as Json};
@@ -741,41 +743,28 @@ fn test_rpc_password_from_json_no_userpass() {
 
 /// Trading test using coins with remote RPC (Electrum, ETH nodes), it needs only ENV variables to be set, coins daemons are not required.
 /// Trades few pairs concurrently to speed up the process and also act like "load" test
+///
+/// Please note that it
 async fn trade_base_rel_electrum(
+    bob_priv_key_policy: Mm2InitPrivKeyPolicy,
+    alice_priv_key_policy: Mm2InitPrivKeyPolicy,
     pairs: &[(&'static str, &'static str)],
     maker_price: i32,
     taker_price: i32,
     volume: f64,
 ) {
-    let bob_passphrase = get_passphrase!(".env.seed", "BOB_PASSPHRASE").unwrap();
-    let alice_passphrase = get_passphrase!(".env.client", "ALICE_PASSPHRASE").unwrap();
-
     let coins = json!([
         rick_conf(),
         morty_conf(),
-        {"coin":"ETH","name":"ethereum","protocol":{"type":"ETH"}},
-        {"coin":"JST","name":"jst","protocol":{"type":"ERC20","protocol_data":{"platform":"ETH","contract_address":"0x2b294F029Fde858b2c62184e8390591755521d8E"}}},
+        eth_testnet_conf(),
+        eth_jst_testnet_conf(),
         {"coin":"ZOMBIE","asset":"ZOMBIE","fname":"ZOMBIE (TESTCOIN)","txversion":4,"overwintered":1,"mm2":1,"protocol":{"type":"ZHTLC"},"required_confirmations":0},
     ]);
 
-    let mut mm_bob = MarketMakerIt::start_async(
-        json! ({
-            "gui": "nogui",
-            "netid": 8999,
-            "dht": "on",  // Enable DHT without delay.
-            "myipaddr": env::var ("BOB_TRADE_IP") .ok(),
-            "rpcip": env::var ("BOB_TRADE_IP") .ok(),
-            "canbind": env::var ("BOB_TRADE_PORT") .ok().map (|s| s.parse::<i64>().unwrap()),
-            "passphrase": bob_passphrase,
-            "coins": coins,
-            "rpc_password": "password",
-            "i_am_seed": true,
-        }),
-        "password".into(),
-        None,
-    )
-    .await
-    .unwrap();
+    let bob_conf = Mm2TestConfForSwap::bob_conf_with_policy(bob_priv_key_policy, &coins);
+    let mut mm_bob = MarketMakerIt::start_async(bob_conf.conf, bob_conf.rpc_password, None)
+        .await
+        .unwrap();
 
     let (_bob_dump_log, _bob_dump_dashboard) = mm_bob.mm_dump();
     #[cfg(not(target_arch = "wasm32"))]
@@ -785,24 +774,10 @@ async fn trade_base_rel_electrum(
 
     Timer::sleep(1.).await;
 
-    let mut mm_alice = MarketMakerIt::start_async(
-        json! ({
-            "gui": "nogui",
-            "netid": 8999,
-            "dht": "on",  // Enable DHT without delay.
-            "myipaddr": env::var ("ALICE_TRADE_IP") .ok(),
-            "rpcip": env::var ("ALICE_TRADE_IP") .ok(),
-            "passphrase": alice_passphrase,
-            "coins": coins,
-            "seednodes": [mm_bob.my_seed_addr()],
-            "rpc_password": "password",
-            "skip_startup_checks": true,
-        }),
-        "password".into(),
-        None,
-    )
-    .await
-    .unwrap();
+    let alice_conf = Mm2TestConfForSwap::alice_conf_with_policy(alice_priv_key_policy, &coins, &mm_bob.my_seed_addr());
+    let mut mm_alice = MarketMakerIt::start_async(alice_conf.conf, alice_conf.rpc_password, None)
+        .await
+        .unwrap();
 
     let (_alice_dump_log, _alice_dump_dashboard) = mm_alice.mm_dump();
     #[cfg(not(target_arch = "wasm32"))]
@@ -914,11 +889,21 @@ async fn trade_base_rel_electrum(
 
 #[test]
 #[cfg(not(target_arch = "wasm32"))]
-fn trade_test_electrum_and_eth_coins() { block_on(trade_base_rel_electrum(&[("ETH", "JST")], 1, 2, 0.1)); }
+fn trade_test_electrum_and_eth_coins() {
+    let bob_policy = Mm2InitPrivKeyPolicy::Iguana;
+    let alice_policy = Mm2InitPrivKeyPolicy::GlobalHDAccount(0);
+    let pairs = &[("ETH", "JST")];
+    block_on(trade_base_rel_electrum(bob_policy, alice_policy, pairs, 1, 2, 0.1));
+}
 
 #[test]
 #[cfg(all(not(target_arch = "wasm32"), feature = "zhtlc-native-tests"))]
-fn trade_test_electrum_rick_zombie() { block_on(trade_base_rel_electrum(&[("RICK", "ZOMBIE")], 1, 2, 0.1)); }
+fn trade_test_electrum_rick_zombie() {
+    let bob_policy = Mm2InitPrivKeyPolicy::Iguana;
+    let alice_policy = Mm2InitPrivKeyPolicy::Iguana;
+    let pairs = &[("RICK", "ZOMBIE")];
+    block_on(trade_base_rel_electrum(bob_policy, alice_policy, pairs, 1, 2, 0.1));
+}
 
 #[cfg(not(target_arch = "wasm32"))]
 fn withdraw_and_send(
@@ -1400,7 +1385,7 @@ fn test_withdraw_segwit() {
     assert!(withdraw_error["error"]
         .as_str()
         .expect("Expected 'error' field")
-        .contains("Invalid address: tb1p6h5fuzmnvpdthf5shf0qqjzwy7wsqc5rhmgq2ks9xrak4ry6mtrscsqvzp"));
+        .contains("address variant/format Bech32m is not supported yet"));
 
     block_on(mm_alice.stop()).unwrap();
 }
@@ -7310,6 +7295,65 @@ fn test_tbtc_block_header_sync() {
     log!("enable UTXO bob {:?}", utxo_bob);
 
     block_on(mm_bob.stop()).unwrap();
+}
+
+#[test]
+#[cfg(not(target_arch = "wasm32"))]
+fn test_enable_coins_with_hd_account_id() {
+    const TX_HISTORY: bool = false;
+    const PASSPHRASE: &str = "tank abandon bind salon remove wisdom net size aspect direct source fossil";
+
+    let coins = json!([
+        eth_testnet_conf(),
+        eth_jst_testnet_conf(),
+        rick_conf(),
+        tqrc20_conf(),
+        btc_segwit_conf(),
+    ]);
+
+    let hd_account_id = 0;
+    let conf_0 = Mm2TestConf::seednode_with_hd_account(PASSPHRASE, hd_account_id, &coins);
+    let mm_hd_0 = MarketMakerIt::start(conf_0.conf, conf_0.rpc_password, None).unwrap();
+    let (_dump_log, _dump_dashboard) = mm_hd_0.mm_dump();
+    log!("log path: {}", mm_hd_0.log_path.display());
+
+    let eth = block_on(enable_native(&mm_hd_0, "ETH", &["http://195.201.0.6:8565"]));
+    assert_eq!(eth.address, "0x1737F1FaB40c6Fd3dc729B51C0F97DB3297CCA93");
+    let jst = block_on(enable_native(&mm_hd_0, "JST", &["http://195.201.0.6:8565"]));
+    assert_eq!(jst.address, "0x1737F1FaB40c6Fd3dc729B51C0F97DB3297CCA93");
+    let rick = block_on(enable_electrum(&mm_hd_0, "RICK", TX_HISTORY, RICK_ELECTRUM_ADDRS));
+    assert_eq!(rick.address, "RXNtAyDSsY3DS3VxTpJegzoHU9bUX54j56");
+    let qrc20 = block_on(enable_qrc20(
+        &mm_hd_0,
+        "QRC20",
+        QRC20_ELECTRUMS,
+        "0xd362e096e873eb7907e205fadc6175c6fec7bc44",
+    ));
+    assert_eq!(qrc20["address"].as_str(), Some("qRtCTiPHW9e6zH9NcRhjMVfq7sG37SvgrL"));
+    let btc_segwit = block_on(enable_electrum(&mm_hd_0, "BTC-segwit", TX_HISTORY, RICK_ELECTRUM_ADDRS));
+    assert_eq!(btc_segwit.address, "bc1q6vyur5hjul2m0979aadd6u7ptuj9ac4gt0ha0c");
+
+    let hd_account_id = 1;
+    let conf_1 = Mm2TestConf::seednode_with_hd_account(PASSPHRASE, hd_account_id, &coins);
+    let mm_hd_1 = MarketMakerIt::start(conf_1.conf, conf_1.rpc_password, None).unwrap();
+    let (_dump_log, _dump_dashboard) = mm_hd_1.mm_dump();
+    log!("log path: {}", mm_hd_1.log_path.display());
+
+    let eth = block_on(enable_native(&mm_hd_1, "ETH", &["http://195.201.0.6:8565"]));
+    assert_eq!(eth.address, "0xDe841899aB4A22E23dB21634e54920aDec402397");
+    let jst = block_on(enable_native(&mm_hd_1, "JST", &["http://195.201.0.6:8565"]));
+    assert_eq!(jst.address, "0xDe841899aB4A22E23dB21634e54920aDec402397");
+    let rick = block_on(enable_electrum(&mm_hd_1, "RICK", TX_HISTORY, RICK_ELECTRUM_ADDRS));
+    assert_eq!(rick.address, "RVyndZp3ZrhGKSwHryyM3Kcz9aq2EJrW1z");
+    let qrc20 = block_on(enable_qrc20(
+        &mm_hd_1,
+        "QRC20",
+        QRC20_ELECTRUMS,
+        "0xd362e096e873eb7907e205fadc6175c6fec7bc44",
+    ));
+    assert_eq!(qrc20["address"].as_str(), Some("qY8FNq2ZDUh52BjNvaroFoeHdr3AAhqsxW"));
+    let btc_segwit = block_on(enable_electrum(&mm_hd_1, "BTC-segwit", TX_HISTORY, RICK_ELECTRUM_ADDRS));
+    assert_eq!(btc_segwit.address, "bc1q6kxcwcrsm5z8pe940xxu294q7588mqvarttxcx");
 }
 
 #[test]

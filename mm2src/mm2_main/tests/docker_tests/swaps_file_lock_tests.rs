@@ -2,6 +2,7 @@ use crate::generate_utxo_coin_with_random_privkey;
 use crate::integration_tests_common::enable_native;
 use bitcrypto::ChecksumType;
 use common::block_on;
+use crypto::Secp256k1Secret;
 use keys::{KeyPair, Private};
 use mm2_io::file_lock::FileLock;
 use mm2_test_helpers::for_tests::{mm_dump, new_mm2_temp_folder_path, MarketMakerIt};
@@ -172,7 +173,7 @@ fn test_swaps_should_kick_start_if_process_was_killed() {
     block_on(mm_alice_dup.wait_for_log(50., |log| log.contains(&format!("Swap {} kick started.", uuid)))).unwrap();
 }
 
-fn addr_hash_for_privkey(priv_key: [u8; 32]) -> String {
+fn addr_hash_for_privkey(priv_key: Secp256k1Secret) -> String {
     let private = Private {
         prefix: 1,
         secret: priv_key.into(),

@@ -3,6 +3,7 @@ use crate::utxo::rpc_clients::UnspentInfo;
 use crate::TxFeeDetails;
 use chain::OutPoint;
 use common::{block_on, DEX_FEE_ADDR_RAW_PUBKEY};
+use crypto::Secp256k1Secret;
 use itertools::Itertools;
 use mm2_core::mm_ctx::MmCtxBuilder;
 use mm2_number::bigdecimal::Zero;
@@ -15,7 +16,7 @@ const EXPECTED_TX_FEE: i64 = 1000;
 const CONTRACT_CALL_GAS_FEE: i64 = (QRC20_GAS_LIMIT_DEFAULT * QRC20_GAS_PRICE_DEFAULT) as i64;
 const SWAP_PAYMENT_GAS_FEE: i64 = (QRC20_PAYMENT_GAS_LIMIT * QRC20_GAS_PRICE_DEFAULT) as i64;
 
-pub fn qrc20_coin_for_test(priv_key: &[u8], fallback_swap: Option<&str>) -> (MmArc, Qrc20Coin) {
+pub fn qrc20_coin_for_test(priv_key: [u8; 32], fallback_swap: Option<&str>) -> (MmArc, Qrc20Coin) {
     let conf = json!({
         "coin":"QRC20",
         "decimals": 8,
@@ -37,13 +38,13 @@ pub fn qrc20_coin_for_test(priv_key: &[u8], fallback_swap: Option<&str>) -> (MmA
     let ctx = MmCtxBuilder::new().into_mm_arc();
     let params = Qrc20ActivationParams::from_legacy_req(&req).unwrap();
 
-    let coin = block_on(qrc20_coin_from_conf_and_params(
+    let coin = block_on(qrc20_coin_with_priv_key(
         &ctx,
         "QRC20",
         "QTUM",
         &conf,
         &params,
-        priv_key,
+        Secp256k1Secret::from(priv_key),
         contract_address,
     ))
     .unwrap();
@@ -61,13 +62,13 @@ fn test_withdraw_to_p2sh_address_should_fail() {
         3, 98, 177, 3, 108, 39, 234, 144, 131, 178, 103, 103, 127, 80, 230, 166, 53, 68, 147, 215, 42, 216, 144, 72,
         172, 110, 180, 13, 123, 179, 10, 49,
     ];
-    let (_, coin) = qrc20_coin_for_test(&priv_key, None);
+    let (_, coin) = qrc20_coin_for_test(priv_key, None);
 
     let p2sh_address = Address {
         prefix: coin.as_ref().conf.p2sh_addr_prefix,
-        hash: coin.as_ref().derivation_method.unwrap_iguana().hash.clone(),
+        hash: coin.as_ref().derivation_method.unwrap_single_addr().hash.clone(),
         t_addr_prefix: coin.as_ref().conf.p2sh_t_addr_prefix,
-        checksum_type: coin.as_ref().derivation_method.unwrap_iguana().checksum_type,
+        checksum_type: coin.as_ref().derivation_method.unwrap_single_addr().checksum_type,
         hrp: coin.as_ref().conf.bech32_hrp.clone(),
         addr_format: UtxoAddressFormat::Standard,
     };
@@ -106,7 +107,7 @@ fn test_withdraw_impl_fee_details() {
         3, 98, 177, 3, 108, 39, 234, 144, 131, 178, 103, 103, 127, 80, 230, 166, 53, 68, 147, 215, 42, 216, 144, 72,
         172, 110, 180, 13, 123, 179, 10, 49,
     ];
-    let (_ctx, coin) = qrc20_coin_for_test(&priv_key, None);
+    let (_ctx, coin) = qrc20_coin_for_test(priv_key, None);
 
     let withdraw_req = WithdrawRequest {
         amount: 10.into(),
@@ -144,10 +145,10 @@ fn test_validate_maker_payment() {
         24, 181, 194, 193, 18, 152, 142, 168, 71, 73, 70, 244, 9, 101, 92, 168, 243, 61, 132, 48, 25, 39, 103, 92, 29,
         17, 11, 29, 113, 235, 48, 70,
     ];
-    let (_ctx, coin) = qrc20_coin_for_test(&priv_key, None);
+    let (_ctx, coin) = qrc20_coin_for_test(priv_key, None);
 
     assert_eq!(
-        *coin.utxo.derivation_method.unwrap_iguana(),
+        *coin.utxo.derivation_method.unwrap_single_addr(),
         "qUX9FGHubczidVjWPCUWuwCUJWpkAtGCgf".into()
     );
 
@@ -242,10 +243,10 @@ fn test_wait_for_confirmations_excepted() {
         24, 181, 194, 193, 18, 152, 142, 168, 71, 73, 70, 244, 9, 101, 92, 168, 243, 61, 132, 48, 25, 39, 103, 92, 29,
         17, 11, 29, 113, 235, 48, 70,
     ];
-    let (_ctx, coin) = qrc20_coin_for_test(&priv_key, None);
+    let (_ctx, coin) = qrc20_coin_for_test(priv_key, None);
 
     assert_eq!(
-        *coin.utxo.derivation_method.unwrap_iguana(),
+        *coin.utxo.derivation_method.unwrap_single_addr(),
         "qUX9FGHubczidVjWPCUWuwCUJWpkAtGCgf".into()
     );
 
@@ -289,7 +290,7 @@ fn test_send_taker_fee() {
         3, 98, 177, 3, 108, 39, 234, 144, 131, 178, 103, 103, 127, 80, 230, 166, 53, 68, 147, 215, 42, 216, 144, 72,
         172, 110, 180, 13, 123, 179, 10, 49,
     ];
-    let (_ctx, coin) = qrc20_coin_for_test(&priv_key, None);
+    let (_ctx, coin) = qrc20_coin_for_test(priv_key, None);
 
     let amount = BigDecimal::from_str("0.01").unwrap();
     let tx = coin
@@ -322,7 +323,7 @@ fn test_validate_fee() {
         3, 98, 177, 3, 108, 39, 234, 144, 131, 178, 103, 103, 127, 80, 230, 166, 53, 68, 147, 215, 42, 216, 144, 72,
         172, 110, 180, 13, 123, 179, 10, 49,
     ];
-    let (_ctx, coin) = qrc20_coin_for_test(&priv_key, None);
+    let (_ctx, coin) = qrc20_coin_for_test(priv_key, None);
 
     // QRC20 transfer tx "f97d3a43dbea0993f1b7a6a299377d4ee164c84935a1eb7d835f70c9429e6a1d"
     let tx = TransactionEnum::UtxoTx("010000000160fd74b5714172f285db2b36f0b391cd6883e7291441631c8b18f165b0a4635d020000006a47304402205d409e141111adbc4f185ae856997730de935ac30a0d2b1ccb5a6c4903db8171022024fc59bbcfdbba283556d7eeee4832167301dc8e8ad9739b7865f67b9676b226012103693bff1b39e8b5a306810023c29b95397eb395530b106b1820ea235fd81d9ce9ffffffff020000000000000000625403a08601012844a9059cbb000000000000000000000000ca1e04745e8ca0c60d8c5881531d51bec470743f00000000000000000000000000000000000000000000000000000000000f424014d362e096e873eb7907e205fadc6175c6fec7bc44c200ada205000000001976a9149e032d4b0090a11dc40fe6c47601499a35d55fbb88acfe967d5f".into());
@@ -430,7 +431,7 @@ fn test_wait_for_tx_spend_malicious() {
         3, 98, 177, 3, 108, 39, 234, 144, 131, 178, 103, 103, 127, 80, 230, 166, 53, 68, 147, 215, 42, 216, 144, 72,
         172, 110, 180, 13, 123, 179, 10, 49,
     ];
-    let (_ctx, coin) = qrc20_coin_for_test(&priv_key, None);
+    let (_ctx, coin) = qrc20_coin_for_test(priv_key, None);
 
     // f94d79f89e9ec785db40bb8bb8dca9bc01b7761429618d4c843bbebbc31836b7
     // the transaction has two outputs:
@@ -462,7 +463,7 @@ fn test_extract_secret() {
         3, 98, 177, 3, 108, 39, 234, 144, 131, 178, 103, 103, 127, 80, 230, 166, 53, 68, 147, 215, 42, 216, 144, 72,
         172, 110, 180, 13, 123, 179, 10, 49,
     ];
-    let (_ctx, coin) = qrc20_coin_for_test(&priv_key, None);
+    let (_ctx, coin) = qrc20_coin_for_test(priv_key, None);
 
     let expected_secret = &[1; 32];
     let secret_hash = &*dhash160(expected_secret);
@@ -481,7 +482,7 @@ fn test_extract_secret_malicious() {
         3, 98, 177, 3, 108, 39, 234, 144, 131, 178, 103, 103, 127, 80, 230, 166, 53, 68, 147, 215, 42, 216, 144, 72,
         172, 110, 180, 13, 123, 179, 10, 49,
     ];
-    let (_ctx, coin) = qrc20_coin_for_test(&priv_key, None);
+    let (_ctx, coin) = qrc20_coin_for_test(priv_key, None);
 
     // f94d79f89e9ec785db40bb8bb8dca9bc01b7761429618d4c843bbebbc31836b7
     // the transaction has two outputs:
@@ -501,7 +502,7 @@ fn test_generate_token_transfer_script_pubkey() {
         3, 98, 177, 3, 108, 39, 234, 144, 131, 178, 103, 103, 127, 80, 230, 166, 53, 68, 147, 215, 42, 216, 144, 72,
         172, 110, 180, 13, 123, 179, 10, 49,
     ];
-    let (_ctx, coin) = qrc20_coin_for_test(&priv_key, None);
+    let (_ctx, coin) = qrc20_coin_for_test(priv_key, None);
 
     let gas_limit = 2_500_000;
     let gas_price = 40;
@@ -550,7 +551,7 @@ fn test_transfer_details_by_hash() {
         3, 98, 177, 3, 108, 39, 234, 144, 131, 178, 103, 103, 127, 80, 230, 166, 53, 68, 147, 215, 42, 216, 144, 72,
         172, 110, 180, 13, 123, 179, 10, 49,
     ];
-    let (_ctx, coin) = qrc20_coin_for_test(&priv_key, None);
+    let (_ctx, coin) = qrc20_coin_for_test(priv_key, None);
     let tx_hash_bytes = hex::decode("85ede12ccc12fb1709c4d9e403e96c0c394b0916f2f6098d41d8dfa00013fcdb").unwrap();
     let tx_hash: H256Json = tx_hash_bytes.as_slice().into();
     let tx_hex:BytesJson = hex::decode("0100000001426d27fde82e12e1ce84e73ca41e2a30420f4c94aaa37b30d4c5b8b4f762c042040000006a473044022032665891693ee732571cefaa6d322ec5114c78259f2adbe03a0d7e6b65fbf40d022035c9319ca41e5423e09a8a613ac749a20b8f5ad6ba4ad6bb60e4a020b085d009012103693bff1b39e8b5a306810023c29b95397eb395530b106b1820ea235fd81d9ce9ffffffff050000000000000000625403a08601012844095ea7b30000000000000000000000001549128bbfb33b997949b4105b6a6371c998e212000000000000000000000000000000000000000000000000000000000000000014d362e096e873eb7907e205fadc6175c6fec7bc44c20000000000000000625403a08601012844095ea7b30000000000000000000000001549128bbfb33b997949b4105b6a6371c998e21200000000000000000000000000000000000000000000000000000000000927c014d362e096e873eb7907e205fadc6175c6fec7bc44c20000000000000000835403a0860101284c640c565ae300000000000000000000000000000000000000000000000000000000000493e0000000000000000000000000d362e096e873eb7907e205fadc6175c6fec7bc440000000000000000000000000000000000000000000000000000000000000000141549128bbfb33b997949b4105b6a6371c998e212c20000000000000000835403a0860101284c640c565ae300000000000000000000000000000000000000000000000000000000000493e0000000000000000000000000d362e096e873eb7907e205fadc6175c6fec7bc440000000000000000000000000000000000000000000000000000000000000001141549128bbfb33b997949b4105b6a6371c998e212c231754b04000000001976a9149e032d4b0090a11dc40fe6c47601499a35d55fbb88acf7cd8b5f").unwrap().into();
@@ -699,7 +700,7 @@ fn test_get_trade_fee() {
         3, 98, 177, 3, 108, 39, 234, 144, 131, 178, 103, 103, 127, 80, 230, 166, 53, 68, 147, 215, 42, 216, 144, 72,
         172, 110, 180, 13, 123, 179, 10, 49,
     ];
-    let (_ctx, coin) = qrc20_coin_for_test(&priv_key, None);
+    let (_ctx, coin) = qrc20_coin_for_test(priv_key, None);
     // check if the coin's tx fee is expected
     check_tx_fee(&coin, ActualTxFee::FixedPerKb(EXPECTED_TX_FEE as u64));
 
@@ -726,7 +727,7 @@ fn test_sender_trade_preimage_zero_allowance() {
         222, 243, 64, 156, 9, 153, 78, 253, 85, 119, 62, 117, 230, 140, 75, 69, 171, 21, 243, 19, 119, 29, 97, 174, 63,
         231, 153, 202, 20, 238, 120, 64,
     ];
-    let (_ctx, coin) = qrc20_coin_for_test(&priv_key, None);
+    let (_ctx, coin) = qrc20_coin_for_test(priv_key, None);
     // check if the coin's tx fee is expected
     check_tx_fee(&coin, ActualTxFee::FixedPerKb(EXPECTED_TX_FEE as u64));
 
@@ -762,7 +763,7 @@ fn test_sender_trade_preimage_with_allowance() {
         32, 192, 195, 65, 165, 53, 21, 68, 180, 241, 67, 147, 54, 54, 41, 117, 174, 253, 139, 155, 56, 101, 69, 39, 32,
         143, 221, 19, 47, 74, 175, 100,
     ];
-    let (_ctx, coin) = qrc20_coin_for_test(&priv_key, None);
+    let (_ctx, coin) = qrc20_coin_for_test(priv_key, None);
     // check if the coin's tx fee is expected
     check_tx_fee(&coin, ActualTxFee::FixedPerKb(EXPECTED_TX_FEE as u64));
 
@@ -837,13 +838,13 @@ fn test_get_sender_trade_fee_preimage_for_correct_ticker() {
     let ctx = MmCtxBuilder::new().into_mm_arc();
     let params = Qrc20ActivationParams::from_legacy_req(&req).unwrap();
 
-    let coin = block_on(qrc20_coin_from_conf_and_params(
+    let coin = block_on(qrc20_coin_with_priv_key(
         &ctx,
         "QRC20",
         "tQTUM",
         &conf,
         &params,
-        &priv_key,
+        Secp256k1Secret::from(priv_key),
         contract_address,
     ))
     .unwrap();
@@ -870,7 +871,7 @@ fn test_receiver_trade_preimage() {
         32, 192, 195, 65, 165, 53, 21, 68, 180, 241, 67, 147, 54, 54, 41, 117, 174, 253, 139, 155, 56, 101, 69, 39, 32,
         143, 221, 19, 47, 74, 175, 100,
     ];
-    let (_ctx, coin) = qrc20_coin_for_test(&priv_key, None);
+    let (_ctx, coin) = qrc20_coin_for_test(priv_key, None);
     // check if the coin's tx fee is expected
     check_tx_fee(&coin, ActualTxFee::FixedPerKb(EXPECTED_TX_FEE as u64));
 
@@ -897,7 +898,7 @@ fn test_taker_fee_tx_fee() {
         32, 192, 195, 65, 165, 53, 21, 68, 180, 241, 67, 147, 54, 54, 41, 117, 174, 253, 139, 155, 56, 101, 69, 39, 32,
         143, 221, 19, 47, 74, 175, 100,
     ];
-    let (_ctx, coin) = qrc20_coin_for_test(&priv_key, None);
+    let (_ctx, coin) = qrc20_coin_for_test(priv_key, None);
     // check if the coin's tx fee is expected
     check_tx_fee(&coin, ActualTxFee::FixedPerKb(EXPECTED_TX_FEE as u64));
     let expected_balance = CoinBalance {
@@ -945,13 +946,13 @@ fn test_coin_from_conf_without_decimals() {
     let ctx = MmCtxBuilder::new().into_mm_arc();
     let params = Qrc20ActivationParams::from_legacy_req(&req).unwrap();
 
-    let coin = block_on(qrc20_coin_from_conf_and_params(
+    let coin = block_on(qrc20_coin_with_priv_key(
         &ctx,
         "QRC20",
         "QTUM",
         &conf,
         &params,
-        &priv_key,
+        Secp256k1Secret::from(priv_key),
         contract_address,
     ))
     .unwrap();
@@ -1009,7 +1010,7 @@ fn test_validate_maker_payment_malicious() {
         24, 181, 194, 193, 18, 152, 142, 168, 71, 73, 70, 244, 9, 101, 92, 168, 243, 61, 132, 48, 25, 39, 103, 92, 29,
         17, 11, 29, 113, 235, 48, 70,
     ];
-    let (_ctx, coin) = qrc20_coin_for_test(&priv_key, None);
+    let (_ctx, coin) = qrc20_coin_for_test(priv_key, None);
 
     // Malicious tx 81540dc6abe59cf1e301a97a7e1c9b66d5f475da916faa3f0ef7ea896c0b3e5a
     let payment_tx = hex::decode("01000000010144e2b8b5e6da0666faf1db95075653ef49e2acaa8924e1ec595f6b89a6f715050000006a4730440220415adec5e24148db8e9654a6beda4b1af8aded596ab1cd8667af32187853e8f5022007a91d44ee13046194aafc07ca46ec44f770e75b41187acaa4e38e17d4eccb5d012103693bff1b39e8b5a306810023c29b95397eb395530b106b1820ea235fd81d9ce9ffffffff030000000000000000625403a08601012844095ea7b300000000000000000000000085a4df739bbb2d247746bea611d5d365204725830000000000000000000000000000000000000000000000000000000005f5e10014d362e096e873eb7907e205fadc6175c6fec7bc44c20000000000000000e35403a0860101284cc49b415b2a0a1a8b4af2762154115ced87e2424b3cb940c0181cc3c850523702f1ec298fef0000000000000000000000000000000000000000000000000000000005f5e100000000000000000000000000d362e096e873eb7907e205fadc6175c6fec7bc44000000000000000000000000783cf0be521101942da509846ea476e683aad8324b6b2e5444c2639cc0fb7bcea5afba3f3cdce239000000000000000000000000000000000000000000000000000000000000000000000000000000005fa0fffb1485a4df739bbb2d247746bea611d5d36520472583c208535c01000000001976a9149e032d4b0090a11dc40fe6c47601499a35d55fbb88acc700a15f").unwrap();
@@ -1047,7 +1048,7 @@ fn test_validate_maker_payment_malicious() {
 
 #[test]
 fn test_negotiate_swap_contract_addr_no_fallback() {
-    let (_, coin) = qrc20_coin_for_test(&[1; 32], None);
+    let (_, coin) = qrc20_coin_for_test([1; 32], None);
 
     let input = None;
     let error = coin.negotiate_swap_contract_addr(input).unwrap_err().into_inner();
@@ -1077,7 +1078,7 @@ fn test_negotiate_swap_contract_addr_has_fallback() {
     let fallback = "0x8500AFc0bc5214728082163326C2FF0C73f4a871";
     let fallback_addr = qtum::contract_addr_from_str(fallback).unwrap();
 
-    let (_, coin) = qrc20_coin_for_test(&[1; 32], Some(fallback));
+    let (_, coin) = qrc20_coin_for_test([1; 32], Some(fallback));
 
     let input = None;
     let result = coin.negotiate_swap_contract_addr(input).unwrap();
@@ -1112,7 +1113,7 @@ fn test_send_contract_calls_recoverable_tx() {
         3, 98, 177, 3, 108, 39, 234, 144, 131, 178, 103, 103, 127, 80, 230, 166, 53, 68, 147, 215, 42, 216, 144, 72,
         172, 110, 180, 13, 123, 179, 10, 49,
     ];
-    let (_ctx, coin) = qrc20_coin_for_test(&priv_key, None);
+    let (_ctx, coin) = qrc20_coin_for_test(priv_key, None);
 
     let tx = TransactionEnum::UtxoTx("010000000160fd74b5714172f285db2b36f0b391cd6883e7291441631c8b18f165b0a4635d020000006a47304402205d409e141111adbc4f185ae856997730de935ac30a0d2b1ccb5a6c4903db8171022024fc59bbcfdbba283556d7eeee4832167301dc8e8ad9739b7865f67b9676b226012103693bff1b39e8b5a306810023c29b95397eb395530b106b1820ea235fd81d9ce9ffffffff020000000000000000625403a08601012844a9059cbb000000000000000000000000ca1e04745e8ca0c60d8c5881531d51bec470743f00000000000000000000000000000000000000000000000000000000000f424014d362e096e873eb7907e205fadc6175c6fec7bc44c200ada205000000001976a9149e032d4b0090a11dc40fe6c47601499a35d55fbb88acfe967d5f".into());
 

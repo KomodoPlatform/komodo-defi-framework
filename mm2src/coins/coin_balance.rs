@@ -128,7 +128,7 @@ where
 {
     async fn coin_balance_report(&self) -> BalanceResult<CoinBalanceReport> {
         match self.derivation_method() {
-            DerivationMethod::Iguana(my_address) => self
+            DerivationMethod::SingleAddress(my_address) => self
                 .my_balance()
                 .compat()
                 .await
@@ -176,7 +176,7 @@ where
         XPubExtractor: HDXPubExtractor + Sync,
     {
         match self.derivation_method() {
-            DerivationMethod::Iguana(my_address) => self
+            DerivationMethod::SingleAddress(my_address) => self
                 .my_balance()
                 .compat()
                 .await

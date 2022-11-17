@@ -72,7 +72,7 @@ impl From<CoinFindError> for CreateAccountRpcError {
 impl From<UnexpectedDerivationMethod> for CreateAccountRpcError {
     fn from(e: UnexpectedDerivationMethod) -> Self {
         match e {
-            UnexpectedDerivationMethod::HDWalletUnavailable => CreateAccountRpcError::CoinIsActivatedNotWithHDWallet,
+            UnexpectedDerivationMethod::ExpectedHDWallet => CreateAccountRpcError::CoinIsActivatedNotWithHDWallet,
             unexpected_error => CreateAccountRpcError::Internal(unexpected_error.to_string()),
         }
     }
