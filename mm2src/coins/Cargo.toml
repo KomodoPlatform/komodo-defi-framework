@@ -25,6 +25,7 @@ bytes = "0.4"
 cfg-if = "1.0"
 chain = { path = "../mm2_bitcoin/chain" }
 common = { path = "../common" }
+cosmrs = { version = "0.7" }
 crossbeam = "0.7"
 crypto = { path = "../crypto" }
 db_common = { path = "../db_common" }
@@ -80,6 +81,8 @@ spv_validation = { path = "../mm2_bitcoin/spv_validation" }
 sha2 = "0.9"
 sha3 = "0.9"
 utxo_signer = { path = "utxo_signer" }
+# using the same version as cosmrs
+tendermint-rpc = { version = "=0.23.7", default-features = false }
 tiny-bip39 = "0.8.0"
 uuid = { version = "0.7", features = ["serde", "v4"] }
 # One of web3 dependencies is the old `tokio-uds 0.1.7` which fails cross-compiling to ARM.
@@ -95,21 +98,21 @@ spl-token = { version = "3" }
 spl-associated-token-account = "1"
 
 [target.'cfg(target_arch = "wasm32")'.dependencies]
-cosmrs = { version = "0.7" }
 js-sys = { version = "0.3.27" }
 mm2_db = { path = "../mm2_db" }
 mm2_test_helpers = { path = "../mm2_test_helpers" }
-# using the same version as cosmrs
-tendermint-rpc = { version = "=0.23.7", default-features = false }
 wasm-bindgen = { version = "0.2.50", features = ["nightly"] }
 wasm-bindgen-futures = { version = "0.4.1" }
 wasm-bindgen-test = { version = "0.3.2" }
 web-sys = { version = "0.3.55", features = ["console", "Headers", "Request", "RequestInit", "RequestMode", "Response", "Window"] }
 
 [target.'cfg(not(target_arch = "wasm32"))'.dependencies]
-cosmrs = { version = "0.7", features = ["rpc"] }
 dirs = { version = "1" }
 bitcoin = "0.28.1"
+hyper = { version = "0.14.11", features = ["client", "http2", "server", "tcp"] }
+# using webpki-tokio to avoid rejecting valid certificates
+# got "invalid certificate: UnknownIssuer" for https://ropsten.infura.io on iOS using default-features
+hyper-rustls = { version = "0.23", default-features = false, features = ["http1", "http2", "webpki-tokio"] }
 lightning = "0.0.110"
 lightning-background-processor = "0.0.110"
 lightning-invoice = { version = "0.18.0", features = ["serde"] }
@@ -118,6 +121,7 @@ lightning-rapid-gossip-sync = "0.0.110"
 rust-ini = { version = "0.13" }
 rustls = { version = "0.20", features = ["dangerous_configuration"] }
 secp256k1v22 = { version = "0.22", package = "secp256k1" }
+tendermint-config = { version = "0.23.7", default-features = false }
 tokio = { version = "1.7" }
 tokio-rustls = { version = "0.23" }
 tonic = { version = "0.7", features = ["tls", "tls-webpki-roots", "compression"] }

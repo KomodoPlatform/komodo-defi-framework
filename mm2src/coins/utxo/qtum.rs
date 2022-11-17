@@ -18,12 +18,12 @@ use crate::rpc_command::init_scan_for_new_addresses::{self, InitScanAddressesRpc
 use crate::rpc_command::init_withdraw::{InitWithdrawCoin, WithdrawTaskHandle};
 use crate::tx_history_storage::{GetTxHistoryFilters, WalletId};
 use crate::utxo::utxo_builder::{BlockHeaderUtxoArcOps, MergeUtxoArcOps, UtxoCoinBuildError, UtxoCoinBuilder,
-                                UtxoCoinBuilderCommonOps, UtxoFieldsWithHardwareWalletBuilder,
-                                UtxoFieldsWithIguanaPrivKeyBuilder};
+                                UtxoCoinBuilderCommonOps, UtxoFieldsWithGlobalHDBuilder,
+                                UtxoFieldsWithHardwareWalletBuilder, UtxoFieldsWithIguanaSecretBuilder};
 use crate::utxo::utxo_tx_history_v2::{UtxoMyAddressesHistoryError, UtxoTxDetailsError, UtxoTxDetailsParams,
                                       UtxoTxHistoryOps};
 use crate::{eth, CanRefundHtlc, CheckIfMyPaymentSentArgs, CoinBalance, CoinWithDerivationMethod, DelegationError,
-            DelegationFut, GetWithdrawSenderAddress, NegotiateSwapContractAddrErr, PaymentInstructions,
+            DelegationFut, GetWithdrawSenderAddress, IguanaPrivKey, NegotiateSwapContractAddrErr, PaymentInstructions,
             PaymentInstructionsErr, PrivKeyBuildPolicy, SearchForSwapTxSpendInput, SendMakerPaymentArgs,
             SendMakerRefundsPaymentArgs, SendMakerSpendsTakerPaymentArgs, SendTakerPaymentArgs,
             SendTakerRefundsPaymentArgs, SendTakerSpendsMakerPaymentArgs, SignatureResult, StakingInfosFut, SwapOps,
@@ -158,7 +158,7 @@ pub trait QtumBasedCoin: UtxoCommonOps + MarketCoinOps {
     }
 
     fn my_addr_as_contract_addr(&self) -> MmResult<H160, Qrc20AddressError> {
-        let my_address = self.as_ref().derivation_method.iguana_or_err()?.clone();
+        let my_address = self.as_ref().derivation_method.single_addr_or_err()?.clone();
         contract_addr_from_utxo_addr(my_address).mm_err(Qrc20AddressError::from)
     }
 
@@ -200,7 +200,7 @@ pub struct QtumCoinBuilder<'a> {
     ticker: &'a str,
     conf: &'a Json,
     activation_params: &'a UtxoActivationParams,
-    priv_key_policy: PrivKeyBuildPolicy<'a>,
+    priv_key_policy: PrivKeyBuildPolicy,
 }
 
 #[async_trait]
@@ -216,7 +216,9 @@ impl<'a> UtxoCoinBuilderCommonOps for QtumCoinBuilder<'a> {
     fn check_utxo_maturity(&self) -> bool { self.activation_params().check_utxo_maturity.unwrap_or(true) }
 }
 
-impl<'a> UtxoFieldsWithIguanaPrivKeyBuilder for QtumCoinBuilder<'a> {}
+impl<'a> UtxoFieldsWithIguanaSecretBuilder for QtumCoinBuilder<'a> {}
+
+impl<'a> UtxoFieldsWithGlobalHDBuilder for QtumCoinBuilder<'a> {}
 
 impl<'a> UtxoFieldsWithHardwareWalletBuilder for QtumCoinBuilder<'a> {}
 
@@ -225,7 +227,7 @@ impl<'a> UtxoCoinBuilder for QtumCoinBuilder<'a> {
     type ResultCoin = QtumCoin;
     type Error = UtxoCoinBuildError;
 
-    fn priv_key_policy(&self) -> PrivKeyBuildPolicy<'_> { self.priv_key_policy.clone() }
+    fn priv_key_policy(&self) -> PrivKeyBuildPolicy { self.priv_key_policy.clone() }
 
     async fn build(self) -> MmResult<Self::ResultCoin, Self::Error> {
         let utxo = self.build_utxo_fields().await?;
@@ -246,7 +248,7 @@ impl<'a> QtumCoinBuilder<'a> {
         ticker: &'a str,
         conf: &'a Json,
         activation_params: &'a UtxoActivationParams,
-        priv_key_policy: PrivKeyBuildPolicy<'a>,
+        priv_key_policy: PrivKeyBuildPolicy,
     ) -> Self {
         QtumCoinBuilder {
             ctx,
@@ -275,20 +277,30 @@ impl From<QtumCoin> for UtxoArc {
     fn from(coin: QtumCoin) -> Self { coin.utxo_arc }
 }
 
-pub async fn qtum_coin_with_priv_key(
+pub async fn qtum_coin_with_policy(
     ctx: &MmArc,
     ticker: &str,
     conf: &Json,
     activation_params: &UtxoActivationParams,
-    priv_key: &[u8],
+    priv_key_policy: PrivKeyBuildPolicy,
 ) -> Result<QtumCoin, String> {
-    let priv_key_policy = PrivKeyBuildPolicy::IguanaPrivKey(priv_key);
     let coin = try_s!(
         QtumCoinBuilder::new(ctx, ticker, conf, activation_params, priv_key_policy)
             .build()
             .await
     );
     Ok(coin)
+}
+
+pub async fn qtum_coin_with_priv_key(
+    ctx: &MmArc,
+    ticker: &str,
+    conf: &Json,
+    activation_params: &UtxoActivationParams,
+    priv_key: IguanaPrivKey,
+) -> Result<QtumCoin, String> {
+    let priv_key_policy = PrivKeyBuildPolicy::IguanaPrivKey(priv_key);
+    qtum_coin_with_policy(ctx, ticker, conf, activation_params, priv_key_policy).await
 }
 
 impl QtumBasedCoin for QtumCoin {}

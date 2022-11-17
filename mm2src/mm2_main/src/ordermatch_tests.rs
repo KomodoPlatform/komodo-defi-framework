@@ -6,9 +6,10 @@ use common::{block_on, executor::spawn};
 use crypto::privkey::key_pair_from_seed;
 use db_common::sqlite::rusqlite::Connection;
 use futures::{channel::mpsc, StreamExt};
-use mm2_core::mm_ctx::{MmArc, MmCtx, MmCtxBuilder};
+use mm2_core::mm_ctx::{MmArc, MmCtx};
 use mm2_libp2p::atomicdex_behaviour::AdexBehaviourCmd;
 use mm2_libp2p::{decode_message, PeerId};
+use mm2_test_helpers::for_tests::mm_ctx_with_iguana;
 use mocktopus::mocking::*;
 use rand::{seq::SliceRandom, thread_rng, Rng};
 use std::collections::HashSet;
@@ -1039,9 +1040,7 @@ fn prepare_for_cancel_by(ctx: &MmArc) -> mpsc::Receiver<AdexBehaviourCmd> {
 
 #[test]
 fn test_cancel_by_single_coin() {
-    let ctx = MmCtxBuilder::default()
-        .with_secp256k1_key_pair(key_pair_from_seed("123").unwrap())
-        .into_mm_arc();
+    let ctx = mm_ctx_with_iguana(None);
     let rx = prepare_for_cancel_by(&ctx);
 
     let connection = Connection::open_in_memory().unwrap();
@@ -1060,9 +1059,7 @@ fn test_cancel_by_single_coin() {
 
 #[test]
 fn test_cancel_by_pair() {
-    let ctx = MmCtxBuilder::default()
-        .with_secp256k1_key_pair(key_pair_from_seed("123").unwrap())
-        .into_mm_arc();
+    let ctx = mm_ctx_with_iguana(None);
     let rx = prepare_for_cancel_by(&ctx);
 
     let connection = Connection::open_in_memory().unwrap();
@@ -1085,9 +1082,7 @@ fn test_cancel_by_pair() {
 
 #[test]
 fn test_cancel_by_all() {
-    let ctx = MmCtxBuilder::default()
-        .with_secp256k1_key_pair(key_pair_from_seed("123").unwrap())
-        .into_mm_arc();
+    let ctx = mm_ctx_with_iguana(None);
     let rx = prepare_for_cancel_by(&ctx);
 
     let connection = Connection::open_in_memory().unwrap();
@@ -1203,13 +1198,13 @@ fn test_maker_order_was_updated() {
 
 #[test]
 fn lp_connect_start_bob_should_not_be_invoked_if_order_match_already_connected() {
+    let ctx = mm_ctx_with_iguana(Some(
+        "also shoot benefit prefer juice shell elder veteran woman mimic image kidney",
+    ));
+
     let order_json = r#"{"max_base_vol":"1","max_base_vol_rat":[[1,[1]],[1,[1]]],"min_base_vol":"0","min_base_vol_rat":[[0,[]],[1,[1]]],"price":"1","price_rat":[[1,[1]],[1,[1]]],"created_at":1589265312093,"updated_at":1589265312093,"base":"ETH","rel":"JST","matches":{"2f9afe84-7a89-4194-8947-45fba563118f":{"request":{"base":"ETH","rel":"JST","base_amount":"0.1","base_amount_rat":[[1,[1]],[1,[10]]],"rel_amount":"0.2","rel_amount_rat":[[1,[1]],[1,[5]]],"action":"Buy","uuid":"2f9afe84-7a89-4194-8947-45fba563118f","method":"request","sender_pubkey":"031d4256c4bc9f99ac88bf3dba21773132281f65f9bf23a59928bce08961e2f3","dest_pub_key":"0000000000000000000000000000000000000000000000000000000000000000","match_by":{"type":"Any"}},"reserved":{"base":"ETH","rel":"JST","base_amount":"0.1","base_amount_rat":[[1,[1]],[1,[10]]],"rel_amount":"0.1","rel_amount_rat":[[1,[1]],[1,[10]]],"taker_order_uuid":"2f9afe84-7a89-4194-8947-45fba563118f","maker_order_uuid":"5f6516ea-ccaa-453a-9e37-e1c2c0d527e3","method":"reserved","sender_pubkey":"c6a78589e18b482aea046975e6d0acbdea7bf7dbf04d9d5bd67fda917815e3ed","dest_pub_key":"031d4256c4bc9f99ac88bf3dba21773132281f65f9bf23a59928bce08961e2f3"},"connect":{"taker_order_uuid":"2f9afe84-7a89-4194-8947-45fba563118f","maker_order_uuid":"5f6516ea-ccaa-453a-9e37-e1c2c0d527e3","method":"connect","sender_pubkey":"031d4256c4bc9f99ac88bf3dba21773132281f65f9bf23a59928bce08961e2f3","dest_pub_key":"c6a78589e18b482aea046975e6d0acbdea7bf7dbf04d9d5bd67fda917815e3ed"},"connected":{"taker_order_uuid":"2f9afe84-7a89-4194-8947-45fba563118f","maker_order_uuid":"5f6516ea-ccaa-453a-9e37-e1c2c0d527e3","method":"connected","sender_pubkey":"c6a78589e18b482aea046975e6d0acbdea7bf7dbf04d9d5bd67fda917815e3ed","dest_pub_key":"031d4256c4bc9f99ac88bf3dba21773132281f65f9bf23a59928bce08961e2f3"},"last_updated":1589265314408}},"started_swaps":["2f9afe84-7a89-4194-8947-45fba563118f"],"uuid":"5f6516ea-ccaa-453a-9e37-e1c2c0d527e3"}"#;
     let maker_order: MakerOrder = json::from_str(order_json).unwrap();
-    let ctx = MmCtxBuilder::default()
-        .with_secp256k1_key_pair(
-            key_pair_from_seed("also shoot benefit prefer juice shell elder veteran woman mimic image kidney").unwrap(),
-        )
-        .into_mm_arc();
+
     let ordermatch_ctx = OrdermatchContext::from_ctx(&ctx).unwrap();
     ordermatch_ctx
         .maker_orders_ctx
@@ -1230,14 +1225,13 @@ fn lp_connect_start_bob_should_not_be_invoked_if_order_match_already_connected()
 
 #[test]
 fn should_process_request_only_once() {
+    let ctx = mm_ctx_with_iguana(Some(
+        "also shoot benefit prefer juice shell elder veteran woman mimic image kidney",
+    ));
+
     let order_json = r#"{"max_base_vol":"1","max_base_vol_rat":[[1,[1]],[1,[1]]],"min_base_vol":"0","min_base_vol_rat":[[0,[]],[1,[1]]],"price":"1","price_rat":[[1,[1]],[1,[1]]],"created_at":1589265312093,"updated_at":1589265312093,"base":"ETH","rel":"JST","matches":{"2f9afe84-7a89-4194-8947-45fba563118f":{"request":{"base":"ETH","rel":"JST","base_amount":"0.1","base_amount_rat":[[1,[1]],[1,[10]]],"rel_amount":"0.2","rel_amount_rat":[[1,[1]],[1,[5]]],"action":"Buy","uuid":"2f9afe84-7a89-4194-8947-45fba563118f","method":"request","sender_pubkey":"031d4256c4bc9f99ac88bf3dba21773132281f65f9bf23a59928bce08961e2f3","dest_pub_key":"0000000000000000000000000000000000000000000000000000000000000000","match_by":{"type":"Any"}},"reserved":{"base":"ETH","rel":"JST","base_amount":"0.1","base_amount_rat":[[1,[1]],[1,[10]]],"rel_amount":"0.1","rel_amount_rat":[[1,[1]],[1,[10]]],"taker_order_uuid":"2f9afe84-7a89-4194-8947-45fba563118f","maker_order_uuid":"5f6516ea-ccaa-453a-9e37-e1c2c0d527e3","method":"reserved","sender_pubkey":"c6a78589e18b482aea046975e6d0acbdea7bf7dbf04d9d5bd67fda917815e3ed","dest_pub_key":"031d4256c4bc9f99ac88bf3dba21773132281f65f9bf23a59928bce08961e2f3"},"connect":{"taker_order_uuid":"2f9afe84-7a89-4194-8947-45fba563118f","maker_order_uuid":"5f6516ea-ccaa-453a-9e37-e1c2c0d527e3","method":"connect","sender_pubkey":"031d4256c4bc9f99ac88bf3dba21773132281f65f9bf23a59928bce08961e2f3","dest_pub_key":"c6a78589e18b482aea046975e6d0acbdea7bf7dbf04d9d5bd67fda917815e3ed"},"connected":{"taker_order_uuid":"2f9afe84-7a89-4194-8947-45fba563118f","maker_order_uuid":"5f6516ea-ccaa-453a-9e37-e1c2c0d527e3","method":"connected","sender_pubkey":"c6a78589e18b482aea046975e6d0acbdea7bf7dbf04d9d5bd67fda917815e3ed","dest_pub_key":"031d4256c4bc9f99ac88bf3dba21773132281f65f9bf23a59928bce08961e2f3"},"last_updated":1589265314408}},"started_swaps":["2f9afe84-7a89-4194-8947-45fba563118f"],"uuid":"5f6516ea-ccaa-453a-9e37-e1c2c0d527e3"}"#;
     let maker_order: MakerOrder = json::from_str(order_json).unwrap();
     let uuid = maker_order.uuid;
-    let ctx = MmCtxBuilder::default()
-        .with_secp256k1_key_pair(
-            key_pair_from_seed("also shoot benefit prefer juice shell elder veteran woman mimic image kidney").unwrap(),
-        )
-        .into_mm_arc();
     let ordermatch_ctx = OrdermatchContext::from_ctx(&ctx).unwrap();
     ordermatch_ctx
         .maker_orders_ctx
@@ -1620,11 +1614,10 @@ fn test_choose_taker_confs_settings_sell_action() {
 fn make_ctx_for_tests() -> (MmArc, String, [u8; 32]) {
     let ctx = MmArc::new(MmCtx::default());
     ctx.init_metrics().unwrap();
-    ctx.secp256k1_key_pair
-        .pin(key_pair_from_seed("passphrase").unwrap())
-        .unwrap();
-    let secret = *(&*ctx.secp256k1_key_pair().private().secret);
-    let pubkey = hex::encode(&**ctx.secp256k1_key_pair().public());
+    let crypto_ctx = CryptoCtx::init_with_iguana_passphrase(ctx.clone(), "passphrase").unwrap();
+
+    let secret = crypto_ctx.mm2_internal_privkey_secret().take();
+    let pubkey = crypto_ctx.mm2_internal_pubkey_hex();
     (ctx, pubkey, secret)
 }
 
@@ -3173,9 +3166,7 @@ fn check_order_serde() {
 
 #[test]
 fn test_maker_order_balance_loops() {
-    let ctx = MmCtxBuilder::default()
-        .with_secp256k1_key_pair(key_pair_from_seed("123").unwrap())
-        .into_mm_arc();
+    let ctx = mm_ctx_with_iguana(None);
 
     let ordermatch_ctx = OrdermatchContext::from_ctx(&ctx).unwrap();
     let mut maker_orders_ctx = ordermatch_ctx.maker_orders_ctx.lock();

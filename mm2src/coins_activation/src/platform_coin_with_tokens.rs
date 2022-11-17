@@ -2,8 +2,9 @@ use crate::prelude::*;
 use async_trait::async_trait;
 use coins::my_tx_history_v2::TxHistoryStorage;
 use coins::tx_history_storage::{CreateTxHistoryStorageError, TxHistoryStorageBuilder};
-use coins::{lp_coinfind, CoinProtocol, CoinsContext, MmCoinEnum};
+use coins::{lp_coinfind, CoinProtocol, CoinsContext, MmCoinEnum, PrivKeyBuildPolicy, PrivKeyPolicyNotAllowed};
 use common::{log, HttpStatusCode, StatusCode};
+use crypto::{CryptoCtx, CryptoCtxError};
 use derive_more::Display;
 use mm2_core::mm_ctx::MmArc;
 use mm2_err_handle::prelude::*;
@@ -144,7 +145,7 @@ pub trait PlatformWithTokensActivationOps: Into<MmCoinEnum> {
         coin_conf: Json,
         activation_request: Self::ActivationRequest,
         protocol_conf: Self::PlatformProtocolInfo,
-        priv_key: &[u8],
+        priv_key_policy: PrivKeyBuildPolicy,
     ) -> Result<Self, MmError<Self::ActivationError>>;
 
     fn token_initializers(
@@ -202,7 +203,7 @@ pub enum EnablePlatformCoinWithTokensError {
         error: String,
     },
     #[display(fmt = "Private key is not allowed: {}", _0)]
-    PrivKeyNotAllowed(String),
+    PrivKeyPolicyNotAllowed(PrivKeyPolicyNotAllowed),
     #[display(fmt = "Unexpected derivation method: {}", _0)]
     UnexpectedDerivationMethod(String),
     Transport(String),
@@ -256,13 +257,17 @@ impl From<CreateTxHistoryStorageError> for EnablePlatformCoinWithTokensError {
     }
 }
 
+impl From<CryptoCtxError> for EnablePlatformCoinWithTokensError {
+    fn from(e: CryptoCtxError) -> Self { EnablePlatformCoinWithTokensError::Internal(e.to_string()) }
+}
+
 impl HttpStatusCode for EnablePlatformCoinWithTokensError {
     fn status_code(&self) -> StatusCode {
         match self {
             EnablePlatformCoinWithTokensError::CoinProtocolParseError { .. }
             | EnablePlatformCoinWithTokensError::TokenProtocolParseError { .. }
             | EnablePlatformCoinWithTokensError::PlatformCoinCreationError { .. }
-            | EnablePlatformCoinWithTokensError::PrivKeyNotAllowed(_)
+            | EnablePlatformCoinWithTokensError::PrivKeyPolicyNotAllowed(_)
             | EnablePlatformCoinWithTokensError::UnexpectedDerivationMethod(_)
             | EnablePlatformCoinWithTokensError::Transport(_)
             | EnablePlatformCoinWithTokensError::Internal(_) => StatusCode::INTERNAL_SERVER_ERROR,
@@ -294,7 +299,8 @@ where
 
     let (platform_conf, platform_protocol) = coin_conf_with_protocol(&ctx, &req.ticker)?;
 
-    let priv_key = &*ctx.secp256k1_key_pair().private().secret;
+    let crypto_ctx = CryptoCtx::from_ctx(&ctx)?;
+    let priv_key_policy = PrivKeyBuildPolicy::detect_priv_key_policy(&crypto_ctx);
 
     let platform_coin = Platform::enable_platform_coin(
         ctx.clone(),
@@ -302,7 +308,7 @@ where
         platform_conf,
         req.request.clone(),
         platform_protocol,
-        priv_key,
+        priv_key_policy,
     )
     .await?;
     let mut mm_tokens = Vec::new();

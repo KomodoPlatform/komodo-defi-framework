@@ -1,5 +1,6 @@
 use super::*;
 use common::executor::AbortedError;
+use crypto::StandardHDPathToCoin;
 
 #[derive(Display, Serialize, SerializeErrorType)]
 #[serde(tag = "error_type", content = "error_data")]
@@ -16,6 +17,11 @@ pub enum EthActivationV2Error {
     UnreachableNodes(String),
     #[display(fmt = "Enable request for ETH coin must have at least 1 node")]
     AtLeastOneNodeRequired,
+    #[display(fmt = "'derivation_path' field is not found in config")]
+    DerivationPathIsNotSet,
+    #[display(fmt = "Error deserializing 'derivation_path': {}", _0)]
+    ErrorDeserializingDerivationPath(String),
+    PrivKeyPolicyNotAllowed(PrivKeyPolicyNotAllowed),
     InternalError(String),
 }
 
@@ -141,8 +147,8 @@ pub async fn eth_coin_from_conf_and_request_v2(
     ticker: &str,
     conf: &Json,
     req: EthActivationV2Request,
-    priv_key: &[u8],
-) -> Result<EthCoin, MmError<EthActivationV2Error>> {
+    priv_key_policy: PrivKeyBuildPolicy,
+) -> MmResult<EthCoin, EthActivationV2Error> {
     if req.nodes.is_empty() {
         return Err(EthActivationV2Error::AtLeastOneNodeRequired.into());
     }
@@ -182,8 +188,7 @@ pub async fn eth_coin_from_conf_and_request_v2(
         }
     }
 
-    let key_pair: KeyPair =
-        KeyPair::from_secret_slice(priv_key).map_err(|e| EthActivationV2Error::InternalError(e.to_string()))?;
+    let key_pair = key_pair_from_priv_key_policy(conf, priv_key_policy)?;
     let my_address = checksum_address(&format!("{:02x}", key_pair.address()));
 
     let mut web3_instances = vec![];
@@ -271,4 +276,30 @@ pub async fn eth_coin_from_conf_and_request_v2(
     };
 
     Ok(EthCoin(Arc::new(coin)))
+}
+
+/// Processes the given `priv_key_policy` and generates corresponding `KeyPair`.
+/// This function expects either [`PrivKeyBuildPolicy::IguanaPrivKey`]
+/// or [`PrivKeyBuildPolicy::GlobalHDAccount`], otherwise returns `PrivKeyPolicyNotAllowed` error.
+pub(crate) fn key_pair_from_priv_key_policy(
+    conf: &Json,
+    priv_key_policy: PrivKeyBuildPolicy,
+) -> MmResult<KeyPair, EthActivationV2Error> {
+    let priv_key = match priv_key_policy {
+        PrivKeyBuildPolicy::IguanaPrivKey(iguana) => iguana,
+        PrivKeyBuildPolicy::GlobalHDAccount(global_hd_ctx) => {
+            // Consider storing `derivation_path` at `EthCoinImpl`.
+            let derivation_path: Option<StandardHDPathToCoin> = json::from_value(conf["derivation_path"].clone())
+                .map_to_mm(|e| EthActivationV2Error::ErrorDeserializingDerivationPath(e.to_string()))?;
+            let derivation_path = derivation_path.or_mm_err(|| EthActivationV2Error::DerivationPathIsNotSet)?;
+            global_hd_ctx
+                .derive_secp256k1_secret(&derivation_path)
+                .mm_err(|e| EthActivationV2Error::InternalError(e.to_string()))?
+        },
+        PrivKeyBuildPolicy::Trezor => {
+            let priv_key_err = PrivKeyPolicyNotAllowed::HardwareWalletNotSupported;
+            return MmError::err(EthActivationV2Error::PrivKeyPolicyNotAllowed(priv_key_err));
+        },
+    };
+    KeyPair::from_secret_slice(priv_key.as_slice()).map_to_mm(|e| EthActivationV2Error::InternalError(e.to_string()))
 }

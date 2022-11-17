@@ -2,7 +2,7 @@ use crate::my_tx_history_v2::MyTxHistoryErrorV2;
 use crate::utxo::rpc_clients::UtxoRpcError;
 use crate::utxo::utxo_builder::UtxoCoinBuildError;
 use crate::WithdrawError;
-use crate::{NumConversError, PrivKeyNotAllowed};
+use crate::{NumConversError, PrivKeyPolicyNotAllowed};
 use common::jsonrpc_client::JsonRpcError;
 use db_common::sqlite::rusqlite::Error as SqliteError;
 use db_common::sqlite::rusqlite::Error as SqlError;
@@ -162,11 +162,11 @@ pub enum SendOutputsErr {
     NumConversion(NumConversError),
     Rpc(UtxoRpcError),
     TxNotMined(String),
-    PrivKeyNotAllowed(PrivKeyNotAllowed),
+    PrivKeyPolicyNotAllowed(PrivKeyPolicyNotAllowed),
 }
 
-impl From<PrivKeyNotAllowed> for SendOutputsErr {
-    fn from(err: PrivKeyNotAllowed) -> Self { SendOutputsErr::PrivKeyNotAllowed(err) }
+impl From<PrivKeyPolicyNotAllowed> for SendOutputsErr {
+    fn from(err: PrivKeyPolicyNotAllowed) -> Self { SendOutputsErr::PrivKeyPolicyNotAllowed(err) }
 }
 
 impl From<GenTxError> for SendOutputsErr {
@@ -206,6 +206,7 @@ pub enum ZCoinBuildError {
     Io(std::io::Error),
     RpcClientInitErr(ZcoinClientInitError),
     ZCashParamsNotFound,
+    ZDerivationPathNotSet,
 }
 
 impl From<SqliteError> for ZCoinBuildError {

@@ -11,7 +11,8 @@ use coins::{CheckIfMyPaymentSentArgs, FeeApproxStage, FoundSwapTxSpend, MarketCo
             SendMakerSpendsTakerPaymentArgs, SendTakerPaymentArgs, SendTakerRefundsPaymentArgs,
             SendTakerSpendsMakerPaymentArgs, SwapOps, TradePreimageValue, TransactionEnum, ValidatePaymentInput};
 use common::log::debug;
-use common::{log, temp_dir, DEX_FEE_ADDR_RAW_PUBKEY};
+use common::{temp_dir, DEX_FEE_ADDR_RAW_PUBKEY};
+use crypto::Secp256k1Secret;
 use ethereum_types::H160;
 use futures01::Future;
 use http::StatusCode;
@@ -53,9 +54,9 @@ impl QtumDockerOps {
         let req = json!({
             "method": "enable",
         });
-        let priv_key = hex::decode("809465b17d0a4ddb3e4c69e8f23c2cabad868f51f8bed5c765ad1d6516c3306f").unwrap();
+        let priv_key = Secp256k1Secret::from("809465b17d0a4ddb3e4c69e8f23c2cabad868f51f8bed5c765ad1d6516c3306f");
         let params = UtxoActivationParams::from_legacy_req(&req).unwrap();
-        let coin = block_on(qtum_coin_with_priv_key(&ctx, "QTUM", &conf, &params, &priv_key)).unwrap();
+        let coin = block_on(qtum_coin_with_priv_key(&ctx, "QTUM", &conf, &params, priv_key)).unwrap();
         QtumDockerOps { ctx, coin }
     }
 
@@ -791,26 +792,26 @@ fn test_wait_for_tx_spend() {
 
 #[test]
 fn test_check_balance_on_order_post_base_coin_locked() {
-    let bob_priv_key = SecretKey::new(&mut rand6::thread_rng());
-    let alice_priv_key = SecretKey::new(&mut rand6::thread_rng());
+    let bob_priv_key = random_secp256k1_secret();
+    let alice_priv_key = random_secp256k1_secret();
     let timeout = 30; // timeout if test takes more than 80 seconds to run
 
     // fill the Bob address by 0.05 Qtum
-    let (_ctx, coin) = qrc20_coin_from_privkey("QICK", bob_priv_key.as_ref());
+    let (_ctx, coin) = qrc20_coin_from_privkey("QICK", bob_priv_key);
     let my_address = coin.my_address().expect("!my_address");
     fill_address(&coin, &my_address, BigDecimal::try_from(0.05).unwrap(), timeout);
     // fill the Bob address by 10 MYCOIN
-    let (_ctx, coin) = utxo_coin_from_privkey("MYCOIN", bob_priv_key.as_ref());
+    let (_ctx, coin) = utxo_coin_from_privkey("MYCOIN", bob_priv_key);
     let my_address = coin.my_address().expect("!my_address");
     fill_address(&coin, &my_address, 10.into(), timeout);
 
     // fill the Alice address by 10 Qtum and 10 QICK
-    let (_ctx, coin) = qrc20_coin_from_privkey("QICK", alice_priv_key.as_ref());
+    let (_ctx, coin) = qrc20_coin_from_privkey("QICK", alice_priv_key);
     let my_address = coin.my_address().expect("!my_address");
     fill_address(&coin, &my_address, 10.into(), timeout);
     fill_qrc20_address(&coin, 10.into(), timeout);
     // fill the Alice address by 10 MYCOIN
-    let (_ctx, coin) = utxo_coin_from_privkey("MYCOIN", alice_priv_key.as_ref());
+    let (_ctx, coin) = utxo_coin_from_privkey("MYCOIN", alice_priv_key);
     let my_address = coin.my_address().expect("!my_address");
     fill_address(&coin, &my_address, 10.into(), timeout);
 
@@ -829,7 +830,7 @@ fn test_check_balance_on_order_post_base_coin_locked() {
             "myipaddr": env::var ("BOB_TRADE_IP") .ok(),
             "rpcip": env::var ("BOB_TRADE_IP") .ok(),
             "canbind": env::var ("BOB_TRADE_PORT") .ok().map(|s| s.parse::<i64>().unwrap()),
-            "passphrase": format!("0x{}", hex::encode(bob_priv_key.as_ref())),
+            "passphrase": format!("0x{}", hex::encode(bob_priv_key)),
             "coins": coins,
             "i_am_seed": true,
             "rpc_password": "pass",
@@ -852,7 +853,7 @@ fn test_check_balance_on_order_post_base_coin_locked() {
             "myipaddr": env::var ("BOB_TRADE_IP") .ok(),
             "rpcip": env::var ("BOB_TRADE_IP") .ok(),
             "canbind": env::var ("BOB_TRADE_PORT") .ok().map(|s| s.parse::<i64>().unwrap()),
-            "passphrase": format!("0x{}", hex::encode(alice_priv_key.as_ref())),
+            "passphrase": format!("0x{}", hex::encode(alice_priv_key)),
             "coins": coins,
             "seednodes": [mm_bob.ip.to_string()],
             "rpc_password": "pass",

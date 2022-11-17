@@ -42,11 +42,11 @@ where
     <Coin as HDWalletCoinOps>::Address: DisplayAddress,
 {
     match (coin.derivation_method(), target) {
-        (DerivationMethod::Iguana(_), MyTxHistoryTarget::Iguana) => {
+        (DerivationMethod::SingleAddress(_), MyTxHistoryTarget::Iguana) => {
             let my_address = coin.my_address()?;
             Ok(GetTxHistoryFilters::for_address(my_address))
         },
-        (DerivationMethod::Iguana(_), target) => {
+        (DerivationMethod::SingleAddress(_), target) => {
             MmError::err(MyTxHistoryErrorV2::with_expected_target(target, "Iguana"))
         },
         (DerivationMethod::HDWallet(hd_wallet), MyTxHistoryTarget::AccountId { account_id }) => {
@@ -129,7 +129,7 @@ where
     const ADDRESSES_CAPACITY: usize = 60;
 
     match coin.as_ref().derivation_method {
-        DerivationMethod::Iguana(ref my_address) => Ok(iter::once(my_address.clone()).collect()),
+        DerivationMethod::SingleAddress(ref my_address) => Ok(iter::once(my_address.clone()).collect()),
         DerivationMethod::HDWallet(ref hd_wallet) => {
             let hd_accounts = hd_wallet.get_accounts().await;
 

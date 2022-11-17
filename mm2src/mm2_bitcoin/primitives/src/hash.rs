@@ -19,6 +19,10 @@ macro_rules! impl_hash {
             fn as_ref(&self) -> &$name { self }
         }
 
+        impl AsRef<[u8]> for $name {
+            fn as_ref(&self) -> &[u8] { &self.0 }
+        }
+
         impl Clone for $name {
             fn clone(&self) -> Self {
                 let mut result = Self::default();

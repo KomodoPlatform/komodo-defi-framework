@@ -52,7 +52,7 @@ impl From<BalanceError> for GetNewAddressRpcError {
 impl From<UnexpectedDerivationMethod> for GetNewAddressRpcError {
     fn from(e: UnexpectedDerivationMethod) -> Self {
         match e {
-            UnexpectedDerivationMethod::HDWalletUnavailable => GetNewAddressRpcError::CoinIsActivatedNotWithHDWallet,
+            UnexpectedDerivationMethod::ExpectedHDWallet => GetNewAddressRpcError::CoinIsActivatedNotWithHDWallet,
             unexpected_error => GetNewAddressRpcError::Internal(unexpected_error.to_string()),
         }
     }

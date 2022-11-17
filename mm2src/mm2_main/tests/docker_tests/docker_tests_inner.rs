@@ -1,6 +1,6 @@
 use crate::integration_tests_common::*;
 use crate::{fill_address, fill_eth, generate_utxo_coin_with_privkey, generate_utxo_coin_with_random_privkey,
-            rmd160_from_priv, utxo_coin_from_privkey};
+            random_secp256k1_secret, rmd160_from_priv, utxo_coin_from_privkey};
 use bitcrypto::dhash160;
 use chain::OutPoint;
 use coins::utxo::rpc_clients::UnspentInfo;
@@ -13,7 +13,6 @@ use futures01::Future;
 use mm2_number::{BigDecimal, MmNumber};
 use mm2_test_helpers::for_tests::{check_my_swap_status_amounts, mm_dump, MarketMakerIt, Mm2TestConf};
 use mm2_test_helpers::structs::*;
-use secp256k1::SecretKey;
 use serde_json::Value as Json;
 use std::collections::HashMap;
 use std::env;
@@ -831,10 +830,11 @@ fn test_order_should_be_updated_when_matched_partially() {
 #[test]
 fn test_watcher_spends_taker_spends_maker_payment() {
     let (_ctx, _, bob_priv_key) = generate_utxo_coin_with_random_privkey("MYCOIN", 100.into());
-    generate_utxo_coin_with_privkey("MYCOIN1", 100.into(), &bob_priv_key);
+    generate_utxo_coin_with_privkey("MYCOIN1", 100.into(), bob_priv_key);
     let (_ctx, _, alice_priv_key) = generate_utxo_coin_with_random_privkey("MYCOIN1", 100.into());
-    generate_utxo_coin_with_privkey("MYCOIN", 100.into(), &alice_priv_key);
-    let watcher_priv_key = *SecretKey::new(&mut rand6::thread_rng()).as_ref();
+    generate_utxo_coin_with_privkey("MYCOIN", 100.into(), alice_priv_key);
+
+    let watcher_priv_key = random_secp256k1_secret();
 
     let coins = json!([
         {"coin":"MYCOIN","asset":"MYCOIN","txversion":4,"overwintered":1,"txfee":1000,"protocol":{"type":"UTXO"}},
@@ -1485,13 +1485,13 @@ fn test_buy_max() {
 
 #[test]
 fn test_maker_trade_preimage() {
-    let priv_key = SecretKey::new(&mut rand6::thread_rng());
+    let priv_key = random_secp256k1_secret();
 
-    let (_ctx, mycoin) = utxo_coin_from_privkey("MYCOIN", &priv_key[..]);
+    let (_ctx, mycoin) = utxo_coin_from_privkey("MYCOIN", priv_key);
     let my_address = mycoin.my_address().expect("!my_address");
     fill_address(&mycoin, &my_address, 10.into(), 30);
 
-    let (_ctx, mycoin1) = utxo_coin_from_privkey("MYCOIN1", &priv_key[..]);
+    let (_ctx, mycoin1) = utxo_coin_from_privkey("MYCOIN1", priv_key);
     let my_address = mycoin1.my_address().expect("!my_address");
     fill_address(&mycoin1, &my_address, 20.into(), 30);
 
@@ -1504,7 +1504,7 @@ fn test_maker_trade_preimage() {
             "gui": "nogui",
             "netid": 9000,
             "dht": "on",  // Enable DHT without delay.
-            "passphrase": format!("0x{}", hex::encode(&priv_key[..])),
+            "passphrase": format!("0x{}", hex::encode(priv_key)),
             "coins": coins,
             "rpc_password": "pass",
             "i_am_seed": true,
@@ -1625,13 +1625,13 @@ fn test_maker_trade_preimage() {
 
 #[test]
 fn test_taker_trade_preimage() {
-    let priv_key = SecretKey::new(&mut rand6::thread_rng());
+    let priv_key = random_secp256k1_secret();
 
-    let (_ctx, mycoin) = utxo_coin_from_privkey("MYCOIN", priv_key.as_ref());
+    let (_ctx, mycoin) = utxo_coin_from_privkey("MYCOIN", priv_key);
     let my_address = mycoin.my_address().expect("!my_address");
     fill_address(&mycoin, &my_address, 10.into(), 30);
 
-    let (_ctx, mycoin1) = utxo_coin_from_privkey("MYCOIN1", priv_key.as_ref());
+    let (_ctx, mycoin1) = utxo_coin_from_privkey("MYCOIN1", priv_key);
     let my_address = mycoin1.my_address().expect("!my_address");
     fill_address(&mycoin1, &my_address, 20.into(), 30);
 
@@ -1644,7 +1644,7 @@ fn test_taker_trade_preimage() {
             "gui": "nogui",
             "netid": 9000,
             "dht": "on",  // Enable DHT without delay.
-            "passphrase": format!("0x{}", hex::encode(priv_key.as_ref())),
+            "passphrase": format!("0x{}", hex::encode(priv_key)),
             "coins": coins,
             "rpc_password": "pass",
             "i_am_seed": true,
@@ -1772,9 +1772,9 @@ fn test_trade_preimage_not_sufficient_balance() {
         assert_eq!(actual.error_data, Some(expected));
     }
 
-    let priv_key = SecretKey::new(&mut rand6::thread_rng());
+    let priv_key = random_secp256k1_secret();
     let fill_balance_functor = |amount: BigDecimal| {
-        let (_ctx, mycoin) = utxo_coin_from_privkey("MYCOIN", priv_key.as_ref());
+        let (_ctx, mycoin) = utxo_coin_from_privkey("MYCOIN", priv_key);
         let my_address = mycoin.my_address().expect("!my_address");
         fill_address(&mycoin, &my_address, amount, 30);
     };
@@ -1788,7 +1788,7 @@ fn test_trade_preimage_not_sufficient_balance() {
             "gui": "nogui",
             "netid": 9000,
             "dht": "on",  // Enable DHT without delay.
-            "passphrase": format!("0x{}", hex::encode(priv_key.as_ref())),
+            "passphrase": format!("0x{}", hex::encode(priv_key)),
             "coins": coins,
             "rpc_password": "pass",
             "i_am_seed": true,
@@ -1890,13 +1890,13 @@ fn test_trade_preimage_not_sufficient_balance() {
 /// https://github.com/KomodoPlatform/atomicDEX-API/issues/902
 #[test]
 fn test_trade_preimage_additional_validation() {
-    let priv_key = SecretKey::new(&mut rand6::thread_rng());
+    let priv_key = random_secp256k1_secret();
 
-    let (_ctx, mycoin1) = utxo_coin_from_privkey("MYCOIN1", priv_key.as_ref());
+    let (_ctx, mycoin1) = utxo_coin_from_privkey("MYCOIN1", priv_key);
     let my_address = mycoin1.my_address().expect("!my_address");
     fill_address(&mycoin1, &my_address, 20.into(), 30);
 
-    let (_ctx, mycoin) = utxo_coin_from_privkey("MYCOIN", priv_key.as_ref());
+    let (_ctx, mycoin) = utxo_coin_from_privkey("MYCOIN", priv_key);
     let my_address = mycoin.my_address().expect("!my_address");
     fill_address(&mycoin, &my_address, 10.into(), 30);
 
@@ -1909,7 +1909,7 @@ fn test_trade_preimage_additional_validation() {
             "gui": "nogui",
             "netid": 9000,
             "dht": "on",  // Enable DHT without delay.
-            "passphrase": format!("0x{}", hex::encode(priv_key.as_ref())),
+            "passphrase": format!("0x{}", hex::encode(priv_key)),
             "coins": coins,
             "rpc_password": "pass",
             "i_am_seed": true,
@@ -2035,11 +2035,11 @@ fn test_trade_preimage_additional_validation() {
 
 #[test]
 fn test_trade_preimage_legacy() {
-    let priv_key = SecretKey::new(&mut rand6::thread_rng());
-    let (_ctx, mycoin) = utxo_coin_from_privkey("MYCOIN", priv_key.as_ref());
+    let priv_key = random_secp256k1_secret();
+    let (_ctx, mycoin) = utxo_coin_from_privkey("MYCOIN", priv_key);
     let my_address = mycoin.my_address().expect("!my_address");
     fill_address(&mycoin, &my_address, 10.into(), 30);
-    let (_ctx, mycoin1) = utxo_coin_from_privkey("MYCOIN1", priv_key.as_ref());
+    let (_ctx, mycoin1) = utxo_coin_from_privkey("MYCOIN1", priv_key);
     let my_address = mycoin1.my_address().expect("!my_address");
     fill_address(&mycoin1, &my_address, 20.into(), 30);
 
@@ -2052,7 +2052,7 @@ fn test_trade_preimage_legacy() {
             "gui": "nogui",
             "netid": 9000,
             "dht": "on",  // Enable DHT without delay.
-            "passphrase": format!("0x{}", hex::encode(priv_key.as_ref())),
+            "passphrase": format!("0x{}", hex::encode(priv_key)),
             "coins": coins,
             "rpc_password": "pass",
             "i_am_seed": true,
@@ -3096,7 +3096,7 @@ fn test_utxo_merge() {
 
     thread::sleep(Duration::from_secs(2));
     let (unspents, _) =
-        block_on(coin.get_unspent_ordered_list(&coin.as_ref().derivation_method.unwrap_iguana())).unwrap();
+        block_on(coin.get_unspent_ordered_list(&coin.as_ref().derivation_method.unwrap_single_addr())).unwrap();
     assert_eq!(unspents.len(), 1);
 }
 
@@ -3153,14 +3153,14 @@ fn test_utxo_merge_max_merge_at_once() {
 
     thread::sleep(Duration::from_secs(2));
     let (unspents, _) =
-        block_on(coin.get_unspent_ordered_list(&coin.as_ref().derivation_method.unwrap_iguana())).unwrap();
+        block_on(coin.get_unspent_ordered_list(&coin.as_ref().derivation_method.unwrap_single_addr())).unwrap();
     // 4 utxos are merged of 5 so the resulting unspents len must be 2
     assert_eq!(unspents.len(), 2);
 }
 
 #[test]
 fn test_withdraw_not_sufficient_balance() {
-    let privkey = SecretKey::new(&mut rand6::thread_rng());
+    let privkey = random_secp256k1_secret();
     let coins = json!([
         {"coin":"MYCOIN","asset":"MYCOIN","txversion":4,"overwintered":1,"txfee":1000,"protocol":{"type":"UTXO"}},
         {"coin":"MYCOIN1","asset":"MYCOIN1","txversion":4,"overwintered":1,"txfee":1000,"protocol":{"type":"UTXO"}},
@@ -3170,7 +3170,7 @@ fn test_withdraw_not_sufficient_balance() {
             "gui": "nogui",
             "netid": 9000,
             "dht": "on",  // Enable DHT without delay.
-            "passphrase": format!("0x{}", hex::encode(privkey.as_ref())),
+            "passphrase": format!("0x{}", hex::encode(privkey)),
             "coins": coins,
             "rpc_password": "pass",
             "i_am_seed": true,
@@ -3211,7 +3211,7 @@ fn test_withdraw_not_sufficient_balance() {
 
     // fill the MYCOIN balance
     let balance = BigDecimal::from(1) / BigDecimal::from(2);
-    let (_ctx, coin) = utxo_coin_from_privkey("MYCOIN", privkey.as_ref());
+    let (_ctx, coin) = utxo_coin_from_privkey("MYCOIN", privkey);
     fill_address(&coin, &coin.my_address().unwrap(), balance.clone(), 30);
 
     // txfee = 0.00001, amount = 0.5 => required = 0.50001
