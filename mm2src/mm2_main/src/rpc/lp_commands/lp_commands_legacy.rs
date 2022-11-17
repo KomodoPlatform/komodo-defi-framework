@@ -58,72 +58,72 @@ pub async fn disable_coin(ctx: MmArc, req: Json) -> Result<Response<Vec<u8>>, St
         .chain(std::iter::once(coin.platform_ticker().to_string()))
         .collect::<Vec<_>>();
 
+    // NOTE. We'll skip this step if we are not disabling a platform coin!.
+    // If coins_to_disable list is > 1 then it's a platform and it tokens we want to disable hence, we check if
+    // there's an active or matching swaps before we try disabling the token.
+    if coins_to_disable.len() > 1usize {
+        for ticker in &coins_to_disable {
+            let swaps = try_s!(active_swaps_using_coin(&ctx, ticker));
+            let still_matching = get_matching_orders(&ctx, ticker).await;
+
+            if !still_matching.is_empty() || !swaps.is_empty() {
+                let err = json!({
+                    "error": format!("There're currently matching orders or active swaps using {}", ticker),
+                    "orders": {
+                        "active_swaps": swaps,
+                        "still_matching": still_matching
+                    }
+                });
+                return Response::builder()
+                    .status(INTERNAL_SERVER_ERROR_CODE)
+                    .body(json::to_vec(&err).unwrap())
+                    .map_err(|e| ERRL!("{}", e));
+            }
+        }
+    }
+
     let mut cancelled_orders = vec![];
     let mut disabled_tokens = vec![];
-
     for ticker in &coins_to_disable {
         log!("disabling {ticker} coin");
-        let swaps = try_s!(active_swaps_using_coin(&ctx, ticker));
-        let still_matching = get_matching_orders(&ctx, ticker).await;
-        // NOTE. We'll skip this step if we are not disabling a platform coin!.
-        // If coins_to_disable list is > 1 then it's a platform and it tokens we want to disable hence, we check if
-        // there's an active or matching swaps before we try disabling the token.
-        if coins_to_disable.len() > 1usize && !still_matching.is_empty() || !swaps.is_empty() {
-            let not_disabled = coins_to_disable
-                .iter()
-                .filter(|c| !disabled_tokens.contains(c))
-                .collect::<Vec<_>>();
-            let err = json!({
-                "error": format!("There're currently matching orders or active swaps using {}", ticker),
-                "orders": {
-                    "active_swaps": swaps,
-                    "still_matching": still_matching,
-                    "disabled_tokens": disabled_tokens,
-                    "still_enabled_tokens": not_disabled
-                }
-            });
-            return Response::builder()
-                .status(INTERNAL_SERVER_ERROR_CODE)
-                .body(json::to_vec(&err).unwrap())
-                .map_err(|e| ERRL!("{}", e));
+        // We'll only process this stage if the coin we're disabling is not a platform coin
+        if coins_to_disable.len() == 1 {
+            let swaps = try_s!(active_swaps_using_coin(&ctx, ticker));
+            if !swaps.is_empty() {
+                let err = json!({
+                    "error": format!("There're active swaps using {}", ticker),
+                    "swaps": swaps,
+                });
+                return Response::builder()
+                    .status(INTERNAL_SERVER_ERROR_CODE)
+                    .body(json::to_vec(&err).unwrap())
+                    .map_err(|e| ERRL!("{}", e));
+            }
+
+            let (cancelled, still_matching) = try_s!(
+                cancel_orders_by(&ctx, CancelBy::Coin {
+                    ticker: ticker.to_string()
+                })
+                .await
+            );
+
+            if !still_matching.is_empty() {
+                let err = json!({
+                    "error": format!("There're currently matching orders using {}", ticker),
+                    "orders": {
+                        "matching": still_matching,
+                        "cancelled": &cancelled,
+                    }
+                });
+                return Response::builder()
+                    .status(INTERNAL_SERVER_ERROR_CODE)
+                    .body(json::to_vec(&err).unwrap())
+                    .map_err(|e| ERRL!("{}", e));
+            }
+            // Combine all orders to a single vector
+            cancelled_orders.extend(cancelled);
         }
 
-        if !swaps.is_empty() {
-            let err = json!({
-                "error": format!("There're active swaps using {}", ticker),
-                "swaps": swaps,
-            });
-            return Response::builder()
-                .status(INTERNAL_SERVER_ERROR_CODE)
-                .body(json::to_vec(&err).unwrap())
-                .map_err(|e| ERRL!("{}", e));
-        }
-
-        let (cancelled, still_matching) = try_s!(
-            cancel_orders_by(&ctx, CancelBy::Coin {
-                ticker: ticker.to_string()
-            })
-            .await
-        );
-
-        if !still_matching.is_empty() {
-            let err = json!({
-                "error": format!("There're currently matching orders using {}", ticker),
-                "orders": {
-                    "matching": still_matching,
-                    "cancelled": &cancelled,
-                }
-            });
-            return Response::builder()
-                .status(INTERNAL_SERVER_ERROR_CODE)
-                .body(json::to_vec(&err).unwrap())
-                .map_err(|e| ERRL!("{}", e));
-        }
-        // Combine all orders to a single vector
-        cancelled_orders.extend(cancelled);
-
-        // If check for matching order / active swaps doesn't return an error then proceed with disabling the requested
-        // coin/tokens
         if let Err(err) = coins_ctx.remove_coin(&ctx, ticker).await {
             let err = json!({
                 "error": err,
