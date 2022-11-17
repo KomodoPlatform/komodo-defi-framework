@@ -1,18 +1,14 @@
-use arrayref::array_ref;
 #[cfg(feature = "track-ctx-pointer")]
 use common::executor::Timer;
 use common::executor::{abortable_queue::{AbortableQueue, WeakSpawner},
                        graceful_shutdown, AbortSettings, AbortableSystem, SpawnAbortable, SpawnFuture};
 use common::log::{self, LogLevel, LogOnError, LogState};
-use common::{bits256, cfg_native, cfg_wasm32, small_rng};
+use common::{cfg_native, cfg_wasm32, small_rng};
 use gstuff::{try_s, Constructible, ERR, ERRL};
-use keys::KeyPair;
 use lazy_static::lazy_static;
 use mm2_metrics::{MetricsArc, MetricsOps};
 use primitives::hash::H160;
 use rand::Rng;
-use serde::{Deserialize, Serialize};
-use serde_bytes::ByteBuf;
 use serde_json::{self as json, Value as Json};
 use shared_ref_counter::{SharedRc, WeakRc};
 use std::any::Any;
@@ -94,9 +90,6 @@ pub struct MmCtx {
     pub crypto_ctx: Mutex<Option<Arc<dyn Any + 'static + Send + Sync>>>,
     /// RIPEMD160(SHA256(x)) where x is secp256k1 pubkey derived from passphrase.
     pub rmd160: Constructible<H160>,
-    /// secp256k1 key pair derived from passphrase.
-    /// cf. `key_pair_from_seed`.
-    pub secp256k1_key_pair: Constructible<KeyPair>,
     /// Coins that should be enabled to kick start the interrupted swaps and orders.
     pub coins_needed_for_kick_start: Mutex<HashSet<String>>,
     /// The context belonging to the `lp_swap` mod: `SwapsContext`.
@@ -143,7 +136,6 @@ impl MmCtx {
             coins_activation_ctx: Mutex::new(None),
             crypto_ctx: Mutex::new(None),
             rmd160: Constructible::default(),
-            secp256k1_key_pair: Constructible::default(),
             coins_needed_for_kick_start: Mutex::new(HashSet::new()),
             swaps_ctx: Mutex::new(None),
             stats_ctx: Mutex::new(None),
@@ -230,33 +222,6 @@ impl MmCtx {
 
     /// True if the MarketMaker instance needs to stop.
     pub fn is_stopping(&self) -> bool { self.stop.copy_or(false) }
-
-    /// Get a reference to the secp256k1 key pair.
-    /// Panics if the key pair is not available.
-    pub fn secp256k1_key_pair(&self) -> &KeyPair {
-        match self.secp256k1_key_pair.as_option() {
-            Some(pair) => pair,
-            None => panic!("secp256k1_key_pair not available"),
-        }
-    }
-
-    /// Get a reference to the secp256k1 key pair as option.
-    /// Can be used in no-login functions to check if the passphrase is set
-    pub fn secp256k1_key_pair_as_option(&self) -> Option<&KeyPair> { self.secp256k1_key_pair.as_option() }
-
-    /// This is our public ID, allowing us to be different from other peers.
-    /// This should also be our public key which we'd use for message verification.
-    pub fn public_id(&self) -> Result<bits256, String> {
-        self.secp256k1_key_pair
-            .ok_or(ERRL!("Public ID is not yet available"))
-            .map(|keypair| {
-                let public = keypair.public(); // Compressed public key is going to be 33 bytes.
-                                               // First byte is a prefix, https://davidederosa.com/basic-blockchain-programming/elliptic-curve-keys/.
-                bits256 {
-                    bytes: *array_ref!(public, 1, 32),
-                }
-            })
-    }
 
     pub fn gui(&self) -> Option<&str> { self.conf["gui"].as_str() }
 
@@ -356,22 +321,6 @@ lazy_static! {
     /// A map from a unique context ID to the corresponding MM context, facilitating context access across the FFI boundaries.
     /// NB: The entries are not removed in order to keep the FFI handlers unique.
     pub static ref MM_CTX_FFI: Mutex<HashMap<u32, MmWeak>> = Mutex::new (HashMap::default());
-}
-
-/// Portable core sharing its context with the native helpers.
-///
-/// In the integration tests we're using this to create new native contexts.
-#[derive(Serialize, Deserialize)]
-struct PortableCtx {
-    // Sending the `conf` as a string in order for bencode not to mess with JSON, and for wire readability.
-    conf: String,
-    secp256k1_key_pair: ByteBuf,
-    ffi_handle: Option<u32>,
-}
-
-#[derive(Serialize, Deserialize, Debug)]
-struct NativeCtx {
-    ffi_handle: u32,
 }
 
 impl MmArc {
@@ -579,7 +528,6 @@ where
 pub struct MmCtxBuilder {
     conf: Option<Json>,
     log_level: LogLevel,
-    key_pair: Option<KeyPair>,
     version: String,
     #[cfg(target_arch = "wasm32")]
     db_namespace: DbNamespaceId,
@@ -595,11 +543,6 @@ impl MmCtxBuilder {
 
     pub fn with_log_level(mut self, level: LogLevel) -> Self {
         self.log_level = level;
-        self
-    }
-
-    pub fn with_secp256k1_key_pair(mut self, key_pair: KeyPair) -> Self {
-        self.key_pair = Some(key_pair);
         self
     }
 
@@ -627,11 +570,6 @@ impl MmCtxBuilder {
         ctx.mm_version = self.version;
         if let Some(conf) = self.conf {
             ctx.conf = conf
-        }
-
-        if let Some(key_pair) = self.key_pair {
-            ctx.rmd160.pin(key_pair.public().address_hash()).unwrap();
-            ctx.secp256k1_key_pair.pin(key_pair).unwrap();
         }
 
         #[cfg(target_arch = "wasm32")]

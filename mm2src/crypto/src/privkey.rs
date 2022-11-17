@@ -21,9 +21,8 @@
 
 use bitcrypto::{sha256, ChecksumType};
 use derive_more::Display;
-use keys::{Error as KeysError, KeyPair, Private};
+use keys::{Error as KeysError, KeyPair, Private, Secret as Secp256k1Secret};
 use mm2_err_handle::prelude::*;
-use primitives::hash::H256;
 use rustc_hex::FromHexError;
 use serde::{Deserialize, Deserializer, Serialize, Serializer};
 
@@ -36,7 +35,7 @@ pub enum PrivKeyError {
     #[display(fmt = "Error parsing passphrase: {}", _0)]
     ErrorParsingPassphrase(String),
     #[display(fmt = "Invalid private key: {}", _0)]
-    InvalidPrivKey(KeysError),
+    InvalidPrivKey(String),
     #[display(fmt = "We only support compressed keys at the moment")]
     ExpectedCompressedKeys,
 }
@@ -46,7 +45,7 @@ impl From<FromHexError> for PrivKeyError {
 }
 
 impl From<KeysError> for PrivKeyError {
-    fn from(e: KeysError) -> Self { PrivKeyError::InvalidPrivKey(e) }
+    fn from(e: KeysError) -> Self { PrivKeyError::InvalidPrivKey(e.to_string()) }
 }
 
 fn private_from_seed(seed: &str) -> PrivKeyResult<Private> {
@@ -61,7 +60,7 @@ fn private_from_seed(seed: &str) -> PrivKeyResult<Private> {
 
     match seed.strip_prefix("0x") {
         Some(stripped) => {
-            let hash: H256 = stripped.parse()?;
+            let hash: Secp256k1Secret = stripped.parse()?;
             Ok(Private {
                 prefix: 0,
                 secret: hash,
@@ -83,7 +82,7 @@ fn private_from_seed(seed: &str) -> PrivKeyResult<Private> {
 }
 
 /// Mutates the arbitrary hash to become a valid secp256k1 private key
-pub fn secp_privkey_from_hash(mut hash: H256) -> H256 {
+pub fn secp_privkey_from_hash(mut hash: Secp256k1Secret) -> Secp256k1Secret {
     hash[0] &= 248;
     hash[31] &= 127;
     hash[31] |= 64;
@@ -103,7 +102,7 @@ pub fn key_pair_from_seed(seed: &str) -> PrivKeyResult<KeyPair> {
 
 pub fn key_pair_from_secret(secret: &[u8]) -> PrivKeyResult<KeyPair> {
     if secret.len() != 32 {
-        return MmError::err(PrivKeyError::InvalidPrivKey(KeysError::InvalidPrivate));
+        return MmError::err(PrivKeyError::InvalidPrivKey(KeysError::InvalidPrivate.to_string()));
     }
 
     let private = Private {
@@ -113,6 +112,12 @@ pub fn key_pair_from_secret(secret: &[u8]) -> PrivKeyResult<KeyPair> {
         checksum_type: Default::default(),
     };
     Ok(KeyPair::from_private(private)?)
+}
+
+pub fn bip39_seed_from_passphrase(passphrase: &str) -> PrivKeyResult<bip39::Seed> {
+    let mnemonic = bip39::Mnemonic::from_phrase(passphrase, bip39::Language::English)
+        .map_to_mm(|e| PrivKeyError::ErrorParsingPassphrase(e.to_string()))?;
+    Ok(bip39::Seed::new(&mnemonic, ""))
 }
 
 #[derive(Clone, Copy, Debug)]

@@ -38,7 +38,8 @@ use base58::FromBase58Error;
 use common::executor::{abortable_queue::{AbortableQueue, WeakSpawner},
                        AbortSettings, SpawnAbortable, SpawnFuture};
 use common::{calc_total_pages, now_ms, ten, HttpStatusCode};
-use crypto::{Bip32Error, CryptoCtx, DerivationPath, HwRpcError, WithHwRpcError};
+use crypto::{Bip32Error, CryptoCtx, DerivationPath, GlobalHDAccountArc, HwRpcError, KeyPairPolicy, Secp256k1Secret,
+             WithHwRpcError};
 use derive_more::Display;
 use enum_from::EnumFromTrait;
 use futures::compat::Future01CompatExt;
@@ -53,7 +54,7 @@ use mm2_metrics::MetricsWeak;
 use mm2_number::{bigdecimal::{BigDecimal, ParseBigDecimalError, Zero},
                  MmNumber};
 use rpc::v1::types::{Bytes as BytesJson, H256 as H256Json};
-use serde::{Deserialize, Deserializer, Serialize};
+use serde::{Deserialize, Deserializer, Serialize, Serializer};
 use serde_json::{self as json, Value as Json};
 use std::cmp::Ordering;
 use std::collections::hash_map::{HashMap, RawEntryMut};
@@ -207,7 +208,7 @@ pub mod hd_wallet_storage;
 pub mod my_tx_history_v2;
 
 pub mod qrc20;
-use qrc20::{qrc20_coin_from_conf_and_params, Qrc20ActivationParams, Qrc20Coin, Qrc20FeeDetails};
+use qrc20::{qrc20_coin_with_policy, Qrc20ActivationParams, Qrc20Coin, Qrc20FeeDetails};
 
 pub mod rpc_command;
 use rpc_command::{init_account_balance::{AccountBalanceTaskManager, AccountBalanceTaskManagerShared},
@@ -233,23 +234,24 @@ pub mod solana;
 #[cfg(all(not(target_os = "ios"), not(target_os = "android"), not(target_arch = "wasm32")))]
 pub use solana::spl::SplToken;
 #[cfg(all(not(target_os = "ios"), not(target_os = "android"), not(target_arch = "wasm32")))]
-pub use solana::{solana_coin_from_conf_and_params, SolanaActivationParams, SolanaCoin, SolanaFeeDetails};
+pub use solana::{SolanaActivationParams, SolanaCoin, SolanaFeeDetails};
 
 pub mod utxo;
-use utxo::bch::{bch_coin_from_conf_and_params, BchActivationRequest, BchCoin};
-use utxo::qtum::{self, qtum_coin_with_priv_key, Qrc20AddressError, QtumCoin, QtumDelegationOps, QtumDelegationRequest,
+use utxo::bch::{bch_coin_with_policy, BchActivationRequest, BchCoin};
+use utxo::qtum::{self, qtum_coin_with_policy, Qrc20AddressError, QtumCoin, QtumDelegationOps, QtumDelegationRequest,
                  QtumStakingInfosDetails, ScriptHashTypeNotSupported};
 use utxo::rpc_clients::UtxoRpcError;
 use utxo::slp::SlpToken;
 use utxo::slp::{slp_addr_from_pubkey_str, SlpFeeDetails};
 use utxo::utxo_common::big_decimal_from_sat_unsigned;
-use utxo::utxo_standard::{utxo_standard_coin_with_priv_key, UtxoStandardCoin};
+use utxo::utxo_standard::{utxo_standard_coin_with_policy, UtxoStandardCoin};
 use utxo::UtxoActivationParams;
 use utxo::{BlockchainNetwork, GenerateTxError, UtxoFeeDetails, UtxoTx};
 
 #[cfg(not(target_arch = "wasm32"))] pub mod z_coin;
 #[cfg(not(target_arch = "wasm32"))] use z_coin::ZCoin;
 
+pub type TransactionFut = Box<dyn Future<Item = TransactionEnum, Error = TransactionErr> + Send>;
 pub type BalanceResult<T> = Result<T, MmError<BalanceError>>;
 pub type BalanceFut<T> = Box<dyn Future<Item = T, Error = MmError<BalanceError>> + Send>;
 pub type NonZeroBalanceFut<T> = Box<dyn Future<Item = T, Error = MmError<GetNonZeroBalance>> + Send>;
@@ -274,6 +276,8 @@ pub type SendMakerSpendsTakerPaymentArgs<'a> = SendSpendPaymentArgs<'a>;
 pub type SendTakerSpendsMakerPaymentArgs<'a> = SendSpendPaymentArgs<'a>;
 pub type SendTakerRefundsPaymentArgs<'a> = SendRefundPaymentArgs<'a>;
 pub type SendMakerRefundsPaymentArgs<'a> = SendRefundPaymentArgs<'a>;
+
+pub type IguanaPrivKey = Secp256k1Secret;
 
 #[derive(Debug, Deserialize, Display, Serialize, SerializeErrorType)]
 #[serde(tag = "error_type", content = "error_data")]
@@ -341,18 +345,27 @@ pub enum TxHistoryError {
     InternalError(String),
 }
 
-#[derive(Debug, Display)]
-pub enum PrivKeyNotAllowed {
+#[derive(Clone, Debug, Display)]
+pub enum PrivKeyPolicyNotAllowed {
     #[display(fmt = "Hardware Wallet is not supported")]
     HardwareWalletNotSupported,
 }
 
+impl Serialize for PrivKeyPolicyNotAllowed {
+    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
+    where
+        S: Serializer,
+    {
+        serializer.serialize_str(&self.to_string())
+    }
+}
+
 #[derive(Clone, Debug, Display, PartialEq, Serialize)]
 pub enum UnexpectedDerivationMethod {
-    #[display(fmt = "Iguana private key is unavailable")]
-    IguanaPrivKeyUnavailable,
-    #[display(fmt = "HD wallet is unavailable")]
-    HDWalletUnavailable,
+    #[display(fmt = "Expected 'SingleAddress' derivation method")]
+    ExpectedSingleAddress,
+    #[display(fmt = "Expected 'HDWallet' derivationMethod")]
+    ExpectedHDWallet,
 }
 
 pub trait Transaction: fmt::Debug + 'static {
@@ -443,8 +456,6 @@ impl TransactionErr {
     }
 }
 
-pub type TransactionFut = Box<dyn Future<Item = TransactionEnum, Error = TransactionErr> + Send>;
-
 #[derive(Debug, PartialEq)]
 pub enum FoundSwapTxSpend {
     Spent(TransactionEnum),
@@ -482,16 +493,6 @@ pub struct WatcherValidatePaymentInput {
     pub amount: BigDecimal,
     pub try_spv_proof_until: u64,
     pub confirmations: u64,
-}
-
-pub struct WatcherSearchForSwapTxSpendInput<'a> {
-    pub time_lock: u32,
-    pub taker_pub: &'a [u8],
-    pub maker_pub: &'a [u8],
-    pub secret_hash: &'a [u8],
-    pub tx: &'a [u8],
-    pub search_from_block: u64,
-    pub swap_contract_address: &'a Option<BytesJson>,
 }
 
 #[derive(Clone, Debug)]
@@ -1480,8 +1481,8 @@ impl From<UtxoSignWithKeyPairError> for DelegationError {
     }
 }
 
-impl From<PrivKeyNotAllowed> for DelegationError {
-    fn from(e: PrivKeyNotAllowed) -> Self { DelegationError::DelegationOpsNotSupported { reason: e.to_string() } }
+impl From<PrivKeyPolicyNotAllowed> for DelegationError {
+    fn from(e: PrivKeyPolicyNotAllowed) -> Self { DelegationError::DelegationOpsNotSupported { reason: e.to_string() } }
 }
 
 impl From<UnexpectedDerivationMethod> for DelegationError {
@@ -1663,8 +1664,8 @@ impl From<UnexpectedDerivationMethod> for WithdrawError {
     fn from(e: UnexpectedDerivationMethod) -> Self { WithdrawError::InternalError(e.to_string()) }
 }
 
-impl From<PrivKeyNotAllowed> for WithdrawError {
-    fn from(e: PrivKeyNotAllowed) -> Self { WithdrawError::InternalError(e.to_string()) }
+impl From<PrivKeyPolicyNotAllowed> for WithdrawError {
+    fn from(e: PrivKeyPolicyNotAllowed) -> Self { WithdrawError::InternalError(e.to_string()) }
 }
 
 impl WithdrawError {
@@ -1743,8 +1744,8 @@ impl From<ethkey::Error> for SignatureError {
     fn from(e: ethkey::Error) -> Self { SignatureError::InternalError(e.to_string()) }
 }
 
-impl From<PrivKeyNotAllowed> for SignatureError {
-    fn from(e: PrivKeyNotAllowed) -> Self { SignatureError::InternalError(e.to_string()) }
+impl From<PrivKeyPolicyNotAllowed> for SignatureError {
+    fn from(e: PrivKeyPolicyNotAllowed) -> Self { SignatureError::InternalError(e.to_string()) }
 }
 
 impl From<CoinFindError> for SignatureError {
@@ -2191,14 +2192,14 @@ impl CoinsContext {
 /// This enum is used in coin activation requests.
 #[derive(Copy, Clone, Debug, Deserialize, Serialize)]
 pub enum PrivKeyActivationPolicy {
-    IguanaPrivKey,
+    ContextPrivKey,
     Trezor,
 }
 
 impl PrivKeyActivationPolicy {
     /// The function can be used as a default deserialization constructor:
-    /// `#[serde(default = "PrivKeyActivationPolicy::iguana_priv_key")]`
-    pub fn iguana_priv_key() -> PrivKeyActivationPolicy { PrivKeyActivationPolicy::IguanaPrivKey }
+    /// `#[serde(default = "PrivKeyActivationPolicy::context_priv_key")]`
+    pub fn context_priv_key() -> PrivKeyActivationPolicy { PrivKeyActivationPolicy::ContextPrivKey }
 
     /// The function can be used as a default deserialization constructor:
     /// `#[serde(default = "PrivKeyActivationPolicy::trezor")]`
@@ -2219,59 +2220,66 @@ impl<T> PrivKeyPolicy<T> {
         }
     }
 
-    pub fn key_pair_or_err(&self) -> Result<&T, MmError<PrivKeyNotAllowed>> {
+    pub fn key_pair_or_err(&self) -> Result<&T, MmError<PrivKeyPolicyNotAllowed>> {
         self.key_pair()
-            .or_mm_err(|| PrivKeyNotAllowed::HardwareWalletNotSupported)
+            .or_mm_err(|| PrivKeyPolicyNotAllowed::HardwareWalletNotSupported)
     }
 }
 
 #[derive(Clone)]
-pub enum PrivKeyBuildPolicy<'a> {
-    IguanaPrivKey(&'a [u8]),
+pub enum PrivKeyBuildPolicy {
+    IguanaPrivKey(IguanaPrivKey),
+    GlobalHDAccount(GlobalHDAccountArc),
     Trezor,
 }
 
-impl<'a> PrivKeyBuildPolicy<'a> {
-    pub fn iguana_priv_key(crypto_ctx: &'a CryptoCtx) -> Self {
-        PrivKeyBuildPolicy::IguanaPrivKey(crypto_ctx.iguana_ctx().secp256k1_privkey_bytes())
+impl PrivKeyBuildPolicy {
+    /// Detects the `PrivKeyBuildPolicy` with which the given `CryptoCtx` is initialized.
+    /// Later it will be used to detect `MetaMask` or `Trezor` policy.
+    pub fn detect_priv_key_policy(crypto_ctx: &CryptoCtx) -> PrivKeyBuildPolicy {
+        match crypto_ctx.key_pair_policy() {
+            // Use the internal private key as the coin secret.
+            KeyPairPolicy::Iguana => PrivKeyBuildPolicy::IguanaPrivKey(crypto_ctx.mm2_internal_privkey_secret()),
+            KeyPairPolicy::GlobalHDAccount(global_hd) => PrivKeyBuildPolicy::GlobalHDAccount(global_hd.clone()),
+        }
     }
 }
 
 #[derive(Debug)]
 pub enum DerivationMethod<Address, HDWallet> {
-    Iguana(Address),
+    SingleAddress(Address),
     HDWallet(HDWallet),
 }
 
 impl<Address, HDWallet> DerivationMethod<Address, HDWallet> {
-    pub fn iguana(&self) -> Option<&Address> {
+    pub fn single_addr(&self) -> Option<&Address> {
         match self {
-            DerivationMethod::Iguana(my_address) => Some(my_address),
+            DerivationMethod::SingleAddress(my_address) => Some(my_address),
             DerivationMethod::HDWallet(_) => None,
         }
     }
 
-    pub fn iguana_or_err(&self) -> MmResult<&Address, UnexpectedDerivationMethod> {
-        self.iguana()
-            .or_mm_err(|| UnexpectedDerivationMethod::IguanaPrivKeyUnavailable)
+    pub fn single_addr_or_err(&self) -> MmResult<&Address, UnexpectedDerivationMethod> {
+        self.single_addr()
+            .or_mm_err(|| UnexpectedDerivationMethod::ExpectedSingleAddress)
     }
 
     pub fn hd_wallet(&self) -> Option<&HDWallet> {
         match self {
-            DerivationMethod::Iguana(_) => None,
+            DerivationMethod::SingleAddress(_) => None,
             DerivationMethod::HDWallet(hd_wallet) => Some(hd_wallet),
         }
     }
 
     pub fn hd_wallet_or_err(&self) -> MmResult<&HDWallet, UnexpectedDerivationMethod> {
         self.hd_wallet()
-            .or_mm_err(|| UnexpectedDerivationMethod::HDWalletUnavailable)
+            .or_mm_err(|| UnexpectedDerivationMethod::ExpectedHDWallet)
     }
 
     /// # Panic
     ///
     /// Panic if the address mode is [`DerivationMethod::HDWallet`].
-    pub fn unwrap_iguana(&self) -> &Address { self.iguana_or_err().unwrap() }
+    pub fn unwrap_single_addr(&self) -> &Address { self.single_addr_or_err().unwrap() }
 }
 
 #[async_trait]
@@ -2509,10 +2517,10 @@ pub async fn lp_coininit(ctx: &MmArc, ticker: &str, req: &Json) -> Result<MmCoin
             "assuming that coin is not supported"
         ));
     }
-    let secret = try_s!(CryptoCtx::from_ctx(ctx))
-        .iguana_ctx()
-        .secp256k1_privkey_bytes()
-        .to_vec();
+
+    let crypto_ctx = try_s!(CryptoCtx::from_ctx(ctx));
+    // The legacy electrum/enable RPCs don't support Hardware Wallet policy.
+    let priv_key_policy = PrivKeyBuildPolicy::detect_priv_key_policy(&crypto_ctx);
 
     if coins_en["protocol"].is_null() {
         return ERR!(
@@ -2524,14 +2532,14 @@ pub async fn lp_coininit(ctx: &MmArc, ticker: &str, req: &Json) -> Result<MmCoin
     let coin: MmCoinEnum = match &protocol {
         CoinProtocol::UTXO => {
             let params = try_s!(UtxoActivationParams::from_legacy_req(req));
-            try_s!(utxo_standard_coin_with_priv_key(ctx, ticker, &coins_en, &params, &secret).await).into()
+            try_s!(utxo_standard_coin_with_policy(ctx, ticker, &coins_en, &params, priv_key_policy).await).into()
         },
         CoinProtocol::QTUM => {
             let params = try_s!(UtxoActivationParams::from_legacy_req(req));
-            try_s!(qtum_coin_with_priv_key(ctx, ticker, &coins_en, &params, &secret).await).into()
+            try_s!(qtum_coin_with_policy(ctx, ticker, &coins_en, &params, priv_key_policy).await).into()
         },
         CoinProtocol::ETH | CoinProtocol::ERC20 { .. } => {
-            try_s!(eth_coin_from_conf_and_request(ctx, ticker, &coins_en, req, &secret, protocol).await).into()
+            try_s!(eth_coin_from_conf_and_request(ctx, ticker, &coins_en, req, protocol, priv_key_policy).await).into()
         },
         CoinProtocol::QRC20 {
             platform,
@@ -2541,8 +2549,16 @@ pub async fn lp_coininit(ctx: &MmArc, ticker: &str, req: &Json) -> Result<MmCoin
             let contract_address = try_s!(qtum::contract_addr_from_str(contract_address));
 
             try_s!(
-                qrc20_coin_from_conf_and_params(ctx, ticker, platform, &coins_en, &params, &secret, contract_address)
-                    .await
+                qrc20_coin_with_policy(
+                    ctx,
+                    ticker,
+                    platform,
+                    &coins_en,
+                    &params,
+                    priv_key_policy,
+                    contract_address
+                )
+                .await
             )
             .into()
         },
@@ -2550,7 +2566,7 @@ pub async fn lp_coininit(ctx: &MmArc, ticker: &str, req: &Json) -> Result<MmCoin
             let prefix = try_s!(CashAddrPrefix::from_str(slp_prefix));
             let params = try_s!(BchActivationRequest::from_legacy_req(req));
 
-            let bch = try_s!(bch_coin_from_conf_and_params(ctx, ticker, &coins_en, params, prefix, &secret).await);
+            let bch = try_s!(bch_coin_with_policy(ctx, ticker, &coins_en, params, prefix, priv_key_policy).await);
             bch.into()
         },
         CoinProtocol::SLPTOKEN {

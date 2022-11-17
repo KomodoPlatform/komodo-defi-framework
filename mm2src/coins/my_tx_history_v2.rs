@@ -6,7 +6,7 @@ use crate::{lp_coinfind_or_err, BlockHeightAndTime, CoinFindError, HDAccountAddr
 use async_trait::async_trait;
 use bitcrypto::sha256;
 use common::{calc_total_pages, ten, HttpStatusCode, PagingOptionsEnum, StatusCode};
-use crypto::Bip44DerivationPath;
+use crypto::StandardHDPath;
 use derive_more::Display;
 use futures::compat::Future01CompatExt;
 use keys::{Address, CashAddress};
@@ -247,7 +247,7 @@ pub enum MyTxHistoryTarget {
     Iguana,
     AccountId { account_id: u32 },
     AddressId(HDAccountAddressId),
-    AddressDerivationPath(Bip44DerivationPath),
+    AddressDerivationPath(StandardHDPath),
 }
 
 impl Default for MyTxHistoryTarget {

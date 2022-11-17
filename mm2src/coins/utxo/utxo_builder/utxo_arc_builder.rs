@@ -1,6 +1,7 @@
 use crate::utxo::rpc_clients::UtxoRpcClientEnum;
 use crate::utxo::utxo_builder::{UtxoCoinBuildError, UtxoCoinBuilder, UtxoCoinBuilderCommonOps,
-                                UtxoFieldsWithHardwareWalletBuilder, UtxoFieldsWithIguanaPrivKeyBuilder};
+                                UtxoFieldsWithGlobalHDBuilder, UtxoFieldsWithHardwareWalletBuilder,
+                                UtxoFieldsWithIguanaSecretBuilder};
 use crate::utxo::{generate_and_send_tx, FeePolicy, GetUtxoListOps, UtxoArc, UtxoCommonOps, UtxoSyncStatusLoopHandle,
                   UtxoWeak};
 use crate::{DerivationMethod, PrivKeyBuildPolicy, UtxoActivationParams};
@@ -30,7 +31,7 @@ where
     ticker: &'a str,
     conf: &'a Json,
     activation_params: &'a UtxoActivationParams,
-    priv_key_policy: PrivKeyBuildPolicy<'a>,
+    priv_key_policy: PrivKeyBuildPolicy,
     constructor: F,
 }
 
@@ -43,7 +44,7 @@ where
         ticker: &'a str,
         conf: &'a Json,
         activation_params: &'a UtxoActivationParams,
-        priv_key_policy: PrivKeyBuildPolicy<'a>,
+        priv_key_policy: PrivKeyBuildPolicy,
         constructor: F,
     ) -> UtxoArcBuilder<'a, F, T> {
         UtxoArcBuilder {
@@ -71,7 +72,12 @@ where
     fn ticker(&self) -> &str { self.ticker }
 }
 
-impl<'a, F, T> UtxoFieldsWithIguanaPrivKeyBuilder for UtxoArcBuilder<'a, F, T> where
+impl<'a, F, T> UtxoFieldsWithIguanaSecretBuilder for UtxoArcBuilder<'a, F, T> where
+    F: Fn(UtxoArc) -> T + Send + Sync + 'static
+{
+}
+
+impl<'a, F, T> UtxoFieldsWithGlobalHDBuilder for UtxoArcBuilder<'a, F, T> where
     F: Fn(UtxoArc) -> T + Send + Sync + 'static
 {
 }
@@ -90,7 +96,7 @@ where
     type ResultCoin = T;
     type Error = UtxoCoinBuildError;
 
-    fn priv_key_policy(&self) -> PrivKeyBuildPolicy<'_> { self.priv_key_policy.clone() }
+    fn priv_key_policy(&self) -> PrivKeyBuildPolicy { self.priv_key_policy.clone() }
 
     async fn build(self) -> MmResult<Self::ResultCoin, Self::Error> {
         let utxo = self.build_utxo_fields().await?;
@@ -152,7 +158,7 @@ async fn merge_utxo_loop<T>(
         };
 
         let my_address = match coin.as_ref().derivation_method {
-            DerivationMethod::Iguana(ref my_address) => my_address,
+            DerivationMethod::SingleAddress(ref my_address) => my_address,
             DerivationMethod::HDWallet(_) => {
                 warn!("'merge_utxo_loop' is currently not used for HD wallets");
                 return;
