@@ -235,8 +235,8 @@ impl From<TendermintCoinRpcError> for ValidatePaymentError {
 }
 
 #[cfg(not(target_arch = "wasm32"))]
-impl From<cosmrs::rpc::Error> for TendermintCoinRpcError {
-    fn from(err: cosmrs::rpc::Error) -> Self { TendermintCoinRpcError::PerformError(err.to_string()) }
+impl From<tendermint_rpc::Error> for TendermintCoinRpcError {
+    fn from(err: tendermint_rpc::Error) -> Self { TendermintCoinRpcError::PerformError(err.to_string()) }
 }
 
 #[cfg(target_arch = "wasm32")]
