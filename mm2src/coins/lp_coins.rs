@@ -2228,7 +2228,7 @@ impl CoinsContext {
 
         // Check if ticker is a platform coin and remove from it platform's token list
         if ticker == platform_ticker && platform_tokens_storage.get_mut(ticker).is_some() {
-            if let Err(err) = coin.deref().on_token_deactivated(ticker) {
+            if let Err(err) = coin.on_token_deactivated(ticker) {
                 log!("Platform Tokens Error: {err}")
             };
             platform_tokens_storage.remove(ticker);
