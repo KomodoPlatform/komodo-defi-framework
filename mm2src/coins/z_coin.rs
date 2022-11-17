@@ -744,10 +744,8 @@ fn verify_checksum_zcash_params(
     expected_out_hash: H256,
 ) -> Result<bool, ZCoinBuildError> {
     let spend_bytes = std::fs::read(spend_path)?;
-    let res_spend_hash = sha256(&spend_bytes);
     let out_bytes = std::fs::read(output_path)?;
-    let res_out_hash = sha256(&out_bytes);
-    Ok(res_spend_hash == expected_spend_hash && res_out_hash == expected_out_hash)
+    Ok(sha256(&spend_bytes) == expected_spend_hash && sha256(&out_bytes) == expected_out_hash)
 }
 
 fn get_spend_output_paths(params_dir: PathBuf) -> Result<(PathBuf, PathBuf), ZCoinBuildError> {
