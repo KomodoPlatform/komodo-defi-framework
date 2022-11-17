@@ -737,10 +737,17 @@ pub async fn z_coin_from_conf_and_params(
     builder.build().await
 }
 
-fn verify_checksum_zcash_params(file_path: PathBuf, expected_hash: H256) -> Result<bool, ZCoinBuildError> {
-    let bytes = std::fs::read(file_path)?;
-    let res_hash = sha256(&bytes);
-    Ok(res_hash == expected_hash)
+fn verify_checksum_zcash_params(
+    spend_path: PathBuf,
+    expected_spend_hash: H256,
+    output_path: PathBuf,
+    expected_out_hash: H256,
+) -> Result<bool, ZCoinBuildError> {
+    let spend_bytes = std::fs::read(spend_path)?;
+    let res_spend_hash = sha256(&spend_bytes);
+    let out_bytes = std::fs::read(output_path)?;
+    let res_out_hash = sha256(&out_bytes);
+    Ok(res_spend_hash == expected_spend_hash && res_out_hash == expected_out_hash)
 }
 
 fn get_spend_output_paths(params_dir: PathBuf) -> Result<(PathBuf, PathBuf), ZCoinBuildError> {
@@ -823,9 +830,13 @@ impl<'a> UtxoCoinBuilder for ZCoinBuilder<'a> {
                     let (spend_path, output_path) = get_spend_output_paths(params_dir)?;
                     let spend_expected = H256::from(SAPLING_SPEND_EXPECTED_HASH);
                     let out_expected = H256::from(SAPLING_OUTPUT_EXPECTED_HASH);
-                    let spend_hash_eq = verify_checksum_zcash_params(spend_path.clone(), spend_expected)?;
-                    let out_hash_eq = verify_checksum_zcash_params(output_path.clone(), out_expected)?;
-                    if spend_hash_eq && out_hash_eq {
+                    let verification_successful = verify_checksum_zcash_params(
+                        spend_path.clone(),
+                        spend_expected,
+                        output_path.clone(),
+                        out_expected,
+                    )?;
+                    if verification_successful {
                         Ok(LocalTxProver::new(&spend_path, &output_path))
                     } else {
                         MmError::err(ZCoinBuildError::ChecksumVerificationFailed)
@@ -839,9 +850,13 @@ impl<'a> UtxoCoinBuilder for ZCoinBuilder<'a> {
                     let (spend_path, output_path) = get_spend_output_paths(path)?;
                     let spend_expected = H256::from(SAPLING_SPEND_EXPECTED_HASH);
                     let out_expected = H256::from(SAPLING_OUTPUT_EXPECTED_HASH);
-                    let spend_hash_eq = verify_checksum_zcash_params(spend_path.clone(), spend_expected)?;
-                    let out_hash_eq = verify_checksum_zcash_params(output_path.clone(), out_expected)?;
-                    if spend_hash_eq && out_hash_eq {
+                    let verification_successful = verify_checksum_zcash_params(
+                        spend_path.clone(),
+                        spend_expected,
+                        output_path.clone(),
+                        out_expected,
+                    )?;
+                    if verification_successful {
                         Ok(LocalTxProver::new(&spend_path, &output_path))
                     } else {
                         MmError::err(ZCoinBuildError::ChecksumVerificationFailed)
