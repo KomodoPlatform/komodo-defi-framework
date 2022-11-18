@@ -26,7 +26,7 @@ use crate::{BalanceError, BalanceFut, CheckIfMyPaymentSentArgs, CoinBalance, Coi
             WithdrawFut, WithdrawRequest};
 use crate::{Transaction, WithdrawError};
 use async_trait::async_trait;
-use bitcrypto::{dhash256, sha256};
+use bitcrypto::dhash256;
 use chain::constants::SEQUENCE_FINAL;
 use chain::{Transaction as UtxoTx, TransactionOutput};
 use common::{async_blocking, calc_total_pages, log, PagingOptionsEnum};
@@ -51,7 +51,10 @@ use rpc::v1::types::{Bytes as BytesJson, Transaction as RpcTransaction, H256 as 
 use script::{Builder as ScriptBuilder, Opcode, Script, TransactionInputSigner};
 use serde_json::Value as Json;
 use serialization::CoinVariant;
+use sha2::{Digest, Sha256};
 use std::collections::{HashMap, HashSet};
+use std::fs::File;
+use std::io::{BufReader, Read};
 use std::iter;
 use std::path::PathBuf;
 use std::sync::Arc;
@@ -737,15 +740,30 @@ pub async fn z_coin_from_conf_and_params(
     builder.build().await
 }
 
-fn verify_checksum_zcash_params(
-    spend_path: PathBuf,
-    expected_spend_hash: H256,
-    output_path: PathBuf,
-    expected_out_hash: H256,
-) -> Result<bool, ZCoinBuildError> {
-    let spend_bytes = std::fs::read(spend_path)?;
-    let out_bytes = std::fs::read(output_path)?;
-    Ok(sha256(&spend_bytes) == expected_spend_hash && sha256(&out_bytes) == expected_out_hash)
+/// open file and calculate its sha256 digest as lowercase hex string
+fn sha256_digest(path: &PathBuf) -> Result<String, ZCoinBuildError> {
+    let input = File::open(path)?;
+    let mut reader = BufReader::new(input);
+
+    let digest = {
+        let mut hasher = Sha256::new();
+        let mut buffer = [0; 1024];
+        loop {
+            let count = reader.read(&mut buffer)?;
+            if count == 0 {
+                break;
+            }
+            hasher.update(&buffer[..count]);
+        }
+        format!("{:x}", hasher.finalize())
+    };
+    Ok(digest)
+}
+
+fn verify_checksum_zcash_params(spend_path: &PathBuf, output_path: &PathBuf) -> Result<bool, ZCoinBuildError> {
+    let spend_hash = sha256_digest(spend_path)?;
+    let out_hash = sha256_digest(output_path)?;
+    Ok(spend_hash == SAPLING_SPEND_EXPECTED_HASH && out_hash == SAPLING_OUTPUT_EXPECTED_HASH)
 }
 
 fn get_spend_output_paths(params_dir: PathBuf) -> Result<(PathBuf, PathBuf), ZCoinBuildError> {
@@ -821,44 +839,21 @@ impl<'a> UtxoCoinBuilder for ZCoinBuilder<'a> {
         .expect("DEX_FEE_Z_ADDR is a valid z-address")
         .expect("DEX_FEE_Z_ADDR is a valid z-address");
 
-        let z_tx_prover = match &self.z_coin_params.zcash_params_path {
-            None => {
-                async_blocking(move || {
-                    let params_dir = default_params_folder().or_mm_err(|| ZCoinBuildError::ZCashParamsNotFound)?;
-                    let (spend_path, output_path) = get_spend_output_paths(params_dir)?;
-                    let verification_successful = verify_checksum_zcash_params(
-                        spend_path.clone(),
-                        H256::from(SAPLING_SPEND_EXPECTED_HASH),
-                        output_path.clone(),
-                        H256::from(SAPLING_OUTPUT_EXPECTED_HASH),
-                    )?;
-                    if verification_successful {
-                        Ok(LocalTxProver::new(&spend_path, &output_path))
-                    } else {
-                        MmError::err(ZCoinBuildError::ChecksumVerificationFailed)
-                    }
-                })
-                .await?
-            },
-            Some(file_path) => {
-                let path = PathBuf::from(file_path);
-                async_blocking(move || {
-                    let (spend_path, output_path) = get_spend_output_paths(path)?;
-                    let verification_successful = verify_checksum_zcash_params(
-                        spend_path.clone(),
-                        H256::from(SAPLING_SPEND_EXPECTED_HASH),
-                        output_path.clone(),
-                        H256::from(SAPLING_OUTPUT_EXPECTED_HASH),
-                    )?;
-                    if verification_successful {
-                        Ok(LocalTxProver::new(&spend_path, &output_path))
-                    } else {
-                        MmError::err(ZCoinBuildError::ChecksumVerificationFailed)
-                    }
-                })
-                .await?
-            },
+        let params_dir = match &self.z_coin_params.zcash_params_path {
+            None => default_params_folder().or_mm_err(|| ZCoinBuildError::ZCashParamsNotFound)?,
+            Some(file_path) => PathBuf::from(file_path),
         };
+
+        let z_tx_prover = async_blocking(move || {
+            let (spend_path, output_path) = get_spend_output_paths(params_dir)?;
+            let verification_successful = verify_checksum_zcash_params(&spend_path, &output_path)?;
+            if verification_successful {
+                Ok(LocalTxProver::new(&spend_path, &output_path))
+            } else {
+                MmError::err(ZCoinBuildError::SaplingParamsInvalidChecksum)
+            }
+        })
+        .await?;
 
         let my_z_addr_encoded = encode_payment_address(
             self.protocol_info.consensus_params.hrp_sapling_payment_address(),
