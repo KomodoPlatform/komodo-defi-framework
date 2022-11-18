@@ -102,30 +102,26 @@ impl EthCoin {
             Some(d) => d as u8,
         };
 
-        let mut web3_instances = vec![];
-        for node in self.web3_instances.clone() {
-            let mut node = node;
-            let mut transport = node.web3.transport().clone();
-
-            let gui_auth = transport.gui_auth_validation_generator.map(|mut g| {
-                g.coin_ticker = ticker.clone();
-                g
-            });
-
-            transport.gui_auth_validation_generator = gui_auth;
-            let web3 = Web3::new(transport);
-
-            node.web3 = web3;
-            web3_instances.push(node);
-        }
+        let web3_instances: Vec<Web3Instance> = self
+            .web3_instances
+            .iter()
+            .map(|node| {
+                let mut transport = node.web3.transport().clone();
+                if let Some(auth) = &mut transport.gui_auth_validation_generator {
+                    auth.coin_ticker = ticker.clone();
+                }
+                let web3 = Web3::new(transport);
+                Web3Instance {
+                    web3,
+                    is_parity: node.is_parity,
+                }
+            })
+            .collect();
 
         let mut transport = self.web3.transport().clone();
-        let gui_auth = transport.gui_auth_validation_generator.map(|mut g| {
-            g.coin_ticker = ticker.clone();
-            g
-        });
-
-        transport.gui_auth_validation_generator = gui_auth;
+        if let Some(auth) = &mut transport.gui_auth_validation_generator {
+            auth.coin_ticker = ticker.clone();
+        }
         let web3 = Web3::new(transport);
 
         let required_confirmations = activation_params
