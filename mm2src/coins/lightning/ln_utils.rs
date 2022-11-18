@@ -79,9 +79,17 @@ pub async fn init_db(ctx: &MmArc, ticker: String) -> EnableLightningResult<Sqlit
     Ok(db)
 }
 
-pub fn init_keys_manager(ctx: &MmArc) -> EnableLightningResult<Arc<KeysManager>> {
+pub fn init_keys_manager(platform: &Platform) -> EnableLightningResult<Arc<KeysManager>> {
     // The current time is used to derive random numbers from the seed where required, to ensure all random generation is unique across restarts.
-    let seed: [u8; 32] = ctx.secp256k1_key_pair().private().secret.into();
+    // TODO validate that this is right
+    let seed: [u8; 32] = platform
+        .coin
+        .as_ref()
+        .priv_key_policy
+        .key_pair_or_err()?
+        .private()
+        .secret
+        .into();
     let cur = get_local_duration_since_epoch().map_to_mm(|e| EnableLightningError::SystemTimeError(e.to_string()))?;
 
     Ok(Arc::new(KeysManager::new(&seed, cur.as_secs(), cur.subsec_nanos())))

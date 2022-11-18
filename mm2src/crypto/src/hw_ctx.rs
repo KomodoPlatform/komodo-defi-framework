@@ -1,11 +1,12 @@
 use crate::hw_client::{HwClient, HwDeviceInfo, HwProcessingError, HwPubkey, TrezorConnectProcessor};
 use crate::hw_error::HwError;
 use crate::trezor::TrezorSession;
-use crate::HwWalletType;
+use crate::{mm2_internal_der_path, HwWalletType};
+use bip32::ChildNumber;
 use bitcrypto::dhash160;
 use common::log::warn;
 use futures::lock::Mutex as AsyncMutex;
-use hw_common::primitives::{DerivationPath, EcdsaCurve, Secp256k1ExtendedPublicKey};
+use hw_common::primitives::{EcdsaCurve, Secp256k1ExtendedPublicKey};
 use keys::Public as PublicKey;
 use mm2_err_handle::prelude::*;
 use primitives::hash::{H160, H264};
@@ -16,14 +17,6 @@ use trezor::client::TrezorClient;
 use trezor::utxo::IGNORE_XPUB_MAGIC;
 use trezor::{ProcessTrezorResponse, TrezorRequestProcessor};
 
-/// The derivation path generally consists of:
-/// `m/purpose'/coin_type'/account'/change/address_index`.
-/// For MarketMaker internal purposes, we decided to use a pubkey derived from the following path, where:
-/// * `coin_type = 141` - KMD coin;
-/// * `account = (2 ^ 31 - 1) = 2147483647` - latest available account index.
-///   This number is chosen so that it does not cross with real accounts;
-/// * `change = 0`, `address_index = 0` - nothing special.
-const MM2_INTERNAL_DERIVATION_PATH: &str = "m/44'/141'/2147483647/0/0";
 const MM2_INTERNAL_ECDSA_CURVE: EcdsaCurve = EcdsaCurve::Secp256k1;
 const MM2_TREZOR_INTERNAL_COIN: &str = "Komodo";
 const SHOW_PUBKEY_ON_DISPLAY: bool = false;
@@ -42,7 +35,7 @@ impl HardwareWalletArc {
 }
 
 pub struct HardwareWalletCtx {
-    /// The pubkey derived from `MM2_INTERNAL_DERIVATION_PATH`.
+    /// The pubkey derived from `mm2_internal_der_path`.
     pub(crate) hw_internal_pubkey: H264,
     pub(crate) hw_wallet_type: HwWalletType,
     /// Please avoid locking multiple mutexes.
@@ -121,8 +114,9 @@ impl HardwareWalletCtx {
     where
         Processor: TrezorRequestProcessor + Sync,
     {
-        let path = DerivationPath::from_str(MM2_INTERNAL_DERIVATION_PATH)
-            .expect("'MM2_INTERNAL_DERIVATION_PATH' is expected to be valid derivation path");
+        const ADDRESS_INDEX: Option<ChildNumber> = None;
+
+        let path = mm2_internal_der_path(ADDRESS_INDEX);
         let mm2_internal_xpub = trezor
             .get_public_key(
                 path,

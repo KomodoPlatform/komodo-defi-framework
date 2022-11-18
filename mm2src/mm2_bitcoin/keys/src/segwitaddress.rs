@@ -21,6 +21,10 @@ pub enum Error {
     InvalidSegwitV0ProgramLength(usize),
     /// An uncompressed pubkey was used where it is not allowed.
     UncompressedPubkey,
+    /// An address variant that is not supported yet was used.
+    UnsupportedAddressVariant(String),
+    /// A script version that is not supported yet was used.
+    UnsupportedWitnessVersion(u8),
 }
 
 impl fmt::Display for Error {
@@ -41,6 +45,8 @@ impl fmt::Display for Error {
                 l,
             ),
             Error::UncompressedPubkey => write!(f, "an uncompressed pubkey was used where it is not allowed",),
+            Error::UnsupportedAddressVariant(ref v) => write!(f, "address variant/format {} is not supported yet!", v),
+            Error::UnsupportedWitnessVersion(v) => write!(f, "witness script version: {} is not supported yet!", v),
         }
     }
 }
@@ -58,7 +64,7 @@ pub enum AddressType {
     P2wsh,
 }
 
-#[derive(Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
 /// A Bitcoin segwit address
 pub struct SegwitAddress {
     /// The human-readable part
@@ -128,31 +134,21 @@ impl fmt::Display for SegwitAddress {
     }
 }
 
-/// Extract the bech32 prefix.
-/// Returns the same slice when no prefix is found.
-fn find_bech32_prefix(bech32: &str) -> Option<&str> {
-    // Split at the last occurrence of the separator character '1'.
-    match bech32.rfind('1') {
-        None => None,
-        Some(sep) => Some(bech32.split_at(sep).0),
-    }
-}
-
 impl FromStr for SegwitAddress {
     type Err = Error;
 
     fn from_str(s: &str) -> Result<SegwitAddress, Error> {
-        // try bech32
-        let hrp = match find_bech32_prefix(s) {
-            // Todo: upper or lowercase is allowed but NOT mixed case
-            Some(hrp) => hrp.to_string(),
-            None => return Err(Error::InvalidSegwitAddressFormat),
-        };
         // decode as bech32, should use Variant if Bech32m is used alongside Bech32
         // The improved Bech32m variant described in [BIP-0350](https://github.com/bitcoin/bips/blob/master/bip-0350.mediawiki)
-        let (_, payload, _) = bech32::decode(s)?;
+        // hrp checks (mixed case not allowed, allowed length and characters) are part of the decode function
+        let (hrp, payload, variant) = bech32::decode(s)?;
         if payload.is_empty() {
             return Err(Error::EmptyBech32Payload);
+        }
+        match variant {
+            bech32::Variant::Bech32 => (),
+            bech32::Variant::Bech32m => return Err(Error::UnsupportedAddressVariant("Bech32m".into())),
+            // Important: If a new variant is added we should return an error until we support the new variant
         }
 
         // Get the script version and program (converted from 5-bit to 8-bit)
@@ -170,7 +166,16 @@ impl FromStr for SegwitAddress {
         }
 
         // Specific segwit v0 check.
-        if version.to_u8() == 0 && (program.len() != 20 && program.len() != 32) {
+        if version.to_u8() != 0 {
+            return Err(Error::UnsupportedWitnessVersion(version.to_u8()));
+        }
+
+        // Bech32 length check.
+        // Important: we should be careful when using new program lengths since a valid Bech32 string can be modified according to
+        // the below 2 links while still having a valid checksum.
+        // https://github.com/bitcoin/bips/blob/master/bip-0350.mediawiki#motivation
+        // https://github.com/sipa/bech32/issues/51
+        if program.len() != 20 && program.len() != 32 {
             return Err(Error::InvalidSegwitV0ProgramLength(program.len()));
         }
 
@@ -182,6 +187,7 @@ impl FromStr for SegwitAddress {
 mod tests {
     use super::*;
     use crypto::sha256;
+    use hex::ToHex;
     use Public;
 
     fn hex_to_bytes(s: &str) -> Option<Vec<u8>> {
@@ -220,5 +226,101 @@ mod tests {
             "bc1qrp33g0q5c5txsp9arysrx4k6zdkfs4nce4xj0gdcccefvpysxf3qccfmv3"
         );
         assert_eq!(addr.address_type(), Some(AddressType::P2wsh));
+    }
+
+    #[test]
+    // https://github.com/bitcoin/bips/blob/master/bip-0173.mediawiki#test-vectors
+    fn test_valid_segwit() {
+        let addr = "BC1QW508D6QEJXTDG4Y5R3ZARVARY0C5XW7KV8F3T4";
+        let segwit_addr = SegwitAddress::from_str(addr).unwrap();
+        assert_eq!(0, segwit_addr.version.to_u8());
+        assert_eq!(
+            "751e76e8199196d454941c45d1b3a323f1433bd6",
+            segwit_addr.program.to_hex::<String>()
+        );
+
+        let addr = "tb1qrp33g0q5c5txsp9arysrx4k6zdkfs4nce4xj0gdcccefvpysxf3q0sl5k7";
+        let segwit_addr = SegwitAddress::from_str(addr).unwrap();
+        assert_eq!(0, segwit_addr.version.to_u8());
+        assert_eq!(
+            "1863143c14c5166804bd19203356da136c985678cd4d27a1b8c6329604903262",
+            segwit_addr.program.to_hex::<String>()
+        );
+
+        let addr = "tb1qqqqqp399et2xygdj5xreqhjjvcmzhxw4aywxecjdzew6hylgvsesrxh6hy";
+        let segwit_addr = SegwitAddress::from_str(addr).unwrap();
+        assert_eq!(0, segwit_addr.version.to_u8());
+        assert_eq!(
+            "000000c4a5cad46221b2a187905e5266362b99d5e91c6ce24d165dab93e86433",
+            segwit_addr.program.to_hex::<String>()
+        );
+    }
+
+    #[test]
+    // https://github.com/bitcoin/bips/blob/master/bip-0173.mediawiki#test-vectors
+    fn test_invalid_segwit_addresses() {
+        // Invalid checksum
+        let invalid_address = "bc1qw508d6qejxtdg4y5r3zarvary0c5xw7kv8f3t5";
+        let err = SegwitAddress::from_str(invalid_address).unwrap_err();
+        assert_eq!(err, Error::Bech32(bech32::Error::InvalidChecksum));
+
+        // Invalid witness version
+        let invalid_address = "BC13W508D6QEJXTDG4Y5R3ZARVARY0C5XW7KN40WF2";
+        let err = SegwitAddress::from_str(invalid_address).unwrap_err();
+        assert_eq!(err, Error::InvalidWitnessVersion(17));
+
+        // Invalid program length
+        let invalid_address = "bc1rw5uspcuh";
+        let err = SegwitAddress::from_str(invalid_address).unwrap_err();
+        assert_eq!(err, Error::InvalidWitnessProgramLength(1));
+
+        // Invalid program length
+        let invalid_address = "bc10w508d6qejxtdg4y5r3zarvary0c5xw7kw508d6qejxtdg4y5r3zarvary0c5xw7kw5rljs90";
+        let err = SegwitAddress::from_str(invalid_address).unwrap_err();
+        assert_eq!(err, Error::InvalidWitnessProgramLength(41));
+
+        // Invalid program length for witness version 0 (per BIP141)
+        let invalid_address = "BC1QR508D6QEJXTDG4Y5R3ZARVARYV98GJ9P";
+        let err = SegwitAddress::from_str(invalid_address).unwrap_err();
+        assert_eq!(err, Error::InvalidSegwitV0ProgramLength(16));
+
+        // Mixed case invalid
+        let invalid_address = "tb1qrp33g0q5c5txsp9arysrx4k6zdkfs4nce4xj0gdcccefvpysxf3q0sL5k7";
+        let err = SegwitAddress::from_str(invalid_address).unwrap_err();
+        assert_eq!(err, Error::Bech32(bech32::Error::MixedCase));
+
+        // zero padding of more than 4 bits
+        let invalid_address = "bc1zw508d6qejxtdg4y5r3zarvaryvqyzf3du";
+        let err = SegwitAddress::from_str(invalid_address).unwrap_err();
+        assert_eq!(err, Error::Bech32(bech32::Error::InvalidPadding));
+
+        // Non-zero padding in 8-to-5 conversion
+        let invalid_address = "tb1qrp33g0q5c5txsp9arysrx4k6zdkfs4nce4xj0gdcccefvpysxf3pjxtptv";
+        let err = SegwitAddress::from_str(invalid_address).unwrap_err();
+        assert_eq!(err, Error::Bech32(bech32::Error::InvalidPadding));
+
+        // Empty data section
+        let invalid_address = "bc1gmk9yu";
+        let err = SegwitAddress::from_str(invalid_address).unwrap_err();
+        assert_eq!(err, Error::EmptyBech32Payload);
+
+        // Version 1 shouldn't be used with bech32 variant although the below address is given as valid in BIP173
+        // https://github.com/bitcoin/bips/blob/master/bip-0350.mediawiki#abstract
+        // If the version byte is 1 to 16, no further interpretation of the witness program or witness stack happens,
+        // and there is no size restriction for the witness stack. These versions are reserved for future extensions
+        // https://github.com/bitcoin/bips/blob/master/bip-0141.mediawiki#witness-program
+        let invalid_address = "bc1pw508d6qejxtdg4y5r3zarvary0c5xw7kw508d6qejxtdg4y5r3zarvary0c5xw7k7grplx";
+        let err = SegwitAddress::from_str(invalid_address).unwrap_err();
+        assert_eq!(err, Error::UnsupportedWitnessVersion(1));
+
+        // Version 16 shouldn't be used with bech32 variant although the below address is given as valid in BIP173
+        let invalid_address = "BC1SW50QA3JX3S";
+        let err = SegwitAddress::from_str(invalid_address).unwrap_err();
+        assert_eq!(err, Error::UnsupportedWitnessVersion(16));
+
+        // Version 2 shouldn't be used with bech32 variant although the below address is given as valid in BIP173
+        let invalid_address = "bc1zw508d6qejxtdg4y5r3zarvaryvg6kdaj";
+        let err = SegwitAddress::from_str(invalid_address).unwrap_err();
+        assert_eq!(err, Error::UnsupportedWitnessVersion(2));
     }
 }

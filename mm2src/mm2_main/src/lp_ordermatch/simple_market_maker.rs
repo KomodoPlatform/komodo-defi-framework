@@ -756,18 +756,14 @@ pub async fn stop_simple_market_maker_bot(ctx: MmArc, _req: Json) -> StopSimpleM
 mod tests {
     use super::{start_simple_market_maker_bot, stop_simple_market_maker_bot, StartSimpleMakerBotRequest};
     use common::block_on;
-    use crypto::privkey::key_pair_from_seed;
-    use mm2_core::mm_ctx::MmCtxBuilder;
+    use mm2_test_helpers::for_tests::mm_ctx_with_iguana;
     use serde_json::Value as Json;
 
     #[test]
     fn test_start_and_stop_simple_market_maker_bot_from_ctx() {
-        let ctx = MmCtxBuilder::default()
-            .with_secp256k1_key_pair(
-                key_pair_from_seed("also shoot benefit prefer juice shell elder veteran woman mimic image kidney")
-                    .unwrap(),
-            )
-            .into_mm_arc();
+        let ctx = mm_ctx_with_iguana(Some(
+            "also shoot benefit prefer juice shell elder veteran woman mimic image kidney",
+        ));
 
         let cloned_ctx = ctx.clone();
         let another_cloned_ctx = ctx.clone();

@@ -10,14 +10,14 @@ use crate::utxo::utxo_common::big_decimal_from_sat_unsigned;
 use crate::utxo::utxo_tx_history_v2::{UtxoMyAddressesHistoryError, UtxoTxDetailsError, UtxoTxDetailsParams,
                                       UtxoTxHistoryOps};
 use crate::{BlockHeightAndTime, CanRefundHtlc, CheckIfMyPaymentSentArgs, CoinBalance, CoinProtocol,
-            CoinWithDerivationMethod, NegotiateSwapContractAddrErr, PaymentInstructions, PaymentInstructionsErr,
-            PrivKeyBuildPolicy, RawTransactionFut, RawTransactionRequest, SearchForSwapTxSpendInput,
-            SendMakerPaymentArgs, SendMakerRefundsPaymentArgs, SendMakerSpendsTakerPaymentArgs, SendTakerPaymentArgs,
-            SendTakerRefundsPaymentArgs, SendTakerSpendsMakerPaymentArgs, SignatureResult, SwapOps,
-            TradePreimageValue, TransactionFut, TransactionType, TxFeeDetails, TxMarshalingErr,
-            UnexpectedDerivationMethod, ValidateAddressResult, ValidateFeeArgs, ValidateInstructionsErr,
-            ValidateOtherPubKeyErr, ValidatePaymentFut, ValidatePaymentInput, VerificationResult, WatcherOps,
-            WatcherValidatePaymentInput, WithdrawFut};
+            CoinWithDerivationMethod, IguanaPrivKey, NegotiateSwapContractAddrErr, PaymentInstructions,
+            PaymentInstructionsErr, PrivKeyBuildPolicy, RawTransactionFut, RawTransactionRequest,
+            SearchForSwapTxSpendInput, SendMakerPaymentArgs, SendMakerRefundsPaymentArgs,
+            SendMakerSpendsTakerPaymentArgs, SendTakerPaymentArgs, SendTakerRefundsPaymentArgs,
+            SendTakerSpendsMakerPaymentArgs, SignatureResult, SwapOps, TradePreimageValue, TransactionFut,
+            TransactionType, TxFeeDetails, TxMarshalingErr, UnexpectedDerivationMethod, ValidateAddressResult,
+            ValidateFeeArgs, ValidateInstructionsErr, ValidateOtherPubKeyErr, ValidatePaymentFut,
+            ValidatePaymentInput, VerificationResult, WatcherOps, WatcherValidatePaymentInput, WithdrawFut};
 use common::log::warn;
 use derive_more::Display;
 use futures::{FutureExt, TryFutureExt};
@@ -303,7 +303,7 @@ impl BchCoin {
         let my_address = self
             .as_ref()
             .derivation_method
-            .iguana_or_err()
+            .single_addr_or_err()
             .mm_err(|e| UtxoRpcError::Internal(e.to_string()))?;
         let (mut bch_unspents, recently_spent) = self.bch_unspents_for_spend(my_address).await?;
         let (mut slp_unspents, standard_utxos) = (
@@ -322,7 +322,7 @@ impl BchCoin {
         let my_address = self
             .as_ref()
             .derivation_method
-            .iguana_or_err()
+            .single_addr_or_err()
             .mm_err(|e| UtxoRpcError::Internal(e.to_string()))?;
         let mut bch_unspents = self.bch_unspents_for_display(my_address).await?;
         let (mut slp_unspents, standard_utxos) = (
@@ -343,7 +343,7 @@ impl BchCoin {
     }
 
     pub fn get_my_slp_address(&self) -> Result<CashAddress, String> {
-        let my_address = try_s!(self.as_ref().derivation_method.iguana_or_err());
+        let my_address = try_s!(self.as_ref().derivation_method.single_addr_or_err());
         let slp_address = my_address.to_cashaddress(
             &self.slp_prefix().to_string(),
             self.as_ref().conf.pub_addr_prefix,
@@ -601,13 +601,13 @@ impl AsRef<UtxoCoinFields> for BchCoin {
     fn as_ref(&self) -> &UtxoCoinFields { &self.utxo_arc }
 }
 
-pub async fn bch_coin_from_conf_and_params(
+pub async fn bch_coin_with_policy(
     ctx: &MmArc,
     ticker: &str,
     conf: &Json,
     params: BchActivationRequest,
     slp_addr_prefix: CashAddrPrefix,
-    priv_key: &[u8],
+    priv_key_policy: PrivKeyBuildPolicy,
 ) -> Result<BchCoin, String> {
     if params.bchd_urls.is_empty() && !params.allow_slp_unsafe_conf {
         return Err("Using empty bchd_urls is unsafe for SLP users!".into());
@@ -624,13 +624,24 @@ pub async fn bch_coin_from_conf_and_params(
         }
     };
 
-    let priv_key_policy = PrivKeyBuildPolicy::IguanaPrivKey(priv_key);
     let coin = try_s!(
         UtxoArcBuilder::new(ctx, ticker, conf, &params.utxo_params, priv_key_policy, constructor)
             .build()
             .await
     );
     Ok(coin)
+}
+
+pub async fn bch_coin_with_priv_key(
+    ctx: &MmArc,
+    ticker: &str,
+    conf: &Json,
+    params: BchActivationRequest,
+    slp_addr_prefix: CashAddrPrefix,
+    priv_key: IguanaPrivKey,
+) -> Result<BchCoin, String> {
+    let priv_key_policy = PrivKeyBuildPolicy::IguanaPrivKey(priv_key);
+    bch_coin_with_policy(ctx, ticker, conf, params, slp_addr_prefix, priv_key_policy).await
 }
 
 #[derive(Debug)]
@@ -1105,7 +1116,7 @@ impl MarketCoinOps for BchCoin {
     fn my_balance(&self) -> BalanceFut<CoinBalance> {
         let coin = self.clone();
         let fut = async move {
-            let my_address = coin.as_ref().derivation_method.iguana_or_err()?;
+            let my_address = coin.as_ref().derivation_method.single_addr_or_err()?;
             let bch_unspents = coin.bch_unspents_for_display(my_address).await?;
             Ok(bch_unspents.platform_balance(coin.as_ref().decimals))
         };
@@ -1288,7 +1299,7 @@ impl CoinWithTxHistoryV2 for BchCoin {
 #[async_trait]
 impl UtxoTxHistoryOps for BchCoin {
     async fn my_addresses(&self) -> MmResult<HashSet<Address>, UtxoMyAddressesHistoryError> {
-        let my_address = self.as_ref().derivation_method.iguana_or_err()?;
+        let my_address = self.as_ref().derivation_method.single_addr_or_err()?;
         Ok(std::iter::once(my_address.clone()).collect())
     }
 
@@ -1360,13 +1371,13 @@ pub fn tbch_coin_for_test() -> (MmArc, BchCoin) {
     });
 
     let params = BchActivationRequest::from_legacy_req(&req).unwrap();
-    let coin = block_on(bch_coin_from_conf_and_params(
+    let coin = block_on(bch_coin_with_priv_key(
         &ctx,
         "BCH",
         &conf,
         params,
         CashAddrPrefix::SlpTest,
-        &*keypair.private().secret,
+        keypair.private().secret,
     ))
     .unwrap();
     (ctx, coin)
@@ -1393,13 +1404,13 @@ pub fn bch_coin_for_test() -> BchCoin {
     });
 
     let params = BchActivationRequest::from_legacy_req(&req).unwrap();
-    block_on(bch_coin_from_conf_and_params(
+    block_on(bch_coin_with_priv_key(
         &ctx,
         "BCH",
         &conf,
         params,
         CashAddrPrefix::SimpleLedger,
-        &*keypair.private().secret,
+        keypair.private().secret,
     ))
     .unwrap()
 }

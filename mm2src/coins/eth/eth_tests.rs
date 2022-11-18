@@ -1,4 +1,5 @@
 use super::*;
+use crate::IguanaPrivKey;
 use common::block_on;
 use mm2_core::mm_ctx::{MmArc, MmCtxBuilder};
 use mm2_test_helpers::for_tests::{ETH_MAINNET_NODE, ETH_MAINNET_SWAP_CONTRACT};
@@ -475,6 +476,8 @@ fn test_wait_for_payment_spend_timeout() {
 }
 
 #[test]
+#[ignore]
+/// Ignored temporarily until dev is merged to mm2.1
 fn test_search_for_swap_tx_spend_was_spent() {
     let key_pair = KeyPair::from_secret_slice(
         &hex::decode("809465b17d0a4ddb3e4c69e8f23c2cabad868f51f8bed5c765ad1d6516c3306f").unwrap(),
@@ -581,6 +584,8 @@ fn test_gas_station() {
 }
 
 #[test]
+#[ignore]
+/// Ignored temporarily until dev is merged to mm2.1
 fn test_search_for_swap_tx_spend_was_refunded() {
     let key_pair = KeyPair::from_secret_slice(
         &hex::decode("809465b17d0a4ddb3e4c69e8f23c2cabad868f51f8bed5c765ad1d6516c3306f").unwrap(),
@@ -1226,14 +1231,14 @@ fn polygon_check_if_my_payment_sent() {
         "swap_contract_address": "0x9130b257d37a52e52f21054c4da3450c72f595ce",
     });
 
-    let priv_key = [1; 32];
+    let priv_key_policy = PrivKeyBuildPolicy::IguanaPrivKey(IguanaPrivKey::from([1; 32]));
     let coin = block_on(eth_coin_from_conf_and_request(
         &ctx,
         "MATIC",
         &conf,
         &request,
-        &priv_key,
         CoinProtocol::ETH,
+        priv_key_policy,
     ))
     .unwrap();
 
@@ -1441,13 +1446,14 @@ fn test_eth_validate_valid_and_invalid_pubkey() {
         3, 98, 177, 3, 108, 39, 234, 144, 131, 178, 103, 103, 127, 80, 230, 166, 53, 68, 147, 215, 42, 216, 144, 72,
         172, 110, 180, 13, 123, 179, 10, 49,
     ];
+    let priv_key_policy = PrivKeyBuildPolicy::IguanaPrivKey(IguanaPrivKey::from(priv_key));
     let coin = block_on(eth_coin_from_conf_and_request(
         &ctx,
         "MATIC",
         &conf,
         &request,
-        &priv_key,
         CoinProtocol::ETH,
+        priv_key_policy,
     ))
     .unwrap();
     // Test expected to pass at this point as we're using a valid pubkey to validate against a valid pubkey

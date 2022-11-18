@@ -9,9 +9,9 @@ use coins::my_tx_history_v2::TxHistoryStorage;
 use coins::tx_history_storage::CreateTxHistoryStorageError;
 use coins::z_coin::{z_coin_from_conf_and_params, BlockchainScanStopped, SyncStatus, ZCoin, ZCoinBuildError,
                     ZcoinActivationParams, ZcoinProtocolInfo};
-use coins::{BalanceError, CoinProtocol, MarketCoinOps, RegisterCoinError};
+use coins::{BalanceError, CoinProtocol, MarketCoinOps, PrivKeyBuildPolicy, RegisterCoinError};
 use crypto::hw_rpc_task::{HwRpcTaskAwaitingStatus, HwRpcTaskUserAction};
-use crypto::CryptoInitError;
+use crypto::{CryptoCtx, CryptoCtxError};
 use derive_more::Display;
 use futures::compat::Future01CompatExt;
 use mm2_core::mm_ctx::MmArc;
@@ -127,8 +127,8 @@ impl From<RpcTaskError> for ZcoinInitError {
     }
 }
 
-impl From<CryptoInitError> for ZcoinInitError {
-    fn from(err: CryptoInitError) -> Self { ZcoinInitError::Internal(err.to_string()) }
+impl From<CryptoCtxError> for ZcoinInitError {
+    fn from(err: CryptoCtxError) -> Self { ZcoinInitError::Internal(err.to_string()) }
 }
 
 impl From<BlockchainScanStopped> for ZcoinInitError {
@@ -162,6 +162,10 @@ impl From<ZcoinInitError> for InitStandaloneCoinError {
             ZcoinInitError::Internal(e) => InitStandaloneCoinError::Internal(e),
         }
     }
+}
+
+impl From<CryptoCtxError> for InitStandaloneCoinError {
+    fn from(e: CryptoCtxError) -> Self { InitStandaloneCoinError::Internal(e.to_string()) }
 }
 
 impl TryFromCoinProtocol for ZcoinProtocolInfo {
@@ -198,14 +202,18 @@ impl InitStandaloneCoinActivationOps for ZCoin {
         protocol_info: ZcoinProtocolInfo,
         task_handle: &ZcoinRpcTaskHandle,
     ) -> MmResult<Self, ZcoinInitError> {
-        let secp_privkey = ctx.secp256k1_key_pair().private().secret;
+        let crypto_ctx = CryptoCtx::from_ctx(&ctx)?;
+        // When `ZCoin` supports Trezor, we'll need to check [`ZcoinActivationParams::priv_key_policy`]
+        // instead of using [`PrivKeyBuildPolicy::detect_priv_key_policy`].
+        let priv_key_policy = PrivKeyBuildPolicy::detect_priv_key_policy(&crypto_ctx);
+
         let coin = z_coin_from_conf_and_params(
             &ctx,
             &ticker,
             &coin_conf,
             activation_request,
             protocol_info,
-            secp_privkey.as_slice(),
+            priv_key_policy,
         )
         .await
         .mm_err(|e| ZcoinInitError::from_build_err(e, ticker))?;

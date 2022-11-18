@@ -33,7 +33,7 @@ use common::log::{error, warn, LogOnError};
 use common::time_cache::TimeCache;
 use common::{bits256, log, new_uuid, now_ms};
 use crypto::privkey::SerializableSecp256k1Keypair;
-use crypto::CryptoCtx;
+use crypto::{CryptoCtx, CryptoCtxError};
 use derive_more::Display;
 use futures::{compat::Future01CompatExt, lock::Mutex as AsyncMutex, TryFutureExt};
 use hash256_std_hasher::Hash256StdHasher;
@@ -61,12 +61,12 @@ use std::time::Duration;
 use trie_db::NodeCodec as NodeCodecT;
 use uuid::Uuid;
 
-use crate::mm2::lp_network::{broadcast_p2p_msg, request_any_relay, request_one_peer, subscribe_to_topic, Libp2pPeerId,
-                             P2PRequest};
+use crate::mm2::lp_network::{broadcast_p2p_msg, request_any_relay, request_one_peer, subscribe_to_topic, P2PRequest};
 use crate::mm2::lp_swap::{calc_max_maker_vol, check_balance_for_maker_swap, check_balance_for_taker_swap,
                           check_other_coin_balance_for_swap, insert_new_swap_to_db, is_pubkey_banned,
-                          lp_atomic_locktime, run_maker_swap, run_taker_swap, AtomicLocktimeVersion, MakerSwap,
-                          RunMakerSwapInput, RunTakerSwapInput, SwapConfirmationsSettings, TakerSwap};
+                          lp_atomic_locktime, p2p_keypair_and_peer_id_to_broadcast,
+                          p2p_private_and_peer_id_to_broadcast, run_maker_swap, run_taker_swap, AtomicLocktimeVersion,
+                          MakerSwap, RunMakerSwapInput, RunTakerSwapInput, SwapConfirmationsSettings, TakerSwap};
 
 pub use best_orders::{best_orders_rpc, best_orders_rpc_v2};
 use my_orders_storage::{delete_my_maker_order, delete_my_taker_order, save_maker_order_on_update,
@@ -319,6 +319,14 @@ fn process_maker_order_updated(ctx: MmArc, from_pubkey: String, updated_msg: new
 //     Ok(())
 // }
 
+// ZHTLC protocol coin uses random keypair to sign P2P messages per every order.
+// So, each ZHTLC order has unique «pubkey» field that doesn’t match node persistent pubkey derived from passphrase.
+// We can compare pubkeys from maker_orders and from asks or bids, to find our order.
+#[inline(always)]
+fn is_my_order(my_orders_pubkeys: &HashSet<String>, my_pub: &Option<String>, order_pubkey: &str) -> bool {
+    my_pub.as_deref() == Some(order_pubkey) || my_orders_pubkeys.contains(order_pubkey)
+}
+
 /// Request best asks and bids for the given `base` and `rel` coins from relays.
 /// Set `asks_num` and/or `bids_num` to get corresponding number of best asks and bids or None to get all of the available orders.
 ///
@@ -347,24 +355,28 @@ async fn request_and_fill_orderbook(ctx: &MmArc, base: &str, rel: &str) -> Resul
     let ordermatch_ctx = OrdermatchContext::from_ctx(ctx).unwrap();
     let mut orderbook = ordermatch_ctx.orderbook.lock();
 
-    let keypair = ctx.secp256k1_key_pair_as_option();
+    let my_pubsecp = match CryptoCtx::from_ctx(ctx).discard_mm_trace() {
+        Ok(crypto_ctx) => Some(crypto_ctx.mm2_internal_pubkey_hex()),
+        Err(CryptoCtxError::NotInitialized) => None,
+        Err(other) => return ERR!("{}", other),
+    };
+
     let alb_pair = alb_ordered_pair(base, rel);
     for (pubkey, GetOrderbookPubkeyItem { orders, .. }) in pubkey_orders {
         let pubkey_bytes = match hex::decode(&pubkey) {
             Ok(b) => b,
             Err(e) => {
-                log::warn!("Error {} decoding pubkey {}", e, pubkey);
+                warn!("Error {} decoding pubkey {}", e, pubkey);
                 continue;
             },
         };
-        if let Some(keypair) = keypair {
-            if pubkey_bytes.as_slice() == keypair.public().as_ref() {
-                continue;
-            }
+
+        if is_my_order(&orderbook.my_p2p_pubkeys, &my_pubsecp, &pubkey) {
+            continue;
         }
 
         if is_pubkey_banned(ctx, &pubkey_bytes[1..].into()) {
-            log::warn!("Pubkey {} is banned", pubkey);
+            warn!("Pubkey {} is banned", pubkey);
             continue;
         }
         let params = ProcessTrieParams {
@@ -962,10 +974,7 @@ fn maker_order_created_p2p_notify(
     };
 
     let to_broadcast = new_protocol::OrdermatchMessage::MakerOrderCreated(message.clone());
-    let (key_pair, peer_id) = match order.p2p_keypair() {
-        Some(k) => (k, Some(k.libp2p_peer_id())),
-        None => (ctx.secp256k1_key_pair(), None),
-    };
+    let (key_pair, peer_id) = p2p_keypair_and_peer_id_to_broadcast(&ctx, order.p2p_keypair());
 
     let encoded_msg = encode_and_sign(&to_broadcast, key_pair.private_ref()).unwrap();
     let item: OrderbookItem = (message, hex::encode(key_pair.public_slice())).into();
@@ -991,10 +1000,7 @@ fn maker_order_updated_p2p_notify(
     p2p_privkey: Option<&KeyPair>,
 ) {
     let msg: new_protocol::OrdermatchMessage = message.clone().into();
-    let (secret, peer_id) = match p2p_privkey {
-        Some(k) => (k.private_bytes(), Some(k.libp2p_peer_id())),
-        None => (ctx.secp256k1_key_pair().private_bytes(), None),
-    };
+    let (secret, peer_id) = p2p_private_and_peer_id_to_broadcast(&ctx, p2p_privkey);
     let encoded_msg = encode_and_sign(&msg, &secret).unwrap();
     process_my_maker_order_updated(&ctx, &message);
     broadcast_p2p_msg(&ctx, vec![topic], encoded_msg, peer_id);
@@ -1597,6 +1603,22 @@ impl TakerOrder {
     fn base_orderbook_ticker(&self) -> &str { self.base_orderbook_ticker.as_deref().unwrap_or(&self.request.base) }
 
     fn rel_orderbook_ticker(&self) -> &str { self.rel_orderbook_ticker.as_deref().unwrap_or(&self.request.rel) }
+
+    /// Returns the orderbook ticker of the taker coin
+    fn taker_orderbook_ticker(&self) -> &str {
+        match self.request.action {
+            TakerAction::Buy => self.rel_orderbook_ticker(),
+            TakerAction::Sell => self.base_orderbook_ticker(),
+        }
+    }
+
+    /// Returns the orderbook ticker of the maker coin
+    fn maker_orderbook_ticker(&self) -> &str {
+        match self.request.action {
+            TakerAction::Buy => self.base_orderbook_ticker(),
+            TakerAction::Sell => self.rel_orderbook_ticker(),
+        }
+    }
 
     fn orderbook_topic(&self) -> String {
         orderbook_topic_from_base_rel(self.base_orderbook_ticker(), self.rel_orderbook_ticker())
@@ -2220,7 +2242,7 @@ fn broadcast_keep_alive_for_pub(ctx: &MmArc, pubkey: &str, orderbook: &Orderbook
 pub async fn broadcast_maker_orders_keep_alive_loop(ctx: MmArc) {
     let persistent_pubsecp = CryptoCtx::from_ctx(&ctx)
         .expect("CryptoCtx not available")
-        .secp256k1_pubkey_hex();
+        .mm2_internal_pubkey_hex();
 
     while !ctx.is_stopping() {
         Timer::sleep(MIN_ORDER_KEEP_ALIVE_INTERVAL as f64).await;
@@ -2251,10 +2273,7 @@ fn broadcast_ordermatch_message(
     msg: new_protocol::OrdermatchMessage,
     p2p_privkey: Option<&KeyPair>,
 ) {
-    let (secret, peer_id) = match p2p_privkey {
-        Some(k) => (k.private_bytes(), Some(k.libp2p_peer_id())),
-        None => (ctx.secp256k1_key_pair().private_bytes(), None),
-    };
+    let (secret, peer_id) = p2p_private_and_peer_id_to_broadcast(ctx, p2p_privkey);
     let encoded_msg = encode_and_sign(&msg, &secret).unwrap();
     broadcast_p2p_msg(ctx, topics.into_iter().collect(), encoded_msg, peer_id);
 }
@@ -2852,8 +2871,11 @@ fn lp_connect_start_bob(ctx: MmArc, maker_match: MakerMatch, maker_order: MakerO
         let alice = bits256::from(maker_match.request.sender_pubkey.0);
         let maker_amount = maker_match.reserved.get_base_amount().to_decimal();
         let taker_amount = maker_match.reserved.get_rel_amount().to_decimal();
-        let privkey = &ctx.secp256k1_key_pair().private().secret;
-        let my_persistent_pub = compressed_pub_key_from_priv_raw(&privkey[..], ChecksumType::DSHA256).unwrap();
+
+        let crypto_ctx = CryptoCtx::from_ctx(&ctx).expect("'CryptoCtx' must be initialized already");
+        let raw_priv = crypto_ctx.mm2_internal_privkey_secret();
+        let my_persistent_pub = compressed_pub_key_from_priv_raw(raw_priv.as_slice(), ChecksumType::DSHA256).unwrap();
+
         let my_conf_settings = choose_maker_confs_and_notas(
             maker_order.conf_settings,
             &maker_match.request,
@@ -2872,7 +2894,11 @@ fn lp_connect_start_bob(ctx: MmArc, maker_match: MakerMatch, maker_order: MakerO
             },
             None => AtomicLocktimeVersion::V1,
         };
-        let lock_time = lp_atomic_locktime(maker_coin.ticker(), taker_coin.ticker(), atomic_locktime_v);
+        let lock_time = lp_atomic_locktime(
+            maker_order.base_orderbook_ticker(),
+            maker_order.rel_orderbook_ticker(),
+            atomic_locktime_v,
+        );
         log_tag!(
             ctx,
             "";
@@ -2941,8 +2967,10 @@ fn lp_connected_alice(ctx: MmArc, taker_order: TakerOrder, taker_match: TakerMat
             },
         };
 
-        let privkey = &ctx.secp256k1_key_pair().private().secret;
-        let my_persistent_pub = compressed_pub_key_from_priv_raw(&privkey[..], ChecksumType::DSHA256).unwrap();
+        let crypto_ctx = CryptoCtx::from_ctx(&ctx).expect("'CryptoCtx' must be initialized already");
+        let raw_priv = crypto_ctx.mm2_internal_privkey_secret();
+        let my_persistent_pub = compressed_pub_key_from_priv_raw(raw_priv.as_slice(), ChecksumType::DSHA256).unwrap();
+
         let maker_amount = taker_match.reserved.get_base_amount().clone();
         let taker_amount = taker_match.reserved.get_rel_amount().clone();
 
@@ -2964,7 +2992,11 @@ fn lp_connected_alice(ctx: MmArc, taker_order: TakerOrder, taker_match: TakerMat
             },
             None => AtomicLocktimeVersion::V1,
         };
-        let locktime = lp_atomic_locktime(maker_coin.ticker(), taker_coin.ticker(), atomic_locktime_v);
+        let locktime = lp_atomic_locktime(
+            taker_order.maker_orderbook_ticker(),
+            taker_order.taker_orderbook_ticker(),
+            atomic_locktime_v,
+        );
         log_tag!(
             ctx,
             "";
@@ -3002,7 +3034,7 @@ fn lp_connected_alice(ctx: MmArc, taker_order: TakerOrder, taker_match: TakerMat
 pub async fn lp_ordermatch_loop(ctx: MmArc) {
     let my_pubsecp = CryptoCtx::from_ctx(&ctx)
         .expect("CryptoCtx not available")
-        .secp256k1_pubkey_hex();
+        .mm2_internal_pubkey_hex();
 
     let maker_order_timeout = ctx.conf["maker_order_timeout"].as_u64().unwrap_or(MAKER_ORDER_TIMEOUT);
     loop {
@@ -3269,7 +3301,9 @@ async fn process_maker_reserved(ctx: MmArc, from_pubkey: H256Json, reserved_msg:
         }
     }
 
-    let our_public_id = ctx.public_id().unwrap();
+    let our_public_id = CryptoCtx::from_ctx(&ctx)
+        .expect("'CryptoCtx' must be initialized already")
+        .mm2_internal_public_id();
     if our_public_id.bytes == from_pubkey.0 {
         log::warn!("Skip maker reserved from our pubkey");
         return;
@@ -3343,7 +3377,10 @@ async fn process_maker_reserved(ctx: MmArc, from_pubkey: H256Json, reserved_msg:
 async fn process_maker_connected(ctx: MmArc, from_pubkey: H256Json, connected: MakerConnected) {
     log::debug!("Processing MakerConnected {:?}", connected);
     let ordermatch_ctx = OrdermatchContext::from_ctx(&ctx).unwrap();
-    let our_public_id = ctx.public_id().unwrap();
+
+    let our_public_id = CryptoCtx::from_ctx(&ctx)
+        .expect("'CryptoCtx' must be initialized already")
+        .mm2_internal_public_id();
     if our_public_id.bytes == from_pubkey.0 {
         log::warn!("Skip maker connected from our pubkey");
         return;
@@ -3380,7 +3417,12 @@ async fn process_maker_connected(ctx: MmArc, from_pubkey: H256Json, connected: M
 }
 
 async fn process_taker_request(ctx: MmArc, from_pubkey: H256Json, taker_request: TakerRequest) {
-    let our_public_id: H256Json = ctx.public_id().unwrap().bytes.into();
+    let our_public_id: H256Json = CryptoCtx::from_ctx(&ctx)
+        .expect("'CryptoCtx' must be initialized already")
+        .mm2_internal_public_id()
+        .bytes
+        .into();
+
     if our_public_id == from_pubkey {
         log::warn!("Skip the request originating from our pubkey");
         return;
@@ -3454,7 +3496,11 @@ async fn process_taker_request(ctx: MmArc, from_pubkey: H256Json, taker_request:
 async fn process_taker_connect(ctx: MmArc, sender_pubkey: H256Json, connect_msg: TakerConnect) {
     log::debug!("Processing TakerConnect {:?}", connect_msg);
     let ordermatch_ctx = OrdermatchContext::from_ctx(&ctx).unwrap();
-    let our_public_id = ctx.public_id().unwrap();
+
+    let our_public_id = CryptoCtx::from_ctx(&ctx)
+        .expect("'CryptoCtx' must be initialized already")
+        .mm2_internal_public_id();
+
     if our_public_id.bytes == sender_pubkey.0 {
         log::warn!("Skip taker connect from our pubkey");
         return;
@@ -3697,7 +3743,7 @@ pub async fn lp_auto_buy(
     };
     let ordermatch_ctx = try_s!(OrdermatchContext::from_ctx(ctx));
     let mut my_taker_orders = ordermatch_ctx.my_taker_orders.lock().await;
-    let our_public_id = try_s!(ctx.public_id());
+    let our_public_id = try_s!(CryptoCtx::from_ctx(&ctx)).mm2_internal_public_id();
     let rel_volume = &input.volume * &input.price;
     let conf_settings = OrderConfirmationsSettings {
         base_confs: input.base_confs.unwrap_or_else(|| base_coin.required_confirmations()),

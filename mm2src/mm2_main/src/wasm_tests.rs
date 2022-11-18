@@ -5,7 +5,7 @@ use mm2_core::mm_ctx::MmArc;
 use mm2_test_helpers::electrums::{morty_electrums, rick_electrums};
 use mm2_test_helpers::for_tests::{check_recent_swaps, enable_electrum_json, morty_conf, rick_conf, start_swaps,
                                   test_qrc20_history_impl, wait_for_swaps_finish_and_check_status, MarketMakerIt,
-                                  Mm2TestConf, MORTY, RICK};
+                                  Mm2InitPrivKeyPolicy, Mm2TestConf, Mm2TestConfForSwap, MORTY, RICK};
 use mm2_test_helpers::get_passphrase;
 use mm2_test_helpers::structs::OrderbookResponse;
 use serde_json::json;
@@ -83,56 +83,27 @@ async fn test_mm2_stops_immediately() {
 async fn test_qrc20_tx_history() { test_qrc20_history_impl(Some(wasm_start)).await }
 
 async fn trade_base_rel_electrum(
+    bob_priv_key_policy: Mm2InitPrivKeyPolicy,
+    alice_priv_key_policy: Mm2InitPrivKeyPolicy,
     pairs: &[(&'static str, &'static str)],
     maker_price: i32,
     taker_price: i32,
     volume: f64,
 ) {
-    let bob_passphrase = get_passphrase!(".env.seed", "BOB_PASSPHRASE").unwrap();
-    let alice_passphrase = get_passphrase!(".env.client", "ALICE_PASSPHRASE").unwrap();
-
     let coins = json!([rick_conf(), morty_conf(),]);
 
-    let mut mm_bob = MarketMakerIt::start_async(
-        json! ({
-            "gui": "nogui",
-            "netid": 8999,
-            "dht": "on",  // Enable DHT without delay.
-            "myipaddr": env::var ("BOB_TRADE_IP") .ok(),
-            "rpcip": env::var ("BOB_TRADE_IP") .ok(),
-            "canbind": env::var ("BOB_TRADE_PORT") .ok().map (|s| s.parse::<i64>().unwrap()),
-            "passphrase": bob_passphrase,
-            "coins": coins,
-            "rpc_password": "password",
-            "i_am_seed": true,
-        }),
-        "password".into(),
-        Some(wasm_start),
-    )
-    .await
-    .unwrap();
+    let bob_conf = Mm2TestConfForSwap::bob_conf_with_policy(bob_priv_key_policy, &coins);
+    let mut mm_bob = MarketMakerIt::start_async(bob_conf.conf, bob_conf.rpc_password, Some(wasm_start))
+        .await
+        .unwrap();
 
     let (_bob_dump_log, _bob_dump_dashboard) = mm_bob.mm_dump();
     Timer::sleep(1.).await;
 
-    let mut mm_alice = MarketMakerIt::start_async(
-        json! ({
-            "gui": "nogui",
-            "netid": 8999,
-            "dht": "on",  // Enable DHT without delay.
-            "myipaddr": env::var ("ALICE_TRADE_IP") .ok(),
-            "rpcip": env::var ("ALICE_TRADE_IP") .ok(),
-            "passphrase": alice_passphrase,
-            "coins": coins,
-            "seednodes": [mm_bob.my_seed_addr()],
-            "rpc_password": "password",
-            "skip_startup_checks": true,
-        }),
-        "password".into(),
-        Some(wasm_start),
-    )
-    .await
-    .unwrap();
+    let alice_conf = Mm2TestConfForSwap::alice_conf_with_policy(alice_priv_key_policy, &coins, &mm_bob.my_seed_addr());
+    let mut mm_alice = MarketMakerIt::start_async(alice_conf.conf, alice_conf.rpc_password, Some(wasm_start))
+        .await
+        .unwrap();
 
     let (_alice_dump_log, _alice_dump_dashboard) = mm_alice.mm_dump();
 
@@ -189,6 +160,8 @@ async fn trade_base_rel_electrum(
 
 #[wasm_bindgen_test]
 async fn trade_test_rick_and_morty() {
+    let bob_policy = Mm2InitPrivKeyPolicy::Iguana;
+    let alice_policy = Mm2InitPrivKeyPolicy::GlobalHDAccount(0);
     let pairs: &[_] = &[("RICK", "MORTY")];
-    trade_base_rel_electrum(pairs, 1, 1, 0.0001).await;
+    trade_base_rel_electrum(bob_policy, alice_policy, pairs, 1, 1, 0.0001).await;
 }

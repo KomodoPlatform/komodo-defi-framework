@@ -11,7 +11,7 @@ use common::now_ms;
 use crypto::hw_rpc_task::{HwConnectStatuses, TrezorRpcTaskConnectProcessor};
 use crypto::trezor::client::TrezorClient;
 use crypto::trezor::{TrezorError, TrezorProcessingError};
-use crypto::{from_hw_error, CryptoCtx, CryptoInitError, DerivationPath, HwError, HwProcessingError, HwRpcError};
+use crypto::{from_hw_error, CryptoCtx, CryptoCtxError, DerivationPath, HwError, HwProcessingError, HwRpcError};
 use keys::{Public as PublicKey, Type as ScriptType};
 use mm2_core::mm_ctx::MmArc;
 use mm2_err_handle::prelude::*;
@@ -70,8 +70,8 @@ impl From<TrezorError> for WithdrawError {
     }
 }
 
-impl From<CryptoInitError> for WithdrawError {
-    fn from(e: CryptoInitError) -> Self { WithdrawError::InternalError(e.to_string()) }
+impl From<CryptoCtxError> for WithdrawError {
+    fn from(e: CryptoCtxError) -> Self { WithdrawError::InternalError(e.to_string()) }
 }
 
 impl From<RpcTaskError> for WithdrawError {
@@ -431,7 +431,7 @@ where
 {
     #[allow(clippy::result_large_err)]
     pub fn new(coin: Coin, req: WithdrawRequest) -> Result<Self, MmError<WithdrawError>> {
-        let my_address = coin.as_ref().derivation_method.iguana_or_err()?.clone();
+        let my_address = coin.as_ref().derivation_method.single_addr_or_err()?.clone();
         let my_address_string = coin.my_address()?;
         Ok(StandardUtxoWithdraw {
             coin,

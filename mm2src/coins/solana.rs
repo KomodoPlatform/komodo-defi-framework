@@ -3,19 +3,21 @@ use crate::coin_errors::MyAddressError;
 use crate::solana::solana_common::{lamports_to_sol, PrepareTransferData, SufficientBalanceError};
 use crate::solana::spl::SplTokenInfo;
 use crate::{BalanceError, BalanceFut, CheckIfMyPaymentSentArgs, CoinFutSpawner, FeeApproxStage, FoundSwapTxSpend,
-            NegotiateSwapContractAddrErr, PaymentInstructions, PaymentInstructionsErr, RawTransactionFut,
-            RawTransactionRequest, SearchForSwapTxSpendInput, SendMakerPaymentArgs, SendMakerRefundsPaymentArgs,
-            SendMakerSpendsTakerPaymentArgs, SendTakerPaymentArgs, SendTakerRefundsPaymentArgs,
-            SendTakerSpendsMakerPaymentArgs, SignatureResult, TradePreimageFut, TradePreimageResult,
-            TradePreimageValue, TransactionDetails, TransactionFut, TransactionType, TxMarshalingErr,
-            UnexpectedDerivationMethod, ValidateAddressResult, ValidateFeeArgs, ValidateInstructionsErr,
-            ValidateOtherPubKeyErr, ValidatePaymentFut, ValidatePaymentInput, VerificationResult,
-            WatcherValidatePaymentInput, WithdrawError, WithdrawFut, WithdrawRequest, WithdrawResult};
+            NegotiateSwapContractAddrErr, PaymentInstructions, PaymentInstructionsErr, PrivKeyBuildPolicy,
+            PrivKeyPolicyNotAllowed, RawTransactionFut, RawTransactionRequest, SearchForSwapTxSpendInput,
+            SendMakerPaymentArgs, SendMakerRefundsPaymentArgs, SendMakerSpendsTakerPaymentArgs, SendTakerPaymentArgs,
+            SendTakerRefundsPaymentArgs, SendTakerSpendsMakerPaymentArgs, SignatureResult, TradePreimageFut,
+            TradePreimageResult, TradePreimageValue, TransactionDetails, TransactionFut, TransactionType,
+            TxMarshalingErr, UnexpectedDerivationMethod, ValidateAddressResult, ValidateFeeArgs,
+            ValidateInstructionsErr, ValidateOtherPubKeyErr, ValidatePaymentFut, ValidatePaymentInput,
+            VerificationResult, WatcherValidatePaymentInput, WithdrawError, WithdrawFut, WithdrawRequest,
+            WithdrawResult};
 use async_trait::async_trait;
 use base58::ToBase58;
 use bincode::{deserialize, serialize};
 use common::executor::{abortable_queue::AbortableQueue, AbortableSystem};
 use common::{async_blocking, now_ms};
+use crypto::StandardHDPathToCoin;
 use derive_more::Display;
 use futures::{FutureExt, TryFutureExt};
 use futures01::Future;
@@ -166,18 +168,28 @@ fn generate_keypair_from_slice(priv_key: &[u8]) -> Result<Keypair, MmError<KeyPa
         .map_to_mm(|e| KeyPairCreationError::KeyPairFromSeed(e.to_string()))
 }
 
-pub async fn solana_coin_from_conf_and_params(
+pub async fn solana_coin_with_policy(
     ctx: &MmArc,
     ticker: &str,
     conf: &Json,
     params: SolanaActivationParams,
-    priv_key: &[u8],
+    priv_key_policy: PrivKeyBuildPolicy,
 ) -> Result<SolanaCoin, String> {
     let client = RpcClient::new_with_commitment(params.client_url.clone(), CommitmentConfig {
         commitment: params.confirmation_commitment,
     });
     let decimals = conf["decimals"].as_u64().unwrap_or(SOLANA_DEFAULT_DECIMALS) as u8;
-    let key_pair = try_s!(generate_keypair_from_slice(priv_key));
+
+    let priv_key = match priv_key_policy {
+        PrivKeyBuildPolicy::IguanaPrivKey(priv_key) => priv_key,
+        PrivKeyBuildPolicy::GlobalHDAccount(global_hd) => {
+            let derivation_path: StandardHDPathToCoin = try_s!(json::from_value(conf["derivation_path"].clone()));
+            try_s!(global_hd.derive_secp256k1_secret(&derivation_path))
+        },
+        PrivKeyBuildPolicy::Trezor => return ERR!("{}", PrivKeyPolicyNotAllowed::HardwareWalletNotSupported),
+    };
+
+    let key_pair = try_s!(generate_keypair_from_slice(priv_key.as_slice()));
     let my_address = key_pair.pubkey().to_string();
     let spl_tokens_infos = Arc::new(Mutex::new(HashMap::new()));
 

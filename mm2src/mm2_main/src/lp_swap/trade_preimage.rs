@@ -3,6 +3,7 @@ use super::{maker_swap_trade_preimage, taker_swap_trade_preimage, MakerTradePrei
 use crate::mm2::lp_ordermatch::{MakerOrderBuildError, TakerAction, TakerOrderBuildError};
 use coins::{is_wallet_only_ticker, lp_coinfind_or_err, BalanceError, CoinFindError, TradeFee, TradePreimageError};
 use common::HttpStatusCode;
+use crypto::CryptoCtxError;
 use derive_more::Display;
 use http::StatusCode;
 use mm2_core::mm_ctx::MmArc;
@@ -312,6 +313,10 @@ impl From<CoinFindError> for TradePreimageRpcError {
             CoinFindError::NoSuchCoin { coin } => TradePreimageRpcError::NoSuchCoin { coin },
         }
     }
+}
+
+impl From<CryptoCtxError> for TradePreimageRpcError {
+    fn from(e: CryptoCtxError) -> Self { TradePreimageRpcError::InternalError(e.to_string()) }
 }
 
 impl TradePreimageRpcError {

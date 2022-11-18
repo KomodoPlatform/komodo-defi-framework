@@ -1,4 +1,5 @@
 use crate::utxo::rpc_clients::UtxoRpcError;
+use crate::PrivKeyPolicyNotAllowed;
 use common::executor::AbortedError;
 use common::HttpStatusCode;
 use db_common::sqlite::rusqlite::Error as SqlError;
@@ -11,7 +12,7 @@ use std::num::TryFromIntError;
 pub type EnableLightningResult<T> = Result<T, MmError<EnableLightningError>>;
 pub type SaveChannelClosingResult<T> = Result<T, MmError<SaveChannelClosingError>>;
 
-#[derive(Clone, Debug, Deserialize, Display, Serialize, SerializeErrorType)]
+#[derive(Clone, Debug, Display, Serialize, SerializeErrorType)]
 #[serde(tag = "error_type", content = "error_data")]
 pub enum EnableLightningError {
     #[display(fmt = "Invalid request: {}", _0)]
@@ -26,6 +27,8 @@ pub enum EnableLightningError {
     InvalidAddress(String),
     #[display(fmt = "Invalid path: {}", _0)]
     InvalidPath(String),
+    #[display(fmt = "Private key policy is not allowed: {}", _0)]
+    PrivKeyPolicyNotAllowed(PrivKeyPolicyNotAllowed),
     #[display(fmt = "System time error {}", _0)]
     SystemTimeError(String),
     #[display(fmt = "RPC error {}", _0)]
@@ -42,7 +45,9 @@ pub enum EnableLightningError {
 impl HttpStatusCode for EnableLightningError {
     fn status_code(&self) -> StatusCode {
         match self {
-            EnableLightningError::InvalidRequest(_) | EnableLightningError::RpcError(_) => StatusCode::BAD_REQUEST,
+            EnableLightningError::InvalidRequest(_)
+            | EnableLightningError::RpcError(_)
+            | EnableLightningError::PrivKeyPolicyNotAllowed(_) => StatusCode::BAD_REQUEST,
             EnableLightningError::UnsupportedMode(_, _) => StatusCode::NOT_IMPLEMENTED,
             EnableLightningError::InvalidAddress(_)
             | EnableLightningError::InvalidPath(_)
@@ -67,6 +72,10 @@ impl From<SqlError> for EnableLightningError {
 
 impl From<UtxoRpcError> for EnableLightningError {
     fn from(e: UtxoRpcError) -> Self { EnableLightningError::RpcError(e.to_string()) }
+}
+
+impl From<PrivKeyPolicyNotAllowed> for EnableLightningError {
+    fn from(e: PrivKeyPolicyNotAllowed) -> Self { EnableLightningError::PrivKeyPolicyNotAllowed(e) }
 }
 
 impl From<RpcTaskError> for EnableLightningError {

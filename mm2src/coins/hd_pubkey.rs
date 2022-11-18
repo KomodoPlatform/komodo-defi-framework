@@ -4,7 +4,7 @@ use crypto::hw_rpc_task::{HwConnectStatuses, TrezorRpcTaskConnectProcessor};
 use crypto::trezor::trezor_rpc_task::{TrezorRpcTaskProcessor, TryIntoUserAction};
 use crypto::trezor::utxo::IGNORE_XPUB_MAGIC;
 use crypto::trezor::{ProcessTrezorResponse, TrezorError, TrezorProcessingError};
-use crypto::{CryptoCtx, CryptoInitError, DerivationPath, EcdsaCurve, HardwareWalletArc, HwError, HwProcessingError,
+use crypto::{CryptoCtx, CryptoCtxError, DerivationPath, EcdsaCurve, HardwareWalletArc, HwError, HwProcessingError,
              XPub, XPubConverter, XpubError};
 use mm2_core::mm_ctx::MmArc;
 use mm2_err_handle::prelude::*;
@@ -22,8 +22,8 @@ pub enum HDExtractPubkeyError {
     Internal(String),
 }
 
-impl From<CryptoInitError> for HDExtractPubkeyError {
-    fn from(e: CryptoInitError) -> Self { HDExtractPubkeyError::Internal(e.to_string()) }
+impl From<CryptoCtxError> for HDExtractPubkeyError {
+    fn from(e: CryptoCtxError) -> Self { HDExtractPubkeyError::Internal(e.to_string()) }
 }
 
 impl From<TrezorError> for HDExtractPubkeyError {

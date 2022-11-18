@@ -2,7 +2,7 @@ use crate::mm2::lp_native_dex::init_context::MmInitContext;
 use async_trait::async_trait;
 use common::{HttpStatusCode, SerdeInfallible, SuccessResponse};
 use crypto::metamask::{from_metamask_error, EthAccount, MetamaskError, MetamaskRpcError, WithMetamaskRpcError};
-use crypto::{CryptoCtx, CryptoInitError, MetamaskCtxInitError};
+use crypto::{CryptoCtx, CryptoCtxError, MetamaskCtxInitError};
 use derive_more::Display;
 use enum_from::EnumFromTrait;
 use http::StatusCode;
@@ -36,8 +36,8 @@ pub enum InitMetamaskError {
     Internal(String),
 }
 
-impl From<CryptoInitError> for InitMetamaskError {
-    fn from(value: CryptoInitError) -> Self { InitMetamaskError::Internal(value.to_string()) }
+impl From<CryptoCtxError> for InitMetamaskError {
+    fn from(value: CryptoCtxError) -> Self { InitMetamaskError::Internal(value.to_string()) }
 }
 
 impl From<MetamaskCtxInitError> for InitMetamaskError {
