@@ -499,7 +499,7 @@ impl SwapOps for LightningCoin {
             .ok_or("payment_instructions can't be None"));
         let coin = self.clone();
         let fut = async move {
-            // Todo: revise this None
+            // No need for max_total_cltv_expiry_delta for lightning maker payment since the maker is the side that reveals the secret/preimage
             let payment = try_tx_s!(coin.pay_invoice(invoice, None).await);
             Ok(payment.payment_hash.into())
         };
@@ -511,14 +511,13 @@ impl SwapOps for LightningCoin {
             .payment_instructions
             .clone()
             .ok_or("payment_instructions can't be None"));
-        // Todo: add correct time_lock_duration for this in swaps code
         let max_total_cltv_expiry_delta = taker_payment_args
             .time_lock_duration
             .try_into()
             .expect("time_lock_duration shouldn't exceed u32::MAX");
         let coin = self.clone();
         let fut = async move {
-            // Todo: revise this time_lock_duration, should log path too?? or return path probably
+            // Todo: The used path should be logged or saved somewhere
             let payment = try_tx_s!(coin.pay_invoice(invoice, Some(max_total_cltv_expiry_delta)).await);
             Ok(payment.payment_hash.into())
         };
@@ -592,9 +591,11 @@ impl SwapOps for LightningCoin {
         let fut = async move {
             match coin.db.get_payment_from_db(payment_hash).await {
                 Ok(Some(mut payment)) => {
-                    let amount_sent = payment.amt_msat;
-                    // Todo: Add more validations if needed, locktime is probably the most important
-                    if amount_sent != Some(amt_msat as i64) {
+                    let amount_received = payment.amt_msat;
+                    // Note: locktime doesn't need to be validated since min_final_cltv_expiry should be validated in rust-lightning after fixing the below issue
+                    // https://github.com/lightningdevkit/rust-lightning/issues/1850
+                    // Todo: PaymentReceived won't be fired anyways if amount_received < the amount requested in the invoice, this check is probably not needed too
+                    if amount_received != Some(amt_msat as i64) {
                         // Free the htlc to allow for this inbound liquidity to be used for other inbound payments
                         coin.channel_manager.fail_htlc_backwards(&payment_hash);
                         payment.status = HTLCStatus::Failed;
@@ -605,7 +606,7 @@ impl SwapOps for LightningCoin {
                             .error_log_with_msg("Unable to update payment information in DB!");
                         return MmError::err(ValidatePaymentError::WrongPaymentTx(format!(
                             "Provided payment {} amount {:?} doesn't match required amount {}",
-                            payment_hex, amount_sent, amt_msat
+                            payment_hex, amount_received, amt_msat
                         )));
                     }
                     Ok(())
@@ -688,6 +689,7 @@ impl SwapOps for LightningCoin {
         secret_hash: &[u8],
         amount: &BigDecimal,
         lock_duration: u64,
+        expires_in: u64,
     ) -> Result<Option<Vec<u8>>, MmError<PaymentInstructionsErr>> {
         // lightning decimals should be 11 in config since the smallest divisible unit in lightning coin is msat
         let amt_msat = sat_from_big_decimal(amount, self.decimals())?;
@@ -696,14 +698,13 @@ impl SwapOps for LightningCoin {
 
         let min_final_cltv_expiry = self.estimate_blocks_from_duration(lock_duration);
         // note: No description is provided in the invoice to reduce the payload
-        // Todo: The invoice expiry should probably be the same as maker_payment_wait/wait_taker_payment
         let invoice = self
             .create_invoice_for_hash(
                 payment_hash,
                 Some(amt_msat),
                 "".into(),
                 min_final_cltv_expiry,
-                DEFAULT_INVOICE_EXPIRY,
+                expires_in.try_into().expect("expires_in shouldn't exceed u32::MAX"),
             )
             .await
             .map_err(|e| PaymentInstructionsErr::LightningInvoiceErr(e.to_string()))?;
@@ -715,6 +716,7 @@ impl SwapOps for LightningCoin {
         instructions: &[u8],
         secret_hash: &[u8],
         amount: BigDecimal,
+        lock_duration: u64,
     ) -> Result<PaymentInstructions, MmError<ValidateInstructionsErr>> {
         let invoice = Invoice::from_str(&String::from_utf8_lossy(instructions))?;
         if invoice.payment_hash().as_inner() != secret_hash
@@ -724,13 +726,22 @@ impl SwapOps for LightningCoin {
                 ValidateInstructionsErr::ValidateLightningInvoiceErr("Invalid invoice payment hash!".into()).into(),
             );
         }
+
         let invoice_amount = invoice
             .amount_milli_satoshis()
             .ok_or_else(|| ValidateInstructionsErr::ValidateLightningInvoiceErr("No invoice amount!".into()))?;
         if big_decimal_from_sat(invoice_amount as i64, self.decimals()) != amount {
             return Err(ValidateInstructionsErr::ValidateLightningInvoiceErr("Invalid invoice amount!".into()).into());
         }
-        // Todo: continue validation here by comparing locktime, etc..
+
+        let min_final_cltv_expiry = self.estimate_blocks_from_duration(lock_duration);
+        if invoice.min_final_cltv_expiry() != min_final_cltv_expiry {
+            return Err(ValidateInstructionsErr::ValidateLightningInvoiceErr(
+                "Invalid invoice min_final_cltv_expiry!".into(),
+            )
+            .into());
+        }
+
         Ok(PaymentInstructions::Lightning(invoice))
     }
 

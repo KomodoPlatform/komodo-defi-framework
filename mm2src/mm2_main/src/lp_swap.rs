@@ -345,13 +345,19 @@ pub fn get_payment_locktime() -> u64 {
 }
 
 #[inline]
+pub fn wait_for_taker_payment_conf_duration(locktime: u64) -> u64 { (locktime * 4) / 5 }
+
+#[inline]
 pub fn wait_for_taker_payment_conf_until(swap_started_at: u64, locktime: u64) -> u64 {
-    swap_started_at + (locktime * 4) / 5
+    swap_started_at + wait_for_taker_payment_conf_duration(locktime)
 }
 
 #[inline]
+pub fn wait_for_maker_payment_conf_duration(locktime: u64) -> u64 { (locktime * 2) / 5 }
+
+#[inline]
 pub fn wait_for_maker_payment_conf_until(swap_started_at: u64, locktime: u64) -> u64 {
-    swap_started_at + (locktime * 2) / 5
+    swap_started_at + wait_for_maker_payment_conf_duration(locktime)
 }
 
 const _SWAP_DEFAULT_NUM_CONFIRMS: u32 = 1;

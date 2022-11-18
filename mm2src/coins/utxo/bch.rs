@@ -1010,6 +1010,7 @@ impl SwapOps for BchCoin {
         _secret_hash: &[u8],
         _amount: &BigDecimal,
         _lock_duration: u64,
+        _expires_in: u64,
     ) -> Result<Option<Vec<u8>>, MmError<PaymentInstructionsErr>> {
         Ok(None)
     }
@@ -1019,6 +1020,7 @@ impl SwapOps for BchCoin {
         _instructions: &[u8],
         _secret_hash: &[u8],
         _amount: BigDecimal,
+        _lock_duration: u64,
     ) -> Result<PaymentInstructions, MmError<ValidateInstructionsErr>> {
         MmError::err(ValidateInstructionsErr::UnsupportedCoin(self.ticker().to_string()))
     }

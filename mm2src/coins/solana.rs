@@ -559,6 +559,7 @@ impl SwapOps for SolanaCoin {
         _secret_hash: &[u8],
         _amount: &BigDecimal,
         _lock_duration: u64,
+        _expires_in: u64,
     ) -> Result<Option<Vec<u8>>, MmError<PaymentInstructionsErr>> {
         unimplemented!()
     }
@@ -568,6 +569,7 @@ impl SwapOps for SolanaCoin {
         _instructions: &[u8],
         _secret_hash: &[u8],
         _amount: BigDecimal,
+        _lock_duration: u64,
     ) -> Result<PaymentInstructions, MmError<ValidateInstructionsErr>> {
         unimplemented!()
     }

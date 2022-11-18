@@ -14,7 +14,8 @@ use super::{broadcast_my_swap_status, broadcast_swap_message, broadcast_swap_mes
 use crate::mm2::lp_network::subscribe_to_topic;
 use crate::mm2::lp_ordermatch::{MatchBy, OrderConfirmationsSettings, TakerAction, TakerOrderBuilder};
 use crate::mm2::lp_price::fetch_swap_coins_price;
-use crate::mm2::lp_swap::{broadcast_p2p_tx_msg, tx_helper_topic, TakerSwapWatcherData};
+use crate::mm2::lp_swap::{broadcast_p2p_tx_msg, tx_helper_topic, wait_for_maker_payment_conf_duration,
+                          TakerSwapWatcherData};
 use crate::mm2::MM_VERSION;
 use coins::{lp_coinfind, CanRefundHtlc, CheckIfMyPaymentSentArgs, FeeApproxStage, FoundSwapTxSpend, MmCoinEnum,
             PaymentInstructions, PaymentInstructionsErr, SearchForSwapTxSpendInput, SendSpendPaymentArgs,
@@ -878,10 +879,11 @@ impl TakerSwap {
         // Todo: find a better way than maker_locktime_multiplier
         let maker_lock_duration =
             (self.r().data.lock_duration as f64 * self.taker_coin.maker_locktime_multiplier()).ceil() as u64;
+        let expires_in = wait_for_maker_payment_conf_duration(self.r().data.lock_duration);
         let instructions = self
             .maker_coin
             // Todo: find a better way instead of self.r().data.lock_duration * 2, also lock_duration * 2 should be more than or equal to MIN_FINAL_CLTV_EXPIRY
-            .payment_instructions(&secret_hash, &maker_amount, maker_lock_duration)
+            .payment_instructions(&secret_hash, &maker_amount, maker_lock_duration, expires_in)
             .await?;
         Ok(SwapTxDataMsg::new(taker_fee_data, instructions))
     }
@@ -1227,10 +1229,12 @@ impl TakerSwap {
         drop(abort_send_handle);
         let mut swap_events = vec![];
         if let Some(instructions) = payload.instructions() {
+            let taker_lock_duration = self.r().data.lock_duration;
             match self.taker_coin.validate_instructions(
                 instructions,
                 &self.r().secret_hash.0,
                 self.taker_amount.clone().into(),
+                taker_lock_duration,
             ) {
                 Ok(instructions) => swap_events.push(TakerSwapEvent::TakerPaymentInstructionsReceived(instructions)),
                 Err(e) => {

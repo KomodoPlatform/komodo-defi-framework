@@ -690,6 +690,7 @@ pub trait SwapOps {
         secret_hash: &[u8],
         amount: &BigDecimal,
         lock_duration: u64,
+        expires_in: u64,
     ) -> Result<Option<Vec<u8>>, MmError<PaymentInstructionsErr>>;
 
     fn validate_instructions(
@@ -697,6 +698,7 @@ pub trait SwapOps {
         instructions: &[u8],
         secret_hash: &[u8],
         amount: BigDecimal,
+        lock_duration: u64,
     ) -> Result<PaymentInstructions, MmError<ValidateInstructionsErr>>;
 
     fn is_supported_by_watchers(&self) -> bool;
