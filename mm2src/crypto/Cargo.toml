@@ -14,16 +14,18 @@ bip32 = { version = "0.2.2", default-features = false, features = ["alloc", "sec
 bitcrypto = { path = "../mm2_bitcoin/crypto" }
 bs58 = "0.4.0"
 common = { path = "../common" }
-mm2_core = { path = "../mm2_core" }
 derive_more = "0.99"
 enum-primitive-derive = "0.2"
 futures = "0.3"
 hex = "0.4.2"
 http = "0.2"
 hw_common = { path = "../hw_common" }
-parking_lot = { version = "0.12.0", features = ["nightly"] }
 keys = { path = "../mm2_bitcoin/keys" }
+lazy_static = "1.4"
+mm2_core = { path = "../mm2_core" }
+mm2_metamask = { path = "../mm2_metamask" }
 num-traits = "0.2"
+parking_lot = { version = "0.12.0", features = ["nightly"] }
 primitives = { path = "../mm2_bitcoin/primitives" }
 rpc = { path = "../mm2_bitcoin/rpc" }
 rpc_task = { path = "../rpc_task" }

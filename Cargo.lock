@@ -1540,8 +1540,10 @@ dependencies = [
  "http 0.2.7",
  "hw_common",
  "keys",
+ "lazy_static",
  "mm2_core",
  "mm2_err_handle",
+ "mm2_metamask",
  "num-traits",
  "parking_lot 0.12.0",
  "primitives",
@@ -4479,6 +4481,25 @@ dependencies = [
  "wasm-timer",
  "web-sys",
  "winapi",
+]
+
+[[package]]
+name = "mm2_metamask"
+version = "0.1.0"
+dependencies = [
+ "async-trait",
+ "common",
+ "derive_more",
+ "futures 0.3.15",
+ "itertools",
+ "js-sys",
+ "mm2_err_handle",
+ "parking_lot 0.12.0",
+ "serde",
+ "serde_derive",
+ "serde_json",
+ "wasm-bindgen",
+ "wasm-bindgen-futures",
 ]
 
 [[package]]

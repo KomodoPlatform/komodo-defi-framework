@@ -8,6 +8,9 @@ mod hw_ctx;
 mod hw_error;
 pub mod hw_rpc_task;
 mod key_pair_ctx;
+#[cfg(target_arch = "wasm32")] mod metamask_ctx;
+// Uncomment this to finish MetaMask login.
+// #[cfg(target_arch = "wasm32")] mod metamask_login;
 pub mod privkey;
 mod xpub;
 
@@ -23,6 +26,12 @@ pub use hw_error::{from_hw_error, HwError, HwResult, HwRpcError, WithHwRpcError}
 pub use key_pair_ctx::{IguanaArc, IguanaCtx};
 pub use trezor;
 pub use xpub::{XPubConverter, XpubError};
+
+#[cfg(target_arch = "wasm32")]
+pub use crypto_ctx::MetamaskCtxInitError;
+#[cfg(target_arch = "wasm32")]
+pub use metamask_ctx::{MetamaskArc, MetamaskError};
+#[cfg(target_arch = "wasm32")] pub use mm2_metamask as metamask;
 
 use serde::de::Error;
 use serde::{Deserialize, Deserializer, Serialize, Serializer};
