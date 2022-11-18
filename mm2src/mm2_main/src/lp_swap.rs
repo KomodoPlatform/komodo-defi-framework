@@ -1061,7 +1061,7 @@ pub async fn my_recent_swaps_rpc(ctx: MmArc, req: Json) -> Result<Response<Vec<u
                 let swap_json = json::to_value(MySwapStatusResponse::from(swap)).unwrap();
                 swaps.push(swap_json)
             },
-            Ok(None) => error!("No such swap with the uuid '{}'", uuid),
+            Ok(None) => warn!("No such swap with the uuid '{}'", uuid),
             Err(e) => error!("Error loading a swap with the uuid '{}': {}", uuid, e),
         }
     }
