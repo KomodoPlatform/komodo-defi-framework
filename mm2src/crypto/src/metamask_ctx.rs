@@ -21,6 +21,8 @@ impl Deref for MetamaskArc {
 pub struct MetamaskCtx {
     eth_account: EthAccount,
     // eth_account_pubkey: String,
+    // TODO `metamask_provider` will be used later.
+    #[allow(dead_code)]
     metamask_provider: MetamaskProvider,
 }
 

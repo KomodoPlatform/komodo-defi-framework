@@ -3,7 +3,7 @@ name = "mm2_metamask"
 version = "0.1.0"
 edition = "2021"
 
-[dependencies]
+[target.'cfg(target_arch = "wasm32")'.dependencies]
 async-trait = "0.1"
 common = { path = "../common" }
 derive_more = "0.99"
