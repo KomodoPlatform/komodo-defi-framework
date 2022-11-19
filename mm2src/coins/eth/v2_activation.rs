@@ -1,6 +1,6 @@
 use super::*;
 use common::executor::AbortedError;
-use crypto::StandardHDPathToCoin;
+use crypto::{CryptoCtxError, StandardHDPathToCoin};
 
 #[derive(Display, Serialize, SerializeErrorType)]
 #[serde(tag = "error_type", content = "error_data")]
@@ -22,6 +22,9 @@ pub enum EthActivationV2Error {
     #[display(fmt = "Error deserializing 'derivation_path': {}", _0)]
     ErrorDeserializingDerivationPath(String),
     PrivKeyPolicyNotAllowed(PrivKeyPolicyNotAllowed),
+    #[cfg(target_arch = "wasm32")]
+    #[display(fmt = "MetaMask context is not initialized")]
+    MetamaskCtxNotInitialized,
     InternalError(String),
 }
 
@@ -31,6 +34,23 @@ impl From<MyAddressError> for EthActivationV2Error {
 
 impl From<AbortedError> for EthActivationV2Error {
     fn from(e: AbortedError) -> Self { EthActivationV2Error::InternalError(e.to_string()) }
+}
+
+impl From<CryptoCtxError> for EthActivationV2Error {
+    fn from(e: CryptoCtxError) -> Self { EthActivationV2Error::InternalError(e.to_string()) }
+}
+
+/// An alternative to `crate::PrivKeyActivationPolicy`, typical only for ETH coin.
+#[derive(Clone, Deserialize)]
+pub enum EthPrivKeyActivationPolicy {
+    ContextPrivKey,
+    Metamask,
+}
+
+impl EthPrivKeyActivationPolicy {
+    /// The function can be used as a default deserialization constructor:
+    /// `#[serde(default = "EthPrivKeyActivationPolicy::context_priv_key")]`
+    pub fn context_priv_key() -> EthPrivKeyActivationPolicy { EthPrivKeyActivationPolicy::ContextPrivKey }
 }
 
 #[derive(Clone, Deserialize)]
@@ -44,6 +64,8 @@ pub struct EthActivationV2Request {
     pub gas_station_policy: GasStationPricePolicy,
     pub mm2: Option<u8>,
     pub required_confirmations: Option<u64>,
+    #[serde(default = "EthPrivKeyActivationPolicy::context_priv_key")]
+    pub priv_key_policy: EthPrivKeyActivationPolicy,
 }
 
 #[derive(Clone, Deserialize)]
@@ -112,7 +134,7 @@ impl EthCoin {
         let abortable_system = ctx.abortable_system.create_subsystem()?;
 
         let token = EthCoinImpl {
-            key_pair: self.key_pair.clone(),
+            priv_key_policy: self.priv_key_policy.clone(),
             my_address: self.my_address,
             coin_type: EthCoinType::Erc20 {
                 platform: protocol.platform,
@@ -147,7 +169,7 @@ pub async fn eth_coin_from_conf_and_request_v2(
     ticker: &str,
     conf: &Json,
     req: EthActivationV2Request,
-    priv_key_policy: PrivKeyBuildPolicy,
+    priv_key_policy: EthPrivKeyBuildPolicy,
 ) -> MmResult<EthCoin, EthActivationV2Error> {
     if req.nodes.is_empty() {
         return Err(EthActivationV2Error::AtLeastOneNodeRequired.into());
@@ -188,18 +210,21 @@ pub async fn eth_coin_from_conf_and_request_v2(
         }
     }
 
-    let key_pair = key_pair_from_priv_key_policy(conf, priv_key_policy)?;
-    let my_address = checksum_address(&format!("{:02x}", key_pair.address()));
+    let (my_address, priv_key_policy) = build_address_and_priv_key_policy(conf, priv_key_policy)?;
+    let my_address_str = checksum_address(&format!("{:02x}", my_address));
 
     let mut web3_instances = vec![];
     let event_handlers = rpc_event_handlers_for_eth_transport(ctx, ticker.to_string());
     for node in &nodes {
         let mut transport = Web3Transport::with_event_handlers(vec![node.clone()], event_handlers.clone());
-        transport.gui_auth_validation_generator = Some(GuiAuthValidationGenerator {
-            coin_ticker: ticker.to_string(),
-            secret: key_pair.secret().clone(),
-            address: my_address.clone(),
-        });
+        // TODO consider creating `gui_auth_validation_generator` with the key-policy.
+        if let EthPrivKeyPolicy::KeyPair(ref key_pair) = priv_key_policy {
+            transport.gui_auth_validation_generator = Some(GuiAuthValidationGenerator {
+                coin_ticker: ticker.to_string(),
+                secret: key_pair.secret().clone(),
+                address: my_address_str.clone(),
+            });
+        }
         drop_mutability!(transport);
 
         let web3 = Web3::new(transport);
@@ -223,11 +248,14 @@ pub async fn eth_coin_from_conf_and_request_v2(
     }
 
     let mut transport = Web3Transport::with_event_handlers(nodes, event_handlers);
-    transport.gui_auth_validation_generator = Some(GuiAuthValidationGenerator {
-        coin_ticker: ticker.to_string(),
-        secret: key_pair.secret().clone(),
-        address: my_address,
-    });
+    // TODO consider creating `gui_auth_validation_generator` with the key-policy.
+    if let EthPrivKeyPolicy::KeyPair(ref key_pair) = priv_key_policy {
+        transport.gui_auth_validation_generator = Some(GuiAuthValidationGenerator {
+            coin_ticker: ticker.to_string(),
+            secret: key_pair.secret().clone(),
+            address: my_address_str,
+        });
+    }
     drop_mutability!(transport);
 
     let web3 = Web3::new(transport);
@@ -252,8 +280,8 @@ pub async fn eth_coin_from_conf_and_request_v2(
     let abortable_system = ctx.abortable_system.create_subsystem()?;
 
     let coin = EthCoinImpl {
-        key_pair: key_pair.clone(),
-        my_address: key_pair.address(),
+        priv_key_policy,
+        my_address,
         coin_type: EthCoinType::Eth,
         sign_message_prefix,
         swap_contract_address: req.swap_contract_address,
@@ -281,13 +309,13 @@ pub async fn eth_coin_from_conf_and_request_v2(
 /// Processes the given `priv_key_policy` and generates corresponding `KeyPair`.
 /// This function expects either [`PrivKeyBuildPolicy::IguanaPrivKey`]
 /// or [`PrivKeyBuildPolicy::GlobalHDAccount`], otherwise returns `PrivKeyPolicyNotAllowed` error.
-pub(crate) fn key_pair_from_priv_key_policy(
+pub(crate) fn build_address_and_priv_key_policy(
     conf: &Json,
-    priv_key_policy: PrivKeyBuildPolicy,
-) -> MmResult<KeyPair, EthActivationV2Error> {
-    let priv_key = match priv_key_policy {
-        PrivKeyBuildPolicy::IguanaPrivKey(iguana) => iguana,
-        PrivKeyBuildPolicy::GlobalHDAccount(global_hd_ctx) => {
+    priv_key_policy: EthPrivKeyBuildPolicy,
+) -> MmResult<(Address, EthPrivKeyPolicy), EthActivationV2Error> {
+    let raw_priv_key = match priv_key_policy {
+        EthPrivKeyBuildPolicy::IguanaPrivKey(iguana) => iguana,
+        EthPrivKeyBuildPolicy::GlobalHDAccount(global_hd_ctx) => {
             // Consider storing `derivation_path` at `EthCoinImpl`.
             let derivation_path: Option<StandardHDPathToCoin> = json::from_value(conf["derivation_path"].clone())
                 .map_to_mm(|e| EthActivationV2Error::ErrorDeserializingDerivationPath(e.to_string()))?;
@@ -296,10 +324,16 @@ pub(crate) fn key_pair_from_priv_key_policy(
                 .derive_secp256k1_secret(&derivation_path)
                 .mm_err(|e| EthActivationV2Error::InternalError(e.to_string()))?
         },
-        PrivKeyBuildPolicy::Trezor => {
-            let priv_key_err = PrivKeyPolicyNotAllowed::HardwareWalletNotSupported;
-            return MmError::err(EthActivationV2Error::PrivKeyPolicyNotAllowed(priv_key_err));
+        #[cfg(target_arch = "wasm32")]
+        EthPrivKeyBuildPolicy::Metamask(metamask_ctx) => {
+            let address_str = metamask_ctx.eth_account().address.as_str();
+            let address = addr_from_str(address_str).map_to_mm(EthActivationV2Error::InternalError)?;
+            return Ok((address, EthPrivKeyPolicy::Metamask));
         },
     };
-    KeyPair::from_secret_slice(priv_key.as_slice()).map_to_mm(|e| EthActivationV2Error::InternalError(e.to_string()))
+
+    let key_pair = KeyPair::from_secret_slice(raw_priv_key.as_slice())
+        .map_to_mm(|e| EthActivationV2Error::InternalError(e.to_string()))?;
+    let address = key_pair.address();
+    Ok((address, EthPrivKeyPolicy::KeyPair(key_pair)))
 }
