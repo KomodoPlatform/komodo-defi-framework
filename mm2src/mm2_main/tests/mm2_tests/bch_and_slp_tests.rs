@@ -1,10 +1,12 @@
 use common::executor::Timer;
 use common::{block_on, log, now_ms};
 use http::StatusCode;
-use mm2_test_helpers::for_tests::{enable_bch_with_tokens, enable_slp, my_tx_history_v2, sign_message, verify_message,
-                                  MarketMakerIt, Mm2TestConf, UtxoRpcMode};
-use mm2_test_helpers::structs::{RpcV2Response, SignatureResponse, StandardHistoryV2Res, UtxoFeeDetails,
-                                VerificationResponse};
+use itertools::Itertools;
+use mm2_test_helpers::for_tests::{enable_bch_with_tokens, enable_slp, my_tx_history_v2, sign_message,
+                                  tbch_for_slp_conf, tbch_usdf_conf, verify_message, MarketMakerIt, Mm2TestConf,
+                                  UtxoRpcMode};
+use mm2_test_helpers::structs::{EnableBchWithTokensResponse, RpcV2Response, SignatureResponse, StandardHistoryV2Res,
+                                UtxoFeeDetails, VerificationResponse};
 use serde_json::{self as json, json, Value as Json};
 use std::env;
 use std::thread;
@@ -25,6 +27,8 @@ const T_BCH_ELECTRUMS: &[&str] = &[
     "electroncash.de:60004",
     "blackie.c3-soft.com:60004",
 ];
+
+const BIP39_PASSPHRASE: &str = "tank abandon bind salon remove wisdom net size aspect direct source fossil";
 
 fn t_bch_electrums_legacy_json() -> Vec<Json> { T_BCH_ELECTRUMS.into_iter().map(|url| json!({ "url": url })).collect() }
 
@@ -630,4 +634,77 @@ fn test_sign_verify_message_slp() {
     let response = response.result;
 
     assert!(response.is_valid);
+}
+
+/// Tested via [Electron-Cash-SLP](https://github.com/simpleledger/Electron-Cash-SLP).
+#[test]
+#[cfg(not(target_arch = "wasm32"))]
+fn test_bch_and_slp_with_hd_account_id() {
+    const TX_HISTORY: bool = false;
+
+    let coins = json!([tbch_for_slp_conf(), tbch_usdf_conf()]);
+
+    // HD account 0
+
+    let hd_account_id = 0;
+    let conf_0 = Mm2TestConf::seednode_with_hd_account(BIP39_PASSPHRASE, hd_account_id, &coins);
+    let mm_hd_0 = MarketMakerIt::start(conf_0.conf, conf_0.rpc_password, None).unwrap();
+
+    let rpc_mode = UtxoRpcMode::electrum(T_BCH_ELECTRUMS);
+    let activation_result = block_on(enable_bch_with_tokens(
+        &mm_hd_0,
+        "tBCH",
+        &["USDF"],
+        rpc_mode,
+        TX_HISTORY,
+    ));
+
+    let activation_result: RpcV2Response<EnableBchWithTokensResponse> = json::from_value(activation_result).unwrap();
+    let (bch_addr, _) = activation_result
+        .result
+        .bch_addresses_infos
+        .into_iter()
+        .exactly_one()
+        .unwrap();
+    assert_eq!(bch_addr, "bchtest:qpylzql7gzh6yctm7uslsz5qufl44gk2tsj8c9pjw0");
+
+    let (slp_addr, _) = activation_result
+        .result
+        .slp_addresses_infos
+        .into_iter()
+        .exactly_one()
+        .unwrap();
+    assert_eq!(slp_addr, "slptest:qpylzql7gzh6yctm7uslsz5qufl44gk2tsfnl7m9uj");
+
+    // HD account 1
+
+    let hd_account_id = 1;
+    let conf_1 = Mm2TestConf::seednode_with_hd_account(BIP39_PASSPHRASE, hd_account_id, &coins);
+    let mm_hd_1 = MarketMakerIt::start(conf_1.conf, conf_1.rpc_password, None).unwrap();
+
+    let rpc_mode = UtxoRpcMode::electrum(T_BCH_ELECTRUMS);
+    let activation_result = block_on(enable_bch_with_tokens(
+        &mm_hd_1,
+        "tBCH",
+        &["USDF"],
+        rpc_mode,
+        TX_HISTORY,
+    ));
+
+    let activation_result: RpcV2Response<EnableBchWithTokensResponse> = json::from_value(activation_result).unwrap();
+    let (bch_addr, _) = activation_result
+        .result
+        .bch_addresses_infos
+        .into_iter()
+        .exactly_one()
+        .unwrap();
+    assert_eq!(bch_addr, "bchtest:qpyhwc7shd5hlul8zg0snmaptaa9q9yc4q7g9khpkj");
+
+    let (slp_addr, _) = activation_result
+        .result
+        .slp_addresses_infos
+        .into_iter()
+        .exactly_one()
+        .unwrap();
+    assert_eq!(slp_addr, "slptest:qpyhwc7shd5hlul8zg0snmaptaa9q9yc4q9uzddky0");
 }

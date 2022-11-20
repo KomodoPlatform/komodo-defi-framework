@@ -5,10 +5,10 @@ use crate::platform_coin_with_tokens::{EnablePlatformCoinWithTokensError, GetPla
 use crate::prelude::*;
 use async_trait::async_trait;
 use coins::my_tx_history_v2::TxHistoryStorage;
-use coins::tendermint::{TendermintCoin, TendermintInitError, TendermintInitErrorKind, TendermintProtocolInfo,
-                        TendermintToken, TendermintTokenActivationParams, TendermintTokenInitError,
-                        TendermintTokenProtocolInfo};
-use coins::{CoinBalance, CoinProtocol, MarketCoinOps};
+use coins::tendermint::{TendermintCoin, TendermintConf, TendermintInitError, TendermintInitErrorKind,
+                        TendermintProtocolInfo, TendermintToken, TendermintTokenActivationParams,
+                        TendermintTokenInitError, TendermintTokenProtocolInfo};
+use coins::{CoinBalance, CoinProtocol, MarketCoinOps, PrivKeyBuildPolicy};
 use common::Future01CompatExt;
 use mm2_core::mm_ctx::MmArc;
 use mm2_err_handle::prelude::*;
@@ -156,25 +156,16 @@ impl PlatformWithTokensActivationOps for TendermintCoin {
         coin_conf: Json,
         activation_request: Self::ActivationRequest,
         protocol_conf: Self::PlatformProtocolInfo,
-        priv_key: &[u8],
+        priv_key_policy: PrivKeyBuildPolicy,
     ) -> Result<Self, MmError<Self::ActivationError>> {
-        let avg_block_time = coin_conf["avg_block_time"].as_i64().unwrap_or(0);
-
-        // `avg_block_time` can not be less than 1 OR bigger than 255(u8::MAX)
-        if avg_block_time < 1 || avg_block_time > std::u8::MAX as i64 {
-            return MmError::err(TendermintInitError {
-                ticker,
-                kind: TendermintInitErrorKind::AvgBlockTimeMissingOrInvalid,
-            });
-        }
-
+        let conf = TendermintConf::try_from_json(&ticker, &coin_conf)?;
         TendermintCoin::init(
             &ctx,
             ticker,
-            avg_block_time as u8,
+            conf,
             protocol_conf,
             activation_request.rpc_urls,
-            priv_key,
+            priv_key_policy,
         )
         .await
     }

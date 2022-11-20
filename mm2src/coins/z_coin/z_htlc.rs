@@ -10,7 +10,7 @@ use crate::utxo::rpc_clients::{UtxoRpcClientEnum, UtxoRpcError};
 use crate::utxo::utxo_common::payment_script;
 use crate::utxo::{sat_from_big_decimal, UtxoAddressFormat};
 use crate::z_coin::{SendOutputsErr, ZOutput, DEX_FEE_OVK};
-use crate::{NumConversError, PrivKeyNotAllowed, TransactionEnum};
+use crate::{NumConversError, PrivKeyPolicyNotAllowed, TransactionEnum};
 use bitcrypto::dhash160;
 use common::async_blocking;
 use derive_more::Display;
@@ -96,7 +96,7 @@ pub async fn z_send_dex_fee(
 #[allow(clippy::large_enum_variant, clippy::upper_case_acronyms)]
 pub enum ZP2SHSpendError {
     ZTxBuilderError(ZTxBuilderError),
-    PrivKeyNotAllowed(PrivKeyNotAllowed),
+    PrivKeyPolicyNotAllowed(PrivKeyPolicyNotAllowed),
     Rpc(UtxoRpcError),
     #[display(fmt = "{:?} {}", _0, _1)]
     TxRecoverable(TransactionEnum, String),
@@ -107,8 +107,8 @@ impl From<ZTxBuilderError> for ZP2SHSpendError {
     fn from(tx_builder: ZTxBuilderError) -> ZP2SHSpendError { ZP2SHSpendError::ZTxBuilderError(tx_builder) }
 }
 
-impl From<PrivKeyNotAllowed> for ZP2SHSpendError {
-    fn from(err: PrivKeyNotAllowed) -> Self { ZP2SHSpendError::PrivKeyNotAllowed(err) }
+impl From<PrivKeyPolicyNotAllowed> for ZP2SHSpendError {
+    fn from(err: PrivKeyPolicyNotAllowed) -> Self { ZP2SHSpendError::PrivKeyPolicyNotAllowed(err) }
 }
 
 impl From<UtxoRpcError> for ZP2SHSpendError {

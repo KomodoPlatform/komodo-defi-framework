@@ -8,9 +8,10 @@ use crate::spl_token_activation::SplActivationRequest;
 use async_trait::async_trait;
 use coins::coin_errors::MyAddressError;
 use coins::my_tx_history_v2::TxHistoryStorage;
+use coins::solana::solana_coin_with_policy;
 use coins::solana::spl::{SplProtocolConf, SplTokenCreationError};
-use coins::{solana_coin_from_conf_and_params, BalanceError, CoinBalance, CoinProtocol, MarketCoinOps,
-            SolanaActivationParams, SolanaCoin, SplToken};
+use coins::{BalanceError, CoinBalance, CoinProtocol, MarketCoinOps, PrivKeyBuildPolicy, SolanaActivationParams,
+            SolanaCoin, SplToken};
 use common::Future01CompatExt;
 use mm2_core::mm_ctx::MmArc;
 use mm2_err_handle::prelude::*;
@@ -179,14 +180,14 @@ impl PlatformWithTokensActivationOps for SolanaCoin {
         platform_conf: Json,
         activation_request: Self::ActivationRequest,
         _protocol_conf: Self::PlatformProtocolInfo,
-        priv_key: &[u8],
+        priv_key_policy: PrivKeyBuildPolicy,
     ) -> Result<Self, MmError<Self::ActivationError>> {
-        let platform_coin = solana_coin_from_conf_and_params(
+        let platform_coin = solana_coin_with_policy(
             &ctx,
             &ticker,
             &platform_conf,
             activation_request.platform_request,
-            priv_key,
+            priv_key_policy,
         )
         .await
         .map_to_mm(|error| SolanaWithTokensActivationError::PlatformCoinCreationError { ticker, error })?;

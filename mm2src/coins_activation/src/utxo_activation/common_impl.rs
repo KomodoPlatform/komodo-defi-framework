@@ -78,7 +78,7 @@ pub(crate) fn priv_key_build_policy(
     activation_policy: PrivKeyActivationPolicy,
 ) -> PrivKeyBuildPolicy {
     match activation_policy {
-        PrivKeyActivationPolicy::IguanaPrivKey => PrivKeyBuildPolicy::iguana_priv_key(crypto_ctx),
+        PrivKeyActivationPolicy::ContextPrivKey => PrivKeyBuildPolicy::detect_priv_key_policy(crypto_ctx),
         PrivKeyActivationPolicy::Trezor => PrivKeyBuildPolicy::Trezor,
     }
 }

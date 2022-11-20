@@ -15,13 +15,11 @@ db_common = { path = "../db_common" }
 derive_more = "0.99"
 futures = { version = "0.3", package = "futures", features = ["compat", "async-await", "thread-pool"] }
 hex = "0.4.2"
-keys = { path = "../mm2_bitcoin/keys" }
 lazy_static = "1.4"
 mm2_metrics = { path = "../mm2_metrics" }
 primitives = { path = "../mm2_bitcoin/primitives" }
 rand = { version = "0.7", features = ["std", "small_rng", "wasm-bindgen"] }
 serde = "1"
-serde_bytes = "0.11"
 serde_json = { version = "1.0", features = ["preserve_order", "raw_value"] }
 shared_ref_counter = { path = "../common/shared_ref_counter" }
 uuid = { version = "0.7", features = ["serde", "v4"] }

@@ -333,7 +333,7 @@ async fn start_lightning(
     let persister = init_persister(ctx, conf.ticker.clone(), params.backup_path).await?;
 
     // Initialize the KeysManager
-    let keys_manager = init_keys_manager(ctx)?;
+    let keys_manager = init_keys_manager(&platform)?;
 
     // Initialize the P2PGossipSync. This is used for providing routes to send payments over
     task_handle.update_in_progress_status(LightningInProgressStatus::ReadingNetworkGraphFromFile)?;

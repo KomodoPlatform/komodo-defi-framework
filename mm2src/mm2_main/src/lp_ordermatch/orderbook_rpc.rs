@@ -1,9 +1,9 @@
-use super::{orderbook_address, subscribe_to_orderbook_topic, OrdermatchContext, RpcOrderbookEntry};
-use crate::mm2::lp_ordermatch::{addr_format_from_protocol_info, RpcOrderbookEntryV2};
+use super::{addr_format_from_protocol_info, is_my_order, orderbook_address, subscribe_to_orderbook_topic,
+            OrdermatchContext, RpcOrderbookEntry, RpcOrderbookEntryV2};
 use coins::{address_by_coin_conf_and_pubkey_str, coin_conf, is_wallet_only_conf};
 use common::log::warn;
 use common::{now_ms, HttpStatusCode};
-use crypto::CryptoCtx;
+use crypto::{CryptoCtx, CryptoCtxError};
 use derive_more::Display;
 use http::{Response, StatusCode};
 use mm2_core::mm_ctx::MmArc;
@@ -11,7 +11,6 @@ use mm2_err_handle::prelude::*;
 use mm2_number::{construct_detailed, BigRational, MmNumber, MmNumberMultiRepr};
 use num_traits::Zero;
 use serde_json::{self as json, Value as Json};
-use std::collections::HashSet;
 
 #[derive(Deserialize)]
 pub struct OrderbookReq {
@@ -108,14 +107,6 @@ fn build_aggregated_entries_v2(
     (aggregated, total_base.into(), total_rel.into())
 }
 
-// ZHTLC protocol coin uses random keypair to sign P2P messages per every order.
-// So, each ZHTLC order has unique «pubkey» field that doesn’t match node persistent pubkey derived from passphrase.
-// We can compare pubkeys from maker_orders and from asks or bids, to find our order.
-#[inline(always)]
-fn is_my_order(my_orders_pubkeys: &HashSet<String>, my_pub: &Option<String>, order_pubkey: &str) -> bool {
-    my_pub.as_deref() == Some(order_pubkey) || my_orders_pubkeys.contains(order_pubkey)
-}
-
 pub async fn orderbook_rpc(ctx: MmArc, req: Json) -> Result<Response<Vec<u8>>, String> {
     let req: OrderbookReq = try_s!(json::from_value(req));
     if req.base == req.rel {
@@ -144,13 +135,14 @@ pub async fn orderbook_rpc(ctx: MmArc, req: Json) -> Result<Response<Vec<u8>>, S
     }
 
     try_s!(subscribe_to_orderbook_topic(&ctx, &base_ticker, &rel_ticker, request_orderbook).await);
-    let orderbook = ordermatch_ctx.orderbook.lock();
-    let my_pubsecp = ctx.secp256k1_key_pair_as_option().map(|_| {
-        CryptoCtx::from_ctx(&ctx)
-            .expect("ctx is available")
-            .secp256k1_pubkey_hex()
-    });
 
+    let my_pubsecp = match CryptoCtx::from_ctx(&ctx).discard_mm_trace() {
+        Ok(crypto_ctx) => Some(crypto_ctx.mm2_internal_pubkey_hex()),
+        Err(CryptoCtxError::NotInitialized) => None,
+        Err(other) => return ERR!("{}", other),
+    };
+
+    let orderbook = ordermatch_ctx.orderbook.lock();
     let mut asks = match orderbook.unordered.get(&(base_ticker.clone(), rel_ticker.clone())) {
         Some(uuids) => {
             let mut orderbook_entries = Vec::new();
@@ -232,6 +224,7 @@ pub enum OrderbookRpcError {
     CoinConfigNotFound(String),
     CoinIsWalletOnly(String),
     P2PSubscribeError(String),
+    Internal(String),
 }
 
 impl HttpStatusCode for OrderbookRpcError {
@@ -241,7 +234,9 @@ impl HttpStatusCode for OrderbookRpcError {
             | OrderbookRpcError::BaseRelSameOrderbookTickersAndProtocols
             | OrderbookRpcError::CoinConfigNotFound(_)
             | OrderbookRpcError::CoinIsWalletOnly(_) => StatusCode::BAD_REQUEST,
-            OrderbookRpcError::P2PSubscribeError(_) => StatusCode::INTERNAL_SERVER_ERROR,
+            OrderbookRpcError::P2PSubscribeError(_) | OrderbookRpcError::Internal(_) => {
+                StatusCode::INTERNAL_SERVER_ERROR
+            },
         }
     }
 }
@@ -311,11 +306,14 @@ pub async fn orderbook_rpc_v2(
         .map_to_mm(OrderbookRpcError::P2PSubscribeError)?;
 
     let orderbook = ordermatch_ctx.orderbook.lock();
-    let my_pubsecp = ctx.secp256k1_key_pair_as_option().map(|_| {
-        CryptoCtx::from_ctx(&ctx)
-            .expect("ctx is available")
-            .secp256k1_pubkey_hex()
-    });
+
+    let my_pubsecp = match CryptoCtx::from_ctx(&ctx).split_mm() {
+        Ok(crypto_ctx) => Some(crypto_ctx.mm2_internal_pubkey_hex()),
+        Err((CryptoCtxError::NotInitialized, _trace)) => None,
+        Err((CryptoCtxError::Internal(e), trace)) => {
+            return MmError::err_with_trace(OrderbookRpcError::Internal(e), trace)
+        },
+    };
 
     let mut asks = match orderbook.unordered.get(&(base_ticker.clone(), rel_ticker.clone())) {
         Some(uuids) => {

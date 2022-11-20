@@ -4,7 +4,7 @@ use coins::hd_wallet::{NewAccountCreatingError, NewAddressDerivingError};
 use coins::tx_history_storage::CreateTxHistoryStorageError;
 use coins::utxo::utxo_builder::UtxoCoinBuildError;
 use coins::{BalanceError, RegisterCoinError};
-use crypto::{CryptoInitError, HwError, HwRpcError};
+use crypto::{CryptoCtxError, HwError, HwRpcError};
 use derive_more::Display;
 use rpc_task::RpcTaskError;
 use ser_error_derive::SerializeErrorType;
@@ -37,9 +37,9 @@ impl From<RpcTaskError> for InitUtxoStandardError {
     }
 }
 
-impl From<CryptoInitError> for InitUtxoStandardError {
+impl From<CryptoCtxError> for InitUtxoStandardError {
     /// `CryptoCtx` is expected to be initialized already.
-    fn from(crypto_err: CryptoInitError) -> Self { InitUtxoStandardError::Internal(crypto_err.to_string()) }
+    fn from(crypto_err: CryptoCtxError) -> Self { InitUtxoStandardError::Internal(crypto_err.to_string()) }
 }
 
 impl From<CreateTxHistoryStorageError> for InitUtxoStandardError {
