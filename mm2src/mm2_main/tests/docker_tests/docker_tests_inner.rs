@@ -3,13 +3,15 @@ use crate::{fill_address, fill_eth, generate_utxo_coin_with_privkey, generate_ut
             rmd160_from_priv, utxo_coin_from_privkey};
 use bitcrypto::dhash160;
 use chain::OutPoint;
+use coins::coin_errors::ValidatePaymentError;
 use coins::utxo::rpc_clients::UnspentInfo;
 use coins::utxo::{GetUtxoListOps, UtxoCommonOps};
-use coins::{FoundSwapTxSpend, MarketCoinOps, MmCoin, SearchForSwapTxSpendInput, SendMakerPaymentArgs,
+use coins::{FoundSwapTxSpend, MarketCoinOps, MmCoin, MmCoinEnum, SearchForSwapTxSpendInput, SendMakerPaymentArgs,
             SendMakerRefundsPaymentArgs, SendMakerSpendsTakerPaymentArgs, SendTakerPaymentArgs,
             SendTakerSpendsMakerPaymentArgs, SwapOps, TransactionEnum, WatcherOps, WithdrawRequest};
-use common::{block_on, now_ms};
+use common::{block_on, now_ms, DEX_FEE_ADDR_RAW_PUBKEY};
 use futures01::Future;
+use mm2::mm2::lp_swap::dex_fee_amount_from_taker_coin;
 use mm2_number::{BigDecimal, MmNumber};
 use mm2_test_helpers::for_tests::{check_my_swap_status_amounts, mm_dump, MarketMakerIt, Mm2TestConf};
 use mm2_test_helpers::structs::*;
@@ -19,6 +21,7 @@ use std::collections::HashMap;
 use std::env;
 use std::thread;
 use std::time::Duration;
+use uuid::Uuid;
 
 #[test]
 fn test_search_for_swap_tx_spend_native_was_refunded_taker() {
@@ -1136,6 +1139,177 @@ fn test_watcher_refunds_taker_payment() {
     let json: Json = serde_json::from_str(&rc.1).unwrap();
     let alice_mycoin_balance = json["balance"].as_str().unwrap();
     assert_eq!(alice_mycoin_balance, "100");
+}
+
+#[test]
+fn test_watcher_validate_taker_fee() {
+    let timeout = (now_ms() / 1000) + 120; // timeout if test takes more than 120 seconds to run
+    let (_ctx, taker_coin, _) = generate_utxo_coin_with_random_privkey("MYCOIN", 1000u64.into());
+    let (_ctx, maker_coin, _) = generate_utxo_coin_with_random_privkey("MYCOIN", 1000u64.into());
+    let taker_pubkey = taker_coin.my_public_key().unwrap();
+
+    let taker_amount = MmNumber::from((10, 1));
+    let fee_amount = dex_fee_amount_from_taker_coin(
+        &MmCoinEnum::UtxoCoin(taker_coin.clone()),
+        maker_coin.ticker(),
+        &taker_amount,
+    );
+    let uuid = Uuid::parse_str("936DA01F-9ABD-4D9D-80C7-02AF85C822A8").unwrap();
+
+    let taker_fee = taker_coin
+        .send_taker_fee(&DEX_FEE_ADDR_RAW_PUBKEY, fee_amount.clone().into(), uuid.as_bytes())
+        .wait()
+        .unwrap();
+
+    taker_coin
+        .wait_for_confirmations(&taker_fee.tx_hex(), 1, false, timeout, 1)
+        .wait()
+        .unwrap();
+
+    let taker_payment = taker_coin
+        .send_taker_payment(SendTakerPaymentArgs {
+            time_lock_duration: 0,
+            time_lock: (now_ms() / 1000) as u32 - 3600,
+            other_pubkey: taker_pubkey,
+            secret_hash: &[0; 20],
+            amount: 1u64.into(),
+            swap_contract_address: &None,
+            swap_unique_data: &[],
+            payment_instructions: &None,
+        })
+        .wait()
+        .unwrap();
+
+    let validate_taker_fee_res = taker_coin
+        .watcher_validate_taker_fee(
+            &taker_fee.tx_hash().into_vec(),
+            &taker_payment.tx_hex(),
+            taker_pubkey,
+            &fee_amount.clone().into(),
+            0,
+            &DEX_FEE_ADDR_RAW_PUBKEY,
+            7800,
+        )
+        .wait();
+    assert!(validate_taker_fee_res.is_ok());
+
+    let error = taker_coin
+        .watcher_validate_taker_fee(
+            &taker_fee.tx_hash().into_vec(),
+            &taker_payment.tx_hex(),
+            maker_coin.my_public_key().unwrap(),
+            &fee_amount.clone().into(),
+            0,
+            &DEX_FEE_ADDR_RAW_PUBKEY,
+            7800,
+        )
+        .wait()
+        .unwrap_err()
+        .into_inner();
+
+    log!("error: {:?}", error);
+    match error {
+        ValidatePaymentError::WrongPaymentTx(err) => {
+            assert!(err.contains("Taker fee does not belong to the verified public key"))
+        },
+        _ => panic!("Expected `WrongPaymentTx` invalid public key, found {:?}", error),
+    }
+
+    let error = taker_coin
+        .watcher_validate_taker_fee(
+            &taker_fee.tx_hash().into_vec(),
+            &taker_payment.tx_hex(),
+            taker_pubkey,
+            &fee_amount.clone().into(),
+            std::u64::MAX,
+            &DEX_FEE_ADDR_RAW_PUBKEY,
+            7800,
+        )
+        .wait()
+        .unwrap_err()
+        .into_inner();
+    log!("error: {:?}", error);
+    match error {
+        ValidatePaymentError::WrongPaymentTx(err) => {
+            assert!(err.contains("confirmed before min_block"))
+        },
+        _ => panic!(
+            "Expected `WrongPaymentTx` confirmed before min_block, found {:?}",
+            error
+        ),
+    }
+
+    let error = taker_coin
+        .watcher_validate_taker_fee(
+            &taker_fee.tx_hash().into_vec(),
+            &taker_payment.tx_hex(),
+            taker_pubkey,
+            &fee_amount.clone().into(),
+            0,
+            &DEX_FEE_ADDR_RAW_PUBKEY,
+            0,
+        )
+        .wait()
+        .unwrap_err()
+        .into_inner();
+    log!("error: {:?}", error);
+    match error {
+        ValidatePaymentError::WrongPaymentTx(err) => {
+            assert!(err.contains("not consistent with the lock_time of the taker payment"))
+        },
+        _ => panic!(
+            "Expected `WrongPaymentTx` not consistent with the lock_time of the taker payment, found {:?}",
+            error
+        ),
+    }
+
+    let error = taker_coin
+        .watcher_validate_taker_fee(
+            &taker_fee.tx_hash().into_vec(),
+            &taker_payment.tx_hex(),
+            taker_pubkey,
+            &fee_amount.into(),
+            0,
+            taker_pubkey,
+            7800,
+        )
+        .wait()
+        .unwrap_err()
+        .into_inner();
+    log!("error: {:?}", error);
+    match error {
+        ValidatePaymentError::WrongPaymentTx(err) => {
+            assert!(err.contains("Provided dex fee tx output script_pubkey doesn't match expected"))
+        },
+        _ => panic!(
+            "Expected `WrongPaymentTx` tx output script_pubkey doesn't match expected, found {:?}",
+            error
+        ),
+    }
+
+    let error = taker_coin
+        .watcher_validate_taker_fee(
+            &taker_fee.tx_hash().into_vec(),
+            &taker_payment.tx_hex(),
+            taker_pubkey,
+            &2u64.into(),
+            0,
+            &DEX_FEE_ADDR_RAW_PUBKEY,
+            7800,
+        )
+        .wait()
+        .unwrap_err()
+        .into_inner();
+    log!("error: {:?}", error);
+    match error {
+        ValidatePaymentError::WrongPaymentTx(err) => {
+            assert!(err.contains("Provided dex fee tx output value is less than expected"))
+        },
+        _ => panic!(
+            "Expected `WrongPaymentTx` tx output value is less than expected, found {:?}",
+            error
+        ),
+    }
 }
 
 #[test]

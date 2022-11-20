@@ -1802,9 +1802,10 @@ pub fn watcher_validate_taker_fee<T: UtxoCommonOps>(
             .await
             .map_to_mm(ValidatePaymentError::InternalError)?;
         if tx_confirmed_before_block {
-            return MmError::err(ValidatePaymentError::WrongPaymentTx(
-                "Fee tx {:?} confirmed before min_block {}".to_string(),
-            ));
+            return MmError::err(ValidatePaymentError::WrongPaymentTx(format!(
+                "Fee tx {:?} confirmed before min_block {}",
+                taker_fee_tx, min_block_number
+            )));
         }
 
         let taker_payment_tx: UtxoTx = deserialize(taker_payment_hex.as_slice())
