@@ -117,6 +117,8 @@ pub mod wio;
 
 #[cfg(target_arch = "wasm32")] pub use wasm::*;
 
+#[cfg(target_arch = "wasm32")] use std::path::PathBuf;
+
 use backtrace::SymbolName;
 use chrono::Utc;
 pub use futures::compat::Future01CompatExt;
