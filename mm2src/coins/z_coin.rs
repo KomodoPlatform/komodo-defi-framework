@@ -29,6 +29,7 @@ use async_trait::async_trait;
 use bitcrypto::dhash256;
 use chain::constants::SEQUENCE_FINAL;
 use chain::{Transaction as UtxoTx, TransactionOutput};
+use common::sha256_digest;
 use common::{async_blocking, calc_total_pages, log, PagingOptionsEnum};
 use crypto::privkey::{key_pair_from_secret, secp_privkey_from_hash};
 use crypto::{Bip32DerPathOps, GlobalHDAccountArc, StandardHDPathToCoin};
@@ -51,10 +52,7 @@ use rpc::v1::types::{Bytes as BytesJson, Transaction as RpcTransaction, H256 as 
 use script::{Builder as ScriptBuilder, Opcode, Script, TransactionInputSigner};
 use serde_json::Value as Json;
 use serialization::CoinVariant;
-use sha2::{Digest, Sha256};
 use std::collections::{HashMap, HashSet};
-use std::fs::File;
-use std::io::{BufReader, Read};
 use std::iter;
 use std::path::PathBuf;
 use std::sync::Arc;
@@ -740,26 +738,6 @@ pub async fn z_coin_from_conf_and_params(
     builder.build().await
 }
 
-/// open file and calculate its sha256 digest as lowercase hex string
-fn sha256_digest(path: &PathBuf) -> Result<String, ZCoinBuildError> {
-    let input = File::open(path)?;
-    let mut reader = BufReader::new(input);
-
-    let digest = {
-        let mut hasher = Sha256::new();
-        let mut buffer = [0; 1024];
-        loop {
-            let count = reader.read(&mut buffer)?;
-            if count == 0 {
-                break;
-            }
-            hasher.update(&buffer[..count]);
-        }
-        format!("{:x}", hasher.finalize())
-    };
-    Ok(digest)
-}
-
 fn verify_checksum_zcash_params(spend_path: &PathBuf, output_path: &PathBuf) -> Result<bool, ZCoinBuildError> {
     let spend_hash = sha256_digest(spend_path)?;
     let out_hash = sha256_digest(output_path)?;
@@ -767,14 +745,12 @@ fn verify_checksum_zcash_params(spend_path: &PathBuf, output_path: &PathBuf) -> 
 }
 
 fn get_spend_output_paths(params_dir: PathBuf) -> Result<(PathBuf, PathBuf), ZCoinBuildError> {
-    let (spend_path, output_path) = if params_dir.exists() {
-        (
-            params_dir.join(SAPLING_SPEND_NAME),
-            params_dir.join(SAPLING_OUTPUT_NAME),
-        )
-    } else {
+    if !params_dir.exists() {
         return Err(ZCoinBuildError::ZCashParamsNotFound);
     };
+    let spend_path = params_dir.join(SAPLING_SPEND_NAME);
+    let output_path = params_dir.join(SAPLING_OUTPUT_NAME);
+
     if !(spend_path.exists() && output_path.exists()) {
         return Err(ZCoinBuildError::ZCashParamsNotFound);
     }
