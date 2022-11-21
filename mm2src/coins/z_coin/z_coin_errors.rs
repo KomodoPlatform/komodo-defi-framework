@@ -207,6 +207,7 @@ pub enum ZCoinBuildError {
     RpcClientInitErr(ZcoinClientInitError),
     ZCashParamsNotFound,
     ZDerivationPathNotSet,
+    SaplingParamsInvalidChecksum,
 }
 
 impl From<SqliteError> for ZCoinBuildError {

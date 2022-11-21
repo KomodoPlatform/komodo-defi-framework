@@ -1235,6 +1235,7 @@ dependencies = [
  "serde_derive",
  "serde_json",
  "serde_repr",
+ "sha2 0.9.9",
  "shared_ref_counter",
  "tokio",
  "uuid 0.7.4",

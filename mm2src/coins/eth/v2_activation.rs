@@ -102,6 +102,28 @@ impl EthCoin {
             Some(d) => d as u8,
         };
 
+        let web3_instances: Vec<Web3Instance> = self
+            .web3_instances
+            .iter()
+            .map(|node| {
+                let mut transport = node.web3.transport().clone();
+                if let Some(auth) = &mut transport.gui_auth_validation_generator {
+                    auth.coin_ticker = ticker.clone();
+                }
+                let web3 = Web3::new(transport);
+                Web3Instance {
+                    web3,
+                    is_parity: node.is_parity,
+                }
+            })
+            .collect();
+
+        let mut transport = self.web3.transport().clone();
+        if let Some(auth) = &mut transport.gui_auth_validation_generator {
+            auth.coin_ticker = ticker.clone();
+        }
+        let web3 = Web3::new(transport);
+
         let required_confirmations = activation_params
             .required_confirmations
             .unwrap_or_else(|| conf["required_confirmations"].as_u64().unwrap_or(1))
@@ -126,8 +148,8 @@ impl EthCoin {
             gas_station_url: self.gas_station_url.clone(),
             gas_station_decimals: self.gas_station_decimals,
             gas_station_policy: self.gas_station_policy,
-            web3: self.web3.clone(),
-            web3_instances: self.web3_instances.clone(),
+            web3,
+            web3_instances,
             history_sync_state: Mutex::new(self.history_sync_state.lock().unwrap().clone()),
             ctx: self.ctx.clone(),
             required_confirmations,

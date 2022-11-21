@@ -244,6 +244,7 @@ mod bchd_grpc_tests {
     use super::*;
     use crate::utxo::rpc_clients::UnspentInfo;
     use common::block_on;
+    use mm2_test_helpers::for_tests::BCHD_TESTNET_URLS;
 
     #[test]
     fn test_validate_slp_utxos_valid() {
@@ -274,9 +275,8 @@ mod bchd_grpc_tests {
             },
         ];
 
-        let url = "https://bchd-testnet.electroncash.de:18335";
         let token_id = H256::from("bb309e48930671582bea508f9a1d9b491e49b69be3d6f372dc08da2ac6e90eb7");
-        block_on(validate_slp_utxos(&[url], &slp_utxos, &token_id)).unwrap();
+        block_on(validate_slp_utxos(BCHD_TESTNET_URLS, &slp_utxos, &token_id)).unwrap();
     }
 
     #[test]
@@ -319,9 +319,8 @@ mod bchd_grpc_tests {
             },
         ];
 
-        let url = "https://bchd-testnet.electroncash.de:18335";
         let token_id = H256::from("bb309e48930671582bea508f9a1d9b491e49b69be3d6f372dc08da2ac6e90eb7");
-        let err = block_on(validate_slp_utxos(&[url], &slp_utxos, &token_id)).unwrap_err();
+        let err = block_on(validate_slp_utxos(BCHD_TESTNET_URLS, &slp_utxos, &token_id)).unwrap_err();
         match err.into_inner().kind {
             ValidateSlpUtxosErrKind::InvalidSlpTxData(_) => (),
             err @ _ => panic!("Unexpected error {:?}", err),
@@ -355,9 +354,8 @@ mod bchd_grpc_tests {
             slp_amount: 8999,
         }];
 
-        let url = "https://bchd-testnet.electroncash.de:18335";
         let token_id = H256::from("bb309e48930671582bea508f9a1d9b491e49b69be3d6f372dc08da2ac6e90eb7");
-        let err = block_on(validate_slp_utxos(&[url], &slp_utxos, &token_id)).unwrap_err();
+        let err = block_on(validate_slp_utxos(BCHD_TESTNET_URLS, &slp_utxos, &token_id)).unwrap_err();
         match err.into_inner().kind {
             ValidateSlpUtxosErrKind::UnexpectedValidityResultType {
                 for_unspent,
@@ -400,10 +398,9 @@ mod bchd_grpc_tests {
             },
         ];
 
-        let url = "https://bchd-testnet.electroncash.de:18335";
         let valid_token_id = H256::from("bb309e48930671582bea508f9a1d9b491e49b69be3d6f372dc08da2ac6e90eb7");
         let invalid_token_id = H256::from("bb309e48930671582bea508f9a1d9b491e49b69be3d6f372dc08da2ac6e90eb8");
-        let err = block_on(validate_slp_utxos(&[url], &slp_utxos, &invalid_token_id)).unwrap_err();
+        let err = block_on(validate_slp_utxos(BCHD_TESTNET_URLS, &slp_utxos, &invalid_token_id)).unwrap_err();
         match err.into_inner().kind {
             ValidateSlpUtxosErrKind::UnexpectedTokenId { expected, actual } => {
                 assert_eq!(invalid_token_id, expected);
@@ -415,18 +412,16 @@ mod bchd_grpc_tests {
 
     #[test]
     fn test_check_slp_transaction_valid() {
-        let url = "https://bchd-testnet.electroncash.de:18335";
         // https://testnet.simpleledger.info/tx/c5f46ccc5431687154335d5b6526f1b9cfa961c44b97956b7bec77f884f56c73
         let tx = hex::decode("010000000232809631da50999813c96996d587ceda2829db5e16247477a0eafcbb1ab9a10b020000006a473044022057c88d815fa563eda8ef7d0dd5c522f4501ffa6110df455b151b31609f149c22022048fecfc9b16e983fbfd05b0d2b7c011c3dbec542577fa00cd9bd192b81961f8e4121036879df230663db4cd083c8eeb0f293f46abc460ad3c299b0089b72e6d472202cffffffff32809631da50999813c96996d587ceda2829db5e16247477a0eafcbb1ab9a10b030000006a4730440220539e1204d2805c0474111a1f233ff82c0ab06e6e2bfc0cbe4975eacae64a0b1f02200ec83d32c2180f5567d0f760e85f1efc99d9341cfebd86c9a334310f6d4381494121036879df230663db4cd083c8eeb0f293f46abc460ad3c299b0089b72e6d472202cffffffff040000000000000000406a04534c500001010453454e4420bb309e48930671582bea508f9a1d9b491e49b69be3d6f372dc08da2ac6e90eb7080000000000000001080000000000002326e8030000000000001976a914ca1e04745e8ca0c60d8c5881531d51bec470743f88ace8030000000000001976a9148cfffc2409d063437d6aa8b75a009b9ba51b71fc88ac9f694801000000001976a9148cfffc2409d063437d6aa8b75a009b9ba51b71fc88ac8983d460").unwrap();
-        block_on(check_slp_transaction(&[url], tx)).unwrap();
+        block_on(check_slp_transaction(BCHD_TESTNET_URLS, tx)).unwrap();
     }
 
     #[test]
     fn test_check_slp_transaction_invalid() {
-        let url = "https://bchd-testnet.electroncash.de:18335";
         // https://www.blockchain.com/bch-testnet/tx/d76723c092b64bc598d5d2ceafd6f0db37dce4032db569d6f26afb35491789a7
         let tx = hex::decode("010000000190e35c09c83b5818b441c18a2d5ec54734851e5581fb21bde7936e77c6c3dca8030000006b483045022100e6b1415cbd81f2d04360597fba65965bc77ab5a972f5b8f8d5c0f1b1912923c402206a63f305f03e9c49ffba6c71c7a76ef60631f67dce7631f673a0e8485b86898d4121036879df230663db4cd083c8eeb0f293f46abc460ad3c299b0089b72e6d472202cffffffff020000000000000000376a04534c500001010453454e4420bb309e48930671582bea508f9a1d9b491e49b69be3d6f372dc08da2ac6e90eb70800000000000003e82500ae00000000001976a9148cfffc2409d063437d6aa8b75a009b9ba51b71fc88ac62715161").unwrap();
-        let err = block_on(check_slp_transaction(&[url], tx)).unwrap_err();
+        let err = block_on(check_slp_transaction(BCHD_TESTNET_URLS, tx)).unwrap_err();
         match err.into_inner().kind {
             CheckSlpTransactionErrKind::InvalidTransaction { reason, .. } => {
                 println!("{}", reason);
@@ -439,15 +434,15 @@ mod bchd_grpc_tests {
 #[cfg(target_arch = "wasm32")]
 mod wasm_tests {
     use super::*;
+    use mm2_test_helpers::for_tests::BCHD_TESTNET_URLS;
     use wasm_bindgen_test::*;
 
     wasm_bindgen_test_configure!(run_in_browser);
 
     #[wasm_bindgen_test]
     async fn test_check_slp_transaction_valid() {
-        let url = "https://bchd-testnet.electroncash.de:18335";
         // https://testnet.simpleledger.info/tx/c5f46ccc5431687154335d5b6526f1b9cfa961c44b97956b7bec77f884f56c73
         let tx = hex::decode("010000000232809631da50999813c96996d587ceda2829db5e16247477a0eafcbb1ab9a10b020000006a473044022057c88d815fa563eda8ef7d0dd5c522f4501ffa6110df455b151b31609f149c22022048fecfc9b16e983fbfd05b0d2b7c011c3dbec542577fa00cd9bd192b81961f8e4121036879df230663db4cd083c8eeb0f293f46abc460ad3c299b0089b72e6d472202cffffffff32809631da50999813c96996d587ceda2829db5e16247477a0eafcbb1ab9a10b030000006a4730440220539e1204d2805c0474111a1f233ff82c0ab06e6e2bfc0cbe4975eacae64a0b1f02200ec83d32c2180f5567d0f760e85f1efc99d9341cfebd86c9a334310f6d4381494121036879df230663db4cd083c8eeb0f293f46abc460ad3c299b0089b72e6d472202cffffffff040000000000000000406a04534c500001010453454e4420bb309e48930671582bea508f9a1d9b491e49b69be3d6f372dc08da2ac6e90eb7080000000000000001080000000000002326e8030000000000001976a914ca1e04745e8ca0c60d8c5881531d51bec470743f88ace8030000000000001976a9148cfffc2409d063437d6aa8b75a009b9ba51b71fc88ac9f694801000000001976a9148cfffc2409d063437d6aa8b75a009b9ba51b71fc88ac8983d460").unwrap();
-        check_slp_transaction(&[url], tx).await.unwrap();
+        check_slp_transaction(BCHD_TESTNET_URLS, tx).await.unwrap();
     }
 }

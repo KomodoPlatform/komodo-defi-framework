@@ -133,6 +133,8 @@ pub const ETH_MAINNET_SWAP_CONTRACT: &str = "0x24abe4c71fc658c91313b6552cd40cd80
 pub const ETH_DEV_NODES: &[&str] = &["http://195.201.0.6:8565"];
 pub const ETH_DEV_SWAP_CONTRACT: &str = "0xa09ad3cd7e96586ebd05a2607ee56b56fb2db8fd";
 
+pub const BCHD_TESTNET_URLS: &[&str] = &["https://bchd-testnet.greyh.at:18335"];
+
 pub struct Mm2TestConf {
     pub conf: Json,
     pub rpc_password: String,

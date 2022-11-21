@@ -1604,6 +1604,22 @@ impl TakerOrder {
 
     fn rel_orderbook_ticker(&self) -> &str { self.rel_orderbook_ticker.as_deref().unwrap_or(&self.request.rel) }
 
+    /// Returns the orderbook ticker of the taker coin
+    fn taker_orderbook_ticker(&self) -> &str {
+        match self.request.action {
+            TakerAction::Buy => self.rel_orderbook_ticker(),
+            TakerAction::Sell => self.base_orderbook_ticker(),
+        }
+    }
+
+    /// Returns the orderbook ticker of the maker coin
+    fn maker_orderbook_ticker(&self) -> &str {
+        match self.request.action {
+            TakerAction::Buy => self.base_orderbook_ticker(),
+            TakerAction::Sell => self.rel_orderbook_ticker(),
+        }
+    }
+
     fn orderbook_topic(&self) -> String {
         orderbook_topic_from_base_rel(self.base_orderbook_ticker(), self.rel_orderbook_ticker())
     }
@@ -2878,7 +2894,11 @@ fn lp_connect_start_bob(ctx: MmArc, maker_match: MakerMatch, maker_order: MakerO
             },
             None => AtomicLocktimeVersion::V1,
         };
-        let lock_time = lp_atomic_locktime(maker_coin.ticker(), taker_coin.ticker(), atomic_locktime_v);
+        let lock_time = lp_atomic_locktime(
+            maker_order.base_orderbook_ticker(),
+            maker_order.rel_orderbook_ticker(),
+            atomic_locktime_v,
+        );
         log_tag!(
             ctx,
             "";
@@ -2972,7 +2992,11 @@ fn lp_connected_alice(ctx: MmArc, taker_order: TakerOrder, taker_match: TakerMat
             },
             None => AtomicLocktimeVersion::V1,
         };
-        let locktime = lp_atomic_locktime(maker_coin.ticker(), taker_coin.ticker(), atomic_locktime_v);
+        let locktime = lp_atomic_locktime(
+            taker_order.maker_orderbook_ticker(),
+            taker_order.taker_orderbook_ticker(),
+            atomic_locktime_v,
+        );
         log_tag!(
             ctx,
             "";
