@@ -19,6 +19,7 @@
 //  marketmaker
 //
 
+use crate::mm2::lp_ordermatch::{cancel_orders_by, CancelBy};
 use coins::{lp_coinfind, lp_coininit, CoinsContext, MmCoinEnum};
 use common::executor::Timer;
 use common::log::error;
@@ -63,7 +64,7 @@ pub async fn disable_coin(ctx: MmArc, req: Json) -> Result<Response<Vec<u8>>, St
     let mut still_matching_orders = vec![];
     for ticker in &coins_to_disable {
         let swaps = try_s!(active_swaps_using_coin(&ctx, ticker));
-        let still_matching = get_matching_orders(&ctx, ticker).await;
+        let still_matching = try_s!(get_matching_orders(&ctx, ticker).await);
         active_swaps.extend(swaps);
         still_matching_orders.extend(still_matching);
     }
@@ -85,9 +86,17 @@ pub async fn disable_coin(ctx: MmArc, req: Json) -> Result<Response<Vec<u8>>, St
     }
 
     // Proceed with diabling the coin/tokens.
+    let mut cancelled_orders = vec![];
     let mut disabled_tokens = vec![];
     for ticker in &coins_to_disable {
         log!("disabling {ticker} coin");
+        let (cancelled, _) = try_s!(
+            cancel_orders_by(&ctx, CancelBy::Coin {
+                ticker: ticker.to_string()
+            })
+            .await
+        );
+
         if let Err(err) = coins_ctx.remove_coin(&ctx, ticker).await {
             let err = json!({
                 "error": err,
@@ -98,12 +107,14 @@ pub async fn disable_coin(ctx: MmArc, req: Json) -> Result<Response<Vec<u8>>, St
                 .body(json::to_vec(&err).unwrap())
                 .map_err(|e| ERRL!("{}", e));
         };
+        cancelled_orders.extend(cancelled);
         disabled_tokens.push(ticker);
     }
 
     let res = json!({
         "result": {
             "coin": ticker,
+            "cancelled_orders": cancelled_orders,
             "disabled_tokens": disabled_tokens
         }
     });

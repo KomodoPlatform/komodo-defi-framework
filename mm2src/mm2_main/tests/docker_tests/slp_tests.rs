@@ -161,11 +161,11 @@ fn test_disable_platform_coin_with_tokens() {
         UtxoRpcMode::Native,
         false,
     ));
-    // Try to disable platform_coin token ADEXSLP.
+    // Try to disable ADEXSLP token.
     assert_ok_200(&mm, "ADEXSLP", "disable_coin");
     // Check if platform_coin FORSLP is still enabled.
     assert_ok_200(&mm, "FORSLP", "my_balance");
-    // Check if platform_coin token ADEXSLP still enabled.
+    // Check if ADEXSLP token still enabled.
     assert_error_500(&mm, "ADEXSLP", "my_balance");
     // // Try to disable patform_coin.
     assert_ok_200(&mm, "FORSLP", "disable_coin");
@@ -178,11 +178,11 @@ fn test_disable_platform_coin_with_tokens() {
         UtxoRpcMode::Native,
         false,
     ));
-    // Try to disable platform_token.
+    // Try to disable platform_coin.
     assert_ok_200(&mm, "FORSLP", "disable_coin");
     // Check if platform_coin FORSLP is still enabled.
     assert_error_500(&mm, "FORSLP", "my_balance");
-    // Check if platform_coin token ADEXSLP is still enabled.
+    // Check if ADEXSLP token is still enabled.
     assert_error_500(&mm, "ADEXSLP", "my_balance");
 }
 
