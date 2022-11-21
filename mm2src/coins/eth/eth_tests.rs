@@ -31,14 +31,14 @@ fn eth_coin_for_test(
 
     let mut nodes = vec![];
     for url in urls.iter() {
-        nodes.push(Web3TransportNode {
+        nodes.push(HttpTransportNode {
             uri: url.parse().unwrap(),
             gui_auth: false,
         });
     }
     drop_mutability!(nodes);
 
-    let transport = Web3Transport::new(nodes);
+    let transport = Web3Transport::with_nodes(nodes);
     let web3 = Web3::new(transport);
     let conf = json!({
         "coins":[

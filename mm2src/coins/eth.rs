@@ -26,8 +26,9 @@ use common::executor::{abortable_queue::AbortableQueue, AbortableSystem, Timer};
 use common::log::{error, info, warn};
 use common::{get_utc_timestamp, now_ms, small_rng, DEX_FEE_ADDR_RAW_PUBKEY};
 use crypto::privkey::key_pair_from_secret;
-#[cfg(target_arch = "wasm32")] use crypto::MetamaskArc;
 use crypto::{CryptoCtx, CryptoCtxError, GlobalHDAccountArc, KeyPairPolicy};
+#[cfg(target_arch = "wasm32")]
+use crypto::{MetamaskArc, MetamaskWeak};
 use derive_more::Display;
 use ethabi::{Contract, Token};
 pub use ethcore_transaction::SignedTransaction as SignedEthTx;
@@ -52,6 +53,7 @@ use serialization::{CompactInteger, Serializable, Stream};
 use sha3::{Digest, Keccak256};
 use std::collections::HashMap;
 use std::convert::TryFrom;
+use std::fmt;
 use std::ops::Deref;
 use std::path::PathBuf;
 use std::str::FromStr;
@@ -60,7 +62,7 @@ use std::sync::{Arc, Mutex};
 use web3::types::{Action as TraceAction, BlockId, BlockNumber, Bytes, CallRequest, FilterBuilder, Log, Trace,
                   TraceFilterBuilder, Transaction as Web3Transaction, TransactionId};
 use web3::{self, Web3};
-use web3_transport::{EthFeeHistoryNamespace, Web3Transport, Web3TransportNode};
+use web3_transport::{http_transport::HttpTransportNode, EthFeeHistoryNamespace, Web3Transport};
 
 use super::{coin_conf, AsyncMutex, BalanceError, BalanceFut, CheckIfMyPaymentSentArgs, CoinBalance, CoinFutSpawner,
             CoinProtocol, CoinTransportMetrics, CoinsContext, FeeApproxStage, FoundSwapTxSpend, HistorySyncState,
@@ -319,6 +321,14 @@ impl EthPrivKeyBuildPolicy {
             KeyPairPolicy::GlobalHDAccount(global_hd) => Ok(EthPrivKeyBuildPolicy::GlobalHDAccount(global_hd.clone())),
         }
     }
+
+    pub fn is_metamask(&self) -> bool {
+        #[cfg(not(target_arch = "wasm32"))]
+        return false;
+
+        #[cfg(target_arch = "wasm32")]
+        matches!(self, EthPrivKeyBuildPolicy::Metamask(_))
+    }
 }
 
 impl TryFrom<PrivKeyBuildPolicy> for EthPrivKeyBuildPolicy {
@@ -336,10 +346,21 @@ impl TryFrom<PrivKeyBuildPolicy> for EthPrivKeyBuildPolicy {
 }
 
 /// An alternative to `crate::PrivKeyPolicy`, typical only for ETH coin.
-#[derive(Clone, Debug)]
+#[derive(Clone)]
 pub enum EthPrivKeyPolicy {
     KeyPair(KeyPair),
-    Metamask,
+    #[cfg(target_arch = "wasm32")]
+    Metamask(MetamaskWeak),
+}
+
+impl fmt::Debug for EthPrivKeyPolicy {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            EthPrivKeyPolicy::KeyPair(_) => write!(f, "KeyPair"),
+            #[cfg(target_arch = "wasm32")]
+            EthPrivKeyPolicy::Metamask(_) => write!(f, "Metamask"),
+        }
+    }
 }
 
 impl From<KeyPair> for EthPrivKeyPolicy {
@@ -350,7 +371,8 @@ impl EthPrivKeyPolicy {
     pub fn key_pair(&self) -> Option<&KeyPair> {
         match self {
             EthPrivKeyPolicy::KeyPair(key_pair) => Some(key_pair),
-            EthPrivKeyPolicy::Metamask => None,
+            #[cfg(target_arch = "wasm32")]
+            EthPrivKeyPolicy::Metamask(_) => None,
         }
     }
 
@@ -1169,9 +1191,11 @@ impl SwapOps for EthCoin {
 
     #[inline]
     fn derive_htlc_key_pair(&self, _swap_unique_data: &[u8]) -> keys::KeyPair {
+        #[allow(clippy::infallible_destructuring_match)]
         let key_pair = match self.priv_key_policy {
             EthPrivKeyPolicy::KeyPair(ref key_pair) => key_pair,
-            EthPrivKeyPolicy::Metamask => todo!(),
+            #[cfg(target_arch = "wasm32")]
+            EthPrivKeyPolicy::Metamask(_) => todo!(),
         };
         key_pair_from_secret(key_pair.secret()).expect("valid key")
     }
@@ -1254,11 +1278,13 @@ impl MarketCoinOps for EthCoin {
     }
 
     fn get_public_key(&self) -> Result<String, MmError<UnexpectedDerivationMethod>> {
+        #[allow(clippy::infallible_destructuring_match)]
         let key_pair = match self.priv_key_policy {
             EthPrivKeyPolicy::KeyPair(ref key_pair) => key_pair,
             // Return a default pubkey for a while.
             // TODO return a pubkey extracted from `Login to AtomicDEX` signature.
-            EthPrivKeyPolicy::Metamask => return Ok("NOT SUPPORTED YET".to_string()),
+            #[cfg(target_arch = "wasm32")]
+            EthPrivKeyPolicy::Metamask(_) => return Ok("NOT SUPPORTED YET".to_string()),
         };
         let uncompressed_without_prefix = hex::encode(key_pair.public());
         Ok(format!("04{}", uncompressed_without_prefix))
@@ -1541,7 +1567,8 @@ impl MarketCoinOps for EthCoin {
     fn display_priv_key(&self) -> Result<String, String> {
         match self.priv_key_policy {
             EthPrivKeyPolicy::KeyPair(ref key_pair) => Ok(format!("{:#02x}", key_pair.secret())),
-            EthPrivKeyPolicy::Metamask => ERR!("'display_priv_key' doesn't support MetaMask"),
+            #[cfg(target_arch = "wasm32")]
+            EthPrivKeyPolicy::Metamask(_) => ERR!("'display_priv_key' doesn't support MetaMask"),
         }
     }
 
@@ -3680,7 +3707,7 @@ pub async fn eth_coin_from_conf_and_request(
 
     let mut nodes = vec![];
     for url in urls.iter() {
-        nodes.push(Web3TransportNode {
+        nodes.push(HttpTransportNode {
             uri: try_s!(url.parse()),
             gui_auth: false,
         });
@@ -3704,7 +3731,7 @@ pub async fn eth_coin_from_conf_and_request(
     let mut web3_instances = vec![];
     let event_handlers = rpc_event_handlers_for_eth_transport(ctx, ticker.to_string());
     for node in nodes.iter() {
-        let transport = Web3Transport::with_event_handlers(vec![node.clone()], event_handlers.clone());
+        let transport = Web3Transport::new_http(vec![node.clone()], event_handlers.clone());
         let web3 = Web3::new(transport);
         let version = match web3.web3().client_version().compat().await {
             Ok(v) => v,
@@ -3723,7 +3750,7 @@ pub async fn eth_coin_from_conf_and_request(
         return ERR!("Failed to get client version for all urls");
     }
 
-    let transport = Web3Transport::with_event_handlers(nodes, event_handlers);
+    let transport = Web3Transport::new_http(nodes, event_handlers);
     let web3 = Web3::new(transport);
 
     let (coin_type, decimals) = match protocol {

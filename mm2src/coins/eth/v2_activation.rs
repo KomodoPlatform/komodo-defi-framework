@@ -129,7 +129,7 @@ impl EthCoin {
             .iter()
             .map(|node| {
                 let mut transport = node.web3.transport().clone();
-                if let Some(auth) = &mut transport.gui_auth_validation_generator {
+                if let Some(auth) = transport.gui_auth_validation_generator_as_mut() {
                     auth.coin_ticker = ticker.clone();
                 }
                 let web3 = Web3::new(transport);
@@ -141,7 +141,7 @@ impl EthCoin {
             .collect();
 
         let mut transport = self.web3.transport().clone();
-        if let Some(auth) = &mut transport.gui_auth_validation_generator {
+        if let Some(auth) = transport.gui_auth_validation_generator_as_mut() {
             auth.coin_ticker = ticker.clone();
         }
         let web3 = Web3::new(transport);
@@ -193,8 +193,16 @@ pub async fn eth_coin_from_conf_and_request_v2(
     req: EthActivationV2Request,
     priv_key_policy: EthPrivKeyBuildPolicy,
 ) -> MmResult<EthCoin, EthActivationV2Error> {
-    if req.nodes.is_empty() {
-        return Err(EthActivationV2Error::AtLeastOneNodeRequired.into());
+    let is_metamask = priv_key_policy.is_metamask();
+    let nodes_specified = req.nodes.is_empty();
+
+    if is_metamask && !nodes_specified {
+        return MmError::err(EthActivationV2Error::ActivationFailed {
+            ticker: ticker.to_string(),
+            error: "RPC nodes should NOT be specified if MetaMask is used".to_string(),
+        });
+    } else if !is_metamask && nodes_specified {
+        return MmError::err(EthActivationV2Error::AtLeastOneNodeRequired);
     }
 
     let mut rng = small_rng();
@@ -209,7 +217,7 @@ pub async fn eth_coin_from_conf_and_request_v2(
             .parse()
             .map_err(|_| EthActivationV2Error::InvalidPayload(format!("{} could not be parsed.", node.url)))?;
 
-        nodes.push(Web3TransportNode {
+        nodes.push(HttpTransportNode {
             uri,
             gui_auth: node.gui_auth,
         });
@@ -238,16 +246,13 @@ pub async fn eth_coin_from_conf_and_request_v2(
     let mut web3_instances = vec![];
     let event_handlers = rpc_event_handlers_for_eth_transport(ctx, ticker.to_string());
     for node in &nodes {
-        let mut transport = Web3Transport::with_event_handlers(vec![node.clone()], event_handlers.clone());
-        // TODO consider creating `gui_auth_validation_generator` with the key-policy.
-        if let EthPrivKeyPolicy::KeyPair(ref key_pair) = priv_key_policy {
-            transport.gui_auth_validation_generator = Some(GuiAuthValidationGenerator {
-                coin_ticker: ticker.to_string(),
-                secret: key_pair.secret().clone(),
-                address: my_address_str.clone(),
-            });
-        }
-        drop_mutability!(transport);
+        let transport = build_web3_transport(
+            my_address_str.clone(),
+            ticker.to_string(),
+            &priv_key_policy,
+            vec![node.clone()],
+            event_handlers.clone(),
+        );
 
         let web3 = Web3::new(transport);
         let version = match web3.web3().client_version().compat().await {
@@ -263,23 +268,19 @@ pub async fn eth_coin_from_conf_and_request_v2(
         })
     }
 
-    if web3_instances.is_empty() {
+    if !is_metamask && web3_instances.is_empty() {
         return Err(
             EthActivationV2Error::UnreachableNodes("Failed to get client version for all nodes".to_string()).into(),
         );
     }
 
-    let mut transport = Web3Transport::with_event_handlers(nodes, event_handlers);
-    // TODO consider creating `gui_auth_validation_generator` with the key-policy.
-    if let EthPrivKeyPolicy::KeyPair(ref key_pair) = priv_key_policy {
-        transport.gui_auth_validation_generator = Some(GuiAuthValidationGenerator {
-            coin_ticker: ticker.to_string(),
-            secret: key_pair.secret().clone(),
-            address: my_address_str,
-        });
-    }
-    drop_mutability!(transport);
-
+    let transport = build_web3_transport(
+        my_address_str,
+        ticker.to_string(),
+        &priv_key_policy,
+        nodes,
+        event_handlers,
+    );
     let web3 = Web3::new(transport);
 
     // param from request should override the config
@@ -350,7 +351,7 @@ pub(crate) fn build_address_and_priv_key_policy(
         EthPrivKeyBuildPolicy::Metamask(metamask_ctx) => {
             let address_str = metamask_ctx.eth_account().address.as_str();
             let address = addr_from_str(address_str).map_to_mm(EthActivationV2Error::InternalError)?;
-            return Ok((address, EthPrivKeyPolicy::Metamask));
+            return Ok((address, EthPrivKeyPolicy::Metamask(metamask_ctx.downgrade())));
         },
     };
 
@@ -358,4 +359,28 @@ pub(crate) fn build_address_and_priv_key_policy(
         .map_to_mm(|e| EthActivationV2Error::InternalError(e.to_string()))?;
     let address = key_pair.address();
     Ok((address, EthPrivKeyPolicy::KeyPair(key_pair)))
+}
+
+pub(crate) fn build_web3_transport(
+    coin_ticker: String,
+    address: String,
+    priv_key_policy: &EthPrivKeyPolicy,
+    nodes: Vec<HttpTransportNode>,
+    event_handlers: Vec<RpcTransportEventHandlerShared>,
+) -> Web3Transport {
+    match priv_key_policy {
+        EthPrivKeyPolicy::KeyPair(key_pair) => {
+            use crate::eth::web3_transport::http_transport::HttpTransport;
+
+            let mut http_transport = HttpTransport::with_event_handlers(nodes, event_handlers);
+            http_transport.gui_auth_validation_generator = Some(GuiAuthValidationGenerator {
+                coin_ticker,
+                secret: key_pair.secret().clone(),
+                address,
+            });
+            Web3Transport::from(http_transport)
+        },
+        #[cfg(target_arch = "wasm32")]
+        EthPrivKeyPolicy::Metamask(metamask_ctx) => Web3Transport::new_metamask(metamask_ctx.clone(), event_handlers),
+    }
 }

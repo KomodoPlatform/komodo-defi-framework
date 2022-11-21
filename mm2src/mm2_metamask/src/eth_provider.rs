@@ -5,7 +5,6 @@ use common::{deserialize_from_js, serialize_to_js, stringify_js_error};
 use futures::channel::{mpsc, oneshot};
 use futures::StreamExt;
 use mm2_err_handle::prelude::*;
-use parking_lot::Mutex as PaMutex;
 use serde::de::DeserializeOwned;
 use serde_json::Value as Json;
 use wasm_bindgen::prelude::*;
@@ -24,7 +23,7 @@ pub enum EthProviderError {
 }
 
 pub struct EthProvider {
-    command_tx: PaMutex<EthCommandSender>,
+    command_tx: EthCommandSender,
     /// This abort handle is needed to drop the spawned at [`WebUsbWrapper::new`] future immediately.
     _abort_handle: AbortOnDropHandle,
 }
@@ -37,12 +36,12 @@ impl EthProvider {
         let abort_handle = spawn_local_abortable(Self::command_loop(raw_provider, command_rx));
 
         Some(EthProvider {
-            command_tx: PaMutex::new(command_tx),
+            command_tx,
             _abort_handle: abort_handle,
         })
     }
 
-    pub async fn invoke_method<T>(&self, method: String, params: Vec<Json>) -> EthProviderResult<T>
+    pub async fn invoke_method<T>(&mut self, method: String, params: Vec<Json>) -> EthProviderResult<T>
     where
         T: DeserializeOwned,
     {
@@ -52,7 +51,7 @@ impl EthProvider {
             params,
             result_tx,
         };
-        let result = send_command_recv_response(&self.command_tx, command, result_rx).await?;
+        let result = send_command_recv_response(&mut self.command_tx, command, result_rx).await?;
         serde_json::from_value(result).map_to_mm(|e| EthProviderError::ErrorDeserializingMethodResult(e.to_string()))
     }
 
@@ -143,11 +142,11 @@ impl RawRequestArguments {
 }
 
 async fn send_command_recv_response<Ok>(
-    command_tx: &PaMutex<EthCommandSender>,
+    command_tx: &mut EthCommandSender,
     command: EthCommand,
     result_rx: oneshot::Receiver<EthProviderResult<Ok>>,
 ) -> EthProviderResult<Ok> {
-    if let Err(e) = command_tx.lock().try_send(command) {
+    if let Err(e) = command_tx.try_send(command) {
         let error = format!("Error sending command: {}", e);
         return MmError::err(EthProviderError::Internal(error));
     }

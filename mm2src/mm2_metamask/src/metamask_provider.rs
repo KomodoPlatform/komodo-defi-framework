@@ -1,14 +1,17 @@
 use crate::eth_provider::EthProvider;
 use crate::metamask_error::{MetamaskError, MetamaskResult};
+use futures::lock::{Mutex as AsyncMutex, MutexGuard as AsyncMutexGuard};
 use itertools::Itertools;
 use mm2_err_handle::prelude::*;
 use serde::Serialize;
 use serde_derive::Deserialize;
+use serde_json::Value as Json;
 use std::collections::HashMap;
 use std::fmt;
+use std::sync::Arc;
 
-/// mm2 uses its own RPC client, so we're going to use `eth_accounts`, `eth_sign` MetaMask's RPCs only.
-/// This is highly unlikely that the channel will be full even with `capacity = 100`.
+/// `MetamaskProvider` is designed the way that there can be only one active session at the moment.
+/// This is highly unlikely that the channel will be full with `capacity = 1024` during this session.
 const ETH_COMMAND_CHANNEL_CAPACITY: usize = 1024;
 const EIP712_DOMAIN: &str = "EIP712Domain";
 
@@ -28,20 +31,51 @@ macro_rules! eth_rpc_await {
     }}
 }
 
+#[derive(Clone)]
 pub struct MetamaskProvider {
-    eth_provider: EthProvider,
+    eth_provider: Arc<AsyncMutex<EthProvider>>,
 }
 
 impl MetamaskProvider {
     pub fn detect_metamask_provider() -> MetamaskResult<MetamaskProvider> {
         let eth_provider = EthProvider::detect_ethereum_provider(ETH_COMMAND_CHANNEL_CAPACITY)
             .or_mm_err(|| MetamaskError::EthProviderNotFound)?;
-        Ok(MetamaskProvider { eth_provider })
+        Ok(MetamaskProvider {
+            eth_provider: Arc::new(AsyncMutex::new(eth_provider)),
+        })
+    }
+
+    /// Creates a session that can be used to invoke methods.
+    /// We need to limit the number of concurrent requests to one.
+    pub async fn session(&self) -> MetamaskSession<'_> {
+        let eth_provider = self.eth_provider.lock().await;
+        MetamaskSession { eth_provider }
+    }
+}
+
+pub struct MetamaskSession<'a> {
+    eth_provider: AsyncMutexGuard<'a, EthProvider>,
+}
+
+impl<'a> MetamaskSession<'a> {
+    /// Invokes an arbitrary RPC method.
+    /// [`MetamaskSession::eth_request`] is expected to be used within a Web3Transport as a plug.
+    ///
+    /// Please consider adding new methods or using existing ones
+    /// if you have a direct access to a `MetamaskSession` instance.
+    ///
+    /// See the list of available RPCs:
+    /// https://ethereum.org/en/developers/docs/apis/json-rpc/
+    pub async fn eth_request(&mut self, method: String, params: Vec<Json>) -> MetamaskResult<Json> {
+        self.eth_provider
+            .invoke_method(method.to_string(), params)
+            .await
+            .mm_err(MetamaskError::from)
     }
 
     /// Invokes the `eth_requestAccounts` method.
     /// https://docs.metamask.io/guide/rpc-api.html#restricted-methods
-    pub async fn eth_request_accounts(&self) -> MetamaskResult<EthAccount> {
+    pub async fn eth_request_accounts(&mut self) -> MetamaskResult<EthAccount> {
         let accounts: Vec<String> = eth_rpc_await!(self, "eth_requestAccounts")?;
         accounts
             .into_iter()
@@ -56,7 +90,7 @@ impl MetamaskProvider {
     /// * sign_data - The message signing data content.
     /// * primary_type - name of the `sign_data` structured type.
     pub async fn sign_typed_data_v4<Domain, SignData>(
-        &self,
+        &mut self,
         user_address: String,
         types: &[ObjectType],
         domain: Domain,

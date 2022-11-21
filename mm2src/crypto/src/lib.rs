@@ -32,7 +32,7 @@ pub use xpub::{XPubConverter, XpubError};
 #[cfg(target_arch = "wasm32")]
 pub use crypto_ctx::MetamaskCtxInitError;
 #[cfg(target_arch = "wasm32")]
-pub use metamask_ctx::{MetamaskArc, MetamaskError};
+pub use metamask_ctx::{MetamaskArc, MetamaskError, MetamaskWeak};
 #[cfg(target_arch = "wasm32")] pub use mm2_metamask as metamask;
 
 use serde::de::Error;

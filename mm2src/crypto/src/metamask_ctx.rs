@@ -1,7 +1,7 @@
 // use crate::metamask_login::{AtomicDEXDomain, AtomicDEXLoginRequest, ADEX_LOGIN_TYPE, ADEX_TYPES};
 use mm2_metamask::MetamaskProvider;
 use std::ops::Deref;
-use std::sync::Arc;
+use std::sync::{Arc, Weak};
 
 pub use mm2_metamask::{EthAccount, MetamaskError, MetamaskResult};
 
@@ -10,6 +10,8 @@ pub struct MetamaskArc(Arc<MetamaskCtx>);
 
 impl MetamaskArc {
     pub fn new(metamask_ctx: MetamaskCtx) -> MetamaskArc { MetamaskArc(Arc::new(metamask_ctx)) }
+
+    pub fn downgrade(&self) -> MetamaskWeak { MetamaskWeak(Arc::downgrade(&self.0)) }
 }
 
 impl Deref for MetamaskArc {
@@ -18,18 +20,26 @@ impl Deref for MetamaskArc {
     fn deref(&self) -> &Self::Target { &self.0 }
 }
 
+#[derive(Clone)]
+pub struct MetamaskWeak(Weak<MetamaskCtx>);
+
+impl MetamaskWeak {
+    pub fn upgrade(&self) -> Option<MetamaskArc> { self.0.upgrade().map(MetamaskArc) }
+}
+
 pub struct MetamaskCtx {
     eth_account: EthAccount,
     // eth_account_pubkey: String,
-    // TODO `metamask_provider` will be used later.
-    #[allow(dead_code)]
     metamask_provider: MetamaskProvider,
 }
 
 impl MetamaskCtx {
     pub async fn init() -> MetamaskResult<MetamaskCtx> {
         let metamask_provider = MetamaskProvider::detect_metamask_provider()?;
-        let eth_account = metamask_provider.eth_request_accounts().await?;
+        let eth_account = {
+            let mut session = metamask_provider.session().await;
+            session.eth_request_accounts().await?
+        };
 
         // Uncomment this to finish MetaMask login.
         // TODO figure out how to serialize the source message into bytes and feed it to `ethkey::recover`.
@@ -50,6 +60,9 @@ impl MetamaskCtx {
             metamask_provider,
         })
     }
+
+    /// TODO later this method will check if the active account is still the same.
+    pub fn metamask_provider(&self) -> MetamaskProvider { self.metamask_provider.clone() }
 
     pub fn eth_account(&self) -> &EthAccount { &self.eth_account }
 }
