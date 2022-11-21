@@ -117,8 +117,6 @@ pub mod wio;
 
 #[cfg(target_arch = "wasm32")] pub use wasm::*;
 
-#[cfg(target_arch = "wasm32")] use std::path::PathBuf;
-
 use backtrace::SymbolName;
 use chrono::Utc;
 pub use futures::compat::Future01CompatExt;
@@ -141,6 +139,7 @@ use std::num::NonZeroUsize;
 use std::ops::{Add, Deref, Div, RangeInclusive};
 use std::os::raw::c_void;
 use std::panic::{set_hook, PanicInfo};
+use std::path::PathBuf;
 use std::ptr::read_volatile;
 use std::sync::atomic::Ordering;
 use std::time::{Duration, SystemTime, SystemTimeError};
@@ -154,7 +153,6 @@ cfg_native! {
     #[cfg(not(windows))]
     use findshlibs::{IterationControl, Segment, SharedLibrary, TargetSharedLibrary};
     use std::env;
-    use std::path::PathBuf;
     use std::sync::Mutex;
 }
 
