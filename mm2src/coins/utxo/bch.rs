@@ -1356,6 +1356,7 @@ pub fn tbch_coin_for_test() -> (MmArc, BchCoin) {
     use common::block_on;
     use crypto::privkey::key_pair_from_seed;
     use mm2_core::mm_ctx::MmCtxBuilder;
+    use mm2_test_helpers::for_tests::BCHD_TESTNET_URLS;
 
     let ctx = MmCtxBuilder::default().into_mm_arc();
     let keypair = key_pair_from_seed("BCH SLP test").unwrap();
@@ -1366,7 +1367,7 @@ pub fn tbch_coin_for_test() -> (MmArc, BchCoin) {
         "method": "electrum",
         "coin": "BCH",
         "servers": [{"url":"blackie.c3-soft.com:60001"},{"url":"testnet.imaginary.cash:50001"},{"url":"tbch.loping.net:60001"},{"url":"electroncash.de:50003"}],
-        "bchd_urls": ["https://bchd-testnet.electroncash.de:18335"],
+        "bchd_urls": BCHD_TESTNET_URLS,
         "allow_slp_unsafe_conf": false,
     });
 
