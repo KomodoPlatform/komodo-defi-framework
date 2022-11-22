@@ -32,12 +32,12 @@ jobs:
         env:
           MANUAL_MM_VERSION: true
       - bash: |
-          cargo clippy -- -D warnings
+          cargo clippy --profile ci -- -D warnings
         displayName: 'Check Clippy warnings'
         env:
           MANUAL_MM_VERSION: true
       - bash: |
-          cargo check --tests
+          cargo check --tests --profile ci
         displayName: 'Check Tests'
         env:
           MANUAL_MM_VERSION: true
