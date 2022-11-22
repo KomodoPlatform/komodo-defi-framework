@@ -91,9 +91,9 @@ pub struct CryptoCtx {
     secp256k1_key_pair: KeyPair,
     key_pair_policy: KeyPairPolicy,
     /// Can be initialized on [`CryptoCtx::init_hw_ctx_with_trezor`].
-    hw_ctx: RwLock<FeatureInitializationState<HardwareWalletArc>>,
+    hw_ctx: RwLock<InitializationState<HardwareWalletArc>>,
     #[cfg(target_arch = "wasm32")]
-    metamask_ctx: RwLock<FeatureInitializationState<MetamaskArc>>,
+    metamask_ctx: RwLock<InitializationState<MetamaskArc>>,
 }
 
 impl CryptoCtx {
@@ -231,17 +231,17 @@ impl CryptoCtx {
     {
         {
             let mut state = self.hw_ctx.write();
-            if let FeatureInitializationState::Initializing = state.deref() {
+            if let InitializationState::Initializing = state.deref() {
                 return MmError::err(HwCtxInitError::InitializingAlready);
             }
 
-            *state = FeatureInitializationState::Initializing;
+            *state = InitializationState::Initializing;
         }
 
         let result = init_check_hw_ctx_with_trezor(processor, expected_pubkey).await;
         let new_state = match result {
-            Ok((_, ref hw_ctx)) => FeatureInitializationState::Ready(hw_ctx.clone()),
-            Err(_) => FeatureInitializationState::NotInitialized,
+            Ok((_, ref hw_ctx)) => InitializationState::Ready(hw_ctx.clone()),
+            Err(_) => InitializationState::NotInitialized,
         };
 
         *self.hw_ctx.write() = new_state;
@@ -253,29 +253,29 @@ impl CryptoCtx {
     pub async fn init_metamask_ctx(&self) -> MmResult<MetamaskArc, MetamaskCtxInitError> {
         {
             let mut state = self.metamask_ctx.write();
-            if let FeatureInitializationState::Initializing = state.deref() {
+            if let InitializationState::Initializing = state.deref() {
                 return MmError::err(MetamaskCtxInitError::InitializingAlready);
             }
 
-            *state = FeatureInitializationState::Initializing;
+            *state = InitializationState::Initializing;
         }
 
         let metamask_ctx = MetamaskCtx::init().await?;
         let metamask_arc = MetamaskArc::new(metamask_ctx);
 
-        *self.metamask_ctx.write() = FeatureInitializationState::Ready(metamask_arc.clone());
+        *self.metamask_ctx.write() = InitializationState::Ready(metamask_arc.clone());
         Ok(metamask_arc)
     }
 
     pub fn reset_hw_ctx(&self) {
         let mut state = self.hw_ctx.write();
-        *state = FeatureInitializationState::NotInitialized;
+        *state = InitializationState::NotInitialized;
     }
 
     #[cfg(target_arch = "wasm32")]
     pub fn reset_metamask_ctx(&self) {
         let mut state = self.metamask_ctx.write();
-        *state = FeatureInitializationState::NotInitialized;
+        *state = InitializationState::NotInitialized;
     }
 
     fn init_crypto_ctx_with_policy_builder(
@@ -301,9 +301,9 @@ impl CryptoCtx {
         let crypto_ctx = CryptoCtx {
             secp256k1_key_pair,
             key_pair_policy,
-            hw_ctx: RwLock::new(FeatureInitializationState::NotInitialized),
+            hw_ctx: RwLock::new(InitializationState::NotInitialized),
             #[cfg(target_arch = "wasm32")]
-            metamask_ctx: RwLock::new(FeatureInitializationState::NotInitialized),
+            metamask_ctx: RwLock::new(InitializationState::NotInitialized),
         };
 
         let result = Arc::new(crypto_ctx);
@@ -368,16 +368,16 @@ where
     Ok((hw_device_info, hw_ctx))
 }
 
-enum FeatureInitializationState<Feature> {
+enum InitializationState<Feature> {
     NotInitialized,
     Initializing,
     Ready(Feature),
 }
 
-impl<Feature> FeatureInitializationState<Feature> {
+impl<Feature> InitializationState<Feature> {
     fn to_option(&self) -> Option<&Feature> {
         match self {
-            FeatureInitializationState::Ready(feature) => Some(feature),
+            InitializationState::Ready(feature) => Some(feature),
             _ => None,
         }
     }
