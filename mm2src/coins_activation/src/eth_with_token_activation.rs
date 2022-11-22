@@ -262,10 +262,5 @@ fn eth_priv_key_build_policy(
                 .or_mm_err(|| EthActivationV2Error::MetamaskCtxNotInitialized)?;
             Ok(EthPrivKeyBuildPolicy::Metamask(metamask_ctx))
         },
-        #[cfg(not(target_arch = "wasm32"))]
-        EthPrivKeyActivationPolicy::Metamask => {
-            let err = coins::PrivKeyPolicyNotAllowed::MetamaskIsNotSupported;
-            MmError::err(EthActivationV2Error::PrivKeyPolicyNotAllowed(err))
-        },
     }
 }

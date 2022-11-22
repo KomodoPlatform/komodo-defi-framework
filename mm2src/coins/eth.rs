@@ -321,14 +321,6 @@ impl EthPrivKeyBuildPolicy {
             KeyPairPolicy::GlobalHDAccount(global_hd) => Ok(EthPrivKeyBuildPolicy::GlobalHDAccount(global_hd.clone())),
         }
     }
-
-    pub fn is_metamask(&self) -> bool {
-        #[cfg(not(target_arch = "wasm32"))]
-        return false;
-
-        #[cfg(target_arch = "wasm32")]
-        matches!(self, EthPrivKeyBuildPolicy::Metamask(_))
-    }
 }
 
 impl TryFrom<PrivKeyBuildPolicy> for EthPrivKeyBuildPolicy {

@@ -349,12 +349,6 @@ pub enum TxHistoryError {
 pub enum PrivKeyPolicyNotAllowed {
     #[display(fmt = "Hardware Wallet is not supported")]
     HardwareWalletNotSupported,
-    #[cfg_attr(target_arch = "wasm32", display(fmt = "MetaMask is not supported"))]
-    #[cfg_attr(
-        not(target_arch = "wasm32"),
-        display(fmt = "MetaMask is supported in a browser only")
-    )]
-    MetamaskIsNotSupported,
 }
 
 impl Serialize for PrivKeyPolicyNotAllowed {

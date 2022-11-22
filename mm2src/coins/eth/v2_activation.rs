@@ -44,6 +44,7 @@ impl From<CryptoCtxError> for EthActivationV2Error {
 #[derive(Clone, Deserialize)]
 pub enum EthPrivKeyActivationPolicy {
     ContextPrivKey,
+    #[cfg(target_arch = "wasm32")]
     Metamask,
 }
 
@@ -53,9 +54,23 @@ impl EthPrivKeyActivationPolicy {
     pub fn context_priv_key() -> EthPrivKeyActivationPolicy { EthPrivKeyActivationPolicy::ContextPrivKey }
 }
 
+#[derive(Clone, Debug, Deserialize, Serialize)]
+pub enum EthRpcMode {
+    Http,
+    #[cfg(target_arch = "wasm32")]
+    Metamask,
+}
+
+impl Default for EthRpcMode {
+    fn default() -> Self { EthRpcMode::Http }
+}
+
 #[derive(Clone, Deserialize)]
 pub struct EthActivationV2Request {
+    #[serde(default)]
     pub nodes: Vec<EthNode>,
+    #[serde(default)]
+    pub rpc_mode: EthRpcMode,
     pub swap_contract_address: Address,
     pub fallback_swap_contract: Option<Address>,
     pub gas_station_url: Option<String>,
@@ -193,36 +208,7 @@ pub async fn eth_coin_from_conf_and_request_v2(
     req: EthActivationV2Request,
     priv_key_policy: EthPrivKeyBuildPolicy,
 ) -> MmResult<EthCoin, EthActivationV2Error> {
-    let is_metamask = priv_key_policy.is_metamask();
-    let nodes_specified = req.nodes.is_empty();
-
-    if is_metamask && !nodes_specified {
-        return MmError::err(EthActivationV2Error::ActivationFailed {
-            ticker: ticker.to_string(),
-            error: "RPC nodes should NOT be specified if MetaMask is used".to_string(),
-        });
-    } else if !is_metamask && nodes_specified {
-        return MmError::err(EthActivationV2Error::AtLeastOneNodeRequired);
-    }
-
-    let mut rng = small_rng();
-    let mut req = req;
-    req.nodes.as_mut_slice().shuffle(&mut rng);
-    drop_mutability!(req);
-
-    let mut nodes = vec![];
-    for node in req.nodes.iter() {
-        let uri = node
-            .url
-            .parse()
-            .map_err(|_| EthActivationV2Error::InvalidPayload(format!("{} could not be parsed.", node.url)))?;
-
-        nodes.push(HttpTransportNode {
-            uri,
-            gui_auth: node.gui_auth,
-        });
-    }
-    drop_mutability!(nodes);
+    let ticker = ticker.to_string();
 
     if req.swap_contract_address == Address::default() {
         return Err(EthActivationV2Error::InvalidSwapContractAddr(
@@ -243,45 +229,20 @@ pub async fn eth_coin_from_conf_and_request_v2(
     let (my_address, priv_key_policy) = build_address_and_priv_key_policy(conf, priv_key_policy)?;
     let my_address_str = checksum_address(&format!("{:02x}", my_address));
 
-    let mut web3_instances = vec![];
-    let event_handlers = rpc_event_handlers_for_eth_transport(ctx, ticker.to_string());
-    for node in &nodes {
-        let transport = build_web3_transport(
-            my_address_str.clone(),
-            ticker.to_string(),
-            &priv_key_policy,
-            vec![node.clone()],
-            event_handlers.clone(),
-        );
-
-        let web3 = Web3::new(transport);
-        let version = match web3.web3().client_version().compat().await {
-            Ok(v) => v,
-            Err(e) => {
-                error!("Couldn't get client version for url {}: {}", node.uri, e);
-                continue;
-            },
-        };
-        web3_instances.push(Web3Instance {
-            web3,
-            is_parity: version.contains("Parity") || version.contains("parity"),
-        })
-    }
-
-    if !is_metamask && web3_instances.is_empty() {
-        return Err(
-            EthActivationV2Error::UnreachableNodes("Failed to get client version for all nodes".to_string()).into(),
-        );
-    }
-
-    let transport = build_web3_transport(
-        my_address_str,
-        ticker.to_string(),
-        &priv_key_policy,
-        nodes,
-        event_handlers,
-    );
-    let web3 = Web3::new(transport);
+    let (web3, web3_instances) = match (req.rpc_mode, &priv_key_policy) {
+        (EthRpcMode::Http, EthPrivKeyPolicy::KeyPair(key_pair)) => {
+            build_http_transport(ctx, ticker.clone(), my_address_str, key_pair, &req.nodes).await?
+        },
+        #[cfg(target_arch = "wasm32")]
+        (EthRpcMode::Metamask, EthPrivKeyPolicy::Metamask(metamask_ctx)) => {
+            build_metamask_transport(ctx, metamask_ctx.clone(), ticker.clone())
+        },
+        #[cfg(target_arch = "wasm32")]
+        (_, _) => {
+            let error = r#"priv_key_policy="Metamask" and rpc_mode="Metamask" should be used both"#.to_string();
+            return MmError::err(EthActivationV2Error::ActivationFailed { ticker, error });
+        },
+    };
 
     // param from request should override the config
     let required_confirmations = req
@@ -296,7 +257,7 @@ pub async fn eth_coin_from_conf_and_request_v2(
     let sign_message_prefix: Option<String> = json::from_value(conf["sign_message_prefix"].clone()).ok();
 
     let mut map = NONCE_LOCK.lock().unwrap();
-    let nonce_lock = map.entry(ticker.to_string()).or_insert_with(new_nonce_lock).clone();
+    let nonce_lock = map.entry(ticker.clone()).or_insert_with(new_nonce_lock).clone();
 
     // Create an abortable system linked to the `MmCtx` so if the app is stopped on `MmArc::stop`,
     // all spawned futures related to `ETH` coin will be aborted as well.
@@ -310,7 +271,7 @@ pub async fn eth_coin_from_conf_and_request_v2(
         swap_contract_address: req.swap_contract_address,
         fallback_swap_contract: req.fallback_swap_contract,
         decimals: ETH_DECIMALS,
-        ticker: ticker.into(),
+        ticker,
         gas_station_url: req.gas_station_url,
         gas_station_decimals: req.gas_station_decimals.unwrap_or(ETH_GAS_STATION_DECIMALS),
         gas_station_policy: req.gas_station_policy,
@@ -361,26 +322,106 @@ pub(crate) fn build_address_and_priv_key_policy(
     Ok((address, EthPrivKeyPolicy::KeyPair(key_pair)))
 }
 
-pub(crate) fn build_web3_transport(
+async fn build_http_transport(
+    ctx: &MmArc,
     coin_ticker: String,
     address: String,
-    priv_key_policy: &EthPrivKeyPolicy,
+    key_pair: &KeyPair,
+    eth_nodes: &[EthNode],
+) -> MmResult<(Web3<Web3Transport>, Vec<Web3Instance>), EthActivationV2Error> {
+    if eth_nodes.is_empty() {
+        return MmError::err(EthActivationV2Error::AtLeastOneNodeRequired);
+    }
+
+    let mut http_nodes = vec![];
+    for node in eth_nodes {
+        let uri = node
+            .url
+            .parse()
+            .map_err(|_| EthActivationV2Error::InvalidPayload(format!("{} could not be parsed.", node.url)))?;
+
+        http_nodes.push(HttpTransportNode {
+            uri,
+            gui_auth: node.gui_auth,
+        });
+    }
+
+    let mut rng = small_rng();
+    http_nodes.as_mut_slice().shuffle(&mut rng);
+
+    drop_mutability!(http_nodes);
+
+    let mut web3_instances = Vec::with_capacity(http_nodes.len());
+    let event_handlers = rpc_event_handlers_for_eth_transport(ctx, coin_ticker.clone());
+    for node in http_nodes.iter() {
+        let transport = build_single_http_transport(
+            coin_ticker.clone(),
+            address.clone(),
+            key_pair,
+            vec![node.clone()],
+            event_handlers.clone(),
+        );
+
+        let web3 = Web3::new(transport);
+        let version = match web3.web3().client_version().compat().await {
+            Ok(v) => v,
+            Err(e) => {
+                error!("Couldn't get client version for url {}: {}", node.uri, e);
+                continue;
+            },
+        };
+        web3_instances.push(Web3Instance {
+            web3,
+            is_parity: version.contains("Parity") || version.contains("parity"),
+        })
+    }
+
+    if web3_instances.is_empty() {
+        return Err(
+            EthActivationV2Error::UnreachableNodes("Failed to get client version for all nodes".to_string()).into(),
+        );
+    }
+
+    let transport = build_single_http_transport(coin_ticker, address, key_pair, http_nodes, event_handlers);
+    let web3 = Web3::new(transport);
+
+    Ok((web3, web3_instances))
+}
+
+fn build_single_http_transport(
+    coin_ticker: String,
+    address: String,
+    key_pair: &KeyPair,
     nodes: Vec<HttpTransportNode>,
     event_handlers: Vec<RpcTransportEventHandlerShared>,
 ) -> Web3Transport {
-    match priv_key_policy {
-        EthPrivKeyPolicy::KeyPair(key_pair) => {
-            use crate::eth::web3_transport::http_transport::HttpTransport;
+    use crate::eth::web3_transport::http_transport::HttpTransport;
 
-            let mut http_transport = HttpTransport::with_event_handlers(nodes, event_handlers);
-            http_transport.gui_auth_validation_generator = Some(GuiAuthValidationGenerator {
-                coin_ticker,
-                secret: key_pair.secret().clone(),
-                address,
-            });
-            Web3Transport::from(http_transport)
-        },
-        #[cfg(target_arch = "wasm32")]
-        EthPrivKeyPolicy::Metamask(metamask_ctx) => Web3Transport::new_metamask(metamask_ctx.clone(), event_handlers),
-    }
+    let mut http_transport = HttpTransport::with_event_handlers(nodes, event_handlers);
+    http_transport.gui_auth_validation_generator = Some(GuiAuthValidationGenerator {
+        coin_ticker,
+        secret: key_pair.secret().clone(),
+        address,
+    });
+    Web3Transport::from(http_transport)
+}
+
+#[cfg(target_arch = "wasm32")]
+fn build_metamask_transport(
+    ctx: &MmArc,
+    metamask_ctx: MetamaskWeak,
+    coin_ticker: String,
+) -> (Web3<Web3Transport>, Vec<Web3Instance>) {
+    let event_handlers = rpc_event_handlers_for_eth_transport(ctx, coin_ticker);
+
+    let web3 = Web3::new(Web3Transport::new_metamask(metamask_ctx, event_handlers));
+
+    // MetaMask doesn't use Parity nodes. So `MetamaskTransport` doesn't support `parity_nextNonce` RPC.
+    // An example of the `web3_clientVersion` RPC - `MetaMask/v10.22.1`.
+    let web3_instances = vec![Web3Instance {
+        web3: web3.clone(),
+        is_parity: false,
+    }];
+
+    (web3, web3_instances)
 }
