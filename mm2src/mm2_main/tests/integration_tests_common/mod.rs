@@ -2,12 +2,12 @@ use common::executor::Timer;
 use common::log::LogLevel;
 use common::{block_on, log, now_ms};
 use crypto::privkey::key_pair_from_seed;
-use mm2::mm2::{lp_main, LpMainParams};
 use mm2_test_helpers::electrums::{morty_electrums, rick_electrums};
 use mm2_test_helpers::for_tests::{enable_native as enable_native_impl, init_utxo_electrum, init_utxo_status,
                                   init_z_coin_light, init_z_coin_status, MarketMakerIt};
 use mm2_test_helpers::structs::{CoinActivationResult, EnableElectrumResponse, InitTaskResult, InitUtxoStatus,
                                 InitZcoinStatus, RpcV2Response, UtxoStandardActivationResult};
+use mm2lib::mm2::{lp_main, LpMainParams};
 use serde_json::{self as json, Value as Json};
 use std::collections::HashMap;
 use std::env::var;
