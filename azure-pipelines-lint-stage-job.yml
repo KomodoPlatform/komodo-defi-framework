@@ -42,7 +42,12 @@ jobs:
         env:
           MANUAL_MM_VERSION: true
       - bash: |
-          cargo check --tests --profile ci
+          if [ $AGENT_OS = "Darwin" ]
+          then
+            cargo check --tests --profile ci --target x86_64-apple-darwin
+          else
+            cargo check --tests --profile ci
+          fi
         displayName: 'Check Tests'
         env:
           MANUAL_MM_VERSION: true
