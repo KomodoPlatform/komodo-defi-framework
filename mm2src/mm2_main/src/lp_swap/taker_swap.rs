@@ -876,14 +876,12 @@ impl TakerSwap {
             .clone();
         let secret_hash = self.r().secret_hash.0.clone();
         let maker_amount = self.maker_amount.clone().into();
-        // Todo: find a better way than maker_locktime_multiplier
         let maker_lock_duration =
             (self.r().data.lock_duration as f64 * self.taker_coin.maker_locktime_multiplier()).ceil() as u64;
         let expires_in = wait_for_maker_payment_conf_duration(self.r().data.lock_duration);
         let instructions = self
             .maker_coin
-            // Todo: find a better way instead of self.r().data.lock_duration * 2, also lock_duration * 2 should be more than or equal to MIN_FINAL_CLTV_EXPIRY
-            .payment_instructions(&secret_hash, &maker_amount, maker_lock_duration, expires_in)
+            .maker_payment_instructions(&secret_hash, &maker_amount, maker_lock_duration, expires_in)
             .await?;
         Ok(SwapTxDataMsg::new(taker_fee_data, instructions))
     }
@@ -1229,12 +1227,10 @@ impl TakerSwap {
         drop(abort_send_handle);
         let mut swap_events = vec![];
         if let Some(instructions) = payload.instructions() {
-            let taker_lock_duration = self.r().data.lock_duration;
-            match self.taker_coin.validate_instructions(
+            match self.taker_coin.validate_taker_payment_instructions(
                 instructions,
                 &self.r().secret_hash.0,
                 self.taker_amount.clone().into(),
-                taker_lock_duration,
             ) {
                 Ok(instructions) => swap_events.push(TakerSwapEvent::TakerPaymentInstructionsReceived(instructions)),
                 Err(e) => {

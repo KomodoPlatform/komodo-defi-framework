@@ -421,15 +421,12 @@ impl MakerSwap {
         // If maker payment is a lightning payment the payment hash will be sent in the message
         // It's not really needed here unlike in TakerFee msg since the hash is included in the invoice/payment_instructions but it's kept for symmetry
         let payment_data = self.r().maker_payment.as_ref().unwrap().tx_hex.0.clone();
-        // Todo: test this with a payment path more than total_cltv expiry, should need 5 lightning nodes for this, or can also adjust the cltv_expiry_delta
-        let taker_lock_duration = self.r().data.lock_duration;
-        let expires_in = wait_for_taker_payment_conf_duration(taker_lock_duration);
+        let expires_in = wait_for_taker_payment_conf_duration(self.r().data.lock_duration);
         let instructions = self
             .taker_coin
-            .payment_instructions(
+            .taker_payment_instructions(
                 &SecretHashAlgo::SHA256.hash_secret(self.secret.as_slice()),
                 &self.taker_amount,
-                taker_lock_duration,
                 expires_in,
             )
             .await?;
@@ -687,7 +684,7 @@ impl MakerSwap {
         if let Some(instructions) = payload.instructions() {
             let maker_lock_duration =
                 (self.r().data.lock_duration as f64 * self.taker_coin.maker_locktime_multiplier()).ceil() as u64;
-            match self.maker_coin.validate_instructions(
+            match self.maker_coin.validate_maker_payment_instructions(
                 instructions,
                 &self.secret_hash(),
                 self.maker_amount.clone(),

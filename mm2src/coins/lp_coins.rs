@@ -685,20 +685,36 @@ pub trait SwapOps {
 
     fn validate_other_pubkey(&self, raw_pubkey: &[u8]) -> MmResult<(), ValidateOtherPubKeyErr>;
 
-    async fn payment_instructions(
+    /// Instructions from the taker on how the maker should send his payment.
+    async fn maker_payment_instructions(
         &self,
         secret_hash: &[u8],
         amount: &BigDecimal,
-        lock_duration: u64,
+        maker_lock_duration: u64,
         expires_in: u64,
     ) -> Result<Option<Vec<u8>>, MmError<PaymentInstructionsErr>>;
 
-    fn validate_instructions(
+    /// Instructions from the maker on how the taker should send his payment.
+    async fn taker_payment_instructions(
+        &self,
+        secret_hash: &[u8],
+        amount: &BigDecimal,
+        expires_in: u64,
+    ) -> Result<Option<Vec<u8>>, MmError<PaymentInstructionsErr>>;
+
+    fn validate_maker_payment_instructions(
         &self,
         instructions: &[u8],
         secret_hash: &[u8],
         amount: BigDecimal,
-        lock_duration: u64,
+        maker_lock_duration: u64,
+    ) -> Result<PaymentInstructions, MmError<ValidateInstructionsErr>>;
+
+    fn validate_taker_payment_instructions(
+        &self,
+        instructions: &[u8],
+        secret_hash: &[u8],
+        amount: BigDecimal,
     ) -> Result<PaymentInstructions, MmError<ValidateInstructionsErr>>;
 
     fn is_supported_by_watchers(&self) -> bool;

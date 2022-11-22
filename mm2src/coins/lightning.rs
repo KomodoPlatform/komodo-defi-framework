@@ -40,7 +40,7 @@ use futures::{FutureExt, TryFutureExt};
 use futures01::Future;
 use keys::{hash::H256, CompactSignature, KeyPair, Private, Public};
 use lightning::chain::keysinterface::{KeysInterface, KeysManager, Recipient};
-use lightning::ln::channelmanager::ChannelDetails;
+use lightning::ln::channelmanager::{ChannelDetails, MIN_FINAL_CLTV_EXPIRY};
 use lightning::ln::{PaymentHash, PaymentPreimage};
 use lightning_background_processor::BackgroundProcessor;
 use lightning_invoice::utils::DefaultRouter;
@@ -73,8 +73,6 @@ use std::fmt;
 use std::net::SocketAddr;
 use std::str::FromStr;
 use std::sync::Arc;
-
-pub use lightning::ln::channelmanager::MIN_FINAL_CLTV_EXPIRY;
 
 pub const DEFAULT_INVOICE_EXPIRY: u32 = 3600;
 
@@ -481,6 +479,64 @@ impl LightningCoin {
     }
 
     fn estimate_blocks_from_duration(&self, duration: u64) -> u64 { duration / self.platform.avg_block_time }
+
+    async fn swap_payment_instructions(
+        &self,
+        secret_hash: &[u8],
+        amount: &BigDecimal,
+        expires_in: u64,
+        min_final_cltv_expiry: u64,
+    ) -> Result<Vec<u8>, MmError<PaymentInstructionsErr>> {
+        // lightning decimals should be 11 in config since the smallest divisible unit in lightning coin is msat
+        let amt_msat = sat_from_big_decimal(amount, self.decimals())?;
+        let payment_hash =
+            payment_hash_from_slice(secret_hash).map_to_mm(|e| PaymentInstructionsErr::InternalError(e.to_string()))?;
+        // note: No description is provided in the invoice to reduce the payload
+        let invoice = self
+            .create_invoice_for_hash(
+                payment_hash,
+                Some(amt_msat),
+                "".into(),
+                min_final_cltv_expiry,
+                expires_in.try_into().expect("expires_in shouldn't exceed u32::MAX"),
+            )
+            .await
+            .map_err(|e| PaymentInstructionsErr::LightningInvoiceErr(e.to_string()))?;
+        Ok(invoice.to_string().into_bytes())
+    }
+
+    fn validate_swap_instructions(
+        &self,
+        instructions: &[u8],
+        secret_hash: &[u8],
+        amount: BigDecimal,
+        min_final_cltv_expiry: u64,
+    ) -> Result<PaymentInstructions, MmError<ValidateInstructionsErr>> {
+        let invoice = Invoice::from_str(&String::from_utf8_lossy(instructions))?;
+        if invoice.payment_hash().as_inner() != secret_hash
+            && ripemd160(invoice.payment_hash().as_inner()).as_slice() != secret_hash
+        {
+            return Err(
+                ValidateInstructionsErr::ValidateLightningInvoiceErr("Invalid invoice payment hash!".into()).into(),
+            );
+        }
+
+        let invoice_amount = invoice
+            .amount_milli_satoshis()
+            .ok_or_else(|| ValidateInstructionsErr::ValidateLightningInvoiceErr("No invoice amount!".into()))?;
+        if big_decimal_from_sat(invoice_amount as i64, self.decimals()) != amount {
+            return Err(ValidateInstructionsErr::ValidateLightningInvoiceErr("Invalid invoice amount!".into()).into());
+        }
+
+        if invoice.min_final_cltv_expiry() != min_final_cltv_expiry {
+            return Err(ValidateInstructionsErr::ValidateLightningInvoiceErr(
+                "Invalid invoice min_final_cltv_expiry!".into(),
+            )
+            .into());
+        }
+
+        Ok(PaymentInstructions::Lightning(invoice))
+    }
 }
 
 #[async_trait]
@@ -654,7 +710,7 @@ impl SwapOps for LightningCoin {
         let payment_hash = payment_hash_from_slice(spend_tx).map_err(|e| e.to_string())?;
         let payment_hex = hex::encode(payment_hash.0);
 
-        return match self.db.get_payment_from_db(payment_hash).await {
+        match self.db.get_payment_from_db(payment_hash).await {
             Ok(Some(payment)) => match payment.preimage {
                 Some(preimage) => Ok(preimage.0.to_vec()),
                 None => ERR!("Preimage for payment {} should be found on the database", payment_hex),
@@ -665,7 +721,7 @@ impl SwapOps for LightningCoin {
                 payment_hex,
                 e
             ),
-        };
+        }
     }
 
     fn negotiate_swap_contract_addr(
@@ -684,65 +740,48 @@ impl SwapOps for LightningCoin {
         utxo_common::validate_other_pubkey(raw_pubkey)
     }
 
-    async fn payment_instructions(
+    async fn maker_payment_instructions(
         &self,
         secret_hash: &[u8],
         amount: &BigDecimal,
-        lock_duration: u64,
+        maker_lock_duration: u64,
         expires_in: u64,
     ) -> Result<Option<Vec<u8>>, MmError<PaymentInstructionsErr>> {
-        // lightning decimals should be 11 in config since the smallest divisible unit in lightning coin is msat
-        let amt_msat = sat_from_big_decimal(amount, self.decimals())?;
-        let payment_hash =
-            payment_hash_from_slice(secret_hash).map_to_mm(|e| PaymentInstructionsErr::InternalError(e.to_string()))?;
-
-        let min_final_cltv_expiry = self.estimate_blocks_from_duration(lock_duration);
-        // note: No description is provided in the invoice to reduce the payload
-        let invoice = self
-            .create_invoice_for_hash(
-                payment_hash,
-                Some(amt_msat),
-                "".into(),
-                min_final_cltv_expiry,
-                expires_in.try_into().expect("expires_in shouldn't exceed u32::MAX"),
-            )
+        let min_final_cltv_expiry = self.estimate_blocks_from_duration(maker_lock_duration);
+        self.swap_payment_instructions(secret_hash, amount, expires_in, min_final_cltv_expiry)
             .await
-            .map_err(|e| PaymentInstructionsErr::LightningInvoiceErr(e.to_string()))?;
-        Ok(Some(invoice.to_string().into_bytes()))
+            .map(Some)
     }
 
-    fn validate_instructions(
+    async fn taker_payment_instructions(
+        &self,
+        secret_hash: &[u8],
+        amount: &BigDecimal,
+        expires_in: u64,
+    ) -> Result<Option<Vec<u8>>, MmError<PaymentInstructionsErr>> {
+        self.swap_payment_instructions(secret_hash, amount, expires_in, MIN_FINAL_CLTV_EXPIRY as u64)
+            .await
+            .map(Some)
+    }
+
+    fn validate_maker_payment_instructions(
         &self,
         instructions: &[u8],
         secret_hash: &[u8],
         amount: BigDecimal,
-        lock_duration: u64,
+        maker_lock_duration: u64,
     ) -> Result<PaymentInstructions, MmError<ValidateInstructionsErr>> {
-        let invoice = Invoice::from_str(&String::from_utf8_lossy(instructions))?;
-        if invoice.payment_hash().as_inner() != secret_hash
-            && ripemd160(invoice.payment_hash().as_inner()).as_slice() != secret_hash
-        {
-            return Err(
-                ValidateInstructionsErr::ValidateLightningInvoiceErr("Invalid invoice payment hash!".into()).into(),
-            );
-        }
+        let min_final_cltv_expiry = self.estimate_blocks_from_duration(maker_lock_duration);
+        self.validate_swap_instructions(instructions, secret_hash, amount, min_final_cltv_expiry)
+    }
 
-        let invoice_amount = invoice
-            .amount_milli_satoshis()
-            .ok_or_else(|| ValidateInstructionsErr::ValidateLightningInvoiceErr("No invoice amount!".into()))?;
-        if big_decimal_from_sat(invoice_amount as i64, self.decimals()) != amount {
-            return Err(ValidateInstructionsErr::ValidateLightningInvoiceErr("Invalid invoice amount!".into()).into());
-        }
-
-        let min_final_cltv_expiry = self.estimate_blocks_from_duration(lock_duration);
-        if invoice.min_final_cltv_expiry() != min_final_cltv_expiry {
-            return Err(ValidateInstructionsErr::ValidateLightningInvoiceErr(
-                "Invalid invoice min_final_cltv_expiry!".into(),
-            )
-            .into());
-        }
-
-        Ok(PaymentInstructions::Lightning(invoice))
+    fn validate_taker_payment_instructions(
+        &self,
+        instructions: &[u8],
+        secret_hash: &[u8],
+        amount: BigDecimal,
+    ) -> Result<PaymentInstructions, MmError<ValidateInstructionsErr>> {
+        self.validate_swap_instructions(instructions, secret_hash, amount, MIN_FINAL_CLTV_EXPIRY as u64)
     }
 
     // Watchers cannot be used for lightning swaps for now
