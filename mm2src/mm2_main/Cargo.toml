@@ -28,7 +28,7 @@ doctest = false
 bench = false
 
 [lib]
-name = "mm2"
+name = "mm2lib"
 crate-type = ["cdylib", "lib"]
 test = false
 doctest = false

@@ -33,7 +33,9 @@ jobs:
       - bash: |
           rm -rf upload
           mkdir upload
-          zip upload/mm2-$(COMMIT_HASH)-ios-aarch64-CI target/aarch64-apple-ios/ci/libmm2.a -j
+          mv target/aarch64-apple-ios/ci/libmm2lib.a upload/libmm2.a
+          zip upload/mm2-$(COMMIT_HASH)-ios-aarch64-CI upload/libmm2.a -j
+          rm -rf upload/libmm2.a
         displayName: 'Prepare upload'
       - task: CopyFilesOverSSH@0
         inputs:
