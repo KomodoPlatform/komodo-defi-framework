@@ -10,8 +10,8 @@ use crate::{BalanceError, BalanceFut, CheckIfMyPaymentSentArgs, CoinFutSpawner, 
             TradePreimageResult, TradePreimageValue, TransactionDetails, TransactionFut, TransactionType,
             TxMarshalingErr, UnexpectedDerivationMethod, ValidateAddressResult, ValidateFeeArgs,
             ValidateInstructionsErr, ValidateOtherPubKeyErr, ValidatePaymentFut, ValidatePaymentInput,
-            VerificationResult, WatcherSearchForSwapTxSpendInput, WatcherValidatePaymentInput, WithdrawError,
-            WithdrawFut, WithdrawRequest, WithdrawResult};
+            VerificationResult, WatcherSearchForSwapTxSpendInput, WatcherValidatePaymentInput,
+            WatcherValidateTakerFeeInput, WithdrawError, WithdrawFut, WithdrawRequest, WithdrawResult};
 use async_trait::async_trait;
 use base58::ToBase58;
 use bincode::{deserialize, serialize};
@@ -607,16 +607,7 @@ impl WatcherOps for SolanaCoin {
         unimplemented!();
     }
 
-    fn watcher_validate_taker_fee(
-        &self,
-        taker_fee_hash: &[u8],
-        taker_payment_hex: &[u8],
-        sender_pubkey: &[u8],
-        amount: &BigDecimal,
-        min_block_number: u64,
-        fee_addr: &[u8],
-        lock_duration: u64,
-    ) -> ValidatePaymentFut<()> {
+    fn watcher_validate_taker_fee(&self, input: WatcherValidateTakerFeeInput) -> ValidatePaymentFut<()> {
         unimplemented!();
     }
 

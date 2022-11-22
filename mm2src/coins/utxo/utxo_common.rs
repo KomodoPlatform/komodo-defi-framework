@@ -16,7 +16,7 @@ use crate::{CanRefundHtlc, CoinBalance, CoinWithDerivationMethod, GetWithdrawSen
             SignatureResult, SwapOps, TradePreimageValue, TransactionFut, TxFeeDetails, TxMarshalingErr,
             ValidateAddressResult, ValidateOtherPubKeyErr, ValidatePaymentFut, ValidatePaymentInput,
             VerificationError, VerificationResult, WatcherSearchForSwapTxSpendInput, WatcherValidatePaymentInput,
-            WithdrawFrom, WithdrawResult, WithdrawSenderAddress};
+            WatcherValidateTakerFeeInput, WithdrawFrom, WithdrawResult, WithdrawSenderAddress};
 pub use bitcrypto::{dhash160, sha256, ChecksumType};
 use bitcrypto::{dhash256, ripemd160};
 use chain::constants::SEQUENCE_FINAL;
@@ -1749,24 +1749,19 @@ pub fn check_all_utxo_inputs_signed_by_pub(tx: &UtxoTx, expected_pub: &[u8]) -> 
     Ok(true)
 }
 
-#[allow(clippy::too_many_arguments)]
 pub fn watcher_validate_taker_fee<T: UtxoCommonOps>(
     coin: T,
-    taker_fee_hash: &[u8],
-    taker_payment_hex: &[u8],
+    input: WatcherValidateTakerFeeInput,
     output_index: usize,
-    sender_pubkey: &[u8],
-    amount: &BigDecimal,
-    min_block_number: u64,
-    fee_addr: &[u8],
-    lock_duration: u64,
 ) -> ValidatePaymentFut<()> {
-    let expected_amount = amount.clone();
-    let sender_pubkey = sender_pubkey.to_vec();
-    let taker_fee_hash = taker_fee_hash.to_vec();
-    let taker_payment_hex = taker_payment_hex.to_vec();
+    let expected_amount = input.amount.clone();
+    let sender_pubkey = input.sender_pubkey;
+    let taker_fee_hash = input.taker_fee_hash;
+    let taker_payment_hex = input.taker_payment_hex;
+    let min_block_number = input.min_block_number;
+    let lock_duration = input.lock_duration;
     let address = try_f!(address_from_raw_pubkey(
-        fee_addr,
+        &input.fee_addr,
         coin.as_ref().conf.pub_addr_prefix,
         coin.as_ref().conf.pub_t_addr_prefix,
         coin.as_ref().conf.checksum_type,

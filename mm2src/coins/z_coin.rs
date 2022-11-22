@@ -23,7 +23,7 @@ use crate::{BalanceError, BalanceFut, CheckIfMyPaymentSentArgs, CoinBalance, Coi
             TransactionFut, TxFeeDetails, TxMarshalingErr, UnexpectedDerivationMethod, ValidateAddressResult,
             ValidateFeeArgs, ValidateInstructionsErr, ValidateOtherPubKeyErr, ValidatePaymentFut,
             ValidatePaymentInput, VerificationError, VerificationResult, WatcherOps, WatcherSearchForSwapTxSpendInput,
-            WatcherValidatePaymentInput, WithdrawFut, WithdrawRequest};
+            WatcherValidatePaymentInput, WatcherValidateTakerFeeInput, WithdrawFut, WithdrawRequest};
 use crate::{Transaction, WithdrawError};
 use async_trait::async_trait;
 use bitcrypto::dhash256;
@@ -1466,16 +1466,7 @@ impl WatcherOps for ZCoin {
         unimplemented!();
     }
 
-    fn watcher_validate_taker_fee(
-        &self,
-        _taker_fee_hash: &[u8],
-        _taker_payment_hex: &[u8],
-        _sender_pubkey: &[u8],
-        _amount: &BigDecimal,
-        _min_block_number: u64,
-        _fee_addr: &[u8],
-        _lock_duration: u64,
-    ) -> ValidatePaymentFut<()> {
+    fn watcher_validate_taker_fee(&self, _input: WatcherValidateTakerFeeInput) -> ValidatePaymentFut<()> {
         unimplemented!();
     }
 

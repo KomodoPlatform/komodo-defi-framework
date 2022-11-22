@@ -25,7 +25,7 @@ use crate::{BalanceFut, CheckIfMyPaymentSentArgs, CoinBalance, CoinFutSpawner, F
             TxMarshalingErr, UnexpectedDerivationMethod, UtxoStandardCoin, ValidateAddressResult, ValidateFeeArgs,
             ValidateInstructionsErr, ValidateOtherPubKeyErr, ValidatePaymentError, ValidatePaymentFut,
             ValidatePaymentInput, VerificationError, VerificationResult, WatcherOps, WatcherSearchForSwapTxSpendInput,
-            WatcherValidatePaymentInput, WithdrawError, WithdrawFut, WithdrawRequest};
+            WatcherValidatePaymentInput, WatcherValidateTakerFeeInput, WithdrawError, WithdrawFut, WithdrawRequest};
 use async_trait::async_trait;
 use bitcoin::bech32::ToBase32;
 use bitcoin::hashes::Hash;
@@ -765,16 +765,7 @@ impl WatcherOps for LightningCoin {
         unimplemented!();
     }
 
-    fn watcher_validate_taker_fee(
-        &self,
-        _taker_fee_hash: &[u8],
-        _taker_payment_hex: &[u8],
-        _sender_pubkey: &[u8],
-        _amount: &BigDecimal,
-        _min_block_number: u64,
-        _fee_addr: &[u8],
-        _lock_duration: u64,
-    ) -> ValidatePaymentFut<()> {
+    fn watcher_validate_taker_fee(&self, _input: WatcherValidateTakerFeeInput) -> ValidatePaymentFut<()> {
         unimplemented!();
     }
 

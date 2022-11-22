@@ -72,7 +72,7 @@ use super::{coin_conf, AsyncMutex, BalanceError, BalanceFut, CheckIfMyPaymentSen
             UnexpectedDerivationMethod, ValidateAddressResult, ValidateFeeArgs, ValidateInstructionsErr,
             ValidateOtherPubKeyErr, ValidatePaymentError, ValidatePaymentFut, ValidatePaymentInput, VerificationError,
             VerificationResult, WatcherOps, WatcherSearchForSwapTxSpendInput, WatcherValidatePaymentInput,
-            WithdrawError, WithdrawFee, WithdrawFut, WithdrawRequest, WithdrawResult};
+            WatcherValidateTakerFeeInput, WithdrawError, WithdrawFee, WithdrawFut, WithdrawRequest, WithdrawResult};
 pub use rlp;
 
 #[cfg(test)] mod eth_tests;
@@ -1163,16 +1163,7 @@ impl WatcherOps for EthCoin {
         unimplemented!();
     }
 
-    fn watcher_validate_taker_fee(
-        &self,
-        _taker_fee_hash: &[u8],
-        _taker_payment_hex: &[u8],
-        _sender_pubkey: &[u8],
-        _amount: &BigDecimal,
-        _min_block_number: u64,
-        _fee_addr: &[u8],
-        _lock_duration: u64,
-    ) -> ValidatePaymentFut<()> {
+    fn watcher_validate_taker_fee(&self, _input: WatcherValidateTakerFeeInput) -> ValidatePaymentFut<()> {
         unimplemented!();
     }
 

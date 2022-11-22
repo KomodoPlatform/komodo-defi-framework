@@ -18,7 +18,7 @@ use crate::{BlockHeightAndTime, CanRefundHtlc, CheckIfMyPaymentSentArgs, CoinBal
             TransactionType, TxFeeDetails, TxMarshalingErr, UnexpectedDerivationMethod, ValidateAddressResult,
             ValidateFeeArgs, ValidateInstructionsErr, ValidateOtherPubKeyErr, ValidatePaymentFut,
             ValidatePaymentInput, VerificationResult, WatcherOps, WatcherSearchForSwapTxSpendInput,
-            WatcherValidatePaymentInput, WithdrawFut};
+            WatcherValidatePaymentInput, WatcherValidateTakerFeeInput, WithdrawFut};
 use common::log::warn;
 use derive_more::Display;
 use futures::{FutureExt, TryFutureExt};
@@ -1082,27 +1082,8 @@ impl WatcherOps for BchCoin {
     }
 
     #[inline]
-    fn watcher_validate_taker_fee(
-        &self,
-        taker_fee_hash: &[u8],
-        taker_payment_hex: &[u8],
-        sender_pubkey: &[u8],
-        amount: &BigDecimal,
-        min_block_number: u64,
-        fee_addr: &[u8],
-        lock_duration: u64,
-    ) -> ValidatePaymentFut<()> {
-        utxo_common::watcher_validate_taker_fee(
-            self.clone(),
-            taker_fee_hash,
-            taker_payment_hex,
-            utxo_common::DEFAULT_FEE_VOUT,
-            sender_pubkey,
-            amount,
-            min_block_number,
-            fee_addr,
-            lock_duration,
-        )
+    fn watcher_validate_taker_fee(&self, input: WatcherValidateTakerFeeInput) -> ValidatePaymentFut<()> {
+        utxo_common::watcher_validate_taker_fee(self.clone(), input, utxo_common::DEFAULT_FEE_VOUT)
     }
 
     #[inline]

@@ -3,7 +3,7 @@ use super::{broadcast_p2p_tx_msg, dex_fee_amount_from_taker_coin, lp_coinfind, t
 use crate::mm2::MmError;
 use async_trait::async_trait;
 use coins::{CanRefundHtlc, FoundSwapTxSpend, MmCoinEnum, WatcherSearchForSwapTxSpendInput,
-            WatcherValidatePaymentInput, TAKER_PAYMENT_SPEND_SEARCH_INTERVAL};
+            WatcherValidatePaymentInput, WatcherValidateTakerFeeInput, TAKER_PAYMENT_SPEND_SEARCH_INTERVAL};
 use common::executor::{AbortSettings, SpawnAbortable, Timer};
 use common::log::{error, info};
 use common::state_machine::prelude::*;
@@ -163,15 +163,15 @@ impl State for ValidateTakerFee {
         loop {
             match watcher_ctx
                 .taker_coin
-                .watcher_validate_taker_fee(
-                    &watcher_ctx.data.taker_fee_hash,
-                    &watcher_ctx.data.taker_payment_hex,
-                    &watcher_ctx.verified_pub,
-                    &fee_amount.clone().into(),
-                    watcher_ctx.data.taker_coin_start_block,
-                    &DEX_FEE_ADDR_RAW_PUBKEY,
-                    watcher_ctx.data.lock_duration,
-                )
+                .watcher_validate_taker_fee(WatcherValidateTakerFeeInput {
+                    taker_fee_hash: watcher_ctx.data.taker_fee_hash.clone(),
+                    taker_payment_hex: watcher_ctx.data.taker_payment_hex.clone(),
+                    sender_pubkey: watcher_ctx.verified_pub.clone(),
+                    amount: fee_amount.clone().into(),
+                    min_block_number: watcher_ctx.data.taker_coin_start_block,
+                    fee_addr: DEX_FEE_ADDR_RAW_PUBKEY.clone(),
+                    lock_duration: watcher_ctx.data.lock_duration,
+                })
                 .compat()
                 .await
             {

@@ -485,6 +485,17 @@ pub enum ValidateOtherPubKeyErr {
 }
 
 #[derive(Clone, Debug)]
+pub struct WatcherValidateTakerFeeInput {
+    pub taker_fee_hash: Vec<u8>,
+    pub taker_payment_hex: Vec<u8>,
+    pub sender_pubkey: Vec<u8>,
+    pub amount: BigDecimal,
+    pub min_block_number: u64,
+    pub fee_addr: Vec<u8>,
+    pub lock_duration: u64,
+}
+
+#[derive(Clone, Debug)]
 pub struct WatcherValidatePaymentInput {
     pub payment_tx: Vec<u8>,
     pub time_lock: u32,
@@ -738,17 +749,7 @@ pub trait WatcherOps {
         _swap_unique_data: &[u8],
     ) -> TransactionFut;
 
-    #[allow(clippy::too_many_arguments)]
-    fn watcher_validate_taker_fee(
-        &self,
-        taker_fee_hash: &[u8],
-        taker_payment_hex: &[u8],
-        sender_pubkey: &[u8],
-        amount: &BigDecimal,
-        min_block_number: u64,
-        fee_addr: &[u8],
-        lock_duration: u64,
-    ) -> ValidatePaymentFut<()>;
+    fn watcher_validate_taker_fee(&self, input: WatcherValidateTakerFeeInput) -> ValidatePaymentFut<()>;
 
     fn watcher_validate_taker_payment(&self, _input: WatcherValidatePaymentInput) -> ValidatePaymentFut<()>;
 
