@@ -1596,7 +1596,7 @@ impl MmCoin for ZCoin {
 
     fn on_disabled(&self) -> Result<(), AbortedError> { AbortableSystem::abort_all(&self.as_ref().abortable_system) }
 
-    fn on_token_deactivated(&self, _ticker: &str) -> Result<(), String> { Ok(()) }
+    fn on_token_deactivated(&self, _ticker: &str) {}
 }
 
 #[async_trait]

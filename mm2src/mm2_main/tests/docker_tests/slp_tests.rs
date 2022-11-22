@@ -153,6 +153,27 @@ fn test_withdraw_bch_max_must_not_spend_slp() {
 
 #[test]
 fn test_disable_platform_coin_with_tokens() {
+    fn assert_coin_not_found_on_balance(mm: &MarketMakerIt, token: &str, method: &str) {
+        let balance = block_on(mm.rpc(&json! ({
+            "userpass": mm.userpass,
+            "method": method,
+            "coin": token
+        })))
+        .unwrap();
+        assert_eq!(balance.0, StatusCode::INTERNAL_SERVER_ERROR);
+        assert!(balance.1.contains(&format!("No such coin: {token}")));
+    }
+
+    fn assert_ok_200(mm: &MarketMakerIt, token: &str, method: &str) {
+        let disable = block_on(mm.rpc(&json! ({
+            "userpass": mm.userpass,
+            "method": method,
+            "coin": token,
+        })))
+        .unwrap();
+        assert_eq!(disable.0, StatusCode::OK);
+    }
+
     let mm = slp_supplied_node();
     let _ = block_on(enable_bch_with_tokens(
         &mm,
@@ -166,7 +187,7 @@ fn test_disable_platform_coin_with_tokens() {
     // Check if platform_coin FORSLP is still enabled.
     assert_ok_200(&mm, "FORSLP", "my_balance");
     // Check if ADEXSLP token still enabled.
-    assert_error_500(&mm, "ADEXSLP", "my_balance");
+    assert_coin_not_found_on_balance(&mm, "ADEXSLP", "my_balance");
     // // Try to disable patform_coin.
     assert_ok_200(&mm, "FORSLP", "disable_coin");
 
@@ -181,28 +202,7 @@ fn test_disable_platform_coin_with_tokens() {
     // Try to disable platform_coin.
     assert_ok_200(&mm, "FORSLP", "disable_coin");
     // Check if platform_coin FORSLP is still enabled.
-    assert_error_500(&mm, "FORSLP", "my_balance");
+    assert_coin_not_found_on_balance(&mm, "FORSLP", "my_balance");
     // Check if ADEXSLP token is still enabled.
-    assert_error_500(&mm, "ADEXSLP", "my_balance");
-}
-
-fn assert_error_500(mm: &MarketMakerIt, token: &str, method: &str) {
-    let balance = block_on(mm.rpc(&json! ({
-        "userpass": mm.userpass,
-        "method": method,
-        "coin": token
-    })))
-    .unwrap();
-    assert_eq!(balance.0, StatusCode::INTERNAL_SERVER_ERROR);
-    assert!(balance.1.contains(&format!("No such coin: {token}")));
-}
-
-fn assert_ok_200(mm: &MarketMakerIt, token: &str, method: &str) {
-    let disable = block_on(mm.rpc(&json! ({
-        "userpass": mm.userpass,
-        "method": method,
-        "coin": token,
-    })))
-    .unwrap();
-    assert_eq!(disable.0, StatusCode::OK);
+    assert_coin_not_found_on_balance(&mm, "ADEXSLP", "my_balance");
 }

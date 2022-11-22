@@ -1267,11 +1267,10 @@ impl MmCoin for BchCoin {
 
     fn on_disabled(&self) -> Result<(), AbortedError> { AbortableSystem::abort_all(&self.as_ref().abortable_system) }
 
-    fn on_token_deactivated(&self, ticker: &str) -> Result<(), String> {
-        if let Ok(tokens) = self.slp_tokens_infos.try_lock().as_deref_mut() {
+    fn on_token_deactivated(&self, ticker: &str) {
+        if let Ok(tokens) = self.slp_tokens_infos.lock().as_deref_mut() {
             tokens.remove(ticker);
         };
-        Ok(())
     }
 }
 

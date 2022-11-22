@@ -186,7 +186,9 @@ where
     /// Try to disable the coin in case if we managed to register it already.
     async fn cancel(self) {
         if let Ok(c_ctx) = CoinsContext::from_ctx(&self.ctx) {
-            c_ctx.remove_coin(&self.ctx, &self.request.ticker).await.ok();
+            if let Ok(Some(t)) = lp_coinfind(&self.ctx, &self.request.ticker).await {
+                c_ctx.remove_coin(t).await.ok();
+            };
         };
     }
 

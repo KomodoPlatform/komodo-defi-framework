@@ -1100,9 +1100,7 @@ impl MmCoin for LightningCoin {
     // Todo: This uses default data for now for the sake of swap P.O.C., this should be implemented probably when implementing order matching if it's needed
     fn is_coin_protocol_supported(&self, _info: &Option<Vec<u8>>) -> bool { true }
 
-    fn on_disabled(&self) -> Result<(), AbortedError> {
-        AbortableSystem::abort_all(&self.platform.abortable_system.clone())
-    }
+    fn on_disabled(&self) -> Result<(), AbortedError> { AbortableSystem::abort_all(&self.platform.abortable_system) }
 
-    fn on_token_deactivated(&self, _ticker: &str) -> Result<(), String> { Ok(()) }
+    fn on_token_deactivated(&self, _ticker: &str) {}
 }

@@ -1948,7 +1948,7 @@ pub trait MmCoin: SwapOps + WatcherOps + MarketCoinOps + Send + Sync + 'static {
     /// Abort all coin related futures on coin deactivation
     fn on_disabled(&self) -> Result<(), AbortedError>;
 
-    fn on_token_deactivated(&self, _ticker: &str) -> Result<(), String>;
+    fn on_token_deactivated(&self, _ticker: &str);
 }
 
 /// The coin futures spawner. It's used to spawn futures that can be aborted immediately or after a timeout
@@ -2192,17 +2192,19 @@ impl CoinsContext {
         }
 
         let platform_ticker = platform.ticker().to_string();
-        coins.insert(platform.ticker().into(), platform);
+        coins.insert(platform_ticker.clone(), platform);
 
         // Tokens can't be activated without platform coin so we can safely insert them without checking prior existence
+        let mut token_tickers = Vec::with_capacity(tokens.len());
         for token in tokens {
-            coins.insert(token.ticker().into(), token.clone());
-            platform_coin_tokens
-                .entry(platform_ticker.clone())
-                .or_default()
-                .insert(0, token.ticker().to_string());
+            token_tickers.push(token.ticker().to_string());
+            coins.insert(token.ticker().into(), token);
         }
 
+        platform_coin_tokens
+            .entry(platform_ticker)
+            .or_default()
+            .extend(token_tickers);
         Ok(())
     }
 
@@ -2212,32 +2214,23 @@ impl CoinsContext {
         coins.get(ticker).cloned().unwrap_or_default()
     }
 
-    pub async fn remove_coin(&self, ctx: &MmArc, ticker: &str) -> Result<(), String> {
-        let coin = match lp_coinfind(ctx, ticker).await {
-            Ok(Some(coin)) => coin,
-            Ok(None) => return ERR!("No such coin: {}", ticker),
-            Err(err) => return ERR!("!lp_coinfind({}): ", err),
-        };
-        let coins_ctx = try_s!(CoinsContext::from_ctx(ctx));
+    pub async fn remove_coin(&self, coin: MmCoinEnum) -> Result<(), String> {
+        let ticker = coin.ticker();
         let platform_ticker = coin.platform_ticker();
-
-        let mut coins_storage = try_s!(coins_ctx.coins.try_lock().ok_or("coins mutex lock err"));
-        let mut platform_tokens_storage = try_s!(coins_ctx
-            .platform_coin_tokens
-            .try_lock()
-            .ok_or("platform_coin_tokens mutex lock err"));
+        let mut coins_storage = self.coins.lock().await;
+        let mut platform_tokens_storage = self.platform_coin_tokens.lock();
 
         // Check if ticker is a platform coin and remove from it platform's token list
         if ticker == platform_ticker && platform_tokens_storage.get_mut(ticker).is_some() {
-            if let Err(err) = coin.on_token_deactivated(ticker) {
-                log!("Platform Tokens Error: {err}")
+            if let Some(tokens_to_remove) = platform_tokens_storage.remove(ticker) {
+                for token in tokens_to_remove {
+                    if let Some(token) = coins_storage.remove(&token) {
+                        if let Err(err) = token.on_disabled() {
+                            log!("Error aborting coin({ticker}) futures: {err:?}")
+                        };
+                    }
+                }
             };
-            platform_tokens_storage.remove(ticker);
-        };
-
-        // Check if coin platform_ticker is in platform_tokens and remove it from token list
-        if let Some(tokens) = platform_tokens_storage.get_mut(platform_ticker) {
-            tokens.retain(|t| t.as_str() != ticker);
         };
 
         //  Remove coin from coin list
@@ -2250,6 +2243,7 @@ impl CoinsContext {
             log!("Error aborting coin({ticker}) futures: {err:?}")
         };
 
+        coin.on_token_deactivated(ticker);
         Ok(())
     }
 

@@ -19,7 +19,6 @@
 //  marketmaker
 //
 
-use crate::mm2::lp_ordermatch::{cancel_orders_by, CancelBy};
 use coins::{lp_coinfind, lp_coininit, CoinsContext, MmCoinEnum};
 use common::executor::Timer;
 use common::log::error;
@@ -34,7 +33,7 @@ use std::borrow::Cow;
 
 use crate::mm2::lp_dispatcher::{dispatch_lp_event, StopCtxEvent};
 use crate::mm2::lp_network::subscribe_to_topic;
-use crate::mm2::lp_ordermatch::get_matching_orders;
+use crate::mm2::lp_ordermatch::{cancel_orders_by, get_matching_orders, CancelBy};
 use crate::mm2::lp_swap::{active_swaps_using_coin, tx_helper_topic, watcher_topic};
 use crate::mm2::MmVersionResult;
 
@@ -52,12 +51,11 @@ pub async fn disable_coin(ctx: MmArc, req: Json) -> Result<Response<Vec<u8>>, St
     let coins_ctx = CoinsContext::from_ctx(&ctx).map_err(|err| ERRL!("{}", err))?;
 
     // Get all enabled tokens with platform coin including the coin.
-    let coins_to_disable = coins_ctx
-        .get_tokens_to_disable(&ticker)
-        .await
-        .into_iter()
-        .chain(std::iter::once(ticker.clone()))
-        .collect::<Vec<_>>();
+    // If a platform coin is to be disabled, we get all the enabled tokens for this platform coin first.
+    let mut coins_to_disable = coins_ctx.get_tokens_to_disable(&ticker).await;
+    // We then add the platform coin to the end of the list of the coins to be disabled.
+    coins_to_disable.push(ticker.clone());
+    drop_mutability!(coins_to_disable);
 
     // Get all matching orders and active swaps.
     let mut active_swaps = vec![];
@@ -70,14 +68,12 @@ pub async fn disable_coin(ctx: MmArc, req: Json) -> Result<Response<Vec<u8>>, St
     }
     drop_mutability!(active_swaps);
     drop_mutability!(still_matching_orders);
-    // If there're matching orders or active swap we return this error.
+    // If there're matching orders or active swaps we return an error.
     if !active_swaps.is_empty() || !still_matching_orders.is_empty() {
         let err = json!({
             "error": format!("There're currently matching orders or active swaps for some tokens"),
-            "orders": {
-                "active_swaps": still_matching_orders,
-                "still_matching": still_matching_orders
-            }
+            "active_swaps": active_swaps,
+            "still_matching": still_matching_orders
         });
         return Response::builder()
             .status(INTERNAL_SERVER_ERROR_CODE)
@@ -90,6 +86,11 @@ pub async fn disable_coin(ctx: MmArc, req: Json) -> Result<Response<Vec<u8>>, St
     let mut disabled_tokens = vec![];
     for ticker in &coins_to_disable {
         log!("disabling {ticker} coin");
+        let coin = match lp_coinfind(&ctx, ticker).await {
+            Ok(Some(t)) => t,
+            Ok(None) => return ERR!("No such coin: {}", ticker),
+            Err(err) => return ERR!("!lp_coinfind({}): ", err),
+        };
         let (cancelled, _) = try_s!(
             cancel_orders_by(&ctx, CancelBy::Coin {
                 ticker: ticker.to_string()
@@ -97,9 +98,10 @@ pub async fn disable_coin(ctx: MmArc, req: Json) -> Result<Response<Vec<u8>>, St
             .await
         );
 
-        if let Err(err) = coins_ctx.remove_coin(&ctx, ticker).await {
+        if let Err(err) = coins_ctx.remove_coin(coin).await {
             let err = json!({
                 "error": err,
+                "cancelled_orders": cancelled_orders,
                 "disabled_tokens": disabled_tokens,
             });
             return Response::builder()
