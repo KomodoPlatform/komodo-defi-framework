@@ -50,7 +50,6 @@ pub async fn disable_coin(ctx: MmArc, req: Json) -> Result<Response<Vec<u8>>, St
     };
     let coins_ctx = CoinsContext::from_ctx(&ctx).map_err(|err| ERRL!("{}", err))?;
 
-    // Get all enabled tokens with platform coin including the coin.
     // If a platform coin is to be disabled, we get all the enabled tokens for this platform coin first.
     let mut coins_to_disable = coins_ctx.get_tokens_to_disable(&ticker).await;
     // We then add the platform coin to the end of the list of the coins to be disabled.
@@ -68,6 +67,7 @@ pub async fn disable_coin(ctx: MmArc, req: Json) -> Result<Response<Vec<u8>>, St
     }
     drop_mutability!(active_swaps);
     drop_mutability!(still_matching_orders);
+
     // If there're matching orders or active swaps we return an error.
     if !active_swaps.is_empty() || !still_matching_orders.is_empty() {
         let err = json!({

@@ -151,10 +151,10 @@ fn test_withdraw_bch_max_must_not_spend_slp() {
 
 #[test]
 fn test_disable_platform_coin_with_tokens() {
-    fn assert_coin_not_found_on_balance(mm: &MarketMakerIt, token: &str, method: &str) {
+    fn assert_coin_not_found_on_balance(mm: &MarketMakerIt, token: &str) {
         let balance = block_on(mm.rpc(&json! ({
             "userpass": mm.userpass,
-            "method": method,
+            "method": "my_balance",
             "coin": token
         })))
         .unwrap();
@@ -185,7 +185,7 @@ fn test_disable_platform_coin_with_tokens() {
     // Check if platform_coin FORSLP is still enabled.
     assert_ok_200(&mm, "FORSLP", "my_balance");
     // Check if ADEXSLP token still enabled.
-    assert_coin_not_found_on_balance(&mm, "ADEXSLP", "my_balance");
+    assert_coin_not_found_on_balance(&mm, "ADEXSLP");
     // // Try to disable patform_coin.
     assert_ok_200(&mm, "FORSLP", "disable_coin");
 
@@ -200,7 +200,7 @@ fn test_disable_platform_coin_with_tokens() {
     // Try to disable platform_coin.
     assert_ok_200(&mm, "FORSLP", "disable_coin");
     // Check if platform_coin FORSLP is still enabled.
-    assert_coin_not_found_on_balance(&mm, "FORSLP", "my_balance");
+    assert_coin_not_found_on_balance(&mm, "FORSLP");
     // Check if ADEXSLP token is still enabled.
-    assert_coin_not_found_on_balance(&mm, "ADEXSLP", "my_balance");
+    assert_coin_not_found_on_balance(&mm, "ADEXSLP");
 }
