@@ -40,7 +40,6 @@ impl Web3Transport {
     }
 
     #[cfg(test)]
-    #[inline]
     pub fn with_nodes(nodes: Vec<http_transport::HttpTransportNode>) -> Web3Transport {
         http_transport::HttpTransport::new(nodes).into()
     }

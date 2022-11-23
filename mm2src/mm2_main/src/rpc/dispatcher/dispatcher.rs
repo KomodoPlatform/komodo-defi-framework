@@ -1,7 +1,7 @@
 use super::{DispatcherError, DispatcherResult, PUBLIC_METHODS};
 use crate::mm2::lp_native_dex::init_hw::{cancel_init_trezor, init_trezor, init_trezor_status, init_trezor_user_action};
 #[cfg(target_arch = "wasm32")]
-use crate::mm2::lp_native_dex::init_metamask::{cancel_init_metamask, init_metamask, init_metamask_status};
+use crate::mm2::lp_native_dex::init_metamask::{cancel_connect_metamask, connect_metamask, connect_metamask_status};
 use crate::mm2::lp_ordermatch::{best_orders_rpc_v2, orderbook_rpc_v2, start_simple_market_maker_bot,
                                 stop_simple_market_maker_bot};
 use crate::mm2::rpc::rate_limiter::{process_rate_limit, RateLimitContext};
@@ -247,9 +247,9 @@ async fn rpc_task_dispatcher(
         },
         #[cfg(target_arch = "wasm32")]
         wasm_only_methods => match wasm_only_methods {
-            "init_metamask::cancel" => handle_mmrpc(ctx, request, cancel_init_metamask).await,
-            "init_metamask::init" => handle_mmrpc(ctx, request, init_metamask).await,
-            "init_metamask::status" => handle_mmrpc(ctx, request, init_metamask_status).await,
+            "connect_metamask::cancel" => handle_mmrpc(ctx, request, cancel_connect_metamask).await,
+            "connect_metamask::init" => handle_mmrpc(ctx, request, connect_metamask).await,
+            "connect_metamask::status" => handle_mmrpc(ctx, request, connect_metamask_status).await,
             _ => MmError::err(DispatcherError::NoSuchMethod),
         },
     }

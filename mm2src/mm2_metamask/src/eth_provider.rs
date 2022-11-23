@@ -103,9 +103,6 @@ impl EthProvider {
     }
 }
 
-// pub async fn detect_ethereum_provider(must_be_metamask: bool, timeout_s: f64) ->  {
-// }
-
 #[wasm_bindgen]
 extern "C" {
     /// An EIP-1193 provider object. Available by convention at `window.ethereum`.

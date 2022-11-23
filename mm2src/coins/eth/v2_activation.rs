@@ -48,10 +48,8 @@ pub enum EthPrivKeyActivationPolicy {
     Metamask,
 }
 
-impl EthPrivKeyActivationPolicy {
-    /// The function can be used as a default deserialization constructor:
-    /// `#[serde(default = "EthPrivKeyActivationPolicy::context_priv_key")]`
-    pub fn context_priv_key() -> EthPrivKeyActivationPolicy { EthPrivKeyActivationPolicy::ContextPrivKey }
+impl Default for EthPrivKeyActivationPolicy {
+    fn default() -> Self { EthPrivKeyActivationPolicy::ContextPrivKey }
 }
 
 #[derive(Clone, Debug, Deserialize, Serialize)]
@@ -79,7 +77,7 @@ pub struct EthActivationV2Request {
     pub gas_station_policy: GasStationPricePolicy,
     pub mm2: Option<u8>,
     pub required_confirmations: Option<u64>,
-    #[serde(default = "EthPrivKeyActivationPolicy::context_priv_key")]
+    #[serde(default)]
     pub priv_key_policy: EthPrivKeyActivationPolicy,
 }
 

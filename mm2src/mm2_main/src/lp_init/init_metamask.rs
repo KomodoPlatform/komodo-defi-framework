@@ -130,7 +130,10 @@ impl RpcTask for InitMetamaskTask {
     }
 }
 
-pub async fn init_metamask(ctx: MmArc, req: InitMetamaskRequest) -> MmResult<InitRpcTaskResponse, InitMetamaskError> {
+pub async fn connect_metamask(
+    ctx: MmArc,
+    req: InitMetamaskRequest,
+) -> MmResult<InitRpcTaskResponse, InitMetamaskError> {
     let init_ctx = MmInitContext::from_ctx(&ctx).map_to_mm(InitMetamaskError::Internal)?;
     let spawner = ctx.spawner();
     let task = InitMetamaskTask { ctx, req };
@@ -138,7 +141,7 @@ pub async fn init_metamask(ctx: MmArc, req: InitMetamaskRequest) -> MmResult<Ini
     Ok(InitRpcTaskResponse { task_id })
 }
 
-pub async fn init_metamask_status(
+pub async fn connect_metamask_status(
     ctx: MmArc,
     req: RpcTaskStatusRequest,
 ) -> MmResult<InitMetamaskStatus, RpcTaskStatusError> {
@@ -152,7 +155,7 @@ pub async fn init_metamask_status(
         .or_mm_err(|| RpcTaskStatusError::NoSuchTask(req.task_id))
 }
 
-pub async fn cancel_init_metamask(
+pub async fn cancel_connect_metamask(
     ctx: MmArc,
     req: CancelRpcTaskRequest,
 ) -> MmResult<SuccessResponse, CancelRpcTaskError> {

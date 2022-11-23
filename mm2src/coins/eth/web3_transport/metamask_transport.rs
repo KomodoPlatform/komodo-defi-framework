@@ -9,8 +9,6 @@ use web3::error::{Error, ErrorKind};
 use web3::helpers::build_request;
 use web3::{RequestId, Transport};
 
-const REQUEST_ID: RequestId = 0;
-
 #[derive(Clone)]
 pub struct MetamaskTransport {
     metamask_ctx: MetamaskWeak,
@@ -60,9 +58,10 @@ impl Transport for MetamaskTransport {
     type Out = Web3SendOut;
 
     fn prepare(&self, method: &str, params: Vec<Json>) -> (RequestId, Call) {
-        let request = build_request(REQUEST_ID, method, params);
-
         // RequestId doesn't make sense for `MetamaskProvider`.
+        const REQUEST_ID: RequestId = 0;
+
+        let request = build_request(REQUEST_ID, method, params);
         (REQUEST_ID, request)
     }
 

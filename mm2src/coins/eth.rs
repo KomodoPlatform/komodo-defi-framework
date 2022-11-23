@@ -53,7 +53,6 @@ use serialization::{CompactInteger, Serializable, Stream};
 use sha3::{Digest, Keccak256};
 use std::collections::HashMap;
 use std::convert::TryFrom;
-use std::fmt;
 use std::ops::Deref;
 use std::path::PathBuf;
 use std::str::FromStr;
@@ -345,32 +344,17 @@ pub enum EthPrivKeyPolicy {
     Metamask(MetamaskWeak),
 }
 
-impl fmt::Debug for EthPrivKeyPolicy {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        match self {
-            EthPrivKeyPolicy::KeyPair(_) => write!(f, "KeyPair"),
-            #[cfg(target_arch = "wasm32")]
-            EthPrivKeyPolicy::Metamask(_) => write!(f, "Metamask"),
-        }
-    }
-}
-
 impl From<KeyPair> for EthPrivKeyPolicy {
     fn from(key_pair: KeyPair) -> Self { EthPrivKeyPolicy::KeyPair(key_pair) }
 }
 
 impl EthPrivKeyPolicy {
-    pub fn key_pair(&self) -> Option<&KeyPair> {
-        match self {
-            EthPrivKeyPolicy::KeyPair(key_pair) => Some(key_pair),
-            #[cfg(target_arch = "wasm32")]
-            EthPrivKeyPolicy::Metamask(_) => None,
-        }
-    }
-
     pub fn key_pair_or_err(&self) -> MmResult<&KeyPair, PrivKeyPolicyNotAllowed> {
-        self.key_pair()
-            .or_mm_err(|| PrivKeyPolicyNotAllowed::HardwareWalletNotSupported)
+        match self {
+            EthPrivKeyPolicy::KeyPair(key_pair) => Ok(key_pair),
+            #[cfg(target_arch = "wasm32")]
+            EthPrivKeyPolicy::Metamask(_) => MmError::err(PrivKeyPolicyNotAllowed::HardwareWalletNotSupported),
+        }
     }
 }
 

@@ -2196,14 +2196,8 @@ pub enum PrivKeyActivationPolicy {
     Trezor,
 }
 
-impl PrivKeyActivationPolicy {
-    /// The function can be used as a default deserialization constructor:
-    /// `#[serde(default = "PrivKeyActivationPolicy::context_priv_key")]`
-    pub fn context_priv_key() -> PrivKeyActivationPolicy { PrivKeyActivationPolicy::ContextPrivKey }
-
-    /// The function can be used as a default deserialization constructor:
-    /// `#[serde(default = "PrivKeyActivationPolicy::trezor")]`
-    pub fn trezor() -> PrivKeyActivationPolicy { PrivKeyActivationPolicy::Trezor }
+impl Default for PrivKeyActivationPolicy {
+    fn default() -> Self { PrivKeyActivationPolicy::ContextPrivKey }
 }
 
 #[derive(Debug)]
