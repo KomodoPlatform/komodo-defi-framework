@@ -2221,10 +2221,11 @@ impl CoinsContext {
         let mut platform_tokens_storage = self.platform_coin_tokens.lock();
 
         // Check if ticker is a platform coin and remove from it platform's token list
-        if ticker == platform_ticker && platform_tokens_storage.get_mut(ticker).is_some() {
+        if ticker == platform_ticker {
             if let Some(tokens_to_remove) = platform_tokens_storage.remove(ticker) {
                 for token in tokens_to_remove {
                     if let Some(token) = coins_storage.remove(&token) {
+                        // Abort all token related futures on token deactivation
                         if let Err(err) = token.on_disabled() {
                             log!("Error aborting coin({ticker}) futures: {err:?}")
                         };
