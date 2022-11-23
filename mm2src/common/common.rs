@@ -127,16 +127,19 @@ use parking_lot::{Mutex as PaMutex, MutexGuard as PaMutexGuard};
 use rand::{rngs::SmallRng, SeedableRng};
 use serde::{de, ser};
 use serde_json::{self as json, Value as Json};
+use sha2::{Digest, Sha256};
 use std::alloc::Allocator;
 use std::fmt::Write as FmtWrite;
+use std::fs::File;
 use std::future::Future as Future03;
-use std::io::Write;
+use std::io::{BufReader, Read, Write};
 use std::iter::Peekable;
 use std::mem::{forget, zeroed};
 use std::num::NonZeroUsize;
 use std::ops::{Add, Deref, Div, RangeInclusive};
 use std::os::raw::c_void;
 use std::panic::{set_hook, PanicInfo};
+use std::path::PathBuf;
 use std::ptr::read_volatile;
 use std::sync::atomic::Ordering;
 use std::time::{Duration, SystemTime, SystemTimeError};
@@ -150,7 +153,6 @@ cfg_native! {
     #[cfg(not(windows))]
     use findshlibs::{IterationControl, Segment, SharedLibrary, TargetSharedLibrary};
     use std::env;
-    use std::path::PathBuf;
     use std::sync::Mutex;
 }
 
@@ -944,4 +946,24 @@ pub fn get_utc_timestamp() -> i64 { Utc::now().timestamp() }
 #[inline(always)]
 pub fn get_local_duration_since_epoch() -> Result<Duration, SystemTimeError> {
     SystemTime::now().duration_since(SystemTime::UNIX_EPOCH)
+}
+
+/// open file and calculate its sha256 digest as lowercase hex string
+pub fn sha256_digest(path: &PathBuf) -> Result<String, std::io::Error> {
+    let input = File::open(path)?;
+    let mut reader = BufReader::new(input);
+
+    let digest = {
+        let mut hasher = Sha256::new();
+        let mut buffer = [0; 1024];
+        loop {
+            let count = reader.read(&mut buffer)?;
+            if count == 0 {
+                break;
+            }
+            hasher.update(&buffer[..count]);
+        }
+        format!("{:x}", hasher.finalize())
+    };
+    Ok(digest)
 }

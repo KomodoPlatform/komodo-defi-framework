@@ -25,7 +25,7 @@ bytes = "0.4"
 cfg-if = "1.0"
 chain = { path = "../mm2_bitcoin/chain" }
 common = { path = "../common" }
-cosmrs = { version = "0.7" }
+cosmrs = { version = "0.7", default-features = false }
 crossbeam = "0.7"
 crypto = { path = "../crypto" }
 db_common = { path = "../db_common" }

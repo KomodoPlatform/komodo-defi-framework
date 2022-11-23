@@ -3,7 +3,6 @@ use common::executor::Timer;
 use common::{cfg_native, cfg_wasm32, get_utc_timestamp, log};
 use crypto::privkey::key_pair_from_seed;
 use http::{HeaderMap, StatusCode};
-use mm2::mm2::lp_ordermatch::MIN_ORDER_KEEP_ALIVE_INTERVAL;
 use mm2_metrics::{MetricType, MetricsJson};
 use mm2_number::{BigDecimal, BigRational, Fraction, MmNumber};
 use mm2_test_helpers::electrums::*;
@@ -21,6 +20,7 @@ use mm2_test_helpers::for_tests::{btc_segwit_conf, btc_with_spv_conf, check_rece
                                   QRC20_ELECTRUMS, RICK, RICK_ELECTRUM_ADDRS, TAKER_SUCCESS_EVENTS};
 use mm2_test_helpers::get_passphrase;
 use mm2_test_helpers::structs::*;
+use mm2lib::mm2::lp_ordermatch::MIN_ORDER_KEEP_ALIVE_INTERVAL;
 use serde_json::{self as json, json, Value as Json};
 use std::collections::HashMap;
 use std::env::{self, var};
