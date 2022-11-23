@@ -364,7 +364,6 @@ impl LightningEventHandler {
                     preimage
                 },
                 // This is a swap related payment since we don't have the preimage yet
-                // Todo: handle swap related events in a seperate handle_event function, this should be done when doing swap payments mutexes. This can reduce the code here a lot.
                 None => {
                     let payment_info = PaymentInfo {
                         payment_hash,

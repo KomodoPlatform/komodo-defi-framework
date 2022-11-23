@@ -15,6 +15,7 @@ use lightning::ln::channelmanager::{ChainParameters, ChannelManagerReadArgs, Pay
 use lightning::routing::gossip::RoutingFees;
 use lightning::routing::router::{PaymentParameters, RouteHint, RouteHintHop, RouteParameters};
 use lightning::util::config::UserConfig;
+use lightning::util::errors::APIError;
 use lightning::util::ser::ReadableArgs;
 use lightning_invoice::payment::{Payer, PaymentError as InvoicePaymentError, Router as RouterTrait};
 use mm2_core::mm_ctx::MmArc;
@@ -22,6 +23,8 @@ use std::collections::hash_map::Entry;
 use std::fs::File;
 use std::path::PathBuf;
 use std::sync::Arc;
+
+pub const PAYMENT_RETRY_ATTEMPTS: usize = 5;
 
 pub type ChainMonitor = chainmonitor::ChainMonitor<
     InMemorySigner,
@@ -366,16 +369,25 @@ pub(crate) fn pay_invoice_with_max_total_cltv_expiry_delta(
         final_cltv_expiry_delta: invoice.min_final_cltv_expiry() as u32,
     };
 
-    pay_internal(channel_manager, router, scorer, &route_params, invoice)
+    pay_internal(
+        channel_manager,
+        router,
+        scorer,
+        &route_params,
+        invoice,
+        &mut 0,
+        &mut Vec::new(),
+    )
 }
 
-// Todo: rename, add number of retry attempts or timeout
 fn pay_internal(
     channel_manager: Arc<ChannelManager>,
     router: Arc<Router>,
     scorer: Arc<Scorer>,
     params: &RouteParameters,
     invoice: &Invoice,
+    attempts: &mut usize,
+    errors: &mut Vec<APIError>,
 ) -> Result<PaymentId, PaymentError> {
     let payer = channel_manager.node_id();
     let first_hops = channel_manager.first_hops();
@@ -396,8 +408,22 @@ fn pay_internal(
         Err(e) => match e {
             PaymentSendFailure::ParameterError(_) => Err(e),
             PaymentSendFailure::PathParameterError(_) => Err(e),
-            PaymentSendFailure::AllFailedRetrySafe(_) => {
-                Ok(pay_internal(channel_manager, router, scorer, params, invoice)?)
+            PaymentSendFailure::AllFailedRetrySafe(err) => {
+                if *attempts > PAYMENT_RETRY_ATTEMPTS {
+                    Err(PaymentSendFailure::AllFailedRetrySafe(errors.to_vec()))
+                } else {
+                    *attempts += 1;
+                    errors.extend(err);
+                    Ok(pay_internal(
+                        channel_manager,
+                        router,
+                        scorer,
+                        params,
+                        invoice,
+                        attempts,
+                        errors,
+                    )?)
+                }
             },
             PaymentSendFailure::PartialFailure {
                 failed_paths_retry,
@@ -409,7 +435,16 @@ fn pay_internal(
                     // recipient may misbehave and claim the funds, at which point we have to
                     // consider the payment sent, so return `Ok()` here, ignoring any retry
                     // errors.
-                    let _ = retry_payment(channel_manager, router, scorer, payment_id, payment_hash, &retry_data);
+                    let _ = retry_payment(
+                        channel_manager,
+                        router,
+                        scorer,
+                        payment_id,
+                        payment_hash,
+                        &retry_data,
+                        &mut 0,
+                        errors,
+                    );
                     Ok(payment_id)
                 } else {
                     // This may happen if we send a payment and some paths fail, but
@@ -424,6 +459,7 @@ fn pay_internal(
     .map_err(|e| InvoicePaymentError::Sending(e).into())
 }
 
+#[allow(clippy::too_many_arguments)]
 fn retry_payment(
     channel_manager: Arc<ChannelManager>,
     router: Arc<Router>,
@@ -431,6 +467,8 @@ fn retry_payment(
     payment_id: PaymentId,
     payment_hash: PaymentHash,
     params: &RouteParameters,
+    attempts: &mut usize,
+    errors: &mut Vec<APIError>,
 ) -> Result<(), PaymentError> {
     let payer = channel_manager.node_id();
     let first_hops = channel_manager.first_hops();
@@ -446,13 +484,38 @@ fn retry_payment(
 
     match channel_manager.retry_payment(&route, payment_id) {
         Ok(()) => Ok(()),
-        Err(PaymentSendFailure::AllFailedRetrySafe(_)) => {
-            retry_payment(channel_manager, router, scorer, payment_id, payment_hash, params)
+        Err(PaymentSendFailure::AllFailedRetrySafe(err)) => {
+            if *attempts > PAYMENT_RETRY_ATTEMPTS {
+                let e = PaymentSendFailure::AllFailedRetrySafe(errors.to_vec());
+                Err(InvoicePaymentError::Sending(e).into())
+            } else {
+                *attempts += 1;
+                errors.extend(err);
+                retry_payment(
+                    channel_manager,
+                    router,
+                    scorer,
+                    payment_id,
+                    payment_hash,
+                    params,
+                    attempts,
+                    errors,
+                )
+            }
         },
         Err(PaymentSendFailure::PartialFailure { failed_paths_retry, .. }) => {
             if let Some(retry) = failed_paths_retry {
                 // Always return Ok for the same reason as noted in pay_internal.
-                let _ = retry_payment(channel_manager, router, scorer, payment_id, payment_hash, &retry);
+                let _ = retry_payment(
+                    channel_manager,
+                    router,
+                    scorer,
+                    payment_id,
+                    payment_hash,
+                    &retry,
+                    attempts,
+                    errors,
+                );
             }
             Ok(())
         },

@@ -650,7 +650,8 @@ impl SwapOps for LightningCoin {
                     let amount_received = payment.amt_msat;
                     // Note: locktime doesn't need to be validated since min_final_cltv_expiry should be validated in rust-lightning after fixing the below issue
                     // https://github.com/lightningdevkit/rust-lightning/issues/1850
-                    // Todo: PaymentReceived won't be fired anyways if amount_received < the amount requested in the invoice, this check is probably not needed too
+                    // Also, PaymentReceived won't be fired if amount_received < the amount requested in the invoice, this check is probably not needed.
+                    // But keeping it just in case any changes happen in rust-lightning
                     if amount_received != Some(amt_msat as i64) {
                         // Free the htlc to allow for this inbound liquidity to be used for other inbound payments
                         coin.channel_manager.fail_htlc_backwards(&payment_hash);
@@ -891,6 +892,7 @@ impl MarketCoinOps for LightningCoin {
         Ok(recovered_pubkey.to_string() == pubkey)
     }
 
+    // Todo: should take max_inbound_in_flight_htlc_percent in consideration too for max allowed amount, this can be considered the spendable balance. We can make it 100% in the config for now until this is implemented.
     fn my_balance(&self) -> BalanceFut<CoinBalance> {
         let coin = self.clone();
         let decimals = self.decimals();
@@ -1060,7 +1062,6 @@ impl MarketCoinOps for LightningCoin {
     }
 
     // Todo: min_tx_amount should depend on inbound_htlc_minimum_msat of the channel/s the payment will be sent through, 1 satoshi is used for for now (1000 of the base unit of lightning which is msat)
-    // Todo: should take max_inbound_in_flight_htlc_percent in considration too for max allowed amount
     fn min_tx_amount(&self) -> BigDecimal { big_decimal_from_sat(1000, self.decimals()) }
 
     // Todo: Equals to min_tx_amount for now (1 satoshi), should change this later

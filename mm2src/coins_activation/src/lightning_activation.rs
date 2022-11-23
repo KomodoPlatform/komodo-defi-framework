@@ -11,7 +11,7 @@ use coins::lightning::ln_p2p::{connect_to_ln_nodes_loop, init_peer_manager, ln_n
 use coins::lightning::ln_platform::Platform;
 use coins::lightning::ln_storage::LightningStorage;
 use coins::lightning::ln_utils::{get_open_channels_nodes_addresses, init_channel_manager, init_db, init_keys_manager,
-                                 init_persister};
+                                 init_persister, PAYMENT_RETRY_ATTEMPTS};
 use coins::lightning::{InvoicePayer, LightningCoin};
 use coins::utxo::utxo_standard::UtxoStandardCoin;
 use coins::utxo::UtxoCommonOps;
@@ -418,7 +418,7 @@ async fn start_lightning(
         logger.clone(),
         event_handler,
         // Todo: Add option for choosing payment::Retry::Timeout instead of Attempts in LightningParams
-        payment::Retry::Attempts(params.payment_retries.unwrap_or(5)),
+        payment::Retry::Attempts(params.payment_retries.unwrap_or(PAYMENT_RETRY_ATTEMPTS)),
     ));
 
     // Start Background Processing. Runs tasks periodically in the background to keep LN node operational.
