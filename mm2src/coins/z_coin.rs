@@ -29,6 +29,7 @@ use async_trait::async_trait;
 use bitcrypto::dhash256;
 use chain::constants::SEQUENCE_FINAL;
 use chain::{Transaction as UtxoTx, TransactionOutput};
+use common::sha256_digest;
 use common::{async_blocking, calc_total_pages, log, PagingOptionsEnum};
 use crypto::privkey::{key_pair_from_secret, secp_privkey_from_hash};
 use crypto::{Bip32DerPathOps, GlobalHDAccountArc, StandardHDPathToCoin};
@@ -72,6 +73,7 @@ use zcash_primitives::transaction::Transaction as ZTransaction;
 use zcash_primitives::zip32::ChildIndex as Zip32Child;
 use zcash_primitives::{consensus, constants::mainnet as z_mainnet_constants, sapling::PaymentAddress,
                        zip32::ExtendedFullViewingKey, zip32::ExtendedSpendingKey};
+use zcash_proofs::default_params_folder;
 use zcash_proofs::prover::LocalTxProver;
 
 mod z_htlc;
@@ -113,6 +115,8 @@ const TRANSACTIONS_TABLE: &str = "transactions";
 const BLOCKS_TABLE: &str = "blocks";
 const SAPLING_SPEND_NAME: &str = "sapling-spend.params";
 const SAPLING_OUTPUT_NAME: &str = "sapling-output.params";
+const SAPLING_SPEND_EXPECTED_HASH: &str = "8e48ffd23abb3a5fd9c5589204f32d9c31285a04b78096ba40a79b75677efc13";
+const SAPLING_OUTPUT_EXPECTED_HASH: &str = "2f0ebbcbb9bb0bcffe95a397e7eba89c29eb4dde6191c339db88570e3f3fb0e4";
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct ZcoinConsensusParams {
@@ -734,6 +738,25 @@ pub async fn z_coin_from_conf_and_params(
     builder.build().await
 }
 
+fn verify_checksum_zcash_params(spend_path: &PathBuf, output_path: &PathBuf) -> Result<bool, ZCoinBuildError> {
+    let spend_hash = sha256_digest(spend_path)?;
+    let out_hash = sha256_digest(output_path)?;
+    Ok(spend_hash == SAPLING_SPEND_EXPECTED_HASH && out_hash == SAPLING_OUTPUT_EXPECTED_HASH)
+}
+
+fn get_spend_output_paths(params_dir: PathBuf) -> Result<(PathBuf, PathBuf), ZCoinBuildError> {
+    if !params_dir.exists() {
+        return Err(ZCoinBuildError::ZCashParamsNotFound);
+    };
+    let spend_path = params_dir.join(SAPLING_SPEND_NAME);
+    let output_path = params_dir.join(SAPLING_OUTPUT_NAME);
+
+    if !(spend_path.exists() && output_path.exists()) {
+        return Err(ZCoinBuildError::ZCashParamsNotFound);
+    }
+    Ok((spend_path, output_path))
+}
+
 pub struct ZCoinBuilder<'a> {
     ctx: &'a MmArc,
     ticker: &'a str,
@@ -792,26 +815,21 @@ impl<'a> UtxoCoinBuilder for ZCoinBuilder<'a> {
         .expect("DEX_FEE_Z_ADDR is a valid z-address")
         .expect("DEX_FEE_Z_ADDR is a valid z-address");
 
-        let z_tx_prover = match &self.z_coin_params.zcash_params_path {
-            None => async_blocking(LocalTxProver::with_default_location)
-                .await
-                .or_mm_err(|| ZCoinBuildError::ZCashParamsNotFound)?,
-            Some(file_path) => {
-                let path = PathBuf::from(file_path);
-                async_blocking(move || {
-                    let (spend_path, output_path) = if path.exists() {
-                        (path.join(SAPLING_SPEND_NAME), path.join(SAPLING_OUTPUT_NAME))
-                    } else {
-                        return MmError::err(ZCoinBuildError::ZCashParamsNotFound);
-                    };
-                    if !(spend_path.exists() && output_path.exists()) {
-                        return MmError::err(ZCoinBuildError::ZCashParamsNotFound);
-                    }
-                    Ok(LocalTxProver::new(&spend_path, &output_path))
-                })
-                .await?
-            },
+        let params_dir = match &self.z_coin_params.zcash_params_path {
+            None => default_params_folder().or_mm_err(|| ZCoinBuildError::ZCashParamsNotFound)?,
+            Some(file_path) => PathBuf::from(file_path),
         };
+
+        let z_tx_prover = async_blocking(move || {
+            let (spend_path, output_path) = get_spend_output_paths(params_dir)?;
+            let verification_successful = verify_checksum_zcash_params(&spend_path, &output_path)?;
+            if verification_successful {
+                Ok(LocalTxProver::new(&spend_path, &output_path))
+            } else {
+                MmError::err(ZCoinBuildError::SaplingParamsInvalidChecksum)
+            }
+        })
+        .await?;
 
         let my_z_addr_encoded = encode_payment_address(
             self.protocol_info.consensus_params.hrp_sapling_payment_address(),

@@ -38,6 +38,7 @@ serde_derive = "1"
 serde_json = { version = "1.0", features = ["preserve_order", "raw_value"] }
 ser_error = { path = "../derives/ser_error" }
 ser_error_derive = { path = "../derives/ser_error_derive" }
+sha2 = "0.9"
 shared_ref_counter = { path = "shared_ref_counter", optional = true }
 uuid = { version = "0.7", features = ["serde", "v4"] }
 wasm-timer = "0.2.4"
