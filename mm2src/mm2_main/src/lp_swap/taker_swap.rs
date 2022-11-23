@@ -1319,7 +1319,6 @@ impl TakerSwap {
             taker_coin: self.r().data.taker_coin.clone(),
             taker_fee_hash: self.r().taker_fee.as_ref().unwrap().tx_hash.0.clone(),
             taker_payment_hash,
-            taker_pub: self.r().data.taker_coin_htlc_pubkey.unwrap().into(),
             taker_coin_start_block: self.r().data.taker_coin_start_block,
             taker_payment_confirmations: self.r().data.taker_payment_confirmations,
             taker_payment_requires_nota: self.r().data.taker_payment_requires_nota,

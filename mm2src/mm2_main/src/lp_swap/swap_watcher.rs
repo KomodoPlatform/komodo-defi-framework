@@ -45,7 +45,6 @@ pub struct TakerSwapWatcherData {
     pub taker_coin: String,
     pub taker_fee_hash: Vec<u8>,
     pub taker_payment_hash: Vec<u8>,
-    pub taker_pub: Vec<u8>,
     pub taker_coin_start_block: u64,
     pub taker_payment_confirmations: u64,
     pub taker_payment_requires_nota: Option<bool>,
@@ -206,7 +205,7 @@ impl State for ValidateTakerPayment {
         let validate_input = WatcherValidatePaymentInput {
             payment_tx: taker_payment_hex.clone(),
             time_lock: (watcher_ctx.data.swap_started_at + watcher_ctx.data.lock_duration) as u32,
-            taker_pub: watcher_ctx.data.taker_pub.clone(),
+            taker_pub: watcher_ctx.verified_pub.clone(),
             maker_pub: watcher_ctx.data.maker_pub.clone(),
             secret_hash: watcher_ctx.data.secret_hash.clone(),
             amount: watcher_ctx.data.taker_amount.clone(),
@@ -245,7 +244,7 @@ impl State for WaitForTakerPaymentSpend {
         };
         let search_input = WatcherSearchForSwapTxSpendInput {
             time_lock: (watcher_ctx.data.swap_started_at + watcher_ctx.data.lock_duration) as u32,
-            taker_pub: &watcher_ctx.data.taker_pub,
+            taker_pub: &watcher_ctx.verified_pub,
             maker_pub: &watcher_ctx.data.maker_pub,
             secret_hash: &watcher_ctx.data.secret_hash,
             tx: &self.taker_payment_hex,
