@@ -7,11 +7,9 @@ use mm2_test_helpers::structs::{EnableBchWithTokensResponse, EnableElectrumRespo
 use serde_json::{self as json};
 use std::time::Duration;
 
-#[inline]
 #[test]
 fn trade_test_with_maker_slp() { trade_base_rel(("ADEXSLP", "FORSLP")); }
 
-#[inline]
 #[test]
 fn trade_test_with_taker_slp() { trade_base_rel(("FORSLP", "ADEXSLP")); }
 
