@@ -130,34 +130,25 @@ impl State for ValidateTakerFee {
         let fee_amount =
             dex_fee_amount_from_taker_coin(&watcher_ctx.taker_coin, &watcher_ctx.data.maker_coin, &taker_amount);
 
-        let mut attempts = 0;
-        loop {
-            match watcher_ctx
-                .taker_coin
-                .watcher_validate_taker_fee(WatcherValidateTakerFeeInput {
-                    taker_fee_hash: watcher_ctx.data.taker_fee_hash.clone(),
-                    sender_pubkey: watcher_ctx.verified_pub.clone(),
-                    amount: fee_amount.clone().into(),
-                    min_block_number: watcher_ctx.data.taker_coin_start_block,
-                    fee_addr: DEX_FEE_ADDR_RAW_PUBKEY.clone(),
-                    lock_duration: watcher_ctx.data.lock_duration,
-                })
-                .compat()
-                .await
-            {
-                Ok(_) => break,
-                Err(err) => {
-                    if attempts >= 3 {
-                        return Self::change_state(Stopped::from_reason(StopReason::Error(
-                            WatcherError::InvalidTakerFee(format!("{:?}", err)).into(),
-                        )));
-                    } else {
-                        attempts += 1;
-                        Timer::sleep(10.).await;
-                    }
-                },
-            };
-        }
+        let validated_f = watcher_ctx
+            .taker_coin
+            .watcher_validate_taker_fee(WatcherValidateTakerFeeInput {
+                taker_fee_hash: watcher_ctx.data.taker_fee_hash.clone(),
+                sender_pubkey: watcher_ctx.verified_pub.clone(),
+                amount: fee_amount.clone().into(),
+                min_block_number: watcher_ctx.data.taker_coin_start_block,
+                fee_addr: DEX_FEE_ADDR_RAW_PUBKEY.clone(),
+                lock_duration: watcher_ctx.data.lock_duration,
+            })
+            .compat();
+
+        if let Err(err) = validated_f.await {
+            error!("Taker fee could not be validated: {}", err);
+            return Self::change_state(Stopped::from_reason(StopReason::Error(
+                WatcherError::InvalidTakerFee(format!("{:?}", err)).into(),
+            )));
+        };
+
         Self::change_state(ValidateTakerPayment {})
     }
 }
@@ -234,9 +225,10 @@ impl State for WaitForTakerPaymentSpend {
     type Result = ();
 
     async fn on_changed(self: Box<Self>, watcher_ctx: &mut WatcherContext) -> StateResult<Self::Ctx, Self::Result> {
+        const TAKER_PAYMENT_SPEND_SEARCH_INTERVAL_SLOW: f64 = 300.;
         let payment_search_interval = match std::env::var("USE_TEST_SEARCH_INTERVAL") {
             Ok(_) => TAKER_PAYMENT_SPEND_SEARCH_INTERVAL,
-            Err(_) => 300.,
+            Err(_) => TAKER_PAYMENT_SPEND_SEARCH_INTERVAL_SLOW,
         };
         let wait_until = match std::env::var("SKIP_WAIT_FOR_TAKER_PAYMENT") {
             Ok(_) => 0,

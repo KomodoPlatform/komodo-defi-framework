@@ -1759,18 +1759,9 @@ pub fn watcher_validate_taker_fee<T: UtxoCommonOps>(
     let taker_fee_hash = input.taker_fee_hash;
     let min_block_number = input.min_block_number;
     let lock_duration = input.lock_duration;
-    let address = try_f!(address_from_raw_pubkey(
-        &input.fee_addr,
-        coin.as_ref().conf.pub_addr_prefix,
-        coin.as_ref().conf.pub_t_addr_prefix,
-        coin.as_ref().conf.checksum_type,
-        coin.as_ref().conf.bech32_hrp.clone(),
-        coin.addr_format().clone(),
-    )
-    .map_to_mm(ValidatePaymentError::InternalError));
+    let fee_addr = input.fee_addr.to_vec();
 
     let fut = async move {
-        let expected_amount = sat_from_big_decimal(&expected_amount, coin.as_ref().decimals)?;
         let tx_from_rpc = match coin
             .as_ref()
             .rpc_client
@@ -1809,6 +1800,16 @@ pub fn watcher_validate_taker_fee<T: UtxoCommonOps>(
             )));
         }
 
+        let address = address_from_raw_pubkey(
+            &fee_addr,
+            coin.as_ref().conf.pub_addr_prefix,
+            coin.as_ref().conf.pub_t_addr_prefix,
+            coin.as_ref().conf.checksum_type,
+            coin.as_ref().conf.bech32_hrp.clone(),
+            coin.addr_format().clone(),
+        )
+        .map_to_mm(ValidatePaymentError::InternalError)?;
+
         match taker_fee_tx.outputs.get(output_index) {
             Some(out) => {
                 let expected_script_pubkey = Builder::build_p2pkh(&address.hash).to_bytes();
@@ -1819,6 +1820,7 @@ pub fn watcher_validate_taker_fee<T: UtxoCommonOps>(
                     )));
                 }
 
+                let expected_amount = sat_from_big_decimal(&expected_amount, coin.as_ref().decimals)?;
                 if out.value < expected_amount {
                     return MmError::err(ValidatePaymentError::WrongPaymentTx(format!(
                         "Provided dex fee tx output value is less than expected {:?} {:?}",
@@ -1975,6 +1977,7 @@ pub fn watcher_validate_taker_payment<T: UtxoCommonOps + SwapOps>(
                 actual_output, expected_output
             )));
         }
+
         if let UtxoRpcClientEnum::Electrum(client) = &coin.as_ref().rpc_client {
             if coin.as_ref().conf.enable_spv_proof && input.confirmations != 0 {
                 client.validate_spv_proof(&tx, input.try_spv_proof_until).await?;
@@ -2093,7 +2096,7 @@ pub async fn watcher_search_for_swap_tx_spend<T: AsRef<UtxoCoinFields> + SwapOps
             Ok(Some(found_swap_tx_spend)) => {
                 return Ok(found_swap_tx_spend);
             },
-            Ok(None) => (),
+            Ok(None) => log!("Transaction spend for {:?} not found", input.tx),
             Err(e) => error!("Error on watcher_search_for_swap_output_spend: {}", e),
         };
 

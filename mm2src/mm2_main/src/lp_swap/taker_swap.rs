@@ -33,6 +33,7 @@ use parking_lot::Mutex as PaMutex;
 use primitives::hash::H264;
 use rpc::v1::types::{Bytes as BytesJson, H256 as H256Json, H264 as H264Json};
 use serde_json::{self as json, Value as Json};
+use std::convert::TryFrom;
 use std::path::PathBuf;
 use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::sync::{Arc, RwLock, RwLockReadGuard, RwLockWriteGuard};
@@ -1416,8 +1417,8 @@ impl TakerSwap {
             );
 
             let time_lock = match std::env::var("USE_TEST_LOCKTIME") {
-                Ok(_) => self.r().data.started_at as u32,
-                Err(_) => self.r().data.taker_payment_lock as u32,
+                Ok(_) => u32::try_from(self.r().data.started_at).map_err(|err| err.to_string())?,
+                Err(_) => u32::try_from(self.r().data.taker_payment_lock).map_err(|err| err.to_string())?,
             };
             let taker_payment_refund_preimage_fut = self.taker_coin.create_taker_payment_refund_preimage(
                 &transaction.tx_hex(),
