@@ -1305,7 +1305,7 @@ impl TakerSwap {
 
     fn create_watcher_data(
         &self,
-        taker_payment_hex: Vec<u8>,
+        taker_payment_hash: Vec<u8>,
         maker_payment_spend_preimage: Vec<u8>,
         taker_payment_refund_preimage: Vec<u8>,
     ) -> TakerSwapWatcherData {
@@ -1318,7 +1318,7 @@ impl TakerSwap {
             lock_duration: self.r().data.lock_duration,
             taker_coin: self.r().data.taker_coin.clone(),
             taker_fee_hash: self.r().taker_fee.as_ref().unwrap().tx_hash.0.clone(),
-            taker_payment_hex,
+            taker_payment_hash,
             taker_pub: self.r().data.taker_coin_htlc_pubkey.unwrap().into(),
             taker_coin_start_block: self.r().data.taker_coin_start_block,
             taker_payment_confirmations: self.r().data.taker_payment_confirmations,
@@ -1434,11 +1434,11 @@ impl TakerSwap {
             );
 
             match payment_fut_pair.await {
-                Ok((taker_spends_maker_payment, taker_refunds_payment)) => {
+                Ok((maker_payment_spend, taker_payment_refund)) => {
                     let watcher_data = self.create_watcher_data(
-                        transaction.tx_hex(),
-                        taker_spends_maker_payment.tx_hex(),
-                        taker_refunds_payment.tx_hex(),
+                        transaction.tx_hash().into_vec(),
+                        maker_payment_spend.tx_hex(),
+                        taker_payment_refund.tx_hex(),
                     );
                     let swpmsg_watcher = SwapWatcherMsg::TakerSwapWatcherMsg(watcher_data);
 
@@ -1450,8 +1450,8 @@ impl TakerSwap {
                     );
 
                     swap_events.push(TakerSwapEvent::WatcherMessageSent(
-                        Some(taker_spends_maker_payment.tx_hex()),
-                        Some(taker_refunds_payment.tx_hex()),
+                        Some(maker_payment_spend.tx_hex()),
+                        Some(taker_payment_refund.tx_hex()),
                     ));
                 },
                 Err(e) => error!(
@@ -1475,12 +1475,15 @@ impl TakerSwap {
             && self.taker_coin.is_supported_by_watchers()
             && self.maker_coin.is_supported_by_watchers()
         {
-            if let (Some(taker_spends_maker_payment), Some(taker_refunds_payment)) = (
+            if let (Some(maker_payment_spend), Some(taker_payment_refund)) = (
                 self.r().maker_payment_spend_preimage.clone(),
                 self.r().taker_payment_refund_preimage.clone(),
             ) {
-                let watcher_data =
-                    self.create_watcher_data(tx_hex.clone(), taker_spends_maker_payment, taker_refunds_payment);
+                let watcher_data = self.create_watcher_data(
+                    self.r().taker_payment.as_ref().unwrap().tx_hash.0.clone(),
+                    maker_payment_spend,
+                    taker_payment_refund,
+                );
                 let swpmsg_watcher = SwapWatcherMsg::TakerSwapWatcherMsg(watcher_data);
                 watcher_broadcast_abort_handle = Some(broadcast_swap_message_every(
                     self.ctx.clone(),

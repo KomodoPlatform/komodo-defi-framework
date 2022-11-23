@@ -25,8 +25,8 @@ struct WatcherContext {
     ctx: MmArc,
     taker_coin: MmCoinEnum,
     maker_coin: MmCoinEnum,
-    data: TakerSwapWatcherData,
     verified_pub: Vec<u8>,
+    data: TakerSwapWatcherData,
 }
 
 #[derive(Clone, Debug, Deserialize, Serialize)]
@@ -44,7 +44,7 @@ pub struct TakerSwapWatcherData {
     pub lock_duration: u64,
     pub taker_coin: String,
     pub taker_fee_hash: Vec<u8>,
-    pub taker_payment_hex: Vec<u8>,
+    pub taker_payment_hash: Vec<u8>,
     pub taker_pub: Vec<u8>,
     pub taker_coin_start_block: u64,
     pub taker_payment_confirmations: u64,
@@ -59,7 +59,9 @@ pub struct TakerSwapWatcherData {
 struct ValidatePublicKeys {}
 struct ValidateTakerFee {}
 struct ValidateTakerPayment {}
-struct WaitForTakerPaymentSpend {}
+struct WaitForTakerPaymentSpend {
+    taker_payment_hex: Vec<u8>,
+}
 
 struct RefundTakerPayment {}
 
@@ -91,7 +93,6 @@ enum WatcherSuccess {
 
 #[derive(Debug)]
 enum WatcherError {
-    InvalidPublicKey(String),
     InvalidTakerFee(String),
     TakerPaymentNotConfirmed(String),
     InvalidTakerPayment(String),
@@ -109,7 +110,6 @@ impl Stopped {
     }
 }
 
-impl TransitionFrom<ValidatePublicKeys> for ValidateTakerFee {}
 impl TransitionFrom<ValidateTakerFee> for ValidateTakerPayment {}
 impl TransitionFrom<ValidateTakerPayment> for WaitForTakerPaymentSpend {}
 impl TransitionFrom<WaitForTakerPaymentSpend> for SpendMakerPayment {}
@@ -120,34 +120,6 @@ impl TransitionFrom<ValidateTakerPayment> for Stopped {}
 impl TransitionFrom<WaitForTakerPaymentSpend> for Stopped {}
 impl TransitionFrom<RefundTakerPayment> for Stopped {}
 impl TransitionFrom<SpendMakerPayment> for Stopped {}
-
-#[async_trait]
-impl State for ValidatePublicKeys {
-    type Ctx = WatcherContext;
-    type Result = ();
-
-    async fn on_changed(self: Box<Self>, watcher_ctx: &mut WatcherContext) -> StateResult<Self::Ctx, Self::Result> {
-        let redeem_pub_valid = match watcher_ctx
-            .taker_coin
-            .check_tx_signed_by_pub(&watcher_ctx.data.taker_payment_hex, &watcher_ctx.verified_pub)
-        {
-            Ok(is_valid) => is_valid,
-            Err(err) => {
-                return Self::change_state(Stopped::from_reason(StopReason::Error(
-                    WatcherError::InvalidPublicKey(err).into(),
-                )))
-            },
-        };
-
-        if !redeem_pub_valid || watcher_ctx.verified_pub != watcher_ctx.data.taker_pub {
-            return Self::change_state(Stopped::from_reason(StopReason::Error(
-                WatcherError::InvalidPublicKey("Public key does not belong to taker payment".to_string()).into(),
-            )));
-        }
-
-        Self::change_state(ValidateTakerFee {})
-    }
-}
 
 #[async_trait]
 impl State for ValidateTakerFee {
@@ -165,7 +137,6 @@ impl State for ValidateTakerFee {
                 .taker_coin
                 .watcher_validate_taker_fee(WatcherValidateTakerFeeInput {
                     taker_fee_hash: watcher_ctx.data.taker_fee_hash.clone(),
-                    taker_payment_hex: watcher_ctx.data.taker_payment_hex.clone(),
                     sender_pubkey: watcher_ctx.verified_pub.clone(),
                     amount: fee_amount.clone().into(),
                     min_block_number: watcher_ctx.data.taker_coin_start_block,
@@ -204,10 +175,11 @@ impl State for ValidateTakerPayment {
 
         let wait_f = watcher_ctx
             .taker_coin
-            .wait_for_confirmations(
-                &watcher_ctx.data.taker_payment_hex,
+            .wait_for_confirmations_by_hash(
+                &watcher_ctx.data.taker_payment_hash,
                 confirmations,
                 watcher_ctx.data.taker_payment_requires_nota.unwrap_or(false),
+                0,
                 wait_taker_payment,
                 WAIT_CONFIRM_INTERVAL,
             )
@@ -218,8 +190,21 @@ impl State for ValidateTakerPayment {
             )));
         }
 
+        let taker_payment_hex_fut = watcher_ctx
+            .taker_coin
+            .get_tx_hex_by_hash(watcher_ctx.data.taker_payment_hash.clone());
+
+        let taker_payment_hex = match taker_payment_hex_fut.compat().await {
+            Ok(tx_res) => tx_res.tx_hex.into_vec(),
+            Err(err) => {
+                return Self::change_state(Stopped::from_reason(StopReason::Error(
+                    WatcherError::InvalidTakerPayment(err.to_string()).into(),
+                )))
+            },
+        };
+
         let validate_input = WatcherValidatePaymentInput {
-            payment_tx: watcher_ctx.data.taker_payment_hex.clone(),
+            payment_tx: taker_payment_hex.clone(),
             time_lock: (watcher_ctx.data.swap_started_at + watcher_ctx.data.lock_duration) as u32,
             taker_pub: watcher_ctx.data.taker_pub.clone(),
             maker_pub: watcher_ctx.data.maker_pub.clone(),
@@ -240,7 +225,7 @@ impl State for ValidateTakerPayment {
             )));
         }
 
-        Self::change_state(WaitForTakerPaymentSpend {})
+        Self::change_state(WaitForTakerPaymentSpend { taker_payment_hex })
     }
 }
 
@@ -263,7 +248,7 @@ impl State for WaitForTakerPaymentSpend {
             taker_pub: &watcher_ctx.data.taker_pub,
             maker_pub: &watcher_ctx.data.maker_pub,
             secret_hash: &watcher_ctx.data.secret_hash,
-            tx: &watcher_ctx.data.taker_payment_hex,
+            tx: &self.taker_payment_hex,
             search_from_block: watcher_ctx.data.taker_coin_start_block,
             wait_until,
             check_every: payment_search_interval,
@@ -582,11 +567,11 @@ fn spawn_taker_swap_watcher(ctx: MmArc, watcher_data: TakerSwapWatcherData, veri
             ctx,
             maker_coin,
             taker_coin,
-            data: watcher_data,
             verified_pub,
+            data: watcher_data,
         };
         let state_machine: StateMachine<_, ()> = StateMachine::from_ctx(watcher_ctx);
-        state_machine.run(ValidatePublicKeys {}).await;
+        state_machine.run(ValidateTakerFee {}).await;
 
         // This allows to move the `taker_watcher_lock` value into this async block to keep it alive
         // until the Swap Watcher finishes.

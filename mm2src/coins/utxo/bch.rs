@@ -1145,6 +1145,27 @@ impl MarketCoinOps for BchCoin {
         utxo_common::send_raw_tx_bytes(&self.utxo_arc, tx)
     }
 
+    #[inline]
+    fn wait_for_confirmations_by_hash(
+        &self,
+        tx_hash: &[u8],
+        confirmations: u64,
+        requires_nota: bool,
+        expiry_height: u32,
+        wait_until: u64,
+        check_every: u64,
+    ) -> Box<dyn Future<Item = (), Error = String> + Send> {
+        utxo_common::wait_for_confirmations_by_hash(
+            &self.utxo_arc,
+            tx_hash,
+            confirmations,
+            requires_nota,
+            expiry_height,
+            wait_until,
+            check_every,
+        )
+    }
+
     fn wait_for_confirmations(
         &self,
         tx: &[u8],

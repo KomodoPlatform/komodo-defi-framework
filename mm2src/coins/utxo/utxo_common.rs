@@ -1757,7 +1757,6 @@ pub fn watcher_validate_taker_fee<T: UtxoCommonOps>(
     let expected_amount = input.amount.clone();
     let sender_pubkey = input.sender_pubkey;
     let taker_fee_hash = input.taker_fee_hash;
-    let taker_payment_hex = input.taker_payment_hex;
     let min_block_number = input.min_block_number;
     let lock_duration = input.lock_duration;
     let address = try_f!(address_from_raw_pubkey(
@@ -1803,13 +1802,10 @@ pub fn watcher_validate_taker_fee<T: UtxoCommonOps>(
             )));
         }
 
-        let taker_payment_tx: UtxoTx = deserialize(taker_payment_hex.as_slice())
-            .map_to_mm(|e| ValidatePaymentError::TxDeserializationError(e.to_string()))?;
-
-        if taker_payment_tx.lock_time - taker_fee_tx.lock_time > lock_duration as u32 {
+        if (now_ms() / 1000) as u32 - taker_fee_tx.lock_time > lock_duration as u32 {
             return MmError::err(ValidatePaymentError::WrongPaymentTx(format!(
-                "lock_time of the provided taker fee {:?} is not consistent with the lock_time of the taker payment {:?}",
-                taker_fee_tx, taker_payment_tx
+                "Taker fee {:?} is too old",
+                taker_fee_tx
             )));
         }
 
@@ -1948,26 +1944,45 @@ pub fn watcher_validate_taker_payment<T: UtxoCommonOps + SwapOps>(
     coin: &T,
     input: WatcherValidatePaymentInput,
 ) -> ValidatePaymentFut<()> {
-    let mut tx: UtxoTx = try_f!(deserialize(input.payment_tx.as_slice()));
-    tx.tx_hash_algo = coin.as_ref().tx_hash_algo;
-    let first_pub = &try_f!(
+    let tx: UtxoTx = try_f!(deserialize(input.payment_tx.as_slice()));
+    let taker_pub = &try_f!(
         Public::from_slice(&input.taker_pub).map_err(|err| ValidatePaymentError::InvalidParameter(err.to_string()))
     );
-    let second_pub = &try_f!(
+    let maker_pub = &try_f!(
         Public::from_slice(&input.maker_pub).map_err(|err| ValidatePaymentError::InvalidParameter(err.to_string()))
     );
-    validate_payment(
-        coin.clone(),
-        tx,
-        DEFAULT_SWAP_VOUT,
-        first_pub,
-        second_pub,
-        &input.secret_hash,
-        input.amount,
-        input.time_lock,
-        input.try_spv_proof_until,
-        input.confirmations,
-    )
+    let amount = try_f!(sat_from_big_decimal(&input.amount, coin.as_ref().decimals));
+    let expected_redeem = payment_script(input.time_lock, &input.secret_hash, taker_pub, maker_pub);
+    let coin = coin.clone();
+
+    let fut = async move {
+        let inputs_signed_by_pub = check_all_utxo_inputs_signed_by_pub(&tx, &input.taker_pub)
+            .map_to_mm(ValidatePaymentError::InternalError)?;
+        if !inputs_signed_by_pub {
+            return MmError::err(ValidatePaymentError::WrongPaymentTx(
+                "Taker payment does not belong to the verified public key".to_string(),
+            ));
+        }
+
+        let expected_output = TransactionOutput {
+            value: amount,
+            script_pubkey: Builder::build_p2sh(&dhash160(&expected_redeem).into()).into(),
+        };
+        let actual_output = tx.outputs.get(DEFAULT_SWAP_VOUT);
+        if actual_output != Some(&expected_output) {
+            return MmError::err(ValidatePaymentError::WrongPaymentTx(format!(
+                "Provided payment tx output doesn't match expected {:?} {:?}",
+                actual_output, expected_output
+            )));
+        }
+        if let UtxoRpcClientEnum::Electrum(client) = &coin.as_ref().rpc_client {
+            if coin.as_ref().conf.enable_spv_proof && input.confirmations != 0 {
+                client.validate_spv_proof(&tx, input.try_spv_proof_until).await?;
+            }
+        }
+        Ok(())
+    };
+    Box::new(fut.boxed().compat())
 }
 
 pub fn validate_taker_payment<T: UtxoCommonOps + SwapOps>(
@@ -2264,6 +2279,25 @@ pub fn send_raw_tx_bytes(
             .send_raw_transaction(tx_bytes.into())
             .map_err(|e| ERRL!("{}", e))
             .map(|hash| format!("{:?}", hash)),
+    )
+}
+
+pub fn wait_for_confirmations_by_hash(
+    coin: &UtxoCoinFields,
+    tx_hash: &[u8],
+    confirmations: u64,
+    requires_nota: bool,
+    expiry_height: u32,
+    wait_until: u64,
+    check_every: u64,
+) -> Box<dyn Future<Item = (), Error = String> + Send> {
+    coin.rpc_client.wait_for_confirmations(
+        H256Json::from(tx_hash),
+        expiry_height,
+        confirmations as u32,
+        requires_nota,
+        wait_until,
+        check_every,
     )
 }
 

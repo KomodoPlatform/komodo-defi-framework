@@ -859,6 +859,18 @@ impl MarketCoinOps for LightningCoin {
         ))
     }
 
+    fn wait_for_confirmations_by_hash(
+        &self,
+        _tx_hash: &[u8],
+        _confirmations: u64,
+        _requires_nota: bool,
+        _expiry_height: u32,
+        _wait_until: u64,
+        _check_every: u64,
+    ) -> Box<dyn Future<Item = (), Error = String> + Send> {
+        unimplemented!();
+    }
+
     // Todo: Add waiting for confirmations logic for the case of if the channel is closed and the htlc can be claimed on-chain
     fn wait_for_confirmations(
         &self,
