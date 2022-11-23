@@ -106,16 +106,15 @@ jobs:
         condition: true
       - bash: |
           zip upload/mm2-$(COMMIT_HASH)-$(Agent.OS)-CI target/ci/mm2 -j
-        displayName: 'Prepare release build upload Linux'
+        displayName: 'Prepare CI build upload Linux'
         condition: and ( eq( variables['Agent.OS'], 'Linux' ), ne ( variables['Build.Reason'], 'PullRequest' ) )
       - bash: |
-          cd target/x86_64-apple-darwin/ci
-          zip ../../../upload/mm2-$(COMMIT_HASH)-$(Agent.OS)-CI mm2.dSYM mm2 -r
-        displayName: 'Prepare release build upload MacOS'
+          zip upload/mm2-$(COMMIT_HASH)-$(Agent.OS)-CI target/x86_64-apple-darwin/ci/mm2.dSYM mm2 -r
+        displayName: 'Prepare CI build upload MacOS'
         condition: and ( eq( variables['Agent.OS'], 'Darwin' ), ne ( variables['Build.Reason'], 'PullRequest' ) )
       - powershell: |
           7z a .\upload\mm2-$(COMMIT_HASH)-$(Agent.OS)-CI.zip .\target\ci\mm2.exe .\target\ci\*.dll "$Env:windir\system32\msvcr100.dll" "$Env:windir\system32\msvcp140.dll" "$Env:windir\system32\vcruntime140.dll"
-        displayName: 'Prepare release build upload Windows'
+        displayName: 'Prepare CI build upload Windows'
         condition: and ( eq( variables['Agent.OS'], 'Windows_NT' ), ne ( variables['Build.Reason'], 'PullRequest' ) )
       # https://docs.microsoft.com/en-us/azure/devops/pipelines/tasks/deploy/copy-files-over-ssh?view=vsts
       - task: CopyFilesOverSSH@0

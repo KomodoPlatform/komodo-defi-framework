@@ -45,10 +45,10 @@ jobs:
           mkdir upload
           mv target/armv7-linux-androideabi/ci/libmm2lib.a upload/libmm2.a
           zip upload/mm2-$(COMMIT_HASH)-android-armv7-CI upload/libmm2.a -j
-          rm -rf upload/libmm2.a
+          rm upload/libmm2.a
           mv target/aarch64-linux-android/ci/libmm2lib.a upload/libmm2.a
           zip upload/mm2-$(COMMIT_HASH)-android-aarch64-CI upload/libmm2.a -j
-          rm -rf upload/libmm2.a
+          rm upload/libmm2.a
         displayName: 'Prepare upload'
       - task: CopyFilesOverSSH@0
         inputs:
