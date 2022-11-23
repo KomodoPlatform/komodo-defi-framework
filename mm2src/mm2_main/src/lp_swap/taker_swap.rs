@@ -1441,11 +1441,12 @@ impl TakerSwap {
                     );
                     let swpmsg_watcher = SwapWatcherMsg::TakerSwapWatcherMsg(watcher_data);
 
+                    let htlc_keypair = self.taker_coin.derive_htlc_key_pair(&self.unique_swap_data());
                     broadcast_swap_message(
                         &self.ctx,
                         watcher_topic(&self.r().data.taker_coin),
                         swpmsg_watcher,
-                        &self.p2p_privkey,
+                        &Some(htlc_keypair),
                     );
 
                     swap_events.push(TakerSwapEvent::WatcherMessageSent(
