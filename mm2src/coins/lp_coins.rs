@@ -2177,6 +2177,25 @@ impl CoinsContext {
         Ok(())
     }
 
+    pub async fn add_l2(&self, coin: MmCoinEnum) -> Result<(), MmError<CoinIsAlreadyActivatedErr>> {
+        let mut coins = self.coins.lock().await;
+        if coins.contains_key(coin.ticker()) {
+            return MmError::err(CoinIsAlreadyActivatedErr {
+                ticker: coin.ticker().into(),
+            });
+        }
+        let ticker = coin.ticker();
+        let platform_ticker = coin.platform_ticker().to_string();
+        let mut platform_coin_tokens = self.platform_coin_tokens.lock();
+        platform_coin_tokens
+            .entry(platform_ticker)
+            .and_modify(|c| c.push(ticker.to_owned()))
+            .or_insert_with(|| vec![ticker.to_owned()]);
+
+        coins.insert(ticker.to_owned(), coin);
+        Ok(())
+    }
+
     pub async fn add_platform_with_tokens(
         &self,
         platform: MmCoinEnum,

@@ -5,8 +5,7 @@ use crate::l2::init_l2_error::{CancelInitL2Error, InitL2StatusError, InitL2UserA
 use crate::l2::InitL2Error;
 use crate::prelude::*;
 use async_trait::async_trait;
-use coins::{lp_coinfind, lp_coinfind_or_err, lp_register_coin, CoinsContext, MmCoinEnum, RegisterCoinError,
-            RegisterCoinParams};
+use coins::{lp_coinfind, lp_coinfind_or_err, CoinsContext, MmCoinEnum, RegisterCoinError};
 use common::SuccessResponse;
 use mm2_core::mm_ctx::MmArc;
 use mm2_err_handle::prelude::*;
@@ -205,10 +204,9 @@ where
         )
         .await?;
 
-        lp_register_coin(&self.ctx, coin.into(), RegisterCoinParams {
-            ticker: self.ticker.clone(),
-        })
-        .await?;
+        if let Ok(c_ctx) = CoinsContext::from_ctx(&self.ctx) {
+            c_ctx.add_l2(coin.into()).await.ok();
+        };
 
         Ok(result)
     }
