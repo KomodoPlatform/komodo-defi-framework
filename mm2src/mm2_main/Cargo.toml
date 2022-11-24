@@ -8,6 +8,9 @@ name = "mm2_main"
 version = "0.1.0"
 edition = "2018"
 
+[lib]
+doctest = false
+
 [features]
 custom-swap-locktime = [] # only for testing purposes, should never be activated on release builds.
 native = [] # Deprecated
