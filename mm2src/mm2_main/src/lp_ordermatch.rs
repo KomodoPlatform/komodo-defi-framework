@@ -5687,10 +5687,11 @@ fn orderbook_address(
             }
         },
         #[cfg(not(target_arch = "wasm32"))]
-        CoinProtocol::LIGHTNING { .. } | CoinProtocol::SOLANA | CoinProtocol::SPLTOKEN { .. } => {
+        CoinProtocol::SOLANA | CoinProtocol::SPLTOKEN { .. } => {
             MmError::err(OrderbookAddrErr::CoinIsNotSupported(coin.to_owned()))
         },
         #[cfg(not(target_arch = "wasm32"))]
-        CoinProtocol::ZHTLC { .. } => Ok(OrderbookAddress::Shielded),
+        // Todo: write note here, also should make pubkey for each swap, should I add another variant other than Shielded???
+        CoinProtocol::ZHTLC { .. } | CoinProtocol::LIGHTNING { .. } => Ok(OrderbookAddress::Shielded),
     }
 }

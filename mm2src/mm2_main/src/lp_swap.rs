@@ -592,6 +592,7 @@ pub fn lp_atomic_locktime(maker_coin: &str, taker_coin: &str, version: AtomicLoc
 }
 
 fn dex_fee_threshold(min_tx_amount: MmNumber) -> MmNumber {
+    // Todo: Is this a good value for lightning swaps?
     // 0.0001
     let min_fee = MmNumber::from((1, 10000));
     if min_fee < min_tx_amount {

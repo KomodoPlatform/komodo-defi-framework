@@ -401,7 +401,6 @@ impl LightningEventHandler {
                 let payment_info = PaymentInfo {
                     payment_hash,
                     payment_type: PaymentType::InboundPayment,
-                    // Todo: maybe add a inside payment type if it's swap, keysend or invoice instead of in the description here
                     description: "keysend".into(),
                     preimage: Some(preimage),
                     secret: None,

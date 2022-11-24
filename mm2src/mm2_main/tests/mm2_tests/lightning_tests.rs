@@ -3,11 +3,13 @@ use common::executor::Timer;
 use common::{block_on, log};
 use gstuff::now_ms;
 use mm2_number::BigDecimal;
-use mm2_test_helpers::for_tests::{init_lightning, init_lightning_status, sign_message, verify_message, MarketMakerIt};
-use mm2_test_helpers::structs::{InitLightningStatus, InitTaskResult, LightningActivationResult, RpcV2Response,
-                                SignatureResponse, VerificationResponse};
+use mm2_test_helpers::for_tests::{init_lightning, init_lightning_status, my_balance, sign_message, verify_message,
+                                  MarketMakerIt};
+use mm2_test_helpers::structs::{InitLightningStatus, InitTaskResult, LightningActivationResult, MyBalanceResponse,
+                                RpcV2Response, SignatureResponse, VerificationResponse};
 use serde_json::{self as json, json, Value as Json};
 use std::env;
+use std::str::FromStr;
 
 const T_BTC_ELECTRUMS: &[&str] = &[
     "electrum1.cipig.net:10068",
@@ -571,9 +573,10 @@ fn test_send_payment() {
 
 #[test]
 // This test is ignored because it requires refilling the tBTC and RICK addresses with test coins periodically.
+// Todo: make common functions (swap and common inside it)
 #[ignore]
 #[cfg(not(target_arch = "wasm32"))]
-fn test_lightning_taker_swap() {
+fn test_lightning_swaps() {
     let (mut mm_node_1, mut mm_node_2, node_1_id, node_2_id) = start_lightning_nodes(true);
     let node_1_address = format!("{}@{}:9735", node_1_id, mm_node_1.ip.to_string());
 
@@ -627,13 +630,15 @@ fn test_lightning_taker_swap() {
         block_on(enable_coins_rick_morty_electrum(&mm_node_2))
     );
 
+    // -------------------- Test Lightning Taker Swap --------------------
+
     // mm_node_1 is maker
     let set_price = block_on(mm_node_1.rpc(&json!({
         "userpass": mm_node_1.userpass,
         "method": "setprice",
         "base": "RICK",
         "rel": "tBTC-TEST-lightning",
-        "price": 0.000001,
+        "price": 0.0005,
         "volume": 0.1
     })))
     .unwrap();
@@ -642,8 +647,11 @@ fn test_lightning_taker_swap() {
     let orderbook = block_on(mm_node_2.rpc(&json!({
         "userpass": mm_node_2.userpass,
         "method": "orderbook",
-        "base": "RICK",
-        "rel": "tBTC-TEST-lightning",
+        "mmrpc": "2.0",
+        "params": {
+            "base": "RICK",
+            "rel": "tBTC-TEST-lightning"
+        }
     })))
     .unwrap();
     assert!(orderbook.0.is_success(), "!orderbook: {}", orderbook.1);
@@ -656,7 +664,7 @@ fn test_lightning_taker_swap() {
         "method": "buy",
         "base": "RICK",
         "rel": "tBTC-TEST-lightning",
-        "price": 0.000001,
+        "price": 0.0005,
         "volume": 0.1
     })))
     .unwrap();
@@ -671,6 +679,71 @@ fn test_lightning_taker_swap() {
     .unwrap();
     block_on(mm_node_1.wait_for_log(5., |log| {
         log.contains("Entering the maker_swap_loop RICK/tBTC-TEST-lightning")
+    }))
+    .unwrap();
+
+    block_on(mm_node_1.wait_for_log(900., |log| log.contains(&format!("[swap uuid={}] Finished", uuid)))).unwrap();
+
+    block_on(mm_node_2.wait_for_log(900., |log| log.contains(&format!("[swap uuid={}] Finished", uuid)))).unwrap();
+
+    // -------------------- Test Lightning Maker Swap --------------------
+
+    // Check node 1 lightning balance after swap
+    let node_1_lightning_balance = block_on(my_balance(&mm_node_1, "tBTC-TEST-lightning"));
+    let node_1_lightning_balance: MyBalanceResponse = serde_json::from_value(node_1_lightning_balance).unwrap();
+    // Channel reserve balance, which is non-spendable, is 1000 sats or 0.00001 BTC.
+    // Note: A channel reserve balance is the amount that is set aside by each channel participant which ensures neither have 'nothing at stake' if a cheating attempt occurs.
+    assert_eq!(
+        node_1_lightning_balance.balance,
+        BigDecimal::from_str("0.00004").unwrap()
+    );
+
+    // mm_node_1 is maker
+    let set_price = block_on(mm_node_1.rpc(&json!({
+        "userpass": mm_node_1.userpass,
+        "method": "setprice",
+        "base": "tBTC-TEST-lightning",
+        "rel": "RICK",
+        "price": 10,
+        "volume": 0.00004
+    })))
+    .unwrap();
+    assert!(set_price.0.is_success(), "!setprice: {}", set_price.1);
+
+    let orderbook = block_on(mm_node_2.rpc(&json!({
+        "userpass": mm_node_2.userpass,
+        "method": "orderbook",
+        "mmrpc": "2.0",
+        "params": {
+            "base": "tBTC-TEST-lightning",
+            "rel": "RICK"
+        }
+    })))
+    .unwrap();
+    assert!(orderbook.0.is_success(), "!orderbook: {}", orderbook.1);
+    block_on(Timer::sleep(1.));
+
+    // mm_node_2 is taker
+    let buy = block_on(mm_node_2.rpc(&json!({
+        "userpass": mm_node_2.userpass,
+        "method": "buy",
+        "base": "tBTC-TEST-lightning",
+        "rel": "RICK",
+        "price": 10,
+        "volume": 0.00004
+    })))
+    .unwrap();
+    assert!(buy.0.is_success(), "!buy: {}", buy.1);
+    let buy_json: Json = serde_json::from_str(&buy.1).unwrap();
+    let uuid = buy_json["result"]["uuid"].as_str().unwrap().to_owned();
+
+    // ensure the swaps are started
+    block_on(mm_node_2.wait_for_log(5., |log| {
+        log.contains("Entering the taker_swap_loop tBTC-TEST-lightning/RICK")
+    }))
+    .unwrap();
+    block_on(mm_node_1.wait_for_log(5., |log| {
+        log.contains("Entering the maker_swap_loop tBTC-TEST-lightning/RICK")
     }))
     .unwrap();
 
