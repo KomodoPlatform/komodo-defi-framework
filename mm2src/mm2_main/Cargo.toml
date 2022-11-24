@@ -7,32 +7,12 @@
 name = "mm2_main"
 version = "0.1.0"
 edition = "2018"
-default-run = "mm2"
-
-# wasm-opt reduces the size from 17 Mb to 14. But it runs for few minutes, which is not good for CI.
-# For production builds, it's recommended to run wasm-opt separately.
-[package.metadata.wasm-pack.profile.release]
-wasm-opt = false
 
 [features]
 custom-swap-locktime = [] # only for testing purposes, should never be activated on release builds.
 native = [] # Deprecated
 track-ctx-pointer = ["common/track-ctx-pointer"]
 zhtlc-native-tests = ["coins/zhtlc-native-tests"]
-
-[[bin]]
-name = "mm2"
-path = "src/mm2_bin.rs"
-test = true
-doctest = false
-bench = false
-
-[lib]
-name = "mm2lib"
-crate-type = ["cdylib", "lib"]
-test = false
-doctest = false
-bench = false
 
 [dependencies]
 async-std = { version = "1.5", features = ["unstable"] }

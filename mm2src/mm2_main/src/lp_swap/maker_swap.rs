@@ -15,7 +15,6 @@ use crate::mm2::lp_network::subscribe_to_topic;
 use crate::mm2::lp_ordermatch::{MakerOrderBuilder, OrderConfirmationsSettings};
 use crate::mm2::lp_price::fetch_swap_coins_price;
 use crate::mm2::lp_swap::broadcast_swap_message;
-use crate::mm2::MM_VERSION;
 use coins::{CanRefundHtlc, CheckIfMyPaymentSentArgs, FeeApproxStage, FoundSwapTxSpend, MmCoinEnum,
             PaymentInstructions, PaymentInstructionsErr, SearchForSwapTxSpendInput, SendMakerPaymentArgs,
             SendMakerRefundsPaymentArgs, SendMakerSpendsTakerPaymentArgs, TradeFee, TradePreimageValue,
@@ -88,7 +87,7 @@ async fn save_my_maker_swap_event(ctx: &MmArc, swap: &MakerSwap, event: MakerSav
             taker_coin: Some(swap.taker_coin.ticker().to_owned()),
             taker_coin_usd_price: None,
             gui: ctx.gui().map(|g| g.to_owned()),
-            mm_version: Some(MM_VERSION.to_owned()),
+            mm_version: Some(ctx.mm_version().to_owned()),
             events: vec![],
             success_events: MAKER_SUCCESS_EVENTS.iter().map(|event| event.to_string()).collect(),
             error_events: MAKER_ERROR_EVENTS.iter().map(|event| event.to_string()).collect(),

@@ -1,0 +1,44 @@
+# Support for split-debuginfo [should eventually](https://github.com/rust-lang/rust/issues/34651) land,
+# hopefully giving us an out-of-the-box way to separate the code from the debugging information.
+# We should use the "objcopy --only-keep-debug" and "add-symbol-file" meanwhile
+# and separating stack tracing into raw trace and symbolication parts.
+
+[package]
+name = "mm2_bin_lib"
+version = "0.1.0"
+edition = "2018"
+default-run = "mm2"
+
+# wasm-opt reduces the size from 17 Mb to 14. But it runs for few minutes, which is not good for CI.
+# For production builds, it's recommended to run wasm-opt separately.
+[package.metadata.wasm-pack.profile.release]
+wasm-opt = false
+
+[features]
+custom-swap-locktime = ["mm2_main/custom-swap-locktime"] # only for testing purposes, should never be activated on release builds.
+native = ["mm2_main/native"] # Deprecated
+track-ctx-pointer = ["mm2_main/track-ctx-pointer"]
+zhtlc-native-tests = ["mm2_main/zhtlc-native-tests"]
+
+[[bin]]
+name = "mm2"
+path = "src/mm2_bin.rs"
+test = true
+doctest = false
+bench = false
+
+[lib]
+name = "mm2lib"
+crate-type = ["cdylib", "lib"]
+test = false
+doctest = false
+bench = false
+
+[dependencies]
+mm2_core = { path = "../mm2_core" }
+mm2_main = { path = "../mm2_main" }
+
+[build-dependencies]
+chrono = "0.4"
+gstuff = { version = "0.7", features = ["nightly"] }
+regex = "1"
