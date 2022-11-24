@@ -35,11 +35,21 @@ doctest = false
 bench = false
 
 [dependencies]
+common = { path = "../common" }
+enum-primitive-derive = "0.2"
+libc = "0.2"
 mm2_core = { path = "../mm2_core" }
 mm2_main = { path = "../mm2_main" }
+num-traits = "0.2"
+serde_json = { version = "1.0", features = ["preserve_order", "raw_value"] }
 
 [target.'cfg(target_arch = "wasm32")'.dependencies]
+gstuff = { version = "0.7", features = ["nightly"] }
+js-sys = { version = "0.3.27" }
+mm2_rpc = { path = "../mm2_rpc" }
+serde = "1.0"
 wasm-bindgen = { version = "0.2.50", features = ["nightly"] }
+wasm-bindgen-futures = { version = "0.4.1" }
 
 [target.x86_64-unknown-linux-gnu.dependencies]
 jemallocator = "0.5.0"

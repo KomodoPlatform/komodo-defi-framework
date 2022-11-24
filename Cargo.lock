@@ -4293,12 +4293,21 @@ name = "mm2_bin_lib"
 version = "0.1.0"
 dependencies = [
  "chrono",
+ "common",
+ "enum-primitive-derive",
  "gstuff",
  "jemallocator",
+ "js-sys",
+ "libc",
  "mm2_core",
  "mm2_main",
+ "mm2_rpc",
+ "num-traits",
  "regex",
+ "serde",
+ "serde_json",
  "wasm-bindgen",
+ "wasm-bindgen-futures",
 ]
 
 [[package]]

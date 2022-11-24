@@ -1,14 +1,12 @@
-#![allow(uncommon_codepoints)]
-#![feature(async_closure)]
-#![feature(drain_filter)]
-#![feature(hash_raw_entry)]
-#![feature(integer_atomics)]
-#![recursion_limit = "512"]
-#![cfg_attr(target_arch = "wasm32", allow(unused_imports))]
-
 use mm2_core::mm_ctx::MmArc;
 use std::sync::atomic::{AtomicBool, AtomicU32, Ordering};
 #[cfg(target_arch = "wasm32")] use wasm_bindgen::prelude::*;
+
+#[cfg(not(target_arch = "wasm32"))] mod mm2_native_lib;
+#[cfg(target_arch = "wasm32")] mod mm2_wasm_lib;
+
+const MM_VERSION: &str = env!("MM_VERSION");
+const MM_DATETIME: &str = env!("MM_DATETIME");
 
 static LP_MAIN_RUNNING: AtomicBool = AtomicBool::new(false);
 static CTX: AtomicU32 = AtomicU32::new(0);
