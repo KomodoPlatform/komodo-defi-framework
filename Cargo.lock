@@ -3302,9 +3302,9 @@ checksum = "1aab8fc367588b89dcee83ab0fd66b72b50b72fa1904d7095045ace2b0c81c35"
 
 [[package]]
 name = "jemalloc-sys"
-version = "0.5.1+5.3.0-patched"
+version = "0.5.2+5.3.0-patched"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "b7c2b313609b95939cb0c5a5c6917fb9b7c9394562aa3ef44eb66ffa51736432"
+checksum = "134163979b6eed9564c98637b710b40979939ba351f59952708234ea11b5f3f8"
 dependencies = [
  "cc",
  "fs_extra",
@@ -4294,6 +4294,7 @@ version = "0.1.0"
 dependencies = [
  "chrono",
  "gstuff",
+ "jemallocator",
  "mm2_core",
  "mm2_main",
  "regex",
@@ -4440,7 +4441,6 @@ dependencies = [
  "hyper",
  "instant",
  "itertools",
- "jemallocator",
  "js-sys",
  "keys",
  "lazy_static",
