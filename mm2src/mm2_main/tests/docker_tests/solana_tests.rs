@@ -114,7 +114,7 @@ fn test_sign_verify_message_spl() {
 }
 
 #[test]
-fn test_disable_solana_platform_coin_with_tokens() {
+fn test_disable_solana_platform_coin_with_token() {
     let mm = solana_supplied_node();
     block_on(enable_solana_with_tokens(
         &mm,
@@ -147,7 +147,7 @@ fn test_disable_solana_platform_coin_with_tokens() {
     assert_eq!(response.0, StatusCode::INTERNAL_SERVER_ERROR);
     assert!(response.1.contains("No such coin: USDC-SOL-DEVNET"));
 
-    // Confirm that token, USDC-SOL-DEVNET is also disabled
+    // Confirm platform coin token ADEX-SOL-DEVNET is also disabled
     let response = block_on(mm.rpc(&json! ({
         "userpass": mm.userpass,
         "method": "my_balance",
