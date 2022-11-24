@@ -259,7 +259,7 @@ pub async fn sim_panic(req: Json) -> Result<Response<Vec<u8>>, String> {
 pub fn version(ctx: MmArc) -> HyRes {
     rpc_response(
         200,
-        MmVersionResult::new(ctx.mm_version.clone(), "".into())
+        MmVersionResult::new(ctx.mm_version.clone(), ctx.datetime.clone())
             .to_json()
             .to_string(),
     )

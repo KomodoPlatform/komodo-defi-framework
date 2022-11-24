@@ -4,6 +4,7 @@
 #![test_runner(docker_tests_runner)]
 #![feature(drain_filter)]
 #![feature(hash_raw_entry)]
+#![cfg(not(target_arch = "wasm32"))]
 
 #[cfg(test)]
 #[macro_use]
@@ -11,7 +12,7 @@ extern crate common;
 #[cfg(test)]
 #[macro_use]
 extern crate gstuff;
-#[cfg(all(test, not(target_arch = "wasm32")))]
+#[cfg(test)]
 #[macro_use]
 extern crate lazy_static;
 #[cfg(test)]
@@ -24,7 +25,6 @@ use std::io::{BufRead, BufReader};
 use std::process::Command;
 use test::{test_main, StaticBenchFn, StaticTestFn, TestDescAndFn};
 use testcontainers::clients::Cli;
-
 mod docker_tests;
 use docker_tests::docker_tests_common::*;
 use docker_tests::qrc20_tests::{qtum_docker_node, QtumDockerOps, QTUM_REGTEST_DOCKER_IMAGE};

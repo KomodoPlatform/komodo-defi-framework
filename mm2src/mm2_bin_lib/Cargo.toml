@@ -23,13 +23,13 @@ zhtlc-native-tests = ["mm2_main/zhtlc-native-tests"]
 [[bin]]
 name = "mm2"
 path = "src/mm2_bin.rs"
-test = true
+test = false
 doctest = false
 bench = false
 
 [lib]
 name = "mm2lib"
-crate-type = ["cdylib", "lib"]
+crate-type = ["cdylib"]
 test = false
 doctest = false
 bench = false
@@ -37,6 +37,9 @@ bench = false
 [dependencies]
 mm2_core = { path = "../mm2_core" }
 mm2_main = { path = "../mm2_main" }
+
+[target.'cfg(target_arch = "wasm32")'.dependencies]
+wasm-bindgen = { version = "0.2.50", features = ["nightly"] }
 
 [build-dependencies]
 chrono = "0.4"

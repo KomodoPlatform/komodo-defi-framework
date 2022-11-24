@@ -1,4 +1,4 @@
-use super::lp_init;
+use crate::mm2::lp_init;
 use common::executor::{spawn, Timer};
 use common::log::wasm_log::register_wasm_log;
 use mm2_core::mm_ctx::MmArc;
@@ -9,13 +9,12 @@ use mm2_test_helpers::for_tests::{check_recent_swaps, enable_electrum_json, mort
 use mm2_test_helpers::get_passphrase;
 use mm2_test_helpers::structs::OrderbookResponse;
 use serde_json::json;
-use std::env;
 use wasm_bindgen_test::wasm_bindgen_test;
 
 /// Starts the WASM version of MM.
 fn wasm_start(ctx: MmArc) {
     spawn(async move {
-        lp_init(ctx).await.unwrap();
+        lp_init(ctx, "TEST".into(), "TEST".into()).await.unwrap();
     })
 }
 

@@ -401,8 +401,8 @@ pub async fn lp_init_continue(ctx: MmArc) -> MmInitResult<()> {
 
 #[cfg_attr(target_arch = "wasm32", allow(unused_variables))]
 /// * `ctx_cb` - callback used to share the `MmCtx` ID with the call site.
-pub async fn lp_init(ctx: MmArc) -> MmInitResult<()> {
-    // info!("Version: {} DT {}", MM_VERSION, MM_DATETIME);
+pub async fn lp_init(ctx: MmArc, version: String, datetime: String) -> MmInitResult<()> {
+    info!("Version: {} DT {}", version, datetime);
 
     if !ctx.conf["passphrase"].is_null() {
         let passphrase: String =

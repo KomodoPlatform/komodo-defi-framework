@@ -102,6 +102,7 @@ pub struct MmCtx {
     #[cfg(not(target_arch = "wasm32"))]
     pub sqlite_connection: Constructible<Arc<Mutex<Connection>>>,
     pub mm_version: String,
+    pub datetime: String,
     pub mm_init_ctx: Mutex<Option<Arc<dyn Any + 'static + Send + Sync>>>,
     /// The abortable system is pinned to the `MmCtx` context.
     /// It's used to spawn futures that can be aborted immediately or after a timeout
@@ -144,6 +145,7 @@ impl MmCtx {
             #[cfg(not(target_arch = "wasm32"))]
             sqlite_connection: Constructible::default(),
             mm_version: "".into(),
+            datetime: "".into(),
             mm_init_ctx: Mutex::new(None),
             abortable_system: AbortableQueue::default(),
             graceful_shutdown_registry: graceful_shutdown::GracefulShutdownRegistry::default(),
@@ -529,6 +531,7 @@ pub struct MmCtxBuilder {
     conf: Option<Json>,
     log_level: LogLevel,
     version: String,
+    datetime: String,
     #[cfg(target_arch = "wasm32")]
     db_namespace: DbNamespaceId,
 }
@@ -551,6 +554,11 @@ impl MmCtxBuilder {
         self
     }
 
+    pub fn with_datetime(mut self, datetime: String) -> Self {
+        self.datetime = datetime;
+        self
+    }
+
     #[cfg(target_arch = "wasm32")]
     pub fn with_test_db_namespace(mut self) -> Self {
         self.db_namespace = DbNamespaceId::for_test();
@@ -568,6 +576,7 @@ impl MmCtxBuilder {
         log.set_level(self.log_level);
         let mut ctx = MmCtx::with_log_state(log);
         ctx.mm_version = self.version;
+        ctx.datetime = self.datetime;
         if let Some(conf) = self.conf {
             ctx.conf = conf
         }

@@ -51,7 +51,7 @@ use std::ptr::null;
 use std::str;
 
 #[path = "lp_native_dex.rs"] mod lp_native_dex;
-use self::lp_native_dex::lp_init;
+pub use self::lp_native_dex::lp_init;
 use coins::update_coins_config;
 use mm2_err_handle::prelude::*;
 
@@ -67,8 +67,6 @@ pub mod database;
 #[path = "lp_stats.rs"] pub mod lp_stats;
 #[path = "lp_swap.rs"] pub mod lp_swap;
 #[path = "rpc.rs"] pub mod rpc;
-
-#[cfg(all(target_arch = "wasm32", test))] mod wasm_tests;
 
 pub const PASSWORD_MAXIMUM_CONSECUTIVE_CHARACTERS: usize = 3;
 
@@ -229,7 +227,12 @@ fn initialize_payment_locktime(conf: &Json) {
 }
 
 /// * `ctx_cb` - callback used to share the `MmCtx` ID with the call site.
-pub async fn lp_main(params: LpMainParams, ctx_cb: &dyn Fn(u32), version: String) -> Result<(), String> {
+pub async fn lp_main(
+    params: LpMainParams,
+    ctx_cb: &dyn Fn(u32),
+    version: String,
+    datetime: String,
+) -> Result<(), String> {
     let log_filter = params.filter.unwrap_or_default();
     // Logger can be initialized once.
     // If `mm2` is linked as a library, and `mm2` is restarted, `init_logger` returns an error.
@@ -261,10 +264,11 @@ pub async fn lp_main(params: LpMainParams, ctx_cb: &dyn Fn(u32), version: String
     let ctx = MmCtxBuilder::new()
         .with_conf(conf)
         .with_log_level(log_filter)
-        .with_version(version)
+        .with_version(version.clone())
+        .with_datetime(datetime.clone())
         .into_mm_arc();
     ctx_cb(try_s!(ctx.ffi_handle()));
-    try_s!(lp_init(ctx).await);
+    try_s!(lp_init(ctx, version, datetime).await);
     Ok(())
 }
 
@@ -381,7 +385,7 @@ pub fn mm2_main(version: String, datetime: String) {
         return;
     }
 
-    if let Err(err) = run_lp_main(first_arg, &|_| (), version) {
+    if let Err(err) = run_lp_main(first_arg, &|_| (), version, datetime) {
         log!("{}", err);
         exit(1);
     }
@@ -439,13 +443,18 @@ pub fn get_mm2config(first_arg: Option<&str>) -> Result<Json, String> {
 /// * `ctx_cb` - Invoked with the MM context handle,
 ///              allowing the `run_lp_main` caller to communicate with MM.
 #[cfg(not(target_arch = "wasm32"))]
-pub fn run_lp_main(first_arg: Option<&str>, ctx_cb: &dyn Fn(u32), version: String) -> Result<(), String> {
+pub fn run_lp_main(
+    first_arg: Option<&str>,
+    ctx_cb: &dyn Fn(u32),
+    version: String,
+    datetime: String,
+) -> Result<(), String> {
     let conf = get_mm2config(first_arg)?;
 
     let log_filter = LogLevel::from_env();
 
     let params = LpMainParams::with_conf(conf).log_filter(log_filter);
-    try_s!(block_on(lp_main(params, ctx_cb, version)));
+    try_s!(block_on(lp_main(params, ctx_cb, version, datetime)));
     Ok(())
 }
 

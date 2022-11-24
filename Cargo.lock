@@ -4297,6 +4297,7 @@ dependencies = [
  "mm2_core",
  "mm2_main",
  "regex",
+ "wasm-bindgen",
 ]
 
 [[package]]
