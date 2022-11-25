@@ -109,7 +109,7 @@ jobs:
         displayName: 'Prepare CI build upload Linux'
         condition: and ( eq( variables['Agent.OS'], 'Linux' ), ne ( variables['Build.Reason'], 'PullRequest' ) )
       - bash: |
-          zip upload/mm2-$(COMMIT_HASH)-$(Agent.OS)-CI target/x86_64-apple-darwin/ci/mm2.dSYM mm2 -r
+          zip upload/mm2-$(COMMIT_HASH)-$(Agent.OS)-CI target/x86_64-apple-darwin/ci/mm2 -j
         displayName: 'Prepare CI build upload MacOS'
         condition: and ( eq( variables['Agent.OS'], 'Darwin' ), ne ( variables['Build.Reason'], 'PullRequest' ) )
       - powershell: |
