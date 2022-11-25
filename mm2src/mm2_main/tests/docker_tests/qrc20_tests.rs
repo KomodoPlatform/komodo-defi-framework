@@ -17,10 +17,10 @@ use ethereum_types::H160;
 use futures01::Future;
 use http::StatusCode;
 use mm2_core::mm_ctx::{MmArc, MmCtxBuilder};
+use mm2_main::mm2::lp_swap::{dex_fee_amount, max_taker_vol_from_available};
 use mm2_number::BigDecimal;
 use mm2_test_helpers::structs::{trade_preimage_error, EnableElectrumResponse, OrderbookResponse, RpcErrorResponse,
                                 RpcSuccessResponse, TransactionDetails};
-use mm2lib::mm2::lp_swap::{dex_fee_amount, max_taker_vol_from_available};
 use rand6::Rng;
 use serde_json::{self as json, Value as Json};
 use std::convert::TryFrom;

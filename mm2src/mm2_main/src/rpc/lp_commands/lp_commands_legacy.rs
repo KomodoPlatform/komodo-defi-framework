@@ -256,7 +256,14 @@ pub async fn sim_panic(req: Json) -> Result<Response<Vec<u8>>, String> {
     Ok(try_s!(Response::builder().body(js)))
 }
 
-pub fn version() -> HyRes { rpc_response(200, MmVersionResult::new().to_json().to_string()) }
+pub fn version(ctx: MmArc) -> HyRes {
+    rpc_response(
+        200,
+        MmVersionResult::new(ctx.mm_version.clone(), ctx.datetime.clone())
+            .to_json()
+            .to_string(),
+    )
+}
 
 pub async fn get_peers_info(ctx: MmArc) -> Result<Response<Vec<u8>>, String> {
     use crate::mm2::lp_network::P2PContext;

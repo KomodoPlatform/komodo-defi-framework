@@ -113,7 +113,7 @@ pub fn dispatcher(req: Json, ctx: MmArc) -> DispatcherRes {
         "unban_pubkeys" => hyres(unban_pubkeys_rpc(ctx, req)),
         "update_maker_order" => hyres(update_maker_order_rpc(ctx, req)),
         "validateaddress" => hyres(validate_address(ctx, req)),
-        "version" => version(),
+        "version" => version(ctx),
         "withdraw" => hyres(into_legacy::withdraw(ctx, req)),
         _ => return DispatcherRes::NoMatch(req),
     })
