@@ -842,8 +842,6 @@ impl MakerSwap {
 
         let maker_payment_wait_confirm =
             wait_for_maker_payment_conf_until(self.r().data.started_at, self.r().data.lock_duration);
-        // Todo: status is sent (not claimed by other side (successful))
-        // Todo: outbound
         let f = self.maker_coin.wait_for_confirmations(
             &self.r().maker_payment.clone().unwrap().tx_hex,
             self.r().data.maker_payment_confirmations,
@@ -918,8 +916,6 @@ impl MakerSwap {
 
         let wait_f = self
             .taker_coin
-            // Todo: status is recieved but not successful (claimed).
-            // Todo: inbound
             .wait_for_confirmations(
                 &self.r().taker_payment.clone().unwrap().tx_hex,
                 confirmations,
@@ -1049,8 +1045,6 @@ impl MakerSwap {
         // we should wait for only one confirmation to make sure our spend transaction is not failed
         let confirmations = std::cmp::min(1, self.r().data.taker_payment_confirmations);
         let requires_nota = false;
-        // Todo: status successful
-        // Todo: Inbound
         let wait_fut = self.taker_coin.wait_for_confirmations(
             &self.r().taker_payment_spend.clone().unwrap().tx_hex,
             confirmations,

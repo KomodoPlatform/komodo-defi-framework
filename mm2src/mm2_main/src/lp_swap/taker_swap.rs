@@ -1267,8 +1267,6 @@ impl TakerSwap {
     async fn validate_maker_payment(&self) -> Result<(Option<TakerSwapCommand>, Vec<TakerSwapEvent>), String> {
         info!("Before wait confirm");
         let confirmations = self.r().data.maker_payment_confirmations;
-        // Todo: status recieved
-        // Todo: inbound
         let f = self.maker_coin.wait_for_confirmations(
             &self.r().maker_payment.clone().unwrap().tx_hex,
             confirmations,
@@ -1501,8 +1499,6 @@ impl TakerSwap {
 
         let wait_taker_payment =
             wait_for_taker_payment_conf_until(self.r().data.started_at, self.r().data.lock_duration);
-        // Todo: status sent or successful
-        // Todo: outbound
         let wait_f = self
             .taker_coin
             .wait_for_confirmations(
@@ -1524,8 +1520,6 @@ impl TakerSwap {
             ]));
         }
 
-        // Todo: status successful
-        // Todo: outbound
         let f = self.taker_coin.wait_for_htlc_tx_spend(
             &self.r().taker_payment.clone().unwrap().tx_hex,
             &self.r().secret_hash.0,

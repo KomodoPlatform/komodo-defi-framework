@@ -640,7 +640,7 @@ impl SwapOps for LightningCoin {
             .expect("time_lock_duration shouldn't exceed u32::MAX");
         let coin = self.clone();
         let fut = async move {
-            // Todo: The used path should be logged or saved somewhere
+            // Todo: The path/s used is already logged when PaymentPathSuccessful/PaymentPathFailed events are fired, it might be better to save it to the DB and retrieve it with the payment info.
             let payment = try_tx_s!(coin.pay_invoice(invoice, Some(max_total_cltv_expiry_delta)).await);
             Ok(payment.payment_hash.into())
         };
@@ -910,7 +910,7 @@ impl MarketCoinOps for LightningCoin {
         Ok(recovered_pubkey.to_string() == pubkey)
     }
 
-    // Todo: should take max_inbound_in_flight_htlc_percent in consideration too for max allowed amount, this can be considered the spendable balance. We can make it 100% in the config for now until this is implemented.
+    // Todo: max_inbound_in_flight_htlc_percent should be taken in consideration too for max allowed amount, this can be considered the spendable balance, but it's better to refactor the CoinBalance struct to add more info. We can make it 100% in the config for now until this is implemented.
     fn my_balance(&self) -> BalanceFut<CoinBalance> {
         let coin = self.clone();
         let decimals = self.decimals();
@@ -983,8 +983,7 @@ impl MarketCoinOps for LightningCoin {
                                         payment.status
                                     )
                                 },
-                                // Todo: Retry payment multiple times returning an error only if all paths failed or other permenant error, should also keep locktime in mind when using different paths with different CLTVs
-                                // Todo: Failed is fired after number of retries anyways (should we add a timeout? or should we give the taker the chance to open a new channel, JIT payments can be used in case of failures???)
+                                // Todo: PaymentFailed event is fired after 5 retries, maybe timeout should be used instead. Still this doesn't prevent failure if there is no routes, JIT channels/routing can be used to solve this issue https://github.com/lightningdevkit/rust-lightning/pull/1835 but it requires some trust.
                                 HTLCStatus::Failed => return ERR!("Lightning swap payment {} failed", payment_hex),
                             },
                             PaymentType::InboundPayment => match payment.status {
@@ -1046,8 +1045,7 @@ impl MarketCoinOps for LightningCoin {
                                 )))
                             },
                             HTLCStatus::Succeeded => return Ok(TransactionEnum::LightningPayment(payment_hash)),
-                            // Todo: Retry payment multiple times returning an error only if all paths failed or other permenant error, should also keep locktime in mind when using different paths with different CLTVs
-                            // Todo: Failed is fired after number of retries anyways (should we add a timeout? or should we give the taker the chance to open a new channel, JIT payments can be used in case of failures???)
+                            // Todo: PaymentFailed event is fired after 5 retries, maybe timeout should be used instead. Still this doesn't prevent failure if there is no routes, JIT channels/routing can be used to solve this issue https://github.com/lightningdevkit/rust-lightning/pull/1835 but it requires some trust.
                             HTLCStatus::Failed => {
                                 return Err(TransactionErr::Plain(format!(
                                     "Lightning swap payment {} failed",

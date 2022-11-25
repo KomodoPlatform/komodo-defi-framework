@@ -392,8 +392,7 @@ fn pay_internal(
     let payer = channel_manager.node_id();
     let first_hops = channel_manager.first_hops();
     let payment_hash = PaymentHash((*invoice.payment_hash()).into_inner());
-    // Todo: should we check for routes before order matching??? (both sides???) (invoice will need to be shared at order matching for this probably)
-    // Todo: find a better place for the above comment
+    // Todo: Routes should be checked before order matching also, this might require routing hints to be shared when matching orders. Just-in-time channels can solve this issue as well.
     let route = router
         .find_route(
             &payer,
