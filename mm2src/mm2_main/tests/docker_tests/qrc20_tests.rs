@@ -16,8 +16,8 @@ use crypto::Secp256k1Secret;
 use ethereum_types::H160;
 use futures01::Future;
 use http::StatusCode;
-use mm2::mm2::lp_swap::{dex_fee_amount, max_taker_vol_from_available};
 use mm2_core::mm_ctx::{MmArc, MmCtxBuilder};
+use mm2_main::mm2::lp_swap::{dex_fee_amount, max_taker_vol_from_available};
 use mm2_number::BigDecimal;
 use mm2_test_helpers::structs::{trade_preimage_error, EnableElectrumResponse, OrderbookResponse, RpcErrorResponse,
                                 RpcSuccessResponse, TransactionDetails};

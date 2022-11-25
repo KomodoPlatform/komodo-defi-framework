@@ -23,17 +23,21 @@ jobs:
           echo "##vso[task.setvariable variable=COMMIT_HASH]${TAG}"
         displayName: Setup ENV
       - bash: |
-          VERSION=2.1.$(Build.BuildId)_$(Build.SourceBranchName)_$(COMMIT_HASH)_ios_aarch64_Release
+          VERSION=2.1.$(Build.BuildId)_$(Build.SourceBranchName)_$(COMMIT_HASH)_ios_aarch64_CI
           if ! grep -q $VERSION MM_VERSION; then
             echo $VERSION > MM_VERSION
           fi
           cat MM_VERSION
-          cargo rustc --target aarch64-apple-ios --lib --release --package mm2_main --crate-type=staticlib
+          cargo rustc --target aarch64-apple-ios --lib --profile ci --package mm2_bin_lib --crate-type=staticlib
         displayName: 'Build iOS lib'
+        env:
+          MANUAL_MM_VERSION: true
       - bash: |
           rm -rf upload
           mkdir upload
-          zip upload/mm2-$(COMMIT_HASH)-ios-aarch64-Release target/aarch64-apple-ios/release/libmm2.a -j
+          mv target/aarch64-apple-ios/ci/libmm2lib.a upload/libmm2.a
+          zip upload/mm2-$(COMMIT_HASH)-ios-aarch64-CI upload/libmm2.a -j
+          rm upload/libmm2.a
         displayName: 'Prepare upload'
       - task: CopyFilesOverSSH@0
         inputs:

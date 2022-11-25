@@ -32,12 +32,22 @@ jobs:
         env:
           MANUAL_MM_VERSION: true
       - bash: |
-          cargo clippy -- -D warnings
+          if [ $AGENT_OS = "Darwin" ]
+          then
+            cargo clippy --profile ci --target x86_64-apple-darwin -- -D warnings
+          else
+            cargo clippy --profile ci -- -D warnings
+          fi
         displayName: 'Check Clippy warnings'
         env:
           MANUAL_MM_VERSION: true
       - bash: |
-          cargo check --tests
+          if [ $AGENT_OS = "Darwin" ]
+          then
+            cargo check --tests --profile ci --target x86_64-apple-darwin
+          else
+            cargo check --tests --profile ci
+          fi
         displayName: 'Check Tests'
         env:
           MANUAL_MM_VERSION: true

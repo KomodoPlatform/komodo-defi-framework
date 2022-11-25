@@ -23,28 +23,36 @@ jobs:
           echo "##vso[task.setvariable variable=COMMIT_HASH]${TAG}"
         displayName: Setup ENV
       - bash: |
-          VERSION=2.1.$(Build.BuildId)_$(Build.SourceBranchName)_$(COMMIT_HASH)_android_armv7_Release
+          VERSION=2.1.$(Build.BuildId)_$(Build.SourceBranchName)_$(COMMIT_HASH)_android_armv7_CI
           if ! grep -q $VERSION MM_VERSION; then
             echo $VERSION > MM_VERSION
           fi
           cat MM_VERSION
           export PATH=$PATH:/home/azureagent/android-ndk/arch-ndk/x86_64/android-ndk/bin
-          CC_armv7_linux_androideabi=armv7a-linux-androideabi21-clang CARGO_TARGET_ARMV7_LINUX_ANDROIDEABI_LINKER=armv7a-linux-androideabi21-clang cargo rustc --target=armv7-linux-androideabi --lib --release --crate-type=staticlib --package mm2_main
+          CC_armv7_linux_androideabi=armv7a-linux-androideabi21-clang CARGO_TARGET_ARMV7_LINUX_ANDROIDEABI_LINKER=armv7a-linux-androideabi21-clang cargo rustc --target=armv7-linux-androideabi --lib --profile ci --crate-type=staticlib --package mm2_bin_lib
         displayName: 'Build armv7'
+        env:
+          MANUAL_MM_VERSION: true
       - bash: |
-          VERSION=2.1.$(Build.BuildId)_$(Build.SourceBranchName)_$(COMMIT_HASH)_android_aarch64_Release
+          VERSION=2.1.$(Build.BuildId)_$(Build.SourceBranchName)_$(COMMIT_HASH)_android_aarch64_CI
           if ! grep -q $VERSION MM_VERSION; then
             echo $VERSION > MM_VERSION
           fi
           cat MM_VERSION
           export PATH=$PATH:/home/azureagent/android-ndk/arch-ndk/x86_64/android-ndk/bin
-          CC_aarch64_linux_android=aarch64-linux-android21-clang CARGO_TARGET_AARCH64_LINUX_ANDROID_LINKER=aarch64-linux-android21-clang cargo rustc --target=aarch64-linux-android --lib --release --crate-type=staticlib --package mm2_main
+          CC_aarch64_linux_android=aarch64-linux-android21-clang CARGO_TARGET_AARCH64_LINUX_ANDROID_LINKER=aarch64-linux-android21-clang cargo rustc --target=aarch64-linux-android --lib --profile ci --crate-type=staticlib --package mm2_bin_lib
         displayName: 'Build aarch64'
+        env:
+          MANUAL_MM_VERSION: true
       - bash: |
           rm -rf upload
           mkdir upload
-          zip upload/mm2-$(COMMIT_HASH)-android-armv7-Release target/armv7-linux-androideabi/release/libmm2.a -j
-          zip upload/mm2-$(COMMIT_HASH)-android-aarch64-Release target/aarch64-linux-android/release/libmm2.a -j
+          mv target/armv7-linux-androideabi/ci/libmm2lib.a upload/libmm2.a
+          zip upload/mm2-$(COMMIT_HASH)-android-armv7-CI upload/libmm2.a -j
+          rm upload/libmm2.a
+          mv target/aarch64-linux-android/ci/libmm2lib.a upload/libmm2.a
+          zip upload/mm2-$(COMMIT_HASH)-android-aarch64-CI upload/libmm2.a -j
+          rm upload/libmm2.a
         displayName: 'Prepare upload'
       - task: CopyFilesOverSSH@0
         inputs:
