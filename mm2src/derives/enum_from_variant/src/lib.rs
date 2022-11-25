@@ -1,17 +1,6 @@
 ///! Rust Derive Impl from enum
 ///
-extern crate quote;
-
-use proc_macro::TokenStream;
-use proc_macro2::Ident;
-use quote::quote;
-use quote::ToTokens;
-use quote::__private::ext::RepToTokensExt;
-use quote::quote_spanned;
-use syn::punctuated::Punctuated;
-use syn::token::Comma;
-use syn::{parse_macro_input, DeriveInput};
-
+///
 /// `EnumFromVariant` is very useful for generating `From<T>` trait from one enum to another enum
 /// Currently, this crate can only convert enum variant with only some basic inner type such as `String`, and `Enum`
 /// type just like the example below. Can not be used for tuple, struct etc for now .
@@ -23,9 +12,9 @@ use syn::{parse_macro_input, DeriveInput};
 /// ```rust
 /// use enum_from_enum::EnumFromVariant;
 /// use derive_more::Display;
-
-// E.G, this converts from whatever Bar is to FooBar::Bar(String) and
-// whatever Foor to FooBar::Foo(Foo)
+///
+/// E.G, this converts from whatever Bar is to FooBar::Bar(String) and
+/// whatever Foor to FooBar::Foo(Foo)
 /// #[derive(Debug, EnumFromVariant, PartialEq, Eq)]
 /// pub enum FooBar {
 ///     #[enum_from_variant("Bar")]
@@ -56,6 +45,17 @@ use syn::{parse_macro_input, DeriveInput};
 //  ```
 ///
 ///
+extern crate quote;
+
+use proc_macro::TokenStream;
+use proc_macro2::Ident;
+use quote::quote;
+use quote::ToTokens;
+use quote::__private::ext::RepToTokensExt;
+use quote::quote_spanned;
+use syn::punctuated::Punctuated;
+use syn::token::Comma;
+use syn::{parse_macro_input, DeriveInput};
 
 #[proc_macro_derive(EnumFromVariant, attributes(enum_from_variant))]
 pub fn derive(input: TokenStream) -> TokenStream {
