@@ -216,6 +216,24 @@ fn test_enable_lightning() {
     );
     assert_eq!(enable_lightning_coin.balance.spendable, BigDecimal::from(0));
     assert_eq!(enable_lightning_coin.balance.unspendable, BigDecimal::from(0));
+
+    // Disable tBTC-TEST-lightning
+    let disabled = block_on(mm.rpc(&json! ({
+        "userpass": mm.userpass,
+        "method": "disable_coin",
+        "coin": "tBTC-TEST-lightning",
+    })))
+    .unwrap();
+    assert_eq!(disabled.0, StatusCode::OK);
+
+    // Enable tBTC-TEST-lightning
+    let enable_lightning_coin = block_on(enable_lightning(&mm, "tBTC-TEST-lightning", 600));
+    assert_eq!(&enable_lightning_coin.platform_coin, "tBTC-TEST-segwit");
+    assert_eq!(
+        &enable_lightning_coin.address,
+        "02ce55b18d617bf4ac27b0f045301a0bb4e71669ae45cb5f2529f2f217520ffca1"
+    );
+
     // Disable tBTC-TEST-segwit
     let disabled = block_on(mm.rpc(&json! ({
         "userpass": mm.userpass,
@@ -230,7 +248,7 @@ fn test_enable_lightning() {
     let enable_lightning = block_on(enable_lightning(&mm, "tBTC-TEST-lightning", 600));
     assert_eq!(&enable_lightning.platform_coin, "tBTC-TEST-segwit");
 
-    // We try to disabled tBTC-TEST-segwit
+    // We try to disable tBTC-TEST-segwit
     let disabled = block_on(mm.rpc(&json! ({
         "userpass": mm.userpass,
         "method": "disable_coin",

@@ -205,7 +205,13 @@ where
         .await?;
 
         if let Ok(c_ctx) = CoinsContext::from_ctx(&self.ctx) {
-            c_ctx.add_l2(coin.into()).await.ok();
+            let coin = coin.into();
+            c_ctx
+                .add_l2(coin.clone())
+                .await
+                .map_err(|_| RegisterCoinError::CoinIsInitializedAlready {
+                    coin: coin.ticker().to_string(),
+                })?;
         };
 
         Ok(result)

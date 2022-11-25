@@ -2184,15 +2184,18 @@ impl CoinsContext {
                 ticker: coin.ticker().into(),
             });
         }
-        let ticker = coin.ticker();
+        let ticker = coin.ticker().to_string();
         let platform_ticker = coin.platform_ticker().to_string();
         let mut platform_coin_tokens = self.platform_coin_tokens.lock();
-        platform_coin_tokens
-            .entry(platform_ticker)
-            .and_modify(|c| c.push(ticker.to_owned()))
-            .or_insert_with(|| vec![ticker.to_owned()]);
+        if let Some(tokens) = platform_coin_tokens.get_mut(&platform_ticker) {
+            if !tokens.contains(&ticker) {
+                tokens.push(ticker.clone());
+            };
+        } else {
+            platform_coin_tokens.insert(platform_ticker, vec![ticker.clone()]);
+        };
 
-        coins.insert(ticker.to_owned(), coin);
+        coins.insert(ticker, coin);
         Ok(())
     }
 
