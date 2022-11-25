@@ -3,8 +3,8 @@ use common::executor::Timer;
 use common::{block_on, log};
 use gstuff::now_ms;
 use mm2_number::BigDecimal;
-use mm2_test_helpers::for_tests::{init_lightning, init_lightning_status, my_balance, sign_message, verify_message,
-                                  MarketMakerIt};
+use mm2_test_helpers::for_tests::{init_lightning, init_lightning_status, my_balance, sign_message, start_swaps,
+                                  verify_message, MarketMakerIt};
 use mm2_test_helpers::structs::{InitLightningStatus, InitTaskResult, LightningActivationResult, MyBalanceResponse,
                                 RpcV2Response, SignatureResponse, VerificationResponse};
 use serde_json::{self as json, json, Value as Json};
@@ -573,7 +573,6 @@ fn test_send_payment() {
 
 #[test]
 // This test is ignored because it requires refilling the tBTC and RICK addresses with test coins periodically.
-// Todo: make common functions (swap and common inside it)
 #[ignore]
 #[cfg(not(target_arch = "wasm32"))]
 fn test_lightning_swaps() {
@@ -631,62 +630,17 @@ fn test_lightning_swaps() {
     );
 
     // -------------------- Test Lightning Taker Swap --------------------
-
-    // mm_node_1 is maker
-    let set_price = block_on(mm_node_1.rpc(&json!({
-        "userpass": mm_node_1.userpass,
-        "method": "setprice",
-        "base": "RICK",
-        "rel": "tBTC-TEST-lightning",
-        "price": 0.0005,
-        "volume": 0.1
-    })))
-    .unwrap();
-    assert!(set_price.0.is_success(), "!setprice: {}", set_price.1);
-
-    let orderbook = block_on(mm_node_2.rpc(&json!({
-        "userpass": mm_node_2.userpass,
-        "method": "orderbook",
-        "mmrpc": "2.0",
-        "params": {
-            "base": "RICK",
-            "rel": "tBTC-TEST-lightning"
-        }
-    })))
-    .unwrap();
-    assert!(orderbook.0.is_success(), "!orderbook: {}", orderbook.1);
-
-    block_on(Timer::sleep(1.));
-
-    // mm_node_2 is taker
-    let buy = block_on(mm_node_2.rpc(&json!({
-        "userpass": mm_node_2.userpass,
-        "method": "buy",
-        "base": "RICK",
-        "rel": "tBTC-TEST-lightning",
-        "price": 0.0005,
-        "volume": 0.1
-    })))
-    .unwrap();
-    assert!(buy.0.is_success(), "!buy: {}", buy.1);
-    let buy_json: Json = serde_json::from_str(&buy.1).unwrap();
-    let uuid = buy_json["result"]["uuid"].as_str().unwrap().to_owned();
-
-    // ensure the swaps are started
-    block_on(mm_node_2.wait_for_log(5., |log| {
-        log.contains("Entering the taker_swap_loop RICK/tBTC-TEST-lightning")
-    }))
-    .unwrap();
-    block_on(mm_node_1.wait_for_log(5., |log| {
-        log.contains("Entering the maker_swap_loop RICK/tBTC-TEST-lightning")
-    }))
-    .unwrap();
-
-    block_on(mm_node_1.wait_for_log(900., |log| log.contains(&format!("[swap uuid={}] Finished", uuid)))).unwrap();
-
-    block_on(mm_node_2.wait_for_log(900., |log| log.contains(&format!("[swap uuid={}] Finished", uuid)))).unwrap();
-
-    // -------------------- Test Lightning Maker Swap --------------------
+    let uuids = block_on(start_swaps(
+        &mut mm_node_1,
+        &mut mm_node_2,
+        &[("RICK", "tBTC-TEST-lightning")],
+        0.0005,
+        0.0005,
+        0.1,
+    ));
+    // Todo: use wait_for_swaps_finish_and_check_status instead after fixing lightning swap events
+    block_on(mm_node_1.wait_for_log(900., |log| log.contains(&format!("[swap uuid={}] Finished", uuids[0])))).unwrap();
+    block_on(mm_node_2.wait_for_log(900., |log| log.contains(&format!("[swap uuid={}] Finished", uuids[0])))).unwrap();
 
     // Check node 1 lightning balance after swap
     let node_1_lightning_balance = block_on(my_balance(&mm_node_1, "tBTC-TEST-lightning"));
@@ -698,58 +652,18 @@ fn test_lightning_swaps() {
         BigDecimal::from_str("0.00004").unwrap()
     );
 
-    // mm_node_1 is maker
-    let set_price = block_on(mm_node_1.rpc(&json!({
-        "userpass": mm_node_1.userpass,
-        "method": "setprice",
-        "base": "tBTC-TEST-lightning",
-        "rel": "RICK",
-        "price": 10,
-        "volume": 0.00004
-    })))
-    .unwrap();
-    assert!(set_price.0.is_success(), "!setprice: {}", set_price.1);
-
-    let orderbook = block_on(mm_node_2.rpc(&json!({
-        "userpass": mm_node_2.userpass,
-        "method": "orderbook",
-        "mmrpc": "2.0",
-        "params": {
-            "base": "tBTC-TEST-lightning",
-            "rel": "RICK"
-        }
-    })))
-    .unwrap();
-    assert!(orderbook.0.is_success(), "!orderbook: {}", orderbook.1);
-    block_on(Timer::sleep(1.));
-
-    // mm_node_2 is taker
-    let buy = block_on(mm_node_2.rpc(&json!({
-        "userpass": mm_node_2.userpass,
-        "method": "buy",
-        "base": "tBTC-TEST-lightning",
-        "rel": "RICK",
-        "price": 10,
-        "volume": 0.00004
-    })))
-    .unwrap();
-    assert!(buy.0.is_success(), "!buy: {}", buy.1);
-    let buy_json: Json = serde_json::from_str(&buy.1).unwrap();
-    let uuid = buy_json["result"]["uuid"].as_str().unwrap().to_owned();
-
-    // ensure the swaps are started
-    block_on(mm_node_2.wait_for_log(5., |log| {
-        log.contains("Entering the taker_swap_loop tBTC-TEST-lightning/RICK")
-    }))
-    .unwrap();
-    block_on(mm_node_1.wait_for_log(5., |log| {
-        log.contains("Entering the maker_swap_loop tBTC-TEST-lightning/RICK")
-    }))
-    .unwrap();
-
-    block_on(mm_node_1.wait_for_log(900., |log| log.contains(&format!("[swap uuid={}] Finished", uuid)))).unwrap();
-
-    block_on(mm_node_2.wait_for_log(900., |log| log.contains(&format!("[swap uuid={}] Finished", uuid)))).unwrap();
+    // -------------------- Test Lightning Maker Swap --------------------
+    let uuids = block_on(start_swaps(
+        &mut mm_node_1,
+        &mut mm_node_2,
+        &[("tBTC-TEST-lightning", "RICK")],
+        10.,
+        10.,
+        0.00004,
+    ));
+    // Todo: use wait_for_swaps_finish_and_check_status instead after fixing lightning swap events
+    block_on(mm_node_1.wait_for_log(900., |log| log.contains(&format!("[swap uuid={}] Finished", uuids[0])))).unwrap();
+    block_on(mm_node_2.wait_for_log(900., |log| log.contains(&format!("[swap uuid={}] Finished", uuids[0])))).unwrap();
 
     block_on(mm_node_1.stop()).unwrap();
     block_on(mm_node_2.stop()).unwrap();

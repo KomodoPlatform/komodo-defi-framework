@@ -2302,8 +2302,8 @@ pub async fn start_swaps(
     maker: &mut MarketMakerIt,
     taker: &mut MarketMakerIt,
     pairs: &[(&'static str, &'static str)],
-    maker_price: i32,
-    taker_price: i32,
+    maker_price: f64,
+    taker_price: f64,
     volume: f64,
 ) -> Vec<String> {
     let mut uuids = vec![];
@@ -2335,8 +2335,11 @@ pub async fn start_swaps(
             .rpc(&json!({
                 "userpass": taker.userpass,
                 "method": "orderbook",
-                "base": base,
-                "rel": rel,
+                "mmrpc": "2.0",
+                "params": {
+                    "base": base,
+                    "rel": rel,
+                },
             }))
             .await
             .unwrap();
