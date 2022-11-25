@@ -22,8 +22,8 @@ fn wasm_start(ctx: MmArc) {
 /// and then immediately stops the nodes to check if `MmArc` is dropped in a short period.
 async fn test_mm2_stops_impl(
     pairs: &[(&'static str, &'static str)],
-    maker_price: i32,
-    taker_price: i32,
+    maker_price: f64,
+    taker_price: f64,
     volume: f64,
     stop_timeout_ms: u64,
 ) {
@@ -75,7 +75,7 @@ async fn test_mm2_stops_immediately() {
     register_wasm_log();
 
     let pairs: &[_] = &[("RICK", "MORTY")];
-    test_mm2_stops_impl(pairs, 1, 1, 0.0001, STOP_TIMEOUT_MS).await;
+    test_mm2_stops_impl(pairs, 1., 1., 0.0001, STOP_TIMEOUT_MS).await;
 }
 
 #[wasm_bindgen_test]
@@ -85,8 +85,8 @@ async fn trade_base_rel_electrum(
     bob_priv_key_policy: Mm2InitPrivKeyPolicy,
     alice_priv_key_policy: Mm2InitPrivKeyPolicy,
     pairs: &[(&'static str, &'static str)],
-    maker_price: i32,
-    taker_price: i32,
+    maker_price: f64,
+    taker_price: f64,
     volume: f64,
 ) {
     let coins = json!([rick_conf(), morty_conf(),]);
@@ -162,5 +162,5 @@ async fn trade_test_rick_and_morty() {
     let bob_policy = Mm2InitPrivKeyPolicy::Iguana;
     let alice_policy = Mm2InitPrivKeyPolicy::GlobalHDAccount(0);
     let pairs: &[_] = &[("RICK", "MORTY")];
-    trade_base_rel_electrum(bob_policy, alice_policy, pairs, 1, 1, 0.0001).await;
+    trade_base_rel_electrum(bob_policy, alice_policy, pairs, 1., 1., 0.0001).await;
 }
