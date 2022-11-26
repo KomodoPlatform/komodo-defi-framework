@@ -382,10 +382,12 @@ impl State for RefundTakerPayment {
 
     async fn on_changed(self: Box<Self>, watcher_ctx: &mut WatcherContext) -> StateResult<Self::Ctx, Self::Result> {
         if std::env::var("SKIP_WAIT_FOR_REFUND").is_err() {
+            let sleep_duration = watcher_ctx.wait_for_taker_refund_deadline() - (now_ms() / 1000) + 1;
+            Timer::sleep(sleep_duration as f64).await;
             loop {
                 match watcher_ctx
                     .taker_coin
-                    .can_refund_htlc(watcher_ctx.wait_for_taker_refund_deadline())
+                    .can_refund_htlc(watcher_ctx.taker_locktime())
                     .compat()
                     .await
                 {
