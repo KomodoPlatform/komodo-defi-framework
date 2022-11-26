@@ -1960,9 +1960,9 @@ pub fn watcher_validate_taker_payment<T: UtxoCommonOps + SwapOps>(
         let taker_payment_locking_script = match taker_payment_tx.outputs.get(DEFAULT_SWAP_VOUT) {
             Some(output) => output.script_pubkey.clone(),
             None => {
-                return MmError::err(ValidatePaymentError::WrongPaymentTx(format!(
-                    "Payment tx has no outputs"
-                )))
+                return MmError::err(ValidatePaymentError::WrongPaymentTx(
+                    "Payment tx has no outputs".to_string(),
+                ))
             },
         };
 
