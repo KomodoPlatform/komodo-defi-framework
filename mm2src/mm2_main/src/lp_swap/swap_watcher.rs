@@ -31,8 +31,6 @@ impl WatcherContext {
     fn taker_locktime(&self) -> u64 { self.data.swap_started_at + self.data.lock_duration }
 
     fn wait_for_taker_refund_deadline(&self) -> u64 { self.data.swap_started_at + self.data.lock_duration + 1200 }
-
-    fn watcher_refund_deadline(&self) -> u64 { self.data.swap_started_at + self.data.lock_duration + 4800 }
 }
 
 #[derive(Clone, Debug, Deserialize, Serialize)]
@@ -428,19 +426,6 @@ impl State for RefundTakerPayment {
             &transaction,
             &None,
         );
-
-        let wait_fut = watcher_ctx.taker_coin.wait_for_confirmations(
-            &transaction.tx_hex(),
-            1,
-            false,
-            watcher_ctx.watcher_refund_deadline(),
-            WAIT_CONFIRM_INTERVAL,
-        );
-        if let Err(err) = wait_fut.compat().await {
-            return Self::change_state(Stopped::from_reason(StopReason::Error(
-                WatcherError::TakerPaymentRefundFailed(err).into(),
-            )));
-        }
 
         let tx_hash = transaction.tx_hash();
         info!("Sent taker refund tx {:02x} as watcher", tx_hash);
