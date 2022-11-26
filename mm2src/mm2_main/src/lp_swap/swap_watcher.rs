@@ -30,7 +30,7 @@ struct WatcherContext {
 impl WatcherContext {
     fn taker_locktime(&self) -> u64 { self.data.swap_started_at + self.data.lock_duration }
 
-    fn wait_for_taker_refund_deadline(&self) -> u64 { self.data.swap_started_at + self.data.lock_duration + 1200 }
+    fn wait_for_taker_refund_deadline(&self) -> u64 { self.data.swap_started_at + (3 * self.data.lock_duration / 2) }
 }
 
 #[derive(Clone, Debug, Deserialize, Serialize)]
