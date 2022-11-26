@@ -34,7 +34,7 @@ use std::borrow::Cow;
 use crate::mm2::lp_dispatcher::{dispatch_lp_event, StopCtxEvent};
 use crate::mm2::lp_network::subscribe_to_topic;
 use crate::mm2::lp_ordermatch::{cancel_orders_by, get_matching_orders, CancelBy};
-use crate::mm2::lp_swap::{active_swaps_using_coin, tx_helper_topic, watcher_topic};
+use crate::mm2::lp_swap::{active_swaps_using_coin, active_swaps_using_coins, tx_helper_topic, watcher_topic};
 use crate::mm2::MmVersionResult;
 
 const INTERNAL_SERVER_ERROR_CODE: u16 = 500;
@@ -53,20 +53,12 @@ pub async fn disable_coin(ctx: MmArc, req: Json) -> Result<Response<Vec<u8>>, St
     // If a platform coin is to be disabled, we get all the enabled tokens for this platform coin first.
     let mut coins_to_disable = coins_ctx.get_tokens_to_disable(&ticker).await;
     // We then add the platform coin to the end of the list of the coins to be disabled.
-    coins_to_disable.push(ticker.clone());
+    coins_to_disable.insert(ticker.clone());
     drop_mutability!(coins_to_disable);
 
     // Get all matching orders and active swaps.
-    let mut active_swaps = vec![];
-    let mut still_matching_orders = vec![];
-    for ticker in &coins_to_disable {
-        let swaps = try_s!(active_swaps_using_coin(&ctx, ticker));
-        let still_matching = try_s!(get_matching_orders(&ctx, ticker).await);
-        active_swaps.extend(swaps);
-        still_matching_orders.extend(still_matching);
-    }
-    drop_mutability!(active_swaps);
-    drop_mutability!(still_matching_orders);
+    let active_swaps = try_s!(active_swaps_using_coins(&ctx, &coins_to_disable));
+    let still_matching_orders = try_s!(get_matching_orders(&ctx, &coins_to_disable).await);
 
     // If there're matching orders or active swaps we return an error.
     if !active_swaps.is_empty() || !still_matching_orders.is_empty() {

@@ -230,7 +230,7 @@ impl RpcTaskTypes for InitCreateAccountTask {
 impl RpcTask for InitCreateAccountTask {
     fn initial_status(&self) -> Self::InProgressStatus { CreateAccountInProgressStatus::Preparing }
 
-    async fn cancel(self) {
+    async fn cancel(self) -> Result<(), MmError<Self::Error>> {
         if let Some(account_id) = self.task_state.create_account_id() {
             // We created the account already, so need to revert the changes.
             match self.coin {
@@ -238,7 +238,8 @@ impl RpcTask for InitCreateAccountTask {
                 MmCoinEnum::QtumCoin(qtum) => qtum.revert_creating_account(account_id).await,
                 _ => (),
             }
-        }
+        };
+        Ok(())
     }
 
     async fn run(&mut self, task_handle: &CreateAccountTaskHandle) -> Result<Self::Item, MmError<Self::Error>> {

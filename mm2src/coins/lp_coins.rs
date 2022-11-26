@@ -59,6 +59,7 @@ use serde::{Deserialize, Deserializer, Serialize, Serializer};
 use serde_json::{self as json, Value as Json};
 use std::cmp::Ordering;
 use std::collections::hash_map::{HashMap, RawEntryMut};
+use std::collections::HashSet;
 use std::fmt;
 use std::future::Future as Future03;
 use std::num::NonZeroUsize;
@@ -2115,11 +2116,11 @@ pub trait BalanceTradeFeeUpdatedHandler {
 pub struct CoinsContext {
     /// A map from a currency ticker symbol to the corresponding coin.
     /// Similar to `LP_coins`.
-    platform_coin_tokens: PaMutex<HashMap<String, Vec<String>>>,
     coins: AsyncMutex<HashMap<String, MmCoinEnum>>,
     balance_update_handlers: AsyncMutex<Vec<Box<dyn BalanceTradeFeeUpdatedHandler + Send + Sync>>>,
     account_balance_task_manager: AccountBalanceTaskManagerShared,
     create_account_manager: CreateAccountTaskManagerShared,
+    platform_coin_tokens: PaMutex<HashMap<String, HashSet<String>>>,
     scan_addresses_manager: ScanAddressesTaskManagerShared,
     withdraw_task_manager: WithdrawTaskManagerShared,
     #[cfg(target_arch = "wasm32")]
@@ -2168,9 +2169,10 @@ impl CoinsContext {
         let ticker = coin.ticker();
 
         let mut platform_coin_tokens = self.platform_coin_tokens.lock();
+        //        let pc = coin.pla
         // Here, we tried to add to a token to platform_coin_tokens if the token belongs to a platform coin.
         if let Some(platform) = platform_coin_tokens.get_mut(coin.platform_ticker()) {
-            platform.push(ticker.to_owned());
+            platform.insert(ticker.to_owned());
         }
 
         coins.insert(ticker.into(), coin);
@@ -2189,10 +2191,12 @@ impl CoinsContext {
         let mut platform_coin_tokens = self.platform_coin_tokens.lock();
         if let Some(tokens) = platform_coin_tokens.get_mut(&platform_ticker) {
             if !tokens.contains(&ticker) {
-                tokens.push(ticker.clone());
+                tokens.insert(ticker.clone());
             };
         } else {
-            platform_coin_tokens.insert(platform_ticker, vec![ticker.clone()]);
+            let mut data = HashSet::with_capacity(1);
+            data.insert(ticker.clone());
+            platform_coin_tokens.insert(platform_ticker, data);
         };
 
         coins.insert(ticker, coin);
@@ -2231,7 +2235,7 @@ impl CoinsContext {
     }
 
     /// Get enabled coins to disable.
-    pub async fn get_tokens_to_disable(&self, ticker: &str) -> Vec<String> {
+    pub async fn get_tokens_to_disable(&self, ticker: &str) -> HashSet<String> {
         let coins = self.platform_coin_tokens.lock();
         coins.get(ticker).cloned().unwrap_or_default()
     }
@@ -2249,7 +2253,7 @@ impl CoinsContext {
                     if let Some(token) = coins_storage.remove(&token) {
                         // Abort all token related futures on token deactivation
                         if let Err(err) = token.on_disabled() {
-                            log!("Error aborting coin({ticker}) futures: {err:?}")
+                            return ERR!("Error aborting coin({}) futures: {}", ticker, err);
                         };
                     }
                 }
@@ -2266,7 +2270,11 @@ impl CoinsContext {
             log!("Error aborting coin({ticker}) futures: {err:?}")
         };
 
-        coin.on_token_deactivated(ticker);
+        if ticker != platform_ticker {
+            if let Some(platform_coin) = coins_storage.get(platform_ticker) {
+                platform_coin.on_token_deactivated(ticker);
+            }
+        }
         Ok(())
     }
 

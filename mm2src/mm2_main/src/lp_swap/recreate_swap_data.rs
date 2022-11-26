@@ -487,7 +487,7 @@ async fn convert_maker_to_taker_events(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use coins::{CoinsContext, SwapOps, TestCoin};
+    use coins::{CoinsContext, MarketCoinOps, SwapOps, TestCoin};
     use common::block_on;
     use mm2_core::mm_ctx::MmCtxBuilder;
     use mocktopus::mocking::{MockResult, Mockable};
@@ -531,6 +531,7 @@ mod tests {
             let secret = hex::decode("23a6bb64bc0ab2cc14cb84277d8d25134b814e5f999c66e578c9bba3c5e2d3a4").unwrap();
             MockResult::Return(Box::pin(async move { Ok(secret) }))
         });
+        TestCoin::platform_ticker.mock_safe(|_| MockResult::Return("TestCoin"));
 
         let maker_saved_swap: MakerSavedSwap =
             json::from_str(include_str!("../for_tests/recreate_taker_swap_maker_saved.json")).unwrap();
@@ -548,6 +549,7 @@ mod tests {
 
     #[test]
     fn test_recreate_taker_swap_taker_payment_wait_confirm_failed() {
+        TestCoin::platform_ticker.mock_safe(|_| MockResult::Return("TestCoin"));
         let maker_saved_swap: MakerSavedSwap = json::from_str(include_str!(
             "../for_tests/recreate_taker_swap_taker_payment_wait_confirm_failed_maker_saved.json"
         ))

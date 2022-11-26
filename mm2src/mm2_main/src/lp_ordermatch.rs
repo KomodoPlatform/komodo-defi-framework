@@ -5245,24 +5245,26 @@ pub enum CancelBy {
     Coin { ticker: String },
 }
 
-pub async fn get_matching_orders(ctx: &MmArc, ticker: &str) -> Result<Vec<Uuid>, String> {
+pub async fn get_matching_orders(ctx: &MmArc, coins: &HashSet<String>) -> Result<Vec<Uuid>, String> {
     let ordermatch_ctx = try_s!(OrdermatchContext::from_ctx(ctx));
     let mut matching_orders = vec![];
 
     let maker_orders = ordermatch_ctx.maker_orders_ctx.lock().orders.clone();
-    for (uuid, order) in maker_orders.iter() {
-        let order = order.lock().await.clone();
-        if (order.base == ticker || order.rel == ticker) && !order.is_cancellable() {
-            matching_orders.push(*uuid);
-        }
-    }
-
     let taker_orders = ordermatch_ctx.my_taker_orders.lock().await;
-    taker_orders.iter().for_each(|(uuid, order)| {
-        if (order.request.base == ticker || order.request.rel == ticker) && !order.is_cancellable() {
-            matching_orders.push(*uuid);
-        };
-    });
+    for ticker in coins {
+        for (uuid, order) in maker_orders.iter() {
+            let order = order.lock().await.clone();
+            if order.is_cancellable() {
+                matching_orders.push(*uuid);
+            }
+        }
+
+        taker_orders.iter().for_each(|(uuid, order)| {
+            if order.is_cancellable() {
+                matching_orders.push(*uuid);
+            };
+        });
+    }
 
     Ok(matching_orders)
 }

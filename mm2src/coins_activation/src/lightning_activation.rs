@@ -18,6 +18,7 @@ use coins::utxo::UtxoCommonOps;
 use coins::{BalanceError, CoinBalance, CoinProtocol, MarketCoinOps, MmCoinEnum, RegisterCoinError};
 use common::executor::SpawnFuture;
 use crypto::hw_rpc_task::{HwRpcTaskAwaitingStatus, HwRpcTaskUserAction};
+use crypto::CryptoCtxError;
 use derive_more::Display;
 use futures::compat::Future01CompatExt;
 use lightning::chain::keysinterface::{KeysInterface, Recipient};
@@ -162,6 +163,10 @@ pub enum LightningInitError {
 
 impl From<MyAddressError> for LightningInitError {
     fn from(err: MyAddressError) -> Self { Self::MyAddressError(err.to_string()) }
+}
+
+impl From<CryptoCtxError> for LightningInitError {
+    fn from(value: CryptoCtxError) -> Self { Self::Internal(value.to_string()) }
 }
 
 impl From<LightningInitError> for InitL2Error {

@@ -125,10 +125,10 @@ impl RpcTaskTypes for InitHwTask {
 impl RpcTask for InitHwTask {
     fn initial_status(&self) -> Self::InProgressStatus { InitHwInProgressStatus::Initializing }
 
-    async fn cancel(self) {
-        if let Ok(crypto_ctx) = CryptoCtx::from_ctx(&self.ctx) {
-            crypto_ctx.reset_hw_ctx()
-        }
+    async fn cancel(self) -> Result<(), MmError<Self::Error>> {
+        let ctx = CryptoCtx::from_ctx(&self.ctx)?;
+        ctx.reset_hw_ctx();
+        Ok(())
     }
 
     async fn run(&mut self, task_handle: &InitHwTaskHandle) -> Result<Self::Item, MmError<Self::Error>> {

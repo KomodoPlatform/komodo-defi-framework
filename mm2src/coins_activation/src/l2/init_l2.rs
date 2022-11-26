@@ -7,6 +7,7 @@ use crate::prelude::*;
 use async_trait::async_trait;
 use coins::{lp_coinfind, lp_coinfind_or_err, CoinsContext, MmCoinEnum, RegisterCoinError};
 use common::SuccessResponse;
+use crypto::CryptoCtxError;
 use mm2_core::mm_ctx::MmArc;
 use mm2_err_handle::prelude::*;
 use rpc_task::rpc_common::{CancelRpcTaskRequest, InitRpcTaskResponse, RpcTaskStatusRequest, RpcTaskUserActionRequest};
@@ -38,7 +39,13 @@ pub trait InitL2ActivationOps: Into<MmCoinEnum> + Send + Sync + 'static {
     type ValidatedParams: Clone + Send + Sync;
     type CoinConf: Clone + Send + Sync;
     type ActivationResult: serde::Serialize + Clone + Send + Sync;
-    type ActivationError: From<RegisterCoinError> + NotEqual + SerMmErrorType + Clone + Send + Sync;
+    type ActivationError: From<RegisterCoinError>
+        + From<CryptoCtxError>
+        + NotEqual
+        + SerMmErrorType
+        + Clone
+        + Send
+        + Sync;
     type InProgressStatus: InitL2InitialStatus + Clone + Send + Sync;
     type AwaitingStatus: Clone + Send + Sync;
     type UserAction: NotMmError + Send + Sync;
@@ -185,12 +192,12 @@ where
     }
 
     /// Try to disable the coin in case if we managed to register it already.
-    async fn cancel(self) {
-        if let Ok(c_ctx) = CoinsContext::from_ctx(&self.ctx) {
-            if let Ok(Some(t)) = lp_coinfind(&self.ctx, &self.ticker).await {
-                c_ctx.remove_coin(t).await.ok();
-            };
+    async fn cancel(self) -> Result<(), MmError<Self::Error>> {
+        let ctx = CoinsContext::from_ctx(&self.ctx).map_to_mm(|err| CryptoCtxError::Internal(err))?;
+        if let Ok(Some(t)) = lp_coinfind(&self.ctx, &self.ticker).await {
+            ctx.remove_coin(t).await.ok();
         };
+        Ok(())
     }
 
     async fn run(&mut self, task_handle: &RpcTaskHandle<Self>) -> Result<Self::Item, MmError<Self::Error>> {
