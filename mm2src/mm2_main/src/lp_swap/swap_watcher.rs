@@ -288,7 +288,7 @@ impl State for WaitForTakerPaymentSpend {
 
                     let f = watcher_ctx.maker_coin.wait_for_htlc_tx_spend(
                         &maker_payment_hex,
-                        &[],
+                        &watcher_ctx.data.secret_hash,
                         wait_until,
                         watcher_ctx.data.maker_coin_start_block,
                         &None,
