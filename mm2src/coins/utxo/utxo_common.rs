@@ -2286,25 +2286,6 @@ pub fn send_raw_tx_bytes(
     )
 }
 
-pub fn wait_for_confirmations_by_hash(
-    coin: &UtxoCoinFields,
-    tx_hash: &[u8],
-    confirmations: u64,
-    requires_nota: bool,
-    expiry_height: u32,
-    wait_until: u64,
-    check_every: u64,
-) -> Box<dyn Future<Item = (), Error = String> + Send> {
-    coin.rpc_client.wait_for_confirmations(
-        H256Json::from(tx_hash),
-        expiry_height,
-        confirmations as u32,
-        requires_nota,
-        wait_until,
-        check_every,
-    )
-}
-
 pub fn wait_for_confirmations(
     coin: &UtxoCoinFields,
     tx: &[u8],

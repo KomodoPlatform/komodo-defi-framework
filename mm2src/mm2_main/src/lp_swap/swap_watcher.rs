@@ -154,37 +154,55 @@ impl State for ValidateTakerPayment {
     async fn on_changed(self: Box<Self>, watcher_ctx: &mut WatcherContext) -> StateResult<Self::Ctx, Self::Result> {
         let wait_taker_payment =
             taker_payment_spend_deadline(watcher_ctx.data.swap_started_at, watcher_ctx.data.lock_duration);
+
+        let taker_payment_hex;
+        loop {
+            let taker_payment_hex_fut = watcher_ctx
+                .taker_coin
+                .get_tx_hex_by_hash(watcher_ctx.data.taker_payment_hash.clone());
+
+            match taker_payment_hex_fut.compat().await {
+                Ok(tx_res) => {
+                    taker_payment_hex = tx_res.tx_hex.into_vec();
+                    break;
+                },
+                Err(err) => {
+                    if now_ms() / 1000 > wait_taker_payment {
+                        error!(
+                            "Waited too long until {} for transaction {:?}",
+                            wait_taker_payment, &watcher_ctx.data.taker_payment_hash
+                        );
+                        return Self::change_state(Stopped::from_reason(StopReason::Error(
+                            WatcherError::InvalidTakerPayment(err.to_string()).into(),
+                        )));
+                    }
+                    log!(
+                        "Transaction with hash {:?} not found",
+                        &watcher_ctx.data.taker_payment_hash
+                    );
+                    Timer::sleep(WAIT_CONFIRM_INTERVAL as f64).await;
+                    continue;
+                },
+            };
+        }
+
         let confirmations = min(watcher_ctx.data.taker_payment_confirmations, TAKER_SWAP_CONFIRMATIONS);
 
-        let wait_f = watcher_ctx
+        let wait_fut = watcher_ctx
             .taker_coin
-            .wait_for_confirmations_by_hash(
-                &watcher_ctx.data.taker_payment_hash,
+            .wait_for_confirmations(
+                &taker_payment_hex,
                 confirmations,
                 watcher_ctx.data.taker_payment_requires_nota.unwrap_or(false),
-                0,
                 wait_taker_payment,
                 WAIT_CONFIRM_INTERVAL,
             )
             .compat();
-        if let Err(err) = wait_f.await {
+        if let Err(err) = wait_fut.await {
             Self::change_state(Stopped::from_reason(StopReason::Error(
                 WatcherError::TakerPaymentNotConfirmed(err).into(),
             )));
         }
-
-        let taker_payment_hex_fut = watcher_ctx
-            .taker_coin
-            .get_tx_hex_by_hash(watcher_ctx.data.taker_payment_hash.clone());
-
-        let taker_payment_hex = match taker_payment_hex_fut.compat().await {
-            Ok(tx_res) => tx_res.tx_hex.into_vec(),
-            Err(err) => {
-                return Self::change_state(Stopped::from_reason(StopReason::Error(
-                    WatcherError::InvalidTakerPayment(err.to_string()).into(),
-                )))
-            },
-        };
 
         let validate_input = WatcherValidatePaymentInput {
             payment_tx: taker_payment_hex.clone(),

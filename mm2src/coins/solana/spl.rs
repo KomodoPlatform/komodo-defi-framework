@@ -264,18 +264,6 @@ impl MarketCoinOps for SplToken {
         self.platform_coin.send_raw_tx_bytes(tx)
     }
 
-    fn wait_for_confirmations_by_hash(
-        &self,
-        tx_hash: &[u8],
-        confirmations: u64,
-        requires_nota: bool,
-        expiry_height: u32,
-        wait_until: u64,
-        check_every: u64,
-    ) -> Box<dyn Future<Item = (), Error = String> + Send> {
-        unimplemented!();
-    }
-
     fn wait_for_confirmations(
         &self,
         _tx: &[u8],

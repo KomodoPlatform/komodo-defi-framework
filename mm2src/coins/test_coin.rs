@@ -63,18 +63,6 @@ impl MarketCoinOps for TestCoin {
 
     fn send_raw_tx_bytes(&self, tx: &[u8]) -> Box<dyn Future<Item = String, Error = String> + Send> { unimplemented!() }
 
-    fn wait_for_confirmations_by_hash(
-        &self,
-        tx_hash: &[u8],
-        confirmations: u64,
-        requires_nota: bool,
-        expiry_height: u32,
-        wait_until: u64,
-        check_every: u64,
-    ) -> Box<dyn Future<Item = (), Error = String> + Send> {
-        unimplemented!();
-    }
-
     fn wait_for_confirmations(
         &self,
         tx: &[u8],

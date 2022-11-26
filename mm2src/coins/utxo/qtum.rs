@@ -827,18 +827,6 @@ impl MarketCoinOps for QtumCoin {
         utxo_common::send_raw_tx_bytes(&self.utxo_arc, tx)
     }
 
-    fn wait_for_confirmations_by_hash(
-        &self,
-        _tx_hash: &[u8],
-        _confirmations: u64,
-        _requires_nota: bool,
-        _expiry_height: u32,
-        _wait_until: u64,
-        _check_every: u64,
-    ) -> Box<dyn Future<Item = (), Error = String> + Send> {
-        unimplemented!();
-    }
-
     fn wait_for_confirmations(
         &self,
         tx: &[u8],
