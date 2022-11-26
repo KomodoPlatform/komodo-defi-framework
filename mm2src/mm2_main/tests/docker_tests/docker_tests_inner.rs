@@ -1171,7 +1171,6 @@ fn test_watcher_validate_taker_fee() {
         .watcher_validate_taker_fee(WatcherValidateTakerFeeInput {
             taker_fee_hash: taker_fee.tx_hash().into_vec(),
             sender_pubkey: taker_pubkey.to_vec(),
-            amount: fee_amount.clone().into(),
             min_block_number: 0,
             fee_addr: DEX_FEE_ADDR_RAW_PUBKEY.to_vec(),
             lock_duration: 7800,
@@ -1183,7 +1182,6 @@ fn test_watcher_validate_taker_fee() {
         .watcher_validate_taker_fee(WatcherValidateTakerFeeInput {
             taker_fee_hash: taker_fee.tx_hash().into_vec(),
             sender_pubkey: maker_coin.my_public_key().unwrap().to_vec(),
-            amount: fee_amount.clone().into(),
             min_block_number: 0,
             fee_addr: DEX_FEE_ADDR_RAW_PUBKEY.to_vec(),
             lock_duration: 7800,
@@ -1204,7 +1202,6 @@ fn test_watcher_validate_taker_fee() {
         .watcher_validate_taker_fee(WatcherValidateTakerFeeInput {
             taker_fee_hash: taker_fee.tx_hash().into_vec(),
             sender_pubkey: taker_pubkey.to_vec(),
-            amount: fee_amount.clone().into(),
             min_block_number: std::u64::MAX,
             fee_addr: DEX_FEE_ADDR_RAW_PUBKEY.to_vec(),
             lock_duration: 7800,
@@ -1227,7 +1224,6 @@ fn test_watcher_validate_taker_fee() {
         .watcher_validate_taker_fee(WatcherValidateTakerFeeInput {
             taker_fee_hash: taker_fee.tx_hash().into_vec(),
             sender_pubkey: taker_pubkey.to_vec(),
-            amount: fee_amount.clone().into(),
             min_block_number: 0,
             fee_addr: DEX_FEE_ADDR_RAW_PUBKEY.to_vec(),
             lock_duration: 0,
@@ -1247,7 +1243,6 @@ fn test_watcher_validate_taker_fee() {
         .watcher_validate_taker_fee(WatcherValidateTakerFeeInput {
             taker_fee_hash: taker_fee.tx_hash().into_vec(),
             sender_pubkey: taker_pubkey.to_vec(),
-            amount: fee_amount.clone().into(),
             min_block_number: 0,
             fee_addr: taker_pubkey.to_vec(),
             lock_duration: 7800,
@@ -1270,7 +1265,6 @@ fn test_watcher_validate_taker_fee() {
         .watcher_validate_taker_fee(WatcherValidateTakerFeeInput {
             taker_fee_hash: taker_fee.tx_hash().into_vec(),
             sender_pubkey: taker_pubkey.to_vec(),
-            amount: 2u64.into(),
             min_block_number: 0,
             fee_addr: DEX_FEE_ADDR_RAW_PUBKEY.to_vec(),
             lock_duration: 7800,

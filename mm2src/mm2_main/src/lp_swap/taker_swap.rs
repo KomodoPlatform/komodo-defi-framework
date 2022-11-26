@@ -39,6 +39,8 @@ use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::sync::{Arc, RwLock, RwLockReadGuard, RwLockWriteGuard};
 use uuid::Uuid;
 
+use coins::utxo::sat_from_big_decimal;
+
 pub const TAKER_SUCCESS_EVENTS: [&str; 10] = [
     "Started",
     "Negotiated",
@@ -1156,6 +1158,12 @@ impl TakerSwap {
 
         let fee_amount =
             dex_fee_amount_from_taker_coin(&self.taker_coin, &self.r().data.maker_coin, &self.taker_amount);
+        println!("**fee_amount: {:?}", fee_amount);
+
+        let amount_sat = sat_from_big_decimal(&fee_amount.clone().into(), self.taker_coin.decimals()).unwrap();
+
+        println!("**amount_sat: {:?}", amount_sat);
+
         let fee_tx = self
             .taker_coin
             .send_taker_fee(&DEX_FEE_ADDR_RAW_PUBKEY, fee_amount.into(), self.uuid.as_bytes())
@@ -1323,7 +1331,6 @@ impl TakerSwap {
             taker_coin_start_block: self.r().data.taker_coin_start_block,
             taker_payment_confirmations: self.r().data.taker_payment_confirmations,
             taker_payment_requires_nota: self.r().data.taker_payment_requires_nota,
-            taker_amount: self.r().data.taker_amount.clone(),
             maker_coin: self.r().data.maker_coin.clone(),
             maker_pub: self.r().other_maker_coin_htlc_pub.to_vec(),
             maker_payment_hash: self.r().maker_payment.as_ref().unwrap().tx_hash.0.clone(),
@@ -1486,12 +1493,13 @@ impl TakerSwap {
                     taker_payment_refund,
                 );
                 let swpmsg_watcher = SwapWatcherMsg::TakerSwapWatcherMsg(watcher_data);
+                let htlc_keypair = self.taker_coin.derive_htlc_key_pair(&self.unique_swap_data());
                 watcher_broadcast_abort_handle = Some(broadcast_swap_message_every(
                     self.ctx.clone(),
                     watcher_topic(&self.r().data.taker_coin),
                     swpmsg_watcher,
                     BROADCAST_SWAP_MESSAGE_INTERVAL,
-                    self.p2p_privkey,
+                    Some(htlc_keypair),
                 ));
             }
         }

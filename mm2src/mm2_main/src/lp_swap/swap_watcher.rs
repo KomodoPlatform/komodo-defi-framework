@@ -1,5 +1,5 @@
-use super::{broadcast_p2p_tx_msg, dex_fee_amount_from_taker_coin, lp_coinfind, taker_payment_spend_deadline,
-            tx_helper_topic, H256Json, SwapsContext, WAIT_CONFIRM_INTERVAL};
+use super::{broadcast_p2p_tx_msg, lp_coinfind, taker_payment_spend_deadline, tx_helper_topic, H256Json, SwapsContext,
+            WAIT_CONFIRM_INTERVAL};
 use crate::mm2::MmError;
 use async_trait::async_trait;
 use coins::{CanRefundHtlc, FoundSwapTxSpend, MmCoinEnum, WatcherSearchForSwapTxSpendInput,
@@ -11,7 +11,6 @@ use common::{now_ms, DEX_FEE_ADDR_RAW_PUBKEY};
 use futures::compat::Future01CompatExt;
 use mm2_core::mm_ctx::MmArc;
 use mm2_libp2p::{decode_signed, pub_sub_topic, TopicPrefix};
-use mm2_number::{BigDecimal, MmNumber};
 use std::cmp::min;
 use std::sync::Arc;
 use uuid::Uuid;
@@ -48,7 +47,6 @@ pub struct TakerSwapWatcherData {
     pub taker_coin_start_block: u64,
     pub taker_payment_confirmations: u64,
     pub taker_payment_requires_nota: Option<bool>,
-    pub taker_amount: BigDecimal,
     pub maker_coin: String,
     pub maker_pub: Vec<u8>,
     pub maker_payment_hash: Vec<u8>,
@@ -126,16 +124,11 @@ impl State for ValidateTakerFee {
     type Result = ();
 
     async fn on_changed(self: Box<Self>, watcher_ctx: &mut WatcherContext) -> StateResult<Self::Ctx, Self::Result> {
-        let taker_amount = MmNumber::from(watcher_ctx.data.taker_amount.clone());
-        let fee_amount =
-            dex_fee_amount_from_taker_coin(&watcher_ctx.taker_coin, &watcher_ctx.data.maker_coin, &taker_amount);
-
         let validated_f = watcher_ctx
             .taker_coin
             .watcher_validate_taker_fee(WatcherValidateTakerFeeInput {
                 taker_fee_hash: watcher_ctx.data.taker_fee_hash.clone(),
                 sender_pubkey: watcher_ctx.verified_pub.clone(),
-                amount: fee_amount.clone().into(),
                 min_block_number: watcher_ctx.data.taker_coin_start_block,
                 fee_addr: DEX_FEE_ADDR_RAW_PUBKEY.clone(),
                 lock_duration: watcher_ctx.data.lock_duration,
@@ -199,7 +192,6 @@ impl State for ValidateTakerPayment {
             taker_pub: watcher_ctx.verified_pub.clone(),
             maker_pub: watcher_ctx.data.maker_pub.clone(),
             secret_hash: watcher_ctx.data.secret_hash.clone(),
-            amount: watcher_ctx.data.taker_amount.clone(),
             try_spv_proof_until: wait_taker_payment,
             confirmations,
         };

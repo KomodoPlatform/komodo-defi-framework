@@ -1754,7 +1754,6 @@ pub fn watcher_validate_taker_fee<T: UtxoCommonOps>(
     input: WatcherValidateTakerFeeInput,
     output_index: usize,
 ) -> ValidatePaymentFut<()> {
-    let expected_amount = input.amount.clone();
     let sender_pubkey = input.sender_pubkey;
     let taker_fee_hash = input.taker_fee_hash;
     let min_block_number = input.min_block_number;
@@ -1817,14 +1816,6 @@ pub fn watcher_validate_taker_fee<T: UtxoCommonOps>(
                     return MmError::err(ValidatePaymentError::WrongPaymentTx(format!(
                         "Provided dex fee tx output script_pubkey doesn't match expected {:?} {:?}",
                         out.script_pubkey, expected_script_pubkey
-                    )));
-                }
-
-                let expected_amount = sat_from_big_decimal(&expected_amount, coin.as_ref().decimals)?;
-                if out.value < expected_amount {
-                    return MmError::err(ValidatePaymentError::WrongPaymentTx(format!(
-                        "Provided dex fee tx output value is less than expected {:?} {:?}",
-                        out.value, expected_amount
                     )));
                 }
             },
@@ -1946,41 +1937,51 @@ pub fn watcher_validate_taker_payment<T: UtxoCommonOps + SwapOps>(
     coin: &T,
     input: WatcherValidatePaymentInput,
 ) -> ValidatePaymentFut<()> {
-    let tx: UtxoTx = try_f!(deserialize(input.payment_tx.as_slice()));
+    let taker_payment_tx: UtxoTx = try_f!(deserialize(input.payment_tx.as_slice()));
     let taker_pub = &try_f!(
         Public::from_slice(&input.taker_pub).map_err(|err| ValidatePaymentError::InvalidParameter(err.to_string()))
     );
     let maker_pub = &try_f!(
         Public::from_slice(&input.maker_pub).map_err(|err| ValidatePaymentError::InvalidParameter(err.to_string()))
     );
-    let amount = try_f!(sat_from_big_decimal(&input.amount, coin.as_ref().decimals));
     let expected_redeem = payment_script(input.time_lock, &input.secret_hash, taker_pub, maker_pub);
     let coin = coin.clone();
 
     let fut = async move {
-        let inputs_signed_by_pub = check_all_utxo_inputs_signed_by_pub(&tx, &input.taker_pub)
+        let inputs_signed_by_pub = check_all_utxo_inputs_signed_by_pub(&taker_payment_tx, &input.taker_pub)
             .map_to_mm(ValidatePaymentError::InternalError)?;
         if !inputs_signed_by_pub {
+            error!("Taker payment does not belong to the verified public key");
             return MmError::err(ValidatePaymentError::WrongPaymentTx(
                 "Taker payment does not belong to the verified public key".to_string(),
             ));
         }
 
-        let expected_output = TransactionOutput {
-            value: amount,
-            script_pubkey: Builder::build_p2sh(&dhash160(&expected_redeem).into()).into(),
+        let taker_payment_locking_script = match taker_payment_tx.outputs.get(DEFAULT_SWAP_VOUT) {
+            Some(output) => output.script_pubkey.clone(),
+            None => {
+                return MmError::err(ValidatePaymentError::WrongPaymentTx(format!(
+                    "Payment tx has no outputs"
+                )))
+            },
         };
-        let actual_output = tx.outputs.get(DEFAULT_SWAP_VOUT);
-        if actual_output != Some(&expected_output) {
+
+        if taker_payment_locking_script != Builder::build_p2sh(&dhash160(&expected_redeem).into()).to_bytes() {
+            error!(
+                "Payment tx locking script {:?} doesn't match expected",
+                taker_payment_locking_script
+            );
             return MmError::err(ValidatePaymentError::WrongPaymentTx(format!(
-                "Provided payment tx output doesn't match expected {:?} {:?}",
-                actual_output, expected_output
+                "Payment tx locking script {:?} doesn't match expected",
+                taker_payment_locking_script
             )));
         }
 
         if let UtxoRpcClientEnum::Electrum(client) = &coin.as_ref().rpc_client {
             if coin.as_ref().conf.enable_spv_proof && input.confirmations != 0 {
-                client.validate_spv_proof(&tx, input.try_spv_proof_until).await?;
+                client
+                    .validate_spv_proof(&taker_payment_tx, input.try_spv_proof_until)
+                    .await?;
             }
         }
         Ok(())

@@ -488,7 +488,6 @@ pub enum ValidateOtherPubKeyErr {
 pub struct WatcherValidateTakerFeeInput {
     pub taker_fee_hash: Vec<u8>,
     pub sender_pubkey: Vec<u8>,
-    pub amount: BigDecimal,
     pub min_block_number: u64,
     pub fee_addr: Vec<u8>,
     pub lock_duration: u64,
@@ -501,7 +500,6 @@ pub struct WatcherValidatePaymentInput {
     pub taker_pub: Vec<u8>,
     pub maker_pub: Vec<u8>,
     pub secret_hash: Vec<u8>,
-    pub amount: BigDecimal,
     pub try_spv_proof_until: u64,
     pub confirmations: u64,
 }
