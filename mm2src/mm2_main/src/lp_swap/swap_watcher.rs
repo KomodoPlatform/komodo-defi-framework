@@ -18,7 +18,6 @@ use uuid::Uuid;
 pub const WATCHER_PREFIX: TopicPrefix = "swpwtchr";
 const TAKER_SWAP_CONFIRMATIONS: u64 = 1;
 pub const TAKER_SWAP_ENTRY_TIMEOUT: u64 = 21600;
-const WAIT_FOR_TAKER_REFUND: u64 = 1200; // How long?
 
 struct WatcherContext {
     ctx: MmArc,
@@ -26,6 +25,14 @@ struct WatcherContext {
     maker_coin: MmCoinEnum,
     verified_pub: Vec<u8>,
     data: TakerSwapWatcherData,
+}
+
+impl WatcherContext {
+    fn taker_locktime(&self) -> u64 { self.data.swap_started_at + self.data.lock_duration }
+
+    fn wait_for_taker_refund_deadline(&self) -> u64 { self.data.swap_started_at + self.data.lock_duration + 1200 }
+
+    fn watcher_refund_deadline(&self) -> u64 { self.data.swap_started_at + self.data.lock_duration + 4800 }
 }
 
 #[derive(Clone, Debug, Deserialize, Serialize)]
@@ -206,7 +213,7 @@ impl State for ValidateTakerPayment {
 
         let validate_input = WatcherValidatePaymentInput {
             payment_tx: taker_payment_hex.clone(),
-            time_lock: (watcher_ctx.data.swap_started_at + watcher_ctx.data.lock_duration) as u32,
+            time_lock: watcher_ctx.taker_locktime() as u32,
             taker_pub: watcher_ctx.verified_pub.clone(),
             maker_pub: watcher_ctx.data.maker_pub.clone(),
             secret_hash: watcher_ctx.data.secret_hash.clone(),
@@ -245,7 +252,7 @@ impl State for WaitForTakerPaymentSpend {
             Err(_) => watcher_ctx.data.swap_started_at + (4 * watcher_ctx.data.lock_duration / 3),
         };
         let search_input = WatcherSearchForSwapTxSpendInput {
-            time_lock: (watcher_ctx.data.swap_started_at + watcher_ctx.data.lock_duration) as u32,
+            time_lock: watcher_ctx.taker_locktime() as u32,
             taker_pub: &watcher_ctx.verified_pub,
             maker_pub: &watcher_ctx.data.maker_pub,
             secret_hash: &watcher_ctx.data.secret_hash,
@@ -263,10 +270,10 @@ impl State for WaitForTakerPaymentSpend {
         match f {
             Ok(FoundSwapTxSpend::Spent(tx)) => {
                 let now = now_ms() / 1000;
-                if now < watcher_ctx.data.swap_started_at + watcher_ctx.data.lock_duration {
+                if now < watcher_ctx.taker_locktime() {
                     let wait_until = match std::env::var("SKIP_WAIT_FOR_MAKER_PAYMENT") {
                         Ok(_) => 0,
-                        Err(_) => watcher_ctx.data.swap_started_at + watcher_ctx.data.lock_duration,
+                        Err(_) => watcher_ctx.taker_locktime(),
                     };
 
                     let maker_payment_hex_fut = watcher_ctx
@@ -380,9 +387,7 @@ impl State for RefundTakerPayment {
             loop {
                 match watcher_ctx
                     .taker_coin
-                    .can_refund_htlc(
-                        watcher_ctx.data.swap_started_at + watcher_ctx.data.lock_duration + WAIT_FOR_TAKER_REFUND,
-                    )
+                    .can_refund_htlc(watcher_ctx.wait_for_taker_refund_deadline())
                     .compat()
                     .await
                 {
@@ -428,7 +433,7 @@ impl State for RefundTakerPayment {
             &transaction.tx_hex(),
             1,
             false,
-            watcher_ctx.data.swap_started_at + watcher_ctx.data.lock_duration + WAIT_FOR_TAKER_REFUND + 3600,
+            watcher_ctx.watcher_refund_deadline(),
             WAIT_CONFIRM_INTERVAL,
         );
         if let Err(err) = wait_fut.compat().await {
