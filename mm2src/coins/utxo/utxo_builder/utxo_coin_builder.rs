@@ -818,27 +818,24 @@ async fn check_electrum_server_version(
 
 /// Wait until the protocol version of at least one client's Electrum is checked.
 async fn wait_for_protocol_version_checked(client: &ElectrumClientImpl) -> Result<(), String> {
-    let mut attempts = 0;
-    loop {
-        if attempts >= 10 {
-            return ERR!("Failed protocol version verifying of at least 1 of Electrums in 5 seconds.");
-        }
-
+    repeatable!(async {
         if client.count_connections().await == 0 {
             // All of the connections were removed because of server.version checking
-            return ERR!(
+            ready!(ERR!(
                 "There are no Electrums with the required protocol version {:?}",
                 client.protocol_version()
-            );
+            ));
         }
 
         if client.is_protocol_version_checked().await {
-            break;
+            ready!(Ok(()));
         }
-
-        Timer::sleep(0.5).await;
-        attempts += 1;
-    }
-
-    Ok(())
+        retry!()
+    })
+    .attempts(10)
+    .repeat_every(0.5)
+    .await
+    .map_err(|_exceed| ERRL!("Failed protocol version verifying of at least 1 of Electrums in 5 seconds."))
+    // Flatten `Result< Result<(), String>, String >`
+    .flatten()
 }
