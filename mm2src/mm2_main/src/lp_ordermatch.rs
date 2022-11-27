@@ -5254,13 +5254,13 @@ pub async fn get_matching_orders(ctx: &MmArc, coins: &HashSet<String>) -> Result
     for ticker in coins {
         for (uuid, order) in maker_orders.iter() {
             let order = order.lock().await.clone();
-            if order.is_cancellable() {
+            if (&order.base == ticker || &order.rel == ticker) && !order.is_cancellable() {
                 matching_orders.push(*uuid);
             }
         }
 
         taker_orders.iter().for_each(|(uuid, order)| {
-            if order.is_cancellable() {
+            if (&order.request.base == ticker || &order.request.rel == ticker) && !order.is_cancellable() {
                 matching_orders.push(*uuid);
             };
         });

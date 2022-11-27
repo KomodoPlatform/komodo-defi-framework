@@ -187,7 +187,7 @@ where
 
     /// Try to disable the coin in case if we managed to register it already.
     async fn cancel(self) -> Result<(), MmError<Self::Error>> {
-        let c_ctx = CoinsContext::from_ctx(&self.ctx).map_to_mm(|err| CryptoCtxError::Internal(err))?;
+        let c_ctx = CoinsContext::from_ctx(&self.ctx).map_to_mm(CryptoCtxError::Internal)?;
         if let Ok(Some(t)) = lp_coinfind(&self.ctx, &self.request.ticker).await {
             c_ctx.remove_coin(t).await.ok();
         };

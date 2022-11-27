@@ -30,15 +30,38 @@ use mm2_metrics::MetricsOps;
 use mm2_number::{construct_detailed, BigDecimal};
 use serde_json::{self as json, Value as Json};
 use std::borrow::Cow;
+use std::iter::Extend;
+use uuid::Uuid;
 
 use crate::mm2::lp_dispatcher::{dispatch_lp_event, StopCtxEvent};
 use crate::mm2::lp_network::subscribe_to_topic;
 use crate::mm2::lp_ordermatch::{cancel_orders_by, get_matching_orders, CancelBy};
-use crate::mm2::lp_swap::{active_swaps_using_coin, active_swaps_using_coins, tx_helper_topic, watcher_topic};
+use crate::mm2::lp_swap::{active_swaps_using_coins, tx_helper_topic, watcher_topic};
 use crate::mm2::MmVersionResult;
 
 const INTERNAL_SERVER_ERROR_CODE: u16 = 500;
 const RESPONSE_OK_STATUS_CODE: u16 = 200;
+
+async fn cancel_and_remove_coin(
+    ctx: &MmArc,
+    coin_ctx: &CoinsContext,
+    ticker: &str,
+) -> Result<(Vec<Uuid>, Vec<Uuid>), String> {
+    let coin = match lp_coinfind(ctx, ticker).await {
+        Ok(Some(t)) => t,
+        Ok(None) => return ERR!("No such coin: {}", ticker),
+        Err(err) => return ERR!("!lp_coinfind({}): ", err),
+    };
+    let res = try_s!(
+        cancel_orders_by(ctx, CancelBy::Coin {
+            ticker: ticker.to_string()
+        })
+        .await
+    );
+    try_s!(coin_ctx.remove_coin(coin).await);
+
+    Ok(res)
+}
 
 /// Attempts to disable the coin
 pub async fn disable_coin(ctx: MmArc, req: Json) -> Result<Response<Vec<u8>>, String> {
@@ -48,7 +71,7 @@ pub async fn disable_coin(ctx: MmArc, req: Json) -> Result<Response<Vec<u8>>, St
         Ok(None) => return ERR!("No such coin: {}", ticker),
         Err(err) => return ERR!("!lp_coinfind({}): ", err),
     };
-    let coins_ctx = CoinsContext::from_ctx(&ctx).map_err(|err| ERRL!("{}", err))?;
+    let coins_ctx = try_s!(CoinsContext::from_ctx(&ctx));
 
     // If a platform coin is to be disabled, we get all the enabled tokens for this platform coin first.
     let mut coins_to_disable = coins_ctx.get_tokens_to_disable(&ticker).await;
@@ -78,31 +101,23 @@ pub async fn disable_coin(ctx: MmArc, req: Json) -> Result<Response<Vec<u8>>, St
     let mut disabled_tokens = vec![];
     for ticker in &coins_to_disable {
         log!("disabling {ticker} coin");
-        let coin = match lp_coinfind(&ctx, ticker).await {
-            Ok(Some(t)) => t,
-            Ok(None) => return ERR!("No such coin: {}", ticker),
-            Err(err) => return ERR!("!lp_coinfind({}): ", err),
-        };
-        let (cancelled, _) = try_s!(
-            cancel_orders_by(&ctx, CancelBy::Coin {
-                ticker: ticker.to_string()
-            })
-            .await
-        );
-
-        if let Err(err) = coins_ctx.remove_coin(coin).await {
-            let err = json!({
-                "error": err,
-                "cancelled_orders": cancelled_orders,
-                "disabled_tokens": disabled_tokens,
-            });
-            return Response::builder()
-                .status(INTERNAL_SERVER_ERROR_CODE)
-                .body(json::to_vec(&err).unwrap())
-                .map_err(|e| ERRL!("{}", e));
-        };
-        cancelled_orders.extend(cancelled);
-        disabled_tokens.push(ticker);
+        match cancel_and_remove_coin(&ctx, &coins_ctx, ticker).await {
+            Ok((cancelled, _matching)) => {
+                cancelled_orders.extend(cancelled);
+                disabled_tokens.push(ticker);
+            },
+            Err(err) => {
+                let err = json!({
+                        "error": err,
+                        "cancelled_orders": cancelled_orders,
+                        "disabled_tokens": disabled_tokens,
+                });
+                return Response::builder()
+                    .status(INTERNAL_SERVER_ERROR_CODE)
+                    .body(json::to_vec(&err).unwrap())
+                    .map_err(|e| ERRL!("{}", e));
+            },
+        }
     }
 
     let res = json!({
