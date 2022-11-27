@@ -1013,7 +1013,14 @@ impl MmCoin for LightningCoin {
         Box::new(fut.boxed().compat())
     }
 
-    fn get_tx_hex_by_hash(&self, _tx_hash: Vec<u8>) -> RawTransactionFut { unimplemented!() }
+    fn get_tx_hex_by_hash(&self, _tx_hash: Vec<u8>) -> RawTransactionFut {
+        let fut = async move {
+            MmError::err(RawTransactionError::InternalError(
+                "get_tx_hex_by_hash method is not supported for lightning.".into(),
+            ))
+        };
+        Box::new(fut.boxed().compat())
+    }
 
     fn withdraw(&self, _req: WithdrawRequest) -> WithdrawFut {
         let fut = async move {

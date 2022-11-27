@@ -52,6 +52,7 @@ use mm2_core::mm_ctx::MmArc;
 use mm2_err_handle::prelude::*;
 use mm2_number::MmNumber;
 use parking_lot::Mutex as PaMutex;
+use primitives::hash::H256;
 use prost::{DecodeError, Message};
 use rpc::v1::types::Bytes as BytesJson;
 use serde_json::{self as json, Value as Json};
@@ -1338,7 +1339,17 @@ impl MmCoin for TendermintCoin {
         Box::new(fut.boxed().compat())
     }
 
-    fn get_tx_hex_by_hash(&self, tx_hash: Vec<u8>) -> RawTransactionFut { unimplemented!() }
+    fn get_tx_hex_by_hash(&self, tx_hash: Vec<u8>) -> RawTransactionFut {
+        let coin = self.clone();
+        let hash = hex::encode_upper(H256::from(tx_hash.as_slice()));
+        let fut = async move {
+            let tx_from_rpc = coin.request_tx(hash).await?;
+            Ok(RawTransactionRes {
+                tx_hex: tx_from_rpc.encode_to_vec().into(),
+            })
+        };
+        Box::new(fut.boxed().compat())
+    }
 
     fn decimals(&self) -> u8 { self.decimals }
 
