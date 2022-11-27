@@ -30,7 +30,26 @@ struct WatcherContext {
 impl WatcherContext {
     fn taker_locktime(&self) -> u64 { self.data.swap_started_at + self.data.lock_duration }
 
-    fn wait_for_taker_refund_deadline(&self) -> u64 { self.data.swap_started_at + (3 * self.data.lock_duration / 2) }
+    fn wait_for_maker_payment_spend_deadline(&self) -> u64 {
+        match std::env::var("SKIP_WAIT_FOR_MAKER_PAYMENT_SPEND") {
+            Ok(_) => 0,
+            Err(_) => self.taker_locktime(),
+        }
+    }
+
+    fn refund_start_time(&self) -> u64 {
+        match std::env::var("REFUND_TEST") {
+            Ok(_) => 0,
+            Err(_) => self.data.swap_started_at + (3 * self.data.lock_duration / 2),
+        }
+    }
+
+    fn search_interval(&self) -> f64 {
+        match std::env::var("USE_TEST_SEARCH_INTERVAL") {
+            Ok(_) => TAKER_PAYMENT_SPEND_SEARCH_INTERVAL,
+            Err(_) => 300.,
+        }
+    }
 }
 
 #[derive(Clone, Debug, Deserialize, Serialize)]
@@ -240,15 +259,8 @@ impl State for WaitForTakerPaymentSpend {
     type Result = ();
 
     async fn on_changed(self: Box<Self>, watcher_ctx: &mut WatcherContext) -> StateResult<Self::Ctx, Self::Result> {
-        const TAKER_PAYMENT_SPEND_SEARCH_INTERVAL_SLOW: f64 = 300.;
-        let payment_search_interval = match std::env::var("USE_TEST_SEARCH_INTERVAL") {
-            Ok(_) => TAKER_PAYMENT_SPEND_SEARCH_INTERVAL,
-            Err(_) => TAKER_PAYMENT_SPEND_SEARCH_INTERVAL_SLOW,
-        };
-        let wait_until = match std::env::var("SKIP_WAIT_FOR_TAKER_PAYMENT") {
-            Ok(_) => 0,
-            Err(_) => watcher_ctx.data.swap_started_at + (4 * watcher_ctx.data.lock_duration / 3),
-        };
+        let payment_search_interval = watcher_ctx.search_interval();
+        let wait_until = watcher_ctx.refund_start_time();
         let search_input = WatcherSearchForSwapTxSpendInput {
             time_lock: watcher_ctx.taker_locktime() as u32,
             taker_pub: &watcher_ctx.verified_pub,
@@ -269,11 +281,7 @@ impl State for WaitForTakerPaymentSpend {
             Ok(FoundSwapTxSpend::Spent(tx)) => {
                 let now = now_ms() / 1000;
                 if now < watcher_ctx.taker_locktime() {
-                    let wait_until = match std::env::var("SKIP_WAIT_FOR_MAKER_PAYMENT") {
-                        Ok(_) => 0,
-                        Err(_) => watcher_ctx.taker_locktime(),
-                    };
-
+                    let wait_until = watcher_ctx.wait_for_maker_payment_spend_deadline();
                     let maker_payment_hex_fut = watcher_ctx
                         .maker_coin
                         .get_tx_hex_by_hash(watcher_ctx.data.maker_payment_hash.clone());
@@ -381,9 +389,7 @@ impl State for RefundTakerPayment {
     type Result = ();
 
     async fn on_changed(self: Box<Self>, watcher_ctx: &mut WatcherContext) -> StateResult<Self::Ctx, Self::Result> {
-        if std::env::var("SKIP_WAIT_FOR_REFUND").is_err() {
-            let sleep_duration = watcher_ctx.wait_for_taker_refund_deadline() - (now_ms() / 1000) + 1;
-            Timer::sleep(sleep_duration as f64).await;
+        if std::env::var("REFUND_TEST").is_err() {
             loop {
                 match watcher_ctx
                     .taker_coin

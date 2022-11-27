@@ -865,7 +865,10 @@ fn test_watcher_spends_maker_payment_spend() {
         watcher_conf,
         "pass".to_string(),
         None,
-        &[("SKIP_WAIT_FOR_MAKER_PAYMENT", ""), ("USE_TEST_SEARCH_INTERVAL", "")],
+        &[
+            ("SKIP_WAIT_FOR_MAKER_PAYMENT_SPEND", ""),
+            ("USE_TEST_SEARCH_INTERVAL", ""),
+        ],
     ))
     .unwrap();
     let (_watcher_dump_log, _watcher_dump_dashboard) = mm_dump(&mm_watcher.log_path);
@@ -1068,11 +1071,7 @@ fn test_watcher_refunds_taker_payment() {
         watcher_conf,
         "pass".to_string(),
         None,
-        &[
-            ("SKIP_WAIT_FOR_TAKER_PAYMENT", ""),
-            ("USE_TEST_SEARCH_INTERVAL", ""),
-            ("SKIP_WAIT_FOR_REFUND", ""),
-        ],
+        &[("REFUND_TEST", ""), ("USE_TEST_SEARCH_INTERVAL", "")],
     ))
     .unwrap();
     let (_watcher_dump_log, _watcher_dump_dashboard) = mm_dump(&mm_watcher.log_path);
@@ -1111,6 +1110,7 @@ fn test_watcher_refunds_taker_payment() {
     block_on(mm_alice.wait_for_log(160., |log| log.contains("Watcher message sent..."))).unwrap();
     block_on(mm_alice.stop()).unwrap();
     block_on(mm_watcher.wait_for_log(160., |log| log.contains("Sent taker refund tx"))).unwrap();
+    thread::sleep(Duration::from_secs(5));
 
     let mm_alice = MarketMakerIt::start(alice_conf, "pass".to_string(), None).unwrap();
     let (_alice_dump_log, _alice_dump_dashboard) = mm_dump(&mm_alice.log_path);
