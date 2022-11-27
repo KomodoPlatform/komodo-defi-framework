@@ -51,7 +51,7 @@ use std::ptr::null;
 use std::str;
 
 #[path = "lp_native_dex.rs"] mod lp_native_dex;
-use self::lp_native_dex::lp_init;
+pub use self::lp_native_dex::lp_init;
 use coins::update_coins_config;
 use mm2_err_handle::prelude::*;
 
@@ -68,10 +68,6 @@ pub mod database;
 #[path = "lp_swap.rs"] pub mod lp_swap;
 #[path = "rpc.rs"] pub mod rpc;
 
-#[cfg(all(target_arch = "wasm32", test))] mod wasm_tests;
-
-pub const MM_DATETIME: &str = env!("MM_DATETIME");
-pub const MM_VERSION: &str = env!("MM_VERSION");
 pub const PASSWORD_MAXIMUM_CONSECUTIVE_CHARACTERS: usize = 3;
 
 #[cfg(feature = "custom-swap-locktime")]
@@ -79,17 +75,12 @@ const CUSTOM_PAYMENT_LOCKTIME_DEFAULT: u64 = 900;
 
 #[derive(Serialize)]
 pub struct MmVersionResult {
-    result: &'static str,
-    datetime: &'static str,
+    result: String,
+    datetime: String,
 }
 
 impl MmVersionResult {
-    pub const fn new() -> MmVersionResult {
-        MmVersionResult {
-            result: MM_VERSION,
-            datetime: MM_DATETIME,
-        }
-    }
+    pub const fn new(result: String, datetime: String) -> MmVersionResult { MmVersionResult { result, datetime } }
 
     pub fn to_json(&self) -> Json { json::to_value(self).expect("expected valid JSON object") }
 }
@@ -236,7 +227,12 @@ fn initialize_payment_locktime(conf: &Json) {
 }
 
 /// * `ctx_cb` - callback used to share the `MmCtx` ID with the call site.
-pub async fn lp_main(params: LpMainParams, ctx_cb: &dyn Fn(u32)) -> Result<(), String> {
+pub async fn lp_main(
+    params: LpMainParams,
+    ctx_cb: &dyn Fn(u32),
+    version: String,
+    datetime: String,
+) -> Result<(), String> {
     let log_filter = params.filter.unwrap_or_default();
     // Logger can be initialized once.
     // If `mm2` is linked as a library, and `mm2` is restarted, `init_logger` returns an error.
@@ -268,10 +264,11 @@ pub async fn lp_main(params: LpMainParams, ctx_cb: &dyn Fn(u32)) -> Result<(), S
     let ctx = MmCtxBuilder::new()
         .with_conf(conf)
         .with_log_level(log_filter)
-        .with_version(MM_VERSION.into())
+        .with_version(version.clone())
+        .with_datetime(datetime.clone())
         .into_mm_arc();
     ctx_cb(try_s!(ctx.ffi_handle()));
-    try_s!(lp_init(ctx).await);
+    try_s!(lp_init(ctx, version, datetime).await);
     Ok(())
 }
 
@@ -338,11 +335,11 @@ https://developers.atomicdex.io
 
 #[cfg(not(target_arch = "wasm32"))]
 #[allow(dead_code)] // Not used by mm2_lib.
-pub fn mm2_main() {
+pub fn mm2_main(version: String, datetime: String) {
     use libc::c_char;
 
     init_crash_reports();
-    log!("AtomicDEX MarketMaker {} DT {}", MM_VERSION, MM_DATETIME);
+    log!("AtomicDEX MarketMaker {} DT {}", version, datetime);
 
     // Temporarily simulate `argv[]` for the C version of the main method.
     let args: Vec<String> = env::args()
@@ -388,7 +385,7 @@ pub fn mm2_main() {
         return;
     }
 
-    if let Err(err) = run_lp_main(first_arg, &|_| ()) {
+    if let Err(err) = run_lp_main(first_arg, &|_| (), version, datetime) {
         log!("{}", err);
         exit(1);
     }
@@ -446,13 +443,18 @@ pub fn get_mm2config(first_arg: Option<&str>) -> Result<Json, String> {
 /// * `ctx_cb` - Invoked with the MM context handle,
 ///              allowing the `run_lp_main` caller to communicate with MM.
 #[cfg(not(target_arch = "wasm32"))]
-pub fn run_lp_main(first_arg: Option<&str>, ctx_cb: &dyn Fn(u32)) -> Result<(), String> {
+pub fn run_lp_main(
+    first_arg: Option<&str>,
+    ctx_cb: &dyn Fn(u32),
+    version: String,
+    datetime: String,
+) -> Result<(), String> {
     let conf = get_mm2config(first_arg)?;
 
     let log_filter = LogLevel::from_env();
 
     let params = LpMainParams::with_conf(conf).log_filter(log_filter);
-    try_s!(block_on(lp_main(params, ctx_cb)));
+    try_s!(block_on(lp_main(params, ctx_cb, version, datetime)));
     Ok(())
 }
 

@@ -2,7 +2,7 @@ use crate::integration_tests_common::{enable_coins_eth_electrum, enable_coins_ri
                                       enable_electrum_json, enable_z_coin_light};
 use common::{block_on, log};
 use http::StatusCode;
-use mm2::mm2::lp_ordermatch::MIN_ORDER_KEEP_ALIVE_INTERVAL;
+use mm2_main::mm2::lp_ordermatch::MIN_ORDER_KEEP_ALIVE_INTERVAL;
 use mm2_number::{BigDecimal, BigRational, MmNumber};
 use mm2_test_helpers::electrums::rick_electrums;
 use mm2_test_helpers::for_tests::{get_passphrase, orderbook_v2, rick_conf, zombie_conf, MarketMakerIt, Mm2TestConf,

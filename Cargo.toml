@@ -13,6 +13,7 @@ members = [
     "mm2src/gossipsub",
     "mm2src/mm2_gui_storage",
     "mm2src/hw_common",
+    "mm2src/mm2_bin_lib",
     "mm2src/mm2_bitcoin/crypto",
     "mm2src/mm2_bitcoin/chain",
     "mm2src/mm2_bitcoin/keys",
@@ -54,3 +55,9 @@ debug-assertions = false
 [profile.release.overrides."*"]
 # Turns debugging symbols off for the out-of-workspace dependencies.
 debug = false
+
+[profile.ci]
+inherits = "dev"
+# full debug info is not required
+debug = 1
+debug-assertions = false

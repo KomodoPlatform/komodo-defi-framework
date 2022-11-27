@@ -1,8 +1,8 @@
 use crate::generate_utxo_coin_with_random_privkey;
 use crate::integration_tests_common::enable_native;
 use common::block_on;
-use mm2::mm2::lp_ordermatch::OrderConfirmationsSettings;
-use mm2::mm2::lp_swap::get_payment_locktime;
+use mm2_main::mm2::lp_ordermatch::OrderConfirmationsSettings;
+use mm2_main::mm2::lp_swap::get_payment_locktime;
 use mm2_test_helpers::for_tests::{mm_dump, MarketMakerIt};
 use serde_json::Value as Json;
 use std::thread;

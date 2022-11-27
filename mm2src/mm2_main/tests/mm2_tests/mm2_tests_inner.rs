@@ -3,7 +3,7 @@ use common::executor::Timer;
 use common::{cfg_native, cfg_wasm32, get_utc_timestamp, log};
 use crypto::privkey::key_pair_from_seed;
 use http::{HeaderMap, StatusCode};
-use mm2::mm2::lp_ordermatch::MIN_ORDER_KEEP_ALIVE_INTERVAL;
+use mm2_main::mm2::lp_ordermatch::MIN_ORDER_KEEP_ALIVE_INTERVAL;
 use mm2_metrics::{MetricType, MetricsJson};
 use mm2_number::{BigDecimal, BigRational, Fraction, MmNumber};
 use mm2_test_helpers::electrums::*;

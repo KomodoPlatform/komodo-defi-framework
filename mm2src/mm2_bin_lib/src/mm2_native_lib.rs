@@ -1,13 +1,14 @@
 use super::*;
-use crate::mm2::lp_dispatcher::dispatch_lp_event;
-use crate::mm2::lp_dispatcher::StopCtxEvent;
 use common::crash_reports::init_crash_reports;
 use common::executor::SpawnFuture;
 use common::log::{register_callback, FfiCallback};
-use common::{block_on, now_float};
+use common::{block_on, log, now_float};
+use enum_primitive_derive::Primitive;
 use gstuff::any_to_str;
 use libc::c_char;
 use mm2_core::mm_ctx::MmArc;
+use mm2_main::mm2::lp_dispatcher::dispatch_lp_event;
+use mm2_main::mm2::lp_dispatcher::StopCtxEvent;
 use num_traits::FromPrimitive;
 use serde_json::{self as json};
 use std::ffi::{CStr, CString};
@@ -71,7 +72,9 @@ pub unsafe extern "C" fn mm2_main(conf: *const c_char, log_cb: extern "C" fn(lin
             return;
         }
         let ctx_cb = &|ctx| CTX.store(ctx, Ordering::Relaxed);
-        match catch_unwind(move || mm2::run_lp_main(Some(&conf), ctx_cb)) {
+        match catch_unwind(move || {
+            mm2_main::mm2::run_lp_main(Some(&conf), ctx_cb, MM_VERSION.into(), MM_DATETIME.into())
+        }) {
             Ok(Ok(_)) => log!("run_lp_main finished"),
             Ok(Err(err)) => log!("run_lp_main error: {}", err),
             Err(err) => log!("run_lp_main panic: {:?}", any_to_str(&*err)),
@@ -124,7 +127,7 @@ pub extern "C" fn mm2_test(torch: i32, log_cb: extern "C" fn(line: *const c_char
             },
         };
         let conf = json::to_string(&ctx.conf).unwrap();
-        let hy_res = mm2::rpc::lp_commands_legacy::stop(ctx);
+        let hy_res = mm2_main::mm2::rpc::lp_commands_legacy::stop(ctx);
         let r = match block_on(hy_res) {
             Ok(r) => r,
             Err(err) => {

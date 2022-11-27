@@ -15,7 +15,6 @@ use crate::mm2::lp_network::subscribe_to_topic;
 use crate::mm2::lp_ordermatch::{MatchBy, OrderConfirmationsSettings, TakerAction, TakerOrderBuilder};
 use crate::mm2::lp_price::fetch_swap_coins_price;
 use crate::mm2::lp_swap::{broadcast_p2p_tx_msg, tx_helper_topic, TakerSwapWatcherData};
-use crate::mm2::MM_VERSION;
 use coins::{lp_coinfind, CanRefundHtlc, CheckIfMyPaymentSentArgs, FeeApproxStage, FoundSwapTxSpend, MmCoinEnum,
             PaymentInstructions, PaymentInstructionsErr, SearchForSwapTxSpendInput, SendSpendPaymentArgs,
             SendTakerPaymentArgs, SendTakerRefundsPaymentArgs, SendTakerSpendsMakerPaymentArgs, TradeFee,
@@ -101,7 +100,7 @@ async fn save_my_taker_swap_event(ctx: &MmArc, swap: &TakerSwap, event: TakerSav
             taker_coin: Some(swap.taker_coin.ticker().to_owned()),
             taker_coin_usd_price: None,
             gui: ctx.gui().map(|g| g.to_owned()),
-            mm_version: Some(MM_VERSION.to_owned()),
+            mm_version: Some(ctx.mm_version.to_owned()),
             events: vec![],
             success_events: match ctx.use_watchers() {
                 true => TAKER_USING_WATCHERS_SUCCESS_EVENTS
