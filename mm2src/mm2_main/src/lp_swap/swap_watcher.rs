@@ -5,7 +5,7 @@ use async_trait::async_trait;
 use coins::{CanRefundHtlc, FoundSwapTxSpend, MmCoinEnum, WatcherSearchForSwapTxSpendInput,
             WatcherValidatePaymentInput, WatcherValidateTakerFeeInput, TAKER_PAYMENT_SPEND_SEARCH_INTERVAL};
 use common::executor::{AbortSettings, SpawnAbortable, Timer};
-use common::log::{error, info};
+use common::log::{error, info, debug};
 use common::state_machine::prelude::*;
 use common::{now_ms, DEX_FEE_ADDR_RAW_PUBKEY};
 use futures::compat::Future01CompatExt;
@@ -200,7 +200,7 @@ impl State for ValidateTakerPayment {
                             WatcherError::InvalidTakerPayment(err.to_string()).into(),
                         )));
                     }
-                    log!(
+                    debug!(
                         "Transaction with hash {:?} not found",
                         &watcher_ctx.data.taker_payment_hash
                     );
