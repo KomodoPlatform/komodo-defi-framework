@@ -23,7 +23,7 @@ use chain::constants::SEQUENCE_FINAL;
 use chain::{OutPoint, TransactionOutput};
 use common::executor::Timer;
 use common::jsonrpc_client::JsonRpcErrorType;
-use common::log::{error, warn};
+use common::log::{debug, error, warn};
 use common::{now_ms, one_hundred, ten_f64};
 use crypto::{Bip32DerPathOps, Bip44Chain, RpcDerivationPath, StandardHDPath, StandardHDPathError};
 use futures::compat::Future01CompatExt;
@@ -1761,73 +1761,84 @@ pub fn watcher_validate_taker_fee<T: UtxoCommonOps>(
     let fee_addr = input.fee_addr.to_vec();
 
     let fut = async move {
-        let tx_from_rpc = match coin
-            .as_ref()
-            .rpc_client
-            .get_verbose_transaction(&H256Json::from(taker_fee_hash.as_slice()))
-            .compat()
-            .await
-        {
-            Ok(t) => t,
-            Err(e) => return MmError::err(ValidatePaymentError::from(e.into_inner())),
-        };
+        let mut attempts = 0;
+        loop {
+            let tx_from_rpc = match coin
+                .as_ref()
+                .rpc_client
+                .get_verbose_transaction(&H256Json::from(taker_fee_hash.as_slice()))
+                .compat()
+                .await
+            {
+                Ok(t) => t,
+                Err(e) => {
+                    if attempts > 2 {
+                        return MmError::err(ValidatePaymentError::from(e.into_inner()));
+                    };
+                    attempts += 1;
+                    error!("Error getting tx {:?} from rpc: {:?}", taker_fee_hash, e);
+                    Timer::sleep(10.).await;
+                    continue;
+                },
+            };
 
-        let taker_fee_tx: UtxoTx = deserialize(tx_from_rpc.hex.0.as_slice())
-            .map_to_mm(|e| ValidatePaymentError::TxDeserializationError(e.to_string()))?;
-        let inputs_signed_by_pub = check_all_utxo_inputs_signed_by_pub(&taker_fee_tx, &sender_pubkey)
-            .map_to_mm(ValidatePaymentError::InternalError)?;
-        if !inputs_signed_by_pub {
-            return MmError::err(ValidatePaymentError::WrongPaymentTx(
-                "Taker fee does not belong to the verified public key".to_string(),
-            ));
-        }
+            let taker_fee_tx: UtxoTx = deserialize(tx_from_rpc.hex.0.as_slice())
+                .map_to_mm(|e| ValidatePaymentError::TxDeserializationError(e.to_string()))?;
+            let inputs_signed_by_pub = check_all_utxo_inputs_signed_by_pub(&taker_fee_tx, &sender_pubkey)
+                .map_to_mm(ValidatePaymentError::InternalError)?;
+            if !inputs_signed_by_pub {
+                return MmError::err(ValidatePaymentError::WrongPaymentTx(
+                    "Taker fee does not belong to the verified public key".to_string(),
+                ));
+            }
 
-        let tx_confirmed_before_block = is_tx_confirmed_before_block(&coin, &tx_from_rpc, min_block_number)
-            .await
-            .map_to_mm(ValidatePaymentError::InternalError)?;
-        if tx_confirmed_before_block {
-            return MmError::err(ValidatePaymentError::WrongPaymentTx(format!(
-                "Fee tx {:?} confirmed before min_block {}",
-                taker_fee_tx, min_block_number
-            )));
-        }
-
-        if (now_ms() / 1000) as u32 - taker_fee_tx.lock_time > lock_duration as u32 {
-            return MmError::err(ValidatePaymentError::WrongPaymentTx(format!(
-                "Taker fee {:?} is too old",
-                taker_fee_tx
-            )));
-        }
-
-        let address = address_from_raw_pubkey(
-            &fee_addr,
-            coin.as_ref().conf.pub_addr_prefix,
-            coin.as_ref().conf.pub_t_addr_prefix,
-            coin.as_ref().conf.checksum_type,
-            coin.as_ref().conf.bech32_hrp.clone(),
-            coin.addr_format().clone(),
-        )
-        .map_to_mm(ValidatePaymentError::InternalError)?;
-
-        match taker_fee_tx.outputs.get(output_index) {
-            Some(out) => {
-                let expected_script_pubkey = Builder::build_p2pkh(&address.hash).to_bytes();
-                if out.script_pubkey != expected_script_pubkey {
-                    return MmError::err(ValidatePaymentError::WrongPaymentTx(format!(
-                        "Provided dex fee tx output script_pubkey doesn't match expected {:?} {:?}",
-                        out.script_pubkey, expected_script_pubkey
-                    )));
-                }
-            },
-            None => {
+            let tx_confirmed_before_block = is_tx_confirmed_before_block(&coin, &tx_from_rpc, min_block_number)
+                .await
+                .map_to_mm(ValidatePaymentError::InternalError)?;
+            if tx_confirmed_before_block {
                 return MmError::err(ValidatePaymentError::WrongPaymentTx(format!(
-                    "Provided dex fee tx {:?} does not have output {}",
-                    taker_fee_tx, output_index
-                )))
-            },
-        }
+                    "Fee tx {:?} confirmed before min_block {}",
+                    taker_fee_tx, min_block_number
+                )));
+            }
 
-        Ok(())
+            if (now_ms() / 1000) as u32 - taker_fee_tx.lock_time > lock_duration as u32 {
+                return MmError::err(ValidatePaymentError::WrongPaymentTx(format!(
+                    "Taker fee {:?} is too old",
+                    taker_fee_tx
+                )));
+            }
+
+            let address = address_from_raw_pubkey(
+                &fee_addr,
+                coin.as_ref().conf.pub_addr_prefix,
+                coin.as_ref().conf.pub_t_addr_prefix,
+                coin.as_ref().conf.checksum_type,
+                coin.as_ref().conf.bech32_hrp.clone(),
+                coin.addr_format().clone(),
+            )
+            .map_to_mm(ValidatePaymentError::InternalError)?;
+
+            match taker_fee_tx.outputs.get(output_index) {
+                Some(out) => {
+                    let expected_script_pubkey = Builder::build_p2pkh(&address.hash).to_bytes();
+                    if out.script_pubkey != expected_script_pubkey {
+                        return MmError::err(ValidatePaymentError::WrongPaymentTx(format!(
+                            "Provided dex fee tx output script_pubkey doesn't match expected {:?} {:?}",
+                            out.script_pubkey, expected_script_pubkey
+                        )));
+                    }
+                },
+                None => {
+                    return MmError::err(ValidatePaymentError::WrongPaymentTx(format!(
+                        "Provided dex fee tx {:?} does not have output {}",
+                        taker_fee_tx, output_index
+                    )))
+                },
+            }
+
+            return Ok(());
+        }
     };
     Box::new(fut.boxed().compat())
 }
@@ -2097,7 +2108,7 @@ pub async fn watcher_search_for_swap_tx_spend<T: AsRef<UtxoCoinFields> + SwapOps
             Ok(Some(found_swap_tx_spend)) => {
                 return Ok(found_swap_tx_spend);
             },
-            Ok(None) => log!("Transaction spend for {:?} not found", input.tx),
+            Ok(None) => debug!("Transaction spend for {:?} not found", input.tx),
             Err(e) => error!("Error on watcher_search_for_swap_output_spend: {}", e),
         };
 
