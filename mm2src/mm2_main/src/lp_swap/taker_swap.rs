@@ -18,7 +18,7 @@ use crate::mm2::MM_VERSION;
 use coins::{lp_coinfind, CanRefundHtlc, CheckIfMyPaymentSentArgs, FeeApproxStage, FoundSwapTxSpend, MmCoinEnum,
             PaymentInstructions, PaymentInstructionsErr, SearchForSwapTxSpendInput, SendSpendPaymentArgs,
             SendTakerPaymentArgs, SendTakerRefundsPaymentArgs, SendTakerSpendsMakerPaymentArgs, TradeFee,
-            TradePreimageValue, ValidatePaymentInput, TAKER_PAYMENT_SPEND_SEARCH_INTERVAL};
+            TradePreimageValue, ValidatePaymentInput};
 use common::executor::Timer;
 use common::log::{debug, error, info, warn};
 use common::{bits256, now_ms, DEX_FEE_ADDR_RAW_PUBKEY};
@@ -39,7 +39,7 @@ use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::sync::{Arc, RwLock, RwLockReadGuard, RwLockWriteGuard};
 use uuid::Uuid;
 
-use coins::utxo::sat_from_big_decimal;
+const TAKER_PAYMENT_SPEND_SEARCH_INTERVAL: f64 = 10.;
 
 pub const TAKER_SUCCESS_EVENTS: [&str; 10] = [
     "Started",
@@ -1158,12 +1158,6 @@ impl TakerSwap {
 
         let fee_amount =
             dex_fee_amount_from_taker_coin(&self.taker_coin, &self.r().data.maker_coin, &self.taker_amount);
-        println!("**fee_amount: {:?}", fee_amount);
-
-        let amount_sat = sat_from_big_decimal(&fee_amount.clone().into(), self.taker_coin.decimals()).unwrap();
-
-        println!("**amount_sat: {:?}", amount_sat);
-
         let fee_tx = self
             .taker_coin
             .send_taker_fee(&DEX_FEE_ADDR_RAW_PUBKEY, fee_amount.into(), self.uuid.as_bytes())

@@ -24,7 +24,7 @@ use crate::utxo::utxo_tx_history_v2::{UtxoTxDetailsParams, UtxoTxHistoryOps};
 #[cfg(not(target_arch = "wasm32"))] use crate::WithdrawFee;
 use crate::{BlockHeightAndTime, CoinBalance, IguanaPrivKey, PrivKeyBuildPolicy, SearchForSwapTxSpendInput,
             SendMakerSpendsTakerPaymentArgs, StakingInfosDetails, SwapOps, TradePreimageValue, TxFeeDetails,
-            TxMarshalingErr, ValidateFeeArgs, TAKER_PAYMENT_SPEND_SEARCH_INTERVAL};
+            TxMarshalingErr, ValidateFeeArgs};
 use chain::{BlockHeader, OutPoint};
 use common::executor::Timer;
 use common::{block_on, now_ms, OrdRange, PagingOptionsEnum, DEX_FEE_ADDR_RAW_PUBKEY};
@@ -43,6 +43,8 @@ use std::convert::TryFrom;
 use std::iter;
 use std::mem::discriminant;
 use std::num::NonZeroUsize;
+
+const TAKER_PAYMENT_SPEND_SEARCH_INTERVAL: f64 = 10.;
 
 pub fn electrum_client_for_test(servers: &[&str]) -> ElectrumClient {
     let ctx = MmCtxBuilder::default().into_mm_arc();

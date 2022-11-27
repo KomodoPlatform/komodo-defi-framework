@@ -1,5 +1,5 @@
 use super::*;
-use crate::{IguanaPrivKey, TAKER_PAYMENT_SPEND_SEARCH_INTERVAL};
+use crate::IguanaPrivKey;
 use common::block_on;
 use mm2_core::mm_ctx::{MmArc, MmCtxBuilder};
 use mm2_test_helpers::for_tests::{ETH_MAINNET_NODE, ETH_MAINNET_SWAP_CONTRACT};
@@ -13,6 +13,8 @@ const GAS_PRICE_APPROXIMATION_ON_START_SWAP: u64 = 51_500_000_000;
 const GAS_PRICE_APPROXIMATION_ON_ORDER_ISSUE: u64 = 52_500_000_000;
 // `GAS_PRICE` increased by 7%
 const GAS_PRICE_APPROXIMATION_ON_TRADE_PREIMAGE: u64 = 53_500_000_000;
+
+const TAKER_PAYMENT_SPEND_SEARCH_INTERVAL: f64 = 10.;
 
 fn check_sum(addr: &str, expected: &str) {
     let actual = checksum_address(addr);

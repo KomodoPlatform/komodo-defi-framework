@@ -3,7 +3,7 @@ use super::{broadcast_p2p_tx_msg, lp_coinfind, taker_payment_spend_deadline, tx_
 use crate::mm2::MmError;
 use async_trait::async_trait;
 use coins::{CanRefundHtlc, FoundSwapTxSpend, MmCoinEnum, WatcherSearchForSwapTxSpendInput,
-            WatcherValidatePaymentInput, WatcherValidateTakerFeeInput, TAKER_PAYMENT_SPEND_SEARCH_INTERVAL};
+            WatcherValidatePaymentInput, WatcherValidateTakerFeeInput};
 use common::executor::{AbortSettings, SpawnAbortable, Timer};
 use common::log::{debug, error, info};
 use common::state_machine::prelude::*;
@@ -46,7 +46,7 @@ impl WatcherContext {
 
     fn search_interval(&self) -> f64 {
         match std::env::var("USE_TEST_SEARCH_INTERVAL") {
-            Ok(_) => TAKER_PAYMENT_SPEND_SEARCH_INTERVAL,
+            Ok(_) => 10.,
             Err(_) => 300.,
         }
     }

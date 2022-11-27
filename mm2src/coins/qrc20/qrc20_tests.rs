@@ -1,6 +1,6 @@
 use super::*;
 use crate::utxo::rpc_clients::UnspentInfo;
-use crate::{TxFeeDetails, TAKER_PAYMENT_SPEND_SEARCH_INTERVAL};
+use crate::TxFeeDetails;
 use chain::OutPoint;
 use common::{block_on, DEX_FEE_ADDR_RAW_PUBKEY};
 use crypto::Secp256k1Secret;
@@ -15,6 +15,7 @@ use std::mem::discriminant;
 const EXPECTED_TX_FEE: i64 = 1000;
 const CONTRACT_CALL_GAS_FEE: i64 = (QRC20_GAS_LIMIT_DEFAULT * QRC20_GAS_PRICE_DEFAULT) as i64;
 const SWAP_PAYMENT_GAS_FEE: i64 = (QRC20_PAYMENT_GAS_LIMIT * QRC20_GAS_PRICE_DEFAULT) as i64;
+const TAKER_PAYMENT_SPEND_SEARCH_INTERVAL: f64 = 10.;
 
 pub fn qrc20_coin_for_test(priv_key: [u8; 32], fallback_swap: Option<&str>) -> (MmArc, Qrc20Coin) {
     let conf = json!({

@@ -277,7 +277,6 @@ pub type SendTakerSpendsMakerPaymentArgs<'a> = SendSpendPaymentArgs<'a>;
 pub type SendTakerRefundsPaymentArgs<'a> = SendRefundPaymentArgs<'a>;
 pub type SendMakerRefundsPaymentArgs<'a> = SendRefundPaymentArgs<'a>;
 
-pub const TAKER_PAYMENT_SPEND_SEARCH_INTERVAL: f64 = 10.;
 pub type IguanaPrivKey = Secp256k1Secret;
 
 #[derive(Debug, Deserialize, Display, Serialize, SerializeErrorType)]

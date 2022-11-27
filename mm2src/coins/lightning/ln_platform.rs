@@ -6,7 +6,7 @@ use crate::utxo::rpc_clients::{BestBlock as RpcBestBlock, BlockHashOrHeight, Con
 use crate::utxo::spv::SimplePaymentVerification;
 use crate::utxo::utxo_standard::UtxoStandardCoin;
 use crate::utxo::GetConfirmedTxError;
-use crate::{CoinFutSpawner, MarketCoinOps, MmCoin, TAKER_PAYMENT_SPEND_SEARCH_INTERVAL};
+use crate::{CoinFutSpawner, MarketCoinOps, MmCoin};
 use bitcoin::blockdata::block::BlockHeader;
 use bitcoin::blockdata::script::Script;
 use bitcoin::blockdata::transaction::Transaction;
@@ -27,6 +27,7 @@ use std::sync::atomic::{AtomicU64, Ordering as AtomicOrdering, Ordering};
 
 const CHECK_FOR_NEW_BEST_BLOCK_INTERVAL: f64 = 60.;
 const TRY_LOOP_INTERVAL: f64 = 60.;
+const TAKER_PAYMENT_SPEND_SEARCH_INTERVAL: f64 = 10.;
 
 #[inline]
 pub fn h256_json_from_txid(txid: Txid) -> H256Json { H256Json::from(txid.as_hash().into_inner()).reversed() }

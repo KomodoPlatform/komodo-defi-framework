@@ -1955,7 +1955,6 @@ pub(crate) fn secret_from_priv_key_policy(
 pub mod tendermint_coin_tests {
     use super::*;
     use crate::tendermint::htlc_proto::ClaimHtlcProtoRep;
-    use crate::TAKER_PAYMENT_SPEND_SEARCH_INTERVAL;
     use common::{block_on, DEX_FEE_ADDR_RAW_PUBKEY};
     use cosmrs::proto::cosmos::tx::v1beta1::{GetTxRequest, GetTxResponse, GetTxsEventResponse};
     use crypto::privkey::key_pair_from_seed;
@@ -1976,6 +1975,8 @@ pub mod tendermint_coin_tests {
     const IRIS_TESTNET_HTLC_PAIR2_ADDRESS: &str = "iaa1erfnkjsmalkwtvj44qnfr2drfzdt4n9ldh0kjv";
 
     pub const IRIS_TESTNET_RPC_URL: &str = "http://34.80.202.172:26657";
+
+    const TAKER_PAYMENT_SPEND_SEARCH_INTERVAL: f64 = 10.;
 
     fn get_iris_usdc_ibc_protocol() -> TendermintProtocolInfo {
         TendermintProtocolInfo {
