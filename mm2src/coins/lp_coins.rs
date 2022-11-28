@@ -495,6 +495,7 @@ pub struct WatcherValidateTakerFeeInput {
 #[derive(Clone, Debug)]
 pub struct WatcherValidatePaymentInput {
     pub payment_tx: Vec<u8>,
+    pub taker_payment_refund_preimage: Vec<u8>,
     pub time_lock: u32,
     pub taker_pub: Vec<u8>,
     pub maker_pub: Vec<u8>,

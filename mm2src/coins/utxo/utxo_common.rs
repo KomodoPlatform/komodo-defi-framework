@@ -1949,6 +1949,7 @@ pub fn watcher_validate_taker_payment<T: UtxoCommonOps + SwapOps>(
     input: WatcherValidatePaymentInput,
 ) -> ValidatePaymentFut<()> {
     let taker_payment_tx: UtxoTx = try_f!(deserialize(input.payment_tx.as_slice()));
+    let taker_payment_refund_preimage: UtxoTx = try_f!(deserialize(input.taker_payment_refund_preimage.as_slice()));
     let taker_pub = &try_f!(
         Public::from_slice(&input.taker_pub).map_err(|err| ValidatePaymentError::InvalidParameter(err.to_string()))
     );
@@ -1985,6 +1986,39 @@ pub fn watcher_validate_taker_payment<T: UtxoCommonOps + SwapOps>(
             return MmError::err(ValidatePaymentError::WrongPaymentTx(format!(
                 "Payment tx locking script {:?} doesn't match expected",
                 taker_payment_locking_script
+            )));
+        }
+
+        let script_sig = match taker_payment_refund_preimage.inputs.get(DEFAULT_SWAP_VOUT) {
+            Some(input) => Script::from(input.script_sig.clone()),
+            None => {
+                return MmError::err(ValidatePaymentError::WrongPaymentTx(
+                    "Taker payment refund tx has no inputs".to_string(),
+                ))
+            },
+        };
+
+        let instruction = script_sig
+            .iter()
+            .last()
+            .ok_or_else(|| String::from("Instruction not found"))
+            .map_to_mm(ValidatePaymentError::WrongPaymentTx)?
+            .map_to_mm(|err| ValidatePaymentError::WrongPaymentTx(err.to_string()))?;
+
+        let redeem_script = instruction
+            .data
+            .ok_or_else(|| String::from("No redeem script in the taker payment refund preimage"))
+            .map_to_mm(ValidatePaymentError::WrongPaymentTx)?;
+        let redeem_script_hash = Builder::build_p2sh(&dhash160(redeem_script).into()).to_bytes();
+
+        if taker_payment_locking_script != redeem_script_hash {
+            error!(
+                "Taker payment tx locking script {:?} doesn't match with taker payment refund redeem script {:?}",
+                taker_payment_locking_script, redeem_script_hash
+            );
+            return MmError::err(ValidatePaymentError::WrongPaymentTx(format!(
+                "Taker payment tx locking script {:?} doesn't match with taker payment refund redeem script {:?}",
+                taker_payment_locking_script, redeem_script_hash
             )));
         }
 

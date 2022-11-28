@@ -230,6 +230,7 @@ impl State for ValidateTakerPayment {
 
         let validate_input = WatcherValidatePaymentInput {
             payment_tx: taker_payment_hex.clone(),
+            taker_payment_refund_preimage: watcher_ctx.data.taker_payment_refund_preimage.clone(),
             time_lock: watcher_ctx.taker_locktime() as u32,
             taker_pub: watcher_ctx.verified_pub.clone(),
             maker_pub: watcher_ctx.data.maker_pub.clone(),
