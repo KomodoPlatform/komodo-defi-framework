@@ -12,10 +12,10 @@ use coins::{FoundSwapTxSpend, MarketCoinOps, MmCoin, MmCoinEnum, SearchForSwapTx
             WithdrawRequest};
 use common::{block_on, now_ms, DEX_FEE_ADDR_RAW_PUBKEY};
 use futures01::Future;
+use mm2_main::mm2::lp_swap::dex_fee_amount_from_taker_coin;
 use mm2_number::{BigDecimal, MmNumber};
 use mm2_test_helpers::for_tests::{check_my_swap_status_amounts, mm_dump, MarketMakerIt, Mm2TestConf};
 use mm2_test_helpers::structs::*;
-use mm2_main::mm2::lp_swap::dex_fee_amount_from_taker_coin;
 use serde_json::Value as Json;
 use std::collections::HashMap;
 use std::env;
