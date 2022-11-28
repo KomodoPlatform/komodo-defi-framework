@@ -1260,28 +1260,6 @@ fn test_watcher_validate_taker_fee() {
             error
         ),
     }
-
-    let error = taker_coin
-        .watcher_validate_taker_fee(WatcherValidateTakerFeeInput {
-            taker_fee_hash: taker_fee.tx_hash().into_vec(),
-            sender_pubkey: taker_pubkey.to_vec(),
-            min_block_number: 0,
-            fee_addr: DEX_FEE_ADDR_RAW_PUBKEY.to_vec(),
-            lock_duration: 7800,
-        })
-        .wait()
-        .unwrap_err()
-        .into_inner();
-    log!("error: {:?}", error);
-    match error {
-        ValidatePaymentError::WrongPaymentTx(err) => {
-            assert!(err.contains("Provided dex fee tx output value is less than expected"))
-        },
-        _ => panic!(
-            "Expected `WrongPaymentTx` tx output value is less than expected, found {:?}",
-            error
-        ),
-    }
 }
 
 #[test]
