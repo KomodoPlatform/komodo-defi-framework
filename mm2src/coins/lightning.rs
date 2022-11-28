@@ -634,10 +634,10 @@ impl SwapOps for LightningCoin {
             .payment_instructions
             .clone()
             .ok_or("payment_instructions can't be None"));
-        let max_total_cltv_expiry_delta = taker_payment_args
-            .time_lock_duration
+        let max_total_cltv_expiry_delta = self
+            .estimate_blocks_from_duration(taker_payment_args.time_lock_duration)
             .try_into()
-            .expect("time_lock_duration shouldn't exceed u32::MAX");
+            .expect("max_total_cltv_expiry_delta shouldn't exceed u32::MAX");
         let coin = self.clone();
         let fut = async move {
             // Todo: The path/s used is already logged when PaymentPathSuccessful/PaymentPathFailed events are fired, it might be better to save it to the DB and retrieve it with the payment info.
