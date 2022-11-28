@@ -3,7 +3,7 @@ use crate::hw_error::HwError;
 use crate::hw_error::HwResult;
 use async_trait::async_trait;
 #[cfg(not(target_os = "ios"))]
-use common::custom_futures::FutureTimerExt;
+use common::custom_futures::timeout::FutureTimerExt;
 use derive_more::Display;
 use futures::FutureExt;
 use mm2_err_handle::prelude::*;
@@ -114,7 +114,7 @@ impl HwClient {
     pub(crate) async fn trezor<Processor: TrezorConnectProcessor>(
         processor: &Processor,
     ) -> MmResult<TrezorClient, HwProcessingError<Processor::Error>> {
-        use common::custom_futures::TimeoutError;
+        use common::custom_futures::timeout::TimeoutError;
         use common::executor::Timer;
 
         async fn try_to_connect() -> HwResult<Option<TrezorClient>> {

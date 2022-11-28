@@ -1,4 +1,4 @@
-use common::custom_futures::TimeoutError;
+use common::custom_futures::timeout::TimeoutError;
 use derive_more::Display;
 use futures::channel::oneshot;
 use mm2_err_handle::prelude::*;

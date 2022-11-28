@@ -12,24 +12,24 @@ macro_rules! repeatable {
     // Please note that we shouldn't allow the user to declare the future as `async move`.
     // Because moving local variables may lead to incorrect usage.
     (async { $($t:tt)* }) => {
-        $crate::repeatable::Repeatable::new(|| Box::pin(async { $($t)* }))
+        $crate::custom_futures::repeatable::Repeatable::new(|| Box::pin(async { $($t)* }))
     };
     ($fut:expr) => {
-        $crate::repeatable::Repeatable::new(|| $fut)
+        $crate::custom_futures::repeatable::Repeatable::new(|| $fut)
     };
 }
 
 #[macro_export]
 macro_rules! ready {
     ($res:expr) => {{
-        return $crate::repeatable::Action::Ready($res);
+        return $crate::custom_futures::repeatable::Action::Ready($res);
     }};
 }
 
 #[macro_export]
 macro_rules! retry {
     () => {{
-        return $crate::repeatable::Action::Retry;
+        return $crate::custom_futures::repeatable::Action::Retry;
     }};
 }
 
