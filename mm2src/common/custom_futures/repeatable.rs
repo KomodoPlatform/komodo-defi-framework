@@ -29,69 +29,113 @@ macro_rules! ready {
 #[macro_export]
 macro_rules! retry {
     () => {{
-        return $crate::custom_futures::repeatable::Action::Retry;
+        return $crate::custom_futures::repeatable::Action::Retry(());
+    }};
+    ($err:expr) => {{
+        return $crate::custom_futures::repeatable::Action::Retry($err);
     }};
 }
 
-type RepeatResult<T> = Result<T, AttemptsExceed>;
+type RepeatResult<T, E> = Result<T, AttemptsExceed<E>>;
 
 #[derive(Clone, Debug, PartialEq)]
-pub struct AttemptsExceed {
+pub struct AttemptsExceed<E> {
     pub attempts: usize,
+    /// An error occurred during the last attempt.
+    pub error: E,
 }
 
 pub trait FactoryTrait<F>: Fn() -> F {}
 
 impl<Factory, F> FactoryTrait<F> for Factory where Factory: Fn() -> F {}
 
-pub trait RepeatableTrait<T>: Future<Output = Action<T>> + Unpin {}
+pub trait RepeatableTrait<T, E>: Future<Output = Action<T, E>> + Unpin {}
 
-impl<F, T> RepeatableTrait<T> for F where F: Future<Output = Action<T>> + Unpin {}
+impl<F, T, E> RepeatableTrait<T, E> for F where F: Future<Output = Action<T, E>> + Unpin {}
+
+pub(crate) trait InspectErrorTrait<E>: 'static + Fn(&E) {}
+
+impl<F: 'static + Fn(&E), E> InspectErrorTrait<E> for F {}
 
 #[derive(Debug)]
-pub enum Action<T> {
+pub enum Action<T, E> {
     Ready(T),
-    Retry,
+    Retry(E),
 }
 
-pub struct Repeatable<Factory, F, T> {
+pub trait RetryOnError<T, E> {
+    fn retry_on_err(self) -> Action<T, E>;
+}
+
+impl<T, E> RetryOnError<T, E> for Result<T, E> {
+    fn retry_on_err(self) -> Action<T, E> {
+        match self {
+            Ok(ready) => Action::Ready(ready),
+            Err(e) => Action::Retry(e),
+        }
+    }
+}
+
+pub struct Repeatable<Factory, F, T, E> {
     factory: Factory,
-    _phantom: PhantomData<(F, T)>,
+    inspect_err: Option<Box<dyn InspectErrorTrait<E>>>,
+    _phantom: PhantomData<(F, T, E)>,
 }
 
-impl<Factory, F, T> Repeatable<Factory, F, T> {
+impl<Factory, F, T, E> Repeatable<Factory, F, T, E> {
     pub fn new(factory: Factory) -> Self {
         Repeatable {
             factory,
+            inspect_err: None,
             _phantom: PhantomData::default(),
         }
     }
 
-    pub fn attempts(self, total_attempts: usize) -> RepeatAttempts<Factory, F, T> {
+    /// Specifies an inspect handler that does something with an error on each unsuccessful attempt.
+    pub fn inspect_err<Inspect>(mut self, inspect: Inspect) -> Self
+    where
+        Inspect: 'static + Fn(&E),
+    {
+        self.inspect_err = Some(Box::new(inspect));
+        self
+    }
+
+    pub fn attempts(self, total_attempts: usize) -> RepeatAttempts<Factory, F, T, E> {
         // TODO avoid asserting probably.
         assert!(total_attempts > 0);
 
         RepeatAttempts {
             factory: self.factory,
             total_attempts,
+            inspect_err: self.inspect_err,
             _phantom: PhantomData::default(),
         }
     }
 }
 
 /// The result of [`Repeatable::attempts`] - the next step at the future configuration.
-pub struct RepeatAttempts<Factory, F, T> {
+pub struct RepeatAttempts<Factory, F, T, E> {
     factory: Factory,
     total_attempts: usize,
-    _phantom: PhantomData<(F, T)>,
+    inspect_err: Option<Box<dyn InspectErrorTrait<E>>>,
+    _phantom: PhantomData<(F, T, E)>,
 }
 
-impl<Factory, F, T> RepeatAttempts<Factory, F, T>
+impl<Factory, F, T, E> RepeatAttempts<Factory, F, T, E>
 where
     Factory: FactoryTrait<F>,
-    F: RepeatableTrait<T>,
+    F: RepeatableTrait<T, E>,
 {
-    pub fn repeat_every(self, timeout_s: f64) -> RepeatAttemptsEvery<Factory, F, T> {
+    /// Specifies an inspect handler that does something with an error on each unsuccessful attempt.
+    pub fn inspect_err<Inspect>(mut self, inspect: Inspect) -> Self
+    where
+        Inspect: 'static + Fn(&E),
+    {
+        self.inspect_err = Some(Box::new(inspect));
+        self
+    }
+
+    pub fn repeat_every(self, timeout_s: f64) -> RepeatAttemptsEvery<Factory, F, T, E> {
         let exec = (self.factory)();
         RepeatAttemptsEvery {
             factory: self.factory,
@@ -100,13 +144,14 @@ where
             attempt: 0,
             total_attempts: self.total_attempts,
             repeat_every: timeout_s,
+            inspect_err: self.inspect_err,
             _phantom: PhantomData::default(),
         }
     }
 }
 
 /// The result of [`Repeatable::repeat_every`] - the next step at the future configuration.
-pub struct RepeatAttemptsEvery<Factory, F, T> {
+pub struct RepeatAttemptsEvery<Factory, F, T, E> {
     factory: Factory,
     /// Currently executable future. Aka an active attempt.
     exec_fut: Option<F>,
@@ -115,17 +160,18 @@ pub struct RepeatAttemptsEvery<Factory, F, T> {
     attempt: usize,
     total_attempts: usize,
     repeat_every: f64,
-    _phantom: PhantomData<(F, T)>,
+    inspect_err: Option<Box<dyn InspectErrorTrait<E>>>,
+    _phantom: PhantomData<(F, T, E)>,
 }
 
-impl<Factory, F: Unpin, T> Unpin for RepeatAttemptsEvery<Factory, F, T> {}
+impl<Factory, F: Unpin, T, E> Unpin for RepeatAttemptsEvery<Factory, F, T, E> {}
 
-impl<Factory, F, T> Future for RepeatAttemptsEvery<Factory, F, T>
+impl<Factory, F, T, E> Future for RepeatAttemptsEvery<Factory, F, T, E>
 where
     Factory: FactoryTrait<F>,
-    F: RepeatableTrait<T>,
+    F: RepeatableTrait<T, E>,
 {
-    type Output = RepeatResult<T>;
+    type Output = RepeatResult<T, E>;
 
     fn poll(mut self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Self::Output> {
         loop {
@@ -137,11 +183,19 @@ where
             let mut exec = self.exec_fut.take().unwrap();
             match exec.poll_unpin(cx) {
                 Poll::Ready(Action::Ready(ready)) => return Poll::Ready(Ok(ready)),
-                Poll::Ready(Action::Retry) => {
+                Poll::Ready(Action::Retry(error)) => {
+                    if let Some(ref inspect) = self.inspect_err {
+                        inspect(&error);
+                    }
+
                     self.attempt += 1;
                     if self.attempt >= self.total_attempts {
-                        return Poll::Ready(Err(AttemptsExceed { attempts: self.attempt }));
+                        return Poll::Ready(Err(AttemptsExceed {
+                            attempts: self.attempt,
+                            error,
+                        }));
                     }
+
                     // Create a new future attempt.
                     self.exec_fut = Some((self.factory)());
                     self.timeout_fut = Some(Timer::sleep(self.repeat_every));
@@ -158,10 +212,21 @@ where
     }
 }
 
-impl<Factory, F, T> RepeatAttemptsEvery<Factory, F, T>
+impl<Factory, F, T, E> RepeatAttemptsEvery<Factory, F, T, E> {
+    /// Specifies an inspect handler that does something with an error on each unsuccessful attempt.
+    pub fn inspect_err<Inspect>(mut self, inspect: Inspect) -> Self
+    where
+        Inspect: 'static + Fn(&E),
+    {
+        self.inspect_err = Some(Box::new(inspect));
+        self
+    }
+}
+
+impl<Factory, F, T, E> RepeatAttemptsEvery<Factory, F, T, E>
 where
     Factory: FactoryTrait<F>,
-    F: RepeatableTrait<T>,
+    F: RepeatableTrait<T, E>,
 {
     /// Returns `Poll::Ready(())` if there is no need to wait for the timeout.
     fn poll_timeout(self: &mut Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<()> {
@@ -185,6 +250,8 @@ mod tests {
     use super::*;
     use crate::block_on;
     use futures::lock::Mutex as AsyncMutex;
+    use std::sync::atomic::{AtomicUsize, Ordering};
+    use std::sync::Arc;
 
     #[test]
     fn test_repeat_attempts_every() {
@@ -224,10 +291,60 @@ mod tests {
         .repeat_every(0.1);
 
         let actual = block_on(fut);
-        assert_eq!(actual, Err(AttemptsExceed { attempts: 2 }));
+        assert_eq!(actual, Err(AttemptsExceed { attempts: 2, error: () }));
 
         // If the counter is 2, then there were exactly 2 attempts to finish the future.
         let actual_attempts = block_on(counter.lock());
         assert_eq!(*actual_attempts, 2);
+    }
+
+    #[test]
+    fn test_retry_on_err() {
+        let counter = AsyncMutex::new(0);
+
+        async fn an_operation(counter: &AsyncMutex<i32>) -> Result<i32, &str> {
+            let mut counter = counter.lock().await;
+            *counter += 1;
+            if *counter == 3 {
+                Ok(*counter)
+            } else {
+                Err("Not ready")
+            }
+        }
+
+        let fut = repeatable!(async { an_operation(&counter).await.retry_on_err() })
+            .attempts(3)
+            .repeat_every(0.1);
+
+        let actual = block_on(fut);
+        assert_eq!(actual, Ok(3));
+    }
+
+    #[test]
+    fn test_inspect_err() {
+        let inspect_counter = Arc::new(AtomicUsize::new(0));
+        let inspect_counter_c = inspect_counter.clone();
+        let counter = AsyncMutex::new(0);
+
+        let fut = repeatable!(async {
+            let mut counter = counter.lock().await;
+            *counter += 1;
+            if *counter == 3 {
+                ready!(*counter);
+            } else {
+                retry!();
+            }
+        })
+        .attempts(3)
+        .inspect_err(move |_| {
+            inspect_counter.fetch_add(1, Ordering::Relaxed);
+        })
+        .repeat_every(0.1);
+
+        let actual = block_on(fut);
+        // If the counter is 3, then there were exactly 3 attempts to finish the future.
+        assert_eq!(actual, Ok(3));
+        // There should be 2 errors.
+        assert_eq!(inspect_counter_c.load(Ordering::Relaxed), 2);
     }
 }
