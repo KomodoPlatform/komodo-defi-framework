@@ -297,7 +297,7 @@ pub async fn init_create_new_account(
     req: CreateNewAccountRequest,
 ) -> MmResult<InitRpcTaskResponse, CreateAccountRpcError> {
     let coin = lp_coinfind_or_err(&ctx, &req.coin).await?;
-    let coins_ctx = CoinsContext::from_ctx(&ctx).map_to_mm(CreateAccountRpcError::Internal)?;
+    let coins_ctx = CoinsContext::from_ctx(&ctx).map_err(|err| CreateAccountRpcError::Internal(err.to_string()))?;
     let spawner = coin.spawner();
     let task = InitCreateAccountTask {
         ctx,
@@ -313,7 +313,7 @@ pub async fn init_create_new_account_status(
     ctx: MmArc,
     req: RpcTaskStatusRequest,
 ) -> MmResult<CreateAccountRpcTaskStatus, RpcTaskStatusError> {
-    let coins_ctx = CoinsContext::from_ctx(&ctx).map_to_mm(RpcTaskStatusError::Internal)?;
+    let coins_ctx = CoinsContext::from_ctx(&ctx)?;
     let mut task_manager = coins_ctx
         .create_account_manager
         .lock()
@@ -327,7 +327,7 @@ pub async fn init_create_new_account_user_action(
     ctx: MmArc,
     req: HwRpcTaskUserActionRequest,
 ) -> MmResult<SuccessResponse, RpcTaskUserActionError> {
-    let coins_ctx = CoinsContext::from_ctx(&ctx).map_to_mm(RpcTaskUserActionError::Internal)?;
+    let coins_ctx = CoinsContext::from_ctx(&ctx).map_err(|err| RpcTaskUserActionError::Internal(err.to_string()))?;
     let mut task_manager = coins_ctx
         .create_account_manager
         .lock()
@@ -340,7 +340,7 @@ pub async fn cancel_create_new_account(
     ctx: MmArc,
     req: CancelRpcTaskRequest,
 ) -> MmResult<SuccessResponse, CancelRpcTaskError> {
-    let coins_ctx = CoinsContext::from_ctx(&ctx).map_to_mm(CancelRpcTaskError::Internal)?;
+    let coins_ctx = CoinsContext::from_ctx(&ctx)?;
     let mut task_manager = coins_ctx
         .create_account_manager
         .lock()

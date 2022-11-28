@@ -2129,20 +2129,20 @@ pub struct CoinsContext {
     hd_wallet_db: SharedDb<HDWalletDb>,
 }
 
-#[derive(Debug)]
-pub struct CoinIsAlreadyActivatedErr {
-    pub ticker: String,
-}
-
-#[derive(Debug)]
-pub struct PlatformIsAlreadyActivatedErr {
-    pub ticker: String,
+#[derive(Debug, Display)]
+pub enum CoinsContextError {
+    #[display(fmt = "Coin '{}' is initialized already", ticker)]
+    CoinIsAlreadyActivatedErr { ticker: String },
+    #[display(fmt = "Platform Coin '{}' is initialized already", ticker)]
+    PlatformIsAlreadyActivatedErr { ticker: String },
+    #[display(fmt = "Internal Error {}", _0)]
+    Internal(String),
 }
 
 impl CoinsContext {
     /// Obtains a reference to this crate context, creating it if necessary.
-    pub fn from_ctx(ctx: &MmArc) -> Result<Arc<CoinsContext>, String> {
-        Ok(try_s!(from_ctx(&ctx.coins_ctx, move || {
+    pub fn from_ctx(ctx: &MmArc) -> Result<Arc<CoinsContext>, MmError<CoinsContextError>> {
+        let ctx = from_ctx(&ctx.coins_ctx, move || {
             Ok(CoinsContext {
                 platform_coin_tokens: PaMutex::new(HashMap::new()),
                 coins: AsyncMutex::new(HashMap::new()),
@@ -2156,13 +2156,15 @@ impl CoinsContext {
                 #[cfg(target_arch = "wasm32")]
                 hd_wallet_db: ConstructibleDb::new_shared(ctx),
             })
-        })))
+        })
+        .map_to_mm(CoinsContextError::Internal)?;
+        Ok(ctx)
     }
 
-    pub async fn add_token(&self, coin: MmCoinEnum) -> Result<(), MmError<CoinIsAlreadyActivatedErr>> {
+    pub async fn add_token(&self, coin: MmCoinEnum) -> Result<(), MmError<CoinsContextError>> {
         let mut coins = self.coins.lock().await;
         if coins.contains_key(coin.ticker()) {
-            return MmError::err(CoinIsAlreadyActivatedErr {
+            return MmError::err(CoinsContextError::CoinIsAlreadyActivatedErr {
                 ticker: coin.ticker().into(),
             });
         }
@@ -2179,10 +2181,10 @@ impl CoinsContext {
         Ok(())
     }
 
-    pub async fn add_l2(&self, coin: MmCoinEnum) -> Result<(), MmError<CoinIsAlreadyActivatedErr>> {
+    pub async fn add_l2(&self, coin: MmCoinEnum) -> Result<(), MmError<CoinsContextError>> {
         let mut coins = self.coins.lock().await;
         if coins.contains_key(coin.ticker()) {
-            return MmError::err(CoinIsAlreadyActivatedErr {
+            return MmError::err(CoinsContextError::CoinIsAlreadyActivatedErr {
                 ticker: coin.ticker().into(),
             });
         }
@@ -2207,12 +2209,12 @@ impl CoinsContext {
         &self,
         platform: MmCoinEnum,
         tokens: Vec<MmCoinEnum>,
-    ) -> Result<(), MmError<PlatformIsAlreadyActivatedErr>> {
+    ) -> Result<(), MmError<CoinsContextError>> {
         let mut coins = self.coins.lock().await;
         let mut platform_coin_tokens = self.platform_coin_tokens.lock();
 
         if coins.contains_key(platform.ticker()) {
-            return MmError::err(PlatformIsAlreadyActivatedErr {
+            return MmError::err(CoinsContextError::PlatformIsAlreadyActivatedErr {
                 ticker: platform.ticker().into(),
             });
         }
@@ -2734,7 +2736,7 @@ pub async fn lp_register_coin(
     params: RegisterCoinParams,
 ) -> Result<(), MmError<RegisterCoinError>> {
     let RegisterCoinParams { ticker } = params;
-    let cctx = CoinsContext::from_ctx(ctx).map_to_mm(RegisterCoinError::Internal)?;
+    let cctx = CoinsContext::from_ctx(ctx).map_err(|err| RegisterCoinError::Internal(err.to_string()))?;
 
     // TODO AP: locking the coins list during the entire initialization prevents different coins from being
     // activated concurrently which results in long activation time: https://github.com/KomodoPlatform/atomicDEX/issues/24

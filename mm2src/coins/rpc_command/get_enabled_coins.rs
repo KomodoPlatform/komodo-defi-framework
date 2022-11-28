@@ -3,7 +3,6 @@ use common::HttpStatusCode;
 use http::StatusCode;
 use mm2_core::mm_ctx::MmArc;
 use mm2_err_handle::prelude::MmResult;
-use mm2_err_handle::prelude::*;
 
 #[derive(Serialize, Display, SerializeErrorType)]
 #[serde(tag = "error_type", content = "error_data")]
@@ -37,7 +36,7 @@ pub async fn get_enabled_coins(
     ctx: MmArc,
     _req: GetEnabledCoinsRequest,
 ) -> MmResult<GetEnabledCoinsResponse, GetEnabledCoinsError> {
-    let coins_ctx = CoinsContext::from_ctx(&ctx).map_to_mm(GetEnabledCoinsError::Internal)?;
+    let coins_ctx = CoinsContext::from_ctx(&ctx).map_err(|err| GetEnabledCoinsError::Internal(err.to_string()))?;
     let coins_map = coins_ctx.coins.lock().await;
 
     let coins = coins_map

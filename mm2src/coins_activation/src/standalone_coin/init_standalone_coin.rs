@@ -6,7 +6,8 @@ use crate::standalone_coin::init_standalone_coin_error::{CancelInitStandaloneCoi
 use async_trait::async_trait;
 use coins::my_tx_history_v2::TxHistoryStorage;
 use coins::tx_history_storage::{CreateTxHistoryStorageError, TxHistoryStorageBuilder};
-use coins::{lp_coinfind, lp_register_coin, CoinsContext, MmCoinEnum, RegisterCoinError, RegisterCoinParams};
+use coins::{lp_coinfind, lp_register_coin, CoinsContext, CoinsContextError, MmCoinEnum, RegisterCoinError,
+            RegisterCoinParams};
 use common::{log, SuccessResponse};
 use crypto::trezor::trezor_rpc_task::RpcTaskHandle;
 use crypto::CryptoCtxError;
@@ -42,6 +43,7 @@ pub trait InitStandaloneCoinActivationOps: Into<MmCoinEnum> + Send + Sync + 'sta
         + From<CreateTxHistoryStorageError>
         + From<CryptoCtxError>
         + Into<InitStandaloneCoinError>
+        + From<CoinsContextError>
         + SerMmErrorType
         + NotEqual
         + Clone
@@ -187,7 +189,7 @@ where
 
     /// Try to disable the coin in case if we managed to register it already.
     async fn cancel(self) -> Result<(), MmError<Self::Error>> {
-        let c_ctx = CoinsContext::from_ctx(&self.ctx).map_to_mm(CryptoCtxError::Internal)?;
+        let c_ctx = CoinsContext::from_ctx(&self.ctx)?;
         if let Ok(Some(t)) = lp_coinfind(&self.ctx, &self.request.ticker).await {
             c_ctx.remove_coin(t).await.ok();
         };

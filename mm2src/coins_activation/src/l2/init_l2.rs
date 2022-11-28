@@ -5,9 +5,8 @@ use crate::l2::init_l2_error::{CancelInitL2Error, InitL2StatusError, InitL2UserA
 use crate::l2::InitL2Error;
 use crate::prelude::*;
 use async_trait::async_trait;
-use coins::{lp_coinfind, lp_coinfind_or_err, CoinIsAlreadyActivatedErr, CoinsContext, MmCoinEnum};
+use coins::{lp_coinfind, lp_coinfind_or_err, CoinsContext, CoinsContextError, MmCoinEnum};
 use common::SuccessResponse;
-use crypto::CryptoCtxError;
 use mm2_core::mm_ctx::MmArc;
 use mm2_err_handle::prelude::*;
 use rpc_task::rpc_common::{CancelRpcTaskRequest, InitRpcTaskResponse, RpcTaskStatusRequest, RpcTaskUserActionRequest};
@@ -39,13 +38,7 @@ pub trait InitL2ActivationOps: Into<MmCoinEnum> + Send + Sync + 'static {
     type ValidatedParams: Clone + Send + Sync;
     type CoinConf: Clone + Send + Sync;
     type ActivationResult: serde::Serialize + Clone + Send + Sync;
-    type ActivationError: From<CoinIsAlreadyActivatedErr>
-        + From<CryptoCtxError>
-        + NotEqual
-        + SerMmErrorType
-        + Clone
-        + Send
-        + Sync;
+    type ActivationError: From<CoinsContextError> + NotEqual + SerMmErrorType + Clone + Send + Sync;
     type InProgressStatus: InitL2InitialStatus + Clone + Send + Sync;
     type AwaitingStatus: Clone + Send + Sync;
     type UserAction: NotMmError + Send + Sync;
@@ -193,7 +186,7 @@ where
 
     /// Try to disable the coin in case if we managed to register it already.
     async fn cancel(self) -> Result<(), MmError<Self::Error>> {
-        let ctx = CoinsContext::from_ctx(&self.ctx).map_to_mm(CryptoCtxError::Internal)?;
+        let ctx = CoinsContext::from_ctx(&self.ctx)?;
         if let Ok(Some(t)) = lp_coinfind(&self.ctx, &self.ticker).await {
             ctx.remove_coin(t).await.ok();
         };

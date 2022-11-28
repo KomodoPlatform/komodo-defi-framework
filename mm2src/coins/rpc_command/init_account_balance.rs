@@ -81,7 +81,7 @@ pub async fn init_account_balance(
 ) -> MmResult<InitRpcTaskResponse, HDAccountBalanceRpcError> {
     let coin = lp_coinfind_or_err(&ctx, &req.coin).await?;
     let spawner = coin.spawner();
-    let coins_ctx = CoinsContext::from_ctx(&ctx).map_to_mm(HDAccountBalanceRpcError::Internal)?;
+    let coins_ctx = CoinsContext::from_ctx(&ctx).map_err(|err| HDAccountBalanceRpcError::Internal(err.to_string()))?;
     let task = InitAccountBalanceTask { coin, req };
     let task_id = AccountBalanceTaskManager::spawn_rpc_task(&coins_ctx.account_balance_task_manager, &spawner, task)?;
     Ok(InitRpcTaskResponse { task_id })
@@ -91,7 +91,7 @@ pub async fn init_account_balance_status(
     ctx: MmArc,
     req: RpcTaskStatusRequest,
 ) -> MmResult<AccountBalanceRpcTaskStatus, RpcTaskStatusError> {
-    let coins_ctx = CoinsContext::from_ctx(&ctx).map_to_mm(RpcTaskStatusError::Internal)?;
+    let coins_ctx = CoinsContext::from_ctx(&ctx)?;
     let mut task_manager = coins_ctx
         .account_balance_task_manager
         .lock()
@@ -105,7 +105,8 @@ pub async fn cancel_account_balance(
     ctx: MmArc,
     req: CancelRpcTaskRequest,
 ) -> MmResult<SuccessResponse, CancelRpcTaskError> {
-    let coins_ctx = CoinsContext::from_ctx(&ctx).map_to_mm(CancelRpcTaskError::Internal)?;
+    let coins_ctx = CoinsContext::from_ctx(&ctx)?;
+
     let mut task_manager = coins_ctx
         .account_balance_task_manager
         .lock()

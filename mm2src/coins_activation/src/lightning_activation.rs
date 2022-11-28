@@ -15,8 +15,7 @@ use coins::lightning::ln_utils::{get_open_channels_nodes_addresses, init_channel
 use coins::lightning::{InvoicePayer, LightningCoin};
 use coins::utxo::utxo_standard::UtxoStandardCoin;
 use coins::utxo::UtxoCommonOps;
-use coins::{BalanceError, CoinBalance, CoinIsAlreadyActivatedErr, CoinProtocol, MarketCoinOps, MmCoinEnum,
-            RegisterCoinError};
+use coins::{BalanceError, CoinBalance, CoinProtocol, CoinsContextError, MarketCoinOps, MmCoinEnum, RegisterCoinError};
 use common::executor::SpawnFuture;
 use crypto::hw_rpc_task::{HwRpcTaskAwaitingStatus, HwRpcTaskUserAction};
 use crypto::CryptoCtxError;
@@ -170,8 +169,14 @@ impl From<CryptoCtxError> for LightningInitError {
     fn from(value: CryptoCtxError) -> Self { Self::Internal(value.to_string()) }
 }
 
-impl From<CoinIsAlreadyActivatedErr> for LightningInitError {
-    fn from(value: CoinIsAlreadyActivatedErr) -> Self { Self::CoinIsAlreadyActivated { ticker: value.ticker } }
+impl From<CoinsContextError> for LightningInitError {
+    fn from(value: CoinsContextError) -> Self {
+        match value {
+            CoinsContextError::CoinIsAlreadyActivatedErr { ticker }
+            | CoinsContextError::PlatformIsAlreadyActivatedErr { ticker } => Self::CoinIsAlreadyActivated { ticker },
+            CoinsContextError::Internal(err) => Self::Internal(err),
+        }
+    }
 }
 
 impl From<LightningInitError> for InitL2Error {
