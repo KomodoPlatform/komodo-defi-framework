@@ -1,6 +1,6 @@
 use crate::coin_balance::HDAddressBalance;
 use crate::rpc_command::hd_account_balance_rpc_error::HDAccountBalanceRpcError;
-use crate::{lp_coinfind_or_err, CoinsContext, CoinsContextError, MmCoinEnum};
+use crate::{lp_coinfind_or_err, CoinsContext, MmCoinEnum};
 use async_trait::async_trait;
 use common::{SerdeInfallible, SuccessResponse};
 use crypto::RpcDerivationPath;
@@ -21,14 +21,6 @@ pub type ScanAddressesRpcTaskStatus = RpcTaskStatus<
     ScanAddressesInProgressStatus,
     ScanAddressesAwaitingStatus,
 >;
-
-impl From<CoinsContextError> for CancelRpcTaskError {
-    fn from(value: CoinsContextError) -> Self { CancelRpcTaskError::Internal(value.to_string()) }
-}
-
-impl From<CoinsContextError> for RpcTaskStatusError {
-    fn from(value: CoinsContextError) -> Self { RpcTaskStatusError::Internal(value.to_string()) }
-}
 
 #[derive(Clone, Debug, PartialEq, Serialize)]
 pub struct ScanAddressesResponse {
@@ -101,7 +93,7 @@ pub async fn init_scan_for_new_addresses(
 ) -> MmResult<InitRpcTaskResponse, HDAccountBalanceRpcError> {
     let coin = lp_coinfind_or_err(&ctx, &req.coin).await?;
     let spawner = coin.spawner();
-    let coins_ctx = CoinsContext::from_ctx(&ctx).map_err(|err| HDAccountBalanceRpcError::Internal(err.to_string()))?;
+    let coins_ctx = CoinsContext::from_ctx(&ctx).map_to_mm(HDAccountBalanceRpcError::Internal)?;
     let task = InitScanAddressesTask { req, coin };
     let task_id = ScanAddressesTaskManager::spawn_rpc_task(&coins_ctx.scan_addresses_manager, &spawner, task)?;
     Ok(InitRpcTaskResponse { task_id })
@@ -111,7 +103,7 @@ pub async fn init_scan_for_new_addresses_status(
     ctx: MmArc,
     req: RpcTaskStatusRequest,
 ) -> MmResult<ScanAddressesRpcTaskStatus, RpcTaskStatusError> {
-    let coins_ctx = CoinsContext::from_ctx(&ctx)?;
+    let coins_ctx = CoinsContext::from_ctx(&ctx).map_to_mm(RpcTaskStatusError::Internal)?;
     let mut task_manager = coins_ctx
         .scan_addresses_manager
         .lock()
@@ -125,7 +117,7 @@ pub async fn cancel_scan_for_new_addresses(
     ctx: MmArc,
     req: CancelRpcTaskRequest,
 ) -> MmResult<SuccessResponse, CancelRpcTaskError> {
-    let coins_ctx = CoinsContext::from_ctx(&ctx)?;
+    let coins_ctx = CoinsContext::from_ctx(&ctx).map_to_mm(CancelRpcTaskError::Internal)?;
     let mut task_manager = coins_ctx
         .scan_addresses_manager
         .lock()

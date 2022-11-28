@@ -2,8 +2,7 @@ use crate::prelude::*;
 use async_trait::async_trait;
 use coins::my_tx_history_v2::TxHistoryStorage;
 use coins::tx_history_storage::{CreateTxHistoryStorageError, TxHistoryStorageBuilder};
-use coins::{lp_coinfind, CoinProtocol, CoinsContext, CoinsContextError, MmCoinEnum, PrivKeyBuildPolicy,
-            PrivKeyPolicyNotAllowed};
+use coins::{lp_coinfind, CoinProtocol, CoinsContext, MmCoinEnum, PrivKeyBuildPolicy, PrivKeyPolicyNotAllowed};
 use common::{log, HttpStatusCode, StatusCode};
 use crypto::{CryptoCtx, CryptoCtxError};
 use derive_more::Display;
@@ -213,16 +212,6 @@ pub enum EnablePlatformCoinWithTokensError {
     Internal(String),
 }
 
-impl From<CoinsContextError> for EnablePlatformCoinWithTokensError {
-    fn from(value: CoinsContextError) -> Self {
-        match value {
-            CoinsContextError::CoinIsAlreadyActivatedErr { ticker }
-            | CoinsContextError::PlatformIsAlreadyActivatedErr { ticker } => Self::PlatformIsAlreadyActivated(ticker),
-            CoinsContextError::Internal(err) => Self::Internal(err),
-        }
-    }
-}
-
 impl From<CoinConfWithProtocolError> for EnablePlatformCoinWithTokensError {
     fn from(err: CoinConfWithProtocolError) -> Self {
         match err {
@@ -339,10 +328,11 @@ where
         );
     }
 
-    let coins_ctx = CoinsContext::from_ctx(&ctx)?;
+    let coins_ctx = CoinsContext::from_ctx(&ctx).unwrap();
     coins_ctx
         .add_platform_with_tokens(platform_coin.into(), mm_tokens)
-        .await?;
+        .await
+        .mm_err(|e| EnablePlatformCoinWithTokensError::PlatformIsAlreadyActivated(e.ticker))?;
 
     Ok(activation_result)
 }

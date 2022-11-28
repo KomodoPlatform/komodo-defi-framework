@@ -3,7 +3,7 @@
 use crate::prelude::*;
 use async_trait::async_trait;
 use coins::utxo::rpc_clients::UtxoRpcError;
-use coins::{lp_coinfind, lp_coinfind_or_err, BalanceError, CoinProtocol, CoinsContext, CoinsContextError, MmCoinEnum,
+use coins::{lp_coinfind, lp_coinfind_or_err, BalanceError, CoinProtocol, CoinsContext, MmCoinEnum,
             UnexpectedDerivationMethod};
 use common::{HttpStatusCode, StatusCode};
 use derive_more::Display;
@@ -62,16 +62,6 @@ pub enum EnableTokenError {
     Transport(String),
     InvalidConfig(String),
     Internal(String),
-}
-
-impl From<CoinsContextError> for EnableTokenError {
-    fn from(value: CoinsContextError) -> Self {
-        match value {
-            CoinsContextError::CoinIsAlreadyActivatedErr { ticker }
-            | CoinsContextError::PlatformIsAlreadyActivatedErr { ticker } => Self::TokenIsAlreadyActivated(ticker),
-            CoinsContextError::Internal(err) => Self::Internal(err),
-        }
-    }
 }
 
 impl From<CoinConfWithProtocolError> for EnableTokenError {
@@ -137,7 +127,10 @@ where
         Token::enable_token(req.ticker, platform_coin, req.activation_params, token_protocol).await?;
 
     let coins_ctx = CoinsContext::from_ctx(&ctx).unwrap();
-    coins_ctx.add_token(token.into()).await?;
+    coins_ctx
+        .add_token(token.into())
+        .await
+        .mm_err(|e| EnableTokenError::TokenIsAlreadyActivated(e.ticker))?;
 
     Ok(activation_result)
 }

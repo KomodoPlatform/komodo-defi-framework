@@ -9,7 +9,7 @@ use coins::my_tx_history_v2::TxHistoryStorage;
 use coins::tx_history_storage::CreateTxHistoryStorageError;
 use coins::z_coin::{z_coin_from_conf_and_params, BlockchainScanStopped, SyncStatus, ZCoin, ZCoinBuildError,
                     ZcoinActivationParams, ZcoinProtocolInfo};
-use coins::{BalanceError, CoinProtocol, CoinsContextError, MarketCoinOps, PrivKeyBuildPolicy, RegisterCoinError};
+use coins::{BalanceError, CoinProtocol, MarketCoinOps, PrivKeyBuildPolicy, RegisterCoinError};
 use crypto::hw_rpc_task::{HwRpcTaskAwaitingStatus, HwRpcTaskUserAction};
 use crypto::{CryptoCtx, CryptoCtxError};
 use derive_more::Display;
@@ -105,16 +105,6 @@ impl ZcoinInitError {
 
 impl From<BalanceError> for ZcoinInitError {
     fn from(err: BalanceError) -> Self { ZcoinInitError::CouldNotGetBalance(err.to_string()) }
-}
-
-impl From<CoinsContextError> for ZcoinInitError {
-    fn from(value: CoinsContextError) -> Self {
-        match value {
-            CoinsContextError::CoinIsAlreadyActivatedErr { ticker }
-            | CoinsContextError::PlatformIsAlreadyActivatedErr { ticker } => Self::CoinIsAlreadyActivated { ticker },
-            CoinsContextError::Internal(err) => Self::Internal(err),
-        }
-    }
 }
 
 impl From<RegisterCoinError> for ZcoinInitError {

@@ -3,7 +3,7 @@ use coins::coin_balance::EnableCoinBalanceError;
 use coins::hd_wallet::{NewAccountCreatingError, NewAddressDerivingError};
 use coins::tx_history_storage::CreateTxHistoryStorageError;
 use coins::utxo::utxo_builder::UtxoCoinBuildError;
-use coins::{BalanceError, CoinsContextError, RegisterCoinError};
+use coins::{BalanceError, RegisterCoinError};
 use crypto::{CryptoCtxError, HwError, HwRpcError};
 use derive_more::Display;
 use rpc_task::RpcTaskError;
@@ -26,16 +26,6 @@ pub enum InitUtxoStandardError {
     Transport(String),
     #[display(fmt = "Internal error: {}", _0)]
     Internal(String),
-}
-
-impl From<CoinsContextError> for InitUtxoStandardError {
-    fn from(value: CoinsContextError) -> Self {
-        match value {
-            CoinsContextError::CoinIsAlreadyActivatedErr { ticker }
-            | CoinsContextError::PlatformIsAlreadyActivatedErr { ticker } => Self::CoinIsAlreadyActivated { ticker },
-            CoinsContextError::Internal(err) => Self::Internal(err),
-        }
-    }
 }
 
 impl From<RpcTaskError> for InitUtxoStandardError {

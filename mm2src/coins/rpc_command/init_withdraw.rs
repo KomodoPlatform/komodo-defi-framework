@@ -40,7 +40,7 @@ pub async fn init_withdraw(ctx: MmArc, request: WithdrawRequest) -> WithdrawInit
         coin,
         request,
     };
-    let coins_ctx = CoinsContext::from_ctx(&ctx).map_err(|err| WithdrawError::InternalError(err.to_string()))?;
+    let coins_ctx = CoinsContext::from_ctx(&ctx).map_to_mm(WithdrawError::InternalError)?;
     let task_id = WithdrawTaskManager::spawn_rpc_task(&coins_ctx.withdraw_task_manager, &spawner, task)?;
     Ok(InitWithdrawResponse { task_id })
 }
@@ -49,7 +49,7 @@ pub async fn withdraw_status(
     ctx: MmArc,
     req: WithdrawStatusRequest,
 ) -> Result<WithdrawRpcStatus, MmError<WithdrawStatusError>> {
-    let coins_ctx = CoinsContext::from_ctx(&ctx).map_err(|err| WithdrawStatusError::Internal(err.to_string()))?;
+    let coins_ctx = CoinsContext::from_ctx(&ctx).map_to_mm(WithdrawStatusError::Internal)?;
     let mut task_manager = coins_ctx
         .withdraw_task_manager
         .lock()
@@ -76,7 +76,7 @@ pub async fn withdraw_user_action(
     ctx: MmArc,
     req: WithdrawUserActionRequest,
 ) -> Result<SuccessResponse, MmError<WithdrawUserActionError>> {
-    let coins_ctx = CoinsContext::from_ctx(&ctx).map_err(|err| WithdrawUserActionError::Internal(err.to_string()))?;
+    let coins_ctx = CoinsContext::from_ctx(&ctx).map_to_mm(WithdrawUserActionError::Internal)?;
     let mut task_manager = coins_ctx
         .withdraw_task_manager
         .lock()
@@ -86,7 +86,7 @@ pub async fn withdraw_user_action(
 }
 
 pub async fn cancel_withdraw(ctx: MmArc, req: CancelRpcTaskRequest) -> MmResult<SuccessResponse, CancelRpcTaskError> {
-    let coins_ctx = CoinsContext::from_ctx(&ctx)?;
+    let coins_ctx = CoinsContext::from_ctx(&ctx).map_to_mm(CancelRpcTaskError::Internal)?;
     let mut task_manager = coins_ctx
         .withdraw_task_manager
         .lock()
