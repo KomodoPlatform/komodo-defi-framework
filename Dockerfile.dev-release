@@ -1,5 +1,5 @@
 FROM debian:stable-slim
 WORKDIR /mm2
-COPY target/release/mm2 /usr/local/bin/mm2
+COPY target/ci/mm2 /usr/local/bin/mm2
 EXPOSE 7783
 CMD ["mm2"]

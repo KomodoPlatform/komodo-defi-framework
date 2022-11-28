@@ -48,7 +48,6 @@ use crate::mm2::lp_ordermatch::{broadcast_maker_orders_keep_alive_loop, clean_me
                                 OrdermatchInitError};
 use crate::mm2::lp_swap::{running_swaps_num, swap_kick_starts};
 use crate::mm2::rpc::spawn_rpc;
-use crate::mm2::{MM_DATETIME, MM_VERSION};
 
 cfg_native! {
     use mm2_io::fs::{ensure_dir_is_writable, ensure_file_is_writable};
@@ -402,8 +401,8 @@ pub async fn lp_init_continue(ctx: MmArc) -> MmInitResult<()> {
 
 #[cfg_attr(target_arch = "wasm32", allow(unused_variables))]
 /// * `ctx_cb` - callback used to share the `MmCtx` ID with the call site.
-pub async fn lp_init(ctx: MmArc) -> MmInitResult<()> {
-    info!("Version: {} DT {}", MM_VERSION, MM_DATETIME);
+pub async fn lp_init(ctx: MmArc, version: String, datetime: String) -> MmInitResult<()> {
+    info!("Version: {} DT {}", version, datetime);
 
     if !ctx.conf["passphrase"].is_null() {
         let passphrase: String =

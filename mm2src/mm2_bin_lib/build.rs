@@ -111,8 +111,8 @@ fn mm_version() -> String {
 
 fn main() {
     println!("cargo:rerun-if-env-changed=MANUAL_MM_VERSION");
-    println!("cargo:rerun-if-changed=MM_VERSION");
-    println!("cargo:rerun-if-changed=MM_DATETIME");
+    println!("cargo:rerun-if-changed=../../MM_VERSION");
+    println!("cargo:rerun-if-changed=../../MM_DATETIME");
     if std::env::var("MANUAL_MM_VERSION").is_err() {
         // This allows build script to run even if no source code files change as rerun-if-changed checks for a file that doesn't exist
         println!("cargo:rerun-if-changed=NON_EXISTING_FILE");

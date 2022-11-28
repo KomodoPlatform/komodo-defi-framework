@@ -13,19 +13,13 @@
 //! [blogpost]: https://rustwasm.github.io/2018/10/24/multithreading-rust-and-wasm.html
 
 use super::*;
-use crate::mm2::{LpMainParams, MmVersionResult};
 use common::log::{register_callback, LogLevel, WasmCallback};
-use common::{deserialize_from_js, executor, serialize_to_js, set_panic_hook};
-use gstuff::any_to_str;
-use js_sys::Array;
+use common::{console_err, console_info, deserialize_from_js, executor, serialize_to_js, set_panic_hook};
+use enum_primitive_derive::Primitive;
+use mm2_main::mm2::{LpMainParams, MmVersionResult};
 use mm2_rpc::wasm_rpc::WasmRpcResponse;
-use num_traits::FromPrimitive;
-use serde::Serialize;
-use serde_json::{self as json, Value as Json};
-use std::cell::RefCell;
-use std::sync::Mutex;
-use wasm_bindgen::prelude::*;
-use wasm_bindgen::JsCast;
+use serde::{Deserialize, Serialize};
+use serde_json::Value as Json;
 
 /// The errors can be thrown when using the `mm2_main` function incorrectly.
 #[wasm_bindgen]
@@ -120,7 +114,7 @@ pub fn mm2_main(params: JsValue, log_cb: js_sys::Function) -> Result<(), JsValue
         //     Ok(Err(err)) => console_err!("run_lp_main error: {}", err),
         //     Err(err) => console_err!("run_lp_main panic: {:?}", any_to_str(&*err)),
         // };
-        match mm2::lp_main(params, &ctx_cb).await {
+        match mm2_main::mm2::lp_main(params, &ctx_cb, MM_VERSION.into(), MM_DATETIME.into()).await {
             Ok(()) => console_info!("run_lp_main finished"),
             Err(err) => console_err!("run_lp_main error: {}", err),
         };
@@ -245,4 +239,7 @@ pub async fn mm2_rpc(payload: JsValue) -> Result<JsValue, JsValue> {
 /// }
 /// ```
 #[wasm_bindgen]
-pub fn mm2_version() -> JsValue { serialize_to_js(&MmVersionResult::new()).expect("expected serialization to succeed") }
+pub fn mm2_version() -> JsValue {
+    serialize_to_js(&MmVersionResult::new(MM_VERSION.into(), MM_DATETIME.into()))
+        .expect("expected serialization to succeed")
+}

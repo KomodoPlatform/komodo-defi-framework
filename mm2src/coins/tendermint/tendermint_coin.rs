@@ -2149,9 +2149,7 @@ pub mod tendermint_coin_tests {
         // >> END HTLC CLAIMING
     }
 
-    /// TODO ignore it for a while.
     #[test]
-    #[ignore]
     fn try_query_claim_htlc_txs_and_get_secret() {
         let rpc_urls = vec![IRIS_TESTNET_RPC_URL.to_string()];
 
@@ -2207,9 +2205,7 @@ pub mod tendermint_coin_tests {
         assert_eq!(actual_secret, expected_secret);
     }
 
-    /// TODO ignore it for a while.
     #[test]
-    #[ignore]
     fn wait_for_tx_spend_test() {
         let rpc_urls = vec![IRIS_TESTNET_RPC_URL.to_string()];
 
@@ -2528,9 +2524,7 @@ pub mod tendermint_coin_tests {
         };
     }
 
-    /// TODO ignore it for a while.
     #[test]
-    #[ignore]
     fn test_search_for_swap_tx_spend_spent() {
         let rpc_urls = vec![IRIS_TESTNET_RPC_URL.to_string()];
 

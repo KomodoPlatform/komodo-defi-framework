@@ -28,8 +28,10 @@ jobs:
             echo $VERSION > MM_VERSION
           fi
           cat MM_VERSION
-          cargo rustc --target aarch64-apple-ios --lib --profile ci --package mm2_main --crate-type=staticlib
+          cargo rustc --target aarch64-apple-ios --lib --profile ci --package mm2_bin_lib --crate-type=staticlib
         displayName: 'Build iOS lib'
+        env:
+          MANUAL_MM_VERSION: true
       - bash: |
           rm -rf upload
           mkdir upload
