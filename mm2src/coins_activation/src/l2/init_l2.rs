@@ -7,10 +7,10 @@ use crate::prelude::*;
 use async_trait::async_trait;
 use coins::{lp_coinfind, lp_coinfind_or_err, CoinIsAlreadyActivatedErr, CoinsContext, MmCoinEnum};
 use common::SuccessResponse;
-use crypto::CryptoCtxError;
 use mm2_core::mm_ctx::MmArc;
 use mm2_err_handle::prelude::*;
-use rpc_task::rpc_common::{CancelRpcTaskRequest, InitRpcTaskResponse, RpcTaskStatusRequest, RpcTaskUserActionRequest};
+use rpc_task::rpc_common::{CancelRpcTaskError, CancelRpcTaskRequest, InitRpcTaskResponse, RpcTaskStatusRequest,
+                           RpcTaskUserActionRequest};
 use rpc_task::{RpcTask, RpcTaskHandle, RpcTaskManager, RpcTaskManagerShared, RpcTaskStatus, RpcTaskTypes};
 use serde_derive::Deserialize;
 use serde_json::Value as Json;
@@ -40,7 +40,7 @@ pub trait InitL2ActivationOps: Into<MmCoinEnum> + Send + Sync + 'static {
     type CoinConf: Clone + Send + Sync;
     type ActivationResult: serde::Serialize + Clone + Send + Sync;
     type ActivationError: From<CoinIsAlreadyActivatedErr>
-        + From<CryptoCtxError>
+        + From<CancelRpcTaskError>
         + NotEqual
         + SerMmErrorType
         + Clone
@@ -193,7 +193,7 @@ where
 
     /// Try to disable the coin in case if we managed to register it already.
     async fn cancel(self) -> Result<(), MmError<Self::Error>> {
-        let ctx = CoinsContext::from_ctx(&self.ctx).map_to_mm(CryptoCtxError::Internal)?;
+        let ctx = CoinsContext::from_ctx(&self.ctx).map_to_mm(CancelRpcTaskError::Internal)?;
         if let Ok(Some(t)) = lp_coinfind(&self.ctx, &self.ticker).await {
             ctx.remove_coin(t).await.ok();
         };
@@ -211,10 +211,9 @@ where
         )
         .await?;
 
-        if let Ok(c_ctx) = CoinsContext::from_ctx(&self.ctx) {
-            let coin = coin.into();
-            c_ctx.add_l2(coin.clone()).await?;
-        };
+        let c_ctx = CoinsContext::from_ctx(&self.ctx).map_to_mm(CancelRpcTaskError::Internal)?;
+        let coin = coin.into();
+        c_ctx.add_l2(coin.clone()).await?;
 
         Ok(result)
     }

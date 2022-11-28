@@ -2188,6 +2188,7 @@ impl CoinsContext {
         }
         let ticker = coin.ticker().to_string();
         let platform_ticker = coin.platform_ticker().to_string();
+
         let mut platform_coin_tokens = self.platform_coin_tokens.lock();
         if let Some(tokens) = platform_coin_tokens.get_mut(&platform_ticker) {
             if !tokens.contains(&ticker) {

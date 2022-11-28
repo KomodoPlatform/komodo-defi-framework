@@ -19,7 +19,6 @@ use coins::{BalanceError, CoinBalance, CoinIsAlreadyActivatedErr, CoinProtocol, 
             RegisterCoinError};
 use common::executor::SpawnFuture;
 use crypto::hw_rpc_task::{HwRpcTaskAwaitingStatus, HwRpcTaskUserAction};
-use crypto::CryptoCtxError;
 use derive_more::Display;
 use futures::compat::Future01CompatExt;
 use lightning::chain::keysinterface::{KeysInterface, Recipient};
@@ -31,6 +30,7 @@ use lightning_invoice::utils::DefaultRouter;
 use mm2_core::mm_ctx::MmArc;
 use mm2_err_handle::prelude::*;
 use parking_lot::Mutex as PaMutex;
+use rpc_task::rpc_common::CancelRpcTaskError;
 use ser_error_derive::SerializeErrorType;
 use serde_derive::{Deserialize, Serialize};
 use serde_json::{self as json, Value as Json};
@@ -162,16 +162,16 @@ pub enum LightningInitError {
     Internal(String),
 }
 
+impl From<CancelRpcTaskError> for LightningInitError {
+    fn from(err: CancelRpcTaskError) -> Self { Self::Internal(err.to_string()) }
+}
+
 impl From<MyAddressError> for LightningInitError {
     fn from(err: MyAddressError) -> Self { Self::MyAddressError(err.to_string()) }
 }
 
-impl From<CryptoCtxError> for LightningInitError {
-    fn from(value: CryptoCtxError) -> Self { Self::Internal(value.to_string()) }
-}
-
 impl From<CoinIsAlreadyActivatedErr> for LightningInitError {
-    fn from(value: CoinIsAlreadyActivatedErr) -> Self { Self::CoinIsAlreadyActivated { ticker: value.ticker } }
+    fn from(err: CoinIsAlreadyActivatedErr) -> Self { Self::CoinIsAlreadyActivated { ticker: err.ticker } }
 }
 
 impl From<LightningInitError> for InitL2Error {
