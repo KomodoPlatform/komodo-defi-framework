@@ -516,23 +516,24 @@ impl LightningCoin {
         if invoice.payment_hash().as_inner() != secret_hash
             && ripemd160(invoice.payment_hash().as_inner()).as_slice() != secret_hash
         {
-            return Err(
-                ValidateInstructionsErr::ValidateLightningInvoiceErr("Invalid invoice payment hash!".into()).into(),
-            );
+            return MmError::err(ValidateInstructionsErr::ValidateLightningInvoiceErr(
+                "Invalid invoice payment hash!".into(),
+            ));
         }
 
         let invoice_amount = invoice
             .amount_milli_satoshis()
-            .ok_or_else(|| ValidateInstructionsErr::ValidateLightningInvoiceErr("No invoice amount!".into()))?;
+            .or_mm_err(|| ValidateInstructionsErr::ValidateLightningInvoiceErr("No invoice amount!".into()))?;
         if big_decimal_from_sat(invoice_amount as i64, self.decimals()) != amount {
-            return Err(ValidateInstructionsErr::ValidateLightningInvoiceErr("Invalid invoice amount!".into()).into());
+            return MmError::err(ValidateInstructionsErr::ValidateLightningInvoiceErr(
+                "Invalid invoice amount!".into(),
+            ));
         }
 
         if invoice.min_final_cltv_expiry() != min_final_cltv_expiry {
-            return Err(ValidateInstructionsErr::ValidateLightningInvoiceErr(
+            return MmError::err(ValidateInstructionsErr::ValidateLightningInvoiceErr(
                 "Invalid invoice min_final_cltv_expiry!".into(),
-            )
-            .into());
+            ));
         }
 
         Ok(PaymentInstructions::Lightning(invoice))
@@ -910,7 +911,8 @@ impl MarketCoinOps for LightningCoin {
         Ok(recovered_pubkey.to_string() == pubkey)
     }
 
-    // Todo: max_inbound_in_flight_htlc_percent should be taken in consideration too for max allowed amount, this can be considered the spendable balance, but it's better to refactor the CoinBalance struct to add more info. We can make it 100% in the config for now until this is implemented.
+    // Todo: max_inbound_in_flight_htlc_percent should be taken in consideration too for max allowed amount, this can be considered the spendable balance,
+    // Todo: but it's better to refactor the CoinBalance struct to add more info. We can make it 100% in the config for now until this is implemented.
     fn my_balance(&self) -> BalanceFut<CoinBalance> {
         let coin = self.clone();
         let decimals = self.decimals();
@@ -983,7 +985,9 @@ impl MarketCoinOps for LightningCoin {
                                         payment.status
                                     )
                                 },
-                                // Todo: PaymentFailed event is fired after 5 retries, maybe timeout should be used instead. Still this doesn't prevent failure if there is no routes, JIT channels/routing can be used to solve this issue https://github.com/lightningdevkit/rust-lightning/pull/1835 but it requires some trust.
+                                // Todo: PaymentFailed event is fired after 5 retries, maybe timeout should be used instead.
+                                // Todo: Still this doesn't prevent failure if there are no routes
+                                // Todo: JIT channels/routing can be used to solve this issue https://github.com/lightningdevkit/rust-lightning/pull/1835 but it requires some trust.
                                 HTLCStatus::Failed => return ERR!("Lightning swap payment {} failed", payment_hex),
                             },
                             PaymentType::InboundPayment => match payment.status {
@@ -1035,24 +1039,21 @@ impl MarketCoinOps for LightningCoin {
                 }
 
                 match coin.db.get_payment_from_db(payment_hash).await {
-                    Ok(Some(payment)) => {
-                        match payment.status {
-                            HTLCStatus::Pending => (),
-                            HTLCStatus::Received => {
-                                return Err(TransactionErr::Plain(format!(
-                                    "Payment {} has an invalid status of {} in the db",
-                                    payment_hex, payment.status
-                                )))
-                            },
-                            HTLCStatus::Succeeded => return Ok(TransactionEnum::LightningPayment(payment_hash)),
-                            // Todo: PaymentFailed event is fired after 5 retries, maybe timeout should be used instead. Still this doesn't prevent failure if there is no routes, JIT channels/routing can be used to solve this issue https://github.com/lightningdevkit/rust-lightning/pull/1835 but it requires some trust.
-                            HTLCStatus::Failed => {
-                                return Err(TransactionErr::Plain(format!(
-                                    "Lightning swap payment {} failed",
-                                    payment_hex
-                                )))
-                            },
-                        }
+                    Ok(Some(payment)) => match payment.status {
+                        HTLCStatus::Pending => (),
+                        HTLCStatus::Received => {
+                            return Err(TransactionErr::Plain(format!(
+                                "Payment {} has an invalid status of {} in the db",
+                                payment_hex, payment.status
+                            )))
+                        },
+                        HTLCStatus::Succeeded => return Ok(TransactionEnum::LightningPayment(payment_hash)),
+                        HTLCStatus::Failed => {
+                            return Err(TransactionErr::Plain(format!(
+                                "Lightning swap payment {} failed",
+                                payment_hex
+                            )))
+                        },
                     },
                     Ok(None) => {
                         return Err(TransactionErr::Plain(format!(

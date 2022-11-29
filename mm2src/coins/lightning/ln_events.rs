@@ -444,14 +444,14 @@ impl LightningEventHandler {
                 payment_info.status = HTLCStatus::Succeeded;
                 payment_info.last_updated = (now_ms() / 1000) as i64;
                 let amt_msat = payment_info.amt_msat;
-                db.add_or_update_payment_in_db(payment_info)
-                    .await
-                    .error_log_with_msg("Unable to update payment information in DB!");
-                info!(
-                    "Successfully claimed payment of {} millisatoshis with payment hash {}",
-                    amt_msat.unwrap_or_default(),
-                    hex::encode(payment_hash.0)
-                );
+                match db.add_or_update_payment_in_db(payment_info).await {
+                    Ok(_) => info!(
+                        "Successfully claimed payment of {} millisatoshis with payment hash {}",
+                        amt_msat.unwrap_or_default(),
+                        hex::encode(payment_hash.0),
+                    ),
+                    Err(e) => error!("Unable to update payment information in DB error: {}", e),
+                }
             }
         };
         let settings = AbortSettings::default().critical_timout_s(CRITICAL_FUTURE_TIMEOUT);
@@ -476,14 +476,14 @@ impl LightningEventHandler {
                 payment_info.fee_paid_msat = fee_paid_msat.map(|f| f as i64);
                 payment_info.last_updated = (now_ms() / 1000) as i64;
                 let amt_msat = payment_info.amt_msat;
-                db.add_or_update_payment_in_db(payment_info)
-                    .await
-                    .error_log_with_msg("Unable to update payment information in DB!");
-                info!(
-                    "Successfully sent payment of {} millisatoshis with payment hash {}",
-                    amt_msat.unwrap_or_default(),
-                    hex::encode(payment_hash.0)
-                );
+                match db.add_or_update_payment_in_db(payment_info).await {
+                    Ok(_) => info!(
+                        "Successfully sent payment of {} millisatoshis with payment hash {}",
+                        amt_msat.unwrap_or_default(),
+                        hex::encode(payment_hash.0)
+                    ),
+                    Err(e) => error!("Unable to update payment information in DB error: {}", e),
+                }
             }
         };
         let settings = AbortSettings::default().critical_timout_s(CRITICAL_FUTURE_TIMEOUT);
