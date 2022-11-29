@@ -5,7 +5,7 @@ use async_trait::async_trait;
 use coins::{CanRefundHtlc, FoundSwapTxSpend, MmCoinEnum, WatcherSearchForSwapTxSpendInput,
             WatcherValidatePaymentInput, WatcherValidateTakerFeeInput};
 use common::executor::{AbortSettings, SpawnAbortable, Timer};
-use common::log::{debug, error, info};
+use common::log::{error, info};
 use common::state_machine::prelude::*;
 use common::{now_ms, DEX_FEE_ADDR_RAW_PUBKEY};
 use futures::compat::Future01CompatExt;
@@ -179,36 +179,23 @@ impl State for ValidateTakerPayment {
         let wait_taker_payment =
             taker_payment_spend_deadline(watcher_ctx.data.swap_started_at, watcher_ctx.data.lock_duration);
 
-        let taker_payment_hex;
-        loop {
-            let taker_payment_hex_fut = watcher_ctx
-                .taker_coin
-                .get_tx_hex_by_hash(watcher_ctx.data.taker_payment_hash.clone());
+        Timer::sleep(120.).await;
+        let taker_payment_hex_fut = watcher_ctx
+            .taker_coin
+            .get_tx_hex_by_hash(watcher_ctx.data.taker_payment_hash.clone());
 
-            match taker_payment_hex_fut.compat().await {
-                Ok(tx_res) => {
-                    taker_payment_hex = tx_res.tx_hex.into_vec();
-                    break;
-                },
-                Err(err) => {
-                    if now_ms() / 1000 > wait_taker_payment {
-                        error!(
-                            "Waited too long until {} for transaction {:?}",
-                            wait_taker_payment, &watcher_ctx.data.taker_payment_hash
-                        );
-                        return Self::change_state(Stopped::from_reason(StopReason::Error(
-                            WatcherError::InvalidTakerPayment(err.to_string()).into(),
-                        )));
-                    }
-                    debug!(
-                        "Transaction with hash {:?} not found",
-                        &watcher_ctx.data.taker_payment_hash
-                    );
-                    Timer::sleep(WAIT_CONFIRM_INTERVAL as f64).await;
-                    continue;
-                },
-            };
-        }
+        let taker_payment_hex = match taker_payment_hex_fut.compat().await {
+            Ok(tx_res) => tx_res.tx_hex.into_vec(),
+            Err(err) => {
+                error!(
+                    "Transaction with hash {:?} not found",
+                    &watcher_ctx.data.taker_payment_hash
+                );
+                return Self::change_state(Stopped::from_reason(StopReason::Error(
+                    WatcherError::InvalidTakerPayment(err.to_string()).into(),
+                )));
+            },
+        };
 
         let confirmations = min(watcher_ctx.data.taker_payment_confirmations, TAKER_SWAP_CONFIRMATIONS);
 
