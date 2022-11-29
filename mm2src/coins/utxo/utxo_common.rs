@@ -57,6 +57,7 @@ pub mod utxo_tx_history_v2_common;
 pub const DEFAULT_FEE_VOUT: usize = 0;
 pub const DEFAULT_SWAP_TX_SPEND_SIZE: u64 = 305;
 pub const DEFAULT_SWAP_VOUT: usize = 0;
+pub const DEFAULT_SWAP_VIN: usize = 0;
 const MIN_BTC_TRADING_VOL: &str = "0.00777";
 
 macro_rules! true_or {
@@ -1296,7 +1297,7 @@ pub fn send_maker_payment_spend_preimage<T: UtxoCommonOps + SwapOps>(
     if transaction.inputs.is_empty() {
         return try_tx_fus!(TX_PLAIN_ERR!("Transaction doesn't have any input"));
     }
-    let script = Script::from(transaction.inputs[0].script_sig.clone());
+    let script = Script::from(transaction.inputs[DEFAULT_SWAP_VIN].script_sig.clone());
     let mut instructions = script.iter();
 
     let instruction_1 = try_tx_fus!(try_tx_fus!(instructions.next().ok_or("Instruction not found")));
@@ -1318,7 +1319,7 @@ pub fn send_maker_payment_spend_preimage<T: UtxoCommonOps + SwapOps>(
     let redeem_part = Builder::default().push_data(redeem_script).into_bytes();
     resulting_script.extend_from_slice(&redeem_part);
 
-    transaction.inputs[0].script_sig = resulting_script;
+    transaction.inputs[DEFAULT_SWAP_VIN].script_sig = resulting_script;
 
     let fut = async move {
         let tx_fut = coin.as_ref().rpc_client.send_transaction(&transaction).compat();
@@ -1989,7 +1990,7 @@ pub fn watcher_validate_taker_payment<T: UtxoCommonOps + SwapOps>(
             )));
         }
 
-        let script_sig = match taker_payment_refund_preimage.inputs.get(DEFAULT_SWAP_VOUT) {
+        let script_sig = match taker_payment_refund_preimage.inputs.get(DEFAULT_SWAP_VIN) {
             Some(input) => Script::from(input.script_sig.clone()),
             None => {
                 return MmError::err(ValidatePaymentError::WrongPaymentTx(
@@ -3864,7 +3865,7 @@ async fn search_for_swap_output_spend(
         Some(spent_output_info) => {
             let mut tx = spent_output_info.spending_tx;
             tx.tx_hash_algo = coin.tx_hash_algo;
-            let script: Script = tx.inputs[0].script_sig.clone().into();
+            let script: Script = tx.inputs[DEFAULT_SWAP_VIN].script_sig.clone().into();
             if let Some(Ok(ref i)) = script.iter().nth(2) {
                 if i.opcode == Opcode::OP_0 {
                     return Ok(Some(FoundSwapTxSpend::Spent(tx.into())));
