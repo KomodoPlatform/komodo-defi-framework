@@ -865,10 +865,7 @@ fn test_watcher_spends_maker_payment_spend() {
         watcher_conf,
         "pass".to_string(),
         None,
-        &[
-            ("SKIP_WAIT_FOR_MAKER_PAYMENT_SPEND", ""),
-            ("USE_TEST_SEARCH_INTERVAL", ""),
-        ],
+        &[("SKIP_WAIT_FOR_MAKER_PAYMENT_SPEND", ""), ("WATCHER_TEST", "")],
     ))
     .unwrap();
     let (_watcher_dump_log, _watcher_dump_dashboard) = mm_dump(&mm_watcher.log_path);
@@ -995,7 +992,7 @@ fn test_watcher_waits_for_taker() {
         watcher_conf,
         "pass".to_string(),
         None,
-        &[("USE_TEST_SEARCH_INTERVAL", "")],
+        &[("WATCHER_TEST", "")],
     ))
     .unwrap();
     let (_watcher_dump_log, _watcher_dump_dashboard) = mm_dump(&mm_watcher.log_path);
@@ -1071,7 +1068,7 @@ fn test_watcher_refunds_taker_payment() {
         watcher_conf,
         "pass".to_string(),
         None,
-        &[("REFUND_TEST", ""), ("USE_TEST_SEARCH_INTERVAL", "")],
+        &[("REFUND_TEST", ""), ("WATCHER_TEST", "")],
     ))
     .unwrap();
     let (_watcher_dump_log, _watcher_dump_dashboard) = mm_dump(&mm_watcher.log_path);

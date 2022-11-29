@@ -2010,17 +2010,12 @@ pub fn watcher_validate_taker_payment<T: UtxoCommonOps + SwapOps>(
             .data
             .ok_or_else(|| String::from("No redeem script in the taker payment refund preimage"))
             .map_to_mm(ValidatePaymentError::WrongPaymentTx)?;
-        let redeem_script_hash = Builder::build_p2sh(&dhash160(redeem_script).into()).to_bytes();
 
-        if taker_payment_locking_script != redeem_script_hash {
-            error!(
-                "Taker payment tx locking script {:?} doesn't match with taker payment refund redeem script {:?}",
-                taker_payment_locking_script, redeem_script_hash
-            );
-            return MmError::err(ValidatePaymentError::WrongPaymentTx(format!(
-                "Taker payment tx locking script {:?} doesn't match with taker payment refund redeem script {:?}",
-                taker_payment_locking_script, redeem_script_hash
-            )));
+        if expected_redeem.to_bytes().take() != redeem_script {
+            error!("Taker payment tx locking script doesn't match with taker payment refund redeem script");
+            return MmError::err(ValidatePaymentError::WrongPaymentTx(
+                "Taker payment tx locking script doesn't match with taker payment refund redeem script".to_string(),
+            ));
         }
 
         if let UtxoRpcClientEnum::Electrum(client) = &coin.as_ref().rpc_client {

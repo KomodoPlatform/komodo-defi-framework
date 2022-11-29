@@ -45,7 +45,7 @@ impl WatcherContext {
     }
 
     fn search_interval(&self) -> f64 {
-        match std::env::var("USE_TEST_SEARCH_INTERVAL") {
+        match std::env::var("WATCHER_TEST") {
             Ok(_) => 10.,
             Err(_) => 300.,
         }
@@ -179,7 +179,10 @@ impl State for ValidateTakerPayment {
         let wait_taker_payment =
             taker_payment_spend_deadline(watcher_ctx.data.swap_started_at, watcher_ctx.data.lock_duration);
 
-        Timer::sleep(120.).await;
+        if std::env::var("WATCHER_TEST").is_err() {
+            Timer::sleep(120.).await;
+        }
+
         let taker_payment_hex_fut = watcher_ctx
             .taker_coin
             .get_tx_hex_by_hash(watcher_ctx.data.taker_payment_hash.clone());
