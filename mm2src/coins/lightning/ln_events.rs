@@ -378,12 +378,8 @@ impl LightningEventHandler {
                         ),
                         fee_paid_msat: None,
                         status: HTLCStatus::Received,
-                        created_at: (now_ms() / 1000)
-                            .try_into()
-                            .expect("created_at shouldn't exceed i64::MAX"),
-                        last_updated: (now_ms() / 1000)
-                            .try_into()
-                            .expect("last_updated shouldn't exceed i64::MAX"),
+                        created_at: (now_ms() / 1000) as i64,
+                        last_updated: (now_ms() / 1000) as i64,
                     };
                     let fut = async move {
                         db.add_or_update_payment_in_db(payment_info)
@@ -411,12 +407,8 @@ impl LightningEventHandler {
                     ),
                     fee_paid_msat: None,
                     status: HTLCStatus::Received,
-                    created_at: (now_ms() / 1000)
-                        .try_into()
-                        .expect("created_at shouldn't exceed i64::MAX"),
-                    last_updated: (now_ms() / 1000)
-                        .try_into()
-                        .expect("last_updated shouldn't exceed i64::MAX"),
+                    created_at: (now_ms() / 1000) as i64,
+                    last_updated: (now_ms() / 1000) as i64,
                 };
                 let fut = async move {
                     db.add_or_update_payment_in_db(payment_info)
