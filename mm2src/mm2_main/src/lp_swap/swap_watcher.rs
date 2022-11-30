@@ -160,7 +160,6 @@ impl State for ValidateTakerFee {
             .compat();
 
         if let Err(err) = validated_f.await {
-            error!("Taker fee could not be validated: {}", err);
             return Self::change_state(Stopped::from_reason(StopReason::Error(
                 WatcherError::InvalidTakerFee(format!("{:?}", err)).into(),
             )));
@@ -190,10 +189,6 @@ impl State for ValidateTakerPayment {
         let taker_payment_hex = match taker_payment_hex_fut.compat().await {
             Ok(tx_res) => tx_res.tx_hex.into_vec(),
             Err(err) => {
-                error!(
-                    "Transaction with hash {:?} not found",
-                    &watcher_ctx.data.taker_payment_hash
-                );
                 return Self::change_state(Stopped::from_reason(StopReason::Error(
                     WatcherError::InvalidTakerPayment(err.to_string()).into(),
                 )));

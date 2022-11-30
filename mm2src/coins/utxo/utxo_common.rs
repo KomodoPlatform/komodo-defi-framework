@@ -1964,7 +1964,6 @@ pub fn watcher_validate_taker_payment<T: UtxoCommonOps + SwapOps>(
         let inputs_signed_by_pub = check_all_utxo_inputs_signed_by_pub(&taker_payment_tx, &input.taker_pub)
             .map_to_mm(ValidatePaymentError::InternalError)?;
         if !inputs_signed_by_pub {
-            error!("Taker payment does not belong to the verified public key");
             return MmError::err(ValidatePaymentError::WrongPaymentTx(
                 "Taker payment does not belong to the verified public key".to_string(),
             ));
@@ -1980,10 +1979,6 @@ pub fn watcher_validate_taker_payment<T: UtxoCommonOps + SwapOps>(
         };
 
         if taker_payment_locking_script != Builder::build_p2sh(&dhash160(&expected_redeem).into()).to_bytes() {
-            error!(
-                "Payment tx locking script {:?} doesn't match expected",
-                taker_payment_locking_script
-            );
             return MmError::err(ValidatePaymentError::WrongPaymentTx(format!(
                 "Payment tx locking script {:?} doesn't match expected",
                 taker_payment_locking_script
@@ -2012,7 +2007,6 @@ pub fn watcher_validate_taker_payment<T: UtxoCommonOps + SwapOps>(
             .map_to_mm(ValidatePaymentError::WrongPaymentTx)?;
 
         if expected_redeem.to_bytes().take() != redeem_script {
-            error!("Taker payment tx locking script doesn't match with taker payment refund redeem script");
             return MmError::err(ValidatePaymentError::WrongPaymentTx(
                 "Taker payment tx locking script doesn't match with taker payment refund redeem script".to_string(),
             ));
