@@ -2483,7 +2483,10 @@ fn test_get_max_taker_vol_dex_fee_threshold() {
 fn test_get_max_taker_vol_dust_threshold() {
     // first, try to test with the balance slightly less than required
     let (_ctx, coin, priv_key) = generate_utxo_coin_with_random_privkey("MYCOIN1", "0.001656".parse().unwrap());
-    let coins = json!([mycoin_conf(10000), mycoin1_conf(10000)]);
+    let coins = json!([
+        mycoin_conf(10000), 
+        {"coin":"MYCOIN1","asset":"MYCOIN1","txversion":4,"overwintered":1,"txfee":10000,"protocol":{"type":"UTXO"},"dust":72800}
+        ]);
     let mm = MarketMakerIt::start(
         json!({
             "gui": "nogui",
