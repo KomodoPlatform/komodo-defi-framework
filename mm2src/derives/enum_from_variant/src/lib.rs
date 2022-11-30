@@ -137,7 +137,7 @@ pub(crate) fn get_attributes(variants: syn::Variant) -> Result<MapEnumDataPunctu
     let fields = &variants.fields;
     for attribute in variants.attrs {
         if let Ok(meta) = attribute.parse_meta() {
-            match meta {
+            return match meta {
                 syn::Meta::List(syn::MetaList { nested, .. }) => {
                     if let Some(ident) = get_variant_unnamed_ident(fields.to_owned()) {
                         return syn::Result::Ok(MapEnumDataPunctuated {
@@ -146,18 +146,16 @@ pub(crate) fn get_attributes(variants: syn::Variant) -> Result<MapEnumDataPunctu
                             inner_ident: Some(ident),
                         });
                     }
-                    return syn::Result::Ok(MapEnumDataPunctuated {
+                    syn::Result::Ok(MapEnumDataPunctuated {
                         variant_ident: variant_ident.to_owned(),
                         nested_meta: nested,
                         inner_ident: None,
-                    });
+                    })
                 },
-                _ => {
-                    return syn::Result::Err(syn::Error::new_spanned(
-                        attribute.tokens,
-                        "expected #[enum_from_variant(..)]".to_string(),
-                    ));
-                },
+                _ => syn::Result::Err(syn::Error::new_spanned(
+                    attribute.tokens,
+                    "expected #[enum_from_variant(..)]".to_string(),
+                )),
             };
         };
     }
