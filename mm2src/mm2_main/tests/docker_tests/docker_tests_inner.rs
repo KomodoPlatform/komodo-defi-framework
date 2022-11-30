@@ -14,7 +14,8 @@ use common::{block_on, now_ms, DEX_FEE_ADDR_RAW_PUBKEY};
 use futures01::Future;
 use mm2_main::mm2::lp_swap::dex_fee_amount_from_taker_coin;
 use mm2_number::{BigDecimal, MmNumber};
-use mm2_test_helpers::for_tests::{check_my_swap_status_amounts, mm_dump, MarketMakerIt, Mm2TestConf};
+use mm2_test_helpers::for_tests::{check_my_swap_status_amounts, eth_testnet_conf, kmd_conf, mm_dump, mycoin1_conf,
+                                  mycoin_conf, MarketMakerIt, Mm2TestConf};
 use mm2_test_helpers::structs::*;
 use serde_json::Value as Json;
 use std::collections::HashMap;
@@ -321,10 +322,8 @@ fn test_one_hundred_maker_payments_in_a_row_native() {
 #[test]
 fn order_should_be_cancelled_when_entire_balance_is_withdrawn() {
     let (_ctx, _, priv_key) = generate_utxo_coin_with_random_privkey("MYCOIN", 1000.into());
-    let coins = json!([
-        {"coin":"MYCOIN","asset":"MYCOIN","txversion":4,"overwintered":1,"txfee":1000,"protocol":{"type":"UTXO"}},
-        {"coin":"MYCOIN1","asset":"MYCOIN1","txversion":4,"overwintered":1,"txfee":1000,"protocol":{"type":"UTXO"}},
-    ]);
+    let coins = json!([mycoin_conf(1000), mycoin1_conf(1000)]);
+
     let mm_bob = MarketMakerIt::start(
         json!({
             "gui": "nogui",
@@ -439,10 +438,8 @@ fn order_should_be_cancelled_when_entire_balance_is_withdrawn() {
 #[test]
 fn order_should_be_updated_when_balance_is_decreased_alice_subscribes_after_update() {
     let (_ctx, _, priv_key) = generate_utxo_coin_with_random_privkey("MYCOIN", 1000.into());
-    let coins = json!([
-        {"coin":"MYCOIN","asset":"MYCOIN","txversion":4,"overwintered":1,"txfee":1000,"protocol":{"type":"UTXO"}},
-        {"coin":"MYCOIN1","asset":"MYCOIN1","txversion":4,"overwintered":1,"txfee":1000,"protocol":{"type":"UTXO"}},
-    ]);
+    let coins = json!([mycoin_conf(1000), mycoin1_conf(1000)]);
+
     let mm_bob = MarketMakerIt::start(
         json!({
             "gui": "nogui",
@@ -575,10 +572,7 @@ fn order_should_be_updated_when_balance_is_decreased_alice_subscribes_after_upda
 #[test]
 fn order_should_be_updated_when_balance_is_decreased_alice_subscribes_before_update() {
     let (_ctx, _, priv_key) = generate_utxo_coin_with_random_privkey("MYCOIN", 1000.into());
-    let coins = json!([
-        {"coin":"MYCOIN","asset":"MYCOIN","txversion":4,"overwintered":1,"txfee":1000,"protocol":{"type":"UTXO"}},
-        {"coin":"MYCOIN1","asset":"MYCOIN1","txversion":4,"overwintered":1,"txfee":1000,"protocol":{"type":"UTXO"}},
-    ]);
+    let coins = json!([mycoin_conf(1000), mycoin1_conf(1000)]);
     let mm_bob = MarketMakerIt::start(
         json!({
             "gui": "nogui",
@@ -728,10 +722,7 @@ fn order_should_be_updated_when_balance_is_decreased_alice_subscribes_before_upd
 fn test_order_should_be_updated_when_matched_partially() {
     let (_ctx, _, bob_priv_key) = generate_utxo_coin_with_random_privkey("MYCOIN", 2000.into());
     let (_ctx, _, alice_priv_key) = generate_utxo_coin_with_random_privkey("MYCOIN1", 2000.into());
-    let coins = json!([
-        {"coin":"MYCOIN","asset":"MYCOIN","txversion":4,"overwintered":1,"txfee":1000,"protocol":{"type":"UTXO"}},
-        {"coin":"MYCOIN1","asset":"MYCOIN1","txversion":4,"overwintered":1,"txfee":1000,"protocol":{"type":"UTXO"}},
-    ]);
+    let coins = json!([mycoin_conf(1000), mycoin1_conf(1000)]);
     let mut mm_bob = MarketMakerIt::start(
         json!({
             "gui": "nogui",
@@ -840,10 +831,7 @@ fn test_watcher_spends_maker_payment_spend() {
 
     let watcher_priv_key = random_secp256k1_secret();
 
-    let coins = json!([
-        {"coin":"MYCOIN","asset":"MYCOIN","txversion":4,"overwintered":1,"txfee":1000,"protocol":{"type":"UTXO"}},
-        {"coin":"MYCOIN1","asset":"MYCOIN1","txversion":4,"overwintered":1,"txfee":1000,"protocol":{"type":"UTXO"}},
-    ]);
+    let coins = json!([mycoin_conf(1000), mycoin1_conf(1000)]);
 
     let alice_conf = Mm2TestConf::seednode_using_watchers(&format!("0x{}", hex::encode(alice_priv_key)), &coins).conf;
     let mut mm_alice = MarketMakerIt::start(alice_conf.clone(), "pass".to_string(), None).unwrap();
@@ -967,10 +955,7 @@ fn test_watcher_waits_for_taker() {
     generate_utxo_coin_with_privkey("MYCOIN", 100.into(), alice_priv_key);
     let watcher_priv_key = *SecretKey::new(&mut rand6::thread_rng()).as_ref();
 
-    let coins = json!([
-        {"coin":"MYCOIN","asset":"MYCOIN","txversion":4,"overwintered":1,"txfee":1000,"protocol":{"type":"UTXO"}},
-        {"coin":"MYCOIN1","asset":"MYCOIN1","txversion":4,"overwintered":1,"txfee":1000,"protocol":{"type":"UTXO"}},
-    ]);
+    let coins = json!([mycoin_conf(1000), mycoin1_conf(1000)]);
 
     let alice_conf = Mm2TestConf::seednode_using_watchers(&format!("0x{}", hex::encode(alice_priv_key)), &coins).conf;
     let mm_alice = MarketMakerIt::start(alice_conf.clone(), "pass".to_string(), None).unwrap();
@@ -1037,10 +1022,7 @@ fn test_watcher_refunds_taker_payment() {
     generate_utxo_coin_with_privkey("MYCOIN", 100.into(), alice_priv_key);
     let watcher_priv_key = *SecretKey::new(&mut rand6::thread_rng()).as_ref();
 
-    let coins = json!([
-        {"coin":"MYCOIN","asset":"MYCOIN","txversion":4,"overwintered":1,"txfee":1000,"protocol":{"type":"UTXO"}},
-        {"coin":"MYCOIN1","asset":"MYCOIN1","txversion":4,"overwintered":1,"txfee":1000,"protocol":{"type":"UTXO"}},
-    ]);
+    let coins = json!([mycoin_conf(1000), mycoin1_conf(1000)]);
 
     let alice_conf = Mm2TestConf::seednode_using_watchers(&format!("0x{}", hex::encode(alice_priv_key)), &coins).conf;
     let mut mm_alice = block_on(MarketMakerIt::start_with_envs(
@@ -1316,10 +1298,7 @@ fn test_send_taker_payment_refund_preimage() {
 fn test_match_and_trade_setprice_max() {
     let (_ctx, _, bob_priv_key) = generate_utxo_coin_with_random_privkey("MYCOIN", 1000.into());
     let (_ctx, _, alice_priv_key) = generate_utxo_coin_with_random_privkey("MYCOIN1", 2000.into());
-    let coins = json!([
-        {"coin":"MYCOIN","asset":"MYCOIN","txversion":4,"overwintered":1,"txfee":1000,"protocol":{"type":"UTXO"}},
-        {"coin":"MYCOIN1","asset":"MYCOIN1","txversion":4,"overwintered":1,"txfee":1000,"protocol":{"type":"UTXO"}},
-    ]);
+    let coins = json!([mycoin_conf(1000), mycoin1_conf(1000)]);
     let mut mm_bob = MarketMakerIt::start(
         json!({
             "gui": "nogui",
@@ -1418,10 +1397,7 @@ fn test_match_and_trade_setprice_max() {
 fn test_max_taker_vol_swap() {
     let (_ctx, _, bob_priv_key) = generate_utxo_coin_with_random_privkey("MYCOIN", 1000.into());
     let (_ctx, _, alice_priv_key) = generate_utxo_coin_with_random_privkey("MYCOIN1", 50.into());
-    let coins = json!([
-        {"coin":"MYCOIN","asset":"MYCOIN","txversion":4,"overwintered":1,"txfee":1000,"protocol":{"type":"UTXO"}},
-        {"coin":"MYCOIN1","asset":"MYCOIN1","txversion":4,"overwintered":1,"txfee":1000,"protocol":{"type":"UTXO"}},
-    ]);
+    let coins = json!([mycoin_conf(1000), mycoin1_conf(1000)]);
     let mut mm_bob = block_on(MarketMakerIt::start_with_envs(
         json!({
             "gui": "nogui",
@@ -1541,10 +1517,7 @@ fn test_max_taker_vol_swap() {
 fn test_buy_when_coins_locked_by_other_swap() {
     let (_ctx, _, bob_priv_key) = generate_utxo_coin_with_random_privkey("MYCOIN", 1000.into());
     let (_ctx, _, alice_priv_key) = generate_utxo_coin_with_random_privkey("MYCOIN1", 2.into());
-    let coins = json!([
-        {"coin":"MYCOIN","asset":"MYCOIN","txversion":4,"overwintered":1,"txfee":1000,"protocol":{"type":"UTXO"}},
-        {"coin":"MYCOIN1","asset":"MYCOIN1","txversion":4,"overwintered":1,"txfee":1000,"protocol":{"type":"UTXO"}},
-    ]);
+    let coins = json!([mycoin_conf(1000), mycoin1_conf(1000)]);
     let mut mm_bob = MarketMakerIt::start(
         json!({
             "gui": "nogui",
@@ -1637,10 +1610,7 @@ fn test_buy_when_coins_locked_by_other_swap() {
 fn test_sell_when_coins_locked_by_other_swap() {
     let (_ctx, _, bob_priv_key) = generate_utxo_coin_with_random_privkey("MYCOIN", 1000.into());
     let (_ctx, _, alice_priv_key) = generate_utxo_coin_with_random_privkey("MYCOIN1", 2.into());
-    let coins = json!([
-        {"coin":"MYCOIN","asset":"MYCOIN","txversion":4,"overwintered":1,"txfee":1000,"protocol":{"type":"UTXO"}},
-        {"coin":"MYCOIN1","asset":"MYCOIN1","txversion":4,"overwintered":1,"txfee":1000,"protocol":{"type":"UTXO"}},
-    ]);
+    let coins = json!([mycoin_conf(1000), mycoin1_conf(1000)]);
     let mut mm_bob = MarketMakerIt::start(
         json!({
             "gui": "nogui",
@@ -1732,10 +1702,7 @@ fn test_sell_when_coins_locked_by_other_swap() {
 #[test]
 fn test_buy_max() {
     let (_ctx, _, alice_priv_key) = generate_utxo_coin_with_random_privkey("MYCOIN1", 1.into());
-    let coins = json!([
-        {"coin":"MYCOIN","asset":"MYCOIN","txversion":4,"overwintered":1,"txfee":1000,"protocol":{"type":"UTXO"}},
-        {"coin":"MYCOIN1","asset":"MYCOIN1","txversion":4,"overwintered":1,"txfee":1000,"protocol":{"type":"UTXO"}},
-    ]);
+    let coins = json!([mycoin_conf(1000), mycoin1_conf(1000)]);
     let mm_alice = MarketMakerIt::start(
         json!({
             "gui": "nogui",
@@ -1799,10 +1766,7 @@ fn test_maker_trade_preimage() {
     let my_address = mycoin1.my_address().expect("!my_address");
     fill_address(&mycoin1, &my_address, 20.into(), 30);
 
-    let coins = json!([
-        {"coin":"MYCOIN","asset":"MYCOIN","txversion":4,"overwintered":1,"txfee":1000,"protocol":{"type":"UTXO"}},
-        {"coin":"MYCOIN1","asset":"MYCOIN1","txversion":4,"overwintered":1,"txfee":2000,"protocol":{"type":"UTXO"}},
-    ]);
+    let coins = json!([mycoin_conf(1000), mycoin1_conf(2000)]);
     let mm = MarketMakerIt::start(
         json!({
             "gui": "nogui",
@@ -1939,10 +1903,7 @@ fn test_taker_trade_preimage() {
     let my_address = mycoin1.my_address().expect("!my_address");
     fill_address(&mycoin1, &my_address, 20.into(), 30);
 
-    let coins = json!([
-        {"coin":"MYCOIN","asset":"MYCOIN","txversion":4,"overwintered":1,"txfee":1000,"protocol":{"type":"UTXO"}},
-        {"coin":"MYCOIN1","asset":"MYCOIN1","txversion":4,"overwintered":1,"txfee":2000,"protocol":{"type":"UTXO"}},
-    ]);
+    let coins = json!([mycoin_conf(1000), mycoin1_conf(2000)]);
     let mm = MarketMakerIt::start(
         json!({
             "gui": "nogui",
@@ -2083,10 +2044,7 @@ fn test_trade_preimage_not_sufficient_balance() {
         fill_address(&mycoin, &my_address, amount, 30);
     };
 
-    let coins = json!([
-        {"coin":"MYCOIN","asset":"MYCOIN","txversion":4,"overwintered":1,"txfee":1000,"protocol":{"type":"UTXO"}},
-        {"coin":"MYCOIN1","asset":"MYCOIN1","txversion":4,"overwintered":1,"txfee":2000,"protocol":{"type":"UTXO"}},
-    ]);
+    let coins = json!([mycoin_conf(1000), mycoin1_conf(2000)]);
     let mm = MarketMakerIt::start(
         json!({
             "gui": "nogui",
@@ -2204,10 +2162,8 @@ fn test_trade_preimage_additional_validation() {
     let my_address = mycoin.my_address().expect("!my_address");
     fill_address(&mycoin, &my_address, 10.into(), 30);
 
-    let coins = json!([
-        {"coin":"MYCOIN","asset":"MYCOIN","txversion":4,"overwintered":1,"txfee":1000,"protocol":{"type":"UTXO"}},
-        {"coin":"MYCOIN1","asset":"MYCOIN1","txversion":4,"overwintered":1,"txfee":2000,"protocol":{"type":"UTXO"}},
-    ]);
+    let coins = json!([mycoin_conf(1000), mycoin1_conf(2000)]);
+
     let mm = MarketMakerIt::start(
         json!({
             "gui": "nogui",
@@ -2347,10 +2303,7 @@ fn test_trade_preimage_legacy() {
     let my_address = mycoin1.my_address().expect("!my_address");
     fill_address(&mycoin1, &my_address, 20.into(), 30);
 
-    let coins = json!([
-        {"coin":"MYCOIN","asset":"MYCOIN","txversion":4,"overwintered":1,"txfee":1000,"protocol":{"type":"UTXO"}},
-        {"coin":"MYCOIN1","asset":"MYCOIN1","txversion":4,"overwintered":1,"txfee":2000,"protocol":{"type":"UTXO"}},
-    ]);
+    let coins = json!([mycoin_conf(1000), mycoin1_conf(2000)]);
     let mm = MarketMakerIt::start(
         json!({
             "gui": "nogui",
@@ -2420,10 +2373,7 @@ fn test_trade_preimage_legacy() {
 #[test]
 fn test_get_max_taker_vol() {
     let (_ctx, _, alice_priv_key) = generate_utxo_coin_with_random_privkey("MYCOIN1", 1.into());
-    let coins = json!([
-        {"coin":"MYCOIN","asset":"MYCOIN","txversion":4,"overwintered":1,"txfee":1000,"protocol":{"type":"UTXO"}},
-        {"coin":"MYCOIN1","asset":"MYCOIN1","txversion":4,"overwintered":1,"txfee":1000,"protocol":{"type":"UTXO"}},
-    ]);
+    let coins = json!([mycoin_conf(1000), mycoin1_conf(1000)]);
     let mm_alice = MarketMakerIt::start(
         json!({
             "gui": "nogui",
@@ -2475,10 +2425,7 @@ fn test_get_max_taker_vol() {
 #[test]
 fn test_get_max_taker_vol_dex_fee_threshold() {
     let (_ctx, _, alice_priv_key) = generate_utxo_coin_with_random_privkey("MYCOIN1", "0.05328455".parse().unwrap());
-    let coins = json!([
-        {"coin":"MYCOIN","asset":"MYCOIN","txversion":4,"overwintered":1,"txfee":10000,"protocol":{"type":"UTXO"}},
-        {"coin":"MYCOIN1","asset":"MYCOIN1","txversion":4,"overwintered":1,"txfee":10000,"protocol":{"type":"UTXO"}},
-    ]);
+    let coins = json!([mycoin_conf(10000), mycoin1_conf(10000)]);
     let mm_alice = MarketMakerIt::start(
         json!({
             "gui": "nogui",
@@ -2536,10 +2483,7 @@ fn test_get_max_taker_vol_dex_fee_threshold() {
 fn test_get_max_taker_vol_dust_threshold() {
     // first, try to test with the balance slightly less than required
     let (_ctx, coin, priv_key) = generate_utxo_coin_with_random_privkey("MYCOIN1", "0.001656".parse().unwrap());
-    let coins = json!([
-        {"coin":"MYCOIN","asset":"MYCOIN","txversion":4,"overwintered":1,"txfee":10000,"protocol":{"type":"UTXO"}},
-        {"coin":"MYCOIN1","asset":"MYCOIN1","txversion":4,"overwintered":1,"txfee":10000,"protocol":{"type":"UTXO"},"dust":72800},
-    ]);
+    let coins = json!([mycoin_conf(10000), mycoin1_conf(10000)]);
     let mm = MarketMakerIt::start(
         json!({
             "gui": "nogui",
@@ -2590,11 +2534,7 @@ fn test_get_max_taker_vol_dust_threshold() {
 #[test]
 fn test_get_max_taker_vol_with_kmd() {
     let (_ctx, _, alice_priv_key) = generate_utxo_coin_with_random_privkey("MYCOIN1", 1.into());
-    let coins = json!([
-        {"coin":"MYCOIN","asset":"MYCOIN","txversion":4,"overwintered":1,"txfee":10000,"protocol":{"type":"UTXO"}},
-        {"coin":"MYCOIN1","asset":"MYCOIN1","txversion":4,"overwintered":1,"txfee":10000,"protocol":{"type":"UTXO"}},
-        {"coin":"KMD","txversion":4,"overwintered":1,"txfee":10000,"protocol":{"type":"UTXO"}},
-    ]);
+    let coins = json!([mycoin_conf(10000), mycoin1_conf(10000), kmd_conf(10000)]);
     let mm_alice = MarketMakerIt::start(
         json!({
             "gui": "nogui",
@@ -2652,10 +2592,7 @@ fn test_get_max_taker_vol_with_kmd() {
 #[test]
 fn test_set_price_max() {
     let (_ctx, _, alice_priv_key) = generate_utxo_coin_with_random_privkey("MYCOIN", 1.into());
-    let coins = json!([
-        {"coin":"MYCOIN","asset":"MYCOIN","txversion":4,"overwintered":1,"txfee":1000,"protocol":{"type":"UTXO"}},
-        {"coin":"MYCOIN1","asset":"MYCOIN1","txversion":4,"overwintered":1,"txfee":1000,"protocol":{"type":"UTXO"}},
-    ]);
+    let coins = json!([mycoin_conf(1000), mycoin1_conf(1000)]);
     let mm_alice = MarketMakerIt::start(
         json!({
             "gui": "nogui",
@@ -2710,10 +2647,7 @@ fn test_set_price_max() {
 fn swaps_should_stop_on_stop_rpc() {
     let (_ctx, _, bob_priv_key) = generate_utxo_coin_with_random_privkey("MYCOIN", 1000.into());
     let (_ctx, _, alice_priv_key) = generate_utxo_coin_with_random_privkey("MYCOIN1", 2000.into());
-    let coins = json!([
-        {"coin":"MYCOIN","asset":"MYCOIN","txversion":4,"overwintered":1,"txfee":1000,"protocol":{"type":"UTXO"}},
-        {"coin":"MYCOIN1","asset":"MYCOIN1","txversion":4,"overwintered":1,"txfee":1000,"protocol":{"type":"UTXO"}},
-    ]);
+    let coins = json!([mycoin_conf(1000), mycoin1_conf(1000)]);
     let mut mm_bob = MarketMakerIt::start(
         json!({
             "gui": "nogui",
@@ -2804,10 +2738,7 @@ fn swaps_should_stop_on_stop_rpc() {
 #[test]
 fn test_maker_order_should_kick_start_and_appear_in_orderbook_on_restart() {
     let (_ctx, _, bob_priv_key) = generate_utxo_coin_with_random_privkey("MYCOIN", 1000.into());
-    let coins = json!([
-        {"coin":"MYCOIN","asset":"MYCOIN","txversion":4,"overwintered":1,"txfee":1000,"protocol":{"type":"UTXO"}},
-        {"coin":"MYCOIN1","asset":"MYCOIN1","txversion":4,"overwintered":1,"txfee":1000,"protocol":{"type":"UTXO"}},
-    ]);
+    let coins = json!([mycoin_conf(1000), mycoin1_conf(1000)]);
     let mut bob_conf = json!({
         "gui": "nogui",
         "netid": 9000,
@@ -2864,10 +2795,7 @@ fn test_maker_order_should_kick_start_and_appear_in_orderbook_on_restart() {
 #[test]
 fn test_maker_order_should_not_kick_start_and_appear_in_orderbook_if_balance_is_withdrawn() {
     let (_ctx, coin, bob_priv_key) = generate_utxo_coin_with_random_privkey("MYCOIN", 1000.into());
-    let coins = json!([
-        {"coin":"MYCOIN","asset":"MYCOIN","txversion":4,"overwintered":1,"txfee":1000,"protocol":{"type":"UTXO"}},
-        {"coin":"MYCOIN1","asset":"MYCOIN1","txversion":4,"overwintered":1,"txfee":1000,"protocol":{"type":"UTXO"}},
-    ]);
+    let coins = json!([mycoin_conf(1000), mycoin1_conf(1000)]);
     let mut bob_conf = json!({
         "gui": "nogui",
         "netid": 9000,
@@ -2958,10 +2886,7 @@ fn test_maker_order_should_not_kick_start_and_appear_in_orderbook_if_balance_is_
 fn test_maker_order_kick_start_should_trigger_subscription_and_match() {
     let (_ctx, _, bob_priv_key) = generate_utxo_coin_with_random_privkey("MYCOIN", 1000.into());
     let (_ctx, _, alice_priv_key) = generate_utxo_coin_with_random_privkey("MYCOIN1", 1000.into());
-    let coins = json!([
-        {"coin":"MYCOIN","asset":"MYCOIN","txversion":4,"overwintered":1,"txfee":1000,"protocol":{"type":"UTXO"}},
-        {"coin":"MYCOIN1","asset":"MYCOIN1","txversion":4,"overwintered":1,"txfee":1000,"protocol":{"type":"UTXO"}},
-    ]);
+    let coins = json!([mycoin_conf(1000), mycoin1_conf(1000)]);
 
     let relay_conf = json!({
         "gui": "nogui",
@@ -3052,10 +2977,7 @@ fn test_maker_order_kick_start_should_trigger_subscription_and_match() {
 fn test_orders_should_match_on_both_nodes_with_same_priv() {
     let (_ctx, _, bob_priv_key) = generate_utxo_coin_with_random_privkey("MYCOIN", 1000.into());
     let (_ctx, _, alice_priv_key) = generate_utxo_coin_with_random_privkey("MYCOIN1", 2000.into());
-    let coins = json!([
-        {"coin":"MYCOIN","asset":"MYCOIN","txversion":4,"overwintered":1,"txfee":1000,"protocol":{"type":"UTXO"}},
-        {"coin":"MYCOIN1","asset":"MYCOIN1","txversion":4,"overwintered":1,"txfee":1000,"protocol":{"type":"UTXO"}},
-    ]);
+    let coins = json!([mycoin_conf(1000), mycoin1_conf(1000)]);
     let mm_bob = MarketMakerIt::start(
         json!({
             "gui": "nogui",
@@ -3158,10 +3080,7 @@ fn test_maker_and_taker_order_created_with_same_priv_should_not_match() {
     let (_ctx, coin, priv_key) = generate_utxo_coin_with_random_privkey("MYCOIN", 1000.into());
     let (_ctx, coin1, _) = generate_utxo_coin_with_random_privkey("MYCOIN1", 1000.into());
     fill_address(&coin1, &coin.my_address().unwrap(), 1000.into(), 30);
-    let coins = json!([
-        {"coin":"MYCOIN","asset":"MYCOIN","txversion":4,"overwintered":1,"txfee":1000,"protocol":{"type":"UTXO"}},
-        {"coin":"MYCOIN1","asset":"MYCOIN1","txversion":4,"overwintered":1,"txfee":1000,"protocol":{"type":"UTXO"}},
-    ]);
+    let coins = json!([mycoin_conf(1000), mycoin1_conf(1000)]);
     let mut mm_bob = MarketMakerIt::start(
         json!({
             "gui": "nogui",
@@ -3232,10 +3151,7 @@ fn test_maker_and_taker_order_created_with_same_priv_should_not_match() {
 fn test_taker_order_converted_to_maker_should_cancel_properly_when_matched() {
     let (_ctx, _, bob_priv_key) = generate_utxo_coin_with_random_privkey("MYCOIN", 1000.into());
     let (_ctx, _, alice_priv_key) = generate_utxo_coin_with_random_privkey("MYCOIN1", 2000.into());
-    let coins = json!([
-        {"coin":"MYCOIN","asset":"MYCOIN","txversion":4,"overwintered":1,"txfee":1000,"protocol":{"type":"UTXO"}},
-        {"coin":"MYCOIN1","asset":"MYCOIN1","txversion":4,"overwintered":1,"txfee":1000,"protocol":{"type":"UTXO"}},
-    ]);
+    let coins = json!([mycoin_conf(1000), mycoin1_conf(1000)]);
     let mut mm_bob = MarketMakerIt::start(
         json!({
             "gui": "nogui",
@@ -3358,10 +3274,7 @@ fn test_utxo_merge() {
     fill_address(&coin, &coin.my_address().unwrap(), 2.into(), timeout);
     fill_address(&coin, &coin.my_address().unwrap(), 2.into(), timeout);
 
-    let coins = json!([
-        {"coin":"MYCOIN","asset":"MYCOIN","txversion":4,"overwintered":1,"txfee":1000,"protocol":{"type":"UTXO"}},
-        {"coin":"MYCOIN1","asset":"MYCOIN1","txversion":4,"overwintered":1,"txfee":1000,"protocol":{"type":"UTXO"}},
-    ]);
+    let coins = json!([mycoin_conf(1000), mycoin1_conf(1000)]);
     let mut mm_bob = MarketMakerIt::start(
         json!({
             "gui": "nogui",
@@ -3414,10 +3327,7 @@ fn test_utxo_merge_max_merge_at_once() {
     fill_address(&coin, &coin.my_address().unwrap(), 2.into(), timeout);
     fill_address(&coin, &coin.my_address().unwrap(), 2.into(), timeout);
 
-    let coins = json!([
-        {"coin":"MYCOIN","asset":"MYCOIN","txversion":4,"overwintered":1,"txfee":1000,"protocol":{"type":"UTXO"}},
-        {"coin":"MYCOIN1","asset":"MYCOIN1","txversion":4,"overwintered":1,"txfee":1000,"protocol":{"type":"UTXO"}},
-    ]);
+    let coins = json!([mycoin_conf(1000), mycoin1_conf(1000)]);
     let mut mm_bob = MarketMakerIt::start(
         json!({
             "gui": "nogui",
@@ -3465,10 +3375,7 @@ fn test_utxo_merge_max_merge_at_once() {
 #[test]
 fn test_withdraw_not_sufficient_balance() {
     let privkey = random_secp256k1_secret();
-    let coins = json!([
-        {"coin":"MYCOIN","asset":"MYCOIN","txversion":4,"overwintered":1,"txfee":1000,"protocol":{"type":"UTXO"}},
-        {"coin":"MYCOIN1","asset":"MYCOIN1","txversion":4,"overwintered":1,"txfee":1000,"protocol":{"type":"UTXO"}},
-    ]);
+    let coins = json!([mycoin_conf(1000), mycoin1_conf(1000)]);
     let mm = MarketMakerIt::start(
         json!({
             "gui": "nogui",
@@ -3554,10 +3461,7 @@ fn test_taker_should_match_with_best_price_buy() {
     let (_ctx, _, alice_priv_key) = generate_utxo_coin_with_random_privkey("MYCOIN1", 4000.into());
     let (_ctx, _, eve_priv_key) = generate_utxo_coin_with_random_privkey("MYCOIN", 2000.into());
 
-    let coins = json!([
-        {"coin":"MYCOIN","asset":"MYCOIN","txversion":4,"overwintered":1,"txfee":1000,"protocol":{"type":"UTXO"}},
-        {"coin":"MYCOIN1","asset":"MYCOIN1","txversion":4,"overwintered":1,"txfee":1000,"protocol":{"type":"UTXO"}},
-    ]);
+    let coins = json!([mycoin_conf(1000), mycoin1_conf(1000)]);
     let mm_bob = MarketMakerIt::start(
         json!({
             "gui": "nogui",
@@ -3690,10 +3594,7 @@ fn test_taker_should_match_with_best_price_sell() {
     let (_ctx, _, alice_priv_key) = generate_utxo_coin_with_random_privkey("MYCOIN1", 4000.into());
     let (_ctx, _, eve_priv_key) = generate_utxo_coin_with_random_privkey("MYCOIN", 2000.into());
 
-    let coins = json!([
-        {"coin":"MYCOIN","asset":"MYCOIN","txversion":4,"overwintered":1,"txfee":1000,"protocol":{"type":"UTXO"}},
-        {"coin":"MYCOIN1","asset":"MYCOIN1","txversion":4,"overwintered":1,"txfee":1000,"protocol":{"type":"UTXO"}},
-    ]);
+    let coins = json!([mycoin_conf(1000), mycoin1_conf(1000)]);
     let mm_bob = MarketMakerIt::start(
         json!({
             "gui": "nogui",
@@ -3824,10 +3725,8 @@ fn test_taker_should_match_with_best_price_sell() {
 fn test_match_utxo_with_eth_taker_sell() {
     let (_ctx, _, bob_priv_key) = generate_utxo_coin_with_random_privkey("MYCOIN", 1000.into());
     let (_ctx, _, alice_priv_key) = generate_utxo_coin_with_random_privkey("MYCOIN", 1000.into());
-    let coins = json!([
-        {"coin":"MYCOIN","asset":"MYCOIN","txversion":4,"overwintered":1,"txfee":1000,"protocol":{"type":"UTXO"}},
-        {"coin":"ETH","name":"ethereum","protocol":{"type":"ETH"}},
-    ]);
+    let coins = json!([mycoin_conf(1000), eth_testnet_conf()]);
+
     let mut mm_bob = MarketMakerIt::start(
         json!({
             "gui": "nogui",
@@ -3903,10 +3802,7 @@ fn test_match_utxo_with_eth_taker_sell() {
 fn test_match_utxo_with_eth_taker_buy() {
     let (_ctx, _, bob_priv_key) = generate_utxo_coin_with_random_privkey("MYCOIN", 1000.into());
     let (_ctx, _, alice_priv_key) = generate_utxo_coin_with_random_privkey("MYCOIN", 1000.into());
-    let coins = json!([
-        {"coin":"MYCOIN","asset":"MYCOIN","txversion":4,"overwintered":1,"txfee":1000,"protocol":{"type":"UTXO"}},
-        {"coin":"ETH","name":"ethereum","protocol":{"type":"ETH"}},
-    ]);
+    let coins = json!([mycoin_conf(1000), eth_testnet_conf()]);
     let mut mm_bob = MarketMakerIt::start(
         json!({
             "gui": "nogui",

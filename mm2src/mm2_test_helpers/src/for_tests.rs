@@ -383,6 +383,44 @@ pub fn morty_conf() -> Json {
     })
 }
 
+pub fn kmd_conf(tx_fee: u64) -> Json {
+    json!({
+        "coin":"KMD",
+        "txversion":4,
+        "overwintered":1,
+        "txfee":tx_fee,
+        "protocol":{
+            "type":"UTXO"
+        }
+    })
+}
+
+pub fn mycoin_conf(tx_fee: u64) -> Json {
+    json!({
+        "coin":"MYCOIN",
+        "asset":"MYCOIN",
+        "txversion":4,
+        "overwintered":1,
+        "txfee":tx_fee,
+        "protocol":{
+            "type":"UTXO"
+        }
+    })
+}
+
+pub fn mycoin1_conf(tx_fee: u64) -> Json {
+    json!({
+        "coin":"MYCOIN1",
+        "asset":"MYCOIN1",
+        "txversion":4,
+        "overwintered":1,
+        "txfee":tx_fee,
+        "protocol":{
+            "type":"UTXO"
+        }
+    })
+}
+
 pub fn atom_testnet_conf() -> Json {
     json!({
         "coin":"ATOM",
