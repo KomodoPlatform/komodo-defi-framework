@@ -5,12 +5,12 @@ use crate::l2::init_l2_error::{CancelInitL2Error, InitL2StatusError, InitL2UserA
 use crate::l2::InitL2Error;
 use crate::prelude::*;
 use async_trait::async_trait;
-use coins::{lp_coinfind, lp_coinfind_or_err, CoinIsAlreadyActivatedErr, CoinsContext, MmCoinEnum};
+use coins::{lp_coinfind, lp_coinfind_or_err, CoinIsAlreadyActivatedErr, CoinsContext, MmCoinEnum, RegisterCoinError};
+use common::log::LogOnError;
 use common::SuccessResponse;
 use mm2_core::mm_ctx::MmArc;
 use mm2_err_handle::prelude::*;
-use rpc_task::rpc_common::{CancelRpcTaskError, CancelRpcTaskRequest, InitRpcTaskResponse, RpcTaskStatusRequest,
-                           RpcTaskUserActionRequest};
+use rpc_task::rpc_common::{CancelRpcTaskRequest, InitRpcTaskResponse, RpcTaskStatusRequest, RpcTaskUserActionRequest};
 use rpc_task::{RpcTask, RpcTaskHandle, RpcTaskManager, RpcTaskManagerShared, RpcTaskStatus, RpcTaskTypes};
 use serde_derive::Deserialize;
 use serde_json::Value as Json;
@@ -40,7 +40,7 @@ pub trait InitL2ActivationOps: Into<MmCoinEnum> + Send + Sync + 'static {
     type CoinConf: Clone + Send + Sync;
     type ActivationResult: serde::Serialize + Clone + Send + Sync;
     type ActivationError: From<CoinIsAlreadyActivatedErr>
-        + From<CancelRpcTaskError>
+        + From<RegisterCoinError>
         + NotEqual
         + SerMmErrorType
         + Clone
@@ -192,12 +192,12 @@ where
     }
 
     /// Try to disable the coin in case if we managed to register it already.
-    async fn cancel(self) -> Result<(), MmError<Self::Error>> {
-        let ctx = CoinsContext::from_ctx(&self.ctx).map_to_mm(CancelRpcTaskError::Internal)?;
-        if let Ok(Some(t)) = lp_coinfind(&self.ctx, &self.ticker).await {
-            ctx.remove_coin(t).await.ok();
+    async fn cancel(self) {
+        if let Ok(ctx) = CoinsContext::from_ctx(&self.ctx) {
+            if let Ok(Some(t)) = lp_coinfind(&self.ctx, &self.ticker).await {
+                ctx.remove_coin(t).await.error_log();
+            };
         };
-        Ok(())
     }
 
     async fn run(&mut self, task_handle: &RpcTaskHandle<Self>) -> Result<Self::Item, MmError<Self::Error>> {
@@ -211,9 +211,8 @@ where
         )
         .await?;
 
-        let c_ctx = CoinsContext::from_ctx(&self.ctx).map_to_mm(CancelRpcTaskError::Internal)?;
-        let coin = coin.into();
-        c_ctx.add_l2(coin.clone()).await?;
+        let c_ctx = CoinsContext::from_ctx(&self.ctx).map_to_mm(RegisterCoinError::Internal)?;
+        c_ctx.add_l2(coin.into()).await?;
 
         Ok(result)
     }

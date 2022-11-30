@@ -2,7 +2,6 @@ use crate::task::RpcTaskTypes;
 use crate::{AtomicTaskId, RpcTask, RpcTaskError, RpcTaskHandle, RpcTaskResult, RpcTaskStatus, RpcTaskStatusAlias,
             TaskAbortHandle, TaskAbortHandler, TaskId, TaskStatus, TaskStatusError, UserActionSender};
 use common::executor::SpawnFuture;
-use common::log;
 use common::log::{debug, info, warn};
 use futures::channel::oneshot;
 use futures::future::{select, Either};
@@ -64,9 +63,7 @@ impl<Task: RpcTask> RpcTaskManager<Task> {
                 },
                 None => {
                     info!("RPC task '{}' has been aborted", task_id);
-                    if let Err(err) = task.cancel().await {
-                        log!("{}", err.to_string())
-                    };
+                    task.cancel().await;
                 },
             }
         };

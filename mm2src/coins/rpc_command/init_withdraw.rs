@@ -124,7 +124,7 @@ impl RpcTask for WithdrawTask {
     fn initial_status(&self) -> Self::InProgressStatus { WithdrawInProgressStatus::Preparing }
 
     // Do nothing if the task has been cancelled.
-    async fn cancel(self) -> Result<(), MmError<Self::Error>> { Ok(()) }
+    async fn cancel(self) {}
 
     async fn run(&mut self, task_handle: &WithdrawTaskHandle) -> Result<Self::Item, MmError<Self::Error>> {
         let ctx = self.ctx.clone();

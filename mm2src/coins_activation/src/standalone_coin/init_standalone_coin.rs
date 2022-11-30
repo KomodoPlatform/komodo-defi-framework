@@ -7,6 +7,7 @@ use async_trait::async_trait;
 use coins::my_tx_history_v2::TxHistoryStorage;
 use coins::tx_history_storage::{CreateTxHistoryStorageError, TxHistoryStorageBuilder};
 use coins::{lp_coinfind, lp_register_coin, CoinsContext, MmCoinEnum, RegisterCoinError, RegisterCoinParams};
+use common::log::LogOnError;
 use common::{log, SuccessResponse};
 use crypto::trezor::trezor_rpc_task::RpcTaskHandle;
 use crypto::CryptoCtxError;
@@ -186,13 +187,12 @@ where
     }
 
     /// Try to disable the coin in case if we managed to register it already.
-    async fn cancel(self) -> Result<(), MmError<Self::Error>> {
-        let c_ctx = CoinsContext::from_ctx(&self.ctx).map_to_mm(CryptoCtxError::Internal)?;
-        if let Ok(Some(t)) = lp_coinfind(&self.ctx, &self.request.ticker).await {
-            c_ctx.remove_coin(t).await.ok();
+    async fn cancel(self) {
+        if let Ok(c_ctx) = CoinsContext::from_ctx(&self.ctx) {
+            if let Ok(Some(coin)) = lp_coinfind(&self.ctx, &self.request.ticker).await {
+                c_ctx.remove_coin(coin).await.error_log();
+            };
         };
-
-        Ok(())
     }
 
     async fn run(&mut self, task_handle: &RpcTaskHandle<Self>) -> Result<Self::Item, MmError<Self::Error>> {

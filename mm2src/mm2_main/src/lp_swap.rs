@@ -495,12 +495,10 @@ pub fn active_swaps_using_coins(ctx: &MmArc, coins: &HashSet<String>) -> Result<
     let swap_ctx = try_s!(SwapsContext::from_ctx(ctx));
     let swaps = try_s!(swap_ctx.running_swaps.lock());
     let mut uuids = vec![];
-    for coin in coins {
-        for swap in swaps.iter() {
-            if let Some(swap) = swap.upgrade() {
-                if swap.maker_coin() == coin || swap.taker_coin() == coin {
-                    uuids.push(*swap.uuid())
-                }
+    for swap in swaps.iter() {
+        if let Some(swap) = swap.upgrade() {
+            if coins.get(swap.maker_coin()).is_some() || coins.get(swap.taker_coin()).is_some() {
+                uuids.push(*swap.uuid())
             }
         }
     }

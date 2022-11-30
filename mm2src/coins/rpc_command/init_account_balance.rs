@@ -64,7 +64,7 @@ impl RpcTask for InitAccountBalanceTask {
     fn initial_status(&self) -> Self::InProgressStatus { AccountBalanceInProgressStatus::RequestingAccountBalance }
 
     // Do nothing if the task has been cancelled.
-    async fn cancel(self) -> Result<(), MmError<Self::Error>> { Ok(()) }
+    async fn cancel(self) {}
 
     async fn run(&mut self, _task_handle: &InitAccountBalanceTaskHandle) -> Result<Self::Item, MmError<Self::Error>> {
         match self.coin {

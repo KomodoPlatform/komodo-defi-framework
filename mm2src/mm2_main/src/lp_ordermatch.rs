@@ -5251,20 +5251,21 @@ pub async fn get_matching_orders(ctx: &MmArc, coins: &HashSet<String>) -> Result
 
     let maker_orders = ordermatch_ctx.maker_orders_ctx.lock().orders.clone();
     let taker_orders = ordermatch_ctx.my_taker_orders.lock().await;
-    for ticker in coins {
-        for (uuid, order) in maker_orders.iter() {
-            let order = order.lock().await.clone();
-            if (&order.base == ticker || &order.rel == ticker) && !order.is_cancellable() {
-                matching_orders.push(*uuid);
-            }
-        }
 
-        taker_orders.iter().for_each(|(uuid, order)| {
-            if (&order.request.base == ticker || &order.request.rel == ticker) && !order.is_cancellable() {
-                matching_orders.push(*uuid);
-            };
-        });
+    for (uuid, order) in maker_orders.iter() {
+        let order = order.lock().await.clone();
+        if (coins.get(&order.base).is_some() || coins.get(&order.rel).is_some()) && !order.is_cancellable() {
+            matching_orders.push(*uuid);
+        }
     }
+
+    taker_orders.iter().for_each(|(uuid, order)| {
+        if (coins.get(&order.request.base).is_some() || coins.get(&order.request.rel).is_some())
+            && !order.is_cancellable()
+        {
+            matching_orders.push(*uuid);
+        };
+    });
 
     Ok(matching_orders)
 }

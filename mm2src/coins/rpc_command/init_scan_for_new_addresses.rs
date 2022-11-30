@@ -76,7 +76,7 @@ impl RpcTask for InitScanAddressesTask {
     fn initial_status(&self) -> Self::InProgressStatus { ScanAddressesInProgressStatus::InProgress }
 
     // Do nothing if the task has been cancelled.
-    async fn cancel(self) -> Result<(), MmError<Self::Error>> { Ok(()) }
+    async fn cancel(self) {}
 
     async fn run(&mut self, _task_handle: &ScanAddressesTaskHandle) -> Result<Self::Item, MmError<Self::Error>> {
         match self.coin {
