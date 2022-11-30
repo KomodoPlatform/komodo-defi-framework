@@ -2224,9 +2224,7 @@ impl CoinsContext {
     /// Get enabled coins to disable.
     pub async fn get_tokens_to_disable(&self, ticker: &str) -> HashSet<String> {
         let coins = self.platform_coin_tokens.lock();
-        let c = coins.get(ticker).cloned().unwrap_or_default();
-        println!("{:?}", c);
-        c
+        coins.get(ticker).cloned().unwrap_or_default()
     }
 
     pub async fn remove_coin(&self, coin: MmCoinEnum) -> Result<(), String> {
@@ -2252,10 +2250,7 @@ impl CoinsContext {
             coin.on_token_deactivated(ticker);
             coin.on_disabled()
                 .error_log_with_msg(&format!("Error aborting coin({ticker}) futures"));
-        } else {
-            coin.on_disabled()
-                .error_log_with_msg(&format!("Error aborting coin({ticker}) futures"));
-        }
+        };
 
         //  Remove coin from coin list
         if coins_storage.remove(ticker).is_none() {
@@ -2736,20 +2731,19 @@ pub async fn lp_register_coin(
         RawEntryMut::Occupied(_oe) => {
             return MmError::err(RegisterCoinError::CoinIsInitializedAlready { coin: ticker.clone() })
         },
-        RawEntryMut::Vacant(ve) => ve.insert(ticker.clone(), coin),
+        RawEntryMut::Vacant(ve) => ve.insert(ticker.clone(), coin.clone()),
     };
-    let mut coins = cctx.coins.lock();
-    //    coins.insert(coin.ticker().to_string(), coin);
-//    if coin.ticker().clone() == coin.platform_ticker() {
-//        let mut platform_coin_tokens = cctx.platform_coin_tokens.lock();
-//        match platform_coin_tokens.entry(coin.ticker().to_string()) {
-//            Entry::Occupied(mut entry) => entry.insert(HashSet::new()),
-//            Entry::Vacant(vacant) => {
-//                let vacant = vacant.insert(HashSet::new());
-//                let d = *vacant;
-//                d
-//            };
-//        };
+
+    if coin.ticker() == coin.platform_ticker() {
+        let mut platform_coin_tokens = cctx.platform_coin_tokens.lock();
+        match platform_coin_tokens.entry(coin.ticker().to_string()) {
+            Entry::Occupied(_) => {
+                // We probably don't need to do anything if platform coin exist in platform_coin_tokens already
+            },
+            Entry::Vacant(vacant) => {
+                vacant.insert(HashSet::new());
+            },
+        };
     }
     Ok(())
 }

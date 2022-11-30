@@ -74,9 +74,14 @@ pub async fn disable_coin(ctx: MmArc, req: Json) -> Result<Response<Vec<u8>>, St
     let coins_ctx = try_s!(CoinsContext::from_ctx(&ctx));
 
     // If a platform coin is to be disabled, we get all the enabled tokens for this platform coin first.
-    let mut coins_to_disable = coins_ctx.get_tokens_to_disable(&ticker).await;
+    // Converting HashSet to Vector here beacuse of ordering, it's very much needed for this functionality. HashSet messes with that.
+    let mut coins_to_disable = coins_ctx
+        .get_tokens_to_disable(&ticker)
+        .await
+        .into_iter()
+        .collect::<Vec<_>>();
     // We then add the platform coin to the end of the list of the coins to be disabled.
-    coins_to_disable.insert(ticker.clone());
+    coins_to_disable.push(ticker.clone());
     drop_mutability!(coins_to_disable);
 
     // Get all matching orders and active swaps.
