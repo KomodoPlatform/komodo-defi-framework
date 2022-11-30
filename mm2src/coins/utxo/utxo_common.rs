@@ -1997,14 +1997,12 @@ pub fn watcher_validate_taker_payment<T: UtxoCommonOps + SwapOps>(
         let instruction = script_sig
             .iter()
             .last()
-            .ok_or_else(|| String::from("Instruction not found"))
-            .map_to_mm(ValidatePaymentError::WrongPaymentTx)?
+            .or_mm_err(|| ValidatePaymentError::WrongPaymentTx(String::from("Instruction not found")))?
             .map_to_mm(|err| ValidatePaymentError::WrongPaymentTx(err.to_string()))?;
 
-        let redeem_script = instruction
-            .data
-            .ok_or_else(|| String::from("No redeem script in the taker payment refund preimage"))
-            .map_to_mm(ValidatePaymentError::WrongPaymentTx)?;
+        let redeem_script = instruction.data.or_mm_err(|| {
+            ValidatePaymentError::WrongPaymentTx(String::from("No redeem script in the taker payment refund preimage"))
+        })?;
 
         if expected_redeem.to_bytes().take() != redeem_script {
             return MmError::err(ValidatePaymentError::WrongPaymentTx(
