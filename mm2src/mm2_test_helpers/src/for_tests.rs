@@ -3,7 +3,7 @@
 use crate::electrums::qtum_electrums;
 use common::executor::Timer;
 use common::log::debug;
-use common::{cfg_native, now_float, now_ms, PagingOptionsEnum};
+use common::{cfg_native, now_float, now_ms, ready, repeatable, retry, PagingOptionsEnum};
 use common::{get_utc_timestamp, log};
 use crypto::CryptoCtx;
 use gstuff::{try_s, ERR, ERRL};
@@ -938,22 +938,27 @@ impl MarketMakerIt {
     /// The difference from standard wait_for_log is this function keeps working
     /// after process is stopped
     #[cfg(not(target_arch = "wasm32"))]
-    pub async fn wait_for_log_after_stop<F>(&mut self, timeout_sec: f64, pred: F) -> Result<(), String>
+    pub async fn wait_for_log_after_stop<F>(&self, timeout_sec: f64, pred: F) -> Result<(), String>
     where
         F: Fn(&str) -> bool,
     {
-        let start = now_float();
+        use common::try_or_ready_err;
+
         let ms = 50.min((timeout_sec * 1000.) as u64 / 20 + 10);
-        loop {
-            let mm_log = try_s!(self.log_as_utf8());
+
+        repeatable!(async {
+            let mm_log = try_or_ready_err!(self.log_as_utf8());
             if pred(&mm_log) {
-                return Ok(());
+                ready!(Ok(()));
             }
-            if now_float() - start > timeout_sec {
-                return ERR!("Timeout expired waiting for a log condition");
-            }
-            Timer::sleep(ms as f64 / 1000.).await
-        }
+            retry!();
+        })
+        .repeat_every_ms(ms)
+        .with_timeout_secs(timeout_sec)
+        .await
+        .map_err(|e| ERRL!("{:?}", e))
+        // Convert `Result<Result<(), String>, String>` to `Result<(), String>`
+        .flatten()
     }
 
     /// Busy-wait on the instance in-memory log until the `pred` returns `true` or `timeout_sec` expires.
@@ -1064,21 +1069,18 @@ impl MarketMakerIt {
         drop(self);
 
         let started_at = now_ms();
-        let wait_until = started_at + timeout_ms;
-        while now_ms() < wait_until {
+        repeatable!(async {
             if MmArc::from_weak(&ctx_weak).is_none() {
                 let took_ms = now_ms() - started_at;
                 log!("stop] MmCtx was dropped in {took_ms}ms");
-                return Ok(());
+                ready!();
             }
-            Timer::sleep(0.05).await;
-        }
-
-        ERR!(
-            "Waited too long (more than '{}ms') for `MmArc` {:?} to be dropped",
-            timeout_ms,
-            ctx_weak
-        )
+            retry!();
+        })
+        .repeat_every_secs(0.05)
+        .with_timeout_ms(timeout_ms)
+        .await
+        .map_err(|e| ERRL!("{:?}", e))
     }
 
     /// Currently, we cannot wait for the `Completed IAmrelay handling for peer` log entry on WASM node,

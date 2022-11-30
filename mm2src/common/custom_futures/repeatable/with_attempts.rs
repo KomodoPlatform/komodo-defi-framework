@@ -55,7 +55,7 @@ where
     /// Specifies an inspect handler that does something with an error on each unsuccessful attempt.
     pub fn inspect_err<Inspect>(mut self, inspect: Inspect) -> Self
     where
-        Inspect: 'static + Fn(&E),
+        Inspect: 'static + Fn(&E) + Send,
     {
         self.inspect_err = Some(Box::new(inspect));
         self
@@ -113,7 +113,7 @@ where
 mod tests {
     use super::*;
     use crate::custom_futures::repeatable::RetryOnError;
-    use crate::{block_on, repeatable};
+    use crate::{block_on, repeatable, retry_on_err};
     use futures::lock::Mutex as AsyncMutex;
     use std::sync::atomic::{AtomicUsize, Ordering};
     use std::sync::Arc;
@@ -169,6 +169,18 @@ mod tests {
         let counter = AsyncMutex::new(0);
 
         let fut = repeatable!(async { an_operation(&counter).await.retry_on_err() })
+            .repeat_every(Duration::from_millis(100))
+            .attempts(3);
+
+        let actual = block_on(fut);
+        assert_eq!(actual, Ok(3));
+    }
+
+    #[test]
+    fn test_attempts_retry_on_err_macro() {
+        let counter = AsyncMutex::new(0);
+
+        let fut = retry_on_err!(async { an_operation(&counter).await })
             .repeat_every(Duration::from_millis(100))
             .attempts(3);
 

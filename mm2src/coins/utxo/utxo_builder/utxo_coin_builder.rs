@@ -832,8 +832,8 @@ async fn wait_for_protocol_version_checked(client: &ElectrumClientImpl) -> Resul
         }
         retry!()
     })
+    .repeat_every_secs(0.5)
     .attempts(10)
-    .repeat_every(0.5)
     .await
     .map_err(|_exceed| ERRL!("Failed protocol version verifying of at least 1 of Electrums in 5 seconds."))
     // Flatten `Result< Result<(), String>, String >`
