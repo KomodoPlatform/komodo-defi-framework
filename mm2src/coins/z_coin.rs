@@ -1495,7 +1495,7 @@ impl WatcherOps for ZCoin {
     async fn watcher_search_for_swap_tx_spend(
         &self,
         _input: WatcherSearchForSwapTxSpendInput<'_>,
-    ) -> Result<FoundSwapTxSpend, String> {
+    ) -> Result<Option<FoundSwapTxSpend>, String> {
         unimplemented!();
     }
 }

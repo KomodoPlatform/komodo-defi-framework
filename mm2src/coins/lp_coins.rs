@@ -518,6 +518,7 @@ pub struct ValidatePaymentInput {
     pub unique_swap_data: Vec<u8>,
 }
 
+#[derive(Clone, Debug)]
 pub struct WatcherSearchForSwapTxSpendInput<'a> {
     pub time_lock: u32,
     pub taker_pub: &'a [u8],
@@ -525,8 +526,6 @@ pub struct WatcherSearchForSwapTxSpendInput<'a> {
     pub secret_hash: &'a [u8],
     pub tx: &'a [u8],
     pub search_from_block: u64,
-    pub wait_until: u64,
-    pub check_every: f64,
 }
 
 pub struct SearchForSwapTxSpendInput<'a> {
@@ -753,7 +752,7 @@ pub trait WatcherOps {
     async fn watcher_search_for_swap_tx_spend(
         &self,
         input: WatcherSearchForSwapTxSpendInput<'_>,
-    ) -> Result<FoundSwapTxSpend, String>;
+    ) -> Result<Option<FoundSwapTxSpend>, String>;
 }
 
 /// Operations that coins have independently from the MarketMaker.

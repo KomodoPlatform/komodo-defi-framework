@@ -23,7 +23,7 @@ use chain::constants::SEQUENCE_FINAL;
 use chain::{OutPoint, TransactionOutput};
 use common::executor::Timer;
 use common::jsonrpc_client::JsonRpcErrorType;
-use common::log::{debug, error, warn};
+use common::log::{error, warn};
 use common::{now_ms, one_hundred, ten_f64};
 use crypto::{Bip32DerPathOps, Bip44Chain, RpcDerivationPath, StandardHDPath, StandardHDPathError};
 use futures::compat::Future01CompatExt;
@@ -2121,37 +2121,18 @@ pub async fn watcher_search_for_swap_tx_spend<T: AsRef<UtxoCoinFields> + SwapOps
     coin: &T,
     input: WatcherSearchForSwapTxSpendInput<'_>,
     output_index: usize,
-) -> Result<FoundSwapTxSpend, String> {
-    loop {
-        match search_for_swap_output_spend(
-            coin.as_ref(),
-            input.time_lock,
-            &try_s!(Public::from_slice(input.taker_pub)),
-            &try_s!(Public::from_slice(input.maker_pub)),
-            input.secret_hash,
-            input.tx,
-            output_index,
-            input.search_from_block,
-        )
-        .await
-        {
-            Ok(Some(found_swap_tx_spend)) => {
-                return Ok(found_swap_tx_spend);
-            },
-            Ok(None) => debug!("Transaction spend for {:?} not found", input.tx),
-            Err(e) => error!("Error on watcher_search_for_swap_output_spend: {}", e),
-        };
-
-        if now_ms() / 1000 > input.wait_until {
-            return ERR!(
-                "Waited too long until {} for transaction {:?} {} to be spent ",
-                input.wait_until,
-                input.tx,
-                output_index,
-            );
-        }
-        Timer::sleep(input.check_every).await;
-    }
+) -> Result<Option<FoundSwapTxSpend>, String> {
+    search_for_swap_output_spend(
+        coin.as_ref(),
+        input.time_lock,
+        &try_s!(Public::from_slice(input.taker_pub)),
+        &try_s!(Public::from_slice(input.maker_pub)),
+        input.secret_hash,
+        input.tx,
+        output_index,
+        input.search_from_block,
+    )
+    .await
 }
 
 pub async fn search_for_swap_tx_spend_my<T: AsRef<UtxoCoinFields> + SwapOps>(

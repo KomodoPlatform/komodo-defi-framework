@@ -784,7 +784,7 @@ impl WatcherOps for QtumCoin {
     async fn watcher_search_for_swap_tx_spend(
         &self,
         input: WatcherSearchForSwapTxSpendInput<'_>,
-    ) -> Result<FoundSwapTxSpend, String> {
+    ) -> Result<Option<FoundSwapTxSpend>, String> {
         utxo_common::watcher_search_for_swap_tx_spend(self, input, utxo_common::DEFAULT_SWAP_VOUT).await
     }
 }

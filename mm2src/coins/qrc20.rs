@@ -1098,7 +1098,7 @@ impl WatcherOps for Qrc20Coin {
     async fn watcher_search_for_swap_tx_spend(
         &self,
         _input: WatcherSearchForSwapTxSpendInput<'_>,
-    ) -> Result<FoundSwapTxSpend, String> {
+    ) -> Result<Option<FoundSwapTxSpend>, String> {
         unimplemented!();
     }
 }
