@@ -2245,15 +2245,12 @@ impl CoinsContext {
                     }
                 });
             };
-        } else if let Some(tokens) = platform_tokens_storage.get_mut(platform_ticker) {
-            tokens.remove(ticker);
-            // Abort all coin related futures on coin deactivation
-            coin.on_disabled()
-                .error_log_with_msg(&format!("Error aborting coin({ticker}) futures"));
-            if ticker != platform_ticker {
-                if let Some(platform_coin) = coins_storage.get(platform_ticker) {
-                    platform_coin.on_token_deactivated(ticker);
-                }
+        } else {
+            if let Some(tokens) = platform_tokens_storage.get_mut(platform_ticker) {
+                tokens.remove(ticker);
+            }
+            if let Some(platform_coin) = coins_storage.get(platform_ticker) {
+                platform_coin.on_token_deactivated(ticker);
             }
         };
 
