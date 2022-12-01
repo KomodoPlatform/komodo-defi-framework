@@ -2004,7 +2004,7 @@ pub fn watcher_validate_taker_payment<T: UtxoCommonOps + SwapOps>(
             ValidatePaymentError::WrongPaymentTx(String::from("No redeem script in the taker payment refund preimage"))
         })?;
 
-        if expected_redeem.to_bytes().take() != redeem_script {
+        if expected_redeem.as_slice() != redeem_script {
             return MmError::err(ValidatePaymentError::WrongPaymentTx(
                 "Taker payment tx locking script doesn't match with taker payment refund redeem script".to_string(),
             ));
