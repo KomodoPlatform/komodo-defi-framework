@@ -1,5 +1,3 @@
-extern crate core;
-
 #[cfg(target_arch = "wasm32")] mod eth_provider;
 #[cfg(target_arch = "wasm32")] mod metamask_error;
 #[cfg(target_arch = "wasm32")] mod metamask_provider;

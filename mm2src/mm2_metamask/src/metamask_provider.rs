@@ -68,7 +68,7 @@ impl<'a> MetamaskSession<'a> {
     /// https://ethereum.org/en/developers/docs/apis/json-rpc/
     pub async fn eth_request(&mut self, method: String, params: Vec<Json>) -> MetamaskResult<Json> {
         self.eth_provider
-            .invoke_method(method.to_string(), params)
+            .invoke_method(method, params)
             .await
             .mm_err(MetamaskError::from)
     }
