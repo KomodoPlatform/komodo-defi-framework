@@ -31,7 +31,6 @@ use mm2_number::{construct_detailed, BigDecimal};
 use serde_json::{self as json, Value as Json};
 use std::borrow::Cow;
 use std::iter::Extend;
-use uuid::Uuid;
 
 use crate::mm2::lp_dispatcher::{dispatch_lp_event, StopCtxEvent};
 use crate::mm2::lp_network::subscribe_to_topic;
@@ -41,16 +40,6 @@ use crate::mm2::MmVersionResult;
 
 const INTERNAL_SERVER_ERROR_CODE: u16 = 500;
 const RESPONSE_OK_STATUS_CODE: u16 = 200;
-
-async fn cancel_orders(ctx: &MmArc, ticker: &str) -> Result<(Vec<Uuid>, Vec<Uuid>), String> {
-    let res = try_s!(
-        cancel_orders_by(ctx, CancelBy::Coin {
-            ticker: ticker.to_string()
-        })
-        .await
-    );
-    Ok(res)
-}
 
 /// Attempts to disable the coin
 pub async fn disable_coin(ctx: MmArc, req: Json) -> Result<Response<Vec<u8>>, String> {
@@ -90,7 +79,11 @@ pub async fn disable_coin(ctx: MmArc, req: Json) -> Result<Response<Vec<u8>>, St
     let mut disabled_tokens = vec![];
     for ticker in &coins_to_disable {
         log!("disabling {ticker} coin");
-        match cancel_orders(&ctx, ticker).await {
+        let cancelled_orders_and_still_matching = cancel_orders_by(&ctx, CancelBy::Coin {
+            ticker: ticker.to_string(),
+        })
+        .await;
+        match cancelled_orders_and_still_matching {
             Ok((cancelled, _)) => {
                 cancelled_orders.extend(cancelled);
                 disabled_tokens.push(ticker);

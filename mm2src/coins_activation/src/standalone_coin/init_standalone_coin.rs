@@ -10,7 +10,6 @@ use coins::{lp_coinfind, lp_register_coin, CoinsContext, MmCoinEnum, RegisterCoi
 use common::log::LogOnError;
 use common::{log, SuccessResponse};
 use crypto::trezor::trezor_rpc_task::RpcTaskHandle;
-use crypto::CryptoCtxError;
 use mm2_core::mm_ctx::MmArc;
 use mm2_err_handle::prelude::*;
 use mm2_metrics::MetricsArc;
@@ -41,7 +40,6 @@ pub trait InitStandaloneCoinActivationOps: Into<MmCoinEnum> + Send + Sync + 'sta
     type ActivationResult: serde::Serialize + Clone + CurrentBlock + GetAddressesBalances + Send + Sync + 'static;
     type ActivationError: From<RegisterCoinError>
         + From<CreateTxHistoryStorageError>
-        + From<CryptoCtxError>
         + Into<InitStandaloneCoinError>
         + SerMmErrorType
         + NotEqual

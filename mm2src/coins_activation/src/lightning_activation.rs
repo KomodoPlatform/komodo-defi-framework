@@ -30,7 +30,6 @@ use lightning_invoice::utils::DefaultRouter;
 use mm2_core::mm_ctx::MmArc;
 use mm2_err_handle::prelude::*;
 use parking_lot::Mutex as PaMutex;
-use rpc_task::rpc_common::CancelRpcTaskError;
 use ser_error_derive::SerializeErrorType;
 use serde_derive::{Deserialize, Serialize};
 use serde_json::{self as json, Value as Json};
@@ -160,10 +159,6 @@ pub enum LightningInitError {
     MyBalanceError(BalanceError),
     MyAddressError(String),
     Internal(String),
-}
-
-impl From<CancelRpcTaskError> for LightningInitError {
-    fn from(err: CancelRpcTaskError) -> Self { Self::Internal(err.to_string()) }
 }
 
 impl From<MyAddressError> for LightningInitError {

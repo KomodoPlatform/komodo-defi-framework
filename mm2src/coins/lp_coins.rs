@@ -37,6 +37,7 @@ use async_trait::async_trait;
 use base58::FromBase58Error;
 use common::executor::{abortable_queue::{AbortableQueue, WeakSpawner},
                        AbortSettings, AbortedError, SpawnAbortable, SpawnFuture};
+use common::log::LogOnError;
 use common::{calc_total_pages, now_ms, ten, HttpStatusCode};
 use crypto::{Bip32Error, CryptoCtx, DerivationPath, GlobalHDAccountArc, HwRpcError, KeyPairPolicy, Secp256k1Secret,
              WithHwRpcError};
@@ -58,7 +59,7 @@ use rpc::v1::types::{Bytes as BytesJson, H256 as H256Json};
 use serde::{Deserialize, Deserializer, Serialize, Serializer};
 use serde_json::{self as json, Value as Json};
 use std::cmp::Ordering;
-use std::collections::hash_map::{Entry, HashMap, RawEntryMut};
+use std::collections::hash_map::{HashMap, RawEntryMut};
 use std::collections::HashSet;
 use std::fmt;
 use std::future::Future as Future03;
@@ -191,7 +192,6 @@ pub mod coin_balance;
 
 pub mod coin_errors;
 use coin_errors::{MyAddressError, ValidatePaymentError, ValidatePaymentFut};
-use common::log::LogOnError;
 
 #[doc(hidden)]
 #[cfg(test)]
@@ -2247,9 +2247,14 @@ impl CoinsContext {
             };
         } else if let Some(tokens) = platform_tokens_storage.get_mut(platform_ticker) {
             tokens.remove(ticker);
-            coin.on_token_deactivated(ticker);
+            // Abort all coin related futures on coin deactivation
             coin.on_disabled()
                 .error_log_with_msg(&format!("Error aborting coin({ticker}) futures"));
+            if ticker != platform_ticker {
+                if let Some(platform_coin) = coins_storage.get(platform_ticker) {
+                    platform_coin.on_token_deactivated(ticker);
+                }
+            }
         };
 
         //  Remove coin from coin list
@@ -2736,14 +2741,9 @@ pub async fn lp_register_coin(
 
     if coin.ticker() == coin.platform_ticker() {
         let mut platform_coin_tokens = cctx.platform_coin_tokens.lock();
-        match platform_coin_tokens.entry(coin.ticker().to_string()) {
-            Entry::Occupied(_) => {
-                // We probably don't need to do anything if platform coin exist in platform_coin_tokens already
-            },
-            Entry::Vacant(vacant) => {
-                vacant.insert(HashSet::new());
-            },
-        };
+        platform_coin_tokens
+            .entry(coin.ticker().to_string())
+            .or_insert_with(HashSet::new);
     }
     Ok(())
 }
