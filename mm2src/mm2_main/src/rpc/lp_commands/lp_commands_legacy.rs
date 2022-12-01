@@ -42,31 +42,20 @@ use crate::mm2::MmVersionResult;
 const INTERNAL_SERVER_ERROR_CODE: u16 = 500;
 const RESPONSE_OK_STATUS_CODE: u16 = 200;
 
-async fn cancel_and_remove_coin(
-    ctx: &MmArc,
-    coin_ctx: &CoinsContext,
-    ticker: &str,
-) -> Result<(Vec<Uuid>, Vec<Uuid>), String> {
-    let coin = match lp_coinfind(ctx, ticker).await {
-        Ok(Some(t)) => t,
-        Ok(None) => return ERR!("No such coin: {}", ticker),
-        Err(err) => return ERR!("!lp_coinfind({}): ", err),
-    };
+async fn cancel_orders(ctx: &MmArc, ticker: &str) -> Result<(Vec<Uuid>, Vec<Uuid>), String> {
     let res = try_s!(
         cancel_orders_by(ctx, CancelBy::Coin {
             ticker: ticker.to_string()
         })
         .await
     );
-    try_s!(coin_ctx.remove_coin(coin).await);
-
     Ok(res)
 }
 
 /// Attempts to disable the coin
 pub async fn disable_coin(ctx: MmArc, req: Json) -> Result<Response<Vec<u8>>, String> {
     let ticker = try_s!(req["coin"].as_str().ok_or("No 'coin' field")).to_owned();
-    let _coin = match lp_coinfind(&ctx, &ticker).await {
+    let coin = match lp_coinfind(&ctx, &ticker).await {
         Ok(Some(t)) => t,
         Ok(None) => return ERR!("No such coin: {}", ticker),
         Err(err) => return ERR!("!lp_coinfind({}): ", err),
@@ -74,14 +63,9 @@ pub async fn disable_coin(ctx: MmArc, req: Json) -> Result<Response<Vec<u8>>, St
     let coins_ctx = try_s!(CoinsContext::from_ctx(&ctx));
 
     // If a platform coin is to be disabled, we get all the enabled tokens for this platform coin first.
-    // Converting HashSet to Vector here beacuse of ordering, it's very much needed for this functionality. HashSet messes with that.
-    let mut coins_to_disable = coins_ctx
-        .get_tokens_to_disable(&ticker)
-        .await
-        .into_iter()
-        .collect::<Vec<_>>();
-    // We then add the platform coin to the end of the list of the coins to be disabled.
-    coins_to_disable.push(ticker.clone());
+    let mut coins_to_disable = coins_ctx.get_tokens_to_disable(&ticker).await;
+    // We then add the platform coin to the list of the coins to be disabled.
+    coins_to_disable.insert(ticker.clone());
     drop_mutability!(coins_to_disable);
 
     // Get all matching orders and active swaps.
@@ -106,8 +90,8 @@ pub async fn disable_coin(ctx: MmArc, req: Json) -> Result<Response<Vec<u8>>, St
     let mut disabled_tokens = vec![];
     for ticker in &coins_to_disable {
         log!("disabling {ticker} coin");
-        match cancel_and_remove_coin(&ctx, &coins_ctx, ticker).await {
-            Ok((cancelled, _matching)) => {
+        match cancel_orders(&ctx, ticker).await {
+            Ok((cancelled, _)) => {
                 cancelled_orders.extend(cancelled);
                 disabled_tokens.push(ticker);
             },
@@ -124,7 +108,7 @@ pub async fn disable_coin(ctx: MmArc, req: Json) -> Result<Response<Vec<u8>>, St
             },
         }
     }
-
+    try_s!(coins_ctx.remove_coin(coin).await);
     let res = json!({
         "result": {
             "coin": ticker,

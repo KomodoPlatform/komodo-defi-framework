@@ -204,7 +204,7 @@ fn test_enable_lightning() {
     )
     .unwrap();
     let (_dump_log, _dump_dashboard) = mm.mm_dump();
-    // log!("log path: {}", mm.log_path.display());
+    log!("log path: {}", mm.log_path.display());
 
     let _electrum = block_on(enable_electrum(&mm, "tBTC-TEST-segwit", false, T_BTC_ELECTRUMS));
 
