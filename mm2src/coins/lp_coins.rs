@@ -2255,9 +2255,10 @@ impl CoinsContext {
         };
 
         //  Remove coin from coin list
-        if coins_storage.remove(ticker).is_none() {
-            return ERR!("{} is disabled already", ticker);
-        };
+        coins_storage
+            .remove(ticker)
+            .ok_or(format!("{} is disabled already", ticker))
+            .error_log();
 
         // Abort all coin related futures on coin deactivation
         coin.on_disabled()
