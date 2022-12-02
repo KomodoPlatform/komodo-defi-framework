@@ -202,8 +202,8 @@ fn test_tendermint_tx_history() {
     const TEST_SEED: &str = "Vdo8Xt8pTAetRlMq3kV0LzE393eVYbPSn5Mhtw4p";
     const TX_FINISHED_LOG: &str = "Tx history fetching finished for IRIS-TEST.";
     const TX_HISTORY_PAGE_LIMIT: usize = 50;
-    const IRIS_TEST_EXPECTED_TX_COUNT: u64 = 7;
-    const IRIS_NIMDA_EXPECTED_TX_COUNT: u64 = 11;
+    const IRIS_TEST_EXPECTED_TX_COUNT: u64 = 15;
+    const IRIS_NIMDA_EXPECTED_TX_COUNT: u64 = 10;
 
     let iris_test_constant_history_txs = include_str!("../../../mm2_test_helpers/dummy_files/iris_test_history.json");
     let iris_test_constant_history_txs: Vec<TransactionDetails> =
@@ -245,7 +245,6 @@ fn test_tendermint_tx_history() {
 
     let mut iris_txs_from_request = iris_tx_history_response["result"]["transactions"].clone();
     for i in 0..IRIS_TEST_EXPECTED_TX_COUNT {
-        iris_txs_from_request[i as usize]["timestamp"] = json!(0);
         iris_txs_from_request[i as usize]
             .as_object_mut()
             .unwrap()
@@ -261,7 +260,6 @@ fn test_tendermint_tx_history() {
 
     let mut nimda_txs_from_request = nimda_tx_history_response["result"]["transactions"].clone();
     for i in 0..IRIS_NIMDA_EXPECTED_TX_COUNT {
-        nimda_txs_from_request[i as usize]["timestamp"] = json!(0);
         nimda_txs_from_request[i as usize]
             .as_object_mut()
             .unwrap()

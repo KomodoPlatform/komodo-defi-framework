@@ -838,10 +838,7 @@ fn process_sync_pubkey_orderbook_state(
 ) -> Result<Option<SyncPubkeyOrderbookStateRes>, String> {
     let ordermatch_ctx = OrdermatchContext::from_ctx(&ctx).unwrap();
     let orderbook = ordermatch_ctx.orderbook.lock();
-    let pubkey_state = match orderbook.pubkeys_state.get(&pubkey) {
-        Some(s) => s,
-        None => return Ok(None),
-    };
+    let pubkey_state = some_or_return_ok_none!(orderbook.pubkeys_state.get(&pubkey));
 
     let order_getter = |uuid: &Uuid| orderbook.order_set.get(uuid).cloned();
     let pair_orders_diff: Result<HashMap<_, _>, _> = trie_roots

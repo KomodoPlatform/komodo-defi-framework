@@ -45,7 +45,6 @@ impl TokenProtocolParams for TendermintTokenProtocolInfo {
 
 #[async_trait]
 impl TokenActivationOps for TendermintToken {
-    type PlatformCoin = TendermintCoin;
     type ActivationParams = TendermintTokenActivationParams;
     type ProtocolInfo = TendermintTokenProtocolInfo;
     type ActivationResult = TendermintTokenInitResult;
@@ -53,7 +52,7 @@ impl TokenActivationOps for TendermintToken {
 
     async fn enable_token(
         ticker: String,
-        platform_coin: <Self as TokenActivationOps>::PlatformCoin,
+        platform_coin: Self::PlatformCoin,
         _activation_params: Self::ActivationParams,
         protocol_conf: Self::ProtocolInfo,
     ) -> Result<(Self, Self::ActivationResult), MmError<Self::ActivationError>> {

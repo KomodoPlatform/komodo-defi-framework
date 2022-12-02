@@ -9,7 +9,7 @@ pub(crate) const TX_SUCCESS_CODE: u32 = 0;
 
 #[repr(u8)]
 pub enum TendermintResultOrder {
-    Ascending = 0,
+    Ascending = 1,
     Descending,
 }
 

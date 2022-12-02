@@ -21,7 +21,7 @@ pub struct TokenActivationRequest<Req> {
 }
 
 pub trait TokenOf: Into<MmCoinEnum> {
-    type PlatformCoin: PlatformWithTokensActivationOps + RegisterTokenInfo<Self>;
+    type PlatformCoin: TryPlatformCoinFromMmCoinEnum + PlatformWithTokensActivationOps + RegisterTokenInfo<Self> + Clone;
 }
 
 pub struct TokenActivationParams<Req, Protocol> {

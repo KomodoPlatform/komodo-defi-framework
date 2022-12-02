@@ -73,7 +73,6 @@ pub struct SlpInitResult {
 
 #[async_trait]
 impl TokenActivationOps for SlpToken {
-    type PlatformCoin = BchCoin;
     type ActivationParams = SlpActivationRequest;
     type ProtocolInfo = SlpProtocolConf;
     type ActivationResult = SlpInitResult;
@@ -81,7 +80,7 @@ impl TokenActivationOps for SlpToken {
 
     async fn enable_token(
         ticker: String,
-        platform_coin: <Self as TokenActivationOps>::PlatformCoin,
+        platform_coin: Self::PlatformCoin,
         activation_params: Self::ActivationParams,
         protocol_conf: Self::ProtocolInfo,
     ) -> Result<(Self, Self::ActivationResult), MmError<Self::ActivationError>> {

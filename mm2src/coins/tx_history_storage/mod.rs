@@ -23,7 +23,16 @@ mod tx_history_v2_tests;
 #[inline]
 pub fn token_id_from_tx_type(tx_type: &TransactionType) -> String {
     match tx_type {
-        TransactionType::Fee(token_id) | TransactionType::TokenTransfer(token_id) => format!("{:02x}", token_id),
+        TransactionType::TokenTransfer(token_id) => {
+            format!("{:02x}", token_id)
+        },
+        TransactionType::CustomTendermintMsg { token_id, .. } => {
+            if let Some(token_id) = token_id {
+                format!("{:02x}", token_id)
+            } else {
+                String::new()
+            }
+        },
         _ => String::new(),
     }
 }

@@ -18,7 +18,6 @@ use mm2_number::BigDecimal;
 use num_traits::ToPrimitive;
 use rpc::v1::types::{Bytes as BytesJson, ToTxHash};
 use std::collections::HashSet;
-use std::mem::discriminant;
 
 #[derive(Debug)]
 pub enum RemoveTxResult {
@@ -217,13 +216,23 @@ impl<'a, Addr: Clone + DisplayAddress + Eq + std::hash::Hash, Tx: Transaction> T
 
         let tx_hash = self.tx.tx_hash();
         let internal_id = match &self.transaction_type {
-            TransactionType::TokenTransfer(token_id) | TransactionType::Fee(token_id) => {
+            TransactionType::TokenTransfer(token_id) => {
                 let mut bytes_for_hash = tx_hash.0.clone();
                 bytes_for_hash.extend_from_slice(&token_id.0);
                 sha256(&bytes_for_hash).to_vec().into()
             },
+            TransactionType::CustomTendermintMsg { token_id, .. } => {
+                if let Some(token_id) = token_id {
+                    let mut bytes_for_hash = tx_hash.0.clone();
+                    bytes_for_hash.extend_from_slice(&token_id.0);
+                    sha256(&bytes_for_hash).to_vec().into()
+                } else {
+                    tx_hash.clone()
+                }
+            },
             TransactionType::StakingDelegation
             | TransactionType::RemoveDelegation
+            | TransactionType::FeeForTokenTx
             | TransactionType::StandardTransfer => tx_hash.clone(),
         };
 
@@ -419,23 +428,39 @@ where
     let protocol_type = coin_conf["protocol"]["type"].as_str().unwrap_or_default();
     let decimals = coin.decimals();
 
-    let transactions =
-        history
-            .transactions
-            .into_iter()
-            .map(|mut details| {
-                // checking if transaction type is not `Fee`
-                if discriminant(&details.transaction_type) != discriminant(&TransactionType::Fee(BytesJson::default()))
-                {
-                    // it can be the platform ticker instead of the token ticker for a pre-saved record
-                    if details.coin != request.coin {
-                        details.coin = request.coin.clone();
+    let transactions = history
+        .transactions
+        .into_iter()
+        .map(|mut details| {
+            // it can be the platform ticker instead of the token ticker for a pre-saved record
+            if details.coin != request.coin {
+                details.coin = request.coin.clone();
+            }
+
+            // TODO
+            // !! temporary solution !!
+            // for tendermint, tx_history_v2 implementation doesn't include amount parsing logic.
+            // therefore, re-mapping is required
+            match protocol_type {
+                TENDERMINT_COIN_PROTOCOL_TYPE | TENDERMINT_ASSET_PROTOCOL_TYPE => {
+                    // TODO
+                    // see this https://github.com/KomodoPlatform/atomicDEX-API/pull/1526#discussion_r1037001780
+                    if let Some(TxFeeDetails::Utxo(fee)) = &mut details.fee_details {
+                        let mapped_fee = crate::tendermint::TendermintFeeDetails {
+                            // We make sure this is filled in `tendermint_tx_history_v2`
+                            coin: fee.coin.as_ref().expect("can't be empty").to_owned(),
+                            amount: fee.amount.clone(),
+                            gas_limit: crate::tendermint::GAS_LIMIT_DEFAULT,
+                            // ignored anyway
+                            uamount: 0,
+                        };
+                        details.fee_details = Some(TxFeeDetails::Tendermint(mapped_fee));
                     }
 
-                    match protocol_type {
-                        // for tendermint, tx_history_v2 implementation doesn't include amount parsing logic.
-                        // therefore, re-mapping is required
-                        TENDERMINT_COIN_PROTOCOL_TYPE | TENDERMINT_ASSET_PROTOCOL_TYPE => {
+                    match &details.transaction_type {
+                        // Amount mappings are by-passed when `TransactionType` is `FeeForTokenTx`
+                        TransactionType::FeeForTokenTx => {},
+                        _ => {
                             // In order to use error result instead of panicking, we should do an extra iteration above this map.
                             // Because all the values are inserted by u64 convertion in tx_history_v2 implementation, using `panic`
                             // shouldn't harm.
@@ -459,18 +484,19 @@ where
                             // this since it's always 0 from tx_history_v2 implementation.
                             details.my_balance_change = &details.received_by_me - &details.spent_by_me;
                         },
-                        _ => {},
-                    };
-                }
+                    }
+                },
+                _ => {},
+            };
 
-                let confirmations = if details.block_height == 0 || details.block_height > current_block {
-                    0
-                } else {
-                    current_block + 1 - details.block_height
-                };
-                MyTxHistoryDetails { confirmations, details }
-            })
-            .collect();
+            let confirmations = if details.block_height == 0 || details.block_height > current_block {
+                0
+            } else {
+                current_block + 1 - details.block_height
+            };
+            MyTxHistoryDetails { confirmations, details }
+        })
+        .collect();
 
     Ok(MyTxHistoryResponseV2 {
         coin: request.coin,

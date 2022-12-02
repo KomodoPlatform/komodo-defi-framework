@@ -1,10 +1,10 @@
-use super::{rpc::*, AllBalancesResult, TendermintCoin, TendermintCoinRpcError, TendermintToken};
+use super::{rpc::*, AllBalancesResult, TendermintCoin, TendermintCommons, TendermintToken};
 
 use crate::my_tx_history_v2::{CoinWithTxHistoryV2, MyTxHistoryErrorV2, MyTxHistoryTarget, TxHistoryStorage};
-use crate::tendermint::TendermintFeeDetails;
+use crate::tendermint::{CustomTendermintMsgType, TendermintFeeDetails};
 use crate::tx_history_storage::{GetTxHistoryFilters, WalletId};
 use crate::utxo::utxo_common::big_decimal_from_sat_unsigned;
-use crate::{HistorySyncState, MarketCoinOps, TransactionDetails, TransactionType, TxFeeDetails};
+use crate::{HistorySyncState, MarketCoinOps, MmCoin, TransactionDetails, TransactionType, TxFeeDetails};
 use async_trait::async_trait;
 use bitcrypto::sha256;
 use common::executor::Timer;
@@ -68,18 +68,8 @@ macro_rules! some_or_return {
     };
 }
 
-#[async_trait]
-pub trait TendermintTxHistoryOps: CoinWithTxHistoryV2 + MarketCoinOps + Send + Sync + 'static {
-    async fn get_rpc_client(&self) -> MmResult<HttpClient, TendermintCoinRpcError>;
-
-    fn decimals(&self) -> u8;
-
-    fn platform_denom(&self) -> String;
-
-    fn set_history_sync_state(&self, new_state: HistorySyncState);
-
-    async fn all_balances(&self) -> MmResult<AllBalancesResult, TendermintCoinRpcError>;
-}
+trait CoinCapabilities: TendermintCommons + CoinWithTxHistoryV2 + MmCoin + MarketCoinOps {}
+impl CoinCapabilities for TendermintCoin {}
 
 #[async_trait]
 impl CoinWithTxHistoryV2 for TendermintCoin {
@@ -108,7 +98,7 @@ impl CoinWithTxHistoryV2 for TendermintToken {
     }
 }
 
-struct TendermintTxHistoryCtx<Coin: TendermintTxHistoryOps, Storage: TxHistoryStorage> {
+struct TendermintTxHistoryCtx<Coin: CoinCapabilities, Storage: TxHistoryStorage> {
     coin: Coin,
     storage: Storage,
     balances: AllBalancesResult,
@@ -186,7 +176,7 @@ impl<Coin, Storage> TransitionFrom<FetchingTransactionsData<Coin, Storage>> for 
 #[async_trait]
 impl<Coin, Storage> State for OnIoErrorCooldown<Coin, Storage>
 where
-    Coin: TendermintTxHistoryOps,
+    Coin: CoinCapabilities,
     Storage: TxHistoryStorage,
 {
     type Ctx = TendermintTxHistoryCtx<Coin, Storage>;
@@ -238,7 +228,7 @@ impl<Coin, Storage> TransitionFrom<FetchingTransactionsData<Coin, Storage>>
 #[async_trait]
 impl<Coin, Storage> State for WaitForHistoryUpdateTrigger<Coin, Storage>
 where
-    Coin: TendermintTxHistoryOps,
+    Coin: CoinCapabilities,
     Storage: TxHistoryStorage,
 {
     type Ctx = TendermintTxHistoryCtx<Coin, Storage>;
@@ -273,7 +263,7 @@ where
 #[async_trait]
 impl<Coin, Storage> State for FetchingTransactionsData<Coin, Storage>
 where
-    Coin: TendermintTxHistoryOps,
+    Coin: CoinCapabilities,
     Storage: TxHistoryStorage,
 {
     type Ctx = TendermintTxHistoryCtx<Coin, Storage>;
@@ -298,31 +288,53 @@ where
             received_by_me: BigDecimal,
         }
 
-        fn get_tx_amounts(amount: u64, sent_by_me: bool, is_self_transfer: bool) -> TxAmounts {
-            let amount = BigDecimal::from(amount);
+        fn get_tx_amounts(
+            transfer_details: &TransferDetails,
+            is_self_transfer: bool,
+            sent_by_me: bool,
+            is_sign_claim_htlc: bool,
+            fee_details: Option<&TendermintFeeDetails>,
+        ) -> TxAmounts {
+            let amount = BigDecimal::from(transfer_details.amount);
 
-            let spent_by_me = if sent_by_me && !is_self_transfer {
+            let total = if is_sign_claim_htlc && !is_self_transfer {
+                BigDecimal::default()
+            } else {
+                amount.clone()
+            };
+
+            let spent_by_me = if sent_by_me
+                && !is_self_transfer
+                && !matches!(transfer_details.transfer_event_type, TransferEventType::ClaimHtlc)
+            {
                 amount.clone()
             } else {
                 BigDecimal::default()
             };
 
             let received_by_me = if !sent_by_me || is_self_transfer {
-                amount.clone()
+                amount
             } else {
                 BigDecimal::default()
             };
 
-            TxAmounts {
-                total: amount,
+            let mut tx_amounts = TxAmounts {
+                total,
                 spent_by_me,
                 received_by_me,
+            };
+
+            if let Some(fee_details) = fee_details {
+                tx_amounts.total += BigDecimal::from(fee_details.uamount);
+                tx_amounts.spent_by_me += BigDecimal::from(fee_details.uamount);
             }
+
+            tx_amounts
         }
 
         fn get_fee_details<Coin>(fee: Fee, coin: &Coin) -> Result<TendermintFeeDetails, String>
         where
-            Coin: TendermintTxHistoryOps,
+            Coin: CoinCapabilities,
         {
             let fee_coin = fee
                 .amount
@@ -338,17 +350,26 @@ where
             })
         }
 
+        #[derive(Default, Clone)]
+        enum TransferEventType {
+            #[default]
+            Standard,
+            CreateHtlc,
+            ClaimHtlc,
+        }
+
         #[derive(Clone)]
         struct TransferDetails {
             from: String,
             to: String,
             denom: String,
             amount: u64,
+            transfer_event_type: TransferEventType,
         }
 
         // updates sender and receiver addressses if tx is htlc, and if not leaves as it is.
-        fn fix_tx_addresses_if_htlc(transfer_details: &mut TransferDetails, msg_event: &&Event, event_type: &str) {
-            match event_type {
+        fn read_real_htlc_addresses(transfer_details: &mut TransferDetails, msg_event: &&Event) {
+            match msg_event.type_str.as_str() {
                 CREATE_HTLC_EVENT => {
                     transfer_details.from = some_or_return!(msg_event
                         .attributes
@@ -363,6 +384,8 @@ where
                         .find(|tag| tag.key.to_string() == RECEIVER_TAG_KEY))
                     .value
                     .to_string();
+
+                    transfer_details.transfer_event_type = TransferEventType::CreateHtlc;
                 },
                 CLAIM_HTLC_EVENT => {
                     transfer_details.from = some_or_return!(msg_event
@@ -371,13 +394,15 @@ where
                         .find(|tag| tag.key.to_string() == SENDER_TAG_KEY))
                     .value
                     .to_string();
+
+                    transfer_details.transfer_event_type = TransferEventType::ClaimHtlc;
                 },
                 _ => {},
             }
         }
 
         fn parse_transfer_values_from_events(tx_events: Vec<&Event>) -> Vec<TransferDetails> {
-            let mut transfer_details_list = vec![];
+            let mut transfer_details_list: Vec<TransferDetails> = vec![];
 
             for (index, event) in tx_events.iter().enumerate() {
                 if event.type_str.as_str() == TRANSFER_EVENT {
@@ -414,6 +439,8 @@ where
                             to,
                             denom: denom.to_owned(),
                             amount,
+                            // Default is Standard, can be changed later in read_real_htlc_addresses
+                            transfer_event_type: TransferEventType::default(),
                         };
 
                         if index != 0 {
@@ -421,12 +448,23 @@ where
                             // addresses will be wrong.
                             if let Some(prev_event) = tx_events.get(index - 1) {
                                 if [CREATE_HTLC_EVENT, CLAIM_HTLC_EVENT].contains(&prev_event.type_str.as_str()) {
-                                    fix_tx_addresses_if_htlc(&mut tx_details, prev_event, prev_event.type_str.as_str());
+                                    read_real_htlc_addresses(&mut tx_details, prev_event);
                                 }
                             };
                         }
 
-                        transfer_details_list.push(tx_details);
+                        // sum the amounts coins and pairs are same
+                        let mut duplicated_details = transfer_details_list.iter_mut().find(|details| {
+                            details.from == tx_details.from
+                                && details.to == tx_details.to
+                                && details.denom == tx_details.denom
+                        });
+
+                        if let Some(duplicated_details) = &mut duplicated_details {
+                            duplicated_details.amount += tx_details.amount;
+                        } else {
+                            transfer_details_list.push(tx_details);
+                        }
                     }
                 }
             }
@@ -463,6 +501,50 @@ where
             parse_transfer_values_from_events(events)
         }
 
+        fn get_transaction_type(
+            transfer_event_type: &TransferEventType,
+            token_id: Option<BytesJson>,
+            is_sign_claim_htlc: bool,
+        ) -> TransactionType {
+            match (transfer_event_type, token_id) {
+                (TransferEventType::CreateHtlc, token_id) => TransactionType::CustomTendermintMsg {
+                    msg_type: CustomTendermintMsgType::SendHtlcAmount,
+                    token_id,
+                },
+                (TransferEventType::ClaimHtlc, token_id) => TransactionType::CustomTendermintMsg {
+                    msg_type: if is_sign_claim_htlc {
+                        CustomTendermintMsgType::SignClaimHtlc
+                    } else {
+                        CustomTendermintMsgType::ClaimHtlcAmount
+                    },
+                    token_id,
+                },
+                (_, Some(token_id)) => TransactionType::TokenTransfer(token_id),
+                _ => TransactionType::StandardTransfer,
+            }
+        }
+
+        fn get_pair_addresses(
+            my_address: String,
+            tx_sent_by_me: bool,
+            transfer_details: &TransferDetails,
+        ) -> Option<(Vec<String>, Vec<String>)> {
+            match transfer_details.transfer_event_type {
+                TransferEventType::CreateHtlc => {
+                    if tx_sent_by_me {
+                        Some((vec![my_address], vec![]))
+                    } else {
+                        // This shouldn't happen if rpc node properly executes the tx search query.
+                        None
+                    }
+                },
+                TransferEventType::ClaimHtlc => Some((vec![my_address], vec![])),
+                TransferEventType::Standard => {
+                    Some((vec![transfer_details.from.clone()], vec![transfer_details.to.clone()]))
+                },
+            }
+        }
+
         async fn fetch_and_insert_txs<Coin, Storage>(
             address: String,
             coin: &Coin,
@@ -471,7 +553,7 @@ where
             from_height: u64,
         ) -> Result<u64, Stopped<Coin, Storage>>
         where
-            Coin: TendermintTxHistoryOps,
+            Coin: CoinCapabilities,
             Storage: TxHistoryStorage,
         {
             let mut page = 1;
@@ -479,7 +561,7 @@ where
             let mut highest_height = from_height;
 
             let client = try_or_return_stopped_as_err!(
-                coin.get_rpc_client().await,
+                coin.rpc_client().await,
                 StopReason::RpcClient,
                 "could not get rpc client"
             );
@@ -504,6 +586,13 @@ where
                     if tx.tx_result.code != TxCode::Ok {
                         continue;
                     }
+
+                    let timestamp = try_or_return_stopped_as_err!(
+                        coin.get_block_timestamp(i64::from(tx.height)).await,
+                        StopReason::RpcClient,
+                        "could not get block_timestamp over rpc node"
+                    );
+                    let timestamp = some_or_continue!(timestamp);
 
                     let tx_hash = tx.hash.to_string();
 
@@ -562,20 +651,32 @@ where
                             continue;
                         }
 
-                        let tx_sent_by_me = address.clone() == transfer_details.from;
+                        let tx_sent_by_me = address == transfer_details.from;
                         let is_platform_coin_tx = transfer_details.denom == coin.platform_denom();
-                        let is_self_tx = transfer_details.to == transfer_details.from;
-                        let mut tx_amounts = get_tx_amounts(transfer_details.amount, tx_sent_by_me, is_self_tx);
+                        let is_self_tx = transfer_details.to == transfer_details.from && tx_sent_by_me;
+                        let is_sign_claim_htlc = tx_sent_by_me
+                            && matches!(transfer_details.transfer_event_type, TransferEventType::ClaimHtlc);
 
-                        if !fee_added
+                        let (from, to) =
+                            some_or_continue!(get_pair_addresses(address.clone(), tx_sent_by_me, transfer_details));
+
+                        let maybe_add_fees = if !fee_added
                         // if tx is platform coin tx and sent by me
-                            && is_platform_coin_tx && tx_sent_by_me && !is_self_tx
+                            && is_platform_coin_tx && tx_sent_by_me
                         {
-                            tx_amounts.total += BigDecimal::from(fee_details.uamount);
-                            tx_amounts.spent_by_me += BigDecimal::from(fee_details.uamount);
                             fee_added = true;
-                        }
-                        drop_mutability!(tx_amounts);
+                            Some(&fee_details)
+                        } else {
+                            None
+                        };
+
+                        let tx_amounts = get_tx_amounts(
+                            transfer_details,
+                            is_self_tx,
+                            tx_sent_by_me,
+                            is_sign_claim_htlc,
+                            maybe_add_fees,
+                        );
 
                         let token_id: Option<BytesJson> = match !is_platform_coin_tx {
                             true => {
@@ -585,18 +686,19 @@ where
                             false => None,
                         };
 
-                        let transaction_type = if let Some(token_id) = token_id.clone() {
-                            TransactionType::TokenTransfer(token_id)
-                        } else {
-                            TransactionType::StandardTransfer
-                        };
+                        let transaction_type = get_transaction_type(
+                            &transfer_details.transfer_event_type,
+                            token_id.clone(),
+                            is_sign_claim_htlc,
+                        );
 
                         let details = TransactionDetails {
-                            from: vec![transfer_details.from.clone()],
-                            to: vec![transfer_details.to.clone()],
+                            from,
+                            to,
                             total_amount: tx_amounts.total,
                             spent_by_me: tx_amounts.spent_by_me,
                             received_by_me: tx_amounts.received_by_me,
+                            // This can be 0 since it gets remapped in `coins::my_tx_history_v2`
                             my_balance_change: BigDecimal::default(),
                             tx_hash: tx_hash.to_string(),
                             tx_hex: msg.into(),
@@ -604,35 +706,28 @@ where
                             block_height: tx.height.into(),
                             coin: transfer_details.denom.clone(),
                             internal_id,
-                            timestamp: common::now_ms() / 1000,
+                            timestamp,
                             kmd_rewards: None,
                             transaction_type,
                         };
                         tx_details.push(details.clone());
 
                         // Display fees as extra transactions for asset txs sent by user
-                        if !fee_added {
-                            if let Some(token_id) = token_id {
-                                if !tx_sent_by_me {
-                                    continue;
-                                }
+                        if tx_sent_by_me && !fee_added && !is_platform_coin_tx {
+                            let fee_details = fee_details.clone();
+                            let mut fee_tx_details = details;
+                            fee_tx_details.to = vec![];
+                            fee_tx_details.total_amount = fee_details.amount.clone();
+                            fee_tx_details.spent_by_me = fee_details.amount.clone();
+                            fee_tx_details.received_by_me = BigDecimal::default();
+                            fee_tx_details.my_balance_change = BigDecimal::default() - &fee_details.amount;
+                            fee_tx_details.coin = coin.platform_ticker().to_string();
+                            // Non-reversed version of original internal id
+                            fee_tx_details.internal_id = H256::from(internal_id_hash.as_slice()).to_vec().into();
+                            fee_tx_details.transaction_type = TransactionType::FeeForTokenTx;
 
-                                let fee_details = fee_details.clone();
-                                let mut fee_tx_details = details;
-                                fee_tx_details.to = vec![];
-                                fee_tx_details.total_amount = fee_details.amount.clone();
-                                fee_tx_details.spent_by_me = fee_details.amount.clone();
-                                fee_tx_details.received_by_me = BigDecimal::default();
-                                fee_tx_details.my_balance_change = BigDecimal::default() - &fee_details.amount;
-                                fee_tx_details.fee_details = None;
-                                fee_tx_details.coin = coin.platform_ticker().to_string();
-                                // Non-reversed version of original internal id
-                                fee_tx_details.internal_id = H256::from(internal_id_hash.as_slice()).to_vec().into();
-                                fee_tx_details.transaction_type = TransactionType::Fee(token_id);
-
-                                tx_details.push(fee_tx_details);
-                                fee_added = true;
-                            }
+                            tx_details.push(fee_tx_details);
+                            fee_added = true;
                         }
                     }
 
@@ -724,7 +819,7 @@ where
 #[async_trait]
 impl<Coin, Storage> State for TendermintInit<Coin, Storage>
 where
-    Coin: TendermintTxHistoryOps,
+    Coin: CoinCapabilities,
     Storage: TxHistoryStorage,
 {
     type Ctx = TendermintTxHistoryCtx<Coin, Storage>;
@@ -758,7 +853,7 @@ where
 #[async_trait]
 impl<Coin, Storage> LastState for Stopped<Coin, Storage>
 where
-    Coin: TendermintTxHistoryOps,
+    Coin: CoinCapabilities,
     Storage: TxHistoryStorage,
 {
     type Ctx = TendermintTxHistoryCtx<Coin, Storage>;
@@ -777,21 +872,6 @@ where
 
         ctx.coin.set_history_sync_state(HistorySyncState::Error(new_state_json));
     }
-}
-
-#[async_trait]
-impl TendermintTxHistoryOps for TendermintCoin {
-    async fn get_rpc_client(&self) -> MmResult<HttpClient, TendermintCoinRpcError> { self.rpc_client().await }
-
-    fn decimals(&self) -> u8 { self.decimals }
-
-    fn platform_denom(&self) -> String { self.denom.to_string() }
-
-    fn set_history_sync_state(&self, new_state: HistorySyncState) {
-        *self.history_sync_state.lock().unwrap() = new_state;
-    }
-
-    async fn all_balances(&self) -> MmResult<AllBalancesResult, TendermintCoinRpcError> { self.all_balances().await }
 }
 
 pub async fn tendermint_history_loop(

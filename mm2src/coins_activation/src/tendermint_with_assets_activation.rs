@@ -6,9 +6,9 @@ use crate::prelude::*;
 use async_trait::async_trait;
 use coins::my_tx_history_v2::TxHistoryStorage;
 use coins::tendermint::tendermint_tx_history_v2::tendermint_history_loop;
-use coins::tendermint::{TendermintCoin, TendermintConf, TendermintInitError, TendermintInitErrorKind,
-                        TendermintProtocolInfo, TendermintToken, TendermintTokenActivationParams,
-                        TendermintTokenInitError, TendermintTokenProtocolInfo};
+use coins::tendermint::{TendermintCoin, TendermintCommons, TendermintConf, TendermintInitError,
+                        TendermintInitErrorKind, TendermintProtocolInfo, TendermintToken,
+                        TendermintTokenActivationParams, TendermintTokenInitError, TendermintTokenProtocolInfo};
 use coins::{CoinBalance, CoinProtocol, MarketCoinOps, MmCoin, PrivKeyBuildPolicy};
 use common::executor::{AbortSettings, SpawnAbortable};
 use common::Future01CompatExt;

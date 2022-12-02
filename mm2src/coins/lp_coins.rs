@@ -217,8 +217,8 @@ use rpc_command::{init_account_balance::{AccountBalanceTaskManager, AccountBalan
                   init_withdraw::{WithdrawTaskManager, WithdrawTaskManagerShared}};
 
 pub mod tendermint;
-use tendermint::{CosmosTransaction, TendermintCoin, TendermintFeeDetails, TendermintProtocolInfo, TendermintToken,
-                 TendermintTokenProtocolInfo};
+use tendermint::{CosmosTransaction, CustomTendermintMsgType, TendermintCoin, TendermintFeeDetails,
+                 TendermintProtocolInfo, TendermintToken, TendermintTokenProtocolInfo};
 
 #[doc(hidden)]
 #[allow(unused_variables)]
@@ -1036,17 +1036,18 @@ impl KmdRewardsDetails {
     }
 }
 
-#[derive(Clone, Debug, Deserialize, PartialEq, Serialize)]
+#[derive(Default, Clone, Debug, Deserialize, PartialEq, Serialize)]
 pub enum TransactionType {
     StakingDelegation,
     RemoveDelegation,
+    #[default]
     StandardTransfer,
     TokenTransfer(BytesJson),
-    Fee(BytesJson),
-}
-
-impl Default for TransactionType {
-    fn default() -> Self { TransactionType::StandardTransfer }
+    FeeForTokenTx,
+    CustomTendermintMsg {
+        msg_type: CustomTendermintMsgType,
+        token_id: Option<BytesJson>,
+    },
 }
 
 /// Transaction details

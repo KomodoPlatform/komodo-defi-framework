@@ -19,7 +19,6 @@ pub trait TokenProtocolParams {
 
 #[async_trait]
 pub trait TokenActivationOps: Into<MmCoinEnum> + platform_coin_with_tokens::TokenOf {
-    type PlatformCoin: TryPlatformCoinFromMmCoinEnum + RegisterTokenInfo<Self> + Clone;
     type ActivationParams;
     type ProtocolInfo: TokenProtocolParams + TryFromCoinProtocol;
     type ActivationResult;
@@ -27,7 +26,7 @@ pub trait TokenActivationOps: Into<MmCoinEnum> + platform_coin_with_tokens::Toke
 
     async fn enable_token(
         ticker: String,
-        platform_coin: <Self as TokenActivationOps>::PlatformCoin,
+        platform_coin: Self::PlatformCoin,
         activation_params: Self::ActivationParams,
         protocol_conf: Self::ProtocolInfo,
     ) -> Result<(Self, Self::ActivationResult), MmError<Self::ActivationError>>;
@@ -117,13 +116,12 @@ where
         .await
         .mm_err(|_| EnableTokenError::PlatformCoinIsNotActivated(token_protocol.platform_coin_ticker().to_owned()))?;
 
-    let platform_coin =
-        <Token as TokenActivationOps>::PlatformCoin::try_from_mm_coin(platform_coin).or_mm_err(|| {
-            EnableTokenError::UnsupportedPlatformCoin {
-                platform_coin_ticker: token_protocol.platform_coin_ticker().into(),
-                token_ticker: req.ticker.clone(),
-            }
-        })?;
+    let platform_coin = Token::PlatformCoin::try_from_mm_coin(platform_coin).or_mm_err(|| {
+        EnableTokenError::UnsupportedPlatformCoin {
+            platform_coin_ticker: token_protocol.platform_coin_ticker().into(),
+            token_ticker: req.ticker.clone(),
+        }
+    })?;
 
     let (token, activation_result) =
         Token::enable_token(req.ticker, platform_coin.clone(), req.activation_params, token_protocol).await?;

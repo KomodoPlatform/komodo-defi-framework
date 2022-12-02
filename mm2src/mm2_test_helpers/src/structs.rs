@@ -536,12 +536,23 @@ pub mod raw_transaction_error {
 }
 
 #[derive(Clone, Debug, Deserialize, PartialEq, Serialize)]
+pub enum CustomTendermintMsgType {
+    SendHtlcAmount,
+    ClaimHtlcAmount,
+    SignClaimHtlc,
+}
+
+#[derive(Clone, Debug, Deserialize, PartialEq, Serialize)]
 pub enum TransactionType {
     StakingDelegation,
     RemoveDelegation,
     StandardTransfer,
     TokenTransfer(String),
-    Fee(String),
+    FeeForTokenTx,
+    CustomTendermintMsg {
+        msg_type: CustomTendermintMsgType,
+        token_id: Option<String>,
+    },
 }
 
 #[derive(Debug, Deserialize, PartialEq)]

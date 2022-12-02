@@ -87,6 +87,19 @@ pub(crate) const TX_DEFAULT_MEMO: &str = "";
 const MAX_TIME_LOCK: i64 = 34560;
 const MIN_TIME_LOCK: i64 = 50;
 
+#[async_trait]
+pub trait TendermintCommons {
+    fn platform_denom(&self) -> String;
+
+    fn set_history_sync_state(&self, new_state: HistorySyncState);
+
+    async fn get_block_timestamp(&self, block: i64) -> MmResult<Option<u64>, TendermintCoinRpcError>;
+
+    async fn all_balances(&self) -> MmResult<AllBalancesResult, TendermintCoinRpcError>;
+
+    async fn rpc_client(&self) -> MmResult<HttpClient, TendermintCoinRpcError>;
+}
+
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 pub struct TendermintFeeDetails {
     pub coin: String,
@@ -332,6 +345,62 @@ impl From<DecodeError> for SearchForSwapTxSpendErr {
     fn from(e: DecodeError) -> Self { SearchForSwapTxSpendErr::Proto(e) }
 }
 
+#[async_trait]
+impl TendermintCommons for TendermintCoin {
+    fn platform_denom(&self) -> String { self.denom.to_string() }
+
+    fn set_history_sync_state(&self, new_state: HistorySyncState) {
+        *self.history_sync_state.lock().unwrap() = new_state;
+    }
+
+    async fn get_block_timestamp(&self, block: i64) -> MmResult<Option<u64>, TendermintCoinRpcError> {
+        let block_response = self.get_block_by_height(block).await?;
+        let block_header = some_or_return_ok_none!(some_or_return_ok_none!(block_response.block).header);
+        let timestamp = some_or_return_ok_none!(block_header.time);
+
+        Ok(u64::try_from(timestamp.seconds).ok())
+    }
+
+    async fn all_balances(&self) -> MmResult<AllBalancesResult, TendermintCoinRpcError> {
+        let platform_balance_denom = self.balance_for_denom(self.denom.to_string()).await?;
+        let platform_balance = big_decimal_from_sat_unsigned(platform_balance_denom, self.decimals);
+        let ibc_assets_info = self.tokens_info.lock().clone();
+
+        let mut result = AllBalancesResult {
+            platform_balance,
+            tokens_balances: HashMap::new(),
+        };
+        for (ticker, info) in ibc_assets_info {
+            let balance_denom = self.balance_for_denom(info.denom.to_string()).await?;
+            let balance_decimal = big_decimal_from_sat_unsigned(balance_denom, info.decimals);
+            result.tokens_balances.insert(ticker, balance_decimal);
+        }
+
+        Ok(result)
+    }
+
+    // TODO
+    // Save one working client to the coin context, only try others once it doesn't
+    // work anymore.
+    // Also, try couple times more on health check errors.
+    async fn rpc_client(&self) -> MmResult<HttpClient, TendermintCoinRpcError> {
+        for rpc_client in self.rpc_clients.iter() {
+            match rpc_client.perform(HealthRequest).timeout(Duration::from_secs(3)).await {
+                Ok(Ok(_)) => return Ok(rpc_client.clone()),
+                Ok(Err(e)) => log::warn!(
+                    "Recieved error from Tendermint rpc node during health check. Error: {:?}",
+                    e
+                ),
+                Err(_) => log::warn!("Tendermint rpc node: {:?} got timeout during health check", rpc_client),
+            };
+        }
+
+        MmError::err(TendermintCoinRpcError::PerformError(
+            "All the current rpc nodes are unavailable.".to_string(),
+        ))
+    }
+}
+
 impl TendermintCoin {
     pub async fn init(
         ctx: &MmArc,
@@ -413,27 +482,6 @@ impl TendermintCoin {
             abortable_system,
             history_sync_state: Mutex::new(history_sync_state),
         })))
-    }
-
-    // TODO
-    // Save one working client to the coin context, only try others once it doesn't
-    // work anymore.
-    // Also, try couple times more on health check errors.
-    pub(crate) async fn rpc_client(&self) -> MmResult<HttpClient, TendermintCoinRpcError> {
-        for rpc_client in self.rpc_clients.iter() {
-            match rpc_client.perform(HealthRequest).timeout(Duration::from_secs(3)).await {
-                Ok(Ok(_)) => return Ok(rpc_client.clone()),
-                Ok(Err(e)) => log::warn!(
-                    "Recieved error from Tendermint rpc node during health check. Error: {:?}",
-                    e
-                ),
-                Err(_) => log::warn!("Tendermint rpc node: {:?} got timeout during health check", rpc_client),
-            };
-        }
-
-        MmError::err(TendermintCoinRpcError::PerformError(
-            "All the current rpc nodes are unavailable.".to_string(),
-        ))
     }
 
     #[inline(always)]
@@ -626,24 +674,6 @@ impl TendermintCoin {
             .amount
             .parse()
             .map_to_mm(|e| TendermintCoinRpcError::InvalidResponse(format!("balance is not u64, err {}", e)))
-    }
-
-    pub async fn all_balances(&self) -> MmResult<AllBalancesResult, TendermintCoinRpcError> {
-        let platform_balance_denom = self.balance_for_denom(self.denom.to_string()).await?;
-        let platform_balance = big_decimal_from_sat_unsigned(platform_balance_denom, self.decimals);
-        let ibc_assets_info = self.tokens_info.lock().clone();
-
-        let mut result = AllBalancesResult {
-            platform_balance,
-            tokens_balances: HashMap::new(),
-        };
-        for (ticker, info) in ibc_assets_info {
-            let balance_denom = self.balance_for_denom(info.denom.to_string()).await?;
-            let balance_decimal = big_decimal_from_sat_unsigned(balance_denom, info.decimals);
-            result.tokens_balances.insert(ticker, balance_decimal);
-        }
-
-        Ok(result)
     }
 
     fn gen_create_htlc_tx(
