@@ -313,7 +313,7 @@ impl State for WaitForTakerPaymentSpend {
                 );
 
                 if f.compat().await.is_ok() {
-                    info!("Found maker payment spend as watcher");
+                    info!("Maker payment spend found by watcher");
                     return Self::change_state(Stopped::from_reason(StopReason::Finished(
                         WatcherSuccess::MakerPaymentSpentByTaker,
                     )));
@@ -373,7 +373,7 @@ impl State for SpendMakerPayment {
         );
 
         let tx_hash = transaction.tx_hash();
-        info!("Sent maker payment spend tx {:02x} as watcher", tx_hash);
+        info!("Maker payment spend tx {:02x} sent by watcher", tx_hash);
 
         Self::change_state(Stopped::from_reason(StopReason::Finished(
             WatcherSuccess::MakerPaymentSpent,
@@ -434,7 +434,7 @@ impl State for RefundTakerPayment {
         );
 
         let tx_hash = transaction.tx_hash();
-        info!("Sent taker refund tx {:02x} as watcher", tx_hash);
+        info!("Taker payment refund tx {:02x} sent by watcher", tx_hash);
         Self::change_state(Stopped::from_reason(StopReason::Finished(
             WatcherSuccess::TakerPaymentRefunded,
         )))
