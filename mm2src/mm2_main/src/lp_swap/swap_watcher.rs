@@ -30,26 +30,23 @@ struct WatcherContext {
 impl WatcherContext {
     fn taker_locktime(&self) -> u64 { self.data.swap_started_at + self.data.lock_duration }
 
+    fn wait_for_taker_payment_duration(&self) -> f64 {
+        self.ctx.conf["wait_for_taker_payment_duration"].as_f64().unwrap_or(60.)
+    }
+
     fn wait_for_maker_payment_spend_deadline(&self) -> u64 {
-        match std::env::var("SKIP_WAIT_FOR_MAKER_PAYMENT_SPEND") {
-            Ok(_) => 0,
-            Err(_) => self.taker_locktime(),
-        }
+        let coefficient = self.ctx.conf["wait_for_maker_payment_spend_coefficient"]
+            .as_f64()
+            .unwrap_or(1.);
+        self.data.swap_started_at + (coefficient * self.data.lock_duration as f64) as u64
     }
 
     fn refund_start_time(&self) -> u64 {
-        match std::env::var("REFUND_TEST") {
-            Ok(_) => 0,
-            Err(_) => self.data.swap_started_at + (3 * self.data.lock_duration / 2),
-        }
+        let coefficient = self.ctx.conf["refund_start_time_coefficient"].as_f64().unwrap_or(1.5);
+        self.data.swap_started_at + (coefficient * self.data.lock_duration as f64) as u64
     }
 
-    fn search_interval(&self) -> f64 {
-        match std::env::var("WATCHER_TEST") {
-            Ok(_) => 10.,
-            Err(_) => 300.,
-        }
-    }
+    fn search_interval(&self) -> f64 { self.ctx.conf["search_interval"].as_f64().unwrap_or(300.) }
 }
 
 #[derive(Clone, Debug, Deserialize, Serialize)]
@@ -178,9 +175,8 @@ impl State for ValidateTakerPayment {
         let wait_taker_payment =
             taker_payment_spend_deadline(watcher_ctx.data.swap_started_at, watcher_ctx.data.lock_duration);
 
-        if std::env::var("WATCHER_TEST").is_err() {
-            Timer::sleep(120.).await;
-        }
+        let sleep_duration = watcher_ctx.wait_for_taker_payment_duration();
+        Timer::sleep(sleep_duration).await;
 
         let taker_payment_hex_fut = watcher_ctx
             .taker_coin

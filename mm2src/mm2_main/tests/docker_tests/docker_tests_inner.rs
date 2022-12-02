@@ -844,18 +844,17 @@ fn test_watcher_spends_maker_payment_spend() {
     let mm_bob = MarketMakerIt::start(bob_conf, "pass".to_string(), None).unwrap();
     let (_bob_dump_log, _bob_dump_dashboard) = mm_dump(&mm_bob.log_path);
 
-    let watcher_conf =
-        Mm2TestConf::watcher_light_node(&format!("0x{}", hex::encode(watcher_priv_key)), &coins, &[&mm_alice
-            .ip
-            .to_string()])
-        .conf;
-    let mut mm_watcher = block_on(MarketMakerIt::start_with_envs(
-        watcher_conf,
-        "pass".to_string(),
-        None,
-        &[("SKIP_WAIT_FOR_MAKER_PAYMENT_SPEND", ""), ("WATCHER_TEST", "")],
-    ))
-    .unwrap();
+    let watcher_conf = Mm2TestConf::watcher_light_node(
+        &format!("0x{}", hex::encode(watcher_priv_key)),
+        &coins,
+        &[&mm_alice.ip.to_string()],
+        0.,
+        1.5,
+        1.,
+        0.,
+    )
+    .conf;
+    let mut mm_watcher = MarketMakerIt::start(watcher_conf, "pass".to_string(), None).unwrap();
     let (_watcher_dump_log, _watcher_dump_dashboard) = mm_dump(&mm_watcher.log_path);
 
     log!("{:?}", block_on(enable_native(&mm_bob, "MYCOIN", &[])));
@@ -968,18 +967,17 @@ fn test_watcher_waits_for_taker() {
     let mm_bob = MarketMakerIt::start(bob_conf, "pass".to_string(), None).unwrap();
     let (_bob_dump_log, _bob_dump_dashboard) = mm_dump(&mm_bob.log_path);
 
-    let watcher_conf =
-        Mm2TestConf::watcher_light_node(&format!("0x{}", hex::encode(watcher_priv_key)), &coins, &[&mm_alice
-            .ip
-            .to_string()])
-        .conf;
-    let mut mm_watcher = block_on(MarketMakerIt::start_with_envs(
-        watcher_conf,
-        "pass".to_string(),
-        None,
-        &[("WATCHER_TEST", "")],
-    ))
-    .unwrap();
+    let watcher_conf = Mm2TestConf::watcher_light_node(
+        &format!("0x{}", hex::encode(watcher_priv_key)),
+        &coins,
+        &[&mm_alice.ip.to_string()],
+        1.,
+        1.5,
+        1.,
+        0.,
+    )
+    .conf;
+    let mut mm_watcher = MarketMakerIt::start(watcher_conf, "pass".to_string(), None).unwrap();
     let (_watcher_dump_log, _watcher_dump_dashboard) = mm_dump(&mm_watcher.log_path);
 
     log!("{:?}", block_on(enable_native(&mm_bob, "MYCOIN", &[])));
@@ -1041,16 +1039,21 @@ fn test_watcher_refunds_taker_payment() {
     let mut mm_bob = MarketMakerIt::start(bob_conf, "pass".to_string(), None).unwrap();
     let (_bob_dump_log, _bob_dump_dashboard) = mm_dump(&mm_bob.log_path);
 
-    let watcher_conf =
-        Mm2TestConf::watcher_light_node(&format!("0x{}", hex::encode(watcher_priv_key)), &coins, &[&mm_alice
-            .ip
-            .to_string()])
-        .conf;
+    let watcher_conf = Mm2TestConf::watcher_light_node(
+        &format!("0x{}", hex::encode(watcher_priv_key)),
+        &coins,
+        &[&mm_alice.ip.to_string()],
+        1.,
+        0.,
+        1.,
+        0.,
+    )
+    .conf;
     let mut mm_watcher = block_on(MarketMakerIt::start_with_envs(
         watcher_conf,
         "pass".to_string(),
         None,
-        &[("REFUND_TEST", ""), ("WATCHER_TEST", "")],
+        &[("REFUND_TEST", "")],
     ))
     .unwrap();
     let (_watcher_dump_log, _watcher_dump_dashboard) = mm_dump(&mm_watcher.log_path);

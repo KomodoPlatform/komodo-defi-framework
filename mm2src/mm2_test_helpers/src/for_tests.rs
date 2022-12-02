@@ -199,7 +199,15 @@ impl Mm2TestConf {
         }
     }
 
-    pub fn watcher_light_node(passphrase: &str, coins: &Json, seednodes: &[&str]) -> Self {
+    pub fn watcher_light_node(
+        passphrase: &str,
+        coins: &Json,
+        seednodes: &[&str],
+        wait_for_maker_payment_spend_coefficient: f64,
+        refund_start_time_coefficient: f64,
+        search_interval: f64,
+        wait_for_taker_payment_duration: f64,
+    ) -> Self {
         Mm2TestConf {
             conf: json!({
                 "gui": "nogui",
@@ -208,7 +216,11 @@ impl Mm2TestConf {
                 "coins": coins,
                 "rpc_password": DEFAULT_RPC_PASSWORD,
                 "seednodes": seednodes,
-                "is_watcher": true
+                "is_watcher": true,
+                "wait_for_maker_payment_spend_coefficient": wait_for_maker_payment_spend_coefficient,
+                "refund_start_time_coefficient": refund_start_time_coefficient,
+                "search_interval": search_interval,
+                "wait_for_taker_payment_duration": wait_for_taker_payment_duration
             }),
             rpc_password: DEFAULT_RPC_PASSWORD.into(),
         }
