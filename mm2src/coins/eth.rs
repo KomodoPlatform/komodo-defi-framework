@@ -581,18 +581,17 @@ async fn get_raw_transaction_impl(coin: EthCoin, req: RawTransactionRequest) -> 
         None => &req.tx_hash,
     };
     let hash = H256::from_str(tx).map_to_mm(|e| RawTransactionError::InvalidHashError(e.to_string()))?;
-    let web3_tx = coin.web3.eth().transaction(TransactionId::Hash(hash)).compat().await?;
-    let web3_tx = web3_tx.or_mm_err(|| RawTransactionError::HashNotExist(req.tx_hash))?;
-    let raw = signed_tx_from_web3_tx(web3_tx).map_to_mm(RawTransactionError::InternalError)?;
-    Ok(RawTransactionRes {
-        tx_hex: BytesJson(rlp::encode(&raw)),
-    })
+    get_tx_hex_by_hash_impl(coin, hash).await
 }
 
-async fn get_tx_hex_by_hash_impl(coin: EthCoin, tx_hash: Vec<u8>) -> RawTransactionResult {
-    let hash = H256::from(tx_hash.as_slice());
-    let web3_tx = coin.web3.eth().transaction(TransactionId::Hash(hash)).compat().await?;
-    let web3_tx = web3_tx.or_mm_err(|| RawTransactionError::HashNotExist(hash.to_string()))?;
+async fn get_tx_hex_by_hash_impl(coin: EthCoin, tx_hash: H256) -> RawTransactionResult {
+    let web3_tx = coin
+        .web3
+        .eth()
+        .transaction(TransactionId::Hash(tx_hash))
+        .compat()
+        .await?
+        .or_mm_err(|| RawTransactionError::HashNotExist(tx_hash.to_string()))?;
     let raw = signed_tx_from_web3_tx(web3_tx).map_to_mm(RawTransactionError::InternalError)?;
     Ok(RawTransactionRes {
         tx_hex: BytesJson(rlp::encode(&raw)),
@@ -3154,7 +3153,11 @@ impl MmCoin for EthCoin {
     }
 
     fn get_tx_hex_by_hash(&self, tx_hash: Vec<u8>) -> RawTransactionFut {
-        Box::new(get_tx_hex_by_hash_impl(self.clone(), tx_hash).boxed().compat())
+        Box::new(
+            get_tx_hex_by_hash_impl(self.clone(), H256::from(tx_hash.as_slice()))
+                .boxed()
+                .compat(),
+        )
     }
 
     fn withdraw(&self, req: WithdrawRequest) -> WithdrawFut {
