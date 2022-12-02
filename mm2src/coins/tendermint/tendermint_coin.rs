@@ -1839,7 +1839,7 @@ impl SwapOps for TendermintCoin {
         Ok(try_s!(hex::decode(htlc.secret)))
     }
 
-    fn check_tx_signed_by_pub(&self, tx: &[u8], expected_pub: &[u8]) -> Result<bool, String> {
+    fn check_tx_signed_by_pub(&self, tx: &[u8], expected_pub: &[u8]) -> Result<bool, MmError<ValidatePaymentError>> {
         unimplemented!();
     }
 

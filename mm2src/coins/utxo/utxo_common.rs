@@ -1729,18 +1729,23 @@ where
     }
 }
 
-pub fn check_all_inputs_signed_by_pub(tx: &[u8], expected_pub: &[u8]) -> Result<bool, String> {
-    let tx: UtxoTx = try_s!(deserialize(tx).map_err(|e| ERRL!("{:?}", e)));
+pub fn check_all_inputs_signed_by_pub(tx: &[u8], expected_pub: &[u8]) -> Result<bool, MmError<ValidatePaymentError>> {
+    let tx: UtxoTx = deserialize(tx)?;
     check_all_utxo_inputs_signed_by_pub(&tx, expected_pub)
 }
 
-pub fn check_all_utxo_inputs_signed_by_pub(tx: &UtxoTx, expected_pub: &[u8]) -> Result<bool, String> {
+pub fn check_all_utxo_inputs_signed_by_pub(
+    tx: &UtxoTx,
+    expected_pub: &[u8],
+) -> Result<bool, MmError<ValidatePaymentError>> {
     for input in &tx.inputs {
         let pubkey = if input.has_witness() {
-            try_s!(pubkey_from_witness_script(&input.script_witness))
+            pubkey_from_witness_script(&input.script_witness)
+                .map_to_mm(|e| ValidatePaymentError::TxDeserializationError(e.to_string()))?
         } else {
             let script: Script = input.script_sig.clone().into();
-            try_s!(pubkey_from_script_sig(&script))
+            pubkey_from_script_sig(&script)
+                .map_to_mm(|e| ValidatePaymentError::TxDeserializationError(e.to_string()))?
         };
         if *pubkey != expected_pub {
             return Ok(false);
@@ -1783,10 +1788,8 @@ pub fn watcher_validate_taker_fee<T: UtxoCommonOps>(
                 },
             };
 
-            let taker_fee_tx: UtxoTx = deserialize(tx_from_rpc.hex.0.as_slice())
-                .map_to_mm(|e| ValidatePaymentError::TxDeserializationError(e.to_string()))?;
-            let inputs_signed_by_pub = check_all_utxo_inputs_signed_by_pub(&taker_fee_tx, &sender_pubkey)
-                .map_to_mm(ValidatePaymentError::InternalError)?;
+            let taker_fee_tx: UtxoTx = deserialize(tx_from_rpc.hex.0.as_slice())?;
+            let inputs_signed_by_pub = check_all_utxo_inputs_signed_by_pub(&taker_fee_tx, &sender_pubkey)?;
             if !inputs_signed_by_pub {
                 return MmError::err(ValidatePaymentError::WrongPaymentTx(
                     "Taker fee does not belong to the verified public key".to_string(),
@@ -1818,7 +1821,7 @@ pub fn watcher_validate_taker_fee<T: UtxoCommonOps>(
                 coin.as_ref().conf.bech32_hrp.clone(),
                 coin.addr_format().clone(),
             )
-            .map_to_mm(ValidatePaymentError::InternalError)?;
+            .map_to_mm(ValidatePaymentError::TxDeserializationError)?;
 
             match taker_fee_tx.outputs.get(output_index) {
                 Some(out) => {
@@ -1961,8 +1964,7 @@ pub fn watcher_validate_taker_payment<T: UtxoCommonOps + SwapOps>(
     let coin = coin.clone();
 
     let fut = async move {
-        let inputs_signed_by_pub = check_all_utxo_inputs_signed_by_pub(&taker_payment_tx, &input.taker_pub)
-            .map_to_mm(ValidatePaymentError::InternalError)?;
+        let inputs_signed_by_pub = check_all_utxo_inputs_signed_by_pub(&taker_payment_tx, &input.taker_pub)?;
         if !inputs_signed_by_pub {
             return MmError::err(ValidatePaymentError::WrongPaymentTx(
                 "Taker payment does not belong to the verified public key".to_string(),
