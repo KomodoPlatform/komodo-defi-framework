@@ -44,7 +44,7 @@ use std::iter;
 use std::mem::discriminant;
 use std::num::NonZeroUsize;
 
-const TAKER_PAYMENT_SPEND_SEARCH_INTERVAL: f64 = 10.;
+const TAKER_PAYMENT_SPEND_SEARCH_INTERVAL: f64 = 1.;
 
 pub fn electrum_client_for_test(servers: &[&str]) -> ElectrumClient {
     let ctx = MmCtxBuilder::default().into_mm_arc();

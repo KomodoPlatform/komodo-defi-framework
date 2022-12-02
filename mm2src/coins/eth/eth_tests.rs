@@ -14,7 +14,7 @@ const GAS_PRICE_APPROXIMATION_ON_ORDER_ISSUE: u64 = 52_500_000_000;
 // `GAS_PRICE` increased by 7%
 const GAS_PRICE_APPROXIMATION_ON_TRADE_PREIMAGE: u64 = 53_500_000_000;
 
-const TAKER_PAYMENT_SPEND_SEARCH_INTERVAL: f64 = 10.;
+const TAKER_PAYMENT_SPEND_SEARCH_INTERVAL: f64 = 1.;
 
 fn check_sum(addr: &str, expected: &str) {
     let actual = checksum_address(addr);

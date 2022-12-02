@@ -1987,7 +1987,7 @@ pub mod tendermint_coin_tests {
 
     pub const IRIS_TESTNET_RPC_URL: &str = "http://34.80.202.172:26657";
 
-    const TAKER_PAYMENT_SPEND_SEARCH_INTERVAL: f64 = 10.;
+    const TAKER_PAYMENT_SPEND_SEARCH_INTERVAL: f64 = 1.;
 
     fn get_iris_usdc_ibc_protocol() -> TendermintProtocolInfo {
         TendermintProtocolInfo {
