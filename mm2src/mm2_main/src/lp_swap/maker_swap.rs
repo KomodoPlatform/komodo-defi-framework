@@ -68,6 +68,8 @@ pub const MAKER_ERROR_EVENTS: [&str; 13] = [
     "MakerPaymentRefundFailed",
 ];
 
+pub const MAKER_PAYMENT_SENT_LOG: &str = "Maker payment sent";
+
 pub fn stats_maker_swap_dir(ctx: &MmArc) -> PathBuf { ctx.dbdir().join("SWAPS").join("STATS").join("MAKER") }
 
 pub fn stats_maker_swap_file_path(ctx: &MmArc, uuid: &Uuid) -> PathBuf {
@@ -805,7 +807,7 @@ impl MakerSwap {
         };
 
         let tx_hash = transaction.tx_hash();
-        info!("Maker payment tx {:02x}", tx_hash);
+        info!("{}: Maker payment tx {:02x}", MAKER_PAYMENT_SENT_LOG, tx_hash);
 
         let tx_ident = TransactionIdentifier {
             tx_hex: BytesJson::from(transaction.tx_hex()),

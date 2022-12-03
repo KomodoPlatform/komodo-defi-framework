@@ -19,6 +19,10 @@ pub const WATCHER_PREFIX: TopicPrefix = "swpwtchr";
 const TAKER_SWAP_CONFIRMATIONS: u64 = 1;
 pub const TAKER_SWAP_ENTRY_TIMEOUT: u64 = 21600;
 
+pub const MAKER_PAYMENT_SPEND_SENT_LOG: &str = "Maker payment spend sent";
+pub const MAKER_PAYMENT_SPEND_FOUND_LOG: &str = "Maker payment spend found by watcher";
+pub const TAKER_PAYMENT_REFUND_SENT_LOG: &str = "Taker payment refund sent";
+
 struct WatcherContext {
     ctx: MmArc,
     taker_coin: MmCoinEnum,
@@ -313,7 +317,7 @@ impl State for WaitForTakerPaymentSpend {
                 );
 
                 if f.compat().await.is_ok() {
-                    info!("Maker payment spend found by watcher");
+                    info!("{}", MAKER_PAYMENT_SPEND_FOUND_LOG);
                     return Self::change_state(Stopped::from_reason(StopReason::Finished(
                         WatcherSuccess::MakerPaymentSpentByTaker,
                     )));
@@ -373,7 +377,10 @@ impl State for SpendMakerPayment {
         );
 
         let tx_hash = transaction.tx_hash();
-        info!("Maker payment spend tx {:02x} sent by watcher", tx_hash);
+        info!(
+            "{}: Maker payment spend tx {:02x} sent by watcher",
+            MAKER_PAYMENT_SPEND_SENT_LOG, tx_hash
+        );
 
         Self::change_state(Stopped::from_reason(StopReason::Finished(
             WatcherSuccess::MakerPaymentSpent,
@@ -434,7 +441,10 @@ impl State for RefundTakerPayment {
         );
 
         let tx_hash = transaction.tx_hash();
-        info!("Taker payment refund tx {:02x} sent by watcher", tx_hash);
+        info!(
+            "{}: Taker payment refund tx {:02x} sent by watcher",
+            TAKER_PAYMENT_REFUND_SENT_LOG, tx_hash
+        );
         Self::change_state(Stopped::from_reason(StopReason::Finished(
             WatcherSuccess::TakerPaymentRefunded,
         )))

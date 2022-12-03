@@ -5,6 +5,8 @@ use bitcrypto::dhash160;
 use chain::OutPoint;
 use coins::coin_errors::ValidatePaymentError;
 use coins::utxo::rpc_clients::UnspentInfo;
+use coins::utxo::utxo_common::{EARLY_CONFIRMATION_ERR_LOG, INVALID_PUBKEY_ERR_LOG, INVALID_SCRIPT_PUBKEY_ERR_LOG,
+                               OLD_TRANSACTION_ERR_LOG};
 use coins::utxo::{GetUtxoListOps, UtxoCommonOps};
 use coins::{FoundSwapTxSpend, MarketCoinOps, MmCoin, MmCoinEnum, SearchForSwapTxSpendInput, SendMakerPaymentArgs,
             SendMakerRefundsPaymentArgs, SendMakerSpendsTakerPaymentArgs, SendTakerPaymentArgs,
@@ -12,7 +14,8 @@ use coins::{FoundSwapTxSpend, MarketCoinOps, MmCoin, MmCoinEnum, SearchForSwapTx
             WithdrawRequest};
 use common::{block_on, now_ms, DEX_FEE_ADDR_RAW_PUBKEY};
 use futures01::Future;
-use mm2_main::mm2::lp_swap::dex_fee_amount_from_taker_coin;
+use mm2_main::mm2::lp_swap::{dex_fee_amount_from_taker_coin, MAKER_PAYMENT_SENT_LOG, MAKER_PAYMENT_SPEND_FOUND_LOG,
+                             MAKER_PAYMENT_SPEND_SENT_LOG, TAKER_PAYMENT_REFUND_SENT_LOG, WATCHER_MESSAGE_SENT_LOG};
 use mm2_number::{BigDecimal, MmNumber};
 use mm2_test_helpers::for_tests::{check_my_swap_status_amounts, eth_testnet_conf, kmd_conf, mm_dump, mycoin1_conf,
                                   mycoin_conf, MarketMakerIt, Mm2TestConf};
@@ -886,9 +889,9 @@ fn test_watcher_spends_maker_payment_spend() {
     .unwrap();
     assert!(rc.0.is_success(), "!buy: {}", rc.1);
 
-    block_on(mm_alice.wait_for_log(60., |log| log.contains("Watcher message sent..."))).unwrap();
+    block_on(mm_alice.wait_for_log(60., |log| log.contains(WATCHER_MESSAGE_SENT_LOG))).unwrap();
     block_on(mm_alice.stop()).unwrap();
-    block_on(mm_watcher.wait_for_log(60., |log| log.contains("Sent maker payment spend tx"))).unwrap();
+    block_on(mm_watcher.wait_for_log(60., |log| log.contains(MAKER_PAYMENT_SPEND_SENT_LOG))).unwrap();
     thread::sleep(Duration::from_secs(5));
 
     let mm_alice = MarketMakerIt::start(alice_conf, "pass".to_string(), None).unwrap();
@@ -1009,7 +1012,7 @@ fn test_watcher_waits_for_taker() {
     .unwrap();
     assert!(rc.0.is_success(), "!buy: {}", rc.1);
 
-    block_on(mm_watcher.wait_for_log(160., |log| log.contains("Found maker payment spend as watcher"))).unwrap();
+    block_on(mm_watcher.wait_for_log(160., |log| log.contains(MAKER_PAYMENT_SPEND_FOUND_LOG))).unwrap();
 }
 
 #[test]
@@ -1087,11 +1090,11 @@ fn test_watcher_refunds_taker_payment() {
     .unwrap();
     assert!(rc.0.is_success(), "!buy: {}", rc.1);
 
-    block_on(mm_bob.wait_for_log(160., |log| log.contains("Maker payment tx"))).unwrap();
+    block_on(mm_bob.wait_for_log(160., |log| log.contains(MAKER_PAYMENT_SENT_LOG))).unwrap();
     block_on(mm_bob.stop()).unwrap();
-    block_on(mm_alice.wait_for_log(160., |log| log.contains("Watcher message sent..."))).unwrap();
+    block_on(mm_alice.wait_for_log(160., |log| log.contains(WATCHER_MESSAGE_SENT_LOG))).unwrap();
     block_on(mm_alice.stop()).unwrap();
-    block_on(mm_watcher.wait_for_log(160., |log| log.contains("Sent taker refund tx"))).unwrap();
+    block_on(mm_watcher.wait_for_log(160., |log| log.contains(TAKER_PAYMENT_REFUND_SENT_LOG))).unwrap();
     thread::sleep(Duration::from_secs(5));
 
     let mm_alice = MarketMakerIt::start(alice_conf, "pass".to_string(), None).unwrap();
@@ -1175,7 +1178,7 @@ fn test_watcher_validate_taker_fee() {
     log!("error: {:?}", error);
     match error {
         ValidatePaymentError::WrongPaymentTx(err) => {
-            assert!(err.contains("Taker fee does not belong to the verified public key"))
+            assert!(err.contains(INVALID_PUBKEY_ERR_LOG))
         },
         _ => panic!("Expected `WrongPaymentTx` invalid public key, found {:?}", error),
     }
@@ -1194,7 +1197,7 @@ fn test_watcher_validate_taker_fee() {
     log!("error: {:?}", error);
     match error {
         ValidatePaymentError::WrongPaymentTx(err) => {
-            assert!(err.contains("confirmed before min_block"))
+            assert!(err.contains(EARLY_CONFIRMATION_ERR_LOG))
         },
         _ => panic!(
             "Expected `WrongPaymentTx` confirmed before min_block, found {:?}",
@@ -1216,7 +1219,7 @@ fn test_watcher_validate_taker_fee() {
     log!("error: {:?}", error);
     match error {
         ValidatePaymentError::WrongPaymentTx(err) => {
-            assert!(err.contains("is too old"))
+            assert!(err.contains(OLD_TRANSACTION_ERR_LOG))
         },
         _ => panic!("Expected `WrongPaymentTx` transaction too old, found {:?}", error),
     }
@@ -1235,7 +1238,7 @@ fn test_watcher_validate_taker_fee() {
     log!("error: {:?}", error);
     match error {
         ValidatePaymentError::WrongPaymentTx(err) => {
-            assert!(err.contains("Provided dex fee tx output script_pubkey doesn't match expected"))
+            assert!(err.contains(INVALID_SCRIPT_PUBKEY_ERR_LOG))
         },
         _ => panic!(
             "Expected `WrongPaymentTx` tx output script_pubkey doesn't match expected, found {:?}",

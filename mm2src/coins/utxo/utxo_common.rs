@@ -60,6 +60,11 @@ pub const DEFAULT_SWAP_VOUT: usize = 0;
 pub const DEFAULT_SWAP_VIN: usize = 0;
 const MIN_BTC_TRADING_VOL: &str = "0.00777";
 
+pub const INVALID_PUBKEY_ERR_LOG: &str = "Invalid public key";
+pub const EARLY_CONFIRMATION_ERR_LOG: &str = "Early confirmation";
+pub const OLD_TRANSACTION_ERR_LOG: &str = "Old transaction";
+pub const INVALID_SCRIPT_PUBKEY_ERR_LOG: &str = "Invalid script pubkey";
+
 macro_rules! true_or {
     ($cond: expr, $etype: expr) => {
         if !$cond {
@@ -1740,12 +1745,10 @@ pub fn check_all_utxo_inputs_signed_by_pub(
 ) -> Result<bool, MmError<ValidatePaymentError>> {
     for input in &tx.inputs {
         let pubkey = if input.has_witness() {
-            pubkey_from_witness_script(&input.script_witness)
-                .map_to_mm(|e| ValidatePaymentError::TxDeserializationError(e.to_string()))?
+            pubkey_from_witness_script(&input.script_witness).map_to_mm(ValidatePaymentError::TxDeserializationError)?
         } else {
             let script: Script = input.script_sig.clone().into();
-            pubkey_from_script_sig(&script)
-                .map_to_mm(|e| ValidatePaymentError::TxDeserializationError(e.to_string()))?
+            pubkey_from_script_sig(&script).map_to_mm(ValidatePaymentError::TxDeserializationError)?
         };
         if *pubkey != expected_pub {
             return Ok(false);
@@ -1791,9 +1794,10 @@ pub fn watcher_validate_taker_fee<T: UtxoCommonOps>(
             let taker_fee_tx: UtxoTx = deserialize(tx_from_rpc.hex.0.as_slice())?;
             let inputs_signed_by_pub = check_all_utxo_inputs_signed_by_pub(&taker_fee_tx, &sender_pubkey)?;
             if !inputs_signed_by_pub {
-                return MmError::err(ValidatePaymentError::WrongPaymentTx(
-                    "Taker fee does not belong to the verified public key".to_string(),
-                ));
+                return MmError::err(ValidatePaymentError::WrongPaymentTx(format!(
+                    "{}: Taker fee does not belong to the verified public key",
+                    INVALID_PUBKEY_ERR_LOG
+                )));
             }
 
             let tx_confirmed_before_block = is_tx_confirmed_before_block(&coin, &tx_from_rpc, min_block_number)
@@ -1801,15 +1805,15 @@ pub fn watcher_validate_taker_fee<T: UtxoCommonOps>(
                 .map_to_mm(ValidatePaymentError::InternalError)?;
             if tx_confirmed_before_block {
                 return MmError::err(ValidatePaymentError::WrongPaymentTx(format!(
-                    "Fee tx {:?} confirmed before min_block {}",
-                    taker_fee_tx, min_block_number
+                    "{}: Fee tx {:?} confirmed before min_block {}",
+                    EARLY_CONFIRMATION_ERR_LOG, taker_fee_tx, min_block_number
                 )));
             }
 
             if (now_ms() / 1000) as u32 - taker_fee_tx.lock_time > lock_duration as u32 {
                 return MmError::err(ValidatePaymentError::WrongPaymentTx(format!(
-                    "Taker fee {:?} is too old",
-                    taker_fee_tx
+                    "{}: Taker fee {:?} is too old",
+                    OLD_TRANSACTION_ERR_LOG, taker_fee_tx
                 )));
             }
 
@@ -1828,8 +1832,8 @@ pub fn watcher_validate_taker_fee<T: UtxoCommonOps>(
                     let expected_script_pubkey = Builder::build_p2pkh(&address.hash).to_bytes();
                     if out.script_pubkey != expected_script_pubkey {
                         return MmError::err(ValidatePaymentError::WrongPaymentTx(format!(
-                            "Provided dex fee tx output script_pubkey doesn't match expected {:?} {:?}",
-                            out.script_pubkey, expected_script_pubkey
+                            "{}: Provided dex fee tx output script_pubkey doesn't match expected {:?} {:?}",
+                            INVALID_SCRIPT_PUBKEY_ERR_LOG, out.script_pubkey, expected_script_pubkey
                         )));
                     }
                 },

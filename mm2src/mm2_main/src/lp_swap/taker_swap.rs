@@ -83,6 +83,8 @@ pub const TAKER_ERROR_EVENTS: [&str; 13] = [
     "TakerPaymentRefundFailed",
 ];
 
+pub const WATCHER_MESSAGE_SENT_LOG: &str = "Watcher message sent...";
+
 pub fn stats_taker_swap_dir(ctx: &MmArc) -> PathBuf { ctx.dbdir().join("SWAPS").join("STATS").join("TAKER") }
 
 pub fn stats_taker_swap_file_path(ctx: &MmArc, uuid: &Uuid) -> PathBuf {
@@ -615,7 +617,7 @@ impl TakerSwapEvent {
                 "Maker payment wait for confirmation failed...".to_owned()
             },
             TakerSwapEvent::TakerPaymentSent(_) => "Taker payment sent...".to_owned(),
-            TakerSwapEvent::WatcherMessageSent(_, _) => "Watcher message sent...".to_owned(),
+            TakerSwapEvent::WatcherMessageSent(_, _) => WATCHER_MESSAGE_SENT_LOG.to_owned(),
             TakerSwapEvent::TakerPaymentTransactionFailed(_) => "Taker payment transaction failed...".to_owned(),
             TakerSwapEvent::TakerPaymentDataSendFailed(_) => "Taker payment data send failed...".to_owned(),
             TakerSwapEvent::TakerPaymentWaitConfirmFailed(_) => {
