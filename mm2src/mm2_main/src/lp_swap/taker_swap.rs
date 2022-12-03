@@ -1417,8 +1417,8 @@ impl TakerSwap {
             );
 
             let time_lock = match std::env::var("USE_TEST_LOCKTIME") {
-                Ok(_) => u32::try_from(self.r().data.started_at).map_err(|err| err.to_string())?,
-                Err(_) => u32::try_from(self.r().data.taker_payment_lock).map_err(|err| err.to_string())?,
+                Ok(_) => try_s!(u32::try_from(self.r().data.started_at)),
+                Err(_) => try_s!(u32::try_from(self.r().data.taker_payment_lock)),
             };
             let taker_payment_refund_preimage_fut = self.taker_coin.create_taker_payment_refund_preimage(
                 &transaction.tx_hex(),
