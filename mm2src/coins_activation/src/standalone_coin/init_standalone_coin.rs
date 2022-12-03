@@ -7,7 +7,6 @@ use async_trait::async_trait;
 use coins::my_tx_history_v2::TxHistoryStorage;
 use coins::tx_history_storage::{CreateTxHistoryStorageError, TxHistoryStorageBuilder};
 use coins::{lp_coinfind, lp_register_coin, CoinsContext, MmCoinEnum, RegisterCoinError, RegisterCoinParams};
-use common::log::LogOnError;
 use common::{log, SuccessResponse};
 use crypto::trezor::trezor_rpc_task::RpcTaskHandle;
 use mm2_core::mm_ctx::MmArc;
@@ -188,7 +187,7 @@ where
     async fn cancel(self) {
         if let Ok(c_ctx) = CoinsContext::from_ctx(&self.ctx) {
             if let Ok(Some(coin)) = lp_coinfind(&self.ctx, &self.request.ticker).await {
-                c_ctx.remove_coin(coin).await.error_log();
+                c_ctx.remove_coin(coin).await;
             };
         };
     }

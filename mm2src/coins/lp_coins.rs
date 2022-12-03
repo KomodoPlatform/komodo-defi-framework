@@ -2132,11 +2132,6 @@ pub struct CoinsContext {
 }
 
 #[derive(Debug)]
-pub struct CoinIsAlreadyActivatedErr {
-    pub ticker: String,
-}
-
-#[derive(Debug)]
 pub struct PlatformIsAlreadyActivatedErr {
     pub ticker: String,
 }
@@ -2161,11 +2156,11 @@ impl CoinsContext {
         })))
     }
 
-    pub async fn add_token(&self, coin: MmCoinEnum) -> Result<(), MmError<CoinIsAlreadyActivatedErr>> {
+    pub async fn add_token(&self, coin: MmCoinEnum) -> Result<(), MmError<RegisterCoinError>> {
         let mut coins = self.coins.lock().await;
         if coins.contains_key(coin.ticker()) {
-            return MmError::err(CoinIsAlreadyActivatedErr {
-                ticker: coin.ticker().into(),
+            return MmError::err(RegisterCoinError::CoinIsInitializedAlready {
+                coin: coin.ticker().into(),
             });
         }
         let ticker = coin.ticker();
@@ -2182,8 +2177,12 @@ impl CoinsContext {
 
     /// Adds a Layer 2 coin that bases on another standalone platform.
     /// The process of adding l2 coins is identical to that of adding tokens.
-    pub async fn add_l2(&self, coin: MmCoinEnum) -> Result<(), MmError<CoinIsAlreadyActivatedErr>> {
-        self.add_token(coin).await
+    pub async fn add_l2(&self, coin: MmCoinEnum) -> Result<(), MmError<RegisterCoinError>> {
+        let ticker = coin.ticker().to_string();
+        self.add_token(coin)
+            .await
+            .map_err(|_| RegisterCoinError::CoinIsInitializedAlready { coin: ticker })?;
+        Ok(())
     }
 
     pub async fn add_platform_with_tokens(
@@ -2227,7 +2226,7 @@ impl CoinsContext {
         coins.get(ticker).cloned().unwrap_or_default()
     }
 
-    pub async fn remove_coin(&self, coin: MmCoinEnum) -> Result<(), String> {
+    pub async fn remove_coin(&self, coin: MmCoinEnum) {
         let ticker = coin.ticker();
         let platform_ticker = coin.platform_ticker();
         let mut coins_storage = self.coins.lock().await;
@@ -2263,8 +2262,6 @@ impl CoinsContext {
         // Abort all coin related futures on coin deactivation
         coin.on_disabled()
             .error_log_with_msg(&format!("Error aborting coin({ticker}) futures"));
-
-        Ok(())
     }
 
     #[cfg(target_arch = "wasm32")]

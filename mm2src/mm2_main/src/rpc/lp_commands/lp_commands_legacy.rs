@@ -21,7 +21,7 @@
 
 use coins::{lp_coinfind, lp_coininit, CoinsContext, MmCoinEnum};
 use common::executor::Timer;
-use common::log::{error, LogOnError};
+use common::log::error;
 use common::{rpc_err_response, rpc_response, HyRes};
 use futures::compat::Future01CompatExt;
 use http::Response;
@@ -106,7 +106,8 @@ pub async fn disable_coin(ctx: MmArc, req: Json) -> Result<Response<Vec<u8>>, St
             },
         }
     }
-    coins_ctx.remove_coin(coin).await.error_log();
+
+    coins_ctx.remove_coin(coin).await;
     let res = json!({
         "result": {
             "coin": ticker,

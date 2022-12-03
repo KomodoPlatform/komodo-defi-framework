@@ -5,8 +5,7 @@ use crate::l2::init_l2_error::{CancelInitL2Error, InitL2StatusError, InitL2UserA
 use crate::l2::InitL2Error;
 use crate::prelude::*;
 use async_trait::async_trait;
-use coins::{lp_coinfind, lp_coinfind_or_err, CoinIsAlreadyActivatedErr, CoinsContext, MmCoinEnum, RegisterCoinError};
-use common::log::LogOnError;
+use coins::{lp_coinfind, lp_coinfind_or_err, CoinsContext, MmCoinEnum, RegisterCoinError};
 use common::SuccessResponse;
 use mm2_core::mm_ctx::MmArc;
 use mm2_err_handle::prelude::*;
@@ -39,13 +38,7 @@ pub trait InitL2ActivationOps: Into<MmCoinEnum> + Send + Sync + 'static {
     type ValidatedParams: Clone + Send + Sync;
     type CoinConf: Clone + Send + Sync;
     type ActivationResult: serde::Serialize + Clone + Send + Sync;
-    type ActivationError: From<CoinIsAlreadyActivatedErr>
-        + From<RegisterCoinError>
-        + NotEqual
-        + SerMmErrorType
-        + Clone
-        + Send
-        + Sync;
+    type ActivationError: From<RegisterCoinError> + NotEqual + SerMmErrorType + Clone + Send + Sync;
     type InProgressStatus: InitL2InitialStatus + Clone + Send + Sync;
     type AwaitingStatus: Clone + Send + Sync;
     type UserAction: NotMmError + Send + Sync;
@@ -195,7 +188,7 @@ where
     async fn cancel(self) {
         if let Ok(ctx) = CoinsContext::from_ctx(&self.ctx) {
             if let Ok(Some(t)) = lp_coinfind(&self.ctx, &self.ticker).await {
-                ctx.remove_coin(t).await.error_log();
+                ctx.remove_coin(t).await;
             };
         };
     }

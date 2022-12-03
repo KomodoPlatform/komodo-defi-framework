@@ -15,8 +15,7 @@ use coins::lightning::ln_utils::{get_open_channels_nodes_addresses, init_channel
 use coins::lightning::{InvoicePayer, LightningCoin};
 use coins::utxo::utxo_standard::UtxoStandardCoin;
 use coins::utxo::UtxoCommonOps;
-use coins::{BalanceError, CoinBalance, CoinIsAlreadyActivatedErr, CoinProtocol, MarketCoinOps, MmCoinEnum,
-            RegisterCoinError};
+use coins::{BalanceError, CoinBalance, CoinProtocol, MarketCoinOps, MmCoinEnum, RegisterCoinError};
 use common::executor::SpawnFuture;
 use crypto::hw_rpc_task::{HwRpcTaskAwaitingStatus, HwRpcTaskUserAction};
 use derive_more::Display;
@@ -163,10 +162,6 @@ pub enum LightningInitError {
 
 impl From<MyAddressError> for LightningInitError {
     fn from(err: MyAddressError) -> Self { Self::MyAddressError(err.to_string()) }
-}
-
-impl From<CoinIsAlreadyActivatedErr> for LightningInitError {
-    fn from(err: CoinIsAlreadyActivatedErr) -> Self { Self::CoinIsAlreadyActivated { ticker: err.ticker } }
 }
 
 impl From<LightningInitError> for InitL2Error {
