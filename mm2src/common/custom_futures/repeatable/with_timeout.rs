@@ -34,7 +34,7 @@ pub enum Until {
     TimestampMs(u64),
 }
 
-/// The result of [`Repeatable::attempts`] - the next step at the future configuration.
+/// The next step at the future configuration `Repeatable` -> `RepeatEvery` -> `RepeatUntil`.
 pub struct RepeatUntil<Factory, F, T, E> {
     factory: Factory,
     /// Currently executable future. Aka an active attempt.
@@ -80,7 +80,7 @@ where
         self
     }
 
-    /// Checks if the deadline is not going to be reached after a `repeat_every` timeout.
+    /// Checks if the deadline is not going to be reached after the `repeat_every` timeout.
     fn check_can_retry_after_timeout(&self) -> bool {
         match self.until {
             Until::Instant(instant) => {

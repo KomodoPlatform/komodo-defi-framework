@@ -1,6 +1,7 @@
 use crate::custom_futures::repeatable::{poll_timeout, Action, FactoryTrait, InspectErrorTrait, RepeatableTrait};
 use crate::executor::Timer;
 use futures::FutureExt;
+use std::fmt;
 use std::future::Future;
 use std::marker::PhantomData;
 use std::pin::Pin;
@@ -13,7 +14,17 @@ pub struct AttemptsExceed<E> {
     pub error: E,
 }
 
-/// The result of [`Repeatable::attempts`] - the next step at the future configuration.
+impl<E: fmt::Display> fmt::Display for AttemptsExceed<E> {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(
+            f,
+            "Error {} on retrying the future after {} attempts",
+            self.error, self.attempts
+        )
+    }
+}
+
+/// The next step at the future configuration `Repeatable` -> `RepeatEvery` -> `RepeatAttempts`.
 pub struct RepeatAttempts<Factory, F, T, E> {
     factory: Factory,
     /// Currently executable future. Aka an active attempt.

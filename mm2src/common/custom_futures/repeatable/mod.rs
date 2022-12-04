@@ -1,3 +1,22 @@
+//! A future that can be repeated if an error occurs or not all conditions are met.
+//!
+//! # Why `async move` shouldn't be allowed
+//!
+//! Let's consider the following example:
+//!
+//! ```rust
+//! let mut counter = 0;
+//! let res = repeatable!(async move {
+//!   counter += 1;
+//!   if counter > 1 { ready!() } else { retry!() }
+//! }).repeat_every_secs(0.1).attempts(10).await;
+//!
+//! res.expect_err("'counter' will never be greater than 1");
+//! ```
+//!
+//! This happens due to the fact that the `counter` variable is not shared between attempts,
+//! and every time the future starts with `counter = 0`.
+
 use crate::executor::Timer;
 use crate::now_ms;
 use futures::FutureExt;
@@ -14,10 +33,10 @@ mod with_timeout;
 pub use with_attempts::{AttemptsExceed, RepeatAttempts};
 pub use with_timeout::{RepeatUntil, TimeoutExpired, Until};
 
+/// Wraps the given future into `Repeatable` future.
+/// The future should return [`Action<T, E>`] with any `T` and `E` types.
 #[macro_export]
 macro_rules! repeatable {
-    // Please note that we shouldn't allow the user to declare the future as `async move`.
-    // Because moving local variables may lead to incorrect usage.
     (async { $($t:tt)* }) => {
         $crate::custom_futures::repeatable::Repeatable::new(|| Box::pin(async { $($t)* }))
     };
@@ -26,10 +45,12 @@ macro_rules! repeatable {
     };
 }
 
+/// Wraps the given future into `Repeatable` future.
+/// The future should return [`Result<T, E>`], where
+/// * `Ok(T)` => `Action::Ready(T)`
+/// * `Err(E)` => `Action::Retry(E)`
 #[macro_export]
 macro_rules! retry_on_err {
-    // Please note that we shouldn't allow the user to declare the future as `async move`.
-    // Because moving local variables may lead to incorrect usage.
     (async { $($t:tt)* }) => {
         $crate::custom_futures::repeatable::Repeatable::new(|| {
             use $crate::custom_futures::repeatable::RetryOnError;
@@ -49,6 +70,7 @@ macro_rules! retry_on_err {
     };
 }
 
+/// The macro expands as `return Action::Ready(T)`.
 #[macro_export]
 macro_rules! ready {
     () => {{
@@ -59,6 +81,7 @@ macro_rules! ready {
     }};
 }
 
+/// The macro expands as `return Action::Retry(E)`.
 #[macro_export]
 macro_rules! retry {
     () => {{
@@ -69,6 +92,7 @@ macro_rules! retry {
     }};
 }
 
+/// Unwraps a result or returns `Action::Retry(E)`.
 #[macro_export]
 macro_rules! try_or_retry {
     ($exp:expr) => {{
@@ -79,6 +103,7 @@ macro_rules! try_or_retry {
     }};
 }
 
+/// Unwraps a result or returns `Action::Ready(E)`.
 #[macro_export]
 macro_rules! try_or_ready_err {
     ($exp:expr) => {{
@@ -101,6 +126,7 @@ pub(crate) trait InspectErrorTrait<E>: 'static + Fn(&E) + Send {}
 
 impl<F: 'static + Fn(&E) + Send, E> InspectErrorTrait<E> for F {}
 
+/// The future is ether ready (with a `T` result), or not ready (failed with an intermediate `E` error).
 #[derive(Debug)]
 pub enum Action<T, E> {
     Ready(T),
@@ -112,6 +138,9 @@ pub trait RetryOnError<T, E> {
 }
 
 impl<T, E> RetryOnError<T, E> for Result<T, E> {
+    /// Converts `Result<T, E>` into `Action<T, E>`:
+    /// * `Ok(T)` => `Action::Ready(T)`.
+    /// * `Err(E)` => `Action::Retry(E)`.
     #[inline]
     fn retry_on_err(self) -> Action<T, E> {
         match self {
@@ -121,6 +150,7 @@ impl<T, E> RetryOnError<T, E> for Result<T, E> {
     }
 }
 
+/// The result of `repeatable` or `retry_on_err` macros - the first step at the future configuration.
 pub struct Repeatable<Factory, F, T, E> {
     factory: Factory,
     inspect_err: Option<Box<dyn InspectErrorTrait<E>>>,
@@ -168,6 +198,7 @@ impl<Factory, F, T, E> Repeatable<Factory, F, T, E> {
     }
 }
 
+/// The next step at the future configuration `Repeatable` -> `RepeatEvery`.
 pub struct RepeatEvery<Factory, F, T, E> {
     factory: Factory,
     repeat_every: Duration,
@@ -186,6 +217,8 @@ impl<Factory, F, T, E> RepeatEvery<Factory, F, T, E> {
         self
     }
 
+    /// Specifies a total number of attempts to run the future.
+    /// So there will be up to `total_attempts`.
     #[inline]
     pub fn attempts(self, total_attempts: usize) -> RepeatAttempts<Factory, F, T, E>
     where
@@ -204,6 +237,7 @@ impl<Factory, F, T, E> RepeatEvery<Factory, F, T, E> {
         )
     }
 
+    /// Specifies a deadline before that we may try to repeat the future.
     #[inline]
     pub fn until(self, until: Instant) -> RepeatUntil<Factory, F, T, E>
     where
@@ -218,6 +252,7 @@ impl<Factory, F, T, E> RepeatEvery<Factory, F, T, E> {
         RepeatUntil::new(self.factory, Until::Instant(until), self.repeat_every, self.inspect_err)
     }
 
+    /// Specifies a deadline in milliseconds before that we may try to repeat the future.
     #[inline]
     pub fn until_ms(self, until_ms: u64) -> RepeatUntil<Factory, F, T, E>
     where
@@ -237,7 +272,8 @@ impl<Factory, F, T, E> RepeatEvery<Factory, F, T, E> {
         )
     }
 
-    /// This method name should differ from [`FutureTimerExt::timeout_ms`].
+    /// Specifies a timeout in milliseconds before that we may try to repeat the future.
+    /// Note this method name should differ from [`FutureTimerExt::timeout_ms`].
     #[inline]
     pub fn with_timeout_ms(self, timeout_ms: u64) -> RepeatUntil<Factory, F, T, E>
     where
@@ -247,7 +283,8 @@ impl<Factory, F, T, E> RepeatEvery<Factory, F, T, E> {
         self.until_ms(now_ms() + timeout_ms)
     }
 
-    /// This method name should differ from [`FutureTimerExt::timeout_secs`].
+    /// Specifies a timeout in seconds before that we may try to repeat the future.
+    /// Note this method name should differ from [`FutureTimerExt::timeout_secs`].
     #[inline]
     pub fn with_timeout_secs(self, timeout_secs: f64) -> RepeatUntil<Factory, F, T, E>
     where

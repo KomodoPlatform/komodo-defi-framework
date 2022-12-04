@@ -1,9 +1,7 @@
 use crate::utxo::rpc_clients::{ConfirmedTransactionInfo, ElectrumClient};
 use async_trait::async_trait;
 use chain::Transaction as UtxoTx;
-use common::executor::Timer;
 use common::log::error;
-use common::now_ms;
 use keys::hash::H256;
 use serialization::serialize_list;
 use spv_validation::helpers_validation::SPVError;
@@ -29,31 +27,18 @@ impl SimplePaymentVerification for ElectrumClient {
             return Err(SPVError::InvalidVout);
         }
 
-        let (merkle_branch, validated_header, height) = loop {
-            if now_ms() / 1000 > try_spv_proof_until {
-                // Todo: Should not show this error when height is 0
-                error!(
-                    "Waited too long until {} for transaction {:?} to validate spv proof",
-                    try_spv_proof_until,
-                    tx.hash().reversed(),
-                );
-                return Err(SPVError::Timeout);
-            }
-
-            match self.get_merkle_and_validated_header(tx).await {
-                Ok(res) => break res,
-                Err(e) => {
+        let tx_hash = tx.hash().reversed();
+        let (merkle_branch, validated_header, height) =
+            retry_on_err!(async { self.get_merkle_and_validated_header(tx).await })
+                .repeat_every_secs(TRY_SPV_PROOF_INTERVAL as f64)
+                .with_timeout_secs(try_spv_proof_until as f64)
+                .inspect_err(move |e| {
                     error!(
-                        "Failed spv proof validation for transaction {} with error: {:?}, retrying in {} seconds.",
-                        tx.hash().reversed(),
-                        e,
-                        TRY_SPV_PROOF_INTERVAL,
-                    );
-
-                    Timer::sleep(TRY_SPV_PROOF_INTERVAL as f64).await;
-                },
-            }
-        };
+                        "Failed spv proof validation for transaction {tx_hash} with error: {e:?}, retrying in {TRY_SPV_PROOF_INTERVAL} seconds.",
+                    )
+                })
+                .await
+                .map_err(|_| SPVError::Timeout)?;
 
         let intermediate_nodes: Vec<H256> = merkle_branch
             .merkle
