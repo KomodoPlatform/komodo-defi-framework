@@ -217,8 +217,8 @@ use rpc_command::{init_account_balance::{AccountBalanceTaskManager, AccountBalan
                   init_withdraw::{WithdrawTaskManager, WithdrawTaskManagerShared}};
 
 pub mod tendermint;
-use tendermint::{CosmosTransaction, TendermintCoin, TendermintFeeDetails, TendermintProtocolInfo, TendermintToken,
-                 TendermintTokenProtocolInfo};
+use tendermint::{CosmosTransaction, CustomTendermintMsgType, TendermintCoin, TendermintFeeDetails,
+                 TendermintProtocolInfo, TendermintToken, TendermintTokenProtocolInfo};
 
 #[doc(hidden)]
 #[allow(unused_variables)]
@@ -1036,16 +1036,18 @@ impl KmdRewardsDetails {
     }
 }
 
-#[derive(Clone, Debug, Deserialize, PartialEq, Serialize)]
+#[derive(Default, Clone, Debug, Deserialize, PartialEq, Serialize)]
 pub enum TransactionType {
     StakingDelegation,
     RemoveDelegation,
+    #[default]
     StandardTransfer,
     TokenTransfer(BytesJson),
-}
-
-impl Default for TransactionType {
-    fn default() -> Self { TransactionType::StandardTransfer }
+    FeeForTokenTx,
+    CustomTendermintMsg {
+        msg_type: CustomTendermintMsgType,
+        token_id: Option<BytesJson>,
+    },
 }
 
 /// Transaction details
@@ -1908,7 +1910,7 @@ pub trait MmCoin: SwapOps + WatcherOps + MarketCoinOps + Send + Sync + 'static {
     ) -> TradePreimageResult<TradeFee>;
 
     /// Get fee to be paid by receiver per whole swap and check if the wallet has sufficient balance to pay the fee.
-    fn get_receiver_trade_fee(&self, stage: FeeApproxStage) -> TradePreimageFut<TradeFee>;
+    fn get_receiver_trade_fee(&self, send_amount: BigDecimal, stage: FeeApproxStage) -> TradePreimageFut<TradeFee>;
 
     /// Get transaction fee the Taker has to pay to send a `TakerFee` transaction and check if the wallet has sufficient balance to pay the fee.
     async fn get_fee_to_send_taker_fee(

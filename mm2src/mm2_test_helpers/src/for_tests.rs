@@ -386,7 +386,7 @@ pub fn morty_conf() -> Json {
 pub fn atom_testnet_conf() -> Json {
     json!({
         "coin":"ATOM",
-        "avg_block_time": 5,
+        "avg_blocktime": 5,
         "protocol":{
             "type":"TENDERMINT",
             "protocol_data": {
@@ -512,7 +512,7 @@ pub fn eth_jst_testnet_conf() -> Json {
 pub fn iris_testnet_conf() -> Json {
     json!({
         "coin": "IRIS-TEST",
-        "avg_block_time": 5,
+        "avg_blocktime": 5,
         "derivation_path": "m/44'/566'",
         "protocol":{
             "type":"TENDERMINT",
@@ -2180,7 +2180,13 @@ pub async fn my_balance(mm: &MarketMakerIt, coin: &str) -> Json {
     json::from_str(&request.1).unwrap()
 }
 
-pub async fn enable_tendermint(mm: &MarketMakerIt, coin: &str, ibc_assets: &[&str], rpc_urls: &[&str]) -> Json {
+pub async fn enable_tendermint(
+    mm: &MarketMakerIt,
+    coin: &str,
+    ibc_assets: &[&str],
+    rpc_urls: &[&str],
+    tx_history: bool,
+) -> Json {
     let ibc_requests: Vec<_> = ibc_assets.iter().map(|ticker| json!({ "ticker": ticker })).collect();
 
     let request = json!({
@@ -2191,6 +2197,7 @@ pub async fn enable_tendermint(mm: &MarketMakerIt, coin: &str, ibc_assets: &[&st
             "ticker": coin,
             "tokens_params": ibc_requests,
             "rpc_urls": rpc_urls,
+            "tx_history": tx_history
         }
     });
     println!(
@@ -2206,6 +2213,36 @@ pub async fn enable_tendermint(mm: &MarketMakerIt, coin: &str, ibc_assets: &[&st
         request.1
     );
     println!("enable_tendermint_with_assets response {}", request.1);
+    json::from_str(&request.1).unwrap()
+}
+
+pub async fn get_tendermint_my_tx_history(mm: &MarketMakerIt, coin: &str, limit: usize, page_number: usize) -> Json {
+    let request = json!({
+        "userpass": mm.userpass,
+        "method": "my_tx_history",
+        "mmrpc": "2.0",
+        "params": {
+            "coin": coin,
+            "limit": limit,
+            "paging_options": {
+                "PageNumber": page_number
+            },
+        }
+    });
+    println!(
+        "tendermint 'my_tx_history' request {}",
+        json::to_string(&request).unwrap()
+    );
+
+    let request = mm.rpc(&request).await.unwrap();
+    assert_eq!(
+        request.0,
+        StatusCode::OK,
+        "tendermint 'my_tx_history' failed: {}",
+        request.1
+    );
+
+    println!("tendermint 'my_tx_history' response {}", request.1);
     json::from_str(&request.1).unwrap()
 }
 

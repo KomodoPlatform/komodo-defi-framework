@@ -1718,6 +1718,10 @@ mod lp_swap_tests {
         let maker_fail_at = std::env::var("MAKER_FAIL_AT").map(maker_swap::FailAt::from).ok();
         let taker_passphrase = std::env::var("ALICE_PASSPHRASE").expect("ALICE_PASSPHRASE env must be set");
         let taker_fail_at = std::env::var("TAKER_FAIL_AT").map(taker_swap::FailAt::from).ok();
+        let lock_duration = match std::env::var("LOCK_DURATION") {
+            Ok(maybe_num) => maybe_num.parse().expect("LOCK_DURATION must be a number of seconds"),
+            Err(_) => 30,
+        };
 
         if maker_fail_at.is_none() && taker_fail_at.is_none() {
             panic!("At least one of MAKER_FAIL_AT/TAKER_FAIL_AT must be provided");
@@ -1737,6 +1741,7 @@ mod lp_swap_tests {
 
         fix_directories(&maker_ctx).unwrap();
         block_on(init_p2p(maker_ctx.clone())).unwrap();
+        maker_ctx.init_sqlite_connection().unwrap();
 
         let rick_activation_params = utxo_activation_params(RICK_ELECTRUM_ADDRS);
         let morty_activation_params = utxo_activation_params(MORTY_ELECTRUM_ADDRS);
@@ -1774,6 +1779,7 @@ mod lp_swap_tests {
 
         fix_directories(&taker_ctx).unwrap();
         block_on(init_p2p(taker_ctx.clone())).unwrap();
+        taker_ctx.init_sqlite_connection().unwrap();
 
         let rick_taker = block_on(utxo_standard_coin_with_priv_key(
             &taker_ctx,
@@ -1804,7 +1810,6 @@ mod lp_swap_tests {
             taker_coin_confs: 0,
             taker_coin_nota: false,
         };
-        let payment_locktime = 30;
 
         let mut maker_swap = MakerSwap::new(
             maker_ctx.clone(),
@@ -1817,7 +1822,7 @@ mod lp_swap_tests {
             conf_settings,
             rick_maker.into(),
             morty_maker.into(),
-            payment_locktime,
+            lock_duration,
             None,
             Default::default(),
         );
@@ -1835,7 +1840,7 @@ mod lp_swap_tests {
             conf_settings,
             rick_taker.into(),
             morty_taker.into(),
-            payment_locktime,
+            lock_duration,
             None,
         );
 

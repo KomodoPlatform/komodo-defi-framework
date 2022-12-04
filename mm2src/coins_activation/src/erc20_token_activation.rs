@@ -66,7 +66,6 @@ impl TokenProtocolParams for Erc20Protocol {
 
 #[async_trait]
 impl TokenActivationOps for EthCoin {
-    type PlatformCoin = EthCoin;
     type ActivationParams = Erc20TokenActivationRequest;
     type ProtocolInfo = Erc20Protocol;
     type ActivationResult = Erc20InitResult;

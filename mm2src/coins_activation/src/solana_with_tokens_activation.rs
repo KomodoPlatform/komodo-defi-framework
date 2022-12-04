@@ -16,7 +16,6 @@ use common::Future01CompatExt;
 use crypto::CryptoCtxError;
 use mm2_core::mm_ctx::MmArc;
 use mm2_err_handle::prelude::*;
-use mm2_metrics::MetricsArc;
 use mm2_number::BigDecimal;
 use serde_derive::{Deserialize, Serialize};
 use serde_json::Value as Json;
@@ -247,7 +246,7 @@ impl PlatformWithTokensActivationOps for SolanaCoin {
 
     fn start_history_background_fetching(
         &self,
-        _metrics: MetricsArc,
+        _ctx: MmArc,
         _storage: impl TxHistoryStorage + Send + 'static,
         _initial_balance: BigDecimal,
     ) {

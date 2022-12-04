@@ -2,8 +2,8 @@
 //! We can spawn it once on [`UsbContext::new`], but we have to set the read/write chunk timeout to 0.5s or smaller.
 
 use super::{send_event_recv_response, InternalError};
-use common::block_on;
 use common::log::error;
+use common::{block_on, some_or_return_ok_none};
 use derive_more::Display;
 use futures::channel::{mpsc, oneshot};
 use futures::StreamExt;
@@ -102,28 +102,17 @@ impl UsbContext {
         let config_descriptor = device
             .config_descriptor(filters.config_id)
             .map_to_mm(UsbError::ErrorGettingDevices)?;
-        let interface = match config_descriptor
+        let interface = some_or_return_ok_none!(config_descriptor
             .interfaces()
-            .find(|i| i.number() == filters.interface_id)
-        {
-            Some(interface) => interface,
-            None => return Ok(None),
-        };
-        let descriptor = match interface
+            .find(|i| i.number() == filters.interface_id));
+        let descriptor = some_or_return_ok_none!(interface
             .descriptors()
-            .find(|d| d.setting_number() == filters.interface_descriptor)
-        {
-            Some(descriptor) => descriptor,
-            None => return Ok(None),
-        };
+            .find(|d| d.setting_number() == filters.interface_descriptor));
         if descriptor.class_code() != filters.interface_class_code {
             return Ok(None);
         }
         // Get the first endpoint.
-        let endpoint = match descriptor.endpoint_descriptors().next() {
-            Some(endpoint) => endpoint,
-            None => return Ok(None),
-        };
+        let endpoint = some_or_return_ok_none!(descriptor.endpoint_descriptors().next());
         Ok(Some(UsbDeviceInterfaceInfo {
             interface_number: filters.interface_id,
             endpoint_number: endpoint.number(),
