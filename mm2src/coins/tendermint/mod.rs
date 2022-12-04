@@ -2,11 +2,29 @@
 // Useful resources
 // https://docs.cosmos.network/
 
-#[path = "iris/htlc.rs"] mod htlc;
-#[path = "iris/htlc_proto.rs"] mod htlc_proto;
+mod iris;
+mod rpc;
 mod tendermint_coin;
-#[cfg(not(target_arch = "wasm32"))] mod tendermint_native_rpc;
 mod tendermint_token;
-#[cfg(target_arch = "wasm32")] mod tendermint_wasm_rpc;
+pub mod tendermint_tx_history_v2;
+
 pub use tendermint_coin::*;
 pub use tendermint_token::*;
+
+#[derive(Clone, Debug, Deserialize, PartialEq, Serialize)]
+pub enum CustomTendermintMsgType {
+    /// Create HTLC as sender
+    SendHtlcAmount,
+    /// Claim HTLC as reciever
+    ClaimHtlcAmount,
+    /// Claim HTLC for reciever
+    SignClaimHtlc,
+}
+
+pub(crate) const TENDERMINT_COIN_PROTOCOL_TYPE: &str = "TENDERMINT";
+pub(crate) const TENDERMINT_ASSET_PROTOCOL_TYPE: &str = "TENDERMINTTOKEN";
+
+pub(crate) mod type_urls {
+    pub(crate) const CREATE_HTLC_TYPE_URL: &str = "/irismod.htlc.MsgCreateHTLC";
+    pub(crate) const CLAIM_HTLC_TYPE_URL: &str = "/irismod.htlc.MsgClaimHTLC";
+}

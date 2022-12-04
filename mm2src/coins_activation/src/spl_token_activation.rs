@@ -83,7 +83,6 @@ impl From<SplInitError> for EnableTokenError {
 
 #[async_trait]
 impl TokenActivationOps for SplToken {
-    type PlatformCoin = SolanaCoin;
     type ActivationParams = SplActivationRequest;
     type ProtocolInfo = SplProtocolConf;
     type ActivationResult = SplInitResult;

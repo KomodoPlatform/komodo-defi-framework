@@ -38,14 +38,14 @@ pub(crate) struct QueryHtlcRequestProto {
 
 #[derive(prost::Enumeration, Debug)]
 #[repr(i32)]
-pub(crate) enum HtlcState {
+pub enum HtlcState {
     Open = 0,
     Completed = 1,
     Refunded = 2,
 }
 
 #[derive(prost::Message)]
-pub(crate) struct HtlcProto {
+pub struct HtlcProto {
     #[prost(string, tag = "1")]
     pub(crate) id: prost::alloc::string::String,
     #[prost(string, tag = "2")]

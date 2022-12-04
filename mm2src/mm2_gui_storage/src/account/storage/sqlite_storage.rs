@@ -3,6 +3,7 @@ use crate::account::{AccountId, AccountInfo, AccountType, AccountWithCoins, Acco
                      EnabledAccountType, HwPubkey, MAX_ACCOUNT_DESCRIPTION_LENGTH, MAX_ACCOUNT_NAME_LENGTH,
                      MAX_TICKER_LENGTH};
 use async_trait::async_trait;
+use common::some_or_return_ok_none;
 use db_common::foreign_columns;
 use db_common::sql_build::*;
 use db_common::sqlite::rusqlite::types::Type;
@@ -244,10 +245,7 @@ impl SqliteAccountStorage {
         conn: &Connection,
         account_id: &AccountId,
     ) -> AccountStorageResult<Option<AccountWithCoins>> {
-        let account_info = match Self::load_account(conn, account_id)? {
-            Some(acc) => acc,
-            None => return Ok(None),
-        };
+        let account_info = some_or_return_ok_none!(Self::load_account(conn, account_id)?);
 
         let coins = Self::load_account_coins(conn, account_id)?;
         Ok(Some(AccountWithCoins { account_info, coins }))

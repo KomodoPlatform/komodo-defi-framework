@@ -15,8 +15,7 @@ use tendermint_rpc::endpoint::*;
 pub use tendermint_rpc::endpoint::{abci_query::Request as AbciRequest, health::Request as HealthRequest,
                                    tx_search::Request as TxSearchRequest};
 use tendermint_rpc::Paging;
-pub use tendermint_rpc::{query::Query as TendermintQuery, Error, Order as TendermintResultOrder, Scheme,
-                         SimpleRequest, Url};
+pub use tendermint_rpc::{query::Query as TendermintQuery, Error, Order, Scheme, SimpleRequest, Url};
 use tokio::time;
 
 /// Provides lightweight access to the Tendermint RPC. It gives access to all
@@ -80,7 +79,7 @@ pub trait Client {
         query: TendermintQuery,
         page: u32,
         per_page: u8,
-        order: TendermintResultOrder,
+        order: Order,
     ) -> Result<block_search::Response, Error> {
         self.perform(block_search::Request::new(query, page, per_page, order))
             .await
@@ -229,7 +228,7 @@ pub trait Client {
         prove: bool,
         page: u32,
         per_page: u8,
-        order: TendermintResultOrder,
+        order: Order,
     ) -> Result<tx_search::Response, Error> {
         self.perform(tx_search::Request::new(query, prove, page, per_page, order))
             .await

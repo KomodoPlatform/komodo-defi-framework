@@ -23,6 +23,7 @@ fn test_iris_with_usdc_activation_balance_orderbook() {
         IRIS_TICKER,
         &[USDC_IBC_TICKER],
         IRIS_TESTNET_RPCS,
+        false,
     ));
 
     let response: RpcV2Response<TendermintActivationResult> = serde_json::from_value(activation_result).unwrap();

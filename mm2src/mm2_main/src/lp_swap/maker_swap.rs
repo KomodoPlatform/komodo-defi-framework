@@ -453,7 +453,9 @@ impl MakerSwap {
                 )]))
             },
         };
-        let taker_payment_spend_trade_fee_fut = self.taker_coin.get_receiver_trade_fee(stage.clone());
+        let taker_payment_spend_trade_fee_fut = self
+            .taker_coin
+            .get_receiver_trade_fee(self.maker_amount.clone(), stage.clone());
         let taker_payment_spend_trade_fee = match taker_payment_spend_trade_fee_fut.compat().await {
             Ok(fee) => fee,
             Err(e) => {
@@ -1977,7 +1979,7 @@ pub async fn check_balance_for_maker_swap(
                 .await
                 .mm_err(|e| CheckBalanceError::from_trade_preimage_error(e, my_coin.ticker()))?;
             let taker_payment_spend_trade_fee = other_coin
-                .get_receiver_trade_fee(stage)
+                .get_receiver_trade_fee(volume.to_decimal(), stage)
                 .compat()
                 .await
                 .mm_err(|e| CheckBalanceError::from_trade_preimage_error(e, other_coin.ticker()))?;
@@ -2029,7 +2031,7 @@ pub async fn maker_swap_trade_preimage(
         .await
         .mm_err(|e| TradePreimageRpcError::from_trade_preimage_error(e, base_coin_ticker))?;
     let rel_coin_fee = rel_coin
-        .get_receiver_trade_fee(FeeApproxStage::TradePreimage)
+        .get_receiver_trade_fee(volume.to_decimal(), FeeApproxStage::TradePreimage)
         .compat()
         .await
         .mm_err(|e| TradePreimageRpcError::from_trade_preimage_error(e, rel_coin_ticker))?;
