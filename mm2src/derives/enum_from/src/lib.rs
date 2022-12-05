@@ -1,14 +1,14 @@
-use crate::from_variant::{get_inner_ident_type, map_enum_data_from_variant, InnerIdentTypes};
+//use crate::from_variant::{get_inner_ident_type, map_enum_data_from_variant, InnerIdentTypes};
 use proc_macro::{self, TokenStream};
 use proc_macro2::{Ident, Span, TokenStream as TokenStream2};
-use quote::{quote, quote_spanned};
+use quote::quote;
 use std::fmt;
 use syn::Variant;
 use syn::{parse_macro_input, Data, DeriveInput, Error, Field, Fields, ImplGenerics, Type, TypeGenerics, WhereClause};
 
 mod from_inner;
+mod from_stringify;
 mod from_trait;
-mod from_variant;
 
 const MACRO_IDENT: &str = "EnumFromInner";
 
@@ -86,12 +86,15 @@ pub fn enum_from_trait(input: TokenStream) -> TokenStream {
     }
 }
 
+#[allow(clippy::enum_variant_names)]
 #[derive(Clone, Copy)]
 enum MacroAttr {
     /// `from_inner` attribute of the `EnumFromInner` derive macro.
     FromInner,
     /// `from_trait` attribute of the `EnumFromTrait` derive macro.
     FromTrait,
+    /// `from_trait` attribute of the `EnumFromTrait` derive macro.
+    FromStringify,
 }
 
 impl fmt::Display for MacroAttr {
@@ -99,6 +102,7 @@ impl fmt::Display for MacroAttr {
         match self {
             MacroAttr::FromInner => write!(f, "from_inner"),
             MacroAttr::FromTrait => write!(f, "from_trait"),
+            MacroAttr::FromStringify => write!(f, "from_stringify"),
         }
     }
 }
@@ -190,6 +194,7 @@ fn derive_enum_from_macro(input: DeriveInput, attr: MacroAttr) -> Result<TokenSt
         let maybe_impl = match attr {
             MacroAttr::FromInner => from_inner::impl_from_inner(&ctx, variant)?,
             MacroAttr::FromTrait => from_trait::impl_from_trait(&ctx, variant)?,
+            MacroAttr::FromStringify => from_stringify::impl_from_stringify(&ctx, variant)?,
         };
         if let Some(variant_impl) = maybe_impl {
             impls.push(variant_impl);
@@ -219,7 +224,7 @@ fn wrap_const(code: TokenStream2) -> TokenStream {
 ///! Rust Derive Impl from enum
 ///
 ///
-/// `EnumFromVariant` is very useful for generating `From<T>` trait from one enum to another enum
+/// `EnumFromStringify` is very useful for generating `From<T>` trait from one enum to another enum
 /// Currently, this crate can only convert enum variant with only some basic inner type such as `String`, and `Enum`
 /// type just like the example below. Can not be used for tuple, struct etc for now .
 ///
@@ -233,21 +238,24 @@ fn wrap_const(code: TokenStream2) -> TokenStream {
 ///
 /// // E.G, this converts from whatever Bar is to FooBar::Bar(String) and
 /// // whatever Foor to FooBar::Foo(Foo)
-/// #[derive(Debug, EnumFromVariant, PartialEq, Eq)]
+/// #[derive(Debug, EnumFromStringify, PartialEq, Eq)]
 /// pub enum FooBar {
-///     #[enum_from_variant("Bar")]
+///     #[from_stringify("Bar")]
 ///     Bar(String),
-///     #[enum_from_variant("Foo")]
+///     #[from_stringify("Foo")]
 ///     Foo(Foo),
 /// }
+///
 /// #[derive(Debug, Display, PartialEq, Eq)]
 /// pub enum Bar {
 ///     Bar(String),
 /// }
+///
 /// #[derive(Debug, Clone, Display, PartialEq, Eq)]
 /// pub enum Foo {
 ///     Foo(String),
 /// }
+///
 /// #[test]
 /// fn test_from_variant() {
 ///     let bar = Bar::Bar("Bar".to_string());
@@ -257,54 +265,11 @@ fn wrap_const(code: TokenStream2) -> TokenStream {
 ///     assert_eq!(FooBar::Foo(foo.clone()), foo.into());
 /// }
 ///  ```
-#[proc_macro_derive(EnumFromVariant, attributes(enum_from_variant))]
+#[proc_macro_derive(EnumFromStringify, attributes(from_stringify))]
 pub fn derive(input: TokenStream) -> TokenStream {
     let ast = parse_macro_input!(input as DeriveInput);
-    let enum_name = &ast.ident;
-    let variants = if let Data::Enum(syn::DataEnum { variants, .. }) = ast.data {
-        variants
-    } else {
-        panic!("Couldn't fetch variants")
-    };
-
-    let enum_data = map_enum_data_from_variant(variants);
-    let construct_meta = enum_data.iter().map(|m| {
-        let variant_ident = &m.variant_ident;
-        if let syn::NestedMeta::Lit(syn::Lit::Str(str)) = &m.meta {
-            if str.value().is_empty() {
-                return Some(quote_spanned!(
-                str.span() => compile_error!("Expected this to take a `type`")
-                ));
-            };
-            let ident_to_impl_from = syn::Ident::new(&str.value(), str.span());
-            return match get_inner_ident_type(m.inner_ident.to_owned()) {
-                InnerIdentTypes::Named => Some(quote! {
-                    impl From<#ident_to_impl_from> for #enum_name {
-                        fn from(err: #ident_to_impl_from) -> #enum_name {
-                            #enum_name::#variant_ident(err)
-                        }
-                    }
-                }),
-                _ => Some(quote! {
-                    impl From<#ident_to_impl_from> for #enum_name {
-                        fn from(err: #ident_to_impl_from) -> #enum_name {
-                            #enum_name::#variant_ident(err.to_string())
-                        }
-                    }
-                }),
-            };
-        }
-        None
-    });
-
-    quote!(#(#construct_meta)*).into()
+    match derive_enum_from_macro(ast, MacroAttr::FromStringify) {
+        Ok(output) => output,
+        Err(e) => e.into(),
+    }
 }
-
-//#[proc_macro_derive(EnumFromTrait, attributes(from_trait))]
-//pub fn enum_from_trait(input: TokenStream) -> TokenStream {
-//    let input: DeriveInput = parse_macro_input!(input);
-//    match derive_enum_from_macro(input, MacroAttr::FromTrait) {
-//        Ok(output) => output,
-//        Err(e) => e.into(),
-//    }
-//}
