@@ -1,5 +1,6 @@
-/// Contains token activation traits and their implementations for various coins
-///
+// Contains token activation traits and their implementations for various coins
+
+use crate::platform_coin_with_tokens::{self, RegisterTokenInfo};
 use crate::prelude::*;
 use async_trait::async_trait;
 use coins::utxo::rpc_clients::UtxoRpcError;
@@ -17,8 +18,7 @@ pub trait TokenProtocolParams {
 }
 
 #[async_trait]
-pub trait TokenActivationOps: Into<MmCoinEnum> {
-    type PlatformCoin: TryPlatformCoinFromMmCoinEnum;
+pub trait TokenActivationOps: Into<MmCoinEnum> + platform_coin_with_tokens::TokenOf {
     type ActivationParams;
     type ProtocolInfo: TokenProtocolParams + TryFromCoinProtocol;
     type ActivationResult;
@@ -111,7 +111,7 @@ pub async fn enable_token<Token>(
     req: EnableTokenRequest<Token::ActivationParams>,
 ) -> Result<Token::ActivationResult, MmError<EnableTokenError>>
 where
-    Token: TokenActivationOps,
+    Token: TokenActivationOps + Clone,
     EnableTokenError: From<Token::ActivationError>,
     (Token::ActivationError, EnableTokenError): NotEqual,
 {
@@ -133,10 +133,12 @@ where
     })?;
 
     let (token, activation_result) =
-        Token::enable_token(req.ticker, platform_coin, req.activation_params, token_protocol).await?;
+        Token::enable_token(req.ticker, platform_coin.clone(), req.activation_params, token_protocol).await?;
 
     let coins_ctx = CoinsContext::from_ctx(&ctx).unwrap();
     coins_ctx.add_token(token.into()).await?;
+
+    platform_coin.register_token_info(&token);
 
     Ok(activation_result)
 }

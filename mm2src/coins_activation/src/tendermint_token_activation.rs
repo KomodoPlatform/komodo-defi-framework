@@ -45,7 +45,6 @@ impl TokenProtocolParams for TendermintTokenProtocolInfo {
 
 #[async_trait]
 impl TokenActivationOps for TendermintToken {
-    type PlatformCoin = TendermintCoin;
     type ActivationParams = TendermintTokenActivationParams;
     type ProtocolInfo = TendermintTokenProtocolInfo;
     type ActivationResult = TendermintTokenInitResult;
@@ -68,6 +67,7 @@ impl TokenActivationOps for TendermintToken {
         let my_address = token.my_address()?;
         let mut balances = HashMap::new();
         balances.insert(my_address, balance);
+
         let init_result = TendermintTokenInitResult {
             balances,
             platform_coin: token.platform_ticker().into(),

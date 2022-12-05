@@ -73,7 +73,6 @@ pub struct SlpInitResult {
 
 #[async_trait]
 impl TokenActivationOps for SlpToken {
-    type PlatformCoin = BchCoin;
     type ActivationParams = SlpActivationRequest;
     type ProtocolInfo = SlpProtocolConf;
     type ActivationResult = SlpInitResult;

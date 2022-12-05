@@ -8,7 +8,6 @@ use crypto::{CryptoCtx, CryptoCtxError};
 use derive_more::Display;
 use mm2_core::mm_ctx::MmArc;
 use mm2_err_handle::prelude::*;
-use mm2_metrics::MetricsArc;
 use mm2_number::BigDecimal;
 use ser_error_derive::SerializeErrorType;
 use serde_derive::{Deserialize, Serialize};
@@ -22,7 +21,7 @@ pub struct TokenActivationRequest<Req> {
 }
 
 pub trait TokenOf: Into<MmCoinEnum> {
-    type PlatformCoin: PlatformWithTokensActivationOps + RegisterTokenInfo<Self>;
+    type PlatformCoin: TryPlatformCoinFromMmCoinEnum + PlatformWithTokensActivationOps + RegisterTokenInfo<Self> + Clone;
 }
 
 pub struct TokenActivationParams<Req, Protocol> {
@@ -87,7 +86,7 @@ impl From<CoinConfWithProtocolError> for InitTokensAsMmCoinsError {
     }
 }
 
-pub trait RegisterTokenInfo<T: TokenOf<PlatformCoin = Self>> {
+pub trait RegisterTokenInfo<T: TokenOf> {
     fn register_token_info(&self, token: &T);
 }
 
@@ -156,7 +155,7 @@ pub trait PlatformWithTokensActivationOps: Into<MmCoinEnum> {
 
     fn start_history_background_fetching(
         &self,
-        metrics: MetricsArc,
+        ctx: MmArc,
         storage: impl TxHistoryStorage,
         initial_balance: BigDecimal,
     );
@@ -322,7 +321,7 @@ where
 
     if req.request.tx_history() {
         platform_coin.start_history_background_fetching(
-            ctx.metrics.clone(),
+            ctx.clone(),
             TxHistoryStorageBuilder::new(&ctx).build()?,
             activation_result.get_platform_balance(),
         );

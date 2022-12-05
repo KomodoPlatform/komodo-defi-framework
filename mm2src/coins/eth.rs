@@ -3258,7 +3258,7 @@ impl MmCoin for EthCoin {
         })
     }
 
-    fn get_receiver_trade_fee(&self, stage: FeeApproxStage) -> TradePreimageFut<TradeFee> {
+    fn get_receiver_trade_fee(&self, _send_amount: BigDecimal, stage: FeeApproxStage) -> TradePreimageFut<TradeFee> {
         let coin = self.clone();
         let fut = async move {
             let gas_price = coin.get_gas_price().compat().await?;
