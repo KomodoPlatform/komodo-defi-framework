@@ -11,6 +11,8 @@ use common::{now_ms, DEX_FEE_ADDR_RAW_PUBKEY};
 use futures::compat::Future01CompatExt;
 use mm2_core::mm_ctx::MmArc;
 use mm2_libp2p::{decode_signed, pub_sub_topic, TopicPrefix};
+use serde::{Deserialize, Serialize};
+use serde_json as json;
 use std::cmp::min;
 use std::sync::Arc;
 use uuid::Uuid;
@@ -29,28 +31,33 @@ struct WatcherContext {
     maker_coin: MmCoinEnum,
     verified_pub: Vec<u8>,
     data: TakerSwapWatcherData,
+    conf: WatcherConf,
 }
 
 impl WatcherContext {
     fn taker_locktime(&self) -> u64 { self.data.swap_started_at + self.data.lock_duration }
 
-    fn wait_for_taker_payment_duration(&self) -> f64 {
-        self.ctx.conf["wait_for_taker_payment_duration"].as_f64().unwrap_or(60.)
-    }
-
     fn wait_for_maker_payment_spend_deadline(&self) -> u64 {
-        let coefficient = self.ctx.conf["wait_for_maker_payment_spend_coefficient"]
-            .as_f64()
-            .unwrap_or(1.);
-        self.data.swap_started_at + (coefficient * self.data.lock_duration as f64) as u64
+        let factor = self.conf.wait_maker_payment_spend_factor;
+        self.data.swap_started_at + (factor * self.data.lock_duration as f64) as u64
     }
 
     fn refund_start_time(&self) -> u64 {
-        let coefficient = self.ctx.conf["refund_start_time_coefficient"].as_f64().unwrap_or(1.5);
-        self.data.swap_started_at + (coefficient * self.data.lock_duration as f64) as u64
+        let factor = self.conf.refund_start_factor;
+        self.data.swap_started_at + (factor * self.data.lock_duration as f64) as u64
     }
+}
 
-    fn search_interval(&self) -> f64 { self.ctx.conf["search_interval"].as_f64().unwrap_or(300.) }
+#[derive(Serialize, Deserialize, Default)]
+struct WatcherConf {
+    #[serde(default = "common::sixty_f64")]
+    wait_taker_payment: f64,
+    #[serde(default = "common::one_f64")]
+    wait_maker_payment_spend_factor: f64,
+    #[serde(default = "common::one_and_half_f64")]
+    refund_start_factor: f64,
+    #[serde(default = "common::three_hundred_f64")]
+    search_interval: f64,
 }
 
 #[derive(Clone, Debug, Deserialize, Serialize)]
@@ -176,10 +183,10 @@ impl State for ValidateTakerPayment {
     type Result = ();
 
     async fn on_changed(self: Box<Self>, watcher_ctx: &mut WatcherContext) -> StateResult<Self::Ctx, Self::Result> {
-        let wait_taker_payment =
+        let taker_payment_spend_deadline =
             taker_payment_spend_deadline(watcher_ctx.data.swap_started_at, watcher_ctx.data.lock_duration);
 
-        let sleep_duration = watcher_ctx.wait_for_taker_payment_duration();
+        let sleep_duration = watcher_ctx.conf.wait_taker_payment;
         Timer::sleep(sleep_duration).await;
 
         let taker_payment_hex_fut = watcher_ctx
@@ -203,7 +210,7 @@ impl State for ValidateTakerPayment {
                 &taker_payment_hex,
                 confirmations,
                 watcher_ctx.data.taker_payment_requires_nota.unwrap_or(false),
-                wait_taker_payment,
+                taker_payment_spend_deadline,
                 WAIT_CONFIRM_INTERVAL,
             )
             .compat();
@@ -220,7 +227,7 @@ impl State for ValidateTakerPayment {
             taker_pub: watcher_ctx.verified_pub.clone(),
             maker_pub: watcher_ctx.data.maker_pub.clone(),
             secret_hash: watcher_ctx.data.secret_hash.clone(),
-            try_spv_proof_until: wait_taker_payment,
+            try_spv_proof_until: taker_payment_spend_deadline,
             confirmations,
         };
 
@@ -245,7 +252,7 @@ impl State for WaitForTakerPaymentSpend {
     type Result = ();
 
     async fn on_changed(self: Box<Self>, watcher_ctx: &mut WatcherContext) -> StateResult<Self::Ctx, Self::Result> {
-        let payment_search_interval = watcher_ctx.search_interval();
+        let payment_search_interval = watcher_ctx.conf.search_interval;
         let wait_until = watcher_ctx.refund_start_time();
         let search_input = WatcherSearchForSwapTxSpendInput {
             time_lock: watcher_ctx.taker_locktime() as u32,
@@ -570,12 +577,14 @@ fn spawn_taker_swap_watcher(ctx: MmArc, watcher_data: TakerSwapWatcherData, veri
             fee_hash
         );
 
+        let conf = json::from_value::<WatcherConf>(ctx.conf["watcher_conf"].clone()).unwrap_or_default();
         let watcher_ctx = WatcherContext {
             ctx,
             maker_coin,
             taker_coin,
             verified_pub,
             data: watcher_data,
+            conf,
         };
         let state_machine: StateMachine<_, ()> = StateMachine::from_ctx(watcher_ctx);
         state_machine.run(ValidateTakerFee {}).await;

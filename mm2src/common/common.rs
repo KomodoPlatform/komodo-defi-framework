@@ -777,6 +777,14 @@ pub const fn ten_f64() -> f64 { 10. }
 
 pub const fn one_hundred() -> usize { 100 }
 
+pub const fn one_and_half_f64() -> f64 { 1.5 }
+
+pub const fn three_hundred_f64() -> f64 { 300. }
+
+pub const fn one_f64() -> f64 { 1. }
+
+pub const fn sixty_f64() -> f64 { 60. }
+
 pub fn one() -> NonZeroUsize { NonZeroUsize::new(1).unwrap() }
 
 #[derive(Debug, Deserialize)]

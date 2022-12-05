@@ -203,10 +203,10 @@ impl Mm2TestConf {
         passphrase: &str,
         coins: &Json,
         seednodes: &[&str],
-        wait_for_maker_payment_spend_coefficient: f64,
-        refund_start_time_coefficient: f64,
+        wait_maker_payment_spend_factor: f64,
+        refund_start_factor: f64,
         search_interval: f64,
-        wait_for_taker_payment_duration: f64,
+        wait_taker_payment: f64,
     ) -> Self {
         Mm2TestConf {
             conf: json!({
@@ -217,10 +217,12 @@ impl Mm2TestConf {
                 "rpc_password": DEFAULT_RPC_PASSWORD,
                 "seednodes": seednodes,
                 "is_watcher": true,
-                "wait_for_maker_payment_spend_coefficient": wait_for_maker_payment_spend_coefficient,
-                "refund_start_time_coefficient": refund_start_time_coefficient,
-                "search_interval": search_interval,
-                "wait_for_taker_payment_duration": wait_for_taker_payment_duration
+                "watcher_conf": {
+                    "wait_maker_payment_spend_factor": wait_maker_payment_spend_factor,
+                    "refund_start_factor": refund_start_factor,
+                    "search_interval": search_interval,
+                    "wait_taker_payment": wait_taker_payment
+                }
             }),
             rpc_password: DEFAULT_RPC_PASSWORD.into(),
         }
