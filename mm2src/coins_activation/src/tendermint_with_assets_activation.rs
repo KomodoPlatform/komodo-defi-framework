@@ -5,14 +5,15 @@ use crate::platform_coin_with_tokens::{EnablePlatformCoinWithTokensError, GetPla
 use crate::prelude::*;
 use async_trait::async_trait;
 use coins::my_tx_history_v2::TxHistoryStorage;
-use coins::tendermint::{TendermintCoin, TendermintConf, TendermintInitError, TendermintInitErrorKind,
-                        TendermintProtocolInfo, TendermintToken, TendermintTokenActivationParams,
-                        TendermintTokenInitError, TendermintTokenProtocolInfo};
-use coins::{CoinBalance, CoinProtocol, MarketCoinOps, PrivKeyBuildPolicy};
+use coins::tendermint::tendermint_tx_history_v2::tendermint_history_loop;
+use coins::tendermint::{TendermintCoin, TendermintCommons, TendermintConf, TendermintInitError,
+                        TendermintInitErrorKind, TendermintProtocolInfo, TendermintToken,
+                        TendermintTokenActivationParams, TendermintTokenInitError, TendermintTokenProtocolInfo};
+use coins::{CoinBalance, CoinProtocol, MarketCoinOps, MmCoin, PrivKeyBuildPolicy};
+use common::executor::{AbortSettings, SpawnAbortable};
 use common::Future01CompatExt;
 use mm2_core::mm_ctx::MmArc;
 use mm2_err_handle::prelude::*;
-use mm2_metrics::MetricsArc;
 use mm2_number::BigDecimal;
 use serde::{Deserialize, Serialize};
 use serde_json::Value as Json;
@@ -32,10 +33,12 @@ impl RegisterTokenInfo<TendermintToken> for TendermintCoin {
 pub struct TendermintActivationParams {
     rpc_urls: Vec<String>,
     pub tokens_params: Vec<TokenActivationRequest<TendermintTokenActivationParams>>,
+    #[serde(default)]
+    tx_history: bool,
 }
 
 impl TxHistory for TendermintActivationParams {
-    fn tx_history(&self) -> bool { false }
+    fn tx_history(&self) -> bool { self.tx_history }
 }
 
 struct TendermintTokenInitializer {
@@ -165,6 +168,7 @@ impl PlatformWithTokensActivationOps for TendermintCoin {
             conf,
             protocol_conf,
             activation_request.rpc_urls,
+            activation_request.tx_history,
             priv_key_policy,
         )
         .await
@@ -212,9 +216,13 @@ impl PlatformWithTokensActivationOps for TendermintCoin {
 
     fn start_history_background_fetching(
         &self,
-        _metrics: MetricsArc,
-        _storage: impl TxHistoryStorage,
-        _initial_balance: BigDecimal,
+        ctx: MmArc,
+        storage: impl TxHistoryStorage,
+        initial_balance: BigDecimal,
     ) {
+        let fut = tendermint_history_loop(self.clone(), storage, ctx, initial_balance);
+
+        let settings = AbortSettings::info_on_abort(format!("tendermint_history_loop stopped for {}", self.ticker()));
+        self.spawner().spawn_with_settings(fut, settings);
     }
 }

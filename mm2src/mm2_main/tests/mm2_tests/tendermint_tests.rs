@@ -1,8 +1,8 @@
 use common::block_on;
 use mm2_number::BigDecimal;
 use mm2_test_helpers::for_tests::{atom_testnet_conf, enable_tendermint, enable_tendermint_token,
-                                  iris_nimda_testnet_conf, iris_testnet_conf, my_balance, send_raw_transaction,
-                                  withdraw_v1, MarketMakerIt, Mm2TestConf};
+                                  get_tendermint_my_tx_history, iris_nimda_testnet_conf, iris_testnet_conf,
+                                  my_balance, send_raw_transaction, withdraw_v1, MarketMakerIt, Mm2TestConf};
 use mm2_test_helpers::structs::{MyBalanceResponse, RpcV2Response, TendermintActivationResult, TransactionDetails};
 use serde_json::{self as json, json};
 
@@ -10,6 +10,8 @@ const ATOM_TEST_BALANCE_SEED: &str = "atom test seed";
 const ATOM_TEST_WITHDRAW_SEED: &str = "atom test withdraw seed";
 const ATOM_TICKER: &str = "ATOM";
 const ATOM_TENDERMINT_RPC_URLS: &[&str] = &["https://cosmos-testnet-rpc.allthatnode.com:26657"];
+
+const IRIS_TESTNET_RPC_URLS: &[&str] = &["http://34.80.202.172:26657"];
 
 #[test]
 fn test_tendermint_activation_and_balance() {
@@ -19,7 +21,13 @@ fn test_tendermint_activation_and_balance() {
     let conf = Mm2TestConf::seednode(ATOM_TEST_BALANCE_SEED, &coins);
     let mm = MarketMakerIt::start(conf.conf, conf.rpc_password, None).unwrap();
 
-    let activation_result = block_on(enable_tendermint(&mm, ATOM_TICKER, &[], ATOM_TENDERMINT_RPC_URLS));
+    let activation_result = block_on(enable_tendermint(
+        &mm,
+        ATOM_TICKER,
+        &[],
+        ATOM_TENDERMINT_RPC_URLS,
+        false,
+    ));
 
     let result: RpcV2Response<TendermintActivationResult> = json::from_value(activation_result).unwrap();
     assert_eq!(result.result.address, expected_address);
@@ -42,7 +50,13 @@ fn test_tendermint_withdraw() {
     let conf = Mm2TestConf::seednode(ATOM_TEST_WITHDRAW_SEED, &coins);
     let mm = MarketMakerIt::start(conf.conf, conf.rpc_password, None).unwrap();
 
-    let activation_res = block_on(enable_tendermint(&mm, ATOM_TICKER, &[], ATOM_TENDERMINT_RPC_URLS));
+    let activation_res = block_on(enable_tendermint(
+        &mm,
+        ATOM_TICKER,
+        &[],
+        ATOM_TENDERMINT_RPC_URLS,
+        false,
+    ));
     println!("Activation {}", json::to_string(&activation_res).unwrap());
 
     // just call withdraw without sending to check response correctness
@@ -111,9 +125,7 @@ fn test_tendermint_token_activation_and_withdraw() {
     let conf = Mm2TestConf::seednode(TEST_SEED, &coins);
     let mm = MarketMakerIt::start(conf.conf, conf.rpc_password, None).unwrap();
 
-    let activation_res = block_on(enable_tendermint(&mm, platform_coin, &[], &[
-        "http://34.80.202.172:26657",
-    ]));
+    let activation_res = block_on(enable_tendermint(&mm, platform_coin, &[], IRIS_TESTNET_RPC_URLS, false));
     println!("Activation with assets {}", json::to_string(&activation_res).unwrap());
 
     let activation_res = block_on(enable_tendermint_token(&mm, token));
@@ -183,4 +195,79 @@ fn test_tendermint_token_activation_and_withdraw() {
 
     let send_raw_tx = block_on(send_raw_transaction(&mm, token, &tx_details.tx_hex));
     println!("Send raw tx {}", json::to_string(&send_raw_tx).unwrap());
+}
+
+#[test]
+fn test_tendermint_tx_history() {
+    const TEST_SEED: &str = "Vdo8Xt8pTAetRlMq3kV0LzE393eVYbPSn5Mhtw4p";
+    const TX_FINISHED_LOG: &str = "Tx history fetching finished for IRIS-TEST.";
+    const TX_HISTORY_PAGE_LIMIT: usize = 50;
+    const IRIS_TEST_EXPECTED_TX_COUNT: u64 = 15;
+    const IRIS_NIMDA_EXPECTED_TX_COUNT: u64 = 10;
+
+    let iris_test_constant_history_txs = include_str!("../../../mm2_test_helpers/dummy_files/iris_test_history.json");
+    let iris_test_constant_history_txs: Vec<TransactionDetails> =
+        serde_json::from_str(iris_test_constant_history_txs).unwrap();
+
+    let iris_nimda_constant_history_txs = include_str!("../../../mm2_test_helpers/dummy_files/iris_nimda_history.json");
+    let iris_nimda_constant_history_txs: Vec<TransactionDetails> =
+        serde_json::from_str(iris_nimda_constant_history_txs).unwrap();
+
+    let coins = json!([iris_testnet_conf(), iris_nimda_testnet_conf()]);
+    let platform_coin = coins[0]["coin"].as_str().unwrap();
+    let token = coins[1]["coin"].as_str().unwrap();
+
+    let conf = Mm2TestConf::seednode(TEST_SEED, &coins);
+    let mut mm = block_on(MarketMakerIt::start_async(conf.conf, conf.rpc_password, None)).unwrap();
+
+    block_on(enable_tendermint(
+        &mm,
+        platform_coin,
+        &[token],
+        IRIS_TESTNET_RPC_URLS,
+        true,
+    ));
+
+    if let Err(_) = block_on(mm.wait_for_log(60., |log| log.contains(TX_FINISHED_LOG))) {
+        println!("{}", mm.log_as_utf8().unwrap());
+        assert!(false, "Tx history didn't finish which is not expected");
+    }
+
+    // testing IRIS-TEST history
+    let iris_tx_history_response = block_on(get_tendermint_my_tx_history(
+        &mm,
+        platform_coin,
+        TX_HISTORY_PAGE_LIMIT,
+        1,
+    ));
+    let total_txs = iris_tx_history_response["result"]["total"].as_u64().unwrap();
+    assert_eq!(total_txs, IRIS_TEST_EXPECTED_TX_COUNT);
+
+    let mut iris_txs_from_request = iris_tx_history_response["result"]["transactions"].clone();
+    for i in 0..IRIS_TEST_EXPECTED_TX_COUNT {
+        iris_txs_from_request[i as usize]
+            .as_object_mut()
+            .unwrap()
+            .remove("confirmations");
+    }
+    let iris_txs_from_request: Vec<TransactionDetails> = serde_json::from_value(iris_txs_from_request).unwrap();
+    assert_eq!(iris_test_constant_history_txs, iris_txs_from_request);
+
+    // testing IRIS-NIMDA history
+    let nimda_tx_history_response = block_on(get_tendermint_my_tx_history(&mm, token, TX_HISTORY_PAGE_LIMIT, 1));
+    let total_txs = nimda_tx_history_response["result"]["total"].as_u64().unwrap();
+    assert_eq!(total_txs, IRIS_NIMDA_EXPECTED_TX_COUNT);
+
+    let mut nimda_txs_from_request = nimda_tx_history_response["result"]["transactions"].clone();
+    for i in 0..IRIS_NIMDA_EXPECTED_TX_COUNT {
+        nimda_txs_from_request[i as usize]
+            .as_object_mut()
+            .unwrap()
+            .remove("confirmations");
+    }
+    let nimda_txs_from_request: Vec<TransactionDetails> = serde_json::from_value(nimda_txs_from_request).unwrap();
+
+    assert_eq!(iris_nimda_constant_history_txs, nimda_txs_from_request);
+
+    block_on(mm.stop()).unwrap();
 }

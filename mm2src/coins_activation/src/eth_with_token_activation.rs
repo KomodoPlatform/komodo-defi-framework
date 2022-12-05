@@ -12,7 +12,6 @@ use coins::{eth::{v2_activation::{eth_coin_from_conf_and_request_v2, Erc20Protoc
 use common::Future01CompatExt;
 use mm2_core::mm_ctx::MmArc;
 use mm2_err_handle::prelude::*;
-use mm2_metrics::MetricsArc;
 use mm2_number::BigDecimal;
 use serde::{Deserialize, Serialize};
 use serde_json::Value as Json;
@@ -235,7 +234,7 @@ impl PlatformWithTokensActivationOps for EthCoin {
 
     fn start_history_background_fetching(
         &self,
-        _metrics: MetricsArc,
+        _ctx: MmArc,
         _storage: impl TxHistoryStorage + Send + 'static,
         _initial_balance: BigDecimal,
     ) {

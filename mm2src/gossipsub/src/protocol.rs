@@ -24,6 +24,7 @@ use crate::topic::TopicHash;
 use byteorder::{BigEndian, ByteOrder};
 use bytes::Bytes;
 use bytes::BytesMut;
+use common::some_or_return_ok_none;
 use futures::future;
 use futures::prelude::*;
 use futures_codec::{Decoder, Encoder, Framed};
@@ -211,10 +212,7 @@ impl Decoder for GossipsubCodec {
     type Error = io::Error;
 
     fn decode(&mut self, src: &mut BytesMut) -> Result<Option<Self::Item>, Self::Error> {
-        let packet = match self.length_codec.decode(src)? {
-            Some(p) => p,
-            None => return Ok(None),
-        };
+        let packet = some_or_return_ok_none!(self.length_codec.decode(src)?);
 
         let rpc = rpc_proto::Rpc::decode(&packet[..])?;
 

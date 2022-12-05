@@ -118,6 +118,11 @@ impl TxHistoryStorage for IndexedDbTxHistoryStorage {
         json::from_value(details_json).map_to_mm(|e| WasmTxHistoryError::ErrorDeserializing(e.to_string()))
     }
 
+    async fn get_highest_block_height(&self, _wallet_id: &WalletId) -> Result<Option<u32>, MmError<Self::Error>> {
+        // TODO
+        Ok(None)
+    }
+
     /// Since we need to filter the transactions by the given `for_addresses`,
     /// we can't use [`DbTable::count_by_multi_index`].
     /// TODO consider one of the solutions described at [`IndexedDbTxHistoryStorage::get_history`].

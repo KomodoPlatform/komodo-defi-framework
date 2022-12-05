@@ -156,10 +156,7 @@ impl QtumCoin {
             .map_to_mm(|e| StakingInfosError::Transport(e.to_string()))?;
         let am_i_staking = add_delegation_history.len() > remove_delegation_history.len();
         if am_i_staking {
-            let last_tx_add = match add_delegation_history.last() {
-                Some(last_tx_add) => last_tx_add,
-                None => return Ok(None),
-            };
+            let last_tx_add = some_or_return_ok_none!(add_delegation_history.last());
             let res = &client
                 .blockchain_transaction_get_receipt(&last_tx_add.tx_hash)
                 .compat()
