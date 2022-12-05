@@ -15,14 +15,14 @@ async fn enable_eth_with_tokens(mm: &MarketMakerIt, platform_coin: &str, tokens:
         "method": "enable_eth_with_tokens",
         "mmrpc": "2.0",
         "params": {
-        "ticker": platform_coin,
-              "gas_station_url":"https://ethgasstation.info/json/ethgasAPI.json",
-              "swap_contract_address":"0x2b294F029Fde858b2c62184e8390591755521d8E",
-              "fallback_swap_contract":"0x8500AFc0bc5214728082163326C2FF0C73f4a871",
-              "nodes": nodes,
-              "tx_history": true,
-              "erc20_tokens_requests": erc20_tokens_requests,
-          }}))
+                "ticker": platform_coin,
+                "swap_contract_address":"0x2b294F029Fde858b2c62184e8390591755521d8E",
+                "fallback_swap_contract":"0x8500AFc0bc5214728082163326C2FF0C73f4a871",
+                "nodes": nodes,
+                "tx_history": true,
+                "erc20_tokens_requests": erc20_tokens_requests,
+            }
+        }))
         .await
         .unwrap();
     assert_eq!(
@@ -39,8 +39,8 @@ async fn enable_eth_with_tokens(mm: &MarketMakerIt, platform_coin: &str, tokens:
 fn test_disable_eth_coin_with_token() {
     let passphrase = get_passphrase(&".env.client", "BOB_PASSPHRASE").unwrap();
     let coins = json! ([
-       {"coin":"ETH","name":"ethereum","protocol":{"type":"ETH"},"rpcport":80,"mm2":1},
-           {"coin":"JST","name":"jst","rpcport":80,"mm2":1,"protocol":{"type":"ERC20","protocol_data":{"platform":"ETH","contract_address":"0x2b294F029Fde858b2c62184e8390591755521d8E"}}}
+        {"coin":"ETH","name":"ethereum","protocol":{"type":"ETH"},"rpcport":80,"mm2":1},
+        {"coin":"JST","name":"jst","rpcport":80,"mm2":1,"protocol":{"type":"ERC20","protocol_data":{"platform":"ETH","contract_address":"0x2b294F029Fde858b2c62184e8390591755521d8E"}}}
     ]);
     let conf = Mm2TestConf::seednode(&passphrase, &coins);
     let mm = block_on(MarketMakerIt::start_async(conf.conf, conf.rpc_password, None)).unwrap();
@@ -55,7 +55,7 @@ fn test_disable_eth_coin_with_token() {
         "price": 1,
         "volume": 0.1,
         "base_confs": 5,
-        "base_nota": true,
+        "base_nota": false,
         "rel_confs": 4,
         "rel_nota": false,
     });

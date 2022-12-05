@@ -2180,10 +2180,7 @@ impl CoinsContext {
     /// Adds a Layer 2 coin that bases on another standalone platform.
     /// The process of adding l2 coins is identical to that of adding tokens.
     pub async fn add_l2(&self, coin: MmCoinEnum) -> Result<(), MmError<RegisterCoinError>> {
-        let ticker = coin.ticker().to_string();
-        self.add_token(coin)
-            .await
-            .map_err(|_| RegisterCoinError::CoinIsInitializedAlready { coin: ticker })?;
+        self.add_token(coin).await?;
         Ok(())
     }
 
