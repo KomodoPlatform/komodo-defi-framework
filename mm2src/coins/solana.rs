@@ -15,7 +15,7 @@ use crate::{BalanceError, BalanceFut, CheckIfMyPaymentSentArgs, CoinFutSpawner, 
 use async_trait::async_trait;
 use base58::ToBase58;
 use bincode::{deserialize, serialize};
-use common::executor::{abortable_queue::AbortableQueue, AbortableSystem};
+use common::executor::{abortable_queue::AbortableQueue, AbortableSystem, AbortedError};
 use common::{async_blocking, now_ms};
 use crypto::StandardHDPathToCoin;
 use derive_more::Display;
@@ -219,7 +219,7 @@ pub struct SolanaCoinImpl {
     spl_tokens_infos: Arc<Mutex<HashMap<String, SplTokenInfo>>>,
     /// This spawner is used to spawn coin's related futures that should be aborted on coin deactivation
     /// and on [`MmArc::stop`].
-    abortable_system: AbortableQueue,
+    pub abortable_system: AbortableQueue,
 }
 
 #[derive(Clone)]
@@ -714,4 +714,8 @@ impl MmCoin for SolanaCoin {
     fn coin_protocol_info(&self) -> Vec<u8> { Vec::new() }
 
     fn is_coin_protocol_supported(&self, _info: &Option<Vec<u8>>) -> bool { true }
+
+    fn on_disabled(&self) -> Result<(), AbortedError> { AbortableSystem::abort_all(&self.abortable_system) }
+
+    fn on_token_deactivated(&self, _ticker: &str) {}
 }

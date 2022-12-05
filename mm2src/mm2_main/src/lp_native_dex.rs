@@ -57,6 +57,9 @@ cfg_native! {
 
 #[path = "lp_init/init_context.rs"] mod init_context;
 #[path = "lp_init/init_hw.rs"] pub mod init_hw;
+#[cfg(target_arch = "wasm32")]
+#[path = "lp_init/init_metamask.rs"]
+pub mod init_metamask;
 
 const NETID_7777_SEEDNODES: [&str; 3] = ["seed1.defimania.live", "seed2.defimania.live", "seed3.defimania.live"];
 

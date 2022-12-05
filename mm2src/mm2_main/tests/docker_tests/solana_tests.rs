@@ -1,4 +1,5 @@
 use crate::docker_tests::docker_tests_common::*;
+use http::StatusCode;
 use mm2_number::bigdecimal::Zero;
 use mm2_test_helpers::for_tests::{enable_solana_with_tokens, enable_spl, sign_message, verify_message};
 use mm2_test_helpers::structs::{EnableSolanaWithTokensResponse, EnableSplResponse, RpcV2Response, SignatureResponse,
@@ -110,4 +111,55 @@ fn test_sign_verify_message_spl() {
     let response = response.result;
 
     assert!(response.is_valid);
+}
+
+#[test]
+fn test_disable_solana_platform_coin_with_tokens() {
+    let mm = solana_supplied_node();
+    block_on(enable_solana_with_tokens(
+        &mm,
+        "SOL-DEVNET",
+        &["USDC-SOL-DEVNET"],
+        "https://api.devnet.solana.com",
+        false,
+    ));
+    block_on(enable_spl(&mm, "ADEX-SOL-DEVNET"));
+
+    // Try to disable platform coin, SOL-DEVNET
+    let disable = block_on(mm.rpc(&json! ({
+        "userpass": mm.userpass,
+        "method": "disable_coin",
+        "coin": "SOL-DEVNET",
+    })))
+    .unwrap();
+    assert_eq!(disable.0, StatusCode::OK);
+
+    // Confirm that token, USDC-SOL-DEVNET is also disabled
+    let response = block_on(mm.rpc(&json! ({
+        "userpass": mm.userpass,
+        "method": "my_balance",
+        "coin": "USDC-SOL-DEVNET"
+    })))
+    .unwrap();
+    assert_eq!(response.0, StatusCode::INTERNAL_SERVER_ERROR);
+    assert!(response.1.contains("No such coin: USDC-SOL-DEVNET"));
+
+    // Confirm that token, ADEX-SOL-DEVNET is also disabled
+    let response = block_on(mm.rpc(&json! ({
+        "userpass": mm.userpass,
+        "method": "my_balance",
+        "coin": "ADEX-SOL-DEVNET"
+    })))
+    .unwrap();
+    assert_eq!(response.0, StatusCode::INTERNAL_SERVER_ERROR);
+    assert!(response.1.contains("No such coin: ADEX-SOL-DEVNET"));
+
+    // Confirm that platform coin, SOL-DEVNET is also disabled
+    let response = block_on(mm.rpc(&json! ({
+        "userpass": mm.userpass,
+        "method": "my_balance",
+        "coin": "SOL-DEVNET"
+    })))
+    .unwrap();
+    assert_eq!(response.0, StatusCode::INTERNAL_SERVER_ERROR);
 }

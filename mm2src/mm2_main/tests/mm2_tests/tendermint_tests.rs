@@ -1,4 +1,5 @@
 use common::block_on;
+use http::StatusCode;
 use mm2_number::BigDecimal;
 use mm2_test_helpers::for_tests::{atom_testnet_conf, enable_tendermint, enable_tendermint_token,
                                   get_tendermint_my_tx_history, iris_nimda_testnet_conf, iris_testnet_conf,
@@ -270,4 +271,47 @@ fn test_tendermint_tx_history() {
     assert_eq!(iris_nimda_constant_history_txs, nimda_txs_from_request);
 
     block_on(mm.stop()).unwrap();
+}
+
+#[test]
+fn test_disable_tendermint_platform_coin_with_token() {
+    const TEST_SEED: &str = "iris test seed";
+    let coins = json!([iris_testnet_conf(), iris_nimda_testnet_conf()]);
+    let platform_coin = coins[0]["coin"].as_str().unwrap();
+    let token = coins[1]["coin"].as_str().unwrap();
+
+    let conf = Mm2TestConf::seednode(TEST_SEED, &coins);
+    let mm = MarketMakerIt::start(conf.conf, conf.rpc_password, None).unwrap();
+    // Enable platform coin IRIS-TEST
+    let activation_res = block_on(enable_tendermint(
+        &mm,
+        platform_coin,
+        &[],
+        &["http://34.80.202.172:26657"],
+        false,
+    ));
+    assert!(&activation_res.get("result").unwrap().get("address").is_some());
+
+    // Enable platform coin token IRIS-NIMDA
+    let activation_res = block_on(enable_tendermint_token(&mm, token));
+    assert!(&activation_res.get("result").unwrap().get("balances").is_some());
+
+    // Try to disable platform coin, IRIS-TEST
+    let disable = block_on(mm.rpc(&json! ({
+        "userpass": mm.userpass,
+        "method": "disable_coin",
+        "coin": "IRIS-TEST",
+    })))
+    .unwrap();
+    assert_eq!(disable.0, StatusCode::OK);
+
+    // Confirm platform coin token IRIS-NIMDA is also disabled
+    let response = block_on(mm.rpc(&json! ({
+        "userpass": mm.userpass,
+        "method": "my_balance",
+        "coin": "IRIS-NIMDA"
+    })))
+    .unwrap();
+    assert_eq!(response.0, StatusCode::INTERNAL_SERVER_ERROR);
+    assert!(response.1.contains("No such coin: IRIS-NIMDA"));
 }

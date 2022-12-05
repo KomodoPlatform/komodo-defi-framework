@@ -511,4 +511,8 @@ impl MmCoin for SplToken {
     fn coin_protocol_info(&self) -> Vec<u8> { Vec::new() }
 
     fn is_coin_protocol_supported(&self, _info: &Option<Vec<u8>>) -> bool { true }
+
+    fn on_disabled(&self) -> Result<(), AbortedError> { AbortableSystem::abort_all(&self.conf.abortable_system) }
+
+    fn on_token_deactivated(&self, _ticker: &str) {}
 }

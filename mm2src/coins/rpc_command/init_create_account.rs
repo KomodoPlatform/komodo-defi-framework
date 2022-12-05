@@ -238,7 +238,7 @@ impl RpcTask for InitCreateAccountTask {
                 MmCoinEnum::QtumCoin(qtum) => qtum.revert_creating_account(account_id).await,
                 _ => (),
             }
-        }
+        };
     }
 
     async fn run(&mut self, task_handle: &CreateAccountTaskHandle) -> Result<Self::Item, MmError<Self::Error>> {

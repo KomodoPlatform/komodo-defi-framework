@@ -4,11 +4,13 @@ use crate::{platform_coin_with_tokens::{EnablePlatformCoinWithTokensError, GetPl
                                         TokenInitializer, TokenOf},
             prelude::*};
 use async_trait::async_trait;
+use coins::eth::v2_activation::EthPrivKeyActivationPolicy;
+use coins::eth::EthPrivKeyBuildPolicy;
 use coins::{eth::{v2_activation::{eth_coin_from_conf_and_request_v2, Erc20Protocol, Erc20TokenActivationError,
                                   Erc20TokenActivationRequest, EthActivationV2Error, EthActivationV2Request},
                   Erc20TokenInfo, EthCoin, EthCoinType},
             my_tx_history_v2::TxHistoryStorage,
-            CoinBalance, CoinProtocol, MarketCoinOps, MmCoin, PrivKeyBuildPolicy};
+            CoinBalance, CoinProtocol, MarketCoinOps, MmCoin};
 use common::Future01CompatExt;
 use mm2_core::mm_ctx::MmArc;
 use mm2_err_handle::prelude::*;
@@ -43,6 +45,10 @@ impl From<EthActivationV2Error> for EnablePlatformCoinWithTokensError {
             EthActivationV2Error::PrivKeyPolicyNotAllowed(e) => {
                 EnablePlatformCoinWithTokensError::PrivKeyPolicyNotAllowed(e)
             },
+            #[cfg(target_arch = "wasm32")]
+            EthActivationV2Error::MetamaskCtxNotInitialized => EnablePlatformCoinWithTokensError::PreparationRequired(
+                "MetaMask context is not initialized. Consider using 'task::init_metamask::init' RPC".to_string(),
+            ),
             EthActivationV2Error::InternalError(e) => EnablePlatformCoinWithTokensError::Internal(e),
         }
     }
@@ -163,8 +169,9 @@ impl PlatformWithTokensActivationOps for EthCoin {
         platform_conf: Json,
         activation_request: Self::ActivationRequest,
         _protocol: Self::PlatformProtocolInfo,
-        priv_key_policy: PrivKeyBuildPolicy,
     ) -> Result<Self, MmError<Self::ActivationError>> {
+        let priv_key_policy = eth_priv_key_build_policy(&ctx, &activation_request.platform_request.priv_key_policy)?;
+
         let platform_coin = eth_coin_from_conf_and_request_v2(
             &ctx,
             &ticker,
@@ -238,5 +245,21 @@ impl PlatformWithTokensActivationOps for EthCoin {
         _storage: impl TxHistoryStorage + Send + 'static,
         _initial_balance: BigDecimal,
     ) {
+    }
+}
+
+fn eth_priv_key_build_policy(
+    ctx: &MmArc,
+    activation_policy: &EthPrivKeyActivationPolicy,
+) -> MmResult<EthPrivKeyBuildPolicy, EthActivationV2Error> {
+    match activation_policy {
+        EthPrivKeyActivationPolicy::ContextPrivKey => Ok(EthPrivKeyBuildPolicy::detect_priv_key_policy(ctx)?),
+        #[cfg(target_arch = "wasm32")]
+        EthPrivKeyActivationPolicy::Metamask => {
+            let metamask_ctx = crypto::CryptoCtx::from_ctx(ctx)?
+                .metamask_ctx()
+                .or_mm_err(|| EthActivationV2Error::MetamaskCtxNotInitialized)?;
+            Ok(EthPrivKeyBuildPolicy::Metamask(metamask_ctx))
+        },
     }
 }

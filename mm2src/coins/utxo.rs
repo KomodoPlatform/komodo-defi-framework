@@ -1354,7 +1354,7 @@ pub struct UtxoActivationParams {
     pub gap_limit: Option<u32>,
     #[serde(flatten)]
     pub enable_params: EnabledCoinBalanceParams,
-    #[serde(default = "PrivKeyActivationPolicy::context_priv_key")]
+    #[serde(default)]
     pub priv_key_policy: PrivKeyActivationPolicy,
     /// The flag determines whether to use mature unspent outputs *only* to generate transactions.
     /// https://github.com/KomodoPlatform/atomicDEX-API/issues/1181

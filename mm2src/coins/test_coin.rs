@@ -12,6 +12,7 @@ use crate::{coin_errors::MyAddressError, BalanceFut, CanRefundHtlc, CheckIfMyPay
             ValidatePaymentInput, VerificationResult, WatcherOps, WatcherSearchForSwapTxSpendInput,
             WatcherValidatePaymentInput, WatcherValidateTakerFeeInput, WithdrawFut, WithdrawRequest};
 use async_trait::async_trait;
+use common::executor::AbortedError;
 use futures01::Future;
 use keys::KeyPair;
 use mm2_core::mm_ctx::MmArc;
@@ -315,4 +316,8 @@ impl MmCoin for TestCoin {
     fn coin_protocol_info(&self) -> Vec<u8> { Vec::new() }
 
     fn is_coin_protocol_supported(&self, _info: &Option<Vec<u8>>) -> bool { true }
+
+    fn on_disabled(&self) -> Result<(), AbortedError> { Ok(()) }
+
+    fn on_token_deactivated(&self, _ticker: &str) { () }
 }

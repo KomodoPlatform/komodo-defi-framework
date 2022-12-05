@@ -1,8 +1,8 @@
-use super::{EthCoin, GuiAuthMessages, RpcTransportEventHandler, RpcTransportEventHandlerShared, Web3RpcError};
+use crate::eth::{web3_transport::Web3SendOut, EthCoin, GuiAuthMessages, RpcTransportEventHandler,
+                 RpcTransportEventHandlerShared, Web3RpcError};
 use common::APPLICATION_JSON;
 #[cfg(not(target_arch = "wasm32"))] use futures::FutureExt;
 use futures::TryFutureExt;
-use futures01::{Future, Poll};
 use http::header::CONTENT_TYPE;
 use jsonrpc_core::{Call, Response};
 use mm2_net::transport::{GuiAuthValidation, GuiAuthValidationGenerator};
@@ -10,58 +10,15 @@ use serde_json::Value as Json;
 #[cfg(not(target_arch = "wasm32"))] use std::ops::Deref;
 use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::Arc;
-use web3::api::Namespace;
 use web3::error::{Error, ErrorKind};
-use web3::helpers::{self, build_request, to_result_from_output, to_string, CallFuture};
-use web3::types::{BlockNumber, U256};
+use web3::helpers::{build_request, to_result_from_output, to_string};
 use web3::{RequestId, Transport};
-
-/// eth_feeHistory support is missing even in the latest rust-web3
-/// It's the custom namespace implementing it
-#[derive(Debug, Clone)]
-pub struct EthFeeHistoryNamespace<T> {
-    transport: T,
-}
 
 #[derive(Serialize, Clone)]
 pub struct AuthPayload<'a> {
     #[serde(flatten)]
     pub request: &'a Call,
     pub signed_message: GuiAuthValidation,
-}
-
-impl<T: Transport> Namespace<T> for EthFeeHistoryNamespace<T> {
-    fn new(transport: T) -> Self
-    where
-        Self: Sized,
-    {
-        Self { transport }
-    }
-
-    fn transport(&self) -> &T { &self.transport }
-}
-
-#[derive(Debug, Deserialize)]
-pub struct FeeHistoryResult {
-    #[serde(rename = "oldestBlock")]
-    pub oldest_block: U256,
-    #[serde(rename = "baseFeePerGas")]
-    pub base_fee_per_gas: Vec<U256>,
-}
-
-impl<T: Transport> EthFeeHistoryNamespace<T> {
-    pub fn eth_fee_history(
-        &self,
-        count: U256,
-        block: BlockNumber,
-        reward_percentiles: &[f64],
-    ) -> CallFuture<FeeHistoryResult, T::Out> {
-        let count = helpers::serialize(&count);
-        let block = helpers::serialize(&block);
-        let reward_percentiles = helpers::serialize(&reward_percentiles);
-        let params = vec![count, block, reward_percentiles];
-        CallFuture::new(self.transport.execute("eth_feeHistory", params))
-    }
 }
 
 /// Parse bytes RPC response into `Result`.
@@ -78,24 +35,24 @@ fn single_response<T: Deref<Target = [u8]>>(response: T, rpc_url: &str) -> Resul
 }
 
 #[derive(Clone, Debug)]
-pub struct Web3Transport {
+pub struct HttpTransport {
     id: Arc<AtomicUsize>,
-    nodes: Vec<Web3TransportNode>,
+    nodes: Vec<HttpTransportNode>,
     event_handlers: Vec<RpcTransportEventHandlerShared>,
     pub(crate) gui_auth_validation_generator: Option<GuiAuthValidationGenerator>,
 }
 
 #[derive(Clone, Debug)]
-pub struct Web3TransportNode {
+pub struct HttpTransportNode {
     pub(crate) uri: http::Uri,
     pub(crate) gui_auth: bool,
 }
 
-impl Web3Transport {
-    #[allow(dead_code)]
+impl HttpTransport {
+    #[cfg(test)]
     #[inline]
-    pub fn new(nodes: Vec<Web3TransportNode>) -> Self {
-        Web3Transport {
+    pub fn new(nodes: Vec<HttpTransportNode>) -> Self {
+        HttpTransport {
             id: Arc::new(AtomicUsize::new(0)),
             nodes,
             event_handlers: Default::default(),
@@ -105,10 +62,10 @@ impl Web3Transport {
 
     #[inline]
     pub fn with_event_handlers(
-        nodes: Vec<Web3TransportNode>,
+        nodes: Vec<HttpTransportNode>,
         event_handlers: Vec<RpcTransportEventHandlerShared>,
     ) -> Self {
-        Web3Transport {
+        HttpTransport {
             id: Arc::new(AtomicUsize::new(0)),
             nodes,
             event_handlers,
@@ -118,12 +75,12 @@ impl Web3Transport {
 
     #[allow(dead_code)]
     pub fn single_node(url: &'static str, gui_auth: bool) -> Self {
-        let nodes = vec![Web3TransportNode {
+        let nodes = vec![HttpTransportNode {
             uri: url.parse().unwrap(),
             gui_auth,
         }];
 
-        Web3Transport {
+        HttpTransport {
             id: Arc::new(AtomicUsize::new(0)),
             nodes,
             event_handlers: Default::default(),
@@ -132,21 +89,8 @@ impl Web3Transport {
     }
 }
 
-struct SendFuture<T>(T);
-
-impl<T: Future> Future for SendFuture<T> {
-    type Item = T::Item;
-
-    type Error = T::Error;
-
-    fn poll(&mut self) -> Poll<Self::Item, Self::Error> { self.0.poll() }
-}
-
-unsafe impl<T> Send for SendFuture<T> where T: Send {}
-unsafe impl<T> Sync for SendFuture<T> {}
-
-impl Transport for Web3Transport {
-    type Out = Box<dyn Future<Item = Json, Error = Error> + Send>;
+impl Transport for HttpTransport {
+    type Out = Web3SendOut;
 
     fn prepare(&self, method: &str, params: Vec<Json>) -> (RequestId, Call) {
         let id = self.id.fetch_add(1, Ordering::AcqRel);
@@ -177,7 +121,7 @@ impl Transport for Web3Transport {
             self.event_handlers.clone(),
             self.gui_auth_validation_generator.clone(),
         );
-        Box::new(SendFuture(Box::pin(fut).compat()))
+        Box::new(Box::pin(fut).compat())
     }
 }
 
@@ -185,7 +129,7 @@ impl Transport for Web3Transport {
 /// payload if gui_auth is activated. Returns false on errors.
 fn handle_gui_auth_payload_if_activated(
     gui_auth_validation_generator: &Option<GuiAuthValidationGenerator>,
-    node: &Web3TransportNode,
+    node: &HttpTransportNode,
     request: &Call,
 ) -> Result<Option<String>, Web3RpcError> {
     if !node.gui_auth {
@@ -223,7 +167,7 @@ fn handle_gui_auth_payload_if_activated(
 #[cfg(not(target_arch = "wasm32"))]
 async fn send_request(
     request: Call,
-    nodes: Vec<Web3TransportNode>,
+    nodes: Vec<HttpTransportNode>,
     event_handlers: Vec<RpcTransportEventHandlerShared>,
     gui_auth_validation_generator: Option<GuiAuthValidationGenerator>,
 ) -> Result<Json, Error> {
@@ -303,7 +247,7 @@ async fn send_request(
 #[cfg(target_arch = "wasm32")]
 async fn send_request(
     request: Call,
-    nodes: Vec<Web3TransportNode>,
+    nodes: Vec<HttpTransportNode>,
     event_handlers: Vec<RpcTransportEventHandlerShared>,
     gui_auth_validation_generator: Option<GuiAuthValidationGenerator>,
 ) -> Result<Json, Error> {

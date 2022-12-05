@@ -2,6 +2,7 @@ use crate::integration_tests_common::{enable_coins_rick_morty_electrum, enable_e
 use common::executor::Timer;
 use common::{block_on, log};
 use gstuff::now_ms;
+use http::StatusCode;
 use mm2_number::BigDecimal;
 use mm2_test_helpers::for_tests::{init_lightning, init_lightning_status, sign_message, verify_message, MarketMakerIt};
 use mm2_test_helpers::structs::{InitLightningStatus, InitTaskResult, LightningActivationResult, RpcV2Response,
@@ -207,15 +208,66 @@ fn test_enable_lightning() {
 
     let _electrum = block_on(enable_electrum(&mm, "tBTC-TEST-segwit", false, T_BTC_ELECTRUMS));
 
-    let enable_lightning = block_on(enable_lightning(&mm, "tBTC-TEST-lightning", 600));
-    assert_eq!(&enable_lightning.platform_coin, "tBTC-TEST-segwit");
+    let enable_lightning_coin = block_on(enable_lightning(&mm, "tBTC-TEST-lightning", 600));
+    assert_eq!(&enable_lightning_coin.platform_coin, "tBTC-TEST-segwit");
     assert_eq!(
-        &enable_lightning.address,
+        &enable_lightning_coin.address,
         "02ce55b18d617bf4ac27b0f045301a0bb4e71669ae45cb5f2529f2f217520ffca1"
     );
-    assert_eq!(enable_lightning.balance.spendable, BigDecimal::from(0));
-    assert_eq!(enable_lightning.balance.unspendable, BigDecimal::from(0));
+    assert_eq!(enable_lightning_coin.balance.spendable, BigDecimal::from(0));
+    assert_eq!(enable_lightning_coin.balance.unspendable, BigDecimal::from(0));
 
+    // Disable tBTC-TEST-lightning
+    let disabled = block_on(mm.rpc(&json! ({
+        "userpass": mm.userpass,
+        "method": "disable_coin",
+        "coin": "tBTC-TEST-lightning",
+    })))
+    .unwrap();
+    assert_eq!(disabled.0, StatusCode::OK);
+
+    // Enable tBTC-TEST-lightning
+    let enable_lightning_coin = block_on(enable_lightning(&mm, "tBTC-TEST-lightning", 600));
+    assert_eq!(&enable_lightning_coin.platform_coin, "tBTC-TEST-segwit");
+    assert_eq!(
+        &enable_lightning_coin.address,
+        "02ce55b18d617bf4ac27b0f045301a0bb4e71669ae45cb5f2529f2f217520ffca1"
+    );
+
+    // Disable tBTC-TEST-segwit
+    let disabled = block_on(mm.rpc(&json! ({
+        "userpass": mm.userpass,
+        "method": "disable_coin",
+        "coin": "tBTC-TEST-segwit",
+    })))
+    .unwrap();
+    assert_eq!(disabled.0, StatusCode::OK);
+
+    // Restart unit test to cover disabling platform coin with it's tokens for LightningCoin
+    let _electrum = block_on(enable_electrum(&mm, "tBTC-TEST-segwit", false, T_BTC_ELECTRUMS));
+    let enable_lightning = block_on(enable_lightning(&mm, "tBTC-TEST-lightning", 600));
+    assert_eq!(&enable_lightning.platform_coin, "tBTC-TEST-segwit");
+
+    // We try to disable tBTC-TEST-segwit
+    let disabled = block_on(mm.rpc(&json! ({
+        "userpass": mm.userpass,
+        "method": "disable_coin",
+        "coin": "tBTC-TEST-segwit",
+    })))
+    .unwrap();
+    assert_eq!(disabled.0, StatusCode::OK);
+
+    // Confirm that tBTC-TEST-lightning is also disabled!.
+    let response = block_on(mm.rpc(&json! ({
+        "userpass": mm.userpass,
+        "method": "my_balance",
+        "coin": "tBTC-TEST-lightning",
+    })))
+    .unwrap();
+    assert_eq!(response.0, StatusCode::INTERNAL_SERVER_ERROR);
+    assert!(response.1.contains("No such coin: tBTC-TEST-lightning"));
+
+    // Stop mm2
     block_on(mm.stop()).unwrap();
 }
 

@@ -33,14 +33,14 @@ fn eth_coin_for_test(
 
     let mut nodes = vec![];
     for url in urls.iter() {
-        nodes.push(Web3TransportNode {
+        nodes.push(HttpTransportNode {
             uri: url.parse().unwrap(),
             gui_auth: false,
         });
     }
     drop_mutability!(nodes);
 
-    let transport = Web3Transport::new(nodes);
+    let transport = Web3Transport::with_nodes(nodes);
     let web3 = Web3::new(transport);
     let conf = json!({
         "coins":[
@@ -63,7 +63,7 @@ fn eth_coin_for_test(
         gas_station_policy: GasStationPricePolicy::MeanAverageFast,
         my_address: key_pair.address(),
         sign_message_prefix: Some(String::from("Ethereum Signed Message:\n")),
-        key_pair,
+        priv_key_policy: key_pair.into(),
         swap_contract_address: Address::from("0x7Bc1bBDD6A0a722fC9bffC49c921B685ECB84b94"),
         fallback_swap_contract,
         ticker,
@@ -229,7 +229,7 @@ fn send_and_refund_erc20_payment() {
         },
         my_address: key_pair.address(),
         sign_message_prefix: Some(String::from("Ethereum Signed Message:\n")),
-        key_pair,
+        priv_key_policy: key_pair.into(),
         swap_contract_address: Address::from("0x7Bc1bBDD6A0a722fC9bffC49c921B685ECB84b94"),
         fallback_swap_contract: None,
         web3_instances: vec![Web3Instance {
@@ -296,7 +296,7 @@ fn send_and_refund_eth_payment() {
         coin_type: EthCoinType::Eth,
         my_address: key_pair.address(),
         sign_message_prefix: Some(String::from("Ethereum Signed Message:\n")),
-        key_pair,
+        priv_key_policy: key_pair.into(),
         swap_contract_address: Address::from("0x7Bc1bBDD6A0a722fC9bffC49c921B685ECB84b94"),
         fallback_swap_contract: None,
         web3_instances: vec![Web3Instance {
@@ -371,7 +371,7 @@ fn test_nonce_several_urls() {
         coin_type: EthCoinType::Eth,
         my_address: key_pair.address(),
         sign_message_prefix: Some(String::from("Ethereum Signed Message:\n")),
-        key_pair,
+        priv_key_policy: key_pair.into(),
         swap_contract_address: Address::from("0x7Bc1bBDD6A0a722fC9bffC49c921B685ECB84b94"),
         fallback_swap_contract: None,
         web3_instances: vec![
@@ -436,7 +436,7 @@ fn test_wait_for_payment_spend_timeout() {
         history_sync_state: Mutex::new(HistorySyncState::NotEnabled),
         my_address: key_pair.address(),
         sign_message_prefix: Some(String::from("Ethereum Signed Message:\n")),
-        key_pair,
+        priv_key_policy: key_pair.into(),
         swap_contract_address: Address::from("0x7Bc1bBDD6A0a722fC9bffC49c921B685ECB84b94"),
         fallback_swap_contract: None,
         ticker: "ETH".into(),
@@ -506,7 +506,7 @@ fn test_search_for_swap_tx_spend_was_spent() {
         history_sync_state: Mutex::new(HistorySyncState::NotEnabled),
         my_address: key_pair.address(),
         sign_message_prefix: Some(String::from("Ethereum Signed Message:\n")),
-        key_pair,
+        priv_key_policy: key_pair.into(),
         swap_contract_address,
         fallback_swap_contract: None,
         ticker: "ETH".into(),
@@ -617,7 +617,7 @@ fn test_search_for_swap_tx_spend_was_refunded() {
         history_sync_state: Mutex::new(HistorySyncState::NotEnabled),
         my_address: key_pair.address(),
         sign_message_prefix: Some(String::from("Ethereum Signed Message:\n")),
-        key_pair,
+        priv_key_policy: key_pair.into(),
         swap_contract_address,
         fallback_swap_contract: None,
         ticker: "BAT".into(),
@@ -1287,7 +1287,7 @@ fn test_message_hash() {
         coin_type: EthCoinType::Eth,
         my_address: key_pair.address(),
         sign_message_prefix: Some(String::from("Ethereum Signed Message:\n")),
-        key_pair,
+        priv_key_policy: key_pair.into(),
         swap_contract_address: Address::from("0x7Bc1bBDD6A0a722fC9bffC49c921B685ECB84b94"),
         fallback_swap_contract: None,
         web3_instances: vec![Web3Instance {
@@ -1331,7 +1331,7 @@ fn test_sign_verify_message() {
         coin_type: EthCoinType::Eth,
         my_address: key_pair.address(),
         sign_message_prefix: Some(String::from("Ethereum Signed Message:\n")),
-        key_pair,
+        priv_key_policy: key_pair.into(),
         swap_contract_address: Address::from("0x7Bc1bBDD6A0a722fC9bffC49c921B685ECB84b94"),
         fallback_swap_contract: None,
         web3_instances: vec![Web3Instance {
@@ -1386,7 +1386,7 @@ fn test_eth_extract_secret() {
         history_sync_state: Mutex::new(HistorySyncState::NotEnabled),
         my_address: key_pair.address(),
         sign_message_prefix: Some(String::from("Ethereum Signed Message:\n")),
-        key_pair,
+        priv_key_policy: key_pair.into(),
         swap_contract_address,
         fallback_swap_contract: None,
         ticker: "ETH".into(),

@@ -11,7 +11,7 @@ use coins::z_coin::{z_coin_from_conf_and_params, BlockchainScanStopped, SyncStat
                     ZcoinActivationParams, ZcoinProtocolInfo};
 use coins::{BalanceError, CoinProtocol, MarketCoinOps, PrivKeyBuildPolicy, RegisterCoinError};
 use crypto::hw_rpc_task::{HwRpcTaskAwaitingStatus, HwRpcTaskUserAction};
-use crypto::{CryptoCtx, CryptoCtxError};
+use crypto::CryptoCtxError;
 use derive_more::Display;
 use futures::compat::Future01CompatExt;
 use mm2_core::mm_ctx::MmArc;
@@ -202,10 +202,9 @@ impl InitStandaloneCoinActivationOps for ZCoin {
         protocol_info: ZcoinProtocolInfo,
         task_handle: &ZcoinRpcTaskHandle,
     ) -> MmResult<Self, ZcoinInitError> {
-        let crypto_ctx = CryptoCtx::from_ctx(&ctx)?;
         // When `ZCoin` supports Trezor, we'll need to check [`ZcoinActivationParams::priv_key_policy`]
         // instead of using [`PrivKeyBuildPolicy::detect_priv_key_policy`].
-        let priv_key_policy = PrivKeyBuildPolicy::detect_priv_key_policy(&crypto_ctx);
+        let priv_key_policy = PrivKeyBuildPolicy::detect_priv_key_policy(&ctx)?;
 
         let coin = z_coin_from_conf_and_params(
             &ctx,
