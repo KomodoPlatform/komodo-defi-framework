@@ -221,14 +221,10 @@ fn wrap_const(code: TokenStream2) -> TokenStream {
     output.into()
 }
 
-///! Rust Derive Impl from enum
-///
-///
 /// `EnumFromStringify` is very useful for generating `From<T>` trait from one enum to another enum
-/// Currently, this crate can only convert enum variant with only some basic inner type such as `String`, and `Enum`
+/// currently, this crate can only convert enum variant with only some basic inner type such as `String`, and `Enum`
 /// type just like the example below. Can not be used for tuple, struct etc for now .
-///
-/// More support will be added soon
+/// More support will be added.
 ///
 ///
 /// ### USAGE:
@@ -237,7 +233,7 @@ fn wrap_const(code: TokenStream2) -> TokenStream {
 /// use derive_more::Display;
 ///
 /// // E.G, this converts from whatever Bar is to FooBar::Bar(String) and
-/// // whatever Foor to FooBar::Foo(Foo)
+/// // whatever Foo to FooBar::Foo(Foo)
 /// #[derive(Debug, EnumFromStringify, PartialEq, Eq)]
 /// pub enum FooBar {
 ///     #[from_stringify("Bar")]
