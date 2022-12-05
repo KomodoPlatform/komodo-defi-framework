@@ -117,7 +117,7 @@ enum WatcherSuccess {
     MakerPaymentSpent,
     TakerPaymentRefunded,
     MakerPaymentSpentByTaker,
-    MakerPaymentRefundByTaker,
+    TakerPaymentRefundedByTaker,
 }
 
 #[derive(Debug)]
@@ -281,7 +281,7 @@ impl State for WaitForTakerPaymentSpend {
                 Ok(Some(FoundSwapTxSpend::Spent(tx))) => tx,
                 Ok(Some(FoundSwapTxSpend::Refunded(_))) => {
                     return Self::change_state(Stopped::from_reason(StopReason::Finished(
-                        WatcherSuccess::MakerPaymentRefundByTaker,
+                        WatcherSuccess::TakerPaymentRefundedByTaker,
                     )))
                 },
                 Ok(None) => {
