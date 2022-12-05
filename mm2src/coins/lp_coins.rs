@@ -2168,7 +2168,7 @@ impl CoinsContext {
         let ticker = coin.ticker();
 
         let mut platform_coin_tokens = self.platform_coin_tokens.lock();
-        // Here, we tried to add to a token to platform_coin_tokens if the token belongs to a platform coin.
+        // Here, we try to add a token to platform_coin_tokens if the token belongs to a platform coin.
         if let Some(platform) = platform_coin_tokens.get_mut(coin.platform_ticker()) {
             platform.insert(ticker.to_owned());
         }
@@ -2177,7 +2177,7 @@ impl CoinsContext {
         Ok(())
     }
 
-    /// Adds a Layer 2 coin that bases on another standalone platform.
+    /// Adds a Layer 2 coin that depends on a standalone platform.
     /// The process of adding l2 coins is identical to that of adding tokens.
     pub async fn add_l2(&self, coin: MmCoinEnum) -> Result<(), MmError<RegisterCoinError>> {
         self.add_token(coin).await

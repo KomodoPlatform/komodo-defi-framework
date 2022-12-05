@@ -73,15 +73,13 @@ pub async fn disable_coin(ctx: MmArc, req: Json) -> Result<Response<Vec<u8>>, St
     let coins_ctx = try_s!(CoinsContext::from_ctx(&ctx));
 
     // If a platform coin is to be disabled, we get all the enabled tokens for this platform coin first.
-    let tokens_to_disable = coins_ctx.get_tokens_to_disable(&ticker).await;
-    let mut tokens_and_coin_to_disable = tokens_to_disable.clone();
+    let mut tokens_to_disable = coins_ctx.get_tokens_to_disable(&ticker).await;
     // We then add the platform coin to the list of the coins to be disabled.
-    tokens_and_coin_to_disable.insert(ticker.clone());
-    drop_mutability!(tokens_and_coin_to_disable);
+    tokens_to_disable.insert(ticker.clone());
 
     // Get all matching orders and active swaps.
-    let active_swaps = try_s!(active_swaps_using_coins(&ctx, &tokens_and_coin_to_disable));
-    let still_matching_orders = try_s!(get_matching_orders(&ctx, &tokens_and_coin_to_disable).await);
+    let active_swaps = try_s!(active_swaps_using_coins(&ctx, &tokens_to_disable));
+    let still_matching_orders = try_s!(get_matching_orders(&ctx, &tokens_to_disable).await);
 
     // If there're matching orders or active swaps we return an error.
     if !active_swaps.is_empty() || !still_matching_orders.is_empty() {
@@ -91,7 +89,7 @@ pub async fn disable_coin(ctx: MmArc, req: Json) -> Result<Response<Vec<u8>>, St
 
     // Proceed with diabling the coin/tokens.
     let mut cancelled_orders = vec![];
-    for ticker in &tokens_and_coin_to_disable {
+    for ticker in &tokens_to_disable {
         log!("disabling {ticker} coin");
         let cancelled_and_matching_orders = cancel_orders_by(&ctx, CancelBy::Coin {
             ticker: ticker.to_string(),
@@ -108,6 +106,9 @@ pub async fn disable_coin(ctx: MmArc, req: Json) -> Result<Response<Vec<u8>>, St
     }
 
     coins_ctx.remove_coin(coin).await;
+    // Ticker shouldn't be a part of the disabled tokens vector in the response.
+    tokens_to_disable.remove(&ticker);
+    drop_mutability!(tokens_to_disable);
     let res = json!({
         "result": {
             "coin": ticker,
