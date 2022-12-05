@@ -2,14 +2,13 @@ use common::executor::Timer;
 use common::{block_on, log, now_ms};
 use http::StatusCode;
 use itertools::Itertools;
-use mm2_test_helpers::for_tests::{enable_bch_with_tokens, enable_slp, get_passphrase, my_tx_history_v2, sign_message,
+use mm2_test_helpers::for_tests::{enable_bch_with_tokens, enable_slp, my_tx_history_v2, sign_message,
                                   tbch_for_slp_conf, tbch_usdf_conf, verify_message, MarketMakerIt, Mm2TestConf,
-                                  UtxoRpcMode, ETH_DEV_NODES};
+                                  UtxoRpcMode};
 use mm2_test_helpers::structs::{EnableBchWithTokensResponse, RpcV2Response, SignatureResponse, StandardHistoryV2Res,
                                 UtxoFeeDetails, VerificationResponse};
 use serde_json::{self as json, json, Value as Json};
 use std::env;
-use std::str::FromStr;
 use std::thread;
 use std::time::Duration;
 

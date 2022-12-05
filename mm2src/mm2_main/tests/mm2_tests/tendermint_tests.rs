@@ -283,9 +283,13 @@ fn test_disable_tendermint_platform_coin_with_token() {
     let conf = Mm2TestConf::seednode(TEST_SEED, &coins);
     let mm = MarketMakerIt::start(conf.conf, conf.rpc_password, None).unwrap();
     // Enable platform coin IRIS-TEST
-    let activation_res = block_on(enable_tendermint(&mm, platform_coin, &[], &[
-        "http://34.80.202.172:26657",
-    ]));
+    let activation_res = block_on(enable_tendermint(
+        &mm,
+        platform_coin,
+        &[],
+        &["http://34.80.202.172:26657"],
+        false,
+    ));
     assert!(&activation_res.get("result").unwrap().get("address").is_some());
 
     // Enable platform coin token IRIS-NIMDA
