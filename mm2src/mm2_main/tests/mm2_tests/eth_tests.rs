@@ -4,6 +4,7 @@ use mm2_test_helpers::for_tests::{get_passphrase, MarketMakerIt, Mm2TestConf, ET
 use serde_json::{json, Value as Json};
 use std::str::FromStr;
 
+#[cfg(not(target_arch = "wasm32"))]
 async fn enable_eth_with_tokens(mm: &MarketMakerIt, platform_coin: &str, tokens: &[&str], nodes: &[&str]) -> Json {
     let erc20_tokens_requests: Vec<_> = tokens.iter().map(|ticker| json!({ "ticker": ticker })).collect();
     let nodes: Vec<_> = nodes.iter().map(|url| json!({ "url": url })).collect();
