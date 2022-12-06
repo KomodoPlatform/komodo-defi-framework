@@ -4271,7 +4271,10 @@ fn test_block_header_utxo_loop() {
     use crate::utxo::utxo_builder::block_header_utxo_loop;
     use futures::future::{Either, FutureExt};
 
-    static mut CURRENT_BLOCK_COUNT: u64 = 500;
+    static mut CURRENT_BLOCK_COUNT: u64 = 2017;
+
+    ElectrumClient::get_block_count
+        .mock_safe(move |_| MockResult::Return(Box::new(futures01::future::ok(unsafe { CURRENT_BLOCK_COUNT }))));
 
     let block_header_storage = BlockHeaderStorageForTests::new(TEST_COIN_NAME.to_string());
     let block_header_storage_copy = block_header_storage.clone();
@@ -4287,27 +4290,29 @@ fn test_block_header_utxo_loop() {
         negotiate_version: true,
         collect_metrics: false,
     };
-    let servers: Vec<_> = RICK_ELECTRUM_ADDRS
-        .iter()
-        .map(|server| json!({ "url": server,"disabl e_cert_verification":true }))
-        .collect();
+    let servers: Vec<_> = [
+        "electrumx1.cointest.com:50001",
+        "electrumx2.cointest.com:50001",
+        "electrumx3.cointest.com:50001",
+    ]
+    .iter()
+    .map(|server| json!({ "url": server,"disabl e_cert_verification":true }))
+    .collect();
     let servers = servers.into_iter().map(|s| json::from_value(s).unwrap()).collect();
     let abortable_system = AbortableQueue::default();
-    let conf = json!({"coin":"RICK","asset":"RICK","rpcport":8923,"enable_spv_proof": false});
+    let conf = json!({"coin":"WHIVE","asset":"WHIVE","rpcport":8923,"enable_spv_proof": false});
     let req = json!({
          "method": "electrum",
          "servers": servers,
     });
     let ctx = MmCtxBuilder::new().into_mm_arc();
     let params = UtxoActivationParams::from_legacy_req(&req).unwrap();
-    let builder = UtxoArcBuilder::new(&ctx, "KMD", &conf, &params, priv_key_policy, UtxoStandardCoin::from);
+    let builder = UtxoArcBuilder::new(&ctx, "WHIVE", &conf, &params, priv_key_policy, UtxoStandardCoin::from);
     let client = block_on(builder.electrum_client(abortable_system, args, servers)).unwrap();
     let arc: UtxoArc = block_on(builder.build_utxo_fields()).unwrap().into();
     let (sync_status_notifier, _) = channel::<UtxoSyncStatus>(1);
     let loop_handle = UtxoSyncStatusLoopHandle::new(sync_status_notifier);
 
-    ElectrumClient::get_block_count
-        .mock_safe(move |_| MockResult::Return(Box::new(futures01::future::ok(unsafe { CURRENT_BLOCK_COUNT }))));
     let loop_fut = async move {
         unsafe {
             block_header_utxo_loop(
@@ -4316,25 +4321,20 @@ fn test_block_header_utxo_loop() {
                 loop_handle,
                 CURRENT_BLOCK_COUNT,
             )
-            .await;
-        };
+            .await
+        }
     };
 
-    unsafe { CURRENT_BLOCK_COUNT = 550 }
-
     let test_fut = async move {
-        Timer::sleep(10.).await;
+        Timer::sleep(6.).await;
         let get_headers_count = client.block_headers_storage().get_last_block_height().await.unwrap();
-        println!("500 {get_headers_count}");
-        // assert_eq!(500, get_headers_count);
+        assert_eq!(2017, get_headers_count);
 
-        unsafe { CURRENT_BLOCK_COUNT = 660 }
+        unsafe { CURRENT_BLOCK_COUNT = 4100 }
 
-        Timer::sleep(10.).await;
+        Timer::sleep(60.).await;
         let get_headers_count = client.block_headers_storage().get_last_block_height().await.unwrap();
-        println!("550 {get_headers_count}");
-
-        // assert_eq!(block_count, get_headers_count);
+        assert_eq!(4100, get_headers_count);
     };
 
     let res_fut = futures::future::select(loop_fut.boxed(), test_fut.boxed());

@@ -231,7 +231,6 @@ pub(crate) async fn block_header_utxo_loop<T: UtxoCommonOps>(
 ) {
     let mut chunk_size = ELECTRUM_MAX_CHUNK_SIZE;
     while let Some(arc) = weak.upgrade() {
-        println!("runner ner {}", block_count);
         let coin = constructor(arc);
         let ticker = coin.as_ref().conf.ticker.as_str();
         let client = match &coin.as_ref().rpc_client {
@@ -256,7 +255,7 @@ pub(crate) async fn block_header_utxo_loop<T: UtxoCommonOps>(
             from_block_height + chunk_size
         };
 
-        if to_block_height > block_count {
+        if to_block_height >= block_count {
             block_count = match coin.as_ref().rpc_client.get_block_count().compat().await {
                 Ok(h) => h,
                 Err(e) => {
@@ -284,10 +283,6 @@ pub(crate) async fn block_header_utxo_loop<T: UtxoCommonOps>(
 
         sync_status_loop_handle.notify_blocks_headers_sync_status(from_block_height + 1, to_block_height);
 
-        println!(
-            "from_block_height{} to_block_height{to_block_height} block_count{block_count}",
-            from_block_height + 1
-        );
         let mut fetch_blocker_headers_attempts = FETCH_BLOCK_HEADERS_ATTEMPTS;
         let (block_registry, block_headers) = match client
             .retrieve_headers(from_block_height + 1, to_block_height)
