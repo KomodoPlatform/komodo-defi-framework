@@ -231,6 +231,7 @@ pub(crate) async fn block_header_utxo_loop<T: UtxoCommonOps>(
 ) {
     let mut chunk_size = ELECTRUM_MAX_CHUNK_SIZE;
     while let Some(arc) = weak.upgrade() {
+        println!("runner ner {}", block_count);
         let coin = constructor(arc);
         let ticker = coin.as_ref().conf.ticker.as_str();
         let client = match &coin.as_ref().rpc_client {

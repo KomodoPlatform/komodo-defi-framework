@@ -4273,9 +4273,6 @@ fn test_block_header_utxo_loop() {
 
     static mut CURRENT_BLOCK_COUNT: u64 = 500;
 
-    ElectrumClient::get_block_count
-        .mock_safe(move |_| MockResult::Return(Box::new(futures01::future::ok(unsafe { CURRENT_BLOCK_COUNT }))));
-
     let block_header_storage = BlockHeaderStorageForTests::new(TEST_COIN_NAME.to_string());
     let block_header_storage_copy = block_header_storage.clone();
     BlockHeaderStorage::new_from_ctx.mock_safe(move |_, _| {
@@ -4292,7 +4289,7 @@ fn test_block_header_utxo_loop() {
     };
     let servers: Vec<_> = RICK_ELECTRUM_ADDRS
         .iter()
-        .map(|server| json!({ "url": server,"disable_cert_verification":true }))
+        .map(|server| json!({ "url": server,"disabl e_cert_verification":true }))
         .collect();
     let servers = servers.into_iter().map(|s| json::from_value(s).unwrap()).collect();
     let abortable_system = AbortableQueue::default();
@@ -4309,6 +4306,8 @@ fn test_block_header_utxo_loop() {
     let (sync_status_notifier, _) = channel::<UtxoSyncStatus>(1);
     let loop_handle = UtxoSyncStatusLoopHandle::new(sync_status_notifier);
 
+    ElectrumClient::get_block_count
+        .mock_safe(move |_| MockResult::Return(Box::new(futures01::future::ok(unsafe { CURRENT_BLOCK_COUNT }))));
     let loop_fut = async move {
         unsafe {
             block_header_utxo_loop(
@@ -4321,27 +4320,26 @@ fn test_block_header_utxo_loop() {
         };
     };
 
+    unsafe { CURRENT_BLOCK_COUNT = 550 }
+
     let test_fut = async move {
         Timer::sleep(10.).await;
         let get_headers_count = client.block_headers_storage().get_last_block_height().await.unwrap();
         println!("500 {get_headers_count}");
-        // assert_eq!(block_count, get_headers_count);
+        // assert_eq!(500, get_headers_count);
 
-        unsafe { CURRENT_BLOCK_COUNT = 520 };
-        ElectrumClient::get_block_count
-            .mock_safe(move |_| MockResult::Return(Box::new(futures01::future::ok(unsafe { CURRENT_BLOCK_COUNT }))));
+        unsafe { CURRENT_BLOCK_COUNT = 660 }
+
         Timer::sleep(10.).await;
         let get_headers_count = client.block_headers_storage().get_last_block_height().await.unwrap();
-        println!("520 {get_headers_count}");
+        println!("550 {get_headers_count}");
+
         // assert_eq!(block_count, get_headers_count);
     };
 
-    // We need to combine these futures in order to run `loop_fut` and `test_fut`.
-    // Once `test_fut` is finished, the test is finished.
     let res_fut = futures::future::select(loop_fut.boxed(), test_fut.boxed());
     match block_on(res_fut) {
         Either::Left((_loop_finished, _)) => panic!("Loop shouldn't stop"),
-        // `test_fut` finished - this is what we expected.
         Either::Right((_, _)) => (),
     };
 }
