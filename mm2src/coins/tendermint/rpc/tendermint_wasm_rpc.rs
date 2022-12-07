@@ -115,9 +115,11 @@ mod tests {
 
     wasm_bindgen_test_configure!(run_in_browser);
 
+    const IRIS_TESTNET_RPC_URL: &str = "http://34.80.202.172:26657";
+
     #[wasm_bindgen_test]
     async fn test_get_abci_info() {
-        let client = HttpClient::new("https://cosmos-testnet-rpc.allthatnode.com:26657").unwrap();
+        let client = HttpClient::new(IRIS_TESTNET_RPC_URL).unwrap();
         client.abci_info().await.unwrap();
     }
 }
