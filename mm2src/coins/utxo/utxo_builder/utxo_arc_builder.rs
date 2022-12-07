@@ -1,8 +1,8 @@
 use crate::utxo::rpc_clients::UtxoRpcClientEnum;
 use crate::utxo::utxo_builder::{UtxoCoinBuildError, UtxoCoinBuilder, UtxoCoinBuilderCommonOps,
                                 UtxoFieldsWithHardwareWalletBuilder, UtxoFieldsWithIguanaPrivKeyBuilder};
-use crate::utxo::{generate_and_send_tx, mockable, FeePolicy, GetUtxoListOps, UtxoArc, UtxoCommonOps,
-                  UtxoSyncStatusLoopHandle, UtxoWeak};
+use crate::utxo::{generate_and_send_tx, FeePolicy, GetUtxoListOps, UtxoArc, UtxoCommonOps, UtxoSyncStatusLoopHandle,
+                  UtxoWeak};
 use crate::{DerivationMethod, PrivKeyBuildPolicy, UtxoActivationParams};
 use async_trait::async_trait;
 use chain::TransactionOutput;
@@ -11,6 +11,7 @@ use common::log::{error, info, warn};
 use futures::compat::Future01CompatExt;
 use mm2_core::mm_ctx::MmArc;
 use mm2_err_handle::prelude::*;
+#[cfg(test)] use mocktopus::macros::*;
 use script::Builder;
 use serde_json::Value as Json;
 use spv_validation::helpers_validation::validate_headers;
