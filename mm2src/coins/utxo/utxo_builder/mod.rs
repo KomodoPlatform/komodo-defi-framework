@@ -9,4 +9,4 @@ pub use utxo_coin_builder::{UtxoCoinBuildError, UtxoCoinBuildResult, UtxoCoinBui
 pub use utxo_conf_builder::{UtxoConfBuilder, UtxoConfError, UtxoConfResult};
 
 #[cfg(test)]
-pub(crate) use utxo_arc_builder::block_header_utxo_loop;
+pub(crate) use utxo_arc_builder::{block_header_utxo_loop, BlockHeaderUtxoLoopExtraArgs};

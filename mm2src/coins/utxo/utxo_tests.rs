@@ -4268,48 +4268,53 @@ fn test_utxo_validate_valid_and_invalid_pubkey() {
 
 #[test]
 fn test_block_header_utxo_loop() {
-    use crate::utxo::utxo_builder::block_header_utxo_loop;
+    use crate::utxo::utxo_builder::{block_header_utxo_loop, BlockHeaderUtxoLoopExtraArgs};
     use futures::future::{Either, FutureExt};
 
-    static mut CURRENT_BLOCK_COUNT: u64 = 2017;
+    static mut CURRENT_BLOCK_COUNT: u64 = 150;
 
     ElectrumClient::get_block_count
         .mock_safe(move |_| MockResult::Return(Box::new(futures01::future::ok(unsafe { CURRENT_BLOCK_COUNT }))));
 
+    BlockHeaderUtxoLoopExtraArgs::default.mock_safe(move || {
+        MockResult::Return(BlockHeaderUtxoLoopExtraArgs {
+            chunk_size: 100,
+            error_sleep: 5.,
+            success_sleep: 1.,
+        })
+    });
+
     let block_header_storage = BlockHeaderStorageForTests::new(TEST_COIN_NAME.to_string());
-    let block_header_storage_copy = block_header_storage.clone();
     BlockHeaderStorage::new_from_ctx.mock_safe(move |_, _| {
         MockResult::Return(Ok(BlockHeaderStorage {
-            inner: Box::new(block_header_storage_copy.clone()),
+            inner: Box::new(block_header_storage.clone()),
         }))
     });
 
+    let ctx = MmCtxBuilder::new().into_mm_arc();
     let priv_key_policy = PrivKeyBuildPolicy::IguanaPrivKey(&[1u8; 32]);
-    let args = ElectrumBuilderArgs {
-        spawn_ping: false,
-        negotiate_version: true,
-        collect_metrics: false,
-    };
+
+    let mut args = ElectrumBuilderArgs::default();
+    args.collect_metrics = false;
+    args.spawn_ping = false;
+
     let servers: Vec<_> = [
         "electrumx1.cointest.com:50001",
         "electrumx2.cointest.com:50001",
         "electrumx3.cointest.com:50001",
     ]
     .iter()
-    .map(|server| json!({ "url": server,"disabl e_cert_verification":true }))
+    .map(|server| json!({ "url": server,"disable_cert_verification":true }))
     .collect();
     let servers = servers.into_iter().map(|s| json::from_value(s).unwrap()).collect();
-    let abortable_system = AbortableQueue::default();
     let conf = json!({"coin":"WHIVE","asset":"WHIVE","rpcport":8923,"enable_spv_proof": false});
-    let req = json!({
-         "method": "electrum",
-         "servers": servers,
-    });
-    let ctx = MmCtxBuilder::new().into_mm_arc();
+    let req = json!({ "method": "electrum", "servers": servers });
+
     let params = UtxoActivationParams::from_legacy_req(&req).unwrap();
     let builder = UtxoArcBuilder::new(&ctx, "WHIVE", &conf, &params, priv_key_policy, UtxoStandardCoin::from);
-    let client = block_on(builder.electrum_client(abortable_system, args, servers)).unwrap();
+    let client = block_on(builder.electrum_client(AbortableQueue::default(), args, servers)).unwrap();
     let arc: UtxoArc = block_on(builder.build_utxo_fields()).unwrap().into();
+
     let (sync_status_notifier, _) = channel::<UtxoSyncStatus>(1);
     let loop_handle = UtxoSyncStatusLoopHandle::new(sync_status_notifier);
 
@@ -4326,20 +4331,24 @@ fn test_block_header_utxo_loop() {
     };
 
     let test_fut = async move {
-        Timer::sleep(6.).await;
+        Timer::sleep(3.).await;
         let get_headers_count = client.block_headers_storage().get_last_block_height().await.unwrap();
-        assert_eq!(2017, get_headers_count);
+        assert_eq!(150, get_headers_count);
 
-        unsafe { CURRENT_BLOCK_COUNT = 4100 }
+        unsafe { CURRENT_BLOCK_COUNT = 250 }
 
-        Timer::sleep(60.).await;
+        Timer::sleep(3.).await;
         let get_headers_count = client.block_headers_storage().get_last_block_height().await.unwrap();
-        assert_eq!(4100, get_headers_count);
+        assert_eq!(250, get_headers_count);
+
+        unsafe { CURRENT_BLOCK_COUNT = 350 }
+
+        Timer::sleep(3.).await;
+        let get_headers_count = client.block_headers_storage().get_last_block_height().await.unwrap();
+        assert_eq!(350, get_headers_count);
     };
 
-    let res_fut = futures::future::select(loop_fut.boxed(), test_fut.boxed());
-    match block_on(res_fut) {
-        Either::Left((_loop_finished, _)) => panic!("Loop shouldn't stop"),
-        Either::Right((_, _)) => (),
+    if let Either::Left(_) = block_on(futures::future::select(loop_fut.boxed(), test_fut.boxed())) {
+        panic!("Loop shouldn't stop")
     };
 }
