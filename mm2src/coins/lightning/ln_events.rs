@@ -23,6 +23,8 @@ use utxo_signer::with_key_pair::sign_tx;
 const TRY_LOOP_INTERVAL: f64 = 60.;
 /// 1 second.
 const CRITICAL_FUTURE_TIMEOUT: f64 = 1.0;
+pub const SUCCESSFUL_CLAIM_LOG: &str = "Successfully claimed payment";
+pub const SUCCESSFUL_SEND_LOG: &str = "Successfully sent payment";
 
 pub struct LightningEventHandler {
     platform: Arc<Platform>,
@@ -438,7 +440,8 @@ impl LightningEventHandler {
                 let amt_msat = payment_info.amt_msat;
                 match db.add_or_update_payment_in_db(payment_info).await {
                     Ok(_) => info!(
-                        "Successfully claimed payment of {} millisatoshis with payment hash {}",
+                        "{} of {} millisatoshis with payment hash {}",
+                        SUCCESSFUL_CLAIM_LOG,
                         amt_msat.unwrap_or_default(),
                         hex::encode(payment_hash.0),
                     ),
@@ -470,7 +473,8 @@ impl LightningEventHandler {
                 let amt_msat = payment_info.amt_msat;
                 match db.add_or_update_payment_in_db(payment_info).await {
                     Ok(_) => info!(
-                        "Successfully sent payment of {} millisatoshis with payment hash {}",
+                        "{} of {} millisatoshis with payment hash {}",
+                        SUCCESSFUL_SEND_LOG,
                         amt_msat.unwrap_or_default(),
                         hex::encode(payment_hash.0)
                     ),

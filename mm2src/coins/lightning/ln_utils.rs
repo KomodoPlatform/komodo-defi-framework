@@ -363,6 +363,7 @@ pub(crate) fn pay_invoice_with_max_total_cltv_expiry_delta(
     if let Some(features) = invoice.features() {
         payment_params = payment_params.with_features(features.clone());
     }
+    drop_mutability!(payment_params);
     let route_params = RouteParameters {
         payment_params,
         final_value_msat,

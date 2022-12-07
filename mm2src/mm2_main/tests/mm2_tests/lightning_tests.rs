@@ -1,4 +1,5 @@
 use crate::integration_tests_common::{enable_coins_rick_morty_electrum, enable_electrum};
+use coins::lightning::ln_events::{SUCCESSFUL_CLAIM_LOG, SUCCESSFUL_SEND_LOG};
 use common::executor::Timer;
 use common::{block_on, log};
 use gstuff::now_ms;
@@ -416,7 +417,7 @@ fn test_send_payment() {
     log!("send_payment_res {:?}", send_payment_res);
     let payment_hash = send_payment_res["result"]["payment_hash"].as_str().unwrap();
 
-    block_on(mm_node_2.wait_for_log(60., |log| log.contains("Successfully sent payment"))).unwrap();
+    block_on(mm_node_2.wait_for_log(60., |log| log.contains(SUCCESSFUL_SEND_LOG))).unwrap();
 
     // Check payment on the sending node side
     let get_payment_details = block_on(mm_node_2.rpc(&json!({
@@ -510,11 +511,11 @@ fn test_send_payment() {
     log!("pay_invoice_res {:?}", pay_invoice_res);
     let payment_hash = pay_invoice_res["result"]["payment_hash"].as_str().unwrap();
 
-    block_on(mm_node_1.wait_for_log(60., |log| log.contains("Successfully claimed payment"))).unwrap();
+    block_on(mm_node_1.wait_for_log(60., |log| log.contains(SUCCESSFUL_CLAIM_LOG))).unwrap();
     block_on(mm_node_2.wait_for_log(60., |log| {
         log.contains(&format!(
-            "Successfully sent payment of 10000 millisatoshis with payment hash {}",
-            payment_hash
+            "{} of 10000 millisatoshis with payment hash {}",
+            SUCCESSFUL_SEND_LOG, payment_hash
         ))
     }))
     .unwrap();
@@ -639,8 +640,8 @@ fn test_lightning_swaps() {
         0.1,
     ));
     // Todo: use wait_for_swaps_finish_and_check_status instead after fixing lightning swap events
-    block_on(mm_node_1.wait_for_log(900., |log| log.contains(&format!("[swap uuid={}] Finished", uuids[0])))).unwrap();
-    block_on(mm_node_2.wait_for_log(900., |log| log.contains(&format!("[swap uuid={}] Finished", uuids[0])))).unwrap();
+    block_on(mm_node_1.wait_for_log(120., |log| log.contains(&format!("[swap uuid={}] Finished", uuids[0])))).unwrap();
+    block_on(mm_node_2.wait_for_log(120., |log| log.contains(&format!("[swap uuid={}] Finished", uuids[0])))).unwrap();
 
     // Check node 1 lightning balance after swap
     let node_1_lightning_balance = block_on(my_balance(&mm_node_1, "tBTC-TEST-lightning"));
@@ -662,8 +663,8 @@ fn test_lightning_swaps() {
         0.00004,
     ));
     // Todo: use wait_for_swaps_finish_and_check_status instead after fixing lightning swap events
-    block_on(mm_node_1.wait_for_log(900., |log| log.contains(&format!("[swap uuid={}] Finished", uuids[0])))).unwrap();
-    block_on(mm_node_2.wait_for_log(900., |log| log.contains(&format!("[swap uuid={}] Finished", uuids[0])))).unwrap();
+    block_on(mm_node_1.wait_for_log(120., |log| log.contains(&format!("[swap uuid={}] Finished", uuids[0])))).unwrap();
+    block_on(mm_node_2.wait_for_log(120., |log| log.contains(&format!("[swap uuid={}] Finished", uuids[0])))).unwrap();
 
     block_on(mm_node_1.stop()).unwrap();
     block_on(mm_node_2.stop()).unwrap();

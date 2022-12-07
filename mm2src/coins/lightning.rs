@@ -594,7 +594,7 @@ impl LightningCoin {
                     Ok(())
                 },
                 Ok(None) => MmError::err(ValidatePaymentError::UnexpectedPaymentState(format!(
-                    "Payment {} should be found on the database",
+                    "Payment {} is not in the database when it should be!",
                     payment_hex
                 ))),
                 Err(e) => MmError::err(ValidatePaymentError::InternalError(format!(
@@ -731,7 +731,7 @@ impl SwapOps for LightningCoin {
                 Some(preimage) => Ok(preimage.0.to_vec()),
                 None => ERR!("Preimage for payment {} should be found on the database", payment_hex),
             },
-            Ok(None) => ERR!("Payment {} should be found on the database", payment_hex),
+            Ok(None) => ERR!("Payment {} is not in the database when it should be!", payment_hex),
             Err(e) => ERR!(
                 "Unable to retrieve payment {} from the database error: {}",
                 payment_hex,
@@ -998,14 +998,7 @@ impl MarketCoinOps for LightningCoin {
                         }
                     },
                     Ok(None) => info!("Payment {} not received yet!", payment_hex),
-                    Err(e) => {
-                        return ERR!(
-                            "Error getting payment {} from db: {}, retrying in {} seconds",
-                            payment_hex,
-                            e,
-                            check_every
-                        )
-                    },
+                    Err(e) => return ERR!("Error getting payment {} from db: {}", payment_hex, e),
                 }
 
                 // note: When sleeping for only 1 second the test_send_payment_and_swaps unit test took 20 seconds to complete instead of 37 seconds when WAIT_CONFIRM_INTERVAL (15 seconds) is used
