@@ -48,8 +48,8 @@ impl WatcherContext {
     }
 }
 
-#[derive(Serialize, Deserialize, Default)]
-struct WatcherConf {
+#[derive(Serialize, Deserialize, Debug)]
+pub struct WatcherConf {
     #[serde(default = "common::sixty_f64")]
     wait_taker_payment: f64,
     #[serde(default = "common::one_f64")]
@@ -58,6 +58,17 @@ struct WatcherConf {
     refund_start_factor: f64,
     #[serde(default = "common::three_hundred_f64")]
     search_interval: f64,
+}
+
+impl Default for WatcherConf {
+    fn default() -> Self {
+        WatcherConf {
+            wait_taker_payment: common::sixty_f64(),
+            wait_maker_payment_spend_factor: common::one_f64(),
+            refund_start_factor: common::one_and_half_f64(),
+            search_interval: common::three_hundred_f64(),
+        }
+    }
 }
 
 #[derive(Clone, Debug, Deserialize, Serialize)]
