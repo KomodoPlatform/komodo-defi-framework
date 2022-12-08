@@ -221,7 +221,6 @@ pub trait MergeUtxoArcOps<T: UtxoCommonOps + GetUtxoListOps>: UtxoCoinBuilderCom
     }
 }
 
-#[cfg_attr(test, mockable)]
 pub(crate) struct BlockHeaderUtxoLoopExtraArgs {
     pub(crate) chunk_size: u64,
     pub(crate) error_sleep: f64,
@@ -266,13 +265,8 @@ pub(crate) async fn block_header_utxo_loop<T: UtxoCommonOps>(
             },
         };
 
-        let mut to_block_height = if block_count < chunk_size {
-            block_count
-        } else {
-            from_block_height + chunk_size
-        };
-
-        if to_block_height >= block_count {
+        let mut to_block_height = from_block_height + chunk_size;
+        if to_block_height > block_count {
             block_count = match coin.as_ref().rpc_client.get_block_count().compat().await {
                 Ok(h) => h,
                 Err(e) => {
@@ -309,7 +303,6 @@ pub(crate) async fn block_header_utxo_loop<T: UtxoCommonOps>(
             Ok(res) => res,
             Err(error) => {
                 if error.get_inner().is_network_error() {
-                    println!("{error:?}");
                     log!("Network Error: Will try fetching {ticker} block headers again after 10 secs");
                     sync_status_loop_handle.notify_on_temp_error(error.to_string());
                     Timer::sleep(args.error_sleep).await;

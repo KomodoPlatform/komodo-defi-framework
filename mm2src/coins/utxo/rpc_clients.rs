@@ -1811,6 +1811,7 @@ impl JsonRpcMultiClient for ElectrumClient {
     }
 }
 
+#[cfg_attr(test, mockable)]
 impl ElectrumClient {
     /// https://electrumx.readthedocs.io/en/latest/protocol-methods.html#server-ping
     pub fn server_ping(&self) -> RpcRes<()> { rpc_func!(self, "server.ping") }
@@ -2010,9 +2011,12 @@ impl ElectrumClient {
     // get_tx_height_from_storage is always preferred to be used instead of this, but if there is no headers in storage (storing headers is not enabled)
     // this function can be used instead
     async fn get_tx_height_from_rpc(&self, tx: &UtxoTx) -> Result<u64, GetTxHeightError> {
+        // Refactor scripthash_get_history to avoid `capturing dynamic environment in a fn item" when using mockable
+        // attribute
+        let scripthash_get_history = |s: String| async move { self.scripthash_get_history(s.as_str()).compat().await };
         for output in tx.outputs.clone() {
             let script_pubkey_str = hex::encode(electrum_script_hash(&output.script_pubkey));
-            if let Ok(history) = self.scripthash_get_history(script_pubkey_str.as_str()).compat().await {
+            if let Ok(history) = scripthash_get_history(script_pubkey_str.to_string()).await {
                 if let Some(item) = history
                     .into_iter()
                     .find(|item| item.tx_hash.reversed() == H256Json(*tx.hash()) && item.height > 0)

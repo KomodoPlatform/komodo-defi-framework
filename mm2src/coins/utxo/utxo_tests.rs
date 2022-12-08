@@ -13,8 +13,7 @@ use crate::utxo::rpc_clients::{BlockHashOrHeight, ElectrumBalance, ElectrumClien
                                GetAddressInfoRes, ListSinceBlockRes, NativeClient, NativeClientImpl, NativeUnspent,
                                NetworkInfo, UtxoRpcClientOps, ValidateAddressRes, VerboseBlock};
 use crate::utxo::spv::SimplePaymentVerification;
-use crate::utxo::utxo_block_header_storage::{block_header_storage_for_tests::BlockHeaderStorageForTests,
-                                             BlockHeaderStorage, SqliteBlockHeadersStorage};
+use crate::utxo::utxo_block_header_storage::{BlockHeaderStorage, SqliteBlockHeadersStorage};
 use crate::utxo::utxo_builder::{UtxoArcBuilder, UtxoCoinBuilder, UtxoCoinBuilderCommonOps};
 use crate::utxo::utxo_common::UtxoTxBuilder;
 use crate::utxo::utxo_common_tests::{self, utxo_coin_fields_for_test, utxo_coin_from_fields, TEST_COIN_DECIMALS,
@@ -34,9 +33,10 @@ use futures::future::join_all;
 use futures::TryFutureExt;
 use mm2_core::mm_ctx::MmCtxBuilder;
 use mm2_number::bigdecimal::{BigDecimal, Signed};
-use mm2_test_helpers::for_tests::{MORTY_ELECTRUM_ADDRS, RICK_ELECTRUM_ADDRS};
+use mm2_test_helpers::for_tests::{mm_ctx_with_custom_db, MORTY_ELECTRUM_ADDRS, RICK_ELECTRUM_ADDRS};
 use mocktopus::mocking::*;
 use rpc::v1::types::H256 as H256Json;
+use serde_json::Value;
 use serialization::{deserialize, CoinVariant};
 use spv_validation::storage::BlockHeaderStorageOps;
 use std::convert::TryFrom;
@@ -4271,50 +4271,44 @@ fn test_block_header_utxo_loop() {
     use crate::utxo::utxo_builder::{block_header_utxo_loop, BlockHeaderUtxoLoopExtraArgs};
     use futures::future::{Either, FutureExt};
 
-    static mut CURRENT_BLOCK_COUNT: u64 = 150;
+    static mut CURRENT_BLOCK_COUNT: u64 = 13;
 
     ElectrumClient::get_block_count
         .mock_safe(move |_| MockResult::Return(Box::new(futures01::future::ok(unsafe { CURRENT_BLOCK_COUNT }))));
+    let expected_steps: Arc<Mutex<Vec<(u64, u64)>>> = Arc::new(Mutex::new(vec![]));
+    let expected_steps_to_move = expected_steps.clone();
+
+    ElectrumClient::retrieve_headers.mock_safe(move |this, from, count| {
+        let (expected_from, expected_count) = expected_steps_to_move.lock().unwrap().remove(0);
+        assert_eq!(from, expected_from);
+        assert_eq!(count, expected_count);
+        MockResult::Continue((this, from, count))
+    });
 
     BlockHeaderUtxoLoopExtraArgs::default.mock_safe(move || {
         MockResult::Return(BlockHeaderUtxoLoopExtraArgs {
-            chunk_size: 100,
+            chunk_size: 4,
             error_sleep: 5.,
             success_sleep: 1.,
         })
     });
 
-    let block_header_storage = BlockHeaderStorageForTests::new(TEST_COIN_NAME.to_string());
-    BlockHeaderStorage::new_from_ctx.mock_safe(move |_, _| {
-        MockResult::Return(Ok(BlockHeaderStorage {
-            inner: Box::new(block_header_storage.clone()),
-        }))
-    });
-
-    let ctx = MmCtxBuilder::new().into_mm_arc();
+    let ctx = mm_ctx_with_custom_db();
     let priv_key_policy = PrivKeyBuildPolicy::IguanaPrivKey(&[1u8; 32]);
-
-    let mut args = ElectrumBuilderArgs::default();
-    args.collect_metrics = false;
-    args.spawn_ping = false;
-
-    let servers: Vec<_> = [
-        "electrumx1.cointest.com:50001",
-        "electrumx2.cointest.com:50001",
-        "electrumx3.cointest.com:50001",
-    ]
-    .iter()
-    .map(|server| json!({ "url": server,"disable_cert_verification":true }))
-    .collect();
-    let servers = servers.into_iter().map(|s| json::from_value(s).unwrap()).collect();
-    let conf = json!({"coin":"WHIVE","asset":"WHIVE","rpcport":8923,"enable_spv_proof": false});
+    let servers: Vec<_> = RICK_ELECTRUM_ADDRS
+        .iter()
+        .map(|server| json!({ "url": server }))
+        .collect();
+    let servers: Vec<Value> = servers.into_iter().map(|s| json::from_value(s).unwrap()).collect();
     let req = json!({ "method": "electrum", "servers": servers });
-
     let params = UtxoActivationParams::from_legacy_req(&req).unwrap();
-    let builder = UtxoArcBuilder::new(&ctx, "WHIVE", &conf, &params, priv_key_policy, UtxoStandardCoin::from);
-    let client = block_on(builder.electrum_client(AbortableQueue::default(), args, servers)).unwrap();
+    let conf = json!({"coin":"RICK", "asset":"RICK", "rpcport":8923, "enable_spv_proof": false});
+    let builder = UtxoArcBuilder::new(&ctx, "RICK", &conf, &params, priv_key_policy, UtxoStandardCoin::from);
     let arc: UtxoArc = block_on(builder.build_utxo_fields()).unwrap().into();
-
+    let client = match &arc.rpc_client {
+        UtxoRpcClientEnum::Electrum(electrum) => electrum.clone(),
+        UtxoRpcClientEnum::Native(_) => unreachable!(),
+    };
     let (sync_status_notifier, _) = channel::<UtxoSyncStatus>(1);
     let loop_handle = UtxoSyncStatusLoopHandle::new(sync_status_notifier);
 
@@ -4331,21 +4325,33 @@ fn test_block_header_utxo_loop() {
     };
 
     let test_fut = async move {
+        *expected_steps.lock().unwrap() = vec![(1, 4), (5, 8), (9, 12), (13, 13)];
+        unsafe { CURRENT_BLOCK_COUNT = 13 }
+        Timer::sleep(2.).await;
+        let get_headers_count = client.block_headers_storage().get_last_block_height().await.unwrap();
+        assert_eq!(get_headers_count, 13);
+        assert!(expected_steps.lock().unwrap().is_empty());
+
+        *expected_steps.lock().unwrap() = vec![(14, 17)];
+        unsafe { CURRENT_BLOCK_COUNT = 17 }
+        Timer::sleep(2.).await;
+        let get_headers_count = client.block_headers_storage().get_last_block_height().await.unwrap();
+        assert_eq!(17, get_headers_count);
+        assert!(expected_steps.lock().unwrap().is_empty());
+
+        unsafe { CURRENT_BLOCK_COUNT = 18 }
+        *expected_steps.lock().unwrap() = vec![(18, 18)];
+        Timer::sleep(2.).await;
+        let get_headers_count = client.block_headers_storage().get_last_block_height().await.unwrap();
+        assert_eq!(18, get_headers_count);
+        assert!(expected_steps.lock().unwrap().is_empty());
+
+        unsafe { CURRENT_BLOCK_COUNT = 25 }
+        *expected_steps.lock().unwrap() = vec![(19, 22), (23, 25)];
         Timer::sleep(3.).await;
         let get_headers_count = client.block_headers_storage().get_last_block_height().await.unwrap();
-        assert_eq!(150, get_headers_count);
-
-        unsafe { CURRENT_BLOCK_COUNT = 250 }
-
-        Timer::sleep(3.).await;
-        let get_headers_count = client.block_headers_storage().get_last_block_height().await.unwrap();
-        assert_eq!(250, get_headers_count);
-
-        unsafe { CURRENT_BLOCK_COUNT = 350 }
-
-        Timer::sleep(3.).await;
-        let get_headers_count = client.block_headers_storage().get_last_block_height().await.unwrap();
-        assert_eq!(350, get_headers_count);
+        assert_eq!(25, get_headers_count);
+        assert!(expected_steps.lock().unwrap().is_empty());
     };
 
     if let Either::Left(_) = block_on(futures::future::select(loop_fut.boxed(), test_fut.boxed())) {
