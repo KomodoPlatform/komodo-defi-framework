@@ -1,10 +1,8 @@
-#[cfg(target_arch = "wasm32")]
-pub mod indexedb_block_header_storage;
+#[cfg(target_arch = "wasm32")] mod indexedb_block_header_storage;
 #[cfg(target_arch = "wasm32")]
 pub use indexedb_block_header_storage::IndexedDBBlockHeadersStorage;
 
-#[cfg(not(target_arch = "wasm32"))]
-pub mod sql_block_header_storage;
+#[cfg(not(target_arch = "wasm32"))] mod sql_block_header_storage;
 #[cfg(not(target_arch = "wasm32"))]
 pub use sql_block_header_storage::SqliteBlockHeadersStorage;
 
