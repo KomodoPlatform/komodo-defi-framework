@@ -4261,6 +4261,7 @@ fn test_utxo_validate_valid_and_invalid_pubkey() {
 fn test_block_header_utxo_loop() {
     use crate::utxo::utxo_builder::{block_header_utxo_loop, BlockHeaderUtxoLoopExtraArgs};
     use futures::future::{Either, FutureExt};
+    use keys::hash::H256 as H256Json;
 
     static mut CURRENT_BLOCK_COUNT: u64 = 13;
 
@@ -4285,7 +4286,7 @@ fn test_block_header_utxo_loop() {
     });
 
     let ctx = mm_ctx_with_custom_db();
-    let priv_key_policy = PrivKeyBuildPolicy::IguanaPrivKey(&[1u8; 32]);
+    let priv_key_policy = PrivKeyBuildPolicy::IguanaPrivKey(IguanaPrivKey::from(H256Json::from([1u8; 32])));
     let servers: Vec<_> = RICK_ELECTRUM_ADDRS
         .iter()
         .map(|server| json!({ "url": server }))
