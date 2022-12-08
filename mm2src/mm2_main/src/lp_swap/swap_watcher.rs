@@ -2,9 +2,10 @@ use super::{broadcast_p2p_tx_msg, lp_coinfind, tx_helper_topic, wait_for_taker_p
             SwapsContext, TransactionIdentifier, WAIT_CONFIRM_INTERVAL};
 use crate::mm2::MmError;
 use async_trait::async_trait;
-use coins::{CanRefundHtlc, FoundSwapTxSpend, MmCoinEnum, WatcherSearchForSwapTxSpendInput, WatcherValidatePaymentInput};
+use coins::{CanRefundHtlc, MmCoinEnum, WatcherValidatePaymentInput};
 use common::executor::{AbortSettings, SpawnAbortable, Timer};
 use common::log::{error, info};
+use common::now_ms;
 use common::state_machine::prelude::*;
 use futures::compat::Future01CompatExt;
 use mm2_core::mm_ctx::MmArc;
@@ -14,8 +15,6 @@ use rpc::v1::types::Bytes as BytesJson;
 use std::cmp::min;
 use std::sync::Arc;
 use uuid::Uuid;
-
-#[cfg(not(test))] use common::now_ms;
 
 pub const WATCHER_PREFIX: TopicPrefix = "swpwtchr";
 const TAKER_SWAP_CONFIRMATIONS: u64 = 1;
@@ -85,8 +84,6 @@ enum StopReason {
 enum WatcherSuccess {
     MakerPaymentSpent,
     TakerPaymentRefunded,
-    TakerPaymentAlreadySpent,
-    TakerPaymentAlreadyRefunded,
 }
 
 #[derive(Debug)]
@@ -94,7 +91,6 @@ enum WatcherError {
     InvalidValidatePublicKey(String),
     InvalidTakerFee(String),
     TakerPaymentNotConfirmed(String),
-    TakerPaymentSearchForSwapFailed(String),
     InvalidTakerPayment(String),
     UnableToExtractSecret(String),
     MakerPaymentSpendFailed(String),
@@ -172,46 +168,12 @@ impl State for ValidateTakerFee {
     }
 }
 
-// TODO: Do this check periodically while waiting for taker payment spend
 #[async_trait]
 impl State for ValidateTakerPayment {
     type Ctx = WatcherContext;
     type Result = ();
 
     async fn on_changed(self: Box<Self>, watcher_ctx: &mut WatcherContext) -> StateResult<Self::Ctx, Self::Result> {
-        let search_input = WatcherSearchForSwapTxSpendInput {
-            time_lock: watcher_ctx.data.taker_payment_lock as u32,
-            taker_pub: &watcher_ctx.data.taker_pub,
-            maker_pub: &watcher_ctx.data.maker_pub,
-            secret_hash: &watcher_ctx.data.secret_hash,
-            tx: &watcher_ctx.data.taker_payment_hex,
-            search_from_block: watcher_ctx.data.taker_coin_start_block,
-            swap_contract_address: &None,
-        };
-
-        match watcher_ctx
-            .taker_coin
-            .watcher_search_for_swap_tx_spend(search_input)
-            .await
-        {
-            Ok(Some(FoundSwapTxSpend::Spent(_))) => {
-                return Self::change_state(Stopped::from_reason(StopReason::Finished(
-                    WatcherSuccess::TakerPaymentAlreadySpent,
-                )))
-            },
-            Ok(Some(FoundSwapTxSpend::Refunded(_))) => {
-                return Self::change_state(Stopped::from_reason(StopReason::Finished(
-                    WatcherSuccess::TakerPaymentAlreadyRefunded,
-                )))
-            },
-            Err(err) => {
-                return Self::change_state(Stopped::from_reason(StopReason::Error(
-                    WatcherError::TakerPaymentSearchForSwapFailed(err).into(),
-                )))
-            },
-            Ok(None) => (),
-        }
-
         let wait_taker_payment =
             wait_for_taker_payment_conf_until(watcher_ctx.data.swap_started_at, watcher_ctx.data.lock_duration);
         let confirmations = min(watcher_ctx.data.taker_payment_confirmations, TAKER_SWAP_CONFIRMATIONS);
@@ -264,8 +226,7 @@ impl State for WaitForTakerPaymentSpend {
     type Result = ();
 
     async fn on_changed(self: Box<Self>, watcher_ctx: &mut WatcherContext) -> StateResult<Self::Ctx, Self::Result> {
-        #[cfg(not(test))]
-        {
+        if std::env::var("SWAP_WATCHER_SKIP_WAITING").is_err() {
             // Sleep for half the locktime to allow the taker to spend the maker payment first
             let now = now_ms() / 1000;
             let wait_for_taker_until =

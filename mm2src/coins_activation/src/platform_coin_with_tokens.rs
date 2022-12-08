@@ -2,17 +2,16 @@ use crate::prelude::*;
 use async_trait::async_trait;
 use coins::my_tx_history_v2::TxHistoryStorage;
 use coins::tx_history_storage::{CreateTxHistoryStorageError, TxHistoryStorageBuilder};
-use coins::{lp_coinfind, CoinProtocol, CoinsContext, MmCoinEnum};
+use coins::{lp_coinfind, CoinProtocol, CoinsContext, MmCoinEnum, PrivKeyPolicyNotAllowed};
 use common::{log, HttpStatusCode, StatusCode};
+use crypto::CryptoCtxError;
 use derive_more::Display;
 use mm2_core::mm_ctx::MmArc;
 use mm2_err_handle::prelude::*;
-use mm2_metrics::MetricsArc;
 use mm2_number::BigDecimal;
 use ser_error_derive::SerializeErrorType;
 use serde_derive::{Deserialize, Serialize};
 use serde_json::Value as Json;
-use std::convert::Infallible;
 
 #[derive(Clone, Debug, Deserialize)]
 pub struct TokenActivationRequest<Req> {
@@ -22,7 +21,7 @@ pub struct TokenActivationRequest<Req> {
 }
 
 pub trait TokenOf: Into<MmCoinEnum> {
-    type PlatformCoin: PlatformWithTokensActivationOps + RegisterTokenInfo<Self>;
+    type PlatformCoin: TryPlatformCoinFromMmCoinEnum + PlatformWithTokensActivationOps + RegisterTokenInfo<Self> + Clone;
 }
 
 pub struct TokenActivationParams<Req, Protocol> {
@@ -87,12 +86,8 @@ impl From<CoinConfWithProtocolError> for InitTokensAsMmCoinsError {
     }
 }
 
-pub trait RegisterTokenInfo<T: TokenOf<PlatformCoin = Self>> {
+pub trait RegisterTokenInfo<T: TokenOf> {
     fn register_token_info(&self, token: &T);
-}
-
-impl From<std::convert::Infallible> for InitTokensAsMmCoinsError {
-    fn from(e: Infallible) -> Self { match e {} }
 }
 
 #[async_trait]
@@ -149,7 +144,6 @@ pub trait PlatformWithTokensActivationOps: Into<MmCoinEnum> {
         coin_conf: Json,
         activation_request: Self::ActivationRequest,
         protocol_conf: Self::PlatformProtocolInfo,
-        priv_key: &[u8],
     ) -> Result<Self, MmError<Self::ActivationError>>;
 
     fn token_initializers(
@@ -160,7 +154,7 @@ pub trait PlatformWithTokensActivationOps: Into<MmCoinEnum> {
 
     fn start_history_background_fetching(
         &self,
-        metrics: MetricsArc,
+        ctx: MmArc,
         storage: impl TxHistoryStorage,
         initial_balance: BigDecimal,
     );
@@ -207,9 +201,12 @@ pub enum EnablePlatformCoinWithTokensError {
         error: String,
     },
     #[display(fmt = "Private key is not allowed: {}", _0)]
-    PrivKeyNotAllowed(String),
+    PrivKeyPolicyNotAllowed(PrivKeyPolicyNotAllowed),
     #[display(fmt = "Unexpected derivation method: {}", _0)]
     UnexpectedDerivationMethod(String),
+    #[cfg_attr(not(target_arch = "wasm32"), allow(dead_code))]
+    #[display(fmt = "Preparation required: {}", _0)]
+    PreparationRequired(String),
     Transport(String),
     AtLeastOneNodeRequired(String),
     InvalidPayload(String),
@@ -261,13 +258,17 @@ impl From<CreateTxHistoryStorageError> for EnablePlatformCoinWithTokensError {
     }
 }
 
+impl From<CryptoCtxError> for EnablePlatformCoinWithTokensError {
+    fn from(e: CryptoCtxError) -> Self { EnablePlatformCoinWithTokensError::Internal(e.to_string()) }
+}
+
 impl HttpStatusCode for EnablePlatformCoinWithTokensError {
     fn status_code(&self) -> StatusCode {
         match self {
             EnablePlatformCoinWithTokensError::CoinProtocolParseError { .. }
             | EnablePlatformCoinWithTokensError::TokenProtocolParseError { .. }
             | EnablePlatformCoinWithTokensError::PlatformCoinCreationError { .. }
-            | EnablePlatformCoinWithTokensError::PrivKeyNotAllowed(_)
+            | EnablePlatformCoinWithTokensError::PrivKeyPolicyNotAllowed(_)
             | EnablePlatformCoinWithTokensError::UnexpectedDerivationMethod(_)
             | EnablePlatformCoinWithTokensError::Transport(_)
             | EnablePlatformCoinWithTokensError::Internal(_) => StatusCode::INTERNAL_SERVER_ERROR,
@@ -277,6 +278,7 @@ impl HttpStatusCode for EnablePlatformCoinWithTokensError {
             | EnablePlatformCoinWithTokensError::UnexpectedPlatformProtocol { .. }
             | EnablePlatformCoinWithTokensError::InvalidPayload { .. }
             | EnablePlatformCoinWithTokensError::AtLeastOneNodeRequired(_)
+            | EnablePlatformCoinWithTokensError::PreparationRequired(_)
             | EnablePlatformCoinWithTokensError::UnexpectedTokenProtocol { .. } => StatusCode::BAD_REQUEST,
         }
     }
@@ -299,15 +301,12 @@ where
 
     let (platform_conf, platform_protocol) = coin_conf_with_protocol(&ctx, &req.ticker)?;
 
-    let priv_key = &*ctx.secp256k1_key_pair().private().secret;
-
     let platform_coin = Platform::enable_platform_coin(
         ctx.clone(),
         req.ticker.clone(),
         platform_conf,
         req.request.clone(),
         platform_protocol,
-        priv_key,
     )
     .await?;
     let mut mm_tokens = Vec::new();
@@ -321,7 +320,7 @@ where
 
     if req.request.tx_history() {
         platform_coin.start_history_background_fetching(
-            ctx.metrics.clone(),
+            ctx.clone(),
             TxHistoryStorageBuilder::new(&ctx).build()?,
             activation_result.get_platform_balance(),
         );

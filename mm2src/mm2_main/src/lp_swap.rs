@@ -70,7 +70,7 @@ use derive_more::Display;
 use http::Response;
 use mm2_core::mm_ctx::{from_ctx, MmArc};
 use mm2_err_handle::prelude::*;
-use mm2_libp2p::{decode_signed, encode_and_sign, pub_sub_topic, TopicPrefix};
+use mm2_libp2p::{decode_signed, encode_and_sign, pub_sub_topic, PeerId, TopicPrefix};
 use mm2_number::{BigDecimal, BigRational, MmNumber};
 use parking_lot::Mutex as PaMutex;
 use rpc::v1::types::{Bytes as BytesJson, H256 as H256Json};
@@ -103,6 +103,7 @@ use std::sync::atomic::{AtomicU64, Ordering};
 mod swap_wasm_db;
 
 pub use check_balance::{check_other_coin_balance_for_swap, CheckBalanceError};
+use crypto::CryptoCtx;
 use keys::KeyPair;
 use maker_swap::MakerSwapEvent;
 pub use maker_swap::{calc_max_maker_vol, check_balance_for_maker_swap, maker_swap_trade_preimage, run_maker_swap,
@@ -162,6 +163,38 @@ impl SwapMsgStore {
     }
 }
 
+/// Returns key-pair for signing P2P messages and an optional `PeerId` if it should be used forcibly
+/// instead of local peer ID.
+///
+/// # Panic
+///
+/// This function panics if `CryptoCtx` hasn't been initialized yet.
+pub fn p2p_keypair_and_peer_id_to_broadcast(ctx: &MmArc, p2p_privkey: Option<&KeyPair>) -> (KeyPair, Option<PeerId>) {
+    match p2p_privkey {
+        Some(keypair) => (*keypair, Some(keypair.libp2p_peer_id())),
+        None => {
+            let crypto_ctx = CryptoCtx::from_ctx(ctx).expect("CryptoCtx must be initialized already");
+            (*crypto_ctx.mm2_internal_key_pair(), None)
+        },
+    }
+}
+
+/// Returns private key for signing P2P messages and an optional `PeerId` if it should be used forcibly
+/// instead of local peer ID.
+///
+/// # Panic
+///
+/// This function panics if `CryptoCtx` hasn't been initialized yet.
+pub fn p2p_private_and_peer_id_to_broadcast(ctx: &MmArc, p2p_privkey: Option<&KeyPair>) -> ([u8; 32], Option<PeerId>) {
+    match p2p_privkey {
+        Some(keypair) => (keypair.private_bytes(), Some(keypair.libp2p_peer_id())),
+        None => {
+            let crypto_ctx = CryptoCtx::from_ctx(ctx).expect("CryptoCtx must be initialized already");
+            (crypto_ctx.mm2_internal_privkey_secret().take(), None)
+        },
+    }
+}
+
 /// Spawns the loop that broadcasts message every `interval` seconds returning the AbortOnDropHandle
 /// to stop it
 pub fn broadcast_swap_message_every<T: 'static + Serialize + Clone + Send>(
@@ -182,10 +215,7 @@ pub fn broadcast_swap_message_every<T: 'static + Serialize + Clone + Send>(
 
 /// Broadcast the swap message once
 pub fn broadcast_swap_message<T: Serialize>(ctx: &MmArc, topic: String, msg: T, p2p_privkey: &Option<KeyPair>) {
-    let (p2p_private, from) = match p2p_privkey {
-        Some(keypair) => (keypair.private_bytes(), Some(keypair.libp2p_peer_id())),
-        None => (ctx.secp256k1_key_pair().private().secret.take(), None),
-    };
+    let (p2p_private, from) = p2p_private_and_peer_id_to_broadcast(ctx, p2p_privkey.as_ref());
     let encoded_msg = encode_and_sign(&msg, &p2p_private).unwrap();
     broadcast_p2p_msg(ctx, vec![topic], encoded_msg, from);
 }
@@ -196,11 +226,7 @@ pub fn broadcast_p2p_tx_msg(ctx: &MmArc, topic: String, msg: &TransactionEnum, p
         return;
     }
 
-    let (p2p_private, from) = match p2p_privkey {
-        Some(keypair) => (keypair.private_bytes(), Some(keypair.libp2p_peer_id())),
-        None => (ctx.secp256k1_key_pair().private().secret.take(), None),
-    };
-
+    let (p2p_private, from) = p2p_private_and_peer_id_to_broadcast(ctx, p2p_privkey.as_ref());
     let encoded_msg = encode_and_sign(&msg.tx_hex(), &p2p_private).unwrap();
     broadcast_p2p_msg(ctx, vec![topic], encoded_msg, from);
 }
@@ -315,13 +341,19 @@ pub fn get_payment_locktime() -> u64 {
 }
 
 #[inline]
+pub fn wait_for_taker_payment_conf_duration(locktime: u64) -> u64 { (locktime * 4) / 5 }
+
+#[inline]
 pub fn wait_for_taker_payment_conf_until(swap_started_at: u64, locktime: u64) -> u64 {
-    swap_started_at + (locktime * 4) / 5
+    swap_started_at + wait_for_taker_payment_conf_duration(locktime)
 }
 
 #[inline]
+pub fn wait_for_maker_payment_conf_duration(locktime: u64) -> u64 { (locktime * 2) / 5 }
+
+#[inline]
 pub fn wait_for_maker_payment_conf_until(swap_started_at: u64, locktime: u64) -> u64 {
-    swap_started_at + (locktime * 2) / 5
+    swap_started_at + wait_for_maker_payment_conf_duration(locktime)
 }
 
 const _SWAP_DEFAULT_NUM_CONFIRMS: u32 = 1;
@@ -465,13 +497,13 @@ fn get_locked_amount_by_other_swaps(ctx: &MmArc, except_uuid: &Uuid, coin: &str)
         })
 }
 
-pub fn active_swaps_using_coin(ctx: &MmArc, coin: &str) -> Result<Vec<Uuid>, String> {
+pub fn active_swaps_using_coins(ctx: &MmArc, coins: &HashSet<String>) -> Result<Vec<Uuid>, String> {
     let swap_ctx = try_s!(SwapsContext::from_ctx(ctx));
     let swaps = try_s!(swap_ctx.running_swaps.lock());
     let mut uuids = vec![];
     for swap in swaps.iter() {
         if let Some(swap) = swap.upgrade() {
-            if swap.maker_coin() == coin || swap.taker_coin() == coin {
+            if coins.contains(&swap.maker_coin().to_string()) || coins.contains(&swap.taker_coin().to_string()) {
                 uuids.push(*swap.uuid())
             }
         }
@@ -530,7 +562,10 @@ pub fn lp_atomic_locktime_v2(
     my_conf_settings: &SwapConfirmationsSettings,
     other_conf_settings: &SwapConfirmationsSettings,
 ) -> u64 {
-    if maker_coin == "BTC"
+    if taker_coin.contains("-lightning") {
+        // A good value for lightning taker locktime is about 24 hours to find a good 3 hop or less path for the payment
+        get_payment_locktime() * 12
+    } else if maker_coin == "BTC"
         || taker_coin == "BTC"
         || coin_with_4x_locktime(maker_coin)
         || coin_with_4x_locktime(taker_coin)
@@ -557,6 +592,7 @@ pub fn lp_atomic_locktime(maker_coin: &str, taker_coin: &str, version: AtomicLoc
 }
 
 fn dex_fee_threshold(min_tx_amount: MmNumber) -> MmNumber {
+    // Todo: This should be reduced for lightning swaps.
     // 0.0001
     let min_fee = MmNumber::from((1, 10000));
     if min_fee < min_tx_amount {
@@ -567,7 +603,7 @@ fn dex_fee_threshold(min_tx_amount: MmNumber) -> MmNumber {
 }
 
 fn dex_fee_rate(base: &str, rel: &str) -> MmNumber {
-    let fee_discount_tickers: &[&str] = if cfg!(test) && var("MYCOIN_FEE_DISCOUNT").is_ok() {
+    let fee_discount_tickers: &[&str] = if var("MYCOIN_FEE_DISCOUNT").is_ok() {
         &["KMD", "MYCOIN"]
     } else {
         &["KMD"]
@@ -1035,7 +1071,7 @@ pub async fn my_recent_swaps_rpc(ctx: MmArc, req: Json) -> Result<Response<Vec<u
                 let swap_json = json::to_value(MySwapStatusResponse::from(swap)).unwrap();
                 swaps.push(swap_json)
             },
-            Ok(None) => error!("No such swap with the uuid '{}'", uuid),
+            Ok(None) => warn!("No such swap with the uuid '{}'", uuid),
             Err(e) => error!("Error loading a swap with the uuid '{}': {}", uuid, e),
         }
     }
@@ -1304,7 +1340,6 @@ mod lp_swap_tests {
     use coins::MarketCoinOps;
     use coins::PrivKeyActivationPolicy;
     use common::block_on;
-    use crypto::privkey::key_pair_from_seed;
     use mm2_core::mm_ctx::MmCtxBuilder;
     use mm2_test_helpers::for_tests::{morty_conf, rick_conf, MORTY_ELECTRUM_ADDRS, RICK_ELECTRUM_ADDRS};
 
@@ -1681,7 +1716,7 @@ mod lp_swap_tests {
             address_format: None,
             gap_limit: None,
             enable_params: Default::default(),
-            priv_key_policy: PrivKeyActivationPolicy::IguanaPrivKey,
+            priv_key_policy: PrivKeyActivationPolicy::ContextPrivKey,
             check_utxo_maturity: None,
         }
     }
@@ -1693,6 +1728,10 @@ mod lp_swap_tests {
         let maker_fail_at = std::env::var("MAKER_FAIL_AT").map(maker_swap::FailAt::from).ok();
         let taker_passphrase = std::env::var("ALICE_PASSPHRASE").expect("ALICE_PASSPHRASE env must be set");
         let taker_fail_at = std::env::var("TAKER_FAIL_AT").map(taker_swap::FailAt::from).ok();
+        let lock_duration = match std::env::var("LOCK_DURATION") {
+            Ok(maybe_num) => maybe_num.parse().expect("LOCK_DURATION must be a number of seconds"),
+            Err(_) => 30,
+        };
 
         if maker_fail_at.is_none() && taker_fail_at.is_none() {
             panic!("At least one of MAKER_FAIL_AT/TAKER_FAIL_AT must be provided");
@@ -1705,13 +1744,14 @@ mod lp_swap_tests {
             "i_am_seed": true,
         });
 
-        let maker_key_pair = key_pair_from_seed(&maker_passphrase).unwrap();
-        let maker_ctx = MmCtxBuilder::default()
-            .with_secp256k1_key_pair(maker_key_pair.clone())
-            .with_conf(maker_ctx_conf)
-            .into_mm_arc();
+        let maker_ctx = MmCtxBuilder::default().with_conf(maker_ctx_conf).into_mm_arc();
+        let maker_key_pair = *CryptoCtx::init_with_iguana_passphrase(maker_ctx.clone(), &maker_passphrase)
+            .unwrap()
+            .mm2_internal_key_pair();
+
         fix_directories(&maker_ctx).unwrap();
         block_on(init_p2p(maker_ctx.clone())).unwrap();
+        maker_ctx.init_sqlite_connection().unwrap();
 
         let rick_activation_params = utxo_activation_params(RICK_ELECTRUM_ADDRS);
         let morty_activation_params = utxo_activation_params(MORTY_ELECTRUM_ADDRS);
@@ -1721,7 +1761,7 @@ mod lp_swap_tests {
             "RICK",
             &rick_conf(),
             &rick_activation_params,
-            maker_key_pair.private_ref(),
+            maker_key_pair.private().secret,
         ))
         .unwrap();
 
@@ -1732,30 +1772,31 @@ mod lp_swap_tests {
             "MORTY",
             &morty_conf(),
             &morty_activation_params,
-            maker_key_pair.private_ref(),
+            maker_key_pair.private().secret,
         ))
         .unwrap();
-
-        let taker_key_pair = key_pair_from_seed(&taker_passphrase).unwrap();
 
         let taker_ctx_conf = json!({
             "netid": 1234,
             "p2p_in_memory": true,
             "seednodes": vec!["/memory/777"]
         });
-        let taker_ctx = MmCtxBuilder::default()
-            .with_secp256k1_key_pair(taker_key_pair.clone())
-            .with_conf(taker_ctx_conf)
-            .into_mm_arc();
+
+        let taker_ctx = MmCtxBuilder::default().with_conf(taker_ctx_conf).into_mm_arc();
+        let taker_key_pair = *CryptoCtx::init_with_iguana_passphrase(taker_ctx.clone(), &taker_passphrase)
+            .unwrap()
+            .mm2_internal_key_pair();
+
         fix_directories(&taker_ctx).unwrap();
         block_on(init_p2p(taker_ctx.clone())).unwrap();
+        taker_ctx.init_sqlite_connection().unwrap();
 
         let rick_taker = block_on(utxo_standard_coin_with_priv_key(
             &taker_ctx,
             "RICK",
             &rick_conf(),
             &rick_activation_params,
-            taker_key_pair.private_ref(),
+            taker_key_pair.private().secret,
         ))
         .unwrap();
 
@@ -1764,7 +1805,7 @@ mod lp_swap_tests {
             "MORTY",
             &morty_conf(),
             &morty_activation_params,
-            taker_key_pair.private_ref(),
+            taker_key_pair.private().secret,
         ))
         .unwrap();
 
@@ -1779,7 +1820,6 @@ mod lp_swap_tests {
             taker_coin_confs: 0,
             taker_coin_nota: false,
         };
-        let payment_locktime = 30;
 
         let mut maker_swap = MakerSwap::new(
             maker_ctx.clone(),
@@ -1792,7 +1832,7 @@ mod lp_swap_tests {
             conf_settings,
             rick_maker.into(),
             morty_maker.into(),
-            payment_locktime,
+            lock_duration,
             None,
             Default::default(),
         );
@@ -1810,7 +1850,7 @@ mod lp_swap_tests {
             conf_settings,
             rick_taker.into(),
             morty_taker.into(),
-            payment_locktime,
+            lock_duration,
             None,
         );
 

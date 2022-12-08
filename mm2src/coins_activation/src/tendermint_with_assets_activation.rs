@@ -5,14 +5,15 @@ use crate::platform_coin_with_tokens::{EnablePlatformCoinWithTokensError, GetPla
 use crate::prelude::*;
 use async_trait::async_trait;
 use coins::my_tx_history_v2::TxHistoryStorage;
-use coins::tendermint::{TendermintCoin, TendermintInitError, TendermintInitErrorKind, TendermintProtocolInfo,
-                        TendermintToken, TendermintTokenActivationParams, TendermintTokenInitError,
-                        TendermintTokenProtocolInfo};
-use coins::{CoinBalance, CoinProtocol, MarketCoinOps};
+use coins::tendermint::tendermint_tx_history_v2::tendermint_history_loop;
+use coins::tendermint::{TendermintCoin, TendermintCommons, TendermintConf, TendermintInitError,
+                        TendermintInitErrorKind, TendermintProtocolInfo, TendermintToken,
+                        TendermintTokenActivationParams, TendermintTokenInitError, TendermintTokenProtocolInfo};
+use coins::{CoinBalance, CoinProtocol, MarketCoinOps, MmCoin, PrivKeyBuildPolicy};
+use common::executor::{AbortSettings, SpawnAbortable};
 use common::Future01CompatExt;
 use mm2_core::mm_ctx::MmArc;
 use mm2_err_handle::prelude::*;
-use mm2_metrics::MetricsArc;
 use mm2_number::BigDecimal;
 use serde::{Deserialize, Serialize};
 use serde_json::Value as Json;
@@ -32,10 +33,12 @@ impl RegisterTokenInfo<TendermintToken> for TendermintCoin {
 pub struct TendermintActivationParams {
     rpc_urls: Vec<String>,
     pub tokens_params: Vec<TokenActivationRequest<TendermintTokenActivationParams>>,
+    #[serde(default)]
+    tx_history: bool,
 }
 
 impl TxHistory for TendermintActivationParams {
-    fn tx_history(&self) -> bool { false }
+    fn tx_history(&self) -> bool { self.tx_history }
 }
 
 struct TendermintTokenInitializer {
@@ -107,7 +110,9 @@ impl From<TendermintTokenInitializerErr> for InitTokensAsMmCoinsError {
                 ticker: err.ticker,
                 error,
             },
-            TendermintTokenInitError::MyAddressError(error) => InitTokensAsMmCoinsError::Internal(error),
+            TendermintTokenInitError::MyAddressError(error) | TendermintTokenInitError::Internal(error) => {
+                InitTokensAsMmCoinsError::Internal(error)
+            },
             TendermintTokenInitError::CouldNotFetchBalance(error) => {
                 InitTokensAsMmCoinsError::CouldNotFetchBalance(error)
             },
@@ -154,25 +159,22 @@ impl PlatformWithTokensActivationOps for TendermintCoin {
         coin_conf: Json,
         activation_request: Self::ActivationRequest,
         protocol_conf: Self::PlatformProtocolInfo,
-        priv_key: &[u8],
     ) -> Result<Self, MmError<Self::ActivationError>> {
-        let avg_block_time = coin_conf["avg_block_time"].as_i64().unwrap_or(0);
+        let conf = TendermintConf::try_from_json(&ticker, &coin_conf)?;
 
-        // `avg_block_time` can not be less than 1 OR bigger than 255(u8::MAX)
-        if avg_block_time < 1 || avg_block_time > std::u8::MAX as i64 {
-            return MmError::err(TendermintInitError {
-                ticker,
-                kind: TendermintInitErrorKind::AvgBlockTimeMissingOrInvalid,
-            });
-        }
+        let priv_key_policy = PrivKeyBuildPolicy::detect_priv_key_policy(&ctx).mm_err(|e| TendermintInitError {
+            ticker: ticker.clone(),
+            kind: TendermintInitErrorKind::Internal(e.to_string()),
+        })?;
 
         TendermintCoin::init(
             &ctx,
             ticker,
-            avg_block_time as u8,
+            conf,
             protocol_conf,
             activation_request.rpc_urls,
-            priv_key,
+            activation_request.tx_history,
+            priv_key_policy,
         )
         .await
     }
@@ -219,9 +221,13 @@ impl PlatformWithTokensActivationOps for TendermintCoin {
 
     fn start_history_background_fetching(
         &self,
-        _metrics: MetricsArc,
-        _storage: impl TxHistoryStorage,
-        _initial_balance: BigDecimal,
+        ctx: MmArc,
+        storage: impl TxHistoryStorage,
+        initial_balance: BigDecimal,
     ) {
+        let fut = tendermint_history_loop(self.clone(), storage, ctx, initial_balance);
+
+        let settings = AbortSettings::info_on_abort(format!("tendermint_history_loop stopped for {}", self.ticker()));
+        self.spawner().spawn_with_settings(fut, settings);
     }
 }

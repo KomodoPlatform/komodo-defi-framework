@@ -1,36 +1,39 @@
 pub mod ln_conf;
 pub(crate) mod ln_db;
 pub mod ln_errors;
-mod ln_events;
+pub mod ln_events;
 mod ln_filesystem_persister;
-pub(crate) mod ln_p2p;
-mod ln_platform;
+pub mod ln_p2p;
+pub mod ln_platform;
 pub(crate) mod ln_serialization;
 mod ln_sql;
-pub(crate) mod ln_storage;
-mod ln_utils;
+pub mod ln_storage;
+pub mod ln_utils;
 
 use crate::coin_errors::MyAddressError;
-use crate::lightning::ln_utils::filter_channels;
+use crate::lightning::ln_utils::{filter_channels, pay_invoice_with_max_total_cltv_expiry_delta, PaymentError};
 use crate::utxo::rpc_clients::UtxoRpcClientEnum;
 use crate::utxo::utxo_common::{big_decimal_from_sat, big_decimal_from_sat_unsigned};
 use crate::utxo::{sat_from_big_decimal, utxo_common, BlockchainNetwork};
-use crate::{BalanceFut, CoinBalance, CoinFutSpawner, DerivationMethod, FeeApproxStage, FoundSwapTxSpend,
+use crate::{BalanceFut, CheckIfMyPaymentSentArgs, CoinBalance, CoinFutSpawner, FeeApproxStage, FoundSwapTxSpend,
             HistorySyncState, MarketCoinOps, MmCoin, NegotiateSwapContractAddrErr, PaymentInstructions,
             PaymentInstructionsErr, RawTransactionError, RawTransactionFut, RawTransactionRequest,
-            SearchForSwapTxSpendInput, SignatureError, SignatureResult, SwapOps, TradeFee, TradePreimageFut,
+            SearchForSwapTxSpendInput, SendMakerPaymentArgs, SendMakerRefundsPaymentArgs,
+            SendMakerSpendsTakerPaymentArgs, SendSpendPaymentArgs, SendTakerPaymentArgs, SendTakerRefundsPaymentArgs,
+            SendTakerSpendsMakerPaymentArgs, SignatureError, SignatureResult, SwapOps, TradeFee, TradePreimageFut,
             TradePreimageResult, TradePreimageValue, Transaction, TransactionEnum, TransactionErr, TransactionFut,
-            TxMarshalingErr, UnexpectedDerivationMethod, UtxoStandardCoin, ValidateAddressResult,
+            TxMarshalingErr, UnexpectedDerivationMethod, UtxoStandardCoin, ValidateAddressResult, ValidateFeeArgs,
             ValidateInstructionsErr, ValidateOtherPubKeyErr, ValidatePaymentError, ValidatePaymentFut,
-            ValidatePaymentInput, VerificationError, VerificationResult, WatcherOps, WatcherSearchForSwapTxSpendInput,
-            WatcherValidatePaymentInput, WithdrawError, WithdrawFut, WithdrawRequest};
+            ValidatePaymentInput, VerificationError, VerificationResult, WatcherOps, WatcherValidatePaymentInput,
+            WithdrawError, WithdrawFut, WithdrawRequest};
 use async_trait::async_trait;
 use bitcoin::bech32::ToBase32;
 use bitcoin::hashes::Hash;
 use bitcoin_hashes::sha256::Hash as Sha256;
 use bitcrypto::ChecksumType;
 use bitcrypto::{dhash256, ripemd160};
-use common::executor::{SpawnFuture, Timer};
+use common::executor::Timer;
+use common::executor::{AbortableSystem, AbortedError};
 use common::log::{info, LogOnError, LogState};
 use common::{async_blocking, get_local_duration_since_epoch, log, now_ms, PagingOptionsEnum};
 use db_common::sqlite::rusqlite::Error as SqlError;
@@ -38,25 +41,23 @@ use futures::{FutureExt, TryFutureExt};
 use futures01::Future;
 use keys::{hash::H256, CompactSignature, KeyPair, Private, Public};
 use lightning::chain::keysinterface::{KeysInterface, KeysManager, Recipient};
-use lightning::chain::Access;
 use lightning::ln::channelmanager::{ChannelDetails, MIN_FINAL_CLTV_EXPIRY};
 use lightning::ln::{PaymentHash, PaymentPreimage};
-use lightning::routing::gossip;
-use lightning_background_processor::{BackgroundProcessor, GossipSync};
+use lightning_background_processor::BackgroundProcessor;
 use lightning_invoice::utils::DefaultRouter;
 use lightning_invoice::{payment, CreationError, InvoiceBuilder, SignOrCreationError};
 use lightning_invoice::{Invoice, InvoiceDescription};
-use ln_conf::{LightningCoinConf, LightningProtocolConf, PlatformCoinConfirmationTargets};
+use ln_conf::{LightningCoinConf, PlatformCoinConfirmationTargets};
 use ln_db::{DBChannelDetails, HTLCStatus, LightningDB, PaymentInfo, PaymentType};
 use ln_errors::{EnableLightningError, EnableLightningResult};
-use ln_events::{init_abortable_events, LightningEventHandler};
+use ln_events::LightningEventHandler;
 use ln_filesystem_persister::LightningFilesystemPersister;
 use ln_p2p::PeerManager;
 use ln_platform::Platform;
 use ln_serialization::{ChannelDetailsForRPC, PublicKeyForRPC};
 use ln_sql::SqliteLightningDB;
-use ln_storage::{LightningStorage, NetworkGraph, NodesAddressesMapShared, Scorer, TrustedNodesShared};
-use ln_utils::{ChainMonitor, ChannelManager};
+use ln_storage::{NetworkGraph, NodesAddressesMapShared, Scorer, TrustedNodesShared};
+use ln_utils::{ChainMonitor, ChannelManager, Router};
 use mm2_core::mm_ctx::MmArc;
 use mm2_err_handle::prelude::*;
 use mm2_net::ip_addr::myipaddr;
@@ -65,9 +66,10 @@ use parking_lot::Mutex as PaMutex;
 use rpc::v1::types::{Bytes as BytesJson, H256 as H256Json};
 use script::TransactionInputSigner;
 use secp256k1v22::PublicKey;
-use serde::{Deserialize, Serialize};
+use serde::Deserialize;
 use serde_json::Value as Json;
 use std::collections::{HashMap, HashSet};
+use std::convert::TryInto;
 use std::fmt;
 use std::net::SocketAddr;
 use std::str::FromStr;
@@ -75,13 +77,14 @@ use std::sync::Arc;
 
 pub const DEFAULT_INVOICE_EXPIRY: u32 = 3600;
 
-type Router = DefaultRouter<Arc<NetworkGraph>, Arc<LogState>>;
-type InvoicePayer<E> = payment::InvoicePayer<Arc<ChannelManager>, Router, Arc<Scorer>, Arc<LogState>, E>;
+pub type InvoicePayer<E> = payment::InvoicePayer<Arc<ChannelManager>, Router, Arc<Scorer>, Arc<LogState>, E>;
 
 #[derive(Clone)]
 pub struct LightningCoin {
     pub platform: Arc<Platform>,
     pub conf: LightningCoinConf,
+    /// The lightning node background processor that takes care of tasks that need to happen periodically.
+    pub background_processor: Arc<BackgroundProcessor>,
     /// The lightning node peer manager that takes care of connecting to peers, etc..
     pub peer_manager: Arc<PeerManager>,
     /// The lightning node channel manager which keeps track of the number of open channels and sends messages to the appropriate
@@ -103,6 +106,13 @@ pub struct LightningCoin {
     /// The mutex storing the public keys of the nodes that our lightning node trusts to allow 0 confirmation
     /// inbound channels from.
     pub trusted_nodes: TrustedNodesShared,
+    /// The lightning node router that takes care of finding routes for payments.
+    // Todo: this should be removed once pay_invoice_with_max_total_cltv_expiry_delta similar functionality is implemented in rust-lightning
+    pub router: Arc<Router>,
+    /// The lightning node scorer that takes care of scoring routes. Given the uncertainty of channel liquidity balances,
+    /// the scorer stores the probabilities that a route is successful based on knowledge learned from successful and unsuccessful attempts.
+    // Todo: this should be removed once pay_invoice_with_max_total_cltv_expiry_delta similar functionality is implemented in rust-lightning
+    pub scorer: Arc<Scorer>,
 }
 
 impl fmt::Debug for LightningCoin {
@@ -132,22 +142,6 @@ pub(crate) struct GetOpenChannelsResult {
     pub channels: Vec<ChannelDetailsForRPC>,
     pub skipped: usize,
     pub total: usize,
-}
-
-#[derive(Debug, Display)]
-pub(crate) enum PaymentError {
-    #[display(fmt = "Final cltv expiry delta {} is below the required minimum of {}", _0, _1)]
-    CLTVExpiry(u32, u32),
-    #[display(fmt = "Error paying invoice: {}", _0)]
-    Invoice(String),
-    #[display(fmt = "Keysend error: {}", _0)]
-    Keysend(String),
-    #[display(fmt = "DB error {}", _0)]
-    DbError(String),
-}
-
-impl From<SqlError> for PaymentError {
-    fn from(err: SqlError) -> PaymentError { PaymentError::DbError(err.to_string()) }
 }
 
 impl Transaction for PaymentHash {
@@ -190,7 +184,11 @@ impl LightningCoin {
             .find(|chan| chan.user_channel_id == rpc_id)
     }
 
-    pub(crate) async fn pay_invoice(&self, invoice: Invoice) -> Result<PaymentInfo, MmError<PaymentError>> {
+    pub(crate) async fn pay_invoice(
+        &self,
+        invoice: Invoice,
+        max_total_cltv_expiry_delta: Option<u32>,
+    ) -> Result<PaymentInfo, MmError<PaymentError>> {
         let payment_hash = PaymentHash((invoice.payment_hash()).into_inner());
         let payment_type = PaymentType::OutboundPayment {
             destination: *invoice.payee_pub_key().unwrap_or(&invoice.recover_payee_pub_key()),
@@ -203,13 +201,21 @@ impl LightningCoin {
         let amt_msat = invoice.amount_milli_satoshis().map(|a| a as i64);
 
         let selfi = self.clone();
-        async_blocking(move || {
-            selfi
-                .invoice_payer
-                .pay_invoice(&invoice)
-                .map_to_mm(|e| PaymentError::Invoice(format!("{:?}", e)))
-        })
-        .await?;
+        match max_total_cltv_expiry_delta {
+            Some(total_cltv) => {
+                async_blocking(move || {
+                    pay_invoice_with_max_total_cltv_expiry_delta(
+                        selfi.channel_manager,
+                        selfi.router,
+                        selfi.scorer,
+                        &invoice,
+                        total_cltv,
+                    )
+                })
+                .await?
+            },
+            None => async_blocking(move || selfi.invoice_payer.pay_invoice(&invoice)).await?,
+        };
 
         let payment_info = PaymentInfo {
             payment_hash,
@@ -413,6 +419,7 @@ impl LightningCoin {
         payment_hash: PaymentHash,
         amt_msat: Option<u64>,
         description: String,
+        min_final_cltv_expiry: u64,
         invoice_expiry_delta_secs: u32,
     ) -> Result<Invoice, MmError<SignOrCreationError<()>>> {
         let open_channels_nodes = self.open_channels_nodes.lock().clone();
@@ -442,8 +449,9 @@ impl LightningCoin {
             .payment_hash(Hash::from_inner(payment_hash.0))
             .payment_secret(payment_secret)
             .basic_mpp()
-            // Todo: This will probably be important in locktime calculations in the next PRs and should be validated by the other side
-            .min_final_cltv_expiry(MIN_FINAL_CLTV_EXPIRY.into())
+            // Todo: This should be validated by the other side, right now this is not validated by rust-lightning and the PaymentReceived event doesn't include the final cltv of the payment for us to validate it
+            // Todo: This needs a PR opened to rust-lightning, I already contacted them about it and there is an issue opened for it https://github.com/lightningdevkit/rust-lightning/issues/1850
+            .min_final_cltv_expiry(min_final_cltv_expiry)
             .expiry_time(core::time::Duration::from_secs(invoice_expiry_delta_secs.into()));
         if let Some(amt) = amt_msat {
             invoice = invoice.amount_milli_satoshis(amt);
@@ -470,72 +478,72 @@ impl LightningCoin {
             Err(e) => MmError::err(SignOrCreationError::SignError(e)),
         }
     }
-}
 
-#[async_trait]
-// Todo: Implement this when implementing swaps for lightning as it's is used only for swaps
-impl SwapOps for LightningCoin {
-    // Todo: This uses dummy data for now for the sake of swap P.O.C., this should be implemented probably after agreeing on how fees will work for lightning
-    fn send_taker_fee(&self, _fee_addr: &[u8], _amount: BigDecimal, _uuid: &[u8]) -> TransactionFut {
-        let fut = async move { Ok(TransactionEnum::LightningPayment(PaymentHash([1; 32]))) };
-        Box::new(fut.boxed().compat())
+    fn estimate_blocks_from_duration(&self, duration: u64) -> u64 { duration / self.platform.avg_block_time }
+
+    async fn swap_payment_instructions(
+        &self,
+        secret_hash: &[u8],
+        amount: &BigDecimal,
+        expires_in: u64,
+        min_final_cltv_expiry: u64,
+    ) -> Result<Vec<u8>, MmError<PaymentInstructionsErr>> {
+        // lightning decimals should be 11 in config since the smallest divisible unit in lightning coin is msat
+        let amt_msat = sat_from_big_decimal(amount, self.decimals())?;
+        let payment_hash =
+            payment_hash_from_slice(secret_hash).map_to_mm(|e| PaymentInstructionsErr::InternalError(e.to_string()))?;
+        // note: No description is provided in the invoice to reduce the payload
+        let invoice = self
+            .create_invoice_for_hash(
+                payment_hash,
+                Some(amt_msat),
+                "".into(),
+                min_final_cltv_expiry,
+                expires_in.try_into().expect("expires_in shouldn't exceed u32::MAX"),
+            )
+            .await
+            .map_err(|e| PaymentInstructionsErr::LightningInvoiceErr(e.to_string()))?;
+        Ok(invoice.to_string().into_bytes())
     }
 
-    fn send_maker_payment(
+    fn validate_swap_instructions(
         &self,
-        _time_lock_duration: u64,
-        _time_lock: u32,
-        _taker_pub: &[u8],
-        _secret_hash: &[u8],
-        _amount: BigDecimal,
-        _swap_contract_address: &Option<BytesJson>,
-        _swap_unique_data: &[u8],
-        payment_instructions: &Option<PaymentInstructions>,
-    ) -> TransactionFut {
-        let PaymentInstructions::Lightning(invoice) =
-            try_tx_fus!(payment_instructions.clone().ok_or("payment_instructions can't be None"));
-        let coin = self.clone();
-        let fut = async move {
-            let payment = try_tx_s!(coin.pay_invoice(invoice).await);
-            Ok(payment.payment_hash.into())
-        };
-        Box::new(fut.boxed().compat())
+        instructions: &[u8],
+        secret_hash: &[u8],
+        amount: BigDecimal,
+        min_final_cltv_expiry: u64,
+    ) -> Result<PaymentInstructions, MmError<ValidateInstructionsErr>> {
+        let invoice = Invoice::from_str(&String::from_utf8_lossy(instructions))?;
+        if invoice.payment_hash().as_inner() != secret_hash
+            && ripemd160(invoice.payment_hash().as_inner()).as_slice() != secret_hash
+        {
+            return MmError::err(ValidateInstructionsErr::ValidateLightningInvoiceErr(
+                "Invalid invoice payment hash!".into(),
+            ));
+        }
+
+        let invoice_amount = invoice
+            .amount_milli_satoshis()
+            .or_mm_err(|| ValidateInstructionsErr::ValidateLightningInvoiceErr("No invoice amount!".into()))?;
+        if big_decimal_from_sat(invoice_amount as i64, self.decimals()) != amount {
+            return MmError::err(ValidateInstructionsErr::ValidateLightningInvoiceErr(
+                "Invalid invoice amount!".into(),
+            ));
+        }
+
+        if invoice.min_final_cltv_expiry() != min_final_cltv_expiry {
+            return MmError::err(ValidateInstructionsErr::ValidateLightningInvoiceErr(
+                "Invalid invoice min_final_cltv_expiry!".into(),
+            ));
+        }
+
+        Ok(PaymentInstructions::Lightning(invoice))
     }
 
-    fn send_taker_payment(
-        &self,
-        _time_lock_duration: u64,
-        _time_lock: u32,
-        _maker_pub: &[u8],
-        _secret_hash: &[u8],
-        _amount: BigDecimal,
-        _swap_contract_address: &Option<BytesJson>,
-        _swap_unique_data: &[u8],
-        payment_instructions: &Option<PaymentInstructions>,
-    ) -> TransactionFut {
-        let PaymentInstructions::Lightning(invoice) =
-            try_tx_fus!(payment_instructions.clone().ok_or("payment_instructions can't be None"));
-        let coin = self.clone();
-        let fut = async move {
-            let payment = try_tx_s!(coin.pay_invoice(invoice).await);
-            Ok(payment.payment_hash.into())
-        };
-        Box::new(fut.boxed().compat())
-    }
-
-    fn send_maker_spends_taker_payment(
-        &self,
-        taker_payment_tx: &[u8],
-        _time_lock: u32,
-        _taker_pub: &[u8],
-        secret: &[u8],
-        _secret_hash: &[u8],
-        _swap_contract_address: &Option<BytesJson>,
-        _swap_unique_data: &[u8],
-    ) -> TransactionFut {
-        let payment_hash = try_tx_fus!(payment_hash_from_slice(taker_payment_tx));
+    fn spend_swap_payment(&self, spend_payment_args: SendSpendPaymentArgs<'_>) -> TransactionFut {
+        let payment_hash = try_tx_fus!(payment_hash_from_slice(spend_payment_args.other_payment_tx));
         let mut preimage = [b' '; 32];
-        preimage.copy_from_slice(secret);
+        preimage.copy_from_slice(spend_payment_args.secret);
 
         let coin = self.clone();
         let fut = async move {
@@ -554,59 +562,7 @@ impl SwapOps for LightningCoin {
         Box::new(fut.boxed().compat())
     }
 
-    fn send_taker_spends_maker_payment(
-        &self,
-        _maker_payment_tx: &[u8],
-        _time_lock: u32,
-        _maker_pub: &[u8],
-        _secret: &[u8],
-        _secret_hash: &[u8],
-        _swap_contract_address: &Option<BytesJson>,
-        _swap_unique_data: &[u8],
-    ) -> TransactionFut {
-        unimplemented!()
-    }
-
-    fn send_taker_refunds_payment(
-        &self,
-        _taker_payment_tx: &[u8],
-        _time_lock: u32,
-        _maker_pub: &[u8],
-        _secret_hash: &[u8],
-        _swap_contract_address: &Option<BytesJson>,
-        _swap_unique_data: &[u8],
-    ) -> TransactionFut {
-        unimplemented!()
-    }
-
-    fn send_maker_refunds_payment(
-        &self,
-        _maker_payment_tx: &[u8],
-        _time_lock: u32,
-        _taker_pub: &[u8],
-        _secret_hash: &[u8],
-        _swap_contract_address: &Option<BytesJson>,
-        _swap_unique_data: &[u8],
-    ) -> TransactionFut {
-        unimplemented!()
-    }
-
-    // Todo: This validates the dummy fee for now for the sake of swap P.O.C., this should be implemented probably after agreeing on how fees will work for lightning
-    fn validate_fee(
-        &self,
-        _fee_tx: &TransactionEnum,
-        _expected_sender: &[u8],
-        _fee_addr: &[u8],
-        _amount: &BigDecimal,
-        _min_block_number: u64,
-        _uuid: &[u8],
-    ) -> Box<dyn Future<Item = (), Error = String> + Send> {
-        Box::new(futures01::future::ok(()))
-    }
-
-    fn validate_maker_payment(&self, _input: ValidatePaymentInput) -> ValidatePaymentFut<()> { unimplemented!() }
-
-    fn validate_taker_payment(&self, input: ValidatePaymentInput) -> ValidatePaymentFut<()> {
+    fn validate_swap_payment(&self, input: ValidatePaymentInput) -> ValidatePaymentFut<()> {
         let payment_hash = try_f!(payment_hash_from_slice(&input.payment_tx)
             .map_to_mm(|e| ValidatePaymentError::TxDeserializationError(e.to_string())));
         let payment_hex = hex::encode(payment_hash.0);
@@ -617,9 +573,12 @@ impl SwapOps for LightningCoin {
         let fut = async move {
             match coin.db.get_payment_from_db(payment_hash).await {
                 Ok(Some(mut payment)) => {
-                    let amount_sent = payment.amt_msat;
-                    // Todo: Add more validations if needed, locktime is probably the most important
-                    if amount_sent != Some(amt_msat as i64) {
+                    let amount_received = payment.amt_msat;
+                    // Note: locktime doesn't need to be validated since min_final_cltv_expiry should be validated in rust-lightning after fixing the below issue
+                    // https://github.com/lightningdevkit/rust-lightning/issues/1850
+                    // Also, PaymentReceived won't be fired if amount_received < the amount requested in the invoice, this check is probably not needed.
+                    // But keeping it just in case any changes happen in rust-lightning
+                    if amount_received != Some(amt_msat as i64) {
                         // Free the htlc to allow for this inbound liquidity to be used for other inbound payments
                         coin.channel_manager.fail_htlc_backwards(&payment_hash);
                         payment.status = HTLCStatus::Failed;
@@ -630,13 +589,13 @@ impl SwapOps for LightningCoin {
                             .error_log_with_msg("Unable to update payment information in DB!");
                         return MmError::err(ValidatePaymentError::WrongPaymentTx(format!(
                             "Provided payment {} amount {:?} doesn't match required amount {}",
-                            payment_hex, amount_sent, amt_msat
+                            payment_hex, amount_received, amt_msat
                         )));
                     }
                     Ok(())
                 },
                 Ok(None) => MmError::err(ValidatePaymentError::UnexpectedPaymentState(format!(
-                    "Payment {} should be found on the database",
+                    "Payment {} is not in the database when it should be!",
                     payment_hex
                 ))),
                 Err(e) => MmError::err(ValidatePaymentError::InternalError(format!(
@@ -647,17 +606,101 @@ impl SwapOps for LightningCoin {
         };
         Box::new(fut.boxed().compat())
     }
+}
+
+#[async_trait]
+// Todo: Implement this when implementing swaps for lightning as it's is used only for swaps
+impl SwapOps for LightningCoin {
+    // Todo: This uses dummy data for now for the sake of swap P.O.C., this should be implemented probably after agreeing on how fees will work for lightning
+    fn send_taker_fee(&self, _fee_addr: &[u8], _amount: BigDecimal, _uuid: &[u8]) -> TransactionFut {
+        let fut = async move { Ok(TransactionEnum::LightningPayment(PaymentHash([1; 32]))) };
+        Box::new(fut.boxed().compat())
+    }
+
+    fn send_maker_payment(&self, maker_payment_args: SendMakerPaymentArgs<'_>) -> TransactionFut {
+        let PaymentInstructions::Lightning(invoice) = try_tx_fus!(maker_payment_args
+            .payment_instructions
+            .clone()
+            .ok_or("payment_instructions can't be None"));
+        let coin = self.clone();
+        let fut = async move {
+            // No need for max_total_cltv_expiry_delta for lightning maker payment since the maker is the side that reveals the secret/preimage
+            let payment = try_tx_s!(coin.pay_invoice(invoice, None).await);
+            Ok(payment.payment_hash.into())
+        };
+        Box::new(fut.boxed().compat())
+    }
+
+    fn send_taker_payment(&self, taker_payment_args: SendTakerPaymentArgs<'_>) -> TransactionFut {
+        let PaymentInstructions::Lightning(invoice) = try_tx_fus!(taker_payment_args
+            .payment_instructions
+            .clone()
+            .ok_or("payment_instructions can't be None"));
+        let max_total_cltv_expiry_delta = self
+            .estimate_blocks_from_duration(taker_payment_args.time_lock_duration)
+            .try_into()
+            .expect("max_total_cltv_expiry_delta shouldn't exceed u32::MAX");
+        let coin = self.clone();
+        let fut = async move {
+            // Todo: The path/s used is already logged when PaymentPathSuccessful/PaymentPathFailed events are fired, it might be better to save it to the DB and retrieve it with the payment info.
+            let payment = try_tx_s!(coin.pay_invoice(invoice, Some(max_total_cltv_expiry_delta)).await);
+            Ok(payment.payment_hash.into())
+        };
+        Box::new(fut.boxed().compat())
+    }
+
+    #[inline]
+    fn send_maker_spends_taker_payment(
+        &self,
+        maker_spends_payment_args: SendMakerSpendsTakerPaymentArgs<'_>,
+    ) -> TransactionFut {
+        self.spend_swap_payment(maker_spends_payment_args)
+    }
+
+    #[inline]
+    fn send_taker_spends_maker_payment(
+        &self,
+        taker_spends_payment_args: SendTakerSpendsMakerPaymentArgs<'_>,
+    ) -> TransactionFut {
+        self.spend_swap_payment(taker_spends_payment_args)
+    }
+
+    fn send_taker_refunds_payment(
+        &self,
+        _taker_refunds_payment_args: SendTakerRefundsPaymentArgs<'_>,
+    ) -> TransactionFut {
+        unimplemented!()
+    }
+
+    fn send_maker_refunds_payment(
+        &self,
+        _maker_refunds_payment_args: SendMakerRefundsPaymentArgs<'_>,
+    ) -> TransactionFut {
+        unimplemented!()
+    }
+
+    // Todo: This validates the dummy fee for now for the sake of swap P.O.C., this should be implemented probably after agreeing on how fees will work for lightning
+    fn validate_fee(
+        &self,
+        _validate_fee_args: ValidateFeeArgs<'_>,
+    ) -> Box<dyn Future<Item = (), Error = String> + Send> {
+        Box::new(futures01::future::ok(()))
+    }
+
+    #[inline]
+    fn validate_maker_payment(&self, input: ValidatePaymentInput) -> ValidatePaymentFut<()> {
+        self.validate_swap_payment(input)
+    }
+
+    #[inline]
+    fn validate_taker_payment(&self, input: ValidatePaymentInput) -> ValidatePaymentFut<()> {
+        self.validate_swap_payment(input)
+    }
 
     // Todo: This is None for now for the sake of swap P.O.C., this should be implemented probably in next PRs and should be tested across restarts
     fn check_if_my_payment_sent(
         &self,
-        _time_lock: u32,
-        _other_pub: &[u8],
-        _secret_hash: &[u8],
-        _search_from_block: u64,
-        _swap_contract_address: &Option<BytesJson>,
-        _swap_unique_data: &[u8],
-        _amount: &BigDecimal,
+        _if_my_payment_spent_args: CheckIfMyPaymentSentArgs<'_>,
     ) -> Box<dyn Future<Item = Option<TransactionEnum>, Error = String> + Send> {
         Box::new(futures01::future::ok(None))
     }
@@ -684,18 +727,18 @@ impl SwapOps for LightningCoin {
         let payment_hash = payment_hash_from_slice(spend_tx).map_err(|e| e.to_string())?;
         let payment_hex = hex::encode(payment_hash.0);
 
-        return match self.db.get_payment_from_db(payment_hash).await {
+        match self.db.get_payment_from_db(payment_hash).await {
             Ok(Some(payment)) => match payment.preimage {
                 Some(preimage) => Ok(preimage.0.to_vec()),
                 None => ERR!("Preimage for payment {} should be found on the database", payment_hex),
             },
-            Ok(None) => ERR!("Payment {} should be found on the database", payment_hex),
+            Ok(None) => ERR!("Payment {} is not in the database when it should be!", payment_hex),
             Err(e) => ERR!(
                 "Unable to retrieve payment {} from the database error: {}",
                 payment_hex,
                 e
             ),
-        };
+        }
     }
 
     fn negotiate_swap_contract_addr(
@@ -706,61 +749,68 @@ impl SwapOps for LightningCoin {
     }
 
     // Todo: This can be changed if private swaps were to be implemented for lightning
+    #[inline]
     fn derive_htlc_key_pair(&self, swap_unique_data: &[u8]) -> KeyPair {
         utxo_common::derive_htlc_key_pair(self.platform.coin.as_ref(), swap_unique_data)
     }
 
+    #[inline]
     fn validate_other_pubkey(&self, raw_pubkey: &[u8]) -> MmResult<(), ValidateOtherPubKeyErr> {
         utxo_common::validate_other_pubkey(raw_pubkey)
     }
 
-    async fn payment_instructions(
+    async fn maker_payment_instructions(
         &self,
         secret_hash: &[u8],
         amount: &BigDecimal,
+        maker_lock_duration: u64,
+        expires_in: u64,
     ) -> Result<Option<Vec<u8>>, MmError<PaymentInstructionsErr>> {
-        // lightning decimals should be 11 in config since the smallest divisible unit in lightning coin is msat
-        let amt_msat = sat_from_big_decimal(amount, self.decimals())?;
-        let payment_hash =
-            payment_hash_from_slice(secret_hash).map_to_mm(|e| PaymentInstructionsErr::InternalError(e.to_string()))?;
-
-        // note: No description is provided in the invoice to reduce the payload
-        // Todo: The invoice expiry should probably be the same as maker_payment_wait/wait_taker_payment
-        let invoice = self
-            .create_invoice_for_hash(payment_hash, Some(amt_msat), "".into(), DEFAULT_INVOICE_EXPIRY)
+        let min_final_cltv_expiry = self.estimate_blocks_from_duration(maker_lock_duration);
+        self.swap_payment_instructions(secret_hash, amount, expires_in, min_final_cltv_expiry)
             .await
-            .map_err(|e| PaymentInstructionsErr::LightningInvoiceErr(e.to_string()))?;
-        Ok(Some(invoice.to_string().into_bytes()))
+            .map(Some)
     }
 
-    fn validate_instructions(
+    #[inline]
+    async fn taker_payment_instructions(
+        &self,
+        secret_hash: &[u8],
+        amount: &BigDecimal,
+        expires_in: u64,
+    ) -> Result<Option<Vec<u8>>, MmError<PaymentInstructionsErr>> {
+        self.swap_payment_instructions(secret_hash, amount, expires_in, MIN_FINAL_CLTV_EXPIRY as u64)
+            .await
+            .map(Some)
+    }
+
+    fn validate_maker_payment_instructions(
+        &self,
+        instructions: &[u8],
+        secret_hash: &[u8],
+        amount: BigDecimal,
+        maker_lock_duration: u64,
+    ) -> Result<PaymentInstructions, MmError<ValidateInstructionsErr>> {
+        let min_final_cltv_expiry = self.estimate_blocks_from_duration(maker_lock_duration);
+        self.validate_swap_instructions(instructions, secret_hash, amount, min_final_cltv_expiry)
+    }
+
+    #[inline]
+    fn validate_taker_payment_instructions(
         &self,
         instructions: &[u8],
         secret_hash: &[u8],
         amount: BigDecimal,
     ) -> Result<PaymentInstructions, MmError<ValidateInstructionsErr>> {
-        let invoice = Invoice::from_str(&String::from_utf8_lossy(instructions))?;
-        if invoice.payment_hash().as_inner() != secret_hash
-            && ripemd160(invoice.payment_hash().as_inner()).as_slice() != secret_hash
-        {
-            return Err(
-                ValidateInstructionsErr::ValidateLightningInvoiceErr("Invalid invoice payment hash!".into()).into(),
-            );
-        }
-        let invoice_amount = invoice
-            .amount_milli_satoshis()
-            .ok_or_else(|| ValidateInstructionsErr::ValidateLightningInvoiceErr("No invoice amount!".into()))?;
-        if big_decimal_from_sat(invoice_amount as i64, self.decimals()) != amount {
-            return Err(ValidateInstructionsErr::ValidateLightningInvoiceErr("Invalid invoice amount!".into()).into());
-        }
-        // Todo: continue validation here by comparing locktime, etc..
-        Ok(PaymentInstructions::Lightning(invoice))
+        self.validate_swap_instructions(instructions, secret_hash, amount, MIN_FINAL_CLTV_EXPIRY as u64)
     }
 
     // Watchers cannot be used for lightning swaps for now
     // Todo: Check if watchers can work in some cases with lightning and implement it if it's possible, the watcher will not be able to retrieve the preimage since it's retrieved through the lightning network
     // Todo: The watcher can retrieve the preimage only if he is running a lightning node and is part of the nodes that routed the taker payment which is a very low probability event that shouldn't be considered
     fn is_supported_by_watchers(&self) -> bool { false }
+
+    fn maker_locktime_multiplier(&self) -> f64 { 1.5 }
 }
 
 #[derive(Debug, Display)]
@@ -819,13 +869,6 @@ impl WatcherOps for LightningCoin {
     fn watcher_validate_taker_payment(&self, _input: WatcherValidatePaymentInput) -> ValidatePaymentFut<()> {
         unimplemented!();
     }
-
-    async fn watcher_search_for_swap_tx_spend(
-        &self,
-        _input: WatcherSearchForSwapTxSpendInput<'_>,
-    ) -> Result<Option<FoundSwapTxSpend>, String> {
-        unimplemented!();
-    }
 }
 
 impl MarketCoinOps for LightningCoin {
@@ -854,7 +897,7 @@ impl MarketCoinOps for LightningCoin {
             checksum_type: ChecksumType::DSHA256,
         };
         let signature = private.sign_compact(&H256::from(message_hash))?;
-        Ok(zbase32::encode_full_bytes(&*signature))
+        Ok(zbase32::encode_full_bytes(&signature))
     }
 
     fn verify_message(&self, signature: &str, message: &str, pubkey: &str) -> VerificationResult<bool> {
@@ -869,6 +912,8 @@ impl MarketCoinOps for LightningCoin {
         Ok(recovered_pubkey.to_string() == pubkey)
     }
 
+    // Todo: max_inbound_in_flight_htlc_percent should be taken in consideration too for max allowed amount, this can be considered the spendable balance,
+    // Todo: but it's better to refactor the CoinBalance struct to add more info. We can make it 100% in the config for now until this is implemented.
     fn my_balance(&self) -> BalanceFut<CoinBalance> {
         let coin = self.clone();
         let decimals = self.decimals();
@@ -930,20 +975,31 @@ impl MarketCoinOps for LightningCoin {
                 }
 
                 match coin.db.get_payment_from_db(payment_hash).await {
-                    Ok(Some(_)) => {
-                        // Todo: This should check for different payment statuses depending on where wait_for_confirmations is called,
-                        // Todo: which might lead to breaking wait_for_confirmations to 3 functions (wait_for_payment_sent_confirmations, wait_for_payment_received_confirmations, wait_for_payment_spent_confirmations)
-                        return Ok(());
+                    Ok(Some(payment)) => {
+                        match payment.payment_type {
+                            PaymentType::OutboundPayment { .. } => match payment.status {
+                                HTLCStatus::Pending | HTLCStatus::Succeeded => return Ok(()),
+                                HTLCStatus::Received => {
+                                    return ERR!(
+                                        "Payment {} has an invalid status of {} in the db",
+                                        payment_hex,
+                                        payment.status
+                                    )
+                                },
+                                // Todo: PaymentFailed event is fired after 5 retries, maybe timeout should be used instead.
+                                // Todo: Still this doesn't prevent failure if there are no routes
+                                // Todo: JIT channels/routing can be used to solve this issue https://github.com/lightningdevkit/rust-lightning/pull/1835 but it requires some trust.
+                                HTLCStatus::Failed => return ERR!("Lightning swap payment {} failed", payment_hex),
+                            },
+                            PaymentType::InboundPayment => match payment.status {
+                                HTLCStatus::Received | HTLCStatus::Succeeded => return Ok(()),
+                                HTLCStatus::Pending => info!("Payment {} not received yet!", payment_hex),
+                                HTLCStatus::Failed => return ERR!("Lightning swap payment {} failed", payment_hex),
+                            },
+                        }
                     },
                     Ok(None) => info!("Payment {} not received yet!", payment_hex),
-                    Err(e) => {
-                        return ERR!(
-                            "Error getting payment {} from db: {}, retrying in {} seconds",
-                            payment_hex,
-                            e,
-                            check_every
-                        )
-                    },
+                    Err(e) => return ERR!("Error getting payment {} from db: {}", payment_hex, e),
                 }
 
                 // note: When sleeping for only 1 second the test_send_payment_and_swaps unit test took 20 seconds to complete instead of 37 seconds when WAIT_CONFIRM_INTERVAL (15 seconds) is used
@@ -977,24 +1033,21 @@ impl MarketCoinOps for LightningCoin {
                 }
 
                 match coin.db.get_payment_from_db(payment_hash).await {
-                    Ok(Some(payment)) => {
-                        match payment.status {
-                            HTLCStatus::Pending => (),
-                            HTLCStatus::Received => {
-                                return Err(TransactionErr::Plain(format!(
-                                    "Payment {} has an invalid status of {} in the db",
-                                    payment_hex, payment.status
-                                )))
-                            },
-                            HTLCStatus::Succeeded => return Ok(TransactionEnum::LightningPayment(payment_hash)),
-                            // Todo: Retry payment multiple times returning an error only if all paths failed or other permenant error, should also keep locktime in mind when using different paths with different CLTVs
-                            HTLCStatus::Failed => {
-                                return Err(TransactionErr::Plain(format!(
-                                    "Lightning swap payment {} failed",
-                                    payment_hex
-                                )))
-                            },
-                        }
+                    Ok(Some(payment)) => match payment.status {
+                        HTLCStatus::Pending => (),
+                        HTLCStatus::Received => {
+                            return Err(TransactionErr::Plain(format!(
+                                "Payment {} has an invalid status of {} in the db",
+                                payment_hex, payment.status
+                            )))
+                        },
+                        HTLCStatus::Succeeded => return Ok(TransactionEnum::LightningPayment(payment_hash)),
+                        HTLCStatus::Failed => {
+                            return Err(TransactionErr::Plain(format!(
+                                "Lightning swap payment {} failed",
+                                payment_hex
+                            )))
+                        },
                     },
                     Ok(None) => {
                         return Err(TransactionErr::Plain(format!(
@@ -1110,7 +1163,7 @@ impl MmCoin for LightningCoin {
     }
 
     // Todo: This uses dummy data for now for the sake of swap P.O.C., this should be implemented probably after agreeing on how fees will work for lightning
-    fn get_receiver_trade_fee(&self, _stage: FeeApproxStage) -> TradePreimageFut<TradeFee> {
+    fn get_receiver_trade_fee(&self, _send_amount: BigDecimal, _stage: FeeApproxStage) -> TradePreimageFut<TradeFee> {
         Box::new(futures01::future::ok(TradeFee {
             coin: self.ticker().to_owned(),
             amount: Default::default(),
@@ -1143,6 +1196,8 @@ impl MmCoin for LightningCoin {
 
     fn swap_contract_address(&self) -> Option<BytesJson> { None }
 
+    fn fallback_swap_contract(&self) -> Option<BytesJson> { None }
+
     fn mature_confirmations(&self) -> Option<u32> { None }
 
     // Todo: This uses default data for now for the sake of swap P.O.C., this should be implemented probably when implementing order matching if it's needed
@@ -1150,178 +1205,8 @@ impl MmCoin for LightningCoin {
 
     // Todo: This uses default data for now for the sake of swap P.O.C., this should be implemented probably when implementing order matching if it's needed
     fn is_coin_protocol_supported(&self, _info: &Option<Vec<u8>>) -> bool { true }
-}
 
-#[derive(Clone, Debug, Deserialize, Serialize)]
-pub struct LightningParams {
-    // The listening port for the p2p LN node
-    pub listening_port: u16,
-    // Printable human-readable string to describe this node to other users.
-    pub node_name: [u8; 32],
-    // Node's RGB color. This is used for showing the node in a network graph with the desired color.
-    pub node_color: [u8; 3],
-    // Invoice Payer is initialized while starting the lightning node, and it requires the number of payment retries that
-    // it should do before considering a payment failed or partially failed. If not provided the number of retries will be 5
-    // as this is a good default value.
-    pub payment_retries: Option<usize>,
-    // Node's backup path for channels and other data that requires backup.
-    pub backup_path: Option<String>,
-}
+    fn on_disabled(&self) -> Result<(), AbortedError> { AbortableSystem::abort_all(&self.platform.abortable_system) }
 
-pub async fn start_lightning(
-    ctx: &MmArc,
-    platform_coin: UtxoStandardCoin,
-    protocol_conf: LightningProtocolConf,
-    conf: LightningCoinConf,
-    params: LightningParams,
-) -> EnableLightningResult<LightningCoin> {
-    // Todo: add support for Hardware wallets for funding transactions and spending spendable outputs (channel closing transactions)
-    if let DerivationMethod::HDWallet(_) = platform_coin.as_ref().derivation_method {
-        return MmError::err(EnableLightningError::UnsupportedMode(
-            "'start_lightning'".into(),
-            "iguana".into(),
-        ));
-    }
-
-    let platform = Arc::new(Platform::new(
-        platform_coin.clone(),
-        protocol_conf.network.clone(),
-        protocol_conf.confirmation_targets,
-    ));
-    platform.set_latest_fees().await?;
-
-    // Initialize the Logger
-    let logger = ctx.log.0.clone();
-
-    // Initialize Persister
-    let persister = ln_utils::init_persister(ctx, conf.ticker.clone(), params.backup_path).await?;
-
-    // Initialize the KeysManager
-    let keys_manager = ln_utils::init_keys_manager(ctx)?;
-
-    // Initialize the P2PGossipSync. This is used for providing routes to send payments over
-    let network_graph = Arc::new(
-        persister
-            .get_network_graph(protocol_conf.network.into(), logger.clone())
-            .await?,
-    );
-
-    let gossip_sync = Arc::new(gossip::P2PGossipSync::new(
-        network_graph.clone(),
-        None::<Arc<dyn Access + Send + Sync>>,
-        logger.clone(),
-    ));
-
-    // Initialize DB
-    let db = ln_utils::init_db(ctx, conf.ticker.clone()).await?;
-
-    // Initialize the ChannelManager
-    let (chain_monitor, channel_manager) = ln_utils::init_channel_manager(
-        platform.clone(),
-        logger.clone(),
-        persister.clone(),
-        db.clone(),
-        keys_manager.clone(),
-        conf.clone().into(),
-    )
-    .await?;
-
-    // Initialize the PeerManager
-    let peer_manager = ln_p2p::init_peer_manager(
-        ctx.clone(),
-        &platform,
-        params.listening_port,
-        channel_manager.clone(),
-        gossip_sync.clone(),
-        keys_manager
-            .get_node_secret(Recipient::Node)
-            .map_to_mm(|_| EnableLightningError::UnsupportedMode("'start_lightning'".into(), "local node".into()))?,
-        logger.clone(),
-    )
-    .await?;
-
-    let trusted_nodes = Arc::new(PaMutex::new(persister.get_trusted_nodes().await?));
-
-    init_abortable_events(platform.clone(), db.clone()).await?;
-
-    // Initialize the event handler
-    let event_handler = Arc::new(ln_events::LightningEventHandler::new(
-        platform.clone(),
-        channel_manager.clone(),
-        keys_manager.clone(),
-        db.clone(),
-        trusted_nodes.clone(),
-    ));
-
-    // Initialize routing Scorer
-    let scorer = Arc::new(persister.get_scorer(network_graph.clone(), logger.clone()).await?);
-
-    // Create InvoicePayer
-    // random_seed_bytes are additional random seed to improve privacy by adding a random CLTV expiry offset to each path's final hop.
-    // This helps obscure the intended recipient from adversarial intermediate hops. The seed is also used to randomize candidate paths during route selection.
-    // TODO: random_seed_bytes should be taken in consideration when implementing swaps because they change the payment lock-time.
-    // https://github.com/lightningdevkit/rust-lightning/issues/158
-    // https://github.com/lightningdevkit/rust-lightning/pull/1286
-    // https://github.com/lightningdevkit/rust-lightning/pull/1359
-    let router = DefaultRouter::new(network_graph, logger.clone(), keys_manager.get_secure_random_bytes());
-    let invoice_payer = Arc::new(InvoicePayer::new(
-        channel_manager.clone(),
-        router,
-        scorer.clone(),
-        logger.clone(),
-        event_handler,
-        // Todo: Add option for choosing payment::Retry::Timeout instead of Attempts in LightningParams
-        payment::Retry::Attempts(params.payment_retries.unwrap_or(5)),
-    ));
-
-    // Start Background Processing. Runs tasks periodically in the background to keep LN node operational.
-    // InvoicePayer will act as our event handler as it handles some of the payments related events before
-    // delegating it to LightningEventHandler.
-    // note: background_processor stops automatically when dropped since BackgroundProcessor implements the Drop trait.
-    let background_processor = BackgroundProcessor::start(
-        persister.clone(),
-        invoice_payer.clone(),
-        chain_monitor.clone(),
-        channel_manager.clone(),
-        GossipSync::p2p(gossip_sync),
-        peer_manager.clone(),
-        logger,
-        Some(scorer),
-    );
-    ctx.background_processors
-        .lock()
-        .unwrap()
-        .insert(conf.ticker.clone(), background_processor);
-
-    // If channel_nodes_data file exists, read channels nodes data from disk and reconnect to channel nodes/peers if possible.
-    let open_channels_nodes = Arc::new(PaMutex::new(
-        ln_utils::get_open_channels_nodes_addresses(persister.clone(), channel_manager.clone()).await?,
-    ));
-
-    platform.spawner().spawn(ln_p2p::connect_to_ln_nodes_loop(
-        open_channels_nodes.clone(),
-        peer_manager.clone(),
-    ));
-
-    // Broadcast Node Announcement
-    platform.spawner().spawn(ln_p2p::ln_node_announcement_loop(
-        channel_manager.clone(),
-        params.node_name,
-        params.node_color,
-        params.listening_port,
-    ));
-
-    Ok(LightningCoin {
-        platform,
-        conf,
-        peer_manager,
-        channel_manager,
-        chain_monitor,
-        keys_manager,
-        invoice_payer,
-        persister,
-        db,
-        open_channels_nodes,
-        trusted_nodes,
-    })
+    fn on_token_deactivated(&self, _ticker: &str) {}
 }

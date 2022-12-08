@@ -392,7 +392,7 @@ impl TransactionInputSigner {
         stream.append(&hash_prevouts);
         stream.append(&hash_sequence);
         stream.append(&self.inputs[input_index].previous_output);
-        stream.append_list(&**script_pubkey);
+        stream.append_list(script_pubkey);
         stream.append(&input_amount);
         stream.append(&self.inputs[input_index].sequence);
         stream.append(&hash_outputs);

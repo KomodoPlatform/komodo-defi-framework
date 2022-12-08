@@ -2,19 +2,22 @@
 use super::{TendermintCoin, TendermintFeeDetails, GAS_LIMIT_DEFAULT, MIN_TX_SATOSHIS, TIMEOUT_HEIGHT_DELTA,
             TX_DEFAULT_MEMO};
 use crate::utxo::utxo_common::big_decimal_from_sat;
-use crate::{big_decimal_from_sat_unsigned, utxo::sat_from_big_decimal, BalanceFut, BigDecimal, CoinBalance,
-            CoinFutSpawner, FeeApproxStage, FoundSwapTxSpend, HistorySyncState, MarketCoinOps, MmCoin, MyAddressError,
-            NegotiateSwapContractAddrErr, PaymentInstructions, PaymentInstructionsErr, RawTransactionFut,
-            RawTransactionRequest, SearchForSwapTxSpendInput, SignatureResult, SwapOps, TradeFee, TradePreimageFut,
-            TradePreimageResult, TradePreimageValue, TransactionDetails, TransactionEnum, TransactionErr,
-            TransactionFut, TransactionType, TxFeeDetails, TxMarshalingErr, UnexpectedDerivationMethod,
-            ValidateAddressResult, ValidateInstructionsErr, ValidateOtherPubKeyErr, ValidatePaymentFut,
-            ValidatePaymentInput, VerificationResult, WatcherOps, WatcherSearchForSwapTxSpendInput,
+use crate::{big_decimal_from_sat_unsigned, utxo::sat_from_big_decimal, BalanceFut, BigDecimal,
+            CheckIfMyPaymentSentArgs, CoinBalance, CoinFutSpawner, FeeApproxStage, FoundSwapTxSpend, HistorySyncState,
+            MarketCoinOps, MmCoin, MyAddressError, NegotiateSwapContractAddrErr, PaymentInstructions,
+            PaymentInstructionsErr, RawTransactionFut, RawTransactionRequest, SearchForSwapTxSpendInput,
+            SendMakerPaymentArgs, SendMakerRefundsPaymentArgs, SendMakerSpendsTakerPaymentArgs, SendTakerPaymentArgs,
+            SendTakerRefundsPaymentArgs, SendTakerSpendsMakerPaymentArgs, SignatureResult, SwapOps, TradeFee,
+            TradePreimageFut, TradePreimageResult, TradePreimageValue, TransactionDetails, TransactionEnum,
+            TransactionErr, TransactionFut, TransactionType, TxFeeDetails, TxMarshalingErr,
+            UnexpectedDerivationMethod, ValidateAddressResult, ValidateFeeArgs, ValidateInstructionsErr,
+            ValidateOtherPubKeyErr, ValidatePaymentFut, ValidatePaymentInput, VerificationResult, WatcherOps,
             WatcherValidatePaymentInput, WithdrawError, WithdrawFut, WithdrawRequest};
 use async_trait::async_trait;
 use bitcrypto::sha256;
 use common::executor::abortable_queue::AbortableQueue;
-use common::executor::AbortableSystem;
+use common::executor::{AbortableSystem, AbortedError};
+use common::log::warn;
 use common::Future01CompatExt;
 use cosmrs::{bank::MsgSend,
              tx::{Fee, Msg},
@@ -33,7 +36,7 @@ use std::sync::Arc;
 
 pub struct TendermintTokenImpl {
     pub ticker: String,
-    platform_coin: TendermintCoin,
+    pub platform_coin: TendermintCoin,
     pub decimals: u8,
     pub denom: Denom,
     /// This spawner is used to spawn coin's related futures that should be aborted on coin deactivation
@@ -61,6 +64,7 @@ pub struct TendermintTokenProtocolInfo {
 pub struct TendermintTokenActivationParams {}
 
 pub enum TendermintTokenInitError {
+    Internal(String),
     InvalidDenom(String),
     MyAddressError(String),
     CouldNotFetchBalance(String),
@@ -68,6 +72,10 @@ pub enum TendermintTokenInitError {
 
 impl From<MyAddressError> for TendermintTokenInitError {
     fn from(err: MyAddressError) -> Self { TendermintTokenInitError::MyAddressError(err.to_string()) }
+}
+
+impl From<AbortedError> for TendermintTokenInitError {
+    fn from(e: AbortedError) -> Self { TendermintTokenInitError::Internal(e.to_string()) }
 }
 
 impl TendermintToken {
@@ -79,7 +87,7 @@ impl TendermintToken {
     ) -> MmResult<Self, TendermintTokenInitError> {
         let denom = Denom::from_str(&denom).map_to_mm(|e| TendermintTokenInitError::InvalidDenom(e.to_string()))?;
         let token_impl = TendermintTokenImpl {
-            abortable_system: platform_coin.abortable_system.create_subsystem(),
+            abortable_system: platform_coin.abortable_system.create_subsystem()?,
             ticker,
             platform_coin,
             decimals,
@@ -97,43 +105,23 @@ impl SwapOps for TendermintToken {
             .send_taker_fee_for_denom(fee_addr, amount, self.denom.clone(), self.decimals, uuid)
     }
 
-    fn send_maker_payment(
-        &self,
-        time_lock_duration: u64,
-        _time_lock: u32,
-        taker_pub: &[u8],
-        secret_hash: &[u8],
-        amount: BigDecimal,
-        _swap_contract_address: &Option<BytesJson>,
-        _swap_unique_data: &[u8],
-        _payment_instructions: &Option<PaymentInstructions>,
-    ) -> TransactionFut {
+    fn send_maker_payment(&self, maker_payment_args: SendMakerPaymentArgs) -> TransactionFut {
         self.platform_coin.send_htlc_for_denom(
-            time_lock_duration,
-            taker_pub,
-            secret_hash,
-            amount,
+            maker_payment_args.time_lock_duration,
+            maker_payment_args.other_pubkey,
+            maker_payment_args.secret_hash,
+            maker_payment_args.amount,
             self.denom.clone(),
             self.decimals,
         )
     }
 
-    fn send_taker_payment(
-        &self,
-        time_lock_duration: u64,
-        _time_lock: u32,
-        maker_pub: &[u8],
-        secret_hash: &[u8],
-        amount: BigDecimal,
-        swap_contract_address: &Option<BytesJson>,
-        swap_unique_data: &[u8],
-        _payment_instructions: &Option<PaymentInstructions>,
-    ) -> TransactionFut {
+    fn send_taker_payment(&self, taker_payment_args: SendTakerPaymentArgs) -> TransactionFut {
         self.platform_coin.send_htlc_for_denom(
-            time_lock_duration,
-            maker_pub,
-            secret_hash,
-            amount,
+            taker_payment_args.time_lock_duration,
+            taker_payment_args.other_pubkey,
+            taker_payment_args.secret_hash,
+            taker_payment_args.amount,
             self.denom.clone(),
             self.decimals,
         )
@@ -141,90 +129,40 @@ impl SwapOps for TendermintToken {
 
     fn send_maker_spends_taker_payment(
         &self,
-        taker_payment_tx: &[u8],
-        time_lock: u32,
-        taker_pub: &[u8],
-        secret: &[u8],
-        secret_hash: &[u8],
-        swap_contract_address: &Option<BytesJson>,
-        swap_unique_data: &[u8],
+        maker_spends_payment_args: SendMakerSpendsTakerPaymentArgs,
     ) -> TransactionFut {
-        self.platform_coin.send_maker_spends_taker_payment(
-            taker_payment_tx,
-            time_lock,
-            taker_pub,
-            secret,
-            secret_hash,
-            swap_contract_address,
-            swap_unique_data,
-        )
+        self.platform_coin
+            .send_maker_spends_taker_payment(maker_spends_payment_args)
     }
 
     fn send_taker_spends_maker_payment(
         &self,
-        maker_payment_tx: &[u8],
-        time_lock: u32,
-        maker_pub: &[u8],
-        secret: &[u8],
-        secret_hash: &[u8],
-        swap_contract_address: &Option<BytesJson>,
-        swap_unique_data: &[u8],
+        taker_spends_payment_args: SendTakerSpendsMakerPaymentArgs,
     ) -> TransactionFut {
-        self.platform_coin.send_taker_spends_maker_payment(
-            maker_payment_tx,
-            time_lock,
-            maker_pub,
-            secret,
-            secret_hash,
-            swap_contract_address,
-            swap_unique_data,
-        )
+        self.platform_coin
+            .send_taker_spends_maker_payment(taker_spends_payment_args)
     }
 
-    fn send_taker_refunds_payment(
-        &self,
-        taker_payment_tx: &[u8],
-        time_lock: u32,
-        maker_pub: &[u8],
-        secret_hash: &[u8],
-        swap_contract_address: &Option<BytesJson>,
-        swap_unique_data: &[u8],
-    ) -> TransactionFut {
+    fn send_taker_refunds_payment(&self, taker_refunds_payment_args: SendTakerRefundsPaymentArgs) -> TransactionFut {
         Box::new(futures01::future::err(TransactionErr::Plain(
             "Doesn't need transaction broadcast to be refunded".into(),
         )))
     }
 
-    fn send_maker_refunds_payment(
-        &self,
-        maker_payment_tx: &[u8],
-        time_lock: u32,
-        taker_pub: &[u8],
-        secret_hash: &[u8],
-        swap_contract_address: &Option<BytesJson>,
-        swap_unique_data: &[u8],
-    ) -> TransactionFut {
+    fn send_maker_refunds_payment(&self, maker_refunds_payment_args: SendMakerRefundsPaymentArgs) -> TransactionFut {
         Box::new(futures01::future::err(TransactionErr::Plain(
             "Doesn't need transaction broadcast to be refunded".into(),
         )))
     }
 
-    fn validate_fee(
-        &self,
-        fee_tx: &TransactionEnum,
-        expected_sender: &[u8],
-        fee_addr: &[u8],
-        amount: &BigDecimal,
-        min_block_number: u64,
-        uuid: &[u8],
-    ) -> Box<dyn Future<Item = (), Error = String> + Send> {
+    fn validate_fee(&self, validate_fee_args: ValidateFeeArgs) -> Box<dyn Future<Item = (), Error = String> + Send> {
         self.platform_coin.validate_fee_for_denom(
-            fee_tx,
-            expected_sender,
-            fee_addr,
-            amount,
+            validate_fee_args.fee_tx,
+            validate_fee_args.expected_sender,
+            validate_fee_args.fee_addr,
+            validate_fee_args.amount,
             self.decimals,
-            uuid,
+            validate_fee_args.uuid,
             self.denom.to_string(),
         )
     }
@@ -241,20 +179,14 @@ impl SwapOps for TendermintToken {
 
     fn check_if_my_payment_sent(
         &self,
-        time_lock: u32,
-        other_pub: &[u8],
-        secret_hash: &[u8],
-        search_from_block: u64,
-        swap_contract_address: &Option<BytesJson>,
-        swap_unique_data: &[u8],
-        amount: &BigDecimal,
+        if_my_payment_spent_args: CheckIfMyPaymentSentArgs,
     ) -> Box<dyn Future<Item = Option<TransactionEnum>, Error = String> + Send> {
         self.platform_coin.check_if_my_payment_sent_for_denom(
             self.decimals,
             self.denom.clone(),
-            other_pub,
-            secret_hash,
-            amount,
+            if_my_payment_spent_args.other_pub,
+            if_my_payment_spent_args.secret_hash,
+            if_my_payment_spent_args.amount,
         )
     }
 
@@ -295,15 +227,36 @@ impl SwapOps for TendermintToken {
         self.platform_coin.validate_other_pubkey(raw_pubkey)
     }
 
-    async fn payment_instructions(
+    async fn maker_payment_instructions(
         &self,
         _secret_hash: &[u8],
         _amount: &BigDecimal,
+        _maker_lock_duration: u64,
+        _expires_in: u64,
     ) -> Result<Option<Vec<u8>>, MmError<PaymentInstructionsErr>> {
         Ok(None)
     }
 
-    fn validate_instructions(
+    async fn taker_payment_instructions(
+        &self,
+        _secret_hash: &[u8],
+        _amount: &BigDecimal,
+        _expires_in: u64,
+    ) -> Result<Option<Vec<u8>>, MmError<PaymentInstructionsErr>> {
+        Ok(None)
+    }
+
+    fn validate_maker_payment_instructions(
+        &self,
+        _instructions: &[u8],
+        _secret_hash: &[u8],
+        _amount: BigDecimal,
+        _maker_lock_duration: u64,
+    ) -> Result<PaymentInstructions, MmError<ValidateInstructionsErr>> {
+        MmError::err(ValidateInstructionsErr::UnsupportedCoin(self.ticker().to_string()))
+    }
+
+    fn validate_taker_payment_instructions(
         &self,
         _instructions: &[u8],
         _secret_hash: &[u8],
@@ -350,13 +303,6 @@ impl WatcherOps for TendermintToken {
     }
 
     fn watcher_validate_taker_fee(&self, _taker_fee_hash: Vec<u8>, _verified_pub: Vec<u8>) -> ValidatePaymentFut<()> {
-        unimplemented!();
-    }
-
-    async fn watcher_search_for_swap_tx_spend(
-        &self,
-        input: WatcherSearchForSwapTxSpendInput<'_>,
-    ) -> Result<Option<FoundSwapTxSpend>, String> {
         unimplemented!();
     }
 
@@ -578,6 +524,7 @@ impl MmCoin for TendermintToken {
                 fee_details: Some(TxFeeDetails::Tendermint(TendermintFeeDetails {
                     coin: platform.ticker().to_string(),
                     amount: fee_amount_dec,
+                    uamount: fee_amount_u64,
                     gas_limit: GAS_LIMIT_DEFAULT,
                 })),
                 coin: token.ticker.clone(),
@@ -595,57 +542,75 @@ impl MmCoin for TendermintToken {
 
     fn decimals(&self) -> u8 { self.decimals }
 
-    fn convert_to_address(&self, from: &str, to_address_format: Json) -> Result<String, String> { todo!() }
+    fn convert_to_address(&self, from: &str, to_address_format: Json) -> Result<String, String> {
+        self.platform_coin.convert_to_address(from, to_address_format)
+    }
 
-    fn validate_address(&self, address: &str) -> ValidateAddressResult { todo!() }
+    fn validate_address(&self, address: &str) -> ValidateAddressResult { self.platform_coin.validate_address(address) }
 
-    fn process_history_loop(&self, ctx: MmArc) -> Box<dyn Future<Item = (), Error = ()> + Send> { todo!() }
+    fn process_history_loop(&self, ctx: MmArc) -> Box<dyn Future<Item = (), Error = ()> + Send> {
+        warn!("process_history_loop is deprecated, tendermint uses tx_history_v2");
+        Box::new(futures01::future::err(()))
+    }
 
-    fn history_sync_status(&self) -> HistorySyncState { todo!() }
+    fn history_sync_status(&self) -> HistorySyncState { HistorySyncState::NotEnabled }
 
-    fn get_trade_fee(&self) -> Box<dyn Future<Item = TradeFee, Error = String> + Send> { todo!() }
+    fn get_trade_fee(&self) -> Box<dyn Future<Item = TradeFee, Error = String> + Send> {
+        Box::new(futures01::future::err("Not implemented".into()))
+    }
 
     async fn get_sender_trade_fee(
         &self,
         value: TradePreimageValue,
-        stage: FeeApproxStage,
+        _stage: FeeApproxStage,
     ) -> TradePreimageResult<TradeFee> {
-        Ok(TradeFee {
-            coin: self.platform_coin.ticker().into(),
-            amount: "0.0002".into(),
-            paid_from_trading_vol: false,
-        })
+        let amount = match value {
+            TradePreimageValue::Exact(decimal) | TradePreimageValue::UpperBound(decimal) => decimal,
+        };
+
+        self.platform_coin
+            .get_sender_trade_fee_for_denom(self.ticker.clone(), self.denom.clone(), self.decimals, amount)
+            .await
     }
 
-    fn get_receiver_trade_fee(&self, stage: FeeApproxStage) -> TradePreimageFut<TradeFee> {
-        Box::new(futures01::future::ok(TradeFee {
-            coin: self.platform_coin.ticker().into(),
-            amount: "0.0002".into(),
-            paid_from_trading_vol: false,
-        }))
+    fn get_receiver_trade_fee(&self, send_amount: BigDecimal, _stage: FeeApproxStage) -> TradePreimageFut<TradeFee> {
+        let token = self.clone();
+        let fut = async move {
+            // We can't simulate Claim Htlc without having information about broadcasted htlc tx.
+            // Since create and claim htlc fees are almost same, we can simply simulate create htlc tx.
+            token
+                .platform_coin
+                .get_sender_trade_fee_for_denom(token.ticker.clone(), token.denom.clone(), token.decimals, send_amount)
+                .await
+        };
+        Box::new(fut.boxed().compat())
     }
 
     async fn get_fee_to_send_taker_fee(
         &self,
         dex_fee_amount: BigDecimal,
-        stage: FeeApproxStage,
+        _stage: FeeApproxStage,
     ) -> TradePreimageResult<TradeFee> {
-        Ok(TradeFee {
-            coin: self.platform_coin.ticker().into(),
-            amount: "0.0002".into(),
-            paid_from_trading_vol: false,
-        })
+        self.platform_coin
+            .get_fee_to_send_taker_fee_for_denom(self.ticker.clone(), self.denom.clone(), self.decimals, dex_fee_amount)
+            .await
     }
 
     fn required_confirmations(&self) -> u64 { self.platform_coin.required_confirmations() }
 
     fn requires_notarization(&self) -> bool { self.platform_coin.requires_notarization() }
 
-    fn set_required_confirmations(&self, confirmations: u64) { todo!() }
+    fn set_required_confirmations(&self, confirmations: u64) {
+        warn!("set_required_confirmations is not supported for tendermint")
+    }
 
-    fn set_requires_notarization(&self, requires_nota: bool) { todo!() }
+    fn set_requires_notarization(&self, requires_nota: bool) {
+        self.platform_coin.set_requires_notarization(requires_nota)
+    }
 
-    fn swap_contract_address(&self) -> Option<BytesJson> { None }
+    fn swap_contract_address(&self) -> Option<BytesJson> { self.platform_coin.swap_contract_address() }
+
+    fn fallback_swap_contract(&self) -> Option<BytesJson> { self.platform_coin.fallback_swap_contract() }
 
     fn mature_confirmations(&self) -> Option<u32> { None }
 
@@ -654,4 +619,8 @@ impl MmCoin for TendermintToken {
     fn is_coin_protocol_supported(&self, info: &Option<Vec<u8>>) -> bool {
         self.platform_coin.is_coin_protocol_supported(info)
     }
+
+    fn on_disabled(&self) -> Result<(), AbortedError> { AbortableSystem::abort_all(&self.abortable_system) }
+
+    fn on_token_deactivated(&self, _ticker: &str) {}
 }

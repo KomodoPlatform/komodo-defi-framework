@@ -4,6 +4,8 @@ use crate::{platform_coin_with_tokens::{EnablePlatformCoinWithTokensError, GetPl
                                         TokenInitializer, TokenOf},
             prelude::*};
 use async_trait::async_trait;
+use coins::eth::v2_activation::EthPrivKeyActivationPolicy;
+use coins::eth::EthPrivKeyBuildPolicy;
 use coins::{eth::{v2_activation::{eth_coin_from_conf_and_request_v2, Erc20Protocol, Erc20TokenActivationError,
                                   Erc20TokenActivationRequest, EthActivationV2Error, EthActivationV2Request},
                   Erc20TokenInfo, EthCoin, EthCoinType},
@@ -12,7 +14,6 @@ use coins::{eth::{v2_activation::{eth_coin_from_conf_and_request_v2, Erc20Protoc
 use common::Future01CompatExt;
 use mm2_core::mm_ctx::MmArc;
 use mm2_err_handle::prelude::*;
-use mm2_metrics::MetricsArc;
 use mm2_number::BigDecimal;
 use serde::{Deserialize, Serialize};
 use serde_json::Value as Json;
@@ -35,6 +36,19 @@ impl From<EthActivationV2Error> for EnablePlatformCoinWithTokensError {
             EthActivationV2Error::CouldNotFetchBalance(e) | EthActivationV2Error::UnreachableNodes(e) => {
                 EnablePlatformCoinWithTokensError::Transport(e)
             },
+            EthActivationV2Error::DerivationPathIsNotSet => EnablePlatformCoinWithTokensError::InvalidPayload(
+                "'derivation_path' field is not found in config".to_string(),
+            ),
+            EthActivationV2Error::ErrorDeserializingDerivationPath(e) => {
+                EnablePlatformCoinWithTokensError::InvalidPayload(e)
+            },
+            EthActivationV2Error::PrivKeyPolicyNotAllowed(e) => {
+                EnablePlatformCoinWithTokensError::PrivKeyPolicyNotAllowed(e)
+            },
+            #[cfg(target_arch = "wasm32")]
+            EthActivationV2Error::MetamaskCtxNotInitialized => EnablePlatformCoinWithTokensError::PreparationRequired(
+                "MetaMask context is not initialized. Consider using 'task::init_metamask::init' RPC".to_string(),
+            ),
             EthActivationV2Error::InternalError(e) => EnablePlatformCoinWithTokensError::Internal(e),
         }
     }
@@ -155,14 +169,15 @@ impl PlatformWithTokensActivationOps for EthCoin {
         platform_conf: Json,
         activation_request: Self::ActivationRequest,
         _protocol: Self::PlatformProtocolInfo,
-        priv_key: &[u8],
     ) -> Result<Self, MmError<Self::ActivationError>> {
+        let priv_key_policy = eth_priv_key_build_policy(&ctx, &activation_request.platform_request.priv_key_policy)?;
+
         let platform_coin = eth_coin_from_conf_and_request_v2(
             &ctx,
             &ticker,
             &platform_conf,
             activation_request.platform_request,
-            priv_key,
+            priv_key_policy,
         )
         .await?;
 
@@ -226,9 +241,25 @@ impl PlatformWithTokensActivationOps for EthCoin {
 
     fn start_history_background_fetching(
         &self,
-        _metrics: MetricsArc,
+        _ctx: MmArc,
         _storage: impl TxHistoryStorage + Send + 'static,
         _initial_balance: BigDecimal,
     ) {
+    }
+}
+
+fn eth_priv_key_build_policy(
+    ctx: &MmArc,
+    activation_policy: &EthPrivKeyActivationPolicy,
+) -> MmResult<EthPrivKeyBuildPolicy, EthActivationV2Error> {
+    match activation_policy {
+        EthPrivKeyActivationPolicy::ContextPrivKey => Ok(EthPrivKeyBuildPolicy::detect_priv_key_policy(ctx)?),
+        #[cfg(target_arch = "wasm32")]
+        EthPrivKeyActivationPolicy::Metamask => {
+            let metamask_ctx = crypto::CryptoCtx::from_ctx(ctx)?
+                .metamask_ctx()
+                .or_mm_err(|| EthActivationV2Error::MetamaskCtxNotInitialized)?;
+            Ok(EthPrivKeyBuildPolicy::Metamask(metamask_ctx))
+        },
     }
 }

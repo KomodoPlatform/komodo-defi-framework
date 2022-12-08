@@ -62,7 +62,7 @@ pub fn get_all_network_seednodes(netid: u16) -> Vec<(PeerId, RelayAddress)> {
     ALL_NETID_7777_SEEDNODES
         .iter()
         .map(|(peer_id, ipv4)| {
-            let peer_id = PeerId::from_str(*peer_id).expect("valid peer id");
+            let peer_id = PeerId::from_str(peer_id).expect("valid peer id");
             let address = RelayAddress::IPv4(ipv4.to_string());
             (peer_id, address)
         })

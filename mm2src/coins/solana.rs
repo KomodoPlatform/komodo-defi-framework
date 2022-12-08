@@ -2,18 +2,22 @@ use super::{CoinBalance, HistorySyncState, MarketCoinOps, MmCoin, SwapOps, Trade
 use crate::coin_errors::MyAddressError;
 use crate::solana::solana_common::{lamports_to_sol, PrepareTransferData, SufficientBalanceError};
 use crate::solana::spl::SplTokenInfo;
-use crate::{BalanceError, BalanceFut, CoinFutSpawner, FeeApproxStage, FoundSwapTxSpend, NegotiateSwapContractAddrErr,
-            PaymentInstructions, PaymentInstructionsErr, RawTransactionFut, RawTransactionRequest,
-            SearchForSwapTxSpendInput, SignatureResult, TradePreimageFut, TradePreimageResult, TradePreimageValue,
-            TransactionDetails, TransactionFut, TransactionType, TxMarshalingErr, UnexpectedDerivationMethod,
-            ValidateAddressResult, ValidateInstructionsErr, ValidateOtherPubKeyErr, ValidatePaymentFut,
-            ValidatePaymentInput, VerificationResult, WatcherSearchForSwapTxSpendInput, WatcherValidatePaymentInput,
-            WithdrawError, WithdrawFut, WithdrawRequest, WithdrawResult};
+use crate::{BalanceError, BalanceFut, CheckIfMyPaymentSentArgs, CoinFutSpawner, FeeApproxStage, FoundSwapTxSpend,
+            NegotiateSwapContractAddrErr, PaymentInstructions, PaymentInstructionsErr, PrivKeyBuildPolicy,
+            PrivKeyPolicyNotAllowed, RawTransactionFut, RawTransactionRequest, SearchForSwapTxSpendInput,
+            SendMakerPaymentArgs, SendMakerRefundsPaymentArgs, SendMakerSpendsTakerPaymentArgs, SendTakerPaymentArgs,
+            SendTakerRefundsPaymentArgs, SendTakerSpendsMakerPaymentArgs, SignatureResult, TradePreimageFut,
+            TradePreimageResult, TradePreimageValue, TransactionDetails, TransactionFut, TransactionType,
+            TxMarshalingErr, UnexpectedDerivationMethod, ValidateAddressResult, ValidateFeeArgs,
+            ValidateInstructionsErr, ValidateOtherPubKeyErr, ValidatePaymentFut, ValidatePaymentInput,
+            VerificationResult, WatcherValidatePaymentInput, WithdrawError, WithdrawFut, WithdrawRequest,
+            WithdrawResult};
 use async_trait::async_trait;
 use base58::ToBase58;
 use bincode::{deserialize, serialize};
-use common::executor::{abortable_queue::AbortableQueue, AbortableSystem};
+use common::executor::{abortable_queue::AbortableQueue, AbortableSystem, AbortedError};
 use common::{async_blocking, now_ms};
+use crypto::StandardHDPathToCoin;
 use derive_more::Display;
 use futures::{FutureExt, TryFutureExt};
 use futures01::Future;
@@ -164,24 +168,34 @@ fn generate_keypair_from_slice(priv_key: &[u8]) -> Result<Keypair, MmError<KeyPa
         .map_to_mm(|e| KeyPairCreationError::KeyPairFromSeed(e.to_string()))
 }
 
-pub async fn solana_coin_from_conf_and_params(
+pub async fn solana_coin_with_policy(
     ctx: &MmArc,
     ticker: &str,
     conf: &Json,
     params: SolanaActivationParams,
-    priv_key: &[u8],
+    priv_key_policy: PrivKeyBuildPolicy,
 ) -> Result<SolanaCoin, String> {
     let client = RpcClient::new_with_commitment(params.client_url.clone(), CommitmentConfig {
         commitment: params.confirmation_commitment,
     });
     let decimals = conf["decimals"].as_u64().unwrap_or(SOLANA_DEFAULT_DECIMALS) as u8;
-    let key_pair = try_s!(generate_keypair_from_slice(priv_key));
+
+    let priv_key = match priv_key_policy {
+        PrivKeyBuildPolicy::IguanaPrivKey(priv_key) => priv_key,
+        PrivKeyBuildPolicy::GlobalHDAccount(global_hd) => {
+            let derivation_path: StandardHDPathToCoin = try_s!(json::from_value(conf["derivation_path"].clone()));
+            try_s!(global_hd.derive_secp256k1_secret(&derivation_path))
+        },
+        PrivKeyBuildPolicy::Trezor => return ERR!("{}", PrivKeyPolicyNotAllowed::HardwareWalletNotSupported),
+    };
+
+    let key_pair = try_s!(generate_keypair_from_slice(priv_key.as_slice()));
     let my_address = key_pair.pubkey().to_string();
     let spl_tokens_infos = Arc::new(Mutex::new(HashMap::new()));
 
     // Create an abortable system linked to the `MmCtx` so if the context is stopped via `MmArc::stop`,
     // all spawned futures related to `SolanaCoin` will be aborted as well.
-    let abortable_system: AbortableQueue = ctx.abortable_system.create_subsystem();
+    let abortable_system: AbortableQueue = try_s!(ctx.abortable_system.create_subsystem());
 
     let solana_coin = SolanaCoin(Arc::new(SolanaCoinImpl {
         my_address,
@@ -205,14 +219,14 @@ pub struct SolanaCoinImpl {
     spl_tokens_infos: Arc<Mutex<HashMap<String, SplTokenInfo>>>,
     /// This spawner is used to spawn coin's related futures that should be aborted on coin deactivation
     /// and on [`MmArc::stop`].
-    abortable_system: AbortableQueue,
+    pub abortable_system: AbortableQueue,
 }
 
 #[derive(Clone)]
 pub struct SolanaCoin(Arc<SolanaCoinImpl>);
 impl Deref for SolanaCoin {
     type Target = SolanaCoinImpl;
-    fn deref(&self) -> &SolanaCoinImpl { &*self.0 }
+    fn deref(&self) -> &SolanaCoinImpl { &self.0 }
 }
 
 #[async_trait]
@@ -276,7 +290,7 @@ async fn withdraw_base_coin_impl(coin: SolanaCoin, req: WithdrawRequest) -> With
 }
 
 async fn withdraw_impl(coin: SolanaCoin, req: WithdrawRequest) -> WithdrawResult {
-    let validate_address_result = coin.validate_address(&*req.to);
+    let validate_address_result = coin.validate_address(&req.to);
     if !validate_address_result.is_valid {
         return MmError::err(WithdrawError::InvalidAddress(
             validate_address_result.reason.unwrap_or_else(|| "Unknown".to_string()),
@@ -322,14 +336,14 @@ impl SolanaCoin {
             });
         }
         let actual_token_pubkey =
-            Pubkey::from_str(&*token_accounts[0].pubkey).map_err(|e| BalanceError::Internal(format!("{:?}", e)))?;
+            Pubkey::from_str(&token_accounts[0].pubkey).map_err(|e| BalanceError::Internal(format!("{:?}", e)))?;
         let amount = async_blocking({
             let coin = self.clone();
             move || coin.rpc().get_token_account_balance(&actual_token_pubkey)
         })
         .await?;
         let balance =
-            BigDecimal::from_str(&*amount.ui_amount_string).map_to_mm(|e| BalanceError::Internal(e.to_string()))?;
+            BigDecimal::from_str(&amount.ui_amount_string).map_to_mm(|e| BalanceError::Internal(e.to_string()))?;
         Ok(CoinBalance {
             spendable: balance,
             unspendable: Default::default(),
@@ -468,93 +482,33 @@ impl MarketCoinOps for SolanaCoin {
 impl SwapOps for SolanaCoin {
     fn send_taker_fee(&self, _fee_addr: &[u8], amount: BigDecimal, _uuid: &[u8]) -> TransactionFut { unimplemented!() }
 
-    fn send_maker_payment(
-        &self,
-        _time_lock_duration: u64,
-        time_lock: u32,
-        taker_pub: &[u8],
-        secret_hash: &[u8],
-        amount: BigDecimal,
-        swap_contract_address: &Option<BytesJson>,
-        _swap_unique_data: &[u8],
-        _payment_instructions: &Option<PaymentInstructions>,
-    ) -> TransactionFut {
-        unimplemented!()
-    }
+    fn send_maker_payment(&self, _maker_payment_args: SendMakerPaymentArgs) -> TransactionFut { unimplemented!() }
 
-    fn send_taker_payment(
-        &self,
-        _time_lock_duration: u64,
-        time_lock: u32,
-        taker_pub: &[u8],
-        secret_hash: &[u8],
-        amount: BigDecimal,
-        swap_contract_address: &Option<BytesJson>,
-        _swap_unique_data: &[u8],
-        _payment_instructions: &Option<PaymentInstructions>,
-    ) -> TransactionFut {
-        unimplemented!()
-    }
+    fn send_taker_payment(&self, _taker_payment_args: SendTakerPaymentArgs) -> TransactionFut { unimplemented!() }
 
     fn send_maker_spends_taker_payment(
         &self,
-        _taker_payment_tx: &[u8],
-        _time_lock: u32,
-        _taker_pub: &[u8],
-        _secret: &[u8],
-        _secret_hash: &[u8],
-        _swap_contract_address: &Option<BytesJson>,
-        _swap_unique_data: &[u8],
+        _maker_spends_payment_args: SendMakerSpendsTakerPaymentArgs,
     ) -> TransactionFut {
         unimplemented!()
     }
 
     fn send_taker_spends_maker_payment(
         &self,
-        maker_payment_tx: &[u8],
-        time_lock: u32,
-        maker_pub: &[u8],
-        secret: &[u8],
-        secret_hash: &[u8],
-        swap_contract_address: &Option<BytesJson>,
-        _swap_unique_data: &[u8],
+        _taker_spends_payment_args: SendTakerSpendsMakerPaymentArgs,
     ) -> TransactionFut {
         unimplemented!()
     }
 
-    fn send_taker_refunds_payment(
-        &self,
-        _taker_payment_tx: &[u8],
-        _time_lock: u32,
-        _maker_pub: &[u8],
-        _secret_hash: &[u8],
-        _swap_contract_address: &Option<BytesJson>,
-        _swap_unique_data: &[u8],
-    ) -> TransactionFut {
+    fn send_taker_refunds_payment(&self, _taker_refunds_payment_args: SendTakerRefundsPaymentArgs) -> TransactionFut {
         unimplemented!()
     }
 
-    fn send_maker_refunds_payment(
-        &self,
-        maker_payment_tx: &[u8],
-        time_lock: u32,
-        taker_pub: &[u8],
-        secret_hash: &[u8],
-        swap_contract_address: &Option<BytesJson>,
-        _swap_unique_data: &[u8],
-    ) -> TransactionFut {
+    fn send_maker_refunds_payment(&self, _maker_refunds_payment_args: SendMakerRefundsPaymentArgs) -> TransactionFut {
         unimplemented!()
     }
 
-    fn validate_fee(
-        &self,
-        _fee_tx: &TransactionEnum,
-        _expected_sender: &[u8],
-        _fee_addr: &[u8],
-        _amount: &BigDecimal,
-        _min_block_number: u64,
-        _uuid: &[u8],
-    ) -> Box<dyn Future<Item = (), Error = String> + Send> {
+    fn validate_fee(&self, _validate_fee_args: ValidateFeeArgs) -> Box<dyn Future<Item = (), Error = String> + Send> {
         unimplemented!()
     }
 
@@ -564,13 +518,7 @@ impl SwapOps for SolanaCoin {
 
     fn check_if_my_payment_sent(
         &self,
-        time_lock: u32,
-        my_pub: &[u8],
-        other_pub: &[u8],
-        search_from_block: u64,
-        swap_contract_address: &Option<BytesJson>,
-        swap_unique_data: &[u8],
-        amount: &BigDecimal,
+        _if_my_payment_spent_args: CheckIfMyPaymentSentArgs,
     ) -> Box<dyn Future<Item = Option<TransactionEnum>, Error = String> + Send> {
         unimplemented!()
     }
@@ -606,15 +554,36 @@ impl SwapOps for SolanaCoin {
 
     fn validate_other_pubkey(&self, _raw_pubkey: &[u8]) -> MmResult<(), ValidateOtherPubKeyErr> { unimplemented!() }
 
-    async fn payment_instructions(
+    async fn maker_payment_instructions(
         &self,
         _secret_hash: &[u8],
         _amount: &BigDecimal,
+        _maker_lock_duration: u64,
+        _expires_in: u64,
     ) -> Result<Option<Vec<u8>>, MmError<PaymentInstructionsErr>> {
         unimplemented!()
     }
 
-    fn validate_instructions(
+    async fn taker_payment_instructions(
+        &self,
+        _secret_hash: &[u8],
+        _amount: &BigDecimal,
+        _expires_in: u64,
+    ) -> Result<Option<Vec<u8>>, MmError<PaymentInstructionsErr>> {
+        unimplemented!()
+    }
+
+    fn validate_maker_payment_instructions(
+        &self,
+        _instructions: &[u8],
+        _secret_hash: &[u8],
+        _amount: BigDecimal,
+        _maker_lock_duration: u64,
+    ) -> Result<PaymentInstructions, MmError<ValidateInstructionsErr>> {
+        unimplemented!()
+    }
+
+    fn validate_taker_payment_instructions(
         &self,
         _instructions: &[u8],
         _secret_hash: &[u8],
@@ -665,13 +634,6 @@ impl WatcherOps for SolanaCoin {
     }
 
     fn watcher_validate_taker_payment(&self, _input: WatcherValidatePaymentInput) -> ValidatePaymentFut<()> {
-        unimplemented!();
-    }
-
-    async fn watcher_search_for_swap_tx_spend(
-        &self,
-        input: WatcherSearchForSwapTxSpendInput<'_>,
-    ) -> Result<Option<FoundSwapTxSpend>, String> {
         unimplemented!();
     }
 }
@@ -731,18 +693,20 @@ impl MmCoin for SolanaCoin {
 
     async fn get_sender_trade_fee(
         &self,
-        value: TradePreimageValue,
-        stage: FeeApproxStage,
+        _value: TradePreimageValue,
+        _stage: FeeApproxStage,
     ) -> TradePreimageResult<TradeFee> {
         unimplemented!()
     }
 
-    fn get_receiver_trade_fee(&self, _stage: FeeApproxStage) -> TradePreimageFut<TradeFee> { unimplemented!() }
+    fn get_receiver_trade_fee(&self, _send_amount: BigDecimal, _stage: FeeApproxStage) -> TradePreimageFut<TradeFee> {
+        unimplemented!()
+    }
 
     async fn get_fee_to_send_taker_fee(
         &self,
-        dex_fee_amount: BigDecimal,
-        stage: FeeApproxStage,
+        _dex_fee_amount: BigDecimal,
+        _stage: FeeApproxStage,
     ) -> TradePreimageResult<TradeFee> {
         unimplemented!()
     }
@@ -757,9 +721,15 @@ impl MmCoin for SolanaCoin {
 
     fn swap_contract_address(&self) -> Option<BytesJson> { unimplemented!() }
 
+    fn fallback_swap_contract(&self) -> Option<BytesJson> { unimplemented!() }
+
     fn mature_confirmations(&self) -> Option<u32> { None }
 
     fn coin_protocol_info(&self) -> Vec<u8> { Vec::new() }
 
     fn is_coin_protocol_supported(&self, _info: &Option<Vec<u8>>) -> bool { true }
+
+    fn on_disabled(&self) -> Result<(), AbortedError> { AbortableSystem::abort_all(&self.abortable_system) }
+
+    fn on_token_deactivated(&self, _ticker: &str) {}
 }

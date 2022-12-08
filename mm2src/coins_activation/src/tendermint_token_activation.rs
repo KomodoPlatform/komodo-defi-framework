@@ -13,7 +13,9 @@ impl From<TendermintTokenInitError> for EnableTokenError {
     fn from(err: TendermintTokenInitError) -> Self {
         match err {
             TendermintTokenInitError::InvalidDenom(e) => EnableTokenError::InvalidConfig(e),
-            TendermintTokenInitError::MyAddressError(e) => EnableTokenError::Internal(e),
+            TendermintTokenInitError::MyAddressError(e) | TendermintTokenInitError::Internal(e) => {
+                EnableTokenError::Internal(e)
+            },
             TendermintTokenInitError::CouldNotFetchBalance(e) => EnableTokenError::CouldNotFetchBalance(e),
         }
     }
@@ -43,7 +45,6 @@ impl TokenProtocolParams for TendermintTokenProtocolInfo {
 
 #[async_trait]
 impl TokenActivationOps for TendermintToken {
-    type PlatformCoin = TendermintCoin;
     type ActivationParams = TendermintTokenActivationParams;
     type ProtocolInfo = TendermintTokenProtocolInfo;
     type ActivationResult = TendermintTokenInitResult;
@@ -66,6 +67,7 @@ impl TokenActivationOps for TendermintToken {
         let my_address = token.my_address()?;
         let mut balances = HashMap::new();
         balances.insert(my_address, balance);
+
         let init_result = TendermintTokenInitResult {
             balances,
             platform_coin: token.platform_ticker().into(),

@@ -1,5 +1,7 @@
 use super::{DispatcherError, DispatcherResult, PUBLIC_METHODS};
 use crate::mm2::lp_native_dex::init_hw::{cancel_init_trezor, init_trezor, init_trezor_status, init_trezor_user_action};
+#[cfg(target_arch = "wasm32")]
+use crate::mm2::lp_native_dex::init_metamask::{cancel_connect_metamask, connect_metamask, connect_metamask_status};
 use crate::mm2::lp_ordermatch::{best_orders_rpc_v2, orderbook_rpc_v2, start_simple_market_maker_bot,
                                 stop_simple_market_maker_bot};
 use crate::mm2::rpc::rate_limiter::{process_rate_limit, RateLimitContext};
@@ -29,8 +31,9 @@ use coins::{add_delegation, get_raw_transaction, get_staking_infos, remove_deleg
             withdraw};
 #[cfg(all(not(target_os = "ios"), not(target_os = "android"), not(target_arch = "wasm32")))]
 use coins::{SolanaCoin, SplToken};
-use coins_activation::{cancel_init_standalone_coin, enable_l2, enable_platform_coin_with_tokens, enable_token,
-                       init_standalone_coin, init_standalone_coin_status, init_standalone_coin_user_action};
+use coins_activation::{cancel_init_l2, cancel_init_standalone_coin, enable_platform_coin_with_tokens, enable_token,
+                       init_l2, init_l2_status, init_l2_user_action, init_standalone_coin,
+                       init_standalone_coin_status, init_standalone_coin_user_action};
 use common::log::{error, warn};
 use common::HttpStatusCode;
 use futures::Future as Future03;
@@ -175,7 +178,6 @@ async fn dispatcher_v2(request: MmRpcRequest, ctx: MmArc) -> DispatcherResult<Re
         "withdraw" => handle_mmrpc(ctx, request, withdraw).await,
         #[cfg(not(target_arch = "wasm32"))]
         native_only_methods => match native_only_methods {
-            "enable_lightning" => handle_mmrpc(ctx, request, enable_l2::<LightningCoin>).await,
             #[cfg(all(not(target_os = "ios"), not(target_os = "android")))]
             "enable_solana_with_tokens" => {
                 handle_mmrpc(ctx, request, enable_platform_coin_with_tokens::<SolanaCoin>).await
@@ -233,6 +235,10 @@ async fn rpc_task_dispatcher(
         "withdraw::user_action" => handle_mmrpc(ctx, request, withdraw_user_action).await,
         #[cfg(not(target_arch = "wasm32"))]
         native_only_methods => match native_only_methods {
+            "enable_lightning::cancel" => handle_mmrpc(ctx, request, cancel_init_l2::<LightningCoin>).await,
+            "enable_lightning::init" => handle_mmrpc(ctx, request, init_l2::<LightningCoin>).await,
+            "enable_lightning::status" => handle_mmrpc(ctx, request, init_l2_status::<LightningCoin>).await,
+            "enable_lightning::user_action" => handle_mmrpc(ctx, request, init_l2_user_action::<LightningCoin>).await,
             "enable_z_coin::cancel" => handle_mmrpc(ctx, request, cancel_init_standalone_coin::<ZCoin>).await,
             "enable_z_coin::init" => handle_mmrpc(ctx, request, init_standalone_coin::<ZCoin>).await,
             "enable_z_coin::status" => handle_mmrpc(ctx, request, init_standalone_coin_status::<ZCoin>).await,
@@ -240,7 +246,12 @@ async fn rpc_task_dispatcher(
             _ => MmError::err(DispatcherError::NoSuchMethod),
         },
         #[cfg(target_arch = "wasm32")]
-        _ => MmError::err(DispatcherError::NoSuchMethod),
+        wasm_only_methods => match wasm_only_methods {
+            "connect_metamask::cancel" => handle_mmrpc(ctx, request, cancel_connect_metamask).await,
+            "connect_metamask::init" => handle_mmrpc(ctx, request, connect_metamask).await,
+            "connect_metamask::status" => handle_mmrpc(ctx, request, connect_metamask_status).await,
+            _ => MmError::err(DispatcherError::NoSuchMethod),
+        },
     }
 }
 

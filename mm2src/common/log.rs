@@ -155,6 +155,7 @@ pub fn short_log_time(ms: u64) -> DelayedFormat<StrftimeItems<'static>> {
     // NB: Given that the debugging logs are targeted at the developers and not the users
     // I think it's better to output the time in GMT here
     // in order for the developers to more easily match the events between the various parts of the peer-to-peer system.
+    #[allow(deprecated)]
     let time = Utc.timestamp_millis(ms as i64);
     time.format("%d %H:%M:%S")
 }
@@ -464,6 +465,7 @@ impl Default for LogEntry {
 
 impl LogEntry {
     pub fn format(&self, buf: &mut String) -> Result<(), fmt::Error> {
+        #[allow(deprecated)]
         let time = Local.timestamp_millis(self.time as i64);
         let time_formatted = time.format("%Y-%m-%d %H:%M:%S %z");
         let emotion = if self.emotion.is_empty() { "·" } else { &self.emotion };
@@ -610,7 +612,7 @@ pub struct LogArc(pub Arc<LogState>);
 
 impl Deref for LogArc {
     type Target = LogState;
-    fn deref(&self) -> &LogState { &*self.0 }
+    fn deref(&self) -> &LogState { &self.0 }
 }
 
 impl LogArc {
@@ -772,7 +774,7 @@ impl LogState {
 
     pub fn with_tail(&self, cb: &mut dyn FnMut(&VecDeque<LogEntry>)) {
         let tail = self.tail.lock();
-        cb(&*tail)
+        cb(&tail)
     }
 
     pub fn with_gravity_tail(&self, cb: &mut dyn FnMut(&VecDeque<String>)) {
@@ -780,7 +782,7 @@ impl LogState {
         if let Some(ref gravity) = gravity {
             gravity.flush();
             let tail = gravity.tail.lock();
-            cb(&*tail);
+            cb(&tail);
         }
     }
 

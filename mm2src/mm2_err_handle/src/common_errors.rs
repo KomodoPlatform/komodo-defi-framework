@@ -9,3 +9,9 @@ pub trait WithInternal {
 pub trait WithTimeout {
     fn timeout(duration: Duration) -> Self;
 }
+
+pub struct InternalError(pub String);
+
+impl InternalError {
+    pub fn take(self) -> String { self.0 }
+}

@@ -1,18 +1,21 @@
 use crate::hd_wallet::{AddressDerivingError, InvalidBip44ChainError};
+use crate::tendermint::{TENDERMINT_ASSET_PROTOCOL_TYPE, TENDERMINT_COIN_PROTOCOL_TYPE};
 use crate::tx_history_storage::{CreateTxHistoryStorageError, FilteringAddresses, GetTxHistoryFilters,
                                 TxHistoryStorageBuilder, WalletId};
-use crate::{lp_coinfind_or_err, BlockHeightAndTime, CoinFindError, HDAccountAddressId, HistorySyncState, MmCoin,
-            MmCoinEnum, Transaction, TransactionDetails, TransactionType, TxFeeDetails, UtxoRpcError};
+use crate::utxo::utxo_common::big_decimal_from_sat_unsigned;
+use crate::{coin_conf, lp_coinfind_or_err, BlockHeightAndTime, CoinFindError, HDAccountAddressId, HistorySyncState,
+            MmCoin, MmCoinEnum, Transaction, TransactionDetails, TransactionType, TxFeeDetails, UtxoRpcError};
 use async_trait::async_trait;
 use bitcrypto::sha256;
 use common::{calc_total_pages, ten, HttpStatusCode, PagingOptionsEnum, StatusCode};
-use crypto::Bip44DerivationPath;
+use crypto::StandardHDPath;
 use derive_more::Display;
 use futures::compat::Future01CompatExt;
 use keys::{Address, CashAddress};
 use mm2_core::mm_ctx::MmArc;
 use mm2_err_handle::prelude::*;
 use mm2_number::BigDecimal;
+use num_traits::ToPrimitive;
 use rpc::v1::types::{Bytes as BytesJson, ToTxHash};
 use std::collections::HashSet;
 
@@ -68,6 +71,9 @@ pub trait TxHistoryStorage: Send + Sync + 'static {
         wallet_id: &WalletId,
         internal_id: &BytesJson,
     ) -> Result<Option<TransactionDetails>, MmError<Self::Error>>;
+
+    /// Gets the highest block_height from the selected wallet's history
+    async fn get_highest_block_height(&self, wallet_id: &WalletId) -> Result<Option<u32>, MmError<Self::Error>>;
 
     /// Returns whether the history contains unconfirmed transactions.
     async fn history_contains_unconfirmed_txes(
@@ -215,8 +221,18 @@ impl<'a, Addr: Clone + DisplayAddress + Eq + std::hash::Hash, Tx: Transaction> T
                 bytes_for_hash.extend_from_slice(&token_id.0);
                 sha256(&bytes_for_hash).to_vec().into()
             },
+            TransactionType::CustomTendermintMsg { token_id, .. } => {
+                if let Some(token_id) = token_id {
+                    let mut bytes_for_hash = tx_hash.0.clone();
+                    bytes_for_hash.extend_from_slice(&token_id.0);
+                    sha256(&bytes_for_hash).to_vec().into()
+                } else {
+                    tx_hash.clone()
+                }
+            },
             TransactionType::StakingDelegation
             | TransactionType::RemoveDelegation
+            | TransactionType::FeeForTokenTx
             | TransactionType::StandardTransfer => tx_hash.clone(),
         };
 
@@ -247,7 +263,7 @@ pub enum MyTxHistoryTarget {
     Iguana,
     AccountId { account_id: u32 },
     AddressId(HDAccountAddressId),
-    AddressDerivationPath(Bip44DerivationPath),
+    AddressDerivationPath(StandardHDPath),
 }
 
 impl Default for MyTxHistoryTarget {
@@ -375,6 +391,8 @@ pub async fn my_tx_history_v2_rpc(
         MmCoinEnum::SlpToken(slp_token) => my_tx_history_v2_impl(ctx, &slp_token, request).await,
         MmCoinEnum::UtxoCoin(utxo) => my_tx_history_v2_impl(ctx, &utxo, request).await,
         MmCoinEnum::QtumCoin(qtum) => my_tx_history_v2_impl(ctx, &qtum, request).await,
+        MmCoinEnum::Tendermint(tendermint) => my_tx_history_v2_impl(ctx, &tendermint, request).await,
+        MmCoinEnum::TendermintToken(tendermint_token) => my_tx_history_v2_impl(ctx, &tendermint_token, request).await,
         other => MmError::err(MyTxHistoryErrorV2::NotSupportedFor(other.ticker().to_owned())),
     }
 }
@@ -406,6 +424,10 @@ where
         .get_history(&wallet_id, filters, request.paging_options.clone(), request.limit)
         .await?;
 
+    let coin_conf = coin_conf(&ctx, coin.ticker());
+    let protocol_type = coin_conf["protocol"]["type"].as_str().unwrap_or_default();
+    let decimals = coin.decimals();
+
     let transactions = history
         .transactions
         .into_iter()
@@ -414,6 +436,59 @@ where
             if details.coin != request.coin {
                 details.coin = request.coin.clone();
             }
+
+            // TODO
+            // !! temporary solution !!
+            // for tendermint, tx_history_v2 implementation doesn't include amount parsing logic.
+            // therefore, re-mapping is required
+            match protocol_type {
+                TENDERMINT_COIN_PROTOCOL_TYPE | TENDERMINT_ASSET_PROTOCOL_TYPE => {
+                    // TODO
+                    // see this https://github.com/KomodoPlatform/atomicDEX-API/pull/1526#discussion_r1037001780
+                    if let Some(TxFeeDetails::Utxo(fee)) = &mut details.fee_details {
+                        let mapped_fee = crate::tendermint::TendermintFeeDetails {
+                            // We make sure this is filled in `tendermint_tx_history_v2`
+                            coin: fee.coin.as_ref().expect("can't be empty").to_owned(),
+                            amount: fee.amount.clone(),
+                            gas_limit: crate::tendermint::GAS_LIMIT_DEFAULT,
+                            // ignored anyway
+                            uamount: 0,
+                        };
+                        details.fee_details = Some(TxFeeDetails::Tendermint(mapped_fee));
+                    }
+
+                    match &details.transaction_type {
+                        // Amount mappings are by-passed when `TransactionType` is `FeeForTokenTx`
+                        TransactionType::FeeForTokenTx => {},
+                        _ => {
+                            // In order to use error result instead of panicking, we should do an extra iteration above this map.
+                            // Because all the values are inserted by u64 convertion in tx_history_v2 implementation, using `panic`
+                            // shouldn't harm.
+
+                            let u_total_amount = details.total_amount.to_u64().unwrap_or_else(|| {
+                                panic!("Parsing '{}' into u64 should not fail", details.total_amount)
+                            });
+                            details.total_amount = big_decimal_from_sat_unsigned(u_total_amount, decimals);
+
+                            let u_spent_by_me = details.spent_by_me.to_u64().unwrap_or_else(|| {
+                                panic!("Parsing '{}' into u64 should not fail", details.spent_by_me)
+                            });
+                            details.spent_by_me = big_decimal_from_sat_unsigned(u_spent_by_me, decimals);
+
+                            let u_received_by_me = details.received_by_me.to_u64().unwrap_or_else(|| {
+                                panic!("Parsing '{}' into u64 should not fail", details.received_by_me)
+                            });
+                            details.received_by_me = big_decimal_from_sat_unsigned(u_received_by_me, decimals);
+
+                            // Because this can be negative values, no need to read and parse
+                            // this since it's always 0 from tx_history_v2 implementation.
+                            details.my_balance_change = &details.received_by_me - &details.spent_by_me;
+                        },
+                    }
+                },
+                _ => {},
+            };
+
             let confirmations = if details.block_height == 0 || details.block_height > current_block {
                 0
             } else {

@@ -155,6 +155,18 @@ fn select_tx_by_internal_id_sql(wallet_id: &WalletId) -> Result<String, MmError<
     Ok(sql)
 }
 
+fn select_highest_block_height_sql(wallet_id: &WalletId) -> Result<String, MmError<SqlError>> {
+    let table_name = tx_history_table(wallet_id);
+    validate_table_name(&table_name)?;
+
+    let sql = format!(
+        "SELECT block_height FROM {} ORDER BY block_height DESC LIMIT 1;",
+        table_name
+    );
+
+    Ok(sql)
+}
+
 fn update_tx_in_table_by_internal_id_sql(wallet_id: &WalletId) -> Result<String, MmError<SqlError>> {
     let table_name = tx_history_table(wallet_id);
     validate_table_name(&table_name)?;
@@ -340,6 +352,8 @@ fn tx_details_from_row(row: &Row<'_>) -> Result<TransactionDetails, SqlError> {
     json::from_str(&json_string).map_err(|e| SqlError::FromSqlConversionFailure(0, Type::Text, Box::new(e)))
 }
 
+fn block_height_from_row(row: &Row<'_>) -> Result<u32, SqlError> { row.get(0) }
+
 impl TxHistoryStorageError for SqlError {}
 
 impl ConfirmationStatus {
@@ -512,6 +526,17 @@ impl TxHistoryStorage for SqliteTxHistoryStorage {
         .await
     }
 
+    async fn get_highest_block_height(&self, wallet_id: &WalletId) -> Result<Option<u32>, MmError<Self::Error>> {
+        let sql = select_highest_block_height_sql(wallet_id)?;
+        let selfi = self.clone();
+
+        async_blocking(move || {
+            let conn = selfi.0.lock().unwrap();
+            query_single_row(&conn, &sql, NO_PARAMS, block_height_from_row).map_to_mm(SqlError::from)
+        })
+        .await
+    }
+
     async fn history_contains_unconfirmed_txes(
         &self,
         wallet_id: &WalletId,
@@ -643,7 +668,7 @@ impl TxHistoryStorage for SqliteTxHistoryStorage {
             }
             let tx_hex = maybe_tx_hex?;
             let tx_bytes =
-                hex::decode(&tx_hex).map_err(|e| SqlError::FromSqlConversionFailure(0, Type::Text, Box::new(e)))?;
+                hex::decode(tx_hex).map_err(|e| SqlError::FromSqlConversionFailure(0, Type::Text, Box::new(e)))?;
             Ok(Some(tx_bytes.into()))
         })
         .await

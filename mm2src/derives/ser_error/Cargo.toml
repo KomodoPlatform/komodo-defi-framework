@@ -4,5 +4,8 @@ version = "0.1.0"
 authors = ["Sergey O. Boyko <sergey.boyko0791@gmail.com>"]
 edition = "2018"
 
+[lib]
+doctest = false
+
 [dependencies]
 serde = "1.0"

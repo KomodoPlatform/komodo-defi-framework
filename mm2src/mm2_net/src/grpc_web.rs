@@ -87,7 +87,7 @@ where
         return MmError::err(DecodeBodyError::PayloadTooShort);
     }
 
-    let msg = T::decode(&mut body.split_to(len as usize))?;
+    let msg = T::decode(&mut body.split_to(len))?;
 
     Ok(msg)
 }

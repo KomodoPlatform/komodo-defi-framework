@@ -1,0 +1,19 @@
+[package]
+name = "mm2_metamask"
+version = "0.1.0"
+edition = "2021"
+
+[target.'cfg(target_arch = "wasm32")'.dependencies]
+async-trait = "0.1"
+common = { path = "../common" }
+derive_more = "0.99"
+futures = { version = "0.3", package = "futures" }
+itertools = "0.10"
+js-sys = { version = "0.3.27" }
+mm2_err_handle = { path = "../mm2_err_handle" }
+parking_lot = { version = "0.12.0", features = ["nightly"] }
+serde = "1.0"
+serde_json = "1.0"
+serde_derive = "1.0"
+wasm-bindgen = { version = "0.2.50", features = ["nightly"] }
+wasm-bindgen-futures = { version = "0.4.1" }

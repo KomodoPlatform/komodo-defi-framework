@@ -1,18 +1,14 @@
-use arrayref::array_ref;
 #[cfg(feature = "track-ctx-pointer")]
 use common::executor::Timer;
 use common::executor::{abortable_queue::{AbortableQueue, WeakSpawner},
                        graceful_shutdown, AbortSettings, AbortableSystem, SpawnAbortable, SpawnFuture};
-use common::log::{self, LogLevel, LogState};
-use common::{bits256, cfg_native, cfg_wasm32, small_rng};
+use common::log::{self, LogLevel, LogOnError, LogState};
+use common::{cfg_native, cfg_wasm32, small_rng};
 use gstuff::{try_s, Constructible, ERR, ERRL};
-use keys::KeyPair;
 use lazy_static::lazy_static;
 use mm2_metrics::{MetricsArc, MetricsOps};
 use primitives::hash::H160;
 use rand::Rng;
-use serde::{Deserialize, Serialize};
-use serde_bytes::ByteBuf;
 use serde_json::{self as json, Value as Json};
 use shared_ref_counter::{SharedRc, WeakRc};
 use std::any::Any;
@@ -31,7 +27,6 @@ cfg_wasm32! {
 
 cfg_native! {
     use db_common::sqlite::rusqlite::Connection;
-    use lightning_background_processor::BackgroundProcessor;
     use mm2_metrics::prometheus;
     use mm2_metrics::MmMetricsError;
     use std::net::{IpAddr, SocketAddr, AddrParseError};
@@ -95,26 +90,19 @@ pub struct MmCtx {
     pub crypto_ctx: Mutex<Option<Arc<dyn Any + 'static + Send + Sync>>>,
     /// RIPEMD160(SHA256(x)) where x is secp256k1 pubkey derived from passphrase.
     pub rmd160: Constructible<H160>,
-    /// secp256k1 key pair derived from passphrase.
-    /// cf. `key_pair_from_seed`.
-    pub secp256k1_key_pair: Constructible<KeyPair>,
     /// Coins that should be enabled to kick start the interrupted swaps and orders.
     pub coins_needed_for_kick_start: Mutex<HashSet<String>>,
     /// The context belonging to the `lp_swap` mod: `SwapsContext`.
     pub swaps_ctx: Mutex<Option<Arc<dyn Any + 'static + Send + Sync>>>,
     /// The context belonging to the `lp_stats` mod: `StatsContext`
     pub stats_ctx: Mutex<Option<Arc<dyn Any + 'static + Send + Sync>>>,
-    /// Lightning background processors, these need to be dropped when stopping mm2 to
-    /// persist the latest states to the filesystem. This can be moved to LightningCoin
-    /// Struct in the future if the LightningCoin and other coins are dropped when mm2 stops.
-    #[cfg(not(target_arch = "wasm32"))]
-    pub background_processors: Mutex<HashMap<String, BackgroundProcessor>>,
     /// The RPC sender forwarding requests to writing part of underlying stream.
     #[cfg(target_arch = "wasm32")]
     pub wasm_rpc: Constructible<WasmRpcSender>,
     #[cfg(not(target_arch = "wasm32"))]
     pub sqlite_connection: Constructible<Arc<Mutex<Connection>>>,
     pub mm_version: String,
+    pub datetime: String,
     pub mm_init_ctx: Mutex<Option<Arc<dyn Any + 'static + Send + Sync>>>,
     /// The abortable system is pinned to the `MmCtx` context.
     /// It's used to spawn futures that can be aborted immediately or after a timeout
@@ -149,17 +137,15 @@ impl MmCtx {
             coins_activation_ctx: Mutex::new(None),
             crypto_ctx: Mutex::new(None),
             rmd160: Constructible::default(),
-            secp256k1_key_pair: Constructible::default(),
             coins_needed_for_kick_start: Mutex::new(HashSet::new()),
             swaps_ctx: Mutex::new(None),
             stats_ctx: Mutex::new(None),
-            #[cfg(not(target_arch = "wasm32"))]
-            background_processors: Mutex::new(HashMap::new()),
             #[cfg(target_arch = "wasm32")]
             wasm_rpc: Constructible::default(),
             #[cfg(not(target_arch = "wasm32"))]
             sqlite_connection: Constructible::default(),
             mm_version: "".into(),
+            datetime: "".into(),
             mm_init_ctx: Mutex::new(None),
             abortable_system: AbortableQueue::default(),
             graceful_shutdown_registry: graceful_shutdown::GracefulShutdownRegistry::default(),
@@ -214,7 +200,7 @@ impl MmCtx {
         } else {
             Path::new("DB")
         };
-        path.join(hex::encode(&**self.rmd160()))
+        path.join(hex::encode(self.rmd160().as_slice()))
     }
 
     pub fn is_watcher(&self) -> bool { self.conf["is_watcher"].as_bool().unwrap_or_default() }
@@ -238,33 +224,6 @@ impl MmCtx {
 
     /// True if the MarketMaker instance needs to stop.
     pub fn is_stopping(&self) -> bool { self.stop.copy_or(false) }
-
-    /// Get a reference to the secp256k1 key pair.
-    /// Panics if the key pair is not available.
-    pub fn secp256k1_key_pair(&self) -> &KeyPair {
-        match self.secp256k1_key_pair.as_option() {
-            Some(pair) => pair,
-            None => panic!("secp256k1_key_pair not available"),
-        }
-    }
-
-    /// Get a reference to the secp256k1 key pair as option.
-    /// Can be used in no-login functions to check if the passphrase is set
-    pub fn secp256k1_key_pair_as_option(&self) -> Option<&KeyPair> { self.secp256k1_key_pair.as_option() }
-
-    /// This is our public ID, allowing us to be different from other peers.
-    /// This should also be our public key which we'd use for message verification.
-    pub fn public_id(&self) -> Result<bits256, String> {
-        self.secp256k1_key_pair
-            .ok_or(ERRL!("Public ID is not yet available"))
-            .map(|keypair| {
-                let public = keypair.public(); // Compressed public key is going to be 33 bytes.
-                                               // First byte is a prefix, https://davidederosa.com/basic-blockchain-programming/elliptic-curve-keys/.
-                bits256 {
-                    bytes: *array_ref!(public, 1, 32),
-                }
-            })
-    }
 
     pub fn gui(&self) -> Option<&str> { self.conf["gui"].as_str() }
 
@@ -366,22 +325,6 @@ lazy_static! {
     pub static ref MM_CTX_FFI: Mutex<HashMap<u32, MmWeak>> = Mutex::new (HashMap::default());
 }
 
-/// Portable core sharing its context with the native helpers.
-///
-/// In the integration tests we're using this to create new native contexts.
-#[derive(Serialize, Deserialize)]
-struct PortableCtx {
-    // Sending the `conf` as a string in order for bencode not to mess with JSON, and for wire readability.
-    conf: String,
-    secp256k1_key_pair: ByteBuf,
-    ffi_handle: Option<u32>,
-}
-
-#[derive(Serialize, Deserialize, Debug)]
-struct NativeCtx {
-    ffi_handle: u32,
-}
-
 impl MmArc {
     pub fn new(ctx: MmCtx) -> MmArc { MmArc(SharedRc::new(ctx)) }
 
@@ -389,12 +332,9 @@ impl MmArc {
         try_s!(self.stop.pin(true));
 
         // Notify shutdown listeners.
-        self.graceful_shutdown_registry.abort_all();
+        self.graceful_shutdown_registry.abort_all().warn_log();
         // Abort spawned futures.
-        self.abortable_system.abort_all();
-
-        #[cfg(not(target_arch = "wasm32"))]
-        self.background_processors.lock().unwrap().drain();
+        self.abortable_system.abort_all().warn_log();
 
         #[cfg(feature = "track-ctx-pointer")]
         self.track_ctx_pointer();
@@ -515,7 +455,10 @@ impl MmArc {
                     userpass: userpass.into(),
                 });
 
-        let shutdown_detector = self.graceful_shutdown_registry.register_listener();
+        let shutdown_detector = self
+            .graceful_shutdown_registry
+            .register_listener()
+            .map_err(|e| MmMetricsError::Internal(e.to_string()))?;
         prometheus::spawn_prometheus_exporter(self.metrics.weak(), address, shutdown_detector, credentials)
     }
 }
@@ -587,8 +530,8 @@ where
 pub struct MmCtxBuilder {
     conf: Option<Json>,
     log_level: LogLevel,
-    key_pair: Option<KeyPair>,
     version: String,
+    datetime: String,
     #[cfg(target_arch = "wasm32")]
     db_namespace: DbNamespaceId,
 }
@@ -606,13 +549,13 @@ impl MmCtxBuilder {
         self
     }
 
-    pub fn with_secp256k1_key_pair(mut self, key_pair: KeyPair) -> Self {
-        self.key_pair = Some(key_pair);
+    pub fn with_version(mut self, version: String) -> Self {
+        self.version = version;
         self
     }
 
-    pub fn with_version(mut self, version: String) -> Self {
-        self.version = version;
+    pub fn with_datetime(mut self, datetime: String) -> Self {
+        self.datetime = datetime;
         self
     }
 
@@ -633,13 +576,9 @@ impl MmCtxBuilder {
         log.set_level(self.log_level);
         let mut ctx = MmCtx::with_log_state(log);
         ctx.mm_version = self.version;
+        ctx.datetime = self.datetime;
         if let Some(conf) = self.conf {
             ctx.conf = conf
-        }
-
-        if let Some(key_pair) = self.key_pair {
-            ctx.rmd160.pin(key_pair.public().address_hash()).unwrap();
-            ctx.secp256k1_key_pair.pin(key_pair).unwrap();
         }
 
         #[cfg(target_arch = "wasm32")]

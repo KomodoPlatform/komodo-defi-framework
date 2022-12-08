@@ -24,6 +24,7 @@ pub type WithdrawInitResult<T> = Result<T, MmError<WithdrawError>>;
 
 #[async_trait]
 pub trait CoinWithdrawInit {
+    #[allow(clippy::result_large_err)]
     fn init_withdraw(
         ctx: MmArc,
         req: WithdrawRequest,

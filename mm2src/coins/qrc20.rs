@@ -7,26 +7,29 @@ use crate::utxo::rpc_clients::{ElectrumClient, NativeClient, UnspentInfo, UtxoRp
                                UtxoRpcError, UtxoRpcFut, UtxoRpcResult};
 #[cfg(not(target_arch = "wasm32"))]
 use crate::utxo::tx_cache::{UtxoVerboseCacheOps, UtxoVerboseCacheShared};
-use crate::utxo::utxo_builder::{UtxoCoinBuildError, UtxoCoinBuildResult, UtxoCoinBuilderCommonOps,
-                                UtxoCoinWithIguanaPrivKeyBuilder, UtxoFieldsWithIguanaPrivKeyBuilder};
+use crate::utxo::utxo_builder::{UtxoCoinBuildError, UtxoCoinBuildResult, UtxoCoinBuilder, UtxoCoinBuilderCommonOps,
+                                UtxoFieldsWithGlobalHDBuilder, UtxoFieldsWithHardwareWalletBuilder,
+                                UtxoFieldsWithIguanaSecretBuilder};
 use crate::utxo::utxo_common::{self, big_decimal_from_sat, check_all_utxo_inputs_signed_by_pub, UtxoTxBuilder};
 use crate::utxo::{qtum, ActualTxFee, AdditionalTxData, AddrFromStrError, BroadcastTxErr, FeePolicy, GenerateTxError,
                   GetUtxoListOps, HistoryUtxoTx, HistoryUtxoTxMap, MatureUnspentList, RecentlySpentOutPointsGuard,
                   UtxoActivationParams, UtxoAddressFormat, UtxoCoinFields, UtxoCommonOps, UtxoFromLegacyReqErr,
                   UtxoTx, UtxoTxBroadcastOps, UtxoTxGenerationOps, VerboseTransactionFrom, UTXO_LOCK};
-use crate::{BalanceError, BalanceFut, CoinBalance, CoinFutSpawner, FeeApproxStage, FoundSwapTxSpend, HistorySyncState,
-            MarketCoinOps, MmCoin, NegotiateSwapContractAddrErr, PaymentInstructions, PaymentInstructionsErr,
-            PrivKeyNotAllowed, RawTransactionFut, RawTransactionRequest, SearchForSwapTxSpendInput, SignatureResult,
-            SwapOps, TradeFee, TradePreimageError, TradePreimageFut, TradePreimageResult, TradePreimageValue,
-            TransactionDetails, TransactionEnum, TransactionErr, TransactionFut, TransactionType, TxMarshalingErr,
-            UnexpectedDerivationMethod, ValidateAddressResult, ValidateInstructionsErr, ValidateOtherPubKeyErr,
-            ValidatePaymentFut, ValidatePaymentInput, VerificationResult, WatcherOps,
-            WatcherSearchForSwapTxSpendInput, WatcherValidatePaymentInput, WithdrawError, WithdrawFee, WithdrawFut,
-            WithdrawRequest, WithdrawResult};
+use crate::{BalanceError, BalanceFut, CheckIfMyPaymentSentArgs, CoinBalance, CoinFutSpawner, FeeApproxStage,
+            FoundSwapTxSpend, HistorySyncState, IguanaPrivKey, MarketCoinOps, MmCoin, NegotiateSwapContractAddrErr,
+            PaymentInstructions, PaymentInstructionsErr, PrivKeyBuildPolicy, PrivKeyPolicyNotAllowed,
+            RawTransactionFut, RawTransactionRequest, SearchForSwapTxSpendInput, SendMakerPaymentArgs,
+            SendMakerRefundsPaymentArgs, SendMakerSpendsTakerPaymentArgs, SendTakerPaymentArgs,
+            SendTakerRefundsPaymentArgs, SendTakerSpendsMakerPaymentArgs, SignatureResult, SwapOps, TradeFee,
+            TradePreimageError, TradePreimageFut, TradePreimageResult, TradePreimageValue, TransactionDetails,
+            TransactionEnum, TransactionErr, TransactionFut, TransactionType, TxMarshalingErr,
+            UnexpectedDerivationMethod, ValidateAddressResult, ValidateFeeArgs, ValidateInstructionsErr,
+            ValidateOtherPubKeyErr, ValidatePaymentFut, ValidatePaymentInput, VerificationResult, WatcherOps,
+            WatcherValidatePaymentInput, WithdrawError, WithdrawFee, WithdrawFut, WithdrawRequest, WithdrawResult};
 use async_trait::async_trait;
 use bitcrypto::{dhash160, sha256};
 use chain::TransactionOutput;
-use common::executor::Timer;
+use common::executor::{AbortableSystem, AbortedError, Timer};
 use common::jsonrpc_client::{JsonRpcClient, JsonRpcRequest, RpcRes};
 use common::log::{error, warn};
 use common::now_ms;
@@ -79,7 +82,7 @@ pub type Qrc20AbiResult<T> = Result<T, MmError<Qrc20AbiError>>;
 pub enum Qrc20GenTxError {
     ErrorGeneratingUtxoTx(GenerateTxError),
     ErrorSigningTx(UtxoSignWithKeyPairError),
-    PrivKeyNotAllowed(PrivKeyNotAllowed),
+    PrivKeyPolicyNotAllowed(PrivKeyPolicyNotAllowed),
     UnexpectedDerivationMethod(UnexpectedDerivationMethod),
 }
 
@@ -91,8 +94,8 @@ impl From<UtxoSignWithKeyPairError> for Qrc20GenTxError {
     fn from(e: UtxoSignWithKeyPairError) -> Self { Qrc20GenTxError::ErrorSigningTx(e) }
 }
 
-impl From<PrivKeyNotAllowed> for Qrc20GenTxError {
-    fn from(e: PrivKeyNotAllowed) -> Self { Qrc20GenTxError::PrivKeyNotAllowed(e) }
+impl From<PrivKeyPolicyNotAllowed> for Qrc20GenTxError {
+    fn from(e: PrivKeyPolicyNotAllowed) -> Self { Qrc20GenTxError::PrivKeyPolicyNotAllowed(e) }
 }
 
 impl From<UnexpectedDerivationMethod> for Qrc20GenTxError {
@@ -110,7 +113,7 @@ impl Qrc20GenTxError {
                 WithdrawError::from_generate_tx_error(gen_err, coin, decimals)
             },
             Qrc20GenTxError::ErrorSigningTx(sign_err) => WithdrawError::InternalError(sign_err.to_string()),
-            Qrc20GenTxError::PrivKeyNotAllowed(priv_err) => WithdrawError::InternalError(priv_err.to_string()),
+            Qrc20GenTxError::PrivKeyPolicyNotAllowed(priv_err) => WithdrawError::InternalError(priv_err.to_string()),
             Qrc20GenTxError::UnexpectedDerivationMethod(addr_err) => WithdrawError::InternalError(addr_err.to_string()),
         }
     }
@@ -155,7 +158,7 @@ struct Qrc20CoinBuilder<'a> {
     ticker: &'a str,
     conf: &'a Json,
     activation_params: &'a Qrc20ActivationParams,
-    priv_key: &'a [u8],
+    priv_key_policy: PrivKeyBuildPolicy,
     platform: String,
     token_contract_address: H160,
 }
@@ -166,7 +169,7 @@ impl<'a> Qrc20CoinBuilder<'a> {
         ticker: &'a str,
         conf: &'a Json,
         activation_params: &'a Qrc20ActivationParams,
-        priv_key: &'a [u8],
+        priv_key_policy: PrivKeyBuildPolicy,
         platform: String,
         token_contract_address: H160,
     ) -> Qrc20CoinBuilder<'a> {
@@ -175,7 +178,7 @@ impl<'a> Qrc20CoinBuilder<'a> {
             ticker,
             conf,
             activation_params,
-            priv_key,
+            priv_key_policy,
             platform,
             token_contract_address,
         }
@@ -257,18 +260,33 @@ impl<'a> UtxoCoinBuilderCommonOps for Qrc20CoinBuilder<'a> {
     }
 }
 
-#[async_trait]
-impl<'a> UtxoFieldsWithIguanaPrivKeyBuilder for Qrc20CoinBuilder<'a> {}
+impl<'a> UtxoFieldsWithIguanaSecretBuilder for Qrc20CoinBuilder<'a> {}
+
+impl<'a> UtxoFieldsWithGlobalHDBuilder for Qrc20CoinBuilder<'a> {}
+
+/// Although, `Qrc20Coin` doesn't support [`PrivKeyBuildPolicy::Trezor`] yet,
+/// `UtxoCoinBuilder` trait requires `UtxoFieldsWithHardwareWalletBuilder` to be implemented.
+impl<'a> UtxoFieldsWithHardwareWalletBuilder for Qrc20CoinBuilder<'a> {}
 
 #[async_trait]
-impl<'a> UtxoCoinWithIguanaPrivKeyBuilder for Qrc20CoinBuilder<'a> {
+impl<'a> UtxoCoinBuilder for Qrc20CoinBuilder<'a> {
     type ResultCoin = Qrc20Coin;
     type Error = UtxoCoinBuildError;
 
-    fn priv_key(&self) -> &[u8] { self.priv_key }
+    fn priv_key_policy(&self) -> PrivKeyBuildPolicy { self.priv_key_policy.clone() }
 
     async fn build(self) -> MmResult<Self::ResultCoin, Self::Error> {
-        let utxo = self.build_utxo_fields_with_iguana_priv_key(self.priv_key()).await?;
+        let utxo = match self.priv_key_policy() {
+            PrivKeyBuildPolicy::IguanaPrivKey(priv_key) => self.build_utxo_fields_with_iguana_secret(priv_key).await?,
+            PrivKeyBuildPolicy::GlobalHDAccount(global_hd_ctx) => {
+                self.build_utxo_fields_with_global_hd(global_hd_ctx).await?
+            },
+            PrivKeyBuildPolicy::Trezor => {
+                let priv_key_err = PrivKeyPolicyNotAllowed::HardwareWalletNotSupported;
+                return MmError::err(UtxoCoinBuildError::PrivKeyPolicyNotAllowed(priv_key_err));
+            },
+        };
+
         let inner = Qrc20CoinFields {
             utxo,
             platform: self.platform,
@@ -280,13 +298,13 @@ impl<'a> UtxoCoinWithIguanaPrivKeyBuilder for Qrc20CoinBuilder<'a> {
     }
 }
 
-pub async fn qrc20_coin_from_conf_and_params(
+pub async fn qrc20_coin_with_policy(
     ctx: &MmArc,
     ticker: &str,
     platform: &str,
     conf: &Json,
     params: &Qrc20ActivationParams,
-    priv_key: &[u8],
+    priv_key_policy: PrivKeyBuildPolicy,
     contract_address: H160,
 ) -> Result<Qrc20Coin, String> {
     let builder = Qrc20CoinBuilder::new(
@@ -294,11 +312,24 @@ pub async fn qrc20_coin_from_conf_and_params(
         ticker,
         conf,
         params,
-        priv_key,
+        priv_key_policy,
         platform.to_owned(),
         contract_address,
     );
     Ok(try_s!(builder.build().await))
+}
+
+pub async fn qrc20_coin_with_priv_key(
+    ctx: &MmArc,
+    ticker: &str,
+    platform: &str,
+    conf: &Json,
+    params: &Qrc20ActivationParams,
+    priv_key: IguanaPrivKey,
+    contract_address: H160,
+) -> Result<Qrc20Coin, String> {
+    let priv_key_policy = PrivKeyBuildPolicy::IguanaPrivKey(priv_key);
+    qrc20_coin_with_policy(ctx, ticker, platform, conf, params, priv_key_policy, contract_address).await
 }
 
 pub struct Qrc20CoinFields {
@@ -314,7 +345,7 @@ pub struct Qrc20Coin(Arc<Qrc20CoinFields>);
 
 impl Deref for Qrc20Coin {
     type Target = Qrc20CoinFields;
-    fn deref(&self) -> &Qrc20CoinFields { &*self.0 }
+    fn deref(&self) -> &Qrc20CoinFields { &self.0 }
 }
 
 impl AsRef<UtxoCoinFields> for Qrc20Coin {
@@ -483,7 +514,7 @@ impl Qrc20Coin {
         &self,
         contract_outputs: Vec<ContractCallOutput>,
     ) -> Result<GenerateQrc20TxResult, MmError<Qrc20GenTxError>> {
-        let my_address = self.utxo.derivation_method.iguana_or_err()?;
+        let my_address = self.utxo.derivation_method.single_addr_or_err()?;
         let (unspents, _) = self.get_unspent_ordered_list(my_address).await?;
 
         let mut gas_fee = 0;
@@ -500,7 +531,7 @@ impl Qrc20Coin {
             .build()
             .await?;
 
-        let my_address = self.utxo.derivation_method.iguana_or_err()?;
+        let my_address = self.utxo.derivation_method.single_addr_or_err()?;
         let key_pair = self.utxo.priv_key_policy.key_pair_or_err()?;
 
         let prev_script = ScriptBuilder::build_p2pkh(&my_address.hash);
@@ -730,22 +761,13 @@ impl SwapOps for Qrc20Coin {
         Box::new(fut.boxed().compat())
     }
 
-    fn send_maker_payment(
-        &self,
-        _time_lock_duration: u64,
-        time_lock: u32,
-        taker_pub: &[u8],
-        secret_hash: &[u8],
-        amount: BigDecimal,
-        swap_contract_address: &Option<BytesJson>,
-        _swap_unique_data: &[u8],
-        _payment_instructions: &Option<PaymentInstructions>,
-    ) -> TransactionFut {
-        let taker_addr = try_tx_fus!(self.contract_address_from_raw_pubkey(taker_pub));
-        let id = qrc20_swap_id(time_lock, secret_hash);
-        let value = try_tx_fus!(wei_from_big_decimal(&amount, self.utxo.decimals));
-        let secret_hash = Vec::from(secret_hash);
-        let swap_contract_address = try_tx_fus!(swap_contract_address.try_to_address());
+    fn send_maker_payment(&self, maker_payment_args: SendMakerPaymentArgs) -> TransactionFut {
+        let time_lock = maker_payment_args.time_lock;
+        let taker_addr = try_tx_fus!(self.contract_address_from_raw_pubkey(maker_payment_args.other_pubkey));
+        let id = qrc20_swap_id(time_lock, maker_payment_args.secret_hash);
+        let value = try_tx_fus!(wei_from_big_decimal(&maker_payment_args.amount, self.utxo.decimals));
+        let secret_hash = Vec::from(maker_payment_args.secret_hash);
+        let swap_contract_address = try_tx_fus!(maker_payment_args.swap_contract_address.try_to_address());
 
         let selfi = self.clone();
         let fut = async move {
@@ -757,22 +779,13 @@ impl SwapOps for Qrc20Coin {
     }
 
     #[inline]
-    fn send_taker_payment(
-        &self,
-        _time_lock_duration: u64,
-        time_lock: u32,
-        maker_pub: &[u8],
-        secret_hash: &[u8],
-        amount: BigDecimal,
-        swap_contract_address: &Option<BytesJson>,
-        _swap_unique_data: &[u8],
-        _payment_instructions: &Option<PaymentInstructions>,
-    ) -> TransactionFut {
-        let maker_addr = try_tx_fus!(self.contract_address_from_raw_pubkey(maker_pub));
-        let id = qrc20_swap_id(time_lock, secret_hash);
-        let value = try_tx_fus!(wei_from_big_decimal(&amount, self.utxo.decimals));
-        let secret_hash = Vec::from(secret_hash);
-        let swap_contract_address = try_tx_fus!(swap_contract_address.try_to_address());
+    fn send_taker_payment(&self, taker_payment_args: SendTakerPaymentArgs) -> TransactionFut {
+        let time_lock = taker_payment_args.time_lock;
+        let maker_addr = try_tx_fus!(self.contract_address_from_raw_pubkey(taker_payment_args.other_pubkey));
+        let id = qrc20_swap_id(time_lock, taker_payment_args.secret_hash);
+        let value = try_tx_fus!(wei_from_big_decimal(&taker_payment_args.amount, self.utxo.decimals));
+        let secret_hash = Vec::from(taker_payment_args.secret_hash);
+        let swap_contract_address = try_tx_fus!(taker_payment_args.swap_contract_address.try_to_address());
 
         let selfi = self.clone();
         let fut = async move {
@@ -786,17 +799,12 @@ impl SwapOps for Qrc20Coin {
     #[inline]
     fn send_maker_spends_taker_payment(
         &self,
-        taker_payment_tx: &[u8],
-        _time_lock: u32,
-        _taker_pub: &[u8],
-        secret: &[u8],
-        _secret_hash: &[u8],
-        swap_contract_address: &Option<BytesJson>,
-        _swap_unique_data: &[u8],
+        maker_spends_payment_args: SendMakerSpendsTakerPaymentArgs,
     ) -> TransactionFut {
-        let payment_tx: UtxoTx = try_tx_fus!(deserialize(taker_payment_tx).map_err(|e| ERRL!("{:?}", e)));
-        let swap_contract_address = try_tx_fus!(swap_contract_address.try_to_address());
-        let secret = secret.to_vec();
+        let payment_tx: UtxoTx =
+            try_tx_fus!(deserialize(maker_spends_payment_args.other_payment_tx).map_err(|e| ERRL!("{:?}", e)));
+        let swap_contract_address = try_tx_fus!(maker_spends_payment_args.swap_contract_address.try_to_address());
+        let secret = maker_spends_payment_args.secret.to_vec();
 
         let selfi = self.clone();
         let fut = async move {
@@ -810,17 +818,12 @@ impl SwapOps for Qrc20Coin {
     #[inline]
     fn send_taker_spends_maker_payment(
         &self,
-        maker_payment_tx: &[u8],
-        _time_lock: u32,
-        _maker_pub: &[u8],
-        secret: &[u8],
-        _secret_hash: &[u8],
-        swap_contract_address: &Option<BytesJson>,
-        _swap_unique_data: &[u8],
+        taker_spends_payment_args: SendTakerSpendsMakerPaymentArgs,
     ) -> TransactionFut {
-        let payment_tx: UtxoTx = try_tx_fus!(deserialize(maker_payment_tx).map_err(|e| ERRL!("{:?}", e)));
-        let secret = secret.to_vec();
-        let swap_contract_address = try_tx_fus!(swap_contract_address.try_to_address());
+        let payment_tx: UtxoTx =
+            try_tx_fus!(deserialize(taker_spends_payment_args.other_payment_tx).map_err(|e| ERRL!("{:?}", e)));
+        let secret = taker_spends_payment_args.secret.to_vec();
+        let swap_contract_address = try_tx_fus!(taker_spends_payment_args.swap_contract_address.try_to_address());
 
         let selfi = self.clone();
         let fut = async move {
@@ -832,17 +835,10 @@ impl SwapOps for Qrc20Coin {
     }
 
     #[inline]
-    fn send_taker_refunds_payment(
-        &self,
-        taker_payment_tx: &[u8],
-        _time_lock: u32,
-        _maker_pub: &[u8],
-        _secret_hash: &[u8],
-        swap_contract_address: &Option<BytesJson>,
-        _swap_unique_data: &[u8],
-    ) -> TransactionFut {
-        let payment_tx: UtxoTx = try_tx_fus!(deserialize(taker_payment_tx).map_err(|e| ERRL!("{:?}", e)));
-        let swap_contract_address = try_tx_fus!(swap_contract_address.try_to_address());
+    fn send_taker_refunds_payment(&self, taker_refunds_payment_args: SendTakerRefundsPaymentArgs) -> TransactionFut {
+        let payment_tx: UtxoTx =
+            try_tx_fus!(deserialize(taker_refunds_payment_args.payment_tx).map_err(|e| ERRL!("{:?}", e)));
+        let swap_contract_address = try_tx_fus!(taker_refunds_payment_args.swap_contract_address.try_to_address());
 
         let selfi = self.clone();
         let fut = async move {
@@ -854,17 +850,10 @@ impl SwapOps for Qrc20Coin {
     }
 
     #[inline]
-    fn send_maker_refunds_payment(
-        &self,
-        maker_payment_tx: &[u8],
-        _time_lock: u32,
-        _taker_pub: &[u8],
-        _secret_hash: &[u8],
-        swap_contract_address: &Option<BytesJson>,
-        _swap_unique_data: &[u8],
-    ) -> TransactionFut {
-        let payment_tx: UtxoTx = try_tx_fus!(deserialize(maker_payment_tx).map_err(|e| ERRL!("{:?}", e)));
-        let swap_contract_address = try_tx_fus!(swap_contract_address.try_to_address());
+    fn send_maker_refunds_payment(&self, maker_refunds_payment_args: SendMakerRefundsPaymentArgs) -> TransactionFut {
+        let payment_tx: UtxoTx =
+            try_tx_fus!(deserialize(maker_refunds_payment_args.payment_tx).map_err(|e| ERRL!("{:?}", e)));
+        let swap_contract_address = try_tx_fus!(maker_refunds_payment_args.swap_contract_address.try_to_address());
 
         let selfi = self.clone();
         let fut = async move {
@@ -878,23 +867,23 @@ impl SwapOps for Qrc20Coin {
     #[inline]
     fn validate_fee(
         &self,
-        fee_tx: &TransactionEnum,
-        expected_sender: &[u8],
-        fee_addr: &[u8],
-        amount: &BigDecimal,
-        min_block_number: u64,
-        _uuid: &[u8],
+        validate_fee_args: ValidateFeeArgs<'_>,
     ) -> Box<dyn Future<Item = (), Error = String> + Send> {
+        let fee_tx = validate_fee_args.fee_tx;
+        let min_block_number = validate_fee_args.min_block_number;
         let fee_tx = match fee_tx {
             TransactionEnum::UtxoTx(tx) => tx,
             _ => panic!("Unexpected TransactionEnum"),
         };
         let fee_tx_hash = fee_tx.hash().reversed().into();
-        if !try_fus!(check_all_utxo_inputs_signed_by_pub(fee_tx, expected_sender)) {
+        if !try_fus!(check_all_utxo_inputs_signed_by_pub(
+            fee_tx,
+            validate_fee_args.expected_sender
+        )) {
             return Box::new(futures01::future::err(ERRL!("The dex fee was sent from wrong address")));
         }
-        let fee_addr = try_fus!(self.contract_address_from_raw_pubkey(fee_addr));
-        let expected_value = try_fus!(wei_from_big_decimal(amount, self.utxo.decimals));
+        let fee_addr = try_fus!(self.contract_address_from_raw_pubkey(validate_fee_args.fee_addr));
+        let expected_value = try_fus!(wei_from_big_decimal(validate_fee_args.amount, self.utxo.decimals));
 
         let selfi = self.clone();
         let fut = async move {
@@ -962,16 +951,11 @@ impl SwapOps for Qrc20Coin {
     #[inline]
     fn check_if_my_payment_sent(
         &self,
-        time_lock: u32,
-        _other_pub: &[u8],
-        secret_hash: &[u8],
-        search_from_block: u64,
-        swap_contract_address: &Option<BytesJson>,
-        _swap_unique_data: &[u8],
-        _amount: &BigDecimal,
+        if_my_payment_spent_args: CheckIfMyPaymentSentArgs<'_>,
     ) -> Box<dyn Future<Item = Option<TransactionEnum>, Error = String> + Send> {
-        let swap_id = qrc20_swap_id(time_lock, secret_hash);
-        let swap_contract_address = try_fus!(swap_contract_address.try_to_address());
+        let search_from_block = if_my_payment_spent_args.search_from_block;
+        let swap_id = qrc20_swap_id(if_my_payment_spent_args.time_lock, if_my_payment_spent_args.secret_hash);
+        let swap_contract_address = try_fus!(if_my_payment_spent_args.swap_contract_address.try_to_address());
 
         let selfi = self.clone();
         let fut = async move {
@@ -1049,15 +1033,36 @@ impl SwapOps for Qrc20Coin {
         utxo_common::validate_other_pubkey(raw_pubkey)
     }
 
-    async fn payment_instructions(
+    async fn maker_payment_instructions(
         &self,
         _secret_hash: &[u8],
         _amount: &BigDecimal,
+        _maker_lock_duration: u64,
+        _expires_in: u64,
     ) -> Result<Option<Vec<u8>>, MmError<PaymentInstructionsErr>> {
         Ok(None)
     }
 
-    fn validate_instructions(
+    async fn taker_payment_instructions(
+        &self,
+        _secret_hash: &[u8],
+        _amount: &BigDecimal,
+        _expires_in: u64,
+    ) -> Result<Option<Vec<u8>>, MmError<PaymentInstructionsErr>> {
+        Ok(None)
+    }
+
+    fn validate_maker_payment_instructions(
+        &self,
+        _instructions: &[u8],
+        _secret_hash: &[u8],
+        _amount: BigDecimal,
+        _maker_lock_duration: u64,
+    ) -> Result<PaymentInstructions, MmError<ValidateInstructionsErr>> {
+        MmError::err(ValidateInstructionsErr::UnsupportedCoin(self.ticker().to_string()))
+    }
+
+    fn validate_taker_payment_instructions(
         &self,
         _instructions: &[u8],
         _secret_hash: &[u8],
@@ -1065,7 +1070,6 @@ impl SwapOps for Qrc20Coin {
     ) -> Result<PaymentInstructions, MmError<ValidateInstructionsErr>> {
         MmError::err(ValidateInstructionsErr::UnsupportedCoin(self.ticker().to_string()))
     }
-
     fn is_supported_by_watchers(&self) -> bool { false }
 }
 
@@ -1107,13 +1111,6 @@ impl WatcherOps for Qrc20Coin {
     }
 
     fn watcher_validate_taker_payment(&self, _input: WatcherValidatePaymentInput) -> ValidatePaymentFut<()> {
-        unimplemented!();
-    }
-
-    async fn watcher_search_for_swap_tx_spend(
-        &self,
-        _input: WatcherSearchForSwapTxSpendInput<'_>,
-    ) -> Result<Option<FoundSwapTxSpend>, String> {
         unimplemented!();
     }
 }
@@ -1339,7 +1336,7 @@ impl MmCoin for Qrc20Coin {
         })
     }
 
-    fn get_receiver_trade_fee(&self, stage: FeeApproxStage) -> TradePreimageFut<TradeFee> {
+    fn get_receiver_trade_fee(&self, _send_amount: BigDecimal, stage: FeeApproxStage) -> TradePreimageFut<TradeFee> {
         let selfi = self.clone();
         let fut = async move {
             // pass the dummy params
@@ -1404,6 +1401,10 @@ impl MmCoin for Qrc20Coin {
         Some(BytesJson::from(self.swap_contract_address.0.as_ref()))
     }
 
+    fn fallback_swap_contract(&self) -> Option<BytesJson> {
+        self.fallback_swap_contract.map(|a| BytesJson::from(a.0.as_ref()))
+    }
+
     fn mature_confirmations(&self) -> Option<u32> { Some(self.utxo.conf.mature_confirmations) }
 
     fn coin_protocol_info(&self) -> Vec<u8> { utxo_common::coin_protocol_info(self) }
@@ -1411,6 +1412,10 @@ impl MmCoin for Qrc20Coin {
     fn is_coin_protocol_supported(&self, info: &Option<Vec<u8>>) -> bool {
         utxo_common::is_coin_protocol_supported(self, info)
     }
+
+    fn on_disabled(&self) -> Result<(), AbortedError> { AbortableSystem::abort_all(&self.as_ref().abortable_system) }
+
+    fn on_token_deactivated(&self, _ticker: &str) {}
 }
 
 pub fn qrc20_swap_id(time_lock: u32, secret_hash: &[u8]) -> Vec<u8> {
@@ -1493,7 +1498,7 @@ async fn qrc20_withdraw(coin: Qrc20Coin, req: WithdrawRequest) -> WithdrawResult
         .await
         .mm_err(|gen_tx_error| gen_tx_error.into_withdraw_error(coin.platform.clone(), coin.utxo.decimals))?;
 
-    let my_address = coin.utxo.derivation_method.iguana_or_err()?;
+    let my_address = coin.utxo.derivation_method.single_addr_or_err()?;
     let received_by_me = if to_addr == *my_address {
         qrc20_amount.clone()
     } else {

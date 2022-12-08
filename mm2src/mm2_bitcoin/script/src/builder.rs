@@ -25,7 +25,7 @@ impl Builder {
     /// Builds p2pk script pubkey
     pub fn build_p2pk(pubkey: &Public) -> Script {
         Builder::default()
-            .push_bytes(&*pubkey)
+            .push_bytes(pubkey)
             .push_opcode(Opcode::OP_CHECKSIG)
             .into_script()
     }
