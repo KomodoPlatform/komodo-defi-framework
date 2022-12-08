@@ -12,6 +12,7 @@ pub struct PlatformCoinConfirmationTargets {
 pub struct LightningProtocolConf {
     pub platform_coin_ticker: String,
     pub network: BlockchainNetwork,
+    pub avg_block_time: u64,
     pub confirmation_targets: PlatformCoinConfirmationTargets,
 }
 

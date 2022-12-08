@@ -707,13 +707,32 @@ pub trait SwapOps {
 
     fn validate_other_pubkey(&self, raw_pubkey: &[u8]) -> MmResult<(), ValidateOtherPubKeyErr>;
 
-    async fn payment_instructions(
+    /// Instructions from the taker on how the maker should send his payment.
+    async fn maker_payment_instructions(
         &self,
         secret_hash: &[u8],
         amount: &BigDecimal,
+        maker_lock_duration: u64,
+        expires_in: u64,
     ) -> Result<Option<Vec<u8>>, MmError<PaymentInstructionsErr>>;
 
-    fn validate_instructions(
+    /// Instructions from the maker on how the taker should send his payment.
+    async fn taker_payment_instructions(
+        &self,
+        secret_hash: &[u8],
+        amount: &BigDecimal,
+        expires_in: u64,
+    ) -> Result<Option<Vec<u8>>, MmError<PaymentInstructionsErr>>;
+
+    fn validate_maker_payment_instructions(
+        &self,
+        instructions: &[u8],
+        secret_hash: &[u8],
+        amount: BigDecimal,
+        maker_lock_duration: u64,
+    ) -> Result<PaymentInstructions, MmError<ValidateInstructionsErr>>;
+
+    fn validate_taker_payment_instructions(
         &self,
         instructions: &[u8],
         secret_hash: &[u8],
@@ -721,6 +740,8 @@ pub trait SwapOps {
     ) -> Result<PaymentInstructions, MmError<ValidateInstructionsErr>>;
 
     fn is_supported_by_watchers(&self) -> bool;
+
+    fn maker_locktime_multiplier(&self) -> f64 { 2.0 }
 }
 
 #[async_trait]
@@ -2427,6 +2448,7 @@ pub enum CoinProtocol {
     LIGHTNING {
         platform: String,
         network: BlockchainNetwork,
+        avg_block_time: u64,
         confirmation_targets: PlatformCoinConfirmationTargets,
     },
     #[cfg(not(target_arch = "wasm32"))]

@@ -342,11 +342,19 @@ pub fn get_payment_locktime() -> u64 {
 }
 
 #[inline]
-pub fn taker_payment_spend_deadline(swap_started_at: u64, locktime: u64) -> u64 { swap_started_at + (locktime * 4) / 5 }
+pub fn taker_payment_spend_duration(locktime: u64) -> u64 { (locktime * 4) / 5 }
+
+#[inline]
+pub fn taker_payment_spend_deadline(swap_started_at: u64, locktime: u64) -> u64 {
+    swap_started_at + taker_payment_spend_duration(locktime)
+}
+
+#[inline]
+pub fn wait_for_maker_payment_conf_duration(locktime: u64) -> u64 { (locktime * 2) / 5 }
 
 #[inline]
 pub fn wait_for_maker_payment_conf_until(swap_started_at: u64, locktime: u64) -> u64 {
-    swap_started_at + (locktime * 2) / 5
+    swap_started_at + wait_for_maker_payment_conf_duration(locktime)
 }
 
 const _SWAP_DEFAULT_NUM_CONFIRMS: u32 = 1;
@@ -555,7 +563,10 @@ pub fn lp_atomic_locktime_v2(
     my_conf_settings: &SwapConfirmationsSettings,
     other_conf_settings: &SwapConfirmationsSettings,
 ) -> u64 {
-    if maker_coin == "BTC"
+    if taker_coin.contains("-lightning") {
+        // A good value for lightning taker locktime is about 24 hours to find a good 3 hop or less path for the payment
+        get_payment_locktime() * 12
+    } else if maker_coin == "BTC"
         || taker_coin == "BTC"
         || coin_with_4x_locktime(maker_coin)
         || coin_with_4x_locktime(taker_coin)
@@ -582,6 +593,7 @@ pub fn lp_atomic_locktime(maker_coin: &str, taker_coin: &str, version: AtomicLoc
 }
 
 fn dex_fee_threshold(min_tx_amount: MmNumber) -> MmNumber {
+    // Todo: This should be reduced for lightning swaps.
     // 0.0001
     let min_fee = MmNumber::from((1, 10000));
     if min_fee < min_tx_amount {

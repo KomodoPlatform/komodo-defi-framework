@@ -14,7 +14,7 @@ use crate::mm2::lp_dispatcher::{DispatcherContext, LpEvents};
 use crate::mm2::lp_network::subscribe_to_topic;
 use crate::mm2::lp_ordermatch::{MakerOrderBuilder, OrderConfirmationsSettings};
 use crate::mm2::lp_price::fetch_swap_coins_price;
-use crate::mm2::lp_swap::broadcast_swap_message;
+use crate::mm2::lp_swap::{broadcast_swap_message, wait_for_taker_payment_conf_duration};
 use coins::{CanRefundHtlc, CheckIfMyPaymentSentArgs, FeeApproxStage, FoundSwapTxSpend, MmCoinEnum,
             PaymentInstructions, PaymentInstructionsErr, SearchForSwapTxSpendInput, SendMakerPaymentArgs,
             SendMakerRefundsPaymentArgs, SendMakerSpendsTakerPaymentArgs, TradeFee, TradePreimageValue,
@@ -422,11 +422,13 @@ impl MakerSwap {
         // If maker payment is a lightning payment the payment hash will be sent in the message
         // It's not really needed here unlike in TakerFee msg since the hash is included in the invoice/payment_instructions but it's kept for symmetry
         let payment_data = self.r().maker_payment.as_ref().unwrap().tx_hex.0.clone();
+        let expires_in = wait_for_taker_payment_conf_duration(self.r().data.lock_duration);
         let instructions = self
             .taker_coin
-            .payment_instructions(
+            .taker_payment_instructions(
                 &SecretHashAlgo::SHA256.hash_secret(self.secret.as_slice()),
                 &self.taker_amount,
+                expires_in,
             )
             .await?;
         Ok(SwapTxDataMsg::new(payment_data, instructions))
@@ -530,7 +532,8 @@ impl MakerSwap {
             maker_payment_requires_nota: Some(self.conf_settings.maker_coin_nota),
             taker_payment_confirmations: self.conf_settings.taker_coin_confs,
             taker_payment_requires_nota: Some(self.conf_settings.taker_coin_nota),
-            maker_payment_lock: started_at + self.payment_locktime * 2,
+            maker_payment_lock: started_at
+                + (self.payment_locktime as f64 * self.taker_coin.maker_locktime_multiplier()).ceil() as u64,
             my_persistent_pub: self.my_persistent_pub.into(),
             uuid: self.uuid,
             maker_coin_start_block,
@@ -682,10 +685,14 @@ impl MakerSwap {
         drop(send_abort_handle);
         let mut swap_events = vec![];
         if let Some(instructions) = payload.instructions() {
-            match self
-                .maker_coin
-                .validate_instructions(instructions, &self.secret_hash(), self.maker_amount.clone())
-            {
+            let maker_lock_duration =
+                (self.r().data.lock_duration as f64 * self.taker_coin.maker_locktime_multiplier()).ceil() as u64;
+            match self.maker_coin.validate_maker_payment_instructions(
+                instructions,
+                &self.secret_hash(),
+                self.maker_amount.clone(),
+                maker_lock_duration,
+            ) {
                 Ok(instructions) => swap_events.push(MakerSwapEvent::MakerPaymentInstructionsReceived(instructions)),
                 Err(e) => {
                     return Ok((Some(MakerSwapCommand::Finish), vec![

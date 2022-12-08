@@ -11,7 +11,7 @@ use coins::lightning::ln_p2p::{connect_to_ln_nodes_loop, init_peer_manager, ln_n
 use coins::lightning::ln_platform::Platform;
 use coins::lightning::ln_storage::LightningStorage;
 use coins::lightning::ln_utils::{get_open_channels_nodes_addresses, init_channel_manager, init_db, init_keys_manager,
-                                 init_persister};
+                                 init_persister, PAYMENT_RETRY_ATTEMPTS};
 use coins::lightning::{InvoicePayer, LightningCoin};
 use coins::utxo::utxo_standard::UtxoStandardCoin;
 use coins::utxo::UtxoCommonOps;
@@ -83,10 +83,12 @@ impl TryFromCoinProtocol for LightningProtocolConf {
             CoinProtocol::LIGHTNING {
                 platform,
                 network,
+                avg_block_time,
                 confirmation_targets,
             } => Ok(LightningProtocolConf {
                 platform_coin_ticker: platform,
                 network,
+                avg_block_time,
                 confirmation_targets,
             }),
             proto => MmError::err(proto),
@@ -321,6 +323,7 @@ async fn start_lightning(
     let platform = Arc::new(Platform::new(
         platform_coin.clone(),
         protocol_conf.network.clone(),
+        protocol_conf.avg_block_time,
         protocol_conf.confirmation_targets,
     )?);
     task_handle.update_in_progress_status(LightningInProgressStatus::GettingFeesFromRPC)?;
@@ -406,7 +409,8 @@ async fn start_lightning(
     // https://github.com/lightningdevkit/rust-lightning/issues/158
     // https://github.com/lightningdevkit/rust-lightning/pull/1286
     // https://github.com/lightningdevkit/rust-lightning/pull/1359
-    let router = DefaultRouter::new(network_graph, logger.clone(), keys_manager.get_secure_random_bytes());
+    let router_random_seed_bytes = keys_manager.get_secure_random_bytes();
+    let router = DefaultRouter::new(network_graph.clone(), logger.clone(), router_random_seed_bytes);
     let invoice_payer = Arc::new(InvoicePayer::new(
         channel_manager.clone(),
         router,
@@ -414,7 +418,7 @@ async fn start_lightning(
         logger.clone(),
         event_handler,
         // Todo: Add option for choosing payment::Retry::Timeout instead of Attempts in LightningParams
-        payment::Retry::Attempts(params.payment_retries.unwrap_or(5)),
+        payment::Retry::Attempts(params.payment_retries.unwrap_or(PAYMENT_RETRY_ATTEMPTS)),
     ));
 
     // Start Background Processing. Runs tasks periodically in the background to keep LN node operational.
@@ -429,8 +433,8 @@ async fn start_lightning(
         channel_manager.clone(),
         GossipSync::p2p(gossip_sync),
         peer_manager.clone(),
-        logger,
-        Some(scorer),
+        logger.clone(),
+        Some(scorer.clone()),
     ));
 
     // If channel_nodes_data file exists, read channels nodes data from disk and reconnect to channel nodes/peers if possible.
@@ -465,5 +469,7 @@ async fn start_lightning(
         db,
         open_channels_nodes,
         trusted_nodes,
+        router: Arc::new(DefaultRouter::new(network_graph, logger, router_random_seed_bytes)),
+        scorer,
     })
 }

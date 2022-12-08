@@ -23,6 +23,8 @@ use utxo_signer::with_key_pair::sign_tx;
 const TRY_LOOP_INTERVAL: f64 = 60.;
 /// 1 second.
 const CRITICAL_FUTURE_TIMEOUT: f64 = 1.0;
+pub const SUCCESSFUL_CLAIM_LOG: &str = "Successfully claimed payment";
+pub const SUCCESSFUL_SEND_LOG: &str = "Successfully sent payment";
 
 pub struct LightningEventHandler {
     platform: Arc<Platform>,
@@ -53,7 +55,7 @@ impl EventHandler for LightningEventHandler {
                 payment_hash,
                 amount_msat,
                 purpose,
-            } => self.handle_payment_received(payment_hash, *amount_msat, purpose),
+            } => self.handle_payment_received(*payment_hash, *amount_msat, purpose.clone()),
 
             Event::PaymentSent {
                 payment_preimage,
@@ -62,7 +64,7 @@ impl EventHandler for LightningEventHandler {
                 ..
             } => self.handle_payment_sent(*payment_preimage, *payment_hash, *fee_paid_msat),
 
-            Event::PaymentClaimed { payment_hash, amount_msat, purpose } => self.handle_payment_claimed(*payment_hash, *amount_msat, purpose),
+            Event::PaymentClaimed { payment_hash, amount_msat, .. } => self.handle_payment_claimed(*payment_hash, *amount_msat),
 
             Event::PaymentFailed { payment_hash, .. } => self.handle_payment_failed(*payment_hash),
 
@@ -333,19 +335,40 @@ impl LightningEventHandler {
         self.platform.spawner().spawn_with_settings(fut, settings);
     }
 
-    fn handle_payment_received(&self, payment_hash: &PaymentHash, received_amount: u64, purpose: &PaymentPurpose) {
+    fn handle_payment_received(&self, payment_hash: PaymentHash, received_amount: u64, purpose: PaymentPurpose) {
         info!(
             "Handling PaymentReceived event for payment_hash: {} with amount {}",
             hex::encode(payment_hash.0),
             received_amount
         );
+        let db = self.db.clone();
         let payment_preimage = match purpose {
-            PaymentPurpose::InvoicePayment { payment_preimage, .. } => match payment_preimage {
-                Some(preimage) => *preimage,
+            PaymentPurpose::InvoicePayment {
+                payment_preimage,
+                payment_secret,
+            } => match payment_preimage {
+                Some(preimage) => {
+                    let fut = async move {
+                        if let Ok(Some(mut payment_info)) =
+                            db.get_payment_from_db(payment_hash).await.error_log_passthrough()
+                        {
+                            payment_info.preimage = Some(preimage);
+                            payment_info.secret = Some(payment_secret);
+                            payment_info.status = HTLCStatus::Received;
+                            payment_info.last_updated = (now_ms() / 1000) as i64;
+                            db.add_or_update_payment_in_db(payment_info)
+                                .await
+                                .error_log_with_msg("Unable to update payment information in DB!");
+                        }
+                    };
+                    let settings = AbortSettings::default().critical_timout_s(CRITICAL_FUTURE_TIMEOUT);
+                    self.platform.spawner().spawn_with_settings(fut, settings);
+                    preimage
+                },
                 // This is a swap related payment since we don't have the preimage yet
                 None => {
                     let payment_info = PaymentInfo {
-                        payment_hash: *payment_hash,
+                        payment_hash,
                         payment_type: PaymentType::InboundPayment,
                         description: "Swap Payment".into(),
                         preimage: None,
@@ -357,14 +380,9 @@ impl LightningEventHandler {
                         ),
                         fee_paid_msat: None,
                         status: HTLCStatus::Received,
-                        created_at: (now_ms() / 1000)
-                            .try_into()
-                            .expect("created_at shouldn't exceed i64::MAX"),
-                        last_updated: (now_ms() / 1000)
-                            .try_into()
-                            .expect("last_updated shouldn't exceed i64::MAX"),
+                        created_at: (now_ms() / 1000) as i64,
+                        last_updated: (now_ms() / 1000) as i64,
                     };
-                    let db = self.db.clone();
                     let fut = async move {
                         db.add_or_update_payment_in_db(payment_info)
                             .await
@@ -377,58 +395,62 @@ impl LightningEventHandler {
                     return;
                 },
             },
-            PaymentPurpose::SpontaneousPayment(preimage) => *preimage,
-        };
-        self.channel_manager.claim_funds(payment_preimage);
-    }
-
-    fn handle_payment_claimed(&self, payment_hash: PaymentHash, amount_msat: u64, purpose: &PaymentPurpose) {
-        info!(
-            "Received an amount of {} millisatoshis for payment hash {}",
-            amount_msat,
-            hex::encode(payment_hash.0)
-        );
-        let db = self.db.clone();
-        match *purpose {
-            PaymentPurpose::InvoicePayment { payment_preimage, .. } => {
-                let fut = async move {
-                    if let Ok(Some(mut payment_info)) =
-                        db.get_payment_from_db(payment_hash).await.error_log_passthrough()
-                    {
-                        payment_info.preimage = payment_preimage;
-                        payment_info.status = HTLCStatus::Succeeded;
-                        payment_info.amt_msat = Some(amount_msat as i64);
-                        payment_info.last_updated = (now_ms() / 1000) as i64;
-                        db.add_or_update_payment_in_db(payment_info)
-                            .await
-                            .error_log_with_msg("Unable to update payment information in DB!");
-                    }
-                };
-                let settings = AbortSettings::default().critical_timout_s(CRITICAL_FUTURE_TIMEOUT);
-                self.platform.spawner().spawn_with_settings(fut, settings);
-            },
-            PaymentPurpose::SpontaneousPayment(payment_preimage) => {
+            PaymentPurpose::SpontaneousPayment(preimage) => {
                 let payment_info = PaymentInfo {
                     payment_hash,
                     payment_type: PaymentType::InboundPayment,
-                    description: "".into(),
-                    preimage: Some(payment_preimage),
+                    description: "keysend".into(),
+                    preimage: Some(preimage),
                     secret: None,
-                    amt_msat: Some(amount_msat as i64),
+                    amt_msat: Some(
+                        received_amount
+                            .try_into()
+                            .expect("received_amount shouldn't exceed i64::MAX"),
+                    ),
                     fee_paid_msat: None,
-                    status: HTLCStatus::Succeeded,
+                    status: HTLCStatus::Received,
                     created_at: (now_ms() / 1000) as i64,
                     last_updated: (now_ms() / 1000) as i64,
                 };
                 let fut = async move {
                     db.add_or_update_payment_in_db(payment_info)
                         .await
-                        .error_log_with_msg("Unable to update payment information in DB!");
+                        .error_log_with_msg("Unable to add payment information to DB!");
                 };
+
                 let settings = AbortSettings::default().critical_timout_s(CRITICAL_FUTURE_TIMEOUT);
                 self.platform.spawner().spawn_with_settings(fut, settings);
+                preimage
             },
-        }
+        };
+        self.channel_manager.claim_funds(payment_preimage);
+    }
+
+    fn handle_payment_claimed(&self, payment_hash: PaymentHash, amount_msat: u64) {
+        info!(
+            "Received an amount of {} millisatoshis for payment hash {}",
+            amount_msat,
+            hex::encode(payment_hash.0)
+        );
+        let db = self.db.clone();
+        let fut = async move {
+            if let Ok(Some(mut payment_info)) = db.get_payment_from_db(payment_hash).await.error_log_passthrough() {
+                payment_info.status = HTLCStatus::Succeeded;
+                payment_info.last_updated = (now_ms() / 1000) as i64;
+                let amt_msat = payment_info.amt_msat;
+                match db.add_or_update_payment_in_db(payment_info).await {
+                    Ok(_) => info!(
+                        "{} of {} millisatoshis with payment hash {}",
+                        SUCCESSFUL_CLAIM_LOG,
+                        amt_msat.unwrap_or_default(),
+                        hex::encode(payment_hash.0),
+                    ),
+                    Err(e) => error!("Unable to update payment information in DB error: {}", e),
+                }
+            }
+        };
+        let settings = AbortSettings::default().critical_timout_s(CRITICAL_FUTURE_TIMEOUT);
+        self.platform.spawner().spawn_with_settings(fut, settings);
     }
 
     fn handle_payment_sent(
@@ -449,14 +471,15 @@ impl LightningEventHandler {
                 payment_info.fee_paid_msat = fee_paid_msat.map(|f| f as i64);
                 payment_info.last_updated = (now_ms() / 1000) as i64;
                 let amt_msat = payment_info.amt_msat;
-                db.add_or_update_payment_in_db(payment_info)
-                    .await
-                    .error_log_with_msg("Unable to update payment information in DB!");
-                info!(
-                    "Successfully sent payment of {} millisatoshis with payment hash {}",
-                    amt_msat.unwrap_or_default(),
-                    hex::encode(payment_hash.0)
-                );
+                match db.add_or_update_payment_in_db(payment_info).await {
+                    Ok(_) => info!(
+                        "{} of {} millisatoshis with payment hash {}",
+                        SUCCESSFUL_SEND_LOG,
+                        amt_msat.unwrap_or_default(),
+                        hex::encode(payment_hash.0)
+                    ),
+                    Err(e) => error!("Unable to update payment information in DB error: {}", e),
+                }
             }
         };
         let settings = AbortSettings::default().critical_timout_s(CRITICAL_FUTURE_TIMEOUT);

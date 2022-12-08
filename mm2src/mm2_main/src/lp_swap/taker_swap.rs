@@ -13,7 +13,8 @@ use super::{broadcast_my_swap_status, broadcast_swap_message, broadcast_swap_mes
 use crate::mm2::lp_network::subscribe_to_topic;
 use crate::mm2::lp_ordermatch::{MatchBy, OrderConfirmationsSettings, TakerAction, TakerOrderBuilder};
 use crate::mm2::lp_price::fetch_swap_coins_price;
-use crate::mm2::lp_swap::{broadcast_p2p_tx_msg, tx_helper_topic, TakerSwapWatcherData};
+use crate::mm2::lp_swap::{broadcast_p2p_tx_msg, tx_helper_topic, wait_for_maker_payment_conf_duration,
+                          TakerSwapWatcherData};
 use coins::{lp_coinfind, CanRefundHtlc, CheckIfMyPaymentSentArgs, FeeApproxStage, FoundSwapTxSpend, MmCoinEnum,
             PaymentInstructions, PaymentInstructionsErr, SearchForSwapTxSpendInput, SendSpendPaymentArgs,
             SendTakerPaymentArgs, SendTakerRefundsPaymentArgs, SendTakerSpendsMakerPaymentArgs, TradeFee,
@@ -878,9 +879,12 @@ impl TakerSwap {
             .clone();
         let secret_hash = self.r().secret_hash.0.clone();
         let maker_amount = self.maker_amount.clone().into();
+        let maker_lock_duration =
+            (self.r().data.lock_duration as f64 * self.taker_coin.maker_locktime_multiplier()).ceil() as u64;
+        let expires_in = wait_for_maker_payment_conf_duration(self.r().data.lock_duration);
         let instructions = self
             .maker_coin
-            .payment_instructions(&secret_hash, &maker_amount)
+            .maker_payment_instructions(&secret_hash, &maker_amount, maker_lock_duration, expires_in)
             .await?;
         Ok(SwapTxDataMsg::new(taker_fee_data, instructions))
     }
@@ -1028,7 +1032,8 @@ impl TakerSwap {
             )]));
         }
 
-        let expected_lock_time = maker_data.started_at() + self.r().data.lock_duration * 2;
+        let expected_lock_time = maker_data.started_at()
+            + (self.r().data.lock_duration as f64 * self.taker_coin.maker_locktime_multiplier()).ceil() as u64;
         if maker_data.payment_locktime() != expected_lock_time {
             return Ok((Some(TakerSwapCommand::Finish), vec![TakerSwapEvent::NegotiateFailed(
                 ERRL!(
@@ -1227,7 +1232,7 @@ impl TakerSwap {
         drop(abort_send_handle);
         let mut swap_events = vec![];
         if let Some(instructions) = payload.instructions() {
-            match self.taker_coin.validate_instructions(
+            match self.taker_coin.validate_taker_payment_instructions(
                 instructions,
                 &self.r().secret_hash.0,
                 self.taker_amount.clone().into(),

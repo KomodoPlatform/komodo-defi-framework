@@ -5710,10 +5710,15 @@ fn orderbook_address(
             }
         },
         #[cfg(not(target_arch = "wasm32"))]
-        CoinProtocol::LIGHTNING { .. } | CoinProtocol::SOLANA | CoinProtocol::SPLTOKEN { .. } => {
+        CoinProtocol::SOLANA | CoinProtocol::SPLTOKEN { .. } => {
             MmError::err(OrderbookAddrErr::CoinIsNotSupported(coin.to_owned()))
         },
         #[cfg(not(target_arch = "wasm32"))]
-        CoinProtocol::ZHTLC { .. } => Ok(OrderbookAddress::Shielded),
+        // Todo: Shielded address is used for lightning for now, the lightning node public key can be used for the orderbook entry pubkey
+        // Todo: instead of the platform coin pubkey which is used right now. But lightning payments are supposed to be private,
+        // Todo: so maybe we should hide the node address in the orderbook, only the sending node and the receiving node should know about a payment,
+        // Todo: a routing node will know about a payment it routed but not the sender or the receiver. This will require using a new keypair for every order/swap
+        // Todo: similar to how it's done for zcoin.
+        CoinProtocol::ZHTLC { .. } | CoinProtocol::LIGHTNING { .. } => Ok(OrderbookAddress::Shielded),
     }
 }
