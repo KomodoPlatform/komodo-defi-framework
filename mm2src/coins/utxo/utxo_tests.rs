@@ -4301,6 +4301,7 @@ fn test_block_header_utxo_loop() {
         UtxoRpcClientEnum::Electrum(electrum) => electrum.clone(),
         UtxoRpcClientEnum::Native(_) => unreachable!(),
     };
+
     let (sync_status_notifier, _) = channel::<UtxoSyncStatus>(1);
     let loop_handle = UtxoSyncStatusLoopHandle::new(sync_status_notifier);
 

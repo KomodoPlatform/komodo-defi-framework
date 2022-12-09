@@ -60,8 +60,7 @@ impl BlockHeaderStorage {
 }
 
 #[async_trait]
-#[cfg_attr(test, mockable)]
-#[cfg(not(target_arch = "wasm32"))]
+#[cfg_attr(all(test, not(target_arch = "wasm32")), mockable)]
 impl BlockHeaderStorageOps for BlockHeaderStorage {
     async fn init(&self) -> Result<(), BlockHeaderStorageError> { self.inner.init().await }
 
