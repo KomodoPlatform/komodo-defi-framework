@@ -3,23 +3,14 @@ use proc_macro2::{Ident, TokenStream};
 use quote::__private::ext::RepToTokensExt;
 use quote::{quote, ToTokens};
 use syn::__private::TokenStream2;
-use syn::punctuated::Punctuated;
 use syn::spanned::Spanned;
-use syn::token::Comma;
 use syn::Variant;
 
 #[derive(Clone)]
-pub struct MapEnumDataPunctuated {
+pub struct MapEnumNestedData {
     variant_ident: Ident,
-    nested_meta: Punctuated<syn::NestedMeta, Comma>,
+    nested_meta: Vec<syn::NestedMeta>,
     inner_ident: Option<Ident>,
-}
-
-#[derive(Clone)]
-pub struct MapEnumData {
-    pub(crate) variant_ident: Ident,
-    pub(crate) meta: syn::NestedMeta,
-    pub(crate) inner_ident: Option<Ident>,
 }
 
 #[derive(Debug)]
@@ -40,7 +31,7 @@ pub(crate) fn get_inner_ident_type(ident: Option<Ident>) -> InnerIdentTypes {
     InnerIdentTypes::None
 }
 
-pub(crate) fn get_attributes(variants: Variant) -> Result<MapEnumDataPunctuated, CompileError> {
+pub(crate) fn get_attributes(variants: Variant) -> Result<MapEnumNestedData, CompileError> {
     let variant_ident = &variants.ident;
     let fields = &variants.fields;
 
@@ -48,9 +39,9 @@ pub(crate) fn get_attributes(variants: Variant) -> Result<MapEnumDataPunctuated,
         if let Ok(meta) = attribute.parse_meta() {
             return match meta {
                 syn::Meta::List(syn::MetaList { nested, .. }) => {
-                    return Ok(MapEnumDataPunctuated {
+                    return Ok(MapEnumNestedData {
                         variant_ident: variant_ident.to_owned(),
-                        nested_meta: nested,
+                        nested_meta: nested.into_iter().collect(),
                         inner_ident: get_variant_unnamed_ident(fields.to_owned()),
                     });
                 },
@@ -79,14 +70,14 @@ fn get_variant_unnamed_ident(fields: syn::Fields) -> Option<Ident> {
     None
 }
 
-pub(crate) fn map_enum_data_from_variant(variant: &Variant) -> Result<Vec<MapEnumData>, CompileError> {
+pub(crate) fn map_enum_data_from_variant(variant: &Variant) -> Result<Vec<MapEnumNestedData>, CompileError> {
     let mut meta_vec = vec![];
     let attr = get_attributes(variant.to_owned())?;
-    for meta in attr.nested_meta {
+    for nested_meta in attr.nested_meta {
         let variant_ident = attr.variant_ident.to_owned();
-        meta_vec.push(MapEnumData {
+        meta_vec.push(MapEnumNestedData {
             variant_ident,
-            meta: meta.clone(),
+            nested_meta: vec![nested_meta],
             inner_ident: attr.inner_ident.clone(),
         });
     }
@@ -95,11 +86,13 @@ pub(crate) fn map_enum_data_from_variant(variant: &Variant) -> Result<Vec<MapEnu
 
 fn parse_inner_ident(attr: &TokenStream) -> Result<Ident, CompileError> {
     let ident_to_impl_from = attr.to_string();
-    if ident_to_impl_from.is_empty() {
-        return Err(CompileError::expected_an_ident(MacroAttr::FromStringify));
-    }
+
     let strip_prefix = ident_to_impl_from.strip_prefix('\"').unwrap();
     let strip_suffix = strip_prefix.strip_suffix('\"').unwrap();
+
+    if strip_suffix.is_empty() {
+        return Err(CompileError::expected_an_ident(MacroAttr::FromStringify));
+    }
 
     let to_ident = Ident::new(strip_suffix, attr.span());
     Ok(to_ident)
@@ -110,7 +103,7 @@ pub(crate) fn impl_from_stringify(ctx: &IdentCtx<'_>, variant: &Variant) -> Resu
     let enum_name = &ctx.ident;
     if let Some(m) = enum_data.get(0) {
         let variant_ident = &m.variant_ident;
-        let ident_to_impl_from = parse_inner_ident(&m.meta.to_token_stream())?;
+        let ident_to_impl_from = parse_inner_ident(&m.nested_meta[0].to_token_stream())?;
 
         return match get_inner_ident_type(m.inner_ident.to_owned()) {
             InnerIdentTypes::Named => Ok(Some(quote! {

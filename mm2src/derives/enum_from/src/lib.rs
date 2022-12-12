@@ -86,6 +86,79 @@ pub fn enum_from_trait(input: TokenStream) -> TokenStream {
     }
 }
 
+/// `EnumFromStringify` is very useful for generating `From<T>` trait from one enum to another enum
+/// currently, this crate can only convert enum variant with only some basic inner type such as `String`, and `Enum`
+/// type just like the example below. Can not be used for tuple, struct etc for now .
+/// More support will be added.
+///
+///
+/// ### USAGE:
+/// ```rust
+/// use enum_from::EnumFromStringify;
+/// use std::fmt::{Display, Formatter};
+///
+/// // E.G, this converts from whatever Bar is to FooBar::Bar(String) and
+/// // whatever Foo to FooBar::Foo(Foo)
+/// #[derive(Debug, EnumFromStringify, PartialEq, Eq)]
+/// pub enum FooBar {
+///     #[from_stringify("Bar", "String", "Man")]
+///     Bar(String),
+///     #[from_stringify("Foo")]
+///     Foo(Foo),
+/// }
+///
+/// #[derive(Debug, PartialEq, Eq)]
+/// pub enum Bar {
+///     Bar(String),
+/// }
+///
+/// impl Display for Bar {
+///   fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+///        match self {
+///            Self::Bar(s) => write!(f, "{}", s),
+///        }
+///    }
+/// }
+///
+/// #[derive(Debug, PartialEq, Eq)]
+/// pub enum Man {
+///     Man(String),
+/// }
+///
+/// impl Display for Man {
+///   fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+///        match self {
+///            Self::Man(s) => write!(f, "{}", s),
+///        }
+///    }
+/// }
+///
+/// #[derive(Debug, Clone, PartialEq, Eq)]
+/// pub enum Foo {
+///     Foo(String),
+/// }
+///
+/// #[test]
+/// fn test_from_variant() {
+///     let bar = Bar::Bar("Bar".to_string());
+///     assert_eq!(FooBar::Bar("Bar".to_string()), bar.into());
+///
+///     let foo = Foo::Foo("Foo".to_string());
+///     assert_eq!(FooBar::Foo(foo.clone()), foo.into());
+///
+///     let man = Man::Man("Man".to_string());
+///     assert_eq!(FooBar::Bar(man.clone()), foo.into());
+/// }
+///  ```
+#[proc_macro_derive(EnumFromStringify, attributes(from_stringify))]
+pub fn derive(input: TokenStream) -> TokenStream {
+    let ast = parse_macro_input!(input as DeriveInput);
+    match derive_enum_from_macro(ast, MacroAttr::FromStringify) {
+        Ok(output) => output,
+        Err(e) => e.into(),
+    }
+}
+
 #[allow(clippy::enum_variant_names)]
 #[derive(Clone, Copy)]
 enum MacroAttr {
@@ -93,7 +166,7 @@ enum MacroAttr {
     FromInner,
     /// `from_trait` attribute of the `EnumFromTrait` derive macro.
     FromTrait,
-    /// `from_trait` attribute of the `EnumFromTrait` derive macro.
+    /// `from_stringify` attribute of the `EnumFromStringify` derive macro.
     FromStringify,
 }
 
@@ -121,7 +194,9 @@ impl CompileError {
     }
 
     fn expected_an_ident(attr: MacroAttr) -> CompileError {
-        CompileError(format!("Can't be empty, expected `Ident`. {attr}"))
+        CompileError(format!(
+            "Ident can't be an empty str, expected an Ident in {attr} attribute. i.e, {attr}(ident_name) "
+        ))
     }
 
     fn expected_unnamed_inner(attr: MacroAttr) -> CompileError {
@@ -229,61 +304,4 @@ fn wrap_const(code: TokenStream2) -> TokenStream {
         };
     };
     output.into()
-}
-
-/// `EnumFromStringify` is very useful for generating `From<T>` trait from one enum to another enum
-/// currently, this crate can only convert enum variant with only some basic inner type such as `String`, and `Enum`
-/// type just like the example below. Can not be used for tuple, struct etc for now .
-/// More support will be added.
-///
-///
-/// ### USAGE:
-/// ```rust
-/// use enum_from::EnumFromStringify;
-/// use std::fmt::{Display, Formatter};
-///
-/// // E.G, this converts from whatever Bar is to FooBar::Bar(String) and
-/// // whatever Foo to FooBar::Foo(Foo)
-/// #[derive(Debug, EnumFromStringify, PartialEq, Eq)]
-/// pub enum FooBar {
-///     #[from_stringify("Bar", "String")]
-///     Bar(String),
-///     #[from_stringify("Foo")]
-///     Foo(Foo),
-/// }
-///
-/// #[derive(Debug, PartialEq, Eq)]
-/// pub enum Bar {
-///     Bar(String),
-/// }
-///
-/// impl Display for Bar {
-///   fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
-///        match self {
-///            Self::Bar(s) => write!(f, "{}", s),
-///        }
-///    }
-/// }
-///
-/// #[derive(Debug, Clone, PartialEq, Eq)]
-/// pub enum Foo {
-///     Foo(String),
-/// }
-///
-/// #[test]
-/// fn test_from_variant() {
-///     let bar = Bar::Bar("Bar".to_string());
-///     assert_eq!(FooBar::Bar("Bar".to_string()), bar.into());
-///
-///     let foo = Foo::Foo("Foo".to_string());
-///     assert_eq!(FooBar::Foo(foo.clone()), foo.into());
-/// }
-///  ```
-#[proc_macro_derive(EnumFromStringify, attributes(from_stringify))]
-pub fn derive(input: TokenStream) -> TokenStream {
-    let ast = parse_macro_input!(input as DeriveInput);
-    match derive_enum_from_macro(ast, MacroAttr::FromStringify) {
-        Ok(output) => output,
-        Err(e) => e.into(),
-    }
 }
