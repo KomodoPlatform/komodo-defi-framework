@@ -1,7 +1,7 @@
-use crate::{CompileError, IdentCtx};
+use crate::{CompileError, IdentCtx, MacroAttr};
 use proc_macro2::{Ident, TokenStream};
 use quote::__private::ext::RepToTokensExt;
-use quote::{quote, quote_spanned};
+use quote::{quote, ToTokens};
 use syn::__private::TokenStream2;
 use syn::punctuated::Punctuated;
 use syn::spanned::Spanned;
@@ -30,18 +30,17 @@ pub(crate) enum InnerIdentTypes {
 }
 
 pub(crate) fn get_inner_ident_type(ident: Option<Ident>) -> InnerIdentTypes {
-    ident
-        .map(|ident| {
-            if ident == Ident::new("String", ident.span()) {
-                InnerIdentTypes::String
-            } else {
-                InnerIdentTypes::Named
-            }
-        })
-        .unwrap_or(InnerIdentTypes::None)
+    if let Some(ident) = ident {
+        return match ident.to_string().as_str() {
+            "String" => InnerIdentTypes::String,
+            _ => InnerIdentTypes::Named,
+        };
+    };
+
+    InnerIdentTypes::None
 }
 
-pub(crate) fn get_attributes(variants: Variant) -> Result<MapEnumDataPunctuated, TokenStream> {
+pub(crate) fn get_attributes(variants: Variant) -> Result<MapEnumDataPunctuated, CompileError> {
     let variant_ident = &variants.ident;
     let fields = &variants.fields;
 
@@ -55,78 +54,81 @@ pub(crate) fn get_attributes(variants: Variant) -> Result<MapEnumDataPunctuated,
                         inner_ident: get_variant_unnamed_ident(fields.to_owned()),
                     });
                 },
-                _ => Err(quote_spanned!(
-                attribute.tokens.span() => compile_error!("expected #[enum_from_stringify(..)]")
+                _ => Err(CompileError::expected_enum_from_stringify(
+                    MacroAttr::FromStringify,
+                    &attribute.tokens.to_string(),
                 )),
             };
         };
     }
-    Err(quote_spanned!(
-    variant_ident.span() => compile_error!("expected #[enum_from_stringify(..)]")
+    Err(CompileError::expected_enum_from_stringify(
+        MacroAttr::FromStringify,
+        &variant_ident.to_string(),
     ))
 }
 
 fn get_variant_unnamed_ident(fields: syn::Fields) -> Option<Ident> {
     if let syn::Fields::Unnamed(syn::FieldsUnnamed { unnamed, .. }) = fields {
         if let Some(field) = unnamed.iter().next() {
-            let type_path = if let Some(syn::Type::Path(type_path, ..)) = field.ty.next().cloned() {
-                type_path
-            } else {
-                return None;
+            if let Some(syn::Type::Path(type_path, ..)) = field.ty.next().cloned() {
+                let type_path = type_path.path.segments.iter().next().cloned()?.ident;
+                return Some(type_path);
             };
-            return Some(type_path.path.segments.iter().next().cloned()?.ident);
         };
     }
     None
 }
 
-pub(crate) fn map_enum_data_from_variant(variant: &Variant) -> Vec<MapEnumData> {
+pub(crate) fn map_enum_data_from_variant(variant: &Variant) -> Result<Vec<MapEnumData>, CompileError> {
     let mut meta_vec = vec![];
-    let _ = get_attributes(variant.to_owned()).map(|attr| {
-        for meta in attr.nested_meta.iter() {
-            let variant_ident = attr.clone().variant_ident.to_owned();
-            meta_vec.push(MapEnumData {
-                variant_ident,
-                meta: meta.clone(),
-                inner_ident: attr.inner_ident.clone(),
-            });
-        }
-    });
-    meta_vec
+    let attr = get_attributes(variant.to_owned())?;
+    for meta in attr.nested_meta {
+        let variant_ident = attr.variant_ident.to_owned();
+        meta_vec.push(MapEnumData {
+            variant_ident,
+            meta: meta.clone(),
+            inner_ident: attr.inner_ident.clone(),
+        });
+    }
+    Ok(meta_vec)
+}
+
+fn parse_inner_ident(attr: &TokenStream) -> Result<Ident, CompileError> {
+    let ident_to_impl_from = attr.to_string();
+    if ident_to_impl_from.is_empty() {
+        return Err(CompileError::expected_an_ident(MacroAttr::FromStringify));
+    }
+    let strip_prefix = ident_to_impl_from.strip_prefix('\"').unwrap();
+    let strip_suffix = strip_prefix.strip_suffix('\"').unwrap();
+
+    let to_ident = Ident::new(strip_suffix, attr.span());
+    Ok(to_ident)
 }
 
 pub(crate) fn impl_from_stringify(ctx: &IdentCtx<'_>, variant: &Variant) -> Result<Option<TokenStream2>, CompileError> {
-    let enum_data = map_enum_data_from_variant(variant);
+    let enum_data = map_enum_data_from_variant(variant)?;
     let enum_name = &ctx.ident;
-    let construct_meta = enum_data.iter().map(|m| {
+    if let Some(m) = enum_data.get(0) {
         let variant_ident = &m.variant_ident;
-        if let syn::NestedMeta::Lit(syn::Lit::Str(str)) = &m.meta {
-            if str.value().is_empty() {
-                return Some(quote_spanned!(
-                str.span() => compile_error!("Expected this to be an `Ident`")
-                ));
-            };
+        let ident_to_impl_from = parse_inner_ident(&m.meta.to_token_stream())?;
 
-            let ident_to_impl_from = Ident::new(&str.value(), str.span());
-            return match get_inner_ident_type(m.inner_ident.to_owned()) {
-                InnerIdentTypes::Named => Some(quote! {
-                    impl From<#ident_to_impl_from> for #enum_name {
-                        fn from(err: #ident_to_impl_from) -> #enum_name {
-                            #enum_name::#variant_ident(err)
-                        }
+        return match get_inner_ident_type(m.inner_ident.to_owned()) {
+            InnerIdentTypes::Named => Ok(Some(quote! {
+                impl From<#ident_to_impl_from> for #enum_name {
+                    fn from(err: #ident_to_impl_from) -> #enum_name {
+                        #enum_name::#variant_ident(err)
                     }
-                }),
-                _ => Some(quote! {
-                    impl From<#ident_to_impl_from> for #enum_name {
-                        fn from(err: #ident_to_impl_from) -> #enum_name {
-                            #enum_name::#variant_ident(err.to_string())
-                        }
+                }
+            })),
+            _ => Ok(Some(quote! {
+                impl From<#ident_to_impl_from> for #enum_name {
+                    fn from(err: #ident_to_impl_from) -> #enum_name {
+                        #enum_name::#variant_ident(err.to_string())
                     }
-                }),
-            };
-        }
-        None
-    });
+                }
+            })),
+        };
+    }
 
-    Ok(Some(quote!(#(#construct_meta)*)))
+    Ok(None)
 }

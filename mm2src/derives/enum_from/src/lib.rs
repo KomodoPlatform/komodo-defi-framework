@@ -114,6 +114,16 @@ impl CompileError {
         CompileError(format!("'{}' cannot be implement for a {}", MACRO_IDENT, found))
     }
 
+    fn expected_enum_from_stringify(attr: MacroAttr, found: &str) -> CompileError {
+        CompileError(format!(
+            "expected #[enum_from_stringify(..)], found '{found}' on {attr} attribute",
+        ))
+    }
+
+    fn expected_an_ident(attr: MacroAttr) -> CompileError {
+        CompileError(format!("Can't be empty, expected `Ident`. {attr}"))
+    }
+
     fn expected_unnamed_inner(attr: MacroAttr) -> CompileError {
         CompileError(format!(
             "'{}' attribute must be used for a variant with one unnamed inner type",
@@ -229,25 +239,33 @@ fn wrap_const(code: TokenStream2) -> TokenStream {
 ///
 /// ### USAGE:
 /// ```rust
-/// use enum_from::EnumFromVariant;
-/// use derive_more::Display;
+/// use enum_from::EnumFromStringify;
+/// use std::fmt::{Display, Formatter};
 ///
 /// // E.G, this converts from whatever Bar is to FooBar::Bar(String) and
 /// // whatever Foo to FooBar::Foo(Foo)
 /// #[derive(Debug, EnumFromStringify, PartialEq, Eq)]
 /// pub enum FooBar {
-///     #[from_stringify("Bar")]
+///     #[from_stringify("Bar", "String")]
 ///     Bar(String),
 ///     #[from_stringify("Foo")]
 ///     Foo(Foo),
 /// }
 ///
-/// #[derive(Debug, Display, PartialEq, Eq)]
+/// #[derive(Debug, PartialEq, Eq)]
 /// pub enum Bar {
 ///     Bar(String),
 /// }
 ///
-/// #[derive(Debug, Clone, Display, PartialEq, Eq)]
+/// impl Display for Bar {
+///   fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+///        match self {
+///            Self::Bar(s) => write!(f, "{}", s),
+///        }
+///    }
+/// }
+///
+/// #[derive(Debug, Clone, PartialEq, Eq)]
 /// pub enum Foo {
 ///     Foo(String),
 /// }
