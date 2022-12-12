@@ -698,6 +698,17 @@ pub trait SwapOps {
         Box::new(futures01::future::ok(result))
     }
 
+    // Todo: check with Onur or Artem if tendermint refunds are implemented or not
+    /// Whether the swap payment refunded automatically or not when the locktime expires.
+    fn is_auto_refundable(&self) -> bool { false }
+
+    /// Waits for an htlc to be refunded automatically and returns the refund transaction.
+    fn wait_for_htlc_refund(&self, _tx: &[u8], _locktime: u64) -> TransactionFut {
+        Box::new(futures01::future::err(TransactionErr::Plain(
+            "wait_for_htlc_refund is not supported for this coin!".into(),
+        )))
+    }
+
     fn negotiate_swap_contract_addr(
         &self,
         other_side_address: Option<&[u8]>,

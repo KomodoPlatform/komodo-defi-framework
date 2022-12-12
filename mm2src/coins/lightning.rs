@@ -75,6 +75,7 @@ use std::net::SocketAddr;
 use std::str::FromStr;
 use std::sync::Arc;
 
+const WAIT_FOR_REFUND_INTERVAL: f64 = 60.;
 pub const DEFAULT_INVOICE_EXPIRY: u32 = 3600;
 
 pub type InvoicePayer<E> = payment::InvoicePayer<Arc<ChannelManager>, Router, Arc<Scorer>, Arc<LogState>, E>;
@@ -669,14 +670,18 @@ impl SwapOps for LightningCoin {
         &self,
         _taker_refunds_payment_args: SendTakerRefundsPaymentArgs<'_>,
     ) -> TransactionFut {
-        unimplemented!()
+        Box::new(futures01::future::err(TransactionErr::Plain(
+            "Doesn't need transaction broadcast to refund lightning HTLC".into(),
+        )))
     }
 
     fn send_maker_refunds_payment(
         &self,
         _maker_refunds_payment_args: SendMakerRefundsPaymentArgs<'_>,
     ) -> TransactionFut {
-        unimplemented!()
+        Box::new(futures01::future::err(TransactionErr::Plain(
+            "Doesn't need transaction broadcast to refund lightning HTLC".into(),
+        )))
     }
 
     // Todo: This validates the dummy fee for now for the sake of swap P.O.C., this should be implemented probably after agreeing on how fees will work for lightning
@@ -739,6 +744,62 @@ impl SwapOps for LightningCoin {
                 e
             ),
         }
+    }
+
+    fn is_auto_refundable(&self) -> bool { true }
+
+    // Todo: revise this function, how about instead of TakerPaymentRefunded event we can add taker payment will be refunded automatically instead??
+    fn wait_for_htlc_refund(&self, tx: &[u8], locktime: u64) -> TransactionFut {
+        let payment_hash = try_tx_fus!(payment_hash_from_slice(tx).map_err(|e| e.to_string()));
+        let payment_hex = hex::encode(payment_hash.0);
+
+        let coin = self.clone();
+        let fut = async move {
+            loop {
+                match coin.db.get_payment_from_db(payment_hash).await {
+                    Ok(Some(payment)) => {
+                        match payment.status {
+                            HTLCStatus::Failed => return Ok(TransactionEnum::LightningPayment(payment_hash)),
+                            HTLCStatus::Pending => (),
+                            // Todo : should I handle all cases explicitly
+                            _ => {
+                                return Err(TransactionErr::Plain(ERRL!(
+                                    "Payment {} has an invalid status of {} in the db",
+                                    payment_hex,
+                                    payment.status
+                                )))
+                            },
+                        }
+                    },
+                    Ok(None) => {
+                        return Err(TransactionErr::Plain(ERRL!(
+                            "Payment {} is not in the database when it should be!",
+                            payment_hex
+                        )))
+                    },
+                    Err(e) => {
+                        return Err(TransactionErr::Plain(ERRL!(
+                            "Error getting payment {} from db: {}",
+                            payment_hex,
+                            e
+                        )))
+                    },
+                }
+
+                // Todo: find best place for this, should I use blocks instead of locktime??
+                let now = now_ms() / 1000;
+                if now > locktime {
+                    return Err(TransactionErr::Plain(ERRL!(
+                        // Todo: maybe change this message
+                        "Waited too long until {} for payment {} to be refunded!",
+                        locktime,
+                        payment_hex
+                    )));
+                }
+                Timer::sleep(WAIT_FOR_REFUND_INTERVAL).await;
+            }
+        };
+        Box::new(fut.boxed().compat())
     }
 
     fn negotiate_swap_contract_addr(
@@ -1034,9 +1095,10 @@ impl MarketCoinOps for LightningCoin {
         let fut = async move {
             loop {
                 if now_ms() / 1000 > wait_until {
-                    return Err(TransactionErr::Plain(format!(
+                    return Err(TransactionErr::Plain(ERRL!(
                         "Waited too long until {} for payment {} to be spent",
-                        wait_until, payment_hex
+                        wait_until,
+                        payment_hex
                     )));
                 }
 
@@ -1044,29 +1106,26 @@ impl MarketCoinOps for LightningCoin {
                     Ok(Some(payment)) => match payment.status {
                         HTLCStatus::Pending => (),
                         HTLCStatus::Received => {
-                            return Err(TransactionErr::Plain(format!(
+                            return Err(TransactionErr::Plain(ERRL!(
                                 "Payment {} has an invalid status of {} in the db",
-                                payment_hex, payment.status
+                                payment_hex,
+                                payment.status
                             )))
                         },
                         HTLCStatus::Succeeded => return Ok(TransactionEnum::LightningPayment(payment_hash)),
                         HTLCStatus::Failed => {
-                            return Err(TransactionErr::Plain(format!(
+                            return Err(TransactionErr::Plain(ERRL!(
                                 "Lightning swap payment {} failed",
                                 payment_hex
                             )))
                         },
                     },
-                    Ok(None) => {
-                        return Err(TransactionErr::Plain(format!(
-                            "Payment {} not found in DB",
-                            payment_hex
-                        )))
-                    },
+                    Ok(None) => return Err(TransactionErr::Plain(ERRL!("Payment {} not found in DB", payment_hex))),
                     Err(e) => {
-                        return Err(TransactionErr::Plain(format!(
+                        return Err(TransactionErr::Plain(ERRL!(
                             "Error getting payment {} from db: {}",
-                            payment_hex, e
+                            payment_hex,
+                            e
                         )))
                     },
                 }

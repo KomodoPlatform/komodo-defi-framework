@@ -1645,25 +1645,31 @@ impl TakerSwap {
         }
 
         let locktime = self.r().data.taker_payment_lock;
-        loop {
-            match self.taker_coin.can_refund_htlc(locktime).compat().await {
-                Ok(CanRefundHtlc::CanRefundNow) => break,
-                Ok(CanRefundHtlc::HaveToWait(to_sleep)) => Timer::sleep(to_sleep as f64).await,
-                Err(e) => {
-                    error!("Error {} on can_refund_htlc, retrying in 30 seconds", e);
-                    Timer::sleep(30.).await;
-                },
+        let refund_fut = if self.taker_coin.is_auto_refundable() {
+            self.taker_coin
+                .wait_for_htlc_refund(&self.r().taker_payment.clone().unwrap().tx_hex, locktime)
+        } else {
+            // Todo: add this to a function
+            loop {
+                match self.taker_coin.can_refund_htlc(locktime).compat().await {
+                    Ok(CanRefundHtlc::CanRefundNow) => break,
+                    Ok(CanRefundHtlc::HaveToWait(to_sleep)) => Timer::sleep(to_sleep as f64).await,
+                    Err(e) => {
+                        error!("Error {} on can_refund_htlc, retrying in 30 seconds", e);
+                        Timer::sleep(30.).await;
+                    },
+                }
             }
-        }
 
-        let refund_fut = self.taker_coin.send_taker_refunds_payment(SendTakerRefundsPaymentArgs {
-            payment_tx: &self.r().taker_payment.clone().unwrap().tx_hex,
-            time_lock: self.r().data.taker_payment_lock as u32,
-            other_pubkey: &*self.r().other_taker_coin_htlc_pub,
-            secret_hash: &self.r().secret_hash.0,
-            swap_contract_address: &self.r().data.taker_coin_swap_contract_address,
-            swap_unique_data: &self.unique_swap_data(),
-        });
+            self.taker_coin.send_taker_refunds_payment(SendTakerRefundsPaymentArgs {
+                payment_tx: &self.r().taker_payment.clone().unwrap().tx_hex,
+                time_lock: locktime as u32,
+                other_pubkey: &*self.r().other_taker_coin_htlc_pub,
+                secret_hash: &self.r().secret_hash.0,
+                swap_contract_address: &self.r().data.taker_coin_swap_contract_address,
+                swap_unique_data: &self.unique_swap_data(),
+            })
+        };
 
         let transaction = match refund_fut.compat().await {
             Ok(t) => t,

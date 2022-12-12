@@ -1080,27 +1080,33 @@ impl MakerSwap {
         }
 
         let locktime = self.r().data.maker_payment_lock;
-        loop {
-            match self.maker_coin.can_refund_htlc(locktime).compat().await {
-                Ok(CanRefundHtlc::CanRefundNow) => break,
-                Ok(CanRefundHtlc::HaveToWait(to_sleep)) => Timer::sleep(to_sleep as f64).await,
-                Err(e) => {
-                    error!("Error {} on can_refund_htlc, retrying in 30 seconds", e);
-                    Timer::sleep(30.).await;
-                },
+        let refund_fut = if self.maker_coin.is_auto_refundable() {
+            self.taker_coin
+                .wait_for_htlc_refund(&self.r().maker_payment.clone().unwrap().tx_hex, locktime)
+        } else {
+            // Todo: add this to a function
+            loop {
+                match self.maker_coin.can_refund_htlc(locktime).compat().await {
+                    Ok(CanRefundHtlc::CanRefundNow) => break,
+                    Ok(CanRefundHtlc::HaveToWait(to_sleep)) => Timer::sleep(to_sleep as f64).await,
+                    Err(e) => {
+                        error!("Error {} on can_refund_htlc, retrying in 30 seconds", e);
+                        Timer::sleep(30.).await;
+                    },
+                }
             }
-        }
 
-        let spend_fut = self.maker_coin.send_maker_refunds_payment(SendMakerRefundsPaymentArgs {
-            payment_tx: &self.r().maker_payment.clone().unwrap().tx_hex,
-            time_lock: self.r().data.maker_payment_lock as u32,
-            other_pubkey: &*self.r().other_maker_coin_htlc_pub,
-            secret_hash: self.secret_hash().as_slice(),
-            swap_contract_address: &self.r().data.maker_coin_swap_contract_address,
-            swap_unique_data: &self.unique_swap_data(),
-        });
+            self.maker_coin.send_maker_refunds_payment(SendMakerRefundsPaymentArgs {
+                payment_tx: &self.r().maker_payment.clone().unwrap().tx_hex,
+                time_lock: locktime as u32,
+                other_pubkey: &*self.r().other_maker_coin_htlc_pub,
+                secret_hash: self.secret_hash().as_slice(),
+                swap_contract_address: &self.r().data.maker_coin_swap_contract_address,
+                swap_unique_data: &self.unique_swap_data(),
+            })
+        };
 
-        let transaction = match spend_fut.compat().await {
+        let transaction = match refund_fut.compat().await {
             Ok(t) => t,
             Err(err) => {
                 if let Some(tx) = err.get_tx() {
