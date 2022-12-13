@@ -734,6 +734,7 @@ pub struct WithdrawRequest {
     #[serde(default)]
     max: bool,
     fee: Option<WithdrawFee>,
+    memo: Option<String>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -782,6 +783,7 @@ impl WithdrawRequest {
         amount: BigDecimal,
         max: bool,
         fee: Option<WithdrawFee>,
+        memo: Option<String>,
     ) -> WithdrawRequest {
         WithdrawRequest {
             coin,
@@ -790,6 +792,7 @@ impl WithdrawRequest {
             amount,
             max,
             fee,
+            memo,
         }
     }
 
@@ -801,6 +804,7 @@ impl WithdrawRequest {
             amount: 0.into(),
             max: true,
             fee: None,
+            memo: None,
         }
     }
 }
@@ -1451,6 +1455,8 @@ pub enum WithdrawError {
     InvalidAddress(String),
     #[display(fmt = "Invalid fee policy: {}", _0)]
     InvalidFeePolicy(String),
+    #[display(fmt = "Invalid memo field: {}", _0)]
+    InvalidMemo(String),
     #[display(fmt = "No such coin {}", coin)]
     NoSuchCoin { coin: String },
     #[display(fmt = "Withdraw timed out {:?}", _0)]
@@ -1481,6 +1487,7 @@ impl HttpStatusCode for WithdrawError {
             | WithdrawError::AmountTooLow { .. }
             | WithdrawError::InvalidAddress(_)
             | WithdrawError::InvalidFeePolicy(_)
+            | WithdrawError::InvalidMemo(_)
             | WithdrawError::FromAddressNotFound
             | WithdrawError::UnexpectedFromAddress(_)
             | WithdrawError::UnknownAccount { .. } => StatusCode::BAD_REQUEST,

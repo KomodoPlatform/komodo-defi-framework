@@ -164,6 +164,7 @@ fn solana_transaction_simulations() {
                 amount: request_amount.clone(),
                 max: false,
                 fee: None,
+                memo: None,
             })
             .compat(),
     )
@@ -191,6 +192,7 @@ fn solana_transaction_zero_balance() {
                 amount: BigDecimal::from_str("0.000001").unwrap(),
                 max: false,
                 fee: None,
+                memo: None,
             })
             .compat(),
     );
@@ -219,6 +221,7 @@ fn solana_transaction_simulations_not_enough_for_fees() {
                 amount: BigDecimal::from(1),
                 max: false,
                 fee: None,
+                memo: None,
             })
             .compat(),
     );
@@ -252,6 +255,7 @@ fn solana_transaction_simulations_max() {
                 amount: BigDecimal::from(0),
                 max: true,
                 fee: None,
+                memo: None,
             })
             .compat(),
     )
@@ -280,6 +284,7 @@ fn solana_test_transactions() {
                 amount: BigDecimal::try_from(0.0001).unwrap(),
                 max: false,
                 fee: None,
+                memo: None,
             })
             .compat(),
     )

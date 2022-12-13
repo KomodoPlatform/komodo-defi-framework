@@ -1649,13 +1649,15 @@ impl InitWithdrawCoin for ZCoin {
 
         task_handle.update_in_progress_status(WithdrawInProgressStatus::GeneratingTransaction)?;
         let satoshi = sat_from_big_decimal(&amount, self.decimals())?;
+
+        let memo = req.memo.map(|memo| interpret_memo_string(&memo)).transpose()?;
         let z_output = ZOutput {
             to_addr,
             amount: Amount::from_u64(satoshi)
                 .map_to_mm(|_| NumConversError(format!("Failed to get ZCash amount from {}", amount)))?,
             // TODO add optional viewing_key and memo fields to the WithdrawRequest
             viewing_key: Some(self.z_fields.evk.fvk.ovk),
-            memo: None,
+            memo,
         };
 
         let (tx, data, _sync_guard) = self.gen_tx(vec![], vec![z_output]).await?;
@@ -1691,6 +1693,23 @@ impl InitWithdrawCoin for ZCoin {
     }
 }
 
+/// Interpret a string or hex-encoded memo, and return a Memo object.
+/// Inspired by https://github.com/adityapk00/zecwallet-light-cli/blob/v1.7.20/lib/src/lightwallet/utils.rs#L23
+pub fn interpret_memo_string(memo_str: &str) -> MmResult<MemoBytes, WithdrawError> {
+    // If the string starts with an "0x", and contains only hex chars ([a-f0-9]+) then
+    // interpret it as a hex.
+    let s_bytes = if let Some(memo_hexadecimal) = memo_str.to_lowercase().strip_prefix("0x") {
+        hex::decode(memo_hexadecimal).unwrap_or_else(|_| memo_str.as_bytes().to_vec())
+    } else {
+        memo_str.as_bytes().to_vec()
+    };
+
+    MemoBytes::from_bytes(&s_bytes).map_to_mm(|_| {
+        let error = format!("Memo '{:?}' is too long", memo_str);
+        WithdrawError::InvalidMemo(error)
+    })
+}
+
 #[test]
 fn derive_z_key_from_mm_seed() {
     use crypto::privkey::key_pair_from_seed;
@@ -1721,4 +1740,22 @@ fn derive_z_key_from_mm_seed() {
         encoded_addr,
         "zs1funuwrjr2stlr6fnhkdh7fyz3p7n0p8rxase9jnezdhc286v5mhs6q3myw0phzvad5mvqgfxpam"
     );
+}
+
+#[test]
+fn test_interpret_memo_string() {
+    use std::str::FromStr;
+    use zcash_primitives::memo::Memo;
+
+    let actual = interpret_memo_string("68656c6c6f207a63617368").unwrap();
+    let expected = Memo::from_str("68656c6c6f207a63617368").unwrap().encode();
+    assert_eq!(actual, expected);
+
+    let actual = interpret_memo_string("A custom memo").unwrap();
+    let expected = Memo::from_str("A custom memo").unwrap().encode();
+    assert_eq!(actual, expected);
+
+    let actual = interpret_memo_string("0x68656c6c6f207a63617368").unwrap();
+    let expected = MemoBytes::from_bytes(&hex::decode("68656c6c6f207a63617368").unwrap()).unwrap();
+    assert_eq!(actual, expected);
 }

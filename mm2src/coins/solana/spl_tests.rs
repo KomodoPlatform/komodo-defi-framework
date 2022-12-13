@@ -111,6 +111,7 @@ fn test_spl_transactions() {
                 amount: withdraw_amount.clone(),
                 max: false,
                 fee: None,
+                memo: None,
             })
             .compat(),
     )
