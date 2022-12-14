@@ -4270,17 +4270,17 @@ fn test_block_header_utxo_loop() {
     let expected_steps: Arc<Mutex<Vec<(u64, u64)>>> = Arc::new(Mutex::new(vec![]));
     let expected_steps_to_move = expected_steps.clone();
 
-    ElectrumClient::retrieve_headers.mock_safe(move |this, from, count| {
-        let (expected_from, expected_count) = expected_steps_to_move.lock().unwrap().remove(0);
+    ElectrumClient::retrieve_headers.mock_safe(move |this, from, to| {
+        let (expected_from, expected_to) = expected_steps_to_move.lock().unwrap().remove(0);
         assert_eq!(from, expected_from);
-        assert_eq!(count, expected_count);
-        MockResult::Continue((this, from, count))
+        assert_eq!(to, expected_to);
+        MockResult::Continue((this, from, to))
     });
 
     BlockHeaderUtxoLoopExtraArgs::default.mock_safe(move || {
         MockResult::Return(BlockHeaderUtxoLoopExtraArgs {
             chunk_size: 4,
-            error_sleep: 5.,
+            error_sleep: 1.,
             success_sleep: 1.,
         })
     });
@@ -4329,21 +4329,21 @@ fn test_block_header_utxo_loop() {
         unsafe { CURRENT_BLOCK_COUNT = 17 }
         Timer::sleep(2.).await;
         let get_headers_count = client.block_headers_storage().get_last_block_height().await.unwrap();
-        assert_eq!(17, get_headers_count);
+        assert_eq!(get_headers_count, 17);
         assert!(expected_steps.lock().unwrap().is_empty());
 
-        unsafe { CURRENT_BLOCK_COUNT = 18 }
         *expected_steps.lock().unwrap() = vec![(18, 18)];
+        unsafe { CURRENT_BLOCK_COUNT = 18 }
         Timer::sleep(2.).await;
         let get_headers_count = client.block_headers_storage().get_last_block_height().await.unwrap();
-        assert_eq!(18, get_headers_count);
+        assert_eq!(get_headers_count, 18);
         assert!(expected_steps.lock().unwrap().is_empty());
 
-        unsafe { CURRENT_BLOCK_COUNT = 25 }
         *expected_steps.lock().unwrap() = vec![(19, 22), (23, 25)];
+        unsafe { CURRENT_BLOCK_COUNT = 25 }
         Timer::sleep(3.).await;
         let get_headers_count = client.block_headers_storage().get_last_block_height().await.unwrap();
-        assert_eq!(25, get_headers_count);
+        assert_eq!(get_headers_count, 25);
         assert!(expected_steps.lock().unwrap().is_empty());
     };
 
