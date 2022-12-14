@@ -1649,7 +1649,6 @@ impl TakerSwap {
             self.taker_coin
                 .wait_for_htlc_refund(&self.r().taker_payment.clone().unwrap().tx_hex, locktime)
         } else {
-            // Todo: add this to a function
             loop {
                 match self.taker_coin.can_refund_htlc(locktime).compat().await {
                     Ok(CanRefundHtlc::CanRefundNow) => break,
@@ -1702,6 +1701,13 @@ impl TakerSwap {
             tx_hex: BytesJson::from(transaction.tx_hex()),
             tx_hash,
         };
+
+        // Todo: do we need to add wait_for_confirmation for refund (if the 2 coins are lightning, should the lightning need_for_confirmation function be refactored) to do this???, we need to check all cases for refunds
+        // Since taker payment is refunded successfully, maker payment can be released for lightning and similar protocols
+        if self.maker_coin.can_be_released() {
+            self.maker_coin
+                .fail_htlc_backwards(&self.r().maker_payment.clone().unwrap().tx_hex)
+        }
 
         Ok((Some(TakerSwapCommand::Finish), vec![
             TakerSwapEvent::TakerPaymentRefunded(tx_ident),

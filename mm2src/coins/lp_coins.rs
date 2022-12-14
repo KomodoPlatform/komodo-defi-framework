@@ -698,8 +698,14 @@ pub trait SwapOps {
         Box::new(futures01::future::ok(result))
     }
 
+    /// Whether the receiver of a payment of this coin can fail/rollback/release the payment manually or not.
+    fn can_be_released(&self) -> bool { false }
+
+    /// Fails an HTLC back to its origin to free resources.
+    fn fail_htlc_backwards(&self, _other_side_tx: &[u8]) {}
+
     // Todo: check with Onur or Artem if tendermint refunds are implemented or not
-    /// Whether the swap payment refunded automatically or not when the locktime expires.
+    /// Whether the swap payment is refunded automatically or not when the locktime expires, or the other side fails the HTLC.
     fn is_auto_refundable(&self) -> bool { false }
 
     /// Waits for an htlc to be refunded automatically and returns the refund transaction.

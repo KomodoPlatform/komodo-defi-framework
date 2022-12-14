@@ -1079,12 +1079,17 @@ impl MakerSwap {
             ]));
         }
 
+        if self.taker_coin.can_be_released() {
+            if let Some(taker_payment) = &self.r().taker_payment {
+                self.taker_coin.fail_htlc_backwards(&taker_payment.tx_hex)
+            }
+        }
+
         let locktime = self.r().data.maker_payment_lock;
         let refund_fut = if self.maker_coin.is_auto_refundable() {
-            self.taker_coin
+            self.maker_coin
                 .wait_for_htlc_refund(&self.r().maker_payment.clone().unwrap().tx_hex, locktime)
         } else {
-            // Todo: add this to a function
             loop {
                 match self.maker_coin.can_refund_htlc(locktime).compat().await {
                     Ok(CanRefundHtlc::CanRefundNow) => break,

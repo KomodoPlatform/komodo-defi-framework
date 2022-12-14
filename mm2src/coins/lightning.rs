@@ -573,21 +573,20 @@ impl LightningCoin {
         let coin = self.clone();
         let fut = async move {
             match coin.db.get_payment_from_db(payment_hash).await {
-                Ok(Some(mut payment)) => {
+                Ok(Some(payment)) => {
                     let amount_received = payment.amt_msat;
                     // Note: locktime doesn't need to be validated since min_final_cltv_expiry should be validated in rust-lightning after fixing the below issue
                     // https://github.com/lightningdevkit/rust-lightning/issues/1850
                     // Also, PaymentReceived won't be fired if amount_received < the amount requested in the invoice, this check is probably not needed.
                     // But keeping it just in case any changes happen in rust-lightning
                     if amount_received != Some(amt_msat as i64) {
-                        // Free the htlc to allow for this inbound liquidity to be used for other inbound payments
-                        coin.channel_manager.fail_htlc_backwards(&payment_hash);
-                        payment.status = HTLCStatus::Failed;
-                        drop_mutability!(payment);
-                        coin.db
-                            .add_or_update_payment_in_db(payment)
-                            .await
-                            .error_log_with_msg("Unable to update payment information in DB!");
+                        // Todo: these should be moved inside fail_htlc_backwards implementation, maybe refactor DB functions or pass around PaymentInfo as the transaction or just do the swap mutex (maybe all three solutions)
+                        // payment.status = HTLCStatus::Failed;
+                        // drop_mutability!(payment);
+                        // coin.db
+                        //     .add_or_update_payment_in_db(payment)
+                        //     .await
+                        //     .error_log_with_msg("Unable to update payment information in DB!");
                         return MmError::err(ValidatePaymentError::WrongPaymentTx(format!(
                             "Provided payment {} amount {:?} doesn't match required amount {}",
                             payment_hex, amount_received, amt_msat
@@ -746,6 +745,20 @@ impl SwapOps for LightningCoin {
         }
     }
 
+    fn can_be_released(&self) -> bool { true }
+
+    fn fail_htlc_backwards(&self, other_side_tx: &[u8]) {
+        // Todo: remove unwrap
+        let payment_hash = payment_hash_from_slice(other_side_tx).unwrap();
+        // Free the htlc to allow for this inbound liquidity to be used for other inbound payments
+        // Todo: taker shouldn't fail the htlc until they refund their payment (the other coin payment)
+        // Todo: this will probably be moved to after refund for taker and straight away for maker.
+        // Todo: refund successful should be done for all coins (tendermint) or we should wait for locktime as an alternative but it depends on estimated blocks which is not ideal.
+        // Todo: we need to confirm automatic refunds too for all coins.
+        // Todo: the taker can abuse this by sending another coin big payment to get a big lightning payment from the maker to lock liquidity, that's why trading fees are needed and should always be proportional
+        self.channel_manager.fail_htlc_backwards(&payment_hash);
+    }
+
     fn is_auto_refundable(&self) -> bool { true }
 
     // Todo: revise this function, how about instead of TakerPaymentRefunded event we can add taker payment will be refunded automatically instead??
@@ -757,19 +770,16 @@ impl SwapOps for LightningCoin {
         let fut = async move {
             loop {
                 match coin.db.get_payment_from_db(payment_hash).await {
-                    Ok(Some(payment)) => {
-                        match payment.status {
-                            HTLCStatus::Failed => return Ok(TransactionEnum::LightningPayment(payment_hash)),
-                            HTLCStatus::Pending => (),
-                            // Todo : should I handle all cases explicitly
-                            _ => {
-                                return Err(TransactionErr::Plain(ERRL!(
-                                    "Payment {} has an invalid status of {} in the db",
-                                    payment_hex,
-                                    payment.status
-                                )))
-                            },
-                        }
+                    Ok(Some(payment)) => match payment.status {
+                        HTLCStatus::Failed => return Ok(TransactionEnum::LightningPayment(payment_hash)),
+                        HTLCStatus::Pending => (),
+                        _ => {
+                            return Err(TransactionErr::Plain(ERRL!(
+                                "Payment {} has an invalid status of {} in the db",
+                                payment_hex,
+                                payment.status
+                            )))
+                        },
                     },
                     Ok(None) => {
                         return Err(TransactionErr::Plain(ERRL!(
@@ -786,7 +796,7 @@ impl SwapOps for LightningCoin {
                     },
                 }
 
-                // Todo: find best place for this, should I use blocks instead of locktime??
+                // Todo: find best place for this, should I use blocks instead of locktime?? check taker_coin_start_block.
                 let now = now_ms() / 1000;
                 if now > locktime {
                     return Err(TransactionErr::Plain(ERRL!(
