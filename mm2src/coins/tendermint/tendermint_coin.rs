@@ -23,7 +23,7 @@ use bitcrypto::{dhash160, sha256};
 use common::executor::{abortable_queue::AbortableQueue, AbortableSystem};
 use common::executor::{AbortedError, Timer};
 use common::log::warn;
-use common::{get_utc_timestamp, log, now_ms, Future01CompatExt, DEX_FEE_ADDR_PUBKEY};
+use common::{get_utc_timestamp, now_ms, Future01CompatExt, DEX_FEE_ADDR_PUBKEY};
 use cosmrs::bank::MsgSend;
 use cosmrs::crypto::secp256k1::SigningKey;
 use cosmrs::proto::cosmos::auth::v1beta1::{BaseAccount, QueryAccountRequest, QueryAccountResponse};
@@ -463,7 +463,7 @@ impl TendermintCoin {
                 }
             })?;
 
-        let (rpc_client, rpc_urls, current) = find_client_valid_urls(rpc_urls).map_to_mm(|e| TendermintInitError {
+        let (rpc_client, current) = find_client(rpc_urls.as_ref()).map_to_mm(|e| TendermintInitError {
             ticker: ticker.clone(),
             kind: TendermintInitErrorKind::RpcClientInitError(e),
         })?;
@@ -1389,37 +1389,26 @@ impl TendermintCoin {
     }
 }
 
-fn find_client_valid_urls(rpc_urls: Vec<String>) -> Result<(HttpClient, Vec<String>, usize), String> {
-    let mut res_urls = rpc_urls.clone();
-    let mut keep_url = Vec::new();
+fn find_client(rpc_urls: &[String]) -> Result<(HttpClient, usize), String> {
     let mut clients = Vec::new();
-    // find valid urls and create clients
+    let mut errors = Vec::new();
+    // check that all urls are valid
+    // keep all invalid urls in one vector to show all of them in error
     for url in rpc_urls.iter() {
         match HttpClient::new(url.as_str()) {
-            Ok(client) => {
-                clients.push(client);
-                keep_url.push(true);
-            },
-            Err(e) => {
-                log::error!("Invalid url {} will be removed, got error {}", url, e);
-                keep_url.push(false);
-            },
+            Ok(client) => clients.push(client),
+            Err(e) => errors.push(format!("Url {} is invalid, got error {}", url, e)),
         }
     }
-    let mut iter_keep = keep_url.iter();
-    // use retain to remove invalid urls
-    res_urls.retain(|_| *iter_keep.next().unwrap());
-    if clients.len() == res_urls.len() {
-        if let Some(client) = clients.pop() {
-            // if clients len equals to res_urls len,
-            // than the last client from vector has index = urls vector length - 1
-            let current = res_urls.len() - 1;
-            Ok((client, res_urls, current))
-        } else {
-            Err("Fail to init HttpClient during rpc urls iteration".to_string())
-        }
+    if !errors.is_empty() {
+        let errors: String = errors.iter().map(|e| format!("{:?}", e)).collect();
+        return Err(errors);
+    }
+    let current = clients.len() - 1;
+    if let Some(client) = clients.pop() {
+        Ok((client, current))
     } else {
-        Err("Got inconsistent data, clients number didn't match their urls number".to_string())
+        Err("None client was found".to_string())
     }
 }
 
