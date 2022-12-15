@@ -164,7 +164,6 @@ impl TendermintConf {
 
 struct TendermintRpcClient(AsyncMutex<TendermintRpcClientImpl>);
 
-#[allow(dead_code)]
 struct TendermintRpcClientImpl {
     rpc_urls: Vec<String>,
     rpc_client: HttpClient,

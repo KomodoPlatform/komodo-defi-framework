@@ -3,7 +3,7 @@
 // https://docs.cosmos.network/
 
 mod iris;
-pub mod rpc;
+mod rpc;
 mod tendermint_coin;
 mod tendermint_token;
 pub mod tendermint_tx_history_v2;

@@ -82,7 +82,7 @@ pub use rlp;
 
 #[cfg(test)] mod eth_tests;
 #[cfg(target_arch = "wasm32")] mod eth_wasm_tests;
-pub(crate) mod web3_transport;
+mod web3_transport;
 
 #[path = "eth/v2_activation.rs"] pub mod v2_activation;
 use v2_activation::build_address_and_priv_key_policy;
