@@ -8,6 +8,7 @@ use db_common::sqlite::sql_builder::SqlBuilder;
 use db_common::sqlite::{h256_option_slice_from_row, h256_slice_from_row, offset_by_id, query_single_row,
                         sql_text_conversion_err, string_from_row, validate_table_name, SqlNamedParams,
                         SqliteConnShared, CHECK_TABLE_EXISTS_SQL};
+use gstuff::now_ms;
 use lightning::ln::{PaymentHash, PaymentPreimage, PaymentSecret};
 use secp256k1v22::PublicKey;
 use std::convert::TryInto;
@@ -125,9 +126,26 @@ fn update_payment_preimage_sql(for_coin: &str) -> Result<String, SqlError> {
 
     let sql = format!(
         "UPDATE {} SET
-            preimage = ?1
+            preimage = ?1,
+            last_updated = ?2
         WHERE
-            payment_hash = ?2;",
+            payment_hash = ?3;",
+        table_name
+    );
+
+    Ok(sql)
+}
+
+fn update_payment_status_sql(for_coin: &str) -> Result<String, SqlError> {
+    let table_name = payments_history_table(for_coin);
+    validate_table_name(&table_name)?;
+
+    let sql = format!(
+        "UPDATE {} SET
+            status = ?1,
+            last_updated = ?2
+        WHERE
+            payment_hash = ?3;",
         table_name
     );
 
@@ -824,15 +842,42 @@ impl LightningDB for SqliteLightningDB {
         preimage: PaymentPreimage,
     ) -> Result<(), Self::Error> {
         let for_coin = self.db_ticker.clone();
-        let payment_hash = hex::encode(hash.0);
         let preimage = hex::encode(preimage.0);
+        let last_updated = (now_ms() / 1000) as i64;
+        let payment_hash = hex::encode(hash.0);
 
         let sqlite_connection = self.sqlite_connection.clone();
         async_blocking(move || {
-            let params = [&preimage as &dyn ToSql, &payment_hash as &dyn ToSql];
+            let params = [
+                &preimage as &dyn ToSql,
+                &last_updated as &dyn ToSql,
+                &payment_hash as &dyn ToSql,
+            ];
             let mut conn = sqlite_connection.lock().unwrap();
             let sql_transaction = conn.transaction()?;
             sql_transaction.execute(&update_payment_preimage_sql(&for_coin)?, &params)?;
+            sql_transaction.commit()?;
+            Ok(())
+        })
+        .await
+    }
+
+    async fn update_payment_status_in_db(&self, hash: PaymentHash, status: &HTLCStatus) -> Result<(), Self::Error> {
+        let for_coin = self.db_ticker.clone();
+        let status = status.to_string();
+        let last_updated = (now_ms() / 1000) as i64;
+        let payment_hash = hex::encode(hash.0);
+
+        let sqlite_connection = self.sqlite_connection.clone();
+        async_blocking(move || {
+            let params = [
+                &status as &dyn ToSql,
+                &last_updated as &dyn ToSql,
+                &payment_hash as &dyn ToSql,
+            ];
+            let mut conn = sqlite_connection.lock().unwrap();
+            let sql_transaction = conn.transaction()?;
+            sql_transaction.execute(&update_payment_status_sql(&for_coin)?, &params)?;
             sql_transaction.commit()?;
             Ok(())
         })
@@ -1219,6 +1264,15 @@ mod tests {
             .preimage
             .unwrap();
         assert_eq!(new_preimage, preimage_after_update);
+
+        // Test update_payment_status_in_db
+        let new_status = HTLCStatus::Failed;
+        block_on(db.update_payment_status_in_db(PaymentHash([1; 32]), &new_status)).unwrap();
+        let status_after_update = block_on(db.get_payment_from_db(PaymentHash([1; 32])))
+            .unwrap()
+            .unwrap()
+            .status;
+        assert_eq!(new_status, status_after_update);
     }
 
     #[test]

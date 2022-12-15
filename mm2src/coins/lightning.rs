@@ -15,10 +15,10 @@ use crate::lightning::ln_utils::{filter_channels, pay_invoice_with_max_total_clt
 use crate::utxo::rpc_clients::UtxoRpcClientEnum;
 use crate::utxo::utxo_common::{big_decimal_from_sat, big_decimal_from_sat_unsigned};
 use crate::utxo::{sat_from_big_decimal, utxo_common, BlockchainNetwork};
-use crate::{BalanceFut, CheckIfMyPaymentSentArgs, CoinBalance, CoinFutSpawner, FeeApproxStage, FoundSwapTxSpend,
-            HistorySyncState, MarketCoinOps, MmCoin, NegotiateSwapContractAddrErr, PaymentInstructions,
-            PaymentInstructionsErr, RawTransactionError, RawTransactionFut, RawTransactionRequest,
-            SearchForSwapTxSpendInput, SendMakerPaymentArgs, SendMakerRefundsPaymentArgs,
+use crate::{BalanceFut, CheckIfMyPaymentSentArgs, CoinBalance, CoinFutSpawner, FailHTLCError, FailHTLCFut,
+            FeeApproxStage, FoundSwapTxSpend, HistorySyncState, MarketCoinOps, MmCoin, NegotiateSwapContractAddrErr,
+            PaymentInstructions, PaymentInstructionsErr, RawTransactionError, RawTransactionFut,
+            RawTransactionRequest, SearchForSwapTxSpendInput, SendMakerPaymentArgs, SendMakerRefundsPaymentArgs,
             SendMakerSpendsTakerPaymentArgs, SendSpendPaymentArgs, SendTakerPaymentArgs, SendTakerRefundsPaymentArgs,
             SendTakerSpendsMakerPaymentArgs, SignatureError, SignatureResult, SwapOps, TradeFee, TradePreimageFut,
             TradePreimageResult, TradePreimageValue, Transaction, TransactionEnum, TransactionErr, TransactionFut,
@@ -580,13 +580,6 @@ impl LightningCoin {
                     // Also, PaymentReceived won't be fired if amount_received < the amount requested in the invoice, this check is probably not needed.
                     // But keeping it just in case any changes happen in rust-lightning
                     if amount_received != Some(amt_msat as i64) {
-                        // Todo: these should be moved inside fail_htlc_backwards implementation, maybe refactor DB functions or pass around PaymentInfo as the transaction or just do the swap mutex (maybe all three solutions)
-                        // payment.status = HTLCStatus::Failed;
-                        // drop_mutability!(payment);
-                        // coin.db
-                        //     .add_or_update_payment_in_db(payment)
-                        //     .await
-                        //     .error_log_with_msg("Unable to update payment information in DB!");
                         return MmError::err(ValidatePaymentError::WrongPaymentTx(format!(
                             "Provided payment {} amount {:?} doesn't match required amount {}",
                             payment_hex, amount_received, amt_msat
@@ -747,16 +740,25 @@ impl SwapOps for LightningCoin {
 
     fn can_be_released(&self) -> bool { true }
 
-    fn fail_htlc_backwards(&self, other_side_tx: &[u8]) {
-        // Todo: remove unwrap
-        let payment_hash = payment_hash_from_slice(other_side_tx).unwrap();
+    fn fail_htlc_backwards(&self, other_side_tx: &[u8]) -> FailHTLCFut<()> {
+        let coin = self.clone();
+        let payment_hash =
+            try_f!(payment_hash_from_slice(other_side_tx).map_err(|e| FailHTLCError::DecodeErr(e.to_string())));
         // Free the htlc to allow for this inbound liquidity to be used for other inbound payments
         // Todo: taker shouldn't fail the htlc until they refund their payment (the other coin payment)
         // Todo: this will probably be moved to after refund for taker and straight away for maker.
         // Todo: refund successful should be done for all coins (tendermint) or we should wait for locktime as an alternative but it depends on estimated blocks which is not ideal.
         // Todo: we need to confirm automatic refunds too for all coins.
         // Todo: the taker can abuse this by sending another coin big payment to get a big lightning payment from the maker to lock liquidity, that's why trading fees are needed and should always be proportional
-        self.channel_manager.fail_htlc_backwards(&payment_hash);
+        coin.channel_manager.fail_htlc_backwards(&payment_hash);
+        let fut = async move {
+            coin.db
+                .update_payment_status_in_db(payment_hash, &HTLCStatus::Failed)
+                .await
+                .error_log_with_msg("Unable to update payment status in DB!");
+            Ok(())
+        };
+        Box::new(fut.boxed().compat())
     }
 
     fn is_auto_refundable(&self) -> bool { true }

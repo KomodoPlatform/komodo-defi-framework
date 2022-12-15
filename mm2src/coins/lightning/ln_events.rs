@@ -434,19 +434,17 @@ impl LightningEventHandler {
         );
         let db = self.db.clone();
         let fut = async move {
-            if let Ok(Some(mut payment_info)) = db.get_payment_from_db(payment_hash).await.error_log_passthrough() {
-                payment_info.status = HTLCStatus::Succeeded;
-                payment_info.last_updated = (now_ms() / 1000) as i64;
-                let amt_msat = payment_info.amt_msat;
-                match db.add_or_update_payment_in_db(payment_info).await {
-                    Ok(_) => info!(
-                        "{} of {} millisatoshis with payment hash {}",
-                        SUCCESSFUL_CLAIM_LOG,
-                        amt_msat.unwrap_or_default(),
-                        hex::encode(payment_hash.0),
-                    ),
-                    Err(e) => error!("Unable to update payment information in DB error: {}", e),
-                }
+            match db
+                .update_payment_status_in_db(payment_hash, &HTLCStatus::Succeeded)
+                .await
+            {
+                Ok(_) => info!(
+                    "{} of {} millisatoshis with payment hash {}",
+                    SUCCESSFUL_CLAIM_LOG,
+                    amount_msat,
+                    hex::encode(payment_hash.0),
+                ),
+                Err(e) => error!("Unable to update payment status in DB error: {}", e),
             }
         };
         let settings = AbortSettings::default().critical_timout_s(CRITICAL_FUTURE_TIMEOUT);
@@ -518,13 +516,9 @@ impl LightningEventHandler {
         );
         let db = self.db.clone();
         let fut = async move {
-            if let Ok(Some(mut payment_info)) = db.get_payment_from_db(payment_hash).await.error_log_passthrough() {
-                payment_info.status = HTLCStatus::Failed;
-                payment_info.last_updated = (now_ms() / 1000) as i64;
-                db.add_or_update_payment_in_db(payment_info)
-                    .await
-                    .error_log_with_msg("Unable to update payment information in DB!");
-            }
+            db.update_payment_status_in_db(payment_hash, &HTLCStatus::Failed)
+                .await
+                .error_log_with_msg("Unable to update payment status in DB!");
         };
         let settings = AbortSettings::default().critical_timout_s(CRITICAL_FUTURE_TIMEOUT);
         self.platform.spawner().spawn_with_settings(fut, settings);

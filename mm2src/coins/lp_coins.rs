@@ -273,6 +273,7 @@ pub type TxHistoryResult<T> = Result<T, MmError<TxHistoryError>>;
 pub type RawTransactionResult = Result<RawTransactionRes, MmError<RawTransactionError>>;
 pub type RawTransactionFut<'a> =
     Box<dyn Future<Item = RawTransactionRes, Error = MmError<RawTransactionError>> + Send + 'a>;
+pub type FailHTLCFut<T> = Box<dyn Future<Item = T, Error = MmError<FailHTLCError>> + Send>;
 pub type SendMakerPaymentArgs<'a> = SendSwapPaymentArgs<'a>;
 pub type SendTakerPaymentArgs<'a> = SendSwapPaymentArgs<'a>;
 pub type SendMakerSpendsTakerPaymentArgs<'a> = SendSpendPaymentArgs<'a>;
@@ -634,6 +635,11 @@ impl From<ParseOrSemanticError> for ValidateInstructionsErr {
     fn from(e: ParseOrSemanticError) -> Self { ValidateInstructionsErr::ValidateLightningInvoiceErr(e.to_string()) }
 }
 
+#[derive(Display)]
+pub enum FailHTLCError {
+    DecodeErr(String),
+}
+
 /// Swap operations (mostly based on the Hash/Time locked transactions implemented by coin wallets).
 #[async_trait]
 pub trait SwapOps {
@@ -702,7 +708,7 @@ pub trait SwapOps {
     fn can_be_released(&self) -> bool { false }
 
     /// Fails an HTLC back to its origin to free resources.
-    fn fail_htlc_backwards(&self, _other_side_tx: &[u8]) {}
+    fn fail_htlc_backwards(&self, _other_side_tx: &[u8]) -> FailHTLCFut<()> { Box::new(futures01::future::ok(())) }
 
     // Todo: check with Onur or Artem if tendermint refunds are implemented or not
     /// Whether the swap payment is refunded automatically or not when the locktime expires, or the other side fails the HTLC.

@@ -1080,8 +1080,12 @@ impl MakerSwap {
         }
 
         if self.taker_coin.can_be_released() {
-            if let Some(taker_payment) = &self.r().taker_payment {
-                self.taker_coin.fail_htlc_backwards(&taker_payment.tx_hex)
+            let taker_payment = self.r().taker_payment.clone();
+            if let Some(payment) = taker_payment {
+                let fail_htlc_fut = self.taker_coin.fail_htlc_backwards(&payment.tx_hex);
+                if let Err(e) = fail_htlc_fut.compat().await {
+                    error!("Error {} on failing htlc backwards, the htlc will be failed back automatically when locktime expires!", e)
+                }
             }
         }
 
