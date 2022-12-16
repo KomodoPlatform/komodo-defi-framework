@@ -177,25 +177,17 @@ impl RpcCommonOps for TendermintCoin {
 
     async fn get_live_client(&self) -> Result<Self::RpcClient, Self::Error> {
         let mut client_impl = self.client.0.lock().await;
-        let mut new_clients = client_impl.rpc_clients.clone();
-        for (i, client) in client_impl.rpc_clients.iter().enumerate() {
+        // try to find first live client
+        for (i, client) in client_impl.rpc_clients.clone().into_iter().enumerate() {
             if client
                 .perform(HealthRequest)
                 .timeout(Duration::from_secs(3))
                 .await
                 .is_ok()
             {
-                let res_client = client.clone();
-                // if the first client is alive, no need to change rpc_clients field
-                return if i == 0 {
-                    Ok(res_client)
-                } else {
-                    let len = new_clients.len();
-                    // move the last len - i elements to front, so i client will be the first
-                    new_clients.rotate_right(len - i);
-                    client_impl.rpc_clients = new_clients;
-                    Ok(res_client)
-                };
+                // Bring the live client to the front of rpc_clients
+                client_impl.rpc_clients.rotate_left(i);
+                return Ok(client);
             }
         }
         return Err(TendermintCoinRpcError::RpcClientError(
