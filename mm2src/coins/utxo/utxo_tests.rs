@@ -37,7 +37,6 @@ use mm2_number::bigdecimal::{BigDecimal, Signed};
 use mm2_test_helpers::for_tests::{mm_ctx_with_custom_db, MORTY_ELECTRUM_ADDRS, RICK_ELECTRUM_ADDRS};
 use mocktopus::mocking::*;
 use rpc::v1::types::H256 as H256Json;
-use serde_json::Value;
 use serialization::{deserialize, CoinVariant};
 use spv_validation::storage::BlockHeaderStorageOps;
 use std::convert::TryFrom;
@@ -4291,7 +4290,6 @@ fn test_block_header_utxo_loop() {
         .iter()
         .map(|server| json!({ "url": server }))
         .collect();
-    let servers: Vec<Value> = servers.into_iter().map(|s| json::from_value(s).unwrap()).collect();
     let req = json!({ "method": "electrum", "servers": servers });
     let params = UtxoActivationParams::from_legacy_req(&req).unwrap();
     let conf = json!({"coin":"RICK", "asset":"RICK", "rpcport":8923, "enable_spv_proof": false});
