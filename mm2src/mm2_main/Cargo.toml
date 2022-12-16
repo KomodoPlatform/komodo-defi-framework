@@ -38,7 +38,6 @@ ethereum-types = { version = "0.4", default-features = false, features = ["std",
 enum_from = { path = "../derives/enum_from" }
 enum-primitive-derive = "0.2"
 futures01 = { version = "0.1", package = "futures" }
-futures-cpupool = "0.1"
 futures = { version = "0.3.1", package = "futures", features = ["compat", "async-await"] }
 gstuff = { version = "0.7", features = ["nightly"] }
 mm2_gui_storage = { path = "../mm2_gui_storage" }

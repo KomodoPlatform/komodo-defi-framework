@@ -969,6 +969,26 @@ pub struct VerificationRequest {
 }
 
 impl WithdrawRequest {
+    pub fn new(
+        coin: String,
+        from: Option<WithdrawFrom>,
+        to: String,
+        amount: BigDecimal,
+        max: bool,
+        fee: Option<WithdrawFee>,
+        memo: Option<String>,
+    ) -> WithdrawRequest {
+        WithdrawRequest {
+            coin,
+            from,
+            to,
+            amount,
+            max,
+            fee,
+            memo,
+        }
+    }
+
     pub fn new_max(coin: String, to: String) -> WithdrawRequest {
         WithdrawRequest {
             coin,
@@ -1636,6 +1656,8 @@ pub enum WithdrawError {
     InvalidAddress(String),
     #[display(fmt = "Invalid fee policy: {}", _0)]
     InvalidFeePolicy(String),
+    #[display(fmt = "Invalid memo field: {}", _0)]
+    InvalidMemo(String),
     #[display(fmt = "No such coin {}", coin)]
     NoSuchCoin { coin: String },
     #[from_trait(WithTimeout::timeout)]
@@ -1671,6 +1693,7 @@ impl HttpStatusCode for WithdrawError {
             | WithdrawError::AmountTooLow { .. }
             | WithdrawError::InvalidAddress(_)
             | WithdrawError::InvalidFeePolicy(_)
+            | WithdrawError::InvalidMemo(_)
             | WithdrawError::FromAddressNotFound
             | WithdrawError::UnexpectedFromAddress(_)
             | WithdrawError::UnknownAccount { .. }
