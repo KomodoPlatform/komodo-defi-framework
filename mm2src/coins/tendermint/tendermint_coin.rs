@@ -18,6 +18,7 @@ use crate::{big_decimal_from_sat_unsigned, BalanceError, BalanceFut, BigDecimal,
             ValidateOtherPubKeyErr, ValidatePaymentFut, ValidatePaymentInput, VerificationError, VerificationResult,
             WatcherOps, WatcherSearchForSwapTxSpendInput, WatcherValidatePaymentInput, WatcherValidateTakerFeeInput,
             WithdrawError, WithdrawFut, WithdrawRequest};
+use async_std::prelude::FutureExt as AsyncStdFutureExt;
 use async_trait::async_trait;
 use bitcrypto::{dhash160, sha256};
 use common::executor::{abortable_queue::AbortableQueue, AbortableSystem};
@@ -59,6 +60,7 @@ use std::convert::TryFrom;
 use std::ops::Deref;
 use std::str::FromStr;
 use std::sync::{Arc, Mutex};
+use std::time::Duration;
 use uuid::Uuid;
 
 // ABCI Request Paths
@@ -165,9 +167,7 @@ impl TendermintConf {
 struct TendermintRpcClient(AsyncMutex<TendermintRpcClientImpl>);
 
 struct TendermintRpcClientImpl {
-    rpc_urls: Vec<String>,
-    rpc_client: HttpClient,
-    current: usize,
+    rpc_clients: Vec<HttpClient>,
 }
 
 #[async_trait]
@@ -177,30 +177,25 @@ impl RpcCommonOps for TendermintCoin {
 
     async fn get_live_client(&self) -> Result<Self::RpcClient, Self::Error> {
         let mut client_impl = self.client.0.lock().await;
-        let current_client = client_impl.rpc_client.clone();
-        match current_client.perform(HealthRequest).await {
-            Ok(_) => return Ok(current_client),
-            // try HealthRequest one more time
-            Err(_) => {
-                if current_client.perform(HealthRequest).await.is_ok() {
-                    return Ok(current_client);
-                }
-            },
-        }
-        let mut rpc_urls = client_impl.rpc_urls.clone();
-        let current_url = rpc_urls.remove(client_impl.current);
-        // push current url to the end
-        rpc_urls.push(current_url);
-        // try to find first live client
-        for (i, url) in rpc_urls.iter().enumerate() {
-            let client = HttpClient::new(url.as_str());
-            if let Ok(new_client) = client {
-                if new_client.perform(HealthRequest).await.is_ok() {
-                    // replace an unavailable client with a new one
-                    client_impl.rpc_client = new_client.clone();
-                    client_impl.current = i;
-                    return Ok(new_client);
-                }
+        let mut new_clients = client_impl.rpc_clients.clone();
+        for (i, client) in client_impl.rpc_clients.iter().enumerate() {
+            if client
+                .perform(HealthRequest)
+                .timeout(Duration::from_secs(3))
+                .await
+                .is_ok()
+            {
+                let res_client = client.clone();
+                // if the first client is alive, no need to change rpc_clients field
+                return if i == 0 {
+                    Ok(res_client)
+                } else {
+                    let len = new_clients.len();
+                    // move the last len - i elements to front, so i client will be the first
+                    new_clients.rotate_right(len - i);
+                    client_impl.rpc_clients = new_clients;
+                    Ok(res_client)
+                };
             }
         }
         return Err(TendermintCoinRpcError::RpcClientError(
@@ -462,16 +457,12 @@ impl TendermintCoin {
                 }
             })?;
 
-        let (rpc_client, current) = find_client(rpc_urls.as_ref()).map_to_mm(|e| TendermintInitError {
+        let rpc_clients = clients_from_urls(rpc_urls.as_ref()).map_to_mm(|e| TendermintInitError {
             ticker: ticker.clone(),
             kind: TendermintInitErrorKind::RpcClientInitError(e),
         })?;
 
-        let client_impl = TendermintRpcClientImpl {
-            rpc_urls,
-            rpc_client,
-            current,
-        };
+        let client_impl = TendermintRpcClientImpl { rpc_clients };
 
         let chain_id = ChainId::try_from(protocol_info.chain_id).map_to_mm(|e| TendermintInitError {
             ticker: ticker.clone(),
@@ -1388,7 +1379,7 @@ impl TendermintCoin {
     }
 }
 
-fn find_client(rpc_urls: &[String]) -> Result<(HttpClient, usize), String> {
+fn clients_from_urls(rpc_urls: &[String]) -> Result<Vec<HttpClient>, String> {
     let mut clients = Vec::new();
     let mut errors = Vec::new();
     // check that all urls are valid
@@ -1399,16 +1390,13 @@ fn find_client(rpc_urls: &[String]) -> Result<(HttpClient, usize), String> {
             Err(e) => errors.push(format!("Url {} is invalid, got error {}", url, e)),
         }
     }
+    drop_mutability!(clients);
+    drop_mutability!(errors);
     if !errors.is_empty() {
         let errors: String = errors.iter().map(|e| format!("{:?}", e)).collect();
         return Err(errors);
     }
-    let current = clients.len() - 1;
-    if let Some(client) = clients.pop() {
-        Ok((client, current))
-    } else {
-        Err("None client was found".to_string())
-    }
+    Ok(clients)
 }
 
 #[async_trait]
