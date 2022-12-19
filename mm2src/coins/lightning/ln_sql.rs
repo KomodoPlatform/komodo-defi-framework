@@ -170,6 +170,24 @@ fn update_received_payment_sql(for_coin: &str) -> Result<String, SqlError> {
     Ok(sql)
 }
 
+fn update_sent_payment_sql(for_coin: &str) -> Result<String, SqlError> {
+    let table_name = payments_history_table(for_coin);
+    validate_table_name(&table_name)?;
+
+    let sql = format!(
+        "UPDATE {} SET
+            preimage = ?1,
+            fee_paid_msat = ?2,
+            status = ?3,
+            last_updated = ?4
+        WHERE
+            payment_hash = ?5;",
+        table_name
+    );
+
+    Ok(sql)
+}
+
 fn select_channel_by_rpc_id_sql(for_coin: &str) -> Result<String, SqlError> {
     let table_name = channels_history_table(for_coin);
     validate_table_name(&table_name)?;
@@ -933,6 +951,37 @@ impl LightningDB for SqliteLightningDB {
         .await
     }
 
+    async fn update_payment_to_sent_in_db(
+        &self,
+        hash: PaymentHash,
+        preimage: PaymentPreimage,
+        fee_paid_msat: Option<u64>,
+    ) -> Result<(), Self::Error> {
+        let for_coin = self.db_ticker.clone();
+        let preimage = hex::encode(preimage.0);
+        let fee_paid_msat = fee_paid_msat.map(|f| f as i64);
+        let status = HTLCStatus::Succeeded.to_string();
+        let last_updated = (now_ms() / 1000) as i64;
+        let payment_hash = hex::encode(hash.0);
+
+        let sqlite_connection = self.sqlite_connection.clone();
+        async_blocking(move || {
+            let params = [
+                &preimage as &dyn ToSql,
+                &fee_paid_msat as &dyn ToSql,
+                &status as &dyn ToSql,
+                &last_updated as &dyn ToSql,
+                &payment_hash as &dyn ToSql,
+            ];
+            let mut conn = sqlite_connection.lock().unwrap();
+            let sql_transaction = conn.transaction()?;
+            sql_transaction.execute(&update_sent_payment_sql(&for_coin)?, &params)?;
+            sql_transaction.commit()?;
+            Ok(())
+        })
+        .await
+    }
+
     async fn get_payment_from_db(&self, hash: PaymentHash) -> Result<Option<PaymentInfo>, Self::Error> {
         let params = [hex::encode(hash.0)];
         let sql = select_payment_by_hash_sql(self.db_ticker.as_str())?;
@@ -1332,6 +1381,19 @@ mod tests {
         assert_eq!(payment_after_update.status, HTLCStatus::Received);
         assert_eq!(payment_after_update.preimage.unwrap(), expected_preimage);
         assert_eq!(payment_after_update.secret.unwrap(), expected_secret);
+
+        // Test update_payment_to_sent_in_db
+        let expected_preimage = PaymentPreimage([7; 32]);
+        let expected_fee_paid_msat = Some(1000);
+        block_on(db.update_payment_to_sent_in_db(PaymentHash([1; 32]), expected_preimage, expected_fee_paid_msat))
+            .unwrap();
+        let payment_after_update = block_on(db.get_payment_from_db(PaymentHash([1; 32]))).unwrap().unwrap();
+        assert_eq!(payment_after_update.status, HTLCStatus::Succeeded);
+        assert_eq!(payment_after_update.preimage.unwrap(), expected_preimage);
+        assert_eq!(
+            payment_after_update.fee_paid_msat.map(|f| f as u64),
+            expected_fee_paid_msat
+        );
     }
 
     #[test]

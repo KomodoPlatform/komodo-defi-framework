@@ -250,6 +250,14 @@ pub trait LightningDB {
         secret: PaymentSecret,
     ) -> Result<(), Self::Error>;
 
+    /// Updates a sent payment status to succeeded in DB by the payment's hash. Also, adds the payment preimage and the amount of fees paid to the db.
+    async fn update_payment_to_sent_in_db(
+        &self,
+        hash: PaymentHash,
+        preimage: PaymentPreimage,
+        fee_paid_msat: Option<u64>,
+    ) -> Result<(), Self::Error>;
+
     /// Gets a payment's record from DB by the payment's hash.
     async fn get_payment_from_db(&self, hash: PaymentHash) -> Result<Option<PaymentInfo>, Self::Error>;
 

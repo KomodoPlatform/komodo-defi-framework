@@ -455,21 +455,16 @@ impl LightningEventHandler {
         );
         let db = self.db.clone();
         let fut = async move {
-            if let Ok(Some(mut payment_info)) = db.get_payment_from_db(payment_hash).await.error_log_passthrough() {
-                payment_info.preimage = Some(payment_preimage);
-                payment_info.status = HTLCStatus::Succeeded;
-                payment_info.fee_paid_msat = fee_paid_msat.map(|f| f as i64);
-                payment_info.last_updated = (now_ms() / 1000) as i64;
-                let amt_msat = payment_info.amt_msat;
-                match db.add_or_update_payment_in_db(payment_info).await {
-                    Ok(_) => info!(
-                        "{} of {} millisatoshis with payment hash {}",
-                        SUCCESSFUL_SEND_LOG,
-                        amt_msat.unwrap_or_default(),
-                        hex::encode(payment_hash.0)
-                    ),
-                    Err(e) => error!("Unable to update payment information in DB error: {}", e),
-                }
+            match db
+                .update_payment_to_sent_in_db(payment_hash, payment_preimage, fee_paid_msat)
+                .await
+            {
+                Ok(_) => info!(
+                    "{} with payment hash {}",
+                    SUCCESSFUL_SEND_LOG,
+                    hex::encode(payment_hash.0)
+                ),
+                Err(e) => error!("Unable to update sent payment info in DB error: {}", e),
             }
         };
         let settings = AbortSettings::default().critical_timout_s(CRITICAL_FUTURE_TIMEOUT);
