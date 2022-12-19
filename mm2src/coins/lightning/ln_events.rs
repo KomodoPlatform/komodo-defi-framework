@@ -349,17 +349,9 @@ impl LightningEventHandler {
             } => match payment_preimage {
                 Some(preimage) => {
                     let fut = async move {
-                        if let Ok(Some(mut payment_info)) =
-                            db.get_payment_from_db(payment_hash).await.error_log_passthrough()
-                        {
-                            payment_info.preimage = Some(preimage);
-                            payment_info.secret = Some(payment_secret);
-                            payment_info.status = HTLCStatus::Received;
-                            payment_info.last_updated = (now_ms() / 1000) as i64;
-                            db.add_or_update_payment_in_db(payment_info)
-                                .await
-                                .error_log_with_msg("Unable to update payment information in DB!");
-                        }
+                        db.update_payment_to_received_in_db(payment_hash, preimage, payment_secret)
+                            .await
+                            .error_log_with_msg("Unable to update received payment info in DB!");
                     };
                     let settings = AbortSettings::default().critical_timout_s(CRITICAL_FUTURE_TIMEOUT);
                     self.platform.spawner().spawn_with_settings(fut, settings);

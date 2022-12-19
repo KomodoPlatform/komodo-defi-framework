@@ -242,6 +242,14 @@ pub trait LightningDB {
     /// Updates a payment's status in DB by the payment's hash.
     async fn update_payment_status_in_db(&self, hash: PaymentHash, status: &HTLCStatus) -> Result<(), Self::Error>;
 
+    /// Updates a payment's status to received in DB by the payment's hash. Also, adds the payment preimage and secret to the db.
+    async fn update_payment_to_received_in_db(
+        &self,
+        hash: PaymentHash,
+        preimage: PaymentPreimage,
+        secret: PaymentSecret,
+    ) -> Result<(), Self::Error>;
+
     /// Gets a payment's record from DB by the payment's hash.
     async fn get_payment_from_db(&self, hash: PaymentHash) -> Result<Option<PaymentInfo>, Self::Error>;
 
