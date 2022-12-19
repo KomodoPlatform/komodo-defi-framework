@@ -45,6 +45,7 @@ use futures::lock::Mutex as AsyncMutex;
 use futures::{FutureExt, TryFutureExt};
 use futures01::Future;
 use hex::FromHexError;
+use itertools::Itertools;
 use keys::KeyPair;
 use mm2_core::mm_ctx::MmArc;
 use mm2_err_handle::prelude::*;
@@ -449,9 +450,9 @@ impl TendermintCoin {
                 }
             })?;
 
-        let rpc_clients = clients_from_urls(rpc_urls.as_ref()).map_to_mm(|e| TendermintInitError {
+        let rpc_clients = clients_from_urls(rpc_urls.as_ref()).mm_err(|kind| TendermintInitError {
             ticker: ticker.clone(),
-            kind: TendermintInitErrorKind::RpcClientInitError(e),
+            kind,
         })?;
 
         let client_impl = TendermintRpcClientImpl { rpc_clients };
@@ -1371,7 +1372,7 @@ impl TendermintCoin {
     }
 }
 
-fn clients_from_urls(rpc_urls: &[String]) -> Result<Vec<HttpClient>, String> {
+fn clients_from_urls(rpc_urls: &[String]) -> MmResult<Vec<HttpClient>, TendermintInitErrorKind> {
     let mut clients = Vec::new();
     let mut errors = Vec::new();
     // check that all urls are valid
@@ -1385,8 +1386,8 @@ fn clients_from_urls(rpc_urls: &[String]) -> Result<Vec<HttpClient>, String> {
     drop_mutability!(clients);
     drop_mutability!(errors);
     if !errors.is_empty() {
-        let errors: String = errors.iter().map(|e| format!("{:?}", e)).collect();
-        return Err(errors);
+        let errors: String = errors.into_iter().join(", ");
+        return MmError::err(TendermintInitErrorKind::RpcClientInitError(errors));
     }
     Ok(clients)
 }
