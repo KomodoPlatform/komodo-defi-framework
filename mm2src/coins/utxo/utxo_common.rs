@@ -3615,7 +3615,7 @@ pub fn validate_payment<T: UtxoCommonOps>(
         .attempts(4)
         .inspect_err(move |e| error!("Error getting tx {tx_hash:?} from rpc: {e:?}"))
         .await
-        .map_err(|timeout| timeout.error.map(ValidatePaymentError::from))?;
+        .map_err(|repeat_err| repeat_err.into_error().map(ValidatePaymentError::from))?;
 
         if serialize(&tx).take() != tx_from_rpc.0
             && serialize_with_flags(&tx, SERIALIZE_TRANSACTION_WITNESS).take() != tx_from_rpc.0
