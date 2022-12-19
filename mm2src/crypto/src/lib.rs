@@ -11,6 +11,10 @@ pub mod privkey;
 mod standard_hd_path;
 mod xpub;
 
+#[cfg(target_arch = "wasm32")] mod metamask_ctx;
+// Uncomment this to finish MetaMask login.
+// #[cfg(target_arch = "wasm32")] mod metamask_login;
+
 pub use bip32_child::{Bip32Child, Bip32DerPathError, Bip32DerPathOps, Bip44Tail};
 pub use crypto_ctx::{CryptoCtx, CryptoCtxError, CryptoInitError, CryptoInitResult, HwCtxInitError, KeyPairPolicy};
 pub use global_hd_ctx::GlobalHDAccountArc;
@@ -24,6 +28,12 @@ pub use standard_hd_path::{Bip44Chain, StandardHDPath, StandardHDPathError, Stan
                            StandardHDPathToCoin, UnknownChainError};
 pub use trezor;
 pub use xpub::{XPubConverter, XpubError};
+
+#[cfg(target_arch = "wasm32")]
+pub use crypto_ctx::MetamaskCtxInitError;
+#[cfg(target_arch = "wasm32")]
+pub use metamask_ctx::{MetamaskArc, MetamaskError, MetamaskWeak};
+#[cfg(target_arch = "wasm32")] pub use mm2_metamask as metamask;
 
 use serde::de::Error;
 use serde::{Deserialize, Deserializer, Serialize, Serializer};

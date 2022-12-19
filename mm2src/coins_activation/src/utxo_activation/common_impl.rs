@@ -11,7 +11,7 @@ use coins::utxo::{UtxoActivationParams, UtxoCoinFields};
 use coins::{CoinFutSpawner, MarketCoinOps, PrivKeyActivationPolicy, PrivKeyBuildPolicy};
 use common::executor::{AbortSettings, SpawnAbortable};
 use crypto::hw_rpc_task::HwConnectStatuses;
-use crypto::CryptoCtx;
+use crypto::CryptoCtxError;
 use futures::compat::Future01CompatExt;
 use mm2_core::mm_ctx::MmArc;
 use mm2_err_handle::prelude::*;
@@ -74,12 +74,12 @@ pub(crate) fn xpub_extractor_rpc_statuses(
 }
 
 pub(crate) fn priv_key_build_policy(
-    crypto_ctx: &CryptoCtx,
+    ctx: &MmArc,
     activation_policy: PrivKeyActivationPolicy,
-) -> PrivKeyBuildPolicy {
+) -> MmResult<PrivKeyBuildPolicy, CryptoCtxError> {
     match activation_policy {
-        PrivKeyActivationPolicy::ContextPrivKey => PrivKeyBuildPolicy::detect_priv_key_policy(crypto_ctx),
-        PrivKeyActivationPolicy::Trezor => PrivKeyBuildPolicy::Trezor,
+        PrivKeyActivationPolicy::ContextPrivKey => PrivKeyBuildPolicy::detect_priv_key_policy(ctx),
+        PrivKeyActivationPolicy::Trezor => Ok(PrivKeyBuildPolicy::Trezor),
     }
 }
 

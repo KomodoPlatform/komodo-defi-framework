@@ -1,6 +1,6 @@
 use crate::lightning::ln_p2p::connect_to_ln_node;
 use crate::lightning::ln_serialization::PublicKeyForRPC;
-use crate::lightning::PaymentError;
+use crate::lightning::ln_utils::PaymentError;
 use crate::{lp_coinfind_or_err, CoinFindError, H256Json, MmCoinEnum};
 use common::log::LogOnError;
 use common::HttpStatusCode;
@@ -99,7 +99,7 @@ pub async fn send_payment(ctx: MmArc, req: SendPaymentReq) -> SendPaymentResult<
             ));
     }
     let payment_info = match req.payment {
-        Payment::Invoice { invoice } => ln_coin.pay_invoice(invoice).await?,
+        Payment::Invoice { invoice } => ln_coin.pay_invoice(invoice, None).await?,
         Payment::Keysend {
             destination,
             amount_in_msat,

@@ -13,6 +13,7 @@ use coins::solana::spl::{SplProtocolConf, SplTokenCreationError};
 use coins::{BalanceError, CoinBalance, CoinProtocol, MarketCoinOps, PrivKeyBuildPolicy, SolanaActivationParams,
             SolanaCoin, SplToken};
 use common::Future01CompatExt;
+use crypto::CryptoCtxError;
 use mm2_core::mm_ctx::MmArc;
 use mm2_err_handle::prelude::*;
 use mm2_number::BigDecimal;
@@ -140,6 +141,10 @@ impl From<BalanceError> for SolanaWithTokensActivationError {
     fn from(e: BalanceError) -> Self { SolanaWithTokensActivationError::GetBalanceError(e) }
 }
 
+impl From<CryptoCtxError> for SolanaWithTokensActivationError {
+    fn from(e: CryptoCtxError) -> Self { SolanaWithTokensActivationError::Internal(e.to_string()) }
+}
+
 pub struct SolanaProtocolInfo {}
 
 impl TryFromCoinProtocol for SolanaProtocolInfo {
@@ -179,9 +184,9 @@ impl PlatformWithTokensActivationOps for SolanaCoin {
         platform_conf: Json,
         activation_request: Self::ActivationRequest,
         _protocol_conf: Self::PlatformProtocolInfo,
-        priv_key_policy: PrivKeyBuildPolicy,
     ) -> Result<Self, MmError<Self::ActivationError>> {
-        let platform_coin = solana_coin_with_policy(
+        let priv_key_policy = PrivKeyBuildPolicy::detect_priv_key_policy(&ctx)?;
+        solana_coin_with_policy(
             &ctx,
             &ticker,
             &platform_conf,
@@ -189,8 +194,7 @@ impl PlatformWithTokensActivationOps for SolanaCoin {
             priv_key_policy,
         )
         .await
-        .map_to_mm(|error| SolanaWithTokensActivationError::PlatformCoinCreationError { ticker, error })?;
-        Ok(platform_coin)
+        .map_to_mm(|error| SolanaWithTokensActivationError::PlatformCoinCreationError { ticker, error })
     }
 
     fn token_initializers(

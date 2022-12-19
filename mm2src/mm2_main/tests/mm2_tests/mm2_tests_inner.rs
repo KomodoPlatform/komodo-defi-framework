@@ -749,8 +749,8 @@ async fn trade_base_rel_electrum(
     bob_priv_key_policy: Mm2InitPrivKeyPolicy,
     alice_priv_key_policy: Mm2InitPrivKeyPolicy,
     pairs: &[(&'static str, &'static str)],
-    maker_price: i32,
-    taker_price: i32,
+    maker_price: f64,
+    taker_price: f64,
     volume: f64,
 ) {
     let coins = json!([
@@ -893,7 +893,7 @@ fn trade_test_electrum_and_eth_coins() {
     let bob_policy = Mm2InitPrivKeyPolicy::Iguana;
     let alice_policy = Mm2InitPrivKeyPolicy::GlobalHDAccount(0);
     let pairs = &[("ETH", "JST")];
-    block_on(trade_base_rel_electrum(bob_policy, alice_policy, pairs, 1, 2, 0.1));
+    block_on(trade_base_rel_electrum(bob_policy, alice_policy, pairs, 1., 2., 0.1));
 }
 
 #[test]
@@ -902,7 +902,7 @@ fn trade_test_electrum_rick_zombie() {
     let bob_policy = Mm2InitPrivKeyPolicy::Iguana;
     let alice_policy = Mm2InitPrivKeyPolicy::Iguana;
     let pairs = &[("RICK", "ZOMBIE")];
-    block_on(trade_base_rel_electrum(bob_policy, alice_policy, pairs, 1, 2, 0.1));
+    block_on(trade_base_rel_electrum(bob_policy, alice_policy, pairs, 1., 2., 0.1));
 }
 
 #[cfg(not(target_arch = "wasm32"))]
@@ -7414,7 +7414,14 @@ fn test_eth_swap_contract_addr_negotiation_same_fallback() {
         Some(ETH_DEV_SWAP_CONTRACT)
     )));
 
-    let uuids = block_on(start_swaps(&mut mm_bob, &mut mm_alice, &[("ETH", "JST")], 1, 1, 0.001));
+    let uuids = block_on(start_swaps(
+        &mut mm_bob,
+        &mut mm_alice,
+        &[("ETH", "JST")],
+        1.,
+        1.,
+        0.001,
+    ));
 
     // give few seconds for swap statuses to be saved
     thread::sleep(Duration::from_secs(3));
@@ -7494,7 +7501,14 @@ fn test_eth_swap_negotiation_fails_maker_no_fallback() {
         Some(ETH_DEV_SWAP_CONTRACT)
     )));
 
-    let uuids = block_on(start_swaps(&mut mm_bob, &mut mm_alice, &[("ETH", "JST")], 1, 1, 0.001));
+    let uuids = block_on(start_swaps(
+        &mut mm_bob,
+        &mut mm_alice,
+        &[("ETH", "JST")],
+        1.,
+        1.,
+        0.001,
+    ));
 
     // give few seconds for swap statuses to be saved
     thread::sleep(Duration::from_secs(3));

@@ -15,6 +15,7 @@ use std::mem::discriminant;
 const EXPECTED_TX_FEE: i64 = 1000;
 const CONTRACT_CALL_GAS_FEE: i64 = (QRC20_GAS_LIMIT_DEFAULT * QRC20_GAS_PRICE_DEFAULT) as i64;
 const SWAP_PAYMENT_GAS_FEE: i64 = (QRC20_PAYMENT_GAS_LIMIT * QRC20_GAS_PRICE_DEFAULT) as i64;
+const TAKER_PAYMENT_SPEND_SEARCH_INTERVAL: f64 = 1.;
 
 pub fn qrc20_coin_for_test(priv_key: [u8; 32], fallback_swap: Option<&str>) -> (MmArc, Qrc20Coin) {
     let conf = json!({
@@ -444,7 +445,14 @@ fn test_wait_for_tx_spend_malicious() {
     let wait_until = (now_ms() / 1000) + 1;
     let from_block = 696245;
     let found = coin
-        .wait_for_htlc_tx_spend(&payment_tx, &[], wait_until, from_block, &coin.swap_contract_address())
+        .wait_for_htlc_tx_spend(
+            &payment_tx,
+            &[],
+            wait_until,
+            from_block,
+            &coin.swap_contract_address(),
+            TAKER_PAYMENT_SPEND_SEARCH_INTERVAL,
+        )
         .wait()
         .unwrap();
 

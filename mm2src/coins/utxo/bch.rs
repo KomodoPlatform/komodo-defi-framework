@@ -16,8 +16,10 @@ use crate::{BlockHeightAndTime, CanRefundHtlc, CheckIfMyPaymentSentArgs, CoinBal
             SendMakerSpendsTakerPaymentArgs, SendTakerPaymentArgs, SendTakerRefundsPaymentArgs,
             SendTakerSpendsMakerPaymentArgs, SignatureResult, SwapOps, TradePreimageValue, TransactionFut,
             TransactionType, TxFeeDetails, TxMarshalingErr, UnexpectedDerivationMethod, ValidateAddressResult,
-            ValidateFeeArgs, ValidateInstructionsErr, ValidateOtherPubKeyErr, ValidatePaymentFut,
-            ValidatePaymentInput, VerificationResult, WatcherOps, WatcherValidatePaymentInput, WithdrawFut};
+            ValidateFeeArgs, ValidateInstructionsErr, ValidateOtherPubKeyErr, ValidatePaymentError,
+            ValidatePaymentFut, ValidatePaymentInput, VerificationResult, WatcherOps,
+            WatcherSearchForSwapTxSpendInput, WatcherValidatePaymentInput, WatcherValidateTakerFeeInput, WithdrawFut};
+use common::executor::{AbortableSystem, AbortedError};
 use common::log::warn;
 use derive_more::Display;
 use futures::{FutureExt, TryFutureExt};
@@ -968,7 +970,7 @@ impl SwapOps for BchCoin {
     }
 
     #[inline]
-    fn check_tx_signed_by_pub(&self, tx: &[u8], expected_pub: &[u8]) -> Result<bool, String> {
+    fn check_tx_signed_by_pub(&self, tx: &[u8], expected_pub: &[u8]) -> Result<bool, MmError<ValidatePaymentError>> {
         utxo_common::check_all_inputs_signed_by_pub(tx, expected_pub)
     }
 
@@ -1005,15 +1007,36 @@ impl SwapOps for BchCoin {
         utxo_common::validate_other_pubkey(raw_pubkey)
     }
 
-    async fn payment_instructions(
+    async fn maker_payment_instructions(
         &self,
         _secret_hash: &[u8],
         _amount: &BigDecimal,
+        _maker_lock_duration: u64,
+        _expires_in: u64,
     ) -> Result<Option<Vec<u8>>, MmError<PaymentInstructionsErr>> {
         Ok(None)
     }
 
-    fn validate_instructions(
+    async fn taker_payment_instructions(
+        &self,
+        _secret_hash: &[u8],
+        _amount: &BigDecimal,
+        _expires_in: u64,
+    ) -> Result<Option<Vec<u8>>, MmError<PaymentInstructionsErr>> {
+        Ok(None)
+    }
+
+    fn validate_maker_payment_instructions(
+        &self,
+        _instructions: &[u8],
+        _secret_hash: &[u8],
+        _amount: BigDecimal,
+        _maker_lock_duration: u64,
+    ) -> Result<PaymentInstructions, MmError<ValidateInstructionsErr>> {
+        MmError::err(ValidateInstructionsErr::UnsupportedCoin(self.ticker().to_string()))
+    }
+
+    fn validate_taker_payment_instructions(
         &self,
         _instructions: &[u8],
         _secret_hash: &[u8],
@@ -1032,7 +1055,7 @@ fn total_unspent_value<'a>(unspents: impl IntoIterator<Item = &'a UnspentInfo>) 
 #[async_trait]
 impl WatcherOps for BchCoin {
     #[inline]
-    fn create_taker_spends_maker_payment_preimage(
+    fn create_maker_payment_spend_preimage(
         &self,
         maker_payment_tx: &[u8],
         time_lock: u32,
@@ -1040,7 +1063,7 @@ impl WatcherOps for BchCoin {
         secret_hash: &[u8],
         swap_unique_data: &[u8],
     ) -> TransactionFut {
-        utxo_common::create_taker_spends_maker_payment_preimage(
+        utxo_common::create_maker_payment_spend_preimage(
             self.clone(),
             maker_payment_tx,
             time_lock,
@@ -1051,12 +1074,12 @@ impl WatcherOps for BchCoin {
     }
 
     #[inline]
-    fn send_taker_spends_maker_payment_preimage(&self, preimage: &[u8], secret: &[u8]) -> TransactionFut {
-        utxo_common::send_taker_spends_maker_payment_preimage(self.clone(), preimage, secret)
+    fn send_maker_payment_spend_preimage(&self, preimage: &[u8], secret: &[u8]) -> TransactionFut {
+        utxo_common::send_maker_payment_spend_preimage(self.clone(), preimage, secret)
     }
 
     #[inline]
-    fn create_taker_refunds_payment_preimage(
+    fn create_taker_payment_refund_preimage(
         &self,
         taker_payment_tx: &[u8],
         time_lock: u32,
@@ -1065,7 +1088,7 @@ impl WatcherOps for BchCoin {
         _swap_contract_address: &Option<BytesJson>,
         swap_unique_data: &[u8],
     ) -> TransactionFut {
-        utxo_common::create_taker_refunds_payment_preimage(
+        utxo_common::create_taker_payment_refund_preimage(
             self.clone(),
             taker_payment_tx,
             time_lock,
@@ -1076,18 +1099,25 @@ impl WatcherOps for BchCoin {
     }
 
     #[inline]
-    fn send_watcher_refunds_taker_payment_preimage(&self, taker_refunds_payment: &[u8]) -> TransactionFut {
-        utxo_common::send_watcher_refunds_taker_payment_preimage(self.clone(), taker_refunds_payment)
+    fn send_taker_payment_refund_preimage(&self, taker_refunds_payment: &[u8]) -> TransactionFut {
+        utxo_common::send_taker_payment_refund_preimage(self.clone(), taker_refunds_payment)
     }
 
     #[inline]
-    fn watcher_validate_taker_fee(&self, taker_fee_hash: Vec<u8>, verified_pub: Vec<u8>) -> ValidatePaymentFut<()> {
-        utxo_common::watcher_validate_taker_fee(self.clone(), taker_fee_hash, verified_pub)
+    fn watcher_validate_taker_fee(&self, input: WatcherValidateTakerFeeInput) -> ValidatePaymentFut<()> {
+        utxo_common::watcher_validate_taker_fee(self.clone(), input, utxo_common::DEFAULT_FEE_VOUT)
     }
 
     #[inline]
     fn watcher_validate_taker_payment(&self, input: WatcherValidatePaymentInput) -> ValidatePaymentFut<()> {
         utxo_common::watcher_validate_taker_payment(self, input)
+    }
+
+    async fn watcher_search_for_swap_tx_spend(
+        &self,
+        input: WatcherSearchForSwapTxSpendInput<'_>,
+    ) -> Result<Option<FoundSwapTxSpend>, String> {
+        utxo_common::watcher_search_for_swap_tx_spend(self, input, utxo_common::DEFAULT_SWAP_VOUT).await
     }
 }
 
@@ -1162,6 +1192,7 @@ impl MarketCoinOps for BchCoin {
         wait_until: u64,
         from_block: u64,
         _swap_contract_address: &Option<BytesJson>,
+        check_every: f64,
     ) -> TransactionFut {
         utxo_common::wait_for_output_spend(
             &self.utxo_arc,
@@ -1169,6 +1200,7 @@ impl MarketCoinOps for BchCoin {
             utxo_common::DEFAULT_SWAP_VOUT,
             from_block,
             wait_until,
+            check_every,
         )
     }
 
@@ -1195,6 +1227,14 @@ impl MmCoin for BchCoin {
 
     fn get_raw_transaction(&self, req: RawTransactionRequest) -> RawTransactionFut {
         Box::new(utxo_common::get_raw_transaction(&self.utxo_arc, req).boxed().compat())
+    }
+
+    fn get_tx_hex_by_hash(&self, tx_hash: Vec<u8>) -> RawTransactionFut {
+        Box::new(
+            utxo_common::get_tx_hex_by_hash(&self.utxo_arc, tx_hash)
+                .boxed()
+                .compat(),
+        )
     }
 
     fn withdraw(&self, req: WithdrawRequest) -> WithdrawFut {
@@ -1262,6 +1302,14 @@ impl MmCoin for BchCoin {
 
     fn is_coin_protocol_supported(&self, info: &Option<Vec<u8>>) -> bool {
         utxo_common::is_coin_protocol_supported(self, info)
+    }
+
+    fn on_disabled(&self) -> Result<(), AbortedError> { AbortableSystem::abort_all(&self.as_ref().abortable_system) }
+
+    fn on_token_deactivated(&self, ticker: &str) {
+        if let Ok(tokens) = self.slp_tokens_infos.lock().as_deref_mut() {
+            tokens.remove(ticker);
+        };
     }
 }
 

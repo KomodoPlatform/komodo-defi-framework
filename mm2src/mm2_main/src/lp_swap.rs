@@ -108,18 +108,19 @@ use keys::KeyPair;
 use maker_swap::MakerSwapEvent;
 pub use maker_swap::{calc_max_maker_vol, check_balance_for_maker_swap, maker_swap_trade_preimage, run_maker_swap,
                      MakerSavedEvent, MakerSavedSwap, MakerSwap, MakerSwapStatusChanged, MakerTradePreimage,
-                     RunMakerSwapInput};
+                     RunMakerSwapInput, MAKER_PAYMENT_SENT_LOG};
 use my_swaps_storage::{MySwapsOps, MySwapsStorage};
 use pubkey_banning::BanReason;
 pub use pubkey_banning::{ban_pubkey_rpc, is_pubkey_banned, list_banned_pubkeys_rpc, unban_pubkeys_rpc};
 pub use recreate_swap_data::recreate_swap_data;
 pub use saved_swap::{SavedSwap, SavedSwapError, SavedSwapIo, SavedSwapResult};
-pub use swap_watcher::{process_watcher_msg, watcher_topic, TakerSwapWatcherData, TAKER_SWAP_ENTRY_TIMEOUT,
+pub use swap_watcher::{process_watcher_msg, watcher_topic, TakerSwapWatcherData, MAKER_PAYMENT_SPEND_FOUND_LOG,
+                       MAKER_PAYMENT_SPEND_SENT_LOG, TAKER_PAYMENT_REFUND_SENT_LOG, TAKER_SWAP_ENTRY_TIMEOUT,
                        WATCHER_PREFIX};
 use taker_swap::TakerSwapEvent;
 pub use taker_swap::{calc_max_taker_vol, check_balance_for_taker_swap, max_taker_vol, max_taker_vol_from_available,
                      run_taker_swap, taker_swap_trade_preimage, RunTakerSwapInput, TakerSavedSwap, TakerSwap,
-                     TakerSwapData, TakerSwapPreparedParams, TakerTradePreimage};
+                     TakerSwapData, TakerSwapPreparedParams, TakerTradePreimage, WATCHER_MESSAGE_SENT_LOG};
 pub use trade_preimage::trade_preimage_rpc;
 
 pub const SWAP_PREFIX: TopicPrefix = "swap";
@@ -341,13 +342,19 @@ pub fn get_payment_locktime() -> u64 {
 }
 
 #[inline]
-pub fn wait_for_taker_payment_conf_until(swap_started_at: u64, locktime: u64) -> u64 {
-    swap_started_at + (locktime * 4) / 5
+pub fn taker_payment_spend_duration(locktime: u64) -> u64 { (locktime * 4) / 5 }
+
+#[inline]
+pub fn taker_payment_spend_deadline(swap_started_at: u64, locktime: u64) -> u64 {
+    swap_started_at + taker_payment_spend_duration(locktime)
 }
 
 #[inline]
+pub fn wait_for_maker_payment_conf_duration(locktime: u64) -> u64 { (locktime * 2) / 5 }
+
+#[inline]
 pub fn wait_for_maker_payment_conf_until(swap_started_at: u64, locktime: u64) -> u64 {
-    swap_started_at + (locktime * 2) / 5
+    swap_started_at + wait_for_maker_payment_conf_duration(locktime)
 }
 
 const _SWAP_DEFAULT_NUM_CONFIRMS: u32 = 1;
@@ -491,13 +498,13 @@ fn get_locked_amount_by_other_swaps(ctx: &MmArc, except_uuid: &Uuid, coin: &str)
         })
 }
 
-pub fn active_swaps_using_coin(ctx: &MmArc, coin: &str) -> Result<Vec<Uuid>, String> {
+pub fn active_swaps_using_coins(ctx: &MmArc, coins: &HashSet<String>) -> Result<Vec<Uuid>, String> {
     let swap_ctx = try_s!(SwapsContext::from_ctx(ctx));
     let swaps = try_s!(swap_ctx.running_swaps.lock());
     let mut uuids = vec![];
     for swap in swaps.iter() {
         if let Some(swap) = swap.upgrade() {
-            if swap.maker_coin() == coin || swap.taker_coin() == coin {
+            if coins.contains(&swap.maker_coin().to_string()) || coins.contains(&swap.taker_coin().to_string()) {
                 uuids.push(*swap.uuid())
             }
         }
@@ -556,7 +563,10 @@ pub fn lp_atomic_locktime_v2(
     my_conf_settings: &SwapConfirmationsSettings,
     other_conf_settings: &SwapConfirmationsSettings,
 ) -> u64 {
-    if maker_coin == "BTC"
+    if taker_coin.contains("-lightning") {
+        // A good value for lightning taker locktime is about 24 hours to find a good 3 hop or less path for the payment
+        get_payment_locktime() * 12
+    } else if maker_coin == "BTC"
         || taker_coin == "BTC"
         || coin_with_4x_locktime(maker_coin)
         || coin_with_4x_locktime(taker_coin)
@@ -583,6 +593,7 @@ pub fn lp_atomic_locktime(maker_coin: &str, taker_coin: &str, version: AtomicLoc
 }
 
 fn dex_fee_threshold(min_tx_amount: MmNumber) -> MmNumber {
+    // Todo: This should be reduced for lightning swaps.
     // 0.0001
     let min_fee = MmNumber::from((1, 10000));
     if min_fee < min_tx_amount {

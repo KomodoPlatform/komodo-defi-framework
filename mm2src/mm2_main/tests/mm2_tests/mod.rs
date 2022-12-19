@@ -1,5 +1,6 @@
 mod bch_and_slp_tests;
 mod best_orders_tests;
+mod eth_tests;
 mod iris_swap;
 mod lightning_tests;
 mod lp_bot_tests;

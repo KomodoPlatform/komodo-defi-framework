@@ -1,10 +1,16 @@
+#[cfg(target_arch = "wasm32")] mod indexedb_block_header_storage;
 #[cfg(target_arch = "wasm32")]
-use crate::utxo::utxo_indexedb_block_header_storage::IndexedDBBlockHeadersStorage;
+pub use indexedb_block_header_storage::IndexedDBBlockHeadersStorage;
+
+#[cfg(not(target_arch = "wasm32"))] mod sql_block_header_storage;
 #[cfg(not(target_arch = "wasm32"))]
-use crate::utxo::utxo_sql_block_header_storage::SqliteBlockHeadersStorage;
+pub use sql_block_header_storage::SqliteBlockHeadersStorage;
+
 use async_trait::async_trait;
 use chain::BlockHeader;
 use mm2_core::mm_ctx::MmArc;
+#[cfg(all(test, not(target_arch = "wasm32")))]
+use mocktopus::macros::*;
 use primitives::hash::H256;
 use spv_validation::storage::{BlockHeaderStorageError, BlockHeaderStorageOps};
 use std::collections::HashMap;
@@ -54,6 +60,7 @@ impl BlockHeaderStorage {
 }
 
 #[async_trait]
+#[cfg_attr(all(test, not(target_arch = "wasm32")), mockable)]
 impl BlockHeaderStorageOps for BlockHeaderStorage {
     async fn init(&self) -> Result<(), BlockHeaderStorageError> { self.inner.init().await }
 

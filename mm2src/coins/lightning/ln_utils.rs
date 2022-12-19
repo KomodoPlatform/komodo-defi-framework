@@ -10,16 +10,21 @@ use common::executor::SpawnFuture;
 use common::log::LogState;
 use lightning::chain::keysinterface::{InMemorySigner, KeysManager};
 use lightning::chain::{chainmonitor, BestBlock, Watch};
-use lightning::ln::channelmanager::{ChainParameters, ChannelManagerReadArgs, SimpleArcChannelManager};
+use lightning::ln::channelmanager::{ChainParameters, ChannelManagerReadArgs, PaymentId, PaymentSendFailure,
+                                    SimpleArcChannelManager};
 use lightning::routing::gossip::RoutingFees;
-use lightning::routing::router::{RouteHint, RouteHintHop};
+use lightning::routing::router::{PaymentParameters, RouteHint, RouteHintHop, RouteParameters};
 use lightning::util::config::UserConfig;
+use lightning::util::errors::APIError;
 use lightning::util::ser::ReadableArgs;
+use lightning_invoice::payment::{Payer, PaymentError as InvoicePaymentError, Router as RouterTrait};
 use mm2_core::mm_ctx::MmArc;
 use std::collections::hash_map::Entry;
 use std::fs::File;
 use std::path::PathBuf;
 use std::sync::Arc;
+
+pub const PAYMENT_RETRY_ATTEMPTS: usize = 5;
 
 pub type ChainMonitor = chainmonitor::ChainMonitor<
     InMemorySigner,
@@ -31,6 +36,7 @@ pub type ChainMonitor = chainmonitor::ChainMonitor<
 >;
 
 pub type ChannelManager = SimpleArcChannelManager<ChainMonitor, Platform, Platform, LogState>;
+pub type Router = DefaultRouter<Arc<NetworkGraph>, Arc<LogState>>;
 
 #[inline]
 fn ln_data_dir(ctx: &MmArc, ticker: &str) -> PathBuf { ctx.dbdir().join("LIGHTNING").join(ticker) }
@@ -315,4 +321,206 @@ pub(crate) fn filter_channels(channels: Vec<ChannelDetails>, min_inbound_capacit
         })
         .map(|(_counterparty_id, channel)| route_hint_from_channel(channel))
         .collect::<Vec<RouteHint>>()
+}
+
+#[derive(Debug, Display)]
+pub enum PaymentError {
+    #[display(fmt = "Final cltv expiry delta {} is below the required minimum of {}", _0, _1)]
+    CLTVExpiry(u32, u32),
+    #[display(fmt = "Error paying invoice: {}", _0)]
+    Invoice(String),
+    #[display(fmt = "Keysend error: {}", _0)]
+    Keysend(String),
+    #[display(fmt = "DB error {}", _0)]
+    DbError(String),
+}
+
+impl From<SqlError> for PaymentError {
+    fn from(err: SqlError) -> PaymentError { PaymentError::DbError(err.to_string()) }
+}
+
+impl From<InvoicePaymentError> for PaymentError {
+    fn from(err: InvoicePaymentError) -> PaymentError { PaymentError::Invoice(format!("{:?}", err)) }
+}
+
+// Todo: This is imported from rust-lightning and modified by me, will need to open a PR there with this modification and update the dependency to remove this code and the code it depends on.
+pub(crate) fn pay_invoice_with_max_total_cltv_expiry_delta(
+    channel_manager: Arc<ChannelManager>,
+    router: Arc<Router>,
+    scorer: Arc<Scorer>,
+    invoice: &Invoice,
+    max_total_cltv_expiry_delta: u32,
+) -> Result<PaymentId, PaymentError> {
+    let final_value_msat = invoice
+        .amount_milli_satoshis()
+        .ok_or(InvoicePaymentError::Invoice("amount missing"))?;
+    let expiry_time = (invoice.duration_since_epoch() + invoice.expiry_time()).as_secs();
+
+    let mut payment_params = PaymentParameters::from_node_id(invoice.recover_payee_pub_key())
+        .with_expiry_time(expiry_time)
+        .with_route_hints(invoice.route_hints())
+        .with_max_total_cltv_expiry_delta(max_total_cltv_expiry_delta);
+    if let Some(features) = invoice.features() {
+        payment_params = payment_params.with_features(features.clone());
+    }
+    drop_mutability!(payment_params);
+    let route_params = RouteParameters {
+        payment_params,
+        final_value_msat,
+        final_cltv_expiry_delta: invoice.min_final_cltv_expiry() as u32,
+    };
+
+    pay_internal(
+        channel_manager,
+        router,
+        scorer,
+        &route_params,
+        invoice,
+        &mut 0,
+        &mut Vec::new(),
+    )
+}
+
+fn pay_internal(
+    channel_manager: Arc<ChannelManager>,
+    router: Arc<Router>,
+    scorer: Arc<Scorer>,
+    params: &RouteParameters,
+    invoice: &Invoice,
+    attempts: &mut usize,
+    errors: &mut Vec<APIError>,
+) -> Result<PaymentId, PaymentError> {
+    let payer = channel_manager.node_id();
+    let first_hops = channel_manager.first_hops();
+    let payment_hash = PaymentHash((*invoice.payment_hash()).into_inner());
+    // Todo: Routes should be checked before order matching also, this might require routing hints to be shared when matching orders. Just-in-time channels can solve this issue as well.
+    let route = router
+        .find_route(
+            &payer,
+            params,
+            &payment_hash,
+            Some(&first_hops.iter().collect::<Vec<_>>()),
+            &scorer.lock().unwrap(),
+        )
+        .map_err(InvoicePaymentError::Routing)?;
+
+    let payment_secret = Some(*invoice.payment_secret());
+    match channel_manager.send_payment(&route, payment_hash, &payment_secret) {
+        Ok(payment_id) => Ok(payment_id),
+        Err(e) => match e {
+            PaymentSendFailure::ParameterError(_) => Err(e),
+            PaymentSendFailure::PathParameterError(_) => Err(e),
+            PaymentSendFailure::AllFailedRetrySafe(err) => {
+                if *attempts > PAYMENT_RETRY_ATTEMPTS {
+                    Err(PaymentSendFailure::AllFailedRetrySafe(errors.to_vec()))
+                } else {
+                    *attempts += 1;
+                    errors.extend(err);
+                    Ok(pay_internal(
+                        channel_manager,
+                        router,
+                        scorer,
+                        params,
+                        invoice,
+                        attempts,
+                        errors,
+                    )?)
+                }
+            },
+            PaymentSendFailure::PartialFailure {
+                failed_paths_retry,
+                payment_id,
+                ..
+            } => {
+                if let Some(retry_data) = failed_paths_retry {
+                    // Some paths were sent, even if we failed to send the full MPP value our
+                    // recipient may misbehave and claim the funds, at which point we have to
+                    // consider the payment sent, so return `Ok()` here, ignoring any retry
+                    // errors.
+                    let _ = retry_payment(
+                        channel_manager,
+                        router,
+                        scorer,
+                        payment_id,
+                        payment_hash,
+                        &retry_data,
+                        &mut 0,
+                        errors,
+                    );
+                    Ok(payment_id)
+                } else {
+                    // This may happen if we send a payment and some paths fail, but
+                    // only due to a temporary monitor failure or the like, implying
+                    // they're really in-flight, but we haven't sent the initial
+                    // HTLC-Add messages yet.
+                    Ok(payment_id)
+                }
+            },
+        },
+    }
+    .map_err(|e| InvoicePaymentError::Sending(e).into())
+}
+
+#[allow(clippy::too_many_arguments)]
+fn retry_payment(
+    channel_manager: Arc<ChannelManager>,
+    router: Arc<Router>,
+    scorer: Arc<Scorer>,
+    payment_id: PaymentId,
+    payment_hash: PaymentHash,
+    params: &RouteParameters,
+    attempts: &mut usize,
+    errors: &mut Vec<APIError>,
+) -> Result<(), PaymentError> {
+    let payer = channel_manager.node_id();
+    let first_hops = channel_manager.first_hops();
+    let route = router
+        .find_route(
+            &payer,
+            params,
+            &payment_hash,
+            Some(&first_hops.iter().collect::<Vec<_>>()),
+            &scorer.lock().unwrap(),
+        )
+        .map_err(InvoicePaymentError::Routing)?;
+
+    match channel_manager.retry_payment(&route, payment_id) {
+        Ok(()) => Ok(()),
+        Err(PaymentSendFailure::AllFailedRetrySafe(err)) => {
+            if *attempts > PAYMENT_RETRY_ATTEMPTS {
+                let e = PaymentSendFailure::AllFailedRetrySafe(errors.to_vec());
+                Err(InvoicePaymentError::Sending(e).into())
+            } else {
+                *attempts += 1;
+                errors.extend(err);
+                retry_payment(
+                    channel_manager,
+                    router,
+                    scorer,
+                    payment_id,
+                    payment_hash,
+                    params,
+                    attempts,
+                    errors,
+                )
+            }
+        },
+        Err(PaymentSendFailure::PartialFailure { failed_paths_retry, .. }) => {
+            if let Some(retry) = failed_paths_retry {
+                // Always return Ok for the same reason as noted in pay_internal.
+                let _ = retry_payment(
+                    channel_manager,
+                    router,
+                    scorer,
+                    payment_id,
+                    payment_hash,
+                    &retry,
+                    attempts,
+                    errors,
+                );
+            }
+            Ok(())
+        },
+        Err(e) => Err(InvoicePaymentError::Sending(e).into()),
+    }
 }

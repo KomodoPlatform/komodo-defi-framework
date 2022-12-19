@@ -22,10 +22,13 @@
 //
 use async_trait::async_trait;
 use bitcrypto::{keccak256, ripemd160, sha256};
-use common::executor::{abortable_queue::AbortableQueue, AbortableSystem, Timer};
+use common::executor::{abortable_queue::AbortableQueue, AbortableSystem, AbortedError, Timer};
 use common::log::{error, info, warn};
 use common::{get_utc_timestamp, now_ms, small_rng, DEX_FEE_ADDR_RAW_PUBKEY};
 use crypto::privkey::key_pair_from_secret;
+use crypto::{CryptoCtx, CryptoCtxError, GlobalHDAccountArc, KeyPairPolicy};
+#[cfg(target_arch = "wasm32")]
+use crypto::{MetamaskArc, MetamaskWeak};
 use derive_more::Display;
 use ethabi::{Contract, Token};
 pub use ethcore_transaction::SignedTransaction as SignedEthTx;
@@ -49,6 +52,7 @@ use serde_json::{self as json, Value as Json};
 use serialization::{CompactInteger, Serializable, Stream};
 use sha3::{Digest, Keccak256};
 use std::collections::HashMap;
+use std::convert::TryFrom;
 use std::ops::Deref;
 use std::path::PathBuf;
 use std::str::FromStr;
@@ -57,22 +61,23 @@ use std::sync::{Arc, Mutex};
 use web3::types::{Action as TraceAction, BlockId, BlockNumber, Bytes, CallRequest, FilterBuilder, Log, Trace,
                   TraceFilterBuilder, Transaction as Web3Transaction, TransactionId};
 use web3::{self, Web3};
-use web3_transport::{EthFeeHistoryNamespace, Web3Transport, Web3TransportNode};
+use web3_transport::{http_transport::HttpTransportNode, EthFeeHistoryNamespace, Web3Transport};
 
 use super::{coin_conf, AsyncMutex, BalanceError, BalanceFut, CheckIfMyPaymentSentArgs, CoinBalance, CoinFutSpawner,
             CoinProtocol, CoinTransportMetrics, CoinsContext, FeeApproxStage, FoundSwapTxSpend, HistorySyncState,
-            MarketCoinOps, MmCoin, MyAddressError, NegotiateSwapContractAddrErr, NumConversError, NumConversResult,
-            PaymentInstructions, PaymentInstructionsErr, PrivKeyBuildPolicy, PrivKeyPolicyNotAllowed,
-            RawTransactionError, RawTransactionFut, RawTransactionRequest, RawTransactionRes, RawTransactionResult,
-            RpcClientType, RpcTransportEventHandler, RpcTransportEventHandlerShared, SearchForSwapTxSpendInput,
-            SendMakerPaymentArgs, SendMakerRefundsPaymentArgs, SendMakerSpendsTakerPaymentArgs, SendTakerPaymentArgs,
-            SendTakerRefundsPaymentArgs, SendTakerSpendsMakerPaymentArgs, SignatureError, SignatureResult, SwapOps,
-            TradeFee, TradePreimageError, TradePreimageFut, TradePreimageResult, TradePreimageValue, Transaction,
-            TransactionDetails, TransactionEnum, TransactionErr, TransactionFut, TxMarshalingErr,
-            UnexpectedDerivationMethod, ValidateAddressResult, ValidateFeeArgs, ValidateInstructionsErr,
-            ValidateOtherPubKeyErr, ValidatePaymentError, ValidatePaymentFut, ValidatePaymentInput, VerificationError,
-            VerificationResult, WatcherOps, WatcherValidatePaymentInput, WithdrawError, WithdrawFee, WithdrawFut,
-            WithdrawRequest, WithdrawResult};
+            IguanaPrivKey, MarketCoinOps, MmCoin, MyAddressError, NegotiateSwapContractAddrErr, NumConversError,
+            NumConversResult, PaymentInstructions, PaymentInstructionsErr, PrivKeyBuildPolicy,
+            PrivKeyPolicyNotAllowed, RawTransactionError, RawTransactionFut, RawTransactionRequest, RawTransactionRes,
+            RawTransactionResult, RpcClientType, RpcTransportEventHandler, RpcTransportEventHandlerShared,
+            SearchForSwapTxSpendInput, SendMakerPaymentArgs, SendMakerRefundsPaymentArgs,
+            SendMakerSpendsTakerPaymentArgs, SendTakerPaymentArgs, SendTakerRefundsPaymentArgs,
+            SendTakerSpendsMakerPaymentArgs, SignatureError, SignatureResult, SwapOps, TradeFee, TradePreimageError,
+            TradePreimageFut, TradePreimageResult, TradePreimageValue, Transaction, TransactionDetails,
+            TransactionEnum, TransactionErr, TransactionFut, TxMarshalingErr, UnexpectedDerivationMethod,
+            ValidateAddressResult, ValidateFeeArgs, ValidateInstructionsErr, ValidateOtherPubKeyErr,
+            ValidatePaymentError, ValidatePaymentFut, ValidatePaymentInput, VerificationError, VerificationResult,
+            WatcherOps, WatcherSearchForSwapTxSpendInput, WatcherValidatePaymentInput, WatcherValidateTakerFeeInput,
+            WithdrawError, WithdrawFee, WithdrawFut, WithdrawRequest, WithdrawResult};
 pub use rlp;
 
 #[cfg(test)] mod eth_tests;
@@ -80,7 +85,7 @@ pub use rlp;
 mod web3_transport;
 
 #[path = "eth/v2_activation.rs"] pub mod v2_activation;
-use v2_activation::key_pair_from_priv_key_policy;
+use v2_activation::build_address_and_priv_key_policy;
 
 /// https://github.com/artemii235/etomic-swap/blob/master/contracts/EtomicSwap.sol
 /// Dev chain (195.201.0.6:8565) contract address: 0xa09ad3cd7e96586ebd05a2607ee56b56fb2db8fd
@@ -293,11 +298,71 @@ pub enum EthCoinType {
     Erc20 { platform: String, token_addr: Address },
 }
 
+/// An alternative to `crate::PrivKeyBuildPolicy`, typical only for ETH coin.
+pub enum EthPrivKeyBuildPolicy {
+    IguanaPrivKey(IguanaPrivKey),
+    GlobalHDAccount(GlobalHDAccountArc),
+    #[cfg(target_arch = "wasm32")]
+    Metamask(MetamaskArc),
+}
+
+impl EthPrivKeyBuildPolicy {
+    /// Detects the `EthPrivKeyBuildPolicy` with which the given `MmArc` is initialized.
+    pub fn detect_priv_key_policy(ctx: &MmArc) -> MmResult<EthPrivKeyBuildPolicy, CryptoCtxError> {
+        let crypto_ctx = CryptoCtx::from_ctx(ctx)?;
+
+        match crypto_ctx.key_pair_policy() {
+            KeyPairPolicy::Iguana => {
+                // Use an internal private key as the coin secret.
+                let priv_key = crypto_ctx.mm2_internal_privkey_secret();
+                Ok(EthPrivKeyBuildPolicy::IguanaPrivKey(priv_key))
+            },
+            KeyPairPolicy::GlobalHDAccount(global_hd) => Ok(EthPrivKeyBuildPolicy::GlobalHDAccount(global_hd.clone())),
+        }
+    }
+}
+
+impl TryFrom<PrivKeyBuildPolicy> for EthPrivKeyBuildPolicy {
+    type Error = PrivKeyPolicyNotAllowed;
+
+    /// Converts `PrivKeyBuildPolicy` to `EthPrivKeyBuildPolicy`
+    /// taking into account that  ETH doesn't support `Trezor` yet.
+    fn try_from(policy: PrivKeyBuildPolicy) -> Result<Self, Self::Error> {
+        match policy {
+            PrivKeyBuildPolicy::IguanaPrivKey(iguana) => Ok(EthPrivKeyBuildPolicy::IguanaPrivKey(iguana)),
+            PrivKeyBuildPolicy::GlobalHDAccount(global_hd) => Ok(EthPrivKeyBuildPolicy::GlobalHDAccount(global_hd)),
+            PrivKeyBuildPolicy::Trezor => Err(PrivKeyPolicyNotAllowed::HardwareWalletNotSupported),
+        }
+    }
+}
+
+/// An alternative to `crate::PrivKeyPolicy`, typical only for ETH coin.
+#[derive(Clone)]
+pub enum EthPrivKeyPolicy {
+    KeyPair(KeyPair),
+    #[cfg(target_arch = "wasm32")]
+    Metamask(MetamaskWeak),
+}
+
+impl From<KeyPair> for EthPrivKeyPolicy {
+    fn from(key_pair: KeyPair) -> Self { EthPrivKeyPolicy::KeyPair(key_pair) }
+}
+
+impl EthPrivKeyPolicy {
+    pub fn key_pair_or_err(&self) -> MmResult<&KeyPair, PrivKeyPolicyNotAllowed> {
+        match self {
+            EthPrivKeyPolicy::KeyPair(key_pair) => Ok(key_pair),
+            #[cfg(target_arch = "wasm32")]
+            EthPrivKeyPolicy::Metamask(_) => MmError::err(PrivKeyPolicyNotAllowed::HardwareWalletNotSupported),
+        }
+    }
+}
+
 /// pImpl idiom.
 pub struct EthCoinImpl {
     ticker: String,
     coin_type: EthCoinType,
-    key_pair: KeyPair,
+    priv_key_policy: EthPrivKeyPolicy,
     my_address: Address,
     sign_message_prefix: Option<String>,
     swap_contract_address: Address,
@@ -321,7 +386,7 @@ pub struct EthCoinImpl {
     erc20_tokens_infos: Arc<Mutex<HashMap<String, Erc20TokenInfo>>>,
     /// This spawner is used to spawn coin's related futures that should be aborted on coin deactivation
     /// and on [`MmArc::stop`].
-    abortable_system: AbortableQueue,
+    pub abortable_system: AbortableQueue,
 }
 
 #[derive(Clone, Debug)]
@@ -566,7 +631,7 @@ impl EthCoinImpl {
         self.erc20_tokens_infos.lock().unwrap().insert(ticker, info);
     }
 
-    /// WARNING
+    /// ### WARNING
     /// Be very careful using this function since it returns dereferenced clone
     /// of value behind the MutexGuard and makes it non-thread-safe.
     pub fn get_erc_tokens_infos(&self) -> HashMap<String, Erc20TokenInfo> {
@@ -581,8 +646,17 @@ async fn get_raw_transaction_impl(coin: EthCoin, req: RawTransactionRequest) -> 
         None => &req.tx_hash,
     };
     let hash = H256::from_str(tx).map_to_mm(|e| RawTransactionError::InvalidHashError(e.to_string()))?;
-    let web3_tx = coin.web3.eth().transaction(TransactionId::Hash(hash)).compat().await?;
-    let web3_tx = web3_tx.or_mm_err(|| RawTransactionError::HashNotExist(req.tx_hash))?;
+    get_tx_hex_by_hash_impl(coin, hash).await
+}
+
+async fn get_tx_hex_by_hash_impl(coin: EthCoin, tx_hash: H256) -> RawTransactionResult {
+    let web3_tx = coin
+        .web3
+        .eth()
+        .transaction(TransactionId::Hash(tx_hash))
+        .compat()
+        .await?
+        .or_mm_err(|| RawTransactionError::HashNotExist(tx_hash.to_string()))?;
     let raw = signed_tx_from_web3_tx(web3_tx).map_to_mm(RawTransactionError::InternalError)?;
     Ok(RawTransactionRes {
         tx_hex: BytesJson(rlp::encode(&raw)),
@@ -680,8 +754,10 @@ async fn withdraw_impl(coin: EthCoin, req: WithdrawRequest) -> WithdrawResult {
         gas_price,
     };
 
-    let signed = tx.sign(coin.key_pair.secret(), coin.chain_id);
+    let secret = coin.priv_key_policy.key_pair_or_err()?.secret();
+    let signed = tx.sign(secret, coin.chain_id);
     let bytes = rlp::encode(&signed);
+
     let amount_decimal = u256_to_big_decimal(wei_amount, coin.decimals)?;
     let mut spent_by_me = amount_decimal.clone();
     let received_by_me = if to_addr == coin.my_address {
@@ -1052,7 +1128,7 @@ impl SwapOps for EthCoin {
         .await
     }
 
-    fn check_tx_signed_by_pub(&self, _tx: &[u8], _expected_pub: &[u8]) -> Result<bool, String> {
+    fn check_tx_signed_by_pub(&self, _tx: &[u8], _expected_pub: &[u8]) -> Result<bool, MmError<ValidatePaymentError>> {
         unimplemented!();
     }
 
@@ -1100,7 +1176,13 @@ impl SwapOps for EthCoin {
 
     #[inline]
     fn derive_htlc_key_pair(&self, _swap_unique_data: &[u8]) -> keys::KeyPair {
-        key_pair_from_secret(self.key_pair.secret()).expect("valid key")
+        #[allow(clippy::infallible_destructuring_match)]
+        let key_pair = match self.priv_key_policy {
+            EthPrivKeyPolicy::KeyPair(ref key_pair) => key_pair,
+            #[cfg(target_arch = "wasm32")]
+            EthPrivKeyPolicy::Metamask(_) => todo!(),
+        };
+        key_pair_from_secret(key_pair.secret()).expect("valid key")
     }
 
     fn validate_other_pubkey(&self, raw_pubkey: &[u8]) -> MmResult<(), ValidateOtherPubKeyErr> {
@@ -1110,15 +1192,36 @@ impl SwapOps for EthCoin {
         Ok(())
     }
 
-    async fn payment_instructions(
+    async fn maker_payment_instructions(
         &self,
         _secret_hash: &[u8],
         _amount: &BigDecimal,
+        _maker_lock_duration: u64,
+        _expires_in: u64,
     ) -> Result<Option<Vec<u8>>, MmError<PaymentInstructionsErr>> {
         Ok(None)
     }
 
-    fn validate_instructions(
+    async fn taker_payment_instructions(
+        &self,
+        _secret_hash: &[u8],
+        _amount: &BigDecimal,
+        _expires_in: u64,
+    ) -> Result<Option<Vec<u8>>, MmError<PaymentInstructionsErr>> {
+        Ok(None)
+    }
+
+    fn validate_maker_payment_instructions(
+        &self,
+        _instructions: &[u8],
+        _secret_hash: &[u8],
+        _amount: BigDecimal,
+        _maker_lock_duration: u64,
+    ) -> Result<PaymentInstructions, MmError<ValidateInstructionsErr>> {
+        MmError::err(ValidateInstructionsErr::UnsupportedCoin(self.ticker().to_string()))
+    }
+
+    fn validate_taker_payment_instructions(
         &self,
         _instructions: &[u8],
         _secret_hash: &[u8],
@@ -1132,11 +1235,11 @@ impl SwapOps for EthCoin {
 
 #[async_trait]
 impl WatcherOps for EthCoin {
-    fn send_taker_spends_maker_payment_preimage(&self, _preimage: &[u8], _secret: &[u8]) -> TransactionFut {
+    fn send_maker_payment_spend_preimage(&self, _preimage: &[u8], _secret: &[u8]) -> TransactionFut {
         unimplemented!();
     }
 
-    fn create_taker_spends_maker_payment_preimage(
+    fn create_maker_payment_spend_preimage(
         &self,
         _maker_payment_tx: &[u8],
         _time_lock: u32,
@@ -1147,7 +1250,7 @@ impl WatcherOps for EthCoin {
         unimplemented!();
     }
 
-    fn create_taker_refunds_payment_preimage(
+    fn create_taker_payment_refund_preimage(
         &self,
         _taker_payment_tx: &[u8],
         _time_lock: u32,
@@ -1159,15 +1262,22 @@ impl WatcherOps for EthCoin {
         unimplemented!();
     }
 
-    fn send_watcher_refunds_taker_payment_preimage(&self, _taker_refunds_payment: &[u8]) -> TransactionFut {
+    fn send_taker_payment_refund_preimage(&self, _taker_refunds_payment: &[u8]) -> TransactionFut {
         unimplemented!();
     }
 
-    fn watcher_validate_taker_fee(&self, _taker_fee_hash: Vec<u8>, _verified_pub: Vec<u8>) -> ValidatePaymentFut<()> {
+    fn watcher_validate_taker_fee(&self, _input: WatcherValidateTakerFeeInput) -> ValidatePaymentFut<()> {
         unimplemented!();
     }
 
     fn watcher_validate_taker_payment(&self, _input: WatcherValidatePaymentInput) -> ValidatePaymentFut<()> {
+        unimplemented!();
+    }
+
+    async fn watcher_search_for_swap_tx_spend(
+        &self,
+        _input: WatcherSearchForSwapTxSpendInput<'_>,
+    ) -> Result<Option<FoundSwapTxSpend>, String> {
         unimplemented!();
     }
 }
@@ -1181,7 +1291,15 @@ impl MarketCoinOps for EthCoin {
     }
 
     fn get_public_key(&self) -> Result<String, MmError<UnexpectedDerivationMethod>> {
-        let uncompressed_without_prefix = hex::encode(self.key_pair.public());
+        #[allow(clippy::infallible_destructuring_match)]
+        let key_pair = match self.priv_key_policy {
+            EthPrivKeyPolicy::KeyPair(ref key_pair) => key_pair,
+            // Return a default pubkey for a while.
+            // TODO return a pubkey extracted from `Login to AtomicDEX` signature.
+            #[cfg(target_arch = "wasm32")]
+            EthPrivKeyPolicy::Metamask(_) => return Ok("NOT SUPPORTED YET".to_string()),
+        };
+        let uncompressed_without_prefix = hex::encode(key_pair.public());
         Ok(format!("04{}", uncompressed_without_prefix))
     }
 
@@ -1201,7 +1319,7 @@ impl MarketCoinOps for EthCoin {
 
     fn sign_message(&self, message: &str) -> SignatureResult<String> {
         let message_hash = self.sign_message_hash(message).ok_or(SignatureError::PrefixNotFound)?;
-        let privkey = &self.key_pair.secret();
+        let privkey = &self.priv_key_policy.key_pair_or_err()?.secret();
         let signature = sign(privkey, &H256::from(message_hash))?;
         Ok(format!("0x{}", signature))
     }
@@ -1354,6 +1472,7 @@ impl MarketCoinOps for EthCoin {
         wait_until: u64,
         from_block: u64,
         swap_contract_address: &Option<BytesJson>,
+        check_every: f64,
     ) -> TransactionFut {
         let unverified: UnverifiedTransaction = try_tx_fus!(rlp::decode(tx_bytes));
         let tx = try_tx_fus!(SignedEthTx::new(unverified));
@@ -1415,12 +1534,12 @@ impl MarketCoinOps for EthCoin {
                             Ok(Some(t)) => t,
                             Ok(None) => {
                                 info!("Tx {} not found yet", tx_hash);
-                                Timer::sleep(5.).await;
+                                Timer::sleep(check_every).await;
                                 continue;
                             },
                             Err(e) => {
                                 error!("Get tx {} error: {}", tx_hash, e);
-                                Timer::sleep(5.).await;
+                                Timer::sleep(check_every).await;
                                 continue;
                             },
                         };
@@ -1459,7 +1578,13 @@ impl MarketCoinOps for EthCoin {
         )
     }
 
-    fn display_priv_key(&self) -> Result<String, String> { Ok(format!("{:#02x}", self.key_pair.secret())) }
+    fn display_priv_key(&self) -> Result<String, String> {
+        match self.priv_key_policy {
+            EthPrivKeyPolicy::KeyPair(ref key_pair) => Ok(format!("{:#02x}", key_pair.secret())),
+            #[cfg(target_arch = "wasm32")]
+            EthPrivKeyPolicy::Metamask(_) => ERR!("'display_priv_key' doesn't support MetaMask"),
+        }
+    }
 
     fn min_tx_amount(&self) -> BigDecimal { BigDecimal::from(0) }
 
@@ -1514,7 +1639,8 @@ async fn sign_and_send_transaction_impl(
         value,
         data,
     };
-    let signed = tx.sign(coin.key_pair.secret(), coin.chain_id);
+    let key_pair = try_tx_s!(coin.priv_key_policy.key_pair_or_err());
+    let signed = tx.sign(key_pair.secret(), coin.chain_id);
     let bytes = web3::types::Bytes(rlp::encode(&signed).to_vec());
     status.status(tags!(), "send_raw_transaction…");
 
@@ -3135,6 +3261,14 @@ impl MmCoin for EthCoin {
         Box::new(get_raw_transaction_impl(self.clone(), req).boxed().compat())
     }
 
+    fn get_tx_hex_by_hash(&self, tx_hash: Vec<u8>) -> RawTransactionFut {
+        Box::new(
+            get_tx_hex_by_hash_impl(self.clone(), H256::from(tx_hash.as_slice()))
+                .boxed()
+                .compat(),
+        )
+    }
+
     fn withdraw(&self, req: WithdrawRequest) -> WithdrawFut {
         Box::new(Box::pin(withdraw_impl(self.clone(), req)).compat())
     }
@@ -3348,6 +3482,14 @@ impl MmCoin for EthCoin {
     fn coin_protocol_info(&self) -> Vec<u8> { Vec::new() }
 
     fn is_coin_protocol_supported(&self, _info: &Option<Vec<u8>>) -> bool { true }
+
+    fn on_disabled(&self) -> Result<(), AbortedError> { AbortableSystem::abort_all(&self.abortable_system) }
+
+    fn on_token_deactivated(&self, ticker: &str) {
+        if let Ok(tokens) = self.erc20_tokens_infos.lock().as_deref_mut() {
+            tokens.remove(ticker);
+        };
+    }
 }
 
 pub trait TryToAddress {
@@ -3583,6 +3725,9 @@ pub async fn eth_coin_from_conf_and_request(
     protocol: CoinProtocol,
     priv_key_policy: PrivKeyBuildPolicy,
 ) -> Result<EthCoin, String> {
+    // Convert `PrivKeyBuildPolicy` to `EthPrivKeyBuildPolicy` if it's possible.
+    let priv_key_policy = try_s!(EthPrivKeyBuildPolicy::try_from(priv_key_policy));
+
     let mut urls: Vec<String> = try_s!(json::from_value(req["urls"].clone()));
     if urls.is_empty() {
         return ERR!("Enable request for ETH coin must have at least 1 node URL");
@@ -3592,7 +3737,7 @@ pub async fn eth_coin_from_conf_and_request(
 
     let mut nodes = vec![];
     for url in urls.iter() {
-        nodes.push(Web3TransportNode {
+        nodes.push(HttpTransportNode {
             uri: try_s!(url.parse()),
             gui_auth: false,
         });
@@ -3611,13 +3756,12 @@ pub async fn eth_coin_from_conf_and_request(
         }
     }
 
-    let key_pair = try_s!(key_pair_from_priv_key_policy(conf, priv_key_policy));
-    let my_address = key_pair.address();
+    let (my_address, key_pair) = try_s!(build_address_and_priv_key_policy(conf, priv_key_policy));
 
     let mut web3_instances = vec![];
     let event_handlers = rpc_event_handlers_for_eth_transport(ctx, ticker.to_string());
     for node in nodes.iter() {
-        let transport = Web3Transport::with_event_handlers(vec![node.clone()], event_handlers.clone());
+        let transport = Web3Transport::new_http(vec![node.clone()], event_handlers.clone());
         let web3 = Web3::new(transport);
         let version = match web3.web3().client_version().compat().await {
             Ok(v) => v,
@@ -3636,7 +3780,7 @@ pub async fn eth_coin_from_conf_and_request(
         return ERR!("Failed to get client version for all urls");
     }
 
-    let transport = Web3Transport::with_event_handlers(nodes, event_handlers);
+    let transport = Web3Transport::new_http(nodes, event_handlers);
     let web3 = Web3::new(transport);
 
     let (coin_type, decimals) = match protocol {
@@ -3695,7 +3839,7 @@ pub async fn eth_coin_from_conf_and_request(
     let abortable_system = try_s!(ctx.abortable_system.create_subsystem());
 
     let coin = EthCoinImpl {
-        key_pair,
+        priv_key_policy: key_pair,
         my_address,
         coin_type,
         sign_message_prefix,

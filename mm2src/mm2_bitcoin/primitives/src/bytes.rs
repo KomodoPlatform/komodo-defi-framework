@@ -14,6 +14,8 @@ impl Bytes {
 
     pub fn take(self) -> Vec<u8> { self.0 }
 
+    pub fn as_slice(&self) -> &[u8] { &self.0 }
+
     pub fn len(&self) -> usize { self.0.len() }
 
     pub fn is_empty(&self) -> bool { self.0.is_empty() }

@@ -21,14 +21,16 @@ use crate::{BalanceError, BalanceFut, CheckIfMyPaymentSentArgs, CoinBalance, Coi
             SendTakerRefundsPaymentArgs, SendTakerSpendsMakerPaymentArgs, SignatureError, SignatureResult, SwapOps,
             TradeFee, TradePreimageFut, TradePreimageResult, TradePreimageValue, TransactionDetails, TransactionEnum,
             TransactionFut, TxFeeDetails, TxMarshalingErr, UnexpectedDerivationMethod, ValidateAddressResult,
-            ValidateFeeArgs, ValidateInstructionsErr, ValidateOtherPubKeyErr, ValidatePaymentFut,
-            ValidatePaymentInput, VerificationError, VerificationResult, WatcherOps, WatcherValidatePaymentInput,
-            WithdrawFut, WithdrawRequest};
+            ValidateFeeArgs, ValidateInstructionsErr, ValidateOtherPubKeyErr, ValidatePaymentError,
+            ValidatePaymentFut, ValidatePaymentInput, VerificationError, VerificationResult, WatcherOps,
+            WatcherSearchForSwapTxSpendInput, WatcherValidatePaymentInput, WatcherValidateTakerFeeInput, WithdrawFut,
+            WithdrawRequest};
 use crate::{Transaction, WithdrawError};
 use async_trait::async_trait;
 use bitcrypto::dhash256;
 use chain::constants::SEQUENCE_FINAL;
 use chain::{Transaction as UtxoTx, TransactionOutput};
+use common::executor::{AbortableSystem, AbortedError};
 use common::sha256_digest;
 use common::{async_blocking, calc_total_pages, log, PagingOptionsEnum};
 use crypto::privkey::{key_pair_from_secret, secp_privkey_from_hash};
@@ -1054,6 +1056,7 @@ impl MarketCoinOps for ZCoin {
         wait_until: u64,
         from_block: u64,
         _swap_contract_address: &Option<BytesJson>,
+        check_every: f64,
     ) -> TransactionFut {
         utxo_common::wait_for_output_spend(
             self.as_ref(),
@@ -1061,6 +1064,7 @@ impl MarketCoinOps for ZCoin {
             utxo_common::DEFAULT_SWAP_VOUT,
             from_block,
             wait_until,
+            check_every,
         )
     }
 
@@ -1399,7 +1403,7 @@ impl SwapOps for ZCoin {
         utxo_common::search_for_swap_tx_spend_other(self, input, utxo_common::DEFAULT_SWAP_VOUT).await
     }
 
-    fn check_tx_signed_by_pub(&self, _tx: &[u8], _expected_pub: &[u8]) -> Result<bool, String> {
+    fn check_tx_signed_by_pub(&self, _tx: &[u8], _expected_pub: &[u8]) -> Result<bool, MmError<ValidatePaymentError>> {
         unimplemented!();
     }
 
@@ -1429,15 +1433,36 @@ impl SwapOps for ZCoin {
         utxo_common::validate_other_pubkey(raw_pubkey)
     }
 
-    async fn payment_instructions(
+    async fn maker_payment_instructions(
         &self,
         _secret_hash: &[u8],
         _amount: &BigDecimal,
+        _maker_lock_duration: u64,
+        _expires_in: u64,
     ) -> Result<Option<Vec<u8>>, MmError<PaymentInstructionsErr>> {
         Ok(None)
     }
 
-    fn validate_instructions(
+    async fn taker_payment_instructions(
+        &self,
+        _secret_hash: &[u8],
+        _amount: &BigDecimal,
+        _expires_in: u64,
+    ) -> Result<Option<Vec<u8>>, MmError<PaymentInstructionsErr>> {
+        Ok(None)
+    }
+
+    fn validate_maker_payment_instructions(
+        &self,
+        _instructions: &[u8],
+        _secret_hash: &[u8],
+        _amount: BigDecimal,
+        _maker_lock_duration: u64,
+    ) -> Result<PaymentInstructions, MmError<ValidateInstructionsErr>> {
+        MmError::err(ValidateInstructionsErr::UnsupportedCoin(self.ticker().to_string()))
+    }
+
+    fn validate_taker_payment_instructions(
         &self,
         _instructions: &[u8],
         _secret_hash: &[u8],
@@ -1451,7 +1476,7 @@ impl SwapOps for ZCoin {
 
 #[async_trait]
 impl WatcherOps for ZCoin {
-    fn create_taker_spends_maker_payment_preimage(
+    fn create_maker_payment_spend_preimage(
         &self,
         _maker_payment_tx: &[u8],
         _time_lock: u32,
@@ -1462,11 +1487,11 @@ impl WatcherOps for ZCoin {
         unimplemented!();
     }
 
-    fn send_taker_spends_maker_payment_preimage(&self, _preimage: &[u8], _secret: &[u8]) -> TransactionFut {
+    fn send_maker_payment_spend_preimage(&self, _preimage: &[u8], _secret: &[u8]) -> TransactionFut {
         unimplemented!();
     }
 
-    fn create_taker_refunds_payment_preimage(
+    fn create_taker_payment_refund_preimage(
         &self,
         _taker_payment_tx: &[u8],
         _time_lock: u32,
@@ -1478,15 +1503,22 @@ impl WatcherOps for ZCoin {
         unimplemented!();
     }
 
-    fn send_watcher_refunds_taker_payment_preimage(&self, _taker_refunds_payment: &[u8]) -> TransactionFut {
+    fn send_taker_payment_refund_preimage(&self, _taker_refunds_payment: &[u8]) -> TransactionFut {
         unimplemented!();
     }
 
-    fn watcher_validate_taker_fee(&self, _taker_fee_hash: Vec<u8>, _verified_pub: Vec<u8>) -> ValidatePaymentFut<()> {
+    fn watcher_validate_taker_fee(&self, _input: WatcherValidateTakerFeeInput) -> ValidatePaymentFut<()> {
         unimplemented!();
     }
 
     fn watcher_validate_taker_payment(&self, _input: WatcherValidatePaymentInput) -> ValidatePaymentFut<()> {
+        unimplemented!();
+    }
+
+    async fn watcher_search_for_swap_tx_spend(
+        &self,
+        _input: WatcherSearchForSwapTxSpendInput<'_>,
+    ) -> Result<Option<FoundSwapTxSpend>, String> {
         unimplemented!();
     }
 }
@@ -1505,6 +1537,14 @@ impl MmCoin for ZCoin {
 
     fn get_raw_transaction(&self, req: RawTransactionRequest) -> RawTransactionFut {
         Box::new(utxo_common::get_raw_transaction(&self.utxo_arc, req).boxed().compat())
+    }
+
+    fn get_tx_hex_by_hash(&self, tx_hash: Vec<u8>) -> RawTransactionFut {
+        Box::new(
+            utxo_common::get_tx_hex_by_hash(&self.utxo_arc, tx_hash)
+                .boxed()
+                .compat(),
+        )
     }
 
     fn decimals(&self) -> u8 { self.utxo_arc.decimals }
@@ -1592,6 +1632,10 @@ impl MmCoin for ZCoin {
     fn is_coin_protocol_supported(&self, info: &Option<Vec<u8>>) -> bool {
         utxo_common::is_coin_protocol_supported(self, info)
     }
+
+    fn on_disabled(&self) -> Result<(), AbortedError> { AbortableSystem::abort_all(&self.as_ref().abortable_system) }
+
+    fn on_token_deactivated(&self, _ticker: &str) {}
 }
 
 #[async_trait]
@@ -1774,13 +1818,15 @@ impl InitWithdrawCoin for ZCoin {
 
         task_handle.update_in_progress_status(WithdrawInProgressStatus::GeneratingTransaction)?;
         let satoshi = sat_from_big_decimal(&amount, self.decimals())?;
+
+        let memo = req.memo.map(|memo| interpret_memo_string(&memo)).transpose()?;
         let z_output = ZOutput {
             to_addr,
             amount: Amount::from_u64(satoshi)
                 .map_to_mm(|_| NumConversError(format!("Failed to get ZCash amount from {}", amount)))?,
             // TODO add optional viewing_key and memo fields to the WithdrawRequest
             viewing_key: Some(self.z_fields.evk.fvk.ovk),
-            memo: None,
+            memo,
         };
 
         let (tx, data, _sync_guard) = self.gen_tx(vec![], vec![z_output]).await?;
@@ -1814,6 +1860,24 @@ impl InitWithdrawCoin for ZCoin {
             transaction_type: Default::default(),
         })
     }
+}
+
+/// Interpret a string or hex-encoded memo, and return a Memo object.
+/// Inspired by https://github.com/adityapk00/zecwallet-light-cli/blob/v1.7.20/lib/src/lightwallet/utils.rs#L23
+#[allow(clippy::result_large_err)]
+pub fn interpret_memo_string(memo_str: &str) -> MmResult<MemoBytes, WithdrawError> {
+    // If the string starts with an "0x", and contains only hex chars ([a-f0-9]+) then
+    // interpret it as a hex.
+    let s_bytes = if let Some(memo_hexadecimal) = memo_str.to_lowercase().strip_prefix("0x") {
+        hex::decode(memo_hexadecimal).unwrap_or_else(|_| memo_str.as_bytes().to_vec())
+    } else {
+        memo_str.as_bytes().to_vec()
+    };
+
+    MemoBytes::from_bytes(&s_bytes).map_to_mm(|_| {
+        let error = format!("Memo '{:?}' is too long", memo_str);
+        WithdrawError::InvalidMemo(error)
+    })
 }
 
 fn extended_spending_key_from_protocol_info_and_policy(
@@ -1890,4 +1954,22 @@ fn derive_z_key_from_mm_seed() {
         encoded_addr,
         "zs1funuwrjr2stlr6fnhkdh7fyz3p7n0p8rxase9jnezdhc286v5mhs6q3myw0phzvad5mvqgfxpam"
     );
+}
+
+#[test]
+fn test_interpret_memo_string() {
+    use std::str::FromStr;
+    use zcash_primitives::memo::Memo;
+
+    let actual = interpret_memo_string("68656c6c6f207a63617368").unwrap();
+    let expected = Memo::from_str("68656c6c6f207a63617368").unwrap().encode();
+    assert_eq!(actual, expected);
+
+    let actual = interpret_memo_string("A custom memo").unwrap();
+    let expected = Memo::from_str("A custom memo").unwrap().encode();
+    assert_eq!(actual, expected);
+
+    let actual = interpret_memo_string("0x68656c6c6f207a63617368").unwrap();
+    let expected = MemoBytes::from_bytes(&hex::decode("68656c6c6f207a63617368").unwrap()).unwrap();
+    assert_eq!(actual, expected);
 }

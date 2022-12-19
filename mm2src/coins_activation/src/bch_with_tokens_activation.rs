@@ -12,6 +12,7 @@ use coins::{CoinBalance, CoinProtocol, MarketCoinOps, MmCoin, PrivKeyBuildPolicy
             UnexpectedDerivationMethod};
 use common::executor::{AbortSettings, SpawnAbortable};
 use common::Future01CompatExt;
+use crypto::CryptoCtxError;
 use mm2_core::mm_ctx::MmArc;
 use mm2_err_handle::prelude::*;
 use mm2_number::BigDecimal;
@@ -192,6 +193,10 @@ impl From<PrivKeyPolicyNotAllowed> for BchWithTokensActivationError {
     fn from(e: PrivKeyPolicyNotAllowed) -> Self { BchWithTokensActivationError::PrivKeyPolicyNotAllowed(e) }
 }
 
+impl From<CryptoCtxError> for BchWithTokensActivationError {
+    fn from(e: CryptoCtxError) -> Self { BchWithTokensActivationError::Internal(e.to_string()) }
+}
+
 #[async_trait]
 impl PlatformWithTokensActivationOps for BchCoin {
     type ActivationRequest = BchWithTokensActivationRequest;
@@ -205,8 +210,9 @@ impl PlatformWithTokensActivationOps for BchCoin {
         platform_conf: Json,
         activation_request: Self::ActivationRequest,
         protocol_conf: Self::PlatformProtocolInfo,
-        priv_key_policy: PrivKeyBuildPolicy,
     ) -> Result<Self, MmError<Self::ActivationError>> {
+        let priv_key_policy = PrivKeyBuildPolicy::detect_priv_key_policy(&ctx)?;
+
         let slp_prefix = CashAddrPrefix::from_str(&protocol_conf.slp_prefix).map_to_mm(|error| {
             BchWithTokensActivationError::InvalidSlpPrefix {
                 ticker: ticker.clone(),

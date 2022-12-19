@@ -19,7 +19,7 @@
 //  marketmaker
 //
 
-use coins::{disable_coin as disable_coin_impl, lp_coinfind, lp_coininit, MmCoinEnum};
+use coins::{lp_coinfind, lp_coininit, CoinsContext, MmCoinEnum};
 use common::executor::Timer;
 use common::log::error;
 use common::{rpc_err_response, rpc_response, HyRes};
@@ -30,52 +30,90 @@ use mm2_metrics::MetricsOps;
 use mm2_number::{construct_detailed, BigDecimal};
 use serde_json::{self as json, Value as Json};
 use std::borrow::Cow;
+use std::iter::Extend;
+use uuid::Uuid;
 
 use crate::mm2::lp_dispatcher::{dispatch_lp_event, StopCtxEvent};
 use crate::mm2::lp_network::subscribe_to_topic;
-use crate::mm2::lp_ordermatch::{cancel_orders_by, CancelBy};
-use crate::mm2::lp_swap::{active_swaps_using_coin, tx_helper_topic, watcher_topic};
+use crate::mm2::lp_ordermatch::{cancel_orders_by, get_matching_orders, CancelBy};
+use crate::mm2::lp_swap::{active_swaps_using_coins, tx_helper_topic, watcher_topic};
 use crate::mm2::MmVersionResult;
+
+const INTERNAL_SERVER_ERROR_CODE: u16 = 500;
+const RESPONSE_OK_STATUS_CODE: u16 = 200;
+
+pub fn disable_coin_err(
+    error: String,
+    matching: &[Uuid],
+    cancelled: &[Uuid],
+    active_swaps: &[Uuid],
+) -> Result<Response<Vec<u8>>, String> {
+    let err = json!({
+        "error": error,
+        "orders": {
+            "matching": matching,
+            "cancelled": cancelled
+        },
+        "active_swaps": active_swaps
+    });
+    Response::builder()
+        .status(INTERNAL_SERVER_ERROR_CODE)
+        .body(json::to_vec(&err).unwrap())
+        .map_err(|e| ERRL!("{}", e))
+}
 
 /// Attempts to disable the coin
 pub async fn disable_coin(ctx: MmArc, req: Json) -> Result<Response<Vec<u8>>, String> {
     let ticker = try_s!(req["coin"].as_str().ok_or("No 'coin' field")).to_owned();
-    let _coin = match lp_coinfind(&ctx, &ticker).await {
+    let coin = match lp_coinfind(&ctx, &ticker).await {
         Ok(Some(t)) => t,
         Ok(None) => return ERR!("No such coin: {}", ticker),
         Err(err) => return ERR!("!lp_coinfind({}): ", err),
     };
-    let swaps = try_s!(active_swaps_using_coin(&ctx, &ticker));
-    if !swaps.is_empty() {
-        let err = json!({
-            "error": format!("There're active swaps using {}", ticker),
-            "swaps": swaps,
-        });
-        return Response::builder()
-            .status(500)
-            .body(json::to_vec(&err).unwrap())
-            .map_err(|e| ERRL!("{}", e));
-    }
-    let (cancelled, still_matching) = try_s!(cancel_orders_by(&ctx, CancelBy::Coin { ticker: ticker.clone() }).await);
-    if !still_matching.is_empty() {
-        let err = json!({
-            "error": format!("There're currently matching orders using {}", ticker),
-            "orders": {
-                "matching": still_matching,
-                "cancelled": cancelled,
-            }
-        });
-        return Response::builder()
-            .status(500)
-            .body(json::to_vec(&err).unwrap())
-            .map_err(|e| ERRL!("{}", e));
+    let coins_ctx = try_s!(CoinsContext::from_ctx(&ctx));
+
+    // If a platform coin is to be disabled, we get all the enabled tokens for this platform coin first.
+    let mut tokens_to_disable = coins_ctx.get_tokens_to_disable(&ticker).await;
+    // We then add the platform coin to the list of the coins to be disabled.
+    tokens_to_disable.insert(ticker.clone());
+
+    // Get all matching orders and active swaps.
+    let active_swaps = try_s!(active_swaps_using_coins(&ctx, &tokens_to_disable));
+    let still_matching_orders = try_s!(get_matching_orders(&ctx, &tokens_to_disable).await);
+
+    // If there're matching orders or active swaps we return an error.
+    if !active_swaps.is_empty() || !still_matching_orders.is_empty() {
+        let err = String::from("There're currently matching orders or active swaps for some tokens");
+        return disable_coin_err(err, &still_matching_orders, &[], &active_swaps);
     }
 
-    try_s!(disable_coin_impl(&ctx, &ticker).await);
+    // Proceed with diabling the coin/tokens.
+    let mut cancelled_orders = vec![];
+    for ticker in &tokens_to_disable {
+        log!("disabling {ticker} coin");
+        let cancelled_and_matching_orders = cancel_orders_by(&ctx, CancelBy::Coin {
+            ticker: ticker.to_string(),
+        })
+        .await;
+        match cancelled_and_matching_orders {
+            Ok((cancelled, _)) => {
+                cancelled_orders.extend(cancelled);
+            },
+            Err(err) => {
+                return disable_coin_err(err, &still_matching_orders, &cancelled_orders, &active_swaps);
+            },
+        }
+    }
+
+    coins_ctx.remove_coin(coin).await;
+    // Ticker shouldn't be a part of the disabled tokens vector in the response.
+    tokens_to_disable.remove(&ticker);
+    drop_mutability!(tokens_to_disable);
     let res = json!({
         "result": {
             "coin": ticker,
-            "cancelled_orders": cancelled,
+            "cancelled_orders": cancelled_orders,
+            "tokens": tokens_to_disable
         }
     });
     Response::builder()
@@ -146,7 +184,7 @@ pub async fn enable(ctx: MmArc, req: Json) -> Result<Response<Vec<u8>>, String> 
 #[cfg(target_arch = "wasm32")]
 pub fn help() -> HyRes {
     rpc_response(
-        500,
+        INTERNAL_SERVER_ERROR_CODE,
         json!({
             "error":"'help' is only supported in native mode"
         })
@@ -157,7 +195,7 @@ pub fn help() -> HyRes {
 #[cfg(not(target_arch = "wasm32"))]
 pub fn help() -> HyRes {
     rpc_response(
-        200,
+        RESPONSE_OK_STATUS_CODE,
         "
         buy(base, rel, price, relvolume, timeout=10, duration=3600)
         electrum(coin, urls)
@@ -179,8 +217,8 @@ pub fn help() -> HyRes {
 /// Get MarketMaker session metrics
 pub fn metrics(ctx: MmArc) -> HyRes {
     match ctx.metrics.collect_json().map(|value| value.to_string()) {
-        Ok(response) => rpc_response(200, response),
-        Err(err) => rpc_err_response(500, &err.to_string()),
+        Ok(response) => rpc_response(RESPONSE_OK_STATUS_CODE, response),
+        Err(err) => rpc_err_response(INTERNAL_SERVER_ERROR_CODE, &err.to_string()),
     }
 }
 
@@ -258,7 +296,7 @@ pub async fn sim_panic(req: Json) -> Result<Response<Vec<u8>>, String> {
 
 pub fn version(ctx: MmArc) -> HyRes {
     rpc_response(
-        200,
+        RESPONSE_OK_STATUS_CODE,
         MmVersionResult::new(ctx.mm_version.clone(), ctx.datetime.clone())
             .to_json()
             .to_string(),

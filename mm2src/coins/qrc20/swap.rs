@@ -337,6 +337,7 @@ impl Qrc20Coin {
         tx: UtxoTx,
         wait_until: u64,
         from_block: u64,
+        check_every: f64,
     ) -> Result<TransactionEnum, String> {
         let Erc20PaymentDetails {
             swap_id,
@@ -360,7 +361,7 @@ impl Qrc20Coin {
             if now_ms() / 1000 > wait_until {
                 return ERR!("Waited too long until {} for {:?} to be spent ", wait_until, tx);
             }
-            Timer::sleep(10.).await;
+            Timer::sleep(check_every).await;
         }
     }
 

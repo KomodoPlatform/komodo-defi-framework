@@ -28,7 +28,7 @@ async fn test_send() {
         coin_type: EthCoinType::Eth,
         my_address: key_pair.address(),
         sign_message_prefix: Some(String::from("Ethereum Signed Message:\n")),
-        key_pair,
+        priv_key_policy: key_pair.into(),
         swap_contract_address: Address::from("0x7Bc1bBDD6A0a722fC9bffC49c921B685ECB84b94"),
         fallback_swap_contract: None,
         web3_instances: vec![Web3Instance {

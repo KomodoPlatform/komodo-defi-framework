@@ -247,10 +247,8 @@ where
     }
 }
 
-#[allow(dead_code)]
 pub struct DuplicateCache<Key: std::hash::Hash>(TimeCache<Key, ()>);
 
-#[allow(dead_code)]
 impl<Key> DuplicateCache<Key>
 where
     Key: Eq + std::hash::Hash + Clone,

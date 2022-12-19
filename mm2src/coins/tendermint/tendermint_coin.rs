@@ -16,12 +16,13 @@ use crate::{big_decimal_from_sat_unsigned, BalanceError, BalanceFut, BigDecimal,
             TransactionErr, TransactionFut, TransactionType, TxFeeDetails, TxMarshalingErr,
             UnexpectedDerivationMethod, ValidateAddressResult, ValidateFeeArgs, ValidateInstructionsErr,
             ValidateOtherPubKeyErr, ValidatePaymentFut, ValidatePaymentInput, VerificationError, VerificationResult,
-            WatcherOps, WatcherValidatePaymentInput, WithdrawError, WithdrawFut, WithdrawRequest};
+            WatcherOps, WatcherSearchForSwapTxSpendInput, WatcherValidatePaymentInput, WatcherValidateTakerFeeInput,
+            WithdrawError, WithdrawFut, WithdrawRequest};
 use async_std::prelude::FutureExt as AsyncStdFutureExt;
 use async_trait::async_trait;
 use bitcrypto::{dhash160, sha256};
-use common::executor::Timer;
 use common::executor::{abortable_queue::AbortableQueue, AbortableSystem};
+use common::executor::{AbortedError, Timer};
 use common::log::warn;
 use common::{get_utc_timestamp, log, now_ms, Future01CompatExt, DEX_FEE_ADDR_PUBKEY};
 use cosmrs::bank::MsgSend;
@@ -49,6 +50,7 @@ use mm2_core::mm_ctx::MmArc;
 use mm2_err_handle::prelude::*;
 use mm2_number::MmNumber;
 use parking_lot::Mutex as PaMutex;
+use primitives::hash::H256;
 use prost::{DecodeError, Message};
 use rand::{thread_rng, Rng};
 use rpc::v1::types::Bytes as BytesJson;
@@ -1534,6 +1536,18 @@ impl MmCoin for TendermintCoin {
         Box::new(fut.boxed().compat())
     }
 
+    fn get_tx_hex_by_hash(&self, tx_hash: Vec<u8>) -> RawTransactionFut {
+        let coin = self.clone();
+        let hash = hex::encode_upper(H256::from(tx_hash.as_slice()));
+        let fut = async move {
+            let tx_from_rpc = coin.request_tx(hash).await?;
+            Ok(RawTransactionRes {
+                tx_hex: tx_from_rpc.encode_to_vec().into(),
+            })
+        };
+        Box::new(fut.boxed().compat())
+    }
+
     fn decimals(&self) -> u8 { self.decimals }
 
     fn convert_to_address(&self, from: &str, to_address_format: Json) -> Result<String, String> {
@@ -1624,6 +1638,10 @@ impl MmCoin for TendermintCoin {
     fn coin_protocol_info(&self) -> Vec<u8> { Vec::new() }
 
     fn is_coin_protocol_supported(&self, info: &Option<Vec<u8>>) -> bool { true }
+
+    fn on_disabled(&self) -> Result<(), AbortedError> { AbortableSystem::abort_all(&self.abortable_system) }
+
+    fn on_token_deactivated(&self, _ticker: &str) {}
 }
 
 impl MarketCoinOps for TendermintCoin {
@@ -1748,6 +1766,7 @@ impl MarketCoinOps for TendermintCoin {
         wait_until: u64,
         _from_block: u64,
         _swap_contract_address: &Option<BytesJson>,
+        _check_every: f64,
     ) -> TransactionFut {
         let tx = try_tx_fus!(cosmrs::Tx::from_bytes(transaction));
         let first_message = try_tx_fus!(tx.body.messages.first().ok_or("Tx body couldn't be read."));
@@ -2032,7 +2051,7 @@ impl SwapOps for TendermintCoin {
         Ok(try_s!(hex::decode(htlc.secret)))
     }
 
-    fn check_tx_signed_by_pub(&self, tx: &[u8], expected_pub: &[u8]) -> Result<bool, String> {
+    fn check_tx_signed_by_pub(&self, tx: &[u8], expected_pub: &[u8]) -> Result<bool, MmError<ValidatePaymentError>> {
         unimplemented!();
     }
 
@@ -2053,15 +2072,36 @@ impl SwapOps for TendermintCoin {
         Ok(())
     }
 
-    async fn payment_instructions(
+    async fn maker_payment_instructions(
         &self,
         _secret_hash: &[u8],
         _amount: &BigDecimal,
+        _maker_lock_duration: u64,
+        _expires_in: u64,
     ) -> Result<Option<Vec<u8>>, MmError<PaymentInstructionsErr>> {
         Ok(None)
     }
 
-    fn validate_instructions(
+    async fn taker_payment_instructions(
+        &self,
+        _secret_hash: &[u8],
+        _amount: &BigDecimal,
+        _expires_in: u64,
+    ) -> Result<Option<Vec<u8>>, MmError<PaymentInstructionsErr>> {
+        Ok(None)
+    }
+
+    fn validate_maker_payment_instructions(
+        &self,
+        _instructions: &[u8],
+        _secret_hash: &[u8],
+        _amount: BigDecimal,
+        _maker_lock_duration: u64,
+    ) -> Result<PaymentInstructions, MmError<ValidateInstructionsErr>> {
+        MmError::err(ValidateInstructionsErr::UnsupportedCoin(self.ticker().to_string()))
+    }
+
+    fn validate_taker_payment_instructions(
         &self,
         _instructions: &[u8],
         _secret_hash: &[u8],
@@ -2074,9 +2114,8 @@ impl SwapOps for TendermintCoin {
 }
 
 #[async_trait]
-#[allow(unused_variables)]
 impl WatcherOps for TendermintCoin {
-    fn create_taker_spends_maker_payment_preimage(
+    fn create_maker_payment_spend_preimage(
         &self,
         _maker_payment_tx: &[u8],
         _time_lock: u32,
@@ -2087,11 +2126,11 @@ impl WatcherOps for TendermintCoin {
         unimplemented!();
     }
 
-    fn send_taker_spends_maker_payment_preimage(&self, preimage: &[u8], secret: &[u8]) -> TransactionFut {
+    fn send_maker_payment_spend_preimage(&self, _preimage: &[u8], _secret: &[u8]) -> TransactionFut {
         unimplemented!();
     }
 
-    fn create_taker_refunds_payment_preimage(
+    fn create_taker_payment_refund_preimage(
         &self,
         _taker_payment_tx: &[u8],
         _time_lock: u32,
@@ -2103,15 +2142,22 @@ impl WatcherOps for TendermintCoin {
         unimplemented!();
     }
 
-    fn send_watcher_refunds_taker_payment_preimage(&self, _taker_refunds_payment: &[u8]) -> TransactionFut {
+    fn send_taker_payment_refund_preimage(&self, _taker_refunds_payment: &[u8]) -> TransactionFut {
         unimplemented!();
     }
 
-    fn watcher_validate_taker_fee(&self, _taker_fee_hash: Vec<u8>, _verified_pub: Vec<u8>) -> ValidatePaymentFut<()> {
+    fn watcher_validate_taker_fee(&self, _input: WatcherValidateTakerFeeInput) -> ValidatePaymentFut<()> {
         unimplemented!();
     }
 
     fn watcher_validate_taker_payment(&self, _input: WatcherValidatePaymentInput) -> ValidatePaymentFut<()> {
+        unimplemented!();
+    }
+
+    async fn watcher_search_for_swap_tx_spend(
+        &self,
+        _input: WatcherSearchForSwapTxSpendInput<'_>,
+    ) -> Result<Option<FoundSwapTxSpend>, String> {
         unimplemented!();
     }
 }
@@ -2175,6 +2221,7 @@ pub mod tendermint_coin_tests {
 
     pub const IRIS_TESTNET_RPC_URL: &str = "http://34.80.202.172:26657";
 
+    const TAKER_PAYMENT_SPEND_SEARCH_INTERVAL: f64 = 1.;
     const AVG_BLOCKTIME: u8 = 5;
 
     const SUCCEED_TX_HASH_SAMPLES: &[&str] = &[
@@ -2467,8 +2514,15 @@ pub mod tendermint_coin_tests {
 
         let secret_hash = hex::decode("0C34C71EBA2A51738699F9F3D6DAFFB15BE576E8ED543203485791B5DA39D10D").unwrap();
         let spend_tx = block_on(
-            coin.wait_for_htlc_tx_spend(&encoded_tx, &secret_hash, get_utc_timestamp() as u64, 0, &None)
-                .compat(),
+            coin.wait_for_htlc_tx_spend(
+                &encoded_tx,
+                &secret_hash,
+                get_utc_timestamp() as u64,
+                0,
+                &None,
+                TAKER_PAYMENT_SPEND_SEARCH_INTERVAL,
+            )
+            .compat(),
         )
         .unwrap();
 

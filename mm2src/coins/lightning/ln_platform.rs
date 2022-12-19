@@ -27,6 +27,7 @@ use std::sync::atomic::{AtomicU64, Ordering as AtomicOrdering, Ordering};
 
 const CHECK_FOR_NEW_BEST_BLOCK_INTERVAL: f64 = 60.;
 const TRY_LOOP_INTERVAL: f64 = 60.;
+const TAKER_PAYMENT_SPEND_SEARCH_INTERVAL: f64 = 10.;
 
 #[inline]
 pub fn h256_json_from_txid(txid: Txid) -> H256Json { H256Json::from(txid.as_hash().into_inner()).reversed() }
@@ -154,6 +155,8 @@ pub struct Platform {
     pub coin: UtxoStandardCoin,
     /// Main/testnet/signet/regtest Needed for lightning node to know which network to connect to
     pub network: BlockchainNetwork,
+    /// The average time in seconds needed to mine a new block for the blockchain network.
+    pub avg_block_time: u64,
     /// The best block height.
     pub best_block_height: AtomicU64,
     /// Number of blocks for every Confirmation target. This is used in the FeeEstimator.
@@ -176,6 +179,7 @@ impl Platform {
     pub fn new(
         coin: UtxoStandardCoin,
         network: BlockchainNetwork,
+        avg_block_time: u64,
         confirmations_targets: PlatformCoinConfirmationTargets,
     ) -> EnableLightningResult<Self> {
         // Create an abortable system linked to the base `coin` so if the base coin is disabled,
@@ -185,6 +189,7 @@ impl Platform {
         Ok(Platform {
             coin,
             network,
+            avg_block_time,
             best_block_height: AtomicU64::new(0),
             confirmations_targets,
             latest_fees: LatestFees {
@@ -520,6 +525,7 @@ impl Platform {
                 (now_ms() / 1000) + 3600,
                 from_block.try_into()?,
                 &None,
+                TAKER_PAYMENT_SPEND_SEARCH_INTERVAL,
             )
             .compat()
             .await
