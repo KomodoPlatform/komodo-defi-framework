@@ -343,13 +343,10 @@ impl LightningEventHandler {
         );
         let db = self.db.clone();
         let payment_preimage = match purpose {
-            PaymentPurpose::InvoicePayment {
-                payment_preimage,
-                payment_secret,
-            } => match payment_preimage {
+            PaymentPurpose::InvoicePayment { payment_preimage, .. } => match payment_preimage {
                 Some(preimage) => {
                     let fut = async move {
-                        db.update_payment_to_received_in_db(payment_hash, preimage, payment_secret)
+                        db.update_payment_to_received_in_db(payment_hash, preimage)
                             .await
                             .error_log_with_msg("Unable to update received payment info in DB!");
                     };
@@ -359,24 +356,21 @@ impl LightningEventHandler {
                 },
                 // This is a swap related payment since we don't have the preimage yet
                 None => {
-                    let payment_info = PaymentInfo {
+                    let amt_msat = Some(
+                        received_amount
+                            .try_into()
+                            .expect("received_amount shouldn't exceed i64::MAX"),
+                    );
+                    let mut payment_info = PaymentInfo::new(
                         payment_hash,
-                        payment_type: PaymentType::InboundPayment,
-                        description: "Swap Payment".into(),
-                        preimage: None,
-                        secret: None,
-                        amt_msat: Some(
-                            received_amount
-                                .try_into()
-                                .expect("received_amount shouldn't exceed i64::MAX"),
-                        ),
-                        fee_paid_msat: None,
-                        status: HTLCStatus::Received,
-                        created_at: (now_ms() / 1000) as i64,
-                        last_updated: (now_ms() / 1000) as i64,
-                    };
+                        PaymentType::InboundPayment,
+                        "Swap Payment".into(),
+                        amt_msat,
+                    );
+                    payment_info.status = HTLCStatus::Received;
+                    drop_mutability!(payment_info);
                     let fut = async move {
-                        db.add_or_update_payment_in_db(payment_info)
+                        db.add_payment_to_db(payment_info)
                             .await
                             .error_log_with_msg("Unable to add payment information to DB!");
                     };
@@ -388,24 +382,18 @@ impl LightningEventHandler {
                 },
             },
             PaymentPurpose::SpontaneousPayment(preimage) => {
-                let payment_info = PaymentInfo {
-                    payment_hash,
-                    payment_type: PaymentType::InboundPayment,
-                    description: "keysend".into(),
-                    preimage: Some(preimage),
-                    secret: None,
-                    amt_msat: Some(
-                        received_amount
-                            .try_into()
-                            .expect("received_amount shouldn't exceed i64::MAX"),
-                    ),
-                    fee_paid_msat: None,
-                    status: HTLCStatus::Received,
-                    created_at: (now_ms() / 1000) as i64,
-                    last_updated: (now_ms() / 1000) as i64,
-                };
+                let amt_msat = Some(
+                    received_amount
+                        .try_into()
+                        .expect("received_amount shouldn't exceed i64::MAX"),
+                );
+                let mut payment_info =
+                    PaymentInfo::new(payment_hash, PaymentType::InboundPayment, "keysend".into(), amt_msat);
+                payment_info.preimage = Some(preimage);
+                payment_info.status = HTLCStatus::Received;
+                drop_mutability!(payment_info);
                 let fut = async move {
-                    db.add_or_update_payment_in_db(payment_info)
+                    db.add_payment_to_db(payment_info)
                         .await
                         .error_log_with_msg("Unable to add payment information to DB!");
                 };

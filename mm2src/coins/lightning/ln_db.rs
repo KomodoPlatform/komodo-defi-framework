@@ -2,7 +2,7 @@ use async_trait::async_trait;
 use common::{now_ms, PagingOptionsEnum};
 use db_common::sqlite::rusqlite::types::FromSqlError;
 use derive_more::Display;
-use lightning::ln::{PaymentHash, PaymentPreimage, PaymentSecret};
+use lightning::ln::{PaymentHash, PaymentPreimage};
 use secp256k1v22::PublicKey;
 use serde::{Deserialize, Serialize};
 use std::str::FromStr;
@@ -132,12 +132,33 @@ pub struct PaymentInfo {
     pub payment_type: PaymentType,
     pub description: String,
     pub preimage: Option<PaymentPreimage>,
-    pub secret: Option<PaymentSecret>,
     pub amt_msat: Option<i64>,
     pub fee_paid_msat: Option<i64>,
     pub status: HTLCStatus,
     pub created_at: i64,
     pub last_updated: i64,
+}
+
+impl PaymentInfo {
+    #[inline]
+    pub fn new(
+        payment_hash: PaymentHash,
+        payment_type: PaymentType,
+        description: String,
+        amt_msat: Option<i64>,
+    ) -> PaymentInfo {
+        PaymentInfo {
+            payment_hash,
+            payment_type,
+            description,
+            preimage: None,
+            amt_msat,
+            fee_paid_msat: None,
+            status: HTLCStatus::Pending,
+            created_at: (now_ms() / 1000) as i64,
+            last_updated: (now_ms() / 1000) as i64,
+        }
+    }
 }
 
 #[derive(Clone)]
@@ -229,8 +250,8 @@ pub trait LightningDB {
         limit: usize,
     ) -> Result<GetClosedChannelsResult, Self::Error>;
 
-    /// Inserts or updates a new payment record in the DB.
-    async fn add_or_update_payment_in_db(&self, info: PaymentInfo) -> Result<(), Self::Error>;
+    /// Inserts a new payment record in the DB.
+    async fn add_payment_to_db(&self, info: PaymentInfo) -> Result<(), Self::Error>;
 
     /// Updates a payment's preimage in DB by the payment's hash.
     async fn update_payment_preimage_in_db(
@@ -242,12 +263,11 @@ pub trait LightningDB {
     /// Updates a payment's status in DB by the payment's hash.
     async fn update_payment_status_in_db(&self, hash: PaymentHash, status: &HTLCStatus) -> Result<(), Self::Error>;
 
-    /// Updates a payment's status to received in DB by the payment's hash. Also, adds the payment preimage and secret to the db.
+    /// Updates a payment's status to received in DB by the payment's hash. Also, adds the payment preimage to the db.
     async fn update_payment_to_received_in_db(
         &self,
         hash: PaymentHash,
         preimage: PaymentPreimage,
-        secret: PaymentSecret,
     ) -> Result<(), Self::Error>;
 
     /// Updates a sent payment status to succeeded in DB by the payment's hash. Also, adds the payment preimage and the amount of fees paid to the db.

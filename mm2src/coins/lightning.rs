@@ -198,7 +198,6 @@ impl LightningCoin {
             InvoiceDescription::Direct(d) => d.to_string(),
             InvoiceDescription::Hash(h) => hex::encode(h.0.into_inner()),
         };
-        let payment_secret = Some(*invoice.payment_secret());
         let amt_msat = invoice.amount_milli_satoshis().map(|a| a as i64);
 
         let selfi = self.clone();
@@ -218,19 +217,8 @@ impl LightningCoin {
             None => async_blocking(move || selfi.invoice_payer.pay_invoice(&invoice)).await?,
         };
 
-        let payment_info = PaymentInfo {
-            payment_hash,
-            payment_type,
-            description,
-            preimage: None,
-            secret: payment_secret,
-            amt_msat,
-            fee_paid_msat: None,
-            status: HTLCStatus::Pending,
-            created_at: (now_ms() / 1000) as i64,
-            last_updated: (now_ms() / 1000) as i64,
-        };
-        self.db.add_or_update_payment_in_db(payment_info.clone()).await?;
+        let payment_info = PaymentInfo::new(payment_hash, payment_type, description, amt_msat);
+        self.db.add_payment_to_db(payment_info.clone()).await?;
         Ok(payment_info)
     }
 
@@ -256,19 +244,8 @@ impl LightningCoin {
 
         let payment_hash = PaymentHash(Sha256::hash(&payment_preimage.0).into_inner());
         let payment_type = PaymentType::OutboundPayment { destination };
-        let payment_info = PaymentInfo {
-            payment_hash,
-            payment_type,
-            description: "".into(),
-            preimage: Some(payment_preimage),
-            secret: None,
-            amt_msat: Some(amount_msat as i64),
-            fee_paid_msat: None,
-            status: HTLCStatus::Pending,
-            created_at: (now_ms() / 1000) as i64,
-            last_updated: (now_ms() / 1000) as i64,
-        };
-        self.db.add_or_update_payment_in_db(payment_info.clone()).await?;
+        let payment_info = PaymentInfo::new(payment_hash, payment_type, "".into(), Some(amount_msat as i64));
+        self.db.add_payment_to_db(payment_info.clone()).await?;
 
         Ok(payment_info)
     }

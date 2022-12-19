@@ -9,7 +9,7 @@ use db_common::sqlite::{h256_option_slice_from_row, h256_slice_from_row, offset_
                         sql_text_conversion_err, string_from_row, validate_table_name, SqlNamedParams,
                         SqliteConnShared, CHECK_TABLE_EXISTS_SQL};
 use gstuff::now_ms;
-use lightning::ln::{PaymentHash, PaymentPreimage, PaymentSecret};
+use lightning::ln::{PaymentHash, PaymentPreimage};
 use secp256k1v22::PublicKey;
 use std::convert::TryInto;
 use std::str::FromStr;
@@ -58,7 +58,6 @@ fn create_payments_history_table_sql(for_coin: &str) -> Result<String, SqlError>
             destination VARCHAR(255),
             description VARCHAR(641) NOT NULL,
             preimage VARCHAR(255),
-            secret VARCHAR(255),
             amount_msat INTEGER,
             fee_paid_msat INTEGER,
             is_outbound INTEGER NOT NULL,
@@ -94,17 +93,16 @@ fn insert_channel_sql(for_coin: &str) -> Result<String, SqlError> {
     Ok(sql)
 }
 
-fn upsert_payment_sql(for_coin: &str) -> Result<String, SqlError> {
+fn insert_payment_sql(for_coin: &str) -> Result<String, SqlError> {
     let table_name = payments_history_table(for_coin);
     validate_table_name(&table_name)?;
 
     let sql = format!(
-        "INSERT OR REPLACE INTO {} (
+        "INSERT INTO {} (
             payment_hash,
             destination,
             description,
             preimage,
-            secret,
             amount_msat,
             fee_paid_msat,
             is_outbound,
@@ -112,7 +110,7 @@ fn upsert_payment_sql(for_coin: &str) -> Result<String, SqlError> {
             created_at,
             last_updated
         ) VALUES (
-            ?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11
+            ?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10
         );",
         table_name
     );
@@ -159,11 +157,10 @@ fn update_received_payment_sql(for_coin: &str) -> Result<String, SqlError> {
     let sql = format!(
         "UPDATE {} SET
             preimage = ?1,
-            secret = ?2,
-            status = ?3,
-            last_updated = ?4
+            status = ?2,
+            last_updated = ?3
         WHERE
-            payment_hash = ?5;",
+            payment_hash = ?4;",
         table_name
     );
 
@@ -229,7 +226,6 @@ fn select_payment_by_hash_sql(for_coin: &str) -> Result<String, SqlError> {
             destination,
             description,
             preimage,
-            secret,
             amount_msat,
             fee_paid_msat,
             status,
@@ -268,7 +264,7 @@ fn channel_details_from_row(row: &Row<'_>) -> Result<DBChannelDetails, SqlError>
 }
 
 fn payment_info_from_row(row: &Row<'_>) -> Result<PaymentInfo, SqlError> {
-    let is_outbound = row.get::<_, bool>(8)?;
+    let is_outbound = row.get::<_, bool>(7)?;
     let payment_type = if is_outbound {
         PaymentType::OutboundPayment {
             destination: PublicKey::from_str(&row.get::<_, String>(1)?).map_err(|e| sql_text_conversion_err(1, e))?,
@@ -282,12 +278,11 @@ fn payment_info_from_row(row: &Row<'_>) -> Result<PaymentInfo, SqlError> {
         payment_type,
         description: row.get(2)?,
         preimage: h256_option_slice_from_row::<String>(row, 3)?.map(PaymentPreimage),
-        secret: h256_option_slice_from_row::<String>(row, 4)?.map(PaymentSecret),
-        amt_msat: row.get(5)?,
-        fee_paid_msat: row.get(6)?,
-        status: HTLCStatus::from_str(&row.get::<_, String>(7)?)?,
-        created_at: row.get(9)?,
-        last_updated: row.get(10)?,
+        amt_msat: row.get(4)?,
+        fee_paid_msat: row.get(5)?,
+        status: HTLCStatus::from_str(&row.get::<_, String>(6)?)?,
+        created_at: row.get(8)?,
+        last_updated: row.get(9)?,
     };
     Ok(payment_info)
 }
@@ -473,7 +468,6 @@ fn finalize_get_payments_sql_builder(sql_builder: &mut SqlBuilder, offset: usize
         .field("destination")
         .field("description")
         .field("preimage")
-        .field("secret")
         .field("amount_msat")
         .field("fee_paid_msat")
         .field("status")
@@ -837,7 +831,7 @@ impl LightningDB for SqliteLightningDB {
         .await
     }
 
-    async fn add_or_update_payment_in_db(&self, info: PaymentInfo) -> Result<(), Self::Error> {
+    async fn add_payment_to_db(&self, info: PaymentInfo) -> Result<(), Self::Error> {
         let for_coin = self.db_ticker.clone();
         let payment_hash = hex::encode(info.payment_hash.0);
         let (is_outbound, destination) = match info.payment_type {
@@ -845,7 +839,6 @@ impl LightningDB for SqliteLightningDB {
             PaymentType::InboundPayment => (false, None),
         };
         let preimage = info.preimage.map(|p| hex::encode(p.0));
-        let secret = info.secret.map(|s| hex::encode(s.0));
         let status = info.status.to_string();
 
         let sqlite_connection = self.sqlite_connection.clone();
@@ -855,7 +848,6 @@ impl LightningDB for SqliteLightningDB {
                 &destination as &dyn ToSql,
                 &info.description as &dyn ToSql,
                 &preimage as &dyn ToSql,
-                &secret as &dyn ToSql,
                 &info.amt_msat as &dyn ToSql,
                 &info.fee_paid_msat as &dyn ToSql,
                 &is_outbound as &dyn ToSql,
@@ -865,7 +857,7 @@ impl LightningDB for SqliteLightningDB {
             ];
             let mut conn = sqlite_connection.lock().unwrap();
             let sql_transaction = conn.transaction()?;
-            sql_transaction.execute(&upsert_payment_sql(&for_coin)?, &params)?;
+            sql_transaction.execute(&insert_payment_sql(&for_coin)?, &params)?;
             sql_transaction.commit()?;
             Ok(())
         })
@@ -924,11 +916,9 @@ impl LightningDB for SqliteLightningDB {
         &self,
         hash: PaymentHash,
         preimage: PaymentPreimage,
-        secret: PaymentSecret,
     ) -> Result<(), Self::Error> {
         let for_coin = self.db_ticker.clone();
         let preimage = hex::encode(preimage.0);
-        let secret = hex::encode(secret.0);
         let status = HTLCStatus::Received.to_string();
         let last_updated = (now_ms() / 1000) as i64;
         let payment_hash = hex::encode(hash.0);
@@ -937,7 +927,6 @@ impl LightningDB for SqliteLightningDB {
         async_blocking(move || {
             let params = [
                 &preimage as &dyn ToSql,
-                &secret as &dyn ToSql,
                 &status as &dyn ToSql,
                 &last_updated as &dyn ToSql,
                 &payment_hash as &dyn ToSql,
@@ -1160,10 +1149,6 @@ mod tests {
                     rng.fill_bytes(&mut bytes);
                     Some(PaymentPreimage(bytes))
                 },
-                secret: {
-                    rng.fill_bytes(&mut bytes);
-                    Some(PaymentSecret(bytes))
-                },
                 amt_msat: Some(rng.gen::<i64>()),
                 fee_paid_msat: Some(rng.gen::<i64>()),
                 status,
@@ -1327,14 +1312,13 @@ mod tests {
             payment_type: PaymentType::InboundPayment,
             description: "test payment".into(),
             preimage: Some(PaymentPreimage([2; 32])),
-            secret: Some(PaymentSecret([3; 32])),
             amt_msat: Some(2000),
             fee_paid_msat: Some(100),
             status: HTLCStatus::Failed,
             created_at: (now_ms() / 1000) as i64,
             last_updated: (now_ms() / 1000) as i64,
         };
-        block_on(db.add_or_update_payment_in_db(expected_payment_info.clone())).unwrap();
+        block_on(db.add_payment_to_db(expected_payment_info.clone())).unwrap();
 
         let actual_payment_info = block_on(db.get_payment_from_db(PaymentHash([0; 32]))).unwrap().unwrap();
         assert_eq!(expected_payment_info, actual_payment_info);
@@ -1344,11 +1328,10 @@ mod tests {
             destination: PublicKey::from_str("038863cf8ab91046230f561cd5b386cbff8309fa02e3f0c3ed161a3aeb64a643b9")
                 .unwrap(),
         };
-        expected_payment_info.secret = None;
         expected_payment_info.amt_msat = None;
         expected_payment_info.status = HTLCStatus::Succeeded;
         expected_payment_info.last_updated = (now_ms() / 1000) as i64;
-        block_on(db.add_or_update_payment_in_db(expected_payment_info.clone())).unwrap();
+        block_on(db.add_payment_to_db(expected_payment_info.clone())).unwrap();
 
         let actual_payment_info = block_on(db.get_payment_from_db(PaymentHash([1; 32]))).unwrap().unwrap();
         assert_eq!(expected_payment_info, actual_payment_info);
@@ -1374,13 +1357,10 @@ mod tests {
 
         // Test update_payment_to_received_in_db
         let expected_preimage = PaymentPreimage([5; 32]);
-        let expected_secret = PaymentSecret([6; 32]);
-        block_on(db.update_payment_to_received_in_db(PaymentHash([1; 32]), expected_preimage, expected_secret))
-            .unwrap();
+        block_on(db.update_payment_to_received_in_db(PaymentHash([1; 32]), expected_preimage)).unwrap();
         let payment_after_update = block_on(db.get_payment_from_db(PaymentHash([1; 32]))).unwrap().unwrap();
         assert_eq!(payment_after_update.status, HTLCStatus::Received);
         assert_eq!(payment_after_update.preimage.unwrap(), expected_preimage);
-        assert_eq!(payment_after_update.secret.unwrap(), expected_secret);
 
         // Test update_payment_to_sent_in_db
         let expected_preimage = PaymentPreimage([7; 32]);
@@ -1408,7 +1388,7 @@ mod tests {
         let mut payments = generate_random_payments(100);
 
         for payment in payments.clone() {
-            block_on(db.add_or_update_payment_in_db(payment)).unwrap();
+            block_on(db.add_payment_to_db(payment)).unwrap();
         }
 
         let paging = PagingOptionsEnum::PageNumber(NonZeroUsize::new(1).unwrap());
