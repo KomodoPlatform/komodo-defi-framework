@@ -13,12 +13,11 @@ use crate::utxo::rpc_clients::{BlockHashOrHeight, ElectrumBalance, ElectrumClien
                                GetAddressInfoRes, ListSinceBlockRes, NativeClient, NativeClientImpl, NativeUnspent,
                                NetworkInfo, UtxoRpcClientOps, ValidateAddressRes, VerboseBlock};
 use crate::utxo::spv::SimplePaymentVerification;
-use crate::utxo::utxo_block_header_storage::BlockHeaderStorage;
-use crate::utxo::utxo_builder::{UtxoArcBuilder, UtxoCoinBuilderCommonOps};
+use crate::utxo::utxo_block_header_storage::{BlockHeaderStorage, SqliteBlockHeadersStorage};
+use crate::utxo::utxo_builder::{UtxoArcBuilder, UtxoCoinBuilder, UtxoCoinBuilderCommonOps};
 use crate::utxo::utxo_common::UtxoTxBuilder;
 use crate::utxo::utxo_common_tests::{self, utxo_coin_fields_for_test, utxo_coin_from_fields, TEST_COIN_DECIMALS,
                                      TEST_COIN_NAME};
-use crate::utxo::utxo_sql_block_header_storage::SqliteBlockHeadersStorage;
 use crate::utxo::utxo_standard::{utxo_standard_coin_with_priv_key, UtxoStandardCoin};
 use crate::utxo::utxo_tx_history_v2::{UtxoTxDetailsParams, UtxoTxHistoryOps};
 #[cfg(not(target_arch = "wasm32"))] use crate::WithdrawFee;
@@ -30,11 +29,12 @@ use common::executor::Timer;
 use common::{block_on, now_ms, OrdRange, PagingOptionsEnum, DEX_FEE_ADDR_RAW_PUBKEY};
 use crypto::{privkey::key_pair_from_seed, Bip44Chain, RpcDerivationPath, Secp256k1Secret};
 use db_common::sqlite::rusqlite::Connection;
+use futures::channel::mpsc::channel;
 use futures::future::join_all;
 use futures::TryFutureExt;
 use mm2_core::mm_ctx::MmCtxBuilder;
 use mm2_number::bigdecimal::{BigDecimal, Signed};
-use mm2_test_helpers::for_tests::{MORTY_ELECTRUM_ADDRS, RICK_ELECTRUM_ADDRS};
+use mm2_test_helpers::for_tests::{mm_ctx_with_custom_db, MORTY_ELECTRUM_ADDRS, RICK_ELECTRUM_ADDRS};
 use mocktopus::mocking::*;
 use rpc::v1::types::H256 as H256Json;
 use serialization::{deserialize, CoinVariant};
@@ -950,7 +950,6 @@ fn test_spv_proof() {
             .as_slice(),
     )
     .unwrap();
-
     let mut headers = HashMap::new();
     headers.insert(452248, header);
     let storage = client.block_headers_storage();
@@ -4271,4 +4270,98 @@ fn test_utxo_validate_valid_and_invalid_pubkey() {
     // Test expected to fail at this point as we're using a valid pubkey to validate against an invalid pubkeys
     assert!(coin.validate_other_pubkey(&[1u8; 20]).is_err());
     assert!(coin.validate_other_pubkey(&[1u8; 8]).is_err());
+}
+
+#[test]
+fn test_block_header_utxo_loop() {
+    use crate::utxo::utxo_builder::{block_header_utxo_loop, BlockHeaderUtxoLoopExtraArgs};
+    use futures::future::{Either, FutureExt};
+    use keys::hash::H256 as H256Json;
+
+    static mut CURRENT_BLOCK_COUNT: u64 = 13;
+
+    ElectrumClient::get_block_count
+        .mock_safe(move |_| MockResult::Return(Box::new(futures01::future::ok(unsafe { CURRENT_BLOCK_COUNT }))));
+    let expected_steps: Arc<Mutex<Vec<(u64, u64)>>> = Arc::new(Mutex::new(vec![]));
+    let expected_steps_to_move = expected_steps.clone();
+
+    ElectrumClient::retrieve_headers.mock_safe(move |this, from, to| {
+        let (expected_from, expected_to) = expected_steps_to_move.lock().unwrap().remove(0);
+        assert_eq!(from, expected_from);
+        assert_eq!(to, expected_to);
+        MockResult::Continue((this, from, to))
+    });
+
+    BlockHeaderUtxoLoopExtraArgs::default.mock_safe(move || {
+        MockResult::Return(BlockHeaderUtxoLoopExtraArgs {
+            chunk_size: 4,
+            error_sleep: 1.,
+            success_sleep: 1.,
+        })
+    });
+
+    let ctx = mm_ctx_with_custom_db();
+    let priv_key_policy = PrivKeyBuildPolicy::IguanaPrivKey(IguanaPrivKey::from(H256Json::from([1u8; 32])));
+    let servers: Vec<_> = RICK_ELECTRUM_ADDRS
+        .iter()
+        .map(|server| json!({ "url": server }))
+        .collect();
+    let req = json!({ "method": "electrum", "servers": servers });
+    let params = UtxoActivationParams::from_legacy_req(&req).unwrap();
+    let conf = json!({"coin":"RICK", "asset":"RICK", "rpcport":8923, "enable_spv_proof": false});
+    let builder = UtxoArcBuilder::new(&ctx, "RICK", &conf, &params, priv_key_policy, UtxoStandardCoin::from);
+    let arc: UtxoArc = block_on(builder.build_utxo_fields()).unwrap().into();
+    let client = match &arc.rpc_client {
+        UtxoRpcClientEnum::Electrum(electrum) => electrum.clone(),
+        UtxoRpcClientEnum::Native(_) => unreachable!(),
+    };
+
+    let (sync_status_notifier, _) = channel::<UtxoSyncStatus>(1);
+    let loop_handle = UtxoSyncStatusLoopHandle::new(sync_status_notifier);
+
+    let loop_fut = async move {
+        unsafe {
+            block_header_utxo_loop(
+                arc.downgrade(),
+                UtxoStandardCoin::from,
+                loop_handle,
+                CURRENT_BLOCK_COUNT,
+            )
+            .await
+        }
+    };
+
+    let test_fut = async move {
+        *expected_steps.lock().unwrap() = vec![(1, 4), (5, 8), (9, 12), (13, 13)];
+        unsafe { CURRENT_BLOCK_COUNT = 13 }
+        Timer::sleep(2.).await;
+        let get_headers_count = client.block_headers_storage().get_last_block_height().await.unwrap();
+        assert_eq!(get_headers_count, 13);
+        assert!(expected_steps.lock().unwrap().is_empty());
+
+        *expected_steps.lock().unwrap() = vec![(14, 17)];
+        unsafe { CURRENT_BLOCK_COUNT = 17 }
+        Timer::sleep(2.).await;
+        let get_headers_count = client.block_headers_storage().get_last_block_height().await.unwrap();
+        assert_eq!(get_headers_count, 17);
+        assert!(expected_steps.lock().unwrap().is_empty());
+
+        *expected_steps.lock().unwrap() = vec![(18, 18)];
+        unsafe { CURRENT_BLOCK_COUNT = 18 }
+        Timer::sleep(2.).await;
+        let get_headers_count = client.block_headers_storage().get_last_block_height().await.unwrap();
+        assert_eq!(get_headers_count, 18);
+        assert!(expected_steps.lock().unwrap().is_empty());
+
+        *expected_steps.lock().unwrap() = vec![(19, 22), (23, 25)];
+        unsafe { CURRENT_BLOCK_COUNT = 25 }
+        Timer::sleep(3.).await;
+        let get_headers_count = client.block_headers_storage().get_last_block_height().await.unwrap();
+        assert_eq!(get_headers_count, 25);
+        assert!(expected_steps.lock().unwrap().is_empty());
+    };
+
+    if let Either::Left(_) = block_on(futures::future::select(loop_fut.boxed(), test_fut.boxed())) {
+        panic!("Loop shouldn't stop")
+    };
 }

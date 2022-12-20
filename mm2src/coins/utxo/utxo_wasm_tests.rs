@@ -1,9 +1,8 @@
 use super::rpc_clients::{ElectrumClient, ElectrumClientImpl, ElectrumProtocol};
 use super::*;
 use crate::utxo::rpc_clients::UtxoRpcClientOps;
-use crate::utxo::utxo_block_header_storage::BlockHeaderStorage;
+use crate::utxo::utxo_block_header_storage::{BlockHeaderStorage, IndexedDBBlockHeadersStorage};
 use crate::utxo::utxo_common_tests;
-use crate::utxo::utxo_indexedb_block_header_storage::IndexedDBBlockHeadersStorage;
 use common::executor::Timer;
 use serialization::deserialize;
 use wasm_bindgen_test::*;

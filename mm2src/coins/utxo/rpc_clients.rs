@@ -1946,49 +1946,6 @@ impl ElectrumClient {
         rpc_func!(self, "blockchain.block.headers", start_height, count)
     }
 
-    pub fn retrieve_headers(&self, from: u64, to: u64) -> UtxoRpcFut<(HashMap<u64, BlockHeader>, Vec<BlockHeader>)> {
-        let coin_name = self.coin_ticker.clone();
-        if from == 0 || to < from {
-            return Box::new(futures01::future::err(
-                UtxoRpcError::Internal("Invalid values for from/to parameters".to_string()).into(),
-            ));
-        }
-        let count: NonZeroU64 = match (to - from + 1).try_into() {
-            Ok(c) => c,
-            Err(e) => return Box::new(futures01::future::err(UtxoRpcError::Internal(e.to_string()).into())),
-        };
-        Box::new(
-            self.blockchain_block_headers(from, count)
-                .map_to_mm_fut(UtxoRpcError::from)
-                .and_then(move |headers| {
-                    let (block_registry, block_headers) = {
-                        if headers.count == 0 {
-                            return MmError::err(UtxoRpcError::Internal("No headers available".to_string()));
-                        }
-                        let len = CompactInteger::from(headers.count);
-                        let mut serialized = serialize(&len).take();
-                        serialized.extend(headers.hex.0.into_iter());
-                        drop_mutability!(serialized);
-                        let mut reader =
-                            Reader::new_with_coin_variant(serialized.as_slice(), coin_name.as_str().into());
-                        let maybe_block_headers = reader.read_list::<BlockHeader>();
-                        let block_headers = match maybe_block_headers {
-                            Ok(headers) => headers,
-                            Err(e) => return MmError::err(UtxoRpcError::InvalidResponse(format!("{:?}", e))),
-                        };
-                        let mut block_registry: HashMap<u64, BlockHeader> = HashMap::new();
-                        let mut starting_height = from;
-                        for block_header in &block_headers {
-                            block_registry.insert(starting_height, block_header.clone());
-                            starting_height += 1;
-                        }
-                        (block_registry, block_headers)
-                    };
-                    Ok((block_registry, block_headers))
-                }),
-        )
-    }
-
     /// https://electrumx.readthedocs.io/en/latest/protocol-methods.html#blockchain-transaction-get-merkle
     pub fn blockchain_transaction_get_merkle(&self, txid: H256Json, height: u64) -> RpcRes<TxMerkleBranch> {
         rpc_func!(self, "blockchain.transaction.get_merkle", txid, height)
@@ -2078,6 +2035,52 @@ impl ElectrumClient {
         let header = self.block_header_from_storage(height).await?;
 
         Ok((merkle_branch, header, height))
+    }
+}
+
+#[cfg_attr(test, mockable)]
+impl ElectrumClient {
+    pub fn retrieve_headers(&self, from: u64, to: u64) -> UtxoRpcFut<(HashMap<u64, BlockHeader>, Vec<BlockHeader>)> {
+        let coin_name = self.coin_ticker.clone();
+        if from == 0 || to < from {
+            return Box::new(futures01::future::err(
+                UtxoRpcError::Internal("Invalid values for from/to parameters".to_string()).into(),
+            ));
+        }
+        let count: NonZeroU64 = match (to - from + 1).try_into() {
+            Ok(c) => c,
+            Err(e) => return Box::new(futures01::future::err(UtxoRpcError::Internal(e.to_string()).into())),
+        };
+        Box::new(
+            self.blockchain_block_headers(from, count)
+                .map_to_mm_fut(UtxoRpcError::from)
+                .and_then(move |headers| {
+                    let (block_registry, block_headers) = {
+                        if headers.count == 0 {
+                            return MmError::err(UtxoRpcError::Internal("No headers available".to_string()));
+                        }
+                        let len = CompactInteger::from(headers.count);
+                        let mut serialized = serialize(&len).take();
+                        serialized.extend(headers.hex.0.into_iter());
+                        drop_mutability!(serialized);
+                        let mut reader =
+                            Reader::new_with_coin_variant(serialized.as_slice(), coin_name.as_str().into());
+                        let maybe_block_headers = reader.read_list::<BlockHeader>();
+                        let block_headers = match maybe_block_headers {
+                            Ok(headers) => headers,
+                            Err(e) => return MmError::err(UtxoRpcError::InvalidResponse(format!("{:?}", e))),
+                        };
+                        let mut block_registry: HashMap<u64, BlockHeader> = HashMap::new();
+                        let mut starting_height = from;
+                        for block_header in &block_headers {
+                            block_registry.insert(starting_height, block_header.clone());
+                            starting_height += 1;
+                        }
+                        (block_registry, block_headers)
+                    };
+                    Ok((block_registry, block_headers))
+                }),
+        )
     }
 }
 
