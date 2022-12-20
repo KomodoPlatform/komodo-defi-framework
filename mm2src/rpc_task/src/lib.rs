@@ -52,7 +52,7 @@ pub enum RpcTaskError {
     UnexpectedUserAction {
         expected: String,
     },
-    Canceled,
+    Cancelled,
     Internal(String),
 }
 
@@ -61,6 +61,7 @@ pub enum TaskStatusError {
     Idle,
     InProgress,
     AwaitingUserAction,
+    Cancelled,
     Finished,
 }
 
