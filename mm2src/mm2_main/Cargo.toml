@@ -109,7 +109,7 @@ winapi = "0.3"
 
 [dev-dependencies]
 mm2_test_helpers = { path = "../mm2_test_helpers" }
-mocktopus = "0.7.0"
+mocktopus = "0.8.0"
 testcontainers = { git = "https://github.com/artemii235/testcontainers-rs.git" }
 
 [build-dependencies]
