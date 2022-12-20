@@ -2357,6 +2357,7 @@ pub mod tendermint_coin_tests {
                 swap_contract_address: &None,
                 swap_unique_data: &[],
                 amount: &amount_dec,
+                payment_instructions: &None,
             })
             .compat(),
         )

@@ -778,6 +778,7 @@ impl MakerSwap {
                 swap_contract_address: &self.r().data.maker_coin_swap_contract_address,
                 swap_unique_data: &unique_data,
                 amount: &self.maker_amount,
+                payment_instructions: &self.r().payment_instructions,
             })
             .compat();
 
@@ -1323,6 +1324,7 @@ impl MakerSwap {
         let other_maker_coin_htlc_pub = self.r().other_maker_coin_htlc_pub;
         let maker_coin_start_block = self.r().data.maker_coin_start_block;
         let maker_coin_swap_contract_address = self.r().data.maker_coin_swap_contract_address.clone();
+        let payment_instructions = self.r().payment_instructions.clone();
 
         let maybe_maker_payment = self.r().maker_payment.clone();
         let maker_payment = match maybe_maker_payment {
@@ -1337,7 +1339,8 @@ impl MakerSwap {
                             search_from_block: maker_coin_start_block,
                             swap_contract_address: &maker_coin_swap_contract_address,
                             swap_unique_data: &unique_data,
-                            amount: &self.maker_amount
+                            amount: &self.maker_amount,
+                            payment_instructions: &payment_instructions,
                         })
                         .compat()
                         .await

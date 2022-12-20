@@ -596,6 +596,7 @@ pub struct CheckIfMyPaymentSentArgs<'a> {
     pub swap_contract_address: &'a Option<BytesJson>,
     pub swap_unique_data: &'a [u8],
     pub amount: &'a BigDecimal,
+    pub payment_instructions: &'a Option<PaymentInstructions>,
 }
 
 #[derive(Clone, Debug)]

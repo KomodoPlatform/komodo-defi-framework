@@ -1365,6 +1365,7 @@ impl TakerSwap {
             swap_contract_address: &self.r().data.taker_coin_swap_contract_address,
             swap_unique_data: &unique_data,
             amount: &self.taker_amount.to_decimal(),
+            payment_instructions: &self.r().payment_instructions,
         });
         let transaction = match f.compat().await {
             Ok(res) => match res {
@@ -1862,6 +1863,7 @@ impl TakerSwap {
         }
 
         let maybe_taker_payment = self.r().taker_payment.clone();
+        let payment_instructions = self.r().payment_instructions.clone();
 
         let taker_payment = match maybe_taker_payment {
             Some(tx) => tx.tx_hex.0,
@@ -1875,7 +1877,8 @@ impl TakerSwap {
                             search_from_block: taker_coin_start_block,
                             swap_contract_address: &taker_coin_swap_contract_address,
                             swap_unique_data: &unique_data,
-                            amount: &self.taker_amount.to_decimal()
+                            amount: &self.taker_amount.to_decimal(),
+                            payment_instructions: &payment_instructions,
                         })
                         .compat()
                         .await
