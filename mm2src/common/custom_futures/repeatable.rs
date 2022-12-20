@@ -283,7 +283,7 @@ where
     pub fn until(mut self, until: Instant) -> Self {
         let now = Instant::now();
         if now > until {
-            warn!("Deadline is reached already: now={now:?} until={until:?}")
+            warn!("Deadline has already passed: now={now:?} until={until:?}")
         }
 
         self.until = Some(Until::Instant(until));
@@ -295,7 +295,7 @@ where
     pub fn until_ms(mut self, until_ms: u64) -> Self {
         let now = now_ms();
         if now >= until_ms {
-            warn!("Deadline is reached already: now={now:?} until={until_ms:?}")
+            warn!("Deadline has already passed: now={now:?} until={until_ms:?}")
         }
 
         self.until = Some(Until::TimestampMs(until_ms));
