@@ -2016,14 +2016,14 @@ impl SwapOps for TendermintCoin {
 
     fn check_if_my_payment_sent(
         &self,
-        if_my_payment_spent_args: CheckIfMyPaymentSentArgs,
+        if_my_payment_sent_args: CheckIfMyPaymentSentArgs,
     ) -> Box<dyn Future<Item = Option<TransactionEnum>, Error = String> + Send> {
         self.check_if_my_payment_sent_for_denom(
             self.decimals,
             self.denom.clone(),
-            if_my_payment_spent_args.other_pub,
-            if_my_payment_spent_args.secret_hash,
-            if_my_payment_spent_args.amount,
+            if_my_payment_sent_args.other_pub,
+            if_my_payment_sent_args.secret_hash,
+            if_my_payment_sent_args.amount,
         )
     }
 

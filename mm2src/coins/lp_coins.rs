@@ -674,7 +674,7 @@ pub trait SwapOps {
 
     fn check_if_my_payment_sent(
         &self,
-        if_my_payment_spent_args: CheckIfMyPaymentSentArgs<'_>,
+        if_my_payment_sent_args: CheckIfMyPaymentSentArgs<'_>,
     ) -> Box<dyn Future<Item = Option<TransactionEnum>, Error = String> + Send>;
 
     async fn search_for_swap_tx_spend_my(

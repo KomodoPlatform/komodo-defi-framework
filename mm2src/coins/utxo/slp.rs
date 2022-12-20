@@ -1381,14 +1381,14 @@ impl SwapOps for SlpToken {
     #[inline]
     fn check_if_my_payment_sent(
         &self,
-        if_my_payment_spent_args: CheckIfMyPaymentSentArgs,
+        if_my_payment_sent_args: CheckIfMyPaymentSentArgs,
     ) -> Box<dyn Future<Item = Option<TransactionEnum>, Error = String> + Send> {
         utxo_common::check_if_my_payment_sent(
             self.platform_coin.clone(),
-            if_my_payment_spent_args.time_lock,
-            if_my_payment_spent_args.other_pub,
-            if_my_payment_spent_args.secret_hash,
-            if_my_payment_spent_args.swap_unique_data,
+            if_my_payment_sent_args.time_lock,
+            if_my_payment_sent_args.other_pub,
+            if_my_payment_sent_args.secret_hash,
+            if_my_payment_sent_args.swap_unique_data,
         )
     }
 

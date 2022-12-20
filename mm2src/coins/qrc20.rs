@@ -952,11 +952,11 @@ impl SwapOps for Qrc20Coin {
     #[inline]
     fn check_if_my_payment_sent(
         &self,
-        if_my_payment_spent_args: CheckIfMyPaymentSentArgs<'_>,
+        if_my_payment_sent_args: CheckIfMyPaymentSentArgs<'_>,
     ) -> Box<dyn Future<Item = Option<TransactionEnum>, Error = String> + Send> {
-        let search_from_block = if_my_payment_spent_args.search_from_block;
-        let swap_id = qrc20_swap_id(if_my_payment_spent_args.time_lock, if_my_payment_spent_args.secret_hash);
-        let swap_contract_address = try_fus!(if_my_payment_spent_args.swap_contract_address.try_to_address());
+        let search_from_block = if_my_payment_sent_args.search_from_block;
+        let swap_id = qrc20_swap_id(if_my_payment_sent_args.time_lock, if_my_payment_sent_args.secret_hash);
+        let swap_contract_address = try_fus!(if_my_payment_sent_args.swap_contract_address.try_to_address());
 
         let selfi = self.clone();
         let fut = async move {

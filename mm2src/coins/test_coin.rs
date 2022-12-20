@@ -143,7 +143,7 @@ impl SwapOps for TestCoin {
 
     fn check_if_my_payment_sent(
         &self,
-        _if_my_payment_spent_args: CheckIfMyPaymentSentArgs,
+        _if_my_payment_sent_args: CheckIfMyPaymentSentArgs,
     ) -> Box<dyn Future<Item = Option<TransactionEnum>, Error = String> + Send> {
         unimplemented!()
     }

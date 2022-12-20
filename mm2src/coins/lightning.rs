@@ -674,7 +674,7 @@ impl SwapOps for LightningCoin {
     // Todo: This is None for now for the sake of swap P.O.C., this should be implemented probably in next PRs and should be tested across restarts
     fn check_if_my_payment_sent(
         &self,
-        _if_my_payment_spent_args: CheckIfMyPaymentSentArgs<'_>,
+        _if_my_payment_sent_args: CheckIfMyPaymentSentArgs<'_>,
     ) -> Box<dyn Future<Item = Option<TransactionEnum>, Error = String> + Send> {
         Box::new(futures01::future::ok(None))
     }

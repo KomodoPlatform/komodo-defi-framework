@@ -1036,12 +1036,12 @@ impl SwapOps for EthCoin {
 
     fn check_if_my_payment_sent(
         &self,
-        if_my_payment_spent_args: CheckIfMyPaymentSentArgs,
+        if_my_payment_sent_args: CheckIfMyPaymentSentArgs,
     ) -> Box<dyn Future<Item = Option<TransactionEnum>, Error = String> + Send> {
-        let id = self.etomic_swap_id(if_my_payment_spent_args.time_lock, if_my_payment_spent_args.secret_hash);
-        let swap_contract_address = try_fus!(if_my_payment_spent_args.swap_contract_address.try_to_address());
+        let id = self.etomic_swap_id(if_my_payment_sent_args.time_lock, if_my_payment_sent_args.secret_hash);
+        let swap_contract_address = try_fus!(if_my_payment_sent_args.swap_contract_address.try_to_address());
         let selfi = self.clone();
-        let from_block = if_my_payment_spent_args.search_from_block;
+        let from_block = if_my_payment_sent_args.search_from_block;
         let fut = async move {
             let status = try_s!(
                 selfi
