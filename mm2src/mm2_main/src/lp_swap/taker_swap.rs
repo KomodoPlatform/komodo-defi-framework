@@ -1702,8 +1702,8 @@ impl TakerSwap {
             tx_hash,
         };
 
-        // Todo: do we need to add wait_for_confirmation for refund (if the 2 coins are lightning, should the lightning need_for_confirmation function be refactored) to do this???, we need to check all cases for refunds
-        // Since taker payment is refunded successfully, maker payment can be released for lightning and similar protocols
+        // Since taker payment is refunded successfully, maker payment can be released for lightning and similar protocols.
+        // # Important: New code that leads to refund failure shouldn't be added below this code block.
         if self.maker_coin.can_be_released() {
             let fail_htlc_fut = self
                 .maker_coin

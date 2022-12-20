@@ -721,12 +721,10 @@ impl SwapOps for LightningCoin {
         let coin = self.clone();
         let payment_hash =
             try_f!(payment_hash_from_slice(other_side_tx).map_err(|e| FailHTLCError::DecodeErr(e.to_string())));
-        // Free the htlc to allow for this inbound liquidity to be used for other inbound payments
-        // Todo: taker shouldn't fail the htlc until they refund their payment (the other coin payment)
-        // Todo: this will probably be moved to after refund for taker and straight away for maker.
         // Todo: refund successful should be done for all coins (tendermint) or we should wait for locktime as an alternative but it depends on estimated blocks which is not ideal.
         // Todo: we need to confirm automatic refunds too for all coins.
-        // Todo: the taker can abuse this by sending another coin big payment to get a big lightning payment from the maker to lock liquidity, that's why trading fees are needed and should always be proportional
+        // Todo: the taker can abuse this by sending another coin big payment to get a big lightning payment from the maker to lock liquidity, that's why trading fees are needed and should always be proportional.
+        // Free the htlc to allow for this inbound liquidity to be used for other inbound payments
         coin.channel_manager.fail_htlc_backwards(&payment_hash);
         let fut = async move {
             coin.db
@@ -740,7 +738,6 @@ impl SwapOps for LightningCoin {
 
     fn is_auto_refundable(&self) -> bool { true }
 
-    // Todo: revise this function, how about instead of TakerPaymentRefunded event we can add taker payment will be refunded automatically instead??
     fn wait_for_htlc_refund(&self, tx: &[u8], locktime: u64) -> TransactionFut {
         let payment_hash = try_tx_fus!(payment_hash_from_slice(tx).map_err(|e| e.to_string()));
         let payment_hex = hex::encode(payment_hash.0);

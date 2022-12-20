@@ -708,6 +708,10 @@ pub trait SwapOps {
     fn can_be_released(&self) -> bool { false }
 
     /// Fails an HTLC back to its origin to free resources.
+    ///
+    /// # Important
+    ///
+    /// Taker shouldn't fail a swap htlc to the maker/origin until the taker swap payment can be refunded successfully.
     fn fail_htlc_backwards(&self, _other_side_tx: &[u8]) -> FailHTLCFut<()> { Box::new(futures01::future::ok(())) }
 
     // Todo: check with Onur or Artem if tendermint refunds are implemented or not
