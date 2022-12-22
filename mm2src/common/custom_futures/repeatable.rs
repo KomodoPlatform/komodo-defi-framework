@@ -8,7 +8,7 @@
 //! let mut counter = 0;
 //! let res = repeatable!(async move {
 //!   counter += 1;
-//!   if counter > 1 { ready!() } else { retry!() }
+//!   if counter > 1 { Ready(()) } else { Retry(()) }
 //! })
 //! .repeat_every_secs(0.1)
 //! .attempts(10)
@@ -32,6 +32,8 @@ use std::pin::Pin;
 use std::task::{Context, Poll};
 use std::time::Duration;
 use wasm_timer::Instant;
+
+pub use Action::{Ready, Retry};
 
 /// Wraps the given future into `Repeatable` future.
 /// The future should return [`Action<T, E>`] with any `T` and `E` types.
@@ -70,35 +72,13 @@ macro_rules! retry_on_err {
     };
 }
 
-/// The macro expands as `return Action::Ready(T)`.
-#[macro_export]
-macro_rules! ready {
-    () => {{
-        return $crate::custom_futures::repeatable::Action::Ready(());
-    }};
-    ($res:expr) => {{
-        return $crate::custom_futures::repeatable::Action::Ready($res);
-    }};
-}
-
-/// The macro expands as `return Action::Retry(E)`.
-#[macro_export]
-macro_rules! retry {
-    () => {{
-        return $crate::custom_futures::repeatable::Action::Retry(());
-    }};
-    ($err:expr) => {{
-        return $crate::custom_futures::repeatable::Action::Retry($err);
-    }};
-}
-
 /// Unwraps a result or returns `Action::Retry(E)`.
 #[macro_export]
 macro_rules! try_or_retry {
     ($exp:expr) => {{
         match $exp {
             Ok(t) => t,
-            Err(e) => $crate::retry!(e),
+            Err(e) => return $crate::custom_futures::repeatable::Retry(e),
         }
     }};
 }
@@ -109,7 +89,7 @@ macro_rules! try_or_ready_err {
     ($exp:expr) => {{
         match $exp {
             Ok(t) => t,
-            Err(e) => $crate::ready!(Err(e)),
+            Err(e) => return $crate::custom_futures::repeatable::Ready(Err(e)),
         }
     }};
 }

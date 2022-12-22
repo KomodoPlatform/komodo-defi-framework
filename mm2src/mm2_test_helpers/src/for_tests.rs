@@ -1,9 +1,10 @@
 //! Helpers used in the unit and integration tests.
 
 use crate::electrums::qtum_electrums;
+use common::custom_futures::repeatable::{Ready, Retry};
 use common::executor::Timer;
 use common::log::debug;
-use common::{cfg_native, now_float, now_ms, ready, repeatable, retry, PagingOptionsEnum};
+use common::{cfg_native, now_float, now_ms, repeatable, PagingOptionsEnum};
 use common::{get_utc_timestamp, log};
 use crypto::CryptoCtx;
 use gstuff::{try_s, ERR, ERRL};
@@ -1001,9 +1002,9 @@ impl MarketMakerIt {
         repeatable!(async {
             let mm_log = try_or_ready_err!(self.log_as_utf8());
             if pred(&mm_log) {
-                ready!(Ok(()));
+                return Ready(Ok(()));
             }
-            retry!();
+            Retry(())
         })
         .repeat_every_ms(ms)
         .with_timeout_secs(timeout_sec)
@@ -1125,9 +1126,9 @@ impl MarketMakerIt {
             if MmArc::from_weak(&ctx_weak).is_none() {
                 let took_ms = now_ms() - started_at;
                 log!("stop] MmCtx was dropped in {took_ms}ms");
-                ready!();
+                return Ready(());
             }
-            retry!();
+            Retry(())
         })
         .repeat_every_secs(0.05)
         .with_timeout_ms(timeout_ms)

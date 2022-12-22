@@ -12,6 +12,7 @@ use crate::{BlockchainNetwork, CoinTransportMetrics, DerivationMethod, HistorySy
             PrivKeyBuildPolicy, PrivKeyPolicy, PrivKeyPolicyNotAllowed, RpcClientType, UtxoActivationParams};
 use async_trait::async_trait;
 use chain::TxHashAlgo;
+use common::custom_futures::repeatable::{Ready, Retry};
 use common::executor::{abortable_queue::AbortableQueue, AbortSettings, AbortableSystem, AbortedError, SpawnAbortable,
                        Timer};
 use common::log::{error, info};
@@ -821,16 +822,16 @@ async fn wait_for_protocol_version_checked(client: &ElectrumClientImpl) -> Resul
     repeatable!(async {
         if client.count_connections().await == 0 {
             // All of the connections were removed because of server.version checking
-            ready!(ERR!(
+            return Ready(ERR!(
                 "There are no Electrums with the required protocol version {:?}",
                 client.protocol_version()
             ));
         }
 
         if client.is_protocol_version_checked().await {
-            ready!(Ok(()));
+            return Ready(Ok(()));
         }
-        retry!()
+        Retry(())
     })
     .repeat_every_secs(0.5)
     .attempts(10)

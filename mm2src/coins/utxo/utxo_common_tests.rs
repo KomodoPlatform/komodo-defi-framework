@@ -8,6 +8,7 @@ use crate::utxo::tx_cache::dummy_tx_cache::DummyVerboseCache;
 use crate::utxo::tx_cache::UtxoVerboseCacheOps;
 use crate::utxo::utxo_tx_history_v2::{utxo_history_loop, UtxoTxHistoryOps};
 use crate::{compare_transaction_details, UtxoStandardCoin};
+use common::custom_futures::repeatable::{Ready, Retry};
 use common::executor::{spawn, Timer};
 use common::jsonrpc_client::JsonRpcErrorType;
 use common::PagingOptionsEnum;
@@ -168,9 +169,9 @@ where
     repeatable!(async {
         let response = my_tx_history_v2_impl(ctx.clone(), coin, req.clone()).await.unwrap();
         if response.transactions.len() >= expected_txs {
-            ready!(response);
+            return Ready(response);
         }
-        retry!();
+        Retry(())
     })
     .repeat_every(Duration::from_secs(3))
     .with_timeout_ms(timeout_s * 1000)
