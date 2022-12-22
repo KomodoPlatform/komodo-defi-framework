@@ -1373,6 +1373,9 @@ impl TendermintCoin {
 }
 
 fn clients_from_urls(rpc_urls: &[String]) -> MmResult<Vec<HttpClient>, TendermintInitErrorKind> {
+    if rpc_urls.is_empty() {
+        return MmError::err(TendermintInitErrorKind::EmptyRpcUrls);
+    }
     let mut clients = Vec::new();
     let mut errors = Vec::new();
     // check that all urls are valid
