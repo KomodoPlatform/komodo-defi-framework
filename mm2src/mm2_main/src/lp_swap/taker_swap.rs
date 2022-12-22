@@ -41,10 +41,11 @@ use uuid::Uuid;
 
 const TAKER_PAYMENT_SPEND_SEARCH_INTERVAL: f64 = 10.;
 
-pub const TAKER_SUCCESS_EVENTS: [&str; 10] = [
+pub const TAKER_SUCCESS_EVENTS: [&str; 11] = [
     "Started",
     "Negotiated",
     "TakerFeeSent",
+    "TakerPaymentInstructionsReceived",
     "MakerPaymentReceived",
     "MakerPaymentWaitConfirmStarted",
     "MakerPaymentValidatedAndConfirmed",
@@ -54,10 +55,11 @@ pub const TAKER_SUCCESS_EVENTS: [&str; 10] = [
     "Finished",
 ];
 
-pub const TAKER_USING_WATCHERS_SUCCESS_EVENTS: [&str; 11] = [
+pub const TAKER_USING_WATCHERS_SUCCESS_EVENTS: [&str; 12] = [
     "Started",
     "Negotiated",
     "TakerFeeSent",
+    "TakerPaymentInstructionsReceived",
     "MakerPaymentReceived",
     "MakerPaymentWaitConfirmStarted",
     "MakerPaymentValidatedAndConfirmed",
@@ -579,7 +581,7 @@ pub enum TakerSwapEvent {
     NegotiateFailed(SwapError),
     TakerFeeSent(TransactionIdentifier),
     TakerFeeSendFailed(SwapError),
-    TakerPaymentInstructionsReceived(PaymentInstructions),
+    TakerPaymentInstructionsReceived(Option<PaymentInstructions>),
     MakerPaymentReceived(TransactionIdentifier),
     MakerPaymentWaitConfirmStarted,
     MakerPaymentValidatedAndConfirmed,
@@ -729,7 +731,7 @@ impl TakerSwap {
             TakerSwapEvent::TakerFeeSent(tx) => self.w().taker_fee = Some(tx),
             TakerSwapEvent::TakerFeeSendFailed(err) => self.errors.lock().push(err),
             TakerSwapEvent::TakerPaymentInstructionsReceived(instructions) => {
-                self.w().payment_instructions = Some(instructions)
+                self.w().payment_instructions = instructions
             },
             TakerSwapEvent::MakerPaymentReceived(tx) => self.w().maker_payment = Some(tx),
             TakerSwapEvent::MakerPaymentWaitConfirmStarted => (),
@@ -1230,21 +1232,24 @@ impl TakerSwap {
             },
         };
         drop(abort_send_handle);
+
         let mut swap_events = vec![];
-        if let Some(instructions) = payload.instructions() {
-            match self.taker_coin.validate_taker_payment_instructions(
+        let instructions = match payload.instructions() {
+            Some(instructions) => match self.taker_coin.validate_taker_payment_instructions(
                 instructions,
                 &self.r().secret_hash.0,
                 self.taker_amount.clone().into(),
             ) {
-                Ok(instructions) => swap_events.push(TakerSwapEvent::TakerPaymentInstructionsReceived(instructions)),
+                Ok(instructions) => Some(instructions),
                 Err(e) => {
                     return Ok((Some(TakerSwapCommand::Finish), vec![
                         TakerSwapEvent::MakerPaymentValidateFailed(e.to_string().into()),
-                    ]));
+                    ]))
                 },
-            }
-        }
+            },
+            None => None,
+        };
+        swap_events.push(TakerSwapEvent::TakerPaymentInstructionsReceived(instructions));
 
         let maker_payment = match self.maker_coin.tx_enum_from_bytes(payload.data()) {
             Ok(p) => p,

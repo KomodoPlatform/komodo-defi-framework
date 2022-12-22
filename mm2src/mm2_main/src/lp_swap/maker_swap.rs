@@ -38,9 +38,10 @@ use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::sync::{Arc, RwLock, RwLockReadGuard, RwLockWriteGuard};
 use uuid::Uuid;
 
-pub const MAKER_SUCCESS_EVENTS: [&str; 11] = [
+pub const MAKER_SUCCESS_EVENTS: [&str; 12] = [
     "Started",
     "Negotiated",
+    "MakerPaymentInstructionsReceived",
     "TakerFeeValidated",
     "MakerPaymentSent",
     "TakerPaymentReceived",
@@ -283,7 +284,7 @@ impl MakerSwap {
             },
             MakerSwapEvent::NegotiateFailed(err) => self.errors.lock().push(err),
             MakerSwapEvent::MakerPaymentInstructionsReceived(instructions) => {
-                self.w().payment_instructions = Some(instructions)
+                self.w().payment_instructions = instructions
             },
             MakerSwapEvent::TakerFeeValidated(tx) => self.w().taker_fee = Some(tx),
             MakerSwapEvent::TakerFeeValidateFailed(err) => self.errors.lock().push(err),
@@ -683,24 +684,29 @@ impl MakerSwap {
             },
         };
         drop(send_abort_handle);
+
         let mut swap_events = vec![];
-        if let Some(instructions) = payload.instructions() {
-            let maker_lock_duration =
-                (self.r().data.lock_duration as f64 * self.taker_coin.maker_locktime_multiplier()).ceil() as u64;
-            match self.maker_coin.validate_maker_payment_instructions(
-                instructions,
-                &self.secret_hash(),
-                self.maker_amount.clone(),
-                maker_lock_duration,
-            ) {
-                Ok(instructions) => swap_events.push(MakerSwapEvent::MakerPaymentInstructionsReceived(instructions)),
-                Err(e) => {
-                    return Ok((Some(MakerSwapCommand::Finish), vec![
-                        MakerSwapEvent::TakerFeeValidateFailed(e.to_string().into()),
-                    ]));
-                },
-            };
-        }
+        let instructions = match payload.instructions() {
+            Some(instructions) => {
+                let maker_lock_duration =
+                    (self.r().data.lock_duration as f64 * self.taker_coin.maker_locktime_multiplier()).ceil() as u64;
+                match self.maker_coin.validate_maker_payment_instructions(
+                    instructions,
+                    &self.secret_hash(),
+                    self.maker_amount.clone(),
+                    maker_lock_duration,
+                ) {
+                    Ok(instructions) => Some(instructions),
+                    Err(e) => {
+                        return Ok((Some(MakerSwapCommand::Finish), vec![
+                            MakerSwapEvent::TakerFeeValidateFailed(e.to_string().into()),
+                        ]));
+                    },
+                }
+            },
+            None => None,
+        };
+        swap_events.push(MakerSwapEvent::MakerPaymentInstructionsReceived(instructions));
 
         let taker_fee = match self.taker_coin.tx_enum_from_bytes(payload.data()) {
             Ok(tx) => tx,
@@ -1486,7 +1492,7 @@ pub enum MakerSwapEvent {
     StartFailed(SwapError),
     Negotiated(TakerNegotiationData),
     NegotiateFailed(SwapError),
-    MakerPaymentInstructionsReceived(PaymentInstructions),
+    MakerPaymentInstructionsReceived(Option<PaymentInstructions>),
     TakerFeeValidated(TransactionIdentifier),
     TakerFeeValidateFailed(SwapError),
     MakerPaymentSent(TransactionIdentifier),

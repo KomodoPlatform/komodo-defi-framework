@@ -43,9 +43,10 @@ cfg_native! {
     use std::process::Command;
 }
 
-pub const MAKER_SUCCESS_EVENTS: [&str; 11] = [
+pub const MAKER_SUCCESS_EVENTS: [&str; 12] = [
     "Started",
     "Negotiated",
+    "MakerPaymentInstructionsReceived",
     "TakerFeeValidated",
     "MakerPaymentSent",
     "TakerPaymentReceived",
@@ -73,10 +74,11 @@ pub const MAKER_ERROR_EVENTS: [&str; 13] = [
     "MakerPaymentRefundFailed",
 ];
 
-pub const TAKER_SUCCESS_EVENTS: [&str; 10] = [
+pub const TAKER_SUCCESS_EVENTS: [&str; 11] = [
     "Started",
     "Negotiated",
     "TakerFeeSent",
+    "TakerPaymentInstructionsReceived",
     "MakerPaymentReceived",
     "MakerPaymentWaitConfirmStarted",
     "MakerPaymentValidatedAndConfirmed",
@@ -2467,6 +2469,7 @@ pub async fn wait_for_swaps_finish_and_check_status(
     taker: &mut MarketMakerIt,
     uuids: &[impl AsRef<str>],
     volume: f64,
+    maker_price: f64,
 ) {
     for uuid in uuids.iter() {
         maker
@@ -2493,7 +2496,7 @@ pub async fn wait_for_swaps_finish_and_check_status(
             &TAKER_SUCCESS_EVENTS,
             &TAKER_ERROR_EVENTS,
             BigDecimal::try_from(volume).unwrap(),
-            BigDecimal::try_from(volume).unwrap(),
+            BigDecimal::try_from(volume * maker_price).unwrap(),
         )
         .await;
 
@@ -2504,7 +2507,7 @@ pub async fn wait_for_swaps_finish_and_check_status(
             &MAKER_SUCCESS_EVENTS,
             &MAKER_ERROR_EVENTS,
             BigDecimal::try_from(volume).unwrap(),
-            BigDecimal::try_from(volume).unwrap(),
+            BigDecimal::try_from(volume * maker_price).unwrap(),
         )
         .await;
     }

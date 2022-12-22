@@ -695,6 +695,7 @@ impl SwapOps for LightningCoin {
         Box::new(fut.boxed().compat())
     }
 
+    // Todo: this sprint, need to also check on-chain spending
     async fn search_for_swap_tx_spend_my(
         &self,
         _: SearchForSwapTxSpendInput<'_>,
@@ -702,6 +703,7 @@ impl SwapOps for LightningCoin {
         unimplemented!()
     }
 
+    // Todo: this sprint, need to also check on-chain spending
     async fn search_for_swap_tx_spend_other(
         &self,
         _: SearchForSwapTxSpendInput<'_>,
