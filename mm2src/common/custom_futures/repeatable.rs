@@ -31,7 +31,6 @@ use std::marker::PhantomData;
 use std::pin::Pin;
 use std::task::{Context, Poll};
 use std::time::Duration;
-use wasm_timer::Instant;
 
 pub use Action::{Ready, Retry};
 
@@ -109,7 +108,7 @@ impl<F: 'static + Fn(&E) + Send, E> InspectErrorTrait<E> for F {}
 #[derive(Clone, Debug, PartialEq)]
 pub enum RepeatError<E> {
     TimeoutExpired {
-        until: Until,
+        until_ms: u64,
         /// An error occurred during the last attempt.
         error: E,
     },
@@ -133,7 +132,7 @@ impl<E> RepeatError<E> {
         }
     }
 
-    fn timeout(until: Until, error: E) -> Self { RepeatError::TimeoutExpired { until, error } }
+    fn timeout(until_ms: u64, error: E) -> Self { RepeatError::TimeoutExpired { until_ms, error } }
 
     fn attempts(attempts: usize, error: E) -> Self { RepeatError::AttemptsExceed { attempts, error } }
 }
@@ -141,10 +140,10 @@ impl<E> RepeatError<E> {
 impl<E: fmt::Display> fmt::Display for RepeatError<E> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
-            RepeatError::TimeoutExpired { until, error } => {
+            RepeatError::TimeoutExpired { until_ms, error } => {
                 write!(
                     f,
-                    "Waited too long until {until:?} for the future to succeed. Error: {error}",
+                    "Waited too long until {until_ms}ms for the future to succeed. Error: {error}",
                 )
             },
             RepeatError::AttemptsExceed { attempts, error } => {
@@ -152,12 +151,6 @@ impl<E: fmt::Display> fmt::Display for RepeatError<E> {
             },
         }
     }
-}
-
-#[derive(Clone, Copy, Debug, PartialEq)]
-pub enum Until {
-    Instant(Instant),
-    TimestampMs(u64),
 }
 
 /// The future is ether ready (with a `T` result), or not ready (failed with an intermediate `E` error).
@@ -188,12 +181,12 @@ impl<T, E> RetryOnError<T, E> for Result<T, E> {
 pub struct Repeatable<Factory, F, T, E> {
     factory: Factory,
     /// Currently executable future, i.e. an active attempt.
-    exec_fut: Option<F>,
+    exec_fut: F,
     /// A timeout future if we're currently waiting for a timeout.
     timeout_fut: Option<Timer>,
-    until: Option<Until>,
+    until_ms: Option<u64>,
     attempts: Option<AttemptsState>,
-    repeat_every: Option<Duration>,
+    repeat_every: Duration,
     inspect_err: Option<Box<dyn InspectErrorTrait<E>>>,
     _phantom: PhantomData<(F, T, E)>,
 }
@@ -205,15 +198,15 @@ where
 {
     #[inline]
     pub fn new(factory: Factory) -> Self {
-        let exec = factory();
+        let exec_fut = factory();
 
         Repeatable {
             factory,
-            exec_fut: Some(exec),
+            exec_fut,
             timeout_fut: None,
-            until: None,
+            until_ms: None,
             attempts: None,
-            repeat_every: None,
+            repeat_every: Duration::default(),
             inspect_err: None,
             _phantom: PhantomData::default(),
         }
@@ -231,7 +224,7 @@ where
 
     #[inline]
     pub fn repeat_every(mut self, repeat_every: Duration) -> Self {
-        self.repeat_every = Some(repeat_every);
+        self.repeat_every = repeat_every;
         self
     }
 
@@ -258,18 +251,6 @@ where
         self
     }
 
-    /// Specifies a deadline before that we may try to repeat the future.
-    #[inline]
-    pub fn until(mut self, until: Instant) -> Self {
-        let now = Instant::now();
-        if now > until {
-            warn!("Deadline has already passed: now={now:?} until={until:?}")
-        }
-
-        self.until = Some(Until::Instant(until));
-        self
-    }
-
     /// Specifies a deadline in milliseconds before that we may try to repeat the future.
     #[inline]
     pub fn until_ms(mut self, until_ms: u64) -> Self {
@@ -278,7 +259,7 @@ where
             warn!("Deadline has already passed: now={now:?} until={until_ms:?}")
         }
 
-        self.until = Some(Until::TimestampMs(until_ms));
+        self.until_ms = Some(until_ms);
         self
     }
 
@@ -296,21 +277,10 @@ where
     }
 
     /// Checks if the deadline is not going to be reached after the `repeat_every` timeout.
-    fn check_can_retry_after_timeout(&self, until: Until) -> bool {
-        // Repeat just right now if `self.repeat_every` is None.
-        let repeat_every = self.repeat_every.unwrap_or_default();
-
-        match until {
-            Until::Instant(instant) => {
-                let will_be_after_timeout = Instant::now() + repeat_every;
-                will_be_after_timeout < instant
-            },
-            Until::TimestampMs(timestamp_ms) => {
-                let repeat_every_ms: u64 = repeat_every.as_millis().into_or_max();
-                let will_be_after_timeout = now_ms() + repeat_every_ms;
-                will_be_after_timeout < timestamp_ms
-            },
-        }
+    fn check_can_retry_after_timeout(&self, until_ms: u64) -> bool {
+        let repeat_every_ms: u64 = self.repeat_every.as_millis().into_or_max();
+        let will_be_after_timeout = now_ms() + repeat_every_ms;
+        will_be_after_timeout < until_ms
     }
 }
 
@@ -329,22 +299,21 @@ where
                 return Poll::Pending;
             }
 
-            let mut exec = self.exec_fut.take().unwrap();
-            match exec.poll_unpin(cx) {
-                Poll::Ready(Action::Ready(ready)) => return Poll::Ready(Ok(ready)),
-                Poll::Ready(Action::Retry(error)) => {
+            match self.exec_fut.poll_unpin(cx) {
+                Poll::Ready(Ready(ready)) => return Poll::Ready(Ok(ready)),
+                Poll::Ready(Retry(error)) => {
                     if let Some(ref inspect) = self.inspect_err {
                         inspect(&error);
                     }
 
-                    if self.until.is_none() && self.attempts.is_none() {
+                    if self.until_ms.is_none() && self.attempts.is_none() {
                         // We should try to execute the future only once
                         // if neither `self.until` nor `self.attempts` are specified.
                         // https://github.com/KomodoPlatform/atomicDEX-API/pull/1564#discussion_r1050778208
                         return Poll::Ready(Err(RepeatError::attempts(1, error)));
                     }
 
-                    if let Some(until) = self.until {
+                    if let Some(until) = self.until_ms {
                         if !self.check_can_retry_after_timeout(until) {
                             return Poll::Ready(Err(RepeatError::timeout(until, error)));
                         }
@@ -359,17 +328,12 @@ where
                     }
 
                     // Create a new future attempt.
-                    self.exec_fut = Some((self.factory)());
-                    // Set the timeout future if `self.repeat_every` is specified,
-                    // otherwise the `self.exec_fut` will be repeated right at the next iteration.
-                    self.timeout_fut = self.repeat_every.map(|timeout| Timer::sleep(timeout.as_secs_f64()));
-                    continue;
+                    self.exec_fut = (self.factory)();
+                    // Reset the timeout future.
+                    self.timeout_fut = Some(Timer::sleep(self.repeat_every.as_secs_f64()));
                 },
-                // We should proceed with this `exec` future attempt.
-                Poll::Pending => {
-                    self.exec_fut = Some(exec);
-                    return Poll::Pending;
-                },
+                // We should proceed with this `exec` future attempt later.
+                Poll::Pending => return Poll::Pending,
             }
         }
     }
@@ -404,6 +368,7 @@ mod tests {
     use std::sync::atomic::{AtomicUsize, Ordering};
     use std::sync::Arc;
     use std::time::Duration;
+    use std::time::Instant;
 
     async fn an_operation(counter: &AsyncMutex<usize>, finish_if: usize) -> Result<usize, &str> {
         let mut counter = counter.lock().await;
@@ -516,7 +481,7 @@ mod tests {
 
         let fut = repeatable!(async { an_operation(&counter, ATTEMPTS_TO_FINISH).await.retry_on_err() })
             .repeat_every(Duration::from_millis(100))
-            .until(Instant::now() + HIGHEST_TIMEOUT);
+            .until_ms(now_ms() + HIGHEST_TIMEOUT.as_millis() as u64);
 
         let before = Instant::now();
         let actual = block_on(fut);
@@ -542,11 +507,11 @@ mod tests {
 
         let counter = AsyncMutex::new(0);
 
-        let until = Instant::now() + HIGHEST_TIMEOUT;
+        let until_ms = now_ms() + HIGHEST_TIMEOUT.as_millis() as u64;
 
         let fut = repeatable!(async { an_operation(&counter, ATTEMPTS_TO_FINISH).await.retry_on_err() })
             .repeat_every(Duration::from_millis(100))
-            .until(until.clone());
+            .until_ms(until_ms);
 
         let before = Instant::now();
         let actual = block_on(fut);
@@ -554,7 +519,7 @@ mod tests {
 
         // If the counter is 3, then there were exactly 3 attempts to finish the future.
         let error = RepeatError::TimeoutExpired {
-            until: Until::Instant(until),
+            until_ms,
             error: "Not ready",
         };
         assert_eq!(actual, Err(error));
@@ -672,12 +637,12 @@ mod tests {
 
         let counter = AsyncMutex::new(0);
 
-        let until = Instant::now() + TIMEOUT;
+        let until_ms = now_ms() + TIMEOUT.as_millis() as u64;
 
         let fut = repeatable!(async { an_operation(&counter, ATTEMPTS_TO_FINISH).await.retry_on_err() })
             .repeat_every_ms(REPEAT_EVERY_MS)
             .attempts(ATTEMPTS_TO_FINISH)
-            .until(until);
+            .until_ms(until_ms);
 
         let before = Instant::now();
         let actual = block_on(fut);
@@ -686,7 +651,7 @@ mod tests {
         assert_eq!(
             actual,
             Err(RepeatError::TimeoutExpired {
-                until: Until::Instant(until),
+                until_ms,
                 error: "Not ready"
             })
         );
@@ -721,12 +686,10 @@ mod tests {
 
         let counter = AsyncMutex::new(0);
 
-        let until = Instant::now() + TIMEOUT;
-
         let fut = repeatable!(async { an_operation(&counter, ATTEMPTS_TO_FINISH).await.retry_on_err() })
             .repeat_every_ms(REPEAT_EVERY_MS)
             .attempts(FAILED_ATTEMPTS)
-            .until(until);
+            .until_ms(now_ms() + TIMEOUT.as_millis() as u64);
 
         let before = Instant::now();
         let actual = block_on(fut);
