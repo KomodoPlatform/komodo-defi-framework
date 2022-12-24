@@ -1,4 +1,3 @@
-//use crate::from_variant::{get_inner_ident_type, map_enum_data_from_variant, InnerIdentTypes};
 use proc_macro::{self, TokenStream};
 use proc_macro2::{Ident, Span, TokenStream as TokenStream2};
 use quote::quote;
@@ -185,12 +184,6 @@ struct CompileError(String);
 impl CompileError {
     fn expected_enum(found: &str) -> CompileError {
         CompileError(format!("'{}' cannot be implement for a {}", MACRO_IDENT, found))
-    }
-
-    fn expected_enum_from_stringify(attr: MacroAttr, found: &str) -> CompileError {
-        CompileError(format!(
-            "expected #[enum_from_stringify(..)], found '{found}' on {attr} attribute",
-        ))
     }
 
     fn expected_an_ident(attr: MacroAttr) -> CompileError {

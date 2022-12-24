@@ -1,17 +1,12 @@
+use crate::from_trait::get_attr_meta;
 use crate::{CompileError, IdentCtx, MacroAttr};
 use proc_macro2::{Ident, TokenStream};
 use quote::__private::ext::RepToTokensExt;
 use quote::{quote, ToTokens};
 use syn::__private::TokenStream2;
 use syn::spanned::Spanned;
-use syn::Variant;
-
-#[derive(Clone)]
-pub struct MapEnumNestedData {
-    variant_ident: Ident,
-    nested_meta: Vec<syn::NestedMeta>,
-    inner_ident: Option<Ident>,
-}
+use syn::NestedMeta::Lit;
+use syn::{NestedMeta, Variant};
 
 #[derive(Debug)]
 pub(crate) enum InnerIdentTypes {
@@ -31,33 +26,6 @@ pub(crate) fn get_inner_ident_type(ident: Option<Ident>) -> InnerIdentTypes {
     InnerIdentTypes::None
 }
 
-pub(crate) fn get_attributes(variants: Variant) -> Result<MapEnumNestedData, CompileError> {
-    let variant_ident = &variants.ident;
-    let fields = &variants.fields;
-
-    for attribute in variants.attrs {
-        if let Ok(meta) = attribute.parse_meta() {
-            return match meta {
-                syn::Meta::List(syn::MetaList { nested, .. }) => {
-                    return Ok(MapEnumNestedData {
-                        variant_ident: variant_ident.to_owned(),
-                        nested_meta: nested.into_iter().collect(),
-                        inner_ident: get_variant_unnamed_ident(fields.to_owned()),
-                    });
-                },
-                _ => Err(CompileError::expected_enum_from_stringify(
-                    MacroAttr::FromStringify,
-                    &attribute.tokens.to_string(),
-                )),
-            };
-        };
-    }
-    Err(CompileError::expected_enum_from_stringify(
-        MacroAttr::FromStringify,
-        &variant_ident.to_string(),
-    ))
-}
-
 fn get_variant_unnamed_ident(fields: syn::Fields) -> Option<Ident> {
     if let syn::Fields::Unnamed(syn::FieldsUnnamed { unnamed, .. }) = fields {
         if let Some(field) = unnamed.iter().next() {
@@ -70,22 +38,8 @@ fn get_variant_unnamed_ident(fields: syn::Fields) -> Option<Ident> {
     None
 }
 
-pub(crate) fn map_enum_data_from_variant(variant: &Variant) -> Result<Vec<MapEnumNestedData>, CompileError> {
-    let mut meta_vec = vec![];
-    let attr = get_attributes(variant.to_owned())?;
-    for nested_meta in attr.nested_meta {
-        let variant_ident = attr.variant_ident.to_owned();
-        meta_vec.push(MapEnumNestedData {
-            variant_ident,
-            nested_meta: vec![nested_meta],
-            inner_ident: attr.inner_ident.clone(),
-        });
-    }
-    Ok(meta_vec)
-}
-
-fn parse_inner_ident(attr: &TokenStream) -> Result<Ident, CompileError> {
-    let ident_to_impl_from = attr.to_string();
+fn parse_inner_ident(token: &TokenStream) -> Result<Ident, CompileError> {
+    let ident_to_impl_from = token.to_string();
 
     let strip_prefix = ident_to_impl_from.strip_prefix('\"').unwrap();
     let strip_suffix = strip_prefix.strip_suffix('\"').unwrap();
@@ -94,34 +48,56 @@ fn parse_inner_ident(attr: &TokenStream) -> Result<Ident, CompileError> {
         return Err(CompileError::expected_an_ident(MacroAttr::FromStringify));
     }
 
-    let to_ident = Ident::new(strip_suffix, attr.span());
+    let to_ident = Ident::new(strip_suffix, token.span());
     Ok(to_ident)
 }
 
-pub(crate) fn impl_from_stringify(ctx: &IdentCtx<'_>, variant: &Variant) -> Result<Option<TokenStream2>, CompileError> {
-    let enum_data = map_enum_data_from_variant(variant)?;
-    let enum_name = &ctx.ident;
-    if let Some(m) = enum_data.get(0) {
-        let variant_ident = &m.variant_ident;
-        let ident_to_impl_from = parse_inner_ident(&m.nested_meta[0].to_token_stream())?;
+/// The `#[from_stringify(..)]` attribute value.
+struct AttrIdentToken(TokenStream);
 
-        return match get_inner_ident_type(m.inner_ident.to_owned()) {
-            InnerIdentTypes::Named => Ok(Some(quote! {
-                impl From<#ident_to_impl_from> for #enum_name {
-                    fn from(err: #ident_to_impl_from) -> #enum_name {
+impl TryFrom<NestedMeta> for AttrIdentToken {
+    type Error = CompileError;
+
+    /// Try to get a trait name and the method from an attribute value `Trait::method`.
+    fn try_from(attr: NestedMeta) -> Result<Self, Self::Error> {
+        match attr {
+            Lit(lit) => Ok(Self(lit.to_token_stream())),
+            _ => Err(CompileError::expected_trait_method_path()),
+        }
+    }
+}
+
+pub(crate) fn impl_from_stringify(ctx: &IdentCtx<'_>, variant: &Variant) -> Result<Option<TokenStream2>, CompileError> {
+    let enum_name = &ctx.ident;
+    let variant_ident = &variant.ident;
+    let inner_ident = get_variant_unnamed_ident(variant.fields.to_owned());
+    let maybe_attr = variant
+        .attrs
+        .iter()
+        .flat_map(|attr| get_attr_meta(attr, MacroAttr::FromStringify))
+        .collect::<Vec<_>>();
+
+    let mut stream = TokenStream::new();
+    for meta in maybe_attr {
+        let AttrIdentToken(token) = AttrIdentToken::try_from(meta)?;
+        let attr_ident = parse_inner_ident(&token)?;
+
+        match get_inner_ident_type(inner_ident.clone()) {
+            InnerIdentTypes::Named => stream.extend(quote! {
+                impl From<#attr_ident> for #enum_name {
+                    fn from(err: #attr_ident) -> #enum_name {
                         #enum_name::#variant_ident(err)
                     }
                 }
-            })),
-            _ => Ok(Some(quote! {
-                impl From<#ident_to_impl_from> for #enum_name {
-                    fn from(err: #ident_to_impl_from) -> #enum_name {
+            }),
+            _ => stream.extend(quote! {
+                impl From<#attr_ident> for #enum_name {
+                    fn from(err: #attr_ident) -> #enum_name {
                         #enum_name::#variant_ident(err.to_string())
                     }
                 }
-            })),
+            }),
         };
     }
-
-    Ok(None)
+    Ok(Some(stream))
 }

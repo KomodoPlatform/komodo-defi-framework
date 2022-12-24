@@ -8,7 +8,7 @@ use syn::{NestedMeta, Variant};
 
 impl CompileError {
     /// This error constructor is involved to be used on `EnumFromTrait` macro.
-    fn expected_trait_method_path() -> CompileError {
+    pub(crate) fn expected_trait_method_path() -> CompileError {
         CompileError(format!(
             "'{}' attribute must consist of two parts: 'Trait::method'. For example, #[{}(Default::default)]",
             MacroAttr::FromTrait,
@@ -58,11 +58,11 @@ pub(crate) fn impl_from_trait(ctx: &IdentCtx<'_>, variant: &Variant) -> Result<O
 }
 
 /// The `Trait::method` attribute value.
-struct TraitIdentMethod<'a> {
+pub(crate) struct TraitIdentMethod<'a> {
     /// The trait name.
-    ident: &'a Ident,
+    pub(crate) ident: &'a Ident,
     /// The trait method.
-    method: &'a Ident,
+    pub(crate) method: &'a Ident,
 }
 
 impl<'a> TryFrom<&'a NestedMeta> for TraitIdentMethod<'a> {
@@ -81,7 +81,7 @@ impl<'a> TryFrom<&'a NestedMeta> for TraitIdentMethod<'a> {
 }
 
 /// Get the meta information about the given `attr`.
-fn get_attr_meta(attr: &Attribute, attr_ident: MacroAttr) -> Vec<NestedMeta> {
+pub(crate) fn get_attr_meta(attr: &Attribute, attr_ident: MacroAttr) -> Vec<NestedMeta> {
     if !attr.path.is_ident(&attr_ident.to_string()) {
         return Vec::new();
     }
