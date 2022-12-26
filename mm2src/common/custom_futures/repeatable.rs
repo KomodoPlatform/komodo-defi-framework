@@ -93,6 +93,8 @@ macro_rules! try_or_ready_err {
     }};
 }
 
+const DEFAULT_REPEAT_EVERY: Duration = Duration::from_secs(1);
+
 pub trait FactoryTrait<F>: Fn() -> F {}
 
 impl<Factory, F> FactoryTrait<F> for Factory where Factory: Fn() -> F {}
@@ -184,8 +186,7 @@ pub struct Repeatable<Factory, F, T, E> {
     exec_fut: F,
     /// A timeout future if we're currently waiting for a timeout.
     timeout_fut: Option<Timer>,
-    until_ms: Option<u64>,
-    attempts: Option<AttemptsState>,
+    until: Option<RepeatUntil>,
     repeat_every: Duration,
     inspect_err: Option<Box<dyn InspectErrorTrait<E>>>,
     _phantom: PhantomData<(F, T, E)>,
@@ -204,9 +205,8 @@ where
             factory,
             exec_fut,
             timeout_fut: None,
-            until_ms: None,
-            attempts: None,
-            repeat_every: Duration::default(),
+            until: None,
+            repeat_every: DEFAULT_REPEAT_EVERY,
             inspect_err: None,
             _phantom: PhantomData::default(),
         }
@@ -238,16 +238,15 @@ where
 
     /// Specifies a total number of attempts to run the future.
     /// So there will be up to `total_attempts`.
+    ///
+    /// # Panic
+    ///
+    /// Panics if `total_attempts` is 0.
     #[inline]
     pub fn attempts(mut self, total_attempts: usize) -> Self {
-        if total_attempts == 0 {
-            warn!("There will be 1 attempt even though 'total_attempts' is 0");
-        }
+        assert!(total_attempts > 0, "'total_attempts' cannot be 0");
 
-        self.attempts = Some(AttemptsState {
-            current_attempt: 0,
-            total_attempts,
-        });
+        self.until = Some(RepeatUntil::AttemptsExceed(AttemptsState::new(total_attempts)));
         self
     }
 
@@ -259,7 +258,7 @@ where
             warn!("Deadline has already passed: now={now:?} until={until_ms:?}")
         }
 
-        self.until_ms = Some(until_ms);
+        self.until = Some(RepeatUntil::TimeoutMsExpired(until_ms));
         self
     }
 
@@ -306,25 +305,23 @@ where
                         inspect(&error);
                     }
 
-                    if self.until_ms.is_none() && self.attempts.is_none() {
+                    match self.until {
+                        Some(RepeatUntil::TimeoutMsExpired(until_ms)) => {
+                            if !self.check_can_retry_after_timeout(until_ms) {
+                                return Poll::Ready(Err(RepeatError::timeout(until_ms, error)));
+                            }
+                        },
+                        Some(RepeatUntil::AttemptsExceed(ref mut attempts)) => {
+                            // Check if we have one more attempt to retry to execute the future.
+                            attempts.current_attempt += 1;
+                            if attempts.current_attempt >= attempts.total_attempts {
+                                return Poll::Ready(Err(RepeatError::attempts(attempts.current_attempt, error)));
+                            }
+                        },
                         // We should try to execute the future only once
-                        // if neither `self.until` nor `self.attempts` are specified.
+                        // if neither `Self::attempts` nor `Self::with_timeout` are specified.
                         // https://github.com/KomodoPlatform/atomicDEX-API/pull/1564#discussion_r1050778208
-                        return Poll::Ready(Err(RepeatError::attempts(1, error)));
-                    }
-
-                    if let Some(until) = self.until_ms {
-                        if !self.check_can_retry_after_timeout(until) {
-                            return Poll::Ready(Err(RepeatError::timeout(until, error)));
-                        }
-                    }
-
-                    if let Some(ref mut attempts) = self.attempts {
-                        // Check if we have one more attempt to retry to execute the future.
-                        attempts.current_attempt += 1;
-                        if attempts.current_attempt >= attempts.total_attempts {
-                            return Poll::Ready(Err(RepeatError::attempts(attempts.current_attempt, error)));
-                        }
+                        None => return Poll::Ready(Err(RepeatError::attempts(1, error))),
                     }
 
                     // Create a new future attempt.
@@ -342,6 +339,20 @@ where
 struct AttemptsState {
     current_attempt: usize,
     total_attempts: usize,
+}
+
+impl AttemptsState {
+    fn new(total_attempts: usize) -> AttemptsState {
+        AttemptsState {
+            current_attempt: 0,
+            total_attempts,
+        }
+    }
+}
+
+enum RepeatUntil {
+    TimeoutMsExpired(u64),
+    AttemptsExceed(AttemptsState),
 }
 
 /// Returns `Poll::Ready(())` if there is no need to wait for the timeout.
@@ -569,7 +580,7 @@ mod tests {
     /// The first case within the following:
     /// https://github.com/KomodoPlatform/atomicDEX-API/pull/1564#discussion_r1040989842
     #[test]
-    fn test_without_attempts_and_until() {
+    fn test_without_attempts_and_timeout() {
         const ATTEMPTS_TO_FINISH: usize = 5;
 
         let counter = AsyncMutex::new(0);
@@ -594,7 +605,7 @@ mod tests {
     /// The first case within the following:
     /// https://github.com/KomodoPlatform/atomicDEX-API/pull/1564#discussion_r1040989842
     #[test]
-    fn test_repeat_every_without_attempts_and_until() {
+    fn test_repeat_every_without_attempts_and_timeout() {
         const ATTEMPTS_TO_FINISH: usize = 5;
         const LOWEST_TIMEOUT: Duration = Duration::from_micros(0);
         const HIGHEST_TIMEOUT: Duration = Duration::from_millis(100);
@@ -615,127 +626,6 @@ mod tests {
                 error: "Not ready"
             })
         );
-
-        assert!(
-            LOWEST_TIMEOUT <= took && took <= HIGHEST_TIMEOUT,
-            "Expected [{:?}, {:?}], but took {:?}",
-            LOWEST_TIMEOUT,
-            HIGHEST_TIMEOUT,
-            took
-        );
-    }
-
-    /// The second case within the following:
-    /// https://github.com/KomodoPlatform/atomicDEX-API/pull/1564#discussion_r1040989842
-    #[test]
-    fn test_with_attempts_and_until_timeout_expired() {
-        const ATTEMPTS_TO_FINISH: usize = 5;
-        const LOWEST_TIMEOUT: Duration = Duration::from_micros(250);
-        const HIGHEST_TIMEOUT: Duration = Duration::from_millis(500);
-        const TIMEOUT: Duration = Duration::from_millis(300);
-        const REPEAT_EVERY_MS: u64 = 100;
-
-        let counter = AsyncMutex::new(0);
-
-        let until_ms = now_ms() + TIMEOUT.as_millis() as u64;
-
-        let fut = repeatable!(async { an_operation(&counter, ATTEMPTS_TO_FINISH).await.retry_on_err() })
-            .repeat_every_ms(REPEAT_EVERY_MS)
-            .attempts(ATTEMPTS_TO_FINISH)
-            .until_ms(until_ms);
-
-        let before = Instant::now();
-        let actual = block_on(fut);
-        let took = before.elapsed();
-
-        assert_eq!(
-            actual,
-            Err(RepeatError::TimeoutExpired {
-                until_ms,
-                error: "Not ready"
-            })
-        );
-
-        let actual = block_on(counter.lock());
-        assert!(
-            (1..=3).contains(&*actual),
-            "There should be [1, 3] attempts within {:?}, found {}",
-            TIMEOUT,
-            *actual
-        );
-
-        assert!(
-            LOWEST_TIMEOUT <= took && took <= HIGHEST_TIMEOUT,
-            "Expected [{:?}, {:?}], but took {:?}",
-            LOWEST_TIMEOUT,
-            HIGHEST_TIMEOUT,
-            took
-        );
-    }
-
-    /// The second case within the following:
-    /// https://github.com/KomodoPlatform/atomicDEX-API/pull/1564#discussion_r1040989842
-    #[test]
-    fn test_with_attempts_and_until_attempts_exceed() {
-        const ATTEMPTS_TO_FINISH: usize = 7;
-        const FAILED_ATTEMPTS: usize = 5;
-        const LOWEST_TIMEOUT: Duration = Duration::from_micros(350);
-        const HIGHEST_TIMEOUT: Duration = Duration::from_millis(650);
-        const TIMEOUT: Duration = Duration::from_secs(1);
-        const REPEAT_EVERY_MS: u64 = 100;
-
-        let counter = AsyncMutex::new(0);
-
-        let fut = repeatable!(async { an_operation(&counter, ATTEMPTS_TO_FINISH).await.retry_on_err() })
-            .repeat_every_ms(REPEAT_EVERY_MS)
-            .attempts(FAILED_ATTEMPTS)
-            .until_ms(now_ms() + TIMEOUT.as_millis() as u64);
-
-        let before = Instant::now();
-        let actual = block_on(fut);
-        let took = before.elapsed();
-
-        assert_eq!(
-            actual,
-            Err(RepeatError::AttemptsExceed {
-                attempts: FAILED_ATTEMPTS,
-                error: "Not ready"
-            })
-        );
-
-        let actual = block_on(counter.lock());
-        assert_eq!(*actual, FAILED_ATTEMPTS);
-
-        assert!(
-            LOWEST_TIMEOUT <= took && took <= HIGHEST_TIMEOUT,
-            "Expected [{:?}, {:?}], but took {:?}",
-            LOWEST_TIMEOUT,
-            HIGHEST_TIMEOUT,
-            took
-        );
-    }
-
-    /// The third case within the following:
-    /// https://github.com/KomodoPlatform/atomicDEX-API/pull/1564#discussion_r1040989842
-    #[test]
-    fn test_without_sleep() {
-        const ATTEMPTS_TO_FINISH: usize = 5;
-        const LOWEST_TIMEOUT: Duration = Duration::from_micros(0);
-        const HIGHEST_TIMEOUT: Duration = Duration::from_millis(100);
-
-        let counter = AsyncMutex::new(0);
-
-        let fut = repeatable!(async { an_operation(&counter, ATTEMPTS_TO_FINISH).await.retry_on_err() })
-            .attempts(ATTEMPTS_TO_FINISH);
-
-        let before = Instant::now();
-        let actual = block_on(fut);
-        let took = before.elapsed();
-
-        assert_eq!(actual, Ok(ATTEMPTS_TO_FINISH));
-
-        let actual = block_on(counter.lock());
-        assert_eq!(*actual, ATTEMPTS_TO_FINISH);
 
         assert!(
             LOWEST_TIMEOUT <= took && took <= HIGHEST_TIMEOUT,
