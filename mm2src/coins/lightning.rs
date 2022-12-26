@@ -695,20 +695,73 @@ impl SwapOps for LightningCoin {
         Box::new(fut.boxed().compat())
     }
 
-    // Todo: this sprint, need to also check on-chain spending
+    // Todo: need to also check on-chain spending
     async fn search_for_swap_tx_spend_my(
         &self,
-        _: SearchForSwapTxSpendInput<'_>,
+        input: SearchForSwapTxSpendInput<'_>,
     ) -> Result<Option<FoundSwapTxSpend>, String> {
-        unimplemented!()
+        let payment_hash = payment_hash_from_slice(input.tx).map_err(|e| e.to_string())?;
+        let payment_hex = hex::encode(payment_hash.0);
+        match self.db.get_payment_from_db(payment_hash).await {
+            Ok(Some(payment)) => {
+                if !payment.is_outbound() {
+                    return ERR!("Payment {} should be an outbound payment!", payment_hex);
+                }
+                match payment.status {
+                    HTLCStatus::Pending => Ok(None),
+                    HTLCStatus::Succeeded => Ok(Some(FoundSwapTxSpend::Spent(TransactionEnum::LightningPayment(
+                        payment_hash,
+                    )))),
+                    HTLCStatus::Received => {
+                        ERR!(
+                            "Payment {} has an invalid status of {} in the db",
+                            payment_hex,
+                            payment.status
+                        )
+                    },
+                    HTLCStatus::Failed => Ok(Some(FoundSwapTxSpend::Refunded(TransactionEnum::LightningPayment(
+                        payment_hash,
+                    )))),
+                }
+            },
+            Ok(None) => ERR!("Payment {} is not in the database when it should be!", payment_hex),
+            Err(e) => ERR!(
+                "Unable to retrieve payment {} from the database error: {}",
+                payment_hex,
+                e
+            ),
+        }
     }
 
-    // Todo: this sprint, need to also check on-chain spending
+    // Todo: need to also check on-chain spending
     async fn search_for_swap_tx_spend_other(
         &self,
-        _: SearchForSwapTxSpendInput<'_>,
+        input: SearchForSwapTxSpendInput<'_>,
     ) -> Result<Option<FoundSwapTxSpend>, String> {
-        unimplemented!()
+        let payment_hash = payment_hash_from_slice(input.tx).map_err(|e| e.to_string())?;
+        let payment_hex = hex::encode(payment_hash.0);
+        match self.db.get_payment_from_db(payment_hash).await {
+            Ok(Some(payment)) => {
+                if payment.is_outbound() {
+                    return ERR!("Payment {} should be an inbound payment!", payment_hex);
+                }
+                match payment.status {
+                    HTLCStatus::Pending | HTLCStatus::Received => Ok(None),
+                    HTLCStatus::Succeeded => Ok(Some(FoundSwapTxSpend::Spent(TransactionEnum::LightningPayment(
+                        payment_hash,
+                    )))),
+                    HTLCStatus::Failed => Ok(Some(FoundSwapTxSpend::Refunded(TransactionEnum::LightningPayment(
+                        payment_hash,
+                    )))),
+                }
+            },
+            Ok(None) => ERR!("Payment {} is not in the database when it should be!", payment_hex),
+            Err(e) => ERR!(
+                "Unable to retrieve payment {} from the database error: {}",
+                payment_hex,
+                e
+            ),
+        }
     }
 
     fn check_tx_signed_by_pub(&self, _tx: &[u8], _expected_pub: &[u8]) -> Result<bool, MmError<ValidatePaymentError>> {

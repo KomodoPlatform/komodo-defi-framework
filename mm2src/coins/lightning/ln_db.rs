@@ -159,6 +159,8 @@ impl PaymentInfo {
             last_updated: (now_ms() / 1000) as i64,
         }
     }
+
+    pub(crate) fn is_outbound(&self) -> bool { matches!(self.payment_type, PaymentType::OutboundPayment { .. }) }
 }
 
 #[derive(Clone)]

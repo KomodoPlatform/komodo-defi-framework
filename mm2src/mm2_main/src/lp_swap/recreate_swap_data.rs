@@ -260,7 +260,6 @@ fn convert_taker_to_maker_events(
             | TakerSwapEvent::StartFailed(_)
             | TakerSwapEvent::Negotiated(_)
             | TakerSwapEvent::NegotiateFailed(_)
-            // Todo: This may be used when implementing convert_taker_to_maker_events for lightning
             | TakerSwapEvent::TakerPaymentInstructionsReceived(_)
             | TakerSwapEvent::MakerPaymentWaitConfirmStarted
             | TakerSwapEvent::MakerPaymentValidatedAndConfirmed
@@ -421,7 +420,6 @@ async fn convert_maker_to_taker_events(
                 return events;
             },
             MakerSwapEvent::MakerPaymentSent(tx_ident) => {
-                // Todo: check this if a new event is added for other side instructions, also look in the mirror maker_swap.rs
                 push_event!(TakerSwapEvent::MakerPaymentReceived(tx_ident));
                 // Please note we have not to push `MakerPaymentValidatedAndConfirmed` since we could actually decline it.
                 push_event!(TakerSwapEvent::MakerPaymentWaitConfirmStarted);
@@ -466,7 +464,6 @@ async fn convert_maker_to_taker_events(
             | MakerSwapEvent::StartFailed(_)
             | MakerSwapEvent::Negotiated(_)
             | MakerSwapEvent::NegotiateFailed(_)
-            // Todo: This may be used when implementing convert_maker_to_taker_events for lightning
             | MakerSwapEvent::MakerPaymentInstructionsReceived(_)
             | MakerSwapEvent::TakerPaymentWaitConfirmStarted
             | MakerSwapEvent::TakerPaymentValidatedAndConfirmed

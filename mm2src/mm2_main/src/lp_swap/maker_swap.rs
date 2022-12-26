@@ -1386,45 +1386,50 @@ impl MakerSwap {
             ),
             Err(e) => ERR!("Error {} when trying to find maker payment spend", e),
             Ok(None) => {
-                let can_refund_htlc = try_s!(
-                    self.maker_coin
-                        .can_refund_htlc(maker_payment_lock as u64)
-                        .compat()
-                        .await
-                );
-                if let CanRefundHtlc::HaveToWait(seconds_to_wait) = can_refund_htlc {
-                    return ERR!("Too early to refund, wait until {}", now_ms() / 1000 + seconds_to_wait);
+                // Todo: what about refunding for a closed channel??
+                if self.taker_coin.is_auto_refundable() {
+                    ERR!("Taker payment will be refunded automatically!")
+                } else {
+                    let can_refund_htlc = try_s!(
+                        self.maker_coin
+                            .can_refund_htlc(maker_payment_lock as u64)
+                            .compat()
+                            .await
+                    );
+                    if let CanRefundHtlc::HaveToWait(seconds_to_wait) = can_refund_htlc {
+                        return ERR!("Too early to refund, wait until {}", now_ms() / 1000 + seconds_to_wait);
+                    }
+                    let fut = self.maker_coin.send_maker_refunds_payment(SendMakerRefundsPaymentArgs {
+                        payment_tx: &maker_payment,
+                        time_lock: maker_payment_lock,
+                        other_pubkey: other_maker_coin_htlc_pub.as_slice(),
+                        secret_hash: secret_hash.as_slice(),
+                        swap_contract_address: &maker_coin_swap_contract_address,
+                        swap_unique_data: &unique_data,
+                    });
+
+                    let transaction = match fut.compat().await {
+                        Ok(t) => t,
+                        Err(err) => {
+                            if let Some(tx) = err.get_tx() {
+                                broadcast_p2p_tx_msg(
+                                    &self.ctx,
+                                    tx_helper_topic(self.maker_coin.ticker()),
+                                    &tx,
+                                    &self.p2p_privkey,
+                                );
+                            }
+
+                            return ERR!("{}", err.get_plain_text_format());
+                        },
+                    };
+
+                    Ok(RecoveredSwap {
+                        action: RecoveredSwapAction::RefundedMyPayment,
+                        coin: self.maker_coin.ticker().to_string(),
+                        transaction,
+                    })
                 }
-                let fut = self.maker_coin.send_maker_refunds_payment(SendMakerRefundsPaymentArgs {
-                    payment_tx: &maker_payment,
-                    time_lock: maker_payment_lock,
-                    other_pubkey: other_maker_coin_htlc_pub.as_slice(),
-                    secret_hash: secret_hash.as_slice(),
-                    swap_contract_address: &maker_coin_swap_contract_address,
-                    swap_unique_data: &unique_data,
-                });
-
-                let transaction = match fut.compat().await {
-                    Ok(t) => t,
-                    Err(err) => {
-                        if let Some(tx) = err.get_tx() {
-                            broadcast_p2p_tx_msg(
-                                &self.ctx,
-                                tx_helper_topic(self.maker_coin.ticker()),
-                                &tx,
-                                &self.p2p_privkey,
-                            );
-                        }
-
-                        return ERR!("{}", err.get_plain_text_format());
-                    },
-                };
-
-                Ok(RecoveredSwap {
-                    action: RecoveredSwapAction::RefundedMyPayment,
-                    coin: self.maker_coin.ticker().to_string(),
-                    transaction,
-                })
             },
         }
     }

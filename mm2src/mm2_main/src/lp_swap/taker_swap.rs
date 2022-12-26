@@ -881,6 +881,7 @@ impl TakerSwap {
             .clone();
         let secret_hash = self.r().secret_hash.0.clone();
         let maker_amount = self.maker_amount.clone().into();
+        // Todo: revise this duration and mirror in context of restarts etc..
         let maker_lock_duration =
             (self.r().data.lock_duration as f64 * self.taker_coin.maker_locktime_multiplier()).ceil() as u64;
         let expires_in = wait_for_maker_payment_conf_duration(self.r().data.lock_duration);
@@ -1889,7 +1890,6 @@ impl TakerSwap {
                         .await
                 );
                 match maybe_sent {
-                    // Todo: Refactor this when implementing recover_funds for lightning swaps
                     Some(tx) => tx.tx_hex(),
                     None => return ERR!("Taker payment is not found, swap is not recoverable"),
                 }
@@ -1998,41 +1998,45 @@ impl TakerSwap {
                 ),
             },
             None => {
-                let can_refund = try_s!(self.taker_coin.can_refund_htlc(taker_payment_lock).compat().await);
-                if let CanRefundHtlc::HaveToWait(seconds_to_wait) = can_refund {
-                    return ERR!("Too early to refund, wait until {}", now_ms() / 1000 + seconds_to_wait);
+                if self.taker_coin.is_auto_refundable() {
+                    ERR!("Taker payment will be refunded automatically!")
+                } else {
+                    let can_refund = try_s!(self.taker_coin.can_refund_htlc(taker_payment_lock).compat().await);
+                    if let CanRefundHtlc::HaveToWait(seconds_to_wait) = can_refund {
+                        return ERR!("Too early to refund, wait until {}", now_ms() / 1000 + seconds_to_wait);
+                    }
+
+                    let fut = self.taker_coin.send_taker_refunds_payment(SendTakerRefundsPaymentArgs {
+                        payment_tx: &taker_payment,
+                        time_lock: taker_payment_lock as u32,
+                        other_pubkey: other_taker_coin_htlc_pub.as_slice(),
+                        secret_hash: &secret_hash,
+                        swap_contract_address: &taker_coin_swap_contract_address,
+                        swap_unique_data: &unique_data,
+                    });
+
+                    let transaction = match fut.compat().await {
+                        Ok(t) => t,
+                        Err(err) => {
+                            if let Some(tx) = err.get_tx() {
+                                broadcast_p2p_tx_msg(
+                                    &self.ctx,
+                                    tx_helper_topic(self.taker_coin.ticker()),
+                                    &tx,
+                                    &self.p2p_privkey,
+                                );
+                            }
+
+                            return ERR!("{:?}", err.get_plain_text_format());
+                        },
+                    };
+
+                    Ok(RecoveredSwap {
+                        action: RecoveredSwapAction::RefundedMyPayment,
+                        coin: self.taker_coin.ticker().to_string(),
+                        transaction,
+                    })
                 }
-
-                let fut = self.taker_coin.send_taker_refunds_payment(SendTakerRefundsPaymentArgs {
-                    payment_tx: &taker_payment,
-                    time_lock: taker_payment_lock as u32,
-                    other_pubkey: other_taker_coin_htlc_pub.as_slice(),
-                    secret_hash: &secret_hash,
-                    swap_contract_address: &taker_coin_swap_contract_address,
-                    swap_unique_data: &unique_data,
-                });
-
-                let transaction = match fut.compat().await {
-                    Ok(t) => t,
-                    Err(err) => {
-                        if let Some(tx) = err.get_tx() {
-                            broadcast_p2p_tx_msg(
-                                &self.ctx,
-                                tx_helper_topic(self.taker_coin.ticker()),
-                                &tx,
-                                &self.p2p_privkey,
-                            );
-                        }
-
-                        return ERR!("{:?}", err.get_plain_text_format());
-                    },
-                };
-
-                Ok(RecoveredSwap {
-                    action: RecoveredSwapAction::RefundedMyPayment,
-                    coin: self.taker_coin.ticker().to_string(),
-                    transaction,
-                })
             },
         }
     }
