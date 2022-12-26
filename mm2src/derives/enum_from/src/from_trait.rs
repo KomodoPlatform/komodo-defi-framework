@@ -58,11 +58,11 @@ pub(crate) fn impl_from_trait(ctx: &IdentCtx<'_>, variant: &Variant) -> Result<O
 }
 
 /// The `Trait::method` attribute value.
-pub(crate) struct TraitIdentMethod<'a> {
+struct TraitIdentMethod<'a> {
     /// The trait name.
-    pub(crate) ident: &'a Ident,
+    ident: &'a Ident,
     /// The trait method.
-    pub(crate) method: &'a Ident,
+    method: &'a Ident,
 }
 
 impl<'a> TryFrom<&'a NestedMeta> for TraitIdentMethod<'a> {
