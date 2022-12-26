@@ -191,7 +191,7 @@ where
 }
 
 struct FetchingTransactionsData<Coin, Storage> {
-    /// The list of addresses for those we have requested [`UpdatingUnconfirmedTxes::all_tx_ids_with_height`] TX hashses
+    /// The list of addresses for those we have requested [`UpdatingUnconfirmedTxes::all_tx_ids_with_height`] TX hashes
     /// at the `FetchingTxHashes` state.
     address: String,
     from_block_height: u64,
@@ -367,7 +367,7 @@ where
             transfer_event_type: TransferEventType,
         }
 
-        // updates sender and receiver addressses if tx is htlc, and if not leaves as it is.
+        // updates sender and receiver addresses if tx is htlc, and if not leaves as it is.
         fn read_real_htlc_addresses(transfer_details: &mut TransferDetails, msg_event: &&Event) {
             match msg_event.type_str.as_str() {
                 CREATE_HTLC_EVENT => {
@@ -731,7 +731,7 @@ where
                         }
                     }
 
-                    log::debug!("Tx '{}' successfuly parsed.", tx.hash);
+                    log::debug!("Tx '{}' successfully parsed.", tx.hash);
                 }
 
                 try_or_return_stopped_as_err!(
@@ -750,11 +750,7 @@ where
             Ok(highest_height)
         }
 
-        let q = format!(
-            "coin_spent.spender = '{}' AND tx.height > {}",
-            self.address.clone(),
-            self.from_block_height
-        );
+        let q = format!("coin_spent.spender = '{}'", self.address.clone(),);
         let highest_send_tx_height = match fetch_and_insert_txs(
             self.address.clone(),
             &ctx.coin,
@@ -775,12 +771,8 @@ where
             },
         };
 
-        let q = format!(
-            "coin_received.receiver = '{}' AND tx.height > {}",
-            self.address.clone(),
-            self.from_block_height
-        );
-        let highest_recieved_tx_height = match fetch_and_insert_txs(
+        let q = format!("coin_received.receiver = '{}'", self.address.clone(),);
+        let highest_received_tx_height = match fetch_and_insert_txs(
             self.address.clone(),
             &ctx.coin,
             &ctx.storage,
@@ -800,7 +792,7 @@ where
             },
         };
 
-        let last_fetched_block = cmp::max(highest_send_tx_height, highest_recieved_tx_height);
+        let last_fetched_block = cmp::max(highest_send_tx_height, highest_received_tx_height);
 
         log::info!(
             "Tx history fetching finished for {}. Last fetched block {}",
