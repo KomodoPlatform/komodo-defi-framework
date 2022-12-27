@@ -2,8 +2,9 @@ use proc_macro::{self, TokenStream};
 use proc_macro2::{Ident, Span, TokenStream as TokenStream2};
 use quote::quote;
 use std::fmt;
-use syn::Variant;
+use syn::Meta::List;
 use syn::{parse_macro_input, Data, DeriveInput, Error, Field, Fields, ImplGenerics, Type, TypeGenerics, WhereClause};
+use syn::{Attribute, NestedMeta, Variant};
 
 mod from_inner;
 mod from_stringify;
@@ -85,57 +86,32 @@ pub fn enum_from_trait(input: TokenStream) -> TokenStream {
     }
 }
 
-/// `EnumFromStringify` is very useful for generating `From<T>` trait from one enum to another enum
-/// currently, this crate can only convert enum variant with only some basic inner type such as `String`, and `Enum`
-/// type just like the example below. Can not be used for tuple, struct etc for now .
-/// More support will be added.
-///
+/// `EnumFromStringify` is very useful for generating `From<T>` trait from one enum to another enum,
+/// this procedural macro is used to convert any type that implements `Display` trait to a enum variant with the `String` inner type only.
 ///
 /// ### USAGE:
+///
 /// ```rust
 /// use enum_from::EnumFromStringify;
 /// use std::fmt::{Display, Formatter};
+/// use std::io::{Error, ErrorKind};
 ///
 /// // E.G, this converts from Bar, Man to FooBar::Bar(String)
 /// #[derive(Debug, EnumFromStringify, PartialEq, Eq)]
 /// pub enum FooBar {
-///     #[from_stringify("Bar", "Man")]
+///     #[from_stringify("u64", "Error")]
 ///     Bar(String),
-/// }
-///
-/// #[derive(Debug, PartialEq, Eq)]
-/// pub enum Bar {
-///     Bar(String),
-/// }
-///
-/// impl Display for Bar {
-///   fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
-///        match self {
-///            Self::Bar(s) => write!(f, "{}", s),
-///        }
-///    }
-/// }
-///
-/// #[derive(Debug, PartialEq, Eq)]
-/// pub enum Man {
-///     Man(String),
-/// }
-///
-/// impl Display for Man {
-///   fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
-///        match self {
-///            Self::Man(s) => write!(f, "{}", s),
-///        }
-///    }
 /// }
 ///
 /// #[test]
-/// fn test_from_variant() {
-///     let bar = Bar::Bar("Bar".to_string());
-///     assert_eq!(FooBar::Bar("Bar".to_string()), bar.into());
+/// fn test_from_stringify() {
+///     let num = 6500u16;
+///     let expected: FooBar = num.into();
+///     assert_eq!(FooBar::Bar(num.to_string()), expected);
 ///
-///     let man = Man::Man("Man".to_string());
-///     assert_eq!(FooBar::Bar(man.clone()), foo.into());
+///     let err = Error::new(ErrorKind::Other, "oh no!");
+///     let expected: FooBar = err.into();
+///     assert_eq!(FooBar::Bar(num.to_string()), expected);
 /// }
 ///  ```
 #[proc_macro_derive(EnumFromStringify, attributes(from_stringify))]
@@ -191,7 +167,7 @@ impl CompileError {
     }
 
     fn expected_string_inner_ident(attr: MacroAttr) -> CompileError {
-        CompileError(format!("'{}' Expected String as inner ident", attr))
+        CompileError(format!("'{attr}' Expected String as inner ident"))
     }
 }
 
@@ -284,4 +260,18 @@ fn wrap_const(code: TokenStream2) -> TokenStream {
         };
     };
     output.into()
+}
+
+/// Get the meta information about the given `attr`.
+pub(crate) fn get_attr_meta(attr: &Attribute, attr_ident: MacroAttr) -> Vec<NestedMeta> {
+    if !attr.path.is_ident(&attr_ident.to_string()) {
+        return Vec::new();
+    }
+
+    match attr.parse_meta() {
+        // A meta list is like the `serde(tag = "...")` in `#[serde(tag = "...")]`
+        // or `serde(untagged)` in `#[serde(untagged)]`
+        Ok(List(meta)) => meta.nested.into_iter().collect(),
+        _ => Vec::new(),
+    }
 }

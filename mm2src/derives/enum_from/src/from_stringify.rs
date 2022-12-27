@@ -1,6 +1,4 @@
-use crate::from_trait::get_attr_meta;
-use crate::{CompileError, IdentCtx, MacroAttr};
-use itertools::Itertools;
+use crate::{get_attr_meta, CompileError, IdentCtx, MacroAttr};
 use proc_macro2::{Ident, Span, TokenStream};
 use quote::__private::ext::RepToTokensExt;
 use quote::{quote, ToTokens};
@@ -9,7 +7,17 @@ use syn::spanned::Spanned;
 use syn::NestedMeta::Lit;
 use syn::{NestedMeta, Variant};
 
-pub(crate) fn check_inner_ident_type(ident: Option<Ident>) -> Result<(), CompileError> {
+impl CompileError {
+    /// This error constructor is involved to be used on `EnumFromTrait` macro.
+    fn expected_literal_inner() -> CompileError {
+        CompileError(format!(
+            "'{}' attribute must consist of string Literal. For example, #[from_stringify(\"String\")]",
+            MacroAttr::FromStringify,
+        ))
+    }
+}
+
+fn check_inner_ident_type(ident: Option<Ident>) -> Result<(), CompileError> {
     if let Some(ident) = ident {
         if ident.to_string().as_str() == "String" {
             return Ok(());
@@ -37,7 +45,7 @@ struct AttrIdentToken(TokenStream);
 impl TryFrom<NestedMeta> for AttrIdentToken {
     type Error = CompileError;
 
-    /// Try to get a trait name and the method from an attribute value `Trait::method`.
+    /// Try to get an Ident name from an attribute value.
     fn try_from(attr: NestedMeta) -> Result<Self, Self::Error> {
         match attr {
             Lit(lit) => Ok(Self(lit.to_token_stream())),
@@ -47,8 +55,16 @@ impl TryFrom<NestedMeta> for AttrIdentToken {
 }
 
 fn parse_inner_ident(ident: String, span: Span) -> Result<Ident, CompileError> {
-    let ident = ident.split("").into_iter().filter(|&e| e != "\"").join("");
-    Ok(Ident::new(&ident, span))
+    let ident = ident
+        .strip_suffix('\"')
+        .ok_or("")
+        .map_err(|_| CompileError::expected_string_inner_ident(MacroAttr::FromStringify))?;
+    let ident = ident
+        .strip_prefix('\"')
+        .ok_or("")
+        .map_err(|_| CompileError::expected_string_inner_ident(MacroAttr::FromStringify))?;
+
+    Ok(Ident::new(ident, span))
 }
 
 pub(crate) fn impl_from_stringify(ctx: &IdentCtx<'_>, variant: &Variant) -> Result<Option<TokenStream2>, CompileError> {
@@ -65,17 +81,14 @@ pub(crate) fn impl_from_stringify(ctx: &IdentCtx<'_>, variant: &Variant) -> Resu
     for meta in maybe_attr {
         let AttrIdentToken(token) = AttrIdentToken::try_from(meta)?;
         let attr_ident = parse_inner_ident(token.to_string(), token.span())?;
-
-        match check_inner_ident_type(inner_ident.clone()) {
-            Ok(_) => stream.extend(quote! {
-                impl From<#attr_ident> for #enum_name {
-                    fn from(err: #attr_ident) -> #enum_name {
-                        #enum_name::#variant_ident(err)
-                    }
+        check_inner_ident_type(inner_ident.clone())?;
+        stream.extend(quote! {
+            impl From<#attr_ident> for #enum_name {
+                fn from(err: #attr_ident) -> #enum_name {
+                    #enum_name::#variant_ident(err.to_string())
                 }
-            }),
-            Err(err) => return Err(err),
-        };
+            }
+        })
     }
     Ok(Some(stream))
 }
