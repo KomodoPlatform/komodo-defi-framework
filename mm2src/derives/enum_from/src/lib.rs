@@ -96,14 +96,11 @@ pub fn enum_from_trait(input: TokenStream) -> TokenStream {
 /// use enum_from::EnumFromStringify;
 /// use std::fmt::{Display, Formatter};
 ///
-/// // E.G, this converts from whatever Bar is to FooBar::Bar(String) and
-/// // whatever Foo to FooBar::Foo(Foo)
+/// // E.G, this converts from Bar, Man to FooBar::Bar(String)
 /// #[derive(Debug, EnumFromStringify, PartialEq, Eq)]
 /// pub enum FooBar {
-///     #[from_stringify("Bar", "String", "Man")]
+///     #[from_stringify("Bar", "Man")]
 ///     Bar(String),
-///     #[from_stringify("Foo")]
-///     Foo(Foo),
 /// }
 ///
 /// #[derive(Debug, PartialEq, Eq)]
@@ -132,18 +129,10 @@ pub fn enum_from_trait(input: TokenStream) -> TokenStream {
 ///    }
 /// }
 ///
-/// #[derive(Debug, Clone, PartialEq, Eq)]
-/// pub enum Foo {
-///     Foo(String),
-/// }
-///
 /// #[test]
 /// fn test_from_variant() {
 ///     let bar = Bar::Bar("Bar".to_string());
 ///     assert_eq!(FooBar::Bar("Bar".to_string()), bar.into());
-///
-///     let foo = Foo::Foo("Foo".to_string());
-///     assert_eq!(FooBar::Foo(foo.clone()), foo.into());
 ///
 ///     let man = Man::Man("Man".to_string());
 ///     assert_eq!(FooBar::Bar(man.clone()), foo.into());
@@ -186,12 +175,6 @@ impl CompileError {
         CompileError(format!("'{}' cannot be implement for a {}", MACRO_IDENT, found))
     }
 
-    fn expected_an_ident(attr: MacroAttr) -> CompileError {
-        CompileError(format!(
-            "Ident can't be an empty str, expected an Ident in {attr} attribute. i.e, {attr}(ident_name) "
-        ))
-    }
-
     fn expected_unnamed_inner(attr: MacroAttr) -> CompileError {
         CompileError(format!(
             "'{}' attribute must be used for a variant with one unnamed inner type",
@@ -205,6 +188,10 @@ impl CompileError {
 
     fn attr_must_be_used(attr: MacroAttr) -> CompileError {
         CompileError(format!("'{}' must be used at least once", attr))
+    }
+
+    fn expected_string_inner_ident(attr: MacroAttr) -> CompileError {
+        CompileError(format!("'{}' Expected String as inner ident", attr))
     }
 }
 

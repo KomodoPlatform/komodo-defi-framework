@@ -15,6 +15,14 @@ impl CompileError {
             MacroAttr::FromTrait
         ))
     }
+
+    /// This error constructor is involved to be used on `EnumFromTrait` macro.
+    pub(crate) fn expected_literal_inner() -> CompileError {
+        CompileError(format!(
+            "'{}' attribute must consist of string Literal. For example, #[from_stringify(`String`)]",
+            MacroAttr::FromStringify,
+        ))
+    }
 }
 
 /// Implement a given trait-constructor for the given enumeration `variant`.
